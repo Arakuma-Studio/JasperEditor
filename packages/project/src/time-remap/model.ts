@@ -20,12 +20,8 @@ import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
 
 /** Largest timeline speed of a remap segment (Premiere Pro 14.0+: 20,000 %). */
 export const MAX_REMAP_SPEED = 200;
-/** Smallest non-zero timeline speed of a remap segment (0.01 %; 0 % is a freeze). */
-export const MIN_REMAP_SPEED = 0.0001;
 /** Default `ease` of a speed transition (a smooth S-curve, like Premiere's split keyframe). */
 export const DEFAULT_RAMP_EASE = 1;
-/** Premiere's palindrome reverse plays backward and forward "at full speed". */
-export const REVERSE_SEGMENT_SPEED = 1;
 
 /** Fields of a clip the time mapping reads. `timeRemap` is only honoured on video clips. */
 export type TimedClip = {

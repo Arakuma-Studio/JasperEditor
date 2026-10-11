@@ -32,8 +32,7 @@ export const MASTER_STRIP_ID = 'master';
 /** Fader range (dB): −∞ (≤ −96) … +15 dB, like Premiere's Audio Track Mixer. */
 export const FADER_MIN_DB = -96;
 export const FADER_MAX_DB = 15;
-/** Premiere: 5 effect slots and 5 send slots per strip. */
-export const MAX_INSERTS = 5;
+/** Premiere: 5 send slots per strip. */
 export const MAX_SENDS = 5;
 
 export type StripKind = 'track' | 'submix' | 'master';
@@ -75,10 +74,6 @@ export function trackFormat(t: Pick<Track, 'channelFormat'>): AudioChannelFormat
 
 export function masterFormat(seq: Pick<Sequence, 'settings'>): AudioChannelFormat {
 	return (seq.settings.masterLayout as AudioChannelFormat | undefined) ?? 'stereo';
-}
-
-export function sequenceSampleRate(seq: Pick<Sequence, 'settings'>): number {
-	return (seq.settings.audioSampleRate as number | undefined) ?? 48000;
 }
 
 export function submixTracksOf(seq: Pick<Sequence, 'submixTracks'>): Track[] {
@@ -168,18 +163,6 @@ export function resolveStripRef(seq: Sequence, ref: string): string | null {
 	const lower = r.toLowerCase();
 	for (const s of listStrips(seq)) if (s.name.toLowerCase() === lower) return s.id;
 	return null;
-}
-
-/** The Track object behind a strip (audio or submix track); null for the Mix. */
-export function stripTrack<T extends Pick<Sequence, 'audioTracks' | 'submixTracks'>>(
-	seq: T,
-	id: string,
-): T['audioTracks'][number] | null {
-	return (
-		seq.audioTracks.find((t) => t.id === id) ??
-		((seq.submixTracks ?? []) as T['audioTracks']).find((t) => t.id === id) ??
-		null
-	);
 }
 
 /** Channel format of the bus strip `id` feeds (its output submix, or the Mix). */

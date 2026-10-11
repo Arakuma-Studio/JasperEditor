@@ -200,12 +200,6 @@ export const EffectPresetFolderSchema = z.looseObject({
 export type EffectPresetFolder = { id: string; name: string; parentId?: string | null };
 
 /** The user library: what the engine stores and serves (built-ins are not stored, they ship with the app). */
-export const EffectPresetLibrarySchema = z.looseObject({
-	format: z.literal('jasper-effect-preset-library'),
-	version: z.literal(1),
-	folders: z.array(EffectPresetFolderSchema),
-	presets: z.array(EffectPresetSchema),
-});
 export type EffectPresetLibrary = {
 	format: 'jasper-effect-preset-library';
 	version: 1;
@@ -214,13 +208,6 @@ export type EffectPresetLibrary = {
 };
 
 /** An exported file (Export…): presets plus the bins they sit in. */
-export const EffectPresetBundleSchema = z.looseObject({
-	format: z.literal(EFFECT_PRESET_BUNDLE_FORMAT),
-	version: z.literal(1),
-	exportedAt: z.string().optional(),
-	folders: z.array(EffectPresetFolderSchema).optional(),
-	presets: z.array(EffectPresetSchema),
-});
 export type EffectPresetBundle = {
 	format: typeof EFFECT_PRESET_BUNDLE_FORMAT;
 	version: 1;

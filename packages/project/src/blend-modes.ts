@@ -236,9 +236,6 @@ export function isCssBlend(mode: string): boolean {
 
 // ---------------------------------------------------------------- formulas (premultiplied RGBA, 0..1)
 
-/** Hard Mix threshold: 1 minus a quarter code value, so sums of 8-bit values that are exactly 1 count as 1 on the GPU. */
-export const HARD_MIX_THRESHOLD = 1 - 0.25 / 255;
-
 /** Rec. 709 luminance (Darker / Lighter Color, the luma stencils). */
 export function luminance709(r: number, g: number, b: number): number {
 	return 0.2126 * r + 0.7152 * g + 0.0722 * b;

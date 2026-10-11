@@ -503,30 +503,6 @@ export function redAngle(m: ScopeMatrix): number {
 	return angleDeg(cb, cr);
 }
 
-/** HLS hue (0..1) and saturation of a clamped colour. */
-function hueSat(r: number, g: number, b: number): [number, number] {
-	const mx = Math.max(r, g, b);
-	const mn = Math.min(r, g, b);
-	const d = mx - mn;
-	if (d < 1e-9) return [0, 0];
-	const l = (mx + mn) / 2;
-	const s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
-	let h: number;
-	if (mx === r) h = (g - b) / d + (g < b ? 6 : 0);
-	else if (mx === g) h = (b - r) / d + 2;
-	else h = (r - g) / d + 4;
-	return [h / 6, s];
-}
-
-/** A sample's point on the HLS vectorscope: hue as the angle from red (counter-clockwise), saturation × 0.5 radius. */
-export function hlsPoint(rgb: readonly [number, number, number], m: ScopeMatrix): [number, number] {
-	const c = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
-	const [h, s] = hueSat(c(rgb[0]), c(rgb[1]), c(rgb[2]));
-	const a = ((redAngle(m) + h * 360) * Math.PI) / 180;
-	const rad = Math.min(1, Math.max(0, s)) * 0.5;
-	return [rad * Math.cos(a), rad * Math.sin(a)];
-}
-
 /** The HLS vectorscope (hue → direction tabulated at 0.1°). */
 export function vectorscopeHls(s: ScopeSignal, p: ScopeParams = DEFAULT_SCOPE_PARAMS): ScopeVectorscope {
 	const v = newVectorscope(p.vectorSize);

@@ -110,37 +110,6 @@ export function defaultCharXf(): CharXf {
 	};
 }
 
-/** True when the state draws the character exactly as laid out (nothing animated on it). */
-export function isIdentityCharXf(x: CharXf): boolean {
-	return (
-		x.offset.every((v) => v === 0) &&
-		x.anchor.every((v) => v === 0) &&
-		x.scale.every((v) => v === 100) &&
-		x.rotation === 0 &&
-		x.rotationX === 0 &&
-		x.rotationY === 0 &&
-		x.skew === 0 &&
-		x.opacity === 100 &&
-		x.fillK === 0 &&
-		x.fillHsb.every((v) => v === 0) &&
-		x.fillOpacity === 100 &&
-		x.strokeK === 0 &&
-		x.strokeHsb.every((v) => v === 0) &&
-		x.strokeOpacity === 100 &&
-		x.strokeWidth === 0 &&
-		x.trackBefore === 0 &&
-		x.trackAfter === 0 &&
-		x.lineAnchorK === 0 &&
-		x.lineSpacing[0] === 0 &&
-		x.lineSpacing[1] === 0 &&
-		x.charOffset === 0 &&
-		x.charValue === null &&
-		x.blur[0] === 0 &&
-		x.blur[1] === 0 &&
-		Object.values(x.axes).every((v) => v === 0)
-	);
-}
-
 /** One laid-out character as the selectors see it. */
 export type AnimatorGlyph = TextUnitIndices & { isSpace: boolean };
 
@@ -276,11 +245,6 @@ registerTextSelectorEvaluator('expression', {
 		};
 	},
 });
-
-/** Whether a selector kind has an evaluator (unknown kinds are skipped, like EffectCraft). */
-export function isKnownSelectorKind(kind: string): boolean {
-	return SELECTOR_EVALUATORS.has(kind);
-}
 
 /** Selection of every glyph by an animator's selectors, per dimension. */
 export function animatorSelection(

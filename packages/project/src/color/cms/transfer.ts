@@ -12,7 +12,7 @@
 //   HLG           ITU-R BT.2100-2 Table 5 (a = 0.17883277, b = 1 − 4a, c = 0.5 − a·ln(4a)); OOTF Note 5e/5f.
 //   ACEScct       Academy S-2016-001 (ACEScct, AP1).
 //   ACEScc        Academy S-2014-003 (ACEScc, AP1).
-import { LOG_CURVES, type LogCurveId, logDecode, logEncode } from './log.ts';
+import { type LogCurveId, logDecode, logEncode } from './log.ts';
 
 export type CurveId =
 	| 'linear'
@@ -73,7 +73,6 @@ export function pqEncode(y: number): number {
 	return ((PQ_C1 + PQ_C2 * p) / (1 + PQ_C3 * p)) ** PQ_M2;
 }
 export const pqFromNits = (nits: number) => pqEncode(nits / 10000);
-export const nitsFromPq = (e: number) => pqDecode(e) * 10000;
 
 // ---------------------------------------------------------------- HLG (ARIB STD-B67 / BT.2100)
 export const HLG_A = 0.17883277;
@@ -179,8 +178,4 @@ export function curveEncode(curve: CurveId, x: number): number {
 		default:
 			return logEncode(curve, x);
 	}
-}
-
-export function isLogCurve(curve: CurveId): curve is LogCurveId {
-	return curve in LOG_CURVES;
 }

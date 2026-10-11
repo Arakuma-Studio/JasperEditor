@@ -63,17 +63,6 @@ export type RangeParams = {
 	easeLow: number;
 };
 
-export const DEFAULT_RANGE: Readonly<RangeParams> = Object.freeze({
-	start: 0,
-	end: 1,
-	offset: 0,
-	amount: 1,
-	shape: 'square',
-	smoothness: 1,
-	easeHigh: 0,
-	easeLow: 0,
-});
-
 /** Shape profile over the range (`f` = 0 at Start, 1 at End). */
 export function shapeValue(shape: TextRangeShape, f: number): number {
 	switch (shape) {

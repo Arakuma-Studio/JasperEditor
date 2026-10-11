@@ -25,14 +25,7 @@ import { intrinsicBoxOf } from '../registry/properties.ts';
 import type { Animatable, Keyframe, RGBA, Vec2 } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Mask } from '../schema/mask.ts';
-import {
-	BLEND_MODES,
-	type Clip,
-	type Sequence,
-	type TextContent,
-	type TextStyle,
-	type Transform,
-} from '../schema/sequence.ts';
+import type { Clip, Sequence, TextContent, TextStyle, Transform } from '../schema/sequence.ts';
 import type { ShapeItem, ShapeTransform } from '../schema/shapes.ts';
 import type { TextAnimatorGroup, TextRangeSelector } from '../schema/text-animators.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
@@ -1125,8 +1118,3 @@ export function exportSequenceToLottie(
 	if (layers.length === 0) ctx.warn('The sequence has no clip Lottie can carry');
 	return { json, warnings: ctx.warnings, layers: ctx.layerCount };
 }
-
-/** BLEND_MODES that have a Lottie code (for UI hints). */
-export const LOTTIE_BLEND_MODES: readonly string[] = LOTTIE_BLEND.filter((m) =>
-	(BLEND_MODES as readonly string[]).includes(m),
-);

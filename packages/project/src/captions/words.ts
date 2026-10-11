@@ -13,17 +13,6 @@ export function attachesToPrevious(next: string): boolean {
 	return ATTACHING.test(plainCaptionText(next));
 }
 
-/** Words joined with single spaces except before attaching punctuation (S01:AST-032). */
-export function joinWords(words: readonly string[]): string {
-	let out = '';
-	for (const w of words) {
-		if (!w) continue;
-		if (out && !attachesToPrevious(w)) out += ' ';
-		out += w;
-	}
-	return out;
-}
-
 /**
  * A word for search and filler matching: markup removed, punctuation trimmed from both ends, lower case
  * (FilmCraft `normalize_word`).

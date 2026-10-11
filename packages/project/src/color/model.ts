@@ -94,11 +94,6 @@ export function sequenceColorInfo(settings: SettingsLike | null | undefined): Se
 	};
 }
 
-/** True for the settings of every sequence made before colour management (nothing to do anywhere). */
-export function isPlainRec709(info: SequenceColorInfo): boolean {
-	return info.space === 'rec709' && !info.blendLinear && !info.linearize;
-}
-
 type AssetLike = Pick<MediaAsset, 'kind' | 'probe'> & {
 	interpretation?: { color?: ColorInterpretation | null } | null;
 };

@@ -66,8 +66,3 @@ export function pickFrames(t: FrameTimes, sec: number, mode: TimeInterpolation):
 	if (w >= 1 - INTERP_EPS) return { a: a + 1, b: a + 1, w: 0 };
 	return { a, b: a + 1, w };
 }
-
-/** Frame count of a constant-rate media of `durationSec` (rounded down, with the probe tolerance). */
-export function cfrFrameCount(durationSec: number, rate: Rational): number {
-	return Math.max(1, Math.floor((durationSec * rate.num) / rate.den + 1e-3));
-}

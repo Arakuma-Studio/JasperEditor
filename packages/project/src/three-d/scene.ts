@@ -28,7 +28,6 @@ import {
 	mat4Apply,
 	mat4ApplyVec,
 	mat4FromQuat,
-	mat4Invert,
 	mat4Mul,
 	mat4MulAll,
 	mat4Orientation,
@@ -91,11 +90,6 @@ export function cameraProjection(cam: CameraState, w: number, h: number): Matrix
 	return mat4Mul(proj, cam.view);
 }
 
-/** Camera-space depth of a world point. */
-export function cameraDepth(cam: CameraState, p: Vec3): number {
-	return mat4Apply(cam.view, p)[2];
-}
-
 export const cameraRight = (c: CameraState): Vec3 => [c.view[0]!, c.view[1]!, c.view[2]!];
 export const cameraDown = (c: CameraState): Vec3 => [c.view[4]!, c.view[5]!, c.view[6]!];
 export const cameraForward = (c: CameraState): Vec3 => [c.view[8]!, c.view[9]!, c.view[10]!];
@@ -106,28 +100,6 @@ export function projectPoint(cam: CameraState, w: number, h: number, p: Vec3): V
 	if (cam.ortho) return [cam.zoom * c[0] + w / 2, cam.zoom * c[1] + h / 2];
 	if (c[2] < NEAR_PLANE) return null;
 	return [(cam.zoom * c[0]) / c[2] + w / 2, (cam.zoom * c[1]) / c[2] + h / 2];
-}
-
-/** The world ray through a frame pixel: origin and unit direction. */
-export function pixelRay(cam: CameraState, w: number, h: number, x: number, y: number): { o: Vec3; d: Vec3 } {
-	const f = cameraForward(cam);
-	const r = cameraRight(cam);
-	const dn = cameraDown(cam);
-	if (cam.ortho) {
-		const k = 1 / Math.max(1e-9, cam.zoom);
-		const o: Vec3 = [
-			cam.eye[0] + (r[0] * (x - w / 2) + dn[0] * (y - h / 2)) * k,
-			cam.eye[1] + (r[1] * (x - w / 2) + dn[1] * (y - h / 2)) * k,
-			cam.eye[2] + (r[2] * (x - w / 2) + dn[2] * (y - h / 2)) * k,
-		];
-		return { o, d: f };
-	}
-	const d = norm3([
-		f[0] * cam.zoom + r[0] * (x - w / 2) + dn[0] * (y - h / 2),
-		f[1] * cam.zoom + r[1] * (x - w / 2) + dn[1] * (y - h / 2),
-		f[2] * cam.zoom + r[2] * (x - w / 2) + dn[2] * (y - h / 2),
-	]);
-	return { o: cam.eye, d };
 }
 
 /** Direction from a shaded point towards the viewer. */
@@ -515,16 +487,6 @@ export function planeHomography(cam: CameraState, w: number, h: number, world: M
 	return m;
 }
 
-/** Unit world normal of a plane (its +z side: the side facing away from a default-placed viewer). */
-export function planeNormal(world: Matrix4): Vec3 {
-	return norm3(cross3(mat4ApplyVec(world, [1, 0, 0]), mat4ApplyVec(world, [0, 1, 0])));
-}
-
-/** World → layer of a plane (identity when singular). */
-export function invertWorld(world: Matrix4): Matrix4 {
-	return mat4Invert(world) ?? MAT4_IDENTITY;
-}
-
 // ---------------------------------------------------------------- 3D runs
 
 /** One drawn item of a track at a frame, in drawing order (the inputs of `runs3dAt`). */
@@ -592,11 +554,6 @@ export function stackAt(
 					out.push({ key: `transition:${st.id}`, trackIndex, is3d: false });
 	});
 	return out;
-}
-
-/** World-space centre of a layer's box (anchor-independent): for sorting, pick and camera tools. */
-export function layerCentre3D(world: Matrix4, box: { width: number; height: number }): Vec3 {
-	return mat4Apply(world, [box.width / 2, box.height / 2, 0]);
 }
 
 /**

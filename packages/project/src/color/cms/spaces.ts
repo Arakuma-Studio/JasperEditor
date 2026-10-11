@@ -205,7 +205,6 @@ export const COLOR_SPACES: readonly ColorSpaceDef[] = [
 ];
 
 const BY_ID = new Map(COLOR_SPACES.map((s) => [s.id, s]));
-export const COLOR_SPACE_IDS = COLOR_SPACES.map((s) => s.id);
 
 export function colorSpace(id: string): ColorSpaceDef | undefined {
 	return BY_ID.get(id);

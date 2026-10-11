@@ -319,20 +319,6 @@ export function insertReverse(
 	};
 }
 
-/**
- * Freezes everything from content time `c` on (Add Frame Hold on the right part of a split): one keyframe at `c` and
- * a zero speed after it.
- */
-export function holdFrom(remap: TimeRemap, c: number, newId: () => string): RemapEdit {
-	const a = addKeyframe(remap, c, newId);
-	const out = clone(a.remap);
-	const k = out.keyframes.findIndex((x) => x.id === a.keyId);
-	out.keyframes.splice(k + 1);
-	delete out.keyframes[k]!.ramp;
-	out.speedAfter = 0;
-	return { remap: out, shift: identityShift, created: a.created };
-}
-
 /** Removes keyframes (the neighbours keep their frames; the merged segment gets the speed between them). */
 export function removeKeyframes(remap: TimeRemap, ids: readonly string[]): RemapEdit {
 	const out = clone(remap);

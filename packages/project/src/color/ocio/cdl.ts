@@ -4,7 +4,6 @@
 import type { Rgb } from '../lut.ts';
 
 export type Cdl = { slope: Rgb; offset: Rgb; power: Rgb; sat: number };
-export const IDENTITY_CDL: Cdl = { slope: [1, 1, 1], offset: [0, 0, 0], power: [1, 1, 1], sat: 1 };
 
 const LUMA = [0.2126, 0.7152, 0.0722] as const;
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);

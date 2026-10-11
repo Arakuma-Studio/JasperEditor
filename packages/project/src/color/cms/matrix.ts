@@ -103,8 +103,3 @@ export function bradford(src: Xy, dst: Xy): ColorMatrix {
 	const diag: ColorMatrix = [d[0] / s[0], 0, 0, 0, d[1] / s[1], 0, 0, 0, d[2] / s[2]];
 	return mul3(inv3(BRADFORD), mul3(diag, BRADFORD));
 }
-
-/** Row-major → GLSL `mat3` column-major order. */
-export function toColumnMajor3(m: ColorMatrix): number[] {
-	return [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
-}

@@ -564,16 +564,6 @@ function hashItems(
 	return { hash: hash128(text), absolute: expressive };
 }
 
-/** The content hash of the video segment [a, b) of a preview snapshot (see the contract at the top). */
-export function videoSegmentHash(
-	snap: RenderSnapshot,
-	a: number,
-	b: number,
-): { hash: string; absolute: boolean } {
-	const { items } = indexSnapshot(snap);
-	return hashItems(snap, sweep(items)(a, b), a, b);
-}
-
 // ---------------------------------------------------------------- cost model (≈)
 
 /** Decode cost of one 1080p frame by codec in the browser (ms, ≈; WebCodecs / `<video>` on a CPU-only box). */

@@ -93,16 +93,6 @@ export function audibleTrackIds(src: MulticamSource, angleId: string | null): st
 	return out;
 }
 
-/** The angle whose video is on `trackId`, or null. */
-export function angleOfVideoTrack(src: MulticamSource, trackId: string): MulticamAngle | null {
-	return src.angles.find((a) => a.videoTrackId === trackId) ?? null;
-}
-
-/** The angle an audio track belongs to, or null. */
-export function angleOfAudioTrack(src: MulticamSource, trackId: string): MulticamAngle | null {
-	return src.angles.find((a) => a.audioTrackIds.includes(trackId)) ?? null;
-}
-
 /** Short badge of a multi-camera clip in the timeline (Premiere shows "[MC2] name"). */
 export function multicamBadge(src: MulticamSource | null, clip: MulticamClip): string {
 	if (!clip.multicam.enabled) return '';

@@ -10,8 +10,6 @@ import { flicksPerFrame, type Rational } from '../time.ts';
 export const OBJECT_MATTE_EFFECT_ID = 'jasper.object-matte';
 /** Effect that blurs / pixelates / fills the region of an object matte (Blur Faces). */
 export const OBJECT_BLUR_EFFECT_ID = 'jasper.object-blur';
-/** `ui.control` of a string param that names a roto object of the clip (Effect Controls shows a picker). */
-export const ROTO_OBJECT_CONTROL = 'roto-object';
 
 /**
  * String params that name a roto object of the clip, per effect id (Effect Controls shows a picker; invariants and
@@ -26,7 +24,6 @@ export const ROTO_OBJECT_PARAMS: Readonly<Record<string, readonly string[]>> = {
 
 /** Default segmentation model (processing-model catalogue id) and face model. */
 export const ROTO_DEFAULT_MODEL = 'sam2.1-hiera-tiny';
-export const FACE_DEFAULT_MODEL = 'mediapipe-face-landmarker';
 
 export type ResolvedRotoSettings = {
 	engine: 'model' | 'classic';
@@ -138,11 +135,6 @@ export function rotoInputsHash(r: ClipRoto): string {
 /** The computed mattes no longer match the roto (strokes, span or settings changed since). */
 export function rotoIsStale(r: ClipRoto): boolean {
 	return !!r.result && r.result.inputs !== rotoInputsHash(r);
-}
-
-/** Whether the roto has something to segment from (a selecting stroke or a box; faces need nothing). */
-export function rotoHasPrompt(r: Pick<ClipRoto, 'kind' | 'strokes' | 'boxes'>): boolean {
-	return r.kind === 'faces' || r.strokes.some((s) => s.kind === 'fg') || (r.boxes?.length ?? 0) > 0;
 }
 
 export type RotoLocation = { sequenceId: string; clipId: string; roto: ClipRoto };

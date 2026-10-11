@@ -354,11 +354,6 @@ export function booleanOp(
 	);
 }
 
-/** Resolves self-overlaps of one filled path into simple contours (same coverage under either fill rule). */
-export function normalizeFill(p: BezPath, rule: FillRule): BezPath {
-	return booleanOp([{ path: p, rule }], 'union');
-}
-
 /** Unsigned filled area of a path under a fill rule (overlaps resolved first). */
 export function filledArea(p: BezPath, rule: FillRule = 'nonzero'): number {
 	const loops = booleanLoops([{ path: p, rule }], 'union');

@@ -22,10 +22,6 @@ import { attachesToPrevious } from './words.ts';
 
 /** Content time of the first word of a new caption: one hour, so a caption's head can be extended (CLP-005). */
 export const CAPTION_CONTENT_ORIGIN = 3600 * FLICKS_PER_SECOND;
-/** Default length of a new caption (Premiere: about three seconds). */
-export const DEFAULT_CAPTION_SECONDS = 3;
-/** Title-safe area: 80 % of the frame (10 % margins), Premiere's default safe margins. */
-export const TITLE_SAFE_MARGIN = 0.1;
 
 export type ResolvedCaptionStyle = CaptionStyle & {
 	placement: 'bottom' | 'middle' | 'top';

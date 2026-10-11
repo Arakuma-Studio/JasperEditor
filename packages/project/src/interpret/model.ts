@@ -9,7 +9,7 @@
 // there is no loop period for uninterpreted media, so every existing document reads exactly as before.
 import type { RGBA } from '../schema/common.ts';
 import type { MediaAsset, MediaInterpretation, VideoStream } from '../schema/media.ts';
-import { FLICKS_PER_SECOND, type Rational } from '../time.ts';
+import type { Rational } from '../time.ts';
 
 export type FieldOrder = 'progressive' | 'upper' | 'lower';
 export type AlphaMode = 'straight' | 'premultiplied' | 'ignore';
@@ -301,11 +301,6 @@ export function mediaTimeMap(asset: AssetLike): MediaTimeMap | null {
 	const pass = loops > 1 ? mediaPassFlicks(asset) : null;
 	if (scale === 1 && !(pass && pass > 0)) return null;
 	return { scale, ...(pass && pass > 0 ? { period: pass } : {}) };
-}
-
-/** Seconds of the file shown at interpreted media time `mediaFlicks`. */
-export function fileSecondsOf(map: MediaTimeMap | null | undefined, mediaFlicks: number): number {
-	return fileTimeOf(map, mediaFlicks) / FLICKS_PER_SECOND;
 }
 
 /** Validation issues of an interpretation (for the command and the invariants). */

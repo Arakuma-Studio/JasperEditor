@@ -6,7 +6,6 @@ import {
 	clipMediaExtent,
 	clipMediaTimeAt,
 	clipSpeedAt,
-	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	frameIndexAt,
 	insertHold,
@@ -293,7 +292,6 @@ describe('frame selection', () => {
 		expect(pickFrames(vfr, 0.2, 'frame-sampling')).toEqual({ a: 3, b: 3, w: 0 });
 		expect(pickFrames(vfr, 0.1, 'optical-flow')).toEqual({ a: 2, b: 2, w: 0 });
 		expect(pickFrames(vfr, 9, 'optical-flow')).toEqual({ a: 4, b: 4, w: 0 });
-		expect(FLICKS_PER_SECOND).toBeGreaterThan(0);
 	});
 });
 

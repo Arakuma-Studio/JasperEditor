@@ -384,8 +384,6 @@ export function transformPath(p: BezPath, m: Affine): BezPath {
 
 // ---------------------------------------------------------------- paths
 
-export const emptyPath = (): BezPath => [];
-
 export function reversePath(p: BezPath): BezPath {
 	return p.map((sp) => ({ closed: sp.closed, segs: sp.segs.map(cReverse).reverse() }));
 }

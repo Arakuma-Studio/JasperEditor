@@ -99,8 +99,6 @@ export function bezToBezierPaths(p: BezPath): BezierPath[] {
 	return out;
 }
 
-export const emptyBezierPath = (): BezierPath => ({ closed: false, vertices: [] });
-
 // ---------------------------------------------------------------- gradients
 
 export const DEFAULT_GRADIENT: GradientValue = {

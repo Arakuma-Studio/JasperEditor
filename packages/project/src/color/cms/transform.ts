@@ -297,20 +297,6 @@ export function outputTransformFn(
 	};
 }
 
-// ---------------------------------------------------------------- linear decode of the working signal
-
-/**
- * The working curve's decode/encode for linear blending ("Blend using 1.0 gamma") and linearised working spaces:
- * encoded signal ↔ linear light on a 0…1 scale (PQ: ÷ 10 000 cd/m²; HLG: scene light E).
- */
-export function workingLinearCurve(working: WorkingSpaceId): {
-	decode(v: number): number;
-	encode(x: number): number;
-} {
-	const w = spaceOrThrow(working);
-	return { decode: (v) => curveDecode(w.curve, v), encode: (x) => curveEncode(w.curve, x) };
-}
-
 // ---------------------------------------------------------------- the grading signal (Lumetri in HDR)
 
 /** Default HDR White / curve HDR Range (cd/m²). */

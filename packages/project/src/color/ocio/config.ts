@@ -1000,8 +1000,3 @@ export class OcioConfig {
 		};
 	}
 }
-
-/** CIE XYZ (D65) → linear RGB of a gamut (for the display interchange). */
-export function xyzD65ToGamut(g: GamutId): ColorMatrix {
-	return inv3(gamutToXyzD65(g));
-}

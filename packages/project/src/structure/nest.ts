@@ -14,7 +14,7 @@
 import { canonicalJson } from '../color/runs.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
-import { flicksPerFrame, mapFrameBetweenRates, type Rational, rationalEquals } from '../time.ts';
+import { mapFrameBetweenRates, type Rational, rationalEquals } from '../time.ts';
 
 export const NEST_KINDS: ReadonlySet<string> = new Set(['nest-video', 'nest-audio']);
 /** Depth guard of the recursive renderers (cycles are invariant violations; this keeps a broken file finite). */
@@ -72,11 +72,6 @@ export function nestReferences(
 		if (ids.length) out.push({ sequenceId: seq.id, clipIds: ids });
 	}
 	return out;
-}
-
-/** Nested sequence frame (its own rate, floor) shown at content time `flicks`. */
-export function nestedFrameOfContent(flicks: number, nestedRate: Rational): number {
-	return Math.floor(flicks / flicksPerFrame(nestedRate) + 1e-6);
 }
 
 // ---------------------------------------------------------------- content key (render caches, previews)

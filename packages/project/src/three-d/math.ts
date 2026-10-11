@@ -120,12 +120,6 @@ export function mat4ApplyVec(m: Matrix4, v: Vec3): Vec3 {
 	];
 }
 
-export function mat4Transpose(m: Matrix4): Matrix4 {
-	const o = new Array<number>(16);
-	for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) o[4 * r + c] = m[4 * c + r]!;
-	return o;
-}
-
 /** General inverse (Gauss-Jordan with partial pivoting); null when singular. */
 export function mat4Invert(m: Matrix4): Matrix4 | null {
 	const a = m.slice();
@@ -163,11 +157,6 @@ export function mat4Invert(m: Matrix4): Matrix4 | null {
  */
 export function planeToMat3(m: Matrix4): Mat3 {
 	return [m[0]!, m[1]!, m[3]!, m[4]!, m[5]!, m[7]!, m[12]!, m[13]!, m[15]!];
-}
-
-/** Embeds a 2D affine map (row-major 3×3, last row 0 0 1) as a 4×4 (z untouched). */
-export function mat4FromAffine3(m: Mat3): Matrix4 {
-	return [m[0], m[1], 0, m[2], m[3], m[4], 0, m[5], 0, 0, 1, 0, 0, 0, 0, 1];
 }
 
 // ---------------------------------------------------------------- frames and orientation

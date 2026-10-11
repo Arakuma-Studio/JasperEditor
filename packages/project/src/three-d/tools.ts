@@ -2,19 +2,8 @@
 // commands, the Program monitor and the agents. Port of EffectCraft `render/three_d/camera.rs` (Rig, View3D;
 // MIT OR Apache-2.0).
 import type { Vec3 } from '../schema/common.ts';
-import {
-	add3,
-	basisView,
-	len3,
-	mat4ApplyVec,
-	mat4RotateX,
-	mat4RotateY,
-	norm3,
-	scale3,
-	sub3,
-} from './math.ts';
+import { add3, basisView, len3, mat4ApplyVec, mat4RotateX, mat4RotateY, scale3, sub3 } from './math.ts';
 import { defaultCameraZoom } from './model.ts';
-import { type CameraState, lookAtCamera } from './scene.ts';
 
 /** A camera as the tools edit it: eye, point of interest, zoom. */
 export type Rig = { eye: Vec3; poi: Vec3; zoom: number; ortho: boolean };
@@ -90,8 +79,6 @@ export const VIEW_3D_LABELS: Record<View3D, string> = {
 	custom2: 'Custom View 2',
 	custom3: 'Custom View 3',
 };
-export const isOrthoView = (v: View3D) =>
-	v === 'front' || v === 'left' || v === 'top' || v === 'back' || v === 'right' || v === 'bottom';
 
 /** A view camera (eye, point of interest, down hint, zoom / ortho scale). */
 export type ViewCam = { eye: Vec3; poi: Vec3; down: Vec3; zoom: number; ortho: boolean };
@@ -137,16 +124,5 @@ export function defaultViewCam(v: View3D, w: number, h: number): ViewCam {
 	}
 }
 
-/** The camera of a view camera. */
-export function viewCamState(v: ViewCam): CameraState {
-	return lookAtCamera(v.eye, v.poi, v.zoom, v.ortho, v.down);
-}
-
-/** A rig from a view camera, and back. */
-export const rigOfView = (v: ViewCam): Rig => ({ eye: v.eye, poi: v.poi, zoom: v.zoom, ortho: v.ortho });
+/** A view camera from a rig. */
 export const viewOfRig = (r: Rig, down: Vec3 = [0, 1, 0]): ViewCam => ({ ...r, down });
-
-/** Unit view direction of a rig. */
-export function rigForward(r: Rig): Vec3 {
-	return norm3(sub3(r.poi, r.eye));
-}

@@ -112,8 +112,6 @@ export const CREATIVE_LOOKS: readonly CreativeLook[] = [
 	{ id: 'sepia', label: 'Sepia', description: 'Warm brown-toned black and white.', family: 'Black & White' },
 ];
 
-export const CREATIVE_LOOK_IDS: readonly CreativeLookId[] = CREATIVE_LOOKS.map((l) => l.id);
-
 const KR = 0.2126;
 const KG = 0.7152;
 const KB = 0.0722;

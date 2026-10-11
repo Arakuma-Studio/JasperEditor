@@ -581,10 +581,6 @@ export function installExpressionSupport(s: ExpressionSupport | null): void {
 	support = s;
 }
 
-export function expressionSupportInstalled(): boolean {
-	return support !== null;
-}
-
 /** The document with expressions bound when the engine is installed and the document has active expressions. */
 export function bindExpressions(doc: ProjectDocument): ProjectDocument {
 	if (!support || !documentHasActiveExpressions(doc)) return doc;

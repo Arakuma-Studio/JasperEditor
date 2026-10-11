@@ -71,7 +71,6 @@ export type PlaceOptions = {
 // ---------------------------------------------------------------- 4×4 matrices (row-major)
 
 export type Mat4 = number[];
-export const identity4 = (): Mat4 => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 export function mul4(a: Mat4, b: Mat4): Mat4 {
 	const o = new Array<number>(16).fill(0);

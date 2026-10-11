@@ -68,10 +68,6 @@ export function smoothVertex(p: PathPoint, t: PathPoint): PathVertex {
 	return { p: [p[0], p[1]], in: [-t[0], -t[1]], out: [t[0], t[1]] };
 }
 
-export function isCornerVertex(v: PathVertex): boolean {
-	return v.in[0] === 0 && v.in[1] === 0 && v.out[0] === 0 && v.out[1] === 0;
-}
-
 /** Axis-aligned ellipse: four smooth vertices (top, right, bottom, left — clockwise on screen, y down). */
 export function ellipsePath(center: PathPoint, radius: PathPoint): BezierPath {
 	const [cx, cy] = center;
@@ -137,15 +133,6 @@ export function cubicPoint(c: Cubic, t: number): PathPoint {
 	return [
 		a * c[0][0] + b * c[1][0] + d * c[2][0] + e * c[3][0],
 		a * c[0][1] + b * c[1][1] + d * c[2][1] + e * c[3][1],
-	];
-}
-
-/** First derivative of a cubic. */
-export function cubicDerivative(c: Cubic, t: number): PathPoint {
-	const u = 1 - t;
-	return [
-		3 * u * u * (c[1][0] - c[0][0]) + 6 * u * t * (c[2][0] - c[1][0]) + 3 * t * t * (c[3][0] - c[2][0]),
-		3 * u * u * (c[1][1] - c[0][1]) + 6 * u * t * (c[2][1] - c[1][1]) + 3 * t * t * (c[3][1] - c[2][1]),
 	];
 }
 
@@ -228,23 +215,6 @@ export function pathLength(p: Pick<BezierPath, 'closed' | 'vertices'>): number {
 	let l = 0;
 	for (const c of segments(p)) l += cubicLength(c);
 	return l;
-}
-
-/** Bounds of the control polygon (contains the curve): [x0, y0, x1, y1]. */
-export function pathControlBounds(p: Pick<BezierPath, 'vertices'>): [number, number, number, number] {
-	let x0 = Number.POSITIVE_INFINITY;
-	let y0 = Number.POSITIVE_INFINITY;
-	let x1 = Number.NEGATIVE_INFINITY;
-	let y1 = Number.NEGATIVE_INFINITY;
-	for (const v of p.vertices) {
-		for (const q of [v.p, addP(v.p, v.in), addP(v.p, v.out)]) {
-			x0 = Math.min(x0, q[0]);
-			y0 = Math.min(y0, q[1]);
-			x1 = Math.max(x1, q[0]);
-			y1 = Math.max(y1, q[1]);
-		}
-	}
-	return [x0, y0, x1, y1];
 }
 
 /** Mean of the vertex positions. */

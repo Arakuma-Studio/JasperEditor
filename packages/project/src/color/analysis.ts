@@ -86,6 +86,6 @@ export function clipAnalysisDocument(
 	seq.links = {};
 	seq.groups = {};
 	for (const t of seq.videoTracks)
-		(t as { output?: boolean }).output = t.id === clip.trackId || below.has(t.id) ? true : false;
+		(t as { output?: boolean }).output = t.id === clip.trackId || below.has(t.id);
 	return out;
 }
