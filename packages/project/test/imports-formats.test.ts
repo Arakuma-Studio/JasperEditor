@@ -72,7 +72,7 @@ describe('image sequences', () => {
 		expect(sequenceFrameFiles(g)).toEqual(['s_01.png', 's_02.png', 's_02.png', 's_02.png', 's_05.png']);
 	});
 
-	it('never throws and partitions its input (fuzz)', () => {
+	it('preserves every distinct input frame or singleton (fuzz)', () => {
 		const name = fc.oneof(
 			fc.string({ maxLength: 40 }),
 			fc
@@ -87,9 +87,14 @@ describe('image sequences', () => {
 		fc.assert(
 			fc.property(fc.array(name, { maxLength: 300 }), (names) => {
 				const { sequences, singles } = groupImageSequences(names);
-				const used = sequences.reduce((n, s) => n + s.frames.length, 0);
-				const unique = new Set(names).size;
-				expect(used + new Set(singles).size).toBeLessThanOrEqual(unique + singles.length);
+				const frameId = (name: string) => {
+					const f = parseFrameName(name);
+					return JSON.stringify(f ? [f.prefix, f.ext, f.number] : name);
+				};
+				const output = [...singles, ...sequences.flatMap((s) => s.frames.map((f) => f.name))];
+				expect(new Set(output.map(frameId))).toEqual(new Set(names.map(frameId)));
+				const inputFiles = new Set(names.map((n) => parseFrameName(n)?.name ?? n));
+				for (const file of output) expect(inputFiles.has(file)).toBe(true);
 				for (const s of sequences) {
 					expect(s.frames.length).toBeGreaterThanOrEqual(2);
 					expect(s.last - s.first + 1).toBe(s.frames.length + s.missingCount);
@@ -98,6 +103,11 @@ describe('image sequences', () => {
 					expect(files[0]).toBe(s.frames[0]!.name);
 				}
 			}),
+			{
+				examples: [
+					[['a/shot_01.png', 'b/shot_01.PNG', 'shot_02.png', 'shot_1.png', 'shot_2.png', 'readme.txt']],
+				],
+			},
 		);
 	});
 });
