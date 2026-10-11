@@ -331,11 +331,42 @@ or dependency-graph scan. It found no new parser diagnostics and only two new bi
 The review also read 501 candidate diff regions containing removed assertions or prose using
 "as", including their replacement expressions. It found no second leftover union/intersection
 operator or other high-confidence accidental expression change. Template text changed in 49 files.
-The six shader-template changes affect comments only; the repaired Premiere common shader now has
-the same interpolation chunks as the baseline. Other template changes are explicit error messages,
+The six shader-template changes alter comment text; this observation alone does not establish
+semantic equivalence because a consumer may parse that text (see the delimiter review below). The
+repaired Premiere common shader has the same interpolation chunks as the baseline. Other template
+changes are explicit error messages,
 shared-worker protocol changes, intrinsic hardening, or code moved into shared helpers. Their
 surrounding implementations were checked rather than treating every textual change as a regression.
 
 This review adds evidence for the specific failure classes encountered during integration. It does
 not replace the owners' behavior tests, shader compilation, and final integrated typechecking. No
 production code was changed by this pass.
+
+## Source-marker dependency review
+
+Integration exposed a runtime dependency on a removed shader comment:
+`packages/compositions/src/three-d/gl.ts` cut `GLSL_BLEND` at
+`// ---- effect blends`. Removing that text made `blendSource()` include effect-only functions in
+the Classic 3D shader, where their uniforms and varyings are unavailable. The composition owner is
+replacing this textual boundary with an explicit reusable layer-blend chunk and a focused rendering
+regression. Restoring a section-label comment would preserve the hidden dependency rather than
+remove it.
+
+A focused read-only scan at integration snapshot `17c80897` traced source-string slicing, splitting,
+replacement, regular expressions, and comment-like string literals across apps, packages, scripts,
+and native code. It reviewed 67 comment-like literal matches, 231 index/substring call sites, and
+111 source/text/code string-method candidates, followed by their relevant producers and consumers.
+No second concrete removed-marker dependency was found. In particular:
+
+- `ported-source:start/end` delimiters remain in both notice generation and the license viewer.
+- `anime-allow`, `layers-allow`, and `tokens-allow` directives remain in their lint consumers; no
+  active directive was removed by the cleanup.
+- Shader uniform extraction uses actual `uniform` lines or identifier mentions, and the checked
+  card-shader replacements target retained GLSL statements rather than removed comments.
+- Expression-body extraction uses its emitted wrapper syntax; generated worker and motion-graphic
+  host scripts do not slice source at removed comment labels.
+
+The earlier AST equivalence check of the final comment-only pass preserved template literal bytes.
+The broader audit's separate edits inside template literals require consumer review and rendering
+verification as well: comments in generated code can be protocol data. No tests, compiler runs, or
+production edits were performed during this focused scan.
