@@ -31,6 +31,9 @@ importers:
       '@types/node':
         specifier: ^20.19.43
         version: 20.19.43
+      ag-psd:
+        specifier: 31.0.2
+        version: 31.0.2
       concurrently:
         specifier: ^9.2.1
         version: 9.2.4
@@ -55,6 +58,12 @@ importers:
 
   apps/desktop:
     devDependencies:
+      '@jasper/api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@jasper/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       electron:
         specifier: ^44.0.0
         version: 44.5.0
@@ -421,7 +430,7 @@ importers:
         version: link:../testkit
       '@remotion/bundler':
         specifier: 4.0.499
-        version: 4.0.499(lightningcss@1.32.0)(postcss@8.5.28)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 4.0.499(lightningcss@1.32.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@remotion/player':
         specifier: 4.0.499
         version: 4.0.499(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -441,7 +450,11 @@ importers:
         specifier: ^19.2.0
         version: 19.3.0(react@19.3.0)
 
-  packages/config: {}
+  packages/config:
+    dependencies:
+      zod:
+        specifier: ^4.1.0
+        version: 4.4.3
 
   packages/engine-client:
     dependencies:
@@ -502,7 +515,13 @@ importers:
         specifier: 4.5.0
         version: 4.5.0
     devDependencies:
+      '@remotion/bundler':
+        specifier: 4.0.499
+        version: 4.0.499(lightningcss@1.32.0)(postcss@8.5.28)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@remotion/player':
+        specifier: 4.0.499
+        version: 4.0.499(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@remotion/renderer':
         specifier: 4.0.499
         version: 4.0.499(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@types/react':
@@ -511,6 +530,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.0
         version: 19.3.0(@types/react@19.3.0)
+      esbuild:
+        specifier: 0.28.1
+        version: 0.28.1
       react:
         specifier: ^19.2.0
         version: 19.3.0
@@ -551,6 +573,9 @@ importers:
       '@jasper/project':
         specifier: workspace:*
         version: link:../project
+      zod:
+        specifier: ^4.1.0
+        version: 4.4.3
       zustand:
         specifier: ^5.0.0
         version: 5.0.15(@types/react@19.3.0)(immer@11.1.18)(react@19.3.0)
@@ -565,7 +590,11 @@ importers:
         specifier: ^19.2.0
         version: 19.3.0(react@19.3.0)
 
-  packages/testkit: {}
+  packages/testkit:
+    devDependencies:
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
 
   packages/ui:
     dependencies:
@@ -8464,7 +8493,7 @@ snapshots:
 
   tapable@2.3.3: {}
 
-  terser-webpack-plugin@5.6.1(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.28)(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.28)):
+  terser-webpack-plugin@5.6.1(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.28)(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.28)):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       jest-worker: 27.5.1
@@ -8527,7 +8556,7 @@ snapshots:
 
   tsx@4.23.15:
     dependencies:
-      esbuild: 0.28.2
+      esbuild: 0.28.1
     optionalDependencies:
       fsevents: 2.3.3
 
@@ -8710,7 +8739,7 @@ snapshots:
       neo-async: 2.6.2
       schema-utils: 4.5.0
       tapable: 2.3.3
-      terser-webpack-plugin: 5.6.1(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.28)(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.28))
+      terser-webpack-plugin: 5.6.1(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.28)(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.28))
       watchpack: 2.5.2
       webpack-sources: 3.6.0
     transitivePeerDependencies:
