@@ -79,8 +79,9 @@ branch.
   independent PNG protocol vectors remain in place. Discovery regressions exercise non-Error
   promise rejections and subprocess startup failures.
 - The progress throttle test now asserts exact notification times and values using virtual timers.
-  The CLI argument-parsing check is pending; its regression checks an unknown query produces a
-  usage error before engine discovery.
+  CLI argument parsing also passed both tests (`pnpm vitest run apps/mcp/test/jasper-cli.test.ts
+  --maxWorkers=1 -t "argument parsing"`); an unknown query produces a usage error before engine
+  discovery. The five real-engine CLI cases were excluded from this focused run.
 - Full typechecking and the integration gate are delegated to the integrator's serialized run;
   parallel local typechecks were stopped to relieve host contention. Real-engine processing,
   render/export and CLI integration suites are part of that final gate.
