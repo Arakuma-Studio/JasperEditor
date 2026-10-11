@@ -11,6 +11,7 @@ import {
 	buildKeyframesPayload,
 	type Clip,
 	type ClipboardPayload,
+	CommandError,
 	checkInvariants,
 	clipboardText,
 	createStaticMgRegistry,
@@ -656,7 +657,10 @@ describe('clip.pasteAttributes / clip.removeAttributes / effect.paste', () => {
 // ---------------------------------------------------------------- keyframe.paste (EC-023)
 
 describe('keyframe.paste (CLB-006, S03:EC-023)', () => {
-	it('reports unexpected property resolver errors and keeps the project unchanged', () => {
+	it.each([
+		new Error('effect registry unavailable'),
+		new CommandError('E_INTERNAL', 'effect registry unavailable'),
+	])('reports unexpected property resolver errors and keeps the project unchanged (%s)', (error) => {
 		const { h, v } = richProject();
 		const clip = h.seq.clips[v];
 		if (clip?.kind !== 'video') throw new Error('expected video');
@@ -677,7 +681,7 @@ describe('keyframe.paste (CLB-006, S03:EC-023)', () => {
 					effects: {
 						...registries.effects,
 						get() {
-							throw new Error('effect registry unavailable');
+							throw error;
 						},
 					},
 				},
@@ -686,6 +690,26 @@ describe('keyframe.paste (CLB-006, S03:EC-023)', () => {
 		expect(result).toMatchObject({
 			ok: false,
 			errors: [{ code: 'E_INTERNAL', message: 'effect registry unavailable' }],
+		});
+		expect(h.doc).toBe(before);
+	});
+
+	it('reports a locked keyframe destination without disguising it as a missing property', () => {
+		const { h, v } = richProject();
+		const clip = h.seq.clips[v];
+		if (clip?.kind !== 'video') throw new Error('expected video');
+		const payload = roundTrip(
+			buildKeyframesPayload(
+				h.doc,
+				v,
+				clip.effects[0]!.params.radius!.keyframes.map((key) => key.id),
+			),
+		);
+		h.ok([{ type: 'track.update', trackId: clip.trackId, patch: { locked: true } }]);
+		const before = h.doc;
+		expect(h.tx([{ type: 'keyframe.paste', payload, clipId: v, at: { frames: 40 } }])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_TRACK_LOCKED' }],
 		});
 		expect(h.doc).toBe(before);
 	});

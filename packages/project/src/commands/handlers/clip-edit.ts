@@ -1,4 +1,3 @@
-//
 // Conventions shared with the core handlers (clip-core.ts):
 // - handlers are pure over Immer drafts and throw through `h.fail` (atomic transactions, S01:CMD-004);
 // - content-time math goes through `contentSpanFlicks` / `setClipRange` so splits and trims stay exact;

@@ -58,7 +58,7 @@ keyframe paste resolver hid an unexpected registry exception as a missing-proper
 
 Implemented: non-string command types produce schema errors without serializing hostile values;
 a transaction boundary also covers exceptions raised before dispatch and after the draft mutation;
-keyframe paste catches only typed command refusals and propagates unexpected failures into the atomic
+keyframe paste catches only missing/unsupported-property refusals and propagates locks and unexpected failures into the atomic
 transaction error result. Every failure keeps the original project reference.
 
 Strongly typing graphic-template import exposed another unchecked edge: its payload was only a generic

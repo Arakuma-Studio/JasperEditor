@@ -802,7 +802,11 @@ function pasteKeyframes(doc: DDoc, cmd: CommandOf<'keyframe.paste'>, h: HandlerC
 			try {
 				t = resolveTarget(doc, { target: cand, sequenceId: seq.id }, h, { create: true });
 			} catch (error) {
-				if (!(error instanceof CommandError)) throw error;
+				if (
+					!(error instanceof CommandError) ||
+					!['E_NOT_FOUND', 'E_INVALID_PARAM', 'E_UNKNOWN_EFFECT'].includes(error.code)
+				)
+					throw error;
 				continue;
 			}
 			if (t.type !== 'anim' || normKind(t.rule.kind) !== normKind(track.paramType)) continue;
