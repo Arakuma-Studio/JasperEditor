@@ -96,12 +96,14 @@ describe('PNG resource limits', () => {
 	it('handles arbitrary bytes with a bounded result or an Error', () => {
 		fc.assert(
 			fc.property(fc.uint8Array({ maxLength: 512 }), (bytes) => {
+				let decoded: ReturnType<typeof decodePng>;
 				try {
-					const decoded = decodePng(bytes);
-					expect(decoded.data.length).toBe(decoded.width * decoded.height * 4);
+					decoded = decodePng(bytes);
 				} catch (error) {
 					expect(error).toBeInstanceOf(Error);
+					return;
 				}
+				expect(decoded.data.length).toBe(decoded.width * decoded.height * 4);
 			}),
 			{ numRuns: 200 },
 		);

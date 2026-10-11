@@ -68,13 +68,19 @@ branch.
 
 ## Verification
 
-- Biome and `git diff --check` cover the edited source and tests.
-- Focused protocol, default-sequence, audio effects, template, format, README-tool, discovery and
-  PNG suites are running with one Vitest worker; results are pending at the source commit. PNG regressions cover malformed/truncated chunks,
-  decompression beyond the declared raster, oversized dimensions and invalid grids; fast-check
-  supplies 200 arbitrary byte inputs. Existing independent PNG protocol vectors remain in place.
-- The progress throttle test assumed real 5 ms sleeps complete promptly even under host load. It
-  now uses virtual timers and asserts exact notification times and values; rerun pending.
+- Biome and `git diff --check` passed for the edited source and tests.
+- The focused run covered unit/discovery, conventions, PNG, default-sequence, audio effects,
+  templates, formatting and README tool coverage: 50 of 51 tests passed initially. Its only
+  failure was the pre-existing progress test's wall-clock scheduling assumption. The virtual-time
+  replacement and the PNG/child-spawn suites then passed all 19 tests. Across those runs, all
+  52 distinct tests in nine files passed. Runs used `pnpm vitest run <files> --maxWorkers=1`.
+- PNG regressions cover malformed/truncated chunks, decompression beyond the declared raster,
+  oversized dimensions and invalid grids; fast-check supplies 200 arbitrary byte inputs. Existing
+  independent PNG protocol vectors remain in place. Discovery regressions exercise non-Error
+  promise rejections and subprocess startup failures.
+- The progress throttle test now asserts exact notification times and values using virtual timers.
+  The CLI argument-parsing check is pending; its regression checks an unknown query produces a
+  usage error before engine discovery.
 - Full typechecking and the integration gate are delegated to the integrator's serialized run;
   parallel local typechecks were stopped to relieve host contention. Real-engine processing,
   render/export and CLI integration suites are part of that final gate.
