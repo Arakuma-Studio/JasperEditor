@@ -64,6 +64,13 @@ other thrown values. `registry-validation.test.ts` reproduces both hook location
 Measured before the fix: the regression file had 8 failures and 2 passes; the failures included a `TypeError`
 when reading `.message` from `null`/`undefined`. After the fix: all 10 cases pass.
 
+The integrated software-GL compile gate found an audit regression in `defineEdgeWipe`: two template
+interpolation expressions had lost their braces during the scalar-reader edit. Generated shaders contained
+literal JavaScript fragments for border width and the wipe body. Both expressions now match the baseline.
+`transition-edge-wipe.test.ts` checks the planned shader body and border declarations with borders enabled
+and disabled; both cases failed before this fix. A complete registry diff scan found no other added
+`$identifier` interpolation corruption.
+
 Seven catches remain in the registry. Four isolate author-provided GPU hooks and return validation diagnostics.
 The other three isolate stored stabilization analysis, custom OCIO transform construction, and conversion of
 external motion-graphics Zod schemas to property metadata. Removing those boundaries would turn unsupported or
@@ -100,7 +107,7 @@ a registry module. Shared readers and GLSL validation rules are dependency leave
 references are type-only imports. Family imports continue to avoid importing registry values back from
 `effects.ts`.
 
-A measured 371 section-label comments were removed, along with redundant helper descriptions, catalogue-row
+A measured 378 section-label comments were removed, along with redundant helper descriptions, catalogue-row
 labels, and development-wave/workstream history. Comments that describe GLSL protocols, coordinate systems,
 non-obvious mathematical conventions, singularity handling, bounds, and licensing provenance remain. The blend
 comment now describes the actual effect-versus-clip formula distinction without change history.

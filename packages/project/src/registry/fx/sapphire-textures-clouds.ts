@@ -53,8 +53,6 @@ function texture(init: {
 	return defineShaderEffect({ ...init, category: 'Generate', bin: SAPPHIRE_BINS.render });
 }
 
-// ================================================================ fractal clouds
-
 /** Frequency, Frequency Rel X, Octaves, Seed (clouds head). */
 const cloudsHead = (freq: number, relX: number, octaves: number, seed: number) => [
 	sFreq('frequency', 'Frequency', freq),
@@ -263,8 +261,6 @@ void main() {
   fragColor = stc_finish(stc_ramp1(v));
 }`),
 });
-
-// ================================================================ procedural textures
 
 /** Frequency, Frequency Rel X (most textures). */
 const freqHead = (freq: number, relX: number, softMax = 40) => [

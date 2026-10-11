@@ -180,8 +180,6 @@ const glowTail = (what = 'Glow', o: { lightBackground?: boolean } = { lightBackg
 	...lightTail(what, o),
 ];
 
-// ================================================================ Glows
-
 export const S_GLOW = defineShaderEffect({
 	id: 'jasper.s.glow',
 	label: 'S_Glow',
@@ -1089,8 +1087,6 @@ export const SGL_GLOW_EFFECTS: readonly EffectSpec[] = [
 	S_ZGLOW,
 ];
 
-// ================================================================ Light beams
-
 const RES_OPTIONS = ['full', 'half', 'quarter'];
 const resChoice = (name: string, label: string) =>
 	fxParam.choice(name, label, RES_OPTIONS, ['Full', 'Half', 'Quarter'], 'full');
@@ -1449,8 +1445,6 @@ void main() {
 });
 
 export const SGL_BEAM_EFFECTS: readonly EffectSpec[] = [S_RAYS, S_EDGE_RAYS, S_STREAKS];
-
-// ================================================================ Lens flares
 
 const lensChoice = () =>
 	fxParam.choice(
@@ -1903,8 +1897,6 @@ void main() {
 });
 
 export const SGL_FLARE_EFFECTS: readonly EffectSpec[] = [S_LENS_FLARE, S_LENS_FLARE_AUTO_TRACK, S_LIGHT_LEAK];
-
-// ================================================================ Glints and glares
 
 /** Glint directions (screen degrees, y down): X, Y, Diag1, Diag2 (Swap Diagonals exchanges the diagonals). */
 const GLINT_DIRS = [0, 90, -45, 45];
@@ -2387,8 +2379,6 @@ vec3 glare(vec2 d, float salt) {
 }`;
 
 export const SGL_GLINT_EFFECTS: readonly EffectSpec[] = [S_GLINT, S_GLINT_RAINBOW, S_GLARE];
-
-// ================================================================ Other lighting
 
 const BOKEH_SHAPES = ['circle', '3', '4', '5', '6', '7', '8', '9', '10'];
 const BOKEH_COMBINE = ['Screen', 'Add', 'Lights Only'] as const;
