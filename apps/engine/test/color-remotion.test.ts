@@ -6,6 +6,7 @@ import {
 	applyLut,
 	bakeColorRun,
 	defaultEffectRegistry,
+	type EffectParams,
 	LUMETRI_EFFECT_ID,
 	parseCube,
 	type Rgb,
@@ -32,7 +33,7 @@ afterAll(async () => {
 	for (const s of stops) await s();
 });
 
-const GRADE = (look: string) => ({
+const GRADE = (look: string): EffectParams => ({
 	temperature: -30,
 	tint: 6,
 	exposure: 0.3,

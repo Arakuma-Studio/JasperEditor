@@ -6,6 +6,7 @@ import {
 	applyLut,
 	bakeColorRun,
 	defaultEffectRegistry,
+	type EffectParams,
 	LUMETRI_EFFECT_ID,
 	type Lut,
 	parseCube,
@@ -101,7 +102,7 @@ function reference(src: Buffer, lut: Lut): Buffer {
 	return out;
 }
 
-const GRADE = (look: string) => ({
+const GRADE = (look: string): EffectParams => ({
 	temperature: -30,
 	tint: 6,
 	exposure: 0.3,
