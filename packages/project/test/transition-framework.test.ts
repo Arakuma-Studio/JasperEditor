@@ -117,7 +117,7 @@ describe('transition catalogue', () => {
 		expect(schema.transitions.map((t) => t.id)).toEqual(TRANSITION_SPECS.map((s) => s.id));
 		const push = schema.transitions.find((t) => t.id === 'jasper.push')!;
 		expect(push).toMatchObject({ bin: 'Slide', gpu: true, appliesTo: 'video' });
-		expect((push.params as { name: string }[]).map((p) => p.name)).toEqual([
+		expect(push.params.map((p) => p.name)).toEqual([
 			'startPercent',
 			'endPercent',
 			'useCompletion',

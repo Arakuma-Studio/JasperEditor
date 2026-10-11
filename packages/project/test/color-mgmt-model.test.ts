@@ -15,7 +15,9 @@ import {
 	logEncode,
 	type MediaAsset,
 	normalizedFromSignal,
+	type ParamValue,
 	pqFromNits,
+	type RenderVisualClip,
 	type Rgb,
 	repairDocument,
 	resolveInputSpace,
@@ -64,18 +66,14 @@ function hdrAsset(transfer: string): ReturnType<typeof videoAsset> {
 }
 
 /** Runs the layer's colour runs (the snapshot's effects, evaluated statically) on one colour. */
-function grade(snapClip: { effects: unknown[] }, ctx: Parameters<typeof bakeColorRun>[2], c: Rgb): Rgb {
-	const effects = (
-		snapClip.effects as {
-			id: string;
-			effectId: string;
-			effectVersion: number;
-			enabled: boolean;
-			params: Record<string, { value: unknown }>;
-		}[]
-	).map((fx) => ({
+function grade(
+	snapClip: Pick<RenderVisualClip, 'effects'>,
+	ctx: Parameters<typeof bakeColorRun>[2],
+	c: Rgb,
+): Rgb {
+	const effects = snapClip.effects.map((fx) => ({
 		...fx,
-		params: Object.fromEntries(Object.entries(fx.params).map(([k, v]) => [k, v.value])),
+		params: Object.fromEntries(Object.entries(fx.params).map<[string, ParamValue]>(([k, v]) => [k, v.value])),
 	}));
 	const out: Rgb = [...c];
 	for (const run of effectRuns(effects, defaultEffectRegistry)) {

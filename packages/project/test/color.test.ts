@@ -400,7 +400,7 @@ describe('colour runs with Lumetri (S06:CG-011/012)', () => {
 	it('a 33³ bake of a full grade takes < 15 ms (S06:CG-043; reported, fails above 2×)', () => {
 		const look: Lut = bakeLut(33, () => {});
 		const ctx: ColorOpContext = { lut: () => look };
-		const params = {
+		const params: EffectParams = {
 			inputLut: { mediaId: 'x' },
 			temperature: -35,
 			tint: 8,
