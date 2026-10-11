@@ -19,80 +19,33 @@ import { idPrefixOf, isValidId } from '../../ids.ts';
 import { evaluate } from '../../keyframes.ts';
 import type { BezierPath } from '../../path/model.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
-import { DEFAULT_SHAPE_STROKE, type PropertySpec, SHAPE_LIMITS } from '../../registry/properties.ts';
+import { DEFAULT_SHAPE_STROKE } from '../../registry/properties.ts';
 import type { Animatable, RGBA, Vec2 } from '../../schema/common.ts';
-import type {
-	Clip,
-	LegacyShapeData,
-	Sequence,
-	ShapeClip,
-	ShapeData,
-	ShapeStroke,
-} from '../../schema/sequence.ts';
+import type { Clip, LegacyShapeData, Sequence, ShapeClip, ShapeData } from '../../schema/sequence.ts';
 import type { ShapeItem } from '../../schema/shapes.ts';
 import { findItem, newShapeItem, nextItemName, reidItems, walkItems } from '../../vector/defaults.ts';
 import { evaluateVectorShape } from '../../vector/evaluate.ts';
 import { buildShapeItems, type IdGen, patchShapeItem, ShapeInputError } from '../../vector/input.ts';
+import { legacyToVectorItems } from '../../vector/legacy.ts';
 import { getShapePreset } from '../../vector/presets.ts';
 import { bezToBezierPaths } from '../../vector/values.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, cleanupSequence, findTrackIn } from '../placement.ts';
-import type { ShapePatch } from '../schemas/clip.ts';
 import type { CommandOf, CommandType } from '../schemas/index.ts';
-import { applyTransformPatch, commonFields, frameBox, newGeneratorClip, visualFields } from './clip-core.ts';
+import {
+	applyTransformPatch,
+	commonFields,
+	frameBox,
+	newGeneratorClip,
+	visualFields,
+} from './clip-common.ts';
 import { applyPathEditOp, applyPathTopologyOp, mapAllPaths, PATH_TOPOLOGY_OPS, writePathAt } from './mask.ts';
+import { checkColor, checkRadius, checkSize, checkStrokeWidth } from './shape-storage.ts';
 import { type Handler, type HandlerMap, memoPlain, peek, peekKeys } from './util.ts';
 
 export const SHAPE_OWNER = 'wp-m2-shapes';
 
 const SHAPE_NAMES = { rect: 'Rectangle', ellipse: 'Ellipse', vector: 'Shape' } as const;
-type DShape = Draft<LegacyShapeData>;
-
-// ---------------------------------------------------------------- validation
-
-const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
-
-function checkColor(v: unknown, field: string, h: HandlerContext): RGBA {
-	if (!Array.isArray(v) || v.length !== 4 || !v.every((x) => finite(x) && x >= 0 && x <= 1))
-		h.fail('E_INVALID_PARAM', `${field} must be an RGBA colour with components in 0..1`, { path: [field] });
-	return [v[0], v[1], v[2], v[3]] as RGBA;
-}
-function checkLength(max: number) {
-	return (v: unknown, field: string, h: HandlerContext): number => {
-		if (!finite(v) || v < 0 || v > max)
-			h.fail('E_INVALID_PARAM', `${field} must be a number in 0..${max} (px)`, { path: [field] });
-		return v as number;
-	};
-}
-function checkSize(v: unknown, field: string, h: HandlerContext): Vec2 {
-	const ok = (x: unknown) => finite(x) && x >= 0 && x <= SHAPE_LIMITS.size;
-	if (!Array.isArray(v) || v.length !== 2 || !v.every(ok))
-		h.fail('E_INVALID_PARAM', `${field} must be [width, height] in 0..${SHAPE_LIMITS.size} (px)`, {
-			path: [field],
-		});
-	return [v[0], v[1]] as Vec2;
-}
-const checkStrokeWidth = checkLength(SHAPE_LIMITS.strokeWidth);
-const checkRadius = checkLength(SHAPE_LIMITS.cornerRadius);
-
-/** A static value becomes a static Animatable (keys dropped, like TransformPatch); an Animatable is checked whole. */
-function animOf<T>(
-	v: T | Animatable<T>,
-	isStatic: boolean,
-	check: (x: unknown, field: string, h: HandlerContext) => T,
-	field: string,
-	h: HandlerContext,
-): Animatable<T> {
-	if (isStatic) return anim(check(v, field, h));
-	const a = v as Animatable<T>;
-	return {
-		...a,
-		value: check(a.value, field, h),
-		keyframes: a.keyframes.map((k) => ({ ...k, value: check(k.value, field, h) })),
-	};
-}
-
-// ---------------------------------------------------------------- centring
 
 function shiftVec(a: Draft<Animatable<Vec2>>, dx: number, dy: number): void {
 	a.value = [a.value[0] + dx, a.value[1] + dy];
@@ -101,7 +54,7 @@ function shiftVec(a: Draft<Animatable<Vec2>>, dx: number, dy: number): void {
 
 /** Moves the anchor by half the box change so the geometry keeps its place (module comment). */
 function recenterShape(clip: Draft<ShapeClip>, before: Box): void {
-	// wp shapes: a vector shape's box is the frame whatever its contents; nothing to re-centre.
+	// a vector shape's box is the frame whatever its contents; nothing to re-centre.
 	if (clip.shape.type === 'vector') return;
 	const after = shapeIntrinsicBox(clip.shape as ShapeData);
 	const dx = (after.width - before.width) / 2;
@@ -156,7 +109,7 @@ function namedClips(cmd: unknown): string[] | null {
 
 /** Sequence id and box of shape clip `cid` (via `peek`), or null when it is not a box-sized shape. */
 function shapeBoxOf(doc: DDoc, cid: string, h: HandlerContext): [string, Box] | null {
-	// perf-core: the clip's sequence from the transaction's clip lookup (indexed for large transactions).
+	// the clip's sequence from the transaction's clip lookup (indexed for large transactions).
 	const sid = h.sequenceOfClip(doc, cid);
 	if (sid === null) return null;
 	const sequences = peek<Record<string, Sequence>>(doc, 'sequences')!;
@@ -232,73 +185,6 @@ export const SHAPE_BOX_COMMANDS: ReadonlySet<CommandType> = new Set<CommandType>
 	'keyframe.paste',
 ]);
 
-// ---------------------------------------------------------------- fill / stroke materialisation
-
-function newStroke(): ShapeStroke {
-	return {
-		color: anim<RGBA>([...DEFAULT_SHAPE_STROKE.color] as RGBA),
-		width: anim(DEFAULT_SHAPE_STROKE.width),
-		position: DEFAULT_SHAPE_STROKE.position,
-	};
-}
-
-/**
- * Storage of a `shape.fill` / `shape.stroke.*` target whose fill or stroke may be "None". With `create` (an explicit
- * write: `param.set`, `keyframe.add` with a value) the fill (white) or a default stroke is created first and the
- * write proceeds as usual (S11:SHP-003/005). Returns false when it stays "None" (the caller refuses the command).
- */
-export function ensureShapeStorage(clip: DClip, spec: PropertySpec, create: boolean): boolean {
-	if (clip.kind !== 'shape') return true;
-	const s = (clip as Draft<ShapeClip>).shape;
-	if (s.type === 'vector') return true;
-	const part = spec.storagePath[1];
-	if ((part !== 'fill' && part !== 'stroke') || s[part] !== null) return true;
-	if (!create) return false;
-	if (part === 'fill') s.fill = anim<RGBA>([1, 1, 1, 1]);
-	else s.stroke = newStroke();
-	return true;
-}
-
-// ---------------------------------------------------------------- clip.update {shape}
-
-/** Merges a clip.update shape patch into the current shape; the type is fixed (vector shapes refuse it). */
-export function applyShapePatch(shape: Draft<ShapeData>, p: ShapePatch, h: HandlerContext): void {
-	if (shape.type === 'vector')
-		h.fail(
-			'E_INVALID_PARAM',
-			'This is a vector shape: edit its items with shape.updateItem / shape.addItems (or param.set on shape.items.<id>.<field>)',
-		);
-	const s = shape as DShape;
-	if (p.size !== undefined)
-		s.size = animOf<Vec2>(p.size as never, Array.isArray(p.size), checkSize, 'size', h);
-	if (p.cornerRadius !== undefined) {
-		if (s.type !== 'rect') h.fail('E_INVALID_PARAM', 'cornerRadius applies to rectangles only');
-		s.cornerRadius = animOf(
-			p.cornerRadius,
-			typeof p.cornerRadius === 'number',
-			checkRadius,
-			'cornerRadius',
-			h,
-		);
-	}
-	if (p.fill !== undefined)
-		s.fill =
-			p.fill === null ? null : animOf<RGBA>(p.fill as never, Array.isArray(p.fill), checkColor, 'fill', h);
-	if (p.stroke === null) s.stroke = null;
-	else if (p.stroke !== undefined) {
-		const st = (s.stroke ?? newStroke()) as Draft<ShapeStroke>;
-		const { color, width, position } = p.stroke;
-		if (color !== undefined)
-			st.color = animOf<RGBA>(color as never, Array.isArray(color), checkColor, 'stroke.color', h);
-		if (width !== undefined)
-			st.width = animOf(width, typeof width === 'number', checkStrokeWidth, 'stroke.width', h);
-		if (position !== undefined) st.position = position;
-		s.stroke = st;
-	}
-}
-
-// ---------------------------------------------------------------- vector shapes (wp shapes)
-
 /** Item and keyframe ids for a command. */
 function idGen(h: HandlerContext): IdGen {
 	return { item: () => h.ids.next('shp'), keyframe: () => h.ids.next('kf') };
@@ -362,36 +248,6 @@ function locateItem(shape: DVector, itemId: string, h: HandlerContext) {
 }
 
 const clampIndex = (i: number | undefined, len: number) => Math.min(len, Math.max(0, i ?? len));
-
-/** Rectangle / ellipse clip → vector contents with the same picture (values and keyframes carried over). */
-export function legacyToVectorItems(s: LegacyShapeData, ids: IdGen): ShapeItem[] {
-	const items: ShapeItem[] = [];
-	const json = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
-	if (s.type === 'rect') {
-		const r = newShapeItem('rect', { id: ids.item(), name: 'Rectangle Path 1' });
-		r.size = json(s.size);
-		r.roundness = json(s.cornerRadius);
-		items.push(r);
-	} else {
-		const e = newShapeItem('ellipse', { id: ids.item(), name: 'Ellipse Path 1' });
-		e.size = json(s.size);
-		items.push(e);
-	}
-	if (s.stroke) {
-		const st = newShapeItem('stroke', { id: ids.item(), name: 'Stroke 1' });
-		st.color = json(s.stroke.color);
-		st.width = json(s.stroke.width);
-		st.position = s.stroke.position;
-		// The legacy renderer draws mitred corners with limit 4 (the SVG default).
-		items.push(st);
-	}
-	if (s.fill) {
-		const f = newShapeItem('fill', { id: ids.item(), name: 'Fill 1' });
-		f.color = json(s.fill);
-		items.push(f);
-	}
-	return items;
-}
 
 function shiftAnchor(clip: Draft<ShapeClip>, dx: number, dy: number): void {
 	const a = clip.transform.anchor;
@@ -567,8 +423,6 @@ function reidKeyframes<T>(v: T, next: () => string): T {
 	return v;
 }
 
-// ---------------------------------------------------------------- clip.addShape
-
 function legacyShapeFromInput(
 	input: CommandOf<'clip.addShape'>['shape'],
 	h: HandlerContext,
@@ -619,7 +473,7 @@ function vectorShapeFromInput(input: CommandOf<'clip.addShape'>['shape'], h: Han
 	};
 }
 
-export const shapeHandlers: HandlerMap = {
+export const shapeHandlers = {
 	...vectorHandlers,
 	'clip.addShape': (doc, cmd, h: HandlerContext) => {
 		const input = cmd.shape;
@@ -652,4 +506,4 @@ export const shapeHandlers: HandlerMap = {
 		h.defineRef(cmd.ref, id);
 		return { clipId: id };
 	},
-};
+} satisfies HandlerMap;

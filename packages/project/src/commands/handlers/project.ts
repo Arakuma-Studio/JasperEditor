@@ -1,5 +1,3 @@
-// project.*, bin.create, item.* (S01 §5, §16.2).
-
 import type { Draft } from 'immer';
 import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { frameShiftFlicks, sourceTimingShift } from '../../process/source-range.ts';
@@ -12,6 +10,7 @@ import type { DDoc, HandlerContext } from '../context.ts';
 import { cleanupSequence, removeClip } from '../placement.ts';
 import { orphanedSynthetics } from '../tx-delta.ts';
 import { replaceMediaFile, type SourceFit } from './process.ts';
+import { assertBin, insertItem } from './project-items.ts';
 import { type HandlerMap, idList, memoPlain, peek, peekKeys } from './util.ts';
 
 function detachItem(doc: DDoc, itemId: string): void {
@@ -23,29 +22,6 @@ function detachItem(doc: DDoc, itemId: string): void {
 			if (i >= 0) it.children.splice(i, 1);
 		}
 	}
-}
-
-export function insertItem(
-	doc: DDoc,
-	itemId: string,
-	parentBinId: string | null | undefined,
-	index?: number,
-): void {
-	let list: string[];
-	if (parentBinId) {
-		const bin = doc.items[parentBinId];
-		if (bin?.kind !== 'bin') throw new Error(`not a bin: ${parentBinId}`);
-		list = bin.children;
-	} else list = doc.rootItems;
-	if (index === undefined || index >= list.length) list.push(itemId);
-	else list.splice(index, 0, itemId);
-}
-
-export function assertBin(doc: DDoc, binId: string | null | undefined, h: HandlerContext): void {
-	if (!binId) return;
-	const bin = doc.items[binId];
-	if (!bin) h.fail('E_NOT_FOUND', `Bin not found: ${binId}`);
-	if (bin.kind !== 'bin') h.fail('E_INVALID_PARAM', `Item ${binId} is not a bin`);
 }
 
 function isDescendant(doc: DDoc, ancestorBinId: string, itemId: string): boolean {
@@ -81,7 +57,7 @@ function clipRefs(clips: Record<string, Clip>): ClipRefs {
 }
 
 export function collectOrphans(doc: DDoc): void {
-	// perf-core: after a normalized base only what the transaction gave up can be orphaned (tx-delta.ts).
+	// after a normalized base only what the transaction gave up can be orphaned (tx-delta.ts).
 	const scoped = orphanedSynthetics(doc as ProjectDocument);
 	if (scoped) {
 		for (const id of scoped) delete doc.synthetics[id];
@@ -121,7 +97,7 @@ export function collectOrphans(doc: DDoc): void {
 	for (const id of peekKeys(synthetics)) if (!usedSyn.has(id)) delete doc.synthetics[id];
 }
 
-export const projectHandlers: HandlerMap = {
+export const projectHandlers = {
 	'project.rename': (doc, cmd) => {
 		doc.name = cmd.name;
 	},
@@ -215,7 +191,7 @@ export const projectHandlers: HandlerMap = {
 			detachItem(doc, id);
 			delete doc.items[id];
 		}
-		// edit-ux: clips forget a deleted subclip (their media stays); subclips forget a deleted parent item.
+		// clips forget a deleted subclip (their media stays); subclips forget a deleted parent item.
 		for (const seq of Object.values(doc.sequences))
 			for (const c of Object.values(seq.clips))
 				if (c.subclipId && toDelete.has(c.subclipId)) delete c.subclipId;
@@ -225,7 +201,7 @@ export const projectHandlers: HandlerMap = {
 		collectOrphans(doc);
 		return { deletedItems: [...toDelete], removedClips: clipRemovals.map((r) => r.clipId) };
 	},
-	// polish: Set / Clear Poster Frame (the thumbnail frame of a media item).
+	// Set / Clear Poster Frame (the thumbnail frame of a media item).
 	'item.setPoster': (doc, cmd, h: HandlerContext) => {
 		const it = item(doc, cmd.itemId, h);
 		if (it.kind !== 'media') h.fail('E_INVALID_PARAM', 'Only media items have a poster frame');
@@ -292,7 +268,7 @@ export const projectHandlers: HandlerMap = {
 	},
 	'media.register': (doc, cmd, h: HandlerContext) => {
 		assertBin(doc, cmd.binId, h);
-		// imports: the pages of one PDF share the file's fingerprint and are different media.
+		// the pages of one PDF share the file's fingerprint and are different media.
 		const page = (a: { vector?: { page?: number } | null }) => a.vector?.page ?? 1;
 		const existing = Object.values(doc.media).find(
 			(m) =>
@@ -385,13 +361,13 @@ export const projectHandlers: HandlerMap = {
 			if (cmd.locators && !cmd.locators.some((l) => l.type === cmd.locator.type))
 				asset.locators.unshift(cmd.locator);
 			if (cmd.probe) asset.probe = cmd.probe;
-			if (cmd.mgBundle) asset.mgBundle = cmd.mgBundle as never;
-			if (cmd.lut) asset.lut = cmd.lut as never;
+			if (cmd.mgBundle) asset.mgBundle = cmd.mgBundle;
+			if (cmd.lut) asset.lut = cmd.lut;
 			if (cmd.sizeBytes !== undefined) asset.sizeBytes = cmd.sizeBytes;
 			if (cmd.originalName !== undefined) asset.originalName = cmd.originalName;
 			if (cmd.container !== undefined) asset.container = cmd.container;
-			if (sr === null) delete (asset as { sourceRange?: unknown }).sourceRange;
-			else if (sr !== undefined) (asset as { sourceRange?: unknown }).sourceRange = sr;
+			if (sr === null) delete asset.sourceRange;
+			else if (sr !== undefined) asset.sourceRange = sr;
 		};
 		if (!keep && !cmd.replace) {
 			update();
@@ -414,4 +390,4 @@ export const projectHandlers: HandlerMap = {
 			trimmedClipIds: r.trimmed,
 		};
 	},
-};
+} satisfies HandlerMap;

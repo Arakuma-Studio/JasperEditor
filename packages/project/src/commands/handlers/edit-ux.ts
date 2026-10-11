@@ -26,12 +26,10 @@ import { contentWindow, rippleTrimGroup, trimLimits } from '../ripple.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { placeSource } from './clip-core.ts';
 import { rollRange, rollTrim } from './clip-edit.ts';
-import { insertItem } from './project.ts';
+import { insertItem } from './project-items.ts';
 import type { HandlerMap } from './util.ts';
 
 const FALLBACK_RATE: Rational = { num: 30, den: 1 };
-
-// ---------------------------------------------------------------- sources
 
 type Source =
 	| {
@@ -97,8 +95,6 @@ function sequenceFrames(seq: Pick<Sequence, 'clips'>): number {
 	for (const c of Object.values(seq.clips)) n = Math.max(n, c.start + c.duration);
 	return n;
 }
-
-// ---------------------------------------------------------------- three- and four-point resolution
 
 export type PointResolution = {
 	/** Sequence frame where the edit starts. */
@@ -231,9 +227,7 @@ function channelOf(
 	};
 }
 
-// ---------------------------------------------------------------- clip.sourceEdit
-
-function sourceEditHandler(doc: DDoc, cmd: CommandOf<'clip.sourceEdit'>, h: HandlerContext): unknown {
+function sourceEditHandler(doc: DDoc, cmd: CommandOf<'clip.sourceEdit'>, h: HandlerContext) {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const rate = seq.settings.frameRate as Rational;
 	const F = flicksPerFrame(rate);
@@ -402,9 +396,7 @@ function sourceEditHandler(doc: DDoc, cmd: CommandOf<'clip.sourceEdit'>, h: Hand
 	};
 }
 
-// ---------------------------------------------------------------- clip.trimEdits
-
-function trimEditsHandler(doc: DDoc, cmd: CommandOf<'clip.trimEdits'>, h: HandlerContext): unknown {
+function trimEditsHandler(doc: DDoc, cmd: CommandOf<'clip.trimEdits'>, h: HandlerContext) {
 	const linked = cmd.linked !== false;
 	const first = h.clip(doc, cmd.edits[0]!.clipId);
 	const seq = first.seq;
@@ -496,8 +488,6 @@ function trimEditsHandler(doc: DDoc, cmd: CommandOf<'clip.trimEdits'>, h: Handle
 	return { deltaFrames: d };
 }
 
-// ---------------------------------------------------------------- subclips
-
 function subclipSource(doc: DDoc, itemId: string, h: HandlerContext) {
 	const it = doc.items[itemId] as ProjectItem | undefined;
 	if (!it) return h.fail('E_NOT_FOUND', `Project item not found: ${itemId}`);
@@ -528,7 +518,7 @@ function parentBin(doc: DDoc, itemId: string): string | null {
 	return null;
 }
 
-export const editUxHandlers: HandlerMap = {
+export const editUxHandlers = {
 	'clip.sourceEdit': sourceEditHandler,
 	'clip.trimEdits': trimEditsHandler,
 	'item.makeSubclip': (doc, cmd, h: HandlerContext) => {
@@ -591,4 +581,4 @@ export const editUxHandlers: HandlerMap = {
 				}
 		return { itemId: it.id, range: { ...it.range } };
 	},
-};
+} satisfies HandlerMap;

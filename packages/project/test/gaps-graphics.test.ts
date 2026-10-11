@@ -40,6 +40,26 @@ const fxList = (c: unknown) =>
 	c as { transform: { position: { value: [number, number]; keyframes: unknown[] } } };
 
 describe('essential graphics', () => {
+	it('rejects a malformed template payload before importing project items', () => {
+		const h = new Harness();
+		const before = h.doc;
+		const result = h.tx([
+			{
+				type: 'graphic.importTemplate',
+				at: 0,
+				template: {
+					format: GRAPHIC_TEMPLATE_FORMAT,
+					version: 1,
+					name: 'Invalid graphic',
+					frame: { width: 1920, height: 1080 },
+					payload: {},
+				},
+			},
+		]);
+		expect(result).toMatchObject({ ok: false, errors: [{ code: 'E_SCHEMA', path: ['payload'] }] });
+		expect(h.doc).toBe(before);
+	});
+
 	it('align / distribute offsets', () => {
 		const rects = [
 			{ x: 10, y: 10, width: 100, height: 50 },

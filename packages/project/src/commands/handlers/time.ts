@@ -43,7 +43,7 @@ import {
 } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { nextStart, rippleAfterEnd } from './clip-edit.ts';
-import { insertItem } from './project.ts';
+import { insertItem } from './project-items.ts';
 import { type HandlerMap, idList } from './util.ts';
 
 type DVideo = Draft<VideoClip | NestVideoClip>;
@@ -220,9 +220,7 @@ function linkedAudioOf(seq: DSeq, clip: DClip): DClip[] {
 
 const newKeyId = (h: HandlerContext) => () => h.ids.next('kf');
 
-// ---------------------------------------------------------------- enable / disable
-
-function enableHandler(doc: DDoc, cmd: CommandOf<'timeRemap.enable'>, h: HandlerContext): unknown {
+function enableHandler(doc: DDoc, cmd: CommandOf<'timeRemap.enable'>, h: HandlerContext) {
 	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
 	const out: { clipId: string; enabled: boolean; duration: number }[] = [];
 	for (const c of clips) {
@@ -274,9 +272,7 @@ export function removeTimeRemap(doc: DDoc, seq: DSeq, c: DClip, h: HandlerContex
 	}
 }
 
-// ---------------------------------------------------------------- keyframes and segments
-
-function addKeyframeHandler(doc: DDoc, cmd: CommandOf<'timeRemap.addKeyframe'>, h: HandlerContext): unknown {
+function addKeyframeHandler(doc: DDoc, cmd: CommandOf<'timeRemap.addKeyframe'>, h: HandlerContext) {
 	const { seq, clip } = h.clip(doc, cmd.clipId);
 	const v = remappable(seq, clip, h);
 	const c = contentAt(seq, clip, h.frame(seq, cmd.at), h, true);
@@ -295,11 +291,7 @@ function keyOf(clip: DVideo, id: string, h: HandlerContext): RemapKeyframe {
 	return k as RemapKeyframe;
 }
 
-function removeKeyframesHandler(
-	doc: DDoc,
-	cmd: CommandOf<'timeRemap.removeKeyframes'>,
-	h: HandlerContext,
-): unknown {
+function removeKeyframesHandler(doc: DDoc, cmd: CommandOf<'timeRemap.removeKeyframes'>, h: HandlerContext) {
 	const { seq, clip } = h.clip(doc, cmd.clipId);
 	const v = remappable(seq, clip, h);
 	for (const id of cmd.keyframeIds) keyOf(v, id, h);
@@ -307,7 +299,7 @@ function removeKeyframesHandler(
 	return { removed: cmd.keyframeIds };
 }
 
-function setSpeedHandler(doc: DDoc, cmd: CommandOf<'timeRemap.setSpeed'>, h: HandlerContext): unknown {
+function setSpeedHandler(doc: DDoc, cmd: CommandOf<'timeRemap.setSpeed'>, h: HandlerContext) {
 	const { seq, clip } = h.clip(doc, cmd.clipId);
 	const v = remappable(seq, clip, h);
 	const c = contentAt(seq, clip, h.frame(seq, cmd.at), h);
@@ -329,11 +321,7 @@ function setSpeedHandler(doc: DDoc, cmd: CommandOf<'timeRemap.setSpeed'>, h: Han
 	}
 }
 
-function moveKeyframeHandler(
-	doc: DDoc,
-	cmd: CommandOf<'timeRemap.moveKeyframe'>,
-	h: HandlerContext,
-): unknown {
+function moveKeyframeHandler(doc: DDoc, cmd: CommandOf<'timeRemap.moveKeyframe'>, h: HandlerContext) {
 	const { seq, clip } = h.clip(doc, cmd.clipId);
 	const v = remappable(seq, clip, h);
 	keyOf(v, cmd.keyframeId, h);
@@ -351,11 +339,7 @@ function moveKeyframeHandler(
 	}
 }
 
-function setTransitionHandler(
-	doc: DDoc,
-	cmd: CommandOf<'timeRemap.setTransition'>,
-	h: HandlerContext,
-): unknown {
+function setTransitionHandler(doc: DDoc, cmd: CommandOf<'timeRemap.setTransition'>, h: HandlerContext) {
 	const { seq, clip } = h.clip(doc, cmd.clipId);
 	const v = remappable(seq, clip, h);
 	keyOf(v, cmd.keyframeId, h);
@@ -372,7 +356,7 @@ function setTransitionHandler(
 	return { frames: got };
 }
 
-function addFreezeHandler(doc: DDoc, cmd: CommandOf<'timeRemap.addFreeze'>, h: HandlerContext): unknown {
+function addFreezeHandler(doc: DDoc, cmd: CommandOf<'timeRemap.addFreeze'>, h: HandlerContext) {
 	const { seq, clip } = h.clip(doc, cmd.clipId);
 	const v = remappable(seq, clip, h);
 	const c = contentAt(seq, clip, h.frame(seq, cmd.at), h);
@@ -388,7 +372,7 @@ function addFreezeHandler(doc: DDoc, cmd: CommandOf<'timeRemap.addFreeze'>, h: H
 	}
 }
 
-function addReverseHandler(doc: DDoc, cmd: CommandOf<'timeRemap.addReverse'>, h: HandlerContext): unknown {
+function addReverseHandler(doc: DDoc, cmd: CommandOf<'timeRemap.addReverse'>, h: HandlerContext) {
 	const { seq, clip } = h.clip(doc, cmd.clipId);
 	const v = remappable(seq, clip, h);
 	const c = contentAt(seq, clip, h.frame(seq, cmd.at), h);
@@ -405,13 +389,11 @@ function addReverseHandler(doc: DDoc, cmd: CommandOf<'timeRemap.addReverse'>, h:
 	}
 }
 
-// ---------------------------------------------------------------- time interpolation
-
 function setTimeInterpolationHandler(
 	doc: DDoc,
 	cmd: CommandOf<'clip.setTimeInterpolation'>,
 	h: HandlerContext,
-): unknown {
+) {
 	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
 	const changed: string[] = [];
 	for (const c of clips) {
@@ -431,13 +413,7 @@ function setTimeInterpolationHandler(
 	return { clipIds: changed };
 }
 
-// ---------------------------------------------------------------- scene edit detection results
-
-function applySceneEditsHandler(
-	doc: DDoc,
-	cmd: CommandOf<'clip.applySceneEdits'>,
-	h: HandlerContext,
-): unknown {
+function applySceneEditsHandler(doc: DDoc, cmd: CommandOf<'clip.applySceneEdits'>, h: HandlerContext) {
 	const { seq, clip } = h.clip(doc, cmd.clipId);
 	if (!cmd.applyCuts && !cmd.createSubclips && !cmd.createMarkers)
 		h.fail('E_INVALID_PARAM', 'Choose at least one of applyCuts, createSubclips, createMarkers');
@@ -545,7 +521,7 @@ function applySceneEditsHandler(
 	return { ...result, edits, seconds: cuts.map((c) => c / FLICKS_PER_SECOND) };
 }
 
-export const timeHandlers: HandlerMap = {
+export const timeHandlers = {
 	'timeRemap.enable': enableHandler,
 	'timeRemap.addKeyframe': addKeyframeHandler,
 	'timeRemap.removeKeyframes': removeKeyframesHandler,
@@ -556,7 +532,7 @@ export const timeHandlers: HandlerMap = {
 	'timeRemap.addReverse': addReverseHandler,
 	'clip.setTimeInterpolation': setTimeInterpolationHandler,
 	'clip.applySceneEdits': applySceneEditsHandler,
-};
+} satisfies HandlerMap;
 
 /** Content span (flicks) a clip covers — exported for tests of the frame-hold math. */
 export function clipContentSpan(seq: DSeq, c: DClip): number {

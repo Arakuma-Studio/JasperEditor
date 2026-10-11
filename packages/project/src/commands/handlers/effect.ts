@@ -130,7 +130,7 @@ export function validExpression(ex: unknown, label: string, h: HandlerContext): 
 	return r.data.text.trim() ? { text: r.data.text, enabled: r.data.enabled } : undefined;
 }
 
-export const effectHandlers: HandlerMap = {
+export const effectHandlers = {
 	'effect.add': (doc, cmd: CommandOf<'effect.add'>, h: HandlerContext) => {
 		const spec = h.registries.effects.get(cmd.effectId);
 		if (!spec) return h.fail('E_UNKNOWN_EFFECT', `Unknown effect: ${cmd.effectId}`);
@@ -174,7 +174,7 @@ export const effectHandlers: HandlerMap = {
 				});
 		} else {
 			const seq = h.sequence(doc, cmd.target.sequenceId ?? cmd.sequenceId);
-			// audio-mix: submix tracks (`S1`… or their id) take track effects too.
+			// submix tracks (`S1`… or their id) take track effects too.
 			const submixId = resolveStripRef(seq as never, cmd.target.trackId);
 			const submix = (seq.submixTracks ?? []).find((t) => t.id === submixId);
 			const track = submix ?? h.track(seq, cmd.target.trackId);
@@ -216,4 +216,4 @@ export const effectHandlers: HandlerMap = {
 		loc.fx.enabled = cmd.enabled;
 		return { enabled: cmd.enabled };
 	},
-};
+} satisfies HandlerMap;

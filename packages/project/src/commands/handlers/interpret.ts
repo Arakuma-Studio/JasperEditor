@@ -80,7 +80,7 @@ function trimToMedia(
 	trimmed.push(c.id);
 }
 
-function mediaInterpret(doc: DDoc, cmd: CommandOf<'media.interpret'>, h: HandlerContext): unknown {
+function mediaInterpret(doc: DDoc, cmd: CommandOf<'media.interpret'>, h: HandlerContext) {
 	const ids = [...new Set(cmd.mediaIds)];
 	const patch = cmd.interpretation as InterpretationPatch;
 	const changed = new Map<string, number | null>();
@@ -118,6 +118,6 @@ function mediaInterpret(doc: DDoc, cmd: CommandOf<'media.interpret'>, h: Handler
 	return { mediaIds: ids, trimmedClipIds };
 }
 
-export const interpretHandlers: HandlerMap = {
+export const interpretHandlers = {
 	'media.interpret': mediaInterpret,
-};
+} satisfies HandlerMap;

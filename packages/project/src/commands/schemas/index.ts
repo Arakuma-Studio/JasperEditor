@@ -65,54 +65,32 @@ export const ALL_COMMAND_SCHEMAS = [
 	...CLIP_COMMANDS,
 	...PARAM_COMMANDS,
 	...TRACKER_COMMANDS,
-	// wp-m3-trackui (S09:TRK-023)
 	...SIMPLIFY_COMMANDS,
-	// wp-clipboard (S01 §20)
 	...CLIPBOARD_COMMANDS,
-	// Effect presets (S03:FX-030)
 	...PRESET_COMMANDS,
-	// wp shapes: vector shape items
 	...SHAPE_COMMANDS,
-	// text-animators workstream (AE text animators)
 	...TEXT_ANIMATOR_COMMANDS,
-	// Timeline interchange (wp interchange)
 	...INTERCHANGE_COMMANDS,
-	// Synchronize, Merge Clips, multi-camera (wp-multicam)
 	...MULTICAM_COMMANDS,
-	// Audio buses (audio-mix)
 	...AUDIO_COMMANDS,
-	// edit-structure (nests, frame holds, through edits, subsequences)
 	...STRUCTURE_COMMANDS,
-	// wp masks (S03 §17)
 	...MASK_COMMANDS,
-	// sim-warp: Liquify, Mesh Warp, Puppet
 	...SIM_WARP_COMMANDS,
-	// wp captions
 	...CAPTION_COMMANDS,
-	// wp speech
 	...SPEECH_COMMANDS,
-	// Expressions (wave expressions)
 	...EXPRESSION_COMMANDS,
-	// Essential Sound and Remix (audio-fx)
 	...ESSENTIAL_COMMANDS,
-	// Workstream `time`: Time Remapping, Time Interpolation, frame holds, Scene Edit Detection
 	...TIME_COMMANDS,
-	// parity: roto / object mattes
 	...ROTO_COMMANDS,
-	// edit-ux: 3/4-point editing, multi-edit trims, subclips
 	...EDIT_UX_COMMANDS,
-	// color-mgmt: Interpret Footage ▸ Colour, clip colour interpretation
 	...COLOR_MGMT_COMMANDS,
-	// three-d: 3D layers, cameras, lights
 	...THREE_D_COMMANDS,
-	// imports: Interpret Footage
 	...INTERPRET_COMMANDS,
-	// previews: Sequence Settings ▸ Video Previews
 	...PREVIEWS_COMMANDS,
-	// gaps: proxies, Sequence Settings, audio channels, Warp Stabilizer, graphics (docs/wp-notes/gaps.md)
 	...GAPS_COMMANDS,
 ] as const;
 
+export type CommandInput = z.input<(typeof ALL_COMMAND_SCHEMAS)[number]>;
 export type Command = z.infer<(typeof ALL_COMMAND_SCHEMAS)[number]>;
 export type CommandType = Command['type'];
 export type CommandOf<T extends CommandType> = Extract<Command, { type: T }>;

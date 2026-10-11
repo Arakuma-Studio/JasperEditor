@@ -29,7 +29,7 @@ import {
 } from '../placement.ts';
 import { placeSource } from './clip-core.ts';
 import { applyColorSettings, hdrWorkingSpaceOf } from './color-mgmt.ts';
-import { assertBin, insertItem } from './project.ts';
+import { assertBin, insertItem } from './project-items.ts';
 import { remapTextAnimationFrames } from './text-animation.ts';
 import type { HandlerMap } from './util.ts';
 
@@ -118,7 +118,7 @@ function changeFrameRate(seq: DSeq, to: Rational, h: HandlerContext): void {
 		} else {
 			c.start = s;
 			c.duration = e - s;
-			// M2 (S11:TXA-005): animator windows keep their length in time.
+			// animator windows keep their length in time.
 			remapTextAnimationFrames(c, from, to);
 		}
 	}
@@ -202,7 +202,7 @@ function findItemMarker(doc: DDoc, markerId: string) {
 	return null;
 }
 
-export const sequenceHandlers: HandlerMap = {
+export const sequenceHandlers = {
 	'sequence.create': (doc, cmd, h: HandlerContext) => {
 		assertBin(doc, cmd.binId, h);
 		const presetId = cmd.preset ?? doc.settings.defaultSequencePreset;
@@ -541,4 +541,4 @@ export const sequenceHandlers: HandlerMap = {
 			track.captionStandard = p.captionStandard;
 		}
 	},
-};
+} satisfies HandlerMap;

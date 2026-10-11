@@ -167,7 +167,7 @@ function freeTrackAbove(seq: DSeq, trackId: string, at: number, duration: number
 	return `V${seq.videoTracks.length + 1}`;
 }
 
-export const cameraTrackerHandlers: HandlerMap = {
+export const cameraTrackerHandlers = {
 	'cameraTracker.add': (doc, cmd: CommandOf<'cameraTracker.add'>, h: HandlerContext) => {
 		const { seq, clip } = videoClip(doc, h, cmd.clipId);
 		const c = clip as { cameraTracker?: DTracker };
@@ -401,4 +401,4 @@ export const cameraTrackerHandlers: HandlerMap = {
 		delete (clip as { cameraTracker?: DTracker }).cameraTracker;
 		return { clipId: clip.id };
 	},
-};
+} satisfies HandlerMap;

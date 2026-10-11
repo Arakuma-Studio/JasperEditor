@@ -75,18 +75,18 @@ export const MediaRelinkCmd = cmd('media.relink', {
 	fingerprint: z.string().optional(),
 	force: z.boolean().optional(),
 	/**
-	 * M2 (S08:MGC-013, additive): a rebuilt Remotion bundle — the new header (bundle hash, compositions). On an
+	 * a rebuilt Remotion bundle — the new header (bundle hash, compositions). On an
 	 * `mg-bundle` asset a changed fingerprint is accepted without `force` (the content address changes with
 	 * every rebuild).
 	 */
 	mgBundle: MgBundleInfoSchema.optional(),
-	/** M2 (S06, additive): an updated LUT header. */
+	/** an updated LUT header. */
 	lut: LutInfoSchema.optional(),
-	/** M2 (additive): new size and container of the relinked file. */
+	/** new size and container of the relinked file. */
 	sizeBytes: z.number().int().min(0).optional(),
 	originalName: z.string().optional(),
 	/**
-	 * M3 (S07:PRC-018, additive) — Replace Footage: the file is a different rendering, not the same bytes moved.
+	 * Replace Footage: the file is a different rendering, not the same bytes moved.
 	 * A changed fingerprint is accepted without `force`; `locators` replaces every locator (the old file's paths
 	 * would point at the wrong bytes) and `container` updates the container.
 	 */
@@ -127,14 +127,14 @@ export const MediaDeriveCmd = cmd('media.derive', {
 	replaceInClips: z.array(IdRefSchema).optional(),
 	ref: RefDeclSchema.optional(),
 	/**
-	 * M3 (S07:PRC-015, additive): the source frames `[startFrame, endFrame)` (at the source's rate) the engine
+	 * the source frames `[startFrame, endFrame)` (at the source's rate) the engine
 	 * processed; absent = the whole source. Recorded as the version's `sourceRange`; swapped clips are remapped.
 	 */
 	range: z.looseObject({ startFrame: z.number().int().min(0), endFrame: z.number().int().min(1) }).optional(),
-	/** M3 (additive): what `replaceInClips` does with clips the version does not cover (default `refuse`). */
+	/** what `replaceInClips` does with clips the version does not cover (default `refuse`). */
 	fit: SourceFitSchema.optional(),
 });
-/** M3 (S07:PRC-019): declares (or clears) the source frames a media file holds. Does not move any clip. */
+/** declares (or clears) the source frames a media file holds. Does not move any clip. */
 export const MediaSetSourceRangeCmd = cmd('media.setSourceRange', {
 	mediaId: IdRefSchema,
 	sourceRange: SourceRangeSchema.nullable(),
@@ -168,7 +168,7 @@ export const TranscriptCreateCmd = cmd('transcript.create', {
 	origin: z.enum(['whisper-local', 'cloud-asr', 'subtitle-file', 'manual']),
 	/** `{text, start, end}` (flicks of media time) plus optional `confidence`, `speaker` (a key of `speakers`), `breakBefore`. */
 	words: z.array(z.record(z.string(), z.unknown())),
-	/** wp captions: speaker names by key (default: a `Speaker N` entry per key used by the words). */
+	/** speaker names by key (default: a `Speaker N` entry per key used by the words). */
 	speakers: z.record(z.string(), z.looseObject({ name: z.string() })).optional(),
 	id: z.string().optional(),
 	ref: RefDeclSchema.optional(),

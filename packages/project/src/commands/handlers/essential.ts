@@ -1,7 +1,7 @@
 // Essential Sound and Remix handlers (audio-fx; docs/wp-notes/audio-fx.md). Essential Sound edits reconcile the
 // clip's essential effects, gain, Volume and pan with its settings (essential/reconcile.ts); Remix replaces a music
 // clip by its pieces (grouped clips, constant-power crossfades at the joints) or restores it.
-import { current, type Draft, isDraft } from 'immer';
+import type { Draft } from 'immer';
 import { contentTimeAt } from '../../derive/index.ts';
 import {
 	type AudioType,
@@ -30,13 +30,11 @@ import {
 } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { transitionHandlers } from './transition.ts';
-import { type HandlerMap, idList } from './util.ts';
+import { type HandlerMap, idList, clone as plain } from './util.ts';
 
 export const ESSENTIAL_OWNER = 'audio-fx' as const;
 
 type DAudio = Draft<AudioClip>;
-
-const plain = <T>(v: T): T => JSON.parse(JSON.stringify(isDraft(v) ? current(v as Draft<T>) : v)) as T;
 
 function audioClips(doc: DDoc, ids: readonly string[], h: HandlerContext): { seq: DSeq; clips: DAudio[] } {
 	const { seq, clips } = h.clipsOf(doc, ids);
@@ -91,8 +89,6 @@ function tryValue<T>(f: () => T, h: HandlerContext, clipId: string): T {
 	}
 }
 
-// ---------------------------------------------------------------- remix helpers
-
 const end = (c: { start: number; duration: number }) => c.start + c.duration;
 
 /** The pieces of the remix a clip belongs to (sorted by start), or just the clip. */
@@ -105,8 +101,8 @@ function remixPieces(seq: DSeq, clip: DClip): DAudio[] {
 }
 
 /** Replaces a remix's pieces by the original clip (the first piece keeps its id); returns the restored clip. */
-function revertRemix(seq: DSeq, any: DAudio, h: HandlerContext): DAudio {
-	const pieces = remixPieces(seq, any);
+function revertRemix(seq: DSeq, clip: DAudio, h: HandlerContext): DAudio {
+	const pieces = remixPieces(seq, clip);
 	const first = pieces[0]!;
 	const info = first.remix!;
 	const lastId = pieces[pieces.length - 1]!.id;
@@ -128,7 +124,7 @@ function revertRemix(seq: DSeq, any: DAudio, h: HandlerContext): DAudio {
 	return first;
 }
 
-export const essentialHandlers: HandlerMap = {
+export const essentialHandlers = {
 	'essentialSound.setType': (doc, cmd: CommandOf<'essentialSound.setType'>, h) => {
 		const { seq, clips } = audioClips(doc, idList(cmd.clipIds), h);
 		for (const c of clips) {
@@ -364,4 +360,4 @@ export const essentialHandlers: HandlerMap = {
 				});
 		return { clipId: restored.id };
 	},
-};
+} satisfies HandlerMap;

@@ -25,15 +25,13 @@ import type { CommandOf } from '../schemas/index.ts';
 import { buildParams, validExpression } from './effect.ts';
 import { refreshAutoBezier } from './keyframe.ts';
 import { ruleFromParam, validateValue } from './param.ts';
-import { type HandlerMap, idList } from './util.ts';
+import { clone, type HandlerMap, idList } from './util.ts';
 
 export const PRESET_OWNER = 'wp-m3-presets';
 
 type Rule = Parameters<typeof validateValue>[1];
 type Box = { width: number; height: number };
 type DRec = Draft<Record<string, unknown>>;
-
-const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 function propertyRule(key: string): Rule {
 	const s = resolvePropertySpec(key)!;
@@ -42,7 +40,7 @@ function propertyRule(key: string): Rule {
 
 const fit = (box: Box, frame: Box) => Math.min(frame.width / box.width, frame.height / box.height);
 
-function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: HandlerContext): unknown {
+function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: HandlerContext) {
 	const parsed = parseEffectPreset(cmd.preset);
 	if (!parsed.ok) return h.fail(parsed.code, parsed.message, { path: ['preset'] });
 	const preset = parsed.preset;
@@ -284,6 +282,6 @@ function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: Handler
 	};
 }
 
-export const presetHandlers: HandlerMap = {
+export const presetHandlers = {
 	'effect.applyPreset': applyPreset,
-};
+} satisfies HandlerMap;

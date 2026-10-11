@@ -72,7 +72,10 @@ function validateCommands(raw: readonly unknown[]): { commands: Command[]; error
 			errors.push({
 				commandIndex: i,
 				code: 'E_SCHEMA',
-				message: `Unknown command type ${JSON.stringify(type)}`,
+				message:
+					typeof type === 'string'
+						? `Unknown command type ${JSON.stringify(type)}`
+						: `Command type must be a string; got ${type === null ? 'null' : typeof type}`,
 				path: ['type'],
 			});
 			return;
@@ -109,11 +112,7 @@ function referencedIds(commands: readonly unknown[], extra: readonly string[] = 
 	return out;
 }
 
-/**
- * Applies a transaction atomically. Returns the input document reference when the transaction fails,
- * is a dry run, or changes nothing.
- */
-export function applyTransaction(
+function applyTransactionUnchecked(
 	doc: ProjectDocument,
 	txIn: unknown,
 	ctx: CommandContext,
@@ -253,4 +252,24 @@ export function applyTransaction(
 			results,
 		},
 	};
+}
+
+/**
+ * Applies a transaction atomically. Returns the input document reference when the transaction fails,
+ * is a dry run, or changes nothing.
+ */
+export function applyTransaction(
+	doc: ProjectDocument,
+	txIn: unknown,
+	ctx: CommandContext,
+): ReturnType<typeof applyTransactionUnchecked> {
+	try {
+		return applyTransactionUnchecked(doc, txIn, ctx);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'Transaction validation failed';
+		return {
+			document: doc,
+			result: fail(ctx.revision, [{ commandIndex: -1, code: 'E_INTERNAL', message }]),
+		};
+	}
 }

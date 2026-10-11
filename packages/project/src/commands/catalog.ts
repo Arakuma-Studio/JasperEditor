@@ -64,8 +64,6 @@ export type CommandOwner =
 	| 'edit-structure'
 	// Masks (S03 §17)
 	| 'wp-m3-masks'
-
-	// Audio buses (parity workstream audio-mix)
 	| 'audio-mix'
 	// Roving keyframes, blend modes (docs/wp-notes/keyframes-blend.md)
 	| 'keyframes-blend'

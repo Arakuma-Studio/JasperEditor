@@ -1,3 +1,4 @@
+import type { SourceFit } from '../schemas/clip.ts';
 // Processed media (M2, S07:PRC-001…007) and source ranges (M3, S07:PRC-015…019): media.derive (register a
 // processed version of a media asset and optionally swap clips to it), clip.replaceSource (swap a clip between
 // versions of the same original), media.setSourceRange, and the "keep source timing" remap used by
@@ -46,10 +47,10 @@ import { clipHandles, fitTransitionDuration } from '../../transitions.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, cleanupSequence, findTrackIn, setClipRange } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
-import { assertBin, insertItem } from './project.ts';
+import { assertBin, insertItem } from './project-items.ts';
 import type { HandlerMap } from './util.ts';
 
-export type SourceFit = 'refuse' | 'trim' | 'skip';
+export type { SourceFit } from '../schemas/clip.ts';
 
 type SwapResult = {
 	clipId: string;
@@ -73,8 +74,6 @@ function mediaOf(doc: DDoc, id: string, h: HandlerContext): MediaAsset {
 function plain<T>(v: T): T {
 	return isDraft(v) ? (current(v as never) as T) : v;
 }
-
-// ---------------------------------------------------------------- transitions and trims
 
 /** Rendered duration of every transition of a sequence (what fits in the handles, TRN-003). */
 function transitionFits(doc: DDoc, seq: DSeq): Map<string, number> {
@@ -219,8 +218,6 @@ function retimeClipForFile(
 	return { kind: 'ok', trimmed: trimToCovered(seq, clip, cov!, h) };
 }
 
-// ---------------------------------------------------------------- clip.replaceSource
-
 /** Swaps a video clip's source to another version of the same original (S07:PRC-006/007, PRC-016/017). */
 function swapClipSource(
 	doc: DDoc,
@@ -288,8 +285,6 @@ function swapClipSource(
 		...(outcome.trimmed ? { trimmed: outcome.trimmed } : {}),
 	};
 }
-
-// ---------------------------------------------------------------- media.relink: keep source timing
 
 /**
  * Replace Footage (S07:PRC-018): `update()` puts the new file into media `mediaId`; then every clip, project-item
@@ -397,8 +392,6 @@ export function replaceMediaFile(
 	return out;
 }
 
-// ---------------------------------------------------------------- media.derive
-
 /** The bin holding `itemId` (null = project root), or undefined when the item is not in the bin tree. */
 function parentOf(doc: DDoc, itemId: string): string | null | undefined {
 	if (doc.rootItems.includes(itemId)) return null;
@@ -485,7 +478,7 @@ function processedSourceRange(
 	};
 }
 
-function mediaDerive(doc: DDoc, cmd: CommandOf<'media.derive'>, h: HandlerContext): unknown {
+function mediaDerive(doc: DDoc, cmd: CommandOf<'media.derive'>, h: HandlerContext) {
 	const source = mediaOf(doc, cmd.fromMediaId, h);
 	const asset = cmd.asset;
 	if (!asset)
@@ -493,7 +486,7 @@ function mediaDerive(doc: DDoc, cmd: CommandOf<'media.derive'>, h: HandlerContex
 			'E_INVALID_PARAM',
 			'media.derive needs `asset`: the engine produces the processed file (POST /api/media/:key/process) and its result is committed here',
 		);
-	// audio-mix: a loudness-normalised version is an audio file made from the audio stream of a video or audio media.
+	// a loudness-normalised version is an audio file made from the audio stream of a video or audio media.
 	const loudness = cmd.recipe.op === 'loudness-normalize';
 	if (loudness && source.kind !== 'video' && source.kind !== 'audio')
 		h.fail('E_INVALID_PARAM', `Media ${source.id} is ${source.kind}; loudness normalisation needs audio`);
@@ -601,7 +594,7 @@ function mediaDerive(doc: DDoc, cmd: CommandOf<'media.derive'>, h: HandlerContex
 }
 
 /**
- * audio-mix: audio clips of `sourceId` play the loudness-normalised `media` instead (same timing: the file starts at
+ * audio clips of `sourceId` play the loudness-normalised `media` instead (same timing: the file starts at
  * the source's time 0; its first audio stream holds the normalised stream's channels).
  */
 function useNormalizedAudio(
@@ -634,9 +627,7 @@ function useNormalizedAudio(
 	return changed;
 }
 
-// ---------------------------------------------------------------- media.setSourceRange
-
-function setSourceRange(doc: DDoc, cmd: CommandOf<'media.setSourceRange'>, h: HandlerContext): unknown {
+function setSourceRange(doc: DDoc, cmd: CommandOf<'media.setSourceRange'>, h: HandlerContext) {
 	const asset = mediaOf(doc, cmd.mediaId, h);
 	const sr = cmd.sourceRange as SourceRange | null;
 	if (sr === null) {
@@ -669,9 +660,9 @@ function originalChain(doc: DDoc, mediaId: string): string[] {
 	return chain;
 }
 
-export const processHandlers: HandlerMap = {
+export const processHandlers = {
 	'media.derive': mediaDerive,
 	'media.setSourceRange': setSourceRange,
 	'clip.replaceSource': (doc, cmd, h) =>
 		swapClipSource(doc, cmd.clipId, cmd.mediaId, h, (cmd.fit ?? 'refuse') as SourceFit),
-};
+} satisfies HandlerMap;

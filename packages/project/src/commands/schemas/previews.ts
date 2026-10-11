@@ -1,4 +1,3 @@
-// previews workstream (docs/wp-notes/previews.md): Sequence Settings ▸ Video Previews.
 import { z } from 'zod';
 import { PREVIEW_FORMATS } from '../../schema/sequence.ts';
 import { cmd, IdRefSchema } from './common.ts';

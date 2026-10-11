@@ -1,3 +1,5 @@
+import type { DTrack } from '../context.ts';
+import { clone as snapshotClip } from './util.ts';
 // Advanced edit handlers owned by WP-2B (ARCHITECTURE §5.3): roll, slip, slide, speed, duplicate,
 // link/unlink, fit to frame, range lift/extract and gap close (S01 §9, §16.2; S02 §11–§14).
 //
@@ -7,11 +9,11 @@
 // - keyframes live in content time, so none of these edits rewrite them (ARCHITECTURE §2.3);
 // - locked tracks are never edited or shifted (ARCHITECTURE §2.3), sync-locked tracks follow ripples.
 
-import { current, type Draft, isDraft } from 'immer';
+import type { Draft } from 'immer';
 import { type Box, scaleForMode } from '../../factories.ts';
 import { mediaIntrinsicSize } from '../../process/rescale.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
-import type { Clip, Track } from '../../schema/sequence.ts';
+import type { Clip } from '../../schema/sequence.ts';
 import { contentSpanFlicks, flicksPerFrame } from '../../time.ts';
 import { isRemapped } from '../../time-remap/model.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
@@ -39,10 +41,6 @@ import {
 import { contentHandles, contentWindow } from '../ripple.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { type HandlerMap, idList } from './util.ts';
-
-type DTrack = Draft<Track>;
-
-// ---------------------------------------------------------------- shared helpers
 
 function trackOf(seq: DSeq, clip: DClip, h: HandlerContext): DTrack {
 	const t = findTrackIn(seq, clip.trackId);
@@ -109,13 +107,6 @@ function clampDelta(d: number, ranges: readonly Range[], h: HandlerContext, what
 	return clamped;
 }
 
-function snapshotClip(c: DClip): Clip {
-	const plain = isDraft(c) ? current(c) : c;
-	return JSON.parse(JSON.stringify(plain)) as Clip;
-}
-
-// ---------------------------------------------------------------- roll (S02 §11.4, TL-545)
-
 type RollPlan = { out: DClip | null; inc: DClip | null; edit: number; range: Range };
 
 function planRoll(doc: DDoc, seq: DSeq, m: DClip, edge: 'in' | 'out'): RollPlan {
@@ -141,7 +132,7 @@ function planRoll(doc: DDoc, seq: DSeq, m: DClip, edge: 'in' | 'out'): RollPlan 
 	return { out, inc, edit, range };
 }
 
-/** edit-ux: the delta range a roll at `clip`'s `edge` allows (with coincident link partners unless `linked` is false). */
+/** the delta range a roll at `clip`'s `edge` allows (with coincident link partners unless `linked` is false). */
 export function rollRange(
 	doc: DDoc,
 	seq: DSeq,
@@ -156,7 +147,7 @@ export function rollRange(
 }
 
 /** `clip.trim` with `mode: 'roll'` (S02:TL-545). Called by the core `clip.trim` handler. */
-export function rollTrim(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext): unknown {
+export function rollTrim(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext) {
 	const { seq, clip } = h.clip(doc, cmd.clipId);
 	assertUnlocked(trackOf(seq, clip, h), h);
 	const pick = (c: DClip) => (cmd.edge === 'in' ? c.start : end(c));
@@ -180,8 +171,6 @@ export function rollTrim(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerConte
 	return { deltaFrames: d };
 }
 
-// ---------------------------------------------------------------- slip (S02 §12.7, TL-625)
-
 /** Kinds where slipping has a visible effect (media and time-based generators). */
 function canSlip(c: DClip): boolean {
 	const caps = kindCapabilities(c.kind);
@@ -189,7 +178,7 @@ function canSlip(c: DClip): boolean {
 	return caps.bounded !== 'no' || c.kind === 'motion-graphic' || c.kind === 'composition';
 }
 
-function slipHandler(doc: DDoc, cmd: CommandOf<'clip.slip'>, h: HandlerContext): unknown {
+function slipHandler(doc: DDoc, cmd: CommandOf<'clip.slip'>, h: HandlerContext) {
 	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
 	for (const c of clips) assertUnlocked(trackOf(seq, c, h), h);
 	const movable = clips.filter(canSlip);
@@ -215,8 +204,6 @@ function slipHandler(doc: DDoc, cmd: CommandOf<'clip.slip'>, h: HandlerContext):
 	return { deltaFrames: d, clipIds: movable.map((c) => c.id) };
 }
 
-// ---------------------------------------------------------------- slide (S02 §12.8, TL-630)
-
 type SlidePlan = { clip: DClip; prev: DClip | null; next: DClip | null; range: Range };
 
 function planSlide(doc: DDoc, seq: DSeq, b: DClip): SlidePlan {
@@ -238,7 +225,7 @@ function planSlide(doc: DDoc, seq: DSeq, b: DClip): SlidePlan {
 	return { clip: b, prev, next, range };
 }
 
-function slideHandler(doc: DDoc, cmd: CommandOf<'clip.slide'>, h: HandlerContext): unknown {
+function slideHandler(doc: DDoc, cmd: CommandOf<'clip.slide'>, h: HandlerContext) {
 	const { seq, clip } = h.clip(doc, cmd.clipId);
 	assertUnlocked(trackOf(seq, clip, h), h);
 	// Linked partners that start with the clip slide with it (S02:TL-630).
@@ -260,8 +247,6 @@ function slideHandler(doc: DDoc, cmd: CommandOf<'clip.slide'>, h: HandlerContext
 	cleanupSequence(seq, h);
 	return { deltaFrames: d, clipIds: members.map((m) => m.id) };
 }
-
-// ---------------------------------------------------------------- ripple helper (speed changes)
 
 /**
  * Ripples the material after a clip whose end moved from `oldEnd` by `delta` frames: later clips on the
@@ -288,9 +273,7 @@ export function rippleAfterEnd(
 	shiftMarkers(seq, delta > 0 ? oldEnd : oldEnd + delta, delta);
 }
 
-// ---------------------------------------------------------------- speed (S01:CLP-008, S02:TL-615/685)
-
-function setSpeedHandler(doc: DDoc, cmd: CommandOf<'clip.setSpeed'>, h: HandlerContext): unknown {
+function setSpeedHandler(doc: DDoc, cmd: CommandOf<'clip.setSpeed'>, h: HandlerContext) {
 	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
 	if (
 		cmd.rate === undefined &&
@@ -373,7 +356,7 @@ function setSpeedHandler(doc: DDoc, cmd: CommandOf<'clip.setSpeed'>, h: HandlerC
 		cleanupSequence(seq, h);
 		return { clips: results };
 	}
-	// edit-ux: with ripple, a clip and its linked partners change as one group (FilmCraft `set_speed_group`):
+	// with ripple, a clip and its linked partners change as one group (FilmCraft `set_speed_group`):
 	// later material moves once, by the largest change, so a split edit stays in sync. Groups go right to left
 	// so a ripple never moves a clip that is processed later.
 	const groups: DClip[][] = [];
@@ -421,9 +404,7 @@ function setSpeedHandler(doc: DDoc, cmd: CommandOf<'clip.setSpeed'>, h: HandlerC
 	return { clips: results };
 }
 
-// ---------------------------------------------------------------- duplicate (S01 clip.duplicate, S02:TL-683)
-
-function duplicateHandler(doc: DDoc, cmd: CommandOf<'clip.duplicate'>, h: HandlerContext): unknown {
+function duplicateHandler(doc: DDoc, cmd: CommandOf<'clip.duplicate'>, h: HandlerContext) {
 	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
 	if (cmd.at !== undefined && cmd.deltaFrames !== undefined)
 		h.fail('E_INVALID_PARAM', 'clip.duplicate takes `at` or `deltaFrames`, not both');
@@ -519,9 +500,7 @@ function duplicateHandler(doc: DDoc, cmd: CommandOf<'clip.duplicate'>, h: Handle
 	return { clipIds: Object.values(map), map, deltaFrames: delta };
 }
 
-// ---------------------------------------------------------------- link / unlink (S01:CLP-010, S02:TL-704)
-
-function linkHandler(doc: DDoc, cmd: CommandOf<'clip.link'>, h: HandlerContext): unknown {
+function linkHandler(doc: DDoc, cmd: CommandOf<'clip.link'>, h: HandlerContext) {
 	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
 	if (clips.length < 2) h.fail('E_INVALID_PARAM', 'Link needs at least two clips');
 	const tracks = new Set<string>();
@@ -548,7 +527,7 @@ function linkHandler(doc: DDoc, cmd: CommandOf<'clip.link'>, h: HandlerContext):
 	return { linkId };
 }
 
-function unlinkHandler(doc: DDoc, cmd: CommandOf<'clip.unlink'>, h: HandlerContext): unknown {
+function unlinkHandler(doc: DDoc, cmd: CommandOf<'clip.unlink'>, h: HandlerContext) {
 	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
 	for (const c of clips) assertUnlocked(trackOf(seq, c, h), h);
 	const dissolved: string[] = [];
@@ -566,8 +545,6 @@ function unlinkHandler(doc: DDoc, cmd: CommandOf<'clip.unlink'>, h: HandlerConte
 	return { dissolved };
 }
 
-// ---------------------------------------------------------------- fit to frame (S01:FX-004)
-
 function intrinsicBox(doc: DDoc, seq: DSeq, c: DClip): Box {
 	const frame = { width: seq.settings.width, height: seq.settings.height };
 	const r = c as Record<string, unknown>;
@@ -583,7 +560,7 @@ function intrinsicBox(doc: DDoc, seq: DSeq, c: DClip): Box {
 	return frame;
 }
 
-function fitToFrameHandler(doc: DDoc, cmd: CommandOf<'clip.fitToFrame'>, h: HandlerContext): unknown {
+function fitToFrameHandler(doc: DDoc, cmd: CommandOf<'clip.fitToFrame'>, h: HandlerContext) {
 	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
 	const frame = { width: seq.settings.width, height: seq.settings.height };
 	const changed: string[] = [];
@@ -601,8 +578,6 @@ function fitToFrameHandler(doc: DDoc, cmd: CommandOf<'clip.fitToFrame'>, h: Hand
 	if (changed.length === 0) h.fail('E_INVALID_PARAM', 'None of the clips has a Motion transform');
 	return { clipIds: changed };
 }
-
-// ---------------------------------------------------------------- range lift / extract (S02:TL-690)
 
 function rangeTracks(seq: DSeq, refs: readonly string[] | undefined, h: HandlerContext): DTrack[] {
 	if (!refs) return allTracksIn(seq).filter((t) => !t.locked);
@@ -625,7 +600,7 @@ function rangeBounds(
 	return [from, to];
 }
 
-function rangeLiftHandler(doc: DDoc, cmd: CommandOf<'range.lift'>, h: HandlerContext): unknown {
+function rangeLiftHandler(doc: DDoc, cmd: CommandOf<'range.lift'>, h: HandlerContext) {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const [from, to] = rangeBounds(seq, cmd, h);
 	const tracks = rangeTracks(seq, cmd.tracks, h);
@@ -636,7 +611,7 @@ function rangeLiftHandler(doc: DDoc, cmd: CommandOf<'range.lift'>, h: HandlerCon
 	return { from, to, tracks: tracks.map((t) => t.id) };
 }
 
-function rangeExtractHandler(doc: DDoc, cmd: CommandOf<'range.extract'>, h: HandlerContext): unknown {
+function rangeExtractHandler(doc: DDoc, cmd: CommandOf<'range.extract'>, h: HandlerContext) {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const [from, to] = rangeBounds(seq, cmd, h);
 	const tracks = rangeTracks(seq, cmd.tracks, h);
@@ -652,9 +627,7 @@ function rangeExtractHandler(doc: DDoc, cmd: CommandOf<'range.extract'>, h: Hand
 	return { from, to, tracks: [...ids] };
 }
 
-// ---------------------------------------------------------------- gap close (S02:TL-741)
-
-function gapCloseHandler(doc: DDoc, cmd: CommandOf<'gap.close'>, h: HandlerContext): unknown {
+function gapCloseHandler(doc: DDoc, cmd: CommandOf<'gap.close'>, h: HandlerContext) {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const track = h.track(seq, cmd.trackId);
 	assertUnlocked(track, h);
@@ -678,9 +651,7 @@ function gapCloseHandler(doc: DDoc, cmd: CommandOf<'gap.close'>, h: HandlerConte
 	return { start: gap.start, end: gap.end, trackId: track.id };
 }
 
-// ---------------------------------------------------------------- catalog entries
-
-export const clipEditHandlers: HandlerMap = {
+export const clipEditHandlers = {
 	'clip.slip': slipHandler,
 	'clip.slide': slideHandler,
 	'clip.setSpeed': setSpeedHandler,
@@ -691,4 +662,4 @@ export const clipEditHandlers: HandlerMap = {
 	'range.lift': rangeLiftHandler,
 	'range.extract': rangeExtractHandler,
 	'gap.close': gapCloseHandler,
-};
+} satisfies HandlerMap;

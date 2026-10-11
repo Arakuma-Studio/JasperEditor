@@ -656,6 +656,40 @@ describe('clip.pasteAttributes / clip.removeAttributes / effect.paste', () => {
 // ---------------------------------------------------------------- keyframe.paste (EC-023)
 
 describe('keyframe.paste (CLB-006, S03:EC-023)', () => {
+	it('reports unexpected property resolver errors and keeps the project unchanged', () => {
+		const { h, v } = richProject();
+		const clip = h.seq.clips[v];
+		if (clip?.kind !== 'video') throw new Error('expected video');
+		const keys = clip.effects[0]!.params.radius!.keyframes;
+		const payload = roundTrip(
+			buildKeyframesPayload(
+				h.doc,
+				v,
+				keys.map((key) => key.id),
+			),
+		);
+		const before = h.doc;
+		const registries = defaultRegistries();
+		const result = h.tx([{ type: 'keyframe.paste', payload, clipId: v, at: { frames: 40 } }], {
+			ctx: {
+				registries: {
+					...registries,
+					effects: {
+						...registries.effects,
+						get() {
+							throw new Error('effect registry unavailable');
+						},
+					},
+				},
+			},
+		});
+		expect(result).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_INTERNAL', message: 'effect registry unavailable' }],
+		});
+		expect(h.doc).toBe(before);
+	});
+
 	it('pastes keys at the playhead keeping relative timing, onto the same property path', () => {
 		const { h, v, text } = richProject();
 		const keys = (h.seq.clips[v] as Extract<Clip, { kind: 'video' }>).effects[0]!.params.radius!.keyframes;

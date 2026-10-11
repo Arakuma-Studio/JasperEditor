@@ -108,7 +108,7 @@ function validateSamples(s: TrackerSamples, kind: ClipTracker['kind'], h: Handle
 	if (!s.data.every(Number.isFinite)) h.fail('E_INVALID_PARAM', 'samples.data must be finite numbers');
 }
 
-export const trackerHandlers: HandlerMap = {
+export const trackerHandlers = {
 	'tracker.add': (doc, cmd: CommandOf<'tracker.add'>, h) => {
 		const { seq, clip } = h.clip(doc, cmd.clipId);
 		if (clip.kind !== 'video')
@@ -370,4 +370,4 @@ export const trackerHandlers: HandlerMap = {
 				: {}),
 		};
 	},
-};
+} satisfies HandlerMap;

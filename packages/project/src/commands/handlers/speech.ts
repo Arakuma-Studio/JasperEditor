@@ -7,7 +7,7 @@ import type { HandlerMap } from './util.ts';
 
 export const SPEECH_OWNER = 'speech';
 
-export const speechHandlers: HandlerMap = {
+export const speechHandlers = {
 	'transcript.attach': (doc, cmd, h) => {
 		if (!doc.media[cmd.mediaId]) return h.fail('E_NOT_FOUND', `Media not found: ${cmd.mediaId}`);
 		for (const w of cmd.words)
@@ -89,4 +89,4 @@ export const speechHandlers: HandlerMap = {
 		h.defineRef(cmd.ref, id);
 		return { transcriptId: id, words: words.length, replaced: false };
 	},
-};
+} satisfies HandlerMap;

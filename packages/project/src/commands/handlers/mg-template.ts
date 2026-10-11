@@ -48,7 +48,7 @@ export function templateParamDraftAnim(
 		if (Object.keys(kf).length === 0) delete mg.paramKeyframes;
 	};
 	const anim = {
-		get value(): unknown {
+		get value() {
 			return (mg.params as Record<string, unknown>)[name];
 		},
 		set value(v: unknown) {

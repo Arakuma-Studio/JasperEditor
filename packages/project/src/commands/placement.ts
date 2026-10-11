@@ -2,25 +2,20 @@
 // removals and link/transition cleanup (S01:CLP-003, CLP-007, TRK-006; S02 Appendix A.4–A.6;
 // ARCHITECTURE §2.3 locked-track rule). Works on Immer drafts, so nothing here is memoized; scans read the drafts'
 // current values without proxies (draft-read.ts) and draft only the clips they change (perf-core).
-import { current, type Draft, isDraft, original } from 'immer';
+import { type Draft, isDraft, original } from 'immer';
 import { clipsInRange } from '../derive/index.ts';
 import { createTrack } from '../factories.ts';
 import { trackKindFor } from '../registry/kinds.ts';
 import { ROTO_OBJECT_PARAMS } from '../roto/index.ts';
 import type { Animatable } from '../schema/common.ts';
-import type { Clip, Sequence, Track, TrackKind } from '../schema/sequence.ts';
+import type { Clip, Sequence, TrackKind } from '../schema/sequence.ts';
 import { contentSpanFlicks } from '../time.ts';
-import type { HandlerContext } from './context.ts';
+import type { DClip, DSeq, DTrack, HandlerContext } from './context.ts';
 import { deltaScans, isClean, keysOf, latest, peekIn, recordDelta, valuesOf } from './draft-read.ts';
 import { splitTextAnimation } from './handlers/text-animation.ts';
-
-type DSeq = Draft<Sequence>;
-type DClip = Draft<Clip>;
-type DTrack = Draft<Track>;
+import { clone as snapshot } from './handlers/util.ts';
 
 export const end = (c: { start: number; duration: number }) => c.start + c.duration;
-
-// ---------------------------------------------------------------- tracks
 
 export function tracksOfKind(seq: DSeq, kind: TrackKind): DTrack[] {
 	return kind === 'video' ? seq.videoTracks : kind === 'audio' ? seq.audioTracks : seq.captionTracks;
@@ -36,7 +31,7 @@ export function findTrackIn(
 ): { track: DTrack; index: number; kind: TrackKind } | null {
 	for (const kind of ['video', 'audio', 'caption'] as const) {
 		const list = tracksOfKind(seq as DSeq, kind);
-		// perf-core: searched on current values; only the found track is drafted.
+		// searched on current values; only the found track is drafted.
 		const index = latest(list).findIndex((t) => latest(t).id === trackId);
 		if (index >= 0) return { track: list[index]!, index, kind };
 	}
@@ -97,8 +92,6 @@ export function syncFollowerTracks(seq: DSeq, edited: ReadonlySet<string>): DTra
 	return allTracksIn(seq).filter((t) => !edited.has(t.id) && t.syncLock && !t.locked);
 }
 
-// ---------------------------------------------------------------- clips
-
 /**
  * Keys of the clips on a track that pass `keep`, sorted by start (stable: record order breaks ties). Reads current
  * values without creating drafts; `keep` gets a read-only clip.
@@ -134,14 +127,9 @@ export function setClipRange(seq: DSeq, clip: DClip, newStart: number, newEnd: n
 	clip.duration = newEnd - newStart;
 }
 
-function snapshot<T>(v: T): T {
-	const plain = isDraft(v) ? current(v as Draft<T>) : v;
-	return JSON.parse(JSON.stringify(plain)) as T;
-}
-
 /** Gives every nested entity (keyframes, effects, clip markers) a fresh id (S01:ID-005). */
 export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
-	// M2 (S09:TRK-003): trackers travel with the copy under new ids; a target's `trackedBy` follows its own
+	// trackers travel with the copy under new ids; a target's `trackedBy` follows its own
 	// corner-pin instance to the copy's new effect id.
 	const c = clip as {
 		trackers?: { id: string }[];
@@ -174,7 +162,7 @@ export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
 		g.id = h.ids.next('tan');
 		for (const sel of g.selectors ?? []) sel.id = h.ids.next('tsl');
 	}
-	// sim-warp: the Puppet meshes and pins of an effect instance (`pms` / `ppn`); a pin follows its mesh.
+	// the Puppet meshes and pins of an effect instance (`pms` / `ppn`); a pin follows its mesh.
 	for (const fx of (c.effects ?? []) as unknown as {
 		puppet?: { meshes?: { id: string }[]; pins?: { id: string; meshId?: string }[] };
 	}[]) {
@@ -208,7 +196,7 @@ export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
 				for (const fx of x as { id: string }[]) fx.id = h.ids.next('fx');
 			if (k === 'markers' && Array.isArray(x))
 				for (const m of x as { id: string }[]) m.id = h.ids.next('mrk');
-			// wp masks: Opacity and effect masks get fresh ids (their keyframes are visited below).
+			// Opacity and effect masks get fresh ids (their keyframes are visited below).
 			if (k === 'masks' && Array.isArray(x)) for (const m of x as { id: string }[]) m.id = h.ids.next('msk');
 			// wp-m2-anime-templates (S11:ATP-006): template param keyframes are plain lists per param name.
 			if (k === 'paramKeyframes' && x && typeof x === 'object')
@@ -246,7 +234,7 @@ export function splitClipAt(seq: DSeq, clip: DClip, at: number, h: HandlerContex
 	}
 	clip.duration = at - clip.start;
 	seq.clips[right.id] = right as DClip;
-	// M2 (S11:TXA-005): the left part keeps the In animator, the right part the Out animator.
+	// the left part keeps the In animator, the right part the Out animator.
 	splitTextAnimation(clip, seq.clips[right.id]!);
 	if (clip.groupId && seq.groups[clip.groupId]) seq.groups[clip.groupId]!.members.push(right.id);
 	for (const t of valuesOf(seq.transitions)) {
@@ -514,15 +502,13 @@ export function shiftMarkers(seq: DSeq, at: number, delta: number): void {
 	seq.markers.sort((a, b) => a.frame - b.frame);
 }
 
-// ---------------------------------------------------------------- cleanup
-
 /**
  * Normalizes memberships after edits: drops dangling link/group members, dissolves groups with fewer
  * than two members, clears dangling `linkId`/`groupId`, and removes transitions whose clips vanished or
  * are no longer adjacent (S01:TRN-005, INV-007, INV-010).
  */
 export function cleanupSequence(seq: DSeq, h: HandlerContext): void {
-	// perf-core: on a sequence that passed the invariants, only what this transaction changed can need cleaning.
+	// on a sequence that passed the invariants, only what this transaction changed can need cleaning.
 	const scope = cleanupScope(seq);
 	for (const kind of ['links', 'groups'] as const) {
 		const field = kind === 'links' ? 'linkId' : 'groupId';

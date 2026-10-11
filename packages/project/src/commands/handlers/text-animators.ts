@@ -119,8 +119,6 @@ function reId(a: TextAnimatorGroup, h: HandlerContext): TextAnimatorGroup {
 	return copy;
 }
 
-// ---------------------------------------------------------------- presets
-
 /** Places a preset on a clip: start content time, flicks per preset second, snapping, loop end. */
 function presetContext(
 	seq: DSeq,
@@ -185,8 +183,6 @@ function applyPresetTo(
 	return groups;
 }
 
-// ---------------------------------------------------------------- Source Text view
-
 /** Parses a Source Text value (text content); throws with the first issue. */
 export function parseSourceText(v: unknown): TextContent {
 	const p = TextContentSchema.safeParse(v);
@@ -227,7 +223,7 @@ export function sourceTextDraftAnim(clip: DClip, h: HandlerContext | null): Draf
 		},
 	});
 	return {
-		get value(): unknown {
+		get value() {
 			return t.content;
 		},
 		set value(v: unknown) {
@@ -266,9 +262,7 @@ export function ensureMoreOptions(clip: DClip): void {
 	} as Draft<NonNullable<DText['moreOptions']>>;
 }
 
-// ---------------------------------------------------------------- handlers
-
-export const textAnimatorHandlers: HandlerMap = {
+export const textAnimatorHandlers = {
 	'font.add': (doc, cmd: CommandOf<'font.add'>, h) => {
 		const family = cmd.family.trim();
 		const existing = Object.values(doc.fonts).find((f) => f.family.toLowerCase() === family.toLowerCase());
@@ -493,7 +487,7 @@ export const textAnimatorHandlers: HandlerMap = {
 		}
 		return {};
 	},
-};
+} satisfies HandlerMap;
 
 /** Valid axis tags (also used by the MCP tool). */
 export const isAxisTag = (t: string) => AXIS_TAG.test(t);

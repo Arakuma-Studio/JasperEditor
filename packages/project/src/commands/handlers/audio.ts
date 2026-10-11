@@ -20,21 +20,18 @@ import {
 	writeLaneKeyframes,
 } from '../../audio/strip.ts';
 import { contentTimeAt } from '../../derive/index.ts';
-import { createTrack } from '../../factories.ts';
+import { anim, createTrack } from '../../factories.ts';
 import { EASE_PRESETS, evaluate } from '../../keyframes.ts';
 import { STRIP_LANES, type TrackSend } from '../../schema/audio.ts';
 import type { Animatable, Keyframe } from '../../schema/common.ts';
-import type { AudioClip, Clip, NestAudioClip, Track } from '../../schema/sequence.ts';
+import type { AudioClip, Clip, NestAudioClip } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
-import type { DDoc, DSeq, HandlerContext } from '../context.ts';
+import type { DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { type HandlerMap, idList } from './util.ts';
 
-type DTrack = Draft<Track>;
 type DAnim = Draft<Animatable<number>>;
-
-const anim = (v: number): Animatable<number> => ({ value: v, keyframes: [] });
 
 /** A strip of the sequence: the Mix (`track` null) or an audio / submix track draft. */
 function strip(
@@ -169,7 +166,7 @@ function contentAt(c: Clip, seqFlicks: number, rate: Rational): number {
 
 export const AUDIO_MIX_OWNER = 'audio-mix' as const;
 
-export const audioHandlers: HandlerMap = {
+export const audioHandlers = {
 	'mixer.updateStrip': (doc: DDoc, cmd: CommandOf<'mixer.updateStrip'>, h) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
 		const s = strip(seq, cmd.stripId, h);
@@ -540,7 +537,7 @@ export const audioHandlers: HandlerMap = {
 		seq.master.loudness = next as never;
 		return { loudness: next };
 	},
-};
+} satisfies HandlerMap;
 
 /** Linear interpolation of a sorted point list at `t` (held at the ends). */
 function interp(pts: readonly (readonly [number, number])[], t: number): number {

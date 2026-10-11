@@ -145,7 +145,7 @@ function boundEffects(doc: DDoc, ids: ReadonlySet<string>) {
 	return out;
 }
 
-export const rotoHandlers: HandlerMap = {
+export const rotoHandlers = {
 	'roto.add': (doc, cmd: CommandOf<'roto.add'>, h) => {
 		const { seq, clip } = h.clip(doc, cmd.clipId);
 		if (clip.kind !== 'video' && clip.kind !== 'still')
@@ -420,4 +420,4 @@ export const rotoHandlers: HandlerMap = {
 			);
 		return { trackerId: id, clipId: clip.id, frames: n, ...(applied ? { applied } : {}) };
 	},
-};
+} satisfies HandlerMap;

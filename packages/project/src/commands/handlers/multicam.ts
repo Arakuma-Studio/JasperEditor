@@ -45,7 +45,6 @@ import type {
 	Sequence,
 	SequenceSettings,
 	SyncMethod,
-	Track,
 	Transition,
 } from '../../schema/sequence.ts';
 import {
@@ -55,7 +54,7 @@ import {
 	type Rational,
 	supportsDropFrame,
 } from '../../time.ts';
-import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import type { DClip, DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
 import {
 	assertUnlocked,
 	cleanupSequence,
@@ -73,12 +72,8 @@ import {
 } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { placeSource } from './clip-core.ts';
-import { assertBin, insertItem } from './project.ts';
-import { type HandlerMap, idList } from './util.ts';
-
-type DTrack = Draft<Track>;
-
-const plain = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+import { assertBin, insertItem } from './project-items.ts';
+import { type HandlerMap, idList, clone as plain } from './util.ts';
 
 function syncSpec(cmd: {
 	method: SyncMethod;
@@ -102,8 +97,6 @@ function offsetsOrFail(sources: SyncSource[], ref: number, spec: SyncSpec, h: Ha
 		throw e;
 	}
 }
-
-// ---------------------------------------------------------------- Synchronize
 
 /** Timeline flicks at which a clip shows content time `t` (continuous; reverse-aware). */
 function timelineFlicksOf(c: Clip, t: number, F: number): number {
@@ -201,8 +194,6 @@ function synchronize(doc: DDoc, cmd: CommandOf<'clip.synchronize'>, h: HandlerCo
 	cleanupSequence(seq, h);
 	return { moved, referenceClipId: (units[ref]!.rep as Clip).id, clips: report };
 }
-
-// ---------------------------------------------------------------- shared by Merge Clips / Create Multi-Camera
 
 type ItemSource = NonNullable<ReturnType<typeof itemSyncSource>> & {
 	asset: MediaAsset;
@@ -324,8 +315,6 @@ function newSequenceItem(
 	return { seq: doc.sequences[seq.id]!, itemId };
 }
 
-// ---------------------------------------------------------------- Merge Clips
-
 function mergeClips(doc: DDoc, cmd: CommandOf<'item.mergeClips'>, h: HandlerContext) {
 	assertBin(doc, cmd.binId, h);
 	const fallback = (
@@ -398,8 +387,6 @@ function mergeClips(doc: DDoc, cmd: CommandOf<'item.mergeClips'>, h: HandlerCont
 		})),
 	};
 }
-
-// ---------------------------------------------------------------- Create Multi-Camera Source Sequence
 
 function processedBin(doc: DDoc, h: HandlerContext): string {
 	for (const id of doc.rootItems) {
@@ -530,27 +517,6 @@ function createMulticam(doc: DDoc, cmd: CommandOf<'multicam.create'>, h: Handler
 		})),
 	};
 }
-
-// ---------------------------------------------------------------- placing multi-camera sources
-
-/**
- * Nest clips just placed from a multi-camera source become enabled multi-camera clips showing camera 1 (audio clips:
- * the same angle; what they play follows the source's audio mode).
- */
-export function markMulticamClips(seq: DSeq, clipIds: readonly string[], mc: MulticamSource): void {
-	const first = firstVideoAngle(mc) ?? mc.angles[0];
-	if (!first) return;
-	for (const id of clipIds) {
-		const c = seq.clips[id];
-		if (c && (c.kind === 'nest-video' || c.kind === 'nest-audio'))
-			(c as Draft<{ multicam?: { enabled: boolean; angle: string } }>).multicam = {
-				enabled: true,
-				angle: first.id,
-			};
-	}
-}
-
-// ---------------------------------------------------------------- multi-camera clips in a sequence
 
 function sourceOfClip(doc: DDoc, c: Clip, h: HandlerContext): { src: DSeq; mc: MulticamSource } {
 	const id = (c as { sequenceId?: string }).sequenceId;
@@ -835,8 +801,6 @@ function record(doc: DDoc, cmd: CommandOf<'multicam.record'>, h: HandlerContext)
 	});
 }
 
-// ---------------------------------------------------------------- Enable / Flatten / Edit Cameras
-
 function setEnabled(doc: DDoc, cmd: CommandOf<'multicam.setEnabled'>, h: HandlerContext) {
 	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
 	const targets = new Map<string, DClip>();
@@ -1021,7 +985,7 @@ function editAngles(doc: DDoc, cmd: CommandOf<'multicam.editAngles'>, h: Handler
 	return { angles: plain(mc.angles) };
 }
 
-export const multicamHandlers: HandlerMap = {
+export const multicamHandlers = {
 	'clip.synchronize': synchronize,
 	'item.mergeClips': mergeClips,
 	'multicam.create': createMulticam,
@@ -1030,4 +994,4 @@ export const multicamHandlers: HandlerMap = {
 	'multicam.setEnabled': setEnabled,
 	'multicam.flatten': flatten,
 	'multicam.editAngles': editAngles,
-};
+} satisfies HandlerMap;

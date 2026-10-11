@@ -108,7 +108,7 @@ export function applyCompositionPatch(
 	return true;
 }
 
-export const compositionHandlers: HandlerMap = {
+export const compositionHandlers = {
 	'clip.addComposition': (doc, cmd: CommandOf<'clip.addComposition'>, h: HandlerContext) => {
 		const info = requireComposition(doc, cmd.composition, h);
 		const overrides = cmd.props ?? {};
@@ -167,4 +167,4 @@ export const compositionHandlers: HandlerMap = {
 		h.defineRef(cmd.ref, id);
 		return { clipId: id, durationFrames: duration, compositionFrames: total };
 	},
-};
+} satisfies HandlerMap;

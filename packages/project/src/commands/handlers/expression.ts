@@ -73,7 +73,7 @@ function holder(doc: DDoc, cmd: { target: string[]; sequenceId?: string }, h: Ha
 	return target.anim as unknown as Draft<Holder>;
 }
 
-export const expressionHandlers: HandlerMap = {
+export const expressionHandlers = {
 	'expression.set': (doc, cmd: CommandOf<'expression.set'>, h: HandlerContext) => {
 		const o = holder(doc, cmd, h);
 		if (cmd.text.trim() === '') {
@@ -108,4 +108,4 @@ export const expressionHandlers: HandlerMap = {
 		else delete loc.fx.name;
 		return { name: name || null };
 	},
-};
+} satisfies HandlerMap;

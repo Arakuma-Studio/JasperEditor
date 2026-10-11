@@ -28,7 +28,7 @@ import { type Rational, secondsToFrames } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, cleanupSequence, ensureTrackAt, findTrackIn, trackClips } from '../placement.ts';
 import type { CommandOf, ParamAt } from '../schemas/index.ts';
-import { commonFields, newGeneratorClip } from './clip-core.ts';
+import { commonFields, newGeneratorClip } from './clip-common.ts';
 import { paramHandlers } from './param.ts';
 import { type HandlerMap, idList } from './util.ts';
 
@@ -234,7 +234,7 @@ function placeRig(
 	const duration = rigDuration(seq, h, at, cmd.duration);
 	const track = rigTrack(seq, h, at, duration, cmd.track);
 	// newGeneratorClip checks the track (video, unlocked), allocates the id and clears the range.
-	const g = newGeneratorClip(doc, { ...cmd, at, duration, track, sequenceId: seq.id }, h, kind as never);
+	const g = newGeneratorClip(doc, { ...cmd, at, duration, track, sequenceId: seq.id }, h, kind);
 	const n = Object.values(seq.clips).filter((c) => c.kind === kind).length + 1;
 	const name = cmd.name ?? (kind === 'camera' ? `Camera ${n}` : `Light ${n}`);
 	const common = commonFields(g.id, g.track.id, g.at, g.duration, 0, name, 'rose');
@@ -323,7 +323,7 @@ function cameraTool(
 	return { position: r.eye, pointOfInterest: r.poi };
 }
 
-export const threeDHandlers: HandlerMap = {
+export const threeDHandlers = {
 	'clip.set3d': (doc, cmd: CommandOf<'clip.set3d'>, h: HandlerContext) => {
 		const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
 		const changed: string[] = [];
@@ -399,4 +399,4 @@ export const threeDHandlers: HandlerMap = {
 		seq.threeD = next as never;
 		return { threeD: next };
 	},
-};
+} satisfies HandlerMap;

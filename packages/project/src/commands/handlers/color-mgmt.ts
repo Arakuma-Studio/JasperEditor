@@ -89,7 +89,7 @@ function patchInterpretation(
 	if (patch.ocio && target.space) delete target.space;
 }
 
-export const colorMgmtHandlers: HandlerMap = {
+export const colorMgmtHandlers = {
 	'media.interpretColor': (doc, cmd, h) => {
 		for (const id of new Set(cmd.mediaIds)) {
 			const asset = doc.media[id] as Draft<MediaAsset> | undefined;
@@ -131,4 +131,4 @@ export const colorMgmtHandlers: HandlerMap = {
 		}
 		return { clipIds: ids };
 	},
-};
+} satisfies HandlerMap;

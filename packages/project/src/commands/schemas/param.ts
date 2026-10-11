@@ -137,12 +137,12 @@ export const TransitionAddCmd = cmd('transition.add', {
 });
 export const TransitionUpdateCmd = cmd('transition.update', {
 	transitionId: IdRefSchema,
-	/** M2 (S10:TUI-040): change the type; a video transition stays video, an audio one audio. */
+	/** change the type; a video transition stays video, an audio one audio. */
 	effectId: z.string().min(1).optional(),
 	duration: z.number().int().min(1).optional(),
 	alignment: z.enum(['center', 'start-at-cut', 'end-at-cut']).optional(),
 	/**
-	 * edit-structure: `freeze` lets a video transition keep its duration with too few media frames (the edge frames
+	 * `freeze` lets a video transition keep its duration with too few media frames (the edge frames
 	 * repeat, `freezeHandles`); `shorten` fits it to the media. Default: what the transition has.
 	 */
 	handles: z.enum(['shorten', 'freeze']).optional(),
@@ -156,7 +156,7 @@ export const TransitionRemoveCmd = cmd('transition.remove', { transitionIds: z.a
 export const TransitionApplyDefaultCmd = cmd('transition.applyDefault', {
 	clipIds: z.union([z.array(IdRefSchema).min(1), z.literal('$selection')]),
 	edges: z.enum(['both', 'in', 'out']),
-	/** M2 (S10:TUI-030): which tracks' clips get one (default ['video']). */
+	/** which tracks' clips get one (default ['video']). */
 	media: z
 		.array(z.enum(['video', 'audio']))
 		.min(1)
@@ -166,9 +166,9 @@ export const TransitionApplyDefaultCmd = cmd('transition.applyDefault', {
 	audioEffectId: z.string().min(1).optional(),
 	/** M2: duration override (default: the project's default length of each medium, S10:TUI-032). */
 	duration: z.number().int().min(1).optional(),
-	/** M3 (S10:TUI-033): alignment of the two-sided ones (default center); fades keep their fixed alignment. */
+	/** alignment of the two-sided ones (default center); fades keep their fixed alignment. */
 	alignment: z.enum(['center', 'start-at-cut', 'end-at-cut']).optional(),
-	/** edit-structure: `freeze` = video transitions keep their length with repeated frames (Premiere's default). */
+	/** `freeze` = video transitions keep their length with repeated frames (Premiere's default). */
 	handles: z.enum(['shorten', 'freeze']).optional(),
 });
 

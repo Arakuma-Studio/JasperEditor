@@ -159,8 +159,6 @@ export const SequenceSet3dRendererCmd = cmd('sequence.set3dRenderer', {
 	supersampling: z.number().int().min(1).max(4).optional(),
 });
 
-// ---------------------------------------------------------------- 3D Camera Tracker
-
 const trackerSettingsShape = {
 	shot: z.enum(CAMERA_TRACKER_SHOT_TYPES).optional(),
 	hfov: finite().min(1).max(170).optional(),

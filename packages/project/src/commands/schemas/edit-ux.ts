@@ -1,4 +1,4 @@
-// edit-ux: editorial commands — three- and four-point editing from a source (with backtiming, Fit Clip choices,
+// editorial commands — three- and four-point editing from a source (with backtiming, Fit Clip choices,
 // split edits, sequences as sources), multi-edit-point keyboard trims, and subclips.
 import { z } from 'zod';
 import {

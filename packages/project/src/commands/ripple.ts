@@ -1,4 +1,4 @@
-// edit-ux: ripple edits that keep split edits (J and L cuts) in sync. One ripple trim of a group of edges
+// ripple edits that keep split edits (J and L cuts) in sync. One ripple trim of a group of edges
 // (a clip and its linked partners, or a multi-edit-point keyboard trim), ripple delete of clips whose sound and
 // picture have different edges, and the shared content window (media handles, subclip limits) that bounds trims.
 //
@@ -30,8 +30,6 @@ import {
 	trackClips,
 } from './placement.ts';
 
-// ---------------------------------------------------------------- content window
-
 /**
  * The content time a clip may show, in flicks: `[start, end)`. `end` is null for unbounded content. Media
  * clips are bounded by the media; clips placed from a subclip with "Restrict Trims to Subclip Boundaries" by the
@@ -39,7 +37,7 @@ import {
  */
 export function contentWindow(doc: DDoc, c: DClip | Clip): { start: number; end: number | null } {
 	let dur = contentDurationFlicks(doc, c as Clip);
-	// edit-ux: a nested sequence is bounded by its content (last clip end).
+	// a nested sequence is bounded by its content (last clip end).
 	const nested = (c as { sequenceId?: string }).sequenceId;
 	if ((c.kind === 'nest-video' || c.kind === 'nest-audio') && nested && doc.sequences[nested]) {
 		const ns = doc.sequences[nested]!;
@@ -123,8 +121,6 @@ export function trimLimits(
 	}
 	return { min, max };
 }
-
-// ---------------------------------------------------------------- ripple trim of a group of edges
 
 export type RippleMember = { clip: DClip; edge: 'in' | 'out' };
 
@@ -307,8 +303,6 @@ export function rippleTrimGroup(
 	}
 	return d;
 }
-
-// ---------------------------------------------------------------- ripple delete
 
 type Span = { start: number; end: number };
 

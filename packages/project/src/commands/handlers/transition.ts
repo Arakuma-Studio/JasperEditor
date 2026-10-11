@@ -240,7 +240,7 @@ function addTransition(doc: DDoc, a: AddArgs, h: HandlerContext) {
 	};
 }
 
-export const transitionHandlers: HandlerMap = {
+export const transitionHandlers = {
 	'transition.add': (doc, cmd, h) => {
 		let seq: DSeq;
 		let trackId: string;
@@ -301,7 +301,7 @@ export const transitionHandlers: HandlerMap = {
 		const { seq, t } = locate(doc, cmd.transitionId, h);
 		const track = trackOf(seq, t.trackId, h);
 		assertUnlocked(track, h);
-		// M2 (S10:TUI-050): change the type within the same medium; the duration is re-fitted below.
+		// change the type within the same medium; the duration is re-fitted below.
 		let effectId = t.effectId;
 		if (cmd.effectId !== undefined && cmd.effectId !== t.effectId) {
 			const spec = specOf(cmd.effectId, h);
@@ -370,7 +370,7 @@ export const transitionHandlers: HandlerMap = {
 		const ids = cmd.clipIds === '$selection' ? [] : cmd.clipIds;
 		if (ids.length === 0) h.fail('E_INVALID_PARAM', 'No clips given');
 		const { seq, clips } = h.clipsOf(doc, ids);
-		// M2 (S10:TUI-030/051): media, the user's default transitions and a duration override.
+		// media, the user's default transitions and a duration override.
 		const media = new Set(cmd.media ?? ['video']);
 		const effectFor = {
 			video: cmd.videoEffectId ?? CROSS_DISSOLVE,
@@ -437,4 +437,4 @@ export const transitionHandlers: HandlerMap = {
 		}
 		return { transitionIds: created };
 	},
-};
+} satisfies HandlerMap;

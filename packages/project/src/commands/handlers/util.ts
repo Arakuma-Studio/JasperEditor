@@ -1,27 +1,13 @@
-// Small helpers shared by handler files.
-
-import { isDraft } from 'immer';
-import type { DDoc, HandlerContext } from '../context.ts';
+import { current, type Draft, isDraft } from 'immer';
+import type { EffectInstance } from '../../schema/sequence.ts';
+import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { latest } from '../draft-read.ts';
 import type { CommandOf, CommandType } from '../schemas/index.ts';
 
+export type ClipEffectLocation = { seq: DSeq; clip: DClip; fx: Draft<EffectInstance> };
+
 export type Handler<T extends CommandType> = (doc: DDoc, cmd: CommandOf<T>, h: HandlerContext) => unknown;
 export type HandlerMap = { [T in CommandType]?: Handler<T> };
-
-const STUBS = new WeakSet<object>();
-
-/** Handler for a command whose implementation belongs to another work package or milestone. */
-export function notImplemented<T extends CommandType>(type: T, owner: string): Handler<T> {
-	const stub: Handler<T> = (_doc, _cmd, h) =>
-		h.fail('E_NOT_IMPLEMENTED', `${type} is not implemented yet (${owner})`);
-	STUBS.add(stub);
-	return stub;
-}
-
-/** True when the handler is a `notImplemented()` stub (drives `implemented` in the agent schema). */
-export function isNotImplementedHandler(handler: unknown): boolean {
-	return typeof handler === 'function' && STUBS.has(handler);
-}
 
 /** Resolved id list (after `$selection` substitution the schema's union is always an array). */
 export function idList(v: readonly string[] | '$selection' | undefined): string[] {
@@ -39,7 +25,7 @@ export function idList(v: readonly string[] | '$selection' | undefined): string[
  * read-only scans; access the found path normally to mutate.
  */
 export function peek<T>(obj: object, key: string | number): T | undefined {
-	// perf-core: the draft's current object read directly (draft-read.ts `latest`): the same value as the trap
+	// the draft's current object read directly (draft-read.ts `latest`): the same value as the trap
 	// reports, without a trap call per read.
 	const raw = latest(obj) as Record<string | number, unknown>;
 	return Object.hasOwn(raw, key) ? (raw[key] as T) : undefined;
@@ -61,4 +47,8 @@ export function memoPlain<T>(cache: WeakMap<object, T>, obj: object, compute: ()
 		cache.set(obj, v);
 	}
 	return v;
+}
+
+export function clone<T>(value: T): T {
+	return JSON.parse(JSON.stringify(isDraft(value) ? current(value as Draft<T>) : value)) as T;
 }

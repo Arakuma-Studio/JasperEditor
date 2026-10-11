@@ -3,19 +3,19 @@
 // Semantics follow Premiere Pro and S01 (SEQ-010/011, CLP-012, AST-010, KND-011/012); the algorithms port FilmCraft
 // `crates/edit/src/{lib,through,multicam}.rs` and `crates/engine/src/{commands,clip_ops,sequence_tools}.rs`
 // (MIT OR Apache-2.0, see licenses/ported/edit-structure.md).
-import { current, type Draft, isDraft } from 'immer';
+import type { Draft } from 'immer';
 import { clipEnd, contentTimeAt, isThroughEdit } from '../../derive/index.ts';
 import { anim, createSequence, defaultTransform } from '../../factories.ts';
 import { TRACK_MATTE_EFFECT_ID } from '../../masks/track-matte.ts';
 import { contentDurationFlicks, isBoundedContent, kindCapabilities } from '../../registry/kinds.ts';
 import type { ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
-import type { Clip, Sequence, Track, TrackKind, Transition } from '../../schema/sequence.ts';
+import type { Clip, Sequence, TrackKind, Transition } from '../../schema/sequence.ts';
 import { conformSequenceRate, isNestClip, wouldCreateNestCycle } from '../../structure/nest.ts';
 import { SYNTHETIC_INFO, syntheticFromParams } from '../../structure/synthetic.ts';
 import { clipToRange } from '../../structure/through.ts';
 import { flicksPerFrame, type Rational, rationalEquals } from '../../time.ts';
-import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import type { DClip, DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
 import {
 	allTracksIn,
 	assertUnlocked,
@@ -35,15 +35,12 @@ import {
 	tracksOfKind,
 } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
-import { commonFields, frameBox, makeRoom, newGeneratorClip, visualFields } from './clip-core.ts';
-import { insertItem, projectHandlers } from './project.ts';
-import { type HandlerMap, idList } from './util.ts';
+import { commonFields, frameBox, makeRoom, newGeneratorClip, visualFields } from './clip-common.ts';
+import { projectHandlers } from './project.ts';
+import { insertItem } from './project-items.ts';
+import { type HandlerMap, idList, clone as plain } from './util.ts';
 
 export const STRUCTURE_OWNER = 'edit-structure' as const;
-
-type DTrack = Draft<Track>;
-
-const plain = <T>(v: T): T => JSON.parse(JSON.stringify(isDraft(v) ? current(v as Draft<T>) : v)) as T;
 
 /** The project item of a sequence and the bin holding it (null = root). */
 function sequenceItem(doc: DDoc, seqId: string): { itemId: string | null; binId: string | null } {
@@ -219,7 +216,7 @@ function dropForeignTracking(seq: DSeq, h: HandlerContext): void {
 }
 
 /**
- * wp masks: Track Matte Keys of clips that moved or were copied into another track layout read the track `map`
+ * Track Matte Keys of clips that moved or were copied into another track layout read the track `map`
  * gives for the track they read before; a track that did not come along (or became the clip's own) is cleared with
  * `W_TRACK_MATTE_CLEARED` (Premiere: the Matte popup then says None).
  */
@@ -269,8 +266,6 @@ function trackRange(seq: DSeq, trackId: string): { kind: TrackKind; index: numbe
 	const f = findTrackIn(seq, trackId)!;
 	return { kind: f.kind, index: f.index };
 }
-
-// ---------------------------------------------------------------- clip.nest (S01:SEQ-010)
 
 function nestHandler(doc: DDoc, cmd: CommandOf<'clip.nest'>, h: HandlerContext) {
 	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
@@ -368,8 +363,6 @@ function nestHandler(doc: DDoc, cmd: CommandOf<'clip.nest'>, h: HandlerContext) 
 	return { sequenceId: nid, itemId: nestedItem, clipIds: created };
 }
 
-// ---------------------------------------------------------------- clip.unnest
-
 function isIdentityMotion(c: Clip, seq: DSeq, box: { width: number; height: number }): boolean {
 	const t = (
 		c as { transform?: Clip extends never ? never : Record<string, { value: unknown; keyframes: unknown[] }> }
@@ -417,7 +410,7 @@ function unnestHandler(doc: DDoc, cmd: CommandOf<'clip.unnest'>, h: HandlerConte
 					'E_INVALID_PARAM',
 					`Clip ${n.id} has Motion or Opacity changes that cannot be moved onto its clips (reset them first)`,
 				);
-			// wp masks: masks are in the nest clip's layer space (and their ids are unique); they cannot be moved.
+			// masks are in the nest clip's layer space (and their ids are unique); they cannot be moved.
 			if (
 				((r.masks as unknown[] | undefined)?.length ?? 0) > 0 ||
 				((r.effects as { masks?: unknown[] }[] | undefined) ?? []).some((fx) => (fx.masks?.length ?? 0) > 0)
@@ -519,8 +512,6 @@ function unnestHandler(doc: DDoc, cmd: CommandOf<'clip.unnest'>, h: HandlerConte
 	cleanupSequence(seq, h);
 	return { clipIds: created };
 }
-
-// ---------------------------------------------------------------- placing a sequence
 
 export type SequencePlaceOptions = {
 	sequenceId: string;
@@ -752,8 +743,6 @@ function placeIndividually(
 	return { clipIds: ids, linkId: null };
 }
 
-// ---------------------------------------------------------------- frame holds
-
 const VIDEO_TRACK_KINDS = (c: { kind: string }) =>
 	kindCapabilities(c.kind)?.trackKind === 'video' && c.kind !== 'adjustment';
 
@@ -870,8 +859,6 @@ function frameHoldOptions(doc: DDoc, cmd: CommandOf<'clip.frameHoldOptions'>, h:
 	return { clips: out };
 }
 
-// ---------------------------------------------------------------- through edits, subsequences
-
 function joinThroughEdits(doc: DDoc, cmd: CommandOf<'sequence.joinThroughEdits'>, h: HandlerContext) {
 	let seq: DSeq;
 	let only: Set<string> | null = null;
@@ -985,8 +972,6 @@ function makeSubsequence(doc: DDoc, cmd: CommandOf<'sequence.makeSubsequence'>, 
 	h.defineRef(cmd.ref, sub.id);
 	return { sequenceId: sub.id, itemId, clipIds: placed.map((p) => p.clip.id) };
 }
-
-// ---------------------------------------------------------------- sequences, project items
 
 /** A deep copy of a sequence in the same project: new ids for every entity inside, shared media (SEQ-011). */
 function duplicateSequence(src: Sequence, h: HandlerContext): Sequence {
@@ -1111,9 +1096,7 @@ function removeUnused(doc: DDoc, cmd: CommandOf<'media.removeUnused'>, h: Handle
 	return { removed: doomed, itemIds: doomed };
 }
 
-// ---------------------------------------------------------------- handlers
-
-export const structureHandlers: HandlerMap = {
+export const structureHandlers = {
 	'clip.nest': nestHandler,
 	'clip.unnest': unnestHandler,
 	'clip.addAdjustment': (doc, cmd, h: HandlerContext) => {
@@ -1236,4 +1219,4 @@ export const structureHandlers: HandlerMap = {
 		doc.synthetics[base.id] = source as Draft<SyntheticSource>;
 		return { syntheticId: base.id };
 	},
-};
+} satisfies HandlerMap;

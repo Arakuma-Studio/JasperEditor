@@ -1,4 +1,3 @@
-// Workstream gaps (docs/wp-notes/gaps.md): proxies (PRJ-8) and the other gaps commands added below.
 import { z } from 'zod';
 import { ALIGN_MODES, GraphicRollSchema, GraphicTemplateSchema, PIN_EDGES } from '../../gaps/graphics.ts';
 import { WarpAnalysisDataSchema } from '../../gaps/warp/analysis.ts';

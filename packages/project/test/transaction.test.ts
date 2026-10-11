@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { COMMAND_CATALOG } from '../src/commands/catalog.ts';
-import { isNotImplementedHandler } from '../src/commands/handlers/util.ts';
 import {
 	applyTransaction,
 	createCounterIdSource,
@@ -21,6 +19,35 @@ const solid = (at: number, duration: number, track: string) => ({
 });
 
 describe('transactions (S01 §16)', () => {
+	it('rejects non-string command types without serializing untrusted values', () => {
+		const h = new Harness();
+		const before = h.doc;
+		const cyclic: { self?: object } = {};
+		cyclic.self = cyclic;
+		for (const type of [1n, cyclic, Symbol('command')]) {
+			expect(h.tx([{ type }])).toMatchObject({
+				ok: false,
+				errors: [{ code: 'E_SCHEMA', commandIndex: 0 }],
+			});
+			expect(h.doc).toBe(before);
+		}
+	});
+
+	it('reports a throwing transaction getter without losing the project', () => {
+		const h = new Harness();
+		const input = {
+			get label() {
+				throw new Error('unreadable transaction');
+			},
+		};
+		const outcome = applyTransaction(h.doc, input, h.ctx());
+		expect(outcome.document).toBe(h.doc);
+		expect(outcome.result).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_INTERNAL', commandIndex: -1, message: 'unreadable transaction' }],
+		});
+	});
+
 	it('AC-09: a failing third command applies nothing and reports commandIndex 2', () => {
 		const h = new Harness();
 		const before = h.doc;
@@ -157,13 +184,6 @@ describe('transactions (S01 §16)', () => {
 });
 
 describe('catalog (ARCHITECTURE §5.3)', () => {
-	it('every declared command is implemented (no E_NOT_IMPLEMENTED stubs left)', () => {
-		const stubs = Object.values(COMMAND_CATALOG)
-			.filter((e) => isNotImplementedHandler(e.handler))
-			.map((e) => e.type);
-		expect(stubs).toEqual([]);
-	});
-
 	it('exports command and template argument constraints as JSON Schema (S01:AGT-002)', () => {
 		const tpl = createStaticMgRegistry([
 			{

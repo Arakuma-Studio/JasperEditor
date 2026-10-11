@@ -1,4 +1,3 @@
-// Command API types (S01 §16, ARCHITECTURE §5.3).
 import type { IdSource } from '../ids.ts';
 import type { PresetRegistry } from '../presets.ts';
 import type { EffectRegistry } from '../registry/effects.ts';
@@ -45,19 +44,19 @@ export const WARNING_CODES = [
 	'W_LAYOUT_PENDING',
 	'W_DEDUPED',
 	'W_VALUE_CLAMPED',
-	/** M2 (S11:TXA-004): in + out text animators exceed the clip and are scaled at render time. */
+	/** in + out text animators exceed the clip and are scaled at render time. */
 	'W_ANIMATION_COMPRESSED',
-	/** M2 (S11:ATP-009, wp-m2-anime-templates): a template upgrade dropped keyframes of params it removed. */
+	/** a template upgrade dropped keyframes of params it removed. */
 	'W_KEYFRAMES_DROPPED',
 	/** wp-clipboard (S01:CLB-008): a pasted clip, item or keyframe track had nothing to land on and was skipped. */
 	'W_CLIP_SKIPPED',
-	/** edit-structure: a video transition keeps its length with repeated frames (freeze-frame handles). */
+	/** a video transition keeps its length with repeated frames (freeze-frame handles). */
 	'W_TRANSITION_FREEZE_FRAMES',
-	/** edit-structure: a nested sequence of another frame rate was conformed (cuts move by up to half a frame). */
+	/** a nested sequence of another frame rate was conformed (cuts move by up to half a frame). */
 	'W_CONFORMED',
-	/** edit-structure: Unnest copied the nest clip's effects onto each clip it showed. */
+	/** Unnest copied the nest clip's effects onto each clip it showed. */
 	'W_EFFECTS_DISTRIBUTED',
-	/** edit-structure: a tracker link between clips that ended up in different sequences was removed. */
+	/** a tracker link between clips that ended up in different sequences was removed. */
 	'W_TRACKING_UNLINKED',
 	/** edit-structure × wp masks: a Track Matte Key's track did not come along into the other sequence (cleared). */
 	'W_TRACK_MATTE_CLEARED',
@@ -115,7 +114,7 @@ export interface CommandContext {
 	/** Run the invariant checker after the transaction (default true). Gestures may skip it in prod. */
 	checkInvariants?: boolean;
 	/**
-	 * perf-core: how invariants are checked — `incremental` (only what the transaction changed; production default),
+	 * how invariants are checked — `incremental` (only what the transaction changed; production default),
 	 * `full`, or `verify` (both, must agree; the default under tests). Default: `invariantMode()`.
 	 */
 	invariants?: 'full' | 'incremental' | 'verify';

@@ -8,7 +8,7 @@ import type { DDoc, HandlerContext } from '../context.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { captionHandlers } from './captions.ts';
 import { insertProjectItems } from './clipboard.ts';
-import { insertItem } from './project.ts';
+import { insertItem } from './project-items.ts';
 import type { HandlerMap } from './util.ts';
 
 export const INTERCHANGE_OWNER = 'wp-interchange';
@@ -30,7 +30,7 @@ const FragmentCaptionsSchema = z.looseObject({
 		.max(100_000),
 });
 
-function importTimeline(doc: DDoc, cmd: CommandOf<'project.importTimeline'>, h: HandlerContext): unknown {
+function importTimeline(doc: DDoc, cmd: CommandOf<'project.importTimeline'>, h: HandlerContext) {
 	const f = cmd.fragment as Record<string, unknown>;
 	const arr = (k: string) => (Array.isArray(f[k]) ? (f[k] as unknown[]) : []);
 	const rootItems = arr('rootItems');
@@ -109,6 +109,6 @@ function importTimeline(doc: DDoc, cmd: CommandOf<'project.importTimeline'>, h: 
 	return { ...r, binId: createdBin ?? cmd.binId ?? null, topSequenceIds, captionTrackIds };
 }
 
-export const interchangeHandlers: HandlerMap = {
+export const interchangeHandlers = {
 	'project.importTimeline': importTimeline,
-};
+} satisfies HandlerMap;
