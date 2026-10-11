@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineJob, EventEnvelope } from '@jasper/api';
+import fc from 'fast-check';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Broadcaster } from '../src/events/broadcaster.ts';
 import { JobQueue } from '../src/jobs/queue.ts';
@@ -281,6 +282,20 @@ describe('cancellation (S04:JB-020, QA-007)', () => {
 });
 
 describe('journal and restart recovery (S04:JB-030, QA-008)', () => {
+	it('does not restore malformed journal records as runnable jobs', async () => {
+		await fc.assert(
+			fc.asyncProperty(fc.jsonValue(), async (invalid) => {
+				const dir = tempAppdir('jasper-invalid-journal-');
+				const journal = join(dir, 'jobs.jsonl');
+				writeFileSync(journal, JSON.stringify({ job: { id: 'job_invalid', invalid }, input: null }));
+				const q = makeQueue({ journal });
+				q.start();
+				expect(q.list()).toEqual([]);
+			}),
+			{ numRuns: 20 },
+		);
+	});
+
 	it('marks a running job interrupted after a crash, restores queued jobs and re-queues artifact jobs', async () => {
 		const dir = tempAppdir('jasper-journal-');
 		mkdirSync(dir, { recursive: true });

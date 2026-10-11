@@ -6,7 +6,14 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdir, rm } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { dirname, join } from 'node:path';
-import { type EngineJob, type JobKind, RETRYABLE_CODES, TERMINAL_JOB_STATES } from '@jasper/api';
+import {
+	type EngineJob,
+	EngineJobSchema,
+	type JobKind,
+	RETRYABLE_CODES,
+	TERMINAL_JOB_STATES,
+} from '@jasper/api';
+import { z } from 'zod';
 import type { Broadcaster } from '../events/broadcaster.ts';
 import { randomId } from '../tools/fs.ts';
 import { terminateTree } from '../tools/process.ts';
@@ -60,7 +67,12 @@ type JobQueueOptions = {
 	onError?(e: unknown): void;
 };
 
-type JournalRecord = { job: EngineJob; input: unknown; requeued?: boolean };
+const JournalRecordSchema = z.object({
+	job: EngineJobSchema,
+	input: z.unknown().optional(),
+	requeued: z.boolean().optional(),
+});
+type JournalRecord = z.infer<typeof JournalRecordSchema>;
 
 type JobListFilter = { active?: boolean; projectId?: string; since?: string; kind?: JobKind };
 
@@ -529,11 +541,14 @@ export class JobQueue {
 		for (const line of text.split('\n')) {
 			if (!line.trim()) continue;
 			try {
-				const rec = JSON.parse(line) as JournalRecord;
-				if (rec?.job?.id) {
-					latest.delete(rec.job.id); // keep insertion order = last write order
-					latest.set(rec.job.id, rec);
+				const parsed = JournalRecordSchema.safeParse(JSON.parse(line));
+				if (!parsed.success) {
+					this.opts.onError?.(parsed.error);
+					continue;
 				}
+				const rec = parsed.data;
+				latest.delete(rec.job.id); // keep insertion order = last write order
+				latest.set(rec.job.id, rec);
 			} catch {
 				// torn last line after a crash: skip
 			}
