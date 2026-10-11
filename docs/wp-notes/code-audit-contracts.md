@@ -82,3 +82,6 @@ the client rather than letting the response parser discard them. Omitted warning
 clients can also consume engines that do not provide this additive field. The engine and session/UI owners
 implement journal isolation and warning presentation; the API contract regression verifies that candidates and
 warnings survive together and that omitted warnings remain compatible.
+
+`pnpm vitest run packages/api/test/recovery-contract.test.ts --maxWorkers=1` passed (one test). Biome and
+`git diff --check` also passed for the follow-up.
