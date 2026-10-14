@@ -28,9 +28,17 @@ function fakes(ok: boolean) {
 		},
 	};
 	const engine = {
-		analyzeAudio: async () => ({ state: 'succeeded', result: { sampleRate: 48000, loudness, mixHash: 'h1' } }),
+		analyzeAudio: async () => ({
+			state: 'succeeded',
+			result: { sampleRate: 48000, loudness, mixHash: 'h1' },
+		}),
 	};
-	return { session: session as never, engine: engine as never, applied, seqId: Object.keys(doc.sequences)[0]! };
+	return {
+		session: session as never,
+		engine: engine as never,
+		applied,
+		seqId: Object.keys(doc.sequences)[0]!,
+	};
 }
 
 describe('analyzeSequenceLoudness', () => {
