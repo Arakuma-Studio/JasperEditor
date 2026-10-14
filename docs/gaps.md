@@ -110,7 +110,7 @@ Audio Channels maps channels, and exports match the preview mix (sample-level or
 pitch shifter, channel volume) apply to clips and tracks with keyframes in preview and export, exponential fades
 join the crossfades, and loudness normalisation (EBU R128 / ITU-R BS.1770, checked against ffmpeg `ebur128`) and
 auto-ducking work as in Essential Sound.
-**Status (merged):** done — see [wp-notes/audio-fx.md](wp-notes/audio-fx.md): 60 audio effects in one DSP (D-42), Exponential Fade, Essential Sound, Music Remix, auto-ducking (`packages/audio-fx/test/*`, `e2e/audio-fx.spec.ts`). Limits: preview latency of track inserts is not compensated (export is).
+**Status (merged):** done — see [wp-notes/audio-fx.md](wp-notes/audio-fx.md): 60 audio effects in one DSP (D-42), Exponential Fade, Essential Sound, Music Remix, auto-ducking (`packages/audio-fx/test/*`, `e2e/audio-fx.spec.ts`). Limits: preview latency of track inserts is not compensated (export is); Remix analyses at most 30 min of music. Sound-design Phase 0 fixed 23 audio-core defects with regression tests ([wp-notes/sound-design.md](wp-notes/sound-design.md) §WP0.2).
 
 ### captions
 **Done when:** caption tracks can be created, edited and styled in the timeline and Program monitor, import and export
