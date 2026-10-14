@@ -88,7 +88,11 @@ describe('preview latency plan (track / submix / Mix inserts)', () => {
 		const mix: RenderAudioMix = {
 			sampleRate: SR,
 			masterFormat: 'stereo',
-			strips: [strip('A1', 'track', { inserts: [fxLat('f1', 256)] }), strip('A2', 'track'), strip('master', 'master')],
+			strips: [
+				strip('A1', 'track', { inserts: [fxLat('f1', 256)] }),
+				strip('A2', 'track'),
+				strip('master', 'master'),
+			],
 			loudness: null,
 		};
 		const plan = planMixLatency(mix, latencyOf);
@@ -147,10 +151,12 @@ describe('preview latency plan (track / submix / Mix inserts)', () => {
 					'master',
 				];
 				const strips = ids.map((id, i) => {
-					const kind: RenderStrip['kind'] = id === 'master' ? 'master' : id.startsWith('S') ? 'submix' : 'track';
+					const kind: RenderStrip['kind'] =
+						id === 'master' ? 'master' : id.startsWith('S') ? 'submix' : 'track';
 					const inserts = Array.from({ length: r(3) }, (_, j) => fxLat(`${id}fx${j}`, r(5) * 97, r(2) === 1));
 					const later = ids.slice(Math.max(i + 1, tracks)).filter((t) => t !== 'master');
-					const output = kind === 'master' ? null : r(2) === 0 || later.length === 0 ? 'master' : later[r(later.length)]!;
+					const output =
+						kind === 'master' ? null : r(2) === 0 || later.length === 0 ? 'master' : later[r(later.length)]!;
 					const sends =
 						kind === 'master' || later.length === 0
 							? []
@@ -191,7 +197,9 @@ describe('preview latency plan (track / submix / Mix inserts)', () => {
 			sampleRate: SR,
 			masterFormat: 'stereo',
 			strips: [
-				strip('A1', 'track', { inserts: [fxLat('a', Number.NaN), fxLat('b', -5), fxLat('c', Number.POSITIVE_INFINITY)] }),
+				strip('A1', 'track', {
+					inserts: [fxLat('a', Number.NaN), fxLat('b', -5), fxLat('c', Number.POSITIVE_INFINITY)],
+				}),
 				strip('S1', 'submix', { output: 'nowhere' }),
 				strip('S2', 'submix', { output: 'S1' }),
 				strip('master', 'master'),
@@ -248,7 +256,7 @@ describe('preview latency plan (track / submix / Mix inserts)', () => {
 		expect(previewInsertLatency(fxLat('a', 128), SR)).toBe(0);
 	});
 
-	it('clip gain above Remotion\'s +24 dB volume limit is left to the graph (the export applies all of it)', () => {
+	it("clip gain above Remotion's +24 dB volume limit is left to the graph (the export applies all of it)", () => {
 		const clip = {
 			duration: 30,
 			sourceIn: 0,

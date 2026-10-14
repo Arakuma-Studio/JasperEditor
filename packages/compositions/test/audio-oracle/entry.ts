@@ -33,7 +33,7 @@ async function render(spec: Spec): Promise<{ channels: number[][]; latency: numb
 	const leads: number[] = [];
 	spec.clips.forEach((c, i) => {
 		const buf = ctx.createBuffer(c.data.length, c.data[0]!.length, sr);
-		c.data.forEach((ch, k) => buf.copyToChannel(Float32Array.from(ch), k));
+		for (const [k, ch] of c.data.entries()) buf.copyToChannel(Float32Array.from(ch), k);
 		const src = ctx.createBufferSource();
 		src.buffer = buf;
 		const remotionGain = ctx.createGain();

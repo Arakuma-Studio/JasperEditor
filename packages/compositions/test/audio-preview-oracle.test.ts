@@ -61,7 +61,14 @@ function scene(opts: { set: 'exact' | 'stft'; loudness?: boolean }): Case {
 	const h = new Harness();
 	const media = [0, 1, 2].map(() => h.registerVideo({ kind: 'audio', seconds: 4 }));
 	while (h.seq.audioTracks.length < 3) h.ok([{ type: 'track.add', kind: 'audio' }]);
-	h.ok(media.map((m, i) => ({ type: 'clip.place', source: { mediaId: m }, at: AT, tracks: { audio: `A${i + 1}` } })));
+	h.ok(
+		media.map((m, i) => ({
+			type: 'clip.place',
+			source: { mediaId: m },
+			at: AT,
+			tracks: { audio: `A${i + 1}` },
+		})),
+	);
 	h.ok([{ type: 'mixer.addSubmix' }, { type: 'mixer.addSubmix' }]);
 	const [s1, s2] = h.seq.submixTracks!.map((t) => t.id);
 	h.ok([
@@ -106,7 +113,8 @@ function scene(opts: { set: 'exact' | 'stft'; loudness?: boolean }): Case {
 		clip.gainDb = 30;
 		quiet.add(clip.clipId);
 	}
-	if (opts.loudness) (mix as { loudness: RenderAudioMix['loudness'] }).loudness = { gainDb: -6, truePeakDb: -1 };
+	if (opts.loudness)
+		(mix as { loudness: RenderAudioMix['loudness'] }).loudness = { gainDb: -6, truePeakDb: -1 };
 	const data = new Map<string, number[][]>();
 	snapshot.audioClips.forEach((c, i) => {
 		const [s0, s1end] = spanOf(c, snapshot.settings.fps, SR);
@@ -135,122 +143,130 @@ function reader(data: Map<string, number[][]>) {
 	};
 }
 
-describe.runIf(!!CHROME)('preview mix = export mix with latency (headless Chrome, Web Audio)', { timeout: 300_000 }, () => {
-	let browser: Browser;
-	let page: Page;
-	let workletUrl: string;
+describe.runIf(!!CHROME)(
+	'preview mix = export mix with latency (headless Chrome, Web Audio)',
+	{ timeout: 300_000 },
+	() => {
+		let browser: Browser;
+		let page: Page;
+		let workletUrl: string;
 
-	beforeAll(async () => {
-		installAudioFxProcessors();
-		const [entry, worklet] = await Promise.all([
-			bundleForBrowser(join(here, 'audio-oracle', 'entry.ts')),
-			bundleForBrowser(join(here, '..', 'src', 'audio', 'worklet.ts')),
-		]);
-		browser = await chromium.launch({ executablePath: CHROME ?? undefined, args: ['--autoplay-policy=no-user-gesture-required'] });
-		page = await browser.newPage();
-		// a secure origin for AudioWorklet
-		await page.route('http://localhost/oracle', (r) =>
-			r.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body></body></html>' }),
-		);
-		await page.goto('http://localhost/oracle');
-		await page.addScriptTag({ content: entry });
-		workletUrl = await page.evaluate(
-			(code) => URL.createObjectURL(new Blob([code], { type: 'text/javascript' })),
-			worklet,
-		);
-	}, 120_000);
+		beforeAll(async () => {
+			installAudioFxProcessors();
+			const [entry, worklet] = await Promise.all([
+				bundleForBrowser(join(here, 'audio-oracle', 'entry.ts')),
+				bundleForBrowser(join(here, '..', 'src', 'audio', 'worklet.ts')),
+			]);
+			browser = await chromium.launch({
+				executablePath: CHROME ?? undefined,
+				args: ['--autoplay-policy=no-user-gesture-required'],
+			});
+			page = await browser.newPage();
+			// a secure origin for AudioWorklet
+			await page.route('http://localhost/oracle', (r) =>
+				r.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body></body></html>' }),
+			);
+			await page.goto('http://localhost/oracle');
+			await page.addScriptTag({ content: entry });
+			workletUrl = await page.evaluate(
+				(code) => URL.createObjectURL(new Blob([code], { type: 'text/javascript' })),
+				worklet,
+			);
+		}, 120_000);
 
-	afterAll(async () => {
-		await browser?.close();
-	});
-
-	async function preview(c: Case) {
-		const fps = c.snapshot.settings.fps;
-		return page.evaluate(
-			(spec) => (window as unknown as { __mix: { render: (s: unknown) => Promise<unknown> } }).__mix.render(spec),
-			{
-				workletUrl,
-				mix: c.snapshot.audioMix,
-				clips: c.snapshot.audioClips.map((clip) => ({
-					clip,
-					data: c.data.get(clip.clipId)!,
-					s0: spanOf(clip, fps, SR)[0],
-					// AudioLayer's volume callback: gain + Volume (clamped to Remotion's limit), unity with effects
-					volume: clipHasEffects(clip)
-						? 1
-						: Math.min(MAX_PREVIEW_GAIN, 10 ** ((clip.gainDb + clip.volumeDb.value) / 20)),
-				})),
-				fps,
-				length: LEN,
-			},
-		) as Promise<{ channels: number[][]; latency: number; leads: number[] }>;
-	}
-
-	async function exported(c: Case) {
-		return renderMixToBuffers({
-			snapshot: c.snapshot,
-			openClip: reader(c.data),
-			startSample: 0,
-			length: LEN,
-			outputLayout: 'stereo',
+		afterAll(async () => {
+			await browser?.close();
 		});
-	}
 
-	/**
-	 * Worst |preview − export| (both channels) over `[from, to)`, the signal peak, and the lag in −3000…3000 samples
-	 * that best matches the preview to the export (0 = aligned).
-	 */
-	function compare(p: number[][], e: Float32Array[], from = 0, to = LEN) {
-		let worst = 0;
-		let peak = 0;
-		for (let c = 0; c < 2; c++)
-			for (let i = from; i < to; i++) {
-				worst = Math.max(worst, Math.abs(p[c]![i]! - e[c]![i]!));
-				peak = Math.max(peak, Math.abs(e[c]![i]!));
-			}
-		let best = { lag: 0, err: Number.POSITIVE_INFINITY };
-		const w0 = 3000 + AT * 1600;
-		for (let lag = -3000; lag <= 3000; lag++) {
-			let err = 0;
-			for (let i = w0; i < w0 + 4096; i++) err += Math.abs(p[0]![i + lag]! - e[0]![i]!);
-			if (err < best.err) best = { lag, err };
+		async function preview(c: Case) {
+			const fps = c.snapshot.settings.fps;
+			return page.evaluate(
+				(spec) =>
+					(window as unknown as { __mix: { render: (s: unknown) => Promise<unknown> } }).__mix.render(spec),
+				{
+					workletUrl,
+					mix: c.snapshot.audioMix,
+					clips: c.snapshot.audioClips.map((clip) => ({
+						clip,
+						data: c.data.get(clip.clipId)!,
+						s0: spanOf(clip, fps, SR)[0],
+						// AudioLayer's volume callback: gain + Volume (clamped to Remotion's limit), unity with effects
+						volume: clipHasEffects(clip)
+							? 1
+							: Math.min(MAX_PREVIEW_GAIN, 10 ** ((clip.gainDb + clip.volumeDb.value) / 20)),
+					})),
+					fps,
+					length: LEN,
+				},
+			) as Promise<{ channels: number[][]; latency: number; leads: number[] }>;
 		}
-		return { worst, peak, lag: best.lag };
-	}
 
-	it('track, submix, Mix and clip effect latency: identical to the export, sample for sample', async () => {
-		const c = scene({ set: 'exact' });
-		const [p, e] = await Promise.all([preview(c), exported(c)]);
-		// A1 374 → S1 (+374 post-fader) → Mix (+256): read-ahead 1004 samples
-		expect(p.latency).toBe(1004);
-		const r = compare(p.channels, e);
-		expect(r.peak).toBeGreaterThan(0.05);
-		expect(r.lag).toBe(0);
-		// float32 Web Audio vs the float32 mixer (summation order, DelayNode on float32 delay times)
-		expect(r.worst).toBeLessThan(1e-4);
-	});
+		async function exported(c: Case) {
+			return renderMixToBuffers({
+				snapshot: c.snapshot,
+				openClip: reader(c.data),
+				startSample: 0,
+				length: LEN,
+				outputLayout: 'stereo',
+			});
+		}
 
-	it('frame-based (STFT) inserts: aligned; identical once past the onset transient', async () => {
-		const c = scene({ set: 'stft' });
-		const [p, e] = await Promise.all([preview(c), exported(c)]);
-		// A1 2048 → S1 (+374) → Mix (+256)
-		expect(p.latency).toBe(2678);
-		const onset = AT * 1600;
-		expect(compare(p.channels, e).lag).toBe(0);
-		// the STFT frame phase only shows at the onset (−43 dB here), never as a delay
-		expect(compare(p.channels, e, 0, onset + 9600).worst).toBeLessThan(0.01);
-		expect(compare(p.channels, e, onset + 9600).worst).toBeLessThan(3e-4);
-	});
+		/**
+		 * Worst |preview − export| (both channels) over `[from, to)`, the signal peak, and the lag in −3000…3000 samples
+		 * that best matches the preview to the export (0 = aligned).
+		 */
+		function compare(p: number[][], e: Float32Array[], from = 0, to = LEN) {
+			let worst = 0;
+			let peak = 0;
+			for (let c = 0; c < 2; c++)
+				for (let i = from; i < to; i++) {
+					worst = Math.max(worst, Math.abs(p[c]![i]! - e[c]![i]!));
+					peak = Math.max(peak, Math.abs(e[c]![i]!));
+				}
+			let best = { lag: 0, err: Number.POSITIVE_INFINITY };
+			const w0 = 3000 + AT * 1600;
+			for (let lag = -3000; lag <= 3000; lag++) {
+				let err = 0;
+				for (let i = w0; i < w0 + 4096; i++) err += Math.abs(p[0]![i + lag]! - e[0]![i]!);
+				if (err < best.err) best = { lag, err };
+			}
+			return { worst, peak, lag: best.lag };
+		}
 
-	it('loudness normalisation: the preview limiter latency is part of the read-ahead', async () => {
-		const c = scene({ set: 'exact', loudness: true });
-		const [p, e] = await Promise.all([preview(c), exported(c)]);
-		expect(p.latency).toBeGreaterThan(1004);
-		// the export applies the normalisation gain after the mixer (engine); below the ceiling the limiter is a delay
-		const g = 10 ** (-6 / 20);
-		const scaled = e.map((ch) => ch.map((v) => v * g));
-		const r = compare(p.channels, scaled);
-		expect(r.lag).toBe(0);
-		expect(r.worst).toBeLessThan(1e-4);
-	});
-});
+		it('track, submix, Mix and clip effect latency: identical to the export, sample for sample', async () => {
+			const c = scene({ set: 'exact' });
+			const [p, e] = await Promise.all([preview(c), exported(c)]);
+			// A1 374 → S1 (+374 post-fader) → Mix (+256): read-ahead 1004 samples
+			expect(p.latency).toBe(1004);
+			const r = compare(p.channels, e);
+			expect(r.peak).toBeGreaterThan(0.05);
+			expect(r.lag).toBe(0);
+			// float32 Web Audio vs the float32 mixer (summation order, DelayNode on float32 delay times)
+			expect(r.worst).toBeLessThan(1e-4);
+		});
+
+		it('frame-based (STFT) inserts: aligned; identical once past the onset transient', async () => {
+			const c = scene({ set: 'stft' });
+			const [p, e] = await Promise.all([preview(c), exported(c)]);
+			// A1 2048 → S1 (+374) → Mix (+256)
+			expect(p.latency).toBe(2678);
+			const onset = AT * 1600;
+			expect(compare(p.channels, e).lag).toBe(0);
+			// the STFT frame phase only shows at the onset (−43 dB here), never as a delay
+			expect(compare(p.channels, e, 0, onset + 9600).worst).toBeLessThan(0.01);
+			expect(compare(p.channels, e, onset + 9600).worst).toBeLessThan(3e-4);
+		});
+
+		it('loudness normalisation: the preview limiter latency is part of the read-ahead', async () => {
+			const c = scene({ set: 'exact', loudness: true });
+			const [p, e] = await Promise.all([preview(c), exported(c)]);
+			expect(p.latency).toBeGreaterThan(1004);
+			// the export applies the normalisation gain after the mixer (engine); below the ceiling the limiter is a delay
+			const g = 10 ** (-6 / 20);
+			const scaled = e.map((ch) => ch.map((v) => v * g));
+			const r = compare(p.channels, scaled);
+			expect(r.lag).toBe(0);
+			expect(r.worst).toBeLessThan(1e-4);
+		});
+	},
+);

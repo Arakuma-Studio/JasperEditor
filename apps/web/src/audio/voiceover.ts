@@ -14,9 +14,9 @@
 // * Save: the take from R to the stop / punch-out point is written as a mono 32-bit float WAV (`<Name> <n>.wav`),
 //   uploaded to the engine as media and placed on the record track at R — ONE undoable "Record Voice-over".
 import { encodeWav } from '@jasper/audio-dsp';
+import { activeMixGraph } from '@jasper/compositions';
 import type { EngineClient } from '@jasper/engine-client';
 import type { Rational, Sequence } from '@jasper/project';
-import { activeMixGraph } from '@jasper/compositions';
 import type { EditorSession, TransportState } from '@jasper/session';
 import { buildMediaAsset } from '../import/assets.ts';
 import { audioPrefs } from './prefs.ts';
@@ -84,7 +84,12 @@ function gcd(a: number, b: number): number {
  * `true − step`, and its lower envelope plus one clock step (the gcd of the readings' differences) recovers the true
  * offset: late reports and stalls cannot pull it. Null without usable pairs.
  */
-export function captureSampleAt(pairs: readonly FramePair[], f: number, fps: Rational, sr: number): number | null {
+export function captureSampleAt(
+	pairs: readonly FramePair[],
+	f: number,
+	fps: Rational,
+	sr: number,
+): number | null {
 	const fpsN = fps.num / fps.den;
 	if (!(fpsN > 0) || !(sr > 0) || !Number.isFinite(f)) return null;
 	const ok = pairs.filter((p) => Number.isFinite(p.frame) && Number.isFinite(p.sample));

@@ -36,7 +36,9 @@ function run(p: Proc, input: (i: number) => number, blocks: number): Float32Arra
 describe('preview loudness limiter worklet', () => {
 	it('re-enabled after a bypass it starts clean (no stale look-ahead audio)', () => {
 		const Limiter = processors.get('jasper-limiter')!;
-		const p = new Limiter({ processorOptions: { channels: 2, ceilingDb: -1, enabled: true, lookaheadMs: 5 } });
+		const p = new Limiter({
+			processorOptions: { channels: 2, ceilingDb: -1, enabled: true, lookaheadMs: 5 },
+		});
 		run(p, (i) => 0.5 * Math.sin(i / 7), 40); // fills the look-ahead delay line
 		p.port.onmessage!({ data: { enabled: false } });
 		run(p, () => 0, 4);

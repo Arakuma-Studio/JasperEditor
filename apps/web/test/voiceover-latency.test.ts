@@ -142,9 +142,16 @@ describe('voice-over latency compensation', () => {
 	});
 
 	it('the user offset and the capture-context fallback; hostile values count as 0', () => {
-		expect(voiceoverLatencySeconds({ capture: { baseLatency: 0.005, outputLatency: 0.02 } })).toBeCloseTo(0.025, 9);
+		expect(voiceoverLatencySeconds({ capture: { baseLatency: 0.005, outputLatency: 0.02 } })).toBeCloseTo(
+			0.025,
+			9,
+		);
 		expect(
-			voiceoverLatencySeconds({ playback: { outputLatency: 0.02 }, capture: { outputLatency: 0.5 }, offsetMs: -5 }),
+			voiceoverLatencySeconds({
+				playback: { outputLatency: 0.02 },
+				capture: { outputLatency: 0.5 },
+				offsetMs: -5,
+			}),
 		).toBeCloseTo(0.015, 9);
 		expect(
 			voiceoverLatencySeconds({
