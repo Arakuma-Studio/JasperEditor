@@ -548,6 +548,18 @@ describe('mixer commands', () => {
 		expect(mixFingerprint(h.doc, h.seqId)).not.toBe(hash);
 	});
 
+	it("mixFingerprint changes when Interpret Footage changes how a clip's media plays", () => {
+		const h = new Harness();
+		const m = h.registerVideo({ seconds: 10 });
+		h.ok([{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { video: 'V1', audio: 'A1' } }]);
+		const fp0 = mixFingerprint(h.doc, h.seqId);
+		h.ok([{ type: 'media.interpret', mediaIds: [m], interpretation: { frameRate: { num: 15, den: 1 } } }]);
+		const fp1 = mixFingerprint(h.doc, h.seqId);
+		expect(fp1).not.toBe(fp0);
+		h.ok([{ type: 'media.interpret', mediaIds: [m], interpretation: { frameRate: null, loop: 3 } }]);
+		expect(mixFingerprint(h.doc, h.seqId)).not.toBe(fp1);
+	});
+
 	it('repairDocument drops invalid routes and sends', () => {
 		const h = new Harness();
 		h.ok([{ type: 'mixer.addSubmix' }]);

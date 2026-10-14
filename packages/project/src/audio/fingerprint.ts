@@ -1,6 +1,7 @@
 // `mixFingerprint`: a hash of everything a sequence's mix depends on (audio tracks and their clips, submixes, the Mix
-// without its loudness settings, audio transitions, the media fingerprints and nested sequences they play). A stored
+// without its loudness settings, audio transitions, the media fingerprints and interpretations and the nested sequences they play). A stored
 // loudness analysis whose `mixHash` differs is stale (audio-mix).
+import { mediaTimeMap } from '../interpret/model.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
 import { fnv1a64 } from '../structure/nest.ts';
@@ -36,7 +37,13 @@ function parts(doc: ProjectDocument, seq: Sequence, seen: Set<string>, out: unkn
 	});
 	for (const c of clips) {
 		const r = c as { mediaId?: string; sequenceId?: string; syntheticId?: string };
-		if (r.mediaId) out.push({ media: r.mediaId, fp: doc.media[r.mediaId]?.fingerprint ?? null });
+		if (r.mediaId) {
+			const asset = doc.media[r.mediaId];
+			// Interpret Footage (assumed frame rate, loop) changes how the media plays (the snapshot's `mediaTime`);
+			// only hashed when set, so analyses of uninterpreted media stay current.
+			const time = asset ? mediaTimeMap(asset) : null;
+			out.push({ media: r.mediaId, fp: asset?.fingerprint ?? null, ...(time ? { time } : {}) });
+		}
 		if (r.syntheticId) out.push({ synthetic: doc.synthetics[r.syntheticId] ?? null });
 		const nested = r.sequenceId ? doc.sequences[r.sequenceId] : undefined;
 		if (nested) parts(doc, nested as Sequence, seen, out);
