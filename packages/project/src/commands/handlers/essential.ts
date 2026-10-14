@@ -206,7 +206,10 @@ export const essentialHandlers = {
 			}
 			const measured = cmd.measuredLufs[c.id];
 			if (measured === null || measured === undefined || !Number.isFinite(measured)) {
-				out[c.id] = { skipped: 'silent' };
+				// No integrated loudness: silence, or a clip shorter than one 400 ms BS.1770 gating block.
+				const rate = seq.settings.frameRate as Rational;
+				const short = (c.duration * rate.den) / rate.num < 0.4;
+				out[c.id] = { skipped: short ? 'shorter than 400 ms (integrated loudness is undefined)' : 'silent' };
 				continue;
 			}
 			const target = cmd.targetLufs ?? cur.loudness.targetLufs ?? DEFAULT_LOUDNESS_TARGET;

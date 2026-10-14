@@ -193,6 +193,16 @@ describe('Essential Sound commands', () => {
 		expect(clip().pan.value).toBe(0);
 	});
 
+	it('Auto-Match skips an unmeasurable clip shorter than 400 ms as too short, not as silent', () => {
+		const { h, clip } = setup(0.3);
+		const id = clip().id;
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'sfx' }]);
+		const r = h.ok([{ type: 'essentialSound.autoMatch', measuredLufs: { [id]: null } }]);
+		const skipped = (r.results[0] as { clips: Record<string, { skipped?: string }> }).clips[id]!.skipped;
+		expect(skipped).toMatch(/400 ms/);
+		expect(clip().gainDb).toBe(0);
+	});
+
 	it('presets: built-ins by name, user settings, keeping loudness/volume/mute; mute is a Mute effect', () => {
 		const { h, clip } = setup();
 		const id = clip().id;
