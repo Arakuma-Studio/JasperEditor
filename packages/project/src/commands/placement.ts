@@ -204,9 +204,34 @@ export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
 			visit(x);
 		}
 	};
+	// Essential Sound clamp residuals are keyed by Volume / Pan keyframe id: they follow the keyframes' new ids.
+	const a = clip as {
+		volumeDb?: { keyframes?: { id: string }[] };
+		pan?: { keyframes?: { id: string }[] };
+		essential?: { residual?: Record<string, unknown> };
+	};
+	const lanes = ['volume', 'pan'] as const;
+	const oldIds = {
+		volume: (a.volumeDb?.keyframes ?? []).map((k) => k.id),
+		pan: (a.pan?.keyframes ?? []).map((k) => k.id),
+	};
 	visit(clip);
 	if (fxIndex >= 0 && c.trackedBy && c.effects?.[fxIndex])
 		c.trackedBy.effectInstanceId = c.effects[fxIndex].id;
+	const residual = a.essential?.residual;
+	if (residual && typeof residual === 'object')
+		for (const lane of lanes) {
+			const r = residual[lane];
+			if (!r || typeof r !== 'object' || Array.isArray(r)) continue;
+			const keys = (lane === 'volume' ? a.volumeDb : a.pan)?.keyframes ?? [];
+			const next: Record<string, unknown> = {};
+			for (const [k, v] of Object.entries(r as Record<string, unknown>)) {
+				const i = k === 'value' ? -1 : oldIds[lane].indexOf(k);
+				if (k === 'value') next.value = v;
+				else if (i >= 0 && keys[i]) next[keys[i]!.id] = v;
+			}
+			residual[lane] = next;
+		}
 }
 
 /**

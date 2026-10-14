@@ -54,7 +54,9 @@ function setAt(
 /**
  * Adds `d` to a level: the static value and every keyframe (keeps ducking shapes), clamped to `[lo, hi]`. What the
  * clamp takes away is kept in `residual` (per `value` / keyframe id) and given back by the next offset, so an
- * offset switched on and off again restores the level exactly.
+ * offset switched on and off again restores the level exactly. A residual only applies while its value still sits
+ * on the bound it was clamped to: once the user moved that value (Effect Controls, Clip Mixer, keyframe edits) it is
+ * stale and dropped. Residuals are limited to the range width (a hostile file cannot store more).
  */
 export function offsetLevel(
 	a: Animatable<number>,
@@ -65,7 +67,12 @@ export function offsetLevel(
 ): void {
 	const left: Record<string, number> = {};
 	const add = (key: string, v: number) => {
-		const want = v + d + (residual[key] ?? 0);
+		const r = residual[key] ?? 0;
+		const live =
+			Number.isFinite(r) && ((r > 0 && v >= hi - 1e-9) || (r < 0 && v <= lo + 1e-9))
+				? Math.sign(r) * Math.min(Math.abs(r), hi - lo)
+				: 0;
+		const want = v + d + live;
 		const got = Math.min(Math.max(want, lo), hi) + 0;
 		if (Math.abs(want - got) > 1e-9) left[key] = want - got;
 		return got;

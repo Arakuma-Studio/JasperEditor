@@ -242,6 +242,58 @@ describe('Essential Sound commands', () => {
 		expect(before[0]).toBe(-96);
 	});
 
+	it('a split keeps the clamp residual of keyframes on both halves (phase 0 verification)', () => {
+		const { h, clip } = setup();
+		const id = clip().id;
+		h.ok([
+			{ type: 'param.setAnimated', target: ['clip', id, 'volumeDb'], animated: true, at: { frames: 0 } },
+			{ type: 'param.set', target: ['clip', id, 'volumeDb'], value: 10, at: { frames: 0 } },
+			{ type: 'param.set', target: ['clip', id, 'volumeDb'], value: 8, at: { frames: 300 } },
+		]);
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'dialogue' }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { volume: { on: true, levelDb: 15 } } }]);
+		expect(clip().volumeDb.keyframes.map((k) => k.value)).toEqual([15, 15]);
+		h.ok([{ type: 'clip.split', at: 100, clipIds: [id] }]);
+		const halves = h.clips('A1').map((c) => c.id);
+		expect(halves).toHaveLength(2);
+		h.ok([{ type: 'essentialSound.set', clipIds: halves, values: { 'volume.on': false } }]);
+		for (const c of h.clips('A1') as unknown as { volumeDb: { keyframes: { value: number }[] } }[])
+			expect(c.volumeDb.keyframes.map((k) => k.value)).toEqual([10, 8]);
+	});
+
+	it('a level the user moved after the clamp does not get the stale residual back (phase 0 verification)', () => {
+		const { h, clip } = setup();
+		const id = clip().id;
+		h.ok([{ type: 'param.set', target: ['clip', id, 'volumeDb'], value: 10 }]);
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'sfx' }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { volume: { on: true, levelDb: 15 } } }]);
+		expect(clip().volumeDb.value).toBe(15);
+		h.ok([{ type: 'param.set', target: ['clip', id, 'volumeDb'], value: 0 }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'volume.on': false } }]);
+		expect(clip().volumeDb.value).toBe(-15);
+		// pan: −50 with SFX Pan −80 shows −100; the user sets 0; Pan off gives +80 (plain offset removal)
+		h.ok([{ type: 'param.set', target: ['clip', id, 'pan'], value: -50 }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { pan: { enabled: true, value: -80 } } }]);
+		expect(clip().pan.value).toBe(-100);
+		h.ok([{ type: 'param.set', target: ['clip', id, 'pan'], value: 0 }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.enabled': false } }]);
+		expect(clip().pan.value).toBe(80);
+	});
+
+	it('a hostile stored residual is bounded by the range width (phase 0 verification)', () => {
+		const { h, clip } = setup();
+		const id = clip().id;
+		h.ok([{ type: 'param.set', target: ['clip', id, 'volumeDb'], value: 10 }]);
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'dialogue' }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { volume: { on: true, levelDb: 15 } } }]);
+		h.doc = structuredClone(h.doc);
+		const c = h.seq.clips[id] as unknown as { essential: { residual: { volume: Record<string, number> } } };
+		c.essential.residual.volume.value = 1e300;
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'volume.on': false } }]);
+		expect(Number.isFinite(clip().volumeDb.value)).toBe(true);
+		expect(clip().volumeDb.value).toBeLessThanOrEqual(15);
+	});
+
 	it('one out-of-range stored field does not reset the other Essential Sound settings', () => {
 		const s = newEssentialSound('dialogue');
 		s.loudness = { enabled: true, measuredLufs: -30, targetLufs: -23, gainDb: 7 };
