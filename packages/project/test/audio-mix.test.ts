@@ -18,6 +18,9 @@ import {
 	soloAudible,
 	thinPoints,
 } from '../src/index.ts';
+import { balanceGains } from '@jasper/audio-dsp';
+import { contentTimeAt } from '../src/derive/index.ts';
+import { evaluate } from '../src/keyframes.ts';
 import { Harness } from './helpers.ts';
 
 const F30 = 705_600_000 / 30;
@@ -238,6 +241,48 @@ describe('offline mixer', () => {
 		const [l, r] = await render(h, { [a]: [0.5, 0.5] });
 		expect(close(l![10]!, 0)).toBe(true);
 		expect(close(r![10]!, 0.5)).toBe(true);
+	});
+
+	it('reversed clips: export volume and pan follow the preview content time (no one-frame shift)', async () => {
+		const { h, a } = audioHarness();
+		h.ok([{ type: 'mixer.updateStrip', stripId: 'A2', patch: { mute: true } }]);
+		const clip = h.clips('A1')[0]!.id;
+		h.ok([{ type: 'clip.setSpeed', clipIds: [clip], reverse: true, ripple: false }]);
+		// Clip Mixer keyframes written in sequence time (content time through `contentTimeAt`, as the preview reads them).
+		h.ok([
+			{
+				type: 'clipMixer.write',
+				trackId: 'A1',
+				lane: 'volume',
+				points: [
+					[10 * F30, 0],
+					[20 * F30, -20],
+				],
+				thinning: { tolerance: 0 },
+			},
+			{
+				type: 'clipMixer.write',
+				trackId: 'A1',
+				lane: 'pan',
+				points: [
+					[10 * F30, 0],
+					[20 * F30, 100],
+				],
+				thinning: { tolerance: 0 },
+			},
+		]);
+		const c = h.seq.clips[clip] as unknown as RenderAudioClip;
+		const [l, r] = await render(h, { [a]: [0.5, 0.5] }, 25);
+		for (const f of [12, 15, 18]) {
+			const i = f * 1600;
+			const content = contentTimeAt(c, f, { num: 30, den: 1 });
+			const g = 0.5 * 10 ** (evaluate(c.volumeDb, content) / 20);
+			const [gl, gr] = balanceGains(evaluate(c.pan, content) / 100);
+			expect(Math.abs(l![i]! - g * gl), `L at frame ${f}`).toBeLessThan(1e-5);
+			expect(Math.abs(r![i]! - g * gr), `R at frame ${f}`).toBeLessThan(1e-5);
+		}
+		// frame 15 is half way: −10 dB, pan 50
+		expect(Math.abs(r![15 * 1600]! - 0.5 * 10 ** (-10 / 20))).toBeLessThan(1e-4);
 	});
 
 	it('inserts run registered processors (latency compensated) and report missing ones', async () => {

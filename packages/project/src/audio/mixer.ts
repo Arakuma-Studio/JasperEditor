@@ -399,9 +399,7 @@ export class OfflineMixer {
 			const c = v.clip;
 			const frame = (at * this.fps.num) / (this.sampleRate * this.fps.den);
 			const local = frame - c.start;
-			const time = c.speed.reverse
-				? c.sourceIn + (c.duration - 1 - local) * F * c.speed.rate
-				: c.sourceIn + local * F * c.speed.rate;
+			const time = contentAt(c, local, F);
 			const fps = this.flicksPerSample * c.speed.rate * (c.speed.reverse ? -1 : 1);
 			for (const p of v.procs)
 				p.process(v.buf, k, { sampleRate: this.sampleRate, time, flicksPerSample: fps });
@@ -425,9 +423,7 @@ export class OfflineMixer {
 			if (volAnimated) {
 				// Levels of the nearest clip frame inside the clip (handles keep the edge level), like the preview.
 				const local = Math.min(c.duration - 1e-9, Math.max(0, frame - c.start));
-				const content = c.speed.reverse
-					? c.sourceIn + (c.duration - local) * F * c.speed.rate
-					: c.sourceIn + local * F * c.speed.rate;
+				const content = contentAt(c, local, F);
 				db = c.gainDb + evaluate(c.volumeDb, content);
 			}
 			// edit-structure: a clip flattened out of a nested sequence carries the nested levels per frame.
@@ -448,9 +444,7 @@ export class OfflineMixer {
 				if (panAnimated) {
 					const frame = (a + i) / spf;
 					const local = Math.min(c.duration - 1e-9, Math.max(0, frame - c.start));
-					const content = c.speed.reverse
-						? c.sourceIn + (c.duration - local) * F * c.speed.rate
-						: c.sourceIn + local * F * c.speed.rate;
+					const content = contentAt(c, local, F);
 					p = evaluate(c.pan, content);
 				}
 				if (p !== 0) [pl, pr] = balanceGains(Math.max(-1, Math.min(1, p / 100)));
@@ -633,6 +627,17 @@ export class OfflineMixer {
 			R[i]! += r * gr * lv;
 		}
 	}
+}
+
+/**
+ * Content time (flicks) of a clip at local frame `local` (fractional): `contentTimeAt`'s convention, which the preview
+ * and every keyframe writer (Clip Mixer, auto-duck) use; a reversed clip's frame `i` reads content frame
+ * `duration − 1 − i`.
+ */
+function contentAt(c: RenderAudioClip, local: number, F: number): number {
+	return c.speed.reverse
+		? c.sourceIn + (c.duration - 1 - local) * F * c.speed.rate
+		: c.sourceIn + local * F * c.speed.rate;
 }
 
 function addInto(dst: Float32Array, src: Float32Array, n: number): void {
