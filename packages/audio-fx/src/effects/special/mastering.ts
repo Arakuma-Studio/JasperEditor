@@ -1,6 +1,6 @@
 // Mastering, Vocal Enhancer, Loudness Meter, Mute (ported from filmcraft `effects/special.rs`) and Loudness Auto Gain
 // (ours).
-import { kPrefilter, kRlb, LoudnessMeter } from '@jasper/audio-dsp';
+import { defaultChannelWeights, kPrefilter, kRlb, LoudnessMeter } from '@jasper/audio-dsp';
 import { Biquad, type Coeffs, designBiquad, IDENTITY, magnitudeDb } from '../../core/biquad.ts';
 import { EffectBase } from '../../core/effect.ts';
 import { dbToGain, linDb } from '../../core/math.ts';
@@ -25,11 +25,12 @@ export class Mastering extends EffectBase {
 	private readonly width: Smoothed;
 	private readonly boost: Smoothed;
 	private readonly out: Smoothed;
-	private readonly y = new Float64Array(2);
+	private readonly y: Float64Array;
 
 	constructor(sr: number, ch: number) {
 		super('jasper.audio.mastering', sr, ch);
 		const n = Math.max(1, ch);
+		this.y = new Float64Array(n);
 		this.st = Array.from({ length: n }, () => [new Biquad(), new Biquad(), new Biquad()]);
 		this.rev = new FdnReverb(sr);
 		this.rev.set({ preDelay: 20, decay: 1.4, damping: 40, size: 40, mix: 100 }, true);
@@ -113,9 +114,11 @@ export class Mastering extends EffectBase {
 				const w = this.width.tick();
 				const boost = this.boost.tick();
 				const out = this.out.tick();
-				for (let c = 0; c < n2; c++) {
+				// Every channel gets the exciter, the maximiser and the output gain (5.1 too); reverb and widener
+				// work on the L/R pair.
+				for (let c = 0; c < nch; c++) {
 					let v = ch[c]![a + i]!;
-					if (useRev) v += ra * (c === 0 ? s0[i]! : s1[i]!);
+					if (useRev && c < n2) v += ra * (c === 0 ? s0[i]! : s1[i]!);
 					if (ex > 0) {
 						const h = this.hp[c]!.hp(ahp, v);
 						const s =
@@ -136,16 +139,16 @@ export class Mastering extends EffectBase {
 				}
 				if (loud) {
 					let peak = 0;
-					for (let c = 0; c < n2; c++) {
+					for (let c = 0; c < nch; c++) {
 						y[c] = y[c]! * boost;
 						peak = Math.max(peak, Math.abs(y[c]!));
 					}
 					const target = Math.min(ceilDb - linDb(peak), 0);
 					this.limEnv = target < this.limEnv ? target : rel * this.limEnv + (1 - rel) * target;
 					const g = dbToGain(this.limEnv);
-					for (let c = 0; c < n2; c++) y[c] = softClip(y[c]! * g, ceiling);
+					for (let c = 0; c < nch; c++) y[c] = softClip(y[c]! * g, ceiling);
 				}
-				for (let c = 0; c < n2; c++) ch[c]![a + i] = y[c]! * out;
+				for (let c = 0; c < nch; c++) ch[c]![a + i] = y[c]! * out;
 			}
 		}
 	}
@@ -239,7 +242,8 @@ export class LoudnessMeterFx extends EffectBase {
 
 	constructor(sr: number, ch: number) {
 		super('jasper.audio.loudness-meter', sr, ch);
-		this.meter = new LoudnessMeter(sr, Math.min(Math.max(ch, 1), 2));
+		// Every channel, with the BS.1770 weights of its layout (5.1: LFE excluded, surrounds +1.5 dB).
+		this.meter = new LoudnessMeter(sr, Math.max(ch, 1));
 	}
 
 	protected applyParams(): void {}
@@ -311,12 +315,15 @@ export class AutoGain extends EffectBase {
 	private sinceResum = 0;
 	private resp = 0;
 	private readonly peakRel: number;
+	/** BS.1770 channel weights (5.1: LFE excluded, surrounds +1.5 dB), as the loudness meters use. */
+	private readonly weights: number[];
 
 	constructor(sr: number, ch: number) {
 		super('jasper.audio.auto-gain', sr, ch);
 		this.pre = kPrefilter(sr);
 		this.rlb = kRlb(sr);
 		this.kf = Array.from({ length: Math.max(1, Math.min(ch, 8)) }, () => [new Biquad(), new Biquad()]);
+		this.weights = defaultChannelWeights(this.kf.length);
 		this.ring = new Float64Array(Math.round(3 * sr));
 		this.peakRel = coef(50, sr);
 		this.applyParams();
@@ -361,7 +368,7 @@ export class AutoGain extends EffectBase {
 				const x = ch[c]![i]!;
 				const [a, b] = this.kf[c]!;
 				const y = b.tick(this.rlb, a.tick(this.pre, x));
-				z += y * y;
+				z += this.weights[c]! * y * y;
 				pk = Math.max(pk, Math.abs(x));
 			}
 			this.sum += z - this.ring[this.ringPos]!;

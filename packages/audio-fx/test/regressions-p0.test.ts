@@ -138,3 +138,79 @@ describe('Scientific Filter', () => {
 		expect(peakDb(c)).toBeLessThan(-120);
 	});
 });
+
+describe('5.1 inserts process every channel', () => {
+	const noiseOf = (n: number, amp: number, seed0: number) => {
+		let seed = seed0;
+		return Float32Array.from({ length: n }, () => {
+			seed = (seed * 1103515245 + 12345) % 2 ** 31;
+			return (seed / 2 ** 31 - 0.5) * 2 * amp;
+		});
+	};
+	const rms = (x: Float32Array, a = x.length / 2) => {
+		let s = 0;
+		for (let i = a; i < x.length; i++) s += x[i]! * x[i]!;
+		return 10 * Math.log10(s / (x.length - a) + 1e-300);
+	};
+	const six = (n: number, amp = 0.3) => Array.from({ length: 6 }, (_, c) => noiseOf(n, amp, 7 + c));
+
+	it('Surround Reverb: Dry 0 / Wet 0 silences all six channels; the centre feeds the reverb', () => {
+		const fx = createProcessor('jasper.audio.surround-reverb', SR, 6)!;
+		fx.setParam('dry', 0);
+		fx.setParam('wet', 0);
+		fx.reset();
+		const ch = six(SR);
+		fx.process(ch, 0, SR);
+		for (const c of ch) expect(rms(c)).toBeLessThan(-200);
+		const fx2 = createProcessor('jasper.audio.surround-reverb', SR, 6)!;
+		fx2.setParam('dry', 0);
+		fx2.setParam('wet', 100);
+		fx2.reset();
+		const ch2 = Array.from({ length: 6 }, () => new Float32Array(SR));
+		ch2[2]!.set(noiseOf(SR, 0.3, 3));
+		fx2.process(ch2, 0, SR);
+		expect(rms(ch2[0]!)).toBeGreaterThan(-60);
+	});
+
+	it('Mastering: output gain and the maximiser apply to every channel', () => {
+		const fx = createProcessor('jasper.audio.mastering', SR, 6)!;
+		fx.setParam('output', -12);
+		fx.reset();
+		const ch = six(SR);
+		const before = ch.map((c) => rms(c));
+		fx.process(ch, 0, SR);
+		ch.forEach((c, k) => expect(rms(c) - before[k]!, `channel ${k}`).toBeCloseTo(-12, 1));
+		const fx2 = createProcessor('jasper.audio.mastering', SR, 6)!;
+		fx2.setParam('loudness', 100);
+		fx2.reset();
+		const loud = six(SR, 0.9);
+		fx2.process(loud, 0, SR);
+		loud.forEach((c, k) => expect(peakDb(c), `channel ${k}`).toBeLessThanOrEqual(-0.3 + 1e-6));
+	});
+
+	it('Loudness Meter measures a 5.1 centre channel', () => {
+		const fx = createProcessor('jasper.audio.loudness-meter', SR, 6)!;
+		const ch = Array.from({ length: 6 }, () => new Float32Array(SR * 2));
+		ch[2]!.set(sine(SR * 2, 1000, 0.3));
+		fx.process(ch, 0, SR * 2);
+		const [, , integrated] = fx.meters!();
+		expect(Number.isFinite(integrated)).toBe(true);
+		expect(integrated!).toBeGreaterThan(-20);
+	});
+
+	it('Loudness Auto Gain weights channels like BS.1770 (LFE ignored, surrounds +1.5 dB)', () => {
+		const gainWith = (c: number) => {
+			const fx = createProcessor('jasper.audio.auto-gain', SR, 6)!;
+			fx.setParam('response', 100);
+			fx.reset();
+			const n = SR * 10;
+			const ch = Array.from({ length: 6 }, () => new Float32Array(n));
+			ch[c]!.set(noiseOf(n, 0.05, 11));
+			for (let a = 0; a < n; a += 4800) fx.process(ch, a, Math.min(n, a + 4800));
+			return fx.meters!()[0]!;
+		};
+		const l = gainWith(0);
+		expect(gainWith(3)).toBe(0); // LFE only: below the silence threshold, the gain holds
+		expect(l - gainWith(4)).toBeCloseTo(1.5, 0);
+	});
+});
