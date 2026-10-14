@@ -187,6 +187,23 @@ export function AudioPreferencesPage() {
 						onScrubEnd={(v) => audioPrefs.set({ voiceOver: { postrollSeconds: v } })}
 					/>
 				</PrefRow>
+				<PrefRow label="Latency Offset">
+					<ScrubbyNumber
+						label="Voice-over latency offset"
+						value={p.voiceOver.latencyOffsetMs}
+						min={-500}
+						max={500}
+						step={1}
+						precision={0}
+						unit="ms"
+						onCommit={(v) => audioPrefs.set({ voiceOver: { latencyOffsetMs: v } })}
+						onScrubEnd={(v) => audioPrefs.set({ voiceOver: { latencyOffsetMs: v } })}
+					/>
+				</PrefRow>
+				<div className="text-pr-small text-pr-muted">
+					Takes are placed compensating the measured output and input latency; the offset corrects devices the
+					browser does not report.
+				</div>
 			</PrefGroup>
 		</div>
 	);

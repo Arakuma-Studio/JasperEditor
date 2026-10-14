@@ -30,6 +30,11 @@ export type AudioPrefs = {
 		countdownCues: boolean;
 		prerollSeconds: number;
 		postrollSeconds: number;
+		/**
+		 * Added to the measured round-trip latency when a take is placed (ms, −500 … 500; positive moves the take
+		 * earlier). For devices whose latency the browser does not report.
+		 */
+		latencyOffsetMs: number;
 	};
 };
 
@@ -48,6 +53,7 @@ export const DEFAULT_AUDIO_PREFS: AudioPrefs = {
 		countdownCues: true,
 		prerollSeconds: 2,
 		postrollSeconds: 2,
+		latencyOffsetMs: 0,
 	},
 };
 
@@ -80,6 +86,7 @@ export function parseAudioPrefs(raw: unknown): AudioPrefs {
 			countdownCues: typeof v.countdownCues === 'boolean' ? v.countdownCues : d.voiceOver.countdownCues,
 			prerollSeconds: num(v.prerollSeconds, 0, 60, d.voiceOver.prerollSeconds),
 			postrollSeconds: num(v.postrollSeconds, 0, 60, d.voiceOver.postrollSeconds),
+			latencyOffsetMs: Math.round(num(v.latencyOffsetMs, -500, 500, d.voiceOver.latencyOffsetMs)),
 		},
 	};
 }
