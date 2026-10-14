@@ -70,7 +70,17 @@ The commands below, run on the shared host (load ≈ 110 on 16 cores):
   alignment within 3 samples.
 - The fail-before / pass-after evidence for every row above is the regression test named in it. The `audio-fx` rows
   were run with the old file checked out: 2 + 1 + 4 + 4 + 1 + 1 + 1 failures before, all passing after.
-- The package suites are listed at the end of this section.
+- `pnpm vitest run packages/project packages/audio-fx packages/audio-dsp packages/api --maxWorkers=2 --testTimeout=600000`
+  ran 1953 tests in 165 files: 1953 passed, 3 failed. The 3 failures were the tests' own timeouts or perf budgets
+  under load 110 (sync GCC-PHAT 60 s / 30 s timeouts, Pitch Shifter 8× realtime) in files this package does not touch.
+  Rerun alone, `pnpm vitest run packages/audio-dsp/test/sync.test.ts …` passed 12 of 12 and
+  `packages/audio-fx/test/reverb-pitch.test.ts` passed 13 of 13.
+- `pnpm vitest run apps/mcp/test/audio-fx.test.ts apps/web/test/panel-input-validation.test.ts packages/compositions/test/audio-fx-preview.test.ts packages/audio-dsp/test/sync.test.ts --maxWorkers=1`
+  passed 28 of 28 (dependants of the Essential Sound and effect-host changes).
+- `pnpm lint` passed. `pnpm --filter <pkg> typecheck` passed for project, audio-dsp, audio-fx, api, engine, mcp and
+  compositions. The workspace `pnpm typecheck` stops at a pre-existing error in
+  `apps/web/test/clip-extensions.test.tsx` (`refs` on `TransactionResult`, from commit 48a90b6c on main), which this
+  package does not touch.
 
 #### Limits and notes for the next packages
 
