@@ -207,6 +207,8 @@ export class MultibandCompressor extends EffectBase {
 	private readonly rel = new Float64Array(MB_BANDS);
 	private limRel = 0;
 	private counter = 0;
+	/** The crossover designs lag the smoothers (see `process`). */
+	private xoDirty = false;
 	private readonly bands = Array.from({ length: MAX_CH }, () => new Float64Array(MB_BANDS));
 	private readonly gains = Array.from({ length: MAX_CH }, () => new Float64Array(MB_BANDS));
 	private readonly ys = new Float64Array(MAX_CH);
@@ -299,6 +301,7 @@ export class MultibandCompressor extends EffectBase {
 		for (const e of this.env) e.fill(0);
 		this.limEnv = 0;
 		this.counter = 0;
+		this.xoDirty = false;
 	}
 
 	private split(st: XoState, x: number, out: Float64Array): void {
@@ -328,11 +331,13 @@ export class MultibandCompressor extends EffectBase {
 		const byp = this.byp;
 		const bg = this.bg;
 		for (let i = start; i < end; i++) {
-			if (
-				this.counter === 0 &&
-				(this.xo[0]!.isSmoothing() || this.xo[1]!.isSmoothing() || this.xo[2]!.isSmoothing())
-			)
-				this.updateXo();
+			if (this.counter === 0) {
+				// Redesign while the crossovers glide, and once more after they arrive (the last ramp steps fall
+				// between two control points; without it the crossovers stopped short of their targets).
+				const gliding = this.xo[0]!.isSmoothing() || this.xo[1]!.isSmoothing() || this.xo[2]!.isSmoothing();
+				if (gliding || this.xoDirty) this.updateXo();
+				this.xoDirty = gliding;
+			}
 			this.counter = (this.counter + 1) % 16;
 			this.xo[0]!.tick();
 			this.xo[1]!.tick();

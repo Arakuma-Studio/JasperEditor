@@ -214,3 +214,20 @@ describe('5.1 inserts process every channel', () => {
 		expect(l - gainWith(4)).toBeCloseTo(1.5, 0);
 	});
 });
+
+describe('Multiband Compressor crossovers', () => {
+	it('reach their target after a glide, whatever the control-point phase', async () => {
+		const { designBiquad } = await import('../src/core/biquad.ts');
+		for (const sr of [44100, 48000]) {
+			const fx = createProcessor('jasper.audio.multiband-compressor', sr, 2)!;
+			const z = [new Float32Array(sr), new Float32Array(sr)];
+			fx.process(z, 0, 7);
+			fx.setParam('xo1', 1000);
+			fx.process(z, 7, sr);
+			const lp = (fx as unknown as { lp: { a1: number; b0: number }[] }).lp[0]!;
+			const want = designBiquad('lowPass', sr, 1000, Math.SQRT1_2, 0);
+			expect(Math.abs(lp.a1 - want.a1), `${sr} Hz`).toBeLessThan(1e-9);
+			expect(Math.abs(lp.b0 - want.b0), `${sr} Hz`).toBeLessThan(1e-9);
+		}
+	});
+});
