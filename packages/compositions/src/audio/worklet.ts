@@ -8,6 +8,7 @@
 // * `jasper-capture`: voice-over recording tap: posts the input (planar copies, ~85 ms batches) with the frame
 //   index of the first sample (`currentFrame`), plus per-channel input peaks for the record meter.
 import { LevelMeter, LoudnessMeter, TruePeakLimiter } from '@jasper/audio-dsp';
+import type { EffectInstance } from '@jasper/project/audio';
 import { FX_PROCESSOR_NAME, FxSlotCore, type FxSlotMessage } from './fx-processor.ts';
 import type { MeterReading } from './graph.ts';
 
@@ -223,10 +224,16 @@ registerProcessor('jasper-limiter', LimiterProcessor);
 /** audio-fx: one audio effect slot (clip effect or strip insert), see fx-processor.ts. */
 class FxProcessor extends AudioWorkletProcessor {
 	private readonly core: FxSlotCore;
-	constructor(options: { processorOptions?: { channels?: number } }) {
+	constructor(options: {
+		processorOptions?: { channels?: number; effect?: EffectInstance; time?: number };
+	}) {
 		super(options);
-		const channels = Math.max(1, options.processorOptions?.channels ?? 2);
+		const o = options.processorOptions ?? {};
+		const channels = Math.max(1, o.channels ?? 2);
 		this.core = new FxSlotCore(sampleRate, channels, this.port);
+		// The instance comes with the node: the first quantum is already processed (a message would arrive later).
+		if (o.effect)
+			this.core.message({ type: 'effect', effect: o.effect, time: Number.isFinite(o.time) ? o.time! : 0 });
 		this.port.onmessage = (e: MessageEvent) => this.core.message(e.data as FxSlotMessage);
 	}
 	process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {

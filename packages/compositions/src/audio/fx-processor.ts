@@ -28,6 +28,8 @@ export class FxSlotCore {
 	private readonly scratch: Float32Array[];
 	private meters = false;
 	private since = 0;
+	/** Whether the parameters were snapped to the instance's values (first instance, or after a reset). */
+	private primed = false;
 	alive = true;
 
 	constructor(
@@ -44,6 +46,12 @@ export class FxSlotCore {
 			case 'effect':
 				this.chain.setEffects([{ ...m.effect, enabled: true }]);
 				if (this.chain.animated()) this.chain.automate(m.time);
+				// The processors were built with the catalogue defaults: the first instance applies at once (nothing was
+				// processed yet), like the export's EffectSlot; later edits glide (the smoothers avoid clicks).
+				if (!this.primed) {
+					this.chain.reset();
+					this.primed = true;
+				}
 				break;
 			case 'time':
 				if (this.chain.animated()) this.chain.automate(m.time);
@@ -53,6 +61,7 @@ export class FxSlotCore {
 				break;
 			case 'reset':
 				this.chain.reset();
+				this.primed = false;
 				break;
 			case 'dispose':
 				this.alive = false;

@@ -60,7 +60,7 @@ class FxInsert implements PreviewInsert {
 				channelCount: channels,
 				channelCountMode: 'explicit',
 				channelInterpretation: 'discrete',
-				processorOptions: { channels },
+				processorOptions: { channels, effect: this.effect, time: this.time },
 			});
 			node.port.onmessage = (e: MessageEvent<FxSlotReading>) => {
 				for (const fn of meterListeners.get(this.effect.id) ?? []) fn(e.data.values);
@@ -68,7 +68,7 @@ class FxInsert implements PreviewInsert {
 			this.node = node;
 			this.input.connect(node);
 			node.connect(this.output);
-			this.post({ type: 'effect', effect: this.effect, time: this.time });
+			this.sentKey = JSON.stringify(this.effect.params);
 			if (meterListeners.has(this.effect.id)) this.meters(true);
 		});
 	}
