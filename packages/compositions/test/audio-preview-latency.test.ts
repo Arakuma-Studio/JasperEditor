@@ -252,7 +252,7 @@ describe('preview latency plan (track / submix / Mix inserts)', () => {
 		const clip = {
 			duration: 30,
 			sourceIn: 0,
-			speed: { rate: 1, reverse: false },
+			speed: { rate: 1, reverse: false, maintainPitch: false },
 			gainDb: 30,
 			volumeDb: still(0),
 		} as Parameters<typeof clipGainExcess>[0];

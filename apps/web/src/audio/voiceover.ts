@@ -266,7 +266,9 @@ export class VoiceoverRecorder {
 			throw new Error(message);
 		}
 		try {
-			this.inputLatency = this.stream.getAudioTracks()[0]?.getSettings?.().latency;
+			// `latency` (Chrome): the input device's latency in seconds; not in every browser's typings
+			const settings = this.stream.getAudioTracks()[0]?.getSettings?.() as { latency?: unknown } | undefined;
+			this.inputLatency = settings?.latency;
 		} catch {
 			this.inputLatency = undefined;
 		}
