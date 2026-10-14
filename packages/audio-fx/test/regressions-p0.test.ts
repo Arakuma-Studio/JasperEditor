@@ -256,3 +256,23 @@ describe('Convolution Reverb Room Size', () => {
 		}
 	});
 });
+
+describe('Delay in tempo mode', () => {
+	it('a whole note at 30 BPM is 8 s, not cut to 4 s', () => {
+		const sr = 8000;
+		const fx = createProcessor('jasper.audio.delay', sr, 1)!;
+		fx.setParam('mode', 1);
+		fx.setParam('bpm', 30);
+		fx.setParam('division', 0);
+		fx.setParam('mix', 100);
+		fx.setParam('feedback', 0);
+		fx.reset();
+		const n = sr * 9;
+		const x = new Float32Array(n);
+		x[0] = 1;
+		fx.process([x], 0, n);
+		let at = -1;
+		for (let i = 0; i < n; i++) if (Math.abs(x[i]!) > 0.5) at = i;
+		expect(at).toBe(sr * 8);
+	});
+});
