@@ -8,6 +8,7 @@ import {
 	type ClipReader,
 	checkInvariants,
 	createCounterIdSource,
+	generatorReader,
 	listStrips,
 	mixFingerprint,
 	OfflineMixer,
@@ -360,6 +361,27 @@ describe('offline mixer', () => {
 		} finally {
 			off();
 		}
+	});
+
+	it('a synthetic tone sped up past Nyquist is silent instead of aliasing', () => {
+		const clip = {
+			start: 0,
+			duration: 30,
+			sourceIn: 0,
+			speed: { rate: 30, reverse: false, maintainPitch: false },
+			channels: { streamIndex: 0, map: [] },
+			generator: { kind: 'tone', hz: 1000, db: -20 },
+		} as unknown as RenderAudioClip;
+		const read = (c: RenderAudioClip) => {
+			const r = generatorReader(c, { offset: 0, length: 4800, sampleRate: 48000 }, { num: 30, den: 1 })!;
+			const out = [new Float32Array(4800), new Float32Array(4800)];
+			r.read(out, 4800);
+			return Math.max(...out[0]!.map(Math.abs));
+		};
+		// 1 kHz × 30 = 30 kHz > 24 kHz: a band-limited resampler removes it (it would alias to 18 kHz)
+		expect(read(clip)).toBe(0);
+		// 1 kHz × 20 = 20 kHz stays
+		expect(read({ ...clip, speed: { ...clip.speed, rate: 20 } })).toBeGreaterThan(0.09);
 	});
 
 	it('block size does not change the output', async () => {

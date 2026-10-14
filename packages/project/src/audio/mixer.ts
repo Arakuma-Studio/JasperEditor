@@ -22,6 +22,7 @@ import { nestGainDbAt, type RenderAudioClip, type RenderSnapshot } from '../rend
 import type { Animatable } from '../schema/common.ts';
 import type { EffectInstance } from '../schema/sequence.ts';
 import { syntheticSamples } from '../structure/generators.ts';
+import { LEADER_BLIP_HZ } from '../structure/synthetic.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
 import { audioFadeGain } from '../transitions.ts';
 import type { RenderStrip } from './plan.ts';
@@ -677,6 +678,10 @@ export function generatorReader(
 	const channels = Math.max(1, Math.min(6, clip.channels.map.length || 2));
 	const frameSeconds = fps.den / fps.num;
 	const rate = clip.speed.rate;
+	// A sound sped up past the Nyquist frequency is removed, as the band-limited resampling of media clips does
+	// (generating it at `sr / rate` would alias it down into the audible range).
+	const hz = sound.kind === 'tone' ? sound.hz : LEADER_BLIP_HZ;
+	const aliased = hz * rate >= sr / 2;
 	let pos = at.offset;
 	const end = at.offset + at.length;
 	return {
@@ -684,6 +689,11 @@ export function generatorReader(
 		read(out: Float32Array[], frames: number): number {
 			const n = Math.max(0, Math.min(frames, end - pos));
 			if (n === 0) return 0;
+			if (aliased) {
+				for (let c = 0; c < channels; c++) out[c]!.fill(0, 0, n);
+				pos += n;
+				return n;
+			}
 			const u0 = (s0 + pos) / spf - clip.start;
 			let block: Float32Array;
 			if (clip.speed.reverse) {
