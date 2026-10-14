@@ -1,7 +1,8 @@
 // WP0.1 (spec 12 Phase 0) in the real app: the Program monitor's audio is tapped at the AudioContext destination while
-// the same click file plays on A1 (through a 2048-sample Pitch Shifter track insert, zero shift = a pure delay) and on
-// A2 (no insert). With the track insert latency compensated the two clicks coincide (one click of twice the size);
-// uncompensated they arrive 2048 samples (43 ms) apart. Also: Preferences ▸ Audio shows the voice-over Latency Offset.
+// the same click file plays on A1 (through a Hard Limiter track insert: 374 samples of look-ahead, a pure delay below
+// its ceiling) and on A2 (no insert). With the track insert latency compensated the two clicks coincide (one click of
+// twice the size); uncompensated they arrive 374 samples (7.8 ms) apart. Before the WP0.1 fixes this run measured
+// pairs of single clicks 374 samples apart (and an insert added after playback started was not heard at all). Also: Preferences ▸ Audio shows the voice-over Latency Offset.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -135,9 +136,11 @@ test('track insert latency is compensated in the Program monitor', async () => {
 		return { rate: t.rate, peaks };
 	});
 	test.info().annotations.push({ type: 'peaks', description: JSON.stringify(tap) });
+	console.log('peaks', JSON.stringify(tap));
 	expect(tap.rate).toBeGreaterThan(0);
 	expect(tap.peaks.length).toBeGreaterThanOrEqual(2);
-	// one click per 0.5 s, each the sum of both tracks (≈ 2 × 0.5 through the default pan / fader)
+	// one click per 0.5 s, each the sum of both tracks: twice the level of one track's click (0.3535 here)
+	for (const p of tap.peaks) expect(p.v, JSON.stringify(tap.peaks)).toBeGreaterThan(0.65);
 	for (let i = 1; i < tap.peaks.length; i++) {
 		const gap = (tap.peaks[i]!.at - tap.peaks[i - 1]!.at) / tap.rate;
 		expect(Math.abs(gap - 0.5), JSON.stringify(tap.peaks)).toBeLessThan(0.01);
