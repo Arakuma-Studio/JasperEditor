@@ -61,7 +61,7 @@ export const EssentialSoundSchema = z.looseObject({
 		enabled: z.boolean(),
 		/** Integrated loudness of the clip's own signal measured by the last Auto-Match (LUFS), null = never. */
 		measuredLufs: z.number().nullable(),
-		targetLufs: z.number().nullable(),
+		targetLufs: z.number().min(-60).max(0).nullable(),
 		/** Gain the match applied (dB); part of the clip gain while the section is on. */
 		gainDb: z.number(),
 	}),
@@ -112,6 +112,14 @@ export const EssentialSoundSchema = z.looseObject({
 	/** Clip Volume (panel footer): an offset in dB on the clip's Volume while on. */
 	volume: z.looseObject({ on: z.boolean(), levelDb: z.number().min(-96).max(15) }),
 	mute: z.boolean(),
+	/**
+	 * Level the fader ranges clamped away while Clip Volume / Pan offsets were applied (dB / pan units), per value
+	 * (`value` or a keyframe id): given back when the offset changes, so switching an offset off restores the clip's
+	 * own levels exactly. Managed by the commands, not a setting.
+	 */
+	residual: z
+		.object({ volume: z.record(z.string(), z.number()), pan: z.record(z.string(), z.number()) })
+		.optional(),
 });
 export type EssentialSound = z.infer<typeof EssentialSoundSchema>;
 
@@ -199,9 +207,38 @@ export function readEssentialSound(raw: unknown): EssentialSound | null {
 	if (!raw || typeof raw !== 'object') return null;
 	const t = (raw as { type?: unknown }).type;
 	if (typeof t !== 'string' || !(AUDIO_TYPES as readonly string[]).includes(t)) return null;
+	const defaults = newEssentialSound(t as AudioType) as Record<string, unknown>;
+	const merged = deepMerge(defaults, raw) as Record<string, unknown>;
+	clampAll(merged as EssentialSound);
+	let r = EssentialSoundSchema.safeParse(merged);
+	if (!r.success) {
+		// Fall back per section: one bad field must not reset the clip's other settings (the gain, Volume and
+		// effects they already applied would then be reconciled from the wrong state).
+		for (const issue of r.error.issues) {
+			const k = String(issue.path[0]);
+			if (k in defaults) merged[k] = defaults[k];
+			else delete merged[k];
+		}
+		r = EssentialSoundSchema.safeParse(merged);
+	}
+	return r.success ? (r.data as EssentialSound) : (defaults as EssentialSound);
+}
+
+/**
+ * Strict read of explicit settings (a user preset from an agent or a file): missing fields take the type's defaults
+ * and numbers are clamped into range like every other setting, but a field of the wrong type is an error message.
+ */
+export function parseEssentialSound(raw: unknown): EssentialSound | string {
+	if (!raw || typeof raw !== 'object') return 'settings must be an object';
+	const t = (raw as { type?: unknown }).type;
+	if (typeof t !== 'string' || !(AUDIO_TYPES as readonly string[]).includes(t))
+		return 'settings need a valid "type" (dialogue, music, sfx, ambience)';
 	const merged = deepMerge(newEssentialSound(t as AudioType), raw) as EssentialSound;
+	clampAll(merged);
 	const r = EssentialSoundSchema.safeParse(merged);
-	return r.success ? (r.data as EssentialSound) : newEssentialSound(t as AudioType);
+	if (r.success) return r.data as EssentialSound;
+	const i = r.error.issues[0];
+	return `settings.${i?.path.join('.') ?? ''}: ${i?.message ?? 'invalid value'}`;
 }
 
 function deepMerge(base: unknown, over: unknown): unknown {
@@ -311,6 +348,8 @@ function clampAll(s: EssentialSound): void {
 	}
 	if (s.pan && typeof s.pan.value === 'number') s.pan.value = c(s.pan.value, -100, 100, 0);
 	if (s.volume && typeof s.volume.levelDb === 'number') s.volume.levelDb = c(s.volume.levelDb, -96, 15, 0);
+	if (s.loudness && typeof s.loudness.targetLufs === 'number')
+		s.loudness.targetLufs = c(s.loudness.targetLufs, -60, 0, DEFAULT_LOUDNESS_TARGET);
 	if (s.loudness && typeof s.loudness.gainDb === 'number')
 		s.loudness.gainDb = c(s.loudness.gainDb, -96, 96, 0);
 	if (s.duration) {
@@ -324,9 +363,9 @@ function clampAll(s: EssentialSound): void {
 export const loudnessGainDb = (s: EssentialSound | null) => (s?.loudness.enabled ? s.loudness.gainDb : 0);
 /** Offset this state adds to the Volume level. */
 export const volumeOffsetDb = (s: EssentialSound | null) => (s?.volume.on ? s.volume.levelDb : 0);
-/** Clip pan this state sets (null when the type has no Pan section). */
-export const panValue = (s: EssentialSound | null) =>
-	s && TYPE_SECTIONS[s.type].includes('pan') ? (s.pan.enabled ? s.pan.value : 0) : null;
+/** Offset this state adds to the clip pan (Pan section on, for the types that have one). */
+export const panOffset = (s: EssentialSound | null) =>
+	s && TYPE_SECTIONS[s.type].includes('pan') && s.pan.enabled ? s.pan.value : 0;
 
 /** Reduce Rumble amount (0…10) → Highpass cutoff (30…150 Hz). */
 export const rumbleCutoff = (amount: number) => 30 + amount * 12;

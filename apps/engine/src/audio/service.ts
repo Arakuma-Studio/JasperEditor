@@ -390,7 +390,10 @@ export class AudioService {
 					'TOO_SHORT',
 					`The audio is ${Math.round((total / sr) * 1000)} ms long: integrated loudness (BS.1770) needs at least 400 ms`,
 					false,
-					{ durationSec: total / sr, truePeakDbtp: Number.isFinite(before.truePeakDb) ? before.truePeakDb : null },
+					{
+						durationSec: total / sr,
+						truePeakDbtp: Number.isFinite(before.truePeakDb) ? before.truePeakDb : null,
+					},
 				);
 			throw new JobError(
 				'SILENT',

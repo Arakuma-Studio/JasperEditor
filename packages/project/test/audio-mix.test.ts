@@ -1,4 +1,6 @@
+import { balanceGains } from '@jasper/audio-dsp';
 import { describe, expect, it } from 'vitest';
+import { contentTimeAt } from '../src/derive/index.ts';
 import {
 	buildAudioMix,
 	buildRenderSnapshot,
@@ -18,8 +20,6 @@ import {
 	soloAudible,
 	thinPoints,
 } from '../src/index.ts';
-import { balanceGains } from '@jasper/audio-dsp';
-import { contentTimeAt } from '../src/derive/index.ts';
 import { evaluate } from '../src/keyframes.ts';
 import { Harness } from './helpers.ts';
 
