@@ -210,7 +210,12 @@ Decisions (undocumented behaviour or our choice):
 - Preview latency compensation (spec 12 WP0.1) starts the media early: right after Play the first `read-ahead` samples
   (≤ 43 ms with one STFT effect) are silent, and frame-based (STFT) inserts start their frames where playback started,
   so the first ≈ 0.2 s after an onset can differ from an export started elsewhere by ≈ −40 dB (the same holds between
-  two exports with different range starts); steady state is sample-identical.
+  two exports with different range starts); steady state is sample-identical. The same `read-ahead` is lost after a
+  seek. Clips that start later are premounted by their lead (≥ 2 s), so a cut is heard from its first sample (Phase 0
+  verification, `e2e/sound-p0-preview.spec.ts`). Not measured: after a seek the route delay lines may still hold up
+  to `read-ahead` of the audio from before the seek (Remotion's 30 ms fade-in hides most of it below ≈ 30 ms); a
+  change of the read-ahead during playback (normalisation on/off, adding a latent insert) re-creates every clip's
+  media player, a short dropout.
 - 5.1 clips: processors run per channel; stereo-image effects act on L/R only and pass the other channels. Surround
   Reverb, Mastering, Loudness Meter and Loudness Auto Gain handle all six channels (Dry / output / maximiser on every
   channel, BS.1770 weights; sound-design Phase 0, `packages/audio-fx/test/regressions-p0.test.ts`).
