@@ -179,13 +179,13 @@ describe('5.1 inserts process every channel', () => {
 		const ch = six(SR);
 		const before = ch.map((c) => rms(c));
 		fx.process(ch, 0, SR);
-		ch.forEach((c, k) => expect(rms(c) - before[k]!, `channel ${k}`).toBeCloseTo(-12, 1));
+		for (const [k, c] of ch.entries()) expect(rms(c) - before[k]!, `channel ${k}`).toBeCloseTo(-12, 1);
 		const fx2 = createProcessor('jasper.audio.mastering', SR, 6)!;
 		fx2.setParam('loudness', 100);
 		fx2.reset();
 		const loud = six(SR, 0.9);
 		fx2.process(loud, 0, SR);
-		loud.forEach((c, k) => expect(peakDb(c), `channel ${k}`).toBeLessThanOrEqual(-0.3 + 1e-6));
+		for (const [k, c] of loud.entries()) expect(peakDb(c), `channel ${k}`).toBeLessThanOrEqual(-0.3 + 1e-6);
 	});
 
 	it('Loudness Meter measures a 5.1 centre channel', () => {
