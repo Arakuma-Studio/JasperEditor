@@ -129,7 +129,26 @@ export class ConvolutionReverb extends EffectBase {
 		const alf = OnePole.alpha(dLf, sr);
 		const ahf = OnePole.alpha(dHf, sr);
 		const bins2 = 2 * (PART + 1);
-		const norm = 1 / Math.sqrt(scale);
+		// Keep the impulse's energy: linear interpolation at fractional ratios loses a ratio-dependent part of it (and
+		// drops or keeps single-sample reflections), so a plain 1/√scale made the level jump with Room Size.
+		let eBase = 0;
+		let eScaled = 0;
+		const used = Math.min(len, this.parts * PART);
+		const baseUsed = Math.min(this.baseLen, Math.ceil(used / scale));
+		for (let c = 0; c < 2; c++) {
+			const b = this.base[c as 0 | 1];
+			for (let i = 0; i < baseUsed; i++) eBase += b[i]! * b[i]!;
+			for (let i = 0; i < used; i++) {
+				const src = i / scale;
+				const i0 = Math.floor(src);
+				const fr = src - i0;
+				const v0 = i0 < this.baseLen ? b[i0]! : 0;
+				const v1 = i0 + 1 < this.baseLen ? b[i0 + 1]! : 0;
+				const v = v0 + (v1 - v0) * fr;
+				eScaled += v * v;
+			}
+		}
+		const norm = eScaled > 0 ? Math.sqrt(eBase / eScaled) : 1 / Math.sqrt(scale);
 		for (let c = 0; c < 2; c++) {
 			const hp = new OnePole();
 			const lp = new OnePole();

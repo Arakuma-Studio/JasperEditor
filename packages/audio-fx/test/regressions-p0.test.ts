@@ -231,3 +231,28 @@ describe('Multiband Compressor crossovers', () => {
 		}
 	});
 });
+
+describe('Convolution Reverb Room Size', () => {
+	it('keeps the wet energy of the impulse at every room size', () => {
+		for (const imp of [0, 2]) {
+			const e: number[] = [];
+			for (const size of [100, 50, 33, 25, 10]) {
+				const fx = createProcessor('jasper.audio.convolution-reverb', SR, 1)!;
+				fx.setParam('impulse', imp);
+				fx.setParam('roomSize', size);
+				fx.setParam('mix', 100);
+				fx.reset();
+				const n = SR * 5;
+				const x = new Float32Array(n);
+				x[0] = 1;
+				fx.process([x], 0, n);
+				let s = 0;
+				for (let i = 0; i < n; i++) s += x[i]! * x[i]!;
+				e.push(10 * Math.log10(s));
+			}
+			// (A mono instance hears the mean of the decorrelated L/R impulses; their correlation moves a little with
+			// the size, ≈ 0.6 dB at 10 %. Before the fix 33 % alone was 1.4 dB low.)
+			for (const v of e) expect(Math.abs(v - e[0]!), `impulse ${imp}: ${e.map((d) => d.toFixed(2))}`).toBeLessThan(1);
+		}
+	});
+});
