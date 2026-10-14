@@ -524,8 +524,11 @@ class ClipNodes {
 		this.trim = discreteGain(ctx, 1);
 	}
 
-	/** (Re)builds the chain for the clip's channel layout and the track width; connects to `dest`. */
-	connect(clip: RenderAudioClip, trackWidth: number, dest: AudioNode, time: number): void {
+	/**
+	 * (Re)builds the chain for the clip's channel layout and the track width; connects to `dest`. `time` is the time of
+	 * the samples the clip nodes process now (the picture time plus the graph's read-ahead), `fps` the sequence rate.
+	 */
+	connect(clip: RenderAudioClip, trackWidth: number, dest: AudioNode, time: number, fps?: Rational): void {
 		this.clip = clip;
 		const stream = Math.max(
 			1,
@@ -570,7 +573,7 @@ class ClipNodes {
 			this.pan.output.connect(dest);
 			this.dest = dest;
 		}
-		this.update(clip, time, null, true);
+		this.update(clip, time, null, true, fps);
 	}
 
 	/** Clip pan, effects and the Clip Mixer trim at sequence time `t` (flicks). */
@@ -690,6 +693,11 @@ export class MixGraph {
 		return this.plan;
 	}
 
+	/** Sequence time (flicks) of the samples the clip nodes process now: the picture time plus the read-ahead. */
+	private aheadTime(): number {
+		return this.time + (this.plan.total * FLICKS_PER_SECOND) / this.ctx.sampleRate;
+	}
+
 	/** Read-ahead of the graph in seconds: every source plays this much early so the Mix lines up with the picture. */
 	get latency(): number {
 		return this.plan.total / this.ctx.sampleRate;
@@ -745,7 +753,7 @@ export class MixGraph {
 			c = new ClipNodes(this.ctx, clip);
 			this.clips.set(clip.clipId, c);
 			const st = this.strips.get(clip.trackId);
-			if (st) c.connect(clip, st.width, st.input, this.time);
+			if (st) c.connect(clip, st.width, st.input, this.aheadTime(), this.fps);
 		}
 		return c.input;
 	}
@@ -857,7 +865,7 @@ export class MixGraph {
 			const st = this.strips.get(clip.trackId);
 			if (!st) continue;
 			if (c.clip.trackId !== clip.trackId || c.clip !== clip || c.trackWidth !== st.width) {
-				c.connect(clip, st.width, st.input, timeFlicks);
+				c.connect(clip, st.width, st.input, this.aheadTime(), this.fps);
 			}
 		}
 		this.applyValues(false);
@@ -939,7 +947,7 @@ export class MixGraph {
 		for (const [id, c] of this.clips) {
 			const clip = byId.get(id) ?? c.clip;
 			const st = this.strips.get(clip.trackId);
-			if (st) c.connect(clip, st.width, st.input, this.time);
+			if (st) c.connect(clip, st.width, st.input, this.aheadTime(), this.fps);
 		}
 	}
 
@@ -1061,7 +1069,7 @@ export class MixGraph {
 		this.limiter?.port.postMessage({ enabled: !!mix.loudness, ceilingDb: mix.loudness?.truePeakDb ?? -1 });
 		// clips: their nodes process the samples `total` ahead of the picture (the read-ahead)
 		const t = this.time;
-		const ahead = t + (this.plan.total * FLICKS_PER_SECOND) / sr;
+		const ahead = this.aheadTime();
 		const byId = new Map(this.clipList.map((c) => [c.clipId, c]));
 		for (const [id, c] of this.clips) {
 			const clip = byId.get(id);

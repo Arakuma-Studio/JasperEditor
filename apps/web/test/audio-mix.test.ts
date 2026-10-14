@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { contentTimeAt, evaluate, flicksPerFrame, type Sequence } from '@jasper/project';
+import { describe, expect, it } from 'vitest';
 import { CLIP_LANE_VOLUME, clipLaneValue, Gesture } from '../src/audio/automation.ts';
 import { dbToFader, faderToDb } from '../src/audio/components/controls.tsx';
 import { meterPos } from '../src/audio/components/LevelMeter.tsx';
@@ -84,7 +84,10 @@ describe('audio UI helpers', () => {
 		const seq = { settings: { frameRate: rate }, clips: { c1: clip } } as unknown as Sequence;
 		for (const local of [0, 3, 9]) {
 			const v = clipLaneValue(seq, 'A1', CLIP_LANE_VOLUME, (10 + local) * F);
-			expect(v).toBeCloseTo(evaluate(clip.volumeDb as never, contentTimeAt(clip, 10 + local, rate)) as number, 9);
+			expect(v).toBeCloseTo(
+				evaluate(clip.volumeDb as never, contentTimeAt(clip, 10 + local, rate)) as number,
+				9,
+			);
 			expect(v).toBeCloseTo(-11 - local, 9);
 		}
 	});

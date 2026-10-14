@@ -62,7 +62,8 @@ function decode(o: {
 		fps: { num: 30, den: 1 },
 		sampleRate: SR,
 		offset: o.window?.offset ?? 0,
-		length: o.window?.length ?? Math.round(((o.frames + (o.headHandle ?? 0) + (o.tailHandle ?? 0)) * SR) / 30),
+		length:
+			o.window?.length ?? Math.round(((o.frames + (o.headHandle ?? 0) + (o.tailHandle ?? 0)) * SR) / 30),
 		soxr: false,
 	});
 	const r = spawnSync(TEST_FFMPEG, ['-v', 'error', ...args], { maxBuffer: 1 << 26, timeout: 60_000 });
