@@ -21,6 +21,8 @@ import {
 	thinPoints,
 } from '../src/index.ts';
 import { evaluate } from '../src/keyframes.ts';
+import { repairAudioMix } from '../src/audio/invariants.ts';
+import type { Sequence } from '../src/schema/sequence.ts';
 import { Harness } from './helpers.ts';
 
 const F30 = 705_600_000 / 30;
@@ -572,5 +574,29 @@ describe('mixer commands', () => {
 		expect(checkInvariants(doc).some((i) => i.invariant === 'INV-MIX')).toBe(true);
 		const { document } = repairDocument(doc, createCounterIdSource(99));
 		expect(checkInvariants(document).filter((i) => i.invariant === 'INV-MIX')).toEqual([]);
+	});
+
+	it('repairDocument keeps a valid send whose id an invalid duplicate used first', () => {
+		const h = new Harness();
+		h.ok([{ type: 'mixer.addSubmix' }]);
+		const doc = JSON.parse(JSON.stringify(h.doc)) as ProjectDocument;
+		const seq = Object.values(doc.sequences)[0]!;
+		const sub = seq.submixTracks![0]!.id;
+		const lv = { value: 0, keyframes: [] };
+		seq.audioTracks[0]!.mixer = {
+			sends: [
+				{ id: 'snd_0000000000000001', target: 'gone', levelDb: lv },
+				{ id: 'snd_0000000000000001', target: sub, levelDb: lv },
+			],
+		};
+		const { document } = repairDocument(doc, createCounterIdSource(99));
+		const sends = Object.values(document.sequences)[0]!.audioTracks[0]!.mixer!.sends!;
+		expect(sends.map((x) => x.target)).toEqual([sub]);
+		// The mixer repair on its own (repairDocument may rename duplicate ids before it runs).
+		const s2 = JSON.parse(JSON.stringify(seq)) as Sequence;
+		const notes: string[] = [];
+		repairAudioMix(s2, (a) => notes.push(a));
+		expect(s2.audioTracks[0]!.mixer!.sends!.map((x) => x.target)).toEqual([sub]);
+		expect(notes).toContain('drop-send');
 	});
 });

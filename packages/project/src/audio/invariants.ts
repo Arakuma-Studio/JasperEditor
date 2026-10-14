@@ -74,11 +74,12 @@ export function repairAudioMix(
 			const seen = new Set<string>();
 			const kept = m.sends.filter((s) => {
 				const good = ok(s.target) && !seen.has(s.id);
-				seen.add(s.id);
+				if (good) seen.add(s.id); // an invalid send must not shadow a valid one with the same id
 				return good;
 			});
 			if (kept.length !== m.sends.length)
 				note('drop-send', t.id, 'removed sends to missing or earlier submixes');
+			if (kept.length > MAX_SENDS) note('drop-send', t.id, `kept the first ${MAX_SENDS} sends`);
 			m.sends = kept.slice(0, MAX_SENDS);
 		}
 		if (m.lanes)
