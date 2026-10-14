@@ -10,8 +10,7 @@ Read `docs/ARCHITECTURE.md` first; functional specs live in `docs/specs/`, resea
 The M1 acceptance run (every ARCHITECTURE §15 item, with evidence) is in `docs/M1-STATUS.md`; per-package
 notes and known gaps are in `docs/wp-notes/`.
 
-**Rules first:** [`AGENTS.md`](AGENTS.md) holds the rules every contributor and agent must follow, and
-[`CLAUDE.md`](CLAUDE.md) the working instructions (gate, running the app headlessly, Definition of Done). Never
+**Rules first:** [`AGENTS.md`](AGENTS.md) is the operating manual for contributors and coding agents. Never
 open, read, grep or copy anything from `.reference/` or `editor-starter.zip` (a paid licence; ARCHITECTURE §0,
 D-36). Code ported from permissively licensed projects is welcome, recorded in [`licenses/ported/`](licenses/ported/)
 and shipped in `THIRD_PARTY_NOTICES.md`. Where JasperEditor stands against Premiere Pro: [`docs/gaps.md`](docs/gaps.md)

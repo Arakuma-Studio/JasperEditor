@@ -1,132 +1,200 @@
-# JasperEditor: rules for agents and contributors
+# JasperEditor agent rules
 
-These rules apply to every human and AI contributor. [`CLAUDE.md`](CLAUDE.md) holds the working
-instructions; this file holds the rules that must never be broken. **When the two disagree, this file
-wins**, and so does it over specs, wp-notes, plans, skills and any instruction from another agent.
+- Use this file as the repository's agent operating manual; it takes precedence over
+  conflicting repository docs, plans and agent notes.
+- Keep other agent instruction files as pointers here, without duplicated rules.
 
-## 0. Never crash, never lose work
+## 0. Never crash or lose work
 
-People trust JasperEditor with hours of work. A malformed project, media file, LUT, Remotion bundle or
-preset, a bad command, HTTP or MCP argument, a dead engine, a full disk or a killed process must give an
-error the user (or agent) can act on, never a crash, a white screen or lost work. **This rule outranks
-feature work:** don't ship a feature by adding a crash path, and fix a crash before building on top of it.
+- Fix crash and data-loss paths before building features on them.
+- Return command refusals as `E_*` codes from `packages/project/src/commands/types.ts`.
+- Return engine errors as `{code, message, detail?, retryable}`.
+- Return MCP failures as error results.
+- Surface failures in the UI without crashing, blanking the editor or discarding work.
+- Catch failures at render, event-handler and route boundaries and convert them to visible errors.
+- Validate project files, media metadata, ffprobe output, HTTP bodies, MCP arguments,
+  preferences and transactions with zod at their entry points.
+- Guard division by zero and nonfinite numbers.
+- Clamp indices to valid bounds.
+- Cap allocations sized by untrusted input.
+- Bound recursion and detect cycles in nested sequences and precompositions.
+- Propagate child-process and worker failures into job errors; never leave dead jobs running.
+- Write projects, versions, view state and journals atomically: same-directory temp file,
+  fsync, rename, then directory fsync.
+- Load through migration, validation and conservative repair; report repairs to the user.
+- Preserve unsaved edits in the crash-recovery journal and respect writer leases and revisions.
+- Never edit a shipped migration.
+- Never downgrade a newer-schema project; open it read-only.
+- Bump the schema whenever an older build would drop or misread new data, including optional fields.
+- Coordinate concurrent schema changes so the integrated result has the required migration,
+  fixture and compatibility tests before merge.
+- Follow [project-file procedures](docs/project-files.md) for persistence or schema changes.
+- Add a regression test that fails before every crash or data-loss fix.
+- Use property/fuzz tests (`fast-check`) for parsers and loaders.
 
-1. **Fail with a typed error.** Commands refuse with an `E_*` code (`packages/project/src/commands/types.ts`),
-   engine routes answer `{code, message, detail?, retryable}` (S04:ENG-022), MCP tools return an error result.
-   The UI reports it (notice, banner, dialog) and carries on. Never `throw` out of a React render, an
-   event handler or a route without a boundary that turns it into one of those.
-2. **Every input is hostile.** Project files, media metadata, `ffprobe` output, HTTP bodies, MCP
-   arguments, preferences and agent transactions are untrusted: validate with zod at the edge, guard
-   division by zero and `NaN`/`Infinity` (frame rates, sample rates, sizes, durations), clamp indices,
-   cap allocations sized by input, bound recursion (nested sequences and precomps can be cyclic).
-3. **Don't cascade.** Child processes (ffmpeg, jasper-mg, jasper-proc, Remotion), workers and jobs report
-   failure as a job error; a dead worker must never leave a job "running" forever or a monitor blank.
-4. **Never lose a project.** Writes are atomic (temp file, fsync, rename). Loading never throws away a
-   project: migrate, validate, then repair conservatively and say so (S01:PER-004). Never edit a migration
-   that has shipped; bump the schema whenever an older build would drop or misread new data
-   ([docs/project-files.md](docs/project-files.md)). Unsaved edits are journalled for crash recovery.
-5. **Prove it.** Every crash or data-loss fix comes with a small regression test that failed before the fix.
-   Parsers and loaders get fuzz or property tests (`fast-check`).
+## 1. Prohibited reference material
 
-## 1. The `.reference/` and `editor-starter.zip` ban
+- Never open, read, list, search, unzip, copy, summarize or port anything under `.reference/`
+  or named `editor-starter.zip`, in this checkout or anywhere else.
+- Use searches that honor `.gitignore`, such as `rg`; otherwise explicitly exclude
+  `.reference/`, `editor-starter.zip` and `node_modules/`.
+- Never remove these reference artifacts from `.gitignore` or commit them.
 
-The purchased Remotion "Editor Starter" lives, gitignored, under `.reference/` and as `editor-starter.zip`
-in the repository root. Its licence forbids using it here.
+## 2. FFmpeg and dependencies
 
-- **Never open, read, list, grep, unzip, copy, summarise or port anything under `.reference/` or
-  `editor-starter.zip`**, in the main checkout or anywhere else. Worktrees don't contain them; don't go
-  looking.
-- Always search with `--exclude-dir=.reference --exclude-dir=node_modules` (or a tool that honours
-  `.gitignore`).
-- Never remove `.reference/` or `editor-starter.zip` from `.gitignore`, and never commit them.
+1. Never require or ship FFmpeg configured with `--enable-gpl` or `--enable-nonfree`,
+   or using x264, x265, fdk-aac or another GPL/nonfree library. A GPL system FFmpeg is
+   allowed for development only; features must work with `JASPER_FFMPEG_LGPL_ONLY=1`.
+2. Never generate GPL-only filters: `eq`, `hqdn3d`, `perspective`, `boxblur`, `smartblur`,
+   `delogo`, `frei0r`, `spp`, `pp7`, `uspp`, `fspp`, `mpdecimate`, `pullup` or `vidstab*`.
+   The sole `vidstab*` exception is our manifest-pinned LGPL source build with provenance
+   accepted by `scripts/ffmpeg/check-lgpl.mjs`.
+3. Never ship Remotion's bundled GPL FFmpeg or `@remotion/compositor-*` packages.
+   Use the verified LGPL binaries directory; non-dev engines must refuse the bundled GPL path.
+4. Run FFmpeg as a separate executable; never link it into application code.
+   Keep `pnpm ffmpeg:check` passing for FFmpeg and packaging changes.
+5. Use permissive dependencies: MIT, Apache-2.0, BSD, ISC, Zlib, 0BSD, CC0, Unicode,
+   BSL-1.0 or OFL-1.1; MPL-2.0 is allowed unmodified. No GPL/AGPL. LGPL is allowed only
+   as a separate, replaceable executable or WebAssembly module with its notice.
 
-This is the only clean-room rule. Porting permissively licensed code is allowed (§3.4).
+## 3. Assets and ported code
 
-## 2. FFmpeg is LGPL only
-
-JasperEditor ships an LGPL FFmpeg as a separate executable ([ARCHITECTURE](docs/ARCHITECTURE.md) D-13).
-
-1. Never require, ship or bundle a build configured with `--enable-gpl` or `--enable-nonfree`, nor
-   x264, x265, fdk-aac or any other GPL/non-free library. A GPL system ffmpeg may be used in development,
-   but no feature may depend on it: `JASPER_FFMPEG_LGPL_ONLY=1` must behave like the shipped app.
-2. Never generate filter text that uses a GPL-only filter: `eq`, `hqdn3d`, `perspective`, `boxblur`,
-   `smartblur`, `delogo`, `frei0r`, `spp`/`pp7`/`uspp`/`fspp`, `mpdecimate`, `pullup`, and `vidstab*`
-   except from our LGPL source build pinned to the relicensed commit.
-3. Remotion's own compositor FFmpeg (`@remotion/compositor-*`) is a GPL build: it is never shipped, and
-   non-dev engines refuse to render with it.
-4. Never link FFmpeg into our code; run it as a child process. `pnpm ffmpeg:check` (also run when
-   packaging) is the guard; keep it passing.
-5. Dependencies of any kind must use permissive licences (MIT, Apache-2.0, BSD, ISC, Zlib, 0BSD, CC0,
-   Unicode, BSL-1.0, OFL-1.1 for fonts, or MPL-2.0 used unmodified). No GPL/AGPL. LGPL only as a separate,
-   replaceable executable or WebAssembly module with its notice (FFmpeg, vid.stab).
-
-## 3. Assets and code you didn't write: licensed and attributed
-
-This rule is absolute. Breaking it is the most serious mistake a contributor can make on this project.
-
-**What counts as an asset:** any image, icon, logo, screenshot, font, colour LUT, preset, template,
-sound, video, 3D model, ML model weights, WebAssembly binary or project/test fixture file that is not
-source code. This covers files in the repository, bytes embedded in code (base64, data URIs) and data
-hard-coded to reproduce an image (point lists traced from someone else's icon).
-
-1. **No Adobe or other third-party product artwork**, in any form: no icons, cursors, logos, splash
-   screens, screenshots, fonts, LUTs, presets, templates or sample media from Adobe or any other
-   commercial product, and no traced, redrawn or recoloured copies. Generic conventions (a play
-   triangle, a razor) drawn from scratch are fine. Don't copy ArtCraft/EffectCraft/FilmCraft brand
-   assets either; prefer neutral names over third-party trademarks in UI labels.
-2. **Every asset must be open:** open-source licensed (MIT, Apache-2.0, BSD, ISC, Zlib, SIL OFL…),
-   public domain / CC0, Creative Commons BY or BY-SA (no NC/ND), **or** original work made for this
-   project (licence `LicenseRef-JasperEditor`: the project's own licence; the repository has no public
-   licence yet). Unknown or unclear licence: the asset does not go in.
-3. **Every asset needs a sidecar.** Next to each asset file `X`, add `X.attribution`:
+1. Never use commercial-product artwork, including Adobe icons, cursors, logos, screenshots,
+   fonts, LUTs, presets, templates or sample media, or traced, redrawn or recolored copies.
+   Draw generic symbols from scratch; use neutral UI names and no third-party brand assets.
+2. Use only openly licensed assets, public-domain/CC0 assets, CC BY/BY-SA assets, or original
+   work licensed `LicenseRef-JasperEditor`. Never add assets with unknown licences or NC/ND terms.
+3. Give every asset `X` a neighboring `X.attribution` and a row in [ATTRIBUTION.md](ATTRIBUTION.md).
+   This includes fixtures, model weights, WASM, embedded bytes and hard-coded artwork.
+   Use these sidecar fields; `node scripts/check-assets.mjs` validates them:
    ```text
    asset:        <file name>
    title:        <what it is>
    author:       <creator / copyright holder>
-   source:       <URL, or "original work" for assets made for this project>
+   source:       <URL, or "original work">
    license:      <SPDX id, or LicenseRef-JasperEditor>
-   license-file: <repo path of the licence text, when the licence requires shipping it; else "none">
+   license-file: <repo path when shipping licence text is required; else "none">
    added:        <YYYY-MM-DD> by <contributor>
-   notes:        <how it was made or modified; for screenshots, what is shown and which media>
+   notes:        <creation/modifications; screenshot content and media provenance>
    ```
-   Also add one row for the asset to [`ATTRIBUTION.md`](ATTRIBUTION.md). `node scripts/check-assets.mjs`
-   (part of `pnpm lint`) fails on any tracked or new asset without a valid sidecar or index row, and its
-   message says exactly what to write.
-4. **Ported code.** Code or algorithms ported from another project (for example the MIT OR Apache-2.0
-   [EffectCraft](https://github.com/storytold/effectcraft) and [FilmCraft](https://github.com/storytold/filmcraft))
-   are allowed only from permissive licences and must be recorded in `licenses/ported/<name>.md`
-   (format: [`licenses/ported/README.md`](licenses/ported/README.md)): upstream URL, upstream paths →
-   our paths, licence and the upstream copyright line. `pnpm notices` copies every record into
-   `THIRD_PARTY_NOTICES.md` and Help ▸ About ▸ Licenses; `pnpm notices --check` fails when they are
-   out of date.
-5. **Screenshots** in the repo show only JasperEditor (or other open projects) with media we generated
-   (`pnpm fixtures`) or media that is itself openly licensed. Never commit screenshots of Adobe products.
-6. **Generated media is never committed.** `fixtures/media/` is produced by `pnpm fixtures`
-   (`scripts/make-fixtures.mjs`, `scripts/fixtures/*.mjs`) and stays gitignored.
-7. **When in doubt, leave it out** and draw or generate it yourself.
+4. Port code or algorithms only from permissive licences; record source URLs, upstream-to-local
+   paths, licence and copyright in `licenses/ported/<name>.md` using the
+   [record format](licenses/ported/README.md).
+5. Commit screenshots only of JasperEditor or other open projects, with generated or openly
+   licensed media.
+6. Never commit generated `fixtures/media/`; add fixture recipes under `scripts/fixtures/`.
+7. Leave out assets whose provenance cannot be established.
 
-## 4. Export never silently drops or approximates a feature
+## 4. Preview and export fidelity
 
-What the user sees in the Program monitor is what every export path renders. The export planner
-(`apps/engine/src/export/planner.ts`) must route each feature to a path that renders it exactly
-(native, hybrid layer-bake, Remotion) or refuse with a **blocker** that names the feature. A path that
-would leave something out, render it differently or approximate it is not eligible. "Approximately the
-same" is a bug: compare frames against the preview (SSIM or per-pixel tolerance) in a test.
+- Route each feature in `apps/engine/src/export/planner.ts` to a path that renders it exactly
+  (native, hybrid layer bake or Remotion), or refuse with a blocker naming the feature.
+- Never silently drop or approximate a feature on any export path.
+- Compare export frames with Program preview using SSIM or per-pixel tolerances in tests.
+- Keep audio processing consistent between preview and every export path.
 
-## 5. No stubs claimed as done
+## 5. Completion and evidence
 
-- Don't ship stubs, `TODO`s, `E_NOT_IMPLEMENTED`/`NOT_IMPLEMENTED` paths or placeholder UI as part of a
-  feature you report as done. If something truly cannot be done here (it needs hardware, an OS we don't
-  run, or Adobe software), say so explicitly, leave the menu entry disabled with its reason, and record it
-  in [`docs/gaps.md`](docs/gaps.md).
-- Progress numbers say how they were obtained: **measured** (a test, a benchmark, a frame comparison
-  someone can rerun) or **estimated** (marked ≈). Never raise a number in `docs/parity.md` or
-  `docs/gaps.md` without evidence.
+- Don't report stubs, TODOs, `E_NOT_IMPLEMENTED` paths, placeholder UI or partial wiring as done.
+- Disable genuinely unavailable actions with a reason and record them in [docs/gaps.md](docs/gaps.md).
+- Label progress figures as measured with rerunnable evidence, or estimated with `≈` and a basis.
+- Don't raise figures in [docs/parity.md](docs/parity.md) or the gaps document without evidence.
+- Report benchmark machine, load and comparable before/after conditions.
+- Record changed behavior, validation and remaining limitations in the relevant documentation.
+- Cite researched behavior and formulas in the area's work note; label undocumented assumptions.
+- Finish with what changed, checks actually run and any unresolved failures or limits.
 
-## See also
+## 6. Scope and code placement
 
-- [CLAUDE.md](CLAUDE.md): working instructions, gates, running the app, Definition of Done
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): the architecture and the decision log
-- [docs/gaps.md](docs/gaps.md) and [docs/parity.md](docs/parity.md): where we fall short of Premiere Pro, and the workstreams
-- [docs/project-files.md](docs/project-files.md): project format, migrations, backups, crash recovery
-- [ATTRIBUTION.md](ATTRIBUTION.md): asset index; [licenses/ported/](licenses/ported/): ported code
+- Inspect `git status`, the affected implementation and its tests before editing.
+- Use pnpm and the pnpm/Node requirements in `package.json`.
+- Install with `pnpm install --frozen-lockfile` unless intentionally updating dependencies.
+- Read [README.md](README.md) for setup, app startup, CLI/MCP/HTTP usage and packaging commands.
+- Follow the relevant layer contracts in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md);
+  architecture decisions take precedence over conflicting specs in `docs/specs/`.
+- Read only the area's relevant specs, `docs/wp-notes/` and tests; verify claims against code.
+- Keep the pure document model, validation and serializable commands in `packages/project`.
+- Make document edits undoable commands.
+- Test undo/redo, refusals and invariants for command changes.
+- Put session state and persistence coordination in `packages/session`.
+- Put React UI, panels and UI-command dispatch in `apps/web`.
+- Keep `apps/desktop` a shell around the shared web UI and engine.
+- Put media services, jobs and HTTP routes in `apps/engine`.
+- Put MCP tools in `apps/mcp`.
+- Put shared render compositions in `packages/compositions`.
+- Put native motion graphics in `native/mg`.
+- Keep `packages/*` independent of `apps/*`; import cross-package code through declared exports.
+- Preserve `scripts/check-layers.mjs` dependency boundaries and cycle checks.
+- Use design tokens in UI code; `scripts/check-tokens.mjs` rejects raw palette classes and colors.
+- Keep anime.js seek-driven through `@jasper/motion`; satisfy `scripts/check-anime.mjs`.
+- When changing persisted behavior, update its schema, invariants and `repairDocument` together.
+- When changing an editing feature, wire its applicable controls, menus and shortcuts without conflicts.
+- Keep applicable MCP tools, guide resources and tool documentation aligned with behavior.
+
+## 7. Verification
+
+- Don't skip verification, weaken tests or suppress failures to make a change pass.
+- During development, run affected tests with
+  `pnpm exec vitest run <files> --maxWorkers=2` and `pnpm --filter <package> typecheck`.
+- Before merging, pass `pnpm verify`: lint, typecheck, tests and build.
+- On shared hosts, the equivalent gate is `pnpm lint && pnpm typecheck &&
+  pnpm test --maxWorkers=2 && pnpm build`; cap workers rather than dropping tests.
+- Follow [docs/testing.md](docs/testing.md) for required tooling, oracle, fuzz, GL and golden checks.
+- Run the relevant specialized suites when changing behavior they cover; the default gate
+  omits opt-in rendering, extended fuzz runs, Playwright, desktop and packaged-app suites.
+- Use `JASPER_REQUIRE_ORACLES=1` for oracle validation; a missing oracle must not count as success.
+- For shader changes, run GL tests with a working Chrome/software-GL environment.
+- Exercise UI changes in the running app and inspect the result visually.
+- For rendering changes, exercise preview and export and inspect extracted frames.
+- Run `pnpm e2e` for browser integration; it prepares fixtures, binaries and required builds.
+- Don't use `E2E_SKIP_BUILD=1` or direct Playwright runs unless required build outputs are current.
+- Don't assume `pnpm build` builds Rust or the Remotion bundle; use `pnpm mg:build` and
+  `pnpm --filter @jasper/engine build:remotion` when needed.
+- Treat `pnpm mg:build` skipping because cargo is missing as untested native behavior.
+- Don't bless changed golden outputs without inspecting and explaining the differences.
+- State skipped suites and unavailable dependencies explicitly; don't claim they passed.
+
+## 8. Generators and scripts
+
+- Don't invent a script or command before checking root/package `package.json` and `scripts/`.
+- Don't hand-edit generated files; edit their source and run the owning generator.
+- Regenerate `THIRD_PARTY_NOTICES.md` with `pnpm notices` after dependency or port-record changes;
+  commit the result and run `pnpm notices --check`.
+- Generate test media with `pnpm fixtures`.
+- Generate English and model-string catalogs with `pnpm i18n`.
+- Update Spanish translations in `apps/web/src/i18n/es.json`; validate with `pnpm i18n:check`.
+- Keep ignored builds, caches, downloaded binaries and runtime state out of commits.
+- Inspect generator diffs and include only outputs required by the requested change.
+
+## 9. Shared work and integration
+
+- Give each editing agent a separate branch and worktree under `.claude/worktrees/<name>`.
+- Don't edit another agent's worktree.
+- Don't overwrite unrelated working-tree changes.
+- Don't use shared `git stash`; preserve unfinished work in commits on the owning branch.
+- Give simultaneous app stacks distinct ports and `JASPER_APPDIR` directories.
+- Stop only processes you started.
+- Use the pairing flow or existing test harness for authenticated app access.
+- Don't hard-code authentication cookies; use the harness's port-scoped session setup.
+- Don't bypass engine authentication or destructive-command approvals, even on localhost.
+- Before integrating, fetch and merge the target branch; resolve conflicts without dropping
+  either side's intended behavior or tests, then verify the integrated result.
+- Stage only task-related changes and review the staged diff before committing.
+- Update the integration checkout only when its work is preserved; prefer fast-forward integration.
+- Don't rewrite shared history or force-push.
+- Require explicit authorization for remote pushes, publishing, releases, signing, spending,
+  credential disclosure or destructive shared-state changes; existing authorization is sufficient.
+- Recheck changed agent instructions after remote integration against this file's maintenance rules.
+
+## 10. Standing Don'ts
+
+- Don't expand scope into unrelated fixes, refactors, dependency upgrades or product redesigns.
+- Don't add redundant wrappers, speculative abstractions or parallel implementations of existing helpers.
+- Don't reformat untouched files or run broad autofixes that obscure the requested change.
+- Don't append history, changelogs, incident/PR notes, dates or temporary workarounds to this file.
+- Don't preserve obsolete instructions as "we used to" explanations; delete them.
+- Don't turn live traps into stories; state their current prohibition in the relevant section.
+- Don't copy README or specialist documentation here; link the source once.
+- Don't add version pins, feature counts or ownership rosters here; use their authoritative sources.
+- Keep this manual to actionable current contracts, one idea per bullet, roughly 200–350 lines
+  and always below 500; cut duplication before adding a rule.
