@@ -6,7 +6,8 @@
 // a Single-band Compressor, EQ a Simple 3-band EQ, Enhance Speech the Enhance Speech chain, Stereo Width the Stereo
 // Width effect, Reverb a Studio Reverb and Mute the Mute effect. These instances carry `EffectInstance.essential` (the
 // slot), appear in Effect Controls (keyframable) and render through the normal clip-effect path. Loudness Auto-Match
-// writes clip gain, Clip Volume the clip's Volume level, Pan the clip's pan; Ducking writes Volume keyframes
+// writes clip gain, Clip Volume and Pan offset the clip's own Volume and pan (every keyframe; switched off they give
+// the clip's levels back, `residual`); Ducking writes Volume keyframes
 // (`audio.autoDuck`); Duration remixes the clip (`clip.remix`).
 import { z } from 'zod';
 
@@ -268,7 +269,7 @@ export function essentialKeys(s: EssentialSound = newEssentialSound('dialogue'))
 		} else out.push(p);
 	};
 	walk(s, '');
-	return out.filter((k) => k !== 'type');
+	return out.filter((k) => k !== 'type' && k !== 'residual' && !k.startsWith('residual.'));
 }
 
 /**
@@ -281,6 +282,10 @@ export function setEssentialValue(s: EssentialSound, key: string, value: unknown
 	if (parts.length === 0) throw new EssentialSoundError('empty setting key');
 	if (parts[0] === 'type')
 		throw new EssentialSoundError('the audio type is changed with essentialSound.setType');
+	if (parts[0] === 'residual')
+		throw new EssentialSoundError(
+			'"residual" is kept by the commands (clamped Clip Volume / Pan), not a setting',
+		);
 	const next = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
 	let cur: Record<string, unknown> = next;
 	for (const p of parts.slice(0, -1)) {

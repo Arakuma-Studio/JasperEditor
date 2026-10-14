@@ -40,12 +40,21 @@ Loudness: measure_loudness gives ITU-R BS.1770-4 / EBU R128 integrated loudness 
 
 const StripArg = z.string().min(1).describe('Strip: "A1"…, "S1"…, "Mix", a track id or a track name');
 
+/** What to do about a failed analysis / normalisation job, by its code. */
+function jobHint(code: string | undefined): string {
+	if (code === 'TOO_SHORT')
+		return 'Integrated loudness needs at least 400 ms of audio (one BS.1770 gating block): normalise a short sound by peak instead (set_audio_gain mode normalizeMax).';
+	if (code === 'SILENT')
+		return 'The audio is silent (below the −70 LUFS gate): there is nothing to normalise.';
+	return 'Check that the media is online (get_media_info).';
+}
+
 function resultOf<T>(job: EngineJob): T {
 	if (job.state !== 'succeeded')
 		throw new ToolError(
 			job.error?.code ?? 'E_ANALYSIS_FAILED',
 			job.error?.message ?? `The job ${job.state}`,
-			'Check that the media is online (get_media_info).',
+			jobHint(job.error?.code),
 		);
 	return job.result as T;
 }
@@ -594,7 +603,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 		{
 			title: 'Normalize media loudness',
 			description:
-				'Makes a loudness-normalised version of a media\'s audio (two-pass: measure, gain to targetLufs, look-ahead true-peak limiter at truePeakDb; 24-bit WAV), adds it to the project (bin "Processed") and, with replaceInClips, switches those audio clips to it — one undo step. Waits for the job (timeoutSeconds, default 600).',
+				'Makes a loudness-normalised version of a media\'s audio (two-pass: measure, gain to targetLufs, look-ahead true-peak limiter at truePeakDb; 24-bit WAV), adds it to the project (bin "Processed") and, with replaceInClips, switches those audio clips to it — one undo step. Waits for the job (timeoutSeconds, default 600). Refused with TOO_SHORT for audio shorter than 400 ms (integrated loudness needs one BS.1770 gating block; the message gives the length and true peak — use set_audio_gain normalizeMax) and with SILENT for silence.',
 			input: {
 				projectId: ProjectIdArg,
 				mediaId: z.string().min(1),

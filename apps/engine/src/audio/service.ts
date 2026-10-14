@@ -386,16 +386,19 @@ export class AudioService {
 		const before = m1.summary();
 		if (!Number.isFinite(before.integrated)) {
 			// BS.1770 integrated loudness needs at least one complete 400 ms gating block: shorter audio is not "silent".
-			if (total < Math.round(sr * 0.4))
+			if (total < Math.round(sr * 0.4)) {
+				// The job error keeps code and message only: the duration and the true peak go in the message.
+				const tp = Number.isFinite(before.truePeakDb) ? `${before.truePeakDb.toFixed(1)} dBTP` : '−∞ dBTP';
 				throw new JobError(
 					'TOO_SHORT',
-					`The audio is ${Math.round((total / sr) * 1000)} ms long: integrated loudness (BS.1770) needs at least 400 ms`,
+					`The audio is ${Math.round((total / sr) * 1000)} ms long: integrated loudness (BS.1770) needs at least 400 ms (true peak ${tp}; normalise short sounds by peak instead: Audio Gain ▸ Normalize Max Peak)`,
 					false,
 					{
 						durationSec: total / sr,
 						truePeakDbtp: Number.isFinite(before.truePeakDb) ? before.truePeakDb : null,
 					},
 				);
+			}
 			throw new JobError(
 				'SILENT',
 				'The audio is silent (below the −70 LUFS gate): nothing to normalise',

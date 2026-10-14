@@ -32,6 +32,7 @@ const notify = {
 import { type ReactNode, useState } from 'react';
 import {
 	autoMatchLoudness,
+	autoMatchMessage,
 	deleteUserSoundPreset,
 	generateDucking,
 	remixClip,
@@ -226,8 +227,9 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 							onClick={() =>
 								run('match', async () => {
 									const m = await autoMatchLoudness(session, engine!.client, seq.id, ids, target);
-									const v = Object.values(m).find((x) => x !== null);
-									return v === undefined || v === null ? 'The clips are silent' : `Matched to ${target} LUFS`;
+									const message = autoMatchMessage(m, target);
+									if (!Object.values(m).some((r) => 'gainDb' in r)) throw new Error(message);
+									return message;
 								})
 							}
 						>

@@ -7,7 +7,7 @@ import type { EditorSession } from '@jasper/session';
 import { z } from 'zod';
 import type { CommandCtx, UiCommand } from '../commands/types.ts';
 import { clipMenuExtensions } from '../extensions/index.ts';
-import { autoMatchLoudness, remixClip, selectedAudioClips } from './ops.ts';
+import { autoMatchLoudness, autoMatchMessage, remixClip, selectedAudioClips } from './ops.ts';
 
 const editable = (ctx: CommandCtx) => !!ctx.session && !ctx.session.getState().readOnly;
 
@@ -104,7 +104,13 @@ export const audioFxCommands: UiCommand[] = [
 			if (!ctx.session || !seq) return;
 			const ids = clips.filter((c) => readEssentialSound(c.essential)).map((c) => c.id);
 			try {
-				await autoMatchLoudness(ctx.session, ctx.engine, seq.id, ids);
+				const out = await autoMatchLoudness(ctx.session, ctx.engine, seq.id, ids);
+				const message = autoMatchMessage(out, undefined);
+				ctx.ui.toast(
+					Object.values(out).some((r) => 'gainDb' in r)
+						? { kind: 'success', message }
+						: { kind: 'error', message: 'Auto-Match', detail: message },
+				);
 			} catch (e) {
 				ctx.ui.toast({ kind: 'error', message: 'Auto-Match failed', detail: (e as Error).message });
 			}

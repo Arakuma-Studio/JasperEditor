@@ -104,8 +104,11 @@ export function clipDecodeArgs(o: {
 		// Reverse exactly the decoded span [max(0, c0), c1): without the trim, the 0.25 s read past c1 (`-t` below)
 		// would come first and shift the whole clip by 250 ms; content past the media end is silence that must come
 		// first too. Content before 0 (lead) is silence at the end, which the final apad supplies.
-		const d = sec(durSec);
-		chain.push(`atrim=duration=${d}`, `apad=whole_dur=${d}`, 'areverse');
+		// In input samples: `atrim=duration=0` / `apad=whole_dur=0` mean "no limit", so an empty span (all of it before
+		// the media start) is cut to nothing and the final apad makes it silence.
+		const n = Math.round(durSec * o.stream.sampleRate);
+		if (n > 0) chain.push(`atrim=end_sample=${n}`, `apad=whole_len=${n}`, 'areverse');
+		else chain.push('atrim=end_sample=0');
 	}
 	// The interpretation's scale is a rate change (pitch follows); the clip's own speed honours Maintain Pitch.
 	if (Math.abs(scale - 1) > 1e-9) chain.push(`asetrate=${Math.round(o.stream.sampleRate * scale)}`);

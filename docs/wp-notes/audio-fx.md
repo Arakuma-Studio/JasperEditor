@@ -72,7 +72,9 @@ The panel never processes audio. Each option reconciles into an ordinary, keyfra
 | Stereo Width (Ambience) | Stereo Width |
 | Mute | Mute |
 
-Loudness ▸ Auto-Match writes clip gain; Clip Volume offsets the Volume; Pan writes the clip pan; Ducking writes Volume
+Loudness ▸ Auto-Match writes clip gain; Clip Volume offsets the Volume; Pan (SFX) offsets the clip's own pan (since
+spec 12 Phase 0; before, it overwrote it), and what the ±100 / −∞…+15 dB ranges clamp away is given back when the
+offset is switched off (`EssentialSound.residual`); Ducking writes Volume
 keyframes through `audio.autoDuck` (triggers = clips of the "Duck against" types); Duration ▸ Remix runs `clip.remix`,
 Duration ▸ Stretch `clip.setSpeed`. Reconciliation is by delta: only parameters whose derived value changed are
 written (user keyframes and edits on other parameters survive), switched-off slots remove their effect, Clear Audio

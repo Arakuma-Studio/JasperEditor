@@ -280,6 +280,22 @@ describe('Essential Sound commands', () => {
 		expect(clip().pan.value).toBe(80);
 	});
 
+	it('residual is not a setting: refused by key and not listed (phase 0 verification)', () => {
+		const s = newEssentialSound('sfx');
+		expect(() => setEssentialValue(s, 'residual.pan.value', 5)).toThrow(/not a setting/);
+		expect(() => setEssentialValue(s, 'residual', { volume: {}, pan: {} })).toThrow(/not a setting/);
+		expect(
+			essentialKeys({ ...s, residual: { volume: { value: 3 }, pan: {} } }).some((k) =>
+				k.startsWith('residual'),
+			),
+		).toBe(false);
+		const { h, clip } = setup();
+		const id = clip().id;
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'sfx' }]);
+		const r = h.tx([{ type: 'essentialSound.set', clipIds: [id], values: { 'residual.pan.value': 5 } }]);
+		expect(r.ok ? null : r.errors[0]?.code).toBe('E_INVALID_PARAM');
+	});
+
 	it('a hostile stored residual is bounded by the range width (phase 0 verification)', () => {
 		const { h, clip } = setup();
 		const id = clip().id;

@@ -37,6 +37,8 @@ function decode(o: {
 	reverse: boolean;
 	tailHandle?: number;
 	headHandle?: number;
+	/** Decode only `[offset, offset + length)` samples of the clip's Sequence span. */
+	window?: { offset: number; length: number };
 }): number[] {
 	const { args } = clipDecodeArgs({
 		clip: {
@@ -59,11 +61,11 @@ function decode(o: {
 		},
 		fps: { num: 30, den: 1 },
 		sampleRate: SR,
-		offset: 0,
-		length: Math.round(((o.frames + (o.headHandle ?? 0) + (o.tailHandle ?? 0)) * SR) / 30),
+		offset: o.window?.offset ?? 0,
+		length: o.window?.length ?? Math.round(((o.frames + (o.headHandle ?? 0) + (o.tailHandle ?? 0)) * SR) / 30),
 		soxr: false,
 	});
-	const r = spawnSync(TEST_FFMPEG, ['-v', 'error', ...args], { maxBuffer: 1 << 26 });
+	const r = spawnSync(TEST_FFMPEG, ['-v', 'error', ...args], { maxBuffer: 1 << 26, timeout: 60_000 });
 	expect(r.status, r.stderr.toString()).toBe(0);
 	const out: number[] = [];
 	for (let i = 0; i < r.stdout.length / 4; i++) {
@@ -102,6 +104,21 @@ describe('clip decode alignment', () => {
 		close(s[SR + SR / 8]!, 0.125 - 1 / SR);
 		// content < 0: silence (the last 0.25 s), not a shifted copy of the media
 		expect(s.slice(SR * 1.25 + 2).every((x) => Number.isNaN(x))).toBe(true);
+	});
+
+	it('a reversed window entirely before the media start is silence (phase 0 verification)', () => {
+		// As above, but only the last 0.2 s is decoded: its content (−0.05 … −0.25 s) is all before the media start,
+		// so the decoded span is empty. `atrim=duration=0` meant "no limit" (0.25 s of the file came out reversed) and
+		// `apad=whole_dur=0` padded forever before `areverse`.
+		const s = decode({
+			sourceInSec: 0.25,
+			frames: 30,
+			reverse: true,
+			tailHandle: 15,
+			window: { offset: SR * 1.3, length: SR * 0.2 },
+		});
+		expect(s.length).toBe(SR * 0.2);
+		expect(s.every((x) => Number.isNaN(x))).toBe(true);
 	});
 
 	it('a reversed clip whose head handle reaches past the media end starts in silence', () => {

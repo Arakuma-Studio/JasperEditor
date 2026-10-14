@@ -1,6 +1,7 @@
 // Engine round trips of Essential Sound and Remix (audio-fx): Loudness Auto-Match (measure the clips' own signal on
 // the engine, then one `essentialSound.autoMatch`), Ducking (audio-mix's `autoDuck` with the Essential Sound
 // triggers), Remix (`POST /api/audio/remix-plan`, then one `clip.remix`) and Duration ▸ Stretch.
+import { MAX_REMIX_SOURCE_SECONDS } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	type AudioClip,
@@ -34,9 +35,38 @@ function fail(r: { ok: boolean; errors?: { message: string }[] }, what: string):
 	if (!r.ok) throw new Error(r.errors?.[0]?.message ?? `${what} failed`);
 }
 
+/** What `essentialSound.autoMatch` did per clip: the match gain, or why the clip was skipped. */
+export type AutoMatchOutcome = Record<string, { gainDb: number } | { skipped: string }>;
+
+/**
+ * The message of an Auto-Match: how many clips were matched, and why the others were left as they are (silent, or
+ * shorter than one 400 ms BS.1770 gating block, where integrated loudness is undefined).
+ */
+export function autoMatchMessage(out: AutoMatchOutcome, targetLufs: number | undefined): string {
+	const results = Object.values(out);
+	const matched = results.filter((r) => 'gainDb' in r).length;
+	const reasons = [...new Set(results.flatMap((r) => ('skipped' in r ? [r.skipped] : [])))];
+	const skipped = results.length - matched;
+	const why = (reason: string) =>
+		reason.startsWith('shorter than 400 ms')
+			? 'shorter than 400 ms, too short to measure'
+			: reason === 'silent'
+				? 'silent'
+				: reason;
+	if (matched === 0) {
+		if (reasons.length === 1)
+			return `${skipped === 1 ? 'The clip is' : 'The clips are'} ${why(reasons[0]!)}: nothing was matched`;
+		return `Nothing was matched: ${reasons.map(why).join(', ')}`;
+	}
+	const to = targetLufs !== undefined ? `${targetLufs} LUFS` : 'the target';
+	const head = `Matched ${matched === 1 ? '1 clip' : `${matched} clips`} to ${to}`;
+	return skipped ? `${head}; ${skipped} left as they are (${reasons.map(why).join(', ')})` : head;
+}
+
 /**
  * Loudness ▸ Auto-Match: integrated loudness (BS.1770) of each clip's own signal — its effects, without its gain,
- * Volume, fades or pan (`levels: 'source'`) — then the match gain to `targetLufs`.
+ * Volume, fades or pan (`levels: 'source'`) — then the match gain to `targetLufs`. Returns what the command did per
+ * clip (`autoMatchMessage` words it).
  */
 export async function autoMatchLoudness(
 	session: EditorSession,
@@ -44,7 +74,7 @@ export async function autoMatchLoudness(
 	sequenceId: string,
 	clipIds: string[],
 	targetLufs?: number,
-): Promise<Record<string, number | null>> {
+): Promise<AutoMatchOutcome> {
 	const r = await analyzeAudio(session, engine, {
 		sequenceId,
 		scope: { type: 'clips', clipIds },
@@ -64,7 +94,11 @@ export async function autoMatchLoudness(
 		],
 	});
 	fail(res, 'Auto-Match');
-	return measured;
+	const out = res.ok ? (res.results[0] as { clips?: AutoMatchOutcome } | undefined)?.clips : undefined;
+	if (out) return out;
+	return Object.fromEntries(
+		Object.entries(measured).map(([id, v]) => [id, v === null ? { skipped: 'silent' } : { gainDb: 0 }]),
+	);
 }
 
 /** Ducking ▸ Generate Keyframes: Volume keyframes on `clipIds` under their trigger clips (audio-mix autoDuck). */
@@ -92,6 +126,12 @@ export async function generateDucking(
 }
 
 /** Remix a music clip to `targetSeconds` (beat-tracked plan from the engine, then `clip.remix`, one undo step). */
+/** Why a music clip is too long to remix (the beat analysis is capped at `MAX_REMIX_SOURCE_SECONDS`). */
+export function remixTooLong(durSec: number): string {
+	const min = (s: number) => Math.round(s / 60);
+	return `The music is ${min(durSec)} min long; Remix analyses at most ${min(MAX_REMIX_SOURCE_SECONDS)} min. Trim the clip first.`;
+}
+
 export async function remixClip(
 	session: EditorSession,
 	engine: EngineClient,
@@ -108,6 +148,7 @@ export async function remixClip(
 	if (!key) throw new Error('The music is not on the engine');
 	const rate = seq.settings.frameRate as Rational;
 	const { startSec, durSec } = remixSourceRange(clip, rate);
+	if (durSec > MAX_REMIX_SOURCE_SECONDS) throw new Error(remixTooLong(durSec));
 	const plan = await engine.remixPlan({
 		mediaKey: key,
 		streamIndex: clip.channels.streamIndex,

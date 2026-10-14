@@ -1,3 +1,4 @@
+import { MAX_REMIX_SOURCE_SECONDS } from '@jasper/api';
 import {
 	AUDIO_EFFECTS,
 	AUDIO_TYPES,
@@ -36,8 +37,8 @@ import { pickSequence } from '../format.ts';
 import { analyze, apply } from './audio.ts';
 
 export const AUDIO_FX_GUIDE = `Audio effects (Premiere's Audio Effects folders: Amplitude and Compression, Delay and Echo, Filter and EQ, Modulation, Noise Reduction/Restoration, Reverb, Special, Stereo Imagery, Time and Pitch): list_audio_effects gives every effect id ("jasper.audio.…") with its parameters (units dB, Hz, ms, Q, ratio, %, st, cents, LUFS; every number keyframable). add_audio_effect puts one on an audio clip, an audio track ("A1"…, a submix "S1"…) or the Mix ("Mix"); set_audio_effect changes parameters (a value, or {"keyframes": [{at, value}…]} for automation), enables/bypasses or reorders it; remove_audio_effect deletes it; get_audio_effects lists the stacks with values at a time. The same DSP runs in the preview (AudioWorklet) and every export. Order: clip effects → clip gain / Volume / fades → pan → track effects → fader.
-Essential Sound: set_essential_sound gives clips an audio type (dialogue | music | sfx | ambience), applies a preset (get_essential_sound lists them) and/or sets options by dotted key (e.g. {"repair.noise.on": true, "repair.noise.amount": 6, "clarity.eqPreset": "Balanced Voice", "creative.reverb.on": true}); the options become ordinary keyframable clip effects you can also edit with set_audio_effect. clear_essential_sound removes the type and every change it made. auto_match_loudness measures each clip (BS.1770, its own signal) and sets its gain to −23 LUFS (or targetLufs). generate_essential_ducking ducks Music / Ambience clips under the clips of their "Duck against" types (ducking.* options) with Volume keyframes.
-Music Remix: remix_audio clips a music clip to a target duration by beat tracking and re-cutting on beats (grouped pieces joined by short crossfades, one undo step); revert_remix restores the original.`;
+Essential Sound: set_essential_sound gives clips an audio type (dialogue | music | sfx | ambience), applies a preset (get_essential_sound lists them) and/or sets options by dotted key (e.g. {"repair.noise.on": true, "repair.noise.amount": 6, "clarity.eqPreset": "Balanced Voice", "creative.reverb.on": true}); the options become ordinary keyframable clip effects you can also edit with set_audio_effect; Clip Volume and the SFX Pan are offsets on the clip's own Volume and pan (switched off, the clip's levels come back). clear_essential_sound removes the type and every change it made. auto_match_loudness measures each clip (BS.1770, its own signal) and sets its gain to −23 LUFS (or targetLufs); silent clips and clips shorter than 400 ms are skipped with the reason. generate_essential_ducking ducks Music / Ambience clips under the clips of their "Duck against" types (ducking.* options) with Volume keyframes.
+Music Remix: remix_audio clips a music clip to a target duration by beat tracking and re-cutting on beats (grouped pieces joined by short crossfades, one undo step; at most 30 min of music is analysed); revert_remix restores the original.`;
 
 const ClipIdsArg = z.array(z.string().min(1)).min(1).describe('Audio clip ids (get_timeline)');
 const ScalarValue = z.union([z.number(), z.boolean(), z.string()]);
@@ -416,7 +417,11 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 			const seq = pickSequence(doc, sequenceId);
 			const clips = (clipIds ?? []).map((id) => {
 				const c = audioClip(seq, id);
-				return { clipId: id, settings: readEssentialSound(c.essential) };
+				// `residual` (what the fader ranges clamped away) is bookkeeping of the commands, not a setting.
+				const s = readEssentialSound(c.essential);
+				if (!s) return { clipId: id, settings: null };
+				const { residual: _residual, ...settings } = s;
+				return { clipId: id, settings };
 			});
 			const type = audioType ?? clips.find((c) => c.settings)?.settings?.type ?? null;
 			const presets = builtinEssentialPresets();
@@ -439,7 +444,7 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 		{
 			title: 'Set Essential Sound',
 			description:
-				'Essential Sound on audio clips, in order: audioType (dialogue | music | sfx | ambience; a new type starts from its defaults), preset (a built-in preset name of that type, get_essential_sound), values (options by dotted key, e.g. {"repair.noise.on": true, "repair.noise.amount": 6}; keyframed effect parameters get a key at `at`). One undo step.',
+				'Essential Sound on audio clips, in order: audioType (dialogue | music | sfx | ambience; a new type starts from its defaults), preset (a built-in preset name of that type, get_essential_sound), values (options by dotted key, e.g. {"repair.noise.on": true, "repair.noise.amount": 6}; keyframed effect parameters get a key at `at`). Clip Volume (volume.on / volume.levelDb) and Pan (pan.enabled / pan.value, SFX) are offsets on the clip\'s own Volume and pan, every keyframe included (clamped to −∞…+15 dB and ±100; switching them off gives the clip\'s own levels back). One undo step.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -513,7 +518,7 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 		{
 			title: 'Auto-Match loudness',
 			description:
-				"Essential Sound ▸ Loudness ▸ Auto-Match: measures each clip's integrated loudness (ITU-R BS.1770 on the engine, its effects without its gain / Volume / fades / pan) and sets the match gain to targetLufs (default −23 LUFS). Clips without an audio type become Dialogue. Silent clips are left as they are.",
+				"Essential Sound ▸ Loudness ▸ Auto-Match: measures each clip's integrated loudness (ITU-R BS.1770 on the engine, its effects without its gain / Volume / fades / pan) and sets the match gain to targetLufs (default −23 LUFS). Clips without an audio type become Dialogue. Silent clips and clips shorter than 400 ms (integrated loudness needs one BS.1770 gating block) are left as they are; results[].clips names the reason per clip.",
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -553,7 +558,7 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 			return jsonResult({
 				...body,
 				measuredLufs: measured,
-				note: `Each clip's total gain now brings it to ${a.targetLufs ?? `its target (default ${DEFAULT_LOUDNESS_TARGET})`} LUFS; silent clips (null) are unchanged.`,
+				note: `Each clip's total gain now brings it to ${a.targetLufs ?? `its target (default ${DEFAULT_LOUDNESS_TARGET})`} LUFS; clips measured as null (silent, or shorter than 400 ms) are unchanged — see the per-clip reasons.`,
 			});
 		},
 	);
@@ -623,7 +628,7 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 		{
 			title: 'Remix music to a duration',
 			description:
-				'Music Remix (Essential Sound ▸ Duration ▸ Remix, the Remix tool): beat-tracks the music clip on the engine and re-cuts it on beats to targetDuration (frames, {"seconds": x} or timecode; the result lands within about a beat). The clip becomes grouped pieces joined by short constant-power crossfades (one undo step). segments (0…100, default 50) favours longer or shorter pieces, variations (0…100, default 50) how freely sections are reordered. A remixed clip is remixed again from its original.',
+				'Music Remix (Essential Sound ▸ Duration ▸ Remix, the Remix tool): beat-tracks the music clip on the engine and re-cuts it on beats to targetDuration (frames, {"seconds": x} or timecode; the result lands within about a beat). The clip becomes grouped pieces joined by short constant-power crossfades (one undo step). segments (0…100, default 50) favours longer or shorter pieces, variations (0…100, default 50) how freely sections are reordered. A remixed clip is remixed again from its original. The music range analysed is limited to 30 minutes.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -643,6 +648,12 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 			if (frames < 1)
 				throw new ToolError('E_INVALID_PARAM', 'targetDuration must be positive', 'e.g. {"seconds": 30}.');
 			const { startSec, durSec } = remixSourceRange(clip, rate);
+			if (durSec > MAX_REMIX_SOURCE_SECONDS)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					`The music clip is ${Math.round(durSec / 60)} min long; Remix analyses at most ${MAX_REMIX_SOURCE_SECONDS / 60} min`,
+					'Trim the clip (trim_clip) or split it, then remix a part.',
+				);
 			const plan = await ctx
 				.engine((c) =>
 					c.remixPlan({
