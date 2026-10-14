@@ -46,7 +46,7 @@ export async function analyzeSequenceLoudness(
 ): Promise<AudioAnalyzeResult> {
 	const r = await analyzeAudio(session, engine, { sequenceId, scope: { type: 'sequence' } });
 	const l = r.loudness;
-	session.apply({
+	const res = session.apply({
 		label: 'Analyze Loudness',
 		origin: 'user',
 		commands: [
@@ -65,6 +65,7 @@ export async function analyzeSequenceLoudness(
 			},
 		],
 	});
+	if (!res.ok) throw new Error(res.errors[0]?.message ?? 'The loudness analysis could not be stored');
 	return r;
 }
 
