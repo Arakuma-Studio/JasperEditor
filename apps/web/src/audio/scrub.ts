@@ -24,6 +24,25 @@ const MIN_SNIPPET_S = 0.04;
 const MAX_SNIPPET_S = 0.12;
 const FADE_S = 0.004;
 
+/**
+ * The sample span a scrub snippet plays: forwards from the playhead, or (reverse) the snippet that ends at the playhead
+ * — never content after it, so near the start of the sequence a reverse snippet is shorter (none at frame 0).
+ */
+export function scrubWindow(
+	frame: number,
+	fps: Rational,
+	sr: number,
+	seconds: number,
+	reverse: boolean,
+): { start: number; length: number } | null {
+	const at = frameToSample(frame, fps, sr);
+	const n = Math.round(seconds * sr);
+	if (!Number.isFinite(at) || at < 0 || !Number.isFinite(n) || n < 1) return null;
+	if (!reverse) return { start: at, length: n };
+	const length = Math.min(n, at);
+	return length > 0 ? { start: at - length, length } : null;
+}
+
 export class AudioScrubber {
 	private ctx: AudioContext | null = null;
 	private busy = false;
@@ -93,12 +112,13 @@ export class AudioScrubber {
 		if (!snap.audioMix || snap.audioClips.length === 0) return;
 		const fps = seq.settings.frameRate as Rational;
 		const sr = snap.audioMix.sampleRate;
-		const n = Math.max(1, Math.round(r.seconds * sr));
-		const start = frameToSample(r.frame, fps, sr) - (r.reverse ? n : 0);
+		const span = scrubWindow(r.frame, fps, sr, r.seconds, r.reverse);
+		if (!span) return;
+		const n = span.length;
 		const mixer = new OfflineMixer({
 			snapshot: snap,
 			openClip: browserOpenClip((id) => snap.media[id] ?? null, fps),
-			startSample: Math.max(0, start),
+			startSample: span.start,
 			outputLayout: 'stereo',
 			mixdown: audioPrefs.get().mixdown,
 		});

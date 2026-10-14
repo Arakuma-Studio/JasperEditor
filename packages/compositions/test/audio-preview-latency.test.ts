@@ -14,6 +14,7 @@ import fc from 'fast-check';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
 	clipEffectsLatency,
+	clipGainExcess,
 	planMixLatency,
 	previewInsertLatency,
 	registerPreviewInsert,
@@ -245,5 +246,19 @@ describe('preview latency plan (track / submix / Mix inserts)', () => {
 			offSlot();
 		}
 		expect(previewInsertLatency(fxLat('a', 128), SR)).toBe(0);
+	});
+
+	it('clip gain above Remotion\'s +24 dB volume limit is left to the graph (the export applies all of it)', () => {
+		const clip = {
+			duration: 30,
+			sourceIn: 0,
+			speed: { rate: 1, reverse: false },
+			gainDb: 30,
+			volumeDb: still(0),
+		} as Parameters<typeof clipGainExcess>[0];
+		const fps = { num: 30, den: 1 };
+		expect(20 * Math.log10(16 * clipGainExcess(clip, 5, fps))).toBeCloseTo(30, 9);
+		expect(clipGainExcess({ ...clip, gainDb: 10 }, 5, fps)).toBe(1);
+		expect(clipGainExcess({ ...clip, gainDb: Number.NaN }, 5, fps)).toBe(1);
 	});
 });
