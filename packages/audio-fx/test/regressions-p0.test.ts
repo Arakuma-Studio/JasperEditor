@@ -252,7 +252,8 @@ describe('Convolution Reverb Room Size', () => {
 			}
 			// (A mono instance hears the mean of the decorrelated L/R impulses; their correlation moves a little with
 			// the size, ≈ 0.6 dB at 10 %. Before the fix 33 % alone was 1.4 dB low.)
-			for (const v of e) expect(Math.abs(v - e[0]!), `impulse ${imp}: ${e.map((d) => d.toFixed(2))}`).toBeLessThan(1);
+			for (const v of e)
+				expect(Math.abs(v - e[0]!), `impulse ${imp}: ${e.map((d) => d.toFixed(2))}`).toBeLessThan(1);
 		}
 	});
 });
