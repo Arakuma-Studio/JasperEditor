@@ -103,14 +103,14 @@ with SwiftShader (no GPU drivers); the workflow has never run on GitHub (nothing
 **Done when:** the Audio Meters show live levels (peak and RMS, clipping) during playback and export, an Audio Track
 Mixer and Clip Mixer edit track and clip volume / pan / mute / solo with automation, submixes route tracks, Modify ▸
 Audio Channels maps channels, and exports match the preview mix (sample-level oracle test).
-**Status (merged):** done — see [wp-notes/audio-mix.md](wp-notes/audio-mix.md): meters, both mixers, submixes, sends, automation, loudness (oracle against ffmpeg `ebur128` and EBU Tech 3341/3342), voice-over, exports from the same offline mixer (D-42); Clip ▸ Modify ▸ Audio Channels came with `gaps` (AU-7). Limit: submixes are not timeline rows.
+**Status (merged):** done — see [wp-notes/audio-mix.md](wp-notes/audio-mix.md): meters, both mixers, submixes, sends, automation, loudness (oracle against ffmpeg `ebur128` and EBU Tech 3341/3342), voice-over (takes placed compensating output + input latency, Latency Offset preference: spec 12 WP0.1), exports from the same offline mixer (D-42); Clip ▸ Modify ▸ Audio Channels came with `gaps` (AU-7). Limit: submixes are not timeline rows.
 
 ### audio-fx
 **Done when:** the core Premiere audio effects (parametric EQ, compressor, limiter, DeNoise, DeReverb, delay, reverb,
 pitch shifter, channel volume) apply to clips and tracks with keyframes in preview and export, exponential fades
 join the crossfades, and loudness normalisation (EBU R128 / ITU-R BS.1770, checked against ffmpeg `ebur128`) and
 auto-ducking work as in Essential Sound.
-**Status (merged):** done — see [wp-notes/audio-fx.md](wp-notes/audio-fx.md): 60 audio effects in one DSP (D-42), Exponential Fade, Essential Sound, Music Remix, auto-ducking (`packages/audio-fx/test/*`, `e2e/audio-fx.spec.ts`). Limits: preview latency of track inserts is not compensated (export is).
+**Status (merged):** done — see [wp-notes/audio-fx.md](wp-notes/audio-fx.md): 60 audio effects in one DSP (D-42), Exponential Fade, Essential Sound, Music Remix, auto-ducking (`packages/audio-fx/test/*`, `e2e/audio-fx.spec.ts`). The preview compensates clip, track, submix and Mix insert latency like the export (spec 12 WP0.1: sample-level oracle against the export mixer, `packages/compositions/test/audio-preview-oracle.test.ts`).
 
 ### captions
 **Done when:** caption tracks can be created, edited and styled in the timeline and Program monitor, import and export

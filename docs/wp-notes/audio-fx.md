@@ -31,8 +31,13 @@ Signal order (both runtimes): decode → clip effects (stack order) → clip gai
 FilmCraft; this is why Loudness Auto-Match measures with `levels: 'source'` (effects, no gain).
 
 Latency: processors report `latency()` (look-ahead limiter, STFT effects, convolution, pitch, FFT filter). The export
-mixer compensates clip and track latency (audio-mix's mixer); the preview compensates clip effect latency by starting
-the clip's media earlier (`compensate()` in `AudioLayer.tsx`).
+mixer compensates clip and track latency (audio-mix's mixer). The preview applies the same plan (spec 12 WP0.1,
+`planMixLatency` in `packages/compositions/src/audio/graph.ts`): every preview slot reports its latency
+(`registerPreviewInsert(…, latency)`, the processor's own `latency()`), each route into a bus gets a DelayNode so all of
+the bus's inputs arrive together, and every clip's media starts early by the graph's read-ahead (the Mix's latency, plus
+the loudness limiter's while it runs) plus its own clip effects' latency (`compensate()` in `AudioLayer.tsx`). Lanes,
+send levels, pucks and insert automation are evaluated at the time of the samples each stage is processing
+(`stripStageTimes`), as the export does.
 
 ### 1.2 Model (optional fields, read-time defaults, no schema bump)
 
@@ -200,7 +205,10 @@ Decisions (undocumented behaviour or our choice):
 
 ## 6. Limits
 
-- Preview latency of track (strip) inserts is not compensated (clip effects are); the export compensates both.
+- Preview latency compensation (spec 12 WP0.1) starts the media early: right after Play the first `read-ahead` samples
+  (≤ 43 ms with one STFT effect) are silent, and frame-based (STFT) inserts start their frames where playback started,
+  so the first ≈ 0.2 s after an onset can differ from an export started elsewhere by ≈ −40 dB (the same holds between
+  two exports with different range starts); steady state is sample-identical.
 - 5.1 clips: processors run per channel; stereo-image effects act on L/R only and pass the other channels.
 - The Remix tool needs the engine (analysis on ffmpeg-decoded audio); offline browser-only sessions get a toast.
 - No spectral display / noise-print capture UI beyond the keyframed Noise Model; no Audition-style multitrack effects.

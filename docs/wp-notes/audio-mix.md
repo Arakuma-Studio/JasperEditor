@@ -105,7 +105,8 @@ feeds them or that they feed.
 - **Voice-over**: the mic button on an audio track header (or Sequence ▸ Record Voice-over; the record-armed track
   by default). Pre-roll with countdown beeps, punch-in/out on In/Out, post-roll; Space or the button stops; the take
   is uploaded and placed (one "Record Voice-over" step). Preferences ▸ Audio ▸ Voice-Over Record: source device,
-  input channel, name, cues, pre/post-roll. Electron grants only audio media permission to the app origin (macOS:
+  input channel, name, cues, pre/post-roll, Latency Offset (ms, added to the measured round trip; positive moves takes
+  earlier). Electron grants only audio media permission to the app origin (macOS:
   `askForMediaAccess`, `NSMicrophoneUsageDescription`, audio-input entitlement).
 - **Sequence settings** (Properties with no selection ▸ Audio): sample rate 44.1 / 48 / 96 kHz and Mix format.
 
@@ -175,8 +176,12 @@ feeds them or that they feed.
 
 ## 6. Limits
 
-- Voice-over latency compensation uses `outputLatency + baseLatency`; the input device's own latency is not
-  reported by browsers and is not compensated. Tested with Chrome's fake media stream only (no microphone here).
+- Voice-over takes are placed compensating the Program monitor's `baseLatency + outputLatency` and the input
+  device's `MediaTrackSettings.latency` (Chrome reports it; other browsers count 0) plus Preferences ▸ Audio ▸ Latency
+  Offset (spec 12 WP0.1, `apps/web/test/voiceover-latency.test.ts`). The frame / capture pairing assumes frame reports
+  never come before the frame starts; when the display refresh and the timeline rate are phase-locked (30 fps on a
+  60 Hz display) the residual is the constant report delay (< one display frame): set Latency Offset to correct it.
+  Tested with simulations and Chrome's fake media stream only (no microphone here).
 - macOS microphone entitlement / prompt are configured but untested (no macOS).
 - Submix tracks appear in the mixers, MCP and the model but not as timeline rows (timeline layout is `edit-ux`'s).
 - No insert effects ship here (they are audio-fx's); slots accept any registered audio effect.
