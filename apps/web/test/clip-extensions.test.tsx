@@ -19,7 +19,7 @@ function withExtension(kind: string, extension: Record<string, unknown>) {
 			{ type: 'clip.addCamera', at: 0, duration: 30, name: 'Extension layer', ref: '$camera' },
 		],
 	});
-	expect(added.ok).toBe(true);
+	if (!added.ok) throw new Error(JSON.stringify(added.errors));
 	const document = structuredClone(initial.getCommitted());
 	const cameraId = added.refs.$camera!;
 	const seq = document.sequences[seqId]!;
