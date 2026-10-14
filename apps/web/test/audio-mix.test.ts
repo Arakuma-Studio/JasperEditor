@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { Gesture } from '../src/audio/automation.ts';
+import { contentTimeAt, evaluate, flicksPerFrame, type Sequence } from '@jasper/project';
+import { CLIP_LANE_VOLUME, clipLaneValue, Gesture } from '../src/audio/automation.ts';
 import { dbToFader, faderToDb } from '../src/audio/components/controls.tsx';
 import { meterPos } from '../src/audio/components/LevelMeter.tsx';
 import { DEFAULT_AUDIO_PREFS, parseAudioPrefs } from '../src/audio/prefs.ts';
@@ -54,6 +55,38 @@ describe('audio UI helpers', () => {
 			[200, -6],
 			[210, -3],
 		]);
+	});
+
+	it('Clip Mixer reads a reversed clip at the content time the preview and the export play (phase 0 verification)', () => {
+		const rate = { num: 30, den: 1 };
+		const F = flicksPerFrame(rate);
+		const ease = { influence: 1 / 3, slope: 0 };
+		const kf = (frame: number, value: number) => ({
+			id: `kf_${frame}`,
+			time: frame * F,
+			value,
+			interpolation: 'linear',
+			easeIn: ease,
+			easeOut: ease,
+		});
+		// Volume ramps −20 → −11 dB over content frames 0…9 of a reversed 10-frame clip at frame 10
+		const clip = {
+			id: 'c1',
+			kind: 'audio',
+			trackId: 'A1',
+			start: 10,
+			duration: 10,
+			sourceIn: 0,
+			speed: { rate: 1, reverse: true },
+			volumeDb: { value: 0, keyframes: [kf(0, -20), kf(9, -11)] },
+			pan: { value: 0, keyframes: [] },
+		};
+		const seq = { settings: { frameRate: rate }, clips: { c1: clip } } as unknown as Sequence;
+		for (const local of [0, 3, 9]) {
+			const v = clipLaneValue(seq, 'A1', CLIP_LANE_VOLUME, (10 + local) * F);
+			expect(v).toBeCloseTo(evaluate(clip.volumeDb as never, contentTimeAt(clip, 10 + local, rate)) as number, 9);
+			expect(v).toBeCloseTo(-11 - local, 9);
+		}
 	});
 
 	it('voice-over: countdown cues, take names, record track', () => {

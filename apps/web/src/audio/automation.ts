@@ -18,6 +18,7 @@ import { activeMixGraph } from '@jasper/compositions';
 import type { CommandInput } from '@jasper/project';
 import {
 	type AutomationMode,
+	contentTimeAt,
 	evaluate,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
@@ -113,10 +114,8 @@ export function clipLaneValue(seq: Sequence, trackId: string, lane: string, t: n
 			continue;
 		if (c.start * F > t || t >= (c.start + c.duration) * F) continue;
 		const clip = c;
-		const local = t / F - clip.start;
-		const content = clip.speed.reverse
-			? clip.sourceIn + (clip.duration - local) * F * clip.speed.rate
-			: clip.sourceIn + local * F * clip.speed.rate;
+		// The preview's, the export mixer's and the keyframe writers' content time (reversed: `duration − 1 − local`).
+		const content = contentTimeAt(clip, t / F, rate);
 		const a = lane === CLIP_LANE_VOLUME ? clip.volumeDb : clip.pan;
 		return evaluate(a, content);
 	}
