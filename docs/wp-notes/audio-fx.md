@@ -209,7 +209,11 @@ Decisions (undocumented behaviour or our choice):
   (≤ 43 ms with one STFT effect) are silent, and frame-based (STFT) inserts start their frames where playback started,
   so the first ≈ 0.2 s after an onset can differ from an export started elsewhere by ≈ −40 dB (the same holds between
   two exports with different range starts); steady state is sample-identical.
-- 5.1 clips: processors run per channel; stereo-image effects act on L/R only and pass the other channels.
+- 5.1 clips: processors run per channel; stereo-image effects act on L/R only and pass the other channels. Surround
+  Reverb, Mastering, Loudness Meter and Loudness Auto Gain handle all six channels (Dry / output / maximiser on every
+  channel, BS.1770 weights; sound-design Phase 0, `packages/audio-fx/test/regressions-p0.test.ts`).
+- Remix analyses at most 30 min of music (`MAX_REMIX_SOURCE_SECONDS`: the beat similarity matrix grows with the square
+  of the length).
 - The Remix tool needs the engine (analysis on ffmpeg-decoded audio); offline browser-only sessions get a toast.
 - No spectral display / noise-print capture UI beyond the keyframed Noise Model; no Audition-style multitrack effects.
 - `ui_locate` (mcp-cli) centres timeline clip targets on the whole clip rectangle even when it is scrolled partly out

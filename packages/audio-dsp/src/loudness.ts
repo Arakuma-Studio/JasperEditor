@@ -250,6 +250,18 @@ export class LoudnessMeter {
 		}
 	}
 
+	/**
+	 * End of stream: measures the true peak of the points between the last input samples (silence follows; the
+	 * interpolator lags by {@link PolyphaseBank.delay} samples). Call once after the last `process` for a
+	 * whole-programme summary; live meters don't. Loudness values are unaffected.
+	 */
+	flush(): void {
+		for (let c = 0; c < this.channels; c++) {
+			const t = this.interp[c].flushPeak(this.bank, this.tPeak[c]);
+			if (t > this.tPeak[c]) this.tPeak[c] = t;
+		}
+	}
+
 	/** Momentary loudness (last 400 ms), LUFS, updated every 100 ms; −Infinity before data / for silence. */
 	momentary(): number {
 		return this.mom;
@@ -372,6 +384,7 @@ export function measureLoudness(
 ): LoudnessSummary {
 	const m = new LoudnessMeter(sampleRate, Math.max(1, planar.length), weights ? { weights } : {});
 	m.process(planar);
+	m.flush();
 	return m.summary();
 }
 

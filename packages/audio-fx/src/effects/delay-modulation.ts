@@ -24,7 +24,8 @@ export function tempoDelayMs(bpm: number, division: number): number {
 
 /** Feedback delay per channel, time in ms or tempo-synced; the time glides (100 ms) instead of clicking. */
 export class Delay extends EffectBase {
-	static readonly MAX_MS = 4000;
+	/** Longest delay: a whole note at the slowest tempo (20 BPM: 12 s); the Time mode stops at 2 s. */
+	static readonly MAX_MS = tempoDelayMs(20, 0);
 	private readonly lines: DelayLine[];
 	private readonly time: Smoothed;
 	private readonly feedback: Smoothed;

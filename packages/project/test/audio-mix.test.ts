@@ -1,10 +1,14 @@
+import { balanceGains } from '@jasper/audio-dsp';
 import { describe, expect, it } from 'vitest';
+import { repairAudioMix } from '../src/audio/invariants.ts';
+import { contentTimeAt } from '../src/derive/index.ts';
 import {
 	buildAudioMix,
 	buildRenderSnapshot,
 	type ClipReader,
 	checkInvariants,
 	createCounterIdSource,
+	generatorReader,
 	listStrips,
 	mixFingerprint,
 	OfflineMixer,
@@ -18,6 +22,8 @@ import {
 	soloAudible,
 	thinPoints,
 } from '../src/index.ts';
+import { evaluate } from '../src/keyframes.ts';
+import type { Sequence } from '../src/schema/sequence.ts';
 import { Harness } from './helpers.ts';
 
 const F30 = 705_600_000 / 30;
@@ -116,6 +122,35 @@ describe('mix plan', () => {
 		expect(keep.has('master')).toBe(true);
 		const mix = buildAudioMix(h.seq);
 		expect(mix.strips.find((s) => s.label === 'A2')!.silent).toBe(true);
+	});
+
+	it('solo: a strip reached from one soloed strip still lets the other soloed strip walk through it', () => {
+		const h = new Harness();
+		h.ok([{ type: 'mixer.addSubmix' }, { type: 'mixer.addSubmix' }, { type: 'mixer.addSubmix' }]);
+		// A1 (solo) → S1 → S2 (solo); A3 → S1 also feeds the soloed S2. S1 sends to S3: fed by the soloed A1.
+		h.ok([
+			{ type: 'mixer.updateStrip', stripId: 'A1', patch: { output: 'S1', solo: true } },
+			{ type: 'mixer.updateStrip', stripId: 'A3', patch: { output: 'S1' } },
+			{ type: 'mixer.updateStrip', stripId: 'S1', patch: { output: 'S2' } },
+			{ type: 'mixer.updateStrip', stripId: 'S2', patch: { solo: true } },
+		]);
+		const label = (l: string) => resolveStripRef(h.seq, l)!;
+		const keep = soloAudible(listStrips(h.seq));
+		expect(keep.has(label('A3')), 'A3 feeds the soloed S2 through S1').toBe(true);
+		expect(keep.has(label('A2'))).toBe(false);
+		// The other direction: S3 is fed by the soloed A1 through S1 (a send), whatever order the seeds are walked in.
+		const h2 = new Harness();
+		h2.ok([{ type: 'mixer.addSubmix' }, { type: 'mixer.addSubmix' }]);
+		h2.ok([
+			{ type: 'mixer.updateStrip', stripId: 'A1', patch: { output: 'S1' } },
+			{ type: 'mixer.updateStrip', stripId: 'A2', patch: { output: 'S1', solo: true } },
+			{ type: 'mixer.updateStrip', stripId: 'S1', patch: { solo: true } },
+			{ type: 'mixer.addSend', stripId: 'S1', target: 'S2' },
+		]);
+		const keep2 = soloAudible(listStrips(h2.seq));
+		expect(keep2.has(resolveStripRef(h2.seq, 'S2')!), 'S2 is fed by the soloed S1').toBe(true);
+		expect(keep2.has(resolveStripRef(h2.seq, 'A1')!), 'A1 feeds the soloed S1').toBe(true);
+		expect(keep2.has(resolveStripRef(h2.seq, 'A3')!)).toBe(false);
 	});
 });
 
@@ -240,6 +275,48 @@ describe('offline mixer', () => {
 		expect(close(r![10]!, 0.5)).toBe(true);
 	});
 
+	it('reversed clips: export volume and pan follow the preview content time (no one-frame shift)', async () => {
+		const { h, a } = audioHarness();
+		h.ok([{ type: 'mixer.updateStrip', stripId: 'A2', patch: { mute: true } }]);
+		const clip = h.clips('A1')[0]!.id;
+		h.ok([{ type: 'clip.setSpeed', clipIds: [clip], reverse: true, ripple: false }]);
+		// Clip Mixer keyframes written in sequence time (content time through `contentTimeAt`, as the preview reads them).
+		h.ok([
+			{
+				type: 'clipMixer.write',
+				trackId: 'A1',
+				lane: 'volume',
+				points: [
+					[10 * F30, 0],
+					[20 * F30, -20],
+				],
+				thinning: { tolerance: 0 },
+			},
+			{
+				type: 'clipMixer.write',
+				trackId: 'A1',
+				lane: 'pan',
+				points: [
+					[10 * F30, 0],
+					[20 * F30, 100],
+				],
+				thinning: { tolerance: 0 },
+			},
+		]);
+		const c = h.seq.clips[clip] as unknown as RenderAudioClip;
+		const [l, r] = await render(h, { [a]: [0.5, 0.5] }, 25);
+		for (const f of [12, 15, 18]) {
+			const i = f * 1600;
+			const content = contentTimeAt(c, f, { num: 30, den: 1 });
+			const g = 0.5 * 10 ** (evaluate(c.volumeDb, content) / 20);
+			const [gl, gr] = balanceGains(evaluate(c.pan, content) / 100);
+			expect(Math.abs(l![i]! - g * gl), `L at frame ${f}`).toBeLessThan(1e-5);
+			expect(Math.abs(r![i]! - g * gr), `R at frame ${f}`).toBeLessThan(1e-5);
+		}
+		// frame 15 is half way: −10 dB, pan 50
+		expect(Math.abs(r![15 * 1600]! - 0.5 * 10 ** (-10 / 20))).toBeLessThan(1e-4);
+	});
+
 	it('inserts run registered processors (latency compensated) and report missing ones', async () => {
 		const { h, a } = audioHarness();
 		h.ok([{ type: 'mixer.updateStrip', stripId: 'A2', patch: { mute: true } }]);
@@ -284,6 +361,27 @@ describe('offline mixer', () => {
 		} finally {
 			off();
 		}
+	});
+
+	it('a synthetic tone sped up past Nyquist is silent instead of aliasing', () => {
+		const clip = {
+			start: 0,
+			duration: 30,
+			sourceIn: 0,
+			speed: { rate: 30, reverse: false, maintainPitch: false },
+			channels: { streamIndex: 0, map: [] },
+			generator: { kind: 'tone', hz: 1000, db: -20 },
+		} as unknown as RenderAudioClip;
+		const read = (c: RenderAudioClip) => {
+			const r = generatorReader(c, { offset: 0, length: 4800, sampleRate: 48000 }, { num: 30, den: 1 })!;
+			const out = [new Float32Array(4800), new Float32Array(4800)];
+			r.read(out, 4800);
+			return Math.max(...out[0]!.map(Math.abs));
+		};
+		// 1 kHz × 30 = 30 kHz > 24 kHz: a band-limited resampler removes it (it would alias to 18 kHz)
+		expect(read(clip)).toBe(0);
+		// 1 kHz × 20 = 20 kHz stays
+		expect(read({ ...clip, speed: { ...clip.speed, rate: 20 } })).toBeGreaterThan(0.09);
 	});
 
 	it('block size does not change the output', async () => {
@@ -474,6 +572,18 @@ describe('mixer commands', () => {
 		expect(mixFingerprint(h.doc, h.seqId)).not.toBe(hash);
 	});
 
+	it("mixFingerprint changes when Interpret Footage changes how a clip's media plays", () => {
+		const h = new Harness();
+		const m = h.registerVideo({ seconds: 10 });
+		h.ok([{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { video: 'V1', audio: 'A1' } }]);
+		const fp0 = mixFingerprint(h.doc, h.seqId);
+		h.ok([{ type: 'media.interpret', mediaIds: [m], interpretation: { frameRate: { num: 15, den: 1 } } }]);
+		const fp1 = mixFingerprint(h.doc, h.seqId);
+		expect(fp1).not.toBe(fp0);
+		h.ok([{ type: 'media.interpret', mediaIds: [m], interpretation: { frameRate: null, loop: 3 } }]);
+		expect(mixFingerprint(h.doc, h.seqId)).not.toBe(fp1);
+	});
+
 	it('repairDocument drops invalid routes and sends', () => {
 		const h = new Harness();
 		h.ok([{ type: 'mixer.addSubmix' }]);
@@ -486,5 +596,29 @@ describe('mixer commands', () => {
 		expect(checkInvariants(doc).some((i) => i.invariant === 'INV-MIX')).toBe(true);
 		const { document } = repairDocument(doc, createCounterIdSource(99));
 		expect(checkInvariants(document).filter((i) => i.invariant === 'INV-MIX')).toEqual([]);
+	});
+
+	it('repairDocument keeps a valid send whose id an invalid duplicate used first', () => {
+		const h = new Harness();
+		h.ok([{ type: 'mixer.addSubmix' }]);
+		const doc = JSON.parse(JSON.stringify(h.doc)) as ProjectDocument;
+		const seq = Object.values(doc.sequences)[0]!;
+		const sub = seq.submixTracks![0]!.id;
+		const lv = { value: 0, keyframes: [] };
+		seq.audioTracks[0]!.mixer = {
+			sends: [
+				{ id: 'snd_0000000000000001', target: 'gone', levelDb: lv },
+				{ id: 'snd_0000000000000001', target: sub, levelDb: lv },
+			],
+		};
+		const { document } = repairDocument(doc, createCounterIdSource(99));
+		const sends = Object.values(document.sequences)[0]!.audioTracks[0]!.mixer!.sends!;
+		expect(sends.map((x) => x.target)).toEqual([sub]);
+		// The mixer repair on its own (repairDocument may rename duplicate ids before it runs).
+		const s2 = JSON.parse(JSON.stringify(seq)) as Sequence;
+		const notes: string[] = [];
+		repairAudioMix(s2, (a) => notes.push(a));
+		expect(s2.audioTracks[0]!.mixer!.sends!.map((x) => x.target)).toEqual([sub]);
+		expect(notes).toContain('drop-send');
 	});
 });

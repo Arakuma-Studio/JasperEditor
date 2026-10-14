@@ -22,6 +22,7 @@ import { nestGainDbAt, type RenderAudioClip, type RenderSnapshot } from '../rend
 import type { Animatable } from '../schema/common.ts';
 import type { EffectInstance } from '../schema/sequence.ts';
 import { syntheticSamples } from '../structure/generators.ts';
+import { LEADER_BLIP_HZ } from '../structure/synthetic.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
 import { audioFadeGain } from '../transitions.ts';
 import type { RenderStrip } from './plan.ts';
@@ -399,9 +400,7 @@ export class OfflineMixer {
 			const c = v.clip;
 			const frame = (at * this.fps.num) / (this.sampleRate * this.fps.den);
 			const local = frame - c.start;
-			const time = c.speed.reverse
-				? c.sourceIn + (c.duration - 1 - local) * F * c.speed.rate
-				: c.sourceIn + local * F * c.speed.rate;
+			const time = contentAt(c, local, F);
 			const fps = this.flicksPerSample * c.speed.rate * (c.speed.reverse ? -1 : 1);
 			for (const p of v.procs)
 				p.process(v.buf, k, { sampleRate: this.sampleRate, time, flicksPerSample: fps });
@@ -425,9 +424,7 @@ export class OfflineMixer {
 			if (volAnimated) {
 				// Levels of the nearest clip frame inside the clip (handles keep the edge level), like the preview.
 				const local = Math.min(c.duration - 1e-9, Math.max(0, frame - c.start));
-				const content = c.speed.reverse
-					? c.sourceIn + (c.duration - local) * F * c.speed.rate
-					: c.sourceIn + local * F * c.speed.rate;
+				const content = contentAt(c, local, F);
 				db = c.gainDb + evaluate(c.volumeDb, content);
 			}
 			// edit-structure: a clip flattened out of a nested sequence carries the nested levels per frame.
@@ -448,9 +445,7 @@ export class OfflineMixer {
 				if (panAnimated) {
 					const frame = (a + i) / spf;
 					const local = Math.min(c.duration - 1e-9, Math.max(0, frame - c.start));
-					const content = c.speed.reverse
-						? c.sourceIn + (c.duration - local) * F * c.speed.rate
-						: c.sourceIn + local * F * c.speed.rate;
+					const content = contentAt(c, local, F);
 					p = evaluate(c.pan, content);
 				}
 				if (p !== 0) [pl, pr] = balanceGains(Math.max(-1, Math.min(1, p / 100)));
@@ -635,6 +630,17 @@ export class OfflineMixer {
 	}
 }
 
+/**
+ * Content time (flicks) of a clip at local frame `local` (fractional): `contentTimeAt`'s convention, which the preview
+ * and every keyframe writer (Clip Mixer, auto-duck) use; a reversed clip's frame `i` reads content frame
+ * `duration − 1 − i`.
+ */
+function contentAt(c: RenderAudioClip, local: number, F: number): number {
+	return c.speed.reverse
+		? c.sourceIn + (c.duration - 1 - local) * F * c.speed.rate
+		: c.sourceIn + local * F * c.speed.rate;
+}
+
 function addInto(dst: Float32Array, src: Float32Array, n: number): void {
 	for (let i = 0; i < n; i++) dst[i]! += src[i]!;
 }
@@ -672,6 +678,10 @@ export function generatorReader(
 	const channels = Math.max(1, Math.min(6, clip.channels.map.length || 2));
 	const frameSeconds = fps.den / fps.num;
 	const rate = clip.speed.rate;
+	// A sound sped up past the Nyquist frequency is removed, as the band-limited resampling of media clips does
+	// (generating it at `sr / rate` would alias it down into the audible range).
+	const hz = sound.kind === 'tone' ? sound.hz : LEADER_BLIP_HZ;
+	const aliased = hz * rate >= sr / 2;
 	let pos = at.offset;
 	const end = at.offset + at.length;
 	return {
@@ -679,6 +689,11 @@ export function generatorReader(
 		read(out: Float32Array[], frames: number): number {
 			const n = Math.max(0, Math.min(frames, end - pos));
 			if (n === 0) return 0;
+			if (aliased) {
+				for (let c = 0; c < channels; c++) out[c]!.fill(0, 0, n);
+				pos += n;
+				return n;
+			}
 			const u0 = (s0 + pos) / spf - clip.start;
 			let block: Float32Array;
 			if (clip.speed.reverse) {

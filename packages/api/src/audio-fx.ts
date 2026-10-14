@@ -1,15 +1,19 @@
 import { z } from 'zod';
 
+/** Longest music range the Remix analyses (seconds). */
+export const MAX_REMIX_SOURCE_SECONDS = 30 * 60;
+
 export const RemixPlanRequestSchema = z.strictObject({
 	mediaKey: z.string().min(1),
 	/** Audio stream of the media (default: the first audio stream). */
 	streamIndex: z.number().int().min(0).optional(),
 	/** The clip's content range (seconds of media time): its intro and outro are kept. */
 	startSeconds: z.number().min(0),
-	durationSeconds: z
-		.number()
-		.positive()
-		.max(4 * 3600),
+	/**
+	 * At most 30 min: the analysis holds the decoded range (22.05 kHz mono) and a beats² similarity matrix, which
+	 * for hours of audio would exhaust the engine's memory (≈ 3 GB per hour at 200 BPM).
+	 */
+	durationSeconds: z.number().positive().max(MAX_REMIX_SOURCE_SECONDS),
 	targetSeconds: z
 		.number()
 		.positive()

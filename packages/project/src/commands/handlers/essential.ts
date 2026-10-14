@@ -7,6 +7,7 @@ import {
 	type EssentialSound,
 	EssentialSoundError,
 	newEssentialSound,
+	parseEssentialSound,
 	readEssentialSound,
 	setEssentialValue,
 	withPreset,
@@ -61,8 +62,13 @@ function timeIn(
 /** Writes the new settings and reconciles the clip's effects and levels (one place for every command). */
 function update(clip: DAudio, next: EssentialSound | null, time: number, h: HandlerContext): void {
 	const old = readEssentialSound(clip.essential);
+	const residual = {
+		volume: { ...(old?.residual?.volume ?? {}) },
+		pan: { ...(old?.residual?.pan ?? {}) },
+	};
 	reconcileEssential(clip as never, old, next, {
 		time,
+		residual,
 		newEffectId: () => h.ids.next('fx'),
 		newKey: (t, value: ParamValue, hold) => ({
 			id: h.ids.next('kf'),
@@ -73,8 +79,21 @@ function update(clip: DAudio, next: EssentialSound | null, time: number, h: Hand
 			easeOut: { ...EASE_PRESETS.linear },
 		}),
 	});
-	if (next) clip.essential = next as never;
-	else delete clip.essential;
+	if (next) {
+		// Residuals of values that no longer exist (deleted keyframes) are dropped.
+		const live = new Set([
+			'value',
+			...clip.volumeDb.keyframes.map((k) => k.id),
+			...clip.pan.keyframes.map((k) => k.id),
+		]);
+		const keep = (r: Record<string, number>) =>
+			Object.fromEntries(Object.entries(r).filter(([k]) => live.has(k)));
+		const r = { volume: keep(residual.volume), pan: keep(residual.pan) };
+		const stored = { ...next } as EssentialSound;
+		if (Object.keys(r.volume).length + Object.keys(r.pan).length > 0) stored.residual = r;
+		else delete stored.residual;
+		clip.essential = stored as never;
+	} else delete clip.essential;
 }
 
 function tryValue<T>(f: () => T, h: HandlerContext, clipId: string): T {
@@ -164,12 +183,13 @@ export const essentialHandlers = {
 			const cur = readEssentialSound(c.essential);
 			let preset: { name: string; settings: EssentialSound };
 			if (cmd.settings) {
-				const s = readEssentialSound({ ...cmd.settings, ...(cmd.audioType ? { type: cmd.audioType } : {}) });
-				if (!s) h.fail('E_INVALID_PARAM', 'settings need a valid "type" (dialogue, music, sfx, ambience)');
+				const { residual: _r, ...given } = cmd.settings;
+				const s = parseEssentialSound({ ...given, ...(cmd.audioType ? { type: cmd.audioType } : {}) });
+				if (typeof s === 'string') return h.fail('E_INVALID_PARAM', s);
 				preset = {
 					name:
 						typeof cmd.settings.preset === 'string' && cmd.settings.preset ? cmd.settings.preset : 'Custom',
-					settings: s!,
+					settings: s,
 				};
 			} else {
 				const type = cmd.audioType ?? cur?.type;
@@ -206,7 +226,10 @@ export const essentialHandlers = {
 			}
 			const measured = cmd.measuredLufs[c.id];
 			if (measured === null || measured === undefined || !Number.isFinite(measured)) {
-				out[c.id] = { skipped: 'silent' };
+				// No integrated loudness: silence, or a clip shorter than one 400 ms BS.1770 gating block.
+				const rate = seq.settings.frameRate as Rational;
+				const short = (c.duration * rate.den) / rate.num < 0.4;
+				out[c.id] = { skipped: short ? 'shorter than 400 ms (integrated loudness is undefined)' : 'silent' };
 				continue;
 			}
 			const target = cmd.targetLufs ?? cur.loudness.targetLufs ?? DEFAULT_LOUDNESS_TARGET;

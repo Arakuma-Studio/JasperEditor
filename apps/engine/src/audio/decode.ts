@@ -100,7 +100,13 @@ export function clipDecodeArgs(o: {
 		);
 		chain.push(`pan=${layout}|${picks.join('|')}`);
 	} else if (!PAN_LAYOUT[o.stream.channels]) chain.push('aformat=channel_layouts=stereo');
-	if (clip.speed.reverse) chain.push('areverse');
+	if (clip.speed.reverse) {
+		// Reverse exactly the decoded span [max(0, c0), c1): without the trim, the 0.25 s read past c1 (`-t` below)
+		// would come first and shift the whole clip by 250 ms; content past the media end is silence that must come
+		// first too. Content before 0 (lead) is silence at the end, which the final apad supplies.
+		const d = sec(durSec);
+		chain.push(`atrim=duration=${d}`, `apad=whole_dur=${d}`, 'areverse');
+	}
 	// The interpretation's scale is a rate change (pitch follows); the clip's own speed honours Maintain Pitch.
 	if (Math.abs(scale - 1) > 1e-9) chain.push(`asetrate=${Math.round(o.stream.sampleRate * scale)}`);
 	if (Math.abs(rate - 1) > 1e-9) {
@@ -109,7 +115,7 @@ export function clipDecodeArgs(o: {
 		else chain.push(`asetrate=${Math.round(o.stream.sampleRate * scale * rate)}`);
 	}
 	chain.push(`aresample=${sampleRate}:${resamplerArgs(o.soxr)}`);
-	if (lead > 0) {
+	if (lead > 0 && !clip.speed.reverse) {
 		const leadSamples = Math.round((lead / FLICKS_PER_SECOND / rate) * sampleRate);
 		chain.push(`adelay=delays=${leadSamples}S:all=1`);
 	}

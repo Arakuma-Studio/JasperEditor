@@ -193,6 +193,122 @@ describe('Essential Sound commands', () => {
 		expect(clip().pan.value).toBe(0);
 	});
 
+	it('Auto-Match skips an unmeasurable clip shorter than 400 ms as too short, not as silent', () => {
+		const { h, clip } = setup(0.3);
+		const id = clip().id;
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'sfx' }]);
+		const r = h.ok([{ type: 'essentialSound.autoMatch', measuredLufs: { [id]: null } }]);
+		const skipped = (r.results[0] as { clips: Record<string, { skipped?: string }> }).clips[id]!.skipped;
+		expect(skipped).toMatch(/400 ms/);
+		expect(clip().gainDb).toBe(0);
+	});
+
+	it("the SFX type keeps the clip's own pan; Pan on/off and Clear Audio Type restore it", () => {
+		const { h, clip } = setup();
+		const id = clip().id;
+		h.ok([{ type: 'param.set', target: ['clip', id, 'pan'], value: -50 }]);
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'sfx' }]);
+		expect(clip().pan.value).toBe(-50);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { pan: { enabled: true, value: 30 } } }]);
+		expect(clip().pan.value).toBe(-20);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.enabled': false } }]);
+		expect(clip().pan.value).toBe(-50);
+		// a pan clamped at −100 while on comes back exactly when switched off
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { pan: { enabled: true, value: -80 } } }]);
+		expect(clip().pan.value).toBe(-100);
+		h.ok([{ type: 'essentialSound.clearType', clipIds: [id] }]);
+		expect(clip().pan.value).toBe(-50);
+	});
+
+	it('Clip Volume on/off restores levels the fader range clamped while it was on', () => {
+		const { h, clip } = setup();
+		const id = clip().id;
+		h.ok([{ type: 'param.set', target: ['clip', id, 'volumeDb'], value: 10 }]);
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'dialogue' }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { volume: { on: true, levelDb: 15 } } }]);
+		expect(clip().volumeDb.value).toBe(15);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'volume.on': false } }]);
+		expect(clip().volumeDb.value).toBe(10);
+		// a fade from silence (−96 = −∞) stays silent through a −6 dB on/off
+		h.ok([
+			{ type: 'param.set', target: ['clip', id, 'volumeDb'], value: -96 },
+			{ type: 'param.setAnimated', target: ['clip', id, 'volumeDb'], animated: true, at: { frames: 0 } },
+			{ type: 'param.set', target: ['clip', id, 'volumeDb'], value: 0, at: { frames: 10 } },
+		]);
+		const before = clip().volumeDb.keyframes.map((k) => k.value);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { volume: { on: true, levelDb: -6 } } }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'volume.on': false } }]);
+		expect(clip().volumeDb.keyframes.map((k) => k.value)).toEqual(before);
+		expect(before[0]).toBe(-96);
+	});
+
+	it('one out-of-range stored field does not reset the other Essential Sound settings', () => {
+		const s = newEssentialSound('dialogue');
+		s.loudness = { enabled: true, measuredLufs: -30, targetLufs: -23, gainDb: 7 };
+		s.volume = { on: true, levelDb: -4 };
+		s.repair.noise = { on: true, amount: 8 };
+		const raw = JSON.parse(JSON.stringify(s));
+		raw.ducking.sensitivity = 11;
+		raw.ducking.reduceDb = -41;
+		const r = readEssentialSound(raw)!;
+		expect(r.loudness.gainDb).toBe(7);
+		expect(r.volume).toEqual({ on: true, levelDb: -4 });
+		expect(r.repair.noise).toEqual({ on: true, amount: 8 });
+		expect(r.ducking.sensitivity).toBe(10);
+		expect(r.ducking.reduceDb).toBe(-40);
+		// a field of the wrong type falls back for its section only
+		const raw2 = JSON.parse(JSON.stringify(s));
+		raw2.clarity.enhanceTone = 'purple';
+		const r2 = readEssentialSound(raw2)!;
+		expect(r2.loudness.gainDb).toBe(7);
+		expect(r2.repair.noise.on).toBe(true);
+		expect(r2.clarity.enhanceTone).toBe('low');
+	});
+
+	it('applyPreset refuses invalid explicit settings instead of applying the defaults', () => {
+		const { h, clip } = setup();
+		const id = clip().id;
+		const bad = h.tx([
+			{
+				type: 'essentialSound.applyPreset',
+				clipIds: [id],
+				settings: { type: 'dialogue', repair: { noise: { on: 'yes', amount: 8 } } },
+			},
+		]);
+		expect(bad.ok).toBe(false);
+		// out-of-range numbers are clamped like every other setting
+		h.ok([
+			{
+				type: 'essentialSound.applyPreset',
+				clipIds: [id],
+				settings: {
+					type: 'dialogue',
+					repair: { noise: { on: true, amount: 8 } },
+					ducking: { reduceDb: -41 },
+				},
+			},
+		]);
+		expect(clip().effects.map((e) => e.essential)).toContain('noise');
+		expect(readEssentialSound(clip().essential)!.ducking.reduceDb).toBe(-40);
+	});
+
+	it('the loudness target is limited to −60…0 LUFS (Auto-Match cannot jump to +96 dB)', () => {
+		expect(setEssentialValue(newEssentialSound('sfx'), 'loudness.targetLufs', 500).loudness.targetLufs).toBe(
+			0,
+		);
+		const raw = {
+			...newEssentialSound('sfx'),
+			loudness: { enabled: true, measuredLufs: null, targetLufs: 500, gainDb: 0 },
+		};
+		expect(readEssentialSound(raw)!.loudness.targetLufs).toBe(0);
+		const { h, clip } = setup();
+		const id = clip().id;
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'sfx' }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'loudness.targetLufs': 500 } }]);
+		h.ok([{ type: 'essentialSound.autoMatch', measuredLufs: { [id]: -30 } }]);
+		expect(clip().gainDb).toBe(30);
+	});
+
 	it('presets: built-ins by name, user settings, keeping loudness/volume/mute; mute is a Mute effect', () => {
 		const { h, clip } = setup();
 		const id = clip().id;
