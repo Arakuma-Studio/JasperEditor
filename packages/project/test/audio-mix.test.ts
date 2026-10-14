@@ -120,6 +120,35 @@ describe('mix plan', () => {
 		const mix = buildAudioMix(h.seq);
 		expect(mix.strips.find((s) => s.label === 'A2')!.silent).toBe(true);
 	});
+
+	it('solo: a strip reached from one soloed strip still lets the other soloed strip walk through it', () => {
+		const h = new Harness();
+		h.ok([{ type: 'mixer.addSubmix' }, { type: 'mixer.addSubmix' }, { type: 'mixer.addSubmix' }]);
+		// A1 (solo) → S1 → S2 (solo); A3 → S1 also feeds the soloed S2. S1 sends to S3: fed by the soloed A1.
+		h.ok([
+			{ type: 'mixer.updateStrip', stripId: 'A1', patch: { output: 'S1', solo: true } },
+			{ type: 'mixer.updateStrip', stripId: 'A3', patch: { output: 'S1' } },
+			{ type: 'mixer.updateStrip', stripId: 'S1', patch: { output: 'S2' } },
+			{ type: 'mixer.updateStrip', stripId: 'S2', patch: { solo: true } },
+		]);
+		const label = (l: string) => resolveStripRef(h.seq, l)!;
+		const keep = soloAudible(listStrips(h.seq));
+		expect(keep.has(label('A3')), 'A3 feeds the soloed S2 through S1').toBe(true);
+		expect(keep.has(label('A2'))).toBe(false);
+		// The other direction: S3 is fed by the soloed A1 through S1 (a send), whatever order the seeds are walked in.
+		const h2 = new Harness();
+		h2.ok([{ type: 'mixer.addSubmix' }, { type: 'mixer.addSubmix' }]);
+		h2.ok([
+			{ type: 'mixer.updateStrip', stripId: 'A1', patch: { output: 'S1' } },
+			{ type: 'mixer.updateStrip', stripId: 'A2', patch: { output: 'S1', solo: true } },
+			{ type: 'mixer.updateStrip', stripId: 'S1', patch: { solo: true } },
+			{ type: 'mixer.addSend', stripId: 'S1', target: 'S2' },
+		]);
+		const keep2 = soloAudible(listStrips(h2.seq));
+		expect(keep2.has(resolveStripRef(h2.seq, 'S2')!), 'S2 is fed by the soloed S1').toBe(true);
+		expect(keep2.has(resolveStripRef(h2.seq, 'A1')!), 'A1 feeds the soloed S1').toBe(true);
+		expect(keep2.has(resolveStripRef(h2.seq, 'A3')!)).toBe(false);
+	});
 });
 
 describe('offline mixer', () => {

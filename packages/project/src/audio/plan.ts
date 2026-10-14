@@ -96,14 +96,20 @@ export function soloAudible(strips: readonly StripView[]): Set<string> {
 	for (const [src, ts] of out) for (const t of ts) into.set(t, [...(into.get(t) ?? []), src]);
 	const keep = new Set<string>([MASTER_STRIP_ID]);
 	const seeds = strips.filter((s) => s.kind !== 'master' && (s.solo || s.soloSafe)).map((s) => s.id);
-	// downstream of a soloed/safe strip (it must reach the Mix) and upstream (what feeds it)
+	// downstream of a soloed/safe strip (it must reach the Mix) and upstream (what feeds it). Each walk has its own
+	// visited set: a strip already kept by another seed's walk must still be walked through (A1 → S1 → soloed S2
+	// keeps everything else that feeds S1).
 	const walk = (start: string, edges: Map<string, string[]>) => {
+		const seen = new Set<string>([start]);
 		const stack = [start];
 		while (stack.length) {
 			const id = stack.pop()!;
-			if (keep.has(id) && id !== start) continue;
 			keep.add(id);
-			for (const n of edges.get(id) ?? []) if (!keep.has(n)) stack.push(n);
+			for (const n of edges.get(id) ?? [])
+				if (!seen.has(n)) {
+					seen.add(n);
+					stack.push(n);
+				}
 		}
 	};
 	for (const s of seeds) {
