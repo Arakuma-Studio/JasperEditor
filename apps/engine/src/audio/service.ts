@@ -383,12 +383,21 @@ export class AudioService {
 			r.close();
 		}
 		const before = m1.summary();
-		if (!Number.isFinite(before.integrated))
+		if (!Number.isFinite(before.integrated)) {
+			// BS.1770 integrated loudness needs at least one complete 400 ms gating block: shorter audio is not "silent".
+			if (total < Math.round(sr * 0.4))
+				throw new JobError(
+					'TOO_SHORT',
+					`The audio is ${Math.round((total / sr) * 1000)} ms long: integrated loudness (BS.1770) needs at least 400 ms`,
+					false,
+					{ durationSec: total / sr, truePeakDbtp: Number.isFinite(before.truePeakDb) ? before.truePeakDb : null },
+				);
 			throw new JobError(
 				'SILENT',
 				'The audio is silent (below the −70 LUFS gate): nothing to normalise',
 				false,
 			);
+		}
 		const gainDb = req.targetLufs - before.integrated;
 		const g = 10 ** (gainDb / 20);
 		// pass 2: gain + true-peak limiter → 24-bit WAV (via ffmpeg from a float WAV)
