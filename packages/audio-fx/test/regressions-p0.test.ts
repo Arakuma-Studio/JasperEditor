@@ -3,6 +3,7 @@
 import type { EffectInstance } from '@jasper/project/audio';
 import { describe, expect, it } from 'vitest';
 import { EffectSlot } from '../src/host.ts';
+import { createProcessor } from '../src/registry.ts';
 
 const SR = 48000;
 const FPS = 705_600_000 / SR;
@@ -56,5 +57,38 @@ describe('hosted effects start at their parameter values (no glide from the defa
 		const b = [new Float32Array(10).fill(1), new Float32Array(10).fill(1)];
 		slot.process(b, 10, { sampleRate: SR, time: 0, flicksPerSample: FPS });
 		expect(db(b[0]![0]!)).toBeCloseTo(-40, 2);
+	});
+});
+
+const sine = (n: number, hz: number, amp: number, sr = SR) =>
+	Float32Array.from({ length: n }, (_, i) => amp * Math.sin((2 * Math.PI * hz * i) / sr));
+const peakDb = (x: Float32Array, from = 0, to = x.length) => {
+	let p = 0;
+	for (let i = from; i < to; i++) p = Math.max(p, Math.abs(x[i]!));
+	return 20 * Math.log10(p);
+};
+
+describe('Dynamics: compressor make-up sits before the limiter', () => {
+	const run = (makeup: number, auto = false) => {
+		const fx = createProcessor('jasper.audio.dynamics', SR, 2)!;
+		fx.setParam('compOn', true);
+		fx.setParam('compThreshold', -20);
+		fx.setParam('compRatio', 4);
+		fx.setParam('compMakeup', makeup);
+		fx.setParam('compAuto', auto);
+		fx.setParam('limOn', true);
+		fx.setParam('limThreshold', -6);
+		fx.reset();
+		const l = sine(SR, 440, 0.9);
+		const r = sine(SR, 440, 0.9);
+		fx.process([l, r], 0, SR);
+		return peakDb(l, SR / 2);
+	};
+
+	it('make-up gain cannot push the output over the limiter threshold', () => {
+		expect(run(0)).toBeLessThanOrEqual(-6 + 1e-6);
+		expect(run(12)).toBeLessThanOrEqual(-6 + 1e-6);
+		expect(run(0, true)).toBeLessThanOrEqual(-6 + 1e-6);
+		expect(run(12)).toBeGreaterThan(-6.5);
 	});
 });

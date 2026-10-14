@@ -20,6 +20,8 @@ export class DynamicsRack extends EffectBase {
 	private compEnv = 0;
 	private limEnv = 0;
 	private readonly out: Smoothed;
+	/** Compressor make-up (dB), part of the compressor stage: before the limiter, which caps it. */
+	private readonly makeup: Smoothed;
 	/** gate att, gate rel, exp att (1 ms), exp rel (80 ms), comp att, comp rel, —, lim rel. */
 	private c = new Float64Array(8);
 	private hold = 0;
@@ -27,6 +29,7 @@ export class DynamicsRack extends EffectBase {
 	constructor(sr: number, ch: number) {
 		super('jasper.audio.dynamics', sr, ch);
 		this.out = Smoothed.withMs(1, sr, 20);
+		this.makeup = Smoothed.withMs(0, sr, 20);
 		this.applyParams(true);
 	}
 
@@ -44,8 +47,12 @@ export class DynamicsRack extends EffectBase {
 			coef(p.v('limRelease'), sr),
 		]);
 		this.hold = Math.floor(p.v('gateHold') * 0.001 * sr);
-		this.out.set(dbToGain(p.v('output') + this.makeupDb()));
-		if (snap) this.out.snap();
+		this.out.set(dbToGain(p.v('output')));
+		this.makeup.set(this.makeupDb());
+		if (snap) {
+			this.out.snap();
+			this.makeup.snap();
+		}
 	}
 
 	private makeupDb(): number {
@@ -57,20 +64,20 @@ export class DynamicsRack extends EffectBase {
 		return p.v('compMakeup') + auto;
 	}
 
-	/** Static gain (dB) of the enabled sections for a detector level, before make-up/output. */
+	/** Static gain (dB) of the enabled sections (compressor make-up included) for a detector level, before output. */
 	private staticGain(level: number): number {
 		const p = this.pv;
 		let l = level;
 		if (p.on('gateOn') && l < p.v('gateThreshold')) l -= GATE_RANGE;
 		if (p.on('expOn')) l = expanderCurve(l, p.v('expThreshold'), p.v('expRatio'), EXP_RANGE);
-		if (p.on('compOn')) l = compressorCurve(l, p.v('compThreshold'), p.v('compRatio'), 0);
+		if (p.on('compOn')) l = compressorCurve(l, p.v('compThreshold'), p.v('compRatio'), 0) + this.makeupDb();
 		if (p.on('limOn')) l = Math.min(l, p.v('limThreshold'));
 		return l - level;
 	}
 
 	transferDb(band: number, inputDb: number): number | null {
 		if (band !== 0) return null;
-		return inputDb + this.staticGain(inputDb) + this.pv.v('output') + this.makeupDb();
+		return inputDb + this.staticGain(inputDb) + this.pv.v('output');
 	}
 
 	/** Gain reduction (dB) of the AutoGate, Expander, Compressor and Limiter sections. */
@@ -85,6 +92,7 @@ export class DynamicsRack extends EffectBase {
 		this.compEnv = 0;
 		this.limEnv = 0;
 		this.out.snap();
+		this.makeup.snap();
 	}
 
 	process(ch: readonly Float32Array[], start: number, end: number): void {
@@ -133,6 +141,10 @@ export class DynamicsRack extends EffectBase {
 				g += this.compEnv;
 				l += this.compEnv;
 			}
+			// Make-up belongs to the compressor: the limiter after it sees (and caps) the made-up level.
+			const mk = this.makeup.tick();
+			g += mk;
+			l += mk;
 			if (limOn) {
 				const target = Math.min(lt - l, 0);
 				if (target < this.limEnv) this.limEnv = target;
