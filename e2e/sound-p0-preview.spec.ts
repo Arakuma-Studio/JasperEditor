@@ -3,13 +3,16 @@
 // its ceiling) and on A2 (no insert). With the track insert latency compensated the two clicks coincide (one click of
 // twice the size); uncompensated they arrive 374 samples (7.8 ms) apart. Before the WP0.1 fixes this run measured
 // pairs of single clicks 374 samples apart (and an insert added after playback started was not heard at all). Also: Preferences ▸ Audio shows the voice-over Latency Offset.
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import {
+	clipBox,
+	clips,
 	createProject,
 	enableAgentBridge,
+	exportViaUi,
 	focusTimeline,
 	query,
 	ROOT,
@@ -23,31 +26,40 @@ test.describe.configure({ mode: 'serial' });
 let page: Page;
 const outDir = join(ROOT, 'test-results', 'e2e-sound-p0');
 
-/** Taps every AudioContext destination: window.__tap.on starts recording channel 0 of what reaches the speakers. */
+/**
+ * Taps every AudioContext destination: whatever any node sends to the speakers goes through one bus per context, and
+ * window.__tap.on records channel 0 of that bus (the whole of what reaches the destination).
+ */
 const TAP = () => {
 	const w = window as unknown as { __tap: { on: boolean; data: Float32Array[][]; rate: number } };
 	w.__tap = { on: false, data: [], rate: 0 };
-	const tapped = new WeakSet<BaseAudioContext>();
+	const buses = new WeakMap<BaseAudioContext, GainNode>();
 	const connect = AudioNode.prototype.connect as (this: AudioNode, ...a: unknown[]) => unknown;
+	const busOf = (dest: AudioDestinationNode): GainNode => {
+		const ctx = dest.context;
+		let bus = buses.get(ctx);
+		if (bus) return bus;
+		bus = ctx.createGain();
+		buses.set(ctx, bus);
+		const mine: Float32Array[] = [];
+		w.__tap.data.push(mine);
+		const sp = ctx.createScriptProcessor(1024, 2, 1);
+		sp.onaudioprocess = (e) => {
+			if (!w.__tap.on) return;
+			w.__tap.rate = ctx.sampleRate;
+			mine.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+		};
+		const mute = ctx.createGain();
+		mute.gain.value = 0;
+		connect.call(bus, sp);
+		connect.call(sp, mute);
+		connect.call(mute, dest);
+		connect.call(bus, dest);
+		return bus;
+	};
 	AudioNode.prototype.connect = function (this: AudioNode, ...args: unknown[]) {
 		const dest = args[0];
-		if (dest instanceof AudioDestinationNode && !tapped.has(this.context)) {
-			tapped.add(this.context);
-			const ctx = this.context;
-			const mine: Float32Array[] = [];
-			w.__tap.data.push(mine);
-			const sp = ctx.createScriptProcessor(1024, 2, 1);
-			sp.onaudioprocess = (e) => {
-				if (!w.__tap.on) return;
-				w.__tap.rate = ctx.sampleRate;
-				mine.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-			};
-			const mute = ctx.createGain();
-			mute.gain.value = 0;
-			connect.call(this, sp);
-			connect.call(sp, mute);
-			connect.call(mute, dest);
-		}
+		if (dest instanceof AudioDestinationNode) return connect.apply(this, [busOf(dest), ...args.slice(1)]);
 		return connect.apply(this, args);
 	} as typeof AudioNode.prototype.connect;
 };
@@ -62,6 +74,49 @@ test.beforeAll(async ({ browser }) => {
 test.afterAll(async () => {
 	await page?.close();
 });
+
+/** Plays the sequence from frame 0 for 2.6 s and returns the click peaks the monitor tap heard (channel 0). */
+async function playAndTap(page: Page): Promise<{ rate: number; peaks: { at: number; v: number }[] }> {
+	await focusTimeline(page);
+	await page.keyboard.press('Home');
+	await page.waitForTimeout(500);
+	await page.evaluate(() => {
+		const t = (window as unknown as { __tap: { on: boolean; data: Float32Array[][] } }).__tap;
+		for (const d of t.data) d.length = 0;
+		t.on = true;
+	});
+	await page.keyboard.press('Space');
+	await page.waitForTimeout(2600);
+	await page.keyboard.press('Space');
+	return page.evaluate(() => {
+		const t = (window as unknown as { __tap: { on: boolean; data: Float32Array[][]; rate: number } }).__tap;
+		t.on = false;
+		// the context that played the program (the loudest; others are silent)
+		const flat = t.data.map((blocks) => {
+			const a = new Float32Array(blocks.reduce((x, b) => x + b.length, 0));
+			let o = 0;
+			for (const b of blocks) {
+				a.set(b, o);
+				o += b.length;
+			}
+			return a;
+		});
+		const peakOf = (a: Float32Array) => a.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+		const all = flat.reduce((best, a) => (peakOf(a) > peakOf(best) ? a : best), new Float32Array(0));
+		const n = all.length;
+		// peaks: local maxima above 0.05, merged within 5 ms
+		const peaks: { at: number; v: number }[] = [];
+		for (let i = 0; i < n; i++) {
+			const v = Math.abs(all[i]!);
+			if (v < 0.05) continue;
+			const last = peaks[peaks.length - 1];
+			if (last && i - last.at < t.rate * 0.005) {
+				if (v > last.v) Object.assign(last, { at: i, v });
+			} else peaks.push({ at: i, v });
+		}
+		return { rate: t.rate, peaks };
+	});
+}
 
 test('track insert latency is compensated in the Program monitor', async () => {
 	test.setTimeout(240_000);
@@ -100,41 +155,7 @@ test('track insert latency is compensated in the Program monitor', async () => {
 		{ type: 'effect.add', target: { trackId: 'A1' }, effectId: 'jasper.audio.hard-limiter' },
 	]);
 	expect(r.ok, JSON.stringify(r)).toBe(true);
-	await focusTimeline(page);
-	await page.evaluate(() => {
-		(window as unknown as { __tap: { on: boolean } }).__tap.on = true;
-	});
-	await page.keyboard.press('Space');
-	await page.waitForTimeout(2600);
-	await page.keyboard.press('Space');
-	const tap = await page.evaluate(() => {
-		const t = (window as unknown as { __tap: { on: boolean; data: Float32Array[][]; rate: number } }).__tap;
-		t.on = false;
-		// the context that played the program (the loudest; others are silent)
-		const flat = t.data.map((blocks) => {
-			const a = new Float32Array(blocks.reduce((x, b) => x + b.length, 0));
-			let o = 0;
-			for (const b of blocks) {
-				a.set(b, o);
-				o += b.length;
-			}
-			return a;
-		});
-		const peakOf = (a: Float32Array) => a.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
-		const all = flat.reduce((best, a) => (peakOf(a) > peakOf(best) ? a : best), new Float32Array(0));
-		const n = all.length;
-		// peaks: local maxima above 0.05, merged within 5 ms
-		const peaks: { at: number; v: number }[] = [];
-		for (let i = 0; i < n; i++) {
-			const v = Math.abs(all[i]!);
-			if (v < 0.05) continue;
-			const last = peaks[peaks.length - 1];
-			if (last && i - last.at < t.rate * 0.005) {
-				if (v > last.v) Object.assign(last, { at: i, v });
-			} else peaks.push({ at: i, v });
-		}
-		return { rate: t.rate, peaks };
-	});
+	const tap = await playAndTap(page);
 	test.info().annotations.push({ type: 'peaks', description: JSON.stringify(tap) });
 	console.log('peaks', JSON.stringify(tap));
 	expect(tap.rate).toBeGreaterThan(0);
@@ -147,6 +168,129 @@ test('track insert latency is compensated in the Program monitor', async () => {
 	}
 	const s = await sequenceSummary(page);
 	expect(s.sequenceId).toBeTruthy();
+});
+
+/** Peaks of channel 0 of a file's audio (48 kHz), as in the monitor tap: local maxima above 0.05, merged within 5 ms. */
+function filePeaks(file: string): { at: number; v: number }[] {
+	const raw = execFileSync(
+		process.env.JASPER_FFMPEG ?? 'ffmpeg',
+		[
+			'-v',
+			'error',
+			'-i',
+			file,
+			'-map',
+			'0:a:0',
+			'-ac',
+			'1',
+			'-af',
+			'pan=mono|c0=c0',
+			'-ar',
+			'48000',
+			'-f',
+			'f32le',
+			'-',
+		],
+		{ maxBuffer: 64 * 1024 * 1024 },
+	);
+	const a = new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4);
+	const peaks: { at: number; v: number }[] = [];
+	for (let i = 0; i < a.length; i++) {
+		const v = Math.abs(a[i]!);
+		if (v < 0.05) continue;
+		const last = peaks[peaks.length - 1];
+		if (last && i - last.at < 240) {
+			if (v > last.v) Object.assign(last, { at: i, v });
+		} else peaks.push({ at: i, v });
+	}
+	return peaks;
+}
+
+test('the export of the same track insert lines both tracks up on the source clicks', async ({ request }) => {
+	test.setTimeout(420_000);
+	const { file } = await exportViaUi(page, request, {
+		engine: 'native',
+		fileName: 'sound-p0-insert.mp4',
+		expectPath: /native/i,
+		outDir,
+		jobTimeoutMs: 360_000,
+	});
+	const peaks = filePeaks(file);
+	test.info().annotations.push({ type: 'export peaks', description: JSON.stringify(peaks) });
+	console.log('export peaks', JSON.stringify(peaks));
+	// clicks at 0, 0.5 … 2.5 s: six, each both tracks summed (an uncompensated insert gives twelve single clicks)
+	expect(peaks.length, JSON.stringify(peaks)).toBe(6);
+	peaks.forEach((p, i) => {
+		expect(Math.abs(p.at - i * 24_000), JSON.stringify(peaks)).toBeLessThanOrEqual(4);
+		// both tracks summed (≈ 0.707; one track alone is 0.354); AAC smooths the click at sample 0 a little
+		expect(p.v, JSON.stringify(peaks)).toBeGreaterThan(0.5);
+	});
+});
+
+test('a clip that starts mid-playback is heard from its first sample (read-ahead with a track insert)', async () => {
+	test.setTimeout(240_000);
+	// head.wav: 1 s with one click (0.25) on its very first sample, placed on A3 at frame 40 (64 064 samples at
+	// 29.97 fps). The graph's read-ahead (A1's Hard Limiter) starts every source early; a clip mounted only when the
+	// picture reaches it cannot start early and lost its first `read-ahead` samples (the click).
+	const wav = join(outDir, 'head.wav');
+	const ff = spawnSync(process.env.JASPER_FFMPEG ?? 'ffmpeg', [
+		'-v',
+		'error',
+		'-y',
+		'-f',
+		'lavfi',
+		'-i',
+		"aevalsrc='if(lt(n\\,1)\\,0.25\\,0)':s=48000:d=1",
+		'-ac',
+		'2',
+		'-c:a',
+		'pcm_s16le',
+		wav,
+	]);
+	expect(ff.status, String(ff.stderr)).toBe(0);
+	await page.getByTestId('tab-project').click(); // the export left the Jobs tab in front
+	await page.getByTestId('project-panel').click({ position: { x: 40, y: 10 } });
+	const chooser = page.waitForEvent('filechooser');
+	await page.keyboard.press('Control+KeyI');
+	await (await chooser).setFiles([wav]);
+	await expect(page.getByTestId('project-row').filter({ hasText: 'head.wav' })).toBeVisible({
+		timeout: 60_000,
+	});
+	const items = await query<Record<string, { id: string; name: string }>>(page, 'doc.get', {
+		path: ['items'],
+	});
+	const item = Object.values(items).find((i) => i.name === 'head.wav')!;
+	const r = await transact(page, [
+		{ type: 'clip.place', source: { projectItemId: item.id }, at: 40, tracks: { audio: 'A3' } },
+	]);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
+	const { frameRate } = (await sequenceSummary(page)).settings;
+	const at = Math.round((40 * 48000 * frameRate.den) / frameRate.num);
+	for (let run = 0; run < 2; run++) {
+		const tap = await playAndTap(page);
+		test.info().annotations.push({ type: `head peaks ${run}`, description: JSON.stringify(tap) });
+		console.log('head peaks', run, JSON.stringify(tap));
+		// A1 + A2 click together every 24 000 samples from timeline 0 (the one at 0 itself is lost to the read-ahead at
+		// the play start): they give where timeline 0 is in the tap.
+		const ref = tap.peaks[0]!;
+		expect(ref.v, JSON.stringify(tap.peaks)).toBeGreaterThan(0.65);
+		const zero = ref.at % 24_000;
+		const head = tap.peaks.find((p) => Math.abs(p.at - zero - at) <= 8);
+		expect(head, `no click at ${at} samples after the first: ${JSON.stringify(tap.peaks)}`).toBeTruthy();
+		expect(head!.v).toBeGreaterThan(0.12);
+	}
+});
+
+test('Essential Sound on an SFX clip', async () => {
+	const a2 = (await clips(page, ['A2']))[0]!;
+	const box = await clipBox(page, a2.id);
+	await page.mouse.click(box.x + 20, box.y + box.height / 2);
+	await page.getByTestId('workspace-tab-audio').click();
+	const es = page.getByTestId('essential-sound');
+	await expect(es).toBeVisible();
+	await es.getByTestId('essential-type-sfx').click();
+	await expect(es.getByTestId('essential-current-type')).toContainText(/SFX/i);
+	await page.screenshot({ path: join(outDir, 'essential-sound-sfx.png') });
 });
 
 test('Preferences ▸ Audio: voice-over Latency Offset', async () => {

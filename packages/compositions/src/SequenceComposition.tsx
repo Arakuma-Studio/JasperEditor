@@ -45,6 +45,7 @@ import {
 } from '@jasper/project';
 import {
 	type ComponentType,
+	type CSSProperties,
 	Fragment,
 	memo,
 	type ReactNode,
@@ -110,7 +111,7 @@ import {
 	transitionRunMode,
 } from './fx/transition.tsx';
 import { AdjustmentScope, cssExactAdjustment, FlatAdjustment } from './layers/AdjustmentScope.tsx';
-import { AudioLayer, layerComponentFor } from './layers/index.ts';
+import { AudioLayer, layerComponentFor, useGraphLatency } from './layers/index.ts';
 import { NestCompSizeContext, NestTracksContext } from './layers/nest-context.ts';
 import { TextExpressionContext } from './layers/text/expression-context.ts';
 import { rgbaCss } from './metadata.ts';
@@ -196,6 +197,12 @@ function isFrameDependent(
 	}
 	return false;
 }
+
+/**
+ * Audio clips' Sequences: Remotion premounts only Sequences with a layout (an empty AbsoluteFill here, which must
+ * never take the pointer).
+ */
+const AUDIO_SEQUENCE_STYLE: CSSProperties = { pointerEvents: 'none' };
 
 /** Media kinds get a 2 s premount so decoders warm up before the cut (S03:RND-020). */
 const PREMOUNT_KINDS: ReadonlySet<string> = new Set(['video', 'still', 'animated-image']);
@@ -1223,13 +1230,26 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 		[doc, options.isPreview, options.previews],
 	);
 	const live = previewed.doc;
-	// ui-perf: audio clips are windowed like the video layers (FrameWindow).
+	// Audio clips are premounted like media (decoder warm-up) and at least by their lead: the graph's read-ahead plus
+	// their own effect latency (`MixGraph.clipLead`). The source of a clip mounted only when the picture reaches it
+	// cannot start early, so it lost its first `lead` seconds at every cut; premounted, its first buffers are
+	// scheduled ahead of the cut (S03:RND-020, spec 12 Phase 0).
+	const graphLatency = useGraphLatency(graph);
+	const audioPremount = useCallback(
+		(clip: RenderDoc['audioClips'][number]): number =>
+			Math.max(premountFrames(fps), Math.ceil(Math.max(graphLatency, graph?.clipLead(clip) ?? 0) * fps) + 1),
+		[graph, graphLatency, fps],
+	);
+	// ui-perf: audio clips are windowed like the video layers (FrameWindow), premount included.
 	const audioSpan = useCallback(
 		(clip: RenderDoc['audioClips'][number]): FrameSpan => {
 			const from = clip.start - (clip.headHandle ?? 0) - offset;
-			return [from, from + clip.duration + (clip.headHandle ?? 0) + (clip.tailHandle ?? 0)];
+			return [
+				from - audioPremount(clip),
+				from + clip.duration + (clip.headHandle ?? 0) + (clip.tailHandle ?? 0),
+			];
 		},
-		[offset],
+		[offset, audioPremount],
 	);
 	// compositor: the display transform cannot capture a stack that draws through HTML-in-Canvas (DisplayStage).
 	const displayFlat = useMemo(
@@ -1286,8 +1306,9 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 													key={clip.clipId}
 													from={from}
 													durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+													premountFor={audioPremount(clip)}
 													name={clip.clipId}
-													layout="none"
+													style={AUDIO_SEQUENCE_STYLE}
 												>
 													<AudioLayer
 														clip={clip}

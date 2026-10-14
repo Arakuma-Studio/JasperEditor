@@ -18,7 +18,7 @@ import { UnsupportedLayer } from './UnsupportedLayer.tsx';
 import { VectorLayer } from './VectorLayer.tsx';
 import { ProxyPendingCard, VideoLayer } from './VideoLayer.tsx';
 
-export { AudioLayer, type AudioLayerProps } from './AudioLayer.tsx';
+export { AudioLayer, type AudioLayerProps, useGraphLatency } from './AudioLayer.tsx';
 export {
 	type BakedLayerPreview,
 	type BakedLayerRuntime,

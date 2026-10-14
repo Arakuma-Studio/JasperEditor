@@ -230,7 +230,7 @@ type SharedAudio = NonNullable<React.ContextType<typeof Internals.SharedAudioCon
 const noGraph = () => () => undefined;
 
 /** The mix graph's read-ahead in seconds (0 without a graph); re-renders when it changes. */
-function useGraphLatency(graph: MixGraph | null): number {
+export function useGraphLatency(graph: MixGraph | null): number {
 	const subscribe = useMemo(() => (graph ? (cb: () => void) => graph.onLatency(cb) : noGraph), [graph]);
 	const get = useCallback(() => graph?.latency ?? 0, [graph]);
 	return useSyncExternalStore(subscribe, get, get);
