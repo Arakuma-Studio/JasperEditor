@@ -34,7 +34,7 @@ import {
 	type RenderAudioMix,
 	type RenderStrip,
 } from '@jasper/project';
-import { audioGainAt, dbToGain as pipelineDbToGain } from '../pipeline.ts';
+import { audioGainAt, MAX_PREVIEW_GAIN, dbToGain as pipelineDbToGain } from '../pipeline.ts';
 import { discreteGain, MatrixNode, setParam } from './matrix-node.ts';
 
 export type LoudnessReading = {
@@ -477,6 +477,25 @@ export function clipLevelAt(clip: RenderAudioClip, f: number, fps: Rational): nu
 	);
 }
 
+/**
+ * The part of a clip's gain + Volume above Remotion's volume limit (`MAX_PREVIEW_GAIN`, +24 dB) at clip-local frame
+ * `f`: Remotion's per-clip volume is clamped there, so the graph applies the rest (≥ 1) — the export applies the whole
+ * gain (Audio Gain goes up to +96 dB, e.g. Normalize Max Peak of a quiet recording).
+ */
+export function clipGainExcess(
+	clip: Pick<RenderAudioClip, 'duration' | 'sourceIn' | 'speed' | 'gainDb' | 'volumeDb'>,
+	f: number,
+	fps: Rational,
+): number {
+	const F = flicksPerFrame(fps);
+	const i = Math.max(0, Math.min(clip.duration - 1, f));
+	const content = clip.speed.reverse
+		? clip.sourceIn + (clip.duration - 1 - i) * F * clip.speed.rate
+		: clip.sourceIn + i * F * clip.speed.rate;
+	const g = pipelineDbToGain(clip.gainDb + evaluate(clip.volumeDb, content));
+	return Number.isFinite(g) && g > MAX_PREVIEW_GAIN ? g / MAX_PREVIEW_GAIN : 1;
+}
+
 class ClipNodes {
 	/** Remotion's per-clip gain node connects here (the `gainNode` of our SharedAudioContext override). */
 	readonly input: GainNode;
@@ -579,7 +598,12 @@ class ClipNodes {
 			override?.volume !== undefined
 				? dbToGain(override.volume) / Math.max(1e-9, dbToGain(laneAt(clip.volumeDb, content)))
 				: 1;
-		setParam(this.trim.gain, Number.isFinite(trim) ? Math.min(trim, 64) : 1, this.ctx, instant);
+		// Gain above Remotion's volume limit: the trim (before the effect slots) for a clip Remotion plays at its levels,
+		// the level node (after them) for a clip with effects.
+		const fx = clipHasEffects(clip);
+		const excess = clipGainExcess(clip, t / F - clip.start, rate);
+		const trimGain = (Number.isFinite(trim) ? Math.min(trim, 64) : 1) * (fx ? 1 : excess);
+		setParam(this.trim.gain, trimGain, this.ctx, instant);
 		this.slots?.sync(
 			clip.effects.filter((e) => e.enabled),
 			content,
@@ -587,7 +611,7 @@ class ClipNodes {
 		if (this.level)
 			setParam(
 				this.level.gain,
-				clipHasEffects(clip) ? clipLevelAt(clip, t / F - clip.start, rate) : 1,
+				fx ? clipLevelAt(clip, t / F - clip.start, rate) * excess : 1,
 				this.ctx,
 				instant,
 			);

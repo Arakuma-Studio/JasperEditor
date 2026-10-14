@@ -84,7 +84,7 @@ export function dbToGain(db: number): number {
 }
 
 /** Remotion throws for volumes ≥ 100 (it assumes a percent mistake); stay well below. */
-const MAX_PREVIEW_GAIN = 16;
+export const MAX_PREVIEW_GAIN = 16;
 
 /**
  * Linear gain of an audio clip at clip-local frame `f` (S01:FX-010 subset, S03:KND-011/020):

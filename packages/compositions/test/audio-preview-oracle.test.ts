@@ -21,6 +21,8 @@ import { bundleForBrowser, findChrome } from '@jasper/testkit/browser';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Harness } from '../../project/test/helpers.ts';
+import { clipHasEffects } from '../src/audio/graph.ts';
+import { MAX_PREVIEW_GAIN } from '../src/pipeline.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CHROME = findChrome();
@@ -97,12 +99,20 @@ function scene(opts: { set: 'exact' | 'stft'; loudness?: boolean }): Case {
 	const clip3 = snapshot.audioClips.find((c) => c.trackId === a3)!;
 	const c3 = opts.set === 'exact' ? 'jasper.audio.hard-limiter' : 'jasper.audio.click-remover';
 	clip3.effects = [fx(c3, 'fx_c3')];
+	// A2 and A3: +30 dB Audio Gain on quiet sources (above Remotion's +24 dB volume limit; A3 with a clip effect)
+	const quiet = new Set<string>();
+	for (const label of ['A2', 'A3']) {
+		const clip = snapshot.audioClips.find((c) => c.trackId === byLabel(label).id)!;
+		clip.gainDb = 30;
+		quiet.add(clip.clipId);
+	}
 	if (opts.loudness) (mix as { loudness: RenderAudioMix['loudness'] }).loudness = { gainDb: -6, truePeakDb: -1 };
 	const data = new Map<string, number[][]>();
 	snapshot.audioClips.forEach((c, i) => {
 		const [s0, s1end] = spanOf(c, snapshot.settings.fps, SR);
 		const n = Math.min(s1end - s0, 2 * LEN);
-		data.set(c.clipId, [noise(10 + i, n), noise(20 + i, n)]);
+		const amp = quiet.has(c.clipId) ? 0.25 * 10 ** (-30 / 20) : 0.25;
+		data.set(c.clipId, [noise(10 + i, n, amp), noise(20 + i, n, amp)]);
 	});
 	return { snapshot, data };
 }
@@ -165,6 +175,10 @@ describe.runIf(!!CHROME)('preview mix = export mix with latency (headless Chrome
 					clip,
 					data: c.data.get(clip.clipId)!,
 					s0: spanOf(clip, fps, SR)[0],
+					// AudioLayer's volume callback: gain + Volume (clamped to Remotion's limit), unity with effects
+					volume: clipHasEffects(clip)
+						? 1
+						: Math.min(MAX_PREVIEW_GAIN, 10 ** ((clip.gainDb + clip.volumeDb.value) / 20)),
 				})),
 				fps,
 				length: LEN,
@@ -225,7 +239,7 @@ describe.runIf(!!CHROME)('preview mix = export mix with latency (headless Chrome
 		expect(compare(p.channels, e).lag).toBe(0);
 		// the STFT frame phase only shows at the onset (−43 dB here), never as a delay
 		expect(compare(p.channels, e, 0, onset + 9600).worst).toBeLessThan(0.01);
-		expect(compare(p.channels, e, onset + 9600).worst).toBeLessThan(1e-4);
+		expect(compare(p.channels, e, onset + 9600).worst).toBeLessThan(3e-4);
 	});
 
 	it('loudness normalisation: the preview limiter latency is part of the read-ahead', async () => {

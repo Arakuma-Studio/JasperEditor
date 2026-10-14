@@ -8,7 +8,8 @@ import { MixGraph, mixWorkletReady, setMixWorkletUrl } from '../../src/audio/gra
 type Spec = {
 	workletUrl: string;
 	mix: RenderAudioMix;
-	clips: { clip: RenderAudioClip; data: number[][]; s0: number }[];
+	/** `volume`: what Remotion's per-clip gain applies (AudioLayer's volume callback; static clips here). */
+	clips: { clip: RenderAudioClip; data: number[][]; s0: number; volume: number }[];
 	fps: Rational;
 	length: number;
 };
@@ -35,7 +36,9 @@ async function render(spec: Spec): Promise<{ channels: number[][]; latency: numb
 		c.data.forEach((ch, k) => buf.copyToChannel(Float32Array.from(ch), k));
 		const src = ctx.createBufferSource();
 		src.buffer = buf;
-		src.connect(inputs[i]!);
+		const remotionGain = ctx.createGain();
+		remotionGain.gain.value = c.volume;
+		src.connect(remotionGain).connect(inputs[i]!);
 		// AudioLayer: the source starts `clipLead` early (past start times trim the offset, as `compensate` does)
 		const lead = graph.clipLead(c.clip);
 		leads.push(lead);
