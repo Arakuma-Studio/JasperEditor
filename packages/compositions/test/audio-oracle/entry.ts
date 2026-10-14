@@ -8,6 +8,8 @@ import { MixGraph, mixWorkletReady, setMixWorkletUrl } from '../../src/audio/gra
 type Spec = {
 	workletUrl: string;
 	mix: RenderAudioMix;
+	/** A mix the graph is built with first (an edit then arrives as a new mix of the same topology). */
+	before?: RenderAudioMix;
 	/** `volume`: what Remotion's per-clip gain applies (AudioLayer's volume callback; static clips here). */
 	clips: { clip: RenderAudioClip; data: number[][]; s0: number; volume: number }[];
 	fps: Rational;
@@ -24,12 +26,16 @@ async function render(spec: Spec): Promise<{ channels: number[][]; latency: numb
 	const graph = new MixGraph(ctx as unknown as AudioContext, ctx.destination);
 	if (!(await mixWorkletReady(ctx))) throw new Error('the mix worklet did not load');
 	const clips = spec.clips.map((c) => c.clip);
-	graph.update(spec.mix, clips, 0, spec.fps);
+	const first = spec.before ?? spec.mix;
+	graph.update(first, clips, 0, spec.fps);
 	const inputs = spec.clips.map((c) => graph.clipInput(c.clip));
-	graph.update(spec.mix, clips, 0, spec.fps);
+	graph.update(first, clips, 0, spec.fps);
+	await tick();
 	// effect slots create their worklet nodes once the module is ready (a microtask later)
 	await tick();
 	graph.update(spec.mix, clips, 0, spec.fps);
+	// slots added by this update create their worklet nodes a microtask later
+	await tick();
 	const leads: number[] = [];
 	spec.clips.forEach((c, i) => {
 		const buf = ctx.createBuffer(c.data.length, c.data[0]!.length, sr);

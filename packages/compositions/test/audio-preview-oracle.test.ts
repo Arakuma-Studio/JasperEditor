@@ -178,7 +178,7 @@ describe.runIf(!!CHROME)(
 			await browser?.close();
 		});
 
-		async function preview(c: Case) {
+		async function preview(c: Case, before?: RenderAudioMix) {
 			const fps = c.snapshot.settings.fps;
 			return page.evaluate(
 				(spec) =>
@@ -186,6 +186,7 @@ describe.runIf(!!CHROME)(
 				{
 					workletUrl,
 					mix: c.snapshot.audioMix,
+					...(before ? { before } : {}),
 					clips: c.snapshot.audioClips.map((clip) => ({
 						clip,
 						data: c.data.get(clip.clipId)!,
@@ -242,6 +243,26 @@ describe.runIf(!!CHROME)(
 			expect(r.peak).toBeGreaterThan(0.05);
 			expect(r.lag).toBe(0);
 			// float32 Web Audio vs the float32 mixer (summation order, DelayNode on float32 delay times)
+			expect(r.worst).toBeLessThan(1e-4);
+		});
+
+		it('edits after the graph is built are heard: inserts, faders, pan (same topology)', async () => {
+			const c = scene({ set: 'exact' });
+			// the graph first sees the mix without inserts, at unity and centred; then the edited mix arrives
+			const mix = c.snapshot.audioMix!;
+			const before: RenderAudioMix = {
+				...mix,
+				strips: mix.strips.map((s) => ({
+					...s,
+					inserts: [],
+					volumeDb: { value: 0, keyframes: [] },
+					pan: { value: 0, keyframes: [] },
+				})),
+			};
+			const [p, e] = await Promise.all([preview(c, before), exported(c)]);
+			expect(p.latency).toBe(1004);
+			const r = compare(p.channels, e);
+			expect(r.lag).toBe(0);
 			expect(r.worst).toBeLessThan(1e-4);
 		});
 

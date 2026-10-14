@@ -845,6 +845,8 @@ export class MixGraph {
 			this.rebuild(mix);
 			this.structure = key;
 		}
+		// The strips' lanes, inserts and send levels change without a rebuild (same topology): always read the new mix.
+		this.order = mix.strips;
 		this.replan(mix, rebuilt);
 		if (rebuilt) for (const cb of this.changeListeners) cb();
 		// clips: (re)connect to their track input

@@ -24,7 +24,7 @@ const outDir = join(ROOT, 'test-results', 'e2e-sound-p0');
 
 /** Taps every AudioContext destination: window.__tap.on starts recording channel 0 of what reaches the speakers. */
 const TAP = () => {
-	const w = window as unknown as { __tap: { on: boolean; data: Float32Array[]; rate: number } };
+	const w = window as unknown as { __tap: { on: boolean; data: Float32Array[][]; rate: number } };
 	w.__tap = { on: false, data: [], rate: 0 };
 	const tapped = new WeakSet<BaseAudioContext>();
 	const connect = AudioNode.prototype.connect as (this: AudioNode, ...a: unknown[]) => unknown;
@@ -33,11 +33,13 @@ const TAP = () => {
 		if (dest instanceof AudioDestinationNode && !tapped.has(this.context)) {
 			tapped.add(this.context);
 			const ctx = this.context;
+			const mine: Float32Array[] = [];
+			w.__tap.data.push(mine);
 			const sp = ctx.createScriptProcessor(1024, 2, 1);
 			sp.onaudioprocess = (e) => {
 				if (!w.__tap.on) return;
 				w.__tap.rate = ctx.sampleRate;
-				w.__tap.data.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+				mine.push(new Float32Array(e.inputBuffer.getChannelData(0)));
 			};
 			const mute = ctx.createGain();
 			mute.gain.value = 0;
@@ -94,7 +96,7 @@ test('track insert latency is compensated in the Program monitor', async () => {
 	const r = await transact(page, [
 		{ type: 'clip.place', source: { projectItemId: item.id }, at: 0, tracks: { audio: 'A1' } },
 		{ type: 'clip.place', source: { projectItemId: item.id }, at: 0, tracks: { audio: 'A2' } },
-		{ type: 'effect.add', target: { trackId: 'A1' }, effectId: 'jasper.audio.pitch-shifter' },
+		{ type: 'effect.add', target: { trackId: 'A1' }, effectId: 'jasper.audio.hard-limiter' },
 	]);
 	expect(r.ok, JSON.stringify(r)).toBe(true);
 	await focusTimeline(page);
@@ -105,15 +107,21 @@ test('track insert latency is compensated in the Program monitor', async () => {
 	await page.waitForTimeout(2600);
 	await page.keyboard.press('Space');
 	const tap = await page.evaluate(() => {
-		const t = (window as unknown as { __tap: { on: boolean; data: Float32Array[]; rate: number } }).__tap;
+		const t = (window as unknown as { __tap: { on: boolean; data: Float32Array[][]; rate: number } }).__tap;
 		t.on = false;
-		const n = t.data.reduce((a, b) => a + b.length, 0);
-		const all = new Float32Array(n);
-		let o = 0;
-		for (const b of t.data) {
-			all.set(b, o);
-			o += b.length;
-		}
+		// the context that played the program (the loudest; others are silent)
+		const flat = t.data.map((blocks) => {
+			const a = new Float32Array(blocks.reduce((x, b) => x + b.length, 0));
+			let o = 0;
+			for (const b of blocks) {
+				a.set(b, o);
+				o += b.length;
+			}
+			return a;
+		});
+		const peakOf = (a: Float32Array) => a.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+		const all = flat.reduce((best, a) => (peakOf(a) > peakOf(best) ? a : best), new Float32Array(0));
+		const n = all.length;
 		// peaks: local maxima above 0.05, merged within 5 ms
 		const peaks: { at: number; v: number }[] = [];
 		for (let i = 0; i < n; i++) {
