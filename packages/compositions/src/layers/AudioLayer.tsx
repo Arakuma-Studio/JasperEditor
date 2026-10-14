@@ -10,7 +10,6 @@
 // submixes, the Mix, loudness normalisation and metering. Without a graph (no Web Audio) the callback also applies
 // the track and master faders as before.
 
-import { effectLatency } from '@jasper/audio-fx';
 import {
 	audioFadeGain,
 	encodeWavStereo16,
@@ -23,10 +22,10 @@ import {
 	syntheticSamples,
 } from '@jasper/project';
 import { Audio } from '@remotion/media';
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { cancelRender, continueRender, delayRender, getRemotionEnvironment, Internals } from 'remotion';
 import { MixGraphContext } from '../audio/context.ts';
-import { clipHasEffects } from '../audio/graph.ts';
+import { clipEffectsLatency, clipHasEffects, type MixGraph } from '../audio/graph.ts';
 import { mappedAudioUrl, reversedAudioUrl } from '../audio/reversed.ts';
 import { audioGainAt, dbToGain, mediaSrc, videoTrimBefore, volumeFrameToClipFrame } from '../pipeline.ts';
 import type { RenderOptions } from '../types.ts';
@@ -88,18 +87,36 @@ export function AudioLayer({
 	const node = graph ? graph.clipInput(clip) : null;
 	useEffect(() => (graph ? () => graph.releaseClip(clip.clipId) : undefined), [graph, clip.clipId]);
 	// audio-fx: a clip with enabled effects plays at unity into the graph, which applies its levels after the effect
-	// slots (export order); the source is scheduled `latency` early so look-ahead / spectral effects stay in sync.
+	// slots (export order). The source is scheduled early by the latency of its effect slots plus the graph's
+	// read-ahead (track / submix / Mix inserts and the loudness limiter, compensated like the export: `MixGraph`), so
+	// what leaves the Mix lines up with the picture.
 	const fx = !!node && clipHasEffects(clip);
-	const latencySec = useMemo(() => (fx ? clipEffectsLatency(clip.effects) / 48000 : 0), [fx, clip.effects]);
+	const graphLatency = useGraphLatency(node ? graph : null);
+	const fxLatency = useMemo(
+		() => (fx && graph ? clipEffectsLatency(clip.effects, graph.sampleRate) / graph.sampleRate : 0),
+		[fx, graph, clip.effects],
+	);
+	// = graph.clipLead(clip)
+	const latencySec = node ? fxLatency + graphLatency : 0;
 	// A stable context value: Remotion re-creates its media player when the context object changes.
 	const routed = useMemo(
 		() => (shared && node ? { ...shared, gainNode: node, ...compensate(shared, latencySec) } : null),
 		[shared, node, latencySec],
 	);
+	// The source plays `graphLatency` ahead of the picture: its levels are those of the samples it is playing.
+	const leadFrames = routed ? (graphLatency * num) / den : 0;
 	const volume = useCallback(
 		(f: number) =>
-			fx ? 1 : audioLayerGain(clip, volumeFrameToClipFrame(f, sequenceFrom), { num, den }, master, !routed),
-		[clip, num, den, master, sequenceFrom, routed, fx],
+			fx
+				? 1
+				: audioLayerGain(
+						clip,
+						volumeFrameToClipFrame(f, sequenceFrom) + leadFrames,
+						{ num, den },
+						master,
+						!routed,
+					),
+		[clip, num, den, master, sequenceFrom, routed, fx, leadFrames],
 	);
 	const generated = useGeneratedAudio(clip, { num, den });
 	const mediaUrl =
@@ -210,11 +227,13 @@ function useMappedAudio(clip: RenderAudioClip, src: string | null, fps: Rational
 
 type SharedAudio = NonNullable<React.ContextType<typeof Internals.SharedAudioContext>>;
 
-/** Total latency (samples at 48 kHz) of a clip's enabled effects. */
-function clipEffectsLatency(effects: RenderAudioClip['effects']): number {
-	let l = 0;
-	for (const e of effects) l += effectLatency(e);
-	return l;
+const noGraph = () => () => undefined;
+
+/** The mix graph's read-ahead in seconds (0 without a graph); re-renders when it changes. */
+function useGraphLatency(graph: MixGraph | null): number {
+	const subscribe = useMemo(() => (graph ? (cb: () => void) => graph.onLatency(cb) : noGraph), [graph]);
+	const get = useCallback(() => graph?.latency ?? 0, [graph]);
+	return useSyncExternalStore(subscribe, get, get);
 }
 
 /** A `scheduleAudioNode` that starts every source buffer `shift` seconds early (effect latency compensation). */

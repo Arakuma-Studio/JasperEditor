@@ -2,6 +2,7 @@
 // and track / submix / Mix inserts, `registerPreviewInsert`). A slot is one AudioWorkletNode running `FxSlotCore`
 // (fx-processor.ts) — the same EffectChain code the export's offline mixer runs. Live meters (gain reduction,
 // loudness) of a slot are posted while someone listens (`audioFxMeters`, Effect Controls).
+import { effectLatency } from '@jasper/audio-fx';
 import { AUDIO_EFFECTS, type EffectInstance } from '@jasper/project/audio';
 import { FX_PROCESSOR_NAME, type FxSlotMessage, type FxSlotReading } from './fx-processor.ts';
 import { mixWorkletReady, type PreviewInsert, registerPreviewInsert } from './graph.ts';
@@ -113,6 +114,8 @@ let installed = false;
 export function installAudioFxPreview(): void {
 	if (installed) return;
 	installed = true;
+	// The slot's latency is the processor's (the same code in the worklet): the graph compensates it like the export.
+	const latency = (effect: EffectInstance, sampleRate: number) => effectLatency(effect, sampleRate);
 	for (const spec of AUDIO_EFFECTS)
-		registerPreviewInsert(spec.id, (ctx, effect, channels) => new FxInsert(ctx, effect, channels));
+		registerPreviewInsert(spec.id, (ctx, effect, channels) => new FxInsert(ctx, effect, channels), latency);
 }

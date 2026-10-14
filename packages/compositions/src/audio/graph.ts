@@ -16,6 +16,7 @@ import {
 	type Mixdown,
 	pan51Matrix,
 	panMonoGains,
+	TruePeakLimiter,
 } from '@jasper/audio-dsp';
 import {
 	type Animatable,
@@ -71,13 +72,154 @@ export type PreviewInsertFactory = (
 	channels: number,
 ) => PreviewInsert;
 
+/** Latency (samples at `sampleRate`) a preview slot adds for an effect instance (its static parameter values). */
+export type PreviewInsertLatency = (effect: EffectInstance, sampleRate: number) => number;
+
 const insertFactories = new Map<string, PreviewInsertFactory>();
-/** Registers the Web Audio implementation of an audio effect for preview slots (returns an unregister function). */
-export function registerPreviewInsert(effectId: string, factory: PreviewInsertFactory): () => void {
+const insertLatencies = new Map<string, PreviewInsertLatency>();
+/**
+ * Registers the Web Audio implementation of an audio effect for preview slots (returns an unregister function).
+ * `latency` reports the delay the slot adds (look-ahead, FFT, convolution): the graph compensates it like the export.
+ */
+export function registerPreviewInsert(
+	effectId: string,
+	factory: PreviewInsertFactory,
+	latency?: PreviewInsertLatency,
+): () => void {
 	insertFactories.set(effectId, factory);
+	if (latency) insertLatencies.set(effectId, latency);
+	else insertLatencies.delete(effectId);
 	return () => {
-		if (insertFactories.get(effectId) === factory) insertFactories.delete(effectId);
+		if (insertFactories.get(effectId) === factory) {
+			insertFactories.delete(effectId);
+			insertLatencies.delete(effectId);
+		}
 	};
+}
+
+const latencyCache = new Map<string, number>();
+/**
+ * Latency (samples) of a preview slot for `effect`: 0 when the effect has no preview slot (it passes through) or is
+ * disabled. Cached per effect id, static parameter values and rate (the measurement builds a processor).
+ */
+export function previewInsertLatency(effect: EffectInstance, sampleRate: number): number {
+	if (!effect.enabled || !insertFactories.has(effect.effectId)) return 0;
+	const f = insertLatencies.get(effect.effectId);
+	if (!f) return 0;
+	const values: Record<string, unknown> = {};
+	for (const [k, a] of Object.entries(effect.params ?? {})) values[k] = (a as { value?: unknown })?.value;
+	const key = `${effect.effectId}|${sampleRate}|${JSON.stringify(values)}`;
+	let l = latencyCache.get(key);
+	if (l === undefined) {
+		const raw = f(effect, sampleRate);
+		l = Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 0;
+		if (latencyCache.size > 512) latencyCache.clear();
+		latencyCache.set(key, l);
+	}
+	return l;
+}
+
+/** Total latency (samples) of a clip's enabled effect slots. */
+export function clipEffectsLatency(effects: readonly EffectInstance[], sampleRate: number): number {
+	let l = 0;
+	for (const e of effects) l += previewInsertLatency(e, sampleRate);
+	return l;
+}
+
+/** Latency bookkeeping of one strip (samples), as in the export mixer (`OfflineMixer`). */
+export type StripLatency = {
+	/** Latest arrival of the strip's inputs (every input is delayed to it). */
+	inLat: number;
+	/** `inLat` + the pre-fader inserts. */
+	preLat: number;
+	/** `preLat` + the post-fader inserts. */
+	postLat: number;
+	/** Delay of the strip's output route into its bus (0 for the Mix). */
+	outDelay: number;
+	/** Delay of each send route (by send id). */
+	sendDelays: Record<string, number>;
+};
+
+export type MixLatencyPlan = {
+	/**
+	 * Read-ahead of the whole graph (samples): the Mix's latency plus the preview limiter's when it runs. Sources are
+	 * scheduled this much early so the Mix output lines up with the picture.
+	 */
+	total: number;
+	strips: Record<string, StripLatency>;
+};
+
+/**
+ * Latency compensation of the preview graph — the same plan as the export mixer: every insert reports its latency,
+ * each route into a bus is delayed so all of the bus's inputs arrive together (`inLat` = latest arrival), and the
+ * graph is read ahead by the Mix's latency (`total`). `masterExtra` is latency after the Mix strip (the loudness
+ * limiter). Strips are in processing order (inputs come from earlier strips; the Mix is last).
+ */
+export function planMixLatency(
+	mix: Pick<RenderAudioMix, 'strips'>,
+	latencyOf: (effect: EffectInstance) => number,
+	masterExtra = 0,
+): MixLatencyPlan {
+	const strips = mix.strips;
+	const index = new Map(strips.map((s, i) => [s.id, i]));
+	const arrivals = strips.map(() => [] as number[]);
+	const lat = (e: EffectInstance) => {
+		const l = latencyOf(e);
+		return Number.isFinite(l) && l > 0 ? Math.round(l) : 0;
+	};
+	const rows: StripLatency[] = strips.map((s, i) => {
+		const inLat = Math.max(0, ...arrivals[i]!);
+		let preLat = inLat;
+		let postLat = 0;
+		for (const e of s.inserts) if (!e.postFader) preLat += lat(e);
+		postLat = preLat;
+		for (const e of s.inserts) if (e.postFader) postLat += lat(e);
+		if (s.output !== null) {
+			const t = index.get(s.output);
+			if (t !== undefined && t > i) arrivals[t]!.push(postLat);
+		}
+		for (const x of s.sends) {
+			const t = index.get(x.target);
+			if (t !== undefined && t > i) arrivals[t]!.push(x.preFader ? preLat : postLat);
+		}
+		return { inLat, preLat, postLat, outDelay: 0, sendDelays: {} };
+	});
+	strips.forEach((s, i) => {
+		const r = rows[i]!;
+		if (s.output !== null) {
+			const t = index.get(s.output);
+			if (t !== undefined && t > i) r.outDelay = rows[t]!.inLat - r.postLat;
+		}
+		for (const x of s.sends) {
+			const t = index.get(x.target);
+			if (t !== undefined && t > i) r.sendDelays[x.id] = rows[t]!.inLat - (x.preFader ? r.preLat : r.postLat);
+		}
+	});
+	const master = rows[rows.length - 1];
+	const out: Record<string, StripLatency> = {};
+	strips.forEach((s, i) => {
+		out[s.id] = rows[i]!;
+	});
+	const extra = Number.isFinite(masterExtra) && masterExtra > 0 ? Math.round(masterExtra) : 0;
+	return { total: (master?.postLat ?? 0) + extra, strips: out };
+}
+
+/**
+ * Sequence times (flicks) at which a strip's lanes and inserts are evaluated when the picture shows `t`: the signal
+ * at each stage is `total − stage latency` samples ahead of the picture (sources are read ahead by `total`), exactly
+ * the times the export mixer uses for the same samples.
+ */
+export function stripStageTimes(
+	plan: MixLatencyPlan,
+	stripId: string,
+	t: number,
+	sampleRate: number,
+): { preInserts: number; fader: number; postInserts: number; pan: number } {
+	const r = plan.strips[stripId];
+	const fps = FLICKS_PER_SECOND / sampleRate;
+	if (!r) return { preInserts: t, fader: t, postInserts: t, pan: t };
+	const at = (lat: number) => t + (plan.total - lat) * fps;
+	return { preInserts: at(r.inLat), fader: at(r.preLat), postInserts: at(r.preLat), pan: at(r.postLat) };
 }
 
 let workletUrl: string | null = null;
@@ -101,6 +243,9 @@ export function mixWorkletReady(ctx: BaseAudioContext): Promise<boolean> {
 	}
 	return p;
 }
+
+/** Look-ahead of the preview loudness limiter (`jasper-limiter`), as the export's normalisation limiter. */
+export const LIMITER_LOOKAHEAD_MS = 5;
 
 const dbToGain = (db: number) => (db <= -96 || !Number.isFinite(db) ? 0 : 10 ** (db / 20));
 const widthOf = (f: string) => (f === 'mono' ? 1 : f === '5.1' ? 6 : 2);
@@ -188,6 +333,52 @@ class SlotChain {
 	}
 }
 
+/**
+ * A route into a bus (`from` → `to`) with an optional latency-compensation delay (a DelayNode only when needed).
+ * Integer sample delays: the DelayNode reads exactly `samples` back.
+ */
+class DelayRoute {
+	private delay: DelayNode | null = null;
+	samples = 0;
+
+	constructor(
+		private readonly ctx: BaseAudioContext,
+		private readonly from: AudioNode,
+		private readonly to: AudioNode,
+		private readonly channels: number,
+	) {
+		from.connect(to);
+	}
+
+	set(samples: number): void {
+		const n = Number.isFinite(samples) && samples > 0 ? Math.round(samples) : 0;
+		if (n === this.samples) return;
+		this.from.disconnect();
+		this.delay?.disconnect();
+		this.delay = null;
+		this.samples = n;
+		if (n === 0) {
+			this.from.connect(this.to);
+			return;
+		}
+		const sec = n / this.ctx.sampleRate;
+		const d = this.ctx.createDelay(Math.min(179, sec + 0.01));
+		d.channelCount = this.channels;
+		d.channelCountMode = 'explicit';
+		d.channelInterpretation = 'discrete';
+		d.delayTime.value = sec;
+		this.from.connect(d);
+		d.connect(this.to);
+		this.delay = d;
+	}
+
+	dispose(): void {
+		this.from.disconnect();
+		this.delay?.disconnect();
+		this.delay = null;
+	}
+}
+
 type SendNodes = {
 	id: string;
 	target: string;
@@ -195,6 +386,7 @@ type SendNodes = {
 	level: GainNode;
 	matrix: MatrixNode;
 	gate: GainNode;
+	route: DelayRoute;
 };
 
 class StripNodes {
@@ -208,6 +400,8 @@ class StripNodes {
 	readonly post: SlotChain;
 	readonly pan: MatrixNode | null;
 	readonly gate: GainNode;
+	/** Output route into the strip's bus (null for the Mix or a dangling output). */
+	out: DelayRoute | null = null;
 	sends: SendNodes[] = [];
 
 	constructor(
@@ -255,10 +449,12 @@ class StripNodes {
 		this.pan?.dispose();
 		this.meter?.disconnect();
 		this.meter?.port.close();
+		this.out?.dispose();
 		for (const x of this.sends) {
 			x.level.disconnect();
 			x.matrix.dispose();
 			x.gate.disconnect();
+			x.route.dispose();
 		}
 	}
 }
@@ -430,6 +626,12 @@ export class MixGraph {
 	mixdown: Mixdown = 'frontRear';
 	/** Output channels soloed on the Audio Meters (monitoring only; empty = all). */
 	private monitorSolo = new Set<number>();
+	/** Latency compensation (insert latencies, route delays, read-ahead), replanned when the mix changes. */
+	private plan: MixLatencyPlan = { total: 0, strips: {} };
+	private plannedMix: RenderAudioMix | null = null;
+	private plannedExtra = -1;
+	private readonly latencyListeners = new Set<() => void>();
+	private limiterLatencySamples: number | null = null;
 
 	constructor(
 		readonly ctx: AudioContext,
@@ -457,6 +659,59 @@ export class MixGraph {
 	/** Sequence time (flicks) of the last update. */
 	get currentTime(): number {
 		return this.time;
+	}
+
+	/** The latency plan in use (route delays, stage latencies, read-ahead). */
+	get latencyPlan(): MixLatencyPlan {
+		return this.plan;
+	}
+
+	/** Read-ahead of the graph in seconds: every source plays this much early so the Mix lines up with the picture. */
+	get latency(): number {
+		return this.plan.total / this.ctx.sampleRate;
+	}
+
+	/** Called when the graph's read-ahead changes (AudioLayer reschedules its sources). */
+	onLatency(cb: () => void): () => void {
+		this.latencyListeners.add(cb);
+		return () => this.latencyListeners.delete(cb);
+	}
+
+	/**
+	 * How early (seconds) a clip's source must play: the graph read-ahead plus, for a clip with enabled effects, the
+	 * latency of its effect slots (the export pre-rolls them).
+	 */
+	clipLead(clip: Pick<RenderAudioClip, 'effects'>): number {
+		const fx = clipHasEffects(clip) ? clipEffectsLatency(clip.effects, this.ctx.sampleRate) : 0;
+		return (fx + this.plan.total) / this.ctx.sampleRate;
+	}
+
+	private limiterLatency(): number {
+		this.limiterLatencySamples ??= new TruePeakLimiter(this.ctx.sampleRate, 1, {
+			ceilingDb: -1,
+			lookaheadMs: LIMITER_LOOKAHEAD_MS,
+		}).latency;
+		return this.limiterLatencySamples;
+	}
+
+	/** Recomputes the latency plan when the mix (or the limiter state) changed; sets every route delay. */
+	private replan(mix: RenderAudioMix, force: boolean): void {
+		const extra = this.limiter && mix.loudness ? this.limiterLatency() : 0;
+		if (!force && mix === this.plannedMix && extra === this.plannedExtra) return;
+		this.plannedMix = mix;
+		this.plannedExtra = extra;
+		const sr = this.ctx.sampleRate;
+		const plan = planMixLatency(mix, (e) => previewInsertLatency(e, sr), extra);
+		for (const s of mix.strips) {
+			const st = this.strips.get(s.id);
+			const r = plan.strips[s.id];
+			if (!st || !r) continue;
+			st.out?.set(r.outDelay);
+			for (const x of st.sends) x.route.set(r.sendDelays[x.id] ?? 0);
+		}
+		const changed = plan.total !== this.plan.total;
+		this.plan = plan;
+		if (changed) for (const cb of [...this.latencyListeners]) cb();
 	}
 
 	/** The node Remotion's per-clip gain must connect to for `clip` (stable for the life of the clip id). */
@@ -561,11 +816,13 @@ export class MixGraph {
 				s.sends.map((x) => [x.id, x.target, x.preFader]),
 			]),
 		]);
-		if (key !== this.structure) {
+		const rebuilt = key !== this.structure;
+		if (rebuilt) {
 			this.rebuild(mix);
 			this.structure = key;
-			for (const cb of this.changeListeners) cb();
 		}
+		this.replan(mix, rebuilt);
+		if (rebuilt) for (const cb of this.changeListeners) cb();
 		// clips: (re)connect to their track input
 		const byId = new Map(clips.map((c) => [c.clipId, c]));
 		for (const [id, c] of this.clips) {
@@ -601,7 +858,7 @@ export class MixGraph {
 			const st = this.strips.get(s.id)!;
 			if (s.output) {
 				const target = this.strips.get(s.output);
-				if (target) st.gate.connect(target.input);
+				if (target) st.out = new DelayRoute(this.ctx, st.gate, target.input, target.width);
 			}
 			st.sends = s.sends.flatMap((x) => {
 				const target = this.strips.get(x.target);
@@ -612,8 +869,8 @@ export class MixGraph {
 				(x.preFader ? st.pre.output : st.post.output).connect(level);
 				level.connect(matrix.input);
 				matrix.output.connect(gate);
-				gate.connect(target.input);
-				return [{ id: x.id, target: x.target, preFader: x.preFader, level, matrix, gate }];
+				const route = new DelayRoute(this.ctx, gate, target.input, target.width);
+				return [{ id: x.id, target: x.target, preFader: x.preFader, level, matrix, gate, route }];
 			});
 		}
 		// the Mix → loudness gain → limiter → meter (levels + loudness) → device fold → Remotion's output gain
@@ -633,6 +890,7 @@ export class MixGraph {
 					channels: mw,
 					ceilingDb: mix.loudness?.truePeakDb ?? -1,
 					enabled: !!mix.loudness,
+					lookaheadMs: LIMITER_LOOKAHEAD_MS,
 				},
 			});
 			last.connect(this.limiter);
@@ -698,13 +956,18 @@ export class MixGraph {
 		return this.overrides.get(`${stripId}|${lane}`);
 	}
 
-	/** Evaluates every lane at the current time and ramps the nodes there. */
+	/**
+	 * Evaluates every lane and ramps the nodes there. Each stage is evaluated at the sequence time of the samples it
+	 * is processing (the picture time plus the read-ahead not yet spent upstream, `stripStageTimes`), as the export does.
+	 */
 	private applyValues(instant: boolean): void {
-		const t = this.time;
 		const mix = this.mix!;
+		const sr = this.ctx.sampleRate;
 		for (const s of this.order) {
 			const st = this.strips.get(s.id);
 			if (!st) continue;
+			const times = stripStageTimes(this.plan, s.id, this.time, sr);
+			const t = times.fader;
 			const vol = this.ov(s.id, 'volume') ?? laneAt(s.volumeDb, t);
 			setParam(st.fader.gain, dbToGain(vol), this.ctx, instant);
 			const mute = s.kind === 'master' ? 0 : (this.ov(s.id, 'mute') ?? laneAt(s.mute, t, true));
@@ -739,38 +1002,40 @@ export class MixGraph {
 				st.inputMap.set(m, true);
 			}
 			if (st.pan) {
-				const pan = this.ov(s.id, 'pan') ?? laneAt(s.pan, t);
-				const p51 = {
-					x: this.ov(s.id, 'pan51.x') ?? laneAt(s.pan51.x, t),
-					y: this.ov(s.id, 'pan51.y') ?? laneAt(s.pan51.y, t),
-					center: this.ov(s.id, 'pan51.center') ?? laneAt(s.pan51.center, t),
-					lfeDb: this.ov(s.id, 'pan51.lfe') ?? laneAt(s.pan51.lfe, t),
-				};
-				st.pan.set(panStageMatrix(st.width, st.outWidth, pan, p51, this.mixdown), instant);
+				const pan = this.ov(s.id, 'pan') ?? laneAt(s.pan, times.pan);
+				st.pan.set(
+					panStageMatrix(st.width, st.outWidth, pan, this.puck(s, times.pan), this.mixdown),
+					instant,
+				);
 			}
 			for (const x of st.sends) {
 				const send = s.sends.find((y) => y.id === x.id);
 				if (!send) continue;
-				const lv = this.ov(s.id, `send.${x.id}.level`) ?? laneAt(send.levelDb, t);
+				const ts = send.preFader ? times.fader : times.pan;
+				const lv = this.ov(s.id, `send.${x.id}.level`) ?? laneAt(send.levelDb, ts);
 				setParam(x.level.gain, dbToGain(lv), this.ctx, instant);
 				const target = this.strips.get(x.target);
-				const p51 = { x: 0, y: 100, center: 100, lfeDb: st.width === 6 ? 0 : -96 };
-				x.matrix.set(panStageMatrix(st.width, target?.width ?? 2, send.pan, p51, this.mixdown), instant);
+				x.matrix.set(
+					panStageMatrix(st.width, target?.width ?? 2, send.pan, this.puck(s, ts), this.mixdown),
+					instant,
+				);
 				setParam(x.gate.gain, s.silent ? 0 : 1, this.ctx, true);
 			}
 			st.pre.sync(
 				s.inserts.filter((e) => !e.postFader),
-				t,
+				times.preInserts,
 			);
 			st.post.sync(
 				s.inserts.filter((e) => !!e.postFader),
-				t,
+				times.postInserts,
 			);
 		}
 		// loudness normalisation
 		setParam(this.loudGain.gain, mix.loudness ? dbToGain(mix.loudness.gainDb) : 1, this.ctx, instant);
 		this.limiter?.port.postMessage({ enabled: !!mix.loudness, ceilingDb: mix.loudness?.truePeakDb ?? -1 });
-		// clips
+		// clips: their nodes process the samples `total` ahead of the picture (the read-ahead)
+		const t = this.time;
+		const ahead = t + (this.plan.total * FLICKS_PER_SECOND) / sr;
 		const byId = new Map(this.clipList.map((c) => [c.clipId, c]));
 		for (const [id, c] of this.clips) {
 			const clip = byId.get(id);
@@ -783,8 +1048,21 @@ export class MixGraph {
 				under && (vo !== undefined || po !== undefined)
 					? { ...(vo !== undefined ? { volume: vo } : {}), ...(po !== undefined ? { pan: po } : {}) }
 					: null;
-			c.update(clip, t, override, instant, this.fps);
+			c.update(clip, ahead, override, instant, this.fps);
 		}
+	}
+
+	/**
+	 * The 5.1 puck of a strip at `t` (live overrides first). Sends into a 5.1 bus use the strip's puck too, as the
+	 * export's pan stage does.
+	 */
+	private puck(s: RenderStrip, t: number): { x: number; y: number; center: number; lfeDb: number } {
+		return {
+			x: this.ov(s.id, 'pan51.x') ?? laneAt(s.pan51.x, t),
+			y: this.ov(s.id, 'pan51.y') ?? laneAt(s.pan51.y, t),
+			center: this.ov(s.id, 'pan51.center') ?? laneAt(s.pan51.center, t),
+			lfeDb: this.ov(s.id, 'pan51.lfe') ?? laneAt(s.pan51.lfe, t),
+		};
 	}
 
 	dispose(): void {
