@@ -92,3 +92,49 @@ describe('Dynamics: compressor make-up sits before the limiter', () => {
 		expect(run(12)).toBeGreaterThan(-6.5);
 	});
 });
+
+describe('Scientific Filter', () => {
+	const rmsDb = (x: Float32Array, from: number) => {
+		let s = 0;
+		for (let i = from; i < x.length; i++) s += x[i]! * x[i]!;
+		return 10 * Math.log10(s / (x.length - from));
+	};
+	// [rate, params, test tone]: steep / narrow designs whose first-section gain used to underflow to silence.
+	const cases: [number, Record<string, number>, number][] = [
+		[48000, { type: 1, mode: 0, order: 12, cutoff: 20 }, 10],
+		[96000, { type: 0, mode: 0, order: 12, cutoff: 20 }, 5],
+		[48000, { type: 1, mode: 2, order: 12, cutoff: 1000, highCutoff: 1010 }, 1000],
+		[48000, { type: 1, mode: 2, order: 12, cutoff: 1000, highCutoff: 1100 }, 1050],
+		[48000, { type: 3, mode: 1, order: 12, cutoff: 5000, ripple: 1, stopAtten: 80 }, 12000],
+	];
+	for (const [sr, params, hz] of cases)
+		it(`passes its pass band: ${sr} Hz ${JSON.stringify(params)} at ${hz} Hz`, () => {
+			const fx = createProcessor('jasper.audio.scientific-filter', sr, 1)!;
+			for (const [k, v] of Object.entries(params)) fx.setParam(k, v);
+			fx.reset();
+			const n = sr * 4;
+			const x = sine(n, hz, 0.5, sr);
+			fx.process([x], 0, n);
+			const measured = rmsDb(x, n - sr) - 20 * Math.log10(0.5 / Math.SQRT2);
+			expect(Math.abs(measured - fx.responseDb!(hz)!)).toBeLessThan(0.5);
+		});
+
+	it('sections that come back after an order change start from silence', () => {
+		const fx = createProcessor('jasper.audio.scientific-filter', SR, 1)!;
+		fx.setParam('order', 12);
+		fx.reset();
+		let seed = 1;
+		const a = Float32Array.from({ length: SR / 2 }, () => {
+			seed = (seed * 1103515245 + 12345) % 2 ** 31;
+			return (seed / 2 ** 31 - 0.5) * 1.8;
+		});
+		fx.process([a], 0, a.length);
+		fx.setParam('order', 2);
+		const b = new Float32Array(SR);
+		fx.process([b], 0, b.length);
+		fx.setParam('order', 12);
+		const c = new Float32Array(SR / 2);
+		fx.process([c], 0, c.length);
+		expect(peakDb(c)).toBeLessThan(-120);
+	});
+});

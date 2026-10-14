@@ -72,6 +72,7 @@ export class ScientificFilter extends EffectBase {
 	}
 
 	private redesign(): void {
+		const before = this.sections.n;
 		realize(
 			this.proto,
 			this.band,
@@ -80,6 +81,14 @@ export class ScientificFilter extends EffectBase {
 			this.sampleRate,
 			this.sections,
 		);
+		// Sections that come (back) into use after an order change start from silence, not from the state they
+		// had when they were last used.
+		for (let ch = 0; ch < this.nch; ch++)
+			for (let k = before; k < this.sections.n; k++) {
+				const so = 2 * MAX_SECTIONS * ch + 2 * k;
+				this.state[so] = 0;
+				this.state[so + 1] = 0;
+			}
 		this.dirty = this.f1.isSmoothing() || this.f2.isSmoothing();
 	}
 
