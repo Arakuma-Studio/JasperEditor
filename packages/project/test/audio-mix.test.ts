@@ -1,5 +1,6 @@
 import { balanceGains } from '@jasper/audio-dsp';
 import { describe, expect, it } from 'vitest';
+import { repairAudioMix } from '../src/audio/invariants.ts';
 import { contentTimeAt } from '../src/derive/index.ts';
 import {
 	buildAudioMix,
@@ -21,7 +22,6 @@ import {
 	thinPoints,
 } from '../src/index.ts';
 import { evaluate } from '../src/keyframes.ts';
-import { repairAudioMix } from '../src/audio/invariants.ts';
 import type { Sequence } from '../src/schema/sequence.ts';
 import { Harness } from './helpers.ts';
 

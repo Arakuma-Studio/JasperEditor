@@ -382,6 +382,7 @@ export class AudioService {
 			}
 			r.close();
 		}
+		m1.flush();
 		const before = m1.summary();
 		if (!Number.isFinite(before.integrated)) {
 			// BS.1770 integrated loudness needs at least one complete 400 ms gating block: shorter audio is not "silent".
@@ -450,6 +451,7 @@ export class AudioService {
 		} finally {
 			await fh.close();
 		}
+		m2.flush();
 		const after = m2.summary();
 		const outDir = join(
 			this.core.config.paths.root,

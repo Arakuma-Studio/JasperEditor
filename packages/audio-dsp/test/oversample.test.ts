@@ -108,3 +108,33 @@ describe('TruePeakDetector', () => {
 		expect(whole.truePeakDb()).toBe(Number.NEGATIVE_INFINITY);
 	});
 });
+
+describe('true peak at the end of a programme (sound-design P0)', () => {
+	// fs/4 burst at 45°: samples ±0.707, inter-sample peaks ≈ 1.0.
+	const burst = (n: number, at: number, len: number) => {
+		const x = new Float32Array(n);
+		for (let i = at; i < at + len; i++) x[i] = Math.sin((Math.PI / 2) * i + Math.PI / 4);
+		return x;
+	};
+
+	it('a burst in the last samples reads the same true peak as one in the middle', () => {
+		const mid = blockTruePeak([burst(4000, 2000, 12)], 48000);
+		const end = blockTruePeak([burst(4000, 3988, 12)], 48000);
+		expect(mid).toBeGreaterThan(0.99);
+		expect(Math.abs(end - mid)).toBeLessThan(0.01);
+		// a whole programme shorter than the interpolator delay
+		expect(blockTruePeak([burst(12, 0, 12)], 48000)).toBeGreaterThan(0.99);
+	});
+
+	it('the loudness meter summary of a whole programme includes the tail; streaming reads are unchanged', async () => {
+		const { LoudnessMeter, measureLoudness } = await import('../src/index.ts');
+		const x = burst(4000, 3988, 12);
+		expect(10 ** (measureLoudness([x], 48000).truePeakDb / 20)).toBeGreaterThan(0.99);
+		const m = new LoudnessMeter(48000, 1);
+		m.process([x]);
+		const live = m.truePeak();
+		expect(live).toBeLessThan(0.72); // the last points are not interpolated yet while the stream goes on
+		m.flush();
+		expect(m.truePeak()).toBeGreaterThan(0.99);
+	});
+});

@@ -185,6 +185,7 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 		mixer.close();
 		await fh?.close();
 	}
+	meter.flush();
 	const before = meter.summary();
 	if (!o.normalize || !keep || !pass1) {
 		return { path: pass1, sampleRate: sr, channels, samples: total, loudness: before };
@@ -249,12 +250,14 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 		await dst.close();
 		await rm(pass1, { force: true });
 	}
+	meter2.flush();
+	const after = meter2.summary();
 	return {
 		path: out,
 		sampleRate: sr,
 		channels,
 		samples: total,
-		loudness: meter2.summary(),
+		loudness: after,
 		normalized: { before, gainDb, truePeakDb: o.normalize.truePeakDb },
 	};
 }
