@@ -64,6 +64,8 @@ export const EVENT_PAYLOADS = {
 	'cache.cleaned': CacheGcReportSchema,
 	/** The user effect preset library changed (Effects ▸ Presets refreshes). */
 	'effectPresets.changed': z.object({ revision: z.number().int() }),
+	/** The sound library index changed (an index job finished, a folder was removed); the Sound Library refreshes. */
+	'sounds.changed': z.object({ snapshotHash: z.string(), sounds: z.number().int().min(0) }),
 	/**
 	 * preview files appeared (a segment finished rendering) or were deleted; the render bar asks again. A
 	 * deletion carries `deleted` (count), a render the segment.

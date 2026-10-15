@@ -36,6 +36,14 @@ describe('@jasper/config', () => {
 		expect(p.renderDir('job1')).toBe(join('/app', 'renders', 'job1'));
 		expect(p.remotionBundleDir).toBe(join('/app', 'remotion', 'bundle'));
 		expect(p.tmpDir).toBe(join('/app', 'tmp'));
+		expect(p.soundsDir).toBe(join('/app', 'sounds'));
+		expect(p.soundLibraryIndex).toBe(join('/app', 'sounds', 'library.json'));
+		expect(p.soundRootsFile).toBe(join('/app', 'sounds', 'roots.json'));
+		expect(p.soundPacksDir).toBe(join('/app', 'sounds', 'packs'));
+		expect(p.soundSynthDir).toBe(join('/app', 'sounds', 'synth'));
+		expect(p.soundCacheDir).toBe(join('/app', 'sounds', 'cache'));
+		expect(p.projectProposalsDir('prj_1')).toBe(join('/app', 'projects', 'prj_1', 'proposals'));
+		expect(() => p.projectProposalsDir('../x')).toThrow();
 		expect(p.logFile(new Date('2026-09-30T10:00:00Z'))).toBe(
 			join('/app', 'engine', 'logs', '2026-09-30.log'),
 		);
