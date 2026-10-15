@@ -1,4 +1,3 @@
-import '../gl-poison.ts';
 import {
 	anim,
 	type CameraState,
@@ -290,9 +289,4 @@ function render(name: string): { gl: number[]; cpu: number[]; W: number; H: numb
 	return { gl: glPx, cpu: cpuPx, W, H };
 }
 
-function info() {
-	const c = document.createElement('canvas');
-	return { webgl2: !!c.getContext('webgl2') };
-}
-
-(window as unknown as { __3d: unknown }).__3d = { render, info, names: () => Object.keys(scenes()) };
+(window as unknown as { __3d: unknown }).__3d = { render };

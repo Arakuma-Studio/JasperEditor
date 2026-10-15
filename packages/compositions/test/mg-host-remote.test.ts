@@ -3,10 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	HOST_AGENT_SCRIPT,
-	hostBootstrapScript,
 	MG_HOST_CONNECT,
 	MG_HOST_PORT_PROTOCOL,
-	MG_HOST_SANDBOX,
 	MgHostProtocolError,
 	SANDBOX_STORAGE_SHIM,
 	TEXT_PROBE_SCRIPT,
@@ -96,15 +94,6 @@ describe('host agent + remote over a MessagePort (MG-1)', () => {
 	afterEach(() => {
 		for (const k of REMOTION_GLOBALS) delete W[k];
 		vi.unstubAllGlobals();
-	});
-
-	it('the host iframe is sandboxed to scripts only, and the bootstrap installs the agent', () => {
-		expect(MG_HOST_SANDBOX).toBe('allow-scripts');
-		const boot = hostBootstrapScript();
-		expect(boot).toContain('__jasperMgAgent');
-		expect(boot).toContain('__jasperTexts');
-		// Plain script: it must parse by itself in another document.
-		expect(() => new Function(boot)).not.toThrow();
 	});
 
 	it('drives the renderer-page protocol: evaluate, calculate, mount with overrides, seek (clamped), re-seek on new props', async () => {

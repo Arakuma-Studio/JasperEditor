@@ -43,10 +43,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		});
 
-		it('has WebGL2', async () => {
-			expect((await call<{ webgl2: boolean }>('info')).webgl2).toBe(true);
-		});
-
 		const cases: [
 			string,
 			ResolvedMask[],

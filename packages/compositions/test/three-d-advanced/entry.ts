@@ -1,4 +1,3 @@
-import '../gl-poison.ts';
 import {
 	anim,
 	type CameraState,

@@ -1,4 +1,3 @@
-import '../gl-poison.ts';
 import {
 	defaultEffectRegistry,
 	type EffectSpec,

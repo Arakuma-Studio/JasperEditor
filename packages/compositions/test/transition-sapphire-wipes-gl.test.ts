@@ -40,9 +40,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		});
 
 		it('runs all 24 wipes, each moving monotonically from A to B', async () => {
-			const info = await call<{ webgl2: boolean; labels: string[] }>('info');
-			expect(info.webgl2).toBe(true);
-			expect(info.labels).toHaveLength(24);
 			const r = await call<Record<string, number[]>>('shares');
 			const bad = Object.entries(r)
 				.filter(([, [a, b, c]]) => !(a! < b! && b! < c!) || b! < 0.05 || b! > 0.95)

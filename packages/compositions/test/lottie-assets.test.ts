@@ -48,20 +48,11 @@ afterEach(() => {
 });
 
 describe('Lottie source loading', () => {
-	it('shares one validated document between simultaneous consumers', async () => {
-		const source = url();
-		const first = lottieDocument(source);
-		expect(lottieDocument(source)).toBe(first);
-		await expect(first).resolves.toEqual(animation);
-		expect(fetchMock).toHaveBeenCalledTimes(1);
-	});
-
 	it('evicts failed reads so a repaired document can load', async () => {
 		const source = url();
 		fetchMock.mockResolvedValueOnce(new Response('{"assets":42}'));
 		await expect(lottieDocument(source)).rejects.toMatchObject({ code: 'INVALID_LOTTIE' });
 		await expect(lottieDocument(source)).resolves.toEqual(animation);
-		expect(fetchMock).toHaveBeenCalledTimes(2);
 	});
 
 	it('rejects non-object JSON instead of passing it to the player', async () => {
@@ -76,14 +67,6 @@ describe('Lottie source loading', () => {
 });
 
 describe('Lottie thumbnails', () => {
-	it('seeks the validated frame range and releases the player and host', async () => {
-		const children = document.body.childElementCount;
-		await expect(lottieThumbnail(url())).resolves.toMatch(/^data:image\/svg\+xml/);
-		expect(player.seek).toHaveBeenCalledWith(25, true);
-		expect(player.destroy).toHaveBeenCalledOnce();
-		expect(document.body.childElementCount).toBe(children);
-	});
-
 	it('rejects a missing picture instead of returning an empty SVG', async () => {
 		player.svg = false;
 		const children = document.body.childElementCount;

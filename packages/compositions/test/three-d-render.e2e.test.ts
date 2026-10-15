@@ -213,5 +213,3 @@ describe.runIf(enabled)('3D layers in Remotion renders (REMOTION_E2E=1)', { time
 		expect(d.bad).toBeLessThan(0.25);
 	});
 });
-
-export const _asset = fxAsset;

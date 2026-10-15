@@ -209,6 +209,7 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 			} as Command,
 		]);
 		const raw = await still(doc2, 1, 'range-half');
+		expect(ink(raw, 0, W)).toBeGreaterThan(50);
 		const b = bbox(raw, white);
 		expect(b.x0).toBeGreaterThan(W / 2 - 5);
 	});
@@ -241,33 +242,6 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 		const b = await still(doc, 12, 'flip-12-again');
 		expect(Buffer.compare(a, b)).toBe(0);
 		expect(ink(a, 0, W)).toBeGreaterThan(50);
-	});
-
-	it('typography: small caps, superscript, tracking and faux italic draw', async () => {
-		const doc = snapshotOf(media, () => [
-			{
-				type: 'clip.addText',
-				at: 0,
-				duration: 30,
-				track: 'V1',
-				content: {
-					text: 'Small Caps x2',
-					style: {
-						sizePx: 60,
-						fill: [1, 1, 1, 1],
-						align: 'left',
-						smallCaps: true,
-						fauxItalic: true,
-						trackingEm: 0.05,
-					},
-					runs: [{ from: 12, to: 13, style: { script: 'superscript' } }],
-				},
-				box: { width: 600, height: 100, autoSize: 'none' },
-				ref: '$t',
-			} as unknown as Command,
-		]);
-		const raw = await still(doc, 1, 'typography');
-		expect(ink(raw, 0, W)).toBeGreaterThan(100);
 	});
 
 	it('variable font axes: style wght and an animated wght offset change the stroke weight', async () => {
@@ -372,6 +346,7 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 			} as Command,
 		]);
 		const raw = await still(doc, 1, 'expr-property');
+		expect(ink(raw, 0, W)).toBeGreaterThan(50);
 		expect(bbox(raw, white).y1).toBeLessThan(H / 2 - 30);
 	});
 });

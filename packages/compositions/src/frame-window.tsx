@@ -9,20 +9,20 @@ import { type ReactNode, useMemo } from 'react';
 import { useCurrentFrame } from 'remotion';
 
 /** Window granularity (frames). */
-export const FRAME_WINDOW_PAGE = 60;
+const FRAME_WINDOW_PAGE = 60;
 
 /** The item's `[first, end)` frame span in the parent Sequence's frame space, premount included. */
 export type FrameSpan = readonly [number, number];
 
 /** Whether `span` intersects the window of `page` (pages of `FRAME_WINDOW_PAGE` frames). */
-export function inFrameWindow(span: FrameSpan, page: number): boolean {
+function inFrameWindow(span: FrameSpan, page: number): boolean {
 	const lo = (page - 1) * FRAME_WINDOW_PAGE;
 	const hi = (page + 2) * FRAME_WINDOW_PAGE;
 	// One frame of slack on both sides for Remotion's rounding of fractional sequence ends.
 	return span[0] - 1 < hi && span[1] + 1 > lo;
 }
 
-export function framePage(frame: number): number {
+function framePage(frame: number): number {
 	return Math.floor(frame / FRAME_WINDOW_PAGE);
 }
 

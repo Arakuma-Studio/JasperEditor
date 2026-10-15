@@ -577,16 +577,6 @@ export class RetimeCompositor {
 		return flow;
 	}
 
-	/** Reads the current flow field (tests): x, y (A→B), x, y (B→A) per tile, analysis px. */
-	readFlow(cols: number, rows: number): Float32Array {
-		const gl = this.gl;
-		const out = new Float32Array(cols * rows * 4);
-		if (!this.flowTex) return out;
-		gl.bindFramebuffer(gl.FRAMEBUFFER, this.flowTex.fb);
-		gl.readPixels(0, 0, cols, rows, gl.RGBA, gl.FLOAT, out);
-		return out;
-	}
-
 	dispose(): void {
 		const gl = this.gl;
 		for (const t of this.targets.values()) {

@@ -41,36 +41,7 @@ function canvasRegion(c: HTMLCanvasElement, x: number, y: number, w: number, h: 
 	return canvas(w, h, (ctx) => ctx.drawImage(c, x, y, w, h, 0, 0, w, h));
 }
 
-function png(arg: {
-	id: string;
-	over?: Record<string, unknown>;
-	frame?: number;
-	w?: number;
-	h?: number;
-	bg?: string;
-}) {
-	const s = spec(arg.id);
-	const r = run(
-		s,
-		defaults(s, arg.over ?? {}),
-		{ width: arg.w ?? 480, height: arg.h ?? 270 },
-		arg.bg ? solid(arg.bg) : picture,
-		{
-			frame: arg.frame ?? 30,
-		},
-	);
-	const c = document.createElement('canvas');
-	c.width = r.out.width;
-	c.height = r.out.height;
-	const ctx = c.getContext('2d')!;
-	ctx.fillStyle = '#202020';
-	ctx.fillRect(0, 0, c.width, c.height);
-	ctx.drawImage(r.out, 0, 0);
-	return { url: c.toDataURL('image/png'), ms: r.ms };
-}
-
 const api = {
-	png,
 	catalogue() {
 		const fam = FX_FAMILIES.find((f) => f.file === 'simulation-warp')!;
 		const errors: string[] = [];
@@ -84,7 +55,7 @@ const api = {
 				}
 			}
 		}
-		return { count: fam.effects.length, errors };
+		return { errors };
 	},
 
 	determinism(arg: { id: string; over?: Record<string, unknown>; frame?: number }) {
@@ -618,7 +589,6 @@ const api = {
 				canvasRegion(pp.out, pp.layout.box.x, pp.layout.box.y, W, H),
 				canvasRegion(pp.input, pp.layout.box.x, pp.layout.box.y, W, H),
 			),
-			ppCanvas: [pp.out.width, pp.out.height],
 			ppNone: maxDiff(ppNone.out, ppNone.input),
 		};
 	},

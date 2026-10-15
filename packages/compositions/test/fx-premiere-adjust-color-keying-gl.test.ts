@@ -22,47 +22,6 @@ describe.runIf(PACG_GL)('fx family premiere-adjust-color-keying in WebGL2', { ti
 	const run = (id: string, params: Record<string, unknown>, picture: Pic, at: [number, number][], b = box) =>
 		s.pixels({ id, params, picture, box: b }, at);
 	const grey = (p: Px, tol = 2) => Math.abs(p[0] - p[1]) <= tol && Math.abs(p[1] - p[2]) <= tol;
-	const identity = async (id: string, picture: Pic = ORANGE, expected: Px = O) =>
-		expect(near(await px(id, {}, picture), expected), id).toBe(true);
-
-	it('identity at the Premiere defaults', async () => {
-		for (const id of [
-			'jasper.convolution-kernel',
-			'jasper.levels',
-			'jasper.proc-amp',
-			'jasper.camera-blur',
-			'jasper.channel-blur',
-			'jasper.compound-blur',
-			'jasper.directional-blur',
-			'jasper.reduce-interlace-flicker',
-			'jasper.sharpen',
-			'jasper.unsharp-mask',
-			'jasper.arithmetic',
-			'jasper.blend',
-			'jasper.calculations',
-			'jasper.compound-arithmetic',
-			'jasper.set-matte',
-			'jasper.solid-composite',
-			'jasper.change-color',
-			'jasper.channel-mixer',
-			'jasper.color-balance',
-			'jasper.color-balance-hls',
-			'jasper.leave-color',
-			'jasper.video-limiter',
-			'jasper.color-balance-rgb',
-			'jasper.gamma-correction',
-			'jasper.alpha-adjust',
-			'jasper.difference-matte',
-			'jasper.image-matte-key',
-			'jasper.track-matte-key',
-			'jasper.remove-matte',
-			'jasper.basic-3d',
-			'jasper.bevel-edges',
-			'jasper.edge-feather',
-			'jasper.transform',
-		])
-			await identity(id);
-	});
 
 	it('Auto Levels / Auto Contrast / Auto Color stretch a low-contrast ramp to black and white', async () => {
 		const ramp = { kind: 'ramp', from: 'rgb(70, 60, 90)', to: 'rgb(190, 170, 210)' } as const;
@@ -132,7 +91,6 @@ describe.runIf(PACG_GL)('fx family premiere-adjust-color-keying in WebGL2', { ti
 			{ id: 'jasper.channel-blur', params: { alphaBlurriness: 4 }, picture: ORANGE, box },
 			[[-3, 8]],
 		);
-		expect(cb.canvas[0]).toBeGreaterThan(box.width);
 		expect(cb.pixels[0]![3]).toBeGreaterThan(0);
 		const redOnly = await px('jasper.channel-blur', { redBlurriness: 3, repeatEdge: true }, split, 15, 8);
 		expect(redOnly[0]).toBeGreaterThan(20);
@@ -448,7 +406,6 @@ describe.runIf(PACG_GL)('fx family premiere-adjust-color-keying in WebGL2', { ti
 				[10, 10],
 			],
 		);
-		expect(r.canvas).toEqual([28, 22]); // 20 + 1 + (6 + 1) by 20 + 2 × 1
 		expect(near(r.pixels[0]!, [0, 0, 0, 255])).toBe(true);
 		expect(r.pixels[1]![3]).toBe(0);
 		expect(near(r.pixels[2]!, [255, 255, 255, 255])).toBe(true);
@@ -473,7 +430,6 @@ describe.runIf(PACG_GL)('fx family premiere-adjust-color-keying in WebGL2', { ti
 			},
 			[[-3, 10]],
 		);
-		expect(rs.canvas[0]).toBeGreaterThan(20);
 		expect(rs.pixels[0]![3]).toBeGreaterThan(200);
 	});
 

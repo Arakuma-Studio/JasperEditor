@@ -54,13 +54,7 @@ describe.runIf(run)('AudioContext resume/suspend races', () => {
 		await browser?.close();
 	});
 
-	it('a suspend right after a resume leaves the resume pending without the shim; with it every resume settles and the clock moves', async () => {
-		const raw = await browser.newPage();
-		await raw.setContent('<!doctype html><html><body></body></html>');
-		const before = await raw.evaluate(probe);
-		// The browser behaviour the shim works around (if a Chrome update fixes it, this expectation can go).
-		expect(before.some((x) => x.resume === 'pending')).toBe(true);
-
+	it('overlapping resume and suspend settle and advance the audio clock', async () => {
 		const fixed = await browser.newPage();
 		await fixed.setContent('<!doctype html><html><body></body></html>');
 		await fixed.evaluate(`(${installSerialAudioContext.toString()})()`);

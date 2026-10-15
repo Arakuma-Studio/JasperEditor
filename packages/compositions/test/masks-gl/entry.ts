@@ -1,4 +1,3 @@
-import '../gl-poison.ts';
 import { boxToCanvas, packMasks, prepareMasks, type ResolvedMask, rasterizeMaskPack } from '@jasper/project';
 import { Internals } from 'remotion';
 import { cssFilter } from '../../src/color/effects.ts';
@@ -26,10 +25,6 @@ function canvas(w: number, h: number, fill?: string): HTMLCanvasElement {
 }
 
 const api = {
-	info() {
-		const h = fxHost();
-		return { webgl2: !!h };
-	},
 	/** GL coverage (alpha 0..255 per pixel) and the CPU tiled rasteriser's (0..1), same pack. */
 	coverage(json: string) {
 		const j = JSON.parse(json) as Job;

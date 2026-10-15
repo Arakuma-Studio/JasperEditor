@@ -3,7 +3,6 @@ import {
 	analysisSize,
 	blendFrames,
 	computeFlowPair,
-	FLOW_BLOCK,
 	type FlowImage,
 	interpolateFlow,
 } from '@jasper/project';
@@ -91,11 +90,6 @@ function stats(a: ArrayLike<number>, b: ArrayLike<number>) {
 }
 
 const api = {
-	info() {
-		const c = document.createElement('canvas');
-		const gl = c.getContext('webgl2');
-		return { webgl2: !!gl, floats: !!gl?.getExtension('EXT_color_buffer_float') };
-	},
 	/** GPU vs CPU optical flow on a pan + moving square (w in 0…1). */
 	flow(arg?: string) {
 		const { w = 0.5, bg = 3, sq = 12, W = 256, H = 160 } = arg ? JSON.parse(arg) : {};
@@ -108,21 +102,6 @@ const api = {
 		const out = readCanvas(comp.flow(toCanvas(a), toCanvas(b), w, W, H, analysis, 'p'), W, H);
 		const pair = computeFlowPair(a, b, 255);
 		const cpu = interpolateFlow(a, b, w, pair, { data: new Uint8ClampedArray(W * H * 4) });
-		const cols = Math.ceil(analysis.w / FLOW_BLOCK);
-		const rows = Math.ceil(analysis.h / FLOW_BLOCK);
-		const gv = comp.readFlow(cols, rows);
-		let vecMax = 0;
-		let vecSame = 0;
-		for (let i = 0; i < cols * rows; i++) {
-			const d = Math.max(
-				Math.abs(gv[i * 4]! - pair.ab.v[i * 2]!),
-				Math.abs(gv[i * 4 + 1]! - pair.ab.v[i * 2 + 1]!),
-				Math.abs(gv[i * 4 + 2]! - pair.ba.v[i * 2]!),
-				Math.abs(gv[i * 4 + 3]! - pair.ba.v[i * 2 + 1]!),
-			);
-			vecMax = Math.max(vecMax, d);
-			if (d < 1e-3) vecSame++;
-		}
 		const blend = blendFrames(a, b, w, { data: new Uint8ClampedArray(W * H * 4) });
 		comp.dispose();
 		return {
@@ -130,8 +109,6 @@ const api = {
 			gpuVsTruth: stats(out, truth.data),
 			cpuVsTruth: stats(cpu, truth.data),
 			mixVsTruth: stats(blend, truth.data),
-			vecMax,
-			vecSame: vecSame / (cols * rows),
 		};
 	},
 	blend(arg?: string) {

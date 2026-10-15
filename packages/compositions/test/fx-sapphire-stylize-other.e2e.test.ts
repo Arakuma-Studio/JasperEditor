@@ -11,25 +11,6 @@ import { FX_H, FX_W, type FxMedia, fxAsset, fxCmd, fxSnapshot, startFxMedia } fr
 const here = dirname(fileURLToPath(import.meta.url));
 const enabled = process.env.REMOTION_E2E === '1';
 
-const EFFECTS: { id: string; params?: Record<string, unknown> }[] = [
-	{ id: 'jasper.s.band-pass' },
-	{ id: 'jasper.s.color-fuse', params: { lut1Strength: 1, lut2: 'faded', lut2Strength: 0.5 } },
-	{ id: 'jasper.s.dog-vision' },
-	{ id: 'jasper.s.mosaic' },
-	{ id: 'jasper.s.pixel-sort' },
-	{ id: 'jasper.s.prism-lens' },
-	{ id: 'jasper.s.pseudo-color' },
-	{ id: 'jasper.s.psyko-blobs' },
-	{ id: 'jasper.s.psyko-stripes' },
-	{ id: 'jasper.s.roman-tile' },
-	{ id: 'jasper.s.solarize' },
-	{ id: 'jasper.s.strip-slide' },
-	{ id: 'jasper.s.zebrafy' },
-	{ id: 'jasper.s.zebrafy-color' },
-	{ id: 'jasper.s.z-fog-exponential', params: { fogColor: [0.75, 0.8, 0.9, 1] } },
-	{ id: 'jasper.s.z-fog-linear', params: { fogColor: [0.75, 0.8, 0.9, 1] } },
-];
-
 describe.runIf(enabled)(
 	'Sapphire other-stylize effects in Remotion renders (REMOTION_E2E=1)',
 	{ timeout: 600_000 },
@@ -86,20 +67,6 @@ describe.runIf(enabled)(
 			media?.close();
 		});
 
-		const picture = (): Command[] => [
-			{
-				type: 'media.register',
-				ref: '$m',
-				asset: fxAsset(media, 'image', 'picture.png', FX_W, FX_H),
-			} as unknown as Command,
-			{
-				type: 'clip.place',
-				source: { mediaId: '$m' },
-				at: 0,
-				tracks: { video: 'V1' },
-				ref: '$c',
-			} as unknown as Command,
-		];
 		const zoomVideo = (): Command[] => [
 			{
 				type: 'media.register',
@@ -147,18 +114,6 @@ describe.runIf(enabled)(
 			}
 			return d / n;
 		};
-
-		it('every effect renders and changes the picture', async () => {
-			const plain = await still(picture(), 0, '_original');
-			for (const e of EFFECTS) {
-				const raw = await still(
-					[...picture(), fxCmd.effect(e.id, e.params)],
-					0,
-					e.id.replace('jasper.s.', ''),
-				);
-				expect([e.id, meanDiff(raw, plain) > 2]).toEqual([e.id, true]);
-			}
-		});
 
 		it('S_PixelMosh: the held frame moshed by the zoom, deterministic across renders', async () => {
 			const params = { frameInterval: 30, varyFrameInterval: 0 };

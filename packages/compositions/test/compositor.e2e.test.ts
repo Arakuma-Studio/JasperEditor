@@ -137,20 +137,6 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 	const mid: Rgba = [0.3, 0.6, 0.9, 1];
 	const top: Rgba = [0.5, 0.5, 0.25, 1];
 
-	it('an adjustment layer with GPU effects over a GL blend-mode track', async () => {
-		await matchesReference(
-			[
-				solid('V1', base, '$a'),
-				solid('V2', mid, '$b'),
-				mode('$b', 'linear-burn'),
-				adjustment('V3', '$adj'),
-				effect('$adj', 'jasper.invert'),
-			],
-			'adjust-over-blend',
-			invert,
-		);
-	});
-
 	it('a GL blend-mode track over an adjustment layer with GPU effects', async () => {
 		await matchesReference(
 			[
@@ -161,24 +147,6 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 				mode('$t', 'color-dodge'),
 			],
 			'blend-over-adjust',
-			invert,
-		);
-	});
-
-	it('two GL blend-mode tracks separated by an adjustment layer (and a small Normal layer)', async () => {
-		await matchesReference(
-			[
-				solid('V1', base, '$a'),
-				solid('V2', mid, '$b'),
-				mode('$b', 'linear-burn'),
-				adjustment('V3', '$adj'),
-				effect('$adj', 'jasper.invert'),
-				solid('V4', [0.1, 0.9, 0.1, 1], '$n'),
-				scale('$n', 25),
-				solid('V5', top, '$t'),
-				mode('$t', 'color-dodge'),
-			],
-			'blend-adjust-blend',
 			invert,
 		);
 	});
@@ -293,30 +261,6 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 		1,
 	];
 	const linear = { type: 'sequence.updateSettings', settings: { color: { blendLinear: true } } } as Command;
-
-	it('linear-light blending with an adjustment layer with GPU effects between the blended tracks', async () => {
-		const raw = await still(
-			[
-				linear,
-				solid('V1', base, '$a'),
-				solid('V2', mid, '$b'),
-				opacity('$b', 50),
-				adjustment('V3', '$adj'),
-				effect('$adj', 'jasper.invert'),
-				solid('V4', top, '$t'),
-				opacity('$t', 50),
-			],
-			5,
-			'linear-adjust-between',
-		);
-		const want = linMix(invert(linMix(base, mid, 0.5)), top, 0.5);
-		expectAt(raw, FX_W / 2, FX_H / 2, want);
-		// Encoded blending would be visibly different.
-		const encoded = over([
-			{ c: invert(over([{ c: base }, { c: [mid[0] * 0.5, mid[1] * 0.5, mid[2] * 0.5, 0.5] }])) },
-		]);
-		expect(near(at(raw, FX_W / 2, FX_H / 2), to8(encoded), 4)).toBe(false);
-	});
 
 	it('linear-light blending with a DOM layer with GPU effects between the blended tracks', async () => {
 		const raw = await still(

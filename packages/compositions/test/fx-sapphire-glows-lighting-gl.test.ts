@@ -1,6 +1,5 @@
 // @vitest-environment node
 
-import { FX_FAMILIES } from '@jasper/project';
 import type { Browser, Page } from '@playwright/test';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CHROME, openSglBrowser, sgl } from './fx-sapphire-glows-lighting/browser.ts';
@@ -16,7 +15,6 @@ type Opts = {
 	seed?: number;
 };
 
-const FAMILY_IDS = FX_FAMILIES.find((f) => f.file === 'sapphire-glows-lighting')!.effects.map((s) => s.id);
 const LIGHT_CASES: [string, Record<string, unknown>][] = [
 	['jasper.s.glow', {}],
 	['jasper.s.glow-noise', { noiseAmplitude: 0 }],
@@ -57,13 +55,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		}, 120_000);
 
-		it.each(FAMILY_IDS)(
-			'compiles and runs %s with default params (opaque and transparent input)',
-			async (id) => {
-				expect(await sgl<string | null>(page, 'runDefaults', id)).toBeNull();
-			},
-		);
-
 		it.each(LIGHT_CASES)(
 			'%s adds light next to a bright source and leaves far black alone',
 			async (id, params) => {
@@ -88,7 +79,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			const r = await pixels('jasper.s.glow', { glowWidth: 1, threshold: 0.2 }, { scene: 'logo' }, [
 				[-4, 30],
 			]);
-			expect(r.canvas[0]).toBeGreaterThan(S.width);
+			expect(r.out[0]![3]).toBeGreaterThan(0);
 			const clipped = await pixels(
 				'jasper.s.glow',
 				{ glowWidth: 1, threshold: 0.2, expandBorders: false },

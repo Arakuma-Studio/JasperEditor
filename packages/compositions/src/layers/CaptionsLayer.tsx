@@ -13,13 +13,13 @@ import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
 
 /** Title-safe margin: 10 % of the frame on each side (Premiere's default safe margins). */
-export const CAPTION_TITLE_SAFE = 0.1;
+const CAPTION_TITLE_SAFE = 0.1;
 const MONO_STACK = '"Source Code Pro", "DejaVu Sans Mono", Menlo, Consolas, monospace';
 
 type Style = RenderCaptionSource['style'];
 
 /** The page on screen at clip frame `f` (pages are sorted and do not overlap). */
-export function captionPageAt(pages: readonly CaptionPage[], f: number): CaptionPage | null {
+function captionPageAt(pages: readonly CaptionPage[], f: number): CaptionPage | null {
 	for (const p of pages) if (p.start <= f && f < p.end) return p;
 	return null;
 }
@@ -101,7 +101,7 @@ function shadowCss(style: Style): string | undefined {
 }
 
 /** Placement of the caption block inside the frame (title-safe, VTT overrides). */
-export function captionBlockPlacement(
+function captionBlockPlacement(
 	style: Pick<Style, 'placement' | 'marginPct' | 'linePct' | 'positionPct' | 'boxWidthPct' | 'align'>,
 	frame: { width: number; height: number },
 ): CSSProperties {

@@ -29,7 +29,6 @@ export {
 	setBakedLayerRuntime,
 	withBakedLayer,
 } from './BakedLayer.tsx';
-export { CAPTION_TITLE_SAFE, captionBlockPlacement, captionPageAt } from './CaptionsLayer.tsx';
 export { compositionFrameOf, compositionFramesAt, hasPixelEffects } from './CompositionLayer.tsx';
 export { LayerBox } from './LayerBox.tsx';
 export { lottieFrameForLayer } from './LottieLayer.tsx';
@@ -42,7 +41,7 @@ export {
 } from './MotionGraphicLayer.tsx';
 export { OFFLINE_CARD_COLORS } from './OfflineCard.tsx';
 export { lottieThumbnail, pdfThumbnail } from './thumbnails.ts';
-export { drawPdfPage, pdfPagePicture, VECTOR_MAX_SIDE, vectorRasterScale } from './VectorLayer.tsx';
+export { drawPdfPage, pdfPagePicture } from './VectorLayer.tsx';
 export {
 	CaptionsLayer,
 	CompositionLayer,

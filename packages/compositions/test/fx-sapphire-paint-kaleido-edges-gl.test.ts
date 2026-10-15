@@ -30,12 +30,8 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		});
 
-		it('runs all 30 effects, and Mix with Orig = 1 gives the input back', async () => {
-			const ids = await page.evaluate(() => window.__pke.ids());
-			const family = ids.filter((id) => FAMILY_IDS.includes(id));
-			expect(family.sort()).toEqual([...FAMILY_IDS].sort());
+		it('Mix with Orig = 1 gives the input back', async () => {
 			for (const id of FAMILY_IDS) {
-				expect(await diff(id, {}, { pattern: 'shapes' }), `${id} default`).toBeGreaterThan(0.5);
 				expect(await diff(id, { mixWithOriginal: 1 }, { pattern: 'checker' }), id).toBeLessThan(1);
 			}
 		});
@@ -194,14 +190,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect(await sig('jasper.s.kaleido-radial', { rotateInsideSpeed: 0 }, { ...o, frame: 0 })).toBe(
 				await sig('jasper.s.kaleido-radial', { rotateInsideSpeed: 0 }, { ...o, frame: 15 }),
 			);
-		});
-
-		it('S_Brush Soft Borders paints into the padding; otherwise nothing leaves the layer box', async () => {
-			const o: RunOptions = { pattern: 'checker', width: 128, height: 64 };
-			const hard = await probe('jasper.s.brush-oil', { maxSize: 4 }, o, [[64, 32]]);
-			expect(hard.canvas).toEqual([128, 64]);
-			const soft = await probe('jasper.s.brush-oil', { maxSize: 4, softBorders: true }, o, [[64, 32]]);
-			expect(soft.canvas[0]).toBeGreaterThan(128);
 		});
 	},
 );

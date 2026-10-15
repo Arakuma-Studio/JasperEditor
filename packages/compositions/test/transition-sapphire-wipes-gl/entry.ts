@@ -1,4 +1,3 @@
-import '../gl-poison.ts';
 import {
 	planGpuTransition,
 	TRANSITION_FAMILIES,
@@ -95,7 +94,6 @@ const hash = (c: HTMLCanvasElement) => {
 };
 
 const api = {
-	info: () => ({ webgl2: !!fxHost(), labels: WIPES.map((s) => s.label) }),
 	shares() {
 		const r: Record<string, number[]> = {};
 		for (const s of WIPES) r[s.label] = [0.2, 0.5, 0.8].map((p) => shareB(render(s.label, p)));

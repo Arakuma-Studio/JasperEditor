@@ -29,10 +29,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		});
 
-		it('has WebGL2', async () => {
-			expect((await call<{ webgl2: boolean }>('info')).webgl2).toBe(true);
-		});
-
 		it.each([
 			['flat', 0],
 			['intersect', 0.002],

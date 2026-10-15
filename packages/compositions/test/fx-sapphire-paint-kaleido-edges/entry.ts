@@ -1,4 +1,3 @@
-import '../gl-poison.ts';
 import {
 	defaultEffectRegistry,
 	type EffectParams,
@@ -13,9 +12,7 @@ import { fxCanvasLayout } from '../../src/fx/plan.ts';
 type Px = [number, number, number, number];
 type Box = { x: number; y: number; w: number; h: number };
 
-export type Pattern = 'split' | 'ramp' | 'shapes' | 'alphaSquare' | 'flat' | 'checker' | `image:${string}`;
-
-const images = new Map<string, HTMLImageElement>();
+export type Pattern = 'split' | 'ramp' | 'shapes' | 'alphaSquare' | 'flat' | 'checker';
 
 function canvas(w: number, h: number, paint?: (ctx: CanvasRenderingContext2D) => void): HTMLCanvasElement {
 	const c = document.createElement('canvas');
@@ -27,12 +24,6 @@ function canvas(w: number, h: number, paint?: (ctx: CanvasRenderingContext2D) =>
 }
 
 function paintPattern(ctx: CanvasRenderingContext2D, b: Box, pattern: Pattern) {
-	if (pattern.startsWith('image:')) {
-		const img = images.get(pattern.slice(6));
-		if (!img) throw new Error(`image ${pattern} not loaded`);
-		ctx.drawImage(img, b.x, b.y, b.w, b.h);
-		return;
-	}
 	switch (pattern) {
 		case 'split':
 			ctx.fillStyle = '#000';
@@ -160,28 +151,11 @@ const pixel = (c: HTMLCanvasElement, x: number, y: number): Px =>
 	Array.from(c.getContext('2d')!.getImageData(Math.floor(x), Math.floor(y), 1, 1).data) as Px;
 
 const api = {
-	async loadImage(name: string, url: string) {
-		const img = new Image();
-		img.src = url;
-		await img.decode();
-		images.set(name, img);
-		return { width: img.naturalWidth, height: img.naturalHeight };
-	},
-
-	ids(): string[] {
-		return defaultEffectRegistry
-			.list()
-			.filter((s) => s.id.startsWith('jasper.s.') && s.gpu)
-			.map((s) => s.id);
-	},
-
 	/** Pixels at layer-box-relative points (x, y in layer px). */
 	probe(id: string, over: EffectParams, o: RunOptions, points: [number, number][]) {
 		const { out, layout } = run(id, over, o);
 		const b = layout.box;
 		return {
-			canvas: [layout.width, layout.height],
-			box: [b.x, b.y, b.w, b.h],
 			pixels: points.map(([x, y]) => pixel(out, b.x + x, b.y + y)),
 		};
 	},
@@ -206,12 +180,6 @@ const api = {
 			h = Math.imul(h, 0x01000193);
 		}
 		return h >>> 0;
-	},
-
-	png(id: string, over: EffectParams, o: RunOptions) {
-		const t0 = performance.now();
-		const { out } = run(id, over, o);
-		return { url: out.toDataURL('image/png'), ms: performance.now() - t0 };
 	},
 };
 

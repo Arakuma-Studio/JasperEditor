@@ -1,4 +1,3 @@
-import '../gl-poison.ts';
 import { type EffectSpec, FX_FAMILIES, fxBuiltinUniforms, planGpuEffect } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
@@ -251,42 +250,6 @@ type Shot = {
 
 const api = {
 	ids: () => FAMILY.map((s) => ({ id: s.id, label: s.label, bin: s.bin })),
-
-	allDefaults() {
-		const errors: string[] = [];
-		for (const s of FAMILY) {
-			try {
-				run(s, defaults(s), { width: 96, height: 54 });
-				run(s, defaults(s), { width: 96, height: 54, scene: 'logo', frame: 17 });
-			} catch (e) {
-				errors.push(`${s.id}: ${(e as Error).message}`);
-			}
-		}
-		return { count: FAMILY.length, errors };
-	},
-
-	/** Milliseconds of a first (compile + run) and a second (cached) run of one effect at 96 × 54. */
-	timing(id: string) {
-		const s = specOf(id);
-		// Read a pixel back: GL work (and SwiftShader's lazy shader compile) only happens when the result is used.
-		const t0 = performance.now();
-		px(run(s, defaults(s), { width: 96, height: 54 }).out, 0, 0);
-		const t1 = performance.now();
-		px(run(s, defaults(s), { width: 96, height: 54 }).out, 0, 0);
-		return { first: Math.round(t1 - t0), second: Math.round(performance.now() - t1) };
-	},
-
-	runDefaults(id: string) {
-		try {
-			const s = specOf(id);
-			// Read back: GL work (and SwiftShader's lazy shader compile) only happens when the result is used.
-			px(run(s, defaults(s), { width: 96, height: 54 }).out, 48, 27);
-			px(run(s, defaults(s), { width: 96, height: 54, scene: 'logo', frame: 17 }).out, 48, 27);
-			return null;
-		} catch (e) {
-			return (e as Error).message;
-		}
-	},
 
 	/** Pixels at layer-box points (layer px) of one effect run. */
 	pixels(id: string, over: Record<string, unknown>, opts: RunOpts, points: [number, number][]) {
