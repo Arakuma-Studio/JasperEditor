@@ -158,6 +158,17 @@ type SfxClip = AudioClip & { sfx?: ClipSfx };
 const sfxClipsOf = (seq: Sequence): SfxClip[] =>
 	Object.values(seq.clips).filter((c): c is SfxClip => c.kind === 'audio' && !!(c as SfxClip).sfx);
 
+/**
+ * The cue a clip fills: its `sfx.cueId` only when that cue's `placedClipIds` lists the clip (two-way link). A
+ * duplicated or pasted copy carries the original's `sfx.cueId` but fills nothing.
+ */
+function filledCueOf(seq: Sequence, clip: SfxClip): SoundCue | undefined {
+	const id = clip.sfx?.cueId;
+	if (!id) return undefined;
+	const cue = soundCuesOf(seq).find((c) => c.id === id);
+	return cue?.placedClipIds?.includes(clip.id) ? cue : undefined;
+}
+
 /** The cue with this id in the document (and its sequence), or a typed error. */
 function findCue(doc: ProjectDocument, cueId: string, sequenceId?: string): { seq: Sequence; cue: SoundCue } {
 	for (const seq of Object.values(doc.sequences)) {
@@ -876,7 +887,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 							});
 						const fps = FLICKS_PER_SECOND / F;
 						for (const c of sfxClipsOf(seq)) {
-							if (c.sfx!.role !== 'hero' || (cue && c.sfx!.cueId === cue.id)) continue;
+							if (c.sfx!.role !== 'hero' || (cue && filledCueOf(seq, c)?.id === cue.id)) continue;
 							const at = alignedFrameOf(c, F);
 							if (at === null) continue;
 							const dt = Math.abs(at - frame) / fps;
@@ -1159,7 +1170,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 			let cueUsed: string | null = null;
 			if (a.to === 'cue') {
 				const cues = soundCuesOf(seq);
-				const own = clip.sfx?.cueId ? cues.find((c) => c.id === clip.sfx!.cueId) : undefined;
+				const own = filledCueOf(seq, clip);
 				const here = alignedFrameOf(clip, F) ?? clip.start;
 				const pick =
 					own ??
@@ -1176,9 +1187,10 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 				cueUsed = pick.id;
 			} else if (a.to === 'playhead') target = await resolveAt(ctx, a.projectId, seq, 'playhead');
 			else target = frameOf(seq, a.to);
+			const ownCue = filledCueOf(seq, clip);
 			const others =
-				a.withLayers !== false && clip.sfx?.cueId
-					? sfxClipsOf(seq).filter((c) => c.id !== clip.id && c.sfx!.cueId === clip.sfx!.cueId)
+				a.withLayers !== false && ownCue
+					? sfxClipsOf(seq).filter((c) => c.id !== clip.id && filledCueOf(seq, c)?.id === ownCue.id)
 					: [];
 			const moving = [clip, ...others];
 			const label =
@@ -1210,7 +1222,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 				errorFlicks: number;
 				sourceInFlicks: number;
 			}[];
-			const linkedCue = clip.sfx?.cueId ? soundCuesOf(s2).find((c) => c.id === clip.sfx!.cueId) : undefined;
+			const linkedCue = filledCueOf(s2, clip);
 			return jsonResult({
 				...txBody(res, r),
 				historyLabel: label,

@@ -598,6 +598,28 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		expect((await fails('align_peak', { projectId, clipId: video.id, to: 100 })).code).toBe(
 			'E_INVALID_PARAM',
 		);
+		// a duplicated layer carries sfx.cueId but fills nothing (the cue's placedClipIds does not list it): "cue" is
+		// the cue nearest to the copy, and the original layers are not dragged along (regression: they were)
+		const dup = await ok<{ results: { clipIds?: string[]; created?: string[] }[]; created: string[] }>(
+			'apply_commands',
+			{
+				projectId,
+				label: 'Duplicate',
+				commands: [{ type: 'clip.duplicate', clipIds: [layers[0]], at: 600 }],
+			},
+		);
+		const copy = dup.created.find((id) => !layers.includes(id) && id.startsWith('clp_'))!;
+		expect((seqOf(await documentOf(projectId)).clips[copy] as SfxClip).sfx?.cueId).toBe(marker.id);
+		const alone = await ok<{ clips: { clipId: string }[]; cueId?: string }>('align_peak', {
+			projectId,
+			clipId: copy,
+			to: 'cue',
+		});
+		expect(alone.clips.map((c) => c.clipId)).toEqual([copy]);
+		expect(alone.cueId).not.toBe(marker.id);
+		s = seqOf(await documentOf(projectId));
+		for (const id of layers)
+			expect(Math.abs(playsAt(s.clips[id] as SfxClip, F) - 250 * F)).toBeLessThanOrEqual(1);
 		expect(FLICKS_PER_SECOND).toBe(705_600_000);
 	});
 });
