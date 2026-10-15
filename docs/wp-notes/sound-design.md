@@ -661,6 +661,167 @@ pinned hashes tell when that (or a recipe) changes: then bump `SYNTH_VERSION` an
 - The judge profiles are reasoned defaults checked only against the synth kit; real recordings (the starter kit) may
   need tuning, which the taxonomy can do without touching this package.
 
+### WP1.2 engine library
+
+Scope: spec 12 §2.1 (library, sources, `SoundEntry`, register), §2.8 (sound routes, `sound-index` job, capabilities),
+P1-R5 and the engine side of P1-R1. Files: `packages/config/src/index.ts` (appdir paths), `packages/api/src/sounds.ts`
+(contracts), `routes.ts` / `jobs.ts` / `events.ts` / `m2-capabilities.ts` (declarations),
+`packages/engine-client/src/client.ts` (calls), `apps/engine/src/sounds/{library,index-job,starter,synth,visual,decode,
+roots,service}.ts`, `apps/engine/src/routes/sounds.ts`, `apps/engine/scripts/build.mjs` and
+`apps/desktop/scripts/package.mjs` (the starter kit ships next to the bundle), docs (ARCHITECTURE §4.3,
+security-review AGT-3 table and §9). Tests: `apps/engine/test/sounds-unit.test.ts`, `sounds-routes.test.ts`
+(fixtures: `sound-fixtures.ts`, generated WAVs, no network), `packages/config/test/config.test.ts`,
+`packages/engine-client/test/client.test.ts`; the generic `fuzz-http.test.ts` picks the new routes up by itself.
+
+#### API (for MCP and web agents)
+
+Appdir (`appdirPaths`): `soundsDir`, `soundLibraryIndex` (`sounds/library.json`), `soundRootsFile`
+(`sounds/roots.json`), `soundPacksDir` (`sounds/packs/<id>/pack.json`), `soundSynthDir` (`sounds/synth/`),
+`soundCacheDir` (`sounds/cache/<fingerprintHex>/{analysis-v<n>,visual-v1}.json`), `projectProposalsDir(pid)`
+(`projects/<pid>/proposals/`, for P3).
+
+| Route (`ROUTES` name) | Engine-client call | Request | Response |
+|---|---|---|---|
+| `GET /api/sounds` (`soundsSearch`) | `searchSounds(req: SoundSearchRequest, signal?)` | query: `q`, `types` (csv ids or synonyms), `family`, `visualKind`, `windowSec`, `align`, `length`, `tone`, `attack`, `weight`, `texture`, `license` (`any` \| `commercial-safe`, default commercial-safe), `sources` (csv `starter,pack,folder,synth`), `rootId`, `similarTo` (sound id), `usedNearby` (csv ids, nearest first), `limit` (1…500, default 50), `offset` | `SoundSearchResponse {snapshotHash, librarySize, total, offset, results: [{sound: SoundEntry, score, parts: RankParts}], facets: {types, families, licenses, sources}: Record<string, count>, indexing}` |
+| `GET /api/sounds/status` (`soundsStatus`) | `soundLibraryStatus()` | — | `SoundLibraryStatus {snapshotHash, sounds, bySource{starter,pack,folder,synth}, packs, roots, starter{status: ok\|absent\|invalid, sounds, errors[]}, indexedAt, needsIndex, recovered, indexing: EngineJob\|null, synth: true, local}` |
+| `GET /api/sounds/:soundId` (`soundGet`) | `getSound(id)` | — | `SoundEntry` |
+| `GET /api/sounds/:soundId/audio` (`soundAudio`, binary) | `soundAudioUrl(id)` | `Range` | the file: `audio/*` content type only, `nosniff`, `CSP: sandbox`, `Accept-Ranges`, 206 for ranges, ETag |
+| `GET /api/sounds/:soundId/visual` (`soundVisual`) | `getSoundVisual(id)` | — | `SoundVisual {version, soundId, fingerprint, durationSec, coveredSec, peakSec, peaks{perSecond: 100, count, data: base64 u8}, spectrogram{bins: 64, frames, framesPerSecond, minHz: 20, maxHz, floorDb: −96, data: base64 u8 frame-major}}` |
+| `POST /api/sounds/:soundId/register` (`soundRegister`) | `registerSound(id, projectId)` | `{projectId}` | `RegisteredMedia & {library: LibraryProvenance, existingMediaId: string \| null}` |
+| `POST /api/sounds/index` (`soundIndex`, 202) | `indexSounds({full?})` | `{full?: boolean}` | `EngineJob` (kind `sound-index`, joins a queued/running one); result `SoundIndexResult {snapshotHash, sounds, files, analysed, reused, added, removed, errors[≤100]: {source, file, code, message}}` |
+| `GET /api/sounds/roots` (`soundRootsGet`) | `getSoundRoots()` | — | `{roots: SoundRoot[], local}` |
+| `PUT /api/sounds/roots` (`soundRootsPut`) | `putSoundRoots({roots})` | `{roots: [{id?, path, label?, license?, attributionTemplate?, author?, enabled?}] ≤ 32}` (the complete list; no `id` or an unknown one = new folder) | `{roots, local, job: EngineJob \| null, removedSounds}` |
+
+```ts
+SoundEntry = { id: 'snd_<16 hex of the content fingerprint>', fingerprint: 'q1:<sha256>', title, types: string[],
+  tags: string[], source: {type:'starter', packId?, file} | {type:'pack', packId, file} | {type:'folder', rootId,
+  relPath} | {type:'synth', recipe, seed}, license, licenseUrl?, author, sourceUrl?, attribution: string|null,
+  format: {durationSec, sampleRate, channels, container}, descriptors: SoundDescriptors (all of audio-fx's),
+  judge: {ok, score, reasons[], type} | null, indexedAt, analysisVersion }      // satisfies project RankableSound
+SoundRoot = { id: 'root_<12 hex>', path, label, license: 'LicenseRef-UserProvided' | 'LicenseRef-UserRoyaltyFree' |
+  'CC0-1.0' | 'CC-BY-3.0' | 'CC-BY-4.0' | 'CC-BY-SA-3.0' | 'CC-BY-SA-4.0', attributionTemplate?, author?, enabled, addedAt }
+```
+
+Also exported: `SOUND_ID_RE`, `SOUND_SOURCE_TYPES` (priority order), `SOUND_FILE_EXTENSIONS`, `SOUND_ANALYSIS_SECONDS`
+(30), `soundSearchParams(req)`, `SOUND_EFFECTS_BIN` (`'Sound Effects'`), `SoundManifestSchema` (+ pack/sound),
+`SoundCapabilitiesSchema`. Event `sounds.changed {snapshotHash, sounds}` (after every index write). Capabilities
+`features.sound = {library: {sounds, packs}, synth: true}`. Job kind `sound-index`.
+
+Registering, for clients: call `registerSound`, then commit `media.register` with the returned asset (minus
+`mediaKey` / `browserPlayable` / `library` / `existingMediaId`, `derivation: null`) plus `library`, into the
+`SOUND_EFFECTS_BIN` bin; when `existingMediaId` is set, reuse that media (the project's `media.register` dedupe also
+fills a missing `library`).
+
+**Starter kit manifest** (`apps/engine/sounds/starter/manifest.json`; the folder ships as `dist/sounds/starter` next
+to `engine.mjs` and in the desktop app's `sounds/`; `JASPER_SOUND_STARTER_DIR` overrides it):
+
+```json
+{ "version": 1,
+  "packs":  [{ "id": "kenney-impact", "title": "…", "url": "https://…zip", "sha256": "<64 hex of the archive>",
+               "license": "CC0-1.0", "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/", "author": "Kenney" }],
+  "sounds": [{ "file": "impact/hit_01.ogg", "title": "Heavy hit", "types": ["hit"], "tags": ["metal"],
+               "author": "Kenney", "license": "CC0-1.0", "licenseUrl": "…", "sourceUrl": "https://kenney.nl/…",
+               "packId": "kenney-impact", "attribution": "optional verbatim credit line" }] }
+```
+
+`file` is relative to the manifest (forward slashes, no `..`) and must have an audio extension; `types` may be empty
+(then inferred from the file name with `inferTypesFromName`); `packId` must name a `packs` entry. Invalid entries are
+skipped and reported (status `starter.errors`, job `errors` with code `MANIFEST_INVALID`); an absent manifest is an
+empty kit (`status: 'absent'`), an unreadable one an empty kit with the reason (`'invalid'`). A changed manifest (its
+sha256) makes `needsIndex` true. An installed pack is `<appdir>/sounds/packs/<id>/pack.json` in the same format with
+exactly one `packs` entry whose id is the folder name (installer: P6). This package commits **no** audio files and
+no manifest.
+
+#### Decisions
+
+- **Ids are content-addressed** (`snd_` + 16 hex of the media fingerprint, so a registered sound and its media share
+  the fingerprint): the same bytes found in two sources are one sound, listed under the source of highest priority
+  (starter > pack > folder > synth, then scan order). Editing a folder file makes a new sound.
+- **Index** `library.json` = `{format: 'jasper-sound-library', version: 1, snapshotHash, indexedAt, starterHash, roots,
+  packs (installed only), sounds{id→SoundEntry}, files{locationKey→{size, mtimeMs, fingerprint}}}`, written with the
+  engine's `atomicWriteJson` (temp file, fsync, rename, fsync dir). `snapshotHash` = 16 hex of sha256 over each sound's
+  id, fingerprint, licence, attribution, types, analysis version and title in id order (what provenance depends on;
+  not `indexedAt`). Damaged (unparseable, wrong format/version, not objects): moved to `library.json.corrupt-<time>`,
+  empty, `recovered: true`, `needsIndex: true`; invalid entries are dropped and also ask for a rebuild. A rebuild
+  re-reads cached analyses, so recovery is cheap.
+- **Every scan rebuilds the whole index** from the sources (starter, installed packs, enabled folders, synth); cost
+  is kept low by the stat shortcut (same size and mtime → fingerprint reused without reading) and the per-fingerprint
+  analysis cache. Nothing is committed until the scan completes; a cancelled scan leaves the old index, and the
+  analyses it finished are reused next time (tested). If the folder list changes during a scan, the scan repeats (≤ 3
+  times). One index job at a time (`dedupeKey: 'sound-index'`).
+- **Analysis**: ffprobe for the format, then ffmpeg decodes the first `SOUND_ANALYSIS_SECONDS` = 30 s to f32 at the
+  file's rate up to 48 kHz (higher rates resampled; descriptors are perceptual) with ≤ 6 channels (more folded to
+  stereo): ≤ 35 MB per file. `analyzeSound` runs on the engine thread between `setImmediate` yields; the 30 s cap bounds
+  one call (WP1.1b measured 60 s of noise at 1.5–5.2 s under load, so ≈ 1–2.5 s at worst for a 30 s file; typical
+  effects of < 3 s take tens of ms). A worker thread was not used: worker threads cannot load the TypeScript sources
+  under Node 20 without a loader (see `dejudder/worker.mjs`); recorded as a limit. For files longer than 30 s,
+  `descriptors.durationSec` is the whole file's (from ffprobe); the other descriptors describe the first 30 s.
+  `ANALYSIS_VERSION = SOUND_DESCRIPTORS_VERSION·1000 + 1` versions the cache.
+- **Judge** with `SOUND_TYPE_PROFILES[first known type]` (project copy, test-pinned equal to audio-fx's);
+  `judge: null` for untyped sounds (`rankSounds` then scores 0.5).
+- **Metadata**: starter/pack from the manifest (licence URL falls back to the pack's when the licence is the same,
+  then to the canonical CC deed); folder sounds: title from the file name (`_`/`-` → spaces), types
+  `inferTypesFromName(relPath)` (synonyms), tags = words of the folders and name (no numbers, stopwords, one-letter
+  words; ≤ 16), licence = the folder's declaration (default `LicenseRef-UserProvided`), author = the folder's `author`
+  (an addition to the spec's `SoundRoot`), credit = the folder's `attributionTemplate` (`{title}`, `{file}`,
+  `{folder}`, `{author}`, `{license}`) or, when the licence requires attribution, `"<title>" by <author> (<source>),
+  licensed under <licence> (<licence URL>)`; CC0, Jasper and user-provided sounds get `null`. Synth: `Jasper Synth
+  <type> <n>`, author `JasperEditor`, `LicenseRef-JasperEditor`, tags `jasper, synth, procedural`.
+- **Jasper Synth** is indexed by the same job: each catalogue entry is rendered once to
+  `sounds/synth/<recipe>-<seed>-v<SYNTH_VERSION>.wav` (16-bit stereo 48 kHz) and analysed through the same ffmpeg path.
+  `JASPER_SOUND_SYNTH_VARIANTS` (0…8, default 8 = 152 sounds; 0 leaves synth out) bounds it; tests use 0 or 1. A
+  render deleted from the cache is rendered again on demand (audio, visual, register) with the same bytes.
+- **Search** = `rankSounds` over the library (real recordings always before synth, then score, then id), with
+  `sources` and `rootId` as pre-filters, `family` as types (intersected with `types` when both are given; no overlap =
+  no results), `similarTo` by id. **Facets are disjunctive**: types and families are counted without the request's
+  type/family filter, licences (by `licenseClass`) without its licence filter, sources without its source filter, so
+  a chip shows how many sounds selecting it gives. Four ranking passes per request (measured: fine for the test
+  library; the 50 000-sound cap was not benchmarked).
+- **Visual data**: computed by the index job from the analysis decode and cached per fingerprint; computed again on
+  request when the cache was cleaned (≤ 2 at once; refused with `SOUND_CHANGED` if the file's fingerprint changed).
+  Peaks: max |sample| over channels per 10 ms, linear u8. Spectrogram: mono mix, Hann frames 2^k ≥ 40 ms (2048 at
+  48 kHz), hop 10 ms (longer past 3000 frames), power summed over the FFT bins of 64 log bands 20 Hz…min(20 kHz, sr/2)
+  (a band narrower than a bin takes the bin of its centre), dB re a full-scale sine, −96…0 dB → 0…255.
+- **Files** are only ever found through the index: kit/pack files by manifest path, folder files by root id +
+  relative path, then `realpath` must stay inside the kit/pack/folder and have an audio extension; served with an
+  `audio/*` type only. Folder sounds (audio, visual, register) need local mode.
+- **Register**: starter, pack and synth files are copied into managed media (`registerPath(…, {copyIntoProject:
+  true})`: the project must not depend on the app's install folder); folder files are registered in place like a path
+  import. The media registry dedupes by fingerprint; `existingMediaId` names the saved project's media with the same
+  fingerprint (not derived). A file whose fingerprint no longer matches the index is refused (`409 SOUND_CHANGED`).
+  The project must exist (`404 PROJECT_NOT_FOUND`).
+- **Folders** (D-47): local mode only (`LOCAL_MODE_ONLY` otherwise, `local: false` in the responses); absolute, no
+  NUL, resolved through links, an existing folder, not a file-system root, no duplicates, ≤ 32. Scans skip hidden
+  names and symlinks (files and folders), stop at depth 12 and 20 000 audio files per folder, and the library at
+  50 000 sounds. Removing or disabling a folder takes its sounds out of the index at once; adding, enabling or
+  relicensing starts a rescan.
+- **Agents** (security review AGT-3): `requireUserApproval` for adding, removing **and relicensing** a folder
+  (a licence declaration decides commercial safety: it is the user's statement); renaming and enabling are open.
+  The card names the paths and declared licences. The editor window is never asked.
+- **Auto-indexing**: `GET /api/sounds` and `/status` (and engine start) start an index job when the library was never
+  indexed, was recovered from damage, or the starter manifest changed; `JASPER_SOUND_AUTO_INDEX=0` turns it off
+  (default off under vitest so the engine suites do not render synth sounds in the background).
+
+#### Verified (measured, this branch)
+
+(see the commands below; shared host, 16 cores)
+
+#### Limits and notes for the next packages
+
+- Analysis runs on the engine's main thread (one file at a time, yields between files): a 30 s file can hold the
+  event loop for ≈ 1–2.5 s under heavy load (estimated from WP1.1b's measurement, not re-measured here).
+- Descriptors and visual data cover the first 30 s of longer files (beds); `durationSec` is the whole file.
+- A folder on an unplugged disk drops out of the index at the next scan (`ROOT_OFFLINE` in the job errors) and comes
+  back, without re-analysis, when it is there again.
+- Symlinked files in folders are skipped (simplest safe rule); users who keep libraries behind links should add the
+  real folder.
+- Pack installation (`sound-pack-install`, catalogue, removal) is P6; the index already reads installed packs.
+- Starter kit content and its sidecars come from the starter-kit package; with no manifest the library holds only
+  synth sounds (and folders).
+- MCP tools (`sound_library_status`, `search_sounds`, `get_sound`, `view_sounds`, `import_sounds`,
+  `add_sound_folder`, `remove_sound_folder`, `rescan_sound_library`) are the MCP package's; the calls above are what
+  they wrap. `view_sounds` can draw from `getSoundVisual` (peaks over spectrogram, `peakSec` line).
+
 ## Phase 2: cues and placement
 
 ## Phase 3: proposals and review

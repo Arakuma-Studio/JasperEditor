@@ -441,6 +441,9 @@ Every state-changing engine route and what an agent may do with it:
 | `DELETE /api/media/:key` | **Gated** for engine-managed uploads | An upload imported into an unsaved project exists nowhere else |
 | `PUT /api/settings/gaps` lowering `keepVersions` | **Gated** | Prunes older versions of every project at its next save |
 | `PUT /api/settings/gaps` otherwise | Open | Interval, render optimisation: nothing is deleted |
+| `PUT /api/sounds/roots` adding, removing or relicensing a folder (`add_sound_folder`, `remove_sound_folder`) | **Gated** | Adding reads a folder of the user's disk into a library every project and agent shares, under the licence it declares; removing takes the user's sounds out; a licence declaration decides what counts as safe for commercial use |
+| `PUT /api/sounds/roots` renaming or enabling / disabling a folder | Open | Nothing is read that was not, nothing lost: a disabled folder's sounds come back when it is enabled |
+| `POST /api/sounds/index`, `POST /api/sounds/:id/register` (`rescan_sound_library`, `import_sounds`) | Open | The index is derived data rebuilt from files; registering copies a kit, pack or synth file under an engine-chosen name, or registers a folder file in place like `/api/media/register` |
 | `PUT /api/settings/processing` (`set_processing_settings`) | **Gated**, now for every caller without the editor key | Where media is sent (was opt-in by a query parameter) |
 | `POST /api/project-manager` (`project_manager`) | Open | Copies into a new destination under free names; sources untouched |
 | `POST /api/assets/:id/relink`, `…/relink-scan` (`link_media`) | Open | Registers and compares files; the relink itself is a transaction (undoable; `force` is gated) |
@@ -644,6 +647,20 @@ them, but it was reviewed by its author, not by this review.
   `agentInputActive`); the desktop app does not offer it.
 - **`/editor-boot.js`** starts `GET /api/projects/<id>` for the id in the page URL before the bundle loads
   (same origin, same credentials); the id is URL-encoded and reaches the engine through the validated route.
+- **Sound library** (spec 12 WP1.2, `apps/engine/src/routes/sounds.ts`; `GET /api/sounds`, `/status`, `/:id`,
+  `/:id/audio`, `/:id/visual`, `/roots`; `POST /api/sounds/index`, `/:id/register`; `PUT /api/sounds/roots`):
+  sound ids are matched against `snd_` + 16 hex digits before any lookup; files are found through the index only
+  (kit and pack files by their manifest's relative path, folder files by root id and relative path), resolved
+  through links and refused unless they stay inside their kit, pack or folder and have an audio extension; bytes are
+  served with an audio content type only, `nosniff`, `CSP: sandbox` and Range. Folder paths (`PUT /api/sounds/roots`)
+  are taken in local mode only, absolute, without NUL, normalised and resolved, must be existing folders and not a
+  file-system root; scans skip hidden names and symlinks and stop at depth 12 and 20 000 files per folder; folder
+  sounds are served and registered in local mode only. FFmpeg reads library files with `-protocol_whitelist
+  file,crypto,data`. Agents adding, removing or relicensing a folder are asked (AGT-3 table). Manifests are
+  validated per entry and capped at 16 MB; a damaged index is moved aside and rebuilt. Tests:
+  `apps/engine/test/sounds-routes.test.ts`, `sounds-unit.test.ts`, and the generic route fuzzing of
+  `fuzz-http.test.ts`. *Residual:* like the Media Browser, an authenticated client of a local engine can have any
+  readable folder indexed (the editor itself, or an agent the user approved).
 - **Editing leases**: a reloaded tab takes over the lease its previous page held (`takeOver`, which any
   authenticated client could already send); nothing changed on the engine.
 

@@ -35,7 +35,9 @@ export default async function soundRoutes(app: FastifyInstance): Promise<void> {
 		features: { sound: await svc.capability() },
 	}));
 	const auto = () => {
-		void svc.autoIndex().catch((e) => app.log.warn(`sound library: auto-index failed: ${(e as Error).message}`));
+		void svc
+			.autoIndex()
+			.catch((e) => app.log.warn(`sound library: auto-index failed: ${(e as Error).message}`));
 	};
 	app.addHook('onReady', async () => auto());
 	app.addHook('onClose', async () => unregister());
@@ -83,18 +85,22 @@ export default async function soundRoutes(app: FastifyInstance): Promise<void> {
 				);
 			}
 			if (plan.removed.length) {
-				lines.push(`remove ${plan.removed.map((r) => `"${r.label}" (${r.path})`).join(', ')} from your sound library`);
+				lines.push(
+					`remove ${plan.removed.map((r) => `"${r.label}" (${r.path})`).join(', ')} from your sound library`,
+				);
 				reasons.push('its sounds leave the library (the files themselves are not touched)');
 			}
 			if (plan.relicensed.length) {
-				lines.push(
-					`declare ${plan.relicensed.map((r) => `"${r.label}" as ${r.license}`).join(', ')}`,
-				);
+				lines.push(`declare ${plan.relicensed.map((r) => `"${r.label}" as ${r.license}`).join(', ')}`);
 				reasons.push('a licence declaration decides whether its sounds count as safe for commercial use');
 			}
 			if (lines.length)
 				await requireUserApproval(app, req, {
-					label: plan.added.length ? 'Add a sound folder' : plan.removed.length ? 'Remove a sound folder' : 'Change a sound folder’s licence',
+					label: plan.added.length
+						? 'Add a sound folder'
+						: plan.removed.length
+							? 'Remove a sound folder'
+							: 'Change a sound folder’s licence',
 					summary: lines.join('; ').slice(0, 1000),
 					reasons,
 				});

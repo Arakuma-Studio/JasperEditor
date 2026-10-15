@@ -26,7 +26,17 @@ export const SOUND_SOURCE_TYPES = ['starter', 'pack', 'folder', 'synth'] as cons
 export type SoundSourceType = (typeof SOUND_SOURCE_TYPES)[number];
 
 /** Audio files the library indexes (by extension, case-insensitive). */
-export const SOUND_FILE_EXTENSIONS = ['wav', 'aif', 'aiff', 'flac', 'mp3', 'ogg', 'opus', 'm4a', 'aac'] as const;
+export const SOUND_FILE_EXTENSIONS = [
+	'wav',
+	'aif',
+	'aiff',
+	'flac',
+	'mp3',
+	'ogg',
+	'opus',
+	'm4a',
+	'aac',
+] as const;
 
 const relFile = z
 	.string()
@@ -47,7 +57,11 @@ const relFile = z
  * (relative to the kit or pack folder); the project's `LibrarySourceSchema` is loose, so it is kept in provenance.
  */
 export const SoundSourceSchema = z.discriminatedUnion('type', [
-	z.object({ type: z.literal('starter'), packId: z.string().max(LIBRARY_LIMITS.id).optional(), file: relFile }),
+	z.object({
+		type: z.literal('starter'),
+		packId: z.string().max(LIBRARY_LIMITS.id).optional(),
+		file: relFile,
+	}),
 	z.object({ type: z.literal('pack'), packId: z.string().min(1).max(LIBRARY_LIMITS.id), file: relFile }),
 	z.object({
 		type: z.literal('folder'),

@@ -58,7 +58,8 @@ function emptySnapshot(): LibrarySnapshot {
 	};
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+	!!v && typeof v === 'object' && !Array.isArray(v);
 
 export class SoundLibrary {
 	private state: LibrarySnapshot | null = null;
@@ -179,7 +180,10 @@ export class SoundLibrary {
 		this.state = snapshot;
 		this.missing = false;
 		this.recovered = false;
-		this.opts.onChange?.({ snapshotHash: snapshot.snapshotHash, sounds: Object.keys(snapshot.sounds).length });
+		this.opts.onChange?.({
+			snapshotHash: snapshot.snapshotHash,
+			sounds: Object.keys(snapshot.sounds).length,
+		});
 		return snapshot;
 	}
 

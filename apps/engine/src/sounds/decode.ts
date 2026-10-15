@@ -45,7 +45,7 @@ export async function probeSound(ff: Ffmpeg, path: string, signal?: AbortSignal)
 		);
 	}
 	const a = r.probe.streams.find((s) => s.type === 'audio');
-	if (!a || a.type !== 'audio') throw new JobError('UNSUPPORTED_MEDIA', 'The file has no audio stream');
+	if (a?.type !== 'audio') throw new JobError('UNSUPPORTED_MEDIA', 'The file has no audio stream');
 	const durationSec = r.durationSec !== null && Number.isFinite(r.durationSec) ? r.durationSec : 0;
 	return {
 		durationSec: Math.max(0, Math.round(durationSec * 10_000) / 10_000),
@@ -58,9 +58,15 @@ export async function probeSound(ff: Ffmpeg, path: string, signal?: AbortSignal)
 /** Rate and channel count the analysis decodes at. */
 export function analysisLayout(format: SoundFormat): { rate: number; channels: number } {
 	const rate =
-		format.sampleRate >= 1000 && format.sampleRate <= MAX_ANALYSIS_RATE ? format.sampleRate : MAX_ANALYSIS_RATE;
+		format.sampleRate >= 1000 && format.sampleRate <= MAX_ANALYSIS_RATE
+			? format.sampleRate
+			: MAX_ANALYSIS_RATE;
 	const channels =
-		format.channels >= 1 && format.channels <= MAX_ANALYSIS_CHANNELS ? format.channels : format.channels > 0 ? 2 : 1;
+		format.channels >= 1 && format.channels <= MAX_ANALYSIS_CHANNELS
+			? format.channels
+			: format.channels > 0
+				? 2
+				: 1;
 	return { rate, channels };
 }
 

@@ -50,7 +50,13 @@ export function computePeaks(channels: readonly Float32Array[], rate: number, pe
 	return out;
 }
 
-type Spectrogram = { data: Uint8Array; frames: number; framesPerSecond: number; minHz: number; maxHz: number };
+type Spectrogram = {
+	data: Uint8Array;
+	frames: number;
+	framesPerSecond: number;
+	minHz: number;
+	maxHz: number;
+};
 
 /**
  * Mono-mix power spectrogram: Hann frames of 2^k ≥ 40 ms, hop 10 ms (longer when the window would exceed
@@ -66,7 +72,13 @@ export function computeSpectrogram(
 ): Spectrogram {
 	const frames0 = channels.reduce((m, c) => Math.max(m, c.length), 0);
 	const maxHz = Math.max(SPECTROGRAM_MIN_HZ * 2, Math.min(SPECTROGRAM_MAX_HZ, rate / 2));
-	const empty = { data: new Uint8Array(0), frames: 0, framesPerSecond: SPECTROGRAM_FPS, minHz: SPECTROGRAM_MIN_HZ, maxHz };
+	const empty = {
+		data: new Uint8Array(0),
+		frames: 0,
+		framesPerSecond: SPECTROGRAM_FPS,
+		minHz: SPECTROGRAM_MIN_HZ,
+		maxHz,
+	};
 	if (frames0 === 0 || !(rate > 0) || channels.length === 0) return empty;
 	// Mono mix (sanitised).
 	const mono = new Float64Array(frames0);
@@ -175,7 +187,8 @@ export async function readVisual(file: string, fingerprint: string): Promise<Sou
 		return null;
 	}
 	const r = SoundVisualSchema.safeParse(raw);
-	if (!r.success || r.data.version !== SOUND_VISUAL_VERSION || r.data.fingerprint !== fingerprint) return null;
+	if (!r.success || r.data.version !== SOUND_VISUAL_VERSION || r.data.fingerprint !== fingerprint)
+		return null;
 	return r.data;
 }
 

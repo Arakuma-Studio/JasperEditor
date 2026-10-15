@@ -48,7 +48,8 @@ export const AUTO_INDEX_ENV = 'JASPER_SOUND_AUTO_INDEX';
 /** Visual data computed on request at once (each decodes up to 30 s of audio). */
 const VISUAL_CONCURRENCY = 2;
 
-const notFound = (id: string) => new HttpError(404, 'SOUND_NOT_FOUND', `Unknown sound: ${String(id).slice(0, 80)}`);
+const notFound = (id: string) =>
+	new HttpError(404, 'SOUND_NOT_FOUND', `Unknown sound: ${String(id).slice(0, 80)}`);
 
 function semaphore(n: number) {
 	let active = 0;
@@ -266,7 +267,9 @@ export class SoundService {
 			librarySize: all.length,
 			total: ranked.length,
 			offset,
-			results: ranked.slice(offset, offset + limit).map((r) => ({ sound: r.entry, score: r.score, parts: r.parts })),
+			results: ranked
+				.slice(offset, offset + limit)
+				.map((r) => ({ sound: r.entry, score: r.score, parts: r.parts })),
 			facets,
 			indexing: this.activeIndexJob() !== null,
 		};
@@ -284,7 +287,11 @@ export class SoundService {
 			try {
 				return await ensureSynthFile(this.core.config.paths.soundSynthDir, src.recipe, src.seed);
 			} catch (err) {
-				throw new HttpError(404, 'SOUND_FILE_MISSING', `The synth sound cannot be rendered: ${(err as Error).message}`);
+				throw new HttpError(
+					404,
+					'SOUND_FILE_MISSING',
+					`The synth sound cannot be rendered: ${(err as Error).message}`,
+				);
 			}
 		}
 		if (src.type === 'starter') {
@@ -296,9 +303,14 @@ export class SoundService {
 			path = join(base, ...src.file.split('/'));
 		} else {
 			if (!this.local)
-				throw new HttpError(403, 'LOCAL_MODE_ONLY', 'Sounds of user folders are only available with a local engine');
+				throw new HttpError(
+					403,
+					'LOCAL_MODE_ONLY',
+					'Sounds of user folders are only available with a local engine',
+				);
 			const root = (await this.roots.list()).find((r) => r.id === src.rootId && r.enabled);
-			if (!root) throw new HttpError(404, 'SOUND_FILE_MISSING', 'The sound’s folder is no longer in the library');
+			if (!root)
+				throw new HttpError(404, 'SOUND_FILE_MISSING', 'The sound’s folder is no longer in the library');
 			base = root.path;
 			path = join(base, ...src.relPath.split('/'));
 		}
@@ -331,7 +343,11 @@ export class SoundService {
 			if (again) return again;
 			const path = await this.fileOf(e);
 			if ((await fingerprintFile(path)).fingerprint !== e.fingerprint)
-				throw new HttpError(409, 'SOUND_CHANGED', 'The file changed since it was indexed; rescan the sound library');
+				throw new HttpError(
+					409,
+					'SOUND_CHANGED',
+					'The file changed since it was indexed; rescan the sound library',
+				);
 			let decoded: Awaited<ReturnType<typeof decodeSound>>;
 			try {
 				decoded = await decodeSound(this.core.ffmpeg, path);
@@ -366,7 +382,11 @@ export class SoundService {
 			...(e.source.type === 'folder' ? {} : { copyIntoProject: true }),
 		});
 		if (reg.fingerprint !== e.fingerprint)
-			throw new HttpError(409, 'SOUND_CHANGED', 'The file changed since it was indexed; rescan the sound library');
+			throw new HttpError(
+				409,
+				'SOUND_CHANGED',
+				'The file changed since it was indexed; rescan the sound library',
+			);
 		const snapshot = await this.library.snapshot();
 		const library = provenanceOf(e, snapshot.snapshotHash);
 		let existingMediaId: string | null = null;
@@ -416,7 +436,10 @@ export class SoundService {
 	async status(): Promise<SoundLibraryStatus> {
 		const s = await this.library.snapshot();
 		const starter = await this.starter();
-		const bySource = Object.fromEntries(SOUND_SOURCE_TYPES.map((t) => [t, 0])) as Record<SoundSourceType, number>;
+		const bySource = Object.fromEntries(SOUND_SOURCE_TYPES.map((t) => [t, 0])) as Record<
+			SoundSourceType,
+			number
+		>;
 		for (const e of Object.values(s.sounds)) bySource[e.source.type]++;
 		return {
 			snapshotHash: s.snapshotHash,
@@ -436,6 +459,9 @@ export class SoundService {
 
 	async capability(): Promise<{ library: { sounds: number; packs: number }; synth: boolean }> {
 		const s = await this.library.snapshot();
-		return { library: { sounds: Object.keys(s.sounds).length, packs: Object.keys(s.packs).length }, synth: true };
+		return {
+			library: { sounds: Object.keys(s.sounds).length, packs: Object.keys(s.packs).length },
+			synth: true,
+		};
 	}
 }

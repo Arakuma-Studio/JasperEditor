@@ -106,10 +106,14 @@ export async function loadManifest(dir: string, fileName = MANIFEST_FILE): Promi
 			return;
 		}
 		const snd = r.data;
-		if (!isSoundFileName(snd.file)) return void out.errors.push(`sounds[${i}]: "${snd.file}" is not an audio file`);
-		if (snd.packId !== undefined && !packIds.has(snd.packId))
-			return void out.errors.push(`sounds[${i}]: unknown pack "${snd.packId}"`);
-		if (files.has(snd.file)) return void out.errors.push(`sounds[${i}]: "${snd.file}" is listed twice`);
+		let problem: string | null = null;
+		if (!isSoundFileName(snd.file)) problem = `"${snd.file}" is not an audio file`;
+		else if (snd.packId !== undefined && !packIds.has(snd.packId)) problem = `unknown pack "${snd.packId}"`;
+		else if (files.has(snd.file)) problem = `"${snd.file}" is listed twice`;
+		if (problem) {
+			out.errors.push(`sounds[${i}]: ${problem}`);
+			return;
+		}
 		files.add(snd.file);
 		out.sounds.push(snd);
 	});

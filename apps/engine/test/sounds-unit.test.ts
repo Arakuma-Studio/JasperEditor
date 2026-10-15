@@ -62,7 +62,11 @@ const entry = (id: string, extra: Partial<SoundEntry> = {}): SoundEntry => ({
 describe('starter manifest', () => {
 	it('tolerates an absent kit and reports unreadable manifests without throwing', async () => {
 		const dir = tempAppdir('jasper-starter-');
-		expect(await loadManifest(join(dir, 'nothing'))).toMatchObject({ status: 'absent', sounds: [], hash: '' });
+		expect(await loadManifest(join(dir, 'nothing'))).toMatchObject({
+			status: 'absent',
+			sounds: [],
+			hash: '',
+		});
 		writeFileSync(join(dir, 'manifest.json'), '{ not json');
 		expect(await loadManifest(dir)).toMatchObject({ status: 'invalid', sounds: [] });
 		writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ version: 2, packs: [], sounds: [] }));
@@ -93,7 +97,11 @@ describe('starter manifest', () => {
 		const dir = tempAppdir('jasper-pack-');
 		writeFileSync(
 			join(dir, 'pack.json'),
-			JSON.stringify({ version: 1, packs: [PACK], sounds: [{ file: 'a.wav', title: 'A', author: 'x', license: 'CC0-1.0' }] }),
+			JSON.stringify({
+				version: 1,
+				packs: [PACK],
+				sounds: [{ file: 'a.wav', title: 'A', author: 'x', license: 'CC0-1.0' }],
+			}),
 		);
 		const ok = await loadPackManifest(dir, PACK.id);
 		expect(ok.status).toBe('ok');
@@ -113,9 +121,12 @@ describe('starter manifest', () => {
 		);
 		await fc.assert(
 			fc.asyncProperty(
-				fc.array(fc.record({ file: fc.string(), title: fc.string(), author: fc.string(), license: fc.string() }), {
-					maxLength: 8,
-				}),
+				fc.array(
+					fc.record({ file: fc.string(), title: fc.string(), author: fc.string(), license: fc.string() }),
+					{
+						maxLength: 8,
+					},
+				),
 				async (sounds) => {
 					writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ version: 1, packs: [], sounds }));
 					const m = await loadManifest(dir);
@@ -218,7 +229,9 @@ describe('names, tags and credits', () => {
 				licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
 				sourceUrl: 'https://x.invalid/boom',
 			}),
-		).toBe('"Boom" by Jane (https://x.invalid/boom), licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/)');
+		).toBe(
+			'"Boom" by Jane (https://x.invalid/boom), licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/)',
+		);
 		expect(
 			attributionFor({
 				title: 'Boom',
@@ -326,15 +339,30 @@ describe('library index store', () => {
 describe('request schemas (hostile input)', () => {
 	it('search queries parse or fail cleanly, and round-trip from typed requests', () => {
 		fc.assert(
-			fc.property(fc.dictionary(fc.constantFrom(...Object.keys(SoundSearchQuerySchema.shape), 'x'), fc.string()), (q) => {
-				expect(() => SoundSearchQuerySchema.safeParse(q)).not.toThrow();
-			}),
+			fc.property(
+				fc.dictionary(fc.constantFrom(...Object.keys(SoundSearchQuerySchema.shape), 'x'), fc.string()),
+				(q) => {
+					expect(() => SoundSearchQuerySchema.safeParse(q)).not.toThrow();
+				},
+			),
 			{ numRuns: 500, seed: 0x5eed },
 		);
 		const parsed = SoundSearchQuerySchema.parse(
-			soundSearchParams({ q: 'door slam', types: ['hit', 'thump'], sources: ['starter'], limit: 5, windowSec: 1.5 }),
+			soundSearchParams({
+				q: 'door slam',
+				types: ['hit', 'thump'],
+				sources: ['starter'],
+				limit: 5,
+				windowSec: 1.5,
+			}),
 		);
-		expect(parsed).toEqual({ q: 'door slam', types: ['hit', 'thump'], sources: ['starter'], limit: 5, windowSec: 1.5 });
+		expect(parsed).toEqual({
+			q: 'door slam',
+			types: ['hit', 'thump'],
+			sources: ['starter'],
+			limit: 5,
+			windowSec: 1.5,
+		});
 		expect(SoundSearchQuerySchema.safeParse({ limit: '0' }).success).toBe(false);
 		expect(SoundSearchQuerySchema.safeParse({ limit: '501' }).success).toBe(false);
 		expect(SoundSearchQuerySchema.safeParse({ sources: 'starter,web' }).success).toBe(false);
@@ -350,8 +378,8 @@ describe('request schemas (hostile input)', () => {
 		);
 		const many = { roots: Array.from({ length: 33 }, () => ({ path: '/x' })) };
 		expect(SoundRootsPutRequestSchema.safeParse(many).success).toBe(false);
-		expect(SoundRootsPutRequestSchema.safeParse({ roots: [{ path: '/x', license: 'CC-BY-NC-4.0' }] }).success).toBe(
-			false,
-		);
+		expect(
+			SoundRootsPutRequestSchema.safeParse({ roots: [{ path: '/x', license: 'CC-BY-NC-4.0' }] }).success,
+		).toBe(false);
 	});
 });

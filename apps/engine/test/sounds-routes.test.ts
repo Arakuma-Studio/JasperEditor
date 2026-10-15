@@ -1,7 +1,16 @@
 // Sound library routes end to end (spec 12 WP1.2): indexing (starter kit, folders, synth), incremental rescans,
 // search ranking, facets and filters, audio and visual routes, registering into a project, folder validation and the
 // approval gate for agents, cancellation and recovery of a damaged index. Generated WAVs only, no network.
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	utimesSync,
+	writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import {
 	AGENT_NAME_HEADER,
@@ -32,7 +41,11 @@ import { closeApps, H, JSON_H, makeApp, tempAppdir, until } from './helpers.ts';
 import { makeStarter, writeWav } from './sound-fixtures.ts';
 
 type App = Awaited<ReturnType<typeof makeApp>>;
-const ENV_KEYS = ['JASPER_SOUND_STARTER_DIR', 'JASPER_SOUND_SYNTH_VARIANTS', 'JASPER_SOUND_AUTO_INDEX'] as const;
+const ENV_KEYS = [
+	'JASPER_SOUND_STARTER_DIR',
+	'JASPER_SOUND_SYNTH_VARIANTS',
+	'JASPER_SOUND_AUTO_INDEX',
+] as const;
 const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 
 let starter = '';
@@ -53,7 +66,11 @@ afterAll(closeApps);
 
 async function get<T = unknown>(app: FastifyInstance, url: string, headers: Record<string, string> = H) {
 	const r = await app.inject({ method: 'GET', url, headers });
-	return { status: r.statusCode, body: (r.headers['content-type']?.includes('json') ? r.json() : r.body) as T, r };
+	return {
+		status: r.statusCode,
+		body: (r.headers['content-type']?.includes('json') ? r.json() : r.body) as T,
+		r,
+	};
 }
 
 async function waitJob(app: FastifyInstance, id: string): Promise<EngineJob> {
@@ -99,7 +116,11 @@ describe('indexing the starter kit', { timeout: 300_000 }, () => {
 		});
 		const result = await index(app);
 		expect(result).toMatchObject({ sounds: 4, files: 4, analysed: 4, reused: 0, added: 4, removed: 0 });
-		expect(result.errors.map((e) => e.code)).toEqual(['MANIFEST_INVALID', 'MANIFEST_INVALID', 'MANIFEST_INVALID']);
+		expect(result.errors.map((e) => e.code)).toEqual([
+			'MANIFEST_INVALID',
+			'MANIFEST_INVALID',
+			'MANIFEST_INVALID',
+		]);
 		const status = SoundLibraryStatusSchema.parse((await get(app, '/api/sounds/status')).body);
 		expect(status).toMatchObject({ sounds: 4, needsIndex: false, bySource: { starter: 4 }, indexing: null });
 		expect(status.snapshotHash).toBe(result.snapshotHash);
@@ -127,7 +148,11 @@ describe('indexing the starter kit', { timeout: 300_000 }, () => {
 			'"Fast whoosh" by Jane Doe (https://example.invalid/sounds), licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/)',
 		);
 		const lib = JSON.parse(readFileSync(appdirPaths(app.appdir).soundLibraryIndex, 'utf8'));
-		expect(lib).toMatchObject({ format: 'jasper-sound-library', version: 1, snapshotHash: result.snapshotHash });
+		expect(lib).toMatchObject({
+			format: 'jasper-sound-library',
+			version: 1,
+			snapshotHash: result.snapshotHash,
+		});
 		expect(Object.keys(lib.sounds)).toHaveLength(4);
 
 		const caps = await get<{ features: { sound: unknown } }>(app, '/api/capabilities');
@@ -175,14 +200,24 @@ describe('indexing the starter kit', { timeout: 300_000 }, () => {
 		for (let i = 0; i < 12; i++) writeWav(join(starter, 'bulk', `hit_${i}.wav`), 'hit', 0.3, 100 + i);
 		const manifest = JSON.parse(readFileSync(join(starter, 'manifest.json'), 'utf8'));
 		for (let i = 0; i < 12; i++)
-			manifest.sounds.push({ file: `bulk/hit_${i}.wav`, title: `Bulk ${i}`, author: 'x', license: 'CC0-1.0' });
+			manifest.sounds.push({
+				file: `bulk/hit_${i}.wav`,
+				title: `Bulk ${i}`,
+				author: 'x',
+				license: 'CC0-1.0',
+			});
 		writeFileSync(join(starter, 'manifest.json'), JSON.stringify(manifest));
 		const app = await makeApp();
 		const r = await app.inject({ method: 'POST', url: '/api/sounds/index', headers: JSON_H, payload: {} });
 		const job = r.json() as EngineJob;
 		const q = coreServices(app).queue;
 		await until(() => q.get(job.id)?.state === 'running' && (q.get(job.id)?.progress ?? 0) > 0, 60_000, 10);
-		const c = await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/cancel`, headers: JSON_H, payload: {} });
+		const c = await app.inject({
+			method: 'POST',
+			url: `/api/jobs/${job.id}/cancel`,
+			headers: JSON_H,
+			payload: {},
+		});
 		expect(c.statusCode).toBe(200);
 		expect((await waitJob(app, job.id)).state).toBe('cancelled');
 		expect(existsSync(appdirPaths(app.appdir).soundLibraryIndex)).toBe(false);
@@ -214,7 +249,11 @@ describe('user folders', { timeout: 300_000 }, () => {
 		]);
 		expect(r.statusCode, r.body).toBe(200);
 		const body = r.json() as { roots: SoundRoot[]; job: EngineJob | null };
-		expect(body.roots[0]).toMatchObject({ label: 'My SFX', license: 'LicenseRef-UserProvided', enabled: true });
+		expect(body.roots[0]).toMatchObject({
+			label: 'My SFX',
+			license: 'LicenseRef-UserProvided',
+			enabled: true,
+		});
 		expect(body.job).not.toBeNull();
 		expect((await waitJob(app, body.job!.id)).state).toBe('succeeded');
 
@@ -295,7 +334,12 @@ describe('user folders', { timeout: 300_000 }, () => {
 describe('agents and folders (approval gate, security review AGT-3)', { timeout: 300_000 }, () => {
 	const TOKEN = 'tok_sounds_0123456789abcdef';
 	const KEY = 'key_sounds_0123456789abcdef';
-	const AGENT = { ...H, authorization: `Bearer ${TOKEN}`, [AGENT_NAME_HEADER]: 'sound-agent', 'content-type': 'application/json' };
+	const AGENT = {
+		...H,
+		authorization: `Bearer ${TOKEN}`,
+		[AGENT_NAME_HEADER]: 'sound-agent',
+		'content-type': 'application/json',
+	};
 	const EDITOR = {
 		...H,
 		cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}`,
@@ -306,7 +350,12 @@ describe('agents and folders (approval gate, security review AGT-3)', { timeout:
 		const doc = createEmptyProject({ ids: createCounterIdSource(5), name: 'Sounds', preset: 'hd-1080p-30' });
 		const file = appdirPaths(app.appdir).projectFile(doc.projectId);
 		mkdirSync(join(file, '..'), { recursive: true });
-		writeFileSync(file, JSON.stringify(makeEnvelope(doc, { revision: 1, savedAt: '2026-10-15T00:00:00.000Z', platform: 'test' })));
+		writeFileSync(
+			file,
+			JSON.stringify(
+				makeEnvelope(doc, { revision: 1, savedAt: '2026-10-15T00:00:00.000Z', platform: 'test' }),
+			),
+		);
 		const ws: WebSocket = await app.injectWS('/agent', { headers: EDITOR });
 		const cards: { approvalId: string; answerKey: string; summary: string; label: string }[] = [];
 		let wake: (() => void) | null = null;
@@ -317,7 +366,9 @@ describe('agents and folders (approval gate, security review AGT-3)', { timeout:
 				wake?.();
 			}
 		});
-		ws.send(JSON.stringify({ type: 'hello', projectId: doc.projectId, sessionId: 'ses_1', leaseId: 'lease_1' }));
+		ws.send(
+			JSON.stringify({ type: 'hello', projectId: doc.projectId, sessionId: 'ses_1', leaseId: 'lease_1' }),
+		);
 		await new Promise((r) => setTimeout(r, 100));
 		const card = async (n: number) => {
 			while (cards.length < n) await new Promise<void>((r) => (wake = r));
@@ -468,7 +519,11 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 		await index(app);
 		const heavy = await byTitle(app, 'Heavy hit');
 		const v = SoundVisualSchema.parse((await get(app, `/api/sounds/${heavy.id}/visual`)).body);
-		expect(v).toMatchObject({ soundId: heavy.id, fingerprint: heavy.fingerprint, peakSec: heavy.descriptors.peakSec });
+		expect(v).toMatchObject({
+			soundId: heavy.id,
+			fingerprint: heavy.fingerprint,
+			peakSec: heavy.descriptors.peakSec,
+		});
 		expect(v.peaks.count).toBe(60);
 		expect(v.spectrogram).toMatchObject({ bins: 64, frames: 60, minHz: 20, maxHz: 20000, floorDb: -96 });
 		// The loudest peak is where the hit is.
@@ -492,7 +547,12 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 		const whoosh = await byTitle(app, 'Fast whoosh');
 		const status = SoundLibraryStatusSchema.parse((await get(app, '/api/sounds/status')).body);
 		const reg = async (id: string, pid = projectId) =>
-			app.inject({ method: 'POST', url: `/api/sounds/${id}/register`, headers: JSON_H, payload: { projectId: pid } });
+			app.inject({
+				method: 'POST',
+				url: `/api/sounds/${id}/register`,
+				headers: JSON_H,
+				payload: { projectId: pid },
+			});
 		const r = await reg(whoosh.id);
 		expect(r.statusCode, r.body).toBe(200);
 		const out = RegisterSoundResponseSchema.parse(r.json());
@@ -535,7 +595,9 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 			derivation: null,
 		};
 		writeFileSync(projectFile, JSON.stringify(env));
-		expect(RegisterSoundResponseSchema.parse((await reg(whoosh.id)).json()).existingMediaId).toBe('med_FAKE0000000001');
+		expect(RegisterSoundResponseSchema.parse((await reg(whoosh.id)).json()).existingMediaId).toBe(
+			'med_FAKE0000000001',
+		);
 
 		expect((await reg(`snd_${'0'.repeat(16)}`)).statusCode).toBe(404);
 		expect((await reg(whoosh.id, 'prj_0000000000000099')).statusCode).toBe(404);
@@ -558,7 +620,11 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 		const synth = (await search(app, 'sources=synth&limit=100')).results.map((r) => r.sound);
 		expect(synth).toHaveLength(19);
 		for (const s of synth) {
-			expect(s).toMatchObject({ license: 'LicenseRef-JasperEditor', author: 'JasperEditor', attribution: null });
+			expect(s).toMatchObject({
+				license: 'LicenseRef-JasperEditor',
+				author: 'JasperEditor',
+				attribution: null,
+			});
 			expect(s.source.type).toBe('synth');
 			expect(s.judge?.ok, `${s.title}: ${s.judge?.reasons.join(', ')}`).toBe(true);
 		}
@@ -629,8 +695,25 @@ describe('hostile requests never crash the routes', { timeout: 300_000 }, () => 
 		await fc.assert(
 			fc.asyncProperty(
 				fc.dictionary(
-					fc.constantFrom('q', 'types', 'family', 'visualKind', 'windowSec', 'license', 'sources', 'limit', 'offset', 'similarTo', 'usedNearby', 'rootId', 'zzz'),
-					fc.oneof(fc.string(), fc.constantFrom('hit', 'hit,whoosh', '0', '500', 'snd_0123456789abcdef', '1e9', '-1', '%00')),
+					fc.constantFrom(
+						'q',
+						'types',
+						'family',
+						'visualKind',
+						'windowSec',
+						'license',
+						'sources',
+						'limit',
+						'offset',
+						'similarTo',
+						'usedNearby',
+						'rootId',
+						'zzz',
+					),
+					fc.oneof(
+						fc.string(),
+						fc.constantFrom('hit', 'hit,whoosh', '0', '500', 'snd_0123456789abcdef', '1e9', '-1', '%00'),
+					),
 				),
 				async (q) => {
 					const qs = Object.entries(q)
@@ -644,7 +727,12 @@ describe('hostile requests never crash the routes', { timeout: 300_000 }, () => 
 		);
 		await fc.assert(
 			fc.asyncProperty(fc.jsonValue(), async (body) => {
-				const r = await app.inject({ method: 'PUT', url: '/api/sounds/roots', headers: JSON_H, payload: JSON.stringify(body) });
+				const r = await app.inject({
+					method: 'PUT',
+					url: '/api/sounds/roots',
+					headers: JSON_H,
+					payload: JSON.stringify(body),
+				});
 				expect(r.statusCode, r.body.slice(0, 200)).toBeLessThan(500);
 			}),
 			{ numRuns: 80, seed: 0x5eed },
@@ -652,7 +740,14 @@ describe('hostile requests never crash the routes', { timeout: 300_000 }, () => 
 		const folder = tempAppdir('jasper-fuzz-folder-');
 		await fc.assert(
 			fc.asyncProperty(
-				fc.array(fc.record({ path: fc.oneof(fc.string(), fc.constant(folder)), label: fc.string(), enabled: fc.boolean() }), { maxLength: 3 }),
+				fc.array(
+					fc.record({
+						path: fc.oneof(fc.string(), fc.constant(folder)),
+						label: fc.string(),
+						enabled: fc.boolean(),
+					}),
+					{ maxLength: 3 },
+				),
 				async (roots) => {
 					const r = await putRoots(app, roots);
 					expect(r.statusCode, r.body.slice(0, 200)).toBeLessThan(500);

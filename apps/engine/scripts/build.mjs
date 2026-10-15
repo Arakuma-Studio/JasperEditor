@@ -42,6 +42,12 @@ await build({
 	});
 	// M2 (S11): the anime.js licence text for About ▸ Licenses (the package itself ships in the Remotion bundle).
 	cpSync(join(root, 'src', 'anime', 'third-party'), join(root, 'dist', 'third-party'), { recursive: true });
+	// Sound design (spec 12 §2.1): the bundled starter kit (`manifest.json`, the audio files and their
+	// `.attribution` sidecars) next to engine.mjs, where `src/sounds/starter.ts` looks for `sounds/starter`.
+	const { existsSync, rmSync } = await import('node:fs');
+	rmSync(join(root, 'dist', 'sounds'), { recursive: true, force: true });
+	if (existsSync(join(root, 'sounds')))
+		cpSync(join(root, 'sounds'), join(root, 'dist', 'sounds'), { recursive: true });
 }
 
 // wp speech: jasper-speech.mjs (the speech-to-text worker, run as a child process by `transcription` jobs) next to

@@ -12,8 +12,8 @@ import { join } from 'node:path';
 import {
 	type SoundEntry,
 	SoundEntrySchema,
-	type SoundIndexResult,
 	SoundIndexRequestSchema,
+	type SoundIndexResult,
 	type SoundManifestPack,
 	type SoundRoot,
 	type SoundSource,
@@ -53,7 +53,20 @@ export const MAX_LIBRARY_SOUNDS = 50_000;
 const MAX_REPORTED_ERRORS = 100;
 const MAX_TAGS = 16;
 /** Words that say nothing about a sound (left out of folder tags). */
-const TAG_STOPWORDS = new Set(['sound', 'sounds', 'sfx', 'fx', 'audio', 'the', 'and', 'of', 'a', 'an', 'wav', 'mp3']);
+const TAG_STOPWORDS = new Set([
+	'sound',
+	'sounds',
+	'sfx',
+	'fx',
+	'audio',
+	'the',
+	'and',
+	'of',
+	'a',
+	'an',
+	'wav',
+	'mp3',
+]);
 
 export const SOURCE_PRIORITY: Record<SoundSourceType, number> = { starter: 0, pack: 1, folder: 2, synth: 3 };
 
@@ -77,7 +90,12 @@ export type IndexItem = {
 	meta: ItemMeta;
 };
 
-type CachedAnalysis = { fingerprint: string; version: number; format: SoundFormat; descriptors: SoundDescriptors };
+type CachedAnalysis = {
+	fingerprint: string;
+	version: number;
+	format: SoundFormat;
+	descriptors: SoundDescriptors;
+};
 
 export function soundIdOf(fingerprint: string): string {
 	return `snd_${fingerprintHex(fingerprint).slice(0, 16)}`;
@@ -110,7 +128,9 @@ export function attributionFor(o: {
 			author: o.author,
 			license: o.license,
 		};
-		return o.template.replace(/\{(title|file|folder|author|license)\}/g, (_, k: string) => vars[k] ?? '').slice(0, 4000);
+		return o.template
+			.replace(/\{(title|file|folder|author|license)\}/g, (_, k: string) => vars[k] ?? '')
+			.slice(0, 4000);
 	}
 	if (!requiresAttribution(o.license)) return null;
 	const by = o.author.trim() ? ` by ${o.author.trim()}` : '';
@@ -120,7 +140,9 @@ export function attributionFor(o: {
 }
 
 const storedTypes = (types: readonly string[]) =>
-	[...new Set(types.map((t) => t.toLowerCase()))].filter((t) => StoredSoundTypeSchema.safeParse(t).success).slice(0, 32);
+	[...new Set(types.map((t) => t.toLowerCase()))]
+		.filter((t) => StoredSoundTypeSchema.safeParse(t).success)
+		.slice(0, 32);
 
 /** A readable title from a file name: extension dropped, `_` and `-` as spaces. */
 export function titleFromFile(name: string): string {
@@ -145,7 +167,11 @@ function manifestItems(m: LoadedManifest, kind: 'starter' | 'pack'): IndexItem[]
 	return m.sounds.map((s) => {
 		const pack = s.packId ? packs.get(s.packId) : undefined;
 		const types = storedTypes(s.types.length ? s.types : inferTypesFromName(s.file));
-		const licenseUrl = s.licenseUrl ?? (pack?.license === s.license ? pack?.licenseUrl : undefined) ?? licenseUrlOf(s.license) ?? undefined;
+		const licenseUrl =
+			s.licenseUrl ??
+			(pack?.license === s.license ? pack?.licenseUrl : undefined) ??
+			licenseUrlOf(s.license) ??
+			undefined;
 		const source: SoundSource =
 			kind === 'starter'
 				? { type: 'starter', file: s.file, ...(s.packId ? { packId: s.packId } : {}) }
@@ -202,7 +228,8 @@ export async function walkRoot(
 			if (name.startsWith('.') || name.includes('\\') || name.includes('/')) continue;
 			const relPath = rel ? `${rel}/${name}` : name;
 			if (d.isDirectory()) {
-				if (depth + 1 <= MAX_SCAN_DEPTH) subdirs.push({ dir: join(dir, name), rel: relPath, depth: depth + 1 });
+				if (depth + 1 <= MAX_SCAN_DEPTH)
+					subdirs.push({ dir: join(dir, name), rel: relPath, depth: depth + 1 });
 				continue;
 			}
 			if (!d.isFile() || !isSoundFileName(name)) continue;
@@ -240,7 +267,8 @@ export async function walkRoot(
 		// Depth-first in name order (reverse push so the first name is scanned first).
 		for (let i = subdirs.length - 1; i >= 0; i--) stack.push(subdirs[i]!);
 	}
-	if (truncated) onError('.', `more than ${MAX_FILES_PER_ROOT} audio files: the rest of "${root.label}" is not indexed`);
+	if (truncated)
+		onError('.', `more than ${MAX_FILES_PER_ROOT} audio files: the rest of "${root.label}" is not indexed`);
 	return items;
 }
 
@@ -281,7 +309,8 @@ async function readCachedAnalysis(file: string, fingerprint: string): Promise<Ca
 	}
 	if (!raw || typeof raw !== 'object') return null;
 	const r = raw as CachedAnalysis;
-	if (r.fingerprint !== fingerprint || r.version !== ANALYSIS_VERSION || !r.format || !r.descriptors) return null;
+	if (r.fingerprint !== fingerprint || r.version !== ANALYSIS_VERSION || !r.format || !r.descriptors)
+		return null;
 	const check = SoundEntrySchema.shape.descriptors.safeParse(r.descriptors);
 	const fmt = SoundEntrySchema.shape.format.safeParse(r.format);
 	return check.success && fmt.success ? { ...r, descriptors: r.descriptors, format: fmt.data } : null;
@@ -337,7 +366,8 @@ export class SoundIndexer {
 		const prev = await d.library.snapshot();
 		const errors: SoundIndexResult['errors'] = [];
 		const err = (source: SoundSourceType, file: string, code: string, message: string) => {
-			if (errors.length < MAX_REPORTED_ERRORS) errors.push({ source, file, code, message: message.slice(0, 500) });
+			if (errors.length < MAX_REPORTED_ERRORS)
+				errors.push({ source, file, code, message: message.slice(0, 500) });
 		};
 		ctx.progress(null, { stage: 'Listing sounds' });
 		const starter = await loadManifest(d.starterDir());
@@ -352,7 +382,9 @@ export class SoundIndexer {
 				err('folder', r.label, 'ROOT_OFFLINE', `the folder ${r.path} is not available`);
 				continue;
 			}
-			items.push(...(await walkRoot(r, ctx.signal, (f, m) => err('folder', `${r.label}/${f}`, 'SCAN_FAILED', m))));
+			items.push(
+				...(await walkRoot(r, ctx.signal, (f, m) => err('folder', `${r.label}/${f}`, 'SCAN_FAILED', m))),
+			);
 		}
 		items.push(...d.synthItems().map(synthEntryItem));
 
@@ -365,7 +397,12 @@ export class SoundIndexer {
 		for (let i = 0; i < total; i++) {
 			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
 			if (Object.keys(sounds).length >= MAX_LIBRARY_SOUNDS) {
-				err(items[i]!.source.type, '.', 'LIBRARY_FULL', `the library holds at most ${MAX_LIBRARY_SOUNDS} sounds`);
+				err(
+					items[i]!.source.type,
+					'.',
+					'LIBRARY_FULL',
+					`the library holds at most ${MAX_LIBRARY_SOUNDS} sounds`,
+				);
 				break;
 			}
 			const item = items[i]!;

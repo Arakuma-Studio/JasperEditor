@@ -117,7 +117,9 @@ export class SoundRootStore {
 			const prev = byId.get(r.id);
 			return !prev || prev.path !== r.path;
 		});
-		const removed = current.filter((r) => !nextIds.has(r.id) || next.find((n) => n.id === r.id)?.path !== r.path);
+		const removed = current.filter(
+			(r) => !nextIds.has(r.id) || next.find((n) => n.id === r.id)?.path !== r.path,
+		);
 		const relicensed = next.filter((r) => {
 			const prev = byId.get(r.id);
 			return !!prev && prev.path === r.path && prev.license !== r.license;
