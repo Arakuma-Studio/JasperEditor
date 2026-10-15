@@ -4,7 +4,8 @@
 // peak snapping to the playhead (ghost with peak tick) → File ▸ Export ▸ Sound Credits…. Screenshots of the panel
 // (normal, high contrast) and of the drag ghost go to test-results/e2e-sound-library.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { appliedLabels, createProject, enableAgentBridge, exportViaUi, query, ROOT } from './support.ts';
@@ -302,4 +303,77 @@ test('inserted library sounds play their aligned point exactly on the frame in a
 	test.info().annotations.push({ type: 'export alignment', description: JSON.stringify(report) });
 	console.log('export alignment', JSON.stringify(report));
 	expect(readFileSync(file).length).toBeGreaterThan(1000);
+});
+
+test('Preferences ▸ Sound Library adds a user folder with its licence; its sound is found and inserted exactly', async () => {
+	test.setTimeout(600_000);
+	// a folder with one hit that starts at once (a loud head: registered with lead silence)
+	const dir = mkdtempSync(join(tmpdir(), 'jasper-e2e-sfx-'));
+	const sr = 48_000;
+	const n = Math.round(0.5 * sr);
+	const pcm = Buffer.alloc(44 + n * 2);
+	pcm.write('RIFF', 0);
+	pcm.writeUInt32LE(36 + n * 2, 4);
+	pcm.write('WAVEfmt ', 8);
+	pcm.writeUInt32LE(16, 16);
+	pcm.writeUInt16LE(1, 20);
+	pcm.writeUInt16LE(1, 22);
+	pcm.writeUInt32LE(sr, 24);
+	pcm.writeUInt32LE(sr * 2, 28);
+	pcm.writeUInt16LE(2, 32);
+	pcm.writeUInt16LE(16, 34);
+	pcm.write('data', 36);
+	pcm.writeUInt32LE(n * 2, 40);
+	for (let i = 0; i < n; i++) {
+		const t = i / sr;
+		const v = Math.exp(-t * 14) * Math.sin(2 * Math.PI * 220 * t) * 0.8;
+		pcm.writeInt16LE(Math.round(v * 32000), 44 + i * 2);
+	}
+	mkdirSync(join(dir, 'Impacts'), { recursive: true });
+	writeFileSync(join(dir, 'Impacts', 'door slam e2e.wav'), pcm);
+
+	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'Edit', exact: true }).click();
+	await page.getByRole('menuitem', { name: /^Preferences$/ }).hover();
+	await page.getByRole('menuitem', { name: /^Preferences…/ }).click();
+	const prefs = page.getByTestId('preferences-dialog');
+	await expect(prefs).toBeVisible();
+	await prefs.getByTestId('prefs-page-sound-library').click();
+	await expect(prefs.getByTestId('prefs-sound-library')).toBeVisible();
+	await prefs.getByTestId('sound-prefs-new-path').fill(dir);
+	await prefs.getByTestId('sound-prefs-add-folder').click();
+	await expect(prefs.getByRole('list', { name: 'Sound folders' }).getByRole('listitem')).toHaveCount(1, {
+		timeout: 30_000,
+	});
+	await prefs.screenshot({ path: join(outDir, 'preferences-folder.png') });
+	await page.keyboard.press('Escape');
+	await expect(prefs).toBeHidden();
+
+	// not declared → "user-provided": hidden by Commercial-safe, found with it off (the export left the Jobs tab in front)
+	await page.locator('.dv-tab', { hasText: 'Sound Library' }).first().click();
+	const panel = page.locator('[data-panel-kind="soundLibrary"][data-instance-id]');
+	const list = panel.getByRole('listbox', { name: 'Sounds' });
+	await panel.getByTestId('sound-search').fill('door slam e2e');
+	await panel.getByRole('button', { name: /Commercial-safe/ }).click();
+	const option = list.getByRole('option', { name: /^door slam e2e/i }).first();
+	await expect(option).toBeVisible({ timeout: 180_000 });
+	await expect(option).toHaveAccessibleName(/Hit/);
+	await panel.screenshot({ path: join(outDir, 'panel-user-folder.png') });
+	await query(page, 'playhead.set', { frame: 20 });
+	await expect.poll(async () => (await query<{ frame: number }>(page, 'playhead.get', {})).frame).toBe(20);
+	const before = Object.keys((await sequence(page)).clips).length;
+	await option.click();
+	await page.keyboard.press('Enter');
+	await expect
+		.poll(async () => Object.keys((await sequence(page)).clips).length, { timeout: 60_000 })
+		.toBe(before + 1);
+	const seq = await sequence(page);
+	const all = await media(page);
+	const clip = Object.values(seq.clips).find((c) => all[c.mediaId]?.library?.source?.type === 'folder')!;
+	const m = all[clip.mediaId]!;
+	expect(m.library!.leadSilenceSec).toBe(0.05);
+	const F = (FLICKS * seq.settings.frameRate.den) / seq.settings.frameRate.num;
+	expect(Math.abs(clip.start * F + alignedPointSec(m) * FLICKS - clip.sourceIn - 20 * F)).toBeLessThanOrEqual(
+		2,
+	);
+	await panel.getByRole('button', { name: /Commercial-safe/ }).click();
 });
