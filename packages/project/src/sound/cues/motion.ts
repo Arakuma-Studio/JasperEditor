@@ -383,7 +383,7 @@ function clipMotion(
 				continue;
 			}
 		}
-		const what = describeChange(ctx, dom, before, after);
+		const what = describeChange(dom, before, after, true);
 		const long = durationSec >= 0.3;
 		const fromPan = panOfX(ctx, before.cx);
 		const toPan = panOfX(ctx, after.cx);
@@ -399,7 +399,7 @@ function clipMotion(
 				...(Math.abs(toPan - fromPan) >= 10 ? { panSweep: { from: fromPan, to: toPan } } : {}),
 				anchor: anchor(dom, pk, 'peak-speed'),
 				confidence: 0.4 + 0.45 * Math.min(1, peakV / 1),
-				reason: `${what} (peak ${peakV.toFixed(2)} screens/s, ${secs(ctx, lenFrames)}) ${where}`,
+				reason: `${what} (peak ${peakV.toFixed(2)} screens/s over ${secs(ctx, lenFrames)}) ${where}`,
 				window,
 				size: Math.max(peakS.area, 0.02),
 			}),
@@ -452,7 +452,7 @@ function clipMotion(
 				pan: panOfX(ctx, ls.cx),
 				anchor: anchor(dom, land, 'settle'),
 				confidence: how === 'abrupt stop' ? 0.7 : 0.75,
-				reason: `${describeChange(ctx, dom, before, ls)} ${ease} ${where}`,
+				reason: `${describeChange(dom, before, after)} ${ease} ${where}`,
 				size: Math.max(ls.area, 0.02),
 			}),
 		);
@@ -460,7 +460,7 @@ function clipMotion(
 	opacityRamps(ctx, c, samples, i0, cues, (k, ev) => anchor('opacity', k, ev), where);
 }
 
-function describeChange(ctx: CueContext, dom: Dominant, a: Sample, b: Sample): string {
+function describeChange(dom: Dominant, a: Sample, b: Sample, distance = false): string {
 	switch (dom) {
 		case 'scale':
 			return `Scale ${Math.round(Math.exp(a.lnS) * 100)}→${Math.round(Math.exp(b.lnS) * 100)} %`;
@@ -469,12 +469,11 @@ function describeChange(ctx: CueContext, dom: Dominant, a: Sample, b: Sample): s
 		case 'positionZ':
 			return `Z position ${Math.round(a.z)}→${Math.round(b.z)} px`;
 		default: {
-			const d = Math.round(Math.hypot(b.x - a.x, b.y - a.y));
 			const dx = b.x - a.x;
 			const dy = b.y - a.y;
 			const dir = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'down' : 'up';
-			void ctx;
-			return `Position moves ${d} px ${dir}`;
+			const p = (s: Sample) => `(${Math.round(s.x)}, ${Math.round(s.y)})`;
+			return `Position ${p(a)}→${p(b)}${distance ? `, ${Math.round(Math.hypot(dx, dy))} px ${dir}` : ''}`;
 		}
 	}
 }

@@ -171,6 +171,6 @@ export type DeriveCuesResult = {
 export type CueCandidate = Omit<DerivedCue, 'score'> & {
 	/** On-screen size 0…1 (area fraction, 1 for full-frame events). */
 	size: number;
-	/** Exempt from rate / gap / maxCues budgets (explicit `sfx:` markers). */
+	/** Exempt from the minimum confidence, rate and gap budgets (explicit `sfx:` markers). */
 	explicit?: boolean;
 };

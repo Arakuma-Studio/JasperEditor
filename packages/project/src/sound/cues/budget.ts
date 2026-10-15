@@ -7,7 +7,7 @@
 // - Budgets per density, applied greedily from the best score: minimum confidence, heroes (≤ 1 per 3 / 2 / 1.5 s,
 //   a hero too close becomes a support cue; never two within 0.5 s), ≤ 1 / 2 / 3 cues in any 1 s window, the
 //   caller's minimum gap and maximum count. A pattern group is one unit (its span counts once in a window).
-//   Explicit `sfx:` marker cues skip the rate, gap and count budgets.
+//   Explicit `sfx:` marker cues skip the minimum confidence, rate and gap budgets (not the count).
 import type { SoundWeight } from '../taxonomy.ts';
 import type { CueCandidate, CueDensity, CueDeriveSource, DeriveCuesStats, DerivedCue } from './types.ts';
 
@@ -190,10 +190,10 @@ export function applyBudgets(
 				drop(u, 'rate');
 				continue;
 			}
-			if (count + u.members.length > o.maxCues) {
-				drop(u, 'maxCues');
-				continue;
-			}
+		}
+		if (count + u.members.length > o.maxCues) {
+			drop(u, 'maxCues');
+			continue;
 		}
 		if (u.weight === 'hero') {
 			const heroFrames = u.members.filter((m) => m.weight === 'hero').map((m) => m.frame);

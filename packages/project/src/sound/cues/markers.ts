@@ -1,7 +1,7 @@
 // Sequence markers that ask for a sound (spec 12 §2.2): a marker named `sfx: <type>[+<type>]` (any marker type; for
 // agent-note markers the comment may carry it too) becomes an explicit cue. Type names are type ids or their
-// synonyms (`resolveTypeNames`: `sfx: swoosh+sub drop` → whoosh, boom). Explicit cues are exempt from the rate, gap
-// and count budgets; the hero spacing still applies.
+// synonyms (`resolveTypeNames`: `sfx: swoosh+sub drop` → whoosh, boom). Explicit cues are exempt from the rate and gap
+// budgets; the hero spacing and `maxCues` still apply.
 import { resolveTypeNames } from '../rank.ts';
 import { SOUND_TYPES, type SoundTypeId } from '../taxonomy.ts';
 import type { CueCandidate } from './types.ts';
