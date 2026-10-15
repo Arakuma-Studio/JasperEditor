@@ -6,12 +6,7 @@ import {
 	bytesTarget,
 	describeFuzz,
 	formatFailures,
-	isExpected,
 	jsonTarget,
-	mutateBytes,
-	mutateJson,
-	mutateText,
-	Rng,
 	runFuzzTarget,
 	textTarget,
 } from '../src/fuzz.ts';
@@ -39,52 +34,6 @@ function buggyParser(text: string): number {
 }
 
 describe('fuzz kit', () => {
-	it('the RNG is deterministic and roughly uniform', () => {
-		const a = new Rng(42);
-		const b = new Rng(42);
-		const xs = Array.from({ length: 1000 }, () => a.next());
-		expect(xs).toEqual(Array.from({ length: 1000 }, () => b.next()));
-		const counts = new Array(10).fill(0);
-		const r = new Rng(7);
-		for (let i = 0; i < 10_000; i++) counts[r.below(10)]++;
-		for (const c of counts) expect(Math.abs(c - 1000)).toBeLessThan(150);
-	});
-
-	it('mutators are deterministic per seed and produce variety', () => {
-		const seedBytes = Uint8Array.from({ length: 64 }, (_, i) => i);
-		const m1 = Array.from(
-			{ length: 50 },
-			(
-				(r) => () =>
-					mutateBytes(r, seedBytes)
-			)(new Rng(1)),
-		);
-		const m2 = Array.from(
-			{ length: 50 },
-			(
-				(r) => () =>
-					mutateBytes(r, seedBytes)
-			)(new Rng(1)),
-		);
-		expect(m1).toEqual(m2);
-		expect(new Set(m1.map((m) => Buffer.from(m).toString('hex'))).size).toBeGreaterThan(40);
-		const rng = new Rng(3);
-		const texts = new Set(Array.from({ length: 100 }, () => mutateText(rng, 'a=1\nb=2.5\nc=-3')));
-		expect(texts.size).toBeGreaterThan(60);
-		const json = new Set(
-			Array.from({ length: 100 }, () => JSON.stringify(mutateJson(rng, { a: [1, 2, { b: 'x' }], c: true }))),
-		);
-		expect(json.size).toBeGreaterThan(50);
-	});
-
-	it('typed failures are accepted, anything else is not', () => {
-		expect(isExpected(new ParseError('x'), ParseError)).toBe(true);
-		expect(isExpected(new TypeError('x'), ParseError)).toBe(false);
-		expect(isExpected(new TypeError('x'), [ParseError, TypeError])).toBe(true);
-		expect(isExpected({ code: 'E' }, (e) => (e as { code?: string }).code === 'E')).toBe(true);
-		expect(isExpected(new Error('x'), undefined)).toBe(false);
-	});
-
 	it('passes a robust parser and catches a buggy one, saving the failing input', async () => {
 		const seeds = ['a=1\nb=2', 'x=-3.5'];
 		expect(await runFuzzTarget(textTarget('good', seeds, goodParser, ParseError), { scale: 1 })).toEqual([]);

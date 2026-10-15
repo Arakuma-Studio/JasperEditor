@@ -439,7 +439,7 @@ export const jsonTarget = (
 ): FuzzTarget<'json'> => ({ name, kind: 'json', seeds, run, expected, ...more });
 
 /** Whether a thrown value is an accepted typed failure. */
-export function isExpected(e: unknown, expected: Expected | undefined): boolean {
+function isExpected(e: unknown, expected: Expected | undefined): boolean {
 	if (!expected) return false;
 	if (Array.isArray(expected)) return expected.some((c) => e instanceof c);
 	if (typeof expected === 'function' && expected.prototype instanceof Error)

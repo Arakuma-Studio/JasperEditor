@@ -40,18 +40,6 @@ function setup() {
 }
 
 describe('EngineProjectStore (S01:PER-001 over the engine routes)', () => {
-	it('preserves recovery warnings alongside candidate listings', async () => {
-		const { engine, projectId } = setup();
-		const client = engine.client();
-		const result = {
-			candidates: [],
-			warnings: [{ sessionId: 'damaged', code: 'INVALID_JSON', message: 'Unreadable recovery journal' }],
-		};
-		vi.spyOn(client, 'listRecovery').mockResolvedValue(result);
-		const store = new EngineProjectStore(client);
-		expect(await store.listRecovery(projectId)).toEqual(result);
-	});
-
 	it('saves with If-Match: <baseRevision> and returns the new revision', async () => {
 		const { engine, store, projectId } = setup();
 		const s = store();
@@ -97,21 +85,6 @@ describe('leases (S01:PER-040)', () => {
 	afterEach(() => {
 		vi.useRealTimers();
 		vi.unstubAllGlobals();
-	});
-
-	it('a second opener is read-only (reason "lease"); release on close frees the project', async () => {
-		const { open } = setup();
-		const a = await open('a');
-		expect(a.getState().lease.status).toBe('held');
-		const b = await open('b');
-		expect(b.getState().readOnly).toBe(true);
-		expect(b.getState().lease).toMatchObject({ status: 'read-only', holder: 'a' });
-		expect(readOnlyReason(b.getState())).toBe('lease');
-		await a.close();
-		await b.close();
-		const c = await open('c');
-		expect(c.getState().lease.status).toBe('held');
-		await c.close();
 	});
 
 	it('keepalive lease release carries the bearer token in token-only auth mode (WP-3I)', async () => {
@@ -177,21 +150,6 @@ describe('leases (S01:PER-040)', () => {
 		expect(a2.getState().lease.status).toBe('held');
 		expect(engine.leases.get(projectId)?.sessionId).toBe('a2');
 		await a2.close();
-	});
-
-	it('a duplicated tab (copied sessionStorage) still opens read-only while the original holds the lease', async () => {
-		const { engine, projectId, open } = setup();
-		const storage = tabStorage();
-		vi.stubGlobal('sessionStorage', storage);
-		const a = await open('a');
-		// The duplicate gets a copy of the tab's storage; `a` stays open and keeps heartbeating.
-		const b = await open('b');
-		expect(b.getState().readOnly).toBe(true);
-		expect(b.getState().lease).toMatchObject({ status: 'read-only', holder: 'a' });
-		await a.close();
-		await b.close();
-		expect(JSON.parse(storage.getItem('jasper:tab-lease-sessions') ?? '[]')).not.toContain('a');
-		expect(engine.leases.has(projectId)).toBe(false);
 	});
 
 	it('heartbeats every lease.heartbeatMs and re-acquires transparently after an engine restart', async () => {

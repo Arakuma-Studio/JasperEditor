@@ -107,11 +107,11 @@ cost of one) next to the invariant counters.
 
 ## 5. Verified behaviour (tests)
 
-- `packages/session/test/ui-perf.test.tsx`: gesture frames — cheap views get every frame (each from its own task),
-  costly ones at most one per `5 × cost`, the latest transient always wins, commit / cancel / undo arrive in the same
-  notification with no timer left; `FreezeStoreUpdates` keeps the last value while frozen and catches up when shown;
-  idle verification makes the first edit incremental (and is a no-op without `requestIdleCallback`); autosave PUTs
-  exactly `JSON.stringify(envelope)` after edits.
+- `packages/session/test/ui-perf.test.tsx`: a published transient returns to the committed document immediately
+  after cancellation and stays there after pending timers; edits and undo reach the monitor immediately.
+  `FreezeStoreUpdates` keeps the last displayed value while frozen and catches up when shown. These tests use
+  the shared production gesture-frame seam. Browser scenarios below own performance budgets; unit tests do not
+  pin the throttle's internal cost formula, React render counts or invariant-cache counters.
 - `packages/project/test/json-cache.test.ts`: `stringifyJson` equals `JSON.stringify` on arbitrary JSON (frozen or
   not, cold and cached), large composed containers with every special value (`undefined`, functions, symbols, `NaN`,
   `-0`, `toJSON`, boxed primitives, U+2028), cycles and `BigInt` throw, objects that can still change are never cached,

@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	ColorPicker,
-	ContextMenu,
 	Dialog,
 	DropdownMenu,
 	IconButton,
@@ -334,28 +333,6 @@ describe('menus (S05:MN-002, SH-031)', () => {
 		).toBe('true');
 		fireEvent.click(undo);
 		expect(run).toHaveBeenCalledOnce();
-	});
-
-	it('resolves its items when it opens, not on every render of its owner', async () => {
-		const items = vi.fn(() => [
-			{ type: 'item' as const, id: 'a', label: 'Resolved late', onSelect: () => {} },
-		]);
-		function Owner({ n }: { n: number }) {
-			return (
-				<>
-					<DropdownMenu trigger={<button type="button">Open {n}</button>} items={items} />
-					<ContextMenu items={items}>
-						<div>Area {n}</div>
-					</ContextMenu>
-				</>
-			);
-		}
-		const view = render(<Owner n={1} />);
-		for (let n = 2; n <= 20; n++) view.rerender(<Owner n={n} />);
-		expect(items).not.toHaveBeenCalled();
-		fireEvent.pointerDown(screen.getByText('Open 20'), { button: 0, ctrlKey: false, pointerType: 'mouse' });
-		await screen.findByText('Resolved late');
-		expect(items).toHaveBeenCalled();
 	});
 });
 

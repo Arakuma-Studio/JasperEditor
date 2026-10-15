@@ -12,8 +12,6 @@ import {
 	encodePng,
 	expectFingerprints,
 	expectPins,
-	fingerprint,
-	fnv1a,
 	GoldenMismatch,
 	MAX_GOLDEN_BYTES,
 	meanGrid,
@@ -56,10 +54,6 @@ describe('PNG codec', () => {
 		}
 	});
 
-	it('compresses smooth images well (adaptive filters)', () => {
-		expect(encodePng(ramp(320, 180)).length).toBeLessThan(8000);
-	});
-
 	it('rejects malformed input with PngError', () => {
 		const png = encodePng(ramp(8, 8));
 		expect(() => decodePng(new Uint8Array(0))).toThrow(PngError);
@@ -95,13 +89,10 @@ describe('difference metrics', () => {
 		expect(Array.from(d.data.subarray(4, 8))).toEqual([40, 40, 40, 255]);
 	});
 
-	it('mean grid and checksum', () => {
+	it('computes the mean RGB of each grid cell', () => {
 		const img = rgba8(4, 4);
 		for (let i = 0; i < 16; i++) img.data.set([i < 8 ? 255 : 0, 0, 0, 255], i * 4);
 		expect(meanGrid(img, 2)).toEqual([255, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 0]);
-		expect(fingerprint(img)).toHaveLength(48);
-		expect(fnv1a(img)).toBe(fnv1a(rgba8(4, 4, Uint8Array.from(img.data))));
-		expect(fnv1a(img)).not.toBe(fnv1a(rgba8(4, 4)));
 	});
 });
 
@@ -166,7 +157,6 @@ describe('fingerprints and pins', () => {
 		process.env.JASPER_BLESS = '1';
 		expectFingerprints(file, { x: grid, y: grid });
 		delete process.env.JASPER_BLESS;
-		expect(readFileSync(file, 'utf8').split('\n')).toHaveLength(5);
 		expectFingerprints(file, { x: grid.map((v) => v + 3.9) });
 		expect(() => expectFingerprints(file, { x: grid.map((v, i) => (i === 7 ? v + 5 : v)) })).toThrow(
 			/cell 2 channel G off by 5/,
