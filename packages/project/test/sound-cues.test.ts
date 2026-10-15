@@ -4,6 +4,7 @@ import {
 	type Animatable,
 	type DerivedCue,
 	deriveCues,
+	MAX_SAMPLES_PER_DERIVATION,
 	mgPhases,
 	parseSfxRequest,
 	resolveCueAnchor,
@@ -751,5 +752,44 @@ describe('anchors resolve back to the derived frame (resolveCueAnchor, WP2.1)', 
 		const e = placeStill(h, 100, 90, 'V3', 'Shrink');
 		setTransform(h, e, 'scale', animOf(100, [kf('u1', 30, 100), kf('u2', 40, 0)]));
 		expect(check(h)).toBeGreaterThanOrEqual(6);
+	});
+});
+
+describe('sampling budget (hostile or huge documents)', () => {
+	it('many long animated clips are sampled up to MAX_SAMPLES_PER_DERIVATION, with one warning', () => {
+		// 22 clips whose position moves over 20 000 frames each: 440 000 frames, more than one derivation samples.
+		// Before the budget every frame was sampled (minutes for a 20 MB envelope, gigabytes of curves).
+		const h = newHarness();
+		const L = 20_000;
+		const ids: string[] = [];
+		for (let i = 0; i < 22; i++) {
+			const media = h.registerVideo({ seconds: 1000, audio: false });
+			const r = h.ok([
+				{
+					type: 'clip.place',
+					source: { mediaId: media },
+					sourceRange: { in: { flicks: 0 }, out: { flicks: L * F } },
+					at: i * L,
+					tracks: { video: 'V2' },
+					audio: false,
+					ref: '$c',
+				},
+			]);
+			ids.push(r.refs.$c!);
+		}
+		for (const id of ids)
+			patchClip(h, id, (c) => {
+				(c as unknown as { transform: { position: Animatable<[number, number]> } }).transform.position =
+					animOf<[number, number]>([0, 540], [kf('a', 0, [0, 540]), kf('b', L - 2, [1920, 540])]);
+			});
+		const out = derive(h, { sources: ['keyframes'] });
+		const sampled = out.curves.reduce((s, c) => s + c.speed.length, 0);
+		expect(sampled).toBeGreaterThan(MAX_SAMPLES_PER_DERIVATION - L);
+		expect(sampled).toBeLessThanOrEqual(MAX_SAMPLES_PER_DERIVATION);
+		const cut = out.warnings.filter((w) => w.code === 'W_SAMPLING_TRUNCATED');
+		expect(cut).toHaveLength(1);
+		expect(cut[0]!.clipId).toBe(ids[Math.floor(MAX_SAMPLES_PER_DERIVATION / L)]);
+		// Deterministic: the same clips are cut every time.
+		expect(derive(h, { sources: ['keyframes'] }).cues).toEqual(out.cues);
 	});
 });

@@ -42,7 +42,16 @@ export type CueContext = {
 	/** Video tracks that are shown (output on), bottom (V1) first, with their index in `seq.videoTracks`. */
 	videoTracks: { track: Track; index: number }[];
 	warn(w: DeriveCuesWarning): void;
+	/**
+	 * Frames the motion sources (keyframes, camera3d) may still sample in this derivation: a document of many long
+	 * animated clips (hostile, or just huge) is cut off with a warning instead of blocking the engine / the editor for
+	 * minutes and returning gigabytes of speed curves.
+	 */
+	sampleBudget: { left: number; warned: boolean };
 };
+
+/** Most frames sampled by the motion sources in one derivation (≈ 20 clips × 20 000 frames; ≈ 2 s on a busy host). */
+export const MAX_SAMPLES_PER_DERIVATION = 400_000;
 
 export function finitePositive(v: unknown, fallback: number): number {
 	return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : fallback;
@@ -78,6 +87,7 @@ export function makeContext(
 		range,
 		videoTracks,
 		warn,
+		sampleBudget: { left: MAX_SAMPLES_PER_DERIVATION, warned: false },
 	};
 }
 
