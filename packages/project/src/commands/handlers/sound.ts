@@ -872,7 +872,9 @@ function setRole(doc: DDoc, cmd: CommandOf<'soundDesign.setRole'>, h: HandlerCon
 		const lib = readLibraryProvenance(
 			(doc.media[clip.mediaId] as { library?: unknown } | undefined)?.library,
 		);
-		const t = lib ? timingOfMedia(lib, mediaDurationFlicks(doc.media[clip.mediaId] as MediaAsset) ?? 0) : null;
+		const t = lib
+			? timingOfMedia(lib, mediaDurationFlicks(doc.media[clip.mediaId] as MediaAsset) ?? 0)
+			: null;
 		if (!lib || !t)
 			return h.fail(
 				'E_INVALID_PARAM',
@@ -974,8 +976,7 @@ function setPeak(doc: DDoc, cmd: CommandOf<'soundDesign.setPeak'>, h: HandlerCon
 		});
 	// Any audio clip may get a peak (Detect Peak on project audio): its `sfx` then has no library sound id.
 	const lib = readLibraryProvenance((media as { library?: unknown } | undefined)?.library);
-	if (!media)
-		h.fail('E_NOT_FOUND', `Media not found: ${clip.mediaId}`, { path: ['clipId'] });
+	if (!media) h.fail('E_NOT_FOUND', `Media not found: ${clip.mediaId}`, { path: ['clipId'] });
 	// How late the new peak plays after the cue the clip fills (0 when it is early, or fills none).
 	const rate = seq.settings.frameRate as Rational;
 	const F = flicksPerFrame(rate);

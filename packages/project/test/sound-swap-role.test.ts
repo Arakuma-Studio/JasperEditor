@@ -86,9 +86,9 @@ describe('soundDesign.swap: align and pitch (Essential Sound SFX)', () => {
 		expect(c.speed.rate).toBeCloseTo(1.012 * 2 ** (2 / 12), 5);
 		expect(c.speed.maintainPitch).toBe(false);
 		expect(Math.abs(alignedAt(c, F) - 90 * F)).toBeLessThanOrEqual(1);
-		expect(c.effects.some((fx) => (fx as { effectId?: string }).effectId === 'jasper.audio.pitch-shifter')).toBe(
-			false,
-		);
+		expect(
+			c.effects.some((fx) => (fx as { effectId?: string }).effectId === 'jasper.audio.pitch-shifter'),
+		).toBe(false);
 		// +5 st: speed back to the variation, the shifter carries the shift
 		h.ok([{ type: 'soundDesign.swap', clipId: id, mediaId: m, pitchSt: 5.5 }]);
 		c = clip(h, id);
@@ -104,12 +104,14 @@ describe('soundDesign.swap: align and pitch (Essential Sound SFX)', () => {
 		h.ok([{ type: 'soundDesign.swap', clipId: id, mediaId: m, pitchSt: 0 }]);
 		c = clip(h, id);
 		expect(c.speed.rate).toBeCloseTo(1.012, 5);
-		expect(c.effects.some((fx) => (fx as { effectId?: string }).effectId === 'jasper.audio.pitch-shifter')).toBe(
-			false,
-		);
+		expect(
+			c.effects.some((fx) => (fx as { effectId?: string }).effectId === 'jasper.audio.pitch-shifter'),
+		).toBe(false);
 		expect(checkInvariants(h.doc)).toEqual([]);
 		// refusals
-		expect(err(h.tx([{ type: 'soundDesign.swap', clipId: id, mediaId: m, pitchSt: 13 }]))?.code).toBe('E_SCHEMA');
+		expect(err(h.tx([{ type: 'soundDesign.swap', clipId: id, mediaId: m, pitchSt: 13 }]))?.code).toBe(
+			'E_SCHEMA',
+		);
 	});
 
 	it('pan keyframes keep their sequence times through a pitch change', () => {
@@ -140,7 +142,14 @@ describe('soundDesign.setRole', () => {
 		const m = libMedia(h);
 		const a = placed(h, m, 60);
 		const r0 = h.ok([
-			{ type: 'clip.place', source: { mediaId: m }, at: 200, tracks: { audio: 'A1' }, video: false, ref: '$b' },
+			{
+				type: 'clip.place',
+				source: { mediaId: m },
+				at: 200,
+				tracks: { audio: 'A1' },
+				video: false,
+				ref: '$b',
+			},
 		]);
 		const b = r0.refs.$b!;
 		expect(clip(h, b).sfx).toBeUndefined();
@@ -165,7 +174,13 @@ describe('soundDesign.setRole', () => {
 		// refusals
 		const plain = h.registerVideo({ seconds: 5 });
 		const pr = h.ok([
-			{ type: 'clip.place', source: { mediaId: plain }, at: 300, tracks: { video: 'V1', audio: 'A3' }, ref: '$p' },
+			{
+				type: 'clip.place',
+				source: { mediaId: plain },
+				at: 300,
+				tracks: { video: 'V1', audio: 'A3' },
+				ref: '$p',
+			},
 		]);
 		const linked = Object.values(h.seq.clips).filter((c) => c.start === 300);
 		const v = linked.find((c) => c.kind === 'video')!.id;

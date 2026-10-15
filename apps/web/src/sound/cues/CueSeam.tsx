@@ -40,6 +40,7 @@ import {
 } from '../../panels/timeline/model/snapping.ts';
 import { deltaFramesFromPx, frameToX, type Viewport } from '../../panels/timeline/model/viewport.ts';
 import type { ContextMenuItem, TimelineUiStore } from '../../panels/timeline/state/ui-store.ts';
+import { endSoundDrag, isSoundDrag, readSoundDrag } from '../insert.ts';
 import {
 	CUE_ALIGN_LABELS,
 	CUE_WEIGHT_LABELS,
@@ -118,6 +119,8 @@ export function CueSeam(p: CueSeamProps) {
 	const selectedIds = useSessionState((s) => s.selection.cues ?? EMPTY);
 	const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
 	const [active, setActive] = useState<string | null>(null);
+	// spec 12 §2.7 Fill: a library sound dragged over a cue glyph highlights it; dropping fills that cue.
+	const [dropCue, setDropCue] = useState<string | null>(null);
 	const cues = useMemo(() => cuesOf(seq), [seq]);
 	const rate = seq.settings.frameRate as Rational;
 	const conflicts = useMemo(() => heroConflicts(cues, rate), [cues, rate]);
@@ -414,6 +417,26 @@ export function CueSeam(p: CueSeamProps) {
 		if (cue) openCueMenu(cue, e.clientX, e.clientY);
 		else laneMenu(e.clientX, e.clientY);
 	};
+	const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+		if (!isSoundDrag(e.dataTransfer)) return;
+		const id = hitCue(geoms, localX(e));
+		const ok = !!id && byId.has(id) && !session.getState().readOnly;
+		setDropCue(ok ? id : null);
+		if (!ok) return;
+		e.preventDefault();
+		e.stopPropagation();
+		e.dataTransfer.dropEffect = 'copy';
+	};
+	const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
+		const id = dropCue;
+		setDropCue(null);
+		if (!id || !isSoundDrag(e.dataTransfer)) return;
+		e.preventDefault();
+		e.stopPropagation();
+		const payload = readSoundDrag(e.dataTransfer);
+		endSoundDrag();
+		if (payload) p.run('sound.fillCue', { cueId: id, soundId: payload.soundId });
+	};
 	const onDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
 		e.stopPropagation();
 		const id = hitCue(geoms, localX(e));
@@ -502,6 +525,9 @@ export function CueSeam(p: CueSeamProps) {
 				onContextMenu={onContextMenu}
 				onDoubleClick={onDoubleClick}
 				onKeyDown={onKeyDown}
+				onDragOver={onDragOver}
+				onDragLeave={() => setDropCue(null)}
+				onDrop={onDrop}
 			>
 				<svg
 					className="pointer-events-none absolute inset-0"
@@ -575,6 +601,7 @@ export function CueSeam(p: CueSeamProps) {
 						g={g}
 						id={`${idPrefix}${g.id}`}
 						active={active === g.id}
+						dropTarget={dropCue === g.id}
 						cue={byId.get(g.id) ?? ghostCues.find((x) => x.id === g.id)}
 						seq={seq}
 						tc={tc}
@@ -622,6 +649,8 @@ function CueGlyph(props: {
 	g: CueGeom;
 	id: string;
 	active: boolean;
+	/** A library sound is dragged over it: dropping fills it. */
+	dropTarget?: boolean;
 	cue: SoundCue | undefined;
 	seq: Sequence;
 	tc: (f: number) => string;
@@ -666,6 +695,7 @@ function CueGlyph(props: {
 				.filter(Boolean)
 				.join(' ')}
 			data-selected={g.state.selected || undefined}
+			data-drop-target={props.dropTarget || undefined}
 		>
 			<svg
 				width={box}
@@ -674,6 +704,15 @@ function CueGlyph(props: {
 				aria-hidden="true"
 				overflow="visible"
 			>
+				{props.dropTarget ? (
+					<circle
+						r={h + 1}
+						fill="var(--pr-accent-fill)"
+						stroke="var(--pr-accent)"
+						strokeWidth={1.5}
+						opacity={0.9}
+					/>
+				) : null}
 				{g.state.selected || props.active ? (
 					<rect
 						x={-h + 0.5}

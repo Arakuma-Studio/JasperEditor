@@ -118,7 +118,7 @@ export async function detectClipPeak(
 			t('The audio could not be decoded: {0}', e instanceof Error ? e.message : String(e)),
 		);
 	}
-	if (!dec || !dec.data.length || !dec.data.some((c) => c.length > 0))
+	if (!dec?.data.length || !dec.data.some((c) => c.length > 0))
 		throw new DetectPeakError(t('This browser cannot decode the clip’s audio'));
 	const a = await deps.analyze(dec.data, dec.rate);
 	if (!Number.isFinite(a.peakSec)) throw new DetectPeakError(t('No peak found (the clip is silent)'));

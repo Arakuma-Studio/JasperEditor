@@ -322,7 +322,11 @@ function concretize(a: Abstract, doc: ProjectDocument, media: string[]): unknown
 		case 'setRole': {
 			const audio = clips.filter((c) => c.kind === 'audio');
 			const c = audio[a.clip % Math.max(1, audio.length)]?.id ?? pick(a.clip);
-			return { type: 'soundDesign.setRole', clipIds: [c], role: (['hero', 'support', 'layer'] as const)[a.role] };
+			return {
+				type: 'soundDesign.setRole',
+				clipIds: [c],
+				role: (['hero', 'support', 'layer'] as const)[a.role],
+			};
 		}
 		case 'setPeak': {
 			const audio = clips.filter((c) => c.kind === 'audio');

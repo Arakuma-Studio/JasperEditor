@@ -16,7 +16,14 @@ import { t } from '../i18n/runtime.ts';
 import { getDesktopBridge } from '../runtime/platform.ts';
 import { PrefGroup, PrefRow } from '../shell/preferences/GeneralPage.tsx';
 import { useEngine } from '../state/engine.tsx';
-import { MAX_AUDITION_DB, MIN_AUDITION_DB, soundLibraryPrefs, useSoundLibraryPrefs } from './prefs.ts';
+import {
+	MAX_AUDITION_DB,
+	MAX_PRE_ROLL_SEC,
+	MIN_AUDITION_DB,
+	MIN_PRE_ROLL_SEC,
+	soundLibraryPrefs,
+	useSoundLibraryPrefs,
+} from './prefs.ts';
 
 type RootLicense = (typeof SOUND_ROOT_LICENSES)[number];
 
@@ -397,6 +404,29 @@ export function SoundLibraryPreferencesPage() {
 						unit="dB"
 						onCommit={(v) => soundLibraryPrefs.set({ volumeDb: v })}
 						onScrubEnd={(v) => soundLibraryPrefs.set({ volumeDb: v })}
+					/>
+				</PrefRow>
+				<Checkbox
+					checked={p.inContext}
+					onCheckedChange={(v) => soundLibraryPrefs.set({ inContext: v })}
+					label="Audition in context (play the timeline with the sound on the selected cue)"
+				/>
+				<Checkbox
+					checked={p.auditionOnSwap}
+					onCheckedChange={(v) => soundLibraryPrefs.set({ auditionOnSwap: v })}
+					label="Audition on swap (play the 2 s around a swapped sound)"
+				/>
+				<PrefRow label="In Context pre-roll">
+					<ScrubbyNumber
+						label="In Context pre-roll"
+						value={p.preRollSec}
+						min={MIN_PRE_ROLL_SEC}
+						max={MAX_PRE_ROLL_SEC}
+						step={0.5}
+						precision={1}
+						unit="s"
+						onCommit={(v) => soundLibraryPrefs.set({ preRollSec: v })}
+						onScrubEnd={(v) => soundLibraryPrefs.set({ preRollSec: v })}
 					/>
 				</PrefRow>
 			</PrefGroup>

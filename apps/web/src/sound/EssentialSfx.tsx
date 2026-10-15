@@ -41,7 +41,6 @@ function Segmented<T extends string>(props: {
 	testId: string;
 }) {
 	return (
-		// biome-ignore lint/a11y/useSemanticElements: a segmented control (radio group of buttons)
 		<div role="radiogroup" aria-label={props.label} className="flex gap-[2px]" data-testid={props.testId}>
 			{props.options.map(([v, label]) => {
 				const on = props.value === v;
@@ -98,7 +97,9 @@ export function EssentialSfxSection(props: { session: EditorSession; seq: Sequen
 		const v = Math.max(-12, Math.min(12, Math.round(st * 100) / 100));
 		apply(
 			t('Sound Pitch'),
-			placed.map((c) => ({ type: 'soundDesign.swap', clipId: c.id, mediaId: c.mediaId, pitchSt: v }) as Command),
+			placed.map(
+				(c) => ({ type: 'soundDesign.swap', clipId: c.id, mediaId: c.mediaId, pitchSt: v }) as Command,
+			),
 		);
 	};
 	const layers = layersOf(seq, first);
@@ -208,7 +209,8 @@ export function EssentialSfxSection(props: { session: EditorSession; seq: Sequen
 							apply(
 								t('Sound Align'),
 								placed.map(
-									(c) => ({ type: 'soundDesign.swap', clipId: c.id, mediaId: c.mediaId, align: a }) as Command,
+									(c) =>
+										({ type: 'soundDesign.swap', clipId: c.id, mediaId: c.mediaId, align: a }) as Command,
 								),
 							)
 						}

@@ -151,15 +151,18 @@ export function AddToLibraryDialog(props: HostedDialogProps<Props>) {
 							onValueChange={(v) => setLicense(v as RootLicense)}
 							options={SOUND_ROOT_LICENSES.map((v) => ({ value: v, label: ROOT_LICENSE_LABELS[v] }))}
 						/>
-						<label className="flex items-center gap-2">
-							<span className="w-[110px] shrink-0 text-pr-muted">Author</span>
+						<div className="flex items-center gap-2">
+							<label htmlFor="sound-add-author" className="w-[110px] shrink-0 text-pr-muted">
+								Author
+							</label>
 							<TextField
+								id="sound-add-author"
 								className="min-w-0 flex-1"
 								value={author}
 								onChange={(e) => setAuthor(e.currentTarget.value)}
 								placeholder="Optional"
 							/>
-						</label>
+						</div>
 						<p className="text-pr-small text-pr-dim">
 							Sounds of an undeclared folder are flagged and hidden by Commercial-safe until you declare a
 							licence.

@@ -43,7 +43,7 @@ const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinit
 
 /** The clip's `sfx` metadata read leniently (null when absent or unreadable). */
 export function sfxOf(clip: Clip | null | undefined): ClipSfx | null {
-	if (!clip || clip.kind !== 'audio') return null;
+	if (clip?.kind !== 'audio') return null;
 	const raw = (clip as { sfx?: unknown }).sfx;
 	return raw === undefined ? null : readClipSfx(raw);
 }
