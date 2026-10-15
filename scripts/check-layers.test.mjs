@@ -184,7 +184,9 @@ describe('check-layers', () => {
 		]);
 	});
 
+	// Walks every source file of the repository: 108 s alone at load ≈ 50 on the shared 16-core host (sound-design Phase 1
+	// verification), so 120 s timed out in the full gate.
 	it('the repository passes', () => {
 		expect(checkRepo(repo)).toEqual([]);
-	}, 120_000);
+	}, 600_000);
 });
