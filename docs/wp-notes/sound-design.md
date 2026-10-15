@@ -2094,9 +2094,12 @@ Shared host, 16 cores, load average 31–58 during the runs (other agents).
   --check` (es.json covers all 8 844 strings): pass. `check-layers` first found a runtime import cycle
   (`handlers/project.ts` imported `libraryDescriptorIssue` from `handlers/sound.ts`, which now imports the clip
   handlers): the helper moved to `sound/provenance.ts`.
-- Not run here: the web UI (no UI in this package: the Cue Seam, Fill, peak handle and menus are P2-R7) and a manual
-  run of the app; the Phase 1 e2e (`e2e/sound-library.spec.ts`) was not rerun after the insert rewire (its unit test
-  and the MCP real-engine test were).
+- Real app after the insert rewire (`pnpm build`, then `E2E_PORT=49201 E2E_SKIP_BUILD=1 pnpm exec playwright test
+  e2e/sound-library.spec.ts`): 3 passed. The panel's inserts now go through `soundDesign.place`; the native export of
+  five kit sounds measured **0 samples of error** for each (peak, peak, peak, start, end; r ≥ 0.9998). Screenshots looked
+  at (`test-results/e2e-sound-library/peaks-timeline.png`: five clips on the new "SFX 1" (A4), Essential Sound showing
+  type SFX, toasts "Added … to A4 · peak at …"). The cue UI itself (Cue Seam, Fill, peak handle, menus) is P2-R7, not
+  in this package.
 
 #### Limits and notes for the next packages
 
