@@ -221,8 +221,7 @@ test('insert a motion graphic and export it over footage with the native rendere
 });
 
 test('create a title with the Type tool and export through Remotion', async ({ request }, testInfo) => {
-	await focusTimeline(page);
-	await page.keyboard.press('KeyT');
+	await page.getByRole('button', { name: 'Type Tool', exact: true }).click();
 	const vp = (await page.getByTestId('program-viewport').boundingBox())!;
 	await page.mouse.click(vp.x + vp.width / 2, vp.y + vp.height * 0.3);
 	await page.keyboard.press('Escape');
