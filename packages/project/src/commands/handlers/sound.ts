@@ -495,10 +495,15 @@ function place(doc: DDoc, cmd: CommandOf<'soundDesign.place'>, h: HandlerContext
 			});
 	}
 	const existing = cue ? placedClipsOf(seq, cue) : [];
-	if (existing.length + cmd.layers.length > SOUND_DESIGN_LIMITS.layers)
+	// New layers follow the cue's highest one (the parts of a split clip are one layer).
+	const firstLayer = existing.reduce(
+		(m, c) => Math.max(m, (Number.isInteger(c.sfx?.layer) ? c.sfx!.layer : 0) + 1),
+		0,
+	);
+	if (firstLayer + cmd.layers.length > SOUND_DESIGN_LIMITS.layers)
 		h.fail(
 			'E_INVALID_PARAM',
-			`A cue holds at most ${SOUND_DESIGN_LIMITS.layers} layers (it has ${existing.length})`,
+			`A cue holds at most ${SOUND_DESIGN_LIMITS.layers} layers (it has ${firstLayer})`,
 			{ path: ['layers'] },
 		);
 	const rate = seq.settings.frameRate as Rational;
@@ -515,7 +520,7 @@ function place(doc: DDoc, cmd: CommandOf<'soundDesign.place'>, h: HandlerContext
 	for (let i = 0; i < cmd.layers.length; i++) {
 		const layer = cmd.layers[i]!;
 		const path = ['layers', String(i)];
-		const index = existing.length + i;
+		const index = firstLayer + i;
 		const asset = doc.media[layer.mediaId] as Draft<MediaAsset> | undefined;
 		if (!asset) h.fail('E_NOT_FOUND', `Media not found: ${layer.mediaId}`, { path: [...path, 'mediaId'] });
 		if (!SOUND_MEDIA_KINDS.has(asset.kind) || !asset.probe.streams.some((s) => s.type === 'audio'))
@@ -780,7 +785,10 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 		timing,
 		mediaDurationFlicks: dur,
 		rate: newRate,
-		clampStart: false,
+		// A clip at the sequence start (an insert or fill near frame 0 trims its head, `clampStart`) stays swappable
+		// in place: the new sound starts there too with its head trimmed, its aligned point still exact. Elsewhere, and
+		// when re-aligned onto a `frame`, a sound that would start before frame 0 is refused (spec 12 §2.3).
+		clampStart: clip.start === 0 && cmd.frame === undefined,
 	});
 	if (!plan.ok) return h.fail(plan.code, plan.message, { path: ['mediaId'] });
 	const p = plan.placement;
@@ -843,6 +851,16 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 			role: 'support',
 			placement,
 		} as ClipSfx;
+	// Fades on the clip's edges fit the new length (INV-010); crossfades whose cut moved are removed by the cleanup.
+	for (const t of Object.values(seq.transitions)) {
+		if (t.outgoingClipId !== clip.id && t.incomingClipId !== clip.id) continue;
+		if (t.duration <= clip.duration) continue;
+		h.warn(
+			'W_TRANSITION_SHORTENED',
+			`Transition ${t.id} shortened to the new sound's ${clip.duration} frames`,
+		);
+		t.duration = Math.max(1, clip.duration);
+	}
 	// The cue's sound list follows.
 	const cueId = clip.sfx!.cueId;
 	const sd = (seq as { soundDesign?: Draft<SoundDesign> }).soundDesign;
@@ -867,6 +885,7 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 		align,
 		rate: clip.speed.rate,
 		pitchSt: cmd.pitchSt ?? null,
+		trimmedHeadSec: p.trimmedHeadSec,
 	};
 }
 
