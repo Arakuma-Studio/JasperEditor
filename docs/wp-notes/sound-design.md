@@ -998,6 +998,251 @@ Shared host, 16 cores, load average 140–165 during every run below (other agen
   `add_sound_folder`, `remove_sound_folder`, `rescan_sound_library`) are the MCP package's; the calls above are what
   they wrap. `view_sounds` can draw from `getSoundVisual` (peaks over spectrogram, `peakSec` line).
 
+### WP1.2b starter kit
+
+Scope: spec 12 §0 decision 1 (bundle a Kenney CC0 kit, ≈ 40–60 sounds, ≤ 8 MB, sidecars and `ATTRIBUTION.md` rows),
+§2.1 (starter kit = source 1), P1-R4. Files: `apps/engine/sounds/starter/` (60 `.ogg`, 60 `.ogg.attribution`,
+`manifest.json`), `scripts/sounds/curate-starter.ts` (fetch / scan / build), `scripts/sounds/lib.ts` (decode and measure
+like the index job), `scripts/sounds/starter-selection.json` (the selection: source files, types, titles, tags,
+derivations), `scripts/sounds/make-sidecars.mjs` (sidecars + the generated `ATTRIBUTION.md` section), tests
+`apps/engine/test/sounds-starter-kit.test.ts` and `scripts/sounds/make-sidecars.test.mjs`. One fix outside the kit:
+`packages/project/src/sound/provenance.ts` (see "Fix" below) with a regression test in
+`packages/project/test/sound-library.test.ts`.
+
+#### How to use and rebuild
+
+```bash
+pnpm exec tsx scripts/sounds/curate-starter.ts fetch /tmp/kenney   # downloads the 7 archives, checks the pinned sha256 (network)
+pnpm exec tsx scripts/sounds/curate-starter.ts scan  /tmp/kenney   # every pack sound: descriptors, judge per type (the evidence)
+pnpm exec tsx scripts/sounds/curate-starter.ts build /tmp/kenney   # converts the selection into apps/engine/sounds/starter, writes manifest.json
+node scripts/sounds/make-sidecars.mjs                              # sidecars + ATTRIBUTION.md section (--check: verify only)
+```
+
+`build` refuses a GPL FFmpeg or one without libvorbis (it uses `JASPER_FFMPEG`, else the checkout's
+`vendor/ffmpeg-lgpl/<platform>/ffmpeg`, searched upwards so worktrees find the main checkout's), a selection entry whose
+judge rejects its first type, a kit over 8 MB, two outputs with the same audio, a file name that is not
+`<type>-<desc>-NN.ogg` or does not start with its first type, and a filter without a derivation note. It deletes kit audio
+and sidecars that are no longer selected. To change the kit, edit `starter-selection.json` and rerun `build` +
+`make-sidecars`; the engine test then checks the result. The output is **byte-reproducible**: rebuilding into another
+folder gave identical sha256 for all 60 files (measured, `diff` of `sha256sum` lists), thanks to `-fflags +bitexact
+-flags:a +bitexact` (fixed Ogg serials, no encoder tag) and `-map_metadata -1`.
+
+#### Packs and licence evidence
+
+Downloaded 2026-10-15 from kenney.nl (the "Audio" category lists these seven sound-effect packs plus "Music Jingles"
+and two voice-over packs, which are not sound effects and were left out). Every pack page has, in its details table,
+"License: [Creative Commons CC0](https://creativecommons.org/publicdomain/zero/1.0/)" (checked with `curl` on each page),
+and every archive holds `License.txt` stating "License: (Creative Commons Zero, CC0) http://creativecommons.org/publicdomain/zero/1.0/"
+("Created/distributed by Kenney (www.kenney.nl)"; credit "would be nice but is not mandatory"). `build` re-checks the
+sha256 and that `License.txt` says CC0 before using an archive. CC0 needs no licence file shipped, so the sidecars say
+`license-file: none`.
+
+| Pack id | Page | Archive | sha256 (archive) | Bytes |
+|---|---|---|---|---|
+| `kenney-casino-audio` | https://kenney.nl/assets/casino-audio | https://kenney.nl/media/pages/assets/casino-audio/2472606a04-1721639069/kenney_casino-audio.zip | `f36250766ac5bc378c13708ddf12a23a8e54a3251f8d482c7536e51b5dbafa18` | 876 839 |
+| `kenney-digital-audio` | https://kenney.nl/assets/digital-audio | https://kenney.nl/media/pages/assets/digital-audio/216eac4753-1677590265/kenney_digital-audio.zip | `24e6ce28b76a6d8c89cff4d331e0965ff5c3de8a73c612028e9d363cc64e4f06` | 990 367 |
+| `kenney-impact-sounds` | https://kenney.nl/assets/impact-sounds | https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip | `029d734af1582474edf3a694d1b0cebc97c1c152f2f39fa34d4c2bafc5de77f8` | 800 850 |
+| `kenney-interface-sounds` | https://kenney.nl/assets/interface-sounds | https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip | `f2193d072726d6758a5f7871b2dcc54dcce0d5c35c6f0a62f92549b327c81232` | 834 536 |
+| `kenney-rpg-audio` | https://kenney.nl/assets/rpg-audio | https://kenney.nl/media/pages/assets/rpg-audio/8e99002d76-1677590336/kenney_rpg-audio.zip | `6dbeaf8544da958d8f2adcb4a4a4b76c1ade34a05f8ab9edccd327da7375f38b` | 964 837 |
+| `kenney-sci-fi-sounds` | https://kenney.nl/assets/sci-fi-sounds | https://kenney.nl/media/pages/assets/sci-fi-sounds/6b296f9ecf-1677589334/kenney_sci-fi-sounds.zip | `119340f351a5098ad814f78719438c0da355a9ce8a4c8a3af6a8d48aa3d49e04` | 5 875 104 |
+| `kenney-ui-audio` | https://kenney.nl/assets/ui-audio | https://kenney.nl/media/pages/assets/ui-audio/490d233f68-1677590494/kenney_ui-audio.zip | `946fc23a63d535d693eb31b2eabb80c8c28d6351e2186b344ceb71b2cb1d5eb6` | 411 949 |
+
+The manifest's `packs[]` carry `url` (archive), `sha256`, `license: CC0-1.0`, `licenseUrl` (the CC0 deed) and `author:
+"Kenney (www.kenney.nl)"`; each sound's `sourceUrl` is its pack page. The archives are never committed.
+
+#### Selection method (measured)
+
+1. `scan` decoded every sound of the seven packs (521 files in their `Audio/` folders, 44.1 kHz except RPG Audio at 48 kHz) at 48 kHz with the
+   LGPL FFmpeg and ran `analyzeSound` + `judgeSound` with `SOUND_TYPE_PROFILES` for all 19 effect types.
+2. Candidates per type were picked from the names (Kenney's file names) and the measurements, preferring judge-ok,
+   unclipped (true peak ≤ +0.3 dBTP), varied sounds and avoiding Kenney's duplicates (`footstep_carpet_001` and `_002`
+   are the same file; `maximize_00n` are `minimize_00n` reversed, `open_00n` are `close_00n` reversed). A first build of
+   91 candidates was judged (`build --out /tmp/…`); 10 were rejected (leather drop: soft attack 32 ms; a 0.8 s pitched
+   whoosh and a thruster pass: hissy / boomy; a blade swish and the first whoosh-into-hit: clipped; Kenney's 20–27 ms
+   "glitch" blips: too short; a card shuffle and a card slide: boomy at 0.302 / 0.305; the "back" blip: boomy 0.312);
+   then the kit was thinned to 60 for variety (no two near-identical variants).
+3. Kenney has no riser, no real air whoosh and no keyboard key. Risers, reverses, whooshes, a transition, a stutter and
+   a shimmer were **derived from Kenney CC0 recordings** with LGPL FFmpeg filters only (reverse, varispeed pitch,
+   concatenation, layering, fades, gain); nothing was synthesised. Each sidecar names the source files and the filter in
+   words; the exact filter graph is in `starter-selection.json`.
+4. Every output is measured again after encoding (the same path the index job uses) and must pass the judge for its first
+   type; the engine test repeats that check on the committed files.
+
+Format: OGG Vorbis, 48 kHz, libvorbis q5, channels as the source (mono or stereo; derived sounds stereo). Size:
+**753 337 bytes of audio (0.72 MB, 9 % of the 8 MB budget)**; the folder with sidecars and manifest is 1.1 MB (`du -sh`).
+
+Coverage: **18 of the 19 effect types** — hit 7, boom 3, riser 3 (derived), reverse 3, transition 3, whoosh 4 (derived),
+swish 3, glitch 3, ui 7 (5 + 2 secondary), click 4, tick 2, tap 3, pop 3, thump 3, paper 3, chime 3, shimmer 2, zap 3.
+**Uncovered: `key`** (no keyboard recording in any Kenney audio pack; the UI Audio "switch" clicks were not relabelled
+as keys); Jasper Synth's `key` recipe covers it (measured: `GET /api/sounds?types=key` returns only `Jasper Synth key
+press 1`).
+
+The kit (values measured by `build`, the same descriptors the engine indexes; judge = ok and score for the first type):
+
+| File | Types | Source (pack: file) | Derived | Dur (s) | Peak (s) | Max M (LUFS) | TP (dBTP) | Judge |
+|---|---|---|---|---|---|---|---|---|
+| `hit-metal-light-01.ogg` | hit | impact-sounds: impactMetal_light_003.ogg |  | 0.5027 | 0.001 | -14.38 | -1.49 | ok 1 (hit) |
+| `hit-metal-01.ogg` | hit | impact-sounds: impactMetal_medium_000.ogg |  | 0.2691 | 0.001 | -20.1 | -1.12 | ok 1 (hit) |
+| `hit-metal-heavy-01.ogg` | hit | sci-fi-sounds: impactMetal_003.ogg |  | 0.7741 | 0.0015 | -19.94 | -0.65 | ok 1 (hit) |
+| `hit-punch-01.ogg` | hit | impact-sounds: impactPunch_medium_002.ogg |  | 0.5387 | 0.0405 | -16.07 | -0.66 | ok 1 (hit) |
+| `hit-plate-01.ogg` | hit | impact-sounds: impactPlate_light_001.ogg |  | 0.676 | 0.001 | -22.21 | -1.23 | ok 1 (hit) |
+| `hit-glass-01.ogg` | hit | impact-sounds: impactGlass_light_001.ogg |  | 0.2069 | 0.001 | -19.85 | -1.24 | ok 1 (hit) |
+| `hit-crunch-01.ogg` | hit | sci-fi-sounds: explosionCrunch_002.ogg |  | 1.2558 | 0.2325 | -13.94 | -1.14 | ok 1 (hit) |
+| `boom-explosion-01.ogg` | boom | sci-fi-sounds: explosionCrunch_001.ogg |  | 1.3568 | 0.0065 | -13.19 | -0.45 | ok 1 (boom) |
+| `boom-low-01.ogg` | boom | sci-fi-sounds: lowFrequency_explosion_001.ogg |  | 0.9974 | 0.0825 | -11.27 | -0.94 | ok 1 (boom) |
+| `boom-low-02.ogg` | boom | sci-fi-sounds: lowFrequency_explosion_001.ogg | yes | 1.2501 | 0.1035 | -10.94 | -0.8 | ok 1 (boom) |
+| `thump-punch-01.ogg` | thump | impact-sounds: impactPunch_heavy_000.ogg |  | 0.6464 | 0.0245 | -15.34 | -0.87 | ok 1 (thump) |
+| `thump-wood-01.ogg` | thump | impact-sounds: impactWood_heavy_003.ogg |  | 0.3104 | 0.0025 | -20.7 | -0.91 | ok 1 (thump) |
+| `thump-plate-01.ogg` | thump | impact-sounds: impactPlate_heavy_001.ogg |  | 0.3497 | 0.0035 | -19.99 | -1.1 | ok 1 (thump) |
+| `riser-engine-01.ogg` | riser | sci-fi-sounds: thrusterFire_000.ogg | yes | 3 | 2.9455 | -24.96 | -11.48 | ok 1 (riser) |
+| `riser-hum-01.ogg` | riser | sci-fi-sounds: computerNoise_000.ogg | yes | 3 | 2.9665 | -12.28 | -7.29 | ok 1 (riser) |
+| `riser-engine-03.ogg` | riser | sci-fi-sounds: spaceEngineSmall_004.ogg | yes | 3 | 2.9095 | -19.05 | -9.08 | ok 1 (riser) |
+| `reverse-bell-01.ogg` | reverse | impact-sounds: impactBell_heavy_001.ogg | yes | 1.7409 | 1.7065 | -18 | -8.02 | ok 1 (reverse) |
+| `reverse-crunch-01.ogg` | reverse | sci-fi-sounds: explosionCrunch_002.ogg | yes | 1.2558 | 0.9835 | -14.33 | -4.72 | ok 1 (reverse) |
+| `reverse-air-01.ogg` | reverse | interface-sounds: maximize_005.ogg |  | 0.5237 | 0.478 | -12.27 | -0.07 | ok 1 (reverse) |
+| `transition-crunch-01.ogg` | transition | sci-fi-sounds: explosionCrunch_002.ogg | yes | 2.5115 | 1.528 | -13.71 | -4.17 | ok 1 (transition) |
+| `transition-sweep-01.ogg` | transition | sci-fi-sounds: forceField_002.ogg |  | 0.9524 | 0.145 | -8.62 | -0.85 | ok 1 (transition) |
+| `transition-whoosh-hit-01.ogg` | transition | interface-sounds: open_002.ogg + close_002.ogg + bong_001.ogg | yes | 0.6249 | 0.3115 | -15.69 | -1.52 | ok 1 (transition) |
+| `whoosh-air-01.ogg` | whoosh | interface-sounds: open_002.ogg + close_002.ogg | yes | 0.6249 | 0.3135 | -12 | -4.26 | ok 1 (whoosh) |
+| `whoosh-air-02.ogg` | whoosh | interface-sounds: open_003.ogg + close_003.ogg | yes | 0.8939 | 0.449 | -10.14 | -1.98 | ok 1 (whoosh) |
+| `whoosh-air-03.ogg` | whoosh | interface-sounds: maximize_005.ogg + minimize_005.ogg | yes | 1.0528 | 0.478 | -9.6 | -3.1 | ok 1 (whoosh) |
+| `whoosh-hiss-01.ogg` | whoosh | sci-fi-sounds: doorClose_000.ogg + doorOpen_000.ogg | yes | 1.7721 | 0.8835 | -10.46 | -3.13 | ok 1 (whoosh) |
+| `swish-blade-01.ogg` | swish | rpg-audio: knifeSlice.ogg |  | 0.5969 | 0.252 | -13.43 | -1.15 | ok 1 (swish) |
+| `swish-card-01.ogg` | swish | casino-audio: card-shove-1.ogg |  | 0.7632 | 0.121 | -22.7 | -2.4 | ok 1 (swish) |
+| `swish-air-01.ogg` | swish | interface-sounds: close_004.ogg |  | 0.3202 | 0.0015 | -15.53 | -0.38 | ok 1 (swish) |
+| `glitch-digital-01.ogg` | glitch | digital-audio: spaceTrash1.ogg |  | 1.4513 | 0.0935 | -16.81 | -0.69 | ok 1 (glitch) |
+| `glitch-stutter-01.ogg` | glitch | interface-sounds: glitch_004.ogg + glitch_003.ogg | yes | 0.1467 | 0.136 | -16.87 | -0.71 | ok 1 (glitch) |
+| `glitch-error-01.ogg` | glitch, ui | interface-sounds: error_003.ogg |  | 0.5308 | 0.0155 | -14.42 | -0.1 | ok 1 (glitch) |
+| `ui-confirm-01.ogg` | ui | interface-sounds: confirmation_001.ogg |  | 0.2872 | 0.0025 | -13.27 | -0.98 | ok 1 (ui) |
+| `ui-confirm-02.ogg` | ui | interface-sounds: confirmation_002.ogg |  | 0.5587 | 0.0015 | -12.05 | -0.95 | ok 1 (ui) |
+| `ui-toggle-01.ogg` | ui | interface-sounds: toggle_001.ogg |  | 0.1367 | 0.0015 | -16.84 | -0.79 | ok 1 (ui) |
+| `ui-back-01.ogg` | ui | interface-sounds: back_004.ogg |  | 0.0946 | 0.001 | -24.7 | -0.76 | ok 1 (ui) |
+| `ui-power-up-01.ogg` | ui | digital-audio: powerUp8.ogg |  | 0.5967 | 0.1525 | -12.1 | -0.65 | ok 1 (ui) |
+| `click-ui-01.ogg` | click | ui-audio: click3.ogg |  | 0.0835 | 0.028 | -29.54 | -1.28 | ok 1 (click) |
+| `click-ui-02.ogg` | click | ui-audio: click4.ogg |  | 0.038 | 0.009 | -23.42 | -0.44 | ok 1 (click) |
+| `click-ui-03.ogg` | click | ui-audio: click5.ogg |  | 0.0351 | 0.011 | -24.63 | -2.14 | ok 1 (click) |
+| `click-switch-01.ogg` | click | ui-audio: switch7.ogg |  | 0.2136 | 0.036 | -24.45 | -1.51 | ok 1 (click) |
+| `tick-01.ogg` | tick | ui-audio: switch13.ogg |  | 0.025 | 0.006 | -24.86 | -1.11 | ok 1 (tick) |
+| `tick-02.ogg` | tick | ui-audio: switch14.ogg |  | 0.0351 | 0.008 | -24.49 | -0.69 | ok 1 (tick) |
+| `tap-wood-01.ogg` | tap | impact-sounds: impactWood_light_000.ogg |  | 0.2629 | 0.001 | -21.98 | -1.25 | ok 1 (tap) |
+| `tap-card-01.ogg` | tap | casino-audio: card-place-1.ogg |  | 0.6865 | 0.176 | -22.14 | -1.42 | ok 1 (tap) |
+| `tap-chip-01.ogg` | tap | casino-audio: chip-lay-1.ogg |  | 0.1698 | 0.0495 | -22.79 | -1.74 | ok 1 (tap) |
+| `pop-drop-01.ogg` | pop | interface-sounds: drop_002.ogg |  | 0.1884 | 0.001 | -20.67 | -1.03 | ok 1 (pop) |
+| `pop-drop-02.ogg` | pop | interface-sounds: drop_004.ogg |  | 0.284 | 0.001 | -19.71 | -0.67 | ok 1 (pop) |
+| `pop-bong-01.ogg` | pop | interface-sounds: bong_001.ogg |  | 0.1202 | 0.0015 | -22.59 | -0.88 | ok 1 (pop) |
+| `paper-page-01.ogg` | paper | rpg-audio: bookFlip2.ogg |  | 0.4493 | 0.0385 | -30.64 | -8.53 | ok 1 (paper) |
+| `paper-pack-01.ogg` | paper | casino-audio: cards-pack-open-2.ogg |  | 0.7294 | 0.2205 | -20.52 | -2.25 | ok 1 (paper) |
+| `paper-card-01.ogg` | paper | casino-audio: card-place-2.ogg |  | 0.4567 | 0.198 | -26.6 | -2.03 | ok 1 (paper) |
+| `chime-bell-01.ogg` | chime | impact-sounds: impactBell_heavy_000.ogg |  | 1.4802 | 0.001 | -18.74 | -1.28 | ok 1 (chime) |
+| `chime-glass-01.ogg` | chime | interface-sounds: glass_001.ogg |  | 0.2758 | 0.001 | -19.42 | -1.08 | ok 1 (chime) |
+| `chime-three-tone-01.ogg` | chime, ui | digital-audio: threeTone1.ogg |  | 0.8492 | 0.207 | -9.59 | -0.9 | ok 1 (chime) |
+| `shimmer-sparkle-01.ogg` | shimmer | digital-audio: powerUp3.ogg |  | 1.1494 | 0.689 | -12.96 | -2.21 | ok 1 (shimmer) |
+| `shimmer-glass-01.ogg` | shimmer | interface-sounds: glass_001.ogg + glass_005.ogg + glass_002.ogg + glass_006.ogg | yes | 0.4023 | 0.091 | -15.53 | -3.39 | ok 1 (shimmer) |
+| `zap-01.ogg` | zap | digital-audio: zap1.ogg |  | 1.0188 | 0.123 | -8.82 | 0.21 | ok 1 (zap) |
+| `zap-laser-01.ogg` | zap | digital-audio: laser5.ogg |  | 1.0137 | 0.205 | -15.75 | -1.15 | ok 1 (zap) |
+| `zap-phaser-01.ogg` | zap | digital-audio: phaserDown1.ogg |  | 0.4675 | 0.2175 | -11.34 | -0.95 | ok 1 (zap) |
+
+The judge is a **defect check, not a classifier**: a clean sound passes many profiles (measured by `build`:
+`hit-metal-light-01` is judge-ok for 19/19 types, `boom-low-02` for 1/19). Types come from the selection, never from
+the judge.
+
+#### Judge profiles on real recordings (decision: no change)
+
+`scan` also judges each Kenney file against the type its own name implies (`inferTypesFromName`, camelCase split):
+hit 68/110 accepted (42 boomy), click 24/61 (22 multi-hit, 17 clipped, 6 soft-attack, 5 boomy), zap 15/35 (9 boomy,
+9 soft-attack, 5 clipped), swish 2/8 (6 boomy), boom 5/7 (2 multi-hit), ui 3/4 (1 soft-attack), glitch 0/4 (4 too
+short, 2 boomy), tick 0/3 (2 clipped, 1 soft-attack). Looked at one by one, every rejection is the profile doing its job
+on these recordings rather than a wrong threshold, so **neither `DEFAULT_TYPE_PROFILES` nor `SOUND_TYPE_PROFILES`
+changed**:
+
+- "boomy" hits are the `_heavy` impacts, punches, mining and soft impacts with 0.70–0.99 of their power under 150 Hz:
+  the taxonomy files those under thump (≤ 0.95) and boom, and they pass there (`thump-punch-01` 0.697, `boom-low-01`
+  0.948). Kenney's impact pack has almost nothing above 6 kHz (`above6kShare` ≈ 0, centroids 100–500 Hz), so the hit
+  limit is never close on the high side.
+- "multi-hit" clicks are Interface Sounds' `switch_00n` (press + release, two onsets 0.5–0.6 s apart): not one click.
+- "clipped" ticks, clicks and zaps are true peaks of +0.4 … +3 dBTP (UI Audio switches, `tick_001/002`,
+  `laserRetro_*`): sources normalised to full scale; avoided rather than trimmed, so the kit keeps Kenney's levels.
+- "soft-attack" zaps are the slow laser/force-field swells (47–130 ms rise); the zap profile wants an attack (≤ 30 ms).
+- Kenney's "glitch" files are 13–27 ms single blips, under the 30 ms floor; spec 12 means stutters by glitch (several
+  onsets), which the kit gets from a four-step layered stutter of two of them (`glitch-stutter-01`, 147 ms, 3 onsets).
+- Two boom files have a debris tail counted as extra onsets (the WP1.1b limit on rattling tails); borderline, left.
+- Borderline (≤ 0.012 over a limit, not counted as "clearly wrong"): paper's 0.3 under-150 share vs a card shuffle
+  (0.302) and a card slide (0.305) on a felt table; ui's 0.3 vs the "back" blip (0.312).
+
+#### Fix: provenance of a registered starter/pack sound could not be committed by an agent
+
+Found while registering a kit sound end to end. The engine's register route returns `library.source = {type:
+'starter', packId, file}` (WP1.2 added `file`); `LibrarySourceSchema` (project) is a `looseObject` listing only `type`
+and `packId`, and the agent transaction path refuses keys a schema does not list (`findUnknownKeys` treats loose objects
+as closed), so `media.register` with the returned provenance failed with `E_SCHEMA: unknown key "file" in
+asset.library.source` (measured on the running engine with `POST /api/agent/tx`). The user path (origin `user`) was not
+affected. Fix: `file` (optional, 1…4096 chars) is now part of the `starter` and `pack` variants. No schema version bump:
+the field was already stored by the loose schema; a malformed `file` (empty) now fails the variant, so repair drops
+that `source` (as it does for any unreadable source). Regression test (failed before the fix): `sound-library.test.ts`
+"accepts the provenance the engine returns from register (starter/pack `file`) on the strict agent path" (no unknown-key
+issue, the command applies and keeps `source`, a misspelt key is still refused, an empty file is invalid).
+
+#### Verified (measured, this branch; shared host, 16 cores, load average 125–140)
+
+- `pnpm vitest run apps/engine/test/sounds-starter-kit.test.ts --maxWorkers=2`: 6 passed (56 s). The committed kit:
+  manifest status ok with no errors, 60 sounds (40…60), packs CC0 with archive URL and sha256; tidy names starting with
+  the first type, known type ids, Kenney author, CC0 deed, pack page as `sourceUrl`, no `attribution`; uncovered types
+  exactly `['key']`, ≥ 3 variants of hit, whoosh, click, pop, ui; the folder holds only manifest files and their
+  sidecars; total ≤ 8 MB; each sidecar's asset, author, source, licence, `license-file: none`, date line and pack
+  sha256 match the manifest and `ATTRIBUTION.md` has its row; **every file decodes with the engine's `decodeSound`
+  (ogg, 48 kHz, 1–2 channels, ≤ 5 s) and the judge accepts it for its first type** (`runAnalysis` + `SOUND_TYPE_PROFILES`).
+- `pnpm vitest run scripts/sounds/make-sidecars.test.mjs`: 3 passed (committed sidecars and section up to date;
+  sidecar keys parse with `check-assets`' parser; the section is replaced in place or appended once).
+- `pnpm vitest run packages/project/test/sound-library.test.ts packages/project/test/sound-credits.test.ts packages/project/test/sound-rank.test.ts --maxWorkers=2`:
+  32 passed (with the new regression test). `pnpm vitest run apps/engine/test/sounds-routes.test.ts apps/engine/test/sounds-unit.test.ts --maxWorkers=2`:
+  33 passed (WP1.2's suites unchanged).
+- `pnpm lint` (Biome, tokens, anime, layers, **check-assets: ok**); `pnpm --filter @jasper/engine typecheck`: pass.
+- `node scripts/sounds/make-sidecars.mjs --check`: "60 sidecars and ATTRIBUTION.md up to date".
+- Dev engine (`JASPER_APPDIR=.stage JASPER_DEV=1 JASPER_SOUND_SYNTH_VARIANTS=1 pnpm exec tsx apps/engine/src/cli.ts --port 48801`,
+  fresh appdir): the automatic index at start found the kit (`starter: {status: ok, sounds: 60, errors: []}`) and indexed
+  79 sounds (60 starter + 19 synth) in ≈ 110 s at load ≈ 135 (status polled every 6 s). `GET /api/sounds?license=any&sources=starter&limit=500`:
+  60 results, every one `ogg` 48 kHz, `CC0-1.0`, `attribution: null`, `judge.ok: true` score 1 for its first type, peaks
+  equal to the curation measurement. `types=hit`: the 7 kit hits, then `Jasper Synth hit 1` last although it scored 0.96
+  (real recordings first); `types=whoosh` 4 + synth; `types=riser` 3 + synth; `types=key` synth only. Facets:
+  `licenses {cc0: 60, jasper: 19}`, `sources {starter: 60, synth: 19}`.
+- Register: a project (`POST /api/projects`, preset `hd-1080p-30`), `POST /api/sounds/snd_bb2cd55c193647c1/register`
+  (`whoosh-air-03.ogg`): managed copy `.stage/media/mk_bb2cd…/whoosh-air-03.ogg` with the same sha256 as the kit file,
+  provenance `{soundId, title "Air whoosh, bright", types [whoosh], source {type starter, packId kenney-interface-sounds,
+  file whoosh-air-03.ogg}, license CC0-1.0, licenseUrl, author "Kenney (www.kenney.nl)", sourceUrl, attribution null,
+  7 descriptors, snapshotHash}`. Committed by an agent (`POST /api/agent/tx`, `media.register` + `library`) — E_SCHEMA
+  before the fix, ok after; then `clip.place` on A1 at 1 s; `soundCredits(doc)` on the saved `project.jasper`: one row
+  (the whoosh, CC0, used in the placed clip, no warnings), text `"Air whoosh, bright" by Kenney (www.kenney.nl),
+  CC0-1.0 (https://creativecommons.org/publicdomain/zero/1.0/). Source: https://kenney.nl/assets/interface-sounds`.
+  Audio route: `Range: bytes=0-99` → 206, `audio/ogg`, `nosniff`, sandbox CSP; visual: 106 peak / spectrogram frames.
+- Packaging: `pnpm --filter @jasper/engine build` → `dist/sounds/starter/` holds the 121 files, byte-identical to the
+  source folder (`sha256sum` diff). The desktop packager copies `dist/sounds` next to `engine.mjs` in
+  `dist-deploy/` (→ `resources/engine/sounds/starter`); reproduced that layout (`engine.mjs`, `sound-worker.mjs`,
+  `sounds/` copied into a scratch folder under `apps/engine`) and ran `node engine.mjs --port 48803` with no override and a
+  fresh appdir: starter status ok, 60 sounds indexed, all 60 judge-ok in `library.json`. A full electron-builder run
+  was not done here.
+- Integration: the merge of `feat/sound-design` (P0 close-out: compositions audio graph, project essential sound) was
+  fast-forwarded as `317cb4f8` before its checks had run (an ordering slip); they were run right after on that exact
+  commit, all green: `pnpm typecheck` (whole workspace) exit 0; `pnpm vitest run packages/project apps/engine/test/sounds-starter-kit.test.ts apps/engine/test/sounds-routes.test.ts apps/engine/test/sounds-unit.test.ts scripts/sounds --maxWorkers=2`:
+  145 files, 1796 tests passed; `pnpm lint` ok (check-assets ok). Earlier, under load ≈ 130, one timing test
+  (`lumetri-grade.test.ts`, "33³ bake < 30 ms") failed once and passed alone; unrelated to this package.
+
+#### Limits and notes for the next packages
+
+- `key` has no recording (synth fallback). `tick` and `shimmer` have 2 sounds each; the rest 3–7.
+- Risers are amplitude swells of engine/hum recordings (exponential fade-in), not pitch sweeps; whooshes are Kenney UI
+  noise bursts joined swell-to-decay and slowed (0.6–1.8 s), not recorded air passes; the reverse air swell
+  (`reverse-air-01`) is Kenney's own reversed `minimize_005`. Good enough as defaults; a pack (P6) should bring real
+  risers, whooshes and keys.
+- Kenney's impacts are dark (almost no energy above 6 kHz); there is no bright, crisp hit in the kit.
+- Levels are Kenney's (max momentary −30.6 … −8.6 LUFS); loudness matching is the mixing phase's job (P4).
+- The manifest has no `attribution` field: `SoundManifestSoundSchema.attribution` is an optional string (null would be
+  invalid), and an absent one gives `attribution: null` in the index, which is what CC0 needs.
+- Search finding (WP1.1a ranking, not changed here): `q=punch` puts "Crunchy impact" before "Punch", because "punch" is a
+  synonym of `hit` and a type match gives the same text score (1) as a title match, so duration fit decides. Worth a
+  tie-break on title tokens when the query names a title word.
+- Kenney's site may move the archives (the URLs carry a content hash); `fetch` then fails on the sha256, and the pinned
+  hashes in `starter-selection.json` / the manifest tell which archive the kit was made from.
+
 ## Phase 2: cues and placement
 
 ## Phase 3: proposals and review

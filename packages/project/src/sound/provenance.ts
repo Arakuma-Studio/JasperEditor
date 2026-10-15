@@ -29,10 +29,24 @@ export const StoredSoundTypeSchema = z
 	.regex(/^[a-z][a-z0-9-]*$/)
 	.max(LIBRARY_LIMITS.typeId);
 
-/** Where the library got the sound (spec 12 §2.1 `SoundEntry.source`). */
+/** A starter-kit or pack file, relative to its folder (the engine's `SoundEntry.source.file`; metadata only). */
+const libraryFile = () => z.string().min(1).max(LIBRARY_LIMITS.pathPart).optional();
+
+/**
+ * Where the library got the sound (spec 12 §2.1 `SoundEntry.source`). Starter and pack sounds may name their `file`:
+ * the engine's register route returns it, and the agent path refuses keys a schema does not list.
+ */
 export const LibrarySourceSchema = z.discriminatedUnion('type', [
-	z.looseObject({ type: z.literal('starter'), packId: z.string().max(LIBRARY_LIMITS.id).optional() }),
-	z.looseObject({ type: z.literal('pack'), packId: z.string().min(1).max(LIBRARY_LIMITS.id) }),
+	z.looseObject({
+		type: z.literal('starter'),
+		packId: z.string().max(LIBRARY_LIMITS.id).optional(),
+		file: libraryFile(),
+	}),
+	z.looseObject({
+		type: z.literal('pack'),
+		packId: z.string().min(1).max(LIBRARY_LIMITS.id),
+		file: libraryFile(),
+	}),
 	z.looseObject({
 		type: z.literal('folder'),
 		rootId: z.string().min(1).max(LIBRARY_LIMITS.id),
