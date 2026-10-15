@@ -1212,23 +1212,23 @@ All commands below run from this worktree. Run each surviving changed file with 
 - Risk: removal/rewrite preserves the independently specified contract above; rendering checks still require Chrome/Remotion validation, and changed expectations are not blessed.
 - Validation: `pnpm exec vitest run packages/compositions/test/fx-sapphire-distort-warp-gl.test.ts --maxWorkers=1`; package typecheck.
 
-### KEEP: identity settings give the source back
+### REWRITE: identity settings give the source back
 
 - Baseline case: `packages/compositions/test/fx-sapphire-distort-warp-gl.test.ts:62`. Detected failure: identity settings give the source back. Production owner/non-test callers: `project registry/fx family shaders + fx/host.ts; FxPicture consumers`.
-- Decision: Retain the independently observable contract named below.
+- Decision: Use the independently painted input before any shader as the oracle, then report each existing identity setting separately. The earlier oracle rewrite and later declaration split affect this same original once; see the [oracle rescan](compositions2.md#final-oracle-independence-rescan-pre-edit-record) and [named shader contracts](compositions2.md#named-shader-contracts-and-false-pass-repairs-before-edits).
 - Bar 1 (independent source): effect parameter semantics and alpha/determinism contracts; docs/wp-notes/fx-shader-framework.md §§3–9; docs/testing.md §2; the contract is the behavior in this case name.
 - Bar 2 (observable failure): violating that behavior changes the consumed pixels, text/state, or typed result; it is observed through real GPU pixel output at explicit effect settings.
-- Bar 3 (independent expectation): fixed fixture colors, analytic endpoint/direction relations or repeat/seed/frame comparisons. These expectations can disagree with the owner.
+- Bar 3 (independent expectation): expected source pixels are read from the independently painted input canvas before any shader; current shader output cannot manufacture the reference. These expectations can disagree with the owner.
 - Bar 4 (stable seam): real GPU pixel output at explicit effect settings; no private call sequence is required.
 - Bar 5 (refactor survival): a replacement owner preserving this input/output behavior still satisfies these assertions; renderer internals and identifiers are not asserted.
 - Bar 6 (lowest distinct owner): named parameter endpoint/alpha/temporal interaction beyond one default and one jointly perturbed fingerprint. No retained stronger test covers this exact contract/input combination.
 - Risk: removal/rewrite preserves the independently specified contract above; rendering checks still require Chrome/Remotion validation, and changed expectations are not blessed.
 - Validation: `pnpm exec vitest run packages/compositions/test/fx-sapphire-distort-warp-gl.test.ts --maxWorkers=1`; package typecheck.
 
-### KEEP: magnifiers enlarge the centre disc; a pinch shrinks it
+### REWRITE: magnifiers enlarge the centre disc; a pinch shrinks it
 
 - Baseline case: `packages/compositions/test/fx-sapphire-distort-warp-gl.test.ts:92`. Detected failure: magnifiers enlarge the centre disc; a pinch shrinks it. Production owner/non-test callers: `project registry/fx family shaders + fx/host.ts; FxPicture consumers`.
-- Decision: Retain the independently observable contract named below.
+- Decision: Report magnification and pinch separately while preserving all four renders. Require a visible white center and opaque output in the existing −1.5 pinch frame so a blank frame cannot satisfy only the dark-edge sum; see [named shader contracts](compositions2.md#named-shader-contracts-and-false-pass-repairs-before-edits).
 - Bar 1 (independent source): effect parameter semantics and alpha/determinism contracts; docs/wp-notes/fx-shader-framework.md §§3–9; docs/testing.md §2; the contract is the behavior in this case name.
 - Bar 2 (observable failure): violating that behavior changes the consumed pixels, text/state, or typed result; it is observed through real GPU pixel output at explicit effect settings.
 - Bar 3 (independent expectation): fixed fixture colors, analytic endpoint/direction relations or repeat/seed/frame comparisons. These expectations can disagree with the owner.
@@ -1316,13 +1316,13 @@ All commands below run from this worktree. Run each surviving changed file with 
 - Risk: removal/rewrite preserves the independently specified contract above; rendering checks still require Chrome/Remotion validation, and changed expectations are not blessed.
 - Validation: `pnpm exec vitest run packages/compositions/test/fx-sapphire-distort-warp-gl.test.ts --maxWorkers=1`; package typecheck.
 
-### KEEP: S_Distort follows the Lens: a flat lens changes nothing, the dots lens warps
+### REWRITE: S_Distort follows the Lens: a flat lens changes nothing, the dots lens warps
 
 - Baseline case: `packages/compositions/test/fx-sapphire-distort-warp-gl.test.ts:230`. Detected failure: S_Distort follows the Lens: a flat lens changes nothing, the dots lens warps. Production owner/non-test callers: `project registry/fx family shaders + fx/host.ts; FxPicture consumers`.
-- Decision: Retain the independently observable contract named below.
+- Decision: Use the independently painted input before any shader as the flat-lens oracle, replacing the WarpTransform-derived reference; see the [oracle rescan](compositions2.md#final-oracle-independence-rescan-pre-edit-record). A shared shader fault can no longer change both actual and expected pixels.
 - Bar 1 (independent source): effect parameter semantics and alpha/determinism contracts; docs/wp-notes/fx-shader-framework.md §§3–9; docs/testing.md §2; the contract is the behavior in this case name.
 - Bar 2 (observable failure): violating that behavior changes the consumed pixels, text/state, or typed result; it is observed through real GPU pixel output at explicit effect settings.
-- Bar 3 (independent expectation): fixed fixture colors, analytic endpoint/direction relations or repeat/seed/frame comparisons. These expectations can disagree with the owner.
+- Bar 3 (independent expectation): expected source pixels are read from the independently painted input canvas before any shader; current shader output cannot manufacture the reference. These expectations can disagree with the owner.
 - Bar 4 (stable seam): real GPU pixel output at explicit effect settings; no private call sequence is required.
 - Bar 5 (refactor survival): a replacement owner preserving this input/output behavior still satisfies these assertions; renderer internals and identifiers are not asserted.
 - Bar 6 (lowest distinct owner): named parameter endpoint/alpha/temporal interaction beyond one default and one jointly perturbed fingerprint. No retained stronger test covers this exact contract/input combination.
@@ -3226,7 +3226,7 @@ All commands below run from this worktree. Run each surviving changed file with 
 
 ## Execution evidence
 
-Cleanup completed in this partition (validation pending integration): **179 KEEP, 48 DELETE, 32 REWRITE** test declarations across all 42 assigned paths. Parameterized declarations cover every existing row; no new test declarations were added. Nine suites were deleted in full. Review uses original names/line positions so deleted and renamed cases remain identifiable.
+Cleanup completed in this partition (validation pending integration): **176 KEEP, 48 DELETE, 35 REWRITE** original test declarations across all 42 assigned paths. Parameterized and split declarations retain the existing scenarios; each original declaration is counted once. Nine suites were deleted in full. Review uses original names/line positions so deleted and renamed cases remain identifiable.
 
 Validation actually run:
 
@@ -3364,3 +3364,27 @@ input still leaves its golden-pinned failing case declared. Targeted Biome passe
 all four changed TS files; TypeScript transpilation reported no syntax diagnostics;
 `git diff --check` passed. These are static/adapter checks, not GL results. No full
 package typecheck or browser render was started in this worktree.
+
+
+## Cross-owner disposition reconciliation
+
+Documentation-only reconciliation against integrated `421ba5cb` and the
+[composition-2 named shader supplement](compositions2.md#named-shader-contracts-and-false-pass-repairs-before-edits):
+
+| Original composition-1 declaration | Authoritative disposition and single-count correction |
+| --- | --- |
+| `fx-sapphire-distort-warp-gl.test.ts / identity settings give the source back` | **REWRITE.** The [earlier oracle rescan](compositions2.md#final-oracle-independence-rescan-pre-edit-record) already replaced the WarpTransform-derived source with the independently painted input; the original heading and totals still said KEEP. The later named-case split preserves the same original. Correct KEEP→REWRITE once, not once per follow-up. |
+| Same path / `magnifiers enlarge the centre disc; a pinch shrinks it` | **REWRITE.** Separate the existing magnifier/pinch controls and reject an invisible pinch output using the same rendered frame. One original KEEP→REWRITE. |
+| Same path / `S_Distort follows the Lens: a flat lens changes nothing, the dots lens warps` | **REWRITE.** The earlier oracle rescan changed its expected source to the input canvas, but its original heading still said KEEP. Correct that single original; no additional scenario or rewrite is counted. |
+
+Transparent-input distort, monotonic wipe progress and `S_WarpDrops` were already
+REWRITE in this ledger, so their later changes add no disposition delta. The current
+original-header census is **176 KEEP / 48 DELETE / 35 REWRITE = 259 originals**,
+a net +3 REWRITE / −3 KEEP from the previously printed totals. Each affected original
+retains its six-bar justification above and links to the precise cross-owner evidence.
+The composition-2 partition separately reconciles to **83 DELETE / 29 REWRITE /
+145 KEEP**; none of its film/grain or MatteOps originals are counted here.
+
+Validation: counted all 259 original disposition headings, checked both earlier and
+later cross-owner identity records to prevent double-counting, reviewed the docs-only
+diff, and passed `git diff --check`. No tests, production files or runtime jobs changed.
