@@ -94,7 +94,10 @@ Validation remains in progress. Confirmed results so far:
 
 - `pnpm lint`: passed Biome, tokens, anime, layer/cycle and asset checks.
 - Config/localization focused tests: 2 files, 9 tests passed.
-- Public Remotion retry tests: 5 tests passed in the owning worktree.
+- Public Remotion retry tests: all seven passed in the owning worktree, including
+  the two setup-error regressions that first failed against the unfixed owner.
+- Real rsync source-link regression: reproduced the missing partial file before
+  the fix, then passed with the exact destination bytes and no partial file.
 - `cargo test --workspace --manifest-path native/mg/Cargo.toml --locked -j 1`:
   13 tests passed, no failures.
 - `pnpm ffmpeg:check`: all inspected FFmpeg artifacts passed LGPL checks.
@@ -125,8 +128,11 @@ Validation remains in progress. Confirmed results so far:
   not claimed. No runtime was added to the repository or installed globally.
 - `pnpm mg:build`: native release build completed. The four native/TypeScript
   parity tests passed; their title-card raster pair was also inspected visually.
-  The companion bundle command terminated with exit 143 before completion and is
-  being rerun; no cause is established and no interrupted case counts as a pass.
+  The first companion bundle command terminated with exit 143 before completion;
+  no cause is established and no interrupted case counts as a pass. Its completed
+  rerun passed 16 cases and failed three: a five-second route watchdog, a hybrid
+  export that completed after its wait deadline, and a bundle build timeout. The
+  route case subsequently passed in the default run; the other reruns remain due.
 - Native animated export: all seven cases passed, including the 48-frame
   preview/export comparison (minimum/mean SSIM 0.9935/0.9956), subpixel motion,
   authored crop geometry and audio volume envelopes.
@@ -139,6 +145,19 @@ Validation remains in progress. Confirmed results so far:
   scripts, including the scale benchmark. AMD Ryzen 7 7700, 16 logical CPUs,
   Node 20.20.2; starting load averages 154.9/147.2/145.5. Reports are in
   `test-results/performance/`; no comparable before/after speedup is claimed.
+- Initial browser run: 51 passed, eight failed and four serial dependents did not
+  run. The failed traces are preserved. The clipboard's required first-placement
+  choice and the motion-graphics bundler namespace are corrected; smoke playback
+  now observes progress and an interior pause position, excluding natural-end
+  false passes. Whole-file reruns remain necessary, including the blocked cases.
+- Initial opt-in Remotion run: 109 passed, 24 failed and four setup dependents
+  skipped across 19 files. Failures occurred before image comparisons, during
+  browser setup/readiness or the resulting layer-bake fallback. The ongoing
+  one-worker recheck has passed all 19 compositor and nine text-animation cases.
+- Whole-workspace typechecking passed 18 packages but exposed two web fixture
+  narrowing errors. Explicit failure throws preserve the setup contract while
+  narrowing the transaction result. All five extension tests passed afterward;
+  web and browser semantic typechecking are still running.
 
 The existing [baseline CI run](https://github.com/JasperRaccoon/JasperEditor/actions/runs/38635051386)
 never started a step: its annotation says an Actions budget prevents further use.
@@ -148,7 +167,9 @@ Full validation results and integrated change measurements will be recorded here
 after the remaining gates. Per-area formatting checks and interrupted baseline
 attempts are distinguished from runtime passes in the records above.
 
-Independent review through `737c9600` found no further issue in the final audio
-case split or clipboard mismatch workflow. The latter now makes the first-visual
-placement choice required by CLB-010/SEQ-005/IN-008; its existing placement, media
-and artifact assertions remain intact. Browser runtime validation is pending.
+Independent review through `cd5f3535`, plus the smoke correction in `16c03941`,
+reconciled all original declarations and assigned paths, the three added product
+regressions, contract splits and transfers, and surviving support callers. The
+clipboard workflow now makes the first-visual placement choice required by
+CLB-010/SEQ-005/IN-008; its existing placement, media and artifact assertions remain
+intact. Browser runtime validation is pending.
