@@ -136,6 +136,32 @@ describe('soundDesign.swap: align and pitch (Essential Sound SFX)', () => {
 	});
 });
 
+describe('soundDesign.swap: frame and pitch together (merged with WP2.3)', () => {
+	it('re-pitches onto another frame: the aligned point lands there, pan keys travel with it', () => {
+		const h = new Harness();
+		const m = libMedia(h, { types: ['whoosh'], peakSec: 0.3, durationSec: 1 });
+		const id = placed(h, m, 90, {
+			pan: {
+				keyframes: [
+					{ offset: -3, value: -50 },
+					{ offset: 3, value: 50 },
+				],
+			},
+		});
+		const F = flicksPerFrame(h.seq.settings.frameRate);
+		const keyTimes = () => {
+			const c = clip(h, id);
+			return c.pan.keyframes.map((k) => c.start * F + (k.time - c.sourceIn) / c.speed.rate);
+		};
+		const t0 = keyTimes();
+		h.ok([{ type: 'soundDesign.swap', clipId: id, mediaId: m, frame: 120, pitchSt: 2 }]);
+		const c = clip(h, id);
+		expect(c.speed.rate).toBeCloseTo(2 ** (2 / 12), 5);
+		expect(Math.abs(alignedAt(c, F) - 120 * F)).toBeLessThanOrEqual(1);
+		for (const [i, t] of keyTimes().entries()) expect(Math.abs(t - (t0[i]! + 30 * F))).toBeLessThanOrEqual(2);
+	});
+});
+
 describe('soundDesign.setRole', () => {
 	it('sets the role of placed clips; a library clip without sfx gets it; undo / redo; refusals', () => {
 		const h = new Harness();

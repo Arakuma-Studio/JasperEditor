@@ -338,6 +338,7 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		clipId: { clipAt: { track: 'A1', at: 30 } },
 		mediaId: { mediaByName: 'clip-a.mp4' },
 		align: 'start',
+		frame: 45,
 	},
 	// Essential Sound ▸ Role (hero / support / layer) of placed sounds.
 	'soundDesign.setRole': {

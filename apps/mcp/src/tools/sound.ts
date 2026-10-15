@@ -67,6 +67,13 @@ import { composeGrid, encodePng } from '../png.ts';
 import { drawSoundCell, drawSoundDetail, isTruncated, type RgbaImage } from '../sound-sheet.ts';
 import { livePlayhead } from './color.ts';
 
+/** The cue workflow (Phase 2 tools in ./sound-design.ts); part of SOUND_GUIDE. */
+export const SOUND_CUES_GUIDE = `Sound cues (spec 12 Phase 2): a cue is a moment of the picture that may want a sound, stored in the sequence (Sequence ▸ Sound Design, the Cue Seam) with its kind (cut, transition, move, land, appear, exit, emphasis, reveal, manual…), weight (hero, support, ambient), suggested types, alignment, pan, a reason and an anchor that ties it to the edit (a cut, a transition, a keyframe run, a text animation, a motion graphic, a clip edge, a marker).
+- Workflow: find_sound_cues {projectId} derives cue suggestions from the edit itself (cuts, transitions, keyframed motion, text animators and typewriters, motion-graphic intros/outros, graphics on V2+, 3D camera moves, markers named "sfx: whoosh+hit") with frame + timecode, kind, weight, suggested types, align, pan, confidence and a reason; it stores nothing. Check a few with render_frames around the cue frames (the frame before, on and after) before trusting them. Then store the ones you keep with set_sound_cues {add: [the suggestions as returned]} (one undo step; add, update, remove and resync in one call), and fill them with place_sound {cueId, layers: [{soundId} | {sound: {type, query?}}], alternatives: 1–3 soundIds, reason} — one undo step that imports the sounds and places them so the PEAK of hits, booms, lands and whooshes (the END of risers and reverses, the start of UI blips) lands exactly on the cue frame (sample-exact; layers on separate SFX tracks, grouped). sound: {type} picks a sound of that type from the library (palette first, ranked, rotated so neighbours differ, ±2 % speed and ±1 dB variation, deterministic for the sequence's seed).
+- Density: keep what the density budget keeps (sparse ≤ 1 cue/s and a hero per 3 s, balanced ≤ 2/s and a hero per 2 s, rich ≤ 3/s and a hero per 1.5 s); plain dissolves and most cuts under dialogue stay silent; never put a hero under spoken words (find_sound_cues returns the dialogue ranges, place_sound warns). Less is more: do not fill every cue.
+- Fix: swap_sound {clipId, to: soundId | "next" | "previous"} replaces a placed sound keeping its peak frame, track, role, pan and gain ("next" cycles the alternates you gave, then the same family, then the most similar sounds). align_peak {clipId, to: frame | timecode | "playhead" | "cue"} moves a clip (with the other layers of its cue) so its peak lands exactly there. After editing the picture, set_sound_cues {resync: true} moves anchored cues and their sounds to follow the edit.
+- Check: get_timeline lists the SFX clips; render_frames around the cues shows the picture; you still cannot hear: report cue timecodes so the user can listen, never that it "sounds right".`;
+
 export const SOUND_GUIDE = `Sound library (sound effects; spec 12). You cannot hear audio. Judge sounds only by their measured descriptors and by pictures, and never claim that something "sounds good", "sounds right" or "fits": say what the numbers and pictures show and ask the user to listen.
 - Where sounds come from: the bundled starter kit (real CC0 recordings by Kenney), installed packs, the user's own folders (add_sound_folder; their licence is the user's declaration) and Jasper Synth (procedural, generated here). Synth sounds are a deterministic fallback of lower quality: they always rank after real recordings; prefer a recording whenever one fits.
 - Find: search_sounds {q, types, visualKind, length/tone/attack/weight/texture, license, sources, similarTo, limit ≤ 24} → rows with soundId, types, durationSec, peakSec, riseMs, decayMs, centroidHz, below150Share, flatness, pitchMidi, the judge (ok, score, reasons such as boomy, hissy, soft-attack, non-decaying, clipped, multi-hit) and the licence. Words in titles rank first, then type synonyms ("swoosh" finds whooshes). Read the numbers: a hit should peak within a few ms (small peakSec and riseMs) and decay; a riser builds to its end; "boomy" means most energy under 150 Hz, "hissy" above 6 kHz.
@@ -75,9 +82,10 @@ export const SOUND_GUIDE = `Sound library (sound effects; spec 12). You cannot h
 - Judgement: sync by structure (cuts, moves, lands, text and motion events you can see in the timeline and frames), never by ear; check placement with get_timeline and render_frame. Less is more: at most one hero sound (a hit or boom that carries the moment) per ~2 s, never two heroes within 0.5 s, and no heroes under spoken words. Keep one family of sounds per type in a piece (search_sounds similarTo). When you suggest sounds, give a reason and 1–3 alternates (soundIds) per moment. Propose, don't apply: insert sounds only when the user asked you to place them; otherwise list your picks with their timecodes and let the user audition them in the Sound Library.
 - Cues: a sequence's sound cues (Sequence.soundDesign.cues: frame, kind, weight hero/support/ambient, types, reason, anchor) are drawn for the user on the Timeline's Cue Seam, a lane between the video and audio tracks (glyph per kind; filled cues are solid with a line to the placed clip's peak). Edit them with apply_commands: soundCue.add / update / remove / resync, soundDesign.place {cueId} fills one, soundDesign.setPeak {clipId, peakFlicks} corrects where a placed clip's peak is (the clip does not move). The UI commands sound.addCue {frame?}, sound.toggleCueSeam, sound.clearUnfilledCues, sound.convertMarkersToCues and soundLibrary.fillCue {cueId} (opens the Sound Library filtered to the cue's types) run through ui_command when an editor window is open.
 - Licences: search defaults to commercial-safe licences (CC0, CC-BY, CC-BY-SA, open licences, the user's royalty-free folders); license "any" also shows user-provided (undeclared) and other sounds — do not use those in work the user will publish without asking. CC-BY sounds need a credit: list_sound_credits {projectId, format md|txt|csv} gives the credit lines of every library sound the project (or a sequence) uses, with warnings for non-commercial, no-derivatives, unknown or undeclared licences; give the credits to the user when CC-BY sounds are used.
-- Library: sound_library_status shows the sources, counts per type, source and licence, the folders and whether an index job runs. rescan_sound_library re-indexes (a job; wait: true waits). add_sound_folder / remove_sound_folder change the user's folders and need the user's approval in an open editor window (E_APPROVAL_DENIED: they said no or no window was open; do not retry without asking).`;
+- Library: sound_library_status shows the sources, counts per type, source and licence, the folders and whether an index job runs. rescan_sound_library re-indexes (a job; wait: true waits). add_sound_folder / remove_sound_folder change the user's folders and need the user's approval in an open editor window (E_APPROVAL_DENIED: they said no or no window was open; do not retry without asking).
+${SOUND_CUES_GUIDE}`;
 
-const SoundIdArg = z.string().regex(/^snd_[0-9a-f]{16}$/, 'a sound id: snd_ + 16 hex digits');
+export const SoundIdArg = z.string().regex(/^snd_[0-9a-f]{16}$/, 'a sound id: snd_ + 16 hex digits');
 const MAX_SHEET = 24;
 const CELL_WIDTH = 360;
 const CELL_PLOT_HEIGHT = 120;
@@ -104,7 +112,7 @@ const SOUND_HINTS: Record<string, string> = {
 };
 
 /** Runs an engine call; sound-route errors get their hint (approval and transaction codes pass through). */
-async function soundCall<T>(ctx: ToolContext, fn: Parameters<ToolContext['engine']>[0]): Promise<T> {
+export async function soundCall<T>(ctx: ToolContext, fn: Parameters<ToolContext['engine']>[0]): Promise<T> {
 	try {
 		return (await ctx.engine(fn)) as T;
 	} catch (e) {
@@ -293,13 +301,13 @@ function existingMediaFor(doc: ProjectDocument, reg: RegisterSoundResponse): str
 	return null;
 }
 
-type Registered = { soundId: string; reg: RegisterSoundResponse; title: string };
+export type Registered = { soundId: string; reg: RegisterSoundResponse; title: string };
 
 /**
  * The commands that make each registered sound a media of the project: reuse the project's copy (adding the
  * provenance when it lacks one) or register it into the "Sound Effects" bin (created when missing). Refs `$s<i>`.
  */
-function importCommands(doc: ProjectDocument, sounds: Registered[]) {
+export function importCommands(doc: ProjectDocument, sounds: Registered[]) {
 	const commands: Record<string, unknown>[] = [];
 	const media: { soundId: string; mediaId: string | null; ref: string | null; reused: boolean }[] = [];
 	let binId = soundEffectsBin(doc);
@@ -330,7 +338,7 @@ function importCommands(doc: ProjectDocument, sounds: Registered[]) {
 }
 
 /** Resolves an explicit track argument ("A3", a track id or name) to an audio track id. */
-function resolveAudioTrack(seq: Sequence, ref: string): string {
+export function resolveAudioTrack(seq: Sequence, ref: string): string {
 	const m = /^A(\d+)$/i.exec(ref);
 	if (m) {
 		const t = seq.audioTracks[Number(m[1]) - 1];

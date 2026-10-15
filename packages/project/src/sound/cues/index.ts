@@ -8,7 +8,7 @@ export {
 	WEIGHT_FACTOR,
 } from './budget.ts';
 export { deriveCues, MAX_DERIVED_CUES } from './derive.ts';
-export { DIALOGUE_BRIDGE_SEC, DIALOGUE_PAD_SEC, dialogueRanges } from './edits.ts';
+export { DIALOGUE_BRIDGE_SEC, DIALOGUE_PAD_SEC, dialogueRanges, sequenceDialogueRanges } from './edits.ts';
 export { parseSfxRequest } from './markers.ts';
 export { mgPhases } from './mg.ts';
 export {

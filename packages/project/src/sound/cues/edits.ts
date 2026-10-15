@@ -2,10 +2,11 @@
 // continuing, `isThroughEdit`) and edits covered by a transition are not cuts. In dialogue-dominant ranges plain
 // cuts get no sound (spec 12 §1 "Less is more").
 import { sequenceWords } from '../../captions/sequence-transcript.ts';
-import { clipEnd, isThroughEdit } from '../../derive/index.ts';
-import type { Clip } from '../../schema/sequence.ts';
+import { clipEnd, isThroughEdit, sequenceDuration } from '../../derive/index.ts';
+import type { ProjectDocument } from '../../schema/document.ts';
+import type { Clip, Sequence } from '../../schema/sequence.ts';
 import type { CueCandidate } from './types.ts';
-import { type CueContext, candidate, clipName, contentClipsOnTrack, label } from './util.ts';
+import { type CueContext, candidate, clipName, contentClipsOnTrack, label, makeContext } from './util.ts';
 
 /** Seconds of speech padding around transcript words, and the pause that still counts as one dialogue stretch. */
 export const DIALOGUE_PAD_SEC = 0.25;
@@ -52,6 +53,16 @@ export function dialogueRanges(ctx: CueContext): Array<[number, number]> {
 		else merged.push([r[0], r[1]]);
 	}
 	return merged;
+}
+
+/** `dialogueRanges` of a whole sequence (placement warnings, the cue route): never throws ([] on damaged data). */
+export function sequenceDialogueRanges(doc: ProjectDocument, seq: Sequence): Array<[number, number]> {
+	try {
+		const end = Math.max(0, Math.round(sequenceDuration(seq)));
+		return dialogueRanges(makeContext(doc, seq, end, { start: 0, end }, () => {}));
+	} catch {
+		return [];
+	}
 }
 
 export function inRanges(ranges: ReadonlyArray<[number, number]>, f: number): boolean {

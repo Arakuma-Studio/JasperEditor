@@ -2322,6 +2322,162 @@ pops, pulses, fades, abrupt stops and shrinks.
 - Thresholds (MOVE_ON/OFF, K_SCALE, K_ROT, ABRUPT_STOP, impact bands, confidences, minimum confidence per density) are
   reasoned defaults checked on synthetic documents; P2's real-app check and P5's Sound Check should tune them.
 
+### WP2.3 cue route & MCP tools
+
+Scope: spec 12 §2.8 (`POST /api/sound-design/cues`), §2.10 (MCP `find_sound_cues`, `set_sound_cues`, `place_sound`
+apply mode, `swap_sound`, `align_peak`), P2-R6; plus the WP2.1 limit "`sequence.duplicate` leaves keyframe / clip-marker
+anchors dangling". Files: `packages/api/src/sound-design.ts` (contracts), `routes.ts` (`soundDesignCues`),
+`packages/engine-client/src/client.ts` (`soundDesignCues`), `apps/engine/src/routes/sound-design.ts` (registered last in
+`routes/index.ts`), `apps/mcp/src/tools/sound-design.ts` (5 tools, registered in `server.ts`), `apps/mcp/src/tools/sound.ts`
+(`SOUND_CUES_GUIDE`, part of `SOUND_GUIDE`; helpers exported), `apps/mcp/src/examples.ts`; `packages/project`:
+`commands/schemas/sound.ts` + `handlers/sound.ts` (`soundDesign.swap` gains `frame`), `handlers/structure.ts` +
+`sound/repair.ts` (duplicate remaps child ids), `sound/cues/edits.ts` (`sequenceDialogueRanges`); `packages/api/src/sounds.ts`
+(a serialisation fix, below). Docs: README tool list (333 → 338), `docs/parity.md`, `docs/gaps.md`, `docs/security-review.md`
+(the route). Tests: `apps/engine/test/sound-design-cues.test.ts`, `apps/mcp/test/sound-cues.test.ts` (+ `sound-cues-fixture.ts`),
+`packages/project/test/sound-design-place.test.ts` (swap `frame`), `sound-cue-commands.test.ts` (duplicate),
+`packages/engine-client/test/client.test.ts`, `apps/engine/test/sounds-unit.test.ts` (regression).
+
+#### Route
+
+`POST /api/sound-design/cues` (`ROUTES.soundDesignCues`, client `soundDesignCues(req, signal?)`), read-only:
+
+```ts
+SoundCuesRequest = { envelope? xor projectId?, sequenceId? /* default the first */, opts?: { range?: {start, end} /* frames */,
+  sources?: CueDeriveSource[], density? /* default the sequence's setting */, respectDialogue? /* default true */,
+  minGapFrames?, maxCues? /* ≤ 10 000 */, curves? } }                                         // strict objects
+SoundCuesResponse = { projectId|null, sequenceId, revision|null, frameRate, durationFrames, density, respectDialogue,
+  cues: [DerivedCue minus Float arrays + {timecode, seconds, storedCueId|null}], stats, warnings,
+  dialogue: [{start, end}], storedCues, curves?: [{clipId, start, speed: number[] /* 0.001, ≤ 20 000 */}] }
+```
+
+- **One implementation path (decision):** derivation runs only on the engine, because the engine may import
+  `@jasper/mg-templates` (check-layers: the engine's deps include it; MCP's and the model's do not) and so passes the real
+  template registry (`mgTemplates`) — motion-graphic intro/outro cues exist only there. MCP `find_sound_cues` calls the route
+  rather than deriving itself. The web's Suggest Cues… (WP2.4a, built in parallel) runs the same pure `deriveCues` in the
+  browser with the same `mgRegistry` (the web may import it), so both surfaces give the same cues for the same document;
+  `curves` is there for clients that want the Cue Seam's speed curves from the engine.
+- `projectId` reads the live document through the agent service (`doc.get`: the editor's when one holds the project, else
+  the saved one); `envelope` is loaded with `loadProject` (registries included). Active expressions are bound before deriving
+  (the wp-note WP2.2 limit "the engine should bind expressions").
+- `storedCueId`: a stored cue with the same anchor (canonical JSON, or one of the merged `also` anchors), else at the same
+  frame with the same kind; a stored cue matches one suggestion at most. That is how `set_sound_cues` avoids adding twice.
+- Errors: `400 VALIDATION_FAILED` (body, options, an invalid envelope), `404 PROJECT_NOT_FOUND`, `404 SEQUENCE_NOT_FOUND`.
+
+#### MCP tools (all strict; one transaction each, retried once on a concurrent edit)
+
+| Tool | Annotations | What |
+|---|---|---|
+| `find_sound_cues` | READ_ONLY | `projectId, sequenceId?, range? {start, end}` (any time input), `sources?, density?, respectDialogue?, maxCues?` (default 500), `minGapFrames?` → the route on the document MCP read (sent as an envelope, so the revision returned is the one derived from): cues as the route gives them **plus `anchorText`** (names from the document: "cut on V1: V1 'Shot A' → V1 'Shot B'", "settle of transform.position on V2 'Logo' (key kf_…)"), counts, heroes, `stats` (sources with events only), `dialogue` with timecodes, `revision`, `next` hint. |
+| `set_sound_cues` | EDIT | `add[]` (a suggestion verbatim — `key, from, score, group, also, timecode, seconds, anchorText, storedCueId` are accepted and not stored; `storedCueId` set → skipped and reported — or a manual cue `{at|frame, kind=manual, weight=support, types (ids or synonyms), align, pan, panSweep, pitchSt, label, anchor, reason, window, muted}`, source `agent`; suggestions keep `derived`/`marker`), `update[]` (`{cueId, …}`, null clears, a new frame moves the cue's clips unless `moveClips:false`), `remove {cueIds, withClips?}`, `resync: true | {cueIds}`, `expectedRevision?` (refused with `E_REVISION_MISMATCH` before anything is sent). ONE transaction "Sound Cues (add n, edit n, remove n, resync)" in that order. |
+| `place_sound` | EDIT | `cueId` xor `at` (time or "playhead"); `layers[1…6]` each exactly one of `soundId`, `mediaId`, `sound {type, query?}`, plus `track, align, gainDb, pitchSt, pan (number or keyframes), role`; `alternatives` (1–3 sound ids), `reason`, `kind`/`weight`/`createCue` (for `at`), `clampStart`. Registers the library sounds, then ONE transaction: imports (bin "Sound Effects", reuse), with `at` a `soundCue.add` (source agent, the layers' types, the reason) unless `createCue:false`, `soundDesign.place`, and on an existing cue a `soundCue.update` appending "· Sound: <reason>" to its reason. Returns each clip (track, role, align, aligned frame, **peakFrame** — where the media's loudest point plays, fractional — start/end, `sourceInFlicks`, `errorFlicks`/`errorMs`, rate, gain, `picked`), `placementWarnings` and notes (synth, credits). |
+| `swap_sound` | EDIT | `clipId, to: soundId | "next" | "previous", align?` → register + `soundDesign.swap` in one transaction; returns from/to, `cycle {index, of, from: alternatives|family|similar|current}`, aligned frame and what was kept. |
+| `align_peak` | EDIT | `clipId, to: time | "playhead" | "cue", align?, withLayers?` → one `soundDesign.swap {frame}` per clip (the clip and, by default, the other clips of its cue). Returns per clip the aligned frame, peakFrame, start, `movedFrames`, `errorFlicks`; a note when the clip's cue stays elsewhere. |
+
+#### Decisions
+
+- **Picking by type** (`sound: {type, query?}`, the "auto-pick" the orchestrator asked to decide): `search_sounds`' ranking
+  (`types: [type]`, the cue's kind as `visualKind`, its window as `windowSec`, `usedNearby` = the sounds of the nearest
+  placed clips, commercial-safe, 12 results), palette sounds moved first, then `pickVariant` (seed = the sequence's
+  `soundDesign.settings.seed`, key = the cue id, or `frame:<n>` before the cue exists, layer = index; earlier picks of the
+  same call count as recent) — the layer then carries the variant's rate (±2 %) and gain offset (±1 dB, added to `gainDb`).
+  Deterministic for the same document, library snapshot and seed; it differs between cues and projects because cue ids
+  are part of the hash. Explicit `soundId` layers get no variation.
+- **`place_sound` with `at` creates a cue** by default (kind manual, weight from the first layer's role): every placed sound
+  then has a cue with a reason in the Cue Seam, and `swap_sound` / `align_peak "cue"` work on it. `createCue:false` places
+  by frame only.
+- **Alternatives ring**: `sfx.alternatives` = [the placed sound, …alternatives], so cycling returns to the original.
+  The cycle list = that ring, then `search {family of the original's first type, similarTo: original}`, then
+  `search {similarTo: original}` (deduplicated, commercial-safe, 12 each); the anchor is the ring's first sound, so the list
+  stays the same while cycling. A current sound not in the list is put first.
+- **Re-aligning is `soundDesign.swap` with `frame`** (additive, optional field; no new command, so no new History label):
+  the swap logic already lands an aligned point sample-exactly through the In point, checks the track, keeps track, speed,
+  gain, pan, effects, group and cue link. With `frame`, keyframes and clip markers travel with the sound (their offset to
+  the aligned point is kept); without it they keep their sequence times (unchanged behaviour). A clip whose cue stays at
+  another frame is reported, not unlinked.
+- **`mode: propose`** is omitted until P3 (no stub, as instructed).
+- **Warnings, not refusals**: a hero (cue weight or a layer role) inside `sequenceDialogueRanges` → `W_HERO_UNDER_DIALOGUE`;
+  another placed hero within 0.5 s → `W_HERO_TOO_CLOSE`, within 2 s → `W_HERO_DENSITY`. The agent asked for it; the guide
+  says not to.
+- **`sequence.duplicate`** now records, per clip, every nested id before and after `reidentifyClipChildren` (same walk,
+  same order) and `remapSoundDesign` maps `keyframeId`, a clip marker's `markerId` and any path segment of a keyframe
+  `property` naming an entity (`effects.<fxId>.params.<name>`). Regression test (failed before: the copy still named
+  `kf_0000000000000KP2`): every cue of the copy resolves to the original's frame and loading repairs no anchor.
+
+#### Bug found and fixed
+
+`soundSearchParams` serialised numbers with `String(n)`, so a computed `windowSec` (a 20-frame transition at 30 fps =
+0.666… s, 16 decimals) failed the route's `^\d{1,6}(\.\d{1,6})?$` and `place_sound {sound: {type}}` on a transition cue
+answered `VALIDATION_FAILED windowSec: seconds` (found in the real run). Numbers now go with ≤ 6 decimals; regression in
+`apps/engine/test/sounds-unit.test.ts` (failed before the fix with the same ZodError) and the MCP test places a pick on the push.
+
+#### Verified (measured, this branch; shared host, 16 cores)
+
+- `pnpm vitest run apps/engine/test/sound-design-cues.test.ts --maxWorkers=1`: 4 passed. On the Phase 2 fixture with the
+  **engine's real template registry** (lower-third 30/15 frames): cuts 90 and 330 ("Cut on V1: 'Shot A' → 'Shot B'",
+  `00:00:03:00`, 3 s), push at 180 (`transition`, window 170–190, sweep −60 → 60, whoosh first), logo move 46 / land 52
+  (anchor `transform.position`, key P2), ≥ 5 typewriter keys from 200 in one group, mg land 360 / exit 405, the marker at 250
+  as a hero boom + whoosh, no warnings; by `projectId` of a saved project: 2 stored cues matched (`storedCueId` at 90 and 180),
+  curves of the logo (> 10 frames, max speed > 0.1), sources / density / range options, the sequence's own density as
+  default; 11 bad bodies → typed 400/404, `maxCues` honoured; a fuzz target (testkit, 3 seeds, mutated structure, values,
+  truncations and arbitrary JSON; 40 iterations + 10 properties): no 5xx, every 200 parses with the response schema.
+  The generic `fuzz-http.test.ts` covers the route too (discovered from the server).
+- `pnpm vitest run apps/mcp/test/sound-cues.test.ts --maxWorkers=1`: 5 passed (≈ 30 s; real engine on 49511, 9 kit files
+  + 19 synth, jasper-mcp over stdio). find: every event above with `anchorText`, sparse < balanced, `sources`, a range in
+  seconds/timecode, `densty` → `E_UNKNOWN_ARGUMENT`; set: all 17 suggestions stored verbatim in **one transaction (revision
+  +1)**, then every suggestion has a `storedCueId`, the same list again → `E_INVALID_PARAM`, stale `expectedRevision` →
+  `E_REVISION_MISMATCH`, add + update + remove + resync in **one transaction (revision +1)** ("swoosh" stored as whoosh),
+  unknown type / key / cue refused; place: a hit with 2 alternates on the cut — **aligned point at 90·F ± 1 flick,
+  `errorFlicks` 0, peakFrame 90**, pan −20 and gain −3 stored, `sfx.alternatives = [placed, alt1, alt2]`, the cue's reason
+  appended; 3 layers on the marker cue (one picked by type): 3 tracks, one group, roles hero/layer/layer, each at 250·F ± 1;
+  a whoosh picked for the push lands at 180·F ± 1 with pan keyframes −60 → 60; a riser `at` 12 s aligns its **end** and
+  creates a `reveal` cue with the reason; a hero 5 frames from another → `W_HERO_TOO_CLOSE`; refusals (two sources in a
+  layer, cueId + at, unknown type, a boom at frame 0, unknown cue, unknown key); swap: next → alt1, next → alt2, previous →
+  alt1, previous → the original, previous again → a family/similar sound (cycle of > 3), explicit id; afterwards the clip
+  still plays its aligned point at 90·F ± 1 with errorFlicks 0, same track, role hero, cue, pan −20, gain −3, alternatives;
+  swapping to the playing sound / unknown clip / malformed id refused; align_peak: the 3 layers to 7 s → each at 210·F ± 1
+  (revision +1, a note naming the cue), back with `to: "cue"` → 250·F ± 1, one layer alone by timecode, refusals (frame 0,
+  "playhead" without an editor → `E_NO_SESSION`, a video clip).
+- `pnpm vitest run packages/project/test/sound-design-place.test.ts packages/project/test/sound-cue-commands.test.ts
+  --maxWorkers=2`: swap `frame` at all 8 rates (aligned point exact to 1 flick, errorFlicks 0, pan keyframes travel 47 frames,
+  undo = untouched document, redo = same document up to ids, refusals before 0 / busy span); the duplicate regression above.
+- `pnpm vitest run apps/mcp/test/readme-tools.test.ts apps/mcp/test/conventions.test.ts apps/mcp/test/sound-guide.test.ts
+  apps/mcp/test/sound-examples.test.ts apps/mcp/test/fuzz.test.ts packages/engine-client/test/client.test.ts`: pass (README
+  lists the 338 tools; the `soundDesign.swap` example with `frame` applies to a real project; the tool-argument fuzz covers
+  the 5 new tools).
+- **Run for real** (dev engine `JASPER_APPDIR=.stage JASPER_DEV=1 tsx apps/engine/src/cli.ts --port 49501`, the full 60-sound
+  starter kit, a scratch MCP client over stdio, project built from `sound-cues-fixture.ts`): find_sound_cues → 17 cues
+  (1 hero), all stored with set_sound_cues (revision 2); place_sound: "Crunchy impact" + 2 alternates on the cut (90),
+  a picked whoosh on the push (180, "Pneumatic whoosh", rate 0.9876), a picked thump on the logo land (52), boom + whoosh
+  on the marker (250), a picked "metal" hit on the lower-third land (360): every clip `errorFlicks` 0, peakFrame = cue;
+  swap_sound next → "Heavy metal hit" (cycle 2 of 24, aligned 90); align_peak to cue (moved 0). **Native export**
+  (`start_export`, 14 s MP4/AAC) decoded with ffmpeg (mono, 48 kHz) and searched with the descriptors' 2 ms RMS / 0.5 ms
+  hop within ±0.25 s of each cue: logo land **+0.17 ms**, cut **0.00 ms**, push **0.00 ms**, mg land **0.00 ms**; the marker's
+  combined maximum is +97.7 ms (the boom's later body plus the whoosh tail), so its two layers were measured alone
+  (exports with A5, then A4 muted): boom **−0.33 ms**, whoosh **−0.83 ms** — all within the envelope's resolution.
+  Frames **looked at** (`render_frames`): 89 red / 90 green (the cut on the cue); 170 / 180 / 189 the push half-way at 180,
+  entering from the left (matches the −60 → 60 sweep); 49 / 52 / 55 the logo left of centre, at its overshoot, settled
+  (the land cue is the turnaround). In the editor (Vite on 49502, the project open in a browser): `set_sound_cues` applied
+  live (`appliedBy: session`), MCP `undo` removed exactly that cue ("Agent: Sound Cues (add 1)"); a two-layer
+  `place_sound` at 300 was **one History entry**: one `undo` deleted both clips, the imported media and its item, and the
+  created cue (storedCues back to 17).
+- `pnpm typecheck`, `pnpm lint` (Biome, tokens, anime, layers, assets): pass (see the integration below).
+
+#### Limits and notes for the next packages
+
+- **Lower-third intro vs its cue (found by looking):** the `lower-third` template's picture settles at ≈ frame 345–350
+  (`render_frames` 330…360), while its declared `introFrames` (30 at 30 fps) put the mg `land` cue at 360, ≈ 0.3 s after the
+  visible settle. The deriver follows the registry's `introFrames` (WP2.2); either the template metadata or the mg source
+  should use the visible settle — a WP2.2/template decision, not changed here.
+- **Loud mix:** kit sounds at 0 dB gain overlap to a decoded peak of 1.36 (mono, > 0 dBFS) in the real-run export. Level is
+  Phase 4 (auto gain, masking, limits); placement does not touch it.
+- `place_sound` warnings use transcript words and Essential Sound dialogue clips only (no VAD: P6-R3) and the hero rule
+  counts placed clips with `sfx.role: hero` (not unfilled hero cues).
+- Undo was checked live in the editor through MCP `undo`; the headless tests prove "one transaction" (revision +1).
+- `find_sound_cues` sends the document as an envelope (one read, a consistent revision); on very large projects the body is
+  as large as `render_frame`'s.
+- `swap_sound`'s family / similar lists depend on the library snapshot (a rescan can change the cycle after the alternates).
+- The route does not return engine sources (scene, beat, pixel: P6 `extraCues`).
+
 ### WP2.4a Cue Seam
 
 Scope: spec 12 §2.7 "Cue Seam", "Suggest Cues… dialog", "Peak handle", the cue / peak snapping and the menus and

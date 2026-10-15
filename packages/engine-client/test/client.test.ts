@@ -147,6 +147,40 @@ describe('EngineClient requests', () => {
 		expect((await c.putSoundRoots({ roots: [] })).removedSounds).toBe(0);
 		await expect(c.getSound('snd_0123456789abcdef')).rejects.toMatchObject({ code: 'NOT_FOUND' });
 	});
+
+	it('posts the cue derivation request (spec 12 §2.8)', async () => {
+		const m = mockFetch((url, init) =>
+			url === '/api/sound-design/cues' && init.method === 'POST'
+				? json({
+						projectId: 'p1',
+						sequenceId: 'seq_1',
+						revision: 3,
+						frameRate: { num: 30, den: 1 },
+						durationFrames: 90,
+						density: 'balanced',
+						respectDialogue: true,
+						cues: [],
+						stats: {
+							bySource: {},
+							dropped: { rate: 0, gap: 0, maxCues: 0, confidence: 0, range: 0 },
+							heroesDemoted: 0,
+							found: 0,
+							kept: 0,
+						},
+						warnings: [],
+						dialogue: [],
+						storedCues: 0,
+					})
+				: json({ code: 'NOT_FOUND', message: 'nope', retryable: false }, 404),
+		);
+		const c = new EngineClient({ fetch: m.fetch });
+		const r = await c.soundDesignCues({ projectId: 'p1', opts: { density: 'sparse', sources: ['edits'] } });
+		expect(r.revision).toBe(3);
+		expect(JSON.parse(String(m.calls[0]!.init.body))).toEqual({
+			projectId: 'p1',
+			opts: { density: 'sparse', sources: ['edits'] },
+		});
+	});
 });
 
 describe('uploadFile (S04:IN-005)', () => {

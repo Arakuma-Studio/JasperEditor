@@ -668,15 +668,22 @@ function remapContentTimes(
 	F: number,
 	from: { start: number; sourceIn: number; rate: number },
 	to: { start: number; sourceIn: number; rate: number },
+	/** Sequence flicks every content time travels by (a swap onto another frame moves them with the sound). */
+	travelSeq = 0,
 ): void {
 	if (from.rate === to.rate) {
-		shiftContentTimes(clip, to.sourceIn - from.sourceIn - (to.start - from.start) * F * from.rate);
+		shiftContentTimes(
+			clip,
+			to.sourceIn - from.sourceIn - (to.start - from.start) * F * from.rate + travelSeq * from.rate,
+		);
 		return;
 	}
 	const map = (k: number) =>
 		Math.max(
 			0,
-			Math.round(to.sourceIn + (from.start * F + (k - from.sourceIn) / from.rate - to.start * F) * to.rate),
+			Math.round(
+				to.sourceIn + (from.start * F + (k - from.sourceIn) / from.rate + travelSeq - to.start * F) * to.rate,
+			),
 		);
 	const remap = (a: { keyframes?: { time: number }[] } | undefined) => {
 		for (const k of a?.keyframes ?? []) k.time = map(k.time);
@@ -734,7 +741,14 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 		pointFlicks = clip.start * F + (pt * FLICKS_PER_SECOND - clip.sourceIn) / clip.speed.rate;
 	}
 	align = cmd.align ?? align!;
-	const cueFrame = Math.round(pointFlicks / F);
+	let cueFrame = Math.round(pointFlicks / F);
+	if (cmd.frame !== undefined) {
+		cueFrame = h.frame(seq, cmd.frame);
+		if (!Number.isSafeInteger(cueFrame) || cueFrame < 0 || cueFrame > SOUND_DESIGN_LIMITS.maxFrame)
+			h.fail('E_INVALID_PARAM', `frame must be between 0 and ${SOUND_DESIGN_LIMITS.maxFrame}`, {
+				path: ['frame'],
+			});
+	}
 	// A pitch change keeps the seeded variation of the speed: new rate = variation · 2^(st/12) (varispeed), or the
 	// variation alone plus the Pitch Shifter for larger shifts.
 	const pitch = currentPitch(clip);
@@ -781,12 +795,14 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 		h.fail('E_OVERLAP', `The new sound does not fit on its track between frames ${p.start} and ${end}`, {
 			blocking,
 		});
-	// Content times move with the In point, start and speed: keyframes keep their sequence times.
+	// Content times move with the In point, start and speed: keyframes and clip markers keep their place relative to
+	// the aligned point (their sequence times when it stays; with `frame` they travel with it).
 	remapContentTimes(
 		clip,
 		F,
 		{ start: clip.start, sourceIn: clip.sourceIn, rate: clip.speed.rate },
 		{ start: p.start, sourceIn: p.sourceInFlicks, rate: newRate },
+		cmd.frame !== undefined ? cueFrame * F - pointFlicks : 0,
 	);
 	if (pp) {
 		clip.speed.rate = newRate;

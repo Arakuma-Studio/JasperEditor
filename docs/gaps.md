@@ -79,7 +79,7 @@ Agents drive everything without a window: a CLI over the same command catalogue 
 reachable, batch steps, rendered checks). **Done when:** each File/Edit/Clip/Sequence menu command is reachable from
 MCP or the CLI with a JSON schema, a scripted end-to-end session (import → edit → grade → export) runs headless in
 CI, and the README tool list is checked by a test.
-**Status (merged):** done for MCP depth and the CLI — see [wp-notes/mcp-cli.md](wp-notes/mcp-cli.md): the `jasper` CLI over the same tools, `ui_*` tools that drive the live window, 333 MCP tools (counted after sound design WP1.3) with a README list checked by `apps/mcp/test/readme-tools.test.ts`, `e2e/agent-ui.spec.ts`. The headless session in CI came with `golden-fuzz` (its GitHub Actions workflow). Since `review` the `ui_*` tools cannot answer approvals or run approval-gated or irreversible commands ([security-review.md](security-review.md) AGT-1). `fixups` made clip targets aim at their visible part and fixed a bundle that did not load (`apps/mcp/test/bundle.test.ts`).
+**Status (merged):** done for MCP depth and the CLI — see [wp-notes/mcp-cli.md](wp-notes/mcp-cli.md): the `jasper` CLI over the same tools, `ui_*` tools that drive the live window, 338 MCP tools (counted after sound design WP2.3) with a README list checked by `apps/mcp/test/readme-tools.test.ts`, `e2e/agent-ui.spec.ts`. The headless session in CI came with `golden-fuzz` (its GitHub Actions workflow). Since `review` the `ui_*` tools cannot answer approvals or run approval-gated or irreversible commands ([security-review.md](security-review.md) AGT-1). `fixups` made clip targets aim at their visible part and fixed a bundle that did not load (`apps/mcp/test/bundle.test.ts`).
 
 ### keyframes-blend
 Premiere's full keyframe and blend-mode behaviour. **Done when:** all 27 Premiere blend modes exist in the model,
@@ -323,7 +323,8 @@ e2e run, reproduced in a unit test).
 and preview defects), Phase 1 (a licensed, offline sound library that users and agents search, look at, audition and
 insert peak-aligned with provenance and credits), then cues and placement (P2), proposals and review (P3), mixing (P4),
 Sound Check (P5), packs and more cue sources (P6).
-**Status (on `feat/sound-design`, not merged to `main`):** partial — Phases 0 and 1 done, Phases 2–6 not started. See
+**Status (on `feat/sound-design`, not merged to `main`):** partial — Phases 0 and 1 done; Phase 2 in progress (see below; the
+`/api/sound-design/cues` route and the five MCP cue tools are in, WP2.3); Phases 3–6 not started. See
 [wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 1 verification": the Sound Library panel and Sound Design
 workspace, the engine library (60-sound Kenney CC0 kit, user folders with a declared licence, Jasper Synth), ten MCP
 tools, credits; inserts land on the frame to the sample (library sounds are registered with 50 ms of lead silence;

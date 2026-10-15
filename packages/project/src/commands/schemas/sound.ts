@@ -155,16 +155,18 @@ export const SoundDesignPlaceCmd = cmd('soundDesign.place', {
 
 /**
  * Swaps the sound of a placed clip: the new media's aligned point lands where the old one did (same track, speed,
- * pan, gain, effects, group, role and cue link; keyframes keep their sequence times). The same media with another
- * `align` re-aligns the clip (its start, peak or end on the frame the old point played at); `pitchSt` re-pitches it
- * around that point (|st| ≤ 3 by varispeed keeping the seeded ±2 % variation, else the Pitch Shifter effect; 0
- * removes the shift). Result `{clipId, mediaId, soundId, start, sourceInFlicks, errorFlicks, alignedFrame, align, rate,
- * pitchSt}`.
+ * pan, gain, effects, group, role and cue link; keyframes keep their sequence times). `frame` lands it on that frame
+ * instead (with the clip's own media this re-aligns the clip: MCP `align_peak`), still sample-exact through the In
+ * point. The same media with another `align` re-aligns the clip (its start, peak or end on the frame the old point
+ * played at, or on `frame`); `pitchSt` re-pitches it around that point (|st| ≤ 3 by varispeed keeping the seeded ±2 %
+ * variation, else the Pitch Shifter effect; 0 removes the shift). Result `{clipId, mediaId, soundId, start,
+ * sourceInFlicks, errorFlicks, alignedFrame, align, rate, pitchSt}`.
  */
 export const SoundDesignSwapCmd = cmd('soundDesign.swap', {
 	clipId: IdRefSchema,
 	mediaId: IdRefSchema,
 	align: z.enum(CUE_ALIGNS).optional(),
+	frame: TimeInputSchema.optional(),
 	pitchSt: z.number().min(-12).max(12).optional(),
 });
 

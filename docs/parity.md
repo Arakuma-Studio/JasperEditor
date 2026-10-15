@@ -25,7 +25,7 @@ the table below (`P0 ×3, P1 ×2, P2 ×1`, each row's fraction); no row's grade 
 | Menu entries | 291, all registered; the 280 default key bindings resolve to commands too (`apps/web/test/polish-menu-wiring.test.ts` fails otherwise; counted from `MENUBAR` and `DEFAULT_KEYMAP` against the registry after `registerAllCommands()`) |
 | Panels | 22 (`listPanels()`), the Media Browser among them |
 | Document commands | 256 in `COMMAND_CATALOG`; none answers `E_NOT_IMPLEMENTED` (no `notImplemented()` handler left) |
-| Agent tools | 333 MCP tools (counted from a live `listTools`; the README list is checked by `apps/mcp/test/readme-tools.test.ts`) |
+| Agent tools | 338 MCP tools (counted from a live `listTools`; the README list is checked by `apps/mcp/test/readme-tools.test.ts`) |
 | UI languages | English and Spanish, 8 614 strings (`pnpm i18n:check`), switched without a restart |
 
 How a row is graded: **done** when the model, an undoable command, the UI, the preview and every export path exist
@@ -244,7 +244,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
-| AG-1 | MCP server: 333 tools, every edit an undoable transaction, approvals, the `jasper` CLI (beyond Premiere) | P1 | done | wp-mcp, wp-notes/mcp-cli.md, README; tools counted from a live `listTools`; the live-UI tools cannot answer approvals or run gated commands (security-review.md AGT-1, `e2e/security-review.spec.ts`) | mcp-cli |
+| AG-1 | MCP server: 338 tools, every edit an undoable transaction, approvals, the `jasper` CLI (beyond Premiere) | P1 | done | wp-mcp, wp-notes/mcp-cli.md, README; tools counted from a live `listTools`; the live-UI tools cannot answer approvals or run gated commands (security-review.md AGT-1, `e2e/security-review.spec.ts`) | mcp-cli |
 
 ### Platforms
 
