@@ -12,8 +12,8 @@ import type { TextAnimatorGroup, TextRangeSelector } from '../../schema/text-ani
 import { getTextAnimationSpec, resolveTextAnimationWindows } from '../../text-animations.ts';
 import { rangeParams } from '../../text-animators/evaluate.ts';
 import { rangeValue, unitCount } from '../../text-animators/selectors.ts';
-import { textUnitCount, typewriterScheduleMs } from '../anchor.ts';
 import type { SoundTypeId } from '../taxonomy.ts';
+import { textUnitCount, typewriterOffsets } from '../text-events.ts';
 import type { CueCandidate, DerivedCueKind } from './types.ts';
 import {
 	type CueContext,
@@ -71,29 +71,7 @@ export function thinPattern(frames: readonly number[], fps: number): number[] {
 	return out;
 }
 
-/**
- * Keystroke frames (offsets from the window start) of a typewriter window, from `typewriterScheduleMs` (the renderer's
- * `typewriterSchedule`, @jasper/motion). In: unit i shows from the first frame whose seek time reaches its keystroke
- * (`⌈t/frame⌉`). Out plays the In timeline mirrored (window frame k seeks `(N − 1 − k)` frames): the i-th deleted unit
- * (the (n − 1 − i)-th typed) is gone from frame `N − ⌈t/frame⌉` (N = the window's end: the first unit stays to the end).
- */
-export function typewriterOffsets(
-	units: number,
-	windowFrames: number,
-	fps: number,
-	params: Record<string, unknown>,
-	side: 'in' | 'out',
-): number[] {
-	const n = Math.max(0, Math.floor(units));
-	if (n === 0 || windowFrames <= 0 || !(fps > 0)) return [];
-	const frameMs = 1000 / fps;
-	const { start, slot } = typewriterScheduleMs(n, windowFrames * frameMs, params);
-	const typed = Array.from({ length: n }, (_, i) =>
-		Math.min(windowFrames, Math.max(0, Math.ceil((start + slot * i) / frameMs - 1e-9))),
-	);
-	if (side === 'in') return typed;
-	return typed.map((x) => windowFrames - x).reverse();
-}
+export { typewriterOffsets };
 
 export function deriveTextCues(ctx: CueContext): CueCandidate[] {
 	const cues: CueCandidate[] = [];
@@ -102,6 +80,17 @@ export function deriveTextCues(ctx: CueContext): CueCandidate[] {
 		if (c.kind !== 'text' || c.enabled === false || !shown.has(c.trackId) || !inRange(ctx, c)) continue;
 		textClipCues(ctx, c as TextClip, cues);
 	}
+	return cues;
+}
+
+/**
+ * The text source's cue candidates of one text clip (no track, enabled or range filter): what `deriveTextCues` gives for
+ * it. `resolveCueAnchor` re-derives a clip with it so a Range Selector unit anchor resolves to the same frame.
+ */
+export function textClipCueCandidates(ctx: CueContext, c: Clip): CueCandidate[] {
+	if (c.kind !== 'text') return [];
+	const cues: CueCandidate[] = [];
+	textClipCues(ctx, c as TextClip, cues);
 	return cues;
 }
 

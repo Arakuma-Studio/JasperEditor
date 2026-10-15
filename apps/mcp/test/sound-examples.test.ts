@@ -9,7 +9,40 @@ import {
 import { describe, expect, it } from 'vitest';
 import { COMMAND_EXAMPLES } from '../src/examples.ts';
 
-const SOUND_COMMANDS = ['media.setLibraryInfo'];
+const SOUND_COMMANDS = [
+	'media.setLibraryInfo',
+	'soundCue.add',
+	'soundCue.update',
+	'soundCue.remove',
+	'soundCue.resync',
+	'soundDesign.place',
+	'soundDesign.swap',
+	'soundDesign.setPalette',
+	'soundDesign.setSettings',
+];
+
+/** What an example needs in the project first (a cue to edit, a placed sound to swap). */
+const PRELUDE: Record<string, unknown[]> = {
+	'soundCue.update': [
+		{
+			type: 'soundCue.add',
+			cues: [{ id: 'cue_00000000000000EX', frame: 30, kind: 'cut', weight: 'support', source: 'user' }],
+		},
+	],
+	'soundCue.remove': [
+		{
+			type: 'soundCue.add',
+			cues: [{ id: 'cue_00000000000000EX', frame: 30, kind: 'cut', weight: 'support', source: 'user' }],
+		},
+	],
+	'soundDesign.swap': [
+		{
+			type: 'soundDesign.place',
+			frame: 30,
+			layers: [{ mediaId: { mediaByName: 'clip-a.mp4' }, align: 'start', track: 'A1' }],
+		},
+	],
+};
 
 describe('sound-design describe_commands examples', () => {
 	it.each(SOUND_COMMANDS)('%s applies to a project with clip-a.mp4', (type) => {
@@ -57,13 +90,27 @@ describe('sound-design describe_commands examples', () => {
 		expect(reg.result.ok).toBe(true);
 		const example = COMMAND_EXAMPLES[type];
 		expect(example).toBeDefined();
-		const resolved = resolveAgentAddresses(reg.document, [example]);
+		let doc = reg.document;
+		const prelude = PRELUDE[type];
+		if (prelude) {
+			const p = resolveAgentAddresses(doc, prelude);
+			expect(p.ok).toBe(true);
+			if (!p.ok) return;
+			const pr = applyTransaction(
+				doc,
+				{ label: 'prelude', origin: 'user', commands: p.commands },
+				{ ...ctx, revision: 1 },
+			);
+			expect(pr.result.ok, JSON.stringify(pr.result)).toBe(true);
+			doc = pr.document;
+		}
+		const resolved = resolveAgentAddresses(doc, [example]);
 		expect(resolved.ok).toBe(true);
 		if (!resolved.ok) return;
 		const r = applyTransaction(
-			reg.document,
+			doc,
 			{ label: 'example', origin: 'user', commands: resolved.commands },
-			{ ...ctx, revision: 1 },
+			{ ...ctx, revision: 2 },
 		);
 		expect(r.result.ok, JSON.stringify(r.result)).toBe(true);
 	});

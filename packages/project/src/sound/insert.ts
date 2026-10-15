@@ -128,6 +128,10 @@ export function planSoundInsert(input: {
 	align: SoundAlign;
 	timing: SoundTiming;
 	mediaDurationFlicks?: number | null;
+	/** Clip speed (varispeed), default 1: the aligned point is placed in sequence time `offset ÷ rate`. */
+	rate?: number;
+	/** A sound that would start before frame 0: true (default) starts it at 0 with its head trimmed, false refuses. */
+	clampStart?: boolean;
 }): { ok: true; placement: SoundInsertPlacement } | { ok: false; code: 'E_INVALID_PARAM'; message: string } {
 	const t = input.timing;
 	if (!t || typeof t !== 'object')
@@ -139,6 +143,7 @@ export function planSoundInsert(input: {
 	if (!(durFlicks > 0)) return { ok: false, code: 'E_INVALID_PARAM', message: 'The sound has no length' };
 	const durSec = durFlicks / FLICKS_PER_SECOND;
 	const cue = Number.isFinite(input.cueFrame) ? Math.max(0, Math.round(input.cueFrame)) : 0;
+	const rate = input.rate ?? 1;
 	const r = peakAlignedStart({
 		cueFrame: cue,
 		peakSec: Math.min(t.peakSec, durSec),
@@ -147,7 +152,8 @@ export function planSoundInsert(input: {
 		headQuietSec: t.headQuietSec,
 		fps: input.fps,
 		align: input.align,
-		clampStart: true,
+		rate,
+		clampStart: input.clampStart ?? true,
 	});
 	if (!r.ok) return r;
 	if (!(durFlicks > r.sourceInFlicks))
@@ -159,11 +165,11 @@ export function planSoundInsert(input: {
 			start: r.start,
 			sourceInFlicks: r.sourceInFlicks,
 			outFlicks: durFlicks,
-			frames: Math.max(1, Math.floor(durFlicks / F - r.sourceInFlicks / F + FRAME_EPS)),
+			frames: Math.max(1, Math.floor((durFlicks - r.sourceInFlicks) / rate / F + FRAME_EPS)),
 			cueFrame: cue,
 			align: input.align,
 			alignFlicks: r.alignFlicks,
-			alignOffsetFrames: (r.alignFlicks - r.sourceInFlicks) / F,
+			alignOffsetFrames: (r.alignFlicks - r.sourceInFlicks) / rate / F,
 			errorFlicks: r.errorFlicks,
 			trimmedHeadSec: r.trimmedHeadSec,
 		},

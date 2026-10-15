@@ -6,13 +6,13 @@ import type { MediaItem, ProjectDocument, ProjectItem, SourceMarks } from '../..
 import type { MediaAsset, Transcript } from '../../schema/media.ts';
 import type { Clip, Sequence } from '../../schema/sequence.ts';
 import type { LibraryProvenance } from '../../sound/provenance.ts';
+import { libraryDescriptorIssue } from '../../sound/provenance.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DDoc, HandlerContext } from '../context.ts';
 import { cleanupSequence, removeClip } from '../placement.ts';
 import { orphanedSynthetics } from '../tx-delta.ts';
 import { replaceMediaFile, type SourceFit } from './process.ts';
 import { assertBin, detachItem, insertItem } from './project-items.ts';
-import { libraryDescriptorIssue } from './sound.ts';
 import { type HandlerMap, idList, memoPlain, peek, peekKeys } from './util.ts';
 
 function isDescendant(doc: DDoc, ancestorBinId: string, itemId: string): boolean {

@@ -130,6 +130,10 @@ export const soundCueFields = {
 	align: z.enum(CUE_ALIGNS).optional(),
 	/** Static pan −100 (left) … 100 (right), or `auto` (x of the picture event; spec 12 §2.2). */
 	pan: z.union([z.number().min(-100).max(100), z.literal('auto')]).optional(),
+	/** Pan travelling with the picture (a whoosh across the frame): from → to over the cue's window. */
+	panSweep: z
+		.looseObject({ from: z.number().min(-100).max(100), to: z.number().min(-100).max(100) })
+		.optional(),
 	pitchSt: z.number().min(-12).max(12).optional(),
 	/** Dip the music before the cue (P4). */
 	stopBefore: z
@@ -211,8 +215,8 @@ export type SfxPlacement = DeepStrip<z.infer<typeof SfxPlacementSchema>>;
 export const ClipSfxSchema = z.looseObject({
 	/** The cue it fills (null = placed at a frame without a cue). */
 	cueId: id().nullable(),
-	/** The library sound (`snd_…`), from the media's provenance. */
-	soundId: id(),
+	/** The library sound (`snd_…`), from the media's provenance; null for media that is not a library sound. */
+	soundId: id().nullable(),
 	/** 0-based layer of its cue. */
 	layer: z
 		.number()
@@ -301,6 +305,7 @@ export function readSoundCue(raw: unknown, key?: string): SoundCue | null {
 		'label',
 		'align',
 		'pan',
+		'panSweep',
 		'pitchSt',
 		'stopBefore',
 		'build',
@@ -374,13 +379,12 @@ export function readSoundDesign(raw: unknown): SoundDesign | null {
 	return soundDesignIssue(out) === null ? (out as SoundDesign) : { cues: rec };
 }
 
-/** Lenient read of a stored `AudioClip.sfx`; null when it has no usable sound id. Pure; never throws. */
+/** Lenient read of a stored `AudioClip.sfx` (field by field); null when it is not an object. Pure; never throws. */
 export function readClipSfx(raw: unknown): ClipSfx | null {
 	if (!isRecord(raw)) return null;
 	const ok = ClipSfxSchema.safeParse(raw);
 	if (ok.success) return ok.data as ClipSfx;
-	const soundId = opt(id(), raw.soundId);
-	if (!soundId) return null;
+	const soundId = opt(id(), raw.soundId) ?? null;
 	const shape = ClipSfxSchema.shape;
 	const out: Record<string, unknown> = { ...unknownFields(raw, shape), soundId };
 	out.cueId = opt(shape.cueId, raw.cueId) ?? null;

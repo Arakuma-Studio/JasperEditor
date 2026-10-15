@@ -6,7 +6,7 @@ import {
 	createRandomIdSource,
 	type ProjectDocument,
 } from '../src/index.ts';
-import { Harness, makeCtx } from './helpers.ts';
+import { Harness, makeCtx, videoAsset } from './helpers.ts';
 import { LIB } from './sound-fixtures.ts';
 
 const FUZZ = process.env.FUZZ === '1';
@@ -35,7 +35,22 @@ type Abstract =
 	| { k: 'opacity'; clip: number; v: number; animate: boolean; frame: number }
 	| { k: 'addTrack'; audio: boolean }
 	| { k: 'update'; clip: number; enabled: boolean }
-	| { k: 'library'; media: number; variant: number; title: string };
+	| { k: 'library'; media: number; variant: number; title: string }
+	| { k: 'cueAdd'; at: number; kind: number; anchor: number; clip: number }
+	| {
+			k: 'soundPlace';
+			cue: number;
+			useCue: boolean;
+			at: number;
+			layers: number;
+			track: number;
+			pitch: number;
+			clamp: boolean;
+	  }
+	| { k: 'cueUpdate'; cue: number; at: number; move: boolean }
+	| { k: 'cueRemove'; cue: number; withClips: boolean }
+	| { k: 'resync' }
+	| { k: 'swap'; clip: number; media: number };
 
 const frame = fc.integer({ min: 0, max: 900 });
 const idx = fc.nat(1000);
@@ -106,7 +121,43 @@ const abstract: fc.Arbitrary<Abstract> = fc.oneof(
 		variant: fc.nat(4),
 		title: fc.string({ maxLength: 12 }),
 	}),
+	// sound-design (spec 12 §2.9): cues, placement, swap and resync mixed into the edits
+	fc.record({
+		k: fc.constant('cueAdd' as const),
+		at: frame,
+		kind: fc.nat(10),
+		anchor: fc.nat(3),
+		clip: idx,
+	}),
+	fc.record({
+		k: fc.constant('soundPlace' as const),
+		cue: idx,
+		useCue: fc.boolean(),
+		at: frame,
+		layers: fc.integer({ min: 1, max: 3 }),
+		track: fc.integer({ min: 0, max: 4 }),
+		pitch: fc.integer({ min: -6, max: 6 }),
+		clamp: fc.boolean(),
+	}),
+	fc.record({ k: fc.constant('cueUpdate' as const), cue: idx, at: frame, move: fc.boolean() }),
+	fc.record({ k: fc.constant('cueRemove' as const), cue: idx, withClips: fc.boolean() }),
+	fc.record({ k: fc.constant('resync' as const) }),
+	fc.record({ k: fc.constant('swap' as const), clip: idx, media: fc.nat(1) }),
 );
+
+const CUE_KINDS = [
+	'cut',
+	'transition',
+	'move',
+	'land',
+	'appear',
+	'exit',
+	'emphasis',
+	'reveal',
+	'beat',
+	'manual',
+	'silence',
+];
 
 function concretize(a: Abstract, doc: ProjectDocument, media: string[]): unknown {
 	const seq = Object.values(doc.sequences)[0]!;
@@ -197,6 +248,56 @@ function concretize(a: Abstract, doc: ProjectDocument, media: string[]): unknown
 			][a.variant % 5];
 			return { type: 'media.setLibraryInfo', mediaId: media[a.media % media.length], library };
 		}
+		case 'cueAdd': {
+			const c = pick(a.clip);
+			const anchor =
+				a.anchor === 0
+					? undefined
+					: a.anchor === 1
+						? { type: 'clip', clipId: c, edge: 'start' }
+						: a.anchor === 2
+							? { type: 'keyframe', clipId: c, property: 'opacity', event: 'end' }
+							: null;
+			return {
+				type: 'soundCue.add',
+				cues: [
+					{
+						frame: a.at,
+						kind: CUE_KINDS[a.kind % CUE_KINDS.length],
+						weight: 'support',
+						source: 'derived',
+						...(anchor !== undefined ? { anchor } : {}),
+					},
+				],
+			};
+		}
+		case 'soundPlace': {
+			const cues = Object.keys((seq.soundDesign as { cues?: object } | undefined)?.cues ?? {}).sort();
+			const lib = media.slice(3);
+			const layers = Array.from({ length: a.layers }, (_, i) => ({
+				mediaId: lib[i % lib.length],
+				...(a.track ? { track: `A${a.track}` } : {}),
+				...(a.pitch ? { pitchSt: a.pitch } : {}),
+			}));
+			return a.useCue && cues.length
+				? { type: 'soundDesign.place', cueId: cues[a.cue % cues.length], layers, clampStart: a.clamp }
+				: { type: 'soundDesign.place', frame: a.at, layers, clampStart: a.clamp };
+		}
+		case 'cueUpdate':
+		case 'cueRemove': {
+			const cues = Object.keys((seq.soundDesign as { cues?: object } | undefined)?.cues ?? {}).sort();
+			const id = cues[a.cue % Math.max(1, cues.length)] ?? 'cue_0000000000000000';
+			return a.k === 'cueUpdate'
+				? { type: 'soundCue.update', cueId: id, frame: a.at, moveClips: a.move }
+				: { type: 'soundCue.remove', cueIds: [id], withClips: a.withClips };
+		}
+		case 'resync':
+			return { type: 'soundCue.resync' };
+		case 'swap': {
+			const sfx = clips.filter((c) => (c as { sfx?: unknown }).sfx);
+			const c = sfx[a.clip % Math.max(1, sfx.length)]?.id ?? pick(a.clip);
+			return { type: 'soundDesign.swap', clipId: c, mediaId: media[3 + (a.media % (media.length - 3))] };
+		}
 	}
 }
 
@@ -207,6 +308,30 @@ describe('AC-25: invariants under random transactions', () => {
 			h.registerVideo({ seconds: 8 }),
 			h.registerVideo({ seconds: 3, audio: false }),
 			h.registerVideo({ seconds: 20, kind: 'audio' }),
+			// sound-design: two padded library sounds (peak 70 ms / 300 ms in)
+			...[0.07, 0.3].map((peakSec, i) => {
+				const r = h.ok([
+					{
+						type: 'media.register',
+						asset: {
+							...videoAsset({ kind: 'audio', seconds: 0.6 + i }),
+							library: {
+								...LIB,
+								soundId: `snd_00000000000000a${i}`,
+								descriptors: {
+									...LIB.descriptors!,
+									peakSec,
+									onsetSec: 0.05,
+									headQuietSec: 0.05,
+									durationSec: 0.6 + i,
+								},
+								leadSilenceSec: 0.05,
+							},
+						},
+					},
+				]);
+				return (r.results[0] as { mediaId: string }).mediaId;
+			}),
 		];
 		h.ok([
 			{ type: 'clip.place', source: { mediaId: media[0] }, at: 0 },
@@ -214,6 +339,7 @@ describe('AC-25: invariants under random transactions', () => {
 		]);
 		const base = h.doc;
 		let accepted = 0;
+		let soundAccepted = 0;
 		const ids = createRandomIdSource();
 		fc.assert(
 			fc.property(
@@ -231,6 +357,8 @@ describe('AC-25: invariants under random transactions', () => {
 						);
 						if (result.ok) {
 							accepted++;
+							if (commands.some((c) => /^sound(Cue|Design)\./.test((c as { type: string }).type)))
+								soundAccepted++;
 							const issues = checkInvariants(document);
 							if (issues.length)
 								throw new Error(
@@ -252,5 +380,6 @@ describe('AC-25: invariants under random transactions', () => {
 			{ numRuns: RUNS, seed: FUZZ ? undefined : 20260930 },
 		);
 		expect(accepted).toBeGreaterThan(0);
+		expect(soundAccepted).toBeGreaterThan(RUNS / 10);
 	}, 600_000);
 });

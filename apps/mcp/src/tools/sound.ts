@@ -686,36 +686,24 @@ export function registerSoundTools(ctx: ToolContext): void {
 						);
 					pick = { kind: 'existing', trackId: id, label: a.track };
 				}
-				let trackRef: string;
-				if (pick.kind === 'new') {
-					commands.push({
-						type: 'track.add',
-						sequenceId: seq.id,
-						kind: 'audio',
-						name: pick.name,
-						ref: '$sfxTrack',
-					});
-					trackRef = '$sfxTrack';
-				} else trackRef = pick.trackId;
 				const mediaRef = existing ?? media[0]!.ref!;
-				commands.push(
-					{
-						type: 'clip.place',
-						sequenceId: seq.id,
-						source: { mediaId: mediaRef },
-						sourceRange: { in: { flicks: place.sourceInFlicks }, out: { flicks: place.outFlicks } },
-						at: place.start,
-						tracks: { audio: trackRef },
-						mode: 'overwrite',
-						video: false,
-						// One clip on the chosen track: never the item's Audio Channels routing (more clips, other tracks).
-						audioMapping: 'stereo',
-						ref: '$soundClip',
-					},
-					{ type: 'essentialSound.setType', clipIds: ['$soundClip'], audioType: 'sfx' },
-				);
-				if (a.gainDb !== undefined && a.gainDb !== 0)
-					commands.push({ type: 'clip.update', clipId: '$soundClip', patch: { gainDb: a.gainDb } });
+				// spec 12 §2.9: soundDesign.place commits the clip (track if needed, Essential Sound ▸ SFX, gain,
+				// `AudioClip.sfx`); an explicit track was checked above and is refused again by the command if busy.
+				commands.push({
+					type: 'soundDesign.place',
+					sequenceId: seq.id,
+					frame: cue,
+					layers: [
+						{
+							mediaId: mediaRef,
+							align,
+							...(pick.kind === 'existing' ? { track: pick.trackId } : {}),
+							...(a.gainDb !== undefined && a.gainDb !== 0 ? { gainDb: a.gainDb } : {}),
+							ref: '$soundClip',
+						},
+					],
+					clampStart: true,
+				});
 				const res = await transact(
 					ctx,
 					a.projectId,

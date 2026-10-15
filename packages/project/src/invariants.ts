@@ -47,6 +47,7 @@ import { isKnownClipKind, SequencePreviewSettingsSchema } from './schema/sequenc
 import type { ShapeItem } from './schema/shapes.ts';
 import type { ClipCameraTracker } from './schema/three-d.ts';
 import { libraryProvenanceIssue, readLibraryProvenance } from './sound/provenance.ts';
+import { clipSfxProblem, repairSoundDesign, sequenceSoundDesignIssue } from './sound/repair.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
@@ -863,6 +864,11 @@ export function invariantCheckers(
 					issues.push(inv('INV-001', `Shape ${c.id} has duplicate item ids ${dup.join(', ')}`, cw));
 			}
 		}
+		// sound-design (spec 12 §2.2): sound-design metadata must be readable, on audio clips only (INV-SFX).
+		if (r.sfx !== undefined) {
+			const bad = clipSfxProblem(c as Clip & { sfx?: unknown });
+			if (bad) issues.push(inv('INV-SFX', `Clip ${c.id}: ${bad}`, [...cw, 'sfx']));
+		}
 		// three-d: only visual clips with Motion are 3D layers; environment lights reference existing media.
 		if (r.threeD !== undefined && !canBe3d(c.kind))
 			issues.push(inv('INV-012', `Clip ${c.id}: a ${c.kind} clip cannot be a 3D layer`, [...cw, 'threeD']));
@@ -1392,6 +1398,12 @@ export function runInvariants(
 			for (const x of t.mixer?.sends ?? []) claim(x.id, 'snd', [...where, 'tracks', t.id, 'sends', x.id]);
 		for (const m of audioMixIssues(seq as Sequence, where)) issues.push(inv('INV-MIX', m.message, m.path));
 		for (const m of seq.markers) claim(m.id, 'mrk', [...where, 'markers', m.id]);
+		// sound-design (spec 12 §2.2): cues and settings must be readable, cue ids well-formed (INV-SOUND).
+		const soundBad = sequenceSoundDesignIssue(seq as { soundDesign?: unknown });
+		if (soundBad)
+			issues.push(
+				inv('INV-SOUND', `Sequence ${seq.id} sound design: ${soundBad}`, [...where, 'soundDesign']),
+			);
 		// wp-multicam: a multi-camera source's angles reference its own tracks.
 		const mcSource = (seq as Sequence).multicam;
 		if (mcSource)
@@ -2197,6 +2209,8 @@ export function repairDocument(
 			note('add-item', s, 'sequence had no project item');
 		}
 	}
+	// sound-design: unreadable cues / clip metadata, dangling anchors, placed clips and cue links, duplicate cue ids.
+	repairSoundDesign(doc, ids, note);
 	// color-mgmt: unknown spaces and dangling LUT / OCIO references go back to automatic.
 	repairColor(doc as never, note);
 	// gaps: unreadable project settings, dangling proxies, channel maps, analyses, graphic layers.

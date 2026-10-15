@@ -1,10 +1,11 @@
 // Inserting library sounds (spec 12 §2.3 placement, §2.7 Insert, P1-R7): a sound goes in with its PEAK on the playhead
 // (or the drop frame), frame-accurate, with the sub-frame rest taken out of its In point when the head is quiet
-// (`peakAlignedStart`). It lands on the targeted audio track when that is free over the clip's span, else on a free
-// "SFX" track, else on the first free audio track, else on a new track "SFX n": inserting never overwrites audio.
+// (`peakAlignedStart`). It lands on the drop track or a targeted audio track when that is free over the clip's span,
+// else on a free "SFX" track, else on a new track "SFX n": inserting never overwrites audio.
 // The sound is registered with the engine first (`registerSound`), then ONE transaction (one undo step) adds the
-// media to the "Sound Effects" bin (or reuses the project's copy), the track if needed, the clip, and tags the clip
-// Essential Sound ▸ SFX. Also the drag payload of the Sound Library (`application/x-jasper-sound`).
+// media to the "Sound Effects" bin (or reuses the project's copy) and runs `soundDesign.place` (spec 12 §2.9), which
+// adds the track if needed and the clip, tags it Essential Sound ▸ SFX and records its `AudioClip.sfx`.
+// Also the drag payload of the Sound Library (`application/x-jasper-sound`).
 import { type RegisterSoundResponse, SOUND_EFFECTS_BIN, type SoundEntry } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
@@ -259,6 +260,7 @@ export async function insertLibrarySound(
 		mediaRef = '$sound';
 		durFlicks = mediaDurationFlicks(asset);
 	}
+	// The plan (the same rules soundDesign.place applies) checks the sound can be placed before committing.
 	const timing = soundTimingOf(provenance, timingOf(entry));
 	const plan = planSoundPlacement({
 		seq,
@@ -271,43 +273,32 @@ export async function insertLibrarySound(
 	});
 	if (!plan.ok) throw new InsertSoundError(plan.message);
 	const p = plan.placement;
-	let trackRef: string;
-	if (p.track.kind === 'new') {
-		commands.push({
-			type: 'track.add',
-			sequenceId,
-			kind: 'audio',
-			name: p.track.name,
-			ref: '$sfxTrack',
-		} as Command);
-		trackRef = '$sfxTrack';
-	} else trackRef = p.track.trackId;
-	const outFlicks = p.outFlicks;
-	commands.push(
-		{
-			type: 'clip.place',
-			sequenceId,
-			source: { mediaId: mediaRef },
-			sourceRange: { in: { flicks: p.sourceInFlicks }, out: { flicks: outFlicks } },
-			at: p.start,
-			tracks: { audio: trackRef },
-			mode: 'overwrite',
-			video: false,
-			// One clip on the chosen track: never the item's Audio Channels routing (more clips, other tracks).
-			audioMapping: 'stereo',
-			ref: '$soundClip',
-		} as Command,
-		{ type: 'essentialSound.setType', clipIds: ['$soundClip'], audioType: 'sfx' } as Command,
-	);
+	// spec 12 §2.9: one `soundDesign.place` places the clip peak-aligned on a free track (the drop track, a targeted
+	// track, a free SFX track or a new "SFX n"), tags it Essential Sound ▸ SFX and records `AudioClip.sfx`.
+	const preferTrackIds = [
+		...(opts.preferredTrackId ? [opts.preferredTrackId] : []),
+		...(state.views[sequenceId]?.targeting.audio ?? []),
+	].filter((id, i, a) => a.indexOf(id) === i && seq.audioTracks.some((t) => t.id === id));
+	commands.push({
+		type: 'soundDesign.place',
+		sequenceId,
+		frame: cueFrame,
+		layers: [{ mediaId: mediaRef, align, ref: '$soundClip' }],
+		...(preferTrackIds.length ? { preferTrackIds } : {}),
+		// A sound that would start before frame 0 starts there with its head trimmed (the aligned point stays exact).
+		clampStart: true,
+	} as Command);
 	const r = session.apply({ label: `Add Sound ${title}`, origin: 'user', sequenceId, commands });
 	if (!r.ok)
 		throw new InsertSoundError(
 			r.errors.map((e) => e.message).join('; ') || t('The sound could not be added'),
 		);
-	const placeIndex = commands.findIndex((c) => c.type === 'clip.place');
-	const clipId =
-		(r.results[placeIndex] as { clipIds?: string[]; clipId?: string } | undefined)?.clipIds?.[0] ??
-		(r.results[placeIndex] as { clipId?: string } | undefined)?.clipId;
+	const placed = (
+		r.results[commands.length - 1] as
+			| { clips?: { clipId: string; start: number; errorFlicks: number; trimmedHeadSec: number }[] }
+			| undefined
+	)?.clips?.[0];
+	const clipId = placed?.clipId;
 	if (!clipId) throw new InsertSoundError(t('The sound was added but its clip was not found'));
 	const after = session.getCommitted().sequences[sequenceId]!;
 	const clip = after.clips[clipId];
@@ -322,11 +313,11 @@ export async function insertLibrarySound(
 		clipId,
 		mediaId,
 		trackLabel,
-		start: p.start,
+		start: placed.start,
 		cueFrame,
-		trimmedHeadSec: p.trimmedHeadSec,
+		trimmedHeadSec: placed.trimmedHeadSec,
 		align,
-		errorFlicks: p.errorFlicks,
+		errorFlicks: placed.errorFlicks,
 		message:
 			align === 'peak'
 				? t('Added {0} to {1} · peak at {2}', title, trackLabel, tc)

@@ -1,5 +1,6 @@
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Sequence } from '../schema/sequence.ts';
+import type { SoundDesign } from '../schema/sound.ts';
 import { keyDiff } from './draft-read.ts';
 
 export type DocDiff = { created: string[]; changed: string[]; deleted: string[] };
@@ -57,7 +58,11 @@ export function diffDocuments(before: ProjectDocument, after: ProjectDocument): 
 		for (const [id, seq] of Object.entries(after.sequences)) {
 			const prev = before.sequences[id];
 			if (!prev) {
-				out.created.push(id, ...Object.keys(seq.clips));
+				out.created.push(
+					id,
+					...Object.keys(seq.clips),
+					...Object.keys((seq as { soundDesign?: SoundDesign }).soundDesign?.cues ?? {}),
+				);
 				continue;
 			}
 			if (prev === seq) continue;
@@ -71,6 +76,14 @@ export function diffDocuments(before: ProjectDocument, after: ProjectDocument): 
 			diffRecord(prev.links, seq.links, out);
 			diffRecord(prev.groups, seq.groups, out);
 			diffList(prev.markers, seq.markers, out);
+			// sound-design: cues count individually; settings and the last check as the sequence's own fields.
+			const sa = (prev as { soundDesign?: SoundDesign }).soundDesign;
+			const sb = (seq as { soundDesign?: SoundDesign }).soundDesign;
+			if (sa !== sb) {
+				diffRecord(sa?.cues ?? {}, sb?.cues ?? {}, out);
+				if (sa?.settings !== sb?.settings || sa?.lastCheck !== sb?.lastCheck || !sa !== !sb)
+					if (!out.changed.includes(id)) out.changed.push(id);
+			}
 			diffList(
 				[...prev.videoTracks, ...prev.audioTracks, ...prev.captionTracks],
 				[...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks],
@@ -81,6 +94,9 @@ export function diffDocuments(before: ProjectDocument, after: ProjectDocument): 
 			if (!after.sequences[id]) {
 				out.deleted.push(id);
 				out.deleted.push(...Object.keys(before.sequences[id]!.clips));
+				out.deleted.push(
+					...Object.keys((before.sequences[id] as { soundDesign?: SoundDesign }).soundDesign?.cues ?? {}),
+				);
 			}
 		}
 	}
