@@ -2,10 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
 	angleShutter,
 	centredShutter,
-	FX_MB_KEYS,
-	FX_MB_MAX_TAPS,
-	FX_MB_TAP_LIMIT,
-	FX_MB_WARP_SIZE,
 	mbKeyTimes,
 	mbQuality,
 	mbQualityParam,
@@ -110,7 +106,7 @@ describe('planMotionBlur', () => {
 		expect(p.taps).toBe(40);
 		expect(p.jitter).toBe(false);
 		expect(p.warp).toBeNull();
-		expect(p.keys).toBe(FX_MB_KEYS);
+		expect(p.keys).toBe(32);
 	});
 	it('the preview scale reduces the taps proportionally', () => {
 		const move = (f: number) => ({ ...still(), x: f * 40 });
@@ -128,9 +124,9 @@ describe('planMotionBlur', () => {
 	});
 	it('very fast moves are capped and jittered', () => {
 		const p = plan((f) => ({ ...still(), x: f * 400 }));
-		expect(p.taps).toBe(FX_MB_MAX_TAPS);
+		expect(p.taps).toBe(64);
 		expect(p.jitter).toBe(true);
-		expect(plan((f) => ({ ...still(), x: f * 400 }), { quality: 'high' }).taps).toBe(FX_MB_TAP_LIMIT);
+		expect(plan((f) => ({ ...still(), x: f * 400 }), { quality: 'high' }).taps).toBe(96);
 	});
 	it('a curved path counts its length, not the endpoint distance (a shake that goes and comes back)', () => {
 		const p = plan((f) => ({ ...still(), x: 30 * Math.sin(2 * Math.PI * (f - 10)) }));
@@ -178,7 +174,7 @@ describe('time warp and helpers', () => {
 		const w = mbTimeWarp([0, 30, 0])!;
 		expect(w).toHaveLength(32);
 		expect(w[0]).toBe(0);
-		expect(w[FX_MB_WARP_SIZE - 1]).toBe(1);
+		expect(w[31]).toBe(1);
 		for (let i = 1; i < w.length; i++) expect(w[i]!).toBeGreaterThanOrEqual(w[i - 1]!);
 		const inMiddle = w.filter((s) => s > 1 / 3 && s < 2 / 3).length / w.length;
 		expect(inMiddle).toBeGreaterThan(0.7);

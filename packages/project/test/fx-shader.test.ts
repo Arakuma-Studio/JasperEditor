@@ -3,8 +3,6 @@ import {
 	addPadding,
 	defineShaderEffect,
 	type EffectSpec,
-	FX_MAX_PADDING,
-	FX_MAX_TIME_SAMPLES,
 	type FxFrameContext,
 	fxBuiltinUniforms,
 	fxParam,
@@ -165,7 +163,7 @@ describe('padding (S03:FX-041)', () => {
 			{},
 			CTX,
 		);
-		expect(b).toEqual({ left: FX_MAX_PADDING, top: 0, right: 5, bottom: 0 });
+		expect(b).toEqual({ left: 2048, top: 0, right: 5, bottom: 0 });
 		expect(addPadding(a, { left: 1, top: 2, right: 3, bottom: 4 })).toEqual({
 			left: 13,
 			top: 14,
@@ -237,13 +235,13 @@ describe('time hooks', () => {
 		expect(fxSourceFrame([{ spec: late, params: {}, seed: 0 }], tctx)).toBe(19);
 	});
 
-	it('samples are integer offsets, at most FX_MAX_TIME_SAMPLES', () => {
+	it('samples are integer offsets, at most eight', () => {
 		const t = spec({
 			gpu: { passes: [{ frag: FRAG }], time: { samples: () => [-1.4, Number.NaN, ...Array(20).fill(-2)] } },
 		});
 		const r = fxTimeSamples(t, {}, { ...tctx, seed: 0 });
 		expect(r[0]).toBe(-1);
-		expect(r).toHaveLength(FX_MAX_TIME_SAMPLES);
+		expect(r).toHaveLength(8);
 	});
 
 	it('time dependence: default true; timeInvariant opts out unless there are time hooks', () => {

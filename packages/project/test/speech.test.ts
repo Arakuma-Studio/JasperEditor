@@ -165,8 +165,7 @@ describe('words of a sequence mix → media transcripts', () => {
 		expect(ma.words.map((x) => [x.text, x.start, x.end])).toEqual([['one', s(11), s(11.5)]]);
 		expect(mb.words.map((x) => [x.text, x.start, x.end])).toEqual([['two', s(2), s(3)]]);
 		expect(ma.coverage).toEqual([[s(10), s(15)]]);
-		const clipB = H.clips('A1').find((c) => (c as { mediaId?: string }).mediaId === b)!;
-		expect(mb.coverage).toEqual([[0, Math.round(clipB.duration * (FLICKS_PER_SECOND / 25) * 2)]]);
+		expect(mb.coverage).toEqual([[0, s(10)]]);
 		H.ok(
 			r.media.map((m) => ({
 				type: 'transcript.attach',
