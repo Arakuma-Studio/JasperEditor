@@ -331,7 +331,9 @@ rerun: `e2e/sound-library.spec.ts` measures 0 samples of error on an ffmpeg-deco
 `apps/mcp/test/sound.test.ts` asserts `errorFlicks` 0); search over 5 000 sounds 7–15 ms at load ≈ 30
 (`apps/engine/test/sounds-search.test.ts`). Schema v7 (D-50). Limits: no keyboard-key recording in the kit (`key` is
 synth only); sounds over 120 s keep the ≤ 1-frame placement rule; In Context audition, cues and the Palette are
-Phase 2–3.
+Phase 2–3. Phase 2 in progress: the cue model and commands (WP2.1), derivation (WP2.2) and the Timeline's Cue Seam,
+Suggest Cues… dialog and peak handle (WP2.4a, `e2e/sound-cues.spec.ts`) are on the branch; filling cues from the
+library, variation cycling, layers and the In Context audition (WP2.4b) are not yet.
 
 ### Not covered by any workstream yet
 

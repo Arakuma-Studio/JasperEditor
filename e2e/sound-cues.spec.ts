@@ -168,9 +168,13 @@ test('Suggest Cues finds each event; glyphs at their frames; edit role, drag, de
 	await page.screenshot({ path: join(outDir, 'seam-reduced-motion.png') });
 	await page.emulateMedia({ reducedMotion: null });
 
-	// role from the cue menu
+	// the suggestion selected every new cue; a click selects the cut alone
+	expect(await seam.locator('[data-selected]').count()).toBe(n);
 	const cx = await centerX(page, cut.id);
 	const sb = (await seam.boundingBox())!;
+	await page.mouse.click(cx, sb.y + 9);
+	await expect(seam.locator('[data-selected]')).toHaveCount(1);
+	// role from the cue menu
 	await page.mouse.click(cx, sb.y + 9, { button: 'right' });
 	const menu = page.getByTestId('timeline-context-menu');
 	await expect(menu).toBeVisible();
@@ -178,6 +182,12 @@ test('Suggest Cues finds each event; glyphs at their frames; edit role, drag, de
 	await menu.getByText('Role', { exact: true }).hover();
 	await page.getByRole('menuitem', { name: /Hero$/ }).click();
 	await expect.poll(async () => (await cues(page)).find((c) => c.id === cut.id)?.weight).toBe('hero');
+	expect(
+		(await cues(page))
+			.filter((c) => c.weight === 'hero')
+			.map((c) => c.id)
+			.sort(),
+	).toEqual([cut.id, marker.id].sort());
 	expect((await appliedLabels(page)).at(-1)).toBe('Cue Role');
 
 	// drag the cut cue 12 frames right (snapping off so nothing pulls it: S in the timeline)
@@ -200,12 +210,74 @@ test('Suggest Cues finds each event; glyphs at their frames; edit role, drag, de
 
 	// Markers ▸ Add Sound Cue (Alt+Shift+C) at the playhead
 	await query(page, 'playhead.set', { frame: 120 });
-	await focusTimeline(page);
+	// focus the timeline with a click on empty track space (below the last audio track)
+	const area = (await page.getByTestId('timeline-clip-area').boundingBox())!;
+	await page.mouse.click(area.x + area.width - 40, area.y + area.height - 30);
 	const before = (await cues(page)).length;
 	await page.keyboard.press('Alt+Shift+KeyC');
 	await expect.poll(async () => (await cues(page)).length).toBe(before + 1);
 	const added = (await cues(page)).find((c) => c.kind === 'manual' && c.source === 'user')!;
 	expect(added).toMatchObject({ weight: 'support', frame: 120 });
 	expect((await appliedLabels(page)).at(-1)).toBe('Add Sound Cue');
+
+	// a cue filled by soundDesign.place: solid glyph, a connector to the clip's peak, the peak handle on the cue frame
+	const fill = await transact(page, [
+		{
+			type: 'media.register',
+			asset: {
+				kind: 'audio',
+				fingerprint: 'q1:e2e-cue-sound',
+				originalName: 'thump.wav',
+				sizeBytes: 1,
+				container: 'wav',
+				probe: {
+					durationFlicks: 705_600_000,
+					startTimecode: null,
+					streams: [
+						{
+							index: 0,
+							type: 'audio',
+							codec: 'pcm_s16le',
+							sampleRate: 48_000,
+							channels: 2,
+							channelLayout: 'stereo',
+						},
+					],
+					rotationDegrees: 0,
+					hasAlpha: false,
+					variableFrameRate: false,
+				},
+				locators: [{ type: 'engine-store', engineId: 'local', key: 'mk_e2e_cue_sound' }],
+				library: {
+					soundId: 'snd_00000000000000e2',
+					title: 'Thump',
+					types: ['thump'],
+					source: { type: 'synth', recipe: 'thump', seed: 1 },
+					license: 'LicenseRef-JasperEditor',
+					author: 'JasperEditor',
+					attribution: null,
+					descriptors: {
+						peakSec: 0.3,
+						onsetSec: 0.28,
+						headQuietSec: 0.28,
+						durationSec: 1,
+						octaveBandsDb: [-30, -25, -20, -18, -19, -24, -33],
+						centroidHz: 400,
+						maxMomentaryLufs: -14,
+					},
+					leadSilenceSec: 0.05,
+				},
+			},
+			ref: '$m',
+		},
+		{ type: 'soundDesign.place', cueId: land.id, layers: [{ mediaId: '$m' }] },
+	] as never);
+	expect(fill.ok, JSON.stringify(fill)).toBe(true);
+	const placed = (fill as { results: { clips?: { clipId: string }[] }[] }).results[1]!.clips![0]!.clipId;
+	await expect(glyph(page, land.id)).toHaveAttribute('data-cue-state', /^filled/);
+	await expect(page.locator(`[data-cue-connector="${land.id}:${placed}"]`)).toHaveCount(1);
+	const peak = (await page.locator(`[data-peak-line="${placed}"]`).boundingBox())!;
+	expect(Math.abs(peak.x + peak.width / 2 - xOf(land.frame))).toBeLessThan(ppf + 1);
+	expect(await glyph(page, land.id).getAttribute('aria-label')).toContain('filled with A');
 	await page.screenshot({ path: join(outDir, 'seam-after-edits.png') });
 });
