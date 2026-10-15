@@ -96,11 +96,11 @@ describe('deriveCues on the Phase 2 fixture (push, keyframed logo, typewriter, c
 		expect(move.anchor).toMatchObject({
 			type: 'keyframe',
 			clipId: f.logo,
-			property: 'position',
+			property: 'transform.position',
 			event: 'peak-speed',
 		});
-		expect(move.frame).toBeGreaterThanOrEqual(41);
-		expect(move.frame).toBeLessThan(52);
+		expect(move.frame).toBe(46); // the middle of the linear 200 → 1010 stretch (content frames 10–22)
+		expect(move.anchor).toMatchObject({ keyframeId: kfid('kp2') });
 		expect(move.types[0]).toBe('whoosh');
 		const land = r.cues.find((c) => c.kind === 'land' && c.from === 'keyframes')!;
 		expect(land).toMatchObject({
@@ -108,7 +108,7 @@ describe('deriveCues on the Phase 2 fixture (push, keyframed logo, typewriter, c
 			anchor: {
 				type: 'keyframe',
 				clipId: f.logo,
-				property: 'position',
+				property: 'transform.position',
 				keyframeId: kfid('kp2'),
 				event: 'settle',
 			},
@@ -328,9 +328,9 @@ describe('keyframes source', () => {
 		const appear = cues.filter((c) => c.kind === 'appear');
 		expect(appear).toHaveLength(1);
 		expect(appear[0]!.types[0]).toBe('pop');
-		expect(appear[0]!.anchor).toMatchObject({ property: 'scale', event: 'end' });
-		expect(appear[0]!.frame).toBeGreaterThanOrEqual(13);
-		expect(appear[0]!.frame).toBeLessThanOrEqual(15);
+		expect(appear[0]!.anchor).toMatchObject({ property: 'transform.scale', event: 'end' });
+		expect(appear[0]!.frame).toBe(15); // on the key the growth reaches
+		expect(appear[0]!.anchor).toMatchObject({ keyframeId: kfid('s2') });
 		expect(cues.some((c) => c.kind === 'move')).toBe(false);
 	});
 
@@ -341,6 +341,11 @@ describe('keyframes source', () => {
 		const cues = of(derive(h).cues, 'keyframes');
 		expect(cues.map((c) => [c.kind, c.frame])).toEqual([['emphasis', 26]]);
 		expect(cues[0]!.reason).toBe("Scale pulses 100 %→120 %→100 % on V2 'Logo'");
+		expect(cues[0]!.anchor).toMatchObject({
+			property: 'transform.scale',
+			keyframeId: kfid('s2'),
+			event: 'end',
+		});
 	});
 
 	it('an abrupt stop lands; a gentle ease-out only moves', () => {
@@ -414,8 +419,8 @@ describe('keyframes source', () => {
 		const id = placeStill(h, 0, 90, 'V2', 'Spinner');
 		setTransform(h, id, 'rotation', animOf(0, [kf('r1', 0, 0), kf('r2', 15, 360)]));
 		expect(of(derive(h).cues, 'keyframes').map((c) => c.anchor)).toEqual([
-			expect.objectContaining({ property: 'rotation', event: 'peak-speed' }),
-			expect.objectContaining({ property: 'rotation', event: 'settle' }),
+			expect.objectContaining({ property: 'transform.rotation', event: 'peak-speed' }),
+			expect.objectContaining({ property: 'transform.rotation', event: 'settle' }),
 		]);
 		const doc = structuredClone(h.doc);
 		doc.sequences[h.seqId]!.videoTracks[1]!.output = false;
@@ -580,11 +585,13 @@ describe('mg, clip edges, 3D camera and markers', () => {
 		expect(moves[0]!.anchor).toMatchObject({
 			type: 'keyframe',
 			clipId: cam,
-			property: 'position',
+			property: 'camera.transform.position',
+			keyframeId: kfid('c2'),
 			event: 'peak-speed',
 		});
-		expect(moves[0]!.frame).toBeGreaterThanOrEqual(31);
-		expect(moves[0]!.frame).toBeLessThanOrEqual(60);
+		// A two-node camera also turns towards its point of interest while it travels: the peak is inside the move.
+		expect(moves[0]!.frame).toBeGreaterThan(30);
+		expect(moves[0]!.frame).toBeLessThan(60);
 		expect(r.curves.some((c) => c.clipId === cam)).toBe(true);
 		// A static camera on V3 covers the moving one: nothing moves on screen.
 		h.ok([{ type: 'clip.addCamera', at: 0, duration: 150, track: 'V3', name: 'Top' }]);

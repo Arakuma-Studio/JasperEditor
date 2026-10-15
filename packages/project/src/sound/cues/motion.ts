@@ -78,20 +78,21 @@ function animatedProps(c: Clip): { name: string; anim: Animatable<unknown> }[] {
 		)
 			out.push({ name, anim: a as Animatable<unknown> });
 	};
+	// Names are the property paths of `CueAnchor.property` (`resolveCueAnchor` walks them on the clip).
 	if (tr) {
-		push('position', tr.position);
-		push('scale', tr.scale);
-		push('scaleWidth', tr.scaleWidth);
-		push('rotation', tr.rotation);
-		push('anchor', tr.anchor);
+		push('transform.position', tr.position);
+		push('transform.scale', tr.scale);
+		push('transform.scaleWidth', tr.scaleWidth);
+		push('transform.rotation', tr.rotation);
+		push('transform.anchor', tr.anchor);
 	}
 	push('opacity', (c as { opacity?: unknown }).opacity);
 	const td = (c as { threeD?: Layer3D }).threeD;
 	if (td?.enabled) {
-		push('positionZ', td.positionZ);
-		push('rotationX', td.rotationX);
-		push('rotationY', td.rotationY);
-		push('orientation', td.orientation);
+		push('threeD.positionZ', td.positionZ);
+		push('threeD.rotationX', td.rotationX);
+		push('threeD.rotationY', td.rotationY);
+		push('threeD.orientation', td.orientation);
 	}
 	return out;
 }
@@ -128,13 +129,26 @@ function clampToRange(ctx: CueContext, c: Clip, [a, b]: [number, number]): [numb
 	return [Math.max(a, ctx.range.start - margin - c.start), Math.min(b, ctx.range.end + margin - c.start)];
 }
 
-function nearestKeyframeId(anim: Animatable<unknown> | undefined, t: number): string | undefined {
-	const kfs = anim?.keyframes as Keyframe<unknown>[] | undefined;
+/**
+ * The keyframe an anchor names, chosen so `resolveCueAnchor` finds the same event again: `after` = the first key at or
+ * after content time `t` (the key that ends the segment holding a peak, or the key a motion arrives at), `before` =
+ * the last key at or before `t` (where a ramp starts), `nearest` = the closest key. `tol` = flicks of tolerance.
+ */
+export function keyframeNear(
+	anim: Animatable<unknown> | undefined,
+	t: number,
+	mode: 'after' | 'before' | 'nearest',
+	tol: number,
+): Keyframe<unknown> | undefined {
+	const kfs = (anim?.keyframes as Keyframe<unknown>[] | undefined)?.filter(
+		(k) => typeof k?.id === 'string' && Number.isFinite(k.time),
+	);
 	if (!kfs?.length) return undefined;
+	if (mode === 'after') return kfs.find((k) => k.time >= t - tol);
+	if (mode === 'before') return [...kfs].reverse().find((k) => k.time <= t + tol);
 	let best: Keyframe<unknown> | undefined;
-	for (const k of kfs)
-		if (typeof k?.id === 'string' && (!best || Math.abs(k.time - t) < Math.abs(best.time - t))) best = k;
-	return best?.id;
+	for (const k of kfs) if (!best || Math.abs(k.time - t) < Math.abs(best.time - t)) best = k;
+	return best;
 }
 
 /**
@@ -261,19 +275,46 @@ function clipMotion(
 	const at = (k: number) => samples[k + 1]!; // the sample reached at speed index k
 	const frameOf = (k: number) => c.start + i0 + k;
 	const where = `on ${label(ctx, c.trackId)} ${clipName(c)}`;
-	const propOf = (name: string) => props.find((p) => p.name === name)?.anim;
-	const kfId = (name: string, k: number) =>
-		nearestKeyframeId(
-			propOf(name) ?? (name === 'scale' ? propOf('scaleWidth') : undefined),
-			clipContentTime(c as never, frameOf(k), ctx.rate),
+	const has = (name: string) => props.some((p) => p.name === name);
+	/** Property path of a dominant component (the animated one; Scale Width when only it is keyframed). */
+	const pathOf = (d: Dominant | 'opacity'): string => {
+		if (d === 'position') return 'transform.position';
+		if (d === 'opacity') return 'opacity';
+		if (d === 'positionZ') return 'threeD.positionZ';
+		if (d === 'scale')
+			return has('transform.scale') || !has('transform.scaleWidth')
+				? 'transform.scale'
+				: 'transform.scaleWidth';
+		return (
+			['transform.rotation', 'threeD.rotationX', 'threeD.rotationY', 'threeD.orientation'].find(has) ??
+			'transform.rotation'
 		);
+	};
+	const step = ctx.F * (c.speed?.rate > 0 ? c.speed.rate : 1);
+	const timeOf = (k: number) => clipContentTime(c as never, frameOf(k), ctx.rate);
+	/** Sequence frame of a content time (inverse of `contentTimeAt`). */
+	const frameOfTime = (t: number) => {
+		const i = Math.round((t - c.sourceIn) / step);
+		return c.speed?.reverse ? c.start + c.duration - 1 - i : c.start + i;
+	};
+	const keyFor = (d: Dominant | 'opacity', k: number, mode: 'after' | 'before' | 'nearest') =>
+		keyframeNear(props.find((p) => p.name === pathOf(d))?.anim, timeOf(k), mode, step / 2);
 	const anchor = (
-		name: string,
-		k: number,
+		d: Dominant | 'opacity',
+		key: Keyframe<unknown> | undefined,
 		event: 'peak-speed' | 'settle' | 'start' | 'end',
-	): DerivedCueAnchor => {
-		const id = kfId(name, k);
-		return { type: 'keyframe', clipId: c.id, property: name, ...(id ? { keyframeId: id } : {}), event };
+	): DerivedCueAnchor => ({
+		type: 'keyframe',
+		clipId: c.id,
+		property: pathOf(d),
+		...(key ? { keyframeId: key.id } : {}),
+		event,
+	});
+	/** Speed index of a key's frame when it lies inside `[lo, hi]`, else `fallback`. */
+	const indexOfKey = (key: Keyframe<unknown> | undefined, lo: number, hi: number, fallback: number) => {
+		if (!key) return fallback;
+		const k = frameOfTime(key.time) - c.start - i0;
+		return k >= lo && k <= hi ? k : fallback;
 	};
 	const bridge = Math.max(2, Math.round(0.1 * ctx.fps));
 	for (const seg of speedSegments(v, bridge)) {
@@ -296,6 +337,10 @@ function clipMotion(
 			// Grows from small: appears when it first reaches 95 % of its final size.
 			let k = seg.a;
 			while (k < seg.b && Math.exp(at(k).lnS) < 0.95 * sAfter) k++;
+			// On the key the growth reaches (the anchor's `end`) when there is one inside the move.
+			const endKey = keyFor('scale', k, 'after');
+			const ke = indexOfKey(endKey, seg.a, seg.b, -1);
+			if (ke >= 0) k = ke;
 			const short = k - seg.a + 1 <= 0.25 * ctx.fps;
 			cues.push(
 				candidate('keyframes', {
@@ -306,7 +351,7 @@ function clipMotion(
 					types: short ? ['pop', 'ui', 'swish'] : ['whoosh', 'reverse', 'shimmer'],
 					align: short ? 'peak' : 'end',
 					pan: panOfX(ctx, at(k).cx),
-					anchor: anchor('scale', k, 'end'),
+					anchor: anchor('scale', ke >= 0 ? endKey : undefined, 'end'),
 					confidence: 0.7,
 					reason: `Scale ${pct(sBefore)}→${pct(sAfter)}: pops in (${secs(ctx, k - seg.a + 1)}) ${where}`,
 					window: { start: window.start, end: frameOf(k) + 1 },
@@ -316,16 +361,20 @@ function clipMotion(
 			continue;
 		}
 		if (dom === 'scale' && sBefore >= 0.5 && sAfter <= 0.2) {
+			// On the key the shrink starts from (the anchor's `start`) when there is one.
+			const startKey = keyFor('scale', seg.a - 1, 'before');
+			const ks = indexOfKey(startKey, seg.a - 1, seg.b, -2);
+			const k = ks === -2 ? seg.a : ks;
 			cues.push(
 				candidate('keyframes', {
-					key: key('exit', seg.a),
-					frame: frameOf(seg.a),
+					key: key('exit', k),
+					frame: frameOf(k),
 					kind: 'exit',
 					weight: 'support',
 					types: ['swish', 'whoosh', 'pop'],
 					align: 'peak',
 					pan: panOfX(ctx, before.cx),
-					anchor: anchor('scale', seg.a, 'start'),
+					anchor: anchor('scale', ks === -2 ? undefined : startKey, 'start'),
 					confidence: 0.55,
 					reason: `Scale ${pct(sBefore)}→${pct(sAfter)}: shrinks away ${where}`,
 					window,
@@ -364,6 +413,9 @@ function clipMotion(
 				if (Math.abs(at(k).lnS - before.lnS) > Math.abs(at(ext).lnS - before.lnS)) ext = k;
 			const swing = Math.abs(at(ext).lnS - before.lnS);
 			if (Math.abs(after.lnS - before.lnS) < 0.05 && swing >= 0.08) {
+				const extKey = keyFor('scale', ext, 'nearest');
+				const kx = indexOfKey(extKey, seg.a, seg.b, -1);
+				if (kx >= 0) ext = kx;
 				cues.push(
 					candidate('keyframes', {
 						key: key('emphasis', ext),
@@ -373,7 +425,7 @@ function clipMotion(
 						types: ['pop', 'ui', 'thump', 'hit'],
 						align: 'peak',
 						pan: panOfX(ctx, at(ext).cx),
-						anchor: anchor('scale', ext, 'peak-speed'),
+						anchor: anchor('scale', kx >= 0 ? extKey : undefined, 'end'),
 						confidence: 0.6,
 						reason: `Scale pulses ${pct(sBefore)}→${pct(Math.exp(at(ext).lnS))}→${pct(sAfter)} ${where}`,
 						window,
@@ -383,21 +435,28 @@ function clipMotion(
 				continue;
 			}
 		}
+		// The cue sits in the middle of the fastest stretch (a linear move: its middle), as `resolveCueAnchor` reads it.
+		let rs = pk;
+		let re = pk;
+		const near = peakV * (1 - 1e-4);
+		while (rs > seg.a && v[rs - 1]! >= near) rs--;
+		while (re < seg.b && v[re + 1]! >= near) re++;
+		const mid = Math.max(seg.a, Math.floor((rs - 1 + re) / 2));
 		const what = describeChange(dom, before, after, true);
 		const long = durationSec >= 0.3;
 		const fromPan = panOfX(ctx, before.cx);
 		const toPan = panOfX(ctx, after.cx);
 		cues.push(
 			candidate('keyframes', {
-				key: key('move', pk),
-				frame: frameOf(pk),
+				key: key('move', mid),
+				frame: frameOf(mid),
 				kind: 'move',
 				weight: 'support',
 				types: long ? ['whoosh', 'swish', 'transition'] : ['swish', 'whoosh'],
 				align: 'peak',
-				pan: panOfX(ctx, peakS.cx),
+				pan: panOfX(ctx, at(mid).cx),
 				...(Math.abs(toPan - fromPan) >= 10 ? { panSweep: { from: fromPan, to: toPan } } : {}),
-				anchor: anchor(dom, pk, 'peak-speed'),
+				anchor: anchor(dom, keyFor(dom, mid, 'after'), 'peak-speed'),
 				confidence: 0.4 + 0.45 * Math.min(1, peakV / 1),
 				reason: `${what} (peak ${peakV.toFixed(2)} screens/s over ${secs(ctx, lenFrames)}) ${where}`,
 				window,
@@ -450,14 +509,22 @@ function clipMotion(
 				types,
 				align: 'peak',
 				pan: panOfX(ctx, ls.cx),
-				anchor: anchor(dom, land, 'settle'),
+				anchor: anchor(dom, keyFor(dom, land, 'after'), 'settle'),
 				confidence: how === 'abrupt stop' ? 0.7 : 0.75,
 				reason: `${describeChange(dom, before, after)} ${ease} ${where}`,
 				size: Math.max(ls.area, 0.02),
 			}),
 		);
 	}
-	opacityRamps(ctx, c, samples, i0, cues, (k, ev) => anchor('opacity', k, ev), where);
+	opacityRamps(
+		ctx,
+		c,
+		samples,
+		i0,
+		cues,
+		(k, ev) => anchor('opacity', keyFor('opacity', k, ev === 'end' ? 'after' : 'before'), ev),
+		where,
+	);
 }
 
 function describeChange(dom: Dominant, a: Sample, b: Sample, distance = false): string {
@@ -568,14 +635,14 @@ function cameraAnimated(c: CameraClip): { name: string; anim: Animatable<unknown
 			out.push({ name, anim: a as Animatable<unknown> });
 	};
 	if (tr) {
-		push('position', tr.position);
-		push('pointOfInterest', tr.pointOfInterest);
-		push('orientation', tr.orientation);
-		push('rotationX', tr.rotationX);
-		push('rotationY', tr.rotationY);
-		push('rotationZ', tr.rotationZ);
+		push('camera.transform.position', tr.position);
+		push('camera.transform.pointOfInterest', tr.pointOfInterest);
+		push('camera.transform.orientation', tr.orientation);
+		push('camera.transform.rotationX', tr.rotationX);
+		push('camera.transform.rotationY', tr.rotationY);
+		push('camera.transform.rotationZ', tr.rotationZ);
 	}
-	push('zoom', c.camera?.zoom);
+	push('camera.zoom', c.camera?.zoom);
 	return out;
 }
 
@@ -643,16 +710,29 @@ export function deriveCameraCues(ctx: CueContext, opts: { curves: CueSpeedCurve[
 			const which = tot.indexOf(Math.max(...tot));
 			const property =
 				which === 0
-					? 'position'
+					? (['camera.transform.position', 'camera.transform.pointOfInterest'].find((n) =>
+							props.some((p) => p.name === n),
+						) ?? 'camera.transform.position')
 					: which === 2
-						? 'zoom'
-						: (props.find((p) => p.name !== 'position' && p.name !== 'zoom')?.name ?? 'orientation');
-			const frame = c.start + i0 + seg.peak;
-			const t = timeAt(frame);
-			const kf = nearestKeyframeId(props.find((p) => p.name === property)?.anim, t);
+						? 'camera.zoom'
+						: (props.find((p) => !['camera.transform.position', 'camera.zoom'].includes(p.name))?.name ??
+							'camera.transform.orientation');
+			// Middle of the fastest stretch, as `resolveCueAnchor` reads `peak-speed`.
+			const peakV = v[seg.peak]!;
+			let rs = seg.peak;
+			let re = seg.peak;
+			while (rs > seg.a && v[rs - 1]! >= peakV * (1 - 1e-4)) rs--;
+			while (re < seg.b && v[re + 1]! >= peakV * (1 - 1e-4)) re++;
+			const frame = c.start + i0 + Math.max(seg.a, Math.floor((rs - 1 + re) / 2));
+			const step = ctx.F * (c.speed?.rate > 0 ? c.speed.rate : 1);
+			const kf = keyframeNear(
+				props.find((p) => p.name === property)?.anim,
+				timeAt(frame),
+				'after',
+				step / 2,
+			)?.id;
 			const lenFrames = seg.b - seg.a + 1;
 			const long = lenFrames >= 0.3 * ctx.fps;
-			const peakV = v[seg.peak]!;
 			const verb = which === 0 ? 'moves' : which === 2 ? 'zooms' : 'turns';
 			cues.push(
 				candidate('camera3d', {

@@ -79,7 +79,8 @@ export function deriveTransitionCues(ctx: CueContext): CueCandidate[] {
 		if (spec && spec.appliesTo !== 'video') continue;
 		const w = transitionWindow(ctx.seq, t);
 		if (!w) continue;
-		const frame = w.start + Math.floor((w.end - w.start) / 2);
+		// The visual centre: `start + ⌊duration / 2⌋` (as `resolveCueAnchor` reads a transition anchor).
+		const frame = w.start + Math.floor(Math.max(1, Math.round(Number(t.duration) || 1)) / 2);
 		if (frame < ctx.range.start || frame >= ctx.range.end) continue;
 		cues.push(transitionCue(ctx, t, w, frame, spec?.label ?? t.effectId));
 	}
