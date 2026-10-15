@@ -231,6 +231,14 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		});
 		expect(ranged.cues.every((c) => c.frame >= 150 && c.frame < 270)).toBe(true);
 		expect((await fails('find_sound_cues', { projectId, densty: 'rich' })).code).toBe('E_UNKNOWN_ARGUMENT');
+		// a range past the last frame a sequence can have is refused by the tool with a time hint (it was the route's
+		// raw zod dump, VALIDATION_FAILED)
+		const far = await fails('find_sound_cues', { projectId, range: { start: 0, end: '99:59:59:29' } });
+		expect([far.code, far.message]).toEqual([
+			'E_INVALID_PARAM',
+			expect.stringMatching(/^range must lie within/),
+		]);
+		expect(far.hint).toContain('timecode');
 		expect((await fails('find_sound_cues', { projectId, sequenceId: 'seq_nope' })).code).toBe('E_NOT_FOUND');
 	});
 
@@ -301,6 +309,18 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		expect((await fails('set_sound_cues', { projectId, add: [{ at: 3, colour: 'red' }] })).code).toBe(
 			'E_UNKNOWN_ARGUMENT',
 		);
+		// an inverted window is refused (it was silently dropped while update refused it); storedCueId is bounded
+		const inverted = await fails('set_sound_cues', {
+			projectId,
+			add: [{ at: 3, window: { start: 50, end: 10 } }],
+		});
+		expect([inverted.code, inverted.message]).toEqual([
+			'E_INVALID_PARAM',
+			expect.stringContaining('add[0].window'),
+		]);
+		expect(
+			(await fails('set_sound_cues', { projectId, add: [{ at: 3, storedCueId: 'x'.repeat(10_000) }] })).code,
+		).toBe('E_INVALID_ARGUMENT');
 		expect(
 			(await fails('set_sound_cues', { projectId, remove: { cueIds: ['cue_0000000000000999'] } })).code,
 		).toBe('E_NOT_FOUND');

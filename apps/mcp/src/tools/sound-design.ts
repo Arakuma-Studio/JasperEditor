@@ -257,6 +257,7 @@ const CueAddArg = z.object({
 	key: z.string().max(400).optional().describe('Informational: the suggestion key'),
 	storedCueId: z
 		.string()
+		.max(128)
 		.nullable()
 		.optional()
 		.describe('A suggestion already stored as this cue is skipped (not added twice)'),
@@ -448,6 +449,12 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 					throw new ToolError(
 						'E_INVALID_PARAM',
 						'range.end must be after range.start (both ≥ 0)',
+						TIME_FORMATS,
+					);
+				if (range.end > SOUND_DESIGN_LIMITS.maxFrame)
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						`range must lie within frames 0…${SOUND_DESIGN_LIMITS.maxFrame} (got end ${range.end})`,
 						TIME_FORMATS,
 					);
 			}
@@ -1311,6 +1318,12 @@ async function cueCommandInput(
 			`add[${i}]: give frame or at`,
 			'A suggestion carries its frame; a manual cue needs at (a time or "playhead").',
 		);
+	if (c.window && c.window.end < c.window.start)
+		throw new ToolError(
+			'E_INVALID_PARAM',
+			`add[${i}].window: end (${c.window.end}) is before start (${c.window.start})`,
+			'window is the event span in sequence frames {start, end} with end ≥ start (a suggestion carries it).',
+		);
 	const derived = c.from !== undefined || c.key !== undefined;
 	const source = c.source ?? (derived ? 'derived' : 'agent');
 	const types = typeIds(c.types, `add[${i}].types`);
@@ -1328,7 +1341,7 @@ async function cueCommandInput(
 		source,
 		...(c.confidence !== undefined ? { confidence: c.confidence } : {}),
 		...(c.reason !== undefined ? { reason: c.reason } : {}),
-		...(c.window && c.window.end >= c.window.start ? { window: c.window } : {}),
+		...(c.window ? { window: c.window } : {}),
 		...(c.muted !== undefined ? { muted: c.muted } : {}),
 	};
 }
