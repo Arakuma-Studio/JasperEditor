@@ -11,7 +11,7 @@ import {
 	soundCueFields,
 } from '../../schema/sound.ts';
 import { LibraryProvenanceSchema } from '../../sound/provenance.ts';
-import { cmd, IdListSchema, IdRefSchema, RefDeclSchema, TimeInputSchema, TrackRefSchema } from './common.ts';
+import { cmd, IdRefSchema, RefDeclSchema, TimeInputSchema, TrackRefSchema } from './common.ts';
 
 /**
  * Sets (or with `null` removes) the library provenance of a media asset: which Sound Library sound it is, its licence
@@ -81,7 +81,7 @@ export const SoundCueUpdateCmd = cmd('soundCue.update', {
  * clips stay and forget the cue (`sfx.cueId` → null). Result `{removed, liftedClipIds}`.
  */
 export const SoundCueRemoveCmd = cmd('soundCue.remove', {
-	cueIds: IdListSchema,
+	cueIds: z.array(IdRefSchema).min(1).max(SOUND_DESIGN_LIMITS.cues),
 	withClips: z.boolean().optional(),
 });
 
