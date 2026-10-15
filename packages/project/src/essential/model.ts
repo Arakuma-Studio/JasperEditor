@@ -121,6 +121,12 @@ export const EssentialSoundSchema = z.looseObject({
 	residual: z
 		.object({ volume: z.record(z.string(), z.number()), pan: z.record(z.string(), z.number()) })
 		.optional(),
+	/**
+	 * The Pan section is an offset on the clip's own pan (sound-design Phase 0). Settings saved without it come from
+	 * builds where switching Pan on or changing it wrote the value into the clip's pan (the static value, or one
+	 * keyframe at the playhead): `migrateLegacyPan` converts them on load. Bookkeeping, not a setting.
+	 */
+	panOffset: z.literal(true).optional(),
 });
 export type EssentialSound = z.infer<typeof EssentialSoundSchema>;
 
@@ -200,7 +206,48 @@ export function newEssentialSound(type: AudioType): EssentialSound {
 		pan: { enabled: false, value: 0 },
 		volume: { on: false, levelDb: 0 },
 		mute: false,
+		panOffset: true,
 	};
+}
+
+/**
+ * Settings saved before the Pan section became an offset (no `panOffset` marker) whose Pan the old build wrote into
+ * the clip's pan in a way the offset reading would misread: the section is on with a non-zero value for a type that
+ * has it, and the clip's pan is not simply that value (it has keyframes, or the user moved it afterwards). Only then
+ * does switching Pan off differ: the old build wrote 0 at the playhead, the offset reading would shift every
+ * keyframe (and the static value) by the Pan value.
+ */
+export function legacyPanApplied(
+	raw: unknown,
+	pan: { value: number; keyframes: readonly unknown[] },
+): boolean {
+	if (!raw || typeof raw !== 'object' || (raw as { panOffset?: unknown }).panOffset === true) return false;
+	const s = readEssentialSound(raw);
+	if (!s || !TYPE_SECTIONS[s.type].includes('pan') || !s.pan.enabled || s.pan.value === 0) return false;
+	return pan.keyframes.length > 0 || Math.abs(pan.value - s.pan.value) > 1e-9;
+}
+
+/**
+ * Converts the Essential Sound settings of a clip saved before the Pan section became an offset (read-time
+ * migration; optional marker, no schema bump). Nothing audible changes: where the old build's absolute writes cannot
+ * be told apart from the user's own pan (`legacyPanApplied`), the Pan section is switched off with its value kept, so
+ * the pan stays as saved and switching the section later applies a plain offset. Otherwise the settings already read
+ * the same as an offset and only get the marker. Returns a note when the section was switched off.
+ */
+export function migrateLegacyPan(clip: {
+	id: string;
+	pan: { value: number; keyframes: readonly unknown[] };
+	essential?: unknown;
+}): string | null {
+	const raw = clip.essential;
+	if (!raw || typeof raw !== 'object' || (raw as { panOffset?: unknown }).panOffset === true) return null;
+	const applied = legacyPanApplied(raw, clip.pan);
+	const r = raw as Record<string, unknown> & { pan?: unknown };
+	const pan = r.pan && typeof r.pan === 'object' ? (r.pan as Record<string, unknown>) : null;
+	clip.essential = { ...r, ...(applied && pan ? { pan: { ...pan, enabled: false } } : {}), panOffset: true };
+	return applied
+		? `clip ${clip.id}: Essential Sound Pan (${String(pan?.value)}) was saved by a build that wrote it into the clip's pan; the Pan section is now an offset and is switched off (value kept) so the pan stays as saved`
+		: null;
 }
 
 /** Reads a stored value with defaults for anything missing or invalid (documents from other versions / agents). */
@@ -269,7 +316,9 @@ export function essentialKeys(s: EssentialSound = newEssentialSound('dialogue'))
 		} else out.push(p);
 	};
 	walk(s, '');
-	return out.filter((k) => k !== 'type' && k !== 'residual' && !k.startsWith('residual.'));
+	return out.filter(
+		(k) => k !== 'type' && k !== 'residual' && !k.startsWith('residual.') && k !== 'panOffset',
+	);
 }
 
 /**
@@ -285,6 +334,10 @@ export function setEssentialValue(s: EssentialSound, key: string, value: unknown
 	if (parts[0] === 'residual')
 		throw new EssentialSoundError(
 			'"residual" is kept by the commands (clamped Clip Volume / Pan), not a setting',
+		);
+	if (parts[0] === 'panOffset')
+		throw new EssentialSoundError(
+			'"panOffset" marks how Pan is applied (kept by the commands), not a setting',
 		);
 	const next = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
 	let cur: Record<string, unknown> = next;

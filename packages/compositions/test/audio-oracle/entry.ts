@@ -61,3 +61,72 @@ async function render(spec: Spec): Promise<{ channels: number[][]; latency: numb
 }
 
 (window as unknown as { __mix: unknown }).__mix = { render };
+
+type TransportSpec = Omit<Spec, 'before'> & {
+	/** Sample (a multiple of 128) where the transport event happens. */
+	at: number;
+	/** `flush`: the sources stop there and the graph flushes (a seek); `none`: they only stop; `live`: playing, the
+	 * graph gets `next` there (an edit during playback). */
+	action: 'flush' | 'none' | 'live';
+	next?: RenderAudioMix;
+};
+
+/**
+ * Sound design Phase 0 close-out: the graph at a transport event, rendered offline with the context suspended at
+ * `at` (the event happens on a render-quantum boundary, like a main-thread change between two quanta).
+ */
+async function transport(spec: TransportSpec): Promise<{
+	channels: number[][];
+	readAhead: { before: number; after: number; paused: number };
+	plan: { before: number; after: number };
+}> {
+	setMixWorkletUrl(spec.workletUrl);
+	installAudioFxPreview();
+	const sr = spec.mix.sampleRate;
+	const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: spec.length, sampleRate: sr });
+	const graph = new MixGraph(ctx as unknown as AudioContext, ctx.destination);
+	if (!(await mixWorkletReady(ctx))) throw new Error('the mix worklet did not load');
+	const clips = spec.clips.map((c) => c.clip);
+	graph.update(spec.mix, clips, 0, spec.fps);
+	const inputs = spec.clips.map((c) => graph.clipInput(c.clip));
+	graph.update(spec.mix, clips, 0, spec.fps);
+	await tick();
+	await tick();
+	if (spec.action === 'live') graph.setPlaying(true);
+	const before = { readAhead: graph.latency * sr, plan: graph.latencyPlan.total };
+	spec.clips.forEach((c, i) => {
+		const buf = ctx.createBuffer(c.data.length, c.data[0]!.length, sr);
+		for (const [k, ch] of c.data.entries()) buf.copyToChannel(Float32Array.from(ch), k);
+		const src = ctx.createBufferSource();
+		src.buffer = buf;
+		const remotionGain = ctx.createGain();
+		remotionGain.gain.value = c.volume;
+		src.connect(remotionGain).connect(inputs[i]!);
+		const when = c.s0 / sr - graph.clipLead(c.clip);
+		if (when >= 0) src.start(when);
+		else src.start(0, -when);
+		if (spec.action !== 'live') src.stop(spec.at / sr);
+	});
+	const after = { readAhead: 0, plan: 0 };
+	void ctx.suspend(spec.at / sr).then(async () => {
+		if (spec.action === 'flush') graph.flush();
+		if (spec.action === 'live' && spec.next) {
+			const t = (spec.at / sr) * 705_600_000;
+			graph.update(spec.next, clips, t, spec.fps);
+			// slots added by the update create their worklet nodes a microtask later
+			await tick();
+		}
+		after.readAhead = graph.latency * sr;
+		after.plan = graph.latencyPlan.total;
+		await ctx.resume();
+	});
+	const out = await ctx.startRendering();
+	graph.setPlaying(false);
+	return {
+		channels: [Array.from(out.getChannelData(0)), Array.from(out.getChannelData(1))],
+		readAhead: { before: before.readAhead, after: after.readAhead, paused: graph.latency * sr },
+		plan: { before: before.plan, after: after.plan },
+	};
+}
+
+(window as unknown as { __mix: Record<string, unknown> }).__mix.transport = transport;

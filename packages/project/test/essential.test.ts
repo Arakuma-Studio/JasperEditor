@@ -521,6 +521,136 @@ describe('Essential Sound invariants and repair', () => {
 	});
 });
 
+/**
+ * Sound design Phase 0 close-out: builds before the SFX Pan became an offset wrote its value into the clip's pan (the
+ * static value, or one keyframe at the playhead) and saved settings without the `panOffset` marker. Such a project is
+ * stored here as the old build left it; it is then loaded (or edited directly) with this build.
+ */
+function legacySfxPan(opts: { keyframed: boolean; panValue: number; own?: number }) {
+	const { h, clip } = setup();
+	const id = clip().id;
+	if (opts.keyframed)
+		h.ok([
+			{ type: 'param.setAnimated', target: ['clip', id, 'pan'], animated: true, at: { frames: 0 } },
+			{ type: 'param.set', target: ['clip', id, 'pan'], value: -50, at: { frames: 0 } },
+			{ type: 'param.set', target: ['clip', id, 'pan'], value: 50, at: { frames: 300 } },
+			// the old build's write when Pan was switched on with the playhead at frame 100
+			{ type: 'param.set', target: ['clip', id, 'pan'], value: opts.panValue, at: { frames: 100 } },
+		]);
+	else h.ok([{ type: 'param.set', target: ['clip', id, 'pan'], value: opts.own ?? opts.panValue }]);
+	const doc = JSON.parse(JSON.stringify(h.doc));
+	const settings = JSON.parse(JSON.stringify(newEssentialSound('sfx'))) as Record<string, unknown>;
+	delete settings.panOffset;
+	settings.pan = { enabled: true, value: opts.panValue };
+	doc.sequences[h.seqId].clips[id].essential = settings;
+	return { h, clip, id, doc };
+}
+
+describe('Essential Sound Pan saved by builds where it was not an offset', () => {
+	const keys = (c: { pan: { keyframes: unknown[] } }) =>
+		(c.pan.keyframes as { value: number }[]).map((k) => k.value);
+
+	it('loading keeps keyframed pan as saved; switching Pan off afterwards does not shift every keyframe', async () => {
+		const { loadProject } = await import('../src/index.ts');
+		const { h, clip, id, doc } = legacySfxPan({ keyframed: true, panValue: 20 });
+		const loaded = loadProject(doc);
+		h.doc = loaded.document;
+		expect(keys(clip())).toEqual([-50, 20, 50]);
+		expect(loaded.repairs.some((r) => r.action === 'migrate-essential-pan' && r.entity === id)).toBe(true);
+		expect(loaded.issues).toEqual([]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.enabled': false } }]);
+		// the old reading of the offset turned these into [−70, 0, 30]
+		expect(keys(clip())).toEqual([-50, 20, 50]);
+		// switched on again it is a plain offset, and off restores the keyframes
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { pan: { enabled: true, value: 10 } } }]);
+		expect(keys(clip())).toEqual([-40, 30, 60]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.enabled': false } }]);
+		expect(keys(clip())).toEqual([-50, 20, 50]);
+		expect(checkInvariants(h.doc)).toEqual([]);
+	});
+
+	it('a command on such a clip before any load reads it the same way', () => {
+		const { h, clip, id, doc } = legacySfxPan({ keyframed: true, panValue: 20 });
+		h.doc = doc;
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.enabled': false } }]);
+		expect(keys(clip())).toEqual([-50, 20, 50]);
+		const s = clip().essential as { pan: { enabled: boolean; value: number }; panOffset?: boolean };
+		expect(s.panOffset).toBe(true);
+		expect(s.pan.enabled).toBe(false);
+	});
+
+	it('a static pan the old build set to the Pan value reads as that offset (off gives 0, as the old build did)', async () => {
+		const { loadProject } = await import('../src/index.ts');
+		const { h, clip, id, doc } = legacySfxPan({ keyframed: false, panValue: 40 });
+		const loaded = loadProject(doc);
+		h.doc = loaded.document;
+		expect(loaded.repairs).toEqual([]);
+		expect(clip().pan.value).toBe(40);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.value': 25 } }]);
+		expect(clip().pan.value).toBe(25);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.enabled': false } }]);
+		expect(clip().pan.value).toBe(0);
+	});
+
+	it('a static pan moved after the old build wrote it stays where the user put it', async () => {
+		const { loadProject } = await import('../src/index.ts');
+		const { h, clip, id, doc } = legacySfxPan({ keyframed: false, panValue: 40, own: -30 });
+		const loaded = loadProject(doc);
+		h.doc = loaded.document;
+		expect(loaded.repairs.map((r) => r.action)).toEqual(['migrate-essential-pan']);
+		expect(clip().pan.value).toBe(-30);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.enabled': false } }]);
+		expect(clip().pan.value).toBe(-30);
+	});
+
+	it('settings with the marker are never migrated; the marker is not a setting', () => {
+		const { h, clip } = setup();
+		const id = clip().id;
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'sfx' }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { pan: { enabled: true, value: 30 } } }]);
+		expect((clip().essential as { panOffset?: boolean }).panOffset).toBe(true);
+		expect(checkInvariants(h.doc)).toEqual([]);
+		expect(essentialKeys()).not.toContain('panOffset');
+		expect(h.tx([{ type: 'essentialSound.set', clipIds: [id], values: { panOffset: false } }]).ok).toBe(
+			false,
+		);
+	});
+
+	it('property: loading any old SFX Pan state changes nothing audible and leaves no issue', async () => {
+		const fc = (await import('fast-check')).default;
+		const { loadProject } = await import('../src/index.ts');
+		const pans = fc.integer({ min: -100, max: 100 });
+		fc.assert(
+			fc.property(
+				fc.boolean(),
+				pans,
+				pans,
+				fc.boolean(),
+				fc.constantFrom(...AUDIO_TYPES),
+				(keyframed, value, own, enabled, type) => {
+					const { h, clip, id, doc } = legacySfxPan({ keyframed, panValue: value, own });
+					const raw = doc.sequences[h.seqId].clips[id].essential;
+					raw.type = type;
+					raw.pan.enabled = enabled;
+					const before = JSON.stringify(doc.sequences[h.seqId].clips[id].pan);
+					const loaded = loadProject(doc);
+					h.doc = loaded.document;
+					expect(JSON.stringify(clip().pan)).toBe(before);
+					expect(loaded.issues).toEqual([]);
+					// Pan off now: the saved pan, or (an untouched static Pan value) 0 as the old build gave
+					const s = readEssentialSound(clip().essential)!;
+					h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.enabled': false } }]);
+					const after = clip().pan;
+					const offsetOn = type === 'sfx' && s.pan.enabled && s.pan.value !== 0;
+					if (offsetOn) expect(after.value).toBe(Math.min(100, Math.max(-100, own - value)));
+					else expect(JSON.stringify(after)).toBe(before);
+				},
+			),
+			{ numRuns: 60 },
+		);
+	});
+});
+
 describe('audio effects through the clipboard and effect presets', () => {
 	it('copy/paste and Save/Apply Preset carry audio effects with their keys; Essential markers are dropped', async () => {
 		const { buildEffectsPayload, buildEffectPreset, parseEffectPreset, defaultRegistries } = await import(

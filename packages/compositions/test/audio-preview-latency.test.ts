@@ -15,8 +15,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
 	clipEffectsLatency,
 	clipGainExcess,
+	liveDelaySegments,
 	planMixLatency,
 	previewInsertLatency,
+	primedAnchor,
 	registerPreviewInsert,
 	stripStageTimes,
 } from '../src/audio/graph.ts';
@@ -268,5 +270,79 @@ describe('preview latency plan (track / submix / Mix inserts)', () => {
 		expect(20 * Math.log10(16 * clipGainExcess(clip, 5, fps))).toBeCloseTo(30, 9);
 		expect(clipGainExcess({ ...clip, gainDb: 10 }, 5, fps)).toBe(1);
 		expect(clipGainExcess({ ...clip, gainDb: Number.NaN }, 5, fps)).toBe(1);
+	});
+});
+
+// Sound design Phase 0 close-out: the preview graph follows the transport. The Web Audio behaviour is checked in Chrome
+// (audio-preview-transport.test.ts) and in the real app (e2e/sound-p0-transport.spec.ts); these are its pure parts.
+describe('preview transport: held read-ahead, live route changes, primed starts', () => {
+	it('stage times follow the read-ahead the sources use, not only the plan', () => {
+		const mix: RenderAudioMix = {
+			sampleRate: SR,
+			masterFormat: 'stereo',
+			strips: [strip('A1', 'track', { inserts: [fxLat('f1', 480)] }), strip('master', 'master')],
+			loudness: null,
+		};
+		const plan = planMixLatency(mix, latencyOf);
+		const f = FLICKS_PER_SECOND / SR;
+		// held at 960 (a longer read-ahead from before): every stage is 480 samples further ahead
+		expect(stripStageTimes(plan, 'A1', 0, SR, 960)).toEqual({
+			preInserts: 960 * f,
+			fader: 480 * f,
+			postInserts: 480 * f,
+			pan: 480 * f,
+		});
+		// held at 0 (an insert added during playback): the Mix plays 480 samples late, stages behind the picture
+		expect(stripStageTimes(plan, 'A1', 0, SR, 0).fader).toBe(-480 * f);
+		expect(stripStageTimes(plan, 'A1', 0, SR)).toEqual(stripStageTimes(plan, 'A1', 0, SR, plan.total));
+	});
+
+	it('a longer route delay while audio flows appends silence; a shorter one skips from the end', () => {
+		expect(liveDelaySegments([], 0)).toEqual([]);
+		expect(liveDelaySegments([], 300)).toEqual([300]);
+		expect(liveDelaySegments([300], 300)).toEqual([300]);
+		expect(liveDelaySegments([300], 800)).toEqual([300, 500]);
+		expect(liveDelaySegments([300, 500], 600)).toEqual([300, 300]);
+		expect(liveDelaySegments([300, 500], 200)).toEqual([200]);
+		expect(liveDelaySegments([300, 500], 0)).toEqual([]);
+		expect(liveDelaySegments([300, 0, -4, Number.NaN], 300)).toEqual([300]);
+		expect(liveDelaySegments([300], Number.NaN)).toEqual([]);
+		expect(liveDelaySegments([300], -5)).toEqual([]);
+		expect(liveDelaySegments([300], 400.6)).toEqual([300, 101]);
+	});
+
+	it('live route delays: total = target, the kept audio is never reordered (property)', () => {
+		fc.assert(
+			fc.property(
+				fc.array(fc.integer({ min: 1, max: 5000 }), { maxLength: 6 }),
+				fc.integer({ min: 0, max: 20000 }),
+				(segs, target) => {
+					const next = liveDelaySegments(segs, target);
+					expect(next.reduce((a, b) => a + b, 0)).toBe(target);
+					expect(next.every((x) => x > 0 && Number.isInteger(x))).toBe(true);
+					const sum = segs.reduce((a, b) => a + b, 0);
+					if (target >= sum) expect(next.slice(0, segs.length)).toEqual(segs);
+					else {
+						// a prefix of the old segments, the last one possibly shortened
+						const k = next.length;
+						expect(next.slice(0, Math.max(0, k - 1))).toEqual(segs.slice(0, Math.max(0, k - 1)));
+						if (k > 0) expect(next[k - 1]!).toBeLessThanOrEqual(segs[k - 1]!);
+					}
+				},
+			),
+		);
+	});
+
+	it("a primed start moves Remotion's anchor by the wait, from Remotion's own value", () => {
+		// first prime: Remotion's value is the base
+		const a = primedAnchor(10, null, 0.05);
+		expect(a).toEqual({ base: 10, value: 10.05 });
+		// re-primed with another wait while our shift is still in place: from the same base
+		expect(primedAnchor(10.05, { base: 10, shift: 0.05 }, 0.02)).toEqual({ base: 10, value: 10.02 });
+		// Remotion wrote a new anchor since (a seek, a pause): that is the new base
+		expect(primedAnchor(12, { base: 10, shift: 0.05 }, 0.05)).toEqual({ base: 12, value: 12.05 });
+		// hostile waits move nothing
+		expect(primedAnchor(3, null, Number.NaN).value).toBe(3);
+		expect(primedAnchor(3, null, -1).value).toBe(3);
 	});
 });

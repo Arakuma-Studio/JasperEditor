@@ -22,7 +22,7 @@ import {
 	syntheticSamples,
 } from '@jasper/project';
 import { Audio } from '@remotion/media';
-import { useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { cancelRender, continueRender, delayRender, getRemotionEnvironment, Internals } from 'remotion';
 import { MixGraphContext } from '../audio/context.ts';
 import { clipEffectsLatency, clipHasEffects, type MixGraph } from '../audio/graph.ts';
@@ -92,16 +92,24 @@ export function AudioLayer({
 	// what leaves the Mix lines up with the picture.
 	const fx = !!node && clipHasEffects(clip);
 	const graphLatency = useGraphLatency(node ? graph : null);
+	const epoch = useGraphEpoch(node ? graph : null);
 	const fxLatency = useMemo(
 		() => (fx && graph ? clipEffectsLatency(clip.effects, graph.sampleRate) / graph.sampleRate : 0),
 		[fx, graph, clip.effects],
 	);
-	// = graph.clipLead(clip)
-	const latencySec = node ? fxLatency + graphLatency : 0;
-	// A stable context value: Remotion re-creates its media player when the context object changes.
+	const clipRef = useRef(clip);
+	clipRef.current = clip;
+	// A stable context value: Remotion re-creates its media player when the context object changes. That happens when
+	// the clip's own effect latency changes, or when the graph asks every source to reschedule while paused (its
+	// read-ahead or the primed start changed: `MixGraph.epoch`); never for a latency change during playback, when the
+	// graph holds its read-ahead (sound-design Phase 0 close-out). The lead is read when each buffer is scheduled.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: fxLatency and epoch re-create the media player on purpose
 	const routed = useMemo(
-		() => (shared && node ? { ...shared, gainNode: node, ...compensate(shared, latencySec) } : null),
-		[shared, node, latencySec],
+		() =>
+			shared && node && graph
+				? { ...shared, gainNode: node, ...compensate(shared, () => graph.clipLead(clipRef.current)) }
+				: null,
+		[shared, node, graph, fxLatency, epoch],
 	);
 	// The source plays `graphLatency` ahead of the picture: its levels are those of the samples it is playing.
 	const leadFrames = routed ? (graphLatency * num) / den : 0;
@@ -236,11 +244,22 @@ export function useGraphLatency(graph: MixGraph | null): number {
 	return useSyncExternalStore(subscribe, get, get);
 }
 
-/** A `scheduleAudioNode` that starts every source buffer `shift` seconds early (effect latency compensation). */
-function compensate(shared: SharedAudio, shift: number): Partial<SharedAudio> {
-	if (shift <= 0) return {};
+/** The mix graph's schedule epoch (`MixGraph.epoch`, 0 without a graph); re-renders when it changes. */
+export function useGraphEpoch(graph: MixGraph | null): number {
+	const subscribe = useMemo(() => (graph ? (cb: () => void) => graph.onLatency(cb) : noGraph), [graph]);
+	const get = useCallback(() => graph?.epoch ?? 0, [graph]);
+	return useSyncExternalStore(subscribe, get, get);
+}
+
+/**
+ * A `scheduleAudioNode` that starts every source buffer `lead()` seconds early (effect latency compensation and the
+ * graph's read-ahead), read when the buffer is scheduled.
+ */
+function compensate(shared: SharedAudio, lead: () => number): Partial<SharedAudio> {
 	return {
 		scheduleAudioNode: (opts) => {
+			const shift = lead();
+			if (!(shift > 0)) return shared.scheduleAudioNode(opts);
 			const ctx = shared.audioContext;
 			let { scheduledTime, offset, duration } = opts;
 			scheduledTime -= shift;

@@ -111,7 +111,7 @@ import {
 	transitionRunMode,
 } from './fx/transition.tsx';
 import { AdjustmentScope, cssExactAdjustment, FlatAdjustment } from './layers/AdjustmentScope.tsx';
-import { AudioLayer, layerComponentFor, useGraphLatency } from './layers/index.ts';
+import { AudioLayer, layerComponentFor, useGraphEpoch, useGraphLatency } from './layers/index.ts';
 import { NestCompSizeContext, NestTracksContext } from './layers/nest-context.ts';
 import { TextExpressionContext } from './layers/text/expression-context.ts';
 import { rgbaCss } from './metadata.ts';
@@ -1182,6 +1182,24 @@ function MixGraphDriver({
 	offset: number;
 }) {
 	const frame = useCurrentFrame();
+	// sound-design Phase 0 close-out: the graph follows the transport (seeks flush it, a Play after a paused seek is
+	// primed, the read-ahead is held while playing).
+	const sharedAudio = useContext(Internals.SharedAudioContext);
+	const [playing] = Internals.Timeline.usePlayingState();
+	useEffect(() => {
+		if (!sharedAudio) return;
+		const emitter = sharedAudio.audioSyncAnchorEmitter;
+		graph.attachSync({
+			anchor: sharedAudio.audioSyncAnchor,
+			subscribe: (cb) => {
+				const s = emitter.subscribe(cb);
+				return () => s.remove();
+			},
+		});
+	}, [graph, sharedAudio]);
+	useEffect(() => {
+		graph.setPlaying(playing);
+	}, [graph, playing]);
 	useEffect(() => {
 		if (!doc.audioMix) return;
 		const t = (frame + offset) * flicksPerFrame(doc.settings.fps);
@@ -1235,6 +1253,7 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 	// cannot start early, so it lost its first `lead` seconds at every cut; premounted, its first buffers are
 	// scheduled ahead of the cut (S03:RND-020, spec 12 Phase 0).
 	const graphLatency = useGraphLatency(graph);
+	const graphEpoch = useGraphEpoch(graph);
 	const audioPremount = useCallback(
 		(clip: RenderDoc['audioClips'][number]): number =>
 			Math.max(premountFrames(fps), Math.ceil(Math.max(graphLatency, graph?.clipLead(clip) ?? 0) * fps) + 1),
@@ -1289,6 +1308,7 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 										offset={offset}
 										premount={premountFrames(fps)}
 										options={options}
+										epoch={graphEpoch}
 									/>
 								</DisplayStage>
 								{graph ? <MixGraphDriver graph={graph} doc={live} offset={offset} /> : null}

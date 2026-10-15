@@ -202,6 +202,7 @@ player (both suspected from the code, not measured; recorded in `wp-notes/audio-
 per channel per instance (≈ 4.6 MB stereo 48 kHz; bounded, reset zero-fills it); `flush()` of the true-peak meters is
 not idempotent, but every caller flushes once at the end; old projects with keyframed SFX pan saved before WP0.2 get
 every keyframe shifted when Pan is switched off (the old code wrote one key; Phase 0 is unreleased, no migration).
+The preview transport limits and the SFX Pan reading were taken up by the close-out below (C1–C4).
 
 #### Gate (measured, this branch, shared host with 16 cores)
 
@@ -244,6 +245,117 @@ Phase 0 "Done when": every confirmed bug of WP0.1, WP0.2 and this verification h
 before and passes after (V5's and V4's hostile-residual tests are defence and passed before); the sample-level oracle
 `packages/compositions/test/audio-preview-oracle.test.ts` (4 tests) passes; the voice-over alignment test
 `apps/web/test/voiceover-latency.test.ts` (6 tests) lands within one buffer under simulated input latency.
+
+### Phase 0 close-out
+
+Branch `feat/sd-p0-closeout` (from `feat/sound-design` e9b8b01a). Scope: the preview limits the verification left
+(`packages/compositions/src/audio/*`, `AudioLayer.tsx`, `SequenceComposition.tsx`, `previews.tsx`) and the SFX Pan
+reading of older projects (`packages/project/src/essential/*`, `invariants.ts`, the essential handlers).
+
+**Design: the graph follows Remotion's transport.** Remotion (4.0.499) suspends the AudioContext while paused,
+anchors audio to the picture (`audioSyncAnchor`: context time of sequence time 0), dispatches `changed` on that anchor
+at a seek (every media player then drops its queued buffers and reschedules), and on Play starts the picture once
+the context's output timestamp passes the resume time (`waitUntilActuallyResumed`) with a 30 ms fade-in.
+`MixGraph.attachSync` (wired by `MixGraphDriver` from the shared audio context and `usePlayingState`) uses exactly those:
+
+- **Primed start** (C1). After a seek while paused (Remotion's `changed` with the context suspended), at load, and
+  when the read-ahead changes while paused, the next Play is *primed*: the graph flushes (below), moves Remotion's
+  anchor later by the wait `W` = read-ahead + the largest clip-effect latency (`primedAnchor`, ≤ 0.5 s), so every
+  source starts at the play position instead of `W` before it, and reports the context's output timestamp `W` late
+  until the program reaches the output (an instance shim of `getOutputTimestamp`, cleared as soon as it has), so the
+  picture's first frame waits for the program's first sample. The program gets Remotion's own 30 ms fade-in at its
+  start (`START_FADE`, a gain after the device fold). A plain pause and Play is not primed: the audio in flight is
+  the continuation, and the context resumes it seamlessly. Rejected: delaying the sources (audio late for the whole
+  play), pre-rendering the pre-roll (the media is decoded by Remotion's players, not reachable here), holding the
+  picture with Remotion's buffering state (it suspends the audio too).
+- **Flush at seeks** (C2). `MixGraph.flush()` gives every route delay a fresh delay line and every effect slot (track,
+  submix, Mix, clip) and the loudness limiter a fresh processor, so nothing of the old position is in flight or rings
+  on: paused, before the primed start; playing, after a 3 ms fade-out of the graph output (`FLUSH_FADE`).
+- **Held read-ahead** (C3). The read-ahead follows the plan while paused and is held while playing: a latency change
+  during playback (an insert added or removed, normalisation toggled) never re-creates the clips' media players
+  (`AudioLayer` keys them on `MixGraph.epoch`, which only moves while paused). The audio in flight is kept: a longer
+  route delay appends a segment (`liveDelaySegments`: that much silence, then the audio continues), a shorter one
+  shortens the last segments, slots of unchanged effects keep their processors (`SlotChain.sync` reuses them by
+  instance id), and a plan shorter than the held read-ahead is padded at the Mix (`pad`). Stage times use the held
+  read-ahead (`stripStageTimes(…, readAhead)`). Until playback stops the Mix is late by an added latency (inter-track
+  alignment stays exact); at the stop the read-ahead takes the plan's and the next Play is primed.
+- **SFX Pan of older builds** (C4). Builds before WP0.2 #10 (on `main` since 2026-10-07, so projects exist) wrote the
+  Pan value into the clip's pan: the static value, or one keyframe at the playhead. The offset reading shifted every
+  keyframe by −value when Pan was switched off. Settings now carry `panOffset: true` (optional, written by every
+  command, not a setting: refused by `essentialSound.set`, left out of `essentialKeys` and `get_essential_sound`).
+  Settings without it whose Pan the offset would misread (`legacyPanApplied`: SFX, Pan on, value ≠ 0, and the pan is
+  keyframed or not equal to the value) are an `INV-ESSENTIAL` issue; `repairDocument` (`migrate-essential-pan`) and
+  every Essential Sound command (`audioClips`) switch the section off with its value kept, so the pan stays as saved
+  and switching it on later is a plain offset. An untouched static pan (equal to the value) already reads the same as
+  an offset and only gets the marker on the next write (Pan off gives 0, as the old build did). No schema bump: the
+  marker is optional, `AudioClip.essential` is `unknown` and the settings schema loose, so older builds keep it.
+
+#### Findings
+
+| # | Item (from the verification) | Verdict | Regression test (before → after) |
+|---|---|---|---|
+| C1 | Right after Play the first read-ahead samples were lost | **fixed** (primed start) | `e2e/sound-p0-transport.spec.ts` "Play: the first samples…": a click 30 ms after the play position with 41.6 ms of read-ahead (Hard Limiters with 20 ms look-ahead on A1 and the Mix). Before: first click heard at +0.280 s (the 0.03 s one lost). After: at +0.0716 s = W 0.0416 + 0.03, 0.68–0.71; picture − audio equals the no-latency baseline within 7 ms (without the output-timestamp shim it was 40–42 ms off: measured with the shim disabled) |
+| C2a | After a seek while paused, Play first played the graph's pre-seek audio (suspected) | **confirmed, fixed** (flush) | same spec, "Play after a seek while paused": pause inside a tone, seek to silence, Play. Before: max 0.352 within 1 ms of the start. After: 0 |
+| C2b | After a seek while playing, the pre-seek audio went on for the read-ahead (suspected) | **confirmed, fixed** (fade + flush) | same spec, "seek during playback": before, the tone ran 44.2 ms past Remotion's stop of the old buffers; after, it ends at the stop (−0.02 ms). Offline: `packages/compositions/test/audio-preview-transport.test.ts` "a seek flushes…" (delay lines and a Convolution Reverb tail silent from the next quantum) |
+| C3 | A latency change while playing re-created every clip's media player (suspected dropout) | **confirmed, fixed** (held read-ahead, live routes, slot reuse) | same spec, "a latency change during playback" (a 2nd Hard Limiter added to A1 while playing, Δ = 998 samples): before, one gap of 1996 samples (41.6 ms, three runs at low load; the players were re-created); after, 998 samples (Δ, the minimum for a longer latency). Offline: `audio-preview-transport.test.ts` add / remove cases: one gap ≤ Δ, then the new mix exact (< 1e-4) right after it (late by Δ when added, aligned when removed); both fail with fresh delay lines or re-created slots |
+| C4 | SFX Pan saved before it was an offset: Pan off shifted every keyframe | **confirmed defect, fixed** (read-time migration) | `packages/project/test/essential.test.ts` "Essential Sound Pan saved by builds where it was not an offset" (6 tests, one a fast-check property over 60 old states). Before: keys `[-50, 20, 50]` became `[-70, 0, 30]`; 5 of 6 failed (the untouched static case already read the same). Real app: same e2e spec, a project file edited to the old form and reopened: keys unchanged, the Pan section shows off, on/off gives `[-30, 40, 70]` and back |
+
+#### Limits (measured where stated)
+
+- A seek *during playback* still loses the first read-ahead after it (plus Remotion's own decode time): the picture
+  jumps at once, so the sources cannot start early. Most seeks pause first (TL-832: ruler, keyboard), so the primed
+  start covers them; typed timecodes and marker clicks seek while playing.
+- A primed start waits `W` (≤ 0.5 s; 41.6 ms in the tests) before the picture moves; above 0.5 s it is not primed
+  (the read-ahead is lost as before).
+- An insert added while playing leaves the Mix late by its latency until playback stops (inter-track alignment
+  exact; 20.8 ms in the test). Removing one keeps alignment (padding).
+- Seeks shorter than Remotion's anchor tolerance (0.1 s + output latency) while paused are not seeks for Remotion:
+  it keeps its queued buffers, and so does the graph (the audio continues from where it was; Remotion's behaviour).
+- The getOutputTimestamp shim relies on Remotion 4.0.499's `waitUntilActuallyResumed`; the e2e sync check fails if
+  an upgrade stops using it.
+- A buffering stall during the wait of a primed start: Remotion re-anchors to the (still unmoved) picture on suspend;
+  the graph puts its primed anchor back and the shim waits only for what is left of the wait (`waitFrom`). This was
+  added after the e2e sync check failed by ≈ the wait (39 ms) once at load ≈ 80; it has no dedicated regression test
+  (a stall cannot be provoked deterministically in the e2e); the check passed in both full runs after it (load ≈ 100 and 68–150).
+- Under heavy load (load average 80–125 on the 16-core host) Remotion re-anchors and reschedules every player during
+  playback and its buffer scheduling falls behind; the e2e plays again (up to 3 times) when that happens around the
+  measured moment. The pre-fix build showed the same reschedules under the same load.
+
+#### Verified (commands and results)
+
+Shared 16-core host, load average 50–150 from other agents during these runs (stated per run).
+
+- Unit / offline (headless Chrome Web Audio):
+  `pnpm vitest run packages/compositions/test/audio-preview-transport.test.ts packages/compositions/test/audio-preview-oracle.test.ts packages/compositions/test/audio-preview-latency.test.ts --maxWorkers=1`:
+  18 passed (transport 3, oracle 4, latency 11). The transport add / remove cases were also run with the route delays
+  forced non-live and with slot reuse disabled: both failed (2 of 3 each), so they test what they claim.
+- `pnpm vitest run packages/project/test/essential.test.ts --maxWorkers=2`: 29 passed. With `model.ts`,
+  `invariants.ts` and `handlers/essential.ts` checked out from before C4: 5 of the 6 new tests failed (keys
+  `[-70, 0, 30]` instead of `[-50, 20, 50]`).
+- `pnpm vitest run packages/compositions packages/project/test/essential.test.ts packages/project/test/invariants.test.ts packages/project/test/audio-mix.test.ts apps/mcp/test/audio-fx.test.ts apps/web/test/essential-auto-match.test.ts apps/web/test/audio-mix.test.ts apps/web/test/audio-mix-panels.test.tsx apps/web/test/audio-engine-ops.test.ts --maxWorkers=2`
+  (load ≈ 125): 604 passed, 1 failed (`audio-fx-preview.test.ts`, its 5 s timeout; rerun alone: 2 passed).
+  `packages/project/test/fuzz-parsers.test.ts apps/web/test/panel-input-validation.test.ts packages/project/test/gaps-graphics.test.ts apps/engine/test/audio-fx.test.ts`:
+  58 passed, 1 failed (the `.3dl` LUT fuzz's 120 s limit under load; not touched here).
+- `pnpm lint`: passed. `pnpm typecheck`: passed (after merging `feat/sound-design` d0827ab1). `pnpm notices --check`:
+  current. `pnpm build`: passed.
+- Real app, built stack, headless Chrome:
+  `E2E_PORT=48401 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-p0-transport.spec.ts e2e/sound-p0-preview.spec.ts`
+  (load 68 → 150): 9 passed, 1 failed ("seek during playback": every attempt disturbed at load 150; rerun alone 3
+  times: 2 passed with the tone ending 0.02 ms before Remotion's stop, the first failed with all attempts
+  disturbed). Values from the passing runs: first click at play + 71.6 ms (= 41.6 + 30), 0.707; picture − audio
+  0.031 s primed vs 0.034 s without latency (earlier runs: 0.012 / 0.007, 0.016 / 0.020, 0.020 / 0.014); after a
+  paused seek max 0; latency change gap 998 samples (four runs). `e2e/sound-p0-preview.spec.ts` 5 passed (clicks of
+  0.7071 every 24 000 samples, export six clicks at 0…120 000, a clip at frame 40 heard from its first sample).
+  Screenshot looked at: `test-results/e2e-sound-p0-transport/essential-sound-legacy-pan.png` (Essential Sound on the
+  reopened clip: SFX, Pan section unchecked).
+- Before the fixes (build of e9b8b01a, same specs, load ≈ 15–40): first click lost (first heard at +0.280 s), stale
+  tone 0.352 after a paused seek, 44.2 ms of tone after a seek during playback, a 1996-sample gap at the latency change
+  (three runs; at load ≈ 90 the same build gave 1996–4812).
+- Observed under load (both builds): when the picture falls behind (main-thread stalls), Remotion re-anchors to it and
+  reschedules every player; the new anchor is frame-based (1601.6 samples per frame at 29.97 fps), so the sources then
+  start at a sub-sample phase and a one-sample click is interpolated over two samples (peaks 0.566 = 0.8 × 0.707 or
+  0.283 instead of 0.707; traced with logged anchors in a debug build). The audio is not misaligned; it is the
+  reason the e2e plays again when Remotion rescheduled, and why `sound-p0-preview` test 1 failed twice at load ≥ 80.
 
 ## Phase 1: sound library
 

@@ -37,7 +37,7 @@ import { pickSequence } from '../format.ts';
 import { analyze, apply } from './audio.ts';
 
 export const AUDIO_FX_GUIDE = `Audio effects (Premiere's Audio Effects folders: Amplitude and Compression, Delay and Echo, Filter and EQ, Modulation, Noise Reduction/Restoration, Reverb, Special, Stereo Imagery, Time and Pitch): list_audio_effects gives every effect id ("jasper.audio.…") with its parameters (units dB, Hz, ms, Q, ratio, %, st, cents, LUFS; every number keyframable). add_audio_effect puts one on an audio clip, an audio track ("A1"…, a submix "S1"…) or the Mix ("Mix"); set_audio_effect changes parameters (a value, or {"keyframes": [{at, value}…]} for automation), enables/bypasses or reorders it; remove_audio_effect deletes it; get_audio_effects lists the stacks with values at a time. The same DSP runs in the preview (AudioWorklet) and every export. Order: clip effects → clip gain / Volume / fades → pan → track effects → fader.
-Essential Sound: set_essential_sound gives clips an audio type (dialogue | music | sfx | ambience), applies a preset (get_essential_sound lists them) and/or sets options by dotted key (e.g. {"repair.noise.on": true, "repair.noise.amount": 6, "clarity.eqPreset": "Balanced Voice", "creative.reverb.on": true}); the options become ordinary keyframable clip effects you can also edit with set_audio_effect; Clip Volume and the SFX Pan are offsets on the clip's own Volume and pan (switched off, the clip's levels come back). clear_essential_sound removes the type and every change it made. auto_match_loudness measures each clip (BS.1770, its own signal) and sets its gain to −23 LUFS (or targetLufs); silent clips and clips shorter than 400 ms are skipped with the reason. generate_essential_ducking ducks Music / Ambience clips under the clips of their "Duck against" types (ducking.* options) with Volume keyframes.
+Essential Sound: set_essential_sound gives clips an audio type (dialogue | music | sfx | ambience), applies a preset (get_essential_sound lists them) and/or sets options by dotted key (e.g. {"repair.noise.on": true, "repair.noise.amount": 6, "clarity.eqPreset": "Balanced Voice", "creative.reverb.on": true}); the options become ordinary keyframable clip effects you can also edit with set_audio_effect; Clip Volume and the SFX Pan are offsets on the clip's own Volume and pan (switched off, the clip's levels come back; projects saved when Pan was written into the pan open with the Pan section off, value kept, so their pan stays as saved). clear_essential_sound removes the type and every change it made. auto_match_loudness measures each clip (BS.1770, its own signal) and sets its gain to −23 LUFS (or targetLufs); silent clips and clips shorter than 400 ms are skipped with the reason. generate_essential_ducking ducks Music / Ambience clips under the clips of their "Duck against" types (ducking.* options) with Volume keyframes.
 Music Remix: remix_audio clips a music clip to a target duration by beat tracking and re-cutting on beats (grouped pieces joined by short crossfades, one undo step; at most 30 min of music is analysed); revert_remix restores the original.`;
 
 const ClipIdsArg = z.array(z.string().min(1)).min(1).describe('Audio clip ids (get_timeline)');
@@ -417,10 +417,11 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 			const seq = pickSequence(doc, sequenceId);
 			const clips = (clipIds ?? []).map((id) => {
 				const c = audioClip(seq, id);
-				// `residual` (what the fader ranges clamped away) is bookkeeping of the commands, not a setting.
+				// `residual` (what the fader ranges clamped away) and `panOffset` (how Pan is applied) are bookkeeping of
+				// the commands, not settings.
 				const s = readEssentialSound(c.essential);
 				if (!s) return { clipId: id, settings: null };
-				const { residual: _residual, ...settings } = s;
+				const { residual: _residual, panOffset: _panOffset, ...settings } = s;
 				return { clipId: id, settings };
 			});
 			const type = audioType ?? clips.find((c) => c.settings)?.settings?.type ?? null;

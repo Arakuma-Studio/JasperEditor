@@ -270,8 +270,8 @@ test('a clip that starts mid-playback is heard from its first sample (read-ahead
 		const tap = await playAndTap(page);
 		test.info().annotations.push({ type: `head peaks ${run}`, description: JSON.stringify(tap) });
 		console.log('head peaks', run, JSON.stringify(tap));
-		// A1 + A2 click together every 24 000 samples from timeline 0 (the one at 0 itself is lost to the read-ahead at
-		// the play start): they give where timeline 0 is in the tap.
+		// A1 + A2 click together every 24 000 samples from timeline 0 (the one at 0 itself falls on the first sample of
+		// the start fade-in, gain 0): they give where timeline 0 is in the tap.
 		const ref = tap.peaks[0]!;
 		expect(ref.v, JSON.stringify(tap.peaks)).toBeGreaterThan(0.65);
 		const zero = ref.at % 24_000;
