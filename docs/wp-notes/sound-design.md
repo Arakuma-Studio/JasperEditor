@@ -1861,7 +1861,30 @@ own split: In Context audition, cues, Replace mode, the Palette collection, the 
 
 #### Gate
 
-GATE_PLACEHOLDER
+Shared host, 16 cores; other agents' load stated per run.
+
+- `pnpm notices --check`: current (150 packages, 31 ported source records).
+- `pnpm verify` on the merged branch (load 21 → 84): `pnpm lint` passed (Biome, tokens, anime, layers, assets);
+  `pnpm typecheck` passed (every workspace project); `pnpm test`: 611 files, **5 757 passed, 5 failed**, 392 skipped.
+  The five: four timeouts under load (`expressions` "recursion and memory limits" 5 s, `sound-library-model` waveform
+  property 15 s, `audio-fx-preview` "every audio effect" 5 s, `check-layers` "the repository passes" 120 s) and
+  `processing-steps` "dejudder" (encoder exited, out of resources). Rerun alone (`--maxWorkers=1`, load 50–82):
+  waveform 17/17, processing-steps 16/16 (990 s), audio-fx-preview 2/2, check-layers 11/11 (108 s), expressions
+  failed twice more (9.9 s, 7.9 s for its 5 s limit).
+- `pnpm build` (the step `verify` did not reach): passed, twice (before and after the last code change).
+- Second full `pnpm test` (load 7 → 80, 20 min): 611 files, **5 764 passed, 2 failed** (`audio-fx-preview` 5 s and
+  `check-layers` 120 s timeouts again), 388 skipped.
+- Fixed so the gate does not depend on the load (coverage unchanged, every assertion kept): the waveform property and
+  the synth / registry tests (above) make one assertion per run instead of one per sample; `audio-fx-preview` is one
+  test per effect (61 tests, 2.9 s in all alone); the expression memory-limit test (filling the sandbox to its limit
+  takes 8–10 s under load) has a 60 s timeout; the repository layer check (108 s alone) has 600 s. Each rerun alone
+  after the change: 17/17, 28/28, 61/61, 11/11.
+- Phase 1 suites after the merges (`pnpm vitest run apps/engine/test/sounds-*.test.ts packages/project/test/sound-*.test.ts
+  packages/audio-fx/test/sound-*.test.ts apps/mcp/test/sound*.test.ts packages/project/test/schema-history.test.ts
+  --maxWorkers=2`, load 56–98): **25 files, 268 tests passed**. `pnpm vitest run --project @jasper/project`
+  (before the helper merges, load 60–90): 1 771 / 1 772; the one failure is the pre-existing 20 s budget of
+  `three-d-hostile.test.ts` (20 000 glTF instances: 20.7 s alone at load 92; it passed in both full runs above).
+- `node scripts/i18n.mjs --check`: es.json covers all 8 836 strings.
 
 #### Limits and notes for the next packages
 
