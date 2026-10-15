@@ -90,6 +90,19 @@ Validation remains in progress. Confirmed results so far:
 - Final sync/remix/registry recheck: 3 files and 149 tests passed with required
   oracles and two workers. Earlier aggregate audio watchdog failures are not passes;
   this result verifies the final per-contract cases.
+- Final GPU recheck: 7 files and 1,071 tests passed with required oracles and two
+  workers, including all effect/transition fingerprints and the revised family
+  contracts. Golden inputs, pixel tolerances and committed golden records remain
+  unchanged; the per-contract reporting change increases the cumulative watchdog
+  allowance, as disclosed in the area ledgers.
+- Real speech-model validation: four model/sequence/cancellation cases passed; the
+  capability case hit its original five-second watchdog, then passed alone with
+  that same deadline. English WER was 1.92%, multilingual WER 5.77%, and trimmed
+  sequence WER 6.15%; measured word-boundary mean/max errors were 18/40 ms.
+- `pnpm mg:build`: native release build completed. The four native/TypeScript
+  parity tests passed; their title-card raster pair was also inspected visually.
+  The companion bundle command terminated with exit 143 before completion and is
+  being rerun; no cause is established and no interrupted case counts as a pass.
 - `pnpm perf --sections micro --label test-cleanup-integration`: passed all six
   scripts, including the scale benchmark. AMD Ryzen 7 7700, 16 logical CPUs,
   Node 20.20.2; starting load averages 154.9/147.2/145.5. Reports are in
