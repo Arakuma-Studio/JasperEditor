@@ -9142,5 +9142,6 @@
   "This clip has no peak to align a layer to": "Este clip no tiene pico al que alinear una capa",
   "Unfilled": "Sin rellenar",
   "Unknown": "Desconocido",
-  "Unlink Layers": "Desvincular capas"
+  "Unlink Layers": "Desvincular capas",
+  "(first of {0} clips)": "(el primero de {0} clips)"
 }

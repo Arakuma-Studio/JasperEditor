@@ -212,7 +212,7 @@ export function registerSoundDesignUi(): void {
 		title: 'Sound',
 		order: 15,
 		defaultOpen: true,
-		appliesTo: (clips) => clips.length === 1 && clips[0]!.kind === 'audio',
+		appliesTo: (clips) => clips.length > 0 && clips.length <= 16 && clips.every((c) => c.kind === 'audio'),
 		component: SoundSection,
 	});
 

@@ -98,6 +98,11 @@ export function SoundSection({ session, clips, sequenceId }: ClipSectionProps) {
 				<>
 					<Row label={t('Sound')}>
 						<span data-testid="sound-section-title">{prov.title || prov.soundId}</span>
+						{clips.length > 1 ? (
+							<span className="ml-1 text-pr-small text-pr-dim">
+								{t('(first of {0} clips)', clips.length)}
+							</span>
+						) : null}
 						<span className="block text-pr-small text-pr-dim">
 							{prov.types.map(typeLabel).join(', ') || t('Untyped')}
 						</span>
@@ -301,7 +306,7 @@ export function CueProperties({ session, sequenceId }: { session: EditorSession;
 				<Row label={t('Pan')}>
 					<TextField
 						label={t('Cue pan (−100 … 100, or auto)')}
-						value={cue.pan === undefined ? '' : String(cue.pan)}
+						value={cue.pan === undefined ? null : String(cue.pan)}
 						disabled={readOnly}
 						onCommit={(v) => {
 							const s = v.trim().toLowerCase();
@@ -323,7 +328,7 @@ export function CueProperties({ session, sequenceId }: { session: EditorSession;
 				<Row label={t('Pitch (st)')}>
 					<TextField
 						label={t('Cue pitch in semitones')}
-						value={cue.pitchSt === undefined ? '' : String(cue.pitchSt)}
+						value={cue.pitchSt === undefined ? null : String(cue.pitchSt)}
 						disabled={readOnly}
 						onCommit={(v) => {
 							const n = v.trim() ? num(v, -12, 12) : null;

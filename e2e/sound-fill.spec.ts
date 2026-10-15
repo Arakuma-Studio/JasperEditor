@@ -205,6 +205,23 @@ test('fill, variation ×3 = one entry, swap, layer, link move, in context, fill 
 	const badges = page.locator(`[data-sound-badges="${filled.id}"]`);
 	await expect(badges.locator('[data-sound-badge="type-sfx"]')).toBeVisible();
 	await page.screenshot({ path: join(outDir, 'filled-badges.png') });
+	// Essential Sound ▸ Sound Design ▸ Role: Hero (the clip gets the "H" badge)
+	await page.getByTestId('essential-role').getByRole('radio', { name: /Hero/ }).click();
+	await expect.poll(async () => (await appliedLabels(page)).at(-1)).toBe('Sound Role');
+	expect((await sequence(page)).clips[filled.id]!.sfx!.role).toBe('hero');
+	// zoom in on it for a close-up of the badges (the hero / layer glyphs need ≥ 80 px)
+	await query(page, 'playhead.set', { frame: filled.start });
+	for (let i = 0; i < 3; i++) {
+		await clipBodyClick(filled.id);
+		await page.keyboard.press('Equal');
+		await page.waitForTimeout(250);
+	}
+	await page
+		.locator(`[data-testid="timeline-track-area"] [data-clip-id="${filled.id}"]`)
+		.first()
+		.screenshot({
+			path: join(outDir, 'clip-badges-closeup.png'),
+		});
 	const essential = page.getByTestId('essential-section-sound-design');
 	if (await essential.isVisible().catch(() => false))
 		await essential.screenshot({ path: join(outDir, 'essential-sfx.png') });
@@ -242,6 +259,8 @@ test('fill, variation ×3 = one entry, swap, layer, link move, in context, fill 
 		.poll(async () => (await appliedLabels(page)).at(-1), { timeout: 60_000 })
 		.toMatch(/^Swap Sound \S/);
 	await expect(banner).toHaveCount(0);
+	// leaving Replace mode clears the similarity ranking it set
+	await expect(panel.getByTestId('sound-similar-chip')).toHaveCount(0);
 	seq = await sequence(page);
 	expectOnCue(pointFrame(seq, seq.clips[filled.id]!), 75);
 
@@ -280,13 +299,20 @@ test('fill, variation ×3 = one entry, swap, layer, link move, in context, fill 
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await sequence(page)).clips[layer.id]!.start).toBe(start0.b);
 
-	// Properties ▸ Cue for the selected cue
+	// Properties ▸ Sound (the selected layer) and ▸ Cue (a selected cue)
+	await page.getByRole('tab', { name: 'Properties' }).click();
+	const soundSection = page.getByTestId('properties-sound-section');
+	await expect(soundSection).toBeVisible();
+	await expect(page.getByTestId('sound-section-credit')).not.toBeEmpty();
+	await page.getByTestId('properties-panel').screenshot({ path: join(outDir, 'properties-sound.png') });
 	await zoomToSequence();
 	g = await glyphBox(cut150.id);
 	await page.mouse.click(g.x + g.width / 2, g.y + g.height / 2);
 	const cueSection = page.getByTestId('properties-cue-section');
-	if (await cueSection.isVisible().catch(() => false))
-		await cueSection.screenshot({ path: join(outDir, 'properties-cue.png') });
+	await expect(cueSection).toBeVisible();
+	await expect(page.getByTestId('cue-section-timecode')).toHaveText(/^00[:;]00[:;]05[:;]00$/);
+	await page.getByTestId('properties-panel').screenshot({ path: join(outDir, 'properties-cue.png') });
+	await page.getByRole('tab', { name: 'Essential Sound' }).click();
 
 	// In Context: Shift+Space in the Library with the cut at 150 selected → the Program chip; nothing is written
 	const revision = await query<{ revision: number }>(page, 'doc.revision');

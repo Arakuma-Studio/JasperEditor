@@ -134,9 +134,17 @@ export type ClipSoundTarget = {
 };
 
 let clipTarget: ClipSoundTarget | null = null;
+/** Replace mode ranked the list by similarity: leaving the mode clears that ranking again. */
+let similarFromMode = false;
 
 export function clipSoundTarget(): ClipSoundTarget | null {
 	return clipTarget;
+}
+
+function clearModeSimilar(): void {
+	if (!similarFromMode) return;
+	similarFromMode = false;
+	withSoundLibrary((c) => c.setSimilar?.(null));
 }
 
 /** Enters Replace / clip-layer mode (clears Fill mode), or leaves it with null. */
@@ -146,9 +154,10 @@ export function requestClipTarget(target: ClipSoundTarget | null): void {
 		fillTarget = null;
 		if (target.kind === 'replace' && target.soundId) {
 			const similar = { id: target.soundId, title: target.title };
+			similarFromMode = true;
 			withSoundLibrary((c) => c.setSimilar?.(similar));
 		}
-	}
+	} else clearModeSimilar();
 	notifyMode();
 }
 
@@ -157,6 +166,7 @@ export function cancelLibraryMode(): boolean {
 	if (!fillTarget && !clipTarget) return false;
 	fillTarget = null;
 	clipTarget = null;
+	clearModeSimilar();
 	notifyMode();
 	return true;
 }
