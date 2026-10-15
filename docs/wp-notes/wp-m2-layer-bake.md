@@ -89,8 +89,12 @@ The e2e suite appends its measurements to `<tmpdir>/layer-bake-e2e.txt`.
 stills built through public `buildRenderSnapshot` and signed media handles. Its
 reference setup does not call the export planner or private export methods;
 the ten boundary/effect frames, pixel tolerance and repeat-export cache checks
-remain unchanged. The [cleanup ledger](../test-cleanup/engine2.md#gpu-span-reference-setup-follow-up--before-edit-record)
-records this reference correction and its pending integrated rendering check.
+remain unchanged. At integration source `30a8430e`, the rewritten case passed
+with all ten RGB comparison shares at 1.0000 within 3/255, no new bake jobs on
+repeat export, and byte-identical frame 45 (exit 0). Semantic engine typecheck
+also passed. The [cleanup ledger](../test-cleanup/engine2.md#gpu-span-reference-setup-follow-up--before-edit-record)
+records the exact source, measured run durations and evidence files separately
+from the earlier historical run.
 
 ## Results (this box: 12 cores, no GPU, load average 20–45 from other agents)
 

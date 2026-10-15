@@ -617,12 +617,13 @@ No wrapper, export, injection hook, production behavior or new fixture is needed
 
 Risk: reference-only setup may expose an actual parity defect previously hidden
 by shared planning; preserve the exact ten frames, pixel threshold, repeat
-frame, fixture, export settings and all deadlines. Validation is changed-file
-Biome and `git diff --check` here; semantic engine typecheck and the opt-in
+frame, fixture, export settings and all deadlines. Planned validation was
+changed-file Biome and `git diff --check` here, then semantic engine typecheck
+and the opt-in
 `REMOTION_E2E=1 JASPER_REQUIRE_ORACLES=1 pnpm exec vitest run
-apps/engine/test/gpu-spans.e2e.test.ts --maxWorkers=1` are reserved for the
-integration coordinator after the currently running batch. No skipped or
-unexecuted rendering check is counted as a pass.
+apps/engine/test/gpu-spans.e2e.test.ts --maxWorkers=1` in the integration
+checkout after its active batch. No skipped or unexecuted rendering check is
+counted as a pass.
 
 Completed local validation: changed-file Biome and `git diff --check` passed;
 final diff and caller census reviewed. Independent static review confirmed that
@@ -632,5 +633,16 @@ inputs. No semantic typecheck or render was run in this follow-up worktree.
 Historical runtime evidence only: the integration coordinator reported the
 unchanged `aacc143c` GPU case passing in 207.833 s with all ten comparison shares
 at 1.0000 and cache assertions passing (exit 0). That predates this public
-reference setup and does **not** count as its runtime validation. The coordinator
-will run semantic types and the rewritten GPU case after the active batch.
+reference setup and does **not** count as its runtime validation.
+
+Completed integrated validation of the public reference setup at
+`30a8430e19caaffb1c266f0e156b2d3f0c4a3592`: **1 test passed, exit 0**. All ten
+frames had a 1.0000 share of RGB samples within 3/255; repeat export created no
+new layer-bake jobs and frame 45 remained byte-identical. The case took 147.169 s
+(180.22 s total Vitest duration). The coordinator also completed the semantic
+`pnpm --filter @jasper/engine typecheck` immediately before this run, passing in
+118.6 s. Runtime evidence:
+`/tmp/jasper-test-prune2/final-specialized-gpu-public-reference.json` and `.log`;
+`/tmp/jasper-test-prune2/final-specialized-results.json` records source, exit 0,
+one expected/passed test and no signal. This validates the rewritten reference;
+the earlier historical run remains separate.
