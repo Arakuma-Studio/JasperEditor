@@ -51,9 +51,13 @@ const AddCueArgs = z
 		/** Sequence frame of the cue (default: the playhead). */
 		frame: z.number().int().min(0).optional(),
 	})
-	.strict();
+	.strict()
+	.optional();
 
-const FillArgs = z.object({ cueId: z.string().min(1).max(128) }).strict();
+const FillArgs = z
+	.object({ cueId: z.string().min(1).max(128).optional() })
+	.strict()
+	.optional();
 
 export const soundCueCommands: UiCommand[] = [
 	{
@@ -69,7 +73,7 @@ export const soundCueCommands: UiCommand[] = [
 		run: (ctx, args) => {
 			const e = sequenceContext(ctx);
 			if (!e) return;
-			const frame = (args as z.infer<typeof AddCueArgs> | undefined)?.frame ?? e.playhead;
+			const frame = (args as z.infer<typeof AddCueArgs>)?.frame ?? e.playhead;
 			const r = applySequenceCommands(ctx, e, t('Add Sound Cue'), [addCueCommand(e.seq.id, frame)]);
 			if (!r.ok) return;
 			const ids = (r.results[0] as { cueIds?: string[] } | undefined)?.cueIds ?? [];
@@ -242,7 +246,7 @@ export const soundCueCommands: UiCommand[] = [
 		when: hasSeq,
 		run: async (ctx, args) => {
 			const e = sequenceContext(ctx);
-			const a = args as z.infer<typeof FillArgs> | undefined;
+			const a = args as z.infer<typeof FillArgs>;
 			const cueId = a?.cueId ?? e?.session.getState().selection.cues?.at(-1);
 			if (!e || !cueId) return;
 			const cue = cuesOf(e.seq).find((c) => c.id === cueId);
