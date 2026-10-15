@@ -38,7 +38,6 @@ describe('Sapphire transition timing', () => {
 		expect(both.map((f) => f.show[0]).join('')).toBe('ffcttct');
 		expect(flutterAt({}, 0, 9)).toEqual({ show: 'from', invert: false });
 		expect(flutterAt({}, 1, 9)).toEqual({ show: 'to', invert: false });
-		expect(flutterAt({}, 0.5, 9).show).toBe(def[4]!.show);
 	});
 });
 

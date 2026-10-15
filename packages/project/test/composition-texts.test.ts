@@ -147,7 +147,7 @@ describe('text layer discovery (S08:MGC-036)', () => {
 			hint: 'Line breaks start a new row',
 		});
 		expect(quote.style.color?.key).toBe('props.accent');
-		expect(findTextLayer(layers, 'props.quote')).toBe(quote);
+		expect(findTextLayer(layers, 'props.quote')?.path).toEqual(['quote']);
 		expect(findTextLayer(layers, 'name')?.path).toEqual(['name', 'text']);
 	});
 

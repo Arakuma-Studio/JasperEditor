@@ -8,9 +8,6 @@ import {
 	captionCuesForTrack,
 	captionPages,
 	checkInvariants,
-	DEFAULT_FILLERS,
-	findFillers,
-	findPauses,
 	type ProjectDocument,
 	repairDocument,
 	resolveCaptionStyle,
@@ -500,20 +497,20 @@ describe('transcripts and text-based editing (FilmCraft transcript tests, end to
 	});
 	it('removes pauses in one pass, keeping air', () => {
 		const { H } = interview();
-		const before = sequenceWords(H.doc, H.seq);
 		H.ok([{ type: 'transcript.removePauses', minSeconds: 0.4, keepSeconds: 0.1 }]);
 		const w2 = sequenceWords(H.doc, H.seq);
-		expect(w2.map((x) => x.text)).toEqual(before.map((x) => x.text));
+		expect(w2.map((x) => x.text)).toEqual(fixture.words.map((w) => w.text));
 		expect(w2[4]!.start - w2[3]!.end).toBe(s(0.2));
-		expect(findPauses(w2, s(0.4), s(0.1), H.seq.settings.frameRate)).toEqual([]);
+		for (let i = 1; i < w2.length; i++) expect(w2[i]!.start - w2[i - 1]!.end).toBeLessThan(s(0.4));
 		ensureValid(H.doc);
 	});
 	it('removes fillers (longest phrase first) without cutting into neighbours', () => {
 		const { H } = interview();
 		H.ok([{ type: 'transcript.removeFillers' }]);
 		const w2 = sequenceWords(H.doc, H.seq);
-		expect(w2).toHaveLength(18);
-		expect(findFillers(w2, DEFAULT_FILLERS)).toEqual([]);
+		expect(w2.map((w) => w.text).join(' ')).toBe(
+			'Welcome to the show. today we talk about rivers. Thanks for having me. I love rivers, you know.',
+		);
 		expect(H.clips('A1')).toHaveLength(3);
 		const { H: H2 } = interview();
 		H2.ok([{ type: 'transcript.removeFillers', fillers: ['um', 'uh', 'you know', 'you'] }]);

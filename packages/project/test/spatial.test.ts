@@ -87,7 +87,7 @@ describe('spatial evaluation (S03:KF-030, KF-031)', () => {
 		expect(spatialSegment(kfs, 0)).toEqual([A, [50, 50], [200, 300], B]);
 		// Golden (independent 10⁶-step arc-length integration): segment length 432.959, arc midpoint
 		// (132.913, 170.778) — reached at half the segment's time with Linear temporal.
-		expect(arcLengthTable(spatialSegment(kfs, 0)!)[64]).toBeCloseTo(432.959, 1);
+		expect(arcLengthTable(spatialSegment(kfs, 0)!).at(-1)).toBeCloseTo(432.959, 1);
 		const mid = at(a, 15);
 		expect(mid[0]).toBeCloseTo(132.913, 1);
 		expect(mid[1]).toBeCloseTo(170.778, 1);
@@ -134,12 +134,11 @@ describe('spatial evaluation (S03:KF-030, KF-031)', () => {
 		kfs[0]!.spatial!.outTangent = [0, 300];
 		kfs[1]!.spatial!.inTangent = [0, 300];
 		const a = anim(kfs);
-		const seg = spatialSegment(kfs, 0)!;
-		const total = arcLengthTable(seg).at(-1)!;
 		// Symmetric ease on a symmetric arc: half the time = half the arc.
 		const mid = at(a, 15);
 		expect(mid[0]).toBeCloseTo(300, 6);
-		expect(dist(at(a, 0), at(a, 1))).toBeLessThan(total / 30 / 2);
+		// The 600 px chord averages 20 px/frame; the eased first step stays below half that.
+		expect(dist(at(a, 0), at(a, 1))).toBeLessThan(10);
 	});
 
 	it('Bezier / Continuous keys use their stored tangents; a linear neighbour contributes none', () => {

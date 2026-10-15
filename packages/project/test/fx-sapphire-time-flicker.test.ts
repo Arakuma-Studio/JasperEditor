@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-	type EffectSpec,
-	FX_MAX_TIME_SAMPLES,
-	type FxFrameContext,
-	type FxTimeContext,
-} from '../src/index.ts';
+import type { EffectSpec, FxFrameContext, FxTimeContext } from '../src/index.ts';
 import {
 	clampToSpan,
 	flickerGains,
@@ -88,7 +83,7 @@ describe('Sapphire Time + Flicker family', () => {
 					if (t?.samples) {
 						const a = t.samples(p, ctx);
 						expect(t.samples(p, { ...ctx })).toEqual(a);
-						expect(a.length).toBeLessThanOrEqual(FX_MAX_TIME_SAMPLES);
+						expect(a.length).toBeLessThanOrEqual(8); // shader time-sample protocol (§9)
 						const base = t.remap ? clampToSpan(t.remap(p, ctx), ctx) : f;
 						for (const o of a) {
 							expect(Number.isInteger(o)).toBe(true);
