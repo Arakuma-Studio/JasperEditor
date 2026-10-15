@@ -285,9 +285,10 @@ export class Mute extends EffectBase {
 		this.g.snap();
 	}
 	process(ch: readonly Float32Array[], start: number, end: number): void {
+		const nch = Math.min(ch.length, this.channels);
 		for (let i = start; i < end; i++) {
 			const g = this.g.tick();
-			for (const buf of ch) buf[i] = buf[i]! * g;
+			for (let c = 0; c < nch; c++) ch[c]![i] = ch[c]![i]! * g;
 		}
 	}
 }
@@ -384,7 +385,7 @@ export class AutoGain extends EffectBase {
 			this.peak = pk > this.peak ? pk : this.peakRel * this.peak + (1 - this.peakRel) * pk;
 			let g = dbToGain(this.gainDb);
 			if (this.peak * g > ceiling) g = ceiling / this.peak;
-			for (let c = 0; c < ch.length; c++) {
+			for (let c = 0; c < nch; c++) {
 				const y = ch[c]![i]! * g;
 				ch[c]![i] = y > ceiling ? ceiling : y < -ceiling ? -ceiling : y;
 			}

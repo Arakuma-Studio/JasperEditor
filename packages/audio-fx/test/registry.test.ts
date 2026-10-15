@@ -71,19 +71,32 @@ describe('audio-fx registry', () => {
 
 	it('handles empty, single-sample, mono and extra-channel blocks', () => {
 		for (const id of processorIds()) {
-			const fx = createProcessor(id, SR, 2)!;
-			const cases = [
-				[],
-				[new Float32Array(0), new Float32Array(0)],
-				[new Float32Array([0.25]), new Float32Array([-0.25])],
-				[new Float32Array(3).fill(0.1)],
-				[new Float32Array(3).fill(0.1), new Float32Array(3).fill(0.1), new Float32Array([0.1, -0.3, 0.2])],
-			];
-			for (const channels of cases) {
-				const extra = channels[2]?.slice();
-				fx.process(channels, 0, channels[0]?.length ?? 0);
-				for (const channel of channels) expect(channel.every(Number.isFinite), id).toBe(true);
-				if (extra) expect(channels[2], `${id}: extra channel`).toEqual(extra);
+			for (const configured of [1, 2]) {
+				const fx = createProcessor(id, SR, configured)!;
+				for (const changed of [false, true]) {
+					if (changed) {
+						tweak(fx);
+						fx.reset();
+					}
+					const label = `${id}: ${configured} configured, ${changed ? 'changed' : 'default'} settings`;
+					const cases = [
+						[],
+						[new Float32Array(0), new Float32Array(0)],
+						[new Float32Array([0.25]), new Float32Array([-0.25])],
+						[new Float32Array(3).fill(0.1)],
+						[
+							new Float32Array(3).fill(0.1),
+							new Float32Array(3).fill(0.1),
+							new Float32Array([0.1, -0.3, 0.2]),
+						],
+					];
+					for (const channels of cases) {
+						const extra = channels.slice(configured).map((channel) => channel.slice());
+						fx.process(channels, 0, channels[0]?.length ?? 0);
+						for (const channel of channels) expect(channel.every(Number.isFinite), label).toBe(true);
+						expect.soft(channels.slice(configured), `${label}: extra channels`).toEqual(extra);
+					}
+				}
 			}
 		}
 	});

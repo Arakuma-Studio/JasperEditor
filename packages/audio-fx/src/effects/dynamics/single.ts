@@ -53,7 +53,7 @@ export class Compressor extends EffectBase {
 	}
 
 	process(ch: readonly Float32Array[], start: number, end: number): void {
-		const nch = ch.length;
+		const nch = Math.min(ch.length, this.channels);
 		for (let i = start; i < end; i++) {
 			let peak = 0;
 			let sq = 0;
@@ -117,7 +117,7 @@ export class ExpanderGate extends EffectBase {
 	}
 
 	process(ch: readonly Float32Array[], start: number, end: number): void {
-		const nch = ch.length;
+		const nch = Math.min(ch.length, this.channels);
 		for (let i = start; i < end; i++) {
 			let peak = 0;
 			for (let c = 0; c < nch; c++) {
@@ -189,7 +189,7 @@ export class TubeCompressor extends EffectBase {
 	}
 
 	process(ch: readonly Float32Array[], start: number, end: number): void {
-		const nch = ch.length;
+		const nch = Math.min(ch.length, this.channels);
 		const t = this.pv.v('threshold');
 		const r = this.pv.v('ratio');
 		for (let i = start; i < end; i++) {

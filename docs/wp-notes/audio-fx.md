@@ -12,7 +12,8 @@ BS.1770 meter, true-peak limiter and `audio.autoDuck`.
 
 `packages/audio-fx` (`@jasper/audio-fx`; layer: depends on `@jasper/audio-dsp` and the light `@jasper/project/audio`
 subpath) holds every processor. Conventions: planar `Float32Array` channels, `process(channels, start, end)` in place,
-output independent of the block size, denormals flushed, `reset()` restores the initial state, optional `latency()`,
+only the configured channels are processed (extra buffers pass through unchanged), output independent of the block
+size, denormals flushed, `reset()` restores the initial state, optional `latency()`,
 `responseDb(f)` (filters), `transferDb(band, inDb)` (dynamics) and `meters()`. Parameters arrive as numbers (enum →
 option index, boolean → 0/1) through `applyParams`; the catalogue in `packages/project/src/registry/audio/*` is the
 single source of names, ranges, defaults and units. Registry tests exercise public refusal, streaming, reset and

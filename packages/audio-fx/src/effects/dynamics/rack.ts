@@ -89,7 +89,7 @@ export class DynamicsRack extends EffectBase {
 
 	process(ch: readonly Float32Array[], start: number, end: number): void {
 		const p = this.pv;
-		const nch = ch.length;
+		const nch = Math.min(ch.length, this.channels);
 		const gateOn = p.on('gateOn');
 		const gt = p.v('gateThreshold');
 		const expOn = p.on('expOn');
