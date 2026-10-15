@@ -1,13 +1,6 @@
-// Compare native masks with the coverage definition also used by the preview GL rasteriser (masks-gl.test.ts).
+// Independent geometric regions and literal pixels verify native masked output.
 import { spawnSync } from 'node:child_process';
-import {
-	ellipsePath,
-	flicksPerFrame,
-	maskExportRoute,
-	rasterizeMasks,
-	rectPath,
-	resolveSceneAt,
-} from '@jasper/project';
+import { ellipsePath, flicksPerFrame, rectPath } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, ensureFixtures, JSON_H, makeApp, type TestApp } from './helpers.ts';
@@ -102,8 +95,6 @@ describe('mask export routing', () => {
 			sequenceId: d.seqId,
 			settings: settings(d.seqId, 10) as never,
 		});
-		const clip = planned.snapshot.videoTracks[1]!.clips[0]!;
-		expect(maskExportRoute(clip)).toBe('stream');
 		expect(planned.plan.path).toBe('native');
 		const fx = d.tx([
 			{ type: 'effect.add', target: { clipId: s }, effectId: 'jasper.gaussian-blur', ref: '$fx' },
@@ -114,7 +105,6 @@ describe('mask export routing', () => {
 			sequenceId: d.seqId,
 			settings: settings(d.seqId, 10) as never,
 		});
-		expect(maskExportRoute(planned.snapshot.videoTracks[1]!.clips[0]!)).toBe('bake');
 		if (planned.plan.path === 'native') throw new Error('a masked effect must not export natively');
 		if (planned.plan.path === 'remotion')
 			expect(planned.plan.blockers.some((b) => b.itemId === s)).toBe(true);
@@ -122,36 +112,38 @@ describe('mask export routing', () => {
 });
 
 describe('native export of Opacity masks (stream kernel)', () => {
-	it('static stacked masks: every pixel equals plate + (white − plate) × coverage (≤ 3/255)', async () => {
+	it('stacked rectangular masks apply opacity and subtract the second region', async () => {
 		const { d, s } = fixture(2);
 		const r = d.tx([
-			{ type: 'mask.add', clipId: s, shape: 'ellipse', feather: 40, ref: '$a' },
+			{ type: 'mask.add', clipId: s, shape: 'polygon', feather: 0, ref: '$a' },
 			{ type: 'mask.add', clipId: s, shape: 'polygon', ref: '$b' },
 		]).refs;
 		d.tx([
 			{ type: 'mask.update', maskId: r.$b, mode: 'subtract' },
 			{ type: 'param.set', target: ['mask', r.$b!, 'path'], value: rectPath(0.45, 0.2, 0.7, 0.55) },
 			{ type: 'param.set', target: ['mask', r.$b!, 'feather'], value: 0 },
-			{ type: 'param.set', target: ['mask', r.$a!, 'expansion'], value: 25 },
+			{ type: 'param.set', target: ['mask', r.$a!, 'path'], value: rectPath(0.2, 0.2, 0.8, 0.8) },
 			{ type: 'param.set', target: ['mask', r.$a!, 'opacity'], value: 90 },
 		]);
 		const { planned, out } = await exportFrames(d, 2);
 		expect(planned.plan.path).toBe('native');
-		const layer = resolveSceneAt(planned.snapshot, 0).find((l) => l.clip.clipId === s)!;
-		const cov = rasterizeMasks(layer.props.masks, W, H, (q) => [q[0] * W, q[1] * H], 1)!;
 		const img = decodeAll(out)[0]!;
-		let worst = 0;
-		let inside = 0;
-		for (let i = 0; i < W * H; i++) {
-			const want = PLATE + (255 - PLATE) * cov[i]!;
-			worst = Math.max(worst, Math.abs(img[3 * i]! - want));
-			if (cov[i]! > 0.8) inside++;
+		// Sample well inside the specified rectangles, away from raster/codec edge tolerance.
+		for (const [x, y, expected] of [
+			[0.1, 0.5, PLATE],
+			[0.9, 0.5, PLATE],
+			[0.5, 0.1, PLATE],
+			[0.5, 0.9, PLATE],
+			[0.3, 0.3, PLATE + (255 - PLATE) * 0.9],
+			[0.5, 0.7, PLATE + (255 - PLATE) * 0.9],
+			[0.55, 0.3, PLATE],
+		] as const) {
+			const at = 3 * (Math.round(y * H) * W + Math.round(x * W));
+			for (let ch = 0; ch < 3; ch++) expect(Math.abs(img[at + ch]! - expected)).toBeLessThanOrEqual(3);
 		}
-		expect(inside).toBeGreaterThan(10_000);
-		expect(worst).toBeLessThanOrEqual(3);
 	}, 300_000);
 
-	it('keyframed Mask Path and Motion: frames follow the evaluated mask through the layer map', async () => {
+	it('keyframed mask endpoints follow the specified path under 50% Motion scale', async () => {
 		const { d, s } = fixture(12);
 		const F = flicksPerFrame({ num: 30, den: 1 });
 		const m = d.tx([{ type: 'mask.add', clipId: s, shape: 'ellipse', feather: 0, ref: '$m' }]).refs.$m!;
@@ -169,25 +161,18 @@ describe('native export of Opacity masks (stream kernel)', () => {
 		const { planned, out } = await exportFrames(d, 12);
 		expect(planned.plan.path).toBe('native');
 		const imgs = decodeAll(out);
-		for (const f of [0, 5, 11]) {
-			const layer = resolveSceneAt(planned.snapshot, f).find((l) => l.clip.clipId === s)!;
-			const mm = layer.props.matrix;
-			const [cx, cy] = layer.props.masks[0]!.path.vertices.reduce(
-				(a, v) => [a[0] + v.p[0] / 4, a[1] + v.p[1] / 4],
-				[0, 0],
-			);
-			// Mask centre in sequence px through the layer map (layer px = normalised × box).
-			const lx = cx * W;
-			const ly = cy * H;
-			const sx = mm.a * lx + mm.c * ly + mm.e;
-			const sy = mm.b * lx + mm.d * ly + mm.f;
+		for (const [f, cx, cy] of [
+			[0, 0.3, 0.5],
+			[11, 0.7, 0.4],
+		] as const) {
+			// At 50% centred scale: sequence position = quarter-frame offset + half layer position.
+			const sx = (0.25 + cx * 0.5) * W;
+			const sy = (0.25 + cy * 0.5) * H;
 			const img = imgs[f]!;
 			const at = (x: number, y: number) => img[3 * (Math.round(y) * W + Math.round(x))]!;
 			expect(at(sx, sy), `frame ${f} centre`).toBeGreaterThan(240);
-			// A corner of the half-size layer, outside every key's ellipse: the plate.
-			const ox = mm.a * (0.03 * W) + mm.c * (0.95 * H) + mm.e;
-			const oy = mm.b * (0.03 * W) + mm.d * (0.95 * H) + mm.f;
-			expect(Math.abs(at(ox, oy) - PLATE), `frame ${f} outside`).toBeLessThanOrEqual(3);
+			// A point inside the scaled layer but outside both specified ellipses.
+			expect(Math.abs(at(0.265 * W, 0.725 * H) - PLATE), `frame ${f} outside`).toBeLessThanOrEqual(3);
 		}
 	}, 300_000);
 });

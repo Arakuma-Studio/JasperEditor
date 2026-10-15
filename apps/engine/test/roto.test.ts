@@ -232,6 +232,8 @@ describe('roto jobs (classic engine)', () => {
 	});
 
 	it('cancelling leaves no partial files and publishes no set', async () => {
+		const root = join(app.appdir, 'cache', 'roto');
+		const before = readdirSync(join(root, 'sets')).sort();
 		const body = request({ strokes: [{ kind: 'fg', frame: 10, radius: 7, points: [[200, 170]] }] });
 		const r = await app.inject({
 			method: 'POST',
@@ -254,12 +256,11 @@ describe('roto jobs (classic engine)', () => {
 			return ['cancelled', 'failed', 'succeeded'].includes(j.state) ? j : null;
 		}, 60_000);
 		expect(done.state).toBe('cancelled');
-		const root = join(app.appdir, 'cache', 'roto');
 		for (const sub of ['pool/seg', 'pool/png'])
 			for (const n of existsSync(join(root, sub)) ? readdirSync(join(root, sub)) : [])
 				expect(n).not.toMatch(/\.tmp$/);
 		const sets = readdirSync(join(root, 'sets'));
-		expect(sets).toHaveLength(3);
+		expect(sets.sort()).toEqual(before);
 	}, 300_000);
 
 	it('saved projects reference their roto sets (cache)', () => {

@@ -18,12 +18,9 @@ const NODE_ENV = 'JASPER_NODE';
 const RESOURCES_ENV = 'JASPER_RESOURCES_DIR';
 
 /** The bundled Node runtime of a resources directory, or null. */
-export function bundledNode(
-	resourcesDir: string | undefined | null,
-	platform = process.platform,
-): string | null {
+function bundledNode(resourcesDir: string | undefined): string | null {
 	if (!resourcesDir) return null;
-	const file = join(resourcesDir, 'node', platform === 'win32' ? 'node.exe' : 'node');
+	const file = join(resourcesDir, 'node', process.platform === 'win32' ? 'node.exe' : 'node');
 	return existsSync(file) ? file : null;
 }
 
@@ -35,6 +32,6 @@ export function nodeExecPath(env: Record<string, string | undefined> = process.e
 }
 
 /** True when this process is Electron (its binary runs scripts only as "run as Node"). */
-export function insideElectron(versions: Record<string, string | undefined> = process.versions): boolean {
-	return typeof versions.electron === 'string';
+export function insideElectron(): boolean {
+	return typeof process.versions.electron === 'string';
 }

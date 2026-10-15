@@ -210,7 +210,7 @@ describe('exports and proxies', () => {
 		return [...raw];
 	};
 
-	it('exports never use proxies unless asked; Use Proxies renders the proxy at the original size', async () => {
+	it('Use Proxies warns about draft quality and renders at the original size', async () => {
 		const a = await register(app, fixture('clip-a.mp4'));
 		const d = new DocBuilder();
 		const m = d.addMedia(a);

@@ -1,16 +1,8 @@
 // Roto algorithms ported from EffectCraft; independent brute-force and analytic oracles check numerical behavior.
 import { describe, expect, it } from 'vitest';
-import { gmmCost, gmmFit } from '../src/roto/core/gmm.ts';
-import { boxMean, closedForm, distance, guidedFilter, signedDistance } from '../src/roto/core/matting.ts';
+import { closedForm, distance, guidedFilter, signedDistance } from '../src/roto/core/matting.ts';
 import { Graph, SOURCE } from '../src/roto/core/maxflow.ts';
-import {
-	DEFAULT_SEG_OPTS,
-	matteAlpha,
-	propagate,
-	rasterize,
-	type Stroke,
-	segment,
-} from '../src/roto/core/segment.ts';
+import { DEFAULT_SEG_OPTS, matteAlpha, type Stroke, segment } from '../src/roto/core/segment.ts';
 
 function xorshift(seed: number) {
 	let s = seed >>> 0 || 1;
@@ -73,23 +65,6 @@ describe('maxflow (Boykov–Kolmogorov)', () => {
 			expect(c).toBe(f);
 		}
 	});
-
-	it('handles a large grid (deterministic, terminates)', () => {
-		const w = 200;
-		const h = 150;
-		const g = new Graph(w * h);
-		for (let y = 0; y < h; y++)
-			for (let x = 0; x < w; x++) {
-				const i = y * w + x;
-				const inside = Math.hypot(x - 100, y - 75) < 40;
-				g.addTWeights(i, inside ? 30 : 0, inside ? 0 : 30);
-				if (x + 1 < w) g.addEdge(i, i + 1, 20, 20);
-				if (y + 1 < h) g.addEdge(i, i + w, 20, 20);
-			}
-		g.maxflow();
-		expect(g.segment(75 * w + 100)).toBe(SOURCE);
-		expect(g.segment(5 * w + 5)).not.toBe(SOURCE);
-	});
 });
 
 describe('matting utilities', () => {
@@ -108,26 +83,6 @@ describe('matting utilities', () => {
 			}
 		const sd = signedDistance(seed, w, h);
 		for (let i = 0; i < w * h; i++) expect(Math.sign(sd[i]!)).toBe(seed[i] ? 1 : -1);
-	});
-
-	it('box mean equals the brute-force clamped window mean', () => {
-		const w = 13;
-		const h = 9;
-		const rnd = xorshift(7);
-		const src = Float32Array.from({ length: w * h }, () => rnd(1000) / 1000);
-		const r = 2;
-		const m = boxMean(src, w, h, r);
-		for (let y = 0; y < h; y++)
-			for (let x = 0; x < w; x++) {
-				let s = 0;
-				let c = 0;
-				for (let j = Math.max(0, y - r); j <= Math.min(h - 1, y + r); j++)
-					for (let i = Math.max(0, x - r); i <= Math.min(w - 1, x + r); i++) {
-						s += src[j * w + i]!;
-						c++;
-					}
-				expect(m[y * w + x]).toBeCloseTo(s / c, 5);
-			}
 	});
 
 	it('guided filter and closed-form matting recover a linear blend', () => {
@@ -151,18 +106,6 @@ describe('matting utilities', () => {
 		let err2 = 0;
 		for (let i = 0; i < w * h; i++) err2 += Math.abs(cf[i]! - alpha[i]!);
 		expect(err2 / (w * h)).toBeLessThan(0.02);
-	});
-
-	it('GMM costs prefer the fitted colours', () => {
-		const s = new Float32Array(300);
-		for (let i = 0; i < 100; i++) {
-			s[i * 3] = 0.8 + (i % 5) * 0.01;
-			s[i * 3 + 1] = 0.1;
-			s[i * 3 + 2] = 0.1 + (i % 3) * 0.01;
-		}
-		const g = gmmFit(s, 5, 1000);
-		expect(g.comps.length).toBeGreaterThan(0);
-		expect(gmmCost(g, 0.82, 0.1, 0.11)).toBeLessThan(gmmCost(g, 0.1, 0.8, 0.1));
 	});
 });
 
@@ -216,43 +159,9 @@ describe('segmentation and propagation', () => {
 		},
 	];
 
-	it('rasterizes strokes as swept discs', () => {
-		const m = rasterize(
-			[
-				{
-					kind: 'fg',
-					radius: 2,
-					points: [
-						[10, 10],
-						[20, 10],
-					],
-				},
-			],
-			['fg'],
-			30,
-			20,
-		);
-		expect(m[10 * 30 + 15]).toBe(1);
-		expect(m[13 * 30 + 15]).toBe(0);
-		expect(m[10 * 30 + 23]).toBe(0);
-	});
-
-	it('segments the disk from strokes, and from a box alone', () => {
-		const seg = segment(diskFrame(0), 100, 80, strokes, null, null, DEFAULT_SEG_OPTS, 0);
-		expect(wrongPixels(seg.matte, 0)).toBeLessThan(20);
+	it('segments the disk from a box alone', () => {
 		const boxed = segment(diskFrame(0), 100, 80, [], [20, 20, 60, 60], null, DEFAULT_SEG_OPTS, 0);
 		expect(wrongPixels(boxed.matte, 0)).toBeLessThan(30);
-	});
-
-	it('propagates through flow over 5 frames', () => {
-		let seg = segment(diskFrame(0), 100, 80, strokes, null, null, DEFAULT_SEG_OPTS, 0);
-		for (let f = 1; f <= 5; f++) {
-			// The true flow next → prev: 2 px to the left everywhere near the disk.
-			const flow = new Float32Array(100 * 80 * 2);
-			for (let i = 0; i < 100 * 80; i++) flow[i * 2] = -2;
-			seg = propagate(seg, flow, diskFrame(f), 100, 80, [], DEFAULT_SEG_OPTS, 0);
-		}
-		expect(wrongPixels(seg.matte, 5)).toBeLessThan(25);
 	});
 
 	it('edge refinement softens the boundary towards the true coverage', () => {

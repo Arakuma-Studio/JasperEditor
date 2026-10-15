@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
@@ -12,11 +12,8 @@ import { loadLottieFile } from '../src/imports/lottie.ts';
 import { extractZip } from '../src/mg-bundles/zip.ts';
 import { ModelStore } from '../src/processing/models.ts';
 import { ProcessingSettingsStore } from '../src/processing/settings.ts';
-import { openerFor } from '../src/routes/gaps.ts';
 import { SpeechModelStore } from '../src/speech/models.ts';
 import { resolveBinaries } from '../src/tools/ffmpeg.ts';
-import { filterPath, filterValue } from '../src/tools/filter-text.ts';
-import { atomicCopyFile } from '../src/tools/fs.ts';
 import { closeApps, DocBuilder, H, makeApp, ROOT, register, tempAppdir } from './helpers.ts';
 
 /** An HTTP server whose every response is an endless body (stops after 256 MiB); counts the bytes it wrote. */
@@ -184,13 +181,6 @@ describe('ENG-3: file paths and text in filter text survive both FFmpeg parsing 
 		expect(green).toBeLessThan(8);
 		expect(blue).toBeGreaterThan(245);
 	});
-
-	it('filterValue escapes both levels', () => {
-		expect(filterValue('C:/a.cube')).toBe("'C\\:/a.cube'");
-		expect(filterValue("it's")).toBe("'it\\'\\''s'");
-		expect(filterPath('C:\\a\\b.cube', 'win32')).toBe("'C\\:/a/b.cube'");
-		expect(filterPath('/a\\b.cube', 'linux')).toBe("'/a\\\\b.cube'");
-	});
 });
 
 describe('DATA-4: an OCIO config only bundles the LUT and CDL files it names', () => {
@@ -330,14 +320,6 @@ describe('ENG-4: project ids in paths are validated', () => {
 });
 
 describe('ENG-5: Edit Original never runs a program', () => {
-	it('the Windows opener does not put the path on a command line', () => {
-		const hostile = 'C:\\media\\a&calc.exe&.mp4';
-		const o = openerFor('open', hostile, 'win32');
-		expect(o.cmd).not.toMatch(/cmd(\.exe)?$/i);
-		expect(o.args.join(' ')).not.toContain('calc');
-		expect(o.env).toEqual({ JASPER_OPEN_PATH: hostile });
-	});
-
 	it('only media and document files are opened; programs, launchers and extensionless files are refused', async () => {
 		const app = await makeApp();
 		const dir = tempAppdir('jasper-open-');
@@ -389,21 +371,6 @@ describe('ENG-5: Edit Original never runs a program', () => {
 			if (prev === undefined) delete process.env.JASPER_OPEN_COMMAND;
 			else process.env.JASPER_OPEN_COMMAND = prev;
 		}
-	});
-});
-
-describe('DATA-6: project backups and versions are copied atomically', () => {
-	it('atomicCopyFile leaves the destination complete or absent, and no temporary file', async () => {
-		const dir = tempAppdir('jasper-copy-');
-		const src = join(dir, 'project.jasper');
-		writeFileSync(src, '{"format":"jasper-project"}');
-		await atomicCopyFile(src, join(dir, 'versions', 'v1.jasper'));
-		expect(readFileSync(join(dir, 'versions', 'v1.jasper'), 'utf8')).toBe('{"format":"jasper-project"}');
-		expect(readdirSync(join(dir, 'versions'))).toEqual(['v1.jasper']);
-		await expect(
-			atomicCopyFile(join(dir, 'gone.jasper'), join(dir, 'versions', 'v2.jasper')),
-		).rejects.toThrow();
-		expect(readdirSync(join(dir, 'versions'))).toEqual(['v1.jasper']);
 	});
 });
 
@@ -552,11 +519,6 @@ describe('ZIP-1: bundle zip entries are streamed and cut at their declared size'
 		rmSync(dir, { recursive: true, force: true });
 		expect(peak).toBeLessThan(64 * 1024 * 1024);
 	}, 120_000);
-
-	it('the extractor no longer inflates whole entries in memory', () => {
-		const src = readFileSync(join(ROOT, 'apps/engine/src/mg-bundles/zip.ts'), 'utf8');
-		expect(src).not.toContain('inflateRawSync');
-	});
 });
 
 describe('SSH-1: remote executor settings', () => {

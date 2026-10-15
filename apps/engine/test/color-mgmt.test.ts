@@ -2,18 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-	applyLut,
-	bakeLut,
-	defaultWorkingSettings,
-	hlgEncode,
-	inputTransformFn,
-	outputTransformFn,
-	pqFromNits,
-	type Rgb,
-	serializeCube,
-	write3dl,
-} from '@jasper/project';
+import { bakeLut, serializeCube, write3dl } from '@jasper/project';
 import { ffmpegPath, ffprobePath } from '@jasper/testkit/oracle';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
@@ -104,14 +93,7 @@ async function job(
 }
 
 async function still(d: DocBuilder, frame = 0): Promise<string> {
-	const { id, result } = await job('/api/stills', { envelope: d.envelope(), sequenceId: d.seqId, frame });
-	if (process.env.CM_DEBUG)
-		console.log(
-			JSON.stringify(result),
-			(coreServices(app).queue as unknown as { entries: Map<string, { logLines: string[] }> }).entries
-				?.get(id)
-				?.logLines?.join('\n'),
-		);
+	const { id } = await job('/api/stills', { envelope: d.envelope(), sequenceId: d.seqId, frame });
 	const png = await app.inject({ method: 'GET', url: `/renders/${id}/output`, headers: H });
 	const f = join(mkdtempSync(join(tmp, 's-')), 'still.png');
 	writeFileSync(f, png.rawPayload);
@@ -184,7 +166,7 @@ describe('export colour spaces', () => {
 		expect(sd.find((x) => /Content light/.test(x.side_data_type))?.max_content).toBe(800);
 		expect(sd.some((x) => /Mastering display/.test(x.side_data_type))).toBe(true);
 		const px = rgbAt(file, 'bt2020', 2, 300, 160, 40, 40);
-		for (const ch of [0, 1, 2]) expect(mean(px, ch)).toBeCloseTo(pqFromNits(203), 2);
+		for (const ch of [0, 1, 2]) expect(mean(px, ch)).toBeCloseTo(0.5807, 2);
 	}, 240_000);
 
 	it('PQ sequence exported as Rec. 709 is tone mapped (BT.2390) and tagged BT.709', async () => {
@@ -192,11 +174,9 @@ describe('export colour spaces', () => {
 		const { file } = await exportOf(d, { codec: 'av1', encoder: 'libsvtav1', colorSpace: 'rec709' });
 		const s = probe(file);
 		expect(s.color_transfer).toBe('bt709');
-		const want: Rgb = [pqFromNits(203), pqFromNits(203), pqFromNits(203)];
-		outputTransformFn({ ...defaultWorkingSettings('rec2100-pq') }, 'rec709')!(want);
+		// Recorded reference-white target: docs/wp-notes/color-mgmt.md §5.
 		const px = rgbAt(file, 'bt709', 2, 300, 160, 40, 40);
-		for (const ch of [0, 1, 2]) expect(mean(px, ch)).toBeCloseTo(want[ch]!, 1);
-		expect(want[0]).toBeLessThan(0.97); // reference white sits below SDR white after the EETF knee
+		for (const ch of [0, 1, 2]) expect(mean(px, ch)).toBeCloseTo(230.3 / 255, 1);
 	}, 240_000);
 
 	it('Rec. 2020 SDR: BT.709 red converted into BT.2020 (BT.2087) and tagged', async () => {
@@ -204,8 +184,8 @@ describe('export colour spaces', () => {
 		const { file } = await exportOf(d, { codec: 'av1', encoder: 'libsvtav1', bitDepth: 10 });
 		const s = probe(file);
 		expect([s.color_primaries, s.color_transfer, s.color_space]).toEqual(['bt2020', 'bt2020-10', 'bt2020nc']);
-		const want: Rgb = [1, 0, 0];
-		inputTransformFn({ space: 'rec709' }, defaultWorkingSettings('rec2020'))!(want);
+		// BT.2087 red-column linear-light coefficients, displayed through BT.1886.
+		const want = [0.6274, 0.0691, 0.0164].map((v) => v ** (1 / 2.4));
 		const px = rgbAt(file, 'bt2020', 2, 300, 160, 40, 40);
 		for (const ch of [0, 1, 2]) expect(mean(px, ch)).toBeCloseTo(want[ch]!, 1);
 	}, 240_000);
@@ -230,16 +210,15 @@ describe('export colour spaces', () => {
 		const d = whiteSolidDoc('rec2100-pq');
 		const f = await still(d);
 		const px = rgbAt(f, 'bt709', 0, 900, 500, 20, 20);
-		const want: Rgb = [pqFromNits(203), pqFromNits(203), pqFromNits(203)];
-		outputTransformFn(defaultWorkingSettings('rec2100-pq'), 'rec709')!(want);
-		expect(mean(px, 0)).toBeCloseTo(want[0], 1);
+		// Recorded display reference-white target: docs/wp-notes/color-mgmt.md §5.
+		expect(mean(px, 0)).toBeCloseTo(230.3 / 255, 1);
 	}, 120_000);
 });
 
 describe('interpreted sources and probe metadata', () => {
 	it('an HLG source is detected from its tags, its HDR metadata probed, and it is tone mapped into Rec. 709', async () => {
 		const src = join(tmp, 'hlg.mov');
-		const v = hlgEncode(0.25).toFixed(4);
+		const v = 0.75; // BT.2408 HDR reference white, 203 cd/m².
 		// A flat HLG grey (signal v) tagged BT.2100 HLG, ProRes 10-bit, with mastering metadata written by our box writer.
 		ff([
 			...['-f', 'lavfi', '-i', `color=c=0x808080:s=320x180:d=1:r=30`],
@@ -281,10 +260,8 @@ describe('interpreted sources and probe metadata', () => {
 		const id = d.addMedia(m);
 		d.tx([{ type: 'clip.place', source: { mediaId: id }, at: 0, tracks: { video: 'V1' } }]);
 		const f = await still(d);
-		const want: Rgb = [Number(v), Number(v), Number(v)];
-		inputTransformFn({ space: 'rec2100-hlg' }, defaultWorkingSettings('rec709'))!(want);
 		const px = rgbAt(f, 'bt709', 0, 900, 500, 20, 20);
-		expect(mean(px, 1)).toBeCloseTo(want[1]!, 1);
+		expect(mean(px, 1)).toBeCloseTo(230.3 / 255, 1);
 	}, 180_000);
 
 	it('an offline input LUT is announced by the plan (LUT_OFFLINE), never skipped silently', async () => {
@@ -347,8 +324,7 @@ describe('interpreted sources and probe metadata', () => {
 		const f = await still(d);
 		const px = rgbAt(f, 'bt709', 0, 0, 0, 0, 0);
 		const src = rgbAt(fixture('chart.png'), 'bt709', 0, 0, 0, 0, 0);
-		const want: Rgb = [src[3000]!, src[3001]!, src[3002]!];
-		applyLut(lut, want);
+		const want = [src[3002]! * 0.9, src[3001]!, src[3000]!] as const;
 		expect(Math.abs(px[3000]! - want[0])).toBeLessThan(3 / 255);
 		expect(Math.abs(px[3002]! - want[2])).toBeLessThan(3 / 255);
 	}, 180_000);

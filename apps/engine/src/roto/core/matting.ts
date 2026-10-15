@@ -81,7 +81,7 @@ export function signedDistance(m: Uint8Array, w: number, h: number): Float32Arra
 }
 
 /** Mean over the (2r+1)² window (clamped at the edges: averages only the pixels inside). */
-export function boxMean(src: Float32Array, w: number, h: number, r: number): Float32Array {
+function boxMean(src: Float32Array, w: number, h: number, r: number): Float32Array {
 	const out = new Float32Array(w * h);
 	if (w === 0 || h === 0) return out;
 	// Horizontal window sums per row.

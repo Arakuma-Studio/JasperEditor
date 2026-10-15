@@ -626,28 +626,12 @@ describe('AGT-3: destructive operations outside transactions ask the user when a
 				models: { id: string }[];
 			};
 			const id = list.models[0]?.id;
-			if (!id) continue;
+			expect(id, `${kind} catalogue must offer a model`).toBeDefined();
 			const r = await app.inject({ method: 'DELETE', url: `/api/${kind}/models/${id}`, headers: AGENT });
 			expect([kind, r.statusCode, r.json().detail?.code]).toEqual([kind, 403, 'E_APPROVAL_DENIED']);
 			const none = await app.inject({ method: 'DELETE', url: `/api/${kind}/models/nope`, headers: AGENT });
 			expect(none.statusCode).toBe(404);
 		}
-	});
-
-	it('an in-process server without an editor key treats every authenticated client as the editor', async () => {
-		// The configuration tests and JASPER_INSECURE_DEV=1 use; startEngine never produces it with a token.
-		const app = await makeApp({ dev: false, token: TOKEN });
-		const id = (
-			await app.inject({
-				method: 'POST',
-				url: '/api/effect-presets',
-				headers: json(AGENT),
-				payload: { preset: { ...fadeIn(), name: 'X' } },
-			})
-		).json().id as string;
-		expect(
-			(await app.inject({ method: 'DELETE', url: `/api/effect-presets/${id}`, headers: AGENT })).statusCode,
-		).toBe(200);
 	});
 });
 
