@@ -20,14 +20,18 @@ afterEach(() => cleanup());
 
 const V = { scrollFrame: 0, pxPerFrame: 10, width: 1000 };
 
-function setup(cues: Record<string, unknown>[], opts: { snapping?: boolean } = {}) {
+function setup(
+	cues: Record<string, unknown>[],
+	opts: { snapping?: boolean; pxPerFrame?: number; before?: Record<string, unknown>[] } = {},
+) {
 	const { session, seqId } = makeSession();
 	const add = session.apply({
 		label: 'setup',
 		origin: 'user',
 		sequenceId: seqId,
-		commands: [{ type: 'soundCue.add', cues }] as never[],
+		commands: [...(opts.before ?? []), { type: 'soundCue.add', cues }] as never[],
 	});
+	const viewport = { ...V, pxPerFrame: opts.pxPerFrame ?? V.pxPerFrame };
 	if (!add.ok) throw new Error(JSON.stringify(add.errors));
 	const ui = createTimelineUiStore();
 	const run = vi.fn();
@@ -56,7 +60,7 @@ function setup(cues: Record<string, unknown>[], opts: { snapping?: boolean } = {
 				session={session}
 				seq={(session.getState().transient ?? session.getState().document).sequences[seqId] as Sequence}
 				layout={layout()}
-				viewport={V}
+				viewport={viewport}
 				media={{}}
 				ui={ui}
 				instanceId="t1"
@@ -74,7 +78,7 @@ function setup(cues: Record<string, unknown>[], opts: { snapping?: boolean } = {
 	const cueList = () => cuesOf(seq());
 	const lane = () => screen.getByTestId('cue-seam');
 	const history = () => session.getState().history.entries.map((e) => e.label);
-	const ids = () => add.ok && ((add.results[0] as { cueIds: string[] }).cueIds as string[]);
+	const ids = () => add.ok && ((add.results.at(-1) as { cueIds: string[] }).cueIds as string[]);
 	return { session, seqId, ui, run, menus, toasts, seq, cueList, lane, history, ids: ids as () => string[] };
 }
 
@@ -115,16 +119,20 @@ describe('Cue Seam', () => {
 	});
 
 	it('drag moves the cue (one undo step) and detaches it from its anchor when dropped elsewhere', () => {
-		const t = setup([
-			{
-				frame: 30,
-				kind: 'cut',
-				weight: 'support',
-				source: 'derived',
-				anchor: { type: 'marker', markerId: 'mrk_missing' },
-			},
-		]);
+		const t = setup(
+			[
+				{
+					frame: 30,
+					kind: 'cut',
+					weight: 'support',
+					source: 'derived',
+					anchor: { type: 'marker', markerId: '$m' },
+				},
+			],
+			{ before: [{ type: 'marker.add', frame: 30, name: 'Hit', ref: '$m' }] },
+		);
 		const [a] = t.ids();
+		expect(t.cueList()[0]!.anchor).toMatchObject({ type: 'marker' });
 		pointer(t.lane(), 'pointerDown', 300);
 		pointer(t.lane(), 'pointerMove', 330);
 		pointer(t.lane(), 'pointerMove', 352);
@@ -132,28 +140,40 @@ describe('Cue Seam', () => {
 		const c = t.cueList()[0]!;
 		expect(c.id).toBe(a);
 		expect(c.frame).toBe(35);
+		expect(c.anchor).toBeNull();
 		expect(t.history().at(-1)).toBe('Move Cue');
 		act(() => t.session.undo());
 		expect(t.cueList()[0]!.frame).toBe(30);
+		expect(t.cueList()[0]!.anchor).toMatchObject({ type: 'marker' });
 		act(() => t.session.redo());
 		expect(t.cueList()[0]!.frame).toBe(35);
 	});
 
-	it('drag snaps to the playhead and to other cues; a dropped cue off its anchor forgets it', () => {
+	it('drag snaps to other cues and to the playhead', () => {
 		const t = setup(
 			[
 				{ frame: 30, kind: 'cut', weight: 'support', source: 'derived' },
 				{ frame: 50, kind: 'land', weight: 'hero', source: 'derived' },
 			],
-			{ snapping: true },
+			{ snapping: true, pxPerFrame: 2 },
 		);
-		// 8 px threshold at 10 px per frame: 49.4 frames → snaps to the cue at 50
-		pointer(t.lane(), 'pointerDown', 300);
-		pointer(t.lane(), 'pointerMove', 494);
+		// 8 px threshold at 2 px per frame = 4 frames: +17 frames (47) snaps to the cue at 50
+		pointer(t.lane(), 'pointerDown', 60);
+		pointer(t.lane(), 'pointerMove', 94);
 		expect(t.ui.getState().snapFrame).toBe(50);
-		pointer(t.lane(), 'pointerUp', 494);
+		pointer(t.lane(), 'pointerUp', 94);
 		expect(t.cueList().map((c) => c.frame)).toEqual([50, 50]);
 		expect(t.ui.getState().snapFrame).toBeNull();
+		// the playhead wins over a cue at the same distance
+		act(() => t.session.transport.seek(54));
+		const second = t.cueList()[1]!;
+		t.session.select('cues', [second.id], 'replace');
+		pointer(t.lane(), 'pointerDown', 100);
+		pointer(t.lane(), 'pointerMove', 104);
+		pointer(t.lane(), 'pointerMove', 105);
+		expect(t.ui.getState().snapFrame).toBe(54);
+		pointer(t.lane(), 'pointerUp', 105);
+		expect(t.cueList().map((c) => c.frame).sort()).toEqual([50, 54]);
 	});
 
 	it('Alt-drag duplicates (the original stays); undo removes the copy', () => {
