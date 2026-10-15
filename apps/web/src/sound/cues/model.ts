@@ -366,13 +366,19 @@ export function layoutCues(
 	}
 	const max = opts.max ?? MAX_RENDERED_CUES;
 	if (out.length <= max) return out;
-	const rank: Record<CueWeight, number> = { hero: 0, support: 1, ambient: 2 };
-	const kept = new Set(
-		[...out]
-			.sort((a, b) => Number(b.state.selected) - Number(a.state.selected) || rank[a.weight] - rank[b.weight])
-			.slice(0, max)
-			.map((g) => g.id),
-	);
+	// Selected cues first, then heroes, support, ambient. The tier that does not fit whole is thinned evenly over the
+	// view (every k-th cue in frame order), so the end of a zoomed-out sequence keeps its share instead of losing
+	// every cue of that tier past the first `max`.
+	const tiers: CueGeom[][] = [[], [], [], []];
+	const rank: Record<CueWeight, number> = { hero: 1, support: 2, ambient: 3 };
+	for (const g of out) tiers[g.state.selected ? 0 : rank[g.weight]]!.push(g);
+	const kept = new Set<string>();
+	for (const tier of tiers) {
+		const room = max - kept.size;
+		if (room <= 0) break;
+		if (tier.length <= room) for (const g of tier) kept.add(g.id);
+		else for (let i = 0; i < room; i++) kept.add(tier[Math.floor((i * tier.length) / room)]!.id);
+	}
 	return out.filter((g) => kept.has(g.id));
 }
 
@@ -381,6 +387,7 @@ export function layoutCues(
  * (hero over support over ambient), then the selected one. Null when none.
  */
 export function hitCue(geoms: readonly CueGeom[], x: number): string | null {
+	if (!Number.isFinite(x)) return null;
 	const rank: Record<CueWeight, number> = { hero: 0, support: 1, ambient: 2 };
 	let best: CueGeom | null = null;
 	let bestD = Number.POSITIVE_INFINITY;

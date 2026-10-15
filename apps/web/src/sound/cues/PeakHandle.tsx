@@ -14,7 +14,7 @@ import {
 } from '@jasper/project';
 import type { Gesture } from '@jasper/session';
 import { useSessionOrNull, useSessionState } from '@jasper/session/react';
-import { type PointerEvent as ReactPointerEvent, useRef } from 'react';
+import { type PointerEvent as ReactPointerEvent, useEffect, useRef } from 'react';
 import type { ClipDecorationProps } from '../../extensions/index.ts';
 import { t } from '../../i18n/runtime.ts';
 import { activeTimeline, useTimelineEnv } from '../../panels/timeline/env.tsx';
@@ -39,6 +39,8 @@ type Drag = {
 	ids: string[];
 	peak0: number;
 	targets: ReturnType<typeof collectSnapTargets>;
+	/** Removes the drag's Esc listener. */
+	offKeys: () => void;
 };
 
 function sequenceOf(clips: Record<string, Sequence>, clipId: string): Sequence | null {
@@ -56,6 +58,17 @@ export function PeakHandle(p: ClipDecorationProps) {
 	});
 	const drag = useRef<Drag | null>(null);
 	const env = useTimelineEnv();
+	// The handle unmounts when its clip is culled or hidden (dragged out of view, the Timeline closed): the drag's
+	// gesture is cancelled with it, never left holding the session (Undo, agents' edits, autosave).
+	useEffect(
+		() => () => {
+			const d = drag.current;
+			drag.current = null;
+			d?.offKeys();
+			d?.gesture?.cancel();
+		},
+		[],
+	);
 	const clip = p.clip as Clip;
 	const pk = clipPeakFlicks(clip as never, media);
 	if (!pk || !session) return null;
@@ -87,7 +100,16 @@ export function PeakHandle(p: ClipDecorationProps) {
 		const group = clip.groupId ? (seq.groups[clip.groupId]?.members ?? []) : [];
 		const ids = [...new Set([clip.id, ...group])].filter((id) => !!seq.clips[id]);
 		e.currentTarget.setPointerCapture?.(e.pointerId);
+		// Esc cancels the drag, as every timeline drag (S02:TL-903)
+		const onKey = (ev: KeyboardEvent) => {
+			if (ev.key !== 'Escape' || !drag.current) return;
+			ev.preventDefault();
+			ev.stopPropagation();
+			onUp(false);
+		};
+		window.addEventListener('keydown', onKey, true);
 		drag.current = {
+			offKeys: () => window.removeEventListener('keydown', onKey, true),
 			pointerId: e.pointerId,
 			mode: e.shiftKey ? 'peak' : 'move',
 			x0: e.clientX,
@@ -147,6 +169,7 @@ export function PeakHandle(p: ClipDecorationProps) {
 				d.gesture = session.beginGesture(d.mode === 'move' ? t('Move Clip by Peak') : t('Set Peak'));
 			} catch {
 				drag.current = null;
+				d.offKeys();
 				return;
 			}
 		}
@@ -158,6 +181,7 @@ export function PeakHandle(p: ClipDecorationProps) {
 		const d = drag.current;
 		drag.current = null;
 		ui()?.setState({ snapFrame: null });
+		d?.offKeys();
 		if (!d?.gesture) return;
 		if (!commit || (d.mode === 'move' && d.delta === 0)) {
 			d.gesture.cancel();

@@ -3896,6 +3896,7 @@
   "Insert",
   "Insert a library sound (its id, snd_…) into the active sequence with its peak on the playhead (or on `at`); registers it into the \"Sound Effects\" bin, picks a free audio track or adds \"SFX n\", tags it SFX — one undo step",
   "Insert and Overwrite Sequences as Nests",
+  "Insert at Playhead",
   "Insert Composition",
   "Insert Frame Hold Segment",
   "Insert Frame Hold Segment: place the playhead over a video clip",

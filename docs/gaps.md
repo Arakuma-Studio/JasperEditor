@@ -342,7 +342,10 @@ directly until Phase 3 proposals; Detect Peak analyses at most 2 min of a clip; 
 model review (wp-note "Phase 2 verification: model review") fixed six defects with failing-first tests (repair
 idempotence, swap at frame 0 and over fades, split SFX clips and their cue, history coalescing across undo, cue id
 bound); known limits: a copied SFX clip keeps its cue link without filling the cue, `pitchSt: 0` after a fractional
-varispeed shift keeps up to ±0.5 st, razoring inside any transition's span fails with `E_INVARIANT`.
+varispeed shift keeps up to ±0.5 st, razoring inside any transition's span fails with `E_INVARIANT`. The
+Phase 2 web verification (wp-note) fixed the In Context exit paths, variation runs, seam / peak drags, Suggest Cues with
+expressions and mode pruning with failing-first tests; known limit: the key that ends an In Context audition is not also
+run when the held gesture disabled its command (the first Ctrl+Z only stops the audition).
 
 ### Not covered by any workstream yet
 

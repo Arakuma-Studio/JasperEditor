@@ -9,13 +9,16 @@
 // timeline and the Program monitor draw and play, S01:SES-006) that is always cancelled, never committed. The sound is
 // registered with the engine first (managed media of the project: an engine-side copy, not a document change). The
 // Program plays through its own transport and audio graph, so the Phase 0 primed start applies unchanged (a seek while
-// paused, then Play). Any other action ends it: a key, a pointer press, the transport stopping, another audition.
+// paused, then Play). Any other action ends it: a key, a pointer press, the transport stopping, another audition (which
+// starts from where this one would have returned), the project closing, another sequence becoming active, an agent's
+// transaction (it would otherwise wait for the gesture), or a watchdog when the frames never move (no Program monitor).
 //
 // Also `playTimelineWindow` (Audition on swap): plays the committed timeline around a frame and returns.
 import type { EngineClient } from '@jasper/engine-client';
 import type { Command, Rational, Sequence, SoundAlignRequest, SoundCue } from '@jasper/project';
 import type { EditorSession, Gesture } from '@jasper/session';
 import { createStore } from 'zustand/vanilla';
+import { beforeAgentTransaction } from '../agent-bridge/hooks.ts';
 import { t } from '../i18n/runtime.ts';
 import { auditionPlayer } from './audition.ts';
 import { clipSoundTarget, cueFillTarget } from './controller.ts';
@@ -104,18 +107,27 @@ export function inContextAnchor(session: EditorSession, seq: Sequence): InContex
 	};
 }
 
+/** The anchor of an audition on a given cue (Fill With ▸ on that cue's menu): its frame and its alignment. */
+export function cueAnchor(cue: Pick<SoundCue, 'id' | 'frame' | 'align'>): InContextAnchor {
+	return { frame: cue.frame, align: cue.align ?? 'auto', muteClipId: null, kind: 'cue', cueId: cue.id };
+}
+
 type Running = {
 	session: EditorSession;
 	gesture: Gesture | null;
 	returnTo: number;
 	end: number;
-	offTransport: () => void;
-	offInput: () => void;
+	/** Everything to undo when it ends: transport and input listeners, session watchers, the watchdog. */
+	offs: (() => void)[];
 	token: number;
 };
 
 let running: Running | null = null;
 let token = 0;
+/** Watchers of an audition still registering its sound (the session closing, the sequence switching). */
+let preparing: (() => void) | null = null;
+/** `KeyboardEvent.code` of the key press that has just ended an audition (cleared once that event is dispatched). */
+let endedByKey: string | null = null;
 
 function set(patch: Partial<InContextState>): void {
 	inContextStore.setState(patch);
@@ -124,19 +136,35 @@ function set(patch: Partial<InContextState>): void {
 /** Stops whatever plays in context (the gesture is cancelled: nothing was written). */
 export function stopInContext(opts: { returnToAnchor?: boolean } = {}): void {
 	token++;
+	const watch = preparing;
+	preparing = null;
+	watch?.();
 	const r = running;
 	running = null;
 	if (r) {
-		r.offTransport();
-		r.offInput();
-		const transport = r.session.transport;
-		if (transport.getState().playing) transport.pause();
+		for (const off of r.offs.splice(0)) off();
+		// the gesture first: whatever the transport does next, the document is the committed one again
 		r.gesture?.cancel();
-		if (opts.returnToAnchor !== false) transport.seek(r.returnTo);
+		const transport = r.session.transport;
+		try {
+			if (transport.getState().playing) transport.pause();
+			if (opts.returnToAnchor !== false) transport.seek(r.returnTo);
+		} catch {
+			// a Program player failing to pause must not keep the audition (or its gesture) alive
+		}
 	}
 	const st = inContextStore.getState();
 	if (st.active || st.loading)
 		set({ active: false, loading: false, soundId: null, title: null, epoch: st.epoch + 1 });
+}
+
+/**
+ * Whether the key press being dispatched has just ended an audition, and it is one of `codes`. The key that ends it
+ * reaches the panel after the audition's own capture listener stopped it: the Sound Library's toggles (Shift+Space,
+ * Space, Esc) use this so that the key stops the audition instead of starting it again or also leaving Fill mode.
+ */
+export function inContextEndedBy(codes: readonly string[]): boolean {
+	return endedByKey !== null && codes.includes(endedByKey);
 }
 
 /** Ends the audition on the next key or pointer press anywhere (installed after the gesture that started it). */
@@ -144,8 +172,15 @@ function endOnInput(stop: () => void): () => void {
 	if (typeof window === 'undefined') return () => undefined;
 	let on = false;
 	const handler = (e: Event) => {
-		// modifier keys alone (holding Shift of Shift+Space) do not end it
-		if (e instanceof KeyboardEvent && ['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+		if (e instanceof KeyboardEvent) {
+			// modifier keys alone (holding Shift of Shift+Space) do not end it
+			if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+			const code = e.code || e.key;
+			endedByKey = code;
+			setTimeout(() => {
+				if (endedByKey === code) endedByKey = null;
+			}, 0);
+		}
 		stop();
 	};
 	const timer = setTimeout(() => {
@@ -162,41 +197,102 @@ function endOnInput(stop: () => void): () => void {
 	};
 }
 
+/** Ends it when the project closes or another sequence becomes active (the Program no longer plays its sequence). */
+function watchSession(session: EditorSession, end: () => void): () => void {
+	const active = session.getState().activeSequenceId;
+	const offClosed = session.on('closed', end);
+	const offStore = session.store.subscribe((s) => {
+		if (s.activeSequenceId !== active) end();
+	});
+	return () => {
+		offClosed();
+		offStore();
+	};
+}
+
 function fpsOf(seq: Pick<Sequence, 'settings'>): number {
 	const r = seq.settings.frameRate as Rational;
 	return r.den > 0 && r.num > 0 ? r.num / r.den : 30;
 }
 
-/** Plays [start, end) of the drawn timeline, then pauses and seeks to `returnTo` (unless something else took over). */
-function playWindow(r: Running, start: number): void {
+/** Wall-clock slack before the watchdog ends a window whose frames do not move (no Program monitor plays them). */
+const WATCHDOG_SLACK_SEC = 5;
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
+/**
+ * Plays [start, end) of the drawn timeline, then pauses and seeks to `returnTo` (unless something else took over).
+ * A watchdog ends it when the window has had its time and more (a transport that never reports frames would otherwise
+ * hold the gesture, and with it agents' edits and autosave, until the next key press).
+ */
+function playWindow(r: Running, start: number, fps: number): void {
 	const transport = r.session.transport;
 	if (transport.getState().playing) transport.pause();
 	transport.seek(Math.max(0, start));
 	let started = false;
-	r.offTransport = transport.subscribe((st, prev) => {
-		if (running !== r) return;
-		if (st.playing && !prev.playing) started = true;
-		// the user (or the end of the sequence) stopped it, or the window is over
-		if ((started && !st.playing) || st.frame >= r.end) stopInContext();
-	});
+	r.offs.push(
+		transport.subscribe((st, prev) => {
+			if (running !== r) return;
+			if (st.playing && !prev.playing) started = true;
+			// the user (or the end of the sequence) stopped it, or the window is over
+			if ((started && !st.playing) || st.frame >= r.end) stopInContext();
+		}),
+	);
+	const windowSec = Math.max(0, r.end - Math.max(0, start)) / (fps > 0 ? fps : 30);
+	const ms = Math.min(MAX_TIMEOUT_MS, (windowSec * 1.5 + WATCHDOG_SLACK_SEC) * 1000);
+	const watchdog = setTimeout(() => {
+		if (running === r) stopInContext();
+	}, ms);
+	r.offs.push(() => clearTimeout(watchdog));
 	transport.play(1);
 }
 
+/** Starts a window: the run is current, input and session watchers are on, the store says what plays. */
+function begin(r: Running, title: string | null, soundId: string | null): void {
+	running = r;
+	r.offs.push(
+		endOnInput(() => {
+			if (running === r) stopInContext();
+		}),
+		watchSession(r.session, () => {
+			if (running === r) stopInContext({ returnToAnchor: false });
+		}),
+	);
+	set({
+		active: true,
+		loading: false,
+		soundId,
+		title,
+		error: null,
+		epoch: inContextStore.getState().epoch + 1,
+	});
+}
+
+export type InContextResult = { ok: true } | { ok: false; message: string; cancelled?: boolean };
+
 /**
  * Plays a candidate sound in context (see the module comment). Resolves when playback starts (or fails: the message
- * is in the store and returned). Never changes the document or history.
+ * is in the store and returned; `cancelled` when another audition or a stop superseded it, which is not an error).
+ * Never changes the document or history, and never rejects.
  */
 export async function auditionInContext(
 	session: EditorSession,
 	engine: Pick<EngineClient, 'registerSound'>,
 	entry: LibraryEntryLike,
 	opts: { sequenceId?: string; anchor?: InContextAnchor } = {},
-): Promise<{ ok: true } | { ok: false; message: string }> {
-	stopInContext({ returnToAnchor: false });
+): Promise<InContextResult> {
+	// What played before ends as it would on its own: back to its anchor, so this one's anchor (the playhead) and
+	// return point are where the user was, not wherever the previous window had got to.
+	stopInContext();
 	auditionPlayer().stop();
 	const my = ++token;
+	const cancelled = () => ({ ok: false as const, message: t('Cancelled'), cancelled: true });
 	const fail = (message: string) => {
-		if (my === token) set({ loading: false, active: false, error: message });
+		if (my === token) {
+			const watch = preparing;
+			preparing = null;
+			watch?.();
+			set({ loading: false, active: false, error: message });
+		}
 		return { ok: false as const, message };
 	};
 	const state = session.getState();
@@ -205,80 +301,83 @@ export async function auditionInContext(
 	if (!seq0) return fail(t('Open a sequence first'));
 	if (session.gestureActive) return fail(t('Finish the current edit first'));
 	set({ loading: true, error: null, soundId: entry.id, title: entry.title ?? entry.id });
+	// closing the project or switching the sequence while the sound registers cancels it
+	preparing = watchSession(session, () => {
+		if (my === token) stopInContext({ returnToAnchor: false });
+	});
 	let sounds: Awaited<ReturnType<typeof registerLibrarySounds>>;
 	try {
 		sounds = await registerLibrarySounds(engine, state.document.projectId, [entry]);
 	} catch (e) {
+		if (my !== token) return cancelled();
 		return fail(e instanceof Error ? e.message : String(e));
 	}
-	if (my !== token) return { ok: false, message: t('Cancelled') };
-	const doc = session.getCommitted();
-	const seq = doc.sequences[seq0.id];
-	if (!seq) return fail(t('The sequence was closed'));
-	if (session.gestureActive) return fail(t('Finish the current edit first'));
-	const anchor = opts.anchor ?? inContextAnchor(session, seq);
-	const prepared = soundMediaCommands(session, doc, sounds, { refPrefix: '$audition' });
-	const media = prepared.media.get(entry.id)!;
-	const commands: Command[] = [
-		...prepared.commands,
-		{
-			type: 'soundDesign.place',
-			sequenceId: seq.id,
-			frame: anchor.frame,
-			layers: [{ mediaId: media.ref, align: anchor.align }],
-			clampStart: true,
-		} as Command,
-		...(anchor.muteClipId && seq.clips[anchor.muteClipId]
-			? [{ type: 'clip.update', clipId: anchor.muteClipId, patch: { enabled: false } } as Command]
-			: []),
-	];
-	const gesture = session.beginGesture(t('Audition in Context'));
-	const r = gesture.update(commands);
-	if (!r.ok) {
-		gesture.cancel();
-		return fail(r.errors[0]?.message ?? t('The sound cannot be placed here'));
+	if (my !== token) return cancelled();
+	const watch = preparing;
+	preparing = null;
+	watch?.();
+	let gesture: Gesture | null = null;
+	let run: Running | null = null;
+	try {
+		const doc = session.getCommitted();
+		const seq = doc.sequences[seq0.id];
+		if (!seq) return fail(t('The sequence was closed'));
+		if (session.gestureActive) return fail(t('Finish the current edit first'));
+		const anchor = opts.anchor ?? inContextAnchor(session, seq);
+		const prepared = soundMediaCommands(session, doc, sounds, { refPrefix: '$audition' });
+		const media = prepared.media.get(entry.id);
+		if (!media) return fail(t('The sound cannot be placed here'));
+		const commands: Command[] = [
+			...prepared.commands,
+			{
+				type: 'soundDesign.place',
+				sequenceId: seq.id,
+				frame: anchor.frame,
+				layers: [{ mediaId: media.ref, align: anchor.align }],
+				clampStart: true,
+			} as Command,
+			...(anchor.muteClipId && seq.clips[anchor.muteClipId]
+				? [{ type: 'clip.update', clipId: anchor.muteClipId, patch: { enabled: false } } as Command]
+				: []),
+		];
+		gesture = session.beginGesture(t('Audition in Context'));
+		const r = gesture.update(commands);
+		if (!r.ok) {
+			gesture.cancel();
+			return fail(r.errors[0]?.message ?? t('The sound cannot be placed here'));
+		}
+		const placed = (
+			r.results[prepared.commands.length] as { clips?: { start: number; duration: number }[] } | undefined
+		)?.clips?.[0];
+		const fps = fpsOf(seq);
+		const preRoll = Math.round(soundLibraryPrefs.get().preRollSec * fps);
+		const start = Math.max(0, anchor.frame - preRoll);
+		const end = (placed ? placed.start + placed.duration : anchor.frame) + Math.round(POST_ROLL_SEC * fps);
+		run = { session, gesture, returnTo: anchor.frame, end, offs: [], token: my };
+		begin(run, media.title, entry.id);
+		playWindow(run, start, fps);
+		return { ok: true };
+	} catch (e) {
+		// never leave the gesture (and with it agents' edits, Undo and autosave) held by a failed start
+		if (run && running === run) stopInContext({ returnToAnchor: false });
+		else gesture?.cancel();
+		const message = e instanceof Error ? e.message : String(e);
+		set({ loading: false, active: false, error: message });
+		return { ok: false, message };
 	}
-	const placed = (
-		r.results[prepared.commands.length] as { clips?: { start: number; duration: number }[] } | undefined
-	)?.clips?.[0];
-	const fps = fpsOf(seq);
-	const preRoll = Math.round(soundLibraryPrefs.get().preRollSec * fps);
-	const start = Math.max(0, anchor.frame - preRoll);
-	const end = (placed ? placed.start + placed.duration : anchor.frame) + Math.round(POST_ROLL_SEC * fps);
-	const run: Running = {
-		session,
-		gesture,
-		returnTo: anchor.frame,
-		end,
-		offTransport: () => undefined,
-		offInput: () => undefined,
-		token: my,
-	};
-	running = run;
-	run.offInput = endOnInput(() => {
-		if (running === run) stopInContext();
-	});
-	set({
-		active: true,
-		loading: false,
-		soundId: entry.id,
-		title: media.title,
-		error: null,
-		epoch: inContextStore.getState().epoch + 1,
-	});
-	playWindow(run, start);
-	return { ok: true };
 }
 
 /**
  * Plays the committed timeline from `center − before` to `center + after` seconds and returns the playhead to
- * `returnTo` (Audition on swap: the 2 s around the swapped sound). Ends like an In Context audition.
+ * `returnTo` (Audition on swap: the 2 s around the swapped sound). Ends like an In Context audition. When it replaces
+ * a window still playing, it returns to where that one would have (the playhead before the first of them).
  */
 export function playTimelineWindow(
 	session: EditorSession,
 	seq: Pick<Sequence, 'settings'>,
 	opts: { center: number; returnTo: number; title: string; before?: number; after?: number },
 ): void {
+	const previous = running && running.session === session ? running.returnTo : null;
 	stopInContext({ returnToAnchor: false });
 	auditionPlayer().stop();
 	const my = ++token;
@@ -286,26 +385,24 @@ export function playTimelineWindow(
 	const run: Running = {
 		session,
 		gesture: null,
-		returnTo: opts.returnTo,
+		returnTo: previous ?? opts.returnTo,
 		end: Math.round(opts.center + (opts.after ?? 1) * fps),
-		offTransport: () => undefined,
-		offInput: () => undefined,
+		offs: [],
 		token: my,
 	};
-	running = run;
-	run.offInput = endOnInput(() => {
-		if (running === run) stopInContext();
-	});
-	set({
-		active: true,
-		loading: false,
-		soundId: null,
-		title: opts.title,
-		error: null,
-		epoch: inContextStore.getState().epoch + 1,
-	});
-	playWindow(run, Math.round(opts.center - (opts.before ?? 1) * fps));
+	try {
+		begin(run, opts.title, null);
+		playWindow(run, Math.round(opts.center - (opts.before ?? 1) * fps), fps);
+	} catch {
+		if (running === run) stopInContext({ returnToAnchor: false });
+	}
 }
+
+// An agent's transaction ends an audition holding the session's gesture slot: it applies at once instead of being
+// queued behind a preview (the audition never writes, so nothing of the user's is lost).
+beforeAgentTransaction((session) => {
+	if (running?.session === session && running.gesture) stopInContext();
+});
 
 /** Whether an In Context audition (or a swap window) is playing. */
 export function inContextActive(): boolean {

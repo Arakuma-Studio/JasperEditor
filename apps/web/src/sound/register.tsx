@@ -41,7 +41,7 @@ import {
 	sfxOf,
 } from './design-model.ts';
 import { cueCandidates } from './fill.ts';
-import { auditionInContext, inContextStore, stopInContext } from './in-context.ts';
+import { auditionInContext, cueAnchor, inContextStore, stopInContext } from './in-context.ts';
 import { formatSeconds, typeLabel } from './model.ts';
 import { soundLibraryPrefs } from './prefs.ts';
 import { SoundSection } from './SoundSection.tsx';
@@ -359,7 +359,15 @@ export function registerSoundDesignUi(): void {
 								clearHover();
 								const h = setTimeout(() => {
 									hoverTimers.delete(h);
-									void auditionInContext(session, createEditorEngineClient(), e);
+									// on THIS cue (not the last selected one, nor Fill mode's), where it is now
+									const now = cuesOf(session.getCommitted().sequences[sequenceId]).find(
+										(c) => c.id === cue.id,
+									);
+									if (!now) return;
+									void auditionInContext(session, createEditorEngineClient(), e, {
+										sequenceId,
+										anchor: cueAnchor(now),
+									});
 								}, 350);
 								hoverTimers.add(h);
 							},
