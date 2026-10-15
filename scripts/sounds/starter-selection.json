@@ -1,0 +1,567 @@
+{
+  "packs": [
+    {
+      "id": "kenney-casino-audio",
+      "title": "Casino Audio",
+      "page": "https://kenney.nl/assets/casino-audio",
+      "url": "https://kenney.nl/media/pages/assets/casino-audio/2472606a04-1721639069/kenney_casino-audio.zip",
+      "sha256": "f36250766ac5bc378c13708ddf12a23a8e54a3251f8d482c7536e51b5dbafa18",
+      "version": "1.1"
+    },
+    {
+      "id": "kenney-digital-audio",
+      "title": "Digital Audio",
+      "page": "https://kenney.nl/assets/digital-audio",
+      "url": "https://kenney.nl/media/pages/assets/digital-audio/216eac4753-1677590265/kenney_digital-audio.zip",
+      "sha256": "24e6ce28b76a6d8c89cff4d331e0965ff5c3de8a73c612028e9d363cc64e4f06"
+    },
+    {
+      "id": "kenney-impact-sounds",
+      "title": "Impact Sounds",
+      "page": "https://kenney.nl/assets/impact-sounds",
+      "url": "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip",
+      "sha256": "029d734af1582474edf3a694d1b0cebc97c1c152f2f39fa34d4c2bafc5de77f8",
+      "version": "1.0"
+    },
+    {
+      "id": "kenney-interface-sounds",
+      "title": "Interface Sounds",
+      "page": "https://kenney.nl/assets/interface-sounds",
+      "url": "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip",
+      "sha256": "f2193d072726d6758a5f7871b2dcc54dcce0d5c35c6f0a62f92549b327c81232",
+      "version": "1.0"
+    },
+    {
+      "id": "kenney-rpg-audio",
+      "title": "RPG Audio",
+      "page": "https://kenney.nl/assets/rpg-audio",
+      "url": "https://kenney.nl/media/pages/assets/rpg-audio/8e99002d76-1677590336/kenney_rpg-audio.zip",
+      "sha256": "6dbeaf8544da958d8f2adcb4a4a4b76c1ade34a05f8ab9edccd327da7375f38b"
+    },
+    {
+      "id": "kenney-sci-fi-sounds",
+      "title": "Sci-fi Sounds",
+      "page": "https://kenney.nl/assets/sci-fi-sounds",
+      "url": "https://kenney.nl/media/pages/assets/sci-fi-sounds/6b296f9ecf-1677589334/kenney_sci-fi-sounds.zip",
+      "sha256": "119340f351a5098ad814f78719438c0da355a9ce8a4c8a3af6a8d48aa3d49e04",
+      "version": "1.0"
+    },
+    {
+      "id": "kenney-ui-audio",
+      "title": "UI Audio",
+      "page": "https://kenney.nl/assets/ui-audio",
+      "url": "https://kenney.nl/media/pages/assets/ui-audio/490d233f68-1677590494/kenney_ui-audio.zip",
+      "sha256": "946fc23a63d535d693eb31b2eabb80c8c28d6351e2186b344ceb71b2cb1d5eb6"
+    }
+  ],
+  "sounds": [
+    {
+      "file": "hit-metal-light-01.ogg",
+      "title": "Light metal hit",
+      "types": ["hit"],
+      "tags": ["metal", "light", "bright"],
+      "pack": "kenney-impact-sounds",
+      "src": ["impactMetal_light_003.ogg"]
+    },
+    {
+      "file": "hit-metal-01.ogg",
+      "title": "Metal hit",
+      "types": ["hit"],
+      "tags": ["metal"],
+      "pack": "kenney-impact-sounds",
+      "src": ["impactMetal_medium_000.ogg"]
+    },
+    {
+      "file": "hit-metal-heavy-01.ogg",
+      "title": "Heavy metal hit",
+      "types": ["hit"],
+      "tags": ["metal", "heavy"],
+      "pack": "kenney-sci-fi-sounds",
+      "src": ["impactMetal_003.ogg"]
+    },
+    {
+      "file": "hit-punch-01.ogg",
+      "title": "Punch",
+      "types": ["hit"],
+      "tags": ["punch", "body", "fight"],
+      "pack": "kenney-impact-sounds",
+      "src": ["impactPunch_medium_002.ogg"]
+    },
+    {
+      "file": "hit-plate-01.ogg",
+      "title": "Plate hit",
+      "types": ["hit"],
+      "tags": ["plate", "metal", "clang"],
+      "pack": "kenney-impact-sounds",
+      "src": ["impactPlate_light_001.ogg"]
+    },
+    {
+      "file": "hit-glass-01.ogg",
+      "title": "Glass hit",
+      "types": ["hit"],
+      "tags": ["glass", "clink"],
+      "pack": "kenney-impact-sounds",
+      "src": ["impactGlass_light_001.ogg"]
+    },
+    {
+      "file": "hit-crunch-01.ogg",
+      "title": "Crunchy impact",
+      "types": ["hit"],
+      "tags": ["crunch", "explosion", "debris"],
+      "pack": "kenney-sci-fi-sounds",
+      "src": ["explosionCrunch_002.ogg"]
+    },
+    {
+      "file": "boom-explosion-01.ogg",
+      "title": "Crunchy explosion",
+      "types": ["boom"],
+      "tags": ["explosion", "crunch", "low"],
+      "pack": "kenney-sci-fi-sounds",
+      "src": ["explosionCrunch_001.ogg"]
+    },
+    {
+      "file": "boom-low-01.ogg",
+      "title": "Low boom",
+      "types": ["boom"],
+      "tags": ["explosion", "sub", "low"],
+      "pack": "kenney-sci-fi-sounds",
+      "src": ["lowFrequency_explosion_001.ogg"]
+    },
+    {
+      "file": "boom-low-02.ogg",
+      "title": "Deep low boom",
+      "types": ["boom"],
+      "tags": ["explosion", "sub", "low", "deep"],
+      "pack": "kenney-sci-fi-sounds",
+      "src": ["lowFrequency_explosion_001.ogg"],
+      "filter": "[in0]asetrate=48000*0.8,aresample=48000[out]",
+      "derivation": "pitched down to 0.8x speed (varispeed: about 3.9 semitones lower, 1.25x longer)"
+    },
+    {
+      "file": "thump-punch-01.ogg",
+      "title": "Heavy punch thump",
+      "types": ["thump"],
+      "tags": ["punch", "body", "heavy"],
+      "pack": "kenney-impact-sounds",
+      "src": ["impactPunch_heavy_000.ogg"]
+    },
+    {
+      "file": "thump-wood-01.ogg",
+      "title": "Heavy wood thump",
+      "types": ["thump"],
+      "tags": ["wood", "heavy", "knock"],
+      "pack": "kenney-impact-sounds",
+      "src": ["impactWood_heavy_003.ogg"]
+    },
+    {
+      "file": "thump-plate-01.ogg",
+      "title": "Heavy plate thump",
+      "types": ["thump"],
+      "tags": ["plate", "heavy"],
+      "pack": "kenney-impact-sounds",
+      "src": ["impactPlate_heavy_001.ogg"]
+    },
+    {
+      "file": "riser-engine-01.ogg",
+      "title": "Thruster riser",
+      "types": ["riser"],
+      "tags": ["engine", "rocket", "build", "swell"],
+      "pack": "kenney-sci-fi-sounds",
+      "src": ["thrusterFire_000.ogg"],
+      "filter": "[in0]atrim=0:3,asetpts=N/SR/TB,afade=t=in:d=2.95:curve=exp,afade=t=out:st=2.97:d=0.03[out]",
+      "derivation": "first 3 s, exponential fade-in over 2.95 s and a 30 ms fade-out, so it swells to its end"
+    },
+    {
+      "file": "riser-hum-01.ogg",
+      "title": "Computer hum riser",
+      "types": ["riser"],
+      "tags": ["computer", "hum", "build", "swell", "tonal"],
+      "pack": "kenney-sci-fi-sounds",
+      "src": ["computerNoise_000.ogg"],
+      "filter": "[in0]atrim=0:3,asetpts=N/SR/TB,afade=t=in:d=2.95:curve=exp,afade=t=out:st=2.97:d=0.03[out]",
+      "derivation": "first 3 s, exponential fade-in over 2.95 s and a 30 ms fade-out, so it swells to its end"
+    },
+    {
+      "file": "riser-engine-03.ogg",
+      "title": "Engine riser, pitched up",
+      "types": ["riser"],
+      "tags": ["engine", "build", "swell"],
+      "pack": "kenney-sci-fi-sounds",
+      "src": ["spaceEngineSmall_004.ogg"],
+      "filter": "[in0]asetrate=48000*1.5,aresample=48000,atrim=0:3,asetpts=N/SR/TB,afade=t=in:d=2.95:curve=exp,afade=t=out:st=2.97:d=0.03[out]",
+      "derivation": "sped up 1.5x (about 7 semitones higher), first 3 s, exponential fade-in over 2.95 s and a 30 ms fade-out"
+    },
+    {
+      "file": "reverse-bell-01.ogg",
+      "title": "Reverse bell",
+      "types": ["reverse"],
+      "tags": ["bell", "reversed", "swell"],
+      "pack": "kenney-impact-sounds",
+      "src": ["impactBell_heavy_001.ogg"],
+      "filter": "[in0]areverse,afade=t=out:st=1.73:d=0.01[out]",
+      "derivation": "reversed (areverse), 10 ms fade-out at the end where the strike was"
+    },
+    {
+      "file": "reverse-crunch-01.ogg",
+      "title": "Reverse crunch",
+      "types": ["reverse"],
+      "tags": ["explosion", "crunch", "reversed", "swell"],
+      "pack": "kenney-sci-fi-sounds",
+      "src": ["explosionCrunch_002.ogg"],
+      "filter": "[in0]areverse,afade=t=out:st=1.25:d=0.01[out]",
+      "derivation": "reversed (areverse), 10 ms fade-out at the end"
+    },
+    {
+      "file": "reverse-air-01.ogg",
+      "title": "Reverse air swell",
+      "types": ["reverse"],
+      "tags": ["air", "reversed", "swell", "noise"],
+      "pack": "kenney-interface-sounds",
+      "src": ["maximize_005.ogg"]
+    },
+    {
+      "file": "transition-crunch-01.ogg",
+      "title": "Reverse crunch into hit",
+      "types": ["transition"],
+      "tags": ["explosion", "crunch", "reversed", "suck"],
+      "pack": "kenney-sci-fi-sounds",
+      "src": ["explosionCrunch_002.ogg"],
+      "filter": "[in0]asplit[a][b];[a]areverse,afade=t=out:st=1.25:d=0.005[r];[r][b]concat=n=2:v=0:a=1[out]",
+      "derivation": "the sound reversed, followed by the original (reverse swell into the hit)"
+    },
+    {
+      "file": "transition-sweep-01.ogg",
+      "title": "Force-field sweep",
+      "types": ["transition"],
+      "tags": ["sci-fi", "sweep", "tonal"],
+      "pack": "kenney-sci-fi-sounds",
+      "src": ["forceField_002.ogg"]
+    },
+    {
+      "file": "transition-whoosh-hit-01.ogg",
+      "title": "Air whoosh into metal hit",
+      "types": ["transition"],
+      "tags": ["whoosh", "hit", "air"],
+      "pack": "kenney-interface-sounds",
+      "src": ["open_002.ogg", "close_002.ogg", "bong_001.ogg"],
+      "filter": "[in0][in1]concat=n=2:v=0:a=1,volume=0.6[w];[in2]adelay=310|310,volume=0.9[h];[w][h]amix=inputs=2:normalize=0:duration=longest[out]",
+      "derivation": "layered: open_002 then close_002 (a noise swell and its decay) at 0.6x gain, with bong_001 at 0.9x gain starting at the swell's peak (310 ms)"
+    },
+    {
+      "file": "whoosh-air-01.ogg",
+      "title": "Air whoosh",
+      "types": ["whoosh"],
+      "tags": ["air", "noise", "pass"],
+      "pack": "kenney-interface-sounds",
+      "src": ["open_002.ogg", "close_002.ogg"],
+      "filter": "[in0][in1]concat=n=2:v=0:a=1[out]",
+      "derivation": "open_002 (a noise swell) followed by close_002 (its decay): a whoosh peaking in the middle"
+    },
+    {
+      "file": "whoosh-air-02.ogg",
+      "title": "Air whoosh, low",
+      "types": ["whoosh"],
+      "tags": ["air", "noise", "pass", "low"],
+      "pack": "kenney-interface-sounds",
+      "src": ["open_003.ogg", "close_003.ogg"],
+      "filter": "[in0][in1]concat=n=2:v=0:a=1,asetrate=48000*0.7,aresample=48000[out]",
+      "derivation": "open_003 then close_003, pitched down to 0.7x speed (about 6 semitones lower, 1.43x longer)"
+    },
+    {
+      "file": "whoosh-air-03.ogg",
+      "title": "Air whoosh, bright",
+      "types": ["whoosh"],
+      "tags": ["air", "noise", "pass", "bright"],
+      "pack": "kenney-interface-sounds",
+      "src": ["maximize_005.ogg", "minimize_005.ogg"],
+      "filter": "[in0][in1]concat=n=2:v=0:a=1[out]",
+      "derivation": "maximize_005 (a reversed swell) followed by minimize_005 (the forward decay): a whoosh peaking in the middle"
+    },
+    {
+      "file": "whoosh-hiss-01.ogg",
+      "title": "Pneumatic whoosh",
+      "types": ["whoosh"],
+      "tags": ["sci-fi", "door", "air", "hiss"],
+      "pack": "kenney-sci-fi-sounds",
+      "src": ["doorClose_000.ogg", "doorOpen_000.ogg"],
+      "filter": "[in0][in1]concat=n=2:v=0:a=1,asetrate=48000*0.6,aresample=48000[out]",
+      "derivation": "doorClose_000 (a hiss swell) then doorOpen_000 (its decay), pitched down to 0.6x speed (about 8.8 semitones lower)"
+    },
+    {
+      "file": "swish-blade-01.ogg",
+      "title": "Blade swish",
+      "types": ["swish"],
+      "tags": ["knife", "blade", "slice"],
+      "pack": "kenney-rpg-audio",
+      "src": ["knifeSlice.ogg"]
+    },
+    {
+      "file": "swish-card-01.ogg",
+      "title": "Card swish",
+      "types": ["swish"],
+      "tags": ["card", "slide", "paper"],
+      "pack": "kenney-casino-audio",
+      "src": ["card-shove-1.ogg"]
+    },
+    {
+      "file": "swish-air-01.ogg",
+      "title": "Air swish",
+      "types": ["swish"],
+      "tags": ["air", "noise"],
+      "pack": "kenney-interface-sounds",
+      "src": ["close_004.ogg"]
+    },
+    {
+      "file": "glitch-digital-01.ogg",
+      "title": "Digital glitch",
+      "types": ["glitch"],
+      "tags": ["digital", "stutter", "sci-fi"],
+      "pack": "kenney-digital-audio",
+      "src": ["spaceTrash1.ogg"]
+    },
+    {
+      "file": "glitch-stutter-01.ogg",
+      "title": "Digital stutter",
+      "types": ["glitch"],
+      "tags": ["digital", "stutter", "short"],
+      "pack": "kenney-interface-sounds",
+      "src": ["glitch_004.ogg", "glitch_003.ogg"],
+      "filter": "[in0]asplit[a0][a1];[in1]asplit[b0][b1];[b0]adelay=45|45[b];[a1]adelay=90|90[c];[b1]adelay=135|135[d];[a0][b][c][d]amix=inputs=4:normalize=0:duration=longest[out]",
+      "derivation": "layered: glitch_004, glitch_003, glitch_004, glitch_003 starting 45 ms apart (a four-step stutter)"
+    },
+    {
+      "file": "glitch-error-01.ogg",
+      "title": "Error buzz",
+      "types": ["glitch", "ui"],
+      "tags": ["error", "buzz", "digital"],
+      "pack": "kenney-interface-sounds",
+      "src": ["error_003.ogg"]
+    },
+    {
+      "file": "ui-confirm-01.ogg",
+      "title": "Confirm blip",
+      "types": ["ui"],
+      "tags": ["confirm", "success", "blip"],
+      "pack": "kenney-interface-sounds",
+      "src": ["confirmation_001.ogg"]
+    },
+    {
+      "file": "ui-confirm-02.ogg",
+      "title": "Confirm chime",
+      "types": ["ui"],
+      "tags": ["confirm", "success", "tonal"],
+      "pack": "kenney-interface-sounds",
+      "src": ["confirmation_002.ogg"]
+    },
+    {
+      "file": "ui-toggle-01.ogg",
+      "title": "Toggle",
+      "types": ["ui"],
+      "tags": ["toggle", "switch", "blip"],
+      "pack": "kenney-interface-sounds",
+      "src": ["toggle_001.ogg"]
+    },
+    {
+      "file": "ui-back-01.ogg",
+      "title": "Back",
+      "types": ["ui"],
+      "tags": ["back", "cancel", "blip", "low"],
+      "pack": "kenney-interface-sounds",
+      "src": ["back_004.ogg"]
+    },
+    {
+      "file": "ui-power-up-01.ogg",
+      "title": "Power-up blip",
+      "types": ["ui"],
+      "tags": ["power-up", "bonus", "digital"],
+      "pack": "kenney-digital-audio",
+      "src": ["powerUp8.ogg"]
+    },
+    {
+      "file": "click-ui-01.ogg",
+      "title": "Soft click",
+      "types": ["click"],
+      "tags": ["button", "soft"],
+      "pack": "kenney-ui-audio",
+      "src": ["click3.ogg"]
+    },
+    {
+      "file": "click-ui-02.ogg",
+      "title": "Bright click",
+      "types": ["click"],
+      "tags": ["button", "bright"],
+      "pack": "kenney-ui-audio",
+      "src": ["click4.ogg"]
+    },
+    {
+      "file": "click-ui-03.ogg",
+      "title": "Short click",
+      "types": ["click"],
+      "tags": ["button", "short"],
+      "pack": "kenney-ui-audio",
+      "src": ["click5.ogg"]
+    },
+    {
+      "file": "click-switch-01.ogg",
+      "title": "Switch click",
+      "types": ["click"],
+      "tags": ["switch", "mechanical"],
+      "pack": "kenney-ui-audio",
+      "src": ["switch7.ogg"]
+    },
+    {
+      "file": "tick-01.ogg",
+      "title": "Tick",
+      "types": ["tick"],
+      "tags": ["tick", "short", "bright"],
+      "pack": "kenney-ui-audio",
+      "src": ["switch13.ogg"]
+    },
+    {
+      "file": "tick-02.ogg",
+      "title": "Tick, firm",
+      "types": ["tick"],
+      "tags": ["tick", "short"],
+      "pack": "kenney-ui-audio",
+      "src": ["switch14.ogg"]
+    },
+    {
+      "file": "tap-wood-01.ogg",
+      "title": "Knock on wood",
+      "types": ["tap"],
+      "tags": ["wood", "knock"],
+      "pack": "kenney-impact-sounds",
+      "src": ["impactWood_light_000.ogg"]
+    },
+    {
+      "file": "tap-card-01.ogg",
+      "title": "Card tap",
+      "types": ["tap"],
+      "tags": ["card", "table"],
+      "pack": "kenney-casino-audio",
+      "src": ["card-place-1.ogg"]
+    },
+    {
+      "file": "tap-chip-01.ogg",
+      "title": "Chip tap",
+      "types": ["tap"],
+      "tags": ["chip", "plastic", "table"],
+      "pack": "kenney-casino-audio",
+      "src": ["chip-lay-1.ogg"]
+    },
+    {
+      "file": "pop-drop-01.ogg",
+      "title": "Drop pop",
+      "types": ["pop"],
+      "tags": ["drop", "bubble", "tonal"],
+      "pack": "kenney-interface-sounds",
+      "src": ["drop_002.ogg"]
+    },
+    {
+      "file": "pop-drop-02.ogg",
+      "title": "Drop pop, low",
+      "types": ["pop"],
+      "tags": ["drop", "bubble", "tonal"],
+      "pack": "kenney-interface-sounds",
+      "src": ["drop_004.ogg"]
+    },
+    {
+      "file": "pop-bong-01.ogg",
+      "title": "Bong pop",
+      "types": ["pop"],
+      "tags": ["bong", "tonal", "blip"],
+      "pack": "kenney-interface-sounds",
+      "src": ["bong_001.ogg"]
+    },
+    {
+      "file": "paper-page-01.ogg",
+      "title": "Page flip",
+      "types": ["paper"],
+      "tags": ["page", "book", "flip"],
+      "pack": "kenney-rpg-audio",
+      "src": ["bookFlip2.ogg"]
+    },
+    {
+      "file": "paper-pack-01.ogg",
+      "title": "Card pack open",
+      "types": ["paper"],
+      "tags": ["cards", "pack", "wrapper", "open"],
+      "pack": "kenney-casino-audio",
+      "src": ["cards-pack-open-2.ogg"]
+    },
+    {
+      "file": "paper-card-01.ogg",
+      "title": "Card flick",
+      "types": ["paper"],
+      "tags": ["card", "flick", "table"],
+      "pack": "kenney-casino-audio",
+      "src": ["card-place-2.ogg"]
+    },
+    {
+      "file": "chime-bell-01.ogg",
+      "title": "Bell chime",
+      "types": ["chime"],
+      "tags": ["bell", "ring", "metal"],
+      "pack": "kenney-impact-sounds",
+      "src": ["impactBell_heavy_000.ogg"]
+    },
+    {
+      "file": "chime-glass-01.ogg",
+      "title": "Glass ping",
+      "types": ["chime"],
+      "tags": ["glass", "ping", "high"],
+      "pack": "kenney-interface-sounds",
+      "src": ["glass_001.ogg"]
+    },
+    {
+      "file": "chime-three-tone-01.ogg",
+      "title": "Three-tone chime",
+      "types": ["chime", "ui"],
+      "tags": ["tonal", "digital", "notification"],
+      "pack": "kenney-digital-audio",
+      "src": ["threeTone1.ogg"]
+    },
+    {
+      "file": "shimmer-sparkle-01.ogg",
+      "title": "Sparkle",
+      "types": ["shimmer"],
+      "tags": ["sparkle", "magic", "bright"],
+      "pack": "kenney-digital-audio",
+      "src": ["powerUp3.ogg"]
+    },
+    {
+      "file": "shimmer-glass-01.ogg",
+      "title": "Glass sparkle",
+      "types": ["shimmer"],
+      "tags": ["glass", "sparkle", "high"],
+      "pack": "kenney-interface-sounds",
+      "src": ["glass_001.ogg", "glass_005.ogg", "glass_002.ogg", "glass_006.ogg"],
+      "filter": "[in0]anull[a];[in1]adelay=90|90[b];[in2]adelay=180|180[c];[in3]adelay=270|270[d];[a][b][c][d]amix=inputs=4:normalize=0:duration=longest[out]",
+      "derivation": "layered: glass_001, glass_005, glass_002 and glass_006 starting 90 ms apart"
+    },
+    {
+      "file": "zap-01.ogg",
+      "title": "Zap",
+      "types": ["zap"],
+      "tags": ["electric", "digital"],
+      "pack": "kenney-digital-audio",
+      "src": ["zap1.ogg"]
+    },
+    {
+      "file": "zap-laser-01.ogg",
+      "title": "Laser zap",
+      "types": ["zap"],
+      "tags": ["laser", "sci-fi"],
+      "pack": "kenney-digital-audio",
+      "src": ["laser5.ogg"]
+    },
+    {
+      "file": "zap-phaser-01.ogg",
+      "title": "Phaser zap",
+      "types": ["zap"],
+      "tags": ["phaser", "sweep", "digital"],
+      "pack": "kenney-digital-audio",
+      "src": ["phaserDown1.ogg"]
+    }
+  ]
+}
