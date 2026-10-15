@@ -1,6 +1,7 @@
 // Media assets, locators, derivations, synthetic sources, transcripts and fonts (S01 §6).
 import { z } from 'zod';
 import { ColorInterpretationSchema } from '../color/model.ts';
+import type { LibraryProvenance } from '../sound/provenance.ts';
 import type { DeepStrip } from './common.ts';
 import { int, nonNegInt, RationalSchema, RGBASchema } from './common.ts';
 
@@ -495,6 +496,12 @@ export const MediaAssetSchema = z.looseObject({
 	layerSource: LayerSourceSchema.optional(),
 	/** gaps (PRJ-8): the attached proxy. */
 	proxy: AttachedProxySchema.optional(),
+	/**
+	 * sound-design (spec 12 §2.1): the library sound this media was registered from. Accepted as any value here so a
+	 * malformed one never fails a load; the invariants check it against `LibraryProvenanceSchema` (INV-LIBRARY) and
+	 * `repairDocument` repairs or drops it, so every loaded or edited document holds valid provenance (the type).
+	 */
+	library: z.custom<LibraryProvenance>(() => true).optional(),
 });
 export type MediaAsset = DeepStrip<z.infer<typeof MediaAssetSchema>>;
 

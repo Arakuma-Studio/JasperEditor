@@ -313,6 +313,12 @@ The SPA always uses **relative URLs** (`/api/...`). On startup `apps/web/src/run
   renders/<jobId>/output.<ext>
   remotion/bundle/                           # cached Remotion serveUrl (dev); packaged builds ship a prebuilt bundle
   presets/effect-presets.json                # user effect preset library (S03:FX-030, wp-m3-presets; /api/effect-presets)
+  projects/<projectId>/proposals/            # sound-design proposals (spec 12 §2.5; engine-side, not in the document)
+  sounds/library.json                        # sound library index {version, snapshotHash, roots, packs, sounds, files} (atomic; spec 12 §2.1)
+  sounds/roots.json                          # user sound folders indexed in place, with their licence declaration (local mode only)
+  sounds/packs/<packId>/                     # installed sound packs + pack.json
+  sounds/synth/                              # Jasper Synth renders (cache, re-rendered on demand)
+  sounds/cache/<fingerprintHex>/             # visual data of library sounds (peaks + spectrogram)
   tmp/                                       # wiped on start
 ```
 

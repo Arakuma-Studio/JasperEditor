@@ -42,7 +42,30 @@ await build({
 	});
 	// M2 (S11): the anime.js licence text for About ▸ Licenses (the package itself ships in the Remotion bundle).
 	cpSync(join(root, 'src', 'anime', 'third-party'), join(root, 'dist', 'third-party'), { recursive: true });
+	// Sound design (spec 12 §2.1): the bundled starter kit (`manifest.json`, the audio files and their
+	// `.attribution` sidecars) next to engine.mjs, where `src/sounds/starter.ts` looks for `sounds/starter`.
+	const { existsSync, rmSync } = await import('node:fs');
+	rmSync(join(root, 'dist', 'sounds'), { recursive: true, force: true });
+	if (existsSync(join(root, 'sounds')))
+		cpSync(join(root, 'sounds'), join(root, 'dist', 'sounds'), { recursive: true });
 }
+
+// Sound design (spec 12 WP1.2): the sound-analysis worker thread (`analyzeSound` + visual data off the engine's main
+// thread), loaded by src/sounds/analysis.ts from `sound-worker.mjs` next to engine.mjs.
+await build({
+	entryPoints: [join(root, 'src/sounds/analysis-worker.ts')],
+	outfile: join(root, 'dist/sound-worker.mjs'),
+	bundle: true,
+	platform: 'node',
+	format: 'esm',
+	target: 'node20',
+	sourcemap: false,
+	legalComments: 'none',
+	banner: {
+		js: "import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);",
+	},
+	logLevel: 'warning',
+});
 
 // wp speech: jasper-speech.mjs (the speech-to-text worker, run as a child process by `transcription` jobs) next to
 // engine.mjs. onnxruntime-node (native binding) stays external like jasper-proc's.

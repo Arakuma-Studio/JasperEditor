@@ -11,6 +11,7 @@ import {
 	NativeRecipeSchema,
 	SourceRangeSchema,
 } from '../../schema/media.ts';
+import { LibraryProvenanceSchema } from '../../sound/provenance.ts';
 import { SourceFitSchema } from './clip.ts';
 import { ContentTimeInputSchema, cmd, IdListSchema, IdRefSchema, RefDeclSchema } from './common.ts';
 
@@ -61,6 +62,8 @@ export const MediaRegisterCmd = cmd('media.register', {
 		id: z.string().optional(),
 		importedAt: z.string().optional(),
 		derivation: MediaAssetSchema.shape.derivation.optional(),
+		/** sound-design: provenance of a library sound (spec 12 §2.1), validated like `media.setLibraryInfo`. */
+		library: LibraryProvenanceSchema.optional(),
 	}),
 	binId: IdRefSchema.nullable().optional(),
 	name: z.string().optional(),

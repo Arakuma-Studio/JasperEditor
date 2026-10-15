@@ -7,6 +7,7 @@ import {
 	type ProjectDocument,
 } from '../src/index.ts';
 import { Harness, makeCtx } from './helpers.ts';
+import { LIB } from './sound-fixtures.ts';
 
 const FUZZ = process.env.FUZZ === '1';
 const RUNS = FUZZ ? 10_000 : 2_000;
@@ -33,7 +34,8 @@ type Abstract =
 	| { k: 'inout'; a: number; b: number }
 	| { k: 'opacity'; clip: number; v: number; animate: boolean; frame: number }
 	| { k: 'addTrack'; audio: boolean }
-	| { k: 'update'; clip: number; enabled: boolean };
+	| { k: 'update'; clip: number; enabled: boolean }
+	| { k: 'library'; media: number; variant: number; title: string };
 
 const frame = fc.integer({ min: 0, max: 900 });
 const idx = fc.nat(1000);
@@ -97,6 +99,13 @@ const abstract: fc.Arbitrary<Abstract> = fc.oneof(
 	}),
 	fc.record({ k: fc.constant('addTrack' as const), audio: fc.boolean() }),
 	fc.record({ k: fc.constant('update' as const), clip: idx, enabled: fc.boolean() }),
+	// sound-design: media.setLibraryInfo with valid, removing, impossible and malformed provenance
+	fc.record({
+		k: fc.constant('library' as const),
+		media: fc.nat(2),
+		variant: fc.nat(4),
+		title: fc.string({ maxLength: 12 }),
+	}),
 );
 
 function concretize(a: Abstract, doc: ProjectDocument, media: string[]): unknown {
@@ -178,6 +187,16 @@ function concretize(a: Abstract, doc: ProjectDocument, media: string[]): unknown
 			return { type: 'track.add', kind: a.audio ? 'audio' : 'video' };
 		case 'update':
 			return { type: 'clip.update', clipId: pick(a.clip), patch: { enabled: a.enabled } };
+		case 'library': {
+			const library = [
+				{ ...LIB, title: a.title },
+				null,
+				{ ...LIB, descriptors: { ...LIB.descriptors!, peakSec: 5 } },
+				{ ...LIB, soundId: '' },
+				{ ...LIB, types: [a.title || 'x', 'hit'] },
+			][a.variant % 5];
+			return { type: 'media.setLibraryInfo', mediaId: media[a.media % media.length], library };
+		}
 	}
 }
 

@@ -71,6 +71,7 @@ for (const f of [
 	'jasper-speech.mjs',
 	'jasper-roto.mjs',
 	'jasper-camtrack.mjs',
+	'sound-worker.mjs',
 	'dejudder-worker.mjs',
 	'vidstab.wasm',
 	'VIDSTAB-WASM.json',
@@ -78,6 +79,8 @@ for (const f of [
 	'NOTICE-vidstab.txt',
 	'models',
 	'third-party',
+	// The sound library's bundled starter kit (spec 12 §2.1).
+	'sounds',
 ])
 	if (existsSync(join(engine, 'dist', f)))
 		cpSync(join(engine, 'dist', f), join(deploy, f), { recursive: true });

@@ -285,6 +285,30 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		},
 		binId: null,
 	},
+	// sound-design (spec 12 §2.1): provenance of a Sound Library sound (import_sounds writes it; this sets it by hand).
+	'media.setLibraryInfo': {
+		type: 'media.setLibraryInfo',
+		mediaId: { mediaByName: 'clip-a.mp4' },
+		library: {
+			soundId: 'snd_0123456789abcdef',
+			title: 'Impact Metal 03',
+			types: ['hit'],
+			source: { type: 'starter' },
+			license: 'CC0-1.0',
+			licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+			author: 'Kenney',
+			attribution: null,
+			descriptors: {
+				peakSec: 0.0123,
+				onsetSec: 0.011,
+				headQuietSec: 0.0105,
+				durationSec: 0.9,
+				octaveBandsDb: [-30, -25, -20, -18, -19, -24, -33],
+				centroidHz: 1820,
+				maxMomentaryLufs: -14.2,
+			},
+		},
+	},
 };
 
 /** A multi-command transaction showing temp refs. */

@@ -44,7 +44,11 @@ import {
 	type RouteName,
 	type RouteResponse,
 	type SceneDetectRequest,
+	type SoundIndexRequest,
+	type SoundRootsPutRequest,
+	type SoundSearchRequest,
 	type StillRequest,
+	soundSearchParams,
 	type UploadCreateRequest,
 	type UploadCreateResponse,
 	UploadOffsetMismatchSchema,
@@ -325,6 +329,40 @@ export class EngineClient {
 	/** S04:AS-011: searches a folder for offline assets (job `relink-scan`). */
 	relinkScan(projectId: string, req: RelinkScanRequest) {
 		return this.call('relinkScan', { params: { projectId }, body: req });
+	}
+	/** Sound library status: counts, starter kit, indexing (spec 12 §2.8). */
+	soundLibraryStatus() {
+		return this.call('soundsStatus');
+	}
+	/** Ranked library search with facets (`rankSounds`; commercial-safe licences unless `license: 'any'`). */
+	searchSounds(req: SoundSearchRequest = {}, signal?: AbortSignal) {
+		return this.call('soundsSearch', { query: soundSearchParams(req), ...(signal ? { signal } : {}) });
+	}
+	getSound(soundId: string) {
+		return this.call('soundGet', { params: { soundId } });
+	}
+	/** URL of a library sound's audio (for `<audio src>` / Web Audio auditioning). */
+	soundAudioUrl(soundId: string): string {
+		return this.url(buildPath(ROUTES.soundAudio.path, { soundId }));
+	}
+	/** Waveform peaks and spectrogram of a library sound (u8, base64). */
+	getSoundVisual(soundId: string) {
+		return this.call('soundVisual', { params: { soundId } });
+	}
+	/** Registers a library sound's file for a project; commit `media.register` with the returned `library`. */
+	registerSound(soundId: string, projectId: string) {
+		return this.call('soundRegister', { params: { soundId }, body: { projectId } });
+	}
+	/** Starts (or joins) a `sound-index` job. */
+	indexSounds(req: SoundIndexRequest = {}) {
+		return this.call('soundIndex', { body: req });
+	}
+	getSoundRoots() {
+		return this.call('soundRootsGet');
+	}
+	/** Replaces the user sound folders (local engines); an agent adding, removing or relicensing one is asked about. */
+	putSoundRoots(req: SoundRootsPutRequest) {
+		return this.call('soundRootsPut', { body: req });
 	}
 	registerMedia(req: MediaRegisterRequest) {
 		return this.call('mediaRegister', { body: req });

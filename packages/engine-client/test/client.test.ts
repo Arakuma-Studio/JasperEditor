@@ -117,6 +117,35 @@ describe('EngineClient requests', () => {
 		expect(c.mediaUrl('mk_abc', { peaks: 1 })).toBe('/media/mk_abc/peaks/1.bin');
 		expect(c.renderOutputUrl('job_1')).toBe('/renders/job_1/output');
 		expect(c.eventsUrl({ since: 5, projectId: 'p' })).toBe('/events?since=5&projectId=p');
+		expect(c.soundAudioUrl('snd_0123456789abcdef')).toBe('/api/sounds/snd_0123456789abcdef/audio');
+	});
+
+	it('searches sounds with a typed request and posts sound routes', async () => {
+		const empty = {
+			snapshotHash: 'h',
+			librarySize: 0,
+			total: 0,
+			offset: 0,
+			results: [],
+			facets: { types: {}, families: {}, licenses: {}, sources: {} },
+			indexing: false,
+		};
+		const m = mockFetch((url, init) => {
+			if (url.startsWith('/api/sounds?')) return json(empty);
+			if (url === '/api/sounds/index' && init.method === 'POST') return json({ ...job, kind: 'sound-index' });
+			if (url === '/api/sounds/roots' && init.method === 'PUT')
+				return json({ roots: [], local: true, job: null, removedSounds: 0 });
+			return json({ code: 'NOT_FOUND', message: 'nope', retryable: false }, 404);
+		});
+		const c = new EngineClient({ fetch: m.fetch });
+		expect(
+			(await c.searchSounds({ q: 'door slam', types: ['hit', 'thump'], sources: [], limit: 5 })).total,
+		).toBe(0);
+		expect(m.calls[0]!.url).toBe('/api/sounds?q=door%20slam&types=hit%2Cthump&limit=5');
+		expect((await c.indexSounds({ full: true })).kind).toBe('sound-index');
+		expect(JSON.parse(String(m.calls[1]!.init.body))).toEqual({ full: true });
+		expect((await c.putSoundRoots({ roots: [] })).removedSounds).toBe(0);
+		await expect(c.getSound('snd_0123456789abcdef')).rejects.toMatchObject({ code: 'NOT_FOUND' });
 	});
 });
 

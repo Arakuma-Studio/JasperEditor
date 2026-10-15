@@ -271,6 +271,9 @@ export const projectHandlers = {
 			mediaId = existing.id;
 			deduped = true;
 			h.warn('W_DEDUPED', `Already in project; added another reference to ${existing.id}`);
+			// sound-design: the same bytes registered from the Sound Library gain its provenance (never overwritten).
+			if (cmd.asset.library && existing.library === undefined)
+				existing.library = JSON.parse(JSON.stringify(cmd.asset.library)) as typeof existing.library;
 		} else {
 			mediaId = h.newId(doc, 'med', cmd.asset.id);
 			doc.media[mediaId] = {

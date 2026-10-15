@@ -164,6 +164,19 @@ import {
 } from './roto.ts';
 import { SceneDetectRequestSchema } from './scenes.ts';
 import {
+	RegisterSoundRequestSchema,
+	RegisterSoundResponseSchema,
+	SoundEntrySchema,
+	SoundIndexRequestSchema,
+	SoundLibraryStatusSchema,
+	SoundRootsPutRequestSchema,
+	SoundRootsPutResponseSchema,
+	SoundRootsResponseSchema,
+	SoundSearchQuerySchema,
+	SoundSearchResponseSchema,
+	SoundVisualSchema,
+} from './sounds.ts';
+import {
 	SpeechModelDeleteResponseSchema,
 	SpeechModelsResponseSchema,
 	TranscribeMediaRequestSchema,
@@ -1022,6 +1035,41 @@ export const ROUTES = {
 		path: '/api/reframe',
 		body: ReframeRequestSchema,
 		response: EngineJobSchema,
+	},
+
+	/** Sound library (spec 12 §2.1, §2.8): search with facets, one sound, its bytes and visual data. */
+	soundsSearch: {
+		method: 'GET',
+		path: '/api/sounds',
+		query: SoundSearchQuerySchema,
+		response: SoundSearchResponseSchema,
+	},
+	soundsStatus: { method: 'GET', path: '/api/sounds/status', response: SoundLibraryStatusSchema },
+	soundGet: { method: 'GET', path: '/api/sounds/:soundId', response: SoundEntrySchema },
+	/** The sound's audio file (audio MIME types only, `nosniff`, Range). */
+	soundAudio: { method: 'GET', path: '/api/sounds/:soundId/audio', response: 'binary', headers: ['range'] },
+	soundVisual: { method: 'GET', path: '/api/sounds/:soundId/visual', response: SoundVisualSchema },
+	/** Registers the sound's file as media for a project; the client commits `media.register` with `library`. */
+	soundRegister: {
+		method: 'POST',
+		path: '/api/sounds/:soundId/register',
+		body: RegisterSoundRequestSchema,
+		response: RegisterSoundResponseSchema,
+	},
+	/** (Re)index the library: a `sound-index` job (incremental unless `full`). */
+	soundIndex: {
+		method: 'POST',
+		path: '/api/sounds/index',
+		body: SoundIndexRequestSchema,
+		response: EngineJobSchema,
+	},
+	/** User sound folders (local mode only). Adding, removing or relicensing one asks an agent's user first. */
+	soundRootsGet: { method: 'GET', path: '/api/sounds/roots', response: SoundRootsResponseSchema },
+	soundRootsPut: {
+		method: 'PUT',
+		path: '/api/sounds/roots',
+		body: SoundRootsPutRequestSchema,
+		response: SoundRootsPutResponseSchema,
 	},
 } as const satisfies Record<string, RouteDef>;
 
