@@ -323,29 +323,28 @@ e2e run, reproduced in a unit test).
 and preview defects), Phase 1 (a licensed, offline sound library that users and agents search, look at, audition and
 insert peak-aligned with provenance and credits), then cues and placement (P2), proposals and review (P3), mixing (P4),
 Sound Check (P5), packs and more cue sources (P6).
-**Status (on `feat/sound-design`, not merged to `main`):** partial — Phases 0 and 1 done; Phase 2 in progress (see below; the
-`/api/sound-design/cues` route and the five MCP cue tools are in, WP2.3); Phases 3–6 not started. See
-[wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 1 verification": the Sound Library panel and Sound Design
+**Status (on `feat/sound-design`, not merged to `main`):** partial — Phases 0, 1 and 2 done; Phases 3–6 not started.
+See [wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 1 verification": the Sound Library panel and Sound Design
 workspace, the engine library (60-sound Kenney CC0 kit, user folders with a declared licence, Jasper Synth), ten MCP
-tools, credits; inserts land on the frame to the sample (library sounds are registered with 50 ms of lead silence;
-rerun: `e2e/sound-library.spec.ts` measures 0 samples of error on an ffmpeg-decoded export for five kit sounds;
-`apps/mcp/test/sound.test.ts` asserts `errorFlicks` 0); search over 5 000 sounds 7–15 ms at load ≈ 30
-(`apps/engine/test/sounds-search.test.ts`). Schema v7 (D-50). Limits: no keyboard-key recording in the kit (`key` is
-synth only); sounds over 120 s keep the ≤ 1-frame placement rule; In Context audition, cues and the Palette are
-Phase 2–3. Phase 2 in progress: the cue model and commands (WP2.1), derivation (WP2.2) and the Timeline's Cue Seam,
-Suggest Cues… dialog and peak handle (WP2.4a, `e2e/sound-cues.spec.ts`) are on the branch; WP2.4b added filling cues
-from the library (Enter, drop on a glyph, Fill With ▸, Fill Unfilled Cues), Replace mode, variation cycling coalesced
-into one undo step, linked layers, the In Context audition, clip badges, Essential Sound and Properties sections and
-Detect Peak (`e2e/sound-fill.spec.ts`: three filled cues measured at 0–1 sample from their cue frame in a native
-export). Limits (WP2.4b wp-note): variation cycling acts on the whole linked selection; Fill Unfilled Cues applies
-directly until Phase 3 proposals; Detect Peak analyses at most 2 min of a clip; Auto gain / Room send are Phase 4. The Phase 2
-model review (wp-note "Phase 2 verification: model review") fixed six defects with failing-first tests (repair
-idempotence, swap at frame 0 and over fades, split SFX clips and their cue, history coalescing across undo, cue id
-bound); known limits: a copied SFX clip keeps its cue link without filling the cue, `pitchSt: 0` after a fractional
-varispeed shift keeps up to ±0.5 st, razoring inside any transition's span fails with `E_INVARIANT`. The
-Phase 2 web verification (wp-note) fixed the In Context exit paths, variation runs, seam / peak drags, Suggest Cues with
-expressions and mode pruning with failing-first tests; known limit: the key that ends an In Context audition is not also
-run when the held gesture disabled its command (the first Ctrl+Z only stops the audition).
+tools, credits; inserts land on the frame to the sample (library sounds are registered with 50 ms of lead silence, and
+since Phase 2 every lossy one as PCM; rerun: `e2e/sound-library.spec.ts` measures 0 samples of error on an
+ffmpeg-decoded export for five kit sounds); search over 5 000 sounds 7–15 ms at load ≈ 30
+(`apps/engine/test/sounds-search.test.ts`). Schema v7 (D-50). **Phase 2** (cues and placement; wp-note "Phase 2
+verification", requirement table with evidence): the cue model and commands, `deriveCues` from every project source,
+the `/api/sound-design/cues` route and five MCP cue tools, the Cue Seam, Suggest Cues…, Fill / Fill Unfilled Cues,
+Replace mode, variation cycling (one undo step), linked layers, the In Context audition, badges, Essential Sound /
+Properties sections. Rerun: `e2e/sound-p2-done.spec.ts` (the spec's "Done when" on the Phase 2 fixture: Suggest Cues
+gives the same 17 cues as the engine route, fill, variations, layer, exact undo / redo, and 18 aligned points measured at
+−1 … +1 sample from their cue frames in the export), `apps/engine/test/sound-placement-export.test.ts` (7 sequence
+rates, 0 samples; varispeed ±2 % ≤ 1 sample), `apps/mcp/test/sound-cues.test.ts`; the verification pass fixed 37
+defects, 36 with a regression test that failed before the fix (model review 6, agent surfaces 6, web UI 21, lead 4;
+listed in the wp-note). Limits: no keyboard-key recording in the kit (`key` is synth only); sounds over 120 s keep the
+≤ 1-frame placement rule and, when lossy, can play up to 128 samples late after an In point; Fill Unfilled Cues
+applies directly until Phase 3 proposals; Detect Peak analyses at most 2 min of a clip; Auto gain / Room send / levels
+are Phase 4 (kit sounds at 0 dB overlap above 0 dBFS); `pitchSt: 0` after a fractional varispeed shift keeps up to
+±0.5 st; razoring inside a transition's span fails with `E_INVARIANT` for any clips (edit-structure, not sound);
+Essential Sound Role / Align radio groups have no arrow-key navigation; "Undo <label>" in the Edit menu is composed in
+English (every feature).
 
 ### Not covered by any workstream yet
 

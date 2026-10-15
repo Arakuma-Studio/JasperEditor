@@ -2854,6 +2854,151 @@ that run.
   (`soundDesign.swap` renames when the name is the old file name).
 - Auto gain with its reason, Room send and Stop before next in Essential Sound are Phase 4 (P4 owns the levels).
 
+### Phase 2 verification
+
+Branch `feat/sd-p2-verify` (from `feat/sound-design` 780670c4). Three review passes ran in parallel on their own
+branches and were merged here: the model and history (`feat/sd-p2v-model`), the agent surfaces and model-string i18n
+(`feat/sd-p2v-agent`) and the web UI (`feat/sd-p2v-web`); their findings are the three sections below. This section is
+the requirements audit, the lead's own fixes, the real-app and agent runs and the gate. Every fix, here and below, has
+a regression test that was run against the unfixed code and failed there. Shared host, 16 cores; the load is stated
+per run.
+
+#### Requirements (spec 12 Phase 2) with evidence
+
+| Req | What | Where | Evidence (all pass on this branch) |
+|---|---|---|---|
+| P2-R1 | `soundDesign`, `SoundCue`, `CueAnchor`, `AudioClip.sfx`, repair (dangling anchors → null with a note, missing placed clips, `sfx.cueId` → null, frames clamped; idempotent; no schema bump) | `packages/project/src/schema/sound.ts`, `sound/repair.ts`, `invariants.ts` (INV-SOUND / INV-SFX), `migrations.ts` | `sound-cue-commands.test.ts` (repair of unreadable data, dangling anchors, pruned / unlinked clips, shared ids, 300-run `loadProject` property), `sound-p2v-model.test.ts` (repair twice = once over hostile values; ordinary edits never `E_INVARIANT`; the two-way cue link), `fuzz.test.ts` (AC-25 with the sound commands) |
+| P2-R2 | `soundCue.add / update / remove / resync`, `soundDesign.place / swap / setPalette` (+ `setSettings`, `setPeak`, `setRole`), undo, redo, refusals | `commands/schemas/sound.ts`, `commands/handlers/sound.ts`, `catalog.ts`, `apps/mcp/src/examples.ts` | `sound-cue-commands`, `sound-design-place`, `sound-swap-role`, `sound-set-peak`, `sound-p2v-model` (undo / redo of all ten commands; every refusal code each can return: `E_NOT_FOUND`, `E_INVALID_PARAM`, `E_TRACK_KIND`, `E_TRACK_LOCKED`, `E_OVERLAP`, `E_SCHEMA`, `E_LIMIT`, the document unchanged), `apps/mcp/test/sound-examples.test.ts` (every example applies) |
+| P2-R3 | `deriveCues` from every project source (edits, transitions, keyframes, text, mg, clip edges, 3D cameras, markers), merge within 2 frames, budgets; never throws, respects budgets on fuzzed documents | `packages/project/src/sound/cues/*` | `sound-cues.test.ts`, `sound-cues-property.test.ts` (generated documents: never throws, integer frames in range, sorted, deterministic, ≤ the density's cues per 1 s window, heroes spaced; testkit fuzz with hostile options), `sound-p2v-model.test.ts` (same cues whatever the storage order), the sampling budget test (agent review) |
+| P2-R4 | placement math §2.3: `sourceIn ≥ 0`, error ≤ 1 frame, exact sample when the head is quiet; verified on exported audio at 23.976, 25, 29.97 DF, 30, 50, 59.94, 60 | `sound/place.ts`, `sound/insert.ts`, `apps/engine/src/sounds/pad.ts` | `sound-place.test.ts` (3 000-run property + 1 000 at the NTSC rates), `sound-design-place.test.ts` (150-run property through the command), `apps/engine/test/sound-placement-export.test.ts`: 28 clicks at the 7 rates exported (native, 24-bit PCM) and decoded: **0 samples** each; new here: the ±2 % variation and +3 st varispeed, **≤ 1 sample** (mutation: placing without dividing by the rate fails it by 262–3 439 samples) |
+| P2-R5 | layers (separate SFX tracks, grouped / linked), rotation (`pickVariant`), ±2 % / ±1 dB variation, pitch (varispeed ≤ 3 st, else Pitch Shifter), pan (static, keyframed sweep), auto tracks, `soundCue.resync` | `handlers/sound.ts`, `sound/variant.ts`, `sound/anchor.ts` | `sound-design-place.test.ts` (layers, auto / preferred tracks, pitch, pan, `pickVariant` round robin + 500-run property), `sound-p2v-model.test.ts` (pitch at exactly ±3 st, resync after trims / speed changes, a clip in two cues moves once, split clips), `sound-placement-export.test.ts` (varispeed on export) |
+| P2-R6 | `POST /api/sound-design/cues`; MCP `find_sound_cues`, `set_sound_cues`, `place_sound` (apply), `swap_sound`, `align_peak` | `apps/engine/src/routes/sound-design.ts`, `packages/api/src/sound-design.ts`, `apps/mcp/src/tools/sound-design.ts` | `apps/engine/test/sound-design-cues.test.ts` (fixture with the real template registry, typed 4xx, fuzz, auth, **the web planner and the route give the same cues** for four option sets), `apps/mcp/test/sound-cues.test.ts` (real engine, stdio; strict arguments; swap cycling across calls), `readme-tools`, `conventions`, `sound-guide`, `fuzz` (MCP) |
+| P2-R7 | Cue Seam (glyphs, states, editing, keyboard), Suggest Cues…, Fill (Enter, drop on a cue), peak handle, peak snapping, variation cycling with coalesced history, Add Layer…, Link / Unlink, In Context audition, clip badges, clip context menu, menus, shortcuts, Properties "Cue" / "Sound" | `apps/web/src/sound/**`, `commands/sound-{cues,design}.ts`, `keymap-defaults.ts`, `shell/menus/model.ts`, timeline `layout` / `snapping` / `gestures` | `sound-cue-seam-model`, `sound-cue-seam`, `sound-cue-commands`, `sound-fill-swap`, `sound-fill-ui`, `sound-i18n`, `sound-p2v-{in-context,variation,seam,suggest}` (web), `packages/session/test/session.test.ts` (coalescing), `keymap.test.ts` (no conflicts in any preset), `e2e/sound-cues.spec.ts`, `e2e/sound-fill.spec.ts` |
+| Done when | on a fixture with a push, a keyframed logo, a text animator and cuts: Suggest Cues finds each event with a reason; fills land on the cue frames in the exported audio; undo / redo everywhere; an agent can do the same | `e2e/sound-p2-done.spec.ts` (new), the MCP run below | measured below (user and agent paths, two export paths) |
+
+Definition of Done items for this phase: model + schema + repair (P2-R1); undoable commands with refusal tests
+(P2-R2); UI wired with menus (Sequence ▸ Sound Design, Markers, Clip ▸ Audio Options, cue and clip context menus) and
+Premiere-style shortcuts without conflicts (`keymap.test.ts`; Alt+Shift+C, Alt+Shift+S, Ctrl+Alt+. / , and Ctrl+Alt+P,
+explicit Opt+Cmd on mac; none of Alt+M, `[` / `]`, Alt+Shift+< / >); preview and every export path render it (placed
+sounds are ordinary audio clips with speed, gain, pan keyframes and the Pitch Shifter: measured on the native and
+the Remotion exports below; cue data are metadata only); MCP tools with README list (338 tools), `SOUND_GUIDE` and
+examples; tests (unit, property / fuzz for untrusted input, oracle against ffmpeg-decoded exports); run in the real
+app with screenshots looked at; no new assets; i18n (es.json complete, History labels and model refusals in
+Spanish through the model-strings mechanism, agent review); design tokens (`check-tokens`); this wp-note.
+
+#### Fixes made in this pass (lead)
+
+- **Lossy library sounds played up to 2.7 ms late (found in the real MCP run).** A starter-kit Ogg Vorbis sound whose
+  head is already quiet (≥ 50 ms) was registered as the Ogg itself. Its descriptors (the peak) are measured on the full
+  decode, but every export path seeks into the file for a clip whose In point is not 0, and ffmpeg's seeked Vorbis
+  decode is 128 samples off its full decode: "Blade swish" on the mg exit cue measured **+129 samples** in the Remotion
+  export of the Phase 2 fixture (every other point ≤ 1). `SoundService.register` now writes a PCM WAV copy of any
+  non-PCM sound of ≤ 120 s (no silence added when the head is quiet; `pad.ts` takes 0 samples). Regression:
+  `sounds-routes.test.ts` "an Ogg Vorbis sound with a quiet head becomes a WAV copy whose samples are its full decode"
+  (failed before: registered in place, same fingerprint); after the fix the same run measured 0–1 sample everywhere.
+  Sounds over 120 s (beds) stay as they are (limit below).
+- **A copy of a filled SFX clip acted as the cue's filler** (reported, left open by the model review; decided here):
+  the cue link is two-way — a clip fills a cue only when the cue's `placedClipIds` lists it. Swap no longer rewrites the
+  cue's sound list from a copy, `setPeak` does not measure a copy against the cue, web `cueOfClip` and the MCP tools
+  (agent review) follow the rule, and loading clears the one-way id with a note. Regression: `sound-p2v-model.test.ts`
+  "swap / setPeak on a copy leave the cue alone; loading clears the copy's cue id" (failed before: the cue's
+  `soundIds` changed).
+- **MCP `swap_sound` next / previous alternated between two sounds forever** for a sound placed without alternates
+  (found in the real run; fixed by the agent review, and the same cross-run drift in the web by the web review).
+- `e2e/sound-fill.spec.ts` did not typecheck (`pnpm e2e:typecheck`: `Sfx` lacked `alternatives`).
+- **The first key pressed during an In Context audition only ended it** (web review's open item: Ctrl+Z did not undo).
+  The keymap dispatcher gained a pre-key hook (`onBeforeKey`, `shell/keymap/dispatcher.ts`) and the audition ends
+  itself there, before the key resolves. Regression: `sound-p2v-in-context.test.tsx` "Ctrl+Z ends the audition and
+  undoes the last edit in the same press" (failed before: nothing undone).
+- **A cue stored under the key `__proto__` loaded as an invalid project** (found by the model review's repair property in
+  the gate run, seed −51879175): zod's record parser skips a `__proto__` key, so INV-SOUND passed the sound design
+  without reading that cue; repair kept it (renamed) and the loaded document failed INV-SOUND (`frame` undefined).
+  `soundDesignIssue` now flags a record whose parsed cues are fewer than its own keys, so the lenient reader drops or
+  reads the cue. Regression: `sound-p2v-model.test.ts` 'a cue stored under the key "__proto__"' (failed before with the
+  INV-SOUND issue); the property then passed 3 more full runs.
+- **Variation runs and the selection** (decision): the web review made any selection change close a run, which broke
+  the WP2.4b e2e (Esc to stop the audition on swap, a click on the clip, the next press: "Swap Sound" instead of "Swap
+  Sound ×2"). Now a selection of *other* clips closes the run (even if the user comes back before pressing); an empty
+  selection or the same clips again continue it. `sound-p2v-variation.test.tsx` was changed to that decision (failed
+  before the change with 5 entries instead of 4).
+- New coverage: `e2e/sound-p2-done.spec.ts` (the "Done when" end to end) and the varispeed export oracle.
+
+#### Real app and agent runs (measured)
+
+- **Built stack** (`pnpm build`; `E2E_PORT=49705 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-cues.spec.ts
+  e2e/sound-library.spec.ts e2e/sound-fill.spec.ts e2e/sound-p2-done.spec.ts`; load 31–108): on the final code all
+  **6 tests pass** — sound-cues 1 and sound-library 3 in one run, sound-fill 1 and sound-p2-done 1 in the run after the
+  variation-run fix (the run before it failed both at "Swap Sound ×2", which is how that regression was found).
+  `sound-fill` measured its three single-layer fills at 0, +1 and 0 samples from their cue frames (native export);
+  `sound-library` its five inserts at 0 samples.
+- **`e2e/sound-p2-done.spec.ts`** on the Phase 2 fixture (`apps/mcp/test/sound-cues-fixture.ts`: cuts at 90 / 330, a
+  20-frame push at 180, a logo keyframed 200 → 1010 → 960 px, a typewriter title, a lower third, an `sfx: boom+swoosh`
+  marker; 29.97 fps): Sequence ▸ Sound Design ▸ Suggest Cues… "17 cues: 1 hero, 15 support, 1 ambient" (edits 2,
+  transitions 1, keyframes 2, text 8, motion graphics 2, edges 1, markers 1; every cue has a reason) → `POST
+  /api/sound-design/cues` on the live document returns **the same 17 cues** (frame, kind, weight, anchor) and matches each
+  to the stored one → Fill Unfilled Cues: ONE History entry, every cue filled, each aligned point in [cue, cue + 1 frame)
+  → Next Variation ×2 = ONE entry "Swap Sound ×2"; one Ctrl+Z restores the sequence **exactly** (canonical JSON), redo
+  the swapped one → Add Layer… (linked, another track, same point) → three undos give the sequence before the fill
+  exactly, three redos the final one → export (the planner chose Remotion: the lower third needs the fframes renderer,
+  which the e2e build lacks) decoded with ffmpeg; each fill's media, varispeed like its clip, located by normalised
+  cross-correlation over 50 ms around its aligned point: **18 points, −0.8 … +1 sample** from where the document puts
+  them, all on their cue frames (r 0.55–1.0 for sounds alone; 0.26 for a click under a louder layer, lag still 0).
+- **Agent path** (built engine on 49703, fresh appdir, full kit + 19 synth; jasper-mcp from source over stdio; scratch
+  client): `find_sound_cues` → **the same 17 cues as the editor's Suggest Cues** (frames, kinds, weights, types and
+  reasons identical; the MCP project is 30 fps, the editor's 29.97); `set_sound_cues` all 17 in one transaction
+  ("Sound Cues (add 17)"); `place_sound {cueId, layers: [{sound: {type}}]}` for each (the marker with boom + whoosh):
+  every clip `errorFlicks` 0, `peakFrame` = cue; `swap_sound` next ×3 → three different sounds (index 2, 3, 4 of 24),
+  previous ×3 → back to the original (before the fix: A, B, A, B and `E_OVERLAP`); `start_export` (Remotion) decoded:
+  **18 points, −1 … +1 sample** (before the Ogg fix: one at +129). Mix peak 0.95 (true peak +3 dBTP in another run: levels
+  are Phase 4).
+- **Varispeed on both export paths** (scratch, same engine): a click 0.45 s into a sound placed at rates 0.98, 0.9817,
+  1, 1.0123, 1.02, exported native and Remotion as 24-bit PCM: sub-sample peak 0, −0.65, 0, +0.18, 0 samples from the cue
+  on **both** paths (identical). An earlier e2e run's +10 samples on a broadband whoosh was a correlation artefact (r 0.90;
+  the click measurement shows the placement is exact).
+- **Looked at** (`test-results/e2e-sound-p2-done/`, `e2e-sound-fill/`, `e2e-sound-cues/`): the Suggest Cues dialog with
+  per-source counts; the final timeline (Cue Seam with 17 glyphs and connectors to the clips on A4, Essential Sound ▸
+  Sound Design "Layer 1 of 2", toast "Added Heavy metal hit as a layer of the Support Cut cue at 00;00;03;00 on A5");
+  the Program chip "Auditioning: Crunchy impact" with the candidate drawn in the transient timeline; the cue menu with
+  Fill With ▸ five ranked sounds; the seam after Suggest Cues with the Properties "Cues · 14 cues selected".
+
+#### Gate
+
+Shared host, 16 cores; other agents' load stated per run.
+
+- **Gate 1**, `pnpm verify` on `feat/sound-design` 780670c4 before any change (load 8 → 43): lint, typecheck, test (626
+  files: 576 passed, 50 skipped; **6 006 tests passed, 0 failed**, 392 skipped; 970 s) and build passed; 21 min 41 s.
+  `pnpm notices --check` current; `pnpm e2e:typecheck` failed (`e2e/sound-fill.spec.ts`), fixed.
+- **Gate 2** (the merged branch): typecheck failed on the lead's own new test — its assertion read a field the History
+  view does not have, so it passed vacuously; with a real assertion it failed, which is how the In Context key fix
+  above was found.
+- **Gate 3**, `pnpm verify` at ddefa773 (all reviews merged; load 82 → 124): lint and typecheck passed; test 633 files:
+  579 passed, 5 failed, 49 skipped; **6 101 tests passed, 6 failed**, 388 skipped (55 min). One failure was real: the
+  model review's repair property found the `__proto__` cue (fixed, 399482d9). Five were timeouts outside sound design:
+  `tracking` "lands on the exact frames after an input seek" (5 s), `time-export` VFR (180 s), `gaps-avc3-playback`
+  (36 of 45 frames seen in Electron), `camtrack-solve` ×2 (120 s / 180 s). Rerun alone (`--maxWorkers=1`, load 65–100):
+  tracking, time-export and gaps-avc3-playback pass; camtrack-solve timed out again (140 s / 120 s, 366 s / 240 s), then
+  passed alone at load 55–79 (**12 / 12**, 9 min). So every gate-3 failure is either fixed or passes alone. This branch changes no engine code outside `apps/engine/src/sounds/{pad,service}.ts` (`git diff
+  780670c4..HEAD -- apps/engine/src`), and camtrack-solve passed in gate 1.
+- **After the last fixes** (after gate 3 only `packages/project/src/schema/sound.ts` and `apps/web/src/sound/swap.ts`
+  changed): `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; `pnpm vitest run --project
+  @jasper/project --project @jasper/session --project @jasper/web --project @jasper/mcp --maxWorkers=4` (load 58–80):
+  **333 files passed (2 skipped), 3 392 tests passed, 0 failed**; the engine and MCP sound suites after the Ogg fix (`sounds-*`,
+  `sound-design-cues`, `sound-placement-export`, `apps/mcp/test/sound*.test.ts`): 9 files, 87 passed; after the
+  merges the sound set (project, session, MCP, engine route, web sound and i18n tests): 56 files, 804 of 805 passed, the
+  one failure an MCP test precondition the two-way link changes (adjusted, rerun 6 / 6); the e2e above; `pnpm notices --check` current (150 packages, 31 ported
+  records); `node scripts/i18n.mjs --check`: es.json covers all 9 177 strings; README lists 338 tools.
+
+#### Limits (after this pass)
+
+- Sounds over 120 s (beds) are registered as they are: a lossy one seeked by an In point can play up to 128 samples
+  (Vorbis) late, and the ≤ 1-frame rule applies to their peak / end alignment.
+- `pitchSt: 0` after a fractional varispeed shift keeps up to ±0.5 st (model review).
+- Razoring inside a transition's span fails with `E_INVARIANT` for any clips (`clip.split`, edit-structure; not sound).
+- Essential Sound Role / Align radio groups have no arrow-key navigation (web review).
+- `set_sound_cues`' label counts skipped (already stored) suggestions in "add n"; "Undo <label>" in the Edit menu is
+  composed in English for every feature (agent review).
+- Levels: kit sounds at 0 dB overlap above 0 dBFS (true peak +3 to +5 dBTP measured in these runs): Phase 4.
+
 ### Phase 2 verification: model review (`feat/sd-p2v-model`)
 
 A review of the cue model, placement commands, repair and coalesced history for real bugs; each fix came with a
@@ -2882,8 +3027,8 @@ run undoes to the exact document before its first step, redoes to its last, and 
 
 Not fixed (reported): razoring inside a transition's span fails with `E_INVARIANT` (INV-010) for any clips, not only
 sound (`clip.split`, edit-structure); a copied / duplicated / pasted SFX clip keeps its `sfx.cueId` without being one
-of the cue's placed clips (resync does not move it, a swap of it rewrites the cue's `soundIds[layer]`) — whether a
-copy should forget its cue is a design call; `soundDesign.swap {pitchSt: 0}` after a fractional varispeed shift
+of the cue's placed clips (resync does not move it, a swap of it rewrites the cue's `soundIds[layer]`) — decided and fixed by
+the lead (the cue link is two-way, "Phase 2 verification" above); `soundDesign.swap {pitchSt: 0}` after a fractional varispeed shift
 (e.g. 2.5 st) keeps up to ±0.5 st, because the seeded variation and a fractional shift cannot be told apart from the
 clip speed alone (the pitch is not stored).
 
