@@ -1557,14 +1557,23 @@ Production owner(s), relative to `packages/audio-fx/src/` unless absolute repo p
 
 ### REWRITE — every catalogue entry has exactly one processor with matching params
 
-- B1: docs/wp-notes/audio-fx.md §§1,5; ARCHITECTURE D-42; published RBJ/GMR/filter/pitch laws and the public AudioProcessor contract. Contract exercised: every catalogue entry has exactly one processor with matching params.
-- B2: A caller receives incorrect audio samples, analysis, protocol bytes or parameter results for the named input; the corresponding value/state assertion fails.
-- B3: Expected results come from fixed parameter-selected output values or independently specified acoustic laws; partition/reset equality checks stream semantics. Response-vs-audio assertions check the documented editor-curve promise against actual processed samples, not against a private collaborator. They can disagree with production.
-- B4: createProcessor/AudioProcessor samples, responseDb, transferDb, meters, latency and reset; core public primitives only for distinct numeric contracts.
-- B5: Keeps the contract across internal renames/reorganization, alternative algorithms and helper call changes; does not pin collaborator calls or source text.
-- B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
+- B1: The documented `createProcessor` API returns null for an unknown effect ID; `AudioProcessor.setParam` returns false for an unknown parameter name.
+- B2: Accepting an unknown processor or parameter makes the literal refusal assertion fail.
+- B3: The expected null/false results come from those public API promises, independently of the registry and parameter implementation.
+- B4: Calls `createProcessor` and the returned processor's `setParam`; real consumers are the effect chain, audio host and editor controls.
+- B5: Factory storage, registry organization and parameter internals can change without affecting the assertions.
+- B6: Lowest public refusal owner; per-effect audio output cases protect supported effects, not unknown-ID handling.
 - Rewrite: Drop catalogue/default/key-shape inventories and numericDefault self-oracle; retain public refusal of unknown processor/parameter ids.
 - Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
+
+Final caller/coverage census confirms all 60 current public effects have retained
+explicit-ID output or response scenarios outside `processorIds()` discovery:
+filter/EQ 18, dynamics 6, restoration 6, delay/modulation 6, reverb/pitch 4,
+special 7 and stereo/channel 13. Removing an existing factory therefore fails a
+behavioral scenario. Phaser's retained explicit scenario checks dry-mix identity;
+the deleted private sweep calculation never established wet-output correctness.
+New effects need their own behavioral owner. Remove the registry comment's stale
+claim that tests prove internal factory uniqueness; no inventory is restored.
 
 ### KEEP — output is independent of the block size, with a parameter change mid-stream
 
