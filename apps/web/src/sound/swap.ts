@@ -5,9 +5,10 @@
 // Variation cycling walks a per-clip list — the clip's alternatives (stored by Fill / agents), then sounds of the same
 // family, then the nearest descriptors (engine `similarTo`) — with the original sound at index 0. Repeated presses on
 // the same clips coalesce into ONE history entry "Swap Sound ×4" (the session's coalescing with no time window and a
-// changing label); the run closes on any other edit (the document revision moves), another selection or another
-// sequence. Presses that arrive while a step is running are added up and applied as one step. With "Audition on swap"
-// (default on) the 2 s around the swapped sound play in context afterwards.
+// changing label); the run closes on any other edit or undo (the document revision moves), any selection change or
+// another sequence. A step that fails leaves the run where it was. Presses that arrive while a step is running are
+// added up and applied as one step. With "Audition on swap" (default on) the 2 s around the swapped sound play in
+// context afterwards.
 import type { EngineClient } from '@jasper/engine-client';
 import type { Clip, Command, Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -28,12 +29,20 @@ import { soundLibraryPrefs } from './prefs.ts';
 
 export class SwapError extends Error {}
 
-/** Clips a swap or variation step can act on: audio clips that carry `sfx` or play a library sound. */
+/**
+ * Clips a variation step can act on: audio clips that play a library sound or carry alternatives to cycle through.
+ * Project audio with a detected peak carries `sfx` too, but has no variation (no library sound, no alternatives).
+ */
 export function swappableClips(session: EditorSession, seq: Sequence, ids: readonly string[]): Clip[] {
 	const doc = session.getCommitted();
 	return ids
 		.map((id) => seq.clips[id])
-		.filter((c): c is Clip => !!c && c.kind === 'audio' && (!!sfxOf(c) || !!clipProvenance(doc, c)));
+		.filter(
+			(c): c is Clip =>
+				!!c &&
+				c.kind === 'audio' &&
+				(!!clipSoundId(doc, c) || !!clipProvenance(doc, c) || alternativesOf(seq, c).length > 0),
+		);
 }
 
 /**
@@ -137,6 +146,8 @@ type Run = {
 	/** Session revision after our last step: anything else moves it and closes the run. */
 	revision: number;
 	nonce: number;
+	/** Stops watching the selection (any selection change after a step closes the run). */
+	unwatch: () => void;
 };
 
 let run: Run | null = null;
@@ -144,9 +155,14 @@ let nonce = 0;
 let busy: Promise<void> | null = null;
 let pendingSteps = 0;
 
+function closeRun(): void {
+	run?.unwatch();
+	run = null;
+}
+
 /** Forgets the run (tests; the next press starts a new history entry). */
 export function resetVariationRun(): void {
-	run = null;
+	closeRun();
 	pendingSteps = 0;
 }
 
@@ -224,32 +240,56 @@ async function step(
 	const ids = clips.map((c) => c.id).sort();
 	const key = `${seq.id}|${ids.join(',')}`;
 	if (!run || run.key !== key || run.revision !== session.revision) {
+		closeRun();
 		const lists = new Map<string, { ids: string[]; index: number }>();
 		for (const c of clips) {
 			const list = await variationCandidates(session, engine, seq, c);
 			lists.set(c.id, { ids: list, index: 0 });
 		}
-		run = { key, sequenceId: seq.id, clipIds: ids, lists, steps: 0, revision: -1, nonce: ++nonce };
+		run = {
+			key,
+			sequenceId: seq.id,
+			clipIds: ids,
+			lists,
+			steps: 0,
+			revision: -1,
+			nonce: ++nonce,
+			unwatch: () => undefined,
+		};
 	}
 	const current = run;
+	// this step's own transaction may report a selection change (the selection re-filtered): not the user's
+	current.unwatch();
+	current.unwatch = () => undefined;
 	const swaps: { clipId: string; entry: LibraryEntryLike }[] = [];
+	const nextIndex = new Map<string, number>();
 	for (const id of current.clipIds) {
 		const l = current.lists.get(id);
 		if (!l || l.ids.length < 2) continue;
 		const n = l.ids.length;
 		const next = (((l.index + steps) % n) + n) % n;
-		l.index = next;
+		nextIndex.set(id, next);
 		swaps.push({ clipId: id, entry: { id: l.ids[next]! } });
 	}
 	if (!swaps.length) return { ok: false, message: t('No other variation of this sound in the library') };
-	current.steps += Math.abs(steps);
-	const label = current.steps > 1 ? t('Swap Sound ×{0}', current.steps) : t('Swap Sound');
+	const total = current.steps + Math.abs(steps);
+	const label = total > 1 ? t('Swap Sound ×{0}', total) : t('Swap Sound');
+	// a step that fails (engine offline, a refused swap) throws here: the run keeps its position and count
 	await swapSounds(session, engine, current.sequenceId, swaps, {
 		label,
 		coalesceKey: `variation:${current.nonce}`,
 	});
+	for (const [id, index] of nextIndex) current.lists.get(id)!.index = index;
+	current.steps = total;
 	current.revision = session.revision;
 	auditionAfterSwap(session, current.sequenceId, swaps[0]!.clipId);
+	// another selection (even of the same clips again) closes the run: the next press is a new history entry
+	if (run === current) {
+		const off = session.on('selection.changed', () => {
+			if (run === current) closeRun();
+		});
+		current.unwatch = () => off();
+	}
 	const doc = session.getCommitted();
 	const first = doc.sequences[current.sequenceId]?.clips[swaps[0]!.clipId];
 	const l0 = current.lists.get(swaps[0]!.clipId)!;
