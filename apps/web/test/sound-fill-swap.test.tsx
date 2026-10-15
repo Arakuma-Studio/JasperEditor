@@ -20,7 +20,7 @@ import {
 	requestCueFill,
 } from '../src/sound/controller.ts';
 import { cuesOf } from '../src/sound/cues/model.ts';
-import { alignedFrameOf, layersOf, sfxOf } from '../src/sound/design-model.ts';
+import { alignedFrameOf, clipSoundLabel, layersOf, sfxOf } from '../src/sound/design-model.ts';
 import { detectClipPeak } from '../src/sound/detect-peak.ts';
 import { fillCueWithSound, fillUnfilledCues } from '../src/sound/fill.ts';
 import { auditionInContext, inContextStore, stopInContext } from '../src/sound/in-context.ts';
@@ -40,8 +40,8 @@ afterEach(() => {
 
 type SfxClip = AudioClip & { sfx?: ClipSfx };
 
-function harness(entries: SoundEntry[] = defaultEntries()) {
-	const { session, seqId } = makeSession();
+function harness(entries: SoundEntry[] = defaultEntries(), preset?: string) {
+	const { session, seqId } = makeSession(preset ? { preset } : {});
 	const fake = fakeSoundEngine(entries);
 	const toasts: ToastRequest[] = [];
 	const ctx: CommandCtx = createCommandContext({
@@ -401,6 +401,25 @@ describe('clip commands', () => {
 		await h.run('sound.addToPalette');
 		expect((h.seq().soundDesign as { settings?: { palette?: string[] } }).settings?.palette).toEqual([]);
 		expect(h.labels().at(-1)).toBe('Remove from Palette');
+	});
+
+	it('at 29.97 fps a point placed on a frame is that frame (not 74.9999…): labels, Align Peak, layers agree', async () => {
+		const h = harness(defaultEntries(), 'dv-ntsc');
+		const cueId = h.addCue(75);
+		const entry = (await h.fake.client.searchSounds({})).results[0]!.sound;
+		const r = await fillCueWithSound(h.session, h.engine, entry, { sequenceId: h.seqId, cueId });
+		expect(pointAt(h, r.clipId)).toBe(75);
+		expect(clipSoundLabel(h.session.getCommitted(), h.seq(), h.clip(r.clipId))).toBe(
+			`${entry.title} on A4 at 00;00;02;15`,
+		);
+		h.session.select('timeline', [r.clipId], 'replace');
+		h.session.transport.seek(100);
+		await h.run('sound.alignPeakToPlayhead');
+		expect(pointAt(h, r.clipId)).toBe(100);
+		// already there: nothing to do, no history entry
+		const n = h.labels().length;
+		await h.run('sound.alignPeakToPlayhead');
+		expect(h.labels()).toHaveLength(n);
 	});
 
 	it('Add Layer… on a clip opens Fill mode with layer intent for its cue', async () => {
