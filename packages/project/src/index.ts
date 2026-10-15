@@ -80,6 +80,7 @@ export * from './registry/transitions/index.ts';
 export * from './render/index.ts';
 export * from './roto/index.ts';
 export * from './schema/index.ts';
+export * from './sound/anchor.ts';
 export * from './sound/index.ts';
 export * from './speech/index.ts';
 export * from './structure/index.ts';
