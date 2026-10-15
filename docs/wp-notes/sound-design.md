@@ -1899,6 +1899,203 @@ Shared host, 16 cores; other agents' load stated per run.
 
 ## Phase 2: cues and placement
 
+### WP2.2 cue derivation
+
+Scope: spec 12 §2.2 "Derivation" and P2-R3. `packages/project/src/sound/cues/` (pure, project layer: no engine, no
+template code, no DOM): `types.ts` (API types), `util.ts` (context, pan, names), one file per source (`edits.ts`,
+`transitions.ts`, `motion.ts` (keyframes + 3D cameras), `text.ts`, `mg.ts`, `edges.ts`, `markers.ts`), `budget.ts`
+(merge, score, budgets) and `derive.ts` (`deriveCues`). Exported from `@jasper/project` and from the subpath
+`@jasper/project/sound/cues` (not from `@jasper/project/sound`, which stays light: derivation pulls in the render
+resolver). Tests: `test/sound-cues.test.ts` (33), `test/sound-cues-property.test.ts` (2 properties + performance),
+fixtures in `test/sound-cues-fixtures.ts`.
+
+#### API
+
+```ts
+deriveCues(doc, sequenceId, opts?: {
+  range?: {start, end};                       // sequence frames [start, end); default the whole sequence
+  sources?: Set<CueDeriveSource> | CueDeriveSource[];   // default all
+  density?: 'sparse'|'balanced'|'rich';       // default balanced (CUE_DENSITIES = SOUND_DENSITIES)
+  minGapFrames?: number; maxCues?: number;    // maxCues counts every cue, pattern members one each
+  respectDialogue?: boolean;                  // default true
+  mgTemplates?: MgTemplateRegistry;           // intro/outro lengths (injected like CommandContext.registries)
+  extraCues?: ExtraCue[];                     // engine sources (scene, beat, pixel; P6), validated, then merged/budgeted
+}) → { cues: DerivedCue[]; curves: {clipId, start, speed: Float32Array}[]; stats; warnings }
+
+CueDeriveSource = 'edits'|'transitions'|'keyframes'|'text'|'mg'|'clipEdges'|'camera3d'|'markers'   // PROJECT_CUE_SOURCES
+                | 'scene'|'beat'|'pixel'                                                        // ENGINE_CUE_SOURCES
+DerivedCue = { key /* stable: source + anchor (+ unit) */, frame, kind: VisualKind|'manual', weight, types: SoundTypeId[],
+  align, pan?: −60…60, panSweep?: {from, to}, anchor: CueAnchor /* WP2.1 schema type */, also?: CueAnchor[] /* merged */,
+  confidence, reason, window?: {start, end}, source: 'derived'|'marker', from: CueDeriveSource, group?, score }
+stats = { bySource: Record<source, {found, kept, merged, droppedByBudget, suppressedByDialogue}>,
+  dropped: {rate, gap, maxCues, confidence, range}, heroesDemoted, found, kept }
+warnings: W_SEQUENCE_NOT_FOUND | W_SOURCE_FAILED | W_SAMPLING_TRUNCATED | W_MG_REGISTRY_MISSING | W_EXTRA_CUE_INVALID
+```
+
+Helpers also exported (tested, reusable by the engine and the web): `transitionClass`, `transitionTravel`,
+`transitionWindow`, `speedSegments`, `keyframeNear`, `thinPattern`, `typewriterOffsets`, `mgPhases`, `parseSfxRequest`,
+`dialogueRanges`, `mergeCandidates`, `applyBudgets`, `DENSITY_BUDGETS`, the thresholds below.
+
+The Suggest Cues… dialog's per-source counts are `stats.bySource[s].found` (events) and `.kept` (after merge and budget);
+deselecting a source is `sources`. The engine route (P2-R6) must pass `mgTemplates` (it has the template registry) and,
+from P6, `extraCues` for scene / beat / pixel; `sources` defaults to every source so extra cues are not dropped silently.
+
+#### Sources (decisions; spec 12 gives the events, not the numbers)
+
+- **edits**: on every shown video track (track `output !== false`), two enabled content clips that touch (`end ===
+  start`), are not a through edit (`isThroughEdit`) and are not the two sides of a transition → `cut` at the incoming
+  clip's first frame, types hit, thump, transition, glitch, click (an explicit list: the taxonomy's `typesForVisualKind
+  ('cut')` puts glitch first, which is wrong as a default for a plain cut), support, confidence 0.5 (0.35 when either
+  shot is under 1 s: montages rarely want a sound per cut). **Dialogue** (`respectDialogue`, default on): frames covered
+  by the sequence transcript's words (`sequenceWords`, padded 0.25 s, pauses under 0.75 s bridged) and by Essential Sound
+  `dialogue` clips on unmuted tracks whose media has no transcript words get no cut cue (`suppressedByDialogue`). Only
+  cuts are silenced (spec: "Edit points … no sound in dialogue-dominant ranges"); VAD-based detection is P6-R3.
+- **transitions**: video transitions on shown tracks. Frame = the visual centre `start + ⌊duration/2⌋` of the span
+  (`transitionSpan` for two-sided transitions; fades sit inside their clip), window = the span. Class from the registry
+  bin and id (`transitionClass`): Slide / Animation / 3D Motion / Page Peel / Transformers bins and whip/push/swish/spin…
+  ids → `move` (whoosh when the span is ≥ 0.3 s, else swish; confidence 0.85); `zoom` (whoosh/riser, 0.8); Wipe / Iris /
+  Sapphire Wipes → `wipe` (swish, 0.6); Grunge & Distort and glitch/pixel-mosh/static ids → `glitch` (glitch, zap; 0.7);
+  Lights & Blurs → `light` (ambient shimmer, 0.35); everything else, unknown ids included → `dissolve` (ambient shimmer,
+  0.2: the density's minimum confidence drops it in sparse and balanced, so plain dissolves stay silent unless the
+  user asks for `rich`). Pan sweep for move/wipe classes from `direction` (westToEast → −60 → 60, eastToWest the reverse,
+  diagonals by their horizontal part, north/south none) or an `angle` param (cos·60, none when |cos| < 0.25).
+- **keyframes**: every enabled content clip with animated Motion (position, scale, scale width, rotation, anchor),
+  Opacity or 3D Z position / X/Y rotation / orientation is sampled **per frame with `resolveLayerProps`** (with only its
+  crop and corner-pin effects, which change the on-screen box) over the content-time span of its keyframes ± 1 frame
+  (the whole clip when an expression is active; at most 20 000 frames, `W_SAMPLING_TRUNCATED`), clipped to the range
+  ± 2 s. Speed per frame (screen diagonals per second) = |Δposition|/diagonal + **K_SCALE 0.6**·|Δ ln scale| +
+  **K_ROT 1/270 per degree**·|Δrotation| + |ΔZ|/diagonal: doubling the scale ≈ moving 0.42 of the diagonal, a quarter
+  turn ≈ a third of it (chosen so a 100→120 % scale over 0.5 s, a 200 px slide over 0.5 s on 1080p and a 45° turn over
+  0.5 s all count as moves). The per-frame speeds are returned as `curves` (for the Cue Seam). Segments: runs above
+  **MOVE_OFF 0.03** that reach **MOVE_ON 0.12**, at least 2 frames (a 1-frame jump is a hold key, not a move), joined
+  across pauses of ≤ max(2 frames, 0.1 s) so an overshoot's turnaround stays one segment. Per segment, by the dominant
+  component (largest summed contribution):
+  - scale growing from ≤ 20 % to ≥ 50 % → `appear` (pop/ui/swish when ≤ 0.25 s, else whoosh/reverse/shimmer) on the
+    key the growth reaches (else the first frame at 95 % of the final size); shrinking to ≤ 20 % → `exit` on the key it
+    starts from;
+  - scale out and back (end within 5 % of the start, swing ≥ 8 %, ≤ 1.2 s, with a reversal) → `emphasis` at the
+    extreme (pop, ui, thump, hit);
+  - otherwise `move` (whoosh when the segment is ≥ 0.3 s, else swish) in the **middle of the fastest stretch** (frames
+    within 10⁻⁴ of the peak speed; a linear move: its middle), confidence 0.4 + 0.45·min(1, peak), pan = on-screen x
+    of the layer's bounds (`pan:'auto'`, x/width → ±60), pan sweep from the start to the end position (when it moves
+    ≥ 10 pan units);
+  - and `land`: at the first reversal of the dominant velocity after the peak (overshoot; "bounce" when it reverses
+    again), or at the stop when the last moving frame still has ≥ **ABRUPT_STOP 35 %** of the peak speed; a gentle
+    ease-out gets no land (a soft settle is not an impact). Impact = √(on-screen area) × the highest speed in the 0.2 s
+    before it: ≥ 0.5 → hit (hero when the layer covers ≥ 20 % of the frame), ≥ 0.15 → thump, else tap.
+  - Opacity ramps from ≤ 5 % to ≥ 50 % → `appear` on the key the fade reaches (pop/ui/swish ≤ 0.25 s, else
+    shimmer/reverse/whoosh); back to ≤ 5 % → `exit` (ambient) on the key it starts from.
+- **camera3d**: enabled camera clips; a frame counts only while the camera is the active one (the topmost camera
+  covering it, as `activeCameraClipAt`). Speed = |Δeye|/diagonal + K_ROT·(angle between view directions, degrees) +
+  K_SCALE·|Δ ln zoom| from `rigFrameAt`; segments as above → `move` (support) at the middle of the fastest stretch;
+  no land (a camera does not hit anything).
+- **text**: `resolveTextAnimationWindows`. In → `appear` at the window's first frame, Out → `exit` where the Out motion
+  starts; types by preset category (Slide: swish/whoosh/ui; Pop: pop/ui; Fade: ui/shimmer, low confidence; Blur and
+  Tracking: whoosh/shimmer; Reveal: swish/ui; Rotate: swish; Drop: swish/tap/thump; unknown presets: ui/swish).
+  **Typewriter** (both versions): one `key` per typed unit, at the frames the renderer shows them
+  (`typewriterScheduleMs`; In: ⌈t/frame⌉, Out: the In timeline mirrored, the first typed unit staying to the window's
+  end), units counted like `textUnitCount` (non-space graphemes or words). **AE-style animators**: every enabled Range
+  Selector with animated Start / End / Offset is evaluated per frame (`rangeParams` + `rangeValue`, units from the text:
+  characters, characters without spaces, words or explicit lines) and every frame where a unit's selection crosses
+  50 % is a reveal step; the steps are `appear` when the animator hides what it selects (Opacity < 50 % or Scale < 20 %)
+  and leaving the selection dominates, else `exit`. Patterns are thinned (`thinPattern`): repeats and frames closer than
+  fps/12 to the previous kept one dropped (≤ 12 per second in every 1 s window), then at most 40 evenly spread; members
+  share `group` and anchor `{type:'text', clipId, side, unit}`.
+- **mg**: motion-graphic clips whose template the registry knows: intro end → `land` (thump/hit/pop), outro start →
+  `exit` (swish/whoosh/reverse); lengths written at 30 fps (`MG_REFERENCE_FPS` of `sound/anchor.ts`), converted and
+  compressed like `animeTemplateTiming` (intro anchored at content frame 0, outro at the content end). No registry or an
+  unknown template → nothing, with `W_MG_REGISTRY_MISSING`. The model never imports `@jasper/mg-templates` (layer rule);
+  composition (mg-bundle) clips carry no intro/outro data, so they only get clip-edge cues.
+- **clipEdges**: graphics (still, text, shape, solid, motion graphic, composition, animated image) on V2 and above:
+  start → `appear` (support, pop/swish/ui; text pop/ui; motion graphics whoosh/swish), end → `exit` (ambient). Skipped
+  where another source describes the edge better: a transition at that edge, an In/Out text animation, an adjacent
+  clip on the track (an edit), and animated Motion/Opacity when the keyframes source runs.
+- **markers**: sequence markers whose name starts `sfx:` (for agent-note markers the comment too):
+  `sfx: <type>[+<type>…]` (also `,`), names resolved by `resolveTypeNames` (ids and synonyms: `swoosh`, `sub drop`),
+  unknown names listed in the reason, `kind:'manual'`, weight and align of the first type, confidence 1, `source:
+  'marker'`, window = the marker's duration. Explicit: exempt from the minimum confidence, rate and gap budgets (not
+  from `maxCues` or the hero spacing).
+
+#### Merge, score, budgets
+
+- Candidates within **2 frames** merge (clusters anchored on the earliest frame; two members of one pattern group never
+  merge with each other). The primary is the heavier (hero > support > ambient, then explicit, confidence, size,
+  earlier frame, key); it keeps its frame and anchor, the others' anchors go to `also` and their reasons are appended
+  ("…; also Cut on V1: 'A' → 'B'"). Confidence and size become the cluster's maxima.
+- Score = confidence × weight (hero 1, support 0.7, ambient 0.4) × size (0.5 + 0.5·√area; 1 for full-frame events)
+  × novelty (1 / (1 + 0.5·n), n = earlier cues of the same kind and first type within 2 s).
+- Budgets (`DENSITY_BUDGETS`), applied greedily from the best score (ties: earlier frame, then key):
+
+  | Density | Min confidence | Heroes | Cues in any 1 s window |
+  |---|---|---|---|
+  | sparse | 0.4 | ≥ 3 s apart | ≤ 1 |
+  | balanced | 0.3 | ≥ 2 s apart | ≤ 2 |
+  | rich | 0.15 | ≥ 1.5 s apart | ≤ 3 |
+
+  A hero too close to a kept hero is **demoted to support** (counted in `heroesDemoted`) rather than dropped, so two
+  heroes are never closer than the spacing and never within 0.5 s (`HERO_MIN_SEC`). A pattern group is one unit: its
+  whole span counts once in every window it touches, and it is kept or dropped as a whole. `minGapFrames` and `maxCues`
+  (every cue counts) apply after. The minimum confidence per density is our addition: it is what keeps dissolves and
+  fade-outs quiet in sparse/balanced without a source-specific rule.
+- Output sorted by frame, then key; scores rounded to 10⁻⁴. Clips are visited in (start, track, id) order, so the
+  stored order of `seq.clips` does not change the result (tested).
+- `deriveCues` never throws: each source runs in its own try/catch (`W_SOURCE_FAILED` with the message; the others
+  still run), engine cues are validated (`W_EXTRA_CUE_INVALID`), frames are integers clamped to the range and the
+  sequence, and the output is capped at `MAX_DERIVED_CUES` (10 000).
+
+#### Anchors (reconciled with WP2.1)
+
+Anchors are the stored `CueAnchor` (`schema/sound.ts`, `DerivedCueAnchor = CueAnchor`) and are chosen so
+`resolveCueAnchor` (`sound/anchor.ts`) finds the same frame again: keyframe anchors name **property paths**
+(`transform.position`, `transform.scale`, `transform.rotation`, `threeD.positionZ`, `opacity`,
+`camera.transform.position`, `camera.zoom`…), `peak-speed` / `settle` name the key that ends the segment (the resolver
+reads the run ending at `keyframeId`), `start` / `end` the key itself, and the derived frame is that key's frame where
+the event sits on a key (appear, exit, emphasis, fades). `test/sound-cues.test.ts` "anchors resolve back to the derived
+frame" asserts `resolveCueAnchor(cue.anchor) === cue.frame` for every cue of the Phase 2 fixture and of a document with
+pops, pulses, fades, abrupt stops and shrinks.
+
+#### Verified (measured, this branch; shared host, 16 cores)
+
+- `pnpm vitest run test/sound-cues.test.ts test/sound-cues-property.test.ts test/sound-anchor.test.ts --maxWorkers=2`
+  (packages/project): 45 passed (33 + 3 + WP2.1's 9). On the Phase 2 fixture (cuts, a 20-frame push, a logo keyframed
+  200 → 1010 → 960 px, a typewriter title, a 15/12-frame motion graphic, an `sfx: boom+swoosh` marker) every event is
+  found with its anchor and reason: cut at 90 (`Cut on V1: 'Shot A' → 'Shot B'`), push at 180 (whoosh, window 170–190,
+  sweep −60 → 60), logo move at 46 and land at 52 (`Position (200, 540)→(960, 540) ends (ease-out overshoot) on V2
+  'Logo'`), 8 typewriter keys from 200 (≤ 12/s), mg land 345 / exit 408, the marker as a hero boom + whoosh at 250.
+- Property (fast-check, 60 generated documents per run: 8 sequence rates, 1–3 tracks of video / still / text / camera /
+  motion-graphic clips with random keyframes, text presets, transitions from the whole registry and markers; random
+  density, range, `maxCues`, `minGapFrames`): never throws, no `W_SOURCE_FAILED`, frames integer and inside the range and
+  sequence, sorted, deterministic (two runs JSON-equal), every 1 s window holds ≤ the density's cues (groups once),
+  heroes spaced, `maxCues` / `minGapFrames` / minimum confidence hold. Fuzz (testkit `mutateJson` of two sequences, 300
+  cases, with hostile options: NaN / strings / inverted ranges, junk sources and engine cues; plus whole-document
+  garbage): never throws, frames stay inside the sequence, deterministic. `FUZZ=1 FUZZ_SEED=1|777|4242` (20× cases):
+  passed.
+- Performance: a 10-minute 30 fps sequence with **200 clips** (120 shots with a push or dissolve on every 4th edit, 40
+  stills keyframed in position, scale and opacity, 40 typewriter + slide-out titles, 20 markers): 669 events found,
+  614 kept (balanced). `deriveCues` best of 3: **212 ms** at load average 41 (runs 673 / 289 / 212 ms, the first one
+  cold) and **65 ms** at load average 27 (83 / 73 / 65 ms); the test asserts best < 1 s.
+- `pnpm --filter @jasper/project typecheck` and `pnpm lint`: pass (see the integration commit).
+
+#### Limits and notes for the next packages
+
+- **resolveCueAnchor disagreements to fix in WP2.1's resolver** (not this package's file): (1) the Out side of a
+  typewriter: the renderer's Out window seeks `(N − 1 − k)` frames, so the i-th deleted unit goes at `N − ⌈t/frame⌉`
+  (this deriver); the resolver computes `⌈N − t/frame⌉`, one frame late whenever `t/frame` is not an integer; (2) text
+  anchors with `unit` resolve only for typewriter windows; per-unit reveals of Range Selectors (`side`, `unit`) resolve
+  to null, so a resync would drop them; (3) `peak-speed` of a multi-property motion: the deriver's peak is on the
+  combined speed (position + scale + rotation), the resolver's on the named property alone; (4) a bezier overshoot
+  with no key at its extreme: the deriver lands at the turnaround, the resolver at the first arrival at the named key's
+  value.
+- Cuts hidden under a full-frame opaque layer on a higher track still give a cut cue (no occlusion test). Text units
+  are counted from the text, not the layout: wrapped lines count as one line for `lines`-based selectors.
+- Expressions: unbound documents evaluate keyframes only (`evaluate` falls back); the engine should bind expressions
+  (`bindDocumentExpressions`) before deriving if it wants their motion.
+- Hold-keyframe jumps (1 frame) are ignored; continuous wiggles (Wiggly selectors, expression jitter) produce many short
+  segments only when they exceed MOVE_ON, and the budget thins them.
+- Clip markers (on clips, in content time) are not read; only sequence markers.
+- Thresholds (MOVE_ON/OFF, K_SCALE, K_ROT, ABRUPT_STOP, impact bands, confidences, minimum confidence per density) are
+  reasoned defaults checked on synthetic documents; P2's real-app check and P5's Sound Check should tune them.
+
 ## Phase 3: proposals and review
 
 ## Phase 4: mixing
