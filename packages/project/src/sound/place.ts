@@ -117,8 +117,7 @@ export function peakAlignedStart(input: PeakAlignInput): PeakAlignResult {
 	}
 	r = Math.min(Math.max(r, 0), F);
 	const totalSrc = dur * FLICKS_PER_SECOND;
-	const framesFrom = (sourceIn: number) =>
-		Math.max(1, Math.ceil((totalSrc - sourceIn) / rate / F - 1e-9));
+	const framesFrom = (sourceIn: number) => Math.max(1, Math.ceil((totalSrc - sourceIn) / rate / F - 1e-9));
 	const alignFlicks = Math.round(alignSrc);
 	let start = cueFrame - k;
 

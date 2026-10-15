@@ -32,7 +32,8 @@ export type LicenseClass =
 	| 'nd'
 	| 'unknown';
 
-const PERMISSIVE = /^(?:MIT|MIT-0|ISC|0BSD|Zlib|BSD-[23]-Clause|Apache-2\.0|OFL-1\.1|BSL-1\.0|Unicode-[\w.-]+)$/i;
+const PERMISSIVE =
+	/^(?:MIT|MIT-0|ISC|0BSD|Zlib|BSD-[23]-Clause|Apache-2\.0|OFL-1\.1|BSL-1\.0|Unicode-[\w.-]+)$/i;
 
 /** Classifies an SPDX id or LicenseRef (case-insensitive). Total: anything unrecognised is `unknown`. */
 export function licenseClass(license: unknown): LicenseClass {

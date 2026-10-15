@@ -497,16 +497,13 @@ export const MediaAssetSchema = z.looseObject({
 	/** gaps (PRJ-8): the attached proxy. */
 	proxy: AttachedProxySchema.optional(),
 	/**
-	 * sound-design (spec 12 §2.1): the library sound this media was registered from (`LibraryProvenance`). Read
-	 * leniently here so a malformed value never fails a load; the invariants check it against
-	 * `LibraryProvenanceSchema` (INV-LIBRARY) and `repairDocument` repairs or drops it.
+	 * sound-design (spec 12 §2.1): the library sound this media was registered from. Accepted as any value here so a
+	 * malformed one never fails a load; the invariants check it against `LibraryProvenanceSchema` (INV-LIBRARY) and
+	 * `repairDocument` repairs or drops it, so every loaded or edited document holds valid provenance (the type).
 	 */
-	library: z.unknown().optional(),
+	library: z.custom<LibraryProvenance>(() => true).optional(),
 });
-/** `library` is typed as validated provenance: every loaded or edited document passes INV-LIBRARY. */
-export type MediaAsset = Omit<DeepStrip<z.infer<typeof MediaAssetSchema>>, 'library'> & {
-	library?: LibraryProvenance;
-};
+export type MediaAsset = DeepStrip<z.infer<typeof MediaAssetSchema>>;
 
 export const SyntheticSourceSchema = z.discriminatedUnion('kind', [
 	z.looseObject({ id: z.string(), kind: z.literal('color-matte'), color: RGBASchema }),

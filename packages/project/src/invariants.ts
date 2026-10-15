@@ -39,8 +39,8 @@ import { PUPPET_PIN_KINDS, PUPPET_PIN_PROPS, type Puppet } from './schema/puppet
 import type { AudioClip, Clip, ClipRoto, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind, SequencePreviewSettingsSchema } from './schema/sequence.ts';
 import type { ShapeItem } from './schema/shapes.ts';
-import { libraryProvenanceIssue, readLibraryProvenance } from './sound/provenance.ts';
 import type { ClipCameraTracker } from './schema/three-d.ts';
+import { libraryProvenanceIssue, readLibraryProvenance } from './sound/provenance.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
@@ -1269,7 +1269,9 @@ export function runInvariants(
 		if ((m as { library?: unknown }).library !== undefined) {
 			const bad = libraryProvenanceIssue((m as { library?: unknown }).library);
 			if (bad)
-				issues.push(inv('INV-LIBRARY', `Media ${m.id} library provenance: ${bad}`, ['media', m.id, 'library']));
+				issues.push(
+					inv('INV-LIBRARY', `Media ${m.id} library provenance: ${bad}`, ['media', m.id, 'library']),
+				);
 		}
 	}
 	for (const t of Object.values(doc.transcripts)) {
@@ -1669,7 +1671,11 @@ export function repairDocument(
 		const fixed = readLibraryProvenance(r.library);
 		if (fixed) {
 			r.library = fixed;
-			note('repair-library', m.id, 'library provenance repaired (unreadable fields reset; check its licence)');
+			note(
+				'repair-library',
+				m.id,
+				'library provenance repaired (unreadable fields reset; check its licence)',
+			);
 		} else {
 			delete r.library;
 			note('drop-library', m.id, 'unreadable library provenance removed (no sound id)');

@@ -1,8 +1,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-	checkInvariants,
 	COMMAND_CATALOG,
+	checkInvariants,
 	createCounterIdSource,
 	LibraryProvenanceSchema,
 	loadProject,
@@ -13,7 +13,6 @@ import {
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
 import { LIB } from './sound-fixtures.ts';
-
 
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 const audio = (h: Harness, seconds = 1) => h.registerVideo({ kind: 'audio', seconds });
@@ -108,7 +107,9 @@ describe('media.setLibraryInfo (spec 12 §2.9)', () => {
 		const r = h.ok([{ type: 'media.register', asset: { ...asset, library: LIB } }]);
 		const id = (r.results[0] as { mediaId: string }).mediaId;
 		expect(h.doc.media[id]!.library).toEqual(LIB);
-		const bad = h.tx([{ type: 'media.register', asset: { ...videoAsset({ kind: 'audio' }), library: { a: 1 } } }]);
+		const bad = h.tx([
+			{ type: 'media.register', asset: { ...videoAsset({ kind: 'audio' }), library: { a: 1 } } },
+		]);
 		expect(bad.ok).toBe(false);
 		if (!bad.ok) expect(bad.errors[0]!.code).toBe('E_SCHEMA');
 
@@ -135,9 +136,9 @@ describe('LibraryProvenance in the document (INV-LIBRARY, repair, load)', () => 
 
 	it('the document schema accepts anything there, so a load never fails on it', () => {
 		for (const library of [5, 'x', null, [], { soundId: 3 }, LIB])
-			expect(MediaAssetSchema.safeParse({ ...videoAsset({ kind: 'audio' }), id: 'med_x', library }).success).toBe(
-				true,
-			);
+			expect(
+				MediaAssetSchema.safeParse({ ...videoAsset({ kind: 'audio' }), id: 'med_x', library }).success,
+			).toBe(true);
 	});
 
 	it('flags unreadable provenance (INV-LIBRARY) and repairs it field by field with a report', () => {
@@ -173,7 +174,14 @@ describe('LibraryProvenance in the document (INV-LIBRARY, repair, load)', () => 
 	});
 
 	it('drops provenance without a sound id, with a report line', () => {
-		for (const bad of [5, 'snd', [], { title: 'no id' }, { ...LIB, soundId: '' }, { ...LIB, soundId: 'x'.repeat(129) }]) {
+		for (const bad of [
+			5,
+			'snd',
+			[],
+			{ title: 'no id' },
+			{ ...LIB, soundId: '' },
+			{ ...LIB, soundId: 'x'.repeat(129) },
+		]) {
 			const { doc, m, h } = docWith(bad);
 			const { document, report } = repairDocument(doc, h.ids);
 			expect(document.media[m]!.library).toBeUndefined();
@@ -210,7 +218,10 @@ describe('LibraryProvenance in the document (INV-LIBRARY, repair, load)', () => 
 				{
 					soundId: fc.oneof(fc.string({ maxLength: 20 }), fc.integer()),
 					title: fc.oneof(fc.string(), fc.constant(undefined)),
-					types: fc.oneof(fc.array(fc.oneof(fc.constantFrom('hit', 'whoosh', 'X', ''), fc.integer())), fc.string()),
+					types: fc.oneof(
+						fc.array(fc.oneof(fc.constantFrom('hit', 'whoosh', 'X', ''), fc.integer())),
+						fc.string(),
+					),
 					source: fc.oneof(
 						fc.record({ type: fc.constantFrom('starter', 'pack', 'folder', 'synth', 'odd') }),
 						fc.anything({ maxDepth: 1 }),
@@ -232,7 +243,8 @@ describe('LibraryProvenance in the document (INV-LIBRARY, repair, load)', () => 
 				expect(loaded.issues).toEqual([]);
 				const stored = (raw.media[m] as { library?: unknown }).library;
 				const kept = loaded.document.media[m]!.library;
-				if (stored !== undefined && LibraryProvenanceSchema.safeParse(stored).success) expect(kept).toEqual(stored);
+				if (stored !== undefined && LibraryProvenanceSchema.safeParse(stored).success)
+					expect(kept).toEqual(stored);
 				if (kept !== undefined) expect(LibraryProvenanceSchema.safeParse(kept).success).toBe(true);
 				expect(readLibraryProvenance(library) === null || kept !== undefined).toBe(true);
 			}),
@@ -249,13 +261,29 @@ describe('LibraryProvenance in the document (INV-LIBRARY, repair, load)', () => 
 			sourceProjectId: 'prj_00000000000000EX',
 			sourceSequenceId: null,
 			kind: 'project-items',
-			media: [{ ...clone(h.doc.media[m]!), id: 'med_foreign000000001', fingerprint: 'q1:foreign', library: { ...LIB, license: 7 } }],
+			media: [
+				{
+					...clone(h.doc.media[m]!),
+					id: 'med_foreign000000001',
+					fingerprint: 'q1:foreign',
+					library: { ...LIB, license: 7 },
+				},
+			],
 			synthetics: [],
 			transcripts: [],
 			fonts: [],
 			mediaItems: {},
 			items: {
-				items: [{ id: 'itm_foreign000000001', kind: 'media', name: 'boom', mediaId: 'med_foreign000000001', label: 'iris', marks: { in: null, out: null } }],
+				items: [
+					{
+						id: 'itm_foreign000000001',
+						kind: 'media',
+						name: 'boom',
+						mediaId: 'med_foreign000000001',
+						label: 'iris',
+						marks: { in: null, out: null },
+					},
+				],
 				sequences: [],
 				rootItems: ['itm_foreign000000001'],
 			},

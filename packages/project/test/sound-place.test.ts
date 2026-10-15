@@ -1,6 +1,12 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { FLICKS_PER_SECOND, flicksPerFrame, type PeakAlignInput, peakAlignedStart, RATES } from '../src/index.ts';
+import {
+	FLICKS_PER_SECOND,
+	flicksPerFrame,
+	type PeakAlignInput,
+	peakAlignedStart,
+	RATES,
+} from '../src/index.ts';
 
 const fps30 = { num: 30, den: 1 };
 const ok = (input: PeakAlignInput) => {
@@ -11,7 +17,14 @@ const ok = (input: PeakAlignInput) => {
 
 describe('peakAlignedStart (spec 12 §2.3)', () => {
 	it('trims the sub-frame rest from a quiet head: the peak lands exactly on the cue', () => {
-		const r = ok({ cueFrame: 30, peakSec: 0.05, durationSec: 1, headQuietSec: 0.02, fps: fps30, align: 'peak' });
+		const r = ok({
+			cueFrame: 30,
+			peakSec: 0.05,
+			durationSec: 1,
+			headQuietSec: 0.02,
+			fps: fps30,
+			align: 'peak',
+		});
 		expect(r.start).toBe(29);
 		expect(r.sourceInFlicks).toBe(11_760_000); // 1/60 s
 		expect(r.errorFlicks).toBe(0);
@@ -23,7 +36,14 @@ describe('peakAlignedStart (spec 12 §2.3)', () => {
 	});
 
 	it('without enough quiet head it plays late by the rest (under one frame); subFrame:false never trims', () => {
-		const late = ok({ cueFrame: 30, peakSec: 0.05, durationSec: 1, headQuietSec: 0.01, fps: fps30, align: 'peak' });
+		const late = ok({
+			cueFrame: 30,
+			peakSec: 0.05,
+			durationSec: 1,
+			headQuietSec: 0.01,
+			fps: fps30,
+			align: 'peak',
+		});
 		expect(late).toMatchObject({ start: 29, sourceInFlicks: 0, errorFlicks: 11_760_000 });
 		const frameOnly = ok({
 			cueFrame: 30,
@@ -48,7 +68,9 @@ describe('peakAlignedStart (spec 12 §2.3)', () => {
 			ok({ cueFrame: 10, peakSec: 0.2, onsetSec: 0.11, durationSec: 0.5, fps: fps30, align: 'start' }),
 		).toMatchObject({ start: 7, sourceInFlicks: 0, errorFlicks: 7_056_000 }); // 0.3 frame late, no quiet head
 		// at 2× the 2 s riser lasts 1 s
-		expect(ok({ cueFrame: 100, peakSec: 0, durationSec: 2, rate: 2, fps: fps30, align: 'end' })).toMatchObject({
+		expect(
+			ok({ cueFrame: 100, peakSec: 0, durationSec: 2, rate: 2, fps: fps30, align: 'end' }),
+		).toMatchObject({
 			start: 70,
 			durationFrames: 30,
 		});
@@ -95,9 +117,9 @@ describe('peakAlignedStart (spec 12 §2.3)', () => {
 
 	const fpsArb = fc.oneof(
 		fc.constantFrom(...Object.values(RATES)),
-		fc.record({ num: fc.integer({ min: 1, max: 120_000 }), den: fc.integer({ min: 1, max: 1001 }) }).filter(
-			(r) => r.num / r.den >= 1 && r.num / r.den <= 240,
-		),
+		fc
+			.record({ num: fc.integer({ min: 1, max: 120_000 }), den: fc.integer({ min: 1, max: 1001 }) })
+			.filter((r) => r.num / r.den >= 1 && r.num / r.den <= 240),
 	);
 	const input = fc
 		.record({

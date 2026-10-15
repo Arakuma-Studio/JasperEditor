@@ -24,12 +24,16 @@ function project() {
 		}),
 	);
 	const nc = add(lib({ soundId: 'snd_nc', title: 'Boom NC', license: 'CC-BY-NC-4.0', author: 'X' }));
-	const user = add(lib({ soundId: 'snd_user', title: '=cmd()', license: 'LicenseRef-UserProvided', author: '' }));
+	const user = add(
+		lib({ soundId: 'snd_user', title: '=cmd()', license: 'LicenseRef-UserProvided', author: '' }),
+	);
 	const unused = add(lib({ soundId: 'snd_unused', title: 'Unused' }));
 	const plain = add(null);
 	const place = (m: string, at: number, track = 'A1') => {
 		h.ok([{ type: 'clip.place', source: { mediaId: m }, at, tracks: { audio: track } }]);
-		return Object.values(h.seq.clips).find((c) => (c as { mediaId?: string }).mediaId === m && c.start === at)!.id;
+		return Object.values(h.seq.clips).find(
+			(c) => (c as { mediaId?: string }).mediaId === m && c.start === at,
+		)!.id;
 	};
 	const cCc0 = place(cc0, 0);
 	const cBy = place(by, 40);
@@ -96,7 +100,11 @@ describe('soundCredits (spec 12 §2.1, P1-R8)', () => {
 		expect(by.sequenceIds).toEqual([inner.id]);
 		expect(outer.rows.map((x) => x.soundId).sort()).toEqual(['snd_by', 'snd_cc0', 'snd_nc', 'snd_user']);
 		// the nested sequence alone credits only what it holds
-		expect(soundCredits(p.h.doc, inner.id).rows.map((x) => x.soundId).sort()).toEqual(['snd_by', 'snd_nc']);
+		expect(
+			soundCredits(p.h.doc, inner.id)
+				.rows.map((x) => x.soundId)
+				.sort(),
+		).toEqual(['snd_by', 'snd_nc']);
 	});
 
 	it('survives a nesting cycle in a damaged document', () => {
@@ -139,7 +147,9 @@ describe('soundCredits (spec 12 §2.1, P1-R8)', () => {
 		);
 		expect(c.text.split('\n')[0]).toBe('Sound credits');
 		expect(c.text.split('\n')).toHaveLength(2 + c.rows.length);
-		expect(c.markdown).toContain('| Whoosh, "Big" | Jane \\| Doe | [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/) |');
+		expect(c.markdown).toContain(
+			'| Whoosh, "Big" | Jane \\| Doe | [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/) |',
+		);
 		const lines = c.csv.trimEnd().split('\r\n');
 		expect(lines[0]).toBe(
 			'mediaId,soundId,title,author,license,licenseUrl,sourceUrl,attribution,requiresAttribution,usedIn',

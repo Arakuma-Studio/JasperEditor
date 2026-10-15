@@ -238,7 +238,11 @@ function bandShape(bands: readonly number[] | undefined): number[] | null {
 const gauss = (x: number, sigma: number) => Math.exp(-(x * x) / (2 * sigma * sigma));
 
 /** The type whose length rules apply: the first requested type it has, else its best type for the visual kind. */
-function fitType(entryTypes: SoundTypeId[], req: SoundRankRequest, wanted: SoundTypeId[]): SoundTypeId | null {
+function fitType(
+	entryTypes: SoundTypeId[],
+	req: SoundRankRequest,
+	wanted: SoundTypeId[],
+): SoundTypeId | null {
 	for (const t of wanted) if (entryTypes.includes(t)) return t;
 	if (req.visualKind) {
 		let best: SoundTypeId | null = null;
@@ -373,7 +377,12 @@ export function rankSounds<T extends RankableSound>(
 			if (wanted.length) parts.push(entryTypes.includes(wanted[0]!) ? 1 : 0.9);
 			typeFit = round6(parts.reduce((s, v) => s + v, 0) / parts.length);
 		}
-		const dFit = durationFit(e.descriptors, fitType(entryTypes, request, wanted), request.windowSec, request.align);
+		const dFit = durationFit(
+			e.descriptors,
+			fitType(entryTypes, request, wanted),
+			request.windowSec,
+			request.align,
+		);
 		const judge = e.judge && fin(e.judge.score) ? Math.min(1, Math.max(0, e.judge.score)) : 0.5;
 		const license = licensePreference(e.license);
 		const similarity = sim ? round6(Math.exp(-descriptorDistance(sim.descriptors, e.descriptors))) : null;

@@ -93,6 +93,15 @@ older JasperEditor can still open that work: File ▸ Project Versions… lists 
 **Open as Copy** makes a separate project of it (it cannot be restored over the project, which would downgrade
 it). Agents: `list_project_versions`, `restore_project_version {mode: "copy"}`.
 
+### Optional fields added since v6 (no bump)
+
+These fields are optional with read-time defaults; older v6 builds keep them on save (`looseObject`), so no bump
+was needed (rule 2).
+
+| Field | Since | Read leniently | Repair |
+|---|---|---|---|
+| `MediaAsset.library` | sound design (spec 12 §2.1, WP1.1a) | the document schema accepts any value (`z.custom<LibraryProvenance>(() => true)`, typed as valid provenance), so a damaged value never fails a load; INV-LIBRARY checks it against `LibraryProvenanceSchema` | `repair-library`: each unreadable field is reset on its own (title → sound id, licence → `NOASSERTION`, bad types / source / descriptors / URLs dropped, unknown newer fields kept); `drop-library` when there is no usable `soundId`. Pasted media get the same treatment. Commands (`media.setLibraryInfo`, `media.register`) validate strictly (`E_SCHEMA`) |
+
 ## Saving
 
 - **Atomic writes** (S01:PER-016): every project, version, view and journal file is written to a hidden temp

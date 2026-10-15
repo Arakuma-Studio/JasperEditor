@@ -60,7 +60,13 @@ describe('licences', () => {
 		expect(licenseClass(7)).toBe('unknown');
 	});
 	it('commercial-safe = the allowlist plus user-declared royalty-free', () => {
-		for (const l of ['CC0-1.0', 'CC-BY-4.0', 'CC-BY-SA-4.0', 'LicenseRef-JasperEditor', 'LicenseRef-UserRoyaltyFree'])
+		for (const l of [
+			'CC0-1.0',
+			'CC-BY-4.0',
+			'CC-BY-SA-4.0',
+			'LicenseRef-JasperEditor',
+			'LicenseRef-UserRoyaltyFree',
+		])
 			expect(isCommercialSafe(l), l).toBe(true);
 		for (const l of ['CC-BY-NC-4.0', 'CC-BY-ND-4.0', 'LicenseRef-UserProvided', 'NOASSERTION', 'WTFPL'])
 			expect(isCommercialSafe(l), l).toBe(false);
@@ -151,7 +157,13 @@ describe('rankSounds (spec 12 §2.1)', () => {
 			snd('snd_rf', { license: 'LicenseRef-UserRoyaltyFree' }),
 		];
 		expect(ids(rankSounds(list))).toEqual(['snd_cc0', 'snd_by', 'snd_rf']);
-		expect(ids(rankSounds(list, { license: 'any' }))).toEqual(['snd_cc0', 'snd_by', 'snd_rf', 'snd_user', 'snd_nc']);
+		expect(ids(rankSounds(list, { license: 'any' }))).toEqual([
+			'snd_cc0',
+			'snd_by',
+			'snd_rf',
+			'snd_user',
+			'snd_nc',
+		]);
 	});
 
 	it('always ranks real recordings above Jasper Synth', () => {
@@ -199,13 +211,22 @@ describe('rankSounds (spec 12 §2.1)', () => {
 		const ref = snd('snd_ref', { d: { durationSec: 1, centroidHz: 1000, flatness: 0.1 } });
 		const list = [
 			ref,
-			snd('snd_far', { d: { durationSec: 6, centroidHz: 9000, flatness: 0.9, octaveBandsDb: [-60, -50, -40, -30, -20, -10, -5] } }),
+			snd('snd_far', {
+				d: {
+					durationSec: 6,
+					centroidHz: 9000,
+					flatness: 0.9,
+					octaveBandsDb: [-60, -50, -40, -30, -20, -10, -5],
+				},
+			}),
 			snd('snd_near', { d: { durationSec: 1.1, centroidHz: 1100, flatness: 0.12 } }),
 		];
 		const r = rankSounds(list, { similarTo: { id: 'snd_ref', descriptors: ref.descriptors } });
 		expect(ids(r)).toEqual(['snd_near', 'snd_far']);
 		expect(descriptorDistance(ref.descriptors, ref.descriptors)).toBe(0);
-		expect(descriptorDistance({ durationSec: Number.NaN }, { durationSec: 1 })).toBe(Number.POSITIVE_INFINITY);
+		expect(descriptorDistance({ durationSec: Number.NaN }, { durationSec: 1 })).toBe(
+			Number.POSITIVE_INFINITY,
+		);
 	});
 
 	it('breaks ties by id and gives the same order for any input order', () => {
@@ -231,9 +252,18 @@ describe('rankSounds (spec 12 §2.1)', () => {
 			{
 				id: fc.oneof(fc.string({ maxLength: 12 }), fc.constant(undefined)),
 				title: fc.oneof(fc.string({ maxLength: 40 }), fc.constant(null)),
-				tags: fc.oneof(fc.array(fc.oneof(fc.string({ maxLength: 10 }), fc.integer())), fc.constant(undefined)),
-				types: fc.oneof(fc.array(fc.constantFrom('hit', 'whoosh', 'riser', 'x', '__proto__')), fc.constant(null)),
-				source: fc.oneof(fc.record({ type: fc.constantFrom('starter', 'synth', 'folder', 'odd') }), fc.constant(null)),
+				tags: fc.oneof(
+					fc.array(fc.oneof(fc.string({ maxLength: 10 }), fc.integer())),
+					fc.constant(undefined),
+				),
+				types: fc.oneof(
+					fc.array(fc.constantFrom('hit', 'whoosh', 'riser', 'x', '__proto__')),
+					fc.constant(null),
+				),
+				source: fc.oneof(
+					fc.record({ type: fc.constantFrom('starter', 'synth', 'folder', 'odd') }),
+					fc.constant(null),
+				),
 				license: fc.oneof(fc.constantFrom('CC0-1.0', 'CC-BY-4.0', 'x'), fc.integer()),
 				descriptors: fc.oneof(
 					fc.record({
@@ -266,10 +296,15 @@ describe('rankSounds (spec 12 §2.1)', () => {
 			{ requiredKeys: [] },
 		);
 		fc.assert(
-			fc.property(fc.array(entry, { maxLength: 12 }), request, fc.array(fc.string(), { maxLength: 4 }), (es, req, used) => {
-				const r = rankSounds(es as unknown as RankableSound[], req as never, { usedNearby: used });
-				for (const x of r) expect(Number.isFinite(x.score)).toBe(true);
-			}),
+			fc.property(
+				fc.array(entry, { maxLength: 12 }),
+				request,
+				fc.array(fc.string(), { maxLength: 4 }),
+				(es, req, used) => {
+					const r = rankSounds(es as unknown as RankableSound[], req as never, { usedNearby: used });
+					for (const x of r) expect(Number.isFinite(x.score)).toBe(true);
+				},
+			),
 			{ numRuns: 300, seed: 1215 },
 		);
 	});

@@ -1,10 +1,10 @@
 // Library provenance of a project media asset (spec 12 §2.1 "Register into a project"): which library sound the
 // media came from, its licence and credit, and the descriptors placement needs. Metadata only, never a render input.
 //
-// Storage: `MediaAsset.library` is read leniently by the document schema (`z.unknown()`), so a malformed value never
-// makes a project fail to load (AGENTS.md §0). The invariants check it against `LibraryProvenanceSchema`
-// (INV-LIBRARY); `repairDocument` rewrites it with `readLibraryProvenance` (or drops it when it has no sound id),
-// with a report line. Commands (`media.setLibraryInfo`, `media.register`) validate it strictly.
+// Storage: `MediaAsset.library` is accepted as any value by the document schema (`z.custom`, typed as valid
+// provenance), so a malformed value never makes a project fail to load (AGENTS.md §0). The invariants check it against
+// `LibraryProvenanceSchema` (INV-LIBRARY); `repairDocument` rewrites it with `readLibraryProvenance` (or drops it when
+// it has no sound id), with a report line. Commands (`media.setLibraryInfo`, `media.register`) validate it strictly.
 import { z } from 'zod';
 import type { DeepStrip } from '../schema/common.ts';
 import { UNKNOWN_LICENSE } from './license.ts';

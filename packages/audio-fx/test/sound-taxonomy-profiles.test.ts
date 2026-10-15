@@ -2,9 +2,9 @@
 // audio-fx (ARCHITECTURE §3.1). This test keeps the two copies identical (spec 12 §2.1, wp-note "WP1.1a").
 import {
 	SOUND_TYPE_IDS as PROJECT_TYPE_IDS,
+	type SoundTypeProfile as ProjectProfile,
 	SOUND_TYPE_PROFILES,
 	SOUND_TYPES,
-	type SoundTypeProfile as ProjectProfile,
 } from '@jasper/project/sound';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_TYPE_PROFILES, judgeSound, SOUND_TYPE_IDS, type SoundTypeProfile } from '../src/index.ts';
@@ -18,7 +18,9 @@ describe('project taxonomy ↔ audio-fx judge profiles', () => {
 		for (const id of SOUND_TYPE_IDS) {
 			expect(SOUND_TYPE_PROFILES[id], id).toEqual(DEFAULT_TYPE_PROFILES[id]);
 			expect(SOUND_TYPES[id].profile, id).toEqual(DEFAULT_TYPE_PROFILES[id]);
-			expect(Object.keys(SOUND_TYPE_PROFILES[id]).sort(), id).toEqual(Object.keys(DEFAULT_TYPE_PROFILES[id]).sort());
+			expect(Object.keys(SOUND_TYPE_PROFILES[id]).sort(), id).toEqual(
+				Object.keys(DEFAULT_TYPE_PROFILES[id]).sort(),
+			);
 		}
 		expect(SOUND_TYPE_PROFILES).toEqual(DEFAULT_TYPE_PROFILES);
 	});
