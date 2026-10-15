@@ -11,6 +11,7 @@ import {
 	getCommand,
 	isCommandEnabled,
 	registerAllCommands,
+	runCommand,
 	type ToastRequest,
 } from '../src/commands/index.ts';
 import { cancelLibraryMode, requestCueFill } from '../src/sound/controller.ts';
@@ -159,5 +160,56 @@ describe('Variation commands are enabled only where they can act', () => {
 		// the library clip still cycles
 		h.session.select('timeline', [h.clipId], 'replace', { linked: false });
 		expect(isCommandEnabled(getCommand('sound.nextVariation')!, h.ctx)).toBe(true);
+	});
+});
+
+describe('A failing sound command reports once (one toast), and fails for agents', () => {
+	it('Fill Unfilled Cues with the library search failing', async () => {
+		const h = await filled();
+		h.apply([
+			{
+				type: 'soundCue.add',
+				cues: [{ frame: 200, kind: 'cut', weight: 'support', types: ['hit'], source: 'user' }],
+			},
+		]);
+		h.fake.client.searchSounds = async () => {
+			throw new Error('engine offline');
+		};
+		h.toasts.length = 0;
+		const r = await runCommand('sound.fillUnfilledCues', h.ctx);
+		expect(r.ran).toBe(false);
+		expect(h.toasts).toHaveLength(1);
+		expect(h.toasts[0]).toMatchObject({ kind: 'warning', message: 'Could not fill the cues' });
+	});
+
+	it('Next Variation with the engine offline', async () => {
+		const h = await filled();
+		h.fake.client.registerSound = async () => {
+			throw new Error('engine offline');
+		};
+		h.toasts.length = 0;
+		const r = await runCommand('sound.nextVariation', h.ctx);
+		expect(r.ran).toBe(false);
+		expect(h.toasts).toHaveLength(1);
+	});
+
+	it('Fill Sound Cue with the sound registration failing', async () => {
+		const h = await filled();
+		const cueId = (
+			h.apply([
+				{
+					type: 'soundCue.add',
+					cues: [{ frame: 200, kind: 'cut', weight: 'support', types: ['hit'], source: 'user' }],
+				},
+			]).results[0] as { cueIds: string[] }
+		).cueIds[0]!;
+		h.fake.client.registerSound = async () => {
+			throw new Error('engine offline');
+		};
+		h.toasts.length = 0;
+		const r = await runCommand('sound.fillCue', h.ctx, { cueId, soundId: h.list[2]!.id });
+		expect(r.ran).toBe(false);
+		expect(h.toasts).toHaveLength(1);
+		expect(h.toasts[0]).toMatchObject({ kind: 'warning', message: 'Could not fill the cue' });
 	});
 });

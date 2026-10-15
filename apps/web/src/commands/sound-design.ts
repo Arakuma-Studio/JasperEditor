@@ -52,7 +52,7 @@ import { inContextActive, inContextEndedBy, stopInContext } from '../sound/in-co
 import { soundLibraryPrefs } from '../sound/prefs.ts';
 import { registerSoundDesignUi } from '../sound/register.tsx';
 import { cycleVariation, swappableClips } from '../sound/swap.ts';
-import { runCommand } from './registry.ts';
+import { ReportedCommandError, runCommand } from './registry.ts';
 import {
 	applySequenceCommands,
 	type ResolvedSequenceCommandContext,
@@ -283,7 +283,7 @@ export const soundDesignCommands: UiCommand[] = [
 				});
 			} catch (err) {
 				toastError(ctx, t('Could not fill the cue'), err);
-				throw err;
+				throw new ReportedCommandError(err);
 			}
 		},
 	},
@@ -348,7 +348,7 @@ export const soundDesignCommands: UiCommand[] = [
 				});
 			} catch (err) {
 				toastError(ctx, t('Could not fill the cues'), err);
-				throw err;
+				throw new ReportedCommandError(err);
 			}
 		},
 	},
@@ -411,7 +411,8 @@ export const soundDesignCommands: UiCommand[] = [
 						ctx.ui.toast({ kind: 'warning', message: t('No variation'), detail: r.message });
 					}
 				});
-				if (failure) throw new Error(failure);
+				// reported above (one toast per failed step); agents still get the failure
+				if (failure) throw new ReportedCommandError(failure);
 			},
 		}),
 	),
@@ -714,7 +715,7 @@ export const soundDesignCommands: UiCommand[] = [
 				}
 			} catch (err) {
 				toastError(ctx, t('Could not detect the peak'), err);
-				throw err;
+				throw new ReportedCommandError(err);
 			}
 		},
 	},
