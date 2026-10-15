@@ -34,6 +34,7 @@ type Sfx = {
 	soundId: string | null;
 	layer: number;
 	role: string;
+	alternatives?: string[];
 	placement: { align: string; peakFlicks: number; errorFlicks: number };
 };
 type Clip = {

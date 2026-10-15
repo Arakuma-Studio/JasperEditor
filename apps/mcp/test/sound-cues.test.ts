@@ -231,6 +231,14 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		});
 		expect(ranged.cues.every((c) => c.frame >= 150 && c.frame < 270)).toBe(true);
 		expect((await fails('find_sound_cues', { projectId, densty: 'rich' })).code).toBe('E_UNKNOWN_ARGUMENT');
+		// a range past the last frame a sequence can have is refused by the tool with a time hint (it was the route's
+		// raw zod dump, VALIDATION_FAILED)
+		const far = await fails('find_sound_cues', { projectId, range: { start: 0, end: '99:59:59:29' } });
+		expect([far.code, far.message]).toEqual([
+			'E_INVALID_PARAM',
+			expect.stringMatching(/^range must lie within/),
+		]);
+		expect(far.hint).toContain('timecode');
 		expect((await fails('find_sound_cues', { projectId, sequenceId: 'seq_nope' })).code).toBe('E_NOT_FOUND');
 	});
 
@@ -301,6 +309,18 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		expect((await fails('set_sound_cues', { projectId, add: [{ at: 3, colour: 'red' }] })).code).toBe(
 			'E_UNKNOWN_ARGUMENT',
 		);
+		// an inverted window is refused (it was silently dropped while update refused it); storedCueId is bounded
+		const inverted = await fails('set_sound_cues', {
+			projectId,
+			add: [{ at: 3, window: { start: 50, end: 10 } }],
+		});
+		expect([inverted.code, inverted.message]).toEqual([
+			'E_INVALID_PARAM',
+			expect.stringContaining('add[0].window'),
+		]);
+		expect(
+			(await fails('set_sound_cues', { projectId, add: [{ at: 3, storedCueId: 'x'.repeat(10_000) }] })).code,
+		).toBe('E_INVALID_ARGUMENT');
 		expect(
 			(await fails('set_sound_cues', { projectId, remove: { cueIds: ['cue_0000000000000999'] } })).code,
 		).toBe('E_NOT_FOUND');
@@ -507,6 +527,37 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		);
 	});
 
+	it('swap_sound cycles a sound placed without alternates: next ×3 progresses, previous ×3 returns to it', async () => {
+		// Regression (lead's real run): without a stored ring the cycle was anchored on the CURRENT sound, so it was
+		// rebuilt around each new sound and "next" alternated between two sounds forever.
+		const seq = seqOf(await documentOf(projectId));
+		const F = flicksPerFrame(seq.settings.frameRate);
+		const push = cuesOf(seq).find((c) => c.kind === 'transition')!;
+		const clip = Object.values(seq.clips).find(
+			(c) => c.kind === 'audio' && (c as SfxClip).sfx?.cueId === push.id,
+		) as SfxClip;
+		expect(clip.sfx!.alternatives ?? []).toEqual([]);
+		const original = clip.sfx!.soundId!;
+		const seen = [original];
+		for (let i = 0; i < 3; i++)
+			seen.push(
+				(await ok<{ to: { soundId: string } }>('swap_sound', { projectId, clipId: clip.id, to: 'next' })).to
+					.soundId,
+			);
+		expect(new Set(seen).size, seen.join(' ')).toBe(4);
+		const back: string[] = [];
+		for (let i = 0; i < 3; i++)
+			back.push(
+				(await ok<{ to: { soundId: string } }>('swap_sound', { projectId, clipId: clip.id, to: 'previous' }))
+					.to.soundId,
+			);
+		expect(back).toEqual([seen[2], seen[1], original]);
+		const after = seqOf(await documentOf(projectId)).clips[clip.id] as SfxClip;
+		expect(after.sfx!.alternatives).toEqual([original]);
+		expect(after.sfx!.soundId).toBe(original);
+		expect(Math.abs(playsAt(after, F) - 180 * F)).toBeLessThanOrEqual(1);
+	});
+
 	it('align_peak moves a clip (and its layers) so the peak lands exactly; back to its cue; refusals', async () => {
 		const doc = await documentOf(projectId);
 		const seq = seqOf(doc);
@@ -547,6 +598,28 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		expect((await fails('align_peak', { projectId, clipId: video.id, to: 100 })).code).toBe(
 			'E_INVALID_PARAM',
 		);
+		// a duplicated layer carries sfx.cueId but fills nothing (the cue's placedClipIds does not list it): "cue" is
+		// the cue nearest to the copy, and the original layers are not dragged along (regression: they were)
+		const dup = await ok<{ results: { clipIds?: string[]; created?: string[] }[]; created: string[] }>(
+			'apply_commands',
+			{
+				projectId,
+				label: 'Duplicate',
+				commands: [{ type: 'clip.duplicate', clipIds: [layers[0]], at: 600 }],
+			},
+		);
+		const copy = dup.created.find((id) => !layers.includes(id) && id.startsWith('clp_'))!;
+		expect((seqOf(await documentOf(projectId)).clips[copy] as SfxClip).sfx?.cueId).toBe(marker.id);
+		const alone = await ok<{ clips: { clipId: string }[]; cueId?: string }>('align_peak', {
+			projectId,
+			clipId: copy,
+			to: 'cue',
+		});
+		expect(alone.clips.map((c) => c.clipId)).toEqual([copy]);
+		expect(alone.cueId).not.toBe(marker.id);
+		s = seqOf(await documentOf(projectId));
+		for (const id of layers)
+			expect(Math.abs(playsAt(s.clips[id] as SfxClip, F) - 250 * F)).toBeLessThanOrEqual(1);
 		expect(FLICKS_PER_SECOND).toBe(705_600_000);
 	});
 });

@@ -18,7 +18,6 @@ import {
 	type SoundVisual,
 } from '@jasper/api';
 import {
-	LIBRARY_LEAD_SILENCE_SEC,
 	LIBRARY_PAD_MAX_SECONDS,
 	type LibraryProvenance,
 	LibraryProvenanceSchema,
@@ -35,7 +34,7 @@ import { resolveSoundWorker, SoundAnalyzer } from './analysis.ts';
 import { decodeSound } from './decode.ts';
 import { SoundIndexer } from './index-job.ts';
 import { type LibrarySnapshot, SoundLibrary } from './library.ts';
-import { paddedFileName, probeAudioStream, writePaddedSound } from './pad.ts';
+import { isPcmCodec, paddedFileName, probeAudioStream, writePaddedSound } from './pad.ts';
 import { SoundRootStore, type SoundRootsPlan } from './roots.ts';
 import { searchSoundEntries } from './search.ts';
 import { isSoundFileName, type LoadedManifest, loadManifest, starterDir } from './starter.ts';
@@ -445,7 +444,9 @@ export class SoundService {
 	 * Registers a sound's file as media for a project. A sound whose head is not quiet (and which is at most
 	 * `LIBRARY_PAD_MAX_SECONDS` long) is registered as a managed WAV copy with `LIBRARY_LEAD_SILENCE_SEC` of silence in
 	 * front (`pad.ts`), whatever its source, so placement is sample-exact; the provenance's descriptors then describe that
-	 * file and `leadSilenceSec` says how much was added. Other sounds: starter, pack and synth files are copied into
+	 * file and `leadSilenceSec` says how much was added. A lossy sound (Vorbis, MP3…) of that length is also registered
+	 * as a PCM WAV copy (without silence when its head is quiet): seeks into lossy streams are not sample-exact. Other
+	 * sounds (PCM, or longer than the limit): starter, pack and synth files are copied into
 	 * managed media, folder files registered in place (local mode). Returns the registered media, the provenance to
 	 * commit and the saved project's media that already is this file.
 	 */
@@ -468,13 +469,14 @@ export class SoundService {
 			new HttpError(409, 'SOUND_CHANGED', 'The file changed since it was indexed; rescan the sound library');
 		let reg: RegisteredMedia;
 		let leadSec = 0;
-		const maybePad =
-			e.descriptors.headQuietSec < LIBRARY_LEAD_SILENCE_SEC &&
-			e.descriptors.durationSec > 0 &&
-			e.descriptors.durationSec <= LIBRARY_PAD_MAX_SECONDS;
-		const stream = maybePad ? await this.mediaCall(() => probeAudioStream(this.core.ffmpeg, path)) : null;
+		const copyable = e.descriptors.durationSec > 0 && e.descriptors.durationSec <= LIBRARY_PAD_MAX_SECONDS;
+		const stream = copyable ? await this.mediaCall(() => probeAudioStream(this.core.ffmpeg, path)) : null;
 		const samples = stream?.sampleRate ? libraryLeadSilenceSamples(e.descriptors, stream.sampleRate) : 0;
-		if (samples > 0 && stream?.sampleRate) {
+		// A lossy source (Vorbis, Opus, MP3, AAC…) is copied as PCM even when its head is quiet: ffmpeg's seeked
+		// decode of such a stream is not sample-aligned with its full decode (Vorbis: 128 samples late), and the
+		// descriptors (the peak) are measured on the full decode, so an In point after 0 would play the peak late.
+		const lossy = !!stream?.codec && !isPcmCodec(stream.codec);
+		if ((samples > 0 || lossy) && stream?.sampleRate) {
 			if ((await fingerprintFile(path)).fingerprint !== e.fingerprint) throw changed();
 			const tmp = await this.mediaCall(() =>
 				writePaddedSound(this.core.ffmpeg, {

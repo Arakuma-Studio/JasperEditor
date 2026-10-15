@@ -29,12 +29,17 @@ export class History {
 	/** Number of applied entries (entries[index - 1] is the top of the undo stack). */
 	private index = 0;
 	private nextId = 1;
+	/** The entry the next commit may merge into: the last one pushed, until an undo, redo or clear closes it. */
+	private open: HistoryEntry | undefined;
 
 	constructor(private capacity = DEFAULT_HISTORY_CAPACITY) {
 		this.capacity = Math.min(1000, Math.max(32, capacity));
 	}
 
-	/** Records a commit; discards the redo stack (S01:UND-005); coalesces when allowed (UND-006). */
+	/**
+	 * Records a commit; discards the redo stack (S01:UND-005); coalesces when allowed (UND-006): only into the entry
+	 * pushed last, never across an undo or redo (the run is closed).
+	 */
 	push(
 		e: Omit<HistoryEntry, 'id'>,
 		now: number,
@@ -46,6 +51,7 @@ export class History {
 		const window = opts.windowMs !== undefined && !Number.isNaN(opts.windowMs) ? opts.windowMs : windowMs;
 		if (
 			top &&
+			top === this.open &&
 			e.coalesceKey !== undefined &&
 			top.coalesceKey === e.coalesceKey &&
 			top.origin === 'user' &&
@@ -64,6 +70,7 @@ export class History {
 			return top;
 		}
 		const entry: HistoryEntry = { ...e, id: this.nextId++, time: now };
+		this.open = entry;
 		this.entries.push(entry);
 		this.index = this.entries.length;
 		while (this.entries.length > this.capacity) {
@@ -82,16 +89,19 @@ export class History {
 	undo(): HistoryEntry | undefined {
 		const e = this.peekUndo();
 		if (e) this.index--;
+		this.open = undefined;
 		return e;
 	}
 	redo(): HistoryEntry | undefined {
 		const e = this.peekRedo();
 		if (e) this.index++;
+		this.open = undefined;
 		return e;
 	}
 	clear(): void {
 		this.entries = [];
 		this.index = 0;
+		this.open = undefined;
 	}
 	get position(): number {
 		return this.index;

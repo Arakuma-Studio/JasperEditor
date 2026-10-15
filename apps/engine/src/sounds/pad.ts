@@ -4,7 +4,9 @@
 // writes a copy with `LIBRARY_LEAD_SILENCE_SEC` (whole samples) of digital silence in front of it, as PCM WAV: the
 // decoded samples bit for bit (32-bit float holds every 16/24-bit and float decoder output exactly), so nothing is
 // re-encoded lossily. Deterministic (`-bitexact`, no metadata): the same file gives the same bytes, so the media
-// registry and the project dedupe repeated registrations by fingerprint.
+// registry and the project dedupe repeated registrations by fingerprint. A lossy sound (Vorbis, Opus, MP3, AAC…) is
+// written the same way with no silence when its head is already quiet: a seeked decode of a lossy stream is not
+// sample-aligned with its full decode (Vorbis: 128 samples), so only PCM keeps an In point after 0 exact.
 import { mkdir, rm } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { JobError } from '../jobs/types.ts';
@@ -15,6 +17,11 @@ const PAD_TIMEOUT_MS = 120_000;
 
 /** Codecs written as they are (lossless PCM wider than float32 would lose bits); everything else → pcm_f32le. */
 const KEEP_CODECS = new Set(['pcm_s32le', 'pcm_f64le']);
+
+/** PCM codecs (`pcm_s16le`, `pcm_f32le`…): seeks are sample-exact, so such a file may be registered as it is. */
+export function isPcmCodec(codec: string): boolean {
+	return codec.startsWith('pcm_');
+}
 
 /** Codec and sample rate of the first audio stream (null fields when ffprobe does not say). */
 export async function probeAudioStream(
@@ -52,14 +59,14 @@ export function paddedFileName(libraryFile: string): string {
 }
 
 /**
- * Writes `<tmpDir>/<unique>.wav`: `samples` of silence, then the first audio stream of `path` at its own rate and
- * channel count. Returns the temp file (the caller registers or deletes it). `codec` is the source's audio codec.
+ * Writes `<tmpDir>/<unique>.wav`: `samples` (≥ 0) of silence, then the first audio stream of `path` at its own rate
+ * and channel count. Returns the temp file (the caller registers or deletes it). `codec` is the source's audio codec.
  */
 export async function writePaddedSound(
 	ff: Ffmpeg,
 	opts: { path: string; samples: number; codec: string | null; tmpDir: string; signal?: AbortSignal },
 ): Promise<string> {
-	if (!Number.isSafeInteger(opts.samples) || opts.samples <= 0 || opts.samples > 1_000_000)
+	if (!Number.isSafeInteger(opts.samples) || opts.samples < 0 || opts.samples > 1_000_000)
 		throw new JobError('E_INVALID_PARAM', 'Bad lead-silence length');
 	await mkdir(opts.tmpDir, { recursive: true });
 	const out = join(opts.tmpDir, `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.wav`);
@@ -78,8 +85,7 @@ export async function writePaddedSound(
 				'-vn',
 				'-sn',
 				'-dn',
-				'-af',
-				`adelay=delays=${opts.samples}S:all=1`,
+				...(opts.samples > 0 ? ['-af', `adelay=delays=${opts.samples}S:all=1`] : []),
 				'-c:a',
 				codec,
 				'-map_metadata',

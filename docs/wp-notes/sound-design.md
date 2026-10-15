@@ -1894,7 +1894,8 @@ Shared host, 16 cores; other agents' load stated per run.
   change) adds the padded copy as a new media; the old clips keep working with their own provenance.
 - `soundDesign.place` (Phase 2) should call `planSoundInsert` / `chooseSoundTrack` (or move them into its handler) so
   the command, the panel and MCP stay one implementation.
-- The history label "Add Sound <title>" and placement refusals from `@jasper/project` are English in the editor.
+- ~~The history label "Add Sound <title>" and placement refusals from `@jasper/project` are English in the editor.~~
+  Fixed in "Phase 2 verification: agent surfaces" below (model-string templates).
 - Workspace names (all built-ins, not only Sound Design) are not in the i18n catalogue (pre-existing).
 
 ## Phase 2: cues and placement
@@ -2853,6 +2854,73 @@ that run.
   (`soundDesign.swap` renames when the name is the old file name).
 - Auto gain with its reason, Room send and Stop before next in Essential Sound are Phase 4 (P4 owns the levels).
 
+### Phase 2 verification: model review (`feat/sd-p2v-model`)
+
+A review of the cue model, placement commands, repair and coalesced history for real bugs; each fix came with a
+regression test that failed before it (run against the unfixed code first). Tests: `packages/project/test/
+sound-p2v-model.test.ts`, `packages/session/test/session.test.ts`.
+
+| Finding | Fix | Regression test (failed before) |
+|---|---|---|
+| `repairDocument` was not idempotent: the final transition pass ran after the sound-design repair, so a cue anchored to a transition that pass drops kept a dangling anchor until a second repair (`drop-cue-anchor`) | sound-design repair runs last | "a cue anchored to a transition the final transition repair drops is tidied in the same pass" |
+| `soundDesign.swap` refused (`E_INVALID_PARAM`, "would start before frame 0") a sound placed near frame 0 with `clampStart` — even swapping it for itself (variation cycling at the sequence start) | an in-place swap of a clip at frame 0 clamps like the insert (head trimmed, aligned point exact; `trimmedHeadSec` in the result); onto a `frame` it stays refused | "a sound placed with clampStart … can be swapped, also for itself"; "a clip at frame 0 re-aligned onto an earlier frame … is refused" |
+| `soundDesign.swap` to a shorter sound with a fade on the clip's edge failed with `E_INVARIANT` (INV-010, transition longer than the clip) | edge transitions are shortened to the new length (`W_TRANSITION_SHORTENED`); crossfades whose cut moved are removed by the cleanup as before | "a fade longer than the new sound is shortened to fit, never E_INVARIANT" |
+| A razor / split of a filled SFX clip left the right part out of the cue's `placedClipIds`: `soundCue.resync` / `update` then moved only the left part into the right one (`E_OVERLAP`, resync impossible) and `remove withClips` left half the sound behind | `splitClipAt` → `followSfxSplit`: the right part joins the cue after the left one (when the cue is full it forgets the cue); `soundDesign.place` numbers new layers after the cue's highest layer (the two parts are one layer) | "both halves fill the cue: resync, update and remove withClips move or lift both"; "the two parts are one layer…" |
+| History merged a coalesced commit into the entry below an undone one (or into a redone entry): one Undo then reverted edits from both sides of the undo (runs with `coalesceWindowMs: Infinity` and 750 ms nudges alike) | `History` merges only into the entry it pushed last; undo, redo and clear close the run | "never coalesces across an undo or redo, even with the same key and window" |
+| `soundCue.add` accepted a cue `id` of any length (refused later, the message echoing it) | schema bound (128) | "non-finite numbers, oversized arrays and strings are refused…" |
+
+Gaps filled (tests only): undo / redo of all ten Phase 2 commands; the refusal codes without a test (update anchor
+`E_NOT_FOUND`, `E_SCHEMA` of update / remove / resync, resync before frame 0, every swap `E_INVALID_PARAM`, palette
+`E_LIMIT`); a repair-idempotence property over two sequences with hostile cue / sfx values (prototype-named keys,
+NaN / ±Infinity / negative / huge frames, 5 000-entry `placedClipIds`, ids of video clips, other sequences' clips and
+cues); ordinary edits (delete clip / transition / marker / track, ripple delete, razor, duplicate, sequence.duplicate,
+nest, trim, speed) never meet `E_INVARIANT` from soft references and load tidies them in one pass; swap keeps gain,
+pan / volume / effect keyframes (sequence times), markers, group, link, role, cue, alternatives, enabled, name and
+Essential type at speed ≠ 1; resync after trims and speed changes, a clip filling two cues moves once; pitch plan at
+|st| = 3; agents' unknown keys at any depth; deriveCues independent of storage order (property); a 5-step coalesced
+run undoes to the exact document before its first step, redoes to its last, and every step dirties and is announced.
+
+Not fixed (reported): razoring inside a transition's span fails with `E_INVARIANT` (INV-010) for any clips, not only
+sound (`clip.split`, edit-structure); a copied / duplicated / pasted SFX clip keeps its `sfx.cueId` without being one
+of the cue's placed clips (resync does not move it, a swap of it rewrites the cue's `soundIds[layer]`) — whether a
+copy should forget its cue is a design call; `soundDesign.swap {pitchSt: 0}` after a fractional varispeed shift
+(e.g. 2.5 st) keeps up to ±0.5 st, because the seeded variation and a fractional shift cannot be told apart from the
+clip speed alone (the pitch is not stored).
+
+### Phase 2 verification: agent surfaces (branch `feat/sd-p2v-agent`)
+
+Review of the cue route, the MCP cue tools and model-string i18n. Each fix has a regression that failed before it.
+
+- **Same cues on both surfaces.** The route (and so `find_sound_cues`) bound active expressions before `deriveCues`, the
+  editor's Suggest Cues… did not: an expression-driven graphic gave 19 cues on the engine, 17 in the dialog. Decision:
+  binding is right (cues follow what the Program monitor shows). `planSuggestion` binds; the dialog waits for the
+  expression engine (`useExpressionsFor`). `apps/engine/test/sound-design-cues.test.ts` runs the web planner and the
+  route on the same envelope (defaults, In–Out range, sparse without dialogue, a source subset) and compares every cue.
+- **Sampling budget.** `deriveCues` sampled every frame of every animated clip (20 000 per clip, no total): measured
+  2.2 s for 20 clips × 20 000 frames on this shared host, so a 20 MB envelope could block the engine for minutes and
+  `curves: true` return gigabytes; camera sampling also tested every camera per frame. The keyframes and camera3d
+  sources now share `MAX_SAMPLES_PER_DERIVATION` (400 000 frames; a camera frame costs 1 + overlapping cameras) and warn
+  once (`W_SAMPLING_TRUNCATED`); deterministic (clip order).
+- **swap_sound cycling across calls.** Without `sfx.alternatives` the cycle was anchored on the current sound and
+  `next` alternated between two sounds (lead's real run). `soundDesign.swap` gains optional `alternatives` (the ring);
+  `swap_sound` stores `[the sound playing now]` on a clip without a ring in the same transaction. Decision: a cycle
+  candidate that does not fit on the track (`E_OVERLAP`) is skipped for the next one in the same direction (≤ 4 tries,
+  listed in `skipped`); the explicit `to: soundId` still fails. The web's Next/Previous Variation has the same
+  cross-run re-anchoring (left to the web reviewer / lead).
+- **Two-way cue link in MCP:** `align_peak` (own cue, `withLayers`, note) and `place_sound`'s hero check use a clip's
+  cue only when its `placedClipIds` lists the clip (a duplicate fills nothing).
+- **Arguments:** `set_sound_cues` refuses an inverted `window` (it was silently dropped), `storedCueId` ≤ 128;
+  `find_sound_cues` refuses a range past `maxFrame` with the time hint (was the route's raw zod dump).
+- **i18n (model strings, the existing mechanism):** `@jasper/project` exports `SOUND_LABELS` (MCP builds its History
+  labels from them) and `SOUND_MESSAGES` (refusal templates; `test/sound-messages.test.ts` checks every refusal written
+  in the sound handlers and planners has one, except `peakAlignedStart`'s developer input checks). `model-strings.ts`
+  lists them plus "Agent"; `translateName` now also matches templated model names (whole text, or a part between
+  separators, so "Agent: Sound Cues (add 2, edit 1)" → "Agente: Señales de sonido (añadir 2, editar 1)"); the filled
+  values (ids, titles, numbers) are kept. The web's own labels (Fill Cue, Add Layer, Swap Sound ×n, Suggest Cues (n),
+  Fill Unfilled Cues (n), Add Sound) were already translated by `t()` / the build transform at commit.
+  Limits: labels are stored in the language they were committed in; "Undo <label>" (`commands/edit.ts`) is still
+  composed in English (pre-existing, every feature).
+
 ### Phase 2 verification: web UI (fill, swap, In Context, Cue Seam)
 
 Review of the WP2.4a/b web code against spec 12 §2.7 / P2-R7 (branch `feat/sd-p2v-web`). Every fix has a regression test
@@ -2881,8 +2949,9 @@ Fixed:
   warning and rethrew, so the runner added a second "… failed" toast; they throw `ReportedCommandError`
   (`commands/registry.ts`): agents still get `ran: false`.
 - **Suggest Cues…** derived on the raw document, the engine route on the document with expressions bound: an
-  expression-driven slide-in gave move@14 + land@30 through MCP and nothing in the dialog. The dialog loads the expression
-  engine and plans on the bound document (`apps/web/test/sound-p2v-suggest.test.tsx`).
+  expression-driven slide-in gave move@14 + land@30 through MCP and nothing in the dialog. Found by this review and the
+  agent-surface review at the same time; the merge keeps one implementation (the agent review's, which also disables
+  Suggest until the expression engine has loaded) and both reviews' tests (`apps/web/test/sound-p2v-suggest.test.tsx`).
 - **Cue Seam / peak handle** (`sound/cues/{CueSeam,PeakHandle,model}.tsx`): Esc cancels a cue drag and a peak drag (Esc
   deselected the cues mid-drag and the release committed); a seam or handle unmounting mid-drag cancels its gesture (it
   stayed held forever); Shift-click / Shift+Arrow on a cue with clips selected selects the cue, and cues selected by

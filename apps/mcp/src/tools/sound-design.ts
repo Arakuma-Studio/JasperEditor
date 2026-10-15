@@ -33,6 +33,7 @@ import {
 	type Sequence,
 	SFX_ROLES,
 	SOUND_DESIGN_LIMITS,
+	SOUND_LABELS,
 	SOUND_TYPES,
 	type SoundCue,
 	type SoundTypeId,
@@ -41,6 +42,7 @@ import {
 	soundCueFields,
 	soundCuesOf,
 	soundDesignSettingsOf,
+	soundText,
 	synonymType,
 	TimeInputSchema,
 	trackLabel,
@@ -68,6 +70,8 @@ import { livePlayhead } from './color.ts';
 import { importCommands, type Registered, resolveAudioTrack, SoundIdArg, soundCall } from './sound.ts';
 
 const CUE_DERIVE_SOURCE_LIST = CUE_DERIVE_SOURCES.join(', ');
+/** swap_sound next / previous: candidates tried in the cycle's direction when one does not fit on the track. */
+const MAX_CYCLE_TRIES = 4;
 const r3 = (x: number) => Math.round(x * 1000) / 1000;
 
 /** `at` of a tool: a sequence time or "playhead". */
@@ -153,6 +157,17 @@ function peakFrameOf(doc: ProjectDocument, clip: AudioClip, F: number): number |
 type SfxClip = AudioClip & { sfx?: ClipSfx };
 const sfxClipsOf = (seq: Sequence): SfxClip[] =>
 	Object.values(seq.clips).filter((c): c is SfxClip => c.kind === 'audio' && !!(c as SfxClip).sfx);
+
+/**
+ * The cue a clip fills: its `sfx.cueId` only when that cue's `placedClipIds` lists the clip (two-way link). A
+ * duplicated or pasted copy carries the original's `sfx.cueId` but fills nothing.
+ */
+function filledCueOf(seq: Sequence, clip: SfxClip): SoundCue | undefined {
+	const id = clip.sfx?.cueId;
+	if (!id) return undefined;
+	const cue = soundCuesOf(seq).find((c) => c.id === id);
+	return cue?.placedClipIds?.includes(clip.id) ? cue : undefined;
+}
 
 /** The cue with this id in the document (and its sequence), or a typed error. */
 function findCue(doc: ProjectDocument, cueId: string, sequenceId?: string): { seq: Sequence; cue: SoundCue } {
@@ -253,6 +268,7 @@ const CueAddArg = z.object({
 	key: z.string().max(400).optional().describe('Informational: the suggestion key'),
 	storedCueId: z
 		.string()
+		.max(128)
 		.nullable()
 		.optional()
 		.describe('A suggestion already stored as this cue is skipped (not added twice)'),
@@ -446,6 +462,12 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 						'range.end must be after range.start (both ≥ 0)',
 						TIME_FORMATS,
 					);
+				if (range.end > SOUND_DESIGN_LIMITS.maxFrame)
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						`range must lie within frames 0…${SOUND_DESIGN_LIMITS.maxFrame} (got end ${range.end})`,
+						TIME_FORMATS,
+					);
 			}
 			const res = await soundCall<SoundCuesResponse>(ctx, (c) =>
 				c.soundDesignCues(
@@ -533,11 +555,12 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 			if (!a.add && !a.update && !a.remove && !a.resync)
 				throw new ToolError('E_INVALID_PARAM', 'Nothing to do', 'Give add, update, remove and/or resync.');
 			const parts: string[] = [];
-			if (a.add) parts.push(`add ${a.add.length}`);
-			if (a.update) parts.push(`edit ${a.update.length}`);
-			if (a.remove) parts.push(`remove ${a.remove.cueIds.length}`);
-			if (a.resync) parts.push('resync');
-			const label = `Sound Cues (${parts.join(', ')})`;
+			if (a.add) parts.push(soundText(SOUND_LABELS.cuesAdd, a.add.length));
+			if (a.update) parts.push(soundText(SOUND_LABELS.cuesEdit, a.update.length));
+			if (a.remove) parts.push(soundText(SOUND_LABELS.cuesRemove, a.remove.cueIds.length));
+			if (a.resync) parts.push(SOUND_LABELS.cuesResync);
+			// The templates of @jasper/project (SOUND_LABELS): the editor shows this label translated in its History.
+			const label = `${SOUND_LABELS.soundCues} (${parts.join(', ')})`;
 			const { res, r, state } = await transactFresh(
 				ctx,
 				a.projectId,
@@ -762,7 +785,10 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 			}
 			for (const id of a.alternatives ?? []) await entry(id);
 			const title = registered[0]?.title ?? 'Sound';
-			const label = a.layers.length > 1 ? `Place ${a.layers.length} Sounds` : `Place Sound ${title}`;
+			const label =
+				a.layers.length > 1
+					? soundText(SOUND_LABELS.placeSounds, a.layers.length)
+					: soundText(SOUND_LABELS.placeSound, title);
 			const { res, r, state } = await transactFresh(
 				ctx,
 				a.projectId,
@@ -861,7 +887,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 							});
 						const fps = FLICKS_PER_SECOND / F;
 						for (const c of sfxClipsOf(seq)) {
-							if (c.sfx!.role !== 'hero' || (cue && c.sfx!.cueId === cue.id)) continue;
+							if (c.sfx!.role !== 'hero' || (cue && filledCueOf(seq, c)?.id === cue.id)) continue;
 							const at = alignedFrameOf(c, F);
 							if (at === null) continue;
 							const dt = Math.abs(at - frame) / fps;
@@ -976,7 +1002,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 		{
 			title: 'Swap sound',
 			description:
-				'Replaces the sound of a placed clip with another library sound in ONE undo step, keeping where its aligned point (peak, start or end) plays, its track, role, pan, gain, effects, group and cue link (keyframes keep their times). to: a soundId, or "next" / "previous" to cycle: first the alternates given to place_sound, then sounds of the same family most similar to the original, then the most similar sounds of any family. Returns the old and new sound, the position in the cycle and the aligned frame.',
+				'Replaces the sound of a placed clip with another library sound in ONE undo step, keeping where its aligned point (peak, start or end) plays, its track, role, pan, gain, effects, group and cue link (keyframes keep their times). to: a soundId, or "next" / "previous" to cycle: first the alternates given to place_sound, then sounds of the same family most similar to the original, then the most similar sounds of any family; the cycle keeps the sound first placed as its anchor across calls (a clip placed without alternates stores it on its first swap), so next / previous progress and come back to it. A candidate that does not fit on the clip’s track is skipped (listed in skipped). Returns the old and new sound, the position in the cycle and the aligned frame.',
 			input: {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1).max(128).describe('A placed sound clip (place_sound, insert_sound)'),
@@ -995,8 +1021,9 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 				(doc.media[clip.mediaId] as { library?: unknown } | undefined)?.library,
 			);
 			const current = clip.sfx?.soundId ?? prov?.soundId ?? null;
-			let target: string;
-			let cycle: { index: number; of: number; from: string } | null = null;
+			// The candidates to try, in order: the explicit sound, or the next ones of the cycle in its direction (a
+			// candidate that does not fit on the clip's track, E_OVERLAP, is skipped for the following one).
+			let tries: { soundId: string; cycle: { index: number; of: number; from: string } | null }[];
 			if (a.to === 'next' || a.to === 'previous') {
 				const list = await cycleList(ctx, clip, current, prov, extra);
 				let idx = current ? list.findIndex((x) => x.soundId === current) : -1;
@@ -1011,34 +1038,68 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 						'Give place_sound alternatives, or swap to a soundId from search_sounds.',
 					);
 				const n = list.length;
-				const j = (idx + (a.to === 'next' ? 1 : -1) + n) % n;
-				target = list[j]!.soundId;
-				cycle = { index: j + 1, of: n, from: list[j]!.from };
-			} else target = a.to;
-			if (target === current)
-				throw new ToolError('E_INVALID_PARAM', `The clip already plays ${target}`, 'Pick another sound.');
-			const e = await soundCall<SoundEntry>(ctx, (c) => c.getSound(target));
-			const reg = await soundCall<RegisterSoundResponse>(ctx, (c) => c.registerSound(target, a.projectId));
-			const title = e.title || reg.library.title || reg.originalName;
-			const label = `Swap Sound ${title}`;
-			const { res, r, state } = await transactFresh(
-				ctx,
-				a.projectId,
-				label,
-				async (d) => {
-					const { seq: s } = findAudioClip(d, a.clipId);
-					const { commands, media } = importCommands(d, [{ soundId: target, reg, title }]);
-					const m = media[0]!;
-					commands.push({
-						type: 'soundDesign.swap',
-						clipId: a.clipId,
-						mediaId: m.mediaId ?? m.ref!,
-						...(a.align ? { align: a.align } : {}),
-					});
-					return { commands, sequenceId: s.id, state: { swapIndex: commands.length - 1 } };
-				},
-				extra,
-			);
+				const dir = a.to === 'next' ? 1 : -1;
+				tries = [];
+				for (let step = 1; step < n && tries.length < MAX_CYCLE_TRIES; step++) {
+					const j = (((idx + dir * step) % n) + n) % n;
+					if (list[j]!.soundId === current) continue;
+					tries.push({ soundId: list[j]!.soundId, cycle: { index: j + 1, of: n, from: list[j]!.from } });
+				}
+			} else tries = [{ soundId: a.to, cycle: null }];
+			if (tries[0]!.soundId === current)
+				throw new ToolError('E_INVALID_PARAM', `The clip already plays ${current}`, 'Pick another sound.');
+			// A clip without a variation ring gets [the sound it plays now] in the same transaction: later calls cycle
+			// around that anchor (it would otherwise be rebuilt around each new sound and alternate between two).
+			const ring =
+				!clip.sfx?.alternatives?.length && current && /^snd_[0-9a-f]{16}$/.test(current) ? [current] : null;
+			const skipped: { soundId: string; reason: string }[] = [];
+			let done:
+				| {
+						target: string;
+						cycle: { index: number; of: number; from: string } | null;
+						e: SoundEntry;
+						title: string;
+						label: string;
+						tx: Awaited<ReturnType<typeof transactFresh<{ swapIndex: number }>>>;
+				  }
+				| undefined;
+			for (const [k, t] of tries.entries()) {
+				const e = await soundCall<SoundEntry>(ctx, (c) => c.getSound(t.soundId));
+				const reg = await soundCall<RegisterSoundResponse>(ctx, (c) =>
+					c.registerSound(t.soundId, a.projectId),
+				);
+				const title = e.title || reg.library.title || reg.originalName;
+				const label = soundText(SOUND_LABELS.swapSound, title);
+				try {
+					const tx = await transactFresh(
+						ctx,
+						a.projectId,
+						label,
+						async (d) => {
+							const { seq: s } = findAudioClip(d, a.clipId);
+							const { commands, media } = importCommands(d, [{ soundId: t.soundId, reg, title }]);
+							const m = media[0]!;
+							commands.push({
+								type: 'soundDesign.swap',
+								clipId: a.clipId,
+								mediaId: m.mediaId ?? m.ref!,
+								...(a.align ? { align: a.align } : {}),
+								...(ring ? { alternatives: ring } : {}),
+							});
+							return { commands, sequenceId: s.id, state: { swapIndex: commands.length - 1 } };
+						},
+						extra,
+					);
+					done = { target: t.soundId, cycle: t.cycle, e, title, label, tx };
+					break;
+				} catch (err) {
+					if (!(t.cycle && err instanceof ToolError && err.code === 'E_OVERLAP' && k < tries.length - 1))
+						throw err;
+					skipped.push({ soundId: t.soundId, reason: err.message });
+				}
+			}
+			const { target, cycle, e, title, label } = done!;
+			const { res, r, state } = done!.tx;
 			const out = (r.results as unknown[])[state.swapIndex] as {
 				start: number;
 				duration: number;
@@ -1060,6 +1121,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 				from: { soundId: current, title: fromEntry?.title ?? prov?.title ?? null },
 				to: { soundId: target, title, mediaId: out.mediaId, license: e.license },
 				...(cycle ? { cycle } : {}),
+				...(skipped.length ? { skipped } : {}),
 				align: out.align,
 				alignedFrame: { frame: out.alignedFrame, timecode: sequenceTimecode(seq, out.alignedFrame) },
 				start: { frame: out.start, timecode: sequenceTimecode(seq, out.start) },
@@ -1108,7 +1170,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 			let cueUsed: string | null = null;
 			if (a.to === 'cue') {
 				const cues = soundCuesOf(seq);
-				const own = clip.sfx?.cueId ? cues.find((c) => c.id === clip.sfx!.cueId) : undefined;
+				const own = filledCueOf(seq, clip);
 				const here = alignedFrameOf(clip, F) ?? clip.start;
 				const pick =
 					own ??
@@ -1125,12 +1187,14 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 				cueUsed = pick.id;
 			} else if (a.to === 'playhead') target = await resolveAt(ctx, a.projectId, seq, 'playhead');
 			else target = frameOf(seq, a.to);
+			const ownCue = filledCueOf(seq, clip);
 			const others =
-				a.withLayers !== false && clip.sfx?.cueId
-					? sfxClipsOf(seq).filter((c) => c.id !== clip.id && c.sfx!.cueId === clip.sfx!.cueId)
+				a.withLayers !== false && ownCue
+					? sfxClipsOf(seq).filter((c) => c.id !== clip.id && filledCueOf(seq, c)?.id === ownCue.id)
 					: [];
 			const moving = [clip, ...others];
-			const label = moving.length > 1 ? `Align ${moving.length} Sound Peaks` : 'Align Sound Peak';
+			const label =
+				moving.length > 1 ? soundText(SOUND_LABELS.alignPeaks, moving.length) : SOUND_LABELS.alignPeak;
 			const { res, r } = await transactFresh(
 				ctx,
 				a.projectId,
@@ -1158,7 +1222,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 				errorFlicks: number;
 				sourceInFlicks: number;
 			}[];
-			const linkedCue = clip.sfx?.cueId ? soundCuesOf(s2).find((c) => c.id === clip.sfx!.cueId) : undefined;
+			const linkedCue = filledCueOf(s2, clip);
 			return jsonResult({
 				...txBody(res, r),
 				historyLabel: label,
@@ -1266,6 +1330,12 @@ async function cueCommandInput(
 			`add[${i}]: give frame or at`,
 			'A suggestion carries its frame; a manual cue needs at (a time or "playhead").',
 		);
+	if (c.window && c.window.end < c.window.start)
+		throw new ToolError(
+			'E_INVALID_PARAM',
+			`add[${i}].window: end (${c.window.end}) is before start (${c.window.start})`,
+			'window is the event span in sequence frames {start, end} with end ≥ start (a suggestion carries it).',
+		);
 	const derived = c.from !== undefined || c.key !== undefined;
 	const source = c.source ?? (derived ? 'derived' : 'agent');
 	const types = typeIds(c.types, `add[${i}].types`);
@@ -1283,7 +1353,7 @@ async function cueCommandInput(
 		source,
 		...(c.confidence !== undefined ? { confidence: c.confidence } : {}),
 		...(c.reason !== undefined ? { reason: c.reason } : {}),
-		...(c.window && c.window.end >= c.window.start ? { window: c.window } : {}),
+		...(c.window ? { window: c.window } : {}),
 		...(c.muted !== undefined ? { muted: c.muted } : {}),
 	};
 }

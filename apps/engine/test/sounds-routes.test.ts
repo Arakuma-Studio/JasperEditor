@@ -4,6 +4,7 @@
 
 import { execFileSync } from 'node:child_process';
 import {
+	copyFileSync,
 	existsSync,
 	mkdirSync,
 	readdirSync,
@@ -14,6 +15,7 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
 	AGENT_NAME_HEADER,
 	type EngineJob,
@@ -741,6 +743,73 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 		});
 		expect(changed.statusCode).toBe(409);
 		expect(changed.json().code).toBe('SOUND_CHANGED');
+	});
+});
+
+describe('lossy sounds are registered as PCM (sample-exact seeks)', { timeout: 300_000 }, () => {
+	// Phase 2 verification: an Ogg Vorbis sound with a quiet head was registered as the Ogg itself. ffmpeg's seeked
+	// Vorbis decode (what every export path does for a clip whose In point is not 0) is 128 samples off its full
+	// decode (what the descriptors are measured on), so a peak-aligned clip with a sub-frame In played 2.7 ms late
+	// (measured on the Remotion export of the Phase 2 fixture: +129 samples). A lossy source is now registered as a
+	// PCM WAV copy of its full decode (no lead silence when its head is already quiet).
+	it('an Ogg Vorbis sound with a quiet head becomes a WAV copy whose samples are its full decode', async () => {
+		const app = await makeApp();
+		const folder = tempAppdir('jasper-sfx-ogg-');
+		const kit = join(fileURLToPath(new URL('../sounds/starter/', import.meta.url)), 'swish-blade-01.ogg');
+		mkdirSync(join(folder, 'Swishes'), { recursive: true });
+		copyFileSync(kit, join(folder, 'Swishes', 'blade.ogg'));
+		const put = await putRoots(app, [{ path: folder, license: 'CC0-1.0' }]);
+		await waitJob(app, (put.json() as { job: EngineJob }).job.id);
+		const blade = (await search(app, 'sources=folder&limit=10')).results.map((r) => r.sound)[0]!;
+		expect(blade.title).toBe('blade');
+		expect(blade.descriptors.headQuietSec).toBeGreaterThanOrEqual(LIBRARY_LEAD_SILENCE_SEC);
+		const created = await app.inject({
+			method: 'POST',
+			url: '/api/projects',
+			headers: JSON_H,
+			payload: { name: 'SFX', preset: 'hd-1080p-30' },
+		});
+		const projectId = (created.json() as { projectId: string }).projectId;
+		const r = await app.inject({
+			method: 'POST',
+			url: `/api/sounds/${blade.id}/register`,
+			headers: JSON_H,
+			payload: { projectId },
+		});
+		expect(r.statusCode, r.body).toBe(200);
+		const out = RegisterSoundResponseSchema.parse(r.json());
+		expect(out.library.leadSilenceSec).toBeUndefined();
+		expect(out.library.descriptors?.peakSec).toBe(blade.descriptors.peakSec);
+		expect(out.fingerprint).not.toBe(blade.fingerprint);
+		const media = appdirPaths(app.appdir).mediaDir;
+		expect(readdirSync(join(media, out.mediaKey))).toEqual(['blade.wav']);
+		const copy = join(media, out.mediaKey, 'blade.wav');
+		const full = decodeF32(join(folder, 'Swishes', 'blade.ogg'));
+		const pcm = decodeF32(copy);
+		expect(pcm.length).toBe(full.length);
+		expect(Buffer.from(pcm.buffer).equals(Buffer.from(full.buffer))).toBe(true);
+		// a seek into the copy (an In point) lands on the same sample as the full decode
+		const at = 1013; // 21.1 ms at 48 kHz
+		const seeked = new Float32Array(
+			execFileSync(TEST_FFMPEG, [
+				'-v',
+				'error',
+				'-ss',
+				String(at / SR),
+				'-i',
+				copy,
+				'-map',
+				'0:a:0',
+				'-f',
+				'f32le',
+				'-',
+			]).buffer.slice(0),
+		);
+		const ch = 2;
+		const bytes = (a: Float32Array) => Buffer.from(a.buffer, a.byteOffset, a.byteLength);
+		expect(bytes(seeked.subarray(0, 2000 * ch)).equals(bytes(full.subarray(at * ch, (at + 2000) * ch)))).toBe(
+			true,
+		);
 	});
 });
 
