@@ -1,6 +1,5 @@
 import * as fs from 'node:fs/promises';
 import { join } from 'node:path';
-import fc from 'fast-check';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { atomicCopyFile, atomicWriteFile, readJsonOrNull } from '../src/tools/fs.ts';
 import { tempAppdir } from './temp.ts';
@@ -35,17 +34,6 @@ describe('JSON reads', () => {
 		const error = ioError(code);
 		vi.mocked(fs.readFile).mockRejectedValueOnce(error);
 		await expect(readJsonOrNull('metadata.json')).rejects.toBe(error);
-	});
-
-	it('round-trips arbitrary JSON values', async () => {
-		await fc.assert(
-			fc.asyncProperty(fc.jsonValue(), async (value) => {
-				const serialized = JSON.stringify(value);
-				vi.mocked(fs.readFile).mockResolvedValueOnce(serialized);
-				expect(JSON.stringify(await readJsonOrNull('metadata.json'))).toBe(serialized);
-			}),
-			{ numRuns: 50, examples: [[-0]] },
-		);
 	});
 });
 

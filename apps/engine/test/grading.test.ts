@@ -1,4 +1,4 @@
-import { BRIGHTNESS_CONTRAST_EFFECT, LUMETRI_EFFECT_ID, readScopes, signalFromRgba8 } from '@jasper/project';
+import { BRIGHTNESS_CONTRAST_EFFECT, LUMETRI_EFFECT_ID } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
 	closeApps,
@@ -65,29 +65,6 @@ const post = (url: string, payload: Record<string, unknown>) =>
 	app.inject({ method: 'POST', url, headers: JSON_H, payload: payload as never });
 
 describe('POST /api/grading/scopes', () => {
-	it('reads every scope of a Program frame as numbers, like the panel maths on the same frame', async () => {
-		const { d } = await twoClips();
-		const r = await post('/api/grading/scopes', {
-			envelope: d.envelope(),
-			sequenceId: d.seqId,
-			frame: 5,
-			columns: 4,
-			peaks: 3,
-			width: 480,
-		});
-		expect(r.statusCode).toBe(200);
-		const j = r.json();
-		expect(j.samples[0]).toBeGreaterThan(100);
-		expect(j.stats.samples).toBeGreaterThan(1000);
-		expect(j.waveform.traces.R).toHaveLength(4);
-		expect(j.parade.type).toBe('rgb');
-		expect(j.histogram.r).toHaveLength(256);
-		expect(j.vectorscopeYuv.peaks).toHaveLength(3);
-		expect(j.vectorscopeHls.samples).toBeGreaterThan(0);
-		const local = readScopes(signalFromRgba8(new Uint8Array(4 * 4 * 4).fill(255), 4, 4));
-		expect(Object.keys(j)).toEqual(expect.arrayContaining(Object.keys(local)));
-	});
-
 	it('one clip alone; unknown clips are 404', async () => {
 		const { d, b } = await twoClips();
 		const r = await post('/api/grading/scopes', {

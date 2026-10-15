@@ -12,7 +12,7 @@ import type { Ffmpeg } from '../tools/ffmpeg.ts';
 export type StillCurve = 'bt1886' | 'srgb' | 'gamma26' | 'gamma22';
 
 /** EOTF of a display curve (signal 0..1 → linear light 0..1). */
-export function eotf(curve: StillCurve, v: number): number {
+function eotf(curve: StillCurve, v: number): number {
 	const x = Math.min(1, Math.max(0, v));
 	switch (curve) {
 		case 'srgb':
@@ -45,7 +45,7 @@ type Opts = {
 };
 
 /** ffmpeg -q:v for a 1–100 JPEG quality (100 → 2, 1 → 31). */
-export function jpegQscale(quality = 90): number {
+function jpegQscale(quality = 90): number {
 	const q = Math.min(100, Math.max(1, Math.round(quality)));
 	return Math.round(31 - ((q - 1) / 99) * 29);
 }

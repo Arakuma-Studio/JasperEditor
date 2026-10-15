@@ -185,7 +185,7 @@ const ISO639: Record<string, string> = {
 	sw: 'swa',
 };
 
-export function iso639_2(lang: string): string {
+function iso639_2(lang: string): string {
 	const base = lang.toLowerCase().split(/[-_]/)[0] ?? '';
 	if (/^[a-z]{3}$/.test(base)) return base;
 	return ISO639[base] ?? 'und';

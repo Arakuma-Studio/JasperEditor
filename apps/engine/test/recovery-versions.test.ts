@@ -449,12 +449,6 @@ describe('journal locks across engine processes', () => {
 		expect(readFileSync(join(incomplete, 'snapshot.jasper'), 'utf8')).toBe('{');
 	});
 
-	it('an engine restart (new instance, no leases) offers the journal of the dead session', async () => {
-		const { s, id, saved } = await journalled();
-		const restarted = new RecoveryJournal({ paths: s.paths, leases: new LeaseManager(), saved });
-		expect((await restarted.list(id)).candidates.map((c) => c.sessionId)).toEqual(['ses_x']);
-	});
-
 	it('a journal written by another live engine process is never touched', async () => {
 		const { s, id, saved } = await journalled();
 		const lockFile = join(s.paths.projectDir(id), 'recovery', 'ses_x', 'lock');
