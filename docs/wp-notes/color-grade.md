@@ -173,17 +173,26 @@ magnitude in % of 0.5). MCP `scopes_read` defaults to 8 columns, 6 peaks, no bin
   `list_looks`; `color_match {clipId, at?, reference: {at, sequenceId?}, faceDetection?, apply?}`;
   `auto_tone {clipId, at?, apply?}`; `scopes_read {at?, clipId?, scopes?, waveformType?, paradeType?, matrix?, …}`.
 
-## 4. Verified behaviour
+## 4. Verification evidence
 
-These are historical workstream results. Browser tours and implementation-only tests named below may
-have been removed during cleanup; the counts are not current suite totals.
+Current `packages/compositions/test/lumetri-spatial-gl.test.ts` coverage reads actual WebGL2 output against
+independent painted inputs and fixed pixel expectations: selected-only correction and Invert, hue/lightness
+softness, all three Show Mask styles, three-way highlight gain, Set/Add/Remove eyedropper selection, and vignette
+center/corner/roundness behavior. These cases preserve seven former `packages/project/test/lumetri-grade.test.ts`
+contracts at the real shader seam. Denoise, Blur, Sharpen, key-limited sharpening and transparency checks remain.
+The [cleanup ledger](../test-cleanup/compositions2.md#final-oracle-independence-rescan-pre-edit-record) records the
+exact transfer map and independent sources. Focused integrated GL validation of the rewritten cases is pending;
+static review and targeted Biome passed.
+
+The table below records historical workstream results. Browser tours and implementation-only tests named below
+may have been removed during cleanup; the counts and pass results are not current suite totals or validation of
+the rewritten shader tests.
 
 | Check | Result |
 |---|---|
 | `packages/project/test/lumetri-grade.test.ts` (27): params/defaults identity, creative steps, looks distinct & bounded & mixed, LUT precedence, hue curves (periodicity, Hue vs Sat only on its hue, greys untouched, Hue vs Hue / Luma / Luma vs Sat / Sat vs Sat), eyedroppers, section switches, HSL/wheel helpers (fast-check), outputs finite in 0..1 for any input (fast-check), bake < 30 ms, spatial maths (key, correction, show mask, invert, 3-way, vignette shape), snapshot expansion (masks carried, keyframes, switched-off sections), Set/Add/Remove Color, hostile params fuzz | pass |
 | `packages/project/test/scopes.test.ts` (16): FilmCraft's known-value tests ported + BT.2020/10-bit/clipping/readScopes/1080p timing | pass |
 | `packages/project/test/color-match.test.ts` (11): Oklab reference values, self-match, recovers a known grade (stats within 0.02), hue fallback ≤ 8°, faces matched (face hue error smaller than without), no-face = off, letterbox, Auto | pass |
-| `packages/compositions/test/lumetri-spatial-gl.test.ts` (7, real WebGL2 / SwiftShader): identity; HSL key + correction (5 settings), Show Mask (3 styles) and vignette (4 shapes) **equal the CPU reference on every pixel within 1 code value**; Denoise fills key holes, Blur softens the key edge, Sharpen raises edge contrast (negative softens), HSL sharpen limited to the key, alpha kept | pass |
 | `packages/compositions/test/lumetri-plan.test.ts` (4): LUT step then spatial stage, `maskJoin`, before/after bypass, pointwise grades stay off the fx path | pass |
 | `apps/engine/test/grading.test.ts` (5): scopes of a Program frame and of a clip alone, 404s; match solves towards a warm reference (after < 0.6 × before, highlights wheel towards red, saturation up), face model absent → `hue` + note; refusals; Auto brightens and stretches a darkened clip | pass |
 | `apps/mcp/test/grading.test.ts` (6, real engine): every new section in one Agent change and back through `get_grade`; render_frame differs with the vignette on/off (layer bake); `list_looks`; `scopes_read`; `color_match` one "Apply Match" change, dry run, refusal; `auto_tone` one change | pass |
