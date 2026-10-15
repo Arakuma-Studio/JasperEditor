@@ -3241,3 +3241,33 @@ Actual support removed: `test/gl-poison.ts`; `test/fx-gl/glsl-reference.ts`; `fx
 The surviving media-mask/composite integration test compares decoded pixels against an independently rendered source/background. The clipping rewrite requires actual halo alpha outside the source, preventing an empty enlarged canvas from passing. Text range and expression tests require visible ink before checking bounds, preventing blank frames from passing.
 
 Cross-partition integration: compositions2 removes remaining `gl-poison.ts` imports in its entries. Root must scan all imports after cherry-picking both branches and update docs/testing.md §3. Published screenshot assets and attribution records remain because documentation still consumes them. Stale generator/test references were reported for docs/wp-notes/fx-transition-framework.md, sim-warp.md, imports.md, captions.md and scripts/docs/gallery-scenes.mjs.
+
+## Motion-blur runtime follow-up: pre-edit record
+
+Root's integrated default run retained `packages/compositions/test/fx-motion-blur-gl.test.ts` and reported a timeout, not a numeric pixel mismatch: `deterministic: same pixels on re-render and in any frame order (no frame-random jitter)` reached **240,007 ms** against its existing **240,000 ms** limit. The other cases passed in 58,936 and 100,934 ms; the file took 424,942 ms. Reported host load was approximately 100 on 16 cores. These are observed loaded-host durations, not a product benchmark or proof that any individual render exceeds the budget.
+
+Disposition: **REWRITE the aggregation boundary**, preserving every render and assertion. Before editing, separate the two independently specified contracts currently inside this one test:
+
+| Original operations, in order | Resulting case | Preserved observation |
+| --- | --- | --- |
+| Shake frame 29; corner-pin frame 2; travel frame 4; shake frame 11; corner-pin frame 3; travel frame 7; shake frame 29 again; corner-pin frame 2 again; travel frame 4 again | Existing `deterministic: same pixels on re-render and in any frame order (no frame-random jitter)` | Three original checksum equalities after the exact same cross-effect interleaving |
+| Twitchy shake amplitude 10 at seed 0.7, then the same shake at the default seed 0.25 | New `a different seed changes the grain of a capped smear` | Original checksum inequality |
+
+Each retains the original 320×180 layer, full preview scale, paint pattern, keys, frame, shutter settings, shader output padding, checksums and 240-second limit. One browser and the same production GPU host remain shared across the file. The former nine-render sequence stays intact: splitting each effect into an isolated three-render test would lose its exact cross-effect contamination exposure. The two seed renders still run immediately after that sequence in the full suite. No render is cached, removed or approximated, and no production code changes.
+
+Independent source: [adaptive shutter specification, §19](../wp-notes/fx-shader-framework.md#19-adaptive-shutter-motion-blur-wave-5-wave5adaptive-motion-blur), specifically the per-pixel/seed jitter and reproducibility in any frame order. Owners inspected: `packages/project/src/registry/fx/glsl/motion-blur.ts` (`fx_mbJitter`), `sapphire-distort-warp.ts` (`shakeUniforms`, `SHAKE_RENDER_GLSL`, `S_SHAKE`), and `packages/compositions/src/fx/host.ts`. Non-test callers are the effect and transition render stages used by Program preview/export. The harness calls the same `planGpuEffect`/`planGpuTransition` and `runShaderPlan` owners, then reads actual output pixels.
+
+Full retention bar for both resulting cases:
+
+1. The specification requires frame-order reproducibility and seed-dependent jitter; these are separate contracts, so each can have a test boundary.
+2. Frame history changing the final image or ignoring a requested seed is a visible preview/export defect; the existing pixel checksums expose it.
+3. Equality under unchanged inputs and inequality after changing the seed are input-defined relations. Neither expected checksum is calculated by production shader logic.
+4. Assertions observe rendered pixels through the real GPU host, without inspecting uniforms, pass counts or intermediate scratch targets.
+5. Changing shader internals, algorithms, pass decomposition or identifiers while preserving output relations leaves the assertions valid.
+6. This is the lowest seam that exercises the shared GPU host and rendered seed/history behavior. Stored default fingerprints do not exercise out-of-order repeated renders, and full-render duplicates were already removed by the composition-2 audit.
+
+Risk: this split improves failure attribution and prevents independent contracts from consuming one combined deadline; it does not prove that either independent case finishes within 240 seconds on the loaded host. A runtime timeout or pixel failure remains actionable. No timeout is raised and no oracle is loosened.
+
+Validation plan: scoped Biome, TypeScript syntax parsing and diff inspection now; then `pnpm exec vitest run packages/compositions/test/fx-motion-blur-gl.test.ts --maxWorkers=1` when root grants the shared-host runtime slot. The runtime result is pending, and no skipped execution counts as a pass.
+
+Scoped follow-up checks completed: Biome passed; TypeScript syntax parsing passed; the nine-render block and its three equality assertions are byte-for-byte unchanged against the integrated baseline; `git diff --check` passed. Full runtime execution remains pending root scheduling.

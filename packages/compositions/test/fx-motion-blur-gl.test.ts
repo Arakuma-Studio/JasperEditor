@@ -301,7 +301,10 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect((await effect({ ...twitchy, png: false })).checksum).toBe(a.checksum);
 			expect((await effect({ ...pin, png: false })).checksum).toBe(p1.checksum);
 			expect((await transition({ ...travel, png: false })).checksum).toBe(t1.checksum);
-			// The jitter is per pixel + seed, not per frame: another seed changes the grain of a capped smear.
+		});
+
+		it('a different seed changes the grain of a capped smear', async () => {
+			const twitchy = SMEARS.find(([n]) => n === 'shake-twitchy')![2] as EffectArgs;
 			const fast = { ...twitchy, png: false, params: { ...twitchy.params, amplitude: 10 } };
 			expect((await effect({ ...fast, seed: 0.7 })).checksum).not.toBe((await effect(fast)).checksum);
 		});
