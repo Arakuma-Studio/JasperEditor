@@ -259,8 +259,8 @@ void main() {
   fragColor = acc / sum;
 }`;
 
-/** The flow passes for a stage of `width × height` (exported for tests). */
-export function morphCutPasses(width: number, height: number): ShaderPass[] {
+/** The flow passes for a stage of `width × height`. */
+function morphCutPasses(width: number, height: number): ShaderPass[] {
 	const k = Math.min(16, analysisFactor(width, height));
 	const A = analysisSize(width, height, k);
 	const cols = Math.max(1, Math.ceil(A.w / FLOW_BLOCK));

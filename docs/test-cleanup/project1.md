@@ -698,3 +698,9 @@ The following 49 exports became internal. Their real runtime calls remain in the
 - Final review covers each source/test diff, import attributes, remaining callers and the staged file list. Full repository gates and opt-in rendering suites are coordinator-owned; none are claimed as passed here.
 
 Shared documentation references to the deleted memo test, delegated to integration: `docs/wp-notes/ui-perf.md:119` and `docs/wp-notes/code-audit-project-model.md:161`.
+
+### Remaining dead seam: Morph Cut pass builder
+
+Pre-edit decision: remove the test-only export of `morphCutPasses` in `packages/project/src/registry/transitions/premiere/morph-cut.ts` and its obsolete “exported for tests” comment. Repo-wide caller search finds only its declaration and the same-module `MORPH_CUT.gpu.passes` production callback. The function and every shader/pass remain unchanged. There is no external test or production consumer, so the export protects no independent behavior. Actual Morph Cut rendering remains owned by the moved-square and textured-shot cases in `packages/compositions/test/transition-premiere-gl.test.ts`. Risk: low (visibility only). Validation: focused Biome, `git diff --check`, and inspection of the exact two-line production diff; no heavyweight tests per integration coordination. Cumulative internalized export count becomes 50; test dispositions are unchanged.
+
+Follow-up checks passed: Biome checked the changed source file with no fixes; `git diff --check` passed; the production diff contains only the export keyword and comment removal.
