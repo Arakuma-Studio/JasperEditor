@@ -157,30 +157,34 @@ text correct but for rare words, translation to English sensible; a 103 s dialog
 LibriSpeech speaker 6930 (male) alternating 10 turns — 2 speakers, every word of every turn labelled correctly; a
 single German reader — 1 speaker.
 
-Tests:
-- `apps/engine/test/speech-core.test.ts` (22): FilmCraft's mel, VAD, diarization, DTW/median, repetition-guard and WER
-  tests; FFT = DFT; threshold rules; extension, pause repair, orphan words, endOfVoice; speaker-count hint; alignment
-  on a synthetic attention map; OpenAI word timing and punctuation merging; timestamp rules; segment parsing; seeded
-  sampling; compression ratio.
+Current automated coverage:
+
+- `apps/engine/test/speech-core.test.ts` (19): Slaney filterbank values and tone location; the 400-point Whisper
+  FFT against a direct DFT; VAD threshold rules, extension, pause repair, orphan words and endOfVoice; synthetic
+  speaker separation and speaker-count hint; alignment on a synthetic attention map; OpenAI word timing and
+  punctuation merging; tokenizer bytes and special tokens; timestamp rules; segment parsing; seeded sampling;
+  repetition guard and compression ratio.
 - `apps/engine/test/speech.test.ts` (7): catalogue listing, multi-file install via `model-download`, checksum
   failure without leftovers, delete, refusals (409 not installed, 404 unknown, 422 English-only + translate), a model
   that cannot load fails the job with the worker's message, licences, capability.
 - `apps/engine/test/speech-model.e2e.test.ts` (5, **real models**; runs when the models are in
-  `target/speech-models` or with `SPEECH_E2E=1`, which downloads them): media transcription WER ≤ 4 % (tiny.en,
-  measured 1.9 %), boundary mean ≤ 60 ms / max ≤ 250 ms (measured 18 / 40 ms), no word outside the speech; language
-  detection + single speaker with tiny; a sequence mix of a trimmed, offset clip mapped back into media time with
-  coverage; cancellation kills the job.
-- `packages/project/test/speech.test.ts` (6): `transcript.attach` create/replace(id kept)/merge/keep/refusals, undo;
-  mix words through offset + 2× speed read back by `sequenceWords`; merge property test (fast-check); coverage
-  invariant and repair.
-- `apps/web/test/speech.test.tsx` (8): dialog request (language, translate, speakers), licence + in-dialog download,
-  English-only options, watcher commit + undo, mix distribution and refusal after an edit, Preferences, commands and
-  menus, transcribe on import.
-- `apps/mcp/test/speech.test.ts` (5): models, transcribe media / sequence (skip transcribed) / wait:false + jobIds /
-  mix, refusals with hints, get_transcript.
-- `e2e/speech.spec.ts` (Playwright, built app, real model): Sequence ▸ Captions ▸ Transcript → Generate Transcript…
-  → Whisper job → words in the Text panel (screenshots `test-results/e2e-speech/`), with `SPEECH_E2E_DOWNLOAD=1` the
-  model downloads through the dialog; undo/redo; Project panel menu; Preferences ▸ Transcription.
+  `JASPER_SPEECH_MODELS_DIR` or `target/speech-models`, or with `SPEECH_E2E=1`, which downloads them): media
+  transcription WER ≤ 4 % (tiny.en, historically measured 1.9 %), boundary mean ≤ 60 ms / max ≤ 250 ms
+  (historically measured 18 / 40 ms), no word outside the speech; language detection + single speaker with tiny;
+  a trimmed, offset sequence mix returns words in sequence time (WER ≤ 8 %, onset error < 150 ms against the
+  measured source times shifted by the clip placement); cancellation reaches the cancelled job state. WER is
+  scored against the separately authored fixture transcript by `apps/engine/test/speech-wer.ts`.
+- `packages/project/test/speech.test.ts` (6) owns transcript storage and sequence-to-media distribution:
+  `transcript.attach` create/replace(id kept)/merge/keep/refusals and undo; mix words mapped through clip offset
+  and 2× speed, dropped words outside clips, played-media coverage and `sequenceWords` readback; merge property
+  test (fast-check); coverage invariant and repair.
+- `apps/web/test/speech.test.tsx` (6): dialog request (language, translate, speakers), licence + in-dialog download,
+  English-only options, watcher commit + undo, mix-result attachment and refusal after an edit, transcribe on import.
+- `apps/mcp/test/speech.test.ts` (4): transcribe media / sequence (skip transcribed) / wait:false + jobIds / mix,
+  transcript commit and readback, sequence-to-media attachment with dropped words, refusals with hints.
+- `e2e/captions.spec.ts` (Playwright, built app) covers the transcript editing workflow with an imported transcript:
+  seek, search, Mark In/Out, Remove Fillers and Create Captions, with persisted caption text and timing checks.
+  The suite writes `test-results/e2e-captions/final.png`; real speech inference is owned by the engine model suite.
 
 ## 8. Compared with FilmCraft — equal or better
 
