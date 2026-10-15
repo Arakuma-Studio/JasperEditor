@@ -81,6 +81,7 @@ export * from './render/index.ts';
 export * from './roto/index.ts';
 export * from './schema/index.ts';
 export * from './sound/anchor.ts';
+export * from './sound/cues/index.ts';
 export * from './sound/index.ts';
 export * from './sound/repair.ts';
 export * from './sound/variant.ts';

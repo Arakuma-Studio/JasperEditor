@@ -1,464 +1,755 @@
-// Sound cues (spec 12 §2.2, §2.9; P2-R1, P2-R2, P2-R5): soundCue.add / update / remove / resync, the cue model's
-// invariants, repair (dangling anchors, placed clips, cue links, duplicate ids, frame clamp), diff and duplicate.
-import fc from 'fast-check';
+// Cue derivation (spec 12 §2.2 "Derivation", P2-R3): one block per source, merging, budgets, determinism.
 import { describe, expect, it } from 'vitest';
 import {
-	type AudioClip,
-	type ClipSfx,
-	COMMAND_CATALOG,
-	checkInvariants,
-	createCounterIdSource,
-	diffDocuments,
-	type LibraryProvenance,
-	loadProject,
-	type ProjectDocument,
-	readSoundDesign,
-	repairDocument,
-	type SoundCue,
-	type SoundDesign,
-	soundDesignNeedsRepair,
+	type Animatable,
+	type DerivedCue,
+	deriveCues,
+	mgPhases,
+	parseSfxRequest,
+	resolveCueAnchor,
+	speedSegments,
+	thinPattern,
+	transitionClass,
+	transitionTravel,
+	typewriterOffsets,
 } from '../src/index.ts';
-import { Harness, videoAsset } from './helpers.ts';
-import { LIB } from './sound-fixtures.ts';
+import type { Harness } from './helpers.ts';
+import {
+	animOf,
+	F,
+	kf,
+	kfid,
+	mgRegistry,
+	newHarness,
+	patchClip,
+	phase2Fixture,
+	placeVideo,
+} from './sound-cues-fixtures.ts';
 
-const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
-type SfxClip = AudioClip & { sfx?: ClipSfx };
-const err = (r: ReturnType<Harness['tx']>) => (r.ok ? null : r.errors[0]!);
-const sd = (h: Harness) => h.seq.soundDesign as SoundDesign;
-const cue = (h: Harness, id: string) => sd(h).cues[id]!;
+const derive = (h: Harness, opts: Parameters<typeof deriveCues>[2] = {}) =>
+	deriveCues(h.doc, h.seqId, { density: 'rich', mgTemplates: mgRegistry(), ...opts });
+const of = (cues: DerivedCue[], from: DerivedCue['from']) => cues.filter((c) => c.from === from);
 
-function libMedia(h: Harness): string {
-	const library: LibraryProvenance = {
-		...LIB,
-		descriptors: {
-			...LIB.descriptors!,
-			peakSec: 0.07,
-			onsetSec: 0.06,
-			headQuietSec: 0.05,
-			durationSec: 0.55,
-		},
-		leadSilenceSec: 0.05,
-	};
-	const r = h.ok([
-		{ type: 'media.register', asset: { ...videoAsset({ kind: 'audio', seconds: 0.55 }), library } },
-	]);
-	return (r.results[0] as { mediaId: string }).mediaId;
+/** A still on a track, `frames` long, named; returns the clip id. */
+function placeStill(
+	h: Harness,
+	at: number,
+	frames: number,
+	track: string,
+	name: string,
+	w = 400,
+	hgt = 200,
+): string {
+	const m = h.registerVideo({ kind: 'image', width: w, height: hgt });
+	const id = h.ok([{ type: 'clip.place', source: { mediaId: m }, at, tracks: { video: track }, ref: '$s' }])
+		.refs.$s!;
+	patchClip(h, id, (c) => {
+		c.name = name;
+		c.duration = frames;
+	});
+	return id;
 }
 
-/** V1: clips A [0, 60) and B [60, 150) of a 10 s video (+ their audio on A1). */
-function edit() {
-	const h = new Harness();
-	const media = h.registerVideo({ seconds: 10 });
-	const place = (at: number, from: number, to: number) =>
-		(
+function setTransform(
+	h: Harness,
+	id: string,
+	prop: 'position' | 'scale' | 'rotation',
+	a: Animatable<unknown>,
+) {
+	patchClip(h, id, (c) => {
+		(c.transform as Record<string, unknown>)[prop] = a;
+	});
+}
+
+describe('deriveCues on the Phase 2 fixture (push, keyframed logo, typewriter, cuts, mg, marker)', () => {
+	it('finds every event with an anchor and a reason', () => {
+		const f = phase2Fixture();
+		const r = derive(f.h);
+		expect(r.warnings).toEqual([]);
+		for (const c of r.cues) {
+			expect(c.reason.length).toBeGreaterThan(10);
+			expect(Number.isInteger(c.frame)).toBe(true);
+			expect(c.confidence).toBeGreaterThanOrEqual(0);
+			expect(c.confidence).toBeLessThanOrEqual(1);
+		}
+		// Cut A → B; the B → C edit is the push transition's event, not a cut.
+		const cuts = r.cues.filter((c) => c.kind === 'cut');
+		expect(cuts.map((c) => c.frame)).toEqual([90, 330]);
+		expect(cuts[0]!.anchor).toEqual({
+			type: 'edit',
+			trackId: f.h.seq.videoTracks[0]!.id,
+			outgoingClipId: f.a,
+			incomingClipId: f.b,
+		});
+		expect(cuts[0]!.reason).toBe("Cut on V1: 'Shot A' → 'Shot B'");
+		// Push: whoosh at the visual centre, window = span, pan sweep along its direction.
+		const push = r.cues.find((c) => c.kind === 'transition')!;
+		expect(push).toMatchObject({
+			frame: 180,
+			types: ['whoosh', 'transition', 'swish'],
+			window: { start: 170, end: 190 },
+			panSweep: { from: -60, to: 60 },
+			anchor: { type: 'transition', transitionId: f.tr },
+		});
+		expect(push.reason).toContain('Push (left → right)');
+		// Logo: peak-speed move, then a land at the overshoot's turnaround (content frame 22 = sequence 52).
+		const move = r.cues.find((c) => c.kind === 'move')!;
+		expect(move.anchor).toMatchObject({
+			type: 'keyframe',
+			clipId: f.logo,
+			property: 'transform.position',
+			event: 'peak-speed',
+		});
+		expect(move.frame).toBe(46); // the middle of the linear 200 → 1010 stretch (content frames 10–22)
+		expect(move.anchor).toMatchObject({ keyframeId: kfid('kp2') });
+		expect(move.types[0]).toBe('whoosh');
+		const land = r.cues.find((c) => c.kind === 'land' && c.from === 'keyframes')!;
+		expect(land).toMatchObject({
+			frame: 52,
+			anchor: {
+				type: 'keyframe',
+				clipId: f.logo,
+				property: 'transform.position',
+				keyframeId: kfid('kp2'),
+				event: 'settle',
+			},
+		});
+		expect(land.reason).toBe("Position (200, 540)→(960, 540) ends (ease-out overshoot) on V2 'Logo'");
+		// Typewriter: a key pattern sharing one group, ≤ 12 per second.
+		const keys = r.cues.filter((c) => c.group?.endsWith(':in:typewriter'));
+		expect(keys.length).toBeGreaterThanOrEqual(6);
+		expect(keys.every((k) => k.types[0] === 'key' && k.anchor.type === 'text')).toBe(true);
+		expect(keys[0]!.frame).toBe(200);
+		for (let i = 1; i < keys.length; i++)
+			expect(keys[i]!.frame - keys[i - 1]!.frame).toBeGreaterThanOrEqual(30 / 12);
+		// Motion-graphic intro end lands, outro start leaves (15 / 12 frames at 30 fps).
+		expect(r.cues.filter((c) => c.from === 'mg').map((c) => [c.frame, c.kind])).toEqual([
+			[345, 'land'],
+			[408, 'exit'],
+		]);
+		// Marker: explicit hero boom + whoosh.
+		const m = r.cues.find((c) => c.from === 'markers')!;
+		expect(m).toMatchObject({
+			frame: 250,
+			kind: 'manual',
+			weight: 'hero',
+			types: ['boom', 'whoosh'],
+			source: 'marker',
+			anchor: { type: 'marker', markerId: f.marker },
+			confidence: 1,
+		});
+		// Stats per source.
+		expect(r.stats.bySource.transitions).toMatchObject({ found: 1, kept: 1 });
+		expect(r.stats.bySource.edits.found).toBe(2);
+		expect(r.stats.found).toBe(r.cues.length);
+		// The logo's speed curve covers its keyframes.
+		const curve = r.curves.find((c) => c.clipId === f.logo)!;
+		expect(curve.speed.length).toBeGreaterThan(15);
+		expect(Math.max(...curve.speed)).toBeCloseTo(((1010 - 200) / 12 / Math.hypot(1920, 1080)) * 30, 2);
+	});
+
+	it('is deterministic and ordered by frame, then key', () => {
+		const f = phase2Fixture();
+		const a = derive(f.h);
+		const b = derive(f.h);
+		expect(JSON.stringify(a.cues)).toBe(JSON.stringify(b.cues));
+		// The same document with its clips stored in another order derives the same cues.
+		const doc = structuredClone(f.h.doc);
+		const seq = doc.sequences[f.h.seqId]!;
+		seq.clips = Object.fromEntries(Object.entries(seq.clips).reverse());
+		const c = deriveCues(doc, f.h.seqId, { density: 'rich', mgTemplates: mgRegistry() });
+		expect(JSON.stringify(c.cues)).toBe(JSON.stringify(a.cues));
+		for (let i = 1; i < a.cues.length; i++) {
+			const p = a.cues[i - 1]!;
+			const q = a.cues[i]!;
+			expect(p.frame < q.frame || (p.frame === q.frame && p.key < q.key)).toBe(true);
+		}
+	});
+
+	it('honours the source selection and the range', () => {
+		const f = phase2Fixture();
+		const only = derive(f.h, { sources: ['transitions', 'markers'] });
+		expect(new Set(only.cues.map((c) => c.from))).toEqual(new Set(['transitions', 'markers']));
+		expect(only.stats.bySource.edits.found).toBe(0);
+		const ranged = derive(f.h, { range: { start: 100, end: 260 } });
+		expect(ranged.cues.length).toBeGreaterThan(0);
+		expect(ranged.cues.every((c) => c.frame >= 100 && c.frame < 260)).toBe(true);
+		expect(ranged.cues.some((c) => c.from === 'mg')).toBe(false);
+	});
+
+	it('reports a missing sequence instead of throwing', () => {
+		const f = phase2Fixture();
+		const r = deriveCues(f.h.doc, 'seq_NOPE', {});
+		expect(r.cues).toEqual([]);
+		expect(r.warnings[0]!.code).toBe('W_SEQUENCE_NOT_FOUND');
+	});
+});
+
+describe('edits source', () => {
+	it('skips through edits and cuts between graphics on a track are still cuts', () => {
+		const h = newHarness();
+		const a = placeVideo(h, 0, 120, 'V1', 'Long');
+		h.ok([{ type: 'clip.split', clipIds: [a], at: 60 }]);
+		const r = derive(h);
+		expect(of(r.cues, 'edits')).toEqual([]);
+		placeStill(h, 120, 30, 'V1', 'Card 1');
+		placeStill(h, 150, 30, 'V1', 'Card 2');
+		expect(of(derive(h).cues, 'edits').map((c) => c.frame)).toEqual([120, 150]);
+	});
+
+	it('gives plain dialogue cuts no sound (transcript words or Essential Sound dialogue)', () => {
+		const h = newHarness();
+		const mediaA = h.registerVideo({ seconds: 60 });
+		const mediaB = h.registerVideo({ seconds: 60 });
+		const place = (m: string, at: number) =>
 			h.ok([
 				{
 					type: 'clip.place',
-					source: { mediaId: media },
+					source: { mediaId: m },
+					sourceRange: { in: { flicks: 30 * F }, out: { flicks: 120 * F } },
 					at,
-					sourceRange: { in: { seconds: from }, out: { seconds: to } },
+					tracks: { video: 'V1', audio: 'A1' },
 				},
-			]).results[0] as { clipIds: string[] }
-		).clipIds[0]!;
-	const a = place(0, 0, 2);
-	const b = place(60, 3, 6);
-	return { h, media, a, b, trackId: h.seq.videoTracks[0]!.id };
-}
-
-/** A cue the deriver would output (spec 12 §2.2, `DerivedCue`). */
-const derived = (o: Record<string, unknown> = {}) => ({
-	frame: 60,
-	kind: 'cut',
-	weight: 'support',
-	types: ['hit', 'thump'],
-	align: 'peak',
-	pan: 'auto',
-	confidence: 0.8,
-	reason: 'Cut from A to B on V1',
-	source: 'derived',
-	...o,
-});
-
-describe('catalogue', () => {
-	it('registers every cue and placement command with owner sound-design and a History label', () => {
-		for (const t of [
-			'soundCue.add',
-			'soundCue.update',
-			'soundCue.remove',
-			'soundCue.resync',
-			'soundDesign.place',
-			'soundDesign.swap',
-			'soundDesign.setPalette',
-			'soundDesign.setSettings',
-		] as const) {
-			expect(COMMAND_CATALOG[t].owner).toBe('sound-design');
-			expect(COMMAND_CATALOG[t].label.length).toBeGreaterThan(3);
-		}
-	});
-});
-
-describe('soundCue.add', () => {
-	it('adds derived-shaped cues with ids and refs; undo leaves the document, redo repeats it', () => {
-		const { h, a, b, trackId } = edit();
-		const before = h.doc;
-		const snapshot = clone(before);
-		const r = h.ok([
-			{
-				type: 'soundCue.add',
-				cues: [
-					derived({ anchor: { type: 'edit', trackId, outgoingClipId: a, incomingClipId: b }, ref: '$cut' }),
-					derived({
-						frame: 10,
-						kind: 'appear',
-						weight: 'hero',
-						window: { start: 5, end: 15 },
-						source: 'agent',
-					}),
-				],
-			},
-			{ type: 'soundCue.update', cueId: '$cut', label: 'Cut' },
-		]);
-		const { sequenceId, cueIds } = r.results[0] as { sequenceId: string; cueIds: string[] };
-		expect(sequenceId).toBe(h.seqId);
-		expect(cueIds).toHaveLength(2);
-		expect(r.refs.$cut).toBe(cueIds[0]);
-		expect(r.created).toEqual(expect.arrayContaining(cueIds));
-		expect(cue(h, cueIds[0]!)).toEqual({
-			id: cueIds[0],
-			...derived({ anchor: { type: 'edit', trackId, outgoingClipId: a, incomingClipId: b } }),
-			label: 'Cut',
-		});
-		expect(cue(h, cueIds[1]!).window).toEqual({ start: 5, end: 15 });
-		expect(checkInvariants(h.doc)).toEqual([]);
-		expect(before).toEqual(snapshot);
-		expect(before.sequences[h.seqId]!.soundDesign).toBeUndefined();
-		// a caller-supplied id
-		const own = h.ok([{ type: 'soundCue.add', cues: [derived({ id: 'cue_00000000000000ZZ' })] }]);
-		expect((own.results[0] as { cueIds: string[] }).cueIds).toEqual(['cue_00000000000000ZZ']);
-	});
-
-	it('refuses unknown types, anchors to nothing, bad or used ids, bad shapes and too many cues', () => {
-		const { h } = edit();
-		h.ok([{ type: 'soundCue.add', cues: [derived({ id: 'cue_0000000000000001' })] }]);
-		const doc = h.doc;
-		const cases: [unknown, string][] = [
-			[derived({ types: ['whosh'] }), 'E_INVALID_PARAM'],
-			[derived({ anchor: { type: 'clip', clipId: 'clp_0000000000000999', edge: 'start' } }), 'E_NOT_FOUND'],
-			[derived({ anchor: { type: 'marker', markerId: 'mrk_0000000000000999' } }), 'E_NOT_FOUND'],
-			[derived({ id: 'cue_bad' }), 'E_INVALID_PARAM'],
-			[derived({ id: 'cue_0000000000000001' }), 'E_INVALID_PARAM'],
-			[derived({ frame: -1 }), 'E_SCHEMA'],
-			[derived({ kind: 'boom' }), 'E_SCHEMA'],
-			[derived({ pan: 200 }), 'E_SCHEMA'],
-			[derived({ window: { start: 9, end: 3 } }), 'E_SCHEMA'],
-			[derived({ placedClipIds: [] }), 'E_SCHEMA'],
-			[derived({ soundIds: ['not-a-sound'] }), 'E_SCHEMA'],
-		];
-		for (const [c, code] of cases) {
-			expect(err(h.tx([{ type: 'soundCue.add', cues: [c] }]))?.code, JSON.stringify(c)).toBe(code);
-			expect(h.doc).toBe(doc);
-		}
-		const many = Array.from({ length: 2001 }, () => derived());
-		expect(err(h.tx([{ type: 'soundCue.add', cues: many }]))?.code).toBe('E_SCHEMA');
-		// the sequence cap
-		const big = clone(h.doc);
-		const cues: Record<string, SoundCue> = {};
-		for (let i = 0; i < 19_999; i++) {
-			const id = `cue_${i.toString(32).toUpperCase().padStart(16, '0')}`;
-			cues[id] = { id, frame: i, kind: 'manual', weight: 'support', source: 'user' };
-		}
-		(big.sequences[h.seqId] as { soundDesign?: unknown }).soundDesign = { cues };
-		h.doc = big;
-		expect(err(h.tx([{ type: 'soundCue.add', cues: [derived(), derived()] }]))?.code).toBe('E_LIMIT');
-	});
-});
-
-/** A cue at the cut A|B filled with one library sound on an SFX track. */
-function filled() {
-	const e = edit();
-	const { h, a, b, trackId } = e;
-	const m = libMedia(h);
-	const r = h.ok([
-		{
-			type: 'soundCue.add',
-			cues: [derived({ anchor: { type: 'edit', trackId, outgoingClipId: a, incomingClipId: b }, ref: '$c' })],
-		},
-		{ type: 'soundDesign.place', cueId: '$c', layers: [{ mediaId: m }] },
-	]);
-	const cueId = r.refs.$c!;
-	const clipId = (r.results[1] as { clips: { clipId: string }[] }).clips[0]!.clipId;
-	return { ...e, m, cueId, clipId };
-}
-
-describe('soundCue.update', () => {
-	it('changes fields, clears with null, and moves the filling clips with the frame (undoable)', () => {
-		const { h, cueId, clipId } = filled();
-		const start = h.seq.clips[clipId]!.start;
-		const before = h.doc;
-		const r = h.ok([
-			{ type: 'soundCue.update', cueId, frame: 75, weight: 'hero', reason: null, pan: -20, label: 'Hit' },
-		]);
-		expect(r.results[0]).toEqual({ cueId, frame: 75, movedClipIds: [clipId] });
-		expect(cue(h, cueId)).toMatchObject({ frame: 75, weight: 'hero', pan: -20, label: 'Hit' });
-		expect('reason' in cue(h, cueId)).toBe(false);
-		expect(h.seq.clips[clipId]!.start).toBe(start + 15);
-		expect(r.changed).toEqual(expect.arrayContaining([cueId, clipId]));
-		expect(before.sequences[h.seqId]!.clips[clipId]!.start).toBe(start);
-		h.ok([{ type: 'soundCue.update', cueId, frame: 80, moveClips: false }]);
-		expect(h.seq.clips[clipId]!.start).toBe(start + 15);
-		expect(checkInvariants(h.doc)).toEqual([]);
-	});
-
-	it('refuses an unknown cue, a move onto other audio or a locked track, and before frame 0', () => {
-		const { h, cueId, clipId, m } = filled();
-		const t = h.seq.clips[clipId]!.trackId;
-		expect(err(h.tx([{ type: 'soundCue.update', cueId: 'cue_0000000000000999', frame: 1 }]))?.code).toBe(
-			'E_NOT_FOUND',
-		);
-		expect(err(h.tx([{ type: 'soundCue.update', cueId, types: ['nope'] }]))?.code).toBe('E_INVALID_PARAM');
-		expect(err(h.tx([{ type: 'soundCue.update', cueId, frame: 0 }]))?.code).toBe('E_INVALID_PARAM');
-		h.ok([{ type: 'soundDesign.place', frame: 100, layers: [{ mediaId: m, track: t }] }]);
-		const doc = h.doc;
-		const ov = err(h.tx([{ type: 'soundCue.update', cueId, frame: 100 }]));
-		expect(ov?.code).toBe('E_OVERLAP');
-		expect(h.doc).toBe(doc);
-		h.ok([{ type: 'track.update', trackId: t, patch: { locked: true } }]);
-		expect(err(h.tx([{ type: 'soundCue.update', cueId, frame: 62 }]))?.code).toBe('E_TRACK_LOCKED');
-	});
-});
-
-describe('soundCue.remove', () => {
-	it('keeps the clips (they forget the cue) or lifts them with withClips; undo / redo', () => {
-		const one = filled();
-		const before = one.h.doc;
-		const r = one.h.ok([{ type: 'soundCue.remove', cueIds: [one.cueId] }]);
-		expect(r.results[0]).toEqual({ removed: [one.cueId], liftedClipIds: [] });
-		expect((one.h.seq.clips[one.clipId] as SfxClip).sfx!.cueId).toBeNull();
-		expect(sd(one.h).cues[one.cueId]).toBeUndefined();
-		expect(r.deleted).toContain(one.cueId);
-		expect((before.sequences[one.h.seqId]!.clips[one.clipId] as SfxClip).sfx!.cueId).toBe(one.cueId);
-
-		const two = filled();
-		two.h.ok([{ type: 'soundCue.remove', cueIds: [two.cueId], withClips: true }]);
-		expect(two.h.seq.clips[two.clipId]).toBeUndefined();
-		expect(checkInvariants(two.h.doc)).toEqual([]);
-	});
-	it('refuses an unknown cue and lifting from a locked track', () => {
-		const { h, cueId, clipId } = filled();
-		expect(err(h.tx([{ type: 'soundCue.remove', cueIds: ['cue_0000000000000999'] }]))?.code).toBe(
-			'E_NOT_FOUND',
-		);
-		h.ok([{ type: 'track.update', trackId: h.seq.clips[clipId]!.trackId, patch: { locked: true } }]);
-		expect(err(h.tx([{ type: 'soundCue.remove', cueIds: [cueId], withClips: true }]))?.code).toBe(
-			'E_TRACK_LOCKED',
-		);
-		expect(h.tx([{ type: 'soundCue.remove', cueIds: [cueId] }]).ok).toBe(true);
-	});
-});
-
-describe('soundCue.resync', () => {
-	it('follows the edit: the cue and its clips move by the anchor’s delta; unresolved cues are reported', () => {
-		const { h, b, cueId, clipId } = filled();
-		const start = h.seq.clips[clipId]!.start;
-		h.ok([{ type: 'clip.move', clipIds: [b], deltaFrames: 12 }]);
-		const free = h.ok([{ type: 'soundCue.add', cues: [derived({ frame: 300 })] }]);
-		const freeId = (free.results[0] as { cueIds: string[] }).cueIds[0]!;
-		const before = h.doc;
-		const r = h.ok([{ type: 'soundCue.resync' }]);
-		expect(r.results[0]).toEqual({
-			moved: [{ cueId, from: 60, to: 72, clipIds: [clipId] }],
-			unresolved: [],
-			unanchored: [],
-		});
-		expect(cue(h, cueId).frame).toBe(72);
-		expect(h.seq.clips[clipId]!.start).toBe(start + 12);
-		expect(cue(h, freeId).frame).toBe(300);
-		expect(before.sequences[h.seqId]!.clips[clipId]!.start).toBe(start);
-		// nothing to do the second time; explicit unanchored cue reported
-		expect(h.ok([{ type: 'soundCue.resync', cueIds: [cueId, freeId] }]).results[0]).toEqual({
-			moved: [],
-			unresolved: [],
-			unanchored: [freeId],
-		});
-		// the anchored clips are gone: unresolved, the cue stays
-		h.ok([{ type: 'clip.lift', clipIds: [b] }]);
-		const a = cue(h, cueId).anchor;
-		expect(a).toBeTruthy();
-		const r2 = h.ok([{ type: 'soundCue.resync' }]);
-		expect((r2.results[0] as { unresolved: string[] }).unresolved).toEqual([]);
-		expect(cue(h, cueId).frame).toBe(60);
-	});
-
-	it('refuses the whole transaction when a clip cannot follow (E_OVERLAP, E_TRACK_LOCKED) and unknown cues', () => {
-		const { h, b, cueId, clipId, m } = filled();
-		const t = h.seq.clips[clipId]!.trackId;
-		h.ok([{ type: 'soundDesign.place', frame: 90, layers: [{ mediaId: m, track: t }] }]);
-		h.ok([{ type: 'clip.move', clipIds: [b], deltaFrames: 30 }]);
-		const doc = h.doc;
-		expect(err(h.tx([{ type: 'soundCue.resync' }]))?.code).toBe('E_OVERLAP');
-		expect(h.doc).toBe(doc);
-		expect(cue(h, cueId).frame).toBe(60);
-		h.ok([{ type: 'track.update', trackId: t, patch: { locked: true } }]);
-		expect(err(h.tx([{ type: 'soundCue.resync' }]))?.code).toBe('E_TRACK_LOCKED');
-		expect(err(h.tx([{ type: 'soundCue.resync', cueIds: ['cue_0000000000000999'] }]))?.code).toBe(
-			'E_NOT_FOUND',
-		);
-	});
-});
-
-describe('invariants, repair and load', () => {
-	it('INV-SOUND / INV-SFX flag unreadable data; loading repairs it field by field (idempotent)', () => {
-		const { h, cueId, clipId } = filled();
-		const raw = clone(h.doc) as ProjectDocument;
-		const seq = raw.sequences[h.seqId] as { soundDesign: Record<string, unknown> };
-		const cues = seq.soundDesign.cues as Record<string, Record<string, unknown>>;
-		cues[cueId]!.frame = 1e12;
-		cues[cueId]!.kind = 'future-kind';
-		cues[cueId]!.extra = { kept: true };
-		cues.cue_bad = { id: 'cue_bad', frame: 3, kind: 'cut', weight: 'hero', source: 'user' };
-		cues.junk = 'x' as never;
-		seq.soundDesign.settings = { density: 'huge', seed: -5, palette: ['snd_0000000000000001', 3] };
-		const c = raw.sequences[h.seqId]!.clips[clipId] as unknown as { sfx: Record<string, unknown> };
-		c.sfx.layer = 99;
-		c.sfx.role = 'boss';
-		const issues = checkInvariants(raw);
-		expect(issues.some((i) => i.invariant === 'INV-SOUND')).toBe(true);
-		expect(issues.some((i) => i.invariant === 'INV-SFX')).toBe(true);
-		const loaded = loadProject(raw, { ids: createCounterIdSource(900) });
-		expect(loaded.issues).toEqual([]);
-		const out = loaded.document.sequences[h.seqId]!.soundDesign as SoundDesign;
-		const kept = out.cues[cueId]!;
-		expect(kept).toMatchObject({ frame: 10_368_000, kind: 'manual', extra: { kept: true } });
-		const renamed = Object.values(out.cues).find((x) => x.frame === 3)!;
-		expect(renamed.id).toMatch(/^cue_[0-9A-Z]{16}$/);
-		expect(out.settings).toMatchObject({ density: 'balanced', seed: 0, palette: ['snd_0000000000000001'] });
-		const sfx = (loaded.document.sequences[h.seqId]!.clips[clipId] as SfxClip).sfx!;
-		expect(sfx).toMatchObject({ layer: 5, role: 'support', cueId });
-		expect(loaded.repairs.map((r) => r.action)).toEqual(
-			expect.arrayContaining(['repair-sound-design', 'repair-sfx', 'reid-cue']),
-		);
-		// idempotent
-		const again = repairDocument(loaded.document, createCounterIdSource(5000));
-		expect(again.document).toEqual(loaded.document);
-		expect(again.report).toEqual([]);
-		expect(soundDesignNeedsRepair(loaded.document)).toBe(false);
-	});
-
-	it('dangling anchors become null (reported), missing placed clips are pruned, lost cues unlink their clips', () => {
-		const { h, b, cueId, clipId, m } = filled();
-		const other = h.ok([{ type: 'soundDesign.place', frame: 400, layers: [{ mediaId: m }] }]);
-		const otherClip = (other.results[0] as { clips: { clipId: string }[] }).clips[0]!.clipId;
-		// edits never fail because of soft references
-		h.ok([{ type: 'clip.lift', clipIds: [b] }]);
-		h.ok([{ type: 'clip.lift', clipIds: [clipId] }]);
-		expect(checkInvariants(h.doc)).toEqual([]);
-		const raw = clone(h.doc);
-		(raw.sequences[h.seqId]!.clips[otherClip] as unknown as { sfx: ClipSfx }).sfx.cueId =
-			'cue_0000000000000777';
-		expect(soundDesignNeedsRepair(raw)).toBe(true);
-		const loaded = loadProject(raw, { ids: createCounterIdSource(900) });
-		const c = (loaded.document.sequences[h.seqId]!.soundDesign as SoundDesign).cues[cueId]!;
-		expect(c.anchor).toBeNull();
-		expect(c.placedClipIds).toBeUndefined();
-		expect((loaded.document.sequences[h.seqId]!.clips[otherClip] as SfxClip).sfx!.cueId).toBeNull();
-		expect(loaded.repairs.map((r) => r.action)).toEqual(
-			expect.arrayContaining(['drop-cue-anchor', 'prune-cue-clips', 'unlink-sfx']),
-		);
-		expect(repairDocument(loaded.document, createCounterIdSource(1)).report).toEqual([]);
-	});
-
-	it('cue ids shared by two sequences are renamed (with their clips’ links); sfx on a video clip is dropped', () => {
-		const { h, cueId } = filled();
-		const dup = h.ok([{ type: 'sequence.duplicate', sequenceId: h.seqId }]);
-		const sid = (dup.results[0] as { sequenceId: string }).sequenceId;
-		const copy = h.doc.sequences[sid]!.soundDesign as SoundDesign;
-		// sequence.duplicate gives the copy its own cue ids, clips and anchors
-		const copied = Object.values(copy.cues)[0]!;
-		expect(copied.id).not.toBe(cueId);
-		const placed = copied.placedClipIds![0]!;
-		expect(h.doc.sequences[sid]!.clips[placed]).toBeDefined();
-		expect((h.doc.sequences[sid]!.clips[placed] as SfxClip).sfx!.cueId).toBe(copied.id);
-		const anchor = copied.anchor as { incomingClipId: string };
-		expect(h.doc.sequences[sid]!.clips[anchor.incomingClipId]).toBeDefined();
-		expect(checkInvariants(h.doc)).toEqual([]);
-		expect(soundDesignNeedsRepair(h.doc)).toBe(false);
-		// a file whose copy shares the ids (an older build)
-		const raw = clone(h.doc);
-		const s2 = raw.sequences[sid] as { soundDesign: SoundDesign };
-		s2.soundDesign.cues = { [cueId]: { ...copied, id: cueId } };
-		(raw.sequences[sid]!.clips[placed] as unknown as { sfx: ClipSfx }).sfx.cueId = cueId;
-		const v = Object.values(raw.sequences[h.seqId]!.clips).find((c) => c.kind === 'video')!;
-		(v as unknown as { sfx: unknown }).sfx = {
-			cueId: null,
-			soundId: null,
-			layer: 0,
-			role: 'hero',
-			placement: {},
+			]);
+		place(mediaA, 0);
+		place(mediaB, 90);
+		place(mediaA, 180);
+		expect(
+			derive(h)
+				.cues.filter((c) => c.kind === 'cut')
+				.map((c) => c.frame),
+		).toEqual([90, 180]);
+		// A word spoken from sequence frame 80 to 89 (media time 110–119 frames) covers the cut at 90 (padding).
+		const doc = structuredClone(h.doc);
+		doc.transcripts.trs_00000000000000T1 = {
+			id: 'trs_00000000000000T1',
+			mediaId: mediaA,
+			language: 'en',
+			origin: 'manual',
+			words: [
+				{ text: 'hello', start: 110 * F, end: 119 * F, confidence: 1, speaker: null, breakBefore: 'none' },
+			],
+			speakers: {},
 		};
-		const loaded = loadProject(raw, { ids: createCounterIdSource(900) });
-		expect(loaded.issues).toEqual([]);
-		const ids = Object.values(loaded.document.sequences).flatMap((s) =>
-			Object.keys((s.soundDesign as SoundDesign | undefined)?.cues ?? {}),
-		);
-		expect(new Set(ids).size).toBe(ids.length);
-		const newId = Object.keys((loaded.document.sequences[sid]!.soundDesign as SoundDesign).cues)[0]!;
-		expect((loaded.document.sequences[sid]!.clips[placed] as SfxClip).sfx!.cueId).toBe(newId);
-		expect((loaded.document.sequences[h.seqId]!.clips[v.id] as { sfx?: unknown }).sfx).toBeUndefined();
+		h.doc = doc;
+		const r = derive(h);
+		expect(r.cues.filter((c) => c.kind === 'cut').map((c) => c.frame)).toEqual([180]);
+		expect(r.stats.bySource.edits.suppressedByDialogue).toBe(1);
+		expect(derive(h, { respectDialogue: false }).cues.filter((c) => c.kind === 'cut').length).toBe(2);
+		// A voice-over on A2 typed `dialogue` in Essential Sound (no transcript) silences the cut at 180 too.
+		const vo = h.registerVideo({ kind: 'audio', seconds: 10 });
+		const voClip = h.ok([
+			{ type: 'clip.place', source: { mediaId: vo }, at: 150, tracks: { audio: 'A2' }, ref: '$v' },
+		]).refs.$v!;
+		patchClip(h, voClip, (c) => {
+			c.essential = { type: 'dialogue' };
+		});
+		const r2 = derive(h);
+		expect(r2.cues.filter((c) => c.kind === 'cut')).toEqual([]);
+		expect(r2.stats.bySource.edits.suppressedByDialogue).toBe(2);
+	});
+});
+
+describe('transitions source', () => {
+	it('classifies the registry', () => {
+		expect(transitionClass('jasper.push')).toBe('move');
+		expect(transitionClass('jasper.whip')).toBe('move');
+		expect(transitionClass('jasper.cube-spin')).toBe('move');
+		expect(transitionClass('jasper.s.swish-pan')).toBe('move');
+		expect(transitionClass('jasper.cross-zoom')).toBe('zoom');
+		expect(transitionClass('jasper.wipe')).toBe('wipe');
+		expect(transitionClass('jasper.iris-round')).toBe('wipe');
+		expect(transitionClass('jasper.s.wipe-clock')).toBe('wipe');
+		expect(transitionClass('jasper.glitch-transition')).toBe('glitch');
+		expect(transitionClass('jasper.s.dissolve-pixel-mosh')).toBe('glitch');
+		expect(transitionClass('jasper.flash-transition')).toBe('light');
+		expect(transitionClass('jasper.cross-dissolve')).toBe('dissolve');
+		expect(transitionClass('jasper.dip-to-black')).toBe('dissolve');
+		expect(transitionClass('vendor.unknown-thing')).toBe('dissolve');
+		const p = (v: unknown) => ({ direction: { value: v, keyframes: [] } }) as never;
+		expect(transitionTravel(p('westToEast'))).toBe(1);
+		expect(transitionTravel(p('eastToWest'))).toBe(-1);
+		expect(transitionTravel(p('northToSouth'))).toBeNull();
+		expect(transitionTravel({ angle: { value: 180, keyframes: [] } } as never)).toBeCloseTo(-1);
+		expect(transitionTravel({ angle: { value: 90, keyframes: [] } } as never)).toBeNull();
 	});
 
-	it('loading never throws and leaves no issue for arbitrary sound-design values (property)', () => {
-		const { h, clipId } = filled();
-		const base = clone(h.doc);
-		const anyCue = fc.oneof(
-			fc.anything(),
-			fc.record(
+	function withTransition(effectId: string, params?: Record<string, unknown>) {
+		const h = newHarness();
+		placeVideo(h, 0, 90, 'V1', 'A');
+		const b = placeVideo(h, 90, 90, 'V1', 'B');
+		const t = h.ok([
+			{
+				type: 'transition.add',
+				clipId: b,
+				edge: 'in',
+				effectId,
+				duration: 16,
+				...(params ? { params } : {}),
+				ref: '$t',
+			},
+		]).refs.$t!;
+		return { h, t };
+	}
+
+	it('a wipe right → left swishes with a sweep from right to left', () => {
+		const { h } = withTransition('jasper.wipe', { direction: 'eastToWest' });
+		const c = of(derive(h).cues, 'transitions')[0]!;
+		expect(c).toMatchObject({
+			frame: 90,
+			types: ['swish', 'transition', 'whoosh'],
+			panSweep: { from: 60, to: -60 },
+		});
+	});
+
+	it('a dissolve is at most an ambient shimmer, dropped by the sparse minimum confidence', () => {
+		const { h } = withTransition('jasper.cross-dissolve');
+		const rich = of(derive(h).cues, 'transitions');
+		expect(rich).toHaveLength(1);
+		expect(rich[0]).toMatchObject({ weight: 'ambient', types: ['shimmer', 'transition'], confidence: 0.2 });
+		expect(rich[0]!.panSweep).toBeUndefined();
+		const sparse = derive(h, { density: 'sparse' });
+		expect(of(sparse.cues, 'transitions')).toEqual([]);
+		expect(sparse.stats.dropped.confidence).toBe(1);
+		expect(sparse.stats.bySource.transitions.droppedByBudget).toBe(1);
+	});
+
+	it('a glitch transition suggests glitch first', () => {
+		const { h } = withTransition('jasper.glitch-transition');
+		expect(of(derive(h).cues, 'transitions')[0]!.types[0]).toBe('glitch');
+	});
+});
+
+describe('keyframes source', () => {
+	it('a scale-up from 0 with overshoot pops in once (appear), not a move', () => {
+		const h = newHarness();
+		const id = placeStill(h, 0, 90, 'V2', 'Badge');
+		setTransform(h, id, 'scale', animOf(100, [kf('s1', 10, 0), kf('s2', 15, 115), kf('s3', 19, 100)]));
+		const cues = of(derive(h).cues, 'keyframes');
+		const appear = cues.filter((c) => c.kind === 'appear');
+		expect(appear).toHaveLength(1);
+		expect(appear[0]!.types[0]).toBe('pop');
+		expect(appear[0]!.anchor).toMatchObject({ property: 'transform.scale', event: 'end' });
+		expect(appear[0]!.frame).toBe(15); // on the key the growth reaches
+		expect(appear[0]!.anchor).toMatchObject({ keyframeId: kfid('s2') });
+		expect(cues.some((c) => c.kind === 'move')).toBe(false);
+	});
+
+	it('a scale pulse out and back is an emphasis at its extreme', () => {
+		const h = newHarness();
+		const id = placeStill(h, 0, 90, 'V2', 'Logo');
+		setTransform(h, id, 'scale', animOf(100, [kf('s1', 20, 100), kf('s2', 26, 120), kf('s3', 32, 100)]));
+		const cues = of(derive(h).cues, 'keyframes');
+		expect(cues.map((c) => [c.kind, c.frame])).toEqual([['emphasis', 26]]);
+		expect(cues[0]!.reason).toBe("Scale pulses 100 %→120 %→100 % on V2 'Logo'");
+		expect(cues[0]!.anchor).toMatchObject({
+			property: 'transform.scale',
+			keyframeId: kfid('s2'),
+			event: 'end',
+		});
+	});
+
+	it('an abrupt stop lands; a gentle ease-out only moves', () => {
+		const h = newHarness();
+		const hard = placeStill(h, 0, 90, 'V2', 'Hard', 1200, 800);
+		setTransform(
+			h,
+			hard,
+			'position',
+			animOf<[number, number]>([960, 540], [kf('p1', 10, [0, 540]), kf('p2', 20, [960, 540])]),
+		);
+		const soft = placeStill(h, 0, 90, 'V3', 'Soft');
+		const easeOut = { influence: 0.9, slope: 0 };
+		setTransform(
+			h,
+			soft,
+			'position',
+			animOf<[number, number]>(
+				[960, 540],
+				[
+					{
+						id: kfid('q1'),
+						time: 40 * F,
+						value: [0, 540],
+						interpolation: 'bezier',
+						easeIn: easeOut,
+						easeOut: { influence: 0.1, slope: 0 },
+					},
+					{
+						id: kfid('q2'),
+						time: 70 * F,
+						value: [960, 540],
+						interpolation: 'bezier',
+						easeIn: easeOut,
+						easeOut,
+					},
+				],
+			),
+		);
+		const r = derive(h);
+		const hardCues = r.cues.filter((c) => (c.anchor as { clipId?: string }).clipId === hard);
+		expect(hardCues.map((c) => c.kind)).toEqual(['move', 'land']);
+		const land = hardCues[1]!;
+		expect(land.frame).toBe(20);
+		expect(land.reason).toContain('stops');
+		// 1200×800 is ≥ 20 % of the frame and fast: a hero hit.
+		expect(land).toMatchObject({ weight: 'hero', types: ['hit', 'thump', 'tap'] });
+		const softCues = r.cues.filter((c) => (c.anchor as { clipId?: string }).clipId === soft);
+		expect(softCues.map((c) => c.kind)).toEqual(['move']);
+		// Pan follows the layer: the peak is left of centre, the sweep goes left → centre.
+		expect(softCues[0]!.panSweep!.from).toBeLessThan(softCues[0]!.panSweep!.to);
+	});
+
+	it('opacity ramps appear and disappear', () => {
+		const h = newHarness();
+		const id = placeStill(h, 0, 120, 'V2', 'Fade');
+		patchClip(h, id, (c) => {
+			c.opacity = animOf(100, [kf('o1', 0, 0), kf('o2', 6, 100), kf('o3', 100, 100), kf('o4', 115, 0)]);
+		});
+		const cues = of(derive(h).cues, 'keyframes');
+		expect(cues.map((c) => [c.kind, c.frame])).toEqual([
+			['appear', 6],
+			['exit', 100],
+		]);
+		expect(cues[0]!.types[0]).toBe('pop');
+		expect(cues[0]!.anchor).toMatchObject({ property: 'opacity', keyframeId: kfid('o2'), event: 'end' });
+	});
+
+	it('a rotation spin moves; hidden tracks and disabled clips are ignored', () => {
+		const h = newHarness();
+		const id = placeStill(h, 0, 90, 'V2', 'Spinner');
+		setTransform(h, id, 'rotation', animOf(0, [kf('r1', 0, 0), kf('r2', 15, 360)]));
+		expect(of(derive(h).cues, 'keyframes').map((c) => c.anchor)).toEqual([
+			expect.objectContaining({ property: 'transform.rotation', event: 'peak-speed' }),
+			expect.objectContaining({ property: 'transform.rotation', event: 'settle' }),
+		]);
+		const doc = structuredClone(h.doc);
+		doc.sequences[h.seqId]!.videoTracks[1]!.output = false;
+		expect(deriveCues(doc, h.seqId, { density: 'rich' }).cues).toEqual([]);
+		patchClip(h, id, (c) => {
+			c.enabled = false;
+		});
+		expect(derive(h).cues).toEqual([]);
+	});
+
+	it('maps on-screen x to pan ±60', () => {
+		const h = newHarness();
+		const id = placeStill(h, 0, 90, 'V2', 'Right', 100, 100);
+		setTransform(
+			h,
+			id,
+			'position',
+			animOf<[number, number]>([1728, 540], [kf('p1', 10, [1728, 100]), kf('p2', 20, [1728, 900])]),
+		);
+		const move = of(derive(h).cues, 'keyframes').find((c) => c.kind === 'move')!;
+		expect(move.pan).toBe(48); // x 1728 of 1920 = 0.9 → (0.9·2 − 1)·60
+	});
+
+	it('speedSegments joins an overshoot turnaround and drops slow drifts', () => {
+		expect(speedSegments([0, 0.5, 0.5, 0.02, 0.2, 0.2, 0], 2)).toEqual([{ a: 1, b: 5, peak: 1 }]);
+		expect(speedSegments([0, 0.05, 0.08, 0.05, 0], 2)).toEqual([]);
+		expect(speedSegments([0, 0.5, 0], 2)).toEqual([]); // one frame: a jump, not a move
+	});
+});
+
+describe('text source', () => {
+	function addText(h: Harness, text: string, textAnimation: unknown, at = 0, duration = 90, track = 'V2') {
+		return h.ok([{ type: 'clip.addText', at, duration, track, content: { text }, textAnimation, ref: '$x' }])
+			.refs.$x!;
+	}
+
+	it('In / Out presets appear at the start and exit where the out motion starts', () => {
+		const h = newHarness();
+		const id = addText(h, 'Hi there', {
+			in: { preset: 'slide-up', durationFrames: 20 },
+			out: { preset: 'pop', durationFrames: 15 },
+		});
+		const cues = of(derive(h).cues, 'text');
+		expect(cues.map((c) => [c.kind, c.frame, c.types[0]])).toEqual([
+			['appear', 0, 'swish'],
+			['exit', 75, 'pop'],
+		]);
+		expect(cues[0]!.anchor).toEqual({ type: 'text', clipId: id, side: 'in' });
+		expect(cues[0]!.window).toEqual({ start: 0, end: 20 });
+		expect(cues[0]!.reason).toContain('Slide Up');
+		// No clip-edge cue duplicates an animated side.
+		expect(of(derive(h).cues, 'clipEdges')).toEqual([]);
+	});
+
+	it('typewriter patterns are capped at 12 per second and 40 per clip', () => {
+		const h = newHarness();
+		addText(h, 'x'.repeat(200), { in: { preset: 'typewriter', durationFrames: 300 } }, 0, 400);
+		const keys = of(derive(h).cues, 'text').filter((c) => c.group);
+		expect(keys.length).toBe(40);
+		expect(new Set(keys.map((k) => k.group)).size).toBe(1);
+		for (let i = 0; i + 12 < keys.length; i++)
+			expect(keys[i + 12]!.frame - keys[i]!.frame).toBeGreaterThanOrEqual(30);
+		const fast = newHarness();
+		addText(fast, 'abcdefghijklmnopqrst', { in: { preset: 'typewriter', durationFrames: 15 } });
+		const k2 = of(derive(fast).cues, 'text').filter((c) => c.group);
+		for (let i = 1; i < k2.length; i++) expect(k2[i]!.frame - k2[i - 1]!.frame).toBeGreaterThanOrEqual(2.5);
+		expect(k2.length).toBeLessThanOrEqual(6);
+	});
+
+	it('typewriterOffsets follows typewriterSchedule (delay, typing span, out deletes backwards)', () => {
+		expect(typewriterOffsets(4, 30, 30, { delay: 0, typing: 1 }, 'in')).toEqual([0, 8, 15, 23]);
+		expect(typewriterOffsets(4, 30, 30, { delay: 0.5, typing: 0.5 }, 'in')).toEqual([15, 19, 23, 27]);
+		// Out: the window seeks the In timeline backwards; the first typed unit stays to the window's end.
+		expect(typewriterOffsets(4, 30, 30, { delay: 0, typing: 1 }, 'out')).toEqual([7, 15, 22, 30]);
+		expect(thinPattern([0, 1, 2, 3, 4, 5, 6], 30)).toEqual([0, 3, 6]);
+	});
+
+	it('an animated Range Selector reveals unit by unit', () => {
+		const h = newHarness();
+		const id = addText(h, 'ABCDEFGH', undefined);
+		patchClip(h, id, (c) => {
+			c.animators = [
 				{
-					id: fc.oneof(fc.string(), fc.constant('cue_0000000000000001')),
-					frame: fc.oneof(fc.double(), fc.integer()),
-					kind: fc.oneof(fc.string(), fc.constant('cut')),
-					weight: fc.oneof(fc.string(), fc.constant('hero')),
-					source: fc.oneof(fc.string(), fc.constant('user')),
-					types: fc.anything(),
-					anchor: fc.oneof(
-						fc.anything(),
-						fc.constant({ type: 'clip', clipId: 'clp_0000000000000999', edge: 'start' }),
-					),
-					placedClipIds: fc.oneof(fc.anything(), fc.constant([clipId, 'clp_X'])),
-					window: fc.anything(),
+					id: 'tag_00000000000000A1',
+					name: 'Reveal',
+					enabled: true,
+					properties: { opacity: { value: 0, keyframes: [] } },
+					selectors: [
+						{
+							id: 'tsl_00000000000000S1',
+							kind: 'range',
+							name: 'Range Selector 1',
+							enabled: true,
+							start: animOf(0, [kf('a1', 10, 0), kf('a2', 40, 100)]),
+							end: { value: 100, keyframes: [] },
+							offset: { value: 0, keyframes: [] },
+							units: 'percentage',
+							basedOn: 'characters',
+							mode: 'add',
+							amount: { value: 100, keyframes: [] },
+							shape: 'square',
+							smoothness: { value: 0, keyframes: [] },
+							easeHigh: { value: 0, keyframes: [] },
+							easeLow: { value: 0, keyframes: [] },
+							randomize: false,
+							randomSeed: { value: 0, keyframes: [] },
+						},
+					],
 				},
-				{ requiredKeys: [] },
-			),
-		);
-		fc.assert(
-			fc.property(
-				fc.oneof(
-					fc.anything(),
-					fc.record({ cues: fc.dictionary(fc.string(), anyCue), settings: fc.anything() }),
-				),
-				fc.anything(),
-				(soundDesign, sfx) => {
-					const raw = clone(base);
-					(raw.sequences[h.seqId] as { soundDesign?: unknown }).soundDesign = soundDesign;
-					(raw.sequences[h.seqId]!.clips[clipId] as unknown as { sfx?: unknown }).sfx = sfx;
-					const r = loadProject(JSON.parse(JSON.stringify(raw)), { ids: createCounterIdSource(1000) });
-					expect(r.issues).toEqual([]);
-					expect(soundDesignNeedsRepair(r.document)).toBe(false);
-					const again = repairDocument(r.document, createCounterIdSource(5000));
-					expect(again.report).toEqual([]);
-				},
-			),
-			{ numRuns: 300 },
-		);
-		expect(readSoundDesign('x')).toBeNull();
+			];
+		});
+		const r = deriveCues(h.doc, h.seqId, { density: 'rich' });
+		const reveal = of(r.cues, 'text').filter((c) => c.group?.includes(':animator:'));
+		expect(reveal.length).toBe(8);
+		expect(reveal.every((c) => c.kind === 'appear' && c.types[0] === 'key')).toBe(true);
+		expect(reveal.map((c) => (c.anchor as { unit?: number }).unit)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+		expect(reveal[0]!.frame).toBeGreaterThanOrEqual(10);
+		expect(reveal[7]!.frame).toBeLessThanOrEqual(41);
+	});
+});
+
+describe('mg, clip edges, 3D camera and markers', () => {
+	it('mgPhases converts from 30 fps and compresses like animeTemplateTiming', () => {
+		expect(mgPhases({ introFrames: 15, outroFrames: 12 }, 60, 300)).toEqual({ intro: 30, outro: 24 });
+		expect(mgPhases({ introFrames: 30, outroFrames: 30 }, 30, 40)).toEqual({ intro: 20, outro: 20 });
 	});
 
-	it('reports cue changes in the transaction diff', () => {
-		const { h, cueId } = filled();
-		const before = h.doc;
-		h.ok([{ type: 'soundCue.update', cueId, label: 'x' }]);
-		expect(diffDocuments(before, h.doc).changed).toContain(cueId);
-		const b2 = h.doc;
-		h.ok([{ type: 'soundDesign.setSettings', seed: 3 }]);
-		expect(diffDocuments(b2, h.doc).changed).toContain(h.seqId);
+	it('without a template registry the mg source warns and finds nothing', () => {
+		const f = phase2Fixture();
+		const r = deriveCues(f.h.doc, f.h.seqId, { density: 'rich' });
+		expect(of(r.cues, 'mg')).toEqual([]);
+		expect(r.warnings.map((w) => w.code)).toContain('W_MG_REGISTRY_MISSING');
+	});
+
+	it('graphics on V2+ appear and disappear; V1 graphics and adjacent edits do not', () => {
+		const h = newHarness();
+		placeVideo(h, 0, 300, 'V1', 'Base');
+		const s = placeStill(h, 30, 60, 'V2', 'Sticker');
+		placeStill(h, 120, 30, 'V1', 'Card');
+		const cues = of(derive(h).cues, 'clipEdges');
+		expect(cues.map((c) => [c.kind, c.frame, c.weight])).toEqual([
+			['appear', 30, 'support'],
+			['exit', 90, 'ambient'],
+		]);
+		expect(cues[0]!.anchor).toEqual({ type: 'clip', clipId: s, edge: 'start' });
+		expect(cues[0]!.types[0]).toBe('pop');
+	});
+
+	it('the active 3D camera moving gives a move; a camera under a higher one does not', () => {
+		const h = newHarness();
+		placeVideo(h, 0, 150, 'V1', 'Plate');
+		const cam = h.ok([{ type: 'clip.addCamera', at: 0, duration: 150, track: 'V2', name: 'Cam', ref: '$c' }])
+			.refs.$c!;
+		patchClip(h, cam, (c) => {
+			const tr = (c.camera as { transform: { position: Animatable<number[]> } }).transform;
+			tr.position = animOf([0, 0, -2000], [kf('c1', 30, [0, 0, -2000]), kf('c2', 60, [1500, 0, -2000])]);
+		});
+		const r = derive(h);
+		const moves = of(r.cues, 'camera3d');
+		expect(moves).toHaveLength(1);
+		expect(moves[0]!.anchor).toMatchObject({
+			type: 'keyframe',
+			clipId: cam,
+			property: 'camera.transform.position',
+			keyframeId: kfid('c2'),
+			event: 'peak-speed',
+		});
+		// A two-node camera also turns towards its point of interest while it travels: the peak is inside the move.
+		expect(moves[0]!.frame).toBeGreaterThan(30);
+		expect(moves[0]!.frame).toBeLessThan(60);
+		expect(r.curves.some((c) => c.clipId === cam)).toBe(true);
+		// A static camera on V3 covers the moving one: nothing moves on screen.
+		h.ok([{ type: 'clip.addCamera', at: 0, duration: 150, track: 'V3', name: 'Top' }]);
+		expect(of(derive(h).cues, 'camera3d')).toEqual([]);
+	});
+
+	it('parses sfx: requests (ids, synonyms, separators) and agent notes', () => {
+		expect(parseSfxRequest('sfx: hit')).toEqual({ names: ['hit'], types: ['hit'] });
+		expect(parseSfxRequest('SFX: swoosh, sub drop')!.types).toEqual(['whoosh', 'boom']);
+		expect(parseSfxRequest('sfx: banana')).toEqual({ names: ['banana'], types: [] });
+		expect(parseSfxRequest('music cue')).toBeNull();
+		expect(parseSfxRequest(42)).toBeNull();
+		const h = newHarness();
+		placeVideo(h, 0, 300, 'V1', 'Base');
+		h.ok([
+			{ type: 'marker.add', frame: 30, name: 'sfx: banana' },
+			{ type: 'marker.add', frame: 60, name: 'Note' },
+			{ type: 'marker.add', frame: 90, name: 'agent', comment: 'sfx: pop', markerType: 'agent-note' },
+			{ type: 'marker.add', frame: 120, name: 'plain', comment: 'sfx: hit' },
+		]);
+		const doc = h.doc;
+		const cues = deriveCues(doc, h.seqId, { density: 'rich', sources: ['markers'] }).cues;
+		expect(cues.map((c) => [c.frame, c.types])).toEqual([
+			[30, []],
+			[90, ['pop']],
+		]);
+		expect(cues[0]!.reason).toContain('unknown: banana');
+	});
+});
+
+describe('merging and budgets', () => {
+	it('cues within 2 frames merge into the heavier one, keeping the other anchor', () => {
+		const h = newHarness();
+		placeVideo(h, 0, 90, 'V1', 'A');
+		placeVideo(h, 90, 90, 'V1', 'B');
+		h.ok([{ type: 'marker.add', frame: 91, name: 'sfx: boom' }]);
+		const r = derive(h);
+		expect(r.cues).toHaveLength(1);
+		const c = r.cues[0]!;
+		expect(c).toMatchObject({ frame: 91, from: 'markers', weight: 'hero' });
+		expect(c.also).toEqual([expect.objectContaining({ type: 'edit' })]);
+		expect(c.reason).toContain('also Cut on V1');
+		expect(r.stats.bySource.edits).toMatchObject({ found: 1, merged: 1, kept: 0 });
+	});
+
+	/** 60 one-second shots: 59 cuts, one per second. */
+	function montage(n = 60, len = 30) {
+		const h = newHarness();
+		for (let i = 0; i < n; i++) placeVideo(h, i * len, len, 'V1', `S${i}`);
+		return h;
+	}
+
+	it('caps cues per second by density and counts drops', () => {
+		const h = montage(60, 10); // a cut every 10 frames = 3 per second
+		for (const [density, perSec] of [
+			['sparse', 1],
+			['balanced', 2],
+			['rich', 3],
+		] as const) {
+			const r = derive(h, { density });
+			const frames = r.cues.map((c) => c.frame);
+			for (const f of frames)
+				expect(frames.filter((g) => g >= f && g < f + 30).length).toBeLessThanOrEqual(perSec);
+			expect(r.stats.dropped.rate + r.cues.length + r.stats.dropped.confidence).toBe(59);
+		}
+	});
+
+	it('demotes heroes closer than the density spacing; never two within 0.5 s', () => {
+		const h = montage(10, 30);
+		h.ok([10, 25, 40, 70, 160].map((frame) => ({ type: 'marker.add', frame, name: 'sfx: hit' })));
+		const heroes = (d: 'sparse' | 'balanced' | 'rich') =>
+			derive(h, { density: d, sources: ['markers'] })
+				.cues.filter((c) => c.weight === 'hero')
+				.map((c) => c.frame);
+		expect(heroes('rich')).toEqual([10, 70, 160]);
+		expect(heroes('balanced')).toEqual([10, 70, 160]);
+		expect(heroes('sparse')).toEqual([10, 160]);
+		const r = derive(h, { density: 'rich', sources: ['markers'] });
+		expect(r.cues).toHaveLength(5); // explicit cues are kept, as support
+		expect(r.stats.heroesDemoted).toBe(2);
+	});
+
+	it('respects maxCues and minGapFrames; a pattern group counts once in a window', () => {
+		const h = montage(30, 30);
+		expect(derive(h, { maxCues: 5 }).cues).toHaveLength(5);
+		const gapped = derive(h, { minGapFrames: 70 }).cues.map((c) => c.frame);
+		for (let i = 1; i < gapped.length; i++) expect(gapped[i]! - gapped[i - 1]!).toBeGreaterThanOrEqual(70);
+		const t = newHarness();
+		t.ok([
+			{
+				type: 'clip.addText',
+				at: 0,
+				duration: 120,
+				track: 'V2',
+				content: { text: 'ABCDEFGHIJKL' },
+				textAnimation: { in: { preset: 'typewriter', durationFrames: 30 } },
+			},
+		]);
+		const keys = deriveCues(t.doc, t.seqId, { density: 'sparse' }).cues.filter((c) => c.group);
+		expect(keys.length).toBeGreaterThan(1); // 1 cue per second, yet the whole pattern is kept
+	});
+
+	it('merges engine cues (scene, beat, pixel) and ignores malformed ones', () => {
+		const h = montage(4, 30);
+		const scene = {
+			frame: 45,
+			kind: 'cut' as const,
+			weight: 'support' as const,
+			types: ['hit' as const],
+			align: 'peak' as const,
+			anchor: { type: 'scene' as const, mediaId: 'med_X', mediaSec: 1.5 },
+			confidence: 0.6,
+			reason: 'Scene change in the footage',
+			from: 'scene' as const,
+		};
+		const r = derive(h, { extraCues: [scene, { ...scene, frame: 1.5 }, null as never] });
+		expect(of(r.cues, 'scene').map((c) => c.frame)).toEqual([45]);
+		expect(r.stats.bySource.scene.found).toBe(1);
+		expect(r.warnings.map((w) => w.code)).toEqual(['W_EXTRA_CUE_INVALID']);
+		expect(of(derive(h, { sources: ['edits'], extraCues: [scene] }).cues, 'scene')).toEqual([]);
+	});
+});
+
+describe('anchors resolve back to the derived frame (resolveCueAnchor, WP2.1)', () => {
+	function check(h: Harness) {
+		const r = derive(h);
+		const seq = h.doc.sequences[h.seqId]!;
+		const off = r.cues
+			.map((c) => ({ c, at: resolveCueAnchor(h.doc, seq, c.anchor, { mgTemplates: mgRegistry() }) }))
+			.filter(({ c, at }) => at !== c.frame)
+			.map(({ c, at }) => `${c.key} @${c.frame} → ${at}`);
+		expect(off).toEqual([]);
+		return r.cues.length;
+	}
+
+	it('on the Phase 2 fixture', () => {
+		expect(check(phase2Fixture().h)).toBeGreaterThan(10);
+	});
+
+	it('on keyframed pops, pulses, fades and stops', () => {
+		const h = newHarness();
+		const a = placeStill(h, 0, 90, 'V2', 'Badge');
+		setTransform(h, a, 'scale', animOf(100, [kf('s1', 10, 0), kf('s2', 15, 115), kf('s3', 19, 100)]));
+		const b = placeStill(h, 100, 90, 'V2', 'Pulse');
+		setTransform(h, b, 'scale', animOf(100, [kf('t1', 20, 100), kf('t2', 26, 120), kf('t3', 32, 100)]));
+		const c = placeStill(h, 200, 120, 'V2', 'Fade');
+		patchClip(h, c, (cl) => {
+			cl.opacity = animOf(100, [kf('o1', 0, 0), kf('o2', 6, 100), kf('o3', 100, 100), kf('o4', 115, 0)]);
+		});
+		const d = placeStill(h, 0, 90, 'V3', 'Hard', 1200, 800);
+		setTransform(
+			h,
+			d,
+			'position',
+			animOf<[number, number]>([960, 540], [kf('p1', 10, [0, 540]), kf('p2', 20, [960, 540])]),
+		);
+		const e = placeStill(h, 100, 90, 'V3', 'Shrink');
+		setTransform(h, e, 'scale', animOf(100, [kf('u1', 30, 100), kf('u2', 40, 0)]));
+		expect(check(h)).toBeGreaterThanOrEqual(6);
 	});
 });
