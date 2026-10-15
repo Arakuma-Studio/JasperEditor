@@ -1978,3 +1978,18 @@ Final rescan validation: cross-review found no static blocker in the literal lin
 
 
 Owning documentation correction: `docs/wp-notes/color-grade.md` now describes the current independent shader expectations and the seven transferred project contracts, and explicitly marks their integrated GL validation pending. The obsolete CPU-reference/every-pixel pass row was removed; other workstream measurements remain labeled historical. This documentation-only follow-up changes no test disposition, test code or production behavior. `git diff --check` passed; no runtime or build commands were run.
+
+
+## Focused runtime investigation: S_MatteOps
+
+The integrated full run reported a failure in `packages/compositions/test/fx-sapphire-adjust-composite-gl.test.ts / S_MatteOps: shrink/grow with every filter, invert, outputs, post blur, deterministic noise` after approximately 86 seconds. The case and its expected values were unchanged by cleanup. Its suite declares a **60-second** test timeout; only `beforeAll` has a 120-second timeout. The production owner remains `packages/project/src/registry/fx/sapphire-adjust-composite.ts` with its matte shaping functions in `sapphire-adjust-composite/matte.ts`.
+
+A fresh isolated worktree at integrated `4e96e3c9` installed dependencies successfully with `pnpm install --frozen-lockfile --offline`, then ran only:
+
+```sh
+pnpm exec vitest run packages/compositions/test/fx-sapphire-adjust-composite-gl.test.ts --maxWorkers=1 -t 'S_MatteOps:'
+```
+
+Result: one selected test failed, eight cases were intentionally excluded by the name filter. The selected case failed after 63,391 ms with `Error: Test timed out in 60000ms` at test line 118. The `afterAll` browser-close hook also failed with `Error: Hook timed out in 10000ms` at line 31. There was no pixel, alpha, noise-determinism or seed/frame assertion failure. Total run duration was 211.41 seconds, including 37.04 seconds importing and 160.96 seconds running the file. The 16-core shared host's observed one-minute load was 137–165 during setup/reproduction.
+
+This focused result demonstrates timeout failures under heavy host load, not a numerical product defect. It does not establish a passing regression or replace the original full-run stack, which was not yet available during this investigation. No test, expected value, timeout, production owner or disposition was changed. The regression remains KEEP and requires a lower-load rerun. Vitest exited with code 1; no Chrome process rooted in the isolated worktree remained afterward. Only this evidence note changed, and `git diff --check` passed.
