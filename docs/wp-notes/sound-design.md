@@ -319,7 +319,39 @@ the context's output timestamp passes the resume time (`waitUntilActuallyResumed
 
 #### Verified (commands and results)
 
-PLACEHOLDER-VERIFIED
+Shared 16-core host, load average 50–150 from other agents during these runs (stated per run).
+
+- Unit / offline (headless Chrome Web Audio):
+  `pnpm vitest run packages/compositions/test/audio-preview-transport.test.ts packages/compositions/test/audio-preview-oracle.test.ts packages/compositions/test/audio-preview-latency.test.ts --maxWorkers=1`:
+  18 passed (transport 3, oracle 4, latency 11). The transport add / remove cases were also run with the route delays
+  forced non-live and with slot reuse disabled: both failed (2 of 3 each), so they test what they claim.
+- `pnpm vitest run packages/project/test/essential.test.ts --maxWorkers=2`: 29 passed. With `model.ts`,
+  `invariants.ts` and `handlers/essential.ts` checked out from before C4: 5 of the 6 new tests failed (keys
+  `[-70, 0, 30]` instead of `[-50, 20, 50]`).
+- `pnpm vitest run packages/compositions packages/project/test/essential.test.ts packages/project/test/invariants.test.ts packages/project/test/audio-mix.test.ts apps/mcp/test/audio-fx.test.ts apps/web/test/essential-auto-match.test.ts apps/web/test/audio-mix.test.ts apps/web/test/audio-mix-panels.test.tsx apps/web/test/audio-engine-ops.test.ts --maxWorkers=2`
+  (load ≈ 125): 604 passed, 1 failed (`audio-fx-preview.test.ts`, its 5 s timeout; rerun alone: 2 passed).
+  `packages/project/test/fuzz-parsers.test.ts apps/web/test/panel-input-validation.test.ts packages/project/test/gaps-graphics.test.ts apps/engine/test/audio-fx.test.ts`:
+  58 passed, 1 failed (the `.3dl` LUT fuzz's 120 s limit under load; not touched here).
+- `pnpm lint`: passed. `pnpm typecheck`: passed (after merging `feat/sound-design` d0827ab1). `pnpm notices --check`:
+  current. `pnpm build`: passed.
+- Real app, built stack, headless Chrome:
+  `E2E_PORT=48401 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-p0-transport.spec.ts e2e/sound-p0-preview.spec.ts`
+  (load 68 → 150): 9 passed, 1 failed ("seek during playback": every attempt disturbed at load 150; rerun alone 3
+  times: 2 passed with the tone ending 0.02 ms before Remotion's stop, the first failed with all attempts
+  disturbed). Values from the passing runs: first click at play + 71.6 ms (= 41.6 + 30), 0.707; picture − audio
+  0.031 s primed vs 0.034 s without latency (earlier runs: 0.012 / 0.007, 0.016 / 0.020, 0.020 / 0.014); after a
+  paused seek max 0; latency change gap 998 samples (four runs). `e2e/sound-p0-preview.spec.ts` 5 passed (clicks of
+  0.7071 every 24 000 samples, export six clicks at 0…120 000, a clip at frame 40 heard from its first sample).
+  Screenshot looked at: `test-results/e2e-sound-p0-transport/essential-sound-legacy-pan.png` (Essential Sound on the
+  reopened clip: SFX, Pan section unchecked).
+- Before the fixes (build of e9b8b01a, same specs, load ≈ 15–40): first click lost (first heard at +0.280 s), stale
+  tone 0.352 after a paused seek, 44.2 ms of tone after a seek during playback, a 1996-sample gap at the latency change
+  (three runs; at load ≈ 90 the same build gave 1996–4812).
+- Observed under load (both builds): when the picture falls behind (main-thread stalls), Remotion re-anchors to it and
+  reschedules every player; the new anchor is frame-based (1601.6 samples per frame at 29.97 fps), so the sources then
+  start at a sub-sample phase and a one-sample click is interpolated over two samples (peaks 0.566 = 0.8 × 0.707 or
+  0.283 instead of 0.707; traced with logged anchors in a debug build). The audio is not misaligned; it is the
+  reason the e2e plays again when Remotion rescheduled, and why `sound-p0-preview` test 1 failed twice at load ≥ 80.
 
 ## Phase 1: sound library
 
