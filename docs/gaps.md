@@ -338,7 +338,11 @@ from the library (Enter, drop on a glyph, Fill With ▸, Fill Unfilled Cues), Re
 into one undo step, linked layers, the In Context audition, clip badges, Essential Sound and Properties sections and
 Detect Peak (`e2e/sound-fill.spec.ts`: three filled cues measured at 0–1 sample from their cue frame in a native
 export). Limits (WP2.4b wp-note): variation cycling acts on the whole linked selection; Fill Unfilled Cues applies
-directly until Phase 3 proposals; Detect Peak analyses at most 2 min of a clip; Auto gain / Room send are Phase 4.
+directly until Phase 3 proposals; Detect Peak analyses at most 2 min of a clip; Auto gain / Room send are Phase 4. The Phase 2
+model review (wp-note "Phase 2 verification: model review") fixed six defects with failing-first tests (repair
+idempotence, swap at frame 0 and over fades, split SFX clips and their cue, history coalescing across undo, cue id
+bound); known limits: a copied SFX clip keeps its cue link without filling the cue, `pitchSt: 0` after a fractional
+varispeed shift keeps up to ±0.5 st, razoring inside any transition's span fails with `E_INVARIANT`.
 
 ### Not covered by any workstream yet
 

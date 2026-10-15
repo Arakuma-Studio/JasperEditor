@@ -953,7 +953,7 @@ describe('soft references never block an ordinary edit (review, gaps)', () => {
 		],
 		['ripple delete', (s) => [{ type: 'clip.extract', clipIds: [s.a], syncConflict: 'cut' }]],
 		// (outside the dissolve's span: razoring inside a transition is refused for reasons unrelated to sound design)
-		['razor through every track', (s) => [{ type: 'clip.split', scope: 'all-unlocked', at: 100 }]],
+		['razor through every track', (_s) => [{ type: 'clip.split', scope: 'all-unlocked', at: 100 }]],
 		['duplicate the filled sounds', (s) => [{ type: 'clip.duplicate', clipIds: s.sfx, deltaFrames: 400 }]],
 		['duplicate the sequence', (s) => [{ type: 'sequence.duplicate', sequenceId: s.h.seqId }]],
 		['nest the picture and a filled sound', (s) => [{ type: 'clip.nest', clipIds: [s.a, s.sfx[0]] }]],
