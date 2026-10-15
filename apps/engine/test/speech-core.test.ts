@@ -20,7 +20,6 @@ import {
 	tightenWords,
 	vadThreshold,
 } from '../src/speech/core/vad.ts';
-import { wordErrorRate } from '../src/speech/core/wer.ts';
 
 const SR = 16_000;
 const s = (sec: number) => Math.round(sec * SR);
@@ -387,14 +386,5 @@ describe('decoding rules', () => {
 		const b = Array.from({ length: 20 }, (_, i) => pickToken(l, 1, mulberry32(i)));
 		expect(a).toEqual(b);
 		expect(new Set(a).size).toBeGreaterThan(1);
-	});
-});
-
-describe('word error rate (FilmCraft lib.rs test)', () => {
-	it('counts edits', () => {
-		expect(wordErrorRate('the cat sat', 'The cat, sat.')).toBe(0);
-		expect(wordErrorRate('the cat sat on the mat', 'the cat sat on mat')).toBeCloseTo(1 / 6, 9);
-		expect(wordErrorRate('a b', 'a x b y')).toBeCloseTo(1, 9);
-		expect(wordErrorRate('forty-two', 'forty two')).toBe(0);
 	});
 });

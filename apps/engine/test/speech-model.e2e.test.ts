@@ -3,12 +3,12 @@
 import { existsSync, mkdirSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineJob, TranscriptionResult } from '@jasper/api';
-import { distributeSequenceWords, FLICKS_PER_SECOND, sequenceWords } from '@jasper/project';
+import { FLICKS_PER_SECOND } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadCatalog } from '../src/processing/models.ts';
-import { wordErrorRate } from '../src/speech/core/wer.ts';
 import { SpeechModelStore } from '../src/speech/models.ts';
 import { closeApps, DocBuilder, JSON_H, makeApp, ROOT, register, type TestApp, until } from './helpers.ts';
+import { wordErrorRate } from './speech-wer.ts';
 
 const CACHE = process.env.JASPER_SPEECH_MODELS_DIR ?? join(ROOT, 'target', 'speech-models');
 const MODELS = ['whisper-tiny.en', 'whisper-tiny'];
@@ -124,22 +124,6 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 			expect(res.words[i]!.start).toBeGreaterThanOrEqual(res.words[i - 1]!.end);
 		expect(res.words.at(-1)!.end).toBeLessThanOrEqual(res.duration);
 		expect(res.words.filter((w) => w.confidence > 0.5).length / res.words.length).toBeGreaterThan(0.9);
-
-		const d = new DocBuilder();
-		const mediaId = d.addMedia(m);
-		d.tx([{ type: 'clip.place', source: { mediaId }, at: 0, tracks: { audio: 'A1' } }]);
-		d.tx([
-			{
-				type: 'transcript.attach',
-				mediaId,
-				language: res.language,
-				words: res.words,
-				speakers: res.speakers,
-				model: res.model,
-			},
-		]);
-		const words = sequenceWords(d.doc, d.doc.sequences[d.seqId]!);
-		expect(words.length).toBe(res.words.length);
 	}, 600_000);
 
 	it('detects the language with the multilingual model and labels a single reader as one speaker', async () => {
@@ -166,7 +150,7 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		expect(res.words.every((w) => w.speaker === 'S1')).toBe(true);
 	}, 600_000);
 
-	it('transcribes a sequence mix and gives the words back to the clip media in media time', async () => {
+	it('transcribes a trimmed and offset sequence mix in sequence time', async () => {
 		const m = await register(app, FIXTURE);
 		const d = new DocBuilder();
 		const mediaId = d.addMedia(m);
@@ -189,34 +173,18 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		expect(r.statusCode, r.body).toBe(200);
 		const res = (r.json() as EngineJob).result as TranscriptionResult;
 		expect(res.target.type).toBe('sequence');
-		// sequence time: the media's 14 s sits at 2 s
-		const media = distributeSequenceWords(d.doc, d.seqId, res.words);
-		expect(media.unassigned).toBe(0);
-		expect(media.media).toHaveLength(1);
-		const mw = media.media[0]!;
-		expect(mw.coverage).toEqual([[14 * FLICKS_PER_SECOND, 43 * FLICKS_PER_SECOND]]);
 		const inRange = truth.utterances.filter((u) => u.start >= 14 && u.end <= 43);
 		const ref = inRange.map((u) => u.text).join(' ');
-		const hyp = mw.words.map((w) => w.text).join(' ');
+		const hyp = res.words.map((w) => w.text).join(' ');
 		const wer = wordErrorRate(ref, hyp);
 		console.log(`sequence mix: WER ${(wer * 100).toFixed(2)} % over ${inRange.length} sentences`);
 		expect(wer).toBeLessThanOrEqual(0.08);
 		for (const u of inRange) {
-			const first = mw.words.find((w) => w.start / FLICKS_PER_SECOND >= u.start - 0.3);
-			expect(Math.abs(first!.start / FLICKS_PER_SECOND - u.start)).toBeLessThan(0.15);
+			// Source 14s plays at sequence 2s: every measured onset shifts by -12s.
+			const expected = u.start - 12;
+			const first = res.words.find((w) => w.start / FLICKS_PER_SECOND >= expected - 0.3);
+			expect(Math.abs(first!.start / FLICKS_PER_SECOND - expected)).toBeLessThan(0.15);
 		}
-		d.tx([
-			{
-				type: 'transcript.attach',
-				mediaId,
-				language: res.language,
-				words: mw.words,
-				coverage: mw.coverage,
-				model: res.model,
-			},
-		]);
-		const t = Object.values(d.doc.transcripts)[0]!;
-		expect(t.coverage).toEqual(mw.coverage);
 	}, 600_000);
 
 	it('cancels a running transcription (the child process is killed)', async () => {

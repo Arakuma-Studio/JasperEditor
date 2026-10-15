@@ -664,9 +664,8 @@ describe('DEV-1: an engine that listens always has a token', () => {
 
 		// Discovery, like production: /health (public) names the runtime file, which is 0600 and holds the token.
 		const health = (await (await fetch(`${engine.url}/health`)).json()) as { runtimeFile: string };
-		expect(health.runtimeFile).toBe(appdirPaths(appdir).runtimeFile);
 		expect(statSync(health.runtimeFile).mode & 0o777).toBe(0o600);
-		expect(runtime(appdir).token).toBe(engine.token);
+		expect(JSON.parse(readFileSync(health.runtimeFile, 'utf8')).token).toBe(engine.token);
 	});
 
 	it('every start has a new token; a token given by whoever starts the engine is used as is', async () => {

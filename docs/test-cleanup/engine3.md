@@ -1,5 +1,7 @@
 # Engine group 3 test cleanup
 
+The [independent-oracle follow-up](engine3-followup.md) supersedes the dispositions of the seven retained declarations it rewrites and records the additional test-only speech helper deletion.
+
 Disposition record written before test/source edits, with subsequent narrow refinements recorded in the affected rows. Cleanup is implemented for all 37 assigned files; focused execution and repository gates are pending the coordinated integrated run. Parameterized same-contract families have one row; dynamic recipe/range families are included explicitly.
 
 Bar columns: **1** independent source/contract; **2** recognizable failure; **3** independent expected result; **4** stable interface; **5** permitted refactor; **6** unique lowest ownership. The exact behavior in each row’s test name is the contract/failure under review, not a claim that all assertions in a file deserve retention.

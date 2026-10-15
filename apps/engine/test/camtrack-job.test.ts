@@ -2,17 +2,7 @@
 import { readFileSync } from 'node:fs';
 import type { CamTrackResult, EngineJob } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import {
-	logRot,
-	type M3,
-	mm,
-	mt,
-	norm,
-	rodrigues,
-	sub,
-	umeyama,
-	type V3,
-} from '../src/camtrack/core/linalg.ts';
+import type { M3, V3 } from '../src/camtrack/core/linalg.ts';
 import {
 	closeApps,
 	ensureFixtures,
@@ -50,6 +40,22 @@ async function finished(job: EngineJob): Promise<EngineJob> {
 
 const frameOf = (r: CamTrackResult, k: number) => r.frames.slice(k * 8, k * 8 + 8);
 
+// q v q⁻¹, with q = [cos(angle/2), axis * sin(angle/2)].
+function rotateVector(v: V3, rotation: V3): V3 {
+	const half = Math.hypot(...rotation) / 2;
+	const scale = half === 0 ? 0.5 : Math.sin(half) / (2 * half);
+	const [x, y, z] = rotation.map((r) => r * scale);
+	const w = Math.cos(half);
+	const tx = 2 * (y! * v[2] - z! * v[1]);
+	const ty = 2 * (z! * v[0] - x! * v[2]);
+	const tz = 2 * (x! * v[1] - y! * v[0]);
+	return [
+		v[0] + w * tx + y! * tz - z! * ty,
+		v[1] + w * ty + z! * tx - x! * tz,
+		v[2] + w * tz + x! * ty - y! * tx,
+	];
+}
+
 beforeAll(async () => {
 	ensureFixtures();
 	truth = JSON.parse(readFileSync(fixture('camtrack-dolly.json'), 'utf8'));
@@ -79,26 +85,36 @@ describe('camtrack jobs', () => {
 		expect(solved.filter((f) => f[7] === 1).length).toBeGreaterThan(55);
 		const focal = [...solved.map((f) => f[6]!)].sort((a, b) => a - b)[30]!;
 		expect(Math.abs(focal / 560 - 1)).toBeLessThan(0.04);
-		// Path after the best similarity, relative to the path length.
-		const src = solved.map((f) => [f[3]!, f[4]!, f[5]!] as V3);
-		const dst = truth.frames.map((f) => f.c);
-		const sim = umeyama(src, dst)!;
-		const len = norm(sub(dst[59]!, dst[0]!));
-		let worst = 0;
-		src.forEach((s, i) => {
-			const p = [0, 1, 2].map(
-				(j) => sim.s * (sim.r[j]![0] * s[0] + sim.r[j]![1] * s[1] + sim.r[j]![2] * s[2]) + sim.t[j]!,
-			) as V3;
-			worst = Math.max(worst, norm(sub(p, dst[i]!)));
-		});
-		expect(worst / len).toBeLessThan(0.05);
-		// Relative rotations against the first frame (degrees).
-		const r0 = rodrigues([solved[0]![0]!, solved[0]![1]!, solved[0]![2]!]);
+		// The fixture moves at constant speed on a straight line. Endpoints fix only
+		// the arbitrary translation/scale/orientation gauge, not the intermediate path.
+		const start = solved[0]!.slice(3, 6);
+		const delta = start.map((v, j) => solved[59]![j + 3]! - v);
+		const travel = Math.hypot(...delta);
+		expect(travel).toBeGreaterThan(0);
+		for (let k = 1; k < 59; k++) {
+			const residual = start.map((v, j) => solved[k]![j + 3]! - v - (delta[j]! * k) / 59);
+			expect(Math.hypot(...residual) / travel).toBeLessThan(0.05);
+		}
+		// Decode the public axis-angle with a quaternion sandwich, independently
+		// of the solver's Rodrigues/log-matrix conversion. For rotations A/B,
+		// ||A-B||_F = sqrt(8) sin(angle/2).
+		const r0 = solved[0]!.slice(0, 3).map((v) => -v) as V3;
 		let rot = 0;
 		for (let k = 1; k < 60; k++) {
-			const rs = mm(rodrigues([solved[k]![0]!, solved[k]![1]!, solved[k]![2]!]), mt(r0));
-			const rt = mm(truth.frames[k]!.r, mt(truth.frames[0]!.r));
-			rot = Math.max(rot, (norm(logRot(mm(rs, mt(rt)))) * 180) / Math.PI);
+			let squared = 0;
+			for (let j = 0; j < 3; j++) {
+				const basis = [0, 0, 0] as V3;
+				basis[j] = 1;
+				const actual = rotateVector(rotateVector(basis, r0), solved[k]!.slice(0, 3) as V3);
+				for (let i = 0; i < 3; i++) {
+					const expected = truth.frames[k]!.r[i]!.reduce(
+						(sum, v, a) => sum + v * truth.frames[0]!.r[j]![a]!,
+						0,
+					);
+					squared += (actual[i]! - expected) ** 2;
+				}
+			}
+			rot = Math.max(rot, (2 * Math.asin(Math.min(1, Math.sqrt(squared / 8))) * 180) / Math.PI);
 		}
 		expect(rot).toBeLessThan(0.5);
 	}, 600_000);

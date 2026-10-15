@@ -2,7 +2,7 @@
 // at whitespace and hyphens; (substitutions + deletions + insertions) / reference words.
 
 /** Lower-case, letters/digits/apostrophes inside the word only. */
-export function normalizeWord(w: string): string {
+function normalizeWord(w: string): string {
 	return w
 		.toLowerCase()
 		.normalize('NFKC')

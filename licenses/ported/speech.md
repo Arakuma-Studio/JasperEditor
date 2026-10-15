@@ -14,8 +14,8 @@
 | `crates/speech/src/vad.rs` | `apps/engine/src/speech/core/vad.ts` (`frameDb`, `vadThreshold`, `tightenWords`) | Energy-based word-bound tightening (30 % floor→speech, ≥ 6 dB, 60 ms minimum) |
 | `crates/speech/src/diarize.rs` | `apps/engine/src/speech/core/diarize.ts` | MFCC 1–19 mean/std chunk vectors, average-linkage clustering, small-cluster folding, numbering by first appearance |
 | `crates/speech/src/models.rs` | `apps/engine/src/speech/models.ts` | Model store: pinned files, sha256 verification, `.part` downloads, installed/missing bytes |
-| `crates/speech/src/lib.rs` (`word_error_rate`) | `apps/engine/src/speech/core/wer.ts` | Word error rate |
-| `crates/speech/src/{vad,diarize,mel,lib}.rs` tests, `crates/speech/src/whisper/{align,mod}.rs` tests | `apps/engine/test/speech-core.test.ts` | Unit tests (synthetic voices, VAD fixture, DTW band, median filter, repetition guard, WER) |
+| `crates/speech/src/lib.rs` (`word_error_rate`) | `apps/engine/test/speech-wer.ts` | Word error rate |
+| `crates/speech/src/{vad,diarize,mel,lib}.rs` tests, `crates/speech/src/whisper/{align,mod}.rs` tests | `apps/engine/test/speech-core.test.ts` | Unit tests (synthetic voices, VAD fixture, DTW band, median filter, repetition guard) |
 
 Notes: Rust (candle) → TypeScript on ONNX Runtime (the onnx-community Whisper exports with cross-attention outputs
 instead of safetensors); times are 16 kHz samples in the worker and flicks in the model. Additions over the

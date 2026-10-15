@@ -9928,8 +9928,8 @@ Record: `licenses/ported/speech.md`
 | `crates/speech/src/vad.rs` | `apps/engine/src/speech/core/vad.ts` (`frameDb`, `vadThreshold`, `tightenWords`) | Energy-based word-bound tightening (30 % floor→speech, ≥ 6 dB, 60 ms minimum) |
 | `crates/speech/src/diarize.rs` | `apps/engine/src/speech/core/diarize.ts` | MFCC 1–19 mean/std chunk vectors, average-linkage clustering, small-cluster folding, numbering by first appearance |
 | `crates/speech/src/models.rs` | `apps/engine/src/speech/models.ts` | Model store: pinned files, sha256 verification, `.part` downloads, installed/missing bytes |
-| `crates/speech/src/lib.rs` (`word_error_rate`) | `apps/engine/src/speech/core/wer.ts` | Word error rate |
-| `crates/speech/src/{vad,diarize,mel,lib}.rs` tests, `crates/speech/src/whisper/{align,mod}.rs` tests | `apps/engine/test/speech-core.test.ts` | Unit tests (synthetic voices, VAD fixture, DTW band, median filter, repetition guard, WER) |
+| `crates/speech/src/lib.rs` (`word_error_rate`) | `apps/engine/test/speech-wer.ts` | Word error rate |
+| `crates/speech/src/{vad,diarize,mel,lib}.rs` tests, `crates/speech/src/whisper/{align,mod}.rs` tests | `apps/engine/test/speech-core.test.ts` | Unit tests (synthetic voices, VAD fixture, DTW band, median filter, repetition guard) |
 
 Notes: Rust (candle) → TypeScript on ONNX Runtime (the onnx-community Whisper exports with cross-attention outputs
 instead of safetensors); times are 16 kHz samples in the worker and flicks in the model. Additions over the
@@ -9990,7 +9990,7 @@ Record: `licenses/ported/three-d.md`
 | `crates/render/src/three_d/compose.rs`, `crates/render/src/three_d/light.rs` | `packages/project/src/three-d/classic.ts` | Classic 3D per-pixel compositor: plane homographies, depth from the plane equation, far → near fragment sort (coplanar in stack order), Blinn-Phong both sides, ray-cast shadows with Light Transmission, blur levels |
 | `crates/render/src/three_d/bokeh.rs` | `packages/project/src/three-d/bokeh.ts` | Iris row spans, span-kernel gather over row prefix sums, highlight boost, progressive blur levels |
 | `crates/gpu/src/shaders/classic3d.wgsl` | `packages/compositions/src/three-d/gl.ts` | The Classic 3D composite and depth-of-field passes (WGSL → GLSL ES 3.00, data textures instead of storage buffers) |
-| `crates/track/src/camtrack/linalg.rs` | `apps/engine/src/camtrack/core/linalg.ts` | Vectors / 3×3 matrices, Rodrigues, one-sided Jacobi SVD, Jacobi eigen-decomposition, Cholesky, Umeyama similarity |
+| `crates/track/src/camtrack/linalg.rs` | `apps/engine/src/camtrack/core/linalg.ts` | Vectors / 3×3 matrices, Rodrigues, one-sided Jacobi SVD, Jacobi eigen-decomposition, Cholesky |
 | `crates/track/src/camtrack/geometry.rs`, `crates/track/src/fit.rs` | `apps/engine/src/camtrack/core/geometry.ts` | Normalised 8-point essential matrix, Sampson distance, RANSAC, essential / homography decomposition, triangulation, pose selection, plane fit, Procrustes, homography RANSAC |
 | `crates/track/src/camtrack/mod.rs` | `apps/engine/src/camtrack/core/types.ts` | Tracks, radial distortion (k1, k2) and its inverse / Jacobian, settings and the solve |
 | `crates/track/src/camtrack/bundle.rs` | `apps/engine/src/camtrack/core/bundle.ts` | Levenberg–Marquardt bundle adjustment with the Schur complement, Huber IRLS, fixed / shared / per-camera focal lengths, distortion |
