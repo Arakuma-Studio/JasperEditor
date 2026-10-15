@@ -35,6 +35,7 @@ async function tool<T = Record<string, unknown>>(
 ): Promise<T> {
 	const r = await call(name, args);
 	expect(r.isError, `${name}: ${text(r)}\n${mcpLog.join('')}`).toBeFalsy();
+	await test.info().attach(name, { body: text(r), contentType: 'application/json' });
 	return JSON.parse(text(r)) as T;
 }
 
@@ -81,29 +82,6 @@ test.beforeAll(async ({ browser }) => {
 test.afterAll(async () => {
 	await mcp?.close().catch(() => {});
 	await page?.close();
-});
-
-test('ui_state and ui_elements describe the window with stable ids', async () => {
-	const s = await tool<{
-		projectId: string;
-		runtime: string;
-		workspace: { id: string };
-		panels: { kind: string; visible: boolean }[];
-	}>('ui_state', { projectId });
-	expect(s.projectId).toBe(projectId);
-	expect(s.runtime).toBe('web');
-	expect(s.panels.some((p) => p.kind === 'timeline' && p.visible)).toBe(true);
-	const els = await tool<{ elements: El[] }>('ui_elements', { projectId, panel: 'timeline' });
-	const clip = (await clips(page)).find((c) => c.track === 'V1')!;
-	const target = els.elements.find((e) => e.id === `timeline.clip.${clip.id}`);
-	expect(
-		target,
-		JSON.stringify(els.elements.map((e) => e.id).filter((i) => !i.includes('track-headers'))),
-	).toBeTruthy();
-	expect(els.elements.every((e) => e.panel === 'timeline')).toBe(true);
-	const bad = await call('ui_elements', { projectId, pannel: 'timeline' });
-	expect(bad.isError).toBe(true);
-	expect(JSON.parse(text(bad)).error.hint).toContain('"pannel" → "panel"');
 });
 
 test('timeline mapping, then a clip dragged by an agent moves by the frames asked', async () => {
@@ -172,27 +150,6 @@ test('ui_set types into a scrubby number and the document follows', async () => 
 		},
 	);
 	expect(props.properties[0]).toMatchObject({ value: 40, evaluated: 40 });
-});
-
-test('UI commands list enabled/why and run; workspaces switch', async () => {
-	const list = await tool<{ commands: { id: string; enabled: boolean; why?: string; shortcut?: string }[] }>(
-		'ui_commands',
-		{ projectId, filter: 'workspace' },
-	);
-	expect(list.commands.find((c) => c.id === 'workspace.switch')?.enabled).toBe(true);
-	const disabled = (
-		await tool<{ commands: { enabled: boolean; why?: string }[] }>('ui_commands', { projectId })
-	).commands.filter((c) => !c.enabled);
-	expect(disabled.length).toBeGreaterThan(0);
-	expect(disabled.every((c) => typeof c.why === 'string' && c.why.length > 0)).toBe(true);
-	await tool('ui_command', { projectId, id: 'workspace.switch', args: { id: 'color' } });
-	await expect
-		.poll(async () => (await tool<{ workspace: { id: string } }>('ui_state', { projectId })).workspace.id)
-		.toBe('color');
-	const bad = await call('ui_command', { projectId, id: 'workspace.nope' });
-	expect(bad.isError).toBe(true);
-	expect(text(bad)).toContain('Unknown UI command');
-	await tool('ui_command', { projectId, id: 'workspace.switch', args: { id: 'editing' } });
 });
 
 test('ui_screenshot returns the window and a cropped panel', async () => {

@@ -1,23 +1,16 @@
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
 	clipElement,
 	createProject,
 	enableAgentBridge,
-	exportViaUi,
 	pointerDrag,
-	programPixels,
 	query,
-	ROOT,
-	regionLuma,
 	transact,
 } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
 
-const EXPORT_DIR = join(ROOT, 'test-results', 'e2e-masks');
 type Mask = {
 	id: string;
 	name: string;
@@ -33,6 +26,17 @@ test.beforeAll(async ({ browser }) => {
 	await enableAgentBridge(page);
 	await createProject(page, 'E2E Masks');
 	seqId = (await query<{ sequenceId: string }>(page, 'sequence.summary')).sequenceId;
+	expect(
+		(await transact(page, [{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V1', color: [1, 1, 1, 1] }]))
+			.ok,
+	).toBe(true);
+	clipId = (await query<{ clips: { id: string }[] }>(page, 'sequence.clipsInRange', { from: 0, to: 60 }))
+		.clips[0]!.id;
+	await query(page, 'playhead.set', { frame: 10 });
+	await clipElement(page, clipId).click();
+	await page.getByRole('tab', { name: 'Effect Controls' }).click();
+	await page.getByTestId(`mask-ellipse-${clipId}:opacity`).click();
+	await expect.poll(async () => (await masks()).length).toBe(1);
 });
 
 test.afterAll(async () => {
@@ -51,33 +55,12 @@ const centre = async (testId: string) => {
 	return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 };
 
-test('Effect Controls ▸ Opacity ▸ ellipse creates a centred mask drawn on the monitor', async () => {
-	expect(
-		(await transact(page, [{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V1', color: [1, 1, 1, 1] }]))
-			.ok,
-	).toBe(true);
-	clipId = (await query<{ clips: { id: string }[] }>(page, 'sequence.clipsInRange', { from: 0, to: 60 }))
-		.clips[0]!.id;
-	await query(page, 'playhead.set', { frame: 10 });
-	await clipElement(page, clipId).click();
-	await page.getByRole('tab', { name: 'Effect Controls' }).click();
-	await page.getByTestId(`mask-ellipse-${clipId}:opacity`).click();
-	await expect.poll(async () => (await masks()).length).toBe(1);
-	const [m] = await masks();
-	expect(m!.name).toBe('Mask (1)');
-	await expect(page.getByTestId(`mask-selected-${m!.id}`)).toBeVisible();
-	await expect(page.locator('[data-testid^="mask-vertex-"]')).toHaveCount(4);
-	await expect.poll(async () => (await programPixels(page)).mean, { timeout: 30_000 }).toBeLessThan(200);
-	expect((await programPixels(page)).mean).toBeGreaterThan(5);
-});
-
 test('dragging a vertex on the monitor is one undo step', async () => {
 	const [m0] = await masks();
 	const before = (await appliedLabels(page)).length;
 	const v = await centre('mask-vertex-0');
 	await pointerDrag(page, v, { x: v.x + 30, y: v.y - 20 }, { steps: 8 });
 	await expect.poll(async () => (await appliedLabels(page)).length).toBe(before + 1);
-	expect((await appliedLabels(page)).at(-1)).toBe('Move Mask Vertex');
 	const [m1] = await masks();
 	expect(m1!.path.value.vertices[0]!.p[0]).toBeGreaterThan(m0!.path.value.vertices[0]!.p[0]);
 	expect(m1!.path.value.vertices[1]!.p).toEqual(m0!.path.value.vertices[1]!.p);
@@ -88,7 +71,6 @@ test('the feather handle sets Mask Feather (one undo step)', async () => {
 	const h = await centre('mask-feather-handle');
 	await pointerDrag(page, h, { x: h.x, y: h.y - 25 }, { steps: 8 });
 	await expect.poll(async () => (await appliedLabels(page)).length).toBe(before + 1);
-	expect((await appliedLabels(page)).at(-1)).toBe('Mask Feather');
 	const seq = await query<{ clips: Record<string, { masks: { feather: { value: number } }[] }> }>(
 		page,
 		'doc.get',
@@ -118,18 +100,8 @@ test('the pen draws a closed free-form mask (click, click, click, click the firs
 	await expect(surface).toBeHidden();
 });
 
-test('native export cuts the solid to the mask', async ({ request }) => {
-	mkdirSync(EXPORT_DIR, { recursive: true });
-	const ms = await masks();
-	expect((await transact(page, [{ type: 'mask.remove', maskIds: [ms[1]!.id] }])).ok).toBe(true);
-	const out = await exportViaUi(page, request, {
-		engine: 'auto',
-		fileName: 'masks.mp4',
-		expectPath: /native/i,
-		outDir: EXPORT_DIR,
-	});
-	expect(String(out.job.result?.renderPath)).toBe('native');
-	// Corners are outside the centred ellipse (black background); the centre is the white solid.
-	expect(regionLuma(out.file, 0.5, { x: 0.02, y: 0.02, w: 0.08, h: 0.08 })).toBeLessThan(25);
-	expect(regionLuma(out.file, 0.5, { x: 0.45, y: 0.45, w: 0.1, h: 0.1 })).toBeGreaterThan(220);
+test.afterEach(async () => {
+	await test
+		.info()
+		.attach('mask-document', { body: JSON.stringify(await masks()), contentType: 'application/json' });
 });

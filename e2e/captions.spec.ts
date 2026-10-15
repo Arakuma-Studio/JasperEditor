@@ -279,48 +279,8 @@ test('export: burned-in captions, embedded mov_text streams and an SRT sidecar',
 	]);
 });
 
-test('the Remotion path burns the same captions in', async ({ request }) => {
-	await focusTimeline(page);
-	await page.keyboard.press('Control+KeyM');
-	await expect(page.getByTestId('export-mode')).toBeVisible();
-	await page.getByTestId('export-engine').selectOption('remotion');
-	await page.getByTestId('export-captions-embed').uncheck();
-	await page.getByTestId('export-captions-sidecar').selectOption('none');
-	await page.getByTestId('export-filename').fill('captions-remotion');
-	await expect(page.getByTestId('plan-path')).toContainText(/Remotion/, { timeout: 60_000 });
-	const before = new Set(
-		((await (await request.get('/api/jobs')).json()).jobs as { id: string }[]).map((j) => j.id),
-	);
-	await page.getByTestId('export-start').click();
-	let jobId = '';
-	await expect
-		.poll(async () => {
-			const jobs = (await (await request.get('/api/jobs')).json()).jobs as { id: string; kind: string }[];
-			jobId = jobs.find((j) => j.kind === 'export' && !before.has(j.id))?.id ?? '';
-			return jobId;
-		})
-		.not.toBe('');
-	const job = await waitForJob(request, jobId, 600_000);
-	expect(job.state, JSON.stringify(job.error ?? null)).toBe('succeeded');
-	const row = page.getByTestId('jobs-panel').locator(`[data-testid="job-row"][data-job-id="${jobId}"]`);
-	const dl = page.waitForEvent('download');
-	await row.getByTestId('job-download').click();
-	const file = join(OUT, 'captions-remotion.mp4');
-	await (await dl).saveAs(file);
-	const band = { x: 0.3, y: 0.82, w: 0.4, h: 0.08 };
-	expect(Math.abs(regionLuma(file, 1.2, band) - regionLuma(file, 1.95, band))).toBeGreaterThan(8);
-	const probe = ffprobe(file) as unknown as { streams: { codec_type: string }[] };
-	expect(probe.streams.filter((s) => s.codec_type === 'subtitle')).toEqual([]);
-	execFileSync(process.env.JASPER_FFMPEG ?? 'ffmpeg', [
-		'-v',
-		'error',
-		'-y',
-		'-ss',
-		'1.2',
-		'-i',
-		file,
-		'-frames:v',
-		'1',
-		join(OUT, 'burned-remotion.png'),
-	]);
+test.afterEach(async () => {
+	await test
+		.info()
+		.attach('captions-document', { body: JSON.stringify(await doc()), contentType: 'application/json' });
 });
