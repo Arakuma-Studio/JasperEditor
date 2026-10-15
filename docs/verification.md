@@ -1,9 +1,11 @@
-# Whole-product verification of `integrate/parity`
+# Historical whole-product verification of `integrate/parity`
 
 Workstream `verify`: every gate, every opt-in suite, every Playwright spec, the MCP scenario QA, the desktop checks, the
 CI workflow and a cross-feature smoke run together on the integrated branch, with the root cause of each failure fixed.
-Each section gives the command, the result and the fixes. Machine: 12 cores, 47 GB, shared with other agents (load
-noted where it matters).
+Each section records the command, result and fixes for the historical revisions below. Test counts, test names
+and measurements describe those runs; they do not certify the current checkout or its current test inventory.
+Use [testing.md](testing.md) and [performance.md](performance.md) for current commands and budget owners.
+Machine: 12 cores, 47 GB, shared with other agents (load noted where it matters).
 
 Branch `feat/verify`, starting at `integrate/parity` 4870ea54; merged again at ea17f67d (perf-core), 85a90e3d (ui-perf),
 065af535 (gaps), c67a6dfb (review), ee9cb4e2 (polish) and 8bcf5df5 (hardening). Sections 1–8 were run on the way (each
@@ -42,7 +44,7 @@ says on which tree where it matters); §9 is the gate after review, **§10 the f
 ## 3. Opt-in suites
 
 Opt-in switches found with `grep -rn "process.env.<X>" … runIf/skipIf` across the repository (gating flags only; the
-`*_DUMP`, `*_GALLERY`, `*_OUT`, `SCENE_REPORT` and similar flags only write extra artefacts):
+`*_DUMP`, `*_GALLERY`, `*_OUT` and similar flags only write extra artefacts):
 
 | Flag | Gates |
 |---|---|
@@ -52,7 +54,7 @@ Opt-in switches found with `grep -rn "process.env.<X>" … runIf/skipIf` across 
 | `SPEECH_E2E=1` | speech model download + transcription (`apps/engine/test/speech-model.e2e.test.ts`, `e2e/speech.spec.ts`) |
 | `FUZZ=1` (`FUZZ_SEED`) | 20× fuzz cases; `packages/project/test/fuzz.test.ts` 10,000 runs |
 | `JASPER_REQUIRE_ORACLES=1` | a missing ffmpeg/ffprobe fails instead of skipping (CI) |
-| `PERF=1`, `NATIVE_ANIM_BENCH=1`, `MB_PERF=1` | exact timing budgets / benchmarks |
+| `PERF=1` | exact timing budgets / benchmarks |
 | `MCP_QA=1` | the MCP scenario QA (`pnpm qa:mcp`) |
 | `FX_GL=0`, `RETIME_GL=0` | opt-*out* of GL suites (they run when a Chrome is found) |
 
@@ -99,7 +101,7 @@ Failures and fixes:
 | `MG_PARITY=1` | `pnpm mg:build`, then `MG_PARITY=1 pnpm vitest run packages/mg-templates/test/parity.test.ts` | **`pnpm mg:build` was broken** (below); after the fix 4/4 pass against the freshly built binary; `cargo test --release` in `native/mg` passes |
 | `SPEECH_E2E=1` | `SPEECH_E2E=1 pnpm vitest run apps/engine/test/speech-model.e2e.test.ts` (downloads whisper-tiny / tiny.en, 2 × 154 MB) | 5/5 pass |
 | `MG_E2E=1` | with the engine/MCP `REMOTION_E2E` run (§3.1) | pass |
-| `PERF=1`, `NATIVE_ANIM_BENCH=1`, `MB_PERF=1` | not run strictly: the host was 3–5× oversubscribed by other agents for the whole session (load average 25–65 on 12 cores), so exact budgets would only measure the other agents. The load-scaled budgets run in the normal suite (§2, §7). | — |
+| `PERF=1` | not run strictly: the host was 3–5× oversubscribed by other agents for the whole session (load average 25–65 on 12 cores), so exact budgets would only measure the other agents. The load-scaled budgets run in the normal suite (§2, §7). | — |
 
 **`pnpm mg:build` broken on `integrate/parity` (since the asset-sidecar commit).** `fframes::include_media_dir!`
 panics on any file it cannot decode, and `native/mg/crates/jasper-mg-templates/media/` now holds
@@ -392,7 +394,7 @@ parity feature and test and every owner simplification and race fix.
 | `text-measure.ts`, `GraphEditor.tsx`, `PresetsBin.tsx`, `dispatcher.ts` | Owner privatisations: no `dispose`, a private `GraphHost`, the preset tree computed by `EffectsPanel`, and the `held` map of commands. Kept from parity: the sandboxed host driver, `GraphView`, the custom-bin handles, and `pressed.clear()` on blur. |
 | `packages/api/src/tracking.ts` | `RationalSchema` (owner) with parity's stride 9 (mask tracking). The same consolidation was applied to parity's `roto.ts` and `camtrack.ts`. |
 | compositions `SequenceComposition.tsx`, `fx/transition.tsx`, `mg-host/protocol.ts` | `canUseHtmlInCanvas` called directly (owner); `htmlInCanvasAvailable` and its test mock are gone. `protocol.ts` re-exports the constants by name, so `MG_HOST_REQUIRED_GLOBALS` stays private (owner). |
-| `fx-gl`, `fx-motion-blur-gl`, `transition-gl` tests | The owner's `gl-browser.ts`, with parity's fingerprints, goldens and NaN poisoning (the entries' `gl-poison.ts`). |
+| `fx-gl`, `fx-motion-blur-gl`, `transition-gl` tests | The owner's `gl-browser.ts`, with parity's fingerprints and goldens. |
 | project `lumetri.ts`, `clipboard.ts`, `shape.ts`, `text-animation.ts`, `derive/index.ts`, `effect-presets/schema.ts`, `snapshot.ts`, `rescale.ts`, `keyframes-spatial.ts` | The owner's inferred `LumetriParams`; no `indirect` set; `applyShapePatch(shape, patch, h)`; text-animation signatures without `doc`; `Map` track index instead of `{byTrack}`; no `presetAnimOf`; shared `useParamMedia` and `effects`. Kept from parity: section switches, `payloadMedia` / `byFingerprint` lookups, vector-shape refusal, incremental derived index, expressions in presets, colour input transforms, 3D, retime, rotos, display-size rescale and `autoTangents`. |
 | `fx-transition-framework.md` | Parity's §14, without the trailing blank line the owner removed. |
 
@@ -460,7 +462,7 @@ Not run on this head: the desktop checks (`pnpm e2e:desktop`, packaged checks). 
 
 ## Not done or caveated
 
-- `PERF=1` / `NATIVE_ANIM_BENCH` / `MB_PERF` strict benchmarks were not run: the host was 3–5× oversubscribed
+- `PERF=1` strict benchmarks were not run: the host was 3–5× oversubscribed
   throughout, so the numbers would measure other agents.
 - `act` is not installed; the workflow was simulated step by step in a clean clone with the runner's apt FFmpeg (§7).
   GitHub's runner itself (Ubuntu 24.04 image, its Chrome) was not exercised.

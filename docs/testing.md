@@ -23,7 +23,7 @@ imported by app code): golden frames (`@jasper/testkit/golden`), PNG and RGBA he
 | Unit | `<package>/test/*.test.ts(x)` | happy-dom for components, node elsewhere |
 | Property | `fast-check` in the model (`packages/project/test/fuzz.test.ts`: invariants under random command sequences; `FUZZ=1` = 10,000 runs), interchange round trips, caption formats, time maths | |
 | Robustness / fuzz | `*/test/fuzz.test.ts`, `packages/interchange/test/*.test.ts` | §4: every parser and loader |
-| GL (WebGL2) | `packages/compositions/test/*-gl.test.ts` | headless Chrome on ANGLE/SwiftShader; `FX_GL=0` skips; scratch targets are poisoned (§3) |
+| GL (WebGL2) | `packages/compositions/test/*-gl.test.ts` | headless Chrome on ANGLE/SwiftShader; `FX_GL=0` skips; output checks described in §3 |
 | Golden frames | `packages/compositions/test/golden-scenes.e2e.test.ts`, fingerprints in `fx-gl` / `transition-gl`, `fx-motion-blur-gl` | §2 |
 | Oracle | engine export, loudness, probe tests | §5 |
 | Remotion renders | `*.e2e.test.ts` with `REMOTION_E2E=1` | bundling ≈ 15–40 s; needs ffmpeg and a Chrome |
@@ -31,7 +31,7 @@ imported by app code): golden frames (`@jasper/testkit/golden`), PNG and RGBA he
 | Performance | `scripts/performance.mjs` (`pnpm perf`), timing budgets in tests | §6 |
 
 Opt-in switches: `REMOTION_E2E=1` (Remotion renders), `FUZZ=1` (long fuzz), `PERF=1` (exact budgets), `MG_E2E=1`
-(motion-graphics bundles), `NATIVE_ANIM_BENCH=1`, `MB_PERF=1`. CI (`.github/workflows/ci.yml`) runs `pnpm lint`,
+(motion-graphics bundles). CI (`.github/workflows/ci.yml`) runs `pnpm lint`,
 `pnpm typecheck`, `pnpm test --maxWorkers=2` and `pnpm build` on every push and pull request with ffmpeg from apt
 and `JASPER_REQUIRE_ORACLES=1`, no GPU (SwiftShader), no LGPL FFmpeg and none of the opt-in suites; it uploads
 `test-results/` (golden and fuzz failure artefacts) when a step fails.
@@ -64,9 +64,6 @@ expectGolden(join(here, 'goldens', 'scenes', `${name}.png`), frame /* Rgba8 */, 
   documented 128 KB exception), and writes the asset's `.attribution` sidecar plus its `ATTRIBUTION.md` row
   ("Golden frames"), so `scripts/check-assets.mjs` passes. **Look at every re-blessed PNG before committing it**
   (`git diff --stat`, then open the files).
-- **Scene guard.** `assertDistinctScenes(frames)` fails when a scene is blank (luma σ < 3 or fewer than 8 colours)
-  or two scenes are nearly identical (PSNR ≥ 50 dB): a render that silently produced a flat frame, or two scenes that
-  do not exercise different code.
 - **Fingerprints** (`expectFingerprints(file, record, ±levels)`; the records under `goldens/` are excluded from Biome so each case stays on one line) are FilmCraft's compact form for large matrices: the
   4×4 mean-RGB grid of a frame (`fingerprint`, 48 numbers) per case in a JSON record, one case per line. **Pins**
   (`expectPins`) are exact values (checksums, counts). Both bless with `JASPER_BLESS=1`; `{complete: true}` also
@@ -82,18 +79,18 @@ What is covered:
 | `fx-motion-blur-gl.test.ts` → `goldens/motion-blur/*.png` | 36 static cases (motion blur off or nothing moving) must equal the pre-motion-blur output; blessed from that output — their pixel checksums equal the former `baseline.json` pins | Chrome present |
 
 Native-vs-Remotion parity: `apps/engine/test/native-animated.test.ts` (keyframed Motion / Opacity / crop, SSIM ≥ 0.98,
-`REMOTION_E2E=1`), `blend-export.test.ts` (every blend mode natively against `blendPixel`) and
-`apps/engine/test/golden-parity.e2e.test.ts` (static compositor scenes exported natively and by Remotion, compared
-with each other and with goldens).
+`REMOTION_E2E=1`) and `apps/engine/test/golden-parity.e2e.test.ts` (static compositor scenes exported natively and
+by Remotion, compared with each other and with goldens). `apps/engine/test/blend-export.test.ts` checks a native
+Multiply / half-opacity Normal / Difference stack against independently calculated pixels, plus literal kernel
+vectors for transparent layer pixels, stencil clearing and inactive-frame passthrough.
 
-## 3. GL tests and poisoned scratch targets
+## 3. GL tests
 
-The fx GPU host (`packages/compositions/src/fx/host.ts`) keeps intermediate textures in a pool and reuses them
-without clearing. Under test (`test/gl-poison.ts`, imported first by every GL entry, sets
-`globalThis.__JASPER_FX_POISON__`), every pooled target is filled before its pass draws — NaN in float targets,
-opaque magenta in 8-bit ones (EffectCraft's NaN-poisoned scratch images) — so a shader that skips pixels (`discard`,
-an early-out) fails its CPU-reference or fingerprint comparison instead of passing on a clean texture. The app never
-sets the flag.
+The GL suites render through the production GPU host in headless Chrome, using
+`packages/compositions/test/gl-browser.ts` for browser discovery, bundling and SwiftShader setup. They compare
+readback pixels with independent reference vectors, committed fingerprints or golden frames. The retained cases
+cover orientation, premultiplied alpha, colour transforms, effect output and transitions. Shader changes require
+a working Chrome/software-GL environment; a missing browser or an opt-out is untested behavior, not a pass.
 
 ## 4. Fuzzing and robustness
 
@@ -128,7 +125,8 @@ Targets:
 | `@jasper/project` (`test/fuzz-parsers.test.ts`) | SRT, WebVTT, SCC, MCC, TTML / DFXP, EBU STL, caption sniffing; `.cube`, `.3dl`, `.spi1d`, `.spi3d`, `.csp`, LUT sniffing; the OCIO YAML subset, OCIO configs (parse, list, convert), ASC CDL XML; SVG → shape layers, SVG path data; Lottie (text and document); glTF, GLB, OBJ; image-sequence grouping; timecode entry; project load / migrate / repair (a loaded project must satisfy every invariant), migrate; effect presets and preset files; clipboard payloads; source-range sidecars; transcript JSON; Essential Sound settings |
 | `@jasper/interchange` (`test/fuzz.test.ts` + per-format tests) | any bytes sniffed, and read as each of FCP7, FCPXML, OTIO, EDL, AAF (CFB), OMF, ALE → `project.importTimeline` into a project (no internal error, no invariant violation) |
 | `@jasper/expressions` | expression source: compile, syntax check, evaluation on a document |
-| `@jasper/engine` (`test/fuzz.test.ts`) | ZIP (imports; motion-graphics bundles — extraction never leaves its destination), dotLottie, Lottie `.json` files, Photoshop documents, ffprobe JSON (the mapped probe must satisfy the media schema), bundle manifests and `package.json`, upload file names, the engine runtime file, engine events |
+| `@jasper/engine` (`test/fuzz.test.ts`) | ZIP (imports; motion-graphics bundles — extraction never leaves its destination), dotLottie, Lottie `.json` files, Photoshop documents, ffprobe JSON (the mapped probe must satisfy the media schema), bundle manifests and `package.json`, upload file names |
+| `@jasper/config`, `@jasper/api` | runtime/config and event/transaction entry-point schemas: arbitrary-JSON properties in `packages/config/test/config.test.ts` and `packages/api/test/api.test.ts` |
 | `@jasper/testkit` | the PNG decoder |
 
 Bugs the fuzzing found and fixed are pinned by `packages/project/test/fuzz-regressions.test.ts` and

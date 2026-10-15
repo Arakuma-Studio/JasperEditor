@@ -5,11 +5,12 @@ budgets (§13 command and gesture) are workstream `perf-core` ([`wp-notes/perf-c
 scale (§5) is workstream `ui-perf` ([`wp-notes/ui-perf.md`](wp-notes/ui-perf.md)); project open (§6) is workstream
 `polish` ([`wp-notes/polish.md`](wp-notes/polish.md) §5). The strategy is
 [ARCHITECTURE §13](ARCHITECTURE.md#13-performance-strategy); this page lists the budgets, how each one is enforced,
-how to measure, and the last measured results.
+how to measure, and historical measured results. The tables in §§4–6 record the stated builds and host loads;
+they are not validation of the current checkout.
 
 ## 1. Budgets
 
-| Budget | Value | Source | Enforced by |
+| Budget | Value | Source | Checked by |
 |---|---|---|---|
 | One command + reindex on a 1 000-clip sequence | < 4 ms | §13, S01:SES-011 | `packages/session/test/perf-budgets.test.ts` (× load × 1.5 in the gate, exact with `PERF=1`) |
 | 50-clip gesture update + reindex | < 8 ms | §13, S02:TL-160 | same file (× load × 1.5 in the gate, exact with `PERF=1`) |
@@ -17,16 +18,19 @@ how to measure, and the last measured results.
 | Render bar (segments, hashes, cost) of 1 000 clips | < 120 ms | previews | `packages/project/test/perf-budgets.test.ts` |
 | Program monitor, one 1080p H.264 clip | ≥ 90 % of the sequence rate | previews | `pnpm perf` (editor) |
 | Program monitor, a GPU-effect stack from its render previews | ≥ 90 % of the sequence rate | previews | `pnpm perf` (editor) |
-| Player stalls recovered by the watchdog during playback | 0 | previews | `pnpm perf` (editor), `e2e/previews.spec.ts` |
+| Player stalls recovered by the watchdog during playback | 0 | previews | `pnpm perf` (editor) |
 | Native H.264 export of 1080p30 | ≥ real time (30 fps) | previews | `pnpm perf` (export) |
 | Smart-rendered H.264 export of an untouched clip | ≥ 4 × real time | previews | `pnpm perf` (export) |
-| 30-step drag of 11 clips on a 1 000-clip sequence: mean main-thread work per frame | < 16 ms (p50 / p95 reported) | ui-perf | `pnpm perf` (ui), `e2e/ui-perf.spec.ts` (× load² in the gate: the browser is another process) |
+| 30-step drag of 11 clips on a 1 000-clip sequence: mean main-thread work per frame | < 16 ms (p50 / p95 reported) | ui-perf | `pnpm perf` (ui; scaled by load² unless `PERF=1`, because the browser is another process) |
 | The same drag, scripted (30 moves 16 ms apart), wall time | < 1.5 s | ui-perf | same |
 | Scrolling / zooming a 5 000-clip timeline | ≥ 50 fps | ui-perf | same |
 | Project panel with 2 000 items, scrolling | ≥ 50 fps | ui-perf | same |
-| Opening a 2 000-item project: editor interactive and every medium resolved | < 2 s | polish | `pnpm perf --sections ui --ui open`, `e2e/polish.spec.ts` (× load² in the gate; the spec also asserts two status requests and a windowed bin, which do not depend on load) |
+| Opening a 2 000-item project: editor interactive and every medium resolved | < 2 s | polish | `pnpm perf --sections ui --ui open` (scaled by load² unless `PERF=1`) |
 | Autosave of the 8 MB scale project after a one-clip edit (serialisation on the UI thread) | — (measured: ≈ 0.5 ms) | ui-perf | `packages/project/bench/json-cache.ts` |
-| Effect / audio budgets of earlier workstreams (audio effects, remix analysis, Lumetri bake, fx compile, tracking cancel latency) | as written in each test | their wp-notes | their tests, through `budgetMs` |
+| Lumetri bake, colour scopes, shader compilation and tracking cancellation | limits documented by each owner | their specs and wp-notes | `packages/project/test/{color,lumetri-grade,scopes}.test.ts`, `packages/compositions/test/fx-compile-budget.test.ts`, `apps/engine/test/tracking.test.ts`, through `budgetMs` |
+
+The performance runner records budget misses in its report and exits nonzero for them with `PERF=1`. Retained
+unit timing tests fail against their load-scaled limits in the normal test gate.
 
 ## 2. Load-tolerant enforcement
 
@@ -44,9 +48,10 @@ raised: at load factor 1 the enforced budget is the documented one.
 
 ### Test timeouts of the web project (workstream `hardening`)
 
-Three web tests were each seen once failing with Vitest's default 5 s limit on a loaded host and passing alone:
+Historical profiling during hardening: three web tests were each seen once failing with Vitest's default 5 s
+limit on a loaded host and passing alone:
 `project-windowing`, `shell-render`, `speech`. They were profiled (`node --cpu-prof` over the Vitest run, and
-`process.cpuUsage()` per phase; times below are **measured** on the shared host at load average 20–25, so compare
+`process.cpuUsage()` per phase; times below were **measured** on the shared host at load average 20–25, so compare
 them with each other, not with a quiet machine):
 
 | Test | Where the time went | Change | Effect |
@@ -55,10 +60,10 @@ them with each other, not with a quiet machine):
 | `shell-render` › header test | Five full mounts or re-layouts of the editor (≈ 900 ms for the first, 100–700 ms each after); no single hot spot. `ContextMenu` / `DropdownMenu` resolved and built their whole menu on every render of their owner although closed (357 ms of 5.6 s in the profile, two rounds) | Menu items are resolved when the menu opens (`packages/ui/src/menu/Menu.tsx`, as the menubar already did) | ≈ 6 % of the test; every panel with a context menu renders cheaper in the app |
 | `speech` › dialog test | A Radix select renders its items also while closed; the 101-entry language list was rebuilt on every render of the dialog. Role queries over the open list are the rest | `Select` keeps its items while `options` is the same array; the dialog's language list is one array | 1 272 → 1 187 ms of CPU for the test in its third round (≈ 7 %) |
 
-The rest of `shell-render` and `speech` is real work (the whole editor, a 101-option list, accessibility-tree
-queries in happy-dom with development React), not needless work. So the web project's limit is scaled with the
-host (`apps/web/vitest.config.ts`): `5 s × loadFactor²`, at least 15 s, at most 60 s; `PERF=1` keeps 5 s. A hung
-test still fails within a minute, `waitFor` / `findBy…` keep their own 1 s deadlines, and no assertion was changed.
+The profiles attributed the remaining time to full editor renders, a 101-option list and accessibility-tree
+queries in happy-dom with development React. The current web project's limit is scaled with the host
+(`apps/web/vitest.config.ts`): `5 s × loadFactor²`, at least 15 s, at most 60 s; `PERF=1` keeps 5 s. A hung test
+still fails within a minute; `waitFor` / `findBy…` keep their own 1 s deadlines.
 `apps/web/test/test-timeout.test.ts` pins the scaling.
 
 Also moved to the load-scaled budget: the colour-scope timing test (`packages/project/test/scopes.test.ts`, 60 ms per
@@ -89,8 +94,8 @@ it afterwards (or use `BASE_URL` of a running stack).
   (copy path), and a preview render of the same range.
 
 - **ui** (headless Chrome, the real app, `scripts/perf/ui-run.ts`): generated projects (1 000 / 5 000 colour mattes,
-  one clip with 1 800 keyframes, 2 000 media items) and scripted gestures — the perf-core drag, a trim, a playhead
-  scrub, selection clicks, wheel scroll and zoom, Effect Controls scrub, Project panel scroll — measured from a Chrome
+  one clip with 200 keyframes per parameter, 2 000 media items) and scripted gestures — the perf-core drag, a trim,
+  a playhead scrub, selection clicks, wheel scroll and zoom, Effect Controls scrub, Project panel scroll — measured from a Chrome
   trace: frames, fps, main-thread work per frame (p50 / p95 / mean), busy fraction, wall time. `--ui drag,scroll`
   runs a subset. `scripts/perf/ui-profile.ts <fixture> <scenario>` adds a source-mapped CPU profile;
   `scripts/perf/ui-compare.ts <webA> <webB>` runs two builds alternately for before/after at the same load.
@@ -98,7 +103,7 @@ it afterwards (or use `BASE_URL` of a running stack).
 Live counters: `GET /api/perf` (engine CPU, memory, event-loop delay p50/p99, jobs, render throughput), the editor's
 `perf` UI action (playback counters, UI fps, render bar summary), MCP `perf_stats` (both).
 
-## 4. Results
+## 4. Historical results
 
 Machine: AMD EPYC (12 cores, KVM), Node 20.20.2, CPU-only (SwiftShader WebGL, software video decode in headless
 Chrome), shared with other agents. Before/after numbers are from the same build.
@@ -132,8 +137,8 @@ measured frame interval (4 ×, at most 2.5 s; `apps/web/test/transport.test.ts`)
 `previews-2026-10-08-watchdog`: single clip 6.2 fps, 3-layer stack 1.3 fps, GPU effects 2.7 fps live and 4.6 fps from
 previews, preview render 333 s) still kicked once in the 3-layer stack at 1.3 fps: there the first frame after play
 or a single frame took longer than the window. So the counter is reliable as a stall signal only when the machine
-renders at a few fps or more; at ≈ 1 fps a kick costs one extra seek. True stalls (the AudioContext race, wp-note §5) measured 0 in 40 seek-and-play cycles and in the e2e
-spec's 12 cycles.
+renders at a few fps or more; at ≈ 1 fps a kick costs one extra seek. The historical AudioContext-race checks
+(wp-note §5) measured 0 true stalls in 40 seek-and-play cycles and in the then-current E2E spec's 12 cycles.
 
 **ARCHITECTURE §13** (`pnpm vitest run packages/project/test/perf-budgets.test.ts packages/session/test/perf-budgets.test.ts --reporter=verbose`, same host, load factor 1.24–1.26, 2026-10-08):
 
@@ -184,7 +189,8 @@ work per frame from the Chrome trace (main-thread time between frame begins).
 | Opening the 1 000-clip project (to an interactive timeline) | 4.4 / 2.7 s | 2.7 / 2.8 s | — |
 
 At load ≈ 20 single runs of the after-build measured scrolling at 55 fps and zooming at 52 fps; at load 40–60 every
-number above degrades 2–3× for both builds (the e2e spec scales its budgets by the measured load factor squared).
+number above degraded 2–3× for both builds. The current UI benchmark reports budgets scaled by the measured load
+factor squared unless `PERF=1`.
 
 Profiles of the drag before the work (`scripts/perf/ui-profile.ts timeline:1000 drag`, load ≈ 19): 83 % of the window
 busy, of which ≈ 90 % JavaScript — the Program monitor rebuilding the 1 000-clip render snapshot and re-rendering
@@ -198,9 +204,10 @@ the gesture update itself (≈ 4 ms, perf-core) and the timeline's render.
 of a session (nothing cached yet) 1.9 ms after the autosaver's idle warm-up (1 063 units, the longest 28 ms) or
 ≈ 225–265 ms without it (the deep-frozen check of every object; once per session).
 
-**First edit after opening**: the session verifies the opened document when the browser is idle (≈ 340 ms on the
-5 000-clip scale project at load ≈ 40, in an idle callback), and the first edit takes the incremental check
-(`packages/session/test/ui-perf.test.tsx`: 1 incremental, 0 full).
+**First edit after opening, historical profile**: idle verification of the opened document took ≈ 340 ms on the
+5 000-clip scale project at load ≈ 40. The first edit then used the incremental check. The retained session timing
+budgets measure edit latency; `ui-perf.test.tsx` checks gesture cancellation, undo and displayed state during
+freeze/thaw, without asserting invariant-cache counters.
 
 ## 6. Opening a large project (polish)
 
@@ -226,11 +233,10 @@ which ≈ 0.45 s evaluating the bundle and ≈ 0.17 s validating the 2.1 MB proj
 painting 0.07 s, garbage collection 0.1 s, other 0.6 s; longest task ≈ 0.4 s. Requests: 43 assets, 1 project,
 1 lease, 2 media status batches.
 
-**Budget: < 2 s — not demonstrated at this load.** At load factor 1.3–1.8 the open takes 2.0–2.9 s; `pnpm perf`
-and the e2e spec enforce 2 000 ms × load² (the browser is another process), which passes (3 188 ms measured against
-3 600 ms at factor 1.34), and `PERF=1` enforces it exactly on a quiet machine. What remains is the editor's start
-for any project (≈ 2.3 s here): downloading and evaluating ≈ 9 MB of JavaScript and the first render of the visible
-panels.
+**Budget: < 2 s — not demonstrated by these historical measurements.** At load factor 1.3–1.8 the open took
+2.0–2.9 s. One run met its scaled limit: 3 188 ms against 3 600 ms at factor 1.34. The current `pnpm perf` UI
+section reports against 2 000 ms × load²; `PERF=1` enforces 2 000 ms exactly. The measured editor startup for any
+project was ≈ 2.3 s: downloading and evaluating ≈ 9 MB of JavaScript and the first render of the visible panels.
 
 Tried and dropped: mounting background-tab panels in idle periods after the shell is up — alternating runs showed
 no gain (median 2.85 s deferred against 2.64 s eager at load ≈ 18), so the panels mount with the shell as before.
