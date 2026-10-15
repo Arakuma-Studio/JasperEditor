@@ -161,14 +161,20 @@ test('ui_screenshot returns the window and a cropped panel', async () => {
 	expect(png.subarray(1, 4).toString()).toBe('PNG');
 	mkdirSync(join(ROOT, 'test-results', 'agent-ui'), { recursive: true });
 	writeFileSync(join(ROOT, 'test-results', 'agent-ui', 'window.png'), png);
-	const meta = JSON.parse(text(win)) as { width: number; height: number };
-	expect(meta.width).toBeLessThanOrEqual(800);
+	expect(png.readUInt32BE(16)).toBeGreaterThan(0);
+	expect(png.readUInt32BE(16)).toBeLessThanOrEqual(800);
 	const panel = await call('ui_screenshot', { projectId, panel: 'timeline' });
 	expect(panel.isError, text(panel)).toBeFalsy();
-	const pm = JSON.parse(text(panel)) as { bounds: { width: number }; width: number };
 	const pimg = panel.content.find((c) => c.type === 'image') as { data: string };
-	writeFileSync(join(ROOT, 'test-results', 'agent-ui', 'timeline.png'), Buffer.from(pimg.data, 'base64'));
-	expect(pm.bounds.width).toBeLessThan(page.viewportSize()!.width);
+	const panelPng = Buffer.from(pimg.data, 'base64');
+	writeFileSync(join(ROOT, 'test-results', 'agent-ui', 'timeline.png'), panelPng);
+	expect(panelPng.subarray(1, 4).toString()).toBe('PNG');
+	expect(panelPng.readUInt32BE(16)).toBeGreaterThan(0);
+	const visiblePanel = await page.getByTestId('timeline-panel').screenshot({ scale: 'css' });
+	for (const dimension of [16, 20])
+		expect(
+			Math.abs(panelPng.readUInt32BE(dimension) - visiblePanel.readUInt32BE(dimension)),
+		).toBeLessThanOrEqual(1);
 });
 
 test('a clip running off the visible timeline is aimed at its visible part; one scrolled away is revealed (wp fixups)', async () => {

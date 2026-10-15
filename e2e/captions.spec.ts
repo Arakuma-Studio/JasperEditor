@@ -201,6 +201,8 @@ test('export: burned-in captions, embedded mov_text streams and an SRT sidecar',
 		{ type: 'track.update', trackId: seq.captionTracks[0]!.id, patch: { language: 'en' } },
 		{ type: 'sequence.setInOut', in: null, out: null },
 		{ type: 'caption.setActiveTrack', trackId: seq.captionTracks[0]!.id },
+		// A fixed background makes the timed pixel difference independent of the moving source video.
+		{ type: 'clip.addSolid', at: 0, duration: 180, track: 'V3', color: [0, 0, 0, 1] },
 	]);
 	expect(r.ok, JSON.stringify(r)).toBe(true);
 	await focusTimeline(page);
@@ -264,7 +266,8 @@ test('export: burned-in captions, embedded mov_text streams and an SRT sidecar',
 	const band = { x: 0.3, y: 0.82, w: 0.4, h: 0.08 };
 	const withCaption = regionLuma(file, 1.2, band);
 	const without = regionLuma(file, 1.95, band);
-	expect(Math.abs(withCaption - without)).toBeGreaterThan(8);
+	expect(without).toBeLessThan(5);
+	expect(withCaption - without).toBeGreaterThan(8);
 	execFileSync(process.env.JASPER_FFMPEG ?? 'ffmpeg', [
 		'-v',
 		'error',
