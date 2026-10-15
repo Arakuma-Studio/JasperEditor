@@ -214,8 +214,13 @@ every keyframe shifted when Pan is switched off (the old code wrote one key; Pha
   120–300 s, Pitch Shifter 8× realtime, a 20 000-instance mesh refusal measured at 21.3 s for a 20 s budget,
   interchange fuzz inputs at 2.7–3.4 s for a 2 s limit, avc3 playback 24 / 33 of 45 frames), plus
   `apps/mcp/test/audio-fx.test.ts`, which ran while V10 was half-written and passed 3/3 afterwards.
-- Final `pnpm verify` and `pnpm notices --check`: FINAL_GATE.
-- `pnpm build`: passed.
+- After the fixes, `pnpm verify` twice on the final code (lint and typecheck green both times; `pnpm test` then stopped
+  the chain): run 1 (load 44–57) 5 363 passed, 4 failed in 3 files (Pitch Shifter 8× realtime budget, avc3 playback
+  frame counts, a 5 s tracking timeout); run 2 (load 10 → 56) 5 363 passed, 4 failed in 4 files (timeouts of 120 s /
+  180 s / 5 s in `audio-fx/registry`, `audio-fx-preview`, `camtrack-solve`, and the Pitch Shifter budget). All 7 files
+  rerun alone afterwards (`pnpm vitest run <file> --maxWorkers=1`, load 12–34): all passed (13/13, 2/2, 8/8 + 1
+  skipped, 5/5, 2/2, 12/12). No test was changed to get there. `pnpm notices --check`: current.
+- `pnpm build` (the step after test in `verify`, run on its own on the final code): passed.
 
 #### Real app (built stack, measured)
 
