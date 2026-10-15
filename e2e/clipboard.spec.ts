@@ -84,6 +84,10 @@ test('Edit Paste imports an image from the browser clipboard and places it at th
 		.getByRole('menuitem', { name: /^Paste(\s|$)/ })
 		.first()
 		.click();
+	await page
+		.getByRole('dialog', { name: 'Clip Mismatch Warning' })
+		.getByRole('button', { name: 'Keep existing settings' })
+		.click();
 	await expect.poll(async () => (await clips(page)).length, { timeout: 60_000 }).toBe(1);
 	const [clip] = await clips(page);
 	expect(clip).toMatchObject({ kind: 'still', start: 0 });
