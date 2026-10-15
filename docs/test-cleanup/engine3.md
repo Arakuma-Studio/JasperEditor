@@ -548,7 +548,7 @@ Removed after confirming callers: private browse helper exports and browseRoots 
 
 ## Validation and completion
 
-Applied cleanup: 22 DELETE, 22 REWRITE and 183 KEEP declaration/family rows (227 total). These count parameter families once, not expanded runtime tests. Three whole test files were deleted: opencv, perf-invariants and generic remotion.e2e. All changed production code removes test-only exposure/injection; runtime branches and values are preserved.
+Final group 3 dispositions: 22 DELETE, 29 REWRITE and 176 KEEP declaration/family rows (227 total). The initial pass had 22 REWRITE and 183 KEEP; the seven follow-up rewrites supersede those KEEP rows. The coordinated WER deletion belongs to engine1's original inventory. These count parameter families once, not expanded runtime tests. Three whole test files were deleted: opencv, perf-invariants and generic remotion.e2e. All changed production code removes test-only exposure/injection; runtime branches and values are preserved.
 
 Checks actually run: `pnpm install --frozen-lockfile --offline` completed; targeted Biome check/format passed for all 18 surviving changed TypeScript files; `git diff --check` passed; production callers and final source/test diff reviewed. Installation reported missing generated CLI bin links and the ignored onnxruntime build script; no dependency files changed.
 
