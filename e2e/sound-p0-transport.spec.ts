@@ -57,7 +57,10 @@ const TAP = () => {
 		});
 		w.__tap.ctxs.push(entry);
 		void ctx.audioWorklet.addModule(url).then(() => {
-			const node = new AudioWorkletNode(ctx, 'jasper-e2e-tap', { channelCount: 2, channelCountMode: 'explicit' });
+			const node = new AudioWorkletNode(ctx, 'jasper-e2e-tap', {
+				channelCount: 2,
+				channelCountMode: 'explicit',
+			});
 			node.port.onmessage = (e: MessageEvent<Block[]>) => entry.blocks.push(...e.data);
 			const mute = ctx.createGain();
 			mute.gain.value = 0;
@@ -93,7 +96,15 @@ type Recording = {
 
 async function arm(p: Page): Promise<void> {
 	await p.evaluate(() => {
-		const t = (window as unknown as { __tap: { on: boolean; ctxs: { node: AudioWorkletNode | null; blocks: unknown[] }[]; stops: unknown[] } }).__tap;
+		const t = (
+			window as unknown as {
+				__tap: {
+					on: boolean;
+					ctxs: { node: AudioWorkletNode | null; blocks: unknown[] }[];
+					stops: unknown[];
+				};
+			}
+		).__tap;
 		for (const c of t.ctxs) {
 			c.blocks.length = 0;
 			c.node?.port.postMessage({ on: true });
@@ -106,7 +117,11 @@ async function arm(p: Page): Promise<void> {
 /** Marks the current context time of the program context under `name`. */
 async function mark(p: Page, name: string): Promise<void> {
 	await p.evaluate((n) => {
-		const t = (window as unknown as { __tap: { ctxs: { ctx: BaseAudioContext; blocks: unknown[] }[]; marks?: Record<string, number> } }).__tap;
+		const t = (
+			window as unknown as {
+				__tap: { ctxs: { ctx: BaseAudioContext; blocks: unknown[] }[]; marks?: Record<string, number> };
+			}
+		).__tap;
 		t.marks ??= {};
 		const ctx = t.ctxs.find((c) => c.ctx.state === 'running')?.ctx ?? t.ctxs[0]?.ctx;
 		t.marks[n] = ctx?.currentTime ?? -1;
@@ -115,7 +130,8 @@ async function mark(p: Page, name: string): Promise<void> {
 
 async function disarm(p: Page): Promise<Recording> {
 	await p.evaluate(() => {
-		const t = (window as unknown as { __tap: { on: boolean; ctxs: { node: AudioWorkletNode | null }[] } }).__tap;
+		const t = (window as unknown as { __tap: { on: boolean; ctxs: { node: AudioWorkletNode | null }[] } })
+			.__tap;
 		t.on = false;
 		for (const c of t.ctxs) c.node?.port.postMessage({ on: false });
 	});
@@ -230,14 +246,25 @@ async function setup(): Promise<void> {
 	const wav = join(outDir, name);
 	const clicks = 'if(lt(t\\,2)*eq(mod(n-1440\\,12000)\\,0)\\,0.5\\,0)';
 	const tone = 'if(gte(t\\,2)*lt(t\\,4)\\,0.25*sin(2*PI*1000*t)\\,0)';
-	ff(['-f', 'lavfi', '-i', `aevalsrc='${clicks}+${tone}':s=48000:d=6`, '-ac', '2', ...(name.endsWith('.mp4') ? ['-c:a', 'aac', '-b:a', '256k'] : ['-c:a', 'pcm_s16le']), wav]);
+	ff([
+		'-f',
+		'lavfi',
+		'-i',
+		`aevalsrc='${clicks}+${tone}':s=48000:d=6`,
+		'-ac',
+		'2',
+		...(name.endsWith('.mp4') ? ['-c:a', 'aac', '-b:a', '256k'] : ['-c:a', 'pcm_s16le']),
+		wav,
+	]);
 	await createProject(page, 'E2E Sound P0 transport');
 	await page.getByTestId('project-panel').click({ position: { x: 40, y: 10 } });
 	const chooser = page.waitForEvent('filechooser');
 	await page.keyboard.press('Control+KeyI');
 	await (await chooser).setFiles([wav]);
 	await expect(page.getByTestId('project-row').filter({ hasText: name })).toBeVisible({ timeout: 60_000 });
-	const items = await query<Record<string, { id: string; name: string }>>(page, 'doc.get', { path: ['items'] });
+	const items = await query<Record<string, { id: string; name: string }>>(page, 'doc.get', {
+		path: ['items'],
+	});
 	const item = Object.values(items).find((i) => i.name === name)!;
 	const r = await transact(page, [
 		{ type: 'clip.place', source: { projectItemId: item.id }, at: 0, tracks: { audio: 'A1' } },
@@ -361,7 +388,12 @@ test('Play after a seek while paused: no audio from before the seek', async () =
 			first = i;
 			break;
 		}
-	console.log('after paused seek: max', max, 'first loud at', first >= 0 ? timeOf(rec, first) - rec.armed : null);
+	console.log(
+		'after paused seek: max',
+		max,
+		'first loud at',
+		first >= 0 ? timeOf(rec, first) - rec.armed : null,
+	);
 	test.info().annotations.push({ type: 'stale', description: JSON.stringify({ max }) });
 	expect(max).toBeLessThan(0.01);
 });
@@ -450,7 +482,10 @@ test('a latency change during playback: no dropout beyond the added latency', as
 			return m;
 		};
 		console.log('gaps', gaps.join(' '), 'amp before', amp(-0.3, -0.05), 'after', amp(0.3, 0.6));
-		console.log('stops/states rel. edit', JSON.stringify(rec.stops.map((x) => (x < 0 ? `S${(-x - edit).toFixed(4)}` : (x - edit).toFixed(4)))));
+		console.log(
+			'stops/states rel. edit',
+			JSON.stringify(rec.stops.map((x) => (x < 0 ? `S${(-x - edit).toFixed(4)}` : (x - edit).toFixed(4)))),
+		);
 	}
 	test.info().annotations.push({ type: 'gap', description: JSON.stringify({ worst, at: at - edit }) });
 	// undo the second limiter for the next tests

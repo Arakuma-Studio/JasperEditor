@@ -417,10 +417,11 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 			const seq = pickSequence(doc, sequenceId);
 			const clips = (clipIds ?? []).map((id) => {
 				const c = audioClip(seq, id);
-				// `residual` (what the fader ranges clamped away) is bookkeeping of the commands, not a setting.
+				// `residual` (what the fader ranges clamped away) and `panOffset` (how Pan is applied) are bookkeeping of
+				// the commands, not settings.
 				const s = readEssentialSound(c.essential);
 				if (!s) return { clipId: id, settings: null };
-				const { residual: _residual, ...settings } = s;
+				const { residual: _residual, panOffset: _panOffset, ...settings } = s;
 				return { clipId: id, settings };
 			});
 			const type = audioType ?? clips.find((c) => c.settings)?.settings?.type ?? null;

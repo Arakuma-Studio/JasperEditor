@@ -10,7 +10,13 @@ import { normalizeWords, wordsWellFormed } from './captions/words.ts';
 import { colorIssues, repairColor } from './color/model.ts';
 import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
-import { ESSENTIAL_SLOTS, EssentialSoundSchema, readEssentialSound } from './essential/model.ts';
+import {
+	ESSENTIAL_SLOTS,
+	EssentialSoundSchema,
+	legacyPanApplied,
+	migrateLegacyPan,
+	readEssentialSound,
+} from './essential/model.ts';
 import { expressionIssues, repairExpressions } from './expressions.ts';
 import { createFontRef, createTrack, DEFAULT_FONT_FAMILY } from './factories.ts';
 import { gapsIssues, repairGaps } from './gaps/index.ts';
@@ -1474,6 +1480,11 @@ export function essentialIssues(
 					message: `clip ${c.id}: unreadable Essential Sound settings`,
 					path: [seq.id, c.id, 'essential'],
 				});
+			else if (legacyPanApplied(raw, (c as AudioClip).pan))
+				out.push({
+					message: `clip ${c.id}: Essential Sound Pan saved by a build that wrote it into the clip's pan`,
+					path: [seq.id, c.id, 'essential', 'pan'],
+				});
 			for (const fx of c.effects)
 				if (
 					fx.essential !== undefined &&
@@ -1728,6 +1739,11 @@ export function repairDocument(
 						? 'Essential Sound settings completed with defaults'
 						: 'unreadable Essential Sound settings removed',
 				);
+			}
+			// sound-design Phase 0 close-out: Pan saved before it became an offset (`migrateLegacyPan`).
+			if (legacyPanApplied(a.essential, a.pan)) {
+				const n = migrateLegacyPan(a);
+				if (n) note('migrate-essential-pan', c.id, n);
 			}
 			for (const fx of a.effects)
 				if (

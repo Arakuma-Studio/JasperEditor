@@ -6,6 +6,7 @@ import {
 	DEFAULT_LOUDNESS_TARGET,
 	type EssentialSound,
 	EssentialSoundError,
+	migrateLegacyPan,
 	newEssentialSound,
 	parseEssentialSound,
 	readEssentialSound,
@@ -42,6 +43,8 @@ function audioClips(doc: DDoc, ids: readonly string[], h: HandlerContext): { seq
 				path: [c.id],
 			});
 		assertUnlocked(findTrackIn(seq, c.trackId)!.track, h);
+		// settings saved before Pan became an offset are read the way they were written (load does this too)
+		migrateLegacyPan(c as never);
 	}
 	return { seq, clips: clips as unknown as DAudio[] };
 }
@@ -61,6 +64,7 @@ function timeIn(
 
 /** Writes the new settings and reconciles the clip's effects and levels (one place for every command). */
 function update(clip: DAudio, next: EssentialSound | null, time: number, h: HandlerContext): void {
+	migrateLegacyPan(clip as never);
 	const old = readEssentialSound(clip.essential);
 	const residual = {
 		volume: { ...(old?.residual?.volume ?? {}) },

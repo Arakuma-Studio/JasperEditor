@@ -928,10 +928,13 @@ export class MixGraph {
 
 	/** A seek or jump (Remotion re-anchored; every media player reschedules from the new position). */
 	private discontinuity(): void {
-		if (this.ctx.state === 'running') {
-			this.fadeFlush();
+		if (this.playing) {
+			// what the graph still holds of the old position is audible: fade it out and reset
+			if (this.ctx.state === 'running') this.fadeFlush();
 			return;
 		}
+		// Paused: the next Play starts from the new position, primed. Remotion reschedules every player itself; if
+		// the context is still suspending, the 'suspended' handler primes (and has the players reschedule again).
 		this.fresh = true;
 		this.prime(true);
 	}
@@ -956,6 +959,8 @@ export class MixGraph {
 			this.flush();
 			this.flushed = true;
 		}
+		// a fade-out of a seek during playback still pending: priming owns the output gain now
+		this.flushToken++;
 		let wait = (this.readAhead + this.maxClipFx()) / this.ctx.sampleRate;
 		if (!(wait > 0) || wait > MAX_PRIMED_WAIT) wait = 0;
 		const a = primedAnchor(sync.anchor.value, this.shift, wait);
