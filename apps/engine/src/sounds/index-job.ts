@@ -468,7 +468,9 @@ export class SoundIndexer {
 				base = next;
 				continue;
 			}
-			const committed = await this.deps.library.commit(await this.current(next));
+			// Reduced to the folders of now inside the library's write queue: a folder removal queued meanwhile (it saves
+			// the folder list first) is seen, so its sounds are not written back.
+			const committed = await this.deps.library.commitFrom(() => this.current(next));
 			const late = this.takeRequest();
 			if (stale || late) this.deps.followUp?.(ctx.job.id, (again?.full ?? false) || (late?.full ?? false));
 			await pruneSoundCache(this.deps, committed).catch((e) =>

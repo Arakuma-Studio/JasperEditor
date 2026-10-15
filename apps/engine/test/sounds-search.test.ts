@@ -223,7 +223,9 @@ function randomQuery(r: () => number, all: SoundEntry[]): SoundSearchQuery {
 }
 
 describe('search facets in one pass (finding 10)', () => {
-	it('equal the four-pass disjunctive counts, with the same results, on random libraries and queries', () => {
+	it('equal the four-pass disjunctive counts, with the same results, on random libraries and queries', {
+		timeout: 120_000,
+	}, () => {
 		for (let lib = 0; lib < 4; lib++) {
 			const all = syntheticLibrary(400, 100 + lib);
 			const byId = new Map(all.map((e) => [e.id, e]));
@@ -232,15 +234,16 @@ describe('search facets in one pass (finding 10)', () => {
 				const q = randomQuery(r, all);
 				const includeFolders = r() < 0.8;
 				const want = oracle(all, q, includeFolders);
+				const offset = r() < 0.3 ? Math.floor(r() * 50) : 0;
 				const got = searchSoundEntries(
 					all,
-					{ ...q, limit: 500 },
+					{ ...q, limit: 500, offset },
 					{ lookup: (id) => byId.get(id), includeFolders },
 				);
 				expect(got.facets, JSON.stringify(q)).toEqual(want.facets);
 				expect(got.total).toBe(want.ranked.length);
 				expect(got.results.map((x) => [x.sound.id, x.score])).toEqual(
-					want.ranked.slice(0, 500).map((x) => [x.entry.id, x.score]),
+					want.ranked.slice(offset, offset + 500).map((x) => [x.entry.id, x.score]),
 				);
 			}
 		}

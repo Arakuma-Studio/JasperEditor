@@ -1,6 +1,6 @@
-// Sound library search (spec 12 §2.1, §2.8; wp-note "WP1.2"): `GET /api/sounds` over the index's entries. One
-// `rankSounds` pass for the results; the disjunctive facets are counted in one more pass over the entries with
-// `soundFilterOf` (each dimension counts with every filter but its own), without sorting anything. Pure apart from
+// Sound library search (spec 12 §2.1, §2.8; wp-note "WP1.2"): `GET /api/sounds` over the index's entries. One pass
+// (`rankSoundsPage`) ranks the results and gives every entry's filter bits, from which the disjunctive facets
+// are counted (each dimension counts with every filter but its own) without sorting anything. Pure apart from
 // its inputs, so it can be measured on a synthetic library (test/sounds-search.test.ts: < 50 ms for 5 000 sounds).
 import {
 	SOUND_SEARCH_DEFAULT_LIMIT,
@@ -12,21 +12,45 @@ import {
 import {
 	isSoundTypeId,
 	licenseClass,
-	rankSounds,
+	rankSoundsPage,
 	resolveTypeNames,
+	SOUND_FAMILIES,
 	SOUND_FILTER_ALL,
 	SOUND_FILTER_LICENSE,
 	SOUND_FILTER_REST,
 	SOUND_FILTER_TYPES,
+	SOUND_TYPE_IDS,
 	SOUND_TYPES,
 	type SoundRankRequest,
-	soundFilterOf,
 	typesOfFamily,
 } from '@jasper/project';
 import { HttpError } from '../tools/reply.ts';
 
 const NOT_TYPES = SOUND_FILTER_LICENSE | SOUND_FILTER_REST;
 const NOT_LICENSE = SOUND_FILTER_TYPES | SOUND_FILTER_REST;
+
+const TYPE_INDEX = new Map<string, number>(SOUND_TYPE_IDS.map((t, i) => [t, i]));
+const FAMILY_INDEX = new Map<string, number>(SOUND_FAMILIES.map((f, i) => [f, i]));
+
+/** What the facets count of an entry: indices of its known types (repeats kept) and distinct families, its licence class. */
+type FacetInfo = { types: number[]; families: number[]; licenseClass: string; of: SoundEntry['types'] };
+const FACET_INFO = new WeakMap<SoundEntry, FacetInfo>();
+
+function facetInfoOf(e: SoundEntry): FacetInfo {
+	const hit = FACET_INFO.get(e);
+	if (hit && hit.of === e.types) return hit;
+	const types: number[] = [];
+	const families: number[] = [];
+	for (const t of e.types)
+		if (isSoundTypeId(t)) {
+			types.push(TYPE_INDEX.get(t)!);
+			const fam = FAMILY_INDEX.get(SOUND_TYPES[t].family)!;
+			if (!families.includes(fam)) families.push(fam);
+		}
+	const info = { types, families, licenseClass: licenseClassOf(e.license), of: e.types };
+	FACET_INFO.set(e, info);
+	return info;
+}
 
 /** `licenseClass` by licence string (a library has a handful of distinct licences). */
 const LICENSE_CLASS = new Map<string, string>();
@@ -91,45 +115,56 @@ export function searchSoundEntries(
 	const { req, none } = rankRequestOf(q, opts.lookup);
 	const sources = q.sources?.length ? new Set<string>(q.sources) : null;
 	const facets: SoundFacets = { types: {}, families: {}, licenses: {}, sources: {} };
-	const bump = (rec: Record<string, number>, k: string) => {
-		rec[k] = (rec[k] ?? 0) + 1;
-	};
-	const filter = soundFilterOf(req);
-	const pool: SoundEntry[] = [];
-	const fams = new Set<string>();
-	for (const e of all) {
-		const isFolder = e.source.type === 'folder';
-		if (isFolder && !opts.includeFolders) continue;
-		if (q.rootId && !(isFolder && e.source.type === 'folder' && e.source.rootId === q.rootId)) continue;
-		const inPool = !sources || sources.has(e.source.type);
-		if (inPool) pool.push(e);
-		const f = filter(e);
-		if (f < 0) continue;
+	const visible =
+		opts.includeFolders && !q.rootId
+			? all
+			: all.filter(
+					(e) =>
+						(opts.includeFolders || e.source.type !== 'folder') &&
+						(!q.rootId || (e.source.type === 'folder' && e.source.rootId === q.rootId)),
+				);
+	const inPool = (e: SoundEntry) => !sources || sources.has(e.source.type);
+	// Counted in arrays by index, turned into the facet records at the end.
+	const typeCounts = new Int32Array(SOUND_TYPE_IDS.length);
+	const familyCounts = new Int32Array(SOUND_FAMILIES.length);
+	const licenseCounts = new Map<string, number>();
+	const sourceCounts = new Map<string, number>();
+	const count = (e: SoundEntry, f: number) => {
+		const pooled = inPool(e);
+		const info = facetInfoOf(e);
 		// Types and families: every filter but the type filter.
-		if (inPool && (f & NOT_TYPES) === NOT_TYPES) {
-			fams.clear();
-			for (const t of e.types)
-				if (isSoundTypeId(t)) {
-					bump(facets.types, t);
-					fams.add(SOUND_TYPES[t].family);
-				}
-			for (const fam of fams) bump(facets.families, fam);
+		if (pooled && (f & NOT_TYPES) === NOT_TYPES) {
+			for (const t of info.types) typeCounts[t]!++;
+			for (const fam of info.families) familyCounts[fam]!++;
 		}
-		if (none) continue;
+		if (none) return;
 		// Licences: every filter but the licence filter; sources: every filter but the source filter.
-		if (inPool && (f & NOT_LICENSE) === NOT_LICENSE) bump(facets.licenses, licenseClassOf(e.license));
-		if (f === SOUND_FILTER_ALL) bump(facets.sources, e.source.type);
-	}
+		if (pooled && (f & NOT_LICENSE) === NOT_LICENSE)
+			licenseCounts.set(info.licenseClass, (licenseCounts.get(info.licenseClass) ?? 0) + 1);
+		if (f === SOUND_FILTER_ALL) sourceCounts.set(e.source.type, (sourceCounts.get(e.source.type) ?? 0) + 1);
+	};
 	const ctx = q.usedNearby?.length ? { usedNearby: q.usedNearby } : {};
-	const ranked = none ? [] : rankSounds(pool, req, ctx);
+	// One pass: the filter bits of every entry count the facets; entries of the pool that pass every filter are ranked.
 	const offset = q.offset ?? 0;
 	const limit = q.limit ?? SOUND_SEARCH_DEFAULT_LIMIT;
-	return {
-		total: ranked.length,
+	const page = rankSoundsPage(visible, req, ctx, {
+		onFilter: count,
+		inRanking: (e) => !none && inPool(e),
 		offset,
-		results: ranked
-			.slice(offset, offset + limit)
-			.map((r) => ({ sound: r.entry, score: r.score, parts: r.parts })),
+		limit,
+	});
+	SOUND_TYPE_IDS.forEach((t, i) => {
+		if (typeCounts[i]) facets.types[t] = typeCounts[i]!;
+	});
+	SOUND_FAMILIES.forEach((fam, i) => {
+		if (familyCounts[i]) facets.families[fam] = familyCounts[i]!;
+	});
+	for (const [k, v] of licenseCounts) facets.licenses[k] = v;
+	for (const [k, v] of sourceCounts) facets.sources[k] = v;
+	return {
+		total: page.total,
+		offset,
+		results: page.results.map((r) => ({ sound: r.entry, score: r.score, parts: r.parts })),
 		facets,
 	};
 }

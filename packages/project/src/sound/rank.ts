@@ -297,7 +297,14 @@ export const MAX_QUERY_TOKENS = 16;
 type QueryPlan = {
 	/** Distinct tokens left after stopwords (first occurrence kept, at most MAX_QUERY_TOKENS), each with the type its synonym phrase names (if any). */
 	tokens: { token: string; type: SoundTypeId | null }[];
+	/**
+	 * How each word seen so far matches the tokens: 2 bits per token (2 = the same word, 1 = starts with a token of 3+
+	 * letters, 0 = no match). A library has far fewer distinct words than entries, so most words cost one lookup.
+	 */
+	words: Map<string, number>;
 };
+/** Words remembered per plan (a bound against hostile libraries; past it, words are matched every time). */
+const MAX_PLAN_WORDS = 200_000;
 
 /** Plans of recent queries (the same query string gives the same plan object, so text scores can be reused). */
 const PLAN_MEMO = new Map<string, QueryPlan | null>();
@@ -335,7 +342,7 @@ function makePlan(query: string): QueryPlan | null {
 		seen.add(token);
 		tokens.push({ token, type: typed[i]! });
 	}
-	return { tokens };
+	return { tokens, words: new Map() };
 }
 
 /**
@@ -426,34 +433,66 @@ function textScore(plan: QueryPlan, t: EntryText): { score: number; titleMatch: 
 	return r;
 }
 
+function wordMatch(plan: QueryPlan, w: string): number {
+	let m = plan.words.get(w);
+	if (m !== undefined) return m;
+	m = 0;
+	const tokens = plan.tokens;
+	for (let k = 0; k < tokens.length; k++) {
+		const token = tokens[k]!.token;
+		if (w === token) m |= 2 << (2 * k);
+		else if (token.length >= 3 && w.startsWith(token)) m |= 1 << (2 * k);
+	}
+	if (plan.words.size < MAX_PLAN_WORDS) plan.words.set(w, m);
+	return m;
+}
+
+/** Per-token scratch of computeTextScore (at most MAX_QUERY_TOKENS tokens; never re-entered). */
+const BEST = new Float64Array(MAX_QUERY_TOKENS);
+const TITLED = new Uint8Array(MAX_QUERY_TOKENS);
+
 function computeTextScore(plan: QueryPlan, t: EntryText): { score: number; titleMatch: number } {
-	const title = t.titleTokens;
-	const tags = t.tagTokens;
+	const tokens = plan.tokens;
+	const n = tokens.length;
 	const entryTypes = t.entryTypes;
-	let total = 0;
-	let inTitle = 0;
-	for (const { token, type } of plan.tokens) {
+	for (let k = 0; k < n; k++) {
+		const { token, type } = tokens[k]!;
 		let best = 0;
-		let titled = false;
 		if (type) {
 			if (entryTypes.includes(type)) best = 1;
 			else if (namedTypesOf(t).includes(type)) best = 0.85;
 		}
 		if (entryTypes.includes(token as SoundTypeId)) best = Math.max(best, 1);
-		for (const w of title) {
-			if (w === token) best = Math.max(best, 1);
-			else if (token.length >= 3 && w.startsWith(token)) best = Math.max(best, 0.75);
-			else continue;
-			titled = true;
-		}
-		if (titled) inTitle++;
-		for (const w of tags) {
-			if (w === token) best = Math.max(best, 0.8);
-			else if (token.length >= 3 && w.startsWith(token)) best = Math.max(best, 0.6);
-		}
-		total += best;
+		BEST[k] = best;
+		TITLED[k] = 0;
 	}
-	return { score: round6(total / plan.tokens.length), titleMatch: round6(inTitle / plan.tokens.length) };
+	for (const w of t.titleTokens) {
+		const m = wordMatch(plan, w);
+		if (m === 0) continue;
+		for (let k = 0; k < n; k++) {
+			const v = (m >>> (2 * k)) & 3;
+			if (v === 2) BEST[k] = Math.max(BEST[k]!, 1);
+			else if (v === 1) BEST[k] = Math.max(BEST[k]!, 0.75);
+			else continue;
+			TITLED[k] = 1;
+		}
+	}
+	for (const w of t.tagTokens) {
+		const m = wordMatch(plan, w);
+		if (m === 0) continue;
+		for (let k = 0; k < n; k++) {
+			const v = (m >>> (2 * k)) & 3;
+			if (v === 2) BEST[k] = Math.max(BEST[k]!, 0.8);
+			else if (v === 1) BEST[k] = Math.max(BEST[k]!, 0.6);
+		}
+	}
+	let total = 0;
+	let inTitle = 0;
+	for (let k = 0; k < n; k++) {
+		total += BEST[k]!;
+		inTitle += TITLED[k]!;
+	}
+	return { score: round6(total / n), titleMatch: round6(inTitle / n) };
 }
 
 /** A request worked out once for many entries. */
@@ -496,19 +535,148 @@ export function soundFilterOf(request: SoundRankRequest = {}): (e: RankableSound
 	const p = prepareRequest(request);
 	return (e) => {
 		if (!e || typeof e !== 'object' || typeof e.id !== 'string' || !e.descriptors) return -1;
-		const t = entryText(e);
-		let bits = 0;
-		if (!p.noKnownType && (p.wanted.length === 0 || p.wanted.some((w) => t.entryTypes.includes(w))))
-			bits |= SOUND_FILTER_TYPES;
-		if (!p.commercialSafeOnly || licenseInfo(e.license).safe) bits |= SOUND_FILTER_LICENSE;
-		if (
-			passesDescriptorFilters(e.descriptors, request) &&
-			!(p.similarId !== undefined && p.similarId === e.id) &&
-			(!p.plan || textScore(p.plan, t).score > 0)
-		)
-			bits |= SOUND_FILTER_REST;
-		return bits;
+		return filterBits(e, entryText(e), licenseInfo(e.license), p, request);
 	};
+}
+
+function filterBits(
+	e: RankableSound,
+	t: EntryText,
+	lic: { safe: boolean },
+	p: PreparedRequest,
+	request: SoundRankRequest,
+): number {
+	let bits = 0;
+	if (!p.noKnownType && (p.wanted.length === 0 || p.wanted.some((w) => t.entryTypes.includes(w))))
+		bits |= SOUND_FILTER_TYPES;
+	if (!p.commercialSafeOnly || lic.safe) bits |= SOUND_FILTER_LICENSE;
+	if (
+		passesDescriptorFilters(e.descriptors, request) &&
+		!(p.similarId !== undefined && p.similarId === e.id) &&
+		(!p.plan || textScore(p.plan, t).score > 0)
+	)
+		bits |= SOUND_FILTER_REST;
+	return bits;
+}
+
+/** The context of one ranking call: the prepared request, rotation penalties and the reference. */
+type RankRun = {
+	request: SoundRankRequest;
+	prep: PreparedRequest;
+	used: Map<string, number>;
+	sim: SoundRankRequest['similarTo'];
+};
+
+function rankRun(request: SoundRankRequest, ctx: SoundRankContext): RankRun {
+	const used = new Map<string, number>();
+	(ctx.usedNearby ?? []).forEach((id, i) => {
+		if (typeof id !== 'string') return;
+		used.set(id, Math.min(MAX_ROTATION_PENALTY, (used.get(id) ?? 0) + ROTATION_PENALTY / (1 + i)));
+	});
+	return { request, prep: prepareRequest(request), used, sim: request.similarTo };
+}
+
+const newParts = (): RankParts => ({
+	text: null,
+	typeFit: null,
+	durationFit: 0,
+	judge: 0,
+	license: 0,
+	source: 0,
+	similarity: null,
+	rotation: 0,
+	titleMatch: null,
+});
+
+/** Scores an entry that passed every filter. */
+function scoreEntry<T extends RankableSound>(
+	e: T,
+	info: EntryText,
+	lic: { preference: number },
+	run: RankRun,
+): RankedSound<T> {
+	const parts = newParts();
+	const score = scoreInto(parts, e, info, lic, run);
+	return { entry: e, score, parts };
+}
+
+/** Writes an entry's parts into `parts` (reusable) and returns its score. */
+function scoreInto(
+	parts: RankParts,
+	e: RankableSound,
+	info: EntryText,
+	lic: { preference: number },
+	run: RankRun,
+): number {
+	const { request, prep, used, sim } = run;
+	const { wanted, plan } = prep;
+	const entryTypes = info.entryTypes;
+	const matched = plan ? textScore(plan, info) : null;
+	const text = matched ? matched.score : null;
+	let typeFit: number | null = null;
+	if (request.visualKind || wanted.length) {
+		let sum = 0;
+		let n = 0;
+		if (request.visualKind) {
+			let best = 0;
+			for (const t of entryTypes) best = Math.max(best, typeFitForVisualKind(t, request.visualKind));
+			sum += best;
+			n++;
+		}
+		if (wanted.length) {
+			sum += entryTypes.includes(wanted[0]!) ? 1 : 0.9;
+			n++;
+		}
+		typeFit = round6(sum / n);
+	}
+	const dFit = durationFit(
+		e.descriptors,
+		fitType(entryTypes, request, wanted),
+		request.windowSec,
+		request.align,
+	);
+	const judge = e.judge && fin(e.judge.score) ? Math.min(1, Math.max(0, e.judge.score)) : 0.5;
+	const license = lic.preference;
+	const similarity = sim ? round6(Math.exp(-descriptorDistance(sim.descriptors, e.descriptors))) : null;
+	const rotation = round6(used.get(e.id) ?? 0);
+
+	let num = RANK_WEIGHTS.durationFit * dFit + RANK_WEIGHTS.judge * judge + RANK_WEIGHTS.license * license;
+	let den = RANK_WEIGHTS.durationFit + RANK_WEIGHTS.judge + RANK_WEIGHTS.license;
+	if (text !== null) {
+		num += RANK_WEIGHTS.text * text;
+		den += RANK_WEIGHTS.text;
+	}
+	if (typeFit !== null) {
+		num += RANK_WEIGHTS.typeFit * typeFit;
+		den += RANK_WEIGHTS.typeFit;
+	}
+	if (similarity !== null) {
+		num += RANK_WEIGHTS.similarity * similarity;
+		den += RANK_WEIGHTS.similarity;
+	}
+	parts.text = text;
+	parts.typeFit = typeFit;
+	parts.durationFit = dFit;
+	parts.judge = judge;
+	parts.license = license;
+	parts.source = REAL_SOURCES.has(e.source?.type) ? 1 : 0;
+	parts.similarity = similarity;
+	parts.rotation = rotation;
+	parts.titleMatch = matched ? matched.titleMatch : null;
+	return round6(num / den - rotation);
+}
+
+/** Sorts ranked sounds (real before synth, title words, score, id) and applies the request's limit. */
+function finish<T extends RankableSound>(out: RankedSound<T>[], request: SoundRankRequest): RankedSound<T>[] {
+	out.sort(
+		(a, b) =>
+			b.parts.source - a.parts.source ||
+			(b.parts.titleMatch ?? 0) - (a.parts.titleMatch ?? 0) ||
+			b.score - a.score ||
+			(a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0),
+	);
+	const limit = fin(request.limit) ? Math.min(10_000, Math.max(1, Math.floor(request.limit))) : out.length;
+	return out.length > limit ? out.slice(0, limit) : out;
 }
 
 /**
@@ -521,15 +689,11 @@ export function rankSounds<T extends RankableSound>(
 	request: SoundRankRequest = {},
 	ctx: SoundRankContext = {},
 ): RankedSound<T>[] {
-	const prep = prepareRequest(request);
+	const run = rankRun(request, ctx);
+	const { prep } = run;
 	if (prep.noKnownType) return [];
 	const { wanted, plan } = prep;
-	const used = new Map<string, number>();
-	(ctx.usedNearby ?? []).forEach((id, i) => {
-		if (typeof id !== 'string') return;
-		used.set(id, Math.min(MAX_ROTATION_PENALTY, (used.get(id) ?? 0) + ROTATION_PENALTY / (1 + i)));
-	});
-	const sim = request.similarTo;
+	const sim = run.sim;
 	const out: RankedSound<T>[] = [];
 	for (const e of entries) {
 		if (!e || typeof e !== 'object' || typeof e.id !== 'string' || !e.descriptors) continue;
@@ -540,71 +704,78 @@ export function rankSounds<T extends RankableSound>(
 		if (prep.commercialSafeOnly && !lic.safe) continue;
 		if (!passesDescriptorFilters(e.descriptors, request)) continue;
 		if (sim?.id !== undefined && sim.id === e.id) continue;
-
-		const matched = plan ? textScore(plan, info) : null;
-		const text = matched ? matched.score : null;
-		if (plan && !(text! > 0)) continue;
-		let typeFit: number | null = null;
-		if (request.visualKind || wanted.length) {
-			const parts: number[] = [];
-			if (request.visualKind) {
-				let best = 0;
-				for (const t of entryTypes) best = Math.max(best, typeFitForVisualKind(t, request.visualKind));
-				parts.push(best);
-			}
-			if (wanted.length) parts.push(entryTypes.includes(wanted[0]!) ? 1 : 0.9);
-			typeFit = round6(parts.reduce((s, v) => s + v, 0) / parts.length);
-		}
-		const dFit = durationFit(
-			e.descriptors,
-			fitType(entryTypes, request, wanted),
-			request.windowSec,
-			request.align,
-		);
-		const judge = e.judge && fin(e.judge.score) ? Math.min(1, Math.max(0, e.judge.score)) : 0.5;
-		const license = lic.preference;
-		const similarity = sim ? round6(Math.exp(-descriptorDistance(sim.descriptors, e.descriptors))) : null;
-		const rotation = round6(used.get(e.id) ?? 0);
-
-		let num = RANK_WEIGHTS.durationFit * dFit + RANK_WEIGHTS.judge * judge + RANK_WEIGHTS.license * license;
-		let den = RANK_WEIGHTS.durationFit + RANK_WEIGHTS.judge + RANK_WEIGHTS.license;
-		if (text !== null) {
-			num += RANK_WEIGHTS.text * text;
-			den += RANK_WEIGHTS.text;
-		}
-		if (typeFit !== null) {
-			num += RANK_WEIGHTS.typeFit * typeFit;
-			den += RANK_WEIGHTS.typeFit;
-		}
-		if (similarity !== null) {
-			num += RANK_WEIGHTS.similarity * similarity;
-			den += RANK_WEIGHTS.similarity;
-		}
-		const score = round6(num / den - rotation);
-		const source = REAL_SOURCES.has(e.source?.type) ? 1 : 0;
-		out.push({
-			entry: e,
-			score,
-			parts: {
-				text,
-				typeFit,
-				durationFit: dFit,
-				judge,
-				license,
-				source,
-				similarity,
-				rotation,
-				titleMatch: matched ? matched.titleMatch : null,
-			},
-		});
+		if (plan && !(textScore(plan, info).score > 0)) continue;
+		out.push(scoreEntry(e, info, lic, run));
 	}
-	out.sort(
-		(a, b) =>
-			b.parts.source - a.parts.source ||
-			(b.parts.titleMatch ?? 0) - (a.parts.titleMatch ?? 0) ||
-			b.score - a.score ||
-			(a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0),
-	);
-	const limit = fin(request.limit) ? Math.min(10_000, Math.max(1, Math.floor(request.limit))) : out.length;
-	return out.slice(0, limit);
+	return finish(out, request);
+}
+
+/**
+ * {@link rankSounds} and {@link soundFilterOf} in one pass, returning one page (the engine's search with its
+ * disjunctive facets): `onFilter(e, bits)` is called for every well-formed entry with its filter bits; entries with
+ * every bit set are ranked unless `inRanking(e)` says no. `total` and `results` equal
+ * `rankSounds(entries.filter(inRanking), request, ctx)` and its slice `offset … offset + limit`; only the page's
+ * results are built as objects (the rest is ranked by numeric keys).
+ */
+export function rankSoundsPage<T extends RankableSound>(
+	entries: readonly T[],
+	request: SoundRankRequest,
+	ctx: SoundRankContext,
+	opts: {
+		onFilter?: (e: T, bits: number) => void;
+		inRanking?: (e: T) => boolean;
+		offset: number;
+		limit: number;
+	},
+): { total: number; results: RankedSound<T>[] } {
+	const run = rankRun(request, ctx);
+	const { prep } = run;
+	// Parallel arrays (no object per ranked entry).
+	const es: T[] = [];
+	const infos: EntryText[] = [];
+	const lics: { safe: boolean; preference: number }[] = [];
+	const keys: number[] = [];
+	const scratch = newParts();
+	for (const e of entries) {
+		if (!e || typeof e !== 'object' || typeof e.id !== 'string' || !e.descriptors) continue;
+		const info = entryText(e);
+		const lic = licenseInfo(e.license);
+		const bits = filterBits(e, info, lic, prep, request);
+		opts.onFilter?.(e, bits);
+		if (bits !== SOUND_FILTER_ALL || (opts.inRanking && !opts.inRanking(e))) continue;
+		const score = scoreInto(scratch, e, info, lic, run);
+		es.push(e);
+		infos.push(info);
+		lics.push(lic);
+		keys.push(sortKey(scratch, score));
+	}
+	const order = new Uint32Array(es.length);
+	for (let i = 0; i < order.length; i++) order[i] = i;
+	order.sort((i, j) => {
+		const d = keys[j]! - keys[i]!;
+		if (d !== 0 && !Number.isNaN(d)) return d;
+		const a = es[i]!.id;
+		const b = es[j]!.id;
+		return a < b ? -1 : a > b ? 1 : 0;
+	});
+	const cap = fin(request.limit) ? Math.min(10_000, Math.max(1, Math.floor(request.limit))) : order.length;
+	const total = Math.min(order.length, cap);
+	const from = Math.max(0, Math.floor(opts.offset));
+	const to = Math.min(total, from + Math.max(0, Math.floor(opts.limit)));
+	const results: RankedSound<T>[] = [];
+	for (let k = from; k < to; k++) {
+		const i = order[k]!;
+		results.push(scoreEntry(es[i]!, infos[i]!, lics[i]!, run));
+	}
+	return { total, results };
+}
+
+/**
+ * The ranking order as one number (descending): source tier, then title-word share, then score, all rounded to 6
+ * decimals already, so the integers below are exact and order exactly like rankSounds' comparison.
+ */
+function sortKey(parts: RankParts, score: number): number {
+	const tm = Math.round((parts.titleMatch ?? 0) * 1e6); // 0 … 1e6
+	const sc = Math.round(score * 1e6) + 2e6; // score ≥ −0.6 → 1.4e6 … 3e6
+	return parts.source * 8e12 + tm * 4e6 + sc;
 }

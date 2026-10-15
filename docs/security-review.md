@@ -441,7 +441,7 @@ Every state-changing engine route and what an agent may do with it:
 | `DELETE /api/media/:key` | **Gated** for engine-managed uploads | An upload imported into an unsaved project exists nowhere else |
 | `PUT /api/settings/gaps` lowering `keepVersions` | **Gated** | Prunes older versions of every project at its next save |
 | `PUT /api/settings/gaps` otherwise | Open | Interval, render optimisation: nothing is deleted |
-| `PUT /api/sounds/roots` adding, removing or relicensing a folder (`add_sound_folder`, `remove_sound_folder`) | **Gated** | Adding reads a folder of the user's disk into a library every project and agent shares, under the licence it declares; removing takes the user's sounds out; a licence declaration decides what counts as safe for commercial use |
+| `PUT /api/sounds/roots` adding, removing, relicensing or re-crediting (author, credit template) a folder (`add_sound_folder`, `remove_sound_folder`) | **Gated** | Adding reads a folder of the user's disk into a library every project and agent shares, under the licence it declares; removing takes the user's sounds out; a licence declaration decides what counts as safe for commercial use; the credit line is what projects print as attribution. Refused with `409 SOUND_ROOTS_CHANGED` when the list changed while the card waited |
 | `PUT /api/sounds/roots` renaming or enabling / disabling a folder | Open | Nothing is read that was not, nothing lost: a disabled folder's sounds come back when it is enabled |
 | `POST /api/sounds/index`, `POST /api/sounds/:id/register` (`rescan_sound_library`, `import_sounds`) | Open | The index is derived data rebuilt from files; registering copies a kit, pack or synth file under an engine-chosen name, or registers a folder file in place like `/api/media/register` |
 | `PUT /api/settings/processing` (`set_processing_settings`) | **Gated**, now for every caller without the editor key | Where media is sent (was opt-in by a query parameter) |
@@ -656,7 +656,10 @@ them, but it was reviewed by its author, not by this review.
   are taken in local mode only, absolute, without NUL, normalised and resolved, must be existing folders and not a
   file-system root; scans skip hidden names and symlinks and stop at depth 12 and 20 000 files per folder; folder
   sounds are served and registered in local mode only. FFmpeg reads library files with `-protocol_whitelist
-  file,crypto,data`. Agents adding, removing or relicensing a folder are asked (AGT-3 table). Manifests are
+  file,crypto,data`. Agents adding, removing, relicensing or re-crediting (author, credit template) a folder are
+  asked (AGT-3 table); the card counts every kind of change and cuts each path to 120 characters, and a change
+  approved after the folder list moved is refused (`409 SOUND_ROOTS_CHANGED`). A remote engine lists no folder paths,
+  does not index folders and keeps folder sounds out of search and visual data; only regular files are served. Manifests are
   validated per entry and capped at 16 MB; a damaged index is moved aside and rebuilt. Tests:
   `apps/engine/test/sounds-routes.test.ts`, `sounds-unit.test.ts`, and the generic route fuzzing of
   `fuzz-http.test.ts`. *Residual:* like the Media Browser, an authenticated client of a local engine can have any

@@ -9,6 +9,7 @@ import {
 	MAX_QUERY_TOKENS,
 	type RankableSound,
 	rankSounds,
+	rankSoundsPage,
 	resolveTypeNames,
 	SOUND_FILTER_ALL,
 	SOUND_TYPE_IDS,
@@ -107,7 +108,37 @@ const requestArb: fc.Arbitrary<SoundRankRequest> = fc.record(
 	{ requiredKeys: [] },
 );
 
-describe('soundFilterOf agrees with rankSounds', () => {
+describe('soundFilterOf and rankSoundsPage agree with rankSounds', () => {
+	it('rankSoundsPage gives rankSounds’ order, total and parts, page by page (property)', () => {
+		fc.assert(
+			fc.property(
+				fc.array(entryArb, { maxLength: 40 }),
+				requestArb,
+				fc.option(fc.integer({ min: 1, max: 30 }), { nil: undefined }),
+				fc.integer({ min: 0, max: 20 }),
+				fc.integer({ min: 0, max: 20 }),
+				(entries, req0, limit, offset, size) => {
+					const req = limit === undefined ? req0 : { ...req0, limit };
+					const keep = (e: RankableSound) => e.source.type !== 'pack';
+					const all = rankSounds(entries.filter(keep), req, {
+						usedNearby: entries.slice(0, 2).map((e) => e.id),
+					});
+					const seen: [RankableSound, number][] = [];
+					const page = rankSoundsPage(
+						entries,
+						req,
+						{ usedNearby: entries.slice(0, 2).map((e) => e.id) },
+						{ inRanking: keep, onFilter: (e, bits) => seen.push([e, bits]), offset, limit: size },
+					);
+					expect(page.total).toBe(all.length);
+					expect(page.results).toEqual(all.slice(offset, offset + size));
+					expect(seen.map(([e]) => e)).toEqual(entries);
+				},
+			),
+			{ numRuns: 400 },
+		);
+	});
+
 	it('an entry passes every filter exactly when rankSounds keeps it (property)', () => {
 		fc.assert(
 			fc.property(fc.array(entryArb, { maxLength: 40 }), requestArb, (entries, req) => {
