@@ -1,14 +1,17 @@
 import type { MediaItem } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
+import { closeAllDialogs, DialogHost, openDialog } from '@jasper/ui';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createCommandContext, getCommand, registerAllCommands, runCommand } from '../src/commands/index.ts';
 import { buildMediaAsset } from '../src/import/assets.ts';
-import { MEDIA_PROPERTIES_DIALOG } from '../src/panels/project/MediaPropertiesDialog.tsx';
 import { clearPosterHover, posterHover, setPosterHover } from '../src/panels/project/poster-frame.ts';
 import { memorySession, registered, ScriptedEngine } from './wp2e/helpers.ts';
 
 beforeAll(() => registerAllCommands());
 afterEach(() => {
+	closeAllDialogs();
+	cleanup();
 	const h = posterHover();
 	if (h) clearPosterHover(h.itemId);
 });
@@ -35,20 +38,23 @@ const poster = (session: EditorSession, itemId: string) =>
 describe('Get Properties for Selection', () => {
 	it('needs a selection and opens the dialog for the selected media', async () => {
 		const { session } = await memorySession();
-		const { mediaId, itemId } = importMedia(session, 'clip-a.mp4');
-		const opened: { kind: string; props?: Record<string, unknown> }[] = [];
+		const { itemId } = importMedia(session, 'clip-a.mp4');
+		importMedia(session, 'clip-b.mp4');
+		render(<DialogHost />);
 		const ctx = createCommandContext({
 			engine: new ScriptedEngine().client(),
 			session,
-			openDialog: (kind, props) => void opened.push({ kind, props }),
+			openDialog: (kind, props) => void openDialog(kind, props),
 		});
 		const cmd = getCommand('project.mediaProperties')!;
 		expect(cmd.when?.(ctx)).toBe(false);
 		session.select('project', [itemId], 'replace', { primary: itemId });
 		expect(cmd.when?.(ctx)).toBe(true);
-		await runCommand('project.mediaProperties', ctx);
-		expect(opened[0]?.kind).toBe(MEDIA_PROPERTIES_DIALOG);
-		expect(opened[0]?.props?.mediaIds).toEqual([mediaId]);
+		await act(async () => {
+			await runCommand('project.mediaProperties', ctx);
+		});
+		expect(await screen.findByRole('heading', { name: 'clip-a.mp4' })).toBeTruthy();
+		expect(screen.queryByRole('heading', { name: 'clip-b.mp4' })).toBeNull();
 	});
 });
 

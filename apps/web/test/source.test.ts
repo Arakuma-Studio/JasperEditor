@@ -118,7 +118,7 @@ describe('Source monitor state (S03:SRC-001…004)', () => {
 		for (const c of placed) {
 			expect(c.start).toBe(15);
 			expect(c.duration).toBe(60);
-			expect(c.sourceIn).toBe(FLICKS_PER_SECOND);
+			expect(c.sourceIn).toBe(705_600_000);
 		}
 		expect(session.transport.getState().frame).toBe(75);
 	});
@@ -143,8 +143,8 @@ describe('Source monitor state (S03:SRC-001…004)', () => {
 			const item = session.getCommitted().items[itemId] as {
 				marks: { in: { flicks: number }; out: { flicks: number } };
 			};
-			expect(item.marks.in.flicks).toBe(FLICKS_PER_SECOND);
-			expect(item.marks.out.flicks).toBe(3 * FLICKS_PER_SECOND);
+			expect(item.marks.in.flicks).toBe(705_600_000);
+			expect(item.marks.out.flicks).toBe(2_116_800_000);
 			const seq = Object.values(session.getCommitted().sequences)[0]!;
 			expect([seq.inPoint, seq.outPoint]).toEqual([null, null]);
 			t.seek(200);
