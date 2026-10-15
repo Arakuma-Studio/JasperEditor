@@ -243,13 +243,6 @@ export type ScopeWaveform = { lo: number; hi: number; perColumn: number; traces:
 export const waveformLevel = (w: Pick<ScopeWaveform, 'lo' | 'hi'>, row: number, rows: number) =>
 	w.lo + ((w.hi - w.lo) * row) / (Math.max(2, rows) - 1);
 
-/** Row of value `v` in [lo, hi] over `rows` levels (−1 outside, or NaN). */
-export function rowOf(v: number, lo: number, hi: number, rows: number): number {
-	const t = (v - lo) / (hi - lo);
-	if (!(t >= 0 && t <= 1)) return -1;
-	return Math.min(rows - 1, Math.round(t * (rows - 1)));
-}
-
 /**
  * Values per sample of each trace layout: 0 RGB (R, G, B), 1 Y, 2 YC (Y, Y + C, Y − C → traces 0, 1, 1),
  * 3 RGB-White (R, G, B, Y), 4 YUV (Y, Cb + ½, Cr + ½).
@@ -415,20 +408,6 @@ export type ScopeVectorscope = {
 	/** Mean (Cb, Cr) of the plotted points. */
 	mean: [number, number];
 };
-
-/** Cell of a (Cb, Cr) point on a size² plane spanning ±extent, or null outside. */
-export function vectorCell(
-	cb: number,
-	cr: number,
-	size: number,
-	extent = VECTOR_EXTENT,
-): [number, number] | null {
-	const n = size - 1;
-	const fx = (cb / extent / 2 + 0.5) * n;
-	const fy = (0.5 - cr / extent / 2) * n;
-	if (!(fx >= 0 && fx <= n && fy >= 0 && fy <= n)) return null;
-	return [Math.round(fx), Math.round(fy)];
-}
 
 /** (Cb, Cr) at the centre of a cell. */
 export function vectorPoint(

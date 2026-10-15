@@ -1727,11 +1727,11 @@ Original location: `packages/project/test/roving.test.ts:186`.
 
 Independent sources: docs/wp-notes/color-grade.md scopes; BT.601/709/2020 signal equations. Production seam: scope signal/summary/paint and naming API. Non-test callers: web Lumetri Scopes and MCP scopes endpoint. Remaining stronger coverage: integration/GL/UI tests exercise wiring; these cases own the distinct stated document, numeric or protocol rule at its lowest stable boundary. No test-only seam is needed for KEEP. Risk: behavior regression in incorrect signal histogram/waveform/vector measurement or protocol name.
 
-### KEEP: a single colour lands in exact histogram bins
+### REWRITE: a single colour lands in exact histogram bins
 Original location: `packages/project/test/scopes.test.ts:88`.
 1. Contract from the section source: a single colour lands in exact histogram bins.
 2. Detectable caller failure: Incorrect signal histogram/waveform/vector measurement or protocol name; specifically the named case would return or store the wrong result.
-3. Oracle: expect(h.samples).toBe(n);; expect([h.r[200], h.g[100], h.b[50]]).toEqual([n, n, n]);; expect(h.y[Math.round(y * 255)]).toBe(n);; expect([h.below, h.above]).toEqual([. These fixed values, input-preservation laws or external reference results can disagree with the production result.
+3. Oracle after final review: BT.709 gives Y = 0.2126×200 + 0.7152×100 + 0.0722×50 = 117.65, hence bin 118. Remove expected-bin calculation through rgbToYcbcr.
 4. Observes scope signal/summary/paint and naming API through result data/errors, not collaborator calls.
 5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
 6. Owns the distinct case “a single colour lands in exact histogram bins” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
@@ -1755,29 +1755,29 @@ Change: Keep RGB parade counts for known input bars; remove vectorscope oracle c
 5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
 6. Owns the distinct case “colour bars: parade levels and vectorscope targets for every matrix” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
 
-### KEEP: vectorscope positions of primaries are known
+### REWRITE: vectorscope positions of primaries are known
 Original location: `packages/project/test/scopes.test.ts:154`.
 1. Contract from the section source: vectorscope positions of primaries are known.
 2. Detectable caller failure: Incorrect signal histogram/waveform/vector measurement or protocol name; specifically the named case would return or store the wrong result.
-3. Oracle: expect([pk.x, pk.y]).toEqual([103, 21]);; expect([pk.share, v.samples]).toEqual([1, 64]);; expect(Math.abs(redAngle('bt709') - 102.906)).toBeLessThan(0.01);; expect(Math.abs(redAngle('bt601') - 108.645)).toBeLessThan(0.01);. These fixed values, input-preservation laws or external reference results can disagree with the production result.
+3. Oracle after final review: The independent BT.709 red chroma vector is (−0.114572106, 0.5). Replace expected mean produced by rgbToYcbcr; keep primary positions and existing 1e−6 tolerance.
 4. Observes scope signal/summary/paint and naming API through result data/errors, not collaborator calls.
 5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
 6. Owns the distinct case “vectorscope positions of primaries are known” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
 
-### KEEP: the HLS vectorscope puts hue on the angle and saturation on the radius
+### REWRITE: the HLS vectorscope puts hue on the angle and saturation on the radius
 Original location: `packages/project/test/scopes.test.ts:172`.
 1. Contract from the section source: the HLS vectorscope puts hue on the angle and saturation on the radius.
 2. Detectable caller failure: Incorrect signal histogram/waveform/vector measurement or protocol name; specifically the named case would return or store the wrong result.
-3. Oracle: expect([pk.x, pk.y]).toEqual(want);; expect(Math.abs(pk.magnitude - 100)).toBeLessThan(0.6);; expect(Math.abs(half.magnitude - 50)).toBeLessThan(1);; expect(Math.abs(half.angleDeg - red)).toBeLessThan(0.5);. These fixed values, input-preservation laws or external reference results can disagree with the production result.
+3. Oracle after final review: BT.709 red direction is 102.906186°, HLS primaries add 0/60/120/180/240/300° and full saturation has radius 0.5. Replace private grid-coordinate helper expectations with fixed continuous mean vectors (1e−6, finer than one display cell); retain peak saturation tolerances and the existing half-saturation direction tolerance 0.5°.
 4. Observes scope signal/summary/paint and naming API through result data/errors, not collaborator calls.
 5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
 6. Owns the distinct case “the HLS vectorscope puts hue on the angle and saturation on the radius” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
 
-### KEEP: the YC waveform draws chroma around luma; the YUV parade offsets chroma to mid scale
+### REWRITE: the YC waveform draws chroma around luma; the YUV parade offsets chroma to mid scale
 Original location: `packages/project/test/scopes.test.ts:197`.
 1. Contract from the section source: the YC waveform draws chroma around luma; the YUV parade offsets chroma to mid scale.
 2. Detectable caller failure: Incorrect signal histogram/waveform/vector measurement or protocol name; specifically the named case would return or store the wrong result.
-3. Oracle: expect([rowsIn(trace(w0, 'Y'), 0), rowsIn(trace(w0, 'C'), 0)]).toEqual([[128], [128]]);; expect(rowsIn(trace(w, 'Y'), 2)).toEqual([row(y)]);; expect(rowsIn(trace(w, 'C'), 2)).toEqual([row(y - c), row(y + c)]);; expect(rowsIn(trace(p, n), 0)).toEqual([128]);. These fixed values, input-preservation laws or external reference results can disagree with the production result.
+3. Oracle after final review: BT.709 red is Y=0.2126, Cb=−0.114572106, Cr=0.5: eight-bit luma row 54; clamped YC chroma envelope rows 0 and 185. Replace expected values from rgbToYcbcr and duplicate row transform with these fixed analytical values.
 4. Observes scope signal/summary/paint and naming API through result data/errors, not collaborator calls.
 5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
 6. Owns the distinct case “the YC waveform draws chroma around luma; the YUV parade offsets chroma to mid scale” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
@@ -1791,11 +1791,11 @@ Original location: `packages/project/test/scopes.test.ts:210`.
 5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
 6. Owns the distinct case “decimation keeps whole samples” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
 
-### KEEP: Clamp Signal controls out-of-range values
+### REWRITE: Clamp Signal controls out-of-range values
 Original location: `packages/project/test/scopes.test.ts:228`.
 1. Contract from the section source: Clamp Signal controls out-of-range values.
 2. Detectable caller failure: Incorrect signal histogram/waveform/vector measurement or protocol name; specifically the named case would return or store the wrong result.
-3. Oracle: expect([h.r[255], h.above[0], h.b[0], h.below[2]]).toEqual([8, 8, 8, 8]);; expect([h.r[255], h.above[0], h.b[0], h.below[2]]).toEqual([0, 8, 0, 8]);; expect(rowsIn(trace(waveform(s, 'rgb', on), 'R'), 0)).toEqual([255]);; expect([w.lo, w.hi]).toEqual([-0.1, 1.1]);. These fixed values, input-preservation laws or external reference results can disagree with the production result.
+3. Oracle after final review: The independently documented unclamped −10%..110% range maps −5% blue to eight-bit row round(255×0.05/1.2)=11. Replace expected production rowOf call with 11.
 4. Observes scope signal/summary/paint and naming API through result data/errors, not collaborator calls.
 5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
 6. Owns the distinct case “Clamp Signal controls out-of-range values” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
@@ -2556,20 +2556,20 @@ Original location: `packages/project/test/three-d-commands.test.ts:102`.
 5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
 6. Owns the distinct case “3D properties are keyframable through param.set; registry rows appear only on 3D layers” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
 
-### KEEP: clip.addCamera: a two-node 50 mm camera on top that frames the sequence like the default camera
+### REWRITE: clip.addCamera: a two-node 50 mm camera on top that frames the sequence like the default camera
 Original location: `packages/project/test/three-d-commands.test.ts:150`.
 1. Contract from the section source: clip.addCamera: a two-node 50 mm camera on top that frames the sequence like the default camera.
 2. Detectable caller failure: Wrong camera/light/layer state, prohibited transition or hidden light; specifically the named case would return or store the wrong result.
-3. Oracle: expect(c.kind).toBe('camera');; expect(c.name).toBe('Camera 1');; expect(c.trackId).toBe(h.seq.videoTracks[h.seq.videoTracks.length - 1]!.id);; expect(c.duration).toBeGreaterThanOrEqual(150);. These fixed values, input-preservation laws or external reference results can disagree with the production result.
+3. Oracle after final review: docs/wp-notes/three-d.md §2 specifies 50mm, 36mm film and eye (w/2,h/2,−w×50/36). For 1920×1080 assert evaluated eye (960,540,−8000/3), zoom 8000/3 and centre point-of-interest instead of comparing with defaultCamera, which shares the same zoom helper. Preserve 9-digit tolerance.
 4. Observes 3D transactions and public scene snapshot queries through result data/errors, not collaborator calls.
 5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
 6. Owns the distinct case “clip.addCamera: a two-node 50 mm camera on top that frames the sequence like the default camera” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
 
-### KEEP: Camera Settings: preset, focal length, angle of view, f-stop, lock to zoom, one-node
+### REWRITE: Camera Settings: preset, focal length, angle of view, f-stop, lock to zoom, one-node
 Original location: `packages/project/test/three-d-commands.test.ts:169`.
 1. Contract from the section source: Camera Settings: preset, focal length, angle of view, f-stop, lock to zoom, one-node.
 2. Detectable caller failure: Wrong camera/light/layer state, prohibited transition or hidden light; specifically the named case would return or store the wrong result.
-3. Oracle: expect(focalLengthForZoom(zoom(), { width: 1920, height: 1080 })).toBeCloseTo(35, 6);; expect(focalLengthForZoom(cam.zoom.value, { width: 1920, height: 1080 })).toBeCloseTo(80, 6);; expect(cam.focusDistance.value).toBeCloseTo(cam.zoom.value, 6);; expect(cam.depthOfField).toBe(true);. These fixed values, input-preservation laws or external reference results can disagree with the production result.
+3. Oracle after final review: The documented 36mm horizontal sensor gives zoom 5600/3 for 35mm and 12800/3 for 80mm at width1920. Assert these known outputs directly, rather than passing actual zoom through production focalLengthForZoom (the inverse of the command helper). Preserve 6-digit tolerance.
 4. Observes 3D transactions and public scene snapshot queries through result data/errors, not collaborator calls.
 5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
 6. Owns the distinct case “Camera Settings: preset, focal length, angle of view, f-stop, lock to zoom, one-node” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
@@ -3335,9 +3335,19 @@ Original location: `packages/project/test/vector/ops.test.ts:416`.
 5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
 6. Owns the distinct case “inclusion–exclusion holds for circles touching squares (tangencies are the hard case)” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
 
+## Final analytic-oracle review (recorded before follow-up edits)
+
+Reviewed retained cases against integration cf890a29. Seven cases above changed from KEEP to REWRITE after finding expected values supplied by the production conversion/default helpers. Sources are docs/wp-notes/color-grade.md §Lumetri Scopes and §scopes_read (BT.709 matrix, HLS hue/radius and −10%..110% unclamped range), licenses/ported/color-grade-filmcraft.md (256-bin scope protocol and independent port provenance), and docs/wp-notes/three-d.md §2 (50mm camera, 36mm sensor, eye and zoom formula). Calculations are analytical from those specifications, not captured production output.
+
+Distinct failures: wrong luma/chroma coefficients, hue orientation, chroma envelope, unclamped negative sample placement, default lens/eye and specified focal-length conversion. Remaining stronger tests do not provide these independent numerical oracles; engine/UI tests consume these results. Stable seams remain histogram/vectorscope/waveform results and camera transaction/evaluated camera data. Refactoring helper names, conversion implementation or vector rasterization cannot change the required numerical result. Risks are incorrect analytical transcription; retain existing inputs/precision and check the integrated focused suites.
+
+Integrated caller census: color/scopes.ts rowOf and vectorCell have no internal or non-test consumers, only the rewritten scopes test. Similarly named rowOf functions in timeline layout and Whisper are unrelated modules and remain. Remove these dead test-only production helpers. VECTOR_EXTENT, redAngle, rgbToYcbcr, defaultCamera and focalLengthForZoom have real production callers and remain. No public config, migration, persisted effect ID or security constant is removed. Caption rules are caller input and protocol bounds; they are not a test oracle inferred from implementation declarations.
+
+Validation: changed-file Biome check passed; TypeScript syntax parse passed; git diff --check passed. Focused scopes/three-d-command tests remain under root scheduling; no heavy runtime ran in this follow-up worktree.
+
 ## Completion and validation
 
-Completed pruning: 55 DELETE, 21 REWRITE, 302 KEEP test declarations across all 34 assigned files. The parameterized border family counts once in the ledger. Five files deleted. Test code changes are net negative (final exact line totals are in the commit diff).
+Completed pruning: 55 DELETE, 28 REWRITE, 295 KEEP test declarations across all 34 assigned files. The parameterized border family counts once in the ledger. Five files deleted. Test code changes are net negative (final exact line totals are in the commit diff).
 
 Removed support: catalogue/order/default arrays and their lookup helpers, private shader packing/padding fixture assertions, duplicate LUT fuzz seeds, cached-envelope scale fixture setup, unused imports and empty describe blocks. No snapshot/media fixture became uniquely orphaned.
 

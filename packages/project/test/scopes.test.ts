@@ -13,7 +13,6 @@ import {
 	readScopes,
 	redAngle,
 	rgbToYcbcr,
-	rowOf,
 	type ScopeGrid,
 	type ScopeMatrix,
 	type ScopeSignal,
@@ -25,8 +24,6 @@ import {
 	signalFromFn,
 	signalFromRgba8,
 	traceColumns,
-	VECTOR_EXTENT,
-	vectorCell,
 	vectorPeaks,
 	vectorscopeHls,
 	vectorscopeYuv,
@@ -88,8 +85,8 @@ describe('scopes maths (FilmCraft port)', () => {
 		const n = 64 * 36;
 		expect(h.samples).toBe(n);
 		expect([h.r[200], h.g[100], h.b[50]]).toEqual([n, n, n]);
-		const [y] = rgbToYcbcr(200 / 255, 100 / 255, 50 / 255, 'bt709');
-		expect(h.y[Math.round(y * 255)]).toBe(n);
+		// BT.709: 0.2126×200 + 0.7152×100 + 0.0722×50 = 117.65.
+		expect(h.y[118]).toBe(n);
 		expect([h.below, h.above]).toEqual([
 			[0, 0, 0, 0],
 			[0, 0, 0, 0],
@@ -139,9 +136,9 @@ describe('scopes maths (FilmCraft port)', () => {
 		expect([pk.share, v.samples]).toEqual([1, 64]);
 		expect(Math.abs(redAngle('bt709') - 102.906)).toBeLessThan(0.01);
 		expect(Math.abs(redAngle('bt601') - 108.645)).toBeLessThan(0.01);
-		const [, cb, cr] = rgbToYcbcr(1, 0, 0, 'bt709');
-		expect(Math.abs(v.mean[0] - cb)).toBeLessThan(1e-6);
-		expect(Math.abs(v.mean[1] - cr)).toBeLessThan(1e-6);
+		// BT.709 red: Cb = −0.2126 / (2×0.9278), Cr = 0.5.
+		expect(Math.abs(v.mean[0] + 0.114572106)).toBeLessThan(1e-6);
+		expect(Math.abs(v.mean[1] - 0.5)).toBeLessThan(1e-6);
 		for (const m of MATRICES) {
 			const g = vectorscopeYuv(solid(4, 4, [77, 77, 77]), { ...DEFAULT_SCOPE_PARAMS, matrix: m });
 			expect(g.data[127 * g.size + 127]).toBe(16);
@@ -151,26 +148,25 @@ describe('scopes maths (FilmCraft port)', () => {
 	});
 
 	it('the HLS vectorscope puts hue on the angle and saturation on the radius', () => {
-		const red = redAngle('bt709');
-		const cases: [[number, number, number], number][] = [
-			[[255, 0, 0], 0],
-			[[255, 255, 0], 60],
-			[[0, 255, 0], 120],
-			[[0, 255, 255], 180],
-			[[0, 0, 255], 240],
-			[[255, 0, 255], 300],
+		// BT.709 red direction 102.906186° + HLS hue, at full-saturation radius 0.5.
+		const cases: [number, number, number, number, number][] = [
+			[255, 0, 0, -0.111677681, 0.487368542],
+			[255, 255, 0, -0.477912379, 0.146968563],
+			[0, 255, 0, -0.366234698, -0.340399979],
+			[0, 255, 255, 0.111677681, -0.487368542],
+			[0, 0, 255, 0.477912379, -0.146968563],
+			[255, 0, 255, 0.366234698, 0.340399979],
 		];
-		for (const [rgb, hue] of cases) {
-			const v = vectorscopeHls(solid(4, 4, rgb));
-			const a = ((red + hue) * Math.PI) / 180;
-			const want = vectorCell(0.5 * Math.cos(a), 0.5 * Math.sin(a), 255, VECTOR_EXTENT);
+		for (const [r, g, b, cb, cr] of cases) {
+			const v = vectorscopeHls(solid(4, 4, [r, g, b]));
+			expect(Math.abs(v.mean[0] - cb)).toBeLessThan(1e-6);
+			expect(Math.abs(v.mean[1] - cr)).toBeLessThan(1e-6);
 			const pk = vectorPeaks(v, 1)[0]!;
-			expect([pk.x, pk.y]).toEqual(want);
 			expect(Math.abs(pk.magnitude - 100)).toBeLessThan(0.6);
 		}
 		const half = vectorPeaks(vectorscopeHls(solid(4, 4, [191, 64, 64])), 1)[0]!;
 		expect(Math.abs(half.magnitude - 50)).toBeLessThan(1);
-		expect(Math.abs(half.angleDeg - red)).toBeLessThan(0.5);
+		expect(Math.abs(half.angleDeg - 102.906186)).toBeLessThan(0.5);
 		const grey = vectorscopeHls(solid(4, 4, [90, 90, 90]));
 		expect(grey.data[127 * grey.size + 127]).toBe(16);
 	});
@@ -179,11 +175,9 @@ describe('scopes maths (FilmCraft port)', () => {
 		const w0 = waveform(solid(4, 4, [128, 128, 128]), 'yc');
 		expect([rowsIn(trace(w0, 'Y'), 0), rowsIn(trace(w0, 'C'), 0)]).toEqual([[128], [128]]);
 		const w = waveform(solid(4, 4, [255, 0, 0]), 'yc');
-		const [y, cb, cr] = rgbToYcbcr(1, 0, 0, 'bt709');
-		const c = Math.hypot(cb, cr);
-		const row = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 255);
-		expect(rowsIn(trace(w, 'Y'), 2)).toEqual([row(y)]);
-		expect(rowsIn(trace(w, 'C'), 2)).toEqual([row(y - c), row(y + c)]);
+		// BT.709 red: Y=0.2126, C=sqrt(0.114572106² + 0.5²).
+		expect(rowsIn(trace(w, 'Y'), 2)).toEqual([54]);
+		expect(rowsIn(trace(w, 'C'), 2)).toEqual([0, 185]);
 		const p = parade(solid(4, 4, [128, 128, 128]), 'yuv');
 		for (const n of ['Y', 'Cb', 'Cr']) expect(rowsIn(trace(p, n), 0)).toEqual([128]);
 	});
@@ -218,7 +212,7 @@ describe('scopes maths (FilmCraft port)', () => {
 		const w = waveform(s, 'rgb', off);
 		expect([w.lo, w.hi]).toEqual([-0.1, 1.1]);
 		expect(rowsIn(trace(w, 'R'), 0)).toEqual([]);
-		expect(rowsIn(trace(w, 'B'), 0)).toEqual([rowOf(-0.05, -0.1, 1.1, 256)]);
+		expect(rowsIn(trace(w, 'B'), 0)).toEqual([11]);
 	});
 
 	it('NaN (transparent) samples and empty signals do not throw', () => {
