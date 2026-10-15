@@ -227,7 +227,7 @@ For each retained row, B1 is the independent requirement; B2 is the concrete fai
 - Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
 - Validation: `pnpm exec vitest run apps/web/test/clip-extensions.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
 
-## 21. KEEP: `apps/web/test/clip-extensions.test.tsx` — renders a %s clip with a null effects extension
+## 21. REWRITE: `apps/web/test/clip-extensions.test.tsx` — renders a %s clip with a null effects extension
 
 - Failure detected: renders a %s clip with a null effects extension. A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
 - Independent contract / B1: AGENTS §0 conservative newer-kind handling; project extension schema.
@@ -237,6 +237,17 @@ For each retained row, B1 is the independent requirement; B2 is the concrete fai
 - B5: Refactoring internals while preserving nudgeSelection and ClipView with parsed extension clips outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
 - Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
 - Validation: `pnpm exec vitest run apps/web/test/clip-extensions.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+
+Integration follow-up, recorded before editing: the baseline setup reads `TransactionResult.refs`
+without narrowing its failure variant, causing two TS2339 errors. Replace the setup's success
+assertion with an explicit failure throw that exposes transaction errors and narrows the same
+success condition; no production behavior or fixture inputs change. The render case also checks
+absence of the product tooltip text `Effects applied`. That wording is not independently specified
+and adds no crash protection beyond rendering the authored clip name with the opaque extension
+preserved. Delete only that copy assertion and its unused query binding. The B1–B6 rationale above
+continues to protect the credible null-extension render failure at the lowest UI seam. No private
+production seam or external caller is involved; risk is low. Run the listed focused tests and web
+typecheck, followed by the browser-test typecheck. Original census changes by one KEEP to REWRITE.
 
 ## 22. KEEP: `apps/web/test/color-scopes.test.ts` — reads back at most 256 px wide, keeping the aspect
 
@@ -2598,7 +2609,7 @@ All 34 assigned files were rescanned against the integrated retained versions. T
 
 ## Validation results
 
-- Cleanup implemented: 23 deleted, 46 rewritten and 167 retained test declarations/families; the ledger lists the original names so every prior test is traceable.
+- Cleanup implemented: 23 deleted, 47 rewritten and 166 retained test declarations/families; the ledger lists the original names so every prior test is traceable.
 - `pnpm install --frozen-lockfile --offline` completed. It reported expected missing MCP executable links because ignored MCP build outputs are absent.
 - Targeted Biome check of edited TypeScript files and `git diff --check` passed; final staged diff reviewed.
 - During the independent-oracle follow-up, a pnpm launcher run crashed in Node/V8 cached-bytecode deserialization before Biome ran. Running the installed native Biome binary bypassed the launcher; its precision warning on one analytic literal was corrected to the representable value, then the full changed-file static check passed. No runtime test result is inferred from this check.
