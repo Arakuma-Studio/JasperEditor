@@ -163,6 +163,7 @@ import {
 	VisionModelsResponseSchema,
 } from './roto.ts';
 import { SceneDetectRequestSchema } from './scenes.ts';
+import { SoundCuesRequestSchema, SoundCuesResponseSchema } from './sound-design.ts';
 import {
 	RegisterSoundRequestSchema,
 	RegisterSoundResponseSchema,
@@ -1070,6 +1071,16 @@ export const ROUTES = {
 		path: '/api/sounds/roots',
 		body: SoundRootsPutRequestSchema,
 		response: SoundRootsPutResponseSchema,
+	},
+	/**
+	 * Sound design (spec 12 §2.8): cue suggestions derived from the edit (`deriveCues` with the engine's template
+	 * registry), for an inline envelope or a project's live document. Nothing is stored.
+	 */
+	soundDesignCues: {
+		method: 'POST',
+		path: '/api/sound-design/cues',
+		body: SoundCuesRequestSchema,
+		response: SoundCuesResponseSchema,
 	},
 } as const satisfies Record<string, RouteDef>;
 

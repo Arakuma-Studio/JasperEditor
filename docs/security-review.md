@@ -664,6 +664,12 @@ them, but it was reviewed by its author, not by this review.
   `apps/engine/test/sounds-routes.test.ts`, `sounds-unit.test.ts`, and the generic route fuzzing of
   `fuzz-http.test.ts`. *Residual:* like the Media Browser, an authenticated client of a local engine can have any
   readable folder indexed (the editor itself, or an agent the user approved).
+- **Sound design cues** (spec 12 WP2.3, `apps/engine/src/routes/sound-design.ts`; `POST /api/sound-design/cues`):
+  read-only (Open in the AGT-3 sense: nothing is written). The body is a strict zod object: an inline envelope
+  (loaded with `loadProject`, a failure is `400 VALIDATION_FAILED`) xor a project id matched against
+  `[A-Za-z0-9_-]{1,128}` and read through the agent service like `doc.get`; option ranges, counts (`maxCues` ≤
+  10 000) and the returned curves (≤ 20 000 frames per clip) are bounded; `deriveCues` never throws (each source in
+  its own try/catch, sampling capped). Tests: `apps/engine/test/sound-design-cues.test.ts` and `fuzz-http.test.ts`.
 - **Editing leases**: a reloaded tab takes over the lease its previous page held (`takeOver`, which any
   authenticated client could already send); nothing changed on the engine.
 

@@ -44,6 +44,7 @@ import {
 	type RouteName,
 	type RouteResponse,
 	type SceneDetectRequest,
+	type SoundCuesRequest,
 	type SoundIndexRequest,
 	type SoundRootsPutRequest,
 	type SoundSearchRequest,
@@ -363,6 +364,10 @@ export class EngineClient {
 	/** Replaces the user sound folders (local engines); an agent adding, removing or relicensing one is asked about. */
 	putSoundRoots(req: SoundRootsPutRequest) {
 		return this.call('soundRootsPut', { body: req });
+	}
+	/** Cue suggestions derived from the edit (spec 12 §2.8; `deriveCues` with the engine's template registry). */
+	soundDesignCues(req: SoundCuesRequest, signal?: AbortSignal) {
+		return this.call('soundDesignCues', { body: req, ...(signal ? { signal } : {}) });
 	}
 	registerMedia(req: MediaRegisterRequest) {
 		return this.call('mediaRegister', { body: req });

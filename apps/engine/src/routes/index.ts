@@ -28,6 +28,7 @@ import previewsRoutes from './previews.ts';
 import processingRoutes from './processing.ts';
 import projectsRoutes from './projects.ts';
 import rotoRoutes from './roto.ts';
+import soundDesignRoutes from './sound-design.ts';
 import soundRoutes from './sounds.ts';
 import speechRoutes from './speech.ts';
 import stillsRoutes from './stills.ts';
@@ -79,6 +80,8 @@ const ROUTE_PLUGINS = [
 	browseRoutes,
 	// The sound library registers sounds through the media service.
 	soundRoutes,
+	// Cue suggestions read the live document through the agent service.
+	soundDesignRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
