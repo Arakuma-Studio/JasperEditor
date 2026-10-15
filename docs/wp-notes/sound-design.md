@@ -1243,6 +1243,176 @@ issue, the command applies and keeps `source`, a misspelt key is still refused, 
 - Kenney's site may move the archives (the URLs carry a content hash); `fetch` then fails on the sha256, and the pinned
   hashes in `starter-selection.json` / the manifest tell which archive the kit was made from.
 
+### WP1.3 MCP tools
+
+Scope: spec 12 §2.10 (Phase 1 tools only), P1-R6 and the MCP part of P1-R8. Files: `apps/mcp/src/tools/sound.ts`
+(10 tools and `SOUND_GUIDE`, registered in `server.ts` and part of `FULL_GUIDE` = the server instructions, the
+`edit-video` prompt and the `jasper://guide` resource), `apps/mcp/src/sound-sheet.ts` (the pictures),
+`apps/mcp/src/pixel-font.ts` (a 5×7 label font, original work), README tool list (323 → 333; also `docs/gaps.md`,
+`docs/parity.md`), tests `apps/mcp/test/sound.test.ts` (real engine) and `apps/mcp/test/sound-sheet.test.ts` (pure).
+One ranking fix in `packages/project/src/sound/rank.ts` (+ `RankParts.titleMatch`, `SoundRankPartsSchema.titleMatch`
+optional in `packages/api`), regression test in `packages/project/test/sound-rank.test.ts`.
+
+#### Tools
+
+| Tool | Annotations | What |
+|---|---|---|
+| `sound_library_status` | READ_ONLY | `soundLibraryStatus` + `getSoundRoots` + the facets of a `license: any` search: sounds, `bySource`, `byType`, `byFamily`, `byLicense` (licence classes), starter kit status, packs, folders (`rootId`, path, label, licence, enabled), `foldersAllowed`, synth, `indexedAt`, `needsIndex`, `recovered`, the running index job; a note when the library is empty. |
+| `search_sounds` | READ_ONLY | `searchSounds` with `q`, `types`, `family`, `visualKind`, `windowSec`, `length`/`tone`/`attack`/`weight`/`texture`, `license` (default commercial-safe), `sources`, `similarTo`, `limit` 1…24 (default 12), `offset`. Rows: `rank, soundId, title, types, durationSec, peakSec, riseMs, decayMs` (null when it does not decay), `centroidHz, below150Share, flatness, pitchMidi, judge{ok,score,reasons}, license, author, credit` (the entry's attribution line), `creditRequired, source{type}, score`; `facets`, `total`, `librarySize`. `contactSheet: true` (+ `columns`, default 3) adds ONE PNG and `contactSheet.cells`. |
+| `get_sound` | READ_ONLY | The full `SoundEntry` (every descriptor, judge, licence, provenance) + `defaultAlign` + `creditRequired`, and a PNG (`width` 320…1600, default 960; height 0.42 × width): waveform over spectrogram, time axis in ms (s past 2 s), 100 Hz / 1 kHz / 10 kHz labels, onset (green dashed), peak (red), decay end (yellow dashed), legend. |
+| `view_sounds` | READ_ONLY | `soundIds` 1…24 (duplicates dropped, order kept) → the same contact sheet + cells JSON. |
+| `import_sounds` | EDIT | `projectId`, `soundIds` 1…50: `registerSound` each (all or nothing: one failure fails the call before any transaction), then ONE transaction: `bin.create "Sound Effects"` when the project has no root bin of that name, one `media.register` per new file (name = the sound's title, `asset.library` = the returned provenance, `binId`), `media.setLibraryInfo` for a project copy that lacks provenance. Sounds the live document already has (the engine's `existingMediaId`, else the same fingerprint, not derived) are reused (`reused: true`); the same file twice in one call is registered once. Applied with `expectedRevision`. Returns `historyLabel` ("Import Sound <title>" / "Import N Sounds"), the transaction body and `sounds[{soundId,title,mediaId,reused}]`. |
+| `insert_sound` | EDIT | See below. |
+| `list_sound_credits` | READ_ONLY | `soundCredits(doc, sequenceId?)` on the live document (whole project by default; a sequence with its nests); `format` md (default) / txt / csv → `rows`, `text`, `warnings`, `count`, `attributionRequired`. Unknown `sequenceId` → `E_NOT_FOUND`. |
+| `add_sound_folder` | EDIT | `PUT /api/sounds/roots` with the current list + `{path, label?, license?, author?, attributionTemplate?}`; `wait` waits for the index job. The engine route shows the approval card (WP1.2); the tool sends a progress notification every 5 s while it waits and passes `E_APPROVAL_DENIED` / `E_APPROVAL_TIMEOUT` through with their hints. |
+| `remove_sound_folder` | DESTRUCTIVE_IDEMPOTENT | By `rootId` or `path`; unknown → `E_NOT_FOUND` listing the folders; approval card as above; returns `removedSounds`. |
+| `rescan_sound_library` | EDIT_IDEMPOTENT | `indexSounds({full?})`; `wait` (+ `timeoutSeconds`, default 600) waits with progress. Cancelling the MCP request does **not** cancel the job (it is shared and deduplicated; `cancel_job` does). |
+
+Sound-route errors (`SOUND_NOT_FOUND`, `SOUND_FILE_MISSING`, `SOUND_CHANGED`, `LOCAL_MODE_ONLY`, `BAD_PATH`,
+`NOT_A_FOLDER`, `DUPLICATE_FOLDER`, `PERMISSION_DENIED`, …) come back with a hint saying what to do; arguments are strict
+like every tool (unknown keys `E_UNKNOWN_ARGUMENT` with the accepted keys and a typo suggestion; sound ids must match
+`snd_` + 16 hex digits before any engine call).
+
+**`insert_sound`** (`projectId, soundId, at, align?, track?, gainDb?, sequenceId?`), the agent equivalent of the
+panel's Insert (the same rules as the web package's `apps/web/src/sound/insert.ts`, written independently in parallel):
+
+- `at`: a frame, `{seconds}`, `{frames}`, a timecode, or `"playhead"` (the open editor's, when it shows that sequence;
+  else `E_NO_SESSION`).
+- `align`: `auto` (default) = `SOUND_TYPES[first known type].defaultAlign` (hit/boom/whoosh… peak, riser/reverse end,
+  ui start), or `peak` / `start` / `end`.
+- Placement = `peakAlignedStart` with the sequence's rational rate, the sound's `peakSec` / `onsetSec` / `headQuietSec`
+  and the **media's** duration (the probe of the registered file), `clampStart: true` (a sound that would start before
+  frame 0 starts at 0 with its head trimmed; `trimmedHeadSec` and a warning say so), sub-frame on: the In point takes the
+  rest when the quiet head allows, so the aligned point is exact to the flick; otherwise it plays `errorFlicks` (< 1 frame)
+  late. The clip covers `[In, end of media)` as `clip.place` computes it.
+- `track: "auto"` (default): the first free unlocked audio track named "SFX…" over the clip's span, else the first free
+  unlocked audio track, else a new audio track "SFX n" (`track.add` in the same transaction). An explicit track (`"A3"`, id
+  or name) must be a free unlocked audio track there: `E_OVERLAP` (with the blocking clips), `E_TRACK_LOCKED`,
+  `E_TRACK_KIND` (a video track) or `E_NOT_FOUND`. It never overwrites: the free check is made on the document read with
+  its revision, and the transaction carries `expectedRevision` (a concurrent edit → read again and retry once).
+- ONE transaction "Add Sound <title>": [bin + `media.register` | `media.setLibraryInfo`] + [`track.add`] + `clip.place`
+  (`video: false`, `mode: overwrite` on the verified-free span) + `essentialSound.setType sfx` + [`clip.update {gainDb}`].
+- Returns `clipId, mediaId, track` (label), `trackCreated, start/end {frame, timecode}, align, alignedFrame` (+ `peakFrame`
+  for peak), `sourceInFlicks, alignFlicks, errorFlicks, errorMs`, `historyLabel`, `credit` when the licence needs one, and
+  notes for synth sounds (a fallback), credit-requiring and not-commercial-safe licences.
+
+**Pictures** (`sound-sheet.ts`, pure, PNG via `png.ts`): each cell 360 px wide: header with `#n snd_…` and the title at
+2× scale, then `types length pk <ms> dec <ms> <centroid>Hz` and the judge (green ok + score, orange reasons) at 1×; then a
+120 px plot: the engine's 64-band log spectrogram (20 Hz at the bottom; −96…0 dBFS on a dark→violet→orange→pale-yellow
+ramp) over the whole covered length, the waveform envelope (max |sample| per pixel column from the 10 ms peaks,
+**normalised to the sound's own maximum**, mirrored, cyan), the peak as a 2 px red line at `peakSec`, and the end of the
+decay (peak + `decayMs`, −20 dB) as a dashed yellow line (none when `decays` is false). Cells are laid out with
+`composeGrid` (3 columns by default, ≤ 6), 6 px gaps. Long files: the visual data covers the first 30 s (`shownSec` in the
+cell JSON; the detail picture prints "first 30s shown"). Damaged visual data is bounded and never throws (fast-check).
+The label font is a 5×7 bitmap drawn for this file (printable ASCII; accents folded, other characters "?"): it is source
+code, original work, so it needs no asset sidecar.
+
+#### Ranking fix (requested by WP1.2b)
+
+`q=punch` ranked "Crunchy impact" above "Punch": "punch" is a synonym of `hit`, and a type match scored the same text
+score (1) as an exact title word, so the duration fit decided. Now `rankSounds` sorts **real recordings first, then the
+share of query words a title word matches exactly or by prefix (≥ 3 letters) — `parts.titleMatch` — then the score, then
+the id**. A title match therefore always outranks a match through a type or synonym (the title tier is a tier, like the
+source tier, not a weight), while the score still orders sounds within a tier. Without a query `titleMatch` is null and
+nothing changes. Regression test (failed before the fix: "Punch" came last): `sound-rank.test.ts` "a title word (exact or
+prefix) outranks a match through a type synonym (starter-kit regression)" with the kit's measured descriptors of "Punch",
+"Crunchy impact" and "Heavy punch thump"; it also checks a title prefix ("Whooshing drone", a riser with a bad judge and a
+9 s length) beating a better-scoring whoosh-typed sound, and `titleMatch` 0.5 for a two-word query.
+
+#### Decisions
+
+- **Contact sheets are drawn by jasper-mcp** from `getSoundVisual` (engine-side drawing would need a PNG encoder and
+  font in the engine; the MCP package already has `png.ts`). The waveform is normalised per sound so quiet sounds keep a
+  readable shape; loudness is in the numbers (`get_sound`: integrated / max momentary LUFS, true peak), not the picture.
+  Labels use a 5×7 bitmap font drawn for this purpose (`pixel-font.ts`) instead of a third-party font: no asset, no
+  licence question. Three columns by default keep 2× ids readable; 24 cells max (`MAX_SHEET`) keep a sheet ≤ 6 × 8 cells
+  (≈ 2.2 k × 1.5 k px at 6 columns).
+- **search_sounds caps `limit` at 24** (the spec's contact-sheet budget), with `offset` for paging; facets still count
+  the whole match.
+- **insert_sound uses `clampStart: true`** (like the panel): near frame 0 the head is trimmed and reported rather than
+  refused; the aligned point stays exact.
+- **The default track rule** mirrors the panel's minus the editor-only parts (drop target, targeted tracks): SFX-named
+  free track → first free audio track → new "SFX n". Free = unlocked and no clip overlapping the clip's span.
+- **import_sounds is all or nothing** (every sound registered before the transaction). A failure after some
+  registrations leaves their managed copies in the engine's media store unused by the project (the same as an
+  abandoned import; the cache cleaner treats them like any unreferenced media).
+- **rescan_sound_library does not cancel the job when the request is cancelled**: the index job is shared (deduplicated)
+  with the editor and other agents.
+- **Folder tools send the complete list** (`PUT /api/sounds/roots` semantics), reading it first; a concurrent change by
+  the user between the read and the write is overwritten by this list (the window is one request; the engine has no
+  revision on roots).
+- **Approval waits** report progress every 5 s ("Waiting for the user to approve …") like `transact`.
+
+#### Verified (measured, this branch; shared host, 16 cores, load average 55–80)
+
+- `pnpm vitest run apps/mcp/test/sound.test.ts --maxWorkers=1`: **10 passed** (≈ 2 min). A real engine
+  (`apps/engine/src/cli.ts`, temp appdir, token + editor key) indexes 12 files copied from the bundled starter kit (their
+  manifest entries) + 19 Jasper Synth sounds, and jasper-mcp over stdio drives it:
+  rescan with `wait` (progress notifications received; 31 sounds) and without (`wait_for_job`); status (bySource,
+  byLicense cc0 12 / jasper 19, byType, folders, needsIndex false); search rows and their fields, **`q=punch` puts both
+  title matches ("Punch", "Heavy punch thump") before "Crunchy impact"**, `types=hit` → 3 starter then the synth hit,
+  strict arguments (`query` → `E_UNKNOWN_ARGUMENT` with the accepted keys; `limt` → "did you mean "limt" → "limit"";
+  `limit: 25`, a malformed id → `E_INVALID_ARGUMENT`; an unknown id → `SOUND_NOT_FOUND`); the contact sheet of 5 results:
+  cells JSON in result order, 3 columns × 2 rows, **the PNG decodes to 1104 × the reported height**; get_sound: every
+  descriptor, `defaultAlign` peak (hit) / end (riser), PNG 800 × 336; view_sounds of 7 ids in 2 columns (order kept, cell
+  3 at row 2 column 1, 4 rows, PNG 738 px wide), 25 ids refused; import_sounds of 2 sounds: provenance on both media
+  (soundId, CC0, starter), the "Sound Effects" bin, **revision +1 (one transaction, `historyLabel` "Import 2
+  Sounds")**, the same sound again `reused: true` with the same mediaId, an unknown id in a batch fails it (nothing
+  imported), `soundIds: []` refused; insert_sound: **for every insert the aligned point plays at `start·F + (alignFlicks −
+  In) = cue·F + errorFlicks` (± 2 flicks) with 0 ≤ errorFlicks < 1 frame**, `alignFlicks` = the entry's `peakSec`, the clip
+  tagged sfx, the bin created; four inserts at the same frame go to A1, A2, A3 and a new "SFX 1" (A4), a fifth to a new
+  "SFX 2" (A5), four clips start at the same frame (nothing overwritten); at 10 s the free "SFX 1" is preferred; an
+  explicit busy track → `E_OVERLAP`, a video track → `E_TRACK_KIND`; a riser with `track: A2, gainDb: −6` aligns its end
+  (`align: end`, the clip ends at frame 599–600) and has gain −6; at frame 2 a 0.23 s-peak sound starts at 0 with
+  `trimmedHeadSec` > 0 and still lands exactly; `at: "playhead"` without an editor → `E_NO_SESSION`; one more insert moves
+  the revision by exactly 1; credits: empty project 0 rows, then one row "Punch" CC0 used by one clip, md / txt (`"Punch"
+  by Kenney…`) / csv (header), unknown sequence `E_NOT_FOUND`, `format: pdf` refused; folders: **no editor window →
+  `E_APPROVAL_DENIED` with the "do not retry" hint; a stand-in editor window (the engine's `/agent` WebSocket with the
+  editor cookie, a minimal RFC 6455 client in the test) gets the card "Add a sound folder" naming the path and
+  CC-BY-4.0; denied → `E_APPROVAL_DENIED` and no folder; approved → the folder, its index job waited (1 added)**; the
+  folder's WAV is found as a CC-BY hit with a generated credit naming the author; inserted into a project, the credits
+  report 1 attribution-required row with CC-BY-4.0 in the text; remove: unknown id `E_NOT_FOUND`, the card "Remove a
+  sound folder" approved → `removedSounds: 1`, no folder sounds left. No network.
+- `pnpm vitest run apps/mcp/test/sound-sheet.test.ts`: **6 passed**: font folding and widths; a cell 360 × 182 with the red
+  peak line exactly at x = 2 + round(0.25 × 356) and not 20 px before it, the dashed decay line on its column (absent when
+  the sound does not decay); detail 960 × 403; grid size; **a 150-run fast-check of hostile visual data** (bad base64,
+  counts up to 10 M, NaN/∞ durations, negative peaks): never throws, allocations capped (≤ 60 000 peaks, ≤ 6000 × 256
+  cells).
+- `pnpm vitest run packages/project/test/sound-rank.test.ts`: 14 passed; the new regression test failed before the fix
+  ("expected 'snd_punch' to be 'snd_crunchy'": Punch was last) and passes after.
+- `pnpm vitest run apps/mcp/test/readme-tools.test.ts apps/mcp/test/conventions.test.ts apps/mcp/test/sound-examples.test.ts`:
+  13 passed (README lists exactly the 333 tools; every tool has the four hints set consistently and strict schemas).
+- **Run for real** (dev engine `JASPER_APPDIR=.stage JASPER_DEV=1 JASPER_SOUND_SYNTH_VARIANTS=1 tsx apps/engine/src/cli.ts
+  --port 49002`, the **full** 60-sound starter kit + 19 synth; a scratch MCP client script over stdio): status 79 sounds
+  (60 starter, 19 synth; byType hit 8, riser 4, key 1…); a 24-cell contact sheet of hits, booms, thumps, risers, whooshes
+  and UI sounds (1470 × 1134 px, 1.1 s) **looked at**: ids, titles and numbers are legible at 1:1; the red peak line sits on
+  the transient of every one-shot (Heavy metal hit at 2 ms, Punch 41 ms, Deep low boom 104 ms on its first big spike,
+  Low boom 83 ms, Toggle 2 ms) and at the end of the risers (Thruster riser 2946 ms, Computer hum riser 2967 ms); the
+  whooshes peak in the middle of their swell; the dashed decay lines follow the measured decays. `get_sound` pictures of
+  "Heavy punch thump" (peak 25 ms on the waveform maximum, onset 9 ms) and "Thruster riser" (peak at the end, onset 2.08 s)
+  looked right. Then `insert_sound` "Heavy punch thump" at 2 s (A1, start 2 s, `errorMs` 24.5: its quiet head is 1.4 ms,
+  shorter than its 24.5 ms peak offset, so it plays that late — WP1.1a's rule) and "Thruster riser" at 2 s (align end:
+  clip 0–60 on A1, In = 1 s, error 0), `start_export` (native, 79 frames) → `/tmp/…mp4`, decoded with ffmpeg and searched
+  with the descriptors' own 2 ms RMS / 0.5 ms hop: **the loudest point after 1.95 s is at 2.0245 s (= 2 s + the reported
+  24.5 ms) and the riser's at 1.9455 s (= 2 s − its 54.5 ms tail after the peak)**: the export plays the sounds where
+  insert_sound said.
+- `pnpm --filter @jasper/mcp typecheck`, `pnpm lint`: pass.
+
+#### Limits and notes for the next packages
+
+- `insert_sound` is frame-based on the sequence and exact only when the sound's quiet head absorbs the sub-frame rest;
+  otherwise the aligned point is late by `errorFlicks` (< 1 frame; measured 24.5 ms at 30 fps for "Heavy punch thump").
+  Kenney's one-shots mostly start at once (quiet heads of 0–2 ms), so many land up to a frame late. Phase 2's
+  `soundDesign.place` should decide whether to pad (e.g. a leading-silence render) or accept it.
+- The clip covers `[In, end of media)` rounded down to whole frames (what `clip.place` makes), so up to one frame of the
+  tail can be cut, and an end-aligned sound whose head is not quiet loses up to a frame of its end.
+- `insert_sound` does not set `AudioClip.sfx` (that schema is Phase 2); it tags Essential Sound ▸ SFX only.
+- Undo was verified as "one transaction" (revision +1, one History label); `history.undo` itself needs an editor
+  session, which the headless test cannot open (the web package covers undo in the editor).
+- Pictures cover what the engine's visual data covers (first 30 s); the 10 ms peaks make sounds under ≈ 50 ms blocky.
+- No `list_sound_packs` / `install_sound_pack` / `remove_sound_pack` (P6), no cue / proposal tools (P2–P3);
+  `SOUND_GUIDE` will grow with them.
+
 ## Phase 2: cues and placement
 
 ## Phase 3: proposals and review
