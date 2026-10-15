@@ -16,6 +16,10 @@ imported by app code): golden frames (`@jasper/testkit/golden`), PNG and RGBA he
 (`/fuzz`), ffmpeg/ffprobe oracles (`/oracle`) and headless WebGL (`/browser`). Its own tests are in
 `packages/testkit/test`.
 
+The remote-upload regression (`apps/engine/test/processing-remote-upload.test.ts`)
+requires `rsync` and a POSIX shell. It transfers real bytes through the local SSH
+protocol fixture; no remote host or SSH credentials are needed.
+
 ## 1. Kinds of tests
 
 | Kind | Where | Notes |

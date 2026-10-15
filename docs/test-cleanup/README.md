@@ -19,10 +19,10 @@ owner. Parameterized cases sharing one contract are recorded as a family.
 | Area | Records |
 | --- | --- |
 | Project model, editing, effects and transitions | [1](project1.md), [2](project2.md), [3](project3.md), [4](project4.md) |
-| Engine, media, persistence and export | [1](engine1.md), [2](engine2.md), [3](engine3.md), [follow-up](engine3-followup.md) |
+| Engine, media, persistence and export | [1](engine1.md), [2](engine2.md), [3](engine3.md), [follow-up](engine3-followup.md), [camera metric correction](camera-metric-correction.md), [remote upload regression](engine1-ssh.md) |
 | Web editor | [1](web1.md), [2](web2.md), [3](web3.md) |
 | Shared rendering | [1](compositions1.md), [2](compositions2.md) |
-| Browser workflows | [1](e2e1.md), [2](e2e2.md) |
+| Browser workflows | [1](e2e1.md), [2](e2e2.md), [motion-graphics harness repair](mg-bundler-repair.md) |
 | MCP and CLI | [MCP](mcp.md) |
 | Audio, motion and motion-graphics templates | [Audio and motion](audio.md) |
 | Interchange and expressions | [Formats](formats.md) |
@@ -68,6 +68,21 @@ processors modified channels beyond their configured count. The original and
 expanded mono/stereo cases failed before the owner fix; the expanded case then
 passed. Processing loops and stereo branches now respect the configured count,
 including the Studio Reverb delay network. The full evidence is in [audio.md](audio.md).
+
+Two further retained failures exposed owner bugs. Remote rsync uploads skipped
+symlinked library sources and then failed renaming a missing partial file; uploads
+now copy the selected file's referent bytes, matching the SCP path. Composition
+selection failures escaped the render service's typed error mapping; SDK setup
+failures now preserve timeout and cancellation codes. Three focused regressions
+failed before these fixes and passed afterward. They are recorded separately from
+the original-test census; no retry or timeout budget was increased.
+
+Integration also corrected two cleanup mistakes: the motion-graphics browser
+protocol still needs the bundler's named-global option, and the camera accuracy
+oracle must preserve best-fit alignment rather than use endpoint alignment. The
+required bundler option is restored; the camera oracle uses an independent
+straight-line derivation with the original tolerances and full trajectory span.
+Neither correction restores unused production hooks.
 
 The unused MCP testkit dependency was removed. The lockfile and third-party notices
 were regenerated with the owning tools. Lockfile generation also normalized
