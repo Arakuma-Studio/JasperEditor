@@ -40,6 +40,8 @@ The independent [cross-review](cross-review.md) records the reconciled inventory
 and 15 resolved findings, including retained regressions and false-positive tests.
 The final [oracle review](oracle-review.md) records the follow-up source audit,
 cross-owner transfers and resolved provenance/counting corrections.
+The [GL integration review](gl-review.md) independently checks the later fingerprint
+and named shader contracts, including preserved inputs, render order and tolerances.
 
 The inventory covers 4,451 original named TypeScript/JavaScript declarations in
 627 assigned paths, plus native/desktop families and 22 executable performance
@@ -82,9 +84,20 @@ Validation remains in progress. Confirmed results so far:
   13 tests passed, no failures.
 - `pnpm ffmpeg:check`: all inspected FFmpeg artifacts passed LGPL checks.
 - `pnpm notices --check`: generated notices are current.
-- Isolated audio effect min/max robustness: 60 cases passed. The first integrated
-  run subsequently exceeded the watchdog for the multiband compressor's combined
-  min/max case; it is not being reported as a clean integrated run.
+- `pnpm i18n:check`: Spanish covers all 8,615 generated strings.
+- `pnpm build` and `pnpm --filter @jasper/engine build:remotion`: passed. The browser
+  E2E preparation is rebuilding its required outputs after later source changes.
+- Final sync/remix/registry recheck: 3 files and 149 tests passed with required
+  oracles and two workers. Earlier aggregate audio watchdog failures are not passes;
+  this result verifies the final per-contract cases.
+- `pnpm perf --sections micro --label test-cleanup-integration`: passed all six
+  scripts, including the scale benchmark. AMD Ryzen 7 7700, 16 logical CPUs,
+  Node 20.20.2; starting load averages 154.9/147.2/145.5. Reports are in
+  `test-results/performance/`; no comparable before/after speedup is claimed.
+
+The existing [baseline CI run](https://github.com/JasperRaccoon/JasperEditor/actions/runs/38635051386)
+never started a step: its annotation says an Actions budget prevents further use.
+Local verification remains necessary; this infrastructure refusal is not a test pass.
 
 Full validation results and integrated change measurements will be recorded here
 after the remaining gates. Per-area formatting checks and interrupted baseline
