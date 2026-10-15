@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Procedural pictures for the documentation contact sheets (docs/screenshots/fx, docs/screenshots/transitions): no
 // photographs, only ffmpeg lavfi sources (gradients drawn with geq, mandelbrot, testsrc2, boxes), so every sheet
-// rendered over them is original work (AGENTS.md §3, ATTRIBUTION.md). Used by
-// packages/compositions/test/docs-gallery.e2e.test.ts and as SBS_SCENE / PSDG_PHOTO of the family tests.
+// rendered over them is original work (AGENTS.md §3, ATTRIBUTION.md). Retained as the
+// reproducible source for the published documentation pictures.
 //
 //   node scripts/docs/gallery-scenes.mjs <dir>   writes <dir>/scene.png (A) and <dir>/scene-b.png (B), 640×360
 import { execFileSync } from 'node:child_process';
@@ -15,7 +15,7 @@ const H = 360;
 const ff = (args) => execFileSync(process.env.JASPER_FFMPEG ?? 'ffmpeg', ['-v', 'error', '-y', ...args]);
 
 /** A: a dusk sky, a sun, a fractal ridge, a green screen card, a warm oval, a test-pattern inset and point lights. */
-export function sceneA(file) {
+function sceneA(file) {
 	const sky = `color=c=black:s=${W}x${H},format=rgb24,geq=r='40+200*Y/${H}':g='60+110*Y/${H}':b='150-90*Y/${H}'`;
 	const ridge = `mandelbrot=s=${W}x${H}:start_x=-0.745:start_y=0.11:start_scale=0.06:end_pts=1:maxiter=300,format=rgb24`;
 	const lights = Array.from({ length: 24 }, (_, i) => {
@@ -42,7 +42,7 @@ export function sceneA(file) {
 }
 
 /** B: a different picture for the incoming side of transitions — a cool fractal under bars. */
-export function sceneB(file) {
+function sceneB(file) {
 	ff([
 		...[
 			'-f',

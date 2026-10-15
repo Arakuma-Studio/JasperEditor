@@ -1,0 +1,69 @@
+# Test cleanup audit
+
+This audit starts at `6c2baa39`. It covers the repository's unit, property, protocol,
+rendering, browser, desktop, native and tooling tests. Individual dispositions were
+recorded before edits. Regex searches identified candidates; decisions followed
+inspection of the tests, their production owners, independent requirements and
+remaining coverage.
+
+Status: implementation is being integrated; repository validation is pending.
+This is not yet a completed-cleanup claim.
+
+## Disposition records
+
+Each record names the original tests, including deleted cases, and explains their
+DELETE, REWRITE or KEEP disposition. Retained cases identify the independent
+contract, observable failure, oracle, stable seam, refactor tolerance and unique
+owner. Parameterized cases sharing one contract are recorded as a family.
+
+| Area | Records |
+| --- | --- |
+| Project model, editing, effects and transitions | [1](project1.md), [2](project2.md), [3](project3.md), [4](project4.md) |
+| Engine, media, persistence and export | [1](engine1.md), [2](engine2.md), [3](engine3.md) |
+| Web editor | [1](web1.md), [2](web2.md), [3](web3.md) |
+| Shared rendering | [1](compositions1.md), [2](compositions2.md) |
+| Browser workflows | [1](e2e1.md), [2](e2e2.md) |
+| MCP and CLI | [MCP](mcp.md) |
+| Audio, motion and motion-graphics templates | [Audio and motion](audio.md) |
+| Interchange and expressions | [Formats](formats.md) |
+| Session, API, client, configuration, UI and testkit | [Shared packages](shared.md) |
+| Tooling, Electron, standalone checks and Rust | [Tooling](tooling.md) |
+
+The review explicitly checks cross-area deletion dependencies: a model test does
+not establish UI wiring, a valid rendered frame does not establish an export
+refusal, and two areas cannot delete a contract while citing each other's removed
+tests. Documented API/configuration values survive even when an inventory-like
+assertion initially looks redundant. Visual regressions have an independent
+repository requirement in [testing.md](../testing.md).
+
+## Removed support and product correction
+
+The area ledgers record removed private exports, duplicate shader/CPU mirrors,
+injected clocks and file-system wrappers, cache/invariant inspection hooks,
+GL-poison instrumentation, scene-distinctness guards, unused canonicalizers,
+local fixtures and gallery-only test entries. Browser helper branches and four
+unused audio-fixture recipes were removed after an integrated caller census.
+Published documentation pictures still have consumers and retain their provenance.
+
+An additional integrated caller search found no remaining imports of
+`scripts/docs/gallery-scenes.mjs`. Its executable recipe remains the reproducible
+source of published pictures, but its `sceneA`/`sceneB` test-only exports and the
+orphan `gallery-scenes.d.mts` declaration file were removed. The remaining caller
+is the same-file CLI entry point; executable statements are unchanged. Validation:
+repository lint/typecheck and `node --check scripts/docs/gallery-scenes.mjs`.
+
+The strengthened public audio block contract exposed a real product bug: multiple
+processors modified channels beyond their configured count. The original and
+expanded mono/stereo cases failed before the owner fix; the expanded case then
+passed. Processing loops and stereo branches now respect the configured count,
+including the Studio Reverb delay network. The full evidence is in [audio.md](audio.md).
+
+The unused MCP testkit dependency was removed. The lockfile and third-party notices
+were regenerated with the owning tools. Lockfile generation also normalized
+existing Remotion/webpack peer resolutions; it added no package version.
+
+## Verification
+
+Full validation results, integrated change measurements and removed support will
+be recorded here after integration. Per-area formatting checks and interrupted
+baseline attempts are distinguished from runtime passes in the records above.

@@ -9631,7 +9631,7 @@ Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors
 | `crates/cfb/src/{lib,read,write}.rs` | `packages/interchange/src/cfb.ts` | Microsoft Compound File Binary reader/writer (v3 / v4 sectors) |
 | `crates/interchange/src/omf/{mod,bento,read,write}.rs` | `packages/interchange/src/omf/{index,bento,read,write}.ts` | OMF Interchange 2.0 in a Bento container (label, TOC, references), audio-only compositions, WAVE/AIFF descriptors, embedded media data |
 | `crates/interchange/src/xml.rs`, `crates/interchange/src/common.rs` | `packages/interchange/src/xml.ts`, `packages/interchange/src/paths.ts`, `packages/interchange/src/build.ts` | XML reading/writing helpers, file URLs and paths, label colours, gain/dB |
-| `crates/interchange/tests/{support,otio,fcp7,fcpxml,edl,aaf_omf,uncarried_clips}.rs` and `src/omf/tests.rs` | `packages/interchange/test/support/{arbitraries,canonical,ir}.ts`, `packages/interchange/test/*.test.ts` | Property round trips (proptest strategies ported to fast-check), fixtures-style tests, uncarried-clip reports, OMF structural checks |
+| `crates/interchange/tests/{support,otio,fcp7,fcpxml,edl,aaf_omf,uncarried_clips}.rs` and `src/omf/tests.rs` | `packages/interchange/test/support/{arbitraries,ir}.ts`, `packages/interchange/test/*.test.ts` | Fixture generators (proptest strategies ported to fast-check), dialect and independent-reader tests, uncarried-clip reports, OMF structural checks |
 
 ## EffectCraft
 
