@@ -18,10 +18,15 @@ export const TAP = () => {
 	type Tap = {
 		on: boolean;
 		ctxs: { ctx: BaseAudioContext; node: AudioWorkletNode | null; blocks: Block[] }[];
-		stops: { t: number }[];
+		stops: { t: number; player: number }[];
 		late: { t: number; by: number }[];
 	};
 	const w = window as unknown as { __tap: Tap };
+	// Which player a buffer source belongs to: the node it is first connected to (each Remotion media player has its
+	// own gain node). A reschedule stops the buffers of every player at once; a clip that ends stops only its own.
+	const players = new WeakMap<AudioNode, number>();
+	const playerOf = new WeakMap<AudioBufferSourceNode, number>();
+	let nextPlayer = 0;
 	w.__tap = { on: false, ctxs: [], stops: [], late: [] };
 	const code = `class T extends AudioWorkletProcessor {
 		constructor() { super(); this.on = false; this.buf = [];
@@ -60,12 +65,24 @@ export const TAP = () => {
 	};
 	AudioNode.prototype.connect = function (this: AudioNode, ...args: unknown[]) {
 		const dest = args[0];
+		if (this instanceof AudioBufferSourceNode && dest instanceof AudioNode && !playerOf.has(this)) {
+			let id = players.get(dest);
+			if (id === undefined) {
+				id = nextPlayer++;
+				players.set(dest, id);
+			}
+			playerOf.set(this, id);
+		}
 		if (dest instanceof AudioDestinationNode) return connect.apply(this, [busOf(dest), ...args.slice(1)]);
 		return connect.apply(this, args);
 	} as typeof AudioNode.prototype.connect;
 	const stop = AudioScheduledSourceNode.prototype.stop;
 	AudioScheduledSourceNode.prototype.stop = function (this: AudioScheduledSourceNode, when?: number) {
-		if (w.__tap.on) w.__tap.stops.push({ t: this.context.currentTime });
+		if (w.__tap.on)
+			w.__tap.stops.push({
+				t: this.context.currentTime,
+				player: this instanceof AudioBufferSourceNode ? (playerOf.get(this) ?? -1) : -1,
+			});
 		return stop.call(this, when);
 	};
 	const start = AudioBufferSourceNode.prototype.start;
@@ -87,8 +104,8 @@ export type Recording = {
 	/** First context frame of each 128-frame block, and the samples of channel 0 (gaps while suspended are not filled). */
 	frames: number[];
 	data: number[];
-	/** Context times of `stop()` calls (Remotion stops every queued buffer when it reschedules). */
-	stops: number[];
+	/** `stop()` calls: context time and the player of the buffer (-1: not a media buffer). */
+	stops: { t: number; player: number }[];
 	/** Context times at which a buffer was started after its time, and by how much (s). */
 	late: { t: number; by: number }[];
 	marks: Record<string, number>;
@@ -148,7 +165,7 @@ export async function disarm(p: Page): Promise<Recording> {
 			window as unknown as {
 				__tap: {
 					ctxs: { ctx: BaseAudioContext; blocks: { f: number; d: Float32Array }[] }[];
-					stops: { t: number }[];
+					stops: { t: number; player: number }[];
 					late: { t: number; by: number }[];
 					marks?: Record<string, number>;
 					armedAll?: number[];
@@ -172,7 +189,7 @@ export async function disarm(p: Page): Promise<Recording> {
 			armed: t.armedAll?.[bestIndex] ?? -1,
 			frames,
 			data,
-			stops: t.stops.map((s) => s.t),
+			stops: t.stops.map((s) => ({ t: s.t, player: s.player })),
 			late: t.late.map((l) => ({ t: l.t, by: l.by })),
 			marks,
 		};
@@ -205,9 +222,20 @@ export function peaks(r: Recording, min = 0.05): { t: number; v: number }[] {
 	return out.map(({ t, v }) => ({ t, v }));
 }
 
-/** Context times where Remotion stopped queued buffers inside [from, to] (it rescheduled every player). */
+/**
+ * Context times inside [from, to] where Remotion stopped the queued buffers of two or more players at once: it
+ * rescheduled every player (a seek, or its re-anchoring when the picture and the audio clock drift apart). A clip that
+ * ends stops only its own player's buffers.
+ */
 export function reschedules(r: Recording, from: number, to: number): number[] {
-	return [...new Set(r.stops.filter((t) => t >= from && t <= to).map((t) => Number(t.toFixed(4))))];
+	const byTime = new Map<number, Set<number>>();
+	for (const s of r.stops) {
+		if (s.t < from || s.t > to) continue;
+		const k = Number(s.t.toFixed(4));
+		if (!byTime.has(k)) byTime.set(k, new Set());
+		byTime.get(k)!.add(s.player);
+	}
+	return [...byTime].filter(([, p]) => p.size >= 2).map(([t]) => t);
 }
 
 /**

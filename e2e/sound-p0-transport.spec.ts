@@ -326,14 +326,13 @@ test('seek during playback: the audio from before the seek stops at the seek', a
 		});
 		enter = rec.marks.enter ?? -1;
 		const seeked = rec.marks.seeked ?? -1;
-		// The seek's own reschedule: the burst of stops between the Enter and the playhead at the target (under load the
-		// seek can take a while). Any other stop around it, or a buffer started late before it, disturbed the play.
-		const own = rec.stops.filter((t) => t >= enter - 0.001 && t <= seeked + 0.001);
-		const burst = own.filter((t) => own.length > 0 && t <= own[0]! + 0.01);
-		stop = burst[0] ?? -1;
-		const other = [
-			...reschedules(rec, rec.armed, seeked + 0.3).filter((t) => !burst.some((b) => Math.abs(b - t) < 1e-9)),
-		].map((t) => `reschedule at ${(t - enter).toFixed(3)} s`);
+		// The seek's own reschedule: the first one between the Enter and the playhead at the target (under load the seek
+		// can take a while). Any other reschedule around it, or a buffer started late before it, disturbed the play.
+		const own = reschedules(rec, enter - 0.001, seeked + 0.001);
+		stop = own[0] ?? -1;
+		const other = reschedules(rec, rec.armed, seeked + 0.3)
+			.filter((t) => t !== stop)
+			.map((t) => `reschedule at ${(t - enter).toFixed(3)} s`);
 		const late = disturbances({ ...rec, stops: [] }, rec.armed, enter);
 		if (stop > 0 && other.length === 0 && late.length === 0) break;
 		console.log(
