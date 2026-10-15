@@ -435,7 +435,7 @@ function tenMinutes(): { doc: ProjectDocument; seqId: string } {
 	}
 	for (let i = 0; i < 40; i++) {
 		const c = add('text', 2, i * 450 + 200, 200);
-		c.content = { ...(c.content as object), text: 'Chapter title number ' + i };
+		c.content = { ...(c.content as object), text: `Chapter title number ${i}` };
 		c.textAnimation = {
 			in: { preset: 'typewriter', version: 2, durationFrames: 45, params: {} },
 			out: { preset: 'slide-up', version: 1, durationFrames: 15, params: {} },
