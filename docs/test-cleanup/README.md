@@ -6,7 +6,7 @@ recorded before edits. Regex searches identified candidates; decisions followed
 inspection of the tests, their production owners, independent requirements and
 remaining coverage.
 
-Status: implementation is being integrated; repository validation is pending.
+Status: cleanup is implemented and integrated; repository validation is in progress.
 This is not yet a completed-cleanup claim.
 
 ## Disposition records
@@ -19,7 +19,7 @@ owner. Parameterized cases sharing one contract are recorded as a family.
 | Area | Records |
 | --- | --- |
 | Project model, editing, effects and transitions | [1](project1.md), [2](project2.md), [3](project3.md), [4](project4.md) |
-| Engine, media, persistence and export | [1](engine1.md), [2](engine2.md), [3](engine3.md) |
+| Engine, media, persistence and export | [1](engine1.md), [2](engine2.md), [3](engine3.md), [follow-up](engine3-followup.md) |
 | Web editor | [1](web1.md), [2](web2.md), [3](web3.md) |
 | Shared rendering | [1](compositions1.md), [2](compositions2.md) |
 | Browser workflows | [1](e2e1.md), [2](e2e2.md) |
@@ -38,6 +38,12 @@ repository requirement in [testing.md](../testing.md).
 
 The independent [cross-review](cross-review.md) records the reconciled inventory
 and 15 resolved findings, including retained regressions and false-positive tests.
+The final [oracle review](oracle-review.md) records the follow-up source audit,
+cross-owner transfers and resolved provenance/counting corrections.
+
+The inventory covers 4,451 original named TypeScript/JavaScript declarations in
+627 assigned paths, plus native/desktop families and 22 executable performance
+budget rows. Parameterized families are not inflated into individual runtime cases.
 
 ## Removed support and product correction
 

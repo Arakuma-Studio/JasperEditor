@@ -2456,7 +2456,7 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 
 ## Cleanup totals
 
-{'DELETE': 33, 'REWRITE': 30, 'KEEP': 169}; parameterized family rows are counted once. Executed-test counts will be reported separately.
+{'DELETE': 34, 'REWRITE': 34, 'KEEP': 164}; parameterized family rows are counted once. Executed-test counts will be reported separately.
 
 ## Completed changes and verification
 

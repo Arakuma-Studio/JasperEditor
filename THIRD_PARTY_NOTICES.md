@@ -9403,7 +9403,7 @@ Record: `licenses/ported/color-grade-effectcraft.md`
 
 | Upstream path | Our path | What |
 |---|---|---|
-| `crates/effects/src/color3.rs` (`HslKey`) | `packages/project/src/color/lumetri-spatial.ts` (`secondaryKey`), `packages/project/src/registry/lumetri-spatial.ts` (`lm_key`) | The HSL Secondary key: hue centre / range / softness with grey attenuation, saturation and lightness bands with soft edges (TypeScript and GLSL ES 3.00) |
+| `crates/effects/src/color3.rs` (`HslKey`) | `packages/project/src/color/lumetri-spatial.ts` (`lumetriSpatialSettings`), `packages/project/src/registry/lumetri-spatial.ts` (`lm_key`) | The HSL Secondary key: TypeScript settings normalization and GLSL ES 3.00 evaluation of hue centre / range / softness with grey attenuation, saturation and lightness bands with soft edges |
 | `crates/effects/src/color3.rs` (`lumetri`: secondary correction, vignette, sharpen, tint balance) | `packages/project/src/color/lumetri-spatial.ts`, `packages/project/src/registry/lumetri-spatial.ts`, `packages/project/src/color/lumetri.ts` | Correction inside the key (temperature / tint gains, contrast, saturation), the Show Mask styles, the vignette shape (roundness, midpoint, feather), the luma unsharp sharpen, the tint-balance pivot |
 | `crates/effects/src/color3.rs` (`OffsetCurve`) | `packages/project/src/color/hue-curves.ts` | Hue/saturation curves as offsets from a neutral 0.5 with chroma attenuation of greys |
 
