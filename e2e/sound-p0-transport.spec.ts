@@ -219,7 +219,8 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 				picture = await pictureAnchor(p, 900, 0);
 			});
 			m = { rec, picture: picture.anchor };
-			const d = disturbances(rec, rec.armed, Math.min(rec.armed + 1.2, (rec.marks.pause ?? 1e9) - 0.001));
+			// the whole span whose clicks are checked (up to 2 s), up to the pause
+			const d = disturbances(rec, rec.armed, Math.min(rec.armed + 2.2, (rec.marks.pause ?? 1e9) - 0.001));
 			if (!(Math.abs(picture.slip) < 0.01))
 				d.push(`the audio clock slipped ${(picture.slip * 1000).toFixed(1)} ms against the wall clock`);
 			last = d;
@@ -378,7 +379,7 @@ test('seek during playback: the audio from before the seek stops at the seek', a
 		if (stop > 0) {
 			const silent = gaps(rec).find((g) => g.t0 >= stop - 0.001 && g.t0 <= stop + 0.008);
 			const back = silent ? rec.data.some((v, i) => Math.abs(v) > 0.01 && timeOf(rec, i) > silent.t1) : false;
-			if (silent && back && rec.starts.some((t) => t >= stop))
+			if (silent && back && rec.starts.some((x) => x.t >= stop))
 				late.push(`old-position audio started again ${(silent.t1 - stop).toFixed(3)} s after the seek`);
 		}
 		last = [...other, ...late];

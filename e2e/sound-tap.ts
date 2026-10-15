@@ -21,7 +21,7 @@ export const TAP = () => {
 		ctxs: { ctx: BaseAudioContext; node: AudioWorkletNode | null; blocks: Block[]; starts: number }[];
 		stops: { t: number; player: number }[];
 		late: { t: number; by: number }[];
-		starts: number[];
+		starts: { t: number; player: number }[];
 	};
 	const w = window as unknown as { __tap: Tap };
 	// Which player a buffer source belongs to: the node it is first connected to (each Remotion media player has its
@@ -93,7 +93,8 @@ export const TAP = () => {
 		const ctx = this.context;
 		const entry = w.__tap.ctxs.find((c) => c.ctx === ctx);
 		if (entry) entry.starts++;
-		if (w.__tap.on && ctx.state === 'running') w.__tap.starts.push(ctx.currentTime);
+		if (w.__tap.on && ctx.state === 'running')
+			w.__tap.starts.push({ t: ctx.currentTime, player: playerOf.get(this) ?? -1 });
 		// A start time already past (by more than a render quantum) on a running context: the buffer plays late.
 		// `0` means "now" (not a scheduled time).
 		if (w.__tap.on && when > 0 && ctx.state === 'running' && when < ctx.currentTime - 128 / ctx.sampleRate)
@@ -113,8 +114,8 @@ export type Recording = {
 	stops: { t: number; player: number }[];
 	/** Context times at which a buffer was started after its time, and by how much (s). */
 	late: { t: number; by: number }[];
-	/** Context times of every media buffer start (while the context ran). */
-	starts: number[];
+	/** Every media buffer start while the context ran: context time and player. */
+	starts: { t: number; player: number }[];
 	marks: Record<string, number>;
 };
 
@@ -179,7 +180,7 @@ export async function disarm(p: Page): Promise<Recording> {
 					ctxs: { ctx: BaseAudioContext; blocks: { f: number; d: Float32Array }[] }[];
 					stops: { t: number; player: number }[];
 					late: { t: number; by: number }[];
-					starts: number[];
+					starts: { t: number; player: number }[];
 					marks?: Record<string, number>;
 					armedAll?: number[];
 				};
@@ -204,7 +205,7 @@ export async function disarm(p: Page): Promise<Recording> {
 			data,
 			stops: t.stops.map((s) => ({ t: s.t, player: s.player })),
 			late: t.late.map((l) => ({ t: l.t, by: l.by })),
-			starts: [...t.starts],
+			starts: t.starts.map((x) => ({ t: x.t, player: x.player })),
 			marks,
 		};
 	});
@@ -237,19 +238,18 @@ export function peaks(r: Recording, min = 0.05): { t: number; v: number }[] {
 }
 
 /**
- * Context times inside [from, to] where Remotion stopped the queued buffers of two or more players at once: it
- * rescheduled every player (a seek, or its re-anchoring when the picture and the audio clock drift apart). A clip that
- * ends stops only its own player's buffers.
+ * Context times inside [from, to] where Remotion rescheduled a player: it stopped that player's queued buffers and
+ * started new ones (within 0.5 s) — a seek, or its re-anchoring when the picture and the audio clock drift apart. A clip
+ * that ends stops its player's buffers and starts none.
  */
 export function reschedules(r: Recording, from: number, to: number): number[] {
-	const byTime = new Map<number, Set<number>>();
+	const out = new Set<number>();
 	for (const s of r.stops) {
-		if (s.t < from || s.t > to) continue;
-		const k = Number(s.t.toFixed(4));
-		if (!byTime.has(k)) byTime.set(k, new Set());
-		byTime.get(k)!.add(s.player);
+		if (s.t < from || s.t > to || s.player < 0) continue;
+		if (r.starts.some((x) => x.player === s.player && x.t >= s.t && x.t <= s.t + 0.5))
+			out.add(Number(s.t.toFixed(4)));
 	}
-	return [...byTime].filter(([, p]) => p.size >= 2).map(([t]) => t);
+	return [...out].sort((a, b) => a - b);
 }
 
 /**
