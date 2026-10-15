@@ -217,7 +217,8 @@ describe('mini waveform columns', () => {
 				fc.oneof(fc.integer({ min: -5, max: 300 }), fc.double()),
 				(p, per, dur, w) => {
 					const c = waveformColumns(p, per, dur, w);
-					for (const v of c) expect(v >= 0 && v <= 1).toBe(true);
+					// one assertion per run (an expect() per column made this property take > 15 s under load)
+					expect(c.findIndex((v) => !(v >= 0 && v <= 1))).toBe(-1);
 				},
 			),
 			{ numRuns: 300 },
