@@ -1396,7 +1396,12 @@ prefix) outranks a match through a type synonym (starter-kit regression)" with t
   with the descriptors' own 2 ms RMS / 0.5 ms hop: **the loudest point after 1.95 s is at 2.0245 s (= 2 s + the reported
   24.5 ms) and the riser's at 1.9455 s (= 2 s − its 54.5 ms tail after the peak)**: the export plays the sounds where
   insert_sound said.
-- `pnpm --filter @jasper/mcp typecheck`, `pnpm lint`: pass.
+- `pnpm --filter @jasper/mcp typecheck`, `pnpm lint` (Biome, tokens, anime, layers, assets): pass. Before integrating:
+  `pnpm typecheck` (whole workspace) exit 0; `pnpm vitest run packages/project/test/sound-rank.test.ts
+  packages/project/test/sound-library.test.ts packages/project/test/sound-credits.test.ts packages/api/test
+  apps/engine/test/sounds-routes.test.ts apps/mcp/test/sound.test.ts apps/mcp/test/sound-sheet.test.ts
+  apps/mcp/test/readme-tools.test.ts apps/mcp/test/conventions.test.ts apps/mcp/test/sound-examples.test.ts
+  apps/mcp/test/unit.test.ts --maxWorkers=2`: 13 files, 108 tests passed.
 
 #### Limits and notes for the next packages
 
