@@ -269,6 +269,8 @@ export const SoundRankPartsSchema = z.object({
 	source: fin(),
 	similarity: fin().nullable(),
 	rotation: fin(),
+	/** Share of the query words its title matches (exact or prefix), ranked before the score; null without a query. */
+	titleMatch: fin().nullable().optional(),
 });
 
 const counts = z.record(z.string(), z.number().int().min(0));
