@@ -52,6 +52,9 @@ const TAP = () => {
 		buses.set(ctx, bus);
 		connect.call(bus, dest);
 		const entry = { ctx, node: null as AudioWorkletNode | null, blocks: [] as Block[] };
+		ctx.addEventListener('statechange', () => {
+			if (w.__tap.on) w.__tap.stops.push({ t: -ctx.currentTime });
+		});
 		w.__tap.ctxs.push(entry);
 		void ctx.audioWorklet.addModule(url).then(() => {
 			const node = new AudioWorkletNode(ctx, 'jasper-e2e-tap', { channelCount: 2, channelCountMode: 'explicit' });
@@ -216,6 +219,8 @@ test.afterAll(async () => {
 });
 
 let ready = false;
+/** Effect instance ids of the A1 and Mix Hard Limiters. */
+let limiters: string[] = [];
 
 /** probe.wav on A1 (Hard Limiter) and A2, a Hard Limiter on the Mix (once per worker). */
 async function setup(): Promise<void> {
@@ -242,10 +247,18 @@ async function setup(): Promise<void> {
 			target: { trackId: 'A1' },
 			effectId: 'jasper.audio.hard-limiter',
 			params: { lookAhead: 20 },
+			ref: '$a1',
 		},
-		{ type: 'effect.add', target: 'master', effectId: 'jasper.audio.hard-limiter', params: { lookAhead: 20 } },
+		{
+			type: 'effect.add',
+			target: 'master',
+			effectId: 'jasper.audio.hard-limiter',
+			params: { lookAhead: 20 },
+			ref: '$mix',
+		},
 	]);
 	expect(r.ok, JSON.stringify(r)).toBe(true);
+	if (r.ok) limiters = [r.refs!.$a1!, r.refs!.$mix!];
 	const s = await query<{ settings: { frameRate: { num: number; den: number } } }>(page, 'sequence.summary');
 	fps = s.settings.frameRate;
 	// let the media players and the graph settle
@@ -253,12 +266,69 @@ async function setup(): Promise<void> {
 	await seekPaused(page, 0);
 }
 
+/**
+ * Samples (context time, Program frame) pairs for `ms` while playing: `min(time − frame / fps)` is the context time at
+ * which the picture shows sequence time 0 (a frame is shown from its start until the next one).
+ */
+async function pictureAnchor(p: Page, ms: number): Promise<number> {
+	return p.evaluate(
+		async ([dur, num, den]) => {
+			const w = window as unknown as {
+				__tap: { ctxs: { ctx: BaseAudioContext }[] };
+				jasper: { query(n: string, a?: unknown): Promise<{ frame: number; playing: boolean }> };
+			};
+			const ctx = w.__tap.ctxs.find((c) => c.ctx.state === 'running')?.ctx;
+			if (!ctx) return Number.NaN;
+			let best = Number.POSITIVE_INFINITY;
+			// anime-allow: test-side wall clock bound of a sampling loop
+			const end = performance.now() + dur;
+			// anime-allow: test-side wall clock bound of a sampling loop
+			while (performance.now() < end) {
+				const now = await new Promise<number>((r) => requestAnimationFrame(r));
+				// the context time of the sample at the output at this frame (precise, unlike currentTime's steps)
+				const o = (ctx as AudioContext).getOutputTimestamp();
+				const t = (o.contextTime ?? 0) + (now - (o.performanceTime ?? 0)) / 1000;
+				const { frame, playing } = await w.jasper.query('playhead.get');
+				if (playing) best = Math.min(best, t - (frame * den) / num);
+			}
+			return best;
+		},
+		[ms, fps.num, fps.den] as const,
+	);
+}
+
 test('Play: the first samples at the play position are heard (nothing lost to the read-ahead)', async () => {
 	test.setTimeout(240_000);
 	await setup();
-	await seekPaused(page, frameAt(1));
-	await seekPaused(page, 0);
-	const rec = await playFor(page, 1300);
+	/** Plays from 0 and returns the clicks heard and the picture's sequence-time-0 context time. */
+	const measure = async () => {
+		await seekPaused(page, frameAt(1));
+		await seekPaused(page, 0);
+		let picture = Number.NaN;
+		const rec = await playFor(page, 200, async (p) => {
+			await p.waitForTimeout(150);
+			picture = await pictureAnchor(p, 900);
+		});
+		return { rec, picture };
+	};
+	// baseline without latency (both limiters off): how far the picture's frame report trails the audio here
+	const setEnabled = (enabled: boolean) =>
+		transact(
+			page,
+			limiters.map((id) => ({ type: 'effect.setEnabled', effectInstanceId: id, enabled })),
+		);
+	/** picture − audio (s): the picture's sequence time 0 minus the program output's (from the click at 0.28 s). */
+	const offsetOf = (m: { rec: Recording; picture: number }) => {
+		const c = peaks(m.rec).find((p) => p.v > 0.5 && p.t - m.rec.armed > 0.15);
+		return c ? m.picture - (c.t - 0.28) : Number.NaN;
+	};
+	// Two plays each: a frame report delayed by a stall only makes the picture look later, so the smaller is right.
+	expect((await setEnabled(false)).ok).toBe(true);
+	const baseOffset = Math.min(offsetOf(await measure()), offsetOf(await measure()));
+	expect((await setEnabled(true)).ok).toBe(true);
+	const first = await measure();
+	const { rec } = first;
+	const offset = Math.min(offsetOf(first), offsetOf(await measure()));
 	const ps = peaks(rec);
 	console.log('play-start peaks', rec.armed, rec.frames[0]! / rec.rate, JSON.stringify(ps));
 	test.info().annotations.push({ type: 'peaks', description: JSON.stringify({ armed: rec.armed, ps }) });
@@ -268,6 +338,12 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 	for (const p of ps) expect(p.v).toBeGreaterThan(0.6);
 	// the click 30 ms after the play position is the first one heard: well before the next one (0.28 s)
 	expect(ps[0]!.t - rec.armed, JSON.stringify(ps.slice(0, 3))).toBeLessThan(0.2);
+	// A/V: the clicks give the context time of sequence time 0 in the program output, the frame reports the picture's.
+	// With the read-ahead primed the picture waits for the program: picture − audio stays what it is without latency
+	// (an unprimed start would show the picture the read-ahead, 41.6 ms, earlier relative to the audio).
+	console.log('picture − audio', offset, 'without latency', baseOffset);
+	test.info().annotations.push({ type: 'sync', description: JSON.stringify({ offset, baseOffset }) });
+	expect(Math.abs(offset - baseOffset)).toBeLessThan(0.02);
 });
 
 test('Play after a seek while paused: no audio from before the seek', async () => {
@@ -374,6 +450,7 @@ test('a latency change during playback: no dropout beyond the added latency', as
 			return m;
 		};
 		console.log('gaps', gaps.join(' '), 'amp before', amp(-0.3, -0.05), 'after', amp(0.3, 0.6));
+		console.log('stops/states rel. edit', JSON.stringify(rec.stops.map((x) => (x < 0 ? `S${(-x - edit).toFixed(4)}` : (x - edit).toFixed(4)))));
 	}
 	test.info().annotations.push({ type: 'gap', description: JSON.stringify({ worst, at: at - edit }) });
 	// undo the second limiter for the next tests

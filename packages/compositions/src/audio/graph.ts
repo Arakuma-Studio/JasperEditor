@@ -813,6 +813,8 @@ export class MixGraph {
 	private shift: { base: number; shift: number } | null = null;
 	/** Seconds the picture waits after the next resume (the program output starts that much after the context). */
 	private startWait = 0;
+	/** Context time where the primed start resumes (the frozen time of the suspended context). */
+	private startAt = 0;
 	private flushToken = 0;
 	private disposed = false;
 
@@ -859,6 +861,11 @@ export class MixGraph {
 					const t = native.call(this.ctx);
 					const w = this.startWait;
 					if (!(w > 0) || t.contextTime === undefined || t.performanceTime === undefined) return t;
+					// the program has reached the output: the start is over, report the context's own timestamp again
+					if (t.contextTime >= this.startAt + w) {
+						this.startWait = 0;
+						return t;
+					}
 					return { contextTime: t.contextTime - w, performanceTime: t.performanceTime - w * 1000 };
 				},
 			});
@@ -955,10 +962,11 @@ export class MixGraph {
 		const changed = !this.shift || a.base !== this.shift.base || wait !== this.shift.shift;
 		sync.anchor.value = a.value;
 		this.shift = { base: a.base, shift: wait };
-		this.startWait = wait;
 		// The context's time is frozen while suspended: the next run starts at `t0`, the program `wait` later.
 		const g = this.outGain.gain;
 		const t0 = this.ctx.currentTime;
+		this.startWait = wait;
+		this.startAt = t0;
 		g.cancelScheduledValues(0);
 		g.setValueAtTime(wait > 0 ? 0 : 1, t0);
 		if (wait > 0) {
