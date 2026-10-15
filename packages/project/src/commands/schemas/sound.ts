@@ -182,6 +182,17 @@ export const SoundDesignSetSettingsCmd = cmd('soundDesign.setSettings', {
 	agentsMayApply: z.boolean().optional(),
 });
 
+/**
+ * Sets where the peak of a clip's sound is (spec 12 §2.7 "Peak handle", Shift-drag): `peakFlicks` = content flicks from
+ * the media start, within the media. Writes `sfx.placement` (align `peak`; a library clip without `sfx` gets it, not
+ * linked to a cue); the clip does not move. Peak snapping, cue fills and swaps use it from then on. Result
+ * `{clipId, peakFlicks, errorFlicks}`.
+ */
+export const SoundDesignSetPeakCmd = cmd('soundDesign.setPeak', {
+	clipId: IdRefSchema,
+	peakFlicks: z.number().int().min(0),
+});
+
 export const SOUND_COMMANDS = [
 	MediaSetLibraryInfoCmd,
 	SoundCueAddCmd,
@@ -192,4 +203,5 @@ export const SOUND_COMMANDS = [
 	SoundDesignSwapCmd,
 	SoundDesignSetPaletteCmd,
 	SoundDesignSetSettingsCmd,
+	SoundDesignSetPeakCmd,
 ] as const;
