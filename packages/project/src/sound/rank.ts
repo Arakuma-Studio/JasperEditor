@@ -5,8 +5,10 @@
 // Score (0…1, higher is better) = weighted mean of the parts that apply, minus a rotation penalty:
 //   text match (weight 3, with a query) · type fit (2, with a visual kind or types) · duration fit (1) ·
 //   judge score (1) · licence preference (0.75) · similarity (3, with `similarTo`).
-// Real recordings (starter kit, packs, user folders) always rank above Jasper Synth sounds (spec 12 §0), then by
-// score, then by id. Filters remove entries before scoring. Decisions and thresholds: wp-note "WP1.1a".
+// Real recordings (starter kit, packs, user folders) always rank above Jasper Synth sounds (spec 12 §0); with a query,
+// sounds whose title names more of its words (exactly or by prefix) come next, so a title match always outranks a
+// match through a type or synonym ("punch" finds "Punch" before "Crunchy impact", typed hit); then by score, then by
+// id. Filters remove entries before scoring. Decisions and thresholds: wp-note "WP1.1a".
 import { isCommercialSafe, licensePreference } from './license.ts';
 import {
 	isSoundTypeId,
@@ -93,6 +95,11 @@ export interface RankParts {
 	source: number;
 	similarity: number | null;
 	rotation: number;
+	/**
+	 * Share of the query words a title word matches exactly or by prefix (0…1; null without a query): a tier, like
+	 * `source`, ranked before the score.
+	 */
+	titleMatch: number | null;
 }
 
 export interface RankedSound<T extends RankableSound = RankableSound> {
@@ -308,15 +315,24 @@ function planQuery(query: string | undefined): QueryPlan | null {
 	return { tokens: raw.map((token, i) => ({ token, type: typed[i]! })) };
 }
 
-/** Text match 0…1: the mean over query tokens of their best field match. */
-function textScore(plan: QueryPlan, e: RankableSound, entryTypes: SoundTypeId[]): number {
+/**
+ * Text match 0…1 (the mean over query tokens of their best field match) and the share of query tokens a title word
+ * matches exactly or by prefix.
+ */
+function textScore(
+	plan: QueryPlan,
+	e: RankableSound,
+	entryTypes: SoundTypeId[],
+): { score: number; titleMatch: number } {
 	const title = tokenizeSoundText(e.title);
 	const tags: string[] = [];
 	for (const t of e.tags ?? []) if (typeof t === 'string') tags.push(...tokenizeSoundText(t));
 	const namedTypes = typesInTokens([...title, ...tags]);
 	let total = 0;
+	let inTitle = 0;
 	for (const { token, type } of plan.tokens) {
 		let best = 0;
+		let titled = false;
 		if (type) {
 			if (entryTypes.includes(type)) best = 1;
 			else if (namedTypes.includes(type)) best = 0.85;
@@ -325,20 +341,23 @@ function textScore(plan: QueryPlan, e: RankableSound, entryTypes: SoundTypeId[])
 		for (const w of title) {
 			if (w === token) best = Math.max(best, 1);
 			else if (token.length >= 3 && w.startsWith(token)) best = Math.max(best, 0.75);
+			else continue;
+			titled = true;
 		}
+		if (titled) inTitle++;
 		for (const w of tags) {
 			if (w === token) best = Math.max(best, 0.8);
 			else if (token.length >= 3 && w.startsWith(token)) best = Math.max(best, 0.6);
 		}
 		total += best;
 	}
-	return round6(total / plan.tokens.length);
+	return { score: round6(total / plan.tokens.length), titleMatch: round6(inTitle / plan.tokens.length) };
 }
 
 /**
  * Ranks library sounds for a request (spec 12 §2.1). Filters first (types, licence, descriptor pills; with a query,
  * sounds that match no query word; with `similarTo`, the reference itself), then sorts: real recordings before
- * synth, score descending, id ascending. Deterministic for the same input; never throws.
+ * synth, more query words in the title (exact or prefix) first, score descending, id ascending. Deterministic for the same input; never throws.
  */
 export function rankSounds<T extends RankableSound>(
 	entries: readonly T[],
@@ -364,7 +383,8 @@ export function rankSounds<T extends RankableSound>(
 		if (!passesDescriptorFilters(e.descriptors, request)) continue;
 		if (sim?.id !== undefined && sim.id === e.id) continue;
 
-		const text = plan ? textScore(plan, e, entryTypes) : null;
+		const matched = plan ? textScore(plan, e, entryTypes) : null;
+		const text = matched ? matched.score : null;
 		if (plan && !(text! > 0)) continue;
 		let typeFit: number | null = null;
 		if (request.visualKind || wanted.length) {
@@ -407,12 +427,23 @@ export function rankSounds<T extends RankableSound>(
 		out.push({
 			entry: e,
 			score,
-			parts: { text, typeFit, durationFit: dFit, judge, license, source, similarity, rotation },
+			parts: {
+				text,
+				typeFit,
+				durationFit: dFit,
+				judge,
+				license,
+				source,
+				similarity,
+				rotation,
+				titleMatch: matched ? matched.titleMatch : null,
+			},
 		});
 	}
 	out.sort(
 		(a, b) =>
 			b.parts.source - a.parts.source ||
+			(b.parts.titleMatch ?? 0) - (a.parts.titleMatch ?? 0) ||
 			b.score - a.score ||
 			(a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0),
 	);

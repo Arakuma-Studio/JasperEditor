@@ -100,6 +100,47 @@ describe('rankSounds (spec 12 §2.1)', () => {
 		expect(r[0]!.parts.text).toBe(0.75);
 	});
 
+	it('a title word (exact or prefix) outranks a match through a type synonym (starter-kit regression)', () => {
+		// The starter kit's descriptors (manifest, WP1.2b): "punch" is a synonym of hit, so "Crunchy impact" matched
+		// the query as well as "Punch" did, and its duration fit put it first.
+		const punch = snd('snd_punch', {
+			title: 'Punch',
+			tags: ['punch', 'body', 'fight'],
+			d: { durationSec: 0.5387, peakSec: 0.0405 },
+		});
+		const crunchy = snd('snd_crunchy', {
+			title: 'Crunchy impact',
+			tags: ['crunch', 'explosion', 'debris'],
+			d: { durationSec: 1.2558, peakSec: 0.2325 },
+		});
+		const thump = snd('snd_thump', {
+			title: 'Heavy punch thump',
+			types: ['thump'],
+			tags: ['punch', 'body', 'heavy'],
+			d: { durationSec: 0.6464, peakSec: 0.0245 },
+		});
+		const r = rankSounds([crunchy, thump, punch], { query: 'punch' });
+		expect(ids(r).at(-1)).toBe('snd_crunchy');
+		expect(ids(r).indexOf('snd_punch')).toBeLessThan(ids(r).indexOf('snd_crunchy'));
+		expect(r.find((x) => x.entry.id === 'snd_crunchy')!.parts).toMatchObject({ text: 1, titleMatch: 0 });
+		expect(r.find((x) => x.entry.id === 'snd_punch')!.parts).toMatchObject({ text: 1, titleMatch: 1 });
+		// Even when the type match scores higher overall, a title prefix comes first.
+		const typed = snd('snd_typed', { title: 'Air pass', types: ['whoosh'], d: { durationSec: 0.8 } });
+		const titled = snd('snd_titled', {
+			title: 'Whooshing drone',
+			types: ['riser'],
+			judge: { ok: false, score: 0.2 },
+			d: { durationSec: 9 },
+		});
+		const w = rankSounds([typed, titled], { query: 'whoosh' });
+		expect(ids(w)).toEqual(['snd_titled', 'snd_typed']);
+		expect(w[1]!.score).toBeGreaterThan(w[0]!.score);
+		// Without a query there is no title tier.
+		expect(rankSounds([punch], {})[0]!.parts.titleMatch).toBeNull();
+		// Two-word queries: the share of words the title names.
+		expect(rankSounds([thump], { query: 'heavy hit' })[0]!.parts.titleMatch).toBe(0.5);
+	});
+
 	it('filters by type (ids or synonyms) and fits types to the visual kind', () => {
 		const list = [
 			snd('snd_hit', { types: ['hit'] }),
