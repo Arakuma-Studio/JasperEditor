@@ -4,6 +4,7 @@ import { appendFileSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { EngineJob } from '@jasper/api';
+import { buildRenderSnapshot } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -152,24 +153,33 @@ describe.runIf(enabled)('GPU transitions and GPU effects on the native path (REM
 		return { plan, done, out, bakes: bakesOf(done.id) };
 	}
 
-	async function referenceStill(
-		d: DocBuilder,
-		frame: number,
-		s: ReturnType<typeof settings>,
-	): Promise<Buffer> {
+	async function referenceStill(d: DocBuilder, frame: number): Promise<Buffer> {
 		const svc = coreServices(engine.app);
-		const planned = await svc.exports.plan({
-			envelope: d.envelope(),
-			sequenceId: d.seqId,
-			settings: { ...s, range: { type: 'custom', startFrame: frame, endFrame: frame + 1 } } as never,
+		const doc = buildRenderSnapshot(d.doc, d.seqId, {
+			resolveFont: () => null,
+			resolveMedia: (asset) => {
+				const key = asset.locators.find((locator) => locator.type === 'engine-store')?.key;
+				if (!key) throw new Error(`Missing engine-store locator for ${asset.id}`);
+				return {
+					url: svc.signer.signUrl(`http://127.0.0.1:${engine.port}`, `/media/${encodeURIComponent(key)}`),
+					proxyUrl: null,
+					kind: asset.kind,
+					width: 1280,
+					height: 720,
+					durationFlicks: null,
+					hasAudio: false,
+					rotation: 0,
+				};
+			},
 		});
 		const ref = join(tempAppdir('jasper-gpu-ref-'), 'ref.png');
 		await svc.remotion.renderStill({
-			inputProps: (
-				svc.exports as unknown as { remotionProps(p: unknown): Record<string, unknown> }
-			).remotionProps(planned),
+			inputProps: {
+				doc,
+				options: { isPreview: false, useProxies: false, transparentBackground: false },
+			},
 			output: ref,
-			frame: 0,
+			frame,
 			signal: new AbortController().signal,
 		});
 		return decode(ref);
@@ -227,7 +237,7 @@ describe.runIf(enabled)('GPU transitions and GPU effects on the native path (REM
 
 		const shares: number[] = [];
 		for (const f of [5, 20, 35, 40, 45, 50, 54, 55, 70, 89]) {
-			const ref = await referenceStill(d, f, s);
+			const ref = await referenceStill(d, f);
 			shares.push(within(decode(first.out, { frame: f }), ref, 3));
 		}
 		report(

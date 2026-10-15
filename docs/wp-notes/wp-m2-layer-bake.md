@@ -85,6 +85,13 @@ pnpm vitest run --project @jasper/engine apps/engine/test/page-pool.test.ts   # 
 
 The e2e suite appends its measurements to `<tmpdir>/layer-bake-e2e.txt`.
 
+`gpu-spans.e2e.test.ts` compares the hybrid export with full-sequence composition
+stills built through public `buildRenderSnapshot` and signed media handles. Its
+reference setup does not call the export planner or private export methods;
+the ten boundary/effect frames, pixel tolerance and repeat-export cache checks
+remain unchanged. The [cleanup ledger](../test-cleanup/engine2.md#gpu-span-reference-setup-follow-up--before-edit-record)
+records this reference correction and its pending integrated rendering check.
+
 ## Results (this box: 12 cores, no GPU, load average 20–45 from other agents)
 
 | Check (S11 §11 test 4) | Result |

@@ -249,7 +249,7 @@ Validation: `pnpm exec vitest run apps/engine/test/gpu-spans.e2e.test.ts --maxWo
 
 | Disposition / exact test declaration | 1/2 Contract failure | 3 Oracle | 4 Stable seam / caller | 5 Refactor resilience | 6 Unique owner / remaining stronger coverage |
 |---|---|---|---|---|---|
-| **REWRITE** `a keyframed GPU transition + a layer with stacked GPU effects: hybrid, matches the composition, re-export reuses the masters` | Hybrid span differs from Program composition or cache rerenders | forced full composition stills at10 boundaries; exact repeat frame bytes | export output and job/cache state; callers listed above | Observes outputs under fixed inputs; private identifiers/control flow may change | real span/layer boundary integration and reuse; remove private group/item-count assertions and dead benchmark timing/settings options. No stronger retained case owns this combination at a lower stable seam. |
+| **REWRITE** `a keyframed GPU transition + a layer with stacked GPU effects: hybrid, matches the composition, re-export reuses the masters` | AGENTS §4, Architecture D-35 and S11 LBK-020/022: a missing/misplaced GPU span, wrong keyframed effect or redundant bake changes exported pixels or visible jobs | Independent full-sequence composition at authored frames 5/20/35/40/45/50/54/55/70/89; ≥99% of RGB samples within 3/255; repeated frame 45 is byte-identical with zero new bake jobs | Public export request/result, job records, public buildRenderSnapshot with signed media handles, and Remotion renderStill; no private exporter reference setup | Export planning, partitioning, cache internals and private method names can change while output/path/cache semantics remain unchanged | Unique assembled GPU-span/layer boundary parity and cache reuse; generic golden parity lacks these GPU spans and layer-bake tests lack this transition/effect combination. Remove private shape/count checks and private remotionProps cast; see the follow-up below. |
 | **DELETE** `speed: a 60 s 1080p timeline with GPU transitions and GPU effects, full Remotion vs hybrid` | Fails bar 3/4/5/6 as applicable: A benchmark prints timings without asserting any speed budget or decoded result. Routing assertions duplicate the first scenario and export planner cases. No behavior would be uniquely protected. | No additional independent oracle | Rejected internal/duplicate observation | Can fail on equivalent implementation or pass the claimed bug | duplicates first scenario, no budget assertion |
 
 ## `apps/engine/test/gpu-spans.test.ts`
@@ -580,3 +580,57 @@ exposure helper declares `Buffer` but typed-array `map` has a `Uint8Array` retur
 Wrap its mapped bytes in `Buffer.from`; retain the same normative formula and pixel
 assertions. This is test setup typing only, with no production change or new seam.
 Validation: engine typecheck and the existing native colour tests.
+
+## GPU span reference setup follow-up — before-edit record
+
+Base: `aacc143c`. The one surviving declaration in
+`apps/engine/test/gpu-spans.e2e.test.ts` remains **REWRITE**; this is a refinement
+of its existing disposition, so the 20 DELETE / 21 REWRITE / 160 KEEP census
+does not change.
+
+The test protects the independently required hybrid/full-composition equivalence
+and content-cache reuse in Architecture D-35, AGENTS §4 and S11 LBK-020/022. A
+wrong transition interval, misplaced span, dropped stacked effect or incorrect
+keyframed border must change an exported boundary frame. A lost cache hit creates
+a new `layer-bake` job on repeat export. `golden-parity.e2e.test.ts` owns generic
+transform/crop/blend/colour comparisons, not these GPU spans; lower planner/key
+tests cannot establish the assembled export pixels. The complete six-item bar
+is recorded in the updated declaration row above.
+
+Before this edit, `referenceStill` called `ExportService.plan` and cast the
+service to expose its private `remotionProps`. That reference setup fails bars
+4/5 and can share export-planning mistakes. Replace it with public
+`buildRenderSnapshot(d.doc, d.seqId, ...)`, explicit signed engine-store media
+handles for the authored 1280×720 PNG, and full-sequence `renderStill` at the
+existing requested frame. Follow the existing golden-parity pattern with
+`resolveFont: () => null` because the still/solid fixture draws no fonts;
+proxy/preview/transparent output stay disabled. The original custom-range-at-
+frame-zero reference and full-sequence-at-frame-F reference address the same
+sequence time; the latter does not depend on exporter range planning.
+
+Caller census: `buildRenderSnapshot` is used by Program `render-doc.ts`, source
+preview, layer-bake runtime and the export service. `UrlSigner.signUrl` serves
+headless media consumers. `RemotionService.renderStill` is the production still
+and bake boundary. `ExportService.remotionProps` still has production export,
+render-to-file and still callers, so it must remain private and is not removed.
+No wrapper, export, injection hook, production behavior or new fixture is needed.
+
+Risk: reference-only setup may expose an actual parity defect previously hidden
+by shared planning; preserve the exact ten frames, pixel threshold, repeat
+frame, fixture, export settings and all deadlines. Validation is changed-file
+Biome and `git diff --check` here; semantic engine typecheck and the opt-in
+`REMOTION_E2E=1 JASPER_REQUIRE_ORACLES=1 pnpm exec vitest run
+apps/engine/test/gpu-spans.e2e.test.ts --maxWorkers=1` are reserved for the
+integration coordinator after the currently running batch. No skipped or
+unexecuted rendering check is counted as a pass.
+
+Completed local validation: changed-file Biome and `git diff --check` passed;
+final diff and caller census reviewed. Independent static review confirmed that
+the full-sequence frame and media setup preserve the prior scene time and PNG
+inputs. No semantic typecheck or render was run in this follow-up worktree.
+
+Historical runtime evidence only: the integration coordinator reported the
+unchanged `aacc143c` GPU case passing in 207.833 s with all ten comparison shares
+at 1.0000 and cache assertions passing (exit 0). That predates this public
+reference setup and does **not** count as its runtime validation. The coordinator
+will run semantic types and the rewritten GPU case after the active batch.
