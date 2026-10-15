@@ -1718,7 +1718,7 @@ Removed dead support: PNG `pngChunk` and zlib imports; auto-tone/model-list resp
 
 Removed unused MCP `@jasper/testkit` devDependency after confirming no source/test imports remain. Root explicitly owns the lockfile regeneration after package changes are integrated; no hand-edited lockfile is included here.
 
-Checks actually run: `git diff --check` passed; Biome checked every modified surviving source/test/package file, with its sole speech import-format finding corrected and rechecked. Final diff reviewed. Focused Vitest, MCP typecheck, rendering/QA and full repository gates were not run in this worktree: root requested no new workers on the overloaded shared host and owns the integrated validation. No baseline behavioral failure was observed because these suites were not executed here. This is completed pruning with integration validation pending, not a claim that tests passed.
+Original cleanup-worktree checks, before integration: `git diff --check` passed; Biome checked every modified surviving source/test/package file, with its sole speech import-format finding corrected and rechecked. Final diff reviewed. Focused Vitest, MCP typecheck, rendering/QA and full repository gates were not run in that worktree: root requested no new workers on the overloaded shared host and owned the integrated validation. No baseline behavioral failure was observed because these suites were not executed there. Integration validation was pending at that stage; the specialized results below record the later completed runs.
 
 Specific remaining stronger owners for deleted overlaps: `apps/mcp/test/png-limits.test.ts`; SDK cancellation in `conventions.test.ts`; `packages/project/test/agent-mcp-cli.test.ts`; `packages/project/test/edit-structure.test.ts`; `packages/project/test/sim-warp-commands.test.ts`; `packages/project/test/text-animators.test.ts`; `packages/project/test/color-match.test.ts`; `apps/engine/test/browse.test.ts`; `apps/engine/test/effect-presets.test.ts`; `apps/engine/test/previews.test.ts`; and real CLI tests in `jasper-cli.test.ts`. Other agents may also prune these owners only under the same independent-contract rule.
 
@@ -1803,3 +1803,39 @@ Callers: request log remains required for the privacy check; no production helpe
 No production behavior/source changes are planned in this pass. Validation is static only as instructed: changed-file Biome and diff review; runtime/typecheck remain with the root integrated gate.
 
 Final rescan completion: all five candidate cases were narrowed as recorded. Removed only test imports/logs and probes; production callers remain intact. Changed-file Biome and git diff --check passed, and the final diff was reviewed. No runtime tests or typecheck were started under the static-only instruction. Test source change in this follow-up: +10/-27 lines (net -17).
+
+## Integrated specialized MCP validation
+
+The integration owner ran both retained opt-in files serially on source
+`30a8430e19caaffb1c266f0e156b2d3f0c4a3592`. Their source, dependencies and fixtures
+are unchanged through `90c061a0`. Earlier `integrated-tests.json` results skipped
+all eight assertions; those skips were not passes. The original worktree's
+deferred checks and interrupted attempts recorded elsewhere remain historical
+limitations, not evidence of successful execution.
+
+| Suite | Result | Measured duration |
+| --- | --- | --- |
+| `apps/mcp/test/compositions.test.ts`, `MG_E2E=1`, port 49371 | 1 passed; 0 failed/skipped | 113.722 s case; 129.498 s tests/hooks; 130.85 s total |
+| `apps/mcp/test/qa/scenarios.test.ts`, `pnpm qa:mcp`, port 49372 | 7 passed; 0 failed/skipped | 74.928 s tests/hooks; 94.19 s total |
+
+The commands used one worker and real engine/MCP processes with isolated appdirs.
+`qa:mcp` set `MCP_QA=1`; `MCP_QA_KEEP=1` retained rendered QA frames. Both commands
+set `JASPER_REQUIRE_ORACLES=1`, `JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome`
+and `JASPER_REMOTION_GL=swangle`; the QA harness forwards browser/GL settings,
+while the composition harness uses browser discovery. Timings describe these
+runs on the shared host and are not a performance comparison.
+
+Verified evidence under `/tmp/jasper-test-prune2/`:
+`final-specialized-mcp-compositions.{json,log,events.jsonl}` and
+`final-specialized-mcp-qa.{json,log,events.jsonl}` agree on all eight passing
+assertions. `final-specialized-results.json` records exit code 0 and no signal
+for both commands; `final-specialized-plan.json` preserves their arguments and
+environment.
+
+The integration owner visually inspected `test-results/mcp/composition-before.png`
+and `composition-after.png` and confirmed the visible text edit. They also
+inspected `test-results/mcp-qa/QA-export-45.png` and `QA-re-import-45.png`, the
+original/compressed color-bar pair whose numeric fidelity assertions passed.
+Those generated artifacts remain outside version control. These results close
+the two specialized MCP runtime gaps; they do not claim that every final
+repository gate passed. The root [validation report](README.md) owns that status.
