@@ -889,3 +889,17 @@ describe('pitch plan boundaries (review, gaps)', () => {
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 });
+
+describe('soundDesign.swap onto a frame stays refused before frame 0 (review)', () => {
+	it('a clip at frame 0 re-aligned onto an earlier frame than its lead allows is refused, not trimmed', () => {
+		const h = new Harness();
+		const whoosh = libMedia(h, { peakSec: 0.5, durationSec: 1.2, types: ['whoosh'] });
+		const [id] = placeOn(h, addCue(h, { frame: 3, align: 'peak' }), [{ mediaId: whoosh }], {
+			clampStart: true,
+		});
+		expect(clipOf(h, id!).start).toBe(0);
+		refused(h, [{ type: 'soundDesign.swap', clipId: id, mediaId: whoosh, frame: 2 }], 'E_INVALID_PARAM');
+		h.ok([{ type: 'soundDesign.swap', clipId: id, mediaId: whoosh, frame: 40 }]);
+		expect(clipOf(h, id!).start).toBeGreaterThan(0);
+	});
+});

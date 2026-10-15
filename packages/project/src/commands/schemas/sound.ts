@@ -160,8 +160,8 @@ export const SoundDesignPlaceCmd = cmd('soundDesign.place', {
  * point. The same media with another `align` re-aligns the clip (its start, peak or end on the frame the old point
  * played at, or on `frame`); `pitchSt` re-pitches it around that point (|st| ≤ 3 by varispeed keeping the seeded ±2 %
  * variation, else the Pitch Shifter effect; 0 removes the shift). A sound that would start before frame 0 is refused,
- * except for a clip at frame 0 (an insert near the start, `clampStart`): the new sound starts there with its head
- * trimmed. Fades on the clip's edges are shortened to its new length. Result `{clipId, mediaId, soundId, start,
+ * except for a clip at frame 0 swapped in place (an insert near the start, `clampStart`): the new sound starts there
+ * with its head trimmed. Fades on the clip's edges are shortened to its new length. Result `{clipId, mediaId, soundId, start,
  * sourceInFlicks, errorFlicks, alignedFrame, align, rate, pitchSt, trimmedHeadSec}`.
  */
 export const SoundDesignSwapCmd = cmd('soundDesign.swap', {

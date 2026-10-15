@@ -785,10 +785,10 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 		timing,
 		mediaDurationFlicks: dur,
 		rate: newRate,
-		// A clip at the sequence start (an insert or fill near frame 0 trims its head, `clampStart`) stays swappable:
-		// the new sound starts there too with its head trimmed, its aligned point still exact. Elsewhere a sound that
-		// would start before frame 0 is refused (spec 12 §2.3).
-		clampStart: clip.start === 0,
+		// A clip at the sequence start (an insert or fill near frame 0 trims its head, `clampStart`) stays swappable
+		// in place: the new sound starts there too with its head trimmed, its aligned point still exact. Elsewhere, and
+		// when re-aligned onto a `frame`, a sound that would start before frame 0 is refused (spec 12 §2.3).
+		clampStart: clip.start === 0 && cmd.frame === undefined,
 	});
 	if (!plan.ok) return h.fail(plan.code, plan.message, { path: ['mediaId'] });
 	const p = plan.placement;
