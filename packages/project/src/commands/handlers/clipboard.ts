@@ -37,6 +37,7 @@ import {
 	type TrackKind,
 } from '../../schema/sequence.ts';
 import type { ShapeItem } from '../../schema/shapes.ts';
+import { readLibraryProvenance } from '../../sound/provenance.ts';
 import { scaleAnimationFrames } from '../../text-animations.ts';
 import { flicksPerFrame, fpsOf, type Rational } from '../../time.ts';
 import { isRemapped, type TimedClip } from '../../time-remap/model.ts';
@@ -140,11 +141,18 @@ class Resolver {
 		if (!m.fingerprint.startsWith('pending:') && !this.byFingerprint?.has(m.fingerprint))
 			this.byFingerprint?.set(m.fingerprint, newId);
 		const from = m.derivation ? this.mediaId(m.derivation.fromMediaId, false) : null;
-		this.doc.media[newId] = {
+		const asset = {
 			...clone(m),
 			id: newId,
 			derivation: m.derivation && from ? { ...clone(m.derivation), fromMediaId: from } : null,
-		} as Draft<MediaAsset>;
+		} as Record<string, unknown>;
+		// sound-design: pasted provenance from another (possibly older or damaged) project is read leniently.
+		if (asset.library !== undefined) {
+			const library = readLibraryProvenance(asset.library);
+			if (library) asset.library = library;
+			else delete asset.library;
+		}
+		this.doc.media[newId] = asset as Draft<MediaAsset>;
 		this.createdMedia.push(newId);
 		if (direct && !this.opts.noItemFor?.has(id)) {
 			const itemId = this.h.ids.next('itm');

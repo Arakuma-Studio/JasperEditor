@@ -39,6 +39,7 @@ import { PUPPET_PIN_KINDS, PUPPET_PIN_PROPS, type Puppet } from './schema/puppet
 import type { AudioClip, Clip, ClipRoto, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind, SequencePreviewSettingsSchema } from './schema/sequence.ts';
 import type { ShapeItem } from './schema/shapes.ts';
+import { libraryProvenanceIssue, readLibraryProvenance } from './sound/provenance.ts';
 import type { ClipCameraTracker } from './schema/three-d.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
@@ -1264,6 +1265,12 @@ export function runInvariants(
 				issues.push(
 					inv('INV-012', `Media ${m.id} interpretation: ${msg}`, ['media', m.id, 'interpretation']),
 				);
+		// sound-design (spec 12 §2.1): library provenance must be readable (it is stored leniently).
+		if ((m as { library?: unknown }).library !== undefined) {
+			const bad = libraryProvenanceIssue((m as { library?: unknown }).library);
+			if (bad)
+				issues.push(inv('INV-LIBRARY', `Media ${m.id} library provenance: ${bad}`, ['media', m.id, 'library']));
+		}
 	}
 	for (const t of Object.values(doc.transcripts)) {
 		if (t.mediaId && !doc.media[t.mediaId])
@@ -1653,6 +1660,19 @@ export function repairDocument(
 					note('reset-camera-solve', c.id, 'the camera solve was malformed: analyse again');
 				}
 			}
+		}
+	}
+	// sound-design: unreadable library provenance is repaired field by field, or dropped without a sound id.
+	for (const m of Object.values(doc.media)) {
+		const r = m as { library?: unknown };
+		if (r.library === undefined || libraryProvenanceIssue(r.library) === null) continue;
+		const fixed = readLibraryProvenance(r.library);
+		if (fixed) {
+			r.library = fixed;
+			note('repair-library', m.id, 'library provenance repaired (unreadable fields reset; check its licence)');
+		} else {
+			delete r.library;
+			note('drop-library', m.id, 'unreadable library provenance removed (no sound id)');
 		}
 	}
 	// Invalid interpretation sections revert to the file's own values.

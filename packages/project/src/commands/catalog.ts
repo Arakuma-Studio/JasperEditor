@@ -28,6 +28,7 @@ import { rovingHandlers } from './handlers/roving.ts';
 import { sequenceHandlers } from './handlers/sequence.ts';
 import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
 import { SIM_WARP_OWNER, simWarpHandlers } from './handlers/sim-warp.ts';
+import { SOUND_DESIGN_OWNER, soundHandlers } from './handlers/sound.ts';
 import { simplifyHandlers } from './handlers/simplify.ts';
 import { spatialHandlers } from './handlers/spatial.ts';
 import { SPEECH_OWNER, speechHandlers } from './handlers/speech.ts';
@@ -72,7 +73,8 @@ export type CommandOwner =
 	| 'color-mgmt'
 	| 'imports'
 	| 'previews'
-	| 'gaps';
+	| 'gaps'
+	| 'sound-design';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -341,6 +343,7 @@ const LABELS: Record<CommandType, string> = {
 	'graphic.align': 'Align',
 	'graphic.setPins': 'Responsive Design – Position',
 	'graphic.importTemplate': 'Add Graphic Template',
+	'media.setLibraryInfo': 'Set Sound Library Info',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -381,6 +384,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[interpretHandlers, INTERPRET_OWNER],
 	[previewsHandlers, PREVIEWS_OWNER],
 	[gapsHandlers, GAPS_OWNER],
+	[soundHandlers, SOUND_DESIGN_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -415,7 +419,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === THREE_D_OWNER ||
 				owner === INTERPRET_OWNER ||
 				owner === PREVIEWS_OWNER ||
-				owner === GAPS_OWNER
+				owner === GAPS_OWNER ||
+				owner === SOUND_DESIGN_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||
