@@ -2860,7 +2860,8 @@ Branch `feat/sd-p2-verify` (from `feat/sound-design` 780670c4). Three review pas
 branches and were merged here: the model and history (`feat/sd-p2v-model`), the agent surfaces and model-string i18n
 (`feat/sd-p2v-agent`) and the web UI (`feat/sd-p2v-web`); their findings are the three sections below. This section is
 the requirements audit, the lead's own fixes, the real-app and agent runs and the gate. Every fix, here and below, has
-a regression test that was run against the unfixed code and failed there. Shared host, 16 cores; the load is stated
+a regression test that was run against the unfixed code and failed there (one exception, said where it is: the model
+review's cue-id length bound, already refused before by another check). Shared host, 16 cores; the load is stated
 per run.
 
 #### Requirements (spec 12 Phase 2) with evidence
