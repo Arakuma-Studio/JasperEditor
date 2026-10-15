@@ -138,25 +138,27 @@ Production owner(s), relative to `packages/audio-dsp/src/` unless absolute repo 
 - B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
 - Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
 
-### KEEP — convert applies the matrix per sample
+### REWRITE — convert applies the matrix per sample
 
-- B1: docs/wp-notes/audio-mix.md §§1,3; ARCHITECTURE D-42; the documented public DSP API and cited BS.1770/BS.775/RBJ/WAVE standards. Contract exercised: convert applies the matrix per sample.
-- B2: A caller receives incorrect audio samples, analysis, protocol bytes or parameter results for the named input; the corresponding value/state assertion fails.
-- B3: Expected results come from fixed physical-unit values, hand-built WAVE bytes, analytic signal amplitude/frequency, independent DFT, or equal-input streaming invariants. They can disagree with production.
-- B4: public DSP functions/classes (index.ts and the sync.ts/fft.ts modules consumed by engine and effects); numeric samples/levels/results, not private calls.
-- B5: Keeps the contract across internal renames/reorganization, alternative algorithms and helper call changes; does not pin collaborator calls or source text.
-- B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
-- Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
+- B1: ITU-R BS.775 downmix laws and the channels.ts public conversion contract require centre/surround amplitudes weighted by 1/√2.
+- B2: Wrong samples, missing/upmixed speakers, or channel-peak output fail on fixed input arrays.
+- B3: Use Math.SQRT1_2 from the normative constant-power/downmix law, rather than importing the implementation K constant. All arranged sample values and remaining expected arrays stay independent.
+- B4: Public convertLayout/convertChannels/channelPeaks samples consumed by the mixer and engine.
+- B5: Changing filter/matrix internals or renaming the private coefficient preserves the expected samples.
+- B6: Lowest stable sample-processing seam; matrix-definition tests alone cannot detect incorrect per-sample application.
+- Rewrite: Replace only the two K-derived expected sample expressions; retain other conversion/peak assertions.
+- Risk/check: preserve independent public behavior; targeted Biome and diff checks only in this scheduled follow-up, runtime gates remain with integration.
 
-### KEEP — applyMatrix: offset/length, gain, accumulate and in-place
+### REWRITE — applyMatrix: offset/length, gain, accumulate and in-place
 
-- B1: docs/wp-notes/audio-mix.md §§1,3; ARCHITECTURE D-42; the documented public DSP API and cited BS.1770/BS.775/RBJ/WAVE standards. Contract exercised: applyMatrix: offset/length, gain, accumulate and in-place.
-- B2: A caller receives incorrect audio samples, analysis, protocol bytes or parameter results for the named input; the corresponding value/state assertion fails.
-- B3: Expected results come from fixed physical-unit values, hand-built WAVE bytes, analytic signal amplitude/frequency, independent DFT, or equal-input streaming invariants. They can disagree with production.
-- B4: public DSP functions/classes (index.ts and the sync.ts/fft.ts modules consumed by engine and effects); numeric samples/levels/results, not private calls.
-- B5: Keeps the contract across internal renames/reorganization, alternative algorithms and helper call changes; does not pin collaborator calls or source text.
-- B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
-- Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
+- B1: The public applyMatrix contract covers caller-provided matrices, offset/length, accumulation, in-place processing and absent channels as silence; BS.775 defines the downmix weight.
+- B2: Wrong region/gain/routing/accumulation or a non-silent missing channel fails fixed output-array expectations.
+- B3: Keep literal transformed arrays and replace the imported K expectation for a missing-right-channel mono fold with independent Math.SQRT1_2.
+- B4: Public applyMatrix output buffers; production mixer callers use the same interface.
+- B5: No loop shape, allocation strategy or private coefficient identity is observed.
+- B6: Lowest stable owner of buffer operation semantics; matrix coefficient tests cannot detect buffer slicing or accumulation bugs.
+- Rewrite: Replace only the K-derived missing-channel expectation; preserve all actions and other assertions.
+- Risk/check: preserve independent public behavior; targeted Biome and diff checks only in this scheduled follow-up, runtime gates remain with integration.
 
 ### KEEP — mono pan is constant power with −3 dB centre
 
@@ -178,15 +180,16 @@ Production owner(s), relative to `packages/audio-dsp/src/` unless absolute repo 
 - B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
 - Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
 
-### KEEP — point gains are equal power
+### REWRITE — point gains are equal power
 
-- B1: docs/wp-notes/audio-mix.md §§1,3; ARCHITECTURE D-42; the documented public DSP API and cited BS.1770/BS.775/RBJ/WAVE standards. Contract exercised: point gains are equal power.
-- B2: A caller receives incorrect audio samples, analysis, protocol bytes or parameter results for the named input; the corresponding value/state assertion fails.
-- B3: Expected results come from fixed physical-unit values, hand-built WAVE bytes, analytic signal amplitude/frequency, independent DFT, or equal-input streaming invariants. They can disagree with production.
-- B4: public DSP functions/classes (index.ts and the sync.ts/fft.ts modules consumed by engine and effects); numeric samples/levels/results, not private calls.
-- B5: Keeps the contract across internal renames/reorganization, alternative algorithms and helper call changes; does not pin collaborator calls or source text.
-- B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
-- Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
+- B1: Public 5.1 panner contract specifies unit total power, no LFE for a point source, speaker endpoints and equal-power phantom centre (BS.775/constant-power law).
+- B2: Loss of power, wrong speaker, LFE leakage or incorrect phantom-centre gains fails.
+- B3: Unit power, literal endpoints and Math.SQRT1_2 are mathematical/speaker-layout expectations; remove the production K from the phantom-centre oracle.
+- B4: Public pointGains51 results consumed by the panner matrix/mixer.
+- B5: Alternative panning implementations retain the same endpoint and power semantics.
+- B6: Lowest stable owner of point-source panning; full matrix tests exercise source-channel placement separately.
+- Rewrite: Replace only the two K comparisons with Math.SQRT1_2.
+- Risk/check: preserve independent public behavior; targeted Biome and diff checks only in this scheduled follow-up, runtime gates remain with integration.
 
 ### KEEP — panner matrices
 
@@ -202,15 +205,16 @@ Production owner(s), relative to `packages/audio-dsp/src/` unless absolute repo 
 
 Production owner(s), relative to `packages/audio-dsp/src/` unless absolute repo path shown: `ducking.ts`. Non-test callers: packages/project/src/audio/mixer.ts; packages/compositions/src/audio/*; apps/engine/src/audio/{service,mixdown,decode}.ts.
 
-### KEEP — envelope levels
+### REWRITE — envelope levels
 
-- B1: docs/wp-notes/audio-mix.md §§1,3; ARCHITECTURE D-42; the documented public DSP API and cited BS.1770/BS.775/RBJ/WAVE standards. Contract exercised: envelope levels.
-- B2: A caller receives incorrect audio samples, analysis, protocol bytes or parameter results for the named input; the corresponding value/state assertion fails.
-- B3: Expected results come from fixed physical-unit values, hand-built WAVE bytes, analytic signal amplitude/frequency, independent DFT, or equal-input streaming invariants. They can disagree with production.
-- B4: public DSP functions/classes (index.ts and the sync.ts/fft.ts modules consumed by engine and effects); numeric samples/levels/results, not private calls.
-- B5: Keeps the contract across internal renames/reorganization, alternative algorithms and helper call changes; does not pin collaborator calls or source text.
-- B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
-- Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
+- B1: Public envelopeDb contract specifies RMS dBFS levels over caller-selected hop/window sizes, including empty input; ±0.1 has −20 dBFS RMS.
+- B2: Incorrect steady level, attack-window integration, hop count or empty-input handling fails.
+- B3: Keep fixed −20 dBFS and window-boundary expectations. Delete equality against FLOOR_DB: no independent exact −120 dBFS floor requirement was found, and the owner assigns that same constant.
+- B4: Public envelopeDb output consumed by ducking planning and engine analysis.
+- B5: Refactoring prefix sums/window calculation preserves the independent RMS/time results; changing the undocumented silence-floor heuristic no longer fails this test.
+- B6: Lowest stable envelope seam; activity/keyframe tests do not independently establish the RMS value/window behavior.
+- Rewrite: Delete only the FLOOR_DB expectation/import. Keep FLOOR_DB production export: apps/engine/src/audio/service.ts uses it.
+- Risk/check: preserve independent public behavior; targeted Biome and diff checks only in this scheduled follow-up, runtime gates remain with integration.
 
 ### KEEP — activity bridges gaps, then drops blips
 
@@ -1181,15 +1185,16 @@ Direct private compressorCurve formula repeats the same piecewise implementation
 
 - Rewrite: Use independently calculated −19 dB steady gain reduction (threshold −20 dB, ratio 20:1, input 0 dB), removing the production compressorCurve oracle.
 
-### KEEP — never exceeds Maximum Amplitude (sample peak), at any boost, in random blocks
+### REWRITE — never exceeds Maximum Amplitude (sample peak), at any boost, in random blocks
 
-- B1: docs/wp-notes/audio-fx.md §§1,5; ARCHITECTURE D-42; published RBJ/GMR/filter/pitch laws and the public AudioProcessor contract. Contract exercised: never exceeds Maximum Amplitude (sample peak), at any boost, in random blocks.
-- B2: A caller receives incorrect audio samples, analysis, protocol bytes or parameter results for the named input; the corresponding value/state assertion fails.
-- B3: Expected results come from fixed parameter-selected output values or independently specified acoustic laws; partition/reset equality checks stream semantics. Response-vs-audio assertions check the documented editor-curve promise against actual processed samples, not against a private collaborator. They can disagree with production.
-- B4: createProcessor/AudioProcessor samples, responseDb, transferDb, meters, latency and reset; core public primitives only for distinct numeric contracts.
-- B5: Keeps the contract across internal renames/reorganization, alternative algorithms and helper call changes; does not pin collaborator calls or source text.
-- B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
-- Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
+- B1: The public Hard Limiter description and docs/wp-notes/audio-fx.md §3 promise output never exceeds caller-selected Maximum Amplitude.
+- B2: Any output sample above the selected −1 dBFS ceiling fails for all original signal/boost/true-peak/block cases.
+- B3: Use fixed amplitude 0.8912509381337456, independently evaluated from the dB amplitude definition 10^(−1/20), rather than owner dbToGain.
+- B4: Actual AudioProcessor output samples from the registered Hard Limiter.
+- B5: Alternative detector/limiter/conversion algorithms retain the caller-selected physical ceiling.
+- B6: Lowest stable sample-peak ceiling seam across parameter combinations; the true-peak detector test checks a separate inter-sample contract.
+- Rewrite: Replace only the local expected ceiling; preserve every signal, block, setting and 1e-6 allowance.
+- Risk/check: preserve independent public behavior; targeted Biome and diff checks only in this scheduled follow-up, runtime gates remain with integration.
 
 ### KEEP — with True Peak the 4× interpolated true peak stays within ceiling + 0.1 dB
 
@@ -1233,15 +1238,14 @@ Direct private compressorCurve formula repeats the same piecewise implementation
 
 ### REWRITE — Dynamics rack: compressor section follows its curve; auto makeup; gate closes; soft clip bounded
 
-- B1: docs/wp-notes/audio-fx.md §§1,5; ARCHITECTURE D-42; published RBJ/GMR/filter/pitch laws and the public AudioProcessor contract. Contract exercised: Dynamics rack: compressor section follows its curve; auto makeup; gate closes; soft clip bounded.
-- B2: A caller receives incorrect audio samples, analysis, protocol bytes or parameter results for the named input; the corresponding value/state assertion fails.
-- B3: Expected results come from fixed parameter-selected output values or independently specified acoustic laws; partition/reset equality checks stream semantics. Response-vs-audio assertions check the documented editor-curve promise against actual processed samples, not against a private collaborator. They can disagree with production.
-- B4: createProcessor/AudioProcessor samples, responseDb, transferDb, meters, latency and reset; core public primitives only for distinct numeric contracts.
-- B5: Keeps the contract across internal renames/reorganization, alternative algorithms and helper call changes; does not pin collaborator calls or source text.
-- B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
-- Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
-
-- Rewrite: Remove private softClip probes; retain public rack transfer curve, actual gate attenuation/meter and processed limiter ceiling.
+- B1: Public Dynamics compressor/gate/limiter parameters specify transfer behavior and the caller-selected −6 dB limiter threshold; GMR 2012 gives the compressor curve.
+- B2: Wrong transfer/makeup, failure to gate quiet audio or samples above the selected soft-clip ceiling fail.
+- B3: Fixed transfer/gate expectations remain. Replace owner dbToGain(−6) in the ceiling oracle with independent amplitude 0.5011872336272722 (10^(−6/20)).
+- B4: Public transferDb, meters and processed samples of the registered Dynamics rack.
+- B5: No private curve/helper call is asserted; alternative implementations preserving the physical behavior pass.
+- B6: The composite rack owns section wiring and soft-clip threshold; single-section effect tests do not cover this route.
+- Rewrite: Replace only the ceiling oracle; keep existing independently specified curve rewrite and all signals/tolerances.
+- Risk/check: preserve independent public behavior; targeted Biome and diff checks only in this scheduled follow-up, runtime gates remain with integration.
 
 ### KEEP — Multiband crossovers sum flat (±0.1 dB) when no band compresses
 
@@ -1863,15 +1867,16 @@ Production owner(s), relative to `packages/audio-fx/src/` unless absolute repo p
 - B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
 - Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
 
-### KEEP — Mastering: transparent at its defaults; EQ follows responseDb; the maximizer raises level under −0.3 dBFS
+### REWRITE — Mastering: transparent at its defaults; EQ follows responseDb; the maximizer raises level under −0.3 dBFS
 
-- B1: docs/wp-notes/audio-fx.md §§1,5; ARCHITECTURE D-42; published RBJ/GMR/filter/pitch laws and the public AudioProcessor contract. Contract exercised: Mastering: transparent at its defaults; EQ follows responseDb; the maximizer raises level under −0.3 dBFS.
-- B2: A caller receives incorrect audio samples, analysis, protocol bytes or parameter results for the named input; the corresponding value/state assertion fails.
-- B3: Expected results come from fixed parameter-selected output values or independently specified acoustic laws; partition/reset equality checks stream semantics. Response-vs-audio assertions check the documented editor-curve promise against actual processed samples, not against a private collaborator. They can disagree with production.
-- B4: createProcessor/AudioProcessor samples, responseDb, transferDb, meters, latency and reset; core public primitives only for distinct numeric contracts.
-- B5: Keeps the contract across internal renames/reorganization, alternative algorithms and helper call changes; does not pin collaborator calls or source text.
-- B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
-- Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
+- B1: Public Mastering description specifies transparency at defaults, editable EQ response and loudness maximization; there is no independent exact −0.3 dBFS ceiling contract.
+- B2: Changed default audio, incorrect EQ gain/display relationship or failure of the maximizer to raise this signal level fails the retained checks.
+- B3: Keep input-versus-output transparency, fixed EQ gain and measured output-level comparison. Delete the ceiling derived from owner dbToGain(−0.3); its exact value occurs only in private implementation and the old test.
+- B4: Actual registered Mastering output and its public editor responseDb.
+- B5: Equivalent DSP/limiter implementations can change the undocumented safety margin while preserving public behavior.
+- B6: Lowest stable owner of the Mastering chain settings; component-filter tests do not cover chain wiring/default transparency.
+- Rewrite: Delete only the private −0.3 dB ceiling loop and remove that wording from the test name; do not substitute another invented ceiling.
+- Risk/check: preserve independent public behavior; targeted Biome and diff checks only in this scheduled follow-up, runtime gates remain with integration.
 
 ### KEEP — Vocal Enhancer voicings
 
@@ -1883,15 +1888,16 @@ Production owner(s), relative to `packages/audio-fx/src/` unless absolute repo p
 - B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
 - Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
 
-### KEEP — Loudness Meter passes audio unchanged and measures exactly like the audio-dsp meter
+### REWRITE — Loudness Meter passes audio unchanged and measures exactly like the audio-dsp meter
 
-- B1: docs/wp-notes/audio-fx.md §§1,5; ARCHITECTURE D-42; published RBJ/GMR/filter/pitch laws and the public AudioProcessor contract. Contract exercised: Loudness Meter passes audio unchanged and measures exactly like the audio-dsp meter.
-- B2: A caller receives incorrect audio samples, analysis, protocol bytes or parameter results for the named input; the corresponding value/state assertion fails.
-- B3: Expected results come from fixed parameter-selected output values or independently specified acoustic laws; partition/reset equality checks stream semantics. Response-vs-audio assertions check the documented editor-curve promise against actual processed samples, not against a private collaborator. They can disagree with production.
-- B4: createProcessor/AudioProcessor samples, responseDb, transferDb, meters, latency and reset; core public primitives only for distinct numeric contracts.
-- B5: Keeps the contract across internal renames/reorganization, alternative algorithms and helper call changes; does not pin collaborator calls or source text.
-- B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
-- Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
+- B1: Public Loudness Meter effect is a transparent BS.1770 meter; EBU Tech 3341 reference sine levels provide the independent expected reading.
+- B2: Audio alteration or a wrongly routed/scaled integrated loudness meter fails unchanged-byte and −20 LUFS expectations.
+- B3: Delete comparison with a second instance of the very LoudnessMeter used inside the effect. Keep the existing independent stereo 1 kHz, −20 dBFS peak → approximately −20 LUFS reference vector.
+- B4: Registered effect process buffers and public meters result.
+- B5: Changing internal meter implementation/delegation preserves the reference reading and pass-through behavior.
+- B6: This seam owns effect integration and meter-slot/channel wiring; audio-dsp oracle tests own the underlying meter algorithm.
+- Rewrite: Delete the redundant reference construction/process/assertion; keep original block inputs and normative tolerance.
+- Risk/check: preserve independent public behavior; targeted Biome and diff checks only in this scheduled follow-up, runtime gates remain with integration.
 
 ### KEEP — Mute ramps to silence over 5 ms without a step
 
@@ -1921,15 +1927,16 @@ Production owner(s), relative to `packages/audio-fx/src/` unless absolute repo p
 
 Duplicate audio-dsp/channels.test.ts constant-power and balance numeric owner. Missing bar: independent ownership and/or stable refactor-safe seam (B3–B6). Risk: removes implementation sensitivity; named surviving public/output owner retains the real contract.
 
-### KEEP — Amplify reaches exact gains, smoothed, linked or not; −96 dB is silence
+### REWRITE — Amplify reaches exact gains, smoothed, linked or not; −96 dB is silence
 
-- B1: docs/wp-notes/audio-fx.md §§1,5; ARCHITECTURE D-42; published RBJ/GMR/filter/pitch laws and the public AudioProcessor contract. Contract exercised: Amplify reaches exact gains, smoothed, linked or not; −96 dB is silence.
-- B2: A caller receives incorrect audio samples, analysis, protocol bytes or parameter results for the named input; the corresponding value/state assertion fails.
-- B3: Expected results come from fixed parameter-selected output values or independently specified acoustic laws; partition/reset equality checks stream semantics. Response-vs-audio assertions check the documented editor-curve promise against actual processed samples, not against a private collaborator. They can disagree with production.
-- B4: createProcessor/AudioProcessor samples, responseDb, transferDb, meters, latency and reset; core public primitives only for distinct numeric contracts.
-- B5: Keeps the contract across internal renames/reorganization, alternative algorithms and helper call changes; does not pin collaborator calls or source text.
-- B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
-- Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
+- B1: Public Amplify gain parameters are in dB, linked/unlinked channel behavior is specified by its controls, and the documented fader convention silences at −96 dB.
+- B2: Wrong gain, wrong link routing, instantaneous parameter jumps or failure to reach silence fails.
+- B3: Use independent fixed amplitudes from 20·log10(output/input): 0.5011872336272722, 0.2505936168136361, 0.19952623149688797 and 0.0251188643150958. Do not calculate expected output with the owner dbToGain helper.
+- B4: Actual AudioProcessor sample output for the registered Amplify effect.
+- B5: Any internal smoothing/conversion implementation preserving gain and channel behavior passes.
+- B6: Lowest stable owner of Amplify parameter wiring and smoothing; direct dB-conversion tests cannot cover these behaviors.
+- Rewrite: Replace the four expected amplitudes, remove the now-unused test import, keep inputs and 6-digit tolerance.
+- Risk/check: preserve independent public behavior; targeted Biome and diff checks only in this scheduled follow-up, runtime gates remain with integration.
 
 ### KEEP — Channel Volume per channel
 
@@ -2407,15 +2414,16 @@ Production owner(s), relative to `packages/motion/src/` unless absolute repo pat
 - B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
 - Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
 
-### KEEP — hash32 is FNV-1a over UTF-8 (parts joined with U+001F)
+### REWRITE — hash32 is FNV-1a over UTF-8 (parts joined with U+001F)
 
-- B1: docs/specs/11-animation.md ANM-002/003/004/005/007/010/011/021; ARCHITECTURE §20.2; wp-m2-anime-core hardening regressions. Contract exercised: hash32 is FNV-1a over UTF-8 (parts joined with U+001F).
-- B2: A caller receives incorrect rendered/temporal/text/registry output for the named input; the corresponding value/state assertion fails.
-- B3: Expected results come from fixed timeline endpoints, published UTF-8 FNV vectors, literal Unicode/format examples, immutability/order invariants, or independent still/Player/export pixels. They can disagree with production.
-- B4: documented @jasper/motion APIs, actual React hook lifecycle, text animator values, rendered counter text, or real browser/export pixels.
-- B5: Keeps the contract across internal renames/reorganization, alternative algorithms and helper call changes; does not pin collaborator calls or source text.
-- B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
-- Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
+- B1: Public hash32 contract is deterministic UTF-8 FNV-1a; S11:ANM-007 separates clip/purpose seed inputs. No independent caller requirement fixes U+001F as the internal separator.
+- B2: Wrong known UTF-8 FNV outputs or collision between distinct argument tuples fails.
+- B3: Keep fixed published FNV vectors and the distinct-arguments collision check. Delete comparing hash32(parts) with another hash32 call using the implementation separator.
+- B4: Public hash32 API used for per-clip/per-purpose animation seeds.
+- B5: Implementation renames and separator strategy changes preserving the promised seed separation no longer cause a change-detector failure.
+- B6: Lowest stable hash/seed seam; shuffled frame tests independently own order invariance, not byte hashing.
+- Rewrite: Delete only the U+001F self-comparison and narrow the displayed test name; do not change production hashing.
+- Risk/check: preserve independent public behavior; targeted Biome and diff checks only in this scheduled follow-up, runtime gates remain with integration.
 
 ### KEEP — seededRandom is deterministic per seed and in [0, 1)
 
@@ -2615,7 +2623,7 @@ Production owner(s), relative to `packages/motion/src/` unless absolute repo pat
 - Retained `ANIMEJS_VERSION`: explicitly documented API/config contract (ARCHITECTURE §20.2, ANM-011), not an expendable test hook.
 - Replaced SVG token parser with pixel comparison helper and preserve artifact-producing render tests.
 
-Declaration dispositions: {"DELETE": 37, "REWRITE": 31, "KEEP": 197}.
+Declaration dispositions: {"DELETE": 37, "REWRITE": 40, "KEEP": 188}.
 
 Before final support edits: `GRAPHIC_EQ_FREQS` / `graphicEqQ` and `tempoDelayMs` have only same-module production callers; remove their now-test-only exports. Retained reverb dry/decay tests will use reported latency.
 
@@ -2625,7 +2633,7 @@ Final support check before editing: `jumpScore` is only called by `planRemix` in
 
 ## Outcome and validation
 
-All 35 assigned files were audited and the pruning/rewrites implemented: **37 DELETE, 31 REWRITE, 197 KEEP** original test declarations (265 total; parameterized declarations include all generated cases). No whole test file was removed. Rewritten names may differ from the original names recorded above. Production changes remove dead seams and correct configured-channel boundaries demonstrated by the retained regression below; DSP arithmetic and persisted formats are unchanged.
+All 35 assigned files were audited and the pruning/rewrites implemented: **37 DELETE, 40 REWRITE, 188 KEEP** original test declarations (265 total; parameterized declarations include all generated cases). No whole test file was removed. Rewritten names may differ from the original names recorded above. Production changes remove dead seams and correct configured-channel boundaries demonstrated by the retained regression below; DSP arithmetic and persisted formats are unchanged.
 
 Removed support consists of the production-derived `sineLufs` oracle, unused `run` test wrapper, SVG token parser, obsolete test imports/setup, test-only IIR `design`/`DesignSpec` wrapper and unused `ellipK`; undocumented `kWeightingPower`, `lufsToEnergy`, `blockTruePeak` helpers; unused convolution `impulse` hook; and test-only exports for IR metadata/generation, convolution partition size, graphic-EQ Q/frequencies, tempo delay conversion, remix jump scoring and the dynamics barrel curve re-exports. Phaser sweep and Ambisonics source-gain methods became private. Actual production consumers of the remaining functions are preserved. Caller/documentation searches found no production caller or documented API contract for each removed seam. The documented `ANIMEJS_VERSION` export/configuration test remains.
 
@@ -2714,3 +2722,13 @@ Before the final minimum-piece cleanup: caller census found MIN_PIECE_BEATS only
 
 
 The minimum-piece follow-up is complete: targeted Biome checked both changed TypeScript files successfully (formatting the shortened import), and `git diff --check` passed. Final diff review confirms only the derived assertion loop/import and unused export were removed; both production constant uses, every target/parameter combination and all other plan assertions remain. No heavy tests were started for this narrow static cleanup. Current totals: **37 DELETE / 31 REWRITE / 197 KEEP**.
+
+
+Before shared-oracle edits, a retained-test rescan covered all 35 assigned files using import/AST leads, assertion reads and production-owner/caller checks against integrated cf890a29 plus the already committed minimum-piece cleanup. Ten declarations require narrow rewrites (Dynamics was already REWRITE): four Amplify expected amplitudes, two selected limiter ceilings (including a local expected variable), three declarations using the public downmix K coefficient, the silence FLOOR_DB self-declaration, the private Mastering −0.3 dB ceiling, a redundant underlying-LoudnessMeter comparison, and the hash32 internal-separator self-comparison. Each affected original declaration has its source/failure/seam/independence/refactor/ownership justification above. Current totals become **37 DELETE / 40 REWRITE / 188 KEEP** (265).
+
+Caller/support census: dbToGain is used throughout production effects and still supplies test stimulus levels in dynamics/special, so its production API and those setup uses stay; only the now-unused stereo-channel test import is removed. K is a normative public coefficient with real channel-conversion uses, so only its test import is removed. FLOOR_DB has a real engine audio-service caller and remains exported. LoudnessMeter remains used by production effects and by the separate Auto Gain measurement test. hash32 remains the real seed API. No production behavior or export changes are needed for this pass.
+
+Other rescan leads retained with independent ownership: block partition/reset/fresh-versus-seeked equality checks assert stream/lifecycle/order invariants, not an expected numerical formula; missing channels versus explicit silence and mono weight 2 versus identical stereo assert documented channel semantics; responseDb-versus-output checks compare public editor curves with independently measured audio; native/TS schema parity and checked-in schemas protect the actual CLI/HTTP/consumer protocol; template frame-end anchoring and cache equivalence compare separately arranged inputs under documented invariants. LevelMeter.take object identity is explicitly part of its public no-allocation/reused-result API, not inferred from a private field. Public reported latency is an observation checked against actual delayed samples. Mathematical FFT/RMS/filter/window/reference-tone tests use literal inputs, normative formulas, independent DFT/measurement or FFmpeg oracles. No further implementation-derived numeric expectation was found in this rescan.
+
+
+Shared-oracle follow-up validation: all six changed test files passed targeted Biome (only a long independent coefficient expression needed formatting); `git diff --check` passed. A separate 50-digit Decimal calculation of 10^(dB/20), without importing production code, confirmed the five distinct literal amplitude vectors (the −6 dB vector is used twice). Retained stimuli, scenario counts and numeric tolerances are unchanged; production code is unchanged. Runtime tests remain with the integration owner per the static-only validation slot.

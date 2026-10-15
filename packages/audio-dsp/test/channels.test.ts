@@ -16,7 +16,6 @@ import {
 	convertChannels,
 	convertLayout,
 	DEFAULT_PAN51,
-	K,
 	LAYOUTS,
 	layoutFromChannels,
 	mixdownFromId,
@@ -74,8 +73,12 @@ describe('channel layouts and conversion (ITU-R BS.775)', () => {
 	it('convert applies the matrix per sample', () => {
 		const ch = Array.from({ length: 6 }, (_, c) => new Float32Array(4).fill((c + 1) * 0.1));
 		const st = convertLayout(ch, '5.1', 'stereo');
-		expect(close(st[0][3], Math.fround(0.1) + K * Math.fround(0.3) + K * Math.fround(0.5))).toBe(true);
-		expect(close(st[1][0], Math.fround(0.2) + K * Math.fround(0.3) + K * Math.fround(0.6))).toBe(true);
+		expect(
+			close(st[0][3], Math.fround(0.1) + Math.SQRT1_2 * Math.fround(0.3) + Math.SQRT1_2 * Math.fround(0.5)),
+		).toBe(true);
+		expect(
+			close(st[1][0], Math.fround(0.2) + Math.SQRT1_2 * Math.fround(0.3) + Math.SQRT1_2 * Math.fround(0.6)),
+		).toBe(true);
 		expect(convertChannels(st, 'stereo')).toEqual(st);
 		const up = convertChannels([new Float32Array(3).fill(0.5)], '5.1');
 		expect(up.length).toBe(6);
@@ -108,7 +111,7 @@ describe('channel layouts and conversion (ITU-R BS.775)', () => {
 		expect(Array.from(out[0])).toEqual([2, 4, 4.5, 5]);
 		const mono = [new Float32Array(4)];
 		applyMatrix(conversionMatrix('stereo', 'mono'), [new Float32Array(4).fill(1)], mono); // missing R = silence
-		expect(close(mono[0][0], K)).toBe(true);
+		expect(close(mono[0][0], Math.SQRT1_2)).toBe(true);
 	});
 });
 
@@ -154,7 +157,7 @@ describe('5.1 panner', () => {
 		expect(close(pointGains51(1, -1, 1)[CH_RS], 1)).toBe(true);
 		// phantom centre at 0 % centre: −3 dB each side
 		let g = pointGains51(0, 1, 0);
-		expect(close(g[CH_L], K) && close(g[CH_R], K) && g[CH_C] === 0).toBe(true);
+		expect(close(g[CH_L], Math.SQRT1_2) && close(g[CH_R], Math.SQRT1_2) && g[CH_C] === 0).toBe(true);
 		// room centre: −3 dB front/rear, then −3 dB left/right
 		g = pointGains51(0, 0, 0);
 		expect(close(g[CH_L], 0.5) && close(g[CH_R], 0.5) && close(g[CH_LS], 0.5) && close(g[CH_RS], 0.5)).toBe(

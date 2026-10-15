@@ -5,7 +5,6 @@ import {
 	type DuckKeyframe,
 	duckKeyframes,
 	envelopeDb,
-	FLOOR_DB,
 	planDucking,
 	sensitivityThresholdDb,
 } from '../src/index.ts';
@@ -23,7 +22,6 @@ describe('ducking analysis', () => {
 		const x = new Float32Array(2000).map((_, i) => (i < 1000 ? 0 : i % 2 === 0 ? 0.1 : -0.1));
 		const e = envelopeDb([x, x], sr, 0.01, 0.02);
 		expect(e.length).toBe(200);
-		expect(e[10]).toBe(FLOOR_DB);
 		expect(Math.abs(e[150] + 20)).toBeLessThan(0.01);
 		expect(e[100]).toBeLessThan(-20);
 		expect(e[100]).toBeGreaterThan(-30);

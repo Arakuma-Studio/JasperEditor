@@ -102,7 +102,7 @@ describe('Hard Limiter', () => {
 			for (const boost of [0, 12, 24])
 				for (const [name, a, b] of signals()) {
 					const lim = fx('hard-limiter', { maxAmplitude: -1, inputBoost: boost, truePeak: tp });
-					const ceil = dbToGain(-1);
+					const ceil = 0.8912509381337456; // 10^(−1/20), independent −1 dBFS amplitude.
 					const l = a.slice();
 					const r = b.slice();
 					let pos = 0;
@@ -194,7 +194,7 @@ describe('gate, rack, multiband, tube', () => {
 		const lim = fx('dynamics', { compOn: false, limOn: true, limThreshold: -6, softClip: true }, 1);
 		const s = sine(100, 1, SR, SR);
 		lim.process([s], 0, SR);
-		for (let i = 0; i < SR; i++) expect(Math.abs(s[i]!)).toBeLessThanOrEqual(dbToGain(-6) + 1e-6);
+		for (let i = 0; i < SR; i++) expect(Math.abs(s[i]!)).toBeLessThanOrEqual(0.5011872336272722 + 1e-6);
 	});
 
 	it('Multiband crossovers sum flat (±0.1 dB) when no band compresses', () => {

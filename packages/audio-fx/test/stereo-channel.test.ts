@@ -2,7 +2,6 @@
 // checks of the pan laws and the Mono Maker crossover).
 
 import { describe, expect, it } from 'vitest';
-import { dbToGain } from '../src/core/math.ts';
 import { createProcessor } from '../src/registry.ts';
 import { noise, peak, rms, SR, sine, toneAmplitude } from './util.ts';
 
@@ -26,13 +25,14 @@ describe('channel utilities', () => {
 		const l = new Float32Array(2000).fill(1);
 		const r = new Float32Array(2000).fill(0.5);
 		a.process([l, r], 0, 2000);
-		expect(l[1999]).toBeCloseTo(dbToGain(-6), 6);
-		expect(r[1999]).toBeCloseTo(0.5 * dbToGain(-6), 6);
+		// Independent dB amplitude vectors: output/input = 10^(gainDb/20).
+		expect(l[1999]).toBeCloseTo(0.5011872336272722, 6);
+		expect(r[1999]).toBeCloseTo(0.2505936168136361, 6);
 		expect(l[0]!).toBeGreaterThan(0.99);
 		const b = fx('amplify', { link: false, leftGain: 6, rightGain: -12 });
 		const [x, y] = run(b, new Float32Array(10).fill(0.1), new Float32Array(10).fill(0.1));
-		expect(x[5]).toBeCloseTo(0.1 * dbToGain(6), 6);
-		expect(y[5]).toBeCloseTo(0.1 * dbToGain(-12), 6);
+		expect(x[5]).toBeCloseTo(0.19952623149688797, 6);
+		expect(y[5]).toBeCloseTo(0.0251188643150958, 6);
 		a.setParam('leftGain', -96);
 		l.fill(1);
 		a.process([l, r], 0, 2000);
