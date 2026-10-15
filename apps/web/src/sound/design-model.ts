@@ -96,7 +96,7 @@ export function clipSoundTitle(doc: Pick<ProjectDocument, 'media'>, clip: Clip):
  * The sequence frame (fractional) where a clip's aligned point plays: the placement's point (peak, start or end) when
  * it has one, else the media's peak; null when unknown (reversed, remapped, no descriptor).
  */
-export function alignedFrameOf(
+function rawAlignedFrameOf(
 	doc: Pick<ProjectDocument, 'media'>,
 	seq: Pick<Sequence, 'settings'>,
 	clip: Clip,
@@ -110,6 +110,25 @@ export function alignedFrameOf(
 		if (f !== null) return f;
 	}
 	return clipPeakFrame(c as never, doc.media[c.mediaId] as never, rate);
+}
+
+/** Flicks rounding leaves a point placed on a frame a hair before it (74.9999…): within 1e-6 frame it is that frame. */
+function snapFrame(f: number | null): number | null {
+	if (f === null) return null;
+	const r = Math.round(f);
+	return Math.abs(f - r) < 1e-6 ? r : f;
+}
+
+/**
+ * The sequence frame (fractional) where a clip's aligned point plays: the placement's point (peak, start or end) when
+ * it has one, else the media's peak; null when unknown (reversed, remapped, no descriptor).
+ */
+export function alignedFrameOf(
+	doc: Pick<ProjectDocument, 'media'>,
+	seq: Pick<Sequence, 'settings'>,
+	clip: Clip,
+): number | null {
+	return snapFrame(rawAlignedFrameOf(doc, seq, clip));
 }
 
 /** Which point of the clip's sound is aligned (its placement's, else the peak). */
