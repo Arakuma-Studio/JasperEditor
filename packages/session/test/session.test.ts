@@ -118,6 +118,56 @@ describe('EditorSession history (S01 §17)', () => {
 		expect(Object.values(Object.values(s.getCommitted().sequences)[0]!.clips)[0]!.start).toBe(0);
 	});
 
+	it('coalesces a run without a time limit and takes the new label (coalesceWindowMs, coalesceRelabel)', async () => {
+		let now = 1000;
+		const { store, doc, ctx } = setup();
+		const s = new EditorSession({
+			projectId: doc.projectId,
+			document: (await store.open(doc.projectId)).document,
+			ctx,
+			clock: () => now,
+		});
+		s.apply({ label: 'Add', origin: 'user', commands: [solid(0)] });
+		const before = s.getCommitted();
+		const [id] = clipIds(before);
+		const step = (n: number, key = 'run:1') =>
+			s.apply({
+				label: `Swap Sound ×${n}`,
+				origin: 'user',
+				coalesceKey: key,
+				coalesceWindowMs: Number.POSITIVE_INFINITY,
+				coalesceRelabel: true,
+				commands: [{ type: 'clip.move', clipIds: [id!], deltaFrames: 1 }],
+			});
+		step(1);
+		now += 60_000;
+		step(2);
+		now += 60_000;
+		step(3);
+		expect(s.getState().history.entries.map((e) => e.label)).toEqual(['Add', 'Swap Sound ×3']);
+		// another key starts a new entry; without relabel a different label never merges
+		step(1, 'run:2');
+		expect(s.getState().history.entries.map((e) => e.label)).toEqual([
+			'Add',
+			'Swap Sound ×3',
+			'Swap Sound ×1',
+		]);
+		s.apply({
+			label: 'Other',
+			origin: 'user',
+			coalesceKey: 'run:2',
+			coalesceWindowMs: Number.POSITIVE_INFINITY,
+			commands: [{ type: 'clip.move', clipIds: [id!], deltaFrames: 1 }],
+		});
+		expect(s.getState().history.entries).toHaveLength(4);
+		s.undo();
+		s.undo();
+		s.undo();
+		expect(s.getCommitted()).toBe(before);
+		s.redo();
+		expect(Object.values(Object.values(s.getCommitted().sequences)[0]!.clips)[0]!.start).toBe(3);
+	});
+
 	it('refuses writes in read-only sessions and when the lease is held elsewhere (PER-040)', async () => {
 		const { open } = setup();
 		const a = await open('a');

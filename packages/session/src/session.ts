@@ -44,6 +44,13 @@ export type SessionContext = Omit<CommandContext, 'revision' | 'selection' | 'en
  */
 export type SessionTxInput = TxInput & {
 	coalesceKey?: string;
+	/**
+	 * With `coalesceKey`: the merge window for this commit (default the session's 750 ms; `Infinity` = until another
+	 * entry is pushed or the key changes) and whether a changed label still merges (the entry takes the new label).
+	 * Variation cycling uses both: repeated presses make ONE entry "Swap Sound ×4" (spec 12 §2.7).
+	 */
+	coalesceWindowMs?: number;
+	coalesceRelabel?: boolean;
 	selectAfter?: (
 		result: Extract<TransactionResult, { ok: true }>,
 	) => { timeline?: readonly string[]; project?: readonly string[] } | null;
@@ -317,7 +324,7 @@ export class EditorSession {
 
 	private commit(tx: SessionTxInput, ctx: CommandContext): TransactionResult {
 		const before = this.store.getState();
-		const { coalesceKey, selectAfter, ...rest } = tx;
+		const { coalesceKey, coalesceWindowMs, coalesceRelabel, selectAfter, ...rest } = tx;
 		const { document, result } = applyTransaction(before.document, { protocol: TX_PROTOCOL, ...rest }, ctx);
 		if (!result.ok || tx.dryRun || document === before.document) return result;
 		const origin = tx.origin as Origin;
@@ -359,6 +366,10 @@ export class EditorSession {
 				},
 				this.clock(),
 				this.coalesceWindowMs,
+				{
+					...(coalesceWindowMs !== undefined ? { windowMs: coalesceWindowMs } : {}),
+					...(coalesceRelabel ? { relabel: true } : {}),
+				},
 			);
 		}
 		this.store.setState({
