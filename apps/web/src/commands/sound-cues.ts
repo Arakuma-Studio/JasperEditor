@@ -6,7 +6,7 @@ import { formatTimecode, type Rational } from '@jasper/project';
 import { z } from 'zod';
 import { t } from '../i18n/runtime.ts';
 import { requestCueFill } from '../sound/controller.ts';
-import { CUE_KIND_LABELS, CUE_WEIGHT_LABELS, cueAfter, cuesOf } from '../sound/cues/model.ts';
+import { CUE_WEIGHT_LABELS, cueAfter, cuesOf, kindLabel } from '../sound/cues/model.ts';
 import {
 	addCueCommand,
 	cueSeamShownFor,
@@ -255,7 +255,7 @@ export const soundCueCommands: UiCommand[] = [
 				sequenceId: e.seq.id,
 				cueId: cue.id,
 				types: cue.types ?? [],
-				label: t('{0} {1} cue at {2}', CUE_WEIGHT_LABELS[cue.weight], CUE_KIND_LABELS[cue.kind], tc),
+				label: t('{0} {1} cue at {2}', CUE_WEIGHT_LABELS[cue.weight], kindLabel(cue.kind), tc),
 			});
 			await runCommand('panel.focus.soundLibrary', ctx);
 		},

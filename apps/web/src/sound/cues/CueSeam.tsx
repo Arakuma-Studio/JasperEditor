@@ -37,7 +37,6 @@ import { deltaFramesFromPx, frameToX, type Viewport } from '../../panels/timelin
 import type { ContextMenuItem, TimelineUiStore } from '../../panels/timeline/state/ui-store.ts';
 import {
 	CUE_ALIGN_LABELS,
-	CUE_KIND_LABELS,
 	CUE_WEIGHT_LABELS,
 	type CueGeom,
 	clipPeakFrame,
@@ -48,6 +47,7 @@ import {
 	glyphPath,
 	heroConflicts,
 	hitCue,
+	kindLabel,
 	layoutCues,
 	neighbourCue,
 	openGlyph,
@@ -332,7 +332,7 @@ export function CueSeam(p: CueSeamProps) {
 				label: t('Visual Tag'),
 				items: VISUAL_TAGS.map((k) => ({
 					kind: 'item' as const,
-					label: CUE_KIND_LABELS[k],
+					label: kindLabel(k),
 					checked: sel.every((c) => c.kind === k),
 					disabled: readOnly,
 					run: () => set(t('Cue Visual Tag'), { kind: k }),

@@ -21,7 +21,7 @@ import {
 	type SoundTypeId,
 	type TimedClip,
 } from '@jasper/project';
-import { t } from '../../i18n/runtime.ts';
+import { t, withoutContext } from '../../i18n/runtime.ts';
 import { frameToX, type Viewport } from '../../panels/timeline/model/viewport.ts';
 import { typeLabel } from '../model.ts';
 
@@ -45,18 +45,22 @@ export const PEAK_DIAMOND_PX = 7;
 // Labels (the `*_LABELS` maps are translated by the i18n transform)
 
 export const CUE_KIND_LABELS: Record<CueKind, string> = {
-	cut: 'Cut',
+	cut: 'Cut [cue kind]',
 	transition: 'Transition',
 	move: 'Move',
 	land: 'Land',
 	appear: 'Appear',
-	exit: 'Exit',
+	exit: 'Exit [cue kind]',
 	emphasis: 'Emphasis',
 	reveal: 'Reveal',
 	beat: 'Beat',
 	manual: 'Manual',
 	silence: 'Silence',
 };
+
+/** A cue kind's label (homonyms carry a "[cue kind]" context in the catalogue). */
+export const kindLabel = (k: string): string =>
+	k in CUE_KIND_LABELS ? withoutContext(CUE_KIND_LABELS[k as CueKind]) : k;
 
 export const CUE_WEIGHT_LABELS: Record<CueWeight, string> = {
 	hero: 'Hero',
@@ -433,7 +437,7 @@ export function cueAriaLabel(
 	},
 ): string {
 	const weight = CUE_WEIGHT_LABELS[c.weight] ?? c.weight;
-	const kind = CUE_KIND_LABELS[c.kind] ?? c.kind;
+	const kind = kindLabel(c.kind);
 	const parts = [t('{0} {1} cue at {2}', weight, kind, opts.timecode)];
 	const names = opts.placedNames?.filter(Boolean) ?? [];
 	parts.push(
@@ -454,7 +458,7 @@ export function cueTooltip(
 	clips?: Readonly<Record<string, unknown>>,
 ): string[] {
 	const lines = [
-		t('{0} {1} cue at {2}', CUE_WEIGHT_LABELS[c.weight] ?? c.weight, CUE_KIND_LABELS[c.kind] ?? c.kind, timecode),
+		t('{0} {1} cue at {2}', CUE_WEIGHT_LABELS[c.weight] ?? c.weight, kindLabel(c.kind), timecode),
 	];
 	if (c.label) lines.push(c.label);
 	if (c.reason && c.reason !== c.label) lines.push(c.reason.length > 300 ? `${c.reason.slice(0, 297)}…` : c.reason);
