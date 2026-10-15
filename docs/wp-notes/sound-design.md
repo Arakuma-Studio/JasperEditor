@@ -1899,6 +1899,166 @@ Shared host, 16 cores; other agents' load stated per run.
 
 ## Phase 2: cues and placement
 
+### WP2.1 cue model and placement commands
+
+Scope: spec 12 §2.2 (cue schema, `AudioClip.sfx`, repair), §2.3 (placement: layers, rotation, variation, pitch, pan,
+auto tracks), §2.9 (commands), P2-R1, P2-R2, P2-R4, P2-R5 (model / command part). Files (all `packages/project` unless
+said): `src/schema/sound.ts` (schemas, lenient readers), `src/sound/anchor.ts` (`resolveCueAnchor`, integrated first,
+alone, at `9032437d` so the cue deriver could build on it), `src/sound/repair.ts` (INV-SOUND / INV-SFX helpers,
+`repairSoundDesign`, `soundDesignNeedsRepair`, `remapSoundDesign`), `src/sound/variant.ts` (`pickVariant`),
+`src/sound/insert.ts` (`planSoundInsert` gained `rate` and `clampStart`), `src/commands/schemas/sound.ts`,
+`src/commands/handlers/sound.ts`, `catalog.ts` (labels), `invariants.ts` (INV-SOUND per sequence, INV-SFX per clip,
+the repair hook), `migrations.ts` (`loadProject` repairs when only soft references dangle), `commands/diff.ts` (cues
+are entities of the diff), `handlers/structure.ts` (`sequence.duplicate` remaps cues), `ids.ts` (prefix `cue`).
+Rewired: `apps/web/src/sound/insert.ts` and MCP `insert_sound` (`apps/mcp/src/tools/sound.ts`) commit through
+`soundDesign.place`; `apps/mcp/src/examples.ts` (describe_commands examples); `apps/web/src/i18n/{en,es,model-strings}.json`
+(8 History labels). Docs: `docs/project-files.md` (v7 optional fields). Tests: `packages/project/test/sound-{anchor,
+cues,design-place}.test.ts`, `fuzz.test.ts` (sound commands in AC-25), `apps/web/test/sound-insert.test.ts` (one
+assertion), `apps/mcp/test/sound-examples.test.ts`, `apps/engine/test/sound-placement-export.test.ts`.
+
+#### API (exported from `@jasper/project`)
+
+```ts
+// schema/sound.ts (also re-exported by schema/index.ts)
+const CUE_KINDS /* cut transition move land appear exit emphasis reveal beat manual silence */, CUE_WEIGHTS, CUE_SOURCES,
+  CUE_ALIGNS, SFX_ROLES /* hero support layer */, SOUND_DENSITIES, SOUND_DELIVERIES, SOUND_DESIGN_LIMITS;
+const CueAnchorSchema; type CueAnchor; const CUE_ANCHOR_TYPES;   // the 9 variants of spec 12 §2.2 (looseObjects)
+//   edit {trackId, outgoingClipId, incomingClipId} | transition {transitionId}
+//   | keyframe {clipId, property /* path in the clip: transform.position, opacity, effects.<fxId>.params.<name> */,
+//              keyframeId?, event: peak-speed|settle|start|end}
+//   | text {clipId, side: in|out, unit? /* 0-based typed unit of a typewriter */} | mg {clipId, event: intro-end|outro-start}
+//   | clip {clipId, edge: start|end} | scene {mediaId, mediaSec} | beat {clipId, beatIndex, mediaSec?} | marker {markerId}
+const soundCueFields;      // the caller's cue fields (= DerivedCue ⊂ SoundCue): frame, label?, kind, weight, types?,
+                           // soundIds?, align?, pan? (−100…100 | 'auto'), pitchSt? (±12), stopBefore?, build?, anchor?,
+                           // source, confidence?, reason?, muted?, window? {start, end}
+const SoundCueSchema;      // {id: 'cue_…', ...soundCueFields, placedClipIds?}
+const SoundDesignSettingsSchema; // {delivery, density, sfxTrackIds, roomBus, seed, agentsMayApply?, palette?}
+const SoundCheckSummarySchema;   // {mixHash, verdict, counts, at}
+const SoundDesignSchema;         // {cues: Record<id, SoundCue>, settings?, lastCheck?}
+const SfxPlacementSchema, ClipSfxSchema; // {cueId|null, soundId|null, layer 0…5, role, alternatives? ≤16,
+                                         //  placement {align, peakFlicks, errorFlicks}}
+const DEFAULT_SOUND_DESIGN_SETTINGS;
+function readSoundCue(raw, key?): SoundCue | null;   function readSoundDesign(raw): SoundDesign | null;
+function readSoundDesignSettings(raw): SoundDesignSettings; function readClipSfx(raw): ClipSfx | null;
+function soundDesignSettingsOf(seq): SoundDesignSettings;   // read-time defaults
+function soundDesignIssue(raw): string | null; function clipSfxIssue(raw): string | null;
+
+// sound/anchor.ts
+function resolveCueAnchor(doc, seq, anchor, opts?: {mgTemplates?}): number | null;  // never throws
+function cueAnchorTargetExists(doc, seq, anchor): boolean;  function cueAnchorRefs(anchor): string[];
+function anchorAnimatable(clip, property): Animatable<unknown> | null;
+function textUnitCount(text, 'char'|'word'): number;
+function typewriterScheduleMs(units, durationMs, params): {start, slot};   // = @jasper/motion typewriterSchedule
+const MG_REFERENCE_FPS = 30;
+
+// sound/repair.ts
+function sequenceSoundDesignIssue(seq): string | null;   function clipSfxProblem(clip): string | null;
+function soundCuesOf(seq): SoundCue[];   function soundDesignNeedsRepair(doc): boolean;
+function repairSoundDesign(doc, ids, note): void;   function remapSoundDesign(seq, maps, newCueId): void;
+
+// sound/variant.ts
+const ROTATION_TOP_N = 4, VARIATION_RATE = 0.02, VARIATION_GAIN_DB = 1;
+function pickVariant(candidates: string[] /* ranked */, ctx: {seed, cueId, sequenceId?, layer?, recentSoundIds?, topN?})
+  : {soundId, index, rate /* 0.98…1.02 */, gainDb /* −1…+1 */, repeated} | null;
+function variationOf({seed, cueId, sequenceId?, layer?}): {rate, gainDb};   function hash32(s): number;
+
+// commands/handlers/sound.ts
+function pitchPlan(pitchSt, rate): {rate, shifterSt};  const VARISPEED_PITCH_MAX_ST = 3, PITCH_SHIFTER_EFFECT_ID;
+```
+
+Commands (owner `sound-design`; History labels in brackets, Spanish in es.json):
+
+| Command | Arguments | Result | Refusals |
+|---|---|---|---|
+| `soundCue.add` [Add Sound Cues] | `sequenceId?`, `cues[1…2000]` of `soundCueFields` + `id?` (unused `cue_…`) + `ref?` | `{sequenceId, cueIds}`, refs defined | unknown type `E_INVALID_PARAM`; anchor target missing `E_NOT_FOUND`; bad / used id `E_INVALID_PARAM`; > 20 000 cues in the sequence `E_LIMIT`; shapes `E_SCHEMA` |
+| `soundCue.update` [Edit Sound Cue] | `cueId`, any cue field (optional ones take `null` to clear), `moveClips?` (default true: a new `frame` moves the filling clips by the same delta) | `{cueId, frame, movedClipIds}` | `E_NOT_FOUND`; `E_INVALID_PARAM` (type, before frame 0); `E_OVERLAP`, `E_TRACK_LOCKED` (moving clips) |
+| `soundCue.remove` [Delete Sound Cues] | `cueIds[]`, `withClips?` | `{removed, liftedClipIds}`; kept clips get `sfx.cueId: null` | `E_NOT_FOUND`; `E_TRACK_LOCKED` (withClips) |
+| `soundCue.resync` [Resync Sound Cues] | `sequenceId?`, `cueIds?` (default every anchored cue) | `{moved: [{cueId, from, to, clipIds}], unresolved, unanchored}` | whole transaction refused on `E_OVERLAP`, `E_TRACK_LOCKED`, before frame 0 `E_INVALID_PARAM`; unknown cue `E_NOT_FOUND` |
+| `soundDesign.place` [Place Sound] | `sequenceId?`, `cueId` xor `frame`, `layers[1…6]` `{mediaId, track? ('auto' default \| A3 \| id \| $ref), align? (auto\|peak\|start\|end), gainDb?, rate? (0.25…4), pitchSt? (±12), pan? (number \| {keyframes[2…32] {offset (frames from the cue), value}}), role?, ref?}`, `group?` (default true), `alternatives?` (≤ 16 sound ids), `preferTrackIds?`, `clampStart?` | `{sequenceId, cueId, frame, groupId, clips: [{clipId, mediaId, soundId, trackId, trackCreated, layer, role, align, start, duration, sourceInFlicks, alignFlicks, errorFlicks, rate, pitchSt, trimmedHeadSec}]}` | neither or both of cueId / frame, start before 0 without `clampStart`, no peak descriptor with `align: peak`, media without sound, > 6 layers on a cue, bad pan keyframes: `E_INVALID_PARAM`; media / cue / track missing `E_NOT_FOUND`; explicit video track `E_TRACK_KIND`; locked `E_TRACK_LOCKED`; busy explicit track `E_OVERLAP` (with the blocking clips) |
+| `soundDesign.swap` [Swap Sound] | `clipId`, `mediaId`, `align?` | `{clipId, mediaId, soundId, start, duration, sourceInFlicks, errorFlicks, alignedFrame, align}` | `E_NOT_FOUND`; not audio / reversed / no peak `E_INVALID_PARAM`; does not fit on its track `E_OVERLAP`; `E_TRACK_LOCKED` |
+| `soundDesign.setPalette` [Sound Palette] | `sequenceId?`, `soundIds` (≤ 500, `snd_` + 16 hex), `mode?` replace\|add\|remove | `{sequenceId, palette}` | `E_SCHEMA`; > 500 `E_LIMIT`; `E_NOT_FOUND` (sequence) |
+| `soundDesign.setSettings` [Sound Design Settings] | `sequenceId?`, `delivery?`, `density?`, `sfxTrackIds?` (A2 / ids), `roomBus?` (S1 / id / null), `seed?`, `agentsMayApply?` | `{sequenceId, settings}` | `E_NOT_FOUND`; non-audio SFX track `E_TRACK_KIND`; `E_SCHEMA` |
+
+#### How placement works (`soundDesign.place`)
+
+Per layer: the media's provenance (`MediaAsset.library`) gives its types and descriptors (the registered file's, lead
+silence included); the alignment is the layer's, else the cue's `align`, else the type's `defaultAlign`
+(`resolveSoundAlign`); the pitch is the layer's, else the cue's `pitchSt`: |st| ≤ 3 → clip speed `rate · 2^(st/12)`
+with `maintainPitch: false` (the aligned point is placed in sequence time `offset ÷ rate`), larger → a
+`jasper.audio.pitch-shifter` effect (semitones + cents) at speed `rate`. `planSoundInsert` (`peakAlignedStart`) gives
+start, In point and length; the track is the explicit one (checked: audio, unlocked, free over the span) or `auto`:
+the first free `preferTrackIds` track, then the settings' `sfxTrackIds`, then a free unmuted "SFX…" track, else
+`track.add` "SFX n" (`chooseSoundTrack`). The clip is made by `placeSource` (the `clip.place` machinery, `fitted`
+range, one stereo clip, overwrite mode on a span checked free, so nothing is ever overwritten), then
+`essentialSound.setType sfx`, `gainDb`, pan (static value, or keyframes in content time at `cue + offset` frames),
+the pitch shifter, and `sfx` = {cueId, soundId, layer, role, alternatives (first layer), placement {align, peakFlicks,
+errorFlicks}}. Several clips of one cue (new and earlier layers) are grouped with `clip.group`; the cue's
+`placedClipIds` and `soundIds` follow. Default roles: the first layer of a hero cue `hero`, of other cues `support`,
+further layers `layer`. Rotation and variation are pure helpers the plan job (P3) calls before placing:
+`pickVariant` gives the sound and a `rate` / `gainDb` the layer then carries.
+
+#### Decisions
+
+- **Storage**: `Sequence.soundDesign` and `AudioClip.sfx` are `z.custom(() => true)` in the document schema (like
+  `MediaAsset.library`): a damaged value never fails a load; INV-SOUND / INV-SFX check them; repair reads them
+  leniently. Enums for kind, weight, source, align, role (the spec's closed lists); sound types are lower-case words
+  (a newer build's type survives), but commands accept only known taxonomy ids.
+- **Soft references** (anchors, `placedClipIds`, `sfx.cueId`) are not invariants: a user deleting a clip or a
+  transition must never get `E_INVARIANT` because a cue pointed at it. Readers skip dangling ids; `repairDocument`
+  tidies them on load and `loadProject` runs the repair when only those dangle (`soundDesignNeedsRepair`), so the
+  user sees a repair line ("the cut the cue followed is gone: it stays at frame 60").
+- **Cue ids** use the new prefix `cue_` and are unique in the document (commands check every sequence;
+  `sequence.duplicate` gives the copy new ids and maps anchors, placed clips and the clips' links; repair renames ids
+  two sequences share). They are not claimed under INV-001 (that index is the per-entity incremental check's), so a
+  transaction changing `soundDesign` takes the full invariant check (`sequence fields` fallback, ≈ 20 ms on 1 000 clips).
+- **Diff**: cues are entities of `diffDocuments` (created / changed / deleted ids); settings or last-check changes
+  mark the sequence changed — the fast-forward rule (S01:AGT-010) sees cue conflicts.
+- **`sfx.soundId` is nullable** (deviation, additive): spec 12 §2.3 keeps `errorFlicks` for "media placed from other
+  sources (project audio)", which has no sound id. Such media are placed by `start` / `end` (or with descriptors set
+  by `media.setLibraryInfo`); `align: peak` without a peak descriptor is refused.
+- **`clampStart`** (default false = the spec's `start < 0 → E_INVALID_PARAM`): the Sound Library insert and MCP
+  `insert_sound` pass `true` (their Phase 1 behaviour: start at 0, head trimmed, aligned point exact).
+- **Anchor resolution** (no published reference; chosen to match what the deriver detects): `edit` = the incoming
+  clip's first frame (else the outgoing clip's end: the cut moves with the clip after it); `transition` = `start +
+  ⌊duration/2⌋` of its stored span (`transitionStartFrame`); `keyframe peak-speed` = the middle of the run of frames
+  with the largest per-frame change (a linear move's middle, an eased move's fastest frame), `settle` = the first frame
+  after that at which the value is within 1 % of the travel from its rest value (an overshoot's first arrival); `text`
+  typewriter units follow `@jasper/motion`'s schedule (`start + slot·i` ms, shown from the first frame at or after
+  it; units = non-space graphemes or words, the renderer's count is based on layout segments and could differ for
+  exotic scripts); `mg` intro/outro frames are at 30 fps and compressed like `animeTemplateTiming`; `scene` / `beat`
+  map a media time through the clip (time remaps and holds by scanning frames, ≤ 50 000); markers include clip
+  markers. A frame outside the clip (± half a frame) or the sequence is null.
+- **Rotation**: least recently used among the top 4 (ties by rank), skipping the last-used sound when another exists;
+  variation from FNV-1a(sequence | cue | seed | layer) → mulberry32: rate 1 ± 0.02 (0.0001 steps), gain ± 1 dB
+  (0.01 dB steps).
+- **Swap** keeps the aligned frame (computed from the clip: start, In, speed, `placement`), track, speed, gain, pan,
+  effects, group, link, role and cue; keyframes and clip markers keep their sequence times (content times shifted by
+  the In / start change); the cue's `soundIds[layer]` follows. It refuses rather than moving to another track.
+- **Resync / update move clips all-or-nothing** on their own tracks (never overwrite; a clip in two cues moves once).
+
+#### Verified (measured, this branch)
+
+RESULTS_PLACEHOLDER
+
+#### Limits and notes for the next packages
+
+- `pickVariant` is pure and not called by `soundDesign.place` itself: the plan job (P3) / Fill (P2-R7) picks the
+  sound and passes the variant's `rate` and `gainDb` on the layer. "Recent" sounds are the caller's to gather (e.g.
+  the `sfx.soundId`s of the cues before this one).
+- Varispeed pitch + variation can exceed what 50 ms of lead silence absorbs: at 23.976 fps a +3 st shift with +2 %
+  variation needs 50.6 ms, so such a layer can play up to one frame late (`errorFlicks` says so). At rate ≤ 1.19 it
+  is exact.
+- `pan: 'auto'` on a cue is not resolved here (no picture position in the model): the deriver should write the
+  number; a cue with `'auto'` places centred unless the layer gives a pan.
+- `stopBefore`, `build`, `muted`, `settings.roomBus`, `delivery`, `lastCheck` are stored and validated only (P4 / P5
+  use them). `muted` does not silence placed clips.
+- MCP cue tools (`find_sound_cues`, `set_sound_cues`, `place_sound`, `swap_sound`, `align_peak`) are P2-R6; agents can
+  already use the commands through `apply_commands` / `describe_commands` (examples added).
+- `sequence.duplicate` re-identifies clip markers and keyframes, so anchors to a clip marker or a keyframe id in the
+  copy dangle (repaired to null on the next load).
+- `soundCue.resync` resolves `mg` anchors with the transaction's template registry; without a template the cue is
+  reported unresolved.
+
 ## Phase 3: proposals and review
 
 ## Phase 4: mixing
