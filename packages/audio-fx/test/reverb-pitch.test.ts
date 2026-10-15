@@ -35,7 +35,7 @@ describe('Convolution Reverb', () => {
 		x[0] = 1;
 		r.process([x], 0, n);
 		for (let i = 0; i < latency; i++) expect(x[i]).toBe(0);
-		expect(x.subarray(Math.max(1, latency)).some((sample) => sample !== 0)).toBe(true);
+		expect(x.subarray(latency + 1).some((sample) => sample !== 0)).toBe(true);
 	});
 
 	it('mix law: 0 % is the delayed dry signal', () => {

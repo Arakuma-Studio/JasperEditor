@@ -786,7 +786,7 @@ Production owner(s), relative to `packages/audio-dsp/src/` unless absolute repo 
 
 ## packages/audio-dsp/test/sync.test.ts
 
-Production owner(s), relative to `packages/audio-dsp/src/` unless absolute repo path shown: `sync.ts`. Non-test callers: apps/engine/src/sync/service.ts and packages/audio-fx/src/analysis/remix.ts.
+Production owner(s), relative to `packages/audio-dsp/src/` unless absolute repo path shown: `sync.ts`. Non-test callers: apps/engine/src/sync/service.ts.
 
 ### DELETE — matches a naive DFT and round-trips
 
@@ -1763,18 +1763,18 @@ Production owner(s), relative to `packages/audio-fx/src/` unless absolute repo p
 
 ### DELETE — generated impulses have the specified RT60 (±15 %) and are deterministic
 
-Expected decay is read from private IR_SPECS, and tests generator internals; actual convolution output decay and registry determinism are stronger. Missing bar: independent ownership and/or stable refactor-safe seam (B3–B6). Risk: removes implementation sensitivity; named surviving public/output owner retains the real contract.
+Expected decay is read from private IR_SPECS, and tests generator internals; public convolution wet-tail/dry-mix and registry determinism contracts remain. An exact preset RT60 is not independently specified; no equivalent decay coverage is claimed. Missing bar: independent ownership and/or stable refactor-safe seam (B3–B6). Risk: removes implementation sensitivity; named surviving public/output owner retains the real contract.
 
 ### REWRITE — the processed output of an impulse decays with the impulse RT60; latency = 256
 
-- B1: docs/wp-notes/audio-fx.md §§1,5; ARCHITECTURE D-42; published RBJ/GMR/filter/pitch laws and the public AudioProcessor contract. Contract exercised: the processed output of an impulse decays with the impulse RT60; latency = 256.
-- B2: A caller receives incorrect audio samples, analysis, protocol bytes or parameter results for the named input; the corresponding value/state assertion fails.
-- B3: Expected results come from fixed parameter-selected output values or independently specified acoustic laws; partition/reset equality checks stream semantics. Response-vs-audio assertions check the documented editor-curve promise against actual processed samples, not against a private collaborator. They can disagree with production.
-- B4: createProcessor/AudioProcessor samples, responseDb, transferDb, meters, latency and reset; core public primitives only for distinct numeric contracts.
-- B5: Keeps the contract across internal renames/reorganization, alternative algorithms and helper call changes; does not pin collaborator calls or source text.
-- B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
-- Rewrite: Use reported latency for leading silence and RT60 measurement instead of pinning the FFT partition size.
-- Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
+- B1: Public Convolution Reverb description in packages/project/src/registry/audio/reverb.ts: full-wet convolution produces a reverberant tail. The exact private largeHall 1.9-second duration is not independently specified and is removed.
+- B2: Disconnected/silent wet processing, returning the dry impulse, or output before reported latency fails the retained assertions.
+- B3: Nonzero post-impulse samples and no output before reported latency are independent of private preset constants or FFT partition size.
+- B4: Actual samples from createProcessor/AudioProcessor.process, with the public reported latency.
+- B5: No private preset duration, transform size, helper calls or IR representation is pinned.
+- B6: The registry finite/determinism tests and the dry-mix test cannot detect a missing wet path. Studio Reverb's explicit RT60 parameter is a different effect contract.
+- Rewrite: Keep impulse setup, wet processing and delayed-tail assertion. Remove the hard-coded latency and private 1.9-second decay target. Final name: “100 % wet produces a delayed reverberant tail”.
+- Risk: Exact historical convolution compensation accuracy needs an independent numeric oracle; this test does not claim that coverage. Validation: reverb-pitch.test.ts and audio-fx typecheck, pending integration.
 
 ### REWRITE — mix law: 0 % is the delayed dry signal
 
@@ -2022,7 +2022,7 @@ Duplicate audio-dsp/channels.test.ts constant-power and balance numeric owner. M
 
 ## packages/mg-templates/test/anime-contracts.test.ts
 
-Production owner(s), relative to `packages/mg-templates/src/` unless absolute repo path shown: `registry.ts, core.ts, types.ts`. Non-test callers: apps/engine/src/mg/* and routes/mg.ts; packages/project template consumers; packages/compositions/src/layers/MgLayer.tsx; apps/web template gallery/property consumers.
+Production owner(s), relative to `packages/mg-templates/src/` unless absolute repo path shown: `registry.ts, core.ts, types.ts`. Non-test callers: apps/engine/src/mg/* and routes/mg.ts; packages/project template consumers; packages/compositions/src/layers/MotionGraphicLayer.tsx; apps/web template gallery/property consumers.
 
 ### KEEP — exposes anime routing and gallery metadata without marking fframes entries
 
@@ -2036,7 +2036,7 @@ Production owner(s), relative to `packages/mg-templates/src/` unless absolute re
 
 ## packages/mg-templates/test/anime-templates.test.ts
 
-Production owner(s), relative to `packages/mg-templates/src/` unless absolute repo path shown: `templates/anime/{timing,counter,common}.ts, registry.ts`. Non-test callers: apps/engine/src/mg/* and routes/mg.ts; packages/project template consumers; packages/compositions/src/layers/MgLayer.tsx; apps/web template gallery/property consumers.
+Production owner(s), relative to `packages/mg-templates/src/` unless absolute repo path shown: `templates/anime/{timing,counter,common}.ts, registry.ts`. Non-test callers: apps/engine/src/mg/* and routes/mg.ts; packages/project template consumers; packages/compositions/src/layers/MotionGraphicLayer.tsx; apps/web template gallery/property consumers.
 
 ### KEEP — rejects unknown fields, invalid RGBA channels and oversized text
 
@@ -2170,7 +2170,7 @@ Production owner(s), relative to `packages/mg-templates/src/` unless absolute re
 
 ## packages/mg-templates/test/parity.test.ts
 
-Production owner(s), relative to `packages/mg-templates/src/` unless absolute repo path shown: `templates/{lower-third,title-card}.ts, catalog.ts; native/mg/src/templates/`. Non-test callers: apps/engine/src/mg/* and routes/mg.ts; packages/project template consumers; packages/compositions/src/layers/MgLayer.tsx; apps/web template gallery/property consumers.
+Production owner(s), relative to `packages/mg-templates/src/` unless absolute repo path shown: `templates/{lower-third,title-card}.ts, catalog.ts; native/mg/crates/jasper-mg-templates/src/`. Non-test callers: apps/engine/src/mg/* and routes/mg.ts; packages/project template consumers; packages/compositions/src/layers/MotionGraphicLayer.tsx; apps/web template gallery/property consumers.
 
 ### KEEP — schemas/ matches the TS catalog (run \`pnpm --filter @jasper/mg-templates schemas\`)
 
@@ -2215,7 +2215,7 @@ Production owner(s), relative to `packages/mg-templates/src/` unless absolute re
 
 ## packages/mg-templates/test/registry.test.ts
 
-Production owner(s), relative to `packages/mg-templates/src/` unless absolute repo path shown: `registry.ts, core.ts, params.ts`. Non-test callers: apps/engine/src/mg/* and routes/mg.ts; packages/project template consumers; packages/compositions/src/layers/MgLayer.tsx; apps/web template gallery/property consumers.
+Production owner(s), relative to `packages/mg-templates/src/` unless absolute repo path shown: `registry.ts, core.ts, params.ts`. Non-test callers: apps/engine/src/mg/* and routes/mg.ts; packages/project template consumers; packages/compositions/src/layers/MotionGraphicLayer.tsx; apps/web template gallery/property consumers.
 
 ### KEEP — ships the required fframes and anime template versions
 
@@ -2249,7 +2249,7 @@ Production owner(s), relative to `packages/mg-templates/src/` unless absolute re
 
 ## packages/mg-templates/test/twins.test.ts
 
-Production owner(s), relative to `packages/mg-templates/src/` unless absolute repo path shown: `templates/lower-third.ts, spec.ts`. Non-test callers: apps/engine/src/mg/* and routes/mg.ts; packages/project template consumers; packages/compositions/src/layers/MgLayer.tsx; apps/web template gallery/property consumers.
+Production owner(s), relative to `packages/mg-templates/src/` unless absolute repo path shown: `templates/lower-third.ts, spec.ts`. Non-test callers: apps/engine/src/mg/* and routes/mg.ts; packages/project template consumers; packages/compositions/src/layers/MotionGraphicLayer.tsx; apps/web template gallery/property consumers.
 
 ### KEEP — escapes user-provided text
 
@@ -2283,7 +2283,7 @@ Production owner(s), relative to `packages/mg-templates/src/` unless absolute re
 
 ## packages/motion/test/determinism-render.e2e.test.ts
 
-Production owner(s), relative to `packages/motion/src/` unless absolute repo path shown: `runtime/, text/, templates/; packages/compositions/src/SequenceComposition.tsx`. Non-test callers: packages/compositions/src/layers/TextLayer.tsx and MgLayer.tsx; packages/motion/src/templates/* and text/presets.ts.
+Production owner(s), relative to `packages/motion/src/` unless absolute repo path shown: `runtime/, text/, templates/; packages/compositions/src/SequenceComposition.tsx`. Non-test callers: packages/compositions/src/layers/TextLayer.tsx and MotionGraphicLayer.tsx; packages/motion/src/templates/* and text/presets.ts.
 
 ### KEEP — \`${id}: renderStill per frame = renderFrames c1 = c4 = reversed = shuffled (byte-identical PNGs)\`
 
@@ -2347,7 +2347,7 @@ Production owner(s), relative to `packages/motion/src/` unless absolute repo pat
 
 ## packages/motion/test/determinism.test.tsx
 
-Production owner(s), relative to `packages/motion/src/` unless absolute repo path shown: `runtime/{timeline,hooks}.ts, text/presets.ts, templates/`. Non-test callers: packages/compositions/src/layers/TextLayer.tsx and MgLayer.tsx; packages/motion/src/templates/* and text/presets.ts.
+Production owner(s), relative to `packages/motion/src/` unless absolute repo path shown: `runtime/{timeline,hooks}.ts, text/presets.ts, templates/`. Non-test callers: packages/compositions/src/layers/TextLayer.tsx and MotionGraphicLayer.tsx; packages/motion/src/templates/* and text/presets.ts.
 
 ### KEEP — \`${key} is order-independent, rests outside its window and keeps the build contract\`
 
@@ -2361,7 +2361,7 @@ Production owner(s), relative to `packages/motion/src/` unless absolute repo pat
 
 ## packages/motion/test/runtime.test.tsx
 
-Production owner(s), relative to `packages/motion/src/` unless absolute repo path shown: `runtime/{timeline,hooks,text,random,eases}.ts`. Non-test callers: packages/compositions/src/layers/TextLayer.tsx and MgLayer.tsx; packages/motion/src/templates/* and text/presets.ts.
+Production owner(s), relative to `packages/motion/src/` unless absolute repo path shown: `runtime/{timeline,hooks,text,random,eases}.ts`. Non-test callers: packages/compositions/src/layers/TextLayer.tsx and MotionGraphicLayer.tsx; packages/motion/src/templates/* and text/presets.ts.
 
 ### KEEP — pins anime.js 4.5.0 exactly
 
@@ -2565,7 +2565,7 @@ Production owner(s), relative to `packages/motion/src/` unless absolute repo pat
 
 ## packages/motion/test/templates-review.test.tsx
 
-Production owner(s), relative to `packages/motion/src/` unless absolute repo path shown: `templates/counter.tsx`. Non-test callers: packages/compositions/src/layers/TextLayer.tsx and MgLayer.tsx; packages/motion/src/templates/* and text/presets.ts.
+Production owner(s), relative to `packages/motion/src/` unless absolute repo path shown: `templates/counter.tsx`. Non-test callers: packages/compositions/src/layers/TextLayer.tsx and MotionGraphicLayer.tsx; packages/motion/src/templates/* and text/presets.ts.
 
 ### KEEP — a large counter advances at frame precision and reaches both endpoints
 
@@ -2579,7 +2579,7 @@ Production owner(s), relative to `packages/motion/src/` unless absolute repo pat
 
 ## packages/motion/test/text.test.ts
 
-Production owner(s), relative to `packages/motion/src/` unless absolute repo path shown: `text/presets.ts`. Non-test callers: packages/compositions/src/layers/TextLayer.tsx and MgLayer.tsx; packages/motion/src/templates/* and text/presets.ts.
+Production owner(s), relative to `packages/motion/src/` unless absolute repo path shown: `text/presets.ts`. Non-test callers: packages/compositions/src/layers/TextLayer.tsx and MotionGraphicLayer.tsx; packages/motion/src/templates/* and text/presets.ts.
 
 ### REWRITE — every offered preset resolves and an unknown version does not
 
@@ -2655,3 +2655,5 @@ Post-fix command: `pnpm exec vitest run packages/audio-fx/test/registry.test.ts 
 
 
 Final independent-source correction before the reverb assertion edit: the work note records a credible convolution energy-compensation regression, but the exact `largeHall = 1.9 s` expectation is only present in private IR metadata. That number fails B1/B3 and is removed. The existing REWRITE retains only its separate public wet-output contract: with 100% wet mix an impulse must produce a delayed, nonzero tail, not silence or an unchanged dry impulse. B1: public Convolution Reverb description in `packages/project/src/registry/audio/reverb.ts`; B2: disconnected/blank wet processing fails; B3: a nonzero post-impulse tail is independent of private preset constants; B4: actual `AudioProcessor.process` output; B5: no decay constant, FFT partition or representation is pinned; B6: registry finite/determinism and dry-mix tests cannot detect a silently absent wet path. The Studio Reverb's explicit RT60-parameter test is a different contract; it does not cover the convolution compensation regression. An exact compensation check needs an independently specified impulse/target and is not claimed by this cleanup.
+
+Cross-review tightened the wet-tail assertion to start strictly after the direct impulse at reported latency (`latency + 1`), so a pure delayed dry impulse cannot satisfy it. Source/caller paths were corrected to MotionGraphicLayer and the native template crate.
