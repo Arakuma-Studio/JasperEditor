@@ -507,6 +507,37 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		);
 	});
 
+	it('swap_sound cycles a sound placed without alternates: next ×3 progresses, previous ×3 returns to it', async () => {
+		// Regression (lead's real run): without a stored ring the cycle was anchored on the CURRENT sound, so it was
+		// rebuilt around each new sound and "next" alternated between two sounds forever.
+		const seq = seqOf(await documentOf(projectId));
+		const F = flicksPerFrame(seq.settings.frameRate);
+		const push = cuesOf(seq).find((c) => c.kind === 'transition')!;
+		const clip = Object.values(seq.clips).find(
+			(c) => c.kind === 'audio' && (c as SfxClip).sfx?.cueId === push.id,
+		) as SfxClip;
+		expect(clip.sfx!.alternatives ?? []).toEqual([]);
+		const original = clip.sfx!.soundId!;
+		const seen = [original];
+		for (let i = 0; i < 3; i++)
+			seen.push(
+				(await ok<{ to: { soundId: string } }>('swap_sound', { projectId, clipId: clip.id, to: 'next' })).to
+					.soundId,
+			);
+		expect(new Set(seen).size, seen.join(' ')).toBe(4);
+		const back: string[] = [];
+		for (let i = 0; i < 3; i++)
+			back.push(
+				(await ok<{ to: { soundId: string } }>('swap_sound', { projectId, clipId: clip.id, to: 'previous' }))
+					.to.soundId,
+			);
+		expect(back).toEqual([seen[2], seen[1], original]);
+		const after = seqOf(await documentOf(projectId)).clips[clip.id] as SfxClip;
+		expect(after.sfx!.alternatives).toEqual([original]);
+		expect(after.sfx!.soundId).toBe(original);
+		expect(Math.abs(playsAt(after, F) - 180 * F)).toBeLessThanOrEqual(1);
+	});
+
 	it('align_peak moves a clip (and its layers) so the peak lands exactly; back to its cue; refusals', async () => {
 		const doc = await documentOf(projectId);
 		const seq = seqOf(doc);

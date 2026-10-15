@@ -843,6 +843,8 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 			role: 'support',
 			placement,
 		} as ClipSfx;
+	if (cmd.alternatives?.length)
+		clip.sfx!.alternatives = [...new Set(cmd.alternatives)].slice(0, SOUND_DESIGN_LIMITS.alternatives);
 	// The cue's sound list follows.
 	const cueId = clip.sfx!.cueId;
 	const sd = (seq as { soundDesign?: Draft<SoundDesign> }).soundDesign;

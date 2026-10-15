@@ -160,7 +160,9 @@ export const SoundDesignPlaceCmd = cmd('soundDesign.place', {
  * point. The same media with another `align` re-aligns the clip (its start, peak or end on the frame the old point
  * played at, or on `frame`); `pitchSt` re-pitches it around that point (|st| ≤ 3 by varispeed keeping the seeded ±2 %
  * variation, else the Pitch Shifter effect; 0 removes the shift). Result `{clipId, mediaId, soundId, start,
- * sourceInFlicks, errorFlicks, alignedFrame, align, rate, pitchSt}`.
+ * sourceInFlicks, errorFlicks, alignedFrame, align, rate, pitchSt}`. `alternatives` replaces the clip's variation ring
+ * (`sfx.alternatives`, sound ids ≤ 16, the original first): variation cycling across separate calls keeps one anchor
+ * even for a sound placed without alternatives (MCP `swap_sound` stores `[original]` on its first swap).
  */
 export const SoundDesignSwapCmd = cmd('soundDesign.swap', {
 	clipId: IdRefSchema,
@@ -168,6 +170,7 @@ export const SoundDesignSwapCmd = cmd('soundDesign.swap', {
 	align: z.enum(CUE_ALIGNS).optional(),
 	frame: TimeInputSchema.optional(),
 	pitchSt: z.number().min(-12).max(12).optional(),
+	alternatives: z.array(SoundIdSchema).min(1).max(SOUND_DESIGN_LIMITS.alternatives).optional(),
 });
 
 /**
