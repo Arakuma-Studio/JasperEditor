@@ -220,15 +220,15 @@ The installers themselves were not built (section 7).
 - **PAR-1.** `&#x110000;` in an SVG threw `RangeError` out of the importer (an untyped engine error).
 - **SSH-1.** A remote-executor user name such as `-oFoo` was accepted and reached `ssh` as part of `user@host`.
 
-## 3. Tests added
+## 3. Current regression coverage
 
 | File | What it holds |
 |---|---|
 | `packages/expressions/test/sandbox.test.ts` | Realm isolation (10 poisoning vectors), implicit globals, clock, override taming, limits, quarantine |
 | `apps/web/test/agent-ui-guard.test.tsx` | Session guard, irreversible commands, approval card |
-| `e2e/security-review.spec.ts` | AGT-1 in the real app over `jasper-mcp`: `ui_click` on Approve approves nothing (it did before the fix), the user's click does; `ui_command history.clear {confirmed}` is refused |
+| `e2e/security-review.spec.ts` | AGT-1 in the real app over `jasper-mcp`: `ui_click` cannot approve; trusted denial preserves the track, trusted approval removes it. DEV-1 checks token refusal and HttpOnly editor cookies |
 | `apps/engine/test/security-review.test.ts` | ENG-1…6, DATA-4/5/6, WebSocket `/agent` Host, Origin and token checks |
-| `apps/engine/test/export-coverage.test.ts` | EXP-1, below |
+| `apps/engine/test/export.test.ts`, `apps/engine/test/layer-bake.test.ts`, `apps/engine/test/compositor-export.e2e.test.ts`, `apps/engine/test/audio-fx.test.ts` | EXP-1: media-file output, unavailable-renderer refusals, mixed-stack pixels and audio processing; limits below |
 | `packages/session/test/integrity-property.test.ts` | DATA-1, below |
 | `packages/project/test/nest-shorten.test.ts`, `split-children-ids.test.ts` | DATA-2, DATA-7 |
 | `packages/project/test/vector/svg.test.ts`, `apps/engine/test/interchange.test.ts`, `gaps-routes.test.ts`, `apps/desktop/test/security.test.ts` | PAR-1, DATA-3, ENG-5, ELE-1/2 |
@@ -247,13 +247,13 @@ document with no repairs and no issues; undoing every step restores each earlier
 one, redoing restores the exact final one. It found DATA-2 and DATA-7. About 2 800 further random sequences
 passed after the fixes (seven `FUZZ=1` runs).
 
-**EXP-1, export coverage**: with the engine's real native extensions, every registered video effect (375), video
-transition (172), audio effect, and the clip kinds and features built from commands is checked to be rendered
-natively by a stage that implements it, baked by an extension, or refused by a blocker (or a plan error) that
-names it — and, when not native, actually drawn by the compositions. Result at this commit: 8 effects native
-(crop, flips, colour ops), 366 baked, Warp Stabilizer refused by name until analysed, 170 GPU transitions baked and
-the 2 built-in ramps rendered as fades, all 60 audio effects with an export processor, 3D layers named. No silent
-drop was found.
+**EXP-1, export coverage**: an export must render the requested features exactly or refuse with a named blocker.
+The former catalog-enumeration test did not prove rendered fidelity for every registered feature and has been
+removed. Current owners are `apps/engine/test/export.test.ts` for produced media and native refusals,
+`apps/engine/test/layer-bake.test.ts` for unavailable-renderer blockers,
+`apps/engine/test/compositor-export.e2e.test.ts` for native/Remotion mixed-stack pixel comparisons, and
+`apps/engine/test/audio-fx.test.ts` for exported audio processing. These are scoped behavioral checks, not evidence
+that every possible feature combination has been rendered without loss.
 
 ## 4. Decisions
 
@@ -398,8 +398,8 @@ Fix, two layers:
 AGT-1 (synthetic clicks) still applies on top: the user approves with a real click.
 
 Tests: `apps/engine/test/security-hardening.test.ts` (AGT-2: classification, relay, wrong / foreign / missing keys,
-no editor, late window), `apps/web/test/agent-bridge.test.ts`, `e2e/security-review.spec.ts` (a raw WebSocket client
-with the runtime file's token attaches and answers: nothing happens; the user's click decides),
+no editor, late window), `apps/web/test/agent-bridge.test.ts`, `e2e/security-review.spec.ts` (MCP UI input cannot
+approve; trusted user denial preserves the track and trusted approval removes it),
 `e2e/desktop-smoke.mjs` (the Electron window is the editor; its cookies are invisible to scripts). Mutation check
 (measured): with the answer-key check, the route gate, the generated token and the inert bundle path taken out
 again, 25 of the 36 tests of `security-hardening.test.ts` fail.
@@ -460,8 +460,8 @@ shell user naming a file. Tool descriptions and the server guide say which tools
 
 Tests: `security-hardening.test.ts` (AGT-3: preset and bin deletion end to end, the editor's own request, the
 agent-input mark, one row per gated route with "nothing changed", what stays open, agent-owned projects, lease
-take-over, models), `e2e/security-review.spec.ts` (`delete_effect_preset` over real `jasper-mcp`: card, deny,
-approve), the MCP suite (34 files, 457 tests) against engines that now have tokens.
+take-over, models). `e2e/security-review.spec.ts` covers the trusted-user approval workflow for a destructive
+transaction over real `jasper-mcp`; route-specific refusal ownership remains in the engine suite.
 
 ### DEV-1 — no unauthenticated mode (Medium; High with other users on the machine)
 
@@ -525,9 +525,11 @@ Tests: `packages/compositions/test/mg-host-remote.test.ts` (agent and remote ove
 stand-in for the Remotion page globals; hostile replies; storage stand-ins), `security-hardening.test.ts` (MG-1:
 redirect, capability, policy, traversal, inert old path), and in the real app `e2e/mg-clips.spec.ts` (the Remotion
 4.0.499 contract through the port; `origin === 'null'`, no parent access, no cookies, the engine API unreachable
-from inside; live preview, props edit visible in under 500 ms, preview WebM) and `e2e/mg-texts.spec.ts` (text
-measuring, on-canvas editing with the bundle's fonts). All existing bundle tests pass; the two e2e specs read the
-page from inside the frame instead of through `contentDocument`.
+from inside; live preview and props edit visible in under 500 ms). The browser spec records protocol JSON and a
+preview screenshot, reading the page from inside the sandboxed frame. Text-edit apply/cancel and schema refusals
+are covered by `apps/web/test/composition-texts.test.tsx`; the measuring server's path confinement and malformed-URL
+handling are covered by `apps/engine/test/mg-text-measure.test.ts`. These lower-level checks do not establish
+browser text measurement with every bundle font.
 
 ### RUN-1 — run-as-node (evaluated; not closed)
 
@@ -607,7 +609,9 @@ right-to-left override) in four directories.
   500 random ones. A name with `"`, NUL or a line break — impossible on Windows — is refused instead of quoted
   around.
 
-### Verified in the running app
+### Historical running-app verification
+
+These are the recorded runs from the hardening workstream, not counts or pass results for the current suite.
 
 - Built stack (`e2e/serve.mjs`, engine with token and editor key): `security-review` (4), `agent` (6),
   `effect-presets` (2), `media-cache` (3), `project-files` (2), `mg-clips` (2), `mg-texts` (2) and `smoke` (11,

@@ -54,9 +54,9 @@ estimate still moves by far less than breadth, because what limits real use is n
 
 | Dimension | Estimate | Evidence |
 |---|---|---|
-| Breadth of features | ≈ 98% (P0 97%, P1 99%, P2 100%) | [parity.md](parity.md): 89 done, 3 partial (CL-4, EX-2, PL-2), 0 missing of 92, each changed row citing its wp-note and tests; every menubar entry (291) and default shortcut resolves to a command (`apps/web/test/polish-menu-wiring.test.ts`) |
-| Behaves like Premiere | largely unreviewed as workflows, ≈ 60–75% where it exists | Fidelity comes from research during implementation (Adobe's help pages, parameter references, shortcut lists, published formulas), not from captures of Adobe software; each merged workstream cites its sources in its wp-note. The keymap follows Premiere's published defaults and is conflict-checked (`keymap.test.ts`). Many M1 behaviours (trim modes, sync lock, targeting) follow our own specs S01–S05 without a recorded source review |
-| Preview = export | measured for the native paths and the audio mix | Sub-pixel streamed layers: lossless-still parity with Remotion SSIM 0.99999, 0.05 px/frame pans smooth to 0.001 px RMS (D-34); GPU spans and effect bakes: 100% of samples within 3/255 (D-35); one offline mixer renders the audio of every export path (D-42, `apps/engine/test/audio-mix.test.ts`); ffprobe frame counts in `smoke.spec.ts` |
+| Breadth of features | ≈ 98% (P0 97%, P1 99%, P2 100%) | [parity.md](parity.md): 89 done, 3 partial (CL-4, EX-2, PL-2), 0 missing of 92, each changed row citing its wp-note and behavior tests; command dispatch and timeline edits are covered by `apps/web/test/registry.test.tsx` and `apps/web/test/timeline-commands.test.ts` |
+| Behaves like Premiere | largely unreviewed as workflows, ≈ 60–75% where it exists | Fidelity comes from research during implementation (Adobe's help pages, parameter references, shortcut lists, published formulas), not from captures of Adobe software; each merged workstream cites its sources in its wp-note. The keymap follows Premiere's published defaults and is conflict-checked (`apps/web/test/keymap.test.ts`). Many M1 behaviours (trim modes, sync lock, targeting) follow our own specs S01–S05 without a recorded source review |
+| Preview = export | measured for the native paths and the audio mix | Sub-pixel streamed layers: lossless-still parity with Remotion SSIM 0.99999, 0.05 px/frame pans smooth to 0.001 px RMS (D-34); GPU spans and effect bakes: 100% of samples within 3/255 (D-35); one offline mixer renders the audio of every export path (D-42, `apps/engine/test/audio-mix.test.ts`); ffprobe frame counts in `e2e/smoke.spec.ts` |
 | Opening existing Premiere work | ≈ 40% | No `.prproj` (out of scope); FCP 7 XML, FCPXML, EDL, AAF, OMF and OTIO import with a report of what each format loses (`docs/wp-notes/interchange.md` §7). Not tried on real projects exported by Premiere |
 | Stability | measured by our own suites, unproven in use | Atomic writes, leases (a reloaded tab keeps its own, `polish`), 409 handling, invariant repair, a crash-recovery journal and saved versions (D-39, `apps/engine/test/recovery-versions.test.ts`); `fast-check` property tests and a 10 000-transaction invariant fuzz in `packages/project`; golden frames, fingerprints of every GPU effect and transition, fuzzed loaders, HTTP routes and MCP tools (`golden-fuzz`, [testing.md](testing.md)); a session-level integrity property over 32 kinds of edits with undo / redo / save round trips, and 19 security findings fixed with regression tests ([security-review.md](security-review.md)). No crash reports from users, because there are no users |
 | Real-user experience | unknown | No outside users yet. The October audits were internal (no longer kept in the repository; `docs/slop-audit.md` records the latest code audit) |
@@ -64,7 +64,7 @@ estimate still moves by far less than breadth, because what limits real use is n
 | Media formats | ≈ 75% | Everything the LGPL FFmpeg 7.1 decodes, plus image sequences, layered PSD, PDF / Illustrator, SVG, Lottie, EXR / DPX / HEIC / JPEG XL stills (`docs/wp-notes/imports.md`); export H.264 (OpenH264 or hardware), VP9, AV1, ProRes, 10/12-bit HDR. No software HEVC export; camera RAW not supported |
 | AI-assisted tools | ≈ 60% | SPAN upscaler, stabilisation, denoise, de-judder; OpenCV tracking; local speech to text with diarization (`docs/wp-notes/speech.md`); SAM 2.1 roto and face tracking (`docs/wp-notes/roto.md`); scene edit detection and optical flow (`docs/wp-notes/time.md`); Music Remix (`docs/wp-notes/audio-fx.md`); Warp Stabilizer with background analysis (Subspace Warp included), Auto Reframe Sequence (face model when installed, else saliency) and Morph Cut on optical flow (`docs/wp-notes/gaps.md`). No enhance speech; all models run on the CPU |
 | Platforms | Linux only | Web, PWA and Electron on Linux (M1-STATUS); macOS / Windows packaging written, never run |
-| Maturity | early | First commit 29 September 2026. ≈ 586,000 lines of TypeScript and scripts (tests included), almost entirely agent-written; 526 test files and 54 Playwright specs (counted with `git ls-files`) |
+| Maturity | early | First commit 29 September 2026. ≈ 586,000 lines of TypeScript and scripts (tests included), almost entirely agent-written; 526 test files and 54 Playwright specs at the 10 October 2026 polish assessment (historical counts from `git ls-files`) |
 
 ## Workstreams
 
@@ -78,15 +78,15 @@ status says so.
 Agents drive everything without a window: a CLI over the same command catalogue and MCP depth (every UI command
 reachable, batch steps, rendered checks). **Done when:** each File/Edit/Clip/Sequence menu command is reachable from
 MCP or the CLI with a JSON schema, a scripted end-to-end session (import → edit → grade → export) runs headless in
-CI, and the README tool list is checked by a test.
-**Status (merged):** done for MCP depth and the CLI — see [wp-notes/mcp-cli.md](wp-notes/mcp-cli.md): the `jasper` CLI over the same tools, `ui_*` tools that drive the live window, 323 MCP tools (counted after `polish`) with a README list checked by `apps/mcp/test/readme-tools.test.ts`, `e2e/agent-ui.spec.ts`. The headless session in CI came with `golden-fuzz` (its GitHub Actions workflow). Since `review` the `ui_*` tools cannot answer approvals or run approval-gated or irreversible commands ([security-review.md](security-review.md) AGT-1). `fixups` made clip targets aim at their visible part and fixed a bundle that did not load (`apps/mcp/test/bundle.test.ts`).
+CI, and MCP `listTools` exposes the current catalog and schemas.
+**Status (merged):** done for MCP depth and the CLI — see [wp-notes/mcp-cli.md](wp-notes/mcp-cli.md): the `jasper` CLI over the same tools, `ui_*` tools that drive the live window, 323 MCP tools counted after `polish` (historical count; query `listTools` for the current catalog), with live-UI workflows in `e2e/agent-ui.spec.ts`. The headless session in CI came with `golden-fuzz` (its GitHub Actions workflow). Since `review` the `ui_*` tools cannot answer approvals or run approval-gated or irreversible commands ([security-review.md](security-review.md) AGT-1). `fixups` made clip targets aim at their visible part and fixed a bundle that did not load (`apps/mcp/test/bundle.test.ts`).
 
 ### keyframes-blend
 Premiere's full keyframe and blend-mode behaviour. **Done when:** all 27 Premiere blend modes exist in the model,
 preview and native export (oracle-tested against the published formulas), keyframe interpolation covers linear,
 Bezier, auto Bezier, continuous Bezier, hold, ease in/out with temporal and spatial variants, and every one is
 editable in Effect Controls and through MCP.
-**Status (merged):** done — see [wp-notes/keyframes-blend.md](wp-notes/keyframes-blend.md): Premiere's 27 blend modes native and in preview (oracle `blendPixel`, Remotion parity 31/31 in `apps/engine/test/blend-remotion.e2e.test.ts`), auto / continuous Bezier and the temporal / spatial variants. Limits: blend modes inside nests export through Remotion; GL modes need HTML-in-Canvas (scope nesting lifted by `compositor`).
+**Status (merged):** done — see [wp-notes/keyframes-blend.md](wp-notes/keyframes-blend.md): Premiere's 27 blend modes native and in preview (native pixels in `apps/engine/test/blend-export.test.ts`, WebGL contracts in `packages/compositions/test/blend-gl.test.ts`, mixed-stack native/Remotion parity in `apps/engine/test/compositor-export.e2e.test.ts`), auto / continuous Bezier and the temporal / spatial variants. Limits: blend modes inside nests export through Remotion; GL modes need HTML-in-Canvas (scope nesting lifted by `compositor`).
 
 ### golden-fuzz
 Evidence that features stay correct. **Done when:** golden-frame tests pin preview and export output for every effect
@@ -110,7 +110,7 @@ Audio Channels maps channels, and exports match the preview mix (sample-level or
 pitch shifter, channel volume) apply to clips and tracks with keyframes in preview and export, exponential fades
 join the crossfades, and loudness normalisation (EBU R128 / ITU-R BS.1770, checked against ffmpeg `ebur128`) and
 auto-ducking work as in Essential Sound.
-**Status (merged):** done — see [wp-notes/audio-fx.md](wp-notes/audio-fx.md): 60 audio effects in one DSP (D-42), Exponential Fade, Essential Sound, Music Remix, auto-ducking (`packages/audio-fx/test/*`, `e2e/audio-fx.spec.ts`). Limits: preview latency of track inserts is not compensated (export is).
+**Status (merged):** done — see [wp-notes/audio-fx.md](wp-notes/audio-fx.md): 60 audio effects in one DSP (D-42), Exponential Fade, Essential Sound, Music Remix, auto-ducking (`packages/audio-fx/test/*`, `apps/engine/test/audio-fx.test.ts`). Limits: preview latency of track inserts is not compensated (export is).
 
 ### captions
 **Done when:** caption tracks can be created, edited and styled in the timeline and Program monitor, import and export
@@ -121,7 +121,7 @@ SRT and WebVTT (round-trip tests), burn in on every export path, and are drivabl
 **Done when:** a local speech-to-text model (permissive licence, on-demand download) transcribes clips into
 transcripts with word timings, captions can be generated from them, and text-based editing (delete words → ripple
 the timeline) works as one undoable step.
-**Status (merged):** done — see [wp-notes/speech.md](wp-notes/speech.md): local Whisper (ONNX, CPU) with word timings, diarization, captions from transcripts, text-based editing (`e2e/speech.spec.ts`). Limits: CPU only, Linux only checked, classical diarization.
+**Status (merged):** done — see [wp-notes/speech.md](wp-notes/speech.md): local Whisper (ONNX, CPU) with word timings, diarization, captions from transcripts, text-based editing (`apps/engine/test/speech.test.ts`, `apps/web/test/speech.test.tsx`). Limits: CPU only, Linux only checked, classical diarization.
 
 ### interchange
 **Done when:** FCP 7 XML, FCPXML, EDL (CMX 3600), AAF and OTIO import and export sequences with clips, tracks, transitions,
@@ -176,12 +176,12 @@ drive any keyframable property deterministically in preview and export, sandboxe
 **Done when:** After Effects-style text animators (range selectors by character / word / line, animated properties)
 and an Essential Graphics panel (layers, alignment, responsive pins, rolling and crawling titles) work in preview
 and export, and templates can be saved and reused.
-**Status (merged):** done — see [wp-notes/text-animators.md](wp-notes/text-animators.md): AE text animators with range / wiggly / expression selectors, text on a path, typography (`e2e/text-animators.spec.ts`). The Essential Graphics panel (layers, align, responsive pins) and rolling / crawling titles (parity GR-5) were added by `gaps` (see below).
+**Status (merged):** done — see [wp-notes/text-animators.md](wp-notes/text-animators.md): AE text animators with range / wiggly / expression selectors, text on a path, typography (`packages/project/test/text-animators.test.ts`, `packages/compositions/test/text-animators.e2e.test.ts`). The Essential Graphics panel (layers, align, responsive pins) and rolling / crawling titles (parity GR-5) were added by `gaps` (see below).
 
 ### shapes
 **Done when:** shape layers carry pen paths, polygons, stars, groups, fills, strokes, trim paths and repeaters, editable
 on canvas and exported natively.
-**Status (merged):** done — see [wp-notes/shapes.md](wp-notes/shapes.md): vector shapes with groups, Bézier paths, gradients, the path operators (trim paths and repeaters included), Pen / Polygon / Star tools, SVG import (`packages/project/test/vector/*`, `e2e/vector-shapes.spec.ts`). `fixups` fixed Merge Paths collapsing at tangencies (a PathBool.js bug, D-45).
+**Status (merged):** done — see [wp-notes/shapes.md](wp-notes/shapes.md): vector shapes with groups, Bézier paths, gradients, the path operators (trim paths and repeaters included), Pen / Polygon / Star tools, SVG import (`packages/project/test/vector/*`, `apps/engine/test/vector-shapes-remotion.e2e.test.ts`). `fixups` fixed Merge Paths collapsing at tangencies (a PathBool.js bug, D-45).
 
 ### sim-warp
 **Done when:** the simulation and warp effects editors use (particles, mesh warp, liquify, turbulent displace, a Warp
@@ -196,7 +196,7 @@ Comp Camera / Lights for the 3D simulations, Puppet Sketch recording in the UI.
 ### three-d
 **Done when:** 3D layers with a camera and lights (After Effects overlap) position and render text, shapes and footage
 in preview and export with tests against analytic projections.
-**Status (merged):** done — see [wp-notes/three-d.md](wp-notes/three-d.md): classic and advanced 3D, cameras, lights, glTF models, a 3D camera tracker (`packages/compositions/test/three-d-gl.test.ts`, `e2e/three-d.spec.ts`). Limits: no transitions on 3D layers; the black capture of video below a 3D run in headless Program-monitor captures was fixed by `previews` (`capture-safe-canvas.ts`).
+**Status (merged):** done — see [wp-notes/three-d.md](wp-notes/three-d.md): classic and advanced 3D, cameras, lights, glTF models, a 3D camera tracker (`packages/compositions/test/three-d-gl.test.ts`, `packages/compositions/test/three-d-render.e2e.test.ts`). Limits: no transitions on 3D layers; the black capture of video below a 3D run in headless Program-monitor captures was fixed by `previews` (`capture-safe-canvas.ts`).
 
 ### imports
 **Done when:** image sequences, layered PSD and Illustrator files, relinking with a Link Media dialog, and Project
@@ -229,7 +229,7 @@ Remaining limits:
 ### color-grade
 **Done when:** Lumetri's HSL secondary, hue-vs curves, vignette, comparison view and Color Match exist, each with
 oracle tests of the maths and native export.
-**Status (merged):** done — see [wp-notes/color-grade.md](wp-notes/color-grade.md): HSL Secondary, hue-vs curves, vignette, Colour Match with Face Detection, Lumetri Scopes upgrade (`apps/web/test/color-grade.test.tsx`, `e2e/color-grade.spec.ts`). Limits: eyedroppers sample the displayed picture; no Basic Correction Intensity slider.
+**Status (merged):** done — see [wp-notes/color-grade.md](wp-notes/color-grade.md): HSL Secondary, hue-vs curves, vignette, Colour Match with Face Detection, Lumetri Scopes upgrade (`apps/web/test/color-grade.test.tsx`, `packages/project/test/color-match.test.ts`, `apps/engine/test/grading.test.ts`). Limits: eyedroppers sample the displayed picture; no Basic Correction Intensity slider.
 
 ### previews
 **Done when:** the timeline shows a render bar, Render In to Out caches previews that playback uses, proxies can be
@@ -301,8 +301,9 @@ the agent surface, data integrity, export routing and the Electron shell. **Done
 fixed at its cause with a regression test that failed before, and what remains is written down.
 **Status (merged):** done — see [security-review.md](security-review.md): 19 findings fixed (six High: the live-UI
 tools bypassing the approval gate, project ids used as paths, Edit Original running programs, a shared mutable
-expressions realm, two refused-edit bugs), an integrity property test over 32 kinds of edits, an export-coverage test
-(no silent drop found). Residual risks in its §6 (motion-graphics bundles are code; dev engines have no token).
+expressions realm, two refused-edit bugs), an integrity property test over 32 kinds of edits, and export pixel,
+media-file and named-refusal checks (current owners and limits in security-review.md §3). Residual risks are listed
+in its §6, with the hardening follow-up and its checks in §8.
 
 ### polish
 **Done when:** the loose ends the other workstreams listed are closed: a reload keeps the editing lease, no menu
@@ -311,9 +312,10 @@ names are translated, a 2 000-item project opens in under 2 s, the native motion
 with a reason, and these documents agree with the code.
 **Status (merged):** done except the open-time target — see [wp-notes/polish.md](wp-notes/polish.md): tab memory
 for leases; the Media Browser panel, Engine Status / Connect, Edit Parameters, Third-Party Notices, Get Properties,
-poster frames and custom effect bins, with a test that every menu entry and key binding has a command; live
-language switch (ARCHITECTURE D-46) checked by a tour of the UI in both directions; project open 8–14 s → 2.0–2.9 s
+poster frames and custom effect bins; live language switching (ARCHITECTURE D-46) with document and undo-history
+preservation checked by `e2e/polish.spec.ts`; project open 8–14 s → 2.0–2.9 s
 at host load ≈ 18 (**< 2 s not demonstrated** at that load; a 10-item project takes ≈ 2.3 s there);
+the current open-time budget runs through `pnpm perf --sections ui --ui open` (`scripts/perf/ui-run.ts`);
 `jasper-mg` builds again (it had not since the asset sidecars landed); code-split panels mount through state
 instead of a Suspense retry, which frequent updates on a busy machine could starve for minutes (found by a failed
 e2e run, reproduced in a unit test).
