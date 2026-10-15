@@ -36,6 +36,9 @@ tests. Documented API/configuration values survive even when an inventory-like
 assertion initially looks redundant. Visual regressions have an independent
 repository requirement in [testing.md](../testing.md).
 
+The independent [cross-review](cross-review.md) records the reconciled inventory
+and 15 resolved findings, including retained regressions and false-positive tests.
+
 ## Removed support and product correction
 
 The area ledgers record removed private exports, duplicate shader/CPU mirrors,
