@@ -19,7 +19,7 @@ owner. Parameterized cases sharing one contract are recorded as a family.
 | Area | Records |
 | --- | --- |
 | Project model, editing, effects and transitions | [1](project1.md), [2](project2.md), [3](project3.md), [4](project4.md) |
-| Engine, media, persistence and export | [1](engine1.md), [2](engine2.md), [3](engine3.md), [follow-up](engine3-followup.md), [camera metric correction](camera-metric-correction.md), [remote upload regression](engine1-ssh.md) |
+| Engine, media, persistence and export | [1](engine1.md), [2](engine2.md), [3](engine3.md), [follow-up](engine3-followup.md), [camera metric correction](camera-metric-correction.md), [remote upload regression](engine1-ssh.md), [AVC3 playback](avc3-playback.md) |
 | Web editor | [1](web1.md), [2](web2.md), [3](web3.md) |
 | Shared rendering | [1](compositions1.md), [2](compositions2.md) |
 | Browser workflows | [1](e2e1.md), [2](e2e2.md), [motion-graphics harness repair](mg-bundler-repair.md) |
@@ -101,6 +101,12 @@ Validation remains in progress. Confirmed results so far:
   the two setup-error regressions that first failed against the unfixed owner.
 - Real rsync source-link regression: reproduced the missing partial file before
   the fix, then passed with the exact destination bytes and no partial file.
+- AVC3 browser playback: both Chrome and Electron cases passed after replacing
+  callback-count quotas and the mismatched callback/pixel oracle with immutable
+  frame snapshots. Every sampled frame still has an exact source-code assertion;
+  literal join/seek targets, completion checks and original outer deadlines remain.
+  The owner semantic typecheck and independent review passed. Failed and interrupted
+  intermediate candidates are disclosed in [avc3-playback.md](avc3-playback.md).
 - `cargo test --workspace --manifest-path native/mg/Cargo.toml --locked -j 1`:
   13 tests passed, no failures.
 - `pnpm ffmpeg:check`: all inspected FFmpeg artifacts passed LGPL checks.
