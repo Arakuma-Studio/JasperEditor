@@ -1917,3 +1917,25 @@ Cross-review retained two initially disputed contracts: D-43 foreign canvas reje
 Validation performed: targeted `pnpm exec biome check --write` passed for the 42 modified TypeScript/TSX files at that point; final targeted Biome passed all 43 modified TypeScript/TSX files, and `git diff --check` passed before commit. Focused Vitest, GL/Remotion suites, package typecheck and repository gates are explicitly pending root integration validation, per root's shared-host scheduling instruction (load exceeded 90; baseline typecheck still active). No baseline/product failures were observed in this partition because no tests were run here.
 
 Integration documentation followups: `docs/testing.md` scene-distinctness guard and GL poison-hook descriptions are root-owned and must be removed; testkit owner is removing the now-unused `assertDistinctScenes`. No external documentation/source API contract is weakened by de-exporting the internal renderer helpers.
+
+## REWRITE — published OCIO gray references move from the CPU mirror to shader pixels
+
+Original declaration: `packages/project/test/fx-sapphire-adjust-composite.test.ts` — `S_OCIOTransform maths / matches published curve values`. The project partition removes the unused `ocioEncode` mirror; this declaration is **REWRITE across packages**, not loss of its independently published contract. Retained destination: `packages/compositions/test/fx-sapphire-adjust-composite-gl.test.ts` — `S_OCIOTransform encodes 18% gray at published reference levels`. This is one additional declaration migrated from the project partition; the original 257 composition-declaration dispositions above are unchanged.
+
+Pre-edit failure inventory: wrong curve selection, damaged encoding constants, missing encode, or an unintended gamut tint can produce a visibly wrong neutral middle gray. The old CPU-only mirror could still pass when the GLSL version broke. Existing IEC sRGB cases do not exercise the LogC3, S-Log3, V-Log, ACEScct or Rec.709 encoders; default scene fingerprints do not establish these published calibration points. Non-test caller: `jasper.s.ocio-transform` runs through `FxPicture` / the shader host in Program preview and export. Risk: 8-bit input quantization and GPU readback; tolerance is three code values, no reference changes/blessing. Validation command: `pnpm exec vitest run packages/compositions/test/fx-sapphire-adjust-composite-gl.test.ts --maxWorkers=1`; GL execution remains pending root's scheduled integrated run.
+
+Primary sources checked before the rewrite:
+
+| Curve | Independent 18% gray source | Literal 8-bit expected output |
+| --- | --- | --- |
+| LogC3 EI800 | [ARRI ALEXA Log C Curve — Usage in VFX, p. 3](https://www.arri.com/resource/blob/31918/66f56e6abb6e5b6553929edf9aa7483e/2017-03-alexa-logc-curve-in-vfx-data.pdf): normalized 0.391, also given as 400/1023 | 100 |
+| S-Log3 | [Sony technical summary, Appendix](https://download.pro.sony/FNGP/protein/1237494271390/1237494271406.pdf): gray at 420/1023 | 105 |
+| V-Log | [Panasonic V-Log/V-Gamut reference manual, Fig. 2.2](https://pro-av.panasonic.net/cn/cinema_camera_varicam_eva/support/pdf/VARICAM_V-Log_V-Gamut.pdf): gray at 433/1023 | 108 |
+| ACEScct | [Academy ACEScct encoding specification, Equation 1](https://docs.acescentral.com/encodings/acescct/): evaluation at 0.18 gives approximately 0.4135884 | 105 |
+| Rec.709 | [ITU-R BT.709-6, table 1 item 1.2](https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.709-6-201506-I%21%21PDF-E.pdf): evaluation at 0.18 gives approximately 0.409008 | 104 |
+
+The last two values are calculations from the published equations, not claimed tabulated reference points. The fixture uses equal linear RGB bytes of 46 (`46/255 ≈ 0.180392`), the closest 8-bit value to 18% gray. Expected bytes are fixed literals obtained by rounding the independently published normalized levels multiplied by 255; the ±3 tolerance covers the input approximation and output quantization. No encode/decode formula is implemented in the test or expected-value harness.
+
+Six-item bar: (1) ARRI, Sony, Panasonic, Academy and ITU explicitly define these transfer curves and middle-gray levels; (2) a wrong displayed/exported gray or neutral tint changes the observed RGB bytes; (3) literal expected values come from the sources above and can disagree with both CPU and GLSL code; (4) the test renders the registered public effect's From/To parameters through the actual shader host and reads output RGBA; (5) shader decomposition, uniform names and helper refactors may change without affecting the test; (6) actual GPU output is the lowest stable seam for these GLSL curves, and the removed unused CPU mirror plus existing sRGB/fingerprint tests do not own these exact points.
+
+Follow-up static validation: targeted Biome passed both changed TypeScript files; `git diff --check` passed. GL and typecheck were not run in this worktree because root reserved runtime validation for the integrated suite.

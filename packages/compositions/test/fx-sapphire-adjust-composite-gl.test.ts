@@ -63,6 +63,14 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expectRgb(r.ocioSwitched, [128, 128, 128]);
 		});
 
+		it('S_OCIOTransform encodes 18% gray at published reference levels', async () => {
+			// Published reference levels and quantization rationale: docs/test-cleanup/compositions2.md.
+			const expected = { logc3: 100, slog3: 105, vlog: 108, acescct: 105, rec709: 104 };
+			const pixels = await call<Record<string, Px>>('ocioGray');
+			for (const [space, value] of Object.entries(expected))
+				expect(rgbNear(pixels[space]!, [value, value, value, 255], 3), space).toBe(true);
+		});
+
 		it('alpha is kept and the Mask block blends effect and source', async () => {
 			const r = await call<Record<string, Px>>('alphaAndMask');
 			expectRgb(r.half, [0, 255, 255, 128], 3);

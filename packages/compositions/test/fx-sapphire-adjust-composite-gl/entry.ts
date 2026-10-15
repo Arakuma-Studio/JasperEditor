@@ -164,6 +164,15 @@ const api = {
 		};
 	},
 
+	ocioGray() {
+		return Object.fromEntries(
+			['logc3', 'slog3', 'vlog', 'acescct', 'rec709'].map((to) => [
+				to,
+				run('jasper.s.ocio-transform', { from: 'linRec709', to }, [8, 8], 'rgb(46, 46, 46)').at(4, 4),
+			]),
+		);
+	},
+
 	alphaAndMask() {
 		// Semi-transparent red under Invert: colour inverted, alpha kept.
 		const half = run('jasper.s.invert', {}, [8, 8], 'rgba(255, 0, 0, 0.5)').at(4, 4);
