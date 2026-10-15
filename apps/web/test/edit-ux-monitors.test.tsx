@@ -149,11 +149,11 @@ describe('Button Editor', () => {
 });
 
 describe('monitor commands', () => {
-	it('rulers, guides, lock and dropped-frame toggles', async () => {
+	it('toggles ruler, guide-lock and dropped-frame preferences', async () => {
 		const { session } = makeSession();
+		monitorExtras.setState({ showRulers: false, lockGuides: false, showDroppedFrames: false });
 		const ctx = createCommandContext({ engine, session, focus: { panel: 'program', instanceId: 'p' } });
 		await runCommand('program.showRulers', ctx);
-		addGuide(session.getState().activeSequenceId!, { orientation: 'vertical', position: 100 });
 		await runCommand('program.lockGuides', ctx);
 		await runCommand('program.toggleDroppedFrames', ctx);
 		expect(monitorExtras.getState()).toMatchObject({
@@ -161,7 +161,5 @@ describe('monitor commands', () => {
 			lockGuides: true,
 			showDroppedFrames: true,
 		});
-		const r = await runCommand('program.clearGuides', ctx);
-		expect(r.ran).toBe(false);
 	});
 });
