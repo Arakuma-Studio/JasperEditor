@@ -246,7 +246,9 @@ describe('errors fall back to the keyframed value', () => {
 		expect(Date.now() - t0).toBeLessThan(5000);
 		expect(num(d, '1 + 1')).toBe(2);
 	});
-	it('recursion and memory limits', () => {
+	// Filling the sandbox's memory up to its limit takes 8–10 s on a loaded shared host (measured at load 50–82 in the
+	// sound-design Phase 1 verification), over vitest's 5 s default: the limit is the point of the test, not its speed.
+	it('recursion and memory limits', { timeout: 60_000 }, () => {
 		expect(ev(d, '$a', 'transform.rotation', 'function f(n) { return f(n + 1) + 1 } f(0)').error).toMatch(
 			/too much recursion/,
 		);
