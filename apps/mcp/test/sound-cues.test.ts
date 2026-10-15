@@ -609,7 +609,11 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 			},
 		);
 		const copy = dup.created.find((id) => !layers.includes(id) && id.startsWith('clp_'))!;
-		expect((seqOf(await documentOf(projectId)).clips[copy] as SfxClip).sfx?.cueId).toBe(marker.id);
+		// (a live editor document keeps the one-way id; loading the saved project tidies it to null: either way the
+		// cue does not list the copy)
+		const before = seqOf(await documentOf(projectId));
+		expect([marker.id, null]).toContain((before.clips[copy] as SfxClip).sfx?.cueId);
+		expect(cuesOf(before).find((c) => c.id === marker.id)!.placedClipIds).not.toContain(copy);
 		const alone = await ok<{ clips: { clipId: string }[]; cueId?: string }>('align_peak', {
 			projectId,
 			clipId: copy,
