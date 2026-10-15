@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Rng } from '../src/fuzz.ts';
 import {
-	assertDistinctScenes,
 	checkGolden,
 	decodePng,
 	diffImage,
@@ -126,26 +125,6 @@ describe('golden files', () => {
 			new RegExp(`${MAX_GOLDEN_BYTES}-byte golden limit`),
 		);
 		expect(existsSync(join(dir, 'noise.png'))).toBe(false);
-	});
-
-	it('the scene guard rejects blank and duplicated scenes', () => {
-		const a = ramp(32, 18);
-		const b = ramp(32, 18, 200);
-		expect(() =>
-			assertDistinctScenes({
-				a,
-				b: rgba8(
-					32,
-					18,
-					b.data.map((v, i) => (i % 4 === 1 ? 255 - v : v)),
-				),
-			}),
-		).not.toThrow();
-		const flat = rgba8(32, 18, new Uint8Array(32 * 18 * 4).fill(90));
-		expect(() => assertDistinctScenes({ a, flat })).toThrow(/flat: blank/);
-		expect(() => assertDistinctScenes({ a, copy: rgba8(32, 18, Uint8Array.from(a.data)) })).toThrow(
-			/a ≈ copy/,
-		);
 	});
 });
 

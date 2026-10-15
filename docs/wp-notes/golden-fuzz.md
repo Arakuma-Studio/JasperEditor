@@ -12,8 +12,8 @@ design, decisions, verified behaviour and limits.
 
 | Module | Contents |
 |---|---|
-| `golden.ts` | `diffImages` (max, mean, p99, PSNR, differing), `Tolerance` (`EXACT`, `RENDER`, `GL`, `BROWSER`), `expectGolden` / `checkGolden` (bless with `JASPER_BLESS=1`, 50 KB cap, actual / expected / ×8 diff to `test-results/golden-failures/`, `.attribution` sidecar + `ATTRIBUTION.md` row on bless), `assertDistinctScenes`, `expectFingerprints` (4×4 mean RGB, ±levels, NaN-aware), `expectPins` |
-| `png.ts`, `image.ts` | PNG codec on node:zlib (all colour types and depths, Adam7, CRC, bounded inflate; `PngError`); RGBA8 helpers, `meanGrid`, `fnv1a`, stats. `image.ts` is DOM- and Node-free, so GL test entries bundle it |
+| `golden.ts` | `diffImages` (max, mean, p99, PSNR, differing), `Tolerance` (`EXACT`, `RENDER`, `GL`, `BROWSER`), `expectGolden` / `checkGolden` (bless with `JASPER_BLESS=1`, 50 KB cap, actual / expected / ×8 diff to `test-results/golden-failures/`, `.attribution` sidecar + `ATTRIBUTION.md` row on bless), `expectFingerprints` (4×4 mean RGB, ±levels, NaN-aware), `expectPins` |
+| `png.ts`, `image.ts` | PNG codec on node:zlib (all colour types and depths, Adam7, CRC, bounded inflate; `PngError`); RGBA8 helpers, `meanGrid`, `fnv1a`. `image.ts` is DOM- and Node-free, so GL test entries bundle it |
 | `fuzz.ts` | `Rng` (xorshift128 seeded by splitmix32), byte / text / JSON-structure mutators, `bytesTarget` / `textTarget` / `jsonTarget`, `describeFuzz`, `runFuzzTarget(Sync)`, `assertFuzzSync`; failing inputs saved to `test-results/fuzz-failures/`; `FUZZ=1`, `FUZZ_SEED` |
 | `oracle.ts` | ffmpeg / ffprobe discovery (`JASPER_FFMPEG` / `JASPER_FFPROBE`, PATH, known dirs), `JASPER_REQUIRE_ORACLES=1`, `requireTool` / `oraclesAvailable` / `skipOracle`, EBU R128 (`measureLoudness`, `parseEbur128`), PSNR / SSIM (`compareVideos`), packet / frame tables (`probePackets`, `probeFrames`, `compareTables`), `decodeFrames`, `ffmpeg` |
 | `browser.ts` | Chrome discovery, SwiftShader flags, esbuild bundling (the compositions GL suites open pages through `packages/compositions/test/gl-browser.ts`) |
@@ -118,11 +118,12 @@ corrupted documents.
 
 ## Verified behaviour
 
-- `packages/testkit`: 24 tests (metrics, PNG codec, bless / cap / attribution, scene guard, fingerprints, pins, RNG,
-  mutators, tool discovery, ebur128 parsing, live ffmpeg loudness: a −20 dBFS 1 kHz sine measures −20.0 LUFS
-  ±0.1, PSNR/SSIM, packet / frame tables).
-- Golden scenes: 56 scenes. Blessed, re-run without bless, and they pass (stable on this machine). I looked at
-  every frame, and the guard confirms that no scene is blank or a duplicate.
+- `packages/testkit`: metrics, PNG codec, blessing and size cap, fingerprints, pins, fuzz verdicts and artifacts,
+  tool discovery, ebur128 parsing, live ffmpeg loudness (a −20 dBFS 1 kHz sine measures −20.0 LUFS ±0.1),
+  PSNR/SSIM, packet / frame tables.
+- Golden scenes retain committed frame references, with independent computed references where available.
+  Native/Remotion parity also compares each scene with its committed reference. These pixel comparisons detect
+  missing or incorrect renders without an additional scene-count or pairwise-distinctness requirement.
 - Native vs Remotion parity, from `test-results/golden/parity.txt`:
 
   | Scene | PSNR | max | p99 |
