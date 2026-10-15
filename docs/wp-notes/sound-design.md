@@ -1220,6 +1220,11 @@ issue, the command applies and keeps `source`, a misspelt key is still refused, 
   `sounds/` copied into a scratch folder under `apps/engine`) and ran `node engine.mjs --port 48803` with no override and a
   fresh appdir: starter status ok, 60 sounds indexed, all 60 judge-ok in `library.json`. A full electron-builder run
   was not done here.
+- Integration: the merge of `feat/sound-design` (P0 close-out: compositions audio graph, project essential sound) was
+  fast-forwarded as `317cb4f8` before its checks had run (an ordering slip); they were run right after on that exact
+  commit, all green: `pnpm typecheck` (whole workspace) exit 0; `pnpm vitest run packages/project apps/engine/test/sounds-starter-kit.test.ts apps/engine/test/sounds-routes.test.ts apps/engine/test/sounds-unit.test.ts scripts/sounds --maxWorkers=2`:
+  145 files, 1796 tests passed; `pnpm lint` ok (check-assets ok). Earlier, under load ≈ 130, one timing test
+  (`lumetri-grade.test.ts`, "33³ bake < 30 ms") failed once and passed alone; unrelated to this package.
 
 #### Limits and notes for the next packages
 
