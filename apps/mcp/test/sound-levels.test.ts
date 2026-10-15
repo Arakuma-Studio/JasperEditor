@@ -307,6 +307,12 @@ describe('default insert levels on the Phase 2 fixture', { timeout: 1_200_000 },
 		for (const id of placedIds) (seqOf(zero).clips[id] as SfxClip).gainDb = 0;
 		const atZero = ffmpegPeaks(await exportAudio(zero, s2.id, 'levels-0db.mov'));
 		console.log('export true peak (dBTP)', JSON.stringify({ withDefaults, atZero }));
+		// the measurements, for the wp-note (test-results/ is not tracked)
+		mkdirSync(join(ROOT, 'test-results'), { recursive: true });
+		writeFileSync(
+			join(ROOT, 'test-results', 'sound-levels.json'),
+			JSON.stringify({ placed: report, mix: m.loudness, export: { withDefaults, atZero } }, null, 1),
+		);
 		expect(withDefaults.truePeak).toBeLessThan(0);
 		expect(withDefaults.samplePeak).toBeLessThan(0);
 	});

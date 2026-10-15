@@ -464,7 +464,8 @@ describe('performance', () => {
 		);
 		expect(cold.map((c) => c.confidence)).toEqual([0.8, 0.6]);
 		expect(warm).toEqual(cold);
-		expect(t1 - t0).toBeLessThan(3000);
+		// a guard against a blow-up, not a benchmark: 0.7 s measured at load ≈ 30, 3.3 s at load ≈ 80 on the shared host
+		expect(t1 - t0).toBeLessThan(10_000);
 		expect(t2 - t1).toBeLessThan(100);
 	});
 });
