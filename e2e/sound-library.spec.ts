@@ -36,12 +36,25 @@ async function sequence(p: Page): Promise<Seq> {
 }
 type Lib = {
 	soundId: string;
+	title?: string;
+	types?: string[];
 	source?: { type: string; file?: string };
 	leadSilenceSec?: number;
 	descriptors?: { peakSec: number; onsetSec: number; durationSec: number };
 };
-async function media(p: Page): Promise<Record<string, { id: string; library?: Lib }>> {
+type Media = { id: string; library?: Lib; probe?: { durationFlicks: number | null } };
+async function media(p: Page): Promise<Record<string, Media>> {
 	return query(p, 'doc.get', { path: ['media'] });
+}
+
+/** The point of a library sound its type aligns (spec 12 §2.1 defaultAlign): the end of the media for risers and
+ * reverses (its probed length, to the sample), the onset for UI sounds, else the peak; seconds into the registered media
+ * (its descriptors include any lead silence). */
+function alignedPointSec(m: Media): number {
+	const d = m.library!.descriptors!;
+	const t = m.library!.types?.[0];
+	if (t === 'riser' || t === 'reverse') return (m.probe?.durationFlicks ?? d.durationSec * FLICKS) / FLICKS;
+	return t === 'ui' ? d.onsetSec : d.peakSec;
 }
 
 /** The first channel of an audio file as 48 kHz float samples (ffmpeg). */
@@ -133,8 +146,9 @@ test('search, audition, insert peak-aligned, undo, drag with peak snapping, cred
 	const m = (await media(page))[clip.mediaId]!;
 	expect(m.library?.soundId).toMatch(/^snd_/);
 	const F = (FLICKS * seq.settings.frameRate.den) / seq.settings.frameRate.num;
-	const peakAt = clip.start * F + m.library!.descriptors!.peakSec * FLICKS - clip.sourceIn;
-	// exact (errorFlicks 0): library sounds are registered with lead silence when their head is not quiet
+	// the type's point (peak; the end of a reverse such as "Reverse crunch") plays exactly on frame 45 (errorFlicks
+	// 0): library sounds are registered with lead silence when their head is not quiet
+	const peakAt = clip.start * F + alignedPointSec(m) * FLICKS - clip.sourceIn;
 	expect(Math.abs(peakAt - 45 * F)).toBeLessThanOrEqual(2);
 	expect(JSON.stringify(clip)).toContain('"sfx"');
 	expect((await appliedLabels(page)).at(-1)).toMatch(/^Add Sound /);
@@ -172,7 +186,7 @@ test('search, audition, insert peak-aligned, undo, drag with peak snapping, cred
 	seq = await sequence(page);
 	const dropped = Object.values(seq.clips)[0]!;
 	const dm = (await media(page))[dropped.mediaId]!;
-	const droppedPeak = dropped.start * F + dm.library!.descriptors!.peakSec * FLICKS - dropped.sourceIn;
+	const droppedPeak = dropped.start * F + alignedPointSec(dm) * FLICKS - dropped.sourceIn;
 	expect(Math.abs(droppedPeak - 45 * F)).toBeLessThanOrEqual(2);
 	// dropped on A1: the drop target is the user's explicit choice
 	expect(dropped.trackId).toBe(seq.audioTracks[0]!.id);
@@ -209,16 +223,20 @@ test('inserted library sounds play their aligned point exactly on the frame in a
 	// title → cue frame; the aligned point is the type's (peak, start for UI, end for risers)
 	const plan: { title: string; cue: number; align: 'peak' | 'start' | 'end' }[] = [
 		{ title: 'Heavy metal hit', cue: 30, align: 'peak' },
-		{ title: 'Punch', cue: 91, align: 'peak' },
-		{ title: 'Air whoosh, low', cue: 152, align: 'peak' },
-		{ title: 'Confirm blip', cue: 213, align: 'start' },
-		{ title: 'Computer hum riser', cue: 337, align: 'end' },
+		{ title: 'Punch', cue: 75, align: 'peak' },
+		{ title: 'Air whoosh, low', cue: 120, align: 'peak' },
+		{ title: 'Confirm blip', cue: 170, align: 'start' },
+		{ title: 'Computer hum riser', cue: 290, align: 'end' },
 	];
-	for (const [i, p] of plan.entries()) {
+	// latest cue first: the playhead cannot go past the end of the sequence (an empty one: 10 s)
+	for (const [i, p] of [...plan].sort((a, b) => b.cue - a.cue).entries()) {
 		await panel.getByTestId('sound-search').fill(p.title);
 		const option = list.getByRole('option', { name: new RegExp(`^${p.title}`) }).first();
 		await expect(option).toBeVisible({ timeout: 30_000 });
 		await query(page, 'playhead.set', { frame: p.cue });
+		await expect
+			.poll(async () => (await query<{ frame: number }>(page, 'playhead.get', {})).frame)
+			.toBe(p.cue);
 		await option.click();
 		await page.keyboard.press('Enter');
 		await expect
@@ -229,16 +247,23 @@ test('inserted library sounds play their aligned point exactly on the frame in a
 	const all = await media(page);
 	const F = (FLICKS * seq.settings.frameRate.den) / seq.settings.frameRate.num;
 	const placed = plan.map((p) => {
-		const clip = Object.values(seq.clips).find(
-			(c) => all[c.mediaId]?.library && c.start <= p.cue && p.cue < c.start + c.duration + 2,
-		)!;
+		const clip = Object.values(seq.clips).find((c) => all[c.mediaId]?.library?.title === p.title);
+		expect(
+			clip,
+			`${p.title}: ${JSON.stringify(Object.values(seq.clips).map((c) => [c.start, c.duration, all[c.mediaId]?.library?.title]))}`,
+		).toBeTruthy();
+		if (!clip) throw new Error('unreachable');
 		const lib = all[clip.mediaId]!.library!;
 		const lead = lib.leadSilenceSec ?? 0;
 		const d = lib.descriptors!;
-		const point = p.align === 'peak' ? d.peakSec : p.align === 'start' ? d.onsetSec : d.durationSec;
+		const end = (all[clip.mediaId]!.probe?.durationFlicks ?? d.durationSec * FLICKS) / FLICKS;
+		const point = p.align === 'peak' ? d.peakSec : p.align === 'start' ? d.onsetSec : end;
 		// the document: the aligned point plays exactly at the cue frame
 		const at = clip.start * F + point * FLICKS - clip.sourceIn;
-		expect(Math.abs(at - p.cue * F), p.title).toBeLessThanOrEqual(2);
+		expect(
+			Math.abs(at - p.cue * F),
+			`${p.title} ${JSON.stringify({ clip, lib, at: at / F })}`,
+		).toBeLessThanOrEqual(2);
 		return { ...p, clip, lib, lead, point };
 	});
 	// the loud-headed hits were registered with lead silence; nothing went on A1–A3
