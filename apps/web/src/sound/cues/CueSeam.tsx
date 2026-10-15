@@ -104,6 +104,8 @@ type Drag = {
 	targets: SnapTarget[];
 	/** Pointer-up on an already selected cue without moving reduces the selection to it. */
 	reduceTo: string | null;
+	/** Removes the Esc listener of the drag. */
+	offKeys: () => void;
 };
 
 const tcOf = (seq: Sequence) => (f: number) =>
@@ -148,6 +150,18 @@ export function CueSeam(p: CueSeamProps) {
 		setActive(last && byId.has(last) ? last : null);
 	}, [active, byId, selectedIds]);
 
+	// A drag never outlives the seam: unmounting mid-drag (the Timeline closed, a workspace switched) cancels its
+	// gesture, which would otherwise hold the session (Undo, agents' edits, autosave) until the app reloads.
+	useEffect(
+		() => () => {
+			const d = drag.current;
+			drag.current = null;
+			d?.offKeys();
+			d?.gesture?.cancel();
+		},
+		[],
+	);
+
 	// Selecting clips deselects cues (one selection the Delete key acts on).
 	useEffect(
 		() =>
@@ -164,7 +178,10 @@ export function CueSeam(p: CueSeamProps) {
 		return r;
 	};
 	const selectCue = (id: string, mode: 'replace' | 'toggle' | 'add') => {
-		if (mode === 'replace') session.select('timeline', [], 'replace');
+		// one selection domain at a time (Delete has one meaning): selecting a cue, even with Shift, deselects clips —
+		// else the "selecting clips deselects cues" rule below would drop the cue just selected
+		if (mode === 'replace' || session.getState().selection.timeline.clips.length)
+			session.select('timeline', [], 'replace');
 		session.select('cues', [id], mode);
 		setActive(id);
 	};
@@ -207,7 +224,16 @@ export function CueSeam(p: CueSeamProps) {
 		const moving = cues.filter((c) => ids.has(c.id));
 		const at = anchorFrame(session.getCommitted(), session.getCommitted().sequences[seq.id] ?? seq, cue);
 		e.currentTarget.setPointerCapture?.(e.pointerId);
+		// Esc cancels the drag, as every timeline drag (S02:TL-903): the keymap leaves Esc to a drag in progress
+		const onKey = (ev: KeyboardEvent) => {
+			if (ev.key !== 'Escape' || !drag.current) return;
+			ev.preventDefault();
+			ev.stopPropagation();
+			endDrag(false);
+		};
+		window.addEventListener('keydown', onKey, true);
 		drag.current = {
+			offKeys: () => window.removeEventListener('keydown', onKey, true),
 			pointerId: e.pointerId,
 			grabbed: cue,
 			cues: moving,
@@ -272,6 +298,7 @@ export function CueSeam(p: CueSeamProps) {
 				);
 			} catch {
 				drag.current = null;
+				d.offKeys();
 				return;
 			}
 		}
@@ -289,6 +316,11 @@ export function CueSeam(p: CueSeamProps) {
 		drag.current = null;
 		p.ui.setState({ snapFrame: null, tooltip: null });
 		if (!d) return;
+		d.offKeys();
+		if (!commit) {
+			d.gesture?.cancel();
+			return;
+		}
 		if (!d.moved) {
 			if (d.reduceTo) selectCue(d.reduceTo, 'replace');
 			return;
@@ -449,10 +481,7 @@ export function CueSeam(p: CueSeamProps) {
 		const move = (dir: 1 | -1 | 'first' | 'last') => {
 			const id = neighbourCue(cues, active, dir, session.transport.getState().frame);
 			if (!id) return;
-			if (e.shiftKey) {
-				session.select('cues', [id], 'add');
-				setActive(id);
-			} else selectCue(id, 'replace');
+			selectCue(id, e.shiftKey ? 'add' : 'replace');
 			const c = byId.get(id);
 			if (c) p.reveal(c.frame);
 		};
