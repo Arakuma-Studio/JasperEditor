@@ -746,7 +746,9 @@ Preserve the named independently observable contract. Remaining stronger coverag
 
 Six-item bar: (1) the independently specified behavior above is S_MathOps: per-channel operations, alpha as a channel unless All Opaque; (2) its named output defect is visible in real WebGL shader pixel readback from synthetic colour/edge/depth inputs; (3) expected values come from the input-defined invariant/reference, not the GPU result or a mock reproducing the tested operation; (4) the seam is real WebGL shader pixel readback from synthetic colour/edge/depth inputs; (5) internal renames, pass decomposition and DOM wrappers may change without changing this observable output; (6) this is the lowest seam that exercises this case, and no stronger owner for these exact inputs/output conditions; generic fingerprints exercise a different default scene. full renders own wiring, this shader/protocol seam owns the specific contract.
 
-## KEEP — `packages/compositions/test/fx-sapphire-adjust-composite-gl.test.ts` — S_MatteOps: shrink/grow with every filter, invert, outputs, post blur, deterministic noise
+## REWRITE — `packages/compositions/test/fx-sapphire-adjust-composite-gl.test.ts` — S_MatteOps: shrink/grow with every filter, invert, outputs, post blur, deterministic noise
+
+Current disposition: split into the named behavioral cases documented in [Named shader contracts and false-pass repairs](#named-shader-contracts-and-false-pass-repairs-before-edits), retaining every original render and expectation.
 
 Failure under review: The named effect produces wrong colour/alpha, ignores a control, corrupts spatial samples or changes on identical seeks. Exact case: S_MatteOps: shrink/grow with every filter, invert, outputs, post blur, deterministic noise. Independent source: docs/wp-notes/fx-shader-framework.md §§5–9; effect public parameter contract; docs/testing.md §2.
 
@@ -922,7 +924,9 @@ Failure under review: The named effect produces wrong colour/alpha, ignores a co
 
 Availability/catalogue/count/compiles smoke is redundant with real pixel output, or asserts private implementation shape. Remaining stronger coverage: retained same-file pixel contracts plus fx-gl/transition-gl fingerprints. Non-test callers/seam: registered effect → fx/host.runShaderPlan under FxPicture; real WebGL shader pixel readback from synthetic colour/edge/depth inputs. Risk: low, implementation-shape/smoke coverage is removed while behavioral owners remain. Check: `pnpm exec vitest run packages/compositions/test/fx-sapphire-film-grain-gl.test.ts --maxWorkers=1` (retained owners replace this deleted file).
 
-## KEEP — `packages/compositions/test/fx-sapphire-film-grain-gl.test.ts` — Mix with Orig = 1 returns the input
+## REWRITE — `packages/compositions/test/fx-sapphire-film-grain-gl.test.ts` — Mix with Orig = 1 returns the input
+
+Current disposition: split into the named behavioral cases documented in [Named shader contracts and false-pass repairs](#named-shader-contracts-and-false-pass-repairs-before-edits), retaining every original render and expectation.
 
 Failure under review: The named effect produces wrong colour/alpha, ignores a control, corrupts spatial samples or changes on identical seeks. Exact case: Mix with Orig = 1 returns the input. Independent source: docs/wp-notes/fx-shader-framework.md §§5–9; effect public parameter contract; docs/testing.md §2.
 
@@ -930,7 +934,9 @@ Preserve the named independently observable contract. Remaining stronger coverag
 
 Six-item bar: (1) the independently specified behavior above is Mix with Orig = 1 returns the input; (2) its named output defect is visible in real WebGL shader pixel readback from synthetic colour/edge/depth inputs; (3) expected values come from the input-defined invariant/reference, not the GPU result or a mock reproducing the tested operation; (4) the seam is real WebGL shader pixel readback from synthetic colour/edge/depth inputs; (5) internal renames, pass decomposition and DOM wrappers may change without changing this observable output; (6) this is the lowest seam that exercises this case, and no stronger owner for these exact inputs/output conditions; generic fingerprints exercise a different default scene. full renders own wiring, this shader/protocol seam owns the specific contract.
 
-## KEEP — `packages/compositions/test/fx-sapphire-film-grain-gl.test.ts` — random effects are deterministic and follow the Seed
+## REWRITE — `packages/compositions/test/fx-sapphire-film-grain-gl.test.ts` — random effects are deterministic and follow the Seed
+
+Current disposition: split into the named behavioral cases documented in [Named shader contracts and false-pass repairs](#named-shader-contracts-and-false-pass-repairs-before-edits), retaining every original render and expectation.
 
 Failure under review: The named effect produces wrong colour/alpha, ignores a control, corrupts spatial samples or changes on identical seeks. Exact case: random effects are deterministic and follow the Seed. Independent source: docs/wp-notes/fx-shader-framework.md §§5–9; effect public parameter contract; docs/testing.md §2.
 
@@ -938,7 +944,9 @@ Preserve the named independently observable contract. Remaining stronger coverag
 
 Six-item bar: (1) the independently specified behavior above is random effects are deterministic and follow the Seed; (2) its named output defect is visible in real WebGL shader pixel readback from synthetic colour/edge/depth inputs; (3) expected values come from the input-defined invariant/reference, not the GPU result or a mock reproducing the tested operation; (4) the seam is real WebGL shader pixel readback from synthetic colour/edge/depth inputs; (5) internal renames, pass decomposition and DOM wrappers may change without changing this observable output; (6) this is the lowest seam that exercises this case, and no stronger owner for these exact inputs/output conditions; generic fingerprints exercise a different default scene. full renders own wiring, this shader/protocol seam owns the specific contract.
 
-## KEEP — `packages/compositions/test/fx-sapphire-film-grain-gl.test.ts` — grain, dust, flicker and glitches change from frame to frame
+## REWRITE — `packages/compositions/test/fx-sapphire-film-grain-gl.test.ts` — grain, dust, flicker and glitches change from frame to frame
+
+Current disposition: split into the named behavioral cases documented in [Named shader contracts and false-pass repairs](#named-shader-contracts-and-false-pass-repairs-before-edits), retaining every original render and expectation.
 
 Failure under review: The named effect produces wrong colour/alpha, ignores a control, corrupts spatial samples or changes on identical seeks. Exact case: grain, dust, flicker and glitches change from frame to frame. Independent source: docs/wp-notes/fx-shader-framework.md §§5–9; effect public parameter contract; docs/testing.md §2.
 
@@ -1908,7 +1916,7 @@ Remove test-only exports `pictureLocalFrame` (production use remains within Sequ
 
 ## Completed cleanup and validation
 
-Cleanup implemented across every assigned file: 83 DELETE, 25 REWRITE, 149 KEEP static declarations, plus DELETE for every dynamically named Sapphire wipe gallery case. Ten complete test files removed. Retained tests cover actual rendering pixels/goldens, preview audio range soundness, public metadata/media/LUT/text protocols, and foreign nested-canvas refusal. No retained failing test was deleted to make a run pass. No golden was re-blessed.
+Cleanup implemented across every assigned file: 83 DELETE, 29 REWRITE, 145 KEEP static declarations, plus DELETE for every dynamically named Sapphire wipe gallery case. Ten complete test files removed. Retained tests cover actual rendering pixels/goldens, preview audio range soundness, public metadata/media/LUT/text protocols, and foreign nested-canvas refusal. No retained failing test was deleted to make a run pass. No golden was re-blessed.
 
 Removed support: mock canvas/planning fixtures; duplicate family/gallery fixture generation; manual PNG dumps/photo loaders/showcase options; family catalogue/default smoke/timing APIs; unused pass names/counts, canvas dimensions, temporal offset metadata, motion-blur tap metadata and benchmark shader injection; unused WebGL availability probes. Removed `pictureLocalFrame` and `nestedScopeMessage` exports, preserving their internal production use. Removed poison-hook imports in this partition; the composition-1 owner removes the shared hook and helper. Removed production CPU-derived OCIO expected values, allowing the project owner to remove uncalled CPU mirror functions.
 
@@ -1995,6 +2003,7 @@ Result: one selected test failed, eight cases were intentionally excluded by the
 This focused result demonstrates timeout failures under heavy host load, not a numerical product defect. It does not establish a passing regression or replace the original full-run stack, which was not yet available during this investigation. No test, expected value, timeout, production owner or disposition was changed. The regression remains KEEP and requires a lower-load rerun. Vitest exited with code 1; no Chrome process rooted in the isolated worktree remained afterward. Only this evidence note changed, and `git diff --check` passed.
 
 
+
 ## Per-transition declarations and omitted fingerprint failures — before-edit record
 
 Reviewed integration `56f3ed72` before modifying these files. **REWRITE** the
@@ -2063,9 +2072,10 @@ this change identifies the specific failing contract and does not fix host conte
 
 Implemented outcome: three named contract declarations per transition, preserving
 **all 1,720 draws** and the original family/phase/ID order. This superseding rewrite
-changes the original partition totals to **83 DELETE / 25 REWRITE / 149 KEEP**;
+changed the intermediate partition totals to **83 DELETE / 25 REWRITE / 149 KEEP**;
 expanded declarations are not new original cases. The four-suite follow-up owned by
-composition partition 2 is accounted separately in its own supplement.
+composition partition 2 is accounted separately in its own supplement; the combined
+final original counts are **83 DELETE / 29 REWRITE / 145 KEEP**.
 
 Static evaluation compared the actual declaration data with the pre-edit catalogue
 and confirmed ordering, case counts and watchdog values. A missing test-transition
@@ -2075,3 +2085,192 @@ rewritten method propagated the identical Error; unknown IDs also reject. This
 probe checks the adapter's error path, not shader correctness. Targeted Biome,
 TypeScript syntax/transpilation for all four changed TS files, and `git diff --check`
 passed. Package typecheck and actual GL runs remain pending scheduled integration.
+
+## Named shader contracts and false-pass repairs (before edits)
+
+Base: integrated `56f3ed72`. The changes below are REWRITE of existing aggregates into independently named behavioral cases, plus four specific false-pass repairs. No shader, effect definition, production seam, golden, input parameter, tolerance or existing render is removed. All tests retain their single shared browser/page, sequential phase order and declared watchdog values (120 seconds for distort, film/grain and wipes; 60 seconds for MatteOps). Each independent case now has its own watchdog: the cumulative allowance therefore changes. These watchdogs are hang protection, not performance requirements. Prior host-load timeouts remain unresolved validation failures until the rewritten cases run; no green result is inferred from splitting them.
+
+Reviewed failures: all four harnesses call the real `runShaderPlan`, which throws compilation/context errors; none catches and drops those errors. Two discovery loops can nevertheless yield no cases: distort filters the production registry by a display-bin string, and wipes checks only keys returned by its production-derived family loop. Stable explicit public IDs will select every previously covered effect; a missing effect will fail its named rendering case. These are behavioral fixtures, not an export/count inventory. The only additional observations are all RGB channels for Mix with Orig, and opacity plus the white center in the *same* pinch output.
+
+Caller census: each changed entry is private browser test support used by its corresponding GL file. The distort `ids` method and wipes aggregate `shares` have no production callers. Remove `ids`; replace `shares` with one explicit-ID result. MatteOps' one batch method becomes an operation selector for the same renders; no new production export or injection hook is introduced. Remaining stronger coverage: generic fingerprints own default appearance, not zero-amplitude identity, full source bypass, alternate seed/frame behavior, intermediate wipe progress or these matte controls.
+
+### Distort transparent input — REWRITE
+
+Original `fx-sapphire-distort-warp-gl.test.ts / runs all 24 effects with their defaults; transparent input stays transparent`. Each new `%s preserves transparent input at its defaults` case uses the same frame 5, empty canvas, 160×90 dimensions and seven existing probes. Explicit IDs, in the original registry iteration order:
+
+- `jasper.s.distort`
+- `jasper.s.distort-blur`
+- `jasper.s.distort-chroma`
+- `jasper.s.distort-rgb`
+- `jasper.s.infinite-zoom`
+- `jasper.s.parallax-strips`
+- `jasper.s.shake`
+- `jasper.s.stretch-frame-edges`
+- `jasper.s.warp-bubble`
+- `jasper.s.warp-bubble2`
+- `jasper.s.warp-chroma`
+- `jasper.s.warp-corner-pin`
+- `jasper.s.warp-drops`
+- `jasper.s.warp-fish-eye`
+- `jasper.s.warp-magnify`
+- `jasper.s.warp-perspective`
+- `jasper.s.warp-polar`
+- `jasper.s.warp-puddle`
+- `jasper.s.warp-puff`
+- `jasper.s.warp-repeat`
+- `jasper.s.warp-transform`
+- `jasper.s.warp-vortex`
+- `jasper.s.warp-waves`
+- `jasper.s.warp-waves2`
+
+B1: shader framework §§5,14 alpha/testing guidance requires filters to preserve transparency; these registered warp IDs are the public effect inputs. B2: an effect inventing opaque pixels in an empty clip fails exact RGBA `[0,0,0,0]`. B3: expected transparency comes from the empty fixture, independently of shader code. B4: actual registered GPU output is observed. B5: shader/helper/bin renames preserve the contract and the bin is no longer used for test discovery. B6: this is the lowest pixel seam covering these empty-input controls; opaque default fingerprints cannot own it. Risk: absent IDs now fail explicitly.
+
+### Distort identity — REWRITE
+
+Original `identity settings give the source back`; new `%s identity settings return the source`. Retain this exact input table in order:
+
+```ts
+['jasper.s.warp-fish-eye', { amount: 0 }],
+				['jasper.s.warp-magnify', { magnifyAmount: 1 }],
+				['jasper.s.warp-waves', { amplitude: 0 }],
+				['jasper.s.warp-waves2', { aAmplitude: 0, bAmplitude: 0 }],
+				['jasper.s.warp-puddle', { amplitude: 0 }],
+				['jasper.s.warp-bubble', { amplitude: 0 }],
+				['jasper.s.warp-vortex', { vortexStart: 0 }],
+				['jasper.s.distort', { amount: 0 }],
+				['jasper.s.distort-rgb', { amount: 0 }],
+				['jasper.s.distort-chroma', { amount: 0 }],
+				['jasper.s.warp-puff', { amount: 0 }],
+				['jasper.s.shake', { amplitude: 0 }],
+				['jasper.s.stretch-frame-edges', { centerSqueeze: 1, smooth: 0 }],
+				['jasper.s.warp-repeat', { warpAmount: 0 }],
+				['jasper.s.warp-chroma', { warpAmount: 0 }],
+				['jasper.s.warp-perspective', { latitude: 0, zDist: 1 }],
+				['jasper.s.parallax-strips', { mode: 'manual', manualAmount: 0 }],
+```
+
+B1: zero displacement, unity magnification, neutral perspective and zero manual parallax are the named public controls' identity settings. B2: wrong source pixels reveal unexpected movement or color/alpha damage. B3: the oracle reads the independently painted input before any shader. B4: real GPU output and source pixels, not pass structure. B5: helper/plan refactors do not change these values. B6: the lowest shader seam owns nondefault identity settings absent from default fingerprints. Preserve one source readback before the first identity case, frame 7 and tolerance 10 for all seven probes. Risk: case naming changes attribution only; output expectations stay unchanged.
+
+### Magnification and pinch — REWRITE
+
+Original `magnifiers enlarge the centre disc; a pinch shrinks it`. New `jasper.s.warp-magnify enlarges the centre disc`, `jasper.s.warp-fish-eye enlarges the centre disc`, then `negative fish-eye amounts shrink the disc and preserve visible pixels`, in that order. Keep the original four renders: two defaults, amount −1 (center white), amount −1.5 (old edge RGB sum below 700). The old negative sum also accepted a blank transparent frame. Read the white center and require opacity 255 in that same amount −1.5 output, without adding another render.
+
+B1: the public lens descriptions specify magnification and negative fish-eye pinch; an opaque source with reflected edges stays visible. B2: an enlarged/shrunken disc in the wrong place or a blank pinch frame fails output pixels. B3: the centered white disc and opaque fixture define expectations independently; retain tolerance 6 and the original sum threshold. B4: actual rendered pixels. B5: no private warp formula or pass shape is asserted. B6: these signed nonidentity controls are distinct from identity/default fingerprints, and the shader is the lowest owner. Risk: the added observation exposes a previously concealed blank-output bug if present.
+
+### Film/grain source bypass — REWRITE
+
+Original `fx-sapphire-film-grain-gl.test.ts / Mix with Orig = 1 returns the input`; new `%s Mix with Orig = 1 returns the input` for these existing explicit inputs, in order:
+
+- `jasper.s.film-effect`
+- `jasper.s.film-damage`
+- `jasper.s.film-burn`
+- `jasper.s.vhs-damage`
+- `jasper.s.vignette`
+- `jasper.s.bleach-bypass`
+- `jasper.s.grain`
+- `jasper.s.grain-static`
+- `jasper.s.ultra-grain`
+- `jasper.s.diffuse`
+- `jasper.s.vintage-color-2strip`
+- `jasper.s.vintage-color-3strip`
+- `jasper.s.digital-damage`
+- `jasper.s.jpeg-damage`
+- `jasper.s.tv-damage`
+- `jasper.s.grunge`
+- `jasper.s.scan-lines`
+- `jasper.s.scan-lines-mono`
+
+B1: Mix with Orig at 1 is the source-bypass contract documented by the shader framework/common parameter. B2: a changed output RGB channel or alpha makes the declared source visibly wrong. B3: the expected gradient value is calculated solely from the independently painted 32×24 fixture at `[16,12]`, not effect code. B4: real shader pixels. B5: shader decomposition does not affect the bypass contract. B6: default fingerprints use other mix settings; this is the lowest bypass seam. Keep tolerance 6 and alpha 255, and apply the same independent expected value to green and blue as well as red so tint corruption cannot pass.
+
+### Film/grain seeded rendering — REWRITE
+
+Original `random effects are deterministic and follow the Seed`; new `%s is deterministic and follows Seed` for:
+
+- `jasper.s.film-effect`
+- `jasper.s.film-damage`
+- `jasper.s.film-burn`
+- `jasper.s.vhs-damage`
+- `jasper.s.grain`
+- `jasper.s.ultra-grain`
+- `jasper.s.digital-damage`
+- `jasper.s.jpeg-damage`
+- `jasper.s.tv-damage`
+- `jasper.s.grunge`
+- `jasper.s.bleach-bypass`
+
+B1: shader framework §8 requires a pure deterministic function of frame/seed; each listed random effect exposes Seed. B2: repeated identical seeks disagree, or Seed ceases to affect the image. B3: equality for identical inputs and visible change for distinct seeds are independently specified relationships, with no copied RNG implementation. B4: all actual output bytes. B5: RNG/helper/plan refactors may change the pattern while preserving these relationships. B6: the shader is the lowest owner; static fingerprints cannot prove repeatability and seed sensitivity. Keep each three-render sequence, frame 3, gray 64×48 fixture, original per-effect params including forced digital damage/JPEG error rate/bleach grain, seed 77 and mean RGB difference >0.2.
+
+### Film/grain temporal behavior — REWRITE
+
+Original `grain, dust, flicker and glitches change from frame to frame`; new `%s changes from frame to frame` for:
+
+- `jasper.s.film-effect`
+- `jasper.s.film-damage`
+- `jasper.s.film-burn`
+- `jasper.s.vhs-damage`
+- `jasper.s.grain`
+- `jasper.s.grain-static`
+- `jasper.s.ultra-grain`
+- `jasper.s.diffuse`
+- `jasper.s.digital-damage`
+- `jasper.s.tv-damage`
+
+B1: these effects' public animated grain/dust/flicker/glitch behavior changes with frame. B2: frozen temporal output fails the image difference. B3: the input gradient is static, so source motion cannot produce the expected change; no noise formula is mirrored. B4: actual output bytes. B5: internal algorithms may change while animation remains visible. B6: the GPU seam owns animation; one-frame fingerprints do not. Keep frame 0 then 1, dimensions 64×48, original params/forced digital damage and mean RGB difference >0.2.
+
+### Wipe progress — REWRITE
+
+Original `transition-sapphire-wipes-gl.test.ts / runs all 24 wipes, each moving monotonically from A to B`; new `%s moves monotonically from A to B`, selecting these public IDs in the same alphabetical label order:
+
+- `jasper.s.wipe-blobs` (`S_WipeBlobs`)
+- `jasper.s.wipe-bubble` (`S_WipeBubble`)
+- `jasper.s.wipe-cells` (`S_WipeCells`)
+- `jasper.s.wipe-checker` (`S_WipeChecker`)
+- `jasper.s.wipe-circle` (`S_WipeCircle`)
+- `jasper.s.wipe-clock` (`S_WipeClock`)
+- `jasper.s.wipe-clouds` (`S_WipeClouds`)
+- `jasper.s.wipe-diffuse` (`S_WipeDiffuse`)
+- `jasper.s.wipe-dots` (`S_WipeDots`)
+- `jasper.s.wipe-double-wedge` (`S_WipeDoubleWedge`)
+- `jasper.s.wipe-flux` (`S_WipeFlux`)
+- `jasper.s.wipe-four-wedges` (`S_WipeFourWedges`)
+- `jasper.s.wipe-line` (`S_WipeLine`)
+- `jasper.s.wipe-moire` (`S_WipeMoire`)
+- `jasper.s.wipe-pixelate` (`S_WipePixelate`)
+- `jasper.s.wipe-plasma` (`S_WipePlasma`)
+- `jasper.s.wipe-pointalize` (`S_WipePointalize`)
+- `jasper.s.wipe-rectangle` (`S_WipeRectangle`)
+- `jasper.s.wipe-rings` (`S_WipeRings`)
+- `jasper.s.wipe-star` (`S_WipeStar`)
+- `jasper.s.wipe-stripes` (`S_WipeStripes`)
+- `jasper.s.wipe-tiles` (`S_WipeTiles`)
+- `jasper.s.wipe-weave` (`S_WipeWeave`)
+- `jasper.s.wipe-wedge` (`S_WipeWedge`)
+
+B1: transition framework progress and the public wipe semantics specify incoming B replacing A as completion advances. B2: reversed/stalled progress or a missing effect fails its named rendered comparison. B3: solid red A and blue B independently identify incoming coverage; retain strict `share(0.2) < share(0.5) < share(0.8)` and midpoint bounds 0.05…0.95. B4: actual shader coverage, no private pass assertions. B5: shader/registry refactors can preserve these pixels; a production-derived empty result can no longer erase the case. B6: this is the lowest seam for per-effect progress; default fingerprints/characteristic control checks do not own these three progress inputs. Keep all 72 renders, 128×72 sides, frame 4, same per-effect default parameters and progress order.
+
+### MatteOps controls — REWRITE
+
+Original `fx-sapphire-adjust-composite-gl.test.ts / S_MatteOps: shrink/grow with every filter, invert, outputs, post blur, deterministic noise`. Split into the following independently named contracts while retaining all 23 renders in precisely their previous phase order:
+
+| New named case | Existing action and independent expected result |
+| --- | --- |
+| `S_MatteOps: identity preserves the original edge` | Default renders at x44 then x45 give alpha `[255,0]`. |
+| `S_MatteOps: %s grows the matte` (box, triangle, gauss) | Grow4/softness1, x47 alpha>240 then x50 alpha<15, all grow filters before any shrink. |
+| `S_MatteOps: %s shrinks the matte` (box, triangle, gauss) | Shrink−3, x43 alpha<15 then x40 alpha>240. |
+| `S_MatteOps: Matte output is an opaque grayscale mask` | Matte output at `[2,2]` is `[0,0,0,255]`, existing tolerance3. |
+| `S_MatteOps: Invert selects the original exterior` | Invert at x2 gives alpha255. |
+| `S_MatteOps: Post Blur softens the edge` | Blur3 at x46 gives alpha strictly between30 and150. |
+| `S_MatteOps: noise follows Seed and Jitter Frames deterministically` | Same six renders, in order: A, B, seed7, frame5, static frame5, static frame0; retain all exact equality/inequality checks and noise parameters. |
+
+B1 for each row: the public Shrink/Grow, Filter, Output, Invert, Post Blur, Seed and Jitter Frames controls specify the corresponding named behavior. B2: a wrong edge, missing mask/inversion/blur, nondeterministic replay or ignored seed/cadence changes visible output. B3: the painted opaque 30×30 square in a transparent 60×60 frame independently defines the edge and mask; seed/cadence expectations are relational, with no copied shaping/noise equations. B4: registered GPU output pixels/bytes. B5: no pass count, intermediate texture or private formula appears in assertions. B6: these alternate controls are not covered by default fingerprints; actual shader pixels are the lowest stable seam. These six bar items apply separately to every parameter row above. Non-test caller of the production effect remains FxPicture; the selector is test harness support only. Risk: independent cases expose earlier/later control failures separately; no timeout failure is suppressed or converted to success.
+
+Planned validation: static Biome and final diff review only in this isolated worktree. Focused GL validation for these four files remains root-scheduled; no heavy test/build commands are authorized in this follow-up.
+
+
+Named-case rewrite completion: all eight aggregate declarations in this supplement are REWRITE. Four originals belong to this partition (film/grain's three plus MatteOps): original-header delta +4 REWRITE, −4 KEEP. The distort/wipes originals belong to partition 1: transparency and monotonic progress were already REWRITE, while identity and magnifier/pinch become REWRITE (+2 REWRITE, −2 KEEP in that ledger). Root coordinates those original counts and the generic-fingerprint supplement separately.
+
+The eight aggregates expand into 118 individually reported contracts, with 36 unrelated cases unchanged across these files. Executable case totals become distort 52, film/grain 50, wipes 33 and adjust/composite 19. This is attribution of existing behaviors, not additional scenarios or a target count. Static comparison confirmed the identity and all three film fixture tables are unchanged, including order and parameter overrides. A caller census confirms only the distort family uses the old `Sapphire Distort` bin; the explicit 24-ID fixture therefore preserves every prior row in registry order. The 24 wipe IDs preserve the original alphabetical label order.
+
+Render review: all 211 GPU renders remain (distort 45, film/grain 71, wipes 72, MatteOps 23), with their existing source sizes, params, seeds, frames, progress values, tolerances, browser/page context and success-path order. The original single source readback remains before the first identity render. The extra pinch center/alpha observation reads the existing −1.5 output and adds no render. All grow filter renders precede all shrink renders; the six matte-noise renders retain their original order.
+
+Validation performed: targeted Biome passed all seven modified TypeScript files; `git diff --check` passed. No Vitest, GL, typecheck or build command ran for this rewrite, per root's scheduling instruction. Full GPU validation remains pending. Independent-case watchdog allocation changes the cumulative allowable run time and must not be presented as a performance improvement or as resolution of earlier overloaded-host failures.

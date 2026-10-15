@@ -103,40 +103,35 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		});
 
-		it('Mix with Orig = 1 returns the input', async () => {
-			for (const id of FAMILY) {
-				const r = await render({
-					id,
-					width: 32,
-					height: 24,
-					paint: 'gradient',
-					params: { mixWithOriginal: 1 },
-					probes: [[16, 12]],
-				});
-				const expected = Math.round((16.5 / 32) * 255);
-				expect(Math.abs(r.probes[0]![0]! - expected), id).toBeLessThanOrEqual(6);
-				expect(r.probes[0]![3], id).toBe(255);
-			}
+		it.each(FAMILY)('%s Mix with Orig = 1 returns the input', async (id) => {
+			const r = await render({
+				id,
+				width: 32,
+				height: 24,
+				paint: 'gradient',
+				params: { mixWithOriginal: 1 },
+				probes: [[16, 12]],
+			});
+			const expected = Math.round((16.5 / 32) * 255);
+			for (const channel of r.probes[0]!.slice(0, 3))
+				expect(Math.abs(channel - expected), id).toBeLessThanOrEqual(6);
+			expect(r.probes[0]![3], id).toBe(255);
 		});
 
-		it('random effects are deterministic and follow the Seed', async () => {
-			for (const [id, params] of SEEDED) {
-				const opts = { id, width: 64, height: 48, paint: 'grey' as const, frame: 3, all: true, params };
-				const a = await render(opts);
-				const b = await render(opts);
-				const c = await render({ ...opts, params: { ...params, seed: 77 } });
-				expect(a.all, id).toEqual(b.all);
-				expect(meanAbsDiff(a.all!, c.all!), id).toBeGreaterThan(0.2);
-			}
+		it.each(SEEDED)('%s is deterministic and follows Seed', async (id, params) => {
+			const opts = { id, width: 64, height: 48, paint: 'grey' as const, frame: 3, all: true, params };
+			const a = await render(opts);
+			const b = await render(opts);
+			const c = await render({ ...opts, params: { ...params, seed: 77 } });
+			expect(a.all, id).toEqual(b.all);
+			expect(meanAbsDiff(a.all!, c.all!), id).toBeGreaterThan(0.2);
 		});
 
-		it('grain, dust, flicker and glitches change from frame to frame', async () => {
-			for (const [id, params] of ANIMATED) {
-				const opts = { id, width: 64, height: 48, paint: 'gradient' as const, all: true, params };
-				const f0 = await render({ ...opts, frame: 0 });
-				const f1 = await render({ ...opts, frame: 1 });
-				expect(meanAbsDiff(f0.all!, f1.all!), id).toBeGreaterThan(0.2);
-			}
+		it.each(ANIMATED)('%s changes from frame to frame', async (id, params) => {
+			const opts = { id, width: 64, height: 48, paint: 'gradient' as const, all: true, params };
+			const f0 = await render({ ...opts, frame: 0 });
+			const f1 = await render({ ...opts, frame: 1 });
+			expect(meanAbsDiff(f0.all!, f1.all!), id).toBeGreaterThan(0.2);
 		});
 
 		it('fully transparent input stays transparent (filters; S_Grunge renders over its background)', async () => {

@@ -163,12 +163,6 @@ const api = {
 		return readPicture(input, box, a.probes);
 	},
 	run,
-	ids() {
-		return defaultEffectRegistry
-			.list()
-			.filter((s) => s.id.startsWith('jasper.s.') && s.bin === 'Sapphire Distort')
-			.map((s) => s.id);
-	},
 };
 
 (window as unknown as { __dw: typeof api }).__dw = api;

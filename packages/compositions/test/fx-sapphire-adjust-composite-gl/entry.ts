@@ -252,37 +252,45 @@ const api = {
 		};
 	},
 
-	matteOps() {
-		// A 30×30 white opaque square in a 60×60 transparent layer: edges at x = 15 and x = 45 (pixels 15…44 inside).
+	matteOps(
+		operation: 'identity' | 'grow' | 'shrink' | 'output' | 'invert' | 'blur' | 'noise',
+		filter = 'triangle',
+	) {
+		// A 30×30 white opaque square in a 60×60 transparent layer: pixels 15…44 inside.
 		const L: [number, number] = [60, 60];
 		const at = (over: Record<string, unknown>, x: number) =>
 			run('jasper.s.matte-ops', over, L, square(30)).at(x, 30)[3];
-		const grow = { shrinkGrow: 4, edgeSoftness: 1 };
-		const filters = ['box', 'triangle', 'gauss'];
-		const noise = { shrinkGrow: 1, noiseAmplitude: 2, noiseWidth: 0.2, frequency: 3 };
-		const noisy = (over: Record<string, unknown>, frame = 0) =>
-			allPixels(run('jasper.s.matte-ops', { ...noise, ...over }, L, square(30), {}, frame).out);
-		return {
-			identityEdge: [at({}, 44), at({}, 45)],
-			growOut: Object.fromEntries(
-				filters.map((f) => [f, [at({ ...grow, filter: f }, 47), at({ ...grow, filter: f }, 50)]]),
-			),
-			shrink: Object.fromEntries(
-				filters.map((f) => [
-					f,
-					[at({ shrinkGrow: -3, filter: f }, 43), at({ shrinkGrow: -3, filter: f }, 40)],
-				]),
-			),
-			matteOut: run('jasper.s.matte-ops', { output: 'matte' }, L, square(30)).at(2, 2),
-			invert: at({ invertMatte: true }, 2),
-			postBlurEdge: at({ postBlur: 3 }, 46),
-			noiseA: noisy({}),
-			noiseB: noisy({}),
-			noiseSeed: noisy({ seed: 7 }),
-			noiseFrame: noisy({}, 5),
-			noiseStatic: noisy({ jitterFrames: 0 }, 5),
-			noiseStatic0: noisy({ jitterFrames: 0 }, 0),
-		};
+		switch (operation) {
+			case 'identity':
+				return [at({}, 44), at({}, 45)];
+			case 'grow': {
+				const p = { shrinkGrow: 4, edgeSoftness: 1, filter };
+				return [at(p, 47), at(p, 50)];
+			}
+			case 'shrink': {
+				const p = { shrinkGrow: -3, filter };
+				return [at(p, 43), at(p, 40)];
+			}
+			case 'output':
+				return run('jasper.s.matte-ops', { output: 'matte' }, L, square(30)).at(2, 2);
+			case 'invert':
+				return at({ invertMatte: true }, 2);
+			case 'blur':
+				return at({ postBlur: 3 }, 46);
+			case 'noise': {
+				const noise = { shrinkGrow: 1, noiseAmplitude: 2, noiseWidth: 0.2, frequency: 3 };
+				const noisy = (over: Record<string, unknown>, frame = 0) =>
+					allPixels(run('jasper.s.matte-ops', { ...noise, ...over }, L, square(30), {}, frame).out);
+				return {
+					noiseA: noisy({}),
+					noiseB: noisy({}),
+					noiseSeed: noisy({ seed: 7 }),
+					noiseFrame: noisy({}, 5),
+					noiseStatic: noisy({ jitterFrames: 0 }, 5),
+					noiseStatic0: noisy({ jitterFrames: 0 }, 0),
+				};
+			}
+		}
 	},
 
 	matteOpsComp() {
