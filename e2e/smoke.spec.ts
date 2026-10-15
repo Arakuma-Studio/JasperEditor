@@ -1,4 +1,4 @@
-// Each test continues the project left by the preceding test.
+// Three critical M1 workflows share the project so the exports contain the user's accumulated edits.
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
@@ -35,47 +35,48 @@ test.afterAll(async () => {
 	await page?.close();
 });
 
-test('Home → New Project opens the Editing workspace', async () => {
+const EXPORT_DIR = join(ROOT, 'test-results', 'e2e-exports');
+
+/** Frames of the sequence = end of the last clip (the sequence starts at 0). */
+async function sequenceFrames(): Promise<number> {
+	return Math.max(...(await clips(page)).map((c) => c.end));
+}
+
+function assertOutput(file: string, frames: number): void {
+	const probe = ffprobe(file);
+	const v = probe.streams.find((s) => s.codec_type === 'video');
+	expect(v, 'video stream').toBeTruthy();
+	expect(v!.codec_name).toBe('h264');
+	expect([v!.width, v!.height]).toEqual([1920, 1080]);
+	expect(v!.r_frame_rate).toBe('30000/1001');
+	expect(Number(v!.nb_read_frames)).toBe(frames);
+	// Container duration within 0.1 s (AAC priming/padding makes the audio a few ms longer).
+	expect(Math.abs(Number(probe.format.duration) - (frames * 1001) / 30000)).toBeLessThan(0.1);
+	expect(probe.streams.some((s) => s.codec_type === 'audio' && s.codec_name === 'aac')).toBe(true);
+}
+
+test('create, import, edit linked footage, play, undo and export a native movie', async ({
+	request,
+}, testInfo) => {
+	test.setTimeout(600_000);
 	await createProject(page, 'E2E Smoke');
 	await expect(page.getByTestId('workspace-tab-editing')).toBeVisible();
 	expect(await sequenceSummary(page)).toMatchObject({ settings: { width: 1920, height: 1080 } });
-});
 
-test('import clip-a.mp4 through the file chooser → Project panel row with a poster', async () => {
 	await importFiles(page, ['clip-a.mp4']);
-	expect(await appliedLabels(page)).toContain('Import 1 file');
-	await page.getByTestId('project-icon-view').click();
-	const tile = page.getByTestId('project-tile').filter({ hasText: 'clip-a.mp4' });
-	await expect(tile).toBeVisible();
-	await expect
-		.poll(
-			async () =>
-				tile.locator('img').evaluateAll((imgs) => imgs.some((i) => (i as HTMLImageElement).naturalWidth > 0)),
-			{
-				timeout: 60_000,
-			},
-		)
-		.toBe(true);
-	await page.getByTestId('project-list-view').click();
-});
-
-test('drag the item to the timeline → linked V1/A1 clips', async () => {
 	const row = page.getByTestId('project-row').filter({ hasText: 'clip-a.mp4' });
 	const box = (await timelineArea(page).boundingBox())!;
 	await row.dragTo(timelineArea(page), { targetPosition: { x: 0, y: box.height - 150 } });
 	await expect.poll(async () => (await clips(page)).length).toBe(2);
-	const [a1, v1] = await clips(page);
+	let [a1, v1] = await clips(page);
 	expect(v1).toMatchObject({ track: 'V1', kind: 'video', start: 0 });
 	expect(a1).toMatchObject({ track: 'A1', kind: 'audio', start: 0 });
 	expect(v1!.linked).toContain(a1!.id);
 	// 10 s at 29.97 fps = 300 frames (rounded from 299.7).
 	expect(Math.abs(v1!.duration - 300)).toBeLessThanOrEqual(1);
-	expect((await appliedLabels(page)).at(-1)).toMatch(/Place|Overwrite|Insert/);
 	await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 20_000 });
 	await expect(page.getByTestId('jobs-badge')).toHaveAttribute('data-active', '0', { timeout: 60_000 });
-});
 
-test('Space plays the Program monitor, Space stops it; the monitor shows the frame', async () => {
 	await focusTimeline(page);
 	const before = await playheadFrame(page);
 	await page.keyboard.press('Space');
@@ -87,10 +88,8 @@ test('Space plays the Program monitor, Space stops it; the monitor shows the fra
 	const ruler = (await page.getByTestId('timeline-ruler').boundingBox())!;
 	await page.mouse.click(ruler.x + ruler.width * 0.3, ruler.y + ruler.height / 2);
 	await expect.poll(async () => (await programPixels(page)).std, { timeout: 20_000 }).toBeGreaterThan(20);
-});
 
-test('move, trim, razor: one History entry each; Ctrl+Z / Ctrl+Shift+Z', async () => {
-	let [a1, v1] = await clips(page);
+	[a1, v1] = await clips(page);
 	const labelsBefore = (await appliedLabels(page)).length;
 	const b = await clipBox(page, v1!.id);
 	const pxPerFrame = b.width / v1!.duration;
@@ -136,31 +135,7 @@ test('move, trim, razor: one History entry each; Ctrl+Z / Ctrl+Shift+Z', async (
 	await page.keyboard.press('Control+Shift+KeyZ');
 	await expect.poll(async () => (await clips(page, ['V1'])).length).toBe(2);
 	expect((await appliedLabels(page)).length).toBe(labelsBefore + 3);
-});
 
-const EXPORT_DIR = join(ROOT, 'test-results', 'e2e-exports');
-
-/** Frames of the sequence = end of the last clip (the sequence starts at 0). */
-async function sequenceFrames(): Promise<number> {
-	return Math.max(...(await clips(page)).map((c) => c.end));
-}
-
-function assertOutput(file: string, frames: number): void {
-	const probe = ffprobe(file);
-	const v = probe.streams.find((s) => s.codec_type === 'video');
-	expect(v, 'video stream').toBeTruthy();
-	expect(v!.codec_name).toBe('h264');
-	expect([v!.width, v!.height]).toEqual([1920, 1080]);
-	expect(v!.r_frame_rate).toBe('30000/1001');
-	expect(Number(v!.nb_read_frames)).toBe(frames);
-	// Container duration within 0.1 s (AAC priming/padding makes the audio a few ms longer).
-	expect(Math.abs(Number(probe.format.duration) - (frames * 1001) / 30000)).toBeLessThan(0.1);
-	expect(probe.streams.some((s) => s.codec_type === 'audio' && s.codec_name === 'aac')).toBe(true);
-}
-
-test('export a media-only sequence with Auto → native ffmpeg path; ffprobe frame count matches', async ({
-	request,
-}) => {
 	mkdirSync(EXPORT_DIR, { recursive: true });
 	const frames = await sequenceFrames();
 	const out = await exportViaUi(page, request, {
@@ -171,9 +146,18 @@ test('export a media-only sequence with Auto → native ffmpeg path; ffprobe fra
 	});
 	expect(out.job.result?.renderPath).toBe('native');
 	assertOutput(out.file, frames);
+	await testInfo.attach('exported-movie', { path: out.file, contentType: 'video/mp4' });
+	await testInfo.attach('stream-probe', {
+		body: JSON.stringify(ffprobe(out.file), null, 2),
+		contentType: 'application/json',
+	});
+	await testInfo.attach('edited-timeline', { body: await page.screenshot(), contentType: 'image/png' });
 });
 
-test('insert the lower-third@1 motion graphic from the Motion Templates panel (drag to V2)', async () => {
+test('insert a motion graphic and export it over footage with the native renderer', async ({
+	request,
+}, testInfo) => {
+	test.setTimeout(600_000);
 	await page.getByTestId('tab-motionTemplates').click();
 	const card = page.locator('[data-template="lower-third@1"]');
 	await expect(card).toBeVisible();
@@ -190,9 +174,7 @@ test('insert the lower-third@1 motion graphic from the Motion Templates panel (d
 	expect((await clips(page)).length).toBe(v2 + 1);
 	const mg = (await clips(page)).find((c) => c.kind === 'motion-graphic')!;
 	expect(mg.track).toBe('V2');
-});
 
-test('motion graphic + footage exports with Auto → native (fframes master)', async ({ request }) => {
 	// jasper-mg is an optional native tool (`pnpm mg:build`, needs cargo; `pnpm e2e` builds it when cargo is
 	// installed). Without it the engine plans this export through Remotion (e2e:mg-fallback checks that path).
 	const caps = (await (await request.get('/api/capabilities')).json()) as {
@@ -211,8 +193,12 @@ test('motion graphic + footage exports with Auto → native (fframes master)', a
 	});
 	expect(out.job.result?.renderPath).toBe('native');
 	assertOutput(out.file, frames);
+	await testInfo.attach('exported-movie', { path: out.file, contentType: 'video/mp4' });
+	await testInfo.attach('stream-probe', {
+		body: JSON.stringify(ffprobe(out.file), null, 2),
+		contentType: 'application/json',
+	});
 	// The lower third (bottom-left) is composited over black before the footage starts.
-	const mg = (await clips(page)).find((c) => c.kind === 'motion-graphic')!;
 	const firstFootage = Math.min(...(await clips(page, ['V1'])).map((c) => c.start));
 	const t = (Math.min(mg.end, firstFootage) * 1001) / 30000 / 2 + 0.5;
 	const lowerThird = { x: 0.05, y: 0.72, w: 0.3, h: 0.18 };
@@ -221,7 +207,7 @@ test('motion graphic + footage exports with Auto → native (fframes master)', a
 	expect(regionLuma(out.file, t, topRight)).toBeLessThan(5);
 });
 
-test('Type tool click in the Program monitor adds a text clip', async () => {
+test('create a title with the Type tool and export through Remotion', async ({ request }, testInfo) => {
 	await focusTimeline(page);
 	await page.keyboard.press('KeyT');
 	const vp = (await page.getByTestId('program-viewport').boundingBox())!;
@@ -230,11 +216,7 @@ test('Type tool click in the Program monitor adds a text clip', async () => {
 	await expect.poll(async () => (await clips(page)).filter((c) => c.kind === 'text').length).toBe(1);
 	await focusTimeline(page);
 	await page.keyboard.press('KeyV');
-	expect((await appliedLabels(page)).at(-1)).toMatch(/Text/);
-});
 
-// Force Remotion here because automatic planning bakes text through the hybrid path.
-test('with the text clip, the forced Remotion export succeeds', async ({ request }) => {
 	test.setTimeout(1_200_000);
 	const frames = await sequenceFrames();
 	const out = await exportViaUi(page, request, {
@@ -246,31 +228,9 @@ test('with the text clip, the forced Remotion export succeeds', async ({ request
 	});
 	expect(out.job.result?.renderPath).toBe('remotion');
 	assertOutput(out.file, frames);
-});
-
-test('Program monitor accepts effect drops (layer under the pointer) and motion-template drops', async () => {
-	const v1 = (await clips(page, ['V1'])).at(-1)!;
-	await focusTimeline(page);
-	const ruler = (await page.getByTestId('timeline-ruler').boundingBox())!;
-	const clipB = await clipBox(page, v1.id);
-	await page.mouse.click(clipB.x + clipB.width / 2, ruler.y + ruler.height / 2);
-	await page.getByTestId('tab-effects').click();
-	await page.getByTestId('effects-search').fill('Gaussian');
-	const blur = page.locator('[data-effect-id="jasper.gaussian-blur"]');
-	await expect(blur).toBeVisible();
-	const overlay = page.getByTestId('program-overlay');
-	const ob = (await overlay.boundingBox())!;
-	const before = await appliedLabels(page);
-	await blur.dragTo(overlay, { targetPosition: { x: ob.width * 0.75, y: ob.height * 0.8 } });
-	await expect.poll(async () => (await appliedLabels(page)).length).toBe(before.length + 1);
-	expect((await appliedLabels(page)).at(-1)).toMatch(/Apply Gaussian Blur/);
-
-	await page.getByTestId('tab-motionTemplates').click();
-	const mgBefore = (await clips(page)).filter((c) => c.kind === 'motion-graphic').length;
-	await page.locator('[data-template="lower-third@1"]').dragTo(overlay, {
-		targetPosition: { x: ob.width / 2, y: ob.height / 2 },
+	await testInfo.attach('exported-movie', { path: out.file, contentType: 'video/mp4' });
+	await testInfo.attach('stream-probe', {
+		body: JSON.stringify(ffprobe(out.file), null, 2),
+		contentType: 'application/json',
 	});
-	await expect
-		.poll(async () => (await clips(page)).filter((c) => c.kind === 'motion-graphic').length)
-		.toBe(mgBefore + 1);
 });

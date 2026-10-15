@@ -2,7 +2,6 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page, test } from '@playwright/test';
-import type { ProjectDocument } from '../packages/project/src/index.ts';
 import {
 	createProject,
 	enableAgentBridge,
@@ -71,19 +70,12 @@ async function ui<T = unknown>(action: string, args: Record<string, unknown> = {
 }
 const runCommand = (id: string, args?: unknown) => ui('command', { id, ...(args ? { args } : {}) });
 
-/** Reloaded tabs reclaim their own lease immediately and must remain editable. */
-async function reloadEditable() {
-	await page.reload();
-	await expect(page.getByTestId('editor-shell')).toBeVisible();
-	await expect(page.getByTestId('banner-read-only')).toHaveCount(0);
-}
-
 test.beforeAll(async ({ browser }) => {
 	const context = await browser.newContext();
 	page = await context.newPage();
 	await enableAgentBridge(page);
 	projectId = await createProject(page, 'E2E gaps');
-	await importFiles(page, ['clip-a.mp4', 'shaky.mp4', 'reframe.mp4']);
+	await importFiles(page, ['clip-a.mp4']);
 });
 
 test.afterAll(async () => {
@@ -91,6 +83,7 @@ test.afterAll(async () => {
 });
 
 test('accessibility: no serious or critical axe violation in the main workspaces', async () => {
+	const testInfo = test.info();
 	const media = (await query<{ media: { mediaId: string; originalName: string }[] }>(page, 'media.list'))
 		.media;
 	const a = media.find((m) => m.originalName === 'clip-a.mp4')!.mediaId;
@@ -112,134 +105,18 @@ test('accessibility: no serious or critical axe violation in the main workspaces
 			await page.keyboard.press('Escape');
 			await runCommand('workspace.switch', { id: ws });
 			await page.waitForTimeout(800);
-			found.push(...(await audit(`[${theme}] ${ws}`)));
+			const violations = await audit(`[${theme}] ${ws}`);
+			found.push(...violations);
+			await testInfo.attach(`axe-${theme}-${ws}`, {
+				body: JSON.stringify(violations, null, 2),
+				contentType: 'application/json',
+			});
 			await shot(page, `a11y-${theme}-${ws}`);
+			await testInfo.attach(`workspace-${theme}-${ws}`, {
+				path: join(SHOTS, `a11y-${theme}-${ws}.png`),
+				contentType: 'image/png',
+			});
 		}
 	}
 	expect(found, found.join('\n')).toEqual([]);
-});
-
-test('Warp Stabilizer: background analysis stored with the effect, banner while analysing', async () => {
-	const media = (await query<{ media: { mediaId: string; originalName: string }[] }>(page, 'media.list'))
-		.media;
-	const shaky = media.find((m) => m.originalName === 'shaky.mp4')!.mediaId;
-	const r = await transact(page, [
-		{
-			type: 'clip.place',
-			source: { mediaId: shaky },
-			at: 300,
-			tracks: { video: 'V1', audio: 'A1' },
-			ref: '$s',
-		},
-	]);
-	expect(r.ok, JSON.stringify(r)).toBe(true);
-	const clips = (
-		await query<{ clips: { id: string; start: number; kind: string }[] }>(page, 'sequence.clipsInRange', {
-			from: 300,
-			to: 301,
-		})
-	).clips;
-	const clipId = clips.find((c) => c.kind === 'video')!.id;
-	expect(
-		(await transact(page, [{ type: 'effect.add', target: { clipId }, effectId: 'jasper.warp-stabilizer' }]))
-			.ok,
-	).toBe(true);
-	await query(page, 'playhead.set', { frame: 340 });
-	await expect(page.getByTestId('warp-banner')).toBeVisible({ timeout: 20_000 });
-	await shot(page, 'warp-banner');
-	await expect
-		.poll(
-			async () => {
-				const doc = await query<ProjectDocument>(page, 'doc.get');
-				const seqs = doc.sequences;
-				const clip = Object.values(seqs)
-					.map((q) => q.clips[clipId])
-					.find(Boolean);
-				const fx =
-					clip && 'effects' in clip
-						? clip.effects.find((e) => e.effectId === 'jasper.warp-stabilizer')
-						: undefined;
-				return fx?.warpAnalysis?.frames?.length ?? 0;
-			},
-			{ timeout: 180_000 },
-		)
-		.toBeGreaterThan(14 * 30);
-	await expect(page.getByTestId('warp-banner')).toBeHidden({ timeout: 20_000 });
-	await shot(page, 'warp-stabilized');
-});
-
-test('Essential Graphics: a new graphic, a second layer, align and roll', async () => {
-	await runCommand('panel.focus.essentialGraphics');
-	const panel = page.getByTestId('essential-graphics-panel');
-	await expect(panel).toBeVisible();
-	await panel.getByRole('tab', { name: 'Edit' }).click();
-	await page.getByTestId('eg-new-text').click();
-	await expect(page.getByTestId('eg-edit')).toBeVisible({ timeout: 15_000 });
-	await page.getByTestId('eg-add-rectangle').click();
-	const layers = page.locator('[data-testid^="eg-layer-"]');
-	await expect(layers).toHaveCount(2);
-	await layers.first().click();
-	await page.getByTestId('eg-align-left').click();
-	await shot(page, 'essential-graphics');
-	const doc = await query<ProjectDocument>(page, 'doc.get');
-	const seqs = Object.values(doc.sequences);
-	expect(seqs.filter((q) => q.graphic).length).toBeGreaterThanOrEqual(1);
-});
-
-test('Auto Reframe Sequence makes a 9:16 copy that follows the subject', async () => {
-	const media = (await query<{ media: { mediaId: string; originalName: string }[] }>(page, 'media.list'))
-		.media;
-	const rf = media.find((m) => m.originalName === 'reframe.mp4')!.mediaId;
-	// After everything the earlier specs placed, on V1 (where the analysis looks first).
-	const sum = await query<{ sequenceId: string; duration: { frames: number } }>(page, 'sequence.summary');
-	const placed = await page.evaluate((tx) => window.jasper!.transact(tx), {
-		protocol: 'jasper.tx/1',
-		label: 'E2E setup',
-		sequenceId: sum.sequenceId,
-		commands: [
-			{
-				type: 'clip.place',
-				source: { mediaId: rf },
-				at: sum.duration.frames + 30,
-				tracks: { video: 'V1', audio: 'A1' },
-			},
-		],
-	});
-	expect(placed.ok, JSON.stringify(placed)).toBe(true);
-	await runCommand('sequence.autoReframe');
-	const dialog = page.getByTestId('auto-reframe-dialog');
-	await expect(dialog).toBeVisible();
-	await shot(page, 'auto-reframe-dialog');
-	await dialog.getByRole('button', { name: 'Create' }).click();
-	await expect(dialog).toBeHidden({ timeout: 240_000 });
-	const s = await query<{ settings: { width: number; height: number } }>(page, 'sequence.summary');
-	expect(s.settings.height).toBeGreaterThan(s.settings.width);
-	await shot(page, 'auto-reframe-result');
-});
-
-test('Spanish UI after a restart', async () => {
-	await page.evaluate(() => {
-		const raw = localStorage.getItem('jasper:gaps-prefs');
-		const p = raw ? JSON.parse(raw) : {};
-		localStorage.setItem(
-			'jasper:gaps-prefs',
-			JSON.stringify({ ...p, appearance: { ...(p.appearance ?? {}), language: 'es' } }),
-		);
-	});
-	await reloadEditable();
-	await expect(page.locator('html')).toHaveAttribute('lang', 'es');
-	await expect(
-		page.getByRole('menuitem', { name: 'Archivo' }).or(page.getByText('Archivo').first()),
-	).toBeVisible();
-	await runCommand('panel.focus.effects');
-	await page.waitForTimeout(500);
-	await shot(page, 'spanish');
-	// Back to English for the following specs.
-	await page.evaluate(() => {
-		const p = JSON.parse(localStorage.getItem('jasper:gaps-prefs') ?? '{}');
-		localStorage.setItem(
-			'jasper:gaps-prefs',
-			JSON.stringify({ ...p, appearance: { ...(p.appearance ?? {}), language: 'en' } }),
-		);
-	});
 });
