@@ -384,9 +384,16 @@ export async function insertLibrarySound(
 	session.select('timeline', [clipId], 'replace', { primary: clipId });
 	soundLibraryPrefs.touchRecent(entry.id);
 	const tc = formatTimecode(cueFrame, after.settings.frameRate, { dropFrame: after.settings.dropFrame });
-	const message =
-		align === 'peak'
-			? `Added ${title} to ${trackLabel} · peak at ${tc}`
-			: `Added ${title} to ${trackLabel} · start at ${tc}`;
-	return { clipId, mediaId, trackLabel, start: p.start, cueFrame, trimmedHeadSec: p.trimmedHeadSec, message };
+	return {
+		clipId,
+		mediaId,
+		trackLabel,
+		start: p.start,
+		cueFrame,
+		trimmedHeadSec: p.trimmedHeadSec,
+		message:
+			align === 'peak'
+				? `Added ${title} to ${trackLabel} · peak at ${tc}`
+				: `Added ${title} to ${trackLabel} · start at ${tc}`,
+	};
 }
