@@ -18,6 +18,7 @@ import {
 	mark,
 	peaks,
 	type Recording,
+	requireUndisturbed,
 	reschedules,
 	TAP,
 	timeOf,
@@ -144,16 +145,25 @@ async function setup(): Promise<void> {
  * play position count: while a primed start waits, the picture holds the play position's frame, which says nothing
  * about when it started.
  */
-async function pictureAnchor(p: Page, ms: number, fromFrame: number): Promise<number> {
+async function pictureAnchor(
+	p: Page,
+	ms: number,
+	fromFrame: number,
+): Promise<{ anchor: number; slip: number }> {
 	return p.evaluate(
 		async ([dur, num, den, from]) => {
 			const w = window as unknown as {
-				__tap: { ctxs: { ctx: BaseAudioContext }[] };
+				__tap: { ctxs: { ctx: BaseAudioContext; starts: number }[] };
 				jasper: { query(n: string, a?: unknown): Promise<{ frame: number; playing: boolean }> };
 			};
-			const ctx = w.__tap.ctxs.find((c) => c.ctx.state === 'running')?.ctx;
-			if (!ctx) return Number.NaN;
+			// the Program monitor's context: the running one Remotion schedules media buffers on
+			const ctx = w.__tap.ctxs
+				.filter((c) => c.ctx.state === 'running')
+				.sort((a, b) => b.starts - a.starts)[0]?.ctx;
+			if (!ctx) return { anchor: Number.NaN, slip: Number.NaN };
 			let best = Number.POSITIVE_INFINITY;
+			let first: AudioTimestamp | null = null;
+			let last: AudioTimestamp | null = null;
 			// anime-allow: test-side wall clock bound of a sampling loop
 			const end = performance.now() + dur;
 			// anime-allow: test-side wall clock bound of a sampling loop
@@ -171,8 +181,19 @@ async function pictureAnchor(p: Page, ms: number, fromFrame: number): Promise<nu
 				const o = (ctx as AudioContext).getOutputTimestamp();
 				const t = (o.contextTime ?? 0) + (now - (o.performanceTime ?? 0)) / 1000;
 				if (playing && frame > from) best = Math.min(best, t - (frame * den) / num);
+				if (o.performanceTime) {
+					first ??= o;
+					last = o;
+				}
 			}
-			return best;
+			// The picture runs on the wall clock, the program on the audio clock: when the audio thread falls behind (a
+			// starved host underruns), the two drift apart and their start offset is not what this measures.
+			const slip =
+				first && last
+					? ((last.performanceTime ?? 0) - (first.performanceTime ?? 0)) / 1000 -
+						((last.contextTime ?? 0) - (first.contextTime ?? 0))
+					: Number.NaN;
+			return { anchor: best, slip };
 		},
 		[ms, fps.num, fps.den, fromFrame] as const,
 	);
@@ -187,19 +208,28 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 	/** Plays from 0 and returns the recording and the picture's sequence-time-0 context time. */
 	const measure = async () => {
 		let m = { rec: null as unknown as Recording, picture: Number.NaN };
+		let clean = false;
+		let last: string[] = [];
 		for (let a = 0; a < ATTEMPTS; a++) {
 			await seekPaused(page, frameAt(1));
 			await seekPaused(page, 0);
-			let picture = Number.NaN;
+			let picture = { anchor: Number.NaN, slip: Number.NaN };
 			const rec = await playFor(page, 200, async (p) => {
 				await p.waitForTimeout(150);
 				picture = await pictureAnchor(p, 900, 0);
 			});
-			m = { rec, picture };
+			m = { rec, picture: picture.anchor };
 			const d = disturbances(rec, rec.armed, Math.min(rec.armed + 1.2, (rec.marks.pause ?? 1e9) - 0.001));
-			if (d.length === 0) break;
+			if (!(Math.abs(picture.slip) < 0.01))
+				d.push(`the audio clock slipped ${(picture.slip * 1000).toFixed(1)} ms against the wall clock`);
+			last = d;
+			if (d.length === 0) {
+				clean = true;
+				break;
+			}
 			console.log('Remotion lost its scheduling during the play (load), again:', d.join('; '));
 		}
+		requireUndisturbed(clean, last);
 		return m;
 	};
 	/**
@@ -209,10 +239,15 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 	 * output timestamp).
 	 */
 	const check = (m: { rec: Recording; picture: number }, wait: number): number => {
-		const ps = peaks(m.rec);
+		// the clicks of the first 2 s (a slow page can play into the tone that follows them)
+		const ps = peaks(m.rec).filter((p) => p.t - m.rec.armed < wait + 1.95);
 		expect(ps.length).toBeGreaterThanOrEqual(3);
 		// both tracks summed (0.707): every click, 0.25 s apart
-		for (let i = 1; i < ps.length; i++) expect(Math.abs(ps[i]!.t - ps[i - 1]!.t - 0.25)).toBeLessThan(0.002);
+		for (let i = 1; i < ps.length; i++)
+			expect(
+				Math.abs(ps[i]!.t - ps[i - 1]!.t - 0.25),
+				JSON.stringify({ armed: m.rec.armed, ps, late: m.rec.late, stops: m.rec.stops }),
+			).toBeLessThan(0.002);
 		for (const p of ps) expect(p.v).toBeGreaterThan(0.6);
 		// the click 30 ms after the play position is the first one heard, `wait` after the resume (sample-exact; the
 		// tolerance is one render quantum)
@@ -266,8 +301,9 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 			.info()
 			.annotations.push({ type: 'sync', description: JSON.stringify({ w1: p1.offset, w2: p2.offset }) });
 		expect(p2.offset).toBeGreaterThan(-0.01);
-		// and not much after it: the sampling reads up to an animation frame late; waiting twice would read ≈ 0.2 s
-		expect(p2.offset).toBeLessThan(0.08);
+		// and not a second wait after it (≈ 0.2 s): on a loaded host the picture's own start and the sampling lag by up
+		// to ≈ 0.1 s
+		expect(p2.offset).toBeLessThan(0.15);
 	} finally {
 		await transact(
 			page,
@@ -307,6 +343,8 @@ test('seek during playback: the audio from before the seek stops at the seek', a
 	let rec = null as unknown as Recording;
 	let enter = -1;
 	let stop = -1;
+	let clean = false;
+	let last: string[] = [];
 	for (let a = 0; a < ATTEMPTS; a++) {
 		await seekPaused(page, frameAt(2.2));
 		rec = await playFor(page, 700, async (p) => {
@@ -334,16 +372,19 @@ test('seek during playback: the audio from before the seek stops at the seek', a
 			.filter((t) => t !== stop)
 			.map((t) => `reschedule at ${(t - enter).toFixed(3)} s`);
 		const late = disturbances({ ...rec, stops: [] }, rec.armed, enter);
-		if (stop > 0 && other.length === 0 && late.length === 0) break;
+		last = [...other, ...late];
+		clean = last.length === 0;
+		if (stop > 0 && clean) break;
 		console.log(
 			'Remotion lost its scheduling around the seek (load), again:',
 			stop > 0 ? '' : 'no reschedule at the seek;',
 			[...other, ...late].join('; '),
 		);
 	}
-	let last = -1;
-	for (let i = 0; i < rec.data.length; i++) if (Math.abs(rec.data[i]!) > 0.01) last = i;
-	const lastT = last >= 0 ? timeOf(rec, last) : -1;
+	requireUndisturbed(clean, last);
+	let tail = -1;
+	for (let i = 0; i < rec.data.length; i++) if (Math.abs(rec.data[i]!) > 0.01) tail = i;
+	const lastT = tail >= 0 ? timeOf(rec, tail) : -1;
 	console.log('seek while playing: enter', enter, 'stop', stop, 'last tone', lastT, 'tail', lastT - stop);
 	test.info().annotations.push({ type: 'tail', description: JSON.stringify({ enter, stop, lastT }) });
 	expect(stop).toBeGreaterThan(0);
@@ -371,6 +412,8 @@ test('a latency change during playback: no dropout beyond the added latency', as
 	let rec = null as unknown as Recording;
 	let edit = -1;
 	let gap = Number.NaN;
+	let clean = false;
+	let last: string[] = [];
 	for (let a = 0; a < ATTEMPTS; a++) {
 		await seekPaused(page, frameAt(2.0));
 		let added = '';
@@ -403,9 +446,12 @@ test('a latency change during playback: no dropout beyond the added latency', as
 		// falls behind or it reschedules every player: that is not the graph) and nothing was rescheduled.
 		const before = all.some((g) => g.t1 > edit - 0.3 && g.t0 < edit);
 		const d = disturbances(rec, edit - 0.3, Math.min(edit + 0.7, (rec.marks.pause ?? 1e9) - 0.001));
-		if (!before && d.length === 0) break;
+		last = before ? ['a gap before the edit', ...d] : d;
+		clean = last.length === 0;
+		if (clean) break;
 		console.log('disturbed play (load), again:', before ? 'a gap before the edit;' : '', d.join('; '));
 	}
+	requireUndisturbed(clean, last);
 	console.log('latency change: gap', gap * SR, 'samples', gap, 's');
 	test.info().annotations.push({ type: 'gap', description: JSON.stringify({ samples: gap * SR }) });
 	// one gap of the added latency (998 samples, 20.8 ms); re-created slots and delay lines gave twice that (41.6 ms)

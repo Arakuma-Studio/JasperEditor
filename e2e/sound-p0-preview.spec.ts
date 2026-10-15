@@ -7,7 +7,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { ATTEMPTS, arm, disarm, disturbances, mark, peaks, TAP } from './sound-tap.ts';
+import { ATTEMPTS, arm, disarm, disturbances, mark, peaks, requireUndisturbed, TAP } from './sound-tap.ts';
 import {
 	clipBox,
 	clips,
@@ -46,6 +46,8 @@ test.afterAll(async () => {
  */
 async function playAndTap(page: Page): Promise<{ rate: number; peaks: { at: number; v: number }[] }> {
 	let out = { rate: 0, peaks: [] as { at: number; v: number }[] };
+	let clean = false;
+	let last: string[] = [];
 	for (let a = 0; a < ATTEMPTS; a++) {
 		await focusTimeline(page);
 		await page.keyboard.press('Home');
@@ -64,9 +66,14 @@ async function playAndTap(page: Page): Promise<{ rate: number; peaks: { at: numb
 			peaks: peaks(rec).map((p) => ({ at: Math.round(p.t * rec.rate) - first, v: p.v })),
 		};
 		const d = disturbances(rec, rec.armed, rec.marks.pause ?? rec.armed);
-		if (d.length === 0) break;
+		last = d;
+		if (d.length === 0) {
+			clean = true;
+			break;
+		}
 		console.log('Remotion lost its scheduling during the play (load), again:', d.join('; '));
 	}
+	requireUndisturbed(clean, last);
 	return out;
 }
 

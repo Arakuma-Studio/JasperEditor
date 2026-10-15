@@ -10,6 +10,7 @@
 // re-anchors and stops every queued buffer to schedule again (the new anchor is frame-based, so clicks then land at a
 // sub-sample phase). Such a play measures Remotion's scheduling, not the mix graph: the tap logs both events
 // (`stops`, `late`) so a spec can tell and play again.
+import { loadavg } from 'node:os';
 import type { Page } from '@playwright/test';
 
 /** Init script: install with `page.addInitScript(TAP)` before the app loads. */
@@ -17,7 +18,7 @@ export const TAP = () => {
 	type Block = { f: number; d: Float32Array };
 	type Tap = {
 		on: boolean;
-		ctxs: { ctx: BaseAudioContext; node: AudioWorkletNode | null; blocks: Block[] }[];
+		ctxs: { ctx: BaseAudioContext; node: AudioWorkletNode | null; blocks: Block[]; starts: number }[];
 		stops: { t: number; player: number }[];
 		late: { t: number; by: number }[];
 	};
@@ -46,7 +47,7 @@ export const TAP = () => {
 		bus = ctx.createGain();
 		buses.set(ctx, bus);
 		connect.call(bus, dest);
-		const entry = { ctx, node: null as AudioWorkletNode | null, blocks: [] as Block[] };
+		const entry = { ctx, node: null as AudioWorkletNode | null, blocks: [] as Block[], starts: 0 };
 		w.__tap.ctxs.push(entry);
 		void ctx.audioWorklet.addModule(url).then(() => {
 			const node = new AudioWorkletNode(ctx, 'jasper-e2e-tap', {
@@ -89,6 +90,8 @@ export const TAP = () => {
 	AudioBufferSourceNode.prototype.start = function (this: AudioBufferSourceNode, ...a: number[]) {
 		const when = a[0] ?? 0;
 		const ctx = this.context;
+		const entry = w.__tap.ctxs.find((c) => c.ctx === ctx);
+		if (entry) entry.starts++;
 		// A start time already past (by more than a render quantum) on a running context: the buffer plays late.
 		// `0` means "now" (not a scheduled time).
 		if (w.__tap.on && when > 0 && ctx.state === 'running' && when < ctx.currentTime - 128 / ctx.sampleRate)
@@ -142,11 +145,14 @@ export async function mark(p: Page, name: string): Promise<void> {
 	await p.evaluate((n) => {
 		const t = (
 			window as unknown as {
-				__tap: { ctxs: { ctx: BaseAudioContext; blocks: unknown[] }[]; marks?: Record<string, number> };
+				__tap: { ctxs: { ctx: BaseAudioContext; starts: number }[]; marks?: Record<string, number> };
 			}
 		).__tap;
 		t.marks ??= {};
-		const ctx = t.ctxs.find((c) => c.ctx.state === 'running')?.ctx ?? t.ctxs[0]?.ctx;
+		// the program context: the one Remotion schedules media buffers on (running ones first)
+		const ctx = [...t.ctxs].sort(
+			(a, b) => Number(b.ctx.state === 'running') - Number(a.ctx.state === 'running') || b.starts - a.starts,
+		)[0]?.ctx;
 		t.marks[n] = ctx?.currentTime ?? -1;
 	}, name);
 }
@@ -256,3 +262,16 @@ export function disturbances(r: Recording, from: number, to: number): string[] {
  * thread) is played again, at most this many times in all.
  */
 export const ATTEMPTS = 8;
+
+/**
+ * After the attempts: a test whose every play was disturbed measured nothing — it fails saying so (with the host load)
+ * instead of judging the graph on a play Remotion lost.
+ */
+export function requireUndisturbed(clean: boolean, last: string[]): void {
+	if (clean) return;
+	throw new Error(
+		`Every one of ${ATTEMPTS} plays was disturbed by the host (load average ${loadavg()
+			.map((x) => x.toFixed(1))
+			.join(' ')}), so nothing was measured; last: ${last.join('; ')}`,
+	);
+}
