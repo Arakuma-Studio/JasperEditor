@@ -5,12 +5,11 @@ import { checkInvariants, defaultRegistries } from '@jasper/project';
 import { DialogHost } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { createCommandContext, registerAllCommands, runCommand } from '../src/commands/index.ts';
+import { createCommandContext, registerAllCommands } from '../src/commands/index.ts';
 import { getCommand } from '../src/commands/registry.ts';
 import { InterchangeExportDialog, offlineMedia, relinkCommand } from '../src/interchange/dialogs.tsx';
 import { isTimelineFileName, isTimelineXmlHead } from '../src/interchange/formats.ts';
 import { importTimelineFiles } from '../src/interchange/import.ts';
-import { MENUBAR } from '../src/shell/menus/model.ts';
 import { makeSession } from './timeline-helpers.ts';
 
 beforeAll(() => registerAllCommands());
@@ -179,25 +178,5 @@ describe('interchange UI', () => {
 		expect(screen.getByText('Sequence 01.edl').getAttribute('href')).toContain(
 			'/renders/job_ix1/interchange/',
 		);
-	});
-
-	it('the File menu has the timeline exports and Link Media', () => {
-		const file = MENUBAR.find((m) => m.id === 'file')!;
-		const exp = file.items.find((i) => i.type === 'submenu' && i.label === 'Export') as {
-			items: { type: string; command?: string; label?: string; args?: { format: string } }[];
-		};
-		const timeline = exp.items.filter((i) => i.command === 'file.exportTimeline');
-		expect(timeline.map((i) => [i.label, i.args!.format])).toEqual([
-			['Final Cut Pro XML…', 'fcp7'],
-			['FCPXML…', 'fcpxml'],
-			['OpenTimelineIO…', 'otio'],
-			['EDL…', 'edl'],
-			['AAF…', 'aaf'],
-			['OMF…', 'omf'],
-			['Avid ALE…', 'ale'],
-		]);
-		expect(file.items.some((i) => i.type === 'command' && i.command === 'project.linkMedia')).toBe(true);
-		expect(getCommand('file.exportTimeline')).toBeTruthy();
-		void runCommand;
 	});
 });

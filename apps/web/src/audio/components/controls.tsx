@@ -17,7 +17,7 @@ const FADER_POINTS: [number, number][] = [
 	[1, 15],
 ];
 
-export function dbToFader(db: number): number {
+function dbToFader(db: number): number {
 	if (!Number.isFinite(db) || db <= -96) return 0;
 	for (let i = 1; i < FADER_POINTS.length; i++) {
 		const [p0, d0] = FADER_POINTS[i - 1]!;
@@ -27,7 +27,7 @@ export function dbToFader(db: number): number {
 	return 1;
 }
 
-export function faderToDb(p: number): number {
+function faderToDb(p: number): number {
 	const x = Math.min(1, Math.max(0, p));
 	for (let i = 1; i < FADER_POINTS.length; i++) {
 		const [p0, d0] = FADER_POINTS[i - 1]!;

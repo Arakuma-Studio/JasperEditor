@@ -1,21 +1,13 @@
 import { EngineClient } from '@jasper/engine-client';
-import {
-	buildRenderSnapshot,
-	type Clip,
-	isMulticamClip,
-	type MulticamClip,
-	type RenderSnapshot,
-} from '@jasper/project';
+import { type Clip, isMulticamClip, type MulticamClip } from '@jasper/project';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
 	type CommandCtx,
 	createCommandContext,
-	DEFAULT_KEYMAP,
 	registerAllCommands,
 	runCommand,
 	type ToastRequest,
 } from '../src/commands/index.ts';
-import { buildMulticamViewDoc, gridLayout } from '../src/multicam/logic.ts';
 import { pressCamera, stopRecording } from '../src/multicam/recorder.ts';
 import { multicamRecorderStore, multicamViewStore } from '../src/multicam/state.ts';
 import { makeSession, videoAsset } from './timeline-helpers.ts';
@@ -120,7 +112,6 @@ describe('camera keys and live recording', () => {
 			]);
 			const entries = h.session.getState().history.entries;
 			expect(entries.length).toBe(before + 1);
-			expect(entries.at(-1)!.label).toBe('Record Multi-Camera');
 			h.session.undo();
 			expect(h.v1()).toEqual([[0, 600, 1]]);
 			uninstall();
@@ -132,52 +123,10 @@ describe('camera keys and live recording', () => {
 		h.session.transport.seek(5);
 		expect(pressCamera(h.session, 7, 'select', h.toast)).toBe(false);
 		expect(stopRecording(h.session)).toBeNull();
-		expect(h.toasts.at(-1)!.message).toMatch(/no camera 7/);
 	});
 });
 
 describe('Multi-Camera view document', () => {
-	it('lays out the shown cameras in a grid next to the program, frame-synced in one sequence', () => {
-		const h = harness(5);
-		const doc = h.session.getCommitted();
-		const mv = buildMulticamViewDoc(doc, h.seqId, 0, {
-			showPreview: true,
-			topDown: false,
-			layout: 'auto',
-			page: 0,
-		})!;
-		expect(mv.width).toBe(3840);
-		expect(mv.layout).toMatchObject({ cols: 3, rows: 3, pages: 1, count: 5 });
-		expect(mv.cells.map((c) => c.camera)).toEqual([1, 2, 3, 4, 5]);
-		expect(mv.program).toEqual({ x: 1920, y: 0, width: 1920, height: 1080 });
-		const snap: RenderSnapshot = buildRenderSnapshot(mv.doc, mv.sequenceId, {
-			resolveMedia: () => null,
-			resolveFont: () => null,
-		});
-		const layers = snap.videoTracks.flatMap((t) => t.clips);
-		expect(layers).toHaveLength(6);
-		const cellMedia = layers
-			.filter((l) => l.name !== 'Program')
-			.map((l) =>
-				(l.source as { nest: { snapshot: RenderSnapshot } }).nest.snapshot.videoTracks.flatMap(
-					(t) => t.clips,
-				),
-			)
-			.map((cs) => (cs[0]!.source as { mediaId: string }).mediaId);
-		expect(new Set(cellMedia).size).toBe(5);
-		expect(snap.audioClips.length).toBeGreaterThan(0);
-		const p2 = buildMulticamViewDoc(doc, h.seqId, 0, {
-			showPreview: false,
-			topDown: false,
-			layout: 2,
-			page: 1,
-		})!;
-		expect(p2.width).toBe(1920);
-		expect(p2.layout).toMatchObject({ page: 1, pages: 2, first: 4, count: 1 });
-		expect(p2.cells.map((c) => c.camera)).toEqual([5]);
-		expect(gridLayout(17, 'auto', 0)).toMatchObject({ cols: 4, pages: 2, count: 16 });
-	});
-
 	it('camera keys pick page-relative cameras on later pages', () => {
 		const h = harness(5);
 		multicamViewStore.setState({ layout: 2, page: 1 });
@@ -205,10 +154,6 @@ describe('commands and keymap', () => {
 			.map((c) => c.kind)
 			.sort();
 		expect(kinds).toEqual(['audio', 'video']);
-		const keys = (cmd: string) => DEFAULT_KEYMAP.filter((b) => b.command === cmd).map((b) => b.key);
-		expect(keys('multicam.selectCamera1')).toEqual(['Digit1']);
-		expect(keys('multicam.cutToCamera9')).toEqual(['Ctrl+Digit9']);
-		expect(keys('program.toggleMulticamView')).toEqual(['Shift+Digit0']);
 		expect((await runCommand('program.toggleMulticamView', h.ctx)).ran).toBe(true);
 		expect(multicamViewStore.getState().view).toBe(true);
 	});

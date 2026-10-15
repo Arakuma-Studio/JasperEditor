@@ -20,7 +20,7 @@ const MODES: { id: ComparisonMode; label: string }[] = [
 ];
 
 /** Two pictures in a comparison mode; `split` 0..1, `onSplit` makes the divider draggable. */
-export function ComparisonLayout(props: {
+function ComparisonLayout(props: {
 	mode: ComparisonMode;
 	split: number;
 	swapped: boolean;

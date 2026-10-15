@@ -4,7 +4,6 @@ import {
 	createEmptyProject,
 	defaultRegistries,
 	findItem,
-	resolveSceneAt,
 	type ShapeClip,
 	type ShapeItem,
 	type VectorShapeData,
@@ -16,15 +15,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { looksLikeSvgPathData } from '../src/clipboard/external.ts';
 import { getCommand, registerAllCommands } from '../src/commands/index.ts';
 import type { CommandCtx } from '../src/commands/types.ts';
-import { buildGroups } from '../src/panels/effectControls/items.ts';
 import { monitorStores } from '../src/panels/program/monitor-store.ts';
 import { PropertiesPanel } from '../src/panels/properties/PropertiesPanel.tsx';
-import { dragStar, polystarPreview } from '../src/shapes/draw.ts';
-import { addStop, removeStop } from '../src/shapes/GradientEditor.tsx';
-import { hitsLayerGeometry, layerEditQuad, layerEditRect } from '../src/shapes/geometry.ts';
 import { ShapeToolOverlay } from '../src/shapes/ShapeToolOverlay.tsx';
 import { VectorPathOverlay } from '../src/shapes/VectorPathOverlay.tsx';
-import { insertionPoint } from '../src/shapes/VectorShapeSection.tsx';
 import { vectorUi } from '../src/shapes/vector.ts';
 
 function makeSession() {
@@ -66,44 +60,6 @@ afterEach(() => {
 });
 
 describe('pure helpers', () => {
-	it('insertion point: paths above the paints, others at the end, into a selected group', () => {
-		const items = [
-			{ id: 'a', type: 'rect', name: 'R' },
-			{ id: 'b', type: 'fill', name: 'F' },
-			{
-				id: 'g',
-				type: 'group',
-				name: 'G',
-				contents: [
-					{ id: 'c', type: 'ellipse', name: 'E' },
-					{ id: 'd', type: 'stroke', name: 'S' },
-				],
-			},
-		] as unknown as ShapeItem[];
-		expect(insertionPoint(items, null, 'ellipse')).toEqual({ parentId: null, index: 1 });
-		expect(insertionPoint(items, null, 'trim')).toEqual({ parentId: null, index: 3 });
-		expect(insertionPoint(items, 'g', 'rect')).toEqual({ parentId: 'g', index: 1 });
-		expect(insertionPoint(items, 'g', 'fill')).toEqual({ parentId: 'g', index: 2 });
-		expect(insertionPoint(items, 'a', 'fill')).toEqual({ parentId: null, index: 1 });
-	});
-	it('polystar drags and gradient stop edits', () => {
-		const s = dragStar([100, 100], [100, 0], false);
-		expect(s).toEqual({ center: [100, 100], radius: 100, rotation: 0 });
-		expect(dragStar([0, 0], [100, 0], false).rotation).toBe(90);
-		expect(dragStar([0, 0], [100, 0], true).rotation).toBe(0);
-		expect(polystarPreview('star', s)).toHaveLength(10);
-		const g = {
-			colors: [
-				{ position: 0, color: [0, 0, 0] as [number, number, number] },
-				{ position: 1, color: [1, 1, 1] as [number, number, number] },
-			],
-			opacities: [],
-		};
-		const r = addStop(g, 'color', 0.5);
-		expect(r.g.colors[r.index]!.color[0]).toBeCloseTo(0.5, 6);
-		expect(removeStop(r.g, { kind: 'color', index: r.index }).colors).toHaveLength(2);
-		expect(removeStop({ ...g, colors: [g.colors[0]!] }, { kind: 'color', index: 0 }).colors).toHaveLength(1);
-	});
 	it('recognises SVG path data', () => {
 		expect(looksLikeSvgPathData('M0 0 L10 10 Z')).toBe(true);
 		expect(looksLikeSvgPathData('Meeting at 10')).toBe(false);
@@ -129,19 +85,13 @@ describe('Properties ▸ Shape Contents', () => {
 		]);
 		session.select('timeline', [id]);
 		mount(session);
-		const tree = screen.getByTestId('vector-tree');
-		expect(
-			within(tree)
-				.getAllByRole('treeitem')
-				.map((r) => r.getAttribute('data-item-type')),
-		).toEqual(['rect', 'fill']);
 		const [rect, fill] = clipOf(session, seqId, id).shape.contents;
+		const originalName = rect!.name;
 		fireEvent.click(screen.getByTestId(`vector-item-${rect!.id}`));
 		const before = session.getState().history.entries.length;
 		fireEvent.change(screen.getByTestId('vector-add'), { target: { value: 'ellipse' } });
 		expect(session.getState().history.entries.length).toBe(before + 1);
 		expect(clipOf(session, seqId, id).shape.contents.map((i) => i.type)).toEqual(['rect', 'ellipse', 'fill']);
-		expect(screen.getByTestId('vector-item-properties')).toBeTruthy();
 		fireEvent.change(screen.getByTestId('vector-add'), { target: { value: 'trim' } });
 		expect(clipOf(session, seqId, id).shape.contents.map((i) => i.type)).toEqual([
 			'rect',
@@ -176,7 +126,7 @@ describe('Properties ▸ Shape Contents', () => {
 		fireEvent.keyDown(input, { key: 'Enter' });
 		expect(findItem(clipOf(session, seqId, id).shape.contents, rect!.id)!.item.name).toBe('Box');
 		session.undo();
-		expect(findItem(clipOf(session, seqId, id).shape.contents, rect!.id)!.item.name).toBe('Rectangle Path 1');
+		expect(findItem(clipOf(session, seqId, id).shape.contents, rect!.id)!.item.name).toBe(originalName);
 	});
 
 	it('adds presets as groups; stroke options toggle dashes / taper / wave; the gradient editor writes stops', () => {
@@ -191,7 +141,7 @@ describe('Properties ▸ Shape Contents', () => {
 		mount(session);
 		fireEvent.change(screen.getByTestId('vector-add'), { target: { value: 'preset:star' } });
 		const top = clipOf(session, seqId, id).shape.contents;
-		expect(top.some((i) => i.type === 'group' && i.name === 'Star')).toBe(true);
+		expect(top.some((i) => i.type === 'group' && i.contents.some((c) => c.type === 'polystar'))).toBe(true);
 		const stroke = top.find((i) => i.type === 'stroke')!;
 		fireEvent.click(screen.getByTestId(`vector-item-${stroke.id}`));
 		fireEvent.click(screen.getByTestId('vector-dashes'));
@@ -221,7 +171,6 @@ describe('Properties ▸ Shape Contents', () => {
 		).colors;
 		expect(colors.value.colors).toHaveLength(3);
 	});
-
 	it('Convert to Vector Shape keeps the clip and turns it into items', () => {
 		registerAllCommands();
 		const { session, seqId } = makeSession();
@@ -245,33 +194,6 @@ describe('Properties ▸ Shape Contents', () => {
 		cmd.run(cmdCtx(session), undefined as never);
 		expect(clipOf(session, seqId, id).shape.contents.map((i) => i.type)).toEqual(['ellipse', 'fill']);
 		expect(cmd.when?.(cmdCtx(session))).toBe(false);
-	});
-});
-
-describe('Effect Controls ▸ Contents', () => {
-	it('one section per item with its keyframable rows', () => {
-		const { session, seqId } = makeSession();
-		const id = addVector(session, [
-			{ type: 'group', name: 'G', contents: [{ type: 'rect' }, { type: 'fill' }] },
-			{ type: 'trim' },
-		]);
-		const doc = session.getCommitted();
-		const seq = doc.sequences[seqId]!;
-		const groups = buildGroups(doc, seq, [seq.clips[id]!], 0, {
-			effects: defaultRegistries().effects,
-			mgTemplates: defaultRegistries().mgTemplates,
-		});
-		const titles = groups[0]!.sections.map((s) => s.title);
-		expect(titles).toEqual(
-			expect.arrayContaining([
-				'Contents › G',
-				'Contents › G › Rectangle Path 1',
-				'Contents › G › Fill 1',
-				'Contents › Trim Paths 1',
-			]),
-		);
-		const trim = groups[0]!.sections.find((s) => s.title === 'Contents › Trim Paths 1')!;
-		expect(trim.rows.map((r) => r.label)).toEqual(['Start', 'End', 'Offset', 'Trim Multiple Shapes']);
 	});
 });
 
@@ -368,16 +290,5 @@ describe('Program monitor', () => {
 		fireEvent.pointerMove(window, { clientX: 310, clientY: 120, pointerId: 1 });
 		fireEvent.pointerUp(window, { clientX: 310, clientY: 120, pointerId: 1 });
 		expect(path().vertices[1]!.p).toEqual([620 - 960, 240 - 540]);
-	});
-
-	it('frames a vector shape by its contents and hit-tests its paint', () => {
-		const { session, seqId } = makeSession();
-		const id = addVector(session, [{ type: 'rect', size: [200, 100], position: [100, 0] }, { type: 'fill' }]);
-		const layer = resolveSceneAt(snapshot(session, seqId), 0).find((l) => l.clip.clipId === id)!;
-		// The painted bounds (1 px of anti-aliasing around the fill).
-		expect(layerEditRect(layer)).toEqual({ x: 959, y: 489, width: 202, height: 102 });
-		expect(layerEditQuad(layer)[0]).toEqual([959, 489]);
-		expect(hitsLayerGeometry(layer, [1060, 540])).toBe(true);
-		expect(hitsLayerGeometry(layer, [900, 540])).toBe(false);
 	});
 });

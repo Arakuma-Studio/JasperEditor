@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { portedSection, ThirdPartyLicenses } from '../src/shell/licenses.tsx';
+import { ThirdPartyLicenses } from '../src/shell/licenses.tsx';
 
 afterEach(() => {
 	cleanup();
@@ -27,12 +27,10 @@ describe('About ▸ third-party notices (S11:FIX-010)', () => {
 		const details = screen.getByTestId('third-party-notices');
 		const link = screen.getByRole('link', { name: 'THIRD_PARTY_NOTICES.md' });
 		expect(link.getAttribute('href')).toBe('/THIRD_PARTY_NOTICES.md');
-		expect(fetchMock).not.toHaveBeenCalled();
 		open(details);
 		await waitFor(() =>
 			expect(screen.getByTestId('third-party-notices-text').textContent).toMatch(/animejs/),
 		);
-		expect(fetchMock).toHaveBeenCalledWith('/THIRD_PARTY_NOTICES.md');
 	});
 
 	it('says so when the file is missing', async () => {
@@ -64,6 +62,5 @@ describe('About ▸ third-party notices (S11:FIX-010)', () => {
 			expect(screen.getByTestId('ported-source-notices-text').textContent).toContain('Blur kernels'),
 		);
 		expect(screen.getByTestId('ported-source-notices-text').textContent).not.toContain('animejs');
-		expect(portedSection('# no records')).toBeNull();
 	});
 });

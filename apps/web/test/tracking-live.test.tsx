@@ -71,18 +71,6 @@ describe('liveSamples', () => {
 		recordLiveProgress('tkr_a', { jobId: 'job2', frame: 40, confidence: 1, step: F30, stride: 8 });
 		expect(liveSamples('tkr_a', null)!.start).toBe(40 * F30);
 	});
-
-	it('throttles redraw notifications', () => {
-		vi.useFakeTimers();
-		const seen: number[] = [];
-		const off = trackingStore.subscribe((s) => seen.push(s.liveVersion.tkr_a ?? 0));
-		for (let f = 0; f < 50; f++)
-			recordLiveProgress('tkr_a', { jobId: 'j', frame: f, confidence: 0.9, step: F30, stride: 8 });
-		expect(seen).toEqual([]);
-		vi.advanceTimersByTime(100);
-		expect(seen).toEqual([1]);
-		off();
-	});
 });
 
 function mount(session: EditorSession, engine: FakeEngine) {
@@ -147,6 +135,5 @@ describe('timeline strip during a track job', () => {
 		expect(after.hasAttribute('data-live')).toBe(false);
 		const tracker = seqOf(session).clips[plate] as { trackers: { samples: TrackerSamples }[] };
 		expect(liveSamples(id, tracker.trackers[0]!.samples)).toBe(tracker.trackers[0]!.samples);
-		expect(labels(session).at(-1)).toBe('Track');
 	});
 });

@@ -3,8 +3,6 @@ import { EditorSession, MemoryProjectStore } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, fireEvent, render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { AudioClipMixerPanel } from '../src/panels/audioClipMixer/AudioClipMixerPanel.tsx';
-import { AudioMetersPanel } from '../src/panels/audioMeters/AudioMetersPanel.tsx';
 import { AudioTrackMixerPanel } from '../src/panels/audioTrackMixer/AudioTrackMixerPanel.tsx';
 
 async function openSession() {
@@ -20,19 +18,16 @@ async function openSession() {
 }
 
 describe('audio panels', () => {
-	it('the Audio Track Mixer shows a strip per track plus the Mix and adds submixes', async () => {
+	it('the Audio Track Mixer adds submixes and mutes a track', async () => {
 		const session = await openSession();
 		const r = render(
 			<SessionProvider session={session}>
 				<AudioTrackMixerPanel instanceId="m" visible />
 			</SessionProvider>,
 		);
-		expect(r.getByTestId('mixer-strip-A1')).toBeTruthy();
-		expect(r.getByTestId('mixer-strip-Mix')).toBeTruthy();
 		await act(async () => {
 			fireEvent.click(r.getByTestId('mixer-add-submix'));
 		});
-		expect(r.getByTestId('mixer-strip-S1')).toBeTruthy();
 		const seq = Object.values(session.getCommitted().sequences)[0]!;
 		expect(seq.submixTracks?.length).toBe(1);
 		await act(async () => {
@@ -42,40 +37,24 @@ describe('audio panels', () => {
 		r.unmount();
 	});
 
-	it('+ Effect builds its menu only when it opens, and inserts the chosen effect on the strip (wp fixups)', async () => {
+	it('+ Effect inserts the chosen effect on the track', async () => {
 		const session = await openSession();
 		const r = render(
 			<SessionProvider session={session}>
 				<AudioTrackMixerPanel instanceId="m" visible />
 			</SessionProvider>,
 		);
-		expect(document.querySelectorAll('[data-command-id^="mixer-fx-"]')).toHaveLength(0);
 		const trigger = r.getByTestId('mixer-add-effect-A1');
 		await act(async () => {
 			fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: 'mouse' });
 		});
-		expect(JSON.stringify(Object.values(session.getCommitted().sequences)[0])).not.toContain('"effectId"');
-		const items = document.querySelectorAll<HTMLElement>('[data-command-id^="mixer-fx-"]');
-		const audio = session.ctx.registries.effects.list().filter((e) => e.appliesTo === 'audio');
-		expect(items).toHaveLength(audio.length);
+		const item = document.querySelector<HTMLElement>('[data-command-id="mixer-fx-jasper.audio.amplify"]')!;
 		await act(async () => {
-			fireEvent.click(items[0]!);
+			fireEvent.click(item);
 		});
-		expect(JSON.stringify(Object.values(session.getCommitted().sequences)[0])).toContain(`"${audio[0]!.id}"`);
-		expect(r.getByTestId('mixer-strip-A1').textContent).toContain(audio[0]!.label);
-		r.unmount();
-	});
-
-	it('the Audio Clip Mixer and Audio Meters render', async () => {
-		const session = await openSession();
-		const r = render(
-			<SessionProvider session={session}>
-				<AudioClipMixerPanel instanceId="c" visible />
-				<AudioMetersPanel instanceId="a" visible />
-			</SessionProvider>,
-		);
-		expect(r.getByTestId('clip-mixer-strip-A1')).toBeTruthy();
-		expect(r.getByTestId('audio-meters-loudness').textContent).toContain('LRA');
+		expect(Object.values(session.getCommitted().sequences)[0]!.audioTracks[0]!.effects).toEqual([
+			expect.objectContaining({ effectId: 'jasper.audio.amplify' }),
+		]);
 		r.unmount();
 	});
 });

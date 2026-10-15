@@ -41,7 +41,7 @@ const writes = (m: AutomationMode) => m === 'latch' || m === 'touch' || m === 'w
 type Point = [number, number];
 
 /** One recorded control gesture. */
-export class Gesture {
+class Gesture {
 	points: Point[];
 	touching = true;
 	released: number | null = null;

@@ -122,10 +122,3 @@ export function deletePresetBin(id: string) {
 export function importPresetFile(file: unknown, folderId?: string | null) {
 	return write((c) => c.call('effectPresetsImport', { body: { file, ...(folderId ? { folderId } : {}) } }));
 }
-
-/** Tests: forget the engine and the cached library. */
-export function resetPresetLibrary(): void {
-	client = null;
-	loading = null;
-	store?.setState({ status: 'offline', revision: 0, folders: [], presets: [], error: null }, true);
-}

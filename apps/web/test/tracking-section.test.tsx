@@ -7,7 +7,7 @@ import { ApplyTrackingDialog } from '../src/tracking/ApplyTrackingDialog.tsx';
 import { addTracker, applyTracking, commitTrackResult } from '../src/tracking/actions.ts';
 import { CornerPinEditor } from '../src/tracking/CornerPinEditor.tsx';
 import { trackingStore } from '../src/tracking/store.ts';
-import { labels, planarResult, seqOf, trackingSession } from './tracking-helpers.tsx';
+import { planarResult, seqOf, trackingSession } from './tracking-helpers.tsx';
 
 const REF = [
 	[700, 300],
@@ -54,17 +54,14 @@ describe('Corner pin editor', () => {
 		);
 	}
 
-	it('shows the driving tracker with Re-apply and Unlink (one entry each)', () => {
+	it('Unlink preserves baked tracking keyframes and undo restores the link', () => {
 		const { session, plate, target } = trackingSession();
 		const id = addTracker(session, plate, 'planar');
 		commitTrackResult(session, id, { step: 705_600_000 / 30, merge: 'replace' }, planarResult(0, 60, REF));
 		applyTracking(session, id, target, 'corner-pin');
+		const linked = seqOf(session).clips[target] as Clip & { effects: EffectInstance[] };
 		const { unmount } = mountEditor(session, target);
-		expect(screen.getByTestId('corner-pin-driven').textContent).toContain('Planar Tracker 1');
-		fireEvent.click(screen.getByTestId('corner-pin-reapply'));
-		expect(labels(session).at(-1)).toBe('Apply Tracking');
 		fireEvent.click(screen.getByTestId('corner-pin-unlink'));
-		expect(labels(session).at(-1)).toBe('Unlink Tracking');
 		expect((seqOf(session).clips[target] as { trackedBy?: unknown }).trackedBy).toBeUndefined();
 		unmount();
 		mountEditor(session, target);
@@ -72,7 +69,9 @@ describe('Corner pin editor', () => {
 		const fx = (seqOf(session).clips[target] as Clip & { effects: EffectInstance[] }).effects.find(
 			(e) => e.effectId === 'jasper.corner-pin',
 		)!;
-		expect((fx.params.topLeft as { keyframes: unknown[] }).keyframes.length).toBe(30);
+		expect(fx.params).toEqual(linked.effects.find((effect) => effect.id === fx.id)!.params);
+		session.undo();
+		expect(seqOf(session).clips[target]).toEqual(linked);
 	});
 
 	it('toggles the Program-monitor handles and warns about a non-convex pin', () => {

@@ -150,7 +150,7 @@ const PORTED_START = '<!-- ported-source:start -->';
 const PORTED_END = '<!-- ported-source:end -->';
 
 /** The ported-source part of the notices file, or null when the file has none. */
-export function portedSection(notices: string): string | null {
+function portedSection(notices: string): string | null {
 	const a = notices.indexOf(PORTED_START);
 	const b = notices.indexOf(PORTED_END, a);
 	if (a < 0 || b < 0) return null;

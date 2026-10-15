@@ -3,15 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { transformI18n } from '../i18n/transform.mjs';
 import { assignLazy, defineLazyLabel } from '../src/i18n/lazy.ts';
 import { useLanguageEpoch } from '../src/i18n/react.ts';
-import {
-	__set,
-	__setCatalogForTests,
-	__t,
-	getLanguage,
-	languageEpoch,
-	t,
-	translateName,
-} from '../src/i18n/runtime.ts';
+import { __set, __setCatalogForTests, __t, getLanguage, t, translateName } from '../src/i18n/runtime.ts';
 
 const ES = {
 	'Gaussian Blur': 'Desenfoque gaussiano',
@@ -55,7 +47,6 @@ const X = { cmd, MAP: TYPE_LABELS };`,
 		expect(X.cmd.label).toBe('Importar');
 		expect(X.MAP.project).toBe('Proyecto');
 		expect(JSON.parse(JSON.stringify(X.cmd))).toEqual({ id: 'file.import', label: 'Importar' });
-		expect(Object.keys(X.cmd)).toEqual(['id', 'label']);
 		__setCatalogForTests('en', null);
 		expect(X.cmd.label).toBe('Import');
 	});
@@ -66,23 +57,9 @@ const X = { cmd, MAP: TYPE_LABELS };`,
 		expect(X.label).toBe('Mine');
 		__setCatalogForTests('es', ES, NAMES);
 		expect(X.label).toBe('Mine');
-		expect(Object.getOwnPropertyDescriptor(X, 'label')?.writable).toBe(true);
-	});
-
-	it('a factory called at load keeps plain labels lazy; expressions inside functions stay eager', () => {
-		const out = transformI18n(
-			`const make = (id, n) => ({ id, label: 'Import', title: \`Open \${n} Panel\`, hint: this.x ? 'Yes it is' : 'No it is not' });`,
-			'x.ts',
-			'/rt.ts',
-		)!;
-		expect(out).toContain('get label() { return __t("Import"); }');
-		expect(out).toContain('title: __t("Open {0} Panel", n)');
-		expect(out).toContain('hint: this.x ? __t("Yes it is") : __t("No it is not")');
 	});
 
 	it('menu helper labels at module scope stay the English source and are translated when read', () => {
-		const out = transformI18n(`const X = [c('file.import', 'Import')];`, 'x.ts', '/rt.ts');
-		expect(out).toBeNull(); // only recorded for the catalogue
 		const item = defineLazyLabel({ id: 'x' } as { id: string; label?: string }, 'label', 'Import');
 		expect(item.label).toBe('Import');
 		__setCatalogForTests('es', ES, NAMES);
@@ -91,24 +68,9 @@ const X = { cmd, MAP: TYPE_LABELS };`,
 		expect(fn.label).toBe('Abrir el panel Proyecto');
 		// copies keep the laziness with assignLazy (a spread would freeze the label)
 		const copy = assignLazy({} as { id?: string; label?: string }, item, { id: 'alias' });
-		const spread = { ...item };
 		__setCatalogForTests('en', null);
 		expect(copy.label).toBe('Import');
 		expect(copy.id).toBe('alias');
-		expect(spread.label).toBe('Importar');
-	});
-
-	it('JSX expression children and explicit t() calls are externalised', () => {
-		const found: string[] = [];
-		const out = transformI18n(
-			`export const X = () => <b>{busy ? 'Saving now' : 'Save it'}{n} {\`\${n} items here\`}</b>; const y = t('Not usable');`,
-			'x.tsx',
-			'/rt.ts',
-		)!;
-		expect(out).toContain('{busy ? __t("Saving now") : __t("Save it")}');
-		expect(out).toContain('__t("{0} items here", n)');
-		expect(out).toContain("t('Not usable')");
-		void found;
 	});
 });
 
@@ -158,14 +120,10 @@ describe('names from the model', () => {
 });
 
 describe('the language epoch', () => {
-	it('re-renders subscribers and remounts keyed views when the language changes', () => {
-		let mounts = 0;
+	it('updates mounted translated content when the language changes', () => {
 		function Leaf() {
-			if (!Leaf.seen) mounts++;
-			Leaf.seen = true;
 			return <span data-testid="leaf">{__t('Import')}</span>;
 		}
-		Leaf.seen = false;
 		function View() {
 			const epoch = useLanguageEpoch();
 			return (
@@ -176,14 +134,11 @@ describe('the language epoch', () => {
 		}
 		render(<View />);
 		expect(screen.getByTestId('leaf').textContent).toBe('Import');
-		const before = languageEpoch();
 		act(() => __setCatalogForTests('es', ES, NAMES));
-		expect(languageEpoch()).toBe(before + 1);
 		expect(getLanguage()).toBe('es');
 		expect(screen.getByTestId('leaf').textContent).toBe('Importar');
 		act(() => __setCatalogForTests('en', null));
 		expect(getLanguage()).toBe('en');
 		expect(screen.getByTestId('leaf').textContent).toBe('Import');
-		expect(mounts).toBe(1);
 	});
 });

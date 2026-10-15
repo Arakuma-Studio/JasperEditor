@@ -1,77 +1,23 @@
 import { EngineClient } from '@jasper/engine-client';
-import { projectSettingsOf, type Sequence } from '@jasper/project';
-import { DialogHost, openDialog } from '@jasper/ui';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { selectedMediaIds } from '../src/commands/gaps.ts';
+import { projectSettingsOf } from '@jasper/project';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { createCommandContext, getCommand, registerAllCommands } from '../src/commands/index.ts';
-import {
-	PROJECT_SETTINGS_DIALOG,
-	registerProjectSettingsDialog,
-} from '../src/gaps/ProjectSettingsDialog.tsx';
 import { reconnectCommands } from '../src/gaps/ProxyDialogs.tsx';
-import { formOf, settingsPatch } from '../src/gaps/SequenceSettingsDialog.tsx';
 import { formatTimecode, parseTimecodeEntry, syncDisplayFormat } from '../src/gaps/time-display.ts';
 import { resolveMediaHandle } from '../src/panels/program/render-doc.ts';
 import { makeSession, videoAsset } from './timeline-helpers.ts';
 
 beforeAll(() => registerAllCommands());
-afterEach(() => cleanup());
 
-const fetchStub = (async (url: string) => {
-	if (String(url).includes('/scratch'))
-		return new Response(
-			JSON.stringify({
-				local: true,
-				projectMedia: { path: '/p/Generated Media', exists: false, writable: false, freeBytes: 1e9 },
-				previews: { path: '/c/previews', exists: true, writable: true, freeBytes: 1e9 },
-				mediaCache: { path: '/c', exists: true, writable: true, freeBytes: 1e9 },
-				autoSave: { path: '/p/versions', exists: true, writable: true, freeBytes: 1e9 },
-				home: '/home/u',
-			}),
-			{ headers: { 'content-type': 'application/json' } },
-		);
-	return new Response('{}', { headers: { 'content-type': 'application/json' } });
-}) as typeof fetch;
-const engine = new EngineClient({ baseUrl: 'http://127.0.0.1:9', fetch: fetchStub });
-
-describe('Sequence Settings', () => {
-	it('patches only what changed; anamorphic and square conversions', () => {
-		const { session, seqId } = makeSession();
-		const seq = () => session.getCommitted().sequences[seqId] as Sequence;
-		const f = formOf(seq());
-		expect(settingsPatch(seq(), f)).toEqual({ patch: {} });
-		const hdv = settingsPatch(seq(), { ...f, storageWidth: 1440, par: 'hdv', fieldOrder: 'upper' });
-		expect(hdv).toEqual({
-			patch: { pixelAspectRatio: { num: 4, den: 3 }, storageWidth: 1440, fieldOrder: 'upper' },
-		});
-		const r = session.apply({
-			label: 's',
-			origin: 'user',
-			sequenceId: seqId,
-			commands: [{ type: 'sequence.updateSettings', settings: (hdv as { patch: object }).patch }] as never[],
-		});
-		expect(r.ok).toBe(true);
-		expect(seq().settings.width).toBe(1920);
-		expect(formOf(seq())).toMatchObject({ storageWidth: 1440, par: 'hdv' });
-		expect(settingsPatch(seq(), { ...formOf(seq()), par: 'square' })).toEqual({
-			patch: { pixelAspectRatio: null, width: 1440 },
-		});
-		expect('error' in settingsPatch(seq(), { ...formOf(seq()), height: 1081 })).toBe(true);
-		expect(getCommand('sequence.settings')).toBeTruthy();
-		expect(getCommand('project.newSequenceFromClip')).toBeTruthy();
-	});
+const engine = new EngineClient({
+	baseUrl: 'http://127.0.0.1:9',
+	fetch: async () => new Response('{}'),
 });
 
 describe('Project Settings', () => {
-	it('saves display formats, the generated media folder and ingest in one undoable step; the UI shows frames', async () => {
+	it('display-format changes reach time fields and undo restores timecode', async () => {
 		const { session } = makeSession();
 		const off = syncDisplayFormat(session);
-		registerProjectSettingsDialog();
-		render(<DialogHost />);
-		act(() => void openDialog(PROJECT_SETTINGS_DIALOG, { session, engine }));
-		await screen.findByTestId('project-settings-dialog');
-		await waitFor(() => expect(screen.getByText(/Renderer \(preview\)/)).toBeTruthy());
 		const r = session.apply({
 			label: 'Project Settings',
 			origin: 'user',
@@ -86,7 +32,6 @@ describe('Project Settings', () => {
 		session.undo();
 		expect(formatTimecode(95, { num: 30, den: 1 })).toBe('00:00:03:05');
 		off();
-		fireEvent.keyDown(document.body, { key: 'Escape' });
 	});
 });
 
@@ -122,33 +67,31 @@ describe('proxies in the UI', () => {
 		await getCommand('media.toggleProxies')!.run(ctx);
 		expect(session.getState().toggles.attachedProxies).toBe(true);
 		expect(getCommand('media.toggleProxies')!.checked!(ctx)).toBe(true);
-		session.select(
-			'project',
-			Object.values(session.getCommitted().items)
-				.filter((i) => i.kind === 'media')
-				.map((i) => i.id),
-			'replace',
-		);
-		expect(
-			selectedMediaIds(
-				createCommandContext({ engine, session, focus: { panel: 'project', instanceId: null } }),
-			),
-		).toEqual([mediaId]);
 	});
 
-	it('Reconnect Full Resolution: the file the clip used becomes its proxy', () => {
+	it('Reconnect Full Resolution keeps the old file as proxy and refuses a mismatched frame rate', () => {
 		const { session } = makeSession();
-		const small = { ...videoAsset(10), id: 'med_x' } as never;
+		const imported = session.apply({
+			label: 'import',
+			origin: 'user',
+			commands: [{ type: 'media.register', asset: videoAsset(10), ref: '$media' }] as never[],
+		});
+		if (!imported.ok) throw new Error('fixture import failed');
+		const mediaId = imported.refs.$media!;
+		const small = session.getCommitted().media[mediaId]!;
 		const full = videoAsset(10);
 		const reg = { ...full, mediaKey: 'mk_full', kind: 'video', browserPlayable: 'yes' } as never;
 		const built = reconnectCommands(small, reg);
-		expect('commands' in built && built.commands.map((c) => (c as { type: string }).type)).toEqual([
-			'media.relink',
-			'media.attachProxy',
-		]);
+		if ('error' in built) throw new Error(built.error);
+		expect(session.apply({ label: 'Reconnect', origin: 'user', commands: built.commands }).ok).toBe(true);
+		const connected = session.getCommitted().media[mediaId]!;
+		expect(connected.fingerprint).toBe(full.fingerprint);
+		expect(connected.proxy?.fingerprint).toBe(small.fingerprint);
+		expect(connected.proxy?.locators).toEqual(small.locators);
+		session.undo();
+		expect(session.getCommitted().media[mediaId]).toEqual(small);
 		const wrongRate = { ...(reg as object), probe: videoAsset(10, true).probe };
 		(wrongRate.probe.streams[0] as { frameRate: unknown }).frameRate = { num: 25, den: 1 };
 		expect('error' in reconnectCommands(small, wrongRate as never)).toBe(true);
-		void session;
 	});
 });

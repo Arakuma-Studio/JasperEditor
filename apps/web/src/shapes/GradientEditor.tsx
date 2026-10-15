@@ -24,7 +24,7 @@ export function gradientCss(g: GradientValue): string {
 }
 
 /** Adds a stop at `pos` sampled from the gradient. */
-export function addStop(
+function addStop(
 	g: GradientValue,
 	kind: 'color' | 'opacity',
 	pos: number,
@@ -42,7 +42,7 @@ export function addStop(
 }
 
 /** Removes a stop (the last colour stop stays). */
-export function removeStop(g: GradientValue, sel: NonNullable<Sel>): GradientValue {
+function removeStop(g: GradientValue, sel: NonNullable<Sel>): GradientValue {
 	if (sel.kind === 'color')
 		return g.colors.length <= 1 ? g : { ...g, colors: g.colors.filter((_, i) => i !== sel.index) };
 	return { ...g, opacities: g.opacities.filter((_, i) => i !== sel.index) };

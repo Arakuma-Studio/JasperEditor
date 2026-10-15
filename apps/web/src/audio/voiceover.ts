@@ -36,7 +36,7 @@ export type VoiceoverStatus = {
 };
 
 /** Countdown cue times (frames): one per whole second of pre-roll before the record point, and the record point. */
-export function cueFrames(captureFrame: number, recordFrame: number, fps: Rational): number[] {
+function cueFrames(captureFrame: number, recordFrame: number, fps: Rational): number[] {
 	const sec = fps.num / fps.den;
 	const out: number[] = [];
 	for (let k = 1; recordFrame - k * sec >= captureFrame - 1e-9; k++)
@@ -47,7 +47,7 @@ export function cueFrames(captureFrame: number, recordFrame: number, fps: Ration
 }
 
 /** `<base> <n>.wav` with the first `n` not used by a project item or media file name. */
-export function nextTakeName(base: string, used: Iterable<string>): string {
+function nextTakeName(base: string, used: Iterable<string>): string {
 	const taken = new Set([...used].map((s) => s.toLowerCase()));
 	for (let n = 1; ; n++) {
 		const name = `${base} ${n}.wav`;
@@ -56,7 +56,7 @@ export function nextTakeName(base: string, used: Iterable<string>): string {
 }
 
 /** The track a recording goes to: `trackId`, else the record-armed audio track, else A1. */
-export function recordTrackOf(seq: Sequence, trackId?: string | null): string | null {
+function recordTrackOf(seq: Sequence, trackId?: string | null): string | null {
 	if (trackId) return seq.audioTracks.some((t) => t.id === trackId) ? trackId : null;
 	return seq.audioTracks.find((t) => t.mixer?.recordArm)?.id ?? seq.audioTracks[0]?.id ?? null;
 }

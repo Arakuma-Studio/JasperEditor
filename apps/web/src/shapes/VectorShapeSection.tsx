@@ -62,7 +62,7 @@ export const isVectorShapeSelection = (clips: readonly Clip[]) =>
 const PATH_LIKE = new Set<string>([...PATH_ITEM_TYPES, 'group']);
 
 /** Where a new item goes: into the selected group, else next to the selected item; paths above the paints. */
-export function insertionPoint(
+function insertionPoint(
 	contents: readonly ShapeItem[],
 	selectedId: string | null,
 	type: ShapeItemType,
