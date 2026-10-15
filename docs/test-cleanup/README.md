@@ -85,11 +85,15 @@ Validation remains in progress. Confirmed results so far:
 - `pnpm ffmpeg:check`: all inspected FFmpeg artifacts passed LGPL checks.
 - `pnpm notices --check`: generated notices are current.
 - `pnpm i18n:check`: Spanish covers all 8,615 generated strings.
-- `pnpm build` and `pnpm --filter @jasper/engine build:remotion`: passed. The browser
-  E2E preparation is rebuilding its required outputs after later source changes.
+- `pnpm build` and `pnpm --filter @jasper/engine build:remotion`: passed. Browser
+  E2E preparation also completed fresh engine, Remotion, web and MCP builds.
 - Final sync/remix/registry recheck: 3 files and 149 tests passed with required
   oracles and two workers. Earlier aggregate audio watchdog failures are not passes;
   this result verifies the final per-contract cases.
+- Audio preview/mixer parity: all 60 effect cases and the automation case passed
+  in the owning worktree. Each original input, block schedule and sample equality
+  assertion is preserved; the cumulative watchdog change is disclosed in
+  [compositions2.md](compositions2.md).
 - Final GPU recheck: 7 files and 1,071 tests passed with required oracles and two
   workers, including all effect/transition fingerprints and the revised family
   contracts. Golden inputs, pixel tolerances and committed golden records remain
@@ -103,6 +107,14 @@ Validation remains in progress. Confirmed results so far:
   parity tests passed; their title-card raster pair was also inspected visually.
   The companion bundle command terminated with exit 143 before completion and is
   being rerun; no cause is established and no interrupted case counts as a pass.
+- Native animated export: all seven cases passed, including the 48-frame
+  preview/export comparison (minimum/mean SSIM 0.9935/0.9956), subpixel motion,
+  authored crop geometry and audio volume envelopes.
+- Linux x64 unpacked application build: passed, including the final LGPL guard
+  over ten FFmpeg artifacts. Packaged-like and development desktop smoke checks,
+  all four desktop clipboard cases and the native-renderer fallback check passed.
+  The packaged export check reached a retryable browser setup timeout and still
+  needs an unchanged rerun; it is not counted as a pass.
 - `pnpm perf --sections micro --label test-cleanup-integration`: passed all six
   scripts, including the scale benchmark. AMD Ryzen 7 7700, 16 logical CPUs,
   Node 20.20.2; starting load averages 154.9/147.2/145.5. Reports are in
@@ -115,3 +127,8 @@ Local verification remains necessary; this infrastructure refusal is not a test 
 Full validation results and integrated change measurements will be recorded here
 after the remaining gates. Per-area formatting checks and interrupted baseline
 attempts are distinguished from runtime passes in the records above.
+
+Independent review through `737c9600` found no further issue in the final audio
+case split or clipboard mismatch workflow. The latter now makes the first-visual
+placement choice required by CLB-010/SEQ-005/IN-008; its existing placement, media
+and artifact assertions remain intact. Browser runtime validation is pending.
