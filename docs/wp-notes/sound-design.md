@@ -850,7 +850,7 @@ Shared host, 16 cores, load average 140–165 during every run below (other agen
   route fuzzing discovers the nine new routes by itself (`-t api/sounds --reporter=verbose`: 9 passed, never a 5xx
   `INTERNAL` or a hang).
 - `pnpm lint` (Biome, tokens, anime, layers, assets): pass. `pnpm --filter @jasper/engine typecheck`,
-  `@jasper/api`, `@jasper/engine-client`, `@jasper/config`: pass.
+  `@jasper/api`, `@jasper/engine-client`, `@jasper/config`, and `pnpm typecheck` (whole workspace): pass.
 - Running engine (`tsx apps/engine/src/cli.ts --port 48701`, appdir `.stage`, generated kit, 1 synth seed), by HTTP
   with the token: the automatic index at start indexed 23 sounds (4 starter, 19 synth) in 45 s (first run, before the
   worker thread existed; load ≈ 150); `types=hit` returned the two starter hits before `Jasper Synth hit 1` although
