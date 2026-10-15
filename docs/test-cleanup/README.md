@@ -67,6 +67,19 @@ existing Remotion/webpack peer resolutions; it added no package version.
 
 ## Verification
 
-Full validation results, integrated change measurements and removed support will
-be recorded here after integration. Per-area formatting checks and interrupted
-baseline attempts are distinguished from runtime passes in the records above.
+Validation remains in progress. Confirmed results so far:
+
+- `pnpm lint`: passed Biome, tokens, anime, layer/cycle and asset checks.
+- Config/localization focused tests: 2 files, 9 tests passed.
+- Public Remotion retry tests: 5 tests passed in the owning worktree.
+- `cargo test --workspace --manifest-path native/mg/Cargo.toml --locked -j 1`:
+  13 tests passed, no failures.
+- `pnpm ffmpeg:check`: all inspected FFmpeg artifacts passed LGPL checks.
+- `pnpm notices --check`: generated notices are current.
+- Isolated audio effect min/max robustness: 60 cases passed. The first integrated
+  run subsequently exceeded the watchdog for the multiband compressor's combined
+  min/max case; it is not being reported as a clean integrated run.
+
+Full validation results and integrated change measurements will be recorded here
+after the remaining gates. Per-area formatting checks and interrupted baseline
+attempts are distinguished from runtime passes in the records above.
