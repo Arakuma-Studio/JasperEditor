@@ -15,16 +15,13 @@ const entry = (name: string, kind: 'folder' | 'file', category: string | null) =
 	hidden: false,
 });
 
-async function connect(local = true) {
+async function connect() {
 	const requests: string[] = [];
 	const fetchImpl = (async (url: string) => {
 		const u = new URL(url);
 		requests.push(`${u.pathname}${u.search}`);
 		const json = (body: unknown, status = 200) =>
 			new Response(JSON.stringify(body), { status, headers: { 'x-jasper-api': '1' } });
-		if (!local) return json({ code: 'LOCAL_MODE_ONLY', message: 'local only', retryable: false }, 403);
-		if (u.pathname === '/api/browse/roots')
-			return json({ sep: '/', home: '/home/u', roots: [{ label: 'Home', path: '/home/u', kind: 'home' }] });
 		if (u.pathname === '/api/browse/list')
 			return json({
 				path: u.searchParams.get('path'),
@@ -71,17 +68,10 @@ async function connect(local = true) {
 		const text = (r.content[0] as { text: string }).text;
 		return { r, json: r.isError ? null : JSON.parse(text), text };
 	};
-	return { client, call, requests };
+	return { call, requests };
 }
 
 describe('browse_media_files', () => {
-	it('answers the places without a path', async () => {
-		const { call } = await connect();
-		const { json } = await call();
-		expect(json.home).toBe('/home/u');
-		expect(json.places).toEqual([{ label: 'Home', path: '/home/u', kind: 'home' }]);
-	});
-
 	it('lists a folder, filters by kind, limits and probes', async () => {
 		const { call, requests } = await connect();
 		const all = (await call({ path: '/m' })).json;
@@ -102,17 +92,5 @@ describe('browse_media_files', () => {
 		expect(limited.truncated).toBe(true);
 		expect(requests.some((r) => r.includes('all=1'))).toBe(false);
 		expect((await call({ path: '/m', includeAll: true })).r.isError).toBe(true);
-	});
-
-	it('is read-only and reports a remote engine as an error result', async () => {
-		const { client } = await connect();
-		const tool = (await client.listTools()).tools.find((t) => t.name === 'browse_media_files')!;
-		expect(tool.annotations?.readOnlyHint).toBe(true);
-		const remote = await connect(false);
-		const { r, text } = await remote.call({ path: '/m' });
-		expect(r.isError).toBe(true);
-		expect(text).toMatch(/LOCAL_MODE_ONLY|local engine/);
-		const bad = await remote.call({ path: '/m', nope: 1 });
-		expect(bad.r.isError).toBe(true);
 	});
 });

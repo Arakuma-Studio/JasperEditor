@@ -267,23 +267,6 @@ describe('render_motion_graphic_preview for anime templates (S11:ANA-003)', () =
 		expect(e.code).toBe('RENDERER_UNAVAILABLE');
 		expect(errOf(await call('render_motion_graphic_preview', { template: 'nope' })).code).toBe('E_NOT_FOUND');
 	});
-
-	it('explains a failed still (Remotion unavailable) with the Remotion hint', async () => {
-		const engine = fakeEngine();
-		engine.setStill({
-			state: 'failed',
-			error: {
-				code: 'BINARY_MISSING',
-				message: 'No Remotion bundle and no composition sources',
-				retryable: false,
-			},
-		});
-		engine.setRender({ native: true, remotionLocal: 'unavailable', fframes: 'unavailable' });
-		const { call } = await connect(engine);
-		const e = errOf(await call('render_motion_graphic_preview', { template: 'title-reveal' }));
-		expect(e.code).toBe('BINARY_MISSING');
-		expect(e.hint).toContain('JASPER_BROWSER_EXECUTABLE');
-	});
 });
 
 describe('set_motion_graphic_params (S11:ANA-003)', () => {

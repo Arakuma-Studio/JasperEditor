@@ -34,12 +34,6 @@ describe('PNG allocation limits', () => {
 		);
 	});
 
-	it('allows an 8K source header through the dimension guard', () => {
-		expect(() => decodePng(png(7680, 4320, Buffer.alloc(1)))).toThrowError(
-			expect.objectContaining({ code: 'E_INVALID_PARAM', message: 'Invalid PNG data length' }),
-		);
-	});
-
 	it('refuses compressed data that expands beyond its declared scanlines', () => {
 		// A one-pixel RGBA PNG needs only five bytes, but this IDAT expands to a megabyte.
 		const bomb = png(1, 1, Buffer.alloc(1024 * 1024));

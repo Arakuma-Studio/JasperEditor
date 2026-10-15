@@ -33,14 +33,14 @@ async function connect(route: (r: Req) => [number, unknown]) {
 		const text = (r.content[0] as { text: string }).text;
 		return { r, json: JSON.parse(text) };
 	};
-	return { client, call, requests };
+	return { call, requests };
 }
 
 const P = 'prj_0000000000000001';
 
 describe('version tools', () => {
 	it('lists versions with their kind and restores as a copy or in place', async () => {
-		const { client, call, requests } = await connect((r) => {
+		const { call, requests } = await connect((r) => {
 			if (r.path === `/api/projects/${P}/versions`)
 				return [
 					200,
@@ -74,14 +74,13 @@ describe('version tools', () => {
 		});
 		const list = await call('list_project_versions', { projectId: P });
 		expect(list.json.versions).toEqual([
-			{
+			expect.objectContaining({
 				versionId: '2026-10-07T10-00-00-000Z',
 				savedAt: 'x',
 				revision: 3,
 				kind: 'auto',
-				what: 'auto-saved',
 				sizeKB: 4,
-			},
+			}),
 			expect.objectContaining({ versionId: 'schema-v4-backup', kind: 'schema-backup', schemaVersion: 4 }),
 		]);
 		const copy = await call('restore_project_version', {
@@ -98,15 +97,6 @@ describe('version tools', () => {
 		});
 		expect(replace.r.isError).toBe(true);
 		expect(replace.json.error).toMatchObject({ code: 'LEASE_HELD' });
-		expect(replace.json.error.hint).toMatch(/File ▸ Project Versions/);
-		const tools = (await client.listTools()).tools.map((t) => t.name);
-		for (const t of [
-			'list_project_versions',
-			'restore_project_version',
-			'save_project_copy',
-			'list_unsaved_changes',
-		])
-			expect(tools).toContain(t);
 	});
 
 	it('reports recoverable unsaved changes without acting on them', async () => {

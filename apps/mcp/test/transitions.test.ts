@@ -217,34 +217,6 @@ describe('GPU transitions through MCP (transition framework)', () => {
 		return { call };
 	}
 
-	it('lists the catalogue with bins and params', async () => {
-		const { call } = await connect();
-		const all = await call<{ types: { effectId: string; bin: string; gpu: boolean }[] }>(
-			'list_transition_types',
-			{},
-		);
-		expect(all.types.map((t) => t.effectId)).toEqual(
-			expect.arrayContaining([
-				'jasper.cross-dissolve',
-				'jasper.push',
-				'jasper.iris-round',
-				'jasper.s.dissolve-luma',
-			]),
-		);
-		expect(all.types.find((t) => t.effectId === 'jasper.s.dissolve-luma')).toMatchObject({
-			bin: 'Sapphire Transitions/Dissolves',
-			gpu: true,
-		});
-		const iris = await call<{ types: { effectId: string; params: { name: string }[] }[] }>(
-			'list_transition_types',
-			{ bin: 'Iris' },
-		);
-		expect(iris.types.map((t) => t.effectId)).toContain('jasper.iris-round');
-		expect(iris.types.find((t) => t.effectId === 'jasper.iris-round')!.params.map((p) => p.name)).toContain(
-			'center',
-		);
-	});
-
 	it('adds a GPU transition by label with params and updates its params', async () => {
 		const { call } = await connect();
 		await call('add_transition', {

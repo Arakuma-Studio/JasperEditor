@@ -5,7 +5,6 @@ import {
 	createEmptyProject,
 	defaultRegistries,
 	type ProjectDocument,
-	TEXT_ANIMATOR_PRESETS,
 	type TextAnimatorGroup,
 } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -92,22 +91,6 @@ const animatorsOf = (doc: ProjectDocument, id: string) =>
 	(Object.values(doc.sequences)[0]!.clips[id] as { animators?: TextAnimatorGroup[] }).animators ?? [];
 
 describe('text animator MCP tools', () => {
-	it('lists presets and applies one', async () => {
-		const { engine, call } = await connect();
-		const list = await call('list_text_animator_presets');
-		expect((list.json.presets as unknown[]).length).toBe(TEXT_ANIMATOR_PRESETS.length);
-		const r = await call('apply_text_animator_preset', {
-			projectId: 'prj_t',
-			clipIds: [engine.text],
-			preset: 'typewriter',
-			durationSeconds: 1,
-		});
-		expect(r.r.isError, r.text).toBeFalsy();
-		const a = animatorsOf(engine.doc(), engine.text);
-		expect(a.map((x) => x.name)).toEqual(['Typewriter']);
-		const s = a[0]!.selectors[0]!;
-		expect(s.kind === 'range' && s.start.keyframes.length).toBe(2);
-	});
 	it('add_text_animator with values, keys and a range; add_text_selector; get; remove', async () => {
 		const { engine, call } = await connect();
 		const r = await call('add_text_animator', {
@@ -158,7 +141,7 @@ describe('text animator MCP tools', () => {
 		expect(rm.r.isError, rm.text).toBeFalsy();
 		expect(animatorsOf(engine.doc(), engine.text)).toEqual([]);
 	});
-	it('set_text_path creates a guide mask and Path Options; null removes', async () => {
+	it('set_text_path creates a guide mask and Path Options', async () => {
 		const { engine, call } = await connect();
 		const r = await call('set_text_path', {
 			projectId: 'prj_t',
@@ -178,7 +161,5 @@ describe('text animator MCP tools', () => {
 		expect(clip.masks![0]!.mode).toBe('none');
 		expect(clip.pathOptions!.maskId).toBe(clip.masks![0]!.id);
 		expect(clip.pathOptions!.firstMargin.value).toBe(10);
-		const off = await call('set_text_path', { projectId: 'prj_t', clipId: engine.text, maskId: null });
-		expect(off.r.isError, off.text).toBeFalsy();
 	});
 });

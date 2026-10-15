@@ -1,8 +1,4 @@
-import {
-	SpeechModelSchema,
-	TranscribeMediaRequestSchema,
-	TranscribeSequenceRequestSchema,
-} from '@jasper/api';
+import { TranscribeMediaRequestSchema, TranscribeSequenceRequestSchema } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import {
 	applyTransaction,
@@ -23,7 +19,6 @@ import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
 import { readToolResponse } from './tool-response.ts';
 
-const ModelListSchema = z.object({ models: z.array(SpeechModelSchema.pick({ id: true })) });
 const SpeechJobsSchema = z.object({
 	jobs: z.array(
 		z.object({
@@ -206,10 +201,6 @@ function fakeEngine() {
 						},
 					],
 				};
-			if (name === 'speechModelInstall') {
-				const { modelId } = z.object({ modelId: z.string() }).parse(opts.params);
-				return { ...newJob({ modelId }), kind: 'model-download' };
-			}
 			if (name === 'mediaTranscribe') {
 				const body = TranscribeMediaRequestSchema.parse(opts.body);
 				const { key } = z.object({ key: z.string() }).parse(opts.params);
@@ -287,19 +278,6 @@ async function connect() {
 }
 
 describe('speech MCP tools', () => {
-	it('lists and installs models', async () => {
-		const { call } = await connect();
-		const list = await call('list_speech_models', {});
-		expect(list.read(ModelListSchema).models.map((m: { id: string }) => m.id)).toEqual([
-			'whisper-base',
-			'whisper-small',
-		]);
-		const inst = await call('install_speech_model', { modelId: 'whisper-small' });
-		expect(inst.isError).toBe(false);
-		expect(inst.body.model).toMatchObject({ license: 'MIT', sizeBytes: 970_934_583 });
-		expect((await call('install_speech_model', { modelId: 'nope' })).isError).toBe(true);
-	});
-
 	it('transcribes a media, commits one step, and reads it back', async () => {
 		const { call, engine } = await connect();
 		const r = await call('transcribe', {

@@ -20,7 +20,7 @@ import {
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
-export { OPEN_OBJECT, suggestKey } from '@jasper/project';
+export { OPEN_OBJECT } from '@jasper/project';
 
 type AnySchema = z.ZodType;
 type Def = Record<string, unknown> & z.core.$ZodTypeDef;

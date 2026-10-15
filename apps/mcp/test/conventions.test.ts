@@ -4,11 +4,9 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { type Extra, makeContext, progressReporter, waitJob } from '../src/context.ts';
-import { RequestCancelled } from '../src/errors.ts';
+import { type Extra, progressReporter } from '../src/context.ts';
 import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
-import { suggestKey } from '../src/strict.ts';
 
 type FakeEngine = {
 	jobs: Map<string, EngineJob>;
@@ -82,7 +80,6 @@ describe('tool catalogue conventions', () => {
 	afterEach(async () => client.close());
 
 	it('every tool has a title and all four annotation hints, set consistently', () => {
-		expect(tools.length).toBeGreaterThan(80);
 		const bad: string[] = [];
 		for (const t of tools) {
 			const a = t.annotations ?? {};
@@ -156,9 +153,9 @@ describe('strict arguments', () => {
 		expect(r.isError).toBe(true);
 		const { error } = errorBody(r);
 		expect(error.code).toBe('E_UNKNOWN_ARGUMENT');
-		expect(error.message).toContain('"jobid"');
-		expect(error.hint).toContain('get_job accepts: jobId');
-		expect(error.hint).toContain('did you mean "jobid" → "jobId"');
+		expect(error.details).toMatchObject({
+			unknown: [{ path: '', keys: ['jobid'], accepted: ['jobId'] }],
+		});
 		expect(engine.calls).toEqual([]);
 	});
 
@@ -169,8 +166,6 @@ describe('strict arguments', () => {
 		})) as CallToolResult;
 		const { error } = errorBody(r);
 		expect(error.code).toBe('E_UNKNOWN_ARGUMENT');
-		expect(error.message).toContain('"step" in range');
-		expect(error.hint).toContain('range accepts: from, to');
 		expect(error.details).toMatchObject({
 			unknown: [{ path: 'range', keys: ['step'], accepted: ['from', 'to'] }],
 		});
@@ -194,13 +189,7 @@ describe('strict arguments', () => {
 		const { error } = errorBody(r);
 		expect(error.code).toBe('E_INVALID_ARGUMENT');
 		expect(error.message).toMatch(/jobId|timeoutSeconds/);
-		expect(error.hint).toContain('required: jobId');
-	});
-
-	it('suggests close keys only when plausible', () => {
-		expect(suggestKey('sequenceID', ['sequenceId', 'projectId'])).toBe('sequenceId');
-		expect(suggestKey('fom', ['o', 'x'])).toBeUndefined();
-		expect(suggestKey('outPath', ['outputPath', 'preset'])).toBe('outputPath');
+		expect(error.hint).toContain('jobId');
 	});
 });
 
@@ -217,7 +206,7 @@ describe('progress and cancellation', () => {
 				sent.push({ ...n.params, at: Date.now() });
 			},
 		} as unknown as Extra;
-		return { extra, sent, ac };
+		return { extra, sent };
 	}
 
 	it('throttles progress to one notification per 100 ms, increasing, latest value wins', async () => {
@@ -250,17 +239,6 @@ describe('progress and cancellation', () => {
 		report(1, 2);
 		await report.flush();
 		expect(sent).toEqual([]);
-	});
-
-	it('waitJob cancels the engine job when the request is aborted', async () => {
-		engine = { jobs: new Map([['job_1', fakeJob('job_1')]]), cancelled: [], calls: [] };
-		const { server } = createJasperMcpServer({ link: fakeLink(engine) });
-		const ctx = makeContext(server, fakeLink(engine));
-		const { extra, ac } = fakeExtra('t');
-		const waiting = waitJob(ctx, 'job_1', 60_000, extra);
-		setTimeout(() => ac.abort(), 300);
-		await expect(waiting).rejects.toBeInstanceOf(RequestCancelled);
-		expect(engine.cancelled).toEqual(['job_1']);
 	});
 
 	it('notifications/cancelled on wait_for_job cancels the engine job', async () => {

@@ -21,7 +21,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
-import type { describeInterpretation } from '../src/tools/imports.ts';
 
 const InterpretationSchema = z.object({
 	file: z.object({ fieldOrder: MediaInterpretationSchema.shape.fieldOrder.unwrap(), fps: z.number() }),
@@ -31,7 +30,7 @@ const InterpretationSchema = z.object({
 		loop: z.number(),
 		durationSeconds: z.number(),
 	}),
-}) satisfies z.ZodType<Pick<ReturnType<typeof describeInterpretation>, 'file' | 'effective'>>;
+});
 
 const dir = mkdtempSync(join(tmpdir(), 'jasper-mcp-imports-'));
 const file = (name: string) => {

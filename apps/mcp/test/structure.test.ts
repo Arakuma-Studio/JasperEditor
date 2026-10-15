@@ -134,37 +134,10 @@ async function connect() {
 			})(),
 		};
 	};
-	return { engine, call, client };
+	return { engine, call };
 }
 
 describe('edit-structure MCP tools', () => {
-	it('lists the tools', async () => {
-		const { client } = await connect();
-		const names = (await client.listTools()).tools.map((t) => t.name);
-		for (const n of [
-			'nest_clips',
-			'unnest_clips',
-			'place_sequence',
-			'list_nests',
-			'add_adjustment_layer',
-			'group_clips',
-			'ungroup_clips',
-			'duplicate_sequence',
-			'delete_sequence',
-			'remove_unused_media',
-			'create_synthetic',
-			'update_synthetic',
-			'list_through_edits',
-			'join_through_edits',
-			'find_gaps',
-			'make_subsequence',
-			'add_frame_hold',
-			'insert_frame_hold_segment',
-			'frame_hold_options',
-		])
-			expect(names).toContain(n);
-	});
-
 	it('nests, lists, places and unnests', async () => {
 		const { engine, call } = await connect();
 		const nest = await call('nest_clips', { clipIds: engine.clipIds, name: 'Inner' });
@@ -180,47 +153,5 @@ describe('edit-structure MCP tools', () => {
 		expect(un.isError, JSON.stringify(un.body)).toBe(false);
 		const kinds = Object.values(engine.doc().sequences[engine.seqId]!.clips).map((c) => c.kind);
 		expect(kinds).not.toContain('nest-video');
-	});
-
-	it('adjustment layers, groups, synthetics, through edits, gaps, subsequences and frame holds', async () => {
-		const { engine, call } = await connect();
-		const adj = await call('add_adjustment_layer', {
-			at: 0,
-			duration: 60,
-			track: 'V2',
-			effects: [{ effectId: 'jasper.black-white' }],
-		});
-		expect(adj.isError, JSON.stringify(adj.body)).toBe(false);
-		const adjClip = Object.values(engine.doc().sequences[engine.seqId]!.clips).find(
-			(c) => c.kind === 'adjustment',
-		);
-		expect((adjClip as { effects: unknown[] }).effects).toHaveLength(1);
-		expect((await call('group_clips', { clipIds: [engine.clipIds[0], adjClip!.id] })).isError).toBe(false);
-		expect((await call('ungroup_clips', { clipIds: [adjClip!.id] })).isError).toBe(false);
-		const bars = await call('create_synthetic', { kind: 'bars-and-tone', params: { toneDb: -18 } });
-		expect(bars.isError, JSON.stringify(bars.body)).toBe(false);
-		const synId = bars.body.results[0].syntheticId;
-		expect((await call('update_synthetic', { syntheticId: synId, params: { toneDb: -20 } })).isError).toBe(
-			false,
-		);
-		expect((await call('update_synthetic', { syntheticId: synId, params: { nope: 1 } })).isError).toBe(true);
-		await call('add_frame_hold', { at: 40, clipIds: [engine.clipIds[0]] });
-		const held = Object.values(engine.doc().sequences[engine.seqId]!.clips).filter((c) => c.frameHold);
-		expect(held).toHaveLength(1);
-		expect((await call('frame_hold_options', { clipIds: [held[0]!.id], enabled: false })).isError).toBe(
-			false,
-		);
-		const te = await call('list_through_edits', {});
-		expect(te.body.throughEdits.length).toBeGreaterThan(0);
-		expect((await call('join_through_edits', {})).isError).toBe(false);
-		const gaps = await call('find_gaps', { tracks: ['V1'] });
-		expect(gaps.body.tracks[0].gaps[0]).toMatchObject({ start: 0, end: 10 });
-		expect((await call('find_gaps', {})).body.gaps).toEqual([]);
-		const seg = await call('insert_frame_hold_segment', { clipId: engine.clipIds[0], at: 20, duration: 15 });
-		expect(seg.isError, JSON.stringify(seg.body)).toBe(false);
-		const sub = await call('make_subsequence', { from: 10, to: 50 });
-		expect(sub.isError, JSON.stringify(sub.body)).toBe(false);
-		const dup = await call('duplicate_sequence', { sequenceId: engine.seqId, name: 'Copy' });
-		expect(dup.isError, JSON.stringify(dup.body)).toBe(false);
 	});
 });

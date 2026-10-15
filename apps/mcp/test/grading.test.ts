@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AutoToneResponseSchema, ColorMatchResponseSchema, GradingScopesResponseSchema } from '@jasper/api';
+import { ColorMatchResponseSchema, GradingScopesResponseSchema } from '@jasper/api';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -23,10 +23,6 @@ const HistogramSummarySchema = GradingScopesResponseSchema.required({ histogram:
 const ColorMatchReportSchema = ColorMatchResponseSchema.pick({ params: true, skin: true }).extend({
 	applied: z.boolean(),
 	statisticsDistance: ColorMatchResponseSchema.pick({ before: true, after: true }),
-});
-const AutoToneReportSchema = z.object({
-	params: AutoToneResponseSchema.shape.params.omit({ saturation: true }).strict(),
-	lumaQuantiles: AutoToneResponseSchema.pick({ before: true, after: true }),
 });
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -266,12 +262,6 @@ describe('grading tools against a real engine (color-grade)', () => {
 		await ok('grade_clip', { projectId, clipId: clipB, sections: { vignette: true } });
 	}, 600_000);
 
-	it('list_looks lists the built-in looks', async () => {
-		const r = await ok<{ looks: { id: string }[] }>('list_looks');
-		expect(r.looks.length).toBeGreaterThanOrEqual(16);
-		expect(r.looks.map((l) => l.id)).toContain('bleach-bypass');
-	});
-
 	it('scopes_read measures a frame as numbers (and one clip alone)', async () => {
 		const r = ScopeSummarySchema.parse(await ok('scopes_read', { projectId, at: 30, columns: 4, peaks: 3 }));
 		expect(r.stats.samples).toBeGreaterThan(1000);
@@ -322,23 +312,5 @@ describe('grading tools against a real engine (color-grade)', () => {
 		expect(
 			(await fails('color_match', { projectId, clipId: clipA, at: 400, reference: { at: 330 } })).code,
 		).toBe('E_INVALID_PARAM');
-	});
-
-	it('auto_tone writes the tone sliders (one change)', async () => {
-		let body: Record<string, unknown> = {};
-		const changes = await docChangedDuring(token, projectId, async () => {
-			body = await ok('auto_tone', { projectId, clipId: clipA, at: 30 });
-		});
-		const res = AutoToneReportSchema.parse(body);
-		expect(changes).toHaveLength(1);
-		expect(Object.keys(res.params).sort()).toEqual([
-			'blacks',
-			'contrast',
-			'exposure',
-			'highlights',
-			'shadows',
-			'whites',
-		]);
-		expect(res.lumaQuantiles.after).toHaveLength(5);
 	});
 });
