@@ -786,6 +786,11 @@ export function rankSoundsPage<T extends RankableSound>(
 	const lics: { safe: boolean; preference: number }[] = [];
 	const keys: number[] = [];
 	const scratch = newParts();
+	// Fast order: when the ranked entries come in id order (the engine's list), the id tie-break is the index and
+	// the whole order packs into one exact float per entry (sorted natively). Else the comparator below.
+	const tokenCount = prep.plan?.tokens.length ?? 0;
+	let packable = true;
+	let lastId = '';
 	for (const e of entries) {
 		if (!e || typeof e !== 'object' || typeof e.id !== 'string' || !e.descriptors) continue;
 		const info = entryText(e);
@@ -794,20 +799,35 @@ export function rankSoundsPage<T extends RankableSound>(
 		opts.onFilter?.(e, bits);
 		if (bits !== SOUND_FILTER_ALL || (opts.inRanking && !opts.inRanking(e))) continue;
 		const score = scoreInto(scratch, e, info, lic, run);
+		if (packable) {
+			const p = packedPrimary(scratch, score, tokenCount);
+			if (p < 0 || (es.length > 0 && !(e.id > lastId))) packable = false;
+			else keys.push(p);
+			lastId = e.id;
+		}
 		es.push(e);
 		infos.push(info);
 		lics.push(lic);
-		keys.push(sortKey(scratch, score));
 	}
-	const order = new Uint32Array(es.length);
-	for (let i = 0; i < order.length; i++) order[i] = i;
-	order.sort((i, j) => {
-		const d = keys[j]! - keys[i]!;
-		if (d !== 0 && !Number.isNaN(d)) return d;
-		const a = es[i]!.id;
-		const b = es[j]!.id;
-		return a < b ? -1 : a > b ? 1 : 0;
-	});
+	let order: Uint32Array;
+	if (packable && es.length < PACK_INDEX) {
+		const packed = new Float64Array(es.length);
+		for (let i = 0; i < packed.length; i++) packed[i] = (PACK_PRIMARY - 1 - keys[i]!) * PACK_INDEX + i;
+		packed.sort();
+		order = new Uint32Array(packed.length);
+		for (let k = 0; k < packed.length; k++) order[k] = packed[k]! % PACK_INDEX;
+	} else {
+		const sortKeys = es.map((e, i) => sortKey(e, infos[i]!, lics[i]!, run, scratch));
+		order = new Uint32Array(es.length);
+		for (let i = 0; i < order.length; i++) order[i] = i;
+		order.sort((i, j) => {
+			const d = sortKeys[j]! - sortKeys[i]!;
+			if (d !== 0 && !Number.isNaN(d)) return d;
+			const a = es[i]!.id;
+			const b = es[j]!.id;
+			return a < b ? -1 : a > b ? 1 : 0;
+		});
+	}
 	const cap = fin(request.limit) ? Math.min(10_000, Math.max(1, Math.floor(request.limit))) : order.length;
 	const total = Math.min(order.length, cap);
 	const from = Math.max(0, Math.floor(opts.offset));
@@ -824,8 +844,36 @@ export function rankSoundsPage<T extends RankableSound>(
  * The ranking order as one number (descending): source tier, then title-word share, then score, all rounded to 6
  * decimals already, so the integers below are exact and order exactly like rankSounds' comparison.
  */
-function sortKey(parts: RankParts, score: number): number {
-	const tm = Math.round((parts.titleMatch ?? 0) * 1e6); // 0 … 1e6
+function sortKey<T extends RankableSound>(
+	e: T,
+	info: EntryText,
+	lic: { preference: number },
+	run: RankRun,
+	scratch: RankParts,
+): number {
+	const score = scoreInto(scratch, e, info, lic, run);
+	const tm = Math.round((scratch.titleMatch ?? 0) * 1e6); // 0 … 1e6
 	const sc = Math.round(score * 1e6) + 2e6; // score ≥ −0.6 → 1.4e6 … 3e6
-	return parts.source * 8e12 + tm * 4e6 + sc;
+	return scratch.source * 8e12 + tm * 4e6 + sc;
+}
+
+/** Packed order: primary key below 2^27, index below 2^23 (2^50 in all: exact in a float). */
+const PACK_PRIMARY = 2 ** 27;
+const PACK_INDEX = 2 ** 23;
+
+/**
+ * The primary ranking key as an integer below 2^27 (larger ranks first): source tier (bit 26), the number of query
+ * words a title word matches (titleMatch × tokens, 0 … 16, bits 21–25), then the 6-decimal score shifted by 0.6
+ * (0 … 1.6·10^6 < 2^21). −1 when a value does not fit (then the comparator orders).
+ */
+function packedPrimary(parts: RankParts, score: number, tokenCount: number): number {
+	const inTitle = tokenCount > 0 ? Math.round((parts.titleMatch ?? 0) * tokenCount) : 0;
+	const sc = Math.round(score * 1e6) + 600_000;
+	if (
+		!(sc >= 0 && sc < 2 ** 21) ||
+		!(inTitle >= 0 && inTitle < 32) ||
+		(parts.source !== 0 && parts.source !== 1)
+	)
+		return -1;
+	return parts.source * 2 ** 26 + inTitle * 2 ** 21 + sc;
 }
