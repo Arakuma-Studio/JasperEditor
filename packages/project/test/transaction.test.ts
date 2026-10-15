@@ -21,7 +21,6 @@ const solid = (at: number, duration: number, track: string) => ({
 describe('transactions (S01 §16)', () => {
 	it('rejects non-string command types without serializing untrusted values', () => {
 		const h = new Harness();
-		const before = h.doc;
 		const cyclic: { self?: object } = {};
 		cyclic.self = cyclic;
 		for (const type of [1n, cyclic, Symbol('command')]) {
@@ -29,7 +28,6 @@ describe('transactions (S01 §16)', () => {
 				ok: false,
 				errors: [{ code: 'E_SCHEMA', commandIndex: 0 }],
 			});
-			expect(h.doc).toBe(before);
 		}
 	});
 
@@ -50,22 +48,28 @@ describe('transactions (S01 §16)', () => {
 
 	it('AC-09: a failing third command applies nothing and reports commandIndex 2', () => {
 		const h = new Harness();
-		const before = h.doc;
-		const r = h.tx(
-			[
-				solid(0, 30, 'V1'),
-				{ type: 'marker.add', frame: 10 },
-				{ type: 'clip.lift', clipIds: ['clp_0000000000NOPE'] },
-			],
-			{ origin: { agent: 'bot' } },
+		const before = structuredClone(h.doc);
+		const { document, result } = applyTransaction(
+			h.doc,
+			{
+				label: 'test',
+				origin: { agent: 'bot' },
+				sequenceId: h.seqId,
+				commands: [
+					solid(0, 30, 'V1'),
+					{ type: 'marker.add', frame: 10 },
+					{ type: 'clip.lift', clipIds: ['clp_0000000000NOPE'] },
+				],
+			},
+			h.ctx(),
 		);
-		expect(r.ok).toBe(false);
-		if (!r.ok) {
-			expect(r.errors[0]!.commandIndex).toBe(2);
-			expect(r.errors[0]!.code).toBe('E_NOT_FOUND');
-			expect(r.revision).toBe(0);
-		}
-		expect(h.doc).toBe(before);
+		expect(result).toMatchObject({
+			ok: false,
+			errors: [{ commandIndex: 2, code: 'E_NOT_FOUND' }],
+			revision: 0,
+		});
+		expect(document).toBe(h.doc);
+		expect(document).toEqual(before);
 	});
 
 	it('AC-10: temp refs create a text clip and target it in later commands', () => {

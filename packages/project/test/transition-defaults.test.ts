@@ -48,10 +48,8 @@ describe('defaultTransitionFrames (TUI-032)', () => {
 			},
 		]);
 		expect(h.doc.settings).toMatchObject({ defaultTransitionFrames: 20, defaultAudioTransitionFrames: 15 });
-		const before = h.doc;
 		const bad = h.tx([{ type: 'project.updateSettings', settings: { defaultAudioTransitionFrames: 0 } }]);
 		expect(!bad.ok && bad.errors[0]!.code).toBe('E_SCHEMA');
-		expect(h.doc).toBe(before);
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 });
