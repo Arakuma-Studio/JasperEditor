@@ -209,9 +209,12 @@ export function remapSoundDesign(
 		tracks: ReadonlyMap<string, string>;
 		transitions: ReadonlyMap<string, string>;
 		markers: ReadonlyMap<string, string>;
+		/** Ids of things inside clips that a copy re-identifies (keyframes, clip markers, effects). */
+		children?: ReadonlyMap<string, string>;
 	},
 	newCueId: () => string,
 ): void {
+	const children = maps.children ?? new Map<string, string>();
 	const r = seq as { soundDesign?: unknown };
 	const cueMap = new Map<string, string>();
 	const sd = r.soundDesign;
@@ -240,9 +243,28 @@ export function remapSoundDesign(
 						cue.anchor = { ...a, transitionId: m(maps.transitions, a.transitionId) };
 						break;
 					case 'marker':
-						cue.anchor = { ...a, markerId: m(maps.markers, a.markerId) };
+						// a sequence marker, else a clip marker
+						cue.anchor = {
+							...a,
+							markerId: maps.markers.get(a.markerId) ?? m(children, a.markerId),
+						};
 						break;
 					case 'scene':
+						break;
+					case 'keyframe':
+						cue.anchor = {
+							...a,
+							clipId: m(maps.clips, a.clipId),
+							// `effects.<fxId>.params.<name>`: path segments naming an entity (by id) follow the copy
+							property:
+								typeof a.property === 'string'
+									? a.property
+											.split('.')
+											.map((part) => m(children, part))
+											.join('.')
+									: a.property,
+							...(typeof a.keyframeId === 'string' ? { keyframeId: m(children, a.keyframeId) } : {}),
+						};
 						break;
 					default:
 						cue.anchor = { ...a, clipId: m(maps.clips, a.clipId) } as SoundCue['anchor'];

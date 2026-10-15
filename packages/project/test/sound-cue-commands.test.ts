@@ -17,6 +17,7 @@ import {
 	type ProjectDocument,
 	readSoundDesign,
 	repairDocument,
+	resolveCueAnchor,
 	type SoundCue,
 	type SoundDesign,
 	soundDesignNeedsRepair,
@@ -408,6 +409,82 @@ describe('invariants, repair and load', () => {
 		const newId = Object.keys((loaded.document.sequences[sid]!.soundDesign as SoundDesign).cues)[0]!;
 		expect((loaded.document.sequences[sid]!.clips[placed] as SfxClip).sfx!.cueId).toBe(newId);
 		expect((loaded.document.sequences[h.seqId]!.clips[v.id] as { sfx?: unknown }).sfx).toBeUndefined();
+	});
+
+	it('sequence.duplicate remaps keyframe, clip-marker and effect ids inside the copy’s cue anchors (none dangle)', () => {
+		const { h, logo, a } = phase2Fixture();
+		const reg = defaultRegistries(mgRegistry());
+		const r = h.ok([
+			{ type: 'effect.add', target: { clipId: logo }, effectId: 'jasper.gaussian-blur', ref: '$blur' },
+			{
+				type: 'keyframe.add',
+				target: ['effect', '$blur', 'radius'],
+				at: { frames: 5 },
+				value: 0,
+				ref: '$k0',
+			},
+			{ type: 'keyframe.add', target: ['effect', '$blur', 'radius'], at: { frames: 15 }, value: 20 },
+			{ type: 'marker.add', clipId: a, flicks: { seconds: 1 }, name: 'clap', ref: '$cm' },
+		]);
+		const fxId = r.refs.$blur!;
+		const derived = deriveCues(h.doc, h.seqId, { mgTemplates: reg.mgTemplates }).cues;
+		const kfCues = derived.filter((c) => c.anchor.type === 'keyframe');
+		expect(kfCues.some((c) => (c.anchor as { keyframeId?: string }).keyframeId)).toBe(true);
+		h.ok([
+			{
+				type: 'soundCue.add',
+				cues: [
+					...kfCues.map((c) => cueInputFromDerived(c)),
+					{
+						frame: 40,
+						kind: 'manual',
+						weight: 'support',
+						source: 'user',
+						anchor: { type: 'marker', markerId: r.refs.$cm },
+					},
+					{
+						frame: 35,
+						kind: 'manual',
+						weight: 'support',
+						source: 'user',
+						anchor: {
+							type: 'keyframe',
+							clipId: logo,
+							property: `effects.${fxId}.params.radius`,
+							keyframeId: r.refs.$k0,
+							event: 'start',
+						},
+					},
+				],
+			},
+		]);
+		const frameOf = (seqId: string, c: SoundCue) =>
+			resolveCueAnchor(h.doc, h.doc.sequences[seqId]!, c.anchor!, { mgTemplates: reg.mgTemplates });
+		const originals = Object.values(sd(h).cues);
+		const before = originals.map((c) => frameOf(h.seqId, c));
+		expect(before.every((f) => f !== null)).toBe(true);
+		const dup = h.ok([{ type: 'sequence.duplicate', sequenceId: h.seqId }]);
+		const sid = (dup.results[0] as { sequenceId: string }).sequenceId;
+		const copy = Object.values((h.doc.sequences[sid]!.soundDesign as SoundDesign).cues);
+		expect(copy).toHaveLength(originals.length);
+		const copyJson = JSON.stringify(copy);
+		// no id of the original's children is left in the copy's anchors
+		for (const c of originals) {
+			const an = c.anchor as { keyframeId?: string; markerId?: string; clipId?: string };
+			if (an.keyframeId) expect(copyJson).not.toContain(an.keyframeId);
+			if (an.markerId) expect(copyJson).not.toContain(an.markerId);
+			if (an.clipId) expect(copyJson).not.toContain(an.clipId);
+		}
+		expect(copyJson).not.toContain(fxId);
+		// every copied cue resolves to the same frame in the copy, and loading repairs nothing
+		expect(copy.map((c) => frameOf(sid, c)).sort()).toEqual([...before].sort());
+		expect(soundDesignNeedsRepair(h.doc)).toBe(false);
+		const loaded = loadProject(clone(h.doc), {
+			ids: createCounterIdSource(700),
+			mgTemplates: reg.mgTemplates,
+		});
+		expect(loaded.repairs.filter((x) => x.action === 'drop-cue-anchor')).toEqual([]);
+		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 
 	it('loading never throws and leaves no issue for arbitrary sound-design values (property)', () => {

@@ -155,13 +155,15 @@ export const SoundDesignPlaceCmd = cmd('soundDesign.place', {
 
 /**
  * Swaps the sound of a placed clip: the new media's aligned point lands where the old one did (same track, speed,
- * pan, gain, effects, group, role and cue link; keyframes keep their sequence times). Result
- * `{clipId, mediaId, soundId, start, sourceInFlicks, errorFlicks, alignedFrame}`.
+ * pan, gain, effects, group, role and cue link; keyframes keep their sequence times). `frame` lands it on that frame
+ * instead (with the clip's own media this re-aligns the clip: MCP `align_peak`), still sample-exact through the In
+ * point. Result `{clipId, mediaId, soundId, start, sourceInFlicks, errorFlicks, alignedFrame}`.
  */
 export const SoundDesignSwapCmd = cmd('soundDesign.swap', {
 	clipId: IdRefSchema,
 	mediaId: IdRefSchema,
 	align: z.enum(CUE_ALIGNS).optional(),
+	frame: TimeInputSchema.optional(),
 });
 
 /** Sets the sequence's sound palette (preferred library sounds): replace (default), add or remove. */

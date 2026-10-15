@@ -972,6 +972,24 @@ function makeSubsequence(doc: DDoc, cmd: CommandOf<'sequence.makeSubsequence'>, 
 	return { sequenceId: sub.id, itemId, clipIds: placed.map((p) => p.clip.id) };
 }
 
+/** Every string `id` nested inside a clip (not its own), in a fixed walk order: the same shape walks the same way. */
+function nestedIds(clip: Clip): string[] {
+	const out: string[] = [];
+	const visit = (v: unknown, depth: number): void => {
+		if (depth > 64 || !v || typeof v !== 'object') return;
+		if (Array.isArray(v)) {
+			for (const x of v) visit(x, depth + 1);
+			return;
+		}
+		for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+			if (k === 'id' && depth > 0 && typeof x === 'string') out.push(x);
+			else visit(x, depth + 1);
+		}
+	};
+	visit(clip, 0);
+	return out;
+}
+
 /** A deep copy of a sequence in the same project: new ids for every entity inside, shared media (SEQ-011). */
 function duplicateSequence(src: Sequence, h: HandlerContext): Sequence {
 	const seq = plain(src);
@@ -993,9 +1011,16 @@ function duplicateSequence(src: Sequence, h: HandlerContext): Sequence {
 	const clipMap = new Map<string, string>();
 	const clips: Sequence['clips'] = {};
 	const trackerMaps = new Map<string, Map<string, string>>();
+	// Old → new ids of the clips' children (keyframes, clip markers, effects…), for the cue anchors naming them.
+	const childMap = new Map<string, string>();
 	for (const c of Object.values(seq.clips)) {
 		const before = ((c as { trackers?: { id: string }[] }).trackers ?? []).map((t) => t.id);
+		const childrenBefore = nestedIds(c);
 		reidentifyClipChildren(c, h);
+		const childrenAfter = nestedIds(c);
+		if (childrenAfter.length === childrenBefore.length)
+			for (const [k, old] of childrenBefore.entries())
+				if (old !== childrenAfter[k]) childMap.set(old, childrenAfter[k]!);
 		const after = ((c as { trackers?: { id: string }[] }).trackers ?? []).map((t) => t.id);
 		const id = h.ids.next('clp');
 		clipMap.set(c.id, id);
@@ -1040,7 +1065,7 @@ function duplicateSequence(src: Sequence, h: HandlerContext): Sequence {
 	// sound-design: cues, their anchors and placed clips follow the copy.
 	remapSoundDesign(
 		seq,
-		{ clips: clipMap, tracks: trackMap, transitions: transitionMap, markers: markerMap },
+		{ clips: clipMap, tracks: trackMap, transitions: transitionMap, markers: markerMap, children: childMap },
 		() => h.ids.next('cue'),
 	);
 	return seq;

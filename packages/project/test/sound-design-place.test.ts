@@ -430,6 +430,69 @@ describe('soundDesign.swap', () => {
 	});
 });
 
+describe('soundDesign.swap with frame (re-align: MCP align_peak)', () => {
+	it('lands the aligned point exactly on the new frame at every rate; pan keyframes travel with it; undo / redo; refusals', () => {
+		for (const fps of ALLOWED_SEQUENCE_RATES) {
+			const h = new Harness();
+			h.ok([{ type: 'sequence.updateSettings', sequenceId: h.seqId, settings: { frameRate: fps } }]);
+			const a = libMedia(h, { types: ['whoosh'], peakSec: 0.3123, durationSec: 1.1 });
+			const r = h.ok([
+				{
+					type: 'soundDesign.place',
+					frame: 90,
+					layers: [
+						{
+							mediaId: a,
+							gainDb: -4,
+							pan: {
+								keyframes: [
+									{ offset: -3, value: -50 },
+									{ offset: 3, value: 50 },
+								],
+							},
+						},
+					],
+				},
+			]);
+			const id = (r.results[0] as { clips: { clipId: string }[] }).clips[0]!.clipId;
+			const F = flicksPerFrame(h.seq.settings.frameRate);
+			const panTimes = () => {
+				const c = clip(h, id);
+				return c.pan.keyframes.map((k) => c.start * F + (k.time - c.sourceIn) / c.speed.rate);
+			};
+			const t0 = panTimes();
+			const before = h.doc;
+			const snapshot = clone(before);
+			const s = h.ok([{ type: 'soundDesign.swap', clipId: id, mediaId: a, frame: 137 }]);
+			const c = clip(h, id);
+			expect(Math.abs(alignedAt(c, F) - 137 * F), `fps ${fps.num}/${fps.den}`).toBeLessThanOrEqual(1);
+			expect(c.sfx!.placement.errorFlicks).toBe(0);
+			expect((s.results[0] as { alignedFrame: number }).alignedFrame).toBe(137);
+			expect(c.gainDb).toBe(-4);
+			// the sweep travels with the sound: 47 frames later
+			for (const [i, t] of panTimes().entries())
+				expect(Math.abs(t - (t0[i]! + 47 * F))).toBeLessThanOrEqual(1);
+			expect(checkInvariants(h.doc)).toEqual([]);
+			expect(before).toEqual(snapshot);
+			const after = h.doc;
+			h.doc = before;
+			h.ok([{ type: 'soundDesign.swap', clipId: id, mediaId: a, frame: 137 }]);
+			expect(normalizeIds(h.doc)).toEqual(normalizeIds(after));
+			// refusals: before 0 (the sound would start before the sequence), a busy span on its track
+			expect(err(h.tx([{ type: 'soundDesign.swap', clipId: id, mediaId: a, frame: 2 }]))?.code).toBe(
+				'E_INVALID_PARAM',
+			);
+			expect(err(h.tx([{ type: 'soundDesign.swap', clipId: id, mediaId: a, frame: -5 }]))?.code).toBe(
+				'E_INVALID_PARAM',
+			);
+			h.ok([{ type: 'soundDesign.place', frame: 300, layers: [{ mediaId: a, track: c.trackId }] }]);
+			expect(err(h.tx([{ type: 'soundDesign.swap', clipId: id, mediaId: a, frame: 300 }]))?.code).toBe(
+				'E_OVERLAP',
+			);
+		}
+	});
+});
+
 describe('soundDesign.setPalette / setSettings', () => {
 	it('replace, add and remove palette sounds; settings with read-time defaults; refusals', () => {
 		const h = new Harness();

@@ -695,7 +695,14 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 		pointFlicks = clip.start * F + (pt * FLICKS_PER_SECOND - clip.sourceIn) / clip.speed.rate;
 	}
 	align = cmd.align ?? align!;
-	const cueFrame = Math.round(pointFlicks / F);
+	let cueFrame = Math.round(pointFlicks / F);
+	if (cmd.frame !== undefined) {
+		cueFrame = h.frame(seq, cmd.frame);
+		if (!Number.isSafeInteger(cueFrame) || cueFrame < 0 || cueFrame > SOUND_DESIGN_LIMITS.maxFrame)
+			h.fail('E_INVALID_PARAM', `frame must be between 0 and ${SOUND_DESIGN_LIMITS.maxFrame}`, {
+				path: ['frame'],
+			});
+	}
 	const asset = doc.media[cmd.mediaId] as Draft<MediaAsset> | undefined;
 	if (!asset) return h.fail('E_NOT_FOUND', `Media not found: ${cmd.mediaId}`, { path: ['mediaId'] });
 	const stream = asset.probe.streams.find((s) => s.type === 'audio');
@@ -735,9 +742,11 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 		h.fail('E_OVERLAP', `The new sound does not fit on its track between frames ${p.start} and ${end}`, {
 			blocking,
 		});
-	// Content times move with the In point and start: keyframes keep their sequence times.
+	// Content times move with the In point and start: keyframes and clip markers keep their place relative to the
+	// aligned point (their sequence times when it stays; with `frame` they travel with it).
 	const delta = p.sourceInFlicks - clip.sourceIn - (p.start - clip.start) * F * clip.speed.rate;
-	shiftContentTimes(clip, delta);
+	const travel = cmd.frame !== undefined ? (cueFrame * F - pointFlicks) * clip.speed.rate : 0;
+	shiftContentTimes(clip, delta + travel);
 	const oldMedia = clip.mediaId;
 	clip.mediaId = asset.id;
 	clip.start = p.start;
