@@ -213,3 +213,69 @@ describe('A failing sound command reports once (one toast), and fails for agents
 		expect(h.toasts[0]).toMatchObject({ kind: 'warning', message: 'Could not fill the cue' });
 	});
 });
+
+describe('Variation cycling keeps one anchor across runs (the ring, original first)', () => {
+	it('a filled clip: next ×2, another edit closes the run, next continues the same list; previous returns to the original', async () => {
+		const h = await filled();
+		const original = h.soundOf();
+		await h.press();
+		await h.press();
+		expect(h.soundOf()).toBe(h.list[2]!.id);
+		h.apply([{ type: 'clip.update', clipId: h.clipId, patch: { gainDb: -2 } }]);
+		await h.press();
+		expect(h.soundOf()).toBe(h.list[3]!.id);
+		h.apply([{ type: 'clip.update', clipId: h.clipId, patch: { gainDb: -3 } }]);
+		await h.press(-1);
+		await h.press(-1);
+		await h.press(-1);
+		expect(h.soundOf()).toBe(original);
+	});
+
+	it('a clip placed without alternatives stores [original] in its first step (undone with it) and cycles around it', async () => {
+		soundLibraryPrefs.set({ auditionOnSwap: false });
+		const list = entries();
+		const { session, seqId } = makeSession();
+		const fake = fakeSoundEngine(list);
+		const add = session.apply({
+			label: 'cue',
+			origin: 'user',
+			sequenceId: seqId,
+			commands: [
+				{
+					type: 'soundCue.add',
+					cues: [{ frame: 90, kind: 'land', weight: 'hero', types: ['hit'], source: 'user' }],
+				},
+			] as never[],
+		});
+		if (!add.ok) throw new Error('setup');
+		const cueId = (add.results[0] as { cueIds: string[] }).cueIds[0]!;
+		const r = await fillCueWithSound(session, fake.client as never, list[0]!, { sequenceId: seqId, cueId });
+		session.select('timeline', [r.clipId], 'replace');
+		const clip = () => session.getCommitted().sequences[seqId]!.clips[r.clipId] as SfxClip;
+		expect(clip().sfx!.alternatives ?? []).toEqual([]);
+		const before = session.getCommitted().sequences[seqId];
+		const k = session.getState().history.index;
+		const press = (dir: 1 | -1 = 1) => cycleVariation(session, fake.client as never, dir, () => undefined);
+		await press();
+		const first = clip().sfx!.soundId;
+		expect(first).not.toBe(list[0]!.id);
+		expect(clip().sfx!.alternatives).toEqual([list[0]!.id]);
+		await press();
+		const second = clip().sfx!.soundId;
+		// a new run (another edit) continues from where the cycle is, around the same anchor
+		session.apply({
+			label: 'g',
+			origin: 'user',
+			sequenceId: seqId,
+			commands: [{ type: 'clip.update', clipId: r.clipId, patch: { gainDb: -2 } }] as never[],
+		});
+		await press(-1);
+		expect(clip().sfx!.soundId).toBe(first);
+		await press(-1);
+		expect(clip().sfx!.soundId).toBe(list[0]!.id);
+		// undo all: the ring goes with the steps that stored it
+		while (session.getState().history.index > k) expect(session.undo().ok).toBe(true);
+		expect(session.getCommitted().sequences[seqId]).toEqual(before);
+		expect(second).not.toBe(first);
+	});
+});

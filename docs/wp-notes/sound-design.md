@@ -2945,6 +2945,13 @@ Fixed:
   press skipped a variation, the label counted swaps that never happened); any selection change now closes a run; Next /
   Previous Variation are disabled for project audio whose only `sfx` is a detected peak (every press failed). Tests:
   `apps/web/test/sound-p2v-variation.test.tsx`.
+- **Variation cycling across runs** (`sound/swap.ts`, `sound/fill.ts`): each run rebuilt the list around the sound the
+  clip played (index 0 = current, `similarTo` current), so after another edit the next press went backwards and the
+  original was lost. The list is now anchored on the clip's ring (`sfx.alternatives`, original first — the convention of
+  `soundDesign.swap {alternatives}` and MCP `place_sound` / `swap_sound`): Fill and Fill Unfilled Cues store
+  [chosen, …up to 3 ranked], and the first variation step of a clip without a ring stores [the sound it plays] in the
+  same coalesced step (undone with it); a run starts at the clip's current sound in that list. The three existing
+  assertions on Fill's stored alternatives were updated to the ring format (same strength: exact contents).
 - **One toast per failure**: Fill Sound Cue, Fill Unfilled Cues, Detect Peak and the variation commands toasted their own
   warning and rethrew, so the runner added a second "… failed" toast; they throw `ReportedCommandError`
   (`commands/registry.ts`): agents still get `ran: false`.
