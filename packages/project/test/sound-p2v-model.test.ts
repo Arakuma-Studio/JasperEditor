@@ -213,6 +213,29 @@ describe('soundDesign.place on a cue whose clip was split (review)', () => {
 	});
 });
 
+describe('a cue stored under the key "__proto__" (Phase 2 verification, found by the repair property)', () => {
+	// A project file whose soundDesign.cues has an own "__proto__" key: zod's record parser skips that key, so the
+	// sound design passed INV-SOUND unread, repair kept the unreadable cue (renaming it) and the loaded document
+	// failed INV-SOUND (`frame` undefined).
+	it('loads repaired: the unreadable cue is dropped, a readable one kept under a new id', () => {
+		for (const json of [
+			'{"cues":{"__proto__":{"id":"__proto__"}}}',
+			'{"cues":{"__proto__":{"id":"__proto__","frame":30,"kind":"cut","weight":"hero","source":"user"}}}',
+		]) {
+			const h = new Harness();
+			const raw = clone(h.doc) as ProjectDocument;
+			(raw.sequences[h.seqId] as { soundDesign?: unknown }).soundDesign = JSON.parse(json);
+			const loaded = loadProject(raw, { ids: createCounterIdSource(1000) });
+			expect(loaded.issues, json).toEqual([]);
+			expect(checkInvariants(loaded.document)).toEqual([]);
+			const cues = Object.values(
+				(loaded.document.sequences[h.seqId]!.soundDesign as SoundDesign | undefined)?.cues ?? {},
+			);
+			expect(cues.map((c) => c.frame)).toEqual(json.includes('"frame"') ? [30] : []);
+		}
+	});
+});
+
 describe('repairDocument on hostile sound-design data (review, property)', () => {
 	/** An object whose keys are own properties whatever their name (`__proto__` included). */
 	function rec(entries: [string, unknown][]): Record<string, unknown> {
