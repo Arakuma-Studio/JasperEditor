@@ -25,11 +25,19 @@ export type SoundLibraryController = {
 	setTypes?(types: readonly string[]): void;
 	findSimilar(): void;
 	showLicense(): void;
+	/** Ranks by similarity to a sound (Find Similar Sounds on a clip, Replace mode); null clears it. */
+	setSimilar?(sound: { id: string; title: string } | null): void;
+	/** Shows a sound: searches its title in All sounds and selects it when it is in the results. */
+	reveal?(sound: { id: string; title: string }): void;
+	/** Plays the selected sound in context (Shift+Space). */
+	auditionInContext?(): void;
 };
 
 let active: SoundLibraryController | null = null;
 let pendingQuery: string | null = null;
 let pendingTypes: readonly string[] | null = null;
+/** Requests for a panel that is not mounted yet (applied in order when it registers). */
+let pendingActions: ((c: SoundLibraryController) => void)[] = [];
 
 export function registerSoundLibraryController(c: SoundLibraryController): () => void {
 	active = c;
@@ -41,9 +49,18 @@ export function registerSoundLibraryController(c: SoundLibraryController): () =>
 		c.setTypes?.(pendingTypes);
 		pendingTypes = null;
 	}
+	const actions = pendingActions;
+	pendingActions = [];
+	for (const a of actions) a(c);
 	return () => {
 		if (active === c) active = null;
 	};
+}
+
+/** Runs a request on the panel now, or when it mounts (the latest 8 requests are kept). */
+export function withSoundLibrary(action: (c: SoundLibraryController) => void): void {
+	if (active) action(active);
+	else pendingActions = [...pendingActions.slice(-7), action];
 }
 
 export function soundLibraryController(): SoundLibraryController | null {
@@ -68,6 +85,8 @@ export type CueFillTarget = {
 	types: readonly string[];
 	/** What the panel shows, e.g. "Hero Land cue at 00:00:04:02". */
 	label: string;
+	/** Add Layer…: the chosen sound is added as one more layer of the cue (linked to the others). */
+	layer?: boolean;
 };
 
 let fillTarget: CueFillTarget | null = null;
@@ -82,14 +101,73 @@ export function subscribeCueFill(l: () => void): () => void {
 	return () => fillListeners.delete(l);
 }
 
+const notifyMode = () => {
+	for (const l of [...fillListeners]) l();
+};
+
 /** Enters Fill mode for a cue: remembers it and presets the type filter (now, or when the panel mounts). */
 export function requestCueFill(target: CueFillTarget | null): void {
 	fillTarget = target;
 	if (target) {
+		clipTarget = null;
 		if (active?.setTypes) active.setTypes(target.types);
 		else pendingTypes = target.types;
 	}
-	for (const l of [...fillListeners]) l();
+	notifyMode();
+}
+
+/**
+ * Replace mode (Swap Sound…, Alt+Shift+S) and Add Layer… on a clip that fills no cue: the library chooses a sound for a
+ * placed clip. The panel shows a banner ("Replacing Crunch on A3 at 00:00:01:15 · Enter to swap · Esc to cancel") and
+ * Enter swaps (`soundDesign.swap`) or adds the layer (`soundDesign.place` on the clip's aligned frame, linked).
+ */
+export type ClipSoundTarget = {
+	kind: 'replace' | 'layer';
+	sequenceId: string;
+	clipId: string;
+	/** The clip's library sound (Replace mode ranks by similarity to it), or null. */
+	soundId: string | null;
+	/** The clip's sound name. */
+	title: string;
+	/** "Crunch on A3 at 00:00:01:15". */
+	label: string;
+};
+
+let clipTarget: ClipSoundTarget | null = null;
+
+export function clipSoundTarget(): ClipSoundTarget | null {
+	return clipTarget;
+}
+
+/** Enters Replace / clip-layer mode (clears Fill mode), or leaves it with null. */
+export function requestClipTarget(target: ClipSoundTarget | null): void {
+	clipTarget = target;
+	if (target) {
+		fillTarget = null;
+		if (target.kind === 'replace' && target.soundId) {
+			const similar = { id: target.soundId, title: target.title };
+			withSoundLibrary((c) => c.setSimilar?.(similar));
+		}
+	}
+	notifyMode();
+}
+
+/** Leaves Fill, Replace and layer modes (Esc in the Sound Library). */
+export function cancelLibraryMode(): boolean {
+	if (!fillTarget && !clipTarget) return false;
+	fillTarget = null;
+	clipTarget = null;
+	notifyMode();
+	return true;
+}
+
+/** A snapshot key of the mode (React external store). */
+export function libraryModeKey(): string {
+	return fillTarget
+		? `fill:${fillTarget.cueId}:${fillTarget.layer ? 1 : 0}`
+		: clipTarget
+			? `${clipTarget.kind}:${clipTarget.clipId}`
+			: '';
 }
 
 /** What the audition player needs of a library entry (its URL and format: long sounds stream). */

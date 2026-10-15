@@ -25,6 +25,12 @@ export type SoundLibraryPrefs = {
 	density: 'normal' | 'compact';
 	/** The Refine pills are shown. */
 	refineOpen: boolean;
+	/** Space, Auto-play and hover audition IN CONTEXT (the timeline with the candidate mixed in; spec 12 §2.7). */
+	inContext: boolean;
+	/** After a swap or a variation step, play the 2 s around the sound in context (default on). */
+	auditionOnSwap: boolean;
+	/** Seconds of the timeline played before the anchor in an In Context audition (0.5 … 10, default 2). */
+	preRollSec: number;
 };
 
 export const DEFAULT_SOUND_LIBRARY_PREFS: SoundLibraryPrefs = {
@@ -36,7 +42,13 @@ export const DEFAULT_SOUND_LIBRARY_PREFS: SoundLibraryPrefs = {
 	volumeDb: -6,
 	density: 'normal',
 	refineOpen: false,
+	inContext: false,
+	auditionOnSwap: true,
+	preRollSec: 2,
 };
+
+export const MIN_PRE_ROLL_SEC = 0.5;
+export const MAX_PRE_ROLL_SEC = 10;
 
 export const MIN_AUDITION_DB = -40;
 export const MAX_AUDITION_DB = 6;
@@ -72,6 +84,12 @@ export function parseSoundLibraryPrefs(raw: unknown): SoundLibraryPrefs {
 		volumeDb: vol,
 		density: o.density === 'compact' ? 'compact' : 'normal',
 		refineOpen: bool(o.refineOpen, d.refineOpen),
+		inContext: bool(o.inContext, d.inContext),
+		auditionOnSwap: bool(o.auditionOnSwap, d.auditionOnSwap),
+		preRollSec:
+			typeof o.preRollSec === 'number' && Number.isFinite(o.preRollSec)
+				? Math.min(MAX_PRE_ROLL_SEC, Math.max(MIN_PRE_ROLL_SEC, Math.round(o.preRollSec * 10) / 10))
+				: d.preRollSec,
 	};
 }
 

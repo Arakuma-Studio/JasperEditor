@@ -6,18 +6,15 @@
 // media to the "Sound Effects" bin (or reuses the project's copy) and runs `soundDesign.place` (spec 12 §2.9), which
 // adds the track if needed and the clip, tags it Essential Sound ▸ SFX and records its `AudioClip.sfx`.
 // Also the drag payload of the Sound Library (`application/x-jasper-sound`).
-import { type RegisterSoundResponse, SOUND_EFFECTS_BIN, type SoundEntry } from '@jasper/api';
+import type { RegisterSoundResponse, SoundEntry } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	audioTrackIsFree,
 	type Command,
 	chooseSoundTrack,
-	type MediaAsset,
-	mediaDurationFlicks,
 	nextSfxTrackName,
 	planSoundInsert,
 	type Rational,
-	readLibraryProvenance,
 	resolveSoundAlign,
 	type Sequence,
 	type SoundAlign,
@@ -29,11 +26,9 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { z } from 'zod';
-import { labelDefault, labelKindOfMedia } from '../gaps/app-prefs.ts';
 import { formatTimecode } from '../gaps/time-display.ts';
 import { t } from '../i18n/runtime.ts';
-import { buildMediaAsset } from '../import/assets.ts';
-import { findExistingMedia } from '../import/transaction.ts';
+import { type RegisteredSound, registerLibrarySounds, soundMediaCommands } from './library-media.ts';
 import { soundLibraryPrefs } from './prefs.ts';
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -169,25 +164,6 @@ export type InsertSoundResult = {
 
 export class InsertSoundError extends Error {}
 
-/** The root "Sound Effects" bin of the project, or null. */
-function soundEffectsBin(doc: ReturnType<EditorSession['getCommitted']>): string | null {
-	for (const id of doc.rootItems) {
-		const it = doc.items[id];
-		if (it?.kind === 'bin' && it.name === SOUND_EFFECTS_BIN) return it.id;
-	}
-	return null;
-}
-
-/** The media in the project for a registered sound: the engine's match (saved project), else the same file. */
-function existingMediaFor(
-	doc: ReturnType<EditorSession['getCommitted']>,
-	reg: RegisterSoundResponse,
-): string | null {
-	const byEngine = reg.existingMediaId;
-	if (byEngine && Object.hasOwn(doc.media, byEngine) && !doc.media[byEngine]!.derivation) return byEngine;
-	return findExistingMedia(doc, reg.fingerprint);
-}
-
 /**
  * Registers a library sound with the engine and inserts it, peak-aligned at `at` (default: the playhead) of the
  * active sequence, as ONE undoable transaction "Add Sound <title>". Throws `InsertSoundError` with a message for
@@ -217,49 +193,27 @@ export async function insertLibrarySound(
 
 	let reg: RegisterSoundResponse;
 	try {
-		reg = await engine.registerSound(entry.id, before.document.projectId);
+		[{ reg }] = (await registerLibrarySounds(engine, before.document.projectId, [entry], opts.signal)) as [
+			RegisteredSound,
+		];
 	} catch (e) {
-		throw new InsertSoundError(t('Could not add the sound: {0}', e instanceof Error ? e.message : String(e)));
+		throw new InsertSoundError(e instanceof Error ? e.message : String(e));
 	}
-	if (opts.signal?.aborted) throw new InsertSoundError(t('Cancelled'));
 
 	// The document after the await (other edits may have happened meanwhile).
 	const doc = session.getCommitted();
 	const seq = doc.sequences[sequenceId];
 	if (!seq) throw new InsertSoundError(t('The sequence was closed'));
 	const state = session.getState();
-	const commands: Command[] = [];
-	const existing = existingMediaFor(doc, reg);
-	let mediaRef: string;
-	let durFlicks: number | null;
+	const prepared = soundMediaCommands(session, doc, [{ entry, reg }]);
+	const commands: Command[] = [...prepared.commands];
+	const sm = prepared.media.get(entry.id)!;
+	const existing = sm.existing;
+	const mediaRef = sm.ref;
+	const durFlicks = sm.durFlicks;
 	// The timing of the media actually placed: its provenance describes that file (lead silence included).
-	let provenance = reg.library;
-	const title = entry.title || reg.library.title || reg.originalName;
-	if (existing) {
-		mediaRef = existing;
-		durFlicks = mediaDurationFlicks(doc.media[existing] as MediaAsset);
-		const own = readLibraryProvenance((doc.media[existing] as { library?: unknown }).library);
-		if (own) provenance = own;
-		else commands.push({ type: 'media.setLibraryInfo', mediaId: existing, library: reg.library } as Command);
-	} else {
-		let binId: string | null = soundEffectsBin(doc);
-		if (!binId) {
-			commands.push({ type: 'bin.create', name: SOUND_EFFECTS_BIN, ref: '$sfxBin' } as Command);
-			binId = '$sfxBin';
-		}
-		const asset = buildMediaAsset(reg, { id: session.ctx.ids.next('med'), now: new Date().toISOString() });
-		const label = labelDefault(labelKindOfMedia(asset));
-		commands.push({
-			type: 'media.register',
-			asset: { ...asset, library: reg.library },
-			binId,
-			name: title,
-			...(label ? { label } : {}),
-			ref: '$sound',
-		} as Command);
-		mediaRef = '$sound';
-		durFlicks = mediaDurationFlicks(asset);
-	}
+	const provenance = sm.provenance;
+	const title = sm.title;
 	// The plan (the same rules soundDesign.place applies) checks the sound can be placed before committing.
 	const timing = soundTimingOf(provenance, timingOf(entry));
 	const plan = planSoundPlacement({
