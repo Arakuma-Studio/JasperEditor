@@ -2601,6 +2601,7 @@ All 34 assigned files were rescanned against the integrated retained versions. T
 - Cleanup implemented: 23 deleted, 46 rewritten and 167 retained test declarations/families; the ledger lists the original names so every prior test is traceable.
 - `pnpm install --frozen-lockfile --offline` completed. It reported expected missing MCP executable links because ignored MCP build outputs are absent.
 - Targeted Biome check of edited TypeScript files and `git diff --check` passed; final staged diff reviewed.
+- During the independent-oracle follow-up, a pnpm launcher run crashed in Node/V8 cached-bytecode deserialization before Biome ran. Running the installed native Biome binary bypassed the launcher; its precision warning on one analytic literal was corrected to the representable value, then the full changed-file static check passed. No runtime test result is inferred from this check.
 - The 34-file baseline attempt was stopped before any verdict, to reduce shared-host load and avoid concurrent edits. It is not counted as passing.
 - Focused tests and `pnpm --filter @jasper/web typecheck` are pending the integration owner's coordinated run, as explicitly directed by the root agent. Repository lint/typecheck/test/build and specialized suites have not been claimed as passing here.
 - No product behavior change or runtime bug fix is claimed. The UI/browser/GL/export suites were not run in this shard; user interactions remain covered by retained tests, whose final results must be reported by integration.

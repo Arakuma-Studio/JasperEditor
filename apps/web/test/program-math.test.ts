@@ -129,7 +129,7 @@ describe('on-canvas transform math (S03 §9)', () => {
 			rect: RECT,
 			handle: 'se',
 			// A perpendicular offset from the doubled corner leaves its projection at 200%.
-			pointer: [1160.8397981738132, 1187.3940643391127],
+			pointer: [1160.8397981738133, 1187.3940643391127],
 		});
 		expect(r.uniformScale).toBe(true);
 		expect(r.scale).toBeCloseTo(200, 9);
