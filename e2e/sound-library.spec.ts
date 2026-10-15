@@ -3,10 +3,11 @@
 // playhead (Enter, one undo step, Essential Sound SFX, "Sound Effects" bin) → undo → drag onto the timeline with the
 // peak snapping to the playhead (ghost with peak tick) → File ▸ Export ▸ Sound Credits…. Screenshots of the panel
 // (normal, high contrast) and of the drag ghost go to test-results/e2e-sound-library.
-import { mkdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { appliedLabels, createProject, enableAgentBridge, query, ROOT } from './support.ts';
+import { appliedLabels, createProject, enableAgentBridge, exportViaUi, query, ROOT } from './support.ts';
 
 test.use({ launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] } });
 test.describe.configure({ mode: 'serial' });
@@ -33,10 +34,46 @@ async function sequence(p: Page): Promise<Seq> {
 	const seqs = await query<Record<string, Seq>>(p, 'doc.get', { path: ['sequences'] });
 	return Object.values(seqs)[0]!;
 }
-async function media(
-	p: Page,
-): Promise<Record<string, { id: string; library?: { soundId: string; descriptors?: { peakSec: number } } }>> {
+type Lib = {
+	soundId: string;
+	source?: { type: string; file?: string };
+	leadSilenceSec?: number;
+	descriptors?: { peakSec: number; onsetSec: number; durationSec: number };
+};
+async function media(p: Page): Promise<Record<string, { id: string; library?: Lib }>> {
 	return query(p, 'doc.get', { path: ['media'] });
+}
+
+/** The first channel of an audio file as 48 kHz float samples (ffmpeg). */
+function decodeMono(file: string): Float32Array {
+	const raw = execFileSync(
+		process.env.JASPER_FFMPEG ?? 'ffmpeg',
+		['-v', 'error', '-i', file, '-map', '0:a:0', '-af', 'pan=mono|c0=c0', '-ar', '48000', '-f', 'f32le', '-'],
+		{ maxBuffer: 256 * 1024 * 1024 },
+	);
+	return new Float32Array(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
+}
+
+/**
+ * Where `ref[w0, w1)` sits in `mix`, searching lags around `guess` (± `span` samples): the lag of the largest
+ * normalised cross-correlation. Sample-exact for a sound mixed in alone (other sounds are seconds away).
+ */
+function locate(mix: Float32Array, ref: Float32Array, w0: number, w1: number, guess: number, span: number) {
+	let best = { lag: Number.NaN, r: -2 };
+	let rr = 0;
+	for (let i = w0; i < w1; i++) rr += ref[i]! * ref[i]!;
+	for (let lag = guess - span; lag <= guess + span; lag++) {
+		let xy = 0;
+		let xx = 0;
+		for (let i = w0; i < w1; i++) {
+			const x = mix[lag + i] ?? 0;
+			xy += x * ref[i]!;
+			xx += x * x;
+		}
+		const r = xx > 0 && rr > 0 ? xy / Math.sqrt(xx * rr) : -1;
+		if (r > best.r) best = { lag, r };
+	}
+	return best;
 }
 const FLICKS = 705_600_000;
 
@@ -97,8 +134,8 @@ test('search, audition, insert peak-aligned, undo, drag with peak snapping, cred
 	expect(m.library?.soundId).toMatch(/^snd_/);
 	const F = (FLICKS * seq.settings.frameRate.den) / seq.settings.frameRate.num;
 	const peakAt = clip.start * F + m.library!.descriptors!.peakSec * FLICKS - clip.sourceIn;
-	expect(peakAt).toBeGreaterThanOrEqual(45 * F - 2);
-	expect(peakAt).toBeLessThan(46 * F);
+	// exact (errorFlicks 0): library sounds are registered with lead silence when their head is not quiet
+	expect(Math.abs(peakAt - 45 * F)).toBeLessThanOrEqual(2);
 	expect(JSON.stringify(clip)).toContain('"sfx"');
 	expect((await appliedLabels(page)).at(-1)).toMatch(/^Add Sound /);
 	expect(await page.locator('[data-testid="project-panel"]').innerText()).toContain('Sound Effects');
@@ -136,8 +173,8 @@ test('search, audition, insert peak-aligned, undo, drag with peak snapping, cred
 	const dropped = Object.values(seq.clips)[0]!;
 	const dm = (await media(page))[dropped.mediaId]!;
 	const droppedPeak = dropped.start * F + dm.library!.descriptors!.peakSec * FLICKS - dropped.sourceIn;
-	expect(droppedPeak).toBeGreaterThanOrEqual(45 * F - 2);
-	expect(droppedPeak).toBeLessThan(46 * F);
+	expect(Math.abs(droppedPeak - 45 * F)).toBeLessThanOrEqual(2);
+	// dropped on A1: the drop target is the user's explicit choice
 	expect(dropped.trackId).toBe(seq.audioTracks[0]!.id);
 
 	// File ▸ Export ▸ Sound Credits…
@@ -156,4 +193,88 @@ test('search, audition, insert peak-aligned, undo, drag with peak snapping, cred
 	await page.evaluate(() => document.documentElement.setAttribute('data-pr-contrast', 'high'));
 	await panel.screenshot({ path: join(outDir, 'panel-high-contrast.png') });
 	await page.evaluate(() => document.documentElement.removeAttribute('data-pr-contrast'));
+});
+
+test('inserted library sounds play their aligned point exactly on the frame in an export (ffmpeg)', async ({
+	request,
+}) => {
+	test.setTimeout(900_000);
+	await createProject(page, 'E2E Sound Peaks');
+	await page.keyboard.press('Alt+Shift+Digit9');
+	const panel = page.locator('[data-panel-kind="soundLibrary"][data-instance-id]');
+	await expect(panel).toBeVisible({ timeout: 60_000 });
+	const list = panel.getByRole('listbox', { name: 'Sounds' });
+	await expect(list.getByRole('option').first()).toBeVisible({ timeout: 360_000 });
+	await page.screenshot({ path: join(outDir, 'sound-design-workspace.png') });
+	// title → cue frame; the aligned point is the type's (peak, start for UI, end for risers)
+	const plan: { title: string; cue: number; align: 'peak' | 'start' | 'end' }[] = [
+		{ title: 'Heavy metal hit', cue: 30, align: 'peak' },
+		{ title: 'Punch', cue: 91, align: 'peak' },
+		{ title: 'Air whoosh, low', cue: 152, align: 'peak' },
+		{ title: 'Confirm blip', cue: 213, align: 'start' },
+		{ title: 'Computer hum riser', cue: 337, align: 'end' },
+	];
+	for (const [i, p] of plan.entries()) {
+		await panel.getByTestId('sound-search').fill(p.title);
+		const option = list.getByRole('option', { name: new RegExp(`^${p.title}`) }).first();
+		await expect(option).toBeVisible({ timeout: 30_000 });
+		await query(page, 'playhead.set', { frame: p.cue });
+		await option.click();
+		await page.keyboard.press('Enter');
+		await expect
+			.poll(async () => Object.keys((await sequence(page)).clips).length, { timeout: 60_000 })
+			.toBe(i + 1);
+	}
+	const seq = await sequence(page);
+	const all = await media(page);
+	const F = (FLICKS * seq.settings.frameRate.den) / seq.settings.frameRate.num;
+	const placed = plan.map((p) => {
+		const clip = Object.values(seq.clips).find(
+			(c) => all[c.mediaId]?.library && c.start <= p.cue && p.cue < c.start + c.duration + 2,
+		)!;
+		const lib = all[clip.mediaId]!.library!;
+		const lead = lib.leadSilenceSec ?? 0;
+		const d = lib.descriptors!;
+		const point = p.align === 'peak' ? d.peakSec : p.align === 'start' ? d.onsetSec : d.durationSec;
+		// the document: the aligned point plays exactly at the cue frame
+		const at = clip.start * F + point * FLICKS - clip.sourceIn;
+		expect(Math.abs(at - p.cue * F), p.title).toBeLessThanOrEqual(2);
+		return { ...p, clip, lib, lead, point };
+	});
+	// the loud-headed hits were registered with lead silence; nothing went on A1–A3
+	expect(placed[0]!.lead).toBe(0.05);
+	expect(placed.every((x) => seq.audioTracks.findIndex((t) => t.id === x.clip.trackId) >= 3)).toBe(true);
+	await page.screenshot({ path: join(outDir, 'peaks-timeline.png') });
+
+	const { file } = await exportViaUi(page, request, {
+		engine: 'native',
+		fileName: 'sound-p1-peaks.mp4',
+		expectPath: /native/i,
+		outDir,
+		jobTimeoutMs: 600_000,
+	});
+	const mix = decodeMono(file);
+	const SR = 48_000;
+	const report: Record<string, unknown>[] = [];
+	for (const x of placed) {
+		const kit = join(ROOT, 'apps', 'engine', 'sounds', 'starter', x.lib.source!.file!);
+		const ref = decodeMono(kit);
+		// the aligned point in the library file (the media's descriptors include the lead silence)
+		const refPoint = Math.round((x.point - x.lead) * SR);
+		const w0 = Math.max(
+			0,
+			Math.min(ref.length - 960, refPoint - (x.align === 'end' ? 960 : x.align === 'start' ? 0 : 480)),
+		);
+		const w1 = Math.min(ref.length, w0 + 960);
+		const cueSample = (x.cue * F * SR) / FLICKS;
+		const found = locate(mix, ref, w0, w1, Math.round(cueSample - refPoint), 3300);
+		const errorSamples = found.lag + refPoint - cueSample;
+		report.push({ title: x.title, align: x.align, cueSample, errorSamples, r: found.r, lead: x.lead });
+		expect(found.r, x.title).toBeGreaterThan(0.9);
+		// AAC and the 29.97 fps sample grid (1601.6 samples per frame): within 2 samples (≈ 0.04 ms)
+		expect(Math.abs(errorSamples), JSON.stringify(report)).toBeLessThanOrEqual(2);
+	}
+	test.info().annotations.push({ type: 'export alignment', description: JSON.stringify(report) });
+	console.log('export alignment', JSON.stringify(report));
+	expect(readFileSync(file).length).toBeGreaterThan(1000);
 });
