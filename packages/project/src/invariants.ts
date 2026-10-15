@@ -2209,13 +2209,14 @@ export function repairDocument(
 			note('add-item', s, 'sequence had no project item');
 		}
 	}
-	// sound-design: unreadable cues / clip metadata, dangling anchors, placed clips and cue links, duplicate cue ids.
-	repairSoundDesign(doc, ids, note);
 	// color-mgmt: unknown spaces and dangling LUT / OCIO references go back to automatic.
 	repairColor(doc as never, note);
 	// gaps: unreadable project settings, dangling proxies, channel maps, analyses, graphic layers.
 	repairGaps(doc, note);
 	for (const seq of Object.values(doc.sequences) as Sequence[]) repairTransitionsFinal(seq, note);
+	// sound-design: unreadable cues / clip metadata, dangling anchors, placed clips and cue links, duplicate cue ids.
+	// Last: its soft references must see every clip, transition and marker the passes above removed (idempotence).
+	repairSoundDesign(doc, ids, note);
 	return { document: doc, report };
 }
 

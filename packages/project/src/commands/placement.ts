@@ -9,6 +9,7 @@ import { trackKindFor } from '../registry/kinds.ts';
 import { ROTO_OBJECT_PARAMS } from '../roto/index.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { Clip, Sequence, TrackKind } from '../schema/sequence.ts';
+import { followSfxSplit } from '../sound/repair.ts';
 import { contentSpanFlicks } from '../time.ts';
 import type { DClip, DSeq, DTrack, HandlerContext } from './context.ts';
 import { deltaScans, isClean, keysOf, latest, peekIn, recordDelta, valuesOf } from './draft-read.ts';
@@ -264,6 +265,8 @@ export function splitClipAt(seq: DSeq, clip: DClip, at: number, h: HandlerContex
 	for (const t of valuesOf(seq.transitions)) {
 		if (t.outgoingClipId === clip.id) seq.transitions[t.id]!.outgoingClipId = right.id;
 	}
+	// sound-design: both parts of a filled SFX clip keep filling its cue.
+	followSfxSplit(seq as Sequence, clip.id, right.id);
 	return seq.clips[right.id]!;
 }
 

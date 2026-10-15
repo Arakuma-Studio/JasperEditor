@@ -11,6 +11,7 @@ import {
 	clipSfxIssue,
 	readClipSfx,
 	readSoundDesign,
+	SOUND_DESIGN_LIMITS,
 	type SoundCue,
 	type SoundDesign,
 	soundDesignIssue,
@@ -195,6 +196,27 @@ export function repairSoundDesign(doc: ProjectDocument, ids: IdSource, note: Not
 			note('unlink-sfx', c.id, 'the sound cue it filled no longer exists');
 		}
 	}
+}
+
+/**
+ * A split SFX clip keeps filling its cue with both parts (`splitClipAt`): the right part (a copy carrying the same
+ * `sfx`) joins the cue's `placedClipIds` right after the left one, so `soundCue.resync` / `update` move both parts and
+ * `soundCue.remove` with `withClips` lifts both. When the left part is not one of the cue's placed clips (a pasted copy)
+ * nothing changes; when the cue is full (`placedClips`) the right part forgets the cue. Mutates `seq` (a draft).
+ */
+export function followSfxSplit(seq: Sequence, leftId: string, rightId: string): void {
+	const right = seq.clips[rightId] as { kind: string; sfx?: unknown } | undefined;
+	const sfx = right?.sfx;
+	if (right?.kind !== 'audio' || !isRecord(sfx) || typeof sfx.cueId !== 'string') return;
+	const sd = (seq as { soundDesign?: unknown }).soundDesign;
+	if (!isRecord(sd) || !isRecord(sd.cues) || !Object.hasOwn(sd.cues, sfx.cueId)) return;
+	const cue = sd.cues[sfx.cueId];
+	const list = isRecord(cue) ? cue.placedClipIds : undefined;
+	if (!Array.isArray(list) || list.includes(rightId)) return;
+	const i = list.indexOf(leftId);
+	if (i < 0) return;
+	if (list.length >= SOUND_DESIGN_LIMITS.placedClips) sfx.cueId = null;
+	else list.splice(i + 1, 0, rightId);
 }
 
 /**
