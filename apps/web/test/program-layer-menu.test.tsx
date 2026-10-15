@@ -4,10 +4,7 @@ import {
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
-	layerMatrix,
-	layerQuad,
 	type MediaAsset,
-	visibleRect,
 } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -19,7 +16,7 @@ import {
 	registerAllCommands,
 	runCommand,
 } from '../src/commands/index.ts';
-import { ANCHOR_POINTS, anchorPatch, fitPatch, type LayerState } from '../src/panels/program/layer-ops.ts';
+import { anchorPatch, fitPatch, type LayerState } from '../src/panels/program/layer-ops.ts';
 import { videoAsset } from './timeline-helpers.ts';
 
 const engine = new EngineClient({ fetch: (async () => new Response('{}')) as unknown as typeof fetch });
@@ -97,10 +94,6 @@ function state(
 	} as LayerState;
 }
 
-const close = (a: number[], b: number[]) => {
-	for (const [i, v] of a.entries()) expect(v).toBeCloseTo(b[i]!, 3);
-};
-
 describe('Fit / Fill / Set to Native (XF-051)', () => {
 	it('fits the visible rect inside the frame, centred', () => {
 		expect(fitPatch(state({ scale: 40, position: [100, 100] }), FRAME, 'fit')).toEqual({
@@ -110,14 +103,11 @@ describe('Fit / Fill / Set to Native (XF-051)', () => {
 		});
 		// Left half cropped away: the visible 640×720 rect is fitted and centred.
 		const cropped = state({}, undefined, { left: 50, top: 0, right: 0, bottom: 0 });
-		const p = fitPatch(cropped, FRAME, 'fit')!;
-		expect(p.scale).toBe(150);
-		const m = layerMatrix({ ...cropped.values, ...p } as LayerState['values']);
-		const quad = layerQuad(m, visibleRect(cropped.box, cropped.crop!));
-		const xs = quad.map((q) => q[0]);
-		const ys = quad.map((q) => q[1]);
-		close([(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2], [960, 540]);
-		close([Math.max(...ys) - Math.min(...ys)], [1080]);
+		expect(fitPatch(cropped, FRAME, 'fit')).toEqual({
+			scale: 150,
+			scaleWidth: 150,
+			position: [480, 540],
+		});
 	});
 
 	it('uses the rotated bounds, fills by the larger ratio, and Set to Native only sets 100%', () => {
@@ -135,18 +125,25 @@ describe('Fit / Fill / Set to Native (XF-051)', () => {
 describe('Anchor ▸ (XF-038)', () => {
 	it('moves the anchor to each grid point of the visible rect without moving a pixel', () => {
 		const s = state(
-			{ rotation: 30, scale: 80, scaleWidth: 60, uniformScale: false, flipH: true, position: [700, 400] },
+			{ rotation: 90, scale: 80, scaleWidth: 60, uniformScale: false, flipH: true, position: [700, 400] },
 			undefined,
 			{ left: 10, top: 20, right: 0, bottom: 5 },
 		);
-		const rect = visibleRect(s.box, s.crop!);
-		const before = layerQuad(layerMatrix(s.values), rect);
-		for (const p of ANCHOR_POINTS) {
-			const patch = anchorPatch(s, p.id)!;
-			const after = layerQuad(layerMatrix({ ...s.values, ...patch }), rect);
-			for (const [i, q] of after.entries()) close(q, before[i]!);
+		// S03 §3.2 / XF-038: the visible rect spans (128,144) to (1280,684).
+		// After the 90° rotation and horizontal flip, x'=700−0.8(y−360), y'=400−0.6(x−640).
+		for (const [point, anchor, position] of [
+			['top-left', [128, 144], [872.8, 707.2]],
+			['top', [704, 144], [872.8, 361.6]],
+			['top-right', [1280, 144], [872.8, 16]],
+			['left', [128, 414], [656.8, 707.2]],
+			['center', [704, 414], [656.8, 361.6]],
+			['right', [1280, 414], [656.8, 16]],
+			['bottom-left', [128, 684], [440.8, 707.2]],
+			['bottom', [704, 684], [440.8, 361.6]],
+			['bottom-right', [1280, 684], [440.8, 16]],
+		] as const) {
+			expect(anchorPatch(s, point)).toEqual({ anchor, position });
 		}
-		expect(anchorPatch(s, 'top-left')!.anchor).toEqual([128, 144]);
 		expect(anchorPatch(state({}), 'center')).toBeNull();
 	});
 });

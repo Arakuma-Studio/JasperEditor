@@ -7,10 +7,11 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { runAgentInput } from '../src/agent-bridge/agent-input.ts';
 import { createCommandContext, getCommand, registerAllCommands, runCommand } from '../src/commands/index.ts';
-import { MG_PARAMETERS_SECTION, selectedMotionGraphics } from '../src/commands/polish.ts';
+import { selectedMotionGraphics } from '../src/commands/polish.ts';
 import { readDataTransfer } from '../src/import/service.ts';
 import { registerMediaBrowser } from '../src/panels/mediaBrowser/instances.ts';
 import { MediaBrowserPanel } from '../src/panels/mediaBrowser/MediaBrowserPanel.tsx';
+import { PropertiesPanel } from '../src/panels/properties/PropertiesPanel.tsx';
 import {
 	ENGINE_DIALOGS,
 	normalizeEngineAddress,
@@ -19,7 +20,7 @@ import {
 } from '../src/shell/engine-dialogs.tsx';
 import { EngineProvider } from '../src/state/engine.tsx';
 import { PanelServices } from '../src/state/panel-services.ts';
-import { HOST_PATHS_MIME, registerImportService, writeHostPathsDrag } from '../src/state/services.ts';
+import { registerImportService, writeHostPathsDrag } from '../src/state/services.ts';
 import { memorySession, ScriptedEngine } from './wp2e/helpers.ts';
 
 beforeAll(() => registerAllCommands());
@@ -164,13 +165,15 @@ describe('Media Browser helpers', () => {
 			effectAllowed: 'none',
 		} as unknown as DataTransfer;
 		writeHostPathsDrag(dt, ['/media/a.mp4', '/media/b.mov']);
-		expect(dt.types).toContain(HOST_PATHS_MIME);
+		expect(data.get('application/x-jasper-host-paths')).toBe('{"paths":["/media/a.mp4","/media/b.mov"]}');
+		data.clear();
+		data.set('application/x-jasper-host-paths', '{"paths":["/media/a.mp4","/media/b.mov"]}');
 		expect(readDataTransfer(dt)).toEqual({
 			type: 'os-files',
 			files: [],
 			paths: ['/media/a.mp4', '/media/b.mov'],
 		});
-		data.set(HOST_PATHS_MIME, '{broken');
+		data.set('application/x-jasper-host-paths', '{broken');
 		expect(readDataTransfer(dt)).toBeNull();
 	});
 });
@@ -302,6 +305,7 @@ describe('polish commands', () => {
 				{
 					type: 'clip.addMotionGraphic',
 					template: { id: 'lower-third', version: 1 },
+					params: { name: 'Reveal contract' },
 					at: 0,
 					duration: 90,
 					track: 'V1',
@@ -313,11 +317,18 @@ describe('polish commands', () => {
 		session.select('timeline', [clipId], 'replace', { primary: clipId, linked: false });
 		expect(selectedMotionGraphics(ctx)).toEqual([clipId]);
 		expect(cmd.when?.(ctx)).toBe(true);
-		await runCommand('mg.editParameters', ctx);
-		expect(focusPanel).toHaveBeenCalledWith('properties');
-		expect(JSON.parse(localStorage.getItem('jasper.inspector.sections') ?? '{}')[MG_PARAMETERS_SECTION]).toBe(
-			true,
+		render(
+			<SessionProvider session={session}>
+				<PropertiesPanel instanceId="parameters-contract" visible />
+			</SessionProvider>,
 		);
+		fireEvent.click(screen.getByText('Parameters · Lower Third').closest('button')!);
+		expect(screen.queryByDisplayValue('Reveal contract')).toBeNull();
+		await act(async () => {
+			await runCommand('mg.editParameters', ctx);
+		});
+		expect(focusPanel).toHaveBeenCalledWith('properties');
+		expect(screen.getByDisplayValue('Reveal contract')).toBeTruthy();
 	});
 });
 

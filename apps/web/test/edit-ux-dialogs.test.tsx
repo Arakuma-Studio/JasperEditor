@@ -1,5 +1,5 @@
 import { EngineClient } from '@jasper/engine-client';
-import { type Clip, FLICKS_PER_SECOND } from '@jasper/project';
+import type { Clip } from '@jasper/project';
 import { TransportStore } from '@jasper/session';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -127,7 +127,7 @@ describe('subclips and Mark Split', () => {
 		expect(sub).toMatchObject({
 			name: 'Take A',
 			restrictTrims: true,
-			range: { in: 2 * FLICKS_PER_SECOND, out: 4 * FLICKS_PER_SECOND },
+			range: { in: 1_411_200_000, out: 2_822_400_000 },
 		});
 		expect(h.session.getState().selection.project.items).toEqual([sub.id]);
 	});
@@ -144,7 +144,7 @@ describe('subclips and Mark Split', () => {
 		const it = h.session.getCommitted().items[h.itemId] as {
 			marks: { split?: { audioIn?: { flicks: number } } };
 		};
-		expect(it.marks.split?.audioIn?.flicks).toBe(1.5 * FLICKS_PER_SECOND);
+		expect(it.marks.split?.audioIn?.flicks).toBe(1_058_400_000);
 		h.session.transport.seek(200);
 		await runCommand('timeline.insertFromSource', h.ctx());
 		expect(h.spans('V1')).toEqual([[215, 275]]);

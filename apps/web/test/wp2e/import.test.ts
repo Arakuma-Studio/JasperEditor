@@ -3,7 +3,6 @@ import { ClientJobStore } from '../../src/import/client-jobs.ts';
 import type { ImportPrompts } from '../../src/import/prompts.ts';
 import { EngineImportService, readDataTransfer } from '../../src/import/service.ts';
 import { createUnloadGuard } from '../../src/import/unload-guard.ts';
-import { PROJECT_ITEMS_MIME } from '../../src/state/services.ts';
 import { memorySession, registered, ScriptedEngine } from './helpers.ts';
 
 function fakePrompts(
@@ -266,7 +265,9 @@ describe('EngineImportService', () => {
 			}) as unknown as DataTransfer;
 		const f = file('x.mp4');
 		expect(
-			readDataTransfer(make({ [PROJECT_ITEMS_MIME]: JSON.stringify({ itemIds: ['itm_1'] }) }, [f])),
+			readDataTransfer(
+				make({ 'application/x-jasper-project-items': JSON.stringify({ itemIds: ['itm_1'] }) }, [f]),
+			),
 		).toEqual({
 			type: 'jasper/project-items',
 			itemIds: ['itm_1'],

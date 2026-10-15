@@ -8,15 +8,14 @@ For each retained row, B1 is the independent requirement; B2 is the concrete fai
 
 ## 1. REWRITE: `apps/web/test/agent-ui-guard.test.tsx` — are marked as the agent’s; the editor’s own housekeeping never is
 
-- Failure detected: are marked as the agent’s; the editor’s own housekeeping never is. A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: docs/security-review.md (AGT-1/3), S01 AGT-011.
-- Remaining stronger coverage / B6: engine authorization tests do not cover synthetic UI input.
-- Non-test callers / B4: agent-bridge/index.ts, ui-automation.ts, state/engine.tsx, AgentApprovals.tsx; observed seam: agent input/session guard, request headers, approval DOM.
-- B2/B3: The named failure is user/caller-visible at that seam. Fixed fixture values, failure codes/state, and before/after document invariants specified by the scenario; expected outcomes are not obtained by invoking the owner under test.
-- B5: Refactoring internals while preserving agent input/session guard, request headers, approval DOM outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Rewrite: Replace test-only reset hook with trusted input; HTTP bytes/header expectations remain.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/agent-ui-guard.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: A renamed or missing wire header can bypass the engine approval gate even when client and test share the same wrong constant.
+- Independent contract / B1: docs/security-review.md AGT-3 explicitly specifies the x-jasper-agent-input HTTP header.
+- Independent oracle / B3 and rewrite: Read the literal 'x-jasper-agent-input' header and require its literal value '1'; do not import the shared API header constant.
+- Stable seam / B4: createEditorEngineClient HTTP requests. Non-test callers: state/engine.tsx and the engine request authentication boundary.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: Engine security tests own handling the header; this adapter test uniquely owns adding it only to agent-origin non-housekeeping requests.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/agent-ui-guard.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
 ## 2. KEEP: `apps/web/test/agent-ui-guard.test.tsx` — refuses destructive user-origin transactions while agent input is handled
 
@@ -31,15 +30,14 @@ For each retained row, B1 is the independent requirement; B2 is the concrete fai
 
 ## 3. REWRITE: `apps/web/test/agent-ui-guard.test.tsx` — covers asynchronous aftermath, ends after the grace period or a real user input
 
-- Failure detected: covers asynchronous aftermath, ends after the grace period or a real user input. A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: docs/security-review.md (AGT-1/3), S01 AGT-011.
-- Remaining stronger coverage / B6: engine authorization tests do not cover synthetic UI input.
-- Non-test callers / B4: agent-bridge/index.ts, ui-automation.ts, state/engine.tsx, AgentApprovals.tsx; observed seam: agent input/session guard, request headers, approval DOM.
-- B2/B3: The named failure is user/caller-visible at that seam. Fixed fixture values, failure codes/state, and before/after document invariants specified by the scenario; expected outcomes are not obtained by invoking the owner under test.
-- B5: Refactoring internals while preserving agent input/session guard, request headers, approval DOM outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Rewrite: Observe expiry using the browser clock and trusted key event; remove optional test clock argument.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/agent-ui-guard.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: A shortened grace period permits delayed destructive edits; a lengthened one blocks legitimate user edits.
+- Independent contract / B1: docs/security-review.md AGT-1 specifies 1.5 seconds of asynchronous protection and immediate release on trusted input.
+- Independent oracle / B3 and rewrite: Control the browser clock from an observed start; require protection at 1,499 ms and expiry at 1,500 ms, independently of the private constant.
+- Stable seam / B4: runAgentInput plus the session transaction guard. Non-test callers: agent bridge actions and session guard installation.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: Approval and engine tests do not exercise delayed frontend transaction provenance.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/agent-ui-guard.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
 ## 4. REWRITE: `apps/web/test/agent-ui-guard.test.tsx` — history.clear {confirmed: true} is refused for agent input and runs for the user
 
@@ -435,26 +433,25 @@ For each retained row, B1 is the independent requirement; B2 is the concrete fai
 
 ## 40. REWRITE: `apps/web/test/edit-ux-dialogs.test.tsx` — Make Subclip from the Source monitor marks; Edit Subclip renames and restricts
 
-- Failure detected: Make Subclip from the Source monitor marks; Edit Subclip renames and restricts. A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: S02 source edits/speed/subclip contracts; docs/wp-notes/edit-ux.md.
-- Remaining stronger coverage / B6: project source-edit tests do not map UI choices to editing inputs.
-- Non-test callers / B4: command/dialog hosts and Source monitor; observed seam: rendered dialog interaction and committed session document.
-- B2/B3: The named failure is user/caller-visible at that seam. Fixed fixture values, failure codes/state, and before/after document invariants specified by the scenario; expected outcomes are not obtained by invoking the owner under test.
-- B5: Refactoring internals while preserving rendered dialog interaction and committed session document outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Rewrite: Keep resulting subclip data and selection; drop private dialog-props shape assertion and false rename claim.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/edit-ux-dialogs.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: The UI converts two/four-second marks to the wrong persisted subclip range.
+- Independent contract / B1: S01 TIME-002/006 and S04 subclip marks require content-time flicks at 705,600,000 per second.
+- Independent oracle / B3 and rewrite: Require literal range 1,411,200,000 through 2,822,400,000 flicks; remove the imported time constant from expected values.
+- Stable seam / B4: SubclipDialog and committed session document. Non-test callers: edit-ux command/dialog registration.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: Core time conversion tests do not exercise this Source marks-to-dialog-to-subclip mapping.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/edit-ux-dialogs.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
-## 41. KEEP: `apps/web/test/edit-ux-dialogs.test.tsx` — Mark Split sets the audio In at the Source playhead and is used by Insert
+## 41. REWRITE: `apps/web/test/edit-ux-dialogs.test.tsx` — Mark Split sets the audio In at the Source playhead and is used by Insert
 
-- Failure detected: Mark Split sets the audio In at the Source playhead and is used by Insert. A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: S02 source edits/speed/subclip contracts; docs/wp-notes/edit-ux.md.
-- Remaining stronger coverage / B6: project source-edit tests do not map UI choices to editing inputs.
-- Non-test callers / B4: command/dialog hosts and Source monitor; observed seam: rendered dialog interaction and committed session document.
-- B2/B3: The named failure is user/caller-visible at that seam. Fixed fixture values, failure codes/state, and before/after document invariants specified by the scenario; expected outcomes are not obtained by invoking the owner under test.
-- B5: Refactoring internals while preserving rendered dialog interaction and committed session document outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/edit-ux-dialogs.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: The Source split command persists the wrong content time or Insert loses the half-second audio lead.
+- Independent contract / B1: S01 TIME-002/006 and S02 split-edit contracts preserve the Source audio In independently of video In.
+- Independent oracle / B3 and rewrite: Require literal 1,058,400,000 flicks at frame 45/30fps, plus existing independent resulting audio/video spans.
+- Stable seam / B4: source.markSplitAudioIn and timeline.insertFromSource command outputs. Non-test callers: Source monitor and timeline command dispatch.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: Core command tests do not own Source transport mapping and UI dispatch.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/edit-ux-dialogs.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
 ## 42. DELETE: `apps/web/test/edit-ux-dialogs.test.tsx` — Linked Selection toggles
 
@@ -857,16 +854,16 @@ For each retained row, B1 is the independent requirement; B2 is the concrete fai
 - Risk: Low: deleting incidental/duplicated assertions only; owning behavior coverage cited above remains.
 - Validation: `pnpm exec vitest run apps/web/test/polish-media-browser.test.tsx --maxWorkers=1` (remaining owner files if this file is deleted).
 
-## 79. KEEP: `apps/web/test/polish-media-browser.test.tsx` — a Media Browser drag reads as host paths
+## 79. REWRITE: `apps/web/test/polish-media-browser.test.tsx` — a Media Browser drag reads as host paths
 
-- Failure detected: a Media Browser drag reads as host paths. A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: S04 Media Browser/import; AGENTS §0 preserve unsaved work; security agent navigation rule.
-- Remaining stronger coverage / B6: import service tests lack browser selection; engine tests lack UI navigation/save gate.
-- Non-test callers / B4: MediaBrowserPanel, commands/polish.ts and shell engine dialogs; observed seam: browser DOM, import service, HTTP engine snapshot and connection dialog.
-- B2/B3: The named failure is user/caller-visible at that seam. Fixed fixture values, failure codes/state, and before/after document invariants specified by the scenario; expected outcomes are not obtained by invoking the owner under test.
-- B5: Refactoring internals while preserving browser DOM, import service, HTTP engine snapshot and connection dialog outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/polish-media-browser.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: A shared renamed MIME type makes producer and parser agree while breaking the documented drag protocol.
+- Independent contract / B1: docs/wp-notes/polish.md specifies application/x-jasper-host-paths for Media Browser drag/drop.
+- Independent oracle / B3 and rewrite: Require literal MIME and serialized paths bytes; separately parse a literal external payload instead of feeding the writer output to the reader.
+- Stable seam / B4: writeHostPathsDrag and readDataTransfer browser payloads. Non-test callers: MediaBrowserPanel, ProjectPanel and TimelinePanel.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: Panel workflows own import interactions; this lowest protocol seam owns drag bytes and malformed-payload refusal.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/polish-media-browser.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
 ## 80. REWRITE: `apps/web/test/polish-media-browser.test.tsx` — lists the start folder, navigates into folders and back up, and previews the selected file
 
@@ -915,16 +912,16 @@ For each retained row, B1 is the independent requirement; B2 is the concrete fai
 - Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
 - Validation: `pnpm exec vitest run apps/web/test/polish-media-browser.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
 
-## 84. KEEP: `apps/web/test/polish-media-browser.test.tsx` — Edit Parameters needs a motion-graphic clip and reveals Properties ▸ Parameters
+## 84. REWRITE: `apps/web/test/polish-media-browser.test.tsx` — Edit Parameters needs a motion-graphic clip and reveals Properties ▸ Parameters
 
-- Failure detected: Edit Parameters needs a motion-graphic clip and reveals Properties ▸ Parameters. A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: S04 Media Browser/import; AGENTS §0 preserve unsaved work; security agent navigation rule.
-- Remaining stronger coverage / B6: import service tests lack browser selection; engine tests lack UI navigation/save gate.
-- Non-test callers / B4: MediaBrowserPanel, commands/polish.ts and shell engine dialogs; observed seam: browser DOM, import service, HTTP engine snapshot and connection dialog.
-- B2/B3: The named failure is user/caller-visible at that seam. Fixed fixture values, failure codes/state, and before/after document invariants specified by the scenario; expected outcomes are not obtained by invoking the owner under test.
-- B5: Refactoring internals while preserving browser DOM, import service, HTTP engine snapshot and connection dialog outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/polish-media-browser.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: The command targets a nonexistent section, leaving parameter controls hidden despite its own matching storage-key assertion.
+- Independent contract / B1: docs/wp-notes/polish.md requires Edit Parameters to focus Properties and reveal the selected motion-graphic parameter controls.
+- Independent oracle / B3 and rewrite: Mount the real Properties panel, collapse its Parameters section through the UI, invoke the command and require the existing textbox to become available again.
+- Stable seam / B4: mg.editParameters command and rendered Properties control state. Non-test callers: commands/polish.ts and PropertiesPanel.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: The old E2E that merely opened this section was deleted; parameter editing E2E does not own this command reveal regression.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/polish-media-browser.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
 ## 85. DELETE: `apps/web/test/polish-media-browser.test.tsx` — Engine Status, Connect and Third-Party Notices open their dialogs
 
@@ -1065,16 +1062,16 @@ For each retained row, B1 is the independent requirement; B2 is the concrete fai
 - Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
 - Validation: `pnpm exec vitest run apps/web/test/preview-thumb.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
 
-## 98. KEEP: `apps/web/test/program-layer-menu.test.tsx` — fits the visible rect inside the frame, centred
+## 98. REWRITE: `apps/web/test/program-layer-menu.test.tsx` — fits the visible rect inside the frame, centred
 
-- Failure detected: fits the visible rect inside the frame, centred. A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: S03 XF-038/051 and S02 TL-266 editing requirements.
-- Remaining stronger coverage / B6: project param edits do not own fit/crop/anchor decisions or UI selection context.
-- Non-test callers / B4: commands/motion.ts and program menu; observed seam: layer patch math and registered layer-edit commands.
-- B2/B3: The named failure is user/caller-visible at that seam. Specified geometric invariant/tolerance, literal fixture dimensions and independent shared layer-matrix evaluation; never a second call to the edited transform solver for its expected answer.
-- B5: Refactoring internals while preserving layer patch math and registered layer-edit commands outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/program-layer-menu.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: A wrong crop or matrix shared by test and owner yields a shifted image but both sides agree.
+- Independent contract / B1: S03 XF-051 requires fitting the cropped visible rectangle and centering it in the frame.
+- Independent oracle / B3 and rewrite: For 50% left crop on 1280x720, require literal scale 150 and position [480,540], without visibleRect/layerMatrix/layerQuad.
+- Stable seam / B4: fitPatch returned Motion values. Non-test callers: commands/layer.ts motion.fit/motion.fill.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: Command integration retains history/keying; this lower operation seam uniquely covers crop-aware centering.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/program-layer-menu.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
 ## 99. KEEP: `apps/web/test/program-layer-menu.test.tsx` — uses the rotated bounds, fills by the larger ratio, and Set to Native only sets 100%
 
@@ -1087,16 +1084,16 @@ For each retained row, B1 is the independent requirement; B2 is the concrete fai
 - Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
 - Validation: `pnpm exec vitest run apps/web/test/program-layer-menu.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
 
-## 100. KEEP: `apps/web/test/program-layer-menu.test.tsx` — moves the anchor to each grid point of the visible rect without moving a pixel
+## 100. REWRITE: `apps/web/test/program-layer-menu.test.tsx` — moves the anchor to each grid point of the visible rect without moving a pixel
 
-- Failure detected: moves the anchor to each grid point of the visible rect without moving a pixel. A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: S03 XF-038/051 and S02 TL-266 editing requirements.
-- Remaining stronger coverage / B6: project param edits do not own fit/crop/anchor decisions or UI selection context.
-- Non-test callers / B4: commands/motion.ts and program menu; observed seam: layer patch math and registered layer-edit commands.
-- B2/B3: The named failure is user/caller-visible at that seam. Specified geometric invariant/tolerance, literal fixture dimensions and independent shared layer-matrix evaluation; never a second call to the edited transform solver for its expected answer.
-- B5: Refactoring internals while preserving layer patch math and registered layer-edit commands outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/program-layer-menu.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: A missing/wrong grid entry or wrong flip/rotation compensation silently moves the image.
+- Independent contract / B1: S03 XF-038 defines the nine visible-rectangle anchor grid points and preservation of image position.
+- Independent oracle / B3 and rewrite: Use an independent literal nine-point table on a cropped, 90-degree rotated and horizontally flipped fixture; require literal anchor and compensated position values.
+- Stable seam / B4: anchorPatch returned Motion values. Non-test callers: commands/layer.ts plus shell and Program context menus.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: The command test covers selection/dispatch; this lower owner covers every grid location and transform compensation without enumerating production ANCHOR_POINTS.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/program-layer-menu.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
 ## 101. KEEP: `apps/web/test/program-layer-menu.test.tsx` — Fit to Frame / Fill Frame / Set to Native: one step each, keyed at the playhead when animated
 
@@ -1164,27 +1161,27 @@ For each retained row, B1 is the independent requirement; B2 is the concrete fai
 - Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
 - Validation: `pnpm exec vitest run apps/web/test/program-layer-menu.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
 
-## 107. KEEP: `apps/web/test/program-math.test.ts` — zooms around the cursor keeping the sequence point fixed within 1 px (AC-PGM-3)
+## 107. REWRITE: `apps/web/test/program-math.test.ts` — zooms around the cursor keeping the sequence point fixed within 1 px (AC-PGM-3)
 
-- Failure detected: zooms around the cursor keeping the sequence point fixed within 1 px (AC-PGM-3). A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: S03 PGM-010..014, XF-001/030..037 and AC-PGM-3/AC-XF-1/AC-SNP-1/2.
-- Remaining stronger coverage / B6: these numerical editing tolerances are specified acceptance cases; DOM smoke lacks rotated/scaled boundary matrix.
-- Non-test callers / B4: TransformOverlay and ProgramPanel; observed seam: coordinate transforms/hit tests/snap calculations used by Program gestures.
-- B2/B3: The named failure is user/caller-visible at that seam. Specified geometric invariant/tolerance, literal fixture dimensions and independent shared layer-matrix evaluation; never a second call to the edited transform solver for its expected answer.
-- B5: Refactoring internals while preserving coordinate transforms/hit tests/snap calculations used by Program gestures outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/program-math.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: Matching errors in computeView/toSequence/toScreen can conceal a viewport jump.
+- Independent contract / B1: S03 PGM-011/012/020 and AC-PGM-3 specify 16px fit padding and cursor-fixed zoom.
+- Independent oracle / B3 and rewrite: Use a 1952x1112 viewport around a 1920x1080 frame: the fit origin is [16,16], pointer [1116,416] maps to [1100,400], and 25/100/400% zoom pans are fixed literals.
+- Stable seam / B4: viewport public mapping and zoomAround return values. Non-test callers: Program viewport and overlay.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: DOM interaction tests own input dispatch; this lowest mathematical seam owns pixel-to-sequence conversion and cursor compensation.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/program-math.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
-## 108. KEEP: `apps/web/test/program-math.test.ts` — clamps pan so at least 10 % / 48 px of the frame stays visible
+## 108. REWRITE: `apps/web/test/program-math.test.ts` — clamps pan so at least 10 % / 48 px of the frame stays visible
 
-- Failure detected: clamps pan so at least 10 % / 48 px of the frame stays visible. A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: S03 PGM-010..014, XF-001/030..037 and AC-PGM-3/AC-XF-1/AC-SNP-1/2.
-- Remaining stronger coverage / B6: these numerical editing tolerances are specified acceptance cases; DOM smoke lacks rotated/scaled boundary matrix.
-- Non-test callers / B4: TransformOverlay and ProgramPanel; observed seam: coordinate transforms/hit tests/snap calculations used by Program gestures.
-- B2/B3: The named failure is user/caller-visible at that seam. Specified geometric invariant/tolerance, literal fixture dimensions and independent shared layer-matrix evaluation; never a second call to the edited transform solver for its expected answer.
-- B5: Refactoring internals while preserving coordinate transforms/hit tests/snap calculations used by Program gestures outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/program-math.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: Wrong clamp/centering shared by clampPan and computeView could leave the whole frame offscreen.
+- Independent contract / B1: S03 PGM-014 requires retaining at least 10% or 48 screen pixels of the frame.
+- Independent oracle / B3 and rewrite: Check literal clamped pan values [1168,-732] at scale 1 and [448,-306] at scale 0.1, independently of computeView.
+- Stable seam / B4: clampPan return value. Non-test callers: Program viewport zoom/pan handler.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: This is the lowest owner of the explicit visibility bound; higher interaction tests do not cover both percentage and minimum-pixel branches.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/program-math.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
 ## 109. KEEP: `apps/web/test/program-math.test.ts` — picks the topmost layer whose quad contains the point, skipping locked tracks (XF-001)
 
@@ -1197,60 +1194,60 @@ For each retained row, B1 is the independent requirement; B2 is the concrete fai
 - Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
 - Validation: `pnpm exec vitest run apps/web/test/program-math.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
 
-## 110. KEEP: `apps/web/test/program-math.test.ts` — moves every handle onto the cursor with ≤ 1 screen px error at 25/100/400 % (AC-XF-1)
+## 110. REWRITE: `apps/web/test/program-math.test.ts` — moves every handle onto the cursor with ≤ 1 screen px error at 25/100/400 % (AC-XF-1)
 
-- Failure detected: moves every handle onto the cursor with ≤ 1 screen px error at 25/100/400 % (AC-XF-1). A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: S03 PGM-010..014, XF-001/030..037 and AC-PGM-3/AC-XF-1/AC-SNP-1/2.
-- Remaining stronger coverage / B6: these numerical editing tolerances are specified acceptance cases; DOM smoke lacks rotated/scaled boundary matrix.
-- Non-test callers / B4: TransformOverlay and ProgramPanel; observed seam: coordinate transforms/hit tests/snap calculations used by Program gestures.
-- B2/B3: The named failure is user/caller-visible at that seam. Specified geometric invariant/tolerance, literal fixture dimensions and independent shared layer-matrix evaluation; never a second call to the edited transform solver for its expected answer.
-- B5: Refactoring internals while preserving coordinate transforms/hit tests/snap calculations used by Program gestures outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/program-math.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: Wrong axis, inverse rotation or scale factors can pass when expected pointer and resulting image both use the same matrix helper.
+- Independent contract / B1: S03 XF-029/030 and AC-XF-1 specify all eight handle drags on the rotated 37-degree, 150%/80%, left-cropped fixture.
+- Independent oracle / B3 and rewrite: Use eight literal sequence-space cursor positions derived from the documented transform equation and require independently chosen 120%/60% targets (unchanged axis on edge handles); remove ineffective post-hoc zoom multiplication.
+- Stable seam / B4: scaleFromHandle returned Motion values. Non-test callers: TransformOverlay scaling gesture.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: This is the lowest owner for gesture-to-parameter math; renderer matrix tests own drawing and UI tests own screen-to-sequence conversion.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/program-math.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
-## 111. KEEP: `apps/web/test/program-math.test.ts` — keeps the opposite handle fixed with Alt and writes position (XF-031)
+## 111. REWRITE: `apps/web/test/program-math.test.ts` — keeps the opposite handle fixed with Alt and writes position (XF-031)
 
-- Failure detected: keeps the opposite handle fixed with Alt and writes position (XF-031). A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: S03 PGM-010..014, XF-001/030..037 and AC-PGM-3/AC-XF-1/AC-SNP-1/2.
-- Remaining stronger coverage / B6: these numerical editing tolerances are specified acceptance cases; DOM smoke lacks rotated/scaled boundary matrix.
-- Non-test callers / B4: TransformOverlay and ProgramPanel; observed seam: coordinate transforms/hit tests/snap calculations used by Program gestures.
-- B2/B3: The named failure is user/caller-visible at that seam. Specified geometric invariant/tolerance, literal fixture dimensions and independent shared layer-matrix evaluation; never a second call to the edited transform solver for its expected answer.
-- B5: Refactoring internals while preserving coordinate transforms/hit tests/snap calculations used by Program gestures outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/program-math.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: A wrong opposite-handle mapping or shared matrix error moves the supposedly fixed point.
+- Independent contract / B1: S03 XF-031 requires Alt scaling about the opposite handle and writing compensated position.
+- Independent oracle / B3 and rewrite: Use eight literal 90-degree fixture pointer/position pairs with independently prescribed 200%/100% scales and unchanged edge axes.
+- Stable seam / B4: scaleFromHandle aboutOpposite result. Non-test callers: TransformOverlay Alt scaling gesture.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: This lower owner distinguishes all opposite mappings; package matrix tests and generic scale UI tests do not exercise them.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/program-math.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
-## 112. KEEP: `apps/web/test/program-math.test.ts` — scales uniformly by projection on corners and clamps instead of flipping (XF-030/032)
+## 112. REWRITE: `apps/web/test/program-math.test.ts` — scales uniformly by projection on corners and clamps instead of flipping (XF-030/032)
 
-- Failure detected: scales uniformly by projection on corners and clamps instead of flipping (XF-030/032). A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: S03 PGM-010..014, XF-001/030..037 and AC-PGM-3/AC-XF-1/AC-SNP-1/2.
-- Remaining stronger coverage / B6: these numerical editing tolerances are specified acceptance cases; DOM smoke lacks rotated/scaled boundary matrix.
-- Non-test callers / B4: TransformOverlay and ProgramPanel; observed seam: coordinate transforms/hit tests/snap calculations used by Program gestures.
-- B2/B3: The named failure is user/caller-visible at that seam. Specified geometric invariant/tolerance, literal fixture dimensions and independent shared layer-matrix evaluation; never a second call to the edited transform solver for its expected answer.
-- B5: Refactoring internals while preserving coordinate transforms/hit tests/snap calculations used by Program gestures outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/program-math.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: A wrong matrix-generated target can conceal projection errors or an axis mismatch.
+- Independent contract / B1: S03 XF-030/032 specify uniform scaling, Shift inversion and the 0.1% non-flipping clamp.
+- Independent oracle / B3 and rewrite: Use independent literal corner coordinates plus a perpendicular cursor offset that projects onto uniform 200%; require both scales to be 200% and retain literal clamp and inverted-mode outcomes.
+- Stable seam / B4: scaleFromHandle result. Non-test callers: TransformOverlay scaling gesture.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: This lower owner covers uniform projection/refusal of negative scaling; other cases cover free scaling.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/program-math.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
-## 113. KEEP: `apps/web/test/program-math.test.ts` — rotates with unwrapping, Shift 15° steps and the 90° snap (XF-035)
+## 113. REWRITE: `apps/web/test/program-math.test.ts` — rotates with unwrapping, Shift 15° steps and the 90° snap (XF-035)
 
-- Failure detected: rotates with unwrapping, Shift 15° steps and the 90° snap (XF-035). A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: S03 PGM-010..014, XF-001/030..037 and AC-PGM-3/AC-XF-1/AC-SNP-1/2.
-- Remaining stronger coverage / B6: these numerical editing tolerances are specified acceptance cases; DOM smoke lacks rotated/scaled boundary matrix.
-- Non-test callers / B4: TransformOverlay and ProgramPanel; observed seam: coordinate transforms/hit tests/snap calculations used by Program gestures.
-- B2/B3: The named failure is user/caller-visible at that seam. Specified geometric invariant/tolerance, literal fixture dimensions and independent shared layer-matrix evaluation; never a second call to the edited transform solver for its expected answer.
-- B5: Refactoring internals while preserving coordinate transforms/hit tests/snap calculations used by Program gestures outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/program-math.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: Generating pointer positions with the owner rotate helper can conceal a wrong orientation convention.
+- Independent contract / B1: S03 XF-035 requires continuous rotation unwrapping, Shift 15-degree steps and the 90-degree snap.
+- Independent oracle / B3 and rewrite: Feed two literal cardinal-point circuits and retain independently specified 730-degree final rotation and 15/90-degree snap outcomes.
+- Stable seam / B4: RotationTracker and snapRotation. Non-test callers: TransformOverlay rotation gesture.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: This lower owner uniquely covers multiple complete turns and snap thresholds.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/program-math.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
-## 114. KEEP: `apps/web/test/program-math.test.ts` — moves the anchor without moving the image (XF-037, AC-XF-2 logic)
+## 114. REWRITE: `apps/web/test/program-math.test.ts` — moves the anchor without moving the image (XF-037, AC-XF-2 logic)
 
-- Failure detected: moves the anchor without moving the image (XF-037, AC-XF-2 logic). A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: S03 PGM-010..014, XF-001/030..037 and AC-PGM-3/AC-XF-1/AC-SNP-1/2.
-- Remaining stronger coverage / B6: these numerical editing tolerances are specified acceptance cases; DOM smoke lacks rotated/scaled boundary matrix.
-- Non-test callers / B4: TransformOverlay and ProgramPanel; observed seam: coordinate transforms/hit tests/snap calculations used by Program gestures.
-- B2/B3: The named failure is user/caller-visible at that seam. Specified geometric invariant/tolerance, literal fixture dimensions and independent shared layer-matrix evaluation; never a second call to the edited transform solver for its expected answer.
-- B5: Refactoring internals while preserving coordinate transforms/hit tests/snap calculations used by Program gestures outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/program-math.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: A wrong matrix shared by expected and actual image mapping can hide wrong anchor/position values.
+- Independent contract / B1: S03 XF-037 explicitly specifies anchor compensation without image movement.
+- Independent oracle / B3 and rewrite: For the documented 37-degree nonuniform fixture and [37,-12] drag, require literal anchor [334.8851557292835,140.18652252850836] and position [937,488], from the independent S03 transform equation.
+- Stable seam / B4: moveAnchor returned Motion values. Non-test callers: TransformOverlay anchor gesture.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: This lowest operation owner covers inverse rotation/scale compensation; rendering tests own matrix application.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/program-math.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
 ## 115. KEEP: `apps/web/test/program-math.test.ts` — engages within 6 ± 1 screen px at 50 % and 200 % (AC-SNP-1)
 
@@ -1363,38 +1360,38 @@ For each retained row, B1 is the independent requirement; B2 is the concrete fai
 - Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
 - Validation: `pnpm exec vitest run apps/web/test/shell.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
 
-## 125. KEEP: `apps/web/test/shell.test.tsx` — a newer workspace storage version falls back without loading its data (SH-021)
+## 125. REWRITE: `apps/web/test/shell.test.tsx` — a newer workspace storage version falls back without loading its data (SH-021)
 
-- Failure detected: a newer workspace storage version falls back without loading its data (SH-021). A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: S05 SH-020..023/WS-010/014, KB-002/006/007, MN-004/010/011.
-- Remaining stronger coverage / B6: project persistence/command tests do not own browser layout, focus or shortcut precedence.
-- Non-test callers / B4: shell workspace store, key dispatcher and MenuBar; observed seam: versioned workspace storage, keyboard DOM events and resolved menus.
-- B2/B3: The named failure is user/caller-visible at that seam. Fixed fixture values, failure codes/state, and before/after document invariants specified by the scenario; expected outcomes are not obtained by invoking the owner under test.
-- B5: Refactoring internals while preserving versioned workspace storage, keyboard DOM events and resolved menus outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/shell.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: Changing the storage key alongside the imported test key can hide loss of existing workspace preferences.
+- Independent contract / B1: S05 SH-021 and docs/wp-notes/WP-2A.md specify versioned jasper:workspaces storage compatibility.
+- Independent oracle / B3 and rewrite: Seed and inspect the literal 'jasper:workspaces' key, while retaining the independent newer-version reset expectations.
+- Stable seam / B4: WorkspaceStore loading persisted ShellStorage bytes. Non-test callers: WorkspaceStore in the application shell.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: Other stores do not own this historical storage path; shell rendering does not verify its version fallback.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/shell.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
-## 126. KEEP: `apps/web/test/shell.test.tsx` — ignores inherited object keys as workspace ids (storage and workspace.switch args)
+## 126. REWRITE: `apps/web/test/shell.test.tsx` — ignores inherited object keys as workspace ids (storage and workspace.switch args)
 
-- Failure detected: ignores inherited object keys as workspace ids (storage and workspace.switch args). A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: S05 SH-020..023/WS-010/014, KB-002/006/007, MN-004/010/011.
-- Remaining stronger coverage / B6: project persistence/command tests do not own browser layout, focus or shortcut precedence.
-- Non-test callers / B4: shell workspace store, key dispatcher and MenuBar; observed seam: versioned workspace storage, keyboard DOM events and resolved menus.
-- B2/B3: The named failure is user/caller-visible at that seam. Fixed fixture values, failure codes/state, and before/after document invariants specified by the scenario; expected outcomes are not obtained by invoking the owner under test.
-- B5: Refactoring internals while preserving versioned workspace storage, keyboard DOM events and resolved menus outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/shell.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: A wrong storage key causes a malformed fixture to be skipped rather than exercising prototype-key rejection.
+- Independent contract / B1: S05 SH-020/024 and AGENTS entry validation require ignoring prototype keys in stored workspace ids.
+- Independent oracle / B3 and rewrite: Seed the documented literal 'jasper:workspaces' key so the negative fixture reaches the owner; preserve constructor/toString rejection and default state assertions.
+- Stable seam / B4: WorkspaceStore persisted input and setActive. Non-test callers: application shell workspace commands.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: This lowest storage seam uniquely guards inherited-key rejection; rendering has no equivalent malformed-id case.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/shell.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
-## 127. KEEP: `apps/web/test/shell.test.tsx` — state saved by a build that had the Agent panel still loads (wp-mcp)
+## 127. REWRITE: `apps/web/test/shell.test.tsx` — state saved by a build that had the Agent panel still loads (wp-mcp)
 
-- Failure detected: state saved by a build that had the Agent panel still loads (wp-mcp). A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: S05 SH-020..023/WS-010/014, KB-002/006/007, MN-004/010/011.
-- Remaining stronger coverage / B6: project persistence/command tests do not own browser layout, focus or shortcut precedence.
-- Non-test callers / B4: shell workspace store, key dispatcher and MenuBar; observed seam: versioned workspace storage, keyboard DOM events and resolved menus.
-- B2/B3: The named failure is user/caller-visible at that seam. Fixed fixture values, failure codes/state, and before/after document invariants specified by the scenario; expected outcomes are not obtained by invoking the owner under test.
-- B5: Refactoring internals while preserving versioned workspace storage, keyboard DOM events and resolved menus outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/shell.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: A renamed shared key can discard all old data while fallback defaults make most assertions pass.
+- Independent contract / B1: docs/wp-notes/wp-mcp.md retired Agent workspace compatibility and WP-2A persisted path.
+- Independent oracle / B3 and rewrite: Seed historical bytes under literal 'jasper:workspaces'; require retained custom workspace plus retired Agent fallback.
+- Stable seam / B4: WorkspaceStore historical persisted input. Non-test callers: application shell workspace initialization.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: This lowest compatibility seam uniquely verifies preserving custom data while removing a retired built-in.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/shell.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
 
 ## 128. KEEP: `apps/web/test/shell.test.tsx` — persists a saved workspace and imports a duplicate name with a suffix (WS-010, WS-014)
 
@@ -2575,28 +2572,33 @@ For each retained row, B1 is the independent requirement; B2 is the concrete fai
 - Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
 - Validation: `pnpm exec vitest run apps/web/test/wp2e/import.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
 
-## 236. KEEP: `apps/web/test/wp2e/import.test.ts` — reads DataTransfer payloads: in-app items first, then OS files
+## 236. REWRITE: `apps/web/test/wp2e/import.test.ts` — reads DataTransfer payloads: in-app items first, then OS files
 
-- Failure detected: reads DataTransfer payloads: in-app items first, then OS files. A wrong result, missing effect or changed externally observable state in this scenario fails the assertion.
-- Independent contract / B1: S01 LIFE-010; S04 IN-003/007/013; S07 PRC-019.
-- Remaining stronger coverage / B6: engine registration and project commands cannot test frontend batch prompting/transaction boundaries.
-- Non-test callers / B4: ProjectPanel/TimelinePanel import services; observed seam: EngineImportService HTTP, DataTransfer and session commit result.
-- B2/B3: The named failure is user/caller-visible at that seam. Fixed fixture values, failure codes/state, and before/after document invariants specified by the scenario; expected outcomes are not obtained by invoking the owner under test.
-- B5: Refactoring internals while preserving EngineImportService HTTP, DataTransfer and session commit result outputs leaves this scenario valid; no source text, wrapper identity or CSS tree is required.
-- Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
-- Validation: `pnpm exec vitest run apps/web/test/wp2e/import.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
+- Failure detected / B2: A shared MIME rename can bypass the old drag protocol while the test arranges the new wrong key.
+- Independent contract / B1: docs/wp-notes/WP-2B.md specifies application/x-jasper-project-items payloads and S04 import precedence.
+- Independent oracle / B3 and rewrite: Provide the literal 'application/x-jasper-project-items' payload with competing Files; retain exact item selection and OS fallback assertions.
+- Stable seam / B4: readDataTransfer browser payload parser. Non-test callers: ProjectPanel and TimelinePanel drop handling.
+- Refactor stability / B5: The assertion observes documented protocol bytes, user-visible control state or semantic operation outputs; it does not import the owner's expected-value helper or depend on private call shape. Identifier-only implementation changes preserve these outcomes.
+- Lowest owner / B6 and remaining stronger coverage: This lowest parser owns precedence/protocol compatibility; UI import workflows own commits and prompts.
+- Risk: No production behavior change; independent literals can now expose correlated baseline defects that previously passed. Any such failure requires fixing its owner, not deleting the assertion.
+- Validation: `pnpm exec vitest run apps/web/test/wp2e/import.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`. Follow-up runtime validation is pending the integration owner's slot; static checks only in this shard.
+
+## Independent-oracle rescan
+
+All 34 assigned files were rescanned against the integrated retained versions. The rows above record the narrow follow-ups before editing. Inputs created with a valid project/schema factory, dynamic IDs, unchanged state captured for undo, and session outputs used to verify relationships were not mistaken for expected-value generation. In particular, the speech mix fingerprint is a valid-job precondition; rejection after a changed mix has an independent expected outcome. Keymap duplicate checks have an independent empty-collision invariant; the imported configuration is the subject, not the expected answer. FLICKS_PER_SECOND used only to construct tracking source-time fixtures remains setup; split-mark expected values now use the documented unit directly.
 
 ## Production/support cleanup completed
 
 - Remove app-internal test-only exports for key/chord parsing, interactive role classification, media-browser formatting/filtering, feature summaries, placement labels, Find scope mapping, confidence classes and timeout calculation. Functions remain local for production callers.
 - Remove the web re-export of the project match-frame query after eliminating duplicated assertions; the package public export remains.
 - Remove the agent-input reset hook and optional test clock argument; retained security tests use trusted input events and the browser clock.
+- Remove the agent grace-period constant and Motion Graphic parameter-section constant exports after replacing their only external test callers; production consumers are local. The public API header export and menu/MIME constants with real callers remain.
 - Remove DynamicTrim class export and clock/RAF constructor/entry-point injection; only tests supplied the overrides. Default performance clock and RAF behavior stay unchanged; tests control browser APIs.
 - Delete the large timeline rendering fixture with its implementation-count test. Shared inspector/timeline/tracking/import helpers still have real retained consumers; no orphan assets or snapshots identified.
 
 ## Validation results
 
-- Cleanup implemented: 23 deleted, 30 rewritten and 183 retained test declarations/families; the ledger lists the original names so every prior test is traceable.
+- Cleanup implemented: 23 deleted, 46 rewritten and 167 retained test declarations/families; the ledger lists the original names so every prior test is traceable.
 - `pnpm install --frozen-lockfile --offline` completed. It reported expected missing MCP executable links because ignored MCP build outputs are absent.
 - Targeted Biome check of edited TypeScript files and `git diff --check` passed; final staged diff reviewed.
 - The 34-file baseline attempt was stopped before any verdict, to reduce shared-host load and avoid concurrent edits. It is not counted as passing.

@@ -15,7 +15,7 @@ import { approvalReasons, type Issue } from '@jasper/project';
 import type { SessionTxInput } from '@jasper/session';
 
 /** How long after an agent input action asynchronous effects still count as agent-driven. */
-export const AGENT_INPUT_GRACE_MS = 1500;
+const AGENT_INPUT_GRACE_MS = 1500;
 
 /** UI commands an agent may not run through the live UI (irreversible, outside the undo history). */
 export const AGENT_UI_REFUSED_COMMANDS: ReadonlySet<string> = new Set(['history.clear', 'file.revert']);

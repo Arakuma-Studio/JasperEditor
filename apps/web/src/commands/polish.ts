@@ -21,7 +21,7 @@ import type { CommandCtx, UiCommand } from './types.ts';
 const editable = (ctx: CommandCtx) => !!ctx.session && !ctx.session.getState().readOnly;
 
 /** The section of the Properties panel that holds a motion-graphic clip's template parameters. */
-export const MG_PARAMETERS_SECTION = 'properties.template';
+const MG_PARAMETERS_SECTION = 'properties.template';
 
 /** Motion-graphic clips of the timeline selection (the active sequence). */
 export function selectedMotionGraphics(ctx: CommandCtx): string[] {
