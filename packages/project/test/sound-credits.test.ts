@@ -64,6 +64,23 @@ describe('soundCredits (spec 12 §2.1, P1-R8)', () => {
 		);
 	});
 
+	it('lists only the sounds that need a credit with attributionOnly, keeping every warning', () => {
+		const p = project();
+		const all = soundCredits(p.h.doc, p.h.seqId);
+		const only = soundCredits(p.h.doc, p.h.seqId, { attributionOnly: true });
+		expect(only.rows.length).toBeGreaterThan(0);
+		expect(only.rows.every((r) => r.requiresAttribution)).toBe(true);
+		expect(only.rows.map((r) => r.soundId)).toEqual(
+			all.rows.filter((r) => r.requiresAttribution).map((r) => r.soundId),
+		);
+		expect(only.rows.some((r) => r.soundId === 'snd_cc0')).toBe(false);
+		expect(only.text).not.toContain('Zap Short');
+		expect(only.markdown).not.toContain('Zap Short');
+		expect(only.csv).not.toContain('snd_cc0');
+		expect(only.csv.trimEnd().split('\r\n')).toHaveLength(1 + only.rows.length);
+		expect(only.warnings).toEqual(all.warnings);
+	});
+
 	it('warns about non-commercial, undeclared and unknown licences', () => {
 		const p = project();
 		const c = soundCredits(p.h.doc, p.h.seqId);

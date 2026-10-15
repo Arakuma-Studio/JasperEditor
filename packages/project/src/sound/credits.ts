@@ -53,6 +53,11 @@ export interface SoundCredits {
 export interface SoundCreditsOptions {
 	/** Also list library media the clips do not use (only without a sequence id). Default false. */
 	includeUnused?: boolean;
+	/**
+	 * Only the sounds whose licence asks for a credit (CC-BY, CC-BY-SA…: `requiresAttribution`). Warnings still cover
+	 * every sound used. Default false.
+	 */
+	attributionOnly?: boolean;
 }
 
 /** The media holding library provenance for `mediaId`: itself, or the original of a processed version. */
@@ -165,6 +170,7 @@ export function soundCredits(
 		sequenceIds: [...seqs].sort(),
 	}));
 	rows.sort((a, b) => cmp(a.title, b.title) || cmp(a.mediaId, b.mediaId));
+	const listed = opts.attributionOnly ? rows.filter((r) => r.requiresAttribution) : rows;
 
 	for (const r of rows) {
 		const name = `"${oneLine(r.title) || r.soundId}" (${r.mediaId})`;
@@ -208,14 +214,14 @@ export function soundCredits(
 			});
 	}
 
-	const text = rows.length ? ['Sound credits', '', ...rows.map(creditLine)].join('\n') : '';
-	const markdown = rows.length
+	const text = listed.length ? ['Sound credits', '', ...listed.map(creditLine)].join('\n') : '';
+	const markdown = listed.length
 		? [
 				'## Sound credits',
 				'',
 				'| Sound | Author | Licence | Source | Credit |',
 				'|---|---|---|---|---|',
-				...rows.map(
+				...listed.map(
 					(r) =>
 						`| ${mdCell(r.title || r.soundId)} | ${mdCell(r.author)} | ${
 							r.licenseUrl ? `[${mdCell(r.license)}](${mdUrl(r.licenseUrl)})` : mdCell(r.license)
@@ -223,7 +229,7 @@ export function soundCredits(
 				),
 			].join('\n')
 		: '';
-	return { rows, text, markdown, csv: csvOf(rows), warnings };
+	return { rows: listed, text, markdown, csv: csvOf(listed), warnings };
 }
 
 function csvOf(rows: SoundCreditRow[]): string {
