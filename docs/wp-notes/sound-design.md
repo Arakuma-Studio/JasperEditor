@@ -809,7 +809,65 @@ no manifest.
 
 #### Verified (measured, this branch)
 
-(see the commands below; shared host, 16 cores)
+Shared host, 16 cores, load average 140–165 during every run below (other agents).
+
+- `pnpm vitest run packages/config/test packages/api/test packages/engine-client/test apps/engine/test/sounds-unit.test.ts apps/engine/test/sounds-routes.test.ts apps/engine/test/security-hardening.test.ts --maxWorkers=2`:
+  8 files, 110 tests passed. New:
+  - `sounds-unit.test.ts` (19): manifest absent / unreadable / wrong version / empty; valid entries kept and
+    non-audio, `..` and unknown-pack entries reported; installed-pack manifest rules; two fast-check properties
+    (150 runs each) of hostile manifests (never throws, no escaping path survives); peaks known values (0.5 → 128,
+    −1 → 255, NaN → 0); spectrogram of a full-scale 1 kHz sine: loudest band within ±1 of the band holding 1 kHz,
+    within 3 dB of 0 dBFS, far bands near the floor; 3000-frame cap, silence, NaN, empty; base64 sizes; titles, tags
+    and credit lines (CC0 none, CC-BY generated, folder template); index persistence (no temp file left, reload equal,
+    `sounds.changed` payload), three kinds of damaged index moved aside and rebuilt, invalid entries dropped with the
+    valid ones kept, removal by predicate; search-query and folder-body schemas under fast-check (500 / 300 runs) and
+    their bounds; the worker thread: module resolution, **bundled with esbuild, results equal to in-thread
+    analysis**, cancelling a 20 s analysis (`JOB_CANCELLED`) and the next one working, hostile input as a typed
+    failure, fallback to in-thread when the worker cannot start.
+  - `sounds-routes.test.ts` (14): starter kit indexed (4 sounds, 3 manifest errors reported), entry fields,
+    peak of a hit after 20 ms of silence, quiet head, inferred types, CC-BY credit, `library.json` contents,
+    capabilities `features.sound`; incremental rescans (second: 0 analysed / 4 reused; one changed file: 1 analysed,
+    1 added, 1 removed; `full`: 4 analysed); a damaged index recovered by the automatic rebuild to the same
+    `snapshotHash`; **cancellation** of a 16-file scan (job `cancelled`, no `library.json` written, the next scan
+    reuses what was analysed); a folder indexed in place (hidden folders, other files and symlinks skipped; `Door
+    Slam` → hit, `swoosh` → whoosh, found by the synonym query; tags; `LicenseRef-UserProvided` hidden by the default
+    commercial-safe filter, royalty-free declaration re-indexes and shows them; disabling removes 3 sounds at once);
+    path validation (relative, NUL, missing, a file, `/`, duplicates, NC licence); remote mode refused
+    (`LOCAL_MODE_ONLY`); **agents** (token only): refused without an editor window, card with the path and licence,
+    deny keeps nothing, approve adds; rename without a card; relicensing and removing asked; the editor never asked;
+    search totals, disjunctive facets, type / family / query / synonym / length / source filters, paging,
+    `similarTo` (the light hit nearest the heavy one), rotation penalty 0.3, six bad queries → 400, unknown
+    `similarTo` → 404; audio headers (`audio/wav`, `nosniff`, `CSP: sandbox`, 206 with 12 bytes), unknown and
+    traversal ids 404, a missing file `SOUND_FILE_MISSING`, a file swapped for a link to `/etc/hostname` 403; visual
+    data from the cache and recomputed identically after the cache was deleted; register: provenance equal to the
+    expected object (snapshot hash included), copy under `media/<key>/`, same media on repeat, `existingMediaId` once
+    the saved project has the file, unknown sound / project / traversal id 404; folder sound registered in place
+    (path locator, no copy), synth registered as a copy after its render was deleted (same fingerprint), a changed
+    folder file `409 SOUND_CHANGED`; 24 sounds with `JASPER_SOUND_SYNTH_VARIANTS=1` (19 synth, **all 19 accepted by
+    the judge for their own type** after 16-bit WAV and ffmpeg decoding) and synth last in a hit search; fast-check of
+    hostile search queries (120), roots bodies (80) and root lists (40): never a 5xx.
+- `pnpm vitest run apps/engine/test/fuzz-http.test.ts apps/engine/test/jobs.test.ts --maxWorkers=2`: 171 passed; the
+  route fuzzing discovers the nine new routes by itself (`-t api/sounds --reporter=verbose`: 9 passed, never a 5xx
+  `INTERNAL` or a hang).
+- `pnpm lint` (Biome, tokens, anime, layers, assets): pass. `pnpm --filter @jasper/engine typecheck`,
+  `@jasper/api`, `@jasper/engine-client`, `@jasper/config`: pass.
+- Running engine (`tsx apps/engine/src/cli.ts --port 48701`, appdir `.stage`, generated kit, 1 synth seed), by HTTP
+  with the token: the automatic index at start indexed 23 sounds (4 starter, 19 synth) in 45 s (first run, before the
+  worker thread existed; load ≈ 150); `types=hit` returned the two starter hits before `Jasper Synth hit 1` although
+  the synth scored higher (0.96 vs 0.90); facets as expected; capabilities `{library: {sounds: 23, packs: 0}, synth:
+  true}`; `Range: bytes=0-99` → 206 with `audio/wav`, `nosniff` and the sandbox CSP; `register` of the CC-BY whoosh
+  → managed copy and the generated credit line; `PUT /api/sounds/roots` with the token alone → `APPROVAL_DENIED`;
+  with the dev editor cookie → added; a file that was a byte copy of a starter sound was listed once (under the
+  starter kit); a distinct `Booms/sub drop 1.wav` → type `boom`, tags `booms, sub, drop`, found by `q=subdrop`.
+  Visual data drawn to PNG (waveform over spectrogram, peak line) and looked at: the synth chime shows its partials as
+  decaying horizontal lines with the peak at the start; the synth whoosh a bell-shaped broadband swell with the peak
+  in the middle.
+- Built engine (`pnpm --filter @jasper/engine build` with a generated kit temporarily in
+  `apps/engine/sounds/starter`, removed afterwards): `dist/sounds/starter/manifest.json` and `dist/sound-worker.mjs`
+  produced; `node dist/engine.mjs` with no override found the kit and indexed its 4 sounds (`starter.status: ok`);
+  the bundled worker run on its own analysed a decaying 440 Hz sine (MIDI 69, 100 spectrogram frames).
+- Dev worker under tsx (scratch script): `mode worker`; its first start took 22 s at load ≈ 160 (tsx transpiling the
+  import graph in the worker), off the main thread.
 
 #### Limits and notes for the next packages
 
