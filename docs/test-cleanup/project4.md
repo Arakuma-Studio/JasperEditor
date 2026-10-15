@@ -1215,21 +1215,65 @@ Original location: `packages/project/test/lumetri-grade.test.ts:400`.
 5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
 6. Owns the distinct case “a 33³ bake of a full grade with every new step takes < 30 ms (best of several runs)” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
 
-### DELETE: keys on hue, saturation and lightness with soft edges; greys leave a hue key
+### REWRITE: keys on hue, saturation and lightness with soft edges; greys leave a hue key
 Original location: `packages/project/test/lumetri-grade.test.ts:420`.
-The tested CPU spatial renderer/key evaluator has no production caller; it is a test-only mirror of GPU logic. Fails bar4/6 despite meaningful mathematical expectations. Remaining stronger owner: packages/compositions/test/lumetri-spatial-gl.test.ts, with fixed actual GPU output oracles. Contract mapping: GPU mask fixtures: red selected, blue/gray excluded, 22.5° hue at half membership; luma .8/.55/.2 selects/half/excludes. Independent HSL Secondary ranges/softness in docs/wp-notes/color-grade.md. Non-test callers: none for the removed CPU mirror; live eyedropper functions and lumetriSpatialSettings retain UI/registry callers. Risk: transfer omissions; compositions2 explicitly committed to these cases before deletion. Validation: static checks now, integrated required-oracle GL suite under root scheduling.
 
-### DELETE: the correction applies inside the key only; Show Mask and Invert
+REWRITE across packages. The CPU-only declaration is removed; its real contract moves to `packages/compositions/test/lumetri-spatial-gl.test.ts`. See the [full six-item shader justification and exact transfer map](compositions2.md#final-oracle-independence-rescan-pre-edit-record).
+Destination: `HSL key softness covers half of the hue and lightness transition bands`: red selected, blue/gray rejected, hue 22.5° and approximately 55% lightness give half masks.
+
+1. Independent contract: HSL Secondary hue, saturation and lightness ranges, soft edges and gray attenuation in `docs/wp-notes/color-grade.md` §2.
+2. Detectable user-visible failure: A wrong selector or softness makes selected, rejected or half-selected pixels display the wrong mask.
+3. Independent oracle: Literal white/black/half-mask bytes are independent of the shader and its settings normalizer.
+4. Observes actual rendered pixels from the registered Lumetri shader, including live eyedropper-generated input parameters where applicable.
+5. Shader helpers, uniform names and render-pass organization may change without changing the required pixels.
+6. Actual GPU output is the lowest stable owner of this spatial contract; the uncalled CPU mirror and its duplicate unit case are removed. No stronger remaining test owns this exact case.
+
+Non-test callers: the live shader runs in Program preview/export; eyedropper functions and `lumetriSpatialSettings` retain UI/registry callers. The removed CPU mirror has none. Risk: omitted transfer or byte quantization; the linked map names the destination and preserves appropriate tolerances. Validation: static checks passed; required-oracle GL validation remains scheduled by the integration owner.
+
+### REWRITE: the correction applies inside the key only; Show Mask and Invert
 Original location: `packages/project/test/lumetri-grade.test.ts:434`.
-The tested CPU spatial renderer/key evaluator has no production caller; it is a test-only mirror of GPU logic. Fails bar4/6 despite meaningful mathematical expectations. Remaining stronger owner: packages/compositions/test/lumetri-spatial-gl.test.ts, with fixed actual GPU output oracles. Contract mapping: GPU literal red/blue correction pixels, Invert, WhiteBlack and ColorGray outputs. Independent correction/mask semantics in docs/wp-notes/color-grade.md. Non-test callers: none for the removed CPU mirror; live eyedropper functions and lumetriSpatialSettings retain UI/registry callers. Risk: transfer omissions; compositions2 explicitly committed to these cases before deletion. Validation: static checks now, integrated required-oracle GL suite under root scheduling.
 
-### DELETE: 3-way correction wheels use the Lumetri wheel maths
+REWRITE across packages. The CPU-only declaration is removed; its real contract moves to `packages/compositions/test/lumetri-spatial-gl.test.ts`. See the [full six-item shader justification and exact transfer map](compositions2.md#final-oracle-independence-rescan-pre-edit-record).
+Destination: `HSL Secondary corrects only the selected colors and supports Invert` and `Show Mask preserves selected color or white and marks excluded pixels gray or black`: fixed desaturated RGB, unchanged excluded RGB, inverse selection and the three mask styles.
+
+1. Independent contract: HSL Secondary correction, Invert and mask styles in `docs/wp-notes/color-grade.md` §2.
+2. Detectable user-visible failure: Incorrect selection, inversion or mask style changes the displayed RGB.
+3. Independent oracle: Hand-painted red/blue inputs have fixed expected RGB or independently specified neutral-gray relationships; no production reference supplies expected values.
+4. Observes actual rendered pixels from the registered Lumetri shader, including live eyedropper-generated input parameters where applicable.
+5. Shader helpers, uniform names and render-pass organization may change without changing the required pixels.
+6. Actual GPU output is the lowest stable owner of this spatial contract; the uncalled CPU mirror and its duplicate unit case are removed. No stronger remaining test owns this exact case.
+
+Non-test callers: the live shader runs in Program preview/export; eyedropper functions and `lumetriSpatialSettings` retain UI/registry callers. The removed CPU mirror has none. Risk: omitted transfer or byte quantization; the linked map names the destination and preserves appropriate tolerances. Validation: static checks passed; required-oracle GL validation remains scheduled by the integration owner.
+
+### REWRITE: 3-way correction wheels use the Lumetri wheel maths
 Original location: `packages/project/test/lumetri-grade.test.ts:449`.
-The tested CPU spatial renderer/key evaluator has no production caller; it is a test-only mirror of GPU logic. Fails bar4/6 despite meaningful mathematical expectations. Remaining stronger owner: packages/compositions/test/lumetri-spatial-gl.test.ts, with fixed actual GPU output oracles. Contract mapping: GPU gray sample under +50 Highlights must receive gain1.25; independent Lumetri lift/gamma/gain law, not CPU spatial reference. Non-test callers: none for the removed CPU mirror; live eyedropper functions and lumetriSpatialSettings retain UI/registry callers. Risk: transfer omissions; compositions2 explicitly committed to these cases before deletion. Validation: static checks now, integrated required-oracle GL suite under root scheduling.
 
-### DELETE: the vignette darkens the corners, not the centre; roundness and feather shape it
+REWRITE across packages. The CPU-only declaration is removed; its real contract moves to `packages/compositions/test/lumetri-spatial-gl.test.ts`. See the [full six-item shader justification and exact transfer map](compositions2.md#final-oracle-independence-rescan-pre-edit-record).
+Destination: `three-way highlight level brightens neutral midgray by the documented gain`: literal gray 160 becomes 200.
+
+1. Independent contract: The documented Lumetri lift/gamma/gain law: Highlights level 50 gives gain 1.25.
+2. Detectable user-visible failure: A missing or incorrect three-way highlight gain displays the wrong gray.
+3. Independent oracle: Expected byte 200 follows the independently specified gain, without calling the production wheel or CPU spatial renderer.
+4. Observes actual rendered pixels from the registered Lumetri shader, including live eyedropper-generated input parameters where applicable.
+5. Shader helpers, uniform names and render-pass organization may change without changing the required pixels.
+6. Actual GPU output is the lowest stable owner of this spatial contract; the uncalled CPU mirror and its duplicate unit case are removed. No stronger remaining test owns this exact case.
+
+Non-test callers: the live shader runs in Program preview/export; eyedropper functions and `lumetriSpatialSettings` retain UI/registry callers. The removed CPU mirror has none. Risk: omitted transfer or byte quantization; the linked map names the destination and preserves appropriate tolerances. Validation: static checks passed; required-oracle GL validation remains scheduled by the integration owner.
+
+### REWRITE: the vignette darkens the corners, not the centre; roundness and feather shape it
 Original location: `packages/project/test/lumetri-grade.test.ts:454`.
-The tested CPU spatial renderer/key evaluator has no production caller; it is a test-only mirror of GPU logic. Fails bar4/6 despite meaningful mathematical expectations. Remaining stronger owner: packages/compositions/test/lumetri-spatial-gl.test.ts, with fixed actual GPU output oracles. Contract mapping: GPU flat frame: unchanged centre, negative/positive Amount extremes at corners and side comparison for +100 roundness at wide aspect. Independent Vignette Amount/shape contract in docs/wp-notes/color-grade.md. Non-test callers: none for the removed CPU mirror; live eyedropper functions and lumetriSpatialSettings retain UI/registry callers. Risk: transfer omissions; compositions2 explicitly committed to these cases before deletion. Validation: static checks now, integrated required-oracle GL suite under root scheduling.
+
+REWRITE across packages. The CPU-only declaration is removed; its real contract moves to `packages/compositions/test/lumetri-spatial-gl.test.ts`. See the [full six-item shader justification and exact transfer map](compositions2.md#final-oracle-independence-rescan-pre-edit-record).
+Destination: `vignette darkens or lightens corners, keeps the center and follows roundness`: center unchanged, extreme amount/zero feather reaches black or white corners, circle darkens the wide-frame side earlier than the aspect-following ellipse.
+
+1. Independent contract: Vignette Amount, midpoint, feather and roundness controls in `docs/wp-notes/color-grade.md` §2.
+2. Detectable user-visible failure: Wrong brightening/darkening, changed center or ignored roundness changes visible vignette pixels.
+3. Independent oracle: Fixed endpoint colors, unchanged center and the documented shape relationship do not call a copied vignette formula.
+4. Observes actual rendered pixels from the registered Lumetri shader, including live eyedropper-generated input parameters where applicable.
+5. Shader helpers, uniform names and render-pass organization may change without changing the required pixels.
+6. Actual GPU output is the lowest stable owner of this spatial contract; the uncalled CPU mirror and its duplicate unit case are removed. No stronger remaining test owns this exact case.
+
+Non-test callers: the live shader runs in Program preview/export; eyedropper functions and `lumetriSpatialSettings` retain UI/registry callers. The removed CPU mirror has none. Risk: omitted transfer or byte quantization; the linked map names the destination and preserves appropriate tolerances. Validation: static checks passed; required-oracle GL validation remains scheduled by the integration owner.
 
 ### DELETE: adds the spatial companion after a Lumetri instance that uses vignette, sharpen or the secondary
 Original location: `packages/project/test/lumetri-grade.test.ts:496`.
@@ -1250,17 +1294,50 @@ Original location: `packages/project/test/lumetri-grade.test.ts:523`.
 5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
 6. Owns the distinct case “a keyframed amount that leaves the default at some key needs the stage” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
 
-### DELETE: Set Color keys the picked colour, not others; greys key on lightness only
+### REWRITE: Set Color keys the picked colour, not others; greys key on lightness only
 Original location: `packages/project/test/lumetri-grade.test.ts:543`.
-The tested CPU spatial renderer/key evaluator has no production caller; it is a test-only mirror of GPU logic. Fails bar4/6 despite meaningful mathematical expectations. Remaining stronger owner: packages/compositions/test/lumetri-spatial-gl.test.ts, with fixed actual GPU output oracles. Contract mapping: GPU receives live keyFromColor output for orange and gray picks; literal mask samples protect picked color inclusion, blue exclusion and gray lightness exclusion. Non-test callers: none for the removed CPU mirror; live eyedropper functions and lumetriSpatialSettings retain UI/registry callers. Risk: transfer omissions; compositions2 explicitly committed to these cases before deletion. Validation: static checks now, integrated required-oracle GL suite under root scheduling.
 
-### DELETE: Add Color extends the key to the new colour and keeps the old one
+REWRITE across packages. The CPU-only declaration is removed; its real contract moves to `packages/compositions/test/lumetri-spatial-gl.test.ts`. See the [full six-item shader justification and exact transfer map](compositions2.md#final-oracle-independence-rescan-pre-edit-record).
+Destination: `HSL eyedroppers select the picked colors through the rendered mask`: orange selected, blue excluded; near-gray selected by a gray pick and bright gray excluded.
+
+1. Independent contract: HSL Secondary Set Color semantics in `docs/wp-notes/color-grade.md` §2, including gray selection by lightness.
+2. Detectable user-visible failure: Wrong generated ranges reject the picked color or select unrelated colors in the rendered mask.
+3. Independent oracle: Literal white/black expectations are independent; `keyFromColor` supplies action inputs only.
+4. Observes actual rendered pixels from the registered Lumetri shader, including live eyedropper-generated input parameters where applicable.
+5. Shader helpers, uniform names and render-pass organization may change without changing the required pixels.
+6. Actual GPU output is the lowest stable owner of this spatial contract; the uncalled CPU mirror and its duplicate unit case are removed. No stronger remaining test owns this exact case.
+
+Non-test callers: the live shader runs in Program preview/export; eyedropper functions and `lumetriSpatialSettings` retain UI/registry callers. The removed CPU mirror has none. Risk: omitted transfer or byte quantization; the linked map names the destination and preserves appropriate tolerances. Validation: static checks passed; required-oracle GL validation remains scheduled by the integration owner.
+
+### REWRITE: Add Color extends the key to the new colour and keeps the old one
 Original location: `packages/project/test/lumetri-grade.test.ts:552`.
-The tested CPU spatial renderer/key evaluator has no production caller; it is a test-only mirror of GPU logic. Fails bar4/6 despite meaningful mathematical expectations. Remaining stronger owner: packages/compositions/test/lumetri-spatial-gl.test.ts, with fixed actual GPU output oracles. Contract mapping: GPU receives live addColorToKey output; white masks for original orange plus added red, black blue mask protect selection semantics. Non-test callers: none for the removed CPU mirror; live eyedropper functions and lumetriSpatialSettings retain UI/registry callers. Risk: transfer omissions; compositions2 explicitly committed to these cases before deletion. Validation: static checks now, integrated required-oracle GL suite under root scheduling.
 
-### DELETE: Remove Color drops the picked colour and keeps the rest of the key
+REWRITE across packages. The CPU-only declaration is removed; its real contract moves to `packages/compositions/test/lumetri-spatial-gl.test.ts`. See the [full six-item shader justification and exact transfer map](compositions2.md#final-oracle-independence-rescan-pre-edit-record).
+Destination: `HSL eyedroppers select the picked colors through the rendered mask`: after Add, both orange and red are white and blue remains black.
+
+1. Independent contract: HSL Secondary Add Color semantics in `docs/wp-notes/color-grade.md` §2.
+2. Detectable user-visible failure: Wrong range expansion drops the original color, rejects the added color or includes blue.
+3. Independent oracle: Literal white/black expectations are independent; `addColorToKey` supplies action inputs only.
+4. Observes actual rendered pixels from the registered Lumetri shader, including live eyedropper-generated input parameters where applicable.
+5. Shader helpers, uniform names and render-pass organization may change without changing the required pixels.
+6. Actual GPU output is the lowest stable owner of this spatial contract; the uncalled CPU mirror and its duplicate unit case are removed. No stronger remaining test owns this exact case.
+
+Non-test callers: the live shader runs in Program preview/export; eyedropper functions and `lumetriSpatialSettings` retain UI/registry callers. The removed CPU mirror has none. Risk: omitted transfer or byte quantization; the linked map names the destination and preserves appropriate tolerances. Validation: static checks passed; required-oracle GL validation remains scheduled by the integration owner.
+
+### REWRITE: Remove Color drops the picked colour and keeps the rest of the key
 Original location: `packages/project/test/lumetri-grade.test.ts:558`.
-The tested CPU spatial renderer/key evaluator has no production caller; it is a test-only mirror of GPU logic. Fails bar4/6 despite meaningful mathematical expectations. Remaining stronger owner: packages/compositions/test/lumetri-spatial-gl.test.ts, with fixed actual GPU output oracles. Contract mapping: GPU receives live removeColorFromKey output; black red and white retained orange protect removal while preserving the remaining key. Non-test callers: none for the removed CPU mirror; live eyedropper functions and lumetriSpatialSettings retain UI/registry callers. Risk: transfer omissions; compositions2 explicitly committed to these cases before deletion. Validation: static checks now, integrated required-oracle GL suite under root scheduling.
+
+REWRITE across packages. The CPU-only declaration is removed; its real contract moves to `packages/compositions/test/lumetri-spatial-gl.test.ts`. See the [full six-item shader justification and exact transfer map](compositions2.md#final-oracle-independence-rescan-pre-edit-record).
+Destination: `HSL eyedroppers select the picked colors through the rendered mask`: after Remove, red is black and orange remains white. The incidental parameter-object-change assertion is discarded.
+
+1. Independent contract: HSL Secondary Remove Color semantics in `docs/wp-notes/color-grade.md` §2.
+2. Detectable user-visible failure: Wrong range contraction retains the removed color or drops the remaining color.
+3. Independent oracle: Literal white/black expectations are independent; `removeColorFromKey` supplies action inputs only.
+4. Observes actual rendered pixels from the registered Lumetri shader, including live eyedropper-generated input parameters where applicable.
+5. Shader helpers, uniform names and render-pass organization may change without changing the required pixels.
+6. Actual GPU output is the lowest stable owner of this spatial contract; the uncalled CPU mirror and its duplicate unit case are removed. No stronger remaining test owns this exact case.
+
+Non-test callers: the live shader runs in Program preview/export; eyedropper functions and `lumetriSpatialSettings` retain UI/registry callers. The removed CPU mirror has none. Risk: omitted transfer or byte quantization; the linked map names the destination and preserves appropriate tolerances. Validation: static checks passed; required-oracle GL validation remains scheduled by the integration owner.
 
 ### REWRITE: any values of any params: the colour fn and the spatial settings never throw and stay finite
 Original location: `packages/project/test/lumetri-grade.test.ts:583`.
@@ -3314,13 +3391,13 @@ Validation: changed-file Biome check passed; TypeScript syntax parse passed; git
 
 Integrated caller census found lumetriSpatialPixel used only by lumetri-grade.test.ts and the Lumetri GL harness. Its secondaryKey, secondaryCorrect, vignetteWeight, applyVignette and private band/hsl scratch state likewise have no production consumer; lumetriSpatialActive is entirely unused. The real shader consumes lumetriSpatialSettings, which remains. CPU spatial tests cannot catch an actual shader bug and kept this duplicate production-path-sized reference alive.
 
-Compositions2 confirmed the complete seven-case contract mapping above before these deletes, including soft hue/luma masks, gray rejection, Invert/mask display modes, three-way highlights, positive/negative/roundness vignette and Set/Add/Remove eyedroppers. Their GPU tests use analytical/literal expected pixels; no expected result calls the deleted CPU mirror. Eyedropper functions become inputs to the real shader in that one owning scenario family, so both parameter generation and rendered membership are exercised once. Hostile values retain finite-value coverage of the two live owners, lumetriFn and lumetriSpatialSettings.
+Compositions2 confirmed the complete seven-case contract mapping above before removing the CPU declarations. These seven original contracts are REWRITE across packages, including soft hue/luma masks, gray rejection, Invert/mask display modes, three-way highlights, positive/negative/roundness vignette and Set/Add/Remove eyedroppers. Their GPU tests use analytical/literal expected pixels; no expected result calls the deleted CPU mirror. Eyedropper functions become inputs to the real shader in that one owning scenario family, so both parameter generation and rendered membership are exercised once. Hostile values retain finite-value coverage of the two live owners, lumetriFn and lumetriSpatialSettings.
 
 Production cleanup: delete the CPU-only renderer and its dead helpers; update source comments so the live module describes spatial uniform normalization. No live shader or settings algorithm changes. Risk is an omitted transferred scenario, bounded by the explicit sibling commitment and integrated GL verification. Changed-file Biome, TypeScript syntax parsing and git diff --check passed. Required runtime verification remains the Lumetri project suite and JASPER_REQUIRE_ORACLES=1 GPU suite; runtime is reserved for the integration owner.
 
 ## Completion and validation
 
-Completed pruning: 62 DELETE, 29 REWRITE, 287 KEEP test declarations across all 34 assigned files. The parameterized border family counts once in the ledger. Five files deleted. Test code changes are net negative (final exact line totals are in the commit diff).
+Completed pruning: 55 DELETE, 36 REWRITE, 287 KEEP test declarations across all 34 assigned files. The parameterized border family counts once in the ledger. Five files deleted. Test code changes are net negative (final exact line totals are in the commit diff).
 
 Removed support: catalogue/order/default arrays and their lookup helpers, private shader packing/padding fixture assertions, duplicate LUT fuzz seeds, cached-envelope scale fixture setup, unused imports and empty describe blocks. No snapshot/media fixture became uniquely orphaned.
 
@@ -3329,3 +3406,5 @@ Production cleanup (runtime algorithms unchanged): made levelDownscale, packFlar
 Actual validation: changed-file Biome check/format passed; TypeScript parse diagnostics reported no syntax errors; git diff --check passed. Focused Vitest, package typecheck, GL and full repository gates were not run in this worktree: the integration owner explicitly suspended new validation processes because the shared host was overloaded and is running the integrated checks. No claim of passing tests or typecheck is made here. No retained baseline failure was observed locally because tests were not run. Review covered all changed test assertions and production export-only/counter edits.
 
 Integration documentation references sent to root: fx-shader-framework.md and sim-warp.md reference fx-catalogue.test.ts; code-audit-compositions.md and code-audit-project-registry.md reference transition-edge-wipe.test.ts; perf-core.md and ui-perf.md describe deleted cache/counter checks. Only this report was changed under docs by this owner.
+
+Final report/provenance correction: the seven transferred original Lumetri contracts count as REWRITE across packages, with each row linking the destination shader justification. The EffectCraft HslKey port record names the surviving settings normalizer and GLSL key evaluator; the deleted CPU `secondaryKey` is no longer an attribution target. This correction changes no test or runtime code. `git diff --check` and the 55/36/287 disposition tally passed. Local `pnpm notices` failed because this isolated worktree has no installed web dependencies (`@codemirror/autocomplete` could not resolve); no generated output changed. The integration owner has been asked to run `pnpm notices` and `pnpm notices --check` after applying this port-record correction. No runtime tests or builds ran for this documentation-only follow-up.
