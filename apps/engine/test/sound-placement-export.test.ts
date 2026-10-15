@@ -171,3 +171,89 @@ describe('soundDesign.place on exported audio (P2-R4)', () => {
 		180_000,
 	);
 });
+
+describe('varispeed placement on exported audio (P2-R5: the ±2 % variation, pitch by varispeed)', () => {
+	it('a click 0.45 s into the sound lands on its cue frame at rates 0.98 … 1.02 (native export)', async () => {
+		const d = new DocBuilder('hd-1080p-30');
+		const RATES = [0.98, 0.9817, 1.0123, 1.02, 2 ** (3 / 12)];
+		const LEAD = 2400;
+		const AT = 19_211; // deep in the file: a wrong rate would move the click by AT·Δ(1/rate) samples
+		const frames: number[] = [];
+		for (const [i, rate] of RATES.entries()) {
+			const src = join(dir, `deep-${i}.wav`);
+			clickWav(src, LEAD + AT + i);
+			const mediaId = d.addMedia(await register(app, src));
+			const peak = LEAD + AT + i;
+			d.tx([
+				{
+					type: 'media.setLibraryInfo',
+					mediaId,
+					library: {
+						soundId: `snd_00000000000000e${i}`,
+						title: `Deep click ${i}`,
+						types: ['click'],
+						source: { type: 'starter' },
+						license: 'LicenseRef-JasperEditor',
+						author: 'test',
+						attribution: null,
+						descriptors: {
+							peakSec: peak / SR,
+							onsetSec: peak / SR,
+							headQuietSec: peak / SR,
+							durationSec: LENGTH / SR,
+							octaveBandsDb: [-60, -60, -60, -60, -60, -60, -60],
+							centroidHz: 10_000,
+							maxMomentaryLufs: -40,
+						},
+					},
+				},
+			]);
+			const frame = 25 + 41 * i;
+			frames.push(frame);
+			const r = d.tx([{ type: 'soundDesign.place', frame, layers: [{ mediaId, rate, align: 'peak' }] }]);
+			expect(
+				(r.results[0] as { clips: { errorFlicks: number }[] }).clips[0]!.errorFlicks,
+			).toBeLessThanOrEqual(1);
+		}
+		const settings = {
+			sequenceId: d.seqId,
+			range: { type: 'entire' },
+			container: 'mov',
+			video: {
+				codec: 'h264',
+				width: 320,
+				height: 180,
+				frameRate: { num: 30, den: 1 },
+				scaling: 'fit',
+				quality: { mode: 'crf', value: 35 },
+				encoderSpeed: 'fast',
+			},
+			audio: { codec: 'pcm', sampleRate: SR, channels: 2 },
+			engine: 'native',
+		};
+		const start = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings },
+		});
+		expect(start.statusCode, start.body).toBe(202);
+		const done = await coreServices(app).queue.wait(start.json().id);
+		expect(done.error).toBeUndefined();
+		const x = pcm((await coreServices(app).exports.outputFile(start.json().id))!);
+		const errors = frames.map((frame) => {
+			const expected = (frame * SR) / 30;
+			let best = -1;
+			let max = 0;
+			for (let i = expected - 4000; i < expected + 4000; i++)
+				if (Math.abs(x[i]!) > max) {
+					max = Math.abs(x[i]!);
+					best = i;
+				}
+			expect(max).toBeGreaterThan(0.5);
+			return best - expected;
+		});
+		// the resampled click's largest sample is the cue's sample or its neighbour
+		for (const e of errors) expect(Math.abs(e), JSON.stringify(errors)).toBeLessThanOrEqual(1);
+	}, 180_000);
+});
