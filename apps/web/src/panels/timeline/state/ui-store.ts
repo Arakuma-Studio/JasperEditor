@@ -47,9 +47,25 @@ export type SoundGhost = {
 };
 
 export type ContextMenuItem =
-	| { kind: 'item'; label: string; shortcut?: string; disabled?: boolean; checked?: boolean; run(): void }
+	| {
+			kind: 'item';
+			label: string;
+			shortcut?: string;
+			disabled?: boolean;
+			checked?: boolean;
+			run(): void;
+			/** Pointer or keyboard focus rests on the item / leaves it (sound design: audition in context). */
+			onHighlight?(): void;
+			onUnhighlight?(): void;
+	  }
 	| { kind: 'separator' }
-	| { kind: 'submenu'; label: string; items: ContextMenuItem[] };
+	| {
+			kind: 'submenu';
+			label: string;
+			items: ContextMenuItem[];
+			/** Items computed when the submenu opens; `items` shows meanwhile. */
+			load?(): Promise<ContextMenuItem[]>;
+	  };
 
 export type TimelineUiState = {
 	/** Measured sizes. */

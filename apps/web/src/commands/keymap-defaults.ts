@@ -329,9 +329,18 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('soundLibrary.toggleFavourite', 'KeyF', 'soundLibrary'),
 	b('soundLibrary.toggleLoop', 'KeyL', 'soundLibrary'),
 	b('soundLibrary.focusSearch', 'Ctrl+KeyF', 'soundLibrary'),
+	// WP2.4b: Esc leaves Fill / Replace mode (enabled only then; it stops a playing audition first)
+	b('soundLibrary.cancelMode', 'Escape', 'soundLibrary', { contextual: true }),
 	b('soundLibrary.stopAudition', 'Escape', 'soundLibrary'),
+	// WP2.4b: In Context audition
+	b('soundLibrary.auditionInContext', 'Shift+Space', 'soundLibrary'),
 	// sound-design (spec 12 §2.7): Markers ▸ Add Sound Cue
 	b('sound.addCue', 'Alt+Shift+KeyC', E, { mac: 'Opt+Shift+KeyC' }),
+	// WP2.4b (spec 12 §2.7 Shortcuts): Swap Sound…, Next / Previous Variation (explicit Opt+Cmd on mac), Align Peak
+	b('sound.swap', 'Alt+Shift+KeyS', E, { mac: 'Opt+Shift+KeyS' }),
+	b('sound.nextVariation', 'Ctrl+Alt+Period', E, { mac: 'Opt+Cmd+Period', repeat: true }),
+	b('sound.prevVariation', 'Ctrl+Alt+Comma', E, { mac: 'Opt+Cmd+Comma', repeat: true }),
+	b('sound.alignPeakToPlayhead', 'Ctrl+Alt+KeyP', E, { mac: 'Opt+Cmd+KeyP' }),
 	b('history.stepBackward', 'ArrowLeft', 'history', R),
 	b('history.stepForward', 'ArrowRight', 'history', R),
 ];

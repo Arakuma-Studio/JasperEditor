@@ -8,9 +8,26 @@ import { createRegistry } from './registry.ts';
 
 /** Menu entries contributed to context menus (same shape as the timeline's ContextMenuItem). */
 export type MenuItemSpec =
-	| { kind: 'item'; label: string; shortcut?: string; disabled?: boolean; checked?: boolean; run(): void }
+	| {
+			kind: 'item';
+			label: string;
+			shortcut?: string;
+			disabled?: boolean;
+			checked?: boolean;
+			run(): void;
+			/** The pointer or the keyboard rests on the item (e.g. audition the sound it would place). */
+			onHighlight?(): void;
+			/** It left the item. */
+			onUnhighlight?(): void;
+	  }
 	| { kind: 'separator' }
-	| { kind: 'submenu'; label: string; items: MenuItemSpec[] };
+	| {
+			kind: 'submenu';
+			label: string;
+			items: MenuItemSpec[];
+			/** Items computed when the submenu opens (`items` shows meanwhile, e.g. "Searching…"). */
+			load?(): Promise<MenuItemSpec[]>;
+	  };
 
 export type EffectEditorProps = {
 	session: EditorSession;
@@ -86,7 +103,13 @@ export type LayerDoubleClickHandler = {
 };
 export const layerDoubleClickHandlers = createRegistry<LayerDoubleClickHandler>();
 
-type ClipMenuContext = { session: EditorSession; clip: Clip; selection: readonly string[] };
+type ClipMenuContext = {
+	session: EditorSession;
+	clip: Clip;
+	selection: readonly string[];
+	/** Runs a UI command with the timeline's context (toasts, engine), when the host provides it. */
+	runCommand?(commandId: string, args?: unknown): void;
+};
 export type ClipMenuExtension = {
 	id: string;
 	items(ctx: ClipMenuContext): MenuItemSpec[];

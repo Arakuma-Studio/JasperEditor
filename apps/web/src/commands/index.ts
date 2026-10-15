@@ -35,6 +35,7 @@ import { rotoCommands } from './roto.ts';
 import { shapeCommands } from './shapes.ts';
 import { soundCommands } from './sound.ts';
 import { soundCueCommands } from './sound-cues.ts';
+import { soundDesignCommands } from './sound-design.ts';
 import { speechCommands } from './speech.ts';
 import { structureCommands } from './structure.ts';
 import { textAnimationCommands } from './text-animation.ts';
@@ -95,6 +96,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	// sound-design (spec 12): Sound Library, Cue Seam
 	soundCommands,
 	soundCueCommands,
+	soundDesignCommands,
 ];
 
 let registered = false;

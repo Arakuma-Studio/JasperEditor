@@ -45,7 +45,7 @@ export async function swapSounds(
 	engine: Pick<EngineClient, 'registerSound'>,
 	sequenceId: string,
 	swaps: readonly { clipId: string; entry: LibraryEntryLike }[],
-	opts: { label: string; coalesceKey?: string } ,
+	opts: { label: string; coalesceKey?: string },
 ): Promise<{ clipIds: string[] }> {
 	const s0 = session.getState();
 	if (s0.readOnly) throw new SwapError(t('The project is read-only'));
@@ -86,7 +86,8 @@ export async function swapSounds(
 			? { coalesceKey: opts.coalesceKey, coalesceWindowMs: Number.POSITIVE_INFINITY, coalesceRelabel: true }
 			: {}),
 	});
-	if (!r.ok) throw new SwapError(r.errors.map((e) => e.message).join('; ') || t('The sound could not be swapped'));
+	if (!r.ok)
+		throw new SwapError(r.errors.map((e) => e.message).join('; ') || t('The sound could not be swapped'));
 	return { clipIds: swaps.map((s) => s.clipId) };
 }
 
@@ -162,7 +163,12 @@ export async function variationCandidates(
 	const types = clipProvenance(doc, clip)?.types ?? [];
 	const fam = familyRequest(types, 12);
 	const [family, similar] = await Promise.all([
-		fam ? engine.searchSounds(fam).then((r) => r.results.map((x) => x.sound.id)).catch(() => []) : [],
+		fam
+			? engine
+					.searchSounds(fam)
+					.then((r) => r.results.map((x) => x.sound.id))
+					.catch(() => [])
+			: [],
 		current
 			? engine
 					.searchSounds({ similarTo: current, limit: 12 })

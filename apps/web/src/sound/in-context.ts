@@ -13,13 +13,7 @@
 //
 // Also `playTimelineWindow` (Audition on swap): plays the committed timeline around a frame and returns.
 import type { EngineClient } from '@jasper/engine-client';
-import {
-	type Command,
-	type Rational,
-	type Sequence,
-	type SoundAlignRequest,
-	type SoundCue,
-} from '@jasper/project';
+import type { Command, Rational, Sequence, SoundAlignRequest, SoundCue } from '@jasper/project';
 import type { EditorSession, Gesture } from '@jasper/session';
 import { createStore } from 'zustand/vanilla';
 import { t } from '../i18n/runtime.ts';
@@ -77,7 +71,8 @@ export function inContextAnchor(session: EditorSession, seq: Sequence): InContex
 	const cueId =
 		fill && fill.sequenceId === seq.id && !fill.layer ? fill.cueId : (s.selection.cues?.at(-1) ?? null);
 	const cue: SoundCue | undefined = cueId ? cues.find((c) => c.id === cueId) : undefined;
-	if (cue) return { frame: cue.frame, align: cue.align ?? 'auto', muteClipId: null, kind: 'cue', cueId: cue.id };
+	if (cue)
+		return { frame: cue.frame, align: cue.align ?? 'auto', muteClipId: null, kind: 'cue', cueId: cue.id };
 	const target = clipSoundTarget();
 	const clipId =
 		target && target.sequenceId === seq.id

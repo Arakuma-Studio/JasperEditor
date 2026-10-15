@@ -369,8 +369,8 @@ export function sourceLine(
 	e: Pick<SoundEntry, 'source'>,
 	rootLabel?: (rootId: string) => string | null,
 ): string {
-	const s = e.source;
-	switch (s.type) {
+	const s = e.source as SoundEntry['source'] | undefined;
+	switch (s?.type) {
 		case 'starter':
 			return t('Starter kit');
 		case 'pack':

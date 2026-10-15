@@ -846,6 +846,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				session,
 				clip: c,
 				selection: session.getState().selection.timeline.clips,
+				runCommand: (id: string, args?: unknown) => run(id, args),
 			}),
 		];
 	};

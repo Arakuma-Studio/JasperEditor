@@ -125,7 +125,8 @@ export async function fillCueWithSound(
 		sequenceId: seq.id,
 		commands,
 	});
-	if (!r.ok) throw new FillError(r.errors.map((e) => e.message).join('; ') || t('The cue could not be filled'));
+	if (!r.ok)
+		throw new FillError(r.errors.map((e) => e.message).join('; ') || t('The cue could not be filled'));
 	const placed = (
 		r.results[prepared.commands.length] as
 			| { clips?: { clipId: string; trackId: string; trimmedHeadSec: number }[] }
@@ -171,7 +172,8 @@ export async function fillUnfilledCues(
 	const settings = soundDesignSettingsOf(seq0 as { soundDesign?: unknown });
 	const cues = cuesOf(seq0).filter((c) => !c.muted && !isFilled(c, seq0.clips));
 	const skipped: FillAllResult['skipped'] = [];
-	const picks: { cue: SoundCue; entry: SoundEntry; rate: number; gainDb: number; alternatives: string[] }[] = [];
+	const picks: { cue: SoundCue; entry: SoundEntry; rate: number; gainDb: number; alternatives: string[] }[] =
+		[];
 	// Recent sounds, most recent first: the clips already placed (nearest first) then this run's picks.
 	const recent: string[] = [];
 	for (const [i, cue] of cues.entries()) {
@@ -181,7 +183,9 @@ export async function fillUnfilledCues(
 		try {
 			ranked = await cueCandidates(engine, session, seq0, cue, 8, opts.signal);
 		} catch (e) {
-			throw new FillError(t('The sound library search failed: {0}', e instanceof Error ? e.message : String(e)));
+			throw new FillError(
+				t('The sound library search failed: {0}', e instanceof Error ? e.message : String(e)),
+			);
 		}
 		if (!ranked.length) {
 			skipped.push({ cueId: cue.id, reason: t('No sound matches this cue') });
@@ -202,7 +206,10 @@ export async function fillUnfilledCues(
 			entry: ranked[pick.index]!,
 			rate: pick.rate,
 			gainDb: pick.gainDb,
-			alternatives: ranked.map((e) => e.id).filter((id) => id !== pick.soundId).slice(0, 3),
+			alternatives: ranked
+				.map((e) => e.id)
+				.filter((id) => id !== pick.soundId)
+				.slice(0, 3),
 		});
 	}
 	opts.onProgress?.(cues.length, cues.length);
@@ -262,11 +269,7 @@ export async function fillUnfilledCues(
 				(r.results[prepared.commands.length + i] as { clips?: { clipId: string }[] } | undefined)?.clips?.[0]
 					?.clipId ?? '',
 		}));
-		session.select(
-			'timeline',
-			filled.map((f) => f.clipId).filter(Boolean),
-			'replace',
-		);
+		session.select('timeline', filled.map((f) => f.clipId).filter(Boolean), 'replace');
 		return { filled, skipped };
 	}
 	return { filled: [], skipped };
@@ -320,7 +323,8 @@ export async function addLayerToClip(
 		sequenceId: seq.id,
 		commands,
 	});
-	if (!r.ok) throw new FillError(r.errors.map((e) => e.message).join('; ') || t('The layer could not be added'));
+	if (!r.ok)
+		throw new FillError(r.errors.map((e) => e.message).join('; ') || t('The layer could not be added'));
 	const placed = (
 		r.results[prepared.commands.length] as
 			| { clips?: { clipId: string; trackId: string; trimmedHeadSec: number }[] }

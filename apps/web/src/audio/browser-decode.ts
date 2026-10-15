@@ -176,3 +176,20 @@ export function browserOpenClip(media: (mediaId: string) => MediaHandle | null, 
 		};
 	};
 }
+
+/**
+ * Decoded planar samples of a media file's audio stream over content time [c0, c1) flicks (interpreted media through
+ * its time map), at the track's own rate; null when the browser cannot open it. Used by Detect Peak (sound design).
+ */
+export async function decodeMediaRange(
+	url: string,
+	streamIndex: number,
+	c0: number,
+	c1: number,
+	map?: MediaTimeMap,
+): Promise<{ rate: number; data: Float32Array[] } | null> {
+	const o = await opened(url);
+	if (!o) return null;
+	const track = o.byIndex.get(streamIndex) ?? o.tracks[0]!;
+	return decodeMapped(track, map, Math.max(0, c0), Math.max(0, c1));
+}

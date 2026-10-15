@@ -17,8 +17,8 @@ import {
 	type Rational,
 	readClipSfx,
 	readLibraryProvenance,
-	SOUND_TYPES,
 	type Sequence,
+	SOUND_TYPES,
 	type SoundCue,
 	type SoundFamily,
 	soundDesignSettingsOf,
@@ -28,7 +28,14 @@ import {
 	type VisualKind,
 } from '@jasper/project';
 import { t } from '../i18n/runtime.ts';
-import { CUE_WEIGHT_LABELS, clipPeakFrame, cuesOf, kindLabel, peakFrameOf, placedClips } from './cues/model.ts';
+import {
+	CUE_WEIGHT_LABELS,
+	clipPeakFrame,
+	cuesOf,
+	kindLabel,
+	peakFrameOf,
+	placedClips,
+} from './cues/model.ts';
 
 export type SfxAudioClip = AudioClip & { sfx?: ClipSfx };
 
@@ -42,14 +49,20 @@ export function sfxOf(clip: Clip | null | undefined): ClipSfx | null {
 }
 
 /** The library provenance of a clip's media (null for project audio). */
-export function clipProvenance(doc: Pick<ProjectDocument, 'media'>, clip: Clip | null | undefined): LibraryProvenance | null {
+export function clipProvenance(
+	doc: Pick<ProjectDocument, 'media'>,
+	clip: Clip | null | undefined,
+): LibraryProvenance | null {
 	const id = (clip as { mediaId?: string } | null | undefined)?.mediaId;
 	if (!id || !Object.hasOwn(doc.media, id)) return null;
 	return readLibraryProvenance((doc.media[id] as { library?: unknown }).library);
 }
 
 /** The library sound id a clip plays (its `sfx`, else its media's provenance), or null. */
-export function clipSoundId(doc: Pick<ProjectDocument, 'media'>, clip: Clip | null | undefined): string | null {
+export function clipSoundId(
+	doc: Pick<ProjectDocument, 'media'>,
+	clip: Clip | null | undefined,
+): string | null {
 	return sfxOf(clip)?.soundId ?? clipProvenance(doc, clip)?.soundId ?? null;
 }
 
@@ -83,7 +96,11 @@ export function clipSoundTitle(doc: Pick<ProjectDocument, 'media'>, clip: Clip):
  * The sequence frame (fractional) where a clip's aligned point plays: the placement's point (peak, start or end) when
  * it has one, else the media's peak; null when unknown (reversed, remapped, no descriptor).
  */
-export function alignedFrameOf(doc: Pick<ProjectDocument, 'media'>, seq: Pick<Sequence, 'settings'>, clip: Clip): number | null {
+export function alignedFrameOf(
+	doc: Pick<ProjectDocument, 'media'>,
+	seq: Pick<Sequence, 'settings'>,
+	clip: Clip,
+): number | null {
 	if (clip.kind !== 'audio') return null;
 	const rate = seq.settings.frameRate as Rational;
 	const sfx = sfxOf(clip);
@@ -103,7 +120,12 @@ export function alignOf(clip: Clip): 'peak' | 'start' | 'end' {
 /** "Crunch on A3 at 00:00:01:15" (the aligned point's timecode). */
 export function clipSoundLabel(doc: Pick<ProjectDocument, 'media'>, seq: Sequence, clip: Clip): string {
 	const at = alignedFrameOf(doc, seq, clip) ?? clip.start;
-	return t('{0} on {1} at {2}', clipSoundTitle(doc, clip), trackLabelOf(seq, clip.trackId), seqTimecode(seq, at));
+	return t(
+		'{0} on {1} at {2}',
+		clipSoundTitle(doc, clip),
+		trackLabelOf(seq, clip.trackId),
+		seqTimecode(seq, at),
+	);
 }
 
 /** "Hero Land cue at 00:00:04:02". */
@@ -203,7 +225,8 @@ export function cueSearchRequest(
 	const types = cue.types?.length ? cue.types : kind ? typesForVisualKind(kind).slice(0, 4) : [];
 	const rate = seq.settings.frameRate as Rational;
 	const fps = rate.den > 0 ? rate.num / rate.den : 30;
-	const win = cue.window && cue.window.end > cue.window.start ? (cue.window.end - cue.window.start) / fps : null;
+	const win =
+		cue.window && cue.window.end > cue.window.start ? (cue.window.end - cue.window.start) / fps : null;
 	const used = soundsUsedNear(doc, seq, cue.frame, { exclude: placedClips(seq, cue) });
 	return {
 		...(types.length ? { types: types.slice(0, 32) } : {}),
