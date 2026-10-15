@@ -2523,3 +2523,10 @@ Validation for this follow-up is intentionally static only, per root scheduling:
 Engine1 implementation commit `a062eb81` changed test code by **+309 / −1432 lines, net −1123 test LOC** from the assigned baseline. The coordinated WER deletion in `0e8fee98` removes another 10 lines from the assigned `speech-core.test.ts`; its support-file move is accounted for in engine3’s change. Authoritative case-family totals after that coordinated deletion are **34 DELETE / 34 REWRITE / 164 KEEP** (232 original families), counting the WER case once here.
 
 Final rescan checks actually completed: `pnpm exec biome check` passed all five changed TypeScript files; TypeScript `transpileModule` reported no syntax diagnostics in those five files; `git diff --check` passed; caller search found no remaining `frameR` use or external FFT-constant imports. Cross-review independently checked the quaternion/chordal rotation math, canonical first-camera frame, literal endpoint transform values and crop equations. Endpoint path alignment is gauge invariant for these straight constant-speed fixtures, but it can produce different noisy residual magnitudes than best-fit similarity; focused runtime validation must confirm the unchanged thresholds rather than assuming metric equivalence.
+
+Integrated typecheck correction, recorded before editing: the rewritten
+`golden-parity.e2e.test.ts` snapshot setup omits the required `resolveFont` option.
+Its five authored scenes contain only the generated image cards and effects, so
+provide a resolver returning `null`. This completes fixture setup without altering
+pixels, assertions or production behavior. Validation: engine typecheck and the
+existing opt-in native/Remotion golden parity suite.

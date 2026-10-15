@@ -80,7 +80,7 @@ function diffStats(a: Buffer, b: Buffer) {
 
 /** S06 §3: decode v^2.4, multiply linear light by 2^EV, then re-encode. */
 function exposed(src: Buffer, ev: number): Buffer {
-	return src.map((v) => Math.round(v * 2 ** (ev / 2.4)));
+	return Buffer.from(src.map((v) => Math.round(v * 2 ** (ev / 2.4))));
 }
 
 const GRADE = (look: string): EffectParams => ({

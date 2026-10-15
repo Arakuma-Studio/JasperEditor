@@ -159,6 +159,7 @@ describe.runIf(enabled)('native vs Remotion on golden scenes (REMOTION_E2E=1)', 
 	async function remotionStill(d: DocBuilder): Promise<Rgba8> {
 		const svc = coreServices(engine.app);
 		const doc = buildRenderSnapshot(d.doc, d.seqId, {
+			resolveFont: () => null,
 			resolveMedia: (asset) => {
 				const key = asset.locators.find((locator) => locator.type === 'engine-store')?.key;
 				if (!key) throw new Error(`Missing engine-store locator for ${asset.id}`);

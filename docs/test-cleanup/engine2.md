@@ -574,3 +574,9 @@ Two further before-edit dispositions from the same census:
 - **REWRITE** `tracking.test.ts` — `tracks the plate both ways from a mid reference within 1.5 px RMS, 4 px max, with live progress`: subscribe using the literal protocol name `tracking.progress` from S09 §7 instead of the same constant used by the publisher. A publisher wire-name regression must fail the existing nonempty progress and numerical trajectory assertions. The oracle is the authored fixture trajectory plus independent wire name, observed at engine events and HTTP job results; private symbols can change. No other retained case owns live trajectory updates. The production constant remains used by the service/UI; no dead production seam. Risk medium; focused tracker test and engine typecheck pending integrated gate.
 
 Rescan completion: 14 additional REWRITE dispositions, no new tests and no deletions in this pass. Totals above incorporate this pass. Removed the dead generic blend accumulator, shared scene-resolution oracle, CPU LUT expected-image machinery, and `schemaBackupName` export. Biome checked changed TypeScript successfully, and final diff review plus `git diff --check` completed. Runtime/render validation remains explicitly pending the coordinated integrated gate; no runtime pass is claimed for the new analytic or external oracles.
+
+Integrated typecheck correction, recorded before editing: `color.test.ts`'s independent
+exposure helper declares `Buffer` but typed-array `map` has a `Uint8Array` return type.
+Wrap its mapped bytes in `Buffer.from`; retain the same normative formula and pixel
+assertions. This is test setup typing only, with no production change or new seam.
+Validation: engine typecheck and the existing native colour tests.
