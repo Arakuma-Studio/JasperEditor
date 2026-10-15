@@ -1,10 +1,10 @@
 # Engine test cleanup audit and disposition
 
-Status: cleanup implemented; pre-edit dispositions are recorded below. Focused execution and package typecheck are pending root-scheduled integrated validation. Scope: the 36 files assigned to engine1. Case names below come from the original TypeScript AST; parameterized families share one entry only when they assert the same contract.
+Status: cleanup implemented; pre-edit dispositions are recorded below. The focused retry suite passes; other focused execution and package typecheck are pending root-scheduled integrated validation. Scope: the 36 files assigned to engine1. Case names below come from the original TypeScript AST; parameterized families share one entry only when they assert the same contract.
 
 Every retained case is evaluated against all six requested bars below: **B1** independent requirement, **B2** recognizable failure, **B3** independent oracle, **B4** stable seam, **B5** refactor tolerance, **B6** lowest owner/remaining coverage. “No stronger owner” means the named scenario is not asserted elsewhere at a lower stable seam after the listed duplicate removals; rendered-artifact checks own cross-component integration, while pure numerical/validation cases own separate input contracts.
 
-The source owner and its non-test callers were inspected before disposition. Production seam changes approved by root: remove export from `WINDOWS_OPEN_COMMAND`, `medianFilter`, `dtw`, `withSinglePageRetry`, `focalOf`; all have only same-module production callers. No production behavior change is intended. No fixtures, committed goldens or shared render helper is removed while another consumer remains.
+The source owner and its non-test callers were inspected before disposition. Production seam changes approved by root: remove export from `WINDOWS_OPEN_COMMAND`, `medianFilter`, `dtw`, `withSinglePageRetry`, `focalOf`, `saliency`, `buildWarpAnalysis`; all have only same-module production callers. No production behavior change is intended. No fixtures, committed goldens or shared render helper is removed while another consumer remains.
 
 ## apps/engine/test/agent.test.ts
 
@@ -1850,22 +1850,50 @@ Detectable failure before removal: the expectation named “renders a still thro
 
 ## apps/engine/test/remotion-retry.test.ts
 
-Owner/caller evidence: RemotionService same-module callers only. Independent sources: software-GL timeout recovery regression.
+Cross-review correction, recorded before follow-up editing: `docs/verification.md` §8 #5 and its remaining-limit note specify recovery after concurrent software-GL render timeout. A successful first render does not cover this failure, so the original DELETE disposition was incorrect. Rewrite through `RemotionService.renderMedia`, which `export/service.ts` calls in production. The external `@remotion/renderer` SDK supplies controlled failures; the real service owns retry decisions and error mapping. `withSinglePageRetry` stays private.
 
-Validation planned: `pnpm exec vitest run apps/engine/test/blend-static-layer.e2e.test.ts --maxWorkers=1`; `pnpm --filter @jasper/engine typecheck`. Rendering/native/SSH cases retain their declared tooling prerequisites; root schedules resource-heavy checks.
+Isolated failure modes: no retry after an overloaded concurrent render; retry still using overloaded concurrency; unbounded retries after repeated timeout; retrying an unrelated rendering failure; retrying a render already limited to one page; ignoring cancellation arriving during the failed render. No actual browser or encoder is needed to induce these SDK-boundary failures.
 
-### DELETE: a timeout on several pages is retried once on one page, and logged
+Validation planned: `pnpm exec vitest run apps/engine/test/remotion-retry.test.ts --maxWorkers=1`; `pnpm --filter @jasper/engine typecheck` when root schedules the slot.
 
-Detectable failure before removal: the expectation named “a timeout on several pages is retried once on one page, and logged”. Disposition: Private wrapper collaborator-count/log-copy detector; expected render mock implements concurrency-dependent outcome. Non-test seam consumers: RemotionService same-module callers only; shared production behavior remains. Risk: loss of incidental shape/duplicate assertions only; stronger coverage is named in the disposition. Validation: focused surviving owner suite plus engine typecheck.
+### REWRITE: a timeout on several pages is retried once on one page, and logged
 
-### DELETE: a second timeout fails with the typed error
+New name: `recovers a concurrent renderer timeout through the public render operation`.
 
-Detectable failure before removal: the expectation named “a second timeout fails with the typed error”. Disposition: Same private wrapper/mock timeout scenario, rather than rendering seam; typed render failures and real multi-frame timeout regression remain. Non-test seam consumers: RemotionService same-module callers only; shared production behavior remains. Risk: loss of incidental shape/duplicate assertions only; stronger coverage is named in the disposition. Validation: focused surviving owner suite plus engine typecheck.
+- **B1:** `docs/verification.md` §8 #5 explicitly requires one-page recovery for heavy concurrent compositions on software GL.
+- **B2:** A caller whose renderer times out with parallel pages must receive a completed render result; removing recovery or keeping excessive concurrency makes this call reject.
+- **B3:** The external renderer refuses concurrent work and accepts one-page work. It does not implement retries. The service must recover; a fixed 30-frame composition supplies independently arranged result metadata.
+- **B4:** Calls public `RemotionService.renderMedia` with real prebuilt-bundle configuration; mocks only the third-party renderer SDK boundary.
+- **B5:** The retry helper can be renamed, inlined or replaced. No log wording, private members or call count is asserted.
+- **B6:** This is the lowest service boundary that owns recovery from SDK failure. The static-layer video test owns successful composition output and cannot force this failure mode.
 
-### DELETE: no retry for other errors, a single page or a cancelled render
+Risk: low; only test orchestration changes. Validation: focused retry suite and engine typecheck.
 
-Detectable failure before removal: the expectation named “no retry for other errors, a single page or a cancelled render”. Disposition: Collaborator call-count expectations; two negative branches do not assert returned error and can pass for the wrong reason. Non-test seam consumers: RemotionService same-module callers only; shared production behavior remains. Risk: loss of incidental shape/duplicate assertions only; stronger coverage is named in the disposition. Validation: focused surviving owner suite plus engine typecheck.
+### REWRITE: a second timeout fails with the typed error
 
+New name: `reports RENDER_TIMEOUT after the recovery attempt also times out`.
+
+- **B1:** The same documented recovery is bounded to one additional attempt; AGENTS.md requires typed engine errors rather than a hanging job.
+- **B2:** A repeated timeout must reject with retryable `RENDER_TIMEOUT`. Unlimited retry or loss of error mapping changes the caller-visible result.
+- **B3:** The renderer dependency fails twice, then would succeed. Expecting rejection is independent of the service implementation and catches an unauthorized third attempt without asserting counts.
+- **B4:** Uses public `renderMedia`; no access to the private retry function.
+- **B5:** Any implementation preserving the bounded outcome and typed error passes, regardless of logging/helper structure.
+- **B6:** No successful-render or first-timeout recovery case proves terminal repeated-timeout behavior; this service owns the mapping.
+
+Risk: low. Validation: focused retry suite and engine typecheck.
+
+### REWRITE: no retry for other errors, a single page or a cancelled render
+
+Named public-boundary cases: unrelated failure → `RENDER_FAILED`; one-page timeout → `RENDER_TIMEOUT`; cancellation during render failure → `JOB_CANCELLED`.
+
+- **B1:** Recovery is specified only for concurrency-induced timeout, and AGENTS.md requires cancellation/failure propagation into the job.
+- **B2:** Each call must reject with its exact engine error code. Returning success after an inappropriate retry or reporting timeout instead of cancellation fails.
+- **B3:** Each SDK fault is followed by a hypothetical success, so retrying incorrectly cannot pass the negative test. Cancellation is triggered inside the renderer call, ensuring it is not rejected earlier during setup for the wrong reason.
+- **B4:** Calls public `renderMedia`, supplies an AbortSignal and faults only the external renderer dependency.
+- **B5:** No private callback shape, log text or retry call count is observed; stable result/error behavior survives refactors.
+- **B6:** These are three distinct negative preconditions of the service recovery policy; ordinary render success and the two timeout cases above do not cover them.
+
+Risk: low. Validation: focused retry suite and engine typecheck.
 
 ## apps/engine/test/smoothpath.test.ts
 
@@ -2422,11 +2450,11 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 
 ## Cleanup totals
 
-{'DELETE': 36, 'REWRITE': 27, 'KEEP': 169}; parameterized family rows are counted once. Executed-test counts will be reported separately.
+{'DELETE': 33, 'REWRITE': 30, 'KEEP': 169}; parameterized family rows are counted once. Executed-test counts will be reported separately.
 
 ## Completed changes and verification
 
-Implemented the dispositions above: 36 DELETE, 27 REWRITE, 169 KEEP families across 36 assigned files. Test code changed by +104/−1319 lines, net −1215 lines. Three files are removed in full: `blend-remotion.e2e.test.ts`, `color-mgmt-remotion.test.ts`, `remotion-retry.test.ts`.
+Implemented the dispositions above: 33 DELETE, 30 REWRITE, 169 KEEP families across 36 assigned files. Test code changed by +176/−1311 lines, net −1135 lines. Two files are removed in full: `blend-remotion.e2e.test.ts`, `color-mgmt-remotion.test.ts`. The retry file is rewritten at the public service boundary after cross-review found an independently documented failure contract.
 
 Dead support removed: private `killIdleWorker` access and its lint suppression; cache fixture `refs` and copied expected-scan code; Windows `crtParse`, `dirs`/`hostilePaths` duplicate corpus and `FIXED` declaration; native animation benchmark `timed`/`pipDoc`/`cardsDoc` and its flags, plus the unused static-card option; golden `nativeFrames` collector; unused imports and anime checkout path helpers. Shared `assertDistinctScenes` removal is coordinated with the shared agent after both golden callers are removed. No golden image, media recipe or shared fixture was deleted here because surviving consumers need them.
 
@@ -2434,10 +2462,18 @@ Production exports removed without changing execution: `WINDOWS_OPEN_COMMAND` in
 
 Independent-oracle derivations: camera focal length follows pinhole geometry `f = width / (2 tan(horizontalFov / 2))`; committed fixture constants use width 1280 and 40°, 45°, 50°, 55°, 60°. The radial fixture uses the k1/k2 model documented in the three-d port record, `p_d = p (1 + k1 rho² + k2 rho⁴)`. These expectations no longer call production `focalOf`/`distort`. Slaney front-end endpoints come from the recipe in `docs/wp-notes/speech.md`: 1 kHz = 15 mel and 6.4 kHz = 42 mel; the 80-band 0–8 kHz bank places 1 kHz nearest zero-based band 26. Native pan and audio tests use their explicitly prescribed linear endpoints. Color Dodge expected RGB is `[204,191,170]` from the independently specified `backdrop / (1-source)` equation. Project collection compares file bytes, and Auto-Match uses external FFmpeg ebur128.
 
-Verification actually run: `pnpm install --frozen-lockfile --offline` passed; TypeScript syntax parser reported zero errors for changed source/test files; focused `pnpm exec biome check` passed for all 25 modified TypeScript files; `git diff --check` passed. Staged diff reviewed before commit. No focused Vitest, package typecheck, browser/GL/native rendering or remote SSH suite was run in this worktree: root requested that new test/typecheck/render processes be deferred because the shared 16-core host was overloaded and root's unchanged baseline/gates were already running. This is an explicit pending-validation handoff, not a passing test claim.
+Verification actually run: `pnpm install --frozen-lockfile --offline` passed; TypeScript syntax parser reported zero errors for changed source/test files; focused `pnpm exec biome check` passed for all 25 modified TypeScript files; `git diff --check` passed. Staged diff reviewed before commit. Before the follow-up, no focused Vitest, package typecheck, browser/GL/native rendering or remote SSH suite was run in this worktree: root requested that new test/typecheck/render processes be deferred because the shared 16-core host was overloaded and root's unchanged baseline/gates were already running. This is an explicit pending-validation handoff, not a passing test claim.
 
 Required integrated execution: root's `pnpm --filter @jasper/engine typecheck`, changed engine suites with one worker, then repository lint/typecheck/test/build. Run retained opt-in rendering with `REMOTION_E2E=1`, working Chrome/software GL and `JASPER_REQUIRE_ORACLES=1`; inspect output artifacts. Engine render tests leave generated video/PNG artifacts in their temporary appdirs, golden parity writes `test-results/golden/parity.txt`, and native/layer-bake numerical suites retain measurement reports. PowerShell and real SSH checks retain their declared environment gates. Baseline failures in retained contracts must be fixed at the owner, never pruned to pass.
 
 Known pending checks deserve attention after the oracle rewrites: external LUFS agreement in `audio-fx.test.ts`; independent Slaney peak and camera fixture numerics; the public snapshot/media handles in `golden-parity.e2e.test.ts`; prescribed audio gain/frame equations in `native-animated.test.ts`. No product failure is asserted from unrun tests.
 
 Stale references were sent to root for its documentation integration: color/compositor/keyframes-blend work notes and gaps.md mode-matrix count; native animation benchmark commands in testing/verification/native-animated-export notes; speech test count. Historical measured benchmark results should remain clearly historical, while active removed commands should go.
+
+## Follow-up dead-seam audit (before edit)
+
+`gaps/reframe.ts` exports `saliency` only because of an obsolete “Exported for tests” comment; its only remaining caller is the same-module automatic reframe implementation. `gaps/warp-analysis.ts` has the same obsolete export/comment on `buildWarpAnalysis`, called only by the same-module analysis pipeline. Repository-wide caller searches found no test or external production imports. Remove the two exports and comments without changing function behavior; retained `gaps-reframe.test.ts` and `gaps-warp-analysis.test.ts` exercise the public job contracts. Risk: low internal visibility cleanup; validate with engine typecheck and those focused suites under root scheduling.
+
+Follow-up implementation complete: `remotion-retry.test.ts` now exercises public render results after external SDK faults, while `withSinglePageRetry` remains private. The dependency fixture has no retry logic and creates no browser/FFmpeg process. `saliency` and `buildWarpAnalysis` now have module-private visibility and accurate comments; production calls are untouched. Focused Biome and TypeScript syntax checks cover these three changed TypeScript files; root subsequently scheduled only the lightweight retry file with one worker; its result is recorded below. Other focused suites/typecheck remain pending integrated execution.
+
+Focused follow-up execution: `pnpm exec vitest run apps/engine/test/remotion-retry.test.ts --maxWorkers=1` passed **5/5 tests** (102.38 s wall time, 524 ms test bodies; 99.55 s module import on the loaded host). The first run exposed a fixture error: returning the reset mock from `beforeEach` registered it as a Vitest cleanup callback. The hook now returns void; rerun passed without weakening any contract assertions. `pnpm exec biome check` passed all three follow-up TypeScript files and final diff whitespace checks passed. No product behavior was changed.
