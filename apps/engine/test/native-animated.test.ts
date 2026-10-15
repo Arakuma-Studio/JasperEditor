@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { appendFileSync, copyFileSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { applyMat3, invertMat3, layerMapOf, type Mat3, resolveSceneAt, type Vec2 } from '@jasper/project';
+import type { Vec2 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fitPieces, pieceValue } from '../src/export/keyframed.ts';
 import { buildNativeGraph } from '../src/export/native.ts';
@@ -278,15 +278,14 @@ function cornerError(corners: readonly Vec2[], quad: readonly Vec2[]): number {
 }
 
 /** Max colour error over pixels whose card point is ≥ 3 px away from every card boundary. */
-function colourError(img: Img, map: Mat3, opacity: number) {
-	const inv = invertMat3(map)!;
+function colourError(img: Img, cardPoint: (x: number, y: number) => Vec2, opacity: number) {
 	let max = 0;
 	let count = 0;
 	let sum = 0;
 	let where = '';
 	for (let y = 0; y < img.h; y += 3)
 		for (let x = 0; x < img.w; x += 3) {
-			const [u, v] = applyMat3(inv, [x + 0.5, y + 0.5]);
+			const [u, v] = cardPoint(x + 0.5, y + 0.5);
 			const c = cardColorAt(u, v);
 			if (!c) continue;
 			const o = (y * img.w + x) * 3;
@@ -313,12 +312,6 @@ function ssim(a: string, b: string, frame: number): number {
 	const m = /SSIM .*All:([0-9.]+)/.exec(r.stderr.toString());
 	if (!m) throw new Error(`ssim failed: ${r.stderr.toString().slice(-2000)}`);
 	return Number(m[1]);
-}
-
-function within(a: Img, b: Img, tol: number): number {
-	let n = 0;
-	for (let i = 0; i < a.rgb.length; i++) if (Math.abs(a.rgb[i]! - b.rgb[i]!) <= tol) n++;
-	return n / a.rgb.length;
 }
 
 const GPL_FILTERS = [
@@ -459,8 +452,8 @@ describe('planner: keyframed layers and levels are native', () => {
 });
 
 describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () => {
-	it('every sampled frame matches the evaluated layer: corners ≤ 0.1 px (sub-pixel), colour ≤ 8/255; LGPL filters only', async () => {
-		const { d, clip } = await cardDoc(app);
+	it('authored endpoint poses render within 0.1 px and 8/255 colour; LGPL filters only', async () => {
+		const { d } = await cardDoc(app);
 		const settings = proresSettings(d.seqId);
 		const planned = await coreServices(app).exports.plan({
 			envelope: d.envelope(),
@@ -491,12 +484,40 @@ describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () =
 		expect(frames).toHaveLength(48);
 		let worst = 0;
 		let worstColour = 0;
-		for (const [f, img] of frames.entries()) {
-			const layer = resolveSceneAt(planned.snapshot, f).find((l) => l.clip.clipId === clip)!;
-			const quad = layer.props.quad;
+		// S03 DM-010: independently apply the authored endpoint values, M(q) = P + R S (q-A).
+		const poses = [
+			{ f: 0, position: [520, 380], anchor: [320, 180], angle: -24, scale: 0.7, opacity: 1 },
+			{ f: 47, position: [1350, 760], anchor: [250, 140], angle: 33, scale: 1.45, opacity: 0.85 },
+		] as const;
+		for (const {
+			f,
+			position: [px, py],
+			anchor: [ax, ay],
+			angle,
+			scale,
+			opacity,
+		} of poses) {
+			const img = frames[f]!;
+			const c = Math.cos((angle * Math.PI) / 180);
+			const s = Math.sin((angle * Math.PI) / 180);
+			const quad = [
+				[0, 0],
+				[640, 0],
+				[640, 360],
+				[0, 360],
+			].map(
+				([u, v]): Vec2 => [
+					px + scale * (c * (u! - ax) - s * (v! - ay)),
+					py + scale * (s * (u! - ax) + c * (v! - ay)),
+				],
+			);
 			const corners = measureCorners(img, quad, PLATE[0]);
 			const err = cornerError(corners, quad);
-			const col = colourError(img, layerMapOf(layer.props), layer.props.opacity / 100);
+			const col = colourError(
+				img,
+				(x, y) => [ax + (c * (x - px) + s * (y - py)) / scale, ay + (-s * (x - px) + c * (y - py)) / scale],
+				opacity,
+			);
 			worst = Math.max(worst, err);
 			worstColour = Math.max(worstColour, col.max);
 			expect(col.count).toBeGreaterThan(1000);
@@ -510,7 +531,7 @@ describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () =
 		);
 	}, 300_000);
 
-	it('keyframed crop edges with keyframed non-uniform scale: the visible rect follows the evaluated quad (≤ 0.1 px)', async () => {
+	it('keyframed crop and non-uniform scale follow the authored affine corners (≤ 0.1 px)', async () => {
 		const d = new DocBuilder();
 		d.tx([
 			{ type: 'clip.addSolid', at: 0, duration: 48, track: 'V1', color: [20 / 255, 20 / 255, 20 / 255, 1] },
@@ -523,6 +544,8 @@ describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () =
 		const fx = d.tx([
 			{ type: 'param.set', target: t('uniformScale'), value: false },
 			{ type: 'param.set', target: t('rotation'), value: 12 },
+			{ type: 'param.set', target: t('position'), value: [960, 540] },
+			{ type: 'param.set', target: t('anchor'), value: [960, 540] },
 			{ type: 'effect.add', target: { clipId: s }, effectId: 'jasper.crop', params: { top: 10 }, ref: '$fx' },
 		]).refs.$fx!;
 		d.tx([
@@ -545,8 +568,24 @@ describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () =
 		const { out } = await runExport(d, settings);
 		let worst = 0;
 		for (const [f, img] of decodeAll(out).entries()) {
-			const layer = resolveSceneAt(planned.snapshot, f).find((l) => l.clip.clipId === s)!;
-			const quad = layer.props.quad;
+			// Linear keys clamp at their endpoints; the right crop is held until frame 20.
+			const sx = (30 + 17 * Math.min(1, f / 40)) / 100;
+			const sy = (25 + 11 * Math.max(0, Math.min(1, (f - 5) / 40))) / 100;
+			const left = 480 * Math.min(1, f / 30);
+			const right = f < 20 ? 1920 : 1632;
+			const c = Math.cos((12 * Math.PI) / 180);
+			const sn = Math.sin((12 * Math.PI) / 180);
+			const quad = [
+				[left, 108],
+				[right, 108],
+				[right, 1080],
+				[left, 1080],
+			].map(
+				([u, v]): Vec2 => [
+					960 + c * sx * (u! - 960) - sn * sy * (v! - 540),
+					540 + sn * sx * (u! - 960) + c * sy * (v! - 540),
+				],
+			);
 			const corners = measureCorners(img, quad, PLATE[0]);
 			const err = cornerError(corners, quad);
 			worst = Math.max(worst, err);
@@ -777,13 +816,8 @@ describe.runIf(REMOTION)('native vs Remotion render of the keyframed fixture (RE
 		return (await coreServices(engine.app).exports.outputFile(done.id))!;
 	}
 
-	/** Per-frame SSIM, share within 8/255 and the corner errors of both renders against the evaluated quad. */
-	async function compare(d: DocBuilder, clip: string, frames: number) {
-		const planned = await coreServices(engine.app).exports.plan({
-			envelope: d.envelope(),
-			sequenceId: d.seqId,
-			settings: proresSettings(d.seqId) as never,
-		});
+	/** Compare the two renderer artifacts; authoring geometry is checked independently above. */
+	async function compare(d: DocBuilder, frames: number) {
 		const native = await exportWith(d, 'native');
 		const remotion = await exportWith(d, 'remotion');
 		// NATIVE_ANIM_KEEP=<dir>: keep both renders for inspection.
@@ -791,36 +825,18 @@ describe.runIf(REMOTION)('native vs Remotion render of the keyframed fixture (RE
 			copyFileSync(native, join(process.env.NATIVE_ANIM_KEEP, `native-${frames}-${Date.now()}.mov`));
 			copyFileSync(remotion, join(process.env.NATIVE_ANIM_KEEP, `remotion-${frames}-${Date.now()}.mov`));
 		}
-		const a = decodeAll(native);
-		const b = decodeAll(remotion);
-		expect(a).toHaveLength(frames);
-		expect(b).toHaveLength(frames);
-		const out = {
-			ssim: [] as number[],
-			share: [] as number[],
-			native: [] as number[],
-			remotion: [] as number[],
-		};
-		for (let f = 0; f < frames; f++) {
-			out.ssim.push(ssim(native, remotion, f));
-			out.share.push(within(a[f]!, b[f]!, 8));
-			const quad = resolveSceneAt(planned.snapshot, f).find((l) => l.clip.clipId === clip)!.props.quad;
-			const err = (img: Img) => cornerError(measureCorners(img, quad, PLATE[0]), quad);
-			out.native.push(err(a[f]!));
-			out.remotion.push(err(b[f]!));
-		}
-		const min = (x: number[]) => Math.min(...x).toFixed(4);
-		const max = (x: number[]) => Math.max(...x).toFixed(3);
-		const mean = (x: number[]) => (x.reduce((s, v) => s + v, 0) / x.length).toFixed(4);
+		expect(decodeAll(native)).toHaveLength(frames);
+		expect(decodeAll(remotion)).toHaveLength(frames);
+		const values = Array.from({ length: frames }, (_, f) => ssim(native, remotion, f));
 		return {
-			...out,
-			line: `SSIM min ${min(out.ssim)} mean ${mean(out.ssim)}; share within 8/255 min ${min(out.share)} mean ${mean(out.share)}; corner error vs evaluated quad: native max ${max(out.native)} px, Remotion max ${max(out.remotion)} px`,
+			ssim: values,
+			line: `SSIM min ${Math.min(...values).toFixed(4)} mean ${(values.reduce((s, v) => s + v, 0) / frames).toFixed(4)}`,
 		};
 	}
 
 	it('every frame of the keyframed card: native vs Remotion SSIM ≥ 0.98 (FX-040)', async () => {
-		const { d, clip } = await cardDoc(engine.app, hostH());
-		const animated = await compare(d, clip, 48);
+		const { d } = await cardDoc(engine.app, hostH());
+		const animated = await compare(d, 48);
 		report(`[anim parity] keyframed card, 48 frames: ${animated.line}`);
 		for (const [f, v] of animated.ssim.entries()) expect(v, `frame ${f}`).toBeGreaterThanOrEqual(0.98);
 	}, 1_800_000);

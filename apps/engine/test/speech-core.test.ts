@@ -10,15 +10,7 @@ import {
 	repeating,
 } from '../src/speech/core/decode.ts';
 import { DEFAULT_DIARIZE, diarize, diarizeChunks } from '../src/speech/core/diarize.ts';
-import {
-	hzToMel,
-	logMel,
-	melFilters,
-	melToHz,
-	N_BINS,
-	N_FFT,
-	powerSpectrumFrame,
-} from '../src/speech/core/mel.ts';
+import { hzToMel, logMel, melFilters, melToHz, powerSpectrumFrame } from '../src/speech/core/mel.ts';
 import { type TokenizerJson, WhisperTokenizer } from '../src/speech/core/tokenizer.ts';
 import {
 	endOfVoice,
@@ -58,17 +50,17 @@ describe('mel front end (FilmCraft mel.rs tests)', () => {
 		expect(peak).toBe(26);
 	});
 
-	it('the mixed-radix FFT equals a direct DFT', () => {
+	it('the 400-point Whisper FFT equals a direct DFT over 201 bins', () => {
 		const rand = mulberry32(7);
-		const x = Float64Array.from({ length: N_FFT }, () => rand() * 2 - 1);
-		const got = new Float64Array(N_BINS);
+		const x = Float64Array.from({ length: 400 }, () => rand() * 2 - 1);
+		const got = new Float64Array(201);
 		powerSpectrumFrame(x, got);
-		for (let k = 0; k < N_BINS; k += 13) {
+		for (let k = 0; k < 201; k += 13) {
 			let re = 0;
 			let im = 0;
-			for (let i = 0; i < N_FFT; i++) {
-				re += x[i] * Math.cos((2 * Math.PI * k * i) / N_FFT);
-				im -= x[i] * Math.sin((2 * Math.PI * k * i) / N_FFT);
+			for (let i = 0; i < 400; i++) {
+				re += x[i] * Math.cos((2 * Math.PI * k * i) / 400);
+				im -= x[i] * Math.sin((2 * Math.PI * k * i) / 400);
 			}
 			expect(got[k]).toBeCloseTo(re * re + im * im, 6);
 		}
