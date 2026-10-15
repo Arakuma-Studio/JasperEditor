@@ -1,8 +1,9 @@
 // Suggest Cues… (spec 12 §2.7, §2.2 "Derivation"): what the dialog would add, computed with `deriveCues` on the
-// committed document. Pure; the dialog shows the counts and commits `plan.commands` as ONE transaction
+// committed document (its expressions bound, as the engine route does). Pure; the dialog shows the counts and commits `plan.commands` as ONE transaction
 // "Suggest Cues (n)" (one undo step).
 import { mgRegistry } from '@jasper/mg-templates';
 import {
+	bindExpressions,
 	type Command,
 	type CueDensity,
 	type CueDeriveSource,
@@ -31,6 +32,8 @@ export type SuggestOptions = {
 	replace: boolean;
 	/** Selected clip ids (range `selection`). */
 	selectedClips?: readonly string[];
+	/** Derive from the document with its expressions bound, as the engine route does (default true). */
+	expressions?: boolean;
 };
 
 export type SuggestPlan = {
@@ -96,12 +99,15 @@ export function planSuggestion(doc: ProjectDocument, sequenceId: string, o: Sugg
 		respectDialogue: o.respectDialogue,
 		mgTemplates: mgRegistry,
 	};
+	// Like the engine route: expression-driven motion moves as the renderer shows it (a no-op until the expression
+	// engine is loaded; the dialog loads it and plans again).
+	const derivedFrom = o.expressions === false ? doc : bindExpressions(doc);
 	// Found counts do not depend on the selection; kept counts do (merging), so both runs are needed unless all are on.
-	const all = deriveCues(doc, sequenceId, { ...base, sources: [...PROJECT_CUE_SOURCES] });
+	const all = deriveCues(derivedFrom, sequenceId, { ...base, sources: [...PROJECT_CUE_SOURCES] });
 	const allOn = PROJECT_CUE_SOURCES.every((s) => o.sources.has(s));
 	const chosen = allOn
 		? all
-		: deriveCues(doc, sequenceId, { ...base, sources: [...o.sources] as CueDeriveSource[] });
+		: deriveCues(derivedFrom, sequenceId, { ...base, sources: [...o.sources] as CueDeriveSource[] });
 	const found = zero();
 	const kept = zero();
 	for (const s of PROJECT_CUE_SOURCES) {

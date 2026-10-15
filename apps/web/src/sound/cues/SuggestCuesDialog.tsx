@@ -11,6 +11,7 @@ import type { EditorSession } from '@jasper/session';
 import { Checkbox, Dialog, type HostedDialogProps, registerDialog, Select } from '@jasper/ui';
 import { useMemo, useState } from 'react';
 import type { ToastRequest } from '../../commands/types.ts';
+import { useExpressionsFor } from '../../expressions/engine.ts';
 import { useDialogClose } from '../../extensions/dialog.ts';
 import { t } from '../../i18n/runtime.ts';
 import { type ProjectCueSource, planSuggestion, type SuggestRange, suggestRange } from './suggest.ts';
@@ -63,10 +64,20 @@ export function SuggestCuesDialog(
 	const [density, setDensity] = useState<CueDensity>(settings.density);
 	const [respectDialogue, setRespectDialogue] = useState(true);
 	const [replace, setReplace] = useState(true);
+	// expression-driven motion is derived as it plays: the plan is made again once the expression engine has loaded
+	const expressionsReady = useExpressionsFor(doc);
 	const plan = useMemo(
 		() =>
-			planSuggestion(doc, sequenceId, { sources, range, density, respectDialogue, replace, selectedClips }),
-		[doc, sequenceId, sources, range, density, respectDialogue, replace, selectedClips],
+			planSuggestion(doc, sequenceId, {
+				sources,
+				range,
+				density,
+				respectDialogue,
+				replace,
+				selectedClips,
+				expressions: expressionsReady,
+			}),
+		[doc, sequenceId, sources, range, density, respectDialogue, replace, selectedClips, expressionsReady],
 	);
 	const n = plan.adds.length;
 	const readOnly = session.getState().readOnly;
