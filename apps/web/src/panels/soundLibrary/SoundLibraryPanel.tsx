@@ -55,7 +55,12 @@ import {
 import { paletteOf } from '../../sound/design-model.ts';
 import { registerSoundDialogs, SOUND_LICENSE_DIALOG } from '../../sound/dialogs.tsx';
 import { addLayerToClip, fillCueWithSound, fillTargetFor } from '../../sound/fill.ts';
-import { auditionInContext, inContextStore, stopInContext } from '../../sound/in-context.ts';
+import {
+	auditionInContext,
+	inContextEndedBy,
+	inContextStore,
+	stopInContext,
+} from '../../sound/in-context.ts';
 import { endSoundDrag, writeSoundDrag } from '../../sound/insert.ts';
 import {
 	type Collection,
@@ -378,6 +383,8 @@ export function SoundLibraryPanel(props: PanelProps) {
 	const doAuditionInContext = useCallback(
 		(e: SoundEntry | null) => {
 			if (!e || !session) return;
+			// the Space / Shift+Space that has just stopped an In Context audition does not start one again
+			if (inContextEndedBy(['Space'])) return;
 			const st = inContextStore.getState();
 			if ((st.active || st.loading) && st.soundId === e.id) {
 				stopInContext();
@@ -385,7 +392,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 			}
 			soundLibraryPrefs.touchRecent(e.id);
 			void auditionInContext(session, engine, e).then((r) => {
-				if (!r.ok)
+				if (!r.ok && !r.cancelled)
 					notify({ kind: 'warning', message: t('Could not audition in context'), detail: r.message });
 			});
 		},
@@ -394,6 +401,8 @@ export function SoundLibraryPanel(props: PanelProps) {
 	const doAudition = useCallback(
 		(e: SoundEntry | null) => {
 			if (!e) return;
+			// Space while an In Context audition plays stops it (its key listener already did): nothing starts
+			if (inContextEndedBy(['Space'])) return;
 			// The In Context toggle makes Space play the sound in the timeline (spec 12 §2.7).
 			if (soundLibraryPrefs.get().inContext && session?.getState().activeSequenceId) doAuditionInContext(e);
 			else toggleAuditionOf(engine, e);
@@ -580,11 +589,14 @@ export function SoundLibraryPanel(props: PanelProps) {
 	useEffect(() => {
 		auditionPlayer().setVolumeDb(prefs.volumeDb);
 	}, [prefs.volumeDb]);
-	// The audition belongs to the panel: closing the panel stops it (a looped audition could not be stopped otherwise).
+	// The audition belongs to the panel: closing the panel stops it (a looped audition could not be stopped otherwise),
+	// and an In Context audition with it (its toggle and its live region go with the panel).
 	useEffect(
 		() => () => {
 			if (hoverTimer.current) clearTimeout(hoverTimer.current);
 			auditionPlayer().stop();
+			const st = inContextStore.getState();
+			if (st.active || st.loading) stopInContext();
 		},
 		[],
 	);

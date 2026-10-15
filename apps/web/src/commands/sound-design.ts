@@ -48,7 +48,7 @@ import {
 import { detectClipPeak } from '../sound/detect-peak.ts';
 import { SOUND_LICENSE_DIALOG } from '../sound/dialogs.tsx';
 import { cueCandidates, fillCueWithSound, fillUnfilledCues, linkLayersCommands } from '../sound/fill.ts';
-import { inContextActive, stopInContext } from '../sound/in-context.ts';
+import { inContextActive, inContextEndedBy, stopInContext } from '../sound/in-context.ts';
 import { soundLibraryPrefs } from '../sound/prefs.ts';
 import { registerSoundDesignUi } from '../sound/register.tsx';
 import { cycleVariation, swappableClips } from '../sound/swap.ts';
@@ -200,7 +200,9 @@ export const soundDesignCommands: UiCommand[] = [
 		disabledReason: () => t('Open a sequence first'),
 		run: async (ctx, args) => {
 			const a = args as z.infer<typeof AuditionArgs>;
-			if (inContextActive()) {
+			// a toggle: the press that stops it (in the Library's list the audition's own key listener has already
+			// stopped it when this runs) does not start it again
+			if (inContextActive() || inContextEndedBy(['Space'])) {
 				stopInContext();
 				return;
 			}
@@ -210,7 +212,8 @@ export const soundDesignCommands: UiCommand[] = [
 				const entry = await ctx.engine.getSound(a.soundId);
 				const { auditionInContext } = await import('../sound/in-context.ts');
 				const r = await auditionInContext(session, ctx.engine, entry);
-				if (!r.ok) throw new Error(r.message);
+				// superseded by another audition or stopped while it registered: not a failure
+				if (!r.ok && !r.cancelled) throw new Error(r.message);
 				return;
 			}
 			soundLibraryController()?.auditionInContext?.();
@@ -242,7 +245,8 @@ export const soundDesignCommands: UiCommand[] = [
 			// Esc stops what plays first (the plain audition, the In Context one), then leaves the mode
 			if (auditionPlayer().state.phase !== 'idle') auditionPlayer().stop();
 			else if (inContextActive()) stopInContext();
-			else cancelLibraryMode();
+			// this Esc has already stopped the In Context audition (its key listener runs first): the mode stays
+			else if (!inContextEndedBy(['Escape'])) cancelLibraryMode();
 		},
 	},
 	// ---------------------------------------------------------------- cues
