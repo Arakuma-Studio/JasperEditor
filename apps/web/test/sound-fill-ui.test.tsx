@@ -284,17 +284,15 @@ describe('Cue Seam drop and cue menu', () => {
 		soundLibraryPrefs.set({ inContext: true });
 		s.session.select('cues', [s.cueId], 'replace');
 		const run = vi.fn();
-		const items = cueMenuExtensions
-			.list()
-			.flatMap((e) =>
-				e.items({
-					session: s.session,
-					sequenceId: s.seqId,
-					cueId: s.cueId,
-					selection: [s.cueId],
-					runCommand: run,
-				}),
-			);
+		const items = cueMenuExtensions.list().flatMap((e) =>
+			e.items({
+				session: s.session,
+				sequenceId: s.seqId,
+				cueId: s.cueId,
+				selection: [s.cueId],
+				runCommand: run,
+			}),
+		);
 		const fillWith = items.find((i) => i.kind === 'submenu' && i.label === 'Fill With') as Extract<
 			MenuItemSpec,
 			{ kind: 'submenu' }
