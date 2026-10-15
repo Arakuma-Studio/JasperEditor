@@ -58,7 +58,7 @@ export type ScopedHtmlInCanvasProps = ComponentProps<typeof HtmlInCanvas> & {
 /** Error code of a render that would nest HTML-in-Canvas scopes (the engine maps it to a job error). */
 export const CANVAS_NESTED = 'CANVAS_NESTED';
 
-export function nestedScopeMessage(inner: string, outer: string): string {
+function nestedScopeMessage(inner: string, outer: string): string {
 	return `${CANVAS_NESTED}: ${inner} cannot be drawn inside ${outer} (the browser cannot nest HTML-in-Canvas scopes)`;
 }
 

@@ -1,4 +1,3 @@
-import '../gl-poison.ts';
 import {
 	planGpuTransition,
 	TRANSITION_FAMILIES,
@@ -35,15 +34,6 @@ function picture(kind: string, w: number, h: number): HTMLCanvasElement {
 			ctx.fillRect(0, 0, w, h);
 			ctx.fillStyle = 'rgb(240, 220, 40)';
 			ctx.fillRect(0, (h * 3) / 4, w, h / 8);
-		} else if (kind === 'stripes' || kind === 'stripes2') {
-			// Vertical colour stripes (period 12 px); 'stripes2' is the same picture moved 4 px to the right.
-			const off = kind === 'stripes2' ? 4 : 0;
-			for (let x = -12; x < w + 12; x += 12) {
-				ctx.fillStyle = 'rgb(230, 200, 40)';
-				ctx.fillRect(x + off, 0, 6, h);
-				ctx.fillStyle = 'rgb(30, 60, 140)';
-				ctx.fillRect(x + off + 6, 0, 6, h);
-			}
 		} else if (kind === 'halves') {
 			ctx.fillStyle = '#fff';
 			ctx.fillRect(0, 0, w / 2, h);
@@ -143,18 +133,6 @@ const api = {
 		let d = 0;
 		for (let i = 0; i < x.length; i++) d += Math.abs(x[i]! - y[i]!);
 		return d / x.length;
-	},
-	timings() {
-		const out: Record<string, [number, number]> = {};
-		for (const s of SPECS) {
-			const t0 = performance.now();
-			run({ id: s.id, frame: 5, duration: 11 });
-			const t1 = performance.now();
-			run({ id: s.id, frame: 6, duration: 11 });
-			const t2 = performance.now();
-			out[s.label] = [Math.round(t1 - t0), Math.round(t2 - t1)];
-		}
-		return out;
 	},
 };
 

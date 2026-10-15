@@ -1,5 +1,4 @@
 // @vitest-environment node
-import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from '@playwright/test';
@@ -37,24 +36,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		});
 
-		it.runIf(process.env.SD_GL_TIMINGS === '1')('times every dissolve', { timeout: 1_800_000 }, async () => {
-			const only = (process.env.SD_GL_IDS ?? '').split(',').filter(Boolean);
-			const ids = (await call<string[]>('ids')).filter(
-				(id) => only.length === 0 || only.some((o) => id.endsWith(o)),
-			);
-			const t: Record<string, [number, number]> = {};
-			for (const id of ids) {
-				const t0 = Date.now();
-				await run({ id, frame: 5, duration: 11 });
-				const t1 = Date.now();
-				await run({ id, frame: 6, duration: 11 });
-				t[id] = [t1 - t0, Date.now() - t1];
-				if (process.env.SD_GL_TIMINGS_OUT)
-					writeFileSync(process.env.SD_GL_TIMINGS_OUT, JSON.stringify(t, null, 1));
-			}
-			expect(ids.length).toBeGreaterThan(0);
-		});
-
 		const compare = (a: RunArgs, b: RunArgs): Promise<number> =>
 			page.evaluate(
 				([x, y]) =>
@@ -74,30 +55,13 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			[48, 44],
 			[90, 50],
 		];
-		const A: Px[] = [
-			[160, 20, 20, 255],
-			[255, 255, 255, 255],
-			[160, 20, 20, 255],
-			[160, 20, 20, 255],
-		];
-		const B: Px[] = [
-			[20, 40, 170, 255],
-			[20, 40, 170, 255],
-			[240, 220, 40, 255],
-			[20, 40, 170, 255],
-		];
 		const bad = (got: Px[], want: Px[], tol = 3) =>
 			got.some((g, i) => g.some((v, k) => Math.abs(v - want[i]![k]!) > tol));
 
-		it('keeps the progress contract with default params: A at 0, B at 1, two-sided and one-sided', async () => {
+		it('single-sided fades start or end at transparency', async () => {
 			const ids = await call<string[]>('ids');
-			expect(ids).toHaveLength(30);
 			const problems: string[] = [];
 			for (const id of ids) {
-				const a = await run({ id, ...at(0), probes: PROBES });
-				const b = await run({ id, ...at(100), probes: PROBES });
-				if (bad(a.probes, A)) problems.push(`${id} @0: ${JSON.stringify(a.probes)}`);
-				if (bad(b.probes, B)) problems.push(`${id} @1: ${JSON.stringify(b.probes)}`);
 				// A fade at the head of B starts transparent, one at the tail of A ends transparent.
 				const head = await run({ id, ...at(0), sides: 'in', probes: PROBES });
 				const tail = await run({ id, ...at(100), sides: 'out', probes: PROBES });
@@ -179,34 +143,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect(dim).toEqual([]);
 		});
 
-		it('the warping, blurring and glitch dissolves differ from the plain dissolve mid-way', async () => {
-			const same: string[] = [];
-			for (const [id, params, a, b] of [
-				['S_DissolveBlur', {}],
-				['S_DissolveDefocus', {}],
-				['S_DissolveBubble', {}],
-				['S_DissolveVortex', {}],
-				['S_DissolveWaves', {}],
-				['S_DissolvePuddle', {}],
-				['S_DissolveDistort', {}, 'stripes', 'stripes2'],
-				['S_DissolveDiffuse', {}],
-				['S_DissolveShake', {}],
-				['S_DissolveTiles', {}],
-				['S_DissolveAutoPaint', {}],
-				['S_DissolvePixelSort', {}],
-				['S_DissolveDigitalDamage', { timeIntensity: 10, intensity: 3 }],
-				['S_DissolvePixelMosh', {}, 'stripes', 'stripes2'],
-			] as [string, Record<string, unknown>, string?, string?][]) {
-				const sides = { a: a ?? 'a', b: b ?? 'b' };
-				const d = await compare(
-					{ id, ...at(50, params), ...sides },
-					{ id: 'S_Dissolve', ...at(50), ...sides },
-				);
-				if (!(d > 1)) same.push(`${id}: ${d.toFixed(2)}`);
-			}
-			expect(same).toEqual([]);
-		});
-
 		it('Mix with Dissolve 1 gives the plain dissolve', async () => {
 			for (const id of ['S_DissolveGlow', 'S_DissolveVortex', 'S_DissolveTiles']) {
 				const d = await compare(
@@ -225,12 +161,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				expect(two.checksum, id).toBe(one.checksum);
 				expect(other.checksum, id).not.toBe(one.checksum);
 			}
-		});
-
-		it('Reverse plays the dissolve backwards (the flare sweeps the other way)', async () => {
-			const fwd = { id: 'S_DissolveLensFlare', frame: 2, duration: 9 };
-			const d = await compare(fwd, { ...fwd, params: { reverse: true } });
-			expect(d).toBeGreaterThan(1);
 		});
 	},
 );

@@ -432,7 +432,7 @@ const ClipLayer = memo(function ClipLayer({
  * edit-structure: the clip-local frame whose picture a clip shows at `localFrame` — the held frame of a frame hold
  * (rounded to the frame grid), or the edge frame inside freeze-frame transition handles; else `localFrame`.
  */
-export function pictureLocalFrame(
+function pictureLocalFrame(
 	clip: Pick<
 		RenderVisualClip,
 		| 'start'

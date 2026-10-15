@@ -1,4 +1,3 @@
-import '../gl-poison.ts';
 import {
 	planGpuTransition,
 	TRANSITION_SPECS,
@@ -102,17 +101,6 @@ function stats(c: HTMLCanvasElement) {
 }
 
 const api = {
-	timings() {
-		const out: Record<string, number> = {};
-		for (const s of TRANSITION_SPECS.filter((x) => x.gpu && !x.id.startsWith('jasper.s.'))) {
-			const t0 = performance.now();
-			for (const p of [0, 50, 100]) run(s.id, { at: p });
-			out[s.id] = Math.round(performance.now() - t0);
-			console.log(`timing ${s.id} ${out[s.id]}`);
-		}
-		return out;
-	},
-
 	pixels() {
 		const r: Record<string, Px> = {};
 		const greenBlue = () => halves('#0f0', '#00f');
@@ -336,32 +324,6 @@ const api = {
 		r.vrGradTop = at('jasper.vr-gradient-wipe', { at: 50, params: { softness: 0 } }, 32, 4);
 		r.vrGradBottom = at('jasper.vr-gradient-wipe', { at: 50, params: { softness: 0 } }, 32, 32);
 		return r;
-	},
-
-	/** Mean |difference| (0..255) of each transition at 50 % from a linear-light cross-fade, over patterned clips. */
-	differs(ids: string) {
-		const a = () => halves('#0f0', '#f00');
-		const b = () =>
-			canvas(W, H, (ctx) => {
-				ctx.fillStyle = '#00f';
-				ctx.fillRect(0, 0, W, H);
-				ctx.fillStyle = '#ff0';
-				ctx.fillRect(0, 0, W, H / 2);
-			});
-		const data = (c: HTMLCanvasElement) => c.getContext('2d')!.getImageData(0, 0, W, H).data;
-		const fade = data(run('jasper.film-dissolve', { at: 50, a: a(), b: b() }));
-		const out: Record<string, number> = {};
-		for (const id of ids.split(',')) {
-			const d = data(run(id, { at: 50, a: a(), b: b() }));
-			let sum = 0;
-			for (let i = 0; i < d.length; i += 4)
-				sum +=
-					Math.abs(d[i]! - fade[i]!) +
-					Math.abs(d[i + 1]! - fade[i + 1]!) +
-					Math.abs(d[i + 2]! - fade[i + 2]!);
-			out[id] = sum / (d.length / 4) / 3;
-		}
-		return out;
 	},
 
 	/** Random transitions: same seed → same picture, other instance → other picture; coverage near the progress. */

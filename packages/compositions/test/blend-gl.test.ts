@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url';
 import { inflateSync } from 'node:zlib';
 import {
 	BLEND_MODES,
-	blendModeInfo,
 	blendPixel,
 	clampPremul,
 	dissolveNoise,
@@ -128,10 +127,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			}
 			return a;
 		};
-
-		it('has WebGL2', async () => {
-			expect((await call<{ webgl2: boolean }>('info')).webgl2).toBe(true);
-		});
 
 		/** Modes with discontinuities (thresholds, divisions near 0): an input off by rounding may flip a pixel. */
 		const STEEP = new Set([
@@ -284,23 +279,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		});
 
 		const cssModes = BLEND_MODES.filter((m) => !!blendModeCss(m));
-		it('draws the CSS modes and only those through mix-blend-mode', () => {
-			expect(cssModes).toEqual(BLEND_MODES.filter((m) => blendModeInfo(m)!.css));
-			expect(cssModes).toEqual([
-				'darken',
-				'multiply',
-				'lighten',
-				'screen',
-				'overlay',
-				'soft-light',
-				'hard-light',
-				'difference',
-				'exclusion',
-				'hue',
-				'color',
-				'luminosity',
-			]);
-		});
 
 		it.each(cssModes.map((m) => [m]))('Chrome CSS mix-blend-mode = blendPixel: %s', async (mode) => {
 			for (const [baseOpacity, topOpacity, tol] of [

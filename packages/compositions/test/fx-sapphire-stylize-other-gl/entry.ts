@@ -1,19 +1,14 @@
-import '../gl-poison.ts';
 import { defaultEffectRegistry, type EffectSpec, fxBuiltinUniforms, planGpuEffect } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
 
 type Px = [number, number, number, number];
 type Scene = {
-	kind: 'photo' | 'ramp' | 'quad' | 'bars' | 'transparent' | 'solid' | 'disc' | 'invertStrip';
+	kind: 'ramp' | 'quad' | 'bars' | 'transparent' | 'solid' | 'disc' | 'invertStrip';
 	dx?: number;
 	dy?: number;
-	/** photo: scale about the box centre. */
-	zoom?: number;
 	color?: string;
 };
-
-let photo: HTMLImageElement | null = null;
 
 function canvas(w: number, h: number, paint?: (ctx: CanvasRenderingContext2D) => void): HTMLCanvasElement {
 	const c = document.createElement('canvas');
@@ -35,12 +30,6 @@ function paintScene(
 	const x = b.x + (s.dx ?? 0);
 	const y = b.y + (s.dy ?? 0);
 	switch (s.kind) {
-		case 'photo':
-			if (photo) {
-				const z = s.zoom ?? 1;
-				ctx.drawImage(photo, x + (b.w * (1 - z)) / 2, y + (b.h * (1 - z)) / 2, b.w * z, b.h * z);
-			}
-			break;
 		case 'ramp': {
 			const g = ctx.createLinearGradient(b.x, 0, b.x + b.w, 0);
 			g.addColorStop(0, '#000');
@@ -103,7 +92,6 @@ export type RenderOpts = {
 	frame?: number;
 	seed?: number;
 	probes?: [number, number][];
-	png?: boolean;
 	/** Media param textures: param name → scene. */
 	media?: Record<string, Scene & { w?: number; h?: number }>;
 };
@@ -188,22 +176,12 @@ function render(o: RenderOpts) {
 			),
 		) as Px;
 	return {
-		canvas: [layout.width, layout.height],
-		box: [layout.box.x, layout.box.y, layout.box.w, layout.box.h],
-		offsets,
 		hash,
 		probes: (o.probes ?? []).map(([x, y]) => px(layout.box.x + x, layout.box.y + y)),
-		png: o.png ? out.toDataURL('image/png') : undefined,
 	};
 }
 
 const api = {
-	async setPhoto(dataUrl: string) {
-		const img = new Image();
-		img.src = dataUrl;
-		await img.decode();
-		photo = img;
-	},
 	render,
 };
 

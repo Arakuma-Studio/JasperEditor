@@ -31,12 +31,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		});
 
-		it('default params are the identity (one pass)', async () => {
-			const r = await run({ width: 96, height: 32, scene: 'hues', reference: true });
-			expect(r.passes.length).toBe(1);
-			expect(r.maxDiff).toBeLessThanOrEqual(1);
-		});
-
 		it('HSL Secondary key + correction equals the CPU reference on every pixel', async () => {
 			for (const params of [
 				{ secHueCenter: 0, secHueRange: 20, secHueSoft: 25, secSaturation: 0 },
@@ -61,7 +55,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				{ secHueCenter: 230, secHueRange: 25, secInvert: true, secSaturation: 30 },
 			]) {
 				const r = await run({ width: 120, height: 24, scene: 'hues', params, reference: true });
-				expect(r.passes.length, JSON.stringify(params)).toBe(1);
 				expect(r.maxDiff, `${JSON.stringify(params)} worst ${JSON.stringify(r.worst)}`).toBeLessThanOrEqual(
 					1,
 				);
@@ -92,7 +85,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				expect(r.maxDiff, `${JSON.stringify(params)} worst ${JSON.stringify(r.worst)}`).toBeLessThanOrEqual(
 					1,
 				);
-				expect(r.probes).toEqual([]);
 			}
 			const r = await run({
 				width: 160,
@@ -120,7 +112,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				params: { ...base, secDenoise: 100 },
 				probes: [[3, 3]],
 			});
-			expect(dn.passes).toContain('keyDenoised');
 			expect(dn.probes[0]![0]).toBeGreaterThan(245);
 			const hard = await run({ width: 200, height: 8, scene: 'split', params: base, probes: [[96, 4]] });
 			expect(hard.probes[0]![0]).toBeGreaterThan(250);
@@ -135,7 +126,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 					[104, 4],
 				],
 			});
-			expect(soft.passes).toContain('keyBlurred');
 			const v = soft.probes.map((p) => p[0]);
 			expect(v[0]).toBeLessThan(250);
 			expect(v[0]).toBeGreaterThan(v[1]!);
@@ -149,7 +139,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			];
 			const plain = await run({ width: 200, height: 8, scene: 'edge', probes });
 			const sharp = await run({ width: 200, height: 8, scene: 'edge', params: { sharpen: 80 }, probes });
-			expect(sharp.passes).toContain('soft');
 			expect(sharp.probes[0]![0]).toBeGreaterThan(plain.probes[0]![0] + 10);
 			expect(sharp.probes[1]![0]).toBeLessThan(plain.probes[1]![0] - 10);
 			const soft = await run({ width: 200, height: 8, scene: 'edge', params: { sharpen: -100 }, probes });

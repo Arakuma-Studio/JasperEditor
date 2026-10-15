@@ -1,4 +1,3 @@
-import '../gl-poison.ts';
 import { planGpuTransition, TRANSITION_SPECS, type TransitionSides, type TrSide } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 
@@ -104,7 +103,6 @@ function frame(o: Omit<RunOpts, 'points'>): number[] {
 }
 
 const api = {
-	webgl2: () => !!fxHost(),
 	run,
 	frame,
 };

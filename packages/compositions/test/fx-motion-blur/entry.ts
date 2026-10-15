@@ -1,15 +1,11 @@
 // Keyframe values are linearly interpolated at fractional frames, matching the shared evaluator
 // for linear keys; this lets the shutter sample motion between whole frames.
-import '../gl-poison.ts';
 import {
 	defaultEffectRegistry,
-	defineShaderEffect,
 	type EffectParams,
 	type EffectSpec,
 	fxBuiltinUniforms,
-	GLSL_MB_POSES,
 	gpuPadding,
-	hashString,
 	planGpuEffect,
 	planGpuTransition,
 	TRANSITION_SPECS,
@@ -129,20 +125,14 @@ export type EffectArgs = {
 	column?: number;
 	probes?: [number, number][];
 	png?: boolean;
-	/** Repeat the draw this many times and report the mean time (ms). */
-	repeat?: number;
 };
 
 export type Out = {
 	probes: Px[];
 	checksum: number;
-	canvas: [number, number];
-	box: [number, number, number, number];
 	row?: number[];
 	column?: number[];
 	png?: string;
-	ms?: number;
-	uniforms?: Record<string, number[]>;
 };
 
 const luma = (d: Uint8ClampedArray, i: number) => 0.2126 * d[i]! + 0.7152 * d[i + 1]! + 0.0722 * d[i + 2]!;
@@ -220,25 +210,8 @@ function runEffect(a: EffectArgs): Out {
 			out.getContext('2d')!,
 		);
 	draw();
-	let ms: number | undefined;
-	if (a.repeat) {
-		out.getContext('2d')!.getImageData(0, 0, 1, 1);
-		const t0 = performance.now();
-		for (let i = 0; i < a.repeat; i++) {
-			draw();
-			out.getContext('2d')!.getImageData(0, 0, 1, 1); // wait for the GPU
-		}
-		ms = (performance.now() - t0) / a.repeat;
-	}
 	const r = report(out, layout.box, a);
-	const mb = plan.uniforms.find((u) => u.name === 'u_mbPlan');
-	return {
-		...(r as Out),
-		canvas: [layout.width, layout.height],
-		box: [layout.box.x, layout.box.y, layout.box.w, layout.box.h],
-		...(ms !== undefined ? { ms } : {}),
-		uniforms: mb ? { u_mbPlan: [...mb.value] } : {},
-	};
+	return r as Out;
 }
 
 export type TransitionArgs = {
@@ -255,7 +228,6 @@ export type TransitionArgs = {
 	column?: number;
 	probes?: [number, number][];
 	png?: boolean;
-	repeat?: number;
 };
 
 function runTransition(a: TransitionArgs): Out {
@@ -298,79 +270,11 @@ function runTransition(a: TransitionArgs): Out {
 			out.getContext('2d')!,
 		);
 	draw();
-	let ms: number | undefined;
-	if (a.repeat) {
-		const t0 = performance.now();
-		for (let i = 0; i < a.repeat; i++) {
-			draw();
-			out.getContext('2d')!.getImageData(0, 0, 1, 1);
-		}
-		ms = (performance.now() - t0) / a.repeat;
-	}
 	const box = { x: 0, y: 0, w: W, h: H };
 	const r = report(out, box, { ...a, width: W, height: H } as EffectArgs);
-	return { ...(r as Out), canvas: [W, H], box: [0, 0, W, H], ...(ms !== undefined ? { ms } : {}) };
+	return r as Out;
 }
 
-/** Micro-benchmark of a custom single-pass shader (dev aid): mean ms over `repeat` draws at width × height. */
-function bench(a: {
-	frag: string;
-	uniforms: Record<string, unknown>;
-	width: number;
-	height: number;
-	repeat: number;
-}) {
-	const h = fxHost();
-	if (!h) throw new Error('no WebGL2');
-	const spec = defineShaderEffect({
-		id: `test.bench-${hashString(a.frag + JSON.stringify(Object.keys(a.uniforms)))}`,
-		label: 'bench',
-		category: 'Stylize',
-		description: 'bench',
-		params: [],
-		gpu: { uniforms: () => a.uniforms as never, passes: [{ include: [GLSL_MB_POSES], frag: a.frag }] },
-	});
-	const box = { width: a.width, height: a.height };
-	const layout = fxCanvasLayout(box, { left: 0, right: 0, top: 0, bottom: 0 }, 8192, 1);
-	const plan = planGpuEffect(
-		spec,
-		{ id: 'fx1', params: {} },
-		{ ...box, pxScale: 1, fps: 30, frame: 0, duration: 60, seed: 0.3, progress: 0 },
-		{ width: layout.width, height: layout.height },
-	);
-	const input = canvas(layout.width, layout.height, (ctx) => paint(ctx, layout.box, 'grid'));
-	const out = canvas(layout.width, layout.height);
-	const draw = () => {
-		runShaderPlan(
-			h,
-			plan,
-			input,
-			{
-				builtins: [
-					...fxBuiltinUniforms({
-						canvas: layout,
-						box: layout.box,
-						pxScale: 1,
-						frame: 0,
-						fps: 30,
-						duration: 60,
-						compSize: box,
-					}),
-					{ name: 'u_seed', type: 'float', value: [0.3] },
-				],
-				textures: {},
-				samples: { sources: [], offsets: [] },
-			},
-			out.getContext('2d')!,
-		);
-		out.getContext('2d')!.getImageData(0, 0, 1, 1);
-	};
-	draw();
-	const t0 = performance.now();
-	for (let i = 0; i < a.repeat; i++) draw();
-	return (performance.now() - t0) / a.repeat;
-}
-
-const api = { runEffect, runTransition, bench, info: () => ({ webgl2: !!fxHost() }) };
+const api = { runEffect, runTransition };
 
 (window as unknown as { __mb: typeof api }).__mb = api;

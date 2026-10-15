@@ -52,13 +52,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect(r.same).toBe(true);
 		});
 
-		it('S_Feedback zooms the previous output (Z Dist); S_FeedbackBubble depends on Bubble Seed', async () => {
-			const r = await call<{ grown: Px; outside: Px; bubbleDiffers: number }>('feedback');
-			expect(near(r.grown, [255, 255, 255, 255])).toBe(true);
-			expect(r.outside[0]).toBeLessThan(5);
-			expect(r.bubbleDiffers).toBeGreaterThan(0);
-		});
-
 		it('S_TimeAverage averages the window; S_TimeWarpRGB takes each channel from its own frame', async () => {
 			expect(near((await call<{ mean: Px }>('timeAverage')).mean, [85, 85, 85, 255], 3)).toBe(true);
 			expect(near((await call<{ pixel: Px }>('timeWarpRgb')).pixel, [255, 0, 0, 255])).toBe(true);

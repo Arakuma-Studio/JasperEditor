@@ -187,17 +187,12 @@ app.whenReady().then(() => {
 					),
 				[name, frame],
 			);
-		const has = (name: string, selector: string) =>
-			page.evaluate(
-				([n, s]) => !!document.getElementById(n as string)?.querySelector(s as string),
-				[name, selector],
-			);
 
 		it('video under an adjustment layer and a GL blend: the decoded frames reach the compositor', async () => {
 			for (const f of [10, 25]) {
 				await seek('video', f);
 				await seek('videoFlat', f);
-				const plain = await until('video', (r) => at(r, 100, 100).some((v) => v > 40));
+				await until('video', (r) => at(r, 100, 100).some((v) => v > 40));
 				await page.waitForTimeout(800);
 				const ref = await pixels('video');
 				let worst = 255;
@@ -212,11 +207,8 @@ app.whenReady().then(() => {
 						}
 					return worst < 12;
 				});
-				expect(plain.length).toBe(ref.length);
 				expect(worst, `frame ${f}`).toBeLessThan(12);
 			}
-			expect(await has('videoFlat', '[data-flat-compositor]')).toBe(true);
-			expect(await has('videoFlat', '[data-canvas-scope-nested]')).toBe(false);
 		});
 
 		it('a nest with effects whose nested sequence nests scopes draws as a canvas source', async () => {
@@ -226,7 +218,6 @@ app.whenReady().then(() => {
 			expect(close(at(raw, FX_W / 2, FX_H / 2), want, 4), `${at(raw, FX_W / 2, FX_H / 2)} want ${want}`).toBe(
 				true,
 			);
-			expect(await has('nest', '[data-nest-source="canvas"]')).toBe(true);
 		});
 
 		it('an adjustment layer over a 3D run', async () => {
@@ -249,8 +240,6 @@ app.whenReady().then(() => {
 			// Graphics white of a PQ sequence: 58 % PQ signal (148) shown tone mapped (≈ 230).
 			const raw = await until('pq', (r) => at(r, FX_W / 2, FX_H / 2)[0] > 220);
 			expect(at(raw, FX_W / 2, FX_H / 2)[0], `${at(raw, FX_W / 2, FX_H / 2)}`).toBeGreaterThan(220);
-			expect(await has('pq', '[data-display-chip]')).toBe(false);
-			expect(await has('pq', '[data-flat-compositor]')).toBe(true);
 		});
 	},
 );

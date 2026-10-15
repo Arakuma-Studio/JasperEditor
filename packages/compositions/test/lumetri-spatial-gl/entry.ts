@@ -85,7 +85,6 @@ export type RunOptions = {
 	scene: string;
 	probes?: [number, number][];
 	reference?: boolean;
-	png?: boolean;
 };
 
 async function run(o: RunOptions) {
@@ -169,11 +168,9 @@ async function run(o: RunOptions) {
 		return [got[i]!, got[i + 1]!, got[i + 2]!, got[i + 3]!];
 	};
 	return {
-		passes: plan.passes.map((p) => p.output ?? null),
 		probes: (o.probes ?? []).map(([x, y]) => at(x, y)),
 		maxDiff,
 		worst,
-		png: o.png ? out.toDataURL('image/png') : undefined,
 	};
 }
 

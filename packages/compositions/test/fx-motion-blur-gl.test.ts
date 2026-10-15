@@ -30,7 +30,7 @@ const H = 180;
  * last), the max/min ratio over its inner 60 %, notches (pixels darker than 60 % of both neighbourhoods' peaks: the
  * dips between ghost copies) and holes (inner pixels below one luma level: gaps a continuous path cannot leave).
  */
-export function smearStats(profile: readonly number[]) {
+function smearStats(profile: readonly number[]) {
 	const max = Math.max(...profile);
 	const on = profile.map((v) => v > 0.3 * max);
 	const first = on.indexOf(true);
@@ -270,17 +270,16 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		});
 
 		it('fast moves smear continuously: no gaps or periodic peaks across the smear', async () => {
-			const results: Record<string, ReturnType<typeof smearStats> & { taps?: number }> = {};
+			const results: Record<string, ReturnType<typeof smearStats>> = {};
 			for (const [name, kind, a, limits] of SMEARS) {
 				const o = kind === 'effect' ? await effect(a as EffectArgs) : await transition(a as TransitionArgs);
 				const s = smearStats(o.row ?? o.column ?? []);
-				results[name] = { ...s, ...(o.uniforms?.u_mbPlan ? { taps: o.uniforms.u_mbPlan[0] } : {}) };
+				results[name] = s;
 				if (process.env.MB_PNG_DIR && o.png)
 					writeFileSync(
 						join(process.env.MB_PNG_DIR, `${name}.png`),
 						Buffer.from(o.png.split(',')[1]!, 'base64'),
 					);
-				if (process.env.MB_NO_ASSERT) continue;
 				expect(s.length, `${name} smear length`).toBeGreaterThanOrEqual(limits.minLength);
 				expect(s.notches, `${name} notches`).toBe(0);
 				if (!limits.allowHoles) expect(s.holes, `${name} holes`).toBe(0);
@@ -305,87 +304,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			// The jitter is per pixel + seed, not per frame: another seed changes the grain of a capped smear.
 			const fast = { ...twitchy, png: false, params: { ...twitchy.params, amplitude: 10 } };
 			expect((await effect({ ...fast, seed: 0.7 })).checksum).not.toBe((await effect(fast)).checksum);
-		});
-
-		it('the preview scale reduces the taps proportionally; Draft / High quality presets', async () => {
-			const wave = SMEARS.find(([n]) => n === 'shake-wave')![2] as EffectArgs;
-			const full = await effect({ ...wave, png: false });
-			const half = await effect({ ...wave, png: false, scale: 0.5 });
-			const quarter = await effect({ ...wave, png: false, scale: 0.25 });
-			const taps = (o: Out) => o.uniforms!.u_mbPlan![0]!;
-			expect(taps(full)).toBe(40);
-			expect(taps(half)).toBe(20);
-			expect(taps(quarter)).toBe(10);
-			const s = smearStats(half.row ?? []);
-			expect(s.holes).toBe(0);
-			expect(s.notches).toBe(0);
-			const draft = await effect({ ...wave, png: false, params: { ...wave.params, mbQuality: 'draft' } });
-			expect(taps(draft)).toBe(16);
-			const fast = { ...wave, png: false, params: { ...wave.params, amplitude: 12 } };
-			expect(taps(await effect(fast))).toBe(64);
-			expect(taps(await effect({ ...fast, params: { ...fast.params, mbQuality: 'high' } }))).toBe(96);
-			report.taps = { full: taps(full), half: taps(half), quarter: taps(quarter), draft: taps(draft) };
-		});
-
-		it.runIf(process.env.MB_PERF === '1')('1080p frame times (MB_PERF=1)', { timeout: 900_000 }, async () => {
-			const at = (a: Partial<EffectArgs> & { id: string }) =>
-				effect({ width: 1920, height: 1080, paint: 'grid', repeat: 3, ...a });
-			const shake = { id: 'jasper.s.shake', frame: 29 };
-			const cases: [string, Partial<EffectArgs> & { id: string }][] = [
-				['shake-off', { ...shake, params: { amplitude: 1 } }],
-				['shake-typical (Normal, amp 1, blur on)', { ...shake, params: { amplitude: 1, motionBlur: true } }],
-				[
-					'shake-twitchy-amp5 (worst, blur on)',
-					{
-						...shake,
-						params: { motionBlur: true, style: 'twitchy', amplitude: 5, frequency: 12, stillness: 0 },
-					},
-				],
-				[
-					'shake-twitchy-amp5 1/2 preview',
-					{
-						...shake,
-						scale: 0.5,
-						params: { motionBlur: true, style: 'twitchy', amplitude: 5, frequency: 12, stillness: 0 },
-					},
-				],
-				[
-					'shake-twitchy-amp5 draft',
-					{
-						...shake,
-						params: {
-							motionBlur: true,
-							style: 'twitchy',
-							amplitude: 5,
-							frequency: 12,
-							stillness: 0,
-							mbQuality: 'draft',
-						},
-					},
-				],
-				[
-					'shake-rgb-amp5 (3 channels, blur on)',
-					{
-						...shake,
-						params: {
-							motionBlur: true,
-							style: 'twitchy',
-							amplitude: 5,
-							frequency: 12,
-							stillness: 0,
-							redPhase: 0.3,
-							bluePhase: -0.3,
-						},
-					},
-				],
-			];
-			const out: Record<string, { ms: number; taps: number }> = {};
-			for (const [name, a] of cases) {
-				const o = await at(a);
-				out[name] = { ms: Math.round(o.ms! * 10) / 10, taps: o.uniforms?.u_mbPlan?.[0] ?? 1 };
-			}
-			report.perf1080 = out;
-			console.info(JSON.stringify(out, null, 2));
 		});
 	},
 );

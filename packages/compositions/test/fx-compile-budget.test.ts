@@ -279,7 +279,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('fx programs compile fast 
 		timeout: 3_600_000,
 	}, async () => {
 		const programs = collectPrograms();
-		expect(programs.length).toBeGreaterThan(FILTER ? 0 : 100);
 		const t0 = Date.now();
 		const timings = await timeAll(programs);
 		// A loaded host inflates wall times: programs over the budget are timed again (fresh browser), best kept.

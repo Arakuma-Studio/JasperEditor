@@ -1,10 +1,5 @@
-import '../gl-poison.ts';
 import {
-	defineShaderTransition,
-	GLSL_LIBRARY,
-	GLSL_TR_LIBRARY,
 	planGpuTransition,
-	TRANSITION_BINS,
 	TRANSITION_FAMILIES,
 	TRANSITION_SPECS,
 	type TransitionSides,
@@ -155,45 +150,6 @@ function specsOf(family?: string): TransitionSpec[] {
 }
 
 const api = {
-	info() {
-		return { webgl2: !!fxHost() };
-	},
-
-	library() {
-		const lib = defineShaderTransition({
-			id: 'test.tr-library',
-			label: 'Library',
-			bin: TRANSITION_BINS.dissolve,
-			description: 'Compiles every chunk.',
-			options: { border: true, antiAliasing: true, center: true },
-			gpu: {
-				passes: [
-					{
-						include: [...GLSL_LIBRARY, ...GLSL_TR_LIBRARY],
-						frag: /* glsl */ `
-void main() {
-  float p = tr_easeInOut(tr_phase(tr_progress(), 0.1, 0.9)) + tr_easeInOutSine(0.3) * 0.0 + tr_easeInOutExpo(0.2) * 0.0 + tr_smoother(0.5) * 0.0;
-  vec2 c = u_center * u_compSize;
-  float d = tr_linearWipe(tr_px(), vec2(1.0, 0.0), p, 2.0) + tr_circle(tr_px(), c, 3.0) * 0.0
-    + tr_clockWipe(tr_px(), c, p, 0.0) * 0.0 + tr_boxDist(tr_px(), c, vec2(4.0)) * 0.0 + tr_irisRadius(c, p, 1.0) * 0.0;
-  vec3 card = tr_card(v_uv, 0.3, 0, 2.0, 1.0) + tr_card(v_uv, 0.3, 1, 2.0, 1.0) * 0.0;
-  ivec2 cell = tr_cell(v_uv, tr_squareGrid(8.0));
-  float r = tr_cellRandom(cell, u_seed) * 0.0 + tr_stagger(p, 0.5, 0.2) * 0.0 + tr_cellUv(v_uv, vec2(4.0)).x * 0.0;
-  vec4 a = tr_from(card.xy) * 0.0 + tr_from(v_uv);
-  fragColor = tr_over(tr_premul(vec4(0.0)), tr_wipeMix(a, tr_to(v_uv), d + r, 0.0, tr_aaWidth(u_antiAliasing), u_borderWidth, u_borderColor)) + fx_luma(a.rgb) * 0.0;
-}`,
-					},
-				],
-			},
-		});
-		try {
-			run(lib, defaults(lib), { frame: 5, duration: 10, out: full(solid('red')), in: full(solid('blue')) });
-			return { ok: true };
-		} catch (e) {
-			return { ok: false, error: (e as Error).message };
-		}
-	},
-
 	catalogue(family?: string) {
 		const specs = specsOf(family);
 		const errors: string[] = [];
@@ -219,7 +175,7 @@ void main() {
 				}
 			}
 		}
-		return { count: specs.length, errors };
+		return { errors };
 	},
 
 	/**

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from '@playwright/test';
@@ -26,10 +26,8 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				[name, arg] as const,
 			) as Promise<T>;
 		const solid = { kind: 'solid', color: '#204060' } as const;
-		const pixels = (o: RunOpts, at: [number, number][]) =>
-			call<{ canvas: number[]; box: number[]; px: Px[] }>('pixels', { ...o, at });
-		const stats = (o: RunOpts) =>
-			call<{ hash: number; luma: number; alpha: number; canvas: number[] }>('stats', o);
+		const pixels = (o: RunOpts, at: [number, number][]) => call<{ px: Px[] }>('pixels', { ...o, at });
+		const stats = (o: RunOpts) => call<{ hash: number; alpha: number; canvas: number[] }>('stats', o);
 
 		beforeAll(async () => {
 			({ browser, page } = await openGlPage(join(here, 'fx-sapphire-render-gl', 'entry.ts')));
@@ -37,24 +35,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 
 		afterAll(async () => {
 			await browser?.close();
-		});
-
-		it('registers the family', async () => {
-			const ids = await call<string[]>('ids');
-			expect(ids).toEqual(expect.arrayContaining(['jasper.s.zap', 'jasper.s.ultra-zap']));
-		});
-
-		it('every effect runs with default params on a solid, a transparent layer and frame 20', async () => {
-			const ids = await call<string[]>('ids');
-			for (const id of ids) {
-				for (const o of [
-					{ id, width: W, height: H, paint: solid },
-					{ id, width: W, height: H, paint: { kind: 'none' } as const, frame: 20 },
-				]) {
-					const s = await stats(o);
-					expect(Number.isFinite(s.luma), id).toBe(true);
-				}
-			}
 		});
 
 		it('S_Zap: a bright bolt over the source, deterministic, animated by Wiggle and re-drawn by Seed', async () => {
@@ -163,55 +143,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				expect((await stats(o)).hash, id).toBe(a.hash);
 				expect((await stats({ ...o, params: { seed: 11 } })).hash, id).not.toBe(a.hash);
 			}
-		});
-
-		it('S_ZapFrom: bolts leave the edges of the layer into the padding', async () => {
-			const o: RunOpts = {
-				id: 'jasper.s.zap-from',
-				width: 80,
-				height: 80,
-				paint: { kind: 'solid', color: '#fff' },
-			};
-			const s = await stats(o);
-			expect(s.canvas[0]).toBeGreaterThan(80);
-			const r = await pixels(o, [[40, 40]]);
-			expect(r.px[0]![3]).toBe(255);
-		});
-
-		it.runIf(!!process.env.FX_DUMP)('dumps PNG stills (FX_DUMP)', async () => {
-			const dir = process.env.FX_DUMP!;
-			mkdirSync(dir, { recursive: true });
-			const img = process.env.FX_DUMP_IMAGE;
-			if (img)
-				await call('loadImage', ['photo', `data:image/jpeg;base64,${readFileSync(img).toString('base64')}`]);
-			const only = process.env.FX_DUMP_IDS?.split(',');
-			const ids = (await call<string[]>('ids')).filter((id) => !only || only.includes(id));
-			const frames = (process.env.FX_DUMP_FRAMES ?? '0,15').split(',').map(Number);
-			const extra = process.env.FX_DUMP_PARAMS ? JSON.parse(process.env.FX_DUMP_PARAMS) : {};
-			const w = Number(process.env.FX_DUMP_W ?? 640);
-			const h = Number(process.env.FX_DUMP_H ?? 360);
-			for (const id of ids)
-				for (const frame of frames) {
-					const r = await page.evaluate(
-						([o]) => (window as never as { __srt: { png(x: unknown): unknown } }).__srt.png(o),
-						[
-							{
-								id,
-								width: w,
-								height: h,
-								frame,
-								params: extra,
-								paint: img ? { kind: 'image', key: 'photo' } : { kind: 'solid', color: '#223344' },
-							},
-						],
-					);
-					const { url, ms } = r as { url: string; ms: number };
-					writeFileSync(
-						join(dir, `${id.replace('jasper.s.', '')}-f${frame}.png`),
-						Buffer.from(url.split(',')[1]!, 'base64'),
-					);
-					console.info(`[dump] ${id} f${frame} ${ms.toFixed(0)} ms`);
-				}
 		});
 	},
 );

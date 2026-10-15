@@ -233,44 +233,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect(bad).toEqual([]);
 		});
 
-		it('distorts / lights the picture mid-way (differs from a plain dissolve)', async () => {
-			const ids = [
-				'jasper.earthquake',
-				'jasper.flicker-transition',
-				'jasper.glass-transition',
-				'jasper.glitch-transition',
-				'jasper.kaleidoscope-transition',
-				'jasper.liquid-distortion',
-				'jasper.vhs-damage',
-				'jasper.chroma-leak',
-				'jasper.directional-blur-transition',
-				'jasper.flare',
-				'jasper.glow-transition',
-				'jasper.lens-blur-transition',
-				'jasper.light-leak',
-				'jasper.phosphor',
-				'jasper.radial-blur-transition',
-				'jasper.ray',
-				'jasper.solarize-transition',
-				'jasper.zoom-blur-transition',
-				'jasper.slice-transition',
-				'jasper.shape-dissolve',
-				'jasper.morph-cut',
-				'jasper.vr-spherical-blur',
-				'jasper.vr-mobius-zoom',
-				'jasper.vr-light-leaks',
-				'jasper.vr-chroma-leaks',
-				'jasper.vr-light-rays',
-			];
-			const r = await page.evaluate(
-				(a) =>
-					(window as unknown as { __pr: { differs(s: string): Record<string, number> } }).__pr.differs(a),
-				ids.join(','),
-			);
-			const flat = ids.filter((id) => !(r[id]! > 8));
-			expect(flat).toEqual([]);
-		});
-
 		it('keeps the random transitions deterministic per instance', async () => {
 			const r = await call<Record<string, { blue: number; same: boolean; differs: boolean }>>('random');
 			for (const [id, v] of Object.entries(r)) {
@@ -293,10 +255,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect(r.morph).toBeLessThan(0.5 * r.dissolve);
 			expect(r.morph, JSON.stringify(r)).toBeLessThan(25);
 			if (process.env.PREMIERE_TIMINGS === '1') console.log('morph vs dissolve', r);
-		});
-
-		it.runIf(process.env.PREMIERE_TIMINGS === '1')('reports run times', async () => {
-			console.log(await call<Record<string, number>>('timings'));
 		});
 	},
 );

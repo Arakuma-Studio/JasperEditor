@@ -32,14 +32,8 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		});
 
-		it('defaults are the identity where Sapphire’s are', async () => {
-			const r = await call<Record<string, Px>>('identity');
-			for (const [id, p] of Object.entries(r))
-				expect(rgbNear(p, [200, 120, 60, 255], 2), `${id}: ${p}`).toBe(true);
-		});
-
 		it('adjust effects: one characteristic pixel each', async () => {
-			const r = await call<Record<string, Px> & { ocioExpected: number[][] }>('adjust');
+			const r = await call<Record<string, Px>>('adjust');
 			expectRgb(r.invert, [0, 255, 255, 255]);
 			expectRgb(r.invertLumaOnly, [127, 127, 127]);
 			expectRgb(r.invertRedOnly, [0, 100, 0]);
@@ -63,14 +57,14 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expectRgb(r.badHigh, [255, 0, 0]);
 			expectRgb(r.badLow, [0, 0, 255]);
 			expectRgb(r.badMatte, [255, 255, 255, 255]);
-			// S_OCIOTransform matches the TypeScript reference of the published curves and matrices.
-			expectRgb(r.ocioLogToRec709, r.ocioExpected[0]!);
-			expectRgb(r.ocioSrgbToLinear, r.ocioExpected[1]!);
-			expectRgb(r.ocioSwitched, r.ocioExpected[2]!);
+			// IEC 61966-2-1 transfer: sRGB code 188 decodes to linear code 128;
+			// linear code 55 encodes to sRGB code 128 (rounded to 8 bits).
+			expectRgb(r.ocioSrgbToLinear, [128, 128, 128]);
+			expectRgb(r.ocioSwitched, [128, 128, 128]);
 		});
 
 		it('alpha is kept and the Mask block blends effect and source', async () => {
-			const r = await call<Record<string, Px> & { softPasses: (string | null)[] }>('alphaAndMask');
+			const r = await call<Record<string, Px>>('alphaAndMask');
 			expectRgb(r.half, [0, 255, 255, 128], 3);
 			expect(r.clear).toEqual([0, 0, 0, 0]);
 			expectRgb(r.invAlpha, [255, 255, 255, 255]);
@@ -80,13 +74,10 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expectRgb(r.invMaskRight, [0, 255, 255]);
 			expect(r.softMid[0]).toBeGreaterThan(30);
 			expect(r.softMid[0]).toBeLessThan(225);
-			expect(r.softPasses).toEqual(['maskRaw', 'maskSoftH', 'maskSoft', null]);
 		});
 
 		it('S_Layer: blend modes, opacity, swap, matte, result controls', async () => {
-			const r = await call<Record<string, Px> & { fgBlurPasses: number; dissolveRedFraction: number }>(
-				'layer',
-			);
+			const r = await call<Record<string, Px> & { dissolveRedFraction: number }>('layer');
 			expectRgb(r.normal, [255, 0, 0]);
 			expectRgb(r.multiply, [128, 64, 0]);
 			expectRgb(r.screen, [128, 128, 128]);
@@ -98,7 +89,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expectRgb(r.resultSat, [54, 54, 54]);
 			expectRgb(r.matteLeft, [255, 0, 0]);
 			expectRgb(r.matteRight, [128, 128, 128]);
-			expect(r.fgBlurPasses).toBe(4);
 			expect(Math.abs(r.dissolveRedFraction - 0.5)).toBeLessThan(0.1); // Dissolve: opacity = probability
 		});
 

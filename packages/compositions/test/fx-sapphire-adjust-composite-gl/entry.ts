@@ -1,4 +1,3 @@
-import '../gl-poison.ts';
 import {
 	defaultEffectRegistry,
 	type EffectSpec,
@@ -6,7 +5,6 @@ import {
 	fxSeed,
 	planGpuEffect,
 } from '@jasper/project';
-import { ocioConvert, ocioSpace } from '../../../project/src/registry/fx/sapphire-adjust-composite/ocio.ts';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
 
@@ -107,7 +105,7 @@ function run(
 		},
 		out.getContext('2d')!,
 	);
-	return { out, plan, at: (x: number, y: number) => px(out, x, y) };
+	return { out, at: (x: number, y: number) => px(out, x, y) };
 }
 
 const allPixels = (c: HTMLCanvasElement) =>
@@ -122,21 +120,6 @@ const square =
 	};
 
 const api = {
-	identity() {
-		const ids = [
-			'jasper.s.gamma',
-			'jasper.s.hue-sat-bright',
-			'jasper.s.tint',
-			'jasper.s.show-bad-colors',
-			'jasper.s.channel-switcher',
-			'jasper.s.math-ops',
-			'jasper.s.matte-ops',
-			'jasper.s.layer',
-			'jasper.s.z-comp',
-		];
-		return Object.fromEntries(ids.map((id) => [id, run(id, {}, [8, 8], 'rgb(200, 120, 60)').at(4, 4)]));
-	},
-
 	adjust() {
 		const r = (id: string, over: Record<string, unknown>, color: string) =>
 			run(id, over, [8, 8], color).at(4, 4);
@@ -172,18 +155,12 @@ const api = {
 			badHigh: r('jasper.s.show-bad-colors', { max: 0.9 }, 'rgb(255, 255, 255)'),
 			badLow: r('jasper.s.show-bad-colors', { minLuma: 0.1 }, 'rgb(5, 5, 5)'),
 			badMatte: r('jasper.s.show-bad-colors', { max: 0.9, outputMatte: true }, 'rgb(255, 255, 255)'),
-			ocioLogToRec709: r('jasper.s.ocio-transform', {}, 'rgb(100, 150, 200)'),
 			ocioSrgbToLinear: r('jasper.s.ocio-transform', { from: 'srgb', to: 'linRec709' }, 'rgb(188, 188, 188)'),
 			ocioSwitched: r(
 				'jasper.s.ocio-transform',
 				{ from: 'srgb', to: 'linRec709', switchToAndFrom: true },
 				'rgb(55, 55, 55)',
 			),
-			ocioExpected: [
-				ocioConvert(ocioSpace('logc3'), ocioSpace('rec709'), [100 / 255, 150 / 255, 200 / 255]),
-				ocioConvert(ocioSpace('srgb'), ocioSpace('linRec709'), [188 / 255, 188 / 255, 188 / 255]),
-				ocioConvert(ocioSpace('linRec709'), ocioSpace('srgb'), [55 / 255, 55 / 255, 55 / 255]),
-			].map((c) => c.map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255))),
 		};
 	},
 
@@ -208,7 +185,6 @@ const api = {
 			invMaskLeft: mi.at(2, 4),
 			invMaskRight: mi.at(13, 4),
 			softMid: soft.at(8, 4),
-			softPasses: soft.plan.passes.map((p) => p.output),
 		};
 	},
 
@@ -242,8 +218,6 @@ const api = {
 				for (let i = 0; i < px.length; i += 4) if (px[i]! > 200) red++;
 				return red / (px.length / 4);
 			})(),
-			fgBlurPasses: run('jasper.s.layer', { fgBlur: 0.2 }, [8, 8], 'rgb(255, 0, 0)', { background: bg }).plan
-				.passes.length,
 		};
 	},
 

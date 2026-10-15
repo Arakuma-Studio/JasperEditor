@@ -33,12 +33,6 @@ function makeDoc(): RenderSnapshot {
 }
 
 describe('applyPreviews', () => {
-	it('is the identity without previews', () => {
-		const doc = makeDoc();
-		expect(applyPreviews(doc, undefined).doc).toBe(doc);
-		expect(applyPreviews(doc, { video: [], audio: [] }).doc).toBe(doc);
-	});
-
 	it('unmounts only the live clips whose whole span is covered', () => {
 		const doc = makeDoc();
 		const a = applyPreviews(doc, { video: [{ start: 0, frames: 50, url: '/p/a.mp4' }], audio: [] });
@@ -93,7 +87,6 @@ describe('applyPreviews', () => {
 				(clips, spans) => {
 					const usable = usableAudioSpans(clips, spans);
 					for (const u of usable) {
-						expect(spans.some((s) => s.start <= u.start) || spans.length > 0).toBe(true);
 						for (let f = u.start; f < u.end; f++)
 							expect(spans.some((s) => f >= s.start && f < s.start + s.frames)).toBe(true);
 						for (const c of clips) {

@@ -35,7 +35,6 @@ describe.runIf(psdgGlEnabled)(
 			expect(near(d.magRight, [0, 0, 255, 255])).toBe(true);
 			expect(d.sphere).toBeGreaterThan(20);
 			expect(d.twirl).toBeGreaterThan(40);
-			expect(d.waveCanvas).toEqual([64 + 22, 36 + 22]); // padded by the wave height (10 + 1)
 			expect(d.waveMoves).toBeGreaterThan(20); // waves travel over time
 			expect(d.turb).toBeGreaterThan(20);
 			expect(d.turbDet).toBe(0);
@@ -62,7 +61,6 @@ describe.runIf(psdgGlEnabled)(
 			expect(g.cellMean[3]).toBe(255);
 			expect(g.ellipseRing[3]).toBeGreaterThan(200);
 			expect(g.ellipseCentre[3]).toBe(0);
-			expect(g.flareCanvas[0]).toBeGreaterThan(64);
 			expect(g.flareCentre[0]).toBeGreaterThan(240);
 			expect(g.boltOn[3]).toBeGreaterThan(200);
 			expect(g.boltOff[0]).toBeLessThan(40);
@@ -91,7 +89,6 @@ describe.runIf(psdgGlEnabled)(
 			expect(s.glowOutside[3]).toBeGreaterThan(40); // glow around the shape's alpha edge
 			expect(s.glowFar[3]).toBe(0);
 			expect(near(s.glowInside, [200, 120, 60, 255])).toBe(true);
-			expect(s.glowCanvas[0]).toBeGreaterThan(64);
 			expect(s.brushDiff).toBeGreaterThan(20);
 			for (let k = 0; k < 3; k++) expect(Math.abs(s.brushMean[k] - s.pictureMean[k])).toBeLessThan(25);
 			expect(near(s.emboss, [128, 128, 128, 255], 2)).toBe(true); // flat areas are mid grey

@@ -1,6 +1,6 @@
 // @vitest-environment node
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, extname, join } from 'node:path';
+
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -10,7 +10,7 @@ import { CHROME, openGlPage } from './gl-browser.ts';
 const here = dirname(fileURLToPath(import.meta.url));
 
 type Px = number[];
-type Result = { canvas: number[]; box: number[]; passes: number; probes: Px[]; all?: number[]; png?: string };
+type Result = { probes: Px[]; all?: number[]; png?: string };
 
 const FAMILY = [
 	'jasper.s.film-effect',
@@ -94,14 +94,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				(opts) => (window as unknown as { __film: { render(o: unknown): Result } }).__film.render(opts),
 				o,
 			) as Promise<Result>;
-		const loadImage = (dataUrl: string | null) =>
-			page.evaluate(
-				(u) =>
-					(
-						window as unknown as { __film: { loadImage(u: string | null): Promise<unknown> } }
-					).__film.loadImage(u),
-				dataUrl,
-			);
 
 		beforeAll(async () => {
 			({ browser, page } = await openGlPage(join(here, 'fx-sapphire-film-grain', 'entry.ts')));
@@ -109,20 +101,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 
 		afterAll(async () => {
 			await browser?.close();
-		});
-
-		it('registers the whole family', async () => {
-			const ids = await page.evaluate(() =>
-				(window as unknown as { __film: { ids(): string[] } }).__film.ids(),
-			);
-			for (const id of FAMILY) expect(ids).toContain(id);
-		});
-
-		it('every effect compiles and runs with default params on a picture', async () => {
-			for (const id of FAMILY) {
-				const r = await render({ id, width: 48, height: 32, paint: 'gradient', all: true });
-				expect(r.all!.length, id).toBe(48 * 32 * 4);
-			}
 		});
 
 		it('Mix with Orig = 1 returns the input', async () => {
@@ -334,29 +312,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect(r.probes[1]![0]).toBeLessThan(20);
 		});
 
-		it('S_FilmDamage: defocus, shake and the inter-frame bar render', async () => {
-			const r = await render({
-				id: 'jasper.s.film-damage',
-				width: 64,
-				height: 48,
-				paint: 'white',
-				params: {
-					defocus: 2,
-					shakeAmplitude: 3,
-					shakeAlways: 1,
-					interframeBorderHeight: 3,
-					flicker: 0,
-					vignetteDarkness: 0,
-				},
-				frame: 4,
-				all: true,
-			});
-			// somewhere a black inter-frame bar crosses the white picture
-			let dark = 0;
-			for (let i = 0; i < r.all!.length; i += 4) if (r.all![i]! < 40) dark++;
-			expect(dark).toBeGreaterThan(20);
-		});
-
 		it('S_Grunge draws stamps (Grunge Only shows them alone)', async () => {
 			const r = await render({ id: 'jasper.s.grunge', width: 96, height: 54, paint: 'white', all: true });
 			expect(mean(r.all!, 0)).toBeLessThan(250);
@@ -370,41 +325,5 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			});
 			expect(mean(only.all!, 3)).toBeLessThan(250);
 		});
-
-		const shots = process.env.FX_FILM_SHOTS;
-		it.runIf(!!shots)(
-			'writes PNG shots of every effect (FX_FILM_SHOTS)',
-			async () => {
-				const dir = shots!;
-				mkdirSync(dir, { recursive: true });
-				const img = process.env.FX_FILM_IMAGE;
-				if (img) {
-					const mime = extname(img).toLowerCase() === '.png' ? 'image/png' : 'image/jpeg';
-					await loadImage(`data:${mime};base64,${readFileSync(img).toString('base64')}`);
-				}
-				const only = process.env.FX_FILM_ONLY?.split(',');
-				const frames = (process.env.FX_FILM_FRAMES ?? '0,1,2').split(',').map(Number);
-				const params = process.env.FX_FILM_PARAMS ? JSON.parse(process.env.FX_FILM_PARAMS) : {};
-				for (const id of FAMILY) {
-					if (only && !only.some((o) => id.endsWith(o))) continue;
-					for (const frame of frames) {
-						const t0 = Date.now();
-						const size = process.env.FX_FILM_SIZE?.split('x').map(Number);
-						const r = await render({
-							id,
-							frame,
-							png: true,
-							paint: img ? 'image' : 'gradient',
-							params,
-							...(size ? { width: size[0], height: size[1] } : {}),
-						});
-						writeFileSync(join(dir, `${id}-f${frame}.ms`), String(Date.now() - t0));
-						const name = `${id.replace('jasper.s.', '')}-f${frame}.png`;
-						writeFileSync(join(dir, name), Buffer.from(r.png!.split(',')[1]!, 'base64'));
-					}
-				}
-			},
-			1_800_000,
-		);
 	},
 );

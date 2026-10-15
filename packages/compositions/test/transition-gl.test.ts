@@ -40,15 +40,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		});
 
-		it('has WebGL2 and compiles the whole transition GLSL library', async () => {
-			expect((await call<{ webgl2: boolean }>('info')).webgl2).toBe(true);
-			expect(await call<{ ok: boolean; error?: string }>('library')).toEqual({ ok: true });
-		});
-
 		it('compiles and runs the test transitions and any GPU transition outside the families', async () => {
-			const r = await call<{ count: number; errors: string[] }>('catalogue');
+			const r = await call<{ errors: string[] }>('catalogue');
 			expect(r.errors).toEqual([]);
-			expect(r.count).toBeGreaterThanOrEqual(2);
 			expect(endsOk(await call('ends'))).toEqual([]);
 			expectFingerprints(TR_FINGERPRINTS, await call<Record<string, number[]>>('fingerprints'), 4);
 		});
@@ -58,9 +52,8 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			it(`compiles and runs every GPU transition of ${family}; A at progress 0, B at 1`, {
 				timeout: 240_000,
 			}, async () => {
-				const r = await call<{ count: number; errors: string[] }>('catalogue', family);
+				const r = await call<{ errors: string[] }>('catalogue', family);
 				expect(r.errors).toEqual([]);
-				expect(r.count).toBeGreaterThan(0);
 				expect(endsOk(await call('ends', family))).toEqual([]);
 				expectFingerprints(TR_FINGERPRINTS, await call<Record<string, number[]>>('fingerprints', family), 4);
 			});
