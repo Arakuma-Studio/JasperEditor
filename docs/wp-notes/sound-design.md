@@ -1591,7 +1591,7 @@ Measured on this branch after merging `feat/sound-design` (10a61d6e), shared hos
   P2/P3 (spec 12 §2.7); the keymap scope already exists (`soundLibrary`), Shift+Space is free in it.
 - Insert always aligns the peak (Enter, double-click, drag) or the start (Alt-drop); the taxonomy's `defaultAlign`
   (risers and reverses by their end) is not used yet: `soundDesign.place` (P2) should own that, and the panel should
-  call it once it exists.
+  call it once it exists. *(Superseded by the Phase 1 verification: the panel and MCP share `resolveSoundAlign`.)*
 - Packs: the Sources › Packs entry appears when the index has pack sounds; installing packs is P6.
 - Reveal in Folder is offered only for folder sounds on desktop (starter/pack files live in the app's install folder).
 - The credits Save uses the browser download (as captions export does); there is no "next to the export" sidecar yet
@@ -1653,7 +1653,8 @@ TL-453 for consistency with every other timeline drag.
 
 Known limits found on the way (not fixed here): the sound type labels share es.json keys with homonyms of other
 features, so some Spanish chips read oddly ("Key" → "Incrustación", "Reverse" → "Invertir", "Pop" → "Aparecer"); they
-need their own context keys (`withoutContext`). The insert's history label "Add Sound <title>" and the placement
+need their own context keys (`withoutContext`) — done in the Phase 1 verification ("Key [sound type]" → "Tecla",
+"Reverse [sound type]" → "Inverso", "Pop [sound type]" → "Pop", shown through `typeLabel`). The insert's history label "Add Sound <title>" and the placement
 refusals that come from `@jasper/project` stay English.
 
 ## Phase 2: cues and placement
