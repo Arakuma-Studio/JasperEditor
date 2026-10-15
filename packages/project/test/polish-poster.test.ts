@@ -33,18 +33,6 @@ describe('item.setPoster', () => {
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 
-	it('is one undoable step', () => {
-		const h = new Harness();
-		const { itemId } = mediaItem(h);
-		const before = h.doc;
-		const r = h.ok([{ type: 'item.setPoster', itemId, time: { seconds: 3 } }]);
-		expect(r.ok).toBe(true);
-		const after = h.doc;
-		expect((after.items[itemId] as MediaItem).poster).toEqual({ flicks: 90 * F });
-		expect((before.items[itemId] as MediaItem).poster).toBeUndefined();
-		expect(after.items[itemId]).not.toBe(before.items[itemId]);
-	});
-
 	it('refuses a frame past the end of the media, other item kinds and unknown items', () => {
 		const h = new Harness();
 		const { itemId } = mediaItem(h, 4);

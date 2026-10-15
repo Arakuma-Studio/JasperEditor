@@ -64,7 +64,7 @@ function softenPasses(input: string, output: string, sigma: number): ShaderPass[
 }
 
 /** Matte Generation / Cleanup values of Ultra Key's "Setting" presets (Default = the param defaults). */
-export const ULTRA_KEY_PRESETS = {
+const ULTRA_KEY_PRESETS = {
 	default: { transparency: 45, highlight: 10, shadow: 50, tolerance: 50, pedestal: 10 },
 	relaxed: { transparency: 45, highlight: 10, shadow: 50, tolerance: 25, pedestal: 0 },
 	aggressive: { transparency: 55, highlight: 20, shadow: 40, tolerance: 75, pedestal: 25 },
@@ -74,7 +74,7 @@ export const ULTRA_KEY_PRESETS = {
  * The matte-generation values Ultra Key uses: the preset's for Relaxed/Aggressive, the sliders for Default/Custom
  * (the sliders' defaults are the Default preset; Premiere switches to Custom when one is edited).
  */
-export function ultraKeyMatteValues(p: EffectParams) {
+function ultraKeyMatteValues(p: EffectParams) {
 	const setting = str(p.setting, 'default');
 	if (setting === 'relaxed' || setting === 'aggressive') return ULTRA_KEY_PRESETS[setting];
 	const d = ULTRA_KEY_PRESETS.default;

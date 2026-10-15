@@ -104,7 +104,7 @@ const DAMAGE_PARAMS: ParamSpec[] = [
 ];
 
 /** Uniforms of a frame: blink gates (S_DigitalDamage's), the damage intensity on the envelope, block size. */
-export function digitalDamageUniforms(
+function digitalDamageUniforms(
 	p: EffectParams,
 	ctx: { frame: number; fps: number; seed: number; width: number; progress: number },
 ) {
@@ -387,13 +387,13 @@ const SORT_TYPE_LABELS = [
 ] as const;
 
 /** Resolution of the sort pass: ½, or Sort Resolution lines of the frame height with Downsample. */
-export function sortScale(p: EffectParams, height: number): number {
+function sortScale(p: EffectParams, height: number): number {
 	if (p.downsample !== true) return 0.5;
 	return clamp(Math.round(num(p.sortResolution, 720)) / Math.max(1, height), 0.05, 0.5);
 }
 
 /** The sort threshold of a frame: nothing sorted at the ends, Max Percentage of the key range at the peak. */
-export function sortThreshold(p: EffectParams, env: number): number {
+function sortThreshold(p: EffectParams, env: number): number {
 	const k = clamp(Math.max(0, num(p.maxPercentage, 1)) * env, 0, 1);
 	return p.sortDirection === 'below' ? k : 1 - k;
 }

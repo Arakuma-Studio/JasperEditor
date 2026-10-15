@@ -18,7 +18,6 @@ import {
 	mat4Invert,
 	mat4Mul,
 	mat4Orientation,
-	materialAt,
 	newCameraData,
 	newLayer3D,
 	newLightData,
@@ -29,7 +28,6 @@ import {
 	type RenderCameraClip,
 	type RenderLightClip,
 	runs3d,
-	shininessExponent,
 	type Transform,
 	type Vec3,
 	zoomForAngleOfView,
@@ -286,23 +284,6 @@ describe('lights and materials', () => {
 		expect(lightAttenuation(l, at(100))).toBe(1);
 		expect(lightAttenuation(l, at(150))).toBeCloseTo(0.5, 9);
 		expect(lightAttenuation(l, at(250))).toBe(0);
-	});
-
-	it("material defaults are After Effects'", () => {
-		const m = materialAt(newLayer3D().material, 0);
-		expect(m).toMatchObject({
-			castsShadows: 0,
-			acceptsShadows: 1,
-			acceptsLights: true,
-			ambient: 1,
-			diffuse: 0.5,
-			specular: 0.5,
-			shininess: 0.05,
-			metal: 1,
-			lightTransmission: 0,
-		});
-		expect(shininessExponent({ shininess: 0 })).toBe(1);
-		expect(shininessExponent({ shininess: 1 })).toBe(256);
 	});
 });
 

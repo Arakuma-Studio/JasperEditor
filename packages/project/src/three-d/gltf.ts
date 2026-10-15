@@ -125,7 +125,7 @@ function utf8Encode(s: string): Uint8Array {
  * size of the file (an accessor without a buffer view is all zeros, a stride of 0 reads one element again and
  * again, a thousand nodes can show the same mesh). 64 million values is a model of several million triangles.
  */
-export const MAX_MODEL_VALUES = 64_000_000;
+const MAX_MODEL_VALUES = 64_000_000;
 
 function base64(s: string): Uint8Array {
 	const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';

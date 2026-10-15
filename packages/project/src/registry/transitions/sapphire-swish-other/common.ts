@@ -1,6 +1,6 @@
 // Family-private helpers of the Sapphire "swish + other" transitions (../sapphire-swish-other.ts): param readers and
-// builders with Sapphire's names/defaults, the pure TS maths behind `gpu.uniforms` (Slow In/Out, whip curves,
-// shutter length per frame, camera shake), and the family's GLSL chunk `sw/core` (prefix `sw_`).
+// builders with Sapphire's names/defaults, the pure TS maths behind `gpu.uniforms` (shutter length per frame,
+// camera shake), and the family's GLSL chunk `sw/core` (prefix `sw_`).
 //
 // Conventions of this family (documented in the authoring guide's terms):
 // - "Sapphire units" for shifts and sizes: 1 = HALF the frame width, the same unit on both axes (Sapphire's screen
@@ -111,36 +111,6 @@ export const directionVector = (v: ParamValue | undefined, def = 'left'): [numbe
 	DIRS[str(v, def)] ?? DIRS[def]!;
 
 /**
- * Sapphire Slow In / Slow Out: a cubic Hermite from 0 to 1 whose end tangents are 1 − slowIn and 1 − slowOut
- * (0, 0 = linear; 1, 1 = smoothstep). Monotonic for every setting; exactly 0 and 1 at the ends.
- */
-export function sapphireSlow(t: number, slowIn: number, slowOut: number): number {
-	const x = clamp(t, 0, 1);
-	const m0 = 1 - clamp(slowIn, 0, 1);
-	const m1 = 1 - clamp(slowOut, 0, 1);
-	const x2 = x * x;
-	const x3 = x2 * x;
-	return (x3 - 2 * x2 + x) * m0 + (-2 * x3 + 3 * x2) + (x3 - x2) * m1;
-}
-
-/**
- * The whip curve of WhipLash / MochaWhip (0 → 1 over the transition, 0.5 at the cut in the middle): an accelerating
- * whip into the cut, then the Whip Out: Smooth (decelerates), Bounce (overshoots and settles, damped), Snap (keeps
- * its speed and stops dead). Velocity is continuous through the cut (3 per unit of progress).
- */
-export function whipCurve(e: number, style: string): number {
-	const x = clamp(e, 0, 1);
-	if (x <= 0.5) return 0.5 * (2 * x) ** 3;
-	const u = 2 * x - 1;
-	if (style === 'snap') return Math.min(1, 0.5 + 1.5 * u);
-	if (style === 'bounce') {
-		const w = 3 * Math.PI;
-		return 1 - 0.5 * (1 - u) ** 2 * (Math.cos(w * u) - Math.sin(w * u) / w);
-	}
-	return 1 - 0.5 * (1 - u) ** 3;
-}
-
-/**
  * Progress change per frame of the span (the shutter unit of the motion blurs): the framework's linear ramp step —
  * `1 / (d + 1)` two-sided, `1 / d` at a single clip edge — scaled by Start/End %.
  */
@@ -245,7 +215,7 @@ float sw_jitter() { return fx_hash2(ivec2(floor(tr_px())), 0.5); }
 float sw_tapAt(int i, int n, float lo, float hi, float jitter) {
   return mix(lo, hi, (float(i) + jitter) / float(n));
 }
-// The whip curve (see whipCurve in common.ts): style 0 Smooth, 1 Bounce, 2 Snap.
+// Whip Out curve: style 0 Smooth, 1 Bounce, 2 Snap; continuous velocity at the cut.
 float sw_whip(float e, int style) {
   float x = clamp(e, 0.0, 1.0);
   if (x <= 0.5) { float y = 2.0 * x; return 0.5 * y * y * y; }

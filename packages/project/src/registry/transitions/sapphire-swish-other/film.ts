@@ -32,7 +32,7 @@ const BIN = TRANSITION_BINS.sapphire;
 const OTHER = SAPPHIRE_TRANSITION_SUBBINS.other;
 
 /** Dust cell size (px) and per-cell probability for an average `density` specks per frame on a w × h frame. */
-export function dustCells(density: number, w: number, h: number): { cell: number; prob: number } {
+function dustCells(density: number, w: number, h: number): { cell: number; prob: number } {
 	const n = Math.max(0, density);
 	if (n <= 0) return { cell: 64, prob: 0 };
 	const cell = Math.max(4, Math.sqrt((w * h) / (2 * n)));
@@ -151,7 +151,7 @@ function flashParams(i: number, d: Flash): ParamSpec[] {
  * Per-frame flash state (TS): the drift of flash i in Sapphire units over the transition (Motion Amount along Motion
  * Angle after Motion Delay, 3 units per unit of amount over the span) and its flicker gain.
  */
-export function flashState(p: EffectParams, i: number, e: number, t: number, seed: number) {
+function flashState(p: EffectParams, i: number, e: number, t: number, seed: number) {
 	const k = Math.max(0, e - num(p[`motionDelay${i}`])) / Math.max(1e-3, 1 - num(p[`motionDelay${i}`]));
 	const amt = num(p[`motionAmount${i}`], 1) * 3 * k;
 	const a = (num(p[`motionAngle${i}`]) * Math.PI) / 180;
@@ -363,13 +363,13 @@ void main() {
 });
 
 /** Whole film frames S_FilmRoll rolls through (Roll Speed rounded, ≥ 1) and the direction (+1 up, −1 down). */
-export function rollFrames(rollSpeed: ParamValue | undefined): { frames: number; dir: number } {
+function rollFrames(rollSpeed: ParamValue | undefined): { frames: number; dir: number } {
 	const v = num(rollSpeed, 1);
 	return { frames: Math.max(1, Math.round(Math.abs(v))), dir: v < 0 ? -1 : 1 };
 }
 
 /** Per-frame film signals of S_FilmRoll (TS): shake offset/velocity, flicker and defocus. */
-export function filmRollSignals(p: EffectParams, ctx: { frame: number; fps: number; seed: number }) {
+function filmRollSignals(p: EffectParams, ctx: { frame: number; fps: number; seed: number }) {
 	const fps = Math.max(1, ctx.fps);
 	const o = {
 		amplitude: num(p.shakeAmplitude, 0.2) * 10,

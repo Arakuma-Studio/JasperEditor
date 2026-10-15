@@ -150,7 +150,7 @@ void main() {
 });
 
 /** The dead-time window [start, end] of S_TVChannelChange in progress. */
-export function deadWindow(p: EffectParams): [number, number] {
+function deadWindow(p: EffectParams): [number, number] {
 	const dur = Math.min(1, Math.max(0, num(p.deadTimeDuration, 0.2)));
 	const start = (1 - dur) * Math.min(1, Math.max(0, 0.5 + 0.5 * num(p.deadTimeStart, 0)));
 	return [start, start + dur];

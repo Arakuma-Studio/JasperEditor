@@ -29,7 +29,7 @@ import {
 const bin = SAPPHIRE_BINS.stylize;
 
 /** Stroke cell size in canvas px for a Sapphire Frequency (strokes across the layer width). */
-export function strokeCellPx(
+function strokeCellPx(
 	frequency: ParamValue | undefined,
 	ctx: Pick<FxPlanContext, 'width' | 'pxScale'>,
 ): number {
@@ -499,7 +499,7 @@ function brushParams(style: 'oil' | 'chalk'): ParamSpec[] {
 }
 
 /** Brush length (layer px) of the first layer: Max Size 1 = 2 % of the layer width. */
-export function brushSizePx(p: EffectParams, width: number): number {
+function brushSizePx(p: EffectParams, width: number): number {
 	return Math.max(0, num(p.maxSize, 1.5)) * 0.02 * width;
 }
 

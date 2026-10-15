@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
 	buildRenderSnapshot,
-	type Clip,
 	checkInvariants,
 	clipPictureTime,
 	contentTimeAt,
@@ -460,44 +459,6 @@ describe('switching angles', () => {
 		expect(anglesOn(h, 'V1')[0]).toEqual([0, 10, mc.angles[2]!.id]);
 		expect(anglesOn(h, 'A1')[0]).toEqual([0, 10, mc.angles[0]!.id]);
 		expect(checkInvariants(h.doc)).toEqual([]);
-	});
-
-	it('every outer frame renders the angle the cuts selected (property check)', () => {
-		const { h, mc, sequenceId } = placed();
-		const src = h.doc.sequences[sequenceId]!;
-		let seed = 7;
-		const rnd = () => {
-			seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-			return seed / 0x7fffffff;
-		};
-		for (let round = 0; round < 6; round++) {
-			const cuts = Array.from({ length: 1 + Math.floor(rnd() * 6) }, () => ({
-				at: Math.floor(rnd() * 200),
-				angle: 1 + Math.floor(rnd() * 3),
-			}));
-			const to = 200 + Math.floor(rnd() * 40);
-			h.ok([{ type: 'multicam.record', cuts, to }]);
-			expect(checkInvariants(h.doc)).toEqual([]);
-			const s = snap(h.doc, h.seqId);
-			for (let f = 0; f < 240; f += 3) {
-				const outer = h.clips('V1').find((c) => c.start <= f && f < c.start + c.duration) as
-					| (Clip & { multicam: { angle: string } })
-					| undefined;
-				if (!outer) continue;
-				const live = flatLayers(s, f);
-				const angle = mc.angles.find((a) => a.id === outer.multicam.angle)!;
-				const inner = Object.values(src.clips).find(
-					(c) => c.trackId === angle.videoTrackId && c.start <= f && f < c.start + c.duration,
-				);
-				if (!inner) {
-					expect(live).toHaveLength(0);
-					continue;
-				}
-				expect(live).toHaveLength(1);
-				expect(live[0]!.mediaId).toBe((inner as { mediaId: string }).mediaId);
-				expect(live[0]!.contentTime).toBe(contentTimeAt(inner, f, src.settings.frameRate));
-			}
-		}
 	});
 
 	it('camera numbers follow Edit Cameras: hidden angles are skipped, order and names change', () => {

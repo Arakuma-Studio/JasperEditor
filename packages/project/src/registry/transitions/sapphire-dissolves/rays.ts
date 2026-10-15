@@ -31,17 +31,14 @@ import {
 export const RAYS_RES = ['full', 'half', 'quarter'] as const;
 
 /** Rays Res → pass resolution (the rays are always computed at ≤ ½ resolution; Full = ½, Half = ¼, Quarter = ⅛). */
-export const raysScale = (p: EffectParams): number =>
+const raysScale = (p: EffectParams): number =>
 	p.raysRes === 'quarter' ? 0.125 : p.raysRes === 'half' ? 0.25 : 0.5;
 
 /**
  * Per-frame ray geometry: the centre (uv) on its path, and per channel the per-pass scale towards the centre
  * (outward rays: (1 + L)^(−1/3)) and away from it (Reverse Rays: (1 + L·rev)^(1/3)).
  */
-export function raysGeometry(
-	p: EffectParams,
-	ctx: { width: number; height: number; t: number; env: number },
-) {
+function raysGeometry(p: EffectParams, ctx: { width: number; height: number; t: number; env: number }) {
 	const c = vec2(p.raysCenter, [0.5, 0.5]);
 	const a = (num(p.raysCenterAngle, 0) * Math.PI) / 180;
 	const travel = clamp(num(p.raysCenterSpeed, 0.2), 0, 2) * (ctx.t - 0.5) * 2;

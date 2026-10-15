@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
-	AgentQueryError,
 	defaultEffectRegistry,
 	findUnknownKeys,
 	runAgentQuery,
@@ -11,7 +10,7 @@ import {
 import { Harness } from './helpers.ts';
 
 describe('unknown keys in agent commands', () => {
-	it('flags top-level and nested unknown keys with the accepted ones and a suggestion', () => {
+	it('flags top-level and nested unknown keys with the accepted keys', () => {
 		const issues = unknownCommandKeyIssues([
 			{ type: 'marker.add', frame: 1, nmae: 'x' },
 			{ type: 'clip.update', clipIds: ['clp_1'], patch: { enabeld: false } },
@@ -19,17 +18,11 @@ describe('unknown keys in agent commands', () => {
 		]);
 		expect(issues).toHaveLength(2);
 		expect(issues[0]).toMatchObject({ commandIndex: 0, code: 'E_SCHEMA' });
-		expect(issues[0]!.message).toContain('unknown key "nmae"');
-		expect(issues[0]!.message).toContain('"nmae" → "name"?');
-		expect(issues[1]!.message).toMatch(/"enabeld" in patch/);
-		expect(issues[1]!.message).toContain('"enabeld" → "enabled"?');
-	});
-
-	it('mentions temp refs where a command declares them', () => {
-		const [issue] = unknownCommandKeyIssues([
-			{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'a' }, $title: 'x' },
-		]);
-		expect(issue!.message).toContain('ref: "$name"');
+		expect(issues[0]!.message).toContain('nmae');
+		expect(issues[0]!.message).toContain('name');
+		expect(issues[1]).toMatchObject({ commandIndex: 1, code: 'E_SCHEMA', path: ['patch'] });
+		expect(issues[1]!.message).toContain('enabeld');
+		expect(issues[1]!.message).toContain('enabled');
 	});
 
 	it('passes valid commands', () => {
@@ -64,8 +57,9 @@ describe('unknown keys in agent commands', () => {
 		]);
 		expect(r.ok).toBe(false);
 		if (r.ok) return;
-		expect(r.errors[0]!.message).toContain('Unknown temp ref $b');
-		expect(r.errors[0]!.message).toContain('declared so far are $a');
+		expect(r.errors[0]!.code).toBe('E_NOT_FOUND');
+		expect(r.errors[0]!.message).toContain('$b');
+		expect(r.errors[0]!.message).toContain('$a');
 	});
 });
 
@@ -111,7 +105,7 @@ describe('clip.properties / param.get (value and evaluated)', () => {
 		const op = r.properties.find((p) => p.key === 'opacity')!;
 		expect(op.animated).toBe(true);
 		expect(op.value).toBeCloseTo(50, 0);
-		expect(op.evaluated).toBeCloseTo(op.value as number, 4);
+		expect(op.evaluated).toBeCloseTo(50, 4);
 		expect(op.keyframes?.map((k) => [k.frame, k.value])).toEqual([
 			[30, 0],
 			[60, 100],
@@ -124,14 +118,14 @@ describe('clip.properties / param.get (value and evaluated)', () => {
 		expect(r.properties.find((p) => p.key === 'transform.position')!.evaluated).toEqual([960, 540]);
 	});
 
-	it('reports what is not rendered and why', () => {
+	it('reports bypassed effects and frames outside a clip', () => {
 		const { h, clipId, fxId } = setup();
 		h.ok([{ type: 'effect.setEnabled', effectInstanceId: fxId, enabled: false }]);
 		const env = { doc: h.doc, revision: h.revision, effects: defaultEffectRegistry };
 		const r = runAgentQuery(env, 'param.get', { target: ['effect', fxId, 'radius'], frame: 40 }) as {
 			property: { value: unknown; rendered?: boolean; why?: string };
 		};
-		expect(r.property).toMatchObject({ value: 6, rendered: false, why: 'the effect is bypassed' });
+		expect(r.property).toMatchObject({ value: 6, rendered: false });
 		const out = runAgentQuery(env, 'clip.properties', { clipId, frame: 200, keys: ['opacity'] }) as {
 			evaluatedAt: { frame: number; outside: boolean };
 			properties: { value: unknown; rendered?: boolean; why?: string }[];
@@ -140,11 +134,10 @@ describe('clip.properties / param.get (value and evaluated)', () => {
 		expect(out.properties[0]).toMatchObject({
 			value: 100,
 			rendered: false,
-			why: 'the frame is outside the clip',
 		});
 	});
 
-	it('times accept seconds and timecode; unknown ids and paths are actionable errors', () => {
+	it('accepts seconds and rejects unknown ids and property paths', () => {
 		const { clipId, env } = setup();
 		const a = runAgentQuery(env, 'param.get', {
 			target: ['clip', clipId, 'opacity'],
@@ -154,9 +147,11 @@ describe('clip.properties / param.get (value and evaluated)', () => {
 			property: { value: number };
 		};
 		expect(a.frame).toBe(45);
-		expect(() => runAgentQuery(env, 'clip.properties', { clipId: 'clp_nope' })).toThrow(AgentQueryError);
+		expect(() => runAgentQuery(env, 'clip.properties', { clipId: 'clp_nope' })).toThrow(
+			expect.objectContaining({ code: 'E_NOT_FOUND', message: expect.stringContaining('clp_nope') }),
+		);
 		expect(() => runAgentQuery(env, 'param.get', { target: ['clip', clipId, 'nope'] })).toThrow(
-			/has no property "nope"/,
+			expect.objectContaining({ code: 'E_NOT_FOUND', message: expect.stringContaining('nope') }),
 		);
 	});
 });

@@ -109,7 +109,7 @@ vec3 pacg_straight(vec4 p) { return p.a > 0.0 ? p.rgb / p.a : vec3(0.0); }
 };
 
 /** Long side of the analysis thumbnail in pixels (≈ 96 × 54 = 5k samples for a 16:9 layer). */
-export const ANALYSIS_SIDE = 96;
+const ANALYSIS_SIDE = 96;
 
 /**
  * Pass `thumb`: a box-averaged thumbnail of the layer box (≈ ANALYSIS_SIDE px on the long side) holding the straight

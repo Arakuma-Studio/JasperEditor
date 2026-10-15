@@ -14,7 +14,7 @@ import { bool, GLSL_PACG, num, popup, slider } from './common.ts';
 export const blurScale = (sigma: number) => (sigma > 48 ? 0.25 : sigma > 12 ? 0.5 : 1);
 
 /** Camera Blur's lens-disc radius in layer px for a Percent Blur (100 % ≈ 4 % of the layer's long side). */
-export function cameraBlurRadius(p: EffectParams, ctx: Pick<FxPlanContext, 'width' | 'height'>): number {
+function cameraBlurRadius(p: EffectParams, ctx: Pick<FxPlanContext, 'width' | 'height'>): number {
 	return (Math.max(0, num(p.percentBlur)) / 100) * 0.04 * Math.max(ctx.width, ctx.height);
 }
 

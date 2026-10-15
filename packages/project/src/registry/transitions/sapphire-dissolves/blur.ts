@@ -28,7 +28,7 @@ import {
 const timingT = (p: EffectParams, progress: number): number => dissolveTiming(p, progress).t;
 
 /** Pass resolution for blurs reaching `maxPx` frame px: a power of two keeping them ≤ `target` texels. */
-export function blurScale(maxPx: number, target = 16): number {
+function blurScale(maxPx: number, target = 16): number {
 	if (!(maxPx > target)) return 1;
 	const s = 2 ** Math.floor(Math.log2(target / maxPx));
 	return clamp(s, 0.125, 1);
@@ -37,7 +37,7 @@ export function blurScale(maxPx: number, target = 16): number {
 export const BLUR_FILTERS = ['box', 'triangle', 'gauss'] as const;
 
 /** σ (frame px, x / y) of each side at timing t: A blurs in as it fades out, B sharpens as it fades in. */
-export function dissolveBlurSigmas(p: EffectParams, t: number, width: number) {
+function dissolveBlurSigmas(p: EffectParams, t: number, width: number) {
 	const base = blurPx(p.blurAmount ?? 2, width);
 	const rel = vec2(p.blurRel, [1, 1]);
 	const a = base * clamp(t, 0, 1) * Math.max(0, num(p.blurRelFrom, 1));
@@ -109,7 +109,7 @@ export const DEFOCUS_EDGE_MODES = ['transparent', 'repeat', 'reflect'] as const;
 export const DEFOCUS_UNIT = 0.05;
 
 /** Defocus radii (frame px) of each side at timing t. */
-export function defocusRadii(p: EffectParams, t: number, width: number) {
+function defocusRadii(p: EffectParams, t: number, width: number) {
 	const base = Math.max(0, num(p.defocusWidth, 0.8)) * DEFOCUS_UNIT * width;
 	const tt = clamp(t, 0, 1);
 	return {

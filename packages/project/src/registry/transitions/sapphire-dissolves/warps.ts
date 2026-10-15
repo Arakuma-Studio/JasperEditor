@@ -374,7 +374,7 @@ const shakeAxis = (axis: 'x' | 'y' | 'z' | 'tilt', label: string, randAmp: numbe
  * The shake poses of a frame (the S_Shake model of the distort family, `shakeUniforms`), with the amplitude scaled
  * by the envelope so the shake builds up to the peak and settles at both ends.
  */
-export function dissolveShakeUniforms(
+function dissolveShakeUniforms(
 	p: EffectParams,
 	ctx: { frame: number; fps: number; seed: number; progress: number; width?: number; height?: number },
 ) {
