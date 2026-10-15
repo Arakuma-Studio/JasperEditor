@@ -271,15 +271,3 @@ if (catalog) {
 	await loadModelNames();
 	syncObserver();
 }
-
-/** Test hook: installs a catalogue and model names without the stored preference or the JSON chunks. */
-export function __setCatalogForTests(lang: string, cat: Catalog | null, names: readonly string[] = []): void {
-	restoreModelNames();
-	language = lang;
-	catalog = cat;
-	loaded.set(family(lang), cat);
-	modelNames = cat ? new Set(names) : modelNames;
-	epoch++;
-	syncObserver();
-	for (const l of [...listeners]) l();
-}
