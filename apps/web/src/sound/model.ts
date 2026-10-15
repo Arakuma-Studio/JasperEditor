@@ -17,6 +17,7 @@ import {
 	type SoundRankRequest,
 	type SoundTypeId,
 } from '@jasper/project';
+import { t } from '../i18n/runtime.ts';
 
 // ---------------------------------------------------------------------------------------------------------------
 // Labels (the `*_LABELS` maps are translated by the i18n transform)
@@ -327,7 +328,7 @@ export function soundAccessibleName(e: SoundEntry, favourite: boolean): string {
 	const types = e.types.map(typeLabel).join(', ');
 	if (types) parts.push(types);
 	parts.push(formatSeconds(e.format.durationSec));
-	if (fin(e.descriptors.peakSec)) parts.push(`peak at ${formatOffset(e.descriptors.peakSec)}`);
+	if (fin(e.descriptors.peakSec)) parts.push(t('peak at {0}', formatOffset(e.descriptors.peakSec)));
 	parts.push(...descriptorWords(e.descriptors));
 	parts.push(licenseBadge(e).title);
 	if (favourite) parts.push('favourite');
@@ -342,15 +343,15 @@ export function sourceLine(
 	const s = e.source;
 	switch (s.type) {
 		case 'starter':
-			return 'Starter kit';
+			return t('Starter kit');
 		case 'pack':
-			return `Pack ${s.packId}`;
+			return t('Pack {0}', s.packId);
 		case 'folder': {
 			const label = rootLabel?.(s.rootId);
 			return label ? `${label} › ${s.relPath}` : s.relPath;
 		}
 		case 'synth':
-			return `Jasper Synth (${s.recipe}, seed ${s.seed})`;
+			return t('Jasper Synth ({0}, seed {1})', s.recipe, s.seed);
 		default:
 			return '';
 	}
@@ -364,10 +365,10 @@ export function soundTooltip(e: SoundEntry, rootLabel?: (rootId: string) => stri
 	if (types) lines.push(types);
 	const facts = [
 		formatSeconds(e.format.durationSec),
-		fin(d.peakSec) ? `peak ${formatOffset(d.peakSec)}` : null,
-		fin(d.riseMs) ? `rise ${Math.round(d.riseMs)} ms` : null,
-		fin(d.centroidHz) ? `centroid ${Math.round(d.centroidHz)} Hz` : null,
-		fin(d.maxMomentaryLufs) ? `${d.maxMomentaryLufs.toFixed(1)} LUFS max` : null,
+		fin(d.peakSec) ? t('peak {0}', formatOffset(d.peakSec)) : null,
+		fin(d.riseMs) ? t('rise {0} ms', Math.round(d.riseMs)) : null,
+		fin(d.centroidHz) ? t('centroid {0} Hz', Math.round(d.centroidHz)) : null,
+		fin(d.maxMomentaryLufs) ? t('{0} LUFS max', d.maxMomentaryLufs.toFixed(1)) : null,
 	].filter(Boolean);
 	lines.push(facts.join(' · '));
 	const words = descriptorWords(d);

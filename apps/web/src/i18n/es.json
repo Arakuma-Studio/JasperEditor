@@ -8795,5 +8795,13 @@
   "Whoosh": "Whoosh",
   "Your folder, declared royalty-free": "Tu carpeta, declarada libre de regalías",
   "Your folder: no licence declared, make sure you may use it": "Tu carpeta: sin licencia declarada, asegúrate de que puedes usarla",
-  "Zap": "Zap"
+  "Zap": "Zap",
+  "{0} LUFS max": "{0} LUFS máx.",
+  "{0} of {1} sounds": "{0} de {1} sonidos",
+  "centroid {0} Hz": "centroide {0} Hz",
+  "Jasper Synth ({0}, seed {1})": "Jasper Synth ({0}, semilla {1})",
+  "Pack {0}": "Paquete {0}",
+  "peak {0}": "pico {0}",
+  "peak at {0}": "pico en {0}",
+  "rise {0} ms": "subida {0} ms"
 }
