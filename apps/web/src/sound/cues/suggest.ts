@@ -1,8 +1,11 @@
 // Suggest Cues… (spec 12 §2.7, §2.2 "Derivation"): what the dialog would add, computed with `deriveCues` on the
 // committed document. Pure; the dialog shows the counts and commits `plan.commands` as ONE transaction
-// "Suggest Cues (n)" (one undo step).
+// "Suggest Cues (n)" (one undo step). The same derivation as the engine's `POST /api/sound-design/cues` (MCP
+// find_sound_cues): the same `mgRegistry`, active expressions bound (motion moves as the Program monitor shows it), the
+// sequence's density and "respect dialogue" as defaults (apps/engine/test/sound-design-cues.test.ts compares them).
 import { mgRegistry } from '@jasper/mg-templates';
 import {
+	bindExpressions,
 	type Command,
 	type CueDensity,
 	type CueDeriveSource,
@@ -90,6 +93,9 @@ export function planSuggestion(doc: ProjectDocument, sequenceId: string, o: Sugg
 	if (!seq) return empty;
 	const range = suggestRange(seq, o.range, o.selectedClips);
 	if (!range) return empty;
+	// Expression-driven motion derives like the renderer shows it (identity without active expressions or before the
+	// expression engine is loaded: the dialog waits for it, see `useExpressionsFor`).
+	const bound = bindExpressions(doc);
 	const base = {
 		range,
 		density: o.density,
@@ -97,11 +103,11 @@ export function planSuggestion(doc: ProjectDocument, sequenceId: string, o: Sugg
 		mgTemplates: mgRegistry,
 	};
 	// Found counts do not depend on the selection; kept counts do (merging), so both runs are needed unless all are on.
-	const all = deriveCues(doc, sequenceId, { ...base, sources: [...PROJECT_CUE_SOURCES] });
+	const all = deriveCues(bound, sequenceId, { ...base, sources: [...PROJECT_CUE_SOURCES] });
 	const allOn = PROJECT_CUE_SOURCES.every((s) => o.sources.has(s));
 	const chosen = allOn
 		? all
-		: deriveCues(doc, sequenceId, { ...base, sources: [...o.sources] as CueDeriveSource[] });
+		: deriveCues(bound, sequenceId, { ...base, sources: [...o.sources] as CueDeriveSource[] });
 	const found = zero();
 	const kept = zero();
 	for (const s of PROJECT_CUE_SOURCES) {
