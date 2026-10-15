@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ProcessStep } from '@jasper/project';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { assertLgplFilters } from '../src/processing/proc/filters.ts';
 import { runProc } from '../src/processing/proc/runner.ts';
 import { createStepImpl } from '../src/processing/proc/steps.ts';
@@ -28,7 +28,8 @@ async function proc(
 	range?: { startFrame: number; endFrame: number },
 ) {
 	const output = join(dir, `${name}.mov`);
-	const res = await runProc(
+	const controller = new AbortController();
+	const running = runProc(
 		{
 			input,
 			output,
@@ -42,8 +43,14 @@ async function proc(
 			scratch: join(dir, `scratch-${name}`),
 			vidstabEngine: 'wasm',
 		},
-		{ emit: () => {}, signal: new AbortController().signal, createStep: createStepImpl },
+		{ emit: () => {}, signal: controller.signal, createStep: createStepImpl },
 	);
+	onTestFinished(async () => {
+		// Vitest's timeout alone leaves the processing operation running.
+		controller.abort();
+		await Promise.allSettled([running]);
+	});
+	const res = await running;
 	return { output, res };
 }
 
