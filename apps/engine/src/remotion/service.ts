@@ -686,16 +686,20 @@ export class RemotionService {
 		if (signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
 		// The WebGL-capable `gl` of the start-up probe (S06:CG-042) applies to every page of the render.
 		const browser = { ...this.browserOptions(), ...(await this.chromiumOptions()) };
-		const composition = await r.selectComposition({
-			serveUrl,
-			id: COMPOSITION_ID,
-			inputProps,
-			timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
-			logLevel: 'error',
-			...binaries,
-			...browser,
-			...(shared ? { puppeteerInstance: shared.instance } : {}),
-		});
+		const composition = await r
+			.selectComposition({
+				serveUrl,
+				id: COMPOSITION_ID,
+				inputProps,
+				timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
+				logLevel: 'error',
+				...binaries,
+				...browser,
+				...(shared ? { puppeteerInstance: shared.instance } : {}),
+			})
+			.catch((e: unknown) => {
+				throw mapRenderError(e, signal);
+			});
 		return { r, serveUrl, composition, browser };
 	}
 

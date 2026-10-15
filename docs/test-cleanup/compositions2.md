@@ -2283,3 +2283,41 @@ The eight aggregates expand into 118 individually reported contracts, with 36 un
 Render review: all 211 GPU renders remain (distort 45, film/grain 71, wipes 72, MatteOps 23), with their existing source sizes, params, seeds, frames, progress values, tolerances, browser/page context and success-path order. The original single source readback remains before the first identity render. The extra pinch center/alpha observation reads the existing −1.5 output and adds no render. All grow filter renders precede all shrink renders; the six matte-noise renders retain their original order.
 
 Validation performed: targeted Biome passed all seven modified TypeScript files; `git diff --check` passed. No Vitest, GL, typecheck or build command ran for this rewrite, per root's scheduling instruction. Full GPU validation remains pending. Independent-case watchdog allocation changes the cumulative allowable run time and must not be presented as a performance improvement or as resolution of earlier overloaded-host failures.
+
+## Composition setup error normalization — before-edit record
+
+Owner: `apps/engine/src/remotion/service.ts`, shared `composition()` SDK boundary. Independent contracts: S04 RR-001/005/006 and AGENTS §0 require typed rendering failures and cancellation. Actual integrated `layer-bake.e2e.test.ts` evidence is preserved in `/var/lib/orquester/tmp/jasper-lb-e2e-RjFN4a/engine/jobs.jsonl`: Fresh frame 70's child bake reports `RENDER_TIMEOUT`, but its fallback still reports `INTERNAL` for the same 60,000 ms headless-browser setup timeout; RED composition failures become `LAYER_BAKE_FAILED`. These are setup failures, not pixel mismatches. The shared `composition()` call awaits `selectComposition` before the public render methods' error-normalization catch blocks.
+
+Isolated failure modes: a setup timeout escapes as an untyped Error; cancellation arriving during selection is reported as a render failure; an existing typed refusal is overwritten. The narrow repair will apply the existing `mapRenderError` only to rejection of the SDK's `selectComposition` promise. Existing typed JobErrors are already preserved by that mapper. Binary/licensing, WebGL, renderer-loading and bundle preconditions remain outside this catch. No retries, deadlines, SDK arguments, successful results or public/test-only seams change.
+
+Caller census: `renderMedia` is used by `export/service.ts`; `renderAlphaMaster` by export and layer-bake services; `renderStill` by export stills and layer-bake services. All three use the same private composition boundary. Existing `remotion-retry.test.ts` cases fault the SDK's later `renderMedia` stage and therefore miss setup errors; successful E2E renders cannot deterministically force selection failure. Test these shared error contracts once through public `RemotionService.renderMedia`, not once per render method.
+
+### KEEP (new regression): reports a composition setup timeout as retryable RENDER_TIMEOUT
+
+Path: `apps/engine/test/remotion-retry.test.ts`.
+
+- **B1:** S04 RR-001 includes composition selection in the render operation; RR-006 specifies `RENDER_TIMEOUT` for rendering timeouts. The recorded failed still demonstrates that selection currently loses this contract.
+- **B2:** Export/still callers otherwise receive generic `INTERNAL` or a bake wrapper instead of the retryable render-timeout code; the public rejected result fails the assertion.
+- **B3:** The external SDK fixture rejects with its observed browser-setup timeout message. It contains no error mapping or retry implementation; the independent expected result is literal `RENDER_TIMEOUT` with `retryable: true`.
+- **B4:** Invoke public `RemotionService.renderMedia` with a valid prebuilt-bundle fixture and replace only the external renderer SDK. No private helper is exported or invoked.
+- **B5:** Moving or renaming private composition/retry helpers preserves the test when the caller-visible error is preserved; it asserts no calls, arguments, log copy or private structure.
+- **B6:** The service is the lowest owner of SDK-to-engine error normalization. The existing render-stage timeout cases cannot catch a rejection before that stage; repeat coverage through still/alpha methods would duplicate the shared contract.
+
+Risk: low, limited to classifying SDK failure. Validation: run this regression against the unchanged owner first, then the complete lightweight retry file with `pnpm exec vitest run apps/engine/test/remotion-retry.test.ts --maxWorkers=1`; targeted Biome and diff review. Root owns the integrated typecheck/gates and real-browser reruns.
+
+### KEEP (new regression): reports cancellation during composition setup as JOB_CANCELLED
+
+Path: `apps/engine/test/remotion-retry.test.ts`.
+
+- **B1:** S04 RR-005 and AGENTS §0 require render cancellation to propagate as the engine's cancellation result, including the RR-001 composition-selection stage.
+- **B2:** A caller cancelling while selection fails must see `JOB_CANCELLED`; leaking the SDK timeout or returning `RENDER_TIMEOUT` is observably wrong.
+- **B3:** The external SDK fixture aborts the supplied controller during selection, then rejects with an ordinary SDK error. It does not implement cancellation classification; expected `JOB_CANCELLED` is literal.
+- **B4:** Uses the public render operation and an ordinary AbortSignal. Cancellation occurs inside the external SDK operation, so an earlier pre-aborted guard cannot make the case pass for the wrong reason.
+- **B5:** Private helpers, promise plumbing and logging may change without affecting this outcome. No private call shape or count is asserted.
+- **B6:** This is the shared selection boundary's distinct cancellation race. The existing cancellation case occurs only after successful selection, and the timeout regression leaves the signal active, so neither proves this behavior.
+
+Risk: low; no new cancellation mechanism is introduced, only existing classification applied to selection rejection. Validation: red before owner fix, then the same focused file/static checks above. These two regression additions are separate from the original 257-test disposition census and introduce no support file, production export or injection hook.
+
+Completed owner fix: catch only rejected `selectComposition` SDK promises and pass the error and AbortSignal to the existing mapper. The successful composition type remains inferred; the argument object, preconditions, retry policy and deadlines are unchanged. No production seam or support file was added or removed.
+
+Validation: `pnpm install --frozen-lockfile --offline` completed. Before the fix, `pnpm exec vitest run apps/engine/test/remotion-retry.test.ts --maxWorkers=1 -t 'composition setup'` failed both new cases on the raw SDK Error (52.50 s total; 91 ms test bodies), proving neither passed through the wrong failure path. After the fix, the unfiltered retry file passed **7/7** (38.32 s total; 84 ms test bodies). Logs: `/tmp/jasper-test-prune2/remotion-setup-red.log` and `/tmp/jasper-test-prune2/remotion-setup-green.log`. Targeted Biome passed both TypeScript files; `git diff --check` passed. Independent read-only cross-review found the repair and regressions sound. No browser, encoder, package typecheck or broad gate ran in this follow-up; root owns integrated verification. This fixes public failure classification, not the overloaded host's render setup timeouts.

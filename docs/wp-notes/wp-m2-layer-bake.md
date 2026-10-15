@@ -24,6 +24,26 @@ Branch `wp/m2-layer-bake` (from `main` a7f1f47, contracts merge 3ece27f). Spec: 
 | LBK-030 | `routes/layer-bake.ts`, `service.ts` (`capability`) | `features.layerBake = {state, reason?, cacheBytes}` (size walked in the background). `features.anime` stays with `routes/anime.ts`. |
 | LBK-031 | tests | Builder output (unit) and every ffmpeg command of the e2e run (`-filter_complex` / `-vf`) pass `gplFiltersIn`. Filters used: `lut3d`, `format`, `scale`, `fade`, `overlay`, `setparams`, `alphaextract`, `signalstats`, `metadata`, `crop`. |
 
+## Composition setup failures
+
+The render operation includes `selectComposition` before drawing frames (S04 RR-001). Its SDK failures use the
+same engine error mapping as drawing: a timeout returns retryable `RENDER_TIMEOUT` (RR-006), and cancellation
+arriving during selection returns `JOB_CANCELLED` (RR-005). Existing typed refusals are preserved. The shared
+`RemotionService` composition boundary covers exports, alpha masters and stills; binary, WebGL and bundle
+preconditions remain outside the SDK catch. This changes error classification, not render deadlines or recovery.
+
+The cleanup validation run exposed the gap in `layer-bake.e2e.test.ts`: a Fresh-layer bake reported a render
+timeout, but the fallback still's composition-selection timeout escaped as `INTERNAL`; RED title selection
+timeouts were wrapped as `LAYER_BAKE_FAILED`. Those failures preceded pixel comparisons. The FADE export used
+the documented Remotion fallback and failed the test's hybrid-path assertion before fade comparisons.
+
+`apps/engine/test/remotion-retry.test.ts` now injects selection timeout and cancellation faults at the external
+SDK boundary and asserts the public service errors. Both regressions failed before the owner fix with an untyped
+SDK Error. After the fix, all seven retry-suite cases pass; targeted Biome and diff whitespace checks also pass.
+These SDK fault tests do not establish real-browser rendering success or resolve the host's setup timeouts.
+Integrated typecheck/gates and browser reruns remain pending. Detailed before-edit evidence and six-bar retention rationale are
+in [the cleanup ledger](../test-cleanup/compositions2.md#composition-setup-error-normalization--before-edit-record).
+
 ## Contract changes (additive; `Contract-Change:` in the commits)
 
 - `NativeExtension.bakes?(clip): 'remotion' | null`; `NativePrepareContext.purpose?: 'native' | 'remotion'`, `concurrency?`; `LayerOverride.still/rect/colorRuns` are now implemented by the builder.

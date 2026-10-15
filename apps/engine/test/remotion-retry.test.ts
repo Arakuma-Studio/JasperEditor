@@ -8,16 +8,17 @@ import { RemotionService } from '../src/remotion/service.ts';
 
 const renderer = vi.hoisted(() => ({
 	renderMedia: vi.fn<(options: { concurrency: number }) => Promise<void>>(),
-}));
-vi.mock('@remotion/renderer', () => ({
-	renderMedia: renderer.renderMedia,
-	selectComposition: async () => ({
+	selectComposition: vi.fn(async () => ({
 		id: 'JasperSequence',
 		width: 16,
 		height: 16,
 		fps: 30,
 		durationInFrames: 30,
-	}),
+	})),
+}));
+vi.mock('@remotion/renderer', () => ({
+	renderMedia: renderer.renderMedia,
+	selectComposition: renderer.selectComposition,
 	makeCancelSignal: () => ({ cancelSignal: undefined, cancel: () => undefined }),
 }));
 
@@ -26,6 +27,7 @@ writeFileSync(join(bundle, 'index.html'), '<html></html>');
 afterAll(() => rmSync(bundle, { recursive: true, force: true }));
 beforeEach(() => {
 	renderer.renderMedia.mockReset();
+	renderer.selectComposition.mockReset();
 });
 const timeout = () => new Error('delayRender timed out at frame 12');
 
@@ -48,6 +50,24 @@ function render(signal = new AbortController().signal, concurrency = 4) {
 }
 
 describe('RemotionService timeout recovery', () => {
+	it('reports a composition setup timeout as retryable RENDER_TIMEOUT', async () => {
+		renderer.selectComposition.mockRejectedValueOnce(
+			new Error('Timed out after 60000ms while setting up the headless browser.'),
+		);
+		renderer.renderMedia.mockResolvedValue(undefined);
+		await expect(render()).rejects.toMatchObject({ code: 'RENDER_TIMEOUT', retryable: true });
+	});
+
+	it('reports cancellation during composition setup as JOB_CANCELLED', async () => {
+		const controller = new AbortController();
+		renderer.selectComposition.mockImplementationOnce(async () => {
+			controller.abort();
+			throw new Error('Timed out after 60000ms while setting up the headless browser.');
+		});
+		renderer.renderMedia.mockResolvedValue(undefined);
+		await expect(render(controller.signal)).rejects.toMatchObject({ code: 'JOB_CANCELLED' });
+	});
+
 	it('recovers a concurrent renderer timeout through the public render operation', async () => {
 		renderer.renderMedia.mockImplementation(async ({ concurrency }) => {
 			if (concurrency !== 1) throw timeout();
