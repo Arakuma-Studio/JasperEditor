@@ -192,6 +192,14 @@ export class SoundLibrary {
 		return this.serialize(() => this.write(next));
 	}
 
+	/**
+	 * Replaces the index with what `make` returns, run in turn with the other writes (after a removal queued before
+	 * it, so it can see the folder list that removal belongs to).
+	 */
+	commitFrom(make: () => Promise<Omit<LibrarySnapshot, 'snapshotHash'>>): Promise<LibrarySnapshot> {
+		return this.serialize(async () => this.write(await make()));
+	}
+
 	/** Takes out the sounds (and file records) a predicate selects; returns how many sounds went. */
 	remove(pred: (e: SoundEntry) => boolean, fileKeyPrefixes: readonly string[]): Promise<number> {
 		return this.serialize(async () => {

@@ -1,16 +1,14 @@
 // The engine's sound library service (spec 12 §2.1, §2.8; wp-note "WP1.2"): the index, user folders, the bundled
 // starter kit, Jasper Synth, search with facets, files and visual data of a sound, and registering a sound into a
 // project. Routes: routes/sounds.ts.
-import { realpath, rm } from 'node:fs/promises';
+import { realpath, rm, stat } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import {
 	type EngineJob,
 	type RegisteredMedia,
 	type RegisterSoundResponse,
-	SOUND_SEARCH_DEFAULT_LIMIT,
 	SOUND_SOURCE_TYPES,
 	type SoundEntry,
-	type SoundFacets,
 	type SoundLibraryStatus,
 	type SoundRoot,
 	type SoundRootsPutRequest,
@@ -20,19 +18,12 @@ import {
 	type SoundVisual,
 } from '@jasper/api';
 import {
-	isSoundTypeId,
 	LIBRARY_LEAD_SILENCE_SEC,
 	LIBRARY_PAD_MAX_SECONDS,
 	type LibraryProvenance,
 	LibraryProvenanceSchema,
 	libraryLeadSilenceSamples,
-	licenseClass,
-	rankSounds,
-	resolveTypeNames,
-	SOUND_TYPES,
-	type SoundRankRequest,
 	shiftLibraryDescriptors,
-	typesOfFamily,
 } from '@jasper/project';
 import { isLoopbackHost } from '../context.ts';
 import { JobError } from '../jobs/types.ts';
@@ -43,9 +34,10 @@ import type { CoreServices } from '../tools/services.ts';
 import { resolveSoundWorker, SoundAnalyzer } from './analysis.ts';
 import { decodeSound } from './decode.ts';
 import { SoundIndexer } from './index-job.ts';
-import { SoundLibrary } from './library.ts';
+import { type LibrarySnapshot, SoundLibrary } from './library.ts';
 import { paddedFileName, probeAudioStream, writePaddedSound } from './pad.ts';
-import { SoundRootStore } from './roots.ts';
+import { SoundRootStore, type SoundRootsPlan } from './roots.ts';
+import { searchSoundEntries } from './search.ts';
 import { isSoundFileName, type LoadedManifest, loadManifest, starterDir } from './starter.ts';
 import { ensureSynthFile, synthItems } from './synth.ts';
 import { readVisual, visualCacheFile, writeVisual } from './visual.ts';
@@ -54,6 +46,14 @@ import { readVisual, visualCacheFile, writeVisual } from './visual.ts';
 export const AUTO_INDEX_ENV = 'JASPER_SOUND_AUTO_INDEX';
 /** Visual data computed on request at once (each decodes up to 30 s of audio). */
 const VISUAL_CONCURRENCY = 2;
+/** A visual analysis that takes longer is stopped (its worker ended) so it cannot hold a slot for ever. */
+export const VISUAL_TIMEOUT_MS = 120_000;
+/** Automatic indexing after a failed automatic job waits this long, doubling per failure up to AUTO_RETRY_MAX_MS. */
+export const AUTO_RETRY_BASE_MS = 60_000;
+export const AUTO_RETRY_MAX_MS = 60 * 60_000;
+
+/** The last automatic index job: whether (and when) automatic indexing may try again. */
+type AutoAttempt = { jobId: string; starterHash: string; failures: number; retryAt: number };
 
 const notFound = (id: string) =>
 	new HttpError(404, 'SOUND_NOT_FOUND', `Unknown sound: ${String(id).slice(0, 80)}`);
@@ -136,10 +136,19 @@ export class SoundService {
 	readonly analyzer: SoundAnalyzer;
 	private readonly limitVisual = semaphore(VISUAL_CONCURRENCY);
 	private starterCache: { at: number; manifest: LoadedManifest } | null = null;
+	/** The index's entries in id order, for the snapshot they were made from (search). */
+	private sorted: { sounds: LibrarySnapshot['sounds']; list: SoundEntry[] } | null = null;
+	private auto: AutoAttempt | null = null;
 
 	constructor(
 		private readonly core: CoreServices,
-		private readonly opts: { env?: Record<string, string | undefined>; log?: (m: string) => void } = {},
+		private readonly opts: {
+			env?: Record<string, string | undefined>;
+			log?: (m: string) => void;
+			/** Tests: a smaller library cap. */
+			maxSounds?: number;
+			now?: () => number;
+		} = {},
 	) {
 		const paths = core.config.paths;
 		this.library = new SoundLibrary(paths.soundLibraryIndex, {
@@ -161,6 +170,15 @@ export class SoundService {
 			synthDir: paths.soundSynthDir,
 			cacheDir: paths.soundCacheDir,
 			synthItems: () => synthItems(this.env()),
+			local: () => this.local,
+			...(opts.maxSounds !== undefined ? { maxSounds: opts.maxSounds } : {}),
+			followUp: (jobId, full) => {
+				void core.queue
+					.wait(jobId)
+					.then(() => this.startIndex({ ...(full ? { full: true } : {}), origin: { type: 'system' } }))
+					.catch(() => undefined);
+			},
+			...(opts.log ? { log: opts.log } : {}),
 		});
 		core.queue.registerRunner('sound-index', (ctx) => this.indexer.run(ctx));
 	}
@@ -193,8 +211,30 @@ export class SoundService {
 		return this.core.queue.list({ active: true, kind: 'sound-index' })[0] ?? null;
 	}
 
-	/** Starts (or joins) an index job. */
+	private nowMs(): number {
+		return this.opts.now?.() ?? Date.now();
+	}
+
+	/**
+	 * Starts an index job, or joins the queued or running one; a joined job scans once more after its current scan
+	 * (full when `full` is asked), so neither a new request nor a full rebuild is lost.
+	 */
 	startIndex(opts: { full?: boolean; origin?: EngineJob['origin'] } = {}): EngineJob {
+		const active = this.activeIndexJob();
+		if (active) {
+			this.indexer.requestPass(opts.full === true);
+			// A job being cancelled scans no more: the request runs as a new job once it has ended.
+			if (active.state === 'cancelling')
+				void this.core.queue
+					.wait(active.id)
+					.then(() => {
+						if (!this.activeIndexJob()) this.startIndex(opts);
+					})
+					.catch(() => undefined);
+			return active;
+		}
+		// The user (or an agent) asking for an index lifts the hold on automatic indexing.
+		if (opts.origin?.type !== 'system') this.auto = null;
 		return this.core.queue.submit({
 			kind: 'sound-index',
 			title: opts.full ? 'Rebuild the sound library' : 'Index the sound library',
@@ -215,14 +255,41 @@ export class SoundService {
 		return s.starterHash !== starter.hash;
 	}
 
-	/** Indexes by itself when the library needs it, unless `JASPER_SOUND_AUTO_INDEX=0` (default off under vitest). */
+	/**
+	 * Indexes by itself when the library needs it, unless `JASPER_SOUND_AUTO_INDEX=0` (default off under vitest).
+	 * Remembers its last job: after the user cancelled it, it does not start again until the starter kit changes or an
+	 * index is asked for; after a failure it waits (1 min, doubling per failure, at most 1 h).
+	 */
 	async autoIndex(): Promise<EngineJob | null> {
 		const env = this.env();
 		const flag = env[AUTO_INDEX_ENV] ?? (env.VITEST ? '0' : '1');
 		if (flag === '0' || flag === 'false') return null;
 		if (this.activeIndexJob()) return null;
 		if (!(await this.needsIndex())) return null;
-		return this.startIndex({ origin: { type: 'system' } });
+		const starterHash = (await this.starter()).hash;
+		const last = this.auto;
+		let failures = 0;
+		if (last) {
+			const job = this.core.queue.get(last.jobId);
+			const state = job?.state;
+			if (state === 'queued' || state === 'running' || state === 'cancelling') return null;
+			const sameKit = last.starterHash === starterHash;
+			if (state === 'cancelled' && sameKit) return null;
+			if (state === 'failed' || state === 'interrupted') {
+				if (sameKit && this.nowMs() < last.retryAt) return null;
+				failures = sameKit ? last.failures : 0;
+			}
+			// A job that succeeded was the last one (a later need, e.g. a new kit, may start one at once).
+		}
+		const job = this.startIndex({ origin: { type: 'system' } });
+		const next = failures + 1;
+		this.auto = {
+			jobId: job.id,
+			starterHash,
+			failures: next,
+			retryAt: this.nowMs() + Math.min(AUTO_RETRY_MAX_MS, AUTO_RETRY_BASE_MS * 2 ** (next - 1)),
+		};
+		return job;
 	}
 
 	async get(id: string): Promise<SoundEntry> {
@@ -231,80 +298,32 @@ export class SoundService {
 		return e;
 	}
 
+	/** The index's entries in id order (sorted once per snapshot). */
+	private sortedEntries(snapshot: LibrarySnapshot): SoundEntry[] {
+		if (this.sorted?.sounds !== snapshot.sounds) {
+			const sounds = snapshot.sounds;
+			this.sorted = {
+				sounds,
+				list: Object.keys(sounds)
+					.sort()
+					.map((id) => sounds[id]!),
+			};
+		}
+		return this.sorted.list;
+	}
+
 	async search(q: SoundSearchQuery): Promise<SoundSearchResponse> {
 		const snapshot = await this.library.snapshot();
-		const all = Object.keys(snapshot.sounds)
-			.sort()
-			.map((id) => snapshot.sounds[id]!);
-		const byRoot = q.rootId
-			? all.filter((e) => e.source.type === 'folder' && e.source.rootId === q.rootId)
-			: all;
-		const sources = q.sources?.length ? new Set<string>(q.sources) : null;
-		const pool = sources ? byRoot.filter((e) => sources.has(e.source.type)) : byRoot;
-
-		let types: string[] | undefined;
-		// A family and types that share nothing match nothing.
-		let none = false;
-		if (q.family) {
-			const fam: string[] = typesOfFamily(q.family);
-			types = q.types?.length ? resolveTypeNames(q.types).filter((t) => fam.includes(t)) : fam;
-			none = types.length === 0;
-		} else if (q.types?.length) types = q.types;
-		let similarTo: SoundRankRequest['similarTo'];
-		if (q.similarTo) {
-			const ref = snapshot.sounds[q.similarTo];
-			if (!ref) throw notFound(q.similarTo);
-			similarTo = { id: ref.id, descriptors: ref.descriptors };
-		}
-		const req: SoundRankRequest = {
-			...(q.q !== undefined ? { query: q.q } : {}),
-			...(types ? { types } : {}),
-			...(q.visualKind ? { visualKind: q.visualKind } : {}),
-			...(q.windowSec !== undefined ? { windowSec: q.windowSec } : {}),
-			...(q.align ? { align: q.align } : {}),
-			...(q.length ? { length: q.length } : {}),
-			...(q.tone ? { tone: q.tone } : {}),
-			...(q.attack ? { attack: q.attack } : {}),
-			...(q.weight ? { weight: q.weight } : {}),
-			...(q.texture ? { texture: q.texture } : {}),
-			license: q.license ?? 'commercial-safe',
-			...(similarTo ? { similarTo } : {}),
-		};
-		const ctx = q.usedNearby?.length ? { usedNearby: q.usedNearby } : {};
-		const ranked = none ? [] : rankSounds(pool, req, ctx);
-
-		// Disjunctive facets: each dimension counts with every filter but its own.
-		const facets: SoundFacets = { types: {}, families: {}, licenses: {}, sources: {} };
-		const bump = (rec: Record<string, number>, k: string) => {
-			rec[k] = (rec[k] ?? 0) + 1;
-		};
-		const { types: _t, ...noTypes } = req;
-		for (const r of rankSounds(pool, noTypes)) {
-			const fams = new Set<string>();
-			for (const t of r.entry.types)
-				if (isSoundTypeId(t)) {
-					bump(facets.types, t);
-					fams.add(SOUND_TYPES[t].family);
-				}
-			for (const f of fams) bump(facets.families, f);
-		}
-		if (!none) {
-			for (const r of rankSounds(pool, { ...req, license: 'any' }))
-				bump(facets.licenses, licenseClass(r.entry.license));
-			for (const r of rankSounds(byRoot, req)) bump(facets.sources, r.entry.source.type);
-		}
-
-		const offset = q.offset ?? 0;
-		const limit = q.limit ?? SOUND_SEARCH_DEFAULT_LIMIT;
+		const all = this.sortedEntries(snapshot);
+		const out = searchSoundEntries(all, q, {
+			lookup: (id) => (Object.hasOwn(snapshot.sounds, id) ? snapshot.sounds[id] : undefined),
+			// Folder sounds are not offered by a remote engine (D-47), even when an index from a local run has them.
+			includeFolders: this.local,
+		});
 		return {
 			snapshotHash: snapshot.snapshotHash,
 			librarySize: all.length,
-			total: ranked.length,
-			offset,
-			results: ranked
-				.slice(offset, offset + limit)
-				.map((r) => ({ sound: r.entry, score: r.score, parts: r.parts })),
-			facets,
+			...out,
 			indexing: this.activeIndexJob() !== null,
 		};
 	}
@@ -358,6 +377,11 @@ export class SoundService {
 		}
 		if (!inside(realBase, real) || !isSoundFileName(real))
 			throw new HttpError(403, 'NOT_A_SOUND', 'The sound’s file now points outside its folder');
+		// A regular file only: a FIFO or device named like a sound would block whoever reads it.
+		const st = await stat(real).catch(() => null);
+		if (!st)
+			throw new HttpError(404, 'SOUND_FILE_MISSING', 'The sound’s file is missing; rescan the sound library');
+		if (!st.isFile()) throw new HttpError(403, 'NOT_A_SOUND', 'The sound’s file is not a regular file');
 		return real;
 	}
 
@@ -369,6 +393,13 @@ export class SoundService {
 	}
 
 	async visual(e: SoundEntry): Promise<SoundVisual> {
+		// Folder sounds need local mode, also when their visual data is cached.
+		if (e.source.type === 'folder' && !this.local)
+			throw new HttpError(
+				403,
+				'LOCAL_MODE_ONLY',
+				'Sounds of user folders are only available with a local engine',
+			);
 		const file = visualCacheFile(this.core.config.paths.soundCacheDir, fingerprintHex(e.fingerprint));
 		const cached = await readVisual(file, e.fingerprint);
 		if (cached) return cached;
@@ -382,29 +413,28 @@ export class SoundService {
 					'SOUND_CHANGED',
 					'The file changed since it was indexed; rescan the sound library',
 				);
-			let decoded: Awaited<ReturnType<typeof decodeSound>>;
-			try {
-				decoded = await decodeSound(this.core.ffmpeg, path);
-			} catch (err) {
-				if (err instanceof JobError) throw new HttpError(422, err.code, err.message);
-				throw err;
-			}
+			const decoded = await this.mediaCall(() => decodeSound(this.core.ffmpeg, path));
 			let v: SoundVisual;
 			try {
 				v = (
-					await this.analyzer.run({
-						kind: 'visual',
-						soundId: e.id,
-						fingerprint: e.fingerprint,
-						durationSec: e.descriptors.durationSec,
-						peakSec: e.descriptors.peakSec,
-						channels: decoded.channels,
-						rate: decoded.rate,
-					})
+					await this.analyzer.run(
+						{
+							kind: 'visual',
+							soundId: e.id,
+							fingerprint: e.fingerprint,
+							durationSec: e.descriptors.durationSec,
+							peakSec: e.descriptors.peakSec,
+							channels: decoded.channels,
+							rate: decoded.rate,
+						},
+						undefined,
+						{ timeoutMs: VISUAL_TIMEOUT_MS },
+					)
 				).visual;
 			} catch (err) {
 				const code = (err as { code?: string }).code;
-				throw new HttpError(422, code ?? 'ANALYSIS_FAILED', (err as Error).message);
+				const busy = code === 'ANALYSIS_TIMEOUT' || code === 'INTERRUPTED';
+				throw new HttpError(busy ? 503 : 422, code ?? 'ANALYSIS_FAILED', (err as Error).message);
 			}
 			await writeVisual(file, v);
 			return v;
@@ -493,18 +523,18 @@ export class SoundService {
 	}
 
 	/**
-	 * Applies a new folder list: saves it, takes the sounds of removed or disabled folders out of the index at once and
-	 * starts a rescan when a folder was added, enabled or relicensed. (Approval is the route's business.)
+	 * Applies a planned folder list: saves it (refused with 409 `SOUND_ROOTS_CHANGED` when the list changed since the
+	 * plan was made), takes the sounds of removed or disabled folders out of the index at once and starts a rescan
+	 * when a folder was added, enabled, relicensed or credited differently. (Approval is the route's business.)
 	 */
 	async applyRoots(
-		next: SoundRoot[],
-		changes: { added: SoundRoot[]; removed: SoundRoot[]; relicensed: SoundRoot[] },
+		plan: SoundRootsPlan,
 		origin: EngineJob['origin'],
 	): Promise<{ roots: SoundRoot[]; job: EngineJob | null; removedSounds: number }> {
 		const before = await this.roots.list();
-		const roots = await this.roots.save(next);
+		const roots = await this.roots.save(plan.next, plan.revision);
 		const live = new Set(roots.filter((r) => r.enabled).map((r) => r.id));
-		const gone = before.filter((r) => !live.has(r.id) || changes.removed.some((x) => x.id === r.id));
+		const gone = before.filter((r) => !live.has(r.id) || plan.removed.some((x) => x.id === r.id));
 		const goneIds = new Set(gone.map((r) => r.id));
 		const removedSounds = gone.length
 			? await this.library.remove(
@@ -513,14 +543,23 @@ export class SoundService {
 				)
 			: 0;
 		const enabledNow = roots.filter((r) => r.enabled && !before.some((b) => b.id === r.id && b.enabled));
-		const needScan = changes.added.length > 0 || changes.relicensed.length > 0 || enabledNow.length > 0;
+		const needScan =
+			plan.added.length > 0 ||
+			plan.relicensed.length > 0 ||
+			plan.recredited.length > 0 ||
+			enabledNow.length > 0;
 		return { roots, job: needScan ? this.startIndex({ origin }) : null, removedSounds };
 	}
 
-	async plannedRoots(body: SoundRootsPutRequest) {
+	async plannedRoots(body: SoundRootsPutRequest): Promise<SoundRootsPlan> {
 		if (!this.local)
 			throw new HttpError(403, 'LOCAL_MODE_ONLY', 'Sound folders are only available with a local engine');
 		return this.roots.plan(body, new Date().toISOString());
+	}
+
+	/** The folder list as callers may see it: paths only in local mode (D-47); a remote engine lists none. */
+	async visibleRoots(): Promise<SoundRoot[]> {
+		return this.local ? this.roots.list() : [];
 	}
 
 	async status(): Promise<SoundLibraryStatus> {

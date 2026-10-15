@@ -859,8 +859,10 @@ no manifest.
 - **Every scan rebuilds the whole index** from the sources (starter, installed packs, enabled folders, synth); cost
   is kept low by the stat shortcut (same size and mtime → fingerprint reused without reading) and the per-fingerprint
   analysis cache. Nothing is committed until the scan completes; a cancelled scan leaves the old index, and the
-  analyses it finished are reused next time (tested). If the folder list changes during a scan, the scan repeats (≤ 3
-  times). One index job at a time (`dedupeKey: 'sound-index'`).
+  analyses it finished are reused next time (tested). If the folder list changes during a scan, or another index
+  request joins the job, the scan repeats (≤ 3 scans per job); what is committed keeps only folders enabled, and
+  declared the same way, at commit time, and a still-stale job queues a follow-up job (review fixes below). One index
+  job at a time (`dedupeKey: 'sound-index'`; a joined `full` request makes the joined job scan once more, in full).
 - **Analysis**: ffprobe for the format, then ffmpeg decodes the first `SOUND_ANALYSIS_SECONDS` = 30 s to f32 at the
   file's rate up to 48 kHz (higher rates resampled; descriptors are perceptual) with ≤ 6 channels (more folded to
   stereo): ≤ 35 MB per file. `analyzeSound` and the visual data run on a **worker thread** (`sounds/analysis.ts`,
@@ -869,7 +871,8 @@ no manifest.
   thread's loader to workers). Measured on this host at load ≈ 160 with `tsx` (scratch script): 30 s of stereo noise
   took 13.4 s in `analyzeSound` and 4.4 s for the spectrogram, which would have held the engine's event loop. One
   worker per engine, started on first use (≤ 120 s start timeout), stopped after 30 s idle; the decoded buffers are
-  transferred, not copied; cancelling a running analysis terminates the worker (a new one starts next time). Without
+  copied (not transferred, so a request can move to a new worker); cancelling or timing out a running analysis
+  terminates the worker and moves its other requests to a new one (review fixes below). Without
   a worker (vitest, `JASPER_SOUND_WORKER=off`, a missing file, a worker that does not start) it runs in-thread,
   between the job's per-file yields. For files longer than 30 s,
   `descriptors.durationSec` is the whole file's (from ffprobe); the other descriptors describe the first 30 s.
@@ -892,8 +895,8 @@ no manifest.
   `sources` and `rootId` as pre-filters, `family` as types (intersected with `types` when both are given; no overlap =
   no results), `similarTo` by id. **Facets are disjunctive**: types and families are counted without the request's
   type/family filter, licences (by `licenseClass`) without its licence filter, sources without its source filter, so
-  a chip shows how many sounds selecting it gives. Four ranking passes per request (measured: fine for the test
-  library; the 50 000-sound cap was not benchmarked).
+  a chip shows how many sounds selecting it gives. One ranking pass for the results plus one filter pass for all
+  facets (`searchSoundEntries`, `sounds/search.ts`); < 50 ms for 5 000 sounds (review fixes below).
 - **Visual data**: computed by the index job from the analysis decode and cached per fingerprint; computed again on
   request when the cache was cleaned (≤ 2 at once; refused with `SOUND_CHANGED` if the file's fingerprint changed).
   Peaks: max |sample| over channels per 10 ms, linear u8. Spectrogram: mono mix, Hann frames 2^k ≥ 40 ms (2048 at
@@ -910,14 +913,22 @@ no manifest.
 - **Folders** (D-47): local mode only (`LOCAL_MODE_ONLY` otherwise, `local: false` in the responses); absolute, no
   NUL, resolved through links, an existing folder, not a file-system root, no duplicates, ≤ 32. Scans skip hidden
   names and symlinks (files and folders), stop at depth 12 and 20 000 audio files per folder, and the library at
-  50 000 sounds. Removing or disabling a folder takes its sounds out of the index at once; adding, enabling or
-  relicensing starts a rescan.
-- **Agents** (security review AGT-3): `requireUserApproval` for adding, removing **and relicensing** a folder
-  (a licence declaration decides commercial safety: it is the user's statement); renaming and enabling are open.
-  The card names the paths and declared licences. The editor window is never asked.
+  50 000 sounds (enforced while listing, with room kept for Jasper Synth). Removing or disabling a folder takes its
+  sounds out of the index at once; adding, enabling, relicensing or changing its author or credit template (or its
+  label, when the template uses `{folder}`) starts a rescan. A remote engine lists no folders, skips folder roots
+  when indexing and keeps folder sounds out of search.
+- **Agents** (security review AGT-3): `requireUserApproval` for adding, removing, relicensing **and re-crediting**
+  a folder (a licence declaration decides commercial safety and the credit line is what projects print: both are the
+  user's statements); renaming and enabling are open. The card starts with the counts of every kind ("This adds 1,
+  removes 1, relicenses 0 and changes the credit line of 0 sound folder(s)"), then removals, licence and credit
+  changes, then additions, each path or change cut to 120 characters; its label names every kind. A plan carries the
+  folder list's revision: when the list changed while the card waited, the change is refused (`409
+  SOUND_ROOTS_CHANGED`). The editor window is never asked.
 - **Auto-indexing**: `GET /api/sounds` and `/status` (and engine start) start an index job when the library was never
   indexed, was recovered from damage, or the starter manifest changed; `JASPER_SOUND_AUTO_INDEX=0` turns it off
-  (default off under vitest so the engine suites do not render synth sounds in the background).
+  (default off under vitest so the engine suites do not render synth sounds in the background). After the user
+  cancels an automatic job it does not start again until the starter kit changes or an index is asked for; after a
+  failure it waits 1 min, doubling per failure up to 1 h.
 
 #### Verified (measured, this branch)
 
@@ -980,6 +991,81 @@ Shared host, 16 cores, load average 140–165 during every run below (other agen
   the bundled worker run on its own analysed a decaying 440 Hz sine (MIDI 69, 100 spectrogram frames).
 - Dev worker under tsx (scratch script): `mode worker`; its first start took 22 s at load ≈ 160 (tsx transpiling the
   import graph in the worker), off the main thread.
+
+#### Review fixes (P1 verification)
+
+Fixes of the WP1.2 review findings, each with a regression test that fails on the code before it (checked by running
+the new tests against the previous sources: all 19 tests of `sounds-review.test.ts` and all 5 of
+`sound-rank-scale.test.ts` failed there; the analysis-worker tests needed the new `createWorker` seam, so before the
+fix they could only fail by timing out). Files: `apps/engine/src/routes/sounds.ts`, `sounds/{roots,service,index-job,
+analysis,search}.ts`, `packages/project/src/sound/{rank,taxonomy}.ts`, `apps/mcp/src/tools/sound.ts` (hints).
+Tests: `apps/engine/test/sounds-review.test.ts`, `sounds-search.test.ts`, `packages/project/test/sound-rank-scale.test.ts`.
+
+1. **Stale folder approvals.** `SoundRootStore.plan` returns the list's `revision`; `save(next, revision)` refuses
+   with `409 SOUND_ROOTS_CHANGED` when another change landed while the card waited (the user's newer folder is kept,
+   nothing is removed without a card about the current list). MCP hint added.
+2. **Cards that hide a removal.** `rootsApprovalCard`: counts of every kind first, removals before additions, every
+   path or change cut to 120 characters, the label names every kind (`Sound folders: remove, add`).
+3. **Stale scans.** `SoundIndexer.run` re-scans when the folder list changed or a request joined (`requestPass`), at
+   most `MAX_PASSES` = 3 scans (later passes reuse the previous pass's fingerprints and analyses), then commits only
+   sounds and file records of folders enabled and declared identically *now* (`rootDeclaration`: path, licence,
+   author, template, label) and, if the last scan was stale, queues a follow-up job after this one ends.
+   `startIndex` joins an active job by asking it for another pass (full when asked): `POST /api/sounds/index {full:
+   true}` during an incremental job ends with a full pass (tested: 14 analysed, 0 reused).
+4. **Automatic indexing retries.** The service remembers its last automatic job: cancelled → no new automatic job
+   until the starter manifest's hash changes or a user/agent asks for an index; failed or interrupted → backoff 1 min
+   × 2^(failures−1), at most 1 h (a changed kit resets it).
+5. **Analysis worker lifecycle.** Requests are kept per worker (`Slot`); events of a worker that is no longer
+   current are ignored; stopping one request (cancel, timeout) ends its worker and re-posts that worker's other
+   requests to a new one (at most 3 posts each); visual analyses time out after `VISUAL_TIMEOUT_MS` = 120 s
+   (`503 ANALYSIS_TIMEOUT`). Samples are copied to the worker instead of transferred (≤ 35 MB more, transiently).
+   Seam: `new SoundAnalyzer(url, log, {createWorker})`.
+6. **Cache growth.** After every committed index, `pruneSoundCache` deletes `cache/<fp>/` folders of fingerprints
+   the index has neither as a sound nor as a file record, analysis/visual files of older versions in kept folders,
+   and `synth/*-<seed>-v<n>.wav` renders the index does not list (older `SYNTH_VERSION`s included). Other files are
+   left alone. (Cached analyses of a cancelled scan's files survive when the next successful scan still lists them.)
+7. **Library cap.** A running count replaces `Object.keys(sounds).length` per file; the cap applies while listing
+   (`walkRoot({maxFiles})` stops a folder at the room left, `LIBRARY_FULL` reported) and room is reserved for every
+   synth item. Test seam: `IndexDeps.maxSounds`.
+8. **Credit changes.** A changed `author` or `attributionTemplate` (or `label` when the template uses `{folder}`) is
+   `recredited` in the plan: it starts a rescan, and an agent doing it is asked (card "Change a sound folder’s credit
+   line", naming the folder and the old → new value).
+9. **Remote mode.** `GET /api/sounds/roots` lists no folders on a non-local engine; scans skip folder roots there
+   (`LOCAL_MODE_ONLY` per root in the job errors) and search leaves folder sounds out even when an index from a
+   local run still has them; `visual()` checks local mode before reading the cache; `fileOf` requires a regular
+   file (a FIFO named `x.wav` is `403 NOT_A_SOUND`, never opened); a missing ffmpeg/ffprobe is `503 BINARY_MISSING`
+   for visual data.
+10. **Search speed.** `rankSounds` caches per entry object (WeakMap; recomputed when title, tags or types change) the
+    title/tag tokens, the known types and the types they name, and the text score of the last query plan; plans are
+    memoised per query string (32) and remember how each vocabulary word (ids ≤ 200 000) matches the query (2 bits per
+    token, an `Int32Array` by word id), so most words cost one array read; `typesInTokens` only tries synonym phrases whose first word occurs (index by first
+    word, same greedy order); query words are deduplicated (first occurrence) and capped at `MAX_QUERY_TOKENS` = 16
+    (a behaviour change for repeated or very long queries only); licence classes are memoised. The engine caches the
+    id-sorted entry list per snapshot and makes one pass (`rankSoundsPage`): every entry's filter bits
+    (`soundFilterOf`'s, one per filter dimension) count the facets, matching entries are ordered by one packed float
+    (source tier, title-word count, 6-decimal score, then the index, which is the id order of the engine's list; 2^50
+    at most, so exact; a native typed-array sort), with the comparator as the fallback for lists not in id order, and
+    only the returned page is built as objects. Facets equal the four-pass disjunctive counts (oracle test over 4 random libraries × 120 random queries
+    with random offsets); `rankSoundsPage` equals `rankSounds` page by page (fast-check, 400 runs).
+    Results for queries without repeated words are identical to the previous `rankSounds` (scratch comparison, 1 500
+    fast-check cases against a copy of the old module; the existing `sound-rank.test.ts` passes unchanged).
+11. **Prototype keys.** `synonymType` reads `TYPE_SYNONYMS` with `Object.hasOwn`; `resolveTypeNames(['constructor'])`
+    returned `[Function Object]` before (measured in the scratch comparison: a `types: ['constructor']` filter matched
+    every sound), now `[]`. `durationFit` guards its type with `isSoundTypeId`.
+
+**Benchmark assertion**: min of 7 runs after a warm-up (up to 3 batches when a load spike hits) < 50 ms; when the
+host's 1-minute load is above 2 per core, the budget grows to 50 ms × load / (2 × cores) (wall time then measures the
+wait for a core: at load 135–144 on this host the same code measured 20–59 ms minimum). Decision recorded here
+because the gate runs on a shared machine.
+
+**Measured search speed** (16-core shared host; `pnpm vitest run apps/engine/test/sounds-search.test.ts
+--reporter=verbose`, load average ≈ 28–43 during the runs; a synthetic library of 5 000 entries with realistic titles,
+tags, 1–3 types, descriptors, four sources and six licences; min / median of 7 runs after one warm-up, each run a new
+query string): `heavy punch` 11.1 / 14.6 ms, `door slam` 7.4 / 10.1 ms, empty query 14.6 / 15.0 ms, no query 13.4 /
+14.3 ms, `heavy punch` + `types=hit` + `length=short` + `license=any` 5.8 / 6.9 ms, `whoosh` + `family=movement` +
+`tone=dark` 4.2 / 5.3 ms. Before, on the same library and host (scratch script with the previous `rank.ts` and the
+previous four-pass search, load ≈ 28): `heavy punch` 558 / 578 ms, `door slam` 416 / 461 ms, no query 38 / 48 ms;
+`rankSounds` alone 84 / 109 ms for `heavy punch` (now `sound-rank-scale.test.ts`: 25 / 39 ms for 5 000 sounds, load ≈ 43).
 
 #### Limits and notes for the next packages
 
