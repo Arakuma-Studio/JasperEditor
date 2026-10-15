@@ -41,13 +41,21 @@ import { auditionPlayer } from '../../sound/audition.ts';
 import {
 	auditionPlaysAlone,
 	auditionSoundOf,
+	cancelLibraryMode,
+	clipSoundTarget,
 	cueFillTarget,
 	insertSoundWithFeedback,
+	libraryModeKey,
 	registerSoundLibraryController,
+	requestClipTarget,
 	requestCueFill,
 	subscribeCueFill,
 	toggleAuditionOf,
 } from '../../sound/controller.ts';
+import { paletteOf } from '../../sound/design-model.ts';
+import { addLayerToClip, fillCueWithSound, fillTargetFor } from '../../sound/fill.ts';
+import { auditionInContext, inContextStore, stopInContext } from '../../sound/in-context.ts';
+import { swapClipSound } from '../../sound/swap.ts';
 import { registerSoundDialogs, SOUND_LICENSE_DIALOG } from '../../sound/dialogs.tsx';
 import { endSoundDrag, writeSoundDrag } from '../../sound/insert.ts';
 import {
@@ -146,6 +154,15 @@ export function SoundLibraryPanel(props: PanelProps) {
 	const usedKey = useStoreSelector(session?.store ?? EMPTY_SESSION_STORE, (s: SessionState | null) =>
 		s ? usedSoundIds(s.document).join(',') : '',
 	);
+	// The active sequence's sound palette (Palette collection and strip).
+	const paletteKey = useStoreSelector(session?.store ?? EMPTY_SESSION_STORE, (s: SessionState | null) =>
+		s?.activeSequenceId ? paletteOf(s.document.sequences[s.activeSequenceId]).join(',') : '',
+	);
+	const palette = useMemo(() => (paletteKey ? paletteKey.split(',') : []), [paletteKey]);
+	// Fill / Replace / layer mode (spec 12 §2.7): re-render when it changes.
+	useSyncExternalStore(subscribeCueFill, libraryModeKey, libraryModeKey);
+	const clipTarget = clipSoundTarget();
+	const inContext = useStoreSelector(inContextStore, (s) => s);
 	const [filters, setFilters] = useState<LibraryFilters>(DEFAULT_FILTERS);
 	// Fill mode (spec 12 §2.7): the cue the library is choosing a sound for.
 	const fill = useSyncExternalStore(subscribeCueFill, cueFillTarget, cueFillTarget);
@@ -247,8 +264,9 @@ export function SoundLibraryPanel(props: PanelProps) {
 		if (filters.collection === 'favourites') return prefs.favourites;
 		if (filters.collection === 'recent') return recentSnapshot;
 		if (filters.collection === 'used') return usedKey ? usedKey.split(',') : [];
+		if (filters.collection === 'palette') return palette;
 		return [];
-	}, [filters.collection, prefs.favourites, recentSnapshot, usedKey]);
+	}, [filters.collection, prefs.favourites, recentSnapshot, usedKey, palette]);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `libraryEpoch` re-runs the search when the library changes
 	useEffect(() => {
@@ -302,7 +320,12 @@ export function SoundLibraryPanel(props: PanelProps) {
 					if (listRef.current) listRef.current.scrollTop = 0;
 					setView((v) => (v.top === 0 ? v : { ...v, top: 0 }));
 				}
-				setSelectedId((cur) => (cur && r.items.some((x) => x.id === cur) ? cur : (r.items[0]?.id ?? null)));
+				const want = revealId.current;
+				if (want && r.items.some((x) => x.id === want)) {
+					revealId.current = null;
+					setSelectedId(want);
+				} else
+					setSelectedId((cur) => (cur && r.items.some((x) => x.id === cur) ? cur : (r.items[0]?.id ?? null)));
 			})
 			.catch((e) => {
 				if (ac.signal.aborted) return;
@@ -352,11 +375,29 @@ export function SoundLibraryPanel(props: PanelProps) {
 
 	// ---------------------------------------------------------------- actions
 	const canInsert = !!session && hasSequence && !readOnly;
+	const doAuditionInContext = useCallback(
+		(e: SoundEntry | null) => {
+			if (!e || !session) return;
+			const st = inContextStore.getState();
+			if ((st.active || st.loading) && st.soundId === e.id) {
+				stopInContext();
+				return;
+			}
+			soundLibraryPrefs.touchRecent(e.id);
+			void auditionInContext(session, engine, e).then((r) => {
+				if (!r.ok) notify({ kind: 'warning', message: t('Could not audition in context'), detail: r.message });
+			});
+		},
+		[session, engine],
+	);
 	const doAudition = useCallback(
 		(e: SoundEntry | null) => {
-			if (e) toggleAuditionOf(engine, e);
+			if (!e) return;
+			// The In Context toggle makes Space play the sound in the timeline (spec 12 §2.7).
+			if (soundLibraryPrefs.get().inContext && session?.getState().activeSequenceId) doAuditionInContext(e);
+			else toggleAuditionOf(engine, e);
 		},
-		[engine],
+		[engine, session, doAuditionInContext],
 	);
 	const doInsert = useCallback(
 		(e: SoundEntry | null) => {
@@ -368,9 +409,55 @@ export function SoundLibraryPanel(props: PanelProps) {
 				});
 				return;
 			}
+			stopInContext({ returnToAnchor: false });
+			// Enter / double-click (spec 12 §2.7): fill the selected cue, else swap (Replace mode), else insert.
+			const fill = fillTargetFor(session);
+			const target = clipSoundTarget();
+			const ok = (message: string, trimmed = 0) =>
+				notify({
+					kind: 'success',
+					message,
+					...(trimmed > 0
+						? { detail: t('The sound started before 0: its first {0} s were trimmed', trimmed.toFixed(2)) }
+						: {}),
+					action: { label: t('Undo'), command: 'history.undo' },
+				});
+			const failed = (message: string) => (err: unknown) =>
+				notify({ kind: 'error', message, detail: err instanceof Error ? err.message : String(err) });
+			if (fill) {
+				const at = items.findIndex((x) => x.id === e.id);
+				const alternatives = items.slice(at + 1, at + 4).map((x) => x.id);
+				void fillCueWithSound(session, engine, e, {
+					sequenceId: fill.sequenceId,
+					cueId: fill.cueId,
+					layer: !!fill.layer,
+					alternatives,
+				})
+					.then((r) => ok(r.message, r.trimmedHeadSec))
+					.catch(failed(t('Could not fill the cue')));
+				return;
+			}
+			if (target?.kind === 'replace') {
+				void swapClipSound(session, engine, target.sequenceId, target.clipId, e)
+					.then((message) => {
+						requestClipTarget(null);
+						ok(message);
+					})
+					.catch(failed(t('Could not swap the sound')));
+				return;
+			}
+			if (target?.kind === 'layer') {
+				void addLayerToClip(session, engine, e, { sequenceId: target.sequenceId, clipId: target.clipId })
+					.then((r) => {
+						requestClipTarget(null);
+						ok(r.message, r.trimmedHeadSec);
+					})
+					.catch(failed(t('Could not add the layer')));
+				return;
+			}
 			void insertSoundWithFeedback(session, engine, e, notify);
 		},
-		[session, canInsert, engine, notify, readOnly],
+		[session, canInsert, engine, notify, readOnly, items],
 	);
 	const doFavourite = useCallback(
 		(e: SoundEntry | null) => {
@@ -413,6 +500,10 @@ export function SoundLibraryPanel(props: PanelProps) {
 		(id: string | null, opts: { play?: boolean } = {}) => {
 			setSelectedId(id);
 			const e = id ? items.find((x) => x.id === id) : null;
+			if (e && opts.play && soundLibraryPrefs.get().autoPlay && soundLibraryPrefs.get().inContext && session) {
+				doAuditionInContext(e);
+				return;
+			}
 			if (e && opts.play && soundLibraryPrefs.get().autoPlay) {
 				const p = auditionPlayer();
 				p.setLoop(soundLibraryPrefs.get().loop);
@@ -421,12 +512,14 @@ export function SoundLibraryPanel(props: PanelProps) {
 				void p.play(auditionSoundOf(engine, e));
 			}
 		},
-		[items, engine],
+		[items, engine, session, doAuditionInContext],
 	);
 
 	// The commands (keymap scope `soundLibrary`, menus, agents) reach the panel through its controller.
-	const latest = useRef({ selected, doAudition, doInsert, doFavourite, doSimilar, doLicense });
-	latest.current = { selected, doAudition, doInsert, doFavourite, doSimilar, doLicense };
+	const latest = useRef({ selected, doAudition, doInsert, doFavourite, doSimilar, doLicense, doAuditionInContext });
+	latest.current = { selected, doAudition, doInsert, doFavourite, doSimilar, doLicense, doAuditionInContext };
+	/** Reveal in Sound Library: the sound to select once its search answers. */
+	const revealId = useRef<string | null>(null);
 	useEffect(
 		() =>
 			registerSoundLibraryController({
@@ -449,6 +542,18 @@ export function SoundLibraryPanel(props: PanelProps) {
 					})),
 				findSimilar: () => latest.current.doSimilar(latest.current.selected),
 				showLicense: () => latest.current.doLicense(latest.current.selected),
+				setSimilar: (sound) =>
+					setFilters((f) => ({
+						...f,
+						collection: LOCAL_COLLECTIONS.has(f.collection) ? 'all' : f.collection,
+						similarTo: sound,
+					})),
+				reveal: (sound) => {
+					revealId.current = sound.id;
+					setQueryInput(sound.title);
+					setFilters((f) => ({ ...DEFAULT_FILTERS, commercialSafe: f.commercialSafe, query: sound.title }));
+				},
+				auditionInContext: () => latest.current.doAuditionInContext(latest.current.selected),
 			}),
 		[],
 	);
@@ -567,6 +672,32 @@ export function SoundLibraryPanel(props: PanelProps) {
 		}
 	};
 
+	// ---------------------------------------------------------------- palette and mode
+	const togglePalette = (id: string) => {
+		const seqId = session?.getState().activeSequenceId;
+		if (!session || !seqId) return;
+		const remove = palette.includes(id);
+		const r = session.apply({
+			label: remove ? t('Remove from Palette') : t('Add to Palette'),
+			origin: 'user',
+			sequenceId: seqId,
+			commands: [
+				{ type: 'soundDesign.setPalette', sequenceId: seqId, soundIds: [id], mode: remove ? 'remove' : 'add' },
+			],
+		});
+		if (!r.ok) notify({ kind: 'warning', message: r.errors[0]?.message ?? t('Edit failed') });
+	};
+	const fillNow = session ? fillTargetFor(session) : null;
+	const modeLabel = fillNow
+		? fillNow.layer
+			? t('Add as Layer')
+			: t('Fill Cue')
+		: clipTarget?.kind === 'replace'
+			? t('Swap Sound')
+			: clipTarget?.kind === 'layer'
+				? t('Add as Layer')
+				: 'Insert at Playhead';
+
 	// ---------------------------------------------------------------- menus
 	const rowMenu = (): ResolvedMenuItem[] => {
 		const e = menuEntry.current ?? selected;
@@ -585,8 +716,17 @@ export function SoundLibraryPanel(props: PanelProps) {
 			},
 			{
 				type: 'item',
+				id: 'auditionInContext',
+				label: t('Audition in Context'),
+				shortcut: 'Shift+Space',
+				disabled: !hasSequence,
+				disabledReason: t('Open a sequence first'),
+				onSelect: () => doAuditionInContext(e),
+			},
+			{
+				type: 'item',
 				id: 'insert',
-				label: 'Insert at Playhead',
+				label: modeLabel,
 				shortcut: 'Enter',
 				disabled: !canInsert,
 				disabledReason: readOnly ? 'The project is read-only' : 'Open a sequence first',
@@ -602,6 +742,14 @@ export function SoundLibraryPanel(props: PanelProps) {
 				onSelect: () => doFavourite(e),
 			},
 			{ type: 'item', id: 'similar', label: 'Find Similar', onSelect: () => doSimilar(e) },
+			{
+				type: 'item',
+				id: 'palette',
+				label: t('Add to Palette'),
+				checked: palette.includes(e.id),
+				disabled: !canInsert,
+				onSelect: () => togglePalette(e.id),
+			},
 			{ type: 'separator', id: 's2' },
 			{ type: 'item', id: 'license', label: 'Show Licence…', onSelect: () => doLicense(e) },
 			...(desktop && path
@@ -638,6 +786,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 			{ value: 'favourites', label: `Favourites (${prefs.favourites.length})` },
 			{ value: 'recent', label: 'Recent' },
 			{ value: 'used', label: 'Used in this project' },
+			{ value: 'palette', label: `Palette (${palette.length})` },
 		];
 		if (bySource.starter)
 			opts.push({ value: 'source:starter', label: `Sources › ${SOUND_SOURCE_LABELS.starter}` });
@@ -648,7 +797,15 @@ export function SoundLibraryPanel(props: PanelProps) {
 		if (!opts.some((o) => o.value === filters.collection))
 			opts.push({ value: filters.collection, label: filters.collection });
 		return opts;
-	}, [prefs.favourites.length, bySource.starter, bySource.pack, bySource.synth, roots, filters.collection]);
+	}, [
+		prefs.favourites.length,
+		bySource.starter,
+		bySource.pack,
+		bySource.synth,
+		roots,
+		filters.collection,
+		palette.length,
+	]);
 
 	const libraryEmpty = status ? status.sounds === 0 : results ? results.librarySize === 0 : false;
 	const playingId = audition.phase !== 'idle' ? audition.soundId : null;
@@ -718,6 +875,21 @@ export function SoundLibraryPanel(props: PanelProps) {
 					onClick={() => soundLibraryPrefs.set({ autoPlay: !prefs.autoPlay })}
 					data-testid="sound-autoplay"
 				/>
+				<button
+					type="button"
+					aria-pressed={prefs.inContext}
+					title="In Context: Space plays the sound in the timeline, on the selected cue (Shift+Space always does)"
+					onClick={() => soundLibraryPrefs.set({ inContext: !prefs.inContext })}
+					className={cx(
+						'shrink-0 rounded-pr-pill border px-1.5 text-pr-small leading-[16px]',
+						prefs.inContext
+							? 'border-pr-accent bg-pr-accent-fill text-pr-on-accent'
+							: 'border-pr-border-subtle text-pr-muted hover:text-pr-text',
+					)}
+					data-testid="sound-in-context"
+				>
+					{prefs.inContext ? '✓ ' : ''}In Context
+				</button>
 				<span className="text-pr-muted" title="Audition volume">
 					<Icon id="app.volume" size={14} />
 				</span>
@@ -754,7 +926,9 @@ export function SoundLibraryPanel(props: PanelProps) {
 						onClick={() => requestCueFill(null)}
 						data-testid="sound-fill-chip"
 					>
-						<span className="truncate">{t('Fill: {0}', fill.label)}</span>
+						<span className="truncate">
+							{fill.layer ? t('Add layer: {0}', fill.label) : t('Fill: {0}', fill.label)}
+						</span>
 						<Icon id="app.close" size={10} />
 					</button>
 				) : null}
@@ -771,6 +945,28 @@ export function SoundLibraryPanel(props: PanelProps) {
 					</button>
 				) : null}
 			</div>
+			{clipTarget ? (
+				<div
+					className="mx-1 mt-1 flex items-center gap-1 rounded-pr-control border px-1.5 py-0.5 text-pr-small text-pr-text"
+					style={{ borderColor: 'var(--pr-accent)', borderStyle: 'dashed' }}
+					role="status"
+					data-testid="sound-replace-banner"
+				>
+					<span className="min-w-0 flex-1 truncate">
+						{clipTarget.kind === 'replace'
+							? t('Replacing {0} · Enter to swap · Esc to cancel', clipTarget.label)
+							: t('Adding a layer to {0} · Enter to add · Esc to cancel', clipTarget.label)}
+					</span>
+					<button
+						type="button"
+						className="shrink-0 text-pr-muted hover:text-pr-text"
+						aria-label={t('Cancel')}
+						onClick={() => cancelLibraryMode()}
+					>
+						<Icon id="app.close" size={10} />
+					</button>
+				</div>
+			) : null}
 			{/* type chips by family */}
 			<div
 				className="flex max-h-[96px] flex-col gap-0.5 overflow-y-auto px-1 pt-1"
@@ -1081,6 +1277,40 @@ export function SoundLibraryPanel(props: PanelProps) {
 					</ContextMenu>
 				)}
 			</div>
+			{/* palette strip (spec 12 §2.7): the sequence's preferred sounds; "Palette only" filters the list to them */}
+			{palette.length || filters.collection === 'palette' ? (
+				<div
+					className="flex items-center gap-1 border-t border-pr-border-subtle px-1 py-0.5"
+					data-testid="sound-palette-strip"
+				>
+					<label className="inline-flex shrink-0 items-center gap-1 text-pr-small text-pr-muted">
+						<input
+							type="checkbox"
+							checked={filters.collection === 'palette'}
+							onChange={(ev) =>
+								setFilters((f) => ({ ...f, collection: ev.currentTarget.checked ? 'palette' : 'all' }))
+							}
+							data-testid="sound-palette-only"
+						/>
+						{t('Palette only')}
+					</label>
+					<div className="flex min-w-0 flex-1 gap-1 overflow-x-auto" role="list" aria-label={t('Palette')}>
+						{palette.map((id) => (
+							<PaletteChip
+								key={id}
+								id={id}
+								engine={engine}
+								selected={selectedId === id}
+								onPick={(entry) => {
+									if (items.some((x) => x.id === id)) select(id, { play: true });
+									else if (entry) doAudition(entry);
+								}}
+								onRemove={canInsert ? () => togglePalette(id) : undefined}
+							/>
+						))}
+					</div>
+				</div>
+			) : null}
 			{/* status line */}
 			<footer
 				className="flex items-center gap-1 border-t border-pr-border-subtle px-1 py-0.5 text-pr-small text-pr-dim"
@@ -1110,6 +1340,48 @@ export function SoundLibraryPanel(props: PanelProps) {
 				{announce}
 			</div>
 		</div>
+	);
+}
+
+/** A palette sound in the strip: its title (fetched by id), click to audition / select, × to remove. */
+function PaletteChip(props: {
+	id: string;
+	engine: { getSound(id: string): Promise<SoundEntry> };
+	selected: boolean;
+	onPick(entry: SoundEntry | null): void;
+	onRemove?: () => void;
+}) {
+	const [entry, setEntry] = useState<SoundEntry | null>(null);
+	useEffect(() => {
+		let live = true;
+		void cachedEntry(props.engine, props.id).then((e) => live && setEntry(e));
+		return () => {
+			live = false;
+		};
+	}, [props.engine, props.id]);
+	return (
+		<span
+			role="listitem"
+			className={cx(
+				'inline-flex shrink-0 items-center gap-0.5 rounded-pr-pill border px-1.5 text-pr-small leading-[16px]',
+				props.selected ? 'border-pr-accent text-pr-text' : 'border-pr-border-subtle text-pr-muted',
+			)}
+			data-palette-sound={props.id}
+		>
+			<button type="button" className="max-w-[120px] truncate hover:text-pr-text" onClick={() => props.onPick(entry)}>
+				{entry?.title || props.id}
+			</button>
+			{props.onRemove ? (
+				<button
+					type="button"
+					aria-label={t('Remove {0} from the palette', entry?.title || props.id)}
+					className="hover:text-pr-text"
+					onClick={props.onRemove}
+				>
+					<Icon id="app.close" size={8} />
+				</button>
+			) : null}
+		</span>
 	);
 }
 

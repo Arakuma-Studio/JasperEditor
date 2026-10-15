@@ -122,10 +122,11 @@ export type Collection =
 	| 'favourites'
 	| 'recent'
 	| 'used'
+	| 'palette'
 	| `source:${SoundSourceType}`
 	| `root:${string}`;
 
-export const LOCAL_COLLECTIONS: ReadonlySet<Collection> = new Set(['favourites', 'recent', 'used']);
+export const LOCAL_COLLECTIONS: ReadonlySet<Collection> = new Set(['favourites', 'recent', 'used', 'palette']);
 
 export type LibraryFilters = {
 	query: string;
@@ -273,7 +274,7 @@ export const LICENSE_BADGE_TITLES: Record<LicenseClass, string> = {
 };
 
 /** The licence badge of a row (CC0 / BY / BY-SA / Yours / Synth; NC, ND, undeclared and unknown flagged). */
-export function licenseBadge(entry: Pick<SoundEntry, 'license' | 'source'>): LicenseBadge {
+export function licenseBadge(entry: { license: string; source?: { type: string; [k: string]: unknown } | null }): LicenseBadge {
 	const cls = licenseClass(entry.license);
 	// `t`: the map's getter translates in the build; the lookup also covers code that reads the English source.
 	const title = `${t(LICENSE_BADGE_TITLES[cls])} · ${entry.license}`;
@@ -281,7 +282,7 @@ export function licenseBadge(entry: Pick<SoundEntry, 'license' | 'source'>): Lic
 		case 'cc0':
 			return { text: 'CC0', warn: false, title };
 		case 'jasper':
-			return { text: entry.source.type === 'synth' ? t('Synth') : t('Jasper'), warn: false, title };
+			return { text: entry.source?.type === 'synth' ? t('Synth') : t('Jasper'), warn: false, title };
 		case 'cc-by':
 			return { text: 'BY', warn: false, title };
 		case 'cc-by-sa':

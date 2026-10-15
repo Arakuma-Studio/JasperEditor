@@ -39,6 +39,9 @@ import {
 	saveUserSoundPreset,
 	userSoundPresets,
 } from '../../audio-fx/ops.ts';
+import { runCommand } from '../../commands/registry.ts';
+import { useShellRuntimeOrNull } from '../../shell/context.tsx';
+import { EssentialSfxSection } from '../../sound/EssentialSfx.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { useInspectorOps } from '../properties/lib/ops.ts';
 import type { PanelProps } from '../types.ts';
@@ -130,6 +133,7 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 	const ids = clips.map((c) => c.id);
 	const ops = useInspectorOps(session);
 	const engine = useEngineOrNull();
+	const runtime = useShellRuntimeOrNull();
 	const [busy, setBusy] = useState<string | null>(null);
 	const [closed, setClosed] = useState<Record<string, boolean>>({});
 	const [, bump] = useState(0);
@@ -474,6 +478,17 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 						{clips.length} clip{clips.length === 1 ? '' : 's'}
 					</span>
 					<span className="flex-1" />
+					{/* sound design (spec 12 §2.7): browse the library for this clip */}
+					<Button
+						variant="quiet"
+						data-testid="essential-browse-sounds"
+						onClick={() => {
+							const ctx = runtime?.getCtx();
+							if (ctx) void runCommand('sound.browse', ctx);
+						}}
+					>
+						Browse sounds…
+					</Button>
 					<Button
 						variant="quiet"
 						data-testid="essential-clear"
@@ -533,6 +548,7 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 					) : null}
 				</div>
 			</div>
+			{s.type === 'sfx' ? <EssentialSfxSection session={session} seq={seq} clips={clips} /> : null}
 			{TYPE_SECTIONS[s.type].map((id) => sections[id]())}
 			<div className="flex flex-col gap-1.5 p-2" data-testid="essential-footer">
 				<Checkbox
