@@ -55,6 +55,13 @@ describe('insertLibrarySound', () => {
 		expect(bin && 'children' in bin && bin.children.length).toBe(1);
 		expect((clip as { essentialSound?: { audioType?: string } }).essentialSound ?? clip).toBeTruthy();
 		expect(JSON.stringify(clip)).toContain('"sfx"');
+		// committed through soundDesign.place (spec 12 §2.9): the clip records what placed it
+		expect((clip as { sfx?: unknown }).sfx).toMatchObject({
+			cueId: null,
+			soundId: s.entries[0]!.id,
+			layer: 0,
+			placement: { align: 'peak', errorFlicks: r.errorFlicks },
+		});
 		expect(s.session.getState().history.entries.length).toBe(historyBefore + 1);
 		expect(s.session.getState().selection.timeline.clips).toEqual([r.clipId]);
 		// undo removes all of it, redo brings back the same document

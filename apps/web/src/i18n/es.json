@@ -8848,5 +8848,13 @@
   "Yours?": "¿Suyo?",
   "Synth": "Sintetizado",
   "Jasper": "Jasper",
-  "favourite [accessible name]": "favorito"
+  "favourite [accessible name]": "favorito",
+  "Add Sound Cues": "Añadir señales de sonido",
+  "Delete Sound Cues": "Eliminar señales de sonido",
+  "Edit Sound Cue": "Editar señal de sonido",
+  "Place Sound": "Colocar sonido",
+  "Resync Sound Cues": "Resincronizar señales de sonido",
+  "Sound Design Settings": "Ajustes de diseño de sonido",
+  "Sound Palette": "Paleta de sonidos",
+  "Swap Sound": "Cambiar sonido"
 }

@@ -309,6 +309,42 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 			},
 		},
 	},
+	// sound-design (spec 12 §2.2, §2.9): cues (what find_sound_cues / deriveCues output) and peak-aligned placement.
+	'soundCue.add': {
+		type: 'soundCue.add',
+		cues: [
+			{
+				frame: 30,
+				kind: 'cut',
+				weight: 'support',
+				types: ['hit', 'thump'],
+				align: 'peak',
+				reason: 'Cut on V1',
+				source: 'agent',
+				ref: '$cue',
+			},
+		],
+	},
+	'soundCue.update': { type: 'soundCue.update', cueId: 'cue_00000000000000EX', frame: 45, weight: 'hero' },
+	'soundCue.remove': { type: 'soundCue.remove', cueIds: ['cue_00000000000000EX'], withClips: true },
+	'soundCue.resync': { type: 'soundCue.resync' },
+	'soundDesign.place': {
+		type: 'soundDesign.place',
+		frame: 30,
+		layers: [{ mediaId: { mediaByName: 'clip-a.mp4' }, align: 'start', track: 'auto', gainDb: -3 }],
+	},
+	'soundDesign.swap': {
+		type: 'soundDesign.swap',
+		clipId: { clipAt: { track: 'A1', at: 30 } },
+		mediaId: { mediaByName: 'clip-a.mp4' },
+		align: 'start',
+	},
+	'soundDesign.setPalette': {
+		type: 'soundDesign.setPalette',
+		soundIds: ['snd_0123456789abcdef'],
+		mode: 'add',
+	},
+	'soundDesign.setSettings': { type: 'soundDesign.setSettings', density: 'sparse', delivery: 'web', seed: 7 },
 };
 
 /** A multi-command transaction showing temp refs. */
