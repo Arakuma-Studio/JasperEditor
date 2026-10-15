@@ -338,7 +338,10 @@ from the library (Enter, drop on a glyph, Fill With ▸, Fill Unfilled Cues), Re
 into one undo step, linked layers, the In Context audition, clip badges, Essential Sound and Properties sections and
 Detect Peak (`e2e/sound-fill.spec.ts`: three filled cues measured at 0–1 sample from their cue frame in a native
 export). Limits (WP2.4b wp-note): variation cycling acts on the whole linked selection; Fill Unfilled Cues applies
-directly until Phase 3 proposals; Detect Peak analyses at most 2 min of a clip; Auto gain / Room send are Phase 4.
+directly until Phase 3 proposals; Detect Peak analyses at most 2 min of a clip; Auto gain / Room send are Phase 4; the
+key that ends an In Context audition is not also run when the held gesture disabled its command (the first Ctrl+Z
+only stops the audition). Phase 2 web verification (wp-note): In Context exit paths, variation runs, seam / peak drags,
+Suggest Cues with expressions, mode pruning fixed with regression tests.
 
 ### Not covered by any workstream yet
 

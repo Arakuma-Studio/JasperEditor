@@ -2515,7 +2515,9 @@ Tests: `apps/web/test/sound-cue-seam-model.test.ts` (21), `sound-cue-seam.test.t
   = a 2 px `--pr-warning` underline; muted = 45 % opacity and a diagonal strike; selected = a box behind the glyph, the
   keyboard's active cue a focus-ring box. Windows (`window`, e.g. a push or a typed title) are a tail with end ticks
   along the bottom of the lane; `build` is a rising wedge before the cue, `stopBefore` a bar along the top ending in a
-  stop tick. Glyphs in view are drawn (± a margin); above 1 500 in view the selected ones and heroes are kept first.
+  stop tick. Glyphs in view are drawn (± a margin); above 1 500 in view the selected ones and heroes are kept first,
+  and the tier that does not fit whole is thinned evenly over the view (Phase 2 verification: it used to keep only that
+  tier's first cues, so a zoomed-out hour lost every support cue of its second half).
 - **Editing**: click selects (Shift toggles; clicking empty lane deselects; selecting clips deselects cues, so Delete
   has one meaning). Drag moves the selected cues (`soundCue.update {frame}` per cue in one session gesture → one undo
   step "Move Cue(s)"; the filled clips follow, as WP2.1's update does). Snapping (when the timeline's snapping is on):
@@ -2845,11 +2847,61 @@ that run.
   skipped cues, the planning part is separable).
 - Detect Peak analyses ≤ 120 s of the clip in the browser; very long clips need an engine route (P5/P6).
 - The In Context audition takes the gesture slot: while it plays, a timeline drag ends it first (any pointer press
-  does); agent transactions queue until it ends (seconds).
+  does), and an agent's transaction ends it (Phase 2 verification; before, agent transactions queued until it ended).
 - Badges: "H" and the chain need 80 px of clip width; below that only the type glyph and the licence dot show.
 - Swap does not rename a clip whose name the user changed; library clips are named after the registered file
   (`soundDesign.swap` renames when the name is the old file name).
 - Auto gain with its reason, Room send and Stop before next in Essential Sound are Phase 4 (P4 owns the levels).
+
+### Phase 2 verification: web UI (fill, swap, In Context, Cue Seam)
+
+Review of the WP2.4a/b web code against spec 12 §2.7 / P2-R7 (branch `feat/sd-p2v-web`). Every fix has a regression test
+that failed before it (each run on the unfixed code first); the gap tests that passed are marked.
+
+Fixed:
+
+- **In Context audition exit paths** (`sound/in-context.ts`): in the Sound Library list (a `role="listbox"`, so its keys
+  reach the panel after the audition's capture listener) Shift+Space and Space restarted the audition instead of
+  stopping it, and Esc stopped it *and* left Fill / Replace mode — the key that ends it is now remembered for that
+  event (`inContextEndedBy`) and the toggles honour it. An audition or swap window replacing another started from
+  wherever the previous window had got to (coalesced variation presses returned the playhead mid-window; a second hover
+  anchored on the moving playhead): the previous one now returns first. The project closing or another sequence becoming
+  active ends it (also while it registers its sound). An agent's transaction ends it instead of queueing behind the
+  gesture (`agent-bridge/hooks.ts`). A watchdog ends a window whose frames never move (no Program monitor attached), which
+  held the gesture — and with it Undo, agents' edits and autosave — until the next key press. An error while starting
+  (a Program player throwing on play) cancels the gesture and clears the chip instead of rejecting with the gesture held.
+  A superseded audition is not reported as a failure; closing the panel stops it; hover with the In Context toggle on
+  plays in context as documented (it played alone). Fill With ▸ hover auditions on the cue of the menu (it used Fill
+  mode's cue or the last selected cue). Tests: `apps/web/test/sound-p2v-in-context.test.tsx`.
+- **Variation cycling** (`sound/swap.ts`): a failed step (engine offline) advanced the cycle and the count (the next
+  press skipped a variation, the label counted swaps that never happened); any selection change now closes a run; Next /
+  Previous Variation are disabled for project audio whose only `sfx` is a detected peak (every press failed). Tests:
+  `apps/web/test/sound-p2v-variation.test.tsx`.
+- **One toast per failure**: Fill Sound Cue, Fill Unfilled Cues, Detect Peak and the variation commands toasted their own
+  warning and rethrew, so the runner added a second "… failed" toast; they throw `ReportedCommandError`
+  (`commands/registry.ts`): agents still get `ran: false`.
+- **Suggest Cues…** derived on the raw document, the engine route on the document with expressions bound: an
+  expression-driven slide-in gave move@14 + land@30 through MCP and nothing in the dialog. The dialog loads the expression
+  engine and plans on the bound document (`apps/web/test/sound-p2v-suggest.test.tsx`).
+- **Cue Seam / peak handle** (`sound/cues/{CueSeam,PeakHandle,model}.tsx`): Esc cancels a cue drag and a peak drag (Esc
+  deselected the cues mid-drag and the release committed); a seam or handle unmounting mid-drag cancels its gesture (it
+  stayed held forever); Shift-click / Shift+Arrow on a cue with clips selected selects the cue, and cues selected by
+  commands (Suggest Cues on the selected clips, Next Cue, agents) stay selected — the domain selected last wins; the
+  render cap thins evenly; `hitCue(NaN)` hits nothing. Tests: `apps/web/test/sound-p2v-seam.test.tsx` (max zoom-in and
+  End / Home / Right revealing the cue are gap tests).
+- **Sound Library modes** end with their target (cue or clip deleted, undone, another project): Enter failed under a chip
+  naming a target that was gone. **i18n**: the row menu's "Insert at Playhead" was English in Spanish (a variable label
+  the transform does not wrap).
+
+Checked and left as they are: the keymap (Alt+Shift+C, Alt+Shift+S, Ctrl+Alt+. / , and Ctrl+Alt+P, mac Opt+…, have no
+conflict in any scope of any preset — Premiere, Avid, FCP7, FCPX — on any platform; Shift+Space shares its chord only
+with `transport.playInToOutPreroll` in the wider editing scope, which the Sound Library scope overrides on purpose);
+`node scripts/i18n.mjs --check`, `check-tokens`, `check-layers`.
+
+Known, not fixed: a key that ends an In Context audition is not also run when its command is disabled while a gesture is
+held (Ctrl+Z, keyboard trims): the keymap resolves the key before the audition's listener ends it, so the first Ctrl+Z
+only stops the audition (a dispatcher-level pre-key hook would be needed; the dispatcher is shared). The Essential Sound
+Role / Align segmented controls are `radiogroup`s without arrow-key navigation (each option is a Tab stop).
 
 ## Phase 3: proposals and review
 
