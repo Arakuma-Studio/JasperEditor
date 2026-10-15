@@ -335,3 +335,40 @@ describe('In Context in the Sound Library: keys toggle it', () => {
 		expect(h.session.gestureActive).toBe(false);
 	});
 });
+
+describe('Fill With ▸ hover auditions on the cue whose menu it is', () => {
+	it('with several cues selected (another one last) and Fill mode on a third cue', async () => {
+		const { cueMenuExtensions } = await import('../src/extensions/index.ts');
+		const { alignedFrameOf } = await import('../src/sound/design-model.ts');
+		const h = harness();
+		soundLibraryPrefs.set({ inContext: true });
+		const a = h.addCue(90);
+		const b = h.addCue(200);
+		const c = h.addCue(300);
+		h.session.select('cues', [a, b], 'replace');
+		requestCueFill({ sequenceId: h.seqId, cueId: c, types: ['hit'], label: 'c' });
+		const items = cueMenuExtensions
+			.list()
+			.flatMap((e) =>
+				e.items({
+					session: h.session,
+					sequenceId: h.seqId,
+					cueId: a,
+					selection: [a, b],
+					runCommand: () => {},
+				}),
+			);
+		const fillWith = items.find((i) => i.kind === 'submenu' && i.label === 'Fill With') as {
+			load(): Promise<{ onHighlight(): void; onUnhighlight(): void }[]>;
+		};
+		const loaded = await fillWith.load();
+		loaded[0]!.onHighlight();
+		await waitFor(() => expect(inContextStore.getState().active).toBe(true), { timeout: 2000 });
+		const st = h.session.getState();
+		const drawn = st.transient!.sequences[h.seqId]!;
+		const placed = Object.values(drawn.clips).find((x) => x.kind === 'audio')!;
+		expect(Math.floor(alignedFrameOf(st.transient!, drawn, placed)!)).toBe(90);
+		loaded[0]!.onUnhighlight();
+		expect(h.session.transport.getState().frame).toBe(90);
+	});
+});

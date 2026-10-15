@@ -107,6 +107,11 @@ export function inContextAnchor(session: EditorSession, seq: Sequence): InContex
 	};
 }
 
+/** The anchor of an audition on a given cue (Fill With ▸ on that cue's menu): its frame and its alignment. */
+export function cueAnchor(cue: Pick<SoundCue, 'id' | 'frame' | 'align'>): InContextAnchor {
+	return { frame: cue.frame, align: cue.align ?? 'auto', muteClipId: null, kind: 'cue', cueId: cue.id };
+}
+
 type Running = {
 	session: EditorSession;
 	gesture: Gesture | null;
