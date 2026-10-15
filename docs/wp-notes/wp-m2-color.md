@@ -68,9 +68,21 @@ pnpm vitest run --project @jasper/project --project @jasper/compositions --proje
 REMOTION_E2E=1 pnpm vitest run --project @jasper/engine apps/engine/test/color-remotion.test.ts   # Remotion path, headless Chrome
 ```
 
-## Results
+## Current engine checks
 
-All parity numbers are per channel against the TypeScript reference (`applyLut` of the baked 33³ LUT, rounded):
+`apps/engine/test/color.test.ts` checks a native still at −1 EV and an exported video's authored −1/0 EV
+keyframes. `apps/engine/test/color-remotion.test.ts` checks −1 EV through a nested composition on the Remotion
+path. Their expected pixels come directly from S06 §3: decode `v^2.4`, multiply by `2^EV`, then re-encode,
+which gives `v * 2^(EV/2.4)`. They do not call the production LUT baker or sampler to calculate expectations.
+The native still retains the ≤ 2/255 on 99.5 %, max 4 budget; Remotion retains ≤ 2/255 on 99.5 %. Animated
+video retains its mean-error budget for H.264 encoding. The planner's native-path and GPL-filter checks remain.
+These current analytic checks do not reproduce the representative multi-control grade measurements below.
+
+## Historical measurements
+
+The following measurements used the original scenarios and oracles. Their parity numbers are per channel
+against the TypeScript reference (`applyLut` of the baked 33³ LUT, rounded); they are not results for the current
+analytic exposure checks:
 
 | Check (S06 §9) | Result |
 |---|---|

@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import {
 	type EngineJob,
 	type EventEnvelope,
-	TRACKING_PROGRESS_EVENT,
 	type TrackProgress,
 	type TrackResult,
 	TrackResultSchema,
@@ -219,7 +218,7 @@ describe('planar tracker klt-homography@1 (S09:TRK-012, §8.2)', () => {
 	it('tracks the plate both ways from a mid reference within 1.5 px RMS, 4 px max, with live progress', async () => {
 		const events: TrackProgress[] = [];
 		const off = coreServices(app).broadcaster.subscribe((e: EventEnvelope) => {
-			if (e.type === TRACKING_PROGRESS_EVENT) events.push(e.payload as TrackProgress);
+			if (e.type === 'tracking.progress') events.push(e.payload as TrackProgress);
 		});
 		const t0 = performance.now();
 		const { job, result } = await runTrack(

@@ -209,6 +209,15 @@ labels), `set_roving`; `KEYFRAMES_BLEND_GUIDE` in the server instructions; READM
 
 ## Verified behaviour (tests)
 
+The engine stack suite, `apps/engine/test/compositor-export.e2e.test.ts` (`REMOTION_E2E=1`), now checks
+adjustment, interleaved blend, text-bake and 3D stack output against independently calculated values.
+For its authored base `[.8,.4,.2]` and middle `[.3,.6,.9]`, Linear Burn is `[.1,0,.1]`; inverting gives
+`[.9,1,.9]`. Rec.709 luma is `.02848`, and Color Dodge by `[.5,.5,.25]` gives
+`[.05696,.05696,.0379733333]`. Linear-light cases retain the explicit gamma-2.4 equation. These expectations
+no longer call `blendPixel`; native/Remotion and text-rasterization comparisons remain for the separate path-parity
+contract. Prior measurements against `blendPixel` establish parity with that implementation, rather than an
+independent check of the authored blend result.
+
 | Area | Test |
 |---|---|
 | Ease precision, AE overlap samples | `packages/project/test/keyframes-ease-precision.test.ts` |

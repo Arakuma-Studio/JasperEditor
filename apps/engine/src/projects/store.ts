@@ -34,7 +34,7 @@ const VERSION_INTERVAL_MS = 5 * 60 * 1000;
 const VERSION_ID_RE = /^(?:\d{4}-\d{2}-\d{2}T[\d-]+Z(?:-restore)?|schema-v\d{1,4}-backup)$/;
 const SCHEMA_BACKUP_RE = /^project \(schema v(\d{1,4}) backup\)\.jasper$/;
 /** File name of the schema backup kept before the first save over a project migrated from schema `v`. */
-export const schemaBackupName = (v: number) => `project (schema v${v} backup).jasper`;
+const schemaBackupName = (v: number) => `project (schema v${v} backup).jasper`;
 const schemaVersionOf = (doc: Record<string, unknown> | undefined, env?: { schemaVersion?: unknown }) => {
 	const v = typeof doc?.schemaVersion === 'number' ? doc.schemaVersion : env?.schemaVersion;
 	return typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : 1;

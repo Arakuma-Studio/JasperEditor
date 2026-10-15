@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { measureLoudness } from '@jasper/audio-dsp';
+import { measureLoudness } from '@jasper/testkit/oracle';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
@@ -151,15 +151,13 @@ describe('export audio = the offline mixer (audio-mix)', () => {
 	it('two-pass loudness normalisation reaches the target within 0.1 LU under the true-peak ceiling', async () => {
 		const d = await toneDoc('tone-500.wav');
 		const n = await exportOf(d, { normalize: { targetLufs: -16, truePeakDb: -1 } });
-		const [l, r] = planar(n.file, 2);
-		const m = measureLoudness([l!, r!], 48000);
+		const m = measureLoudness(n.file);
 		expect(Math.abs(m.integrated + 16)).toBeLessThan(0.15); // AAC adds a few hundredths
-		expect(m.truePeakDb).toBeLessThan(-0.8);
+		expect(m.truePeak).toBeLessThan(-0.8);
 		expect((n.result.audioLoudness as { integratedLufs: number }).integratedLufs).toBeCloseTo(-16, 1);
 		// a target that would clip: the limiter holds the ceiling
 		const loud = await exportOf(d, { normalize: { targetLufs: -3, truePeakDb: -2 } });
-		const [l2, r2] = planar(loud.file, 2);
-		expect(measureLoudness([l2!, r2!], 48000).truePeakDb).toBeLessThan(-1.7);
+		expect(measureLoudness(loud.file).truePeak).toBeLessThan(-1.7);
 	}, 300_000);
 
 	it('audio effects without an export processor block every path by name', async () => {

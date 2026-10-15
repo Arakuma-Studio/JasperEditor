@@ -220,18 +220,18 @@ describe('bundle identity and versions (S08:MGC-001/010)', () => {
 	});
 
 	it('accepts pinned bundles and rejects mismatched or missing versions', async () => {
-		const dir = fakeBundle(tempAppdir('jasper-bundle-version-'));
-		await expect(checkBundleVersion(dir)).resolves.toBe(MG_REMOTION_VERSION);
+		const dir = fakeBundle(tempAppdir('jasper-bundle-version-'), '4.0.499');
+		await expect(checkBundleVersion(dir)).resolves.toBe('4.0.499');
 		fakeBundle(dir, '4.0.498');
 		await expect(checkBundleVersion(dir)).rejects.toMatchObject({
 			code: 'MG_REMOTION_VERSION',
 			status: 422,
-			detail: { found: '4.0.498', required: MG_REMOTION_VERSION },
+			detail: { found: '4.0.498', required: '4.0.499' },
 		});
 		writeFileSync(join(dir, 'index.html'), '<html></html>');
 		await expect(checkBundleVersion(dir)).rejects.toMatchObject({
 			code: 'MG_REMOTION_VERSION',
-			detail: { found: null, required: MG_REMOTION_VERSION },
+			detail: { found: null, required: '4.0.499' },
 		});
 	});
 
