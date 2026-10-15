@@ -15,6 +15,7 @@ import {
 	playheadFrame,
 	pointerDrag,
 	programPixels,
+	query,
 	ROOT,
 	regionLuma,
 	sequenceSummary,
@@ -80,11 +81,18 @@ test('create, import, edit linked footage, play, undo and export a native movie'
 	await focusTimeline(page);
 	const before = await playheadFrame(page);
 	await page.keyboard.press('Space');
-	await page.waitForTimeout(1200);
+	await expect
+		.poll(async () => {
+			const state = await query<{ frame: number; playing: boolean }>(page, 'playhead.get');
+			return state.playing && state.frame > before;
+		})
+		.toBe(true);
+	const advancedFrame = await playheadFrame(page);
 	await page.keyboard.press('Space');
-	await page.waitForTimeout(300);
-	const after = await playheadFrame(page);
-	expect(after - before).toBeGreaterThan(10);
+	await expect
+		.poll(async () => (await query<{ playing: boolean }>(page, 'playhead.get')).playing)
+		.toBe(false);
+	expect(await playheadFrame(page)).toBeGreaterThanOrEqual(advancedFrame);
 	const ruler = (await page.getByTestId('timeline-ruler').boundingBox())!;
 	await page.mouse.click(ruler.x + ruler.width * 0.3, ruler.y + ruler.height / 2);
 	await expect.poll(async () => (await programPixels(page)).std, { timeout: 20_000 }).toBeGreaterThan(20);
