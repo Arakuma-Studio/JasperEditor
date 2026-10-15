@@ -139,7 +139,8 @@ const color: WorkspaceDefinition = {
 
 /**
  * Audio (audio-mix; Premiere's Audio workspace): Audio Track Mixer and Audio Clip Mixer next to a large Program,
- * the Timeline strip with the meters below, Properties on the right.
+ * the Timeline strip with the meters below, Properties on the right. The Sound Library (spec 12) is a tab next to
+ * Essential Sound.
  */
 const audio: WorkspaceDefinition = {
 	id: 'audio',
@@ -154,7 +155,14 @@ const audio: WorkspaceDefinition = {
 						[
 							0.45,
 							g(
-								['essentialSound', 'audioTrackMixer', 'audioClipMixer', 'source', 'effectControls'],
+								[
+									'essentialSound',
+									'soundLibrary',
+									'audioTrackMixer',
+									'audioClipMixer',
+									'source',
+									'effectControls',
+								],
 								'essentialSound',
 							),
 						],

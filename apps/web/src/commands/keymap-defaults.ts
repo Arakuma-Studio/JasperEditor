@@ -322,6 +322,13 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('effectControls.toggleLoop', 'Ctrl+KeyL', 'effectControls'),
 	// Wave expressions: After Effects' Add Expression shortcut (Alt+Shift+= / Option+Shift+=).
 	b('inspector.toggleExpression', 'Alt+Shift+Equal', 'effectControls', { mac: 'Opt+Shift+Equal' }),
+	// sound-design (spec 12 §2.7): Sound Library scope (Space audition, Enter insert, F favourite, L loop, Ctrl+F search)
+	b('soundLibrary.audition', 'Space', 'soundLibrary'),
+	b('soundLibrary.insert', 'Enter', 'soundLibrary'),
+	b('soundLibrary.insert', 'NumpadEnter', 'soundLibrary'),
+	b('soundLibrary.toggleFavourite', 'KeyF', 'soundLibrary'),
+	b('soundLibrary.toggleLoop', 'KeyL', 'soundLibrary'),
+	b('soundLibrary.focusSearch', 'Ctrl+KeyF', 'soundLibrary'),
 	b('history.stepBackward', 'ArrowLeft', 'history', R),
 	b('history.stepForward', 'ArrowRight', 'history', R),
 ];

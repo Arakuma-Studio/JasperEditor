@@ -23,6 +23,7 @@ import { KeyframeLane } from './KeyframeLane.tsx';
 /** Lanes start under the clip name strip. */
 const LANE_TOP_PX = 15;
 
+import { SoundGhostView } from './SoundGhost.tsx';
 import { TransitionGhostView, TransitionView, transitionViewProps } from './TransitionView.tsx';
 
 type TrackAreaProps = {
@@ -48,6 +49,7 @@ type TrackAreaProps = {
 		| 'drop'
 		| 'flash'
 		| 'transitionGhost'
+		| 'soundGhost'
 	>;
 	/** S10: per-track transition index of the drawn sequence and the selected transition ids. */
 	transitions?: TransitionIndex;
@@ -375,6 +377,7 @@ export function TrackArea(raw: TrackAreaProps) {
 					v={v}
 				/>
 			) : null}
+			{overlays.soundGhost ? <SoundGhostView ghost={overlays.soundGhost} layout={layout} v={v} /> : null}
 			{overlays.snapFrame !== null ? (
 				<div
 					className="pointer-events-none absolute top-0 bottom-0"

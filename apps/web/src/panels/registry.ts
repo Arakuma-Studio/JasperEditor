@@ -18,6 +18,7 @@ import program from './program/index.ts';
 import project from './project/index.ts';
 import properties from './properties/index.ts';
 import scopes from './scopes/index.ts';
+import soundLibrary from './soundLibrary/index.ts';
 import source from './source/index.ts';
 import text from './text/index.ts';
 import timeline from './timeline/index.ts';
@@ -47,6 +48,7 @@ const PANEL_DEFINITIONS: readonly PanelDefinition[] = [
 	essentialSound,
 	essentialGraphics,
 	mediaBrowser,
+	soundLibrary,
 ];
 
 export function listPanels(): readonly PanelDefinition[] {

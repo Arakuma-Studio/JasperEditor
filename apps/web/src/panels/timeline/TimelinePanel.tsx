@@ -33,6 +33,8 @@ import { clipMenuExtensions, collectMenuItems } from '../../extensions/index.ts'
 import { labelName } from '../../gaps/app-prefs.ts';
 import { formatTimecode, parseTimecodeEntry } from '../../gaps/time-display.ts';
 import { useRenderBar } from '../../previews/hooks.ts';
+import { insertSoundWithFeedback } from '../../sound/controller.ts';
+import { endSoundDrag, isSoundDrag, readSoundDrag, soundDragInfo } from '../../sound/insert.ts';
 import { createEditorEngineClient, useEngineOrNull } from '../../state/engine.tsx';
 import {
 	getImportService,
@@ -78,6 +80,8 @@ import { itemAvKinds, itemDurationFrames } from './model/drop.ts';
 import { hitTest } from './model/hit.ts';
 import { computeLayout, hitY, regionIndexAt, type TrackRow } from './model/layout.ts';
 import { revealRowScroll, revealScroll, type Span, visiblePart, visibleRowBand } from './model/locate.ts';
+import { thresholdFrames } from './model/snapping.ts';
+import { resolveSoundDrop } from './model/sound-drop.ts';
 import {
 	type DropTarget,
 	dropCommand,
@@ -169,6 +173,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			drop: s.drop,
 			flash: s.flash,
 			transitionGhost: s.transitionGhost,
+			soundGhost: s.soundGhost,
 		}),
 		(a, b) =>
 			a.marquee === b.marquee &&
@@ -179,7 +184,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			a.editPoints === b.editPoints &&
 			a.drop === b.drop &&
 			a.flash === b.flash &&
-			a.transitionGhost === b.transitionGhost,
+			a.transitionGhost === b.transitionGhost &&
+			a.soundGhost === b.soundGhost,
 	);
 	const cursor = useStoreSelector(ui, (s) => s.cursor);
 	const tooltip = useStoreSelector(ui, (s) => s.tooltip);
@@ -1200,10 +1206,99 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		const label = `${region === 'video' ? 'V' : 'A'}${index + 1}`;
 		return { frame, region, index, label, insert: mac ? e.metaKey : e.ctrlKey };
 	};
+	/** sound-design: where a dragged library sound goes (peak under the pointer, Alt: its start). */
+	const soundDropAt = (e: React.DragEvent, info: ReturnType<typeof soundDragInfo>) => {
+		const p = local(e);
+		const g = geomRef.current;
+		const yh = hitY(g.layout, p.y);
+		const preferred = yh.kind === 'track' && yh.row.kind === 'audio' ? yh.row.trackId : null;
+		return resolveSoundDrop({
+			seq: committedSeq,
+			info,
+			pointerFrame: boundaryFrameAt(g.viewport, p.x),
+			preferredTrackId: preferred,
+			alt: e.altKey,
+			snapping,
+			playhead: session.transport.getState().frame,
+			thresholdFrames: thresholdFrames(g.viewport.pxPerFrame),
+			targeted: session.getState().views[committedSeq.id]?.targeting.audio ?? [],
+		});
+	};
+	const onSoundDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+		e.preventDefault();
+		e.dataTransfer.dropEffect = 'copy';
+		const info = soundDragInfo(e.dataTransfer);
+		const t = soundDropAt(e, info);
+		const rate = committedSeq.settings.frameRate;
+		const tc = formatTimecode(t.cue, rate, { dropFrame: committedSeq.settings.dropFrame });
+		const p = t.plan;
+		const where = p
+			? p.track.kind === 'new'
+				? `new track ${p.track.name} (${p.track.label})`
+				: p.track.label
+			: (t.preferredTrackId ?? 'A1');
+		const lines = [
+			`${t.align === 'peak' ? 'peak' : 'start'} → ${tc}`,
+			`${info?.title ?? 'Sound'} → ${where}`,
+			...(t.snapEdge && t.snapEdge !== t.align ? [`${t.snapEdge} edge snapped`] : []),
+		];
+		const ghost = p
+			? {
+					trackId: p.track.kind === 'existing' ? p.track.trackId : null,
+					start: p.start,
+					frames: p.frames,
+					peakOffset: p.alignOffsetFrames,
+					label: `${info?.title ?? ''} → ${where}`,
+					align: t.align,
+				}
+			: null;
+		const cur = ui.getState();
+		if (
+			JSON.stringify(cur.soundGhost) !== JSON.stringify(ghost) ||
+			cur.snapFrame !== t.snapFrame ||
+			JSON.stringify(cur.tooltip?.lines ?? null) !== JSON.stringify(lines)
+		) {
+			const lp = local(e);
+			ui.setState({
+				soundGhost: ghost,
+				snapFrame: t.snapFrame,
+				tooltip: { x: lp.x, y: lp.y, lines },
+				drop: null,
+			});
+		}
+	};
+	const onSoundDrop = (e: React.DragEvent<HTMLDivElement>, soundId: string) => {
+		const info = soundDragInfo(e.dataTransfer);
+		const t = soundDropAt(e, info && info.id === soundId ? info : null);
+		ui.setState({ soundGhost: null, snapFrame: null, tooltip: null, drop: null });
+		endSoundDrag();
+		if (!engine) {
+			toast('error', 'The engine is not connected');
+			return;
+		}
+		const at = t.cue;
+		void (async () => {
+			try {
+				const entry = await engine.getSound(soundId);
+				// Without the dragged sound's details (a drag from another window) the drop frame is the peak.
+				await insertSoundWithFeedback(session, engine, entry, envRef.current.toast, {
+					at,
+					align: t.align,
+					preferredTrackId: t.preferredTrackId,
+				});
+			} catch (err) {
+				toast('error', err instanceof Error ? err.message : String(err));
+			}
+		})();
+	};
 	const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
 		const types = Array.from(e.dataTransfer?.types ?? []);
 		if (isTransitionDrag(e.dataTransfer)) {
 			onTransitionDragOver(e);
+			return;
+		}
+		if (isSoundDrag(e.dataTransfer)) {
+			onSoundDragOver(e);
 			return;
 		}
 		// Effects (WP-2D) and text animations (M2, wp-m2-text-anim) drop onto the clip under the pointer; no
@@ -1230,6 +1325,11 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		e.preventDefault();
 		if (isTransitionDrag(e.dataTransfer)) {
 			onTransitionDrop(e);
+			return;
+		}
+		const sound = readSoundDrag(e.dataTransfer);
+		if (sound) {
+			onSoundDrop(e, sound.soundId);
 			return;
 		}
 		const t = dropTarget(e);
@@ -1512,7 +1612,15 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 					onPointerLeave={() => controller.leave()}
 					onContextMenu={onContextMenu}
 					onDragOver={onDragOver}
-					onDragLeave={() => ui.setState({ drop: null, transitionGhost: null, tooltip: null })}
+					onDragLeave={() =>
+						ui.setState({
+							drop: null,
+							transitionGhost: null,
+							soundGhost: null,
+							snapFrame: null,
+							tooltip: null,
+						})
+					}
 					onDoubleClick={onDoubleClick}
 					onDrop={onDrop}
 					data-testid="timeline-clip-area"

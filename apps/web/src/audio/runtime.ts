@@ -9,6 +9,7 @@ import {
 	setMixWorkletUrl,
 } from '@jasper/compositions';
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { auditionMeter } from './audition-meter.ts';
 import { audioPrefs } from './prefs.ts';
 import { MIX_WORKLET_URL } from './worklet-url.ts';
 
@@ -41,27 +42,37 @@ export function useGraphVersion(graph: MixGraph | null): number {
 
 /**
  * Latest meter reading of a strip (`master` = the Mix), throttled to animation frames. Null when no graph or no
- * reading yet (the meters then show silence).
+ * reading yet (the meters then show silence). While a Sound Library audition plays, the Mix shows the audition
+ * (`auditionMeter`: what reaches the output).
  */
 export function useMeterReading(graph: MixGraph | null, stripId: string): MeterReading | null {
-	const [r, setR] = useState<MeterReading | null>(() => graph?.lastMeter(stripId) ?? null);
+	const [r, setR] = useState<MeterReading | null>(
+		() => (stripId === 'master' ? auditionMeter.last() : null) ?? graph?.lastMeter(stripId) ?? null,
+	);
 	useEffect(() => {
-		if (!graph) {
-			setR(null);
-			return;
-		}
 		let pending: MeterReading | null = null;
 		let raf = 0;
-		const off = graph.onMeter(stripId, (m) => {
+		const push = (m: MeterReading | null) => {
 			pending = m;
 			if (!raf)
 				raf = requestAnimationFrame(() => {
 					raf = 0;
 					setR(pending);
 				});
-		});
+		};
+		const offGraph = graph
+			? graph.onMeter(stripId, (m) => {
+					if (!(stripId === 'master' && auditionMeter.active())) push(m);
+				})
+			: null;
+		const offAudition =
+			stripId === 'master'
+				? auditionMeter.subscribe((m) => push(m ?? graph?.lastMeter(stripId) ?? null))
+				: null;
+		if (!graph && !auditionMeter.active()) setR(null);
 		return () => {
-			off();
+			offGraph?.();
+			offAudition?.();
 			if (raf) cancelAnimationFrame(raf);
 		};
 	}, [graph, stripId]);

@@ -74,6 +74,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				sep,
 				...TIMELINE_FORMATS.map((f) => c('file.exportTimeline', f.label, { format: f.id })),
 				sep,
+				c('file.exportSoundCredits', 'Sound Credits…'),
+				sep,
 				sub('Captions', [
 					c('captions.export', 'SubRip (.srt)', { format: 'srt' }),
 					c('captions.export', 'WebVTT (.vtt)', { format: 'vtt' }),
