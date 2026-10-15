@@ -82,6 +82,8 @@ export * from './roto/index.ts';
 export * from './schema/index.ts';
 export * from './sound/anchor.ts';
 export * from './sound/index.ts';
+export * from './sound/repair.ts';
+export * from './sound/variant.ts';
 export * from './speech/index.ts';
 export * from './structure/index.ts';
 export * from './text-animations.ts';

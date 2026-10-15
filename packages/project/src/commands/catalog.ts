@@ -344,6 +344,14 @@ const LABELS: Record<CommandType, string> = {
 	'graphic.setPins': 'Responsive Design – Position',
 	'graphic.importTemplate': 'Add Graphic Template',
 	'media.setLibraryInfo': 'Set Sound Library Info',
+	'soundCue.add': 'Add Sound Cues',
+	'soundCue.update': 'Edit Sound Cue',
+	'soundCue.remove': 'Delete Sound Cues',
+	'soundCue.resync': 'Resync Sound Cues',
+	'soundDesign.place': 'Place Sound',
+	'soundDesign.swap': 'Swap Sound',
+	'soundDesign.setPalette': 'Sound Palette',
+	'soundDesign.setSettings': 'Sound Design Settings',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [

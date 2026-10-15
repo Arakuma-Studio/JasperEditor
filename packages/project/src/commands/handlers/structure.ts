@@ -9,6 +9,7 @@ import { contentDurationFlicks, isBoundedContent, kindCapabilities } from '../..
 import type { ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
 import type { Clip, Sequence, TrackKind, Transition } from '../../schema/sequence.ts';
+import { remapSoundDesign } from '../../sound/repair.ts';
 import { conformSequenceRate, isNestClip, wouldCreateNestCycle } from '../../structure/nest.ts';
 import { SYNTHETIC_INFO, syntheticFromParams } from '../../structure/synthetic.ts';
 import { clipToRange } from '../../structure/through.ts';
@@ -983,7 +984,12 @@ function duplicateSequence(src: Sequence, h: HandlerContext): Sequence {
 		reidentifyClipChildren(t as never, h);
 	}
 	reidentifyClipChildren(seq.master as never, h);
-	for (const m of seq.markers) m.id = h.ids.next('mrk');
+	const markerMap = new Map<string, string>();
+	for (const m of seq.markers) {
+		const id = h.ids.next('mrk');
+		markerMap.set(m.id, id);
+		m.id = id;
+	}
 	const clipMap = new Map<string, string>();
 	const clips: Sequence['clips'] = {};
 	const trackerMaps = new Map<string, Map<string, string>>();
@@ -1018,8 +1024,10 @@ function duplicateSequence(src: Sequence, h: HandlerContext): Sequence {
 	}
 	seq.clips = clips;
 	const transitions: Sequence['transitions'] = {};
+	const transitionMap = new Map<string, string>();
 	for (const t of Object.values(seq.transitions)) {
 		const id = h.ids.next('trn');
+		transitionMap.set(t.id, id);
 		transitions[id] = {
 			...t,
 			id,
@@ -1029,6 +1037,12 @@ function duplicateSequence(src: Sequence, h: HandlerContext): Sequence {
 		};
 	}
 	seq.transitions = transitions;
+	// sound-design: cues, their anchors and placed clips follow the copy.
+	remapSoundDesign(
+		seq,
+		{ clips: clipMap, tracks: trackMap, transitions: transitionMap, markers: markerMap },
+		() => h.ids.next('cue'),
+	);
 	return seq;
 }
 

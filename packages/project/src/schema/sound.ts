@@ -211,8 +211,8 @@ export type SfxPlacement = DeepStrip<z.infer<typeof SfxPlacementSchema>>;
 export const ClipSfxSchema = z.looseObject({
 	/** The cue it fills (null = placed at a frame without a cue). */
 	cueId: id().nullable(),
-	/** The library sound (`snd_…`), from the media's provenance. */
-	soundId: id(),
+	/** The library sound (`snd_…`), from the media's provenance; null for media that is not a library sound. */
+	soundId: id().nullable(),
 	/** 0-based layer of its cue. */
 	layer: z
 		.number()
@@ -374,13 +374,12 @@ export function readSoundDesign(raw: unknown): SoundDesign | null {
 	return soundDesignIssue(out) === null ? (out as SoundDesign) : { cues: rec };
 }
 
-/** Lenient read of a stored `AudioClip.sfx`; null when it has no usable sound id. Pure; never throws. */
+/** Lenient read of a stored `AudioClip.sfx` (field by field); null when it is not an object. Pure; never throws. */
 export function readClipSfx(raw: unknown): ClipSfx | null {
 	if (!isRecord(raw)) return null;
 	const ok = ClipSfxSchema.safeParse(raw);
 	if (ok.success) return ok.data as ClipSfx;
-	const soundId = opt(id(), raw.soundId);
-	if (!soundId) return null;
+	const soundId = opt(id(), raw.soundId) ?? null;
 	const shape = ClipSfxSchema.shape;
 	const out: Record<string, unknown> = { ...unknownFields(raw, shape), soundId };
 	out.cueId = opt(shape.cueId, raw.cueId) ?? null;
