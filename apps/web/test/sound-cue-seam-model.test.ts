@@ -100,7 +100,7 @@ describe('glyphs', () => {
 		const filled = glyphPaint('hero', 'triangle-down', { ...st, filled: true });
 		const agent = glyphPaint('support', 'bar', { ...st, agent: true });
 		const ghost = glyphPaint('support', 'bar', { ...st, ghost: true });
-		expect(unfilled.dash).toBe('2.5 1.5');
+		expect(unfilled.dash).toBe('3 1.5');
 		expect(unfilled.fill).toBe('none');
 		expect(unfilled.stroke).toBe('var(--pr-cue-unfilled)');
 		expect(filled.dash).toBeNull();

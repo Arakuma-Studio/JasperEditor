@@ -470,7 +470,6 @@ export function CueSeam(p: CueSeamProps) {
 		}
 	}
 
-	const cy = SEAM_PX / 2;
 	return (
 		<>
 			{/* biome-ignore lint/a11y/useSemanticElements: a composite widget (toolbar of cues) with its own key handling */}
@@ -506,18 +505,29 @@ export function CueSeam(p: CueSeamProps) {
 					{geoms.map((g) => (
 						<g key={`spans:${g.id}`}>
 							{g.window ? (
-								<g data-cue-window={g.id}>
+								<g data-cue-window={g.id} opacity={0.65}>
 									<line
 										x1={g.window.x0}
 										x2={g.window.x1}
-										y1={cy}
-										y2={cy}
+										y1={SEAM_PX - 2.5}
+										y2={SEAM_PX - 2.5}
 										stroke="var(--pr-cue)"
 										strokeWidth={1}
-										opacity={0.7}
 									/>
-									<line x1={g.window.x0} x2={g.window.x0} y1={cy - 2} y2={cy + 2} stroke="var(--pr-cue)" />
-									<line x1={g.window.x1} x2={g.window.x1} y1={cy - 2} y2={cy + 2} stroke="var(--pr-cue)" />
+									<line
+										x1={g.window.x0}
+										x2={g.window.x0}
+										y1={SEAM_PX - 5}
+										y2={SEAM_PX}
+										stroke="var(--pr-cue)"
+									/>
+									<line
+										x1={g.window.x1}
+										x2={g.window.x1}
+										y1={SEAM_PX - 5}
+										y2={SEAM_PX}
+										stroke="var(--pr-cue)"
+									/>
 								</g>
 							) : null}
 							{g.build ? (

@@ -6,7 +6,6 @@ import {
 	type ClipSfx,
 	type CueKind,
 	type CueWeight,
-	type DerivedCue,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	isRemapped,
@@ -263,7 +262,7 @@ export function glyphPaint(weight: CueWeight, shape: GlyphShape, s: CueVisualSta
 	const base: GlyphPaint = {
 		stroke: 'var(--pr-cue)',
 		fill: 'none',
-		strokeWidth: heavy ? 2 : 1.25,
+		strokeWidth: heavy ? 2 : weight === 'support' ? 1.5 : 1.25,
 		dash: null,
 		opacity: s.muted ? 0.45 : 1,
 		underline: s.conflict,
@@ -277,7 +276,7 @@ export function glyphPaint(weight: CueWeight, shape: GlyphShape, s: CueVisualSta
 			...base,
 			stroke: s.agent ? 'var(--pr-agent)' : 'var(--pr-cue-unfilled)',
 			// unfilled: dashed; agent: dotted (shape, not colour alone)
-			dash: s.agent ? '1 1.5' : '2.5 1.5',
+			dash: s.agent ? '1 1.5' : '3 1.5',
 		};
 	// filled: solid; a hero is a filled shape, support and ambient outlines
 	return {
@@ -553,32 +552,6 @@ export type CueInput = Omit<SoundCue, 'id' | 'placedClipIds'>;
 
 const clampText = (s: string | undefined, max: number) =>
 	s === undefined ? undefined : s.length > max ? `${s.slice(0, max - 1)}…` : s;
-
-/** A derived cue (`deriveCues`) as `soundCue.add` input: reason, anchor and confidence kept, source as derived. */
-export function derivedToCueInput(d: DerivedCue): CueInput {
-	const types = d.types.slice(0, SOUND_DESIGN_LIMITS.types);
-	const frame = Math.min(SOUND_DESIGN_LIMITS.maxFrame, Math.max(0, Math.round(d.frame)));
-	return {
-		frame,
-		kind: d.kind,
-		weight: d.weight,
-		...(types.length ? { types } : {}),
-		align: d.align,
-		...(fin(d.pan) ? { pan: Math.max(-100, Math.min(100, d.pan)) } : {}),
-		anchor: d.anchor ?? null,
-		source: d.source,
-		confidence: Math.max(0, Math.min(1, d.confidence)),
-		reason: clampText(d.reason, SOUND_DESIGN_LIMITS.reason) ?? '',
-		...(d.window && d.window.end >= d.window.start
-			? {
-					window: {
-						start: Math.max(0, Math.round(d.window.start)),
-						end: Math.max(0, Math.round(d.window.end)),
-					},
-				}
-			: {}),
-	};
-}
 
 /** A marker as a cue: `sfx: <type>[+<type>]` markers give their types and the first type's weight and align. */
 export function markerToCueInput(m: Pick<Marker, 'frame' | 'duration' | 'name' | 'comment' | 'type'>): CueInput {

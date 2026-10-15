@@ -5,6 +5,7 @@ import { mgRegistry } from '@jasper/mg-templates';
 import {
 	type Command,
 	type CueDensity,
+	cueInputFromDerived,
 	type CueDeriveSource,
 	type DerivedCue,
 	type DeriveCuesWarning,
@@ -16,7 +17,7 @@ import {
 	type SoundCue,
 	sequenceDuration,
 } from '@jasper/project';
-import { type CueInput, cuesOf, derivedToCueInput, duplicatesStored, isFilled } from './model.ts';
+import { type CueInput, cuesOf, duplicatesStored, isFilled } from './model.ts';
 
 export type ProjectCueSource = (typeof PROJECT_CUE_SOURCES)[number];
 export type SuggestRange = 'sequence' | 'inout' | 'selection';
@@ -115,7 +116,7 @@ export function planSuggestion(doc: ProjectDocument, sequenceId: string, o: Sugg
 	const removed = new Set(removes);
 	const staying = stored.filter((c) => !removed.has(c.id));
 	const derived: DerivedCue[] = chosen.cues.filter((d) => !duplicatesStored(d, staying));
-	const adds = derived.map(derivedToCueInput);
+	const adds = derived.map((d) => cueInputFromDerived(d) as CueInput);
 	const byWeight = { hero: 0, support: 0, ambient: 0 };
 	for (const a of adds) byWeight[a.weight]++;
 	const commands: Command[] = [];
