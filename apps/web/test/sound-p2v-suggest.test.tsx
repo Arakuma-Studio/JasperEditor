@@ -38,6 +38,7 @@ function expressionMotion() {
 			},
 		] as never[],
 	});
+	if (!r.ok) throw new Error(JSON.stringify(r.errors));
 	const t = r.refs.$t!;
 	// no keyframes: the title slides in for one second through an expression, then lands
 	const e = session.apply({
