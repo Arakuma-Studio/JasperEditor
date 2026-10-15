@@ -299,8 +299,20 @@ type QueryPlan = {
 	tokens: { token: string; type: SoundTypeId | null }[];
 };
 
+/** Plans of recent queries (the same query string gives the same plan object, so text scores can be reused). */
+const PLAN_MEMO = new Map<string, QueryPlan | null>();
+const PLAN_MEMO_SIZE = 64;
+
 function planQuery(query: string | undefined): QueryPlan | null {
 	if (typeof query !== 'string') return null;
+	if (PLAN_MEMO.has(query)) return PLAN_MEMO.get(query)!;
+	const plan = makePlan(query);
+	if (PLAN_MEMO.size >= PLAN_MEMO_SIZE) PLAN_MEMO.delete(PLAN_MEMO.keys().next().value as string);
+	PLAN_MEMO.set(query, plan);
+	return plan;
+}
+
+function makePlan(query: string): QueryPlan | null {
 	const raw = tokenizeSoundText(query).filter((t) => !STOPWORDS.has(t));
 	if (raw.length === 0) return null;
 	// The type each token names: synonym phrases (up to 3 words, longest first) claim their tokens.
@@ -342,6 +354,9 @@ type EntryText = {
 	namedTypes: SoundTypeId[] | null;
 	/** Its known type ids. */
 	entryTypes: SoundTypeId[];
+	/** The text score of the last query plan it was scored against (one slot). */
+	scoredPlan: QueryPlan | null;
+	scored: { score: number; titleMatch: number } | null;
 };
 const ENTRY_TEXT = new WeakMap<object, EntryText>();
 
@@ -372,6 +387,8 @@ function entryText(e: RankableSound): EntryText {
 		tagTokens,
 		namedTypes: null,
 		entryTypes: (Array.isArray(types) ? types : []).filter(isSoundTypeId),
+		scoredPlan: null,
+		scored: null,
 	};
 	ENTRY_TEXT.set(e, info);
 	return info;
@@ -400,6 +417,14 @@ function licenseInfo(license: unknown): { safe: boolean; preference: number } {
  * matches exactly or by prefix.
  */
 function textScore(plan: QueryPlan, t: EntryText): { score: number; titleMatch: number } {
+	if (t.scoredPlan === plan) return t.scored!;
+	const r = computeTextScore(plan, t);
+	t.scoredPlan = plan;
+	t.scored = r;
+	return r;
+}
+
+function computeTextScore(plan: QueryPlan, t: EntryText): { score: number; titleMatch: number } {
 	const title = t.titleTokens;
 	const tags = t.tagTokens;
 	const entryTypes = t.entryTypes;
@@ -450,35 +475,37 @@ function prepareRequest(request: SoundRankRequest): PreparedRequest {
 	};
 }
 
-/** Which of rankSounds' filters an entry passes (one call per entry; `null` = an entry rankSounds always skips). */
-export interface SoundFilterResult {
-	/** The type filter (`types`). */
-	types: boolean;
-	/** The licence filter (`license`). */
-	license: boolean;
-	/** Everything else: descriptor pills, the `similarTo` reference itself, and (with a query) a text match. */
-	rest: boolean;
-}
+/**
+ * Which of rankSounds' filters an entry passes, as bits (one call per entry): `SOUND_FILTER_TYPES` (the type filter),
+ * `SOUND_FILTER_LICENSE` (the licence filter), `SOUND_FILTER_REST` (descriptor pills, not the `similarTo` reference
+ * itself and, with a query, a text match). `SOUND_FILTER_ALL` = in the ranking; `-1` = an entry rankSounds always skips.
+ */
+export const SOUND_FILTER_TYPES = 1;
+export const SOUND_FILTER_LICENSE = 2;
+export const SOUND_FILTER_REST = 4;
+export const SOUND_FILTER_ALL = 7;
 
 /**
  * The filters of {@link rankSounds}, split by dimension, for counting disjunctive facets in one pass: an entry is in
- * `rankSounds(entries, request)` exactly when all three are true; dropping a dimension from the request is the same
- * as ignoring its flag. Prepares the request once; the returned function never throws.
+ * `rankSounds(entries, request)` exactly when all three bits are set; dropping a dimension from the request is the
+ * same as ignoring its bit. Prepares the request once; the returned function never throws.
  */
-export function soundFilterOf(
-	request: SoundRankRequest = {},
-): (e: RankableSound) => SoundFilterResult | null {
+export function soundFilterOf(request: SoundRankRequest = {}): (e: RankableSound) => number {
 	const p = prepareRequest(request);
 	return (e) => {
-		if (!e || typeof e !== 'object' || typeof e.id !== 'string' || !e.descriptors) return null;
+		if (!e || typeof e !== 'object' || typeof e.id !== 'string' || !e.descriptors) return -1;
 		const t = entryText(e);
-		const types = !p.noKnownType && (p.wanted.length === 0 || p.wanted.some((w) => t.entryTypes.includes(w)));
-		const license = !p.commercialSafeOnly || licenseInfo(e.license).safe;
-		const rest =
+		let bits = 0;
+		if (!p.noKnownType && (p.wanted.length === 0 || p.wanted.some((w) => t.entryTypes.includes(w))))
+			bits |= SOUND_FILTER_TYPES;
+		if (!p.commercialSafeOnly || licenseInfo(e.license).safe) bits |= SOUND_FILTER_LICENSE;
+		if (
 			passesDescriptorFilters(e.descriptors, request) &&
 			!(p.similarId !== undefined && p.similarId === e.id) &&
-			(!p.plan || textScore(p.plan, t).score > 0);
-		return { types, license, rest };
+			(!p.plan || textScore(p.plan, t).score > 0)
+		)
+			bits |= SOUND_FILTER_REST;
+		return bits;
 	};
 }
 

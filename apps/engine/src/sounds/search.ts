@@ -14,12 +14,31 @@ import {
 	licenseClass,
 	rankSounds,
 	resolveTypeNames,
+	SOUND_FILTER_ALL,
+	SOUND_FILTER_LICENSE,
+	SOUND_FILTER_REST,
+	SOUND_FILTER_TYPES,
 	SOUND_TYPES,
 	type SoundRankRequest,
 	soundFilterOf,
 	typesOfFamily,
 } from '@jasper/project';
 import { HttpError } from '../tools/reply.ts';
+
+const NOT_TYPES = SOUND_FILTER_LICENSE | SOUND_FILTER_REST;
+const NOT_LICENSE = SOUND_FILTER_TYPES | SOUND_FILTER_REST;
+
+/** `licenseClass` by licence string (a library has a handful of distinct licences). */
+const LICENSE_CLASS = new Map<string, string>();
+function licenseClassOf(license: string): string {
+	let c = LICENSE_CLASS.get(license);
+	if (c === undefined) {
+		if (LICENSE_CLASS.size >= 1024) LICENSE_CLASS.clear();
+		c = licenseClass(license);
+		LICENSE_CLASS.set(license, c);
+	}
+	return c;
+}
 
 export type SoundSearchResult = Pick<SoundSearchResponse, 'total' | 'offset' | 'results' | 'facets'>;
 
@@ -85,9 +104,9 @@ export function searchSoundEntries(
 		const inPool = !sources || sources.has(e.source.type);
 		if (inPool) pool.push(e);
 		const f = filter(e);
-		if (!f) continue;
+		if (f < 0) continue;
 		// Types and families: every filter but the type filter.
-		if (inPool && f.license && f.rest) {
+		if (inPool && (f & NOT_TYPES) === NOT_TYPES) {
 			fams.clear();
 			for (const t of e.types)
 				if (isSoundTypeId(t)) {
@@ -98,8 +117,8 @@ export function searchSoundEntries(
 		}
 		if (none) continue;
 		// Licences: every filter but the licence filter; sources: every filter but the source filter.
-		if (inPool && f.types && f.rest) bump(facets.licenses, licenseClass(e.license));
-		if (f.types && f.license && f.rest) bump(facets.sources, e.source.type);
+		if (inPool && (f & NOT_LICENSE) === NOT_LICENSE) bump(facets.licenses, licenseClassOf(e.license));
+		if (f === SOUND_FILTER_ALL) bump(facets.sources, e.source.type);
 	}
 	const ctx = q.usedNearby?.length ? { usedNearby: q.usedNearby } : {};
 	const ranked = none ? [] : rankSounds(pool, req, ctx);
