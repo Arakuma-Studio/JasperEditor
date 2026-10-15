@@ -51,7 +51,6 @@ import {
 	type RefineKey,
 	SOUND_FAMILY_LABELS,
 	SOUND_SOURCE_LABELS,
-	SOUND_TYPE_LABELS,
 	searchLocal,
 	searchRequest,
 	soundAccessibleName,
@@ -776,8 +775,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 										)}
 									>
 										{on ? '✓ ' : ''}
-										{SOUND_TYPE_LABELS[t]}{' '}
-										<span className="pr-tabular opacity-80">{facets.types[t] ?? 0}</span>
+										{typeLabel(t)} <span className="pr-tabular opacity-80">{facets.types[t] ?? 0}</span>
 									</button>
 								);
 							})}

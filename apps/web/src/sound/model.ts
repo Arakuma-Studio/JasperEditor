@@ -26,17 +26,17 @@ export const SOUND_TYPE_LABELS: Record<SoundTypeId, string> = {
 	hit: 'Hit',
 	boom: 'Boom',
 	riser: 'Riser',
-	reverse: 'Reverse',
+	reverse: 'Reverse [sound type]',
 	transition: 'Transition',
 	whoosh: 'Whoosh',
 	swish: 'Swish',
 	glitch: 'Glitch',
 	ui: 'UI',
 	click: 'Click',
-	key: 'Key',
+	key: 'Key [sound type]',
 	tick: 'Tick',
 	tap: 'Tap',
-	pop: 'Pop',
+	pop: 'Pop [sound type]',
 	thump: 'Thump',
 	paper: 'Paper',
 	chime: 'Chime',
@@ -64,7 +64,8 @@ export const SOUND_SOURCE_LABELS: Record<SoundSourceType, string> = {
 
 /** A sound type's label (unknown ids of newer builds are shown as they are). */
 export function typeLabel(type: string): string {
-	return isSoundTypeId(type) ? SOUND_TYPE_LABELS[type] : type;
+	// homonyms carry a "[sound type]" context in the catalogue ("Key" is a keyer elsewhere, "Pop" an animation)
+	return isSoundTypeId(type) ? withoutContext(SOUND_TYPE_LABELS[type]) : type;
 }
 
 /** Families in panel order with their types (chips are grouped by family, spec 12 §2.7). */
@@ -162,7 +163,7 @@ export function localizeSoundQuery(q: string): string {
 	if (getLanguage() === 'en' || !q.trim()) return q;
 	const labels: { label: string; id: SoundTypeId }[] = [];
 	for (const id of SOUND_TYPE_IDS) {
-		const label = fold(t(SOUND_TYPE_LABELS[id]).trim());
+		const label = fold(withoutContext(t(SOUND_TYPE_LABELS[id])).trim());
 		if (label && label !== id) labels.push({ label, id });
 	}
 	labels.sort((a, b) => b.label.length - a.label.length);
