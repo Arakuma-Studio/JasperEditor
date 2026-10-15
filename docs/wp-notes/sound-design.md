@@ -1042,15 +1042,21 @@ Tests: `apps/engine/test/sounds-review.test.ts`, `sounds-search.test.ts`, `packa
     word, same greedy order); query words are deduplicated (first occurrence) and capped at `MAX_QUERY_TOKENS` = 16
     (a behaviour change for repeated or very long queries only); licence classes are memoised. The engine caches the
     id-sorted entry list per snapshot and makes one pass (`rankSoundsPage`): every entry's filter bits
-    (`soundFilterOf`'s, one per filter dimension) count the facets, matching entries are ranked by one numeric sort key
-    (source tier, title share, score: exact integers of the 6-decimal values) and only the returned page is built as
-    objects. Facets equal the four-pass disjunctive counts (oracle test over 4 random libraries × 120 random queries
+    (`soundFilterOf`'s, one per filter dimension) count the facets, matching entries are ordered by one packed float
+    (source tier, title-word count, 6-decimal score, then the index, which is the id order of the engine's list; 2^50
+    at most, so exact; a native typed-array sort), with the comparator as the fallback for lists not in id order, and
+    only the returned page is built as objects. Facets equal the four-pass disjunctive counts (oracle test over 4 random libraries × 120 random queries
     with random offsets); `rankSoundsPage` equals `rankSounds` page by page (fast-check, 400 runs).
     Results for queries without repeated words are identical to the previous `rankSounds` (scratch comparison, 1 500
     fast-check cases against a copy of the old module; the existing `sound-rank.test.ts` passes unchanged).
 11. **Prototype keys.** `synonymType` reads `TYPE_SYNONYMS` with `Object.hasOwn`; `resolveTypeNames(['constructor'])`
     returned `[Function Object]` before (measured in the scratch comparison: a `types: ['constructor']` filter matched
     every sound), now `[]`. `durationFit` guards its type with `isSoundTypeId`.
+
+**Benchmark assertion**: min of 7 runs after a warm-up (up to 3 batches when a load spike hits) < 50 ms; when the
+host's 1-minute load is above 2 per core, the budget grows to 50 ms × load / (2 × cores) (wall time then measures the
+wait for a core: at load 135–144 on this host the same code measured 20–59 ms minimum). Decision recorded here
+because the gate runs on a shared machine.
 
 **Measured search speed** (16-core shared host; `pnpm vitest run apps/engine/test/sounds-search.test.ts
 --reporter=verbose`, load average ≈ 28–43 during the runs; a synthetic library of 5 000 entries with realistic titles,
