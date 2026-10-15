@@ -132,7 +132,7 @@ export function SuggestCuesDialog(
 							<span
 								className="ml-auto shrink-0 text-pr-small text-pr-muted tabular-nums"
 								data-cue-source-count={s}
-								aria-label={t('{0} events found, {1} cues kept', plan.found[s], plan.kept[s])}
+								title={t('{0} events found, {1} cues kept', plan.found[s], plan.kept[s])}
 							>
 								{t('{0} found · {1} kept', plan.found[s], plan.kept[s])}
 							</span>

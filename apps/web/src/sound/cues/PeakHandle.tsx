@@ -60,7 +60,11 @@ export function PeakHandle(p: ClipDecorationProps) {
 	const pk = clipPeakFlicks(clip as never, media);
 	if (!pk || !session) return null;
 	const peakFrame = peakFrameOf(clip as never, pk.flicks, p.rate);
-	const geom = peakHandleGeom(clip as never, peakFrame, { w: p.w, height: p.height, pxPerFrame: p.pxPerFrame });
+	const geom = peakHandleGeom(clip as never, peakFrame, {
+		w: p.w,
+		height: p.height,
+		pxPerFrame: p.pxPerFrame,
+	});
 	if (!geom?.visible || peakFrame === null) return null;
 	const seq = sequenceOf(session.getCommitted().sequences as Record<string, Sequence>, clip.id);
 	const tc = seq
@@ -126,7 +130,10 @@ export function PeakHandle(p: ClipDecorationProps) {
 			d.delta = delta;
 			commands = delta ? [{ type: 'clip.move', clipIds: d.ids, deltaFrames: delta, mode: 'overwrite' }] : [];
 			lines = [
-				t('Peak → {0}', formatTimecode(Math.floor(d.peak0) + delta, p.rate, { dropFrame: seq.settings.dropFrame })),
+				t(
+					'Peak → {0}',
+					formatTimecode(Math.floor(d.peak0) + delta, p.rate, { dropFrame: seq.settings.dropFrame }),
+				),
 			];
 		} else {
 			const frame = Math.min(clip.start + clip.duration, Math.max(clip.start, d.peak0 + dx / p.pxPerFrame));

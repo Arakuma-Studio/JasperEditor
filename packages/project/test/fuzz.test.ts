@@ -144,7 +144,11 @@ const abstract: fc.Arbitrary<Abstract> = fc.oneof(
 	fc.record({ k: fc.constant('cueRemove' as const), cue: idx, withClips: fc.boolean() }),
 	fc.record({ k: fc.constant('resync' as const) }),
 	fc.record({ k: fc.constant('swap' as const), clip: idx, media: fc.nat(1) }),
-	fc.record({ k: fc.constant('setPeak' as const), clip: idx, peak: fc.integer({ min: -1, max: 2_000_000_000 }) }),
+	fc.record({
+		k: fc.constant('setPeak' as const),
+		clip: idx,
+		peak: fc.integer({ min: -1, max: 2_000_000_000 }),
+	}),
 );
 
 const CUE_KINDS = [

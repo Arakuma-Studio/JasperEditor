@@ -37,8 +37,8 @@ import { useRenderBar } from '../../previews/hooks.ts';
 import { insertSoundWithFeedback } from '../../sound/controller.ts';
 import { CueSeam, CueSeamHeader } from '../../sound/cues/CueSeam.tsx';
 import { SEAM_PX } from '../../sound/cues/model.ts';
-import { useCueSeamShown } from '../../sound/cues/seam.ts';
 import { useLibraryMediaTracking } from '../../sound/cues/peak.ts';
+import { useCueSeamShown } from '../../sound/cues/seam.ts';
 import { endSoundDrag, isSoundDrag, readSoundDrag, soundDragInfo } from '../../sound/insert.ts';
 import { createEditorEngineClient, useEngineOrNull } from '../../state/engine.tsx';
 import {

@@ -1,6 +1,12 @@
 // Cue Seam model (spec 12 §2.7): glyph geometry, states, hit testing, keyboard order, accessible names, clip peaks,
 // conversions, layout of the widened divider, cue / peak snapping.
-import { FLICKS_PER_SECOND, type Marker, parseSfxRequest, type Sequence, type SoundCue } from '@jasper/project';
+import {
+	FLICKS_PER_SECOND,
+	type Marker,
+	parseSfxRequest,
+	type Sequence,
+	type SoundCue,
+} from '@jasper/project';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { moveDelta } from '../src/panels/timeline/model/gestures.ts';
@@ -21,8 +27,8 @@ import {
 	hitCue,
 	KIND_GLYPH,
 	layoutCues,
-	markerToCueInput,
 	markersToConvert,
+	markerToCueInput,
 	neighbourCue,
 	peakHandleGeom,
 	peakSecondsIntoSound,
@@ -39,11 +45,6 @@ const cue = (id: string, frame: number, over: Partial<SoundCue> = {}): SoundCue 
 	source: 'derived',
 	...over,
 });
-const seqWith = (cues: SoundCue[], clips: Record<string, unknown> = {}) =>
-	({
-		soundDesign: { cues: Object.fromEntries(cues.map((c) => [c.id, c])) },
-		clips,
-	}) as unknown as Sequence;
 const V = { scrollFrame: 0, pxPerFrame: 10, width: 1000 };
 
 describe('reading cues', () => {
@@ -144,7 +145,9 @@ describe('layout and hit testing', () => {
 		expect(d!.stopBefore).toEqual({ x0: 400, x1: 700 });
 		expect(d!.state.filled).toBe(true);
 		// a dangling placed clip id does not make a cue filled
-		expect(layoutCues([cs[3]!], V, { rate: R30, selected: new Set(), clips: {} })[0]!.state.filled).toBe(false);
+		expect(layoutCues([cs[3]!], V, { rate: R30, selected: new Set(), clips: {} })[0]!.state.filled).toBe(
+			false,
+		);
 	});
 
 	it('caps the glyphs drawn, keeping selected and heroes first', () => {
@@ -192,7 +195,9 @@ describe('layout and hit testing', () => {
 		const filled = cue('b', 1, { source: 'agent', placedClipIds: ['x'], muted: true });
 		expect(
 			cueAriaLabel(filled, { timecode: 'T', placedNames: ['A2 Crunch'], conflict: true, clips: { x: {} } }),
-		).toBe('Support Land cue at T, filled with A2 Crunch, agent-authored, muted, conflicts with another hero cue');
+		).toBe(
+			'Support Land cue at T, filled with A2 Crunch, agent-authored, muted, conflicts with another hero cue',
+		);
 	});
 });
 
@@ -275,7 +280,10 @@ describe('clip peaks', () => {
 
 	it('the handle hides below 24 × 32 px', () => {
 		const c = clip();
-		expect(peakHandleGeom(c, 107.5, { w: 600, height: 40, pxPerFrame: 10 })).toEqual({ x: 75, visible: true });
+		expect(peakHandleGeom(c, 107.5, { w: 600, height: 40, pxPerFrame: 10 })).toEqual({
+			x: 75,
+			visible: true,
+		});
 		expect(peakHandleGeom(c, 107.5, { w: 23, height: 40, pxPerFrame: 10 })?.visible).toBe(false);
 		expect(peakHandleGeom(c, 107.5, { w: 600, height: 31, pxPerFrame: 10 })?.visible).toBe(false);
 		expect(peakHandleGeom(c, null, { w: 600, height: 40, pxPerFrame: 10 })).toBeNull();

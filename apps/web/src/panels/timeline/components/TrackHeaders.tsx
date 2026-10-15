@@ -455,6 +455,7 @@ export function TrackHeaders(props: TrackHeadersProps) {
 					</div>
 				</div>
 			))}
+			{/* biome-ignore lint/a11y/noStaticElementInteractions: the divider is a pointer handle; its menu entries are also Sequence ▸ Sound Design commands */}
 			<div
 				className="absolute right-0 left-0 flex items-center overflow-hidden"
 				style={{

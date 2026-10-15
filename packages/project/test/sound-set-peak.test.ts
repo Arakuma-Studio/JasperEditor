@@ -18,7 +18,13 @@ const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 function libMedia(h: Harness): string {
 	const library: LibraryProvenance = {
 		...LIB,
-		descriptors: { ...LIB.descriptors!, peakSec: 0.0705, onsetSec: 0.06, headQuietSec: 0.05, durationSec: 0.55 },
+		descriptors: {
+			...LIB.descriptors!,
+			peakSec: 0.0705,
+			onsetSec: 0.06,
+			headQuietSec: 0.05,
+			durationSec: 0.55,
+		},
 		leadSilenceSec: 0.05,
 	};
 	const r = h.ok([
@@ -49,9 +55,17 @@ describe('soundDesign.setPeak', () => {
 		const c = clipOf(h, id);
 		expect(c.start).toBe(c0.start);
 		expect(c.sourceIn).toBe(c0.sourceIn);
-		expect(c.sfx!.placement).toEqual({ align: 'peak', peakFlicks: Math.round(peakFlicks), errorFlicks: Math.round(2 * F) });
+		expect(c.sfx!.placement).toEqual({
+			align: 'peak',
+			peakFlicks: Math.round(peakFlicks),
+			errorFlicks: Math.round(2 * F),
+		});
 		expect(c.sfx!.cueId).toBe(cueId);
-		expect(r.results[0]).toEqual({ clipId: id, peakFlicks: Math.round(peakFlicks), errorFlicks: Math.round(2 * F) });
+		expect(r.results[0]).toEqual({
+			clipId: id,
+			peakFlicks: Math.round(peakFlicks),
+			errorFlicks: Math.round(2 * F),
+		});
 		expect(checkInvariants(h.doc)).toEqual([]);
 		expect(r.changed).toContain(id);
 		// a peak before the cue frame is early: no lateness to record
@@ -69,7 +83,14 @@ describe('soundDesign.setPeak', () => {
 		const h = new Harness();
 		const m = libMedia(h);
 		const r = h.ok([
-			{ type: 'clip.place', source: { mediaId: m }, at: 30, tracks: { audio: 'A1' }, video: false, ref: '$c' },
+			{
+				type: 'clip.place',
+				source: { mediaId: m },
+				at: 30,
+				tracks: { audio: 'A1' },
+				video: false,
+				ref: '$c',
+			},
 		]);
 		const id = r.refs.$c!;
 		expect(clipOf(h, id).sfx).toBeUndefined();
@@ -90,7 +111,13 @@ describe('soundDesign.setPeak', () => {
 		const plain = h.registerVideo({ seconds: 5 });
 		const r = h.ok([
 			{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { audio: 'A1' }, video: false, ref: '$a' },
-			{ type: 'clip.place', source: { mediaId: plain }, at: 100, tracks: { video: 'V1', audio: 'A2' }, ref: '$v' },
+			{
+				type: 'clip.place',
+				source: { mediaId: plain },
+				at: 100,
+				tracks: { video: 'V1', audio: 'A2' },
+				ref: '$v',
+			},
 		]);
 		const a = r.refs.$a!;
 		const linked = Object.values(h.seq.clips).filter((c) => c.start === 100);

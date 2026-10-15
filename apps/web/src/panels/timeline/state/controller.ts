@@ -23,6 +23,7 @@ import {
 	type Gesture,
 	type SequenceViewState,
 } from '@jasper/session';
+import { clipPeakFrame } from '../../../sound/cues/model.ts';
 import {
 	axisConstraint,
 	clampTrackOffset,
@@ -69,7 +70,6 @@ import {
 	zoomAround,
 	zoomToSequenceViewport,
 } from '../model/viewport.ts';
-import { clipPeakFrame } from '../../../sound/cues/model.ts';
 import { publishPreview } from './gesture-preview.ts';
 import { clearOverlays, type TimelineUiStore } from './ui-store.ts';
 

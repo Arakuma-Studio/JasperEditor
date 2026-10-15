@@ -31,8 +31,13 @@ import {
 import { collectMenuItems, cueMenuExtensions } from '../../extensions/index.ts';
 import { t } from '../../i18n/runtime.ts';
 import { rowOf, type TrackAreaLayout } from '../../panels/timeline/model/layout.ts';
-import { findSnap, SNAP_PRIORITY, type SnapTarget, thresholdFrames } from '../../panels/timeline/model/snapping.ts';
-import { collectSnapTargets } from '../../panels/timeline/model/snapping.ts';
+import {
+	collectSnapTargets,
+	findSnap,
+	SNAP_PRIORITY,
+	type SnapTarget,
+	thresholdFrames,
+} from '../../panels/timeline/model/snapping.ts';
 import { deltaFramesFromPx, frameToX, type Viewport } from '../../panels/timeline/model/viewport.ts';
 import type { ContextMenuItem, TimelineUiStore } from '../../panels/timeline/state/ui-store.ts';
 import {
@@ -167,7 +172,10 @@ export function CueSeam(p: CueSeamProps) {
 	const removeSelected = () => {
 		const ids = selection().map((c) => c.id);
 		if (!ids.length) return;
-		const r = apply(ids.length > 1 ? t('Delete Cues ({0})', ids.length) : t('Delete Cue'), removeCueCommands(ids));
+		const r = apply(
+			ids.length > 1 ? t('Delete Cues ({0})', ids.length) : t('Delete Cue'),
+			removeCueCommands(ids),
+		);
 		if (r?.ok) session.select('cues', [], 'replace');
 	};
 	const fill = (id: string) => p.run('soundLibrary.fillCue', { cueId: id });
@@ -438,7 +446,8 @@ export function CueSeam(p: CueSeamProps) {
 			const r = laneRef.current?.getBoundingClientRect();
 			const cue = byId.get(active);
 			if (cue) openCueMenu(cue, (r?.left ?? 0) + (g?.x ?? 0), (r?.top ?? 0) + SEAM_PX);
-		} else if (plain && !e.shiftKey && e.key === 'Escape' && selected.size) session.select('cues', [], 'replace');
+		} else if (plain && !e.shiftKey && e.key === 'Escape' && selected.size)
+			session.select('cues', [], 'replace');
 		else handled = false;
 		if (handled) {
 			e.preventDefault();
@@ -452,19 +461,16 @@ export function CueSeam(p: CueSeamProps) {
 	const arrows: { key: string; x: number; dir: 'down' | 'up' }[] = [];
 	for (const g of geoms) {
 		const c = byId.get(g.id);
-		if (!c || !c.placedClipIds?.length) continue;
+		if (!c?.placedClipIds?.length) continue;
 		for (const clipId of c.placedClipIds) {
 			const clip = seq.clips[clipId] as Clip | undefined;
 			if (!clip) continue;
 			const row = rowOf(layout, clip.trackId);
-			const peak = clipPeakFrame(
-				clip as never,
-				p.media[(clip as { mediaId?: string }).mediaId ?? ''],
-				rate,
-			);
+			const peak = clipPeakFrame(clip as never, p.media[(clip as { mediaId?: string }).mediaId ?? ''], rate);
 			const x1 = frameToX(v, peak ?? clip.start);
-			if (!row || row.kind !== 'audio') continue;
-			if (row.y + 2 > audio.top + audio.height) arrows.push({ key: `${g.id}:${clipId}`, x: g.x, dir: 'down' });
+			if (row?.kind !== 'audio') continue;
+			if (row.y + 2 > audio.top + audio.height)
+				arrows.push({ key: `${g.id}:${clipId}`, x: g.x, dir: 'down' });
 			else if (row.y + row.height < audio.top) arrows.push({ key: `${g.id}:${clipId}`, x: g.x, dir: 'up' });
 			else connectors.push({ key: `${g.id}:${clipId}`, x0: g.x, x1, y1: Math.max(0, row.y - audio.top) + 1 });
 		}
@@ -472,13 +478,15 @@ export function CueSeam(p: CueSeamProps) {
 
 	return (
 		<>
-			{/* biome-ignore lint/a11y/useSemanticElements: a composite widget (toolbar of cues) with its own key handling */}
 			<div
 				ref={laneRef}
 				role="toolbar"
 				aria-label={t('Cue Seam: {0} cues', cues.length)}
 				aria-orientation="horizontal"
-				aria-activedescendant={active && geoms.some((g) => g.id === active) ? `${idPrefix}${active}` : undefined}
+				aria-activedescendant={
+					active && geoms.some((g) => g.id === active) ? `${idPrefix}${active}` : undefined
+				}
+				// biome-ignore lint/a11y/noNoninteractiveTabindex: a composite widget (role toolbar, one tab stop, aria-activedescendant)
 				tabIndex={0}
 				data-keymap-local
 				data-testid="cue-seam"
@@ -634,9 +642,11 @@ function CueGlyph(props: {
 		clips: seq.clips,
 	});
 	return (
+		// biome-ignore lint/a11y/useSemanticElements: an item of the seam's composite (aria-activedescendant); the lane owns focus and keys
 		<div
 			id={props.id}
 			role="button"
+			tabIndex={-1}
 			aria-label={label}
 			aria-pressed={g.state.selected}
 			title={cueTooltip(cue, props.tc(cue.frame), seq.clips).join('\n')}
@@ -657,7 +667,13 @@ function CueGlyph(props: {
 				.join(' ')}
 			data-selected={g.state.selected || undefined}
 		>
-			<svg width={box} height={box} viewBox={`${-h} ${-h} ${box} ${box}`} aria-hidden="true" overflow="visible">
+			<svg
+				width={box}
+				height={box}
+				viewBox={`${-h} ${-h} ${box} ${box}`}
+				aria-hidden="true"
+				overflow="visible"
+			>
 				{g.state.selected || props.active ? (
 					<rect
 						x={-h + 0.5}
@@ -705,7 +721,10 @@ function CueGlyph(props: {
 export function CueSeamHeader(props: { seq: Sequence }) {
 	const n = cuesOf(props.seq).length;
 	return (
-		<span className="pointer-events-none truncate px-2 text-[10px] leading-[18px] text-pr-muted" data-cue-seam-header>
+		<span
+			className="pointer-events-none truncate px-2 text-[10px] leading-[18px] text-pr-muted"
+			data-cue-seam-header
+		>
 			{t('Cues')}
 			{n ? ` · ${n}` : ''}
 		</span>

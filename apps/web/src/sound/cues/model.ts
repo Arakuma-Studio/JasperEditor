@@ -2,8 +2,8 @@
 // accessible names, clip peaks and the conversions between cues, derived cues and markers. DOM-free and React-free so
 // it is tested exactly; `CueSeam.tsx` draws what this computes, `PeakHandle.tsx` uses the peak math.
 import {
-	CUE_KINDS,
 	type ClipSfx,
+	CUE_KINDS,
 	type CueKind,
 	type CueWeight,
 	FLICKS_PER_SECOND,
@@ -13,9 +13,9 @@ import {
 	type Marker,
 	parseSfxRequest,
 	type Rational,
+	type Sequence,
 	SOUND_DESIGN_LIMITS,
 	SOUND_TYPES,
-	type Sequence,
 	type SoundCue,
 	type SoundTypeId,
 	type TimedClip,
@@ -270,7 +270,12 @@ export function glyphPaint(weight: CueWeight, shape: GlyphShape, s: CueVisualSta
 		strike: s.muted,
 	};
 	if (s.ghost)
-		return { ...base, stroke: 'var(--pr-ghost-stroke)', fill: open ? 'none' : 'var(--pr-ghost-fill)', dash: '2 1.5' };
+		return {
+			...base,
+			stroke: 'var(--pr-ghost-stroke)',
+			fill: open ? 'none' : 'var(--pr-ghost-fill)',
+			dash: '2 1.5',
+		};
 	if (!s.filled)
 		return {
 			...base,
@@ -440,7 +445,11 @@ export function cueAriaLabel(
 	const parts = [t('{0} {1} cue at {2}', weight, kind, opts.timecode)];
 	const names = opts.placedNames?.filter(Boolean) ?? [];
 	parts.push(
-		isFilled(c, opts.clips) ? (names.length ? t('filled with {0}', names.join(' + ')) : t('filled')) : t('unfilled'),
+		isFilled(c, opts.clips)
+			? names.length
+				? t('filled with {0}', names.join(' + '))
+				: t('filled')
+			: t('unfilled'),
 	);
 	if (c.source === 'agent') parts.push(t('agent-authored'));
 	if (c.muted) parts.push(t('muted'));
@@ -460,9 +469,12 @@ export function cueTooltip(
 		t('{0} {1} cue at {2}', CUE_WEIGHT_LABELS[c.weight] ?? c.weight, kindLabel(c.kind), timecode),
 	];
 	if (c.label) lines.push(c.label);
-	if (c.reason && c.reason !== c.label) lines.push(c.reason.length > 300 ? `${c.reason.slice(0, 297)}…` : c.reason);
+	if (c.reason && c.reason !== c.label)
+		lines.push(c.reason.length > 300 ? `${c.reason.slice(0, 297)}…` : c.reason);
 	if (c.types?.length) lines.push(t('Sounds: {0}', c.types.slice(0, 6).map(typeLabel).join(', ')));
-	lines.push(isFilled(c, clips) ? t('Filled') : t('Unfilled: double-click or Enter to fill from the Sound Library'));
+	lines.push(
+		isFilled(c, clips) ? t('Filled') : t('Unfilled: double-click or Enter to fill from the Sound Library'),
+	);
 	return lines;
 }
 
@@ -486,13 +498,17 @@ function libraryOf(media: PeakMedia): LibraryProvenance | null {
  * The peak of an audio clip's sound as content flicks from the media start: the clip's own placement when it aligned
  * the peak (or a Shift-drag override), else the media's library descriptors. Null when neither is known.
  */
-export function clipPeakFlicks(clip: PeakClip, media: PeakMedia): { flicks: number; override: boolean } | null {
+export function clipPeakFlicks(
+	clip: PeakClip,
+	media: PeakMedia,
+): { flicks: number; override: boolean } | null {
 	if (clip.kind !== 'audio') return null;
 	const pl = clip.sfx?.placement;
 	if (pl && pl.align === 'peak' && fin(pl.peakFlicks) && pl.peakFlicks >= 0)
 		return { flicks: pl.peakFlicks, override: true };
 	const peakSec = libraryOf(media)?.descriptors?.peakSec;
-	if (fin(peakSec) && peakSec >= 0) return { flicks: Math.round(peakSec * FLICKS_PER_SECOND), override: false };
+	if (fin(peakSec) && peakSec >= 0)
+		return { flicks: Math.round(peakSec * FLICKS_PER_SECOND), override: false };
 	return null;
 }
 
@@ -554,7 +570,9 @@ const clampText = (s: string | undefined, max: number) =>
 	s === undefined ? undefined : s.length > max ? `${s.slice(0, max - 1)}…` : s;
 
 /** A marker as a cue: `sfx: <type>[+<type>]` markers give their types and the first type's weight and align. */
-export function markerToCueInput(m: Pick<Marker, 'frame' | 'duration' | 'name' | 'comment' | 'type'>): CueInput {
+export function markerToCueInput(
+	m: Pick<Marker, 'frame' | 'duration' | 'name' | 'comment' | 'type'>,
+): CueInput {
 	const req =
 		parseSfxRequest(m.name) ?? (m.type === 'agent-note' ? parseSfxRequest(m.comment) : null) ?? null;
 	const types = (req?.types ?? []).slice(0, SOUND_DESIGN_LIMITS.types) as SoundTypeId[];

@@ -173,7 +173,12 @@ describe('Cue Seam', () => {
 		pointer(t.lane(), 'pointerMove', 105);
 		expect(t.ui.getState().snapFrame).toBe(54);
 		pointer(t.lane(), 'pointerUp', 105);
-		expect(t.cueList().map((c) => c.frame).sort()).toEqual([50, 54]);
+		expect(
+			t
+				.cueList()
+				.map((c) => c.frame)
+				.sort(),
+		).toEqual([50, 54]);
 	});
 
 	it('Alt-drag duplicates (the original stays); undo removes the copy', () => {

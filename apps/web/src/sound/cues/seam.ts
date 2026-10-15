@@ -54,7 +54,9 @@ export function cueSeamShownFor(session: EditorSession, sequenceId: string): boo
 export function useCueSeamShown(sequenceId: string): boolean {
 	const ws = useActiveWorkspace();
 	const choice = useSessionState((s) => s.views[sequenceId]?.cueSeam);
-	const hasCues = useSessionState((s) => cuesOf((s.transient ?? s.document).sequences[sequenceId]).length > 0);
+	const hasCues = useSessionState(
+		(s) => cuesOf((s.transient ?? s.document).sequences[sequenceId]).length > 0,
+	);
 	return cueSeamShown({ cueSeam: choice }, { workspaceId: ws, hasCues });
 }
 
@@ -68,7 +70,11 @@ export function selectedCues(session: EditorSession, seq: Pick<Sequence, 'soundD
 // Commands
 
 /** The frame a cue's anchor resolves to now (motion graphics read the template registry), or null. */
-export function anchorFrame(doc: Pick<ProjectDocument, 'media'>, seq: Sequence, cue: SoundCue): number | null {
+export function anchorFrame(
+	doc: Pick<ProjectDocument, 'media'>,
+	seq: Sequence,
+	cue: SoundCue,
+): number | null {
 	if (!cue.anchor) return null;
 	return resolveCueAnchor(doc, seq, cue.anchor, { mgTemplates: mgRegistry });
 }

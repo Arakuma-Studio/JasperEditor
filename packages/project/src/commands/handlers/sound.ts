@@ -862,7 +862,9 @@ function setPeak(doc: DDoc, cmd: CommandOf<'soundDesign.setPeak'>, h: HandlerCon
 	const media = doc.media[clip.mediaId] as MediaAsset | undefined;
 	const dur = media ? (mediaDurationFlicks(media) ?? null) : null;
 	if (dur !== null && cmd.peakFlicks > dur)
-		h.fail('E_INVALID_PARAM', `The peak is past the end of the media (${dur} flicks)`, { path: ['peakFlicks'] });
+		h.fail('E_INVALID_PARAM', `The peak is past the end of the media (${dur} flicks)`, {
+			path: ['peakFlicks'],
+		});
 	const lib = readLibraryProvenance((media as { library?: unknown } | undefined)?.library);
 	if (!clip.sfx && !lib)
 		h.fail('E_INVALID_PARAM', `${clip.id} is not a library sound (place it with soundDesign.place first)`, {

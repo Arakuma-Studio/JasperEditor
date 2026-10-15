@@ -5,15 +5,15 @@ import { mgRegistry } from '@jasper/mg-templates';
 import {
 	type Command,
 	type CueDensity,
-	cueInputFromDerived,
 	type CueDeriveSource,
-	type DerivedCue,
+	cueInputFromDerived,
 	type DeriveCuesWarning,
+	type DerivedCue,
 	deriveCues,
 	PROJECT_CUE_SOURCES,
 	type ProjectDocument,
-	SOUND_DESIGN_LIMITS,
 	type Sequence,
+	SOUND_DESIGN_LIMITS,
 	type SoundCue,
 	sequenceDuration,
 } from '@jasper/project';
@@ -136,7 +136,9 @@ export function planSuggestion(doc: ProjectDocument, sequenceId: string, o: Sugg
 		removes,
 		duplicates: chosen.cues.length - derived.length,
 		byWeight,
-		warnings: [...new Map([...all.warnings, ...chosen.warnings].map((w) => [w.code + w.message, w])).values()],
+		warnings: [
+			...new Map([...all.warnings, ...chosen.warnings].map((w) => [w.code + w.message, w])).values(),
+		],
 		commands,
 	};
 }

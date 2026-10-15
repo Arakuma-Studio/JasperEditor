@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { t } from '../i18n/runtime.ts';
 import { requestCueFill } from '../sound/controller.ts';
 import { CUE_WEIGHT_LABELS, cueAfter, cuesOf, kindLabel } from '../sound/cues/model.ts';
+import { registerSuggestCuesDialog, SUGGEST_CUES_DIALOG } from '../sound/cues/SuggestCuesDialog.tsx';
 import {
 	addCueCommand,
 	cueSeamShownFor,
@@ -16,7 +17,6 @@ import {
 	selectedCues,
 	unfilledCueIds,
 } from '../sound/cues/seam.ts';
-import { registerSuggestCuesDialog, SUGGEST_CUES_DIALOG } from '../sound/cues/SuggestCuesDialog.tsx';
 import { runCommand } from './registry.ts';
 import { applySequenceCommands, sequenceContext } from './sequence-context.ts';
 import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
@@ -180,7 +180,8 @@ export const soundCueCommands: UiCommand[] = [
 	{
 		id: 'sound.suggestCues',
 		label: 'Suggest Cues…',
-		description: 'Find sound cues in the edit (cuts, transitions, motion, text, motion graphics, sfx markers)',
+		description:
+			'Find sound cues in the edit (cuts, transitions, motion, text, motion graphics, sfx markers)',
 		scope: G,
 		when: writable,
 		disabledReason: noSeqReason,
