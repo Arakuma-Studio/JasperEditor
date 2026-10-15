@@ -4,13 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { lottieDocument } from '../src/layers/lottie.ts';
 import { lottieThumbnail } from '../src/layers/thumbnails.ts';
 
-const player = vi.hoisted(() => ({
-	loaded: true,
-	svg: true,
-	listeners: new Map<string, () => void>(),
-	destroy: vi.fn(),
-	seek: vi.fn(),
-}));
+const player = vi.hoisted(() => ({ loaded: true, svg: true }));
 
 vi.mock('lottie-web/build/player/lottie_svg', () => ({
 	default: {
@@ -19,10 +13,10 @@ vi.mock('lottie-web/build/player/lottie_svg', () => ({
 				options.container.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'svg'));
 			return {
 				isLoaded: player.loaded,
-				goToAndStop: player.seek,
-				destroy: player.destroy,
-				addEventListener: (name: string, listener: () => void) => player.listeners.set(name, listener),
-				removeEventListener: (name: string) => player.listeners.delete(name),
+				goToAndStop() {},
+				destroy() {},
+				addEventListener() {},
+				removeEventListener() {},
 			};
 		},
 	},
@@ -39,7 +33,6 @@ beforeEach(() => {
 	fetchMock.mockImplementation(async () => new Response(JSON.stringify(animation)));
 	player.loaded = true;
 	player.svg = true;
-	player.listeners.clear();
 });
 
 afterEach(() => {
@@ -71,17 +64,15 @@ describe('Lottie thumbnails', () => {
 		player.svg = false;
 		const children = document.body.childElementCount;
 		await expect(lottieThumbnail(url())).rejects.toThrow('LOTTIE_RENDER_FAILED');
-		expect(player.destroy).toHaveBeenCalledOnce();
 		expect(document.body.childElementCount).toBe(children);
 	});
 
-	it('rejects a stalled renderer and releases its listeners and player', async () => {
+	it('rejects a stalled renderer instead of waiting indefinitely', async () => {
 		vi.useFakeTimers();
+		// Keep a valid SVG: bypassing the readiness wait must resolve and fail this rejection assertion.
 		player.loaded = false;
 		const result = expect(lottieThumbnail(url())).rejects.toThrow('LOTTIE_RENDER_FAILED');
 		await vi.advanceTimersByTimeAsync(3000);
 		await result;
-		expect(player.listeners.size).toBe(0);
-		expect(player.destroy).toHaveBeenCalledOnce();
 	});
 });

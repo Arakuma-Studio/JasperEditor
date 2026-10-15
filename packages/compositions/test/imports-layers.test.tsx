@@ -3,14 +3,14 @@ import {
 	anim as constant,
 	defaultSpeed,
 	defaultTransform,
-	FLICKS_PER_SECOND,
 	type MediaHandle,
 	type RenderVisualClip,
 } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { lottieFrameForLayer } from '../src/layers/LottieLayer.tsx';
 
-const S = FLICKS_PER_SECOND;
+// Serialized time unit specified by docs/ARCHITECTURE.md, independent of the conversion under test.
+const S = 705_600_000;
 const lottie = { fps: 25, inFrame: 5, outFrame: 55, width: 100, height: 100 };
 const media: MediaHandle = {
 	url: '/lottie.json',

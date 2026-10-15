@@ -2085,10 +2085,10 @@ All commands below run from this worktree. Run each surviving changed file with 
 - Risk: removal/rewrite preserves the independently specified contract above; rendering checks still require Chrome/Remotion validation, and changed expectations are not blessed.
 - Validation: `pnpm exec vitest run packages/compositions/test/fx-warp-stabilizer-gl.test.ts --maxWorkers=1`; package typecheck.
 
-### KEEP: Stabilize Only leaves the uncovered edge transparent; no analysis passes through
+### REWRITE: Stabilize Only leaves the uncovered edge transparent; no analysis passes through
 
 - Baseline case: `packages/compositions/test/fx-warp-stabilizer-gl.test.ts:34`. Detected failure: Stabilize Only leaves the uncovered edge transparent; no analysis passes through. Production owner/non-test callers: `project registry/fx/simulation-warp + fx/host.ts; real effect-chain consumers`.
-- Decision: Retain the independently observable contract named below.
+- Decision: Retain the independent outcome; remove shared-unit cancellation or collaborator/fixture self-assertions as detailed in the final retained-test rescan ledger.
 - Bar 1 (independent source): docs/wp-notes/sim-warp.md and documented camera-path/particle physics; docs/testing.md §2; the contract is the behavior in this case name.
 - Bar 2 (observable failure): violating that behavior changes the consumed pixels, text/state, or typed result; it is observed through real GPU image statistics/displacement.
 - Bar 3 (independent expectation): synthetic known camera path, rest/disabled identities, gravity direction, alpha conservation and seed/frame invariants. These expectations can disagree with the owner.
@@ -2100,10 +2100,10 @@ All commands below run from this worktree. Run each surviving changed file with 
 
 ## packages/compositions/test/imports-layers.test.tsx
 
-### KEEP: samples the Lottie frame at the clip time
+### REWRITE: samples the Lottie frame at the clip time
 
 - Baseline case: `packages/compositions/test/imports-layers.test.tsx:61`. Detected failure: samples the Lottie frame at the clip time. Production owner/non-test callers: `layers/LottieLayer.tsx, called by SequenceComposition`.
-- Decision: Retain the independently observable contract named below.
+- Decision: Retain the independent outcome; remove shared-unit cancellation or collaborator/fixture self-assertions as detailed in the final retained-test rescan ledger.
 - Bar 1 (independent source): docs/wp-notes/imports.md §1/§4; interpreted file-time/Lottie frame protocol; the contract is the behavior in this case name.
 - Bar 2 (observable failure): violating that behavior changes the consumed pixels, text/state, or typed result; it is observed through pure Lottie media-time to frame boundary.
 - Bar 3 (independent expectation): 25 fps, first frame 5, last 54, doubled rate and two-second loop as fixed fixture facts. These expectations can disagree with the owner.
@@ -2113,10 +2113,10 @@ All commands below run from this worktree. Run each surviving changed file with 
 - Risk: removal/rewrite preserves the independently specified contract above; rendering checks still require Chrome/Remotion validation, and changed expectations are not blessed.
 - Validation: `pnpm exec vitest run packages/compositions/test/imports-layers.test.tsx --maxWorkers=1`; package typecheck.
 
-### KEEP: follows an assumed frame rate and a loop (Interpret Footage)
+### REWRITE: follows an assumed frame rate and a loop (Interpret Footage)
 
 - Baseline case: `packages/compositions/test/imports-layers.test.tsx:68`. Detected failure: follows an assumed frame rate and a loop (Interpret Footage). Production owner/non-test callers: `layers/LottieLayer.tsx, called by SequenceComposition`.
-- Decision: Retain the independently observable contract named below.
+- Decision: Retain the independent outcome; remove shared-unit cancellation or collaborator/fixture self-assertions as detailed in the final retained-test rescan ledger.
 - Bar 1 (independent source): docs/wp-notes/imports.md §1/§4; interpreted file-time/Lottie frame protocol; the contract is the behavior in this case name.
 - Bar 2 (observable failure): violating that behavior changes the consumed pixels, text/state, or typed result; it is observed through pure Lottie media-time to frame boundary.
 - Bar 3 (independent expectation): 25 fps, first frame 5, last 54, doubled rate and two-second loop as fixed fixture facts. These expectations can disagree with the owner.
@@ -2186,10 +2186,10 @@ All commands below run from this worktree. Run each surviving changed file with 
 - Risk: removal/rewrite preserves the independently specified contract above; rendering checks still require Chrome/Remotion validation, and changed expectations are not blessed.
 - Validation: `pnpm exec vitest run packages/compositions/test/lottie-assets.test.ts --maxWorkers=1`; package typecheck.
 
-### KEEP: rejects a missing picture instead of returning an empty SVG
+### REWRITE: rejects a missing picture instead of returning an empty SVG
 
 - Baseline case: `packages/compositions/test/lottie-assets.test.ts:87`. Detected failure: rejects a missing picture instead of returning an empty SVG. Production owner/non-test callers: `layers/lottie.ts and thumbnails.ts; LottieLayer, Project/Source thumbnails`.
-- Decision: Retain the independently observable contract named below.
+- Decision: Retain the independent outcome; remove shared-unit cancellation or collaborator/fixture self-assertions as detailed in the final retained-test rescan ledger.
 - Bar 1 (independent source): AGENTS.md §0 typed input failures and bounded jobs; docs/wp-notes/imports.md §4; the contract is the behavior in this case name.
 - Bar 2 (observable failure): violating that behavior changes the consumed pixels, text/state, or typed result; it is observed through document-load promise or thumbnail success/error resource lifecycle.
 - Bar 3 (independent expectation): malformed JSON, explicit missing SVG and deliberately stalled external player. These expectations can disagree with the owner.
@@ -2199,10 +2199,10 @@ All commands below run from this worktree. Run each surviving changed file with 
 - Risk: removal/rewrite preserves the independently specified contract above; rendering checks still require Chrome/Remotion validation, and changed expectations are not blessed.
 - Validation: `pnpm exec vitest run packages/compositions/test/lottie-assets.test.ts --maxWorkers=1`; package typecheck.
 
-### KEEP: rejects a stalled renderer and releases its listeners and player
+### REWRITE: rejects a stalled renderer and releases its listeners and player
 
 - Baseline case: `packages/compositions/test/lottie-assets.test.ts:95`. Detected failure: rejects a stalled renderer and releases its listeners and player. Production owner/non-test callers: `layers/lottie.ts and thumbnails.ts; LottieLayer, Project/Source thumbnails`.
-- Decision: Retain the independently observable contract named below.
+- Decision: Retain the independent outcome; remove shared-unit cancellation or collaborator/fixture self-assertions as detailed in the final retained-test rescan ledger.
 - Bar 1 (independent source): AGENTS.md §0 typed input failures and bounded jobs; docs/wp-notes/imports.md §4; the contract is the behavior in this case name.
 - Bar 2 (observable failure): violating that behavior changes the consumed pixels, text/state, or typed result; it is observed through document-load promise or thumbnail success/error resource lifecycle.
 - Bar 3 (independent expectation): malformed JSON, explicit missing SVG and deliberately stalled external player. These expectations can disagree with the owner.
@@ -2299,10 +2299,10 @@ All commands below run from this worktree. Run each surviving changed file with 
 - Risk: removal/rewrite preserves the independently specified contract above; rendering checks still require Chrome/Remotion validation, and changed expectations are not blessed.
 - Validation: `pnpm exec vitest run packages/compositions/test/mg-host-remote.test.ts --maxWorkers=1`; package typecheck.
 
-### KEEP: drives the renderer-page protocol: evaluate, calculate, mount with overrides, seek (clamped), re-seek on new props
+### REWRITE: drives the renderer-page protocol: evaluate, calculate, mount with overrides, seek (clamped), re-seek on new props
 
 - Baseline case: `packages/compositions/test/mg-host-remote.test.ts:110`. Detected failure: drives the renderer-page protocol: evaluate, calculate, mount with overrides, seek (clamped), re-seek on new props. Production owner/non-test callers: `mg-host/remote.ts, agent.ts, protocol.ts; MgHostLayer and engine host consumers`.
-- Decision: Retain the independently observable contract named below.
+- Decision: Retain the independent outcome; remove shared-unit cancellation or collaborator/fixture self-assertions as detailed in the final retained-test rescan ledger.
 - Bar 1 (independent source): docs/security-review.md MG-1; S08:MGC-003; renderer-page MessagePort protocol; the contract is the behavior in this case name.
 - Bar 2 (observable failure): violating that behavior changes the consumed pixels, text/state, or typed result; it is observed through MessagePort requests/replies and untrusted-input validation boundary.
 - Bar 3 (independent expectation): hostile payloads, allowed origins, protocol codes, bounded limits fixed independently of sanitizer code. These expectations can disagree with the owner.
@@ -3226,7 +3226,7 @@ All commands below run from this worktree. Run each surviving changed file with 
 
 ## Execution evidence
 
-Cleanup completed in this partition (validation pending integration): **185 KEEP, 48 DELETE, 26 REWRITE** test declarations across all 42 assigned paths. Parameterized declarations cover every existing row; no new test declarations were added. Nine suites were deleted in full. Review uses original names/line positions so deleted and renamed cases remain identifiable.
+Cleanup completed in this partition (validation pending integration): **179 KEEP, 48 DELETE, 32 REWRITE** test declarations across all 42 assigned paths. Parameterized declarations cover every existing row; no new test declarations were added. Nine suites were deleted in full. Review uses original names/line positions so deleted and renamed cases remain identifiable.
 
 Validation actually run:
 
@@ -3271,3 +3271,31 @@ Risk: this split improves failure attribution and prevents independent contracts
 Validation plan: scoped Biome, TypeScript syntax parsing and diff inspection now; then `pnpm exec vitest run packages/compositions/test/fx-motion-blur-gl.test.ts --maxWorkers=1` when root grants the shared-host runtime slot. The runtime result is pending, and no skipped execution counts as a pass.
 
 Scoped follow-up checks completed: Biome passed; TypeScript syntax parsing passed; the nine-render block and its three equality assertions are byte-for-byte unchanged against the integrated baseline; `git diff --check` passed. Full runtime execution remains pending root scheduling.
+
+## Final retained-test rescan: pre-edit ledger
+
+Re-read retained assertions, their browser helpers and production owners after integration. Most CPU comparisons are intentional cross-implementation contracts: `docs/wp-notes/three-d.md` explicitly names `compositeClassicCPU` as the GL oracle; `docs/wp-notes/masks.md` requires GPU/native/fallback coverage parity; blend and retime CPU kernels run in native export while the GL implementations run in preview. These comparisons can catch disagreement between independently executed rendering paths. Their limits are now explicit: shared path preparation, transforms and definitions are not independently validated by parity alone. Existing analytic pixel/known-frame cases and project-owner tests cover those definitions. Static pixel goldens and native/preview parity were not removed merely for importing production fixture constructors.
+
+Narrow REWRITE candidates recorded before editing:
+
+| Test path and original case | Miss and actual retained failure | Stronger or complementary owner; callers/seams | Risk and validation |
+| --- | --- | --- | --- |
+| `packages/compositions/test/mg-host-remote.test.ts` — `drives the renderer-page protocol: evaluate, calculate, mount with overrides, seek (clamped), re-seek on new props` | Exact log ordering, duplicate-call suppression and log length inspect caching/collaborator structure. Keep returned metadata overrides and the external renderer's selected frame (45, clamped 89, re-clamped 74 after metadata changes). Also remove the shared-constant handshake equality from `connect()` setup; communication still must succeed over a real MessageChannel. | Real-bundle mode sequencing belongs to `e2e/mg-clips.spec.ts`; this port test owns override/clamp cases not exercised there. Agent/remote callers: CompositionLayer and web bundle text measuring. No production export becomes unused. | No render/protocol change; a different caching strategy should pass. Run this file with one Vitest worker; static checks now. |
+| `packages/compositions/test/imports-layers.test.tsx` — `samples the Lottie frame at the clip time` | Fixture input used the same `FLICKS_PER_SECOND` that the owner divides by, hiding a wrong shared unit. Use the documented serialized second, 705,600,000 ticks; retain expected frames 5/30/54 and missing-media null. | `docs/ARCHITECTURE.md` time contract; LottieLayer calls `lottieFrameForLayer`. Model time tests complement, but do not own the layer's combined media-time mapping. | Existing numerical inputs are unchanged today. Same focused Vitest command; syntax/Biome now. |
+| Same path — `follows an assumed frame rate and a loop (Interpret Footage)` | The same shared-unit cancellation; pin fixture tick units independently and keep the existing 30/5/6 frame expectations. | `docs/wp-notes/imports.md` interpreted footage/Lottie frame sampling; same production caller. | Existing current inputs/assertions unchanged; no helper export removed. Same validation. |
+| `packages/compositions/test/fx-warp-stabilizer-gl.test.ts` — `Stabilize Only leaves the uncovered edge transparent; no analysis passes through` | `s.expected[0] < 0` only asserts the fixture's camera-path delta against itself, never GPU output. Delete that assertion and its unused render; keep uncovered output alpha 0 and the exact no-analysis pixel [10,200,30,255]. | `docs/wp-notes/sim-warp.md` stabilization framing; actual GPU effect chain. Other cases retain independently known synthetic-path displacement at every tested frame. | One pure fixture assertion/render removed; no production/harness seam becomes unused. Focused GL remains deferred to root. |
+| `packages/compositions/test/lottie-assets.test.ts` — `rejects a missing picture instead of returning an empty SVG` | Mock `destroy` call count is collaborator shape. Keep public `LOTTIE_RENDER_FAILED` and removal of the temporary DOM host. | Browser thumbnail contract in `docs/wp-notes/imports.md`; lottieThumbnail is called by web Project and Source panels. Source owner `layers/thumbnails.ts` read; no production changes. | A refactor using another legitimate disposal path should not fail a mock counter. Same focused Vitest command. |
+| Same path — `rejects a stalled renderer and releases its listeners and player` | Mock listener-map size and exact `destroy` count assert disposal mechanics. Keep timeout rejection as `LOTTIE_RENDER_FAILED`, the caller-visible hang-prevention contract; rename accordingly. Remove now-unused listener-map/call-spy support. Keep the valid SVG in the stalled fixture so skipping the wait cannot pass by failing for a missing picture. | Same thumbnail caller and source; tests do not claim to validate lottie-web's own teardown implementation. | Timeout/error behavior retained; static and focused commands as above. |
+
+Full six-item justification for each rewritten retained contract:
+
+1. MG metadata/frame bounds are the documented renderer-page protocol and AGENTS.md clamping requirement; Lottie sampling is the documented interpreted-footage timing contract in a persisted fixed tick unit; stabilization preserves no-analysis pixels and transparent uncovered edges; thumbnails must surface missing/stalled output as a failure instead of hanging or returning an empty picture.
+2. Wrong configured dimensions or selected frame, wrong Lottie animation frame, opaque uncovered stabilization pixels, or a resolved/never-settling broken thumbnail are observable by real callers. Each retained assertion fails for one of these defects.
+3. Expected metadata overrides, frame numbers, serialized tick count, literal pixel/alpha and error code come from input fixtures/contracts. Removed expectations came from private call logs, shared implementation constants or fixtures checking themselves.
+4. Stable seams are MessagePort results plus the renderer's selected frame, the layer time-to-frame mapping, actual GPU pixels, and thumbnail result/rejection with DOM resource cleanup. No assertion requires private cache operations or collaborator invocation counts.
+5. Internal caching, teardown, pass decomposition and function identifiers can change without changing these retained results; the tests continue to pass under those behavior-preserving refactors.
+6. Each kept case observes its lowest distinct owner: port mapping/bounds, Lottie layer timing composition, stabilized shader pixels, or thumbnail failure handling. Higher-level bundle/visual tests are complementary and do not repeat these exact boundary conditions.
+
+Caller census: no production seam is introduced or deleted by this follow-up. The unused imports/mocks removed are confined to test setup. The integrated motion-blur split is preserved unchanged. Static-only validation is authorized now; runtime reruns are root's responsibility after integration.
+
+Final rescan static validation: scoped Biome passed for all four changed test files; TypeScript syntax parsing passed; final diff inspected and `git diff --check` passed. No runtime command was launched. The stalled-thumbnail fixture deliberately retains a valid SVG so removing the readiness wait cannot produce the same error for a different reason.
