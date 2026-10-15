@@ -815,6 +815,8 @@ export class MixGraph {
 	private startWait = 0;
 	/** Context time where the primed start resumes (the frozen time of the suspended context). */
 	private startAt = 0;
+	/** Context time of the resume the picture is waiting from (`startAt`, or later after a stall). */
+	private waitFrom = 0;
 	private flushToken = 0;
 	private disposed = false;
 
@@ -861,12 +863,17 @@ export class MixGraph {
 					const t = native.call(this.ctx);
 					const w = this.startWait;
 					if (!(w > 0) || t.contextTime === undefined || t.performanceTime === undefined) return t;
+					const end = this.startAt + w;
 					// the program has reached the output: the start is over, report the context's own timestamp again
-					if (t.contextTime >= this.startAt + w) {
+					if (t.contextTime >= end) {
 						this.startWait = 0;
 						return t;
 					}
-					return { contextTime: t.contextTime - w, performanceTime: t.performanceTime - w * 1000 };
+					// Remotion asks while the context is still suspended, then polls until the time passes the resume
+					// time: that wait has to end at `end` (a resume after a stall during the wait waits less).
+					if (this.ctx.state !== 'running') this.waitFrom = this.ctx.currentTime;
+					const off = Math.max(0, end - this.waitFrom);
+					return { contextTime: t.contextTime - off, performanceTime: t.performanceTime - off * 1000 };
 				},
 			});
 		this.unsubscribeSync = () => {
@@ -887,7 +894,11 @@ export class MixGraph {
 	setPlaying(playing: boolean): void {
 		if (this.playing === playing) return;
 		this.playing = playing;
-		if (!playing) this.followPlan();
+		if (playing) {
+			// a run starts: whatever was primed is in use now (also when the context's own events come late)
+			this.fresh = false;
+			this.flushed = false;
+		} else this.followPlan();
 	}
 
 	/** Bumped when every source must reschedule (AudioLayer re-creates its media players while paused). */
@@ -920,6 +931,16 @@ export class MixGraph {
 			this.fresh = false;
 			this.flushed = false;
 		} else if (s === 'suspended') {
+			const shift = this.shift;
+			if (this.playing && this.startWait > 0 && shift && this.sync) {
+				// Buffering stalled a primed start before its program reached the output: Remotion re-anchors to the
+				// picture, which has not moved yet. Keep the primed anchor (the queued sources follow it) and the wait.
+				const sync = this.sync;
+				setTimeout(() => {
+					sync.anchor.value = shift.base + shift.shift;
+				}, 0);
+				return;
+			}
 			this.startWait = 0;
 			// after Remotion's own handler (it re-anchors to the picture on suspend)
 			setTimeout(() => this.prime(false), 0);
@@ -954,7 +975,7 @@ export class MixGraph {
 	 */
 	private prime(fromSeek: boolean): void {
 		const sync = this.sync;
-		if (!sync || !this.fresh || this.disposed || this.ctx.state !== 'suspended') return;
+		if (!sync || !this.fresh || this.playing || this.disposed || this.ctx.state !== 'suspended') return;
 		if (!this.flushed) {
 			this.flush();
 			this.flushed = true;
@@ -972,6 +993,7 @@ export class MixGraph {
 		const t0 = this.ctx.currentTime;
 		this.startWait = wait;
 		this.startAt = t0;
+		this.waitFrom = t0;
 		g.cancelScheduledValues(0);
 		g.setValueAtTime(wait > 0 ? 0 : 1, t0);
 		if (wait > 0) {
