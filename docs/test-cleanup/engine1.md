@@ -1,6 +1,6 @@
 # Engine test cleanup audit and disposition
 
-Status: cleanup implemented; pre-edit dispositions are recorded below. The focused retry suite passes; other focused execution and package typecheck are pending root-scheduled integrated validation. Scope: the 36 files assigned to engine1. Case names below come from the original TypeScript AST; parameterized families share one entry only when they assert the same contract.
+Status: cleanup implemented; pre-edit dispositions are recorded below. The focused retry suite passes; other focused execution and package typecheck are pending root-scheduled integrated validation. Scope: the 36 files assigned to engine1. The 232 original decision rows comprise 221 named declarations from the TypeScript inventory and 11 explicit fuzz-target families. Parameterized families share one entry only when they assert the same contract. See [counting basis](counting-basis.md).
 
 Every retained case is evaluated against all six requested bars below: **B1** independent requirement, **B2** recognizable failure, **B3** independent oracle, **B4** stable seam, **B5** refactor tolerance, **B6** lowest owner/remaining coverage. “No stronger owner” means the named scenario is not asserted elsewhere at a lower stable seam after the listed duplicate removals; rendered-artifact checks own cross-component integration, while pure numerical/validation cases own separate input contracts.
 

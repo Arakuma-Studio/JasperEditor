@@ -31,7 +31,7 @@ At integrated revision `5dac93a2`, `packages/compositions/test/audio-fx-preview.
 
 Remaining stronger coverage: none for this exact cross-host contract; `packages/audio-fx/test/registry.test.ts` separately owns processor streaming invariance. No support or production seam is removed. Risk: shared-host starvation can still exhaust an individual 5-second deadline; no timeout, stimulus, supported effect or numerical tolerance will be relaxed. Validation: `pnpm exec vitest run packages/compositions/test/audio-fx-preview.test.ts --maxWorkers=1`, targeted Biome and `git diff --check`.
 
-Validation completed: targeted Biome and `git diff --check` pass. A temporary comparison against the original source confirms the complete per-effect body is byte-identical after indentation normalization; seeded fixture setup, helpers and the adjacent keyframe test are unchanged. The original `AUDIO_EFFECTS` domain/order and default timeout are preserved. The original-header census, excluding the separately documented dynamic-gallery deletion, is now **83 DELETE / 30 REWRITE / 144 KEEP = 257**. The focused file passes **61/61 cases** (60 exact effect-parity cases and the unchanged automation case), with 15.73 seconds of test time and 91.43 seconds total under the same unchanged 5000 ms per-case deadline. `/tmp/prune2-audio-preview-by-effect.log` records the passing run. No production change, sample mismatch or numerical relaxation was needed; this is independent-case scheduling, not a performance improvement or a fix for host contention.
+Validation completed: targeted Biome and `git diff --check` pass. A temporary comparison against the original source confirms the complete per-effect body is byte-identical after indentation normalization; seeded fixture setup, helpers and the adjacent keyframe test are unchanged. The original `AUDIO_EFFECTS` domain/order and default timeout are preserved. The original-header census, excluding the separately documented dynamic-gallery deletion, is now **83 DELETE / 31 REWRITE / 143 KEEP = 257**. The focused file passes **61/61 cases** (60 exact effect-parity cases and the unchanged automation case), with 15.73 seconds of test time and 91.43 seconds total under the same unchanged 5000 ms per-case deadline. `/tmp/prune2-audio-preview-by-effect.log` records the passing run. No production change, sample mismatch or numerical relaxation was needed; this is independent-case scheduling, not a performance improvement or a fix for host contention.
 
 ## KEEP — `packages/compositions/test/audio-fx-preview.test.ts` — keyframed parameters: preview (frame-rate updates) stays close to the export (32-sample control rate)
 
@@ -1507,7 +1507,9 @@ Remove private pass/plan/DOM/canvas-count assertions, vacuous bounds, duplicated
 
 Six-item bar: (1) the independently specified behavior above is HSL Secondary key + correction equals the CPU reference on every pixel; (2) its named output defect is visible in shader RGBA against independent CPU colour reference and synthetic edge invariants; (3) expected values come from the input-defined invariant/reference, not the GPU result or a mock reproducing the tested operation; (4) the seam is shader RGBA against independent CPU colour reference and synthetic edge invariants; (5) internal renames, pass decomposition and DOM wrappers may change without changing this observable output after the listed pruning; (6) this is the lowest seam that exercises this case, and no stronger owner for these exact inputs/output conditions; generic fingerprints exercise a different default scene. full renders own wiring, this shader/protocol seam owns the specific contract.
 
-## KEEP — `packages/compositions/test/lumetri-spatial-gl.test.ts` — Show Mask (Color/Gray, Color/Black, White/Black) equals the reference
+## REWRITE — `packages/compositions/test/lumetri-spatial-gl.test.ts` — Show Mask (Color/Gray, Color/Black, White/Black) equals the reference
+
+The [final oracle rescan](#final-oracle-independence-rescan-pre-edit-record) supersedes the original CPU-reference description below with independently painted inputs and literal mask outputs. This heading now reflects that already implemented REWRITE; it is not an additional original case.
 
 Failure under review: Secondary colour/key/vignette pixels disagree with reference, edge contrast reverses or alpha is lost. Exact case: Show Mask (Color/Gray, Color/Black, White/Black) equals the reference. Independent source: docs/wp-notes/color-grade.md §2 HSL/vignette/sharpen and AGENTS §4.
 
@@ -2084,7 +2086,7 @@ Implemented outcome: three named contract declarations per transition, preservin
 changed the intermediate partition totals to **83 DELETE / 25 REWRITE / 149 KEEP**;
 expanded declarations are not new original cases. The four-suite follow-up owned by
 composition partition 2 is accounted separately in its own supplement; the combined
-final original counts are **83 DELETE / 30 REWRITE / 144 KEEP**, including the preview/export parity follow-up.
+final original counts are **83 DELETE / 31 REWRITE / 143 KEEP**, including the preview/export parity follow-up.
 
 Static evaluation compared the actual declaration data with the pre-edit catalogue
 and confirmed ordering, case counts and watchdog values. A missing test-transition

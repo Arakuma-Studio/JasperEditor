@@ -76,7 +76,7 @@ The six numbered checks in each retained row are the user's retention bar. Group
 - Detectable failure: foreign, missing or child frame can open native folder dialog.
 - Bar: **1** the independent group source specifies this input policy/behavior; **2** the failure above is visible in the returned result, diagnostic, native side effect or produced artifact; **3** expected values come from literal authored examples and required protocol/policy outcome, not copied production expressions; **4** observations use the group seam, with external providers only supplying inputs/failures; **5** implementation identifiers, helper structure and scheduling can change while these outcomes remain; **6** this case uniquely exercises the stated failure category at its owning seam; the stronger-coverage comparison above explains why another layer cannot replace it.
 
-### KEEP — `%s keeps later valid entries when %s rejects [clipboard-read/read-files × getType/text]`
+### REWRITE — `%s keeps later valid entries when %s rejects [clipboard-read/read-files × getType/text]`
 
 - Detectable failure: one unreadable clipboard entry hides a later valid payload or file.
 - Bar: **1** the independent group source specifies this input policy/behavior; **2** the failure above is visible in the returned result, diagnostic, native side effect or produced artifact; **3** expected values come from literal authored examples and required protocol/policy outcome, not copied production expressions; **4** observations use the group seam, with external providers only supplying inputs/failures; **5** implementation identifiers, helper structure and scheduling can change while these outcomes remain; **6** this case uniquely exercises the stated failure category at its owning seam; the stronger-coverage comparison above explains why another layer cannot replace it.
@@ -153,7 +153,7 @@ The six numbered checks in each retained row are the user's retention bar. Group
 - Detectable failure: shipped Node runtime is ignored or Electron environment contaminates its invocation.
 - Bar: **1** the independent group source specifies this input policy/behavior; **2** the failure above is visible in the returned result, diagnostic, native side effect or produced artifact; **3** expected values come from literal authored examples and required protocol/policy outcome, not copied production expressions; **4** observations use the group seam, with external providers only supplying inputs/failures; **5** implementation identifiers, helper structure and scheduling can change while these outcomes remain; **6** this case uniquely exercises the stated failure category at its owning seam; the stronger-coverage comparison above explains why another layer cannot replace it.
 
-### KEEP — `names the session and editor cookies by the engine port and keeps the two secrets apart`
+### REWRITE — `names the session and editor cookies by the engine port and keeps the two secrets apart`
 
 - Detectable failure: cookies collide across engine ports or conflate editor and agent credentials.
 - Bar: **1** the independent group source specifies this input policy/behavior; **2** the failure above is visible in the returned result, diagnostic, native side effect or produced artifact; **3** expected values come from literal authored examples and required protocol/policy outcome, not copied production expressions; **4** observations use the group seam, with external providers only supplying inputs/failures; **5** implementation identifiers, helper structure and scheduling can change while these outcomes remain; **6** this case uniquely exercises the stated failure category at its owning seam; the stronger-coverage comparison above explains why another layer cannot replace it.
@@ -463,7 +463,7 @@ The six numbered checks in each retained row are the user's retention bar. Group
 - Detectable failure: dynamic import/CommonJS assignment cycle is missed.
 - Bar: **1** the independent group source specifies this input policy/behavior; **2** the failure above is visible in the returned result, diagnostic, native side effect or produced artifact; **3** expected values come from literal authored examples and required protocol/policy outcome, not copied production expressions; **4** observations use the group seam, with external providers only supplying inputs/failures; **5** implementation identifiers, helper structure and scheduling can change while these outcomes remain; **6** this case uniquely exercises the stated failure category at its owning seam; the stronger-coverage comparison above explains why another layer cannot replace it.
 
-### KEEP — `excludes tests, fixture directories, declarations and benchmarks from production cycles`
+### REWRITE — `excludes tests, fixture directories, declarations and benchmarks from production cycles`
 
 - Detectable failure: nonproduction files/declarations cause false production cycle errors.
 - Bar: **1** the independent group source specifies this input policy/behavior; **2** the failure above is visible in the returned result, diagnostic, native side effect or produced artifact; **3** expected values come from literal authored examples and required protocol/policy outcome, not copied production expressions; **4** observations use the group seam, with external providers only supplying inputs/failures; **5** implementation identifiers, helper structure and scheduling can change while these outcomes remain; **6** this case uniquely exercises the stated failure category at its owning seam; the stronger-coverage comparison above explains why another layer cannot replace it.
@@ -585,7 +585,7 @@ The six numbered checks in each retained row are the user's retention bar. Group
 - Remaining stronger coverage: packaged E2E proves one valid build; invalid synthetic artifacts and manifest constraints uniquely protect rejection paths.
 - Risk: low for removed bookkeeping/copy assertions; retained security, distribution and process failures remain mandatory. Check: `pnpm exec vitest run scripts/ffmpeg/lib.test.mjs --maxWorkers=1`. Desktop TypeScript changes also use `pnpm --filter @jasper/desktop typecheck`; E2E edits use `pnpm e2e:typecheck` and root-scheduled runtime execution.
 
-### KEEP — `fails on GPL libraries and Remotion compositor packages, passes LGPL ones`
+### REWRITE — `fails on GPL libraries and Remotion compositor packages, passes LGPL ones`
 
 - Detectable failure: GPL/nonfree libraries or bundled Remotion compositor pass distribution guard.
 - Bar: **1** the independent group source specifies this input policy/behavior; **2** the failure above is visible in the returned result, diagnostic, native side effect or produced artifact; **3** expected values come from literal authored examples and required protocol/policy outcome, not copied production expressions; **4** observations use the group seam, with external providers only supplying inputs/failures; **5** implementation identifiers, helper structure and scheduling can change while these outcomes remain; **6** this case uniquely exercises the stated failure category at its owning seam; the stronger-coverage comparison above explains why another layer cannot replace it.
@@ -600,7 +600,7 @@ The six numbered checks in each retained row are the user's retention bar. Group
 - Detectable failure: BUILDINFO missing/wrong vid.stab commit is accepted.
 - Bar: **1** the independent group source specifies this input policy/behavior; **2** the failure above is visible in the returned result, diagnostic, native side effect or produced artifact; **3** expected values come from literal authored examples and required protocol/policy outcome, not copied production expressions; **4** observations use the group seam, with external providers only supplying inputs/failures; **5** implementation identifiers, helper structure and scheduling can change while these outcomes remain; **6** this case uniquely exercises the stated failure category at its owning seam; the stronger-coverage comparison above explains why another layer cannot replace it.
 
-### KEEP — `passes an app that ships only the complete LGPL directory`
+### REWRITE — `passes an app that ships only the complete LGPL directory`
 
 - Detectable failure: complete valid LGPL package is incorrectly rejected.
 - Bar: **1** the independent group source specifies this input policy/behavior; **2** the failure above is visible in the returned result, diagnostic, native side effect or produced artifact; **3** expected values come from literal authored examples and required protocol/policy outcome, not copied production expressions; **4** observations use the group seam, with external providers only supplying inputs/failures; **5** implementation identifiers, helper structure and scheduling can change while these outcomes remain; **6** this case uniquely exercises the stated failure category at its owning seam; the stronger-coverage comparison above explains why another layer cannot replace it.
@@ -784,7 +784,7 @@ The six numbered checks in each retained row are the user's retention bar. Group
 - `native/mg/crates/jasper-mg-cli/src/main.rs` writer parameter to `write_output`: all production calls pass stdout().lock(); rewrite output regression at executable pipe and let helper own stdout. Stream reader generic remains needed for both file and stdin in production.
 - Removed deleted declarations' imports, the single-use preload bridge test helper/setup, clipboard generated-name helper, and screenshot header/size reading. No committed fixtures, snapshots or attribution assets become unused.
 
-Pre-edit declaration dispositions: {'REWRITE': 24, 'KEEP': 90, 'DELETE': 6}. Parameterized IPC rows cover 3 and 4 runtime cases respectively. Executable scenario/support entries above are separate from that declaration count.
+Initial decision-row dispositions: {'REWRITE': 24, 'KEEP': 90, 'DELETE': 6}. These 120 rows comprise 102 named JS/TS declarations in the discovery inventory, 14 Rust declarations and four desktop clipboard declarations outside the test/spec filename pattern. Parameterized IPC rows cover 3 and 4 runtime cases respectively. Other executable scenario/support entries and benchmark gates are separate. The final rescan below supersedes five KEEP rows; see [counting basis](counting-basis.md).
 
 ## Validation and final diff
 
@@ -884,3 +884,5 @@ Read the retained assigned tests and their production owners in the integration 
 No additional self-derived oracle was found in the retained parser, checker-policy, license-manifest, notice, process, SVG-escaping or raw-image protocol cases. The generated cycle property test uses independent graph reachability, not the production strongly-connected-component implementation. Config pins, diagnostic paths/locations, raw RGBA byte counts and PNG headers remain explicit caller-visible contracts. No helper, fixture, export or production-only seam becomes unused from this rescan's assertion/setup edits.
 
 Rescan validation: `pnpm exec biome check apps/desktop/test/security.test.ts apps/desktop/test/main.test.ts scripts/ffmpeg/lib.test.mjs scripts/check-cycles.test.mjs` and `git diff --check` passed. Final diff reviewed. The native owner fixture returns its window only for the requesting sender, so removing the lookup assertion does not weaken the externally observed dialog-owner check. No runtime was launched; focused tests remain for integrated validation.
+
+Counting correction: the final rescan changes five original KEEP rows to REWRITE (the folder-dialog row was already REWRITE). The consolidated 120-row disposition is **6 DELETE / 29 REWRITE / 85 KEEP**. This includes the 102 named JS/TS declarations, 14 Rust declarations and four desktop clipboard declarations described above; it is not a runtime case count. No additional original is created by the superseding rescan rows.

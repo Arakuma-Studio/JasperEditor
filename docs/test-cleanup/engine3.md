@@ -2,7 +2,7 @@
 
 The [independent-oracle follow-up](engine3-followup.md) supersedes the dispositions of the seven retained declarations it rewrites and records the coordinated test-only speech helper deletion counted in engine1's original inventory. The [avc3 browser follow-up](avc3-playback.md) records two further KEEP→REWRITE dispositions for unsupported callback-delivery quotas; its original Chrome failure remains unclassified pending the full-run stack.
 
-Disposition record written before test/source edits, with subsequent narrow refinements recorded in the affected rows. Cleanup is implemented for all 37 assigned files; focused execution and repository gates are pending the coordinated integrated run. Parameterized same-contract families have one row; dynamic recipe/range families are included explicitly.
+Disposition record written before test/source edits, with subsequent narrow refinements recorded in the affected rows. Cleanup is implemented for all 37 assigned files; focused execution and repository gates are pending the coordinated integrated run. Parameterized same-contract families have one row; the 227 original decision rows comprise 226 named declarations and one additional dynamic processing-step family. The recipe/range template declaration is already included in the 226. See [counting basis](counting-basis.md).
 
 Bar columns: **1** independent source/contract; **2** recognizable failure; **3** independent expected result; **4** stable interface; **5** permitted refactor; **6** unique lowest ownership. The exact behavior in each row’s test name is the contract/failure under review, not a claim that all assertions in a file deserve retention.
 

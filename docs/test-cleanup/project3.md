@@ -1,6 +1,6 @@
 # Project test cleanup: project3
 
-Pre-edit audit recorded before modifications. Scope: every test definition/fuzz-target family in the 34 assigned files. Parameterized families share a row only when they assert the same contract. Cleanup implementation is complete; runtime validation is explicitly pending the root integration gate. Dispositions record pre-edit decisions and the documented cross-review corrections.
+Pre-edit audit recorded before modifications. Scope: every test definition/fuzz-target family in the 34 assigned files: 409 original decision rows, comprising 373 named declarations, 35 fuzz targets and one additional dynamic roll family. See [counting basis](counting-basis.md). Parameterized families share a row only when they assert the same contract. Cleanup implementation is complete; runtime validation is explicitly pending the root integration gate. Dispositions record pre-edit decisions and the documented cross-review corrections.
 
 For isolated mathematical units, candidate failures were: wrong standard coefficients/signs, lost boundary values, incorrect time/coordinate mapping, numeric instability, malformed-input crashes, and destructive state changes. Retain only cases that detect one of those observable failures. Registry declarations, internal packing, arbitrary sample counts, object identities and self-comparisons are not contracts.
 

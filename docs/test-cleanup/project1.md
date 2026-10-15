@@ -1,6 +1,6 @@
 # Project test cleanup: project1
 
-Scope: all 34 assigned files; 395 test declarations. Table rows were recorded before edits. Parameterized declarations represent every listed input; no row is a file-level KEEP. Cleanup is implemented; validation status is recorded below.
+Scope: all 34 assigned files; 395 original test/family decision rows (393 named declarations in the discovery inventory plus two dynamic transition families). See [counting basis](counting-basis.md). Table rows were recorded before edits. Parameterized declarations represent every listed input; no row is a file-level KEEP. Cleanup is implemented; validation status is recorded below.
 
 For each retained test the failure is the negation of its named behavioral contract. “Oracle” is independent of implementation; “Refactor” refers only to preserving the stated API behavior. Risk is high for storage/security, medium for editing/render math, low for declaration deletion. Each row includes the lowest owner and remaining coverage reasoning.
 
