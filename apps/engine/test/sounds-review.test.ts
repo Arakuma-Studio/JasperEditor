@@ -74,8 +74,8 @@ async function index(app: FastifyInstance, body: Record<string, unknown> = {}) {
 	return SoundIndexResultSchema.parse(job.result);
 }
 
-async function search(app: FastifyInstance, qs = '') {
-	const r = await get(app, `/api/sounds${qs ? `?${qs}` : ''}`);
+async function search(app: FastifyInstance, qs = '', headers: Record<string, string> = H) {
+	const r = await get(app, `/api/sounds${qs ? `?${qs}` : ''}`, headers);
 	expect(r.status, JSON.stringify(r.body)).toBe(200);
 	return SoundSearchResponseSchema.parse(r.body);
 }
@@ -249,7 +249,10 @@ describe('folder approvals (finding 1, 2, 8)', { timeout: 300_000 }, () => {
 		const body = added.json() as { roots: SoundRoot[]; job: EngineJob };
 		await coreServices(app).queue.wait(body.job.id);
 		const credit = async () =>
-			(await search(app, 'sources=folder&license=any')).results.map((r) => [r.sound.attribution, r.sound.author]);
+			(await search(app, 'sources=folder&license=any', EDITOR)).results.map((r) => [
+				r.sound.attribution,
+				r.sound.author,
+			]);
 		expect(await credit()).toEqual([['door slam by Ann', 'Ann']]);
 		const editor = await editorSession(app);
 		// An agent rewriting the credit line is asked; the card names the folder and the change.
