@@ -332,8 +332,12 @@ rerun: `e2e/sound-library.spec.ts` measures 0 samples of error on an ffmpeg-deco
 (`apps/engine/test/sounds-search.test.ts`). Schema v7 (D-50). Limits: no keyboard-key recording in the kit (`key` is
 synth only); sounds over 120 s keep the ≤ 1-frame placement rule; In Context audition, cues and the Palette are
 Phase 2–3. Phase 2 in progress: the cue model and commands (WP2.1), derivation (WP2.2) and the Timeline's Cue Seam,
-Suggest Cues… dialog and peak handle (WP2.4a, `e2e/sound-cues.spec.ts`) are on the branch; filling cues from the
-library, variation cycling, layers and the In Context audition (WP2.4b) are not yet.
+Suggest Cues… dialog and peak handle (WP2.4a, `e2e/sound-cues.spec.ts`) are on the branch; WP2.4b added filling cues
+from the library (Enter, drop on a glyph, Fill With ▸, Fill Unfilled Cues), Replace mode, variation cycling coalesced
+into one undo step, linked layers, the In Context audition, clip badges, Essential Sound and Properties sections and
+Detect Peak (`e2e/sound-fill.spec.ts`: three filled cues measured at 0–1 sample from their cue frame in a native
+export). Limits (WP2.4b wp-note): variation cycling acts on the whole linked selection; Fill Unfilled Cues applies
+directly until Phase 3 proposals; Detect Peak analyses at most 2 min of a clip; Auto gain / Room send are Phase 4.
 
 ### Not covered by any workstream yet
 
