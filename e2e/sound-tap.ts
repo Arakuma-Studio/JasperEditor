@@ -239,14 +239,15 @@ export function peaks(r: Recording, min = 0.05): { t: number; v: number }[] {
 
 /**
  * Context times inside [from, to] where Remotion rescheduled a player: it stopped that player's queued buffers and
- * started new ones (within 0.5 s) — a seek, or its re-anchoring when the picture and the audio clock drift apart. A clip
- * that ends stops its player's buffers and starts none.
+ * started new ones (in the same task or within 2 s: after a seek the new position may take a while to decode) — a seek,
+ * or its re-anchoring when the picture and the audio clock drift apart. Buffers that play out end without `stop()`; a
+ * clip that ends stops its player's buffers and starts none.
  */
 export function reschedules(r: Recording, from: number, to: number): number[] {
 	const out = new Set<number>();
 	for (const s of r.stops) {
 		if (s.t < from || s.t > to || s.player < 0) continue;
-		if (r.starts.some((x) => x.player === s.player && x.t >= s.t && x.t <= s.t + 0.5))
+		if (r.starts.some((x) => x.player === s.player && x.t >= s.t - 0.05 && x.t <= s.t + 2))
 			out.add(Number(s.t.toFixed(4)));
 	}
 	return [...out].sort((a, b) => a - b);

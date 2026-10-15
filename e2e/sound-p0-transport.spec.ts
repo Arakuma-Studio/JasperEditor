@@ -149,23 +149,30 @@ async function pictureAnchor(
 	p: Page,
 	ms: number,
 	fromFrame: number,
+	skipMs: number,
 ): Promise<{ anchor: number; slip: number }> {
 	return p.evaluate(
-		async ([dur, num, den, from]) => {
+		async ([dur, num, den, from, skip]) => {
 			const w = window as unknown as {
 				__tap: { ctxs: { ctx: BaseAudioContext; starts: number }[] };
 				jasper: { query(n: string, a?: unknown): Promise<{ frame: number; playing: boolean }> };
 			};
+			// anime-allow: test-side wall clock bound of a sampling loop
+			const t0 = performance.now();
+			const end = t0 + dur;
 			// the Program monitor's context: the running one Remotion schedules media buffers on
-			const ctx = w.__tap.ctxs
-				.filter((c) => c.ctx.state === 'running')
-				.sort((a, b) => b.starts - a.starts)[0]?.ctx;
+			const program = () =>
+				w.__tap.ctxs.filter((c) => c.ctx.state === 'running').sort((a, b) => b.starts - a.starts)[0]?.ctx;
+			let ctx = program();
+			// anime-allow: test-side wall clock bound of a sampling loop
+			while (!ctx && performance.now() < end) {
+				await new Promise<number>((r) => requestAnimationFrame(r));
+				ctx = program();
+			}
 			if (!ctx) return { anchor: Number.NaN, slip: Number.NaN };
 			let best = Number.POSITIVE_INFINITY;
 			let first: AudioTimestamp | null = null;
 			let last: AudioTimestamp | null = null;
-			// anime-allow: test-side wall clock bound of a sampling loop
-			const end = performance.now() + dur;
 			// anime-allow: test-side wall clock bound of a sampling loop
 			while (performance.now() < end) {
 				await new Promise<number>((r) => requestAnimationFrame(r));
@@ -180,8 +187,9 @@ async function pictureAnchor(
 				const now = performance.now();
 				const o = (ctx as AudioContext).getOutputTimestamp();
 				const t = (o.contextTime ?? 0) + (now - (o.performanceTime ?? 0)) / 1000;
-				if (playing && frame > from) best = Math.min(best, t - (frame * den) / num);
-				if (o.performanceTime) {
+				if (playing && frame > from && now - t0 >= skip) best = Math.min(best, t - (frame * den) / num);
+				// the clocks from the program's first valid output timestamp on (Chrome reports none just after a resume)
+				if (o.performanceTime && (o.contextTime ?? 0) > 0) {
 					first ??= o;
 					last = o;
 				}
@@ -195,7 +203,7 @@ async function pictureAnchor(
 					: Number.NaN;
 			return { anchor: best, slip };
 		},
-		[ms, fps.num, fps.den, fromFrame] as const,
+		[ms, fps.num, fps.den, fromFrame, skipMs] as const,
 	);
 }
 
@@ -215,8 +223,8 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 			await seekPaused(page, 0);
 			let picture = { anchor: Number.NaN, slip: Number.NaN };
 			const rec = await playFor(page, 200, async (p) => {
-				await p.waitForTimeout(150);
-				picture = await pictureAnchor(p, 900, 0);
+				// the clocks are compared from the start; the anchor sampled after 150 ms (the picture has started)
+				picture = await pictureAnchor(p, 1050, 0, 150);
 			});
 			m = { rec, picture: picture.anchor };
 			// the whole span whose clicks are checked (up to 2 s), up to the pause
@@ -365,12 +373,13 @@ test('seek during playback: the audio from before the seek stops at the seek', a
 		});
 		enter = rec.marks.enter ?? -1;
 		const seeked = rec.marks.seeked ?? -1;
-		// The seek's own reschedule: the first one between the Enter and the playhead at the target (under load the seek
-		// can take a while). Any other reschedule around it, or a buffer started late before it, disturbed the play.
-		const own = reschedules(rec, enter - 0.001, seeked + 0.001);
-		stop = own[0] ?? -1;
+		// The seek's own reschedule: Remotion's first stop of queued buffers between the Enter and the playhead at the
+		// target (under load the seek can take a while). Any other reschedule around it, or a buffer started late before
+		// it, disturbed the play.
+		const own = rec.stops.filter((x) => x.player >= 0 && x.t >= enter - 0.001 && x.t <= seeked + 0.001);
+		stop = own[0]?.t ?? -1;
 		const other = reschedules(rec, rec.armed, seeked + 0.3)
-			.filter((t) => t !== stop)
+			.filter((t) => Math.abs(t - stop) > 0.01)
 			.map((t) => `reschedule at ${(t - enter).toFixed(3)} s`);
 		const late = disturbances({ ...rec, stops: [] }, rec.armed, enter);
 		// Tone that comes back after the old audio had stopped at the seek is a buffer of the old position Remotion
