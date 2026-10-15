@@ -531,3 +531,24 @@ describe('Sound Library modes follow their target', () => {
 		expect(screen.queryByTestId('sound-fill-chip')).toBeNull();
 	});
 });
+
+describe('Hover audition with In Context on', () => {
+	it('resting on a row plays it in context (as documented), leaving the row stops it', async () => {
+		const h = harness();
+		soundLibraryPrefs.set({ inContext: true, auditionOnHover: true });
+		h.session.transport.seek(100);
+		render(
+			<SessionProvider session={h.session}>
+				<SoundLibraryPanel instanceId="sl" visible />
+			</SessionProvider>,
+		);
+		const list = await screen.findByRole('listbox');
+		const option = (await within(list).findAllByRole('option'))[0]!;
+		fireEvent.mouseEnter(option);
+		await waitFor(() => expect(inContextStore.getState().active).toBe(true), { timeout: 3000 });
+		expect(h.session.getState().transient).not.toBeNull();
+		fireEvent.mouseLeave(option);
+		expect(inContextStore.getState().active).toBe(false);
+		expect(h.session.transport.getState()).toMatchObject({ playing: false, frame: 100 });
+	});
+});

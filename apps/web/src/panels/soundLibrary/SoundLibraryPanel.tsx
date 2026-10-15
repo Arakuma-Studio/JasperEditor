@@ -1244,6 +1244,11 @@ export function SoundLibraryPanel(props: PanelProps) {
 												if (!prefs.auditionOnHover) return;
 												if (hoverTimer.current) clearTimeout(hoverTimer.current);
 												hoverTimer.current = setTimeout(() => {
+													// the In Context toggle applies to hover too (spec 12 §2.7)
+													if (soundLibraryPrefs.get().inContext && session?.getState().activeSequenceId) {
+														if (inContextStore.getState().soundId !== it.id) doAuditionInContext(it);
+														return;
+													}
 													const p = auditionPlayer();
 													p.setVolumeDb(soundLibraryPrefs.get().volumeDb);
 													void p.play(auditionSoundOf(engine, it), { loop: false });
@@ -1252,8 +1257,9 @@ export function SoundLibraryPanel(props: PanelProps) {
 											onMouseLeave={() => {
 												if (hoverTimer.current) clearTimeout(hoverTimer.current);
 												hoverTimer.current = null;
-												if (prefs.auditionOnHover && auditionPlayer().state.soundId === it.id)
-													auditionPlayer().stop();
+												if (!prefs.auditionOnHover) return;
+												if (auditionPlayer().state.soundId === it.id) auditionPlayer().stop();
+												if (inContextStore.getState().soundId === it.id) stopInContext();
 											}}
 											onDragStart={(e) => writeSoundDrag(e.dataTransfer, it)}
 											onDragEnd={() => endSoundDrag()}
