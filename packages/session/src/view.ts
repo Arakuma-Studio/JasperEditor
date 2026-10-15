@@ -20,6 +20,11 @@ export const SequenceViewSchema = z.object({
 		waveforms: z.boolean(),
 		clipNames: z.boolean(),
 	}),
+	/**
+	 * Sequence ▸ Sound Design ▸ Show Cue Seam (spec 12 §2.7): `on` / `off` once the user chose; absent = automatic
+	 * (shown in the Sound Design workspace and whenever the sequence has cues).
+	 */
+	cueSeam: z.enum(['on', 'off']).optional(),
 });
 
 export type SequenceViewState = z.infer<typeof SequenceViewSchema>;

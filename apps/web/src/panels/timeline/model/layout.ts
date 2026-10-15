@@ -2,7 +2,7 @@
 // The video region is bottom-aligned (V1 sits on the divider, tracks grow upward); the audio region is
 // top-aligned (A1 under the divider, tracks grow downward). Each region scrolls on its own.
 
-const DIVIDER_PX = 4;
+export const DIVIDER_PX = 4;
 const MASTER_ROW_PX = 28;
 const TRACK_MIN_PX = 20;
 const TRACK_MAX_PX = 240;
@@ -37,6 +37,8 @@ export type TrackAreaLayout = {
 	video: RegionLayout;
 	audio: RegionLayout;
 	dividerTop: number;
+	/** Height of the divider: 4 px, or the 18 px Cue Seam lane when it is shown (spec 12 §2.7). */
+	dividerHeight: number;
 	/** Y of the master row (header only) in track-area coordinates, or null when hidden. */
 	masterY: number | null;
 };
@@ -66,13 +68,16 @@ export function computeLayout(opts: {
 	scrollYVideo: number;
 	scrollYAudio: number;
 	showMaster?: boolean;
+	/** Divider height (default 4 px; the Cue Seam widens it to 18 px). */
+	dividerPx?: number;
 }): TrackAreaLayout {
-	const avail = Math.max(0, opts.height - DIVIDER_PX);
+	const divider = Math.max(DIVIDER_PX, Math.round(opts.dividerPx ?? DIVIDER_PX));
+	const avail = Math.max(0, opts.height - divider);
 	const ratio = Math.min(0.9, Math.max(0.1, opts.dividerRatio));
 	const vh = Math.round(avail * ratio);
 	const ah = avail - vh;
 	const dividerTop = vh;
-	const audioTop = vh + DIVIDER_PX;
+	const audioTop = vh + divider;
 
 	// Video: rows stack upward from the divider. Content coordinates measured from the content top.
 	const vHeights = opts.videoTracks.map((t) => trackHeight(opts.heights, t.id, 'video'));
@@ -111,6 +116,7 @@ export function computeLayout(opts: {
 	return {
 		height: opts.height,
 		dividerTop,
+		dividerHeight: divider,
 		video: {
 			kind: 'video',
 			top: 0,
@@ -149,7 +155,8 @@ type YHit =
 
 /** Which track (or new-track zone, TL-266) is at `y` in track-area coordinates. */
 export function hitY(layout: TrackAreaLayout, y: number): YHit {
-	if (y >= layout.dividerTop && y < layout.dividerTop + DIVIDER_PX) return { kind: 'divider' };
+	if (y >= layout.dividerTop && y < layout.dividerTop + (layout.dividerHeight ?? DIVIDER_PX))
+		return { kind: 'divider' };
 	const region = y < layout.dividerTop ? layout.video : layout.audio;
 	for (const row of region.rows) if (y >= row.y && y < row.y + row.height) return { kind: 'track', row };
 	if (region.kind === 'video') {

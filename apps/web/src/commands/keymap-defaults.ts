@@ -330,6 +330,8 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('soundLibrary.toggleLoop', 'KeyL', 'soundLibrary'),
 	b('soundLibrary.focusSearch', 'Ctrl+KeyF', 'soundLibrary'),
 	b('soundLibrary.stopAudition', 'Escape', 'soundLibrary'),
+	// sound-design (spec 12 §2.7): Markers ▸ Add Sound Cue
+	b('sound.addCue', 'Alt+Shift+KeyC', E, { mac: 'Opt+Shift+KeyC' }),
 	b('history.stepBackward', 'ArrowLeft', 'history', R),
 	b('history.stepForward', 'ArrowRight', 'history', R),
 ];

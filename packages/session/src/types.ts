@@ -11,6 +11,8 @@ export type Selection = {
 	markers: string[];
 	project: { items: string[]; primary: string | null };
 	tracks: string[];
+	/** Sound cues (spec 12 §2.7 Cue Seam), ids from `Sequence.soundDesign.cues`; absent = none. */
+	cues?: string[];
 };
 
 export type SelectionDomain =
@@ -20,7 +22,8 @@ export type SelectionDomain =
 	| 'tracks'
 	| 'keyframes'
 	| 'transitions'
-	| 'gaps';
+	| 'gaps'
+	| 'cues';
 export type SelectMode = 'replace' | 'add' | 'toggle' | 'remove';
 
 export type ActiveTool =

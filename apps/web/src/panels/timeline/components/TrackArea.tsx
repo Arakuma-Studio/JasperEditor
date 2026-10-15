@@ -307,7 +307,7 @@ export function TrackArea(raw: TrackAreaProps) {
 			<Region {...props} region={layout.video} offsets={offsets} />
 			<div
 				className="absolute right-0 left-0"
-				style={{ top: layout.dividerTop, height: 4, background: 'var(--pr-bg-app)' }}
+				style={{ top: layout.dividerTop, height: layout.dividerHeight, background: 'var(--pr-bg-app)' }}
 				data-divider
 			/>
 			<Region {...props} region={layout.audio} offsets={offsets} />

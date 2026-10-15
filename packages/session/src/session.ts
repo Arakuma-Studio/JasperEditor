@@ -648,6 +648,9 @@ export class EditorSession {
 			case 'tracks':
 				next = { ...sel, tracks: combine(sel.tracks, ids, mode) };
 				break;
+			case 'cues':
+				next = { ...sel, cues: combine(sel.cues ?? [], ids, mode) };
+				break;
 			default:
 				return;
 		}
