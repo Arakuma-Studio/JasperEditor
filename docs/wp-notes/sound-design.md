@@ -316,7 +316,7 @@ the context's output timestamp passes the resume time (`waitUntilActuallyResumed
 - A buffering stall during the wait of a primed start: Remotion re-anchors to the (still unmoved) picture on suspend;
   the graph puts its primed anchor back and the shim waits only for what is left of the wait (`waitFrom`). This was
   added after the e2e sync check failed by ≈ the wait (39 ms) once at load ≈ 80; it has no dedicated regression test
-  (a stall cannot be provoked deterministically in the e2e); the check passed in every run at load 68–150 after it.
+  (a stall cannot be provoked deterministically in the e2e); the check passed in both full runs after it (load ≈ 100 and 68–150).
 - Under heavy load (load average 80–125 on the 16-core host) Remotion re-anchors and reschedules every player during
   playback and its buffer scheduling falls behind; the e2e plays again (up to 3 times) when that happens around the
   measured moment. The pre-fix build showed the same reschedules under the same load.
