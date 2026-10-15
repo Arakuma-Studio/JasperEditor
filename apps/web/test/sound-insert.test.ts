@@ -12,7 +12,7 @@ import {
 import { EditorSession } from '@jasper/session';
 import { describe, expect, it } from 'vitest';
 import { InsertSoundError, insertLibrarySound } from '../src/sound/insert.ts';
-import { registered, soundEntry } from './sound-helpers.ts';
+import { registered, registeredPadded, soundEntry } from './sound-helpers.ts';
 import { makeSession, videoAsset } from './timeline-helpers.ts';
 
 function setup() {
@@ -45,8 +45,10 @@ describe('insertLibrarySound', () => {
 		const peakAt = clip.start * F + (0.2325 * FLICKS_PER_SECOND - (clip as { sourceIn: number }).sourceIn);
 		expect(peakAt).toBeGreaterThanOrEqual(45 * F - 2);
 		expect(peakAt).toBeLessThan(46 * F);
-		expect(r.message).toBe('Added Crunch to A1 · peak at 00:00:01:15');
-		expect(r.trackLabel).toBe('A1');
+		// no SFX track yet: a new "SFX 1" (A4), in the same undo step
+		expect(r.message).toBe('Added Crunch to A4 · peak at 00:00:01:15');
+		expect(r.trackLabel).toBe('A4');
+		expect(seq.audioTracks.at(-1)!.name).toBe('SFX 1');
 		const media = doc.media[r.mediaId]!;
 		expect((media as { library?: { soundId: string } }).library?.soundId).toBe(s.entries[0]!.id);
 		const bin = Object.values(doc.items).find((i) => i.kind === 'bin' && i.name === 'Sound Effects');
@@ -69,12 +71,13 @@ describe('insertLibrarySound', () => {
 		const doc = s.session.getCommitted();
 		expect(b.mediaId).toBe(a.mediaId);
 		expect(Object.values(doc.items).filter((i) => i.kind === 'bin')).toHaveLength(1);
-		expect(b.trackLabel).toBe('A2');
-		await insertLibrarySound(s.session, s.engine, s.entries[0]!);
-		const d = await insertLibrarySound(s.session, s.engine, s.entries[0]!);
+		// SFX 1 is busy over the span: a new SFX 2, never the free non-SFX tracks A1–A3
+		expect(a.trackLabel).toBe('A4');
+		expect(b.trackLabel).toBe('A5');
+		const later = await insertLibrarySound(s.session, s.engine, s.entries[0]!, { at: 300 });
+		expect(later.trackLabel).toBe('A4');
 		const seq = seqOf(s);
-		expect(d.trackLabel).toBe('A4');
-		expect(seq.audioTracks.at(-1)!.name).toBe('SFX 1');
+		expect(seq.audioTracks.map((t) => t.name).slice(3)).toEqual(['SFX 1', 'SFX 2']);
 		// every clip keeps its own track span: no overlaps on any track
 		const clips = Object.values(seq.clips);
 		for (const x of clips)
@@ -100,13 +103,76 @@ describe('insertLibrarySound', () => {
 		expect(r0.ok).toBe(true);
 		const r = await insertLibrarySound(s.session, { registerSound: async () => reg }, e, {
 			align: 'start',
-			at: 10,
+			at: 40,
 		});
 		const m = s.session.getCommitted().media[r.mediaId] as { library?: { soundId: string } };
 		expect(m.library?.soundId).toBe(e.id);
 		expect(Object.keys(s.session.getCommitted().media)).toHaveLength(1);
-		expect(seqOf(s).clips[r.clipId]!.start).toBe(10);
+		// `start` aligns the onset (as MCP insert_sound does)
+		const clip = seqOf(s).clips[r.clipId]! as { start: number; sourceIn: number };
+		const F = flicksPerFrame(seqOf(s).settings.frameRate);
+		const onsetAt = clip.start * F + e.descriptors.onsetSec * FLICKS_PER_SECOND - clip.sourceIn;
+		expect(Math.abs(onsetAt - 40 * F - r.errorFlicks)).toBeLessThanOrEqual(2);
 		expect(r.message).toContain('start at');
+	});
+
+	it('aligns by the sound type when not told (risers by their end, UI by their start), like MCP insert_sound', async () => {
+		const s = setup();
+		const riser = soundEntry({ title: 'Riser', types: ['riser'], peakSec: 2.9, durationSec: 3 });
+		const r = await insertLibrarySound(s.session, { registerSound: async () => registered(riser) }, riser, {
+			at: 150,
+		});
+		expect(r.align).toBe('end');
+		const clip = seqOf(s).clips[r.clipId]! as { start: number; duration: number; sourceIn: number };
+		const F = flicksPerFrame(seqOf(s).settings.frameRate);
+		// the last sample plays at frame 150 (+ the reported error)
+		const endAt = clip.start * F + 3 * FLICKS_PER_SECOND - clip.sourceIn;
+		expect(Math.abs(endAt - 150 * F - r.errorFlicks)).toBeLessThanOrEqual(2);
+		expect(r.message).toContain('end at');
+		const ui = soundEntry({ title: 'Blip', types: ['ui'], peakSec: 0.05, durationSec: 0.3 });
+		const u = await insertLibrarySound(s.session, { registerSound: async () => registered(ui) }, ui, {
+			at: 60,
+		});
+		expect(u.align).toBe('start');
+		// an explicit point wins
+		const p = await insertLibrarySound(s.session, { registerSound: async () => registered(riser) }, riser, {
+			at: 400,
+			align: 'peak',
+		});
+		expect(p.align).toBe('peak');
+	});
+
+	it('places a sound the engine padded with lead silence exactly on the frame (errorFlicks 0), from its provenance', async () => {
+		const s = setup();
+		// a hit whose head is not quiet at all: unpadded, the peak plays up to a frame late
+		const hit = soundEntry({ title: 'Hard hit', peakSec: 0.0245, durationSec: 0.6 });
+		hit.descriptors.headQuietSec = 0;
+		hit.descriptors.onsetSec = 0.009;
+		const F = flicksPerFrame(seqOf(s).settings.frameRate);
+		const plain = await insertLibrarySound(s.session, { registerSound: async () => registered(hit) }, hit, {
+			at: 45,
+		});
+		expect(plain.errorFlicks).toBeGreaterThan(0);
+		expect(plain.errorFlicks).toBeLessThan(F);
+		for (const at of [45, 46, 47, 100, 101, 2]) {
+			const r = await insertLibrarySound(
+				s.session,
+				{ registerSound: async () => registeredPadded(hit) },
+				hit,
+				{
+					at,
+				},
+			);
+			expect(r.errorFlicks, `at ${at}`).toBe(0);
+			const clip = seqOf(s).clips[r.clipId]! as { start: number; sourceIn: number; mediaId: string };
+			// the peak of the PADDED file (0.0245 + 0.05 s) plays exactly at the frame
+			const peakAt = clip.start * F + (0.0245 + 0.05) * FLICKS_PER_SECOND - clip.sourceIn;
+			expect(Math.abs(peakAt - at * F), `at ${at}`).toBeLessThanOrEqual(1);
+			// the In point never cuts into the sound itself (only the lead silence)
+			expect(clip.sourceIn).toBeLessThanOrEqual(0.05 * FLICKS_PER_SECOND + 1);
+			const m = s.session.getCommitted().media[clip.mediaId] as { library?: { leadSilenceSec?: number } };
+			expect(m.library?.leadSilenceSec).toBe(0.05);
+		}
 	});
 
 	it('refuses without a sequence or in a read-only project, and leaves the project alone when the engine fails', async () => {

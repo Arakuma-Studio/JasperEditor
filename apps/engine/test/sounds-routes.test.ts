@@ -1,6 +1,8 @@
 // Sound library routes end to end (spec 12 WP1.2): indexing (starter kit, folders, synth), incremental rescans,
 // search ranking, facets and filters, audio and visual routes, registering into a project, folder validation and the
 // approval gate for agents, cancellation and recovery of a damaged index. Generated WAVs only, no network.
+
+import { execFileSync } from 'node:child_process';
 import {
 	existsSync,
 	mkdirSync,
@@ -24,11 +26,13 @@ import {
 	SoundSearchResponseSchema,
 	SoundVisualSchema,
 } from '@jasper/api';
+import { encodeWav } from '@jasper/audio-dsp';
 import { appdirPaths } from '@jasper/config';
 import {
 	createCounterIdSource,
 	createEmptyProject,
 	inferTypesFromName,
+	LIBRARY_LEAD_SILENCE_SEC,
 	LibraryProvenanceSchema,
 	makeEnvelope,
 } from '@jasper/project';
@@ -37,8 +41,14 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { WebSocket } from 'ws';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, H, JSON_H, makeApp, tempAppdir, until } from './helpers.ts';
-import { makeStarter, writeWav } from './sound-fixtures.ts';
+import { closeApps, H, JSON_H, makeApp, TEST_FFMPEG, tempAppdir, until } from './helpers.ts';
+import { makeStarter, SR, samples, writeWav } from './sound-fixtures.ts';
+
+/** Interleaved f32 samples of a file's first audio stream (the engine tests' ffmpeg). */
+function decodeF32(file: string): Float32Array {
+	const out = execFileSync(TEST_FFMPEG, ['-v', 'error', '-i', file, '-map', '0:a:0', '-f', 'f32le', '-']);
+	return new Float32Array(out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength));
+}
 
 type App = Awaited<ReturnType<typeof makeApp>>;
 const ENV_KEYS = [
@@ -534,7 +544,7 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 		expect(again).toEqual(v);
 	});
 
-	it('registers a sound into a project with its provenance, copies it and dedupes', async () => {
+	it('registers a sound into a project with its provenance, copies it with lead silence and dedupes', async () => {
 		const app = await makeApp();
 		await index(app);
 		const created = await app.inject({
@@ -556,9 +566,13 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 		const r = await reg(whoosh.id);
 		expect(r.statusCode, r.body).toBe(200);
 		const out = RegisterSoundResponseSchema.parse(r.json());
-		expect(out.fingerprint).toBe(whoosh.fingerprint);
+		// The whoosh swells from silence but its quiet head (< 50 ms) cannot absorb every sub-frame rest: the project
+		// gets a copy with 50 ms (2400 samples at 48 kHz) of silence in front, a different file.
+		expect(whoosh.descriptors.headQuietSec).toBeLessThan(LIBRARY_LEAD_SILENCE_SEC);
+		expect(out.fingerprint).not.toBe(whoosh.fingerprint);
 		expect(out.kind).toBe('audio');
 		expect(out.existingMediaId).toBeNull();
+		const lead = 2400 / 48000;
 		expect(LibraryProvenanceSchema.parse(out.library)).toEqual({
 			soundId: whoosh.id,
 			title: 'Fast whoosh',
@@ -570,23 +584,39 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 			sourceUrl: 'https://example.invalid/sounds',
 			attribution: whoosh.attribution,
 			descriptors: {
-				peakSec: whoosh.descriptors.peakSec,
-				onsetSec: whoosh.descriptors.onsetSec,
-				headQuietSec: whoosh.descriptors.headQuietSec,
-				durationSec: whoosh.descriptors.durationSec,
+				peakSec: whoosh.descriptors.peakSec + lead,
+				onsetSec: whoosh.descriptors.onsetSec + lead,
+				headQuietSec: whoosh.descriptors.headQuietSec + lead,
+				durationSec: whoosh.descriptors.durationSec + lead,
 				octaveBandsDb: whoosh.descriptors.octaveBandsDb,
 				centroidHz: whoosh.descriptors.centroidHz,
 				maxMomentaryLufs: whoosh.descriptors.maxMomentaryLufs,
 			},
+			leadSilenceSec: lead,
 			snapshotHash: status.snapshotHash,
 		});
 		// Copied into managed media (the project does not depend on the app's install folder).
 		const media = appdirPaths(app.appdir).mediaDir;
 		expect(readdirSync(join(media, out.mediaKey))).toEqual(['whoosh_fast.wav']);
+		// The copy is the library file's samples exactly, after 2400 samples of digital silence.
+		const original = decodeF32(join(starter, 'movement', 'whoosh_fast.wav'));
+		const padded = decodeF32(join(media, out.mediaKey, 'whoosh_fast.wav'));
+		expect(padded.length).toBe(original.length + 2 * 2400);
+		expect(padded.subarray(0, 2 * 2400).every((v) => v === 0)).toBe(true);
+		const body = padded.subarray(2 * 2400);
+		expect(
+			Buffer.from(body.buffer, body.byteOffset, body.byteLength).equals(Buffer.from(original.buffer)),
+		).toBe(true);
+		expect(out.probe.durationFlicks).toBe(Math.round((whoosh.format.durationSec + lead) * 705_600_000));
+		expect(readdirSync(media).filter((f) => f.startsWith('.sound-tmp'))).toEqual(
+			existsSync(join(media, '.sound-tmp')) ? ['.sound-tmp'] : [],
+		);
+		if (existsSync(join(media, '.sound-tmp'))) expect(readdirSync(join(media, '.sound-tmp'))).toEqual([]);
 
-		// Registering again: the same media; once the saved project has it, it is named.
+		// Registering again: the same bytes, so the same media; once the saved project has it, it is named.
 		const again = RegisterSoundResponseSchema.parse((await reg(whoosh.id)).json());
 		expect(again.mediaKey).toBe(out.mediaKey);
+		expect(again.fingerprint).toBe(out.fingerprint);
 		const projectFile = appdirPaths(app.appdir).projectFile(projectId);
 		const env = JSON.parse(readFileSync(projectFile, 'utf8'));
 		env.document.media.med_FAKE0000000001 = {
@@ -609,14 +639,23 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 		const app = await makeApp();
 		const folder = tempAppdir('jasper-sfx-place-');
 		const wav = writeWav(join(folder, 'Hits', 'punch.wav'), 'hit', 0.3, 77);
+		// A hit after 80 ms of silence: its quiet head absorbs any sub-frame rest, so it is registered in place.
+		const late = join(folder, 'Hits', 'late punch.wav');
+		const [l, r] = samples('hit', 0.3, 79);
+		const pad = (c: Float32Array) => {
+			const o = new Float32Array(c.length + 0.08 * SR);
+			o.set(c, 0.08 * SR);
+			return o;
+		};
+		writeFileSync(late, encodeWav([pad(l!), pad(r!)], SR, 's16'));
 		const put = await putRoots(app, [{ path: folder, license: 'CC0-1.0' }]);
 		const job = await waitJob(app, (put.json() as { job: EngineJob }).job.id);
 		const result = SoundIndexResultSchema.parse(job.result);
 		expect(result.errors.filter((e) => e.source !== 'starter')).toEqual([]);
-		// 4 starter + 1 folder + 19 synth (one seed per recipe).
-		expect(result.sounds).toBe(24);
+		// 4 starter + 2 folder + 19 synth (one seed per recipe).
+		expect(result.sounds).toBe(25);
 		const status = SoundLibraryStatusSchema.parse((await get(app, '/api/sounds/status')).body);
-		expect(status.bySource).toEqual({ starter: 4, pack: 0, folder: 1, synth: 19 });
+		expect(status.bySource).toEqual({ starter: 4, pack: 0, folder: 2, synth: 19 });
 		const synth = (await search(app, 'sources=synth&limit=100')).results.map((r) => r.sound);
 		expect(synth).toHaveLength(19);
 		for (const s of synth) {
@@ -631,9 +670,9 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 		// Real recordings always come first.
 		const hits = await search(app, 'types=hit');
 		const order = hits.results.map((r) => r.sound.source.type);
-		expect(order).toHaveLength(4);
-		expect(order[3]).toBe('synth');
-		expect([...order.slice(0, 3)].sort()).toEqual(['folder', 'starter', 'starter']);
+		expect(order).toHaveLength(5);
+		expect(order[4]).toBe('synth');
+		expect([...order.slice(0, 4)].sort()).toEqual(['folder', 'folder', 'starter', 'starter']);
 
 		const created = await app.inject({
 			method: 'POST',
@@ -642,20 +681,35 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 			payload: { name: 'SFX', preset: 'hd-1080p-30' },
 		});
 		const projectId = (created.json() as { projectId: string }).projectId;
-		const punch = hits.results.find((r) => r.sound.source.type === 'folder')!.sound;
-		const inPlace = RegisterSoundResponseSchema.parse(
-			(
-				await app.inject({
-					method: 'POST',
-					url: `/api/sounds/${punch.id}/register`,
-					headers: JSON_H,
-					payload: { projectId },
-				})
-			).json(),
-		);
-		expect(inPlace.locators).toContainEqual(expect.objectContaining({ type: 'path', path: wav }));
+		const folderHits = hits.results.filter((r) => r.sound.source.type === 'folder').map((r) => r.sound);
+		const punch = folderHits.find((e) => e.title === 'punch')!;
+		const latePunch = folderHits.find((e) => e.title === 'late punch')!;
+		expect(latePunch.descriptors.headQuietSec).toBeGreaterThanOrEqual(LIBRARY_LEAD_SILENCE_SEC);
+		const registerIt = async (id: string) =>
+			RegisterSoundResponseSchema.parse(
+				(
+					await app.inject({
+						method: 'POST',
+						url: `/api/sounds/${id}/register`,
+						headers: JSON_H,
+						payload: { projectId },
+					})
+				).json(),
+			);
+		const inPlace = await registerIt(latePunch.id);
+		expect(inPlace.fingerprint).toBe(latePunch.fingerprint);
+		expect(inPlace.locators).toContainEqual(expect.objectContaining({ type: 'path', path: late }));
 		expect(inPlace.library.license).toBe('CC0-1.0');
+		expect(inPlace.library.leadSilenceSec).toBeUndefined();
+		expect(inPlace.library.descriptors?.peakSec).toBe(latePunch.descriptors.peakSec);
 		expect(existsSync(join(appdirPaths(app.appdir).mediaDir, inPlace.mediaKey))).toBe(false);
+		// A folder hit with a loud head gets a managed padded copy (decision: exact placement over in-place).
+		const padded = await registerIt(punch.id);
+		expect(padded.fingerprint).not.toBe(punch.fingerprint);
+		expect(padded.library.leadSilenceSec).toBe(0.05);
+		expect(padded.library.source).toEqual(punch.source);
+		expect(padded.library.descriptors?.peakSec).toBeCloseTo(punch.descriptors.peakSec + 0.05, 9);
+		expect(readdirSync(join(appdirPaths(app.appdir).mediaDir, padded.mediaKey))).toEqual(['punch.wav']);
 
 		// A synth render that was cleaned away is rendered again, byte for byte.
 		const hitSynth = hits.results.find((r) => r.sound.source.type === 'synth')!.sound;
@@ -672,7 +726,9 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 				})
 			).json(),
 		);
-		expect(s.fingerprint).toBe(hitSynth.fingerprint);
+		// the synth hit starts at once: padded, from the re-rendered (identical) file
+		expect(hitSynth.descriptors.headQuietSec).toBeLessThan(LIBRARY_LEAD_SILENCE_SEC);
+		expect(s.library.leadSilenceSec).toBe(0.05);
 		expect(s.library.source).toEqual({ type: 'synth', recipe: 'synth.hit', seed: 0 });
 		// A folder file changed since indexing is reported, not silently registered as the old sound.
 		writeWav(wav, 'hit', 0.31, 78);

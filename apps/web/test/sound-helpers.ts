@@ -105,6 +105,32 @@ export function registered(e: SoundEntry, over: Partial<RegisterSoundResponse> =
 	} as RegisterSoundResponse;
 }
 
+/**
+ * The engine's answer for a sound registered with `leadSec` of silence put in front (what the engine does for sounds
+ * whose head is not quiet): another file (fingerprint), longer by the lead, provenance descriptors moved by it.
+ */
+export function registeredPadded(e: SoundEntry, leadSec = 0.05): RegisterSoundResponse {
+	const base = registered(e);
+	const d = base.library.descriptors!;
+	return {
+		...base,
+		mediaKey: `mk_${e.id}_pad`,
+		fingerprint: `q1:${'f'.repeat(48)}${e.fingerprint.slice(-16)}`,
+		probe: { ...base.probe, durationFlicks: Math.round((e.format.durationSec + leadSec) * 705_600_000) },
+		library: {
+			...base.library,
+			descriptors: {
+				...d,
+				peakSec: d.peakSec + leadSec,
+				onsetSec: d.onsetSec + leadSec,
+				headQuietSec: d.headQuietSec + leadSec,
+				durationSec: d.durationSec + leadSec,
+			},
+			leadSilenceSec: leadSec,
+		},
+	} as RegisterSoundResponse;
+}
+
 /** A fake engine client over a list of entries (search ranks them with the shared `rankSounds`). */
 export function fakeSoundEngine(entries: SoundEntry[]) {
 	const calls: { search: SoundSearchRequest[]; register: string[] } = { search: [], register: [] };

@@ -130,6 +130,8 @@ export function planSoundInsert(input: {
 	mediaDurationFlicks?: number | null;
 }): { ok: true; placement: SoundInsertPlacement } | { ok: false; code: 'E_INVALID_PARAM'; message: string } {
 	const t = input.timing;
+	if (!t || typeof t !== 'object')
+		return { ok: false, code: 'E_INVALID_PARAM', message: 'The sound has no timing' };
 	const durFlicks =
 		input.mediaDurationFlicks && Number.isFinite(input.mediaDurationFlicks) && input.mediaDurationFlicks > 0
 			? Math.round(input.mediaDurationFlicks)
