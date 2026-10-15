@@ -97,11 +97,14 @@ it). Agents: `list_project_versions`, `restore_project_version {mode: "copy"}`.
 ### Optional fields added since v6
 
 These fields are optional with read-time defaults; older v6 builds keep them on save (`looseObject`). The fields
-alone needed no bump (rule 2); the v7 bump above is for the SFX Pan reading that came with them.
+alone needed no bump (rule 2); the v7 bump above is for the SFX Pan reading that came with them. Sound-design
+fields of later phases are added to v7 until `feat/sound-design` merges to `main`.
 
 | Field | Since | Read leniently | Repair |
 |---|---|---|---|
 | `MediaAsset.library` | sound design (spec 12 §2.1, WP1.1a) | the document schema accepts any value (`z.custom<LibraryProvenance>(() => true)`, typed as valid provenance), so a damaged value never fails a load; INV-LIBRARY checks it against `LibraryProvenanceSchema` | `repair-library`: each unreadable field is reset on its own (title → sound id, licence → `NOASSERTION`, bad types / source / descriptors / URLs dropped, unknown newer fields kept); `drop-library` when there is no usable `soundId`. Pasted media get the same treatment. Commands (`media.setLibraryInfo`, `media.register`) validate strictly (`E_SCHEMA`) |
+| `Sequence.soundDesign` (`cues`, `settings`, `lastCheck`) | sound design (spec 12 §2.2, WP2.1; still v7) | any value accepted (`z.custom<SoundDesign>`); INV-SOUND checks `SoundDesignSchema`, cue keys = ids, ids `cue_…`, ≤ 20 000 cues; settings default at read time (`soundDesignSettingsOf`: web, balanced, no SFX tracks, no room bus, seed 0, agents may not apply, empty palette). References to clips, transitions, markers and media (anchors, `placedClipIds`) are soft: edits never fail on them, readers skip dangling ids | `repair-sound-design` (cue by cue, field by field: frame clamped to 0…10 368 000, unknown kind / weight / source → manual / support / user, bad optional fields dropped, unknown newer fields kept; unreadable cues dropped; `drop-sound-design` when not an object), `reid-cue` (malformed ids, or ids shared with another sequence; the clips' `sfx.cueId` follow), `drop-cue-anchor` (anchor whose clip / transition / marker / media / keyframe is gone → null, the cue keeps its frame), `prune-cue-clips`, `prune-sfx-tracks`, `reset-room-bus`. `loadProject` also runs the repair when only soft references dangle (`soundDesignNeedsRepair`). Idempotent. `sequence.duplicate` gives the copy new cue ids with its anchors and clips mapped |
+| `AudioClip.sfx` (`cueId`, `soundId`, `layer`, `role`, `alternatives`, `placement`) | sound design (spec 12 §2.2, WP2.1; still v7) | any value accepted (`z.custom<ClipSfx>`); INV-SFX checks `ClipSfxSchema` and that only audio clips carry it. `soundId` is null for media that is not a library sound | `repair-sfx` (field by field: layer clamped to 0…5, unknown role → support, placement defaults), `drop-sfx` on other clip kinds or non-objects, `unlink-sfx` (`cueId` → null when the cue is not in the clip's sequence) |
 
 ## Saving
 
