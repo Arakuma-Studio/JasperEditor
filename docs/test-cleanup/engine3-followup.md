@@ -39,6 +39,8 @@ Each numbered justification corresponds to the user's six retention requirements
 
 ### DELETE — `apps/engine/test/speech-core.test.ts` / `word error rate (FilmCraft lib.rs test) > counts edits`
 
+This coordinated deletion was implemented here and is counted once in engine1's authoritative original inventory. This row supplies cross-owner evidence, not an additional test declaration.
+
 - Failure previously detected: changes to a test scoring helper's normalization/edit-distance implementation. There is no production or public API contract for this helper.
 - Missing bar items: no caller-visible production failure (2), no public production seam (4), and only keeps a test-only source seam alive (6). The real-model tests compare independently authored speech transcripts with actual output; those behavioral tests remain.
 - Caller census: `wordErrorRate` is used only by this helper test and `speech-model.e2e.test.ts`; `normalizeWord` has no external caller. Move WER to `apps/engine/test/speech-wer.ts`, make normalization private, and delete the helper self-test/import. Update the port record and regenerate notices to preserve attribution.
@@ -73,4 +75,4 @@ Each numbered justification corresponds to the user's six retention requirements
 
 ## Validation and result
 
-Biome passed for all seven changed source/test/support TypeScript files; `git diff --check` and regenerated `pnpm notices --check` passed. Reviewed the staged diff. Integrate engine1 commit `a062eb81` before this cleanup so its remaining test caller is removed before the dead alignment function. No focused/runtime suite is claimed as run in this worktree. Root must validate the integrated changes, including the specialized camera, roto and speech prerequisites. There are 1 additional DELETE and 7 REWRITE declarations in this supplement; no replacement test declarations are added.
+Biome passed for all seven changed source/test/support TypeScript files; `git diff --check` and regenerated `pnpm notices --check` passed. Reviewed the staged diff. Integrate engine1 commit `a062eb81` before this cleanup so its remaining test caller is removed before the dead alignment function. No focused/runtime suite is claimed as run in this worktree. Root must validate the integrated changes, including the specialized camera, roto and speech prerequisites. The coordinated WER DELETE is counted in engine1's original inventory. The seven REWRITE follow-ups replace the corresponding original dispositions; they are not additional cases. No replacement test declarations are added.

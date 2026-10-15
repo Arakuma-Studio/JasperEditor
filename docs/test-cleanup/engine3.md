@@ -1,6 +1,6 @@
 # Engine group 3 test cleanup
 
-The [independent-oracle follow-up](engine3-followup.md) supersedes the dispositions of the seven retained declarations it rewrites and records the additional test-only speech helper deletion.
+The [independent-oracle follow-up](engine3-followup.md) supersedes the dispositions of the seven retained declarations it rewrites and records the coordinated test-only speech helper deletion counted in engine1's original inventory.
 
 Disposition record written before test/source edits, with subsequent narrow refinements recorded in the affected rows. Cleanup is implemented for all 37 assigned files; focused execution and repository gates are pending the coordinated integrated run. Parameterized same-contract families have one row; dynamic recipe/range families are included explicitly.
 
