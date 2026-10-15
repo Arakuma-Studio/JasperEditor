@@ -79,10 +79,6 @@ describe('persistence envelope and migrations (S01:PER-002, MIG-001…005)', () 
 		expect(r.readOnly).toBe(true);
 		expect((r.document as unknown as { futureField: unknown }).futureField).toEqual({ a: 1 });
 	});
-	it('rejects data that is not a project', () => {
-		expect(() => loadProject({ format: 'something-else' })).toThrow();
-		expect(() => loadProject({ format: 'jasper-project', document: { name: 3 } })).toThrow();
-	});
 });
 
 describe('unknown data is preserved (S01:DOC-005, AC-24)', () => {

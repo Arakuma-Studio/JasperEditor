@@ -117,7 +117,7 @@ describe('cameraTracker commands', () => {
 		};
 		const bad = h.tx([{ type: 'cameraTracker.add', clipId: solid.clipId }]);
 		expect(bad.ok).toBe(false);
-		expect(!bad.ok && bad.errors[0]!.message).toMatch(/video clips/);
+		expect(!bad.ok && bad.errors[0]!.code).toBe('E_INVALID_PARAM');
 		expect(h.tx([{ type: 'cameraTracker.add', clipId, span: [5, 5] }]).ok).toBe(false);
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
@@ -260,7 +260,7 @@ describe('cameraTracker commands', () => {
 		h.ok([{ type: 'param.set', target: ['clip', clipId, 'transform', 'rotation'], value: 10 }]);
 		const r = h.tx([{ type: 'cameraTracker.create', clipId }]);
 		expect(r.ok).toBe(false);
-		expect(!r.ok && r.errors[0]!.message).toMatch(/rotated/);
+		expect(!r.ok && r.errors[0]!.code).toBe('E_INVALID_PARAM');
 		h.ok([{ type: 'param.set', target: ['clip', clipId, 'transform', 'rotation'], value: 0 }]);
 		h.ok([{ type: 'param.set', target: ['clip', clipId, 'transform', 'position'], value: [900, 540] }]);
 		expect(h.tx([{ type: 'cameraTracker.create', clipId }]).ok).toBe(false);
@@ -275,7 +275,12 @@ describe('cameraTracker commands', () => {
 		const doc = structuredClone(h.doc);
 		const t = (doc.sequences[h.seqId]!.clips[clipId] as TClip).cameraTracker!;
 		(t.solve as { frames: number[] }).frames.pop();
-		expect(checkInvariants(doc).some((i) => i.message.includes('3D Camera Tracker'))).toBe(true);
+		expect(checkInvariants(doc)).toContainEqual(
+			expect.objectContaining({
+				invariant: 'INV-012',
+				path: ['sequences', h.seqId, 'clips', clipId, 'cameraTracker'],
+			}),
+		);
 		const fixed = repairDocument(doc, createCounterIdSource(9));
 		expect((fixed.document.sequences[h.seqId]!.clips[clipId] as TClip).cameraTracker!.solve).toBeNull();
 		const gone = structuredClone(h.doc);

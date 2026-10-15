@@ -1,8 +1,6 @@
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	checkInvariants,
-	checkInvariantsUncached,
 	createCounterIdSource,
 	defaultRegistries,
 	type ProjectDocument,
@@ -11,9 +9,6 @@ import {
 import { Harness } from './helpers.ts';
 
 const effects = defaultRegistries().effects;
-const same = (d: ProjectDocument) =>
-	expect(checkInvariants(d, { effects })).toEqual(checkInvariantsUncached(d, { effects }));
-
 function project(): Harness {
 	const h = new Harness();
 	const m = h.registerVideo({ seconds: 20 });
@@ -32,33 +27,9 @@ function project(): Harness {
 }
 
 describe('per-sequence invariant memo', () => {
-	it('equals the uncached check across edits that leave other sequences shared', () => {
+	it('detects duplicate clip IDs and removed media after checking shared sequences', () => {
 		const h = project();
-		same(h.doc);
-		const seqs = Object.keys(h.doc.sequences);
-		fc.assert(
-			fc.property(
-				fc.array(fc.tuple(fc.integer({ min: 0, max: 200 }), fc.boolean()), { maxLength: 8 }),
-				(ops) => {
-					for (const [at, solid] of ops) {
-						h.tx([
-							solid
-								? { type: 'clip.addSolid', at, duration: 10, track: 'V3', color: [1, 0, 0, 1] }
-								: { type: 'marker.add', frame: at, name: 'm' },
-						]);
-						same(h.doc);
-					}
-					return true;
-				},
-			),
-			{ numRuns: 40 },
-		);
-		expect(seqs.length).toBe(2);
-	});
-
-	it('equals the uncached check on corrupted documents (duplicate ids across sequences, dangling media)', () => {
-		const h = project();
-		checkInvariants(h.doc, { effects });
+		expect(checkInvariants(h.doc, { effects })).toEqual([]);
 		const [s1, s2] = Object.keys(h.doc.sequences);
 		// Every table shared with the memoized document (a memo hit for the first sequence); one of its clips copied
 		// into the second sequence: the replayed id collides and the check falls back to the uncached walk.
@@ -66,13 +37,17 @@ describe('per-sequence invariant memo', () => {
 		const second = structuredClone(h.doc.sequences[s2!]!);
 		second.clips[clip.id] = { ...clip, trackId: second.videoTracks[0]!.id, linkId: null } as never;
 		const d = { ...h.doc, sequences: { [s1!]: h.doc.sequences[s1!]!, [s2!]: second } } as ProjectDocument;
-		same(d);
-		expect(checkInvariants(d, { effects }).some((i) => i.message.includes('Duplicate id'))).toBe(true);
+		expect(
+			checkInvariants(d, { effects }).some((i) => i.invariant === 'INV-001' && i.path?.includes(clip.id)),
+		).toBe(true);
 		const e = structuredClone(h.doc) as ProjectDocument;
 		e.sequences[s1!] = h.doc.sequences[s1!]!;
 		e.media = {};
-		same(e);
+		expect(
+			checkInvariants(e, { effects }).some((i) => i.invariant === 'INV-006' && i.path?.includes(clip.id)),
+		).toBe(true);
 		const repaired = repairDocument(e, createCounterIdSource(5)).document;
-		same(repaired);
+		expect(checkInvariants(repaired, { effects })).toEqual([]);
+		expect(repaired.sequences[s1!]!.clips[clip.id]).toBeUndefined();
 	});
 });

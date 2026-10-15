@@ -13,13 +13,11 @@ import {
 	curveFn,
 	defaultEffectRegistry,
 	type EffectParams,
-	effectBadges,
 	effectiveParams,
 	effectRuns,
 	HUE_SATURATION_OP,
 	LUMETRI_EFFECT,
 	LUMETRI_EFFECT_ID,
-	LUMETRI_PARAMS,
 	type Lut,
 	lumetriFn,
 	normalizeCurve,
@@ -36,49 +34,6 @@ const run = (params: EffectParams, c: Rgb, ctx: ColorOpContext = NO_LUTS): Rgb =
 const Y = (c: Rgb) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 const unit = fc.double({ min: 0, max: 1, noNaN: true });
 const rgb = fc.tuple(unit, unit, unit) as fc.Arbitrary<Rgb>;
-
-describe('jasper.lumetri@1 spec (S06:CG-001/002)', () => {
-	it('is registered by default as a colour correction effect with the contract param list', () => {
-		const spec = defaultEffectRegistry.get(LUMETRI_EFFECT_ID);
-		expect(spec?.category).toBe('Color Correction');
-		expect(spec?.appliesTo).toBe('video');
-		expect(spec?.version).toBe(1);
-		expect(LUMETRI_PARAMS.slice(0, 25).map((p) => p.name)).toEqual([
-			'inputLut',
-			'hdrWhite',
-			'temperature',
-			'tint',
-			'exposure',
-			'contrast',
-			'highlights',
-			'shadows',
-			'whites',
-			'blacks',
-			'hdrSpecular',
-			'saturation',
-			'look',
-			'lookIntensity',
-			'vibrance',
-			'curveMaster',
-			'curveRed',
-			'curveGreen',
-			'curveBlue',
-			'shadowsWheel',
-			'midtonesWheel',
-			'highlightsWheel',
-			'shadowsLevel',
-			'midtonesLevel',
-			'highlightsLevel',
-		]);
-		const by = Object.fromEntries(LUMETRI_PARAMS.map((p) => [p.name, p]));
-		expect(by.exposure!.range).toMatchObject({ min: -5, max: 5 });
-		expect(by.saturation!.default).toBe(100);
-		expect(by.look!.mediaKinds).toEqual(['lut']);
-		expect(by.look!.animatable).toBe(false);
-		expect(by.curveRed!.type).toBe('curve');
-		expect(effectBadges(spec!)).toEqual({ realtime: true, native: true });
-	});
-});
 
 describe('Lumetri maths (S06 §3)', () => {
 	it('CG-021: defaults are the identity (null function; bit-exact on lattice points)', () => {

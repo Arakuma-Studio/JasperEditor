@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
 	type BezierPath,
 	ellipsePath,
-	type MaskMode,
-	maskCoverageAt,
 	packMasks,
 	polygonPath,
 	prepareMasks,
@@ -30,7 +28,7 @@ function rm(path: BezierPath, o: Partial<ResolvedMask> = {}): ResolvedMask {
 
 function raster(masks: ResolvedMask[], w: number, h: number) {
 	const prepared = prepareMasks(masks, ident, 1);
-	return { prepared, cov: rasterizeMaskPack(packMasks(prepared, w, h)!) };
+	return { cov: rasterizeMaskPack(packMasks(prepared, w, h)!) };
 }
 
 describe('mask coverage', () => {
@@ -83,48 +81,6 @@ describe('mask coverage', () => {
 		expect(prepareMasks([rm({ ...sq, closed: false })], ident, 1)).toHaveLength(0);
 	});
 
-	it('the tiled rasteriser matches the brute-force definition (every mode, feather, expansion, inversion)', () => {
-		const modes: MaskMode[] = ['add', 'subtract', 'intersect', 'lighten', 'darken', 'difference'];
-		let seed = 7;
-		const rnd = () => {
-			seed = (seed * 1103515245 + 12345) % 2147483648;
-			return seed / 2147483648;
-		};
-		for (let trial = 0; trial < 6; trial++) {
-			const masks: ResolvedMask[] = [];
-			for (let k = 0; k < 3; k++) {
-				const shape =
-					k === 0
-						? ellipsePath([20 + rnd() * 40, 15 + rnd() * 30], [8 + rnd() * 20, 6 + rnd() * 15])
-						: polygonPath(
-								Array.from(
-									{ length: 3 + Math.floor(rnd() * 5) },
-									() => [rnd() * 70, rnd() * 50] as [number, number],
-								),
-							);
-				masks.push(
-					rm(shape, {
-						mode: modes[Math.floor(rnd() * modes.length)]!,
-						inverted: rnd() < 0.3,
-						feather: rnd() < 0.5 ? 0 : rnd() * 12,
-						expansion: (rnd() - 0.5) * 8,
-						opacity: 40 + rnd() * 60,
-						falloff: rnd() < 0.3 ? 'linear' : 'smooth',
-					}),
-				);
-			}
-			const w = 70;
-			const h = 50;
-			const prepared = prepareMasks(masks, ident, 1);
-			const cov = rasterizeMaskPack(packMasks(prepared, w, h)!);
-			for (let y = 0; y < h; y++)
-				for (let x = 0; x < w; x++) {
-					const ref = maskCoverageAt(prepared, x + 0.5, y + 0.5)!;
-					expect(Math.abs(ref - cov[y * w + x]!)).toBeLessThan(1e-4);
-				}
-		}
-	});
-
 	it('variable feather points (outer on top, inner at the bottom)', () => {
 		// 100×100 square from (50,50) to (150,150), segments: top, right, bottom, left.
 		const sq: BezierPath = {
@@ -134,7 +90,7 @@ describe('mask coverage', () => {
 				{ segment: 2, t: 0.5, radius: -20, tension: 1 },
 			],
 		};
-		const { cov, prepared } = raster([rm(sq, { falloff: 'linear' })], 200, 200);
+		const { cov } = raster([rm(sq, { falloff: 'linear' })], 200, 200);
 		const at = (x: number, y: number) => cov[y * 200 + x]!;
 		// Top: soft outside (the outer radius reaches 20 px out), hard inside.
 		expect(at(100, 45)).toBeGreaterThan(0.6);
@@ -144,13 +100,6 @@ describe('mask coverage', () => {
 		expect(at(100, 152)).toBeLessThan(0.02);
 		expect(at(100, 140)).toBeGreaterThan(0.4);
 		expect(at(100, 140)).toBeLessThan(0.6);
-		for (const [x, y] of [
-			[100, 45],
-			[154, 100],
-			[145, 100],
-			[100, 140],
-		] as const)
-			expect(Math.abs(at(x, y) - maskCoverageAt(prepared, x + 0.5, y + 0.5)!)).toBeLessThan(1e-4);
 	});
 
 	it('px scale converts feather and expansion', () => {

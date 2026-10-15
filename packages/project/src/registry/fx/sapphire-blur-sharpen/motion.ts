@@ -230,7 +230,7 @@ const toVec = (t: MoTransform, ctx: FxPlanContext): [number, number, number, num
 };
 
 /** Longest displacement (layer px) of the box corners and centre between From and To (sample count). */
-export function moPathLength(
+function moPathLength(
 	from: MoTransform,
 	to: MoTransform,
 	center: readonly [number, number],

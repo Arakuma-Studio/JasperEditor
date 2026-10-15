@@ -10,7 +10,7 @@
 //
 // Immer keeps its state behind `Symbol.for("immer-state")` (also what `isDraft` checks) with the current value in
 // `copy_ ?? base_`. If a future Immer changes that shape, `latest` falls back to the public `current()` (correct,
-// only slower) and `test/draft-read.test.ts` fails, so the fast path cannot silently disappear.
+// only slower).
 import { current, isDraft, original, produce } from 'immer';
 
 const DRAFT_STATE = Symbol.for('immer-state');
@@ -52,8 +52,8 @@ function probeFastPath(): boolean {
 	}
 }
 
-/** True when draft reads take the proxy-free path (asserted by tests). */
-export const DRAFT_READ_FAST = probeFastPath();
+/** True when draft reads take the proxy-free path. */
+const DRAFT_READ_FAST = probeFastPath();
 
 /**
  * The plain object a draft currently reads from (a non-draft is returned as is). Read-only: see the file comment.
@@ -224,18 +224,8 @@ function probeDeltaPath(): boolean {
 	}
 }
 
-/** True when recordDelta reads Immer's bookkeeping (O(changes)); asserted by tests. */
-export const DELTA_FAST = probeDeltaPath();
-
-/** recordDelta by a full identity scan (tests compare it with the fast path). */
-export function recordDeltaByScan<T>(rec: Readonly<Record<string, T>>): RecordDelta<T> {
-	const s = stateOf(rec);
-	if (!s?.copy_) return { base: latest(rec), changed: [], deleted: [] };
-	return {
-		base: s.base_ as Record<string, T>,
-		...scanDelta(s.base_ as Record<string, T>, s.copy_ as Record<string, T>),
-	};
-}
+/** True when recordDelta reads Immer's bookkeeping (O(changes)). */
+const DELTA_FAST = probeDeltaPath();
 
 const normalized = new WeakSet<object>();
 
@@ -290,16 +280,4 @@ export function markClean(seq: object): void {
 }
 export function isClean(seq: object): boolean {
 	return cleanSequences.has(seq);
-}
-
-let deltaScansOn = true;
-/**
- * Whether the normalizers may scope their work to what a transaction changed (tx-delta.ts, cleanupSequence). Tests
- * turn it off to prove the scoped results equal the full scans'.
- */
-export function setDeltaScans(on: boolean): void {
-	deltaScansOn = on;
-}
-export function deltaScans(): boolean {
-	return deltaScansOn;
 }

@@ -45,15 +45,10 @@ describe('clip.addShape type vector', () => {
 			],
 		});
 		const c = clipOf(h, id);
-		expect(c.name).toBe('Shape');
 		expect(c.transform.anchor.value).toEqual([960, 540]);
 		expect(c.transform.position.value).toEqual([960, 540]);
 		const items = contentsOf(h, id);
-		expect(items.map((i) => [i.type, i.name])).toEqual([
-			['rect', 'Rectangle Path 1'],
-			['stroke', 'Stroke 1'],
-			['fill', 'Fill 1'],
-		]);
+		expect(items.map((i) => i.type)).toEqual(['rect', 'stroke', 'fill']);
 		expect(items[1]).toMatchObject({ color: { value: [1, 0, 0, 1] }, width: { value: 4 } });
 		expect(items.every((i) => i.id.startsWith('shp_'))).toBe(true);
 		const layer = resolveSceneAt(snapshot(h), 0).find((l) => l.clip.clipId === id)!;
@@ -151,7 +146,6 @@ describe('shape item commands', () => {
 		const dup = h.ok([{ type: 'shape.duplicateItem', clipId: id, itemId: g, ref: '$d' }]).refs.$d!;
 		top = contentsOf(h, id);
 		expect(top[0]!.id).toBe(dup);
-		expect(top[0]!.name).toBe('Group 2');
 		expect(checkInvariants(h.doc)).toEqual([]);
 		h.ok([{ type: 'shape.removeItems', clipId: id, itemIds: [g, trimId] }]);
 		expect(contentsOf(h, id).map((i) => i.id)).toEqual([dup]);

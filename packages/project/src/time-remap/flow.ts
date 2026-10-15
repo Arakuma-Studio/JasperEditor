@@ -542,35 +542,6 @@ export function createFlowKernel(C: FlowConstants) {
 		return dst;
 	}
 
-	/** Plain cross-fade of effectcraft (for comparisons in tests). */
-	function interpolateEffectcraft(
-		a: FlowImage,
-		b: FlowImage,
-		w: number,
-		flowAB: BlockFlow,
-		k: number,
-	): Float32Array {
-		const W = a.width;
-		const H = a.height;
-		const dst = new Float32Array(W * H * 4);
-		const F: [number, number] = [0, 0];
-		const pa: number[] = [0, 0, 0, 0];
-		const pb: number[] = [0, 0, 0, 0];
-		for (let y = 0; y < H; y++)
-			for (let x = 0; x < W; x++) {
-				const px = x + 0.5;
-				const py = y + 0.5;
-				flowAt(flowAB, px / k, py / k, F);
-				const fx = F[0] * k;
-				const fy = F[1] * k;
-				sample(a, px - w * fx, py - w * fy, pa);
-				sample(b, px + (1 - w) * fx, py + (1 - w) * fy, pb);
-				const o = (y * W + x) * 4;
-				for (let c = 0; c < 4; c++) dst[o + c] = pa[c]! + (pb[c]! - pa[c]!) * w;
-			}
-		return dst;
-	}
-
 	return {
 		analysisFactor,
 		analysisSize,
@@ -585,7 +556,6 @@ export function createFlowKernel(C: FlowConstants) {
 		interpolateFlow,
 		flowCandidates,
 		blendFrames,
-		interpolateEffectcraft,
 		sad,
 		sample,
 	};
@@ -614,4 +584,3 @@ export const vectorMatch = K.vectorMatch;
 export const interpolateFlow = K.interpolateFlow;
 export const flowCandidates = K.flowCandidates;
 export const blendFrames = K.blendFrames;
-export const interpolateEffectcraft = K.interpolateEffectcraft;

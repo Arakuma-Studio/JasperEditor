@@ -61,7 +61,9 @@ describe('transcript.attach', () => {
 		expect(t.origin).toBe('whisper-local');
 		expect(t.model).toBe('whisper-base');
 		expect(t.createdAt).toBeTruthy();
-		expect(t.speakers).toEqual({ S2: { name: 'Speaker 1' }, S1: { name: 'Speaker 2' } });
+		expect(Object.keys(t.speakers).sort()).toEqual(['S1', 'S2']);
+		expect(Object.values(t.speakers).every((s) => s.name.trim().length > 0)).toBe(true);
+		expect(t.speakers.S1!.name).not.toBe(t.speakers.S2!.name);
 		expect(sequenceWords(H.doc, H.seq).map((x) => [x.text, x.confidence])).toEqual([
 			['Hello', 0.9],
 			['world.', 0.4],

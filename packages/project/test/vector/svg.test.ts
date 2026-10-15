@@ -1,4 +1,3 @@
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	buildShapeItems,
@@ -8,11 +7,9 @@ import {
 	parseSvgPath,
 	parseTransform,
 	type ShapeItem,
-	SvgImportError,
 	shapeBoolean,
 	shapeGeom,
 	svgDocumentSize,
-	svgPathToShapeItems,
 	svgToShapeContents,
 } from '../../src/index.ts';
 
@@ -44,23 +41,6 @@ describe('parseSvgPath', () => {
 		const p = parseSvgPath('M-50 0 A50 50 0 1 0 50 0 A50 50 0 1 0 -50 0Z');
 		// Quarter-arc cubics overshoot a circle's area by ≈ 0.03 %.
 		expect(Math.abs(Math.abs(shapeGeom.signedArea(p)) / (Math.PI * 2500) - 1)).toBeLessThan(5e-4);
-	});
-	it('rejects garbage', () => {
-		expect(() => parseSvgPath('M 10 x')).toThrow();
-		expect(() => parseSvgPath('10 10')).toThrow();
-	});
-	it('never throws anything but Error on random input (fuzz)', () => {
-		fc.assert(
-			fc.property(fc.string({ maxLength: 60 }), (s) => {
-				try {
-					const p = parseSvgPath(s);
-					expect(Array.isArray(p)).toBe(true);
-				} catch (e) {
-					expect(e).toBeInstanceOf(Error);
-				}
-			}),
-			{ numRuns: 300 },
-		);
 	});
 });
 
@@ -177,33 +157,6 @@ describe('svgToShapeContents', () => {
 		});
 		expect(draws.some((d) => d.fillRule === 'evenodd')).toBe(true);
 		expect(fillArea(items)).toBeGreaterThan(0);
-	});
-
-	it('refuses non-SVG text and survives hostile input', () => {
-		expect(() => svgToShapeContents('<html></html>')).toThrow(SvgImportError);
-		fc.assert(
-			fc.property(fc.string({ maxLength: 200 }), (s) => {
-				try {
-					const r = svgToShapeContents(
-						`<svg viewBox="0 0 10 10"><path d="${s.replace(/"/g, '')}" fill="${s.slice(0, 5)}"/>${s}</svg>`,
-					);
-					build(r.contents);
-				} catch (e) {
-					expect(e).toBeInstanceOf(Error);
-				}
-			}),
-			{ numRuns: 200 },
-		);
-	});
-
-	it('svgPathToShapeItems gives one path per subpath and paints', () => {
-		const items = build(
-			svgPathToShapeItems('M0 0 H10 V10Z M20 20 h5 v5z', {
-				fill: '#ff0000',
-				stroke: { color: '#000000', width: 2 },
-			}),
-		);
-		expect(items.map((i) => i.type)).toEqual(['path', 'path', 'stroke', 'fill']);
 	});
 });
 

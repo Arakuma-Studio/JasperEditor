@@ -14,8 +14,8 @@ import { gaussianBlurPasses } from '../passes.ts';
 import type { FxPlanContext, GlslChunk, ShaderPass } from '../shader.ts';
 import { num, relSigma, str } from './common.ts';
 
-export const MATTE_FILTERS = ['box', 'triangle', 'gauss'] as const;
-export type MatteFilter = (typeof MATTE_FILTERS)[number];
+const MATTE_FILTERS = ['box', 'triangle', 'gauss'] as const;
+type MatteFilter = (typeof MATTE_FILTERS)[number];
 
 /** Shrink-/Grow+ and Edge Softness (pixels). */
 export function shrinkGrowParams(): ParamSpec[] {
@@ -79,7 +79,7 @@ export function noiseParams(opts: { relX: boolean; jitter: boolean }): ParamSpec
 }
 
 /** Edge-noise displacement amplitude in canvas px (Noise Amplitude × Noise Width, relative to the layer height). */
-export function noiseReachPx(p: EffectParams, ctx: Pick<FxPlanContext, 'height' | 'pxScale'>): number {
+function noiseReachPx(p: EffectParams, ctx: Pick<FxPlanContext, 'height' | 'pxScale'>): number {
 	return (
 		Math.max(0, num(p, 'noiseAmplitude')) *
 		Math.max(0, num(p, 'noiseWidth', 0.0224)) *
@@ -94,49 +94,9 @@ export function matteShaped(p: EffectParams, ctx: Pick<FxPlanContext, 'height' |
 }
 
 /** Reach R (canvas px) of the shaping filter. */
-export function matteReachPx(p: EffectParams, ctx: Pick<FxPlanContext, 'height' | 'pxScale'>): number {
+function matteReachPx(p: EffectParams, ctx: Pick<FxPlanContext, 'height' | 'pxScale'>): number {
 	const soft = Math.max(0.01, num(p, 'edgeSoftness', 1));
 	return (Math.abs(num(p, 'shrinkGrow')) + soft) * ctx.pxScale + noiseReachPx(p, ctx) + 2;
-}
-
-/** TS reference of the GLSL inverse survival functions: blurred level L (0..1) → signed distance (outside > 0). */
-export function matteDistance(filter: MatteFilter, level: number, reach: number): number {
-	const L = Math.min(1, Math.max(0, level));
-	if (filter === 'box') return reach * (1 - 2 * L);
-	if (filter === 'triangle')
-		return L <= 0.5 ? reach * (1 - Math.sqrt(2 * L)) : -reach * (1 - Math.sqrt(2 * (1 - L)));
-	// Gauss: σ = R / 2.5, d = σ·√2·erfc⁻¹(2L) = −σ·√2·erf⁻¹(2L − 1)
-	const sigma = reach / 2.5;
-	return -sigma * Math.SQRT2 * erfinv(Math.min(0.9999, Math.max(-0.9999, 2 * L - 1)));
-}
-
-/** Giles' single-precision erf⁻¹ approximation (also in the GLSL). */
-export function erfinv(x: number): number {
-	let w = -Math.log((1 - x) * (1 + x));
-	if (w < 5) {
-		w -= 2.5;
-		let p = 2.81022636e-8;
-		p = 3.43273939e-7 + p * w;
-		p = -3.5233877e-6 + p * w;
-		p = -4.39150654e-6 + p * w;
-		p = 0.00021858087 + p * w;
-		p = -0.00125372503 + p * w;
-		p = -0.00417768164 + p * w;
-		p = 0.246640727 + p * w;
-		p = 1.50140941 + p * w;
-		return p * x;
-	}
-	w = Math.sqrt(w) - 3;
-	let p = -0.000200214257;
-	p = 0.000100950558 + p * w;
-	p = 0.00134934322 + p * w;
-	p = -0.00367342844 + p * w;
-	p = 0.00573950773 + p * w;
-	p = -0.0076224613 + p * w;
-	p = 0.00943887047 + p * w;
-	p = 1.00167406 + p * w;
-	p = 2.83297682 + p * w;
-	return p * x;
 }
 
 export const GLSL_SAC_MATTE: GlslChunk = {

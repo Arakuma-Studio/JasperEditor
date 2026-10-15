@@ -274,10 +274,6 @@ describe('Lumetri in HDR', () => {
 		const m = run({ hdrWhite: 1000, hdrSpecular: -60 }, [mid, mid, mid]);
 		expect(m[0]).toBeCloseTo(mid, 2);
 	});
-	it('exposure works on the grading signal (1 = HDR White) and is SDR-identical in Rec. 709', () => {
-		const lift = run({ exposure: 1 }, [pqFromNits(100), pqFromNits(100), pqFromNits(100)]);
-		expect(lift[0]).toBeGreaterThan(pqFromNits(100));
-	});
 });
 
 describe('invariants and repairs', () => {

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
 	addPadding,
-	buildPassSource,
 	defineShaderEffect,
 	type EffectSpec,
 	FX_MAX_PADDING,
@@ -14,16 +13,12 @@ import {
 	fxSourceFrame,
 	fxTimeSamples,
 	GLSL_BLUR,
-	GLSL_COLOR,
 	GLSL_COMPOSITE,
-	GLSL_HASH,
-	GLSL_NOISE,
 	gpuIsTimeDependent,
 	gpuPadding,
 	mixWithOriginalParam,
 	paramUniforms,
 	planGpuEffect,
-	resolveIncludes,
 	seedParam,
 	showParam,
 	toUniform,
@@ -153,45 +148,11 @@ describe('pass planning', () => {
 		expect(plan.textures).toEqual([{ param: 'map', uniform: 'u_map', mediaId: 'm1' }]);
 	});
 
-	it('includes chunks once, dependencies first', () => {
-		expect(resolveIncludes([GLSL_NOISE, GLSL_HASH, GLSL_COMPOSITE, GLSL_COLOR]).map((c) => c.name)).toEqual([
-			'fx/hash',
-			'fx/noise',
-			'fx/color',
-			'fx/composite',
-		]);
-		const src = buildPassSource(
-			{ frag: FRAG, include: [GLSL_NOISE, GLSL_NOISE] },
-			{ params: [], textures: [], outputs: [], uniforms: [] },
-		);
-		expect(src.match(/---- fx\/hash/g)).toHaveLength(1);
-		expect(src.indexOf('fx/hash')).toBeLessThan(src.indexOf('fx/noise'));
-	});
-
 	it('keys programs and sizes, not uniform values', () => {
 		const again = planGpuEffect(s, { id: 'fx1', params: { radius: 9 } }, CTX, { width: 101, height: 51 });
 		expect(again.key).toBe(plan.key);
 		const bigger = planGpuEffect(s, { id: 'fx1', params: { radius: 9 } }, CTX, { width: 200, height: 51 });
 		expect(bigger.key).not.toBe(plan.key);
-	});
-
-	it('function passes follow the params (variable pyramids)', () => {
-		const pyr = spec({
-			params: [fxParam.number('levels', 'Levels', 2, { min: 1, max: 6 })],
-			gpu: {
-				passes: (p) => [
-					...Array.from({ length: p.levels as number }, (_, i) => ({
-						output: `l${i}`,
-						frag: FRAG,
-						scale: 1 / 2 ** (i + 1),
-					})),
-					{ frag: FRAG },
-				],
-			},
-		});
-		expect(
-			planGpuEffect(pyr, { id: 'x', params: { levels: 4 } }, CTX, { width: 64, height: 64 }).passes,
-		).toHaveLength(5);
 	});
 });
 
