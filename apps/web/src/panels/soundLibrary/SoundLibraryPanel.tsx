@@ -46,6 +46,7 @@ import {
 	cueFillTarget,
 	insertSoundWithFeedback,
 	libraryModeKey,
+	pruneLibraryMode,
 	registerSoundLibraryController,
 	requestClipTarget,
 	requestCueFill,
@@ -600,6 +601,14 @@ export function SoundLibraryPanel(props: PanelProps) {
 		},
 		[],
 	);
+	// Fill / Replace / layer mode ends with its target (deleted, undone, another project opened).
+	useEffect(() => {
+		if (!session) return;
+		pruneLibraryMode(session.getCommitted());
+		return session.store.subscribe((s, prev) => {
+			if (s.document !== prev.document) pruneLibraryMode(s.document);
+		});
+	}, [session]);
 	// It plays alone (spec 12 §2.7): an audition pauses the Program, and the Program starting stops the audition.
 	useEffect(() => (session ? auditionPlaysAlone(auditionPlayer(), session.transport) : undefined), [session]);
 

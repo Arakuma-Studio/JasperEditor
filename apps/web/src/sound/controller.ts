@@ -3,11 +3,12 @@
 // instance). Commands that do not need the panel (insert a sound by id at the playhead) work without it.
 import type { SoundEntry } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
-import type { SoundAlignRequest } from '@jasper/project';
+import type { ProjectDocument, SoundAlignRequest } from '@jasper/project';
 import type { EditorSession, TransportStore } from '@jasper/session';
 import type { ToastRequest } from '../commands/types.ts';
 import { t } from '../i18n/runtime.ts';
 import { type AuditionPlayer, type AuditionSound, auditionPlayer } from './audition.ts';
+import { cuesOf } from './cues/model.ts';
 import { InsertSoundError, insertLibrarySound } from './insert.ts';
 import { soundLibraryPrefs } from './prefs.ts';
 
@@ -169,6 +170,24 @@ export function cancelLibraryMode(): boolean {
 	clearModeSimilar();
 	notifyMode();
 	return true;
+}
+
+/**
+ * Leaves Fill / Replace / layer mode when its target is no longer in `doc`: the cue or clip was deleted (or its
+ * creation undone), or `doc` is another project's. Otherwise Enter would fail on a target that is gone, under a chip
+ * or banner that still names it.
+ */
+export function pruneLibraryMode(doc: Pick<ProjectDocument, 'sequences'>): void {
+	const seqOf = (id: string) => (Object.hasOwn(doc.sequences, id) ? doc.sequences[id] : undefined);
+	if (fillTarget) {
+		const { sequenceId, cueId } = fillTarget;
+		const seq = seqOf(sequenceId);
+		if (!seq || !cuesOf(seq).some((c) => c.id === cueId)) requestCueFill(null);
+	}
+	if (clipTarget) {
+		const seq = seqOf(clipTarget.sequenceId);
+		if (!seq || !Object.hasOwn(seq.clips, clipTarget.clipId)) requestClipTarget(null);
+	}
 }
 
 /** A snapshot key of the mode (React external store). */

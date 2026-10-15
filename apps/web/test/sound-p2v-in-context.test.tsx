@@ -18,7 +18,13 @@ import {
 } from '../src/commands/index.ts';
 import { __setCatalogForTests } from '../src/i18n/runtime.ts';
 import { AuditionPlayer, setAuditionPlayer } from '../src/sound/audition.ts';
-import { cancelLibraryMode, cueFillTarget, requestCueFill } from '../src/sound/controller.ts';
+import {
+	cancelLibraryMode,
+	clipSoundTarget,
+	cueFillTarget,
+	requestClipTarget,
+	requestCueFill,
+} from '../src/sound/controller.ts';
 import { fillCueWithSound } from '../src/sound/fill.ts';
 import { auditionInContext, inContextStore, stopInContext } from '../src/sound/in-context.ts';
 import { soundLibraryPrefs } from '../src/sound/prefs.ts';
@@ -469,5 +475,59 @@ describe('In Context: more exit paths and races (gap tests)', () => {
 			expect(h.session.getCommitted().sequences[h.seqId]!.clips[r.clipId]!.enabled).toBe(true);
 			expect(h.session.getState().transient).toBeNull();
 		}
+	});
+});
+
+describe('Sound Library modes follow their target', () => {
+	function mount(session: ReturnType<typeof harness>['session']) {
+		return render(
+			<SessionProvider session={session}>
+				<SoundLibraryPanel instanceId="sl" visible />
+			</SessionProvider>,
+		);
+	}
+
+	it('Replace mode ends when its clip is deleted (Enter then inserts instead of failing to swap)', async () => {
+		const h = harness();
+		const cueId = h.addCue(90);
+		const r = await fillCueWithSound(h.session, h.engine, h.list[0]!, { sequenceId: h.seqId, cueId });
+		requestClipTarget({
+			kind: 'replace',
+			sequenceId: h.seqId,
+			clipId: r.clipId,
+			soundId: null,
+			title: 'x',
+			label: 'x',
+		});
+		mount(h.session);
+		await screen.findByTestId('sound-replace-banner');
+		act(() => {
+			h.apply([{ type: 'clip.lift', clipIds: [r.clipId] }]);
+		});
+		await waitFor(() => expect(screen.queryByTestId('sound-replace-banner')).toBeNull());
+		expect(clipSoundTarget()).toBeNull();
+	});
+
+	it('Fill mode ends when its cue is removed (undo of the cue)', async () => {
+		const h = harness();
+		const cueId = h.addCue(90);
+		requestCueFill({ sequenceId: h.seqId, cueId, types: ['hit'], label: 'Hero Land cue at 00:00:03:00' });
+		mount(h.session);
+		await screen.findByTestId('sound-fill-chip');
+		act(() => {
+			h.session.undo();
+		});
+		await waitFor(() => expect(screen.queryByTestId('sound-fill-chip')).toBeNull());
+		expect(cueFillTarget()).toBeNull();
+	});
+
+	it('another project: a mode of the previous one does not carry over', async () => {
+		const h = harness();
+		const cueId = h.addCue(90);
+		requestCueFill({ sequenceId: h.seqId, cueId, types: ['hit'], label: 'x' });
+		const other = harness();
+		mount(other.session);
+		await waitFor(() => expect(cueFillTarget()).toBeNull());
+		expect(screen.queryByTestId('sound-fill-chip')).toBeNull();
 	});
 });
