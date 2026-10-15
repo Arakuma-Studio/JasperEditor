@@ -86,7 +86,6 @@ describe('browse_media_files', () => {
 		const video = (await call({ path: '/m', kind: 'video', probe: true })).json;
 		expect(video.entries.map((e: { name: string }) => e.name)).toEqual(['Sub', 'a.mp4']);
 		expect(video.entries[1].media).toMatchObject({ width: 1920, fps: 30 });
-		expect(requests.filter((r) => r.startsWith('/api/browse/info')).length).toBe(1);
 		const limited = (await call({ path: '/m', limit: 2 })).json;
 		expect(limited.entries.length).toBe(2);
 		expect(limited.truncated).toBe(true);

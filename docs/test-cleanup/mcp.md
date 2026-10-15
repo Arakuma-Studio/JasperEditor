@@ -64,7 +64,7 @@ Risk: retained behavior unchanged; any new failure requires owner investigation.
 
 Independent source: docs/wp-notes/audio-fx.md and published audio tool arguments. Owner inspected: `apps/mcp/src/tools/audio-fx.ts`. Oracle: Real command application, authored effect values, LUFS differences and audio activity offsets. Non-test callers / other coverage: Tool handlers registered by server; project audio commands own DSP/edit algebra.
 
-### KEEP — `lists the catalogue, adds with keyframes, edits, reorders, bypasses and removes`
+### REWRITE — `lists the catalogue, adds with keyframes, edits, reorders, bypasses and removes`
 
 1. Independent contract: docs/wp-notes/audio-fx.md and published audio tool arguments; the exact case is “lists the catalogue, adds with keyframes, edits, reorders, bypasses and removes”.
 2. Detectable failure: the caller receives incorrect data/state, a wrong refusal, an omitted required result or a failed workflow for this case; the assertion observes real command application, authored effect values, lufs differences and audio activity offsets.
@@ -74,7 +74,7 @@ Independent source: docs/wp-notes/audio-fx.md and published audio tool arguments
 6. Lowest owner / uniqueness: Tool handlers registered by server; project audio commands own DSP/edit algebra. This case protects the boundary conversion, error class or required complete workflow in its name; lower-layer algorithm tests cannot detect that boundary failure. Its remaining sibling cases use different inputs/contracts rather than replaying this same outcome.
 Risk: retained behavior unchanged; any new failure requires owner investigation. Validation: the file command above and package typecheck.
 
-### KEEP — `type, preset, options, Auto-Match, ducking, clear`
+### REWRITE — `type, preset, options, Auto-Match, ducking, clear`
 
 1. Independent contract: docs/wp-notes/audio-fx.md and published audio tool arguments; the exact case is “type, preset, options, Auto-Match, ducking, clear”.
 2. Detectable failure: the caller receives incorrect data/state, a wrong refusal, an omitted required result or a failed workflow for this case; the assertion observes real command application, authored effect values, lufs differences and audio activity offsets.
@@ -926,7 +926,7 @@ Independent source: Public browse_media arguments and local file privacy contrac
 
 Mock root entries are simply echoed; engine file-browse tests own directory enumeration. Observable failure removed: implementation/test-fixture changes or the duplicate behavior identified above. No unique independently specified behavior is lost. Risk: low; remaining owners identified above and the integrated gate validate the deletion. No production caller requires this test.
 
-### KEEP — `lists a folder, filters by kind, limits and probes`
+### REWRITE — `lists a folder, filters by kind, limits and probes`
 
 1. Independent contract: Public browse_media arguments and local file privacy contract; README MCP media browsing; the exact case is “lists a folder, filters by kind, limits and probes”.
 2. Detectable failure: the caller receives incorrect data/state, a wrong refusal, an omitted required result or a failed workflow for this case; the assertion observes requested video filtering retains folders, excludes audio/captions and enforces limit/probe options.
@@ -968,7 +968,7 @@ Remove transaction label copy and fake-library deletion echo; retain anchor-to-o
 6. Lowest owner / uniqueness: Public preset tools; model owns serialized preset schema, MCP owns selection/anchor request mapping. This case protects the boundary conversion, error class or required complete workflow in its name; lower-layer algorithm tests cannot detect that boundary failure. Its remaining sibling cases use different inputs/contracts rather than replaying this same outcome.
 Risk: retained behavior unchanged; any new failure requires owner investigation. Validation: the file command above and package typecheck.
 
-### KEEP — `applies inline JSON and a built-in to several clips in one transaction; validates authored presets`
+### REWRITE — `applies inline JSON and a built-in to several clips in one transaction; validates authored presets`
 
 1. Independent contract: docs/wp-notes/effect-presets.md public search, anchor-to-out and built-in immutability; the exact case is “applies inline JSON and a built-in to several clips in one transaction; validates authored presets”.
 2. Detectable failure: the caller receives incorrect data/state, a wrong refusal, an omitted required result or a failed workflow for this case; the assertion observes explicit 20/29→80/89 keyframe placement and real applied effect values.
@@ -1710,7 +1710,7 @@ Risk: retained behavior unchanged; any new failure requires owner investigation.
 
 ## Validation and completion
 
-Audit inventory: 42 files; 163 named test declarations ({'KEEP': 119, 'DELETE': 24, 'REWRITE': 20}), plus the generated fuzz families. Parameter expansions are not counted as separate declarations.
+Audit inventory: 42 files; 163 named test declarations ({'KEEP': 115, 'DELETE': 24, 'REWRITE': 24}), plus the generated fuzz families. Parameter expansions are not counted as separate declarations.
 
 Cleanup implemented for all 42 audited files. Three test files were removed entirely (`fuzz`, `readme-tools`, `tool-response`); retained/rewritten named tests remain in the other 39 files. The test source diff is net negative. No production behavior changed.
 
@@ -1727,3 +1727,79 @@ Documentation follow-up for integration: `docs/wp-notes/code-audit-mcp.md` descr
 ## PNG cross-review correction
 
 Before this follow-up edit, cross-review established that a generic ToolError cannot distinguish bounded inflation from an unbounded inflate followed by a length error. The bomb duplicate is deleted and the seeded property is described solely as input/length validation. Actual 8K decoding replaces the deleted malformed-header surrogate because the independent work note preserves 8K compatibility. Production code is unchanged. Follow-up Biome and git diff --check passed. Vitest/MCP typecheck remain subject to root scheduling.
+
+## Final shared-oracle / private-call rescan (before edit)
+
+Base inspected: integrated `cf890a2977b8ab07ecde699417db7c5a755abdd3`; follow-up edits are isolated in `prune2-mcp-final`. All retained MCP files were rescanned for imported production computations in expectations and recorded collaborator calls. These are the genuine remaining candidates; disposition supplements the corresponding original-name entry above.
+
+### REWRITE — `apps/mcp/test/presets.test.ts`: `saves from a clip, applies by id with Anchor to Out, and refuses built-in deletion`
+
+The expected frame positions divide stored times by production `flicksPerFrame`, also used by the preset time mapper. A wrong frame conversion could cancel itself between output and assertion. Replace only that test constant with independently calculated 23,520,000 flicks/frame (705,600,000 / 30, architecture's persisted unit). The expected anchor offsets stay authored 20/29 and 80/89.
+
+1. Contract: documented preset offsets in flicks and Anchor to Out preserving distance to the last frame (`docs/wp-notes/effect-presets.md`, Time mapping; architecture time unit).
+2. Failure: saved/applied key times drift or use the wrong unit.
+3. Oracle: authored frame offsets and the fixed document unit, independent of production conversion functions.
+4. Seam: public MCP save/apply and actual serialized preset/document data.
+5. Refactor tolerance: converter implementation, effect creation and preset helper decomposition may change without changing expected data.
+6. Lowest owner: this verifies MCP save/library-id resolution/application; pure time-mapper tests cannot prove that boundary. It does not add another pure converter test.
+Callers: `flicksPerFrame` is used throughout project preset/time/command code; it is retained in production. Only its test import is removed. Risk low; run the preset file and package typecheck in integration.
+
+### REWRITE — `apps/mcp/test/presets.test.ts`: `applies inline JSON and a built-in to several clips in one transaction; validates authored presets`
+
+Use the same independent frame unit. Replace the fixture's private `txs.length` assertion with the revision returned by public `get_project` before and after application. Remove the now-unused transaction log.
+
+1. Contract: FX-010/FX-030 and the preset guide require one undoable change for N clips.
+2. Failure: the multi-clip operation creates more than one document revision or applies wrong per-clip key times/values.
+3. Oracle: one revision increment and explicit authored fade positions/values, not a count copied from handler calls.
+4. Seam: MCP apply/get_project and actual document state.
+5. Refactor tolerance: retries, helper calls and internal transaction construction can change while preserving the public committed revision.
+6. Lowest owner: the protocol boundary owns batching N selected clips into the documented one change; project preset tests own the pure command.
+Callers/support: `txs` exists only in this test fake and has no non-test callers; delete its declaration/push/returned field. Production revision/query functions have real MCP callers and remain. Risk low; no new production seam.
+
+### REWRITE — `apps/mcp/test/audio-fx.test.ts`: `lists the catalogue, adds with keyframes, edits, reorders, bypasses and removes`
+
+Delete the leftover hard-limiter/amplify catalogue-membership probe and rename the case to its actual edit contract. It did not prove folder filtering and was not necessary setup for either effect.
+
+1. Contract: published audio tools add caller-authored keys/values, change stack order/state and remove the chosen effect.
+2. Failure: requested values are lost, the wrong effect moves/is disabled or removal leaves the effect behind.
+3. Oracle: explicit -6/3/-3 gain values and requested effect identity; no catalogue derives expectations.
+4. Seam: MCP and real document commands.
+5. Refactor tolerance: effect registry enumeration/order can change without failing this editing contract.
+6. Lowest owner: MCP units/time/selection mapping is unique to this boundary; registry membership has no separate protection claim.
+Callers: removed local `list`/`ids` have no callers outside the case. Production listing remains used by users. Risk low; run audio-fx in integration.
+
+### REWRITE — `apps/mcp/test/audio-fx.test.ts`: `type, preset, options, Auto-Match, ducking, clear`
+
+The assertions normalize stored settings with production `readEssentialSound`, which merges defaults and is also used by the owner. Assert only the explicitly required persisted fields directly. Remove the preset-list default-copy assertion and the unused dynamically selected preset; later explicit noise options, loudness matching, ducking and clearing are the observed contract.
+
+1. Contract: `docs/wp-notes/audio-fx.md` §1.2–1.4 and the public MCP guide require authored noise options, dialogue assignment for untyped Auto-Match, enabled music ducking and clear behavior.
+2. Failure: values/type/ducking state are missing from the document despite a success response, or gains differ from the authored -31/-15 LUFS examples targeting -23.
+3. Oracle: raw persisted fields must match the explicit request/semantic state; no defaulting parser can fill in an omitted write for the assertion.
+4. Seam: MCP actions followed by serializable document state; effect/gain assertions remain.
+5. Refactor tolerance: storage field contracts survive moving command helpers or changing parsing internals; the test does not pin unused defaults.
+6. Lowest owner: verifies MCP option forwarding and engine-analysis-to-edit orchestration; the model owns preset contents and read-time default compatibility.
+Callers: `readEssentialSound` remains needed by `apps/mcp/src/tools/audio-fx.ts`, web audio controls and project essential handlers. Remove only its test import; do not privatize or alter it. Risk low; the removed preset choice was not independently asserted.
+
+### REWRITE — `apps/mcp/test/polish.test.ts`: `lists a folder, filters by kind, limits and probes`
+
+Delete the exact count of one `/api/browse/info` request. Keep returned video metadata/filter/limit assertions and the independent security check that `all=1` is never requested.
+
+1. Contract: published browse tool returns folders plus matching media and optional metadata, limited as requested; engine-host file disclosure stays restricted.
+2. Failure: wrong files/metadata escape or truncation disappears; these still fail response assertions.
+3. Oracle: authored folder/video/audio/caption entries, requested limit and known width/fps.
+4. Seam: MCP response and documented HTTP privacy option; no private request count.
+5. Refactor tolerance: batching/caching/deduplicating probe work is permitted.
+6. Lowest owner: MCP filtering/compact response remains covered; the engine owns physical ffprobe execution.
+Callers: request log remains required for the privacy check; no production helper or hook is removed. Risk low; run polish in integration.
+
+### Leads retained without changes
+
+- `previewSegments` in preview setup supplies a cache key, not expected boundaries: expectations remain authored `[0, 10, 20, 30]`. Hash correctness belongs to the project owner.
+- `mixFingerprint` and `ellipsePath` supply fake engine inputs. Assertions independently check word placement, mask modes and a 50-pixel translation; they do not compare those helpers' output against itself.
+- Imported fixed flick units used to author media fixtures, protocol schemas used only to parse responses, package version metadata and documented 100 ms progress limits remain legitimate inputs/contracts.
+- Motion-path expected Auto Bezier tangent follows independent S03:KF-021 and the documented outgoing-chord rule; it does not invoke the production evaluator.
+- Network request counts preventing write replay, no engine effects on strict argument rejection, and read-only recovery HTTP verbs protect security/data-loss contracts. These differ from the deleted private probe/transaction-log assertions.
+
+No production behavior/source changes are planned in this pass. Validation is static only as instructed: changed-file Biome and diff review; runtime/typecheck remain with the root integrated gate.
+
+Final rescan completion: all five candidate cases were narrowed as recorded. Removed only test imports/logs and probes; production callers remain intact. Changed-file Biome and git diff --check passed, and the final diff was reviewed. No runtime tests or typecheck were started under the static-only instruction. Test source change in this follow-up: +10/-27 lines (net -17).

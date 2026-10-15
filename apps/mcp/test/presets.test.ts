@@ -5,7 +5,6 @@ import {
 	createEmptyProject,
 	defaultRegistries,
 	type EffectPreset,
-	flicksPerFrame,
 	type ProjectDocument,
 } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -15,15 +14,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
 
-const F30 = flicksPerFrame({ num: 30, den: 1 });
+// Document time is 705,600,000 flicks/second; at 30 fps one frame is 23,520,000.
+const F30 = 23_520_000;
 
 function fakeEngine() {
 	const ids = createCounterIdSource(7);
 	let doc: ProjectDocument = createEmptyProject({ ids, name: 'Presets', preset: 'hd-1080p-30' });
 	let revision = 0;
-	const txs: Record<string, unknown>[] = [];
 	const apply = (tx: Record<string, unknown>) => {
-		txs.push(tx);
 		const r = applyTransaction(doc, { protocol: 'jasper.tx/1', ...tx, origin: 'user' } as never, {
 			ids,
 			now: () => '2026-10-05T00:00:00.000Z',
@@ -86,7 +84,6 @@ function fakeEngine() {
 	return {
 		link,
 		lib,
-		txs,
 		doc: () => doc,
 		a: setup.refs.$a!,
 		b: setup.refs.$b!,
@@ -113,7 +110,7 @@ async function connect() {
 		const text = (r.content[0] as { text: string }).text;
 		return { r, text, json: JSON.parse(text) };
 	};
-	return { engine, client, call };
+	return { engine, call };
 }
 
 type Solid = {
@@ -174,14 +171,14 @@ describe('effect preset MCP tools (FX-030, AGT-020)', () => {
 
 	it('applies inline JSON and a built-in to several clips in one transaction; validates authored presets', async () => {
 		const { engine, call } = await connect();
-		const before = engine.txs.length;
+		const before = (await call('get_project', { projectId: 'prj_test' })).json.revision;
 		const r = await call('apply_effect_preset', {
 			projectId: 'prj_test',
 			clipIds: [engine.a, engine.b],
 			presetId: 'builtin.fade-in',
 		});
 		expect(r.r.isError, r.text).toBeFalsy();
-		expect(engine.txs.length).toBe(before + 1);
+		expect((await call('get_project', { projectId: 'prj_test' })).json.revision).toBe(before + 1);
 		for (const id of [engine.a, engine.b]) {
 			const c = clip(engine.doc(), id);
 			expect(c.opacity.keyframes.map((k) => [(k.time - c.sourceIn) / F30, k.value])).toEqual([
