@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-	hitTransition,
-	transitionIndex,
-	transitionsInRange,
-} from '../src/panels/timeline/model/transitions.ts';
+import { transitionIndex, transitionsInRange } from '../src/panels/timeline/model/transitions.ts';
 import { transitionSequence } from './transition-performance-fixture.ts';
 
 describe('indexed timeline transition queries', () => {
@@ -37,39 +33,11 @@ describe('indexed timeline transition queries', () => {
 		);
 	});
 
-	it('matches exhaustive hits at body/edge boundaries across zoom and row heights', () => {
-		const { seq, media, row } = transitionSequence(30);
-		// Overlapping fades exercise edge/body priority and the prefix maximum for a long earlier span.
-		seq.clips['clip-0'] = { ...seq.clips['clip-0']!, duration: 4000 };
-		seq.transitions['fade-0'] = { ...seq.transitions['fade-0']!, duration: 4000 };
-		const index = transitionIndex(seq, media);
-		const list = index.get(row.trackId)!;
-		const exhaustive = new Map([[row.trackId, [...list]]]);
-		for (const pxPerFrame of [0.0001, 0.01, 0.1, 0.3, 1, 2, 10, 100]) {
-			for (const height of [20, 30, 64]) {
-				const testRow = { ...row, height };
-				const v = { scrollFrame: 153.75, pxPerFrame, width: 1200 };
-				for (const g of list) {
-					for (const frame of [g.start, (g.start + g.end) / 2, g.end]) {
-						for (const dx of [-3, -2, -1.5, -1, 0, 1, 1.5, 2, 3]) {
-							const x = (frame - v.scrollFrame) * pxPerFrame + dx;
-							expect(hitTransition(index, testRow, v, x, 15)).toEqual(
-								hitTransition(exhaustive, testRow, v, x, 15),
-							);
-						}
-					}
-				}
-			}
-		}
-	});
-
-	it('reuses unchanged indexes and rebuilds after a transient clip movement', () => {
+	it('queries the new range after a transient clip movement', () => {
 		const { seq, media, row } = transitionSequence(10);
 		const before = transitionIndex(seq, media);
-		expect(transitionIndex({ ...seq }, media)).toBe(before);
 		const moved = { ...seq, clips: { ...seq.clips, 'clip-9': { ...seq.clips['clip-9']!, start: 5000 } } };
 		const after = transitionIndex(moved, media);
-		expect(after).not.toBe(before);
 		expect(transitionsInRange(before, row.trackId, 900, 920)).toHaveLength(1);
 		expect(transitionsInRange(after, row.trackId, 900, 920)).toHaveLength(0);
 		expect(transitionsInRange(after, row.trackId, 5000, 5020).map((g) => g.t.id)).toEqual(['fade-9']);

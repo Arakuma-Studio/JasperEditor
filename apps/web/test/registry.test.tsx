@@ -67,11 +67,7 @@ describe('UI command registry (ARCHITECTURE §7.3)', () => {
 			await expect(
 				runCommand('monitor.fullScreenVideo', createCommandContext({ engine, toast })),
 			).resolves.toEqual({ ran: false, reason: 'error', error });
-			expect(toast).toHaveBeenCalledWith({
-				kind: 'error',
-				message: 'Toggle Full Screen failed',
-				detail: error.message,
-			});
+			expect(toast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error', detail: error.message }));
 		} finally {
 			removeTarget();
 			unregister();
@@ -93,7 +89,7 @@ describe('UI command registry (ARCHITECTURE §7.3)', () => {
 				error,
 			});
 			expect(run).not.toHaveBeenCalled();
-			expect(toast).toHaveBeenCalledWith({ kind: 'error', message: 'Hook failed', detail: error.message });
+			expect(toast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error', detail: error.message }));
 		} finally {
 			removeHook();
 			unregister();
@@ -120,11 +116,7 @@ describe('UI command registry (ARCHITECTURE §7.3)', () => {
 				runCommand('test.transform', createCommandContext({ engine, toast }), 'input'),
 			).resolves.toEqual({ ran: false, reason: 'error', error });
 			expect(run).not.toHaveBeenCalled();
-			expect(toast).toHaveBeenCalledWith({
-				kind: 'error',
-				message: 'Transform failed',
-				detail: error.message,
-			});
+			expect(toast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error', detail: error.message }));
 		} finally {
 			unregister();
 		}

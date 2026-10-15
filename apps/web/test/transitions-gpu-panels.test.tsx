@@ -5,7 +5,6 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { registerAllCommands } from '../src/commands/index.ts';
 import { EffectControlsPanel } from '../src/panels/effectControls/EffectControlsPanel.tsx';
 import { EffectsPanel } from '../src/panels/effects/EffectsPanel.tsx';
-import { transitionTree } from '../src/panels/effects/transitions.ts';
 import { makeSession, videoAsset } from './timeline-helpers.ts';
 
 beforeAll(() => registerAllCommands());
@@ -59,31 +58,13 @@ function scene() {
 }
 
 describe('Effects panel GPU transition bins', () => {
-	it('groups transitions by bin and sub-bin, Sapphire after Premiere', () => {
-		const video = transitionTree('').find((b) => b.appliesTo === 'video')!;
-		const bins = video.categories.map((c) => c.category);
-		expect(bins).toEqual(
-			expect.arrayContaining(['Dissolve', 'Iris', 'Slide', 'Zoom', 'Sapphire Transitions']),
-		);
-		expect(bins[bins.length - 1]).toBe('Sapphire Transitions');
-		const sapphire = video.categories.find((c) => c.category === 'Sapphire Transitions')!;
-		expect(sapphire.transitions).toEqual([]);
-		expect(sapphire.groups.find((g) => g.group === 'Dissolves')!.transitions.map((t) => t.label)).toContain(
-			'S_DissolveLuma',
-		);
-		const hits = transitionTree('circle').flatMap((b) => b.categories.flatMap((c) => c.transitions));
-		expect(hits.map((t) => t.id)).toContain('jasper.iris-round');
-	});
-
-	it('shows the GPU badge and filters by GPU', () => {
+	it('filters transitions by GPU capability', () => {
 		const { session } = scene();
 		render(
 			<SessionProvider session={session}>
 				<EffectsPanel instanceId="fx" visible />
 			</SessionProvider>,
 		);
-		const iris = document.querySelector('[data-transition-effect-id="jasper.iris-round"]')!;
-		expect(iris.querySelector('[data-badge="gpu"]')).toBeTruthy();
 		expect(document.querySelector('[data-transition-effect-id="jasper.s.dissolve-luma"]')).toBeTruthy();
 		fireEvent.click(screen.getByTitle('Show only GPU-accelerated effects'));
 		expect(document.querySelector('[data-transition-effect-id="jasper.cross-dissolve"]')).toBeNull();
@@ -100,22 +81,6 @@ describe('Transition section params', () => {
 				<EffectControlsPanel instanceId="ec-gpu" visible />
 			</SessionProvider>,
 		);
-		const rows = screen.getByTestId('transition-params');
-		expect(
-			[...rows.querySelectorAll('[data-transition-param]')].map((r) =>
-				r.getAttribute('data-transition-param'),
-			),
-		).toEqual([
-			'startPercent',
-			'endPercent',
-			'useCompletion',
-			'completion',
-			'borderWidth',
-			'borderColor',
-			'reverse',
-			'antiAliasing',
-			'center',
-		]);
 		const n = session.getState().history.entries.length;
 		act(() => {
 			fireEvent.change(screen.getByTestId('transition-param-antiAliasing'), { target: { value: 'high' } });

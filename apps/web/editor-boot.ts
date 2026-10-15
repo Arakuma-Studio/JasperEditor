@@ -1,4 +1,4 @@
-// Build-time pieces of `/editor-boot.js` (used by vite.config.ts; kept apart so tests can import them).
+// Build-time pieces of `/editor-boot.js`, used by vite.config.ts.
 /**
  * `/editor-boot.js` is a small classic script that index.html loads
  * before the bundle (external, so a strict CSP `script-src 'self'` works). On an editor URL (`/project/<id>`) it
@@ -32,7 +32,7 @@ export const BOOT_MAX_RELOADS = 8;
 export const BOOT_RETRY_KEY = 'jasper:boot-retries';
 
 /** The texts of the start-up failure message; the bundle and its catalogue are what failed to load. */
-export const BOOT_FAILURE_TEXT: Record<string, { message: string; reload: string }> = {
+const BOOT_FAILURE_TEXT: Record<string, { message: string; reload: string }> = {
 	en: { message: 'JasperEditor could not load. Check your connection and reload.', reload: 'Reload' },
 	es: {
 		message: 'No se pudo cargar JasperEditor. Comprueba la conexión y vuelve a cargar.',

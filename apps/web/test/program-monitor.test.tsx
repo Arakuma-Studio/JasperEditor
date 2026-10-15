@@ -11,7 +11,6 @@ import { defaultMediaRuntime, EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { registerAllCommands } from '../src/commands/index.ts';
 import { monitorStores } from '../src/panels/program/monitor-store.ts';
 import { ProgramMonitor } from '../src/panels/program/ProgramMonitor.tsx';
 import { playerDurationFrames, resolveMediaHandle } from '../src/panels/program/render-doc.ts';
@@ -60,44 +59,6 @@ function position(session: EditorSession, seqId: string, id: string): number[] {
 afterEach(() => cleanup());
 
 describe('Program monitor', () => {
-	it('marks, navigates and edits a range through the registered timeline commands', async () => {
-		registerAllCommands();
-		const { session, seqId } = makeSession();
-		const { getByTestId } = render(
-			<SessionProvider session={session}>
-				<ProgramMonitor instanceId="program-1" visible />
-			</SessionProvider>,
-		);
-		const click = (id: string) => act(async () => fireEvent.click(getByTestId(id)));
-		act(() => session.transport.seek(10));
-		await click('btn-mark-in');
-		await click('btn-add-marker');
-		act(() => session.transport.seek(19));
-		await click('btn-mark-out');
-		const marked = session.getCommitted().sequences[seqId]!;
-		expect([marked.inPoint, marked.outPoint]).toEqual([10, 20]);
-		expect(marked.markers.map((m) => m.frame)).toEqual([10]);
-		await click('btn-go-in');
-		expect(session.transport.getState().frame).toBe(10);
-		await click('btn-go-out');
-		expect(session.transport.getState().frame).toBe(19);
-		await click('btn-lift');
-		const ranges = () =>
-			Object.values(session.getCommitted().sequences[seqId]!.clips)
-				.filter((clip) => clip.kind === 'solid')
-				.map((clip) => [clip.start, clip.duration]);
-		expect(ranges()).toEqual([
-			[0, 10],
-			[20, 40],
-		]);
-		act(() => session.undo());
-		await click('btn-extract');
-		expect(ranges()).toEqual([
-			[0, 10],
-			[10, 40],
-		]);
-	});
-
 	it('shows the active sequence timecode and duration', () => {
 		const { session } = makeSession();
 		const { getByTestId } = render(

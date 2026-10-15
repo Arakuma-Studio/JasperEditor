@@ -43,11 +43,11 @@ function selectedTransition(
 }
 
 /** Frame-normalised point → sequence px, and back (rounded like the effects' handles). */
-export const framePointToSequence = (seq: Pick<Sequence, 'settings'>, n: Vec2): Vec2 => [
+const framePointToSequence = (seq: Pick<Sequence, 'settings'>, n: Vec2): Vec2 => [
 	n[0] * seq.settings.width,
 	n[1] * seq.settings.height,
 ];
-export function sequenceToFramePoint(seq: Pick<Sequence, 'settings'>, s: Vec2): Vec2 {
+function sequenceToFramePoint(seq: Pick<Sequence, 'settings'>, s: Vec2): Vec2 {
 	const r = (v: number) => Math.round(v * 1e6) / 1e6 || 0;
 	return [r(s[0] / Math.max(1, seq.settings.width)), r(s[1] / Math.max(1, seq.settings.height))];
 }

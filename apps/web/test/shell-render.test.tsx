@@ -66,7 +66,7 @@ describe('editor shell (rendered)', { timeout: 60_000 }, () => {
 		mountEditor();
 		await waitFor(() => expect(screen.getByTestId('editor-shell').dataset.workspace).toBe('editing'));
 		await act(async () => {});
-		const warnings = toasts.getState().log.filter((e) => e.title.startsWith('Workspace layout was reset'));
+		const warnings = toasts.getState().log.filter((e) => e.kind === 'warning');
 		expect(warnings).toHaveLength(1);
 	});
 

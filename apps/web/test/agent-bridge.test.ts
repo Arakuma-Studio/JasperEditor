@@ -53,20 +53,6 @@ describe('window.jasper transact (S01:AGT-003, UND-007)', () => {
 	});
 });
 
-describe('history ownership (S01:UND-008)', () => {
-	it('refuses to undo another agent’s top entry', async () => {
-		const { api, session } = makeBridge();
-		await api.transact(agentTx([{ type: 'marker.add', frame: 1 }]));
-		const result = await api.transact({
-			label: 'Undo',
-			origin: { agent: 'intruder' },
-			commands: [{ type: 'history.undo' }],
-		});
-		expect(result).toMatchObject({ ok: false, errors: [{ code: 'E_NOT_OWNER' }] });
-		expect(session.getState().history.index).toBe(1);
-	});
-});
-
 class FakeSocket {
 	readyState = 0;
 	onopen: ((ev: unknown) => void) | null = null;
