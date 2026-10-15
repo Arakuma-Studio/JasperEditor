@@ -1634,15 +1634,16 @@ Tests private similarity scoring on its own analysis object, not any selected ed
 - B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
 - Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
 
-### KEEP — hits targets within a beat (half a beat at default settings), at beat boundaries, keeping intro and outro
+### REWRITE — hits targets within a beat (half a beat at default settings), at beat boundaries, keeping intro and outro
 
-- B1: docs/wp-notes/audio-fx.md §§1,5; ARCHITECTURE D-42; published RBJ/GMR/filter/pitch laws and the public AudioProcessor contract. Contract exercised: hits targets within a beat (half a beat at default settings), at beat boundaries, keeping intro and outro.
-- B2: A caller receives incorrect audio samples, analysis, protocol bytes or parameter results for the named input; the corresponding value/state assertion fails.
-- B3: Expected results come from fixed parameter-selected output values or independently specified acoustic laws; partition/reset equality checks stream semantics. Response-vs-audio assertions check the documented editor-curve promise against actual processed samples, not against a private collaborator. They can disagree with production.
-- B4: createProcessor/AudioProcessor samples, responseDb, transferDb, meters, latency and reset; core public primitives only for distinct numeric contracts.
-- B5: Keeps the contract across internal renames/reorganization, alternative algorithms and helper call changes; does not pin collaborator calls or source text.
-- B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
-- Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
+- B1: docs/wp-notes/audio-fx.md §1.5 requires cuts on beat boundaries with intro/outro preserved; §3 records target-length accuracy within one beat, half a beat at default settings. No independent four-beat minimum-piece requirement was found in the area's specs, work note, architecture or port record.
+- B2: wrong output duration, loss of the beginning/end, or a cut away from a beat boundary fails the retained assertions.
+- B3: the target is the caller's requested duration; source endpoints and beat boundaries come from the analyzed input contract. planLength and planCuts observe the output that real callers receive. Delete the minimum-piece assertion: it imports the same MIN_PIECE_BEATS constant used by the planner and can change along with implementation.
+- B4: planRemix results and public planLength/planCuts accessors, both actually consumed by apps/engine/src/audio/remix.ts for lengthSeconds and cuts.
+- B5: alternative planning algorithms, helper renames and changes to the undocumented minimum-piece heuristic preserve the remaining duration/boundary/endpoint contract.
+- B6: lowest stable planning seam for the complete original target/Segments/Variations grid; engine integration tests do not own these numerical plan guarantees. Separate tempo/beat tests own the input analysis accuracy.
+- Rewrite: delete only the per-piece minimum-length assertion loop and its production-constant import. Preserve every requested duration, parameter combination and other assertion.
+- Risk/check: no independently specified four-beat requirement is lost. Remove the constant's undocumented export after confirming its only non-test uses are inside the owning module. Run targeted Biome and diff checks; integration owns runtime gates.
 
 ### KEEP — is deterministic; Segments changes the number of joints; identity at the source length; too-short targets refused
 
@@ -2614,7 +2615,7 @@ Production owner(s), relative to `packages/motion/src/` unless absolute repo pat
 - Retained `ANIMEJS_VERSION`: explicitly documented API/config contract (ARCHITECTURE §20.2, ANM-011), not an expendable test hook.
 - Replaced SVG token parser with pixel comparison helper and preserve artifact-producing render tests.
 
-Declaration dispositions: {"DELETE": 37, "REWRITE": 30, "KEEP": 198}.
+Declaration dispositions: {"DELETE": 37, "REWRITE": 31, "KEEP": 197}.
 
 Before final support edits: `GRAPHIC_EQ_FREQS` / `graphicEqQ` and `tempoDelayMs` have only same-module production callers; remove their now-test-only exports. Retained reverb dry/decay tests will use reported latency.
 
@@ -2624,7 +2625,7 @@ Final support check before editing: `jumpScore` is only called by `planRemix` in
 
 ## Outcome and validation
 
-All 35 assigned files were audited and the pruning/rewrites implemented: **37 DELETE, 30 REWRITE, 198 KEEP** original test declarations (265 total; parameterized declarations include all generated cases). No whole test file was removed. Rewritten names may differ from the original names recorded above. Production changes remove dead seams and correct configured-channel boundaries demonstrated by the retained regression below; DSP arithmetic and persisted formats are unchanged.
+All 35 assigned files were audited and the pruning/rewrites implemented: **37 DELETE, 31 REWRITE, 197 KEEP** original test declarations (265 total; parameterized declarations include all generated cases). No whole test file was removed. Rewritten names may differ from the original names recorded above. Production changes remove dead seams and correct configured-channel boundaries demonstrated by the retained regression below; DSP arithmetic and persisted formats are unchanged.
 
 Removed support consists of the production-derived `sineLufs` oracle, unused `run` test wrapper, SVG token parser, obsolete test imports/setup, test-only IIR `design`/`DesignSpec` wrapper and unused `ellipK`; undocumented `kWeightingPower`, `lufsToEnergy`, `blockTruePeak` helpers; unused convolution `impulse` hook; and test-only exports for IR metadata/generation, convolution partition size, graphic-EQ Q/frequencies, tempo delay conversion, remix jump scoring and the dynamics barrel curve re-exports. Phaser sweep and Ambisonics source-gain methods became private. Actual production consumers of the remaining functions are preserved. Caller/documentation searches found no production caller or documented API contract for each removed seam. The documented `ANIMEJS_VERSION` export/configuration test remains.
 
@@ -2707,3 +2708,9 @@ Final follow-up disposition remains **37 DELETE / 30 REWRITE / 198 KEEP** origin
 
 
 Final follow-up static validation: `pnpm exec biome check` passed the five changed TypeScript files with no fixes, and `git diff --check` passed. Reviewed the final diff; no timeout, numerical threshold, stimulus count, seed or production DSP formula was relaxed. Full gates and the explicitly pending watchdog reruns remain with the integration owner.
+
+
+Before the final minimum-piece cleanup: caller census found MIN_PIECE_BEATS only in packages/audio-fx/src/analysis/remix.ts (declaration, minimum analysis length and planner heuristic) and the derived per-piece assertion in remix.test.ts. Relevant specs, architecture, docs/wp-notes/audio-fx.md and licenses/ported/audio-fx.md provide no independent exact four-beat rule. The assertion fails B1/B3/B5: its expected floor follows the production constant and freezes an undocumented heuristic. Delete that assertion loop and test import, and make the constant module-local while retaining both production uses. Keep public planLength/planCuts observations: the engine consumes them and their expected target/boundary behavior is independently stated. The original plan declaration becomes REWRITE with its full six-bar justification above; current original-declaration totals are **37 DELETE / 31 REWRITE / 197 KEEP** (265). Validation for this narrow follow-up is static only, as scheduled by the integration owner.
+
+
+The minimum-piece follow-up is complete: targeted Biome checked both changed TypeScript files successfully (formatting the shortened import), and `git diff --check` passed. Final diff review confirms only the derived assertion loop/import and unused export were removed; both production constant uses, every target/parameter combination and all other plan assertions remain. No heavy tests were started for this narrow static cleanup. Current totals: **37 DELETE / 31 REWRITE / 197 KEEP**.

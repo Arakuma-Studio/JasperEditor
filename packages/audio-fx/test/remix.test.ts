@@ -1,14 +1,7 @@
 // Music remix on synthetic beat tracks (port of filmcraft `remix.rs` tests): tempo and beats, plans hit the
 // target at beat boundaries keeping intro and outro, determinism and parameters, refusals.
 import { describe, expect, it } from 'vitest';
-import {
-	analyzeMusic,
-	MIN_PIECE_BEATS,
-	planCuts,
-	planLength,
-	planRemix,
-	RemixError,
-} from '../src/analysis/remix.ts';
+import { analyzeMusic, planCuts, planLength, planRemix, RemixError } from '../src/analysis/remix.ts';
 import { testMusic } from './music.ts';
 
 const SR = 22050;
@@ -74,8 +67,6 @@ describe('remix plans', () => {
 						expect(a.beats).toContain(o);
 						expect(a.beats).toContain(i);
 					}
-					for (const pc of p.pieces)
-						expect(pc.len).toBeGreaterThanOrEqual(Math.trunc(MIN_PIECE_BEATS * a.period) - 2);
 				}
 	});
 
