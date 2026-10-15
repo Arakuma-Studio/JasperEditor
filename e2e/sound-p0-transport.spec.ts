@@ -254,8 +254,6 @@ test.afterAll(async () => {
 });
 
 let ready = false;
-/** Effect instance ids of the A1 and Mix Hard Limiters. */
-let limiters: string[] = [];
 
 /** probe.wav on A1 (Hard Limiter) and A2, a Hard Limiter on the Mix (once per worker). */
 async function setup(): Promise<void> {
@@ -304,7 +302,6 @@ async function setup(): Promise<void> {
 		},
 	]);
 	expect(r.ok, JSON.stringify(r)).toBe(true);
-	if (r.ok) limiters = [r.refs!.$a1!, r.refs!.$mix!];
 	const s = await query<{ settings: { frameRate: { num: number; den: number } } }>(page, 'sequence.summary');
 	fps = s.settings.frameRate;
 	// let the media players and the graph settle
@@ -314,11 +311,13 @@ async function setup(): Promise<void> {
 
 /**
  * Samples (context time, Program frame) pairs for `ms` while playing: `min(time − frame / fps)` is the context time at
- * which the picture shows sequence time 0 (a frame is shown from its start until the next one).
+ * which the picture shows sequence time 0 (a frame is shown from its start until the next one). Only frames after the
+ * play position count: while a primed start waits, the picture holds the play position's frame, which says nothing
+ * about when it started.
  */
-async function pictureAnchor(p: Page, ms: number): Promise<number> {
+async function pictureAnchor(p: Page, ms: number, fromFrame: number): Promise<number> {
 	return p.evaluate(
-		async ([dur, num, den]) => {
+		async ([dur, num, den, from]) => {
 			const w = window as unknown as {
 				__tap: { ctxs: { ctx: BaseAudioContext }[] };
 				jasper: { query(n: string, a?: unknown): Promise<{ frame: number; playing: boolean }> };
@@ -335,18 +334,21 @@ async function pictureAnchor(p: Page, ms: number): Promise<number> {
 				const o = (ctx as AudioContext).getOutputTimestamp();
 				const t = (o.contextTime ?? 0) + (now - (o.performanceTime ?? 0)) / 1000;
 				const { frame, playing } = await w.jasper.query('playhead.get');
-				if (playing) best = Math.min(best, t - (frame * den) / num);
+				if (playing && frame > from) best = Math.min(best, t - (frame * den) / num);
 			}
 			return best;
 		},
-		[ms, fps.num, fps.den] as const,
+		[ms, fps.num, fps.den, fromFrame] as const,
 	);
 }
 
+/** Hard Limiter latency at 20 ms look-ahead (samples, 48 kHz): every one on the path adds it to the read-ahead. */
+const HL20 = 998;
+
 test('Play: the first samples at the play position are heard (nothing lost to the read-ahead)', async () => {
-	test.setTimeout(240_000);
+	test.setTimeout(300_000);
 	await setup();
-	/** Plays from 0 and returns the clicks heard and the picture's sequence-time-0 context time. */
+	/** Plays from 0 and returns the recording and the picture's sequence-time-0 context time. */
 	const measure = async () => {
 		let m = { rec: null as unknown as Recording, picture: Number.NaN };
 		for (let a = 0; a < ATTEMPTS; a++) {
@@ -355,7 +357,7 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 			let picture = Number.NaN;
 			const rec = await playFor(page, 200, async (p) => {
 				await p.waitForTimeout(150);
-				picture = await pictureAnchor(p, 900);
+				picture = await pictureAnchor(p, 900, 0);
 			});
 			m = { rec, picture };
 			const r = reschedules(rec, rec.armed, rec.armed + 1.2);
@@ -367,49 +369,78 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 		}
 		return m;
 	};
-	// baseline without latency (both limiters off): how far the picture's frame report trails the audio here
-	const setEnabled = (enabled: boolean) =>
-		transact(
-			page,
-			limiters.map((id) => ({ type: 'effect.setEnabled', effectInstanceId: id, enabled })),
+	/**
+	 * Checks one primed play with the wait `wait` (s): every click is heard from the one 30 ms after the play position,
+	 * exactly `wait` after the resume, and returns picture − audio (s): the picture's sequence time 0 minus the
+	 * program's, both as context times at the output (the tap's frames are the context's, the picture's come from its
+	 * output timestamp).
+	 */
+	const check = (m: { rec: Recording; picture: number }, wait: number): number => {
+		const ps = peaks(m.rec);
+		expect(ps.length).toBeGreaterThanOrEqual(3);
+		// both tracks summed (0.707): every click, 0.25 s apart
+		for (let i = 1; i < ps.length; i++) expect(Math.abs(ps[i]!.t - ps[i - 1]!.t - 0.25)).toBeLessThan(0.002);
+		for (const p of ps) expect(p.v).toBeGreaterThan(0.6);
+		// the click 30 ms after the play position is the first one heard, `wait` after the resume (sample-exact; the
+		// tolerance is one render quantum)
+		expect(Math.abs(ps[0]!.t - m.rec.armed - (wait + 0.03)), JSON.stringify(ps.slice(0, 3))).toBeLessThan(
+			128 / SR,
 		);
-	/** picture − audio (s): the picture's sequence time 0 minus the program output's (from the click at 0.28 s). */
-	const offsetOf = (m: { rec: Recording; picture: number }) => {
-		const c = peaks(m.rec).find((p) => p.v > 0.5 && p.t - m.rec.armed > 0.15);
-		return c ? m.picture - (c.t - 0.28) : Number.NaN;
+		return m.picture - (ps[0]!.t - 0.03);
 	};
-	// Two plays each: a frame report delayed by a stall only makes the picture look later, so the smaller is right.
-	// Under heavy load the frame reports scatter: the pair is measured again until both agree within 10 ms.
-	const pair = async () => {
-		for (let a = 0; ; a++) {
-			const m1 = await measure();
-			const m2 = await measure();
-			const o = [offsetOf(m1), offsetOf(m2)];
-			if (Math.abs(o[0]! - o[1]!) < 0.01 || a === ATTEMPTS - 1) return { offset: Math.min(...o), m: m1 };
-			console.log('scattered picture reports (load), again:', o.join(' '));
-		}
+	// Two plays each: a frame report delayed by a stall only makes the picture look later, so the smaller is kept
+	// (the stricter one for the lower bound below).
+	const primed = async (wait: number) => {
+		const m1 = await measure();
+		const m2 = await measure();
+		const o = [check(m1, wait), check(m2, wait)];
+		console.log('primed wait', wait, 'picture − audio', o.join(' '));
+		return { offset: Math.min(...o), m: m1 };
 	};
-	expect((await setEnabled(false)).ok).toBe(true);
-	const baseOffset = (await pair()).offset;
-	expect((await setEnabled(true)).ok).toBe(true);
-	const primed = await pair();
-	const { rec } = primed.m;
-	const { offset } = primed;
-	const ps = peaks(rec);
-	console.log('play-start peaks', rec.armed, rec.frames[0]! / rec.rate, JSON.stringify(ps));
-	test.info().annotations.push({ type: 'peaks', description: JSON.stringify({ armed: rec.armed, ps }) });
-	expect(ps.length).toBeGreaterThanOrEqual(3);
-	// both tracks summed (0.707): every click, 0.25 s apart
-	for (let i = 1; i < ps.length; i++) expect(Math.abs(ps[i]!.t - ps[i - 1]!.t - 0.25)).toBeLessThan(0.002);
-	for (const p of ps) expect(p.v).toBeGreaterThan(0.6);
-	// the click 30 ms after the play position is the first one heard: well before the next one (0.28 s)
-	expect(ps[0]!.t - rec.armed, JSON.stringify(ps.slice(0, 3))).toBeLessThan(0.2);
-	// A/V: the clicks give the context time of sequence time 0 in the program output, the frame reports the picture's.
-	// With the read-ahead primed the picture waits for the program: picture − audio stays what it is without latency
-	// (an unprimed start would show the picture the read-ahead, 41.6 ms, earlier relative to the audio).
-	console.log('picture − audio', offset, 'without latency', baseOffset);
-	test.info().annotations.push({ type: 'sync', description: JSON.stringify({ offset, baseOffset }) });
-	expect(Math.abs(offset - baseOffset)).toBeLessThan(0.02);
+	// The setup's read-ahead: Hard Limiters on A1 and the Mix (41.6 ms).
+	const w1 = (2 * HL20) / SR;
+	const p1 = await primed(w1);
+	console.log('play-start peaks', p1.m.rec.armed, JSON.stringify(peaks(p1.m.rec)));
+	test.info().annotations.push({
+		type: 'peaks',
+		description: JSON.stringify({ armed: p1.m.rec.armed, ps: peaks(p1.m.rec) }),
+	});
+	// A/V: the picture waits for the program. It must never show sequence time 0 before the program's sequence time 0
+	// is at the output. (Remotion starts the picture at its first animation frame after the output passed the resume
+	// time; at the end of an unprimed start that lag, 15–90 ms measured here, is the picture's, so a primed start is
+	// not compared with one: the wait hides that lag.)
+	expect(p1.offset).toBeGreaterThan(-0.01);
+	// A wait longer than Remotion's start lag tells a picture that waits apart from one that does not (without the
+	// wait it would lead by ≈ wait − lag, 0.1–0.2 s): eight more Hard Limiters on the Mix, ten in all (208 ms).
+	const more = await transact(
+		page,
+		Array.from({ length: 8 }, (_, i) => ({
+			type: 'effect.add',
+			target: 'master',
+			effectId: 'jasper.audio.hard-limiter',
+			params: { lookAhead: 20 },
+			ref: `$m${i}`,
+		})),
+	);
+	expect(more.ok, JSON.stringify(more)).toBe(true);
+	const extra = more.ok ? Object.values(more.refs ?? {}) : [];
+	expect(extra).toHaveLength(8);
+	try {
+		const w2 = (10 * HL20) / SR;
+		const p2 = await primed(w2);
+		console.log('picture − audio', p1.offset, 'with a 208 ms wait', p2.offset);
+		test
+			.info()
+			.annotations.push({ type: 'sync', description: JSON.stringify({ w1: p1.offset, w2: p2.offset }) });
+		expect(p2.offset).toBeGreaterThan(-0.01);
+		// and no later than one animation frame and one picture frame past it
+		expect(p2.offset).toBeLessThan(0.05);
+	} finally {
+		await transact(
+			page,
+			extra.map((id) => ({ type: 'effect.remove', effectInstanceId: id })),
+		);
+	}
 });
 
 test('Play after a seek while paused: no audio from before the seek', async () => {

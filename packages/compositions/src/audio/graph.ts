@@ -36,6 +36,7 @@ import {
 } from '@jasper/project';
 import { audioGainAt, MAX_PREVIEW_GAIN, dbToGain as pipelineDbToGain } from '../pipeline.ts';
 import { discreteGain, MatrixNode, setParam } from './matrix-node.ts';
+import { PrimedStartClock } from './primed-clock.ts';
 
 export type LoudnessReading = {
 	momentary: number;
@@ -811,12 +812,8 @@ export class MixGraph {
 	private flushed = false;
 	/** The anchor shift written for a primed start (`primedAnchor`). */
 	private shift: { base: number; shift: number } | null = null;
-	/** Seconds the picture waits after the next resume (the program output starts that much after the context). */
-	private startWait = 0;
-	/** Context time where the primed start resumes (the frozen time of the suspended context). */
-	private startAt = 0;
-	/** Context time of the resume the picture is waiting from (`startAt`, or later after a stall). */
-	private waitFrom = 0;
+	/** The picture's wait after the next resume (the program output starts that much after the context). */
+	private readonly startClock = new PrimedStartClock();
 	private flushToken = 0;
 	private disposed = false;
 
@@ -851,7 +848,7 @@ export class MixGraph {
 		const onState = () => this.onContextState();
 		this.ctx.addEventListener?.('statechange', onState);
 		// Remotion starts the picture once the context's output timestamp passes the resume time
-		// (`waitUntilActuallyResumed`). The program reaches the output `startWait` later than the context's own
+		// (`waitUntilActuallyResumed`). The program reaches the output the primed wait later than the context's own
 		// output: report that, so a primed start shows its first frame with its first sample.
 		const native = (this.ctx as { getOutputTimestamp?: () => AudioTimestamp }).getOutputTimestamp;
 		const shimmed = typeof native === 'function';
@@ -859,22 +856,9 @@ export class MixGraph {
 			Object.defineProperty(this.ctx, 'getOutputTimestamp', {
 				configurable: true,
 				writable: true,
-				value: () => {
-					const t = native.call(this.ctx);
-					const w = this.startWait;
-					if (!(w > 0) || t.contextTime === undefined || t.performanceTime === undefined) return t;
-					const end = this.startAt + w;
-					// the program has reached the output: the start is over, report the context's own timestamp again
-					if (t.contextTime >= end) {
-						this.startWait = 0;
-						return t;
-					}
-					// Remotion asks while the context is still suspended, then polls until the time passes the resume
-					// time: that wait has to end at `end` (a resume after a stall during the wait waits less).
-					if (this.ctx.state !== 'running') this.waitFrom = this.ctx.currentTime;
-					const off = Math.max(0, end - this.waitFrom);
-					return { contextTime: t.contextTime - off, performanceTime: t.performanceTime - off * 1000 };
-				},
+				// Remotion's start reading fixes the offset; its polls then pass the start once the program is at the
+				// output (`PrimedStartClock`).
+				value: () => this.startClock.report(native.call(this.ctx), this.ctx.currentTime) as AudioTimestamp,
 			});
 		this.unsubscribeSync = () => {
 			off();
@@ -932,16 +916,18 @@ export class MixGraph {
 			this.flushed = false;
 		} else if (s === 'suspended') {
 			const shift = this.shift;
-			if (this.playing && this.startWait > 0 && shift && this.sync) {
+			if (this.playing && this.startClock.active && shift && this.sync) {
 				// Buffering stalled a primed start before its program reached the output: Remotion re-anchors to the
-				// picture, which has not moved yet. Keep the primed anchor (the queued sources follow it) and the wait.
+				// picture, which has not moved yet. Keep the primed anchor (the queued sources follow it) and the wait;
+				// the resume after the stall waits for what is left of it.
+				this.startClock.rearm();
 				const sync = this.sync;
 				setTimeout(() => {
 					sync.anchor.value = shift.base + shift.shift;
 				}, 0);
 				return;
 			}
-			this.startWait = 0;
+			this.startClock.clear();
 			// after Remotion's own handler (it re-anchors to the picture on suspend)
 			setTimeout(() => this.prime(false), 0);
 		}
@@ -991,9 +977,7 @@ export class MixGraph {
 		// The context's time is frozen while suspended: the next run starts at `t0`, the program `wait` later.
 		const g = this.outGain.gain;
 		const t0 = this.ctx.currentTime;
-		this.startWait = wait;
-		this.startAt = t0;
-		this.waitFrom = t0;
+		this.startClock.arm(t0, wait);
 		g.cancelScheduledValues(0);
 		g.setValueAtTime(wait > 0 ? 0 : 1, t0);
 		if (wait > 0) {
@@ -1029,7 +1013,7 @@ export class MixGraph {
 
 	/** A seek while playing: fades out what the graph still holds of the old position, then flushes. */
 	private fadeFlush(): void {
-		this.startWait = 0;
+		this.startClock.clear();
 		const g = this.outGain.gain;
 		const t = this.ctx.currentTime;
 		g.cancelScheduledValues(t);
