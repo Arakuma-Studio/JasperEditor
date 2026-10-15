@@ -196,6 +196,27 @@ const captions: WorkspaceDefinition = {
 	),
 };
 
+/**
+ * Sound Design (spec 12 §2.7; the 9th built-in, Alt+Shift+9): the Sound Library with Project, Media Browser, Markers,
+ * History and Jobs on the left; Program and the Timeline strip in the centre; Essential Sound, Properties and the
+ * mixers on the right. (Review and Sound Check join the left group when their phases land.)
+ */
+const soundDesign: WorkspaceDefinition = {
+	id: 'sound-design',
+	name: 'Sound Design',
+	layout: row(
+		[0.24, g(['soundLibrary', 'project', 'mediaBrowser', 'markers', 'history', 'jobs'], 'soundLibrary')],
+		['fill', col([0.55, g(['program'])], ['fill', TIMELINE_STRIP()])],
+		[
+			0.24,
+			g(
+				['essentialSound', 'properties', 'audioTrackMixer', 'audioClipMixer', 'effectControls'],
+				'essentialSound',
+			),
+		],
+	),
+};
+
 /** Built-ins in default order (Alt+Shift+1…9 follow the visible order, WS-010). */
 export const BUILTIN_WORKSPACES: readonly WorkspaceDefinition[] = [
 	editing,
@@ -206,6 +227,7 @@ export const BUILTIN_WORKSPACES: readonly WorkspaceDefinition[] = [
 	color,
 	audio,
 	captions,
+	soundDesign,
 ];
 
 /**
