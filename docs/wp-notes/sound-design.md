@@ -667,7 +667,7 @@ Scope: spec 12 §2.1 (library, sources, `SoundEntry`, register), §2.8 (sound ro
 P1-R5 and the engine side of P1-R1. Files: `packages/config/src/index.ts` (appdir paths), `packages/api/src/sounds.ts`
 (contracts), `routes.ts` / `jobs.ts` / `events.ts` / `m2-capabilities.ts` (declarations),
 `packages/engine-client/src/client.ts` (calls), `apps/engine/src/sounds/{library,index-job,starter,synth,visual,decode,
-roots,service}.ts`, `apps/engine/src/routes/sounds.ts`, `apps/engine/scripts/build.mjs` and
+roots,service,analysis,analysis-core,analysis-worker}.ts`, `apps/engine/src/routes/sounds.ts`, `apps/engine/scripts/build.mjs` and
 `apps/desktop/scripts/package.mjs` (the starter kit ships next to the bundle), docs (ARCHITECTURE §4.3,
 security-review AGT-3 table and §9). Tests: `apps/engine/test/sounds-unit.test.ts`, `sounds-routes.test.ts`
 (fixtures: `sound-fixtures.ts`, generated WAVs, no network), `packages/config/test/config.test.ts`,
@@ -751,10 +751,15 @@ no manifest.
   times). One index job at a time (`dedupeKey: 'sound-index'`).
 - **Analysis**: ffprobe for the format, then ffmpeg decodes the first `SOUND_ANALYSIS_SECONDS` = 30 s to f32 at the
   file's rate up to 48 kHz (higher rates resampled; descriptors are perceptual) with ≤ 6 channels (more folded to
-  stereo): ≤ 35 MB per file. `analyzeSound` runs on the engine thread between `setImmediate` yields; the 30 s cap bounds
-  one call (WP1.1b measured 60 s of noise at 1.5–5.2 s under load, so ≈ 1–2.5 s at worst for a 30 s file; typical
-  effects of < 3 s take tens of ms). A worker thread was not used: worker threads cannot load the TypeScript sources
-  under Node 20 without a loader (see `dejudder/worker.mjs`); recorded as a limit. For files longer than 30 s,
+  stereo): ≤ 35 MB per file. `analyzeSound` and the visual data run on a **worker thread** (`sounds/analysis.ts`,
+  entry `analysis-worker.ts`, bundled by `scripts/build.mjs` to `dist/sound-worker.mjs` and shipped by the desktop
+  packager; in a dev engine under tsx the worker registers tsx's hooks itself, since Node 20 does not pass the main
+  thread's loader to workers). Measured on this host at load ≈ 160 with `tsx` (scratch script): 30 s of stereo noise
+  took 13.4 s in `analyzeSound` and 4.4 s for the spectrogram, which would have held the engine's event loop. One
+  worker per engine, started on first use (≤ 120 s start timeout), stopped after 30 s idle; the decoded buffers are
+  transferred, not copied; cancelling a running analysis terminates the worker (a new one starts next time). Without
+  a worker (vitest, `JASPER_SOUND_WORKER=off`, a missing file, a worker that does not start) it runs in-thread,
+  between the job's per-file yields. For files longer than 30 s,
   `descriptors.durationSec` is the whole file's (from ffprobe); the other descriptors describe the first 30 s.
   `ANALYSIS_VERSION = SOUND_DESCRIPTORS_VERSION·1000 + 1` versions the cache.
 - **Judge** with `SOUND_TYPE_PROFILES[first known type]` (project copy, test-pinned equal to audio-fx's);
@@ -808,8 +813,9 @@ no manifest.
 
 #### Limits and notes for the next packages
 
-- Analysis runs on the engine's main thread (one file at a time, yields between files): a 30 s file can hold the
-  event loop for ≈ 1–2.5 s under heavy load (estimated from WP1.1b's measurement, not re-measured here).
+- Where no worker thread can start (vitest; a packaged build missing `sound-worker.mjs`), analysis falls back to the
+  main thread: a 30 s file then holds the event loop for seconds under heavy load (measured above). The engine test
+  suites run in-thread; the worker itself is tested by bundling it with esbuild (`sounds-unit.test.ts`).
 - Descriptors and visual data cover the first 30 s of longer files (beds); `durationSec` is the whole file.
 - A folder on an unplugged disk drops out of the index at the next scan (`ROOT_OFFLINE` in the job errors) and comes
   back, without re-analysis, when it is there again.

@@ -68,7 +68,7 @@ async function get<T = unknown>(app: FastifyInstance, url: string, headers: Reco
 	const r = await app.inject({ method: 'GET', url, headers });
 	return {
 		status: r.statusCode,
-		body: (r.headers['content-type']?.includes('json') ? r.json() : r.body) as T,
+		body: (String(r.headers['content-type'] ?? '').includes('json') ? r.json() : r.body) as T,
 		r,
 	};
 }
