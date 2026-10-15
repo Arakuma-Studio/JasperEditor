@@ -31,7 +31,7 @@ describe('velocity curve', () => {
 		// 0 → 90 over 30 frames at 30 fps = 90 units / s.
 		const a = anim([kf('a', 0, 0), kf('b', 30, 90)]);
 		const v = sampleVelocityCurve(a, map, range, 300);
-		const inside = v.filter((p) => p.x > map.toX(0) + 0.5 && p.x < map.toX(30 * F) - 0.5);
+		const inside = v.filter((p) => p.x > 10.5 && p.x < 39.5);
 		expect(inside.length).toBeGreaterThan(0);
 		for (const p of inside) expect(p.y).toBeCloseTo(90, 6);
 		expect(v[0]!.y).toBe(0);
@@ -44,10 +44,9 @@ describe('velocity curve', () => {
 			kf('c', 45, 0),
 		]);
 		const v = sampleVelocityCurve(a, map, range, 300);
-		expect(Math.abs(curveVelocityAt(v, map.toX(0), 'out'))).toBeLessThan(0.5); // ≈ 0 (one-sided step)
-		const xb = map.toX(30 * F);
-		expect(curveVelocityAt(v, xb, 'in')).toBeGreaterThan(0);
-		expect(curveVelocityAt(v, xb, 'out')).toBeCloseTo(-180, 3); // 90 down over 15 frames
+		expect(Math.abs(curveVelocityAt(v, 10, 'out'))).toBeLessThan(0.5); // ≈ 0 (one-sided step)
+		expect(curveVelocityAt(v, 40, 'in')).toBeGreaterThan(0);
+		expect(curveVelocityAt(v, 40, 'out')).toBeCloseTo(-180, 3); // 90 down over 15 frames
 	});
 	it('vec2 velocity is the speed along the path; reversed clips flip the sign of numbers', () => {
 		const p = anim<[number, number]>([kf('a', 0, [0, 0]), kf('b', 30, [30, 40])]);

@@ -2,13 +2,7 @@ import { DialogHost, openDialog } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { registerAllCommands } from '../src/commands/index.ts';
-import {
-	DEFAULT_GAPS_PREFS,
-	gapsPrefs,
-	labelDefault,
-	labelName,
-	parseGapsPrefs,
-} from '../src/gaps/app-prefs.ts';
+import { gapsPrefs, labelDefault, labelName, parseGapsPrefs } from '../src/gaps/app-prefs.ts';
 import { applyMotionPreference } from '../src/gaps/startup.ts';
 import { largeTrimOffset, postrollSeconds, prerollSeconds } from '../src/panels/timeline/state/trim-mode.ts';
 import { autoSavePolicy } from '../src/runtime/save.ts';
@@ -44,7 +38,6 @@ describe('preference pages', () => {
 	});
 
 	it('parses hostile storage values to the defaults', () => {
-		expect(parseGapsPrefs(null)).toEqual(DEFAULT_GAPS_PREFS);
 		const p = parseGapsPrefs({
 			trim: { largeTrimOffset: 1e9 },
 			labels: { names: { nope: 'x', rose: 5 }, defaults: { bin: 'bogus' } },

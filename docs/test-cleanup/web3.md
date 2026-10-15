@@ -404,7 +404,7 @@ Detectable failure: Final Cut Pro 7 puts Insert/Overwrite on F9/F10 and trims on
 - B6 — Lowest distinct owner: Other keyboard tests own basic chord dispatch; these cases own layout conflict checks, custom preference persistence, contextual conflicts and held-tool restoration.
 - Risk/validation: retain this case because its input condition can uniquely produce the named failure; run `pnpm exec vitest run apps/web/test/edit-ux-keyboard.test.tsx --maxWorkers=1` and web typecheck.
 
-### KEEP: `spring-loaded tools: a held key returns to the previous tool on release, a tap switches`
+### REWRITE: `spring-loaded tools: a held key returns to the previous tool on release, a tap switches`
 
 - B1 — Independent contract: S05 KB-001/011; docs/wp-notes/edit-ux.md shortcut customization.
 - B2 — Recognizable failure: violating “spring-loaded tools: a held key returns to the previous tool on release, a tap switches” changes the named document, state, choice, error, or protocol result.
@@ -522,7 +522,7 @@ Detectable failure: vec2 gives one curve per dimension; holds are vertical steps
 - B6 — Lowest distinct owner: Project keyframe/ease tests own evaluate(); UI graph tests own edits. Four retained tests alone check displayed velocity in units/s, signed reverse speed and hold-zero values.
 - Risk/validation: retain this case because its input condition can uniquely produce the named failure; run `pnpm exec vitest run apps/web/test/effect-controls-graph.test.ts --maxWorkers=1` and web typecheck.
 
-### KEEP: `eases to zero speed at an Ease Out key and steps at keys with different in/out speeds`
+### REWRITE: `eases to zero speed at an Ease Out key and steps at keys with different in/out speeds`
 
 - B1 — Independent contract: S03 KF-022 velocity graph; docs/wp-notes/graph-editor.md Units and conversions.
 - B2 — Recognizable failure: violating “eases to zero speed at an Ease Out key and steps at keys with different in/out speeds” changes the named document, state, choice, error, or protocol result.
@@ -726,7 +726,7 @@ Detectable failure: every page renders inside the Preferences dialog. Reason: Pa
 - B6 — Lowest distinct owner: session persistence tests own autosaving; these cases own settings-to-consumer mapping and invalid stored-field repair.
 - Risk/validation: retain this case because its input condition can uniquely produce the named failure; run `pnpm exec vitest run apps/web/test/gaps-preferences.test.tsx --maxWorkers=1` and web typecheck.
 
-### KEEP: `parses hostile storage values to the defaults`
+### REWRITE: `parses hostile storage values to the defaults`
 
 - B1 — Independent contract: S05 Preferences; AGENTS §0 hostile preference validation.
 - B2 — Recognizable failure: violating “parses hostile storage values to the defaults” changes the named document, state, choice, error, or protocol result.
@@ -2019,3 +2019,70 @@ Production behavior is unchanged. Removed test-only exports from `INITIAL_ROWS`,
 Validation actually run: offline frozen pnpm installation succeeded (unbuilt MCP binary-link warnings; ignored onnxruntime build script). Targeted Biome import cleanup/format checks and `git diff --check` ran. The assigned-path baseline Vitest command was started with one worker; it produced only the RUN banner under shared-host contention and was interrupted with exit 130 at the integration owner's instruction. This is **not a passing baseline**. Focused Vitest, web typecheck and repository gates are explicitly pending root integrated validation; no failures were hidden, suppressed or used to choose deletions. No UI production behavior changed, so browser/GL/render suites were not launched by this group.
 
 Final diff review: all production hunks only remove export visibility or obsolete test-oriented commentary. Test removals and retained behavior assertions were inspected; targeted Biome reported “Checked 24 files”, with no remaining diagnostics. `git diff --check` passed. No dependencies, generated catalogs, fixtures, screenshots or other assets were changed.
+
+## Final shared-oracle rescan: pre-edit record
+
+Reviewed all 31 retained assigned files against the integrated checkout. Seven cases need narrower or independent oracles; this record is written before changing tests or production exports. Every affected test currently matches integration. No behavioral production change is planned.
+
+### REWRITE — `apps/web/test/polish-open.test.tsx`: `resolves every requested media status across bounded batches`
+
+- B1: ARCHITECTURE D-48 and §9 specify POST `/api/media/status` with at most 1,000 keys; S01:LIFE-050 requires per-asset availability. Exactly two requests and 1,000/200 partition sizes are measurements, not the contract.
+- B2: An oversized request, a never-requested medium, wrong online/offline state, or a lost poster URL is a caller-visible failure at project open.
+- B3: Use 1,200 fixture keys independent of the production batch constant, the documented literal maximum 1,000, exact set equality of requested input keys, and fixture online/offline/poster results for every medium. Do not derive the cap or fixture size from `MEDIA_STATUS_BATCH_MAX`.
+- B4: Observe emitted HTTP bodies and the public session media store after `createMediaRuntimeSync`.
+- B5: Smaller batches, different request order and different numbers of requests remain valid. Remove exact-two and exact-partition assertions.
+- B6: Engine tests own server rejection limits; this web case proves the producer respects the API cap and resolves a multi-batch project. `scripts/perf/ui-run.ts` owns open-time performance.
+- Production callers: project/import lifecycle uses `createMediaRuntimeSync`; API/engine code also uses `MEDIA_STATUS_BATCH_MAX`, which remains exported. `DERIVATIVE_KINDS` builds fixture response data, not expected results.
+- Risk/validation: low, assertion-only; comparing every result prevents losing coverage when dropping call shape. Focused `polish-open`, web typecheck and integration gates are pending root; static checks here.
+
+### REWRITE — `apps/web/test/polish-open.test.tsx`: `says so when the bundle cannot be downloaded, instead of a blank page`; `reloads by itself first: fast failures have a small budget, slow cut-off loads a larger one, a boot resets it`
+
+- B1: `docs/verification.md` §8 explicitly records three quick reloads, an eight-second slow-load boundary, eight total reloads per tab, and reset when the app renders. AGENTS §0 and the polish regression require a visible failure instead of a blank page.
+- B2: A wrong retry cap/threshold can leave the user reloading forever or abandon a recoverable load. The DOM case also detects a missing focused recovery action and misclassified script errors.
+- B3: Use documented literals 3, 8, 8,001 ms and 16,000 ms instead of importing the same `BOOT_RETRIES`, `BOOT_MAX_RELOADS`, and `BOOT_SLOW_MS` values that generate the script. Seed/read persisted `jasper:boot-retries` independently. Preserve DOM/reset/error observations.
+- B4: Execute the generated script in a DOM, dispatch module errors, observe reload requests, alert state and session storage.
+- B5: Internal constant names, formatting, control-flow arrangement and backoff implementation may change without changing these contracts.
+- B6: Lowest seam for quick/slow retry branches and malformed saved counters; browser workflow owns built-app script delivery/recovery.
+- Production callers: `vite.config.ts` uses `editorBootScript`. Census shows all four `BOOT_*` exports have only local production uses and this test import. Make `BOOT_RETRIES`, `BOOT_MAX_RELOADS`, `BOOT_SLOW_MS`, `BOOT_RETRY_KEY` private; generated bytes remain unchanged.
+- Risk/validation: low, same actions with independent oracles. Focused `polish-open` and web typecheck pending root; static checks here.
+
+### REWRITE — `apps/web/test/gaps-preferences.test.tsx`: `parses hostile storage values to the defaults`
+
+- B1: AGENTS §0 requires preference entry-point validation; corrupt stored labels/language and out-of-range trim settings must not break the editor.
+- B2: Invalid label defaults, invalid locale or an unbounded trim offset remain visible in the retained parsed configuration.
+- B3: Delete only `parseGapsPrefs(null) === DEFAULT_GAPS_PREFS`: both sides use production defaults, so simultaneous wrong defaults pass. Preserve existing literal hostile-input assertions. Do not replace the whole defaults object with a copied inventory.
+- B4: `parseGapsPrefs` is the storage/config entry seam.
+- B5: Accepted safe configuration survives default-object identity and private-field refactors.
+- B6: This case owns hostile stored preferences; separate UI cases own settings affecting trim/autosave/reduced motion.
+- Production callers: parser is used by preference load/set; `DEFAULT_GAPS_PREFS` has only module-local production uses. Remove its export after removing the test import.
+- Risk/validation: low; delete only a tautological subassertion. Focused preferences test and web typecheck pending root; static checks here.
+
+### REWRITE — `apps/web/test/edit-ux-keyboard.test.tsx`: `spring-loaded tools: a held key returns to the previous tool on release, a tap switches`
+
+- B1: `docs/wp-notes/edit-ux.md` specifies a hold of at least 250 ms, explicitly the project's chosen threshold, and distinguishes a tap.
+- B2: A held tool staying selected or a tap reverting changes the active editing tool.
+- B3: Drive a deterministic clock from 0 to literal 250 ms. Remove the wait computed from imported `SPRING_HOLD_MS`, which let a wrong threshold move setup and production together.
+- B4: Registered tool commands and keyboard-release entry point, observed through session active-tool state.
+- B5: No dependency on a private identifier, scheduler speed or wall-clock load; command internals can change.
+- B6: Command owns spring-state transitions; browser tours add no distinct contract at this threshold.
+- Production callers: keyboard dispatcher invokes command/key-up handlers. `SPRING_HOLD_MS` has only local uses and this test import; make it private.
+- Risk/validation: low, deterministic test timing and export visibility only. Focused keyboard test and web typecheck pending root; static checks here.
+
+### REWRITE — `apps/web/test/effect-controls-graph.test.ts`: `is the derivative of evaluate in units per second: constant on linear segments, zero outside`; `eases to zero speed at an Ease Out key and steps at keys with different in/out speeds`
+
+- B1: S01:KF-002/KF-009 and `docs/wp-notes/graph-editor.md` define mapping to sequence frames and velocity in units per second of sequence time.
+- B2: A misplaced boundary or wrong one-sided speed displays the wrong graph value at a known keyframe.
+- B3: Fixture starts at frame 10, source offset 0, speed 1×; content keys at 0 and 30 frames therefore occur at literal sequence frames 10 and 40. Replace expected-sample `map.toX` calls with these independent coordinates. Existing 90 and −180 units/s oracles remain analytical.
+- B4: Graph sampler output consumed by GraphEditor.
+- B5: Sampling density and interpolation internals may change while preserving the coordinates/velocities.
+- B6: Project interpolation owns values; sampler owns graph velocities and one-sided boundary samples; UI tests own handle interactions.
+- Production callers: GraphEditor uses `timeMapOf` and `sampleVelocityCurve`; keep both exports. `EASE_PRESETS.linear` supplies fixture input only, not expected velocity.
+- Risk/validation: low, independent coordinates strengthen the same assertions. Focused graph test and web typecheck pending root; static checks here.
+
+### Coordinated seam removal — `apps/web/test/shell-render.test.tsx`
+
+`WORKSPACES_KEY` is fixture setup, not a derived expected value. Web2 is replacing its `shell.test.tsx` import independently. This test will use the persisted `jasper:workspaces` key documented in `docs/wp-notes/WP-2A.md`; census confirms all production uses are local to `shell/workspaces/store.ts`, so remove only its export after both test imports disappear. Existing retained-test disposition is unchanged. Risk low; no storage bytes change; focused shell tests and web typecheck pending root.
+
+Other helper uses inspected were setup or observed output: `resolveTextAnimationWindows`/`activeRemap` are observed against literals; `buildRenderSnapshot` supplies rendered input; keymap normalization checks the independent no-conflict invariant; transition-index lookup is compared with an exhaustive half-open interval predicate. No change is required for those uses. No fixture/snapshot/helper becomes orphaned beyond the seven test-only constant exports identified above.
+
+Rescan validation: targeted Biome passed for all nine changed TypeScript files; the first pass reported one formatting change in the boot test, corrected before the passing rerun. `git diff --check` passed. Tests/typecheck were not run under root's static-only instruction; root owns the integrated verdict. `shell.test.tsx` still imports `WORKSPACES_KEY` in this isolated older branch; web2's coordinated commit removes that import and must accompany this commit before integrated typecheck. Production diff contains only seven `export` removals, with all values unchanged. Three former KEEP declarations are now REWRITE, leaving 52 DELETE / 34 REWRITE / 132 KEEP original declarations/families.

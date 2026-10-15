@@ -204,7 +204,7 @@ const TOOL_IDS: ActiveTool[] = [
  * edit-ux: spring-loaded tools (Premiere: hold a tool's key to use it temporarily; releasing returns to the previous
  * tool; a quick tap switches for good). A key held at least SPRING_HOLD_MS counts as a hold.
  */
-export const SPRING_HOLD_MS = 250;
+const SPRING_HOLD_MS = 250;
 const springs = new Map<string, { previous: ActiveTool; at: number }>();
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 

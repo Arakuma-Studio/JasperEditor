@@ -1,6 +1,6 @@
 import { EngineClient } from '@jasper/engine-client';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	createCommandContext,
 	effectiveKey,
@@ -14,7 +14,6 @@ import {
 	runCommand,
 } from '../src/commands/index.ts';
 import { LAYOUTS, layoutKeymap } from '../src/commands/keymap-presets.ts';
-import { SPRING_HOLD_MS } from '../src/commands/timeline.ts';
 import { resolveKey } from '../src/shell/keymap/dispatcher.ts';
 import { KeyboardShortcutsDialog } from '../src/shell/keymap/KeyboardShortcutsDialog.tsx';
 import {
@@ -151,15 +150,20 @@ describe('dispatch details', () => {
 	it('spring-loaded tools: a held key returns to the previous tool on release, a tap switches', async () => {
 		const { session } = makeSession();
 		const ctx = createCommandContext({ engine, session, focus: { panel: 'timeline', instanceId: 't' } });
-		await runCommand('tool.razor', ctx);
-		const cmd = listCommands().find((c) => c.id === 'tool.razor')!;
-		cmd.onKeyUp!(ctx);
-		expect(session.getState().toggles.activeTool).toBe('razor');
-		await runCommand('tool.selection', ctx);
-		await runCommand('tool.ripple', ctx);
-		await new Promise((r) => setTimeout(r, SPRING_HOLD_MS + 20));
-		listCommands().find((c) => c.id === 'tool.ripple')!.onKeyUp!(ctx);
-		expect(session.getState().toggles.activeTool).toBe('selection');
+		const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+		try {
+			await runCommand('tool.razor', ctx);
+			listCommands().find((c) => c.id === 'tool.razor')!.onKeyUp!(ctx);
+			expect(session.getState().toggles.activeTool).toBe('razor');
+			await runCommand('tool.selection', ctx);
+			await runCommand('tool.ripple', ctx);
+			// docs/wp-notes/edit-ux.md: a hold of at least 250 ms is temporary.
+			now.mockReturnValue(250);
+			listCommands().find((c) => c.id === 'tool.ripple')!.onKeyUp!(ctx);
+			expect(session.getState().toggles.activeTool).toBe('selection');
+		} finally {
+			now.mockRestore();
+		}
 	});
 });
 

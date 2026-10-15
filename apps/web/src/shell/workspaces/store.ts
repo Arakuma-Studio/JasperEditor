@@ -29,7 +29,7 @@ export type WorkspacesState = {
 	workspaces: Record<string, WorkspaceRecord>;
 };
 
-export const WORKSPACES_KEY = 'jasper:workspaces';
+const WORKSPACES_KEY = 'jasper:workspaces';
 const WORKSPACES_VERSION = 1;
 const SAVE_DEBOUNCE_MS = 300;
 

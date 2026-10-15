@@ -1,20 +1,16 @@
-import { DERIVATIVE_KINDS, MEDIA_STATUS_BATCH_MAX } from '@jasper/api';
+import { DERIVATIVE_KINDS } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-	BOOT_MAX_RELOADS,
-	BOOT_RETRIES,
-	BOOT_RETRY_KEY,
-	BOOT_SLOW_MS,
-	editorBootScript,
-} from '../editor-boot.ts';
+import { editorBootScript } from '../editor-boot.ts';
 import { buildMediaAsset } from '../src/import/assets.ts';
 import { createMediaRuntimeSync } from '../src/import/media-runtime.ts';
 import { fetchWithEarly } from '../src/state/engine.tsx';
 import { memorySession, registered, ScriptedEngine } from './wp2e/helpers.ts';
 
 afterEach(() => localStorage.clear());
+
+const BOOT_RETRY_STORAGE_KEY = 'jasper:boot-retries';
 
 function addMedia(session: EditorSession, n: number): { ids: string[]; keys: string[] } {
 	const keys = Array.from({ length: n }, (_, i) => `mk_OPEN${String(i).padStart(6, '0')}`);
@@ -51,7 +47,8 @@ async function until(fn: () => boolean) {
 describe('media resolution at project open', () => {
 	it('resolves every requested media status across bounded batches', async () => {
 		const { session } = await memorySession();
-		const n = MEDIA_STATUS_BATCH_MAX + 200;
+		// ARCHITECTURE D-48 caps each request at 1,000 keys. This project needs more than one.
+		const n = 1200;
 		const { ids, keys } = addMedia(session, n);
 		const engine = new ScriptedEngine().on((r) => {
 			if (r.method !== 'POST' || r.path !== '/api/media/status') return undefined;
@@ -74,19 +71,18 @@ describe('media resolution at project open', () => {
 		const sync = createMediaRuntimeSync(session, engine.client(), null);
 		await until(() => Object.keys(session.getState().media).length === n && settled(session));
 
-		const status = engine.requests.filter((r) => r.path.startsWith('/api/media/'));
-		expect(status.map((r) => `${r.method} ${r.path}`)).toEqual([
-			'POST /api/media/status',
-			'POST /api/media/status',
-		]);
-		expect((status[0]!.body as { mediaKeys: string[] }).mediaKeys).toHaveLength(MEDIA_STATUS_BATCH_MAX);
-		expect((status[1]!.body as { mediaKeys: string[] }).mediaKeys).toHaveLength(200);
+		const batches = engine.requests
+			.filter((r) => r.method === 'POST' && r.path === '/api/media/status')
+			.map((r) => (r.body as { mediaKeys: string[] }).mediaKeys);
+		expect(new Set(batches.flat())).toEqual(new Set(keys));
+		for (const batch of batches) expect(batch.length).toBeLessThanOrEqual(1000);
 		const media = session.getState().media;
-		expect(media[ids[0]!]).toMatchObject({
-			availability: 'online',
-			posterUrl: `/media/${keys[0]}/poster.jpg`,
-		});
-		expect(media[ids[1]!]).toMatchObject({ availability: 'offline' });
+		for (const [i, id] of ids.entries())
+			expect(media[id]).toMatchObject(
+				i % 2 === 0
+					? { availability: 'online', posterUrl: `/media/${keys[i]}/poster.jpg` }
+					: { availability: 'offline' },
+			);
 		sync.dispose();
 	});
 
@@ -178,10 +174,7 @@ describe('editor boot script (preload + early project fetch)', () => {
 
 	it('says so when the bundle cannot be downloaded, instead of a blank page', () => {
 		document.body.innerHTML = '<div id="root"></div>';
-		window.sessionStorage.setItem(
-			BOOT_RETRY_KEY,
-			JSON.stringify({ fast: BOOT_RETRIES, total: BOOT_MAX_RELOADS }),
-		);
+		window.sessionStorage.setItem(BOOT_RETRY_STORAGE_KEY, JSON.stringify({ fast: 3, total: 8 }));
 		const root = document.getElementById('root')!;
 		const listeners: EventListener[] = [];
 		const add = window.addEventListener.bind(window);
@@ -229,7 +222,7 @@ describe('editor boot script (preload + early project fetch)', () => {
 		} finally {
 			for (const fn of listeners) window.removeEventListener('error', fn, true);
 			window.localStorage.removeItem('jasper:gaps-prefs');
-			window.sessionStorage.removeItem(BOOT_RETRY_KEY);
+			window.sessionStorage.removeItem(BOOT_RETRY_STORAGE_KEY);
 			document.body.innerHTML = '';
 		}
 	});
@@ -242,7 +235,7 @@ describe('editor boot script (preload + early project fetch)', () => {
 		Object.defineProperty(window, 'location', { configurable: true, value: { ...realLocation, reload } });
 		const listeners: EventListener[] = [];
 		const add = window.addEventListener.bind(window);
-		const stored = () => JSON.parse(window.sessionStorage.getItem(BOOT_RETRY_KEY) ?? 'null');
+		const stored = () => JSON.parse(window.sessionStorage.getItem(BOOT_RETRY_STORAGE_KEY) ?? 'null');
 		/** A fresh page: the boot script runs; then, `at` ms after the navigation, every module fails. */
 		const page = async (at: number | null) => {
 			for (const fn of listeners.splice(0)) window.removeEventListener('error', fn, true);
@@ -279,27 +272,28 @@ describe('editor boot script (preload + early project fetch)', () => {
 			return { root, reloaded: reload.mock.calls.length > 0, message };
 		};
 		try {
-			window.sessionStorage.removeItem(BOOT_RETRY_KEY);
-			for (let i = 1; i <= BOOT_RETRIES; i++) {
+			window.sessionStorage.removeItem(BOOT_RETRY_STORAGE_KEY);
+			// docs/verification.md §8: three quick retries, eight total, slow after eight seconds.
+			for (let i = 0; i < 3; i++) {
 				expect(await page(100)).toMatchObject({ reloaded: true, message: false });
 				expect(reload).toHaveBeenCalledTimes(1);
 			}
 			expect(await page(100)).toMatchObject({ reloaded: false, message: true });
 			// a slow load cut off midway was making progress: it is reloaded although the quick budget is spent
-			expect(await page(BOOT_SLOW_MS + 1)).toMatchObject({ reloaded: true, message: false });
-			for (let i = BOOT_RETRIES + 2; i <= BOOT_MAX_RELOADS; i++)
-				expect(await page(BOOT_SLOW_MS * 2)).toMatchObject({ reloaded: true, message: false });
-			expect(await page(BOOT_SLOW_MS * 2)).toMatchObject({ reloaded: false, message: true });
+			expect(await page(8001)).toMatchObject({ reloaded: true, message: false });
+			for (let total = 5; total <= 8; total++)
+				expect(await page(16_000)).toMatchObject({ reloaded: true, message: false });
+			expect(await page(16_000)).toMatchObject({ reloaded: false, message: true });
 			const { root } = await page(null);
 			root.appendChild(document.createElement('main'));
 			await vi.advanceTimersByTimeAsync(0);
 			expect(stored()).toBeNull();
-			window.sessionStorage.setItem(BOOT_RETRY_KEY, '{"fast":"x","total":-4}');
+			window.sessionStorage.setItem(BOOT_RETRY_STORAGE_KEY, '{"fast":"x","total":-4}');
 			expect(await page(100)).toMatchObject({ reloaded: true, message: false });
 		} finally {
 			for (const fn of listeners) window.removeEventListener('error', fn, true);
 			Object.defineProperty(window, 'location', { configurable: true, value: realLocation });
-			window.sessionStorage.removeItem(BOOT_RETRY_KEY);
+			window.sessionStorage.removeItem(BOOT_RETRY_STORAGE_KEY);
 			document.body.innerHTML = '';
 			vi.useRealTimers();
 		}

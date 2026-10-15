@@ -9,7 +9,7 @@ import { exportMode } from '../src/export/mode.ts';
 import { focusStore } from '../src/shell/focus.ts';
 import { GlobalHosts } from '../src/shell/GlobalHosts.tsx';
 import { prefsStore } from '../src/shell/prefs.ts';
-import { WORKSPACES_KEY, WorkspaceStore } from '../src/shell/workspaces/store.ts';
+import { WorkspaceStore } from '../src/shell/workspaces/store.ts';
 import { EngineProvider } from '../src/state/engine.tsx';
 import { memoryStorage } from './shell-storage.ts';
 // Keep Vite's module transformation outside UI waitFor timeouts. Production lazy loading is covered
@@ -62,7 +62,7 @@ describe('editor shell (rendered)', { timeout: 60_000 }, () => {
 	});
 
 	it('AC-SH-4: a corrupt stored layout opens the default layout with exactly one warning toast', async () => {
-		workspace = new WorkspaceStore(memoryStorage({ [WORKSPACES_KEY]: '{not json' }));
+		workspace = new WorkspaceStore(memoryStorage({ 'jasper:workspaces': '{not json' }));
 		mountEditor();
 		await waitFor(() => expect(screen.getByTestId('editor-shell').dataset.workspace).toBe('editing'));
 		await act(async () => {});
