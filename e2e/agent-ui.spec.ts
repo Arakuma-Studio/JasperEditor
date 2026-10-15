@@ -163,18 +163,37 @@ test('ui_screenshot returns the window and a cropped panel', async () => {
 	writeFileSync(join(ROOT, 'test-results', 'agent-ui', 'window.png'), png);
 	expect(png.readUInt32BE(16)).toBeGreaterThan(0);
 	expect(png.readUInt32BE(16)).toBeLessThanOrEqual(800);
-	const panel = await call('ui_screenshot', { projectId, panel: 'timeline' });
+	const windowInfo = JSON.parse(text(win)) as { width: number; height: number };
+	expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([windowInfo.width, windowInfo.height]);
+	await test
+		.info()
+		.attach('window-screenshot-metadata', { body: text(win), contentType: 'application/json' });
+	const state = await tool<{
+		panels: { kind: string; visible: boolean; bounds: { width: number; height: number } }[];
+	}>('ui_state', { projectId });
+	expect(await page.evaluate(() => window.devicePixelRatio)).toBe(1);
+	const timeline = state.panels.find((p) => p.kind === 'timeline' && p.visible);
+	expect(timeline).toBeTruthy();
+	expect(timeline!.bounds.width).toBeLessThanOrEqual(1600);
+	const panel = await call('ui_screenshot', { projectId, panel: 'timeline', maxWidth: 1600 });
 	expect(panel.isError, text(panel)).toBeFalsy();
 	const pimg = panel.content.find((c) => c.type === 'image') as { data: string };
 	const panelPng = Buffer.from(pimg.data, 'base64');
 	writeFileSync(join(ROOT, 'test-results', 'agent-ui', 'timeline.png'), panelPng);
 	expect(panelPng.subarray(1, 4).toString()).toBe('PNG');
 	expect(panelPng.readUInt32BE(16)).toBeGreaterThan(0);
-	const visiblePanel = await page.getByTestId('timeline-panel').screenshot({ scale: 'css' });
-	for (const dimension of [16, 20])
-		expect(
-			Math.abs(panelPng.readUInt32BE(dimension) - visiblePanel.readUInt32BE(dimension)),
-		).toBeLessThanOrEqual(1);
+	const panelInfo = JSON.parse(text(panel)) as { width: number; height: number };
+	await test
+		.info()
+		.attach('panel-screenshot-metadata', { body: text(panel), contentType: 'application/json' });
+	expect([panelPng.readUInt32BE(16), panelPng.readUInt32BE(20)]).toEqual([panelInfo.width, panelInfo.height]);
+	for (const [dimension, extent] of [
+		[16, timeline!.bounds.width],
+		[20, timeline!.bounds.height],
+	] as const) {
+		expect(panelPng.readUInt32BE(dimension)).toBeGreaterThanOrEqual(Math.floor(extent));
+		expect(panelPng.readUInt32BE(dimension)).toBeLessThanOrEqual(Math.ceil(extent));
+	}
 });
 
 test('a clip running off the visible timeline is aimed at its visible part; one scrolled away is revealed (wp fixups)', async () => {

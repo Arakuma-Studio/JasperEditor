@@ -111,7 +111,10 @@ Works identically in the browser and in Electron (both load the same SPA).
 - Screenshots: Electron — `webContents.capturePage` via a new preload IPC (`jasper:capture-page`, rect validated
   in `security.ts`), the real pixels; web — `modern-screenshot` (MIT) DOM rasterisation of the window or one
   element/panel (canvases and videos included; a WebGL canvas without preserved buffers can come out stale — the
-  result says so and points to `render_frame`).
+  result says so and points to `render_frame`). Returned `width` and `height` describe the encoded PNG raster;
+  `bounds` describe its target in window CSS pixels. Web dimensions are read from the decoded output image,
+  so fractional panel sizes do not make the metadata disagree with the actual raster. The PNG bytes and their
+  density metadata remain unchanged.
 
 **Audit.** `e2e/ui-audit.spec.ts` opens a project with clips, a title with an effect and keyframes, a transition
 and a marker, selects the title, then for every workspace focuses and maximizes each of its panels, opens the

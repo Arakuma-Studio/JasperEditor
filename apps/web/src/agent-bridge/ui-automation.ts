@@ -788,14 +788,21 @@ async function screenshot(a: ShotArgs) {
 		timeout: 15_000,
 	});
 	const png = url.slice(url.indexOf(',') + 1);
-	return {
-		png,
-		width: Math.round(rect.width * scale),
-		height: Math.round(rect.height * scale),
-		bounds: rect,
-		via: 'dom',
-		note: 'Rasterised from the DOM: WebGL canvases (GPU effects in the Program monitor) may show their last drawn frame or nothing; use render_frame for the rendered picture.',
-	};
+	const bitmap = await createImageBitmap(
+		new Blob([Uint8Array.from(atob(png), (c) => c.charCodeAt(0))], { type: 'image/png' }),
+	);
+	try {
+		return {
+			png,
+			width: bitmap.width,
+			height: bitmap.height,
+			bounds: rect,
+			via: 'dom',
+			note: 'Rasterised from the DOM: WebGL canvases (GPU effects in the Program monitor) may show their last drawn frame or nothing; use render_frame for the rendered picture.',
+		};
+	} finally {
+		bitmap.close();
+	}
 }
 
 const round = (v: number) => Math.round(v * 10) / 10;
