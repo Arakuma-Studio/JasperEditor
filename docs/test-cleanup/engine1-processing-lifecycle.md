@@ -45,7 +45,7 @@ case remains KEEP; only its shared resource cleanup is rewritten.
 
 | Case or same-contract family | Six-item justification and remaining owner |
 | --- | --- |
-| `every step keeps frame count, rate and audio`: `deblock`, `denoise-atadenoise`, `denoise-fftdnoiz`, `stabilize-vidstab`, `stabilize-deshake`, `dejudder`, `upscale`, `chain` | **1:** S07 §8 test 2 explicitly specifies `clip-b.mp4`, six seconds of 720p25, frame/rate preservation and bit-exact copied audio; §8 test 6 specifies 2× upscaling. **2:** dropped/extra frames, changed rate, lost/reencoded audio, wrong output format or scale fail output checks. **3:** input packet counts, rate and audio bytes come from the independent input file; ProRes/bt709 and scale are requested output requirements. **4:** real `runProc` with real FFmpeg, step dispatch and generated ONNX model is the processing CLI boundary. **5:** decoder, encoder or step implementation changes preserve the same file observations. **6:** the single-frame tile test cannot observe the container, audio or 150-frame stream; each method and composed chain can independently break preservation. No stronger remaining owner covers all these step outputs. |
+| `every step keeps frame count, rate and audio`: `deblock`, `denoise-atadenoise`, `denoise-fftdnoiz`, `stabilize-vidstab`, `stabilize-deshake`, `dejudder`, `upscale`, `chain` | **1:** S07 §8 test 2 explicitly specifies `clip-b.mp4`, six seconds of 720p25, frame/rate preservation and bit-exact copied audio; §8 test 6 specifies 2× upscaling. **2:** dropped/extra frames, changed rate, lost/reencoded audio, wrong output format or scale fail output checks. **3:** input packet counts, rate and audio bytes come from the independent input file; ProRes/bt709 and scale are requested output requirements. **4:** real `runProc` with real FFmpeg, step dispatch and generated ONNX model is the shared processing runner beneath the CLI; its output files are the observed seam. **5:** decoder, encoder or step implementation changes preserve the same file observations. **6:** the single-frame tile test cannot observe the container, audio or 150-frame stream; each method and composed chain can independently break preservation. No stronger remaining owner covers all these step outputs. |
 | `vid.stab (WASM): motion variance drops ≥ 60 %` | **1:** S07 §8 test 3 requires this reduction on the authored shaky clip. **2:** residual visible camera shake breaches the threshold. **3:** independent phase-correlation measurements of source/output frames produce variance; the 60% target comes from the spec. **4:** real `runProc` file output. **5:** no private stage or call-shape assertion. **6:** the generic preservation test cannot detect ineffective stabilization; this owns the WASM path's quality contract. |
 | `deshake: motion variance drops ≥ 40 %` | **1:** S07 §8 test 3 separately specifies deshake's 40% threshold. **2:** ineffective fallback stabilization leaves measurable shake. **3:** measured source/output motion and spec threshold, independent of stabilization implementation. **4:** real processed file. **5:** internal refactors retain the same motion observations. **6:** the WASM threshold and container preservation do not own deshake's independent fallback behavior. |
 | `reduces uneven frame-to-frame motion by at least 50%` | **1:** S07 §8 test 4 requires the per-pair motion coefficient of variation to decrease by at least 50%. **2:** visible uneven movement remains when dejudder does not retime correctly. **3:** source/output motion is measured independently with phase correlation and the spec threshold. **4:** real `runProc` output frames. **5:** no private cadence decisions are asserted. **6:** the container count test cannot distinguish correct retiming from unchanged motion. |
@@ -79,15 +79,16 @@ fixture, model, snapshot or helper becomes unused; none is removed.
 - `proc` is private test support. Its only callers are the cases enumerated
   above; no production caller exists and no export is added.
 - `runProc` is used by `apps/engine/src/processing/proc/cli.ts`, which already
-  owns and aborts its controller. It retains its public signal contract.
+  owns and aborts its controller, adds forced child termination and removes
+  partial outputs. The CLI retains its public signal contract.
 - `ffio.ts` maintains a module-global child set. Merely sending a delayed abort
-  after advancing tests could kill the next test's children. The hook must join
-  the owned promise before advancing.
+  after advancing tests could kill the next test's children. The hook requests
+  cancellation and joins the owned promise within its existing timeout budget.
 - Joining `runProc` proves JavaScript operation settlement, not child reaping by
   itself: the rejection path does not await `RawWriter.close`, and decoder
-  cleanup sends SIGTERM without awaiting exit. The scheduled real-PID probe
-  must verify actual process exit before the next case; no such result is
-  claimed from static inspection.
+  cleanup sends SIGTERM without awaiting exit. The real-PID probe below found
+  the encoder still alive and writing after the next case began. Complete
+  process isolation is therefore unproven and failed in that probe.
 - The installed Vitest 4.1.11 public declaration documents `onTestFinished` as
   running on pass/fail. Current cases do not dynamically skip. Its existing hook
   timeout stays unchanged; a stuck cleanup remains a reported failure. An
@@ -99,25 +100,20 @@ fixture, model, snapshot or helper becomes unused; none is removed.
   settlement observation consumes only that same already-awaited promise;
   numerical assertions and error checks are not caught or suppressed.
 
-## Validation plan and current limits
+## Validation and current limits
 
 1. Static checks: focused Biome, TypeScript syntax diagnostics, unchanged
    assertion/deadline/fixture comparison and `git diff --check`.
-2. When the parent schedules runtime: a disposable validation copy forces a
-   short timeout during an actual processing operation. An external monitor must
-   first observe active decoder/encoder PIDs and incomplete output; cancellation
-   before child startup is inconclusive. Verify those exact owned PIDs are gone
-   and the operation has settled before a following sentinel case. Record any
-   residual model-worker/pipe risks and cleanup-wait behavior. Keep the committed
-   600000 ms deadline untouched. Exercise the real lifecycle and actual child
-   processes, not a mock that implements cancellation.
-3. Rerun the unchanged upscale acceptance case, then the affected file and
-   required integrated gates as scheduled. The lifecycle fix alone cannot turn
-   the original watchdog failure into a pass.
-
-No new heavy runtime, build or package typecheck was launched while the parent's
-full suite was active. GREEN cleanup validation and the original acceptance
-rerun are pending; the recorded overlap is the RED evidence.
+2. The scheduled disposable validation copy forced a short timeout after an
+   external monitor observed active decoder/encoder PIDs and incomplete output.
+   Its strict acceptance criterion required those exact processes to exit and
+   the operation to settle before a following sentinel case. It also recorded
+   residual model-worker/pipe risks and cleanup-wait behavior. The real helper,
+   processing implementation and child processes ran; the committed 600000 ms
+   deadline stayed untouched. The strict criterion failed as detailed below.
+3. The unchanged upscale acceptance case passed its focused rerun. Integrated
+   gate results remain separately recorded by the parent. The lifecycle change
+   alone does not turn the original watchdog failure into a pass.
 
 Completed static checks: focused Biome passed (one file); TypeScript parse
 diagnostics were empty; `git diff --check` passed. A byte comparison against
@@ -126,3 +122,99 @@ These checks establish the patch's narrow scope, not runtime cleanup success.
 Independent cross-review confirmed the installed public hook runs after success
 or failure, including watchdog failure, and is awaited within its existing
 budget; static review is clear with the process-exit limits stated above.
+
+### Controlled timeout: strict cleanup probe failed
+
+After the full gate exited, the disposable probe ran the committed helper with
+the actual 1280×720×150 fixture, real tiny ONNX model and FFmpeg, with only its
+diagnostic deadline reduced to 30000 ms. An external monitor first observed an
+active decoder and encoder, progress at frame 1/150, incomplete output and no
+sidecar. The committed 600000 ms deadline and test source stayed unchanged.
+The probe and monitor ran at nice 0; no priority of another process was changed.
+
+The archived verdict is **`CLEANUP_NOT_PROVEN`**, exit 1. The intentional timeout
+and the following process-isolation sentinel both failed. Evidence from
+`processing-lifecycle-probe/run-20261015T124335.537091Z/`:
+
+- Abort was requested at 12:44:10.643Z. `runProc` rejected with `cancelled` at
+  12:44:10.736Z, 93 ms later. The finish hook ended at 12:44:10.737Z; the next
+  sentinel began at 12:44:10.738Z.
+- Decoder PID 2806990/start 39187384 was absent at sentinel entry. Encoder PID
+  2806989/start 39187383 was still sleeping, last observed at 12:44:10.897Z and
+  first absent at 12:44:10.999Z. These are sampled exit bounds, not an exact exit
+  timestamp.
+- The partial output grew from 74186788 to 75473211 bytes after sentinel entry,
+  an additional 1286423 bytes. Its final modification time was
+  12:44:10.950104712Z. No sidecar was produced.
+- The runner reported no unhandled or module-level errors. No owned descendants
+  remained at the final observation, and no emergency process cleanup was used.
+  Thread/pipe snapshots cannot establish ownership or release of every native
+  ONNX thread.
+
+The existing hook therefore demonstrated prompt cancellation and JavaScript
+operation settlement for this run. It did **not** establish that all FFmpeg
+children exit, or all output writes stop, before the next test begins. The
+earlier 73-second overlap remains the RED evidence for adding ownership; the
+stronger process-isolation probe remains failed. Neither result is relabelled
+as GREEN.
+
+The diagnostic JSON reporter favored a `STACK_TRACE_ERROR` stack over the actual
+timeout message, so its `intentional_timeout_recorded` flag is false even though
+the console log explicitly records the 30000 ms watchdog. This instrumentation
+limitation is separate from the independently observed live encoder and late
+writes. The archive is unchanged; any future probe should record messages from
+the public `onTestCaseResult(testCase)` / `testCase.result().errors` API.
+
+### Cancellation contract and production ownership
+
+S07 PRC-011 specifies the standalone `jasper-proc` CLI and exit 3 on cancellation;
+PRC-014 requires process-tree termination and removal of partial outputs.
+[Architecture §9.3](../ARCHITECTURE.md#93-jobs-s04-17), S04 JB-020 and QA-007
+require job cancellation to terminate the tree, delete scratch/partials and
+reach `cancelled` within five seconds. These are CLI/job contracts; they do not
+independently specify that an internal `runProc` rejection has already reaped
+every child.
+
+Caller census found `proc/cli.ts` is `runProc`'s sole production caller. Its signal
+handler aborts the runner and calls `killChildren('SIGKILL')`; its catch path
+calls `cleanupPartial` before returning the cancellation exit code. The engine
+launches that CLI in a separate process for each local job, waits for child
+`close`, then checks `ctx.signal.aborted` before allowing output publication.
+`runProcess` uses job-specific partial paths and renames/registers output only
+after successful processing. The job queue awaits its tracked-child termination
+path and removes registered partials before publishing terminal cancellation. The probe
+used the internal runner directly and bypassed these production cleanup owners.
+
+Concrete public failures would be a CLI reporting cancellation while its child
+continues writing, a terminal cancelled job retaining partial output or live
+processes, or a cancelled result being published/reused as completed media.
+The probe does not reproduce any of those public outcomes. Retained lowest
+stable cancellation owners passed the full gate:
+
+| Retained case | Independent contract and observable failure | Recorded result |
+| --- | --- | --- |
+| `processing-cli.test.ts`: `cancels a processor whose detached FFmpeg ignores SIGTERM` | PRC-011/014: real CLI signal handling must return exit 3, remove the partial file and terminate the stubborn external process. The fixture implements a child that ignores SIGTERM, not the asserted cleanup. | PASS, 2203 ms |
+| `jobs.test.ts`: `cancels a running ffmpeg job within 5 s with no child process left and removes partials` | JB-020/QA-007: public queue cancellation must finish within five seconds, leave no tracked process/group and remove the partial. Uses real FFmpeg plus a stubborn child. | PASS, 3814 ms |
+| `processing-remote.test.ts`: `cancel kills the remote process group and leaves no job directory` | PRM-006: HTTP cancellation after actual processing begins must reach `cancelled`, remove the remote job directory and stop the recorded process. | PASS, 3055 ms |
+
+These rows cite existing coverage, not new dispositions or added cases. No
+production change is justified solely to satisfy the stronger direct-runner
+probe. If a public race is later reproduced, its regression belongs at the
+existing CLI or job boundary with independently observed process/artifact
+outcomes, rather than private child-set or call-shape assertions.
+
+### Unchanged acceptance rerun passed
+
+The parent reran only `every step keeps frame count, rate and audio > upscale`
+on integrated `68e99cbc`: **1 passed, 15 excluded by the name filter, exit 0**.
+The case took 33930.038532 ms (41.92 s total), retaining the original fixture,
+numerical/audio assertions and 600000 ms deadline. Evidence is
+`processing-upscale-recheck.{json,log}`, its source record and events. The host
+conditions were not controlled against the timed-out run, so the faster result
+is not attributed to the lifecycle helper. The original full-gate watchdog
+failure and failed strict cleanup probe remain explicitly recorded.
+
+This report-only follow-up changes no test disposition, fixture, model, support
+code, production seam or deadline. No additional runtime, build or typecheck
+was launched for the follow-up; validation is source/evidence review and
+`git diff --check`.
