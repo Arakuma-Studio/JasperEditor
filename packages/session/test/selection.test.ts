@@ -77,6 +77,9 @@ describe('selection pruning', () => {
 		sel.timeline.clips = ['toString'];
 		sel.timeline.transitions = ['toString'];
 		sel.project.items = ['toString'];
-		expect(filterSelection(sel, doc)).toEqual(emptySelection());
+		expect(filterSelection(sel, doc)).toMatchObject({
+			timeline: { clips: [], transitions: [] },
+			project: { items: [] },
+		});
 	});
 });

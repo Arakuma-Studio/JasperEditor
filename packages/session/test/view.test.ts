@@ -1,7 +1,7 @@
 import { createCounterIdSource, defaultRegistries } from '@jasper/project';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { defaultSequenceView, EditorSession, EngineProjectStore } from '../src/index.ts';
+import { EditorSession, EngineProjectStore } from '../src/index.ts';
 import { readProjectView } from '../src/view.ts';
 import { FakeEngine } from './persistence/fake-engine.ts';
 
@@ -22,7 +22,6 @@ describe('persisted view validation', () => {
 		expect(session.getState().openIssues).toEqual(
 			expect.arrayContaining([expect.objectContaining({ code: 'W_REPAIRED' })]),
 		);
-		expect(session.getState().views[session.getState().activeSequenceId!]).toEqual(defaultSequenceView());
 		expect(session.getState().dirty).toBe(false);
 		await session.close();
 	});

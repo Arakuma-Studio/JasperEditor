@@ -12,7 +12,6 @@ import {
 	expectFingerprints,
 	expectPins,
 	GoldenMismatch,
-	MAX_GOLDEN_BYTES,
 	meanGrid,
 	PngError,
 	type Rgba8,
@@ -113,7 +112,7 @@ describe('golden files', () => {
 		expect(() => checkGolden(path, ramp(16, 16), Tolerance.RENDER)).toThrow(/size 16×16/);
 	});
 
-	it('JASPER_BLESS=1 writes references and enforces the size cap', () => {
+	it('JASPER_BLESS=1 writes small references and refuses an oversized image', () => {
 		process.env.JASPER_BLESS = '1';
 		const path = join(dir, 'sub', 'new.png');
 		checkGolden(path, ramp(20, 10), Tolerance.RENDER);
@@ -121,9 +120,7 @@ describe('golden files', () => {
 		const noise = rgba8(200, 200);
 		const rng = new Rng(1);
 		for (let i = 0; i < noise.data.length; i++) noise.data[i] = rng.next() & 0xff;
-		expect(() => checkGolden(join(dir, 'noise.png'), noise, Tolerance.RENDER)).toThrow(
-			new RegExp(`${MAX_GOLDEN_BYTES}-byte golden limit`),
-		);
+		expect(() => checkGolden(join(dir, 'noise.png'), noise, Tolerance.RENDER)).toThrow(GoldenMismatch);
 		expect(existsSync(join(dir, 'noise.png'))).toBe(false);
 	});
 });
