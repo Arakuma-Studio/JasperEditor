@@ -147,8 +147,73 @@ export function withoutContext(s: string): string {
 const SEPARATORS = /(\s*(?:[:·▸›»|/]|[—–-]\s|→)\s*|\s+\(|\)\s*|,\s+)/;
 
 /**
- * The translation of a name from the model, or of a label made of such names joined by separators; null when
- * nothing in it is a known name (or the language is English).
+ * Model names with `{0}`… placeholders (sound-design History labels and refusals: "Place Sound {0}", "Track not found:
+ * {0}") match a text whose placeholders hold ids, titles or numbers; those are kept as they are. Compiled once per
+ * name set, indexed by the text before the first placeholder (or, for templates that start with one, after the last).
+ */
+type Template = { key: string; re: RegExp; slots: number[] };
+let templates: {
+	names: ReadonlySet<string>;
+	byPrefix: Map<string, Template[]>;
+	bySuffix: Map<string, Template[]>;
+} | null = null;
+const AFFIX = 4;
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+function templatesOf(names: ReadonlySet<string>): NonNullable<typeof templates> {
+	if (templates?.names === names) return templates;
+	const byPrefix = new Map<string, Template[]>();
+	const bySuffix = new Map<string, Template[]>();
+	for (const key of names) {
+		if (!/\{\d+\}/.test(key)) continue;
+		const parts = key.split(/(\{\d+\})/);
+		const slots: number[] = [];
+		const re = new RegExp(
+			`^${parts
+				.map((p) => {
+					const m = /^\{(\d+)\}$/.exec(p);
+					if (!m) return escapeRe(p);
+					slots.push(Number(m[1]));
+					return '(.+?)';
+				})
+				.join('')}$`,
+			's',
+		);
+		const t: Template = { key, re, slots };
+		const head = parts[0]!;
+		const tail = parts[parts.length - 1]!;
+		const [map, affix] =
+			head.length >= AFFIX ? [byPrefix, head.slice(0, AFFIX)] : [bySuffix, tail.slice(-AFFIX)];
+		const list = map.get(affix) ?? [];
+		list.push(t);
+		map.set(affix, list);
+	}
+	templates = { names, byPrefix, bySuffix };
+	return templates;
+}
+
+/** The translation of a text matching a templated model name (its placeholders filled back), else null. */
+function translateTemplate(s: string, cat: Catalog, names: ReadonlySet<string>): string | null {
+	if (s.length > 1000) return null;
+	const { byPrefix, bySuffix } = templatesOf(names);
+	for (const t of [...(byPrefix.get(s.slice(0, AFFIX)) ?? []), ...(bySuffix.get(s.slice(-AFFIX)) ?? [])]) {
+		const m = t.re.exec(s);
+		if (!m) continue;
+		const v = cat[t.key];
+		if (!v || v === t.key) return null;
+		const args = new Map<number, string>();
+		t.slots.forEach((slot, i) => {
+			args.set(slot, m[i + 1]!);
+		});
+		return v.replace(/\{(\d+)\}/g, (x, i: string) => args.get(Number(i)) ?? x);
+	}
+	return null;
+}
+
+/**
+ * The translation of a name from the model, of a text matching a templated model name, or of a label made of such
+ * names joined by separators ("Agent: Place Sound Whoosh"); null when nothing in it is a known name (or the language
+ * is English).
  */
 export function translateName(s: string): string | null {
 	const cat = catalog;
@@ -160,11 +225,19 @@ export function translateName(s: string): string | null {
 		const v = cat[k];
 		return v && v !== k ? s.replace(k, v) : null;
 	}
+	const whole = translateTemplate(k, cat, names);
+	if (whole !== null) return s.replace(k, whole);
 	if (k.length > 200 || !SEPARATORS.test(k)) return null;
 	let changed = false;
 	const parts = s.split(SEPARATORS).map((part) => {
 		const p = part.trim();
-		if (!p || !names.has(p)) return part;
+		if (!p) return part;
+		if (!names.has(p)) {
+			const v = translateTemplate(p, cat, names);
+			if (v === null) return part;
+			changed = true;
+			return part.replace(p, v);
+		}
 		const v = cat[p];
 		if (!v || v === p) return part;
 		changed = true;

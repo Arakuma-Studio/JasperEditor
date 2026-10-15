@@ -12,12 +12,17 @@ import {
 	type DerivedCue,
 	defaultRegistries,
 	type Keyframe,
+	loadProject,
 	type MediaAsset,
 	makeEnvelope,
+	PROJECT_CUE_SOURCES,
 	type ProjectDocument,
+	soundDesignSettingsOf,
 } from '@jasper/project';
 import { describeFuzz, jsonTarget } from '@jasper/testkit/fuzz';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+// The editor's Suggest Cues… planner (pure; no React): both surfaces must derive the same cues (spec 12 §2.8).
+import { planSuggestion } from '../../web/src/sound/cues/suggest.ts';
 import { closeApps, JSON_H, makeApp, type TestApp } from './helpers.ts';
 
 const F = 705_600_000 / 30;
@@ -331,6 +336,110 @@ describe('POST /api/sound-design/cues', () => {
 		// maxCues caps the result
 		const capped = SoundCuesResponseSchema.parse((await post({ envelope: env, opts: { maxCues: 3 } })).body);
 		expect(capped.cues.length).toBeLessThanOrEqual(3);
+	});
+
+	it('needs the token in token mode (401 without it)', async () => {
+		const secured = await makeApp({ dev: false, token: 's3cret' });
+		const f = fixture();
+		const payload = JSON.stringify({ envelope: envelopeOf(f.doc, f.revision) });
+		const url = '/api/sound-design/cues';
+		const without = await secured.inject({ method: 'POST', url, headers: JSON_H, payload });
+		expect(without.statusCode).toBe(401);
+		const wrong = await secured.inject({
+			method: 'POST',
+			url,
+			headers: { ...JSON_H, authorization: 'Bearer nope' },
+			payload,
+		});
+		expect(wrong.statusCode).toBe(401);
+		const ok = await secured.inject({
+			method: 'POST',
+			url,
+			headers: { ...JSON_H, authorization: 'Bearer s3cret' },
+			payload,
+		});
+		expect(ok.statusCode, ok.body).toBe(200);
+	});
+});
+
+describe('the same cues as the editor (Suggest Cues…) for the same document and options', () => {
+	/** What a stored cue keeps of a suggestion (confidence as the route rounds it). */
+	const view = (c: Record<string, unknown>) => {
+		const x = { ...c };
+		x.confidence = Math.round((c.confidence as number) * 1000) / 1000;
+		return x;
+	};
+	/** The fixture plus a graphic moved by an expression only (no keyframes) and In/Out points. */
+	function withExpression() {
+		const f = fixture();
+		const r = f.tx([
+			{ type: 'media.register', asset: asset('image'), ref: '$m' },
+			{ type: 'clip.place', source: { mediaId: '$m' }, at: 120, tracks: { video: 'V4' }, ref: '$e' },
+		]);
+		f.tx([
+			{ type: 'clip.update', clipId: r.$e!, patch: { name: 'Driven' } },
+			{
+				type: 'expression.set',
+				target: ['clip', r.$e!, 'transform', 'position'],
+				text: '[200 + 1200 * Math.min(1, Math.max(0, (time - 4.5) / 0.3)), 540]',
+			},
+			{ type: 'sequence.setInOut', in: 60, out: 300 },
+		]);
+		return f;
+	}
+
+	it('expression-driven motion, the sequence density, dialogue, ranges and sources agree', async () => {
+		const f = withExpression();
+		f.tx([{ type: 'soundDesign.setSettings', density: 'rich' }]);
+		const env = envelopeOf(f.get(), 7);
+		// The editor holds the loaded document (registries included), as the dialog reads `session.getCommitted()`.
+		const doc = loadProject(env, { mgTemplates: mgRegistry }).document;
+		const seq = doc.sequences[f.seqId]!;
+		const all = new Set(PROJECT_CUE_SOURCES);
+		const cases: {
+			web: Omit<Parameters<typeof planSuggestion>[2], 'replace'>;
+			route: Record<string, unknown>;
+		}[] = [
+			// The dialog's defaults: every source, whole sequence, the sequence's density, respect dialogue.
+			{
+				web: {
+					sources: all,
+					range: 'sequence',
+					density: soundDesignSettingsOf(seq).density,
+					respectDialogue: true,
+				},
+				route: {},
+			},
+			{
+				web: { sources: all, range: 'inout', density: 'sparse', respectDialogue: false },
+				route: { range: { start: 60, end: 300 }, density: 'sparse', respectDialogue: false },
+			},
+			{
+				web: {
+					sources: new Set(['keyframes', 'transitions'] as const),
+					range: 'sequence',
+					density: 'balanced',
+					respectDialogue: true,
+				},
+				route: { sources: ['keyframes', 'transitions'], density: 'balanced' },
+			},
+		];
+		for (const c of cases) {
+			const r = await post({
+				envelope: env,
+				sequenceId: f.seqId,
+				...(Object.keys(c.route).length ? { opts: c.route } : {}),
+			});
+			expect(r.status, JSON.stringify(r.body)).toBe(200);
+			const res = SoundCuesResponseSchema.parse(r.body);
+			const plan = planSuggestion(doc, f.seqId, { ...c.web, replace: true });
+			expect(plan.adds.map(view), JSON.stringify(c.route)).toEqual(
+				res.cues.map((x) => view(cueInputFromDerived(x as unknown as DerivedCue))),
+			);
+		}
+		// The expression-driven graphic is in both: a move (and its stop) on V4 'Driven'.
+		const r = SoundCuesResponseSchema.parse((await post({ envelope: env, sequenceId: f.seqId })).body);
+		expect(r.cues.some((c) => c.reason.includes("'Driven'"))).toBe(true);
 	});
 });
 

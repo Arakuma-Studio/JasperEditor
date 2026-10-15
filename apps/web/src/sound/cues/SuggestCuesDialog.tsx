@@ -3,6 +3,7 @@
 // adds the derived cues — each with its reason, anchor and source `derived` — in ONE transaction "Suggest Cues (n)".
 import {
 	type CueDensity,
+	documentHasActiveExpressions,
 	PROJECT_CUE_SOURCES,
 	readSoundDesignSettings,
 	SOUND_DENSITIES,
@@ -11,6 +12,7 @@ import type { EditorSession } from '@jasper/session';
 import { Checkbox, Dialog, type HostedDialogProps, registerDialog, Select } from '@jasper/ui';
 import { useMemo, useState } from 'react';
 import type { ToastRequest } from '../../commands/types.ts';
+import { useExpressionsFor } from '../../expressions/engine.ts';
 import { useDialogClose } from '../../extensions/dialog.ts';
 import { t } from '../../i18n/runtime.ts';
 import { type ProjectCueSource, planSuggestion, type SuggestRange, suggestRange } from './suggest.ts';
@@ -63,10 +65,15 @@ export function SuggestCuesDialog(
 	const [density, setDensity] = useState<CueDensity>(settings.density);
 	const [respectDialogue, setRespectDialogue] = useState(true);
 	const [replace, setReplace] = useState(true);
+	// Expression-driven motion needs the expression engine (the engine route binds expressions too): the plan is
+	// recomputed once it is loaded, and Suggest waits for it.
+	const expressionsReady = useExpressionsFor(doc);
+	const waitingForExpressions = !expressionsReady && documentHasActiveExpressions(doc);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: expressionsReady re-plans with bound expressions
 	const plan = useMemo(
 		() =>
 			planSuggestion(doc, sequenceId, { sources, range, density, respectDialogue, replace, selectedClips }),
-		[doc, sequenceId, sources, range, density, respectDialogue, replace, selectedClips],
+		[doc, sequenceId, sources, range, density, respectDialogue, replace, selectedClips, expressionsReady],
 	);
 	const n = plan.adds.length;
 	const readOnly = session.getState().readOnly;
@@ -115,7 +122,7 @@ export function SuggestCuesDialog(
 			title="Suggest Cues"
 			size="medium"
 			primaryLabel={n ? t('Suggest {0} Cues', n) : t('Suggest')}
-			primaryDisabled={readOnly || n === 0}
+			primaryDisabled={readOnly || n === 0 || waitingForExpressions}
 			onPrimary={suggest}
 			data-testid="suggest-cues-dialog"
 		>

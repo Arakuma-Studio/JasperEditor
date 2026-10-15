@@ -2,6 +2,7 @@
 export * from './credits.ts';
 export * from './insert.ts';
 export * from './license.ts';
+export * from './messages.ts';
 export * from './place.ts';
 export * from './provenance.ts';
 export * from './rank.ts';

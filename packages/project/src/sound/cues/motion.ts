@@ -29,6 +29,7 @@ import {
 	inRange,
 	isContentClip,
 	label,
+	MAX_SAMPLES_PER_DERIVATION,
 	panOfX,
 	secs,
 	sortedClips,
@@ -45,6 +46,32 @@ export const MOVE_OFF = 0.03;
 export const ABRUPT_STOP = 0.35;
 /** Most frames sampled per clip (≈ 11 min at 30 fps); longer animated spans are truncated with a warning. */
 export const MAX_SAMPLES_PER_CLIP = 20_000;
+
+/**
+ * Takes `frames × cost` samples from the derivation's budget and returns how many frames may be sampled (≤ frames);
+ * warns once when the budget runs out (clips are visited in a fixed order, so the cut is deterministic).
+ */
+function takeSamples(
+	ctx: CueContext,
+	c: Clip,
+	frames: number,
+	source: 'keyframes' | 'camera3d',
+	cost = 1,
+): number {
+	const b = ctx.sampleBudget;
+	const allowed = Math.max(0, Math.min(frames, Math.floor(b.left / Math.max(1, cost))));
+	b.left -= allowed * Math.max(1, cost);
+	if (allowed < frames && !b.warned) {
+		b.warned = true;
+		ctx.warn({
+			code: 'W_SAMPLING_TRUNCATED',
+			message: `Motion analysis stopped at ${clipName(c)}: at most ${MAX_SAMPLES_PER_DERIVATION} frames are sampled per derivation (choose a shorter range)`,
+			source,
+			clipId: c.id,
+		});
+	}
+	return allowed;
+}
 
 type Sample = {
 	x: number;
@@ -227,6 +254,8 @@ function clipMotion(
 		});
 		i1 = i0 + MAX_SAMPLES_PER_CLIP;
 	}
+	if (i1 - i0 < 2) return;
+	i1 = i0 + takeSamples(ctx, c, i1 - i0, 'keyframes');
 	if (i1 - i0 < 2) return;
 	const vc = c as Clip & {
 		transform?: Transform | null;
@@ -678,11 +707,6 @@ export function deriveCameraCues(ctx: CueContext, opts: { curves: CueSpeedCurve[
 		if (index !== undefined && c.kind === 'camera' && c.enabled !== false && c.camera?.transform)
 			cams.push({ c: c as CameraClip, index });
 	}
-	const activeAt = (f: number): CameraClip | null => {
-		let best: { c: CameraClip; index: number } | null = null;
-		for (const x of cams) if (f >= x.c.start && f < clipEnd(x.c) && (!best || x.index > best.index)) best = x;
-		return best?.c ?? null;
-	};
 	const cues: CueCandidate[] = [];
 	for (const { c } of cams) {
 		if (!inRange(ctx, c)) continue;
@@ -699,6 +723,16 @@ export function deriveCameraCues(ctx: CueContext, opts: { curves: CueSpeedCurve[
 			i1 = i0 + MAX_SAMPLES_PER_CLIP;
 		}
 		if (i1 - i0 < 2) continue;
+		// Each sampled frame also asks which camera is active (one test per overlapping camera): that is its cost.
+		const overlapping = cams.filter((x) => x.c.start < c.start + i1 && clipEnd(x.c) > c.start + i0);
+		i1 = i0 + takeSamples(ctx, c, i1 - i0, 'camera3d', 1 + overlapping.length);
+		if (i1 - i0 < 2) continue;
+		const activeAt = (f: number): CameraClip | null => {
+			let best: { c: CameraClip; index: number } | null = null;
+			for (const x of overlapping)
+				if (f >= x.c.start && f < clipEnd(x.c) && (!best || x.index > best.index)) best = x;
+			return best?.c ?? null;
+		};
 		const hold = (c as { frameHold?: { flicks: number; holdFilters?: boolean } }).frameHold;
 		const timeAt = (f: number) => (hold?.holdFilters ? hold.flicks : contentTimeAt(c, f, ctx.rate));
 		const sampleAt = (i: number) => {
