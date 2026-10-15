@@ -64,6 +64,7 @@ export const SoundCueUpdateCmd = cmd('soundCue.update', {
 	soundIds: clearable(z.array(SoundIdSchema).max(SOUND_DESIGN_LIMITS.soundIds)),
 	align: clearable(soundCueFields.align.unwrap()),
 	pan: clearable(soundCueFields.pan.unwrap()),
+	panSweep: clearable(soundCueFields.panSweep.unwrap()),
 	pitchSt: clearable(soundCueFields.pitchSt.unwrap()),
 	stopBefore: clearable(soundCueFields.stopBefore.unwrap()),
 	build: clearable(soundCueFields.build.unwrap()),
@@ -115,7 +116,10 @@ export const SoundLayerSchema = z.strictObject({
 	rate: z.number().min(0.25).max(4).optional(),
 	/** Pitch in semitones (default: the cue's): |st| ≤ 3 by varispeed, else the Pitch Shifter effect. */
 	pitchSt: z.number().min(-12).max(12).optional(),
-	/** Static pan −100…100, or keyframes relative to the cue frame (whoosh sweeps). Default: the cue's static pan. */
+	/**
+	 * Static pan −100…100, or keyframes relative to the cue frame (whoosh sweeps). Default: the cue's `panSweep` (from →
+	 * to over its window, else ± 0.2 s around the cue), else its static pan.
+	 */
 	pan: z
 		.union([
 			z.number().min(-100).max(100),

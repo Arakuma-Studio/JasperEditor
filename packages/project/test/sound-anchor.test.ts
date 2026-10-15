@@ -8,7 +8,9 @@ import {
 	createStaticMgRegistry,
 	cueAnchorRefs,
 	cueAnchorTargetExists,
+	type DerivedCue,
 	defaultRegistries,
+	deriveCues,
 	FLICKS_PER_SECOND,
 	type MgTemplateInfo,
 	resolveCueAnchor,
@@ -16,6 +18,7 @@ import {
 	typewriterScheduleMs,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
+import { animOf, kf, mgRegistry, newHarness, patchClip } from './sound-cues-fixtures.ts';
 
 const schema = z.object({});
 const TPL: MgTemplateInfo = {
@@ -288,5 +291,127 @@ describe('resolveCueAnchor', () => {
 			resolveCueAnchor({ media: {} } as never, { clips: 5 } as never, { type: 'clip' } as never),
 		).toBeNull();
 		expect(FLICKS_PER_SECOND).toBeGreaterThan(0);
+	});
+});
+
+// Review of WP2.2 (deriveCues): anchors the deriver makes must resolve back to the derived frame, and follow the clip.
+describe('derived anchors resolve back to their frame (WP2.2 review regressions)', () => {
+	const offenders = (h: Harness, cues: DerivedCue[]) =>
+		cues
+			.map((c) => ({ c, at: resolveCueAnchor(h.doc, h.seq, c.anchor, { mgTemplates: mgRegistry() }) }))
+			.filter(({ c, at }) => at !== c.frame)
+			.map(({ c, at }) => `${c.key} @${c.frame} → ${at}`);
+	const addText = (h: Harness, text: string, textAnimation: unknown, at = 0, duration = 90) =>
+		h.ok([{ type: 'clip.addText', at, duration, track: 'V2', content: { text }, textAnimation, ref: '$x' }])
+			.refs.$x!;
+
+	it('typewriter Out units: N − ⌈t/frame⌉ like the renderer (was one frame late when t/frame is not whole)', () => {
+		const h = newHarness();
+		addText(
+			h,
+			'abcdefg',
+			{ out: { preset: 'typewriter', durationFrames: 37, params: { typing: 1, delay: 0 } } },
+			0,
+			120,
+		);
+		const keys = deriveCues(h.doc, h.seqId, { density: 'rich' }).cues.filter((c) =>
+			c.group?.includes('typewriter'),
+		);
+		expect(keys.length).toBeGreaterThan(3);
+		expect(offenders(h, keys)).toEqual([]);
+	});
+
+	it('Range Selector reveals resolve per unit (were null) and follow the clip', () => {
+		const h = newHarness();
+		const id = addText(h, 'ABCDEFGH', undefined);
+		patchClip(h, id, (c) => {
+			c.animators = [
+				{
+					id: 'tan_00000000000000A1',
+					name: 'Reveal',
+					enabled: true,
+					properties: { opacity: { value: 0, keyframes: [] } },
+					selectors: [
+						{
+							id: 'tsl_00000000000000S1',
+							kind: 'range',
+							name: 'Range Selector 1',
+							enabled: true,
+							start: animOf(0, [kf('a1', 10, 0), kf('a2', 40, 100)]),
+							end: { value: 100, keyframes: [] },
+							offset: { value: 0, keyframes: [] },
+							units: 'percentage',
+							basedOn: 'characters',
+							mode: 'add',
+							amount: { value: 100, keyframes: [] },
+							shape: 'square',
+							smoothness: { value: 0, keyframes: [] },
+							easeHigh: { value: 0, keyframes: [] },
+							easeLow: { value: 0, keyframes: [] },
+							randomize: false,
+							randomSeed: { value: 0, keyframes: [] },
+						},
+					],
+				},
+			];
+		});
+		const reveal = deriveCues(h.doc, h.seqId, { density: 'rich' }).cues.filter((c) =>
+			c.group?.includes(':animator:'),
+		);
+		expect(reveal.length).toBe(8);
+		expect(offenders(h, reveal)).toEqual([]);
+		h.ok([{ type: 'clip.move', clipIds: [id], deltaFrames: 20 }]);
+		expect(reveal.map((c) => resolveCueAnchor(h.doc, h.seq, c.anchor))).toEqual(
+			reveal.map((c) => c.frame + 20),
+		);
+	});
+
+	it('peak speed of a combined position + scale + rotation move is the deriver’s (combined speed)', () => {
+		const h = newHarness();
+		const m = h.registerVideo({ kind: 'image', width: 400, height: 200 });
+		const id = h.ok([
+			{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { video: 'V2' }, ref: '$s' },
+		]).refs.$s!;
+		patchClip(h, id, (c) => {
+			c.duration = 120;
+			const tr = c.transform as Record<string, unknown>;
+			tr.position = animOf<[number, number]>(
+				[960, 540],
+				[kf('p1', 10, [200, 540]), kf('p2', 20, [700, 540])],
+			);
+			tr.scale = animOf(100, [kf('s1', 10, 100, 'bezier'), kf('s2', 50, 300, 'bezier')]);
+			tr.rotation = animOf(0, [kf('r1', 30, 0), kf('r2', 50, 180)]);
+		});
+		const moves = deriveCues(h.doc, h.seqId, { density: 'rich' }).cues.filter((c) => c.from === 'keyframes');
+		expect(moves.some((c) => c.kind === 'move')).toBe(true);
+		expect(offenders(h, moves)).toEqual([]);
+	});
+
+	it('an overshoot with no key at its extreme lands at the turnaround (deriver and resolver agree)', () => {
+		const h = newHarness();
+		const m = h.registerVideo({ kind: 'image', width: 400, height: 200 });
+		const id = h.ok([
+			{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { video: 'V2' }, ref: '$s' },
+		]).refs.$s!;
+		patchClip(h, id, (c) => {
+			c.duration = 120;
+			const a = kf<[number, number]>('p1', 10, [200, 540], 'bezier');
+			const b = kf<[number, number]>('p2', 40, [960, 540], 'bezier');
+			// a fast start that passes the target and comes back (an ease-out overshoot without a key at the extreme)
+			a.easeOut = { influence: 0.7, slope: 3.2 };
+			b.easeIn = { influence: 0.5, slope: 0 };
+			(c.transform as Record<string, unknown>).position = animOf<[number, number]>([960, 540], [a, b]);
+		});
+		const cues = deriveCues(h.doc, h.seqId, { density: 'rich' }).cues.filter((c) => c.from === 'keyframes');
+		const land = cues.find((c) => c.kind === 'land');
+		expect(land, JSON.stringify(cues.map((c) => [c.kind, c.frame, c.reason]))).toBeDefined();
+		expect(land!.frame).toBeLessThan(40);
+		expect(offenders(h, cues)).toEqual([]);
+		// the generic rule (no derived event to match) also lands at the turnaround
+		const generic = resolveCueAnchor(h.doc, h.seq, {
+			...(land!.anchor as CueAnchor & { type: 'keyframe' }),
+			keyframeId: undefined,
+		} as CueAnchor);
+		expect(generic).toBe(land!.frame);
 	});
 });

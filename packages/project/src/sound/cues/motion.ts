@@ -197,6 +197,19 @@ export function deriveMotionCues(ctx: CueContext, opts: { curves: CueSpeedCurve[
 	return cues;
 }
 
+/**
+ * The keyframes source's cue candidates of one clip (no track, enabled or range filter): what `deriveMotionCues`
+ * gives for it. `resolveCueAnchor` re-derives a clip with it so a derived motion anchor resolves to the same frame.
+ */
+export function clipMotionCues(ctx: CueContext, c: Clip): CueCandidate[] {
+	if (!isContentClip(c) || (c as { frameHold?: { holdFilters?: boolean } }).frameHold?.holdFilters) return [];
+	const props = animatedProps(c);
+	if (!props.length) return [];
+	const cues: CueCandidate[] = [];
+	clipMotion(ctx, c, props, cues, []);
+	return cues;
+}
+
 function clipMotion(
 	ctx: CueContext,
 	c: Clip,

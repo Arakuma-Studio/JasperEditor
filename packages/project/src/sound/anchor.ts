@@ -8,11 +8,13 @@
 // | `edit` | the incoming clip's first frame (else the outgoing clip's end) |
 // | `transition` | the visual centre of the transition's span: `start + ⌊duration / 2⌋` |
 // | `keyframe` | `start` / `end`: the run's first / last key (or `keyframeId`); `peak-speed`: the middle of the fastest
-// |   | stretch of the run, sampled per frame; `settle`: the first frame after the peak at which the value reaches its
-// |   | rest value (within 1 % of the travel) — the first arrival of an overshoot. With `keyframeId` the run is the
-// |   | segment that ends at that key. |
-// | `text` | In: the clip's first frame (typewriter `unit` i: the frame it is typed on); Out: the Out window's first
-// |   | frame (`unit` i: the frame the i-th deleted unit goes) |
+// |   | stretch of the run, sampled per frame; `settle`: an overshoot's turnaround, else the first frame after the peak
+// |   | at which the value reaches its rest value (within 1 % of the travel). With `keyframeId` the run is the segment
+// |   | that ends at that key. Anchors the deriver made resolve by deriving the clip again (combined position + scale +
+// |   | rotation speed; Range Selector reveals): `derivedAnchorFrame`; the rules above are the fallback. |
+// | `text` | In: the clip's first frame (typewriter `unit` i: the frame it is typed on, `typewriterOffsets`); Out: the
+// |   | Out window's first frame (`unit` i: the frame the i-th deleted unit goes, `N − ⌈t/frame⌉`); a `unit` of a Range
+// |   | Selector reveal: the frame the deriver finds for it (`derivedAnchorFrame`) |
 // | `mg` | intro end / outro start of the template (its frames are written at 30 fps and scaled like the renderer) |
 // | `clip` | the clip's first frame or its end (the first frame after it) |
 // | `scene` | the first frame (earliest clip) that shows `mediaSec` of the media |
@@ -26,6 +28,14 @@ import type { Clip, Sequence } from '../schema/sequence.ts';
 import { type CueAnchor, SOUND_DESIGN_LIMITS } from '../schema/sound.ts';
 import { resolveTextAnimationWindows } from '../text-animations.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
+import { clipMotionCues } from './cues/motion.ts';
+import { textClipCueCandidates } from './cues/text.ts';
+import type { CueCandidate } from './cues/types.ts';
+import { makeContext } from './cues/util.ts';
+import { textUnitCount, typewriterOffsets, typewriterScheduleMs } from './text-events.ts';
+
+export { textUnitCount, typewriterScheduleMs };
+
 import { activeRemap, clipMediaTimeFn, frameAtContent } from '../time-remap/model.ts';
 import { transitionStartFrame } from '../transitions.ts';
 
@@ -124,9 +134,9 @@ function resolve(
 		case 'marker':
 			return markerFrame(seq, anchor.markerId);
 		case 'keyframe':
-			return keyframeAnchorFrame(seq, anchor);
+			return derivedAnchorFrame(doc, seq, anchor) ?? keyframeAnchorFrame(seq, anchor);
 		case 'text':
-			return textAnchorFrame(seq, anchor);
+			return textAnchorFrame(doc, seq, anchor);
 		case 'mg':
 			return mgAnchorFrame(seq, anchor, opts);
 		case 'scene': {
@@ -279,7 +289,26 @@ function keyframeAnchorFrame(
 		const hi = frames[runEnd + 1]!;
 		return frameOrNull(Math.floor((lo + hi) / 2 + 1e-9));
 	}
-	// settle: the first frame after the peak at which the value reaches its rest (last) value within 1 % of the travel.
+	// settle: an overshoot's turnaround (the frame where the motion along the peak's direction reverses, as the
+	// deriver lands it), else the first frame after the peak at which the value is within 1 % of the travel from rest.
+	const step = (k: number): number[] | null => {
+		const p = values[k];
+		const q = values[k + 1];
+		if (fin(p) && fin(q)) return [q - p];
+		if (Array.isArray(p) && Array.isArray(q) && p.length === q.length)
+			return p.map((x, i) => (fin(x) && fin(q[i]) ? (q[i] as number) - x : 0));
+		return null;
+	};
+	const dir = step(runStart);
+	if (dir) {
+		const along = (d: number[]) => d.reduce((acc, x, i) => acc + x * dir[i]!, 0);
+		const vPeak = along(dir);
+		for (let k = runStart + 1; k + 1 < values.length; k++) {
+			const d = step(k);
+			const u = d ? along(d) : 0;
+			if (u * vPeak < 0 && Math.abs(u) >= 0.02 * Math.abs(vPeak)) return frameOrNull(frames[k]!);
+		}
+	}
 	const rest = values[values.length - 1];
 	let travel = 0;
 	for (const v of values) travel = Math.max(travel, valueDistance(v, rest) ?? 0);
@@ -296,40 +325,11 @@ function contentAt(c: Clip, f: number, rate: Rational): number {
 	return c.sourceIn + i * step;
 }
 
-/** Typed units of a text (`char`: every non-space character; `word`: whitespace-separated words). */
-export function textUnitCount(text: string, unit: 'char' | 'word'): number {
-	if (typeof text !== 'string' || text.length === 0) return 0;
-	if (unit === 'word') return text.split(/\s+/).filter(Boolean).length;
-	const Seg = (globalThis as { Intl?: { Segmenter?: new (l?: string, o?: object) => unknown } }).Intl
-		?.Segmenter;
-	if (Seg) {
-		const seg = new Seg(undefined, { granularity: 'grapheme' }) as {
-			segment(s: string): Iterable<{ segment: string }>;
-		};
-		let n = 0;
-		for (const s of seg.segment(text)) if (!/^\s+$/.test(s.segment)) n++;
-		return n;
-	}
-	return Array.from(text).filter((ch) => !/\s/.test(ch)).length;
-}
-
-/**
- * Keystroke schedule of a typewriter window (the renderer's `typewriterSchedule`, `@jasper/motion`): unit `i` is typed
- * at `start + slot·i` ms; `delay` / `typing` are fractions of the window (typewriter@1 has neither).
- */
-export function typewriterScheduleMs(
-	units: number,
-	durationMs: number,
-	params: Record<string, unknown>,
-): { start: number; slot: number } {
-	const num = (v: unknown, d: number) => (fin(v) ? v : d);
-	const total = Math.max(1, durationMs);
-	const delay = Math.min(0.9, Math.max(0, num(params.delay, 0)));
-	const typing = Math.min(1 - delay, Math.max(0.05, num(params.typing, 1)));
-	return { start: total * delay, slot: (total * typing) / Math.max(1, Math.floor(units)) };
-}
-
-function textAnchorFrame(seq: AnchorSequence, a: Extract<CueAnchor, { type: 'text' }>): number | null {
+function textAnchorFrame(
+	doc: AnchorDocument,
+	seq: AnchorSequence,
+	a: Extract<CueAnchor, { type: 'text' }>,
+): number | null {
 	const c = clipOf(seq, a.clipId);
 	const rate = rateOf(seq);
 	if (c?.kind !== 'text' || !rate) return null;
@@ -337,18 +337,77 @@ function textAnchorFrame(seq: AnchorSequence, a: Extract<CueAnchor, { type: 'tex
 	const win = a.side === 'in' ? w.in : w.out;
 	const base = a.side === 'in' ? c.start : c.start + c.duration - (w.out?.frames ?? 0);
 	if (a.unit === undefined) return frameOrNull(base);
-	if (win?.preset !== 'typewriter' || win.frames < 1) return null;
-	const unit = win.params.unit === 'word' ? 'word' : 'char';
-	const n = textUnitCount((c as { content?: { text?: unknown } }).content?.text as string, unit);
-	if (a.unit >= n) return null;
-	const fps = rate.num / rate.den;
-	const D = (win.frames * 1000) / fps;
-	const s = typewriterScheduleMs(n, D, win.params);
-	// In: unit i is shown from the first frame at or after its keystroke. Out plays the In timeline backwards: the
-	// i-th deleted unit (the (n−1−i)-th typed) goes when the reversed time passes its keystroke.
-	const ms = a.side === 'in' ? s.start + s.slot * a.unit : D - (s.start + s.slot * (n - 1 - a.unit));
-	const off = Math.min(win.frames, Math.max(0, Math.ceil((ms * fps) / 1000 - 1e-9)));
-	return frameOrNull(base + off);
+	if (win?.preset === 'typewriter' && win.frames >= 1) {
+		const unit = win.params.unit === 'word' ? 'word' : 'char';
+		const n = textUnitCount((c as { content?: { text?: unknown } }).content?.text as string, unit);
+		if (a.unit >= n) return null;
+		// The deriver's keystroke frames (In: ⌈t/frame⌉; Out: N − ⌈t/frame⌉ of the mirrored In timeline).
+		const off = typewriterOffsets(n, win.frames, rate.num / rate.den, win.params, a.side)[a.unit];
+		return off === undefined ? null : frameOrNull(base + off);
+	}
+	// A unit revealed by a Range Selector (AE-style animator): the frame the deriver finds for it.
+	return derivedAnchorFrame(doc, seq, a);
+}
+
+/** Cue candidates of one clip from the deriver's keyframes and text sources, cached per clip and sequence object. */
+const derivedCache = new WeakMap<object, { seq: object; doc: object; cues: CueCandidate[] }>();
+
+function derivedCandidates(doc: AnchorDocument, seq: AnchorSequence, c: Clip): CueCandidate[] {
+	const hit = derivedCache.get(c);
+	if (hit && hit.seq === seq && hit.doc === doc) return hit.cues;
+	let cues: CueCandidate[] = [];
+	try {
+		let end = 0;
+		for (const x of Object.values(seq.clips))
+			if (fin(x?.start) && fin(x?.duration)) end = Math.max(end, x.start + x.duration);
+		const ctx = makeContext(
+			doc as ProjectDocument,
+			seq as Sequence,
+			end,
+			{ start: 0, end: Math.max(1, end) },
+			() => {},
+		);
+		cues =
+			c.kind === 'text'
+				? [...textClipCueCandidates(ctx, c), ...clipMotionCues(ctx, c)]
+				: clipMotionCues(ctx, c);
+	} catch {
+		cues = [];
+	}
+	derivedCache.set(c, { seq, doc, cues });
+	return cues;
+}
+
+/** Whether two anchors name the same event (type, clip and the event's own fields). */
+function sameAnchor(x: CueAnchor, y: CueAnchor): boolean {
+	if (x.type !== y.type) return false;
+	if (x.type === 'keyframe' && y.type === 'keyframe')
+		return (
+			x.clipId === y.clipId &&
+			x.property === y.property &&
+			x.event === y.event &&
+			x.keyframeId === y.keyframeId
+		);
+	if (x.type === 'text' && y.type === 'text')
+		return x.clipId === y.clipId && x.side === y.side && x.unit === y.unit;
+	return false;
+}
+
+/**
+ * The frame the cue deriver gives the event an anchor names, by deriving its clip again (motion sampled on the
+ * combined position + scale + rotation speed, landings at the turnaround, Range Selector reveals): so a derived cue
+ * resolves back to its own frame and follows the clip when it moves. Null when the deriver finds no such event now.
+ */
+function derivedAnchorFrame(
+	doc: AnchorDocument,
+	seq: AnchorSequence,
+	a: Extract<CueAnchor, { type: 'keyframe' } | { type: 'text' }>,
+): number | null {
+	const c = clipOf(seq, a.clipId);
+	if (!c || !rateOf(seq)) return null;
+	for (const cue of derivedCandidates(doc, seq, c))
+		if (cue.anchor && sameAnchor(cue.anchor as CueAnchor, a)) return frameOrNull(cue.frame);
+	return null;
 }
 
 function mgAnchorFrame(

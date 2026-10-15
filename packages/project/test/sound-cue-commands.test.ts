@@ -8,6 +8,9 @@ import {
 	COMMAND_CATALOG,
 	checkInvariants,
 	createCounterIdSource,
+	cueInputFromDerived,
+	defaultRegistries,
+	deriveCues,
 	diffDocuments,
 	type LibraryProvenance,
 	loadProject,
@@ -19,6 +22,7 @@ import {
 	soundDesignNeedsRepair,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
+import { mgRegistry, phase2Fixture } from './sound-cues-fixtures.ts';
 import { LIB } from './sound-fixtures.ts';
 
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
@@ -460,5 +464,23 @@ describe('invariants, repair and load', () => {
 		const b2 = h.doc;
 		h.ok([{ type: 'soundDesign.setSettings', seed: 3 }]);
 		expect(diffDocuments(b2, h.doc).changed).toContain(h.seqId);
+	});
+});
+
+describe('derived cues stored with soundCue.add (WP2.2 → WP2.1)', () => {
+	it('every cue of the Phase 2 fixture is accepted as is, and a resync moves none of them', () => {
+		const f = phase2Fixture();
+		const derivedCues = deriveCues(f.h.doc, f.h.seqId, { density: 'rich', mgTemplates: mgRegistry() }).cues;
+		expect(derivedCues.length).toBeGreaterThan(10);
+		const r = f.h.ok([{ type: 'soundCue.add', cues: derivedCues.map((c) => cueInputFromDerived(c)) }], {
+			ctx: { registries: defaultRegistries(mgRegistry()) },
+		});
+		const ids = (r.results[0] as { cueIds: string[] }).cueIds;
+		expect(ids).toHaveLength(derivedCues.length);
+		const resync = f.h.ok([{ type: 'soundCue.resync' }], {
+			ctx: { registries: defaultRegistries(mgRegistry()) },
+		});
+		expect(resync.results[0]).toEqual({ moved: [], unresolved: [], unanchored: [] });
+		expect(checkInvariants(f.h.doc)).toEqual([]);
 	});
 });

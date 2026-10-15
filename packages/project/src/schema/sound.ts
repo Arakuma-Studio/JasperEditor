@@ -130,6 +130,10 @@ export const soundCueFields = {
 	align: z.enum(CUE_ALIGNS).optional(),
 	/** Static pan −100 (left) … 100 (right), or `auto` (x of the picture event; spec 12 §2.2). */
 	pan: z.union([z.number().min(-100).max(100), z.literal('auto')]).optional(),
+	/** Pan travelling with the picture (a whoosh across the frame): from → to over the cue's window. */
+	panSweep: z
+		.looseObject({ from: z.number().min(-100).max(100), to: z.number().min(-100).max(100) })
+		.optional(),
 	pitchSt: z.number().min(-12).max(12).optional(),
 	/** Dip the music before the cue (P4). */
 	stopBefore: z
@@ -301,6 +305,7 @@ export function readSoundCue(raw: unknown, key?: string): SoundCue | null {
 		'label',
 		'align',
 		'pan',
+		'panSweep',
 		'pitchSt',
 		'stopBefore',
 		'build',

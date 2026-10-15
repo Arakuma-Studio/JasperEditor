@@ -540,3 +540,57 @@ describe('pickVariant (rotation and variation)', () => {
 		expect(v.size).toBeGreaterThan(30);
 	});
 });
+
+describe('pan sweep of a derived cue (WP2.2 panSweep)', () => {
+	it('a cue’s panSweep becomes pan keyframes over its window; soundCue.update clears it', () => {
+		const h = new Harness();
+		const m = libMedia(h, { types: ['whoosh'], durationSec: 1, peakSec: 0.4 });
+		const r = h.ok([
+			{
+				type: 'soundCue.add',
+				cues: [
+					{
+						frame: 180,
+						kind: 'transition',
+						weight: 'support',
+						source: 'derived',
+						pan: 0,
+						panSweep: { from: -60, to: 60 },
+						window: { start: 170, end: 190 },
+						ref: '$c',
+					},
+				],
+			},
+			{ type: 'soundDesign.place', cueId: '$c', layers: [{ mediaId: m }] },
+		]);
+		const cueId = r.refs.$c!;
+		expect((h.seq.soundDesign as SoundDesign).cues[cueId]!.panSweep).toEqual({ from: -60, to: 60 });
+		const c = clip(h, (r.results[1] as { clips: { clipId: string }[] }).clips[0]!.clipId);
+		const F = flicksPerFrame(h.seq.settings.frameRate);
+		expect(c.pan.keyframes.map((k) => k.value)).toEqual([-60, 60]);
+		expect(c.pan.keyframes.map((k) => Math.round(c.start + (k.time - c.sourceIn) / F))).toEqual([170, 190]);
+		// a window reaching before the sound's media starts holds the first key at the media start
+		const r2 = h.ok([
+			{
+				type: 'soundCue.add',
+				cues: [
+					{
+						frame: 400,
+						kind: 'move',
+						weight: 'support',
+						source: 'derived',
+						panSweep: { from: 50, to: -50 },
+						window: { start: 300, end: 410 },
+						ref: '$d',
+					},
+				],
+			},
+			{ type: 'soundDesign.place', cueId: '$d', layers: [{ mediaId: m }] },
+		]);
+		const d = clip(h, (r2.results[1] as { clips: { clipId: string }[] }).clips[0]!.clipId);
+		expect(d.pan.keyframes[0]!.time).toBe(0);
+		expect(checkInvariants(h.doc)).toEqual([]);
+		h.ok([{ type: 'soundCue.update', cueId, panSweep: null }]);
+		expect('panSweep' in (h.seq.soundDesign as SoundDesign).cues[cueId]!).toBe(false);
+	});
+});

@@ -240,6 +240,7 @@ const CLEARABLE = [
 	'soundIds',
 	'align',
 	'pan',
+	'panSweep',
 	'pitchSt',
 	'stopBefore',
 	'build',
@@ -383,12 +384,41 @@ function writePan(
 	for (const k of pan.keyframes) {
 		if (k.offset <= prev) h.fail('E_INVALID_PARAM', 'Pan keyframe offsets must increase', { path });
 		prev = k.offset;
-		const time = Math.round(clip.sourceIn + (cueFrame + k.offset - clip.start) * F * clip.speed.rate);
-		if (time < 0)
-			h.fail('E_INVALID_PARAM', `Pan keyframe at offset ${k.offset} is before the sound starts`, { path });
+		// Before the media starts: held at its first sample (the clip cannot show earlier content).
+		const time = Math.max(
+			0,
+			Math.round(clip.sourceIn + (cueFrame + k.offset - clip.start) * F * clip.speed.rate),
+		);
+		if (keys[keys.length - 1]?.time === time) keys.pop();
 		keys.push(newKeyframe(h, time, k.value, false) as Keyframe<number>);
 	}
 	clip.pan = { value: keys[0]!.value, keyframes: keys } as never;
+}
+
+/**
+ * The pan a cue asks for: its `panSweep` as two keyframes over its window (± 0.2 s around the cue without one), else
+ * its static pan; `'auto'` without a number = centred (no pan written).
+ */
+function cuePan(
+	cue: DCue | null,
+	cueFrame: number,
+	rate: Rational,
+): number | { keyframes: { offset: number; value: number }[] } | undefined {
+	if (!cue) return undefined;
+	const sweep = cue.panSweep;
+	if (sweep && sweep.from !== sweep.to) {
+		const half = Math.max(1, Math.round((0.2 * rate.num) / rate.den));
+		let a = cue.window ? cue.window.start - cueFrame : -half;
+		let b = cue.window ? cue.window.end - cueFrame : half;
+		if (!(b > a)) [a, b] = [-half, half];
+		return {
+			keyframes: [
+				{ offset: a, value: sweep.from },
+				{ offset: b, value: sweep.to },
+			],
+		};
+	}
+	return typeof cue.pan === 'number' ? cue.pan : undefined;
 }
 
 type PlacedLayer = {
@@ -559,7 +589,7 @@ function place(doc: DDoc, cmd: CommandOf<'soundDesign.place'>, h: HandlerContext
 			h,
 		);
 		if (layer.gainDb !== undefined) clip.gainDb = layer.gainDb;
-		const pan = layer.pan ?? (typeof cue?.pan === 'number' ? cue.pan : undefined);
+		const pan = layer.pan ?? cuePan(cue, cueFrame, rate);
 		if (pan !== undefined) writePan(clip, pan, cueFrame, rate, h, [...path, 'pan']);
 		if (pp.shifterSt) {
 			const whole = Math.trunc(pp.shifterSt);
