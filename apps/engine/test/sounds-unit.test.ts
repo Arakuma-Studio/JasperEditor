@@ -368,6 +368,9 @@ describe('request schemas (hostile input)', () => {
 			limit: 5,
 			windowSec: 1.5,
 		});
+		// A computed window (a 20-frame transition at 30 fps = 0.666… s) is sent with 6 decimals, not refused
+		// (WP2.3 regression: String(2/3) has 16 decimals and failed the query schema).
+		expect(SoundSearchQuerySchema.parse(soundSearchParams({ windowSec: 20 / 30 })).windowSec).toBe(0.666667);
 		expect(SoundSearchQuerySchema.safeParse({ limit: '0' }).success).toBe(false);
 		expect(SoundSearchQuerySchema.safeParse({ limit: '501' }).success).toBe(false);
 		expect(SoundSearchQuerySchema.safeParse({ sources: 'starter,web' }).success).toBe(false);

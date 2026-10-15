@@ -24,6 +24,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { cleanEnv, waitFor } from './helpers.ts';
+import { FIXTURE_COMMANDS } from './sound-cues-fixture.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const KIT = join(ROOT, 'apps', 'engine', 'sounds', 'starter');
@@ -94,76 +95,6 @@ function makeKit(dir: string) {
 	for (const s of sounds) copyFileSync(join(KIT, s.file), join(dir, s.file));
 	writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ ...manifest, packs, sounds }));
 }
-
-/** The Phase 2 fixture from renderable generators: cuts, a push, a keyframed logo, a typewriter, a lower third, a marker. */
-export const FIXTURE_COMMANDS = [
-	{ type: 'clip.addSolid', at: 0, duration: 90, track: 'V1', name: 'Shot A', color: [0.7, 0.2, 0.2, 1] },
-	{ type: 'clip.addSolid', at: 90, duration: 90, track: 'V1', name: 'Shot B', color: [0.2, 0.6, 0.3, 1] },
-	{
-		type: 'clip.addSolid',
-		at: 180,
-		duration: 150,
-		track: 'V1',
-		name: 'Shot C',
-		color: [0.2, 0.3, 0.7, 1],
-		ref: '$c',
-	},
-	{
-		type: 'transition.add',
-		clipId: '$c',
-		edge: 'in',
-		effectId: 'jasper.push',
-		duration: 20,
-		alignment: 'center',
-		params: { direction: 'westToEast' },
-	},
-	{
-		type: 'clip.addShape',
-		at: 30,
-		duration: 120,
-		track: 'V2',
-		name: 'Logo',
-		shape: { type: 'rect', size: [400, 200], fill: [1, 0.85, 0.2, 1] },
-		ref: '$logo',
-	},
-	{
-		type: 'keyframe.add',
-		target: ['clip', '$logo', 'transform', 'position'],
-		at: { sequenceFrame: 40 },
-		value: [200, 540],
-		interpolation: 'linear',
-	},
-	{
-		type: 'keyframe.add',
-		target: ['clip', '$logo', 'transform', 'position'],
-		at: { sequenceFrame: 52 },
-		value: [1010, 540],
-		interpolation: 'linear',
-	},
-	{
-		type: 'keyframe.add',
-		target: ['clip', '$logo', 'transform', 'position'],
-		at: { sequenceFrame: 57 },
-		value: [960, 540],
-		interpolation: 'linear',
-	},
-	{
-		type: 'clip.addText',
-		at: 200,
-		duration: 90,
-		track: 'V3',
-		content: { text: 'HELLO WORLD' },
-		textAnimation: { in: { preset: 'typewriter', durationFrames: 45 } },
-	},
-	{
-		type: 'clip.addMotionGraphic',
-		at: 330,
-		duration: 90,
-		track: 'V1',
-		template: { id: 'lower-third', version: 1 },
-	},
-	{ type: 'marker.add', frame: 250, name: 'sfx: boom+swoosh' },
-];
 
 beforeAll(async () => {
 	work = mkdtempSync(join(tmpdir(), 'jasper-mcp-cues-'));
@@ -434,6 +365,19 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 			expect(Math.abs(playsAt(clip, F) - 250 * F), c.clipId).toBeLessThanOrEqual(1);
 			expect(c.errorFlicks).toBe(0);
 		}
+		// a pick by type on the push cue: its 20-frame window (0.666… s) is passed to the search (regression: the
+		// window was serialised with 16 decimals and refused by the search route)
+		const push = cuesOf(s).find((c) => c.kind === 'transition')!;
+		const whoosh = await ok<Placed>('place_sound', {
+			projectId,
+			cueId: push.id,
+			layers: [{ sound: { type: 'whoosh' } }],
+		});
+		expect(whoosh.clips[0]!.errorFlicks).toBe(0);
+		const wclip = seqOf(await documentOf(projectId)).clips[whoosh.clips[0]!.clipId] as SfxClip;
+		expect(Math.abs(playsAt(wclip, F) - 180 * F)).toBeLessThanOrEqual(1);
+		// the cue's pan sweep (−60 → 60) becomes pan keyframes
+		expect(wclip.pan.keyframes.map((k) => k.value)).toEqual([-60, 60]);
 		// a riser at a time: its END lands on the frame; a cue is created with the reason
 		const riser = await ok<Placed>('place_sound', {
 			projectId,

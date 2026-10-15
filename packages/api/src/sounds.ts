@@ -255,7 +255,10 @@ export function soundSearchParams(req: SoundSearchRequest): Record<string, strin
 		if (v === undefined || v === null) continue;
 		if (Array.isArray(v)) {
 			if (v.length) out[k] = v.join(',');
-		} else out[k] = String(v);
+		} else if (typeof v === 'number')
+			// The query schema takes up to 6 decimals (a computed 2/3 s would otherwise be refused).
+			out[k] = String(Number.isInteger(v) ? v : Number(v.toFixed(6)));
+		else out[k] = String(v);
 	}
 	return out;
 }
