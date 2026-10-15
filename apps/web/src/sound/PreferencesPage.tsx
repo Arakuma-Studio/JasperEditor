@@ -12,6 +12,7 @@ import { EngineError } from '@jasper/engine-client';
 import { requiresAttribution } from '@jasper/project';
 import { Button, Checkbox, ScrubbyNumber, Select, TextField, Toggle } from '@jasper/ui';
 import { useCallback, useEffect, useState } from 'react';
+import { t } from '../i18n/runtime.ts';
 import { getDesktopBridge } from '../runtime/platform.ts';
 import { PrefGroup, PrefRow } from '../shell/preferences/GeneralPage.tsx';
 import { useEngine } from '../state/engine.tsx';
@@ -82,11 +83,17 @@ export function SoundLibraryPreferencesPage() {
 	const [busy, setBusy] = useState(false);
 	const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
 
+	// Every engine call here is answered or caught: a dead engine shows "not available", never an unhandled rejection.
+	const refreshStatus = useCallback(
+		() =>
+			void engine
+				.soundLibraryStatus()
+				.then(setStatus)
+				.catch(() => setStatus(null)),
+		[engine],
+	);
 	const load = useCallback(() => {
-		void engine
-			.soundLibraryStatus()
-			.then(setStatus)
-			.catch(() => setStatus(null));
+		refreshStatus();
 		void engine
 			.getSoundRoots()
 			.then((r) => {
@@ -96,16 +103,19 @@ export function SoundLibraryPreferencesPage() {
 				setLocal(r.local);
 			})
 			.catch((e) => setMessage({ kind: 'error', text: errorText(e) }));
-	}, [engine]);
+	}, [engine, refreshStatus]);
 	useEffect(() => load(), [load]);
 	useEffect(
-		() => subscribe((e) => e?.type === 'sounds.changed' && void engine.soundLibraryStatus().then(setStatus)),
-		[subscribe, engine],
+		() =>
+			subscribe((e) => {
+				if (e?.type === 'sounds.changed') refreshStatus();
+			}),
+		[subscribe, refreshStatus],
 	);
 	const indexing = !!status?.indexing;
 	useEffect(() => {
 		if (!indexing) return;
-		const t = setInterval(
+		const timer = setInterval(
 			() =>
 				void engine
 					.soundLibraryStatus()
@@ -113,14 +123,15 @@ export function SoundLibraryPreferencesPage() {
 					.catch(() => undefined),
 			1500,
 		);
-		return () => clearInterval(t);
+		return () => clearInterval(timer);
 	}, [indexing, engine]);
 
 	const dirty = JSON.stringify(saved) !== JSON.stringify(drafts);
 	const patch = (i: number, d: Partial<DraftRoot>) =>
 		setDrafts((list) => list.map((x, k) => (k === i ? { ...x, ...d } : x)));
 
-	const save = async (list: DraftRoot[]) => {
+	/** Saves the folder list; resolves true when the engine accepted it. */
+	const save = async (list: DraftRoot[]): Promise<boolean> => {
 		setBusy(true);
 		setMessage(null);
 		try {
@@ -131,14 +142,16 @@ export function SoundLibraryPreferencesPage() {
 			setMessage({
 				kind: 'info',
 				text: r.job
-					? 'Folders saved. Indexing them (see the Jobs panel).'
+					? t('Folders saved. Indexing them (see the Jobs panel).')
 					: r.removedSounds
-						? `Folders saved. ${r.removedSounds} sounds left the library.`
-						: 'Folders saved.',
+						? t('Folders saved. {0} sounds left the library.', r.removedSounds)
+						: t('Folders saved.'),
 			});
-			void engine.soundLibraryStatus().then(setStatus);
+			refreshStatus();
+			return true;
 		} catch (e) {
 			setMessage({ kind: 'error', text: errorText(e) });
+			return false;
 		} finally {
 			setBusy(false);
 		}
@@ -148,8 +161,8 @@ export function SoundLibraryPreferencesPage() {
 		setMessage(null);
 		try {
 			await engine.indexSounds(full ? { full: true } : {});
-			setMessage({ kind: 'info', text: 'Indexing the sound library (see the Jobs panel).' });
-			void engine.soundLibraryStatus().then(setStatus);
+			setMessage({ kind: 'info', text: t('Indexing the sound library (see the Jobs panel).') });
+			refreshStatus();
 		} catch (e) {
 			setMessage({ kind: 'error', text: errorText(e) });
 		}
@@ -302,9 +315,12 @@ export function SoundLibraryPreferencesPage() {
 							variant="secondary"
 							disabled={!local}
 							onClick={() =>
-								void desktop.pickFolder().then((path) => {
-									if (path) setNewPath(path);
-								})
+								void desktop
+									.pickFolder()
+									.then((path) => {
+										if (path) setNewPath(path);
+									})
+									.catch((e) => setMessage({ kind: 'error', text: errorText(e) }))
 							}
 						>
 							Browse…
@@ -333,8 +349,11 @@ export function SoundLibraryPreferencesPage() {
 									enabled: true,
 								},
 							];
-							setNewPath('');
-							void save(next);
+							// The typed path stays until the engine accepted the folder (a refusal keeps it to fix).
+							const typed = newPath;
+							void save(next).then((ok) => {
+								if (ok) setNewPath((cur) => (cur === typed ? '' : cur));
+							});
 						}}
 					>
 						Add Folder

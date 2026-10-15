@@ -110,10 +110,14 @@ export const soundLibraryPrefs = {
 		commit({ ...state, ...patch });
 	},
 	isFavourite: (soundId: string): boolean => state.favourites.includes(soundId),
-	/** Stars or unstars a sound; returns whether it is a favourite now. */
-	toggleFavourite(soundId: string): boolean {
+	/**
+	 * Stars or unstars a sound; returns whether it is a favourite now. Starring a sound when there are already
+	 * `MAX_FAVOURITES` is refused (`'full'`: the caller says so), never by silently dropping the oldest favourite.
+	 */
+	toggleFavourite(soundId: string): boolean | 'full' {
 		if (!SOUND_ID.test(soundId)) return false;
 		const on = !state.favourites.includes(soundId);
+		if (on && state.favourites.length >= MAX_FAVOURITES) return 'full';
 		commit({
 			...state,
 			favourites: on ? [soundId, ...state.favourites] : state.favourites.filter((x) => x !== soundId),

@@ -32,6 +32,7 @@ import { revealNested } from '../../commands/structure.ts';
 import { clipMenuExtensions, collectMenuItems } from '../../extensions/index.ts';
 import { labelName } from '../../gaps/app-prefs.ts';
 import { formatTimecode, parseTimecodeEntry } from '../../gaps/time-display.ts';
+import { t as tr } from '../../i18n/runtime.ts';
 import { useRenderBar } from '../../previews/hooks.ts';
 import { insertSoundWithFeedback } from '../../sound/controller.ts';
 import { endSoundDrag, isSoundDrag, readSoundDrag, soundDragInfo } from '../../sound/insert.ts';
@@ -82,6 +83,7 @@ import { computeLayout, hitY, regionIndexAt, type TrackRow } from './model/layou
 import { revealRowScroll, revealScroll, type Span, visiblePart, visibleRowBand } from './model/locate.ts';
 import { thresholdFrames } from './model/snapping.ts';
 import { resolveSoundDrop } from './model/sound-drop.ts';
+import { soundDropDestination, soundDropTooltip } from './model/sound-drop-tooltip.ts';
 import {
 	type DropTarget,
 	dropCommand,
@@ -1232,16 +1234,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		const rate = committedSeq.settings.frameRate;
 		const tc = formatTimecode(t.cue, rate, { dropFrame: committedSeq.settings.dropFrame });
 		const p = t.plan;
-		const where = p
-			? p.track.kind === 'new'
-				? `new track ${p.track.name} (${p.track.label})`
-				: p.track.label
-			: (t.preferredTrackId ?? 'A1');
-		const lines = [
-			`${t.align} → ${tc}`,
-			`${info?.title ?? 'Sound'} → ${where}`,
-			...(t.snapEdge && t.snapEdge !== t.align ? [`${t.snapEdge} edge snapped`] : []),
-		];
+		const where = soundDropDestination(committedSeq, t);
+		const lines = soundDropTooltip(committedSeq, t, info?.title || null, tc);
 		const ghost = p
 			? {
 					trackId: p.track.kind === 'existing' ? p.track.trackId : null,
@@ -1273,7 +1267,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		ui.setState({ soundGhost: null, snapFrame: null, tooltip: null, drop: null });
 		endSoundDrag();
 		if (!engine) {
-			toast('error', 'The engine is not connected');
+			toast('error', tr('The engine is not connected'));
 			return;
 		}
 		const at = t.cue;

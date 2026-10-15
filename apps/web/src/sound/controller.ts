@@ -4,9 +4,10 @@
 import type { SoundEntry } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import type { SoundAlignRequest } from '@jasper/project';
-import type { EditorSession } from '@jasper/session';
+import type { EditorSession, TransportStore } from '@jasper/session';
 import type { ToastRequest } from '../commands/types.ts';
-import { auditionPlayer } from './audition.ts';
+import { t } from '../i18n/runtime.ts';
+import { type AuditionPlayer, type AuditionSound, auditionPlayer } from './audition.ts';
 import { InsertSoundError, insertLibrarySound } from './insert.ts';
 import { soundLibraryPrefs } from './prefs.ts';
 
@@ -48,6 +49,14 @@ export function requestSoundSearch(q: string): void {
 	else pendingQuery = q;
 }
 
+/** What the audition player needs of a library entry (its URL and format: long sounds stream). */
+export function auditionSoundOf(
+	engine: Pick<EngineClient, 'soundAudioUrl'>,
+	e: Pick<SoundEntry, 'id' | 'title' | 'format'>,
+): AuditionSound {
+	return { id: e.id, title: e.title || e.id, url: engine.soundAudioUrl(e.id), format: e.format };
+}
+
 /** Plays / stops a sound through the shared audition player (recorded in Recent). */
 export function toggleAuditionOf(engine: Pick<EngineClient, 'soundAudioUrl'>, e: SoundEntry): void {
 	const player = auditionPlayer();
@@ -55,7 +64,26 @@ export function toggleAuditionOf(engine: Pick<EngineClient, 'soundAudioUrl'>, e:
 	player.setVolumeDb(soundLibraryPrefs.get().volumeDb);
 	const playing = player.state.soundId === e.id && player.state.phase !== 'idle';
 	if (!playing) soundLibraryPrefs.touchRecent(e.id);
-	void player.toggle({ id: e.id, title: e.title || e.id, url: engine.soundAudioUrl(e.id) });
+	void player.toggle(auditionSoundOf(engine, e));
+}
+
+/**
+ * The audition plays alone (spec 12 §2.7): starting one pauses the Program transport, and the transport starting to
+ * play stops it. Returns the unsubscribe.
+ */
+export function auditionPlaysAlone(player: AuditionPlayer, transport: TransportStore): () => void {
+	const offAudition = player.store.subscribe((s, prev) => {
+		if (s.phase !== 'idle' && (prev.phase === 'idle' || s.soundId !== prev.soundId)) {
+			if (transport.getState().playing) transport.pause();
+		}
+	});
+	const offTransport = transport.subscribe((s, prev) => {
+		if (s.playing && !prev.playing && player.state.phase !== 'idle') player.stop();
+	});
+	return () => {
+		offAudition();
+		offTransport();
+	};
 }
 
 /**
@@ -69,23 +97,37 @@ export async function insertSoundWithFeedback(
 	toast: (r: ToastRequest) => void,
 	opts: { at?: number; align?: SoundAlignRequest; preferredTrackId?: string | null } = {},
 ): Promise<string | null> {
+	const r = await insertSoundReporting(session, engine, entry, toast, opts);
+	return r.ok ? r.clipId : null;
+}
+
+/** `insertSoundWithFeedback` that also returns why it failed (agents get the real reason, not just "failed"). */
+export async function insertSoundReporting(
+	session: EditorSession,
+	engine: Pick<EngineClient, 'registerSound'>,
+	entry: SoundEntry,
+	toast: (r: ToastRequest) => void,
+	opts: { at?: number; align?: SoundAlignRequest; preferredTrackId?: string | null } = {},
+): Promise<{ ok: true; clipId: string } | { ok: false; message: string }> {
 	try {
 		const r = await insertLibrarySound(session, engine, entry, opts);
 		toast({
 			kind: 'success',
 			message: r.message,
 			...(r.trimmedHeadSec > 0
-				? { detail: `The sound started before 0: its first ${r.trimmedHeadSec.toFixed(2)} s were trimmed` }
+				? {
+						detail: t(
+							'The sound started before 0: its first {0} s were trimmed',
+							r.trimmedHeadSec.toFixed(2),
+						),
+					}
 				: {}),
-			action: { label: 'Undo', command: 'history.undo' },
+			action: { label: t('Undo'), command: 'history.undo' },
 		});
-		return r.clipId;
+		return { ok: true, clipId: r.clipId };
 	} catch (e) {
-		toast({
-			kind: 'error',
-			message: 'Could not add the sound',
-			detail: e instanceof InsertSoundError || e instanceof Error ? e.message : String(e),
-		});
-		return null;
+		const message = e instanceof InsertSoundError || e instanceof Error ? e.message : String(e);
+		toast({ kind: 'error', message: t('Could not add the sound'), detail: message });
+		return { ok: false, message };
 	}
 }

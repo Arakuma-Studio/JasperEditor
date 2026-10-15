@@ -30,6 +30,7 @@ import type { EditorSession } from '@jasper/session';
 import { z } from 'zod';
 import { labelDefault, labelKindOfMedia } from '../gaps/app-prefs.ts';
 import { formatTimecode } from '../gaps/time-display.ts';
+import { t } from '../i18n/runtime.ts';
 import { buildMediaAsset } from '../import/assets.ts';
 import { findExistingMedia } from '../import/transaction.ts';
 import { soundLibraryPrefs } from './prefs.ts';
@@ -205,26 +206,26 @@ export async function insertLibrarySound(
 	} = {},
 ): Promise<InsertSoundResult> {
 	const before = session.getState();
-	if (before.readOnly) throw new InsertSoundError('The project is read-only');
+	if (before.readOnly) throw new InsertSoundError(t('The project is read-only'));
 	const sequenceId = opts.sequenceId ?? before.activeSequenceId;
 	if (!sequenceId || !before.document.sequences[sequenceId])
-		throw new InsertSoundError('Open a sequence first');
+		throw new InsertSoundError(t('Open a sequence first'));
 	const cueFrame = Math.max(0, Math.round(opts.at ?? session.transport.getState().frame));
 	const align = resolveSoundAlign(entry.types, opts.align);
-	if (!(timingOf(entry).durationSec > 0)) throw new InsertSoundError('This sound has no length');
+	if (!(timingOf(entry).durationSec > 0)) throw new InsertSoundError(t('This sound has no length'));
 
 	let reg: RegisterSoundResponse;
 	try {
 		reg = await engine.registerSound(entry.id, before.document.projectId);
 	} catch (e) {
-		throw new InsertSoundError(`Could not add the sound: ${e instanceof Error ? e.message : String(e)}`);
+		throw new InsertSoundError(t('Could not add the sound: {0}', e instanceof Error ? e.message : String(e)));
 	}
-	if (opts.signal?.aborted) throw new InsertSoundError('Cancelled');
+	if (opts.signal?.aborted) throw new InsertSoundError(t('Cancelled'));
 
 	// The document after the await (other edits may have happened meanwhile).
 	const doc = session.getCommitted();
 	const seq = doc.sequences[sequenceId];
-	if (!seq) throw new InsertSoundError('The sequence was closed');
+	if (!seq) throw new InsertSoundError(t('The sequence was closed'));
 	const state = session.getState();
 	const commands: Command[] = [];
 	const existing = existingMediaFor(doc, reg);
@@ -300,12 +301,14 @@ export async function insertLibrarySound(
 	);
 	const r = session.apply({ label: `Add Sound ${title}`, origin: 'user', sequenceId, commands });
 	if (!r.ok)
-		throw new InsertSoundError(r.errors.map((e) => e.message).join('; ') || 'The sound could not be added');
+		throw new InsertSoundError(
+			r.errors.map((e) => e.message).join('; ') || t('The sound could not be added'),
+		);
 	const placeIndex = commands.findIndex((c) => c.type === 'clip.place');
 	const clipId =
 		(r.results[placeIndex] as { clipIds?: string[]; clipId?: string } | undefined)?.clipIds?.[0] ??
 		(r.results[placeIndex] as { clipId?: string } | undefined)?.clipId;
-	if (!clipId) throw new InsertSoundError('The sound was added but its clip was not found');
+	if (!clipId) throw new InsertSoundError(t('The sound was added but its clip was not found'));
 	const after = session.getCommitted().sequences[sequenceId]!;
 	const clip = after.clips[clipId];
 	const trackLabel = clip
@@ -326,9 +329,9 @@ export async function insertLibrarySound(
 		errorFlicks: p.errorFlicks,
 		message:
 			align === 'peak'
-				? `Added ${title} to ${trackLabel} · peak at ${tc}`
+				? t('Added {0} to {1} · peak at {2}', title, trackLabel, tc)
 				: align === 'end'
-					? `Added ${title} to ${trackLabel} · end at ${tc}`
-					: `Added ${title} to ${trackLabel} · start at ${tc}`,
+					? t('Added {0} to {1} · end at {2}', title, trackLabel, tc)
+					: t('Added {0} to {1} · start at {2}', title, trackLabel, tc),
 	};
 }

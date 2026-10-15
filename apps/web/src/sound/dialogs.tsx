@@ -8,12 +8,14 @@ import {
 	licenseUrlOf,
 	requiresAttribution,
 	type SoundCreditRow,
+	type SoundCreditWarning,
 	soundCredits,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Button, Dialog, type HostedDialogProps, registerDialog, Select } from '@jasper/ui';
 import { useMemo, useState } from 'react';
 import { useDialogClose } from '../extensions/dialog.ts';
+import { t } from '../i18n/runtime.ts';
 import { downloadBytes } from '../panels/text/state.ts';
 import { LICENSE_BADGE_TITLES, sourceLine } from './model.ts';
 
@@ -136,6 +138,44 @@ export function SoundLicenseDialog(
 	);
 }
 
+/**
+ * A credits warning in the UI language: `soundCredits` (@jasper/project, shared with agents) writes English, so the
+ * dialog rebuilds the text from the warning's code and its sound's row; an unknown code keeps the English text.
+ */
+export function creditWarningText(w: SoundCreditWarning, rows: readonly SoundCreditRow[]): string {
+	const r = w.mediaId ? rows.find((x) => x.mediaId === w.mediaId) : undefined;
+	if (!r) return w.code === 'W_SEQUENCE_NOT_FOUND' ? t('The sequence was not found') : w.message;
+	const title = r.title.replace(/[\r\n\t]+/g, ' ').trim() || r.soundId;
+	switch (w.code) {
+		case 'W_LICENSE_NC':
+			return t('“{0}” ({1}) is licensed for non-commercial use only ({2})', title, r.mediaId, r.license);
+		case 'W_LICENSE_ND':
+			return t(
+				'“{0}” ({1}) may not be modified ({2}): edits, effects and trims may break its licence',
+				title,
+				r.mediaId,
+				r.license,
+			);
+		case 'W_USER_PROVIDED':
+			return t(
+				'“{0}” ({1}) comes from your own folder without a licence declaration: make sure you may use it',
+				title,
+				r.mediaId,
+			);
+		case 'W_LICENSE_UNKNOWN':
+			return t('“{0}” ({1}) has an unknown licence ({2})', title, r.mediaId, r.license);
+		case 'W_CREDIT_INCOMPLETE':
+			return t(
+				'“{0}” ({1}) needs a credit ({2}) but names no author or attribution',
+				title,
+				r.mediaId,
+				r.license,
+			);
+		default:
+			return w.message;
+	}
+}
+
 type CreditsFormat = 'md' | 'txt' | 'csv';
 const FORMAT_INFO: Record<CreditsFormat, { ext: string; mime: string }> = {
 	md: { ext: 'md', mime: 'text/markdown' },
@@ -158,6 +198,14 @@ export function SoundCreditsDialog(
 				attributionOnly: scope === 'attribution',
 			}),
 		[doc, range, seqId, scope],
+	);
+	// Every sound's row (warnings cover all of them, also those an "only credits" list leaves out).
+	const allRows = useMemo(
+		() =>
+			scope === 'attribution'
+				? soundCredits(doc, range === 'sequence' && seqId ? seqId : undefined).rows
+				: credits.rows,
+		[doc, range, seqId, scope, credits],
 	);
 	const body = format === 'md' ? credits.markdown : format === 'txt' ? credits.text : credits.csv;
 	const empty = credits.rows.length === 0;
@@ -243,7 +291,7 @@ export function SoundCreditsDialog(
 					<ul className="flex flex-col gap-0.5" aria-label="Licence warnings">
 						{credits.warnings.map((w) => (
 							<li key={`${w.code}|${w.mediaId}`} className="text-pr-small text-pr-warning">
-								{w.message}
+								{creditWarningText(w, allRows)}
 							</li>
 						))}
 					</ul>
