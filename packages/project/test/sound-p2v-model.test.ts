@@ -3,9 +3,11 @@
 import { describe, expect, it } from 'vitest';
 import {
 	type AudioClip,
+	applyTransaction,
 	type ClipSfx,
 	checkInvariants,
 	createCounterIdSource,
+	deriveCues,
 	flicksPerFrame,
 	type LibraryProvenance,
 	loadProject,
@@ -13,8 +15,10 @@ import {
 	repairDocument,
 	type SoundDesign,
 	soundDesignNeedsRepair,
+	unknownCommandKeyIssues,
 } from '../src/index.ts';
-import { Harness, videoAsset } from './helpers.ts';
+import { Harness, makeCtx, videoAsset } from './helpers.ts';
+import { mgRegistry, phase2Fixture } from './sound-cues-fixtures.ts';
 import { LIB } from './sound-fixtures.ts';
 
 type SfxClip = AudioClip & { sfx?: ClipSfx };
@@ -490,4 +494,301 @@ describe('soundDesign.swap keeps every property of the clip (review)', () => {
 		expect(err(h.tx([{ type: 'soundDesign.swap', clipId: id, mediaId: a }]))?.code).toBe('E_INVALID_PARAM');
 		expect(h.doc).toBe(doc);
 	});
+});
+
+/**
+ * Undo / redo at the model level: the document before the transaction is untouched (Undo restores it), and the same
+ * transaction applied to it again gives the same document (Redo). Ids are drawn from a counter at the same seed.
+ */
+function undoRedo(h: Harness, commands: unknown[], seed = 4242): void {
+	const before = h.doc;
+	const snapshot = clone(before);
+	const run = () =>
+		applyTransaction(
+			before,
+			{ label: 'test', origin: 'user', sequenceId: h.seqId, commands: commands as never },
+			makeCtx({ revision: h.revision }, createCounterIdSource(seed)),
+		);
+	const first = run();
+	expect(first.result.ok, JSON.stringify(first.result)).toBe(true);
+	expect(first.document).not.toBe(before);
+	expect(clone(before)).toEqual(snapshot);
+	expect(run().document).toEqual(first.document);
+	expect(checkInvariants(first.document)).toEqual([]);
+	h.doc = first.document;
+	h.revision = first.result.revision;
+}
+
+/** Refused with `code` and the document unchanged. */
+function refused(h: Harness, commands: unknown[], code: string): void {
+	const doc = h.doc;
+	const r = h.tx(commands);
+	expect(err(r)?.code, JSON.stringify(commands)).toBe(code);
+	expect(h.doc).toBe(doc);
+}
+
+describe('every soundCue.* / soundDesign.* command: undo / redo and each refusal (review, gaps)', () => {
+	function filled() {
+		const e = edit();
+		const m = libMedia(e.h);
+		const r = e.h.ok([
+			{
+				type: 'soundCue.add',
+				cues: [
+					{
+						frame: 60,
+						kind: 'cut',
+						weight: 'support',
+						source: 'user',
+						anchor: { type: 'clip', clipId: e.b, edge: 'start' },
+						ref: '$c',
+					},
+				],
+			},
+			{ type: 'soundDesign.place', cueId: '$c', layers: [{ mediaId: m }] },
+		]);
+		const cueId = r.refs.$c!;
+		const clipId = (r.results[1] as { clips: { clipId: string }[] }).clips[0]!.clipId;
+		return { ...e, m, cueId, clipId };
+	}
+
+	it('soundCue.add / update / remove / resync: undo / redo', () => {
+		const f = filled();
+		undoRedo(f.h, [
+			{ type: 'soundCue.add', cues: [{ frame: 9, kind: 'manual', weight: 'ambient', source: 'agent' }] },
+		]);
+		undoRedo(f.h, [{ type: 'soundCue.update', cueId: f.cueId, frame: 64, label: 'x', weight: 'hero' }]);
+		f.h.ok([{ type: 'clip.move', clipIds: [f.b], deltaFrames: 5 }]);
+		undoRedo(f.h, [{ type: 'soundCue.resync' }]);
+		expect(clipOf(f.h, f.clipId).sfx!.cueId).toBe(f.cueId);
+		undoRedo(f.h, [{ type: 'soundCue.remove', cueIds: [f.cueId], withClips: true }]);
+		expect(f.h.seq.clips[f.clipId]).toBeUndefined();
+	});
+
+	it('soundDesign.place / swap / setRole / setPalette / setSettings / setPeak: undo / redo', () => {
+		const f = filled();
+		const other = libMedia(f.h, { peakSec: 0.2, durationSec: 0.8 });
+		undoRedo(f.h, [
+			{ type: 'soundDesign.place', cueId: f.cueId, layers: [{ mediaId: f.m }, { mediaId: other }] },
+		]);
+		undoRedo(f.h, [{ type: 'soundDesign.swap', clipId: f.clipId, mediaId: other, pitchSt: 2 }]);
+		undoRedo(f.h, [{ type: 'soundDesign.setRole', clipIds: [f.clipId], role: 'layer' }]);
+		undoRedo(f.h, [{ type: 'soundDesign.setPalette', soundIds: ['snd_0000000000000001'], mode: 'add' }]);
+		undoRedo(f.h, [{ type: 'soundDesign.setSettings', seed: 9, density: 'rich', sfxTrackIds: ['A2'] }]);
+		undoRedo(f.h, [{ type: 'soundDesign.setPeak', clipId: f.clipId, peakFlicks: 1000 }]);
+	});
+
+	it('soundCue.update: an anchor to nothing (E_NOT_FOUND) and unknown keys (E_SCHEMA)', () => {
+		const f = filled();
+		refused(
+			f.h,
+			[
+				{
+					type: 'soundCue.update',
+					cueId: f.cueId,
+					anchor: { type: 'transition', transitionId: 'trn_0000000000000999' },
+				},
+			],
+			'E_NOT_FOUND',
+		);
+		refused(f.h, [{ type: 'soundCue.update', cueId: f.cueId, nope: 1 }], 'E_SCHEMA');
+		refused(f.h, [{ type: 'soundCue.update', cueId: f.cueId, frame: -1 }], 'E_SCHEMA');
+		refused(f.h, [{ type: 'soundCue.update', cueId: f.cueId, frame: Number.NaN }], 'E_SCHEMA');
+		refused(f.h, [{ type: 'soundCue.update', cueId: f.cueId, frame: 10_368_001 }], 'E_SCHEMA');
+	});
+
+	it('soundCue.remove: no cue ids or unknown keys (E_SCHEMA)', () => {
+		const f = filled();
+		refused(f.h, [{ type: 'soundCue.remove', cueIds: [] }], 'E_SCHEMA');
+		refused(f.h, [{ type: 'soundCue.remove', cueIds: [f.cueId], lift: true }], 'E_SCHEMA');
+	});
+
+	it('soundCue.resync: a clip pushed before frame 0 (E_INVALID_PARAM), unknown sequence / no cues (E_NOT_FOUND), E_SCHEMA', () => {
+		const f = filled();
+		// B moves to frame 0 (A lifted): the cue follows to 0, its sound would start before the sequence
+		f.h.ok([{ type: 'clip.lift', clipIds: [f.a] }]);
+		f.h.ok([{ type: 'clip.move', clipIds: [f.b], deltaFrames: -60 }]);
+		expect(clipOf(f.h, f.clipId).start).toBeLessThan(60);
+		refused(f.h, [{ type: 'soundCue.resync' }], 'E_INVALID_PARAM');
+		refused(f.h, [{ type: 'soundCue.resync', sequenceId: 'seq_0000000000000999' }], 'E_NOT_FOUND');
+		refused(f.h, [{ type: 'soundCue.resync', cueIds: [] }], 'E_SCHEMA');
+		refused(f.h, [{ type: 'soundCue.resync', all: true }], 'E_SCHEMA');
+		const empty = new Harness();
+		refused(empty, [{ type: 'soundCue.resync', cueIds: ['cue_0000000000000001'] }], 'E_NOT_FOUND');
+		expect(empty.ok([{ type: 'soundCue.resync' }]).results[0]).toEqual({
+			moved: [],
+			unresolved: [],
+			unanchored: [],
+		});
+	});
+
+	it('soundDesign.swap: every E_INVALID_PARAM case and E_SCHEMA', () => {
+		const f = filled();
+		const h = f.h;
+		const plain = h.registerVideo({ kind: 'audio', seconds: 2 });
+		const still = h.registerVideo({ kind: 'image' });
+		const r = h.ok([
+			{
+				type: 'clip.place',
+				source: { mediaId: plain },
+				at: 300,
+				tracks: { audio: 'A3' },
+				video: false,
+				ref: '$p',
+			},
+		]);
+		const plainClip = r.refs.$p!;
+		// a video clip
+		refused(h, [{ type: 'soundDesign.swap', clipId: f.a, mediaId: f.m }], 'E_INVALID_PARAM');
+		// project audio never placed by sound design and without a peak
+		refused(h, [{ type: 'soundDesign.swap', clipId: plainClip, mediaId: f.m }], 'E_INVALID_PARAM');
+		// a media without sound
+		refused(h, [{ type: 'soundDesign.swap', clipId: f.clipId, mediaId: still }], 'E_INVALID_PARAM');
+		// project audio has no peak to align by its peak (by its start it is fine)
+		refused(h, [{ type: 'soundDesign.swap', clipId: f.clipId, mediaId: plain }], 'E_INVALID_PARAM');
+		// the frame out of range, the new sound before frame 0
+		refused(
+			h,
+			[{ type: 'soundDesign.swap', clipId: f.clipId, mediaId: f.m, frame: 10_368_001 }],
+			'E_INVALID_PARAM',
+		);
+		const late = libMedia(h, { peakSec: 1.5, durationSec: 2 });
+		refused(h, [{ type: 'soundDesign.swap', clipId: f.clipId, mediaId: late, frame: 10 }], 'E_INVALID_PARAM');
+		refused(h, [{ type: 'soundDesign.swap', clipId: f.clipId, mediaId: f.m, pitchSt: 12.5 }], 'E_SCHEMA');
+		refused(h, [{ type: 'soundDesign.swap', clipId: f.clipId, mediaId: f.m, track: 'A1' }], 'E_SCHEMA');
+		refused(h, [{ type: 'soundDesign.swap', clipId: f.clipId }], 'E_SCHEMA');
+		h.ok([{ type: 'soundDesign.swap', clipId: f.clipId, mediaId: plain, align: 'start' }]);
+		expect(clipOf(h, f.clipId).mediaId).toBe(plain);
+	});
+
+	it('soundDesign.setPalette: more than 500 sounds (E_LIMIT), unknown sequence (E_NOT_FOUND)', () => {
+		const h = new Harness();
+		const ids = (from: number, count: number) =>
+			Array.from({ length: count }, (_, i) => `snd_${(from + i).toString(16).padStart(16, '0')}`);
+		h.ok([{ type: 'soundDesign.setPalette', soundIds: ids(0, 400) }]);
+		refused(h, [{ type: 'soundDesign.setPalette', soundIds: ids(400, 101), mode: 'add' }], 'E_LIMIT');
+		h.ok([{ type: 'soundDesign.setPalette', soundIds: ids(400, 100), mode: 'add' }]);
+		expect((h.seq.soundDesign as SoundDesign).settings!.palette).toHaveLength(500);
+		refused(h, [{ type: 'soundDesign.setPalette', soundIds: ids(0, 501) }], 'E_SCHEMA');
+		refused(
+			h,
+			[{ type: 'soundDesign.setPalette', sequenceId: 'seq_0000000000000999', soundIds: [] }],
+			'E_NOT_FOUND',
+		);
+	});
+});
+
+describe('sound command input is strict and bounded (review, gaps)', () => {
+	it('agents get E_SCHEMA for unknown keys at any depth (window, panSweep, anchor, layer pan keyframes)', () => {
+		const cue = { frame: 10, kind: 'cut', weight: 'hero', source: 'agent' };
+		const cases: unknown[] = [
+			{ type: 'soundCue.add', cues: [{ ...cue, window: { start: 1, end: 2, extra: 1 } }] },
+			{ type: 'soundCue.add', cues: [{ ...cue, panSweep: { from: 0, to: 1, ease: 1 } }] },
+			{
+				type: 'soundCue.add',
+				cues: [{ ...cue, anchor: { type: 'clip', clipId: 'clp_0000000000000001', edge: 'start', x: 1 } }],
+			},
+			{
+				type: 'soundCue.update',
+				cueId: 'cue_0000000000000001',
+				stopBefore: { seconds: 1, depthDb: -6, q: 1 },
+			},
+			{
+				type: 'soundDesign.place',
+				frame: 10,
+				layers: [
+					{
+						mediaId: 'med_0000000000000001',
+						pan: {
+							keyframes: [
+								{ offset: 0, value: 0, ease: 1 },
+								{ offset: 1, value: 1 },
+							],
+						},
+					},
+				],
+			},
+		];
+		for (const c of cases)
+			expect(
+				unknownCommandKeyIssues([c]).map((i) => i.code),
+				JSON.stringify(c),
+			).toEqual(['E_SCHEMA']);
+		expect(unknownCommandKeyIssues([{ type: 'soundCue.add', cues: [cue] }])).toEqual([]);
+	});
+
+	it('non-finite numbers, oversized arrays and strings are refused before any handler runs', () => {
+		const h = new Harness();
+		const m = libMedia(h);
+		const cue = { kind: 'cut', weight: 'hero', source: 'agent' };
+		const bad: unknown[] = [
+			{ type: 'soundCue.add', cues: [{ ...cue, frame: Number.NaN }] },
+			{ type: 'soundCue.add', cues: [{ ...cue, frame: Number.POSITIVE_INFINITY }] },
+			{ type: 'soundCue.add', cues: [{ ...cue, frame: 1.5 }] },
+			{ type: 'soundCue.add', cues: [{ ...cue, frame: 1, pitchSt: Number.NaN }] },
+			{ type: 'soundCue.add', cues: [{ ...cue, frame: 1, confidence: Number.POSITIVE_INFINITY }] },
+			{ type: 'soundCue.add', cues: [{ ...cue, frame: 1, label: 'x'.repeat(501) }] },
+			{ type: 'soundCue.add', cues: [{ ...cue, frame: 1, id: 'x'.repeat(10_000) }] },
+			{ type: 'soundCue.add', cues: Array.from({ length: 2001 }, () => ({ ...cue, frame: 1 })) },
+			{ type: 'soundCue.add', cues: [{ ...cue, frame: 1, types: Array.from({ length: 17 }, () => 'hit') }] },
+			{ type: 'soundCue.add', cues: [{ ...cue, frame: 1, window: { start: 5, end: 4 } }] },
+			{ type: 'soundDesign.place', frame: 10, layers: Array.from({ length: 7 }, () => ({ mediaId: m })) },
+			{ type: 'soundDesign.place', frame: 10, layers: [{ mediaId: m, gainDb: Number.NaN }] },
+			{ type: 'soundDesign.place', frame: 10, layers: [{ mediaId: m, rate: 0 }] },
+			{
+				type: 'soundDesign.place',
+				frame: 10,
+				layers: [{ mediaId: m }],
+				preferTrackIds: Array.from({ length: 33 }, () => 'A1'),
+			},
+			{ type: 'soundDesign.place', frame: 10, layers: [{ mediaId: m }], alternatives: ['snd_x'] },
+			{ type: 'soundDesign.swap', clipId: 'clp_0000000000000001', mediaId: m, pitchSt: Number.NaN },
+			{ type: 'soundDesign.setPeak', clipId: 'clp_0000000000000001', peakFlicks: Number.POSITIVE_INFINITY },
+			{ type: 'soundDesign.setSettings', seed: -1 },
+			{ type: 'soundDesign.setSettings', seed: 2 ** 32 },
+		];
+		for (const c of bad) {
+			const code = err(h.tx([c]))?.code;
+			// a malformed cue id is refused by the handler; everything else by the schema
+			expect(['E_SCHEMA', 'E_INVALID_PARAM'], JSON.stringify(c).slice(0, 200)).toContain(code);
+		}
+	});
+});
+
+describe('deriveCues determinism (review, gaps)', () => {
+	it('the same cues whatever order the clips, transitions, media and markers are stored in (property)', async () => {
+		const fc = (await import('fast-check')).default;
+		const f = phase2Fixture();
+		const h = f.h;
+		h.ok([
+			{ type: 'marker.add', frame: 200, name: 'sfx: hit' },
+			{ type: 'marker.add', frame: 40, name: 'sfx: whoosh' },
+			{ type: 'marker.add', frame: 120, name: 'sfx: boom' },
+		]);
+		const opts = { density: 'rich' as const, mgTemplates: mgRegistry() };
+		const ref = deriveCues(h.doc, h.seqId, opts);
+		expect(ref.cues.length).toBeGreaterThan(10);
+		const want = JSON.stringify({ cues: ref.cues, curves: ref.curves });
+		const shuffle = <T>(list: T[], keys: number[]) =>
+			list
+				.map((x, i) => [x, keys[i % keys.length]! + i / 1e6] as const)
+				.sort((a, b) => a[1] - b[1])
+				.map((x) => x[0]);
+		const reorder = (o: Record<string, unknown>, keys: number[]) =>
+			Object.fromEntries(shuffle(Object.entries(o), keys));
+		fc.assert(
+			fc.property(fc.array(fc.integer({ min: 0, max: 1000 }), { minLength: 1, maxLength: 40 }), (keys) => {
+				const doc = structuredClone(h.doc);
+				const seq = doc.sequences[h.seqId]!;
+				seq.clips = reorder(seq.clips, keys) as typeof seq.clips;
+				seq.transitions = reorder(seq.transitions, [...keys].reverse()) as typeof seq.transitions;
+				seq.markers = shuffle(seq.markers, keys);
+				doc.media = reorder(doc.media, keys) as typeof doc.media;
+				doc.sequences = reorder(doc.sequences, keys) as typeof doc.sequences;
+				const r = deriveCues(doc, h.seqId, opts);
+				expect(JSON.stringify({ cues: r.cues, curves: r.curves })).toBe(want);
+			}),
+			{ numRuns: 40 },
+		);
+	}, 120_000);
 });

@@ -36,7 +36,7 @@ export const SoundIdSchema = z
 export const SoundCueInputSchema = z.strictObject({
 	...soundCueFields,
 	soundIds: z.array(SoundIdSchema).max(SOUND_DESIGN_LIMITS.soundIds).optional(),
-	id: z.string().optional(),
+	id: z.string().max(SOUND_DESIGN_LIMITS.id).optional(),
 	ref: RefDeclSchema.optional(),
 });
 export type SoundCueInput = z.infer<typeof SoundCueInputSchema>;
