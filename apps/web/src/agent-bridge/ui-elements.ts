@@ -111,7 +111,7 @@ export function handlersOf(el: Element): string[] {
 	return HANDLERS.filter((h) => typeof p[h] === 'function');
 }
 
-export function implicitRole(el: Element): string {
+function implicitRole(el: Element): string {
 	const explicit = el.getAttribute('role');
 	if (explicit) return explicit.split(/\s+/)[0]!;
 	const tag = el.tagName.toLowerCase();
@@ -135,7 +135,7 @@ export function implicitRole(el: Element): string {
 }
 
 /** True for controls a user can operate (native controls, interactive roles, focusable or handler-bearing). */
-export function isInteractive(el: Element): boolean {
+function isInteractive(el: Element): boolean {
 	const tag = el.tagName.toLowerCase();
 	if (tag === 'input') return (el as HTMLInputElement).type !== 'hidden';
 	if (['button', 'select', 'textarea', 'summary'].includes(tag)) return true;

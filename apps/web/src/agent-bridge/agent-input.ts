@@ -51,7 +51,8 @@ export async function runAgentInput<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /** True while an agent's live-UI input (or its asynchronous aftermath) is being handled. */
-export function agentInputActive(at = now()): boolean {
+export function agentInputActive(): boolean {
+	const at = now();
 	if (depth > 0) return true;
 	return at - lastAgentInputAt < AGENT_INPUT_GRACE_MS && lastUserInputAt < lastAgentInputAt;
 }
@@ -66,11 +67,4 @@ export function agentUiTxGuard(tx: SessionTxInput): Issue | null {
 		code: 'E_APPROVAL_DENIED',
 		message: `Agent UI automation cannot make destructive edits (${reasons.join('; ')}): run them with apply_commands, which asks the user for approval`,
 	};
-}
-
-/** Tests: forget all input. */
-export function resetAgentInputForTests(): void {
-	depth = 0;
-	lastAgentInputAt = Number.NEGATIVE_INFINITY;
-	lastUserInputAt = Number.NEGATIVE_INFINITY;
 }

@@ -208,7 +208,6 @@ export function trimSelected(
 	return { applied };
 }
 
-type Clock = () => number;
 type FrameHandle = number | ReturnType<typeof setTimeout>;
 type Raf = { request(cb: () => void): FrameHandle; cancel(h: FrameHandle): void };
 
@@ -221,7 +220,7 @@ const defaultRaf: Raf = {
 			: clearTimeout(h),
 };
 
-export class DynamicTrim {
+class DynamicTrim {
 	private gesture: Gesture;
 	private readonly points: EditPoint[];
 	private readonly base: { outShift: number; inShift: number };
@@ -238,14 +237,12 @@ export class DynamicTrim {
 		private readonly timeline: TimelineHandle,
 		private readonly sequenceId: string,
 		private readonly fps: number,
-		private readonly clock: Clock = () => performance.now() / 1000,
-		private readonly raf: Raf = defaultRaf,
 	) {
 		this.points = editPointsOf(timeline.ui);
 		const s = trimMode.getState();
 		this.base = { outShift: s.outShift, inShift: s.inShift };
 		this.gesture = session.beginGesture(labelFor(this.points, true));
-		this.anchorClock = this.clock();
+		this.anchorClock = performance.now() / 1000;
 		this.publish();
 		// A click anywhere commits first (another gesture cannot start on top of the open trim).
 		if (typeof window !== 'undefined') {
@@ -269,7 +266,7 @@ export class DynamicTrim {
 			speed = Math.max(-MAX_DYNAMIC_SPEED, Math.min(MAX_DYNAMIC_SPEED, this.speed * 2));
 		else speed = dir;
 		this.speed = speed;
-		this.anchorClock = this.clock();
+		this.anchorClock = performance.now() / 1000;
 		this.anchorOffset = this.offset;
 		this.atLimit = false;
 		this.publish();
@@ -279,7 +276,7 @@ export class DynamicTrim {
 	/** Advances to the clock (call once per animation frame). */
 	tick(): void {
 		if (this.done || this.speed === 0) return;
-		const secs = Math.max(0, this.clock() - this.anchorClock) * this.speed;
+		const secs = Math.max(0, performance.now() / 1000 - this.anchorClock) * this.speed;
 		const frames = Math.trunc(Math.abs(secs) * this.fps + 1e-6) * Math.sign(secs);
 		const want = this.anchorOffset + frames;
 		if (want === this.offset) return;
@@ -290,7 +287,7 @@ export class DynamicTrim {
 			this.atLimit = true;
 			this.speed = 0;
 			this.anchorOffset = got;
-			this.anchorClock = this.clock();
+			this.anchorClock = performance.now() / 1000;
 		}
 		this.publish();
 	}
@@ -335,13 +332,13 @@ export class DynamicTrim {
 			this.handle = null;
 			if (this.done || this.speed === 0) return;
 			this.tick();
-			this.handle = this.raf.request(loop);
+			this.handle = defaultRaf.request(loop);
 		};
-		this.handle = this.raf.request(loop);
+		this.handle = defaultRaf.request(loop);
 	}
 
 	private stopLoop(): void {
-		if (this.handle !== null) this.raf.cancel(this.handle);
+		if (this.handle !== null) defaultRaf.cancel(this.handle);
 		this.handle = null;
 		this.offPointer?.();
 		this.offPointer = null;
@@ -395,13 +392,12 @@ export function dynamicShuttle(
 	fps: number,
 	dir: 1 | -1,
 	slow: boolean,
-	opts: { clock?: Clock; raf?: Raf } = {},
 ): DynamicTrim | null {
 	stopPlayAround();
 	if (!dynamic?.active) {
 		if (!editPointsOf(handle.ui).length || session.gestureActive) return null;
 		if (session.transport.getState().playing) session.transport.pause();
-		dynamic = new DynamicTrim(session, handle, sequenceId, fps, opts.clock, opts.raf);
+		dynamic = new DynamicTrim(session, handle, sequenceId, fps);
 	}
 	dynamic.shuttle(dir, slow);
 	return dynamic;

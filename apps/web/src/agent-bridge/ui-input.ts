@@ -389,7 +389,7 @@ const SHIFTED: Record<string, string> = {
 };
 
 /** `key`/`code` of one key name or printable character (shift: whether Shift produces it). */
-export function keyOf(name: string): { key: string; code: string; shift: boolean } {
+function keyOf(name: string): { key: string; code: string; shift: boolean } {
 	const lower = name.toLowerCase();
 	if (NAMED[lower]) return { ...NAMED[lower]!, shift: false };
 	if (/^f([1-9]|1[0-9]|2[0-4])$/.test(lower))
@@ -426,7 +426,7 @@ const MOD_NAMES: Record<string, keyof Modifiers> = {
 };
 
 /** "Ctrl+Shift+Z", "Cmd+K", "Shift+Delete", "Space", "a" → modifiers + key. */
-export function parseChord(chord: string): { mods: Modifiers; key: string } {
+function parseChord(chord: string): { mods: Modifiers; key: string } {
 	const parts = chord.split(/\+(?!$)/).map((p) => p.trim());
 	const key = parts.pop() ?? '';
 	const m: Modifiers = {};

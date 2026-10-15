@@ -99,7 +99,7 @@ function iconFor(e: Pick<BrowseEntry, 'kind' | 'category'>): IconId {
 }
 
 /** "1.2 MB" (decimal units, like the OS file browsers). */
-export function formatBytes(n: number | null): string {
+function formatBytes(n: number | null): string {
 	if (n === null || !Number.isFinite(n) || n < 0) return '';
 	if (n < 1000) return `${n} B`;
 	const units = ['KB', 'MB', 'GB', 'TB'];
@@ -123,11 +123,7 @@ function formatDuration(sec: number | null): string {
 }
 
 /** Filters a listing by the type filter and the search text (folders always stay, unless the search excludes them). */
-export function visibleEntries(
-	entries: readonly BrowseEntry[],
-	filter: Filter,
-	query: string,
-): BrowseEntry[] {
+function visibleEntries(entries: readonly BrowseEntry[], filter: Filter, query: string): BrowseEntry[] {
 	const q = query.trim().toLowerCase();
 	return entries.filter(
 		(e) =>

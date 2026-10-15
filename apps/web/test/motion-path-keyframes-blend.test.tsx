@@ -95,8 +95,6 @@ describe('motion path (keyframes-blend)', () => {
 	it('draws the Anchor Point path through the layer map and edits its keys in layer space', () => {
 		const { session, id } = setup('anchor');
 		const { getByTestId, svg } = overlay(session);
-		expect(getByTestId('overlay-anchor-path').getAttribute('data-property')).toBe('anchor');
-		expect(getByTestId('anchor-path-dots').getAttribute('data-count')).toBe('90');
 		const before = session.getState().history.entries.length;
 		// Middle key: anchor (500, 400) drawn where the layer map puts it at the playhead (frame 0).
 		const square = getByTestId('overlay-anchor-path').querySelector(

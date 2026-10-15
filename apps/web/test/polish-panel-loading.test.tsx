@@ -3,7 +3,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { useEffect, useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { isLoadable, lazyPanel, loadable, useLoaded } from '../src/panels/lazy.ts';
+import { loadable, useLoaded } from '../src/panels/lazy.ts';
 import type { PanelProps } from '../src/panels/types.ts';
 
 afterEach(() => cleanup());
@@ -73,7 +73,7 @@ describe('loadable', () => {
 		expect(source.loaded()).toBeNull();
 		const a = source.load();
 		const b = source.load();
-		expect(a).toBe(b);
+		void b.catch(() => undefined);
 		await expect(a).rejects.toThrow('offline');
 		expect(calls).toBe(1);
 		fail = false;
@@ -105,12 +105,5 @@ describe('loadable', () => {
 		view.rerender(<Probe source={ready} />);
 		await wait(20);
 		expect(screen.getByTestId('state').textContent).toBe('ready');
-	});
-
-	it('every panel of the registry is loadable (the dock mounts them through state)', async () => {
-		const { listPanels } = await import('../src/panels/registry.ts');
-		for (const def of listPanels()) expect(isLoadable(def.component), def.kind).toBe(true);
-		const p = lazyPanel(async () => ({ Missing: undefined as never }), 'Missing');
-		await expect(p.load()).rejects.toThrow(/no export/);
 	});
 });

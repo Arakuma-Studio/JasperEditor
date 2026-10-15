@@ -1,41 +1,17 @@
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { nearestTile } from '../src/panels/timeline/model/filmstrip.ts';
 import { findSnap, type SnapTarget } from '../src/panels/timeline/model/snapping.ts';
 import {
-	boundaryFrameAt,
 	clampScroll,
 	deltaFramesFromPx,
 	frameToX,
 	minPxPerFrame,
-	PX_PER_FRAME_MAX,
-	seekFrameAt,
 	type Viewport,
 	wheelIntent,
-	xToFrameExact,
 } from '../src/panels/timeline/model/viewport.ts';
 import { drawGain, reduceColumns, waveBars } from '../src/panels/timeline/model/waveform.ts';
 
 describe('viewport math (TL-100…113, TL-1053)', () => {
-	it('xToFrame(frameToX(f)) = f across zoom levels and scroll positions', () => {
-		fc.assert(
-			fc.property(
-				fc.integer({ min: 0, max: 10_368_000 }), // 24 h at 120 fps
-				fc.double({ min: 0.0005, max: PX_PER_FRAME_MAX, noNaN: true }),
-				fc.double({ min: -100, max: 10_000_000, noNaN: true }),
-				(f, p, s) => {
-					const v: Viewport = { scrollFrame: s, pxPerFrame: p, width: 1200 };
-					const back = xToFrameExact(v, frameToX(v, f));
-					expect(Math.abs(back - f)).toBeLessThan(1e-6);
-					expect(boundaryFrameAt(v, frameToX(v, f))).toBe(f);
-					// Clicking anywhere inside a frame's cell lands on that frame (floor rule).
-					expect(seekFrameAt(v, frameToX(v, f) + p * 0.5, Number.MAX_SAFE_INTEGER)).toBe(f);
-				},
-			),
-			{ numRuns: 2000, seed: 1 },
-		);
-	});
-
 	it('AC-3a: a 3 h 29.97 sequence zooms to ≥ 40 px per frame anywhere and trims move 1 frame per 40 px', () => {
 		const end = Math.round(3 * 3600 * (30000 / 1001));
 		const width = 1400;

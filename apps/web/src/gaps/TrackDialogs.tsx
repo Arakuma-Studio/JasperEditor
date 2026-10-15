@@ -24,7 +24,7 @@ const kindName = (k: 'video' | 'audio' | 'submix') =>
 	k === 'video' ? 'Video' : k === 'audio' ? 'Audio' : 'Submix';
 
 /** Placement choices: index into the kind's list (0 = before the first). */
-export function placementOptions(
+function placementOptions(
 	tracks: readonly Pick<Track, 'name'>[],
 	kind: 'video' | 'audio' | 'submix',
 ): { value: string; label: string }[] {

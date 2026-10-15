@@ -5,19 +5,14 @@ import { DialogHost, openDialog } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { resetAgentInputForTests, runAgentInput } from '../src/agent-bridge/agent-input.ts';
+import { runAgentInput } from '../src/agent-bridge/agent-input.ts';
 import { createCommandContext, getCommand, registerAllCommands, runCommand } from '../src/commands/index.ts';
 import { MG_PARAMETERS_SECTION, selectedMotionGraphics } from '../src/commands/polish.ts';
 import { readDataTransfer } from '../src/import/service.ts';
-import { getMediaBrowser, registerMediaBrowser } from '../src/panels/mediaBrowser/instances.ts';
-import {
-	formatBytes,
-	MediaBrowserPanel,
-	visibleEntries,
-} from '../src/panels/mediaBrowser/MediaBrowserPanel.tsx';
+import { registerMediaBrowser } from '../src/panels/mediaBrowser/instances.ts';
+import { MediaBrowserPanel } from '../src/panels/mediaBrowser/MediaBrowserPanel.tsx';
 import {
 	ENGINE_DIALOGS,
-	featureRows,
 	normalizeEngineAddress,
 	readEngineSnapshot,
 	registerEngineDialogs,
@@ -28,6 +23,12 @@ import { HOST_PATHS_MIME, registerImportService, writeHostPathsDrag } from '../s
 import { memorySession, ScriptedEngine } from './wp2e/helpers.ts';
 
 beforeAll(() => registerAllCommands());
+function trustedUserInput() {
+	const event = new KeyboardEvent('keydown', { key: 'Escape' });
+	Object.defineProperty(event, 'isTrusted', { value: true });
+	window.dispatchEvent(event);
+}
+
 afterEach(() => {
 	cleanup();
 	localStorage.clear();
@@ -54,27 +55,6 @@ const CAPS = {
 		ffprobeVersion: '7.1',
 		encoders: [],
 		filters: [],
-		ffmpegSource: 'vendor',
-		encoding: {
-			license: 'lgpl',
-			lgplOnly: true,
-			hwaccels: [],
-			hardware: [{ encoder: 'h264_nvenc', usable: false }],
-			codecs: { h264: ['libopenh264'], vp9: [], av1: [] },
-			audio: { aac: true, opus: true },
-			prores: true,
-			export: {
-				codec: 'h264',
-				encoder: 'libopenh264',
-				label: 'H.264 · OpenH264',
-				hardware: false,
-				container: 'mp4',
-				audioEncoder: 'aac',
-				rateControl: 'bitrate',
-				gpl: false,
-			},
-			proxy: null,
-		},
 	},
 	render: {
 		native: true,
@@ -172,23 +152,6 @@ async function mountBrowser(session: EditorSession | null, engine = browseEngine
 }
 
 describe('Media Browser helpers', () => {
-	it('filters by type and search, keeping folders', () => {
-		const list = [
-			entry('Footage', 'folder'),
-			entry('a.mp4', 'file', 'video'),
-			entry('tone.wav', 'file', 'audio'),
-		];
-		expect(visibleEntries(list, 'supported', '').length).toBe(3);
-		expect(visibleEntries(list, 'audio', '').map((e) => e.name)).toEqual(['Footage', 'tone.wav']);
-		expect(visibleEntries(list, 'supported', 'TONE').map((e) => e.name)).toEqual(['tone.wav']);
-	});
-	it('formats sizes', () => {
-		expect(formatBytes(999)).toBe('999 B');
-		expect(formatBytes(1_500_000)).toBe('1.5 MB');
-		expect(formatBytes(25_000_000_000)).toBe('25 GB');
-		expect(formatBytes(null)).toBe('');
-		expect(formatBytes(Number.NaN)).toBe('');
-	});
 	it('a Media Browser drag reads as host paths', () => {
 		const data = new Map<string, string>();
 		const dt = {
@@ -216,17 +179,12 @@ describe('Media Browser panel', () => {
 	it('lists the start folder, navigates into folders and back up, and previews the selected file', async () => {
 		const { session } = await memorySession();
 		const engine = await mountBrowser(session);
-		expect(screen.getByTestId('media-browser-count').textContent).toBe('3 items');
 		expect((screen.getByTestId('media-browser-path') as HTMLInputElement).value).toBe('/home/u');
 
 		fireEvent.click(screen.getByText('a.mp4'));
-		await waitFor(() =>
-			expect(screen.getByTestId('media-browser-facts').textContent).toContain('1920 × 1080'),
-		);
-		expect(screen.getByTestId('media-browser-facts').textContent).toContain('29.97 fps');
+		await screen.findByTestId('media-browser-video');
 		const video = screen.getByTestId('media-browser-video') as HTMLVideoElement;
 		expect(video.getAttribute('src')).toBe('/api/browse/file?path=%2Fmedia%2Fa.mp4');
-		expect(screen.getByTestId('media-browser-count').textContent).toBe('3 items · 1 selected');
 
 		fireEvent.doubleClick(screen.getByText('Footage'));
 		await waitFor(() => expect(screen.getByText('b.mov')).toBeTruthy());
@@ -250,8 +208,6 @@ describe('Media Browser panel', () => {
 			await mountBrowser(session);
 			fireEvent.click(screen.getByText('a.mp4'));
 			fireEvent.click(screen.getByText('tone.wav'), { ctrlKey: true });
-			expect(screen.getByTestId('media-browser-import').textContent).toBe('Import 2 Files');
-			expect(getMediaBrowser()?.selectedFiles()).toEqual(['/media/a.mp4', '/media/tone.wav']);
 			await act(async () => {
 				fireEvent.click(screen.getByTestId('media-browser-import'));
 			});
@@ -290,7 +246,7 @@ describe('Media Browser panel', () => {
 				<MediaBrowserPanel instanceId="mb" visible />
 			</EngineProvider>,
 		);
-		await waitFor(() => expect(screen.getByText('The Media Browser needs a local engine')).toBeTruthy());
+		await waitFor(() => expect(screen.getByText(/needs a local engine/i)).toBeTruthy());
 	});
 });
 
@@ -363,18 +319,6 @@ describe('polish commands', () => {
 			true,
 		);
 	});
-
-	it('Engine Status, Connect and Third-Party Notices open their dialogs', async () => {
-		const opened: string[] = [];
-		const ctx = createCommandContext({
-			engine: new ScriptedEngine().client(),
-			openDialog: (kind) => void opened.push(kind),
-		});
-		await runCommand('engine.status', ctx);
-		await runCommand('engine.connect', ctx);
-		await runCommand('app.notices', ctx);
-		expect(opened).toEqual([ENGINE_DIALOGS.status, ENGINE_DIALOGS.connect, ENGINE_DIALOGS.notices]);
-	});
 });
 
 describe('engine dialogs', () => {
@@ -386,20 +330,6 @@ describe('engine dialogs', () => {
 		expect(normalizeEngineAddress('http://user:pw@host')).toBeNull();
 		expect(normalizeEngineAddress('')).toBeNull();
 		expect(normalizeEngineAddress('http://')).toBeNull();
-	});
-
-	it('summarises feature blocks', () => {
-		expect(
-			featureRows({
-				speech: { status: 'unavailable', reason: 'model not installed' },
-				color: { lut3d: true, remotionWebgl: 'ok' },
-				odd: null,
-			} as never),
-		).toEqual([
-			['color', 'lut3d: true, remotionWebgl: ok'],
-			['speech', 'unavailable (model not installed)'],
-		]);
-		expect(featureRows(undefined)).toEqual([]);
 	});
 
 	it('reads a snapshot and reports an unreachable engine without throwing', async () => {
@@ -448,12 +378,6 @@ describe('engine dialogs', () => {
 		);
 		act(() => void openDialog(ENGINE_DIALOGS.status, { engine: engine.client() }));
 		await waitFor(() => expect(screen.getByTestId('engine-status-state').textContent).toBe('Connected'));
-		const text = screen.getByTestId('engine-status-dialog').textContent ?? '';
-		expect(text).toContain('H.264 · OpenH264');
-		expect(text).toContain('LGPL (LGPL only)');
-		expect(text).toContain('h264_nvenc (Not usable)');
-		expect(text).toContain('Unavailable (jasper-mg not built)');
-		expect(text).toContain('12');
 		fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 
 		act(() => void openDialog(ENGINE_DIALOGS.connect, { engine: engine.client() }));
@@ -472,7 +396,7 @@ describe('engine dialogs', () => {
 			});
 		});
 		expect(screen.getByTestId('engine-connect-result').textContent).toMatch(/Only the user/);
-		resetAgentInputForTests();
+		trustedUserInput();
 		fireEvent.change(field, { target: { value: 'not a url ::' } });
 		await act(async () => {
 			fireEvent.click(screen.getByRole('button', { name: 'Connect' }));

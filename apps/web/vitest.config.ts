@@ -18,7 +18,7 @@ const TEST_TIMEOUT_BASE_MS = 5_000;
 const TEST_TIMEOUT_FLOOR_MS = 15_000;
 const TEST_TIMEOUT_CEILING_MS = 60_000;
 
-export function webTestTimeoutMs(factor = loadFactor(), strict = PERF_STRICT): number {
+function webTestTimeoutMs(factor = loadFactor(), strict = PERF_STRICT): number {
 	if (strict) return TEST_TIMEOUT_BASE_MS;
 	const scaled = Math.round(TEST_TIMEOUT_BASE_MS * factor * factor);
 	return Math.min(TEST_TIMEOUT_CEILING_MS, Math.max(TEST_TIMEOUT_FLOOR_MS, scaled));

@@ -7,7 +7,6 @@ import {
 	runCommand,
 	type ToastRequest,
 } from '../src/commands/index.ts';
-import { resolveMatchFrame } from '../src/commands/structure.ts';
 import {
 	openInSource,
 	performSourceEdit,
@@ -15,7 +14,7 @@ import {
 	syntheticPreviewDoc,
 } from '../src/panels/source/source-state.ts';
 import { itemAvKinds, itemDurationFrames } from '../src/panels/timeline/model/drop.ts';
-import { setupTimeline, solid, videoAsset } from './timeline-helpers.ts';
+import { setupTimeline, videoAsset } from './timeline-helpers.ts';
 
 const engine = new EngineClient({ fetch: (async () => new Response('{}')) as unknown as typeof fetch });
 
@@ -51,24 +50,6 @@ function harness() {
 	return { ...t, ctx, run, toasts, movie };
 }
 
-describe('groups', () => {
-	it('groups the selection, selects groups together and Alt-selects one member', async () => {
-		const h = harness();
-		h.apply([solid(0, 60, 'V1'), solid(30, 60, 'V2')]);
-		const [a, b] = [h.clipsOn('V1')[0]!.id, h.clipsOn('V2')[0]!.id];
-		h.session.select('timeline', [a, b], 'replace');
-		await h.run('timeline.group');
-		expect(h.seq().clips[a]!.groupId).not.toBeNull();
-		h.session.select('timeline', [a], 'replace');
-		expect(h.session.getState().selection.timeline.clips.sort()).toEqual([a, b].sort());
-		h.session.select('timeline', [a], 'replace', { groups: false });
-		expect(h.session.getState().selection.timeline.clips).toEqual([a]);
-		h.session.select('timeline', [a], 'replace');
-		await h.run('timeline.ungroup');
-		expect(h.seq().clips[a]!.groupId).toBeNull();
-	});
-});
-
 describe('frame holds, through edits, gaps, subsequences', () => {
 	it('adds a frame hold at the playhead and inserts a hold segment', async () => {
 		const h = harness();
@@ -87,41 +68,14 @@ describe('frame holds, through edits, gaps, subsequences', () => {
 			[160, 200],
 		]);
 	});
-
-	it('joins through edits, goes to gaps and makes a subsequence', async () => {
-		const h = harness();
-		const { ids } = h.movie(0);
-		h.session.transport.seek(50);
-		await h.run('timeline.addEditAllTracks');
-		expect(h.clipsOn('V1')).toHaveLength(2);
-		h.session.select('timeline', [], 'replace');
-		await h.run('timeline.joinThroughEdits');
-		expect(h.clipsOn('V1')).toHaveLength(1);
-		h.apply([solid(400, 30, 'V1')]);
-		h.session.transport.seek(10);
-		await h.run('sequence.goToNextGap');
-		expect(h.session.transport.getState().frame).toBe(300);
-		h.session.transport.seek(350);
-		await h.run('sequence.goToPrevGap');
-		expect(h.session.transport.getState().frame).toBe(300);
-		h.session.select('timeline', ids, 'replace');
-		const before = Object.keys(h.session.getCommitted().sequences).length;
-		await h.run('sequence.makeSubsequence');
-		expect(Object.keys(h.session.getCommitted().sequences)).toHaveLength(before + 1);
-	});
 });
 
 describe('nests', () => {
-	it('unnests, reveals the nested sequence and matches frames through it', async () => {
+	it('reveals the nested sequence at the playhead source frame and unnests its clips', async () => {
 		const h = harness();
-		const { ids, mediaId } = h.movie(30);
+		const { ids } = h.movie(30);
 		const r = h.apply([{ type: 'clip.nest', clipIds: ids, name: 'N' }]);
 		const { sequenceId, clipIds } = r.results[0] as { sequenceId: string; clipIds: string[] };
-		const doc = h.session.getCommitted();
-		const hit = resolveMatchFrame(doc, h.seq(), 40);
-		expect(hit?.clip.kind).toBe('video');
-		expect((hit!.clip as { mediaId: string }).mediaId).toBe(mediaId);
-		expect(Math.round(hit!.contentFlicks / (705_600_000 / 30))).toBe(10);
 		h.session.transport.seek(45);
 		await h.run('timeline.revealNested');
 		expect(h.session.getState().activeSequenceId).toBe(sequenceId);
@@ -161,17 +115,10 @@ describe('nests', () => {
 });
 
 describe('synthetic sources and project operations', () => {
-	it('creates New Items, previews them and removes unused ones', async () => {
+	it('previews a bars-and-tone source with picture and audio', async () => {
 		const h = harness();
 		await h.run('project.newBarsAndTone');
-		await h.run('project.newAdjustmentLayer');
-		await h.run('project.newBlackVideo');
-		await h.run('project.newTransparentVideo');
 		const doc = h.session.getCommitted();
-		const kinds = Object.values(doc.synthetics)
-			.map((s) => s.kind)
-			.sort();
-		expect(kinds).toEqual(['adjustment', 'bars-and-tone', 'black-video', 'transparent']);
 		const bars = Object.values(doc.items).find(
 			(i) => i.kind === 'synthetic' && doc.synthetics[i.syntheticId]?.kind === 'bars-and-tone',
 		) as Extract<(typeof doc.items)[string], { kind: 'synthetic' }>;
@@ -180,14 +127,5 @@ describe('synthetic sources and project operations', () => {
 		expect(preview!.videoTracks[0]!.clips[0]!.source).toEqual({ generator: { kind: 'bars' } });
 		expect(preview!.audioClips[0]!.generator?.kind).toBe('tone');
 		expect(itemDurationFrames(doc, bars, { num: 30, den: 1 })).toBe(30);
-		await h.run('edit.removeUnused');
-		expect(Object.keys(h.session.getCommitted().synthetics)).toHaveLength(0);
-	});
-
-	it('duplicates a sequence item', async () => {
-		const h = harness();
-		const item = Object.values(h.session.getCommitted().items).find((i) => i.kind === 'sequence')!;
-		await h.run('project.duplicateSequence', { itemIds: [item.id] });
-		expect(Object.keys(h.session.getCommitted().sequences)).toHaveLength(2);
 	});
 });

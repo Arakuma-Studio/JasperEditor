@@ -9,7 +9,6 @@ import {
 	kindCapabilities,
 	matchFrame as matchFrameQuery,
 	type ProjectDocument,
-	resolveMatchFrame,
 	reverseMatchFrame as reverseMatchFrameQuery,
 	SYNTHETIC_INFO,
 	type SyntheticKind,
@@ -63,8 +62,6 @@ function clipUnderPlayhead(e: Env, kinds?: (c: Clip) => boolean): Clip | null {
 
 /** Clips with a picture a frame hold can freeze (video-track kinds except adjustment layers). */
 const hasPicture = (c: Clip) => kindCapabilities(c.kind)?.trackKind === 'video' && c.kind !== 'adjustment';
-
-export { resolveMatchFrame };
 
 function matchFrame(ctx: CommandCtx, e: Env): void {
 	const view = e.session.getState().views[e.seq.id];

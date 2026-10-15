@@ -8,7 +8,6 @@ import {
 	AGENT_INPUT_GRACE_MS,
 	agentInputActive,
 	agentUiTxGuard,
-	resetAgentInputForTests,
 	runAgentInput,
 } from '../src/agent-bridge/agent-input.ts';
 import type { AgentBridge, PendingApproval } from '../src/agent-bridge/bridge.ts';
@@ -17,9 +16,15 @@ import type { CommandCtx } from '../src/commands/types.ts';
 import { ApprovalCard } from '../src/shell/AgentApprovals.tsx';
 import { createEditorEngineClient } from '../src/state/engine.tsx';
 
+function trustedUserInput() {
+	const event = new KeyboardEvent('keydown', { key: 'Escape' });
+	Object.defineProperty(event, 'isTrusted', { value: true });
+	window.dispatchEvent(event);
+}
+
 afterEach(() => {
 	cleanup();
-	resetAgentInputForTests();
+	trustedUserInput();
 	vi.useRealTimers();
 });
 
@@ -86,7 +91,7 @@ describe('requests the editor makes while it handles agent input (security revie
 			expect(last().marked).toBe(true);
 		});
 
-		resetAgentInputForTests();
+		trustedUserInput();
 		await del();
 		expect(last().marked).toBe(false);
 		vi.unstubAllGlobals();
@@ -110,7 +115,9 @@ describe('session guard', () => {
 		await runAgentInput(async () => undefined);
 		expect(agentInputActive()).toBe(true);
 		expect(s.apply(deleteSequence(s)).ok).toBe(false);
-		expect(agentInputActive(performance.now() + AGENT_INPUT_GRACE_MS + 1)).toBe(false);
+		const clock = vi.spyOn(performance, 'now').mockReturnValue(performance.now() + AGENT_INPUT_GRACE_MS + 1);
+		expect(agentInputActive()).toBe(false);
+		clock.mockRestore();
 		// A trusted user key press ends it at once (jsdom events are untrusted: simulate the flag).
 		const e = new KeyboardEvent('keydown', { key: 'Delete' });
 		Object.defineProperty(e, 'isTrusted', { value: true });
@@ -132,7 +139,7 @@ describe('irreversible UI commands', () => {
 			const r = await runAgentInput(() => runCommand('history.clear', ctx, { confirmed: true }));
 			expect(r).toMatchObject({ ran: false, reason: 'error' });
 			expect(run).not.toHaveBeenCalled();
-			resetAgentInputForTests();
+			trustedUserInput();
 			expect(await runCommand('history.clear', ctx, { confirmed: true })).toEqual({ ran: true });
 			expect(run).toHaveBeenCalledOnce();
 		} finally {

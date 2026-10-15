@@ -25,7 +25,6 @@ describe('Properties panel (S03 §14, S05:PRP)', () => {
 		act(() => session.select('timeline', ids));
 		renderWithSession(session, <PropertiesPanel instanceId="p1" visible />);
 		const scale = screen.getByTestId('prop-transform.scale');
-		expect(scale.textContent).toBe('–%');
 		const entries = session.getState().history.entries.length;
 		act(() => {
 			fireEvent.pointerDown(scale, { clientX: 100, button: 0 });

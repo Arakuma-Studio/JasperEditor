@@ -122,7 +122,7 @@ function minConfidence(index: ConfidenceIndex, lo: number, hi: number): number {
 /** Strip colour class: good ≥ 0.8, fair ≥ 0.5, poor > 0, lost = 0 (TRU-002 tones plus "lost"). */
 type ConfidenceClass = 'good' | 'fair' | 'poor' | 'lost';
 
-export function confidenceClass(c: number): ConfidenceClass {
+function confidenceClass(c: number): ConfidenceClass {
 	return c <= 0 ? 'lost' : c < 0.5 ? 'poor' : c < 0.8 ? 'fair' : 'good';
 }
 
