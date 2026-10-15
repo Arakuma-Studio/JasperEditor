@@ -19,7 +19,6 @@ type StartEngineOptions = {
 	 * directory in `<resourcesDir>/ffmpeg-lgpl` (ARCHITECTURE D-13).
 	 */
 	resourcesDir?: string | null;
-	readyTimeoutMs?: number;
 	onLog?(line: string): void;
 };
 
@@ -54,8 +53,8 @@ export function startEngineProcess(opts: StartEngineOptions): Promise<EngineProc
 		const timer = setTimeout(() => {
 			child.removeListener('message', onMessage);
 			child.kill();
-			reject(new Error(`engine did not report ready within ${opts.readyTimeoutMs ?? 30_000} ms`));
-		}, opts.readyTimeoutMs ?? 30_000);
+			reject(new Error('engine did not report ready within 30000 ms'));
+		}, 30_000);
 		function onMessage(message: unknown): void {
 			const result = EngineReadyMessageSchema.safeParse(message);
 			if (!result.success) return;

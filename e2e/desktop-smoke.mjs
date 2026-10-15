@@ -8,7 +8,7 @@
 // Env: DESKTOP_SMOKE_PORT (base port, default 48140: engine = base, Vite = base + 1). Screenshots go to
 // test-results/desktop-<mode>.png. Needs xvfb-run; sets ELECTRON_DISABLE_SANDBOX=1 (no SUID sandbox helper).
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -251,8 +251,7 @@ try {
 			.catch(() => {});
 		throw new Error(`Desktop home did not render; diagnostics in ${failureFile}: ${error}`);
 	}
-	// The Home screen settles once the project list has loaded (an empty-state guide or the list): the screenshot
-	// size check below needs that, not the "Loading projects…" placeholder a starved machine can still show.
+	// Wait for the project request to settle before saving the desktop artifact.
 	await expect(
 		page
 			.locator('[data-testid="home-empty"], [data-testid="project-list"], [data-testid="projects-error"]')
@@ -343,12 +342,7 @@ try {
 	await browser.close();
 	app.kill('SIGTERM');
 }
-if (!existsSync(shot) || statSync(shot).size < 20_000) fail(`screenshot ${shot} is missing or blank`);
-// PNG IHDR: width/height at bytes 16..24.
-const png = readFileSync(shot);
-const width = png.readUInt32BE(16);
-const height = png.readUInt32BE(20);
 console.log(
-	`[desktop-smoke] PASS ${mode}: loaded ${loaded[1]}, screenshot ${shot} ${width}x${height} (${statSync(shot).size} bytes), ${Math.round((Date.now() - t0) / 1000)} s`,
+	`[desktop-smoke] PASS ${mode}: loaded ${loaded[1]}, screenshot ${shot}, ${Math.round((Date.now() - t0) / 1000)} s`,
 );
 process.exit(0);

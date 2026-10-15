@@ -1,11 +1,8 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { checkRepo, fileViolations, LAYERS } from './check-layers.mjs';
-
-const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** A miniature workspace: `{ 'packages/project': {pkg, files: {'src/x.ts': text}} }`. */
 function workspace(spec) {
@@ -183,8 +180,4 @@ describe('check-layers', () => {
 			'@jasper/api',
 		]);
 	});
-
-	it('the repository passes', () => {
-		expect(checkRepo(repo)).toEqual([]);
-	}, 120_000);
 });

@@ -10,7 +10,7 @@ fn fixture(name: &str) -> String {
 }
 
 /// Runs the binary with a spec on stdin; returns (exit code, stdout bytes, stderr text).
-fn run_stdin(args: &[&str], spec: &Value) -> (i32, Vec<u8>, String) {
+fn run_stdin(args: &[&str], spec: &impl ToString) -> (i32, Vec<u8>, String) {
     let mut child = Command::new(BIN)
         .args(args)
         .stdin(Stdio::piped())
@@ -174,21 +174,74 @@ fn frame_writes_a_png() {
 }
 
 #[test]
-fn invalid_thread_environment_is_reported_as_a_spec_error() {
-    let out = Command::new(BIN)
-        .args([
-            "render",
-            "--spec",
-            &fixture("title-card.json"),
-            "--raw-rgba",
-        ])
-        .env("JASPER_MG_THREADS", "invalid")
-        .output()
+fn invalid_thread_settings_are_reported_as_spec_errors() {
+    let path = fixture("title-card.json");
+    let args = ["render", "--spec", &path, "--raw-rgba"];
+    for value in ["", "0", "65", "invalid", "-1", "1.5"] {
+        let out = Command::new(BIN)
+            .args(&args)
+            .env("JASPER_MG_THREADS", value)
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(2), "{value}");
+        assert!(out.stdout.is_empty());
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(events(&stderr).last().unwrap()["code"], "INVALID_SPEC");
+    }
+    let spec = json!({
+        "template": {"id": "title-card", "version": 1}, "params": {},
+        "width": 64, "height": 36, "fps": {"num": 30, "den": 1}, "durationFrames": 1
+    });
+    for value in ["0", "65", "1", "64"] {
+        let (code, stdout, stderr) = run_stdin(
+            &["render", "--spec", "-", "--raw-rgba", "--threads", value],
+            &spec,
+        );
+        if value == "0" || value == "65" {
+            assert_eq!(code, 2, "{stderr}");
+            assert!(stdout.is_empty());
+            assert_eq!(events(&stderr).last().unwrap()["code"], "INVALID_SPEC");
+        } else {
+            assert_eq!(code, 0, "{stderr}");
+            assert_eq!(stdout.len(), 64 * 36 * 4);
+        }
+    }
+}
+
+#[test]
+fn oversized_stdin_is_refused_before_parsing() {
+    // Padding preserves the valid spec: without the byte cap this would render successfully.
+    let spec =
+        std::fs::read_to_string(fixture("title-card.json")).unwrap() + &" ".repeat(1024 * 1024);
+    let (code, stdout, stderr) = run_stdin(&["svg", "--spec", "-", "--frame", "0"], &spec);
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    let error = events(&stderr).pop().unwrap();
+    assert_eq!(error["code"], "INVALID_SPEC");
+    assert!(error["message"].as_str().unwrap().contains("exceeds"));
+}
+
+#[test]
+fn closed_output_pipe_returns_render_failure() {
+    let mut child = Command::new(BIN)
+        .args(["svg", "--spec", "-", "--frame", "0"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .unwrap();
-    assert_eq!(out.status.code(), Some(2));
-    assert!(out.stdout.is_empty());
+    // Close the read end before supplying stdin, so SVG output cannot race the pipe close.
+    drop(child.stdout.take());
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(&std::fs::read(fixture("title-card.json")).unwrap())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert_eq!(events(&stderr).last().unwrap()["code"], "INVALID_SPEC");
+    assert_eq!(events(&stderr).last().unwrap()["code"], "RENDER_FAILED");
 }
 
 #[test]

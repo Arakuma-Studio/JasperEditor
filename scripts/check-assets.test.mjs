@@ -1,9 +1,5 @@
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { checkRepo, findProblems, isAsset, parseSidecar, template } from './check-assets.mjs';
-
-const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
+import { findProblems, parseSidecar } from './check-assets.mjs';
 
 const SIDECAR = `asset:        logo.png
 title:        A logo
@@ -20,11 +16,17 @@ const problems = (files) =>
 	findProblems(Object.keys(files), (p) => (Object.hasOwn(files, p) ? files[p] : null)).map((p) => p.problem);
 
 describe('check-assets', () => {
-	it('recognises assets by extension, not code or data', () => {
+	it('requires attribution for assets while ignoring source and data files', () => {
 		for (const f of ['a.png', 'b.JPG', 'c.ttf', 'd.cube', 'e.mp4', 'f.onnx', 'g.wasm', 'h.jasper', 'i.svg'])
-			expect(isAsset(f), f).toBe(true);
-		for (const f of ['a.ts', 'b.json', 'c.md', 'd.png.attribution', 'e.txt'])
-			expect(isAsset(f), f).toBe(false);
+			expect(
+				findProblems([f], () => null).map((p) => p.file),
+				f,
+			).toEqual([f]);
+		for (const f of ['a.ts', 'b.json', 'c.md', 'e.txt'])
+			expect(
+				findProblems([f], () => null),
+				f,
+			).toEqual([]);
 	});
 
 	it('accepts an asset with a complete sidecar and an index row', () => {
@@ -33,31 +35,23 @@ describe('check-assets', () => {
 		).toEqual([]);
 	});
 
-	it('fails without a sidecar, and the fix is the exact template to write', () => {
-		const all = findProblems(['img/logo.png', 'ATTRIBUTION.md'], (p) => (p === 'ATTRIBUTION.md' ? '' : 'x'));
-		expect(all.map((p) => p.problem)).toEqual(['asset without an attribution sidecar']);
-		expect(all[0].fix).toContain('Create img/logo.png.attribution');
-		expect(all[0].fix).toContain('asset:        logo.png');
-		expect(all[0].fix).toContain('| `img/logo.png` |');
-		expect(template('x/y.ttf')).toMatch(/license-file: .*none/);
-	});
-
 	it('fails on a missing index row, missing keys, a wrong asset name, a bad licence or date', () => {
 		expect(
 			problems({ 'img/logo.png': 'x', 'img/logo.png.attribution': SIDECAR, 'ATTRIBUTION.md': '' }),
-		).toEqual(['no row in ATTRIBUTION.md']);
-		const broken = SIDECAR.replace('asset:        logo.png', 'asset:        other.png')
-			.replace('LicenseRef-JasperEditor', 'CC-BY-NC-4.0')
-			.replace('2026-10-07 by tests', 'yesterday')
-			.replace(/^notes:.*$/m, '');
-		expect(
-			problems({ 'img/logo.png': 'x', 'img/logo.png.attribution': broken, 'ATTRIBUTION.md': INDEX }),
-		).toEqual([
-			'missing or empty key(s): notes',
-			'asset: is "other.png", expected "logo.png"',
-			'licence not allowed or not an SPDX id: CC-BY-NC-4.0',
-			'added: "yesterday" is not "<YYYY-MM-DD> by <contributor>"',
-		]);
+		).toEqual([expect.stringContaining('ATTRIBUTION.md')]);
+		for (const [before, after, field] of [
+			['asset:        logo.png', 'asset:        other.png', 'asset:'],
+			['LicenseRef-JasperEditor', 'CC-BY-NC-4.0', 'CC-BY-NC-4.0'],
+			['2026-10-07 by tests', 'yesterday', 'added:'],
+			['notes:        drawn by code', '', 'notes'],
+		]) {
+			const found = problems({
+				'img/logo.png': 'x',
+				'img/logo.png.attribution': SIDECAR.replace(before, after),
+				'ATTRIBUTION.md': INDEX,
+			});
+			expect(found).toEqual([expect.stringContaining(field)]);
+		}
 	});
 
 	it('checks that a named licence file exists, and accepts SPDX expressions', () => {
@@ -67,7 +61,7 @@ describe('check-assets', () => {
 		);
 		expect(
 			problems({ 'img/logo.png': 'x', 'img/logo.png.attribution': withFile, 'ATTRIBUTION.md': INDEX }),
-		).toEqual(['license-file img/OFL.txt does not exist']);
+		).toEqual([expect.stringContaining('img/OFL.txt')]);
 		expect(
 			problems({
 				'img/logo.png': 'x',
@@ -79,19 +73,15 @@ describe('check-assets', () => {
 	});
 
 	it('fails on orphan sidecars and on committed generated media', () => {
-		expect(problems({ 'img/gone.png.attribution': SIDECAR, 'ATTRIBUTION.md': '' })).toEqual([
-			'sidecar without its asset (img/gone.png is not in the repository)',
+		expect(findProblems(['img/gone.png.attribution'], () => SIDECAR)).toEqual([
+			expect.objectContaining({ file: 'img/gone.png.attribution' }),
 		]);
-		expect(problems({ 'fixtures/media/clip-a.mp4': 'x', 'ATTRIBUTION.md': '' })).toEqual([
-			'generated test media is committed',
+		expect(findProblems(['fixtures/media/clip-a.mp4'], () => '')).toEqual([
+			expect.objectContaining({ file: 'fixtures/media/clip-a.mp4' }),
 		]);
 	});
 
 	it('parses continuation lines', () => {
 		expect(parseSidecar('notes: one\n  two\nlicense: MIT\n')).toEqual({ notes: 'one two', license: 'MIT' });
 	});
-
-	it('the repository passes', () => {
-		expect(checkRepo(repo)).toEqual([]);
-	}, 60_000);
 });

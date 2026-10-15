@@ -90,8 +90,9 @@ fn event(value: serde_json::Value) {
     let _ = err.flush();
 }
 
-fn write_output(mut out: impl Write, value: impl std::fmt::Display) -> CliResult {
-    writeln!(out, "{value}").map_err(|e| CliError::Other(format!("stdout: {e}")))
+fn write_output(value: impl std::fmt::Display) -> CliResult {
+    writeln!(std::io::stdout().lock(), "{value}")
+        .map_err(|e| CliError::Other(format!("stdout: {e}")))
 }
 
 fn read_spec_text(reader: impl Read) -> CliResult<String> {
@@ -322,7 +323,6 @@ fn run(cli: Cli) -> CliResult {
             .map(|t| format!("{}@{}", t.id, t.version))
             .collect();
         return write_output(
-            std::io::stdout().lock(),
             json!({"name": "jasper-mg", "version": env!("CARGO_PKG_VERSION"), "fframes": FFRAMES_VERSION,
                    "renderer": RENDERER_VERSION, "templates": templates}),
         );
@@ -331,10 +331,7 @@ fn run(cli: Cli) -> CliResult {
         None => Err(CliError::Spec(
             "missing command (schema | render | frame | svg); see --help".into(),
         )),
-        Some(Command::Schema) => write_output(
-            std::io::stdout().lock(),
-            json!({ "templates": catalog() }),
-        ),
+        Some(Command::Schema) => write_output(json!({ "templates": catalog() })),
         Some(Command::Render {
             spec,
             raw_rgba,
@@ -363,7 +360,7 @@ fn run(cli: Cli) -> CliResult {
         Some(Command::Svg { spec, frame }) => {
             let prepared = read_spec(&spec)?;
             check_frame(&prepared, frame)?;
-            write_output(std::io::stdout().lock(), prepared.svg(frame))
+            write_output(prepared.svg(frame))
         }
     }
 }
@@ -427,34 +424,5 @@ mod tests {
             render_raw(&PanickingVideo, &prepared, &media, 3),
             Err(CliError::Other(message)) if message.contains("panicked")
         ));
-    }
-
-    #[test]
-    fn output_errors_return_render_failures() {
-        let mut full = &mut [0_u8; 1][..];
-        assert!(matches!(
-            write_output(&mut full, "output exceeds writer capacity"),
-            Err(CliError::Other(message)) if message.starts_with("stdout:")
-        ));
-    }
-
-    #[test]
-    fn spec_reads_are_bounded_even_for_endless_input() {
-        match read_spec_text(std::io::repeat(b' ')) {
-            Err(CliError::Spec(message)) => assert!(message.contains("exceeds")),
-            _ => panic!("oversized input must be refused"),
-        }
-    }
-
-    #[test]
-    fn invalid_thread_settings_are_refused() {
-        for raw in ["", "0", "65", "abc", "-1", "1.5"] {
-            assert!(
-                matches!(parse_threads(raw), Err(CliError::Spec(_))),
-                "{raw}"
-            );
-        }
-        assert!(matches!(parse_threads("1"), Ok(1)));
-        assert!(matches!(parse_threads("64"), Ok(64)));
     }
 }
