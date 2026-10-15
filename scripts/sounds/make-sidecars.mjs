@@ -7,7 +7,7 @@
 //   node scripts/sounds/make-sidecars.mjs --check  exit 1 when anything is missing or out of date
 //
 // A sidecar's `added:` line is kept when the sidecar already exists, so re-running does not change history.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -78,8 +78,12 @@ export function withSection(text, section) {
 	return `${text.replace(/\n*$/, '\n\n')}${section}\n`;
 }
 
-function main() {
-	const check = process.argv.includes('--check');
+/**
+ * Brings the sidecars and the ATTRIBUTION.md section in line with the manifest (`write`) or only lists what is
+ * missing or stale (`write: false`). Returns the problems (empty = up to date).
+ */
+export function syncSidecars({ write }) {
+	const check = !write;
 	const manifest = JSON.parse(readFileSync(join(STARTER, 'manifest.json'), 'utf8'));
 	const selection = JSON.parse(readFileSync(SELECTION, 'utf8'));
 	const packs = new Map(manifest.packs.map((p) => [p.id, p]));
@@ -107,14 +111,25 @@ function main() {
 		if (check) problems.push('ATTRIBUTION.md starter-kit section is out of date');
 		else writeFileSync(ATTRIBUTION, next);
 	}
+	// Sidecars of sounds no longer in the kit (`curate-starter.ts build` removes their audio).
+	const listed = new Set(manifest.sounds.map((s) => `${s.file}.attribution`));
+	for (const f of readdirSync(STARTER))
+		if (f.endsWith('.attribution') && !listed.has(f)) {
+			if (check) problems.push(`${STARTER_REL}/${f} has no sound in the manifest`);
+			else rmSync(join(STARTER, f));
+		}
+	return { problems, count: manifest.sounds.length };
+}
+
+function main() {
+	const check = process.argv.includes('--check');
+	const { problems, count } = syncSidecars({ write: !check });
 	if (problems.length) {
 		for (const p of problems) console.error(p);
 		console.error('make-sidecars: run `node scripts/sounds/make-sidecars.mjs`');
 		process.exit(1);
 	}
-	console.log(
-		`make-sidecars: ${manifest.sounds.length} sidecars and ATTRIBUTION.md ${check ? 'up to date' : 'written'}`,
-	);
+	console.log(`make-sidecars: ${count} sidecars and ATTRIBUTION.md ${check ? 'up to date' : 'written'}`);
 }
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
