@@ -2638,6 +2638,219 @@ Measured on this branch (merged with `feat/sound-design` 675ca903, shared host w
   commit is refused with a toast (WP2.1's `soundCue.update` rule); there is no "move the cue only" modifier.
 - Ghost cues are drawn when passed in (`ghosts`), but nothing passes them until P3.
 
+### Phase 2 → WP2.4b fill, swap, layers, badges
+
+Scope: spec 12 §2.7 Insert / Fill, Audition "In Context", Variation cycling, Layering, Clip badges, Essential Sound SFX
+additions (Sound row, Role, Align, Pitch; Auto gain, Room send and Stop before next are Phase 4), Properties "Sound" and
+"Cue", the clip context menu, the shortcuts and Clip ▸ Audio Options; the parts of P2-R7 WP2.4a did not do.
+
+Files: `apps/web/src/sound/{library-media,design-model,fill,swap,in-context,detect-peak,analyze.worker,register,
+EssentialSfx,SoundSection,AddToLibraryDialog}.ts(x)`, `apps/web/src/commands/sound-design.ts` (+ `commands/index.ts`,
+`keymap-defaults.ts`), `sound/controller.ts` (Replace / layer modes), `sound/insert.ts` (uses `library-media`),
+`sound/prefs.ts` + `PreferencesPage.tsx`, `sound/model.ts` (Palette collection), `panels/soundLibrary/SoundLibraryPanel.tsx`,
+`sound/cues/CueSeam.tsx` (drop target), `panels/essentialSound/EssentialSoundPanel.tsx`, `panels/properties/
+PropertiesPanel.tsx`, `extensions/index.ts` (`MenuItemSpec` highlight hooks and lazy submenus, `ClipMenuContext.runCommand`),
+`panels/timeline/{components/Chrome.tsx,state/ui-store.ts,TimelinePanel.tsx}`, `audio/browser-decode.ts`
+(`decodeMediaRange`), `shell/menus/model.ts`; `packages/session` (`coalesceWindowMs`, `coalesceRelabel`);
+`packages/project` (`soundDesign.swap` `pitchSt`, `soundDesign.setRole`, `soundDesign.setPeak` on project audio, catalog
+label, AC-25 fuzz), `apps/mcp/src/examples.ts` (setRole example); es.json (179 strings); `docs/gaps.md`.
+Tests: `apps/web/test/sound-fill-swap.test.tsx` (14), `sound-fill-ui.test.tsx` (9), `packages/project/test/
+sound-swap-role.test.ts` (6), `sound-set-peak.test.ts` (updated), `packages/session/test/session.test.ts` (+1),
+`apps/mcp/test/sound-examples.test.ts` (+1), `e2e/sound-fill.spec.ts`.
+
+#### What it does (usage)
+
+- **Fill** (spec: "Enter or double-click: fill the selected cue, else swap, else insert"). The cue being filled is Fill
+  mode's (`soundLibrary.fillCue`: double-click / Enter on a glyph, Fill from Library…) or else the last selected cue.
+  Enter / double-click in the Sound Library then runs ONE transaction "Fill Cue <title>": the sound is registered
+  (`sound/library-media.ts`, shared with Insert), `soundDesign.place {cueId}` puts it on the cue — role from the cue
+  (hero / support), alignment from the cue or the sound type, pan / pan sweep from the cue, `alternatives` = the next
+  3 results of the list (the ranking the user looked at), speed and gain from `variationOf` (seeded ±2 % / ±1 dB). The
+  Fill chip goes away, the clip is selected, a toast says "Filled the Support Cut cue at 00;00;02;15 with … on A4" with
+  Undo. A head that would start before frame 0 is trimmed (`clampStart`, as Insert decided in WP1.4).
+- **Drop on a cue**: a Sound Library row dragged over the Cue Seam highlights the glyph under the pointer (a ring in
+  `--pr-accent`, `data-drop-target`), dropping runs `sound.fillCue {cueId, soundId}`; elsewhere the timeline drop of
+  WP1.4 is unchanged.
+- **Cue menu** (`cueMenuExtensions`): **Fill With ▸** loads the 5 best sounds for the cue when it opens (engine search
+  with the cue's types — else its visual kind's —, visual kind, window, align and the sounds used nearby for rotation:
+  `cueSearchRequest`); resting on one for 350 ms auditions it in context when the Library's In Context toggle is on;
+  choosing one fills the cue. **Fill from Library…**, **Add Layer…** (filled cues only).
+- **Fill Unfilled Cues** (Sequence ▸ Sound Design): for every unfilled, unmuted cue in frame order the engine ranks
+  sounds, `pickVariant` picks one (least recently used of the top 4, never the same file twice in a row; the recent
+  list is this run's picks plus the sounds of nearby clips), the next 3 become alternatives; all in ONE transaction
+  "Fill Unfilled Cues (n)". A dry run finds a cue that cannot be placed; it is skipped and reported, the others fill.
+  Deterministic for the same library and seed (tested). Until Phase 3 it applies directly (no proposal).
+- **Replace mode / Swap Sound…** (Alt+Shift+S, mac Opt+Shift+S; clip menu; Essential "Swap…"; Properties "Swap…"): the
+  Library shows "Replacing <name> on A3 at <tc> · Enter to swap · Esc to cancel" and ranks by similarity to the clip's
+  sound (the "Similar to" chip, cleared again when the mode ends). Enter → "Swap Sound <title>" (`soundDesign.swap`: peak
+  frame, track, role, pan, gain, effects, group, link and cue kept).
+- **Variation cycling** (Next / Previous Variation, Ctrl+Alt+. / Ctrl+Alt+, — mac Opt+Cmd+. / Opt+Cmd+, — repeat on,
+  clip menu, Essential ◀ ▶): per selected SFX clip a list = its alternatives (or its cue's other layers'), then the
+  same family (engine search by `typesOfFamily`), then the nearest descriptors (`similarTo`), the original at index 0
+  (cycling past the end returns to it). Presses on the same clips coalesce into ONE history entry "Swap Sound ×4": the
+  session commits each step with a run key, no time window and the new label (`coalesceWindowMs: Infinity`,
+  `coalesceRelabel`, new in `packages/session`). The run closes on any other edit (the document revision moved),
+  another selection or sequence; presses arriving while a step registers are summed into one step. "Audition on swap"
+  (preference, default on) then plays the 2 s around the sound and returns the playhead.
+- **In Context audition** (Shift+Space in the Library, the toolbar's In Context toggle for Space / Auto-play / hover,
+  the row menu, the Fill With hover, agents: `soundLibrary.auditionInContext {soundId}`): the candidate is placed by
+  `soundDesign.place {frame, align}` inside a session **gesture** — the transient document the timeline and the Program
+  draw and play — on the anchor: the cue being filled or the last selected cue (its align), else the clip being replaced
+  or the selected SFX clip's aligned point (that clip disabled in the transient document only, i.e. muted), else the
+  playhead. The transport seeks to anchor − pre-roll (preference, default 2 s, 0.5 … 10 s), plays to 1 s after the
+  candidate's end, pauses and returns to the anchor; the gesture is always cancelled, so the document, the revision and
+  History never change (tests and e2e assert both). Any key or pointer press, the transport stopping, Esc or another
+  audition ends it. A Program overlay chip "Auditioning: <name>" (`programOverlays`) and the Library's aria-live say
+  what plays. It uses the Program's own transport and graph (a seek while paused, then Play: the Phase 0 primed start
+  applies unchanged); the plain audition player is stopped first.
+- **Layers** (Add Layer… on a filled cue or an SFX clip): the Library goes to Fill mode with layer intent ("Add layer:
+  …" chip) or, for a clip that fills no cue, a clip-layer mode (banner). Enter → "Add Layer <title>": `soundDesign.place`
+  with `role: 'layer'`, `group: false`, on the next free SFX track, aligned to the same point, then `clip.link` of the
+  cue's clips (Premiere-style link, one clip per track: with Linked Selection on, selecting or moving one moves the
+  others — e2e). **Link Layers / Unlink Layers** (`sound.toggleLinkLayers`). Essential Sound and Properties show
+  "Layer 2 of 2"; the timeline shows a chain badge.
+- **Clip badges** (`clipDecorations` `sound.badges`, audio clips with an Essential type or `sfx`): the audio-type glyph
+  (dialogue mic, music note, SFX bolt, ambience wind: different shapes) — clicking it selects the clip and focuses
+  Essential Sound —, "H" for a hero, a chain for layers, a `--pr-warning` dot for NC / ND / unknown / undeclared-folder
+  licences; each with an aria-label and tooltip. The host shows badges from 40 px; H and chain need 80 px.
+- **Essential Sound ▸ Sound Design** (type SFX, above the type's sections): the Sound row (name, types, author, licence
+  badge, Swap…, ◀ ▶, Find Similar), Role (Hero / Support / Layer → `soundDesign.setRole`), Align (Peak / Start / End →
+  `soundDesign.swap` with the same media: the chosen point lands on the frame the old one played at), Pitch − / + / Reset
+  (→ `soundDesign.swap {pitchSt}`: |st| ≤ 3 by varispeed keeping the seeded variation, beyond by the Pitch Shifter
+  effect; the aligned point stays; pan keyframes keep their sequence times), "Layer n of m". Header: **Browse sounds…**.
+- **Properties**: **Sound** (selected audio clips; the first when several): title, types, descriptors (length, onset,
+  peak into the sound without the lead silence, centroid, max momentary loudness), where the aligned point plays, role
+  and layer, the cue (click selects it and seeks), the licence with its class, the credit line exactly as File ▸ Export
+  ▸ Sound Credits prints it (`creditLine`; tested against `soundCredits`), Show Licence…, Swap…; project audio shows
+  Detect Peak. **Cue** (a selected cue, no clip): timecode, frame, role, kind, align, pan (number or `auto`, the sweep
+  shown), pitch, build, stop before, reason, the filling clips (click selects) — every edit one `soundCue.update`.
+- **Clip context menu / Clip ▸ Audio Options**: library sounds — Swap Sound…, Next / Previous Variation, Align Peak to
+  Playhead (Ctrl+Alt+P, mac Opt+Cmd+P; moves the clip and what moves with it), Align Peak to Nearest Cue (its own cue
+  first), Set Peak at Playhead (`soundDesign.setPeak`), Find Similar Sounds, Reveal in Sound Library (searches the title
+  and selects it), Add to Palette (toggle; `soundDesign.setPalette` add / remove), Role ▸, Add Layer…, Link / Unlink
+  Layers, Show Licence… (the engine's entry, else the stored provenance); other audio — **Detect Peak**, **Add to Sound
+  Library…** (and the peak entries once it has a peak). All are UI commands with a `clipId` argument, agent-exposed.
+- **Palette**: the Library's "Palette (n)" collection and a strip above the status line with the sequence's palette
+  sounds (click auditions / selects, × removes) and "Palette only"; the row menu has Add to Palette.
+- **Detect Peak** (decision): no engine route exists for analysing project media and the engine is WP2.3's area, so the
+  browser measures it: the part of the media the clip uses is decoded with mediabunny (`decodeMediaRange`, interpreted
+  media through its time map), `@jasper/audio-fx` `analyzeSound` (the library's own descriptor: the centre of the loudest
+  2 ms RMS window) runs in a module worker (`sound/analyze.worker.ts`; web may import audio-fx, ARCHITECTURE §3.1), and
+  the result is written with `soundDesign.setPeak`. At most 120 s are analysed (≈ 46 MB of stereo 48 kHz; the toast says
+  when the clip was longer). `setPeak` now accepts any audio clip (the clip's `sfx` gets `soundId: null`, which WP2.1
+  made nullable for exactly this); the old "not a library sound" refusal is replaced by that behaviour.
+- **Add to Sound Library…** (decision): the library indexes folders in place (WP1.2), so the clip's file is not copied;
+  the dialog adds the folder of its `path` locator as a user folder with a declared licence (default undeclared =
+  flagged, hidden by Commercial-safe) and author, through the user's own `PUT /api/sounds/roots` (approval-free for
+  the editor; agents are asked by the engine); a folder already in the library (itself or a parent) is rescanned instead.
+  Media without a local path (uploads, engine-store copies) cannot be added: the entry is disabled with the reason.
+- **Preferences ▸ Sound Library ▸ Audition**: Audition in context, Audition on swap (on), In Context pre-roll (2 s).
+
+#### Decisions
+
+- `soundDesign.setRole` is new (no existing command wrote `sfx.role`); a library clip without `sfx` gets it.
+- Align and Pitch reuse `soundDesign.swap` (same media) so re-alignment and re-pitching share the swap's sample-exact
+  plan and keyframe handling. Pitch: the current varispeed is read as whole semitones (`round(12·log2 rate)`, ±3), the
+  rest is the seeded variation and is kept. Merged with WP2.3's `frame` option: both can be combined (tested).
+- Layers are linked, not grouped (the timeline has Premiere's A/V link; the spec says Link / Unlink).
+- History: variation cycling uses the session's coalescing (S01:UND-006) with two new optional transaction fields
+  instead of a long-lived gesture (a gesture would hold edits uncommitted — autosave and crash recovery would not see
+  them — and block Undo).
+- In Context uses a cancelled gesture (transient document) instead of mixing the candidate in the audition context:
+  the Program's mix, effects, latency compensation and primed start apply unchanged and nothing has to be synchronised
+  between two AudioContexts.
+- Aligned frames within 1e-6 of a whole frame are that frame (`alignedFrameOf`): at 29.97 fps flicks rounding gave
+  74.9999… for a sound placed on 75, so labels said 02;14 and Align Peak moved one frame (found by the e2e).
+- The NaN-x guard in the seam's drop hit test (jsdom has no `DragEvent.clientX`; `hitCue(NaN)` matched the first cue).
+
+#### Verified (measured, this branch, shared host with 16 cores, load average 10–65)
+
+- `pnpm vitest run packages/session/test/session.test.ts`: 13 passed (new: a run coalesces across minutes with the new
+  label, another key starts a new entry, a different label without relabel does not merge, undo restores the document).
+- `pnpm vitest run packages/project/test/sound-swap-role.test.ts packages/project/test/sound-set-peak.test.ts
+  packages/project/test/sound-design-place.test.ts packages/project/test/fuzz.test.ts`: all passed — swap align start /
+  end on the old frame; pitch +2 st = rate × 2^(2/12) keeping 1.012 variation, +5.5 st = Pitch Shifter 5 st 50 cents,
+  0 removes it, the aligned point within 1 flick each time; pan keys keep their sequence times (≤ 1 flick) through a
+  pitch change and travel with `frame`; setRole on a placed and an unplaced library clip, undo / redo, every refusal
+  (`E_NOT_FOUND`, `E_INVALID_PARAM` video / project audio, `E_SCHEMA`, `E_TRACK_LOCKED`); setPeak on project audio. AC-25
+  draws setRole and swaps with align / pitch.
+- After merging `feat/sound-design` (4d2fdd55, WP2.3): `pnpm vitest run --project @jasper/project --project
+  @jasper/session --maxWorkers=4` → 166 files, 1942 tests passed; web sound / keymap / menu / i18n / properties + MCP
+  sound tests → 20 files, 168 passed; `pnpm vitest run --project @jasper/web --maxWorkers=3` (before the merge) → 115
+  files, 824 passed. `pnpm typecheck`, `pnpm lint` (Biome, tokens, anime, layers, assets), `node scripts/i18n.mjs --check`
+  (9 130 strings), `pnpm notices --check`: pass.
+- `apps/web/test/sound-fill-swap.test.tsx` (14): fill = one entry "Fill Cue Crunch", hero role, 3 alternatives without
+  the chosen sound, rate within ±2 %, the peak in [90, 91) frames, undo = the document before; Add Layer on another
+  track, linked, "Layer 2 of 2", selecting one selects both, Unlink / Link; Fill Unfilled Cues (4 cues) one entry, no
+  sound twice in a row, the same titles on a second run, muted cues left out; variation ×3 = ONE entry "Swap Sound ×3",
+  the alternatives in order, Previous goes back ("×4", still one entry), one undo restores the sequence; another edit
+  closes the run; Audition on swap seeks to cue − 1 s, plays, returns, no history; Replace mode label and swap keeping
+  track / gain / role / cue / peak frame; In Context: the transient holds the candidate on the cue, the committed
+  document is the same object, transport at cue − 60 frames playing, at the window end it stops and returns to the cue;
+  Replace mode mutes the replaced clip in the transient only; a key press ends it; Align Peak / Nearest Cue / Set Peak
+  / Role / Palette add + remove; Add Layer… opens Fill mode with layer intent; Detect Peak finds a click at 0.75 s within
+  3 ms; at 29.97 fps the point placed on 75 is 75 and Align Peak to an aligned clip is a no-op.
+- `apps/web/test/sound-fill-ui.test.tsx` (9, testing-library): the Library fills with Enter in Fill mode (the chip goes);
+  the Replace banner text, similarity ranking, Enter swaps, Esc leaves; the palette strip and Palette only; the In
+  Context toggle and Shift+Space (aria-live "Playing Thud in context", transient set, no history); a sound dragged over a
+  glyph marks it `data-drop-target` and the drop runs `sound.fillCue`; Fill With loads 3 sounds (the fixture has 3),
+  hover auditions in context, unhover stops; the clip menu entries; badges (`clipBadges` and the rendered SFX button /
+  Hero img); Essential Role / Align / Pitch with undo; Properties Sound credit line equals `soundCredits` text; Cue role
+  and frame edits move the filling clip.
+- `pnpm build`, then `E2E_PORT=49605 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-fill.spec.ts`: 1 passed
+  (1.1–2.9 min; five runs while fixing the spec). In the built app with the starter kit: Suggest Cues on four solids and an
+  `sfx: boom` marker → double-click the cut glyph at 75 → Enter fills it ("Fill Cue …", alternatives stored, point in
+  [75, 76)); Essential Role ▸ Hero ("Sound Role"); Ctrl+Alt+. three times → ONE more History entry, last label "Swap Sound
+  ×3", the sound changed, the point still on 75; Alt+Shift+S → banner "Replacing … on A4 at 00;00;02;15 · Enter to swap ·
+  Esc to cancel", Enter swaps, the banner and the similarity chip go; Add Layer… from the clip menu → "Add Layer …" on
+  A5, linked, point on 75; dragging the first layer 10 frames moves the other by the same amount, Ctrl+Z; Properties ▸
+  Sound (credit line) and ▸ Cue (00;00;05;00); Shift+Space with the cue at 150 selected → the chip "Auditioning: …",
+  then hidden, `doc.revision` and History unchanged, playhead back on 150; Fill With ▸ lists ranked sounds; Fill
+  Unfilled Cues → one entry "Fill Unfilled Cues (n)", every cue filled; native export, decoded with ffmpeg: for the three
+  single-layer peak-aligned fills (cues 150, 225, 270; speeds 0.985–1.011 from the variation) the registered media,
+  varispeed by the clip's speed (`asetrate`), cross-correlated into the mix (r ≥ 0.996) puts the peak at **0 samples**
+  from where the document puts it in every run (one run: −1 sample at cue 150), i.e. on the cue frame.
+- Phase 0 / 1 / 2 sound e2e after the merge: see "Gate" below. `e2e/sound-p0-transport.spec.ts` "Play: the first samples…"
+  is load-sensitive on this host on the integration branch too: interleaved runs (load 9–38) of the integration build
+  (4d2fdd55, a temporary worktree) and this branch failed its 20 ms A/V check 2 of 3 times each; at load ≈ 10 both pass
+  the whole Phase 0 spec set (10 passed each, run back to back). Not a regression of this package.
+- Looked at (`test-results/e2e-sound-fill/`): the filled clip's close-up badges (name, "H", SFX bolt), Essential Sound ▸
+  Sound Design (Hero / Peak selected, 0 st), the Replace banner over the Library, the clip context menu (the new block
+  with shortcuts; Set Peak at Playhead disabled off the playhead), the cue menu with Fill With ▸ five sounds
+  ("Crunchy impact · Hit · 1.3 s"…), the Program chip "Auditioning: Crunchy impact" with the candidate drawn in the
+  transient timeline, Properties ▸ Sound and ▸ Cue, every cue filled. The first look found the "Similar to" chip left
+  behind after a swap (now cleared with the mode) and the Sound section missing for a linked selection (now the first
+  clip of up to 16).
+
+#### Gate
+
+After merging `feat/sound-design` (4d2fdd55) and `pnpm build`: `E2E_PORT=49605 E2E_SKIP_BUILD=1 pnpm exec playwright test
+e2e/sound-fill.spec.ts e2e/sound-cues.spec.ts e2e/sound-library.spec.ts e2e/sound-p0-preview.spec.ts
+e2e/sound-p0-transport.spec.ts` (load ≈ 39): 13 passed, 2 failed — `sound-p0-transport` "Play: the first samples…"
+(its 20 ms picture − audio check) and "a latency change during playback". Reruns of `sound-p0-transport.spec.ts` alone:
+4 passed / 1 failed ("first samples…") at load 37–38 twice and at load 14 once; before the merge the whole Phase 0
+set (`sound-p0-preview` + `sound-p0-transport`, 10 tests) passed on this branch at load ≈ 10, as it did on the
+integration build run right before it. Measured flake rate of "first samples…" with interleaved runs (load 9–38):
+integration build 1 pass / 3, this branch 1 pass / 3, with the same failing signature (the primed offset 30–50 ms below
+the unprimed baseline) on both: a timing-sensitive test on this shared host, not a regression of this package (whose
+only Program-side addition is an overlay that renders nothing unless an audition plays; removing it did not change
+the result, measured with a build that disabled it). `sound-fill` measured 0, −1 and 0 samples at cues 150, 225, 270 in
+that run.
+
+#### Limits and notes for the next packages
+
+- Variation cycling, Align and Pitch act on the whole selection; with Linked Selection on, selecting a layer selects
+  its linked layers too (Alt-click one to cycle it alone).
+- Fill Unfilled Cues applies directly; Phase 3 should turn it into a proposal (`fillUnfilledCues` returns the picks and
+  skipped cues, the planning part is separable).
+- Detect Peak analyses ≤ 120 s of the clip in the browser; very long clips need an engine route (P5/P6).
+- The In Context audition takes the gesture slot: while it plays, a timeline drag ends it first (any pointer press
+  does); agent transactions queue until it ends (seconds).
+- Badges: "H" and the chain need 80 px of clip width; below that only the type glyph and the licence dot show.
+- Swap does not rename a clip whose name the user changed; library clips are named after the registered file
+  (`soundDesign.swap` renames when the name is the old file name).
+- Auto gain with its reason, Room send and Stop before next in Essential Sound are Phase 4 (P4 owns the levels).
+
 ## Phase 3: proposals and review
 
 ## Phase 4: mixing
