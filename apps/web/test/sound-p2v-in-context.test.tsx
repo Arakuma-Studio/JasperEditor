@@ -17,6 +17,7 @@ import {
 	type ToastRequest,
 } from '../src/commands/index.ts';
 import { __setCatalogForTests } from '../src/i18n/runtime.ts';
+import { installKeyboardDispatcher } from '../src/shell/keymap/dispatcher.ts';
 import { AuditionPlayer, setAuditionPlayer } from '../src/sound/audition.ts';
 import {
 	cancelLibraryMode,
@@ -550,5 +551,44 @@ describe('Hover audition with In Context on', () => {
 		fireEvent.mouseLeave(option);
 		expect(inContextStore.getState().active).toBe(false);
 		expect(h.session.transport.getState()).toMatchObject({ playing: false, frame: 100 });
+	});
+});
+
+describe('a key pressed while it plays runs its own command too (Phase 2 verification)', () => {
+	// Before: the keymap dispatcher (window, capture, installed at start-up) resolved the key while the audition still
+	// held the session gesture, so Ctrl+Z was disabled and only ended the audition; the user had to press it again.
+	it('Ctrl+Z ends the audition and undoes the last edit in the same press', async () => {
+		const h = harness();
+		h.addCue(150);
+		expect(h.labels()).toEqual(['setup']);
+		const off = installKeyboardDispatcher(window, {
+			getCtx: () => h.ctx,
+			getFocusKind: () => 'timeline',
+			platform: 'linux',
+			runtime: 'web',
+			run: (c, ctx, args) => void runCommand(c.id, ctx, args),
+		});
+		try {
+			h.session.transport.seek(100);
+			expect((await auditionInContext(h.session, h.engine, h.list[0]!)).ok).toBe(true);
+			await tick(); // the audition listens for the next key from here
+			expect(h.session.gestureActive).toBe(true);
+			document.body.dispatchEvent(
+				new KeyboardEvent('keydown', {
+					code: 'KeyZ',
+					key: 'z',
+					ctrlKey: true,
+					cancelable: true,
+					bubbles: true,
+				}),
+			);
+			await waitFor(() => expect(inContextStore.getState().active).toBe(false));
+			expect(h.session.gestureActive).toBe(false);
+			await waitFor(() =>
+				expect(h.session.getState().history.entries.filter((e) => e.applied)).toHaveLength(0),
+			);
+		} finally {
+			off();
+		}
 	});
 });

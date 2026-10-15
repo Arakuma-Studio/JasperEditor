@@ -2975,8 +2975,10 @@ with `transport.playInToOutPreroll` in the wider editing scope, which the Sound 
 `node scripts/i18n.mjs --check`, `check-tokens`, `check-layers`.
 
 Known, not fixed: a key that ends an In Context audition is not also run when its command is disabled while a gesture is
-held (Ctrl+Z, keyboard trims): the keymap resolves the key before the audition's listener ends it, so the first Ctrl+Z
-only stops the audition (a dispatcher-level pre-key hook would be needed; the dispatcher is shared). The Essential Sound
+held (keyboard trims): the keymap resolves the key before the audition's listener ends it (a dispatcher-level pre-key
+hook would be needed; the dispatcher is shared). Ctrl+Z is not affected (`history.undo` is enabled during the audition):
+the lead's regression test "Ctrl+Z ends the audition and undoes the last edit in the same press" (real dispatcher and
+commands, `sound-p2v-in-context.test.tsx`) passes. The Essential Sound
 Role / Align segmented controls are `radiogroup`s without arrow-key navigation (each option is a Tab stop).
 
 ## Phase 3: proposals and review
