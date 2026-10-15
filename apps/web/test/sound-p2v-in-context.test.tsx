@@ -6,7 +6,7 @@
 import type { SoundEntry } from '@jasper/api';
 import { SessionProvider } from '@jasper/session/react';
 import { closeAllDialogs, DialogHost } from '@jasper/ui';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentBridge } from '../src/agent-bridge/bridge.ts';
 import {
@@ -16,6 +16,7 @@ import {
 	runCommand,
 	type ToastRequest,
 } from '../src/commands/index.ts';
+import { __setCatalogForTests } from '../src/i18n/runtime.ts';
 import { AuditionPlayer, setAuditionPlayer } from '../src/sound/audition.ts';
 import { cancelLibraryMode, cueFillTarget, requestCueFill } from '../src/sound/controller.ts';
 import { fillCueWithSound } from '../src/sound/fill.ts';
@@ -347,17 +348,15 @@ describe('Fill With ▸ hover auditions on the cue whose menu it is', () => {
 		const c = h.addCue(300);
 		h.session.select('cues', [a, b], 'replace');
 		requestCueFill({ sequenceId: h.seqId, cueId: c, types: ['hit'], label: 'c' });
-		const items = cueMenuExtensions
-			.list()
-			.flatMap((e) =>
-				e.items({
-					session: h.session,
-					sequenceId: h.seqId,
-					cueId: a,
-					selection: [a, b],
-					runCommand: () => {},
-				}),
-			);
+		const items = cueMenuExtensions.list().flatMap((e) =>
+			e.items({
+				session: h.session,
+				sequenceId: h.seqId,
+				cueId: a,
+				selection: [a, b],
+				runCommand: () => {},
+			}),
+		);
 		const fillWith = items.find((i) => i.kind === 'submenu' && i.label === 'Fill With') as {
 			load(): Promise<{ onHighlight(): void; onUnhighlight(): void }[]>;
 		};
@@ -370,5 +369,30 @@ describe('Fill With ▸ hover auditions on the cue whose menu it is', () => {
 		expect(Math.floor(alignedFrameOf(st.transient!, drawn, placed)!)).toBe(90);
 		loaded[0]!.onUnhighlight();
 		expect(h.session.transport.getState().frame).toBe(90);
+	});
+});
+
+describe('Sound Library row menu in Spanish', () => {
+	it('the Enter entry names its action in the language of the UI ("Insert at Playhead" too)', async () => {
+		const h = harness();
+		__setCatalogForTests('es', {
+			'Insert at Playhead': 'Insertar en el cabezal',
+			'Fill Cue': 'Rellenar señal',
+		});
+		try {
+			render(
+				<SessionProvider session={h.session}>
+					<SoundLibraryPanel instanceId="sl" visible />
+				</SessionProvider>,
+			);
+			const list = await screen.findByRole('listbox');
+			const option = (await within(list).findAllByRole('option'))[0]!;
+			act(() => {
+				fireEvent.contextMenu(option);
+			});
+			expect(screen.getByRole('menuitem', { name: /Insertar en el cabezal/ })).toBeTruthy();
+		} finally {
+			__setCatalogForTests('en', null);
+		}
 	});
 });

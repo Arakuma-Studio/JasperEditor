@@ -728,7 +728,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 			? t('Swap Sound')
 			: clipTarget?.kind === 'layer'
 				? t('Add as Layer')
-				: 'Insert at Playhead';
+				: t('Insert at Playhead');
 
 	// ---------------------------------------------------------------- menus
 	const rowMenu = (): ResolvedMenuItem[] => {
