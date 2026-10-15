@@ -36,7 +36,7 @@ import { decodeSound } from './decode.ts';
 import { SoundIndexer } from './index-job.ts';
 import { type LibrarySnapshot, SoundLibrary } from './library.ts';
 import { paddedFileName, probeAudioStream, writePaddedSound } from './pad.ts';
-import { type SoundRootsPlan, SoundRootStore } from './roots.ts';
+import { SoundRootStore, type SoundRootsPlan } from './roots.ts';
 import { searchSoundEntries } from './search.ts';
 import { isSoundFileName, type LoadedManifest, loadManifest, starterDir } from './starter.ts';
 import { ensureSynthFile, synthItems } from './synth.ts';
@@ -361,7 +361,8 @@ export class SoundService {
 			throw new HttpError(403, 'NOT_A_SOUND', 'The sound’s file now points outside its folder');
 		// A regular file only: a FIFO or device named like a sound would block whoever reads it.
 		const st = await stat(real).catch(() => null);
-		if (!st) throw new HttpError(404, 'SOUND_FILE_MISSING', 'The sound’s file is missing; rescan the sound library');
+		if (!st)
+			throw new HttpError(404, 'SOUND_FILE_MISSING', 'The sound’s file is missing; rescan the sound library');
 		if (!st.isFile()) throw new HttpError(403, 'NOT_A_SOUND', 'The sound’s file is not a regular file');
 		return real;
 	}
@@ -376,7 +377,11 @@ export class SoundService {
 	async visual(e: SoundEntry): Promise<SoundVisual> {
 		// Folder sounds need local mode, also when their visual data is cached.
 		if (e.source.type === 'folder' && !this.local)
-			throw new HttpError(403, 'LOCAL_MODE_ONLY', 'Sounds of user folders are only available with a local engine');
+			throw new HttpError(
+				403,
+				'LOCAL_MODE_ONLY',
+				'Sounds of user folders are only available with a local engine',
+			);
 		const file = visualCacheFile(this.core.config.paths.soundCacheDir, fingerprintHex(e.fingerprint));
 		const cached = await readVisual(file, e.fingerprint);
 		if (cached) return cached;

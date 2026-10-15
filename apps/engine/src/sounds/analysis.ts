@@ -115,7 +115,11 @@ export class SoundAnalyzer {
 	 * Runs one analysis. `signal` cancels it (`JOB_CANCELLED`); `timeoutMs` bounds it (`ANALYSIS_TIMEOUT`). Stopping a
 	 * running analysis means ending its worker: the other requests on that worker move to a new one, they do not fail.
 	 */
-	async run(job: AnalysisJob, signal?: AbortSignal, opts: { timeoutMs?: number } = {}): Promise<AnalysisResult> {
+	async run(
+		job: AnalysisJob,
+		signal?: AbortSignal,
+		opts: { timeoutMs?: number } = {},
+	): Promise<AnalysisResult> {
 		if (signal?.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
 		if (!this.url || this.unavailable) return this.inThread(job);
 		if (this.idle) clearTimeout(this.idle);
@@ -148,7 +152,10 @@ export class SoundAnalyzer {
 					() =>
 						this.stopFor(
 							p,
-							new JobError('ANALYSIS_TIMEOUT', `The sound analysis took longer than ${Math.round(ms / 1000)} s`),
+							new JobError(
+								'ANALYSIS_TIMEOUT',
+								`The sound analysis took longer than ${Math.round(ms / 1000)} s`,
+							),
 						),
 					ms,
 				);

@@ -629,7 +629,9 @@ export const TYPE_SYNONYMS: Readonly<Record<string, SoundTypeId>> = Object.freez
 
 /** The type a synonym phrase names, or undefined (own properties only: `constructor`, `__proto__` name nothing). */
 export function synonymType(phrase: unknown): SoundTypeId | undefined {
-	return typeof phrase === 'string' && Object.hasOwn(TYPE_SYNONYMS, phrase) ? TYPE_SYNONYMS[phrase] : undefined;
+	return typeof phrase === 'string' && Object.hasOwn(TYPE_SYNONYMS, phrase)
+		? TYPE_SYNONYMS[phrase]
+		: undefined;
 }
 
 /** Synonym phrases by their word count, longest first (phrases win over their single words). */

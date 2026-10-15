@@ -2,7 +2,12 @@
 // one-pass facets equal the disjunctive counts of four `rankSounds` passes (the previous algorithm, kept here as the
 // oracle) on random libraries and queries, and a search over a synthetic 5 000-sound library takes < 50 ms.
 import { performance } from 'node:perf_hooks';
-import { type SoundEntry, type SoundFacets, type SoundSearchQuery, SoundSearchQuerySchema } from '@jasper/api';
+import {
+	type SoundEntry,
+	type SoundFacets,
+	type SoundSearchQuery,
+	SoundSearchQuerySchema,
+} from '@jasper/api';
 import {
 	isSoundTypeId,
 	licenseClass,
@@ -27,8 +32,31 @@ function rng(seed: number) {
 }
 
 const ADJECTIVES = [
-	'heavy', 'light', 'metal', 'wood', 'glass', 'deep', 'sharp', 'soft', 'big', 'small', 'distant', 'close', 'fast',
-	'slow', 'punchy', 'dark', 'bright', 'cinematic', 'retro', 'digital', 'organic', 'short', 'long', 'wet', 'dry',
+	'heavy',
+	'light',
+	'metal',
+	'wood',
+	'glass',
+	'deep',
+	'sharp',
+	'soft',
+	'big',
+	'small',
+	'distant',
+	'close',
+	'fast',
+	'slow',
+	'punchy',
+	'dark',
+	'bright',
+	'cinematic',
+	'retro',
+	'digital',
+	'organic',
+	'short',
+	'long',
+	'wet',
+	'dry',
 ];
 const NOUNS: Partial<Record<SoundTypeId, string[]>> = {
 	hit: ['punch', 'impact', 'slam', 'door slam', 'strike', 'smash', 'hit'],
@@ -53,7 +81,14 @@ const NOUNS: Partial<Record<SoundTypeId, string[]>> = {
 	ambience: ['ambience', 'city atmosphere', 'forest background'],
 	roomtone: ['room tone', 'air tone'],
 };
-const LICENSES = ['CC0-1.0', 'CC-BY-4.0', 'CC-BY-SA-4.0', 'LicenseRef-UserProvided', 'LicenseRef-UserRoyaltyFree', 'CC-BY-NC-4.0'];
+const LICENSES = [
+	'CC0-1.0',
+	'CC-BY-4.0',
+	'CC-BY-SA-4.0',
+	'LicenseRef-UserProvided',
+	'LicenseRef-UserRoyaltyFree',
+	'CC-BY-NC-4.0',
+];
 const ROOTS = ['root_000000000001', 'root_000000000002', 'root_000000000003'];
 
 /** A synthetic library of `n` realistic entries (titles, tags, 1–2 types, descriptors, sources, licences). */
@@ -67,9 +102,10 @@ function syntheticLibrary(n: number, seed = 1): SoundEntry[] {
 		if (r() < 0.25) types.push(pick(SOUND_TYPE_IDS));
 		if (r() < 0.05) types.push('custom-type');
 		const noun = pick(NOUNS[t1] ?? [t1]);
-		const title = `${pick(ADJECTIVES)} ${noun} ${r() < 0.5 ? pick(ADJECTIVES) : ''} ${1 + Math.floor(r() * 40)}`
-			.replace(/\s+/g, ' ')
-			.trim();
+		const title =
+			`${pick(ADJECTIVES)} ${noun} ${r() < 0.5 ? pick(ADJECTIVES) : ''} ${1 + Math.floor(r() * 40)}`
+				.replace(/\s+/g, ' ')
+				.trim();
 		const tags = Array.from({ length: 2 + Math.floor(r() * 5) }, () => pick(ADJECTIVES));
 		if (r() < 0.3) tags.push(pick(NOUNS[pick(SOUND_TYPE_IDS)] ?? ['x']));
 		const s = r();
@@ -164,7 +200,10 @@ function randomQuery(r: () => number, all: SoundEntry[]): SoundSearchQuery {
 	const raw: Record<string, string> = {};
 	const words = [...ADJECTIVES, ...Object.values(NOUNS).flat(), 'constructor', 'zzz', 'the'];
 	if (r() < 0.7) raw.q = Array.from({ length: Math.floor(r() * 4) }, () => pick(words)).join(' ');
-	if (r() < 0.3) raw.types = Array.from({ length: 1 + Math.floor(r() * 2) }, () => pick([...SOUND_TYPE_IDS, 'swoosh', 'nope'])).join(',');
+	if (r() < 0.3)
+		raw.types = Array.from({ length: 1 + Math.floor(r() * 2) }, () =>
+			pick([...SOUND_TYPE_IDS, 'swoosh', 'nope']),
+		).join(',');
 	if (r() < 0.2) raw.family = pick(['impacts', 'movement', 'digital', 'tactile', 'tonal', 'beds']);
 	if (r() < 0.2) raw.length = pick(['short', 'medium', 'long']);
 	if (r() < 0.2) raw.tone = pick(['dark', 'bright']);
@@ -172,7 +211,10 @@ function randomQuery(r: () => number, all: SoundEntry[]): SoundSearchQuery {
 	if (r() < 0.15) raw.weight = pick(['light', 'heavy']);
 	if (r() < 0.15) raw.texture = pick(['clean', 'noisy']);
 	if (r() < 0.5) raw.license = pick(['any', 'commercial-safe']);
-	if (r() < 0.3) raw.sources = Array.from({ length: 1 + Math.floor(r() * 2) }, () => pick(['starter', 'pack', 'folder', 'synth'])).join(',');
+	if (r() < 0.3)
+		raw.sources = Array.from({ length: 1 + Math.floor(r() * 2) }, () =>
+			pick(['starter', 'pack', 'folder', 'synth']),
+		).join(',');
 	if (r() < 0.15) raw.rootId = pick(ROOTS);
 	if (r() < 0.15) raw.similarTo = pick(all).id;
 	if (r() < 0.2) raw.usedNearby = [pick(all).id, pick(all).id].join(',');
@@ -190,7 +232,11 @@ describe('search facets in one pass (finding 10)', () => {
 				const q = randomQuery(r, all);
 				const includeFolders = r() < 0.8;
 				const want = oracle(all, q, includeFolders);
-				const got = searchSoundEntries(all, { ...q, limit: 500 }, { lookup: (id) => byId.get(id), includeFolders });
+				const got = searchSoundEntries(
+					all,
+					{ ...q, limit: 500 },
+					{ lookup: (id) => byId.get(id), includeFolders },
+				);
 				expect(got.facets, JSON.stringify(q)).toEqual(want.facets);
 				expect(got.total).toBe(want.ranked.length);
 				expect(got.results.map((x) => [x.sound.id, x.score])).toEqual(
@@ -230,7 +276,9 @@ describe('search speed (finding 10: < 50 ms for thousands of sounds)', () => {
 			const times: number[] = [];
 			for (let i = 1; i <= 7; i++) times.push(run(i));
 			times.sort((a, b) => a - b);
-			report.push(`${JSON.stringify(raw)}: min ${times[0]!.toFixed(2)} ms, median ${times[3]!.toFixed(2)} ms`);
+			report.push(
+				`${JSON.stringify(raw)}: min ${times[0]!.toFixed(2)} ms, median ${times[3]!.toFixed(2)} ms`,
+			);
 			expect(times[0]!, JSON.stringify(raw)).toBeLessThan(50);
 		}
 		console.log(`sound search, 5000 sounds:\n${report.join('\n')}`);

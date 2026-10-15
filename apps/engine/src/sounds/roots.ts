@@ -146,7 +146,9 @@ export class SoundRootStore {
 			if ((prev.author ?? '') !== (r.author ?? ''))
 				changes.push(`author "${prev.author ?? ''}" → "${r.author ?? ''}"`);
 			if ((prev.attributionTemplate ?? '') !== (r.attributionTemplate ?? ''))
-				changes.push(`credit template "${prev.attributionTemplate ?? ''}" → "${r.attributionTemplate ?? ''}"`);
+				changes.push(
+					`credit template "${prev.attributionTemplate ?? ''}" → "${r.attributionTemplate ?? ''}"`,
+				);
 			else if (prev.label !== r.label && (r.attributionTemplate ?? '').includes('{folder}'))
 				changes.push(`folder name in its credit line "${prev.label}" → "${r.label}"`);
 			if (changes.length) recredited.push({ root: r, changes });

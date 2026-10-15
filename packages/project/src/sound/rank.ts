@@ -376,7 +376,8 @@ function entryText(e: RankableSound): EntryText {
 	)
 		return hit;
 	const tagTokens: string[] = [];
-	if (Array.isArray(tags)) for (const t of tags) if (typeof t === 'string') tagTokens.push(...tokenizeSoundText(t));
+	if (Array.isArray(tags))
+		for (const t of tags) if (typeof t === 'string') tagTokens.push(...tokenizeSoundText(t));
 	const info: EntryText = {
 		title: e.title,
 		tagsRef: tags,
@@ -402,7 +403,8 @@ function namedTypesOf(t: EntryText): SoundTypeId[] {
 /** Licence class results by licence string (a library has a handful of distinct licences). */
 const LICENSE_MEMO = new Map<string, { safe: boolean; preference: number }>();
 function licenseInfo(license: unknown): { safe: boolean; preference: number } {
-	if (typeof license !== 'string') return { safe: isCommercialSafe(license), preference: licensePreference(license) };
+	if (typeof license !== 'string')
+		return { safe: isCommercialSafe(license), preference: licensePreference(license) };
 	let r = LICENSE_MEMO.get(license);
 	if (!r) {
 		if (LICENSE_MEMO.size >= 4096) LICENSE_MEMO.clear();

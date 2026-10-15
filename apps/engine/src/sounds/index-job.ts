@@ -14,6 +14,7 @@
 import { readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+	SOUND_VISUAL_VERSION,
 	type SoundEntry,
 	SoundEntrySchema,
 	SoundIndexRequestSchema,
@@ -22,7 +23,6 @@ import {
 	type SoundRoot,
 	type SoundSource,
 	type SoundSourceType,
-	SOUND_VISUAL_VERSION,
 } from '@jasper/api';
 import { judgeSound, SOUND_DESCRIPTORS_VERSION, type SoundDescriptors } from '@jasper/audio-fx';
 import {
@@ -282,7 +282,8 @@ export async function walkRoot(
 	}
 	if (truncated) {
 		if (cap < MAX_FILES_PER_ROOT) opts.onLibraryFull?.();
-		else onError('.', `more than ${MAX_FILES_PER_ROOT} audio files: the rest of "${root.label}" is not indexed`);
+		else
+			onError('.', `more than ${MAX_FILES_PER_ROOT} audio files: the rest of "${root.label}" is not indexed`);
 	}
 	return items;
 }
@@ -469,8 +470,7 @@ export class SoundIndexer {
 			}
 			const committed = await this.deps.library.commit(await this.current(next));
 			const late = this.takeRequest();
-			if (stale || late)
-				this.deps.followUp?.(ctx.job.id, (again?.full ?? false) || (late?.full ?? false));
+			if (stale || late) this.deps.followUp?.(ctx.job.id, (again?.full ?? false) || (late?.full ?? false));
 			await pruneSoundCache(this.deps, committed).catch((e) =>
 				this.deps.log?.(`sound library: cache cleanup failed: ${(e as Error).message}`),
 			);
@@ -494,9 +494,7 @@ export class SoundIndexer {
 		const local = this.deps.local?.() ?? true;
 		const now = local ? (await this.deps.roots.list()).filter((r) => r.enabled) : [];
 		const nowById = new Map(now.map((r) => [r.id, rootDeclaration(r)]));
-		const live = new Set(
-			next.roots.filter((r) => nowById.get(r.id) === rootDeclaration(r)).map((r) => r.id),
-		);
+		const live = new Set(next.roots.filter((r) => nowById.get(r.id) === rootDeclaration(r)).map((r) => r.id));
 		const sounds: Record<string, SoundEntry> = {};
 		for (const [id, e] of Object.entries(next.sounds))
 			if (e.source.type !== 'folder' || live.has(e.source.rootId)) sounds[id] = e;

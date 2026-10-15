@@ -135,7 +135,9 @@ async function editorSession(app: App) {
 			wake?.();
 		}
 	});
-	ws.send(JSON.stringify({ type: 'hello', projectId: doc.projectId, sessionId: 'ses_1', leaseId: 'lease_1' }));
+	ws.send(
+		JSON.stringify({ type: 'hello', projectId: doc.projectId, sessionId: 'ses_1', leaseId: 'lease_1' }),
+	);
 	await new Promise((r) => setTimeout(r, 100));
 	const card = async (n: number) => {
 		while (cards.length < n) await new Promise<void>((r) => (wake = r));
@@ -243,7 +245,15 @@ describe('folder approvals (finding 1, 2, 8)', { timeout: 300_000 }, () => {
 		writeWav(join(folder, 'door slam.wav'), 'hit', 0.3, 5);
 		const added = await putRoots(
 			app,
-			[{ path: folder, label: 'Mine', license: 'CC-BY-4.0', author: 'Ann', attributionTemplate: '{title} by {author}' }],
+			[
+				{
+					path: folder,
+					label: 'Mine',
+					license: 'CC-BY-4.0',
+					author: 'Ann',
+					attributionTemplate: '{title} by {author}',
+				},
+			],
 			EDITOR,
 		);
 		const body = added.json() as { roots: SoundRoot[]; job: EngineJob };
@@ -338,7 +348,9 @@ describe('index jobs never commit a stale scan (finding 3)', { timeout: 300_000 
 			fulls.push(full);
 			const roots = (await deps.roots.list()).filter((r) => r.enabled);
 			await during(pass, full);
-			const sounds: LibrarySnapshot['sounds'] = { snd_0000000000000001: entryOf('snd_0000000000000001', { type: 'starter', file: 'a.wav' }) };
+			const sounds: LibrarySnapshot['sounds'] = {
+				snd_0000000000000001: entryOf('snd_0000000000000001', { type: 'starter', file: 'a.wav' }),
+			};
 			const files: LibrarySnapshot['files'] = {};
 			for (const r of roots) {
 				const id = `snd_${r.id.slice(5).padStart(16, '0')}`;
@@ -347,7 +359,16 @@ describe('index jobs never commit a stale scan (finding 3)', { timeout: 300_000 
 			}
 			return {
 				next: { indexedAt: 'now', starterHash: '', roots, packs: {}, sounds, files },
-				result: { snapshotHash: '', sounds: 0, files: 0, analysed: 0, reused: 0, added: 0, removed: 0, errors: [] },
+				result: {
+					snapshotHash: '',
+					sounds: 0,
+					files: 0,
+					analysed: 0,
+					reused: 0,
+					added: 0,
+					removed: 0,
+					errors: [],
+				},
 				before: new Set<string>(),
 			};
 		};
@@ -589,7 +610,9 @@ describe('the sound cache is pruned after a commit (finding 6)', { timeout: 300_
 		);
 		expect(folderHex).toHaveLength(2);
 		for (const h of folderHex) expect(existsSync(join(paths.soundCacheDir, h))).toBe(true);
-		const starterHex = (await search(app, 'sources=starter&license=any')).results[0]!.sound.fingerprint.slice(3);
+		const starterHex = (await search(app, 'sources=starter&license=any')).results[0]!.sound.fingerprint.slice(
+			3,
+		);
 		writeFileSync(join(paths.soundCacheDir, starterHex, 'analysis-v1.json'), '{}');
 		mkdirSync(paths.soundSynthDir, { recursive: true });
 		writeFileSync(join(paths.soundSynthDir, 'hit-0-v0.wav'), 'old render');
@@ -598,7 +621,9 @@ describe('the sound cache is pruned after a commit (finding 6)', { timeout: 300_
 		expect((await putRoots(app, [])).statusCode).toBe(200);
 		await index(app);
 		for (const h of folderHex) expect(existsSync(join(paths.soundCacheDir, h))).toBe(false);
-		expect(readdirSync(join(paths.soundCacheDir, starterHex)).some((f) => f.startsWith('analysis-v'))).toBe(true);
+		expect(readdirSync(join(paths.soundCacheDir, starterHex)).some((f) => f.startsWith('analysis-v'))).toBe(
+			true,
+		);
 		expect(existsSync(join(paths.soundCacheDir, starterHex, 'analysis-v1.json'))).toBe(false);
 		expect(existsSync(join(paths.soundSynthDir, 'hit-0-v0.wav'))).toBe(false);
 		expect(existsSync(join(paths.soundSynthDir, 'notes.txt'))).toBe(true);
@@ -619,7 +644,10 @@ describe('the library cap (finding 7)', { timeout: 300_000 }, () => {
 			(_f, m) => errors.push(m),
 			{ maxFiles: 2, onLibraryFull: () => full++ },
 		);
-		expect(items.map((i) => i.key)).toEqual(['folder:root_000000000001:hit_0.wav', 'folder:root_000000000001:hit_1.wav']);
+		expect(items.map((i) => i.key)).toEqual([
+			'folder:root_000000000001:hit_0.wav',
+			'folder:root_000000000001:hit_1.wav',
+		]);
 		expect(full).toBe(1);
 		expect(errors).toEqual([]);
 	});
@@ -676,7 +704,9 @@ describe('remote mode and hostile files (finding 9)', { timeout: 300_000 }, () =
 		app.jasper.config.host = '192.0.2.10';
 		const roots = await get<{ roots: SoundRoot[]; local: boolean }>(app, '/api/sounds/roots');
 		expect(roots.body).toEqual({ roots: [], local: false });
-		expect((await search(app, 'license=any')).results.map((r) => r.sound.source.type)).not.toContain('folder');
+		expect((await search(app, 'license=any')).results.map((r) => r.sound.source.type)).not.toContain(
+			'folder',
+		);
 		expect((await search(app, 'sources=folder&license=any')).total).toBe(0);
 		const v = await get<{ code: string }>(app, `/api/sounds/${sound.id}/visual`);
 		expect(v.status).toBe(403);

@@ -67,7 +67,20 @@ describe('query words (finding 10)', () => {
 	});
 });
 
-const WORDS = ['heavy', 'light', 'metal', 'door', 'slam', 'punch', 'whoosh', 'swoosh', 'riser', 'click', 'room', 'tone'];
+const WORDS = [
+	'heavy',
+	'light',
+	'metal',
+	'door',
+	'slam',
+	'punch',
+	'whoosh',
+	'swoosh',
+	'riser',
+	'click',
+	'room',
+	'tone',
+];
 const entryArb = fc.record({
 	id: fc.stringMatching(/^snd_[0-9a-f]{6}$/),
 	title: fc.array(fc.constantFrom(...WORDS), { maxLength: 4 }).map((a) => a.join(' ')),
@@ -119,8 +132,33 @@ function rng(seed: number) {
 	};
 }
 
-const ADJ = ['heavy', 'light', 'metal', 'wood', 'glass', 'deep', 'sharp', 'soft', 'distant', 'fast', 'dark', 'bright'];
-const NOUN = ['punch', 'impact', 'door slam', 'whoosh', 'swoosh', 'riser', 'click', 'button', 'room tone', 'chime', 'zap'];
+const ADJ = [
+	'heavy',
+	'light',
+	'metal',
+	'wood',
+	'glass',
+	'deep',
+	'sharp',
+	'soft',
+	'distant',
+	'fast',
+	'dark',
+	'bright',
+];
+const NOUN = [
+	'punch',
+	'impact',
+	'door slam',
+	'whoosh',
+	'swoosh',
+	'riser',
+	'click',
+	'button',
+	'room tone',
+	'chime',
+	'zap',
+];
 
 function library(n: number): RankableSound[] {
 	const r = rng(5);
@@ -173,7 +211,9 @@ describe('ranking 5 000 sounds (finding 10)', () => {
 				times.push(r.ms);
 			}
 			times.sort((a, b) => a - b);
-			report.push(`${JSON.stringify(base)}: ${warm.n} results, min ${times[0]!.toFixed(2)} ms, median ${times[3]!.toFixed(2)} ms`);
+			report.push(
+				`${JSON.stringify(base)}: ${warm.n} results, min ${times[0]!.toFixed(2)} ms, median ${times[3]!.toFixed(2)} ms`,
+			);
 			expect(times[0]!).toBeLessThan(50);
 		}
 		console.log(`rankSounds, 5000 sounds:\n${report.join('\n')}`);
