@@ -12,11 +12,9 @@ let page: Page;
 let protocolScript = '';
 
 test.beforeAll(async ({ browser }) => {
-	protocolScript = await bundleForBrowser(
-		join(ROOT, 'packages/compositions/src/mg-host/remote.ts'),
-		{},
-		{ globalName: 'MgHost' },
-	);
+	protocolScript = await bundleForBrowser(join(ROOT, 'packages/compositions/src/mg-host/remote.ts'), {
+		globalName: 'MgHost',
+	});
 	page = await browser.newPage();
 	await enableAgentBridge(page);
 });

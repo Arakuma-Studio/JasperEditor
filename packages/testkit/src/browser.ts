@@ -22,12 +22,16 @@ export const SWIFTSHADER_ARGS = [
 	'--ignore-gpu-blocklist',
 ];
 
-export async function bundleForBrowser(entry: string): Promise<string> {
+export async function bundleForBrowser(
+	entry: string,
+	options: { globalName?: string } = {},
+): Promise<string> {
 	const out = await build({
 		entryPoints: [entry],
 		bundle: true,
 		write: false,
 		format: 'iife',
+		...options,
 		platform: 'browser',
 		target: 'es2022',
 		jsx: 'automatic',
