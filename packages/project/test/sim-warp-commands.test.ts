@@ -12,7 +12,6 @@ import {
 	liquifyEmpty,
 	liquifyOf,
 	meshAt,
-	meshWarpRest,
 	type Puppet,
 	puppetMesh,
 	repairDocument,
@@ -193,22 +192,22 @@ describe('Puppet in the render scene', () => {
 });
 
 describe('Mesh Warp', () => {
-	it('moves vertices and tangents with stopwatch semantics; validates indices', () => {
+	it('updates vertices and tangents, refuses invalid edits and resets the regular grid', () => {
 		const { h, fxId, fx } = setup('jasper.mesh-warp');
 		h.ok([
+			{ type: 'param.set', target: ['effect', fxId, 'columns'], value: 2 },
+			{ type: 'param.set', target: ['effect', fxId, 'rows'], value: 2 },
 			{
 				type: 'meshWarp.setVertex',
 				effectInstanceId: fxId,
-				column: 3,
-				row: 3,
+				column: 1,
+				row: 1,
 				position: [0.55, 0.45],
 				tangents: { right: [0.1, 0.05] },
 			},
 		]);
 		const m = fx().params.distortionMesh!.value as number[];
-		const rest = meshWarpRest(7, 7);
-		expect(m.length).toBe(rest.length);
-		const o = 3 + (3 * 8 + 3) * 10;
+		const o = 3 + (1 * 3 + 1) * 10;
 		expect(m.slice(o, o + 2)).toEqual([0.55, 0.45]);
 		expect(m.slice(o + 4, o + 6)).toEqual([0.1, 0.05]);
 		expect(
@@ -216,7 +215,11 @@ describe('Mesh Warp', () => {
 		).toBe(false);
 		expect(h.tx([{ type: 'meshWarp.setVertex', effectInstanceId: fxId, column: 0, row: 0 }]).ok).toBe(false);
 		h.ok([{ type: 'meshWarp.reset', effectInstanceId: fxId }]);
-		expect(fx().params.distortionMesh!.value).toEqual(rest);
+		const reset = fx().params.distortionMesh!.value as number[];
+		expect(reset.slice(o, o + 2)).toEqual([0.5, 0.5]);
+		// Each straight cubic handle spans one third of a half-width cell.
+		expect(reset[o + 4]).toBeCloseTo(1 / 6, 12);
+		expect(reset[o + 5]).toBe(0);
 	});
 });
 

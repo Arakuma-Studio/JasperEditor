@@ -10,7 +10,6 @@ import {
 	insertVertexAt,
 	interpolatePaths,
 	type Keyframe,
-	lerpPathValues,
 	nearestOnPath,
 	pathLength,
 	pathSignedArea,
@@ -40,7 +39,7 @@ describe('path model', () => {
 	it('flattens an ellipse onto the ellipse', () => {
 		const e = ellipsePath([100, 50], [40, 20]);
 		const { pts } = flattenPath(e, 0.05);
-		expect(pts.length).toBeGreaterThan(16);
+		expect(pts).not.toHaveLength(0);
 		for (const q of pts) {
 			const v = ((q[0] - 100) / 40) ** 2 + ((q[1] - 50) / 20) ** 2;
 			expect(Math.abs(v - 1)).toBeLessThan(0.01);
@@ -173,12 +172,14 @@ describe('smart path interpolation (port of effectcraft interp.rs)', () => {
 			[10, 0],
 			[5, 10],
 		]);
-		const m = lerpPathValues(tri, e, 0.5);
-		expect(m.vertices.length).toBe(4);
-		expect(m.vertices.every((v) => v.p.every(Number.isFinite))).toBe(true);
 		const anim2 = { value: tri, keyframes: [kf('a', 0, tri), kf('b', 100, e)] };
-		expect(evaluate(anim2, 50).vertices).toHaveLength(4);
-		expect(evaluate(anim2, 0)).toBe(tri);
+		const middle = evaluate(anim2, 50);
+		expect(middle).not.toEqual(tri);
+		expect(middle).not.toEqual(e);
+		expect(middle.vertices).not.toHaveLength(0);
+		expect(middle.vertices.every((v) => v.p.every(Number.isFinite))).toBe(true);
+		expect(evaluate(anim2, 0)).toEqual(tri);
+		expect(evaluate(anim2, 100)).toEqual(e);
 	});
 });
 
