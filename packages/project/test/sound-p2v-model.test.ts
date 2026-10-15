@@ -903,3 +903,83 @@ describe('soundDesign.swap onto a frame stays refused before frame 0 (review)', 
 		expect(clipOf(h, id!).start).toBeGreaterThan(0);
 	});
 });
+
+describe('soft references never block an ordinary edit (review, gaps)', () => {
+	/** Cues anchored to an edit, a transition, a marker, a clip and a keyframe, each filled with a sound. */
+	function scene() {
+		const e = edit();
+		const { h, a, b, trackId } = e;
+		const m = libMedia(h, { durationSec: 1 });
+		const r = h.ok([
+			{
+				type: 'transition.add',
+				trackId: 'V1',
+				at: 60,
+				effectId: 'jasper.cross-dissolve',
+				duration: 10,
+				ref: '$t',
+			},
+			{ type: 'marker.add', frame: 100, name: 'beat', ref: '$m' },
+			{ type: 'param.setAnimated', target: ['clip', a, 'opacity'], animated: true, at: { frames: 0 } },
+			{ type: 'keyframe.add', target: ['clip', a, 'opacity'], at: { frames: 20 }, value: 30, ref: '$k' },
+		]);
+		const anchors = [
+			{ type: 'edit', trackId, outgoingClipId: a, incomingClipId: b },
+			{ type: 'transition', transitionId: r.refs.$t },
+			{ type: 'marker', markerId: r.refs.$m },
+			{ type: 'clip', clipId: b, edge: 'end' },
+			{ type: 'keyframe', clipId: a, property: 'opacity', keyframeId: r.refs.$k, event: 'end' },
+		];
+		const frames = [60, 60, 100, 150, 20];
+		const sfx: string[] = [];
+		const cues: string[] = [];
+		anchors.forEach((anchor, i) => {
+			const cueId = addCue(h, { frame: frames[i], anchor, kind: 'cut' });
+			cues.push(cueId);
+			sfx.push(...placeOn(h, cueId, [{ mediaId: m }], { clampStart: true }));
+		});
+		expect(checkInvariants(h.doc)).toEqual([]);
+		return { ...e, m, sfx, cues, transitionId: r.refs.$t!, markerId: r.refs.$m! };
+	}
+
+	const edits: [string, (s: ReturnType<typeof scene>) => unknown[]][] = [
+		['delete the clips of the cut', (s) => [{ type: 'clip.lift', clipIds: [s.a, s.b], groups: false }]],
+		['delete the transition', (s) => [{ type: 'transition.remove', transitionIds: [s.transitionId] }]],
+		['delete the marker', (s) => [{ type: 'marker.remove', markerIds: [s.markerId] }]],
+		['delete a filled sound', (s) => [{ type: 'clip.lift', clipIds: [s.sfx[0]], groups: false }]],
+		[
+			'delete the SFX track',
+			(s) => [{ type: 'track.remove', trackIds: [s.h.seq.clips[s.sfx[0]!]!.trackId], force: true }],
+		],
+		['ripple delete', (s) => [{ type: 'clip.extract', clipIds: [s.a], syncConflict: 'cut' }]],
+		// (outside the dissolve's span: razoring inside a transition is refused for reasons unrelated to sound design)
+		['razor through every track', (s) => [{ type: 'clip.split', scope: 'all-unlocked', at: 100 }]],
+		['duplicate the filled sounds', (s) => [{ type: 'clip.duplicate', clipIds: s.sfx, deltaFrames: 400 }]],
+		['duplicate the sequence', (s) => [{ type: 'sequence.duplicate', sequenceId: s.h.seqId }]],
+		['nest the picture and a filled sound', (s) => [{ type: 'clip.nest', clipIds: [s.a, s.sfx[0]] }]],
+		[
+			'trim and speed the anchored clips',
+			(s) => [
+				{ type: 'clip.trim', clipId: s.b, edge: 'out', deltaFrames: -20 },
+				{ type: 'clip.setSpeed', clipIds: [s.a], rate: 2, ripple: false },
+			],
+		],
+	];
+
+	for (const [name, make] of edits)
+		it(`${name}: no E_INVARIANT; resync still works; loading tidies it in one pass`, () => {
+			const s = scene();
+			const r = s.h.tx(make(s));
+			expect(err(r), name).toBeNull();
+			expect(checkInvariants(s.h.doc)).toEqual([]);
+			const resync = s.h.tx([{ type: 'soundCue.resync' }]);
+			// a resync may be refused only for a typed reason (a sound that cannot follow), never E_INVARIANT
+			if (!resync.ok)
+				expect(['E_OVERLAP', 'E_INVALID_PARAM', 'E_TRACK_LOCKED']).toContain(resync.errors[0]!.code);
+			const loaded = loadProject(clone(s.h.doc), { ids: createCounterIdSource(900) });
+			expect(loaded.issues).toEqual([]);
+			expect(soundDesignNeedsRepair(loaded.document)).toBe(false);
+			const again = repairDocument(clone(loaded.document), createCounterIdSource(5000));
+			expect(again.report).toEqual([]);
+		});
+});
