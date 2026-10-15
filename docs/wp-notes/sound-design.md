@@ -2472,7 +2472,8 @@ answered `VALIDATION_FAILED windowSec: seconds` (found in the real run). Numbers
   visible settle. **Fixed in Phase 2 verification B**: the mg source measures the rendered motion; the fixture's land is
   now 350 (exit 408), see "Phase 2 verification B: mg land / exit from the rendered motion".
 - **Loud mix:** kit sounds at 0 dB gain overlap to a decoded peak of 1.36 (mono, > 0 dBFS) in the real-run export. Level is
-  Phase 4 (auto gain, masking, limits); placement does not touch it.
+  Phase 4 (auto gain, masking, limits). **Since Phase 2 verification B (§3) placement gives each sound a default level by
+  role** (the fixture filled through MCP exports at −5.0 dBTP).
 - `place_sound` warnings use transcript words and Essential Sound dialogue clips only (no VAD: P6-R3) and the hero rule
   counts placed clips with `sfx.role: hero` (not unfilled hero cues).
 - Undo was checked live in the editor through MCP `undo`; the headless tests prove "one transaction" (revision +1).
@@ -2854,12 +2855,73 @@ that run.
   (`soundDesign.swap` renames when the name is the old file name).
 - Auto gain with its reason, Room send and Stop before next in Essential Sound are Phase 4 (P4 owns the levels).
 
-### Phase 2 verification B: mg land / exit from the rendered motion
+### Phase 2 verification B
+
+Branch `feat/sd-p2-verify-b` (from `feat/sound-design` 780670c4). Three problems: the Phase 0 transport e2e failing ≈ 2 runs
+of 3, the motion-graphic land cue ≈ 0.3 s late (own section below), and library sounds inserted at 0 dB. Shared 16-core
+host; load averages are stated per run (other agents drove it to 20–117 during this work).
+
+#### 1. Phase 0 transport: "Play: the first samples…" (and the other Phase 0 e2e)
+
+**Verdict: (b), not a regression — a latent defect of the close-out's picture wait plus a test that compared the wrong
+things, made visible by load.** Evidence:
+
+- Bisect anchor first: the close-out merge itself (09e3b50c, its own build in a scratch worktree) fails the test too:
+  `E2E_PORT=49802 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-p0-transport.spec.ts -g "Play: the first"
+  --repeat-each=4`, twice: 0/4 and 1/4 passed (load 30–50); integration HEAD 780670c4: 1/4 (load 9–46). The browser did
+  not change in between (Chrome 150.0.7871.181, installed 2026-10-12 per `/var/log/dpkg.log`, before the close-out of
+  2026-10-15). So there is no good commit to bisect from: the failure is in the close-out's design or in its test.
+  Phase 1/2 commits touch no `packages/compositions/src` file (`git diff --stat 09e3b50c..HEAD`); their web audio
+  changes (audition meter, decodeMediaRange) do not touch the Program transport. A probe of main-thread stalls caused by
+  an edit during playback (`effect.add` while playing, 6 edits, scratch spec, not committed) measured no regression:
+  09e3b50c median transaction 48 ms / longest animation-frame gap 53 ms, HEAD 21 ms / 33 ms (load 35–43). The
+  latency-change test, 5 runs each at load 26–41: 09e3b50c 5/5 passed (2 of 7 plays disturbed), HEAD 4/5 (9 of 14
+  plays disturbed) — the disturbed plays are Remotion reschedules under load in both builds.
+- **The defect (fixed).** A debug build logged every `getOutputTimestamp` call of the shim. Chrome starts the audio clock
+  before the main thread sees `state === 'running'`: calls arrived with `currentTime` 21, 29, 64 and 85 ms past the
+  resume time while `state` still read `suspended`. The shim took its offset from the *last* call made while
+  "suspended" (`waitFrom = currentTime`), so such a call shortened the wait or removed it (85 ms > the 41.6 ms wait:
+  no wait at all). Measured picture − audio of those plays: −17 ms and −48 ms (the picture led the program). The offset
+  must come from Remotion's own start reading (`waitUntilActuallyResumed` reads `currentTime` and the timestamp once,
+  then polls). `PrimedStartClock` (`packages/compositions/src/audio/primed-clock.ts`, used by `MixGraph.attachSync`)
+  latches the offset at the first call after the start is armed (Remotion's start reading: it calls synchronously in
+  its `resume`, before anything else can), re-arms only on a stall during the wait (the `suspended` handler), and ends
+  the wait only on a real reading (Chrome briefly answers `{currentTime, performanceTime: 0}` after a resume).
+  Regression test `packages/compositions/test/audio-primed-clock.test.ts` replays Remotion 4.0.499's algorithm against
+  the clock (the e2e trace, a late start reading, the transient readings, a stall, a 300-run property over clock start,
+  output latency, poll interval and stray callers): 6 passed; the same tests against the old shim logic (scratch copy
+  with a state lag) 5 of 6 failed.
+- **The assertion was wrong.** It required primed picture − audio to equal an unprimed play's within 20 ms. The
+  unprimed value is Remotion's resume-detection lag (it polls once per animation frame and Chrome reports no valid
+  output timestamp for 10–20 ms after a resume): measured 14–90 ms, varying with load. A primed start hides that lag
+  inside its wait (logs: `primed` 0.0001, `base` 0.0205 in the same session), so a correct implementation failed
+  whenever the lag exceeded ≈ 20 ms. The test now checks what the close-out promises: (1) the first click is heard
+  exactly `wait + 30 ms` after the resume (one render quantum tolerance; was "< 0.2 s"), at both waits; (2) the picture
+  never shows sequence time 0 before the program's sequence time 0 is at the output (picture − audio > −10 ms); (3) with
+  a wait longer than any start lag (10 Hard Limiters, 208 ms) the same lower bound, plus no second wait (< 150 ms).
+  Without the shim the 208 ms case reads −0.18 / −0.20 s (fails: measured with the shim removed); with the old shim
+  4/4 runs failed (−13 … −32 ms); with the fix 3/3 passed (0.0005–0.015 s, load ≈ 35).
+- **Measurement fixes (no assertion loosened).** The picture's anchor is sampled after the frame report (the old sample
+  at the animation frame's start could undershoot by the Player callback's delay); the program context is the one
+  Remotion schedules buffers on (the first "running" context was sometimes another one: an offset of 15.8 s was read);
+  clicks are taken from the first 2 s only (a slow page played into the tone after them).
+- **Flakes of the other Phase 0 e2e** (first 10× run of both specs, load 30–63: 19 of 76 failed): the preview spec's
+  ScriptProcessor tap runs on the main thread and dropped or repeated 1024-sample buffers under load (clicks read 2048
+  samples apart, a head click 128 samples off). Both specs now share `e2e/sound-tap.ts`: an AudioWorklet tap with exact
+  context frames, plus a log of what disturbs Remotion's scheduling — a reschedule (`stop()` of the buffers of two or
+  more players in one task; a clip that ends stops only its own) and a buffer started after its time — and, for the A/V
+  measurement, the audio clock slipping against the wall clock (> 10 ms over the sampling window). A disturbed play is
+  played again (up to 8 times, was 3; the assertions are unchanged); when every play is disturbed the test fails saying
+  so with the load average instead of judging the graph on a lost play. At load ≥ 90 (measured 100–117 for a while)
+  Chrome's audio clock slipped 180–850 ms per second and every play was disturbed: no real-time audio check can measure
+  on such a host.
+
+#### 2. Motion-graphic land / exit from the rendered motion
 
 The mg cues sat on the template's declared `introFrames` / `outroFrames`; the lower third visibly settles ≈ 0.33 s before
 its declared intro end (WP2.3 limits). Now the land / exit come from the picture.
 
-#### Design
+##### Design
 
 - `MgTemplateInfo.motionSpeed?(params, {fps, totalFrames})` (`@jasper/project` `registry/mg.ts`, optional): the picture
   speed per CONTENT frame `0 … totalFrames − 1` (`speed[i]` from frame i − 1 to i) in canvas diagonals per second — the
@@ -2891,7 +2953,7 @@ its declared intro end (WP2.3 limits). Now the land / exit come from the picture
   and Cue Seam all pass the same `mgRegistry`, so they agree (read: `routes/sound-design.ts`, `agent/index.ts`,
   `web/src/sound/cues/suggest.ts`, `seam.ts`, `state/session-host.tsx`).
 
-#### Verified (measured, this branch; shared host)
+##### Verified (measured, this branch; shared host)
 
 - `pnpm vitest run packages/mg-templates/test/motion-cues.test.ts --maxWorkers=2`: 24 passed. The oracle is independent of
   the code under test (no SVG parsing, no `speedSegments`): it differentiates the templates' own curves analytically
@@ -2933,7 +2995,7 @@ its declared intro end (WP2.3 limits). Now the land / exit come from the picture
 - `apps/engine/test/sound-design-cues.test.ts` (4 passed) and `apps/mcp/test/sound-cues.test.ts` (5 passed) now expect the
   measured 350 / 408 at 0.8 / 0.6 (they pinned the old declared 360 / 405).
 
-#### Limits
+##### Limits
 
 - **Anime templates are unmeasured** (declared timing, confidence 0.5 / 0.4). Estimated from their timeline constants
   (`@jasper/motion/src/templates`, not run): every intro phase is a fraction of the declared intro ending at or before it,
@@ -2944,6 +3006,59 @@ its declared intro end (WP2.3 limits). Now the land / exit come from the picture
 - Clips over 20 000 frames (≈ 11 min at 30 fps, 5.5 min at 60 fps) fall back to the declared timing.
 - When an outro overlaps an unfinished intro (very short clips, `holdUntilFrames` inside the intro) the movements merge:
   the "intro" lands where the merged movement ends (or not at all when it reaches the last frame).
+
+#### 3. Default insert level
+
+**Problem (WP2.3):** kit sounds placed at 0 dB clip gain summed to a decoded export peak of 1.36. Until Phase 4's masking
+solver sets gains against the bed, `soundDesign.place` gives every layer without `gainDb` a level from its own
+descriptors (`defaultSfxLevel`, `packages/project/src/sound/level.ts`):
+
+- gain = role target − the sound's `maxMomentaryLufs` (its loudest 400 ms, BS.1770 momentary), capped so its true peak
+  stays under the role's ceiling, clamped to −30 … +12 dB (spec 12 §2.4 constraint 1, the solver's range), 0.1 dB steps;
+  without a measured true peak it never boosts; without a loudness descriptor it stays at 0 dB (lowered only by the
+  ceiling).
+- Targets are relative to the sequence's delivery integrated target (spec 12 §2.4: web −14, podcast −16, R128 −23,
+  A/85 −24): hero −2 LU, support −8, layer −10, beds (a sound typed ambience or room tone, whatever its role) −16. Web:
+  hero −16, support −22, layer −24, ambience −30 LUFS momentary. True-peak ceilings: hero −6, support −12, layer −16,
+  ambience −20 dBTP (a hero, a support and a layer peak-aligned on one cue sum to −0.8 dBTP even exactly in phase).
+- Reasoning and sources (the numbers are a decision; no standard gives SFX insert levels): programme and dialogue sit
+  at the delivery's integrated target — EBU R 128 (2020) −23 LUFS / −1 dBTP and EBU Tech 3343 (practical guidelines,
+  momentary/short-term use in mixing), ATSC A/85 −24 LKFS / −2 dBTP, AES TD1008 (streaming: −18 LUFS for speech,
+  −16 for music, −1 dBTP), streaming platforms' −14 LUFS normalisation, Netflix's dialogue-gated −27 LKFS / −2 dBTP
+  delivery spec. A hit's loudest 400 ms just under the programme level reads as a strong accent without dominating
+  speech; support sounds sit well under it; spec 12 §2.4 asks ambience ≥ 10 LU under voice, and a bed's momentary
+  maximum exceeds its integrated level by a few LU, hence −16. Measured on the kit and Synth (below): true peak − max momentary is
+  10–23 dB for hits, thumps, booms and key presses and 6–8 dB for whooshes, so for most hits the true-peak ceiling,
+  not the loudness target, sets the gain.
+- Recorded on the clip: `AudioClip.sfx.level = {by: 'default', gainDb, offsetDb?, targetLufs, limitedBy}` (optional
+  field of the loose `ClipSfx`; invalid ones are dropped by `readClipSfx` / `repairDocument`, the gain kept). While
+  `gainDb` equals the clip's gain it is still the default: `soundDesign.swap` and `soundDesign.setRole` recompute it for
+  the new sound / role (keeping the variation offset); a gain the user set since is kept. Phase 4 replaces it.
+- New layer field `gainOffsetDb` (−12 … 12, added to the default; ignored with `gainDb`): fills pass their seeded ±1 dB
+  variation there (web `fill.ts` Fill / Fill Unfilled Cues, MCP `place_sound` picks); an explicit gain stays absolute
+  (MCP `insert_sound` now passes an explicit 0 dB too). The engine's provenance now carries `truePeakDb` (optional
+  descriptor; older registrations lack it and so never boost). MCP `place_sound` / `insert_sound` return each clip's
+  `gainDb` and `level`; tool docs, SOUND_GUIDE ("Levels") and `describe_commands` say how the default is chosen.
+- Verified: `pnpm vitest run packages/project/test/sound-level.test.ts` (10 passed: targets by role and delivery, peak
+  cap, no boost without a peak, unmeasured, range, a 2 000-run property over hostile descriptors; place with three
+  layers hero/layer/layer = −6 / +4 / −4 dB with limitedBy loudness/peak/peak, recorded, undo = the untouched document,
+  redo the same levels; explicit gain wins, offsets add; broadcast delivery; swap and setRole refresh an untouched
+  default and keep a user gain; refusal of an out-of-range offset; a bad stored level dropped on load, idempotent).
+  `packages/project/test/sound-design-place.test.ts` and `apps/web/test/sound-fill-swap.test.tsx` updated to the
+  default (they asserted 0 dB / jitter only).
+- **Phase 2 fixture, filled as an agent fills it** (`pnpm vitest run apps/mcp/test/sound-levels.test.ts`, real engine
+  with 9 kit recordings + Jasper Synth, jasper-mcp over stdio; load ≈ 80): find_sound_cues → set_sound_cues → place_sound
+  with picks by type on all 17 cues (two layers on the hero marker cue): 18 clips, every gain equal to
+  `defaultSfxLevel` of its provenance (+ its ≤ 1 dB offset) — e.g. "Air whoosh, bright" (−9.6 LUFS, −3.1 dBTP) support
+  −11.7 dB (loudness), "Low boom" (−11.3, −0.9) hero −5.8 dB (peak), "Jasper Synth whoosh 1" layer −14.9 dB
+  (loudness); 15 of 18 limited by the peak ceiling. Mix by the export mixer (`measure_loudness`, no normalisation):
+  −4.9 dBTP, −23.8 LUFS integrated. A native export (MOV, 24-bit PCM, audio clips only) decoded and metered by ffmpeg
+  `ebur128=peak=true+sample`: **−5.0 dBTP**, sample peak −5.0 dBFS; the same export with every clip at 0 dB: −0.4 dBTP
+  (this run's picks did not reach the 1.36 of WP2.3's, which had other sounds layered on the same cues).
+
+#### Gate and integration
+
+PENDING
 
 ## Phase 3: proposals and review
 

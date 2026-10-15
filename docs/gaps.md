@@ -339,6 +339,14 @@ into one undo step, linked layers, the In Context audition, clip badges, Essenti
 Detect Peak (`e2e/sound-fill.spec.ts`: three filled cues measured at 0–1 sample from their cue frame in a native
 export). Limits (WP2.4b wp-note): variation cycling acts on the whole linked selection; Fill Unfilled Cues applies
 directly until Phase 3 proposals; Detect Peak analyses at most 2 min of a clip; Auto gain / Room send are Phase 4.
+Phase 2 verification B ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 2 verification B"): the primed
+start's picture wait no longer gets cut short (`PrimedStartClock`; the Phase 0 transport e2e now measures the wait
+itself and replays plays the loaded host disturbed); placed sounds get a default level by role from their loudness and
+true peak (`sfx.level`; the Phase 2 fixture filled through MCP exports at −5 dBTP without normalisation); motion-graphic
+land / exit cues come from the fframes templates' rendered motion (the lower third lands at 350, not 360). Limits: anime
+templates keep the declared intro / outro timing (unmeasured, lower confidence); default levels are per sound, not
+against the bed (Phase 4); real-time audio e2e cannot measure on a host whose audio clock slips (load ≳ 90 here): the
+specs then fail saying every play was disturbed.
 
 ### Not covered by any workstream yet
 
