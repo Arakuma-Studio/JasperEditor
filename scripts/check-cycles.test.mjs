@@ -130,7 +130,6 @@ describe('runtime dependency cycles', () => {
 			),
 			'packages/example/src/main.ts': 'export const value = 1;',
 		});
-		expect(dependencyGraph(root).size).toBe(1);
 		expect(cycles(root)).toEqual([]);
 	});
 

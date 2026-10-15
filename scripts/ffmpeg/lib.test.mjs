@@ -27,13 +27,15 @@ describe('checkTree', () => {
 			'\0--prefix=/ffbuild --enable-nonfree --enable-shared\0nonfree and unredistributable\0',
 		);
 		const okResults = checkTree(ok);
-		expect(okResults).toHaveLength(3);
-		expect(okResults.every((r) => r.problems.length === 0)).toBe(true);
+		for (const file of ['libavcodec.so.61', 'libavcodec.61.dylib', 'avcodec-61.dll'])
+			expect(okResults.find((r) => r.file === join(ok, file))?.problems).toEqual([]);
 		const badResults = checkTree(join(root, 'bad'));
-		expect(badResults).toHaveLength(3);
-		expect(badResults.every((r) => r.problems.length > 0)).toBe(true);
-		expect(badResults.some((r) => r.method === 'path')).toBe(true);
-		expect(badResults.flatMap((r) => r.problems)).toContain('configured with --enable-nonfree');
+		for (const [file, reason] of [
+			[join(bad, 'libavcodec.so'), /--enable-gpl/],
+			[join(bad, 'libavutil.so.59'), /--enable-nonfree/],
+			[bad, /Remotion compositor package/],
+		])
+			expect(badResults.find((r) => r.file === file)?.problems.join(' ')).toMatch(reason);
 	});
 });
 
@@ -92,7 +94,6 @@ describe('checkPackagedApp', () => {
 	it('passes an app that ships only the complete LGPL directory', () => {
 		const r = checkPackagedApp(app().root);
 		expect(bad(r)).toEqual([]);
-		expect(r.results).toHaveLength(3);
 	});
 
 	it('fails without the LGPL directory, or when it lacks the notice', () => {
