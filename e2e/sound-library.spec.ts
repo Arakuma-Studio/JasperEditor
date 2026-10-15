@@ -287,11 +287,12 @@ test('inserted library sounds play their aligned point exactly on the frame in a
 		const ref = decodeMono(kit);
 		// the aligned point in the library file (the media's descriptors include the lead silence)
 		const refPoint = Math.round((x.point - x.lead) * SR);
-		const w0 = Math.max(
-			0,
-			Math.min(ref.length - 960, refPoint - (x.align === 'end' ? 960 : x.align === 'start' ? 0 : 480)),
-		);
-		const w1 = Math.min(ref.length, w0 + 960);
+		// 100 ms of the sound next to its aligned point: long enough to hold its envelope, so a tonal sound cannot match
+		// one period off (AAC smears a sharp attack a little; a 20 ms window then preferred a later period)
+		const W = 4800;
+		const from = x.align === 'end' ? refPoint - W : x.align === 'start' ? refPoint : refPoint - W / 2;
+		const w0 = Math.max(0, Math.min(ref.length - W, from));
+		const w1 = Math.min(ref.length, w0 + W);
 		const cueSample = (x.cue * F * SR) / FLICKS;
 		const found = locate(mix, ref, w0, w1, Math.round(cueSample - refPoint), 3300);
 		const errorSamples = found.lag + refPoint - cueSample;
