@@ -206,7 +206,8 @@ export class SshRemote {
 
 	/**
 	 * Uploads a local file to `remotePath` (PRM-005). rsync: `--partial --inplace` into `<path>.part`, which a
-	 * retry resumes; scp restarts the file. The final rename makes the file appear atomically.
+	 * retry resumes; scp restarts the file. Both transfer the referent bytes of a source symlink.
+	 * The final rename makes the file appear atomically.
 	 */
 	async upload(local: string, remotePath: string, opts: ExecOptions = {}): Promise<void> {
 		const part = `${remotePath}.part`;
@@ -217,6 +218,7 @@ export class SshRemote {
 			r = await run(
 				this.bin('rsync'),
 				[
+					'--copy-links',
 					'--partial',
 					'--inplace',
 					'--info=progress2',

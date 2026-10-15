@@ -52,7 +52,7 @@ Branch `wp/m2-process`. Spec `docs/specs/07-clip-processing.md`; ARCHITECTURE D-
 -o StrictHostKeyChecking=<accept-new|yes> -o ControlMaster=auto -o ControlPath=<appdir>/tmp/ssh/ssh-%C
 -o ControlPersist=60 -p <port> [-i <key> -o IdentitiesOnly=yes]`; remote command lines are built only from the
 validated `remoteDir` and engine ids, every word single-quoted. Layout `<remoteDir>/{bin,models,jobs,cache,ffmpeg}`.
-A job uploads the source to the content-addressed cache (`rsync --partial --inplace` into `.part`, resumable;
+A job uploads the source to the content-addressed cache (`rsync --copy-links --partial --inplace` into `.part`, resumable;
 scp fallback restarts), uploads missing models, writes the spec, runs `setsid -w sh -c 'echo $$ > pid; exec node
 bin/jasper-proc.mjs run --spec spec.json'` streaming the NDJSON progress, downloads the output + sidecar, verifies
 sha256 and frame count, deletes the job directory and LRU-trims the cache to 20 GB. Cancel kills the local ssh and
@@ -62,6 +62,15 @@ from a checkout), runs `npm install --omit=dev` (`JASPER_REMOTE_NPM` overrides),
 LGPL linux-x64 FFmpeg when the remote has none, then probes. Probe reports node / ffmpeg / `nvidia-smi` GPU /
 installed runtime / ONNX providers (CUDA only when the CUDA provider library exists and a CUDA session can be
 created — never on this host).
+
+Uploads transfer the bytes of a selected source symlink, matching SCP and the source size/hash checks. This is
+required for LGPL library aliases such as `libavcodec.so → libavcodec.so.61`; omitting dereferencing lets rsync
+skip the alias and leaves no `.part` to publish. The installed `rsync --help` documents `--copy-links` as transforming
+a symlink into its referent file/directory; this single-file upload does not enable recursive traversal.
+`processing-remote-upload.test.ts` isolates the regression with real rsync, a real relative link and the shared SSH
+protocol fixture; expected destination bytes are authored independently of the transfer implementation.
+The focused one-worker regression failed with the missing `.part` before the fix and passed afterward; full setup
+and real-SSH verification remain separate integration checks.
 
 Tests: `apps/engine/test/processing-remote.test.ts` with `JASPER_SSH`/`JASPER_SCP` shims (protocol, setup,
 auto executor, input cache reuse, resumable upload, cancel kills the remote process group, connection loss);
