@@ -75,6 +75,11 @@ export const LibraryDescriptorsSchema = z.looseObject({
 	centroidHz: z.number().min(0).max(1_000_000),
 	/** Highest 400 ms momentary loudness; null for silence. */
 	maxMomentaryLufs: z.number().min(-400).max(400).nullable(),
+	/**
+	 * True peak (dBTP, BS.1770 4× oversampled); null for digital silence. Absent in provenance written before it was
+	 * recorded: the default insert level then never boosts (`defaultSfxLevel`).
+	 */
+	truePeakDb: z.number().min(-400).max(400).nullable().optional(),
 });
 export type LibraryDescriptors = DeepStrip<z.infer<typeof LibraryDescriptorsSchema>>;
 

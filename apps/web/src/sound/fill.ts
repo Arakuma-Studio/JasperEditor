@@ -107,7 +107,8 @@ export async function fillCueWithSound(
 				{
 					mediaId: media.ref,
 					rate: v.rate,
-					gainDb: v.gainDb,
+					// the seeded ±1 dB variation, on top of the sound's default level (soundDesign.place)
+					gainOffsetDb: v.gainDb,
 					...(layer ? { role: 'layer' } : {}),
 					ref: '$fill',
 				},
@@ -240,7 +241,7 @@ export async function fillUnfilledCues(
 					type: 'soundDesign.place',
 					sequenceId,
 					cueId: p.cue.id,
-					layers: [{ mediaId: prepared.media.get(p.entry.id)!.ref, rate: p.rate, gainDb: p.gainDb }],
+					layers: [{ mediaId: prepared.media.get(p.entry.id)!.ref, rate: p.rate, gainOffsetDb: p.gainDb }],
 					...(p.alternatives.length ? { alternatives: p.alternatives } : {}),
 					clampStart: true,
 				}) as Command,

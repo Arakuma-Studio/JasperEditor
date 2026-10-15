@@ -9,6 +9,7 @@ import type { AudioClip, Clip, Sequence } from '../../schema/sequence.ts';
 import {
 	type ClipSfx,
 	readSoundDesignSettings,
+	type SfxLevel,
 	SOUND_DESIGN_LIMITS,
 	type SoundCue,
 	type SoundDesign,
@@ -25,12 +26,12 @@ import {
 	type SoundTrackSequence,
 	soundTimingOf,
 } from '../../sound/insert.ts';
+import { defaultSfxLevel } from '../../sound/level.ts';
 import {
 	type LibraryProvenance,
 	libraryDescriptorIssue,
 	readLibraryProvenance,
 } from '../../sound/provenance.ts';
-
 import { isSoundTypeId, SOUND_TYPE_IDS } from '../../sound/taxonomy.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
@@ -431,6 +432,10 @@ type PlacedLayer = {
 	rate: number;
 	pitchSt: number;
 	trimmedHeadSec: number;
+	/** The clip gain (dB). */
+	gainDb: number;
+	/** The default level, when placement chose the gain (no `gainDb` given). */
+	level: SfxLevel | null;
 };
 
 /** An audio track for `[start, start + frames)`: explicit (refusals), else `auto`. */
@@ -473,6 +478,58 @@ function layerTrack(
 		h,
 	) as { trackIds: string[] };
 	return { trackId: r.trackIds[0]!, created: true };
+}
+
+/**
+ * The default level of a library sound placed with `role` (`defaultSfxLevel` on its descriptors), plus `offsetDb`, as
+ * stored in `sfx.level`.
+ */
+function sfxDefaultLevel(
+	prov: LibraryProvenance | null,
+	role: ClipSfx['role'],
+	types: readonly unknown[],
+	delivery: SoundDesignSettings['delivery'],
+	offsetDb = 0,
+): SfxLevel {
+	const d = prov?.descriptors as
+		| (LibraryProvenance['descriptors'] & { truePeakDb?: number | null })
+		| undefined;
+	const l = defaultSfxLevel({
+		role,
+		types,
+		maxMomentaryLufs: d?.maxMomentaryLufs ?? null,
+		truePeakDb: d?.truePeakDb ?? null,
+		delivery,
+	});
+	const off = Number.isFinite(offsetDb) ? Math.max(-12, Math.min(12, offsetDb)) : 0;
+	const gainDb = Math.round((l.gainDb + off) * 100) / 100;
+	return {
+		by: 'default',
+		gainDb: Object.is(gainDb, -0) ? 0 : gainDb,
+		...(off !== 0 ? { offsetDb: off } : {}),
+		targetLufs: l.targetLufs,
+		limitedBy: l.limitedBy,
+	};
+}
+
+/**
+ * After a swap or a role change: a clip whose gain is still the default placement gave it (`sfx.level`, untouched)
+ * gets the default of its current sound and role (with the same variation offset). A gain set since is kept.
+ */
+function refreshDefaultLevel(doc: DDoc, seq: DSeq, clip: DAudio): void {
+	const level = clip.sfx?.level;
+	if (!clip.sfx || !level || level.by !== 'default' || Math.abs(clip.gainDb - level.gainDb) > 0.005) return;
+	const prov = readLibraryProvenance((doc.media[clip.mediaId] as { library?: unknown } | undefined)?.library);
+	const settings = readSoundDesignSettings((seq as { soundDesign?: SoundDesign }).soundDesign?.settings);
+	const next = sfxDefaultLevel(
+		prov,
+		clip.sfx.role,
+		prov?.types ?? [],
+		settings.delivery,
+		level.offsetDb ?? 0,
+	);
+	clip.gainDb = next.gainDb;
+	clip.sfx.level = next as Draft<SfxLevel>;
 }
 
 function place(doc: DDoc, cmd: CommandOf<'soundDesign.place'>, h: HandlerContext) {
@@ -581,7 +638,13 @@ function place(doc: DDoc, cmd: CommandOf<'soundDesign.place'>, h: HandlerContext
 			{ type: 'essentialSound.setType', clipIds: [clipId], audioType: 'sfx' },
 			h,
 		);
+		const role = layer.role ?? (index === 0 ? (cue?.weight === 'hero' ? 'hero' : 'support') : 'layer');
+		let level: SfxLevel | null = null;
 		if (layer.gainDb !== undefined) clip.gainDb = layer.gainDb;
+		else {
+			level = sfxDefaultLevel(prov, role, types, settings.delivery, layer.gainOffsetDb);
+			clip.gainDb = level.gainDb;
+		}
 		const pan = layer.pan ?? cuePan(cue, cueFrame, rate);
 		if (pan !== undefined) writePan(clip, pan, cueFrame, rate, h, [...path, 'pan']);
 		if (pp.shifterSt) {
@@ -597,7 +660,6 @@ function place(doc: DDoc, cmd: CommandOf<'soundDesign.place'>, h: HandlerContext
 				h,
 			);
 		}
-		const role = layer.role ?? (index === 0 ? (cue?.weight === 'hero' ? 'hero' : 'support') : 'layer');
 		clip.sfx = {
 			cueId: cue?.id ?? null,
 			soundId: prov?.soundId ?? null,
@@ -605,6 +667,7 @@ function place(doc: DDoc, cmd: CommandOf<'soundDesign.place'>, h: HandlerContext
 			role,
 			...(i === 0 && cmd.alternatives?.length ? { alternatives: [...new Set(cmd.alternatives)] } : {}),
 			placement: { align, peakFlicks: p.alignFlicks, errorFlicks: p.errorFlicks },
+			...(level ? { level } : {}),
 		} as ClipSfx;
 		placed.push({
 			clipId,
@@ -623,6 +686,8 @@ function place(doc: DDoc, cmd: CommandOf<'soundDesign.place'>, h: HandlerContext
 			rate: pp.rate,
 			pitchSt,
 			trimmedHeadSec: p.trimmedHeadSec,
+			gainDb: clip.gainDb,
+			level,
 		});
 	}
 	const all = [...existing.map((c) => c.id), ...placed.map((p) => p.clipId)];
@@ -843,6 +908,7 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 			role: 'support',
 			placement,
 		} as ClipSfx;
+	refreshDefaultLevel(doc, seq, clip);
 	// The cue's sound list follows.
 	const cueId = clip.sfx!.cueId;
 	const sd = (seq as { soundDesign?: Draft<SoundDesign> }).soundDesign;
@@ -867,6 +933,7 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 		align,
 		rate: clip.speed.rate,
 		pitchSt: cmd.pitchSt ?? null,
+		gainDb: clip.gainDb,
 	};
 }
 
@@ -883,6 +950,7 @@ function setRole(doc: DDoc, cmd: CommandOf<'soundDesign.setRole'>, h: HandlerCon
 		assertUnlocked(findTrackIn(seq, clip.trackId)!.track, h);
 		if (clip.sfx) {
 			clip.sfx.role = cmd.role;
+			refreshDefaultLevel(doc, seq, clip);
 			continue;
 		}
 		const lib = readLibraryProvenance(

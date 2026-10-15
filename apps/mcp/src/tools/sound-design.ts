@@ -320,7 +320,14 @@ const LayerArg = z.object({
 		.enum(['auto', ...CUE_ALIGNS])
 		.optional()
 		.describe('Which point lands on the cue (default: by type)'),
-	gainDb: z.number().min(-96).max(96).optional(),
+	gainDb: z
+		.number()
+		.min(-96)
+		.max(96)
+		.optional()
+		.describe(
+			"Clip gain in dB (default: the sound's default level by its loudness and role, plus a pick's ±1 dB)",
+		),
 	pitchSt: z
 		.number()
 		.min(-12)
@@ -628,7 +635,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 		'place_sound',
 		{
 			title: 'Place sound (on a cue)',
-			description: `Places 1–6 layers of sound on a stored cue (cueId) or at a time (at; a cue is created there unless createCue: false) so that each layer's aligned point lands EXACTLY on the cue frame: the peak for hits, booms, lands, whooshes; the end for risers and reverses; the start for UI blips (align auto, or say peak|start|end). Each layer is a library sound (soundId), a project media (mediaId) or a pick: sound {type, query?} chooses among the best-ranked sounds of that type (palette first), rotated so neighbouring cues differ, with the seeded ±2 % speed and ±1 dB variation. ONE undo step: imports the sounds into the "Sound Effects" bin, places one clip per layer on free SFX tracks (never over audio; a new "SFX n" when none is free), tags them Essential Sound ▸ SFX, groups the layers and links them to the cue. alternatives (1–3 soundIds) are stored on the clip for swap_sound "next"/"previous"; reason is recorded on the cue. Returns each clip with its track, start, aligned frame, peak frame and errorFlicks (0 = sample-exact), plus warnings (a hero under dialogue or within 0.5 s of another hero).`,
+			description: `Places 1–6 layers of sound on a stored cue (cueId) or at a time (at; a cue is created there unless createCue: false) so that each layer's aligned point lands EXACTLY on the cue frame: the peak for hits, booms, lands, whooshes; the end for risers and reverses; the start for UI blips (align auto, or say peak|start|end). Each layer is a library sound (soundId), a project media (mediaId) or a pick: sound {type, query?} chooses among the best-ranked sounds of that type (palette first), rotated so neighbouring cues differ, with the seeded ±2 % speed and ±1 dB variation. ONE undo step: imports the sounds into the "Sound Effects" bin, places one clip per layer on free SFX tracks (never over audio; a new "SFX n" when none is free), tags them Essential Sound ▸ SFX, groups the layers and links them to the cue. Gain: a layer's gainDb when given; otherwise its default level — the sound's loudest 400 ms to its role's momentary target at the sequence's delivery (web: hero −16, support −22, layer −24, beds −30 LUFS) under the role's true-peak ceiling (−6/−12/−16/−20 dBTP), within −30…+12 dB, so layered inserts stay under full scale (each clip's gainDb and level are returned). alternatives (1–3 soundIds) are stored on the clip for swap_sound "next"/"previous"; reason is recorded on the cue. Returns each clip with its track, start, aligned frame, peak frame and errorFlicks (0 = sample-exact), plus warnings (a hero under dialogue or within 0.5 s of another hero).`,
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -796,12 +803,19 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 						}
 						const track =
 							!l.track || l.track.toLowerCase() === 'auto' ? undefined : resolveAudioTrack(seq, l.track);
-						const gain = (l.gainDb ?? 0) + (pick?.gainDb ?? 0);
+						// An explicit gain is the clip's (plus a pick's ±1 dB variation); without one the clip gets the
+						// sound's default level and the variation on top of it (soundDesign.place).
+						const jitter = pick?.gainDb ?? 0;
+						const gain = l.gainDb !== undefined ? l.gainDb + jitter : null;
 						return {
 							mediaId,
 							...(track ? { track } : {}),
 							...(l.align ? { align: l.align } : {}),
-							...(gain !== 0 ? { gainDb: Math.round(gain * 100) / 100 } : {}),
+							...(gain !== null
+								? { gainDb: Math.round(gain * 100) / 100 }
+								: jitter !== 0
+									? { gainOffsetDb: Math.round(jitter * 100) / 100 }
+									: {}),
 							...(pick && pick.rate !== 1 ? { rate: pick.rate } : {}),
 							...(l.pitchSt !== undefined ? { pitchSt: l.pitchSt } : {}),
 							...(l.pan !== undefined ? { pan: l.pan } : {}),
@@ -945,6 +959,9 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 					rate: p.rate,
 					pitchSt: p.pitchSt,
 					gainDb: clip?.gainDb ?? 0,
+					...((clip as { sfx?: { level?: unknown } } | undefined)?.sfx?.level
+						? { level: (clip as { sfx?: { level?: unknown } }).sfx!.level }
+						: {}),
 					...(p.trimmedHeadSec > 0 ? { trimmedHeadSec: p.trimmedHeadSec } : {}),
 					...(pick
 						? { picked: { from: pick.from, variationRate: pick.rate, variationGainDb: pick.gainDb } }

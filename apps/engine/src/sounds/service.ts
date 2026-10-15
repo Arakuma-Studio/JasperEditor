@@ -99,6 +99,11 @@ export function provenanceOf(e: SoundEntry, snapshotHash: string, leadSilenceSec
 			raw.maxMomentaryLufs === null || !Number.isFinite(raw.maxMomentaryLufs) || raw.maxMomentaryLufs < -400
 				? null
 				: Math.min(400, raw.maxMomentaryLufs),
+		// analyses cached before true peak was part of them (or digital silence) carry none
+		truePeakDb:
+			typeof raw.truePeakDb !== 'number' || !Number.isFinite(raw.truePeakDb) || raw.truePeakDb < -400
+				? null
+				: Math.min(400, raw.truePeakDb),
 	};
 	const candidate = {
 		soundId: e.id,
@@ -120,6 +125,7 @@ export function provenanceOf(e: SoundEntry, snapshotHash: string, leadSilenceSec
 				octaveBandsDb: d.octaveBandsDb,
 				centroidHz: d.centroidHz,
 				maxMomentaryLufs: d.maxMomentaryLufs,
+				truePeakDb: d.truePeakDb,
 			},
 			lead,
 		),

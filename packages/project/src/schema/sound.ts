@@ -211,6 +211,25 @@ export const SfxPlacementSchema = z.looseObject({
 });
 export type SfxPlacement = DeepStrip<z.infer<typeof SfxPlacementSchema>>;
 
+/**
+ * `AudioClip.sfx.level`: the clip gain placement chose from the sound's descriptors (`defaultSfxLevel`, spec 12 §2.3,
+ * Phase 2 verification B), written only when no gain was given. While `gainDb` still equals the clip's gain the gain
+ * is that default (a swap or a role change recomputes it; Phase 4's masking solver replaces it); a gain the user set
+ * since is theirs.
+ */
+export const SfxLevelSchema = z.looseObject({
+	by: z.literal('default'),
+	/** The clip gain applied (dB): the default plus `offsetDb`. */
+	gainDb: z.number().min(-96).max(96),
+	/** Added to the default (the seeded ±1 dB variation of a fill), dB. */
+	offsetDb: z.number().min(-12).max(12).optional(),
+	/** Momentary-loudness target of the role at the sequence's delivery (LUFS). */
+	targetLufs: z.number().min(-100).max(0),
+	/** What set it: the loudness target, the true-peak ceiling, the gain range, or no loudness descriptor. */
+	limitedBy: z.enum(['loudness', 'peak', 'range', 'unmeasured']),
+});
+export type SfxLevel = DeepStrip<z.infer<typeof SfxLevelSchema>>;
+
 /** `AudioClip.sfx`: a clip placed by sound design (spec 12 §2.2). */
 export const ClipSfxSchema = z.looseObject({
 	/** The cue it fills (null = placed at a frame without a cue). */
@@ -227,6 +246,8 @@ export const ClipSfxSchema = z.looseObject({
 	/** Alternatives the agent or the ranking offered (variation cycling), ≤ 16. */
 	alternatives: z.array(id()).max(SOUND_DESIGN_LIMITS.alternatives).optional(),
 	placement: SfxPlacementSchema,
+	/** The default level placement gave it (absent: a gain was given, or placed before default levels). */
+	level: SfxLevelSchema.optional(),
 });
 export type ClipSfx = DeepStrip<z.infer<typeof ClipSfxSchema>>;
 
@@ -404,6 +425,10 @@ export function readClipSfx(raw: unknown): ClipSfx | null {
 		peakFlicks: finite(p.peakFlicks) ? Math.max(0, Math.round(p.peakFlicks)) : 0,
 		errorFlicks: finite(p.errorFlicks) ? Math.max(0, Math.round(p.errorFlicks)) : 0,
 	};
+	// a level that does not read is dropped (the clip keeps its gain; it no longer counts as a default)
+	const level = opt(SfxLevelSchema, raw.level);
+	if (level !== undefined) out.level = level;
+	else delete out.level;
 	const r = ClipSfxSchema.safeParse(out);
 	return r.success ? (r.data as ClipSfx) : null;
 }

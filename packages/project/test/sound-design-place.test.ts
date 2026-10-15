@@ -104,7 +104,10 @@ describe('soundDesign.place', () => {
 			layer: 0,
 			role: 'support',
 			placement: { align: 'peak', peakFlicks: Math.round(0.0705 * FLICKS_PER_SECOND), errorFlicks: 0 },
+			// no gain given: the default level (support −22 LUFS momentary at web delivery; −14.2 measured)
+			level: { by: 'default', gainDb: -7.8, targetLufs: -22, limitedBy: 'loudness' },
 		});
+		expect(c.gainDb).toBe(-7.8);
 		expect(checkInvariants(h.doc)).toEqual([]);
 		// undo = the untouched document; redo = the same transaction gives the same document
 		expect(before).toEqual(snapshot);

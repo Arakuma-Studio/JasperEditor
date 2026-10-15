@@ -599,7 +599,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 		'insert_sound',
 		{
 			title: 'Insert sound (peak-aligned)',
-			description: `Puts a library sound on the timeline so that its aligned point lands exactly on \`at\` — the agent version of the Sound Library's Insert. align "auto" (default) uses the sound type's: peak for hits, booms, impacts, whooshes; end for risers and reverses (they lead into the moment); start for UI blips; or give peak | start | end. The sub-frame rest is trimmed from the head of the registered file (library sounds whose head is not silent get 50 ms of lead silence when registered), so the aligned point is exact to the flick (errorFlicks 0). A sound that would start before frame 0 starts at 0 with its head trimmed (trimmedHeadSec). track "auto" (default) picks a free unmuted "SFX…" audio track over the clip's span, else adds "SFX n"; an explicit track must be free there (E_OVERLAP otherwise): it never overwrites audio and places one clip. ONE undo step registers and imports the sound (into the "${SOUND_EFFECTS_BIN}" bin, reusing the project's copy), adds the track if needed, places the clip, tags it Essential Sound ▸ SFX and sets gainDb. Returns the clip, its track, start, the aligned frame and errorFlicks.`,
+			description: `Puts a library sound on the timeline so that its aligned point lands exactly on \`at\` — the agent version of the Sound Library's Insert. align "auto" (default) uses the sound type's: peak for hits, booms, impacts, whooshes; end for risers and reverses (they lead into the moment); start for UI blips; or give peak | start | end. The sub-frame rest is trimmed from the head of the registered file (library sounds whose head is not silent get 50 ms of lead silence when registered), so the aligned point is exact to the flick (errorFlicks 0). A sound that would start before frame 0 starts at 0 with its head trimmed (trimmedHeadSec). track "auto" (default) picks a free unmuted "SFX…" audio track over the clip's span, else adds "SFX n"; an explicit track must be free there (E_OVERLAP otherwise): it never overwrites audio and places one clip. ONE undo step registers and imports the sound (into the "${SOUND_EFFECTS_BIN}" bin, reusing the project's copy), adds the track if needed, places the clip, tags it Essential Sound ▸ SFX and sets its gain: gainDb when given, else the sound's default level (its loudest 400 ms to the role's momentary target at the sequence's delivery — web: support −22 LUFS — under a true-peak ceiling, within −30…+12 dB; \`level\` in the result says what limited it). Returns the clip, its track, start, the aligned frame, errorFlicks and gainDb.`,
 			input: {
 				projectId: ProjectIdArg,
 				soundId: SoundIdArg.describe('Sound id from search_sounds'),
@@ -618,7 +618,12 @@ export function registerSoundTools(ctx: ToolContext): void {
 					.describe(
 						'"auto" (default), or an audio track ("A3", a track id or name) that is free over the span',
 					),
-				gainDb: z.number().min(-96).max(96).optional().describe('Clip gain in dB (default 0)'),
+				gainDb: z
+					.number()
+					.min(-96)
+					.max(96)
+					.optional()
+					.describe("Clip gain in dB (default: the sound's default level by its loudness and role)"),
 				sequenceId: SequenceIdArg,
 			},
 			annotations: EDIT,
@@ -707,7 +712,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 							mediaId: mediaRef,
 							align,
 							...(pick.kind === 'existing' ? { track: pick.trackId } : {}),
-							...(a.gainDb !== undefined && a.gainDb !== 0 ? { gainDb: a.gainDb } : {}),
+							...(a.gainDb !== undefined ? { gainDb: a.gainDb } : {}),
 							ref: '$soundClip',
 						},
 					],
@@ -780,7 +785,10 @@ export function registerSoundTools(ctx: ToolContext): void {
 								warning: `The sound would have started before frame 0: ${place.trimmedHeadSec} s of its head is cut.`,
 							}
 						: {}),
-					...(a.gainDb ? { gainDb: a.gainDb } : {}),
+					gainDb: (clip as { gainDb?: number }).gainDb ?? 0,
+					...((clip as { sfx?: { level?: unknown } }).sfx?.level
+						? { level: (clip as { sfx?: { level?: unknown } }).sfx!.level }
+						: {}),
 					...(requiresAttribution(entry.license) ? { credit: entry.attribution } : {}),
 					...(notes.length ? { notes } : {}),
 				});
