@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import type { CamTrackResult, EngineJob } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { M3, V3 } from '../src/camtrack/core/linalg.ts';
+import { collinearPathError } from './camera-path-oracle.ts';
 import {
 	closeApps,
 	ensureFixtures,
@@ -85,16 +86,13 @@ describe('camtrack jobs', () => {
 		expect(solved.filter((f) => f[7] === 1).length).toBeGreaterThan(55);
 		const focal = [...solved.map((f) => f[6]!)].sort((a, b) => a - b)[30]!;
 		expect(Math.abs(focal / 560 - 1)).toBeLessThan(0.04);
-		// The fixture moves at constant speed on a straight line. Endpoints fix only
-		// the arbitrary translation/scale/orientation gauge, not the intermediate path.
-		const start = solved[0]!.slice(3, 6);
-		const delta = start.map((v, j) => solved[59]![j + 3]! - v);
-		const travel = Math.hypot(...delta);
-		expect(travel).toBeGreaterThan(0);
-		for (let k = 1; k < 59; k++) {
-			const residual = start.map((v, j) => solved[k]![j + 3]! - v - (delta[j]! * k) / 59);
-			expect(Math.hypot(...residual) / travel).toBeLessThan(0.05);
-		}
+		// Fit every returned frame, normalized by the full authored dolly path.
+		expect(
+			collinearPathError(
+				solved.map((f) => f.slice(3, 6)),
+				truth.frames.length,
+			),
+		).toBeLessThan(0.05);
 		// Decode the public axis-angle with a quaternion sandwich, independently
 		// of the solver's Rodrigues/log-matrix conversion. For rotations A/B,
 		// ||A-B||_F = sqrt(8) sin(angle/2).

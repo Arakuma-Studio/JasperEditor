@@ -147,6 +147,13 @@ the commands given.
 - **Interchange:** `packages/interchange/test/three-d.test.ts`. **Engine models:** `apps/engine/test/three-d-models.test.ts`.
 - **Historical real-app evidence:** §8 records the run and screenshots from the former 3D browser tour.
 
+Camera path accuracy means the maximum residual after the least-squares best similarity, divided by the full
+authored path length. The synthetic suite fits solved frames; the plate suite fits every returned frame. Rotation
+accuracy compares each path relative to its first frame. For the straight, constant-speed fixtures, the test oracle
+uses our independently derived [rank-one specialization](../test-cleanup/camera-metric-correction.md), without
+production alignment helpers or copied upstream code. [Umeyama (1991)](https://web.stanford.edu/class/cs273/refs/umeyama.pdf)
+identifies the least-squares similarity objective; the scalar derivation is our own.
+
 ## 5. Comparison with the references
 
 - **EffectCraft** (`render/three_d`, `track/camtrack`): Classic 3D, the bokeh DOF, scene evaluation and the camera

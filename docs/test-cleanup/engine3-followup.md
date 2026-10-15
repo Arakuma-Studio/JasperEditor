@@ -1,5 +1,7 @@
 # Engine 3 independent-oracle follow-up
 
+The [camera metric correction](camera-metric-correction.md) supersedes the endpoint-fit convention recorded for `camtrack-job.test.ts` below. It restores the original best-fit similarity metric and full truth-span denominator without production helpers.
+
 This is a completed cleanup supplement to `engine3.md`. The ledger below was recorded before editing. The integration checkout's assigned test files matched the first-pass commit when inspected. No runtime or typecheck processes are launched here: root owns integrated validation because the shared host is overloaded.
 
 ## Before-edit decisions

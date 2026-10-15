@@ -19,6 +19,7 @@ import {
 	type SolveSettings,
 	solveFocal,
 } from '../src/camtrack/core/types.ts';
+import { collinearPathError } from './camera-path-oracle.ts';
 
 const W = 1280;
 const H = 720;
@@ -90,23 +91,6 @@ function movingCamera(n: number, f: (k: number) => number): Cam[] {
 	});
 }
 
-/** This fixture's dolly is a straight path at constant speed. Endpoints fix its unobservable gauge. */
-function linearPathError(solve: ReturnType<typeof solveCamera>): number {
-	const solved = solve.frames.flatMap((f, k) => (f.solved ? [{ center: f.center, frame: k }] : []));
-	if (solved.length < 3) return Number.POSITIVE_INFINITY;
-	const first = solved[0]!;
-	const last = solved[solved.length - 1]!;
-	const delta = last.center.map((v, j) => v - first.center[j]!);
-	const length = Math.hypot(...delta);
-	if (length === 0) return Number.POSITIVE_INFINITY;
-	return Math.max(
-		...solved.map(({ center, frame }) => {
-			const t = (frame - first.frame) / (last.frame - first.frame);
-			return Math.hypot(...center.map((v, j) => v - first.center[j]! - t * delta[j]!)) / length;
-		}),
-	);
-}
-
 /** Decode the serialized axis-angle via a unit quaternion, independently of the solver's Rodrigues helpers. */
 function rotationMatrix(rot: V3): M3 {
 	const theta = Math.hypot(...rot);
@@ -126,14 +110,18 @@ function rotationDegrees(a: M3, b: M3): number {
 	return (2 * Math.asin(Math.min(1, chord / (2 * Math.SQRT2))) * 180) / Math.PI;
 }
 
-/** Compare serialized canonical rotations with the authored camera directions relative to the first frame. */
+/** Compare both camera paths relative to their first frame, as in the original accuracy metric. */
 function rotationError(truth: Cam[], solve: ReturnType<typeof solveCamera>): number {
+	const first = rotationMatrix(solve.frames[0]!.rot);
 	return Math.max(
-		...truth.map((cam, k) => {
+		...truth.slice(1).map((cam, index) => {
+			const actual = rotationMatrix(solve.frames[index + 1]!.rot).map((row) =>
+				first.map((firstRow) => row.reduce((sum, v, j) => sum + v * firstRow[j]!, 0)),
+			) as M3;
 			const expected = cam.r.map((row) =>
 				truth[0]!.r.map((firstRow) => row.reduce((sum, v, j) => sum + v * firstRow[j]!, 0)),
 			) as M3;
-			return rotationDegrees(rotationMatrix(solve.frames[k]!.rot), expected);
+			return rotationDegrees(actual, expected);
 		}),
 	);
 }
@@ -248,7 +236,12 @@ describe('camtrack solve (synthetic scenes)', () => {
 		expect(solve.methodUsed).toBe('typical');
 		expect(solve.frames.every((fr) => fr.solved)).toBe(true);
 		expect(Math.abs(solveFocal(solve) / f - 1)).toBeLessThan(0.03);
-		expect(linearPathError(solve)).toBeLessThan(0.02);
+		expect(
+			collinearPathError(
+				solve.frames.map((fr) => (fr.solved ? fr.center : null)),
+				truth.length,
+			),
+		).toBeLessThan(0.02);
 		expect(rotationError(truth, solve)).toBeLessThan(0.3);
 		expect(solve.averageError).toBeLessThan(0.5);
 		expect(solve.points.length).toBeGreaterThan(150);
@@ -262,7 +255,12 @@ describe('camtrack solve (synthetic scenes)', () => {
 			settings({ shot: 'specify', hfov: 40, method: 'typical' }),
 		);
 		expect(solveFocal(solve)).toBeCloseTo(f, 6);
-		expect(linearPathError(solve)).toBeLessThan(0.02);
+		expect(
+			collinearPathError(
+				solve.frames.map((fr) => (fr.solved ? fr.center : null)),
+				truth.length,
+			),
+		).toBeLessThan(0.02);
 	}, 120_000);
 
 	it('Variable Zoom: follows a zoom during the move', () => {
@@ -276,7 +274,12 @@ describe('camtrack solve (synthetic scenes)', () => {
 			if (fr.solved) worst = Math.max(worst, Math.abs(fr.focal / zoom(k) - 1));
 		});
 		expect(worst).toBeLessThan(0.06);
-		expect(linearPathError(solve)).toBeLessThan(0.04);
+		expect(
+			collinearPathError(
+				solve.frames.map((fr) => (fr.solved ? fr.center : null)),
+				truth.length,
+			),
+		).toBeLessThan(0.04);
 	}, 180_000);
 
 	it('Auto Detect: a pan from a tripod is solved as a pure rotation', () => {
@@ -301,7 +304,12 @@ describe('camtrack solve (synthetic scenes)', () => {
 		const ground: V3[] = Array.from({ length: 220 }, () => [-8 + 16 * rng.unit(), 1.6, 3 + 14 * rng.unit()]);
 		const solve = solveCamera(tracksOf(truth, ground, 0.1, 5), settings({ shot: 'specify', hfov: 50 }));
 		expect(solve.methodUsed).toBe('flat');
-		expect(linearPathError(solve)).toBeLessThan(0.03);
+		expect(
+			collinearPathError(
+				solve.frames.map((fr) => (fr.solved ? fr.center : null)),
+				truth.length,
+			),
+		).toBeLessThan(0.03);
 	}, 120_000);
 
 	it('solves radial lens distortion', () => {
