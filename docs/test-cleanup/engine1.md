@@ -1950,7 +1950,7 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 
 ## apps/engine/test/speech-core.test.ts
 
-Owner/caller evidence: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER. Independent sources: docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md.
+Owner/caller evidence: speech worker imports mel/VAD/diarize/align/decode/tokenizer. Independent sources: docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md.
 
 Validation planned: `pnpm exec vitest run apps/engine/test/speech-core.test.ts --maxWorkers=1`; `pnpm --filter @jasper/engine typecheck`. Rendering/native/SSH cases retain their declared tooling prerequisites; root schedules resource-heavy checks.
 
@@ -1961,7 +1961,7 @@ Change recorded before edit: use Whisper protocol dimensions (80 × 201) and ind
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “filterbank shape and coverage; Slaney scale”.
 - **B2:** A caller-visible violation of “filterbank shape and coverage; Slaney scale” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “filterbank shape and coverage; Slaney scale” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
@@ -1973,7 +1973,7 @@ Change: Use independently derived 1 kHz Slaney band index 26; do not derive expe
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “a tone lands in its band”.
 - **B2:** A caller-visible violation of “a tone lands in its band” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Use independently derived 1 kHz Slaney band index 26; do not derive expected band with production melFilters.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “a tone lands in its band” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
@@ -1985,7 +1985,7 @@ Change: remove the shared implementation oracle as detailed in the final indepen
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “the mixed-radix FFT equals a direct DFT”.
 - **B2:** A caller-visible violation of “the mixed-radix FFT equals a direct DFT” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “the mixed-radix FFT equals a direct DFT” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
@@ -1995,7 +1995,7 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “silence is trimmed from words”.
 - **B2:** A caller-visible violation of “silence is trimmed from words” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “silence is trimmed from words” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
@@ -2005,7 +2005,7 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “threshold: 30 % from floor to speech, at least 6 dB above the floor; digital silence ignored”.
 - **B2:** A caller-visible violation of “threshold: 30 % from floor to speech, at least 6 dB above the floor; digital silence ignored” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “threshold: 30 % from floor to speech, at least 6 dB above the floor; digital silence ignored” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
@@ -2015,7 +2015,7 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “a word keeps at least 60 ms and unvoiced words are left alone”.
 - **B2:** A caller-visible violation of “a word keeps at least 60 ms and unvoiced words are left alone” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “a word keeps at least 60 ms and unvoiced words are left alone” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
@@ -2025,7 +2025,7 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “extends early-ending / late-starting words into the voice beside a pause, never into a neighbour”.
 - **B2:** A caller-visible violation of “extends early-ending / late-starting words into the voice beside a pause, never into a neighbour” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “extends early-ending / late-starting words into the voice beside a pause, never into a neighbour” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
@@ -2035,7 +2035,7 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “repairs a word straddling a pause and moves a word found in silence onto unassigned voice”.
 - **B2:** A caller-visible violation of “repairs a word straddling a pause and moves a word found in silence onto unassigned voice” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “repairs a word straddling a pause and moves a word found in silence onto unassigned voice” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
@@ -2045,7 +2045,7 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “endOfVoice stops at the first silent frame or the limit”.
 - **B2:** A caller-visible violation of “endOfVoice stops at the first silent frame or the limit” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “endOfVoice stops at the first silent frame or the limit” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
@@ -2055,7 +2055,7 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “two synthetic voices are told apart”.
 - **B2:** A caller-visible violation of “two synthetic voices are told apart” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “two synthetic voices are told apart” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
@@ -2065,7 +2065,7 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “one voice is one speaker”.
 - **B2:** A caller-visible violation of “one voice is one speaker” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “one voice is one speaker” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
@@ -2075,7 +2075,7 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “chunks split at pauses and join short ones”.
 - **B2:** A caller-visible violation of “chunks split at pauses and join short ones” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “chunks split at pauses and join short ones” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
@@ -2085,25 +2085,25 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “a speaker-count hint forces exactly that many speakers”.
 - **B2:** A caller-visible violation of “a speaker-count hint forces exactly that many speakers” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “a speaker-count hint forces exactly that many speakers” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
 
 ### DELETE: median filter removes spikes
 
-Detectable failure before removal: the expectation named “median filter removes spikes”. Disposition: Intermediate median helper output only; known-attention alignTokens owns caller-visible token timing. Non-test seam consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER; shared production behavior remains. Risk: loss of incidental shape/duplicate assertions only; stronger coverage is named in the disposition. Validation: focused surviving owner suite plus engine typecheck.
+Detectable failure before removal: the expectation named “median filter removes spikes”. Disposition: Intermediate median helper output only; known-attention alignTokens owns caller-visible token timing. Non-test seam consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; shared production behavior remains. Risk: loss of incidental shape/duplicate assertions only; stronger coverage is named in the disposition. Validation: focused surviving owner suite plus engine typecheck.
 
 ### DELETE: DTW follows the cheap diagonal band
 
-Detectable failure before removal: the expectation named “DTW follows the cheap diagonal band”. Disposition: Intermediate DTW path shape only; known-attention alignment owns timing and survives an alignment algorithm refactor. Non-test seam consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER; shared production behavior remains. Risk: loss of incidental shape/duplicate assertions only; stronger coverage is named in the disposition. Validation: focused surviving owner suite plus engine typecheck.
+Detectable failure before removal: the expectation named “DTW follows the cheap diagonal band”. Disposition: Intermediate DTW path shape only; known-attention alignment owns timing and survives an alignment algorithm refactor. Non-test seam consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; shared production behavior remains. Risk: loss of incidental shape/duplicate assertions only; stronger coverage is named in the disposition. Validation: focused surviving owner suite plus engine typecheck.
 
 ### KEEP: alignTokens finds where each token attends
 
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “alignTokens finds where each token attends”.
 - **B2:** A caller-visible violation of “alignTokens finds where each token attends” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “alignTokens finds where each token attends” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
@@ -2113,7 +2113,7 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “word timings, punctuation merging and segment distribution”.
 - **B2:** A caller-visible violation of “word timings, punctuation merging and segment distribution” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “word timings, punctuation merging and segment distribution” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
@@ -2123,7 +2123,7 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “reads specials, languages and bytes”.
 - **B2:** A caller-visible violation of “reads specials, languages and bytes” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “reads specials, languages and bytes” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
@@ -2133,7 +2133,7 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “timestamp rules: first token a timestamp ≤ max initial, monotonic, pairs”.
 - **B2:** A caller-visible violation of “timestamp rules: first token a timestamp ≤ max initial, monotonic, pairs” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “timestamp rules: first token a timestamp ≤ max initial, monotonic, pairs” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
@@ -2143,7 +2143,7 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “segments and seek”.
 - **B2:** A caller-visible violation of “segments and seek” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “segments and seek” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
@@ -2153,20 +2153,18 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 - **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “repetition guard, compression ratio, seeded sampling”.
 - **B2:** A caller-visible violation of “repetition guard, compression ratio, seeded sampling” fails its result/error/artifact assertion; this is not an assertion-free exercise.
 - **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
+- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer.
 - **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
 - **B6:** Owns the distinct scenario “repetition guard, compression ratio, seeded sampling” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
 Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
 
-### KEEP: counts edits
+### DELETE: counts edits
 
-- **B1:** docs/wp-notes/speech.md front end, VAD, diarization and Whisper protocol; licenses/ported/speech.md independently specifies this case: “counts edits”.
-- **B2:** A caller-visible violation of “counts edits” fails its result/error/artifact assertion; this is not an assertion-free exercise.
-- **B3:** Oracle: fixed signal/token/attention fixtures and direct DFT, prescribed threshold/timestamp/edit-distance arithmetic. Expected outcomes are fixed by the input fixture/protocol, not copied from the implementation branch.
-- **B4:** Observes speech worker numerical/model-input and transcript timing APIs. Non-test consumers: speech worker imports mel/VAD/diarize/align/decode/tokenizer; benchmark consumes WER.
-- **B5:** Implementation can be reorganized, renamed or replaced while preserving this seam and the stated behavior; assertions do not require private collaborator call shape after cleanup.
-- **B6:** Owns the distinct scenario “counts edits” at the above seam. Other retained cases cover different inputs, failure modes or integration boundaries; no stronger remaining test asserts this complete contract.
-Risk: low; fixture and caller-visible expectation are preserved. Validation: the focused command above, then engine typecheck and root repository gates.
+Detectable failure before removal: changes to the WER scoring helper's punctuation normalization and edit-distance arithmetic. This helper has no production callers or public API; the test therefore fails bars B2 (caller-visible production failure), B4 (public/stable production seam) and B6 (keeps a test-only source seam alive). The real-model `speech-model.e2e.test.ts` cases retain recognition/timing acceptance against independently authored transcripts and measured boundaries.
+
+Caller census: `wordErrorRate` was used only here and by the real-model test; `normalizeWord` had no external caller. Coordinated implementation in engine3 commit `0e8fee98` deleted this test/import, moved WER to `apps/engine/test/speech-wer.ts`, made normalization private and updated port attribution/notices. See [engine3 follow-up evidence](engine3-followup.md). This row is the authoritative disposition of the original engine1-assigned case; the supplement supplies implementation evidence and must not be counted as another deleted test.
+
+Risk: no production behavior changes; only helper self-coverage is removed. Validation: source caller census, Biome, notices checks and diff review passed in engine3's follow-up; integrated speech execution/typecheck remain the root agent's responsibility. This report-only correction runs no runtime/build checks.
 
 
 ## apps/engine/test/unit.test.ts
@@ -2462,7 +2460,7 @@ Risk: low; fixture and caller-visible expectation are preserved. Validation: the
 
 ## Completed changes and verification
 
-Implemented the dispositions above: 33 DELETE, 34 REWRITE, 165 KEEP families across 36 assigned files. Cumulative test LOC is recorded after the final rescan below. Two files are removed in full: `blend-remotion.e2e.test.ts`, `color-mgmt-remotion.test.ts`. The retry file is rewritten at the public service boundary after cross-review found an independently documented failure contract.
+Implemented the dispositions above: 34 DELETE, 34 REWRITE, 164 KEEP families across 36 assigned files. Cumulative test LOC is recorded after the final rescan below. Two files are removed in full: `blend-remotion.e2e.test.ts`, `color-mgmt-remotion.test.ts`. The retry file is rewritten at the public service boundary after cross-review found an independently documented failure contract.
 
 Dead support removed: private `killIdleWorker` access and its lint suppression; cache fixture `refs` and copied expected-scan code; Windows `crtParse`, `dirs`/`hostilePaths` duplicate corpus and `FIXED` declaration; native animation benchmark `timed`/`pipDoc`/`cardsDoc` and its flags, plus the unused static-card option; golden `nativeFrames` collector; unused imports and anime checkout path helpers. Shared `assertDistinctScenes` removal is coordinated with the shared agent after both golden callers are removed. No golden image, media recipe or shared fixture was deleted here because surviving consumers need them.
 
@@ -2518,10 +2516,10 @@ B1: Whisper's published 16 kHz frontend uses 400 samples and 201 real-spectrum b
 
 The `fitPieces` test remains valid: its expected sequence is an authored smooth-step plus step discontinuity, and `pieceValue` observes the fitted output through the production numerical interface rather than deriving the expected sequence. `fitPieces` does not call `pieceValue`; native stream planning is a real non-test consumer of both. Likewise generated reframe position evaluations and warp-plan output decoding observe public results; their expected subject bounds/known camera path remain independent. No duplicate oracle was inferred merely from an imported production function.
 
-Final rescan implementation: the three targeted test files now contain the independent oracles described above. Removed the `frameR` wrapper and unused `types.ts` `logRot` re-export, made `N_FFT`/`N_BINS` private, and removed unused renderer-parity diagnostics/`within`. No production algorithm or output changed. Engine3 separately owns deleting the test-only WER unit case and moving its scoring helper, and deleting production `umeyama` once both test consumers are gone; its separate disposition/commit must be included in integrated totals.
+Final rescan implementation: the three targeted test files now contain the independent oracles described above. Removed the `frameR` wrapper and unused `types.ts` `logRot` re-export, made `N_FFT`/`N_BINS` private, and removed unused renderer-parity diagnostics/`within`. No production algorithm or output changed. Engine3 commit `0e8fee98` completed deletion of the test-only WER unit case, moved its scoring helper into test support and deleted production `umeyama` after both test consumers were removed. The WER case is counted once in this original inventory; [engine3-followup.md](engine3-followup.md) supplies the coordinated implementation evidence.
 
 Validation for this follow-up is intentionally static only, per root scheduling: focused Biome and TypeScript syntax/transpile checks, final whitespace and caller searches. Semantic package typecheck, camera solving, speech execution and native/Remotion rendering remain pending integrated validation; no runtime pass is claimed for the new oracles. Retained retry restoration is unchanged. The native authored-card check now names endpoint poses, and crop names authored affine corners; historical work-note measurements against all-frame evaluated quads remain historical measurements, not claims about the rewritten assertions.
 
-Final rescan cumulative test diff from assigned baseline: **+309 / −1432 lines, net −1123 test LOC**; case-family totals in this branch are **33 DELETE / 34 REWRITE / 165 KEEP** (232 original families). Engine3’s separately coordinated WER deletion is not counted in this branch.
+Engine1 implementation commit `a062eb81` changed test code by **+309 / −1432 lines, net −1123 test LOC** from the assigned baseline. The coordinated WER deletion in `0e8fee98` removes another 10 lines from the assigned `speech-core.test.ts`; its support-file move is accounted for in engine3’s change. Authoritative case-family totals after that coordinated deletion are **34 DELETE / 34 REWRITE / 164 KEEP** (232 original families), counting the WER case once here.
 
 Final rescan checks actually completed: `pnpm exec biome check` passed all five changed TypeScript files; TypeScript `transpileModule` reported no syntax diagnostics in those five files; `git diff --check` passed; caller search found no remaining `frameR` use or external FFT-constant imports. Cross-review independently checked the quaternion/chordal rotation math, canonical first-camera frame, literal endpoint transform values and crop equations. Endpoint path alignment is gauge invariant for these straight constant-speed fixtures, but it can produce different noisy residual magnitudes than best-fit similarity; focused runtime validation must confirm the unchanged thresholds rather than assuming metric equivalence.
