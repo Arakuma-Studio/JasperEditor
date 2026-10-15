@@ -12,7 +12,7 @@ import {
 	transact,
 } from './support.ts';
 
-test.describe.configure({ mode: 'default' });
+test.describe.configure({ mode: 'serial' });
 
 const SHOTS = join(ROOT, 'test-results', 'gaps');
 mkdirSync(SHOTS, { recursive: true });
@@ -76,14 +76,6 @@ test.beforeAll(async ({ browser }) => {
 	await enableAgentBridge(page);
 	projectId = await createProject(page, 'E2E gaps');
 	await importFiles(page, ['clip-a.mp4']);
-});
-
-test.afterAll(async () => {
-	await page?.close();
-});
-
-test('accessibility: no serious or critical axe violation in the main workspaces', async () => {
-	const testInfo = test.info();
 	const media = (await query<{ media: { mediaId: string; originalName: string }[] }>(page, 'media.list'))
 		.media;
 	const a = media.find((m) => m.originalName === 'clip-a.mp4')!.mediaId;
@@ -93,20 +85,26 @@ test('accessibility: no serious or critical axe violation in the main workspaces
 		{ type: 'marker.add', frame: 20, name: 'Audit marker' },
 	]);
 	expect(r.ok, JSON.stringify(r)).toBe(true);
-	const found: string[] = [];
-	const workspaces = ['editing', 'color', 'audio', 'effects', 'motion', 'captions'];
-	for (const theme of ['default', 'high-contrast']) {
-		if (theme === 'high-contrast') {
-			// View ▸ High Contrast applies live (no reload, so the session keeps its lease).
-			await runCommand('view.contrast.high');
-			await expect(page.locator('html')).toHaveAttribute('data-pr-contrast', 'high');
-		}
-		for (const ws of workspaces) {
+});
+
+test.afterAll(async () => {
+	await page?.close();
+});
+
+const workspaces = ['editing', 'color', 'audio', 'effects', 'motion', 'captions'];
+for (const theme of ['default', 'high-contrast']) {
+	for (const ws of workspaces) {
+		test(`accessibility: [${theme}] ${ws} has no serious or critical axe violations`, async () => {
+			const testInfo = test.info();
+			if (theme === 'high-contrast' && ws === 'editing') {
+				// View ▸ High Contrast applies live (no reload, so the session keeps its lease).
+				await runCommand('view.contrast.high');
+				await expect(page.locator('html')).toHaveAttribute('data-pr-contrast', 'high');
+			}
 			await page.keyboard.press('Escape');
 			await runCommand('workspace.switch', { id: ws });
 			await page.waitForTimeout(800);
 			const violations = await audit(`[${theme}] ${ws}`);
-			found.push(...violations);
 			await testInfo.attach(`axe-${theme}-${ws}`, {
 				body: JSON.stringify(violations, null, 2),
 				contentType: 'application/json',
@@ -116,7 +114,7 @@ test('accessibility: no serious or critical axe violation in the main workspaces
 				path: join(SHOTS, `a11y-${theme}-${ws}.png`),
 				contentType: 'image/png',
 			});
-		}
+			expect(violations, violations.join('\n')).toEqual([]);
+		});
 	}
-	expect(found, found.join('\n')).toEqual([]);
-});
+}
