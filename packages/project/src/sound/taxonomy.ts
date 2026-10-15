@@ -627,10 +627,27 @@ export const TYPE_SYNONYMS: Readonly<Record<string, SoundTypeId>> = Object.freez
 	'air tone': 'roomtone',
 });
 
+/** The type a synonym phrase names, or undefined (own properties only: `constructor`, `__proto__` name nothing). */
+export function synonymType(phrase: unknown): SoundTypeId | undefined {
+	return typeof phrase === 'string' && Object.hasOwn(TYPE_SYNONYMS, phrase) ? TYPE_SYNONYMS[phrase] : undefined;
+}
+
 /** Synonym phrases by their word count, longest first (phrases win over their single words). */
 const SYNONYM_PHRASES: readonly [string[], SoundTypeId][] = Object.entries(TYPE_SYNONYMS)
 	.map(([k, v]) => [k.split(' '), v] as [string[], SoundTypeId])
 	.sort((a, b) => b[0].length - a[0].length || a[0].join(' ').localeCompare(b[0].join(' ')));
+
+/** Indices into SYNONYM_PHRASES (ascending) by the phrase's first word: only phrases whose first word occurs can match. */
+const PHRASES_BY_FIRST_WORD: ReadonlyMap<string, readonly number[]> = (() => {
+	const m = new Map<string, number[]>();
+	SYNONYM_PHRASES.forEach(([words], i) => {
+		const first = words[0]!;
+		const list = m.get(first);
+		if (list) list.push(i);
+		else m.set(first, [i]);
+	});
+	return m;
+})();
 
 /**
  * Splits text into lower-case word tokens: diacritics folded, camelCase and letter/digit boundaries split, everything
@@ -659,9 +676,22 @@ export function tokenizeSoundText(text: string): string[] {
  * consume them. Pure.
  */
 export function typesInTokens(tokens: readonly string[]): SoundTypeId[] {
+	// The phrases that can match (their first word occurs), in SYNONYM_PHRASES order: the same greedy claims as
+	// trying every phrase, without looping over the ~200 phrases for every call.
+	const candidates: number[] = [];
+	const seen = new Set<string>();
+	for (const t of tokens) {
+		if (typeof t !== 'string' || seen.has(t)) continue;
+		seen.add(t);
+		const list = PHRASES_BY_FIRST_WORD.get(t);
+		if (list) for (const i of list) candidates.push(i);
+	}
+	if (candidates.length === 0) return [];
+	candidates.sort((a, b) => a - b);
 	const used = new Array<boolean>(tokens.length).fill(false);
 	const hits: [number, SoundTypeId][] = [];
-	for (const [words, type] of SYNONYM_PHRASES) {
+	for (const c of candidates) {
+		const [words, type] = SYNONYM_PHRASES[c]!;
 		for (let i = 0; i + words.length <= tokens.length; i++) {
 			let ok = true;
 			for (let j = 0; j < words.length; j++)

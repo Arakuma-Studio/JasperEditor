@@ -15,7 +15,7 @@ import {
 	SOUND_TYPES,
 	type SoundAlign,
 	type SoundTypeId,
-	TYPE_SYNONYMS,
+	synonymType,
 	tokenizeSoundText,
 	typeFitForVisualKind,
 	typesInTokens,
@@ -198,7 +198,7 @@ export function resolveTypeNames(names: readonly string[]): SoundTypeId[] {
 		const k = n.trim().toLowerCase();
 		const t: SoundTypeId | undefined = isSoundTypeId(k)
 			? k
-			: (TYPE_SYNONYMS[k] ?? typesInTokens(tokenizeSoundText(k))[0]);
+			: (synonymType(k) ?? typesInTokens(tokenizeSoundText(k))[0]);
 		if (t && !out.includes(t)) out.push(t);
 	}
 	return out;
@@ -275,7 +275,7 @@ export function durationFit(
 ): number {
 	const dur = d.durationSec;
 	if (!fin(dur) || dur <= 0) return 0;
-	const info = type ? SOUND_TYPES[type] : null;
+	const info = isSoundTypeId(type) ? SOUND_TYPES[type] : null;
 	const fit = info?.durationFit ?? { minSec: 0.05, idealSec: 1, maxSec: 10, window: null };
 	if (fin(windowSec) && windowSec > 0 && fit.window) {
 		const a = align ?? info?.defaultAlign ?? 'peak';
@@ -291,8 +291,11 @@ export function durationFit(
 
 const round6 = (x: number) => Math.round(x * 1e6) / 1e6;
 
+/** At most this many distinct query words are matched (a pasted paragraph must not cost a pass per word). */
+export const MAX_QUERY_TOKENS = 16;
+
 type QueryPlan = {
-	/** Tokens left after stopwords, each with the type its synonym phrase names (if any). */
+	/** Distinct tokens left after stopwords (first occurrence kept, at most MAX_QUERY_TOKENS), each with the type its synonym phrase names (if any). */
 	tokens: { token: string; type: SoundTypeId | null }[];
 };
 
@@ -305,29 +308,101 @@ function planQuery(query: string | undefined): QueryPlan | null {
 	for (let i = 0; i < raw.length; i++) {
 		for (let len = Math.min(3, raw.length - i); len >= 1; len--) {
 			const phrase = raw.slice(i, i + len).join(' ');
-			const t = TYPE_SYNONYMS[phrase];
+			const t = synonymType(phrase);
 			if (t && typed.slice(i, i + len).every((x) => x === null)) {
 				for (let j = i; j < i + len; j++) typed[j] = t;
 				break;
 			}
 		}
 	}
-	return { tokens: raw.map((token, i) => ({ token, type: typed[i]! })) };
+	const tokens: QueryPlan['tokens'] = [];
+	const seen = new Set<string>();
+	for (let i = 0; i < raw.length && tokens.length < MAX_QUERY_TOKENS; i++) {
+		const token = raw[i]!;
+		if (seen.has(token)) continue;
+		seen.add(token);
+		tokens.push({ token, type: typed[i]! });
+	}
+	return { tokens };
+}
+
+/**
+ * What ranking reads of an entry's text, computed once per entry object (entries are treated as immutable; a changed
+ * title, tags or types array is noticed and recomputed).
+ */
+type EntryText = {
+	title: unknown;
+	tagsRef: unknown;
+	tagsLen: number;
+	typesRef: unknown;
+	typesLen: number;
+	titleTokens: string[];
+	tagTokens: string[];
+	/** Types its title and tags name (computed on first use). */
+	namedTypes: SoundTypeId[] | null;
+	/** Its known type ids. */
+	entryTypes: SoundTypeId[];
+};
+const ENTRY_TEXT = new WeakMap<object, EntryText>();
+
+function entryText(e: RankableSound): EntryText {
+	const tags = e.tags;
+	const types = e.types;
+	const tagsLen = Array.isArray(tags) ? tags.length : -1;
+	const typesLen = Array.isArray(types) ? types.length : -1;
+	const hit = ENTRY_TEXT.get(e);
+	if (
+		hit &&
+		hit.title === e.title &&
+		hit.tagsRef === tags &&
+		hit.tagsLen === tagsLen &&
+		hit.typesRef === types &&
+		hit.typesLen === typesLen
+	)
+		return hit;
+	const tagTokens: string[] = [];
+	if (Array.isArray(tags)) for (const t of tags) if (typeof t === 'string') tagTokens.push(...tokenizeSoundText(t));
+	const info: EntryText = {
+		title: e.title,
+		tagsRef: tags,
+		tagsLen,
+		typesRef: types,
+		typesLen,
+		titleTokens: tokenizeSoundText(e.title),
+		tagTokens,
+		namedTypes: null,
+		entryTypes: (Array.isArray(types) ? types : []).filter(isSoundTypeId),
+	};
+	ENTRY_TEXT.set(e, info);
+	return info;
+}
+
+function namedTypesOf(t: EntryText): SoundTypeId[] {
+	if (!t.namedTypes) t.namedTypes = typesInTokens([...t.titleTokens, ...t.tagTokens]);
+	return t.namedTypes;
+}
+
+/** Licence class results by licence string (a library has a handful of distinct licences). */
+const LICENSE_MEMO = new Map<string, { safe: boolean; preference: number }>();
+function licenseInfo(license: unknown): { safe: boolean; preference: number } {
+	if (typeof license !== 'string') return { safe: isCommercialSafe(license), preference: licensePreference(license) };
+	let r = LICENSE_MEMO.get(license);
+	if (!r) {
+		if (LICENSE_MEMO.size >= 4096) LICENSE_MEMO.clear();
+		r = { safe: isCommercialSafe(license), preference: licensePreference(license) };
+		LICENSE_MEMO.set(license, r);
+	}
+	return r;
 }
 
 /**
  * Text match 0…1 (the mean over query tokens of their best field match) and the share of query tokens a title word
  * matches exactly or by prefix.
  */
-function textScore(
-	plan: QueryPlan,
-	e: RankableSound,
-	entryTypes: SoundTypeId[],
-): { score: number; titleMatch: number } {
-	const title = tokenizeSoundText(e.title);
-	const tags: string[] = [];
-	for (const t of e.tags ?? []) if (typeof t === 'string') tags.push(...tokenizeSoundText(t));
-	const namedTypes = typesInTokens([...title, ...tags]);
+function textScore(plan: QueryPlan, t: EntryText): { score: number; titleMatch: number } {
+	const title = t.titleTokens;
+	const tags = t.tagTokens;
+	const entryTypes = t.entryTypes;
 	let total = 0;
 	let inTitle = 0;
 	for (const { token, type } of plan.tokens) {
@@ -335,7 +410,7 @@ function textScore(
 		let titled = false;
 		if (type) {
 			if (entryTypes.includes(type)) best = 1;
-			else if (namedTypes.includes(type)) best = 0.85;
+			else if (namedTypesOf(t).includes(type)) best = 0.85;
 		}
 		if (entryTypes.includes(token as SoundTypeId)) best = Math.max(best, 1);
 		for (const w of title) {
@@ -354,6 +429,59 @@ function textScore(
 	return { score: round6(total / plan.tokens.length), titleMatch: round6(inTitle / plan.tokens.length) };
 }
 
+/** A request worked out once for many entries. */
+type PreparedRequest = {
+	wanted: SoundTypeId[];
+	/** Types were asked for but none is known: nothing passes the type filter. */
+	noKnownType: boolean;
+	plan: QueryPlan | null;
+	commercialSafeOnly: boolean;
+	similarId: string | undefined;
+};
+
+function prepareRequest(request: SoundRankRequest): PreparedRequest {
+	const wanted = request.types ? resolveTypeNames(request.types) : [];
+	return {
+		wanted,
+		noKnownType: !!request.types && request.types.length > 0 && wanted.length === 0,
+		plan: planQuery(request.query),
+		commercialSafeOnly: (request.license ?? 'commercial-safe') === 'commercial-safe',
+		similarId: request.similarTo?.id,
+	};
+}
+
+/** Which of rankSounds' filters an entry passes (one call per entry; `null` = an entry rankSounds always skips). */
+export interface SoundFilterResult {
+	/** The type filter (`types`). */
+	types: boolean;
+	/** The licence filter (`license`). */
+	license: boolean;
+	/** Everything else: descriptor pills, the `similarTo` reference itself, and (with a query) a text match. */
+	rest: boolean;
+}
+
+/**
+ * The filters of {@link rankSounds}, split by dimension, for counting disjunctive facets in one pass: an entry is in
+ * `rankSounds(entries, request)` exactly when all three are true; dropping a dimension from the request is the same
+ * as ignoring its flag. Prepares the request once; the returned function never throws.
+ */
+export function soundFilterOf(
+	request: SoundRankRequest = {},
+): (e: RankableSound) => SoundFilterResult | null {
+	const p = prepareRequest(request);
+	return (e) => {
+		if (!e || typeof e !== 'object' || typeof e.id !== 'string' || !e.descriptors) return null;
+		const t = entryText(e);
+		const types = !p.noKnownType && (p.wanted.length === 0 || p.wanted.some((w) => t.entryTypes.includes(w)));
+		const license = !p.commercialSafeOnly || licenseInfo(e.license).safe;
+		const rest =
+			passesDescriptorFilters(e.descriptors, request) &&
+			!(p.similarId !== undefined && p.similarId === e.id) &&
+			(!p.plan || textScore(p.plan, t).score > 0);
+		return { types, license, rest };
+	};
+}
+
 /**
  * Ranks library sounds for a request (spec 12 §2.1). Filters first (types, licence, descriptor pills; with a query,
  * sounds that match no query word; with `similarTo`, the reference itself), then sorts: real recordings before
@@ -364,10 +492,9 @@ export function rankSounds<T extends RankableSound>(
 	request: SoundRankRequest = {},
 	ctx: SoundRankContext = {},
 ): RankedSound<T>[] {
-	const wanted = request.types ? resolveTypeNames(request.types) : [];
-	if (request.types && request.types.length > 0 && wanted.length === 0) return [];
-	const plan = planQuery(request.query);
-	const licenseFilter = request.license ?? 'commercial-safe';
+	const prep = prepareRequest(request);
+	if (prep.noKnownType) return [];
+	const { wanted, plan } = prep;
 	const used = new Map<string, number>();
 	(ctx.usedNearby ?? []).forEach((id, i) => {
 		if (typeof id !== 'string') return;
@@ -376,14 +503,16 @@ export function rankSounds<T extends RankableSound>(
 	const sim = request.similarTo;
 	const out: RankedSound<T>[] = [];
 	for (const e of entries) {
-		if (!e || typeof e.id !== 'string' || !e.descriptors) continue;
-		const entryTypes = (Array.isArray(e.types) ? e.types : []).filter(isSoundTypeId);
+		if (!e || typeof e !== 'object' || typeof e.id !== 'string' || !e.descriptors) continue;
+		const info = entryText(e);
+		const entryTypes = info.entryTypes;
 		if (wanted.length && !wanted.some((t) => entryTypes.includes(t))) continue;
-		if (licenseFilter === 'commercial-safe' && !isCommercialSafe(e.license)) continue;
+		const lic = licenseInfo(e.license);
+		if (prep.commercialSafeOnly && !lic.safe) continue;
 		if (!passesDescriptorFilters(e.descriptors, request)) continue;
 		if (sim?.id !== undefined && sim.id === e.id) continue;
 
-		const matched = plan ? textScore(plan, e, entryTypes) : null;
+		const matched = plan ? textScore(plan, info) : null;
 		const text = matched ? matched.score : null;
 		if (plan && !(text! > 0)) continue;
 		let typeFit: number | null = null;
@@ -404,7 +533,7 @@ export function rankSounds<T extends RankableSound>(
 			request.align,
 		);
 		const judge = e.judge && fin(e.judge.score) ? Math.min(1, Math.max(0, e.judge.score)) : 0.5;
-		const license = licensePreference(e.license);
+		const license = lic.preference;
 		const similarity = sim ? round6(Math.exp(-descriptorDistance(sim.descriptors, e.descriptors))) : null;
 		const rotation = round6(used.get(e.id) ?? 0);
 

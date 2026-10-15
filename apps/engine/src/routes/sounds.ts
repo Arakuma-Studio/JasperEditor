@@ -7,8 +7,9 @@
 //   POST /api/sounds/:soundId/register   registers its file for a project; returns RegisteredMedia + provenance
 //   POST /api/sounds/index               a `sound-index` job
 //   GET  /api/sounds/roots               user folders
-//   PUT  /api/sounds/roots               the new folder list (local mode; an agent adding, removing or relicensing
-//                                        a folder needs the user's approval: security review AGT-3)
+//   PUT  /api/sounds/roots               the new folder list (local mode; an agent adding, removing, relicensing or
+//                                        re-crediting a folder needs the user's approval: security review AGT-3;
+//                                        409 SOUND_ROOTS_CHANGED when the list changed while the approval waited)
 import {
 	RegisterSoundRequestSchema,
 	SoundIndexRequestSchema,
@@ -16,13 +17,73 @@ import {
 	SoundSearchQuerySchema,
 } from '@jasper/api';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { agentNameOf, requireUserApproval } from '../agent/user-approval.ts';
+import { agentNameOf, type OperationApproval, requireUserApproval } from '../agent/user-approval.ts';
+import type { SoundRootsPlan } from '../sounds/roots.ts';
 import { SoundService } from '../sounds/service.ts';
 import { serveFile } from '../tools/http.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
 type P = { Params: { soundId: string } };
+
+/** Longest path or change shown per folder on the approval card (the card's summary holds 600 characters). */
+const CARD_ITEM_CHARS = 120;
+const cut = (text: string, max = CARD_ITEM_CHARS) =>
+	text.length <= max ? text : `…${text.slice(text.length - (max - 1))}`;
+
+/**
+ * The approval card of a folder-list change, or null when it decides nothing about the user's files (renaming,
+ * enabling, disabling). The summary starts with the count of every kind of change, then removals, licence and credit
+ * changes, then additions, each item cut to CARD_ITEM_CHARS (a long path cannot push a removal off the card); the label
+ * names every kind.
+ */
+export function rootsApprovalCard(plan: SoundRootsPlan): OperationApproval | null {
+	const { added, removed, relicensed, recredited } = plan;
+	if (!added.length && !removed.length && !relicensed.length && !recredited.length) return null;
+	const lines: string[] = [
+		`This adds ${added.length}, removes ${removed.length}, relicenses ${relicensed.length} and changes the credit line of ${recredited.length} sound folder(s)`,
+	];
+	const reasons: string[] = [];
+	const kinds: string[] = [];
+	if (removed.length) {
+		kinds.push('remove');
+		lines.push(
+			`remove ${removed.map((r) => `"${cut(r.label, 80)}" (${cut(r.path)})`).join(', ')} from your sound library`,
+		);
+		reasons.push('its sounds leave the library (the files themselves are not touched)');
+	}
+	if (relicensed.length) {
+		kinds.push('relicense');
+		lines.push(`declare ${relicensed.map((r) => `"${cut(r.label, 80)}" as ${r.license}`).join(', ')}`);
+		reasons.push('a licence declaration decides whether its sounds count as safe for commercial use');
+	}
+	if (recredited.length) {
+		kinds.push('change credits');
+		lines.push(
+			`change the credit line of ${recredited
+				.map((c) => `"${cut(c.root.label, 80)}" (${c.changes.map((x) => cut(x)).join('; ')})`)
+				.join(', ')}`,
+		);
+		reasons.push('the credit line and author are what projects using its sounds print as their attribution');
+	}
+	if (added.length) {
+		kinds.push('add');
+		lines.push(
+			`add ${added.map((r) => `the folder "${cut(r.path)}" (declared ${r.license})`).join(', ')} to your sound library`,
+		);
+		reasons.push(
+			'the library will read every audio file in it and offer the sounds under the licence declared here',
+		);
+	}
+	const single: Record<string, string> = {
+		add: 'Add a sound folder',
+		remove: 'Remove a sound folder',
+		relicense: 'Change a sound folder’s licence',
+		'change credits': 'Change a sound folder’s credit line',
+	};
+	const label = kinds.length === 1 ? single[kinds[0]!]! : `Sound folders: ${kinds.join(', ')}`;
+	return { label, summary: lines.join('; '), reasons };
+}
 
 const originOf = (req: FastifyRequest) =>
 	req.jasperEditor ? ({ type: 'user' } as const) : ({ type: 'agent', agentRunId: agentNameOf(req) } as const);
@@ -70,44 +131,18 @@ export default async function soundRoutes(app: FastifyInstance): Promise<void> {
 	);
 	app.get(
 		'/api/sounds/roots',
-		guarded(async () => ({ roots: await svc.roots.list(), local: svc.local })),
+		guarded(async () => ({ roots: await svc.visibleRoots(), local: svc.local })),
 	);
 	app.put(
 		'/api/sounds/roots',
 		guarded(async (req) => {
 			const body = parseOr400(SoundRootsPutRequestSchema, req.body ?? {});
 			const plan = await svc.plannedRoots(body);
-			const lines: string[] = [];
-			const reasons: string[] = [];
-			if (plan.added.length) {
-				lines.push(
-					`add ${plan.added.map((r) => `the folder "${r.path}" (declared ${r.license})`).join(', ')} to your sound library`,
-				);
-				reasons.push(
-					'the library will read every audio file in it and offer the sounds under the licence declared here',
-				);
-			}
-			if (plan.removed.length) {
-				lines.push(
-					`remove ${plan.removed.map((r) => `"${r.label}" (${r.path})`).join(', ')} from your sound library`,
-				);
-				reasons.push('its sounds leave the library (the files themselves are not touched)');
-			}
-			if (plan.relicensed.length) {
-				lines.push(`declare ${plan.relicensed.map((r) => `"${r.label}" as ${r.license}`).join(', ')}`);
-				reasons.push('a licence declaration decides whether its sounds count as safe for commercial use');
-			}
-			if (lines.length)
-				await requireUserApproval(app, req, {
-					label: plan.added.length
-						? 'Add a sound folder'
-						: plan.removed.length
-							? 'Remove a sound folder'
-							: 'Change a sound folder’s licence',
-					summary: lines.join('; ').slice(0, 1000),
-					reasons,
-				});
-			const out = await svc.applyRoots(plan.next, plan, originOf(req));
+			const card = rootsApprovalCard(plan);
+			// The plan carries the list's revision: if the list changed while the card waited, saving it is refused
+			// (409 SOUND_ROOTS_CHANGED) instead of silently undoing the other change.
+			if (card) await requireUserApproval(app, req, card);
+			const out = await svc.applyRoots(plan, originOf(req));
 			return { ...out, local: svc.local };
 		}),
 	);

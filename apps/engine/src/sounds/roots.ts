@@ -13,6 +13,19 @@ import { HttpError } from '../tools/reply.ts';
 
 type RootsFile = { version: 1; roots: SoundRoot[] };
 
+/** A folder whose credit line changes, and how (for the approval card). */
+export type SoundRootCreditChange = { root: SoundRoot; changes: string[] };
+
+export type SoundRootsPlan = {
+	next: SoundRoot[];
+	added: SoundRoot[];
+	removed: SoundRoot[];
+	relicensed: SoundRoot[];
+	recredited: SoundRootCreditChange[];
+	/** The list's revision the plan was made from. */
+	revision: number;
+};
+
 export function newRootId(): string {
 	return `root_${randomBytes(6).toString('hex')}`;
 }
@@ -82,13 +95,12 @@ export class SoundRootStore {
 
 	/**
 	 * Works out the new list of a `PUT` (validating every new or moved path) without saving it: what an agent would
-	 * change is shown on the approval card first.
+	 * change is shown on the approval card first. `revision` is the list's revision the plan was made from: saving it
+	 * with `save(next, revision)` refuses when the list changed meanwhile.
 	 */
-	async plan(
-		body: SoundRootsPutRequest,
-		now: string,
-	): Promise<{ next: SoundRoot[]; added: SoundRoot[]; removed: SoundRoot[]; relicensed: SoundRoot[] }> {
+	async plan(body: SoundRootsPutRequest, now: string): Promise<SoundRootsPlan> {
 		const current = await this.list();
+		const revision = this.revision;
 		const byId = new Map(current.map((r) => [r.id, r]));
 		const next: SoundRoot[] = [];
 		const paths = new Set<string>();
@@ -124,14 +136,38 @@ export class SoundRootStore {
 			const prev = byId.get(r.id);
 			return !!prev && prev.path === r.path && prev.license !== r.license;
 		});
-		return { next, added, removed, relicensed };
+		// The credit line of its sounds changes: another author or template, or (when the template names the folder)
+		// another label.
+		const recredited: SoundRootCreditChange[] = [];
+		for (const r of next) {
+			const prev = byId.get(r.id);
+			if (!prev || prev.path !== r.path) continue;
+			const changes: string[] = [];
+			if ((prev.author ?? '') !== (r.author ?? ''))
+				changes.push(`author "${prev.author ?? ''}" → "${r.author ?? ''}"`);
+			if ((prev.attributionTemplate ?? '') !== (r.attributionTemplate ?? ''))
+				changes.push(`credit template "${prev.attributionTemplate ?? ''}" → "${r.attributionTemplate ?? ''}"`);
+			else if (prev.label !== r.label && (r.attributionTemplate ?? '').includes('{folder}'))
+				changes.push(`folder name in its credit line "${prev.label}" → "${r.label}"`);
+			if (changes.length) recredited.push({ root: r, changes });
+		}
+		return { next, added, removed, relicensed, recredited, revision };
 	}
 
-	/** Saves a planned list (atomic). */
-	save(next: SoundRoot[]): Promise<SoundRoot[]> {
+	/**
+	 * Saves a planned list (atomic). With `expectedRevision`, refuses (409 `SOUND_ROOTS_CHANGED`) when the list was
+	 * changed since that revision (a plan made before another change must not undo it).
+	 */
+	save(next: SoundRoot[], expectedRevision?: number): Promise<SoundRoot[]> {
 		const run = this.chain
 			.catch(() => undefined)
 			.then(async () => {
+				if (expectedRevision !== undefined && expectedRevision !== this.revision)
+					throw new HttpError(
+						409,
+						'SOUND_ROOTS_CHANGED',
+						'The sound folder list changed while this change waited; read the folders again and repeat it',
+					);
 				const file: RootsFile = { version: 1, roots: next };
 				await atomicWriteJson(this.file, file, true);
 				this.roots = structuredClone(next);

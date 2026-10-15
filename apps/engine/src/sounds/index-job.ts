@@ -6,8 +6,12 @@
 // Incremental: a file whose size and modification time match the index keeps its fingerprint without being read; a
 // fingerprint whose analysis is cached (`sounds/cache/<fp>/analysis-v<n>.json`) is not decoded again. Cancellation
 // (JobContext.signal) is checked between files and kills a running ffmpeg; a cancelled scan commits nothing (the
-// analyses it finished stay cached for the next run). When the folder list changes during a scan, it scans again.
-import { readdir, stat } from 'node:fs/promises';
+// analyses it finished stay cached for the next run). When the folder list changes during a scan, or another index
+// request arrives (`requestPass`), it scans again (at most MAX_PASSES scans per job); what it commits keeps only the
+// folders that are enabled, and declared the same way, at commit time; when the scan was still stale it queues a
+// follow-up job (`followUp`). After a commit, cache entries of fingerprints the index no longer has and Jasper Synth
+// renders it no longer uses are deleted (`pruneSoundCache`).
+import { readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
 	type SoundEntry,
@@ -18,6 +22,7 @@ import {
 	type SoundRoot,
 	type SoundSource,
 	type SoundSourceType,
+	SOUND_VISUAL_VERSION,
 } from '@jasper/api';
 import { judgeSound, SOUND_DESCRIPTORS_VERSION, type SoundDescriptors } from '@jasper/audio-fx';
 import {
@@ -40,7 +45,7 @@ import { decodeSound, type SoundFormat } from './decode.ts';
 import type { FileRecord, LibrarySnapshot, SoundLibrary } from './library.ts';
 import type { SoundRootStore } from './roots.ts';
 import { isSoundFileName, type LoadedManifest, loadManifest, loadPackManifest } from './starter.ts';
-import { ensureSynthFile, type SynthItem } from './synth.ts';
+import { ensureSynthFile, type SynthItem, synthFileName } from './synth.ts';
 import { visualCacheFile, writeVisual } from './visual.ts';
 
 /** Engine-side analysis revision (decode settings); with SOUND_DESCRIPTORS_VERSION it versions cached analyses. */
@@ -52,6 +57,8 @@ export const MAX_SCAN_DEPTH = 12;
 export const MAX_FILES_PER_ROOT = 20_000;
 /** At most this many sounds in the library. */
 export const MAX_LIBRARY_SOUNDS = 50_000;
+/** Scans per job when the folder list changes or another request arrives during a scan (then a follow-up job). */
+export const MAX_PASSES = 3;
 const MAX_REPORTED_ERRORS = 100;
 const MAX_TAGS = 16;
 /** Words that say nothing about a sound (left out of folder tags). */
@@ -209,8 +216,12 @@ export async function walkRoot(
 	root: SoundRoot,
 	signal: AbortSignal,
 	onError: (file: string, message: string) => void,
+	opts: { maxFiles?: number; onLibraryFull?: () => void } = {},
 ): Promise<IndexItem[]> {
 	const items: IndexItem[] = [];
+	// The folder's own cap, or the room left in the library when that is smaller.
+	const libraryRoom = opts.maxFiles ?? Number.POSITIVE_INFINITY;
+	const cap = Math.max(0, Math.min(MAX_FILES_PER_ROOT, libraryRoom));
 	const stack: { dir: string; rel: string; depth: number }[] = [{ dir: root.path, rel: '', depth: 0 }];
 	let truncated = false;
 	while (stack.length) {
@@ -235,7 +246,7 @@ export async function walkRoot(
 				continue;
 			}
 			if (!d.isFile() || !isSoundFileName(name)) continue;
-			if (items.length >= MAX_FILES_PER_ROOT) {
+			if (items.length >= cap) {
 				truncated = true;
 				break;
 			}
@@ -269,8 +280,10 @@ export async function walkRoot(
 		// Depth-first in name order (reverse push so the first name is scanned first).
 		for (let i = subdirs.length - 1; i >= 0; i--) stack.push(subdirs[i]!);
 	}
-	if (truncated)
-		onError('.', `more than ${MAX_FILES_PER_ROOT} audio files: the rest of "${root.label}" is not indexed`);
+	if (truncated) {
+		if (cap < MAX_FILES_PER_ROOT) opts.onLibraryFull?.();
+		else onError('.', `more than ${MAX_FILES_PER_ROOT} audio files: the rest of "${root.label}" is not indexed`);
+	}
 	return items;
 }
 
@@ -302,7 +315,79 @@ export type IndexDeps = {
 	cacheDir: string;
 	synthItems: () => SynthItem[];
 	now?: () => string;
+	/** Folders may be scanned (local mode, D-47; default true). Folder roots are skipped otherwise. */
+	local?: () => boolean;
+	/** At most this many sounds (default MAX_LIBRARY_SOUNDS; tests use small caps). */
+	maxSounds?: number;
+	/** Queue another index job once job `jobId` has finished (the scan it committed was already stale). */
+	followUp?: (jobId: string, full: boolean) => void;
+	log?: (m: string) => void;
 };
+
+/** Root fields whose change changes the sounds an index holds for it (licence, credits, author, path). */
+export function rootDeclaration(r: SoundRoot): string {
+	return JSON.stringify([r.path, r.license, r.author ?? '', r.attributionTemplate ?? '', r.label]);
+}
+
+/**
+ * Deletes cache entries the committed index no longer uses: `cache/<fingerprintHex>/` folders of fingerprints it has
+ * neither as a sound nor as a file record, analyses and visual data of older versions, and Jasper Synth renders of
+ * sounds it does not list (older SYNTH_VERSIONs included). Never throws; returns what it removed.
+ */
+export async function pruneSoundCache(
+	o: { cacheDir: string; synthDir: string },
+	snapshot: Pick<LibrarySnapshot, 'sounds' | 'files'>,
+): Promise<{ dirs: number; files: number }> {
+	const keep = new Set<string>();
+	const hex = (fp: string) => {
+		try {
+			keep.add(fingerprintHex(fp));
+		} catch {
+			// not a fingerprint: nothing to keep
+		}
+	};
+	const synthKeep = new Set<string>();
+	for (const e of Object.values(snapshot.sounds)) {
+		hex(e.fingerprint);
+		if (e.source.type === 'synth') synthKeep.add(synthFileName(e.source.recipe, e.source.seed));
+	}
+	for (const f of Object.values(snapshot.files)) hex(f.fingerprint);
+	let dirs = 0;
+	let files = 0;
+	const names = await readdir(o.cacheDir, { withFileTypes: true }).catch(() => []);
+	const analysisName = `analysis-v${ANALYSIS_VERSION}.json`;
+	const visualName = `visual-v${SOUND_VISUAL_VERSION}.json`;
+	for (const d of names) {
+		const name = String(d.name);
+		if (!d.isDirectory() || !/^[0-9a-f]{64}$/.test(name)) continue;
+		const dir = join(o.cacheDir, name);
+		if (!keep.has(name)) {
+			await rm(dir, { recursive: true, force: true }).then(
+				() => dirs++,
+				() => undefined,
+			);
+			continue;
+		}
+		for (const f of await readdir(dir).catch(() => [] as string[])) {
+			const old =
+				(/^analysis-v\d+\.json$/.test(f) && f !== analysisName) ||
+				(/^visual-v\d+\.json$/.test(f) && f !== visualName);
+			if (old)
+				await rm(join(dir, f), { force: true }).then(
+					() => files++,
+					() => undefined,
+				);
+		}
+	}
+	for (const f of await readdir(o.synthDir).catch(() => [] as string[])) {
+		if (!/-\d+-v\d+\.wav$/.test(f) || synthKeep.has(f)) continue;
+		await rm(join(o.synthDir, f), { force: true }).then(
+			() => files++,
+			() => undefined,
+		);
+	}
+	return { dirs, files };
+}
 
 async function readCachedAnalysis(file: string, fingerprint: string): Promise<CachedAnalysis | null> {
 	let raw: unknown;
@@ -347,66 +432,153 @@ export class SoundIndexer {
 		return this.deps.now?.() ?? new Date().toISOString();
 	}
 
-	/** The job runner: scans until the folder list stayed the same during a scan (at most 3 times), then commits. */
+	/** An index request that arrived while a job was queued or running: one more pass (full when asked). */
+	private requested: { full: boolean } | null = null;
+
+	/** Asks the queued or running index job for another pass after its current scan (a joined request). */
+	requestPass(full: boolean): void {
+		this.requested = { full: (this.requested?.full ?? false) || full };
+	}
+
+	private takeRequest(): { full: boolean } | null {
+		const r = this.requested;
+		this.requested = null;
+		return r;
+	}
+
+	/**
+	 * The job runner: scans until neither the folder list changed nor another request arrived during a scan (at most
+	 * MAX_PASSES scans), then commits what is still true (folders enabled and declared the same way now) and, when the
+	 * last scan was stale, queues a follow-up job. Then prunes the cache.
+	 */
 	async run(ctx: JobContext): Promise<SoundIndexResult> {
 		const input = SoundIndexRequestSchema.safeParse(ctx.input ?? {});
-		const full = input.success ? input.data.full === true : false;
-		for (let attempt = 0; ; attempt++) {
+		let full = (input.success ? input.data.full === true : false) || this.takeRequest()?.full === true;
+		let base: Pick<LibrarySnapshot, 'files'> | undefined;
+		for (let pass = 1; ; pass++) {
 			const rev = this.deps.roots.revision;
-			const { next, result } = await this.scan(ctx, full);
-			if (this.deps.roots.revision !== rev && attempt < 2) continue;
+			const { next, result, before } = await this.scan(ctx, full, base);
 			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
-			const committed = await this.deps.library.commit(next);
-			return { ...result, snapshotHash: committed.snapshotHash };
+			const again = this.takeRequest();
+			const stale = again !== null || this.deps.roots.revision !== rev;
+			if (stale && pass < MAX_PASSES) {
+				// The next pass reuses this one's fingerprints and analyses (a full pass is not repeated unless asked).
+				full = again?.full === true;
+				base = next;
+				continue;
+			}
+			const committed = await this.deps.library.commit(await this.current(next));
+			const late = this.takeRequest();
+			if (stale || late)
+				this.deps.followUp?.(ctx.job.id, (again?.full ?? false) || (late?.full ?? false));
+			await pruneSoundCache(this.deps, committed).catch((e) =>
+				this.deps.log?.(`sound library: cache cleanup failed: ${(e as Error).message}`),
+			);
+			const after = Object.keys(committed.sounds);
+			const afterSet = new Set(after);
+			return {
+				...result,
+				sounds: after.length,
+				files: Object.keys(committed.files).length,
+				added: after.filter((id) => !before.has(id)).length,
+				removed: [...before].filter((id) => !afterSet.has(id)).length,
+				snapshotHash: committed.snapshotHash,
+			};
 		}
 	}
 
-	/** One complete scan: the next index and what changed. Commits nothing. */
+	/** A scanned index reduced to what is still true: sounds and files of folders enabled, and declared the same, now. */
+	private async current(
+		next: Omit<LibrarySnapshot, 'snapshotHash'>,
+	): Promise<Omit<LibrarySnapshot, 'snapshotHash'>> {
+		const local = this.deps.local?.() ?? true;
+		const now = local ? (await this.deps.roots.list()).filter((r) => r.enabled) : [];
+		const nowById = new Map(now.map((r) => [r.id, rootDeclaration(r)]));
+		const live = new Set(
+			next.roots.filter((r) => nowById.get(r.id) === rootDeclaration(r)).map((r) => r.id),
+		);
+		const sounds: Record<string, SoundEntry> = {};
+		for (const [id, e] of Object.entries(next.sounds))
+			if (e.source.type !== 'folder' || live.has(e.source.rootId)) sounds[id] = e;
+		const files: Record<string, FileRecord> = {};
+		for (const [k, v] of Object.entries(next.files)) {
+			const m = /^folder:(root_[0-9a-f]+):/.exec(k);
+			if (!k.startsWith('folder:') || (m && live.has(m[1]!))) files[k] = v;
+		}
+		return { ...next, roots: next.roots.filter((r) => live.has(r.id)), sounds, files };
+	}
+
+	/**
+	 * One complete scan: the next index and what changed. Commits nothing. `base` (a previous pass of the same job)
+	 * supplies the file records the stat shortcut trusts instead of the committed index's.
+	 */
 	async scan(
 		ctx: Pick<JobContext, 'signal' | 'progress' | 'trackChild'>,
 		full: boolean,
-	): Promise<{ next: Omit<LibrarySnapshot, 'snapshotHash'>; result: SoundIndexResult }> {
+		base?: Pick<LibrarySnapshot, 'files'>,
+	): Promise<{ next: Omit<LibrarySnapshot, 'snapshotHash'>; result: SoundIndexResult; before: Set<string> }> {
 		const d = this.deps;
 		const prev = await d.library.snapshot();
+		const knownFiles = base?.files ?? prev.files;
 		const errors: SoundIndexResult['errors'] = [];
 		const err = (source: SoundSourceType, file: string, code: string, message: string) => {
 			if (errors.length < MAX_REPORTED_ERRORS)
 				errors.push({ source, file, code, message: message.slice(0, 500) });
 		};
+		const maxSounds = Math.max(0, Math.floor(d.maxSounds ?? MAX_LIBRARY_SOUNDS));
+		const libraryFull = (source: SoundSourceType, what: string) =>
+			err(source, what, 'LIBRARY_FULL', `the library holds at most ${maxSounds} sounds`);
 		ctx.progress(null, { stage: 'Listing sounds' });
 		const starter = await loadManifest(d.starterDir());
 		for (const e of starter.errors) err('starter', 'manifest.json', 'MANIFEST_INVALID', e);
 		const packs = await loadPacks(d.packsDir, (f, m) => err('pack', f, 'MANIFEST_INVALID', m));
-		const roots = (await d.roots.list()).filter((r) => r.enabled);
+		const local = d.local?.() ?? true;
+		const enabled = (await d.roots.list()).filter((r) => r.enabled);
+		if (!local)
+			for (const r of enabled)
+				err('folder', r.label, 'LOCAL_MODE_ONLY', 'user folders are only indexed by a local engine');
+		const roots = local ? enabled : [];
+		// Room is kept for every Jasper Synth sound; the cap is enforced while listing, before a folder is walked past it.
+		const synth = d.synthItems().map(synthEntryItem);
+		const synthRoom = Math.min(synth.length, maxSounds);
+		const room = maxSounds - synthRoom;
 		const items: IndexItem[] = [...manifestItems(starter, 'starter')];
 		for (const p of packs) items.push(...manifestItems(p, 'pack'));
+		if (items.length > room) {
+			libraryFull(items[room]!.source.type, '.');
+			items.length = room;
+		}
 		for (const r of roots) {
+			const left = room - items.length;
+			if (left <= 0) {
+				libraryFull('folder', r.label);
+				continue;
+			}
 			const rootStat = await stat(r.path).catch(() => null);
 			if (!rootStat?.isDirectory()) {
 				err('folder', r.label, 'ROOT_OFFLINE', `the folder ${r.path} is not available`);
 				continue;
 			}
 			items.push(
-				...(await walkRoot(r, ctx.signal, (f, m) => err('folder', `${r.label}/${f}`, 'SCAN_FAILED', m))),
+				...(await walkRoot(r, ctx.signal, (f, m) => err('folder', `${r.label}/${f}`, 'SCAN_FAILED', m), {
+					maxFiles: left,
+					onLibraryFull: () => libraryFull('folder', r.label),
+				})),
 			);
 		}
-		items.push(...d.synthItems().map(synthEntryItem));
+		items.push(...synth.slice(0, synthRoom));
 
 		const files: Record<string, FileRecord> = {};
 		const sounds: Record<string, SoundEntry> = {};
 		const priority = new Map<string, number>();
+		let count = 0;
 		let analysed = 0;
 		let reused = 0;
 		const total = items.length;
 		for (let i = 0; i < total; i++) {
 			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
-			if (Object.keys(sounds).length >= MAX_LIBRARY_SOUNDS) {
-				err(
-					items[i]!.source.type,
-					'.',
-					'LIBRARY_FULL',
-					`the library holds at most ${MAX_LIBRARY_SOUNDS} sounds`,
-				);
+			if (count >= maxSounds) {
+				libraryFull(items[i]!.source.type, '.');
 				break;
 			}
 			const item = items[i]!;
@@ -426,7 +598,7 @@ export class SoundIndexer {
 						: item.path!;
 				const st = await stat(path);
 				if (!st.isFile()) throw new JobError('ASSET_NOT_FOUND', 'Not a file');
-				const old = prev.files[item.key];
+				const old = Object.hasOwn(knownFiles, item.key) ? knownFiles[item.key] : undefined;
 				const fingerprint =
 					!full && old && old.size === st.size && old.mtimeMs === st.mtimeMs
 						? old.fingerprint
@@ -469,7 +641,7 @@ export class SoundIndexer {
 				}
 				const judgeType = item.meta.types.find(isSoundTypeId);
 				const judged = judgeType ? judgeSound(analysis.descriptors, SOUND_TYPE_PROFILES[judgeType]) : null;
-				const previous = prev.sounds[id];
+				const previous = Object.hasOwn(prev.sounds, id) ? prev.sounds[id] : undefined;
 				const candidate = {
 					id,
 					fingerprint,
@@ -496,6 +668,7 @@ export class SoundIndexer {
 					const issue = entry.error.issues[0];
 					throw new JobError('INVALID_ENTRY', `${issue?.path.join('.')}: ${issue?.message}`);
 				}
+				if (have === undefined) count++;
 				sounds[id] = entry.data;
 				priority.set(id, p);
 			} catch (e) {
@@ -513,7 +686,7 @@ export class SoundIndexer {
 		}
 		ctx.progress(1, { stage: 'Saving the library' });
 		const before = new Set(Object.keys(prev.sounds));
-		const after = new Set(Object.keys(sounds));
+		const after = Object.keys(sounds);
 		const packMap: Record<string, SoundManifestPack> = {};
 		// Installed packs (the starter kit's source packs are in its manifest).
 		for (const p of packs.flatMap((m) => m.packs)) packMap[p.id] = p;
@@ -528,14 +701,15 @@ export class SoundIndexer {
 			},
 			result: {
 				snapshotHash: '',
-				sounds: after.size,
+				sounds: after.length,
 				files: Object.keys(files).length,
 				analysed,
 				reused,
-				added: [...after].filter((id) => !before.has(id)).length,
-				removed: [...before].filter((id) => !after.has(id)).length,
+				added: after.filter((id) => !before.has(id)).length,
+				removed: [...before].filter((id) => !Object.hasOwn(sounds, id)).length,
 				errors,
 			},
+			before,
 		};
 	}
 }

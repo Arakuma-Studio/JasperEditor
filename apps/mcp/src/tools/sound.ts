@@ -96,6 +96,9 @@ const SOUND_HINTS: Record<string, string> = {
 	PERMISSION_DENIED: 'The engine cannot read that folder. Check its permissions.',
 	PROJECT_NOT_FOUND: 'Unknown projectId. Call list_projects.',
 	NOT_A_SOUND: 'Only audio files can be served from the library.',
+	SOUND_ROOTS_CHANGED:
+		'The folder list changed while the change waited for approval (the user or another client edited it). Read the folders again with sound_library_status and repeat the change on the current list.',
+	ANALYSIS_TIMEOUT: 'Computing the sound’s pictures took too long (the engine may be busy). Try again later.',
 };
 
 /** Runs an engine call; sound-route errors get their hint (approval and transaction codes pass through). */
