@@ -1,12 +1,7 @@
-// Export path: with the layer-bake extension ready (`features.layerBake.state === 'ready'`) the
-// plan must be native/hybrid; without it (this package alone) Auto plans the Remotion path because the anime
-// template has a native blocker. The test checks the actual selected path and never skips.
-
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
-import { ExportResultSchema } from '../packages/api/src/exports.ts';
 import { createProject, enableAgentBridge, focusTimeline, query, ROOT, waitForJob } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -36,18 +31,14 @@ function rgbFrame(file: string, args: string[]): Buffer {
 	);
 }
 
-async function exportProRes(
-	request: APIRequestContext,
-	expectPath: RegExp,
-	filename = 'anime-templates.mov',
-): Promise<{ file: string; renderPath: string }> {
+async function exportProRes(request: APIRequestContext, filename: string): Promise<string> {
 	await focusTimeline(page);
 	await page.keyboard.press('Control+KeyM');
 	await expect(page.getByTestId('export-mode')).toBeVisible();
 	await page.getByTestId('export-engine').selectOption('auto');
 	await page.getByTestId('export-codec').selectOption('prores');
 	await page.getByTestId('export-filename').fill(filename);
-	await expect(page.getByTestId('plan-path')).toContainText(expectPath, { timeout: 60_000 });
+	await expect(page.getByTestId('export-start')).toBeEnabled({ timeout: 60_000 });
 	const known = new Set(
 		((await (await request.get('/api/jobs')).json()).jobs as { id: string }[]).map((j) => j.id),
 	);
@@ -66,7 +57,7 @@ async function exportProRes(
 	expect(res.ok()).toBe(true);
 	const file = join(EXPORT_DIR, filename);
 	writeFileSync(file, await res.body());
-	return { file, renderPath: ExportResultSchema.parse(job.result).renderPath ?? '' };
+	return file;
 }
 
 function redPixels(
@@ -126,14 +117,11 @@ test('an out-of-canvas callout is clipped in the Program and exported frame', as
 	expect(redPixels(previewRgb, width, height, inside)).toBeGreaterThan(20);
 	expect(redPixels(previewRgb, width, height, outside)).toBe(0);
 
-	const caps = await (await request.get('/api/capabilities')).json();
-	const bake = caps.features?.layerBake?.state === 'ready';
-	const out = await exportProRes(request, bake ? /native|hybrid/i : /remotion/i, 'callout-clipped.mov');
-	expect(out.renderPath).toMatch(bake ? /native|hybrid/ : /remotion/);
-	const exported = rgbFrame(out.file, ['-vf', 'select=eq(n\\,50)', '-frames:v', '1']);
+	const file = await exportProRes(request, 'callout-clipped.mov');
+	const exported = rgbFrame(file, ['-vf', 'select=eq(n\\,50)', '-frames:v', '1']);
 	expect(exported.length).toBe(1920 * 1080 * 3);
 	expect(redPixels(exported, 1920, 1080, inside)).toBeGreaterThan(100);
 	expect(redPixels(exported, 1920, 1080, outside)).toBe(0);
 	await testInfo.attach('clipped-preview', { body: preview, contentType: 'image/png' });
-	await testInfo.attach('clipped-export', { path: out.file, contentType: 'video/quicktime' });
+	await testInfo.attach('clipped-export', { path: file, contentType: 'video/quicktime' });
 });

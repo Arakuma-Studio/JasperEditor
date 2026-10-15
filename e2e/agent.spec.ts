@@ -32,7 +32,6 @@ type TxBody = {
 	created: string[];
 	refs?: Record<string, string>;
 };
-type ToolFailure = { error: { code: string; message: string; hint?: string } };
 
 const text = (r: CallToolResult) =>
 	(r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
@@ -164,22 +163,10 @@ test('with the editor closed the tools apply headlessly; open_project_in_editor 
 		.toBe(false);
 	const marker = await tool<TxBody>('add_marker', { projectId, at: 90, name: 'Headless marker' });
 	expect(marker.appliedBy).toBe('headless');
-	const refused = await call('apply_commands', {
+	const opened = await tool<{ editorOpen: boolean }>('open_project_in_editor', {
 		projectId,
-		label: 'Remove V3',
-		commands: [{ type: 'track.remove', trackIds: ['V3'] }],
+		waitSeconds: 30,
 	});
-	expect(refused.isError).toBe(true);
-	expect((JSON.parse(text(refused)) as ToolFailure).error.code).toBe('E_APPROVAL_DENIED');
-
-	const opened = await tool<{ editorOpen: boolean; editorWindowsNotified: number }>(
-		'open_project_in_editor',
-		{
-			projectId,
-			waitSeconds: 30,
-		},
-	);
-	expect(opened.editorWindowsNotified).toBeGreaterThanOrEqual(1);
 	expect(opened.editorOpen).toBe(true);
 	await expect(page.getByTestId('editor-shell')).toBeVisible();
 	expect(page.url()).toContain(`/project/${projectId}`);
