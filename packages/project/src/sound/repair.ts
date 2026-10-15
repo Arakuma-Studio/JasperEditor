@@ -65,12 +65,15 @@ export function soundDesignNeedsRepair(doc: ProjectDocument): boolean {
 	for (const seq of Object.values(doc.sequences) as Sequence[]) {
 		const sd = seq.soundDesign as SoundDesign | undefined;
 		const cueIds = new Set<string>();
+		/** `cueId → clipId` pairs the cues list (a clip fills a cue only when the cue lists it). */
+		const listed = new Set<string>();
 		if (sd !== undefined) {
 			if (sequenceSoundDesignIssue(seq)) return true;
 			for (const cue of Object.values(sd.cues)) {
 				if (seenCue.has(cue.id)) return true;
 				seenCue.add(cue.id);
 				cueIds.add(cue.id);
+				for (const id of cue.placedClipIds ?? []) listed.add(`${cue.id}\u0000${id}`);
 				if (cue.anchor && !cueAnchorTargetExists(doc, seq, cue.anchor)) return true;
 				for (const id of cue.placedClipIds ?? []) if (seq.clips[id]?.kind !== 'audio') return true;
 			}
@@ -86,7 +89,7 @@ export function soundDesignNeedsRepair(doc: ProjectDocument): boolean {
 			if (sfx === undefined) continue;
 			if (clipSfxProblem(c as Clip & { sfx?: unknown })) return true;
 			const id = (sfx as ClipSfx).cueId;
-			if (id !== null && !cueIds.has(id)) return true;
+			if (id !== null && (!cueIds.has(id) || !listed.has(`${id}\u0000${c.id}`))) return true;
 		}
 	}
 	return false;
@@ -189,7 +192,14 @@ export function repairSoundDesign(doc: ProjectDocument, ids: IdSource, note: Not
 			if (!sfx || sfx.cueId === null) continue;
 			const id = renamed.get(sfx.cueId) ?? sfx.cueId;
 			if (sd && Object.hasOwn(sd.cues, id)) {
-				if (id !== sfx.cueId) sfx.cueId = id;
+				// The link is two-way: a copy of a filled clip (duplicate, paste) carries the cue id, but the cue does
+				// not list it, so it fills nothing.
+				if ((sd.cues[id]!.placedClipIds ?? []).includes(c.id)) {
+					if (id !== sfx.cueId) sfx.cueId = id;
+					continue;
+				}
+				sfx.cueId = null;
+				note('unlink-sfx', c.id, 'a copy of a clip that fills a sound cue: the cue does not list it');
 				continue;
 			}
 			sfx.cueId = null;

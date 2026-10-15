@@ -864,7 +864,9 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 	// The cue's sound list follows.
 	const cueId = clip.sfx!.cueId;
 	const sd = (seq as { soundDesign?: Draft<SoundDesign> }).soundDesign;
-	const cue = cueId && sd && Object.hasOwn(sd.cues, cueId) ? sd.cues[cueId]! : null;
+	const own = cueId && sd && Object.hasOwn(sd.cues, cueId) ? sd.cues[cueId]! : null;
+	// only the cue that lists this clip (a duplicated or pasted copy carries the cue id but fills nothing)
+	const cue = own && (own.placedClipIds ?? []).includes(clip.id) ? own : null;
 	if (cue && prov?.soundId) {
 		const list = [...(cue.soundIds ?? [])];
 		list[clip.sfx!.layer] = prov.soundId;
@@ -1016,7 +1018,8 @@ function setPeak(doc: DDoc, cmd: CommandOf<'soundDesign.setPeak'>, h: HandlerCon
 	const rate = seq.settings.frameRate as Rational;
 	const F = flicksPerFrame(rate);
 	const cueId = clip.sfx?.cueId ?? null;
-	const cue = cueId ? soundDesignOf(seq, false)?.cues[cueId] : undefined;
+	const own = cueId ? soundDesignOf(seq, false)?.cues[cueId] : undefined;
+	const cue = own && (own.placedClipIds ?? []).includes(clip.id) ? own : undefined;
 	const playsAt = clip.start * F + (cmd.peakFlicks - clip.sourceIn) / clip.speed.rate;
 	const errorFlicks = cue ? Math.max(0, Math.round(playsAt - cue.frame * F)) : 0;
 	const placement = { align: 'peak' as const, peakFlicks: cmd.peakFlicks, errorFlicks };

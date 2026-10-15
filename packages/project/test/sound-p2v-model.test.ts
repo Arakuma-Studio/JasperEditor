@@ -983,3 +983,44 @@ describe('soft references never block an ordinary edit (review, gaps)', () => {
 			expect(again.report).toEqual([]);
 		});
 });
+
+describe('a copy of a filled SFX clip does not fill the cue (the cue link is two-way)', () => {
+	// Decision (Phase 2 verification): a clip fills a cue only when the cue lists it in `placedClipIds`. A duplicate or
+	// a paste keeps the original's `sfx` (its sound, role, placement), but the cue does not list the copy, so the copy
+	// must not rewrite the cue's sound list, report its error against that cue, or keep a cue id after loading.
+	it('swap / setPeak on a copy leave the cue alone; loading clears the copy’s cue id', () => {
+		const h = new Harness();
+		const m = libMedia(h);
+		const m2 = libMedia(h);
+		const cueId = addCue(h, { frame: 60 });
+		const placed = h.ok([{ type: 'soundDesign.place', cueId, layers: [{ mediaId: m }] }]);
+		const original = (placed.results[0] as { clips: { clipId: string }[] }).clips[0]!.clipId;
+		const before = clone(sdOf(h).cues[cueId]!);
+		const dup = h.ok([{ type: 'clip.duplicate', clipIds: [original], deltaFrames: 300 }]);
+		const copy = Object.keys(h.seq.clips).find((id) => id !== original && clipOf(h, id).sfx)!;
+		expect(copy, JSON.stringify(dup.results)).toBeTruthy();
+		expect(sdOf(h).cues[cueId]!.placedClipIds).toEqual([original]);
+		// swapping the copy's sound does not change the cue's sound list
+		h.ok([{ type: 'soundDesign.swap', clipId: copy, mediaId: m2 }]);
+		expect(sdOf(h).cues[cueId]!.soundIds).toEqual(before.soundIds);
+		// a peak override on the copy is not measured against the cue 300 frames away
+		const F = flicksPerFrame(h.seq.settings.frameRate);
+		const c = clipOf(h, copy);
+		const set = h.ok([
+			{
+				type: 'soundDesign.setPeak',
+				clipId: copy,
+				peakFlicks: c.sourceIn + Math.round(2 * F * c.speed.rate),
+			},
+		]);
+		expect((set.results[0] as { errorFlicks: number }).errorFlicks).toBe(0);
+		// loading tidies the one-way link (the original keeps its cue)
+		expect(soundDesignNeedsRepair(h.doc)).toBe(true);
+		const loaded = loadProject(clone(h.doc), { ids: createCounterIdSource(900) });
+		expect(loaded.issues).toEqual([]);
+		const seq = loaded.document.sequences[h.seqId]!;
+		expect((seq.clips[copy] as SfxClip).sfx!.cueId).toBeNull();
+		expect((seq.clips[original] as SfxClip).sfx!.cueId).toBe(cueId);
+		expect(soundDesignNeedsRepair(loaded.document)).toBe(false);
+	});
+});
