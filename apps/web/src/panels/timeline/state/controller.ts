@@ -10,6 +10,7 @@ import {
 	formatTimecode,
 	fpsOf,
 	linkedPartners,
+	type MediaAsset,
 	type Rational,
 	type Sequence,
 	sequenceDuration,
@@ -22,6 +23,7 @@ import {
 	type Gesture,
 	type SequenceViewState,
 } from '@jasper/session';
+import { clipPeakFrame } from '../../../sound/cues/model.ts';
 import {
 	axisConstraint,
 	clampTrackOffset,
@@ -113,6 +115,8 @@ type MoveDrag = DragBase & {
 	downIndex: number;
 	starts: number[];
 	ends: number[];
+	/** Peak frames of the moving SFX clips (spec 12 §2.7: the peak is the primary snap edge). */
+	peaks: number[];
 	targets: SnapTarget[];
 };
 
@@ -155,6 +159,17 @@ type ZoomDrag = DragBase & { kind: 'zoom' };
 type Drag = MoveDrag | EdgeDrag | BodyDrag | MarqueeDrag | HandDrag | ZoomDrag | TransitionDrag;
 
 const endOf = (c: { start: number; duration: number }) => c.start + c.duration;
+
+/** Peak frames of the SFX clips among `clips` (library sounds and clips placed by sound design). */
+function movingPeaks(media: Record<string, MediaAsset>, clips: readonly Clip[], rate: Rational): number[] {
+	const out: number[] = [];
+	for (const c of clips) {
+		if (c.kind !== 'audio') continue;
+		const p = clipPeakFrame(c, media[(c as { mediaId?: string }).mediaId ?? ''], rate);
+		if (p !== null) out.push(p);
+	}
+	return out;
+}
 
 function signed(n: number, rate: Rational, dropFrame: boolean): string {
 	return `${n < 0 ? '-' : '+'}${formatTimecode(Math.abs(n), rate, { dropFrame })}`;
@@ -371,6 +386,7 @@ export class TimelineController {
 			downIndex: index,
 			starts: clips.map((c) => c.start),
 			ends: clips.map(endOf),
+			peaks: movingPeaks(this.session.getDrawn().media, clips, seq.settings.frameRate),
 			targets: collectSnapTargets(seq, { exclude: set, playhead: this.playhead() }),
 		};
 	}
@@ -621,6 +637,7 @@ export class TimelineController {
 			pxPerFrame: viewport.pxPerFrame,
 			starts: d.starts,
 			ends: d.ends,
+			peaks: d.peaks,
 			targets: d.targets,
 			snapping: this.snapping(),
 			pointerFrame: viewport.scrollFrame + p.x / viewport.pxPerFrame,

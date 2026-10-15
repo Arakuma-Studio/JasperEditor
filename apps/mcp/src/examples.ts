@@ -346,6 +346,12 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		mode: 'add',
 	},
 	'soundDesign.setSettings': { type: 'soundDesign.setSettings', density: 'sparse', delivery: 'web', seed: 7 },
+	// The peak 0.25 s into the media (flicks): the Timeline's peak handle Shift-drag.
+	'soundDesign.setPeak': {
+		type: 'soundDesign.setPeak',
+		clipId: { clipAt: { track: 'A1', at: 30 } },
+		peakFlicks: 176_400_000,
+	},
 };
 
 /** A multi-command transaction showing temp refs. */

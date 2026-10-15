@@ -1,17 +1,37 @@
 // Snapping (S02 §9: TL-450…455, Appendix A.3).
 import type { Sequence } from '@jasper/project';
 
-type SnapKind = 'playhead' | 'marker' | 'inout' | 'clip' | 'zero';
+/**
+ * `cue`: a sound cue on the Cue Seam (spec 12 §2.7: clips snap to cues, at marker priority); `anchor`: the picture
+ * event a dragged cue came from (only while dragging that cue, above everything else).
+ */
+export type SnapKind = 'anchor' | 'playhead' | 'marker' | 'cue' | 'inout' | 'clip' | 'zero';
 export type SnapTarget = { frame: number; kind: SnapKind; priority: number };
 
-/** TL-453 tie-break priority: playhead > marker > In/Out > clip edge > frame 0. */
-const SNAP_PRIORITY: Record<SnapKind, number> = { playhead: 5, marker: 4, inout: 3, clip: 2, zero: 1 };
+/** TL-453 tie-break priority: playhead > marker = cue > In/Out > clip edge > frame 0 (a cue's own anchor first). */
+export const SNAP_PRIORITY: Record<SnapKind, number> = {
+	anchor: 6,
+	playhead: 5,
+	marker: 4,
+	cue: 4,
+	inout: 3,
+	clip: 2,
+	zero: 1,
+};
 const SNAP_THRESHOLD_PX = 8;
 
 /** Collects targets at gesture begin, excluding the manipulated clips (and their partners) (TL-451). */
 export function collectSnapTargets(
 	seq: Sequence,
-	opts: { exclude?: ReadonlySet<string>; playhead?: number | null; includeClips?: boolean } = {},
+	opts: {
+		exclude?: ReadonlySet<string>;
+		playhead?: number | null;
+		includeClips?: boolean;
+		/** Cues being dragged (they do not snap to themselves). */
+		excludeCues?: ReadonlySet<string>;
+		/** Extra targets (a dragged cue's anchor frame). */
+		extra?: readonly SnapTarget[];
+	} = {},
 ): SnapTarget[] {
 	const out: SnapTarget[] = [{ frame: 0, kind: 'zero', priority: SNAP_PRIORITY.zero }];
 	if (opts.playhead !== undefined && opts.playhead !== null)
@@ -38,6 +58,14 @@ export function collectSnapTargets(
 		out.push({ frame: seq.workArea.start, kind: 'inout', priority: SNAP_PRIORITY.inout });
 		out.push({ frame: seq.workArea.end, kind: 'inout', priority: SNAP_PRIORITY.inout });
 	}
+	const cues = (seq as { soundDesign?: { cues?: unknown } }).soundDesign?.cues;
+	if (cues && typeof cues === 'object')
+		for (const c of Object.values(cues as Record<string, { id?: unknown; frame?: unknown }>)) {
+			if (!c || typeof c.frame !== 'number' || !Number.isFinite(c.frame)) continue;
+			if (typeof c.id === 'string' && opts.excludeCues?.has(c.id)) continue;
+			out.push({ frame: c.frame, kind: 'cue', priority: SNAP_PRIORITY.cue });
+		}
+	for (const t of opts.extra ?? []) if (Number.isFinite(t.frame)) out.push(t);
 	out.sort((a, b) => a.frame - b.frame || b.priority - a.priority);
 	// One target per frame (the highest priority), so the two neighbours of a binary search suffice.
 	return out.filter((t, i) => i === 0 || out[i - 1]!.frame !== t.frame);

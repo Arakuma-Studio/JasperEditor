@@ -857,6 +857,41 @@ function setSettings(doc: DDoc, cmd: CommandOf<'soundDesign.setSettings'>, h: Ha
 	return { sequenceId: seq.id, settings: plainCopy(s) };
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// soundDesign.setPeak
+
+function setPeak(doc: DDoc, cmd: CommandOf<'soundDesign.setPeak'>, h: HandlerContext) {
+	const { seq, clip: c } = h.clip(doc, cmd.clipId);
+	if (c.kind !== 'audio')
+		return h.fail('E_INVALID_PARAM', `${c.id} is not an audio clip`, { path: ['clipId'] });
+	const clip = c as DAudio;
+	const track = findTrackIn(seq, clip.trackId);
+	if (!track) return h.fail('E_NOT_FOUND', `Track not found: ${clip.trackId}`);
+	assertUnlocked(track.track, h);
+	const media = doc.media[clip.mediaId] as MediaAsset | undefined;
+	const dur = media ? (mediaDurationFlicks(media) ?? null) : null;
+	if (dur !== null && cmd.peakFlicks > dur)
+		h.fail('E_INVALID_PARAM', `The peak is past the end of the media (${dur} flicks)`, {
+			path: ['peakFlicks'],
+		});
+	const lib = readLibraryProvenance((media as { library?: unknown } | undefined)?.library);
+	if (!clip.sfx && !lib)
+		h.fail('E_INVALID_PARAM', `${clip.id} is not a library sound (place it with soundDesign.place first)`, {
+			path: ['clipId'],
+		});
+	// How late the new peak plays after the cue the clip fills (0 when it is early, or fills none).
+	const rate = seq.settings.frameRate as Rational;
+	const F = flicksPerFrame(rate);
+	const cueId = clip.sfx?.cueId ?? null;
+	const cue = cueId ? soundDesignOf(seq, false)?.cues[cueId] : undefined;
+	const playsAt = clip.start * F + (cmd.peakFlicks - clip.sourceIn) / clip.speed.rate;
+	const errorFlicks = cue ? Math.max(0, Math.round(playsAt - cue.frame * F)) : 0;
+	const placement = { align: 'peak' as const, peakFlicks: cmd.peakFlicks, errorFlicks };
+	if (clip.sfx) clip.sfx.placement = placement;
+	else clip.sfx = { cueId: null, soundId: lib!.soundId, layer: 0, role: 'support', placement };
+	return { clipId: clip.id, peakFlicks: cmd.peakFlicks, errorFlicks };
+}
+
 export const soundHandlers = {
 	'media.setLibraryInfo': setLibraryInfo,
 	'soundCue.add': addCues,
@@ -867,6 +902,7 @@ export const soundHandlers = {
 	'soundDesign.swap': swap,
 	'soundDesign.setPalette': setPalette,
 	'soundDesign.setSettings': setSettings,
+	'soundDesign.setPeak': setPeak,
 } satisfies HandlerMap;
 
 export type { Clip, DClip };

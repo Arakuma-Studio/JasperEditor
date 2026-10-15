@@ -4,7 +4,7 @@
 // at the playhead (Enter / double-click) or by dragging onto the timeline. Collections: All, Favourites, Recent, Used
 // in this project and each source. Results are a virtualised listbox with descriptor-rich accessible names.
 import type { SoundEntry, SoundFacets, SoundLibraryStatus, SoundRoot } from '@jasper/api';
-import type { SoundTypeId } from '@jasper/project';
+import { isSoundTypeId, type SoundTypeId } from '@jasper/project';
 import type { SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import {
@@ -20,7 +20,15 @@ import {
 	Slider,
 	toast as uiToast,
 } from '@jasper/ui';
-import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+	type KeyboardEvent,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	useSyncExternalStore,
+} from 'react';
 import { createCommandContext } from '../../commands/context.ts';
 import { chordFromEvent, resolveBindings, scopeChain } from '../../commands/keymap-defaults.ts';
 import { getCommand, isCommandEnabled, runCommand } from '../../commands/registry.ts';
@@ -33,8 +41,11 @@ import { auditionPlayer } from '../../sound/audition.ts';
 import {
 	auditionPlaysAlone,
 	auditionSoundOf,
+	cueFillTarget,
 	insertSoundWithFeedback,
 	registerSoundLibraryController,
+	requestCueFill,
+	subscribeCueFill,
 	toggleAuditionOf,
 } from '../../sound/controller.ts';
 import { registerSoundDialogs, SOUND_LICENSE_DIALOG } from '../../sound/dialogs.tsx';
@@ -136,6 +147,8 @@ export function SoundLibraryPanel(props: PanelProps) {
 		s ? usedSoundIds(s.document).join(',') : '',
 	);
 	const [filters, setFilters] = useState<LibraryFilters>(DEFAULT_FILTERS);
+	// Fill mode (spec 12 §2.7): the cue the library is choosing a sound for.
+	const fill = useSyncExternalStore(subscribeCueFill, cueFillTarget, cueFillTarget);
 	const [queryInput, setQueryInput] = useState('');
 	const [status, setStatus] = useState<SoundLibraryStatus | null>(null);
 	const [roots, setRoots] = useState<SoundRoot[]>([]);
@@ -429,6 +442,11 @@ export function SoundLibraryPanel(props: PanelProps) {
 					setQueryInput(q);
 					setFilters((f) => ({ ...f, query: q }));
 				},
+				setTypes: (types) =>
+					setFilters((f) => ({
+						...f,
+						types: types.filter(isSoundTypeId),
+					})),
 				findSimilar: () => latest.current.doSimilar(latest.current.selected),
 				showLicense: () => latest.current.doLicense(latest.current.selected),
 			}),
@@ -726,6 +744,20 @@ export function SoundLibraryPanel(props: PanelProps) {
 					onValueChange={(v) => setFilters((f) => ({ ...f, collection: v as Collection }))}
 					options={collectionOptions}
 				/>
+				{fill ? (
+					<button
+						type="button"
+						className="inline-flex max-w-[45%] items-center gap-1 rounded-pr-pill border px-1.5 text-pr-small text-pr-text"
+						style={{ borderColor: 'var(--pr-cue)', borderStyle: 'dashed' }}
+						aria-label={t('Filling {0}: leave Fill mode', fill.label)}
+						title={t('Filling {0}', fill.label)}
+						onClick={() => requestCueFill(null)}
+						data-testid="sound-fill-chip"
+					>
+						<span className="truncate">{t('Fill: {0}', fill.label)}</span>
+						<Icon id="app.close" size={10} />
+					</button>
+				) : null}
 				{filters.similarTo ? (
 					<button
 						type="button"

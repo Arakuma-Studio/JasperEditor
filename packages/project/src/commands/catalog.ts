@@ -352,6 +352,7 @@ const LABELS: Record<CommandType, string> = {
 	'soundDesign.swap': 'Swap Sound',
 	'soundDesign.setPalette': 'Sound Palette',
 	'soundDesign.setSettings': 'Sound Design Settings',
+	'soundDesign.setPeak': 'Set Peak',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [

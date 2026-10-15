@@ -95,6 +95,25 @@ export type ClipMenuExtension = {
 /** Timeline clip context menu additions (appended after a separator). */
 export const clipMenuExtensions = createRegistry<ClipMenuExtension>();
 
+/** What a Cue Seam menu extension receives: the right-clicked cue and the selected cues of its sequence. */
+export type CueMenuContext = {
+	session: EditorSession;
+	sequenceId: string;
+	cueId: string;
+	selection: readonly string[];
+	runCommand(commandId: string, args?: unknown): void;
+};
+export type CueMenuExtension = {
+	id: string;
+	items(ctx: CueMenuContext): MenuItemSpec[];
+	order?: number;
+};
+/**
+ * Cue Seam context menu additions (spec 12 §2.7: Fill With ▸, Fill from Library…, Add Layer…), inserted after the
+ * cue's own entries, before Convert to Marker / Delete.
+ */
+export const cueMenuExtensions = createRegistry<CueMenuExtension>();
+
 type ProjectItemMenuContext = {
 	session: EditorSession;
 	items: readonly ProjectItem[];

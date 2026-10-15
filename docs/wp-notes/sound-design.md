@@ -2352,8 +2352,10 @@ SoundCuesResponse = { projectId|null, sequenceId, revision|null, frameRate, dura
 
 - **One implementation path (decision):** derivation runs only on the engine, because the engine may import
   `@jasper/mg-templates` (check-layers: the engine's deps include it; MCP's and the model's do not) and so passes the real
-  template registry (`mgTemplates`) — motion-graphic intro/outro cues exist only there. MCP `find_sound_cues` calls the route;
-  the web dialog (P2-R7) can call it too (`curves` gives the Cue Seam its speed curves).
+  template registry (`mgTemplates`) — motion-graphic intro/outro cues exist only there. MCP `find_sound_cues` calls the route
+  rather than deriving itself. The web's Suggest Cues… (WP2.4a, built in parallel) runs the same pure `deriveCues` in the
+  browser with the same `mgRegistry` (the web may import it), so both surfaces give the same cues for the same document;
+  `curves` is there for clients that want the Cue Seam's speed curves from the engine.
 - `projectId` reads the live document through the agent service (`doc.get`: the editor's when one holds the project, else
   the saved one); `envelope` is loaded with `loadProject` (registries included). Active expressions are bound before deriving
   (the wp-note WP2.2 limit "the engine should bind expressions").
@@ -2475,6 +2477,166 @@ answered `VALIDATION_FAILED windowSec: seconds` (found in the real run). Numbers
   as large as `render_frame`'s.
 - `swap_sound`'s family / similar lists depend on the library snapshot (a rescan can change the cycle after the alternates).
 - The route does not return engine sources (scene, beat, pixel: P6 `extraCues`).
+
+### WP2.4a Cue Seam
+
+Scope: spec 12 §2.7 "Cue Seam", "Suggest Cues… dialog", "Peak handle", the cue / peak snapping and the menus and
+shortcut of P2-R7 (the timeline parts). Fill / swap / variation cycling, Add Layer / Link, In Context audition, clip
+audio-type badges, the clip context menu, the Essential Sound / Properties sections and Clip ▸ Audio Options are WP2.4b.
+
+Files: `apps/web/src/sound/cues/{model.ts,seam.ts,suggest.ts,peak.ts,CueSeam.tsx,PeakHandle.tsx,SuggestCuesDialog.tsx}`,
+`apps/web/src/commands/sound-cues.ts` (+ `commands/index.ts`, `keymap-defaults.ts`), `shell/menus/model.ts`
+(Sequence ▸ Sound Design, Markers), the timeline (`model/layout.ts` divider height, `model/snapping.ts` `cue` /
+`anchor` snap kinds, `model/gestures.ts` peak-first move snapping, `state/controller.ts` peaks of moving clips,
+`components/TrackArea.tsx` / `TrackHeaders.tsx` divider, `TimelinePanel.tsx` wiring), `extensions/index.ts`
+(`cueMenuExtensions`), `sound/controller.ts` (Fill mode) and the Sound Library's Fill chip, `packages/session`
+(selection domain `cues`, view field `cueSeam`), `packages/ui` tokens (`--pr-cue`, `--pr-cue-hero`,
+`--pr-cue-unfilled`, high-contrast values), `packages/project` `soundDesign.setPeak` (schema, handler, catalog label,
+AC-25 fuzz), `apps/mcp` (`describe_commands` example, SOUND_GUIDE "Cues" paragraph), es.json (108 strings).
+Tests: `apps/web/test/sound-cue-seam-model.test.ts` (21), `sound-cue-seam.test.tsx` (10), `sound-cue-commands.test.tsx`
+(9), `packages/project/test/sound-set-peak.test.ts` (3), `apps/mcp/test/sound-examples.test.ts` (+1),
+`e2e/sound-cues.spec.ts`.
+
+#### What it does (usage)
+
+- **The seam**: the video/audio divider widens from 4 px to an 18 px lane (`computeLayout({dividerPx})`; the lane does
+  not scroll vertically; the audio region starts below it). The header column shows "Cues · n" and keeps the divider's
+  row-resize drag; its context menu has Suggest Cues…, Add Sound Cue, Hide Cue Seam. **Visibility** (decision): the
+  user's choice per sequence (`SequenceViewState.cueSeam: 'on'|'off'`, saved with the project's views) wins; without
+  one the seam shows in the Sound Design workspace **and whenever the sequence has cues** (after Suggest Cues the cues
+  must be visible in any workspace). Sequence ▸ Sound Design ▸ Show Cue Seam toggles it (checked = shown).
+- **Glyphs** (one shape per kind, so no two kinds share one): cut ▮ bar, transition ◆, move ▸, land ▼, appear ○,
+  exit ▲, emphasis ✦ (4-point star), reveal ■, beat +, manual ⬟ (pentagon), silence – . Size by weight: hero 12 px,
+  support 8 px, ambient 6 px. **States** never by colour alone: unfilled = hollow with a dashed stroke
+  (`--pr-cue-unfilled`); filled = solid stroke (`--pr-cue`; a hero is a filled shape in `--pr-cue-hero`) plus a 1 px
+  connector from the glyph to the peak of each clip that fills it (an arrow ▾/▴ at the lane edge when that clip's row is
+  scrolled out of view); agent-authored = dotted `--pr-agent` stroke plus a tick above the glyph; ghost (P3 proposals,
+  a `ghosts` prop, not stored) = `--pr-ghost-stroke` over `--pr-ghost-fill`; conflict (two unmuted heroes < 0.5 s apart)
+  = a 2 px `--pr-warning` underline; muted = 45 % opacity and a diagonal strike; selected = a box behind the glyph, the
+  keyboard's active cue a focus-ring box. Windows (`window`, e.g. a push or a typed title) are a tail with end ticks
+  along the bottom of the lane; `build` is a rising wedge before the cue, `stopBefore` a bar along the top ending in a
+  stop tick. Glyphs in view are drawn (± a margin); above 1 500 in view the selected ones and heroes are kept first.
+- **Editing**: click selects (Shift toggles; clicking empty lane deselects; selecting clips deselects cues, so Delete
+  has one meaning). Drag moves the selected cues (`soundCue.update {frame}` per cue in one session gesture → one undo
+  step "Move Cue(s)"; the filled clips follow, as WP2.1's update does). Snapping (when the timeline's snapping is on):
+  first the dragged cue's own **anchor** (where `resolveCueAnchor` puts its picture event now, priority above the
+  playhead), then the usual targets (playhead > marker = cue > In/Out > clip edges). A cue dropped off the frame its
+  anchor resolves to **forgets the anchor** (`anchor: null`), so `soundCue.resync` does not pull an intentional offset
+  back (decision; the tooltip says "Detached from its picture event" while dragging). Alt-drag duplicates (copies by the
+  user, no clips, no anchor; the copies are selected). Double-click / Enter → `soundLibrary.fillCue`. Delete / Backspace
+  removes (`soundCue.remove`; filled clips stay and forget the cue).
+- **Cue menu**: Role ▸ Hero / Support / Ambient, Visual Tag ▸ (the cue kinds), Align ▸ Peak / Start / End, Stop Before
+  Next (toggle; writes `stopBefore {seconds: 0.25, depthDb: −24}` — values chosen here, P4 renders them as a music dip),
+  Mute Cue, the entries of `cueMenuExtensions` (WP2.4b: Fill With ▸, Fill from Library…, Add Layer…), Convert to
+  Marker, Delete. Entries act on the selection when the right-clicked cue is in it.
+- **Keyboard**: the lane is one tab stop (`role="toolbar"`, `aria-activedescendant`, `data-keymap-local` so its keys
+  run before the keymap and the others fall through): Left / Right / Home / End move between cues (Shift extends) and
+  scroll the timeline to them, Enter fills, Delete removes, the context-menu key or Shift+F10 opens the cue menu, Esc
+  deselects. Each glyph is named, e.g. "Hero Land cue at 00:00:04:02, unfilled, Position (200, 540)→(960, 540) ends
+  (ease-out overshoot) on V2 'Logo'" (filled: "filled with A4 Crunch"; "agent-authored", "muted", "conflicts with
+  another hero cue"), and has a tooltip with the reason, the suggested types and how to fill it.
+- **Suggest Cues…** (Sequence ▸ Sound Design, the seam menus): checkboxes for the eight project sources of `deriveCues`
+  with live "n found · k kept" (found from a run with every source, kept from the run with the chosen ones: merging
+  depends on the selection), range (whole sequence, In to Out, selected clips), density (default: the sequence's
+  setting; a change is saved with `soundDesign.setSettings` in the same transaction), "Respect dialogue", "Replace
+  earlier unfilled suggestions in the range" (default on: unfilled `derived` cues in the range are removed first; a
+  derived cue of the same kind within 2 frames of a cue that stays is skipped, so running it twice does not double the
+  cues). Suggest commits ONE transaction "Suggest Cues (n)" (`soundCue.add` with WP2.1's `cueInputFromDerived`: reason,
+  anchor, confidence, pan / pan sweep, window, source `derived` or `marker`; split into commands of ≤ 2 000 cues), selects
+  the new cues and toasts with Undo. Motion graphics use `mgRegistry` from `@jasper/mg-templates`.
+- **Peak handle** (`clipDecorations` overlay on audio clips with `sfx` or library media): a 1 px `--pr-accent` line at
+  the peak and a 7 px diamond at the top, hidden below 24 px of width or 32 px of height, on reversed and time-remapped
+  clips, and when the peak is outside the used part of the media. Peak = `sfx.placement.peakFlicks` when the placement
+  aligned the peak (or after an override), else the media's `library.descriptors.peakSec`. Tooltip "Peak <tc> · <s> s
+  into <name>" (seconds into the sound, lead silence excluded). Dragging the diamond moves the clip and its group
+  (`clip.move`, "Move Clip by Peak") snapping by the peak's frame only; Shift-drag moves the peak inside the clip and
+  writes **`soundDesign.setPeak {clipId, peakFlicks}`** (new command: align `peak`, `errorFlicks` = how late the new peak
+  plays after the cue the clip fills, 0 when early or without a cue; a library clip without `sfx` gets it with
+  `cueId: null`; refusals E_NOT_FOUND, E_INVALID_PARAM (not audio, not a library sound, past the media end),
+  E_TRACK_LOCKED, E_SCHEMA). The appliesTo test stays O(1): the timeline keeps the set of library media ids
+  (`useLibraryMediaTracking`) and re-registers the decoration when it changes.
+- **Snapping**: new `cue` snap kind at marker priority (clips, the playhead scrub and cue drags snap to cues) and
+  `anchor` (only for a dragged cue). Moving any SFX clip with the Selection tool snaps its **peak first** (the peak's
+  frame, so the sub-frame rest is kept), the start/end edges only when the peak finds no target.
+- **Menus and shortcut**: Markers ▸ Add Sound Cue (**Alt+Shift+C**, scope `editing`; mac Opt+Shift+C; no other binding
+  uses it in any preset — `keymap.test.ts` passes), Go to Next / Previous Sound Cue (unbound; seek and select), Convert
+  Markers to Sound Cues (`sfx: …` markers and the selected markers become cues — kind `manual`, the first type's weight
+  and align, the name as label otherwise — and are removed), Convert Sound Cue to Marker (`sfx: type+type`, read back by
+  `parseSfxRequest`); Sequence ▸ Sound Design ▸ Suggest Cues…, Show Cue Seam, Clear Unfilled Cues.
+- **Fill mode** (`soundLibrary.fillCue {cueId?}`, agent-exposed): selects the cue, remembers it as the Sound Library's
+  fill target (`sound/controller.ts` `requestCueFill` / `cueFillTarget` / `subscribeCueFill`), presets the type chips
+  to the cue's suggested types (now, or when the panel mounts) and focuses the panel, which shows a dashed "Fill: Hero
+  Land cue at …" chip (✕ leaves Fill mode). Placing the chosen sound into the cue (Enter / drop in the panel) is WP2.4b.
+- **Agents**: every edit is a `soundCue.*` / `marker.*` / `soundDesign.setPeak` command (`apply_commands`); the UI
+  commands `sound.addCue {frame?}`, `sound.nextCue`, `sound.prevCue`, `sound.convertMarkersToCues`,
+  `sound.convertCueToMarker`, `sound.toggleCueSeam`, `sound.clearUnfilledCues`, `soundLibrary.fillCue {cueId}` are in the
+  UI command catalogue (`ui_command`). SOUND_GUIDE has a "Cues" paragraph.
+
+#### Verified
+
+Measured on this branch (merged with `feat/sound-design` 675ca903, shared host with 16 cores, load average 60–75).
+
+- `pnpm vitest run apps/web/test/sound-cue-seam-model.test.ts` (21 passed): cue reading (sorted, hostile values skipped;
+  300-run `fc.anything()` property), one shape per kind, glyph paths inside the box, paint per state (dashes, fill,
+  underline, agent tick, strike), hero conflicts, layout (x at the frame, culling, window / build / stop spans, dangling
+  placed ids are not "filled"), the render cap, hit testing (half size + 3 px slop, heroes win ties), keyboard order,
+  accessible names, divider layout (4 px default, 18 px seam, audio region and `hitY` below it), visibility rule, clip
+  peaks (placement over descriptors, sourceIn / speed, reversed / outside → none, content-time round trip, seconds into
+  the sound, handle hidden below 24 × 32 px), conversions (marker ⇄ cue round trip through `parseSfxRequest`), `cue`
+  snap targets and peak-first move snapping.
+- `apps/web/test/sound-cue-seam.test.tsx` (10 passed; testing-library on a real session): glyph names and states,
+  click / Shift-click / empty-lane deselect, drag (one "Move Cue" step, undo / redo, anchor detached and restored by
+  undo), snapping to another cue and to the playhead, Alt-drag duplicate (+ undo), keyboard (arrows, Shift-extend,
+  Enter → fill, context-menu key, Delete → "Delete Cues (2)", undo, Home, Esc), double-click → fill, the cue menu
+  (Role, Visual Tag, Align, Stop Before Next with their history labels, undo, Convert to Marker + undo), a read-only
+  project never edits; Suggest Cues… dialog: "2 found · 2 kept" (edits) / "1 found · 1 kept" (markers), unticking a
+  source updates the kept count and the summary live, Suggest → 3 cues with reason and anchor in ONE history entry
+  "Suggest Cues (3)", selected, undo removes all three.
+- `apps/web/test/sound-cue-commands.test.tsx` (9 passed): Add Sound Cue at the playhead / at `frame`, undo / redo;
+  Next / Previous Cue (disabled past the last); Convert Markers to Cues ("Convert Markers to Cues (2)") and back; Clear
+  Unfilled Cues; Show Cue Seam toggling; Fill mode target and label, unknown cue refused; selection pruned when cues go;
+  peak handle drawn at 0.25 s = frame 37.5 with tooltip "Peak 00:00:01:07 · 0.200 s into Crunch", hidden on a 20 px
+  clip, diamond drag moves the clip so its peak lands on the cue at 50 ("Move Clip by Peak", undo), Shift-drag writes
+  the override (`peakFlicks` 0.35 s, the clip stays, "Set Peak", undo removes `sfx`).
+- `packages/project`: `pnpm vitest run --project @jasper/project --maxWorkers=4` → 150 files, 1858 tests passed
+  (includes `sound-set-peak.test.ts` (3: override + error against the cue + redo, library clip gains `sfx`, every
+  refusal) and AC-25 with `soundDesign.setPeak` in the random transactions). `apps/mcp/test/sound-examples.test.ts`
+  10 passed (the setPeak example applies to a project).
+- `pnpm vitest run --project @jasper/web --maxWorkers=4` → 113 files, 801 tests; one failure on the first run
+  (`i18n.test.ts`: "Set Peak" missing from model-strings.json), fixed with `pnpm i18n`, rerun passed.
+  `--project @jasper/session --project @jasper/ui --project @jasper/mcp` → 625 passed; `apps/mcp/test/integration.test.ts`
+  timed out in its `beforeAll` (180 s) at load ≈ 70 and passed alone (10 tests).
+- `pnpm typecheck` (workspace), `pnpm lint` (Biome, tokens, anime, layers, assets), `node scripts/i18n.mjs --check`
+  (8 952 strings), `pnpm notices --check`: pass.
+- `pnpm build`, then `E2E_PORT=49405 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-cues.spec.ts`: 1 passed
+  (9.2 s). In the built app: a fixture of three solids with cuts at 90 and 180, a 20-frame push into the third, a text
+  "LOGO" on V2 keyframed 200 → 1010 → 960 px, a typewriter title, a `sfx: boom+swoosh` marker; no seam before cues;
+  Sequence ▸ Sound Design ▸ Suggest Cues… shows edits 1/1, transitions 1/1, keyframes 2/2, markers 1/1, text found;
+  "Suggest 14 Cues" → history "Suggest Cues (14)", every cue has a reason; the seam appears (18 px) and the cut (90),
+  push (180), move, land and marker (250, hero) glyph centres are within 1.5 px of their frames' x (measured against
+  the clip edges); right-click → Role ▸ Hero changes that cue only ("Cue Role"); a 12-frame drag (snapping off) → frame
+  102 ± 1, "Move Cue", Ctrl+Z → 90; Delete + Ctrl+Z; Alt+Shift+C at frame 120 → a manual support cue, "Add Sound Cue";
+  `soundDesign.place {cueId: land}` of a library sound → the glyph turns filled, the connector exists, the peak line is
+  within one frame of the cue's x, the name says "filled with A…".
+- Looked at (dev stack on ports 49401/49402 and the e2e screenshots in `test-results/e2e-sound-cues/`): the dialog, the
+  seam at sequence zoom and zoomed in (dashed ▸ / ▼ glyphs, window tails, the hero marker pentagon), high contrast
+  (`data-pr-contrast="high"`: brighter cue and unfilled strokes), reduced motion (nothing animates on the seam), the cue
+  menu, the filled land cue with its connector down to the SFX track. The first look found the window tail drawn
+  through the glyphs and 8 px dashed glyphs too faint: the tail moved to the lane bottom and strokes went to 1.5 px /
+  3-1.5 dashes.
+
+#### Limits and notes for the next packages
+
+- WP2.4b: register Fill With ▸ / Fill from Library… / Add Layer… through `cueMenuExtensions`; read the fill target with
+  `cueFillTarget()` (cleared with `requestCueFill(null)`) and the selected cues from `session.getState().selection.cues`;
+  Enter in the panel should place into the target cue with `soundDesign.place {cueId}`. The Properties "Cue" section
+  can reuse `cueAriaLabel` / `cueTooltip`.
+- Stop Before Next's values (0.25 s, −24 dB) are a decision of this package; P4 may tune them.
+- The seam has no horizontal virtualisation beyond culling to the view and the 1 500-glyph cap; typewriter patterns at
+  sequence zoom overlap into a row of glyphs (they are still hit-testable one by one when zoomed in).
+- Dragging a cue whose filled clip cannot move (overlap, locked track) shows the refusal in the drag tooltip and the
+  commit is refused with a toast (WP2.1's `soundCue.update` rule); there is no "move the cue only" modifier.
+- Ghost cues are drawn when passed in (`ghosts`), but nothing passes them until P3.
 
 ## Phase 3: proposals and review
 

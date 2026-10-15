@@ -35,6 +35,10 @@ import { formatTimecode, parseTimecodeEntry } from '../../gaps/time-display.ts';
 import { t as tr } from '../../i18n/runtime.ts';
 import { useRenderBar } from '../../previews/hooks.ts';
 import { insertSoundWithFeedback } from '../../sound/controller.ts';
+import { CueSeam, CueSeamHeader } from '../../sound/cues/CueSeam.tsx';
+import { SEAM_PX } from '../../sound/cues/model.ts';
+import { useLibraryMediaTracking } from '../../sound/cues/peak.ts';
+import { useCueSeamShown } from '../../sound/cues/seam.ts';
 import { endSoundDrag, isSoundDrag, readSoundDrag, soundDragInfo } from '../../sound/insert.ts';
 import { createEditorEngineClient, useEngineOrNull } from '../../state/engine.tsx';
 import {
@@ -217,6 +221,9 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		() => ({ scrollFrame: view.scrollFrame, pxPerFrame: view.pxPerFrame, width: size.w }),
 		[view.scrollFrame, view.pxPerFrame, size.w],
 	);
+	// sound-design (spec 12 §2.7): the Cue Seam widens the video/audio divider into an 18 px lane.
+	const seamShown = useCueSeamShown(seqId);
+	useLibraryMediaTracking(session);
 	const layout = useMemo(
 		() =>
 			computeLayout({
@@ -227,8 +234,10 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				heights: view.trackHeights,
 				scrollYVideo: view.scrollYVideo,
 				scrollYAudio: view.scrollYAudio,
+				...(seamShown ? { dividerPx: SEAM_PX } : {}),
 			}),
 		[
+			seamShown,
 			size,
 			view.dividerRatio,
 			seq.videoTracks,
@@ -1573,6 +1582,25 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 						ui={ui}
 						openMenu={openMenu}
 						toast={toast}
+						dividerLabel={seamShown ? <CueSeamHeader seq={seq} /> : undefined}
+						onDividerContextMenu={
+							seamShown
+								? (e) => {
+										e.preventDefault();
+										openMenu(e.clientX, e.clientY, [
+											{ kind: 'item', label: 'Suggest Cues…', run: () => run('sound.suggestCues') },
+											{
+												kind: 'item',
+												label: 'Add Sound Cue',
+												shortcut: 'Alt+Shift+C',
+												run: () => run('sound.addCue'),
+											},
+											{ kind: 'separator' },
+											{ kind: 'item', label: 'Hide Cue Seam', run: () => run('sound.toggleCueSeam') },
+										]);
+									}
+								: undefined
+						}
 					/>
 					<div
 						className="absolute top-0 right-[-3px] bottom-0 w-[6px] cursor-col-resize"
@@ -1637,6 +1665,22 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 						showThroughEdits={showThroughEdits}
 						lanes={lanes}
 					/>
+					{seamShown ? (
+						<CueSeam
+							session={session}
+							seq={seq}
+							layout={layout}
+							viewport={viewport}
+							media={media}
+							ui={ui}
+							instanceId={props.instanceId}
+							snapping={snapping}
+							run={run}
+							openMenu={openMenu}
+							toast={toast}
+							reveal={(f) => controller.reveal(f)}
+						/>
+					) : null}
 					<GestureTooltip tooltip={tooltip} width={size.w} />
 				</div>
 			</div>

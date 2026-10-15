@@ -14,6 +14,11 @@ type MoveDeltaInput = {
 	targets: readonly SnapTarget[];
 	snapping: boolean;
 	pointerFrame?: number;
+	/**
+	 * Peak frames (fractional) of moving SFX clips (spec 12 §2.7): the peak snaps first; the start/end edges only when no
+	 * peak finds a target.
+	 */
+	peaks?: readonly number[];
 };
 
 /** TL-482: delta per TL-101, then snapping (A.3), then clamping so nothing starts before frame 0. */
@@ -22,8 +27,21 @@ export function moveDelta(i: MoveDeltaInput): { delta: number; snap: SnapResult 
 	let delta = raw;
 	let snap: SnapResult | null = null;
 	if (i.snapping && i.targets.length) {
-		const edges = [...i.starts.map((s) => s + raw), ...i.ends.map((e) => e + raw)];
-		snap = findSnap(i.targets, edges, thresholdFrames(i.pxPerFrame), i.pointerFrame);
+		const th = thresholdFrames(i.pxPerFrame);
+		if (i.peaks?.length) {
+			// A peak lands on the target's frame: the clip moves by whole frames, so the peak's sub-frame rest stays.
+			const peak = findSnap(
+				i.targets,
+				i.peaks.map((p) => Math.floor(p) + raw),
+				th,
+				i.pointerFrame,
+			);
+			if (peak) snap = peak;
+		}
+		if (!snap) {
+			const edges = [...i.starts.map((s) => s + raw), ...i.ends.map((e) => e + raw)];
+			snap = findSnap(i.targets, edges, th, i.pointerFrame);
+		}
 		if (snap) delta = raw + snap.offset;
 	}
 	const minStart = Math.min(...i.starts);

@@ -50,7 +50,8 @@ type Abstract =
 	| { k: 'cueUpdate'; cue: number; at: number; move: boolean }
 	| { k: 'cueRemove'; cue: number; withClips: boolean }
 	| { k: 'resync' }
-	| { k: 'swap'; clip: number; media: number };
+	| { k: 'swap'; clip: number; media: number }
+	| { k: 'setPeak'; clip: number; peak: number };
 
 const frame = fc.integer({ min: 0, max: 900 });
 const idx = fc.nat(1000);
@@ -143,6 +144,11 @@ const abstract: fc.Arbitrary<Abstract> = fc.oneof(
 	fc.record({ k: fc.constant('cueRemove' as const), cue: idx, withClips: fc.boolean() }),
 	fc.record({ k: fc.constant('resync' as const) }),
 	fc.record({ k: fc.constant('swap' as const), clip: idx, media: fc.nat(1) }),
+	fc.record({
+		k: fc.constant('setPeak' as const),
+		clip: idx,
+		peak: fc.integer({ min: -1, max: 2_000_000_000 }),
+	}),
 );
 
 const CUE_KINDS = [
@@ -297,6 +303,11 @@ function concretize(a: Abstract, doc: ProjectDocument, media: string[]): unknown
 			const sfx = clips.filter((c) => (c as { sfx?: unknown }).sfx);
 			const c = sfx[a.clip % Math.max(1, sfx.length)]?.id ?? pick(a.clip);
 			return { type: 'soundDesign.swap', clipId: c, mediaId: media[3 + (a.media % (media.length - 3))] };
+		}
+		case 'setPeak': {
+			const audio = clips.filter((c) => c.kind === 'audio');
+			const c = audio[a.clip % Math.max(1, audio.length)]?.id ?? pick(a.clip);
+			return { type: 'soundDesign.setPeak', clipId: c, peakFlicks: a.peak };
 		}
 	}
 }

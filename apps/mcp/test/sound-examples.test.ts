@@ -19,6 +19,7 @@ const SOUND_COMMANDS = [
 	'soundDesign.swap',
 	'soundDesign.setPalette',
 	'soundDesign.setSettings',
+	'soundDesign.setPeak',
 ];
 
 /** What an example needs in the project first (a cue to edit, a placed sound to swap). */
@@ -36,6 +37,13 @@ const PRELUDE: Record<string, unknown[]> = {
 		},
 	],
 	'soundDesign.swap': [
+		{
+			type: 'soundDesign.place',
+			frame: 30,
+			layers: [{ mediaId: { mediaByName: 'clip-a.mp4' }, align: 'start', track: 'A1' }],
+		},
+	],
+	'soundDesign.setPeak': [
 		{
 			type: 'soundDesign.place',
 			frame: 30,

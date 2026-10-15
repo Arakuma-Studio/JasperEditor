@@ -323,9 +323,8 @@ e2e run, reproduced in a unit test).
 and preview defects), Phase 1 (a licensed, offline sound library that users and agents search, look at, audition and
 insert peak-aligned with provenance and credits), then cues and placement (P2), proposals and review (P3), mixing (P4),
 Sound Check (P5), packs and more cue sources (P6).
-**Status (on `feat/sound-design`, not merged to `main`):** partial — Phases 0 and 1 done; Phase 2 in progress (cue model, derivation, the
-`/api/sound-design/cues` route and the five MCP cue tools are in, WP2.1–2.3; the web Cue Seam P2-R7 is open); Phases 3–6
-not started. See
+**Status (on `feat/sound-design`, not merged to `main`):** partial — Phases 0 and 1 done; Phase 2 in progress (see below; the
+`/api/sound-design/cues` route and the five MCP cue tools are in, WP2.3); Phases 3–6 not started. See
 [wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 1 verification": the Sound Library panel and Sound Design
 workspace, the engine library (60-sound Kenney CC0 kit, user folders with a declared licence, Jasper Synth), ten MCP
 tools, credits; inserts land on the frame to the sample (library sounds are registered with 50 ms of lead silence;
@@ -333,7 +332,9 @@ rerun: `e2e/sound-library.spec.ts` measures 0 samples of error on an ffmpeg-deco
 `apps/mcp/test/sound.test.ts` asserts `errorFlicks` 0); search over 5 000 sounds 7–15 ms at load ≈ 30
 (`apps/engine/test/sounds-search.test.ts`). Schema v7 (D-50). Limits: no keyboard-key recording in the kit (`key` is
 synth only); sounds over 120 s keep the ≤ 1-frame placement rule; In Context audition, cues and the Palette are
-Phase 2–3.
+Phase 2–3. Phase 2 in progress: the cue model and commands (WP2.1), derivation (WP2.2) and the Timeline's Cue Seam,
+Suggest Cues… dialog and peak handle (WP2.4a, `e2e/sound-cues.spec.ts`) are on the branch; filling cues from the
+library, variation cycling, layers and the In Context audition (WP2.4b) are not yet.
 
 ### Not covered by any workstream yet
 

@@ -21,18 +21,25 @@ export type SoundLibraryController = {
 	toggleFavourite(): void;
 	focusSearch(): void;
 	setQuery(q: string): void;
+	/** Sets the type filter chips (Fill mode presets them to a cue's suggested types). */
+	setTypes?(types: readonly string[]): void;
 	findSimilar(): void;
 	showLicense(): void;
 };
 
 let active: SoundLibraryController | null = null;
 let pendingQuery: string | null = null;
+let pendingTypes: readonly string[] | null = null;
 
 export function registerSoundLibraryController(c: SoundLibraryController): () => void {
 	active = c;
 	if (pendingQuery !== null) {
 		c.setQuery(pendingQuery);
 		pendingQuery = null;
+	}
+	if (pendingTypes !== null) {
+		c.setTypes?.(pendingTypes);
+		pendingTypes = null;
 	}
 	return () => {
 		if (active === c) active = null;
@@ -47,6 +54,42 @@ export function soundLibraryController(): SoundLibraryController | null {
 export function requestSoundSearch(q: string): void {
 	if (active) active.setQuery(q);
 	else pendingQuery = q;
+}
+
+/**
+ * Fill mode (spec 12 §2.7: double-click or Enter on a cue "opens the Library in Fill mode"): the cue the Sound Library
+ * is choosing a sound for. The panel shows it and presets its type chips to the cue's suggested types; filling the cue
+ * with the chosen sound is the panel's Enter / drop (`soundDesign.place {cueId}`).
+ */
+export type CueFillTarget = {
+	sequenceId: string;
+	cueId: string;
+	/** Suggested sound types of the cue (may be empty). */
+	types: readonly string[];
+	/** What the panel shows, e.g. "Hero Land cue at 00:00:04:02". */
+	label: string;
+};
+
+let fillTarget: CueFillTarget | null = null;
+const fillListeners = new Set<() => void>();
+
+export function cueFillTarget(): CueFillTarget | null {
+	return fillTarget;
+}
+
+export function subscribeCueFill(l: () => void): () => void {
+	fillListeners.add(l);
+	return () => fillListeners.delete(l);
+}
+
+/** Enters Fill mode for a cue: remembers it and presets the type filter (now, or when the panel mounts). */
+export function requestCueFill(target: CueFillTarget | null): void {
+	fillTarget = target;
+	if (target) {
+		if (active?.setTypes) active.setTypes(target.types);
+		else pendingTypes = target.types;
+	}
+	for (const l of [...fillListeners]) l();
 }
 
 /** What the audition player needs of a library entry (its URL and format: long sounds stream). */
