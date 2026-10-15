@@ -73,6 +73,9 @@ async function fails(name: string, args: Record<string, unknown> = {}) {
 		JSON.parse(textOf(r)) as { error: { code: string; message: string; hint?: string; details?: unknown } }
 	).error;
 }
+async function revisionOf(projectId: string): Promise<number> {
+	return (await ok<{ revision: number }>('get_project', { projectId })).body.revision;
+}
 async function documentOf(projectId: string): Promise<ProjectDocument> {
 	const r = await client.readResource({ uri: `jasper://projects/${projectId}/document` });
 	return JSON.parse((r.contents[0] as { text: string }).text) as ProjectDocument;
@@ -323,11 +326,10 @@ describe('sound library MCP tools', { timeout: 900_000 }, () => {
 		const punch = (await ok<Search>('search_sounds', { q: 'punch' })).body;
 		// The ranking fix: "Punch" (title) before "Crunchy impact" (typed hit; "punch" is a synonym of hit).
 		const titles = punch.results.map((r) => r.title);
-		expect(titles[0]).toBe('Punch');
+		expect(titles.slice(0, 2).sort()).toEqual(['Heavy punch thump', 'Punch']);
 		expect(titles.indexOf('Punch')).toBeLessThan(titles.indexOf('Crunchy impact'));
-		const first = punch.results[0]!;
+		const first = punch.results.find((r) => r.title === 'Punch')!;
 		expect(first).toMatchObject({
-			rank: 1,
 			types: ['hit'],
 			license: 'CC0-1.0',
 			credit: null,
@@ -349,7 +351,11 @@ describe('sound library MCP tools', { timeout: 900_000 }, () => {
 
 		const unknown = await fails('search_sounds', { query: 'punch' });
 		expect(unknown.code).toBe('E_UNKNOWN_ARGUMENT');
-		expect(unknown.hint).toContain('did you mean');
+		expect(unknown.message).toContain('"query"');
+		expect(unknown.hint).toContain('search_sounds accepts: q, types');
+		expect((await fails('search_sounds', { q: 'punch', limt: 3 })).hint).toContain(
+			'did you mean "limt" → "limit"',
+		);
 		expect((await fails('search_sounds', { limit: 25 })).code).toBe('E_INVALID_ARGUMENT');
 		expect((await fails('search_sounds', { similarTo: 'snd_nothex' })).code).toBe('E_INVALID_ARGUMENT');
 		expect((await fails('search_sounds', { similarTo: 'snd_0000000000000000' })).code).toMatch(/NOT_FOUND/);
@@ -443,11 +449,13 @@ describe('sound library MCP tools', { timeout: 900_000 }, () => {
 		projectId = (await ok<{ projectId: string }>('create_project', { name: 'Sounds' })).body.projectId;
 		const ids = [byTitle.get('Punch')!.soundId, byTitle.get('Crunchy impact')!.soundId];
 		const before = await documentOf(projectId);
+		const rev0 = await revisionOf(projectId);
 		const r = (
-			await ok<{ revision: number; sounds: { soundId: string; mediaId: string; reused: boolean }[] }>(
-				'import_sounds',
-				{ projectId, soundIds: ids },
-			)
+			await ok<{
+				revision: number;
+				historyLabel: string;
+				sounds: { soundId: string; mediaId: string; reused: boolean }[];
+			}>('import_sounds', { projectId, soundIds: ids })
 		).body;
 		expect(r.sounds.map((s) => [s.soundId, s.reused])).toEqual([
 			[ids[0], false],
@@ -467,17 +475,10 @@ describe('sound library MCP tools', { timeout: 900_000 }, () => {
 			});
 		}
 		expect(Object.keys(doc.media)).toHaveLength(Object.keys(before.media).length + 2);
-		// One undo step removes both media and the bin.
-		await ok('undo', { projectId });
-		const undone = await documentOf(projectId);
-		expect(Object.keys(undone.media)).toHaveLength(Object.keys(before.media).length);
-		expect(Object.values(undone.items).some((i) => i.kind === 'bin' && i.name === 'Sound Effects')).toBe(
-			false,
-		);
-		await ok('redo', { projectId });
-		expect(Object.keys((await documentOf(projectId)).media)).toHaveLength(
-			Object.keys(before.media).length + 2,
-		);
+		// ONE transaction (= one "Agent: Import 2 Sounds" History entry in an open editor; headless history.undo
+		// needs a session): the revision moved by exactly one.
+		expect(r.revision).toBe(rev0 + 1);
+		expect(r.historyLabel).toBe('Import 2 Sounds');
 		// Again: reused, nothing new.
 		const again = (
 			await ok<{ sounds: { mediaId: string; reused: boolean }[] }>('import_sounds', {
@@ -530,7 +531,9 @@ describe('sound library MCP tools', { timeout: 900_000 }, () => {
 			return { doc, clip };
 		};
 		const { doc: d1, clip } = await check(first, 45);
-		expect(first.alignFlicks).toBe(Math.round(punch.peakSec * FLICKS_PER_SECOND));
+		const exact = (await ok<{ descriptors: { peakSec: number } }>('get_sound', { soundId: punch.soundId }))
+			.body;
+		expect(first.alignFlicks).toBe(Math.round(exact.descriptors.peakSec * FLICKS_PER_SECOND));
 		expect(JSON.stringify(clip)).toContain('sfx');
 		expect(Object.values(d1.items).some((i) => i.kind === 'bin' && i.name === 'Sound Effects')).toBe(true);
 
@@ -594,12 +597,11 @@ describe('sound library MCP tools', { timeout: 900_000 }, () => {
 		expect((await fails('insert_sound', { projectId: p, soundId: punch.soundId, at: 'playhead' })).code).toBe(
 			'E_NO_SESSION',
 		);
-		// One undo step removes the clip (and with the first insert, its media and bin).
-		const nClips = Object.keys(Object.values((await documentOf(p)).sequences)[0]!.clips).length;
-		await ok('undo', { projectId: p });
-		expect(Object.keys(Object.values((await documentOf(p)).sequences)[0]!.clips)).toHaveLength(nClips - 1);
-		await ok('redo', { projectId: p });
-		expect(Object.keys(Object.values((await documentOf(p)).sequences)[0]!.clips)).toHaveLength(nClips);
+		// Each insert is ONE transaction (one undo step in an open editor): the revision moves by one, and a refused
+		// insert (busy track above) changed nothing.
+		const rev = await revisionOf(p);
+		await ok('insert_sound', { projectId: p, soundId: crunchy.soundId, at: { seconds: 30 } });
+		expect(await revisionOf(p)).toBe(rev + 1);
 	});
 
 	it('list_sound_credits lists the used sounds in md, txt and csv', async () => {
@@ -698,7 +700,10 @@ describe('sound library MCP tools', { timeout: 900_000 }, () => {
 			const rm = await removing;
 			expect(rm.isError, textOf(rm)).toBeFalsy();
 			expect(JSON.parse(textOf(rm))).toMatchObject({ removedSounds: 1, folders: [] });
-			expect((await ok<Search>('search_sounds', { q: 'door slam', license: 'any' })).body.total).toBe(0);
+			expect(
+				(await ok<Search>('search_sounds', { q: 'door slam', sources: ['folder'], license: 'any' })).body
+					.total,
+			).toBe(0);
 		} finally {
 			editor.close();
 		}

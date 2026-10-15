@@ -62,7 +62,7 @@ import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
 import { mediaRegisterCommand } from '../media.ts';
 import { composeGrid, encodePng } from '../png.ts';
-import { drawSoundCell, drawSoundDetail, type RgbaImage } from '../sound-sheet.ts';
+import { drawSoundCell, drawSoundDetail, isTruncated, type RgbaImage } from '../sound-sheet.ts';
 import { livePlayhead } from './color.ts';
 
 export const SOUND_GUIDE = `Sound library (sound effects; spec 12). You cannot hear audio. Judge sounds only by their measured descriptors and by pictures, and never claim that something "sounds good", "sounds right" or "fits": say what the numbers and pictures show and ask the user to listen.
@@ -158,7 +158,7 @@ function sheetCell(e: SoundEntry, i: number, columns: number, visual: SoundVisua
 		centroidHz: Math.round(d.centroidHz),
 		judge: e.judge ? { ok: e.judge.ok, score: r3(e.judge.score), reasons: e.judge.reasons } : null,
 		...(visual
-			? visual.coveredSec + 1e-3 < e.format.durationSec
+			? isTruncated(visual.coveredSec, e.format.durationSec)
 				? { shownSec: r3(visual.coveredSec) }
 				: {}
 			: { visual: 'unavailable' }),
@@ -403,7 +403,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 				soundCall<{ roots: SoundRoot[]; local: boolean }>(ctx, (c) => c.getSoundRoots()),
 				soundCall<SoundSearchResponse>(ctx, (c) => c.searchSounds({ license: 'any', limit: 1 })),
 			]);
-			const base = (ctx.link.target?.url ?? '');
+			const base = ctx.link.target?.url ?? '';
 			return jsonResult({
 				sounds: status.sounds,
 				bySource: status.bySource,
@@ -574,7 +574,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 			}
 			const { doc, revision } = await loadDoc(ctx, projectId);
 			const plan = importCommands(doc, registered);
-			let tx: ReturnType<typeof txBody> | null = null;
+			let tx: (ReturnType<typeof txBody> & { historyLabel: string }) | null = null;
 			let refs: Record<string, string> = {};
 			if (plan.commands.length) {
 				const label =
@@ -591,7 +591,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 				);
 				const r = requireOk(res);
 				refs = r.refs;
-				tx = txBody(res, r);
+				tx = { ...txBody(res, r), historyLabel: label };
 			}
 			const sounds = plan.media.map((m, i) => ({
 				soundId: m.soundId,
@@ -772,6 +772,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 					);
 				return jsonResult({
 					...txBody(res, r),
+					historyLabel: `Add Sound ${title}`,
 					clipId,
 					mediaId,
 					soundId: a.soundId,
@@ -872,9 +873,9 @@ export function registerSoundTools(ctx: ToolContext): void {
 
 	async function maybeWait(job: EngineJob | null, wait: boolean | undefined, extra: Extra) {
 		if (!job) return null;
-		if (!wait) return jobBody(job, (ctx.link.target?.url ?? ''));
+		if (!wait) return jobBody(job, ctx.link.target?.url ?? '');
 		const { job: done, timedOut } = await waitJob(ctx, job.id, 600_000, extra, { cancelJobOnAbort: false });
-		return { ...jobBody(done, (ctx.link.target?.url ?? '')), ...(timedOut ? { timedOut: true } : {}) };
+		return { ...jobBody(done, ctx.link.target?.url ?? ''), ...(timedOut ? { timedOut: true } : {}) };
 	}
 
 	defineTool(
@@ -1006,11 +1007,14 @@ export function registerSoundTools(ctx: ToolContext): void {
 		},
 		async (a, extra) => {
 			const job = await soundCall<EngineJob>(ctx, (c) => c.indexSounds(a.full ? { full: true } : {}));
-			if (!a.wait) return jsonResult(jobBody(job, (ctx.link.target?.url ?? '')));
+			if (!a.wait) return jsonResult(jobBody(job, ctx.link.target?.url ?? ''));
 			const { job: done, timedOut } = await waitJob(ctx, job.id, (a.timeoutSeconds ?? 600) * 1000, extra, {
 				cancelJobOnAbort: false,
 			});
-			return jsonResult({ ...jobBody(done, (ctx.link.target?.url ?? '')), ...(timedOut ? { timedOut: true } : {}) });
+			return jsonResult({
+				...jobBody(done, ctx.link.target?.url ?? ''),
+				...(timedOut ? { timedOut: true } : {}),
+			});
 		},
 	);
 }

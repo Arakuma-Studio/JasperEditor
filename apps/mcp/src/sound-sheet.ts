@@ -130,6 +130,14 @@ export function decodeVisual(v: SoundVisual): DecodedVisual {
 	};
 }
 
+/**
+ * The visual data stops well before the end of the file (the engine analyses the first 30 s): not the few ms a
+ * container's duration differs from the decoded length.
+ */
+export function isTruncated(coveredSec: number, durationSec: number): boolean {
+	return coveredSec + 0.25 < durationSec;
+}
+
 type Plot = { x: number; y: number; w: number; h: number };
 
 /** The markers drawn on a plot, in seconds from the file start. */
@@ -292,7 +300,7 @@ export function drawSoundDetail(
 		drawText(img, label, x + 11, legendY, DIM);
 		x += 11 + textWidth(label) + 12;
 	}
-	if (v.coveredSec + 1e-3 < entry.format.durationSec)
+	if (isTruncated(v.coveredSec, entry.format.durationSec))
 		drawText(img, `first ${secs(v.coveredSec)} shown`, x, legendY, BAD);
 	return img;
 }

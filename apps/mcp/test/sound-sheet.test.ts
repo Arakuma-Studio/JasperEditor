@@ -131,7 +131,9 @@ describe('sound pictures', () => {
 	it('the detail picture and a grid of cells', () => {
 		const d = drawSoundDetail(entry(), visual(), { width: 960, height: 403 });
 		expect([d.width, d.height]).toEqual([960, 403]);
-		const cells = [1, 2, 3, 4].map((n) => drawSoundCell(entry(), visual(), n, { width: 360, plotHeight: 120 }));
+		const cells = [1, 2, 3, 4].map((n) =>
+			drawSoundCell(entry(), visual(), n, { width: 360, plotHeight: 120 }),
+		);
 		const grid = composeGrid(cells, 3, 6);
 		expect([grid.width, grid.height]).toEqual([3 * 360 + 4 * 6, 2 * 182 + 3 * 6]);
 	});
