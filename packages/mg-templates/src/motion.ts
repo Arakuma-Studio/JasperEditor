@@ -4,20 +4,17 @@
 // (`@jasper/project` cues/motion.ts): screen travel in canvas diagonals per second, plus K_SCALE·|Δ ln scale| and
 // K_ROT·|Δ degrees|, plus opacity changes weighted by K_OPACITY — the largest over every animated element. Sound
 // design cuts it into movements and finds where the intro settles and the outro starts.
-import type { MgTemplateMotionTiming } from '@jasper/project';
+import { K_ROT, K_SCALE, MAX_SAMPLES_PER_CLIP, type MgTemplateMotionTiming } from '@jasper/project';
 import { CANVASES } from './core.ts';
 import type { AnySvgMgTemplate } from './types.ts';
 
-/** Same weights as the keyframed-clip sampler (`@jasper/project` cues/motion.ts). */
-const K_SCALE = 0.6;
-const K_ROT = 1 / 270;
 /**
  * An opacity change of 1 per second counts as a quarter of a diagonal per second: a fade still moves while it changes
  * by more than ≈ 0.12/s (the sampler's MOVE_OFF 0.03 ÷ 0.25), about one 8-bit code value per frame at 30 fps.
  */
 export const K_OPACITY = 0.25;
 /** Most frames measured per clip (as the keyframed-clip sampler): longer clips fall back to the declared timing. */
-export const MAX_MOTION_FRAMES = 20_000;
+export const MAX_MOTION_FRAMES = MAX_SAMPLES_PER_CLIP;
 
 type Feature = { kind: 'px' | 'scale' | 'rot' | 'opacity'; value: number };
 
@@ -62,7 +59,9 @@ export function svgFeatures(svg: string): Feature[] {
 		}
 		if (name === 'transform' || name === 'gradientTransform' || name === 'patternTransform') {
 			for (const f of value.matchAll(TRANSFORM_FN)) {
-				const kind = f[1] === 'scale' ? 'scale' : f[1] === 'rotate' ? 'rot' : 'px';
+				// angles (rotate, skew) in degrees; matrix coefficients are counted as pixels (no template uses matrix)
+				const kind =
+					f[1] === 'scale' ? 'scale' : f[1] === 'rotate' || f[1]!.startsWith('skew') ? 'rot' : 'px';
 				const nums = f[2]!.match(NUM) ?? [];
 				// rotate(a cx cy): the centre is geometry
 				nums.forEach((s, i) => {
@@ -100,15 +99,22 @@ export function svgTemplateSpeed(
 	const diag = Math.hypot(canvas.width, canvas.height);
 	const speed = new Array<number>(total).fill(0);
 	let prev: Feature[] | null = null;
+	let prevSvg = '';
 	for (let f = 0; f < total; f++) {
-		let cur: Feature[];
+		let svg: string;
 		try {
-			cur = svgFeatures(
-				def.renderSvg(parsed.data, f, fps, canvas, { durationFrames: total, sourceInFrames: 0, idPrefix: 'sd' }),
-			);
+			svg = def.renderSvg(parsed.data, f, fps, canvas, {
+				durationFrames: total,
+				sourceInFrames: 0,
+				idPrefix: 'sd',
+			});
 		} catch {
 			return null;
 		}
+		if (typeof svg !== 'string') return null;
+		// A held picture renders the same markup: nothing moved (speed[f] stays 0) and nothing to parse.
+		if (prev && svg === prevSvg) continue;
+		const cur = svgFeatures(svg);
 		if (prev) {
 			if (prev.length !== cur.length) return null;
 			let px = 0;
@@ -122,12 +128,14 @@ export function svgTemplateSpeed(
 				if (a.kind === 'px') px = Math.max(px, d);
 				else if (a.kind === 'opacity') other = Math.max(other, K_OPACITY * d);
 				else if (a.kind === 'rot') other = Math.max(other, K_ROT * d);
-				else if (a.value > 0 && b.value > 0) other = Math.max(other, K_SCALE * Math.abs(Math.log(b.value / a.value)));
+				else if (a.value > 0 && b.value > 0)
+					other = Math.max(other, K_SCALE * Math.abs(Math.log(b.value / a.value)));
 				else other = Math.max(other, K_SCALE * 5);
 			}
 			speed[f] = Math.max(px / diag, other) * fps;
 		}
 		prev = cur;
+		prevSvg = svg;
 	}
 	return speed;
 }

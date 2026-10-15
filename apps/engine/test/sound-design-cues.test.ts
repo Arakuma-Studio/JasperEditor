@@ -228,12 +228,14 @@ describe('POST /api/sound-design/cues', () => {
 		expect(keys.length).toBeGreaterThanOrEqual(5);
 		expect(keys.every((c) => c.kind === 'appear' && c.group === keys[0]!.group)).toBe(true);
 		expect(keys[0]!.frame).toBe(200);
-		// The engine's registry knows the lower third: intro end (30 frames at 30 fps) and outro start.
+		// The engine's registry measures the lower third's rendered motion: it settles at content frame 20 (0.67 s; the
+		// declared intro end is 30) and starts leaving 12 frames before its end (declared 15).
 		const mg = byFrom(res.cues, 'mg');
-		expect(mg.map((c) => [c.kind, c.frame])).toEqual([
-			['land', 360],
-			['exit', 405],
+		expect(mg.map((c) => [c.kind, c.frame, c.confidence])).toEqual([
+			['land', 350, 0.8],
+			['exit', 408, 0.6],
 		]);
+		expect(mg[0]!.reason).toBe("Lower Third settles after 0.67 s on V1 'Lower Third'");
 		expect(res.stats.bySource.mg!.found).toBe(2);
 		const marker = byFrom(res.cues, 'markers')[0]!;
 		expect(marker).toMatchObject({ frame: 250, kind: 'manual', weight: 'hero', source: 'marker' });

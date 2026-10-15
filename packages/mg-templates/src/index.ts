@@ -4,6 +4,7 @@ import { createMgRegistry } from './registry.ts';
 
 export * from './catalog.ts';
 export * from './core.ts';
+export * from './motion.ts';
 export * from './registry.ts';
 export * from './spec.ts';
 export * from './templates/anime/index.ts';

@@ -154,6 +154,7 @@ type Cue = {
 	weight: string;
 	types: string[];
 	from: string;
+	confidence: number;
 	reason: string;
 	anchorText: string;
 	panSweep?: { from: number; to: number };
@@ -207,9 +208,11 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		expect(of('keyframes').map((c) => c.kind)).toEqual(expect.arrayContaining(['move', 'land']));
 		expect(of('keyframes').find((c) => c.kind === 'move')!.anchorText).toContain('transform.position');
 		expect(of('text').length).toBeGreaterThanOrEqual(5);
-		expect(of('mg').map((c) => [c.kind, c.frame])).toEqual([
-			['land', 360],
-			['exit', 405],
+		// measured on the lower third's rendered motion: it settles at content frame 20 (0.67 s), not at the declared
+		// intro end (30), and starts leaving 12 frames before its end (declared 15)
+		expect(of('mg').map((c) => [c.kind, c.frame, c.confidence])).toEqual([
+			['land', 350, 0.8],
+			['exit', 408, 0.6],
 		]);
 		expect(of('markers')[0]).toMatchObject({
 			frame: 250,
@@ -258,7 +261,7 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		const doc = await documentOf(projectId);
 		const stored = cuesOf(seqOf(doc));
 		const cut = stored.find((c) => c.kind === 'cut' && c.frame === 90)!;
-		const exit = stored.find((c) => c.kind === 'exit' && c.frame === 405)!;
+		const exit = stored.find((c) => c.kind === 'exit' && c.frame === 408)!;
 		const r2 = await revisionOf(projectId);
 		const multi = await ok<{
 			revision: number;

@@ -15,7 +15,8 @@
 // | `text` | In: the clip's first frame (typewriter `unit` i: the frame it is typed on, `typewriterOffsets`); Out: the
 // |   | Out window's first frame (`unit` i: the frame the i-th deleted unit goes, `N − ⌈t/frame⌉`); a `unit` of a Range
 // |   | Selector reveal: the frame the deriver finds for it (`derivedAnchorFrame`) |
-// | `mg` | intro end / outro start of the template (its frames are written at 30 fps and scaled like the renderer) |
+// | `mg` | where the template's intro settles / its outro starts (`mgCuePhases`: its measured motion when the registry |
+// |   | exposes it, else the declared intro / outro, written at 30 fps and scaled like the renderer) |
 // | `clip` | the clip's first frame or its end (the first frame after it) |
 // | `scene` | the first frame (earliest clip) that shows `mediaSec` of the media |
 // | `beat` | the frame of the clip that shows `mediaSec` (when known) |
@@ -28,6 +29,7 @@ import type { Clip, Sequence } from '../schema/sequence.ts';
 import { type CueAnchor, SOUND_DESIGN_LIMITS } from '../schema/sound.ts';
 import { resolveTextAnimationWindows } from '../text-animations.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
+import { mgCuePhases } from './cues/mg-phases.ts';
 import { clipMotionCues } from './cues/motion.ts';
 import { textClipCueCandidates } from './cues/text.ts';
 import type { CueCandidate } from './cues/types.ts';
@@ -49,8 +51,8 @@ export type AnchorDocument = Pick<ProjectDocument, 'media'>;
 /** The parts of a sequence anchors read. */
 export type AnchorSequence = Pick<Sequence, 'clips' | 'transitions' | 'markers' | 'settings'>;
 
-/** Reference rate of motion-graphic `introFrames` / `outroFrames` (the anime layer's `ANIME_REFERENCE_FPS`). */
-export const MG_REFERENCE_FPS = 30;
+export { MG_REFERENCE_FPS } from './cues/mg-phases.ts';
+
 /** Most frames a keyframe run is sampled at (longer runs are sampled with a stride). */
 const MAX_SAMPLES = 50_000;
 /** Most clips a `scene` anchor inspects. */
@@ -422,18 +424,15 @@ function mgAnchorFrame(
 	if (!tpl || typeof tpl.id !== 'string' || !fin(tpl.version)) return null;
 	const info = opts.mgTemplates.get(tpl.id, tpl.version);
 	if (!info) return null;
-	const fps = rate.num / rate.den;
-	const at = (ref: number) => (fin(ref) ? Math.max(0, Math.round((ref * fps) / MG_REFERENCE_FPS)) : 0);
-	const sourceIn = Math.max(0, Math.round((fin(c.sourceIn) ? c.sourceIn : 0) / flicksPerFrame(rate)));
-	const total = Math.max(1, sourceIn + Math.max(1, c.duration));
-	let intro = at(info.introFrames);
-	let outro = at(info.outroFrames);
-	if (intro + outro > total) {
-		const sum = intro + outro;
-		intro = Math.floor((total * intro) / sum);
-		outro = total - intro;
-	}
-	const local = a.event === 'intro-end' ? intro - sourceIn : total - outro - sourceIn;
+	const ph = mgCuePhases(
+		info,
+		c as { sourceIn?: unknown; duration?: unknown; params?: unknown },
+		rate.num / rate.den,
+		flicksPerFrame(rate),
+	);
+	const content = a.event === 'intro-end' ? ph.land : ph.exit;
+	if (content === null) return null;
+	const local = content - ph.sourceIn;
 	if (local < 0 || local > c.duration) return null;
 	return frameOrNull(c.start + local);
 }

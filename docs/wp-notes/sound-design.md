@@ -2226,10 +2226,13 @@ from P6, `extraCues` for scene / beat / pixel; `sources` defaults to every sourc
   and leaving the selection dominates, else `exit`. Patterns are thinned (`thinPattern`): repeats and frames closer than
   fps/12 to the previous kept one dropped (≤ 12 per second in every 1 s window), then at most 40 evenly spread; members
   share `group` and anchor `{type:'text', clipId, side, unit}`.
-- **mg**: motion-graphic clips whose template the registry knows: intro end → `land` (thump/hit/pop), outro start →
-  `exit` (swish/whoosh/reverse); lengths written at 30 fps (`MG_REFERENCE_FPS` of `sound/anchor.ts`), converted and
-  compressed like `animeTemplateTiming` (intro anchored at content frame 0, outro at the content end). No registry or an
-  unknown template → nothing, with `W_MG_REGISTRY_MISSING`. The model never imports `@jasper/mg-templates` (layer rule);
+- **mg**: motion-graphic clips whose template the registry knows: where the intro settles → `land` (thump/hit/pop),
+  where the outro starts → `exit` (swish/whoosh/reverse), both from `mgCuePhases` (`sound/cues/mg-phases.ts`, shared with
+  `resolveCueAnchor`). Measured when the registry exposes the template's picture speed (`MgTemplateInfo.motionSpeed`:
+  the fframes templates, from their SVG twins; confidence 0.8 / 0.6), else the declared lengths written at 30 fps
+  (`MG_REFERENCE_FPS`), converted and compressed like `animeTemplateTiming` (intro anchored at content frame 0, outro at
+  the content end; confidence 0.5 / 0.4). Details: "Phase 2 verification B: mg land / exit from the rendered motion".
+  No registry or an unknown template → nothing, with `W_MG_REGISTRY_MISSING`. The model never imports `@jasper/mg-templates` (layer rule);
   composition (mg-bundle) clips carry no intro/outro data, so they only get clip-edge cues.
 - **clipEdges**: graphics (still, text, shape, solid, motion graphic, composition, animated image) on V2 and above:
   start → `appear` (support, pop/swish/ui; text pop/ui; motion graphics whoosh/swish), end → `exit` (ambient). Skipped
@@ -2466,8 +2469,8 @@ answered `VALIDATION_FAILED windowSec: seconds` (found in the real run). Numbers
 
 - **Lower-third intro vs its cue (found by looking):** the `lower-third` template's picture settles at ≈ frame 345–350
   (`render_frames` 330…360), while its declared `introFrames` (30 at 30 fps) put the mg `land` cue at 360, ≈ 0.3 s after the
-  visible settle. The deriver follows the registry's `introFrames` (WP2.2); either the template metadata or the mg source
-  should use the visible settle — a WP2.2/template decision, not changed here.
+  visible settle. **Fixed in Phase 2 verification B**: the mg source measures the rendered motion; the fixture's land is
+  now 350 (exit 408), see "Phase 2 verification B: mg land / exit from the rendered motion".
 - **Loud mix:** kit sounds at 0 dB gain overlap to a decoded peak of 1.36 (mono, > 0 dBFS) in the real-run export. Level is
   Phase 4 (auto gain, masking, limits); placement does not touch it.
 - `place_sound` warnings use transcript words and Essential Sound dialogue clips only (no VAD: P6-R3) and the hero rule
@@ -2850,6 +2853,97 @@ that run.
 - Swap does not rename a clip whose name the user changed; library clips are named after the registered file
   (`soundDesign.swap` renames when the name is the old file name).
 - Auto gain with its reason, Room send and Stop before next in Essential Sound are Phase 4 (P4 owns the levels).
+
+### Phase 2 verification B: mg land / exit from the rendered motion
+
+The mg cues sat on the template's declared `introFrames` / `outroFrames`; the lower third visibly settles ≈ 0.33 s before
+its declared intro end (WP2.3 limits). Now the land / exit come from the picture.
+
+#### Design
+
+- `MgTemplateInfo.motionSpeed?(params, {fps, totalFrames})` (`@jasper/project` `registry/mg.ts`, optional): the picture
+  speed per CONTENT frame `0 … totalFrames − 1` (`speed[i]` from frame i − 1 to i) in canvas diagonals per second — the
+  units of the keyframed-clip sampler (`cues/motion.ts`).
+- `@jasper/mg-templates` `motion.ts`: `svgTemplateSpeed` renders the fframes template's SVG twin (a pure function of
+  params and frame: what jasper-mg rasterises, D-12) at every content frame on the 1920×1080 design canvas and pairs every
+  number of consecutive frames in document order: pixel geometry (attributes, translate, rotate centres) ÷ the canvas
+  diagonal, `scale()` as K_SCALE·|Δ ln s|, `rotate()` / `skew` as K_ROT·|Δ°|, opacities weighted by K_OPACITY = 0.25 (a
+  fade moves while it changes by > 0.12 / s, ≈ one 8-bit code value per frame at 30 fps); the largest change wins (the
+  keyframed sampler sums its components; one element's largest change is what reads as "still moving"). A frame whose
+  markup equals the previous one is not parsed (held frames). Null when the params fail the schema, the render throws,
+  the frames' structure differs, or the clip is longer than `MAX_SAMPLES_PER_CLIP` (20 000 frames).
+- `toTemplateInfo` attaches `motionSpeed` to fframes templates, memoised per registry in a 32-entry LRU keyed by
+  template@version, fps, totalFrames and the params JSON (copies handed out). **Anime templates get none**: they are
+  drawn by `@jasper/motion` (anime.js), which neither the model nor `@jasper/mg-templates` may import (ARCHITECTURE §3.1,
+  D-31) and the engine does not load at runtime; their cues use the declared timing.
+- `mgCuePhases(info, clip, fps, flicksPerFrame)` (`cues/mg-phases.ts`, used by both `deriveMgCues` and `mgAnchorFrame`,
+  so a derived anchor always resolves to its frame): `speedSegments(speed, bridge = round(0.25·fps))`; the intro is the
+  first movement when it starts within `round(0.1·fps) + 1` frames, the land its last moving frame `b` (the picture is at
+  rest from the next frame; the keyframes source's abrupt-stop land is also `b`); an intro still moving on the last content
+  frame never lands. The exit is the start `a` of the last movement when it is not the intro and starts after the land. No
+  movement at all → no cues (measured). Without `motionSpeed`, a null / wrong-length / throwing result, or a clip over the
+  cap → the declared `mgPhases`. Non-finite speeds count as still. The existing in-clip checks stay (a land before the
+  clip's first frame — sourceIn past it — gives no cue and a null anchor).
+- Confidence: measured land 0.8 / exit 0.6; declared land 0.5 / exit 0.4 (were 0.7 / 0.55 for both). Reasons say which:
+  `Lower Third settles after 0.67 s on V1 'Lower Third'`, `… starts leaving 0.4 s before its end …` vs `… intro (declared
+  1.0 s) ends …`. The land window runs from the intro's first moving frame to the land.
+- The engine route, MCP `find_sound_cues`, `soundCue.resync` (engine agent and web session) and the web Suggest Cues dialog
+  and Cue Seam all pass the same `mgRegistry`, so they agree (read: `routes/sound-design.ts`, `agent/index.ts`,
+  `web/src/sound/cues/suggest.ts`, `seam.ts`, `state/session-host.tsx`).
+
+#### Verified (measured, this branch; shared host)
+
+- `pnpm vitest run packages/mg-templates/test/motion-cues.test.ts --maxWorkers=2`: 24 passed. The oracle is independent of
+  the code under test (no SVG parsing, no `speedSegments`): it differentiates the templates' own curves analytically
+  (easeOut/easeIn/easeInOut cubic, the closed-form spring velocity) with the constants of `lower-third.ts` /
+  `title-card.ts`, and calls a quantity moving above 0.03 diagonals/s (≈ 66 px/s) or 0.12 opacity/s, joining gaps
+  ≤ 0.25 s. Land within ±1 frame of settle·fps, exit within −1 … +1.5 frames of leave·fps (an ease-in onset: a frame's
+  change averages a rate growing like t²). Content frames (settle·fps → land; leave·fps → exit):
+
+  | variant | settle → land | leave → exit |
+  |---|---|---|
+  | lower third, defaults, 30 fps, 90 f | 20.01 → 20 | 77.12 → 78 |
+  | lower third, 25 fps, 125 f | 16.68 → 17 | 114.27 → 115 |
+  | lower third, 29.97 fps, 150 f | 19.99 → 20 | 137.14 → 138 |
+  | lower third, 60 fps, 300 f | 40.03 → 40 | 274.25 → 275 |
+  | lower third, holdUntilFrames 40, 30 fps | 20.01 → 20 | 42.12 → 43 |
+  | lower third, holdUntilFrames 100, 60 fps | 40.03 → 40 | 104.25 → 105 |
+  | lower third, long name, sourceIn 6, 30 fps | 20.01 → 20 | 113.12 → 114 |
+  | title card, defaults, 30 fps, 120 f | 17.33 → 17 | 106.06 → 107 |
+  | title card, 25 fps, 100 f | 14.44 → 14 | 86.16 → 87 |
+  | title card, 29.97 fps, 120 f | 17.31 → 17 | 106.06 → 107 |
+  | title card, 60 fps, 240 f | 34.65 → 35 | 225.75 → 227 |
+  | title card, fade in 45 / out 30, 30 fps | 39.49 → 40 | 123.00 → 124 |
+  | title card, no fades, no subtitle | 17.33 → 17 | no outro → no exit |
+  | title card, fade in 60, sourceIn 10, 25 fps | 50.71 → 51 | 96.16 → 97 |
+
+  Declared timing for comparison: lower third land 30 / 25 / 30 / 60 (30, 25, 29.97, 60 fps), title card 15 at 30 fps.
+  Also: the Phase 2 fixture's lower third (330, 90 frames, 30 fps) → land **350**, exit **408** (declared 360 / 405); an
+  anime template (`lower-third-anim`) and a `createStaticMgRegistry` copy of `lower-third` without `motionSpeed` → the
+  declared frames at 0.5 / 0.4; a 60 fps clip over the cap → declared; a property test (120 runs: lower third, title card
+  and two anime templates × 7 rates × random start / duration / sourceIn / holdUntilFrames) → every derived mg cue inside
+  its clip and `resolveCueAnchor` returns its frame; hostile timings / params → null, no throw; the LRU hands out copies.
+- Performance (same test, two vitest workers on a loaded shared host): deriving the mg cues of a **10-minute lower third
+  (18 000 frames) cold 704 ms** (every frame rendered and compared), **warm 0.6 ms** (memoised). A standalone `tsx` probe
+  of `svgTemplateSpeed` alone measured 462 ms for the same 18 000 frames.
+- `pnpm vitest run packages/project/test/sound-mg-phases.test.ts`: 10 passed (synthetic speed curves: land / exit rules,
+  bridging, late start, never-resting and still templates, fallbacks for throw / null / short / over-cap — `motionSpeed`
+  not called — NaN speeds, hostile clips; deriver confidences / reasons / windows; 150-run property derive ↔ resolve for
+  measured and declared registries).
+- `apps/engine/test/sound-design-cues.test.ts` (4 passed) and `apps/mcp/test/sound-cues.test.ts` (5 passed) now expect the
+  measured 350 / 408 at 0.8 / 0.6 (they pinned the old declared 360 / 405).
+
+#### Limits
+
+- **Anime templates are unmeasured** (declared timing, confidence 0.5 / 0.4). Estimated from their timeline constants
+  (`@jasper/motion/src/templates`, not run): every intro phase is a fraction of the declared intro ending at or before it,
+  so their declared land is never early; for `lower-third-anim` the last role word's ease-out fade (0.65 → 1.0 of the
+  intro) drops below 0.12 opacity/s at ≈ 0.9 of the intro, i.e. the declared land is ≈ 1–3 frames late at 30 fps.
+- Measured on the 16:9 design canvas only (the 9:16 / 1:1 canvases scale the same motion; the timing is the same but the
+  speed in diagonals differs slightly). The clip's own transform keyframes are the keyframes source's, not the mg's.
+- Clips over 20 000 frames (≈ 11 min at 30 fps, 5.5 min at 60 fps) fall back to the declared timing.
+- When an outro overlaps an unfinished intro (very short clips, `holdUntilFrames` inside the intro) the movements merge:
+  the "intro" lands where the merged movement ends (or not at all when it reaches the last frame).
 
 ## Phase 3: proposals and review
 
