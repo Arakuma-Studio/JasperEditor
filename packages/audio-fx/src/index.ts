@@ -5,6 +5,8 @@
 // ducking analysis are @jasper/audio-dsp's.
 
 export * from './analysis/remix.ts';
+export * from './analysis/sound-descriptors.ts';
+export * from './analysis/sound-judge.ts';
 export * from './chain/effect-chain.ts';
 export * from './core/biquad.ts';
 export * from './core/effect.ts';
@@ -16,3 +18,4 @@ export * from './core/stft.ts';
 export * from './core/util.ts';
 export * from './host.ts';
 export * from './registry.ts';
+export * from './synth/render.ts';
