@@ -93,6 +93,9 @@ existing Remotion/webpack peer resolutions; it added no package version.
 Validation remains in progress. Confirmed results so far:
 
 - `pnpm lint`: passed Biome, tokens, anime, layer/cycle and asset checks.
+- Workspace semantic typechecking passed across all packages. The initial run
+  exposed two web fixture narrowing errors; the corrected web and testkit checks
+  and `pnpm e2e:typecheck` subsequently passed. Final `pnpm build` also passed.
 - Config/localization focused tests: 2 files, 9 tests passed.
 - Public Remotion retry tests: all seven passed in the owning worktree, including
   the two setup-error regressions that first failed against the unfixed owner.
@@ -132,15 +135,19 @@ Validation remains in progress. Confirmed results so far:
   no cause is established and no interrupted case counts as a pass. Its completed
   rerun passed 16 cases and failed three: a five-second route watchdog, a hybrid
   export that completed after its wait deadline, and a bundle build timeout. The
-  route case subsequently passed in the default run; the other reruns remain due.
+  route case subsequently passed in the default run. Both remaining cases then
+  passed unchanged in a focused one-worker run: hybrid text export in 499.8 seconds
+  and watched-project rebuild in 42.2 seconds.
 - Native animated export: all seven cases passed, including the 48-frame
   preview/export comparison (minimum/mean SSIM 0.9935/0.9956), subpixel motion,
   authored crop geometry and audio volume envelopes.
 - Linux x64 unpacked application build: passed, including the final LGPL guard
   over ten FFmpeg artifacts. Packaged-like and development desktop smoke checks,
   all four desktop clipboard cases and the native-renderer fallback check passed.
-  The packaged export check reached a retryable browser setup timeout and still
-  needs an unchanged rerun; it is not counted as a pass.
+  The first packaged export check reached a retryable browser setup timeout.
+  After rebuilding the unpacked application from the final root build, the
+  unchanged packaged check passed: a 30-frame H.264 export used the packaged LGPL
+  binaries without PATH FFmpeg/ffprobe.
 - `pnpm perf --sections micro --label test-cleanup-integration`: passed all six
   scripts, including the scale benchmark. AMD Ryzen 7 7700, 16 logical CPUs,
   Node 20.20.2; starting load averages 154.9/147.2/145.5. Reports are in
@@ -149,15 +156,17 @@ Validation remains in progress. Confirmed results so far:
   run. The failed traces are preserved. The clipboard's required first-placement
   choice and the motion-graphics bundler namespace are corrected; smoke playback
   now observes progress and an interior pause position, excluding natural-end
-  false passes. Whole-file reruns remain necessary, including the blocked cases.
+  false passes. The second run of eight whole files passed 13 cases, failed six
+  and left one serial dependent blocked. Both clipboard cases, both motion-graphics
+  browser cases, and the edit/playback/native-export smoke cases now pass. Screenshot
+  metadata, title creation, HDR export and remaining setup/accessibility deadlines
+  are under investigation; they are not counted as passes.
 - Initial opt-in Remotion run: 109 passed, 24 failed and four setup dependents
   skipped across 19 files. Failures occurred before image comparisons, during
   browser setup/readiness or the resulting layer-bake fallback. The ongoing
   one-worker recheck has passed all 19 compositor and nine text-animation cases.
-- Whole-workspace typechecking passed 18 packages but exposed two web fixture
-  narrowing errors. Explicit failure throws preserve the setup contract while
-  narrowing the transaction result. All five extension tests passed afterward;
-  web and browser semantic typechecking are still running.
+- All five clip-extension cases passed after explicit setup-failure throws fixed
+  TypeScript narrowing and an unsupported tooltip-absence assertion was removed.
 
 The existing [baseline CI run](https://github.com/JasperRaccoon/JasperEditor/actions/runs/38635051386)
 never started a step: its annotation says an Actions budget prevents further use.
@@ -172,4 +181,4 @@ reconciled all original declarations and assigned paths, the three added product
 regressions, contract splits and transfers, and surviving support callers. The
 clipboard workflow now makes the first-visual placement choice required by
 CLB-010/SEQ-005/IN-008; its existing placement, media and artifact assertions remain
-intact. Browser runtime validation is pending.
+intact. Both clipboard workflows passed in the second browser run.
