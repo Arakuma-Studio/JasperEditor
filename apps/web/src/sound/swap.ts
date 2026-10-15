@@ -20,7 +20,6 @@ import {
 	clipSoundId,
 	clipSoundTitle,
 	familyRequest,
-	sfxOf,
 	variationList,
 } from './design-model.ts';
 import { playTimelineWindow } from './in-context.ts';
