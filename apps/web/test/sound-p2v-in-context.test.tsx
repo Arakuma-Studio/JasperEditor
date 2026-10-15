@@ -584,9 +584,11 @@ describe('a key pressed while it plays runs its own command too (Phase 2 verific
 			);
 			await waitFor(() => expect(inContextStore.getState().active).toBe(false));
 			expect(h.session.gestureActive).toBe(false);
-			await waitFor(() =>
-				expect(h.session.getState().history.entries.filter((e) => e.applied)).toHaveLength(0),
-			);
+			// the cue the setup added is gone: undone, not only the audition stopped
+			await waitFor(() => expect(h.session.getState().history.canUndo).toBe(false));
+			expect(h.session.getState().history.canRedo).toBe(true);
+			const seq = h.session.getState().document.sequences[h.seqId]!;
+			expect(Object.keys((seq.soundDesign as { cues?: object } | undefined)?.cues ?? {})).toHaveLength(0);
 		} finally {
 			off();
 		}

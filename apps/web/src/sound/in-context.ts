@@ -20,6 +20,7 @@ import type { EditorSession, Gesture } from '@jasper/session';
 import { createStore } from 'zustand/vanilla';
 import { beforeAgentTransaction } from '../agent-bridge/hooks.ts';
 import { t } from '../i18n/runtime.ts';
+import { onBeforeKey } from '../shell/keymap/dispatcher.ts';
 import { auditionPlayer } from './audition.ts';
 import { clipSoundTarget, cueFillTarget } from './controller.ts';
 import { cuesOf } from './cues/model.ts';
@@ -171,7 +172,10 @@ export function inContextEndedBy(codes: readonly string[]): boolean {
 function endOnInput(stop: () => void): () => void {
 	if (typeof window === 'undefined') return () => undefined;
 	let on = false;
+	let ended = false;
+	let offKey: () => void = () => undefined;
 	const handler = (e: Event) => {
+		if (ended) return;
 		if (e instanceof KeyboardEvent) {
 			// modifier keys alone (holding Shift of Shift+Space) do not end it
 			if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
@@ -181,16 +185,21 @@ function endOnInput(stop: () => void): () => void {
 				if (endedByKey === code) endedByKey = null;
 			}, 0);
 		}
+		ended = true;
 		stop();
 	};
 	const timer = setTimeout(() => {
 		on = true;
+		// the keymap's pre-key hook runs before it resolves the key, so the key's command then finds no gesture held
+		// (Ctrl+Z undoes in the same press); the window listener covers keys the keymap never sees
+		offKey = onBeforeKey(handler);
 		window.addEventListener('keydown', handler, true);
 		window.addEventListener('pointerdown', handler, true);
 	}, 0);
 	return () => {
 		clearTimeout(timer);
 		if (on) {
+			offKey();
 			window.removeEventListener('keydown', handler, true);
 			window.removeEventListener('pointerdown', handler, true);
 		}
