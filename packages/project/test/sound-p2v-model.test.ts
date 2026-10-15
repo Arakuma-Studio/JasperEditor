@@ -1,6 +1,7 @@
 // Sound Design Phase 2 model review (spec 12 §2.2, §2.3, §2.9; P2-R1…R5): regression tests for the bugs the
 // verification review found (each failed before its fix) and the coverage gaps it filled.
 import { describe, expect, it } from 'vitest';
+import { pitchPlan } from '../src/commands/handlers/sound.ts';
 import {
 	type AudioClip,
 	applyTransaction,
@@ -791,4 +792,100 @@ describe('deriveCues determinism (review, gaps)', () => {
 			{ numRuns: 40 },
 		);
 	}, 120_000);
+});
+
+describe('soundCue.resync follows trims, speed changes and moves (review, gaps)', () => {
+	function anchoredTo(edge: 'start' | 'end') {
+		const e = edit();
+		const m = libMedia(e.h);
+		const frame = edge === 'start' ? 60 : 150;
+		const cueId = addCue(e.h, { frame, anchor: { type: 'clip', clipId: e.b, edge } });
+		const [clipId] = placeOn(e.h, cueId, [{ mediaId: m }]);
+		return { ...e, m, cueId, clipId: clipId! };
+	}
+
+	it('the anchored clip trimmed or speed-changed: the cue and its sound follow its end', () => {
+		const f = anchoredTo('end');
+		const s0 = clipOf(f.h, f.clipId).start;
+		f.h.ok([{ type: 'clip.trim', clipId: f.b, edge: 'out', deltaFrames: -30 }]);
+		f.h.ok([{ type: 'soundCue.resync' }]);
+		expect(sdOf(f.h).cues[f.cueId]!.frame).toBe(120);
+		expect(clipOf(f.h, f.clipId).start).toBe(s0 - 30);
+		// twice as fast: B [60, 120) → [60, 90)
+		f.h.ok([{ type: 'clip.setSpeed', clipIds: [f.b], rate: 2, ripple: false }]);
+		const end = f.h.seq.clips[f.b]!.start + f.h.seq.clips[f.b]!.duration;
+		const r = f.h.ok([{ type: 'soundCue.resync' }]);
+		expect((r.results[0] as { moved: { to: number }[] }).moved[0]!.to).toBe(end);
+		expect(clipOf(f.h, f.clipId).start).toBe(s0 - 30 + (end - 120));
+		expect(checkInvariants(f.h.doc)).toEqual([]);
+	});
+
+	it('a clip filling two cues moves once (by the first cue’s delta); an unresolvable anchor is reported', () => {
+		const f = anchoredTo('start');
+		const other = addCue(f.h, { frame: 60, anchor: { type: 'clip', clipId: f.b, edge: 'start' } });
+		const unresolved = addCue(f.h, {
+			frame: 30,
+			anchor: { type: 'mg', clipId: f.a, event: 'intro-end' },
+		});
+		// a file in which the second cue names the same clip
+		const doc = clone(f.h.doc);
+		(doc.sequences[f.h.seqId]!.soundDesign as SoundDesign).cues[other]!.placedClipIds = [f.clipId];
+		f.h.doc = doc;
+		const s0 = clipOf(f.h, f.clipId).start;
+		f.h.ok([{ type: 'clip.move', clipIds: [f.b], deltaFrames: 8 }]);
+		const r = f.h.ok([{ type: 'soundCue.resync' }]).results[0] as {
+			moved: { cueId: string; clipIds: string[] }[];
+			unresolved: string[];
+		};
+		expect(clipOf(f.h, f.clipId).start).toBe(s0 + 8);
+		expect(r.moved.map((x) => [x.cueId, x.clipIds])).toEqual([
+			[f.cueId, [f.clipId]],
+			[other, []],
+		]);
+		expect(r.unresolved).toEqual([unresolved]);
+		expect(sdOf(f.h).cues[unresolved]!.frame).toBe(30);
+	});
+});
+
+describe('pitch plan boundaries (review, gaps)', () => {
+	it('|st| = 3 exactly is varispeed; just above uses the Pitch Shifter (place and swap)', () => {
+		expect(pitchPlan(3, 1)).toEqual({ rate: 2 ** (3 / 12), shifterSt: 0 });
+		expect(pitchPlan(-3, 1.01)).toEqual({ rate: 1.01 * 2 ** (-3 / 12), shifterSt: 0 });
+		expect(pitchPlan(3.01, 1.01)).toEqual({ rate: 1.01, shifterSt: 3.01 });
+		expect(pitchPlan(-12, 1)).toEqual({ rate: 1, shifterSt: -12 });
+		expect(pitchPlan(0, 0.99)).toEqual({ rate: 0.99, shifterSt: 0 });
+		const h = new Harness();
+		const m = libMedia(h);
+		const r = h.ok([
+			{
+				type: 'soundDesign.place',
+				frame: 100,
+				group: false,
+				layers: [
+					{ mediaId: m, pitchSt: 3 },
+					{ mediaId: m, pitchSt: -3 },
+					{ mediaId: m, pitchSt: 3.5 },
+				],
+			},
+		]);
+		const [a, b, c] = (r.results[0] as { clips: { clipId: string }[] }).clips.map((x) => clipOf(h, x.clipId));
+		const shifter = (x: SfxClip) => x.effects.filter((fx) => fx.effectId === 'jasper.audio.pitch-shifter');
+		expect(a!.speed.rate).toBeCloseTo(2 ** (3 / 12), 12);
+		expect(shifter(a!)).toHaveLength(0);
+		expect(b!.speed.rate).toBeCloseTo(2 ** (-3 / 12), 12);
+		expect(shifter(b!)).toHaveLength(0);
+		expect(c!.speed.rate).toBe(1);
+		expect(shifter(c!).map((fx) => [fx.params.semitones!.value, fx.params.cents!.value])).toEqual([[3, 50]]);
+		// swap re-pitches across the boundary both ways; never two shifters
+		h.ok([{ type: 'soundDesign.swap', clipId: a!.id, mediaId: m, pitchSt: -4 }]);
+		expect(clipOf(h, a!.id).speed.rate).toBe(1);
+		expect(shifter(clipOf(h, a!.id)).map((fx) => fx.params.semitones!.value)).toEqual([-4]);
+		h.ok([{ type: 'soundDesign.swap', clipId: a!.id, mediaId: m, pitchSt: 3 }]);
+		expect(clipOf(h, a!.id).speed.rate).toBeCloseTo(2 ** (3 / 12), 6);
+		expect(shifter(clipOf(h, a!.id))).toHaveLength(0);
+		h.ok([{ type: 'soundDesign.swap', clipId: c!.id, mediaId: m, pitchSt: 0 }]);
+		expect(clipOf(h, c!.id).speed.rate).toBe(1);
+		expect(shifter(clipOf(h, c!.id))).toHaveLength(0);
+		expect(checkInvariants(h.doc)).toEqual([]);
+	});
 });
