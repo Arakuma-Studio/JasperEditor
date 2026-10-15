@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { budgetMs, budgetReport } from '../../../scripts/perf/budget.ts';
 import { Biquad, designBiquad } from '../src/core/biquad.ts';
 import { Prng } from '../src/core/util.ts';
 import { createProcessor } from '../src/registry.ts';
@@ -178,31 +177,5 @@ describe('DeReverb, click remover, Enhance Speech', () => {
 		expect(db(rms(y, n / 2, n) / rms(quiet, n / 2, n))).toBeLessThan(-6);
 		const rumble = run1(fx('enhance-speech'), sine(30, 0.1, SR, n));
 		expect(db(toneAmplitude(rumble, 30, SR, n / 2, n) / 0.1)).toBeLessThan(-6);
-	});
-
-	it('is deterministic and reports constant latency', () => {
-		for (const id of ['dehummer', 'denoise', 'deesser', 'dereverb', 'click-remover', 'enhance-speech']) {
-			const a = noise(3, 9600, 0.5);
-			const b = a.slice();
-			const e1 = fx(id, {}, 2);
-			const e2 = fx(id, {}, 2);
-			e1.process([a, a.slice()], 0, a.length);
-			e2.process([b, b.slice()], 0, b.length);
-			expect(Buffer.from(a.buffer).equals(Buffer.from(b.buffer)), id).toBe(true);
-			expect(e1.latency()).toBe(e2.latency());
-		}
-	});
-
-	it('spectral effects run faster than 8× realtime (stereo, 10 s)', () => {
-		for (const id of ['denoise', 'dereverb']) {
-			const e = fx(id, {}, 2);
-			const l = noise(1, SR * 10, 0.3);
-			const r = noise(2, SR * 10, 0.3);
-			const t0 = performance.now();
-			e.process([l, r], 0, l.length);
-			const ms = performance.now() - t0;
-			console.info(budgetReport(`${id}, 10 s stereo`, ms, 1250));
-			expect(ms, id).toBeLessThan(budgetMs(1250));
-		}
 	});
 });

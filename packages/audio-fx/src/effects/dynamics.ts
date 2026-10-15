@@ -4,8 +4,6 @@ import { HardLimiter } from './dynamics/limiter.ts';
 import { DynamicsRack, MultibandCompressor } from './dynamics/rack.ts';
 import { Compressor, ExpanderGate, TubeCompressor } from './dynamics/single.ts';
 
-export { compressorCurve, expanderCurve, softClip } from './dynamics/curves.ts';
-
 export const DYNAMICS_PROCESSORS: Readonly<Record<string, ProcessorFactory>> = {
 	'jasper.audio.dynamics': (sr, ch) => new DynamicsRack(sr, ch),
 	'jasper.audio.expander-gate': (sr, ch) => new ExpanderGate(sr, ch),

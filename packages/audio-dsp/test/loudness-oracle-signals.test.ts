@@ -1,11 +1,11 @@
 import { afterAll, describe, it } from 'vitest';
-import { dual, type Ffmpeg, findFfmpeg, Oracle, sineLufs } from './oracle.ts';
+import { dual, type Ffmpeg, findFfmpeg, Oracle } from './oracle.ts';
 import { concat, dbfs, pink, sine, speech, white } from './util.ts';
 
 const FF = findFfmpeg();
 
 describe.skipIf(!FF)(
-	'loudness oracle: synthetic programmes (ours vs ffmpeg vs analytic)',
+	'loudness oracle: synthetic programmes (ours vs ffmpeg; analytic true peaks)',
 	{ timeout: 300_000 },
 	() => {
 		const oracle = new Oracle(FF as Ffmpeg);
@@ -24,7 +24,6 @@ describe.skipIf(!FF)(
 			]) {
 				const a = dbfs(lvl);
 				await oracle.compare(`sine ${f} Hz ${lvl} dBFS`, dual(sine(f, a, sr, sr * 4, 0.2)), sr, {
-					i: sineLufs(f, sr, [a, a], [1, 1]),
 					tp: lvl,
 					src: 'analytic',
 				});
@@ -38,7 +37,6 @@ describe.skipIf(!FF)(
 				[sine(1000, dbfs(-20), 44100, 44100 * 5)],
 				44100,
 				{
-					i: sineLufs(1000, 44100, [dbfs(-20)], [1]),
 					tp: -20,
 					src: 'analytic',
 				},
@@ -49,10 +47,7 @@ describe.skipIf(!FF)(
 			const sr = 48000;
 			const lv = [-28, -26, -24, -10, -30, -22];
 			const ch = lv.map((l, c) => sine(1000, dbfs(l), sr, sr * 6, c * 0.4));
-			await oracle.compare('5.1 sines, LFE −10 dBFS', ch, sr, {
-				i: sineLufs(1000, sr, lv.map(dbfs), [1, 1, 1, 0, 1.41, 1.41]),
-				src: 'analytic',
-			});
+			await oracle.compare('5.1 sines, LFE −10 dBFS', ch, sr);
 			await oracle.compare(
 				'5.1 pink noise, loud LFE',
 				[0, 1, 2, 3, 4, 5].map((c) => pink(sr, 8, c === 3 ? 0.8 : 0.25, 100 + c)),

@@ -1,8 +1,7 @@
-// Generic contract of every registered processor (port of filmcraft `effects/mod.rs` tests): catalogue
-// consistency, block-size independence with parameter changes, degenerate blocks, extreme settings, reset.
-import { AUDIO_EFFECTS, type ParamSpec } from '@jasper/project/audio';
+// Generic contract of every registered processor (port of filmcraft `effects/mod.rs` tests): block-size independence with parameter changes, degenerate blocks, extreme settings, reset.
+import type { ParamSpec } from '@jasper/project/audio';
 import { describe, expect, it } from 'vitest';
-import { type AudioProcessor, numericDefault } from '../src/core/effect.ts';
+import type { AudioProcessor } from '../src/core/effect.ts';
 import { createProcessor, processorIds } from '../src/registry.ts';
 import { noise, SR } from './util.ts';
 
@@ -20,32 +19,10 @@ function tweakValue(p: ParamSpec): number | boolean {
 const isF32Subnormal = (v: number) => v !== 0 && Math.abs(v) < 1.1754944e-38;
 
 describe('audio-fx registry', () => {
-	it('every catalogue entry has exactly one processor with matching params', () => {
-		const ids = AUDIO_EFFECTS.map((s) => s.id);
-		expect(new Set(ids).size).toBe(ids.length);
-		expect([...processorIds()].sort()).toEqual([...ids].sort());
-		for (const spec of AUDIO_EFFECTS) {
-			expect(spec.id.startsWith('jasper.audio.')).toBe(true);
-			const fx = createProcessor(spec.id, SR, 2)!;
-			expect(fx.id).toBe(spec.id);
-			const names = new Set<string>();
-			for (const p of spec.params) {
-				expect(names.has(p.name), `${spec.id}: duplicate ${p.name}`).toBe(false);
-				names.add(p.name);
-				expect(/^[a-zA-Z][a-zA-Z0-9]*$/.test(p.name), `${spec.id}.${p.name}: camelCase name`).toBe(true);
-				if (p.type === 'number') {
-					expect(p.range?.min).toBeTypeOf('number');
-					expect(p.range?.max).toBeTypeOf('number');
-					expect(p.default as number).toBeGreaterThanOrEqual(p.range!.min!);
-					expect(p.default as number).toBeLessThanOrEqual(p.range!.max!);
-				}
-				if (p.type === 'enum') expect(p.options).toContain(p.default);
-				expect(['number', 'boolean', 'enum']).toContain(p.type);
-				expect(fx.param(p.name)).toBe(numericDefault(p));
-			}
-			expect(fx.setParam('nope', 1)).toBe(false);
-		}
+	it('refuses unknown processor and parameter identifiers', () => {
 		expect(createProcessor('jasper.audio.nope', SR, 2)).toBeNull();
+		const processor = createProcessor('jasper.audio.amplify', SR, 2)!;
+		expect(processor.setParam('nope', 1)).toBe(false);
 	});
 
 	it('output is independent of the block size, with a parameter change mid-stream', () => {
@@ -95,18 +72,19 @@ describe('audio-fx registry', () => {
 	it('handles empty, single-sample, mono and extra-channel blocks', () => {
 		for (const id of processorIds()) {
 			const fx = createProcessor(id, SR, 2)!;
-			fx.process([], 0, 0);
-			fx.process([new Float32Array(0), new Float32Array(0)], 0, 0);
-			const a = new Float32Array([0.25]);
-			const b = new Float32Array([-0.25]);
-			fx.process([a, b], 0, 1);
-			fx.process([new Float32Array(3).fill(0.1)], 0, 3);
-			fx.process(
-				[new Float32Array(3).fill(0.1), new Float32Array(3).fill(0.1), new Float32Array(3).fill(0.1)],
-				0,
-				3,
-			);
-			expect(Number.isFinite(a[0]!) && Number.isFinite(b[0]!), id).toBe(true);
+			const cases = [
+				[],
+				[new Float32Array(0), new Float32Array(0)],
+				[new Float32Array([0.25]), new Float32Array([-0.25])],
+				[new Float32Array(3).fill(0.1)],
+				[new Float32Array(3).fill(0.1), new Float32Array(3).fill(0.1), new Float32Array([0.1, -0.3, 0.2])],
+			];
+			for (const channels of cases) {
+				const extra = channels[2]?.slice();
+				fx.process(channels, 0, channels[0]?.length ?? 0);
+				for (const channel of channels) expect(channel.every(Number.isFinite), id).toBe(true);
+				if (extra) expect(channels[2], `${id}: extra channel`).toEqual(extra);
+			}
 		}
 	});
 

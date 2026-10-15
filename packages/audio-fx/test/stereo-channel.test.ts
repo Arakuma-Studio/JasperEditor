@@ -1,11 +1,8 @@
 // Channel utilities and stereo imagery (ports of filmcraft `channel.rs` / `premiere_tests.rs` tests plus analytic
 // checks of the pan laws and the Mono Maker crossover).
 
-import { balanceGains, panMonoGains as constantPowerPan } from '@jasper/audio-dsp';
 import { describe, expect, it } from 'vitest';
-import { magnitudeDb } from '../src/core/biquad.ts';
 import { dbToGain } from '../src/core/math.ts';
-import { AmbisonicsPanner } from '../src/effects/stereo-channel.ts';
 import { createProcessor } from '../src/registry.ts';
 import { noise, peak, rms, SR, sine, toneAmplitude } from './util.ts';
 
@@ -21,20 +18,6 @@ function run(e: ReturnType<typeof fx>, l: Float32Array, r: Float32Array) {
 	e.process([a, b], 0, a.length);
 	return [a, b] as const;
 }
-
-describe('pan laws (audio-dsp, used by Balance)', () => {
-	it('constant-power pan sums power to 1; balance is cosine', () => {
-		for (let i = -10; i <= 10; i++) {
-			const [l, r] = constantPowerPan(i / 10);
-			expect(l * l + r * r).toBeCloseTo(1, 12);
-		}
-		expect(constantPowerPan(0)[0]).toBeCloseTo(Math.SQRT1_2, 12);
-		expect(balanceGains(0)).toEqual([1, 1]);
-		expect(balanceGains(1)[0]).toBeCloseTo(0, 12);
-		expect(balanceGains(1)[1]).toBe(1);
-		expect(balanceGains(0.5)[0]).toBeCloseTo(Math.cos(Math.PI / 4), 12);
-	});
-});
 
 describe('channel utilities', () => {
 	it('Amplify reaches exact gains, smoothed, linked or not; −96 dB is silence', () => {
@@ -68,10 +51,15 @@ describe('channel utilities', () => {
 		const [l, r] = run(b, new Float32Array(4).fill(0.5), new Float32Array(4).fill(0.5));
 		expect(Math.abs(l[3]!)).toBeLessThan(1e-6);
 		expect(r[3]).toBeCloseTo(0.5 * Math.SQRT2, 6);
-		for (const p of [-100, -50, 0, 50, 100]) {
+		for (const [p, gl, gr] of [
+			[-100, 1, 0],
+			[-50, 1, Math.SQRT1_2],
+			[0, 1, 1],
+			[50, Math.SQRT1_2, 1],
+			[100, 0, 1],
+		]) {
 			const e = fx('balance', { balance: p });
 			const [x, y] = run(e, new Float32Array(4).fill(1), new Float32Array(4).fill(1));
-			const [gl, gr] = balanceGains(p / 100);
 			expect(x[3]).toBeCloseTo(gl, 6);
 			expect(y[3]).toBeCloseTo(gr, 6);
 		}
@@ -176,7 +164,6 @@ describe('Mono Maker', () => {
 			const [y] = run(z, x, x.slice());
 			expect(Math.abs(20 * Math.log10(toneAmplitude(y, f, SR, n / 2, n) / 0.5))).toBeLessThan(0.05);
 		}
-		expect(magnitudeDb({ b0: 1, b1: 0, b2: 0, a1: 0, a2: 0 }, 1, SR)).toBe(0);
 	});
 });
 
@@ -213,7 +200,6 @@ describe('spatial', () => {
 		}
 		const [l, r] = run(fx('ambisonics-panner', { pan: 180 }), x, new Float32Array(n));
 		expect(rms(r)).toBeGreaterThan(3 * rms(l));
-		expect(AmbisonicsPanner.sourceGains(30, 0, 0, 0)[0]).toBeCloseTo(1, 6);
 		expect(peak(l)).toBeLessThan(1);
 	});
 });

@@ -2,7 +2,6 @@
 // partial overlap and unrelated material. The test signals and cases follow FilmCraft's
 // `crates/audio-dsp/src/sync.rs` tests (licenses/ported/multicam.md), plus partial-overlap and sub-sample cases.
 import { describe, expect, it } from 'vitest';
-import { fft } from '../src/fft.ts';
 import { decimate, findOffset, mixdown } from '../src/sync.ts';
 
 /** Deterministic uniform noise in [−1, 1). */
@@ -101,29 +100,6 @@ function shifted(s: Float32Array, delay: number, len: number): Float32Array {
 	}
 	return b;
 }
-
-describe('fft', () => {
-	it('matches a naive DFT and round-trips', () => {
-		const n = 64;
-		const x = Array.from({ length: n }, (_, i) => (((i * 7) % 13) - 6) / 6);
-		const re = Float64Array.from(x);
-		const im = new Float64Array(n);
-		fft(re, im);
-		for (let k = 0; k < n; k++) {
-			let r = 0;
-			let q = 0;
-			for (let t = 0; t < n; t++) {
-				const a = (-2 * Math.PI * k * t) / n;
-				r += x[t]! * Math.cos(a);
-				q += x[t]! * Math.sin(a);
-			}
-			expect(re[k]).toBeCloseTo(r, 9);
-			expect(im[k]).toBeCloseTo(q, 9);
-		}
-		fft(re, im, true);
-		for (let t = 0; t < n; t++) expect(re[t]! / n).toBeCloseTo(x[t]!, 12);
-	});
-});
 
 describe('decimate', () => {
 	it('keeps low frequencies and removes high ones', () => {

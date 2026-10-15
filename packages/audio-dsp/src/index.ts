@@ -64,7 +64,7 @@ export {
 	sensitivityThresholdDb,
 } from './ducking.ts';
 export { Fft, fft, nextPow2 } from './fft.ts';
-export { K_PREFILTER_PROTOTYPE, K_RLB_PROTOTYPE, kPrefilter, kRlb, kWeightingPower } from './kweight.ts';
+export { K_PREFILTER_PROTOTYPE, K_RLB_PROTOTYPE, kPrefilter, kRlb } from './kweight.ts';
 export { limitBuffer, TruePeakLimiter, type TruePeakLimiterOptions } from './limiter.ts';
 export {
 	defaultChannelWeights,
@@ -72,7 +72,6 @@ export {
 	LoudnessMeter,
 	type LoudnessMeterOptions,
 	type LoudnessSummary,
-	lufsToEnergy,
 	measureLoudness,
 	type NormalizeGain,
 	normalizeGainDb,
@@ -89,7 +88,6 @@ export {
 } from './meter.ts';
 export {
 	besselI0,
-	blockTruePeak,
 	Interpolator,
 	PolyphaseBank,
 	TAPS_PER_PHASE,

@@ -68,7 +68,7 @@ export function planCuts(p: Plan): [number, number][] {
 	return out;
 }
 
-export function jumpScore(a: Analysis, i: number, j: number): number {
+function jumpScore(a: Analysis, i: number, j: number): number {
 	const m = a.beats.length;
 	let s = 0;
 	let n = 0;

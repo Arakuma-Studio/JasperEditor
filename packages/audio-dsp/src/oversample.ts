@@ -273,18 +273,3 @@ export class TruePeakDetector {
 		for (const ip of this.interp) ip.reset();
 	}
 }
-
-/**
- * True peak (linear, max over channels) of a planar block measured from silence (no history), e.g. for a
- * whole buffer. Allocates a detector; use {@link TruePeakDetector} in real-time paths.
- */
-export function blockTruePeak(
-	planar: Float32Array[],
-	sampleRate: number,
-	offset = 0,
-	length?: number,
-): number {
-	const d = new TruePeakDetector(sampleRate, Math.max(1, planar.length));
-	d.process(planar, offset, length);
-	return d.truePeak();
-}

@@ -77,6 +77,9 @@ No new dependencies (anime.js 4.5.0 and `@remotion/*` came with the contracts).
 
 - Unit/component: `pnpm vitest run --project @jasper/mg-templates --project @jasper/motion --project @jasper/compositions` and the files `packages/project/test/anime-templates.test.ts`, `apps/engine/test/anime-templates.test.ts`, `apps/web/test/anime-templates.test.tsx`, `apps/mcp/test/templates.test.ts`.
 - Parity of the fframes templates: `pnpm mg:build && MG_PARITY=1 pnpm vitest run packages/mg-templates`.
+  Requires Chromium (Playwright installation, system Google Chrome or `JASPER_BROWSER_EXECUTABLE`). The native/TS
+  SVG comparison rasterizes both frames in the same browser and saves PNGs under the logged temporary
+  `jasper-mg-svg-parity-*` directory; equivalent SVG markup is allowed.
 - Playwright: `E2E_PORT=48447 pnpm e2e e2e/anime-templates.spec.ts`.
 
 ## Verification (2026-10-01, load average 25–55 on 12 cores)

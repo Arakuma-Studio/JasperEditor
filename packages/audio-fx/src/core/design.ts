@@ -25,7 +25,7 @@ export type Family = 'bessel' | 'butterworth' | 'chebyshev' | 'elliptic';
 export type Band = 'lowPass' | 'highPass' | 'bandPass' | 'bandStop';
 
 /** Minimal immutable complex number (prototype design only: not on the per-redesign path). */
-export class C {
+class C {
 	constructor(
 		readonly re: number,
 		readonly im: number,
@@ -300,12 +300,6 @@ function landen(k0: number): number[] {
 	return v;
 }
 
-/** Complete elliptic integral K(k). */
-export function ellipK(k: number): number {
-	if (k >= 1) return Number.POSITIVE_INFINITY;
-	return landen(k).reduce((a, vi) => a * (1 + vi), Math.PI / 2);
-}
-
 function landenUp(w0: C, v: readonly number[]): C {
 	let w = w0;
 	for (let i = v.length - 1; i >= 0; i--) {
@@ -316,17 +310,17 @@ function landenUp(w0: C, v: readonly number[]): C {
 }
 
 /** cd(u·K, k) for complex normalised u. */
-export function cde(u: C, k: number): C {
+function cde(u: C, k: number): C {
 	return landenUp(u.scale(Math.PI / 2).cos(), landen(k));
 }
 
 /** sn(u·K, k) for complex normalised u. */
-export function sne(u: C, k: number): C {
+function sne(u: C, k: number): C {
 	return landenUp(u.scale(Math.PI / 2).sin(), landen(k));
 }
 
 /** Inverse of `cde`: normalised u with cd(u·K, k) = w. */
-export function acde(w0: C, k: number): C {
+function acde(w0: C, k: number): C {
 	const v = landen(k);
 	let w = w0;
 	for (let i = 0; i < v.length; i++) {
@@ -340,7 +334,7 @@ export function acde(w0: C, k: number): C {
 }
 
 /** Inverse of `sne`: sn(uK) = cd((1 − u)K). */
-export function asne(w: C, k: number): C {
+function asne(w: C, k: number): C {
 	return C.real(1).sub(acde(w, k));
 }
 
@@ -693,31 +687,4 @@ export function realize(
 	bilinear(f, sampleRate);
 	intoSections(f, out, s);
 	return out;
-}
-
-/** Design parameters. */
-export type DesignSpec = {
-	family: Family;
-	band: Band;
-	/** Prototype order (1..=MAX_ORDER). */
-	order: number;
-	/** Low-pass / high-pass edge, or the lower edge for band-pass / band-stop (Hz). */
-	f1: number;
-	/** Upper edge for band-pass / band-stop (Hz). */
-	f2: number;
-	/** Pass-band ripple (dB, Chebyshev / elliptic). */
-	rippleDb: number;
-	/** Stop-band attenuation (dB, elliptic). */
-	stopDb: number;
-};
-
-/** Designs a digital filter at `sampleRate`. */
-export function design(spec: DesignSpec, sampleRate: number): Sections {
-	return realize(
-		prototype(spec.family, spec.order, spec.rippleDb, spec.stopDb),
-		spec.band,
-		spec.f1,
-		spec.f2,
-		sampleRate,
-	);
 }

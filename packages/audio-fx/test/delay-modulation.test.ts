@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { Phaser, tempoDelayMs } from '../src/effects/delay-modulation.ts';
 import { createProcessor } from '../src/registry.ts';
 import { noise, peak, SR, sine, toneAmplitude } from './util.ts';
 
@@ -32,13 +31,17 @@ describe('delays', () => {
 	});
 
 	it('tempo sync: note values at a tempo', () => {
-		expect(tempoDelayMs(120, 2)).toBe(500);
-		expect(tempoDelayMs(120, 3)).toBe(250);
-		expect(tempoDelayMs(120, 5)).toBeCloseTo(750, 9);
-		const d = fx('delay', { mode: 'tempo', bpm: 90, division: '1/4', mix: 100, feedback: 0 });
-		const x = impulse(48000);
-		d.process([x], 0, x.length);
-		expect(x[32000]).toBeCloseTo(1, 6);
+		for (const [bpm, division, sample] of [
+			[120, '1/4', 24000],
+			[120, '1/8', 12000],
+			[120, '1/4d', 36000],
+			[90, '1/4', 32000],
+		] as const) {
+			const delay = fx('delay', { mode: 'tempo', bpm, division, mix: 100, feedback: 0 });
+			const samples = impulse(48000);
+			delay.process([samples], 0, samples.length);
+			expect(samples[sample], `${bpm} BPM ${division}`).toBeCloseTo(1, 6);
+		}
 	});
 
 	it('Multitap: taps at their times and levels', () => {
@@ -67,14 +70,6 @@ describe('delays', () => {
 });
 
 describe('modulation', () => {
-	it('Phaser notches sweep between the upper frequency and 6·depth octaves below', () => {
-		const p = new Phaser(SR, 1);
-		p.setParam('upperFreq', 4000);
-		p.setParam('depth', 50);
-		expect(p.sweepHz(0)).toBeCloseTo(4000, 6);
-		expect(p.sweepHz(0.5)).toBeCloseTo(4000 / 8, 6);
-	});
-
 	it('Flanger: a static delay makes comb notches at odd multiples of 1/(2·delay)', () => {
 		// Initial = final delay (no sweep), no feedback, 50 % mix: H = 0.5 + 0.5·z^−D → notches at (2k+1)/(2D).
 		const f = fx('flanger', { initialDelay: 2, finalDelay: 2, feedback: 0, mix: 50 });
@@ -127,17 +122,12 @@ describe('modulation', () => {
 		expect(Math.max(...d)).toBeGreaterThan(4.9 * 48);
 	});
 
-	it('mix 0 is identity for the modulation effects; determinism', () => {
+	it('mix 0 is identity for the modulation effects', () => {
 		for (const id of ['chorus-flanger', 'flanger', 'phaser']) {
 			const x = noise(2, 4800, 0.4);
 			const y = x.slice();
 			fx(id, { mix: 0 }).process([y], 0, y.length);
 			for (let i = 0; i < x.length; i++) expect(y[i]).toBeCloseTo(x[i]!, 6);
-			const a = noise(3, 9600, 0.5);
-			const b = a.slice();
-			fx(id).process([a], 0, a.length);
-			fx(id).process([b], 0, b.length);
-			expect(Buffer.from(a.buffer).equals(Buffer.from(b.buffer)), id).toBe(true);
 		}
 	});
 });

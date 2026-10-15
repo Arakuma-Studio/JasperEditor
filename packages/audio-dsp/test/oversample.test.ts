@@ -1,68 +1,7 @@
 // Ported from FilmCraft crates/audio-dsp/src/oversample.rs tests, plus TruePeakDetector checks.
 import { describe, expect, it } from 'vitest';
-import {
-	blockTruePeak,
-	Interpolator,
-	PolyphaseBank,
-	TAPS_PER_PHASE,
-	TruePeakDetector,
-	truePeakFactor,
-} from '../src/index.ts';
+import { TruePeakDetector } from '../src/index.ts';
 import { Rng, sine } from './util.ts';
-
-describe('polyphase true-peak interpolator', () => {
-	it('phases have unity DC, mirror each other and interpolate sines', () => {
-		const bank = new PolyphaseBank(4);
-		expect(bank.coeffs.length).toBe(3 * TAPS_PER_PHASE);
-		for (let k = 0; k < 3; k++) {
-			let s = 0;
-			for (let j = 0; j < TAPS_PER_PHASE; j++) s += bank.coeffs[k * TAPS_PER_PHASE + j];
-			expect(Math.abs(s - 1)).toBeLessThan(1e-12);
-		}
-		// point 1/4 is point 3/4 time-reversed
-		for (let j = 0; j < TAPS_PER_PHASE; j++)
-			expect(bank.coeffs[j]).toBeCloseTo(bank.coeffs[2 * TAPS_PER_PHASE + TAPS_PER_PHASE - 1 - j], 14);
-		// the folded evaluation equals the direct convolution
-		const ipd = new Interpolator();
-		const r = new Rng(11);
-		const win: number[] = [];
-		for (let n = 0; n < 200; n++) {
-			const x = r.uniform();
-			win.unshift(x);
-			const got = ipd.pushPeak(bank, x);
-			if (n < TAPS_PER_PHASE) continue;
-			let want = 0;
-			for (let k = 0; k < 3; k++) {
-				let y = 0;
-				for (let j = 0; j < TAPS_PER_PHASE; j++) y += bank.coeffs[k * TAPS_PER_PHASE + j] * win[j];
-				want = Math.max(want, Math.abs(y));
-			}
-			expect(got).toBeCloseTo(want, 12);
-		}
-		// Sine at fs/4 with 45° phase: samples at ±0.707, true peak 1.0.
-		const ip = new Interpolator();
-		let peak = 0;
-		for (let n = 0; n < 400; n++) {
-			const x = Math.fround(Math.sin((Math.PI / 2) * n + Math.PI / 4));
-			const p = ip.pushPeak(bank, x);
-			if (n > 40) peak = Math.max(peak, p);
-		}
-		expect(Math.abs(peak - 1)).toBeLessThan(0.002); // the half-sample point is on the grid
-	});
-
-	it('oversampling factor reaches ≥ 176.4 kHz', () => {
-		expect(truePeakFactor(44100)).toBe(4);
-		expect(truePeakFactor(48000)).toBe(4);
-		expect(truePeakFactor(32000)).toBe(6);
-		expect(truePeakFactor(22050)).toBe(8);
-		expect(truePeakFactor(88200)).toBe(2);
-		expect(truePeakFactor(96000)).toBe(2);
-		expect(truePeakFactor(176400)).toBe(1);
-		expect(truePeakFactor(192000)).toBe(1);
-		expect(new PolyphaseBank(1).factor).toBe(1);
-		expect(new Interpolator().pushPeak(new PolyphaseBank(1), -0.5)).toBe(0.5);
-	});
-});
 
 describe('TruePeakDetector', () => {
 	it('measures inter-sample peaks: fs/4 sine at 45° (44.1/48 kHz), 12 kHz off-grid at 96 kHz (2×)', () => {
@@ -102,7 +41,6 @@ describe('TruePeakDetector', () => {
 		expect(whole.truePeak()).toBe(whole.truePeakPerChannel()[0]);
 		// ±0.25 uniform noise: inter-sample overshoot is bounded well below 2× the sample peak
 		expect(whole.truePeakPerChannel()[1]).toBeLessThan(0.5);
-		expect(blockTruePeak([a, b], 48000)).toBe(whole.truePeak());
 		whole.reset();
 		expect(whole.truePeak()).toBe(0);
 		expect(whole.truePeakDb()).toBe(Number.NEGATIVE_INFINITY);

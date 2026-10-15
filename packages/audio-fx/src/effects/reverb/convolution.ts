@@ -12,12 +12,12 @@ import { Smoothed } from '../../core/smooth.ts';
 import { DelayLine, OnePole, Prng } from '../../core/util.ts';
 
 /** Partition (block) size: the effect's latency. */
-export const PART = 256;
+const PART = 256;
 
 type IrSpec = { rt60: number; erMs: number; erCount: number; hfDecay: number; onsetMs: number; seed: number };
 
 /** Characters of the generated impulses (order of CONVOLUTION_IMPULSES). */
-export const IR_SPECS: readonly IrSpec[] = [
+const IR_SPECS: readonly IrSpec[] = [
 	{ rt60: 0.45, erMs: 25, erCount: 10, hfDecay: 6, onsetMs: 8, seed: 11 },
 	{ rt60: 0.8, erMs: 45, erCount: 14, hfDecay: 4, onsetMs: 15, seed: 12 },
 	{ rt60: 1.9, erMs: 80, erCount: 18, hfDecay: 2.2, onsetMs: 30, seed: 13 },
@@ -27,12 +27,12 @@ export const IR_SPECS: readonly IrSpec[] = [
 	{ rt60: 0.2, erMs: 8, erCount: 6, hfDecay: 12, onsetMs: 2, seed: 17 },
 ];
 
-export function irLength(spec: IrSpec, sr: number): number {
+function irLength(spec: IrSpec, sr: number): number {
 	return Math.floor((spec.rt60 * 1.1 + spec.erMs * 0.001) * sr) + 1;
 }
 
 /** Writes the stereo impulse `index` into `out` (two equal-length buffers). */
-export function generateIr(index: number, sr: number, out: [Float32Array, Float32Array]): void {
+function generateIr(index: number, sr: number, out: [Float32Array, Float32Array]): void {
 	const spec = IR_SPECS[Math.min(Math.max(index, 0), IR_SPECS.length - 1)]!;
 	out.forEach((buf, c) => {
 		const len = buf.length;
@@ -172,13 +172,6 @@ export class ConvolutionReverb extends EffectBase {
 
 	latency(): number {
 		return PART;
-	}
-
-	/** The current processed impulse response of output channel `c` (tests: RT60, determinism). */
-	impulse(c: 0 | 1): Float32Array {
-		const scale = Math.min(Math.max(this.pv.v('roomSize') / 100, 0.1), 1);
-		const len = Math.max(Math.floor(this.baseLen * scale), 1);
-		return this.base[c].slice(0, Math.min(len, this.baseLen));
 	}
 
 	private block(): void {

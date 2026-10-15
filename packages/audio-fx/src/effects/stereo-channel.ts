@@ -492,7 +492,7 @@ export class AmbisonicsPanner extends EffectBase {
 	}
 
 	/** `[left, right]` gains of a source at azimuth `az` (degrees, + = left) after the rotation. */
-	static sourceGains(az: number, pan: number, tilt: number, roll: number): [number, number] {
+	private static sourceGains(az: number, pan: number, tilt: number, roll: number): [number, number] {
 		const rad = (d: number) => (d * Math.PI) / 180;
 		let v: [number, number, number] = [Math.cos(rad(az)), Math.sin(rad(az)), 0];
 		const rot = (w: [number, number, number], axis: number, ang: number): [number, number, number] => {

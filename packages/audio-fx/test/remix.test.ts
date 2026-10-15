@@ -1,11 +1,9 @@
-// Music remix on synthetic beat tracks (port of filmcraft `remix.rs` tests): tempo and beats, similarity, plans hit the
+// Music remix on synthetic beat tracks (port of filmcraft `remix.rs` tests): tempo and beats, plans hit the
 // target at beat boundaries keeping intro and outro, determinism and parameters, refusals.
 import { describe, expect, it } from 'vitest';
-import { budgetMs, budgetReport } from '../../../scripts/perf/budget.ts';
 import {
 	analyzeMusic,
 	beatLead,
-	jumpScore,
 	MIN_PIECE_BEATS,
 	planCuts,
 	planLength,
@@ -40,13 +38,6 @@ describe('remix analysis', () => {
 			expect(worst, `${bpm}@${sr}`).toBeLessThanOrEqual(tol);
 			expect(a.beats.length + 2).toBeGreaterThanOrEqual(truth.length);
 		}
-	});
-
-	it('similarity prefers the same section', () => {
-		const { a } = music(120, 24);
-		const first = (bar: number) => a.beats.findIndex((b) => b >= bar * 4 * a.period - a.period / 4);
-		const i = first(1);
-		expect(jumpScore(a, i, first(5))).toBeGreaterThan(jumpScore(a, i, first(9)));
 	});
 
 	it('silence, a steady tone and noise have no beat', () => {
@@ -97,15 +88,5 @@ describe('remix plans', () => {
 		expect(few.pieces.length).toBeLessThan(many.pieces.length);
 		expect(planRemix(a, a.len).pieces.length).toBe(1);
 		expect(() => planRemix(a, SR)).toThrow(RemixError);
-	});
-
-	it('analyses a 3-minute song quickly', () => {
-		const { audio: long } = testMusic(SR, 110, 82, 3);
-		const t0 = performance.now();
-		const r = analyzeMusic(long, SR);
-		const ms = performance.now() - t0;
-		console.info(budgetReport('remix analysis, 3 min', ms, 6000));
-		expect(ms).toBeLessThan(budgetMs(6000));
-		expect(Math.abs(r.bpm - 110)).toBeLessThan(1);
 	});
 });

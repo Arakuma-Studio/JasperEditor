@@ -15,8 +15,8 @@ subpath) holds every processor. Conventions: planar `Float32Array` channels, `pr
 output independent of the block size, denormals flushed, `reset()` restores the initial state, optional `latency()`,
 `responseDb(f)` (filters), `transferDb(band, inDb)` (dynamics) and `meters()`. Parameters arrive as numbers (enum →
 option index, boolean → 0/1) through `applyParams`; the catalogue in `packages/project/src/registry/audio/*` is the
-single source of names, ranges, defaults and units (a test checks that every catalogue entry has exactly one processor
-with the same parameters).
+single source of names, ranges, defaults and units. Registry tests exercise public refusal, streaming, reset and
+bounded-output contracts; individual effect tests check the parameter-selected audio and editor curves.
 
 Hosts:
 
@@ -111,17 +111,17 @@ packages/compositions/test/audio-fx-preview.test.ts apps/engine/test/audio-fx.te
 
 - **Filters vs. RBJ cookbook**: peaking/shelving/pass/notch magnitudes match the analytic cookbook response; LP/HP are
   −3.01 dB at the cutoff with 12 dB/oct; pass filters of every slope are digital Butterworths (6·N dB/oct); Scientific
-  Filter designs meet Chebyshev ripple and elliptic stop-band specs, all poles inside the unit circle; graphic EQ bands
-  sit on ISO 266 centres.
-- **Compressor static curve** equals the textbook soft-knee formula; steady-state sine output within 0.2 dB of
-  `transferDb`; attack/release time constants within 15 %.
+  Filter responses meet Chebyshev ripple, elliptic stop-band and Bessel cutoff specs; extreme settings remain finite.
+  Graphic EQ bands sit on ISO 266 centres.
+- **Compressor static curve** and steady-state audio output each match the textbook soft-knee formula (audio within
+  0.2 dB); attack/release time constants within 15 %.
 - **Hard Limiter** never exceeds Maximum Amplitude (sample peak) in random blocks; with True Peak the 4× interpolated
   peak stays within ceiling + 0.1 dB; below the ceiling it is a pure delay equal to `latency()`.
 - **DeHummer** notches 50/60 Hz and every enabled harmonic by ≥ 30 dB while a 1 kHz tone stays within 0.5 dB.
 - **Pitch Shifter** shifts 440 Hz by the requested semitones + cents within 0.5 %; zero shift is the input delayed by
   exactly `latency()`.
 - **Latency compensation**: every effect's `latency()` equals its measured impulse delay (limiter, FFT filter, DeNoise,
-  pitch, convolution = 256).
+  pitch and convolution).
 - **Determinism and block-size independence** for every processor (generic registry contract, parameter change
   mid-stream, extremes stay finite, tails without subnormals, reset).
 - **Preview/export parity**: every effect gives bit-identical samples in the worklet core (128-sample quanta) and the
