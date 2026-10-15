@@ -30,6 +30,7 @@ import {
 import { MaskSchema } from './mask.ts';
 import { PuppetSchema } from './puppet.ts';
 import { type VectorShapeData, VectorShapeDataSchema } from './shapes.ts';
+import type { ClipSfx, SoundDesign } from './sound.ts';
 import { TextAnimatorGroupSchema, TextMoreOptionsSchema, TextPathOptionsSchema } from './text-animators.ts';
 import {
 	CameraDataSchema,
@@ -603,6 +604,11 @@ export const AudioClipSchema = z.looseObject({
 	essential: z.unknown().optional(),
 	/** audio-fx: this clip is a piece of a music remix. */
 	remix: ClipRemixSchema.optional(),
+	/**
+	 * sound-design (spec 12 §2.2): the clip was placed by sound design (its cue, sound, layer, role, alignment). Accepted
+	 * as any value here so a malformed one never fails a load; INV-SFX checks it and `repairDocument` repairs or drops it.
+	 */
+	sfx: z.custom<ClipSfx>(() => true).optional(),
 });
 export const StillClipSchema = z.looseObject({
 	...commonShape,
@@ -1053,6 +1059,11 @@ export const SequenceSchema = z.looseObject({
 	previews: SequencePreviewSettingsSchema.optional(),
 	/** gaps (GR-4/5): present = an Essential Graphics graphic (its tracks are the layers), see gaps/graphics.ts. */
 	graphic: GraphicSettingsSchema.optional(),
+	/**
+	 * sound-design (spec 12 §2.2): sound cues, settings and the last Sound Check. Accepted as any value here so a
+	 * malformed one never fails a load; INV-SOUND checks it and `repairDocument` repairs it (`readSoundDesign`).
+	 */
+	soundDesign: z.custom<SoundDesign>(() => true).optional(),
 });
 export type Sequence = Omit<DeepStrip<z.infer<typeof SequenceSchema>>, 'clips'> & {
 	clips: Record<string, Clip>;

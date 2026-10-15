@@ -38,6 +38,8 @@ export const ID_PREFIXES = {
 	roto: 'rto',
 	/** three-d: the 3D Camera Tracker of a clip. */
 	cameraTracker: 'ctk',
+	/** sound-design (spec 12 §2.2): sound cues of a sequence (`Sequence.soundDesign.cues`). */
+	soundCue: 'cue',
 } as const;
 export type IdPrefix = (typeof ID_PREFIXES)[keyof typeof ID_PREFIXES];
 export const ALL_ID_PREFIXES: readonly IdPrefix[] = Object.values(ID_PREFIXES);
