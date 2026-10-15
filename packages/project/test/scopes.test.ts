@@ -149,19 +149,18 @@ describe('scopes maths (FilmCraft port)', () => {
 
 	it('the HLS vectorscope puts hue on the angle and saturation on the radius', () => {
 		// BT.709 red direction 102.906186° + HLS hue, at full-saturation radius 0.5.
-		const cases: [number, number, number, number, number][] = [
-			[255, 0, 0, -0.111677681, 0.487368542],
-			[255, 255, 0, -0.477912379, 0.146968563],
-			[0, 255, 0, -0.366234698, -0.340399979],
-			[0, 255, 255, 0.111677681, -0.487368542],
-			[0, 0, 255, 0.477912379, -0.146968563],
-			[255, 0, 255, 0.366234698, 0.340399979],
+		const cases: [number, number, number, number][] = [
+			[255, 0, 0, 102.906186],
+			[255, 255, 0, 162.906186],
+			[0, 255, 0, 222.906186],
+			[0, 255, 255, 282.906186],
+			[0, 0, 255, 342.906186],
+			[255, 0, 255, 42.906186],
 		];
-		for (const [r, g, b, cb, cr] of cases) {
+		for (const [r, g, b, angle] of cases) {
 			const v = vectorscopeHls(solid(4, 4, [r, g, b]));
-			expect(Math.abs(v.mean[0] - cb)).toBeLessThan(1e-6);
-			expect(Math.abs(v.mean[1] - cr)).toBeLessThan(1e-6);
 			const pk = vectorPeaks(v, 1)[0]!;
+			expect(Math.abs(pk.angleDeg - angle)).toBeLessThan(0.5);
 			expect(Math.abs(pk.magnitude - 100)).toBeLessThan(0.6);
 		}
 		const half = vectorPeaks(vectorscopeHls(solid(4, 4, [191, 64, 64])), 1)[0]!;

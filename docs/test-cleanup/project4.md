@@ -1768,7 +1768,7 @@ Original location: `packages/project/test/scopes.test.ts:154`.
 Original location: `packages/project/test/scopes.test.ts:172`.
 1. Contract from the section source: the HLS vectorscope puts hue on the angle and saturation on the radius.
 2. Detectable caller failure: Incorrect signal histogram/waveform/vector measurement or protocol name; specifically the named case would return or store the wrong result.
-3. Oracle after final review: BT.709 red direction is 102.906186°, HLS primaries add 0/60/120/180/240/300° and full saturation has radius 0.5. Replace private grid-coordinate helper expectations with fixed continuous mean vectors (1e−6, finer than one display cell); retain peak saturation tolerances and the existing half-saturation direction tolerance 0.5°.
+3. Oracle after final review: BT.709 red direction is 102.906186°, HLS primaries add 0/60/120/180/240/300° and full saturation has radius 0.5. Replace private grid-coordinate helper expectations with fixed plotted peak angles for all six primaries, using the existing 0.5° direction tolerance for grid quantization. Retain peak saturation tolerances. The plotted data remains the observable so an incorrect rasterization cannot hide behind a correct mean.
 4. Observes scope signal/summary/paint and naming API through result data/errors, not collaborator calls.
 5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
 6. Owns the distinct case “the HLS vectorscope puts hue on the angle and saturation on the radius” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
