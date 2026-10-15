@@ -115,13 +115,26 @@ describe('Variation cycling runs', () => {
 		expect(h.session.getCommitted().sequences[h.seqId]).toEqual(original.sequences[h.seqId]);
 	});
 
-	it('another selection closes the run, even when the same clip is selected again', async () => {
+	it('selecting other clips closes the run, even when the user comes back; Esc and a click on the same clip do not', async () => {
+		// Decision (lead, Phase 2 verification): the WP2.4b e2e cycles with Esc (stops the audition on swap, clears the
+		// selection) and a click on the clip between presses — still one run; going to another clip ends it.
 		const h = await filled();
+		h.apply([{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: [0.2, 0.2, 0.2, 1] }]);
+		h.session.select('timeline', [h.clipId], 'replace');
 		const n = h.labels().length;
 		await h.press();
 		await h.press();
 		expect(h.labels()).toHaveLength(n + 1);
 		h.session.select('timeline', [], 'replace');
+		h.session.select('timeline', [h.clipId], 'replace');
+		await h.press();
+		expect(h.labels()).toHaveLength(n + 1);
+		expect(h.labels().at(-1)).toBe('Swap Sound ×3');
+		const other = Object.keys(h.session.getState().document.sequences[h.seqId]!.clips).find(
+			(id) => id !== h.clipId,
+		);
+		expect(other).toBeTruthy();
+		h.session.select('timeline', [other!], 'replace');
 		h.session.select('timeline', [h.clipId], 'replace');
 		await h.press();
 		expect(h.labels()).toHaveLength(n + 2);

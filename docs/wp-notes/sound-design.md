@@ -2942,7 +2942,9 @@ Fixed:
   plays in context as documented (it played alone). Fill With ▸ hover auditions on the cue of the menu (it used Fill
   mode's cue or the last selected cue). Tests: `apps/web/test/sound-p2v-in-context.test.tsx`.
 - **Variation cycling** (`sound/swap.ts`): a failed step (engine offline) advanced the cycle and the count (the next
-  press skipped a variation, the label counted swaps that never happened); any selection change now closes a run; Next /
+  press skipped a variation, the label counted swaps that never happened); selecting other clips now closes a run (the
+  lead narrowed the review's "any selection change": Esc and a click on the same clip between presses continue the run,
+  as the WP2.4b e2e does; the gate's e2e failed with "Swap Sound" instead of "Swap Sound ×2" under the broader rule); Next /
   Previous Variation are disabled for project audio whose only `sfx` is a detected peak (every press failed). Tests:
   `apps/web/test/sound-p2v-variation.test.tsx`.
 - **Variation cycling across runs** (`sound/swap.ts`, `sound/fill.ts`): each run rebuilt the list around the sound the

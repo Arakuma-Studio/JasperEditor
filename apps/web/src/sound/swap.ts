@@ -7,8 +7,8 @@
 // original's family, then its nearest descriptors (engine `similarTo`). The list is the same in every run, and a run
 // starts from the sound the clip plays, so presses after another edit continue the cycle and come back to the original. Repeated presses on
 // the same clips coalesce into ONE history entry "Swap Sound ×4" (the session's coalescing with no time window and a
-// changing label); the run closes on any other edit or undo (the document revision moves), any selection change or
-// another sequence. A step that fails leaves the run where it was. Presses that arrive while a step is running are
+// changing label); the run closes on any other edit or undo (the document revision moves), a selection of other clips
+// or another sequence (deselecting and selecting the same clips again — Esc, a click on the clip — continues it). A step that fails leaves the run where it was. Presses that arrive while a step is running are
 // added up and applied as one step. With "Audition on swap" (default on) the 2 s around the swapped sound play in
 // context afterwards.
 import type { EngineClient } from '@jasper/engine-client';
@@ -151,7 +151,7 @@ type Run = {
 	/** Session revision after our last step: anything else moves it and closes the run. */
 	revision: number;
 	nonce: number;
-	/** Stops watching the selection (any selection change after a step closes the run). */
+	/** Stops watching the selection (selecting other clips after a step closes the run). */
 	unwatch: () => void;
 };
 
@@ -327,10 +327,14 @@ async function step(
 	current.steps = total;
 	current.revision = session.revision;
 	auditionAfterSwap(session, current.sequenceId, swaps[0]!.clipId);
-	// another selection (even of the same clips again) closes the run: the next press is a new history entry
+	// a selection of other clips closes the run (the next press is a new history entry), even if the user comes back
+	// to these clips before pressing again; an empty selection (Esc) or the same clips again do not
 	if (run === current) {
+		const runIds = new Set(current.clipIds);
 		const off = session.on('selection.changed', () => {
-			if (run === current) closeRun();
+			if (run !== current) return;
+			const sel = session.getState().selection.timeline.clips;
+			if (sel.length && (sel.length !== runIds.size || sel.some((id) => !runIds.has(id)))) closeRun();
 		});
 		current.unwatch = () => off();
 	}
