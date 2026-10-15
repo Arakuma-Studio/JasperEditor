@@ -37,7 +37,11 @@ mixer compensates clip and track latency (audio-mix's mixer). The preview applie
 the bus's inputs arrive together, and every clip's media starts early by the graph's read-ahead (the Mix's latency, plus
 the loudness limiter's while it runs) plus its own clip effects' latency (`compensate()` in `AudioLayer.tsx`). Lanes,
 send levels, pucks and insert automation are evaluated at the time of the samples each stage is processing
-(`stripStageTimes`), as the export does.
+(`stripStageTimes`), as the export does. The graph follows Remotion's transport (spec 12 Phase 0 close-out,
+[sound-design.md](sound-design.md) §Phase 0 close-out): a seek flushes its delay lines and effect processors, a Play
+after a paused seek is primed (the sources start at the play position and the picture waits for the program), and the
+read-ahead is held while playing, so latency changes during playback keep the audio in flight instead of re-creating
+the media players.
 
 ### 1.2 Model (optional fields, read-time defaults, no schema bump)
 
@@ -45,8 +49,11 @@ send levels, pucks and insert automation are evaluated at the time of the sample
 - `AudioClip.essential?: unknown` — Essential Sound settings, read through `readEssentialSound` (zod, loose).
 - `AudioClip.remix?: ClipRemix` — a remix piece: group id, index/count, the original `{start, duration, sourceIn}`,
   target, segments, variations, BPM.
-- Invariants `INV-ESSENTIAL` (unreadable settings, stray slot markers, wrong remix counts) with `repairDocument`
-  actions `normalize-essential`, `drop-essential-mark`, `recount-remix`.
+- `EssentialSound.panOffset?: true` — the Pan section is an offset (written by every command; settings saved without
+  it come from builds that wrote Pan into the clip's pan, `migrateLegacyPan`).
+- Invariants `INV-ESSENTIAL` (unreadable settings, stray slot markers, wrong remix counts, a Pan saved by a build that
+  wrote it into the pan) with `repairDocument` actions `normalize-essential`, `drop-essential-mark`, `recount-remix`,
+  `migrate-essential-pan`.
 
 ### 1.3 Commands (`schemas/essential.ts`, owner `audio-fx`, milestone M3)
 
@@ -73,7 +80,8 @@ The panel never processes audio. Each option reconciles into an ordinary, keyfra
 | Mute | Mute |
 
 Loudness ▸ Auto-Match writes clip gain; Clip Volume offsets the Volume; Pan (SFX) offsets the clip's own pan (since
-spec 12 Phase 0; before, it overwrote it), and what the ±100 / −∞…+15 dB ranges clamp away is given back when the
+spec 12 Phase 0; before, it overwrote it: projects saved then open with the section switched off, value kept, so the
+pan stays as saved, `migrateLegacyPan`), and what the ±100 / −∞…+15 dB ranges clamp away is given back when the
 offset is switched off (`EssentialSound.residual`); Ducking writes Volume
 keyframes through `audio.autoDuck` (triggers = clips of the "Duck against" types); Duration ▸ Remix runs `clip.remix`,
 Duration ▸ Stretch `clip.setSpeed`. Reconciliation is by delta: only parameters whose derived value changed are
@@ -207,15 +215,17 @@ Decisions (undocumented behaviour or our choice):
 
 ## 6. Limits
 
-- Preview latency compensation (spec 12 WP0.1) starts the media early: right after Play the first `read-ahead` samples
-  (≤ 43 ms with one STFT effect) are silent, and frame-based (STFT) inserts start their frames where playback started,
-  so the first ≈ 0.2 s after an onset can differ from an export started elsewhere by ≈ −40 dB (the same holds between
-  two exports with different range starts); steady state is sample-identical. The same `read-ahead` is lost after a
-  seek. Clips that start later are premounted by their lead (≥ 2 s), so a cut is heard from its first sample (Phase 0
-  verification, `e2e/sound-p0-preview.spec.ts`). Not measured: after a seek the route delay lines may still hold up
-  to `read-ahead` of the audio from before the seek (Remotion's 30 ms fade-in hides most of it below ≈ 30 ms); a
-  change of the read-ahead during playback (normalisation on/off, adding a latent insert) re-creates every clip's
-  media player, a short dropout.
+- Preview latency compensation (spec 12 WP0.1) starts the media early by the read-ahead. A Play after a seek while
+  paused is primed (spec 12 Phase 0 close-out): nothing at the play position is lost, the picture waits the read-ahead
+  plus clip-effect latency (≤ 0.5 s, else unprimed) and both start together (`e2e/sound-p0-transport.spec.ts`). A seek
+  *during* playback still loses the first read-ahead after it (the picture jumps at once; Remotion also loses its decode
+  time there); the graph's audio of the old position is faded out (3 ms) and flushed. Frame-based (STFT) inserts start
+  their frames where processing started, so the first ≈ 0.2 s after an onset can differ from an export started
+  elsewhere by ≈ −40 dB (the same holds between two exports with different range starts); steady state is
+  sample-identical. Clips that start later are premounted by their lead (≥ 2 s), so a cut is heard from its first
+  sample (`e2e/sound-p0-preview.spec.ts`). A latency change during playback (normalisation on/off, an insert added or
+  removed) inserts one gap of the added latency and, when the latency grew, leaves the Mix that much late until playback
+  stops (inter-track alignment exact); the media players are not re-created.
 - 5.1 clips: processors run per channel; stereo-image effects act on L/R only and pass the other channels. Surround
   Reverb, Mastering, Loudness Meter and Loudness Auto Gain handle all six channels (Dry / output / maximiser on every
   channel, BS.1770 weights; sound-design Phase 0, `packages/audio-fx/test/regressions-p0.test.ts`).

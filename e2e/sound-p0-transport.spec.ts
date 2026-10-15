@@ -7,10 +7,20 @@
 // the Mix has a Hard Limiter too. Below the ceiling a Hard Limiter is a pure delay, so the Mix is the source summed,
 // delayed by the inserts and compensated by the read-ahead.
 import { spawnSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { createProject, enableAgentBridge, focusTimeline, query, ROOT, transact } from './support.ts';
+import {
+	clipBox,
+	clips,
+	createProject,
+	enableAgentBridge,
+	focusTimeline,
+	query,
+	ROOT,
+	serverInfo,
+	transact,
+} from './support.ts';
 
 test.use({ launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] } });
 // Each test measures on its own: a failing one restarts the worker, and the next test sets its project up again.
@@ -52,9 +62,6 @@ const TAP = () => {
 		buses.set(ctx, bus);
 		connect.call(bus, dest);
 		const entry = { ctx, node: null as AudioWorkletNode | null, blocks: [] as Block[] };
-		ctx.addEventListener('statechange', () => {
-			if (w.__tap.on) w.__tap.stops.push({ t: -ctx.currentTime });
-		});
 		w.__tap.ctxs.push(entry);
 		void ctx.audioWorklet.addModule(url).then(() => {
 			const node = new AudioWorkletNode(ctx, 'jasper-e2e-tap', {
@@ -191,6 +198,16 @@ function peaks(r: Recording, min = 0.05): { t: number; v: number }[] {
 	return out.map(({ t, v }) => ({ t, v }));
 }
 
+/**
+ * Context times where Remotion stopped every queued buffer at once inside [from, to] (it re-anchors and reschedules
+ * every player when the picture and the audio clock drift apart, e.g. when the main thread stalls under load). Such a
+ * play does not measure the graph; the tests play again (up to `ATTEMPTS` times).
+ */
+function reschedules(r: Recording, from: number, to: number): number[] {
+	return [...new Set(r.stops.filter((t) => t >= from && t <= to).map((t) => Number(t.toFixed(4))))];
+}
+const ATTEMPTS = 3;
+
 async function seekPaused(p: Page, frame: number): Promise<void> {
 	await query(p, 'playhead.set', { frame });
 	await p.waitForTimeout(600);
@@ -226,6 +243,8 @@ const frameAt = (s: number) => Math.round((s * fps.num) / fps.den);
 test.beforeAll(async ({ browser }) => {
 	mkdirSync(outDir, { recursive: true });
 	page = await browser.newPage();
+	if (process.env.E2E_MIXDBG)
+		page.on('console', (m) => m.text().startsWith('[mixdbg]') && console.log(m.text()));
 	await page.addInitScript(TAP);
 	await enableAgentBridge(page);
 });
@@ -329,14 +348,24 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 	await setup();
 	/** Plays from 0 and returns the clicks heard and the picture's sequence-time-0 context time. */
 	const measure = async () => {
-		await seekPaused(page, frameAt(1));
-		await seekPaused(page, 0);
-		let picture = Number.NaN;
-		const rec = await playFor(page, 200, async (p) => {
-			await p.waitForTimeout(150);
-			picture = await pictureAnchor(p, 900);
-		});
-		return { rec, picture };
+		let m = { rec: null as unknown as Recording, picture: Number.NaN };
+		for (let a = 0; a < ATTEMPTS; a++) {
+			await seekPaused(page, frameAt(1));
+			await seekPaused(page, 0);
+			let picture = Number.NaN;
+			const rec = await playFor(page, 200, async (p) => {
+				await p.waitForTimeout(150);
+				picture = await pictureAnchor(p, 900);
+			});
+			m = { rec, picture };
+			const r = reschedules(rec, rec.armed, rec.armed + 1.2);
+			if (r.length === 0) break;
+			console.log(
+				'Remotion rescheduled during the play (load), again:',
+				r.map((t) => t - rec.armed).join(' '),
+			);
+		}
+		return m;
 	};
 	// baseline without latency (both limiters off): how far the picture's frame report trails the audio here
 	const setEnabled = (enabled: boolean) =>
@@ -350,12 +379,22 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 		return c ? m.picture - (c.t - 0.28) : Number.NaN;
 	};
 	// Two plays each: a frame report delayed by a stall only makes the picture look later, so the smaller is right.
+	// Under heavy load the frame reports scatter: the pair is measured again until both agree within 10 ms.
+	const pair = async () => {
+		for (let a = 0; ; a++) {
+			const m1 = await measure();
+			const m2 = await measure();
+			const o = [offsetOf(m1), offsetOf(m2)];
+			if (Math.abs(o[0]! - o[1]!) < 0.01 || a === ATTEMPTS - 1) return { offset: Math.min(...o), m: m1 };
+			console.log('scattered picture reports (load), again:', o.join(' '));
+		}
+	};
 	expect((await setEnabled(false)).ok).toBe(true);
-	const baseOffset = Math.min(offsetOf(await measure()), offsetOf(await measure()));
+	const baseOffset = (await pair()).offset;
 	expect((await setEnabled(true)).ok).toBe(true);
-	const first = await measure();
-	const { rec } = first;
-	const offset = Math.min(offsetOf(first), offsetOf(await measure()));
+	const primed = await pair();
+	const { rec } = primed.m;
+	const { offset } = primed;
 	const ps = peaks(rec);
 	console.log('play-start peaks', rec.armed, rec.frames[0]! / rec.rate, JSON.stringify(ps));
 	test.info().annotations.push({ type: 'peaks', description: JSON.stringify({ armed: rec.armed, ps }) });
@@ -401,94 +440,165 @@ test('Play after a seek while paused: no audio from before the seek', async () =
 test('seek during playback: the audio from before the seek stops at the seek', async () => {
 	test.setTimeout(240_000);
 	await setup();
-	await seekPaused(page, frameAt(2.2));
-	const rec = await playFor(page, 700, async (p) => {
-		await p.waitForTimeout(600);
-		// type 4.5 s into the timecode readout while playing (it seeks without pausing)
-		await p.getByTestId('timeline-timecode').click();
-		const input = p.getByTestId('timeline-timecode-input');
-		await input.fill('00:00:04:15');
-		await mark(p, 'enter');
-		await input.press('Enter');
-		await p.waitForTimeout(100);
-		console.log('after the typed seek', JSON.stringify(await query(p, 'playhead.get')));
-	});
-	const enter = rec.marks.enter ?? -1;
-	const stop = rec.stops.find((t) => t >= enter - 0.001) ?? -1;
+	let rec = null as unknown as Recording;
+	let enter = -1;
+	let stop = -1;
+	for (let a = 0; a < ATTEMPTS; a++) {
+		await seekPaused(page, frameAt(2.2));
+		rec = await playFor(page, 700, async (p) => {
+			await p.waitForTimeout(600);
+			// type 4.5 s into the timecode readout while playing (it seeks without pausing)
+			await p.getByTestId('timeline-timecode').click();
+			const input = p.getByTestId('timeline-timecode-input');
+			await input.fill('00:00:04:15');
+			await mark(p, 'enter');
+			await input.press('Enter');
+			await p.waitForTimeout(100);
+			console.log('after the typed seek', JSON.stringify(await query(p, 'playhead.get')));
+		});
+		enter = rec.marks.enter ?? -1;
+		// the seek's own reschedule, and any other one around it
+		stop = rec.stops.find((t) => t >= enter - 0.001) ?? -1;
+		const other = reschedules(rec, rec.armed, enter + 0.3).filter((t) => Math.abs(t - stop) > 0.002);
+		if (other.length === 0) break;
+		console.log('Remotion rescheduled around the seek (load), again:', other.map((t) => t - enter).join(' '));
+	}
 	let last = -1;
 	for (let i = 0; i < rec.data.length; i++) if (Math.abs(rec.data[i]!) > 0.01) last = i;
 	const lastT = last >= 0 ? timeOf(rec, last) : -1;
 	console.log('seek while playing: enter', enter, 'stop', stop, 'last tone', lastT, 'tail', lastT - stop);
-	console.log('stops', JSON.stringify(rec.stops), 'armed', rec.armed);
 	test.info().annotations.push({ type: 'tail', description: JSON.stringify({ enter, stop, lastT }) });
 	expect(stop).toBeGreaterThan(0);
 	expect(lastT - stop).toBeLessThan(0.008);
 });
 
+/** Runs of |x| < 0.01 longer than 2 ms (a 1 kHz tone of 0.35 crosses 0.01 for 9 µs): [start, end) context times. */
+function gaps(r: Recording): { t0: number; t1: number }[] {
+	const out: { t0: number; t1: number }[] = [];
+	let from = -1;
+	for (let i = 0; i <= r.data.length; i++) {
+		const quiet = i < r.data.length && Math.abs(r.data[i]!) < 0.01;
+		if (quiet && from < 0) from = i;
+		if (!quiet && from >= 0) {
+			if (i - from > 0.002 * r.rate) out.push({ t0: timeOf(r, from), t1: timeOf(r, i - 1) + 1 / r.rate });
+			from = -1;
+		}
+	}
+	return out;
+}
+
 test('a latency change during playback: no dropout beyond the added latency', async () => {
+	test.setTimeout(300_000);
+	await setup();
+	let rec = null as unknown as Recording;
+	let edit = -1;
+	let gap = Number.NaN;
+	for (let a = 0; a < ATTEMPTS; a++) {
+		await seekPaused(page, frameAt(2.0));
+		let added = '';
+		rec = await playFor(page, 1200, async (p) => {
+			await p.waitForTimeout(500);
+			await mark(p, 'edit');
+			const r = await transact(p, [
+				{
+					type: 'effect.add',
+					target: { trackId: 'A1' },
+					effectId: 'jasper.audio.hard-limiter',
+					params: { lookAhead: 20 },
+					ref: '$added',
+				},
+			]);
+			expect(r.ok, JSON.stringify(r)).toBe(true);
+			if (r.ok) added = r.refs!.$added!;
+		});
+		edit = rec.marks.edit ?? -1;
+		// back to one A1 limiter for the next play
+		expect((await transact(page, [{ type: 'effect.remove', effectInstanceId: added }])).ok).toBe(true);
+		const all = gaps(rec);
+		console.log(
+			'gaps rel. edit',
+			all.map((g) => `${((g.t1 - g.t0) * SR).toFixed(0)}@${(g.t0 - edit).toFixed(3)}`).join(' '),
+		);
+		// the gap the edit makes starts once the change reaches the graph (within 0.3 s of the transaction)
+		gap = Math.max(0, ...all.filter((g) => g.t0 >= edit && g.t0 < edit + 0.3).map((g) => g.t1 - g.t0));
+		// A valid play: the tone ran without a gap for 0.3 s before the edit (under heavy load Remotion's scheduling
+		// falls behind or it reschedules every player: that is not the graph) and nothing was rescheduled.
+		const before = all.some((g) => g.t1 > edit - 0.3 && g.t0 < edit);
+		const r = reschedules(rec, edit - 0.3, edit + 0.7);
+		if (!before && r.length === 0) break;
+		console.log('disturbed play (load), again:', before, r.map((t) => t - edit).join(' '));
+	}
+	console.log('latency change: gap', gap * SR, 'samples', gap, 's');
+	test.info().annotations.push({ type: 'gap', description: JSON.stringify({ samples: gap * SR }) });
+	// one gap of the added latency (998 samples, 20.8 ms); re-created slots and delay lines gave twice that (41.6 ms)
+	expect(gap).toBeLessThan(0.03);
+});
+
+test('Essential Sound Pan saved by an older build: opening the project keeps the pan keyframes; Pan on/off is an offset', async () => {
 	test.setTimeout(240_000);
 	await setup();
-	await seekPaused(page, frameAt(2.0));
-	const rec = await playFor(page, 1200, async (p) => {
-		await p.waitForTimeout(500);
-		await mark(p, 'edit');
-		const r = await transact(p, [
-			{
-				type: 'effect.add',
-				target: { trackId: 'A1' },
-				effectId: 'jasper.audio.hard-limiter',
-				params: { lookAhead: 20 },
-			},
-		]);
-		expect(r.ok, JSON.stringify(r)).toBe(true);
-	});
-	const edit = rec.marks.edit ?? -1;
-	// the longest run of |x| < 0.01 while the tone plays (the tone crosses 0.01 every 0.5 ms)
-	let worst = 0;
-	let at = -1;
-	let run = 0;
-	for (let i = 0; i < rec.data.length; i++) {
-		const t = timeOf(rec, i);
-		if (t < edit - 0.2 || t > edit + 0.7) {
-			run = 0;
-			continue;
-		}
-		if (Math.abs(rec.data[i]!) < 0.01) run++;
-		else {
-			if (run > worst) {
-				worst = run;
-				at = t;
-			}
-			run = 0;
-		}
-	}
-	console.log('latency change: longest gap', worst, 'samples', worst / SR, 's at', at - edit);
-	{
-		const gaps: string[] = [];
-		let r0 = 0;
-		for (let i = 0; i < rec.data.length; i++) {
-			if (Math.abs(rec.data[i]!) < 0.01) r0++;
-			else {
-				if (r0 > 96) gaps.push(`${r0}@${(timeOf(rec, i) - edit).toFixed(4)}`);
-				r0 = 0;
-			}
-		}
-		const amp = (from: number, to: number) => {
-			let m = 0;
-			for (let i = 0; i < rec.data.length; i++) {
-				const t = timeOf(rec, i) - edit;
-				if (t >= from && t < to) m = Math.max(m, Math.abs(rec.data[i]!));
-			}
-			return m;
-		};
-		console.log('gaps', gaps.join(' '), 'amp before', amp(-0.3, -0.05), 'after', amp(0.3, 0.6));
-		console.log(
-			'stops/states rel. edit',
-			JSON.stringify(rec.stops.map((x) => (x < 0 ? `S${(-x - edit).toFixed(4)}` : (x - edit).toFixed(4)))),
+	const projectId = decodeURIComponent(/\/project\/([^/?#]+)/.exec(page.url())![1]!);
+	const a1 = (await clips(page, ['A1']))[0]!;
+	// pan automation on the A1 clip and the SFX type (the pan stays the clip's own)
+	const r = await transact(page, [
+		{ type: 'param.setAnimated', target: ['clip', a1.id, 'pan'], animated: true, at: { frames: 0 } },
+		{ type: 'param.set', target: ['clip', a1.id, 'pan'], value: -50, at: { frames: 0 } },
+		{ type: 'param.set', target: ['clip', a1.id, 'pan'], value: 20, at: { frames: 20 } },
+		{ type: 'param.set', target: ['clip', a1.id, 'pan'], value: 50, at: { frames: 60 } },
+		{ type: 'essentialSound.setType', clipIds: [a1.id], audioType: 'sfx' },
+	]);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
+	const panKeys = async () => {
+		const seq = await query<{ clips: Record<string, { pan: { keyframes: { value: number }[] } }> }>(
+			page,
+			'doc.get',
+			{ path: ['sequences', (await query<{ sequenceId: string }>(page, 'sequence.summary')).sequenceId] },
 		);
-	}
-	test.info().annotations.push({ type: 'gap', description: JSON.stringify({ worst, at: at - edit }) });
-	// undo the second limiter for the next tests
-	await query(page, 'playhead.get');
-	expect(worst / SR).toBeLessThan(0.05);
+		return seq.clips[a1.id]!.pan.keyframes.map((k) => k.value);
+	};
+	expect(await panKeys()).toEqual([-50, 20, 50]);
+	// saved, then closed
+	await expect
+		.poll(async () => {
+			const env = (await (await page.request.get(`/api/projects/${projectId}`)).json()) as {
+				envelope: {
+					document: { sequences: Record<string, { clips: Record<string, { essential?: unknown }> }> };
+				};
+			};
+			return Object.values(env.envelope.document.sequences).some((q) => !!q.clips[a1.id]?.essential);
+		})
+		.toBe(true);
+	await page.goto('/');
+	await expect(page.getByTestId('home')).toBeVisible();
+	// the file as the older build left it: SFX Pan on at 20, which it wrote into the pan (the key at frame 20), and no
+	// `panOffset` marker
+	const file = join(serverInfo().appdir, 'projects', projectId, 'project.jasper');
+	const env = JSON.parse(readFileSync(file, 'utf8')) as {
+		document: {
+			sequences: Record<string, { clips: Record<string, { essential: Record<string, unknown> }> }>;
+		};
+	};
+	const seq = Object.values(env.document.sequences).find((q) => q.clips[a1.id])!;
+	const ess = seq.clips[a1.id]!.essential;
+	delete ess.panOffset;
+	ess.pan = { enabled: true, value: 20 };
+	writeFileSync(file, JSON.stringify(env));
+	await page.goto(`/project/${encodeURIComponent(projectId)}`);
+	await expect(page.getByTestId('editor-shell')).toBeVisible();
+	await expect.poll(() => page.evaluate(() => !!window.jasper)).toBe(true);
+	expect(await panKeys()).toEqual([-50, 20, 50]);
+	// Essential Sound shows the Pan section switched off (value kept): nothing moved
+	const box = await clipBox(page, a1.id);
+	await page.mouse.click(box.x + 20, box.y + box.height / 2);
+	await page.getByTestId('workspace-tab-audio').click();
+	const es = page.getByTestId('essential-sound');
+	await expect(es).toBeVisible();
+	const panOn = es.getByTestId('essential-section-pan').getByLabel('Pan on');
+	await expect(panOn).not.toBeChecked();
+	await page.screenshot({ path: join(outDir, 'essential-sound-legacy-pan.png') });
+	// switched on it offsets every key by its value; off gives them back
+	await panOn.click();
+	await expect.poll(panKeys).toEqual([-30, 40, 70]);
+	await panOn.click();
+	await expect.poll(panKeys).toEqual([-50, 20, 50]);
 });
