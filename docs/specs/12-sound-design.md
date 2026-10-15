@@ -151,7 +151,10 @@ with ties broken by id.
 
 **Register into a project.** `POST /api/sounds/:soundId/register {projectId}` returns `RegisteredMedia` plus
 `library: LibraryProvenance`. Starter, pack and synth files are copied into managed media; folder sounds follow
-the local-path import rules. The client commits `media.register` into a "Sound Effects" bin.
+the local-path import rules. A sound whose quiet head is shorter than 50 ms (and which is at most 120 s long), from
+any source, is registered as a managed WAV copy with 50 ms (whole samples) of digital silence in front, so placement
+(§2.3) is always sample-exact; its provenance's descriptors describe that copy and `leadSilenceSec` records the
+padding (decision of the Phase 1 verification; schema v7). The client commits `media.register` into a "Sound Effects" bin.
 `MediaAssetSchema.library?` carries `soundId`, `title`, `types`, `source`, `license`, `licenseUrl`, `author`,
 `sourceUrl`, `attribution`, `descriptors{peakSec, onsetSec, headQuietSec, durationSec, octaveBandsDb,
 centroidHz, maxMomentaryLufs}` and `snapshotHash`. Command `media.setLibraryInfo` sets it.
@@ -214,7 +217,8 @@ optional or loose, with read-time defaults.
 - `P` = peak, onset or end offset ÷ rate; `k = floor(P·fps)`; `start = cue − k`.
 - Residue `r = P − k/fps`. If `headQuietSec ≥ r`, set `sourceIn = round(r·FLICKS_PER_SECOND)`, which is
   sample-exact. Otherwise `sourceIn = 0`, and the error is ≤ 1 frame late (audio lag is less noticeable; cite
-  ITU-R BT.1359).
+  ITU-R BT.1359). Library sounds never take this branch: registering pads their head (§2.1), so `errorFlicks` is 0;
+  it remains for media placed from other sources (the longest library files, project audio).
 - Record `errorFlicks`. Refuse `start < 0` with `E_INVALID_PARAM`.
 - Layers: one clip each, peaks aligned, on different SFX tracks, grouped (`clip.group`).
 - Rotation: round-robin over the top-N ranked candidates, never the same file twice in a row. Seeded ±2 %
