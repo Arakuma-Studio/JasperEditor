@@ -1,28 +1,10 @@
 // Cue derivation types (spec 12 §2.2 "Derivation", P2-R3). Pure data; see ./derive.ts for the algorithm.
 import type { MgTemplateRegistry } from '../../registry/mg.ts';
+import { type CueAnchor, SOUND_DENSITIES, type SoundDensity } from '../../schema/sound.ts';
 import type { SoundAlign, SoundTypeId, SoundWeight, VisualKind } from '../taxonomy.ts';
 
-/**
- * Where a cue's frame comes from (spec 12 §2.2 `CueAnchor`). Field for field the `CueAnchor` union of the spec; the
- * zod schema of the stored cue (`packages/project/src/schema/sound.ts`) is the source of truth, this type mirrors it so
- * derivation does not depend on the stored-cue module.
- */
-export type DerivedCueAnchor =
-	| { type: 'edit'; trackId: string; outgoingClipId: string; incomingClipId: string }
-	| { type: 'transition'; transitionId: string }
-	| {
-			type: 'keyframe';
-			clipId: string;
-			property: string;
-			keyframeId?: string;
-			event: 'peak-speed' | 'settle' | 'start' | 'end';
-	  }
-	| { type: 'text'; clipId: string; side: 'in' | 'out'; unit?: number }
-	| { type: 'mg'; clipId: string; event: 'intro-end' | 'outro-start' }
-	| { type: 'clip'; clipId: string; edge: 'start' | 'end' }
-	| { type: 'scene'; mediaId: string; mediaSec: number }
-	| { type: 'beat'; clipId: string; beatIndex: number }
-	| { type: 'marker'; markerId: string };
+/** Where a cue's frame comes from: the stored cue's `CueAnchor` (spec 12 §2.2; `resolveCueAnchor` finds it again). */
+export type DerivedCueAnchor = CueAnchor;
 
 /**
  * The derivation sources (each individually selectable in Suggest Cues…). `scene`, `beat` and `pixel` need media
@@ -50,8 +32,9 @@ export function isCueDeriveSource(v: unknown): v is CueDeriveSource {
 /** `SoundCue.kind` values a derived cue can have (visual events, plus `manual` for `sfx:` markers). */
 export type DerivedCueKind = VisualKind | 'manual';
 
-export const CUE_DENSITIES = ['sparse', 'balanced', 'rich'] as const;
-export type CueDensity = (typeof CUE_DENSITIES)[number];
+/** The densities of Suggest Cues (the stored settings' `SOUND_DENSITIES`). */
+export const CUE_DENSITIES = SOUND_DENSITIES;
+export type CueDensity = SoundDensity;
 
 export type DerivedCue = {
 	/**

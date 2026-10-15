@@ -5,11 +5,9 @@
 import { clipEnd } from '../../derive/index.ts';
 import type { MgTemplateRegistry } from '../../registry/mg.ts';
 import type { MotionGraphicClip } from '../../schema/sequence.ts';
+import { MG_REFERENCE_FPS } from '../anchor.ts';
 import type { CueCandidate } from './types.ts';
 import { type CueContext, candidate, clipName, inRange, label, panOfX, secs, sortedClips } from './util.ts';
-
-/** Rate the catalogue's `introFrames` / `outroFrames` are written at (`ANIME_REFERENCE_FPS`). */
-export const MG_REFERENCE_FPS = 30;
 
 /** Intro / outro lengths in sequence frames of a clip whose content spans `totalFrames` (sourceIn + duration). */
 export function mgPhases(

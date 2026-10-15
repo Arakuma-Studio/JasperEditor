@@ -6,6 +6,7 @@ import {
 	deriveCues,
 	mgPhases,
 	parseSfxRequest,
+	resolveCueAnchor,
 	speedSegments,
 	thinPattern,
 	transitionClass,
@@ -408,7 +409,7 @@ describe('keyframes source', () => {
 		const cues = of(derive(h).cues, 'keyframes');
 		expect(cues.map((c) => [c.kind, c.frame])).toEqual([
 			['appear', 6],
-			['exit', 101],
+			['exit', 100],
 		]);
 		expect(cues[0]!.types[0]).toBe('pop');
 		expect(cues[0]!.anchor).toMatchObject({ property: 'opacity', keyframeId: kfid('o2'), event: 'end' });
@@ -493,9 +494,8 @@ describe('text source', () => {
 	it('typewriterOffsets follows typewriterSchedule (delay, typing span, out deletes backwards)', () => {
 		expect(typewriterOffsets(4, 30, 30, { delay: 0, typing: 1 }, 'in')).toEqual([0, 8, 15, 23]);
 		expect(typewriterOffsets(4, 30, 30, { delay: 0.5, typing: 0.5 }, 'in')).toEqual([15, 19, 23, 27]);
-		const out = typewriterOffsets(4, 30, 30, { delay: 0, typing: 1 }, 'out');
-		expect(out).toEqual([...out].sort((a, b) => a - b));
-		expect(out[out.length - 1]).toBeLessThanOrEqual(29);
+		// Out: the window seeks the In timeline backwards; the first typed unit stays to the window's end.
+		expect(typewriterOffsets(4, 30, 30, { delay: 0, typing: 1 }, 'out')).toEqual([7, 15, 22, 30]);
 		expect(thinPattern([0, 1, 2, 3, 4, 5, 6], 30)).toEqual([0, 3, 6]);
 	});
 
@@ -712,5 +712,44 @@ describe('merging and budgets', () => {
 		expect(r.stats.bySource.scene.found).toBe(1);
 		expect(r.warnings.map((w) => w.code)).toEqual(['W_EXTRA_CUE_INVALID']);
 		expect(of(derive(h, { sources: ['edits'], extraCues: [scene] }).cues, 'scene')).toEqual([]);
+	});
+});
+
+describe('anchors resolve back to the derived frame (resolveCueAnchor, WP2.1)', () => {
+	function check(h: Harness) {
+		const r = derive(h);
+		const seq = h.doc.sequences[h.seqId]!;
+		const off = r.cues
+			.map((c) => ({ c, at: resolveCueAnchor(h.doc, seq, c.anchor, { mgTemplates: mgRegistry() }) }))
+			.filter(({ c, at }) => at !== c.frame)
+			.map(({ c, at }) => `${c.key} @${c.frame} → ${at}`);
+		expect(off).toEqual([]);
+		return r.cues.length;
+	}
+
+	it('on the Phase 2 fixture', () => {
+		expect(check(phase2Fixture().h)).toBeGreaterThan(10);
+	});
+
+	it('on keyframed pops, pulses, fades and stops', () => {
+		const h = newHarness();
+		const a = placeStill(h, 0, 90, 'V2', 'Badge');
+		setTransform(h, a, 'scale', animOf(100, [kf('s1', 10, 0), kf('s2', 15, 115), kf('s3', 19, 100)]));
+		const b = placeStill(h, 100, 90, 'V2', 'Pulse');
+		setTransform(h, b, 'scale', animOf(100, [kf('t1', 20, 100), kf('t2', 26, 120), kf('t3', 32, 100)]));
+		const c = placeStill(h, 200, 120, 'V2', 'Fade');
+		patchClip(h, c, (cl) => {
+			cl.opacity = animOf(100, [kf('o1', 0, 0), kf('o2', 6, 100), kf('o3', 100, 100), kf('o4', 115, 0)]);
+		});
+		const d = placeStill(h, 0, 90, 'V3', 'Hard', 1200, 800);
+		setTransform(
+			h,
+			d,
+			'position',
+			animOf<[number, number]>([960, 540], [kf('p1', 10, [0, 540]), kf('p2', 20, [960, 540])]),
+		);
+		const e = placeStill(h, 100, 90, 'V3', 'Shrink');
+		setTransform(h, e, 'scale', animOf(100, [kf('u1', 30, 100), kf('u2', 40, 0)]));
+		expect(check(h)).toBeGreaterThanOrEqual(6);
 	});
 });

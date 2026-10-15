@@ -10,7 +10,7 @@ export {
 export { deriveCues, MAX_DERIVED_CUES } from './derive.ts';
 export { DIALOGUE_BRIDGE_SEC, DIALOGUE_PAD_SEC, dialogueRanges } from './edits.ts';
 export { parseSfxRequest } from './markers.ts';
-export { MG_REFERENCE_FPS, mgPhases } from './mg.ts';
+export { mgPhases } from './mg.ts';
 export {
 	ABRUPT_STOP,
 	K_ROT,

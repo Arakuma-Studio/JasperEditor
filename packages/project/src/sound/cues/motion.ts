@@ -522,7 +522,10 @@ function clipMotion(
 		samples,
 		i0,
 		cues,
-		(k, ev) => anchor('opacity', keyFor('opacity', k, ev === 'end' ? 'after' : 'before'), ev),
+		(k, ev) => {
+			const key = keyFor('opacity', k, ev === 'end' ? 'after' : 'before');
+			return { anchor: anchor('opacity', key, ev), frame: key ? frameOfTime(key.time) : null };
+		},
 		where,
 	);
 }
@@ -552,7 +555,7 @@ function opacityRamps(
 	samples: Sample[],
 	i0: number,
 	cues: CueCandidate[],
-	anchor: (k: number, ev: 'start' | 'end') => DerivedCueAnchor,
+	anchorAt: (k: number, ev: 'start' | 'end') => { anchor: DerivedCueAnchor; frame: number | null },
 	where: string,
 ): void {
 	if (!isAnimated((c as { opacity?: Animatable<number> }).opacity)) return;
@@ -571,6 +574,9 @@ function opacityRamps(
 			if (top >= 0.5) {
 				let m = a;
 				while (m < e && samples[m]!.op < 0.95 * top) m++;
+				// On the key the fade reaches (the anchor's `end`) when it is inside the ramp.
+				const r = anchorAt(m - 1, 'end');
+				if (r.frame !== null && r.frame >= frameOf(a + 1) && r.frame <= frameOf(e)) m = r.frame - frameOf(0);
 				const short = m - a <= 0.25 * ctx.fps;
 				cues.push(
 					candidate('keyframes', {
@@ -581,7 +587,7 @@ function opacityRamps(
 						types: short ? ['pop', 'ui', 'swish'] : ['shimmer', 'reverse', 'whoosh'],
 						align: short ? 'peak' : 'end',
 						pan: panOfX(ctx, samples[m]!.cx),
-						anchor: anchor(m - 1, 'end'),
+						anchor: r.anchor,
 						confidence: short ? 0.55 : 0.45,
 						reason: `Opacity ${Math.round(samples[a]!.op * 100)}→${Math.round(top * 100)} % fades in (${secs(ctx, m - a)}) ${where}`,
 						window: { start: frameOf(a + 1), end: frameOf(m) + 1 },
@@ -596,16 +602,20 @@ function opacityRamps(
 			while (k < n && samples[k]!.op < samples[k - 1]!.op - 1e-4) k++;
 			const e = k - 1;
 			if (samples[e]!.op <= 0.05) {
+				// On the key the fade starts from (the anchor's `start`) when it is at the ramp's start.
+				const r = anchorAt(a - 1, 'start');
+				const f =
+					r.frame !== null && r.frame >= frameOf(a) && r.frame <= frameOf(e) ? r.frame : frameOf(a + 1);
 				cues.push(
 					candidate('keyframes', {
-						key: `keyframes:${c.id}:fade-out:${frameOf(a + 1)}`,
-						frame: frameOf(a + 1),
+						key: `keyframes:${c.id}:fade-out:${f}`,
+						frame: f,
 						kind: 'exit',
 						weight: 'ambient',
 						types: ['swish', 'whoosh', 'reverse'],
 						align: 'peak',
 						pan: panOfX(ctx, samples[a]!.cx),
-						anchor: anchor(a, 'start'),
+						anchor: r.anchor,
 						confidence: 0.4,
 						reason: `Opacity ${Math.round(prev * 100)}→${Math.round(samples[e]!.op * 100)} % fades out (${secs(ctx, e - a)}) ${where}`,
 						window: { start: frameOf(a + 1), end: frameOf(e) + 1 },

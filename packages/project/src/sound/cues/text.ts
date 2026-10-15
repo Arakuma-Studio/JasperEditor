@@ -12,6 +12,7 @@ import type { TextAnimatorGroup, TextRangeSelector } from '../../schema/text-ani
 import { getTextAnimationSpec, resolveTextAnimationWindows } from '../../text-animations.ts';
 import { rangeParams } from '../../text-animators/evaluate.ts';
 import { rangeValue, unitCount } from '../../text-animators/selectors.ts';
+import { textUnitCount, typewriterScheduleMs } from '../anchor.ts';
 import type { SoundTypeId } from '../taxonomy.ts';
 import type { CueCandidate, DerivedCueKind } from './types.ts';
 import {
@@ -70,7 +71,12 @@ export function thinPattern(frames: readonly number[], fps: number): number[] {
 	return out;
 }
 
-/** Keystroke frames (offsets from the window start) of a typewriter window, per `typewriterSchedule` of @jasper/motion. */
+/**
+ * Keystroke frames (offsets from the window start) of a typewriter window, from `typewriterScheduleMs` (the renderer's
+ * `typewriterSchedule`, @jasper/motion). In: unit i shows from the first frame whose seek time reaches its keystroke
+ * (`⌈t/frame⌉`). Out plays the In timeline mirrored (window frame k seeks `(N − 1 − k)` frames): the i-th deleted unit
+ * (the (n − 1 − i)-th typed) is gone from frame `N − ⌈t/frame⌉` (N = the window's end: the first unit stays to the end).
+ */
 export function typewriterOffsets(
 	units: number,
 	windowFrames: number,
@@ -79,23 +85,14 @@ export function typewriterOffsets(
 	side: 'in' | 'out',
 ): number[] {
 	const n = Math.max(0, Math.floor(units));
-	if (n === 0 || windowFrames <= 0) return [];
+	if (n === 0 || windowFrames <= 0 || !(fps > 0)) return [];
 	const frameMs = 1000 / fps;
-	const total = Math.max(1, windowFrames * frameMs);
-	const numP = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-	const delay = Math.min(0.9, Math.max(0, numP(params.delay, 0)));
-	const typing = Math.min(1 - delay, Math.max(0.05, numP(params.typing, 1)));
-	const start = total * delay;
-	const slot = (total * typing) / n;
-	const out: number[] = [];
-	for (let i = 0; i < n; i++) {
-		const t = start + slot * i;
-		// In: unit i shows from the first frame at or after t. Out (the In motion reversed): it is gone from the first
-		// frame after total − t.
-		const j = side === 'in' ? Math.ceil(t / frameMs - 1e-9) : Math.floor((total - t) / frameMs + 1e-9) + 1;
-		out.push(Math.min(windowFrames - 1, Math.max(0, j)));
-	}
-	return side === 'in' ? out : out.reverse();
+	const { start, slot } = typewriterScheduleMs(n, windowFrames * frameMs, params);
+	const typed = Array.from({ length: n }, (_, i) =>
+		Math.min(windowFrames, Math.max(0, Math.ceil((start + slot * i) / frameMs - 1e-9))),
+	);
+	if (side === 'in') return typed;
+	return typed.map((x) => windowFrames - x).reverse();
 }
 
 export function deriveTextCues(ctx: CueContext): CueCandidate[] {
@@ -123,7 +120,7 @@ function textClipCues(ctx: CueContext, c: TextClip, cues: CueCandidate[]): void 
 		const kind: DerivedCueKind = side === 'in' ? 'appear' : 'exit';
 		if (a.preset === 'typewriter') {
 			const unit = a.params.unit === 'word' ? 'word' : 'char';
-			const n = unit === 'word' ? counts.words : counts.charsNoSpace;
+			const n = textUnitCount(text, unit);
 			const offsets = typewriterOffsets(n, a.frames, ctx.fps, a.params, side);
 			const frames = offsets.map((o) => start + o);
 			const keep = thinPattern(frames, ctx.fps);
