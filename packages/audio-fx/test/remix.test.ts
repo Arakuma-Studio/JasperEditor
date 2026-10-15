@@ -3,7 +3,6 @@
 import { describe, expect, it } from 'vitest';
 import {
 	analyzeMusic,
-	beatLead,
 	MIN_PIECE_BEATS,
 	planCuts,
 	planLength,
@@ -19,25 +18,27 @@ const music = (bpm: number, bars: number) => {
 };
 
 describe('remix analysis', () => {
-	it('finds tempo within 1 BPM and beats within 10 ms', () => {
-		for (const [bpm, sr] of [
-			[100, SR],
-			[120, SR],
-			[97, SR],
-			[128, SR],
-			[120, 48000],
-			[90, 44100],
-		] as const) {
-			const { audio, beats: truth } = testMusic(sr, bpm, 16, 7);
-			const a = analyzeMusic(audio, sr);
-			expect(Math.abs(a.bpm - bpm), `${bpm}@${sr}`).toBeLessThan(1);
-			const tol = Math.trunc(0.01 * sr);
-			let worst = 0;
-			for (const b of a.beats.map((x) => x + beatLead(sr)))
-				worst = Math.max(worst, Math.min(...truth.map((t) => Math.abs(t - b))));
-			expect(worst, `${bpm}@${sr}`).toBeLessThanOrEqual(tol);
-			expect(a.beats.length + 2).toBeGreaterThanOrEqual(truth.length);
+	it.each([
+		[100, SR],
+		[120, SR],
+		[97, SR],
+		[128, SR],
+		[120, 48000],
+		[90, 44100],
+	])('finds tempo within 1 BPM and beats within 10 ms (%i BPM at %i Hz)', (bpm, sr) => {
+		const { audio, beats: truth } = testMusic(sr, bpm, 16, 7);
+		const a = analyzeMusic(audio, sr);
+		expect(Math.abs(a.bpm - bpm), `${bpm}@${sr}`).toBeLessThan(1);
+		const tol = Math.trunc(0.01 * sr);
+		// Public plans center the crossfade at the joint so its end meets the beat attack.
+		const { xfade } = planRemix(a, a.len);
+		let worst = 0;
+		for (const boundary of a.beats) {
+			const fadeEnd = boundary + xfade / 2;
+			worst = Math.max(worst, Math.min(...truth.map((attack) => Math.abs(attack - fadeEnd))));
 		}
+		expect(worst, `${bpm}@${sr}`).toBeLessThanOrEqual(tol);
+		expect(a.beats.length + 2).toBeGreaterThanOrEqual(truth.length);
 	});
 
 	it('silence, a steady tone and noise have no beat', () => {

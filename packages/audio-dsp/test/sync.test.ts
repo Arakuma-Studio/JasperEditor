@@ -62,6 +62,16 @@ function mic(
 	let out = new Float32Array(len);
 	const di = Math.floor(delay);
 	const fr = delay - di;
+	// Fractional tap factors are constant across samples; retain the two multiplies' order below.
+	const sinc = new Float64Array(33);
+	const window = new Float64Array(33);
+	if (fr !== 0) {
+		for (let k = -16; k <= 16; k++) {
+			const t = k - fr;
+			sinc[k + 16] = Math.sin(Math.PI * t) / (Math.PI * t);
+			window[k + 16] = 0.5 + 0.5 * Math.cos((Math.PI * t) / 17);
+		}
+	}
 	for (let n = 0; n < len; n++) {
 		const src = n - di;
 		if (fr === 0) {
@@ -71,10 +81,7 @@ function mic(
 			for (let k = -16; k <= 16; k++) {
 				const j = src - k;
 				if (j < 0 || j >= x.length) continue;
-				const t = k - fr;
-				const s = Math.sin(Math.PI * t) / (Math.PI * t);
-				const w = 0.5 + 0.5 * Math.cos((Math.PI * t) / 17);
-				acc += x[j]! * s * w;
+				acc += x[j]! * sinc[k + 16]! * window[k + 16]!;
 			}
 			out[n] = acc;
 		}
@@ -130,25 +137,26 @@ describe('findOffset (GCC-PHAT, two passes)', () => {
 		}
 	});
 
-	it('three microphones with different gains, noise (25, 10, 3 dB SNR), colouring and fractional delays: within one sample', () => {
-		const src = speechy(sr, 30, 7);
-		const len = 30 * sr;
-		const cases: [number, number, number | null, number][] = [
-			[0, 1, null, 40],
-			[2345, 0.1, null, 25],
-			[-31_337.4, 3, 0.3, 10],
-			[150_000.6, 0.5, null, 3],
-		];
-		const mics = cases.map((c, i) => mic(src, c[0], c[1], c[2], c[3], len, 100 + i));
-		for (let k = 1; k < cases.length; k++) {
-			// b = mic_k: b[n] = src[n − d_k] = a[n − d_k + d_0] → lag = d_0 − d_k
-			const expected = cases[0]![0] - cases[k]![0];
-			const r = findOffset(mics[0]!, mics[k]!, sr)!;
+	const microphones: [number, number, number, number | null, number][] = [
+		[1, 2345, 0.1, null, 25],
+		[2, -31_337.4, 3, 0.3, 10],
+		[3, 150_000.6, 0.5, null, 3],
+	];
+	it.each(microphones)(
+		'three microphones: mic %i with gain, noise, colouring and fractional delay is within one sample',
+		(k, delay, gain, lowpass, snrDb) => {
+			const src = speechy(sr, 30, 7);
+			const reference = mic(src, 0, 1, null, 40, 30 * sr, 100);
+			const target = mic(src, delay, gain, lowpass, snrDb, 30 * sr, 100 + k);
+			// b[n] = src[n − delay], reference has zero delay → lag = −delay.
+			const expected = -delay;
+			const r = findOffset(reference, target, sr)!;
 			expect(Math.abs(r.lag - expected), `mic ${k}: ${r.lag} vs ${expected}`).toBeLessThanOrEqual(1);
 			expect(Math.abs(r.lagFine - expected), `mic ${k} fine: ${r.lagFine}`).toBeLessThan(0.75);
 			expect(r.reliable).toBe(true);
-		}
-	}, 60_000);
+		},
+		60_000,
+	);
 
 	it('room echo 23 ms later at 0 dB SNR: the direct path wins', () => {
 		const src = speechy(sr, 20, 21);
@@ -187,16 +195,18 @@ describe('findOffset (GCC-PHAT, two passes)', () => {
 		expect(Math.abs(q.lag + 6 * sr)).toBeLessThanOrEqual(1);
 	}, 30_000);
 
-	it('sub-sample delays come out of the parabolic refinement', () => {
-		const s = speechy(sr, 6, 51);
-		for (const d of [0.25, 0.5, 10.4, -3.7]) {
+	it.each([0.25, 0.5, 10.4, -3.7])(
+		'sub-sample delays come out of the parabolic refinement (%s samples)',
+		(d) => {
+			const s = speechy(sr, 6, 51);
 			const a = mic(s, 0, 1, null, 50, s.length, 1);
 			const b = mic(s, d, 1, null, 50, s.length, 2);
 			// b[n] = s[n − d] = a[n − d] → lag = −d
 			const r = findOffset(a, b, sr)!;
 			expect(Math.abs(r.lagFine + d), `delay ${d}: ${r.lagFine}`).toBeLessThan(0.3);
-		}
-	}, 30_000);
+		},
+		30_000,
+	);
 
 	it('unrelated, silent or too-short signals are not trusted', () => {
 		const a = speechy(sr, 10, 11);

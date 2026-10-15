@@ -1,6 +1,6 @@
 # Audio DSP, effects, motion and template test cleanup
 
-Status: completed cleanup implementation; validation is pending the integration owner’s scheduled gates. Dispositions were recorded before test/source edits; final checks and limits are recorded below. All 35 assigned files reviewed, including helper implementations and production callers. Parameterized declarations cover every generated case.
+Status: completed cleanup implementation; focused follow-up results are recorded below and repository gates remain with the integration owner. Dispositions were recorded before test/source edits; final checks and limits are recorded below. All 35 assigned files reviewed, including helper implementations and production callers. Parameterized declarations cover every generated case.
 
 Each retained entry below explicitly records B1 source/contract, B2 failure, B3 independent expectation, B4 stable observation, B5 refactor resilience and B6 ownership. Mathematical identities are retained only when they describe the promised transform/output; private representation checks and tests of test-only wrappers are removed.
 
@@ -822,7 +822,7 @@ Duplicate of fft.test.ts randomized complex DFT mathematical oracle and inverse 
 - B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
 - Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
 
-### KEEP — three microphones with different gains, noise (25, 10, 3 dB SNR), colouring and fractional delays: within one sample
+### REWRITE — three microphones with different gains, noise (25, 10, 3 dB SNR), colouring and fractional delays: within one sample
 
 - B1: docs/wp-notes/multicam.md GCC-PHAT lag/polarity/reliability contract; public findOffset/decimate/mixdown API. Contract exercised: three microphones with different gains, noise (25, 10, 3 dB SNR), colouring and fractional delays: within one sample.
 - B2: A caller receives incorrect audio samples, analysis, protocol bytes or parameter results for the named input; the corresponding value/state assertion fails.
@@ -862,7 +862,7 @@ Duplicate of fft.test.ts randomized complex DFT mathematical oracle and inverse 
 - B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
 - Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
 
-### KEEP — sub-sample delays come out of the parabolic refinement
+### REWRITE — sub-sample delays come out of the parabolic refinement
 
 - B1: docs/wp-notes/multicam.md GCC-PHAT lag/polarity/reliability contract; public findOffset/decimate/mixdown API. Contract exercised: sub-sample delays come out of the parabolic refinement.
 - B2: A caller receives incorrect audio samples, analysis, protocol bytes or parameter results for the named input; the corresponding value/state assertion fails.
@@ -1593,7 +1593,7 @@ Production owner(s), relative to `packages/audio-fx/src/` unless absolute repo p
 - B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
 - Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
 
-- Rewrite: Execute the identical min/max stress/reset/tail body once per processor with it.each, retaining all samples/assertions and the standard package timeout. This identifies the failing effect and removes the aggregate all-effects timing artifact.
+- Rewrite: Execute the identical stress/reset/tail body once per processor and min/max setting with it.each (120 rows), retaining all samples/assertions and the standard package timeout. This identifies the failing effect and setting and removes aggregate timing artifacts.
 
 ### KEEP — reset restores the initial behaviour
 
@@ -1607,17 +1607,18 @@ Production owner(s), relative to `packages/audio-fx/src/` unless absolute repo p
 
 ## packages/audio-fx/test/remix.test.ts
 
-Production owner(s), relative to `packages/audio-fx/src/` unless absolute repo path shown: `analysis/remix.ts`. Non-test callers: packages/audio-fx/src/{host,chain/effect-chain}.ts; packages/compositions/src/audio/fx-processor.ts; apps/web/src/audio-fx/editors.tsx.
+Production owner: `packages/audio-fx/src/analysis/remix.ts`. Non-test caller: `apps/engine/src/audio/remix.ts` uses analyzeMusic, planRemix, planLength and planCuts and returns their data through the remix-plan API. `beatLead` is called only by analyzeMusic in its own module; its removed export has no independent documented consumer.
 
-### KEEP — finds tempo within 1 BPM and beats within 10 ms
+### REWRITE — finds tempo within 1 BPM and beats within 10 ms
 
-- B1: docs/wp-notes/audio-fx.md §§1,5; ARCHITECTURE D-42; published RBJ/GMR/filter/pitch laws and the public AudioProcessor contract. Contract exercised: finds tempo within 1 BPM and beats within 10 ms.
-- B2: A caller receives incorrect audio samples, analysis, protocol bytes or parameter results for the named input; the corresponding value/state assertion fails.
-- B3: Expected results come from fixed parameter-selected output values or independently specified acoustic laws; partition/reset equality checks stream semantics. Response-vs-audio assertions check the documented editor-curve promise against actual processed samples, not against a private collaborator. They can disagree with production.
-- B4: createProcessor/AudioProcessor samples, responseDb, transferDb, meters, latency and reset; core public primitives only for distinct numeric contracts.
-- B5: Keeps the contract across internal renames/reorganization, alternative algorithms and helper call changes; does not pin collaborator calls or source text.
-- B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
-- Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
+- B1: docs/wp-notes/audio-fx.md §3 specifies 1 BPM / 10 ms accuracy. The remix module's public plan contract centers each crossfade at a joint and places the joint so the fade ends at the beat attack; apps/engine/src/audio/remix.ts returns both boundaries and crossfadeSeconds.
+- B2: wrong tempo, missing beats or misplaced fade ends relative to known synthesized drum attacks fail.
+- B3: expected BPM and attack samples come from testMusic's arranged rhythm, independent of analyzeMusic. The observed public plan crossfade is applied to the observed boundary; the analyzer's own beatLead helper is no longer imported to cancel its offset.
+- B4: actual analyzeMusic and planRemix output, the same boundary/fade values exposed by the engine API.
+- B5: no onset envelope, FFT frame, private helper or detector call is asserted. Replacing the tracker or changing crossfade duration while preserving attack alignment keeps this test passing.
+- B6: lowest stable common analysis/planning seam for fade/attack alignment. No engine or UI test independently checks all six tempo/sample-rate signals to this precision.
+- Rewrite: parameterize the original six signal rows without changing bars, seeds, tolerances or default timeout; compare each boundary plus half the public plan's crossfade against independently generated attack samples.
+- Risk/check: a faulty analysis lead can no longer cancel itself in the oracle. Validate remix.test.ts's six tempo rows, followed by integration gates.
 
 ### DELETE — similarity prefers the same section
 
@@ -2613,7 +2614,7 @@ Production owner(s), relative to `packages/motion/src/` unless absolute repo pat
 - Retained `ANIMEJS_VERSION`: explicitly documented API/config contract (ARCHITECTURE §20.2, ANM-011), not an expendable test hook.
 - Replaced SVG token parser with pixel comparison helper and preserve artifact-producing render tests.
 
-Declaration dispositions: {"DELETE": 37, "REWRITE": 27, "KEEP": 201}.
+Declaration dispositions: {"DELETE": 37, "REWRITE": 30, "KEEP": 198}.
 
 Before final support edits: `GRAPHIC_EQ_FREQS` / `graphicEqQ` and `tempoDelayMs` have only same-module production callers; remove their now-test-only exports. Retained reverb dry/decay tests will use reported latency.
 
@@ -2623,19 +2624,19 @@ Final support check before editing: `jumpScore` is only called by `planRemix` in
 
 ## Outcome and validation
 
-All 35 assigned files were audited and the pruning/rewrites implemented: **37 DELETE, 27 REWRITE, 201 KEEP** original test declarations (265 total; parameterized declarations include all generated cases). No whole test file was removed. Rewritten names may differ from the original names recorded above. Source processing arithmetic and persisted behavior are unchanged.
+All 35 assigned files were audited and the pruning/rewrites implemented: **37 DELETE, 30 REWRITE, 198 KEEP** original test declarations (265 total; parameterized declarations include all generated cases). No whole test file was removed. Rewritten names may differ from the original names recorded above. Production changes remove dead seams and correct configured-channel boundaries demonstrated by the retained regression below; DSP arithmetic and persisted formats are unchanged.
 
 Removed support consists of the production-derived `sineLufs` oracle, unused `run` test wrapper, SVG token parser, obsolete test imports/setup, test-only IIR `design`/`DesignSpec` wrapper and unused `ellipK`; undocumented `kWeightingPower`, `lufsToEnergy`, `blockTruePeak` helpers; unused convolution `impulse` hook; and test-only exports for IR metadata/generation, convolution partition size, graphic-EQ Q/frequencies, tempo delay conversion, remix jump scoring and the dynamics barrel curve re-exports. Phaser sweep and Ambisonics source-gain methods became private. Actual production consumers of the remaining functions are preserved. Caller/documentation searches found no production caller or documented API contract for each removed seam. The documented `ANIMEJS_VERSION` export/configuration test remains.
 
 - `pnpm install --frozen-lockfile --offline`: completed, no dependency changes. Existing warnings: absent built CLI binaries and ignored onnxruntime-node install script.
 - Attempted package baseline: `pnpm exec vitest run packages/audio-dsp/test packages/audio-fx/test packages/mg-templates/test packages/motion/test --maxWorkers=1`. It produced only the Vitest start banner during host contention; interrupted without a test verdict after root requested resource coordination. This is **not** a passing validation run.
 - Root’s unchanged baseline recorded the restoration 8× realtime timing case at denoise 4791.7 ms versus an adjusted 4537 ms budget, and reverb/pitch at 7083 ms versus 4338 ms. Both tests were already recorded DELETE before their result: no independent exact 8× requirement was found; performance.md only points back to the test’s own budget. An independent reviewer confirmed the circular reference. These deletions do not claim to fix a product regression.
-- Root also reported the retained registry finite-output/subnormal-tail case failing after 289620 ms under contention. Its numeric/safety contract remains unchanged. Failure classification and rerun are pending integration; no expected value or timeout was relaxed here.
-- Focused tests, package typechecks, full repository gates, FFmpeg oracle validation and native/Remotion rendering have **not** passed in this worktree. Per root’s resource hold they are delegated to the integrated checkout. The rewritten `MG_PARITY=1` raster comparison needs native `jasper-mg` and Chromium; it writes both native and preview PNGs to a logged temporary artifact directory. No rendered artifact was generated during cleanup.
+- Root also reported the retained registry finite-output/subnormal-tail case failing after 289620 ms under contention. The focused reproduction below classified it as a watchdog timeout; all numeric assertions passed in the complete per-effect rerun. No expected value or timeout was relaxed.
+- Initial cleanup validation was deferred by the resource hold. Subsequently scheduled focused test results are recorded below. Package typechecks, full repository gates, FFmpeg oracle validation and native/Remotion rendering remain delegated to the integrated checkout; this worktree does not claim those gates passed. The rewritten `MG_PARITY=1` raster comparison needs native `jasper-mg` and Chromium; it writes both native and preview PNGs to a logged temporary artifact directory. No rendered artifact was generated during cleanup.
 
 Independent ownership details: direct DSP tests own mathematical transforms and binary formats; the FFmpeg oracle owns BS.1770/K-weighting scenarios removed from loudness.test.ts. Public effect tests own audible parameter laws and curve/audio agreement; registry.test.ts owns partitioning, reset and extreme-input safety across effects, so duplicate per-effect determinism probes are removed. Public motion runtime tests own timeline/Unicode/lifecycle contracts; rendered counter and cross-render-path suites own visible outputs their runtime tests cannot establish. Template schemas/migrations/cache bytes are public compatibility/storage/security contracts and survive separately from pixel parity.
 
-Additional precise retention sources: `AudioProcessor.process` explicitly promises pass-through beyond the configured channel count (`packages/audio-fx/src/core/effect.ts`), so the registry degenerate-block rewrite verifies that output rather than a stale input from a previous call. Static review suggests some channel utility implementations may violate it; integrated validation must fix the owner if confirmed. The ANM-015 200-unit title / 2 ms budget stays because it is independently specified. ANM-011’s anime.js pin stays as a documented configuration/API promise. ANM-010’s line grouping observes semantic line membership under positioned wrappers, not widths/styles/coordinates for appearance. Template version/schema inventories stay only where they enforce persisted template references or the native CLI/HTTP schema protocol, rather than internal implementation inventories.
+Additional precise retention sources: `AudioProcessor.process` explicitly promises pass-through beyond the configured channel count (`packages/audio-fx/src/core/effect.ts`), so the registry degenerate-block rewrite verifies that output rather than a stale input from a previous call. Focused validation confirmed violations and the processing owners were fixed, with red/green evidence recorded below. The ANM-015 200-unit title / 2 ms budget stays because it is independently specified. ANM-011’s anime.js pin stays as a documented configuration/API promise. ANM-010’s line grouping observes semantic line membership under positioned wrappers, not widths/styles/coordinates for appearance. Template version/schema inventories stay only where they enforce persisted template references or the native CLI/HTTP schema protocol, rather than internal implementation inventories.
 
 Static validation: targeted `pnpm exec biome check --write` on the 31 changed TypeScript files completed successfully (18 files formatted/cleaned). `git diff --check` passed. Reviewed source, test and documentation diffs; final package gates remain delegated as recorded above.
 
@@ -2667,4 +2668,42 @@ The focused unchanged extreme-settings case completed with **timeout only**: `Te
 
 Before editing, disposition changes KEEP → REWRITE for this declaration: parameterize its existing independent per-processor contract using `it.each(processorIds())`. B1: public no-nonfinite/denormal-free streaming contract (audio-fx design §1.1 and AGENTS numeric-safety rules); B2: samples become NaN/Infinity or subnormal tails; B3: Number.isFinite and IEEE-754 f32 subnormal bounds are independent numeric expectations; B4: actual processor output; B5: no internal representation/calls are observed; B6: each processor has its own state/algorithm and the same stream-safety requirement, with no stronger all-effects owner. The sample counts, min/max settings, reset setup, both channels and all assertions stay unchanged. Standard package timeout remains 120000 ms; this groups output by the responsible processor rather than timing the sum of all independent cases. Original declaration counts become **37 DELETE / 27 REWRITE / 201 KEEP** (265 total).
 
-The per-effect extreme-settings rerun is in progress at commit time (`/tmp/prune2-audio-extremes-by-effect.log`); no passing result is claimed yet. Targeted Biome check and `git diff --check` pass. Whitespace-insensitive diff confirms the only test changes are the it.each wrapper and removal of the outer processor loop.
+The per-effect extreme-settings rerun was still in progress at commit 82ae7a2a; its completed passing result is recorded immediately below (`/tmp/prune2-audio-extremes-by-effect.log`). Targeted Biome check and `git diff --check` pass. Whitespace-insensitive diff confirms the only test changes are the it.each wrapper and removal of the outer processor loop.
+
+
+Per-effect robustness validation completed successfully: **60 passed, 4 intentionally unselected**, 774.59 s test time / 798.64 s total under shared-host contention; `/tmp/prune2-audio-extremes-by-effect.log`. The command remained `pnpm exec vitest run packages/audio-fx/test/registry.test.ts --maxWorkers=1 -t 'extreme settings stay finite and tails end without subnormals'`. All original min/max stimuli and both-channel finite/subnormal assertions passed. No DSP-calculation fix or timeout-budget change was needed.
+
+Integrated validation separately flagged the original bundled sync microphone and fractional-delay tests after 62675 ms (60000 ms limit) and 51024 ms (30000 ms limit). Focused original reproduction was run before any sync edits: `pnpm exec vitest run packages/audio-dsp/test/sync.test.ts --maxWorkers=1 -t 'three microphones|sub-sample delays'` (`/tmp/prune2-audio-sync-original.log`).
+
+
+Focused sync reproduction reported only timeouts: microphone bundle 165793 ms against 60000 ms; fractional-delay bundle 88163 ms against 30000 ms. Neither reported an offset/reliability/numeric assertion failure (`/tmp/prune2-audio-sync-original.log`, 2 failed / 9 unselected).
+
+Before edits, mark the two existing sync declarations REWRITE: each microphone/noise combination and fractional offset is an independently specified offset-recovery contract. B1: public GCC-PHAT sync lag/reliability contract and synthetic signal's known physical delay; B2: wrong lag, unreliable matching or insufficient fractional precision fails; B3: expected offsets come from arranged signal delays, not findOffset; B4: public findOffset result; B5: no FFT implementation or internal collaborators are inspected; B6: each independent noise/gain/colour/delay case stresses a distinct caller input and no engine test measures these sample errors. Preserve all 30-second/6-second signals, gains, colour filters, SNRs, seeds and numeric tolerances. Keep the exact existing 60000/30000 ms timeout for each independent row. Original declaration counts become **37 DELETE / 29 REWRITE / 199 KEEP**.
+
+The test-only mic generator recomputes the same 33 fractional sinc/window factors for every sample. Hoist those constants once per generated mic, keeping the exact left-to-right `(sample * sinc) * window` multiplication and accumulation order, and byte-compare old/new generated arrays for all original mic/delay cases before claiming equivalence. This edits fixture construction only; no production sync implementation changes are planned.
+
+
+The temporary before/after fixture diagnostic passed: all 14 distinct original microphone arrays and four source programmes were byte-identical (`/tmp/prune2-sync-fixture-equivalence.log`). The diagnostic script remains outside the repository; no implementation-copying equivalence test is added. The seven independent sync rows were then validated with their original tolerances and timeout values; their passing result is recorded below.
+
+Before follow-up edits, integrated validation reports the six-row remix tempo/beat bundle at 259375 ms and the multiband-compressor combined min/max stream-safety case at 132278 ms, both above the unchanged standard 120000 ms watchdog. The integrated final stack is still pending; no numeric failure is assumed from timing alone. Split the six original tempo/rate combinations and the registry min/max cases into independently reported rows, retaining all seeds, durations, samples, parameters and assertions. Earlier isolated registry validation already passed every original min/max output assertion.
+
+The remix beat oracle currently adds `beatLead(sr)`, the very helper subtracted by `analyzeMusic`; a faulty lead can cancel itself. Change this declaration KEEP → REWRITE. B1: public remix plan uses an equal-power crossfade centered at each joint, with the fade ending at the beat attack (analysis module contract); docs/wp-notes/audio-fx.md §3 requires tempo within 1 BPM and beat alignment within 10 ms. B2: incorrect tempo, missing beat detections, or a joint fade ending away from the independently synthesized drum attacks fails. B3: expected BPM and attack samples come from the generated source rhythm; compensate the observed beat boundary by half the public plan's returned crossfade, not the analyzer's private lead helper. B4: `analyzeMusic`/`planRemix` results, exposed to real callers by apps/engine/src/audio/remix.ts as `beats` and `crossfadeSeconds`. B5: an internal tracker rename/rewrite or coordinated change of crossfade duration preserves the relation; changing only the analyzer's lead does not. B6: lowest common analysis/planning API that defines the caller-visible fade/attack relationship; engine tests do not independently measure every generated tempo/rate's attack position. Remove only the undocumented export of `beatLead` after its test import is gone; its actual same-module production caller remains. Risk: strengthen the oracle without changing production audio or inventing a fixed crossfade duration. Validate the existing six rows with `pnpm exec vitest run packages/audio-fx/test/remix.test.ts --maxWorkers=1 -t 'finds tempo'`. Current original-declaration dispositions become **37 DELETE / 30 REWRITE / 198 KEEP**.
+
+
+Sync validation passed all seven rewritten rows (9 deliberately unselected), 48.79 s tests / 54.51 s total: `/tmp/prune2-audio-sync-by-case.log`. The command was `pnpm exec vitest run packages/audio-dsp/test/sync.test.ts --maxWorkers=1 -t 'three microphones|sub-sample delays'`. No production sync implementation, numerical tolerance or timeout changed.
+
+
+The six-row remix run passed five cases; 90 BPM at 44100 Hz hit only the unchanged 120000 ms watchdog at 141715 ms (364.28 s tests / 399.90 s total; host load reached 124 on 16 CPUs). No beat/BPM assertion failed (`/tmp/prune2-audio-remix-by-case.log`). Before editing the shared testMusic fixture, hoist each bar's three constant note frequencies out of the per-sample loop. Preserve note order, every arithmetic operation in the sample sum, all durations/seeds/inputs, and compare all eight distinct existing caller vectors byte-for-byte before retaining the change. This fixture has two actual caller files: audio-fx/test/remix.test.ts (six tempo/rate rows and 120 BPM/22050 Hz/24 bars) and apps/engine/test/audio-fx.test.ts (120 BPM/48000 Hz/24 bars), all seed 7. No production analysis change, new benchmark expectation or timeout adjustment is authorized or needed by this fixture optimization.
+
+
+The min/max-isolated multiband check returned one pass (max) and one watchdog timeout (min, 153401 ms against unchanged 120000 ms), with no finite/subnormal assertion failure: `/tmp/prune2-audio-multiband-by-setting.log`, 239.30 s tests / 285.19 s total. During the run its worker received only 7.2 CPU seconds over 247 elapsed seconds (about 3% CPU); host contention reached load 124 on 16 CPUs. The earlier complete 60-effect run passed both settings. No further subdivision, timeout increase, input reduction or production change is made for this scheduling failure. The integration owner will repeat affected focused tests when resources are available.
+
+Independent read-only review found no contract weakening in the sync signals, registry setting rows or public remix fade/attack oracle, and confirmed only a same-module production caller for beatLead. The testMusic constant-frequency hoist preserves note and arithmetic order; its exact eight-vector comparison passed for every existing caller (see the result below).
+
+
+The temporary fixture diagnostic passed all eight original testMusic caller vectors: byte-identical stereo samples and beat positions, including all six tempo/rate signals and both 24-bar plan/engine fixtures (`/tmp/prune2-music-equivalence.log`). No diagnostic script or equivalence test is committed. The frequency hoist was checked without changing waveform duration, seed, signal data, assertions or watchdog values. A post-hoist rerun of the 90 BPM/44100 Hz test remains for the integration owner's lower-contention validation slot; this report does not claim it passed.
+
+Final follow-up disposition remains **37 DELETE / 30 REWRITE / 198 KEEP** original declarations. Parameterized sync, remix and registry cases preserve every original signal/setting; their generated case count is not an additional retained/deleted declaration. Removed dead seam in this follow-up: only the undocumented `beatLead` export, leaving its same-module production implementation and caller intact.
+
+
+Final follow-up static validation: `pnpm exec biome check` passed the five changed TypeScript files with no fixes, and `git diff --check` passed. Reviewed the final diff; no timeout, numerical threshold, stimulus count, seed or production DSP formula was relaxed. Full gates and the explicitly pending watchdog reruns remain with the integration owner.

@@ -101,8 +101,9 @@ describe('audio-fx registry', () => {
 		}
 	});
 
-	it.each(processorIds())('extreme settings stay finite and tails end without subnormals (%s)', (id) => {
-		for (const extreme of ['min', 'max'] as const) {
+	it.each(processorIds().flatMap((id) => (['min', 'max'] as const).map((extreme) => [id, extreme] as const)))(
+		'extreme settings stay finite and tails end without subnormals (%s, %s)',
+		(id, extreme) => {
 			const fx = createProcessor(id, SR, 2)!;
 			for (const p of fx.spec.params) {
 				if (p.type === 'number') fx.setParam(p.name, extreme === 'min' ? p.range!.min! : p.range!.max!);
@@ -132,8 +133,8 @@ describe('audio-fx registry', () => {
 						throw new Error(`${id} ${extreme}: NaN or subnormal in the tail`);
 				}
 			}
-		}
-	});
+		},
+	);
 
 	it('reset restores the initial behaviour', () => {
 		for (const id of processorIds()) {

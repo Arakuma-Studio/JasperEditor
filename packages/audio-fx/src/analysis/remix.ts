@@ -318,7 +318,7 @@ function cosSim(a: Float64Array, b: Float64Array): number {
 }
 
 /** How far the analysed beats sit before the attack of each beat (half a crossfade), samples. */
-export function beatLead(sampleRate: number): number {
+function beatLead(sampleRate: number): number {
 	return Math.round(XFADE_S * 0.5 * sampleRate);
 }
 

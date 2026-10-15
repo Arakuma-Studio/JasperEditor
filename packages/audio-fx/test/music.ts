@@ -24,15 +24,14 @@ export function testMusic(
 	const beats: number[] = [];
 	for (let bar = 0; bar < bars; bar++) {
 		const root = form[Math.floor(bar / 4) % form.length]![bar % 4]!;
-		const notes = [root, root + (minor(root) ? 3 : 4), root + 7];
+		const frequencies = [root, root + (minor(root) ? 3 : 4), root + 7].map((nt) => 220 * 2 ** (nt / 12));
 		const b0 = Math.round(bar * 4 * beat);
 		const b1 = Math.round((bar + 1) * 4 * beat);
 		for (let i = b0; i < Math.min(b1, n); i++) {
 			const t = (i - b0) / sr;
 			const env = (1 - Math.exp(-t * 30)) * 0.9 ** t;
 			let v = 0;
-			for (const nt of notes) {
-				const f = 220 * 2 ** (nt / 12);
+			for (const f of frequencies) {
 				v += Math.sin((tau * f * i) / sr) + 0.3 * Math.sin((tau * 2 * f * i) / sr);
 			}
 			l[i] = l[i]! + 0.06 * env * v;
