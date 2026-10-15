@@ -18,18 +18,12 @@ function canvas(w: number, h: number, paint?: (ctx: CanvasRenderingContext2D) =>
 	return c;
 }
 
-const images = new Map<string, HTMLImageElement>();
-
 function paintTest(
 	ctx: CanvasRenderingContext2D,
 	b: { x: number; y: number; w: number; h: number },
 	kind: string,
 ) {
 	if (kind === 'none') return;
-	if (kind.startsWith('img:')) {
-		ctx.drawImage(images.get(kind.slice(4))!, b.x, b.y, b.w, b.h);
-		return;
-	}
 	if (kind === 'dots') {
 		// Black with three white dots (S_WarpDrops centres) at 25 %, 50 %, 75 % across.
 		ctx.fillStyle = '#000';
@@ -82,15 +76,14 @@ export type RunArgs = {
 	params?: Record<string, unknown>;
 	width: number;
 	height: number;
-	/** 'grid' (default), 'solid', 'none' (transparent) or 'img:<name>' (loaded with loadImage). */
+	/** 'grid' (default), 'solid' or 'none' (transparent). */
 	paint?: string;
 	frame?: number;
 	seed?: number;
-	/** Media params: param name → 'img:<name>' or 'grid'. */
+	/** Media params: param name → painted fixture kind. */
 	media?: Record<string, string>;
 	/** Pixels to read, in layer px (may be outside the box when padded). */
 	probes?: [number, number][];
-	png?: boolean;
 };
 
 function run(a: RunArgs) {
@@ -145,32 +138,29 @@ function run(a: RunArgs) {
 		},
 		out.getContext('2d')!,
 	);
-	const ctx = out.getContext('2d')!;
-	const probes = (a.probes ?? []).map(
-		([x, y]) =>
-			Array.from(
-				ctx.getImageData(Math.floor(x + layout.box.x), Math.floor(y + layout.box.y), 1, 1).data,
-			) as Px,
+	return readPicture(out, { ...layout.box, w: a.width, h: a.height }, a.probes);
+}
+
+function readPicture(
+	picture: HTMLCanvasElement,
+	box: { x: number; y: number; w: number; h: number },
+	points: [number, number][] = [],
+) {
+	const ctx = picture.getContext('2d')!;
+	const probes = points.map(
+		([x, y]) => Array.from(ctx.getImageData(Math.floor(x + box.x), Math.floor(y + box.y), 1, 1).data) as Px,
 	);
-	const all = ctx.getImageData(layout.box.x, layout.box.y, a.width, a.height).data;
-	let sum = 0;
-	for (let i = 0; i < all.length; i += 1) sum = (sum * 31 + all[i]!) >>> 0;
-	return {
-		probes,
-		checksum: sum,
-		canvas: [layout.width, layout.height],
-		box: [layout.box.x, layout.box.y, layout.box.w, layout.box.h],
-		png: a.png ? out.toDataURL('image/png') : undefined,
-	};
+	const all = ctx.getImageData(box.x, box.y, box.w, box.h).data;
+	let checksum = 0;
+	for (const value of all) checksum = (checksum * 31 + value) >>> 0;
+	return { probes, checksum };
 }
 
 const api = {
-	async loadImage(name: string, url: string) {
-		const img = new Image();
-		img.src = url;
-		await img.decode();
-		images.set(name, img);
-		return true;
+	source(a: Pick<RunArgs, 'width' | 'height' | 'paint' | 'probes'>) {
+		const box = { x: 0, y: 0, w: a.width, h: a.height };
+		const input = canvas(a.width, a.height, (ctx) => paintTest(ctx, box, a.paint ?? 'grid'));
+		return readPicture(input, box, a.probes);
 	},
 	run,
 	ids() {

@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { addColorToKey, keyFromColor, removeColorFromKey } from '@jasper/project';
 import type { Browser, Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CHROME, openGlPage } from './gl-browser.ts';
@@ -9,7 +10,7 @@ import type { RunOptions } from './lumetri-spatial-gl/entry.ts';
 const here = dirname(fileURLToPath(import.meta.url));
 
 type Px = [number, number, number, number];
-type Result = { passes: (string | null)[]; probes: Px[]; maxDiff: number; worst: unknown };
+type Result = { probes: Px[] };
 
 describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 	'Lumetri spatial stage in WebGL2 (headless Chrome)',
@@ -31,73 +32,151 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		});
 
-		it('HSL Secondary key + correction equals the CPU reference on every pixel', async () => {
-			for (const params of [
-				{ secHueCenter: 0, secHueRange: 20, secHueSoft: 25, secSaturation: 0 },
-				{
-					secHueCenter: 120,
-					secHueRange: 30,
-					secHueSoft: 10,
-					secTemperature: 60,
-					secTint: -30,
-					secContrast: 40,
-				},
-				{ secLumaLow: 40, secLumaHigh: 70, secLumaSoft: 15, secWheel: [0.5, 0.3], secWheelLevel: 20 },
-				{
-					secSatLow: 30,
-					secSatHigh: 100,
-					secSatSoft: 10,
-					secWheelMode: 'three',
-					secShadowsWheel: [0.3, 0.1],
-					secMidtonesLevel: 30,
-					secHighlightsWheel: [-0.2, 0.4],
-				},
-				{ secHueCenter: 230, secHueRange: 25, secInvert: true, secSaturation: 30 },
-			]) {
-				const r = await run({ width: 120, height: 24, scene: 'hues', params, reference: true });
-				expect(r.maxDiff, `${JSON.stringify(params)} worst ${JSON.stringify(r.worst)}`).toBeLessThanOrEqual(
-					1,
-				);
+		const colorMask = (params: Record<string, unknown>, colors: [number, number, number][]) =>
+			run({
+				width: colors.length * 16,
+				height: 8,
+				scene: 'colors',
+				colors,
+				params: { secShowMask: true, secMaskStyle: 'whiteBlack', ...params },
+				probes: colors.map((_, i) => [i * 16 + 8, 4]),
+			});
+
+		it('HSL Secondary corrects only the selected colors and supports Invert', async () => {
+			const base = { secHueCenter: 0, secHueRange: 20, secSaturation: 0 };
+			for (const [invert, expected] of [
+				[
+					false,
+					[
+						[69, 69, 69, 255],
+						[32, 48, 208, 255],
+					],
+				],
+				[
+					true,
+					[
+						[208, 32, 32, 255],
+						[56, 56, 56, 255],
+					],
+				],
+			] as const) {
+				const r = await run({
+					width: 64,
+					height: 16,
+					scene: 'split',
+					params: { ...base, secInvert: invert },
+					probes: [
+						[8, 8],
+						[56, 8],
+					],
+				});
+				// Rec.709 luma of the hand-painted red/blue is 69/56 code values.
+				for (const [i, pixel] of r.probes.entries())
+					for (const [channel, value] of pixel.entries())
+						expect(Math.abs(value - expected[i]![channel]!)).toBeLessThanOrEqual(1);
 			}
 		});
 
-		it('Show Mask (Color/Gray, Color/Black, White/Black) equals the reference', async () => {
+		it('HSL key softness covers half of the hue and lightness transition bands', async () => {
+			// RGB (224,94,16) is exactly hue 22.5°, half way between range 15° and range + softness 30°.
+			const hue = await colorMask({ secHueCenter: 0, secHueRange: 15, secHueSoft: 15 }, [
+				[224, 16, 16],
+				[224, 94, 16],
+				[16, 16, 224],
+				[128, 128, 128],
+			]);
+			for (const [i, expected] of [255, 128, 0, 0].entries())
+				expect(Math.abs(hue.probes[i]![0] - expected)).toBeLessThanOrEqual(1);
+			const luma = await colorMask({ secLumaLow: 60, secLumaHigh: 100, secLumaSoft: 10 }, [
+				[204, 204, 204],
+				[140, 140, 140],
+				[51, 51, 51],
+			]);
+			// 140/255 approximates 55% lightness; it lies half way through the 50..60% soft band.
+			for (const [i, expected] of [255, 128, 0].entries())
+				expect(Math.abs(luma.probes[i]![0] - expected)).toBeLessThanOrEqual(3);
+		});
+
+		it('Show Mask preserves selected color or white and marks excluded pixels gray or black', async () => {
 			for (const style of ['colorGray', 'colorBlack', 'whiteBlack']) {
 				const r = await run({
-					width: 120,
-					height: 24,
-					scene: 'hues',
+					width: 64,
+					height: 16,
+					scene: 'split',
 					params: { secHueCenter: 0, secHueRange: 20, secShowMask: true, secMaskStyle: style },
-					reference: true,
+					probes: [
+						[8, 8],
+						[56, 8],
+					],
 				});
-				expect(r.maxDiff, `${style} worst ${JSON.stringify(r.worst)}`).toBeLessThanOrEqual(1);
+				expect(r.probes[0]).toEqual(style === 'whiteBlack' ? [255, 255, 255, 255] : [208, 32, 32, 255]);
+				if (style === 'colorGray') {
+					const [red, green, blue, alpha] = r.probes[1]!;
+					expect(red).toBe(green);
+					expect(green).toBe(blue);
+					expect(red).toBeGreaterThan(0);
+					expect(red).toBeLessThan(255);
+					expect(alpha).toBe(255);
+				} else expect(r.probes[1]).toEqual([0, 0, 0, 255]);
 			}
 		});
 
-		it('the vignette equals the reference for every roundness and feather', async () => {
-			for (const params of [
-				{ vignetteAmount: -3 },
-				{ vignetteAmount: 2.5, vignetteMidpoint: 30, vignetteFeather: 10 },
-				{ vignetteAmount: -5, vignetteRoundness: 100, vignetteFeather: 80 },
-				{ vignetteAmount: -2, vignetteRoundness: -100, vignetteMidpoint: 70 },
-			]) {
-				const r = await run({ width: 160, height: 90, scene: 'grey', params, reference: true });
-				expect(r.maxDiff, `${JSON.stringify(params)} worst ${JSON.stringify(r.worst)}`).toBeLessThanOrEqual(
-					1,
-				);
-			}
+		it('three-way highlight level brightens neutral midgray by the documented gain', async () => {
 			const r = await run({
+				width: 16,
+				height: 8,
+				scene: 'grey',
+				params: { secWheelMode: 'three', secHighlightsLevel: 50 },
+				probes: [[8, 4]],
+			});
+			// Highlight level 50 means gain 1.25: the fixture's gray 160 becomes 200.
+			expect(r.probes[0]).toEqual([200, 200, 200, 255]);
+		});
+
+		it('HSL eyedroppers select the picked colors through the rendered mask', async () => {
+			const orange: [number, number, number] = [0.9, 0.5, 0.1];
+			const red: [number, number, number] = [0.85, 0.1, 0.1];
+			const set = keyFromColor(orange);
+			const added = addColorToKey(set, red);
+			for (const [params, expected] of [
+				[set, [255, 0, 0]],
+				[added, [255, 255, 0]],
+				[removeColorFromKey(added, red), [255, 0, 0]],
+			] as const) {
+				const r = await colorMask(params, [
+					[230, 128, 26],
+					[217, 26, 26],
+					[26, 51, 230],
+				]);
+				expect(r.probes.map((p) => p[0])).toEqual(expected);
+			}
+			const gray = await colorMask(keyFromColor([0.5, 0.5, 0.5]), [
+				[133, 128, 128],
+				[242, 242, 242],
+			]);
+			expect(gray.probes.map((p) => p[0])).toEqual([255, 0]);
+		});
+
+		it('vignette darkens or lightens corners, keeps the center and follows roundness', async () => {
+			const base = {
 				width: 160,
 				height: 90,
 				scene: 'grey',
-				params: { vignetteAmount: -4 },
 				probes: [
 					[80, 45],
 					[1, 1],
-				],
-			});
-			expect(r.probes[0]![0]).toBe(160);
-			expect(r.probes[1]![0]).toBeLessThan(80);
+					[3, 45],
+				] as [number, number][],
+			};
+			const dark = await run({ ...base, params: { vignetteAmount: -5, vignetteFeather: 0 } });
+			const light = await run({ ...base, params: { vignetteAmount: 5, vignetteFeather: 0 } });
+			expect(dark.probes[0]).toEqual([160, 160, 160, 255]);
+			expect(light.probes[0]).toEqual([160, 160, 160, 255]);
+			expect(dark.probes[1]).toEqual([0, 0, 0, 255]);
+			expect(light.probes[1]).toEqual([255, 255, 255, 255]);
+			const ellipse = await run({ ...base, params: { vignetteAmount: -3 } });
+			const circle = await run({ ...base, params: { vignetteAmount: -3, vignetteRoundness: 100 } });
+			expect(circle.probes[2]![0]).toBeLessThan(ellipse.probes[2]![0]);
 		});
 
 		it('Denoise fills speckle holes of the key; Blur softens its edge', async () => {

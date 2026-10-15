@@ -146,7 +146,7 @@ describe.runIf(enabled)('golden scenes rendered by Remotion (REMOTION_E2E=1)', {
 			);
 			const img = await still(doc, scene.frame, `golden-${scene.name}`, scene.options);
 			expect([img.width, img.height]).toEqual([GW, GH]);
-			// Check computed references even when blessing, to prevent accepting an incorrect golden.
+			// Check compositing/backend relationships even when blessing; the stored PNG remains the visual oracle.
 			if (scene.reference) {
 				const ref = await scene.reference.compute({
 					card: goldenCard(),

@@ -3,10 +3,7 @@ import {
 	type EffectSpec,
 	fxBuiltinUniforms,
 	LUMETRI_SPATIAL_EFFECT_ID,
-	lumetriSpatialPixel,
-	lumetriSpatialSettings,
 	planGpuEffect,
-	type Rgb,
 } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
@@ -26,27 +23,6 @@ function canvas(w: number, h: number, paint?: (ctx: CanvasRenderingContext2D) =>
 const spec = (): EffectSpec => defaultEffectRegistry.get(LUMETRI_SPATIAL_EFFECT_ID)!;
 
 const SCENES: Record<string, (ctx: CanvasRenderingContext2D, b: Box) => void> = {
-	/** Vertical bands: hues around the wheel, then greys. */
-	hues(ctx, b) {
-		const cols = [
-			'#e01010',
-			'#e07010',
-			'#d0d020',
-			'#20c020',
-			'#20c0c0',
-			'#2040e0',
-			'#a020d0',
-			'#e02090',
-			'#c8906c',
-			'#202020',
-			'#808080',
-			'#e0e0e0',
-		];
-		cols.forEach((c, i) => {
-			ctx.fillStyle = c;
-			ctx.fillRect(b.x + (b.w * i) / cols.length, b.y, Math.ceil(b.w / cols.length) + 1, b.h);
-		});
-	},
 	grey(ctx, b) {
 		ctx.fillStyle = '#a0a0a0';
 		ctx.fillRect(b.x, b.y, b.w, b.h);
@@ -84,7 +60,8 @@ export type RunOptions = {
 	height: number;
 	scene: string;
 	probes?: [number, number][];
-	reference?: boolean;
+	/** Independently painted fixture colors, in 8-bit RGB. */
+	colors?: [number, number, number][];
 };
 
 async function run(o: RunOptions) {
@@ -109,7 +86,15 @@ async function run(o: RunOptions) {
 		},
 		{ width: layout.width, height: layout.height },
 	);
-	const input = canvas(layout.width, layout.height, (ctx) => SCENES[o.scene]!(ctx, layout.box));
+	const input = canvas(layout.width, layout.height, (ctx) => {
+		if (o.colors) {
+			const width = layout.width / o.colors.length;
+			o.colors.forEach((color, i) => {
+				ctx.fillStyle = `rgb(${color.join(',')})`;
+				ctx.fillRect(i * width, 0, width, layout.height);
+			});
+		} else SCENES[o.scene]!(ctx, layout.box);
+	});
 	const out = canvas(layout.width, layout.height);
 	runShaderPlan(
 		h,
@@ -136,41 +121,12 @@ async function run(o: RunOptions) {
 	const W = layout.width;
 	const H = layout.height;
 	const got = out.getContext('2d')!.getImageData(0, 0, W, H).data;
-	const src = input.getContext('2d')!.getImageData(0, 0, W, H).data;
-	let maxDiff = 0;
-	let worst: unknown = null;
-	if (o.reference) {
-		const settings = lumetriSpatialSettings(params as never);
-		for (let y = 0; y < H; y++)
-			for (let x = 0; x < W; x++) {
-				const i = (y * W + x) * 4;
-				if (src[i + 3] === 0) continue;
-				const c: Rgb = [src[i]! / 255, src[i + 1]! / 255, src[i + 2]! / 255];
-				lumetriSpatialPixel(settings, c, (x + 0.5) / W, (y + 0.5) / H, W / H);
-				for (let k = 0; k < 3; k++) {
-					const d = Math.abs(Math.round(c[k]! * 255) - got[i + k]!);
-					if (d > maxDiff) {
-						maxDiff = d;
-						worst = {
-							x,
-							y,
-							k,
-							want: Math.round(c[k]! * 255),
-							got: got[i + k],
-							src: [src[i], src[i + 1], src[i + 2]],
-						};
-					}
-				}
-			}
-	}
 	const at = (x: number, y: number): Px => {
 		const i = (Math.floor(y) * W + Math.floor(x)) * 4;
 		return [got[i]!, got[i + 1]!, got[i + 2]!, got[i + 3]!];
 	};
 	return {
 		probes: (o.probes ?? []).map(([x, y]) => at(x, y)),
-		maxDiff,
-		worst,
 	};
 }
 

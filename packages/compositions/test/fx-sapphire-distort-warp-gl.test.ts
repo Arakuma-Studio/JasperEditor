@@ -9,7 +9,7 @@ import { CHROME, openGlPage } from './gl-browser.ts';
 const here = dirname(fileURLToPath(import.meta.url));
 
 type Px = [number, number, number, number];
-type Out = { probes: Px[]; checksum: number; canvas: number[]; box: number[] };
+type Out = { probes: Px[]; checksum: number };
 const near = (a: Px, b: Px, tol = 6) => a.every((v, i) => Math.abs(v - b[i]!) <= tol);
 const W = 160;
 const H = 90;
@@ -38,6 +38,11 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 					(window as unknown as { __dw: { run(a: unknown): unknown } }).__dw.run(args) as Promise<Out>,
 				{ width: W, height: H, ...a },
 			) as Promise<Out>;
+		const source = (probes = Object.values(P) as [number, number][]): Promise<Out> =>
+			page.evaluate(
+				(args) => (window as unknown as { __dw: { source(a: unknown): Out } }).__dw.source(args),
+				{ width: W, height: H, probes },
+			);
 		const probe = (id: string, params: Record<string, unknown> = {}, extra: Partial<RunArgs> = {}) =>
 			run({ id, params, probes: Object.values(P) as [number, number][], ...extra });
 		const at = (o: Out, k: keyof typeof P) => o.probes[Object.keys(P).indexOf(k)]!;
@@ -59,9 +64,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		});
 
 		it('identity settings give the source back', async () => {
-			const src = await probe('jasper.s.warp-transform');
-			expect(near(at(src, 'red'), RED)).toBe(true);
-			expect(near(at(src, 'centre'), WHITE)).toBe(true);
+			const src = await source();
 			const identities: [string, Record<string, unknown>][] = [
 				['jasper.s.warp-fish-eye', { amount: 0 }],
 				['jasper.s.warp-magnify', { magnifyAmount: 1 }],
@@ -196,7 +199,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				[5, 85],
 				[155, 85],
 			];
-			const src = await run({ id: 'jasper.s.warp-transform', probes: pts });
+			const src = await source(pts);
 			const o = await run({
 				id: 'jasper.s.warp-drops',
 				params: { amplitude: 6 },
@@ -223,7 +226,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		});
 
 		it('S_Distort follows the Lens: a flat lens changes nothing, the dots lens warps', async () => {
-			const src = await run({ id: 'jasper.s.warp-transform' });
+			const src = await source([]);
 			const flat = await run({ id: 'jasper.s.distort', media: { lens: 'solid' } });
 			expect(flat.checksum).toBe(src.checksum);
 			const dots = await run({ id: 'jasper.s.distort', media: { lens: 'dots' } });
