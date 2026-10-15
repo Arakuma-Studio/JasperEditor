@@ -57,6 +57,8 @@ async function settings(): Promise<{ workingColorSpace: string; color?: { blendL
 
 test('Properties ▸ Colour: a PQ working space is previewed through the display transform', async () => {
 	const r = await transact(page, [
+		// These uniform-color oracles use the same render path at a smaller raster size.
+		{ type: 'sequence.updateSettings', sequenceId: seqId, settings: { width: 320, height: 180 } },
 		{ type: 'clip.addSolid', at: 0, duration: 90, track: 'V1', color: [0, 0, 0, 1] },
 		{ type: 'clip.addSolid', at: 0, duration: 90, track: 'V2', color: [1, 1, 1, 1] },
 	]);
