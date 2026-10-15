@@ -1583,7 +1583,7 @@ Production owner(s), relative to `packages/audio-fx/src/` unless absolute repo p
 - Rewrite: Keep empty/mono/sample safety at public process seam; assert every output stays finite and extra channels pass through, rather than checking only a stale earlier buffer.
 - Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
 
-### KEEP — extreme settings stay finite and tails end without subnormals
+### REWRITE — extreme settings stay finite and tails end without subnormals
 
 - B1: docs/wp-notes/audio-fx.md §§1,5; ARCHITECTURE D-42; published RBJ/GMR/filter/pitch laws and the public AudioProcessor contract. Contract exercised: extreme settings stay finite and tails end without subnormals.
 - B2: A caller receives incorrect audio samples, analysis, protocol bytes or parameter results for the named input; the corresponding value/state assertion fails.
@@ -1592,6 +1592,8 @@ Production owner(s), relative to `packages/audio-fx/src/` unless absolute repo p
 - B5: Keeps the contract across internal renames/reorganization, alternative algorithms and helper call changes; does not pin collaborator calls or source text.
 - B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
 - Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
+
+- Rewrite: Execute the identical min/max stress/reset/tail body once per processor with it.each, retaining all samples/assertions and the standard package timeout. This identifies the failing effect and removes the aggregate all-effects timing artifact.
 
 ### KEEP — reset restores the initial behaviour
 
@@ -2611,7 +2613,7 @@ Production owner(s), relative to `packages/motion/src/` unless absolute repo pat
 - Retained `ANIMEJS_VERSION`: explicitly documented API/config contract (ARCHITECTURE §20.2, ANM-011), not an expendable test hook.
 - Replaced SVG token parser with pixel comparison helper and preserve artifact-producing render tests.
 
-Declaration dispositions: {"DELETE": 37, "REWRITE": 26, "KEEP": 202}.
+Declaration dispositions: {"DELETE": 37, "REWRITE": 27, "KEEP": 201}.
 
 Before final support edits: `GRAPHIC_EQ_FREQS` / `graphicEqQ` and `tempoDelayMs` have only same-module production callers; remove their now-test-only exports. Retained reverb dry/decay tests will use reported latency.
 
@@ -2621,7 +2623,7 @@ Final support check before editing: `jumpScore` is only called by `planRemix` in
 
 ## Outcome and validation
 
-All 35 assigned files were audited and the pruning/rewrites implemented: **37 DELETE, 26 REWRITE, 202 KEEP** original test declarations (265 total; parameterized declarations include all generated cases). No whole test file was removed. Rewritten names may differ from the original names recorded above. Source processing arithmetic and persisted behavior are unchanged.
+All 35 assigned files were audited and the pruning/rewrites implemented: **37 DELETE, 27 REWRITE, 201 KEEP** original test declarations (265 total; parameterized declarations include all generated cases). No whole test file was removed. Rewritten names may differ from the original names recorded above. Source processing arithmetic and persisted behavior are unchanged.
 
 Removed support consists of the production-derived `sineLufs` oracle, unused `run` test wrapper, SVG token parser, obsolete test imports/setup, test-only IIR `design`/`DesignSpec` wrapper and unused `ellipK`; undocumented `kWeightingPower`, `lufsToEnergy`, `blockTruePeak` helpers; unused convolution `impulse` hook; and test-only exports for IR metadata/generation, convolution partition size, graphic-EQ Q/frequencies, tempo delay conversion, remix jump scoring and the dynamics barrel curve re-exports. Phaser sweep and Ambisonics source-gain methods became private. Actual production consumers of the remaining functions are preserved. Caller/documentation searches found no production caller or documented API contract for each removed seam. The documented `ANIMEJS_VERSION` export/configuration test remains.
 
@@ -2657,3 +2659,12 @@ Post-fix command: `pnpm exec vitest run packages/audio-fx/test/registry.test.ts 
 Final independent-source correction before the reverb assertion edit: the work note records a credible convolution energy-compensation regression, but the exact `largeHall = 1.9 s` expectation is only present in private IR metadata. That number fails B1/B3 and is removed. The existing REWRITE retains only its separate public wet-output contract: with 100% wet mix an impulse must produce a delayed, nonzero tail, not silence or an unchanged dry impulse. B1: public Convolution Reverb description in `packages/project/src/registry/audio/reverb.ts`; B2: disconnected/blank wet processing fails; B3: a nonzero post-impulse tail is independent of private preset constants; B4: actual `AudioProcessor.process` output; B5: no decay constant, FFT partition or representation is pinned; B6: registry finite/determinism and dry-mix tests cannot detect a silently absent wet path. The Studio Reverb's explicit RT60-parameter test is a different contract; it does not cover the convolution compensation regression. An exact compensation check needs an independently specified impulse/target and is not claimed by this cleanup.
 
 Cross-review tightened the wet-tail assertion to start strictly after the direct impulse at reported latency (`latency + 1`), so a pure delayed dry impulse cannot satisfy it. Source/caller paths were corrected to MotionGraphicLayer and the native template crate.
+
+
+## Retained extreme-settings validation and structure correction
+
+The focused unchanged extreme-settings case completed with **timeout only**: `Test timed out in 120000ms`, case duration 436449 ms, total 464.24 s; no numeric or subnormal failure was reported. Command: `pnpm exec vitest run packages/audio-fx/test/registry.test.ts --maxWorkers=1 -t 'extreme settings stay finite and tails end without subnormals'`; log `/tmp/prune2-audio-extremes.log`. This resolves the previously unclassified baseline failure as a reproduced aggregate timeout under contention, not a demonstrated DSP calculation bug.
+
+Before editing, disposition changes KEEP → REWRITE for this declaration: parameterize its existing independent per-processor contract using `it.each(processorIds())`. B1: public no-nonfinite/denormal-free streaming contract (audio-fx design §1.1 and AGENTS numeric-safety rules); B2: samples become NaN/Infinity or subnormal tails; B3: Number.isFinite and IEEE-754 f32 subnormal bounds are independent numeric expectations; B4: actual processor output; B5: no internal representation/calls are observed; B6: each processor has its own state/algorithm and the same stream-safety requirement, with no stronger all-effects owner. The sample counts, min/max settings, reset setup, both channels and all assertions stay unchanged. Standard package timeout remains 120000 ms; this groups output by the responsible processor rather than timing the sum of all independent cases. Original declaration counts become **37 DELETE / 27 REWRITE / 201 KEEP** (265 total).
+
+The per-effect extreme-settings rerun is in progress at commit time (`/tmp/prune2-audio-extremes-by-effect.log`); no passing result is claimed yet. Targeted Biome check and `git diff --check` pass. Whitespace-insensitive diff confirms the only test changes are the it.each wrapper and removal of the outer processor loop.

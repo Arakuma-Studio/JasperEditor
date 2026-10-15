@@ -101,37 +101,35 @@ describe('audio-fx registry', () => {
 		}
 	});
 
-	it('extreme settings stay finite and tails end without subnormals', () => {
-		for (const id of processorIds()) {
-			for (const extreme of ['min', 'max'] as const) {
-				const fx = createProcessor(id, SR, 2)!;
-				for (const p of fx.spec.params) {
-					if (p.type === 'number') fx.setParam(p.name, extreme === 'min' ? p.range!.min! : p.range!.max!);
-					else if (p.type === 'boolean') fx.setParam(p.name, extreme === 'max');
-					else fx.setParam(p.name, extreme === 'min' ? 0 : (p.options?.length ?? 1) - 1);
-				}
-				const l = noise(3, 24000, 4);
-				const r = noise(4, 24000, 4);
-				l[100] = 1e6;
-				r[200] = -1e6;
-				fx.process([l, r], 0, l.length);
-				for (let i = 0; i < l.length; i++)
-					if (!Number.isFinite(l[i]!) || !Number.isFinite(r[i]!))
-						throw new Error(`${id} ${extreme}: non-finite`);
-				fx.reset();
-				const l2 = noise(3, 4800, 0.5);
-				const r2 = noise(4, 4800, 0.5);
-				fx.process([l2, r2], 0, l2.length);
-				for (let k = 0; k < 12; k++) {
-					const zl = new Float32Array(48000);
-					const zr = new Float32Array(48000);
-					fx.process([zl, zr], 0, zl.length);
-					for (let i = 0; i < zl.length; i++) {
-						const v = zl[i]!;
-						const w = zr[i]!;
-						if (!Number.isFinite(v) || !Number.isFinite(w) || isF32Subnormal(v) || isF32Subnormal(w))
-							throw new Error(`${id} ${extreme}: NaN or subnormal in the tail`);
-					}
+	it.each(processorIds())('extreme settings stay finite and tails end without subnormals (%s)', (id) => {
+		for (const extreme of ['min', 'max'] as const) {
+			const fx = createProcessor(id, SR, 2)!;
+			for (const p of fx.spec.params) {
+				if (p.type === 'number') fx.setParam(p.name, extreme === 'min' ? p.range!.min! : p.range!.max!);
+				else if (p.type === 'boolean') fx.setParam(p.name, extreme === 'max');
+				else fx.setParam(p.name, extreme === 'min' ? 0 : (p.options?.length ?? 1) - 1);
+			}
+			const l = noise(3, 24000, 4);
+			const r = noise(4, 24000, 4);
+			l[100] = 1e6;
+			r[200] = -1e6;
+			fx.process([l, r], 0, l.length);
+			for (let i = 0; i < l.length; i++)
+				if (!Number.isFinite(l[i]!) || !Number.isFinite(r[i]!))
+					throw new Error(`${id} ${extreme}: non-finite`);
+			fx.reset();
+			const l2 = noise(3, 4800, 0.5);
+			const r2 = noise(4, 4800, 0.5);
+			fx.process([l2, r2], 0, l2.length);
+			for (let k = 0; k < 12; k++) {
+				const zl = new Float32Array(48000);
+				const zr = new Float32Array(48000);
+				fx.process([zl, zr], 0, zl.length);
+				for (let i = 0; i < zl.length; i++) {
+					const v = zl[i]!;
+					const w = zr[i]!;
+					if (!Number.isFinite(v) || !Number.isFinite(w) || isF32Subnormal(v) || isF32Subnormal(w))
+						throw new Error(`${id} ${extreme}: NaN or subnormal in the tail`);
 				}
 			}
 		}
