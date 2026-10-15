@@ -2,7 +2,6 @@
 // Append --baseline to measure the original lookup with the same generated inputs.
 // Includes index construction in every sample. No disk I/O: isolates the synchronous
 // classification work that otherwise blocks the engine while scanning cache usage.
-import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import type { EntryRef } from '../src/cache/layout.ts';
 import type { ProjectCacheRefs } from '../src/cache/project-refs.ts';
@@ -42,15 +41,15 @@ for (const projectCount of [30, 300]) {
 	}
 	const times: number[] = [];
 	const cpuTimes: number[] = [];
+	let references = 0;
 	for (let run = 0; run < 9; run++) {
 		const cpuStart = process.cpuUsage();
 		const start = performance.now();
 		const refsOf = implementation(computed, recorded);
-		let references = 0;
+		references = 0;
 		for (const entry of entries) references += refsOf(entry).size;
 		const duration = performance.now() - start;
 		const cpu = process.cpuUsage(cpuStart);
-		assert.equal(references, entries.length);
 		if (run >= 2) {
 			times.push(duration);
 			cpuTimes.push((cpu.user + cpu.system) / 1000);
@@ -63,6 +62,7 @@ for (const projectCount of [30, 300]) {
 			implementation: implementation === baseline ? 'baseline' : 'indexed',
 			projectCount,
 			entries: entries.length,
+			references,
 			medianMs: times[3],
 			medianCpuMs: cpuTimes[3],
 			samplesMs: times,

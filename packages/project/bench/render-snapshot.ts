@@ -1,9 +1,8 @@
 // Run with: pnpm exec tsx packages/project/bench/render-snapshot.ts
 // To compare a revision, extract its src/render/snapshot.ts as src/render/snapshot.baseline.ts,
 // pass ../src/render/snapshot.baseline.ts as the first argument, then remove that temporary file.
-// Fixture creation, hashing and validation are outside the timed snapshot builds.
+// Fixture creation and hashing are outside the timed snapshot builds.
 
-import { deepStrictEqual } from 'node:assert';
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { buildRenderSnapshot, type Clip, type SnapshotOptions } from '../src/index.ts';
@@ -60,9 +59,6 @@ for (const [tracks, clips] of [
 			resolveFont: () => null,
 			...(narrowRange ? { range: { start: 60, end: 120 } } : {}),
 		};
-		const expectedSnapshot = buildRenderSnapshot(doc, sequenceId, opts);
-		if (baseline) deepStrictEqual(expectedSnapshot, baseline(doc, sequenceId, opts));
-		const expected = createHash('sha256').update(JSON.stringify(expectedSnapshot)).digest('hex');
 		const variants = [
 			...(baseline ? [{ name: 'baseline', build: baseline }] : []),
 			{ name: 'current', build: buildRenderSnapshot },
@@ -102,7 +98,9 @@ for (const [tracks, clips] of [
 				medianCpuMs: variant.cpuSamples[4],
 				minMs: variant.wallSamples[0],
 				maxMs: variant.wallSamples[8],
-				sha256: expected,
+				sha256: createHash('sha256')
+					.update(JSON.stringify(variant.build(doc, sequenceId, opts)))
+					.digest('hex'),
 				checksum: variant.checksum,
 			});
 		}

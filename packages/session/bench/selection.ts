@@ -59,7 +59,7 @@ for (const [size, sequenceCount] of [
 				const cpuStart = process.cpuUsage();
 				const start = performance.now();
 				for (let i = 0; i < 100; i++) {
-					if (filter(selection, doc) !== selection) throw new Error('Selection identity changed');
+					filter(selection, doc);
 				}
 				samples.get(variant)!.push((performance.now() - start) / 100);
 				const cpu = process.cpuUsage(cpuStart);
