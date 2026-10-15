@@ -274,7 +274,14 @@ root handle one animation frame after `createRoot().render`; `Composition` regis
 `CompositionManagerProvider` updates its registry ref inside queued state updaters. An actual React 19.3 /
 Remotion diagnostic under happy-dom observed readiness with incomplete registration in ten unguarded mounts;
 ten guarded mounts had no such observation and released with all three variants registered. This diagnostic
-checks scheduling with the real libraries, not browser pixel output. The unchanged six-case browser suite still
-requires scheduled validation with `REMOTION_E2E=1 pnpm exec vitest run
-packages/motion/test/determinism-render.e2e.test.ts --maxWorkers=1`; the cleanup ledger records its failure
-artifacts and diagnostic evidence. No retries, private registration-count seam or dependency patch is retained.
+checks scheduling with the real libraries, not browser pixel output.
+
+The unchanged six-case browser suite subsequently passed at integrated `90c061a0`, with exit code 0 and no
+signal, using `REMOTION_E2E=1 pnpm exec vitest run
+packages/motion/test/determinism-render.e2e.test.ts --maxWorkers=1`. The run took 177.73 seconds, including
+110885 ms for the previously failing still/sequential/concurrent/reversed/shuffled parity case. Its entry and
+test file exactly match the reviewed fixture change. Rendered artifacts remain at
+`/var/lib/orquester/tmp/jasper-anm014-Za3f3p`; `/tmp/jasper-test-prune2/motion-readiness-results.json` records
+the source and clean exit, with detailed results in adjacent `motion-readiness-suite.log`, `.json` and
+`.events.jsonl`. The cleanup ledger retains the original failure and diagnostic evidence. No retries,
+private registration-count seam or dependency patch is retained.
