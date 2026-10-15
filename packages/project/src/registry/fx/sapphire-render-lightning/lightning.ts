@@ -34,11 +34,11 @@ import { GLSL_ZAP_BOLT_SPLINE, GLSL_ZAP_BOLT_STRAIGHT } from './zap-glsl.ts';
 const ZAP_COMBINE = lightCombine('Zap');
 
 /** Wiggle time axis of the bolt noise. */
-export const zapTau = (p: EffectParams, ctx: Pick<FxFrameContext, 'frame' | 'fps'>) =>
+const zapTau = (p: EffectParams, ctx: Pick<FxFrameContext, 'frame' | 'fps'>) =>
 	num(p.wiggleStart) + (ctx.frame / Math.max(1, ctx.fps)) * num(p.wiggleSpeed, 1) * 2;
 
 /** Bolt seed: u_seed, re-drawn every `Jitter Frames` frames (0 = the same lightning on every frame). */
-export function zapSeed(seed: number, frame: number, jitterFrames: number): number {
+function zapSeed(seed: number, frame: number, jitterFrames: number): number {
 	const j = Math.max(0, Math.floor(jitterFrames));
 	const k = j > 0 ? Math.floor(frame / j) : 0;
 	const s = seed + k * 0.6180339887;
@@ -51,7 +51,7 @@ const BOLT_K = 0.045;
 const GLOW_K = 0.14;
 
 /** Brightness gain making the glow of a thin bolt visible (a blurred line's peak falls with sigma / width). */
-export const glowGain = (glowWidth: number, boltWidth: number) =>
+const glowGain = (glowWidth: number, boltWidth: number) =>
 	clamp((0.9 * (Math.max(0, glowWidth) * GLOW_K)) / (2 * Math.max(0.005, boltWidth) * BOLT_K), 1, 40);
 
 const glowSigma = (p: EffectParams, ctx: FxPlanContext, name = 'glowWidth', def = 0.224) =>

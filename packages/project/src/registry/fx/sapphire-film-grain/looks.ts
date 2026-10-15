@@ -180,7 +180,7 @@ export const S_BLEACH_BYPASS = defineShaderEffect({
 });
 
 /** Grain presets (the Load Preset factory looks of film stocks): base values, scaled by the sliders. */
-export const GRAIN_PRESETS: Record<
+const GRAIN_PRESETS: Record<
 	string,
 	{
 		label: string;
@@ -264,7 +264,7 @@ export const GRAIN_PRESETS: Record<
 const GRAIN_PRESET_KEYS = Object.keys(GRAIN_PRESETS);
 
 /** Effective S_Grain values: Custom = the sliders; a preset = its base values scaled by the sliders' ratios. */
-export function grainSettings(p: EffectParams) {
+function grainSettings(p: EffectParams) {
 	const key = typeof p.filmStock === 'string' && GRAIN_PRESETS[p.filmStock] ? p.filmStock : 'custom';
 	const pr = GRAIN_PRESETS[key]!;
 	const amp = Math.max(0, num(p.colorAmplitude, 0.1));

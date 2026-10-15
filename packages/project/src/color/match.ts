@@ -45,14 +45,14 @@ export function oklab(r0: number, g0: number, b0: number): [number, number, numb
 }
 
 /** Tonal-range weights (shadows, midtones, highlights) of an Oklab lightness. */
-export function tonalWeights(l: number): [number, number, number] {
+function tonalWeights(l: number): [number, number, number] {
 	const s = smoothstep(0.55, 0.15, l);
 	const h = smoothstep(0.45, 0.85, l);
 	return [s, Math.max(0, 1 - s - h), h];
 }
 
 /** How much an Oklab colour looks like skin (0..1). */
-export function skinWeight(lab: readonly [number, number, number]): number {
+function skinWeight(lab: readonly [number, number, number]): number {
 	const c = Math.hypot(lab[1], lab[2]);
 	if (c < 0.02 || c > 0.2 || lab[0] < 0.25 || lab[0] > 0.92) return 0;
 	const h = (Math.atan2(lab[2], lab[1]) * 180) / Math.PI;

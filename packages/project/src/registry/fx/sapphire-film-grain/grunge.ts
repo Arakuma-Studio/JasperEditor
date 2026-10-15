@@ -291,14 +291,14 @@ const DEFAULT_COLORS: Record<number, [[number, number, number], [number, number,
 };
 
 /** The style index of stamp collection i (1..3), 0 = None. */
-export const grungeStyle = (p: EffectParams, i: number) =>
+const grungeStyle = (p: EffectParams, i: number) =>
 	Math.max(0, STAMP_KEYS.indexOf(String(p[`stamp${i}`]) as (typeof STAMP_KEYS)[number]));
 
 /**
  * Pass uniforms of stamp collection i: stamp radius (layer px), cell size and the occupancy of a cell (one stamp per
  * cell, cells ≥ the stamp radius so a 3×3 neighbourhood finds every stamp covering a pixel), colours, variations.
  */
-export function grungeLayerUniforms(
+function grungeLayerUniforms(
 	p: EffectParams,
 	i: number,
 	ctx: { width: number; height: number },

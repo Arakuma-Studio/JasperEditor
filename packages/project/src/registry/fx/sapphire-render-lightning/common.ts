@@ -327,7 +327,7 @@ export function blurXYPasses(opts: {
 }
 
 /** Samples of a spline uniform (`u_spline`: x, y in layer px and cumulative arc length, per sample). */
-export const SPLINE_N = 24;
+const SPLINE_N = 24;
 
 /** The GLSL side of `u_spline` (include only in effects that declare it through `splineUniform`). */
 export const GLSL_SRT_SPLINE: GlslChunk = {

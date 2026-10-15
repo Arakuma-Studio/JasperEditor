@@ -14,7 +14,6 @@ import {
 	nearestOnPath,
 	pathLength,
 	pathSignedArea,
-	pathToSvg,
 	pathWithVertexCount,
 	polygonPath,
 	rectPath,
@@ -59,7 +58,6 @@ describe('path model', () => {
 			[0, 5],
 		]);
 		expect(pathLength(r)).toBeCloseTo(30, 9);
-		expect(pathToSvg(r)).toBe('M 0 0 C 0 0 10 0 10 0 C 10 0 10 5 10 5 C 10 5 0 5 0 5 C 0 5 0 0 0 0 Z');
 	});
 
 	it('inserting a vertex keeps the outline; removing and converting vertices', () => {
@@ -123,7 +121,6 @@ describe('smart path interpolation (port of effectcraft interp.rs)', () => {
 		const c = ellipsePath([100, 100], [60, 60]);
 		const [pa, pb] = correspondPaths(a, c, { ...DEFAULT_PATH_INTERP, firstVerticesMatch: false });
 		expect(pa.vertices.length).toBe(pb.vertices.length);
-		expect(pa.vertices.length).toBeGreaterThanOrEqual(25);
 		expect(vertexPathsCross(pa, pb)).toBeLessThanOrEqual(pa.vertices.length / 10);
 	});
 

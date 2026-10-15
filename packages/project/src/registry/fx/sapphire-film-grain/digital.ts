@@ -213,7 +213,7 @@ export function digitalDamageGates(p: EffectParams, ctx: { frame: number; fps: n
 }
 
 /** Frames since the last held frame (Freeze Frames: holds every Nth frame; ≤ 1 = no hold). */
-export function freezeOffset(p: EffectParams, frame: number): number {
+function freezeOffset(p: EffectParams, frame: number): number {
 	const n = Math.round(num(p.freezeFrames, 10));
 	if (n <= 1) return 0;
 	return -(((Math.floor(frame) % n) + n) % n);

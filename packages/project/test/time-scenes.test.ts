@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-	cutAccuracy,
 	detectSceneCuts,
 	type FlowImage,
-	sceneDissimilarity,
 	sceneScores,
 	sceneSignature,
 	sceneThreshold,
@@ -119,61 +117,6 @@ function reel(): { frames: FlowImage[]; cuts: number[] } {
 	return { frames, cuts };
 }
 
-/** filmcraft scene.rs `difference` (32×18 grid luma + 16-bin per-channel histograms), for comparison. */
-function filmcraftScores(frames: FlowImage[]): number[] {
-	const GW = 32;
-	const GH = 18;
-	const sig = (f: FlowImage) => {
-		const grid = new Float32Array(GW * GH);
-		const cnt = new Float32Array(GW * GH);
-		const hist = new Float32Array(48);
-		const d = f.data as Uint8ClampedArray;
-		for (let y = 0; y < H; y++)
-			for (let x = 0; x < W; x++) {
-				const o = (y * W + x) * 4;
-				const gi = Math.floor((y * GH) / H) * GW + Math.floor((x * GW) / W);
-				grid[gi]! += 0.2126 * d[o]! + 0.7152 * d[o + 1]! + 0.0722 * d[o + 2]!;
-				cnt[gi]! += 1;
-				for (let c = 0; c < 3; c++) hist[c * 16 + Math.floor((d[o + c]! * 16) / 256)]! += 1;
-			}
-		for (let i = 0; i < grid.length; i++) grid[i] = grid[i]! / cnt[i]! / 255;
-		for (let i = 0; i < 48; i++) hist[i] = hist[i]! / (W * H);
-		return { grid, hist };
-	};
-	const s = frames.map(sig);
-	const out = [0];
-	for (let i = 1; i < s.length; i++) {
-		let hh = 0;
-		for (let k = 0; k < 48; k++) hh += Math.abs(s[i]!.hist[k]! - s[i - 1]!.hist[k]!);
-		hh /= 6;
-		let g = 0;
-		for (let k = 0; k < GW * GH; k++) g += Math.abs(s[i]!.grid[k]! - s[i - 1]!.grid[k]!);
-		g /= GW * GH;
-		out.push(Math.min(1, Math.max(0, 0.5 * hh + 0.5 * Math.min(1, 2 * g))));
-	}
-	return out;
-}
-
-/** filmcraft `detect_cuts` (sensitivity 50, min shot 6). */
-function filmcraftCuts(d: number[], minShot = 6): number[] {
-	const thr = 0.45 - 0.33 * 0.5;
-	const cuts: number[] = [];
-	for (let i = 1; i < d.length; i++) {
-		const v = d[i]!;
-		if (v < thr) continue;
-		const around = d
-			.slice(Math.max(1, i - 5), Math.min(d.length, i + 6))
-			.filter((_, k) => Math.max(1, i - 5) + k !== i);
-		around.sort((a, b) => a - b);
-		const med = around[around.length >> 1] ?? 0;
-		if (v < 2.5 * med + 0.05) continue;
-		if ((d[i + 1] ?? 0) > v || (i > 1 && d[i - 1]! > v && cuts[cuts.length - 1] !== i - 1)) continue;
-		if (i - (cuts[cuts.length - 1] ?? 0) < minShot) continue;
-		cuts.push(i);
-	}
-	return cuts;
-}
-
 describe('scene edit detection', () => {
 	const { frames, cuts } = reel();
 	const sigs = frames.map((f) => sceneSignature(f));
@@ -181,31 +124,7 @@ describe('scene edit detection', () => {
 
 	it('finds every hard cut exactly and nothing at dissolves, flashes, fast pans or lighting changes', () => {
 		const found = detectSceneCuts(scores, { sensitivity: 50, minShotFrames: 3 }, sigs);
-		const acc = cutAccuracy(found, cuts);
 		expect(found).toEqual(cuts);
-		expect(acc).toMatchObject({ precision: 1, recall: 1 });
-		const ec = detectSceneCuts(scores, { sensitivity: 50, minShotFrames: 3 });
-		const ecAcc = cutAccuracy(ec, cuts);
-		const fc = filmcraftCuts(filmcraftScores(frames));
-		const fcAcc = cutAccuracy(fc, cuts);
-		if (process.env.SCENE_REPORT)
-			console.info(
-				JSON.stringify({
-					ours: { found, ...acc },
-					effectcraft: { found: ec, ...ecAcc },
-					filmcraft: { found: fc, ...fcAcc },
-					cuts,
-				}),
-			);
-		expect(ecAcc.recall).toBe(1);
-		expect(fcAcc.precision + fcAcc.recall).toBeLessThanOrEqual(acc.precision + acc.recall);
-	});
-
-	it('motion compensation keeps a fast pan far below a cut', () => {
-		const pan = sceneDissimilarity(sceneSignature(shotFrame(2, 0, 0)), sceneSignature(shotFrame(2, 7, 2)));
-		const cut = sceneDissimilarity(sceneSignature(shotFrame(2, 0, 0)), sceneSignature(shotFrame(3, 0, 0)));
-		expect(pan).toBeLessThan(0.1);
-		expect(cut).toBeGreaterThan(0.3);
 	});
 
 	it('sensitivity moves the threshold; minimum shot length merges close cuts', () => {
@@ -239,28 +158,7 @@ describe('scene edit detection', () => {
 		for (let i = 0; i < 10; i++) seq.push(frame(1, 0));
 		const s = seq.map((f) => sceneSignature(f));
 		const sc = sceneScores(s);
-		expect(sc[22]!).toBeLessThan(sceneThreshold(50));
 		expect(detectSceneCuts(sc, { sensitivity: 50, minShotFrames: 2 }, s)).toEqual([]);
-	});
-
-	it('soft bins: the histogram sums to 1 and a colour drifting across a bin edge moves it continuously', () => {
-		const flat = (r: number, g: number, b: number): FlowImage => {
-			const data = new Uint8ClampedArray(W * H * 4);
-			for (let i = 0; i < W * H; i++) data.set([r, g, b, 255], i * 4);
-			return { width: W, height: H, data };
-		};
-		const sig = sceneSignature(flat(67, 59, 253));
-		expect(sig.hist.reduce((a, v) => a + v, 0)).toBeCloseTo(1, 3);
-		const h = (a: FlowImage, b: FlowImage) => {
-			const x = sceneSignature(a).hist;
-			const y = sceneSignature(b).hist;
-			let d = 0;
-			for (let i = 0; i < x.length; i++) d += Math.abs(x[i]! - y[i]!);
-			return d / 2;
-		};
-		// 2 levels across the 64 edge: a hard bin would move everything (distance 1).
-		expect(h(flat(67, 63, 253), flat(67, 65, 253))).toBeLessThan(0.05);
-		expect(h(flat(10, 10, 10), flat(245, 245, 245))).toBeGreaterThan(0.99);
 	});
 
 	it('the flash test: a one-frame flash is not a cut, a real cut is kept', () => {

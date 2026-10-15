@@ -2,7 +2,6 @@
 import { describe, expect, it } from 'vitest';
 import {
 	anim,
-	blurLevels,
 	bokehBlur,
 	boostHighlights,
 	type CameraState,
@@ -10,7 +9,6 @@ import {
 	defaultCamera,
 	type FloatImage,
 	type Iris,
-	kernelSpans,
 	layerWorldMatrix,
 	lightStateOf,
 	type Mat3,
@@ -23,7 +21,6 @@ import {
 	progressiveBlur,
 	renderClassicCPU,
 	type Transform,
-	type Vec3,
 } from '../src/index.ts';
 
 const W = 64;
@@ -346,9 +343,5 @@ describe('bokeh (EffectCraft bokeh tests, ported)', () => {
 		expect(spread(1)).toBeLessThanOrEqual(3);
 		expect(spread(39)).toBeGreaterThanOrEqual(13);
 		expect(spread(20) > spread(1) && spread(20) < spread(39)).toBe(true);
-		expect(blurLevels([0, 0.1])).toBeNull();
-		expect(kernelSpans(iris({}), 0.2)).toBeNull();
 	});
 });
-
-export type _V = Vec3;

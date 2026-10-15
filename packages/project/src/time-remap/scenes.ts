@@ -207,25 +207,3 @@ function isFlash(sigs: readonly SceneSignature[], i: number, thr: number): boole
 	if (near(before, sigs[i + 1]) || near(before, sigs[i + 2])) return true;
 	return near(sigs[i], sigs[i - 2]) || near(sigs[i], sigs[i - 3]);
 }
-
-/** Precision and recall of detected cuts against true cuts (a hit within `tolerance` frames counts once). */
-export function cutAccuracy(
-	found: readonly number[],
-	truth: readonly number[],
-	tolerance = 0,
-): { precision: number; recall: number; hits: number } {
-	const used = new Set<number>();
-	let hits = 0;
-	for (const f of found) {
-		const t = truth.findIndex((x, k) => !used.has(k) && Math.abs(x - f) <= tolerance);
-		if (t >= 0) {
-			used.add(t);
-			hits++;
-		}
-	}
-	return {
-		precision: found.length === 0 ? 1 : hits / found.length,
-		recall: truth.length === 0 ? 1 : hits / truth.length,
-		hits,
-	};
-}

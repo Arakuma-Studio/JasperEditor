@@ -12,7 +12,6 @@ import {
 	reanchorSamples,
 	resolveSceneAt,
 	samplesFromTrackResult,
-	scaleTracker,
 	smoothSamples,
 	type TrackerSamples,
 	trackerGeometryAt,
@@ -274,18 +273,6 @@ describe('tracker commands (S09:TRK-001…005)', () => {
 		expect(copy.trackedBy.effectInstanceId).toBe(copy.effects[0]!.id);
 		expect(copy.trackedBy.effectInstanceId).not.toBe(orig.trackedBy.effectInstanceId);
 		expect(checkInvariants(h.doc, { effects: defaultEffectRegistry })).toEqual([]);
-	});
-
-	it('scales trackers for a source of another size (S07:PRC-006)', () => {
-		const t: Pick<ClipTracker, 'reference' | 'samples'> = {
-			reference: { time: 0, corners: REF, patch: 20, search: 60 },
-			samples: samplesFor(2),
-		};
-		const s = scaleTracker(t, 2, 2);
-		expect(s.reference.corners![1]).toEqual([2600, 640]);
-		expect(s.reference.patch).toBe(40);
-		expect(s.samples!.data.slice(0, 2)).toEqual([1400, 600]);
-		expect(t.reference.corners![1]).toEqual([1300, 320]);
 	});
 });
 
