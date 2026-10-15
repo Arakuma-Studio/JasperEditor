@@ -12,7 +12,6 @@ import {
 	FLICKS_PER_SECOND,
 	FRAME_EPS,
 	flicksPerFrame,
-	formatTimecode,
 	type MediaAsset,
 	mediaDurationFlicks,
 	peakAlignedStart,
@@ -24,6 +23,7 @@ import {
 import type { EditorSession } from '@jasper/session';
 import { z } from 'zod';
 import { labelDefault, labelKindOfMedia } from '../gaps/app-prefs.ts';
+import { formatTimecode } from '../gaps/time-display.ts';
 import { buildMediaAsset } from '../import/assets.ts';
 import { findExistingMedia } from '../import/transaction.ts';
 import { soundLibraryPrefs } from './prefs.ts';

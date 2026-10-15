@@ -282,6 +282,12 @@ export function formatSeconds(s: number): string {
 	return `${m}:${String(Math.floor(s - m * 60)).padStart(2, '0')}`;
 }
 
+/** A point in a sound (the peak): milliseconds under a second ("230 ms"), else seconds. */
+export function formatOffset(s: number): string {
+	if (!fin(s) || s < 0) return '—';
+	return s < 1 ? `${Math.round(s * 1000)} ms` : formatSeconds(s);
+}
+
 export const DESCRIPTOR_WORD_LABELS: Record<string, string> = {
 	punchy: 'punchy',
 	soft: 'soft attack',
@@ -321,7 +327,7 @@ export function soundAccessibleName(e: SoundEntry, favourite: boolean): string {
 	const types = e.types.map(typeLabel).join(', ');
 	if (types) parts.push(types);
 	parts.push(formatSeconds(e.format.durationSec));
-	if (fin(e.descriptors.peakSec)) parts.push(`peak at ${formatSeconds(e.descriptors.peakSec)}`);
+	if (fin(e.descriptors.peakSec)) parts.push(`peak at ${formatOffset(e.descriptors.peakSec)}`);
 	parts.push(...descriptorWords(e.descriptors));
 	parts.push(licenseBadge(e).title);
 	if (favourite) parts.push('favourite');
@@ -358,7 +364,7 @@ export function soundTooltip(e: SoundEntry, rootLabel?: (rootId: string) => stri
 	if (types) lines.push(types);
 	const facts = [
 		formatSeconds(e.format.durationSec),
-		fin(d.peakSec) ? `peak ${formatSeconds(d.peakSec)}` : null,
+		fin(d.peakSec) ? `peak ${formatOffset(d.peakSec)}` : null,
 		fin(d.riseMs) ? `rise ${Math.round(d.riseMs)} ms` : null,
 		fin(d.centroidHz) ? `centroid ${Math.round(d.centroidHz)} Hz` : null,
 		fin(d.maxMomentaryLufs) ? `${d.maxMomentaryLufs.toFixed(1)} LUFS max` : null,

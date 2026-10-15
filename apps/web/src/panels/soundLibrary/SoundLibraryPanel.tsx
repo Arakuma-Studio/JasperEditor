@@ -967,7 +967,9 @@ export function SoundLibraryPanel(props: PanelProps) {
 			>
 				<span className="truncate">
 					{results
-						? `${results.total} ${results.total === 1 ? 'sound' : 'sounds'}`
+						? results.total === results.librarySize || local
+							? `${results.total} ${results.total === 1 ? 'sound' : 'sounds'}`
+							: `${results.total} of ${results.librarySize} sounds`
 						: loading
 							? 'Searching…'
 							: ''}
