@@ -36,7 +36,14 @@ writeFileSync(infoFile, JSON.stringify({ port: Number(port), appdir }));
 const child = spawn(process.execPath, [engineBundle, '--port', port, '--appdir', appdir], {
 	cwd: root,
 	stdio: 'inherit',
-	env: { ...process.env, JASPER_APPDIR: appdir, JASPER_WEB_DIR: webDir },
+	env: {
+		...process.env,
+		JASPER_APPDIR: appdir,
+		JASPER_WEB_DIR: webDir,
+		// sound-design: one Jasper Synth variant per type (19 sounds) keeps the first index of the throwaway appdir short;
+		// the bundled starter kit is indexed in full.
+		JASPER_SOUND_SYNTH_VARIANTS: process.env.JASPER_SOUND_SYNTH_VARIANTS ?? '1',
+	},
 });
 
 let stopping = false;
