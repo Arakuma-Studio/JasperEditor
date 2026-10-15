@@ -2068,13 +2068,14 @@ pops, pulses, fades, abrupt stops and shrinks.
   sequence, sorted, deterministic (two runs JSON-equal), every 1 s window holds ≤ the density's cues (groups once),
   heroes spaced, `maxCues` / `minGapFrames` / minimum confidence hold. Fuzz (testkit `mutateJson` of two sequences, 300
   cases, with hostile options: NaN / strings / inverted ranges, junk sources and engine cues; plus whole-document
-  garbage): never throws, frames stay inside the sequence, deterministic. `FUZZ=1 FUZZ_SEED=1|777|4242` (20× cases):
-  passed.
+  garbage): never throws, frames stay inside the sequence, deterministic. `FUZZ=1 FUZZ_SEED=1|777|4242` (20× cases,
+  before the anchor reconciliation) and `FUZZ=1 FUZZ_SEED=2026` (final code): passed.
 - Performance: a 10-minute 30 fps sequence with **200 clips** (120 shots with a push or dissolve on every 4th edit, 40
   stills keyframed in position, scale and opacity, 40 typewriter + slide-out titles, 20 markers): 669 events found,
   614 kept (balanced). `deriveCues` best of 3: **212 ms** at load average 41 (runs 673 / 289 / 212 ms, the first one
   cold) and **65 ms** at load average 27 (83 / 73 / 65 ms); the test asserts best < 1 s.
-- `pnpm --filter @jasper/project typecheck` and `pnpm lint`: pass (see the integration commit).
+- `pnpm vitest run --maxWorkers=3` in packages/project (after merging WP2.1): 147 files, 1823 tests passed.
+  `pnpm typecheck` (whole workspace) and `pnpm lint` (Biome, tokens, anime, layers, assets): pass.
 
 #### Limits and notes for the next packages
 
