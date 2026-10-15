@@ -68,7 +68,9 @@ describe('Preferences ▸ Sound Library', () => {
 	it('keeps the typed folder path when the engine refuses it, and clears it once saved', async () => {
 		const engine = fakeSoundEngine([]);
 		let refuse = true;
-		engine.client.putSoundRoots = async (req: { roots: { path: string }[] }) => {
+		(engine.client as { putSoundRoots: unknown }).putSoundRoots = async (req: {
+			roots: { path: string }[];
+		}) => {
 			if (refuse) throw new Error('Not a folder');
 			return {
 				roots: req.roots.map(

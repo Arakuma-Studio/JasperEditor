@@ -1461,7 +1461,7 @@ state differs by shape), es.json (173 new strings), and `soundCredits(…, {attr
   (punchy, soft attack, dark, bright, heavy, light, clean, noisy, tonal, loopable), licence and "favourite". Tooltip:
   the same plus rise, centroid, max momentary LUFS, source and author.
 - **Keyboard** (scope `soundLibrary`, rebindable): ↑/↓/Home/End/PageUp/PageDown select (Auto-play auditions the new
-  selection), **Space** audition / stop, **Enter** insert at the playhead, **F** favourite, **L** loop, **Ctrl/Cmd+F**
+  selection), **Space** audition / stop, **Enter** insert at the playhead, **F** favourite, **L** loop, **Esc** stop the audition, **Ctrl/Cmd+F**
   search. The dispatcher ignores keys inside `role="listbox"` (it treats them as an overlay), so the list resolves the
   chord itself along `scopeChain('soundLibrary')` with the active keymap and runs the bound command (the same way the
   monitors do), which keeps the bindings rebindable and global chords (Ctrl+S…) working from the list.
@@ -1521,7 +1521,7 @@ shows. A drag from another window has no entry: the drop frame is the peak and t
 #### Audition (decision: own context, shown on the Mix meters)
 
 `sound/audition.ts` `AuditionPlayer`: fetches `soundAudioUrl` (with the session cookie), decodes once (24 most recent
-sounds kept, ≤ 64 MB of PCM each), plays an `AudioBufferSourceNode` → gain (audition volume) → the output; Loop starts
+sounds kept, ≤ 32 MB of PCM each and ≤ 160 MB in total; longer sounds stream, see "Review fixes"), plays an `AudioBufferSourceNode` → gain (audition volume) → the output; Loop starts
 the sound again 250 ms after it ends; a newer play or stop cancels a pending load (it never starts late). It runs on
 **its own AudioContext**, not the Program monitor's: that context belongs to Remotion's transport (suspended while
 paused, the Phase 0 primed-start logic keys off its state changes), and resuming it for an audition would break the
@@ -1599,6 +1599,62 @@ Measured on this branch after merging `feat/sound-design` (10a61d6e), shared hos
 - Facets of local collections (Favourites, Recent, Used) are computed in the browser over at most 500 / 50 / the
   project's sounds; the engine search pages by 100 and never loads more than the user scrolls to.
 - The list is a single column: below the panel's minimum width (280 px) the name truncates first.
+
+#### Review fixes (Phase 1 verification, branch `feat/sd-p1v-web`)
+
+Review findings on the panel, fixed with a regression test each (every test below was run against the previous
+sources and failed there, except the tooltip helper, which is new code extracted from `TimelinePanel.tsx`):
+
+- **Long sounds stream** (`sound/audition.ts`). Decoding is allowed only when the decoded PCM (`durationSec × channels ×
+  max(file rate, context rate) × 4`) fits `DECODE_MAX_BYTES` = 32 MB (≈ 87 s of stereo 48 kHz); longer sounds, and
+  sounds whose format is unknown, play through an `<audio>` element (`crossOrigin = use-credentials`) →
+  `MediaElementAudioSourceNode` → the same gain / analysers, so volume, Loop (250 ms gap, `currentTime = 0`) and the Mix
+  meters behave the same; a 30 min folder WAV is never fetched whole nor decoded (before: ≈ 690 MB of float PCM plus
+  the file). The decoded cache keeps ≤ 24 sounds **and** ≤ `CACHE_BUDGET_BYTES` = 160 MB in total (LRU); a buffer
+  larger than the decode budget (format understated) plays but is not kept. Tests: `sound-audition.test.ts` "streams a
+  long sound…", "keeps the decoded cache within its total byte budget…".
+- **The audition plays alone and can always be stopped**: Esc in the `soundLibrary` scope runs
+  `soundLibrary.stopAudition` (no longer hidden; rebindable; no chord conflict in the scope); closing the panel stops
+  it (a looped audition could not be stopped before); `auditionPlaysAlone` (`sound/controller.ts`) pauses the Program
+  transport when an audition starts and stops the audition when the transport starts playing. Tests:
+  `sound-audition.test.ts` "plays alone…", `sound-library-review.test.tsx` "stops the audition on Esc…".
+- **Recent keeps its order while you browse**: the collection is read when it is entered or the search changes, not on
+  every audition (auditioning moves a sound to the front of Recent). Test: Recent [A, B, C, D] with Auto-play, ↓ ×3
+  selects D.
+- **Virtualised list**: a callback ref measures and observes each list element (the empty states unmount it); new
+  filters scroll the list to the top; the selected row is always rendered (`aria-activedescendant` never names a
+  missing element) and every row has `aria-setsize` (the result total) / `aria-posinset`. Tests: three in
+  `sound-library-review.test.tsx`.
+- **Paging**: results carry the search epoch and the filters they answer; `loadMore` pages only the results on screen
+  with their own filters and an `AbortController`; a page from an older search is dropped; a page that adds nothing
+  marks the results exhausted (no request loop). A failed page is asked again only when the list scrolls.
+- **Search in another UI language** (spec §2.7 "type ids and translated labels"): `localizeSoundQuery` (`sound/model.ts`)
+  replaces whole words equal to a translated type label (lower case, accents folded, longest label first: "golpe sordo"
+  → `thump` before "golpe" → `hit`) with the type id, in the engine request and the local collections. English is sent
+  as typed.
+- **Smaller**: a failed `getSound` is not cached (the next search asks again); Install Starter Kit asks for the status
+  at once, so "Indexing n %" shows and the 2 s polling starts (the panel's own command context now has the `engine`
+  capability when the engine is connected); the cross-window drag tooltip names the track "A2", not its id
+  (`panels/timeline/model/sound-drop-tooltip.ts`); `sound.insertAtPlayhead` fails with the insert's own message
+  ("Could not add the sound: disk full", "The project is read-only"…) for agents; Preferences: every engine promise is
+  caught (no unhandled rejection when the engine goes away), Add Folder keeps the typed path until the engine accepts it;
+  the 501st favourite is **refused** with a toast ("Favourites are full (500 sounds)") instead of silently dropping the
+  oldest one (`toggleFavourite` returns `'full'`).
+- **i18n**: the strings these files build outside the transform's positions go through `t()` with Spanish entries: licence
+  badges (Synth, Jasper, Yours, Yours?, and "Open [licence badge]" — `withoutContext` in `i18n/runtime.ts` strips a
+  trailing "[context]" so a homonym gets its own key; es.json "Open" is the verb), "favourite" in names, audition errors,
+  insert errors and the "Added … · peak|start|end at …" toast, the aria-live texts, the status count, the drop tooltip,
+  Preferences messages, and the credits warnings (rebuilt in the dialog from each warning's code and row:
+  `creditWarningText`). Test: the panel rendered in Spanish shows none of those English strings.
+
+Decision recorded, not changed: the drop snapping uses the timeline's TL-453 rule (the nearest target wins, priority
+breaks ties, In/Out above cuts), while spec 12 §2.7 lists playhead > cue > marker > cut > In/Out; the integrator keeps
+TL-453 for consistency with every other timeline drag.
+
+Known limits found on the way (not fixed here): the sound type labels share es.json keys with homonyms of other
+features, so some Spanish chips read oddly ("Key" → "Incrustación", "Reverse" → "Invertir", "Pop" → "Aparecer"); they
+need their own context keys (`withoutContext`). The insert's history label "Add Sound <title>" and the placement
+refusals that come from `@jasper/project` stay English.
 
 ## Phase 2: cues and placement
 
