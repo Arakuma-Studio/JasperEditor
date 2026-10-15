@@ -1,7 +1,6 @@
 // @jasper/expressions — After Effects-style expressions on any animatable property (docs/wp-notes/expressions.md).
 export * from './api.ts';
 export { bindDocumentExpressions, bindSnapshotExpressions, bindWorld, worldOfDocument } from './bind.ts';
-export { compileExpressionSource, MAX_NESTING } from './compile.ts';
 export * from './presets.ts';
 export * from './reference.ts';
 export {

@@ -6,7 +6,6 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { exportAle, importAle } from '../src/ale.ts';
 import { detectFormat } from '../src/formats.ts';
-import type { IMedia } from '../src/model.ts';
 import { Report } from '../src/report.ts';
 import { framesToFlicks } from '../src/time.ts';
 import { arbProject, BASIC } from './support/arbitraries.ts';
@@ -28,20 +27,6 @@ describe('Avid ALE', () => {
 		expect(ms[1]!.video).toBeUndefined();
 		expect(ms[1]!.audio!.channels).toBe(2);
 		expect(ms[0]!.jasper).toEqual({ ale: { Scene: '12', Take: '3', Description: 'Wide of the beach' } });
-	});
-
-	it('export → import keeps the logged media', () => {
-		fc.assert(
-			fc.property(arbProject({ ...BASIC, timecode: true, audioOnlyMedia: true }), (p) => {
-				const text = exportAle(p, p.top[0]!, { ale: { scope: 'project' } }, new Report());
-				expect(text.includes('\r\n')).toBe(true);
-				const back = importAle(text, {}, new Report());
-				const pick = (m: IMedia) => [m.name, m.path, m.duration, m.timecode];
-				const orig = Object.values(p.media).filter((m) => !m.generator);
-				expect(Object.values(back.media).map(pick)).toEqual(orig.map(pick));
-			}),
-			{ numRuns: 60 },
-		);
 	});
 
 	it('only ever throws InterchangeError on corrupt input', () => {

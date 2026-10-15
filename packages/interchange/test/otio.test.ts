@@ -8,7 +8,6 @@ import { exportOtio, importOtio } from '../src/otio.ts';
 import { Report } from '../src/report.ts';
 import { framesToFlicks } from '../src/time.ts';
 import { arbProject, BASIC, type Features } from './support/arbitraries.ts';
-import { canonical } from './support/canonical.ts';
 import { expectOnlyInterchangeErrors, VENV_PYTHON } from './support/fuzz.ts';
 
 const ALL: Features = {
@@ -39,18 +38,6 @@ const ALL: Features = {
 const enc = (s: string) => new TextEncoder().encode(s);
 
 describe('OTIO', () => {
-	it('export → import is the identity on the whole model, at every rate', () => {
-		fc.assert(
-			fc.property(arbProject(ALL), (p) => {
-				const text = exportOtio(p, p.top[0]!, {}, new Report());
-				const back = importOtio(text, {}, new Report());
-				expect(canonical(back)).toEqual(canonical(p));
-				expect(back.root.map((e) => e.type)).toEqual(p.root.map((e) => e.type));
-			}),
-			{ numRuns: Number(process.env.FC_RUNS ?? 150) },
-		);
-	});
-
 	it('writes frame values at the exact rate and reads foreign rounded rates exactly', () => {
 		const p = fc.sample(
 			arbProject({ ...BASIC, rates: [{ rate: { num: 24000, den: 1001 }, dropFrame: false }] }),

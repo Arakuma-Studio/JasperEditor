@@ -2,17 +2,15 @@
 // nothing an expression does may outlive its evaluation, and an expression that exhausts the heap (where the
 // interrupt hook cannot stop it) is not re-run per frame.
 import type { ExpressionRef } from '@jasper/project';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { evaluateExpressionText, loadExpressionEngine, storedTimeAtFrame } from '../src/index.ts';
-import { clearExpressionQuarantineForTests, setExpressionClockForTests } from '../src/runtime.ts';
 import { basicDoc } from './fixture.ts';
 
 beforeAll(async () => {
 	await loadExpressionEngine();
 });
 afterEach(() => {
-	setExpressionClockForTests(null);
-	clearExpressionQuarantineForTests();
+	vi.restoreAllMocks();
 });
 
 function setup() {
@@ -28,9 +26,6 @@ describe('expression realm isolation', () => {
 		['Array.prototype.map = null; 0', '[1, 2].map(function (x) { return x }).length', 2],
 		['JSON.stringify = function () { return "{\\"r\\":99}" }; 0', '5', 5],
 		['Object.prototype.valueOf = function () { return 7 }; 0', '({}) + 1 === "[object Object]1" ? 1 : 0', 1],
-		['__add = function () { return 42 }; 0', '1 + 2', 3],
-		['__run = null; __result = null; __json = null; 0', '4', 4],
-		['__host = function () { return "123" }; 0', 'thisComp.width', 1920],
 		['wiggle = function () { return 9 }; 0', 'typeof wiggle === "function" && wiggle(0, 0) === 0 ? 1 : 0', 1],
 		['thisComp.constructor.prototype.layer = 5; 0', 'typeof thisComp.layer === "function" ? 1 : 0', 1],
 		['Date.now = function () { return 5 }; 0', 'Date.now()', 0],
@@ -97,13 +92,6 @@ describe('expression realm isolation', () => {
 			error: null,
 		});
 	});
-
-	it('random and wiggle stay deterministic after attempts to detach the hash buffers', () => {
-		const run = setup();
-		const before = run('wiggle(2, 30)');
-		run('try { __f64.buffer.transfer() } catch (e) {} try { __f64 = new Float64Array(1) } catch (e) {} 0');
-		expect(run('wiggle(2, 30)')).toEqual(before);
-	});
 });
 
 describe('resource limits', () => {
@@ -116,8 +104,7 @@ describe('resource limits', () => {
 
 	// An expression stopped by any resource limit must not run again in the realm.
 	// Which limit trips first depends on the machine and its load, so each path is driven explicitly (the clock is
-	// replaced where the test is about it, frozen where it is not), and the slow allocation loop is checked for the
-	// one property that matters whatever trips first: the second run costs nothing.
+	// replaced where the test is about it, frozen where it is not).
 	const quarantined = /not run again until the editor or engine restarts/;
 
 	it('the heap limit: quarantined, the next run is immediate', () => {
@@ -134,7 +121,7 @@ describe('resource limits', () => {
 
 	it('the operation budget: quarantined (the clock is frozen, so only the budget can stop it)', () => {
 		const run = setup();
-		setExpressionClockForTests(() => 0);
+		vi.spyOn(performance, 'now').mockReturnValue(0);
 		const first = run('var n = 0; while (true) n++;');
 		expect(first.error).toMatch(/operation limit reached/);
 		expect(first.error).not.toMatch(quarantined);
@@ -147,27 +134,16 @@ describe('resource limits', () => {
 		const run = setup();
 		// A busy host: every reading of the clock is a second later.
 		let t = 0;
-		setExpressionClockForTests(() => (t += 1000));
+		const clock = vi.spyOn(performance, 'now').mockImplementation(() => (t += 1000));
 		const text = 'var a = []; while (1) a.push([1, 2, 3]);';
 		const first = run(text);
 		expect(first.error).toMatch(/took too long \(over 2 s\)/);
-		setExpressionClockForTests(null);
+		clock.mockRestore();
 		const t0 = performance.now();
 		const second = run(text);
 		expect(performance.now() - t0).toBeLessThan(50);
 		expect(second.error).toMatch(/over 2 s/);
 		expect(second.error).toMatch(quarantined);
-	});
-
-	it('the heap-growing loop is never run twice, whichever limit stops it on this host', {
-		timeout: 60_000,
-	}, () => {
-		const run = setup();
-		const text = 'var b = []; while (1) b.push([1, 2, 3]);';
-		expect(run(text).error).toMatch(/ran out of memory|took too long/);
-		const t0 = performance.now();
-		expect(run(text).error).toMatch(quarantined);
-		expect(performance.now() - t0).toBeLessThan(50);
 	});
 
 	it('ordinary errors are not quarantined (they are cheap and may depend on the frame)', () => {

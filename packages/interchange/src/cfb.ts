@@ -50,7 +50,7 @@ function upper(u: number): number {
 }
 
 /** Sibling order (§2.6.4): shorter names first, then a code-unit comparison of the upper-cased names. */
-export function compareNames(a: string, b: string): number {
+function compareNames(a: string, b: string): number {
 	if (a.length !== b.length) return a.length - b.length;
 	for (let i = 0; i < a.length; i++) {
 		const d = upper(a.charCodeAt(i)) - upper(b.charCodeAt(i));

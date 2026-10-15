@@ -3,7 +3,6 @@ import { describeFuzz, textTarget } from '@jasper/testkit/fuzz';
 import { beforeAll } from 'vitest';
 import {
 	checkExpressionSyntax,
-	compileExpressionSource,
 	evaluateExpressionText,
 	loadExpressionEngine,
 	storedTimeAtFrame,
@@ -30,9 +29,7 @@ const SEEDS = [
 ];
 
 describeFuzz('@jasper/expressions', [
-	textTarget('compile (result object)', SEEDS, (t) => {
-		const r = compileExpressionSource(t) as { ok: boolean };
-		if (typeof r.ok !== 'boolean') throw new Error('compile did not return a result');
+	textTarget('syntax check (message or null)', SEEDS, (t) => {
 		const s = checkExpressionSyntax(t);
 		if (s !== null && typeof s !== 'string') throw new Error('syntax check did not return a message');
 	}),

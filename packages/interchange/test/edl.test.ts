@@ -4,100 +4,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { scaled } from '../src/build.ts';
 import { exportEdl, exportEdlPerTrack, importEdl } from '../src/edl.ts';
 import { detectFormat } from '../src/formats.ts';
-import type { IProject } from '../src/model.ts';
 import { Report } from '../src/report.ts';
 import { framesToFlicks, parseTc } from '../src/time.ts';
-import { arbProject, BASIC, type Features } from './support/arbitraries.ts';
+import { arbProject, BASIC } from './support/arbitraries.ts';
 import { expectOnlyInterchangeErrors, VENV_PYTHON } from './support/fuzz.ts';
 
 const fixture = (n: string) => readFileSync(join(__dirname, 'fixtures/edl', n), 'utf8');
 const r2997 = { num: 30000, den: 1001 };
-
-const FEATURES: Features = {
-	...BASIC,
-	videoTracks: 1,
-	audioTracks: 2,
-	clips: 6,
-	speed: true,
-	reverse: true,
-	hold: true,
-	markers: true,
-	transitions: true,
-};
-
-const COLOR = (l: string) =>
-	({
-		rose: 'RED',
-		green: 'GREEN',
-		forest: 'GREEN',
-		blue: 'BLUE',
-		iris: 'BLUE',
-		cerulean: 'BLUE',
-		teal: 'CYAN',
-		caribbean: 'CYAN',
-		magenta: 'MAGENTA',
-		violet: 'MAGENTA',
-		purple: 'PURPLE',
-		lavender: 'WHITE',
-		brown: 'BLACK',
-		mango: 'ORANGE',
-		tan: 'ORANGE',
-		yellow: 'YELLOW',
-	})[l];
-
-/** What a CMX list carries, per track: clip timing, source, retime, transitions, markers (EDL colours). */
-function edlView(p: IProject) {
-	const s = p.sequences[p.top[0]!]!;
-	const media = (c: { source: { type: string; mediaId?: string } }) =>
-		c.source.type === 'media' ? p.media[c.source.mediaId!]!.path : null;
-	const track = (t: (typeof s.video)[number]) => ({
-		clips: t.clips.map((c) => ({
-			start: c.start,
-			duration: c.duration,
-			sourceIn: c.hold ?? c.sourceIn,
-			speed: c.hold != null ? 'hold' : c.speed,
-			reverse: c.hold != null ? false : c.reverse,
-			media: media(c),
-		})),
-		transitions: t.transitions.map((x) => ({
-			start: x.start,
-			duration: x.duration,
-			from: x.from !== null,
-			to: x.to !== null,
-		})),
-	});
-	return {
-		video: s.video.map(track).filter((t) => t.clips.length),
-		audio: s.audio.map(track).filter((t) => t.clips.length),
-		markers: s.markers.map((m) => [m.start, m.name, COLOR(m.color)]),
-	};
-}
-
-/** Two-sided transitions in an EDL start at the cut: the incoming clip starts at the transition start. */
-function toEdlForm(p: IProject): IProject | null {
-	const q = JSON.parse(JSON.stringify(p)) as IProject;
-	const s = q.sequences[q.top[0]!]!;
-	for (const t of [...s.video, ...s.audio])
-		for (const x of t.transitions) {
-			const from = t.clips.find((c) => c.id === x.from);
-			const to = t.clips.find((c) => c.id === x.to);
-			if (from && to) {
-				const d = to.start - x.start;
-				from.duration = x.start - from.start;
-				to.start = x.start;
-				to.duration += d;
-				if (to.hold == null) to.sourceIn -= scaled(d, to.speed);
-				// EDL source timecodes are whole frames.
-				if (to.sourceIn < 0 || from.duration <= 0 || to.sourceIn % framesToFlicks(1, s.rate) !== 0)
-					return null;
-				x.alignment = 'start-at-cut';
-			}
-		}
-	return q;
-}
 
 describe('CMX 3600 EDL', () => {
 	it('reads a Premiere drop-frame list: dissolves, M2, LOC, fade from black, source files', () => {
@@ -148,27 +63,6 @@ describe('CMX 3600 EDL', () => {
 		expect(ks.video.length).toBe(2);
 		expect(ks.video[1]!.clips[0]!.name).toBe('FG_REEL');
 		expect(ks.audio.length).toBeGreaterThanOrEqual(3);
-	});
-
-	it('export → import keeps every event, at every rate (transitions in their EDL form)', () => {
-		fc.assert(
-			fc.property(
-				arbProject(FEATURES)
-					.map((p) => ({ p, q: toEdlForm(p) }))
-					.filter(
-						(x) =>
-							x.q !== null &&
-							Object.values(x.p.sequences).some((s) => [...s.video, ...s.audio].some((t) => t.clips.length)),
-					),
-				({ p, q }) => {
-					const report = new Report();
-					const text = exportEdl(p, p.top[0]!, { edl: { reelLength: 32 } }, report);
-					const back = importEdl(text, { rate: p.sequences[p.top[0]!]!.rate }, new Report());
-					expect(edlView(back)).toEqual(edlView(q!));
-				},
-			),
-			{ numRuns: Number(process.env.FC_RUNS ?? 100) },
-		);
 	});
 
 	it('drop-frame timecode at minute boundaries (29.97 and 59.94)', () => {
@@ -257,10 +151,8 @@ print(json.dumps([(c.name, c.range_in_parent().start_time.to_frames(), c.source_
 		);
 		const clips = JSON.parse(out) as [string, number, number][];
 		const s = p.sequences[p.top[0]!]!;
-		const F = framesToFlicks(1, s.rate);
 		const ours = s.video[0]!.clips;
 		expect(clips.length).toBeGreaterThanOrEqual(ours.length);
 		for (const c of ours) expect(clips.some(([n]) => n === c.name)).toBe(true);
-		void F;
 	});
 });

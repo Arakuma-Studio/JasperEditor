@@ -193,14 +193,12 @@ sequence rate), zero-padding past the end of the media.
 
 ## 4. Verified behaviour (measured; commands below)
 
-`pnpm vitest run packages/interchange --maxWorkers=2` — 11 files, 74 tests, all passing (≈ 65 s on the shared
-16-core machine under load):
+`pnpm exec vitest run packages/interchange --maxWorkers=1` runs the retained format contracts below.
+The test cleanup removed generic own-writer/own-reader identity properties, their canonicalizer and duplicate
+container probes. Independent dialect fixtures, external-reader checks and specific persistence, format-option,
+bridge and hostile-input regressions remain. [The per-test audit](../test-cleanup/formats.md) records each
+retention/deletion decision and current validation status; historical counts are not a current gate result.
 
-- **Property round trips** (fast-check, ported FilmCraft strategies; `arbProject(features)` + `canonical()` or the
-  clip/transition structure), at every rate including 29.97/59.94 DF: OTIO (everything), FCP7 XML (+ keyframes,
-  generators, transitions, links), FCPXML (+ lanes, keyframes, speed), EDL (cuts, dissolves, speed), ALE (media and
-  timecodes), AAF (every clip, transition and link; audio to the nearest frame) and OMF (every audio clip and
-  crossfade). `FC_RUNS=400` was also run for AAF and `FC_RUNS=300` for OMF.
 - **Fixtures** (hand-made, per dialect): Premiere FCP7 XML (`premiere-lighthouse.xml`: bins, master clips, ticks,
   Basic Motion, Time Remap, levels), Resolve FCP7 XML (timecode strings, no `<frame>`), Final Cut Pro FCPXML
   (`fcp-harbour.fcpxml`: spine, lanes, compound clip, timeMap, roles, chapter markers), Resolve FCPXML, Premiere
@@ -210,7 +208,7 @@ sequence rate), zero-padding past the end of the media.
   (PCM bit-exact), linked per-clip files + video mixdown, uncarried clips named; a file written by pyaaf2 (Avid
   dialect) is read.
 - **OMF**: round trips at 25, 23.976 and 29.97 DF, embedded WAVE (bit-exact), separate AIFF files with mono breakout,
-  the required properties of every OMF class (ported structural check), Bento values and references.
+  the required properties, bytes and mob references of every OMF class (ported structural check).
 - **JasperEditor round trips through `project.importTimeline`**: OTIO identical (text, solids, effects, keyframes,
   transitions, links, markers, captions); FCP7 and FCPXML keep timing, Motion, opacity, blend, levels, pan, effects
   and transitions of the media clips; AAF timing and levels; EDL the picture of every record frame. The text clip is
@@ -245,7 +243,7 @@ the report. `apps/mcp/test/interchange.test.ts` (3) — the four tools against a
 ## 5. Comparison with the references
 
 - **FilmCraft** (`crates/interchange`, Rust): the formats, the IR idea, the mob composition model, CFB/AAF/OMF/Bento
-  and the property tests are ported. Differences: JasperEditor's model is frames + flicks (FilmCraft ticks), so the IR
+  and retained fixture generators/structural tests are ported. Differences: JasperEditor's model is frames + flicks (FilmCraft ticks), so the IR
   and the bridge (`jasper-{import,export}.ts`) are new; added on top: bins/master clips in FCP7, crop, blend modes,
   generators, channel mapping, hold filters, FCPXML captions and non-uniform scale, OTIO full metadata round trip,
   EDL start-timecode rebasing, ALE import, AAF SDK usage codes and MetaDictionary (pyaaf2 needed them), multicam in

@@ -20,7 +20,7 @@
 import { type AnyNode, Parser, type Program } from 'acorn';
 
 /** Deepest bracket / operator nesting an expression may have (rewrite.rs `MAX_NESTING`). */
-export const MAX_NESTING = 64;
+const MAX_NESTING = 64;
 
 export type CompiledSource = { ok: true; code: string } | { ok: false; error: string };
 

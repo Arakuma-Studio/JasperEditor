@@ -165,20 +165,8 @@ function createEngine(module: QuickJSWASMModule): Engine {
 	return { module, runtime, context, run, functions: new Map() };
 }
 
-let clock: (() => number) | null = null;
 function now(): number {
-	if (clock) return clock();
 	return typeof performance !== 'undefined' ? performance.now() : Date.now();
-}
-
-/** Tests: replace the wall clock the limits read (null restores it). */
-export function setExpressionClockForTests(fn: (() => number) | null): void {
-	clock = fn;
-}
-
-/** Tests: forget every quarantined expression. */
-export function clearExpressionQuarantineForTests(): void {
-	quarantine.clear();
 }
 
 /**
