@@ -188,6 +188,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | AU-5 | Audio effects (EQ, dynamics, reverb, noise reduction, pitch) | P1 | done | 60 audio effects in one DSP for preview and export (D-42; wp-notes/audio-fx.md; `packages/audio-fx/test/*`, `apps/engine/test/audio-fx.test.ts`, `e2e/audio-fx.spec.ts`) | audio-fx |
 | AU-6 | Essential Sound, loudness normalisation, ducking | P1 | done | Essential Sound panel, two-pass loudness normalisation with true-peak limiter, auto-ducking, Music Remix (wp-notes/audio-mix.md, wp-notes/audio-fx.md; `packages/audio-fx/test/remix.test.ts`, `apps/engine/test/audio-mix.test.ts`) | audio-fx |
 | AU-7 | Audio channel mapping (Modify ▸ Audio Channels) | P2 | done | Clip ▸ Modify ▸ Audio Channels: matrix, clip channel format, number of clips, muted channels in preview and export, routings on Project items (wp-notes/gaps.md; `gaps-audio-channels` project + engine tests) | gaps |
+| AU-8 | Sound effects library: browse, audition, insert (Essential Sound's "Browse") | P2 | done | Sound Library panel + Sound Design workspace, starter kit (60 CC0 sounds), user folders, peak / end / start-aligned insert exact to the sample, provenance and credits, MCP tools (wp-notes/sound-design.md "Phase 1 verification"; `e2e/sound-library.spec.ts`, `apps/mcp/test/sound.test.ts`, `apps/engine/test/sounds-routes.test.ts`); added by sound-design on `feat/sound-design`, not yet counted in the numbers above | sound-design |
 
 ### Captions & speech
 

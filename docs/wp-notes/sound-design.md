@@ -1743,6 +1743,137 @@ need their own context keys (`withoutContext`) — done in the Phase 1 verificat
 "Reverse [sound type]" → "Inverso", "Pop [sound type]" → "Pop", shown through `typeLabel`). The insert's history label "Add Sound <title>" and the placement
 refusals that come from `@jasper/project` stay English.
 
+### Phase 1 verification
+
+Branch `feat/sd-p1-verify` (from `feat/sound-design` 7e15487f), with two helper branches merged into it:
+`feat/sd-p1v-web` (panel review fixes: "Review fixes" under WP1.4) and `feat/sd-p1v-engine` (engine review fixes:
+"Review fixes (P1 verification)" under WP1.2). Three read-only review passes (engine; web; project + audio-fx + MCP)
+produced the findings; every confirmed defect got a regression test that was run against the code before the fix and
+failed there (stated per item in the two "Review fixes" sections and below).
+
+#### Requirements (spec 12 Phase 1) with evidence
+
+| Req | What | Where | Evidence (tests; all pass on this branch) |
+|---|---|---|---|
+| P1-R1 | taxonomy, rank, credits (pure), `LibraryProvenance` on media, repair, `media.setLibraryInfo` | `packages/project/src/sound/*`, `commands/handlers/sound.ts`, INV-LIBRARY in `invariants.ts` | `packages/project/test/sound-{taxonomy,rank,rank-scale,library,credits,insert,place,review-fixes}.test.ts`, `fuzz.test.ts` (integrity property with `media.setLibraryInfo`), `apps/mcp/test/sound-examples.test.ts` |
+| P1-R2 | descriptors + judge, known answers (impulse peak ≤ 1 ms, decay, sine centroid/MIDI, white flatness ≈ 1, pink band shares) | `packages/audio-fx/src/analysis/sound-{descriptors,judge}.ts` | `packages/audio-fx/test/sound-{descriptors,judge,oracle,review-fixes}.test.ts` (oracle against ffmpeg with `JASPER_REQUIRE_ORACLES=1`) |
+| P1-R3 | Jasper Synth: deterministic (byte hash), every variant accepted by the judge for its type | `packages/audio-fx/src/synth/*` | `packages/audio-fx/test/sound-synth.test.ts` (152 variants) |
+| P1-R4 | Kenney CC0 kit, 40–60 sounds, ≤ 8 MB, sidecars, ATTRIBUTION rows, manifest with pack URL + sha256 | `apps/engine/sounds/starter/` (60 sounds, 0.72 MB; 18 of 19 types, `key` only from Jasper Synth: Kenney has no keyboard recording) | `apps/engine/test/sounds-starter-kit.test.ts`, `scripts/sounds/make-sidecars.test.mjs`, `pnpm lint` (check-assets) |
+| P1-R5 | engine library: appdir paths, atomic index, `sound-index` job, routes (search, get, audio, visual, register, roots, index), capabilities, folder roots with a licence declaration, path validation (D-47) | `apps/engine/src/sounds/*`, `routes/sounds.ts`, `packages/api/src/sounds.ts`, `packages/config` | `apps/engine/test/sounds-{unit,routes,review,search,provenance}.test.ts`, `fuzz-http.test.ts` (the sound routes), `packages/config/test`, `packages/engine-client/test` |
+| P1-R6 | MCP: status, search, get, view (PNG), import, credits, add/remove folder (approval), rescan; `SOUND_GUIDE`, README, conventions | `apps/mcp/src/tools/sound.ts`, `sound-sheet.ts` | `apps/mcp/test/sound.test.ts` (real engine), `sound-sheet.test.ts`, `sound-guide.test.ts` (the spec §2.10 phrases), `readme-tools.test.ts`, `conventions.test.ts` |
+| P1-R7 | Sound Library panel: search, chips, Refine, licence filter, waveform rows with peak tick, Space / Auto-play / Loop, insert peak-aligned at the playhead, drag with the new MIME and peak-edge snapping, favourites / recents / used, empty state, Preferences ▸ Sound Library (folders), i18n | `apps/web/src/sound/*`, `panels/soundLibrary/*`, `panels/timeline/model/sound-drop*.ts`, Sound Design workspace (`shell/workspaces/definitions.ts`) | `apps/web/test/sound-{library-model,insert,audition,library-panel,library-review,review-misc}.test.*`, `keymap.test.ts`, `polish-menu-wiring.test.ts`, `node scripts/i18n.mjs --check`, `e2e/sound-library.spec.ts` (3 tests) |
+| P1-R8 | credits: `list_sound_credits`, File ▸ Export ▸ Sound Credits… (md / txt / csv) | `packages/project/src/sound/credits.ts`, `apps/web/src/sound/dialogs.tsx`, MCP | `sound-credits.test.ts`, `sound-library-panel.test.tsx`, `apps/mcp/test/sound.test.ts`, e2e (download of `…-sound-credits.md`) |
+| Done when | offline, a user and an agent each search the kit, see descriptors and a contact sheet, audition, insert peak-aligned at the playhead as one undo step; provenance, credits, preview and export | — | e2e (user) and the MCP run below (agent), both measured on the export with ffmpeg |
+
+Nothing in Phase 1 was missing. Added because the spec lists it with the panel: the **Sound Design workspace** (9th
+built-in, Alt+Shift+9: Sound Library / Project / Media Browser / Markers / History / Jobs, Program + Timeline,
+Essential Sound / Properties / mixers; Review and Sound Check join it in their phases). Not in Phase 1 by the spec's
+own split: In Context audition, cues, Replace mode, the Palette collection, the Properties "Sound" section.
+
+#### Cross-surface fixes and decisions
+
+- **One set of insert rules** (`packages/project/src/sound/insert.ts`, used by the panel, the drop and MCP
+  `insert_sound`): `resolveSoundAlign(types, request)` (`auto` → the first known type's `defaultAlign`: risers and
+  reverses by their end, UI by its start = the onset, else the peak; Alt-drop forces `start`); `soundTimingOf` (the
+  descriptors of the media actually placed, i.e. its provenance); `planSoundInsert` (`peakAlignedStart` with
+  `clampStart`, the clip `[In, end of media)`); `chooseSoundTrack`. Before, the web always aligned the peak, read the
+  library entry's timing, and its `start` meant the file's first sample; MCP aligned by type and `start` meant the onset.
+- **Track choice follows spec §2.3 / §2.7**: the drop track (explicit) when free, else a targeted track, else a free
+  **unmuted** "SFX…" track, else a new "SFX n". Both surfaces used to fall back to any free audio track (a sound could
+  land on a dialogue or music track, or a muted one).
+- **One clip, never other tracks** (found in review, high): both inserts sent `clip.place` without `audioMapping`, so a
+  Project item with Modify ▸ Audio Channels routing made several clips and the extra ones went over other tracks in
+  overwrite mode (reproduced: dialogue on A2 cut at the insert). Both now pass `audioMapping: 'stereo'`.
+- **Sample-exact placement (lead silence).** `SoundService.register` copies a sound whose quiet head is shorter than
+  `LIBRARY_LEAD_SILENCE_SEC` = 50 ms (≥ one frame at 23.976 fps, the lowest sequence rate; room for ±2 % varispeed) and
+  which is at most `LIBRARY_PAD_MAX_SECONDS` = 120 s long into managed media as WAV with `ceil(0.05 · rate)` samples
+  of digital silence in front (`apps/engine/src/sounds/pad.ts`: ffmpeg `adelay=<n>S`, `pcm_f32le` — every 16/24-bit and
+  float decoder output exactly — or the source's own `pcm_s32le` / `pcm_f64le`, `-bitexact`, no metadata, so the same
+  file always gives the same bytes and repeated registrations dedupe). The provenance's descriptors then describe the
+  copy (time points + lead) and `leadSilenceSec` records it (schema field added to `LibraryProvenanceSchema`, repaired
+  field by field). Placement takes the sub-frame rest from that silence, so `errorFlicks` is 0 for every library sound.
+  Sounds with a quiet head ≥ 50 ms are registered as before (copy, or in place for folders). **Folder sounds** that
+  need the lead are also copied into managed media (decision: exact placement over referencing in place; the
+  provenance keeps `source {type: folder, rootId, relPath}`; SFX are small; the project no longer depends on the folder
+  for them). Rejected: the media derivation mechanism (`derivation` is for processed versions of project media with a
+  `NativeRecipe`; the library file is not project media), and a ≤ 1-frame tolerance.
+- **Schema v7** (D-50, `docs/project-files.md`): `v6→v7` is a version bump only. Reason: a v6 build would keep the new
+  fields, but editing Essential Sound Pan there writes an absolute pan under the `panOffset` marker, which v7 reads as
+  an offset (keyframes would shift) — AGENTS.md §0.4 asks for a bump when an older build would misread new data. Older
+  files keep being read by the C4 repair (`migrate-essential-pan`) and the Essential Sound commands; fixture
+  `schema-v7.jasper` (generated through the commands: a library media with `leadSilenceSec`, an SFX clip with
+  `panOffset`). Later sound-design phases add their optional fields to v7 until `feat/sound-design` merges to `main`.
+- **Review fixes in the pure model** (`packages/project/test/sound-review-fixes.test.ts`, `packages/audio-fx/test/
+  sound-review-fixes.test.ts`, `apps/engine/test/sounds-provenance.test.ts`; each failed before): licence ids must be
+  whole SPDX ids (`"CC-BY-4.0 AND LicenseRef-Proprietary"` was commercial-safe CC BY); provenance repair dropped unknown
+  fields named like `Object` members; Markdown credits linked any URL scheme (`javascript:`) and did not escape `[ ]`;
+  `media.register` accepted provenance on an image or with descriptors past the end (now `E_INVALID_PARAM` like
+  `media.setLibraryInfo`); a sub-normal signal measured −900 LUFS and ±3.4e38 samples +730 dBTP, out of the provenance
+  schema, so registering such a sound was a 500 (loudness under −120 is now null, levels are capped at +200, and
+  `provenanceOf` keeps old cached values inside the schema; register checks the provenance before copying anything);
+  `judgeSound(null)` threw; `import_sounds` did not retry a revision conflict; `SOUND_GUIDE` lacked the hero density,
+  alternates, "propose, don't apply", one family per type and "sync by structure" sentences of spec §2.10.
+- **Spanish type chips**: "Key", "Reverse" and "Pop" shared catalogue keys with other features ("Incrustación"…); they
+  now have `[sound type]` keys ("Tecla", "Inverso", "Pop").
+- **Slow tests** (asked by the orchestrator): `sound-synth.test.ts` "every variant … passes the judge" made one
+  `expect()` per sample (≈ 140 000 per variant): measured 7.0 s of the 7.6 s per boom variant were the expects
+  (render 0.23 s, analysis 0.43 s; scratch test, load ≈ 30). Now one assertion per sound with the same checks (every
+  sample finite, peak −1 dBFS): the 19 tests took 400 s in total (boom 87.6 s, shimmer 46.7 s; load 47) before and 46 s
+  after (longest shimmer 20 s, its render is slow; load 34). `registry.test.ts` "extreme settings…" ran 12 s of tail × 2
+  settings × every effect in one test (88.9 s at load 47, over the 120 s timeout at load 110–144): now one test per
+  effect, same coverage (longest 18.7 s). Same command both times: `pnpm vitest run packages/audio-fx/test/sound-synth.test.ts
+  packages/audio-fx/test/registry.test.ts --maxWorkers=2 --reporter=verbose` (6 min 50 s → 2 min 7 s wall).
+- **Search over thousands of sounds**: see "Review fixes (P1 verification)" item 10 under WP1.2 (5 000 sounds: 7–15 ms
+  min at load ≈ 28–43, was 416–558 ms). The benchmark asserts < 50 ms when the load per core is ≤ 2 and scales the limit
+  with the load above that (a fixed 50 ms fails on this shared host at load 135–144, where the same code measured 20–59
+  ms); the old code fails it at any load. Accepted by the integrator.
+- **Snapping** keeps the timeline's TL-453 rule (nearest target wins, priority breaks ties) rather than spec §2.7's
+  strict order; recorded under WP1.4's review fixes.
+
+#### Real app (measured)
+
+- Built stack (`pnpm build`, then `E2E_PORT=49101 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-library.spec.ts`,
+  load 31–48): **3 passed**. (1) search, audition (aria-live, Mix meters live, no history entry), Enter at frame 45:
+  the first "crunch" result is "Reverse crunch", aligned by its **end** on frame 45 to ≤ 2 flicks (the old test assumed
+  the peak), one undo step, undo, drag onto A1 with the end snapping to the playhead (ghost "end → 00;00;01;15 /
+  Reverse crunch → A1"), credits Markdown download. (2) In the Sound Design workspace, five kit sounds inserted from the
+  panel at frames 30 / 75 / 120 / 170 / 290 (29.97 fps): Heavy metal hit, Punch, Air whoosh low (peak), Confirm blip
+  (start), Computer hum riser (end); all on a new "SFX 1" (A4), A1–A3 untouched; native export (MP4/AAC); the export's
+  left channel decoded with ffmpeg and each kit file located by normalised cross-correlation over 100 ms next to its
+  aligned point: **error 0 samples for all five** (r ≥ 0.9999), lead 0.05 s on the four short sounds, 0 on the riser.
+  (3) Preferences ▸ Sound Library: a folder added by path (not declared), indexed; its "door slam e2e" (a hit that
+  starts at once) is hidden by Commercial-safe and found with it off ("Yours?" badge), inserted at frame 20 exactly
+  (`leadSilenceSec` 0.05, a managed copy).
+- Screenshots looked at (`test-results/e2e-sound-library/`): the Sound Design workspace with the five clips on SFX 1
+  and the toasts "Added … to A4 · peak at …"; the drag ghost with the end tick on the playhead; the credits dialog; the
+  Preferences page with the folder, its licence select and "Folders saved. Indexing them"; the panel listing the folder
+  sound with the warning badge.
+- Agent path: built engine (`node apps/engine/dist/engine.mjs --port 49103`, fresh appdir, one synth seed) and
+  jasper-mcp from source over stdio (scratch client): `sound_library_status` 79 sounds (60 kit + 19 synth),
+  `rescan_sound_library {wait}`, `search_sounds {types: [hit], contactSheet}` 8 hits (125–210 ms per call through MCP),
+  `get_sound` and `view_sounds` PNGs looked at (waveform over spectrogram, red peak line on each transient, the riser's
+  peak at its end, dashed decay lines), a 23.976 fps project, `insert_sound` of Heavy metal hit / Punch (peak),
+  Confirm blip (start), Thruster riser (end) at frames 24 / 73 / 121 / 260 → `errorFlicks` 0 each, all on a new SFX 1;
+  `list_sound_credits` 4 rows; `start_export {engine: native}`; measured on the export as above: **0 samples** for all
+  four. (A first pass of the measurement used 20 ms windows and put the tonal UI blip one period, 245 samples, late:
+  AAC smears its sharp attack, so a later period of the steady tone matched better; the whole-sound correlation and
+  the 100 ms window both give 0.)
+
+#### Gate
+
+GATE_PLACEHOLDER
+
+#### Limits and notes for the next packages
+
+- Lead-silence copies are WAV (f32 for lossy sources): a 3 s stereo kit sound is ≈ 1.2 MB of managed media instead of
+  ≈ 40 kB of Ogg. Sounds over 120 s (beds) are not padded and keep the ≤ 1-frame rule for peak / end alignment.
+- Registering the same library sound in a project that already holds its unpadded copy (registered before this
+  change) adds the padded copy as a new media; the old clips keep working with their own provenance.
+- `soundDesign.place` (Phase 2) should call `planSoundInsert` / `chooseSoundTrack` (or move them into its handler) so
+  the command, the panel and MCP stay one implementation.
+- The history label "Add Sound <title>" and placement refusals from `@jasper/project` are English in the editor.
+- Workspace names (all built-ins, not only Sound Design) are not in the i18n catalogue (pre-existing).
+
 ## Phase 2: cues and placement
 
 ## Phase 3: proposals and review

@@ -318,6 +318,21 @@ at host load ≈ 18 (**< 2 s not demonstrated** at that load; a 10-item project 
 instead of a Suspense retry, which frequent updates on a busy machine could starve for minutes (found by a failed
 e2e run, reproduced in a unit test).
 
+### sound-design
+**Done when:** spec 12 ([specs/12-sound-design.md](specs/12-sound-design.md)) is done phase by phase: Phase 0 (audio-core
+and preview defects), Phase 1 (a licensed, offline sound library that users and agents search, look at, audition and
+insert peak-aligned with provenance and credits), then cues and placement (P2), proposals and review (P3), mixing (P4),
+Sound Check (P5), packs and more cue sources (P6).
+**Status (on `feat/sound-design`, not merged to `main`):** partial — Phases 0 and 1 done, Phases 2–6 not started. See
+[wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 1 verification": the Sound Library panel and Sound Design
+workspace, the engine library (60-sound Kenney CC0 kit, user folders with a declared licence, Jasper Synth), ten MCP
+tools, credits; inserts land on the frame to the sample (library sounds are registered with 50 ms of lead silence;
+rerun: `e2e/sound-library.spec.ts` measures 0 samples of error on an ffmpeg-decoded export for five kit sounds;
+`apps/mcp/test/sound.test.ts` asserts `errorFlicks` 0); search over 5 000 sounds 7–15 ms at load ≈ 30
+(`apps/engine/test/sounds-search.test.ts`). Schema v7 (D-50). Limits: no keyboard-key recording in the kit (`key` is
+synth only); sounds over 120 s keep the ≤ 1-frame placement rule; In Context audition, cues and the Palette are
+Phase 2–3.
+
 ### Not covered by any workstream yet
 
 - **Platforms**: run and fix the desktop app on macOS and Windows; hardware H.264/HEVC export on real GPUs; build
