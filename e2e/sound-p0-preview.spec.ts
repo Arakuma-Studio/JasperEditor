@@ -7,6 +7,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
+import { ATTEMPTS, arm, disarm, disturbances, peaks, TAP } from './sound-tap.ts';
 import {
 	clipBox,
 	clips,
@@ -26,44 +27,6 @@ test.describe.configure({ mode: 'serial' });
 let page: Page;
 const outDir = join(ROOT, 'test-results', 'e2e-sound-p0');
 
-/**
- * Taps every AudioContext destination: whatever any node sends to the speakers goes through one bus per context, and
- * window.__tap.on records channel 0 of that bus (the whole of what reaches the destination).
- */
-const TAP = () => {
-	const w = window as unknown as { __tap: { on: boolean; data: Float32Array[][]; rate: number } };
-	w.__tap = { on: false, data: [], rate: 0 };
-	const buses = new WeakMap<BaseAudioContext, GainNode>();
-	const connect = AudioNode.prototype.connect as (this: AudioNode, ...a: unknown[]) => unknown;
-	const busOf = (dest: AudioDestinationNode): GainNode => {
-		const ctx = dest.context;
-		let bus = buses.get(ctx);
-		if (bus) return bus;
-		bus = ctx.createGain();
-		buses.set(ctx, bus);
-		const mine: Float32Array[] = [];
-		w.__tap.data.push(mine);
-		const sp = ctx.createScriptProcessor(1024, 2, 1);
-		sp.onaudioprocess = (e) => {
-			if (!w.__tap.on) return;
-			w.__tap.rate = ctx.sampleRate;
-			mine.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-		};
-		const mute = ctx.createGain();
-		mute.gain.value = 0;
-		connect.call(bus, sp);
-		connect.call(sp, mute);
-		connect.call(mute, dest);
-		connect.call(bus, dest);
-		return bus;
-	};
-	AudioNode.prototype.connect = function (this: AudioNode, ...args: unknown[]) {
-		const dest = args[0];
-		if (dest instanceof AudioDestinationNode) return connect.apply(this, [busOf(dest), ...args.slice(1)]);
-		return connect.apply(this, args);
-	} as typeof AudioNode.prototype.connect;
-};
-
 test.beforeAll(async ({ browser }) => {
 	mkdirSync(outDir, { recursive: true });
 	page = await browser.newPage();
@@ -75,47 +38,35 @@ test.afterAll(async () => {
 	await page?.close();
 });
 
-/** Plays the sequence from frame 0 for 2.6 s and returns the click peaks the monitor tap heard (channel 0). */
+/**
+ * Plays the sequence from frame 0 for 2.6 s and returns the click peaks the monitor tap heard (channel 0; `at` in
+ * samples from the first recorded one, exact context frames). A play whose scheduling Remotion lost (it rescheduled,
+ * or started a buffer late: a starved main thread on a loaded host) is played again; it measures Remotion, not the
+ * graph.
+ */
 async function playAndTap(page: Page): Promise<{ rate: number; peaks: { at: number; v: number }[] }> {
-	await focusTimeline(page);
-	await page.keyboard.press('Home');
-	await page.waitForTimeout(500);
-	await page.evaluate(() => {
-		const t = (window as unknown as { __tap: { on: boolean; data: Float32Array[][] } }).__tap;
-		for (const d of t.data) d.length = 0;
-		t.on = true;
-	});
-	await page.keyboard.press('Space');
-	await page.waitForTimeout(2600);
-	await page.keyboard.press('Space');
-	return page.evaluate(() => {
-		const t = (window as unknown as { __tap: { on: boolean; data: Float32Array[][]; rate: number } }).__tap;
-		t.on = false;
-		// the context that played the program (the loudest; others are silent)
-		const flat = t.data.map((blocks) => {
-			const a = new Float32Array(blocks.reduce((x, b) => x + b.length, 0));
-			let o = 0;
-			for (const b of blocks) {
-				a.set(b, o);
-				o += b.length;
-			}
-			return a;
-		});
-		const peakOf = (a: Float32Array) => a.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
-		const all = flat.reduce((best, a) => (peakOf(a) > peakOf(best) ? a : best), new Float32Array(0));
-		const n = all.length;
-		// peaks: local maxima above 0.05, merged within 5 ms
-		const peaks: { at: number; v: number }[] = [];
-		for (let i = 0; i < n; i++) {
-			const v = Math.abs(all[i]!);
-			if (v < 0.05) continue;
-			const last = peaks[peaks.length - 1];
-			if (last && i - last.at < t.rate * 0.005) {
-				if (v > last.v) Object.assign(last, { at: i, v });
-			} else peaks.push({ at: i, v });
-		}
-		return { rate: t.rate, peaks };
-	});
+	let out = { rate: 0, peaks: [] as { at: number; v: number }[] };
+	for (let a = 0; a < ATTEMPTS; a++) {
+		await focusTimeline(page);
+		await page.keyboard.press('Home');
+		await page.waitForTimeout(500);
+		await arm(page);
+		await page.keyboard.press('Space');
+		await page.waitForTimeout(2600);
+		await page.keyboard.press('Space');
+		await page.waitForTimeout(200);
+		const rec = await disarm(page);
+		const first = rec.frames[0] ?? 0;
+		out = {
+			rate: rec.rate,
+			peaks: peaks(rec).map((p) => ({ at: Math.round(p.t * rec.rate) - first, v: p.v })),
+		};
+		const end = rec.frames.length ? (rec.frames[rec.frames.length - 1]! + 128) / rec.rate : rec.armed;
+		const d = disturbances(rec, rec.armed, end);
+		if (d.length === 0) break;
+		console.log('Remotion lost its scheduling during the play (load), again:', d.join('; '));
+	}
+	return out;
 }
 
 test('track insert latency is compensated in the Program monitor', async () => {

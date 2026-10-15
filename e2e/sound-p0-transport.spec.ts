@@ -11,6 +11,18 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import {
+	ATTEMPTS,
+	arm,
+	disarm,
+	disturbances,
+	mark,
+	peaks,
+	type Recording,
+	reschedules,
+	TAP,
+	timeOf,
+} from './sound-tap.ts';
+import {
 	clipBox,
 	clips,
 	createProject,
@@ -29,185 +41,6 @@ let page: Page;
 const outDir = join(ROOT, 'test-results', 'e2e-sound-p0-transport');
 const SR = 48000;
 
-/**
- * Taps every AudioContext destination through one bus per context: an AudioWorklet records channel 0 of whatever
- * reaches the speakers with its context frame. `stop()` calls of scheduled sources are logged with the context time
- * (Remotion stops a clip's queued buffers when it reschedules, e.g. at a seek).
- */
-const TAP = () => {
-	type Block = { f: number; d: Float32Array };
-	type Tap = {
-		on: boolean;
-		ctxs: { ctx: BaseAudioContext; node: AudioWorkletNode | null; blocks: Block[] }[];
-		stops: { t: number }[];
-	};
-	const w = window as unknown as { __tap: Tap };
-	w.__tap = { on: false, ctxs: [], stops: [] };
-	const code = `class T extends AudioWorkletProcessor {
-		constructor() { super(); this.on = false; this.buf = [];
-			this.port.onmessage = (e) => { this.on = e.data.on; if (!this.on) { this.port.postMessage(this.buf); this.buf = []; } }; }
-		process(inputs) { const x = inputs[0] && inputs[0][0];
-			if (this.on && x) { this.buf.push({ f: currentFrame, d: new Float32Array(x) });
-				if (this.buf.length >= 256) { this.port.postMessage(this.buf); this.buf = []; } }
-			return true; } }
-	registerProcessor('jasper-e2e-tap', T);`;
-	const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
-	const buses = new WeakMap<BaseAudioContext, GainNode>();
-	const connect = AudioNode.prototype.connect as (this: AudioNode, ...a: unknown[]) => unknown;
-	const busOf = (dest: AudioDestinationNode): GainNode => {
-		const ctx = dest.context;
-		let bus = buses.get(ctx);
-		if (bus) return bus;
-		bus = ctx.createGain();
-		buses.set(ctx, bus);
-		connect.call(bus, dest);
-		const entry = { ctx, node: null as AudioWorkletNode | null, blocks: [] as Block[] };
-		w.__tap.ctxs.push(entry);
-		void ctx.audioWorklet.addModule(url).then(() => {
-			const node = new AudioWorkletNode(ctx, 'jasper-e2e-tap', {
-				channelCount: 2,
-				channelCountMode: 'explicit',
-			});
-			node.port.onmessage = (e: MessageEvent<Block[]>) => entry.blocks.push(...e.data);
-			const mute = ctx.createGain();
-			mute.gain.value = 0;
-			connect.call(bus!, node);
-			connect.call(node, mute);
-			connect.call(mute, dest);
-			entry.node = node;
-		});
-		return bus;
-	};
-	AudioNode.prototype.connect = function (this: AudioNode, ...args: unknown[]) {
-		const dest = args[0];
-		if (dest instanceof AudioDestinationNode) return connect.apply(this, [busOf(dest), ...args.slice(1)]);
-		return connect.apply(this, args);
-	} as typeof AudioNode.prototype.connect;
-	const stop = AudioScheduledSourceNode.prototype.stop;
-	AudioScheduledSourceNode.prototype.stop = function (this: AudioScheduledSourceNode, when?: number) {
-		if (w.__tap.on) w.__tap.stops.push({ t: this.context.currentTime });
-		return stop.call(this, when);
-	};
-};
-
-type Recording = {
-	rate: number;
-	/** Context time (s) when the tap was armed (the frozen time of a suspended context = where playback resumes). */
-	armed: number;
-	/** First context frame and the samples of channel 0 from there (gaps, e.g. while suspended, are not filled). */
-	frames: number[];
-	data: number[];
-	stops: number[];
-	marks: Record<string, number>;
-};
-
-async function arm(p: Page): Promise<void> {
-	await p.evaluate(() => {
-		const t = (
-			window as unknown as {
-				__tap: {
-					on: boolean;
-					ctxs: { node: AudioWorkletNode | null; blocks: unknown[] }[];
-					stops: unknown[];
-				};
-			}
-		).__tap;
-		for (const c of t.ctxs) {
-			c.blocks.length = 0;
-			c.node?.port.postMessage({ on: true });
-		}
-		t.stops.length = 0;
-		t.on = true;
-	});
-}
-
-/** Marks the current context time of the program context under `name`. */
-async function mark(p: Page, name: string): Promise<void> {
-	await p.evaluate((n) => {
-		const t = (
-			window as unknown as {
-				__tap: { ctxs: { ctx: BaseAudioContext; blocks: unknown[] }[]; marks?: Record<string, number> };
-			}
-		).__tap;
-		t.marks ??= {};
-		const ctx = t.ctxs.find((c) => c.ctx.state === 'running')?.ctx ?? t.ctxs[0]?.ctx;
-		t.marks[n] = ctx?.currentTime ?? -1;
-	}, name);
-}
-
-async function disarm(p: Page): Promise<Recording> {
-	await p.evaluate(() => {
-		const t = (window as unknown as { __tap: { on: boolean; ctxs: { node: AudioWorkletNode | null }[] } })
-			.__tap;
-		t.on = false;
-		for (const c of t.ctxs) c.node?.port.postMessage({ on: false });
-	});
-	await p.waitForTimeout(300);
-	return p.evaluate(() => {
-		const t = (
-			window as unknown as {
-				__tap: {
-					ctxs: { ctx: BaseAudioContext; blocks: { f: number; d: Float32Array }[] }[];
-					stops: { t: number }[];
-					marks?: Record<string, number>;
-					armedAt?: number;
-				};
-			}
-		).__tap;
-		const peakOf = (bs: { d: Float32Array }[]) =>
-			bs.reduce((m, b) => b.d.reduce((x, v) => Math.max(x, Math.abs(v)), m), 0);
-		const bestIndex = t.ctxs.reduce((a, b, i) => (peakOf(b.blocks) > peakOf(t.ctxs[a]!.blocks) ? i : a), 0);
-		const best = t.ctxs[bestIndex]!;
-		const armedAll = (t as unknown as { armedAll?: number[] }).armedAll ?? [];
-		const frames: number[] = [];
-		const data: number[] = [];
-		for (const b of best.blocks) {
-			frames.push(b.f);
-			for (const v of b.d) data.push(v);
-		}
-		const marks = t.marks ?? {};
-		t.marks = {};
-		return {
-			rate: best.ctx.sampleRate,
-			armed: armedAll[bestIndex] ?? -1,
-			frames,
-			data,
-			stops: t.stops.map((s) => s.t),
-			marks,
-		};
-	});
-}
-
-/** Context time (s) of sample `i` of a recording (blocks are 128 frames). */
-function timeOf(r: Recording, i: number): number {
-	const b = Math.floor(i / 128);
-	return (r.frames[b]! + (i - b * 128)) / r.rate;
-}
-
-/** Local maxima of |x| above `min`, merged within 5 ms, as context times. */
-function peaks(r: Recording, min = 0.05): { t: number; v: number }[] {
-	const out: { t: number; v: number; i: number }[] = [];
-	for (let i = 0; i < r.data.length; i++) {
-		const v = Math.abs(r.data[i]!);
-		if (v < min) continue;
-		const last = out[out.length - 1];
-		if (last && i - last.i < r.rate * 0.005) {
-			if (v > last.v) Object.assign(last, { i, v, t: timeOf(r, i) });
-		} else out.push({ i, v, t: timeOf(r, i) });
-	}
-	return out.map(({ t, v }) => ({ t, v }));
-}
-
-/**
- * Context times where Remotion stopped every queued buffer at once inside [from, to] (it re-anchors and reschedules
- * every player when the picture and the audio clock drift apart, e.g. when the main thread stalls under load). Such a
- * play does not measure the graph; the tests play again (up to `ATTEMPTS` times).
- */
-function reschedules(r: Recording, from: number, to: number): number[] {
-	return [...new Set(r.stops.filter((t) => t >= from && t <= to).map((t) => Number(t.toFixed(4))))];
-}
-const ATTEMPTS = 3;
-
 async function seekPaused(p: Page, frame: number): Promise<void> {
 	await query(p, 'playhead.set', { frame });
 	await p.waitForTimeout(600);
@@ -217,12 +50,6 @@ async function seekPaused(p: Page, frame: number): Promise<void> {
 async function playFor(p: Page, ms: number, during?: (p: Page) => Promise<void>): Promise<Recording> {
 	await focusTimeline(p);
 	await arm(p);
-	await p.evaluate(() => {
-		const t = (window as unknown as { __tap: { ctxs: { ctx: BaseAudioContext }[]; armedAt?: number } }).__tap;
-		// the program context is suspended while paused: its frozen time is where the next Play starts
-		// the program context (the Player's) is the one Remotion created suspended; the tap picks the loudest one later
-		(t as unknown as { armedAll: number[] }).armedAll = t.ctxs.map((c) => c.ctx.currentTime);
-	});
 	await p.keyboard.press('Space');
 	if (during) await during(p);
 	await p.waitForTimeout(ms);
@@ -329,11 +156,18 @@ async function pictureAnchor(p: Page, ms: number, fromFrame: number): Promise<nu
 			const end = performance.now() + dur;
 			// anime-allow: test-side wall clock bound of a sampling loop
 			while (performance.now() < end) {
-				const now = await new Promise<number>((r) => requestAnimationFrame(r));
-				// the context time of the sample at the output at this frame (precise, unlike currentTime's steps)
+				await new Promise<number>((r) => requestAnimationFrame(r));
+				const { frame, playing } = await w.jasper.query('playhead.get');
+				// The context time of the sample at the output now (precise, unlike currentTime's steps), read after the
+				// frame: the Player set that frame at or before this moment and shows it from then on, so
+				// `t − frame / fps` is never earlier than the picture's anchor, and the smallest over many samples
+				// approaches it (a main thread that runs late only makes a sample later). Reading the time at the
+				// animation frame's start instead, before the Player's own callback set the frame, could undershoot it by
+				// that callback's delay (≈ 10–20 ms under load).
+				// anime-allow: test-side wall clock of a sample
+				const now = performance.now();
 				const o = (ctx as AudioContext).getOutputTimestamp();
 				const t = (o.contextTime ?? 0) + (now - (o.performanceTime ?? 0)) / 1000;
-				const { frame, playing } = await w.jasper.query('playhead.get');
 				if (playing && frame > from) best = Math.min(best, t - (frame * den) / num);
 			}
 			return best;
@@ -360,12 +194,9 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 				picture = await pictureAnchor(p, 900, 0);
 			});
 			m = { rec, picture };
-			const r = reschedules(rec, rec.armed, rec.armed + 1.2);
-			if (r.length === 0) break;
-			console.log(
-				'Remotion rescheduled during the play (load), again:',
-				r.map((t) => t - rec.armed).join(' '),
-			);
+			const d = disturbances(rec, rec.armed, rec.armed + 1.2);
+			if (d.length === 0) break;
+			console.log('Remotion lost its scheduling during the play (load), again:', d.join('; '));
 		}
 		return m;
 	};
@@ -433,8 +264,8 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 			.info()
 			.annotations.push({ type: 'sync', description: JSON.stringify({ w1: p1.offset, w2: p2.offset }) });
 		expect(p2.offset).toBeGreaterThan(-0.01);
-		// and no later than one animation frame and one picture frame past it
-		expect(p2.offset).toBeLessThan(0.05);
+		// and not much after it: the sampling reads up to an animation frame late; waiting twice would read ≈ 0.2 s
+		expect(p2.offset).toBeLessThan(0.08);
 	} finally {
 		await transact(
 			page,
@@ -484,15 +315,30 @@ test('seek during playback: the audio from before the seek stops at the seek', a
 			await input.fill('00:00:04:15');
 			await mark(p, 'enter');
 			await input.press('Enter');
-			await p.waitForTimeout(100);
+			// the moment the playhead is seen at the target (Remotion has re-anchored by then: its stops come first)
+			await expect
+				.poll(async () => (await query<{ frame: number }>(p, 'playhead.get')).frame, { timeout: 5000 })
+				.toBeGreaterThanOrEqual(frameAt(4.5) - 1);
+			await mark(p, 'seeked');
 			console.log('after the typed seek', JSON.stringify(await query(p, 'playhead.get')));
 		});
 		enter = rec.marks.enter ?? -1;
-		// the seek's own reschedule, and any other one around it
-		stop = rec.stops.find((t) => t >= enter - 0.001) ?? -1;
-		const other = reschedules(rec, rec.armed, enter + 0.3).filter((t) => Math.abs(t - stop) > 0.002);
-		if (other.length === 0) break;
-		console.log('Remotion rescheduled around the seek (load), again:', other.map((t) => t - enter).join(' '));
+		const seeked = rec.marks.seeked ?? -1;
+		// The seek's own reschedule: the burst of stops between the Enter and the playhead at the target (under load the
+		// seek can take a while). Any other stop around it, or a buffer started late before it, disturbed the play.
+		const own = rec.stops.filter((t) => t >= enter - 0.001 && t <= seeked + 0.001);
+		const burst = own.filter((t) => own.length > 0 && t <= own[0]! + 0.01);
+		stop = burst[0] ?? -1;
+		const other = [
+			...reschedules(rec, rec.armed, seeked + 0.3).filter((t) => !burst.some((b) => Math.abs(b - t) < 1e-9)),
+		].map((t) => `reschedule at ${(t - enter).toFixed(3)} s`);
+		const late = disturbances({ ...rec, stops: [] }, rec.armed, enter);
+		if (stop > 0 && other.length === 0 && late.length === 0) break;
+		console.log(
+			'Remotion lost its scheduling around the seek (load), again:',
+			stop > 0 ? '' : 'no reschedule at the seek;',
+			[...other, ...late].join('; '),
+		);
 	}
 	let last = -1;
 	for (let i = 0; i < rec.data.length; i++) if (Math.abs(rec.data[i]!) > 0.01) last = i;
@@ -555,9 +401,9 @@ test('a latency change during playback: no dropout beyond the added latency', as
 		// A valid play: the tone ran without a gap for 0.3 s before the edit (under heavy load Remotion's scheduling
 		// falls behind or it reschedules every player: that is not the graph) and nothing was rescheduled.
 		const before = all.some((g) => g.t1 > edit - 0.3 && g.t0 < edit);
-		const r = reschedules(rec, edit - 0.3, edit + 0.7);
-		if (!before && r.length === 0) break;
-		console.log('disturbed play (load), again:', before, r.map((t) => t - edit).join(' '));
+		const d = disturbances(rec, edit - 0.3, edit + 0.7);
+		if (!before && d.length === 0) break;
+		console.log('disturbed play (load), again:', before ? 'a gap before the edit;' : '', d.join('; '));
 	}
 	console.log('latency change: gap', gap * SR, 'samples', gap, 's');
 	test.info().annotations.push({ type: 'gap', description: JSON.stringify({ samples: gap * SR }) });
