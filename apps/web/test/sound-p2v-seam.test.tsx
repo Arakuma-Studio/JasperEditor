@@ -296,3 +296,24 @@ describe('Peak handle drags never hold the gesture', () => {
 		expect(h.clip().start).toBe(30);
 	});
 });
+
+describe('Cue Seam: cues selected by commands while clips are selected', () => {
+	it('selecting cues (Suggest Cues on the selected clips, Next Cue, agents) deselects the clips, not the new cues', () => {
+		const t = seam(
+			[
+				{ frame: 30, kind: 'land', weight: 'hero', source: 'user' },
+				{ frame: 60, kind: 'cut', weight: 'support', source: 'user' },
+			],
+			{ before: [solid(0, 90, 'V1')] },
+		);
+		const clipId = Object.keys(t.seq().clips)[0]!;
+		act(() => t.session.select('timeline', [clipId], 'replace'));
+		act(() => t.session.select('cues', t.ids, 'replace'));
+		expect(t.session.getState().selection.cues).toEqual(t.ids);
+		expect(t.session.getState().selection.timeline.clips).toEqual([]);
+		// and selecting clips still deselects the cues
+		act(() => t.session.select('timeline', [clipId], 'replace'));
+		expect(t.session.getState().selection.cues).toEqual([]);
+		expect(t.session.getState().selection.timeline.clips).toEqual([clipId]);
+	});
+});

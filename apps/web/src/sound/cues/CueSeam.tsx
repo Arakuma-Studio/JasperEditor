@@ -162,14 +162,22 @@ export function CueSeam(p: CueSeamProps) {
 		[],
 	);
 
-	// Selecting clips deselects cues (one selection the Delete key acts on).
-	useEffect(
-		() =>
-			session.on('selection.changed', ({ selection }) => {
-				if (selection.timeline.clips.length && selection.cues?.length) session.select('cues', [], 'replace');
-			}),
-		[session],
-	);
+	// One selection domain at a time (the one the Delete key acts on): the one selected last wins. Selecting clips
+	// deselects cues; selecting cues (a click, Next Cue, Suggest Cues on the selected clips, an agent) deselects clips.
+	useEffect(() => {
+		let prev = session.getState().selection;
+		const same = (a: readonly string[] | undefined, b: readonly string[] | undefined) =>
+			(a ?? EMPTY).length === (b ?? EMPTY).length && (a ?? EMPTY).every((x, i) => x === (b ?? EMPTY)[i]);
+		return session.on('selection.changed', ({ selection }) => {
+			const before = prev;
+			prev = selection;
+			if (!selection.timeline.clips.length || !selection.cues?.length) return;
+			const cuesNew = !same(before.cues, selection.cues);
+			const clipsNew = !same(before.timeline.clips, selection.timeline.clips);
+			if (cuesNew && !clipsNew) session.select('timeline', [], 'replace');
+			else session.select('cues', [], 'replace');
+		});
+	}, [session]);
 
 	const apply = (label: string, commands: Command[]) => {
 		if (!commands.length) return null;
