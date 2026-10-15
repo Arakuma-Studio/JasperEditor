@@ -40,7 +40,7 @@ export const MAX_SOUND_CHANNELS = 32;
 export const MIN_SOUND_SAMPLE_RATE = 1000;
 export const MAX_SOUND_SAMPLE_RATE = 768_000;
 /** Octave band centres of `octaveBandsDb` (Hz); each band spans centre/√2 … centre·√2. */
-export const OCTAVE_BAND_CENTRES_HZ: readonly number[] = Object.freeze([
+export const OCTAVE_BAND_CENTRES_HZ: readonly number[] = /* @__PURE__ */ Object.freeze([
 	125, 250, 500, 1000, 2000, 4000, 8000,
 ]);
 /** Level reported for an empty band or silence (dB). */
@@ -324,7 +324,7 @@ const EMPTY_SPECTRAL: Spectral = {
 	below150Share: 0,
 	above6kShare: 0,
 	flatness: 0,
-	octaveBandsDb: OCTAVE_BAND_CENTRES_HZ.map(() => DESCRIPTOR_FLOOR_DB),
+	octaveBandsDb: /* @__PURE__ */ OCTAVE_BAND_CENTRES_HZ.map(() => DESCRIPTOR_FLOOR_DB),
 };
 
 function spectral(pr: Prepared, s0: number, s1: number): Spectral {

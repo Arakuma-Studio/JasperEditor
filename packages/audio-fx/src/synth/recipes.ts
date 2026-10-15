@@ -561,7 +561,7 @@ const zap: SynthRecipe = {
 };
 
 /** Every recipe, one per type of the 19 sound-effect types, in taxonomy order. */
-export const SYNTH_RECIPES: readonly SynthRecipe[] = Object.freeze([
+export const SYNTH_RECIPES: readonly SynthRecipe[] = /* @__PURE__ */ Object.freeze([
 	hit,
 	boom,
 	riser,

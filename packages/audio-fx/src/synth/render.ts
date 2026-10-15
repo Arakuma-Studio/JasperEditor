@@ -34,7 +34,9 @@ export class SynthError extends Error {
 	}
 }
 
-const BY_ID = new Map<string, SynthRecipe>(SYNTH_RECIPES.map((r) => [r.id, r]));
+const BY_ID = /* @__PURE__ */ new Map<string, SynthRecipe>(
+	/* @__PURE__ */ SYNTH_RECIPES.map((r) => [r.id, r]),
+);
 
 /** The recipe with this id, or undefined. */
 export function synthRecipe(id: string): SynthRecipe | undefined {

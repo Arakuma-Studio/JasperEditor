@@ -64,7 +64,7 @@ export type JudgeReason =
 	| 'multi-hit'
 	| 'quiet';
 
-export const JUDGE_REASONS: readonly JudgeReason[] = Object.freeze([
+export const JUDGE_REASONS: readonly JudgeReason[] = /* @__PURE__ */ Object.freeze([
 	'boomy',
 	'hissy',
 	'noisy',
@@ -142,7 +142,7 @@ export function judgeSound(d: SoundDescriptors, profile: SoundTypeProfile): Judg
 	return { ok: reasons.length === 0, score: Math.round(Math.max(0, score) * 1000) / 1000, reasons };
 }
 
-const P = (
+const P = /* @__NO_SIDE_EFFECTS__ */ (
 	minDurSec: number,
 	maxDurSec: number,
 	maxRiseMs: number | null,
@@ -170,27 +170,28 @@ const P = (
  * 2 ms RMS envelope (≈ 0.5 ms resolution); shares are of the power over the active span; loudness floors are the
  * highest 400 ms momentary loudness, so short sounds (whose energy is averaged over 400 ms) get lower floors.
  */
-export const DEFAULT_TYPE_PROFILES: Readonly<Record<SoundTypeId, SoundTypeProfile>> = Object.freeze({
-	//              minDur maxDur rise   decay  <150  >6k   flat  single momentary
-	hit: P(0.05, 6, 25, true, 0.6, 0.5, null, true, -40),
-	boom: P(0.2, 10, 60, true, 1, 0.25, null, true, -45),
-	riser: P(0.5, 30, null, false, 0.6, 0.6, null, false, -45),
-	reverse: P(0.3, 12, null, false, 0.6, 0.6, null, false, -45),
-	transition: P(0.2, 12, null, false, 0.7, 0.6, null, false, -45),
-	whoosh: P(0.15, 6, null, false, 0.5, 0.7, null, false, -45),
-	swish: P(0.05, 3, null, false, 0.3, 0.85, null, false, -45),
-	glitch: P(0.03, 5, null, false, 0.5, 0.7, null, false, -45),
-	ui: P(0.01, 2, 30, true, 0.3, 0.6, null, false, -50),
-	click: P(0.002, 1, 6, true, 0.3, 0.85, null, true, -55),
-	key: P(0.005, 1, 10, true, 0.4, 0.7, null, true, -55),
-	tick: P(0.002, 1, 6, true, 0.3, 0.85, null, true, -55),
-	tap: P(0.01, 1.5, 12, true, 0.5, 0.6, null, true, -55),
-	pop: P(0.01, 1.5, 15, true, 0.5, 0.5, null, true, -50),
-	thump: P(0.05, 3, 25, true, 0.95, 0.25, null, true, -45),
-	paper: P(0.05, 6, null, false, 0.3, 0.85, null, false, -50),
-	chime: P(0.2, 10, 40, true, 0.3, 0.5, 0.3, false, -45),
-	shimmer: P(0.3, 12, null, false, 0.2, 0.85, 0.5, false, -50),
-	zap: P(0.05, 3, 30, false, 0.5, 0.6, null, false, -45),
-	ambience: P(2, 3600, null, false, 0.8, 0.6, null, false, -60),
-	roomtone: P(2, 3600, null, false, 0.9, 0.6, null, false, -75),
-});
+export const DEFAULT_TYPE_PROFILES: Readonly<Record<SoundTypeId, SoundTypeProfile>> =
+	/* @__PURE__ */ Object.freeze({
+		//              minDur maxDur rise   decay  <150  >6k   flat  single momentary
+		hit: P(0.05, 6, 25, true, 0.6, 0.5, null, true, -40),
+		boom: P(0.2, 10, 60, true, 1, 0.25, null, true, -45),
+		riser: P(0.5, 30, null, false, 0.6, 0.6, null, false, -45),
+		reverse: P(0.3, 12, null, false, 0.6, 0.6, null, false, -45),
+		transition: P(0.2, 12, null, false, 0.7, 0.6, null, false, -45),
+		whoosh: P(0.15, 6, null, false, 0.5, 0.7, null, false, -45),
+		swish: P(0.05, 3, null, false, 0.3, 0.85, null, false, -45),
+		glitch: P(0.03, 5, null, false, 0.5, 0.7, null, false, -45),
+		ui: P(0.01, 2, 30, true, 0.3, 0.6, null, false, -50),
+		click: P(0.002, 1, 6, true, 0.3, 0.85, null, true, -55),
+		key: P(0.005, 1, 10, true, 0.4, 0.7, null, true, -55),
+		tick: P(0.002, 1, 6, true, 0.3, 0.85, null, true, -55),
+		tap: P(0.01, 1.5, 12, true, 0.5, 0.6, null, true, -55),
+		pop: P(0.01, 1.5, 15, true, 0.5, 0.5, null, true, -50),
+		thump: P(0.05, 3, 25, true, 0.95, 0.25, null, true, -45),
+		paper: P(0.05, 6, null, false, 0.3, 0.85, null, false, -50),
+		chime: P(0.2, 10, 40, true, 0.3, 0.5, 0.3, false, -45),
+		shimmer: P(0.3, 12, null, false, 0.2, 0.85, 0.5, false, -50),
+		zap: P(0.05, 3, 30, false, 0.5, 0.6, null, false, -45),
+		ambience: P(2, 3600, null, false, 0.8, 0.6, null, false, -60),
+		roomtone: P(2, 3600, null, false, 0.9, 0.6, null, false, -75),
+	});

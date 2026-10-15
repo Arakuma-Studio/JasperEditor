@@ -430,7 +430,10 @@ pinned hashes tell when that (or a recipe) changes: then bump `SYNTH_VERSION` an
 
 - Speed (measured, scratch script, load ≈ 47): `analyzeSound` on 60 s of stereo noise 1.5–5.2 s (load-dependent);
   render + analyse of one synth sound ≈ 100 ms at load 17.
-- `pnpm --filter @jasper/audio-fx typecheck` and `pnpm lint` (Biome, tokens, anime, layers, assets) pass.
+- `JASPER_REQUIRE_ORACLES=1 pnpm vitest run packages/audio-fx --maxWorkers=2`: 16 files, 229 tests passed (the whole
+  package, old and new). `pnpm typecheck` (whole workspace) and `pnpm lint` (Biome, tokens, anime, layers, assets) pass.
+- Module-level tables (`SYNTH_RECIPES`, `DEFAULT_TYPE_PROFILES`, …) are `@__PURE__`-annotated so the preview worklet
+  and web bundles, which import `@jasper/audio-fx` for the effect chain, can drop them.
 
 #### Limits and notes for the next packages
 
