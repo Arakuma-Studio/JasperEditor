@@ -7,9 +7,10 @@ import { describe, expect, it } from 'vitest';
 import { exportEdl, exportEdlPerTrack, importEdl } from '../src/edl.ts';
 import { detectFormat } from '../src/formats.ts';
 import { Report } from '../src/report.ts';
-import { framesToFlicks, parseTc } from '../src/time.ts';
+import { framesToFlicks } from '../src/time.ts';
 import { arbProject, BASIC } from './support/arbitraries.ts';
 import { expectOnlyInterchangeErrors, VENV_PYTHON } from './support/fuzz.ts';
+import { clip, media, project, sequence } from './support/ir.ts';
 
 const fixture = (n: string) => readFileSync(join(__dirname, 'fixtures/edl', n), 'utf8');
 const r2997 = { num: 30000, den: 1001 };
@@ -23,14 +24,14 @@ describe('CMX 3600 EDL', () => {
 		const s = p.sequences[p.top[0]!]!;
 		expect(s.rate).toEqual(r2997);
 		expect(s.dropFrame).toBe(true);
-		expect(s.startTimecode).toBe(parseTc('01;00;00;00', r2997));
+		// S02 A.1: 01;00;00;00 = 107892 frames at 29.97 DF; each frame is 23543520 flicks.
+		expect(s.startTimecode).toBe(107_892);
 		const v = s.video[0]!.clips;
-		const f = (tc: string) => framesToFlicks(parseTc(tc, r2997, true)! - s.startTimecode, r2997);
 		expect(v.map((c) => [c.name, c.start])).toEqual([
-			['Harbour A.mov', f('01;00;00;00')],
-			['Gulls Wide.mov', f('01;00;05;00')],
-			['Boat.mov', f('01;00;10;00')],
-			['Sunset.mov', f('01;00;12;00')],
+			['Harbour A.mov', 0],
+			['Gulls Wide.mov', 3_531_528_000],
+			['Boat.mov', 7_063_056_000],
+			['Sunset.mov', 8_475_667_200],
 		]);
 		expect(v[2]!.speed).toBe(2);
 		const a = s.audio.map((t) => t.clips.length);
@@ -66,20 +67,34 @@ describe('CMX 3600 EDL', () => {
 	});
 
 	it('drop-frame timecode at minute boundaries (29.97 and 59.94)', () => {
-		for (const rate of [r2997, { num: 60000, den: 1001 }]) {
-			const p = fc.sample(
-				arbProject({ ...BASIC, videoTracks: 1, audioTracks: 0, rates: [{ rate, dropFrame: true }] }),
-				{ seed: 4, numRuns: 1 },
-			)[0]!;
-			const s = p.sequences[p.top[0]!]!;
-			s.startTimecode = parseTc('00;59;59;00', rate, true)!;
-			const text = exportEdl(p, p.top[0]!, {}, new Report());
+		// SMPTE skipped labels and the tenth-minute exception (S02 Appendix A.1).
+		for (const { rate, cuts } of [
+			{
+				rate: r2997,
+				cuts: [
+					[1799, '00;00;59;29', '00;01;00;02'],
+					[17981, '00;09;59;29', '00;10;00;00'],
+				],
+			},
+			{
+				rate: { num: 60000, den: 1001 },
+				cuts: [
+					[3599, '00;00;59;59', '00;01;00;04'],
+					[35963, '00;09;59;59', '00;10;00;00'],
+				],
+			},
+		] as const) {
+			const p = project();
+			const m = media(p, '/media/card.mov', true, false, rate);
+			const sid = sequence(p, 'Drop-frame cuts', rate, true);
+			for (const [frame] of cuts) clip(p, sid, 'video', 0, m, frame, 1, 0);
+			const text = exportEdl(p, sid, {}, new Report());
 			expect(text).toContain('FCM: DROP FRAME');
-			const back = importEdl(text, { rate }, new Report());
-			const b = back.sequences[back.top[0]!]!;
-			expect(
-				b.video[0]!.clips.map((c) => [c.start + framesToFlicks(b.startTimecode, rate), c.duration]),
-			).toEqual(s.video[0]!.clips.map((c) => [c.start + framesToFlicks(s.startTimecode, rate), c.duration]));
+			const recordTimes = text
+				.split('\n')
+				.filter((line) => /^\d{3}\s/.test(line))
+				.map((line) => line.trim().split(/\s+/).slice(-2));
+			expect(recordTimes).toEqual(cuts.map(([, start, end]) => [start, end]));
 		}
 	});
 

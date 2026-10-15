@@ -61,10 +61,11 @@ function ramp(frames: number, channels: number, seed: number): Uint8Array {
 
 describe('OMF', () => {
 	it('round trips the audio edit at 25, 23.976 and 29.97 DF and reports what it leaves out', () => {
-		for (const [rate, df] of [
-			[RATE_25, false],
-			[RATE_23_976, false],
-			[RATE_29_97, true],
+		// Stored frame indices are independent of the display drop-frame flag.
+		for (const [rate, df, startFrames, mediaStartFrames] of [
+			[RATE_25, false, 90_000, 90_012],
+			[RATE_23_976, false, 86_400, 86_412],
+			[RATE_29_97, true, 108_000, 108_012],
 		] as const) {
 			const { p, s } = sample(rate, df);
 			const { q, n, bytes, report } = rt(p, s);
@@ -74,13 +75,13 @@ describe('OMF', () => {
 			expect(qs.name).toBe('Mix');
 			expect(qs.rate).toEqual(rate);
 			expect(qs.dropFrame).toBe(df);
-			expect(qs.startTimecode).toBe(timecodeBase(rate) * 3600);
+			expect(qs.startTimecode).toBe(startFrames);
 			expect(Math.abs(qs.audio[0]!.clips[0]!.volumeDb!.value - 6)).toBeLessThan(1e-3);
 			const ks = qs.audio[1]!.clips[0]!.volumeDb!.keyframes;
 			expect(ks.map((k) => Math.round(k.value * 1000) / 1000)).toEqual([-12, 0]);
 			expect(Math.abs(ks[1]!.time - framesToFlicks(48, rate))).toBeLessThan(705_600_000 / 48_000);
 			const ma = Object.values(q.media).find((m) => m.path === '/media/A001.mov')!;
-			expect(ma.timecode!.frames).toBe(timecodeBase(rate) * 3600 + 12);
+			expect(ma.timecode!.frames).toBe(mediaStartFrames);
 			expect(ma.audio!.sampleRate).toBe(48000);
 			expect(report.mentions('audio only')).toBe(true);
 			expect(report.mentions('marker')).toBe(true);
