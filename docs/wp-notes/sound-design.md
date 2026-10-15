@@ -1037,11 +1037,15 @@ Tests: `apps/engine/test/sounds-review.test.ts`, `sounds-search.test.ts`, `packa
    for visual data.
 10. **Search speed.** `rankSounds` caches per entry object (WeakMap; recomputed when title, tags or types change) the
     title/tag tokens, the known types and the types they name, and the text score of the last query plan; plans are
-    memoised per query string (64); `typesInTokens` only tries synonym phrases whose first word occurs (index by first
+    memoised per query string (32) and remember how each vocabulary word (ids ≤ 200 000) matches the query (2 bits per
+    token, an `Int32Array` by word id), so most words cost one array read; `typesInTokens` only tries synonym phrases whose first word occurs (index by first
     word, same greedy order); query words are deduplicated (first occurrence) and capped at `MAX_QUERY_TOKENS` = 16
     (a behaviour change for repeated or very long queries only); licence classes are memoised. The engine caches the
-    id-sorted entry list per snapshot and counts all facets in one pass with `soundFilterOf` (bit flags per filter
-    dimension), equal to the four-pass disjunctive counts (oracle test over 4 random libraries × 120 random queries).
+    id-sorted entry list per snapshot and makes one pass (`rankSoundsPage`): every entry's filter bits
+    (`soundFilterOf`'s, one per filter dimension) count the facets, matching entries are ranked by one numeric sort key
+    (source tier, title share, score: exact integers of the 6-decimal values) and only the returned page is built as
+    objects. Facets equal the four-pass disjunctive counts (oracle test over 4 random libraries × 120 random queries
+    with random offsets); `rankSoundsPage` equals `rankSounds` page by page (fast-check, 400 runs).
     Results for queries without repeated words are identical to the previous `rankSounds` (scratch comparison, 1 500
     fast-check cases against a copy of the old module; the existing `sound-rank.test.ts` passes unchanged).
 11. **Prototype keys.** `synonymType` reads `TYPE_SYNONYMS` with `Object.hasOwn`; `resolveTypeNames(['constructor'])`

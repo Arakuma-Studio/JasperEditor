@@ -298,17 +298,42 @@ type QueryPlan = {
 	/** Distinct tokens left after stopwords (first occurrence kept, at most MAX_QUERY_TOKENS), each with the type its synonym phrase names (if any). */
 	tokens: { token: string; type: SoundTypeId | null }[];
 	/**
-	 * How each word seen so far matches the tokens: 2 bits per token (2 = the same word, 1 = starts with a token of 3+
-	 * letters, 0 = no match). A library has far fewer distinct words than entries, so most words cost one lookup.
+	 * How each vocabulary word (by id) matches the tokens, computed on first use: 2 bits per token (2 = the same word,
+	 * 1 = starts with a token of 3+ letters, 0 = no match); −1 = not computed yet. A library has far fewer distinct
+	 * words than entries, so most words cost one array read.
 	 */
-	words: Map<string, number>;
+	byWord: Int32Array;
 };
-/** Words remembered per plan (a bound against hostile libraries; past it, words are matched every time). */
-const MAX_PLAN_WORDS = 200_000;
+
+/**
+ * Word ids of every word ranking has seen (title and tag tokens). Bounded: past MAX_VOCABULARY words, new words get
+ * no id and are matched as strings every time.
+ */
+const VOCABULARY = new Map<string, number>();
+const VOCABULARY_WORDS: string[] = [];
+const MAX_VOCABULARY = 200_000;
+
+function wordIds(words: readonly string[]): Int32Array {
+	const ids = new Int32Array(words.length);
+	for (let i = 0; i < words.length; i++) {
+		const w = words[i]!;
+		let id = VOCABULARY.get(w);
+		if (id === undefined) {
+			if (VOCABULARY_WORDS.length >= MAX_VOCABULARY) id = -1;
+			else {
+				id = VOCABULARY_WORDS.length;
+				VOCABULARY_WORDS.push(w);
+				VOCABULARY.set(w, id);
+			}
+		}
+		ids[i] = id;
+	}
+	return ids;
+}
 
 /** Plans of recent queries (the same query string gives the same plan object, so text scores can be reused). */
 const PLAN_MEMO = new Map<string, QueryPlan | null>();
-const PLAN_MEMO_SIZE = 64;
+const PLAN_MEMO_SIZE = 32;
 
 function planQuery(query: string | undefined): QueryPlan | null {
 	if (typeof query !== 'string') return null;
@@ -342,7 +367,7 @@ function makePlan(query: string): QueryPlan | null {
 		seen.add(token);
 		tokens.push({ token, type: typed[i]! });
 	}
-	return { tokens, words: new Map() };
+	return { tokens, byWord: new Int32Array(0) };
 }
 
 /**
@@ -357,6 +382,9 @@ type EntryText = {
 	typesLen: number;
 	titleTokens: string[];
 	tagTokens: string[];
+	/** Vocabulary ids of the title and tag tokens (−1: no id). */
+	titleIds: Int32Array;
+	tagIds: Int32Array;
 	/** Types its title and tags name (computed on first use). */
 	namedTypes: SoundTypeId[] | null;
 	/** Its known type ids. */
@@ -385,14 +413,17 @@ function entryText(e: RankableSound): EntryText {
 	const tagTokens: string[] = [];
 	if (Array.isArray(tags))
 		for (const t of tags) if (typeof t === 'string') tagTokens.push(...tokenizeSoundText(t));
+	const titleTokens = tokenizeSoundText(e.title);
 	const info: EntryText = {
 		title: e.title,
 		tagsRef: tags,
 		tagsLen,
 		typesRef: types,
 		typesLen,
-		titleTokens: tokenizeSoundText(e.title),
+		titleTokens,
 		tagTokens,
+		titleIds: wordIds(titleTokens),
+		tagIds: wordIds(tagTokens),
 		namedTypes: null,
 		entryTypes: (Array.isArray(types) ? types : []).filter(isSoundTypeId),
 		scoredPlan: null,
@@ -433,17 +464,32 @@ function textScore(plan: QueryPlan, t: EntryText): { score: number; titleMatch: 
 	return r;
 }
 
-function wordMatch(plan: QueryPlan, w: string): number {
-	let m = plan.words.get(w);
-	if (m !== undefined) return m;
-	m = 0;
+/** How a word matches the plan's tokens (2 bits per token). Never −1: no 2-bit group is ever 3. */
+function matchWord(plan: QueryPlan, w: string): number {
+	let m = 0;
 	const tokens = plan.tokens;
 	for (let k = 0; k < tokens.length; k++) {
 		const token = tokens[k]!.token;
 		if (w === token) m |= 2 << (2 * k);
 		else if (token.length >= 3 && w.startsWith(token)) m |= 1 << (2 * k);
 	}
-	if (plan.words.size < MAX_PLAN_WORDS) plan.words.set(w, m);
+	return m;
+}
+
+function wordMatch(plan: QueryPlan, id: number, w: string): number {
+	if (id < 0) return matchWord(plan, w);
+	let table = plan.byWord;
+	if (id >= table.length) {
+		const grown = new Int32Array(Math.max(1024, id + 1, Math.ceil(VOCABULARY_WORDS.length * 1.25)));
+		grown.fill(-1);
+		grown.set(table);
+		plan.byWord = table = grown;
+	}
+	let m = table[id]!;
+	if (m === -1) {
+		m = matchWord(plan, w);
+		table[id] = m;
+	}
 	return m;
 }
 
@@ -466,8 +512,10 @@ function computeTextScore(plan: QueryPlan, t: EntryText): { score: number; title
 		BEST[k] = best;
 		TITLED[k] = 0;
 	}
-	for (const w of t.titleTokens) {
-		const m = wordMatch(plan, w);
+	const titleIds = t.titleIds;
+	const titleWords = t.titleTokens;
+	for (let i = 0; i < titleIds.length; i++) {
+		const m = wordMatch(plan, titleIds[i]!, titleWords[i]!);
 		if (m === 0) continue;
 		for (let k = 0; k < n; k++) {
 			const v = (m >>> (2 * k)) & 3;
@@ -477,8 +525,10 @@ function computeTextScore(plan: QueryPlan, t: EntryText): { score: number; title
 			TITLED[k] = 1;
 		}
 	}
-	for (const w of t.tagTokens) {
-		const m = wordMatch(plan, w);
+	const tagIds = t.tagIds;
+	const tagWords = t.tagTokens;
+	for (let i = 0; i < tagIds.length; i++) {
+		const m = wordMatch(plan, tagIds[i]!, tagWords[i]!);
 		if (m === 0) continue;
 		for (let k = 0; k < n; k++) {
 			const v = (m >>> (2 * k)) & 3;
