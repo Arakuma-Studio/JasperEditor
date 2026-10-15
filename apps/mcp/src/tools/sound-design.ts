@@ -33,6 +33,7 @@ import {
 	type Sequence,
 	SFX_ROLES,
 	SOUND_DESIGN_LIMITS,
+	SOUND_LABELS,
 	SOUND_TYPES,
 	type SoundCue,
 	type SoundTypeId,
@@ -41,6 +42,7 @@ import {
 	soundCueFields,
 	soundCuesOf,
 	soundDesignSettingsOf,
+	soundText,
 	synonymType,
 	TimeInputSchema,
 	trackLabel,
@@ -535,11 +537,12 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 			if (!a.add && !a.update && !a.remove && !a.resync)
 				throw new ToolError('E_INVALID_PARAM', 'Nothing to do', 'Give add, update, remove and/or resync.');
 			const parts: string[] = [];
-			if (a.add) parts.push(`add ${a.add.length}`);
-			if (a.update) parts.push(`edit ${a.update.length}`);
-			if (a.remove) parts.push(`remove ${a.remove.cueIds.length}`);
-			if (a.resync) parts.push('resync');
-			const label = `Sound Cues (${parts.join(', ')})`;
+			if (a.add) parts.push(soundText(SOUND_LABELS.cuesAdd, a.add.length));
+			if (a.update) parts.push(soundText(SOUND_LABELS.cuesEdit, a.update.length));
+			if (a.remove) parts.push(soundText(SOUND_LABELS.cuesRemove, a.remove.cueIds.length));
+			if (a.resync) parts.push(SOUND_LABELS.cuesResync);
+			// The templates of @jasper/project (SOUND_LABELS): the editor shows this label translated in its History.
+			const label = `${SOUND_LABELS.soundCues} (${parts.join(', ')})`;
 			const { res, r, state } = await transactFresh(
 				ctx,
 				a.projectId,
@@ -764,7 +767,10 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 			}
 			for (const id of a.alternatives ?? []) await entry(id);
 			const title = registered[0]?.title ?? 'Sound';
-			const label = a.layers.length > 1 ? `Place ${a.layers.length} Sounds` : `Place Sound ${title}`;
+			const label =
+				a.layers.length > 1
+					? soundText(SOUND_LABELS.placeSounds, a.layers.length)
+					: soundText(SOUND_LABELS.placeSound, title);
 			const { res, r, state } = await transactFresh(
 				ctx,
 				a.projectId,
@@ -1045,7 +1051,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 					c.registerSound(t.soundId, a.projectId),
 				);
 				const title = e.title || reg.library.title || reg.originalName;
-				const label = `Swap Sound ${title}`;
+				const label = soundText(SOUND_LABELS.swapSound, title);
 				try {
 					const tx = await transactFresh(
 						ctx,
@@ -1168,7 +1174,8 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 					? sfxClipsOf(seq).filter((c) => c.id !== clip.id && c.sfx!.cueId === clip.sfx!.cueId)
 					: [];
 			const moving = [clip, ...others];
-			const label = moving.length > 1 ? `Align ${moving.length} Sound Peaks` : 'Align Sound Peak';
+			const label =
+				moving.length > 1 ? soundText(SOUND_LABELS.alignPeaks, moving.length) : SOUND_LABELS.alignPeak;
 			const { res, r } = await transactFresh(
 				ctx,
 				a.projectId,
