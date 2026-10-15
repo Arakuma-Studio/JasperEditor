@@ -1,16 +1,45 @@
 // @vitest-environment node
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TRANSITION_FAMILIES } from '@jasper/project';
+import { TRANSITION_FAMILIES, TRANSITION_SPECS } from '@jasper/project';
 import { expectFingerprints } from '@jasper/testkit/golden';
 import type { Browser, Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CHROME, openGlPage } from './gl-browser.ts';
+import { TEST_TRANSITIONS } from './transition-examples.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
 /** Golden transition fingerprints: `<id>@<p>` → 4×4 mean RGB (FilmCraft's goldens.txt, ±4 levels). */
 const TR_FINGERPRINTS = join(here, 'goldens', 'transition-fingerprints.json');
+const inFamily = new Set(TRANSITION_FAMILIES.flatMap((f) => f.transitions.map((s) => s.id)));
+const transitionGroups = [
+	{
+		family: undefined,
+		ids: [...TRANSITION_SPECS.filter((s) => s.gpu && !inFamily.has(s.id)), ...TEST_TRANSITIONS].map(
+			(s) => s.id,
+		),
+		timeout: 60_000,
+	},
+	...TRANSITION_FAMILIES.map((f) => ({
+		family: f.file,
+		ids: f.transitions.filter((s) => s.gpu).map((s) => s.id),
+		timeout: 240_000,
+	})),
+];
+// A missing registered transition must not silently remove its committed golden cases.
+const pinnedIds = new Set(
+	Object.keys(JSON.parse(readFileSync(TR_FINGERPRINTS, 'utf8'))).map((id) =>
+		id.replace(/@(0\.25|0\.5|0\.75)$/, ''),
+	),
+);
+const listedIds = new Set(transitionGroups.flatMap((g) => g.ids));
+transitionGroups.push({
+	family: undefined,
+	ids: [...pinnedIds].filter((id) => !listedIds.has(id)),
+	timeout: 60_000,
+});
 
 type Px = [number, number, number, number];
 const near = (a: Px, b: Px, tol = 4) => a.every((v, i) => Math.abs(v - b[i]!) <= tol);
@@ -22,9 +51,11 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 	() => {
 		let browser: Browser;
 		let page: Page;
-		const call = <T>(name: string, arg?: string): Promise<T> =>
+		const call = <T>(name: string, arg?: { family?: string; id: string }): Promise<T> =>
 			page.evaluate(
-				([n, a]) => (window as unknown as { __tr: Record<string, (a?: string) => unknown> }).__tr[n]!(a),
+				([n, a]) =>
+					(window as unknown as { __tr: Record<string, (a?: { family?: string; id: string }) => unknown> })
+						.__tr[n]!(a),
 				[name, arg] as const,
 			) as Promise<T>;
 		const endsOk = (r: Record<string, { first: Px; last: Px }>) =>
@@ -40,23 +71,26 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		});
 
-		it('compiles and runs the test transitions and any GPU transition outside the families', async () => {
-			const r = await call<{ errors: string[] }>('catalogue');
-			expect(r.errors).toEqual([]);
-			expect(endsOk(await call('ends'))).toEqual([]);
-			expectFingerprints(TR_FINGERPRINTS, await call<Record<string, number[]>>('fingerprints'), 4);
-		});
-
-		// SwiftShader compiles slowly; split families so the catalogue fits the per-test timeout.
-		for (const family of TRANSITION_FAMILIES.map((f) => f.file))
-			it(`compiles and runs every GPU transition of ${family}; A at progress 0, B at 1`, {
-				timeout: 240_000,
-			}, async () => {
-				const r = await call<{ errors: string[] }>('catalogue', family);
-				expect(r.errors).toEqual([]);
-				expect(endsOk(await call('ends', family))).toEqual([]);
-				expectFingerprints(TR_FINGERPRINTS, await call<Record<string, number[]>>('fingerprints', family), 4);
-			});
+		// Keep the shared-host sequence: all catalogue draws, then all endpoints, then all fingerprints in each family.
+		for (const { family, ids, timeout } of transitionGroups) {
+			for (const id of ids)
+				it(`renders ${id} with both, single and reversed sides`, { timeout }, async () => {
+					const r = await call<{ errors: string[] }>('catalogue', { family, id });
+					expect(r.errors).toEqual([]);
+				});
+			for (const id of ids)
+				it(`shows A at progress 0 and B at 1 for ${id}`, { timeout }, async () => {
+					expect(endsOk(await call('ends', { family, id }))).toEqual([]);
+				});
+			for (const id of ids)
+				it(`matches golden pixels at progress 0.25, 0.5 and 0.75 for ${id}`, { timeout }, async () => {
+					expectFingerprints(
+						TR_FINGERPRINTS,
+						await call<Record<string, number[]>>('fingerprints', { family, id }),
+						4,
+					);
+				});
+		}
 
 		it('places the side pictures through their matrices and opacity', async () => {
 			const r = await call<{ left: Px; right: Px; outside: Px; inside: Px }>('placement');

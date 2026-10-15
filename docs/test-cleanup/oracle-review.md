@@ -54,3 +54,42 @@ Reviewed final added/superseding justifications specify independent source, visi
 ## Validation limits
 
 `git diff --check cf890a29..HEAD` passed during this review. No reviewer runtime/build jobs were run. The source review found no blocker, but independent camera straight-path normalization differs from its former best-fit metric and needs the scheduled noisy-fixture run. Quantized GL mask/eyedropper and painted-source cases likewise need actual GL execution. Watchdog-only failures under host contention are unresolved validation results until a rerun succeeds; they were not used to delete contracts or relax numerical tolerances. Final lint/typecheck/test/build, specialized-suite status, remote-added-test audit and push remain root responsibilities.
+
+
+## GPU fingerprint declaration follow-up — pre-edit disposition
+
+At integration `56f3ed72`, review found one additional **REWRITE** requirement:
+`transition-gl/entry.ts` swallowed fingerprint render errors and omitted keys,
+while `expectFingerprints` compares only received keys. Different catalogue
+inputs do not cover all three patterned-card progress cases. Propagate these
+errors. The earlier source-findings resolution above does not cover this later
+finding until the following rewrite is committed and reviewed.
+
+The FX and transition family declarations also become individual documented pixel
+contracts. Their complete B1–B6 justifications, caller census, risk and exact retained
+case mapping were recorded before edits in the final supplements of
+[compositions1.md](compositions1.md#per-effect-fingerprint-declarations--before-edit-record)
+and [compositions2.md](compositions2.md#per-transition-declarations-and-omitted-fingerprint-failures--before-edit-record).
+Preserve every input/render, fixed golden, tolerance, existing category watchdog,
+browser/context and transition phase ordering. Family elapsed-time limits are not
+specified behavior. These changes do not remove a retained regression, raise a
+timeout, change production, or introduce a production test hook. Static validation
+and exact accounting will be appended; full GL execution remains pending integration.
+
+
+**Follow-up implemented; static validation passed.** The transition catch is removed;
+a deliberate render-rejection probe passes through the same Error in the rewritten
+adapter where the baseline swallowed it. Independent committed-golden IDs now keep
+missing catalogue effects/transitions declared; new unpinned catalogue entries also
+remain checked. No shader, production seam, fixture image or golden JSON changed.
+
+Exact accounting: **374 effects × 2 = 748 renders**, and **172 transitions ×
+(5 catalogue + 2 endpoint + 3 fingerprint) = 1,720 renders**. Static comparison
+preserved the complete group/phase/ID sequence and each existing category's 60s/240s
+watchdog. The sum of available per-case wall-time budgets increases; this attributes
+failures to independently specified contracts and is not a host-load repair. Biome
+checked all four TS files, TypeScript syntax/transpilation passed, and diff whitespace
+checks passed. No browser/GL or full package typecheck was launched for this follow-up;
+those remain integration gates. Composition1 original dispositions are unchanged;
+one composition2 family original changes KEEP→REWRITE (83 DELETE / 25 REWRITE /
+149 KEEP before its separately owned four-suite follow-up).

@@ -193,30 +193,30 @@ const identity = defineShaderEffect({
 
 const api = {
 	/**
-	 * Fingerprints (4×4 mean RGB) of every GPU effect of a family at its defaults on the golden test card, frame 12:
+	 * Fingerprints (4×4 mean RGB) of one GPU effect at defaults and perturbed settings on the golden test card, frame 12:
 	 * compared with goldens/fx-fingerprints.json by fx-gl.test.ts (JASPER_BLESS=1 re-blesses). Rendering failures propagate and fail the golden comparison.
 	 */
-	fingerprints(family?: string) {
+	fingerprints({ family, id }: { family?: string; id: string }) {
 		const familySpecs = FX_FAMILIES.find((f) => f.file === family)?.effects;
 		const inFamily = new Set(FX_FAMILIES.flatMap((f) => f.effects.map((e) => e.id)));
 		const specs = familySpecs
 			? familySpecs.filter((s) => s.gpu)
 			: [...defaultEffectRegistry.list().filter((s) => s.gpu && !inFamily.has(s.id)), ...TEST_FX];
+		const spec = specs.find((s) => s.id === id);
+		if (!spec) throw new Error(`unknown GPU effect ${id}`);
 		const out: Record<string, number[]> = {};
-		for (const spec of specs) {
-			out[spec.id] = fingerprintOf(
-				run(spec, defaults(spec), { width: 64, height: 36 }, testCard, { frame: 12 }).out,
+		out[spec.id] = fingerprintOf(
+			run(spec, defaults(spec), { width: 64, height: 36 }, testCard, { frame: 12 }).out,
+		);
+		try {
+			out[`${spec.id}@perturbed`] = fingerprintOf(
+				run(spec, perturbed(spec), { width: 64, height: 36 }, testCard, { frame: 12 }).out,
 			);
-			try {
-				out[`${spec.id}@perturbed`] = fingerprintOf(
-					run(spec, perturbed(spec), { width: 64, height: 36 }, testCard, { frame: 12 }).out,
-				);
-				if (fxHost()?.gl.isContextLost()) throw new Error('the WebGL context was lost');
-			} catch (e) {
-				// Failing at other settings is a bug: recorded as NaNs, which no golden accepts.
-				out[`${spec.id}@perturbed`] = new Array(48).fill(Number.NaN);
-				console.error(`${spec.id} @perturbed: ${(e as Error).message}`);
-			}
+			if (fxHost()?.gl.isContextLost()) throw new Error('the WebGL context was lost');
+		} catch (e) {
+			// Failing at other settings is a bug: recorded as NaNs, which no golden accepts.
+			out[`${spec.id}@perturbed`] = new Array(48).fill(Number.NaN);
+			console.error(`${spec.id} @perturbed: ${(e as Error).message}`);
 		}
 		return out;
 	},

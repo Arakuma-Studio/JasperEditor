@@ -11,6 +11,7 @@ import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { TEST_TRANSITIONS } from '../transition-examples.ts';
 
 type Px = [number, number, number, number];
+type CatalogueCase = { family?: string; id: string };
 const W = 64;
 const H = 36;
 
@@ -137,82 +138,74 @@ const fingerprintOf = (c: HTMLCanvasElement) =>
 
 const spec = (id: string) => TRANSITION_SPECS.find((s) => s.id === id)!;
 
-/**
- * The GPU transitions of one family (`TRANSITION_FAMILIES[].file`), or without a family every GPU transition outside
- * the families plus the test transitions (one call per family keeps each test inside its timeout).
- */
-function specsOf(family?: string): TransitionSpec[] {
+/** Select one transition from the same family/test catalogue used by the original render sequence. */
+function specOf({ family, id }: CatalogueCase): TransitionSpec {
 	const fam = TRANSITION_FAMILIES.find((f) => f.file === family);
 	if (family && !fam) throw new Error(`unknown transition family ${family}`);
-	if (fam) return fam.transitions.filter((s) => s.gpu);
 	const inFamily = new Set(TRANSITION_FAMILIES.flatMap((f) => f.transitions.map((s) => s.id)));
-	return [...TRANSITION_SPECS.filter((s) => s.gpu && !inFamily.has(s.id)), ...TEST_TRANSITIONS];
+	const specs = fam
+		? fam.transitions.filter((s) => s.gpu)
+		: [...TRANSITION_SPECS.filter((s) => s.gpu && !inFamily.has(s.id)), ...TEST_TRANSITIONS];
+	const selected = specs.find((s) => s.id === id);
+	if (!selected) throw new Error(`unknown GPU transition ${id}`);
+	return selected;
 }
 
 const api = {
-	catalogue(family?: string) {
-		const specs = specsOf(family);
+	catalogue(selection: CatalogueCase) {
+		const s = specOf(selection);
 		const errors: string[] = [];
 		const a = () => full(solid('#c84'));
 		const b = () => full(solid('#48c'));
-		for (const s of specs) {
-			const cases: [string, Parameters<typeof run>[2], Record<string, unknown>][] = [
-				['both', { frame: 0, duration: 10, out: a(), in: b() }, {}],
-				['mid', { frame: 5, duration: 10, out: a(), in: b() }, {}],
-				['in', { frame: 3, duration: 10, sides: 'in', in: b() }, {}],
-				['out', { frame: 9, duration: 10, sides: 'out', out: a() }, {}],
-				['reverse', { frame: 5, duration: 10, out: a(), in: b() }, { reverse: true }],
-			];
-			for (const [name, o, over] of cases) {
-				try {
-					const out = run(s, defaults(s, over), o);
-					// Fully progressed two-sided frames are not required to match exactly, but nothing may be NaN-black
-					// over an opaque frame in the middle of the transition.
-					if (name === 'mid' && px(out, W / 2, H / 2)[3] === 0)
-						errors.push(`${s.id} ${name}: transparent centre`);
-				} catch (e) {
-					errors.push(`${s.id} ${name}: ${(e as Error).message}`);
-				}
+		const cases: [string, Parameters<typeof run>[2], Record<string, unknown>][] = [
+			['both', { frame: 0, duration: 10, out: a(), in: b() }, {}],
+			['mid', { frame: 5, duration: 10, out: a(), in: b() }, {}],
+			['in', { frame: 3, duration: 10, sides: 'in', in: b() }, {}],
+			['out', { frame: 9, duration: 10, sides: 'out', out: a() }, {}],
+			['reverse', { frame: 5, duration: 10, out: a(), in: b() }, { reverse: true }],
+		];
+		for (const [name, o, over] of cases) {
+			try {
+				const out = run(s, defaults(s, over), o);
+				// Fully progressed two-sided frames are not required to match exactly, but nothing may be NaN-black
+				// over an opaque frame in the middle of the transition.
+				if (name === 'mid' && px(out, W / 2, H / 2)[3] === 0)
+					errors.push(`${s.id} ${name}: transparent centre`);
+			} catch (e) {
+				errors.push(`${s.id} ${name}: ${(e as Error).message}`);
 			}
 		}
 		return { errors };
 	},
 
 	/**
-	 * Golden fingerprints (FilmCraft's transition fingerprints): every GPU transition of a family at its defaults,
+	 * Golden fingerprints (FilmCraft's transition fingerprints): one GPU transition at its defaults,
 	 * two-sided over the golden cards, at p = 0.25 / 0.5 / 0.75 (frames 5 / 10 / 15 of 20) → 4×4 mean RGB, compared
 	 * with goldens/transition-fingerprints.json (±4 levels) by transition-gl.test.ts.
 	 */
-	fingerprints(family?: string) {
+	fingerprints(selection: CatalogueCase) {
+		const s = specOf(selection);
 		const out: Record<string, number[]> = {};
-		for (const s of specsOf(family))
-			for (const [p, frame] of [
-				['0.25', 5],
-				['0.5', 10],
-				['0.75', 15],
-			] as const) {
-				try {
-					out[`${s.id}@${p}`] = fingerprintOf(
-						run(s, defaults(s), { frame, duration: 20, out: full(cardA()), in: full(cardB()) }),
-					);
-				} catch {
-					// reported by `catalogue`
-				}
-			}
+		for (const [p, frame] of [
+			['0.25', 5],
+			['0.5', 10],
+			['0.75', 15],
+		] as const) {
+			out[`${s.id}@${p}`] = fingerprintOf(
+				run(s, defaults(s), { frame, duration: 20, out: full(cardA()), in: full(cardB()) }),
+			);
+		}
 		return out;
 	},
 
 	/** Ends of a two-sided transition: start ≈ A, end ≈ B (Start 0 % / End 100 % around the linear ramp). */
-	ends(family?: string) {
-		const out: Record<string, { first: Px; last: Px }> = {};
-		for (const s of specsOf(family)) {
-			const p = defaults(s, { startPercent: 0, endPercent: 0 });
-			const q = defaults(s, { startPercent: 100, endPercent: 100 });
-			const first = run(s, p, { frame: 0, duration: 10, out: full(solid('red')), in: full(solid('blue')) });
-			const last = run(s, q, { frame: 0, duration: 10, out: full(solid('red')), in: full(solid('blue')) });
-			out[s.id] = { first: px(first, W / 2, H / 2), last: px(last, W / 2, H / 2) };
-		}
-		return out;
+	ends(selection: CatalogueCase) {
+		const s = specOf(selection);
+		const p = defaults(s, { startPercent: 0, endPercent: 0 });
+		const q = defaults(s, { startPercent: 100, endPercent: 100 });
+		const first = run(s, p, { frame: 0, duration: 10, out: full(solid('red')), in: full(solid('blue')) });
+		const last = run(s, q, { frame: 0, duration: 10, out: full(solid('red')), in: full(solid('blue')) });
+		return { [s.id]: { first: px(first, W / 2, H / 2), last: px(last, W / 2, H / 2) } };
 	},
 
 	placement() {

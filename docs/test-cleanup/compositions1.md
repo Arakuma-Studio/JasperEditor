@@ -3299,3 +3299,68 @@ Full six-item justification for each rewritten retained contract:
 Caller census: no production seam is introduced or deleted by this follow-up. The unused imports/mocks removed are confined to test setup. The integrated motion-blur split is preserved unchanged. Static-only validation is authorized now; runtime reruns are root's responsibility after integration.
 
 Final rescan static validation: scoped Biome passed for all four changed test files; TypeScript syntax parsing passed; final diff inspected and `git diff --check` passed. No runtime command was launched. The stalled-thumbnail fixture deliberately retains a valid SVG so removing the readiness wait cannot produce the same error for a different reason.
+
+
+## Per-effect fingerprint declarations — before-edit record
+
+Reviewed integration `56f3ed72` before modifying these files. **REWRITE** the existing
+`matches golden pixels for GPU effects outside the families and test effects` and
+`matches golden pixels for every GPU effect of ${family}` declarations in
+`packages/compositions/test/fx-gl.test.ts`, with their browser adapter
+`packages/compositions/test/fx-gl/entry.ts`. Both original declarations were already
+REWRITE above; this supplement does not add original declarations to the census.
+
+The independent contract is per effect, not a family's elapsed time:
+[testing §2](../testing.md#2-golden-frames) names every GPU effect's
+default and perturbed fingerprint, and
+[the transition framework's golden-fuzz contract](../wp-notes/fx-transition-framework.md)
+requires exactly those two cases. Family-wide watchdog failures under shared-host
+contention prompted inspection, but no timing result establishes a product defect.
+Retain each effect's two renders together, in the existing effect/family order, on
+the same browser/page/context. Preserve 64×36 source, frame 12, test card, parameter
+perturbation, 4×4 mean-RGB fingerprints, committed JSON and ±4 tolerance. Preserve
+60,000 ms for outside-family/test effects and 240,000 ms for family members.
+
+- **B1:** the documentation explicitly requires each registered GPU effect's default
+  and perturbed image; family membership is only catalogue organization.
+- **B2:** a shader compilation/render failure or wrong displayed effect colors/alpha
+  produces a rejection or fingerprint mismatch for that named effect.
+- **B3:** expected pixels remain committed JSON, never computed from the current
+  shader, planner or a shared numerical helper. Registry data selects stimuli only.
+- **B4:** the adapter calls the documented shader planning/host interface and reads
+  real output pixels; no pass names, allocation counts or private order is asserted.
+- **B5:** implementation renames, shader decomposition and host caching may change
+  while these pixel results remain valid. No family performance limit is asserted.
+- **B6:** this real shader seam owns the complete default/perturbed image matrix;
+  representative Remotion scenes and analytic pixel cases do not cover that matrix.
+
+Caller census: only this test calls `window.__fx.fingerprints`; it is test support,
+not a production hook. Production `fx/stage.ts` calls `planGpuEffect` and
+`fx/effects.ts` calls `runShaderPlan`; neither owner changes. Risk is accidentally
+omitting/reordering a case when moving enumeration into the node test; compare
+case IDs and render sequence with the pre-edit source. No goldens, tolerance,
+production behavior, fixture, or production seam will change. Validation planned:
+format/syntax and static retained-case accounting now; scheduled Chrome run
+`pnpm exec vitest run packages/compositions/test/fx-gl.test.ts --maxWorkers=1`
+and package typecheck remain integration responsibilities. No full GL success is
+claimed by this record.
+
+Pre-edit static registry/fixture census at `56f3ed72`: **374 effects / 748 existing
+fingerprint renders**, including eight outside-family/test effects. All 748 committed
+golden keys map to those 374 IDs; no missing or duplicate current ID was found.
+Expected-case discovery will also include every ID in the committed golden record,
+so removal from the runtime registry cannot silently remove a test. Current IDs
+without a golden remain included and fail the missing-golden check. Preserve current
+catalogue order; append any absent pinned ID as an explicit failing lookup case.
+The per-case watchdog values stay unchanged; their cumulative possible wall-time
+budget necessarily increases. This is contract attribution, not a host-load fix.
+
+
+Implemented outcome: one named default/perturbed pixel declaration for each of the
+374 current effects; **748 renders retained**, no golden changes. Static evaluation
+of the actual declaration data against the pre-edit catalogue confirmed identical
+ID/render order and category watchdogs. Removing a fixture ID from the discovery
+input still leaves its golden-pinned failing case declared. Targeted Biome passed
+all four changed TS files; TypeScript transpilation reported no syntax diagnostics;
+`git diff --check` passed. These are static/adapter checks, not GL results. No full
+package typecheck or browser render was started in this worktree.

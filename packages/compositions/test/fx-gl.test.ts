@@ -1,10 +1,12 @@
 // @vitest-environment node
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { FX_FAMILIES } from '@jasper/project';
+import { defaultEffectRegistry, FX_FAMILIES } from '@jasper/project';
 import { expectFingerprints } from '@jasper/testkit/golden';
 import type { Browser, Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { TEST_FX } from './fx-examples.ts';
 import { CHROME, openGlPage } from './gl-browser.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -12,6 +14,31 @@ const here = dirname(fileURLToPath(import.meta.url));
 /** Golden fingerprints of every GPU effect (4×4 mean RGB at defaults on the test card; ±FP_TOL levels). */
 const FX_FINGERPRINTS = join(here, 'goldens', 'fx-fingerprints.json');
 const FP_TOL = 4;
+const inFamily = new Set(FX_FAMILIES.flatMap((f) => f.effects.map((s) => s.id)));
+const fingerprintGroups = [
+	{
+		family: undefined,
+		ids: [...defaultEffectRegistry.list().filter((s) => s.gpu && !inFamily.has(s.id)), ...TEST_FX].map(
+			(s) => s.id,
+		),
+		timeout: 60_000,
+	},
+	...FX_FAMILIES.map((f) => ({
+		family: f.file,
+		ids: f.effects.filter((s) => s.gpu).map((s) => s.id),
+		timeout: 240_000,
+	})),
+];
+// Pinned effects must still run (and fail lookup) if they disappear from the current catalogue.
+const pinnedIds = new Set(
+	Object.keys(JSON.parse(readFileSync(FX_FINGERPRINTS, 'utf8'))).map((id) => id.replace(/@perturbed$/, '')),
+);
+const listedIds = new Set(fingerprintGroups.flatMap((g) => g.ids));
+fingerprintGroups.push({
+	family: undefined,
+	ids: [...pinnedIds].filter((id) => !listedIds.has(id)),
+	timeout: 60_000,
+});
 
 type Px = [number, number, number, number];
 const near = (a: Px, b: Px, tol = 3) => a.every((v, i) => Math.abs(v - b[i]!) <= tol);
@@ -22,9 +49,11 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 	() => {
 		let browser: Browser;
 		let page: Page;
-		const call = <T>(name: string, arg?: string): Promise<T> =>
+		const call = <T>(name: string, arg?: { family?: string; id: string }): Promise<T> =>
 			page.evaluate(
-				([n, a]) => (window as unknown as { __fx: Record<string, (a?: string) => unknown> }).__fx[n]!(a),
+				([n, a]) =>
+					(window as unknown as { __fx: Record<string, (a?: { family?: string; id: string }) => unknown> })
+						.__fx[n]!(a),
 				[name, arg] as const,
 			) as Promise<T>;
 
@@ -36,19 +65,15 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		});
 
-		it('matches golden pixels for GPU effects outside the families and test effects', async () => {
-			expectFingerprints(FX_FINGERPRINTS, await call<Record<string, number[]>>('fingerprints'), FP_TOL);
-		});
-
-		// One test per fx family: SwiftShader compiles slowly, so the whole catalogue does not fit one timeout.
-		for (const family of FX_FAMILIES.map((f) => f.file))
-			it(`matches golden pixels for every GPU effect of ${family}`, { timeout: 240_000 }, async () => {
-				expectFingerprints(
-					FX_FINGERPRINTS,
-					await call<Record<string, number[]>>('fingerprints', family),
-					FP_TOL,
-				);
-			});
+		for (const { family, ids, timeout } of fingerprintGroups)
+			for (const id of ids)
+				it(`matches golden pixels for ${id} at default and perturbed settings`, { timeout }, async () => {
+					expectFingerprints(
+						FX_FINGERPRINTS,
+						await call<Record<string, number[]>>('fingerprints', { family, id }),
+						FP_TOL,
+					);
+				});
 
 		it('keeps the picture upright and premultiplied alpha intact', async () => {
 			const o = await call<{ top: Px; bottom: Px }>('orientation');

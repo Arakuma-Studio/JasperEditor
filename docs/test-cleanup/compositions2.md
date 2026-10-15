@@ -1606,7 +1606,7 @@ Remove private pass/plan/DOM/canvas-count assertions, vacuous bounds, duplicated
 
 Six-item bar: (1) the independently specified behavior above is compiles and runs the test transitions and any GPU transition outside the families; (2) its named output defect is visible in real transition shader pixels with independently painted sides; (3) expected values come from the input-defined invariant/reference, not the GPU result or a mock reproducing the tested operation; (4) the seam is real transition shader pixels with independently painted sides; (5) internal renames, pass decomposition and DOM wrappers may change without changing this observable output after the listed pruning; (6) this is the lowest seam that exercises this case, and no stronger owner for these exact inputs/output conditions; generic fingerprints exercise a different default scene. full renders own wiring, this shader/protocol seam owns the specific contract.
 
-## KEEP — `packages/compositions/test/transition-gl.test.ts` — `compiles and runs every GPU transition of ${family}; A at progress 0, B at 1`
+## REWRITE — `packages/compositions/test/transition-gl.test.ts` — `compiles and runs every GPU transition of ${family}; A at progress 0, B at 1`
 
 Failure under review: The named transition selects the wrong side, colour, spatial region or frame, or becomes nondeterministic. Exact case: `compiles and runs every GPU transition of ${family}; A at progress 0, B at 1`. Independent source: docs/wp-notes/fx-transition-framework.md §§3,7,9,13; docs/testing.md §2.
 
@@ -1908,7 +1908,7 @@ Remove test-only exports `pictureLocalFrame` (production use remains within Sequ
 
 ## Completed cleanup and validation
 
-Cleanup implemented across every assigned file: 83 DELETE, 24 REWRITE, 150 KEEP static declarations, plus DELETE for every dynamically named Sapphire wipe gallery case. Ten complete test files removed. Retained tests cover actual rendering pixels/goldens, preview audio range soundness, public metadata/media/LUT/text protocols, and foreign nested-canvas refusal. No retained failing test was deleted to make a run pass. No golden was re-blessed.
+Cleanup implemented across every assigned file: 83 DELETE, 25 REWRITE, 149 KEEP static declarations, plus DELETE for every dynamically named Sapphire wipe gallery case. Ten complete test files removed. Retained tests cover actual rendering pixels/goldens, preview audio range soundness, public metadata/media/LUT/text protocols, and foreign nested-canvas refusal. No retained failing test was deleted to make a run pass. No golden was re-blessed.
 
 Removed support: mock canvas/planning fixtures; duplicate family/gallery fixture generation; manual PNG dumps/photo loaders/showcase options; family catalogue/default smoke/timing APIs; unused pass names/counts, canvas dimensions, temporal offset metadata, motion-blur tap metadata and benchmark shader injection; unused WebGL availability probes. Removed `pictureLocalFrame` and `nestedScopeMessage` exports, preserving their internal production use. Removed poison-hook imports in this partition; the composition-1 owner removes the shared hook and helper. Removed production CPU-derived OCIO expected values, allowing the project owner to remove uncalled CPU mirror functions.
 
@@ -1993,3 +1993,85 @@ pnpm exec vitest run packages/compositions/test/fx-sapphire-adjust-composite-gl.
 Result: one selected test failed, eight cases were intentionally excluded by the name filter. The selected case failed after 63,391 ms with `Error: Test timed out in 60000ms` at test line 118. The `afterAll` browser-close hook also failed with `Error: Hook timed out in 10000ms` at line 31. There was no pixel, alpha, noise-determinism or seed/frame assertion failure. Total run duration was 211.41 seconds, including 37.04 seconds importing and 160.96 seconds running the file. The 16-core shared host's observed one-minute load was 137–165 during setup/reproduction.
 
 This focused result demonstrates timeout failures under heavy host load, not a numerical product defect. It does not establish a passing regression or replace the original full-run stack, which was not yet available during this investigation. No test, expected value, timeout, production owner or disposition was changed. The regression remains KEEP and requires a lower-load rerun. Vitest exited with code 1; no Chrome process rooted in the isolated worktree remained afterward. Only this evidence note changed, and `git diff --check` passed.
+
+
+## Per-transition declarations and omitted fingerprint failures — before-edit record
+
+Reviewed integration `56f3ed72` before modifying these files. **REWRITE** the
+`compiles and runs the test transitions and any GPU transition outside the families`
+and `compiles and runs every GPU transition of ${family}; A at progress 0, B at 1`
+declarations in `packages/compositions/test/transition-gl.test.ts`, together with
+`packages/compositions/test/transition-gl/entry.ts`. This supersedes the family
+row's KEEP disposition above (one original KEEP becomes REWRITE); the outside-family
+row remains REWRITE. These are existing original declarations, not new coverage.
+
+[Testing §2](../testing.md) and the
+[transition framework golden-fuzz contract](../wp-notes/fx-transition-framework.md)
+require each transition at p=0.25/0.5/0.75, and the framework's transition input
+contract specifies outgoing/incoming sides and completion. Each transition retains
+all ten draws: five catalogue cases (both frame0/duration10; mid5/10; incoming-only
+3/10; outgoing-only9/10; reverse5/10), two endpoint cases (0% and100% completion),
+and three patterned-card fingerprints (frames5/10/15 of20). Preserve each family's
+existing phase order: catalogue for every transition, then endpoints for every
+transition, then fingerprints for every transition. Use the same page/context,
+64×36 inputs, ±6 endpoint and ±4 fingerprint tolerances, golden files, 60,000 ms
+outside-family/test watchdog and 240,000 ms family watchdog. There is no documented
+family-wide timing contract; individual pixel contracts justify the declaration
+boundaries independently of shared-host timing failures.
+
+A concrete false-negative exists: `fingerprints` catches render errors and omits the
+corresponding `<id>@<p>` key. `expectFingerprints` checks only received keys by default,
+so even an empty record can pass. `catalogue` renders different cards, timings and
+sidedness and cannot protect failures unique to a fingerprint frame. Remove that
+catch so the actual render rejection fails its owning case; do not loosen assertions.
+
+- **B1:** independently documented transition sides/completion and each of the three
+  golden progress values define the cases, not the shader's implementation layout.
+- **B2:** inability to render, transparent opaque midpoint, wrong source at an endpoint,
+  or wrong intermediate imagery is visible to an editor/export consumer and fails.
+- **B3:** endpoint red/blue values come from painted input sides; intermediate expected
+  grids remain committed JSON. A shader/planner change cannot change the expectation.
+- **B4:** use `planGpuTransition`/`runShaderPlan` and actual canvas pixels, with no
+  private passes or mocked shader implementation.
+- **B5:** pass decomposition, identifiers and allocation strategies may change without
+  affecting output. Per-transition boundaries preserve the original render sequence.
+- **B6:** this GPU seam uniquely owns the full catalogue's side modes, endpoints and
+  three progress goldens. Scalar transition tests cover specific semantics; representative
+  Remotion scenes do not exercise every transition/side/progress combination.
+
+Caller census: only `transition-gl.test.ts` calls the browser `catalogue`, `ends` and
+`fingerprints` methods; no production caller uses these test adapters. Production
+`fx/transition.tsx` calls the shared planner/host and is unchanged. Risk: moving
+case enumeration could omit a transition or reorder shared-context draws; compare
+all IDs and the complete phase sequence before/after. No production seam is added,
+no case/golden removed or blessed. Planned checks: format/syntax and static matrix
+accounting now; `pnpm exec vitest run packages/compositions/test/transition-gl.test.ts
+--maxWorkers=1` with real Chrome and package typecheck remain scheduled by integration.
+This record does not claim successful full GL execution.
+
+Pre-edit static registry/fixture census at `56f3ed72`: **172 transitions / 1,720
+existing renders** (860 catalogue, 344 endpoint and 516 fingerprint draws), including
+two outside-family/test transitions. All 516 golden keys map to those 172 IDs with
+no missing or duplicate current ID. Include every committed-golden ID in case
+discovery as well as every current GPU transition; absent pinned IDs must fail
+lookup, and new unpinned IDs must fail comparison. Preserve existing catalogue and
+phase order; absent pinned IDs append an explicit failing lookup case. Each
+transition has three independent phase declarations (five, two and three draws).
+Their watchdog values are unchanged, but cumulative possible wall time increases;
+this change identifies the specific failing contract and does not fix host contention.
+
+
+Implemented outcome: three named contract declarations per transition, preserving
+**all 1,720 draws** and the original family/phase/ID order. This superseding rewrite
+changes the original partition totals to **83 DELETE / 25 REWRITE / 149 KEEP**;
+expanded declarations are not new original cases. The four-suite follow-up owned by
+composition partition 2 is accounted separately in its own supplement.
+
+Static evaluation compared the actual declaration data with the pre-edit catalogue
+and confirmed ordering, case counts and watchdog values. A missing test-transition
+ID remained declared via its committed golden. A no-GL adapter probe demonstrated
+that the baseline swallowed a deliberately rejected fingerprint render, while the
+rewritten method propagated the identical Error; unknown IDs also reject. This
+probe checks the adapter's error path, not shader correctness. Targeted Biome,
+TypeScript syntax/transpilation for all four changed TS files, and `git diff --check`
+passed. Package typecheck and actual GL runs remain pending scheduled integration.
