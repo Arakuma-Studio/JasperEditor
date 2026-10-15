@@ -62,6 +62,24 @@ EOTF) / BMP / Targa, to a folder (never overwriting, " (2)"), optionally importe
 transport bars and Shift+E. The avc3 smart-render output was verified to play in Chrome and Electron with the frame
 codes intact across copy / encode joins (`gaps-avc3-playback`), so no switch to avc1 was needed.
 
+The browser decoder oracle checks playback to `ended`, every sampled frame code,
+and paused seeks to output frames 19/20/30/5 with independent source codes
+29/30/40/15. Chrome receives the fully materialized exported MP4 as a Blob;
+Electron reads the same bytes from a file. A fake HTTP 200 response to a Range
+request made Chrome's test resource unseekable, so it could report `seeked`
+without reaching the requested frame. The oracle now reads canvas pixels after
+`seeked` and checks the actual position: [HTML seeking](https://html.spec.whatwg.org/multipage/media.html#seeking)
+waits for decodable data, and [canvas video sources](https://html.spec.whatwg.org/multipage/canvas.html#image-sources-for-2d-rendering-contexts)
+use the current playback frame. Playback callbacks remain useful samples;
+[requestVideoFrameCallback](https://wicg.github.io/video-rvfc/) permits missed
+callbacks under load, so their count is not a frame-integrity oracle. The
+sampled pixels and timestamp come from one immutable
+[`VideoFrame(video)` snapshot](https://www.w3.org/TR/webcodecs/#videoframe-constructors),
+without overriding its native timestamp; callback metadata and a later canvas
+read are not assumed to identify the same frame. Each snapshot is closed after
+inspection. The separate FFmpeg smart-render test owns encoded frame count and copied-frame
+fidelity. Browser result JSON is retained beside each exported/copied MP4.
+
 **Project Manager (PRJ-6).** Collect Files and Copy to New Location, or Consolidate and Transcode (ProRes 422 HQ /
 WAV of the used range + handles, clips re-based by Replace Footage with Keep Source Timing over a declared source
 range); Exclude Unused Clips, Include Handles, Include Preview Files, Include Proxies; disk estimate; the copy is
@@ -170,7 +188,7 @@ high-contrast themes) runs over the main workspaces; see §4 for its result.
 | Proxies, ingest, draft exports | `apps/engine/test/gaps-media-jobs.test.ts`: proxy sizes, rotation kept, ProRes transcodes, Use Proxies renders the proxy at the original size (mean pixel difference < 6 levels vs the original) | pass |
 | HEVC, anamorphic, fields | `gaps-export-formats`: hvc1 + BT.709 VUI, PQ at 8 bits with a warning, Main10 refused, HDV SAR 4:3 / DAR 16:9 | pass (ffprobe) |
 | Export Frame | `gaps-export-frame`: EXR gray 0.5 → its BT.1886 EOTF in half float, no overwrite, refusals | pass |
-| avc3 playback | `gaps-avc3-playback`: Chrome and Electron play every frame and seek across joins (frame codes read with requestVideoFrameCallback) | pass |
+| avc3 playback | `gaps-avc3-playback`: Chrome and Electron finish playback with valid sampled codes and decode exact join/forward/backward seek frames | pass in both real decoders; [evidence](../test-cleanup/avc3-playback.md) |
 | Audio Channels | `gaps-audio-channels` (project + engine): routing, muted channel decodes to silence | pass |
 | Project Manager | `gaps-project-manager`: consolidated copy shows the same frame codes (42 in both) from its own file; collect copies whole files | pass |
 | Preferences | `gaps-preferences`: pages, Playback / Trim / Auto Save drive behaviour, hostile storage parses to defaults | pass |
