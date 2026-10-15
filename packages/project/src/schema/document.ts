@@ -20,8 +20,11 @@ import { CaptionStyleSchema, ClipMarkerSchema, type Sequence, SequenceSchema } f
  * (ARCHITECTURE §20.1).
  * v5 (M3): additive — `MediaAsset.sourceRange` (S07:PRC-015…019: the source frames a processed version or a
  * rendered file holds). The v4 → v5 migration records the whole-source range on existing processed versions;
- * later M3 additions may share v5 (older builds open v5 files read-only). */
-export const CURRENT_SCHEMA_VERSION = 6;
+ * later M3 additions may share v5 (older builds open v5 files read-only).
+ * v6 (parity program, D-36…D-48): additive; version bump only.
+ * v7 (sound design, spec 12): Essential Sound SFX Pan is an offset (`panOffset`, `residual`) and media carry library
+ * provenance (`MediaAsset.library`); version bump only, so v6 builds open v7 files read-only (docs/project-files.md). */
+export const CURRENT_SCHEMA_VERSION = 7;
 
 const markSchema = z.looseObject({ flicks: nonNegInt() });
 export const SourceMarksSchema = z.looseObject({

@@ -95,6 +95,12 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	// and the other optional schema-v6 fields. Existing data needs no changes; the bump makes
 	// v5 builds open v6 files read-only instead of silently dropping the new fields on their next save.
 	{ from: 5, to: 6, migrate: (doc) => doc },
+	// v7 (sound design, spec 12 Phases 0–1): Essential Sound SFX Pan is an offset on the clip's own pan
+	// (`panOffset`, `residual`), and media carry library provenance (`MediaAsset.library`, lead-silence copies).
+	// Existing data needs no changes here (SFX Pan settings of older builds are read by `migrate-essential-pan` in
+	// repair and by the Essential Sound commands); the bump makes v6 builds open v7 files read-only, because a v6
+	// build editing Essential Sound Pan would write an absolute pan under the offset marker, which v7 then misreads.
+	{ from: 6, to: 7, migrate: (doc) => doc },
 ];
 
 /** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */

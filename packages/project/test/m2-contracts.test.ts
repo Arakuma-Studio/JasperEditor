@@ -38,7 +38,7 @@ describe('v3 schema (ARCHITECTURE §19.1)', () => {
 		expect(r.readOnly).toBe(false);
 		expect(r.repairs).toEqual([]);
 		expect(r.issues).toEqual([]);
-		expect(r.migration.steps).toEqual(['v3→v4', 'v4→v5', 'v5→v6']);
+		expect(r.migration.steps).toEqual(['v3→v4', 'v4→v5', 'v5→v6', 'v6→v7']);
 		const d = r.document;
 		expect(d.media.med_00000000000000C1!.lut?.size).toBe(33);
 		expect(d.media.med_00000000000000M1?.mgBundle?.compositions[0]?.id).toBe('Title');

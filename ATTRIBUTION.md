@@ -60,6 +60,7 @@ Hand-made `.jasper` projects (schema history, loader and migration tests; see [d
 | `packages/project/test/fixtures/schema-v4.jasper` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/project/test/fixtures/schema-v5.jasper` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/project/test/fixtures/schema-v6.jasper` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/project/test/fixtures/schema-v7.jasper` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 
 ## Screenshots
 

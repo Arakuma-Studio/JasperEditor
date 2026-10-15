@@ -11,11 +11,11 @@ crash recovery).
 ```json
 {
   "format": "jasper-project",
-  "schemaVersion": 5,
+  "schemaVersion": 7,
   "savedAt": "2026-10-07T10:12:00.000Z",
   "savedBy": { "app": "JasperEditor", "version": "0.1.0", "platform": "web" },
   "revision": 412,
-  "document": { "schemaVersion": 5, "projectId": "prj_…", "name": "…", "settings": {…}, "rootItems": […],
+  "document": { "schemaVersion": 7, "projectId": "prj_…", "name": "…", "settings": {…}, "rootItems": […],
                 "items": {…}, "media": {…}, "synthetics": {…}, "transcripts": {…}, "fonts": {…},
                 "sequences": {…}, "extensions": {…} }
 }
@@ -50,6 +50,7 @@ crash recovery).
 | 4 | M2 (D-32) | text animators, anime.js template renderer, shape clips | `v3→v4`: version bump only |
 | 5 | M3 (D-33) | `MediaAsset.sourceRange` (which source frames a processed or rendered version holds) | `v4→v5`: processed versions made from the whole source get the explicit full-source range |
 | 6 | parity program (D-36…D-48) | masks and track mattes, nests and adjustment layers, groups, captions and transcripts, time remapping, vector shapes, text animators, expressions, 3D layers / cameras / lights, multicam, roto mattes, audio effects / buses / Essential Sound, working colour spaces, interpreted footage, and the other optional fields the parity workstreams added | `v5→v6`: version bump only, so v5 builds open v6 files read-only instead of dropping the new fields on save |
+| 7 | sound design (spec 12, Phases 0–1) | Essential Sound SFX Pan is an offset on the clip's own pan (`essential.panOffset`, with `essential.residual` for what the fader range clamped); `MediaAsset.library` (provenance of Sound Library sounds, including `leadSilenceSec` for copies registered with lead silence) | `v6→v7`: version bump only, so v6 builds open v7 files read-only. Why: a v6 build editing Essential Sound Pan on a v7 file writes an absolute pan while keeping the `panOffset` marker, which v7 then reads as an offset (the clip's keyframes would shift). Older SFX Pan settings (no marker) keep being read by `migrate-essential-pan` (repair) and the Essential Sound commands |
 
 Every version has a hand-made fixture, `packages/project/test/fixtures/schema-v<N>.jasper`, that must load
 forever (S01:MIG-002), and `packages/project/test/schema-history.test.ts` checks that:
@@ -93,10 +94,10 @@ older JasperEditor can still open that work: File ▸ Project Versions… lists 
 **Open as Copy** makes a separate project of it (it cannot be restored over the project, which would downgrade
 it). Agents: `list_project_versions`, `restore_project_version {mode: "copy"}`.
 
-### Optional fields added since v6 (no bump)
+### Optional fields added since v6
 
-These fields are optional with read-time defaults; older v6 builds keep them on save (`looseObject`), so no bump
-was needed (rule 2).
+These fields are optional with read-time defaults; older v6 builds keep them on save (`looseObject`). The fields
+alone needed no bump (rule 2); the v7 bump above is for the SFX Pan reading that came with them.
 
 | Field | Since | Read leniently | Repair |
 |---|---|---|---|
