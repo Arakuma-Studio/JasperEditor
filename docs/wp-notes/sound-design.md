@@ -1418,6 +1418,188 @@ prefix) outranks a match through a type synonym (starter-kit regression)" with t
 - No `list_sound_packs` / `install_sound_pack` / `remove_sound_pack` (P6), no cue / proposal tools (P2–P3);
   `SOUND_GUIDE` will grow with them.
 
+### WP1.4 Sound Library panel
+
+Scope: spec 12 §2.7 (Sound Library panel, Audition, Insert; minus cues, In Context and Replace, which are P2), P1-R7
+and the UI part of P1-R8. Files: `apps/web/src/panels/soundLibrary/{index.ts,SoundLibraryPanel.tsx,MiniWaveform.tsx}`,
+`apps/web/src/sound/{model,prefs,insert,audition,controller,dialogs.tsx,PreferencesPage.tsx}.ts(x)`,
+`apps/web/src/audio/audition-meter.ts` (+ `audio/runtime.ts` `useMeterReading`), `apps/web/src/commands/sound.ts`
+(+ `commands/index.ts`, `keymap-defaults.ts`, `app.ts` panel label), the timeline drop
+(`panels/timeline/model/sound-drop.ts`, `components/SoundGhost.tsx`, `state/ui-store.ts` `soundGhost`,
+`TimelinePanel.tsx` dragover/drop), `panels/types.ts` + `registry.ts` (kind `soundLibrary`), the Audio workspace
+(`shell/workspaces/definitions.ts`: a tab next to Essential Sound), File ▸ Export ▸ Sound Credits… (`shell/menus/model.ts`),
+icons `panel.soundLibrary`, `app.autoplay`, `app.volume`, `app.favourite`, `app.favouriteOn` (`packages/ui` registry:
+lucide `LibraryBig`, `CirclePlay`, `Volume2`, `Star`; `favouriteOn` is our own glyph, a star with inner stars, so the
+state differs by shape), es.json (173 new strings), and `soundCredits(…, {attributionOnly})` in `packages/project`
+(`src/sound/credits.ts`). Tests: `apps/web/test/sound-{library-model,insert,audition}.test.ts`,
+`sound-library-panel.test.tsx`, `sound-helpers.ts`, `packages/project/test/sound-credits.test.ts` (one new case),
+`e2e/sound-library.spec.ts` (+ `e2e/serve.mjs` defaults `JASPER_SOUND_SYNTH_VARIANTS=1`).
+
+#### What the panel does (usage)
+
+- **Open it**: Window ▸ Sound Library, the Audio workspace (Alt+Shift+7, tab next to Essential Sound), or the command
+  `panel.focus.soundLibrary`. It needs the engine (`requires: ['engine']`); with no engine it says so.
+- **Toolbar**: search (debounced 150 ms; Ctrl/Cmd+F in the panel focuses it; Enter or ↓ moves to the results), Loop
+  (L), Auto-play on select, audition volume (−40…+6 dB, default −6 dB).
+- **Collection**: All sounds, Favourites (n), Recent, Used in this project, Sources › Starter kit / Packs / Folders /
+  each folder / Jasper Synth (only sources that have sounds). All and Sources are engine searches (`searchSounds`
+  with `sources` / `rootId`, paged 100 at a time as the list scrolls); Favourites, Recent and Used are fetched by id
+  (`getSound`, cached) and filtered and ordered **with the same `rankSounds`** the engine uses (`sound/model.ts`
+  `searchLocal`, disjunctive facets computed the same way); without a query they keep their own order (last starred
+  / most recent first).
+- **Type chips** grouped by family (Impacts, Movement, Digital, Tactile, Tonal, Beds) with the engine's disjunctive
+  facet counts; chips with no sounds are hidden unless selected. Several chips = any of them (`types` csv). A selected
+  chip shows ✓ (not colour alone).
+- **Refine** (collapsible, remembered): Length short/medium/long, Tone dark/bright, Attack punchy/soft, Weight
+  light/heavy, Texture clean/noisy (the `DESCRIPTOR_FILTERS` thresholds of WP1.1a). **Commercial-safe** is a pill that
+  is on by default (`license=commercial-safe`); off = `any`. "Clear filters" resets everything.
+- **Results**: a virtualised `listbox` (fixed rows of 36 px, 24 px with Compact Rows; only the rows in view ± 8 are
+  rendered) with `aria-activedescendant`. A row: playing ▶ marker, the 120×24 waveform (engine peaks, column maxima;
+  `--pr-accent` peak tick and a faint `--pr-accent` wash before it), name, types · duration, licence badge (CC0 / BY /
+  BY-SA / Open / Yours / Synth; `Yours?`, NC, ND and `?` in `--pr-warning` with a border: the text differs too), the
+  favourite star (outline / filled glyph). Accessible name: title, types, duration, "peak at 233 ms", descriptor words
+  (punchy, soft attack, dark, bright, heavy, light, clean, noisy, tonal, loopable), licence and "favourite". Tooltip:
+  the same plus rise, centroid, max momentary LUFS, source and author.
+- **Keyboard** (scope `soundLibrary`, rebindable): ↑/↓/Home/End/PageUp/PageDown select (Auto-play auditions the new
+  selection), **Space** audition / stop, **Enter** insert at the playhead, **F** favourite, **L** loop, **Ctrl/Cmd+F**
+  search. The dispatcher ignores keys inside `role="listbox"` (it treats them as an overlay), so the list resolves the
+  chord itself along `scopeChain('soundLibrary')` with the active keymap and runs the bound command (the same way the
+  monitors do), which keeps the bindings rebindable and global chords (Ctrl+S…) working from the list.
+- **Mouse**: click selects, double-click inserts, right-click: Audition / Stop Audition, Insert at Playhead, Favourite,
+  Find Similar (`similarTo`, shown as a removable "Similar to …" chip), Show Licence… (licence + class text, licence
+  URL, author, source and source URL, credit line with Copy), Reveal in Folder (desktop only, folder sounds only:
+  `jasperDesktop.revealInFolder(root.path/relPath)`).
+- **Status line**: "4 of 79 sounds · Starter kit 60 · Jasper Synth 19", indexing progress, audition errors.
+- **Empty library**: "No sounds yet" with **Install Starter Kit** (indexes the bundled kit: `indexSounds`; disabled
+  with "This build has no starter kit" when the manifest is absent) and **Add a Folder…** (opens Preferences ▸ Sound
+  Library). It refreshes on `sounds.changed` and polls status every 2 s while an index job runs.
+- **Preferences ▸ Sound Library**: library counts, last indexed, Rescan / Full Rescan (a `sound-index` job, listed in
+  the Jobs panel under Other; progress shown on the page), user folders (local engines only): add by path (Browse… on
+  desktop: `pickFolder`), per-folder licence declaration (not declared / royalty-free / CC0 / CC BY 3.0, 4.0 / CC BY-SA
+  3.0, 4.0 — the engine's `SOUND_ROOT_LICENSES`), author, credit template (shown for attribution licences), enable,
+  remove; folder edits are saved with "Save Folders" (the engine validates them; errors shown). Audition: on hover
+  (off), auto-play, loop, volume. Display: compact rows.
+- **Credits**: File ▸ Export ▸ Sound Credits… (also in the panel menu): credits for the active sequence (with its
+  nested sequences) or the whole project, all sounds used or only those whose licence asks for a credit, as Markdown,
+  plain text or CSV (`soundCredits`), a preview, the licence warnings, Save… (the browser download, like captions).
+- **Agents** (UI command catalogue, `agentExposed`): `soundLibrary.search {query}` (opens the panel and searches),
+  `sound.insertAtPlayhead {soundId, at?, align?: 'peak'|'start'}`, `file.exportSoundCredits`; `panel.focus.soundLibrary`
+  is generated. The panel's `agentDescription` lists what it does.
+
+#### Insert (spec 12 §2.3 / §2.7)
+
+`sound/insert.ts` `insertLibrarySound(session, engine, entry, {at?, align?, preferredTrackId?})`:
+
+1. `registerSound(soundId, projectId)` (the engine copies kit/pack/synth files into managed media).
+2. One transaction **"Add Sound <title>"** (one undo step): `bin.create "Sound Effects"` when the project has no root
+   bin of that name, `media.register` with `library` into it (or reuse: the engine's `existingMediaId`, else media of
+   the same fingerprint already in the document; a reused media without provenance gets `media.setLibraryInfo`),
+   `track.add {kind: audio, name: "SFX n"}` when needed, `clip.place` (`sourceRange` In = `sourceInFlicks`, Out = the
+   media's end, `video: false`, overwrite mode on a span that is free), `essentialSound.setType sfx`. The new clip is
+   selected; the sound goes to Recent.
+3. Toast "Added <title> to A4 · peak at <timecode>" (the project's timecode display) with **Undo** (`history.undo`); a
+   detail line when the head had to be trimmed.
+
+Placement: `peakAlignedStart({align: 'peak', clampStart: true})` with the default sub-frame trim (exact to the flick
+when the head is quiet enough, otherwise ≤ 1 frame late, never early). Alt-drop / `align: 'start'` aligns the first
+sample. A peak later than the playhead time would start the clip before 0: it starts at 0 with the head trimmed so the
+peak still lands on the playhead (decision: the spec's `start < 0` refusal is for agents' explicit placements; for an
+interactive insert at frame 12 a trimmed head is more useful than an error, and the toast says how much was cut).
+Track (`chooseSoundTrack`): the drop track if it is a free audio track, else the first free **targeted** audio track,
+else a free track whose name starts with "SFX", else the first free audio track, else a new "SFX n" (next unused n).
+Free = unlocked and no clip over `[start, start + frames)`, so inserting never overwrites audio (property test).
+
+**Drag**: rows are draggable with `application/x-jasper-sound` = `{type: 'jasper/sound', soundId}` (validated with zod
+on drop), the id also as the type `application/x-jasper-sound-id.<id>` and the entry kept for this window's drag (types,
+not data, are readable during dragover). Over the timeline (`resolveSoundDrop`): the pointer is the **peak** (Alt: the
+start); with snapping on, the peak snaps first to the TL-453 targets (playhead > marker > In/Out > clip edge); only
+when it finds nothing do the clip's start and end edges snap. The ghost (`SoundGhost.tsx`: `--pr-ghost-fill` with a
+dashed `--pr-ghost-stroke`, a 2 px `--pr-accent` peak tick, the destination track or a dashed row below the last
+audio track for a new "SFX n") and a tooltip "peak → 00;00;01;15 / <title> → A1" follow the pointer; the snap line
+shows. A drag from another window has no entry: the drop frame is the peak and the sound is fetched on drop.
+
+#### Audition (decision: own context, shown on the Mix meters)
+
+`sound/audition.ts` `AuditionPlayer`: fetches `soundAudioUrl` (with the session cookie), decodes once (24 most recent
+sounds kept, ≤ 64 MB of PCM each), plays an `AudioBufferSourceNode` → gain (audition volume) → the output; Loop starts
+the sound again 250 ms after it ends; a newer play or stop cancels a pending load (it never starts late). It runs on
+**its own AudioContext**, not the Program monitor's: that context belongs to Remotion's transport (suspended while
+paused, the Phase 0 primed-start logic keys off its state changes), and resuming it for an audition would break the
+next primed start. "Plays through the Mix so meters move" is met by `audio/audition-meter.ts`: while an audition
+plays, the player publishes per-channel peak/RMS (two `AnalyserNode`s, every animation frame) and `useMeterReading(…,
+'master')` shows them on the Audio Meters and the Track Mixer's Mix strip instead of the Program mix (measured in the
+e2e: `data-live` true while auditioning). The audition is not processed by the sequence's Mix (master fader, loudness
+normalisation, limiter): a library sound is heard as it is, at the audition volume, as in Premiere's Essential Sound
+browsing. It never writes the document or history (tested). Hover audition (off by default) waits 350 ms and stops on
+leave. Auditioning or inserting adds the sound to Recent; favourites, recents, loop, auto-play, hover, volume, density
+and the Refine state are UI preferences (`jasper:sound-library-prefs` in localStorage, validated on read; ≤ 500
+favourites, ≤ 50 recents).
+
+#### Verified
+
+Measured on this branch after merging `feat/sound-design` (10a61d6e), shared host with 16 cores, load average 70–85.
+
+- `pnpm vitest run --project @jasper/web --maxWorkers=3`: 108 files, 739 tests passed (the whole web project). The run
+  before the last merge found one missing Spanish string (`{0} of {1} sounds`), fixed. New:
+  - `sound-library-model.test.ts` (17): prefs defaults / hostile values / 300-run property / persistence / damaged
+    storage; the engine request from the filters; local collections (rank order, collection order without a query,
+    disjunctive type and licence facets, commercial-safe); every licence badge; accessible names ("peak at 23 ms",
+    descriptor words, licence, favourite); "used in this project"; waveform columns (known values, 300-run hostile
+    property, base64); drag payload round trip and 4 malformed payloads; placement: the peak lands in [cue, cue + 1
+    frame) to 2 flicks, Alt / start alignment, a start before 0 trimmed from the head; track choice order (drop track,
+    targeted, SFX-named, first free, new "SFX 1" → A4); a 60-run property (random clips on A1–A3, random cue and peak):
+    the chosen track is always free over the span, a new track only when none is; drop snapping (peak to the playhead
+    first, the start edge when the peak has no target, snapping off, Alt, an unknown sound).
+  - `sound-insert.test.ts` (4): one transaction with bin, media + provenance, clip at start 39 for a 0.2325 s peak at
+    frame 45 (30 fps), SFX type, selection, toast text "Added Crunch to A1 · peak at 00:00:01:15"; **undo restores the
+    exact document, redo gives the same one**; second insert reuses media and bin and goes to A2, the fourth to a new
+    "SFX 1" (A4), no overlaps on any track; a project media with the same file gets its provenance filled; refusals
+    (engine failure leaves the document untouched, unknown sequence, zero length, read-only project).
+  - `sound-audition.test.ts` (4, fake AudioContext and timers): play → meters published → end; toggle; one fetch for
+    two plays (cache); loop restarts exactly 250 ms after the end and stops with Stop; volume −20 dB = gain 0.1; no Web
+    Audio / failed fetch reported as `error`; a stale load never starts.
+  - `sound-library-panel.test.tsx` (5): listbox and option names, chips with counts, status; keyboard: ↓/↑ move
+    `aria-selected` and `aria-activedescendant`, Space → aria-live "Playing Crunch" and no history entry, F stars, L
+    loops, Enter inserts (start 39, one history entry); chips, Refine and Commercial-safe reach the search; Ctrl+F
+    focuses the search; the empty state; the credits dialog preview after two double-click inserts.
+- `pnpm vitest run packages/project/test/sound-credits.test.ts`: 7 passed (new: `attributionOnly` lists only the
+  sounds that need a credit, in text, Markdown and CSV, and keeps every warning).
+- `pnpm vitest run --project @jasper/ui`: 39 passed (icon registry). `apps/web/test/keymap.test.ts` (no duplicate
+  chords per scope on 6 platform/runtime pairs) and `polish-menu-wiring.test.ts` (every menu and key binding names a
+  registered command) pass with the new bindings and menu entries.
+- `pnpm typecheck` (workspace), `pnpm lint` (Biome, tokens, anime, layers, assets), `node scripts/i18n.mjs --check`
+  (8792 strings), `pnpm notices --check`: pass.
+- `pnpm build`, then `E2E_PORT=48905 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-library.spec.ts`: 1 passed
+  (1.0 min; run twice, before and after the merge). In the built app with a fresh appdir (starter kit 60 + Jasper Synth
+  19 indexed on first use): search "crunch"; Space → aria-live "Playing …" and the Audio Meters `data-live="true"`,
+  Space again → "Audition stopped", history unchanged; Enter with the playhead at 45 → one clip whose peak (from its
+  media's provenance) is in [45, 46) frames at 29.97 fps, tagged SFX, history "Add Sound …", "Sound Effects" bin in the
+  Project panel; Ctrl+Z → no clip, no media; a mouse drag of the row onto A1 3 px right of the playhead → ghost, peak
+  tick and snap line visible, drop → the peak in [45, 46) on A1; File ▸ Export ▸ Sound Credits… → Markdown preview,
+  Save… downloads `…-sound-credits.md`.
+- Looked at (screenshots in `test-results/e2e-sound-library/`, and with the dev stack on ports 48901/48902 and an
+  empty-library engine on 48903/48904): the panel (chips by family with counts, waveforms with the peak tick and the
+  pre-peak wash, CC0 badges, status "79 sounds · Starter kit 60 · Jasper Synth 19"), high contrast
+  (`data-pr-contrast="high"`), the drag ghost with "peak → 00;00;01;15 / Reverse crunch → A1" and the insert toast with
+  Undo, the credits dialog, the licence dialog (CC0, Kenney, source URL, credit line), the context menu, the empty state
+  (Install Starter Kit disabled without a kit, Add a Folder…), Preferences ▸ Sound Library adding a folder (indexed:
+  "door slam.wav" → Hit, Boom; hidden by Commercial-safe, shown with the `Yours?` warning badge when it is off).
+
+#### Limits and notes for the next packages
+
+- In Context audition (Shift+Space), Replace mode, cue filling, the Palette collection and the Program overlay chip are
+  P2/P3 (spec 12 §2.7); the keymap scope already exists (`soundLibrary`), Shift+Space is free in it.
+- Insert always aligns the peak (Enter, double-click, drag) or the start (Alt-drop); the taxonomy's `defaultAlign`
+  (risers and reverses by their end) is not used yet: `soundDesign.place` (P2) should own that, and the panel should
+  call it once it exists.
+- Packs: the Sources › Packs entry appears when the index has pack sounds; installing packs is P6.
+- Reveal in Folder is offered only for folder sounds on desktop (starter/pack files live in the app's install folder).
+- The credits Save uses the browser download (as captions export does); there is no "next to the export" sidecar yet
+  (`ExportSettings.credits`, §2.11, is a later package).
+- Facets of local collections (Favourites, Recent, Used) are computed in the browser over at most 500 / 50 / the
+  project's sounds; the engine search pages by 100 and never loads more than the user scrolls to.
+- The list is a single column: below the panel's minimum width (280 px) the name truncates first.
+
 ## Phase 2: cues and placement
 
 ## Phase 3: proposals and review
