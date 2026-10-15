@@ -25,11 +25,14 @@ import { createCommandContext } from '../../commands/context.ts';
 import { chordFromEvent, resolveBindings, scopeChain } from '../../commands/keymap-defaults.ts';
 import { getCommand, isCommandEnabled, runCommand } from '../../commands/registry.ts';
 import type { CommandCtx, ToastRequest } from '../../commands/types.ts';
+import { t } from '../../i18n/runtime.ts';
 import { getDesktopBridge } from '../../runtime/platform.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { PREFERENCES_DIALOG } from '../../shell/preferences/index.ts';
 import { auditionPlayer } from '../../sound/audition.ts';
 import {
+	auditionPlaysAlone,
+	auditionSoundOf,
 	insertSoundWithFeedback,
 	registerSoundLibraryController,
 	toggleAuditionOf,
@@ -59,6 +62,7 @@ import {
 } from '../../sound/model.ts';
 import {
 	MAX_AUDITION_DB,
+	MAX_FAVOURITES,
 	MIN_AUDITION_DB,
 	soundLibraryPrefs,
 	useSoundLibraryPrefs,
@@ -77,6 +81,11 @@ const SEARCH_DEBOUNCE_MS = 150;
 const INITIAL_ROWS = 40;
 
 type Results = {
+	/** The search these results answer (`loadMore` pages only append to the search they belong to). */
+	epoch: number;
+	filters: LibraryFilters;
+	/** No more pages: a page added nothing new (the engine's total counts more than it pages through). */
+	exhausted?: boolean;
 	items: SoundEntry[];
 	total: number;
 	librarySize: number;
@@ -88,8 +97,24 @@ type Results = {
 
 const EMPTY_FACETS: SoundFacets = { types: {}, families: {}, licenses: {}, sources: {} };
 
-/** A cache of library entries fetched by id (local collections). */
+/** A cache of library entries fetched by id (local collections). Failures are not kept: the next search retries. */
 const entryCache = new Map<string, Promise<SoundEntry | null>>();
+
+function cachedEntry(
+	engine: { getSound(id: string): Promise<SoundEntry> },
+	id: string,
+): Promise<SoundEntry | null> {
+	let p = entryCache.get(id);
+	if (!p) {
+		const fetched: Promise<SoundEntry | null> = engine.getSound(id).catch(() => {
+			if (entryCache.get(id) === fetched) entryCache.delete(id);
+			return null;
+		});
+		p = fetched;
+		entryCache.set(id, p);
+	}
+	return p;
+}
 
 function errorText(e: unknown): string {
 	return e instanceof Error ? e.message : String(e);
@@ -125,12 +150,13 @@ export function SoundLibraryPanel(props: PanelProps) {
 	const listRef = useRef<HTMLDivElement>(null);
 	const menuEntry = useRef<SoundEntry | null>(null);
 	const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const loadingMore = useRef(false);
+	/** The current search (bumped whenever the filters, collection or library change). */
+	const searchEpoch = useRef(0);
+	/** The filters of the results on screen (a new search scrolls the list to the top). */
+	const shownFilters = useRef<LibraryFilters | null>(null);
+	/** The page being fetched by `loadMore`, if any. */
+	const more = useRef<{ epoch: number; ac: AbortController } | null>(null);
 
-	const ctx = useCallback(
-		(): CommandCtx => runtime?.getCtx() ?? createCommandContext({ engine, session }),
-		[runtime, engine, session],
-	);
 	const notify = useCallback(
 		(r: ToastRequest) => {
 			if (runtime) runtime.getCtx().ui.toast(r);
@@ -142,6 +168,19 @@ export function SoundLibraryPanel(props: PanelProps) {
 				});
 		},
 		[runtime],
+	);
+	// Outside the shell (no runtime) the panel's own context still has the engine when it is connected, so the
+	// engine commands it runs (Install Starter Kit) are enabled, and its toasts are shown.
+	const ctx = useCallback(
+		(): CommandCtx =>
+			runtime?.getCtx() ??
+			createCommandContext({
+				engine,
+				session,
+				capabilities: engineStatus === 'connected' ? ['engine'] : [],
+				toast: notify,
+			}),
+		[runtime, engine, session, engineStatus, notify],
 	);
 
 	// ---------------------------------------------------------------- library status, folders, change events
@@ -188,37 +227,38 @@ export function SoundLibraryPanel(props: PanelProps) {
 	}, [queryInput]);
 
 	const local = LOCAL_COLLECTIONS.has(filters.collection);
+	// Recent is read when the collection is entered or the search changes, not on every audition: auditioning moves a
+	// sound to the front of Recent, and re-sorting the list under the selection would make ↓ skip around.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the snapshot is taken per search (`filters`) on purpose
+	const recentSnapshot = useMemo(() => soundLibraryPrefs.get().recents, [filters, libraryEpoch]);
 	const localIds = useMemo(() => {
 		if (filters.collection === 'favourites') return prefs.favourites;
-		if (filters.collection === 'recent') return prefs.recents;
+		if (filters.collection === 'recent') return recentSnapshot;
 		if (filters.collection === 'used') return usedKey ? usedKey.split(',') : [];
 		return [];
-	}, [filters.collection, prefs.favourites, prefs.recents, usedKey]);
+	}, [filters.collection, prefs.favourites, recentSnapshot, usedKey]);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `libraryEpoch` re-runs the search when the library changes
 	useEffect(() => {
 		if (engineStatus !== 'connected') return;
 		const ac = new AbortController();
+		const epoch = ++searchEpoch.current;
+		// A page of the previous search still loading is dropped.
+		more.current?.ac.abort();
+		more.current = null;
 		setLoading(true);
 		setError(null);
 		const run = async (): Promise<Results> => {
 			if (local) {
-				const got = await Promise.all(
-					localIds.map((id) => {
-						let p = entryCache.get(id);
-						if (!p) {
-							p = engine.getSound(id).catch(() => null);
-							entryCache.set(id, p);
-						}
-						return p;
-					}),
-				);
+				const got = await Promise.all(localIds.map((id) => cachedEntry(engine, id)));
 				const entries = got.filter((x): x is SoundEntry => !!x);
 				const similar = filters.similarTo
 					? ((await engine.getSound(filters.similarTo.id).catch(() => null)) ?? null)
 					: null;
 				const r = searchLocal(entries, filters, similar);
 				return {
+					epoch,
+					filters,
 					items: r.results,
 					total: r.total,
 					librarySize: status?.sounds ?? entries.length,
@@ -229,6 +269,8 @@ export function SoundLibraryPanel(props: PanelProps) {
 			}
 			const r = await engine.searchSounds(searchRequest(filters, { limit: PAGE, offset: 0 }), ac.signal);
 			return {
+				epoch,
+				filters,
 				items: r.results.map((x) => x.sound),
 				total: r.total,
 				librarySize: r.librarySize,
@@ -242,6 +284,12 @@ export function SoundLibraryPanel(props: PanelProps) {
 				if (ac.signal.aborted) return;
 				setResults(r);
 				setLoading(false);
+				// New filters show their results from the top (a library refresh keeps the scroll position).
+				if (shownFilters.current !== r.filters) {
+					shownFilters.current = r.filters;
+					if (listRef.current) listRef.current.scrollTop = 0;
+					setView((v) => (v.top === 0 ? v : { ...v, top: 0 }));
+				}
 				setSelectedId((cur) => (cur && r.items.some((x) => x.id === cur) ? cur : (r.items[0]?.id ?? null)));
 			})
 			.catch((e) => {
@@ -252,26 +300,39 @@ export function SoundLibraryPanel(props: PanelProps) {
 		return () => ac.abort();
 	}, [engine, engineStatus, filters, local, localIds, libraryEpoch]);
 
+	/**
+	 * The next page of an engine search. It belongs to the search of the results on screen: a page answering an older
+	 * search (the filters changed meanwhile) is dropped, and a page that adds nothing ends the list (the engine's total
+	 * was larger than what it can page through) instead of asking for the same page again.
+	 */
 	const loadMore = useCallback(() => {
-		if (local || !results || loadingMore.current || results.items.length >= results.total) return;
-		loadingMore.current = true;
+		if (!results || LOCAL_COLLECTIONS.has(results.filters.collection) || more.current) return;
+		if (results.epoch !== searchEpoch.current || results.exhausted || results.items.length >= results.total)
+			return;
+		const epoch = results.epoch;
+		const job = { epoch, ac: new AbortController() };
+		more.current = job;
 		void engine
-			.searchSounds(searchRequest(filters, { limit: PAGE, offset: results.items.length }))
-			.then((r) =>
-				setResults((cur) => {
-					if (!cur) return cur;
-					const seen = new Set(cur.items.map((x) => x.id));
-					return {
-						...cur,
-						items: [...cur.items, ...r.results.map((x) => x.sound).filter((x) => !seen.has(x.id))],
-					};
-				}),
+			.searchSounds(
+				searchRequest(results.filters, { limit: PAGE, offset: results.items.length }),
+				job.ac.signal,
 			)
+			.then((r) => {
+				if (job.ac.signal.aborted || epoch !== searchEpoch.current) return;
+				setResults((cur) => {
+					if (!cur || cur.epoch !== epoch) return cur;
+					const seen = new Set(cur.items.map((x) => x.id));
+					const added = r.results.map((x) => x.sound).filter((x) => !seen.has(x.id));
+					if (!added.length) return { ...cur, exhausted: true };
+					return { ...cur, items: [...cur.items, ...added] };
+				});
+			})
+			// A failed page is asked again when the list scrolls (nothing re-renders, so it does not loop).
 			.catch(() => undefined)
 			.finally(() => {
-				loadingMore.current = false;
+				if (more.current === job) more.current = null;
 			});
-	}, [engine, filters, local, results]);
+	}, [engine, results]);
 
 	const items = results?.items ?? [];
 	const selected = items.find((x) => x.id === selectedId) ?? null;
@@ -299,9 +360,19 @@ export function SoundLibraryPanel(props: PanelProps) {
 		},
 		[session, canInsert, engine, notify, readOnly],
 	);
-	const doFavourite = useCallback((e: SoundEntry | null) => {
-		if (e) soundLibraryPrefs.toggleFavourite(e.id);
-	}, []);
+	const doFavourite = useCallback(
+		(e: SoundEntry | null) => {
+			if (!e) return;
+			// The 501st favourite is refused (never by dropping the oldest one silently).
+			if (soundLibraryPrefs.toggleFavourite(e.id) === 'full')
+				notify({
+					kind: 'warning',
+					message: t('Favourites are full ({0} sounds)', MAX_FAVOURITES),
+					detail: t('Remove a favourite to star another sound.'),
+				});
+		},
+		[notify],
+	);
 	const doSimilar = useCallback((e: SoundEntry | null) => {
 		if (!e) return;
 		setFilters((f) => ({ ...f, similarTo: { id: e.id, title: e.title || e.id } }));
@@ -335,7 +406,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 				p.setLoop(soundLibraryPrefs.get().loop);
 				p.setVolumeDb(soundLibraryPrefs.get().volumeDb);
 				soundLibraryPrefs.touchRecent(e.id);
-				void p.play({ id: e.id, title: e.title || e.id, url: engine.soundAudioUrl(e.id) });
+				void p.play(auditionSoundOf(engine, e));
 			}
 		},
 		[items, engine],
@@ -372,30 +443,50 @@ export function SoundLibraryPanel(props: PanelProps) {
 	useEffect(() => {
 		auditionPlayer().setVolumeDb(prefs.volumeDb);
 	}, [prefs.volumeDb]);
+	// The audition belongs to the panel: closing the panel stops it (a looped audition could not be stopped otherwise).
 	useEffect(
 		() => () => {
 			if (hoverTimer.current) clearTimeout(hoverTimer.current);
+			auditionPlayer().stop();
 		},
 		[],
 	);
+	// It plays alone (spec 12 §2.7): an audition pauses the Program, and the Program starting stops the audition.
+	useEffect(() => (session ? auditionPlaysAlone(auditionPlayer(), session.transport) : undefined), [session]);
 
 	// ---------------------------------------------------------------- list geometry (virtualised)
 	const rowH = prefs.density === 'compact' ? 24 : 36;
 	const [view, setView] = useState({ top: 0, height: 0 });
-	useEffect(() => {
-		const el = listRef.current;
-		if (!el) return;
+	// The list element comes and goes (empty states replace it): a callback ref measures and observes each new one,
+	// so a remounted list starts from its own scroll position, not the last one of the list it replaces.
+	const listObserver = useRef<ResizeObserver | null>(null);
+	const bindList = useCallback((el: HTMLDivElement | null) => {
+		listObserver.current?.disconnect();
+		listObserver.current = null;
+		listRef.current = el;
+		if (!el) {
+			setView({ top: 0, height: 0 });
+			return;
+		}
 		const measure = () => setView({ top: el.scrollTop, height: el.clientHeight });
 		measure();
-		const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
-		ro?.observe(el);
-		return () => ro?.disconnect();
+		if (typeof ResizeObserver !== 'undefined') {
+			listObserver.current = new ResizeObserver(measure);
+			listObserver.current.observe(el);
+		}
 	}, []);
 	const first = view.height > 0 ? Math.max(0, Math.floor(view.top / rowH) - 8) : 0;
 	const last =
 		view.height > 0
 			? Math.min(items.length, Math.ceil((view.top + view.height) / rowH) + 8)
 			: Math.min(items.length, INITIAL_ROWS);
+	// The rows in view, plus the selected row wherever it is: `aria-activedescendant` must name a rendered element.
+	const selectedIndex = selectedId ? items.findIndex((x) => x.id === selectedId) : -1;
+	const rendered: number[] = [];
+	if (selectedIndex >= 0 && selectedIndex < first) rendered.push(selectedIndex);
+	for (let i = first; i < last; i++) rendered.push(i);
+	if (selectedIndex >= last) rendered.push(selectedIndex);
+	const setSize = results?.exhausted ? items.length : Math.max(items.length, results?.total ?? 0);
 	useEffect(() => {
 		if (results && last >= items.length - 10 && items.length < results.total) loadMore();
 	}, [last, items.length, results, loadMore]);
@@ -547,11 +638,11 @@ export function SoundLibraryPanel(props: PanelProps) {
 	const announce =
 		audition.error ??
 		(audition.phase === 'playing'
-			? `Playing ${audition.title ?? ''}`
+			? t('Playing {0}', audition.title ?? '')
 			: audition.phase === 'loading'
-				? `Loading ${audition.title ?? ''}`
+				? t('Loading {0}', audition.title ?? '')
 				: audition.epoch > 0
-					? 'Audition stopped'
+					? t('Audition stopped')
 					: '');
 
 	const sourceCounts = (['starter', 'pack', 'folder', 'synth'] as const)
@@ -799,7 +890,8 @@ export function SoundLibraryPanel(props: PanelProps) {
 										? 'Index the bundled starter kit'
 										: 'This build has no starter kit'
 								}
-								onClick={() => void runCommand('soundLibrary.installStarterKit', ctx())}
+								// The status is asked again at once: it says "indexing", which starts the 2 s polling.
+								onClick={() => void runCommand('soundLibrary.installStarterKit', ctx()).then(refreshStatus)}
 								data-testid="sound-install-starter"
 							>
 								Install Starter Kit
@@ -831,7 +923,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 				) : (
 					<ContextMenu items={rowMenu} onOpenChange={(o) => !o && (menuEntry.current = null)}>
 						<div
-							ref={listRef}
+							ref={bindList}
 							role="listbox"
 							tabIndex={0}
 							aria-label="Sounds"
@@ -844,8 +936,8 @@ export function SoundLibraryPanel(props: PanelProps) {
 							}
 						>
 							<div style={{ height: items.length * rowH, position: 'relative' }}>
-								{items.slice(first, last).map((it, k) => {
-									const i = first + k;
+								{rendered.map((i) => {
+									const it = items[i]!;
 									const fav = prefs.favourites.includes(it.id);
 									const badge = licenseBadge(it);
 									const sel = it.id === selectedId;
@@ -858,6 +950,8 @@ export function SoundLibraryPanel(props: PanelProps) {
 											id={`snd-opt-${it.id}`}
 											role="option"
 											aria-selected={sel}
+											aria-setsize={setSize}
+											aria-posinset={i + 1}
 											aria-label={soundAccessibleName(it, fav)}
 											data-sound-id={it.id}
 											data-playing={playing || undefined}
@@ -883,10 +977,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 												hoverTimer.current = setTimeout(() => {
 													const p = auditionPlayer();
 													p.setVolumeDb(soundLibraryPrefs.get().volumeDb);
-													void p.play(
-														{ id: it.id, title: it.title || it.id, url: engine.soundAudioUrl(it.id) },
-														{ loop: false },
-													);
+													void p.play(auditionSoundOf(engine, it), { loop: false });
 												}, HOVER_DELAY_MS);
 											}}
 											onMouseLeave={() => {
@@ -946,7 +1037,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 												title={fav ? 'Remove from Favourites (F)' : 'Add to Favourites (F)'}
 												onClick={(e) => {
 													e.stopPropagation();
-													soundLibraryPrefs.toggleFavourite(it.id);
+													doFavourite(it);
 												}}
 												onDoubleClick={(e) => e.stopPropagation()}
 											>
@@ -968,7 +1059,9 @@ export function SoundLibraryPanel(props: PanelProps) {
 				<span className="truncate">
 					{results
 						? results.total === results.librarySize || local
-							? `${results.total} ${results.total === 1 ? 'sound' : 'sounds'}`
+							? results.total === 1
+								? t('1 sound')
+								: t('{0} sounds', results.total)
 							: `${results.total} of ${results.librarySize} sounds`
 						: loading
 							? 'Searching…'

@@ -1,18 +1,28 @@
 // Sound Library audition (spec 12 §2.7 "Audition", P1-R7): Space plays the selected sound alone, Loop repeats it
-// with a 250 ms gap, Auto-play follows the selection. The sound is fetched from the engine (`soundAudioUrl`),
-// decoded once (a small cache), and played on the audition's own AudioContext at the audition volume, metered for the
-// Mix meters (`auditionMeter`). Auditioning never touches the project document or history, nor the Program monitor's
-// AudioContext (Remotion suspends and resumes that one with its transport; resuming it here would break primed starts).
+// with a 250 ms gap, Auto-play follows the selection. Short sounds are fetched from the engine (`soundAudioUrl`),
+// decoded once (a small cache with a total byte budget) and played from memory; a sound whose decoded PCM would exceed
+// the decode budget (a long folder WAV: 30 min of stereo 48 kHz is ≈ 690 MB of float PCM) is never fetched whole: it
+// streams through an HTMLAudioElement into a MediaElementAudioSourceNode on the same graph, so the audition volume,
+// Loop and the Mix meters work the same. Everything plays on the audition's own AudioContext at the audition volume,
+// metered for the Mix meters (`auditionMeter`). Auditioning never touches the project document or history, nor the
+// Program monitor's AudioContext (Remotion suspends and resumes that one with its transport; resuming it here would
+// break primed starts).
 import type { MeterReading } from '@jasper/compositions';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { auditionMeter } from '../audio/audition-meter.ts';
+import { t } from '../i18n/runtime.ts';
 
 /** Silence between loop repetitions (spec 12 §2.7). */
 export const LOOP_GAP_SEC = 0.25;
 /** Decoded sounds kept (most recently used). */
 const CACHE_ENTRIES = 24;
-/** Larger files are not cached (bytes of decoded PCM). */
-const CACHE_MAX_BYTES = 64 * 1024 * 1024;
+/**
+ * Largest decoded sound (bytes of float PCM: duration × channels × sample rate × 4). Longer sounds stream. 32 MB is
+ * ≈ 87 s of stereo 48 kHz: every effect of the library decodes; beds and long folder files stream.
+ */
+export const DECODE_MAX_BYTES = 32 * 1024 * 1024;
+/** Total bytes of decoded PCM the cache keeps (least recently used dropped first). */
+export const CACHE_BUDGET_BYTES = 160 * 1024 * 1024;
 
 export type AuditionState = {
 	soundId: string | null;
@@ -24,15 +34,31 @@ export type AuditionState = {
 	epoch: number;
 };
 
+/** What the player needs from an `<audio>` element (streamed auditions; tests pass a fake). */
+export type AuditionMediaElement = {
+	src: string;
+	crossOrigin: string | null;
+	preload: string;
+	currentTime: number;
+	onended: ((this: never, ev: Event) => unknown) | null;
+	onerror: ((this: never, ev: Event | string) => unknown) | null;
+	play(): Promise<void>;
+	pause(): void;
+	load(): void;
+	removeAttribute(name: string): void;
+};
+
 /** What the player needs from Web Audio (an AudioContext; tests pass a fake). */
 export type AuditionAudio = {
 	readonly currentTime: number;
 	readonly state: string;
 	readonly destination: AudioNode;
+	readonly sampleRate?: number;
 	resume(): Promise<void>;
 	close(): Promise<void>;
 	decodeAudioData(data: ArrayBuffer): Promise<AudioBuffer>;
 	createBufferSource(): AudioBufferSourceNode;
+	createMediaElementSource?(el: never): AudioNode;
 	createGain(): GainNode;
 	createChannelSplitter(n: number): ChannelSplitterNode;
 	createAnalyser(): AnalyserNode;
@@ -41,9 +67,19 @@ export type AuditionAudio = {
 export type AuditionDeps = {
 	createContext(): AuditionAudio | null;
 	fetchBytes(url: string, signal: AbortSignal): Promise<ArrayBuffer>;
+	/** A new `<audio>` element (streamed auditions), or null when the platform has none. */
+	createMediaElement?(): AuditionMediaElement | null;
 	/** Animation-frame scheduler for metering (tests: manual). */
 	raf(cb: () => void): number;
 	cancelRaf(id: number): void;
+};
+
+/** A sound to audition: its engine URL and, when known, its format (decides decode vs stream). */
+export type AuditionSound = {
+	id: string;
+	title: string;
+	url: string;
+	format?: { durationSec?: number; channels?: number; sampleRate?: number } | null;
 };
 
 const defaultDeps: AuditionDeps = {
@@ -57,9 +93,11 @@ const defaultDeps: AuditionDeps = {
 	},
 	fetchBytes: async (url, signal) => {
 		const r = await fetch(url, { credentials: 'include', signal });
-		if (!r.ok) throw new Error(`The engine answered ${r.status}`);
+		if (!r.ok) throw new Error(t('The engine answered {0}', r.status));
 		return r.arrayBuffer();
 	},
+	createMediaElement: () =>
+		typeof Audio === 'function' ? (new Audio() as unknown as AuditionMediaElement) : null,
 	raf: (cb) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(cb) : 0),
 	cancelRaf: (id) => {
 		if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(id);
@@ -67,6 +105,26 @@ const defaultDeps: AuditionDeps = {
 };
 
 const dbToGain = (db: number) => (Number.isFinite(db) ? 10 ** (db / 20) : 1);
+const fin = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x) && x > 0;
+
+/**
+ * Bytes of float PCM a sound decodes to (at the larger of its own and the context's sample rate), or null when its
+ * format is unknown (then it streams: an unknown length may be anything).
+ */
+export function decodedBytesOf(format: AuditionSound['format'], contextRate?: number): number | null {
+	if (!format || !fin(format.durationSec)) return null;
+	const channels = fin(format.channels) ? Math.min(64, format.channels) : 2;
+	const rate = Math.max(
+		fin(format.sampleRate) ? format.sampleRate : 48_000,
+		fin(contextRate) ? contextRate : 0,
+	);
+	return format.durationSec * channels * rate * 4;
+}
+
+const bufferBytes = (b: AudioBuffer) =>
+	(Number.isFinite(b.length) ? b.length : 0) *
+	(Number.isFinite(b.numberOfChannels) ? b.numberOfChannels : 1) *
+	4;
 
 export class AuditionPlayer {
 	readonly store: StoreApi<AuditionState> = createStore<AuditionState>(() => ({
@@ -81,12 +139,14 @@ export class AuditionPlayer {
 	private gain: GainNode | null = null;
 	private analysers: AnalyserNode[] = [];
 	private source: AudioBufferSourceNode | null = null;
+	private media: { el: AuditionMediaElement; node: AudioNode } | null = null;
 	private token = 0;
 	private abort: AbortController | null = null;
 	private gapTimer: ReturnType<typeof setTimeout> | null = null;
 	private meterRaf = 0;
 	private volumeDb = -6;
-	private readonly cache = new Map<string, AudioBuffer>();
+	private readonly cache = new Map<string, { buffer: AudioBuffer; bytes: number }>();
+	private cachedBytes = 0;
 
 	constructor(private readonly deps: AuditionDeps = defaultDeps) {}
 
@@ -94,29 +154,37 @@ export class AuditionPlayer {
 		return this.store.getState();
 	}
 
+	/** Bytes of decoded PCM held by the cache (tests, diagnostics). */
+	get cacheBytes(): number {
+		return this.cachedBytes;
+	}
+
 	/** Plays a sound (stopping whatever plays); `url` is the engine's audio URL of the sound. */
-	async play(
-		sound: { id: string; title: string; url: string },
-		opts: { loop?: boolean } = {},
-	): Promise<void> {
+	async play(sound: AuditionSound, opts: { loop?: boolean } = {}): Promise<void> {
 		this.stopSource();
 		const token = ++this.token;
 		const loop = opts.loop ?? this.state.loop;
 		this.set({ soundId: sound.id, title: sound.title, phase: 'loading', loop, error: null });
 		try {
 			const ctx = this.context();
-			if (!ctx) throw new Error('This browser cannot play audio (no Web Audio)');
-			let buffer = this.cache.get(sound.id);
-			if (!buffer) {
+			if (!ctx) throw new Error(t('This browser cannot play audio (no Web Audio)'));
+			let buffer = this.cache.get(sound.id)?.buffer;
+			if (buffer) {
+				const hit = this.cache.get(sound.id)!;
+				this.cache.delete(sound.id);
+				this.cache.set(sound.id, hit);
+			} else {
+				const estimate = decodedBytesOf(sound.format, ctx.sampleRate);
+				if (estimate === null || estimate > DECODE_MAX_BYTES) {
+					await this.playStreamed(ctx, sound, token);
+					return;
+				}
 				this.abort = new AbortController();
 				const bytes = await this.deps.fetchBytes(sound.url, this.abort.signal);
 				if (token !== this.token) return;
 				buffer = await ctx.decodeAudioData(bytes);
 				if (token !== this.token) return;
 				this.remember(sound.id, buffer);
-			} else {
-				this.cache.delete(sound.id);
-				this.cache.set(sound.id, buffer);
 			}
 			if (ctx.state === 'suspended') await ctx.resume().catch(() => undefined);
 			if (token !== this.token) return;
@@ -124,20 +192,12 @@ export class AuditionPlayer {
 			this.startSource(buffer, token);
 			this.startMeter();
 		} catch (e) {
-			if (token !== this.token) return;
-			const aborted = e instanceof DOMException && e.name === 'AbortError';
-			this.set({
-				phase: 'idle',
-				error: aborted
-					? null
-					: `Could not play “${sound.title}”: ${e instanceof Error ? e.message : String(e)}`,
-			});
-			this.stopMeter();
+			this.fail(sound, token, e);
 		}
 	}
 
 	/** Plays the sound, or stops it when it is the one playing (Space). */
-	toggle(sound: { id: string; title: string; url: string }): Promise<void> {
+	toggle(sound: AuditionSound): Promise<void> {
 		if (this.state.soundId === sound.id && this.state.phase !== 'idle') {
 			this.stop();
 			return Promise.resolve();
@@ -164,10 +224,24 @@ export class AuditionPlayer {
 	dispose(): void {
 		this.stop();
 		this.cache.clear();
+		this.cachedBytes = 0;
 		void this.ctx?.close().catch(() => undefined);
 		this.ctx = null;
 		this.gain = null;
 		this.analysers = [];
+	}
+
+	private fail(sound: AuditionSound, token: number, e: unknown): void {
+		if (token !== this.token) return;
+		const aborted = e instanceof DOMException && e.name === 'AbortError';
+		this.stopSource();
+		this.set({
+			phase: 'idle',
+			error: aborted
+				? null
+				: t('Could not play “{0}”: {1}', sound.title, e instanceof Error ? e.message : String(e)),
+		});
+		this.stopMeter();
 	}
 
 	private set(patch: Partial<AuditionState>, bump = true): void {
@@ -195,15 +269,61 @@ export class AuditionPlayer {
 		return ctx;
 	}
 
+	/** Keeps a decoded sound (LRU), within the per-sound and total byte budgets. */
 	private remember(id: string, buffer: AudioBuffer): void {
-		const bytes = buffer.length * buffer.numberOfChannels * 4;
-		if (bytes > CACHE_MAX_BYTES) return;
-		this.cache.set(id, buffer);
-		while (this.cache.size > CACHE_ENTRIES) {
+		const bytes = bufferBytes(buffer);
+		if (bytes > DECODE_MAX_BYTES) return; // the format understated it: played, not kept
+		const old = this.cache.get(id);
+		if (old) {
+			this.cache.delete(id);
+			this.cachedBytes -= old.bytes;
+		}
+		this.cache.set(id, { buffer, bytes });
+		this.cachedBytes += bytes;
+		while (this.cache.size > CACHE_ENTRIES || this.cachedBytes > CACHE_BUDGET_BYTES) {
 			const first = this.cache.keys().next().value;
 			if (first === undefined) break;
+			this.cachedBytes -= this.cache.get(first)?.bytes ?? 0;
 			this.cache.delete(first);
 		}
+	}
+
+	/** A long sound: an `<audio>` element streams it into the same gain / meters (never fetched or decoded whole). */
+	private async playStreamed(ctx: AuditionAudio, sound: AuditionSound, token: number): Promise<void> {
+		const el = this.deps.createMediaElement?.() ?? null;
+		if (!el || typeof ctx.createMediaElementSource !== 'function' || !this.gain)
+			throw new Error(t('This browser cannot stream long sounds'));
+		el.crossOrigin = 'use-credentials';
+		el.preload = 'auto';
+		el.src = sound.url;
+		const node = ctx.createMediaElementSource(el as never);
+		node.connect(this.gain);
+		this.media = { el, node };
+		el.onerror = () => {
+			if (token !== this.token || this.media?.el !== el) return;
+			this.fail(sound, token, new Error(t('The sound could not be loaded')));
+		};
+		el.onended = () => {
+			if (token !== this.token || this.media?.el !== el) return;
+			if (this.state.loop) {
+				this.gapTimer = setTimeout(() => {
+					this.gapTimer = null;
+					if (token !== this.token || this.state.phase !== 'playing' || this.media?.el !== el) return;
+					el.currentTime = 0;
+					el.play().catch((e) => this.fail(sound, token, e));
+				}, LOOP_GAP_SEC * 1000);
+				return;
+			}
+			this.releaseMedia();
+			this.set({ phase: 'idle', soundId: null });
+			this.stopMeter();
+		};
+		if (ctx.state === 'suspended') await ctx.resume().catch(() => undefined);
+		if (token !== this.token) return;
+		await el.play();
+		if (token !== this.token) return;
+		this.set({ phase: 'playing' });
+		this.startMeter();
 	}
 
 	private startSource(buffer: AudioBuffer, token: number): void {
@@ -229,11 +349,32 @@ export class AuditionPlayer {
 		src.start();
 	}
 
+	private releaseMedia(): void {
+		const m = this.media;
+		this.media = null;
+		if (!m) return;
+		m.el.onended = null;
+		m.el.onerror = null;
+		try {
+			m.el.pause();
+			m.el.removeAttribute('src');
+			m.el.load();
+		} catch {
+			// already released
+		}
+		try {
+			m.node.disconnect();
+		} catch {
+			// not connected
+		}
+	}
+
 	private stopSource(): void {
 		this.abort?.abort();
 		this.abort = null;
 		if (this.gapTimer) clearTimeout(this.gapTimer);
 		this.gapTimer = null;
+		this.releaseMedia();
 		const s = this.source;
 		this.source = null;
 		if (s) {

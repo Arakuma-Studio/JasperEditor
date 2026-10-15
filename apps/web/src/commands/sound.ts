@@ -11,7 +11,7 @@ import {
 	registerPreferencesPage,
 } from '../shell/preferences/index.ts';
 import { auditionPlayer } from '../sound/audition.ts';
-import { insertSoundWithFeedback, requestSoundSearch, soundLibraryController } from '../sound/controller.ts';
+import { insertSoundReporting, requestSoundSearch, soundLibraryController } from '../sound/controller.ts';
 import { registerSoundDialogs, SOUND_CREDITS_DIALOG } from '../sound/dialogs.tsx';
 import { SoundLibraryPreferencesPage } from '../sound/PreferencesPage.tsx';
 import { soundLibraryPrefs } from '../sound/prefs.ts';
@@ -57,8 +57,8 @@ export const soundCommands: UiCommand[] = [
 	{
 		id: 'soundLibrary.stopAudition',
 		label: 'Stop Audition',
-		scope: 'global',
-		hidden: true,
+		description: 'Stop the Sound Library audition (also when it loops)',
+		scope: S,
 		when: () => auditionPlayer().state.phase !== 'idle',
 		run: () => auditionPlayer().stop(),
 	},
@@ -170,11 +170,12 @@ export const soundCommands: UiCommand[] = [
 			const session = ctx.session;
 			if (!session) return;
 			const entry = await ctx.engine.getSound(a.soundId);
-			const id = await insertSoundWithFeedback(session, ctx.engine, entry, (r) => ctx.ui.toast(r), {
+			const r = await insertSoundReporting(session, ctx.engine, entry, (t) => ctx.ui.toast(t), {
 				...(a.at !== undefined ? { at: a.at } : {}),
 				...(a.align ? { align: a.align } : {}),
 			});
-			if (!id) throw new Error(`Could not insert ${a.soundId}`);
+			// The real reason (read-only project, engine refusal, no free placement…), for agents too.
+			if (!r.ok) throw new Error(r.message);
 		},
 	},
 	{

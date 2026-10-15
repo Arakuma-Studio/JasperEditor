@@ -133,6 +133,14 @@ export function __set(target: object, key: string, value: unknown): void {
 export const t = __t;
 
 /**
+ * Removes the "[context]" a catalogue key ends with to tell homonyms apart (`withoutContext(t('Open [licence
+ * badge]'))` is "Open" in English, while the key "Open" is the verb): a translation has no brackets, English the key.
+ */
+export function withoutContext(s: string): string {
+	return s.replace(/\s*\[[^\]]*\]$/, '');
+}
+
+/**
  * Separators of labels built from several names: "Gaussian Blur: Radius", "Video Effects ▸ Blur & Sharpen",
  * "Cross Dissolve (Video Transitions)", "Lumetri Color · Basic Correction".
  */

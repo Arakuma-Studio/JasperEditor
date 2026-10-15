@@ -17,7 +17,7 @@ import {
 	type SoundRankRequest,
 	type SoundTypeId,
 } from '@jasper/project';
-import { t } from '../i18n/runtime.ts';
+import { getLanguage, t, withoutContext } from '../i18n/runtime.ts';
 
 // ---------------------------------------------------------------------------------------------------------------
 // Labels (the `*_LABELS` maps are translated by the i18n transform)
@@ -148,6 +148,33 @@ export const DEFAULT_FILTERS: LibraryFilters = {
 
 const SOURCE_TYPES: readonly SoundSourceType[] = ['starter', 'pack', 'folder', 'synth'];
 
+/** Lower case without accents ("Transición" → "transicion"). */
+const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Spec 12 §2.7 "search matches type ids and translated labels": the engine knows the type ids (and English words);
+ * in another UI language, words of the query equal to a type's translated label ("golpe", "transición", "golpe
+ * sordo": lower case, accents ignored, whole words, longest label first) are sent as that type's id. English queries
+ * are sent as typed.
+ */
+export function localizeSoundQuery(q: string): string {
+	if (getLanguage() === 'en' || !q.trim()) return q;
+	const labels: { label: string; id: SoundTypeId }[] = [];
+	for (const id of SOUND_TYPE_IDS) {
+		const label = fold(t(SOUND_TYPE_LABELS[id]).trim());
+		if (label && label !== id) labels.push({ label, id });
+	}
+	labels.sort((a, b) => b.label.length - a.label.length);
+	let out = fold(q);
+	for (const { label, id } of labels)
+		out = out.replace(
+			new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRe(label)}(?=$|[^\\p{L}\\p{N}])`, 'gu'),
+			`$1${id}`,
+		);
+	return out === fold(q) ? q : out;
+}
+
 /** The engine search for the filters (engine collections: all, a source, a folder). */
 export function searchRequest(
 	f: LibraryFilters,
@@ -158,7 +185,7 @@ export function searchRequest(
 		offset: page.offset,
 		license: f.commercialSafe ? 'commercial-safe' : 'any',
 	};
-	const q = f.query.trim();
+	const q = localizeSoundQuery(f.query.trim());
 	if (q) req.q = q.slice(0, 500);
 	if (f.types.length) req.types = [...f.types];
 	for (const { key } of REFINE_OPTIONS) {
@@ -176,7 +203,7 @@ export function searchRequest(
 /** The same request for `rankSounds` (local collections). */
 export function rankRequest(f: LibraryFilters, similar: SoundEntry | null): SoundRankRequest {
 	const req: SoundRankRequest = { license: f.commercialSafe ? 'commercial-safe' : 'any', ...f.refine };
-	const q = f.query.trim();
+	const q = localizeSoundQuery(f.query.trim());
 	if (q) req.query = q.slice(0, 500);
 	if (f.types.length) req.types = [...f.types];
 	if (similar) req.similarTo = { id: similar.id, descriptors: similar.descriptors };
@@ -247,22 +274,23 @@ export const LICENSE_BADGE_TITLES: Record<LicenseClass, string> = {
 /** The licence badge of a row (CC0 / BY / BY-SA / Yours / Synth; NC, ND, undeclared and unknown flagged). */
 export function licenseBadge(entry: Pick<SoundEntry, 'license' | 'source'>): LicenseBadge {
 	const cls = licenseClass(entry.license);
-	const title = `${LICENSE_BADGE_TITLES[cls]} · ${entry.license}`;
+	// `t`: the map's getter translates in the build; the lookup also covers code that reads the English source.
+	const title = `${t(LICENSE_BADGE_TITLES[cls])} · ${entry.license}`;
 	switch (cls) {
 		case 'cc0':
 			return { text: 'CC0', warn: false, title };
 		case 'jasper':
-			return { text: entry.source.type === 'synth' ? 'Synth' : 'Jasper', warn: false, title };
+			return { text: entry.source.type === 'synth' ? t('Synth') : t('Jasper'), warn: false, title };
 		case 'cc-by':
 			return { text: 'BY', warn: false, title };
 		case 'cc-by-sa':
 			return { text: 'BY-SA', warn: false, title };
 		case 'permissive':
-			return { text: 'Open', warn: false, title };
+			return { text: withoutContext(t('Open [licence badge]')), warn: false, title };
 		case 'royalty-free':
-			return { text: 'Yours', warn: false, title };
+			return { text: t('Yours'), warn: false, title };
 		case 'user-provided':
-			return { text: 'Yours?', warn: true, title };
+			return { text: t('Yours?'), warn: true, title };
 		case 'nc':
 			return { text: 'NC', warn: true, title };
 		case 'nd':
@@ -331,7 +359,7 @@ export function soundAccessibleName(e: SoundEntry, favourite: boolean): string {
 	if (fin(e.descriptors.peakSec)) parts.push(t('peak at {0}', formatOffset(e.descriptors.peakSec)));
 	parts.push(...descriptorWords(e.descriptors));
 	parts.push(licenseBadge(e).title);
-	if (favourite) parts.push('favourite');
+	if (favourite) parts.push(withoutContext(t('favourite [accessible name]')));
 	return parts.join(', ');
 }
 

@@ -329,6 +329,7 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('soundLibrary.toggleFavourite', 'KeyF', 'soundLibrary'),
 	b('soundLibrary.toggleLoop', 'KeyL', 'soundLibrary'),
 	b('soundLibrary.focusSearch', 'Ctrl+KeyF', 'soundLibrary'),
+	b('soundLibrary.stopAudition', 'Escape', 'soundLibrary'),
 	b('history.stepBackward', 'ArrowLeft', 'history', R),
 	b('history.stepForward', 'ArrowRight', 'history', R),
 ];
