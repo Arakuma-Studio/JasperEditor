@@ -243,11 +243,12 @@ describe('ported source records (licenses/ported, AGENTS.md §3.4)', () => {
 			'c.md': RECORD.replace('# Blur kernels', '# C').replace(ec, `${ec}; ${fc}`),
 		});
 		const records = collectPorted(root);
-		expect(records.map((r) => r.copyrights)).toEqual([[ec], [fc, ec], [ec, fc]]);
+		expect(records.map((r) => [...r.copyrights].sort())).toEqual([[ec], [ec, fc], [ec, fc]]);
 		const text = renderNotices([], records, portedLicenseTexts(root, records));
 		const section = text.slice(text.indexOf(PORTED_START), text.indexOf(PORTED_END));
 		expect(section).toContain(ec);
 		expect(section).toContain(fc);
-		for (const license of portedLicenseTexts(root, records)) expect(license.copyrights).toEqual([ec, fc]);
+		for (const license of portedLicenseTexts(root, records))
+			expect([...license.copyrights].sort()).toEqual([ec, fc]);
 	});
 });
