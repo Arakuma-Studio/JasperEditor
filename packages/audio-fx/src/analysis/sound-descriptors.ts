@@ -45,6 +45,8 @@ export const OCTAVE_BAND_CENTRES_HZ: readonly number[] = /* @__PURE__ */ Object.
 ]);
 /** Level reported for an empty band or silence (dB). */
 export const DESCRIPTOR_FLOOR_DB = -120;
+/** Highest level a descriptor reports (dB / LUFS): huge finite input (±3.4e38) would read ≈ +730. */
+export const DESCRIPTOR_CEILING_DB = 200;
 
 export interface SoundDescriptors {
 	/** Length of the input (s, 0.1 ms). */
@@ -115,7 +117,9 @@ const qMs = (x: number): number => quant(x, 10);
 const qHz = (x: number): number => quant(x, 1);
 const qDb = (x: number): number => quant(x, 100);
 const qUnit = (x: number): number => quant(Math.min(1, Math.max(0, finite(x))), 1000);
-const qDbOrNull = (x: number): number | null => (Number.isFinite(x) ? qDb(x) : null);
+/** Loudness levels: null for −∞ and for anything under the floor (a sub-normal "signal" is silence); capped above. */
+const qDbOrNull = (x: number): number | null =>
+	Number.isFinite(x) && x >= DESCRIPTOR_FLOOR_DB ? qDb(Math.min(x, DESCRIPTOR_CEILING_DB)) : null;
 
 const dbPow = (p: number): number => (p > 0 ? 10 * Math.log10(p) : Number.NEGATIVE_INFINITY);
 

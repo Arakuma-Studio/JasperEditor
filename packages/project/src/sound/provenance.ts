@@ -123,7 +123,7 @@ export function readLibraryProvenance(raw: unknown): LibraryProvenance | null {
 	if (!soundId || soundId.length > LIBRARY_LIMITS.id || !soundId.trim()) return null;
 	const out: Record<string, unknown> = {};
 	// Unknown (newer) fields survive, like everywhere in the document (S01:DOC-005).
-	for (const [k, v] of Object.entries(raw)) if (!(k in LibraryProvenanceSchema.shape)) out[k] = v;
+	for (const [k, v] of Object.entries(raw)) if (!Object.hasOwn(LibraryProvenanceSchema.shape, k)) out[k] = v;
 	out.soundId = soundId;
 	out.title = str(raw.title, LIBRARY_LIMITS.title) ?? soundId;
 	out.types = Array.isArray(raw.types)

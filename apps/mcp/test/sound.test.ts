@@ -513,7 +513,14 @@ describe('sound library MCP tools', { timeout: 900_000 }, () => {
 			errorFlicks: number;
 		};
 		const first = (await ok<Ins>('insert_sound', { projectId: p, soundId: punch.soundId, at: 45 })).body;
-		expect(first).toMatchObject({ align: 'peak', peakFrame: 45, alignedFrame: { frame: 45 }, track: 'A1' });
+		// No SFX track yet: a new "SFX 1" (A4); the free A1–A3 are not sound-effect tracks (spec 12 §2.3).
+		expect(first).toMatchObject({
+			align: 'peak',
+			peakFrame: 45,
+			alignedFrame: { frame: 45 },
+			track: 'A4',
+			trackCreated: true,
+		});
 		const check = async (ins: Ins, cue: number) => {
 			const doc = await documentOf(p);
 			const clip = Object.values(doc.sequences)[0]!.clips[ins.clipId] as {
@@ -523,36 +530,40 @@ describe('sound library MCP tools', { timeout: 900_000 }, () => {
 				essentialSound?: { type?: string };
 			};
 			expect(clip.start).toBe(ins.start.frame);
-			// The aligned point plays at start + (align − In): on the cue frame, late by errorFlicks (< 1 frame).
+			// The aligned point plays at start + (align − In): exactly on the cue frame. Library sounds whose head is not
+			// quiet are registered with 50 ms of lead silence, so the sub-frame rest always comes out of silence.
 			const playsAt = clip.start * F + (ins.alignFlicks - clip.sourceIn);
-			expect(Math.abs(playsAt - (cue * F + ins.errorFlicks))).toBeLessThanOrEqual(2);
-			expect(ins.errorFlicks).toBeGreaterThanOrEqual(0);
-			expect(ins.errorFlicks).toBeLessThan(F);
+			expect(ins.errorFlicks).toBe(0);
+			expect(Math.abs(playsAt - cue * F)).toBeLessThanOrEqual(2);
 			return { doc, clip };
 		};
 		const { doc: d1, clip } = await check(first, 45);
 		const exact = (await ok<{ descriptors: { peakSec: number } }>('get_sound', { soundId: punch.soundId }))
 			.body;
-		expect(first.alignFlicks).toBe(Math.round(exact.descriptors.peakSec * FLICKS_PER_SECOND));
+		// The media is the padded copy: its peak is the library peak + the lead silence the provenance records.
+		const lib = (d1.media[first.mediaId] as { library?: { leadSilenceSec?: number } }).library;
+		expect(lib?.leadSilenceSec).toBe(0.05);
+		expect(first.alignFlicks).toBe(Math.round((exact.descriptors.peakSec + 0.05) * FLICKS_PER_SECOND));
 		expect(JSON.stringify(clip)).toContain('sfx');
 		expect(Object.values(d1.items).some((i) => i.kind === 'bin' && i.name === 'Sound Effects')).toBe(true);
 
-		// The same spot again: A1 is taken, so A2, then A3, then a new "SFX 1" — nothing is overwritten.
+		// The same spot again: SFX 1 is taken, so a new SFX 2, SFX 3 — nothing is overwritten, A1–A3 stay empty.
 		const tracks: string[] = [first.track];
-		for (let i = 0; i < 3; i++) {
+		for (let i = 0; i < 2; i++) {
 			const r = (await ok<Ins>('insert_sound', { projectId: p, soundId: punch.soundId, at: 45 })).body;
 			tracks.push(r.track);
 			await check(r, 45);
-			if (i === 2) expect(r.trackCreated).toBe(true);
+			expect(r.trackCreated).toBe(true);
+			expect(r.mediaId).toBe(first.mediaId);
 		}
-		expect(tracks).toEqual(['A1', 'A2', 'A3', 'A4']);
+		expect(tracks).toEqual(['A4', 'A5', 'A6']);
 		const d2 = await documentOf(p);
 		const s2 = Object.values(d2.sequences)[0]!;
-		expect(s2.audioTracks.at(-1)!.name).toBe('SFX 1');
-		expect(Object.values(s2.clips).filter((c) => c.start === first.start.frame)).toHaveLength(4);
-		// A fifth: "SFX 1" is taken there too, so a new "SFX 2".
-		const fifth = (await ok<Ins>('insert_sound', { projectId: p, soundId: punch.soundId, at: 45 })).body;
-		expect(fifth.track).toBe('A5');
+		expect(s2.audioTracks.slice(3).map((t) => t.name)).toEqual(['SFX 1', 'SFX 2', 'SFX 3']);
+		expect(Object.values(s2.clips).filter((c) => c.start === first.start.frame)).toHaveLength(3);
+		expect(Object.values(s2.clips).some((c) => s2.audioTracks.findIndex((t) => t.id === c.trackId) < 3)).toBe(
+			false,
+		);
 		// Later on the timeline the SFX track is preferred over A1.
 		const later = (
 			await ok<Ins>('insert_sound', { projectId: p, soundId: punch.soundId, at: { seconds: 10 } })
@@ -560,7 +571,7 @@ describe('sound library MCP tools', { timeout: 900_000 }, () => {
 		expect(later.track).toBe('A4');
 		await check(later, 300);
 		// An explicit busy track is refused.
-		const busy = await fails('insert_sound', { projectId: p, soundId: punch.soundId, at: 45, track: 'A1' });
+		const busy = await fails('insert_sound', { projectId: p, soundId: punch.soundId, at: 45, track: 'A4' });
 		expect(busy.code).toBe('E_OVERLAP');
 		expect(
 			(await fails('insert_sound', { projectId: p, soundId: punch.soundId, at: 45, track: 'V1' })).code,

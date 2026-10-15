@@ -5,6 +5,7 @@ import { Fft } from '../src/core/fft.ts';
 import { Prng } from '../src/core/util.ts';
 import {
 	analyzeSound,
+	DESCRIPTOR_CEILING_DB,
 	DESCRIPTOR_FLOOR_DB,
 	MAX_ANALYSIS_SECONDS,
 	OCTAVE_BAND_CENTRES_HZ,
@@ -392,7 +393,8 @@ describe('analyzeSound: edge input', () => {
 		for (let i = 0; i < x.length; i++) x[i] = (i % 2 ? 1 : -1) * 3.4e38;
 		const d = analyzeSound([x, x], SR);
 		expectWellFormed(d);
-		expect(d.truePeakDb!).toBeGreaterThan(700);
+		// ≈ +730 dBTP before the Phase 1 verification; capped so the value fits the project's provenance schema
+		expect(d.truePeakDb!).toBe(DESCRIPTOR_CEILING_DB);
 	});
 
 	it(`input longer than ${MAX_ANALYSIS_SECONDS} s reports its real duration and analyses the first ${MAX_ANALYSIS_SECONDS} s`, () => {

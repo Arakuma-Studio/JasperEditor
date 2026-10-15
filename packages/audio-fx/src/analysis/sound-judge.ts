@@ -113,6 +113,9 @@ const fin = (x: unknown): x is number => typeof x === 'number' && Number.isFinit
 
 /** Judge descriptors against a type profile. Never throws; missing or non-finite profile limits are not checked. */
 export function judgeSound(d: SoundDescriptors, profile: SoundTypeProfile): JudgeResult {
+	// Nothing to judge (missing descriptors or profile from hostile input): not accepted, never a throw.
+	if (!d || typeof d !== 'object' || !profile || typeof profile !== 'object')
+		return { ok: false, score: 0, reasons: [] };
 	const sev = new Map<JudgeReason, number>();
 	const dur = d.durationSec;
 	if (fin(profile.minDurSec) && dur < profile.minDurSec)

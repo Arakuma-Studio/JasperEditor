@@ -5,12 +5,14 @@ import { defaultLabelForMedia } from '../../registry/kinds.ts';
 import type { MediaItem, ProjectDocument, ProjectItem, SourceMarks } from '../../schema/document.ts';
 import type { MediaAsset, Transcript } from '../../schema/media.ts';
 import type { Clip, Sequence } from '../../schema/sequence.ts';
+import type { LibraryProvenance } from '../../sound/provenance.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DDoc, HandlerContext } from '../context.ts';
 import { cleanupSequence, removeClip } from '../placement.ts';
 import { orphanedSynthetics } from '../tx-delta.ts';
 import { replaceMediaFile, type SourceFit } from './process.ts';
 import { assertBin, detachItem, insertItem } from './project-items.ts';
+import { libraryDescriptorIssue } from './sound.ts';
 import { type HandlerMap, idList, memoPlain, peek, peekKeys } from './util.ts';
 
 function isDescendant(doc: DDoc, ancestorBinId: string, itemId: string): boolean {
@@ -257,6 +259,15 @@ export const projectHandlers = {
 	},
 	'media.register': (doc, cmd, h: HandlerContext) => {
 		assertBin(doc, cmd.binId, h);
+		// sound-design: the same checks as `media.setLibraryInfo` (audio/video media, descriptors inside the sound).
+		if (cmd.asset.library) {
+			if (cmd.asset.kind !== 'audio' && cmd.asset.kind !== 'video')
+				h.fail('E_INVALID_PARAM', `Library provenance applies to audio media, not ${cmd.asset.kind}`, {
+					path: ['asset', 'library'],
+				});
+			const bad = libraryDescriptorIssue(cmd.asset.library as LibraryProvenance);
+			if (bad) h.fail('E_INVALID_PARAM', bad, { path: ['asset', 'library', 'descriptors'] });
+		}
 		// the pages of one PDF share the file's fingerprint and are different media.
 		const page = (a: { vector?: { page?: number } | null }) => a.vector?.page ?? 1;
 		const existing = Object.values(doc.media).find(

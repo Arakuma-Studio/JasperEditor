@@ -99,7 +99,14 @@ export function creditLine(row: SoundCreditRow): string {
 	return line;
 }
 
-const mdCell = (s: string | null) => (s ? oneLine(s).replace(/\\/g, '\\\\').replace(/\|/g, '\\|') : '');
+const mdCell = (s: string | null) =>
+	s
+		? oneLine(s)
+				.replace(/\\/g, '\\\\')
+				.replace(/[|[\]]/g, (c) => `\\${c}`)
+		: '';
+/** Only web links become Markdown links (an agent-set `javascript:` URL stays text). */
+const isWebUrl = (s: string) => /^https?:\/\/[^\s]+$/i.test(s.trim());
 const mdUrl = (s: string) =>
 	oneLine(s).replace(/[ ()<>|\\]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`);
 const csvCell = (v: string | boolean | null) => {
@@ -224,7 +231,9 @@ export function soundCredits(
 				...listed.map(
 					(r) =>
 						`| ${mdCell(r.title || r.soundId)} | ${mdCell(r.author)} | ${
-							r.licenseUrl ? `[${mdCell(r.license)}](${mdUrl(r.licenseUrl)})` : mdCell(r.license)
+							r.licenseUrl && isWebUrl(r.licenseUrl)
+								? `[${mdCell(r.license)}](${mdUrl(r.licenseUrl)})`
+								: mdCell(r.license)
 						} | ${mdCell(r.sourceUrl)} | ${mdCell(creditLine(r))} |`,
 				),
 			].join('\n')

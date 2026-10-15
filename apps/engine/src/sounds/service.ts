@@ -80,8 +80,26 @@ function inside(base: string, child: string): boolean {
 
 /** The provenance a registered library sound carries in the project (`MediaAsset.library`). */
 export function provenanceOf(e: SoundEntry, snapshotHash: string, leadSilenceSec = 0): LibraryProvenance {
-	const d = e.descriptors;
 	const lead = leadSilenceSec > 0 ? leadSilenceSec : 0;
+	// Analyses cached by older builds (or ffprobe's estimate for a broken file) may hold values the provenance schema
+	// bounds: keep them inside, so registering never fails on a number.
+	const clamp = (v: number, lo: number, hi: number) =>
+		Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : lo;
+	const sec = (v: number) => clamp(v, 0, 86_400 - 1);
+	const raw = e.descriptors;
+	const d = {
+		...raw,
+		peakSec: sec(raw.peakSec),
+		onsetSec: sec(raw.onsetSec),
+		headQuietSec: sec(raw.headQuietSec),
+		durationSec: sec(raw.durationSec),
+		octaveBandsDb: raw.octaveBandsDb.map((v) => clamp(v, -400, 400)),
+		centroidHz: clamp(raw.centroidHz, 0, 1_000_000),
+		maxMomentaryLufs:
+			raw.maxMomentaryLufs === null || !Number.isFinite(raw.maxMomentaryLufs) || raw.maxMomentaryLufs < -400
+				? null
+				: Math.min(400, raw.maxMomentaryLufs),
+	};
 	const candidate = {
 		soundId: e.id,
 		title: e.title,
@@ -405,6 +423,17 @@ export class SoundService {
 		const e = await this.get(id);
 		const project = await this.core.projects.get(projectId);
 		const path = await this.fileOf(e);
+		const snapshot = await this.library.snapshot();
+		// Checked before any file is copied: a sound whose provenance cannot be written is refused, not half-registered.
+		try {
+			provenanceOf(e, snapshot.snapshotHash);
+		} catch {
+			throw new HttpError(
+				422,
+				'SOUND_UNSUPPORTED',
+				'This sound’s library data is unusable; rescan the sound library',
+			);
+		}
 		const changed = () =>
 			new HttpError(409, 'SOUND_CHANGED', 'The file changed since it was indexed; rescan the sound library');
 		let reg: RegisteredMedia;
@@ -438,7 +467,6 @@ export class SoundService {
 			});
 			if (reg.fingerprint !== e.fingerprint) throw changed();
 		}
-		const snapshot = await this.library.snapshot();
 		const library = provenanceOf(e, snapshot.snapshotHash, leadSec);
 		let existingMediaId: string | null = null;
 		const media = (project.envelope.document as { media?: unknown }).media;

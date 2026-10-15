@@ -48,8 +48,10 @@ export function licenseClass(license: unknown): LicenseClass {
 	if (u.startsWith('CC-BY')) {
 		if (/(?:^|-)NC(?:-|$)/.test(u.slice(5))) return 'nc';
 		if (/(?:^|-)ND(?:-|$)/.test(u.slice(5))) return 'nd';
-		if (/^CC-BY-SA(?:-|$)/.test(u)) return 'cc-by-sa';
-		if (/^CC-BY(?:-\d|$)/.test(u)) return 'cc-by';
+		// The whole id must be a CC-BY(-SA) SPDX id (version and port, e.g. CC-BY-3.0-AT): "CC-BY-4.0 AND
+		// LicenseRef-Proprietary" or "CC-BY-4.0 (non-commercial)" are not commercial-safe CC BY.
+		if (/^CC-BY-SA(?:-\d\.\d(?:-[A-Z]{2,4})?)?\+?$/.test(u)) return 'cc-by-sa';
+		if (/^CC-BY(?:-\d\.\d(?:-[A-Z]{2,4})?)?\+?$/.test(u)) return 'cc-by';
 		return 'unknown';
 	}
 	if (PERMISSIVE.test(l)) return 'permissive';
