@@ -25,7 +25,12 @@ import {
 	type SoundTrackSequence,
 	soundTimingOf,
 } from '../../sound/insert.ts';
-import { type LibraryProvenance, readLibraryProvenance } from '../../sound/provenance.ts';
+import {
+	type LibraryProvenance,
+	libraryDescriptorIssue,
+	readLibraryProvenance,
+} from '../../sound/provenance.ts';
+
 import { isSoundTypeId, SOUND_TYPE_IDS } from '../../sound/taxonomy.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
@@ -44,24 +49,12 @@ export const SOUND_DESIGN_OWNER = 'sound-design' as const;
 
 /** Media kinds that can be a library sound (it is audio, or a video file whose audio is the sound). */
 const SOUND_MEDIA_KINDS: ReadonlySet<string> = new Set(['audio', 'video']);
-/** Descriptor times may exceed the stated duration by this much (rounding of separately quantised values). */
-const DESCRIPTOR_SLACK_SEC = 0.001;
 /** Pitch shifts up to this many semitones are made by varispeed (spec 12 §2.3); larger ones by the Pitch Shifter. */
 export const VARISPEED_PITCH_MAX_ST = 3;
 export const PITCH_SHIFTER_EFFECT_ID = 'jasper.audio.pitch-shifter';
 
 type DAudio = Draft<AudioClip> & { sfx?: ClipSfx };
 type DCue = Draft<SoundCue>;
-
-/** The problem with a provenance's descriptors (points past the end of the sound), or null. Pure. */
-export function libraryDescriptorIssue(library: LibraryProvenance): string | null {
-	const d = library.descriptors;
-	if (!d) return null;
-	for (const key of ['peakSec', 'onsetSec', 'headQuietSec'] as const)
-		if (d[key] > d.durationSec + DESCRIPTOR_SLACK_SEC)
-			return `descriptors.${key} (${d[key]} s) is past the end of the sound (${d.durationSec} s)`;
-	return null;
-}
 
 function setLibraryInfo(doc: DDoc, cmd: CommandOf<'media.setLibraryInfo'>, h: HandlerContext) {
 	const asset = doc.media[cmd.mediaId] as Draft<MediaAsset> | undefined;

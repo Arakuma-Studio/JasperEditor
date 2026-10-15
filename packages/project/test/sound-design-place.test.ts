@@ -63,7 +63,6 @@ function libMedia(
 	return (r.results[0] as { mediaId: string }).mediaId;
 }
 
-const sfxClips = (h: Harness) => Object.values(h.seq.clips).filter((c) => (c as SfxClip).sfx) as SfxClip[];
 const clip = (h: Harness, id: string) => h.seq.clips[id] as SfxClip;
 
 /** Sequence flicks at which a placed clip's aligned point plays. */
@@ -427,7 +426,7 @@ describe('soundDesign.swap', () => {
 		const t0 = seqTimes();
 		h.ok([{ type: 'soundDesign.swap', clipId: id, mediaId: b }]);
 		const t1 = seqTimes();
-		t1.forEach((t, i) => expect(Math.abs(t - t0[i]!)).toBeLessThanOrEqual(1));
+		for (const [i, t] of t1.entries()) expect(Math.abs(t - t0[i]!)).toBeLessThanOrEqual(1);
 	});
 });
 

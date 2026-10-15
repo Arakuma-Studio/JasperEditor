@@ -70,96 +70,104 @@ const RATES: [string, { num: number; den: number }, boolean][] = [
 ];
 
 function pcm(file: string): Float32Array {
-	const r = spawnSync(TEST_FFMPEG, ['-v', 'error', '-i', file, '-vn', '-ac', '1', '-ar', String(SR), '-f', 'f32le', '-'], {
-		maxBuffer: 256 * 1024 * 1024,
-	});
+	const r = spawnSync(
+		TEST_FFMPEG,
+		['-v', 'error', '-i', file, '-vn', '-ac', '1', '-ar', String(SR), '-f', 'f32le', '-'],
+		{
+			maxBuffer: 256 * 1024 * 1024,
+		},
+	);
 	if (r.status !== 0) throw new Error(`decode failed: ${r.stderr}`);
 	const b = r.stdout;
 	return new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
 }
 
 describe('soundDesign.place on exported audio (P2-R4)', () => {
-	it.each(RATES)('%s fps: every click peak lands on its cue frame with 0 samples of error', async (label, fps, df) => {
-		const d = new DocBuilder(`hd-1080p-${label}`);
-		if (df) d.tx([{ type: 'sequence.updateSettings', settings: { dropFrame: true } }]);
-		expect(d.doc.sequences[d.seqId]!.settings.frameRate).toEqual(fps);
-		const cues: { frame: number; peak: number }[] = [];
-		for (const [i, s] of sounds.entries()) {
-			const mediaId = d.addMedia(await register(app, s.path));
-			const library: LibraryProvenance = {
-				soundId: `snd_00000000000000c${i}`,
-				title: `Click ${i}`,
-				types: ['click'],
-				source: { type: 'starter' },
-				license: 'LicenseRef-JasperEditor',
-				author: 'test',
-				attribution: null,
-				descriptors: {
-					peakSec: s.peak / SR,
-					onsetSec: s.peak / SR,
-					headQuietSec: s.peak / SR,
-					durationSec: s.samples / SR,
-					octaveBandsDb: [-60, -60, -60, -60, -60, -60, -60],
-					centroidHz: 10_000,
-					maxMomentaryLufs: -40,
+	it.each(RATES)(
+		'%s fps: every click peak lands on its cue frame with 0 samples of error',
+		async (label, fps, df) => {
+			const d = new DocBuilder(`hd-1080p-${label}`);
+			if (df) d.tx([{ type: 'sequence.updateSettings', settings: { dropFrame: true } }]);
+			expect(d.doc.sequences[d.seqId]!.settings.frameRate).toEqual(fps);
+			const cues: { frame: number; peak: number }[] = [];
+			for (const [i, s] of sounds.entries()) {
+				const mediaId = d.addMedia(await register(app, s.path));
+				const library: LibraryProvenance = {
+					soundId: `snd_00000000000000c${i}`,
+					title: `Click ${i}`,
+					types: ['click'],
+					source: { type: 'starter' },
+					license: 'LicenseRef-JasperEditor',
+					author: 'test',
+					attribution: null,
+					descriptors: {
+						peakSec: s.peak / SR,
+						onsetSec: s.peak / SR,
+						headQuietSec: s.peak / SR,
+						durationSec: s.samples / SR,
+						octaveBandsDb: [-60, -60, -60, -60, -60, -60, -60],
+						centroidHz: 10_000,
+						maxMomentaryLufs: -40,
+					},
+					leadSilenceSec: 2400 / SR,
+				};
+				d.tx([{ type: 'media.setLibraryInfo', mediaId, library }]);
+				// cues ≈ 0.7 s apart, on frames that are not whole seconds
+				const frame = Math.round((0.6 + 0.7 * i) * (fps.num / fps.den)) + i;
+				const r = d.tx([
+					{
+						type: 'soundCue.add',
+						cues: [{ frame, kind: 'cut', weight: 'support', source: 'user', align: 'peak', ref: '$c' }],
+					},
+					{ type: 'soundDesign.place', cueId: '$c', layers: [{ mediaId }] },
+				]);
+				const placed = (r.results[1] as { clips: { errorFlicks: number }[] }).clips[0]!;
+				expect(placed.errorFlicks).toBe(0);
+				cues.push({ frame, peak: s.peak });
+			}
+			const settings = {
+				sequenceId: d.seqId,
+				range: { type: 'entire' },
+				container: 'mov',
+				video: {
+					codec: 'h264',
+					width: 320,
+					height: 180,
+					frameRate: fps,
+					scaling: 'fit',
+					quality: { mode: 'crf', value: 35 },
+					encoderSpeed: 'fast',
 				},
-				leadSilenceSec: 2400 / SR,
+				audio: { codec: 'pcm', sampleRate: SR, channels: 2 },
+				engine: 'native',
 			};
-			d.tx([{ type: 'media.setLibraryInfo', mediaId, library }]);
-			// cues ≈ 0.7 s apart, on frames that are not whole seconds
-			const frame = Math.round((0.6 + 0.7 * i) * (fps.num / fps.den)) + i;
-			const r = d.tx([
-				{
-					type: 'soundCue.add',
-					cues: [{ frame, kind: 'cut', weight: 'support', source: 'user', align: 'peak', ref: '$c' }],
-				},
-				{ type: 'soundDesign.place', cueId: '$c', layers: [{ mediaId }] },
-			]);
-			const placed = (r.results[1] as { clips: { errorFlicks: number }[] }).clips[0]!;
-			expect(placed.errorFlicks).toBe(0);
-			cues.push({ frame, peak: s.peak });
-		}
-		const settings = {
-			sequenceId: d.seqId,
-			range: { type: 'entire' },
-			container: 'mov',
-			video: {
-				codec: 'h264',
-				width: 320,
-				height: 180,
-				frameRate: fps,
-				scaling: 'fit',
-				quality: { mode: 'crf', value: 35 },
-				encoderSpeed: 'fast',
-			},
-			audio: { codec: 'pcm', sampleRate: SR, channels: 2 },
-			engine: 'native',
-		};
-		const start = await app.inject({
-			method: 'POST',
-			url: '/api/exports',
-			headers: JSON_H,
-			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings },
-		});
-		expect(start.statusCode, start.body).toBe(202);
-		const done = await coreServices(app).queue.wait(start.json().id);
-		expect(done.error).toBeUndefined();
-		const file = (await coreServices(app).exports.outputFile(start.json().id))!;
-		const x = pcm(file);
-		const errors: number[] = [];
-		for (const c of cues) {
-			// the cue frame's time in samples (no rate here puts it exactly on a half sample)
-			const expected = Math.round((c.frame * fps.den * SR) / fps.num);
-			let best = -1;
-			let max = 0;
-			for (let i = Math.max(0, expected - 4000); i < Math.min(x.length, expected + 4000); i++)
-				if (Math.abs(x[i]!) > max) {
-					max = Math.abs(x[i]!);
-					best = i;
-				}
-			expect(max).toBeGreaterThan(0.5);
-			errors.push(best - expected);
-		}
-		expect(errors, `${label} fps: measured − expected click sample per cue`).toEqual(cues.map(() => 0));
-	}, 180_000);
+			const start = await app.inject({
+				method: 'POST',
+				url: '/api/exports',
+				headers: JSON_H,
+				payload: { envelope: d.envelope(), sequenceId: d.seqId, settings },
+			});
+			expect(start.statusCode, start.body).toBe(202);
+			const done = await coreServices(app).queue.wait(start.json().id);
+			expect(done.error).toBeUndefined();
+			const file = (await coreServices(app).exports.outputFile(start.json().id))!;
+			const x = pcm(file);
+			const errors: number[] = [];
+			for (const c of cues) {
+				// the cue frame's time in samples (no rate here puts it exactly on a half sample)
+				const expected = Math.round((c.frame * fps.den * SR) / fps.num);
+				let best = -1;
+				let max = 0;
+				for (let i = Math.max(0, expected - 4000); i < Math.min(x.length, expected + 4000); i++)
+					if (Math.abs(x[i]!) > max) {
+						max = Math.abs(x[i]!);
+						best = i;
+					}
+				expect(max).toBeGreaterThan(0.5);
+				errors.push(best - expected);
+			}
+			expect(errors, `${label} fps: measured − expected click sample per cue`).toEqual(cues.map(() => 0));
+		},
+		180_000,
+	);
 });

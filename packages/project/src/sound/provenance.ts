@@ -159,3 +159,16 @@ export function libraryProvenanceIssue(raw: unknown): string | null {
 	const i = r.error.issues[0]!;
 	return `${i.path.length ? `${i.path.join('.')}: ` : ''}${i.message}`;
 }
+
+/** Descriptor times may exceed the stated duration by this much (rounding of separately quantised values). */
+const DESCRIPTOR_SLACK_SEC = 0.001;
+
+/** The problem with a provenance's descriptors (points past the end of the sound), or null. Pure. */
+export function libraryDescriptorIssue(library: LibraryProvenance): string | null {
+	const d = library.descriptors;
+	if (!d) return null;
+	for (const key of ['peakSec', 'onsetSec', 'headQuietSec'] as const)
+		if (d[key] > d.durationSec + DESCRIPTOR_SLACK_SEC)
+			return `descriptors.${key} (${d[key]} s) is past the end of the sound (${d.durationSec} s)`;
+	return null;
+}

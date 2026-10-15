@@ -1906,14 +1906,15 @@ auto tracks), §2.9 (commands), P2-R1, P2-R2, P2-R4, P2-R5 (model / command part
 said): `src/schema/sound.ts` (schemas, lenient readers), `src/sound/anchor.ts` (`resolveCueAnchor`, integrated first,
 alone, at `9032437d` so the cue deriver could build on it), `src/sound/repair.ts` (INV-SOUND / INV-SFX helpers,
 `repairSoundDesign`, `soundDesignNeedsRepair`, `remapSoundDesign`), `src/sound/variant.ts` (`pickVariant`),
-`src/sound/insert.ts` (`planSoundInsert` gained `rate` and `clampStart`), `src/commands/schemas/sound.ts`,
+`src/sound/insert.ts` (`planSoundInsert` gained `rate` and `clampStart`), `src/sound/text-events.ts` (typewriter
+timing shared with the deriver), `src/sound/cue-input.ts` (`cueInputFromDerived`), `src/commands/schemas/sound.ts`,
 `src/commands/handlers/sound.ts`, `catalog.ts` (labels), `invariants.ts` (INV-SOUND per sequence, INV-SFX per clip,
 the repair hook), `migrations.ts` (`loadProject` repairs when only soft references dangle), `commands/diff.ts` (cues
 are entities of the diff), `handlers/structure.ts` (`sequence.duplicate` remaps cues), `ids.ts` (prefix `cue`).
 Rewired: `apps/web/src/sound/insert.ts` and MCP `insert_sound` (`apps/mcp/src/tools/sound.ts`) commit through
 `soundDesign.place`; `apps/mcp/src/examples.ts` (describe_commands examples); `apps/web/src/i18n/{en,es,model-strings}.json`
 (8 History labels). Docs: `docs/project-files.md` (v7 optional fields). Tests: `packages/project/test/sound-{anchor,
-cues,design-place}.test.ts`, `fuzz.test.ts` (sound commands in AC-25), `apps/web/test/sound-insert.test.ts` (one
+cue-commands,design-place}.test.ts`, `fuzz.test.ts` (sound commands in AC-25), `apps/web/test/sound-insert.test.ts` (one
 assertion), `apps/mcp/test/sound-examples.test.ts`, `apps/engine/test/sound-placement-export.test.ts`.
 
 #### API (exported from `@jasper/project`)
@@ -1947,9 +1948,13 @@ function soundDesignIssue(raw): string | null; function clipSfxIssue(raw): strin
 function resolveCueAnchor(doc, seq, anchor, opts?: {mgTemplates?}): number | null;  // never throws
 function cueAnchorTargetExists(doc, seq, anchor): boolean;  function cueAnchorRefs(anchor): string[];
 function anchorAnimatable(clip, property): Animatable<unknown> | null;
-function textUnitCount(text, 'char'|'word'): number;
+function textUnitCount(text, 'char'|'word'): number;                        // sound/text-events.ts, re-exported
 function typewriterScheduleMs(units, durationMs, params): {start, slot};   // = @jasper/motion typewriterSchedule
+// sound/text-events.ts also: typewriterOffsets(units, windowFrames, fps, params, side) (the deriver's, exported by cues)
 const MG_REFERENCE_FPS = 30;
+
+// sound/cue-input.ts
+function cueInputFromDerived(cue: DerivedCue, ref?: string): soundCue.add cue;  // stored fields only, within limits
 
 // sound/repair.ts
 function sequenceSoundDesignIssue(seq): string | null;   function clipSfxProblem(clip): string | null;
@@ -2018,16 +2023,30 @@ further layers `layer`. Rotation and variation are pure helpers the plan job (P3
   by `media.setLibraryInfo`); `align: peak` without a peak descriptor is refused.
 - **`clampStart`** (default false = the spec's `start < 0 → E_INVALID_PARAM`): the Sound Library insert and MCP
   `insert_sound` pass `true` (their Phase 1 behaviour: start at 0, head trimmed, aligned point exact).
-- **Anchor resolution** (no published reference; chosen to match what the deriver detects): `edit` = the incoming
-  clip's first frame (else the outgoing clip's end: the cut moves with the clip after it); `transition` = `start +
-  ⌊duration/2⌋` of its stored span (`transitionStartFrame`); `keyframe peak-speed` = the middle of the run of frames
-  with the largest per-frame change (a linear move's middle, an eased move's fastest frame), `settle` = the first frame
-  after that at which the value is within 1 % of the travel from its rest value (an overshoot's first arrival); `text`
-  typewriter units follow `@jasper/motion`'s schedule (`start + slot·i` ms, shown from the first frame at or after
-  it; units = non-space graphemes or words, the renderer's count is based on layout segments and could differ for
-  exotic scripts); `mg` intro/outro frames are at 30 fps and compressed like `animeTemplateTiming`; `scene` / `beat`
-  map a media time through the clip (time remaps and holds by scanning frames, ≤ 50 000); markers include clip
-  markers. A frame outside the clip (± half a frame) or the sequence is null.
+- **Anchor resolution** (no published reference): `edit` = the incoming clip's first frame (else the outgoing
+  clip's end: the cut moves with the clip after it); `transition` = `start + ⌊duration/2⌋` of its stored span
+  (`transitionStartFrame`); `mg` intro/outro frames are at 30 fps and compressed like `animeTemplateTiming`; `scene` /
+  `beat` map a media time through the clip (time remaps and holds by scanning frames, ≤ 50 000); markers include clip
+  markers; a frame outside the clip (± half a frame) or the sequence is null. **Keyframe and text-unit anchors resolve
+  through the deriver** (`derivedAnchorFrame`: the clip's keyframes / text cues derived again with `clipMotionCues` /
+  `textClipCueCandidates`, cached per clip object, and the event whose anchor matches by clip, property, key and
+  event, or side and unit): motion events then use the deriver's combined position + scale + rotation speed and its
+  landing at the turnaround, Range Selector reveals its per-frame selection, so a derived cue always resolves to its own
+  frame and follows its clip. Without a matching derived event (a cue the user anchored by hand, an edited motion) the
+  property alone decides: `start` / `end` = the run's first / last key (or `keyframeId`), `peak-speed` = the middle of
+  the run of frames with the largest per-frame change, `settle` = an overshoot's turnaround along the peak's direction
+  (≥ 2 % of the peak speed backwards), else the first frame within 1 % of the travel from the rest value. Typewriter
+  units use the deriver's `typewriterOffsets` (In `⌈t/frame⌉`, Out `N − ⌈t/frame⌉`), units = non-space graphemes or
+  words (the renderer counts layout segments: exotic scripts could differ).
+- **Review fixes from WP2.2** (each with a regression test in `sound-anchor.test.ts` "derived anchors resolve back to
+  their frame", all four failing on the resolver integrated at `9032437d`): typewriter Out units were one frame late
+  when `t/frame` was not whole (`⌈N − t/frame⌉` → `N − ⌈t/frame⌉`); Range Selector unit anchors resolved to null; a
+  `peak-speed` of a position + scale + rotation move was taken on the named property alone; an overshoot without a key
+  at its extreme settled at the first arrival instead of the turnaround. `DerivedCue.panSweep` is a stored cue field
+  (`soundCue.add` / `update`, cleared with null) and placement writes it as two pan keyframes over the cue's window (±
+  0.2 s around the cue without one; a key before the media start is held at the media start) unless the layer gives a
+  pan. `cueInputFromDerived` maps a derived cue to `soundCue.add` input (the Phase 2 fixture's cues are all accepted and
+  a resync right after moves none: `sound-cue-commands.test.ts`).
 - **Rotation**: least recently used among the top 4 (ties by rank), skipping the last-used sound when another exists;
   variation from FNV-1a(sequence | cue | seed | layer) → mulberry32: rate 1 ± 0.02 (0.0001 steps), gain ± 1 dB
   (0.01 dB steps).
@@ -2038,7 +2057,46 @@ further layers `layer`. Rotation and variation are pure helpers the plan job (P3
 
 #### Verified (measured, this branch)
 
-RESULTS_PLACEHOLDER
+Shared host, 16 cores, load average 31–58 during the runs (other agents).
+
+- `pnpm vitest run packages/project/test/sound-design-place.test.ts packages/project/test/sound-cue-commands.test.ts
+  packages/project/test/sound-anchor.test.ts --maxWorkers=2`: 13 + 15 + 13 passed. Placement: peak exact to ≤ 1 flick
+  with `errorFlicks` 0 for padded sounds; a 150-run property over the 8 sequence rates, cue frames 60…5000, peaks at any
+  sample position (48 kHz) and pitch −2 / 0 / +1 / +3 st (`errorFlicks` 0 at rate 1, ≤ 1 flick with varispeed);
+  layers on separate SFX tracks, grouped, cue links both ways; auto / preferred / settings tracks; every refusal
+  (`E_NOT_FOUND`, `E_INVALID_PARAM`, `E_TRACK_KIND`, `E_TRACK_LOCKED`, `E_OVERLAP`, `E_SCHEMA`, `E_LIMIT`) with the
+  document unchanged; undo (the before document untouched) and redo (same document up to fresh ids) for place, swap,
+  add, update, remove, resync, palette, settings; pitch shifter vs varispeed; pan static / keyframes / `panSweep`;
+  `pickVariant` round robin and a 500-run determinism / range property; repair of unreadable data, dangling anchors,
+  pruned clips, unlinked clips, shared cue ids, idempotence, and a 300-run property of arbitrary `soundDesign` / `sfx`
+  values through `loadProject` (never throws, no issue left, nothing more to repair); the transaction diff; every cue
+  `deriveCues` gives on the Phase 2 fixture accepted by `soundCue.add` through `cueInputFromDerived` and unmoved by a
+  resync; the four review regressions (each failed on the previous resolver: run with `anchor.ts` of `9032437d`, 4
+  failed / 9 passed).
+- `pnpm vitest run packages/project/test/fuzz.test.ts`: AC-25 integrity property, 2 000 runs, now mixing `soundCue.add`
+  (with clip / keyframe / null anchors), `soundDesign.place` (frame or cue, 1–3 layers, auto or A1–A4, pitch ±6,
+  clampStart), `soundCue.update` / `remove` / `resync` and `soundDesign.swap` into the random edits: passed, with more
+  than 200 accepted transactions carrying sound commands (asserted).
+- `pnpm vitest run apps/engine/test/sound-placement-export.test.ts --maxWorkers=1` (**P2-R4, measured on exported
+  audio**): for 23.976, 25, 29.97 DF, 30, 50, 59.94 and 60 fps, four clicks (single samples 37 / 611 / 1203 / 1999
+  samples into 0.5 s files, padded by the engine's `writePaddedSound` with 2 400 samples) placed with `soundCue.add` +
+  `soundDesign.place` at cue frames ≈ 0.7 s apart, exported on the native path as 24-bit PCM in MOV, decoded with
+  ffmpeg: **measured − expected click sample = 0 for all 28 clicks** (expected = round(cue frame × 48 000 × den /
+  num)); 7 passed. Mutation check: with frame-accurate placement (`subFrame: false`) the 29.97 fps case fails (both the
+  `errorFlicks` and the measured samples).
+- `pnpm vitest run --project @jasper/project --maxWorkers=4` (after merging WP2.2): 149 files, 1 855 tests passed.
+- `pnpm vitest run apps/mcp/test/sound.test.ts apps/mcp/test/sound-examples.test.ts apps/web/test/sound-insert.test.ts
+  apps/web/test/i18n.test.ts apps/web/test/sound-library-panel.test.tsx apps/engine/test/sound-placement-export.test.ts
+  apps/engine/test/sounds-provenance.test.ts --maxWorkers=2`: 7 files, 43 passed (`insert_sound` over a real engine
+  now commits through `soundDesign.place`; the panel's insert records `AudioClip.sfx`; every describe_commands example
+  of the new commands applies to a real project).
+- `pnpm typecheck` (whole workspace), `pnpm lint` (Biome, tokens, anime, layers, assets), `node scripts/i18n.mjs
+  --check` (es.json covers all 8 844 strings): pass. `check-layers` first found a runtime import cycle
+  (`handlers/project.ts` imported `libraryDescriptorIssue` from `handlers/sound.ts`, which now imports the clip
+  handlers): the helper moved to `sound/provenance.ts`.
+- Not run here: the web UI (no UI in this package: the Cue Seam, Fill, peak handle and menus are P2-R7) and a manual
+  run of the app; the Phase 1 e2e (`e2e/sound-library.spec.ts`) was not rerun after the insert rewire (its unit test
+  and the MCP real-engine test were).
 
 #### Limits and notes for the next packages
 
@@ -2058,6 +2116,10 @@ RESULTS_PLACEHOLDER
   copy dangle (repaired to null on the next load).
 - `soundCue.resync` resolves `mg` anchors with the transaction's template registry; without a template the cue is
   reported unresolved.
+- A text `unit` anchor on a Range Selector resolves only to units the deriver keeps after thinning (≤ 12/s, ≤ 40 per
+  clip); a hand-made anchor to a thinned-out unit resolves to null (the cue stays where it is).
+- Keyframe anchors resolve by deriving the clip again (sampling up to 20 000 frames with `resolveLayerProps`), cached
+  per clip object; a resync of hundreds of motion cues on many clips costs one derivation per clip.
 
 ### WP2.2 cue derivation
 
@@ -2239,7 +2301,7 @@ pops, pulses, fades, abrupt stops and shrinks.
 
 #### Limits and notes for the next packages
 
-- **resolveCueAnchor disagreements to fix in WP2.1's resolver** (not this package's file): (1) the Out side of a
+- **Fixed in WP2.1 (`61a0aaee`, see WP2.1 "Review fixes from WP2.2")** — resolveCueAnchor disagreements found here: (1) the Out side of a
   typewriter: the renderer's Out window seeks `(N − 1 − k)` frames, so the i-th deleted unit goes at `N − ⌈t/frame⌉`
   (this deriver); the resolver computes `⌈N − t/frame⌉`, one frame late whenever `t/frame` is not an integer; (2) text
   anchors with `unit` resolve only for typewriter windows; per-unit reveals of Range Selectors (`side`, `unit`) resolve
