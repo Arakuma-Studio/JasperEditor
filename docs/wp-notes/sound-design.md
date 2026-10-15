@@ -1894,7 +1894,8 @@ Shared host, 16 cores; other agents' load stated per run.
   change) adds the padded copy as a new media; the old clips keep working with their own provenance.
 - `soundDesign.place` (Phase 2) should call `planSoundInsert` / `chooseSoundTrack` (or move them into its handler) so
   the command, the panel and MCP stay one implementation.
-- The history label "Add Sound <title>" and placement refusals from `@jasper/project` are English in the editor.
+- ~~The history label "Add Sound <title>" and placement refusals from `@jasper/project` are English in the editor.~~
+  Fixed in "Phase 2 verification: agent surfaces" below (model-string templates).
 - Workspace names (all built-ins, not only Sound Design) are not in the i18n catalogue (pre-existing).
 
 ## Phase 2: cues and placement
@@ -2850,6 +2851,40 @@ that run.
 - Swap does not rename a clip whose name the user changed; library clips are named after the registered file
   (`soundDesign.swap` renames when the name is the old file name).
 - Auto gain with its reason, Room send and Stop before next in Essential Sound are Phase 4 (P4 owns the levels).
+
+### Phase 2 verification: agent surfaces (branch `feat/sd-p2v-agent`)
+
+Review of the cue route, the MCP cue tools and model-string i18n. Each fix has a regression that failed before it.
+
+- **Same cues on both surfaces.** The route (and so `find_sound_cues`) bound active expressions before `deriveCues`, the
+  editor's Suggest Cues… did not: an expression-driven graphic gave 19 cues on the engine, 17 in the dialog. Decision:
+  binding is right (cues follow what the Program monitor shows). `planSuggestion` binds; the dialog waits for the
+  expression engine (`useExpressionsFor`). `apps/engine/test/sound-design-cues.test.ts` runs the web planner and the
+  route on the same envelope (defaults, In–Out range, sparse without dialogue, a source subset) and compares every cue.
+- **Sampling budget.** `deriveCues` sampled every frame of every animated clip (20 000 per clip, no total): measured
+  2.2 s for 20 clips × 20 000 frames on this shared host, so a 20 MB envelope could block the engine for minutes and
+  `curves: true` return gigabytes; camera sampling also tested every camera per frame. The keyframes and camera3d
+  sources now share `MAX_SAMPLES_PER_DERIVATION` (400 000 frames; a camera frame costs 1 + overlapping cameras) and warn
+  once (`W_SAMPLING_TRUNCATED`); deterministic (clip order).
+- **swap_sound cycling across calls.** Without `sfx.alternatives` the cycle was anchored on the current sound and
+  `next` alternated between two sounds (lead's real run). `soundDesign.swap` gains optional `alternatives` (the ring);
+  `swap_sound` stores `[the sound playing now]` on a clip without a ring in the same transaction. Decision: a cycle
+  candidate that does not fit on the track (`E_OVERLAP`) is skipped for the next one in the same direction (≤ 4 tries,
+  listed in `skipped`); the explicit `to: soundId` still fails. The web's Next/Previous Variation has the same
+  cross-run re-anchoring (left to the web reviewer / lead).
+- **Two-way cue link in MCP:** `align_peak` (own cue, `withLayers`, note) and `place_sound`'s hero check use a clip's
+  cue only when its `placedClipIds` lists the clip (a duplicate fills nothing).
+- **Arguments:** `set_sound_cues` refuses an inverted `window` (it was silently dropped), `storedCueId` ≤ 128;
+  `find_sound_cues` refuses a range past `maxFrame` with the time hint (was the route's raw zod dump).
+- **i18n (model strings, the existing mechanism):** `@jasper/project` exports `SOUND_LABELS` (MCP builds its History
+  labels from them) and `SOUND_MESSAGES` (refusal templates; `test/sound-messages.test.ts` checks every refusal written
+  in the sound handlers and planners has one, except `peakAlignedStart`'s developer input checks). `model-strings.ts`
+  lists them plus "Agent"; `translateName` now also matches templated model names (whole text, or a part between
+  separators, so "Agent: Sound Cues (add 2, edit 1)" → "Agente: Señales de sonido (añadir 2, editar 1)"); the filled
+  values (ids, titles, numbers) are kept. The web's own labels (Fill Cue, Add Layer, Swap Sound ×n, Suggest Cues (n),
+  Fill Unfilled Cues (n), Add Sound) were already translated by `t()` / the build transform at commit.
+  Limits: labels are stored in the language they were committed in; "Undo <label>" (`commands/edit.ts`) is still
+  composed in English (pre-existing, every feature).
 
 ## Phase 3: proposals and review
 
