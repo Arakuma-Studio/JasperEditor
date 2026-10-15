@@ -1,8 +1,9 @@
 // sound-design (spec 12 §2.7 "Insert"): where a library sound dragged over the timeline goes. The pointer marks the
-// sound's PEAK (Alt: its start). With snapping on, the peak is the primary snap edge: it snaps first (playhead >
-// marker > In/Out > clip edge, TL-453); only when the peak finds no target within the threshold do the clip's start
-// and end edges snap. The placement itself is `planSoundPlacement` (free track, never overwriting audio). Pure.
-import type { Sequence } from '@jasper/project';
+// sound's aligned point: its type's (`resolveSoundAlign`: the PEAK of hits and whooshes, the END of risers and
+// reverses, the start of UI blips), or its start with Alt. With snapping on, that point is the primary snap edge: it
+// snaps first (playhead > marker > In/Out > clip edge, TL-453); only when it finds no target within the threshold do
+// the clip's other edges snap. The placement itself is `planSoundPlacement` (free track, never overwriting audio). Pure.
+import { resolveSoundAlign, type Sequence, type SoundAlign, type SoundAlignRequest } from '@jasper/project';
 import {
 	planSoundPlacement,
 	type SoundDragInfo,
@@ -12,9 +13,11 @@ import {
 import { collectSnapTargets, findSnap } from './snapping.ts';
 
 export type SoundDropTarget = {
-	/** The frame the aligned point (peak, or start with Alt) lands on. */
+	/** The frame the aligned point (peak / end / start by type, or start with Alt) lands on. */
 	cue: number;
-	align: 'peak' | 'start';
+	align: SoundAlign;
+	/** What the insert asks for: `start` with Alt, else `auto` (the sound's type decides, also for a drag from another window). */
+	request: SoundAlignRequest;
 	/** The audio track under the pointer (preferred when free). */
 	preferredTrackId: string | null;
 	/** Null when the sound's details are unknown (a drag from another window). */
@@ -36,10 +39,12 @@ export function resolveSoundDrop(input: {
 	thresholdFrames: number;
 	targeted?: readonly string[];
 }): SoundDropTarget {
-	const align = input.alt ? 'start' : 'peak';
+	const align: SoundAlign = input.alt ? 'start' : resolveSoundAlign(input.info?.types ?? null, 'auto');
 	const pointer = Math.max(0, Math.round(input.pointerFrame));
+	const request: SoundAlignRequest = input.alt ? 'start' : 'auto';
 	const base = {
 		align,
+		request,
 		preferredTrackId: input.preferredTrackId,
 		snapFrame: null,
 		snapEdge: null,
@@ -67,9 +72,8 @@ export function resolveSoundDrop(input: {
 		const end = p.start + p.frames;
 		// The aligned point is primary; the clip's edges only when it snaps to nothing.
 		const primary = findSnap(targets, [pointer], input.thresholdFrames, pointer);
-		const secondary = primary
-			? null
-			: findSnap(targets, align === 'peak' ? [start, end] : [end], input.thresholdFrames, pointer);
+		const edges = align === 'peak' ? [start, end] : align === 'end' ? [start] : [end];
+		const secondary = primary ? null : findSnap(targets, edges, input.thresholdFrames, pointer);
 		const hit = primary ?? secondary;
 		if (hit) {
 			cue = Math.max(0, pointer + hit.offset);
@@ -81,6 +85,7 @@ export function resolveSoundDrop(input: {
 	return {
 		cue,
 		align,
+		request,
 		preferredTrackId: input.preferredTrackId,
 		plan: final.ok ? final.placement : first.placement,
 		snapFrame,

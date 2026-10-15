@@ -1238,7 +1238,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				: p.track.label
 			: (t.preferredTrackId ?? 'A1');
 		const lines = [
-			`${t.align === 'peak' ? 'peak' : 'start'} → ${tc}`,
+			`${t.align} → ${tc}`,
 			`${info?.title ?? 'Sound'} → ${where}`,
 			...(t.snapEdge && t.snapEdge !== t.align ? [`${t.snapEdge} edge snapped`] : []),
 		];
@@ -1280,10 +1280,10 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		void (async () => {
 			try {
 				const entry = await engine.getSound(soundId);
-				// Without the dragged sound's details (a drag from another window) the drop frame is the peak.
+				// `auto` lets the sound's type pick the aligned point (also for a drag from another window).
 				await insertSoundWithFeedback(session, engine, entry, envRef.current.toast, {
 					at,
-					align: t.align,
+					align: t.request,
 					preferredTrackId: t.preferredTrackId,
 				});
 			} catch (err) {

@@ -43,7 +43,7 @@ export type SoundGhost = {
 	/** What the ghost shows: the sound's name and its destination. */
 	label: string;
 	/** `start` = Alt-drop (aligns the sound's start). */
-	align: 'peak' | 'start';
+	align: 'peak' | 'start' | 'end';
 };
 
 export type ContextMenuItem =

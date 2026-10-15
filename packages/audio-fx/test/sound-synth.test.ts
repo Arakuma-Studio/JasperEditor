@@ -95,12 +95,18 @@ describe('Jasper Synth', () => {
 				expect(s.sampleRate).toBe(SYNTH_SAMPLE_RATE);
 				expect(s.channels).toHaveLength(2);
 				expect(s.type).toBe(type);
+				// One assertion per sound, not per sample: an expect() per sample (≈ 140 000 per variant) made this
+				// test take 7 s per variant, 90 s per type under load, and time out in the gate.
 				let peak = 0;
+				let nonFinite = -1;
 				for (const c of s.channels)
-					for (const v of c) {
-						expect(Number.isFinite(v)).toBe(true);
-						peak = Math.max(peak, Math.abs(v));
+					for (let i = 0; i < c.length; i++) {
+						const v = c[i]!;
+						if (!Number.isFinite(v)) {
+							if (nonFinite < 0) nonFinite = i;
+						} else if (Math.abs(v) > peak) peak = Math.abs(v);
 					}
+				expect(nonFinite, `${id} seed ${seed}: first non-finite sample`).toBe(-1);
 				expect(Math.abs(20 * Math.log10(peak) - -1)).toBeLessThan(0.01);
 				const d = analyzeSound(s.channels, s.sampleRate);
 				const j = judgeSound(d, DEFAULT_TYPE_PROFILES[type]);

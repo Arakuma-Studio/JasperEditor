@@ -110,8 +110,11 @@ describe('audio-fx registry', () => {
 		}
 	});
 
-	it('extreme settings stay finite and tails end without subnormals', () => {
-		for (const id of processorIds()) {
+	// One test per processor: all of them in one test (12 s of tail × 2 settings × every effect) ran 90–190 s under
+	// load and hit the 120 s test timeout. The coverage is the same.
+	it.each([...processorIds()].map((id) => [id]))(
+		'%s: extreme settings stay finite and tails end without subnormals',
+		(id) => {
 			for (const extreme of ['min', 'max'] as const) {
 				const fx = createProcessor(id, SR, 2)!;
 				for (const p of fx.spec.params) {
@@ -143,8 +146,8 @@ describe('audio-fx registry', () => {
 					}
 				}
 			}
-		}
-	});
+		},
+	);
 
 	it('reset restores the initial behaviour', () => {
 		for (const id of processorIds()) {

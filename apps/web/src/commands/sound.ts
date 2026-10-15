@@ -37,10 +37,10 @@ const writableSequence = (ctx: CommandCtx) => {
 const InsertArgs = z
 	.object({
 		soundId: SoundIdSchema,
-		/** Sequence frame the peak lands on (default: the playhead). */
+		/** Sequence frame the aligned point lands on (default: the playhead). */
 		at: z.number().int().min(0).optional(),
-		/** `start` places the sound's start instead of its peak. */
-		align: z.enum(['peak', 'start']).optional(),
+		/** Which point lands there: auto (default, by the sound's type: peak, end for risers, start for UI), peak, start, end. */
+		align: z.enum(['auto', 'peak', 'start', 'end']).optional(),
 	})
 	.strict();
 

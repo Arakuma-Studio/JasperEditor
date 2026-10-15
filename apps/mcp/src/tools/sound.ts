@@ -17,24 +17,26 @@ import {
 } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
+	audioTrackClipsIn,
+	chooseSoundTrack,
+	defaultAlignForTypes,
 	FLICKS_PER_SECOND,
-	FRAME_EPS,
-	flicksPerFrame,
 	isCommercialSafe as isCommercialSafeLicense,
-	isSoundTypeId,
 	type MediaAsset,
 	mediaDurationFlicks,
 	type ProjectDocument,
-	peakAlignedStart,
+	planSoundInsert,
 	type Rational,
 	readLibraryProvenance,
 	requiresAttribution,
+	resolveSoundAlign,
 	type Sequence,
 	SOUND_FAMILIES,
-	SOUND_TYPES,
 	type SoundAlign,
+	type SoundTrackChoice,
 	sequenceTimecode,
 	soundCredits,
+	soundTimingOf,
 	TimeInputSchema,
 	trackLabel,
 	VISUAL_KINDS,
@@ -322,24 +324,6 @@ function importCommands(doc: ProjectDocument, sounds: Registered[]) {
 	return { commands, media };
 }
 
-const SFX_NAME = /^sfx\b/i;
-
-function nextSfxTrackName(seq: Sequence): string {
-	const used = new Set(seq.audioTracks.map((t) => (t.name ?? '').trim().toLowerCase()));
-	for (let n = 1; n < 1000; n++) if (!used.has(`sfx ${n}`)) return `SFX ${n}`;
-	return 'SFX';
-}
-
-/** Clips on an audio track over [start, start + frames), and whether it is locked. */
-function trackState(seq: Sequence, trackId: string, start: number, frames: number) {
-	const t = seq.audioTracks.find((x) => x.id === trackId);
-	const end = start + frames;
-	const blocking = Object.values(seq.clips).filter(
-		(c) => c.trackId === trackId && c.start < end && start < c.start + c.duration,
-	);
-	return { exists: !!t, locked: !!t?.locked, blocking };
-}
-
 /** Resolves an explicit track argument ("A3", a track id or name) to an audio track id. */
 function resolveAudioTrack(seq: Sequence, ref: string): string {
 	const m = /^A(\d+)$/i.exec(ref);
@@ -364,26 +348,6 @@ function resolveAudioTrack(seq: Sequence, ref: string): string {
 		`No audio track ${ref}`,
 		'get_timeline lists the tracks; or pass track "auto".',
 	);
-}
-
-type TrackPick = { kind: 'existing'; trackId: string } | { kind: 'new'; name: string };
-
-/** track "auto": a free "SFX…" track, else the first free audio track, else a new "SFX n" (never overwrites). */
-function autoTrack(seq: Sequence, start: number, frames: number): TrackPick {
-	const free = (id: string) => {
-		const s = trackState(seq, id, start, frames);
-		return s.exists && !s.locked && s.blocking.length === 0;
-	};
-	for (const t of seq.audioTracks)
-		if (SFX_NAME.test(t.name ?? '') && free(t.id)) return { kind: 'existing', trackId: t.id };
-	for (const t of seq.audioTracks) if (free(t.id)) return { kind: 'existing', trackId: t.id };
-	return { kind: 'new', name: nextSfxTrackName(seq) };
-}
-
-/** The alignment a sound uses by default: its first known type's (`SOUND_TYPES[type].defaultAlign`), else peak. */
-function defaultAlignOf(e: Pick<SoundEntry, 'types'>): SoundAlign {
-	for (const t of e.types) if (isSoundTypeId(t)) return SOUND_TYPES[t].defaultAlign;
-	return 'peak';
 }
 
 export function registerSoundTools(ctx: ToolContext): void {
@@ -517,7 +481,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 			const visual = await soundCall<SoundVisual>(ctx, (c) => c.getSoundVisual(soundId)).catch(() => null);
 			const body = {
 				...e,
-				defaultAlign: defaultAlignOf(e),
+				defaultAlign: defaultAlignForTypes(e.types),
 				creditRequired: requiresAttribution(e.license),
 				...(visual ? {} : { visual: 'unavailable' }),
 			};
@@ -640,7 +604,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 			const entry = await soundCall<SoundEntry>(ctx, (c) => c.getSound(a.soundId));
 			const reg = await soundCall<RegisterSoundResponse>(ctx, (c) => c.registerSound(a.soundId, a.projectId));
 			const title = entry.title || reg.library.title || reg.originalName;
-			const align: SoundAlign = !a.align || a.align === 'auto' ? defaultAlignOf(entry) : a.align;
+			const align: SoundAlign = resolveSoundAlign(entry.types, a.align);
 			// One retry when the project changed between reading it and applying (never place on a stale view).
 			for (let attempt = 0; ; attempt++) {
 				const { doc, revision } = await loadDoc(ctx, a.projectId);
@@ -657,7 +621,6 @@ export function registerSoundTools(ctx: ToolContext): void {
 					cue = ph;
 				} else cue = frameOf(seq, a.at);
 				const fps = seq.settings.frameRate as Rational;
-				const F = flicksPerFrame(fps);
 				const { commands, media } = importCommands(doc, [{ soundId: a.soundId, reg, title }]);
 				const existing = media[0]!.mediaId;
 				const durFlicks =
@@ -665,42 +628,49 @@ export function registerSoundTools(ctx: ToolContext): void {
 					Math.round(entry.format.durationSec * FLICKS_PER_SECOND);
 				if (!(durFlicks > 0))
 					throw new ToolError('E_INVALID_PARAM', 'This sound has no length', 'Pick another sound.');
-				const d = entry.descriptors;
-				const place = peakAlignedStart({
+				// The timing of the media actually placed: its provenance describes that file (lead silence included).
+				const provenance =
+					(existing && readLibraryProvenance((doc.media[existing] as { library?: unknown }).library)) ||
+					reg.library;
+				const planned = planSoundInsert({
 					cueFrame: cue,
-					peakSec: Math.min(d.peakSec, durFlicks / FLICKS_PER_SECOND),
-					onsetSec: Math.min(d.onsetSec, durFlicks / FLICKS_PER_SECOND),
-					durationSec: durFlicks / FLICKS_PER_SECOND,
-					headQuietSec: d.headQuietSec,
 					fps,
 					align,
-					clampStart: true,
+					timing: soundTimingOf(provenance, {
+						peakSec: entry.descriptors.peakSec,
+						onsetSec: entry.descriptors.onsetSec,
+						headQuietSec: entry.descriptors.headQuietSec,
+						durationSec: entry.format.durationSec,
+					}),
+					mediaDurationFlicks: durFlicks,
 				});
-				if (!place.ok)
-					throw new ToolError(place.code, place.message, 'Check `at` and the sound (get_sound).');
-				// What clip.place makes of [In, end of media).
-				const frames = Math.max(1, Math.floor(durFlicks / F - place.sourceInFlicks / F + FRAME_EPS));
-				let pick: TrackPick;
-				if (!a.track || a.track.toLowerCase() === 'auto') pick = autoTrack(seq, place.start, frames);
+				if (!planned.ok)
+					throw new ToolError(planned.code, planned.message, 'Check `at` and the sound (get_sound).');
+				const place = planned.placement;
+				const frames = place.frames;
+				let pick: SoundTrackChoice;
+				if (!a.track || a.track.toLowerCase() === 'auto')
+					pick = chooseSoundTrack(seq, { start: place.start, frames });
 				else {
 					const id = resolveAudioTrack(seq, a.track);
-					const s = trackState(seq, id, place.start, frames);
-					if (s.locked)
+					const t = seq.audioTracks.find((x) => x.id === id);
+					const blocking = audioTrackClipsIn(seq, id, place.start, frames);
+					if (t?.locked)
 						throw new ToolError('E_TRACK_LOCKED', `${a.track} is locked`, 'Unlock it, or use track "auto".');
-					if (s.blocking.length)
+					if (blocking.length)
 						throw new ToolError(
 							'E_OVERLAP',
-							`${a.track} has audio between frames ${place.start} and ${place.start + frames} (${s.blocking.map((c) => c.id).join(', ')}); insert_sound never overwrites`,
+							`${a.track} has audio between frames ${place.start} and ${place.start + frames} (${blocking.map((c) => c.id).join(', ')}); insert_sound never overwrites`,
 							'Use track "auto" (a free or new SFX track), another track, or move the other clip.',
 							{
-								blocking: s.blocking.map((c) => ({
+								blocking: blocking.map((c) => ({
 									clipId: c.id,
 									start: c.start,
 									end: c.start + c.duration,
 								})),
 							},
 						);
-					pick = { kind: 'existing', trackId: id };
+					pick = { kind: 'existing', trackId: id, label: a.track };
 				}
 				let trackRef: string;
 				if (pick.kind === 'new') {
@@ -719,11 +689,13 @@ export function registerSoundTools(ctx: ToolContext): void {
 						type: 'clip.place',
 						sequenceId: seq.id,
 						source: { mediaId: mediaRef },
-						sourceRange: { in: { flicks: place.sourceInFlicks }, out: { flicks: durFlicks } },
+						sourceRange: { in: { flicks: place.sourceInFlicks }, out: { flicks: place.outFlicks } },
 						at: place.start,
 						tracks: { audio: trackRef },
 						mode: 'overwrite',
 						video: false,
+						// One clip on the chosen track: never the item's Audio Channels routing (more clips, other tracks).
+						audioMapping: 'stereo',
 						ref: '$soundClip',
 					},
 					{ type: 'essentialSound.setType', clipIds: ['$soundClip'], audioType: 'sfx' },

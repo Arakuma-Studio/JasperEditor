@@ -8,17 +8,23 @@
 import { type RegisterSoundResponse, SOUND_EFFECTS_BIN, type SoundEntry } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
+	audioTrackIsFree,
 	type Command,
-	FLICKS_PER_SECOND,
-	FRAME_EPS,
-	flicksPerFrame,
+	chooseSoundTrack,
 	type MediaAsset,
 	mediaDurationFlicks,
-	peakAlignedStart,
+	nextSfxTrackName,
+	planSoundInsert,
 	type Rational,
 	readLibraryProvenance,
+	resolveSoundAlign,
 	type Sequence,
 	type SoundAlign,
+	type SoundAlignRequest,
+	type SoundInsertPlacement,
+	type SoundTiming,
+	type SoundTrackChoice,
+	soundTimingOf,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { z } from 'zod';
@@ -87,16 +93,13 @@ export function readSoundDrag(dt: Pick<DataTransfer, 'getData'> | null): SoundDr
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Placement (pure)
+// Placement (pure): the rules are @jasper/project's (`planSoundInsert`, `chooseSoundTrack`), shared with MCP insert_sound.
 
-export type SoundTiming = {
-	peakSec: number;
-	onsetSec: number;
-	headQuietSec: number;
-	/** Length of the sound file (seconds). */
-	durationSec: number;
-};
+export type { SoundTiming };
+export { chooseSoundTrack, nextSfxTrackName };
+export type TrackChoice = SoundTrackChoice;
 
+/** The library entry's timing (the unpadded library file): what the drag ghost knows before registering. */
 export function timingOf(e: Pick<SoundEntry, 'descriptors' | 'format'>): SoundTiming {
 	const d = e.descriptors;
 	return {
@@ -107,122 +110,41 @@ export function timingOf(e: Pick<SoundEntry, 'descriptors' | 'format'>): SoundTi
 	};
 }
 
-export type TrackChoice =
-	| { kind: 'existing'; trackId: string; label: string }
-	| { kind: 'new'; name: string; label: string };
-
-export type SoundPlacement = {
-	/** Sequence frame of the clip's first frame. */
-	start: number;
-	/** Clip In point, content flicks. */
-	sourceInFlicks: number;
-	/** Clip length in frames (what `clip.place` gives for the range). */
-	frames: number;
-	/** The frame the aligned point lands on (the playhead / drop frame). */
-	cueFrame: number;
-	/** The aligned point within the clip, frames from its start (fractional; the ghost's peak tick). */
-	alignOffsetFrames: number;
-	/** How late the aligned point plays, flicks (< 1 frame). */
-	errorFlicks: number;
-	/** Seconds of the sound's head cut because the clip would have started before frame 0. */
-	trimmedHeadSec: number;
-	track: TrackChoice;
-};
-
-const SFX_NAME = /^sfx\b/i;
-
-/** The next free "SFX n" name (1-based; names already used by audio tracks are skipped). */
-export function nextSfxTrackName(seq: Pick<Sequence, 'audioTracks'>): string {
-	const used = new Set(seq.audioTracks.map((t) => (t.name ?? '').trim().toLowerCase()));
-	for (let n = 1; n < 1000; n++) if (!used.has(`sfx ${n}`)) return `SFX ${n}`;
-	return 'SFX';
-}
+export type SoundPlacement = SoundInsertPlacement & { track: TrackChoice };
 
 /** Whether an audio track is unlocked and has no clip over `[start, start + frames)`. */
 export function trackIsFree(seq: Sequence, trackId: string, start: number, frames: number): boolean {
-	const t = seq.audioTracks.find((x) => x.id === trackId);
-	if (!t || t.locked) return false;
-	const end = start + frames;
-	for (const c of Object.values(seq.clips)) {
-		if (c.trackId !== trackId) continue;
-		if (c.start < end && start < c.start + c.duration) return false;
-	}
-	return true;
+	return audioTrackIsFree(seq, trackId, start, frames);
 }
 
 /**
- * The track a sound goes on (spec 12 §2.7 "Tracks"): the preferred track (a drop target) when it is a free audio
- * track, else the first free targeted audio track, else a free track named "SFX…", else the first free audio track,
- * else a new "SFX n". Never a track with audio over the span.
- */
-export function chooseSoundTrack(
-	seq: Sequence,
-	span: { start: number; frames: number },
-	opts: { preferredTrackId?: string | null; targeted?: readonly string[] } = {},
-): TrackChoice {
-	const label = (id: string) => `A${seq.audioTracks.findIndex((t) => t.id === id) + 1}`;
-	const free = (id: string) => trackIsFree(seq, id, span.start, span.frames);
-	const pick = (id: string): TrackChoice => ({ kind: 'existing', trackId: id, label: label(id) });
-	if (opts.preferredTrackId && free(opts.preferredTrackId)) return pick(opts.preferredTrackId);
-	for (const t of seq.audioTracks) if (opts.targeted?.includes(t.id) && free(t.id)) return pick(t.id);
-	for (const t of seq.audioTracks) if (SFX_NAME.test(t.name ?? '') && free(t.id)) return pick(t.id);
-	for (const t of seq.audioTracks) if (free(t.id)) return pick(t.id);
-	return { kind: 'new', name: nextSfxTrackName(seq), label: `A${seq.audioTracks.length + 1}` };
-}
-
-/**
- * Where a sound goes so that its peak (`align: 'peak'`) or its start (`'start'`, Alt-drop) lands on `cueFrame`.
- * `mediaDurationFlicks`: the registered media's length when known (else the sound's). Refuses only impossible input.
+ * Where a sound goes so that its `align` point (peak, start = onset, end) lands on `cueFrame`, and on which track.
+ * `mediaDurationFlicks`: the registered media's length when known (else the timing's). Refuses only impossible input.
  */
 export function planSoundPlacement(input: {
 	seq: Sequence;
 	timing: SoundTiming;
 	cueFrame: number;
-	align: Extract<SoundAlign, 'peak' | 'start'>;
+	align: SoundAlign;
 	mediaDurationFlicks?: number | null;
 	preferredTrackId?: string | null;
 	targeted?: readonly string[];
 }): { ok: true; placement: SoundPlacement } | { ok: false; message: string } {
-	const fps = input.seq.settings.frameRate as Rational;
-	const F = flicksPerFrame(fps);
-	const cue = Math.max(0, Math.round(input.cueFrame));
-	const t = input.timing;
-	const r = peakAlignedStart({
-		cueFrame: cue,
-		peakSec: t.peakSec,
-		onsetSec: input.align === 'start' ? 0 : t.onsetSec,
-		durationSec: t.durationSec,
-		headQuietSec: t.headQuietSec,
-		fps,
+	const r = planSoundInsert({
+		cueFrame: input.cueFrame,
+		fps: input.seq.settings.frameRate as Rational,
 		align: input.align,
-		clampStart: true,
+		timing: input.timing,
+		mediaDurationFlicks: input.mediaDurationFlicks ?? null,
 	});
 	if (!r.ok) return { ok: false, message: r.message };
-	const dur =
-		input.mediaDurationFlicks && input.mediaDurationFlicks > 0
-			? input.mediaDurationFlicks
-			: Math.round(t.durationSec * FLICKS_PER_SECOND);
-	if (!(dur > r.sourceInFlicks)) return { ok: false, message: 'The sound is too short to place' };
-	// what clip.place makes of the range [sourceIn, end of media)
-	const frames = Math.max(1, Math.floor(dur / F - r.sourceInFlicks / F + FRAME_EPS));
+	const p = r.placement;
 	const track = chooseSoundTrack(
 		input.seq,
-		{ start: r.start, frames },
+		{ start: p.start, frames: p.frames },
 		{ preferredTrackId: input.preferredTrackId ?? null, targeted: input.targeted ?? [] },
 	);
-	return {
-		ok: true,
-		placement: {
-			start: r.start,
-			sourceInFlicks: r.sourceInFlicks,
-			frames,
-			cueFrame: cue,
-			alignOffsetFrames: (r.alignFlicks - r.sourceInFlicks) / F,
-			errorFlicks: r.errorFlicks,
-			trimmedHeadSec: r.trimmedHeadSec,
-			track,
-		},
-	};
+	return { ok: true, placement: { ...p, track } };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -235,6 +157,10 @@ export type InsertSoundResult = {
 	start: number;
 	cueFrame: number;
 	trimmedHeadSec: number;
+	/** The point of the sound that landed on `cueFrame`. */
+	align: SoundAlign;
+	/** How late it plays, flicks (0 for padded library sounds: sample-exact). */
+	errorFlicks: number;
 	/** "Added <name> to A4 · peak at 00:00:01:12" */
 	message: string;
 };
@@ -268,10 +194,11 @@ function existingMediaFor(
 export async function insertLibrarySound(
 	session: EditorSession,
 	engine: Pick<EngineClient, 'registerSound'>,
-	entry: Pick<SoundEntry, 'id' | 'title' | 'descriptors' | 'format'>,
+	entry: Pick<SoundEntry, 'id' | 'title' | 'descriptors' | 'format' | 'types'>,
 	opts: {
 		at?: number;
-		align?: 'peak' | 'start';
+		/** Which point of the sound lands on `at`: auto (default: by its type), peak, start (onset) or end. */
+		align?: SoundAlignRequest;
 		preferredTrackId?: string | null;
 		sequenceId?: string;
 		signal?: AbortSignal;
@@ -283,9 +210,8 @@ export async function insertLibrarySound(
 	if (!sequenceId || !before.document.sequences[sequenceId])
 		throw new InsertSoundError('Open a sequence first');
 	const cueFrame = Math.max(0, Math.round(opts.at ?? session.transport.getState().frame));
-	const align = opts.align ?? 'peak';
-	const timing = timingOf(entry);
-	if (!(timing.durationSec > 0)) throw new InsertSoundError('This sound has no length');
+	const align = resolveSoundAlign(entry.types, opts.align);
+	if (!(timingOf(entry).durationSec > 0)) throw new InsertSoundError('This sound has no length');
 
 	let reg: RegisterSoundResponse;
 	try {
@@ -304,12 +230,15 @@ export async function insertLibrarySound(
 	const existing = existingMediaFor(doc, reg);
 	let mediaRef: string;
 	let durFlicks: number | null;
+	// The timing of the media actually placed: its provenance describes that file (lead silence included).
+	let provenance = reg.library;
 	const title = entry.title || reg.library.title || reg.originalName;
 	if (existing) {
 		mediaRef = existing;
 		durFlicks = mediaDurationFlicks(doc.media[existing] as MediaAsset);
-		if (!readLibraryProvenance((doc.media[existing] as { library?: unknown }).library))
-			commands.push({ type: 'media.setLibraryInfo', mediaId: existing, library: reg.library } as Command);
+		const own = readLibraryProvenance((doc.media[existing] as { library?: unknown }).library);
+		if (own) provenance = own;
+		else commands.push({ type: 'media.setLibraryInfo', mediaId: existing, library: reg.library } as Command);
 	} else {
 		let binId: string | null = soundEffectsBin(doc);
 		if (!binId) {
@@ -329,6 +258,7 @@ export async function insertLibrarySound(
 		mediaRef = '$sound';
 		durFlicks = mediaDurationFlicks(asset);
 	}
+	const timing = soundTimingOf(provenance, timingOf(entry));
 	const plan = planSoundPlacement({
 		seq,
 		timing,
@@ -351,8 +281,7 @@ export async function insertLibrarySound(
 		} as Command);
 		trackRef = '$sfxTrack';
 	} else trackRef = p.track.trackId;
-	const outFlicks =
-		durFlicks && durFlicks > 0 ? durFlicks : Math.round(timing.durationSec * FLICKS_PER_SECOND);
+	const outFlicks = p.outFlicks;
 	commands.push(
 		{
 			type: 'clip.place',
@@ -363,6 +292,8 @@ export async function insertLibrarySound(
 			tracks: { audio: trackRef },
 			mode: 'overwrite',
 			video: false,
+			// One clip on the chosen track: never the item's Audio Channels routing (more clips, other tracks).
+			audioMapping: 'stereo',
 			ref: '$soundClip',
 		} as Command,
 		{ type: 'essentialSound.setType', clipIds: ['$soundClip'], audioType: 'sfx' } as Command,
@@ -391,9 +322,13 @@ export async function insertLibrarySound(
 		start: p.start,
 		cueFrame,
 		trimmedHeadSec: p.trimmedHeadSec,
+		align,
+		errorFlicks: p.errorFlicks,
 		message:
 			align === 'peak'
 				? `Added ${title} to ${trackLabel} · peak at ${tc}`
-				: `Added ${title} to ${trackLabel} · start at ${tc}`,
+				: align === 'end'
+					? `Added ${title} to ${trackLabel} · end at ${tc}`
+					: `Added ${title} to ${trackLabel} · start at ${tc}`,
 	};
 }

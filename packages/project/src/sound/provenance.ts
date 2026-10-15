@@ -92,7 +92,13 @@ export const LibraryProvenanceSchema = z.looseObject({
 	sourceUrl: z.string().max(LIBRARY_LIMITS.url).optional(),
 	/** The credit line the licence asks for, verbatim; null when none is required. */
 	attribution: z.string().max(LIBRARY_LIMITS.attribution).nullable(),
+	/** Descriptors of the registered file (with `leadSilenceSec` included in its time points). */
 	descriptors: LibraryDescriptorsSchema.optional(),
+	/**
+	 * Seconds of silence the engine put in front of the library file when it registered it (sample-exact placement,
+	 * spec 12 §2.3); absent or 0 when the media is the library file itself.
+	 */
+	leadSilenceSec: z.number().min(0).max(1).optional(),
 	/** Hash of the library snapshot the sound was registered from. */
 	snapshotHash: z.string().max(LIBRARY_LIMITS.hash).optional(),
 });
@@ -138,6 +144,8 @@ export function readLibraryProvenance(raw: unknown): LibraryProvenance | null {
 	out.attribution = str(raw.attribution, LIBRARY_LIMITS.attribution) ?? null;
 	const d = LibraryDescriptorsSchema.safeParse(raw.descriptors);
 	if (d.success) out.descriptors = d.data;
+	const lead = LibraryProvenanceSchema.shape.leadSilenceSec.safeParse(raw.leadSilenceSec);
+	if (lead.success && lead.data !== undefined) out.leadSilenceSec = lead.data;
 	const hash = str(raw.snapshotHash, LIBRARY_LIMITS.hash);
 	if (hash !== undefined) out.snapshotHash = hash;
 	const r = LibraryProvenanceSchema.safeParse(out);

@@ -1,10 +1,11 @@
 // The engine's sound library service (spec 12 §2.1, §2.8; wp-note "WP1.2"): the index, user folders, the bundled
 // starter kit, Jasper Synth, search with facets, files and visual data of a sound, and registering a sound into a
 // project. Routes: routes/sounds.ts.
-import { realpath } from 'node:fs/promises';
+import { realpath, rm } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import {
 	type EngineJob,
+	type RegisteredMedia,
 	type RegisterSoundResponse,
 	SOUND_SEARCH_DEFAULT_LIMIT,
 	SOUND_SOURCE_TYPES,
@@ -20,13 +21,17 @@ import {
 } from '@jasper/api';
 import {
 	isSoundTypeId,
+	LIBRARY_LEAD_SILENCE_SEC,
+	LIBRARY_PAD_MAX_SECONDS,
 	type LibraryProvenance,
 	LibraryProvenanceSchema,
+	libraryLeadSilenceSamples,
 	licenseClass,
 	rankSounds,
 	resolveTypeNames,
 	SOUND_TYPES,
 	type SoundRankRequest,
+	shiftLibraryDescriptors,
 	typesOfFamily,
 } from '@jasper/project';
 import { isLoopbackHost } from '../context.ts';
@@ -39,6 +44,7 @@ import { resolveSoundWorker, SoundAnalyzer } from './analysis.ts';
 import { decodeSound } from './decode.ts';
 import { SoundIndexer } from './index-job.ts';
 import { SoundLibrary } from './library.ts';
+import { paddedFileName, probeAudioStream, writePaddedSound } from './pad.ts';
 import { SoundRootStore } from './roots.ts';
 import { isSoundFileName, type LoadedManifest, loadManifest, starterDir } from './starter.ts';
 import { ensureSynthFile, synthItems } from './synth.ts';
@@ -73,8 +79,9 @@ function inside(base: string, child: string): boolean {
 }
 
 /** The provenance a registered library sound carries in the project (`MediaAsset.library`). */
-export function provenanceOf(e: SoundEntry, snapshotHash: string): LibraryProvenance {
+export function provenanceOf(e: SoundEntry, snapshotHash: string, leadSilenceSec = 0): LibraryProvenance {
 	const d = e.descriptors;
+	const lead = leadSilenceSec > 0 ? leadSilenceSec : 0;
 	const candidate = {
 		soundId: e.id,
 		title: e.title,
@@ -85,15 +92,20 @@ export function provenanceOf(e: SoundEntry, snapshotHash: string): LibraryProven
 		author: e.author,
 		...(e.sourceUrl ? { sourceUrl: e.sourceUrl } : {}),
 		attribution: e.attribution,
-		descriptors: {
-			peakSec: d.peakSec,
-			onsetSec: d.onsetSec,
-			headQuietSec: d.headQuietSec,
-			durationSec: d.durationSec,
-			octaveBandsDb: d.octaveBandsDb,
-			centroidHz: d.centroidHz,
-			maxMomentaryLufs: d.maxMomentaryLufs,
-		},
+		// The registered file's time points: the library file's, moved by the silence put in front of it.
+		descriptors: shiftLibraryDescriptors(
+			{
+				peakSec: d.peakSec,
+				onsetSec: d.onsetSec,
+				headQuietSec: d.headQuietSec,
+				durationSec: d.durationSec,
+				octaveBandsDb: d.octaveBandsDb,
+				centroidHz: d.centroidHz,
+				maxMomentaryLufs: d.maxMomentaryLufs,
+			},
+			lead,
+		),
+		...(lead > 0 ? { leadSilenceSec: lead } : {}),
 		snapshotHash,
 	};
 	return LibraryProvenanceSchema.parse(candidate) as LibraryProvenance;
@@ -382,26 +394,52 @@ export class SoundService {
 	}
 
 	/**
-	 * Registers a sound's file as media for a project: starter, pack and synth files are copied into managed media,
-	 * folder files registered in place (local mode). Returns the registered media, the provenance to commit and the
-	 * saved project's media that already is this file.
+	 * Registers a sound's file as media for a project. A sound whose head is not quiet (and which is at most
+	 * `LIBRARY_PAD_MAX_SECONDS` long) is registered as a managed WAV copy with `LIBRARY_LEAD_SILENCE_SEC` of silence in
+	 * front (`pad.ts`), whatever its source, so placement is sample-exact; the provenance's descriptors then describe that
+	 * file and `leadSilenceSec` says how much was added. Other sounds: starter, pack and synth files are copied into
+	 * managed media, folder files registered in place (local mode). Returns the registered media, the provenance to
+	 * commit and the saved project's media that already is this file.
 	 */
 	async register(id: string, projectId: string): Promise<RegisterSoundResponse> {
 		const e = await this.get(id);
 		const project = await this.core.projects.get(projectId);
 		const path = await this.fileOf(e);
-		const reg = await this.core.media.registerPath(path, {
-			projectId,
-			...(e.source.type === 'folder' ? {} : { copyIntoProject: true }),
-		});
-		if (reg.fingerprint !== e.fingerprint)
-			throw new HttpError(
-				409,
-				'SOUND_CHANGED',
-				'The file changed since it was indexed; rescan the sound library',
+		const changed = () =>
+			new HttpError(409, 'SOUND_CHANGED', 'The file changed since it was indexed; rescan the sound library');
+		let reg: RegisteredMedia;
+		let leadSec = 0;
+		const maybePad =
+			e.descriptors.headQuietSec < LIBRARY_LEAD_SILENCE_SEC &&
+			e.descriptors.durationSec > 0 &&
+			e.descriptors.durationSec <= LIBRARY_PAD_MAX_SECONDS;
+		const stream = maybePad ? await this.mediaCall(() => probeAudioStream(this.core.ffmpeg, path)) : null;
+		const samples = stream?.sampleRate ? libraryLeadSilenceSamples(e.descriptors, stream.sampleRate) : 0;
+		if (samples > 0 && stream?.sampleRate) {
+			if ((await fingerprintFile(path)).fingerprint !== e.fingerprint) throw changed();
+			const tmp = await this.mediaCall(() =>
+				writePaddedSound(this.core.ffmpeg, {
+					path,
+					samples,
+					codec: stream.codec,
+					tmpDir: join(this.core.config.paths.mediaDir, '.sound-tmp'),
+				}),
 			);
+			try {
+				reg = await this.core.media.registerUploaded(tmp, paddedFileName(path), { projectId });
+			} finally {
+				await rm(tmp, { force: true });
+			}
+			leadSec = samples / stream.sampleRate;
+		} else {
+			reg = await this.core.media.registerPath(path, {
+				projectId,
+				...(e.source.type === 'folder' ? {} : { copyIntoProject: true }),
+			});
+			if (reg.fingerprint !== e.fingerprint) throw changed();
+		}
 		const snapshot = await this.library.snapshot();
-		const library = provenanceOf(e, snapshot.snapshotHash);
+		const library = provenanceOf(e, snapshot.snapshotHash, leadSec);
 		let existingMediaId: string | null = null;
 		const media = (project.envelope.document as { media?: unknown }).media;
 		if (media && typeof media === 'object')
@@ -413,6 +451,17 @@ export class SoundService {
 				}
 			}
 		return { ...reg, library, existingMediaId };
+	}
+
+	/** Runs an ffmpeg step of registering; its job errors become HTTP errors (422 with the code). */
+	private async mediaCall<T>(fn: () => Promise<T>): Promise<T> {
+		try {
+			return await fn();
+		} catch (err) {
+			if (err instanceof JobError)
+				throw new HttpError(err.code === 'BINARY_MISSING' ? 503 : 422, err.code, err.message);
+			throw err;
+		}
 	}
 
 	/**

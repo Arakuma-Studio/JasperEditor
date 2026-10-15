@@ -3,6 +3,7 @@
 // instance). Commands that do not need the panel (insert a sound by id at the playhead) work without it.
 import type { SoundEntry } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
+import type { SoundAlignRequest } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import type { ToastRequest } from '../commands/types.ts';
 import { auditionPlayer } from './audition.ts';
@@ -66,7 +67,7 @@ export async function insertSoundWithFeedback(
 	engine: Pick<EngineClient, 'registerSound'>,
 	entry: SoundEntry,
 	toast: (r: ToastRequest) => void,
-	opts: { at?: number; align?: 'peak' | 'start'; preferredTrackId?: string | null } = {},
+	opts: { at?: number; align?: SoundAlignRequest; preferredTrackId?: string | null } = {},
 ): Promise<string | null> {
 	try {
 		const r = await insertLibrarySound(session, engine, entry, opts);
