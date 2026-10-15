@@ -54,6 +54,8 @@ async function playFor(p: Page, ms: number, during?: (p: Page) => Promise<void>)
 	if (during) await during(p);
 	await p.waitForTimeout(ms);
 	await focusTimeline(p);
+	// the stop's own `stop()` calls end every disturbance window
+	await mark(p, 'pause');
 	await p.keyboard.press('Space');
 	await p.waitForTimeout(200);
 	return disarm(p);
@@ -194,7 +196,7 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 				picture = await pictureAnchor(p, 900, 0);
 			});
 			m = { rec, picture };
-			const d = disturbances(rec, rec.armed, rec.armed + 1.2);
+			const d = disturbances(rec, rec.armed, Math.min(rec.armed + 1.2, (rec.marks.pause ?? 1e9) - 0.001));
 			if (d.length === 0) break;
 			console.log('Remotion lost its scheduling during the play (load), again:', d.join('; '));
 		}
@@ -401,7 +403,7 @@ test('a latency change during playback: no dropout beyond the added latency', as
 		// A valid play: the tone ran without a gap for 0.3 s before the edit (under heavy load Remotion's scheduling
 		// falls behind or it reschedules every player: that is not the graph) and nothing was rescheduled.
 		const before = all.some((g) => g.t1 > edit - 0.3 && g.t0 < edit);
-		const d = disturbances(rec, edit - 0.3, edit + 0.7);
+		const d = disturbances(rec, edit - 0.3, Math.min(edit + 0.7, (rec.marks.pause ?? 1e9) - 0.001));
 		if (!before && d.length === 0) break;
 		console.log('disturbed play (load), again:', before ? 'a gap before the edit;' : '', d.join('; '));
 	}

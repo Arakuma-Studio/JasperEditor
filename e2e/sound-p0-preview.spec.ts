@@ -7,7 +7,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { ATTEMPTS, arm, disarm, disturbances, peaks, TAP } from './sound-tap.ts';
+import { ATTEMPTS, arm, disarm, disturbances, mark, peaks, TAP } from './sound-tap.ts';
 import {
 	clipBox,
 	clips,
@@ -53,6 +53,8 @@ async function playAndTap(page: Page): Promise<{ rate: number; peaks: { at: numb
 		await arm(page);
 		await page.keyboard.press('Space');
 		await page.waitForTimeout(2600);
+		// the stop's own `stop()` calls are not a disturbance: the window ends here
+		await mark(page, 'pause');
 		await page.keyboard.press('Space');
 		await page.waitForTimeout(200);
 		const rec = await disarm(page);
@@ -61,8 +63,7 @@ async function playAndTap(page: Page): Promise<{ rate: number; peaks: { at: numb
 			rate: rec.rate,
 			peaks: peaks(rec).map((p) => ({ at: Math.round(p.t * rec.rate) - first, v: p.v })),
 		};
-		const end = rec.frames.length ? (rec.frames[rec.frames.length - 1]! + 128) / rec.rate : rec.armed;
-		const d = disturbances(rec, rec.armed, end);
+		const d = disturbances(rec, rec.armed, rec.marks.pause ?? rec.armed);
 		if (d.length === 0) break;
 		console.log('Remotion lost its scheduling during the play (load), again:', d.join('; '));
 	}
