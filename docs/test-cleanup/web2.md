@@ -1603,32 +1603,38 @@ For each retained row, B1 is the independent requirement; B2 is the concrete fai
 - Risk: Retains behavior at the listed boundary; other layers still own rendering fidelity, engine integration and model invariants.
 - Validation: `pnpm exec vitest run apps/web/test/speech.test.tsx --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
 
-## 147. DELETE: `apps/web/test/test-timeout.test.ts` — is 15 s on a quiet host, grows with the square of the load factor, and is capped at a minute
+## 147. REWRITE: `apps/web/test/test-timeout.test.ts` — is 15 s on a quiet host, grows with the square of the load factor, and is capped at a minute
 
-- Failure detected: is 15 s on a quiet host, grows with the square of the load factor, and is capped at a minute. Restates the test runner timeout formula, protecting no product behavior. Config still executes in every run.
-- Independent contract / B1: no independent product contract.
-- Remaining stronger coverage / B6: configuration executes without testing its own arithmetic.
-- Non-test callers / B4: vitest runner; observed seam: Vitest configuration.
-- Risk: Low: deleting incidental/duplicated assertions only; owning behavior coverage cited above remains.
-- Validation: `pnpm exec vitest run apps/web/test/test-timeout.test.ts --maxWorkers=1` (remaining owner files if this file is deleted).
+- Failure detected / B2: An incorrect exported timeout can cause false failures on a busy host or leave a hung test running beyond one minute; a missing configuration value silently restores Vitest's too-short default.
+- Independent contract / B1: `docs/performance.md`, “Test timeouts of the web project,” specifies 5 s × loadFactor² with a 15 s floor and 60 s ceiling, following observed false failures in project-windowing, shell-render and speech.
+- Independent oracle / B3: Fixed outputs 15,000, 20,000, 45,000 and 60,000 ms for explicit calibration inputs; expected values are literals, never computed by the implementation under test. The calibration input is controlled; the exported timeout is real.
+- Stable seam / B4 and non-test callers: The default exported `apps/web/vitest.config.ts` project configuration is consumed by Vitest. The private timeout helper has no outside production caller and stays unexported.
+- Refactor stability / B5: Read only the exported `test.testTimeout` configuration property; renaming, moving or inlining the private arithmetic does not affect the assertion.
+- Lowest owner / B6 and remaining stronger coverage: The project configuration is the lowest public seam that owns these web-specific bounds. Running the suite does not reliably detect wrong limits on a quiet host, and performance-budget tests do not own this configuration.
+- Rewrite: Replace direct private-helper calls with importing the public configuration under controlled load/PERF inputs. Keep the helper's export removed.
+- Risk: No production change. Module isolation must re-evaluate configuration for each controlled environment; runtime validation remains pending the coordinated integration run.
+- Validation: `pnpm exec vitest run apps/web/test/test-timeout.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
 
-## 148. DELETE: `apps/web/test/test-timeout.test.ts` — PERF=1 keeps the strict 5 s whatever the load
+## 148. REWRITE: `apps/web/test/test-timeout.test.ts` — PERF=1 keeps the strict 5 s whatever the load
 
-- Failure detected: PERF=1 keeps the strict 5 s whatever the load. Self-test of runner timeout choice; no caller-visible product failure. PERF configuration remains unchanged.
-- Independent contract / B1: no independent product contract.
-- Remaining stronger coverage / B6: configuration executes without testing its own arithmetic.
-- Non-test callers / B4: vitest runner; observed seam: Vitest configuration.
-- Risk: Low: deleting incidental/duplicated assertions only; owning behavior coverage cited above remains.
-- Validation: `pnpm exec vitest run apps/web/test/test-timeout.test.ts --maxWorkers=1` (remaining owner files if this file is deleted).
+- Failure detected / B2: Applying relaxed shared-host timeouts in strict PERF mode masks slow tests that the documented strict run must reject.
+- Independent contract / B1: `docs/performance.md`, “Test timeouts of the web project,” explicitly requires PERF=1 to retain Vitest's 5 s limit regardless of host load.
+- Independent oracle / B3: The specified 5,000 ms literal is checked with both quiet and high calibration inputs; expected output does not invoke the implementation or reproduce its branching.
+- Stable seam / B4 and non-test callers: Read the default Vitest project configuration consumed by the runner. Mock only the external calibration module's load and strict-mode inputs, not the asserted configuration.
+- Refactor stability / B5: The assertion survives replacement, inlining or renaming of the timeout helper because only the runner's public `test.testTimeout` property is observed.
+- Lowest owner / B6 and remaining stronger coverage: The web project configuration owns the strict override. Budget-calibration tests cannot protect this use of it, and the ordinary suite does not exercise PERF mode deterministically.
+- Rewrite: Import the default configuration with strict calibration inputs instead of exporting and calling its private helper.
+- Risk: No production change. The strict branch needs focused runtime validation after integration; no passing result is claimed yet.
+- Validation: `pnpm exec vitest run apps/web/test/test-timeout.test.ts --maxWorkers=1`; `pnpm --filter @jasper/web typecheck`.
 
 ## 149. DELETE: `apps/web/test/test-timeout.test.ts` — this run is configured with it: never unlimited, never above the ceiling
 
-- Failure detected: this run is configured with it: never unlimited, never above the ceiling. Assertion against the current test own timeout is a self-configuration detector, not a product contract.
-- Independent contract / B1: no independent product contract.
-- Remaining stronger coverage / B6: configuration executes without testing its own arithmetic.
-- Non-test callers / B4: vitest runner; observed seam: Vitest configuration.
-- Risk: Low: deleting incidental/duplicated assertions only; owning behavior coverage cited above remains.
-- Validation: `pnpm exec vitest run apps/web/test/test-timeout.test.ts --maxWorkers=1` (remaining owner files if this file is deleted).
+- Failure detected: A timeout outside the documented bounds in the current test's own Vitest task metadata.
+- Independent contract / B1: `docs/performance.md` specifies finite bounded timeouts, but this case observes only the current host/mode and duplicates the configuration output contract.
+- Remaining stronger coverage / B6: Rewritten cases 147–148 read the actual exported configuration under deterministic floor, scaling, ceiling and strict inputs. They also catch omitted configuration properties, with broader boundary coverage than this current-run assertion.
+- Non-test callers / B4: Vitest consumes the default project configuration; task metadata belongs to the runner's execution layer.
+- Risk: Low: the configuration bounds and strict override remain protected at their public owner seam. This duplicate adds no distinct credible failure.
+- Validation: `pnpm exec vitest run apps/web/test/test-timeout.test.ts --maxWorkers=1`.
 
 ## 150. KEEP: `apps/web/test/timeline-gestures.test.ts` — rounds the pointer delta to frames and commits exactly one history entry
 
@@ -2590,7 +2596,7 @@ For each retained row, B1 is the independent requirement; B2 is the concrete fai
 
 ## Validation results
 
-- Cleanup implemented: 25 deleted, 28 rewritten and 183 retained test declarations/families; the ledger lists the original names so every prior test is traceable.
+- Cleanup implemented: 23 deleted, 30 rewritten and 183 retained test declarations/families; the ledger lists the original names so every prior test is traceable.
 - `pnpm install --frozen-lockfile --offline` completed. It reported expected missing MCP executable links because ignored MCP build outputs are absent.
 - Targeted Biome check of edited TypeScript files and `git diff --check` passed; final staged diff reviewed.
 - The 34-file baseline attempt was stopped before any verdict, to reduce shared-host load and avoid concurrent edits. It is not counted as passing.
