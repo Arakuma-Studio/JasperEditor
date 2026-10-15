@@ -36,7 +36,7 @@ float lm_band(float v, vec4 k) {
   if (d <= 0.0) return 1.0;
   return k.w > 0.0 ? max(0.0, 1.0 - d / k.w) : 0.0;
 }
-// HSL Secondary key of a straight colour (color/lumetri-spatial.ts secondaryKey).
+// HSL Secondary key of a straight colour (docs/wp-notes/color-grade.md, HSL Secondary).
 float lm_key(vec3 c) {
   vec3 hsl = fx_rgb2hsl(clamp(c, 0.0, 1.0));
   float w = 1.0;

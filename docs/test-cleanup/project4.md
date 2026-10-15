@@ -1215,41 +1215,21 @@ Original location: `packages/project/test/lumetri-grade.test.ts:400`.
 5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
 6. Owns the distinct case “a 33³ bake of a full grade with every new step takes < 30 ms (best of several runs)” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
 
-### KEEP: keys on hue, saturation and lightness with soft edges; greys leave a hue key
+### DELETE: keys on hue, saturation and lightness with soft edges; greys leave a hue key
 Original location: `packages/project/test/lumetri-grade.test.ts:420`.
-1. Contract from the section source: keys on hue, saturation and lightness with soft edges; greys leave a hue key.
-2. Detectable caller failure: Wrong colour/key/spatial activation or over-budget interactive LUT bake; specifically the named case would return or store the wrong result.
-3. Oracle: expect(s.secondary).toBe(true);; expect(secondaryKey(s, 0.9, 0.1, 0.1)).toBeCloseTo(1, 6);; expect(secondaryKey(s, 0.1, 0.1, 0.9)).toBe(0);; expect(secondaryKey(s, 0.5, 0.5, 0.5)).toBe(0);. These fixed values, input-preservation laws or external reference results can disagree with the production result.
-4. Observes lumetri colour functions, secondary key operations and spatial activation through result data/errors, not collaborator calls.
-5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
-6. Owns the distinct case “keys on hue, saturation and lightness with soft edges; greys leave a hue key” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
+The tested CPU spatial renderer/key evaluator has no production caller; it is a test-only mirror of GPU logic. Fails bar4/6 despite meaningful mathematical expectations. Remaining stronger owner: packages/compositions/test/lumetri-spatial-gl.test.ts, with fixed actual GPU output oracles. Contract mapping: GPU mask fixtures: red selected, blue/gray excluded, 22.5° hue at half membership; luma .8/.55/.2 selects/half/excludes. Independent HSL Secondary ranges/softness in docs/wp-notes/color-grade.md. Non-test callers: none for the removed CPU mirror; live eyedropper functions and lumetriSpatialSettings retain UI/registry callers. Risk: transfer omissions; compositions2 explicitly committed to these cases before deletion. Validation: static checks now, integrated required-oracle GL suite under root scheduling.
 
-### KEEP: the correction applies inside the key only; Show Mask and Invert
+### DELETE: the correction applies inside the key only; Show Mask and Invert
 Original location: `packages/project/test/lumetri-grade.test.ts:434`.
-1. Contract from the section source: the correction applies inside the key only; Show Mask and Invert.
-2. Detectable caller failure: Wrong colour/key/spatial activation or over-budget interactive LUT bake; specifically the named case would return or store the wrong result.
-3. Oracle: expect(chroma(red)).toBeLessThan(1e-6);; expect(blue).toEqual([0.1, 0.1, 0.9]);; expect(chroma(lumetriSpatialPixel(inv, [0.1, 0.1, 0.9], 0.5, 0.5, 1))).toBeLessThan(1e-6);; expect(lumetriSpatialPixel(wb, [0.9, 0.1, 0.1], 0.5, 0.5, 1)).toEqual([1, 1, 1]);. These fixed values, input-preservation laws or external reference results can disagree with the production result.
-4. Observes lumetri colour functions, secondary key operations and spatial activation through result data/errors, not collaborator calls.
-5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
-6. Owns the distinct case “the correction applies inside the key only; Show Mask and Invert” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
+The tested CPU spatial renderer/key evaluator has no production caller; it is a test-only mirror of GPU logic. Fails bar4/6 despite meaningful mathematical expectations. Remaining stronger owner: packages/compositions/test/lumetri-spatial-gl.test.ts, with fixed actual GPU output oracles. Contract mapping: GPU literal red/blue correction pixels, Invert, WhiteBlack and ColorGray outputs. Independent correction/mask semantics in docs/wp-notes/color-grade.md. Non-test callers: none for the removed CPU mirror; live eyedropper functions and lumetriSpatialSettings retain UI/registry callers. Risk: transfer omissions; compositions2 explicitly committed to these cases before deletion. Validation: static checks now, integrated required-oracle GL suite under root scheduling.
 
-### KEEP: 3-way correction wheels use the Lumetri wheel maths
+### DELETE: 3-way correction wheels use the Lumetri wheel maths
 Original location: `packages/project/test/lumetri-grade.test.ts:449`.
-1. Contract from the section source: 3-way correction wheels use the Lumetri wheel maths.
-2. Detectable caller failure: Wrong colour/key/spatial activation or over-budget interactive LUT bake; specifically the named case would return or store the wrong result.
-3. Oracle: expect(out[0]).toBeCloseTo(0.625, 6);. These fixed values, input-preservation laws or external reference results can disagree with the production result.
-4. Observes lumetri colour functions, secondary key operations and spatial activation through result data/errors, not collaborator calls.
-5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
-6. Owns the distinct case “3-way correction wheels use the Lumetri wheel maths” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
+The tested CPU spatial renderer/key evaluator has no production caller; it is a test-only mirror of GPU logic. Fails bar4/6 despite meaningful mathematical expectations. Remaining stronger owner: packages/compositions/test/lumetri-spatial-gl.test.ts, with fixed actual GPU output oracles. Contract mapping: GPU gray sample under +50 Highlights must receive gain1.25; independent Lumetri lift/gamma/gain law, not CPU spatial reference. Non-test callers: none for the removed CPU mirror; live eyedropper functions and lumetriSpatialSettings retain UI/registry callers. Risk: transfer omissions; compositions2 explicitly committed to these cases before deletion. Validation: static checks now, integrated required-oracle GL suite under root scheduling.
 
-### KEEP: the vignette darkens the corners, not the centre; roundness and feather shape it
+### DELETE: the vignette darkens the corners, not the centre; roundness and feather shape it
 Original location: `packages/project/test/lumetri-grade.test.ts:454`.
-1. Contract from the section source: the vignette darkens the corners, not the centre; roundness and feather shape it.
-2. Detectable caller failure: Wrong colour/key/spatial activation or over-budget interactive LUT bake; specifically the named case would return or store the wrong result.
-3. Oracle: expect(vignetteWeight(v, 0.5, 0.5, 16 / 9)).toBe(0);; expect(vignetteWeight(v, 0, 0, 16 / 9)).toBeGreaterThan(0.9);; expect(c[0]).toBeLessThan(0.05);; expect(lighter[0]).toBeGreaterThan(0.95);. These fixed values, input-preservation laws or external reference results can disagree with the production result.
-4. Observes lumetri colour functions, secondary key operations and spatial activation through result data/errors, not collaborator calls.
-5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
-6. Owns the distinct case “the vignette darkens the corners, not the centre; roundness and feather shape it” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
+The tested CPU spatial renderer/key evaluator has no production caller; it is a test-only mirror of GPU logic. Fails bar4/6 despite meaningful mathematical expectations. Remaining stronger owner: packages/compositions/test/lumetri-spatial-gl.test.ts, with fixed actual GPU output oracles. Contract mapping: GPU flat frame: unchanged centre, negative/positive Amount extremes at corners and side comparison for +100 roundness at wide aspect. Independent Vignette Amount/shape contract in docs/wp-notes/color-grade.md. Non-test callers: none for the removed CPU mirror; live eyedropper functions and lumetriSpatialSettings retain UI/registry callers. Risk: transfer omissions; compositions2 explicitly committed to these cases before deletion. Validation: static checks now, integrated required-oracle GL suite under root scheduling.
 
 ### DELETE: adds the spatial companion after a Lumetri instance that uses vignette, sharpen or the secondary
 Original location: `packages/project/test/lumetri-grade.test.ts:496`.
@@ -1270,38 +1250,23 @@ Original location: `packages/project/test/lumetri-grade.test.ts:523`.
 5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
 6. Owns the distinct case “a keyframed amount that leaves the default at some key needs the stage” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
 
-### KEEP: Set Color keys the picked colour, not others; greys key on lightness only
+### DELETE: Set Color keys the picked colour, not others; greys key on lightness only
 Original location: `packages/project/test/lumetri-grade.test.ts:543`.
-1. Contract from the section source: Set Color keys the picked colour, not others; greys key on lightness only.
-2. Detectable caller failure: Wrong colour/key/spatial activation or over-budget interactive LUT bake; specifically the named case would return or store the wrong result.
-3. Oracle: expect(key(k, orange)).toBe(1);; expect(key(k, blue)).toBe(0);; expect(g.secHueOn).toBe(false);; expect(key(g, [0.52, 0.5, 0.5])).toBe(1);. These fixed values, input-preservation laws or external reference results can disagree with the production result.
-4. Observes lumetri colour functions, secondary key operations and spatial activation through result data/errors, not collaborator calls.
-5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
-6. Owns the distinct case “Set Color keys the picked colour, not others; greys key on lightness only” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
+The tested CPU spatial renderer/key evaluator has no production caller; it is a test-only mirror of GPU logic. Fails bar4/6 despite meaningful mathematical expectations. Remaining stronger owner: packages/compositions/test/lumetri-spatial-gl.test.ts, with fixed actual GPU output oracles. Contract mapping: GPU receives live keyFromColor output for orange and gray picks; literal mask samples protect picked color inclusion, blue exclusion and gray lightness exclusion. Non-test callers: none for the removed CPU mirror; live eyedropper functions and lumetriSpatialSettings retain UI/registry callers. Risk: transfer omissions; compositions2 explicitly committed to these cases before deletion. Validation: static checks now, integrated required-oracle GL suite under root scheduling.
 
-### KEEP: Add Color extends the key to the new colour and keeps the old one
+### DELETE: Add Color extends the key to the new colour and keeps the old one
 Original location: `packages/project/test/lumetri-grade.test.ts:552`.
-1. Contract from the section source: Add Color extends the key to the new colour and keeps the old one.
-2. Detectable caller failure: Wrong colour/key/spatial activation or over-budget interactive LUT bake; specifically the named case would return or store the wrong result.
-3. Oracle: expect(key(k, orange)).toBe(1);; expect(key(k, red)).toBe(1);; expect(key(k, blue)).toBe(0);. These fixed values, input-preservation laws or external reference results can disagree with the production result.
-4. Observes lumetri colour functions, secondary key operations and spatial activation through result data/errors, not collaborator calls.
-5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
-6. Owns the distinct case “Add Color extends the key to the new colour and keeps the old one” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
+The tested CPU spatial renderer/key evaluator has no production caller; it is a test-only mirror of GPU logic. Fails bar4/6 despite meaningful mathematical expectations. Remaining stronger owner: packages/compositions/test/lumetri-spatial-gl.test.ts, with fixed actual GPU output oracles. Contract mapping: GPU receives live addColorToKey output; white masks for original orange plus added red, black blue mask protect selection semantics. Non-test callers: none for the removed CPU mirror; live eyedropper functions and lumetriSpatialSettings retain UI/registry callers. Risk: transfer omissions; compositions2 explicitly committed to these cases before deletion. Validation: static checks now, integrated required-oracle GL suite under root scheduling.
 
-### KEEP: Remove Color drops the picked colour and keeps the rest of the key
+### DELETE: Remove Color drops the picked colour and keeps the rest of the key
 Original location: `packages/project/test/lumetri-grade.test.ts:558`.
-1. Contract from the section source: Remove Color drops the picked colour and keeps the rest of the key.
-2. Detectable caller failure: Wrong colour/key/spatial activation or over-budget interactive LUT bake; specifically the named case would return or store the wrong result.
-3. Oracle: expect(key(k, red)).toBe(0);; expect(key(k, orange)).toBeGreaterThan(0.99);; expect(removeColorFromKey(DEFAULT_SECONDARY_KEY, blue)).not.toEqual(DEFAULT_SECONDARY_KEY);. These fixed values, input-preservation laws or external reference results can disagree with the production result.
-4. Observes lumetri colour functions, secondary key operations and spatial activation through result data/errors, not collaborator calls.
-5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
-6. Owns the distinct case “Remove Color drops the picked colour and keeps the rest of the key” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
+The tested CPU spatial renderer/key evaluator has no production caller; it is a test-only mirror of GPU logic. Fails bar4/6 despite meaningful mathematical expectations. Remaining stronger owner: packages/compositions/test/lumetri-spatial-gl.test.ts, with fixed actual GPU output oracles. Contract mapping: GPU receives live removeColorFromKey output; black red and white retained orange protect removal while preserving the remaining key. Non-test callers: none for the removed CPU mirror; live eyedropper functions and lumetriSpatialSettings retain UI/registry callers. Risk: transfer omissions; compositions2 explicitly committed to these cases before deletion. Validation: static checks now, integrated required-oracle GL suite under root scheduling.
 
-### KEEP: any values of any params: the colour fn and the spatial settings never throw and stay finite
+### REWRITE: any values of any params: the colour fn and the spatial settings never throw and stay finite
 Original location: `packages/project/test/lumetri-grade.test.ts:583`.
 1. Contract from the section source: any values of any params: the colour fn and the spatial settings never throw and stay finite.
 2. Detectable caller failure: Wrong colour/key/spatial activation or over-budget interactive LUT bake; specifically the named case would return or store the wrong result.
-3. Oracle: Property assertions over fixed scenario or independently generated inputs in the named test.. These fixed values, input-preservation laws or external reference results can disagree with the production result.
+3. Oracle: live lumetriFn outputs remain finite/in0..1; every numeric field of live lumetriSpatialSettings remains finite for hostile inputs, per AGENTS.md entry-point nonfinite guard. Remove the test-only CPU pixel renderer from this property.
 4. Observes lumetri colour functions, secondary key operations and spatial activation through result data/errors, not collaborator calls.
 5. The stated input/output rule remains valid if algorithms, helper names, storage indexes or render-pass implementation change.
 6. Owns the distinct case “any values of any params: the colour fn and the spatial settings never throw and stay finite” at that boundary. Remaining broader tests do not independently assert this exact condition; pure numeric or protocol tests are the owner, with integration covering wiring.
@@ -3345,9 +3310,17 @@ Integrated caller census: color/scopes.ts rowOf and vectorCell have no internal 
 
 Validation: changed-file Biome check passed; TypeScript syntax parse passed; git diff --check passed. Focused scopes/three-d-command tests remain under root scheduling; no heavy runtime ran in this follow-up worktree.
 
+## Lumetri CPU-mirror removal (recorded before edits)
+
+Integrated caller census found lumetriSpatialPixel used only by lumetri-grade.test.ts and the Lumetri GL harness. Its secondaryKey, secondaryCorrect, vignetteWeight, applyVignette and private band/hsl scratch state likewise have no production consumer; lumetriSpatialActive is entirely unused. The real shader consumes lumetriSpatialSettings, which remains. CPU spatial tests cannot catch an actual shader bug and kept this duplicate production-path-sized reference alive.
+
+Compositions2 confirmed the complete seven-case contract mapping above before these deletes, including soft hue/luma masks, gray rejection, Invert/mask display modes, three-way highlights, positive/negative/roundness vignette and Set/Add/Remove eyedroppers. Their GPU tests use analytical/literal expected pixels; no expected result calls the deleted CPU mirror. Eyedropper functions become inputs to the real shader in that one owning scenario family, so both parameter generation and rendered membership are exercised once. Hostile values retain finite-value coverage of the two live owners, lumetriFn and lumetriSpatialSettings.
+
+Production cleanup: delete the CPU-only renderer and its dead helpers; update source comments so the live module describes spatial uniform normalization. No live shader or settings algorithm changes. Risk is an omitted transferred scenario, bounded by the explicit sibling commitment and integrated GL verification. Changed-file Biome, TypeScript syntax parsing and git diff --check passed. Required runtime verification remains the Lumetri project suite and JASPER_REQUIRE_ORACLES=1 GPU suite; runtime is reserved for the integration owner.
+
 ## Completion and validation
 
-Completed pruning: 55 DELETE, 28 REWRITE, 295 KEEP test declarations across all 34 assigned files. The parameterized border family counts once in the ledger. Five files deleted. Test code changes are net negative (final exact line totals are in the commit diff).
+Completed pruning: 62 DELETE, 29 REWRITE, 287 KEEP test declarations across all 34 assigned files. The parameterized border family counts once in the ledger. Five files deleted. Test code changes are net negative (final exact line totals are in the commit diff).
 
 Removed support: catalogue/order/default arrays and their lookup helpers, private shader packing/padding fixture assertions, duplicate LUT fuzz seeds, cached-envelope scale fixture setup, unused imports and empty describe blocks. No snapshot/media fixture became uniquely orphaned.
 

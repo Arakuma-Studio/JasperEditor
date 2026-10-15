@@ -3,15 +3,15 @@
 // Lumetri steps they depend on neighbouring pixels or on the pixel position, so they cannot bake into the colour
 // run's 3D LUT: the render snapshot gives a Lumetri instance that uses them a companion GPU stage
 // (`jasper.lumetri-spatial`, registry/lumetri-spatial.ts) right after the instance's LUT step. This module holds the
-// pure maths shared by that stage's uniforms and the CPU reference used by the tests: the settings read from the
-// params, the key of a colour, the correction inside the key and the vignette factor.
+// settings read from the params and normalized for that stage's uniforms.
 //
 // Formulas: the HSL key, the correction gains and the vignette shape follow EffectCraft's Lumetri (crates/effects/
 // src/color3.rs `HslKey`, `lumetri`); Denoise is FilmCraft's median of the key mixed by the amount and Blur its
 // Gaussian of up to 20 px (crates/render/src/effects.rs `hsl_secondary`). Both MIT OR Apache-2.0, recorded in
-// licenses/ported/color-grade.md. The 3-way correction reuses Lumetri's own lift/gamma/gain wheel maths.
+// licenses/ported/color-grade-effectcraft.md and color-grade-filmcraft.md. The 3-way correction reuses
+// Lumetri's own lift/gamma/gain wheel maths.
 import type { EffectParams } from '../registry/effects.ts';
-import { LUMA_B, LUMA_G, LUMA_R, rgbToHsl, smoothstep, wheelRgb } from './grade-math.ts';
+import { wheelRgb } from './grade-math.ts';
 import type { Rgb } from './lut.ts';
 
 const clamp = (x: number, lo: number, hi: number) => (x < lo ? lo : x > hi ? hi : x);
@@ -176,130 +176,4 @@ export function lumetriSpatialSettings(p: EffectParams): LumetriSpatialSettings 
 			feather: num(p, 'vignetteFeather', 50, 0, 100) / 100,
 		},
 	};
-}
-
-/** True when the settings change any pixel (the companion stage is needed). */
-export function lumetriSpatialActive(s: LumetriSpatialSettings): boolean {
-	return s.sharpen !== 0 || s.secondary || s.vignette.amount !== 0;
-}
-
-/** Soft band membership: 1 inside [lo, hi], falling linearly to 0 over `soft` outside it. */
-function band(v: number, lo: number, hi: number, soft: number): number {
-	const a = Math.min(lo, hi);
-	const b = Math.max(lo, hi);
-	const d = v < a ? a - v : v > b ? v - b : 0;
-	if (d <= 0) return 1;
-	return soft > 0 ? Math.max(0, 1 - d / soft) : 0;
-}
-
-const hslTmp: Rgb = [0, 0, 0];
-
-/**
- * The HSL Secondary key (0..1) of a straight RGB colour (before Refine and Invert). Hue: circular distance to the
- * centre within the range (half-width) is 1, falling over the softness; greys belong to a hue key only as far as
- * they are saturated (×min(1, 20·S)). A hue range of 180° selects every hue.
- */
-export function secondaryKey(s: LumetriSpatialSettings, r: number, g: number, b: number): number {
-	const [h, sat, l] = rgbToHsl(r, g, b, hslTmp);
-	let w = 1;
-	if (s.hue.on && s.hue.b < 0.5 - 1e-9) {
-		const dd = Math.abs(h - s.hue.a);
-		const d = Math.min(dd - Math.floor(dd), 1 - (dd - Math.floor(dd)));
-		const hw = d <= s.hue.b ? 1 : s.hue.soft > 0 ? Math.max(0, 1 - (d - s.hue.b) / s.hue.soft) : 0;
-		w *= hw * Math.min(1, sat * 20);
-	}
-	if (s.sat.on) w *= band(sat, s.sat.a, s.sat.b, s.sat.soft);
-	if (s.luma.on) w *= band(l, s.luma.a, s.luma.b, s.luma.soft);
-	return w;
-}
-
-/** The correction of HSL Secondary applied to `c` (straight RGB) at full strength, in place. */
-export function secondaryCorrect(s: LumetriSpatialSettings, c: Rgb): Rgb {
-	if (s.temperature !== 0 || s.tint !== 0) {
-		c[0] *= 1 + 0.25 * s.temperature;
-		c[1] *= 1 - 0.25 * s.tint;
-		c[2] *= 1 - 0.25 * s.temperature;
-	}
-	if (s.contrast !== 0) for (let k = 0; k < 3; k++) c[k] = 0.5 + (c[k]! - 0.5) * (1 + s.contrast);
-	if (s.saturation !== 1) {
-		const y = LUMA_R * c[0] + LUMA_G * c[1] + LUMA_B * c[2];
-		for (let k = 0; k < 3; k++) c[k] = y + (c[k]! - y) * s.saturation;
-	}
-	if (s.threeWay) {
-		for (let k = 0; k < 3; k++) {
-			let v = c[k]! + s.lift[k]! * (1 - c[k]!);
-			if (v > 0) v = v ** s.gamma[k]!;
-			c[k] = v * s.gain[k]!;
-		}
-	} else for (let k = 0; k < 3; k++) c[k] = c[k]! + s.offset[k]!;
-	return c;
-}
-
-/**
- * Vignette factor inputs at a layer-normalised position (0..1 over the clip frame): returns the edge weight `f` in
- * 0..1 (0 inside the midpoint, 1 at the corners for feather 0). Roundness 0 follows the frame's aspect, +1 a
- * circle, −1 a rounded rectangle; Feather widens the transition.
- */
-export function vignetteWeight(
-	v: LumetriSpatialSettings['vignette'],
-	nxIn: number,
-	nyIn: number,
-	aspect: number,
-): number {
-	let nx = nxIn * 2 - 1;
-	let ny = nyIn * 2 - 1;
-	if (v.roundness > 0) {
-		nx *= 1 + (Math.max(aspect, 1) - 1) * v.roundness;
-		ny *= 1 + (Math.max(1 / aspect, 1) - 1) * v.roundness;
-	}
-	const pw = 2 + Math.max(0, -v.roundness) * 6;
-	const r = (Math.abs(nx) ** pw + Math.abs(ny) ** pw) ** (1 / pw) / Math.SQRT2;
-	const start = v.midpoint * 0.9;
-	return smoothstep(start, start + 0.05 + v.feather * (1.05 - start), r);
-}
-
-/** Applies the vignette with edge weight `f` to `c` in place (negative amounts darken, positive lighten). */
-export function applyVignette(amount: number, f: number, c: Rgb): Rgb {
-	if (amount < 0) {
-		const k = Math.max(0, 1 + amount * 0.2 * f);
-		for (let i = 0; i < 3; i++) c[i] = c[i]! * k;
-	} else if (amount > 0) {
-		const k = Math.min(1, amount * 0.2 * f);
-		for (let i = 0; i < 3; i++) c[i] = c[i]! + (1 - c[i]!) * k;
-	}
-	return c;
-}
-
-/**
- * CPU reference of the stage's last pass for one pixel (no Refine, no sharpen detail): straight RGB in, straight
- * RGB out (clamped 0..1), at layer-normalised position (nx, ny). Used by the GL tests and documentation examples.
- */
-export function lumetriSpatialPixel(
-	s: LumetriSpatialSettings,
-	c: Rgb,
-	nx: number,
-	ny: number,
-	aspect: number,
-	keyOverride?: number,
-): Rgb {
-	let k = keyOverride ?? (s.secondary ? secondaryKey(s, c[0], c[1], c[2]) : 0);
-	if (s.secondary && keyOverride === undefined && s.invert) k = 1 - k;
-	if (s.secondary && s.showMask !== 0) {
-		if (s.showMask === 1) {
-			const g = clamp(LUMA_R * c[0] + LUMA_G * c[1] + LUMA_B * c[2], 0, 1) * 0.2 + 0.4;
-			for (let i = 0; i < 3; i++) c[i] = g + (c[i]! - g) * k;
-		} else if (s.showMask === 2) for (let i = 0; i < 3; i++) c[i] = c[i]! * k;
-		else for (let i = 0; i < 3; i++) c[i] = k;
-		for (let i = 0; i < 3; i++) c[i] = clamp(c[i]!, 0, 1);
-		return c;
-	}
-	if (s.secondary && k > 0) {
-		const d: Rgb = [c[0], c[1], c[2]];
-		secondaryCorrect(s, d);
-		for (let i = 0; i < 3; i++) c[i] = c[i]! + (d[i]! - c[i]!) * k;
-	}
-	if (s.vignette.amount !== 0)
-		applyVignette(s.vignette.amount, vignetteWeight(s.vignette, nx, ny, aspect), c);
-	for (let i = 0; i < 3; i++) c[i] = clamp(c[i]!, 0, 1);
-	return c;
 }
