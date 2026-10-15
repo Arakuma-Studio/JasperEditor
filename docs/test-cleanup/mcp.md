@@ -6,7 +6,7 @@ Scope: MCP/CLI behavior only. No production behavior changes are planned. Failur
 
 Validation command for each retained/rewritten file: `pnpm exec vitest run <path> --maxWorkers=1`; package check: `pnpm --filter @jasper/mcp typecheck`. Rendering files require fixtures/builds and isolated ports/appdirs. Root coordinates the shared-host gate. Deletions are validated by remaining-owner suites, package typecheck and the integrated repository gate.
 
-For isolated units, the failure classes are: PNG channel/filter reconstruction, malformed/truncated input and bounded allocation/inflation; discovery precedence/stale runtime/spawn failure; network timeout/retry/data-loss and credential disclosure; public error mapping, explicit preset override and CLI launch/version. Only tests observing these concrete failures remain.
+For isolated units, the failure classes are: PNG channel/filter reconstruction, malformed/truncated input, dimension caps and scanline-length validation; discovery precedence/stale runtime/spawn failure; network timeout/retry/data-loss and credential disclosure; public error mapping, explicit preset override and CLI launch/version. Only tests observing these concrete failures remain.
 
 ## `apps/mcp/test/animation.test.ts`
 
@@ -38,7 +38,7 @@ Duplicate allocation guard; png-limits asserts the structured E_LIMIT refusal an
 
 ### DELETE — `limits inflation to the declared raster size`
 
-Duplicate decompression-bomb coverage; png-limits retains the credible bounded-inflate regression. Observable failure removed: implementation/test-fixture changes or the duplicate behavior identified above. No unique independently specified behavior is lost. Risk: low; remaining owners identified above and the integrated gate validate the deletion. No production caller requires this test.
+The generic thrown error cannot prove bounded inflation: an unbounded decode still throws at the later scanline-length check. The retained property owns malformed scanline rejection without claiming an allocation guarantee. Observable failure removed: implementation/test-fixture changes or the duplicate behavior identified above. No unique independently specified behavior is lost. Risk: low; remaining owners identified above and the integrated gate validate the deletion. No production caller requires this test.
 
 ### KEEP — `requires complete headers, chunks and an end marker`
 
@@ -878,41 +878,45 @@ Risk: retained behavior unchanged; any new failure requires owner investigation.
 
 ## `apps/mcp/test/png-limits.test.ts`
 
-Independent source: AGENTS §0 allocation caps; docs/wp-notes/mcp-cli.md PNG bomb regression. Owner inspected: `apps/mcp/src/png.ts`. Oracle: Explicit E_LIMIT/E_INVALID_PARAM codes and independently sized compressed data. Non-test callers / other coverage: PNG functions used by tools/animation.ts; animation retains format vectors.
+Independent sources: PNG scanline encoding; AGENTS §0 untrusted dimensions; `docs/wp-notes/mcp-cli.md` explicitly records preserving 8K support and refusing surplus inflated data. Production owner: `apps/mcp/src/png.ts`, used by contact-sheet tools. These tests do not prove an upper bound on inflation allocation.
 
 ### KEEP — `refuses oversized dimensions before expanding the compressed data`
 
-1. Independent contract: AGENTS §0 allocation caps; docs/wp-notes/mcp-cli.md PNG bomb regression; the exact case is “refuses oversized dimensions before expanding the compressed data”.
-2. Detectable failure: the caller receives incorrect data/state, a wrong refusal, an omitted required result or a failed workflow for this case; the assertion observes explicit e_limit/e_invalid_param codes and independently sized compressed data.
-3. Independent expectation: authored request/fixture values, specified error/config rules or external artifact truth supply the expected result; the expected result is not obtained by calling the implementation under test.
-4. Stable seam: the production PNG, discovery, network, timeline-format or executable boundary appropriate to this case; no private collaborator order/count is required.
-5. Refactor tolerance: moving handlers/helpers or changing internal decomposition preserves these input/output/state assertions; no source, markup, export-list or private call-shape snapshot is used.
-6. Lowest owner / uniqueness: PNG functions used by tools/animation.ts; animation retains format vectors. This case protects the boundary conversion, error class or required complete workflow in its name; lower-layer algorithm tests cannot detect that boundary failure. Its remaining sibling cases use different inputs/contracts rather than replaying this same outcome.
-Risk: retained behavior unchanged; any new failure requires owner investigation. Validation: the file command above and package typecheck.
+1. Contract: untrusted dimensions above the supported pixel ceiling must return E_LIMIT.
+2. Failure: a hostile header crashes, proceeds to codec errors, or loses the caller-visible limit refusal.
+3. Oracle: explicit UINT32_MAX dimensions and E_LIMIT are independently specified; no production limit constant supplies the expectation.
+4. Seam: production decodePng input/error boundary.
+5. Refactor tolerance: no zlib call, helper order, source text or private object shape is asserted.
+6. Lowest owner: the codec owns validation; render/contact-sheet integration never submits this hostile header. This fixed case uniquely checks the E_LIMIT error rather than merely a thrown ToolError.
+Risk/check: low; run this file and MCP typecheck in the integrated gate.
 
-### DELETE — `allows an 8K source header through the dimension guard`
+### REWRITE — `allows an 8K source header through the dimension guard`
 
-Malformed 8K input failing at a later guard does not demonstrate successful 8K support; negative assertion passes without decoding an 8K image. Observable failure removed: implementation/test-fixture changes or the duplicate behavior identified above. No unique independently specified behavior is lost. Risk: low; remaining owners identified above and the integrated gate validate the deletion. No production caller requires this test.
+Replace the malformed-header surrogate with `decodes an 8K source image`: a valid grayscale PNG must actually decode successfully. This correction was recorded before editing the follow-up.
 
-### KEEP — `refuses compressed data that expands beyond its declared scanlines`
+1. Contract: `docs/wp-notes/mcp-cli.md` records the compatibility decision to allow 8K and preserve supported image decoding; this is independent of the codec source comment.
+2. Failure: an accidentally lowered dimension ceiling or broken large-image decode refuses a valid 7680×4320 source.
+3. Oracle: explicit 8K dimensions, PNG grayscale scanlines and opaque black RGBA pixels; no production helper supplies expected pixels or sizes.
+4. Seam: decodePng receives encoded bytes and returns the actual image.
+5. Refactor tolerance: successful image data survives replacing zlib, reorganizing guards or decoder internals.
+6. Lowest owner: decodePng owns source-image compatibility; tiny protocol vectors and small-dimension properties cannot detect rejecting 8K. Rendering an 8K editor workflow adds unrelated layers.
+Risk/check: test allocates approximately 33 MB grayscale scanlines and 133 MB decoded RGBA data; root owns scheduled execution. No resource-usage limit is asserted or claimed.
 
-1. Independent contract: AGENTS §0 allocation caps; docs/wp-notes/mcp-cli.md PNG bomb regression; the exact case is “refuses compressed data that expands beyond its declared scanlines”.
-2. Detectable failure: the caller receives incorrect data/state, a wrong refusal, an omitted required result or a failed workflow for this case; the assertion observes explicit e_limit/e_invalid_param codes and independently sized compressed data.
-3. Independent expectation: authored request/fixture values, specified error/config rules or external artifact truth supply the expected result; the expected result is not obtained by calling the implementation under test.
-4. Stable seam: the production PNG, discovery, network, timeline-format or executable boundary appropriate to this case; no private collaborator order/count is required.
-5. Refactor tolerance: moving handlers/helpers or changing internal decomposition preserves these input/output/state assertions; no source, markup, export-list or private call-shape snapshot is used.
-6. Lowest owner / uniqueness: PNG functions used by tools/animation.ts; animation retains format vectors. This case protects the boundary conversion, error class or required complete workflow in its name; lower-layer algorithm tests cannot detect that boundary failure. Its remaining sibling cases use different inputs/contracts rather than replaying this same outcome.
-Risk: retained behavior unchanged; any new failure requires owner investigation. Validation: the file command above and package typecheck.
+### DELETE — `refuses compressed data that expands beyond its declared scanlines`
 
-### KEEP — `bounds inflation for varied dimensions and rejects oversized hostile dimensions`
+The error-only bomb assertion passes if maxOutputLength is removed, because the later raw-length check still throws ToolError. It proves malformed length rejection already covered by the retained property, not bounded allocation. No independent resource regression is lost by deletion. Removed the compressed-byte-count assertion too: it describes the test fixture. Non-test callers of decodePng remain unchanged. Risk low; validate the remaining file at integration.
 
-1. Independent contract: AGENTS §0 allocation caps; docs/wp-notes/mcp-cli.md PNG bomb regression; the exact case is “bounds inflation for varied dimensions and rejects oversized hostile dimensions”.
-2. Detectable failure: the caller receives incorrect data/state, a wrong refusal, an omitted required result or a failed workflow for this case; the assertion observes explicit e_limit/e_invalid_param codes and independently sized compressed data.
-3. Independent expectation: authored request/fixture values, specified error/config rules or external artifact truth supply the expected result; the expected result is not obtained by calling the implementation under test.
-4. Stable seam: the production PNG, discovery, network, timeline-format or executable boundary appropriate to this case; no private collaborator order/count is required.
-5. Refactor tolerance: moving handlers/helpers or changing internal decomposition preserves these input/output/state assertions; no source, markup, export-list or private call-shape snapshot is used.
-6. Lowest owner / uniqueness: PNG functions used by tools/animation.ts; animation retains format vectors. This case protects the boundary conversion, error class or required complete workflow in its name; lower-layer algorithm tests cannot detect that boundary failure. Its remaining sibling cases use different inputs/contracts rather than replaying this same outcome.
-Risk: retained behavior unchanged; any new failure requires owner investigation. Validation: the file command above and package typecheck.
+### REWRITE — `bounds inflation for varied dimensions and rejects oversized hostile dimensions`
+
+Rename to `validates dimensions and scanline lengths across varied PNG inputs` and correct its coverage claim; retain the existing assertions.
+
+1. Contract: valid small PNG dimensions/scanlines decode; surplus scanline data and hostile dimensions must be rejected (PNG protocol and AGENTS entry validation).
+2. Failure: valid files fail, returned raster dimensions/length disagree with the authored header, or malformed files are accepted.
+3. Oracle: generated widths/heights and the PNG-specified four channels plus one filter byte per row, independent of implementation helpers.
+4. Seam: encoded PNG bytes into the production decoder, observing decoded data/errors.
+5. Refactor tolerance: no private zlib options or implementation sequence are asserted; the name no longer claims them.
+6. Lowest owner: codec-level seeded parser properties vary valid and malformed sizes; fixed protocol vectors cover channel/filter bytes, while the fixed oversized case owns the exact E_LIMIT code.
+Risk/check: unchanged small-input assertions; execute the file and MCP typecheck at integration. This property does not detect an unbounded inflate followed by a correct length refusal.
 
 ## `apps/mcp/test/polish.test.ts`
 
@@ -1706,7 +1710,7 @@ Risk: retained behavior unchanged; any new failure requires owner investigation.
 
 ## Validation and completion
 
-Audit inventory: 42 files; 163 named test declarations ({'KEEP': 121, 'DELETE': 24, 'REWRITE': 18}), plus the generated fuzz families. Parameter expansions are not counted as separate declarations.
+Audit inventory: 42 files; 163 named test declarations ({'KEEP': 119, 'DELETE': 24, 'REWRITE': 20}), plus the generated fuzz families. Parameter expansions are not counted as separate declarations.
 
 Cleanup implemented for all 42 audited files. Three test files were removed entirely (`fuzz`, `readme-tools`, `tool-response`); retained/rewritten named tests remain in the other 39 files. The test source diff is net negative. No production behavior changed.
 
@@ -1719,3 +1723,7 @@ Checks actually run: `git diff --check` passed; Biome checked every modified sur
 Specific remaining stronger owners for deleted overlaps: `apps/mcp/test/png-limits.test.ts`; SDK cancellation in `conventions.test.ts`; `packages/project/test/agent-mcp-cli.test.ts`; `packages/project/test/edit-structure.test.ts`; `packages/project/test/sim-warp-commands.test.ts`; `packages/project/test/text-animators.test.ts`; `packages/project/test/color-match.test.ts`; `apps/engine/test/browse.test.ts`; `apps/engine/test/effect-presets.test.ts`; `apps/engine/test/previews.test.ts`; and real CLI tests in `jasper-cli.test.ts`. Other agents may also prune these owners only under the same independent-contract rule.
 
 Documentation follow-up for integration: `docs/wp-notes/code-audit-mcp.md` describes the now-deleted response-reader self-tests, exported interpretation return-type coupling, auto-tone key inventory and README coverage. Those historical validation claims are not current suite requirements; the root report should use this disposition inventory instead.
+
+## PNG cross-review correction
+
+Before this follow-up edit, cross-review established that a generic ToolError cannot distinguish bounded inflation from an unbounded inflate followed by a length error. The bomb duplicate is deleted and the seeded property is described solely as input/length validation. Actual 8K decoding replaces the deleted malformed-header surrogate because the independent work note preserves 8K compatibility. Production code is unchanged. Follow-up Biome and git diff --check passed. Vitest/MCP typecheck remain subject to root scheduling.
