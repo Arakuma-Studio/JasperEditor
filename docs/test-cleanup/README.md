@@ -23,7 +23,7 @@ owner. Parameterized cases sharing one contract are recorded as a family.
 | Web editor | [1](web1.md), [2](web2.md), [3](web3.md) |
 | Shared rendering | [1](compositions1.md), [2](compositions2.md) |
 | Browser workflows | [1](e2e1.md), [2](e2e2.md), [motion-graphics harness repair](mg-bundler-repair.md) |
-| MCP and CLI | [MCP](mcp.md) |
+| MCP and CLI | [MCP](mcp.md), [UI window response regression](mcp-ui-window.md) |
 | Audio, motion and motion-graphics templates | [Audio and motion](audio.md) |
 | Interchange and expressions | [Formats](formats.md) |
 | Session, API, client, configuration, UI and testkit | [Shared packages](shared.md) |
@@ -77,6 +77,16 @@ failures now preserve timeout and cancellation codes. Three focused regressions
 failed before these fixes and passed afterward. They are recorded separately from
 the original-test census; no retry or timeout budget was increased.
 
+Browser verification exposed two more public response defects. Web screenshot
+metadata predicted rounded dimensions that differed from the encoded PNG; it now
+reports the dimensions decoded from the unchanged PNG bytes. The existing browser
+case checks those protocol values and the requested panel's public bounds. All
+five automation workflows passed with the fix. MCP `ui_state` also overwrote its
+promised window dimensions and pixel ratio when attaching the answering session's
+identity. A guarded merge preserves both, with relay identity authoritative. One
+new SDK regression failed before that fix and passed afterward, bringing the
+separately recorded new regression declarations to four.
+
 Integration also corrected two cleanup mistakes: the motion-graphics browser
 protocol still needs the bundler's named-global option, and the camera accuracy
 oracle must preserve best-fit alignment rather than use endpoint alignment. The
@@ -92,6 +102,12 @@ existing Remotion/webpack peer resolutions; it added no package version.
 
 Validation remains in progress. Confirmed results so far:
 
+- Initial whole-repository run completed: 450 files passed, 39 failed and 30
+  opt-in files skipped; 3,928 cases passed, 69 failed and 221 skipped or blocked
+  by setup failures. Its six-hour run overlapped later source corrections, so it
+  is neither a final-source gate nor an overall pass. Final diagnostics identify
+  watchdog/setup failures, already corrected oracle defects, and a monitor-guide
+  assertion whose claimed lock behavior is being checked against its requirement.
 - `pnpm lint`: passed Biome, tokens, anime, layer/cycle and asset checks.
 - Workspace semantic typechecking passed across all packages. The initial run
   exposed two web fixture narrowing errors; the corrected web and testkit checks
@@ -164,13 +180,22 @@ Validation remains in progress. Confirmed results so far:
   now observes progress and an interior pause position, excluding natural-end
   false passes. The second run of eight whole files passed 13 cases, failed six
   and left one serial dependent blocked. Both clipboard cases, both motion-graphics
-  browser cases, and the edit/playback/native-export smoke cases now pass. Screenshot
-  metadata, title creation, HDR export and remaining setup/accessibility deadlines
-  are under investigation; they are not counted as passes.
+  browser cases, and the edit/playback/native-export smoke cases now pass. The
+  screenshot fix subsequently passed all five automation browser cases, two focused
+  unit cases, web/browser semantic checks and a fresh web build. Title creation now
+  selects the public Type Tool button; its full export workflow, HDR export and the
+  remaining setup/accessibility failures still require runtime rechecks.
 - Initial opt-in Remotion run: 109 passed, 24 failed and four setup dependents
   skipped across 19 files. Failures occurred before image comparisons, during
-  browser setup/readiness or the resulting layer-bake fallback. The ongoing
-  one-worker recheck has passed all 19 compositor and nine text-animation cases.
+  browser setup/readiness or the resulting layer-bake fallback. The
+  one-worker recheck passed all 19 compositor and nine text-animation cases,
+  then was interrupted with exit 143 before its final report. Fourteen file
+  verdicts recorded 114 case passes, 11 failures and 15 cases blocked by setup;
+  four files had no verdict. This interrupted batch is not an overall pass.
+- The new MCP window-response regression passed after failing on the original
+  response merge. MCP semantic typechecking and the integrated MCP bundle build
+  passed. An earlier interrupted typecheck and a corrected test-stub cast are
+  recorded separately in [mcp-ui-window.md](mcp-ui-window.md).
 - All five clip-extension cases passed after explicit setup-failure throws fixed
   TypeScript narrowing and an unsupported tooltip-absence assertion was removed.
 

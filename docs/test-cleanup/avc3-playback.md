@@ -299,6 +299,12 @@ Final artifacts retained outside git:
 This completes two REWRITE dispositions, with no declaration added or deleted;
 engine3 remains 22 DELETE / 31 REWRITE / 174 KEEP. Removed support is the invalid
 HTTP media interception and duplicate Electron probe source. No production code
-or seam changed. Earlier failed/interrupted attempts remain recorded above;
-the original full-default Chrome assertion is still unclassified without its
-final stack and is not attributed to any particular oracle defect.
+or seam changed. Earlier failed/interrupted attempts remain recorded above.
+
+The subsequently completed full-default report identifies the original Chrome
+failure: `frame 1 after a seek to 5: expected 12 to be 11`. This is an exact
+callback-time/pixel mismatch, not a callback-count failure. The old probe did not
+save that failing seek's image and callback together, so the stack alone cannot
+establish its cause. The independent snapshot and paused-seek checks above passed
+without relaxing any frame-code equality. Earlier pending-stack statements record
+what was known at those stages.
