@@ -10,6 +10,7 @@ import {
 	type ProjectDocument,
 	readLibraryProvenance,
 	repairDocument,
+	unknownCommandKeyIssues,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
 import { LIB } from './sound-fixtures.ts';
@@ -122,6 +123,34 @@ describe('media.setLibraryInfo (spec 12 §2.9)', () => {
 		// existing provenance is never overwritten by a re-register
 		h.ok([{ type: 'media.register', asset: { ...plain, library: { ...LIB, title: 'Other' } } }]);
 		expect(h.doc.media[pid]!.library!.title).toBe(LIB.title);
+	});
+
+	it('accepts the provenance the engine returns from register (starter/pack `file`) on the strict agent path', () => {
+		// Regression (WP1.2b): the engine's register route names the kit or pack file in `source`; agent
+		// transactions refuse keys a schema does not list, so committing it failed with E_SCHEMA.
+		const kit = {
+			...LIB,
+			source: { type: 'starter', packId: 'kenney-impact-sounds', file: 'hit-metal-01.ogg' },
+		};
+		const pack = { ...LIB, source: { type: 'pack', packId: 'some-pack', file: 'impacts/a.ogg' } };
+		for (const library of [kit, pack]) {
+			const cmd = { type: 'media.register', asset: { ...videoAsset({ kind: 'audio' }), library } };
+			expect(unknownCommandKeyIssues([cmd])).toEqual([]);
+			const h = new Harness();
+			const r = h.ok([cmd]);
+			const id = (r.results[0] as { mediaId: string }).mediaId;
+			expect(h.doc.media[id]!.library!.source).toEqual(library.source);
+		}
+		// still closed for anything else, and the file is bounded
+		const typo = { ...LIB, source: { type: 'starter', fiel: 'a.ogg' } };
+		expect(
+			unknownCommandKeyIssues([
+				{ type: 'media.register', asset: { ...videoAsset({ kind: 'audio' }), library: typo } },
+			]),
+		).toHaveLength(1);
+		expect(
+			LibraryProvenanceSchema.safeParse({ ...LIB, source: { type: 'pack', packId: 'p', file: '' } }).success,
+		).toBe(false);
 	});
 });
 
