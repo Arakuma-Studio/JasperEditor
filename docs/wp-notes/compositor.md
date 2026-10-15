@@ -99,13 +99,6 @@ through Remotion, against the formulas.
 
 ## 4. Verified behaviour
 
-- **`packages/compositions/test/compositor.test.tsx`** (happy-dom, GPU and HTML-in-Canvas mocked): `flatOpsAt` order and
-  items, `flatStackReason`, `clipDrawsThroughCanvas`, `docUsesCanvas`; the structure (one scope keeps the nested
-  structure; nesting stacks have no scope at all); **property** (fast-check, 150 random stacks of all blend modes,
-  adjustment layers with GPU / colour / CSS effects, text and shapes with and without GPU effects, 3D layers, linear
-  light and nests with and without effects): no HTML-in-Canvas canvas inside another, the Player's error card never
-  shows, and no scope had to ask for a flat stack at run time (the static decision was always right). Checked against
-  a build with the flat path disabled: the property fails at once.
 - **`compositor.e2e.test.ts`** (REMOTION_E2E=1, Remotion renders in Chrome 150) — every combination of the brief against
   references computed without a browser (the CPU reference of `three-d-reference.ts`, extended with pointwise
   adjustment layers; `blendPixel`; Invert = 1 − c; BT.1886 for linear light):
@@ -125,15 +118,12 @@ through Remotion, against the formulas.
   through the display transform (> 220; it was the raw 148 with a chip before) without the chip.
   `COMPOSITOR_ELECTRON=1 xvfb-run -a …` runs the same four Players in the desktop app's **Electron 44** (Chrome 152,
   `CanvasDrawElement` as `apps/desktop` sets it; SwiftShader for WebGL2 because xvfb has no GPU): 4 / 4 pass.
-- **`e2e/compositor.spec.ts`** (built app, Playwright): Program monitor of an adjustment layer (Invert) over Linear
-  Burn = (179, 230, 179) with no chip, the Remotion export of the same stack (centre within 4), a 3D layer added on
-  top, and a Rec. 2100 PQ working space with the display transform running (no chip). Screenshots
-  `test-results/compositor-*.png`.
 - **`apps/engine/test/compositor-export.e2e.test.ts`** (REMOTION_E2E=1, real engine): see §3.
-- **`apps/engine/test/color-mgmt-remotion.test.ts`**: the adjustment layer between linear-light tracks that failed with
-  CANVAS_NESTED now renders the linear mix.
 - `color-mgmt.test.tsx`: the nested guard asks the owner to flatten instead of failing.
-- Regressions run with these changes (all pass): `scope-nesting`, `edit-structure-render`, `three-d-render`,
+- Historical validation: the former mocked compositor property test failed immediately with the flat path
+  disabled. It was removed in favour of the rendered-pixel owners above.
+- Historical regressions run when these changes landed (all passed; some suites have since been removed):
+  `scope-nesting`, `edit-structure-render`, `three-d-render`,
   `masks-render`, `text-animators`, `transition-render`, `fx-render`, `fx-player`, `transition-player` (REMOTION_E2E,
   compositions); `blend-remotion.e2e` (31 / 31 modes) and `color-mgmt-remotion` (engine); `blend-gl`, `three-d-gl`,
   `masks-gl`, `capture-safe-canvas` (GL). The Player suites failed before on `integrate/parity` for an unrelated reason

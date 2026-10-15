@@ -42,9 +42,9 @@ probe; the duplicate then takes the lease and the original shows "lost" when it 
 ## 2. Every menu entry and every default shortcut does something
 
 Five menubar entries rendered disabled because no command had their id; a new test then found five default key
-bindings in the same state. All ten are commands now (`apps/web/src/commands/polish.ts`), and
-`apps/web/test/polish-menu-wiring.test.ts` fails when a menubar entry, a Workspaces or panel menu entry or a default
-key binding has no registered command (entries limited to a runtime, such as File ▸ Exit, are wired too).
+bindings in the same state. All ten are commands now (`apps/web/src/commands/polish.ts`), including entries
+limited to a runtime, such as File ▸ Exit. The registry-inventory test was removed; retained command and
+workflow tests assert the actions' observable effects.
 
 | Entry | What it does | Notes |
 |---|---|---|
@@ -252,7 +252,10 @@ is "in flight", the five disabled menu entries are gone, the counts are recounte
 `listTools`, 291 menubar entries all registered, 256 document commands, 22 panels, 526 test files, 54 Playwright
 specs), the README opens with what the product does.
 
-## 9. Tests added
+## 9. Historical tests added
+
+This records the original workstream. The menu inventory test was removed during cleanup, and retained
+suites have been narrowed to independent behavioural contracts.
 
 | File | What |
 |---|---|

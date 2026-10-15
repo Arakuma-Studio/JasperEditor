@@ -127,7 +127,6 @@ least one selected key is on a point property; applies to those keys; a check ma
 - `apps/web/test/motion-path.test.tsx`: overlay drawing under zoom/pan, key and tangent drags (one undo entry,
   Alt), selection, locked tracks, Effect Controls submenu.
 - `apps/mcp/test/integration.test.ts`: `get_motion_path` / `set_spatial_interpolation` against a real engine.
-- `e2e/motion-path.spec.ts`: monitor drawing, drags and the Effect Controls menu in the built app.
 
 ## Known gaps
 

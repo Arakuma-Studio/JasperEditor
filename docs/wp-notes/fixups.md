@@ -48,7 +48,7 @@ and the keymap's Escape no longer deselects at the same time. (b) `ShapeToolOver
 one key listener for their lifetime that calls the latest render's handler (no re-subscription mid-dispatch).
 
 **Tests.** `apps/web/test/shell.test.tsx` › "Esc during a pointer drag is left to the drag…" (fails without the
-fix); `e2e/shapes.spec.ts` passes again and now also checks that Esc during the drag kept the selection.
+fix). The historical `e2e/shapes.spec.ts` run passed and checked that Esc during the drag kept the selection.
 
 ## 3. Long context menus ran off the window
 
@@ -63,7 +63,8 @@ fix); `e2e/shapes.spec.ts` passes again and now also checks that Esc during the 
 - Radix menus (menubar, dropdowns, context menus, every submenu): `MENU_CONTENT` used the dropdown-only
   `--radix-dropdown-menu-content-available-height`, so context menus and the menubar fell back to 80vh; it now uses
   `--radix-popper-available-height`, which Radix sets for every kind.
-- Tests: `packages/ui/test/menu-placement.test.tsx` (placement maths and `PointMenu` in a portal), `e2e/fixups.spec.ts`
+- Historical validation used the former `packages/ui/test/menu-placement.test.tsx` (placement maths and `PointMenu`
+  in a portal) and `e2e/fixups.spec.ts`
   (Project menu with the Label list open, every timeline clip submenu, every menubar menu and submenu, in a
   1600×1000 and a 1600×560 window).
 
@@ -79,7 +80,7 @@ fix); `e2e/shapes.spec.ts` passes again and now also checks that Esc during the 
   `import('@jasper/project')` next to the static imports made esbuild lazy-wrap the package and zod. Static imports
   now; `apps/mcp/test/bundle.test.ts` bundles `src/cli.ts` like `scripts/build.mjs` (shared `build-options.mjs`) and
   checks it answers `initialize` (fails before the fix).
-- Tests: `apps/web/test/timeline-locate.test.ts`, `e2e/agent-ui.spec.ts` › "a clip running off the visible
+- Browser regression: `e2e/agent-ui.spec.ts` › "a clip running off the visible
   timeline…" (zoomed so the whole clip's centre is off screen; then scrolled away behind a second clip).
 
 ## 5. Third-party notices repeated the same copyright line
@@ -118,10 +119,10 @@ gradients, mandelbrot, testsrc2, boxes) or the repository fixture:
 
 | Removed | Now |
 |---|---|
-| `fx/{premiere-adjust-color-keying,sapphire-film-grain,sapphire-paint-kaleido-edges,sapphire-render-textures,sapphire-stylize-other}/contact-sheet.png`, `transitions/sapphire-dissolves/contact-sheet.jpg` | regenerated, same paths, by `packages/compositions/test/docs-gallery.e2e.test.ts` (`REMOTION_E2E=1 DOCS_GALLERY=1`) |
-| `fx/sapphire-blur-sharpen/contact-sheet.png`, `fx/premiere-stylize-distort-generate/contact-sheet.png` | regenerated, same paths, by the family tests' `SBS_SHEET` / `PSDG_SHEET` with `SBS_SCENE` / `PSDG_PHOTO` = the procedural picture |
+| `fx/{premiere-adjust-color-keying,sapphire-film-grain,sapphire-paint-kaleido-edges,sapphire-render-textures,sapphire-stylize-other}/contact-sheet.png`, `transitions/sapphire-dissolves/contact-sheet.jpg` | historically regenerated, same paths, by the former `packages/compositions/test/docs-gallery.e2e.test.ts` gallery harness |
+| `fx/sapphire-blur-sharpen/contact-sheet.png`, `fx/premiere-stylize-distort-generate/contact-sheet.png` | historically regenerated, same paths, by the former family-test `SBS_SHEET` / `PSDG_SHEET` harnesses with `SBS_SCENE` / `PSDG_PHOTO` = the procedural picture |
 | `m3-mgtext/trailer-mg07-overflow-warnings.jpg`, `trailer-mg07-on-canvas-editor.jpg` | the existing fixture screenshots of the same features (`fixture-properties-text-warnings.jpg`, `fixture-on-canvas-editor.jpg`) |
-| `m3-mgtext/trailer-mg07-applied.jpg` | new `fixture-applied.jpg` (`e2e/mg-texts.spec.ts`, `DOCS_SCREENSHOTS=1`) |
+| `m3-mgtext/trailer-mg07-applied.jpg` | historical `fixture-applied.jpg` from the former `e2e/mg-texts.spec.ts` screenshot harness |
 
 Each has a sidecar and an `ATTRIBUTION.md` row; `docs/wp-notes/wp-m3-mgtext.md` points at the fixture shots.
 

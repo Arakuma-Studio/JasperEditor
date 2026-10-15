@@ -66,7 +66,6 @@ No new dependency. Filters used on the native path: `lut3d` (LGPL, present in `v
 pnpm fixtures
 pnpm vitest run --project @jasper/project --project @jasper/compositions --project @jasper/engine --project @jasper/web
 REMOTION_E2E=1 pnpm vitest run --project @jasper/engine apps/engine/test/color-remotion.test.ts   # Remotion path, headless Chrome
-E2E_PORT=48420 pnpm e2e -- e2e/color.spec.ts
 ```
 
 ## Results

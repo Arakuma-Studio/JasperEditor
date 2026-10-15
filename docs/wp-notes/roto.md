@@ -121,7 +121,7 @@ All measured on this machine (12 cores, shared with other agents; load average n
 | Every export path | the same project exported with the planner's default route and with `engine: 'remotion'`; frames 25 / 75 extracted with ffmpeg and looked at | object cut out and faces mosaicked in both, identical to `render_frame` |
 | Composes with effect masks | `apps/mcp/test/roto.test.ts`: a left-half effect mask on the Object Matte | left half cut out, right half keeps the plate, object kept |
 | Export refusal | `start_export` before propagation | `ROTO_NOT_COMPUTED` |
-| UI | `e2e/roto.spec.ts` (Playwright, built stack): brush stroke → one "Roto Brush" entry + Object Matte, segmented frame shown; Propagate (one entry, `Computed 0–44`), views, Convert to Masks + undo, Effect Controls object picker, Freeze | 4/4 pass; screenshots `test-results/e2e-roto-*.png` looked at |
+| Historical UI run (former browser tour) | `e2e/roto.spec.ts` (Playwright, built stack): brush stroke → one "Roto Brush" entry + Object Matte, segmented frame shown; Propagate (one entry, `Computed 0–44`), views, Convert to Masks + undo, Effect Controls object picker, Freeze | 4/4 pass; screenshots `test-results/e2e-roto-*.png` looked at |
 
 Tests: `apps/engine/test/roto-core.test.ts` (max-flow vs brute force, GMM, guided filter / closed form, codec,
 segmentation of synthetic shapes, propagation), `apps/engine/test/roto.test.ts` (service, store reuse, cancel cleans
@@ -129,7 +129,7 @@ up, SAM when `JASPER_ROTO_MODELS_DIR` has the model, faces), `packages/project/t
 undo / redo and refusals, staleness, snapshot states, export issues, copy / paste / preset dropping foreign roto
 refs, repair, face tracker), `packages/compositions/test/fx-object-matte-gl.test.ts` and
 `fx-keying-matte-gl.test.ts` (GL: every view and control of the seven effects against CPU expectations),
-`apps/mcp/test/roto.test.ts`, `e2e/roto.spec.ts`.
+`apps/mcp/test/roto.test.ts`.
 
 ## 5. Comparison with the references
 

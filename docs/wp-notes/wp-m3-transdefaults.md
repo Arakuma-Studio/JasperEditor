@@ -58,10 +58,7 @@ No new dependencies.
   `transitions-*.test.ts(x)`, `shell.test.tsx`, `agent-bridge.test.ts`)
 - `pnpm vitest run --project @jasper/mcp apps/mcp/test/transitions.test.ts`;
   `MCP_TEST_PORT=48661 pnpm vitest run --project @jasper/mcp apps/mcp/test/integration.test.ts`
-- E2E: after a build (`pnpm e2e` prepares fixtures and builds, but runs every spec), `E2E_PORT=48660 npx playwright test
-  e2e/transition-defaults.spec.ts e2e/transitions.spec.ts` (dialog from the
-  Sequence menu, change type/alignment/duration, Ctrl+D applies them, persistence across reload; screenshots in
-  `test-results/e2e-transition-defaults-*.png`).
+- E2E transition rendering: `E2E_PORT=48660 pnpm e2e e2e/transitions.spec.ts`.
 
 ## Open issues / remaining gaps from wp-m2-transitions
 

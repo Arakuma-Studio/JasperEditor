@@ -229,12 +229,14 @@ error, Player fallback).
 - A `.3dl` look grades like its `.cube` twin.
 - An offline input LUT gives the plan warning `LUT_OFFLINE` naming the clip (one more test, 9 in all).
 
-**`apps/engine/test/color-mgmt-remotion.test.ts`** (REMOTION_E2E=1, Chrome 150):
-- PQ + Blend Using 1.0 Gamma, with a 50 % white solid over black and a text layer. The still is the display
-  rendition:
-  - corner **190.0** (expected 190.4; encoded blending would give 69.2);
-  - text maximum **230** (expected 230.3).
-- An adjustment layer between linear-light tracks fails with **CANVAS_NESTED** in seconds.
+Historical validation with the former `apps/engine/test/color-mgmt-remotion.test.ts` (Chrome 150):
+PQ + Blend Using 1.0 Gamma, with a 50 % white solid over black and a text layer, measured corner **190.0**
+(expected 190.4; encoded blending would give 69.2) and text maximum **230** (expected 230.3). At that point an
+adjustment layer between linear-light tracks refused with **CANVAS_NESTED**; the later compositor work removed
+that limitation. These are recorded results from the removed suite.
+
+Remotion/display-transform coverage is retained in `packages/compositions/test/compositor-player.e2e.test.ts`,
+`compositor.e2e.test.ts` and the colour-management browser workflow below.
 
 **`apps/web/test/color-mgmt.test.tsx`** (5): the dialog, the Interpret Footage section commands, the export colour
 choice. **`apps/mcp/test/color-mgmt.test.ts`**: the tools end to end on an engine.

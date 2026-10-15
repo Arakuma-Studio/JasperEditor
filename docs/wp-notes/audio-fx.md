@@ -107,6 +107,9 @@ pieces with 1-frame constant-power crossfades; each piece's frame-rounding shift
 
 ## 3. Verified behaviour (measured)
 
+These are historical workstream results. Browser tours and implementation-only tests named below may
+have been removed during cleanup; the counts are not current suite totals.
+
 Unit tests (`pnpm vitest run packages/audio-fx packages/project/test/essential.test.ts
 packages/compositions/test/audio-fx-preview.test.ts apps/engine/test/audio-fx.test.ts apps/mcp/test/audio-fx.test.ts`):
 

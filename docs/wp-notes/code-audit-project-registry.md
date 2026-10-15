@@ -67,8 +67,8 @@ when reading `.message` from `null`/`undefined`. After the fix: all 10 cases pas
 The integrated software-GL compile gate found an audit regression in `defineEdgeWipe`: two template
 interpolation expressions had lost their braces during the scalar-reader edit. Generated shaders contained
 literal JavaScript fragments for border width and the wipe body. Both expressions now match the baseline.
-`transition-edge-wipe.test.ts` checks the planned shader body and border declarations with borders enabled
-and disabled; both cases failed before this fix. A complete registry diff scan found no other added
+The former `transition-edge-wipe.test.ts` checked the planned shader body and border declarations with borders
+enabled and disabled; both cases failed before this fix. The retained GL suites now own shader-output coverage. A complete registry diff scan found no other added
 `$identifier` interpolation corruption.
 
 Seven catches remain in the registry. Four isolate author-provided GPU hooks and return validation diagnostics.

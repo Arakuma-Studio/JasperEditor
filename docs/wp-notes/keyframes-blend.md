@@ -217,10 +217,12 @@ labels), `set_roving`; `KEYFRAMES_BLEND_GUIDE` in the server instructions; READM
 | Reversed paste (exact frames, mirrored eases, paste attributes + keyframe paste) | `packages/project/test/reversed-paste.test.ts` |
 | GL compositor = `blendPixel` for **every mode** (opaque, opacity, translucent), Dissolve, placement, stencils; CSS modes = formulas | `packages/compositions/test/blend-gl.test.ts` (headless Chrome WebGL2) |
 | Native export = `blendPixel` for **every mode** at 60 % opacity, a two-blend stack, planner routing, kernel unit | `apps/engine/test/blend-export.test.ts` (real ffmpeg, PNG stills) |
-| Remotion path = `blendPixel` for **every mode**, same oracle and tolerances as native: the native ↔ preview parity | `apps/engine/test/blend-remotion.e2e.test.ts` (`REMOTION_E2E=1`): 31 / 31 |
-| Graph editor: overshoot, vec2 handles, zoom | `apps/web/test/effect-controls-graph.test.ts`, `keyframes-blend-ui.test.tsx` |
+| Remotion stacks against blend formulas; native/Remotion frame parity | `packages/compositions/test/compositor.e2e.test.ts`, `apps/engine/test/golden-parity.e2e.test.ts` (`REMOTION_E2E=1`) |
+| Graph editor: display preferences, vec2 handle edits and undo | `apps/web/test/keyframes-blend-ui.test.tsx` |
 | Motion path: anchor path, snapping, multi-drag, pen | `apps/web/test/motion-path-keyframes-blend.test.tsx` |
-| Built app: grouped Blend Mode menu, Linear Burn in the Program monitor = (77, 26, 77), native export the same, Rove Across Time | `e2e/keyframes-blend.spec.ts` |
+
+Historical validation also passed all 31 modes in the former `blend-remotion.e2e.test.ts`. The removed
+`e2e/keyframes-blend.spec.ts` exercised the menu, monitor/export Linear Burn and Rove Across Time.
 
 ## Comparison with the references
 

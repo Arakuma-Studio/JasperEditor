@@ -123,8 +123,7 @@ the commands given.
   2D Motion, cameras / lights, runs), Classic CPU reference, commands with refusals and invariants / repair, camera
   tracker (the created camera projects every track point to within 0.05 px of where the footage shows it, Create Text
   lies in the points' plane within 10⁻³ rad, ground points land on y = h/2), extrusion (closed solids, outward
-  normals, bevel insets), models (glTF node transforms, materials, OBJ). Session: `packages/session/test/three-d.test.ts`
-  (each 3D edit one undo step; undo / redo restore the exact documents).
+  normals, bevel insets), models (glTF node transforms, materials, OBJ).
 - **Classic GL = CPU:** `packages/compositions/test/three-d-gl.test.ts` (headless Chrome, SwiftShader): flat,
   intersect + blend modes, orbit camera, orthographic view, lights + shadows + transmission, Dissolve, depth of
   field; pixels off by more than 3 code values ≤ 0.4 % per scene.
@@ -146,8 +145,7 @@ the commands given.
   (0.3 %), path within 5 %, average error 0.25 px; 88 s for 60 frames at 640×360 (tsx, loaded host); re-solve from the
   cache; cancel kills the process; refusals.
 - **Interchange:** `packages/interchange/test/three-d.test.ts`. **Engine models:** `apps/engine/test/three-d-models.test.ts`.
-- **Real app:** `E2E_PORT=49380 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/three-d.spec.ts` (built app,
-  HTML-in-Canvas on) — see §8 for the run and the screenshots it writes to `test-results/`.
+- **Historical real-app evidence:** §8 records the run and screenshots from the former 3D browser tour.
 
 ## 5. Comparison with the references
 
@@ -200,7 +198,9 @@ the commands given.
   (2000); Umeyama (PAMI 1991); Walter et al., *Microfacet Models for Refraction* (GGX, 2007); Karis, *Real Shading in
   Unreal Engine 4* (2013); the glTF 2.0 specification (Khronos).
 
-## 8. Real-app run
+## 8. Historical real-app run
+
+The command below records the original validation; its browser tour has since been removed.
 
 `E2E_PORT=49380 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/three-d.spec.ts` against the built app (Chrome with
 `--enable-features=CanvasDrawElement`), screenshots in `test-results/three-d-*.png`:

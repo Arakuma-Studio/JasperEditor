@@ -107,7 +107,6 @@ pnpm vitest run --project @jasper/compositions packages/compositions/test/text-p
 pnpm vitest run --project @jasper/engine apps/engine/test/mg-bundles.test.ts          # manifest texts (unit)
 MG_E2E=1 pnpm vitest run --project @jasper/engine apps/engine/test/mg-bundles.test.ts -t "hybrid text layers|measures text layout"
 MG_E2E=1 MCP_MG_TEST_PORT=48632 pnpm vitest run --project @jasper/mcp apps/mcp/test/compositions.test.ts
-E2E_PORT=48630 pnpm e2e e2e/mg-texts.spec.ts      # also e2e/mg-clips.spec.ts (fixture now has 3 compositions)
 ```
 
 Results on this branch (host heavily loaded): unit `composition-texts` 10/10, `text-probe` 5/5, web

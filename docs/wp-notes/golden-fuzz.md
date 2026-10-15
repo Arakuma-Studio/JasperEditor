@@ -1,7 +1,7 @@
 # golden-fuzz: golden frames, fuzzing, oracles, scale benchmark, CI
 
 Evidence that features stay correct (docs/gaps.md "golden-fuzz"): golden frames and fingerprints pin rendered
-output, every parser, loader, HTTP route and MCP tool runs under a never-crash fuzz harness, ffmpeg serves as an
+output, parser, loader and HTTP fuzz targets exercise malformed inputs, ffmpeg serves as an
 oracle with a require-switch, a scale benchmark keeps everyday operations fast on a 5,000-clip project, and a
 GitHub Actions workflow runs the gate. The user guide is [docs/testing.md](../testing.md); this note records
 design, decisions, verified behaviour and limits.
@@ -18,12 +18,9 @@ design, decisions, verified behaviour and limits.
 | `oracle.ts` | ffmpeg / ffprobe discovery (`JASPER_FFMPEG` / `JASPER_FFPROBE`, PATH, known dirs), `JASPER_REQUIRE_ORACLES=1`, `requireTool` / `oraclesAvailable` / `skipOracle`, EBU R128 (`measureLoudness`, `parseEbur128`), PSNR / SSIM (`compareVideos`), packet / frame tables (`probePackets`, `probeFrames`, `compareTables`), `decodeFrames`, `ffmpeg` |
 | `browser.ts` | Chrome discovery, SwiftShader flags, esbuild bundling (the compositions GL suites open pages through `packages/compositions/test/gl-browser.ts`) |
 
-**GL tests.** The fx host poisons pooled intermediate targets under test (`globalThis.__JASPER_FX_POISON__`, set
-by `test/gl-poison.ts`, imported first by all 22 GL entries): NaN in float targets, magenta in 8-bit ones
-(EffectCraft's NaN-poisoned scratch images). Fingerprints were folded into the existing per-family catalogue runs (no
-extra shader compiles): `fx-fingerprints.json` (every GPU effect at defaults and with every parameter moved off its
-default — 744 entries, 544 distinct) and `transition-fingerprints.json` (every GPU transition at p = 0.25 / 0.5 /
-0.75 over two cards — 516 entries).
+**GL tests.** Fingerprints compare rendered output in the per-family catalogue runs:
+`fx-fingerprints.json` covers GPU effects at defaults and with perturbed parameters, and
+`transition-fingerprints.json` covers GPU transitions at p = 0.25 / 0.5 / 0.75 over two cards.
 
 **Golden scenes.** `packages/compositions/test/golden/scenes.ts` (56 procedural 256×144 scenes, rendered by Remotion
 in `golden-scenes.e2e.test.ts`) and `apps/engine/test/golden-parity.e2e.test.ts` (5 compositor scenes rendered by
@@ -46,8 +43,6 @@ perspective-warp PNGs exceed the 50 KB cap (56–109 KB) and pass a 128 KB cap e
 - `@jasper/expressions`.
 - `@jasper/engine`: archives, PSD, Lottie, ffprobe JSON, bundle metadata, names, runtime file and events.
   `test/fuzz-http.test.ts` covers every HTTP route (123 method/path pairs, taken from the server's own route table).
-- `@jasper/mcp`: every tool's arguments, in `test/fuzz.test.ts` (tools from `tools/list`, seeds from their input
-  schemas).
 - `@jasper/testkit`: its PNG decoder.
 
 **Scale benchmark.** `packages/project/bench/scale-project.ts` builds 200 sequences / 5,000 clips / 1,600 effects /
@@ -113,8 +108,8 @@ Hot spots fixed:
 - **Expression issues were recomputed for every sequence.** They are now memoized per frozen sequence, and a
   sequence without expressions skips `allowedTargets`.
 
-`invariants-memo.test.ts` checks that the memoized check equals `checkInvariantsUncached` on random edits and on
-corrupted documents.
+`invariants-memo.test.ts` checks that duplicate clip IDs and missing media are reported after earlier
+validation of shared sequences, through the public `checkInvariants` entry point.
 
 ## Verified behaviour
 
@@ -136,7 +131,7 @@ corrupted documents.
 
   The test requires PSNR ≥ 45 dB, max ≤ 32 and p99 ≤ 3.
 - GL fingerprints were blessed and re-run stable. The motion-blur goldens equal the old checksums.
-- Long fuzz runs found nothing further:
+- Historical validation before test cleanup: long fuzz runs found nothing further:
   - `FUZZ=1` on seeds 7, 99, 1234 and 31337 for the project parsers;
   - default runs for the interchange, engine, HTTP and MCP targets.
 
@@ -154,6 +149,4 @@ corrupted documents.
   samples, and mattes that need other layers. Their family GL tests cover them.
 - **The HTTP fuzz sends junk, not valid requests.** It covers argument validation and error typing. It does not
   start real long jobs, because exports and installs refuse the junk.
-- **The MCP fuzz runs against an in-memory engine.** Engine-side calls answer with typed errors. Tool logic past
-  the engine call is exercised by each tool's own tests.
 - **No Adobe comparison** (BRIEF §3b).

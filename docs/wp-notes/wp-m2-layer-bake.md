@@ -61,7 +61,6 @@ pnpm vitest run --project @jasper/web apps/web/test/layer-bake-runtime.test.ts
 REMOTION_E2E=1 pnpm --filter @jasper/engine exec vitest run test/layer-bake.e2e.test.ts   # ~3–4 min, headless Chrome
 REMOTION_E2E=1 pnpm --filter @jasper/engine exec vitest run test/layer-bake-parallel.e2e.test.ts   # parallel = sequential, joins, cancel (~5 min)
 pnpm vitest run --project @jasper/engine apps/engine/test/page-pool.test.ts   # pool: budget, progress, abort
-E2E_PORT=48460 pnpm exec playwright test e2e/layer-bake.spec.ts                         # after `node scripts/e2e-prepare.mjs`
 ```
 
 The e2e suite appends its measurements to `<tmpdir>/layer-bake-e2e.txt`.

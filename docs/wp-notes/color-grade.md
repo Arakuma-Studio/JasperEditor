@@ -175,6 +175,9 @@ magnitude in % of 0.5). MCP `scopes_read` defaults to 8 columns, 6 peaks, no bin
 
 ## 4. Verified behaviour
 
+These are historical workstream results. Browser tours and implementation-only tests named below may
+have been removed during cleanup; the counts are not current suite totals.
+
 | Check | Result |
 |---|---|
 | `packages/project/test/lumetri-grade.test.ts` (27): params/defaults identity, creative steps, looks distinct & bounded & mixed, LUT precedence, hue curves (periodicity, Hue vs Sat only on its hue, greys untouched, Hue vs Hue / Luma / Luma vs Sat / Sat vs Sat), eyedroppers, section switches, HSL/wheel helpers (fast-check), outputs finite in 0..1 for any input (fast-check), bake < 30 ms, spatial maths (key, correction, show mask, invert, 3-way, vignette shape), snapshot expansion (masks carried, keyframes, switched-off sections), Set/Add/Remove Color, hostile params fuzz | pass |

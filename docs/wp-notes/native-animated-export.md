@@ -174,8 +174,9 @@ native path. The lossless still comparison isolates the renderers: the sub-pixel
 SSIM 0.99999 (mean |Δ| 0.001 code values on flat areas, ~2 on edges). Against the old warp path the export SSIM
 minimum differs by 0.0001 (0.9935 vs 0.9936) — within that codec noise; on lossless stills the sub-pixel path is closer.
 
-**Speed** (`NATIVE_ANIM_BENCH=1`, 300 frames 1080p30 → H.264 (OpenH264), fresh engine per run, full job time;
-interleaved runs, load average 15–25 except the first sub-pixel run at ~3):
+**Historical speed measurements** (the former `NATIVE_ANIM_BENCH` harness, 300 frames 1080p30 → H.264
+(OpenH264), fresh engine per run, full job time; interleaved runs, load average 15–25 except the first sub-pixel
+run at ~3):
 
 | Fixture | Remotion | Warp stage (first / cached re-export) | Whole-pixel filtergraph | **Sub-pixel streamed** |
 |---|---|---|---|---|
@@ -296,8 +297,9 @@ like the M1 static path (bound per edge: ½ px position rounding + ¼ px size ro
 Keyframed layers now match Remotion like static layers do (FX-040's 0.98 with margin); the warp stage's sub-pixel
 warp is slightly closer (+0.002 SSIM) — the price of whole-pixel placement (see open issues).
 
-**Speed** (`NATIVE_ANIM_BENCH=1 [NATIVE_ANIM_BENCH_REMOTION=1]`, 300 frames 1080p30 → H.264 OpenH264, fresh engine,
-full job time):
+**Historical speed measurements** (300 frames 1080p30 → H.264 OpenH264, fresh engine, full job time).
+The former `NATIVE_ANIM_BENCH` / `NATIVE_ANIM_BENCH_REMOTION` test harness was removed; these are recorded
+results, not a current benchmark command:
 
 Load average 7–10. Before = `b56f7d4` (keyframed Motion goes through the warp stage, which caches its
 intermediates, so its re-export skips the warp); after = this branch (no intermediate, re-export = export).
@@ -330,7 +332,6 @@ pnpm fixtures
 pnpm vitest run apps/engine/test/native-animated.test.ts apps/engine/test/warp.test.ts apps/engine/test/export.test.ts
 REMOTION_E2E=1 pnpm vitest run apps/engine/test/native-animated.test.ts -t "Remotion"     # parity (stills + exports)
 NATIVE_ANIM_KEEP=/tmp/keep REMOTION_E2E=1 …                                               # keep the renders
-NATIVE_ANIM_BENCH=1 NATIVE_ANIM_BENCH_REMOTION=1 pnpm vitest run apps/engine/test/native-animated.test.ts -t "export speed"
 ```
 
 Measurements are appended to `$TMPDIR/native-animated.txt`.

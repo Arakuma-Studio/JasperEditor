@@ -293,10 +293,10 @@ fixed handful of straight taps around the current pose.
 
 ## 9. Tests to write (per family)
 
-Free for every entry (no plumbing):
+Shared transition contracts:
 
-- `packages/project/test/transition-framework.test.ts` — ids/prefixes, bins and sub-bins, description, Start/End
-  present, `validateGpuTransition`, registry + agent schema wiring;
+- `packages/project/test/transition-framework.test.ts` — invalid shader rejection, transition progress and
+  reverse semantics, side-picture coordinates, clip handles and transition parameter/keyframe commands;
 - `packages/compositions/test/transition-gl.test.ts` — **compiles and runs every registered GPU transition** in real
   WebGL2 (headless Chrome, SwiftShader): two-sided at the start and middle, one-sided in/out, reversed; and checks the
   §3 contract (A at progress 0, B at 1). One test per family of `TRANSITION_FAMILIES` (240 s each, as
@@ -310,20 +310,19 @@ pnpm vitest run packages/project/test/transition-framework.test.ts packages/comp
 GPU effect (defaults and perturbed parameters) with `packages/compositions/test/goldens/{transition,fx}-fingerprints.json`.
 A new or changed entry fails with "not in … (bless with JASPER_BLESS=1)" or "off by …": run
 `JASPER_BLESS=1 pnpm vitest run packages/compositions/test/fx-gl.test.ts packages/compositions/test/transition-gl.test.ts`,
-review the JSON diff (only your ids may change) and commit it. GL entries poison pooled scratch targets (NaN /
-magenta), so a shader that skips pixels fails here ([testing.md](../testing.md) §2–§3).
+review the JSON diff (only your ids may change) and commit it. Inspect changed rendered output before blessing
+([testing.md](../testing.md) §2–§3).
 
 Add in your family's own test file (`packages/project/test/transition-<family>.test.ts` and/or
 `packages/compositions/test/transition-<family>-gl.test.ts`, copying the pattern of `test/transition-gl/entry.ts`:
 `run(spec, params, {frame, duration, sides, out, in})` → pixels): one characteristic pixel per transition mid-way
 (e.g. "the left half is B at progress 0.5 for a West-to-East wipe"), the border colour where it is drawn, Reverse,
-the TS maths of `gpu.uniforms` / `passes` functions (pure), determinism of random ones (same seed → same pixels,
+independently specified numerical contracts at a stable seam, determinism of random ones (same seed → same pixels,
 other `seed` → different).
 
 Renders: `REMOTION_E2E=1 pnpm vitest run packages/compositions/test/transition-render.e2e.test.ts
-packages/compositions/test/transition-player.e2e.test.ts` (Chrome + ffmpeg). For a visual check of your family over
-real footage add your ids to `transition-gallery.e2e.test.ts` locally and run it with
-`REMOTION_E2E=1 TRANSITION_GALLERY=/tmp/gallery` — then look at the PNGs.
+packages/compositions/test/transition-player.e2e.test.ts` (Chrome + ffmpeg). For a visual check of your family,
+exercise preview and export with representative media and inspect the extracted frames.
 
 ## 10. What runs where
 

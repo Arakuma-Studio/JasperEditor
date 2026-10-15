@@ -348,25 +348,24 @@ badge (Premiere's "Accelerated" badge) plus RT/N/GPU filter toggles. Premiere-st
 
 ## 14. Tests to write (per family)
 
-Free for every entry (no plumbing): `packages/project/test/fx-catalogue.test.ts` (ids, prefixes, bins, description,
-`validateGpuEffect`, registry + agent schema wiring) and `packages/compositions/test/fx-gl.test.ts`, which **compiles
-and runs every registered GPU effect with default params in real WebGL2** (headless Chrome, SwiftShader). Run both
-before committing:
+`packages/compositions/test/fx-gl.test.ts` renders GPU effects in real WebGL2 (headless Chrome,
+SwiftShader) and compares their output with committed fingerprints. Run it before committing:
 
 ```bash
-pnpm vitest run packages/project/test/fx-catalogue.test.ts packages/compositions/test/fx-gl.test.ts
+pnpm vitest run packages/compositions/test/fx-gl.test.ts
 ```
 
 Add in your family's own test file (`packages/project/test/fx-<family>.test.ts` and/or
 `packages/compositions/test/fx-<family>-gl.test.ts`):
 
-1. Param maths you do in TS (`uniforms`, `padding`, `passes` functions, time hooks): unit tests (pure functions).
+1. Independently specified numerical contracts at their lowest stable seam; expected values must not repeat
+   the production formulas or assert private uniforms/pass structure.
 2. Pixel behaviour of each effect in real WebGL: copy the pattern of `test/fx-gl/entry.ts` (`run(spec, params, box,
    paint)` → pixels) — at least: identity/default params, one characteristic pixel per effect, padding when you draw
    outside the box, alpha (transparent input stays transparent where it should).
 3. Determinism of random effects: same params → same pixels; different `seed` → different pixels.
-4. Time effects: hook outputs per frame (pure) and, for one representative effect, a REMOTION_E2E render (pattern:
-   `fx-render.e2e.test.ts`, which bundles `test/fx-render/entry.ts` with extra effects via `setFxEffectRegistry`).
+4. Time effects: observable frame output against independent expectations, with a representative REMOTION_E2E
+   render (pattern: `fx-render.e2e.test.ts`, which bundles `test/fx-render/entry.ts` with extra effects via `setFxEffectRegistry`).
 
 Commands: `pnpm typecheck`, `pnpm lint`, `pnpm vitest run <paths>`, full `pnpm test`; browser suites:
 `REMOTION_E2E=1 pnpm vitest run packages/compositions/test/fx-render.e2e.test.ts packages/compositions/test/fx-player.e2e.test.ts`

@@ -31,16 +31,11 @@ the evaluator normalises by — including curved spatial vec2 paths when that wo
 
 ## Tests
 
-- `apps/web/test/effect-controls-graph.test.ts` — time map vs. the lanes' `exactFrameOf` (normal, sped-up,
-  reversed), value sampling equals `evaluate`, holds / clamps, velocity of linear / eased / vec2 / reversed
-  segments, handles sit on the sampled curve, drag ↔ ease round trips and clamps, `planEaseEdit` cases, and an
-  end-to-end check through the real command handlers (dragging a velocity handle to −120 / s yields −120 / s
-  from the evaluator).
-- `apps/web/test/effect-controls-graph-ui.test.tsx` (happy-dom) — twirl + labels + persistence, value-key
-  vertical / horizontal drags (one undo entry, transient preview, Esc cancel), velocity handle speed /
-  influence / clamps, Linear → Bezier, Continuous linked vs. Alt-broken, value-graph handles, shared selection
-  with the lanes, context menu, resize.
-- `e2e/graph-editor.spec.ts` — the same flow with real pointer events in the built app.
+- `apps/web/test/effect-controls-graph.test.ts` — velocity in units per second for linear, eased, vec2,
+  reversed and held segments, against independently specified speeds.
+- `apps/web/test/effect-controls-graph-ui.test.tsx` (happy-dom) — persisted graph visibility, value-key
+  drags with one undo entry and transient preview, time movement and Esc cancellation, velocity handle
+  speed/influence, Linear → Bezier, Continuous linked vs. Alt-broken handles, shared selection and context menu.
 
 ## Known gaps
 

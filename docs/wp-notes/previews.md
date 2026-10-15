@@ -137,7 +137,7 @@ FilmCraft's table and this box's measurements (§7), not a calibrated model.
 ## 5. Playback robustness
 
 **The Remotion Player stall after seeks — root cause found and fixed.** Reproduced in the built editor
-(`/tmp`-style harness, now `e2e/previews.spec.ts` › seek-and-play cycles, and the 20/40-cycle runs below) with the
+(`/tmp`-style harness, later the former `e2e/previews.spec.ts` seek-and-play cycles, and the 20/40-cycle runs below) with the
 watchdog disabled: 2 of 20 seek-and-play cycles froze (store playing, frame standing still). Both had the same
 signature in an AudioContext log: `resume()` in state `suspended`, then `suspend()` 6–25 ms later before the resume
 settled; afterwards the context read `running` but its clock (`getOutputTimestamp`) no longer moved. Reduced to a
@@ -175,8 +175,10 @@ linear blending with an adjustment between blended tracks; 3D under or over thes
 GL blend modes now share one scope** under the lowest of them (`makeBlendGroup`, like color-mgmt's linear runs): at
 frames where any member draws a GL item every layer of every member is composited in drawing order; a Normal track
 between them joins the run; an adjustment layer or a 3D run bottom ends it.
-`packages/compositions/test/scope-nesting.e2e.test.ts` renders Linear Burn on V2, a Normal layer on V3 and Color Dodge
-on V4 against `blendPixel` (it failed with CANVAS_NESTED before). Not done — the single flattening compositor, for
+The former `scope-nesting.e2e.test.ts` rendered Linear Burn on V2, a Normal layer on V3 and Color Dodge
+on V4 against `blendPixel` (it failed with CANVAS_NESTED before). Its regression is now owned by
+`packages/compositions/test/compositor.e2e.test.ts`. At this workstream's completion the single flattening compositor
+was still outstanding, for
 these precise reasons:
 1. *Adjustment and 3D steps need their own layout.* An adjustment scope's chain (`stash → effects → mix`) is built
    per clip by `useLayerFx` with a padded layout (effects sample transparent padding beyond the frame; a blur on an
@@ -265,12 +267,8 @@ clipIds?, wait?}` · `delete_render_files {scope: all|range, range?}` · `perf_s
   frames' framemd5 equal the source's), ProRes copying 30 frames bit-identically and encoding the edited 20, the plan's
   reasons.
 - `packages/compositions/test/previews.test.tsx` (4), `capture-safe-canvas.test.ts` (2, real Chrome),
-  `serial-audio-context.test.ts` (1, real Chrome), `scope-nesting.e2e.test.ts` (REMOTION_E2E=1).
+  `serial-audio-context.test.ts` (real Chrome).
 - `apps/web/test/previews.test.ts` (3), `apps/mcp/test/previews.test.ts` (3).
-- `e2e/previews.spec.ts` (built app, 3): bar yellow → Sequence ▸ Render Effects In to Out → green, the Program
-  monitor mounts `/renders/previews/<format>/<hash>.mp4`, ripple keeps it green, an edit turns it back, undo green
-  again; 12 seek-and-play cycles with no stall; Delete Render Files. Screenshot `test-results/previews-green.png`
-  (blurred clip playing from its preview, green bar).
 
 ## 10. Comparison with the references
 

@@ -118,7 +118,6 @@ pnpm fixtures
 pnpm vitest run --project @jasper/project packages/project/test/tracker.test.ts
 pnpm vitest run --project @jasper/engine apps/engine/test/tracking*.test.ts apps/engine/test/warp*.test.ts
 pnpm vitest run --project @jasper/mcp apps/mcp/test/tracking.test.ts
-pnpm build && E2E_PORT=48450 pnpm e2e -- e2e/tracking.spec.ts
 pnpm --filter @jasper/engine exec tsx scripts/track-file.ts --file <video> --ref N --corners "x,y x,y x,y x,y" --refine-edges
 ```
 

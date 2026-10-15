@@ -25,7 +25,7 @@ Research: `docs/research/animejs-v4-notes.md` (R-ANM). anime.js pinned at **4.5.
 | ANM-023 | `apps/web/vite.config.ts` (`vendorChunk`), lint | `animejs` → `vendor-anime`; motion value imports use subpaths except the runtime index (`animejs-root-import`). |
 | FIX-003 | `packages/compositions/src/fonts.ts`, `SequenceComposition.tsx` (2 hunks), `test/fonts-ready.test.tsx` | `useFontsReadyState(fonts)` tracks every face (family/weight/style; failed loads settle → fallback). One `delayRender` handle (via `useDelayRender`) created in a layout effect — never in a state initializer — and released by the commit that first renders every face as settled, i.e. the one that mounts the gated layers. `ClipLayer` renders nothing until the faces of its layer (`layerFontFaces`: text style + styled runs; anime-template params naming a document font) have settled: no split/measure/build and no fallback-font paint in the Player. Faces already settled on the page never hide a layer again (no blink on a new document). Component test with a deferred `FontFace`. |
 | FIX-010 | `scripts/third-party-notices.mjs` (+ test), `THIRD_PARTY_NOTICES.md`, `package.json` (`pnpm notices`), `apps/web/vite.config.ts`, `apps/web/src/shell/licenses.tsx`, `apps/desktop/scripts/package.mjs` | Production closure of `apps/web` + `packages/compositions` through workspace packages (deps + required peers; optional deps skipped → platform-independent), 98 packages with licence and licence/notice texts; Remotion packages without a declared licence get the Remotion License text. `pnpm notices --check` (also a test). Vite serves/emits `/THIRD_PARTY_NOTICES.md`; Help ▸ About links it and shows it on demand; packaging fails on stale notices, checks the web build has them and copies them next to the engine. |
-| Acceptance 8 | `apps/engine/src/anime/index.ts`, `apps/engine/test/anime.test.ts`, `e2e/anime-core.spec.ts` | `/api/licenses` lists anime.js (MIT, text). Packaged-like verified for real: `dist/engine.mjs` + `dist/third-party/` copied outside the repo answered with the committed text and version 4.5.0; unit test for the same path (`animeLicense(null)`). The engine-less About names anime.js (MIT). |
+| Acceptance 8 | `apps/engine/src/anime/index.ts`, `apps/engine/test/anime.test.ts` | `/api/licenses` lists anime.js (MIT, text). Packaged-like verified for real: `dist/engine.mjs` + `dist/third-party/` copied outside the repo answered with the committed text and version 4.5.0; unit test for the same path (`animeLicense(null)`). The engine-less About names anime.js (MIT). |
 
 ## Contract changes (additive)
 
@@ -51,7 +51,6 @@ Research: `docs/research/animejs-v4-notes.md` (R-ANM). anime.js pinned at **4.5.
 - Parity + cost: `REMOTION_E2E=1 pnpm vitest run packages/motion/test/determinism-render.e2e.test.ts`
   (Chrome: `/usr/bin/google-chrome` or `JASPER_BROWSER_EXECUTABLE`; ~5–7 min on a loaded box). Results
   (`anm-015.json`, `player-*.json`) are written to a temp dir `jasper-anm014-*`.
-- Playwright: `E2E_SKIP_LGPL=1 E2E_PORT=<free port> pnpm e2e e2e/anime-core.spec.ts`.
 - `pnpm notices --check`.
 
 ## Defects fixed

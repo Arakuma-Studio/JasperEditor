@@ -131,6 +131,9 @@ through its clips with frames and timecode). Guide text `SPEECH_GUIDE`; README t
 
 ## 7. Verified behaviour (measured here, 12-core shared Linux box, CPU only)
 
+These are historical workstream results. Browser tours and implementation-only tests named below may
+have been removed during cleanup; the counts are not current suite totals.
+
 Fixture `fixtures/speech/lj-composite.flac` (public domain, LJ Speech; 12 sentences, 156 words, 71.6 s = 3 windows) with
 measured sentence onsets/offsets; a 293 s / 644-word set of 40 LJ Speech sentences built by the same script for the
 comparison (not committed). Commands: `apps/engine/test/speech-model.e2e.test.ts` (Vitest) and the evaluation scripts
