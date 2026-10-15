@@ -155,13 +155,26 @@ export const SoundDesignPlaceCmd = cmd('soundDesign.place', {
 
 /**
  * Swaps the sound of a placed clip: the new media's aligned point lands where the old one did (same track, speed,
- * pan, gain, effects, group, role and cue link; keyframes keep their sequence times). Result
- * `{clipId, mediaId, soundId, start, sourceInFlicks, errorFlicks, alignedFrame}`.
+ * pan, gain, effects, group, role and cue link; keyframes keep their sequence times). The same media with another
+ * `align` re-aligns the clip (its start, peak or end on the frame the old point played at); `pitchSt` re-pitches it
+ * around that point (|st| ≤ 3 by varispeed keeping the seeded ±2 % variation, else the Pitch Shifter effect; 0
+ * removes the shift). Result `{clipId, mediaId, soundId, start, sourceInFlicks, errorFlicks, alignedFrame, align, rate,
+ * pitchSt}`.
  */
 export const SoundDesignSwapCmd = cmd('soundDesign.swap', {
 	clipId: IdRefSchema,
 	mediaId: IdRefSchema,
 	align: z.enum(CUE_ALIGNS).optional(),
+	pitchSt: z.number().min(-12).max(12).optional(),
+});
+
+/**
+ * Sets the sound-design role of placed clips (hero, support or layer; spec 12 §2.7 Essential Sound ▸ Role). Clips
+ * without `sfx` metadata get it (not linked to a cue) when their media is a library sound. Result `{clipIds, role}`.
+ */
+export const SoundDesignSetRoleCmd = cmd('soundDesign.setRole', {
+	clipIds: z.array(IdRefSchema).min(1).max(SOUND_DESIGN_LIMITS.cues),
+	role: z.enum(SFX_ROLES),
 });
 
 /** Sets the sequence's sound palette (preferred library sounds): replace (default), add or remove. */
@@ -183,9 +196,9 @@ export const SoundDesignSetSettingsCmd = cmd('soundDesign.setSettings', {
 });
 
 /**
- * Sets where the peak of a clip's sound is (spec 12 §2.7 "Peak handle", Shift-drag): `peakFlicks` = content flicks from
- * the media start, within the media. Writes `sfx.placement` (align `peak`; a library clip without `sfx` gets it, not
- * linked to a cue); the clip does not move. Peak snapping, cue fills and swaps use it from then on. Result
+ * Sets where the peak of a clip's sound is (spec 12 §2.7 "Peak handle", Shift-drag, Detect Peak): `peakFlicks` =
+ * content flicks from the media start, within the media. Writes `sfx.placement` (align `peak`; an audio clip without
+ * `sfx` gets it, not linked to a cue: `soundId` is its library sound, or null for other audio); the clip does not move. Peak snapping, cue fills and swaps use it from then on. Result
  * `{clipId, peakFlicks, errorFlicks}`.
  */
 export const SoundDesignSetPeakCmd = cmd('soundDesign.setPeak', {
@@ -201,6 +214,7 @@ export const SOUND_COMMANDS = [
 	SoundCueResyncCmd,
 	SoundDesignPlaceCmd,
 	SoundDesignSwapCmd,
+	SoundDesignSetRoleCmd,
 	SoundDesignSetPaletteCmd,
 	SoundDesignSetSettingsCmd,
 	SoundDesignSetPeakCmd,

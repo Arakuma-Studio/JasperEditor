@@ -350,6 +350,7 @@ const LABELS: Record<CommandType, string> = {
 	'soundCue.resync': 'Resync Sound Cues',
 	'soundDesign.place': 'Place Sound',
 	'soundDesign.swap': 'Swap Sound',
+	'soundDesign.setRole': 'Sound Role',
 	'soundDesign.setPalette': 'Sound Palette',
 	'soundDesign.setSettings': 'Sound Design Settings',
 	'soundDesign.setPeak': 'Set Peak',

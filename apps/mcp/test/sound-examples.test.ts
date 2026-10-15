@@ -17,6 +17,7 @@ const SOUND_COMMANDS = [
 	'soundCue.resync',
 	'soundDesign.place',
 	'soundDesign.swap',
+	'soundDesign.setRole',
 	'soundDesign.setPalette',
 	'soundDesign.setSettings',
 	'soundDesign.setPeak',
@@ -37,6 +38,13 @@ const PRELUDE: Record<string, unknown[]> = {
 		},
 	],
 	'soundDesign.swap': [
+		{
+			type: 'soundDesign.place',
+			frame: 30,
+			layers: [{ mediaId: { mediaByName: 'clip-a.mp4' }, align: 'start', track: 'A1' }],
+		},
+	],
+	'soundDesign.setRole': [
 		{
 			type: 'soundDesign.place',
 			frame: 30,

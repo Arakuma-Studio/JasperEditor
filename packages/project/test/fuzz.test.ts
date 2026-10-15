@@ -50,7 +50,8 @@ type Abstract =
 	| { k: 'cueUpdate'; cue: number; at: number; move: boolean }
 	| { k: 'cueRemove'; cue: number; withClips: boolean }
 	| { k: 'resync' }
-	| { k: 'swap'; clip: number; media: number }
+	| { k: 'swap'; clip: number; media: number; pitch: number; align: number }
+	| { k: 'setRole'; clip: number; role: number }
 	| { k: 'setPeak'; clip: number; peak: number };
 
 const frame = fc.integer({ min: 0, max: 900 });
@@ -143,7 +144,14 @@ const abstract: fc.Arbitrary<Abstract> = fc.oneof(
 	fc.record({ k: fc.constant('cueUpdate' as const), cue: idx, at: frame, move: fc.boolean() }),
 	fc.record({ k: fc.constant('cueRemove' as const), cue: idx, withClips: fc.boolean() }),
 	fc.record({ k: fc.constant('resync' as const) }),
-	fc.record({ k: fc.constant('swap' as const), clip: idx, media: fc.nat(1) }),
+	fc.record({
+		k: fc.constant('swap' as const),
+		clip: idx,
+		media: fc.nat(1),
+		pitch: fc.integer({ min: -7, max: 7 }),
+		align: fc.nat(3),
+	}),
+	fc.record({ k: fc.constant('setRole' as const), clip: idx, role: fc.nat(2) }),
 	fc.record({
 		k: fc.constant('setPeak' as const),
 		clip: idx,
@@ -302,7 +310,19 @@ function concretize(a: Abstract, doc: ProjectDocument, media: string[]): unknown
 		case 'swap': {
 			const sfx = clips.filter((c) => (c as { sfx?: unknown }).sfx);
 			const c = sfx[a.clip % Math.max(1, sfx.length)]?.id ?? pick(a.clip);
-			return { type: 'soundDesign.swap', clipId: c, mediaId: media[3 + (a.media % (media.length - 3))] };
+			return {
+				type: 'soundDesign.swap',
+				clipId: c,
+				mediaId: media[3 + (a.media % (media.length - 3))],
+				// WP2.4b: re-align and re-pitch through swap
+				...(a.align < 3 ? { align: (['peak', 'start', 'end'] as const)[a.align] } : {}),
+				...(a.pitch ? { pitchSt: a.pitch } : {}),
+			};
+		}
+		case 'setRole': {
+			const audio = clips.filter((c) => c.kind === 'audio');
+			const c = audio[a.clip % Math.max(1, audio.length)]?.id ?? pick(a.clip);
+			return { type: 'soundDesign.setRole', clipIds: [c], role: (['hero', 'support', 'layer'] as const)[a.role] };
 		}
 		case 'setPeak': {
 			const audio = clips.filter((c) => c.kind === 'audio');

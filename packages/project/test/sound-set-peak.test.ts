@@ -105,7 +105,7 @@ describe('soundDesign.setPeak', () => {
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 
-	it('refuses: unknown clip, not audio, not a library sound, past the media end, locked track, bad input', () => {
+	it('refuses: unknown clip, not audio, past the media end, locked track, bad input', () => {
 		const h = new Harness();
 		const m = libMedia(h);
 		const plain = h.registerVideo({ seconds: 5 });
@@ -129,7 +129,8 @@ describe('soundDesign.setPeak', () => {
 		};
 		expect(code({ clipId: 'clp_0000000000000000', peakFlicks: 0 })).toBe('E_NOT_FOUND');
 		expect(code({ clipId: v, peakFlicks: 0 })).toBe('E_INVALID_PARAM');
-		expect(code({ clipId: plainAudio, peakFlicks: 0 })).toBe('E_INVALID_PARAM');
+		// project audio is accepted since WP2.4b (Detect Peak): see sound-swap-role.test.ts
+		expect(code({ clipId: plainAudio, peakFlicks: 0 })).toBeNull();
 		expect(code({ clipId: a, peakFlicks: Math.round(0.6 * FLICKS_PER_SECOND) })).toBe('E_INVALID_PARAM');
 		expect(code({ clipId: a, peakFlicks: -1 })).toBe('E_SCHEMA');
 		expect(code({ clipId: a, peakFlicks: 1.5 })).toBe('E_SCHEMA');

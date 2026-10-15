@@ -659,6 +659,45 @@ function shiftContentTimes(clip: DAudio, delta: number): void {
 	for (const m of clip.markers) m.flicks = Math.max(0, Math.round(m.flicks + delta));
 }
 
+/**
+ * Re-times the keyframes and clip markers of an audio clip whose start, In point or speed change so that each keeps
+ * its sequence time: content time k plays at `start·F + (k − in) / rate`.
+ */
+function remapContentTimes(
+	clip: DAudio,
+	F: number,
+	from: { start: number; sourceIn: number; rate: number },
+	to: { start: number; sourceIn: number; rate: number },
+): void {
+	if (from.rate === to.rate) {
+		shiftContentTimes(clip, to.sourceIn - from.sourceIn - (to.start - from.start) * F * from.rate);
+		return;
+	}
+	const map = (k: number) =>
+		Math.max(
+			0,
+			Math.round(to.sourceIn + (from.start * F + (k - from.sourceIn) / from.rate - to.start * F) * to.rate),
+		);
+	const remap = (a: { keyframes?: { time: number }[] } | undefined) => {
+		for (const k of a?.keyframes ?? []) k.time = map(k.time);
+	};
+	remap(clip.volumeDb as never);
+	remap(clip.pan as never);
+	for (const fx of clip.effects) for (const p of Object.values(fx.params)) remap(p as never);
+	for (const m of clip.markers) m.flicks = map(m.flicks);
+}
+
+/** Semitones of a clip's current pitch shift: its varispeed (whole semitones, the ±2 % variation left out) and Pitch Shifter. */
+function currentPitch(clip: DAudio): { varispeedSt: number; variation: number; shifterIds: string[] } {
+	const rate = clip.speed.rate;
+	const st = Math.round(12 * Math.log2(rate > 0 ? rate : 1));
+	const varispeedSt = Math.abs(st) <= VARISPEED_PITCH_MAX_ST ? st : 0;
+	const shifterIds = clip.effects
+		.filter((fx) => (fx as { effectId?: string }).effectId === PITCH_SHIFTER_EFFECT_ID)
+		.map((fx) => fx.id);
+	return { varispeedSt, variation: rate / 2 ** (varispeedSt / 12), shifterIds };
+}
+
 function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) {
 	const { seq, clip: c } = h.clip(doc, cmd.clipId);
 	if (c.kind !== 'audio')
@@ -696,6 +735,13 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 	}
 	align = cmd.align ?? align!;
 	const cueFrame = Math.round(pointFlicks / F);
+	// A pitch change keeps the seeded variation of the speed: new rate = variation · 2^(st/12) (varispeed), or the
+	// variation alone plus the Pitch Shifter for larger shifts.
+	const pitch = currentPitch(clip);
+	const pp = cmd.pitchSt !== undefined ? pitchPlan(cmd.pitchSt, pitch.variation) : null;
+	const newRate = pp ? Math.round(pp.rate * 1e6) / 1e6 : clip.speed.rate;
+	if (!(newRate >= 0.01 && newRate <= 100))
+		h.fail('E_INVALID_PARAM', 'The resulting speed is out of range', { path: ['pitchSt'] });
 	const asset = doc.media[cmd.mediaId] as Draft<MediaAsset> | undefined;
 	if (!asset) return h.fail('E_NOT_FOUND', `Media not found: ${cmd.mediaId}`, { path: ['mediaId'] });
 	const stream = asset.probe.streams.find((s) => s.type === 'audio');
@@ -719,7 +765,7 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 		align,
 		timing,
 		mediaDurationFlicks: dur,
-		rate: clip.speed.rate,
+		rate: newRate,
 		clampStart: false,
 	});
 	if (!plan.ok) return h.fail(plan.code, plan.message, { path: ['mediaId'] });
@@ -735,9 +781,32 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 		h.fail('E_OVERLAP', `The new sound does not fit on its track between frames ${p.start} and ${end}`, {
 			blocking,
 		});
-	// Content times move with the In point and start: keyframes keep their sequence times.
-	const delta = p.sourceInFlicks - clip.sourceIn - (p.start - clip.start) * F * clip.speed.rate;
-	shiftContentTimes(clip, delta);
+	// Content times move with the In point, start and speed: keyframes keep their sequence times.
+	remapContentTimes(
+		clip,
+		F,
+		{ start: clip.start, sourceIn: clip.sourceIn, rate: clip.speed.rate },
+		{ start: p.start, sourceIn: p.sourceInFlicks, rate: newRate },
+	);
+	if (pp) {
+		clip.speed.rate = newRate;
+		if (newRate !== 1) clip.speed.maintainPitch = false;
+		if (pitch.shifterIds.length)
+			clip.effects = clip.effects.filter((fx) => !pitch.shifterIds.includes(fx.id)) as never;
+		if (pp.shifterSt) {
+			const whole = Math.trunc(pp.shifterSt);
+			effectHandlers['effect.add']!(
+				doc,
+				{
+					type: 'effect.add',
+					target: { clipId: clip.id },
+					effectId: PITCH_SHIFTER_EFFECT_ID,
+					params: { semitones: whole, cents: Math.round((pp.shifterSt - whole) * 100) },
+				},
+				h,
+			);
+		}
+	}
 	const oldMedia = clip.mediaId;
 	clip.mediaId = asset.id;
 	clip.start = p.start;
@@ -780,7 +849,45 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 		errorFlicks: p.errorFlicks,
 		alignedFrame: cueFrame,
 		align,
+		rate: clip.speed.rate,
+		pitchSt: cmd.pitchSt ?? null,
 	};
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// soundDesign.setRole
+
+function setRole(doc: DDoc, cmd: CommandOf<'soundDesign.setRole'>, h: HandlerContext) {
+	const ids = [...new Set(cmd.clipIds)];
+	for (const [i, id] of ids.entries()) {
+		const { seq, clip: c } = h.clip(doc, id);
+		if (c.kind !== 'audio')
+			return h.fail('E_INVALID_PARAM', `${c.id} is not an audio clip`, { path: ['clipIds', String(i)] });
+		const clip = c as DAudio;
+		assertUnlocked(findTrackIn(seq, clip.trackId)!.track, h);
+		if (clip.sfx) {
+			clip.sfx.role = cmd.role;
+			continue;
+		}
+		const lib = readLibraryProvenance(
+			(doc.media[clip.mediaId] as { library?: unknown } | undefined)?.library,
+		);
+		const t = lib ? timingOfMedia(lib, mediaDurationFlicks(doc.media[clip.mediaId] as MediaAsset) ?? 0) : null;
+		if (!lib || !t)
+			return h.fail(
+				'E_INVALID_PARAM',
+				`${clip.id} is not a placed or library sound (place it with soundDesign.place first)`,
+				{ path: ['clipIds', String(i)] },
+			);
+		clip.sfx = {
+			cueId: null,
+			soundId: lib.soundId,
+			layer: 0,
+			role: cmd.role,
+			placement: { align: 'peak', peakFlicks: Math.round(t.peakSec * FLICKS_PER_SECOND), errorFlicks: 0 },
+		} as ClipSfx;
+	}
+	return { clipIds: ids, role: cmd.role };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -865,11 +972,10 @@ function setPeak(doc: DDoc, cmd: CommandOf<'soundDesign.setPeak'>, h: HandlerCon
 		h.fail('E_INVALID_PARAM', `The peak is past the end of the media (${dur} flicks)`, {
 			path: ['peakFlicks'],
 		});
+	// Any audio clip may get a peak (Detect Peak on project audio): its `sfx` then has no library sound id.
 	const lib = readLibraryProvenance((media as { library?: unknown } | undefined)?.library);
-	if (!clip.sfx && !lib)
-		h.fail('E_INVALID_PARAM', `${clip.id} is not a library sound (place it with soundDesign.place first)`, {
-			path: ['clipId'],
-		});
+	if (!media)
+		h.fail('E_NOT_FOUND', `Media not found: ${clip.mediaId}`, { path: ['clipId'] });
 	// How late the new peak plays after the cue the clip fills (0 when it is early, or fills none).
 	const rate = seq.settings.frameRate as Rational;
 	const F = flicksPerFrame(rate);
@@ -879,7 +985,7 @@ function setPeak(doc: DDoc, cmd: CommandOf<'soundDesign.setPeak'>, h: HandlerCon
 	const errorFlicks = cue ? Math.max(0, Math.round(playsAt - cue.frame * F)) : 0;
 	const placement = { align: 'peak' as const, peakFlicks: cmd.peakFlicks, errorFlicks };
 	if (clip.sfx) clip.sfx.placement = placement;
-	else clip.sfx = { cueId: null, soundId: lib!.soundId, layer: 0, role: 'support', placement };
+	else clip.sfx = { cueId: null, soundId: lib?.soundId ?? null, layer: 0, role: 'support', placement };
 	return { clipId: clip.id, peakFlicks: cmd.peakFlicks, errorFlicks };
 }
 
@@ -891,6 +997,7 @@ export const soundHandlers = {
 	'soundCue.resync': resyncCues,
 	'soundDesign.place': place,
 	'soundDesign.swap': swap,
+	'soundDesign.setRole': setRole,
 	'soundDesign.setPalette': setPalette,
 	'soundDesign.setSettings': setSettings,
 	'soundDesign.setPeak': setPeak,
