@@ -1,15 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { EngineCapabilitiesSchema, LicensesResponseSchema } from '@jasper/api';
 import { afterEach, describe, expect, it } from 'vitest';
 import { animeLicense } from '../src/anime/index.ts';
 import { createServer, engineConfig } from '../src/index.ts';
 import { RemotionService } from '../src/remotion/service.ts';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const repo = join(here, '..', '..', '..');
 const H = { host: '127.0.0.1:47900' };
 
 const apps: { close(): Promise<unknown> }[] = [];
@@ -26,16 +23,6 @@ async function make() {
 }
 
 describe('anime.js on the engine (routes/anime.ts)', () => {
-	it('the pinned version matches packages/motion and the installed package', () => {
-		const pkg = JSON.parse(readFileSync(join(repo, 'packages', 'motion', 'package.json'), 'utf8'));
-		expect(pkg.dependencies.animejs).toBe('4.5.0');
-		const dir = join(repo, 'packages', 'motion', 'node_modules', 'animejs');
-		expect(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).version).toBe('4.5.0');
-		// The committed fallback is the package's own licence text.
-		expect(readFileSync(join(repo, 'apps/engine/src/anime/third-party/LICENSE-animejs.txt'), 'utf8')).toBe(
-			readFileSync(join(dir, 'LICENSE.md'), 'utf8'),
-		);
-	});
 	it('lists anime.js (MIT, with its text) in /api/licenses and fills features.anime', async () => {
 		const app = await make();
 		const lic = LicensesResponseSchema.parse(

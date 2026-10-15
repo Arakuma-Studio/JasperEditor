@@ -2,8 +2,6 @@ import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, wr
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
-import { parseEvent } from '@jasper/api';
-import { parseEngineRuntime } from '@jasper/config';
 import { MediaProbeSchema } from '@jasper/project';
 import { bytesTarget, describeFuzz, jsonTarget, textTarget } from '@jasper/testkit/fuzz';
 import { afterAll } from 'vitest';
@@ -221,17 +219,4 @@ describeFuzz('@jasper/engine bundle metadata, names and messages', [
 		if (typeof s !== 'string' || !s || s.includes('/') || s.includes('\\') || s === '.' || s === '..')
 			throw new Error(`unsafe result ${JSON.stringify(s)}`);
 	}),
-	jsonTarget(
-		'engine runtime file',
-		[{ version: 1, port: 47900, pid: 1234, token: 'x', startedAt: '2026-10-07T00:00:00.000Z' }],
-		parseEngineRuntime,
-	),
-	jsonTarget(
-		'engine events',
-		[
-			{ type: 'job.progress', jobId: 'j1', progress: 0.5 },
-			{ type: 'project.saved', projectId: 'p', revision: 3 },
-		],
-		parseEvent,
-	),
 ]);

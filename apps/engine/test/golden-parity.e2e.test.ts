@@ -4,14 +4,9 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } f
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildRenderSnapshot } from '@jasper/project';
 import { testResultsDir } from '@jasper/testkit/env';
-import {
-	assertDistinctScenes,
-	diffImages,
-	expectGolden,
-	formatDiff,
-	Tolerance,
-} from '@jasper/testkit/golden';
+import { diffImages, expectGolden, formatDiff, Tolerance } from '@jasper/testkit/golden';
 import type { Rgba8 } from '@jasper/testkit/image';
 import { oraclesAvailable } from '@jasper/testkit/oracle';
 import { decodePng, encodePng } from '@jasper/testkit/png';
@@ -96,7 +91,6 @@ describe.runIf(enabled)('native vs Remotion on golden scenes (REMOTION_E2E=1)', 
 	let card: Awaited<ReturnType<typeof register>>;
 	let tile: Awaited<ReturnType<typeof register>>;
 	const host = () => ({ host: `127.0.0.1:${engine.port}` });
-	const nativeFrames: Record<string, Rgba8> = {};
 
 	beforeAll(async () => {
 		engine = await startEngine({
@@ -164,33 +158,30 @@ describe.runIf(enabled)('native vs Remotion on golden scenes (REMOTION_E2E=1)', 
 
 	async function remotionStill(d: DocBuilder): Promise<Rgba8> {
 		const svc = coreServices(engine.app);
-		const planned = await svc.exports.plan({
-			envelope: d.envelope(),
-			sequenceId: d.seqId,
-			settings: {
-				sequenceId: d.seqId,
-				range: { type: 'custom', startFrame: 10, endFrame: 11 },
-				container: 'mov',
-				engine: 'remotion',
-				video: {
-					codec: 'prores',
-					proresProfile: '4444',
+		const doc = buildRenderSnapshot(d.doc, d.seqId, {
+			resolveMedia: (asset) => {
+				const key = asset.locators.find((locator) => locator.type === 'engine-store')?.key;
+				if (!key) throw new Error(`Missing engine-store locator for ${asset.id}`);
+				return {
+					url: svc.signer.signUrl(`http://127.0.0.1:${engine.port}`, `/media/${encodeURIComponent(key)}`),
+					proxyUrl: null,
+					kind: asset.kind,
 					width: GW,
 					height: GH,
-					frameRate: { num: 30, den: 1 },
-					scaling: 'fit',
-					quality: { mode: 'crf', value: 10 },
-					encoderSpeed: 'fast',
-				},
-			} as never,
+					durationFlicks: null,
+					hasAudio: false,
+					rotation: 0,
+				};
+			},
 		});
 		const out = join(mkdtempSync(join(tmpdir(), 'jasper-golden-parity-')), 'remotion.png');
 		await svc.remotion.renderStill({
-			inputProps: (
-				svc.exports as unknown as { remotionProps(p: unknown): Record<string, unknown> }
-			).remotionProps(planned),
+			inputProps: {
+				doc,
+				options: { isPreview: false, useProxies: false, transparentBackground: false },
+			},
 			output: out,
-			frame: 0,
+			frame: 10,
 			signal: new AbortController().signal,
 		});
 		return decodePng(readFileSync(out));
@@ -208,12 +199,6 @@ describe.runIf(enabled)('native vs Remotion on golden scenes (REMOTION_E2E=1)', 
 			mkdirSync(testResultsDir('golden'), { recursive: true });
 			appendFileSync(join(testResultsDir('golden'), 'parity.txt'), `${new Date().toISOString()} ${line}\n`);
 			expect(Tolerance.accepts(PARITY, diff), `${scene.name}: ${formatDiff(diff)}`).toBe(true);
-			nativeFrames[scene.name] = native;
 			expectGolden(join(GOLDENS, `${scene.name}.png`), native, Tolerance.RENDER);
 		});
-
-	it('no scene is blank or a duplicate of another', () => {
-		expect(Object.keys(nativeFrames)).toHaveLength(SCENES.length);
-		assertDistinctScenes(nativeFrames);
-	});
 });

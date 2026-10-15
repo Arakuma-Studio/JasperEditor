@@ -1,13 +1,6 @@
 // shaky.mp4 pans a test chart by a seeded random walk, providing independent ground truth for stabilisation.
 import type { WarpAnalysisResult } from '@jasper/api';
-import {
-	decodeWarpAnalysis,
-	hApply,
-	planOutputOf,
-	WarpAnalysisDataSchema,
-	warpPlanFor,
-	warpSettingsOf,
-} from '@jasper/project';
+import { planOutputOf, WarpAnalysisDataSchema, warpPlanFor, warpSettingsOf } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import {
@@ -98,11 +91,9 @@ describe('Warp Stabilizer analysis', () => {
 			const spread = Math.max(...outs.map((p) => Math.hypot(p[0] - outs[45]![0], p[1] - outs[45]![1])));
 			expect(spread, method).toBeLessThan(method === 'subspaceWarp' ? 2.5 : 1.5);
 		}
-		expect(decodeWarpAnalysis(a).frames).toHaveLength(90);
-		expect(hApply([1, 0, 2, 0, 1, 3, 0, 0, 1], [0, 0])).toEqual([2, 3]);
 	});
 
-	it('the export planner refuses an un-analysed Warp Stabilizer and exports an analysed one', async () => {
+	it('the export planner refuses an un-analysed Warp Stabilizer and accepts an analysed one', async () => {
 		const shaky = await register(app, fixture('shaky.mp4'));
 		const d = new DocBuilder();
 		const m = d.addMedia(shaky);

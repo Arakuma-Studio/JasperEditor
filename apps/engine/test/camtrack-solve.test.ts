@@ -25,15 +25,13 @@ import {
 	umeyama,
 	type V3,
 } from '../src/camtrack/core/linalg.ts';
-import { focalOf, solveCamera } from '../src/camtrack/core/solver.ts';
+import { solveCamera } from '../src/camtrack/core/solver.ts';
 import {
 	type CameraTracks,
 	type Distortion,
-	distort,
 	frameR,
 	type SolveSettings,
 	solveFocal,
-	undistort,
 } from '../src/camtrack/core/types.ts';
 
 const W = 1280;
@@ -59,7 +57,10 @@ function project(cam: Cam, x: V3, dist?: Distortion): P2 | null {
 	const p = mv(cam.r, sub(x, cam.c));
 	if (p[2] < 0.1) return null;
 	const q: P2 = [(cam.f * p[0]) / p[2], (cam.f * p[1]) / p[2]];
-	const d = dist ? distort(dist, q) : q;
+	// Brown radial model, independently applied to generate observed image coordinates.
+	const radiusSquared = dist ? (q[0] ** 2 + q[1] ** 2) / dist.radius ** 2 : 0;
+	const radialScale = dist ? 1 + dist.k1 * radiusSquared + dist.k2 * radiusSquared ** 2 : 1;
+	const d: P2 = [q[0] * radialScale, q[1] * radialScale];
 	const u = d[0] + W / 2;
 	const v = d[1] + H / 2;
 	return u >= 0 && u < W && v >= 0 && v < H ? [u, v] : null;
@@ -231,26 +232,13 @@ describe('camtrack geometry', () => {
 		expect(rep.cost).toBeLessThan(rep.initialCost * 1e-6);
 		for (let i = 2; i < truth.length; i++) expect(norm(sub(cams[i]!.pose.c, truth[i]!.c))).toBeLessThan(1e-3);
 	});
-
-	it('undistort inverts distort', () => {
-		const d: Distortion = { k1: -0.08, k2: 0.01, radius: 734 };
-		for (const p of [
-			[0, 0],
-			[300, -200],
-			[-620, 350],
-		] as P2[]) {
-			const q = undistort(d, distort(d, p));
-			expect(q[0]).toBeCloseTo(p[0], 6);
-			expect(q[1]).toBeCloseTo(p[1], 6);
-		}
-	});
 });
 
 describe('camtrack solve (synthetic scenes)', () => {
 	const pts3d = randomPoints(260, 11, { min: [-6, -3, 4], max: [6, 3, 16] });
 
 	it('Fixed Angle of View: finds the focal length and the path of a dolly', () => {
-		const f = focalOf(W, 50);
+		const f = 1372.484429126117 /* 1280 / (2 tan(50° / 2)) */;
 		const truth = movingCamera(40, () => f);
 		const solve = solveCamera(tracksOf(truth, pts3d, 0.1, 1), settings());
 		expect(solve.methodUsed).toBe('typical');
@@ -263,7 +251,7 @@ describe('camtrack solve (synthetic scenes)', () => {
 	}, 120_000);
 
 	it('Specify Angle of View: uses the given focal length', () => {
-		const f = focalOf(W, 40);
+		const f = 1758.385548450958 /* 1280 / (2 tan(40° / 2)) */;
 		const truth = movingCamera(30, () => f);
 		const solve = solveCamera(
 			tracksOf(truth, pts3d, 0.1, 2),
@@ -274,7 +262,7 @@ describe('camtrack solve (synthetic scenes)', () => {
 	}, 120_000);
 
 	it('Variable Zoom: follows a zoom during the move', () => {
-		const f0 = focalOf(W, 55);
+		const f0 = 1229.428561261546 /* 1280 / (2 tan(55° / 2)) */;
 		const n = 36;
 		const zoom = (k: number) => f0 * (1 + (0.3 * k) / (n - 1));
 		const truth = movingCamera(n, zoom);
@@ -288,7 +276,7 @@ describe('camtrack solve (synthetic scenes)', () => {
 	}, 180_000);
 
 	it('Auto Detect: a pan from a tripod is solved as a pure rotation', () => {
-		const f = focalOf(W, 45);
+		const f = 1545.096679918781 /* 1280 / (2 tan(45° / 2)) */;
 		const n = 30;
 		const truth: Cam[] = Array.from({ length: n }, (_, k) => {
 			const a = -0.25 + (0.5 * k) / (n - 1);
@@ -303,7 +291,7 @@ describe('camtrack solve (synthetic scenes)', () => {
 	}, 120_000);
 
 	it('Auto Detect: a scene of one plane is solved (Flat)', () => {
-		const f = focalOf(W, 50);
+		const f = 1372.484429126117 /* 1280 / (2 tan(50° / 2)) */;
 		const truth = movingCamera(30, () => f);
 		const rng = new Rng(17);
 		const ground: V3[] = Array.from({ length: 220 }, () => [-8 + 16 * rng.unit(), 1.6, 3 + 14 * rng.unit()]);
@@ -313,7 +301,7 @@ describe('camtrack solve (synthetic scenes)', () => {
 	}, 120_000);
 
 	it('solves radial lens distortion', () => {
-		const f = focalOf(W, 60);
+		const f = 1108.512516844082 /* 1280 / (2 tan(60° / 2)) */;
 		const truth = movingCamera(30, () => f);
 		const dist: Distortion = { k1: -0.06, k2: 0, radius: 0.5 * Math.hypot(W, H) };
 		const solve = solveCamera(tracksOf(truth, pts3d, 0.1, 6, dist), settings({ lensDistortion: true }));

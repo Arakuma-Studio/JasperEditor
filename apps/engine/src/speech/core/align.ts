@@ -10,7 +10,7 @@
 import { APPEND_PUNCTUATIONS, PREPEND_PUNCTUATIONS } from './tokenizer.ts';
 
 /** Median filter with reflect padding (numpy "reflect"). */
-export function medianFilter(x: ArrayLike<number>, width: number): Float32Array {
+function medianFilter(x: ArrayLike<number>, width: number): Float32Array {
 	const n = x.length;
 	const out = new Float32Array(n);
 	if (n === 0) return out;
@@ -39,7 +39,7 @@ export function medianFilter(x: ArrayLike<number>, width: number): Float32Array 
  * Dynamic time warping through `cost` (`n × m`, row-major) with monotonic steps (diagonal, down, right).
  * Returns the path from (0, 0) to (n − 1, m − 1) as [row, column] pairs.
  */
-export function dtw(cost: Float32Array, n: number, m: number): Array<[number, number]> {
+function dtw(cost: Float32Array, n: number, m: number): Array<[number, number]> {
 	const W = m + 1;
 	const acc = new Float64Array((n + 1) * W).fill(Number.POSITIVE_INFINITY);
 	const trace = new Uint8Array((n + 1) * W);

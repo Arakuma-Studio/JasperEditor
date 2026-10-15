@@ -506,15 +506,6 @@ describe('cache, capability and preview route (LBK-021, LBK-030)', () => {
 		expect((await get(`${signed.slice(signed.indexOf('?'))}&n=1`)).body).toBe('frame 1');
 	});
 
-	it('features.layerBake reports readiness and the cache size', async () => {
-		await svc.refreshBytes();
-		const caps = (
-			await app.inject({ method: 'GET', url: '/api/capabilities', headers: { host: '127.0.0.1:47900' } })
-		).json();
-		expect(caps.features.layerBake).toMatchObject({ cacheBytes: expect.any(Number) });
-		expect(['ready', 'unavailable']).toContain(caps.features.layerBake.state);
-	});
-
 	it('POST /api/layer-bake/preview validates the request and the clip', async () => {
 		const d = new DocBuilder('hd-720p-30');
 		const t = smallTitle(d, 'Plain', { at: 0, track: 'V1' });

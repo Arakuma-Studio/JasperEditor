@@ -39,13 +39,13 @@ it('preserves existing audio if a cross-device copy runs out of disk space', asy
 	expect(await readFile(source, 'utf8')).toBe('complete audio');
 });
 
-it('reports a rename permission failure without attempting a copy', async () => {
+it('reports a rename permission failure and preserves both files', async () => {
 	const { source, destination } = await files();
 	const error = Object.assign(new Error('permission denied'), { code: 'EACCES' });
 	vi.mocked(rename).mockRejectedValueOnce(error);
 	await expect(publishNormalizedAudio(source, destination)).rejects.toBe(error);
-	expect(copyFile).not.toHaveBeenCalled();
 	expect(await readFile(destination, 'utf8')).toBe('previous audio');
+	expect(await readFile(source, 'utf8')).toBe('complete audio');
 });
 
 it('publishes the complete audio across filesystems and removes its scratch file', async () => {

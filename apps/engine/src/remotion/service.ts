@@ -967,7 +967,7 @@ function docHasColorEffects(doc: unknown): boolean {
  * Concurrent heavy compositions can time out under software GL or host contention even when one page
  * succeeds. Retry RENDER_TIMEOUT once on a single page; a repeated timeout retains the typed error.
  */
-export async function withSinglePageRetry(
+async function withSinglePageRetry(
 	concurrency: number,
 	signal: AbortSignal,
 	log: ((line: string) => void) | undefined,

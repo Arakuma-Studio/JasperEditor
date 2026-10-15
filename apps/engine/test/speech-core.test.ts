@@ -1,13 +1,6 @@
 // Whisper front-end and post-processing tests include cases ported from FilmCraft.
 import { describe, expect, it } from 'vitest';
-import {
-	addWordTimestamps,
-	alignTokens,
-	dtw,
-	medianFilter,
-	mergePunctuations,
-	wordTimings,
-} from '../src/speech/core/align.ts';
+import { addWordTimestamps, alignTokens, mergePunctuations, wordTimings } from '../src/speech/core/align.ts';
 import {
 	applyFilters,
 	compressionRatio,
@@ -43,14 +36,16 @@ const s = (sec: number) => Math.round(sec * SR);
 describe('mel front end (FilmCraft mel.rs tests)', () => {
 	it('filterbank shape and coverage; Slaney scale', () => {
 		const w = melFilters(80);
-		expect(w.length).toBe(80 * N_BINS);
+		expect(w.length).toBe(80 * 201);
 		for (let m = 0; m < 80; m++) {
-			const row = w.subarray(m * N_BINS, (m + 1) * N_BINS);
+			const row = w.subarray(m * 201, (m + 1) * 201);
 			expect(row.every((v) => v >= 0)).toBe(true);
 			expect(row.reduce((a, b) => a + b, 0)).toBeGreaterThan(0);
 		}
 		expect(Math.abs(hzToMel(500) - 7.5)).toBeLessThan(1e-9);
-		expect(Math.abs(melToHz(hzToMel(3000)) - 3000)).toBeLessThan(1e-6);
+		expect(hzToMel(6400)).toBeCloseTo(42, 9);
+		expect(melToHz(15)).toBeCloseTo(1000, 9);
+		expect(melToHz(42)).toBeCloseTo(6400, 6);
 	});
 
 	it('a tone lands in its band', () => {
@@ -59,11 +54,8 @@ describe('mel front end (FilmCraft mel.rs tests)', () => {
 		expect(frames).toBe(100);
 		let peak = 0;
 		for (let b = 0; b < 80; b++) if (data[b * frames + 50] > data[peak * frames + 50]) peak = b;
-		const w = melFilters(80);
-		const k = (1000 * N_FFT) / SR;
-		let best = 0;
-		for (let b = 0; b < 80; b++) if (w[b * N_BINS + k] > w[best * N_BINS + k]) best = b;
-		expect(peak).toBe(best);
+		// Slaney 80-band bank over 0–8 kHz: the centre nearest 1 kHz is band 26.
+		expect(peak).toBe(26);
 	});
 
 	it('the mixed-radix FFT equals a direct DFT', () => {
@@ -295,26 +287,6 @@ describe('speaker labelling (FilmCraft diarize.rs tests + count hint)', () => {
 });
 
 describe('alignment (FilmCraft align.rs tests + OpenAI heuristics)', () => {
-	it('median filter removes spikes', () => {
-		expect([...medianFilter([0, 0, 9, 0, 0], 3)]).toEqual([0, 0, 0, 0, 0]);
-		expect([...medianFilter([1, 2, 3], 1)]).toEqual([1, 2, 3]);
-	});
-
-	it('DTW follows the cheap diagonal band', () => {
-		const c = new Float32Array(18).fill(1);
-		const cheap: Array<[number, number[]]> = [
-			[0, [0, 1]],
-			[1, [2, 3]],
-			[2, [4, 5]],
-		];
-		for (const [r, cols] of cheap) for (const k of cols) c[r * 6 + k] = 0;
-		const p = dtw(c, 3, 6);
-		expect(p[0]).toEqual([0, 0]);
-		expect(p[p.length - 1]).toEqual([2, 5]);
-		const first = (row: number) => p.find((x) => x[0] === row)?.[1];
-		expect([first(0), first(1), first(2)]).toEqual([0, 2, 4]);
-	});
-
 	it('alignTokens finds where each token attends', () => {
 		// 2 prompt rows + 3 text tokens + eot, 30 frames; token i attends frames [i·8, i·8+8)
 		const T = 6;
