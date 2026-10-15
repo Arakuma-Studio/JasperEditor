@@ -419,7 +419,8 @@ export function CueSeam(p: CueSeamProps) {
 	};
 	const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
 		if (!isSoundDrag(e.dataTransfer)) return;
-		const id = hitCue(geoms, localX(e));
+		const x = localX(e);
+		const id = Number.isFinite(x) ? hitCue(geoms, x) : null;
 		const ok = !!id && byId.has(id) && !session.getState().readOnly;
 		setDropCue(ok ? id : null);
 		if (!ok) return;

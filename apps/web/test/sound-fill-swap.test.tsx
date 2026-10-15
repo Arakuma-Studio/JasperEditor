@@ -13,7 +13,12 @@ import {
 	runCommand,
 	type ToastRequest,
 } from '../src/commands/index.ts';
-import { cancelLibraryMode, clipSoundTarget, cueFillTarget, requestCueFill } from '../src/sound/controller.ts';
+import {
+	cancelLibraryMode,
+	clipSoundTarget,
+	cueFillTarget,
+	requestCueFill,
+} from '../src/sound/controller.ts';
 import { cuesOf } from '../src/sound/cues/model.ts';
 import { alignedFrameOf, layersOf, sfxOf } from '../src/sound/design-model.ts';
 import { detectClipPeak } from '../src/sound/detect-peak.ts';
@@ -52,7 +57,12 @@ function harness(entries: SoundEntry[] = defaultEntries()) {
 		return r;
 	};
 	const apply = (commands: unknown[]) => {
-		const r = session.apply({ label: 'setup', origin: 'user', sequenceId: seqId, commands: commands as never[] });
+		const r = session.apply({
+			label: 'setup',
+			origin: 'user',
+			sequenceId: seqId,
+			commands: commands as never[],
+		});
 		if (!r.ok) throw new Error(JSON.stringify(r.errors));
 		return r;
 	};
@@ -64,7 +74,20 @@ function harness(entries: SoundEntry[] = defaultEntries()) {
 			apply([{ type: 'soundCue.add', cues: [{ frame, kind: 'land', weight, types, source: 'user' }] }])
 				.results[0] as { cueIds: string[] }
 		).cueIds[0]!;
-	return { session, seqId, fake, engine: fake.client as never, ctx, run, apply, seq, clip, labels, toasts, addCue };
+	return {
+		session,
+		seqId,
+		fake,
+		engine: fake.client as never,
+		ctx,
+		run,
+		apply,
+		seq,
+		clip,
+		labels,
+		toasts,
+		addCue,
+	};
 }
 
 function defaultEntries(): SoundEntry[] {
@@ -93,14 +116,24 @@ describe('Fill', () => {
 		const r = await fillCueWithSound(h.session, h.engine, entry, {
 			sequenceId: h.seqId,
 			cueId,
-			alternatives: [entry.id, 'snd_0000000000000aaa', 'snd_0000000000000bbb', 'snd_0000000000000ccc', 'snd_0000000000000ddd'],
+			alternatives: [
+				entry.id,
+				'snd_0000000000000aaa',
+				'snd_0000000000000bbb',
+				'snd_0000000000000ccc',
+				'snd_0000000000000ddd',
+			],
 		});
 		expect(h.labels()).toHaveLength(n + 1);
 		expect(h.labels().at(-1)).toBe('Fill Cue Crunch');
 		const c = h.clip(r.clipId);
 		expect(c.sfx).toMatchObject({ cueId, role: 'hero', soundId: entry.id, layer: 0 });
 		// the chosen sound is not its own alternative; at most 3
-		expect(c.sfx!.alternatives).toEqual(['snd_0000000000000aaa', 'snd_0000000000000bbb', 'snd_0000000000000ccc']);
+		expect(c.sfx!.alternatives).toEqual([
+			'snd_0000000000000aaa',
+			'snd_0000000000000bbb',
+			'snd_0000000000000ccc',
+		]);
 		expect(Math.abs(c.speed.rate - 1)).toBeLessThanOrEqual(0.02);
 		expect(Math.abs(c.gainDb)).toBeLessThanOrEqual(1);
 		// the peak plays on the cue frame (to less than a frame, sub-frame exact for this unpadded file)
@@ -117,7 +150,11 @@ describe('Fill', () => {
 		const cueId = h.addCue(120);
 		const [a, b] = (await h.fake.client.searchSounds({})).results.map((x) => x.sound);
 		const first = await fillCueWithSound(h.session, h.engine, a!, { sequenceId: h.seqId, cueId });
-		const second = await fillCueWithSound(h.session, h.engine, b!, { sequenceId: h.seqId, cueId, layer: true });
+		const second = await fillCueWithSound(h.session, h.engine, b!, {
+			sequenceId: h.seqId,
+			cueId,
+			layer: true,
+		});
 		expect(h.labels().at(-1)).toBe(`Add Layer ${b!.title}`);
 		const c1 = h.clip(first.clipId);
 		const c2 = h.clip(second.clipId);
@@ -129,7 +166,9 @@ describe('Fill', () => {
 		expect(layersOf(h.seq(), c2)).toEqual({ clipIds: [first.clipId, second.clipId], index: 1 });
 		// moving one moves the other (Premiere link)
 		h.session.select('timeline', [first.clipId], 'replace');
-		expect(h.session.getState().selection.timeline.clips.sort()).toEqual([first.clipId, second.clipId].sort());
+		expect(h.session.getState().selection.timeline.clips.sort()).toEqual(
+			[first.clipId, second.clipId].sort(),
+		);
 		// Unlink / Link Layers
 		await h.run('sound.toggleLinkLayers', { clipId: first.clipId });
 		expect(h.labels().at(-1)).toBe('Unlink Layers');
@@ -150,7 +189,8 @@ describe('Fill', () => {
 			expect(r.filled).toHaveLength(4);
 			expect(r.skipped).toEqual([]);
 			for (const c of cuesOf(h.seq())) expect(c.placedClipIds?.length).toBe(1);
-			for (let i = 1; i < r.filled.length; i++) expect(r.filled[i]!.soundId).not.toBe(r.filled[i - 1]!.soundId);
+			for (let i = 1; i < r.filled.length; i++)
+				expect(r.filled[i]!.soundId).not.toBe(r.filled[i - 1]!.soundId);
 			for (const f of r.filled) expect(h.clip(f.clipId).sfx!.alternatives?.length).toBe(3);
 			// nothing left: the command is disabled
 			const again = await runCommand('sound.fillUnfilledCues', h.ctx);
