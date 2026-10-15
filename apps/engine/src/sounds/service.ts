@@ -35,13 +35,14 @@ import { fingerprintFile, fingerprintHex } from '../media/fingerprint.ts';
 import { contentTypeFor } from '../tools/http.ts';
 import { HttpError } from '../tools/reply.ts';
 import type { CoreServices } from '../tools/services.ts';
+import { resolveSoundWorker, SoundAnalyzer } from './analysis.ts';
 import { decodeSound } from './decode.ts';
 import { SoundIndexer } from './index-job.ts';
 import { SoundLibrary } from './library.ts';
 import { SoundRootStore } from './roots.ts';
 import { isSoundFileName, type LoadedManifest, loadManifest, starterDir } from './starter.ts';
 import { ensureSynthFile, synthItems } from './synth.ts';
-import { computeVisual, readVisual, visualCacheFile, writeVisual } from './visual.ts';
+import { readVisual, visualCacheFile, writeVisual } from './visual.ts';
 
 /** Turn `JASPER_SOUND_AUTO_INDEX=0` to keep the engine from indexing by itself (default on; off under vitest). */
 export const AUTO_INDEX_ENV = 'JASPER_SOUND_AUTO_INDEX';
@@ -102,6 +103,7 @@ export class SoundService {
 	readonly library: SoundLibrary;
 	readonly roots: SoundRootStore;
 	readonly indexer: SoundIndexer;
+	readonly analyzer: SoundAnalyzer;
 	private readonly limitVisual = semaphore(VISUAL_CONCURRENCY);
 	private starterCache: { at: number; manifest: LoadedManifest } | null = null;
 
@@ -118,10 +120,12 @@ export class SoundService {
 			...(opts.log ? { log: opts.log } : {}),
 		});
 		this.roots = new SoundRootStore(paths.soundRootsFile, opts.log);
+		this.analyzer = new SoundAnalyzer(resolveSoundWorker(this.env()), opts.log);
 		this.indexer = new SoundIndexer({
 			library: this.library,
 			roots: this.roots,
 			ffmpeg: core.ffmpeg,
+			analyzer: this.analyzer,
 			starterDir: () => this.starterDir(),
 			packsDir: paths.soundPacksDir,
 			synthDir: paths.soundSynthDir,
@@ -355,14 +359,23 @@ export class SoundService {
 				if (err instanceof JobError) throw new HttpError(422, err.code, err.message);
 				throw err;
 			}
-			const v = computeVisual({
-				soundId: e.id,
-				fingerprint: e.fingerprint,
-				durationSec: e.descriptors.durationSec,
-				peakSec: e.descriptors.peakSec,
-				channels: decoded.channels,
-				rate: decoded.rate,
-			});
+			let v: SoundVisual;
+			try {
+				v = (
+					await this.analyzer.run({
+						kind: 'visual',
+						soundId: e.id,
+						fingerprint: e.fingerprint,
+						durationSec: e.descriptors.durationSec,
+						peakSec: e.descriptors.peakSec,
+						channels: decoded.channels,
+						rate: decoded.rate,
+					})
+				).visual;
+			} catch (err) {
+				const code = (err as { code?: string }).code;
+				throw new HttpError(422, code ?? 'ANALYSIS_FAILED', (err as Error).message);
+			}
 			await writeVisual(file, v);
 			return v;
 		});

@@ -50,6 +50,23 @@ await build({
 		cpSync(join(root, 'sounds'), join(root, 'dist', 'sounds'), { recursive: true });
 }
 
+// Sound design (spec 12 WP1.2): the sound-analysis worker thread (`analyzeSound` + visual data off the engine's main
+// thread), loaded by src/sounds/analysis.ts from `sound-worker.mjs` next to engine.mjs.
+await build({
+	entryPoints: [join(root, 'src/sounds/analysis-worker.ts')],
+	outfile: join(root, 'dist/sound-worker.mjs'),
+	bundle: true,
+	platform: 'node',
+	format: 'esm',
+	target: 'node20',
+	sourcemap: false,
+	legalComments: 'none',
+	banner: {
+		js: "import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);",
+	},
+	logLevel: 'warning',
+});
+
 // wp speech: jasper-speech.mjs (the speech-to-text worker, run as a child process by `transcription` jobs) next to
 // engine.mjs. onnxruntime-node (native binding) stays external like jasper-proc's.
 await build({

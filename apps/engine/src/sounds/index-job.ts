@@ -1,6 +1,6 @@
 // The `sound-index` job (spec 12 §2.1, §2.8; wp-note "WP1.2"): scans the starter kit, installed packs, enabled user
-// folders and the Jasper Synth catalogue; decodes each new or changed file with ffmpeg, runs `analyzeSound` and
-// `judgeSound` (with the profile of the sound's first type) and writes the visual data; then commits the new index
+// folders and the Jasper Synth catalogue; decodes each new or changed file with ffmpeg, runs `analyzeSound` (on a worker
+// thread, analysis.ts) and `judgeSound` (with the profile of the sound's first type) and writes the visual data; then commits the new index
 // in one atomic write.
 //
 // Incremental: a file whose size and modification time match the index keeps its fingerprint without being read; a
@@ -19,7 +19,7 @@ import {
 	type SoundSource,
 	type SoundSourceType,
 } from '@jasper/api';
-import { analyzeSound, judgeSound, SOUND_DESCRIPTORS_VERSION, type SoundDescriptors } from '@jasper/audio-fx';
+import { judgeSound, SOUND_DESCRIPTORS_VERSION, type SoundDescriptors } from '@jasper/audio-fx';
 import {
 	inferTypesFromName,
 	isSoundTypeId,
@@ -34,12 +34,14 @@ import { type JobContext, JobError } from '../jobs/types.ts';
 import { fingerprintFile, fingerprintHex } from '../media/fingerprint.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { atomicWriteJson, readJsonOrNull } from '../tools/fs.ts';
+import type { SoundAnalyzer } from './analysis.ts';
+import type { AnalysisResult } from './analysis-core.ts';
 import { decodeSound, type SoundFormat } from './decode.ts';
 import type { FileRecord, LibrarySnapshot, SoundLibrary } from './library.ts';
 import type { SoundRootStore } from './roots.ts';
 import { isSoundFileName, type LoadedManifest, loadManifest, loadPackManifest } from './starter.ts';
 import { ensureSynthFile, type SynthItem } from './synth.ts';
-import { computeVisual, visualCacheFile, writeVisual } from './visual.ts';
+import { visualCacheFile, writeVisual } from './visual.ts';
 
 /** Engine-side analysis revision (decode settings); with SOUND_DESCRIPTORS_VERSION it versions cached analyses. */
 const ENGINE_ANALYSIS_REVISION = 1;
@@ -292,6 +294,8 @@ export type IndexDeps = {
 	library: SoundLibrary;
 	roots: SoundRootStore;
 	ffmpeg: Ffmpeg;
+	/** Runs `analyzeSound` and the visual data off the main thread when it can. */
+	analyzer: SoundAnalyzer;
 	starterDir: () => string;
 	packsDir: string;
 	synthDir: string;
@@ -440,28 +444,27 @@ export class SoundIndexer {
 						signal: ctx.signal,
 						onSpawn: (c) => ctx.trackChild(c),
 					});
-					let descriptors: SoundDescriptors;
+					let out: AnalysisResult;
 					try {
-						descriptors = analyzeSound(decoded.channels, decoded.rate);
+						out = await d.analyzer.run(
+							{
+								kind: 'analyse',
+								channels: decoded.channels,
+								rate: decoded.rate,
+								soundId: id,
+								fingerprint,
+								durationSec: decoded.format.durationSec,
+							},
+							ctx.signal,
+						);
 					} catch (e) {
+						if (e instanceof JobError) throw e;
 						throw new JobError('UNSUPPORTED_MEDIA', `The sound cannot be analysed: ${(e as Error).message}`);
 					}
-					// Longer files are analysed over their first seconds; the duration is the whole file's.
-					if (decoded.format.durationSec > descriptors.durationSec + 0.05)
-						descriptors = { ...descriptors, durationSec: decoded.format.durationSec };
+					const descriptors = out.descriptors!;
 					analysis = { fingerprint, version: ANALYSIS_VERSION, format: decoded.format, descriptors };
 					await atomicWriteJson(cacheFile, analysis);
-					await writeVisual(
-						visualCacheFile(d.cacheDir, fingerprintHex(fingerprint)),
-						computeVisual({
-							soundId: id,
-							fingerprint,
-							durationSec: descriptors.durationSec,
-							peakSec: descriptors.peakSec,
-							channels: decoded.channels,
-							rate: decoded.rate,
-						}),
-					);
+					await writeVisual(visualCacheFile(d.cacheDir, fingerprintHex(fingerprint)), out.visual);
 					analysed++;
 				}
 				const judgeType = item.meta.types.find(isSoundTypeId);

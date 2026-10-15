@@ -40,7 +40,10 @@ export default async function soundRoutes(app: FastifyInstance): Promise<void> {
 			.catch((e) => app.log.warn(`sound library: auto-index failed: ${(e as Error).message}`));
 	};
 	app.addHook('onReady', async () => auto());
-	app.addHook('onClose', async () => unregister());
+	app.addHook('onClose', async () => {
+		unregister();
+		await svc.analyzer.close();
+	});
 
 	app.get(
 		'/api/sounds',

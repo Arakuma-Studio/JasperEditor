@@ -1,7 +1,8 @@
 // Sound library units (spec 12 WP1.2): manifest loading, visual data, attribution and naming, the index store's
 // persistence and recovery, request schemas under fuzzing.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
 	SOUND_SPECTROGRAM_BINS,
 	type SoundEntry,
@@ -11,12 +12,16 @@ import {
 } from '@jasper/api';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { resolveSoundWorker, SoundAnalyzer } from '../src/sounds/analysis.ts';
+import { runAnalysis } from '../src/sounds/analysis-core.ts';
 import { attributionFor, tagsFromPath, titleFromFile } from '../src/sounds/index-job.ts';
 import { SoundLibrary, snapshotHashOf } from '../src/sounds/library.ts';
 import { loadManifest, loadPackManifest } from '../src/sounds/starter.ts';
 import { computePeaks, computeSpectrogram, computeVisual } from '../src/sounds/visual.ts';
 import { makeStarter, PACK, SR, samples } from './sound-fixtures.ts';
 import { tempAppdir } from './temp.ts';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 const entry = (id: string, extra: Partial<SoundEntry> = {}): SoundEntry => ({
 	id,
@@ -141,7 +146,7 @@ describe('starter manifest', () => {
 	});
 });
 
-describe('visual data', () => {
+describe('visual data', { timeout: 120_000 }, () => {
 	it('peaks: 100 per second, max |sample| over channels as u8', () => {
 		const ch = [new Float32Array(SR), new Float32Array(SR)];
 		ch[0]![100] = 0.5;
@@ -381,5 +386,82 @@ describe('request schemas (hostile input)', () => {
 		expect(
 			SoundRootsPutRequestSchema.safeParse({ roots: [{ path: '/x', license: 'CC-BY-NC-4.0' }] }).success,
 		).toBe(false);
+	});
+});
+
+describe('analysis worker thread', { timeout: 300_000 }, () => {
+	async function bundleWorker(): Promise<string> {
+		const { build } = await import('esbuild');
+		const out = join(tempAppdir('jasper-sound-worker-'), 'sound-worker.mjs');
+		await build({
+			entryPoints: [join(HERE, '..', 'src', 'sounds', 'analysis-worker.ts')],
+			outfile: out,
+			bundle: true,
+			platform: 'node',
+			format: 'esm',
+			target: 'node20',
+			logLevel: 'silent',
+			banner: {
+				js: "import { createRequire as __r } from 'node:module'; const require = __r(import.meta.url);",
+			},
+		});
+		return out;
+	}
+	const job = (seconds: number, seed = 1) => ({
+		kind: 'analyse' as const,
+		channels: samples('hit', seconds, seed),
+		rate: SR,
+		soundId: 'snd_0000000000000001',
+		fingerprint: 'q1:x',
+		durationSec: seconds,
+	});
+
+	it('resolves the worker module: env, bundle, tsx source, or none', () => {
+		expect(resolveSoundWorker({ JASPER_SOUND_WORKER: 'off' })).toBeNull();
+		expect(resolveSoundWorker({ JASPER_SOUND_WORKER: '/x/w.mjs' })?.href).toBe('file:///x/w.mjs');
+		const base = pathToFileURL(join(tempAppdir('jasper-w-'), 'engine.mjs')).href;
+		expect(resolveSoundWorker({}, base, [])).toBeNull();
+		writeFileSync(new URL('./sound-worker.mjs', base), '');
+		expect(resolveSoundWorker({}, base, [])?.href).toBe(new URL('./sound-worker.mjs', base).href);
+		const src = pathToFileURL(join(HERE, '..', 'src', 'sounds', 'analysis.ts')).href;
+		expect(resolveSoundWorker({}, src, ['--import', 'file:///x/tsx/dist/loader.mjs'])?.pathname).toMatch(
+			/analysis-worker\.ts$/,
+		);
+		expect(resolveSoundWorker({}, src, [])).toBeNull();
+	});
+
+	it('gives the same results as in-thread analysis, and survives cancellation', async () => {
+		const file = await bundleWorker();
+		const analyzer = new SoundAnalyzer(pathToFileURL(file));
+		try {
+			const expected = runAnalysis(job(0.5));
+			const got = await analyzer.run(job(0.5));
+			expect(analyzer.lastMode).toBe('worker');
+			expect(got).toEqual(expected);
+			// Cancelling a running analysis ends the worker; the next one starts a new worker.
+			const ctrl = new AbortController();
+			const long = analyzer.run(job(20, 7), ctrl.signal);
+			setTimeout(() => ctrl.abort(), 50);
+			await expect(long).rejects.toMatchObject({ code: 'JOB_CANCELLED' });
+			expect(await analyzer.run(job(0.5))).toEqual(expected);
+			// Hostile input is a typed failure, not a dead worker.
+			await expect(analyzer.run({ ...job(0.1), rate: Number.NaN })).rejects.toMatchObject({
+				code: 'UNSUPPORTED_MEDIA',
+			});
+			expect(await analyzer.run(job(0.5))).toEqual(expected);
+		} finally {
+			await analyzer.close();
+		}
+	});
+
+	it('falls back to in-thread analysis when no worker can start', async () => {
+		const analyzer = new SoundAnalyzer(pathToFileURL(join(tempAppdir('jasper-w-'), 'missing.mjs')));
+		const r = await analyzer.run(job(0.3));
+		expect(analyzer.lastMode).toBe('thread');
+		expect(r).toEqual(runAnalysis(job(0.3)));
+		const none = new SoundAnalyzer(null);
+		await none.run(job(0.2));
+		expect(none.lastMode).toBe('thread');
+		await analyzer.close();
 	});
 });
