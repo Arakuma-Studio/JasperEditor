@@ -2305,15 +2305,24 @@ Production owner(s), relative to `packages/mg-templates/src/` unless absolute re
 
 Production owner(s), relative to `packages/motion/src/` unless absolute repo path shown: `runtime/, text/, templates/; packages/compositions/src/SequenceComposition.tsx`. Non-test callers: packages/compositions/src/layers/TextLayer.tsx and MotionGraphicLayer.tsx; packages/motion/src/templates/* and text/presets.ts.
 
-### KEEP — \`${id}: renderStill per frame = renderFrames c1 = c4 = reversed = shuffled (byte-identical PNGs)\`
+### REWRITE — \`${id}: renderStill per frame = renderFrames c1 = c4 = reversed = shuffled (byte-identical PNGs)\`
 
-- B1: docs/specs/11-animation.md ANM-002…015/021; docs/wp-notes/wp-m2-anime-core.md; docs/wp-notes/wp-m2-text-anim.md typewriter@2; code-audit-audio-animation.md counter regression. Contract exercised: ${id}: renderStill per frame = renderFrames c1 = c4 = reversed = shuffled (byte-identical PNGs).
-- B2: A caller receives incorrect rendered/temporal/text/registry output for the named input; the corresponding value/state assertion fails.
-- B3: Expected results come from fixed timeline endpoints, published UTF-8 FNV vectors, literal Unicode/format examples, immutability/order invariants, or independent still/Player/export pixels. They can disagree with production.
-- B4: documented @jasper/motion APIs, actual React hook lifecycle, text animator values, rendered counter text, or real browser/export pixels.
-- B5: Keeps the contract across internal renames/reorganization, alternative algorithms and helper call changes; does not pin collaborator calls or source text.
-- B6: Lowest stable owner of this distinct parameter, boundary, format or lifecycle case. Broader engine/UI/render smoke coverage does not assert this exact outcome; duplicates listed above are removed.
-- Risk: retained requirement or credible regression; no change to expected product behavior. Validation: file command and package typecheck described above.
+Pre-edit follow-up at integrated `30a8430e`: the retained browser test fails selecting `SequenceShuffled` after its 40 stills and c1/c4/reversed renders, reporting only `Sequence` available. The other five cases pass. Evidence: `/tmp/jasper-test-prune2/remotion-isolated-determinism-render.events.jsonl`, retained artifacts `/var/lib/orquester/tmp/jasper-anm014-FDjdXJ`. The generated parity bundle contains all three variants; its error is exactly line 206240, matching the failure, whereas neighboring unrelated bundles throw at different lines. Remotion's static server disables caching, selection creates a new page, and `renderPagesInOwnWindows` only adds `newWindow` to target creation. No wrong-bundle or production-renderer bug is established.
+
+The installed Remotion 4.0.499 releases evaluation readiness after one animation-frame callback following `createRoot().render`. Its `Composition` registration runs in passive effects, while `CompositionManagerProvider` publishes its registry ref inside queued React state updaters. An actual React 19.3 / Remotion 4.0.499 diagnostic under happy-dom reproduces public readiness true with only the first registered ID. Ten unguarded mounts produce 20 observations of readiness with an incomplete registry; ten mounts with the proposed guard produce zero, and all ten guard releases observe all three IDs. This is a lightweight ordering diagnostic, not a browser-render verdict; its diagnostic-only registry reads are not retained tests or production code. Log/script: `/tmp/prune2-registration-diagnostic.log` and `.mjs`.
+
+Rewrite only fixture setup: add a final-sibling `RegistrationReady` component to `determinism-render/entry.tsx`, using public `delayRender` / `continueRender`. It acquires a handle on initial render, queues a local state update in its mount effect after the Composition registration effects, and releases only from the subsequent committed-state effect. Only that sibling rerenders; `Root`, its default props and the three Composition subtrees stay stable. No retry, additional animation-frame wait, private registration count, replacement test, dependency patch or production change is introduced. Preserve every existing ID, all 40 frames, visit order, concurrency, render option, pixel/byte assertion and deadline.
+
+- B1: S11:ANM-014 and `docs/wp-notes/wp-m2-anime-core.md` require identical rendered output under still, sequential, concurrent, reversed and shuffled frame visits.
+- B2: State leakage, first-frame rendering or seek-history errors produce PNG differences for the same scene frame and fail the byte-equality assertion; the existing selection failure prevents reaching that oracle.
+- B3: The independently specified order/concurrency invariant compares separate real render runs; no expected pixel formula is derived from the motion implementation. The existing distinct-frame controls prevent empty/static renders from passing.
+- B4: Actual Remotion `renderStill` / `renderFrames` PNG output through `SequenceComposition` is the stable rendered-output seam.
+- B5: Internal tween, component, renderer-page and registry refactors can preserve the same images and therefore preserve this test.
+- B6: Motion value tests cannot detect Chrome raster or renderer-page history defects; this is the lowest real-browser seam comparing all specified visit orders and concurrency settings.
+- Remaining stronger coverage: none for these renderer-order PNG comparisons. Non-test callers of the preserved production owners: `SequenceComposition` in preview/export, `RemotionService` for rendering, and text/template layers for motion runtime. The readiness helper is local fixture setup with one caller; no production seam/export is added or removed.
+- Risk: happy-dom does not establish Chrome scheduling or rendered parity; the full six-case opt-in suite remains pending scheduled integration. Validation: targeted Biome, diff review, temporary real-library ordering diagnostic, then `REMOTION_E2E=1 pnpm exec vitest run packages/motion/test/determinism-render.e2e.test.ts --maxWorkers=1` at integration. No heavy runtime starts in this worktree.
+
+This original declaration changes KEEP → REWRITE; current audio-partition totals are **37 DELETE / 41 REWRITE / 187 KEEP = 265**.
 
 ### KEEP — callout paints no premature pulse at clip start
 
@@ -2741,3 +2750,5 @@ Other rescan leads retained with independent ownership: block partition/reset/fr
 
 
 Shared-oracle follow-up validation: all six changed test files passed targeted Biome (only a long independent coefficient expression needed formatting); `git diff --check` passed. A separate 50-digit Decimal calculation of 10^(dB/20), without importing production code, confirmed the five distinct literal amplitude vectors (the −6 dB vector is used twice). Retained stimuli, scenario counts and numeric tolerances are unchanged; production code is unchanged. Runtime tests remain with the integration owner per the static-only validation slot.
+
+Registration-readiness follow-up validation: targeted Biome and `git diff --check` pass. Static comparison confirms every prior entry definition, Composition subtree/default prop and the entire six-case test file is unchanged after removing only the new guard/imports. Independent cross-review cleared the actual three-file diff and the 10 unguarded/10 guarded real-library diagnostic evidence. No browser/render process was started for this follow-up; the full existing opt-in file remains queued at integration, so its earlier failure is not reported as a browser pass. Final original-declaration totals are **37 DELETE / 41 REWRITE / 187 KEEP = 265**.

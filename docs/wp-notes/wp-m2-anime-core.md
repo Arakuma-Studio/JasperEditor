@@ -258,3 +258,23 @@ Player revisits: AnimeScene 3, Sequence 22 differing).
   `layer-bake.e2e`, `layer-bake`, `shapes-remotion.e2e`, `remotion-lgpl.e2e`): 40/40.
 - `pnpm lint`, `pnpm typecheck`, `pnpm e2e:typecheck` ok. `pnpm test`: 1585 passed, 40 skipped, 1 failed —
   `packages/project/test/color.test.ts` "a 33³ bake … < 15 ms" (load timing; 22/22 re-run alone).
+
+## Parity fixture registration readiness
+
+The three-composition parity fixture holds Remotion's public `delayRender` handle until a subsequent React
+commit has completed. Its final-sibling `RegistrationReady` component queues its own update after the
+Composition registration effects and releases the handle from that update's committed effect. Only the guard
+rerenders, so the composition subtrees and their default props stay stable. No frame, order, concurrency,
+assertion or deadline changes, and the production renderer/window setup remains unchanged.
+
+The retained browser test first failed selecting `SequenceShuffled` with only `Sequence` available. The actual
+generated bundle contained all three variants and its error line matched the stack. Installed Remotion 4.0.499
+source explains the ordering: `select-composition` waits for public render readiness; the bundler releases its
+root handle one animation frame after `createRoot().render`; `Composition` registers in passive effects, and
+`CompositionManagerProvider` updates its registry ref inside queued state updaters. An actual React 19.3 /
+Remotion diagnostic under happy-dom observed readiness with incomplete registration in ten unguarded mounts;
+ten guarded mounts had no such observation and released with all three variants registered. This diagnostic
+checks scheduling with the real libraries, not browser pixel output. The unchanged six-case browser suite still
+requires scheduled validation with `REMOTION_E2E=1 pnpm exec vitest run
+packages/motion/test/determinism-render.e2e.test.ts --maxWorkers=1`; the cleanup ledger records its failure
+artifacts and diagnostic evidence. No retries, private registration-count seam or dependency patch is retained.
