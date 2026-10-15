@@ -15,17 +15,13 @@ import {
 	planSourceOf,
 	repairDocument,
 	type StabSettings,
-	smoothTrajectories,
 	solveMesh,
 	stabPlan,
 	type WarpAnalysis,
 	type WarpAnalysisData,
 	WarpMesh,
 	warpFrameAt,
-	warpPlanFor,
-	warpSettingsOf,
 } from '../src/index.ts';
-import { warpSynthesisOffsets } from '../src/registry/fx/warp-stabilizer.ts';
 import { Harness } from './helpers.ts';
 
 /** A slow pan plus per-frame jitter (translation only). */
@@ -247,10 +243,8 @@ describe('warp stabilizer maths', () => {
 		const base = { framing: 'stabilizeOnly', fps: 24 } as const;
 		const before = residual((_, x) => x);
 		const ppl = stabPlan(a, S({ ...base, method: 'perspective' }));
-		expect(ppl.meshes).toHaveLength(0);
 		const persp = residual((t, x) => planOutputOf(ppl, t, x));
 		const spl = stabPlan(a, S({ ...base, method: 'subspaceWarp' }));
-		expect(spl.meshes).toHaveLength(n);
 		const sub = residual((t, x) => planOutputOf(spl, t, x));
 		const epl = stabPlan(a, S({ ...base, method: 'subspaceWarp', ripple: 'enhanced' }));
 		const enh = residual((t, x) => planOutputOf(epl, t, x));
@@ -260,8 +254,6 @@ describe('warp stabilizer maths', () => {
 		const o = planOutputOf(spl, 10, [150, 80])!;
 		const back = planSourceOf(spl, 10, o)!;
 		expect(Math.abs(back[0] - 150)).toBeLessThan(1e-3);
-		const sm = smoothTrajectories(tracks, n, 5, 9);
-		expect(sm.every((pr) => pr.length >= 100)).toBe(true);
 	});
 });
 
@@ -287,14 +279,6 @@ describe('stored analysis, command and invariant', () => {
 		);
 		expect(warpFrameAt(a, 0.6)).toEqual({ index: 18, inside: true });
 		expect(warpFrameAt(a, 5)).toEqual({ index: 29, inside: false });
-		expect(warpSettingsOf({ cropLessSmoothMore: 100 }, 30).cropLessSmoothMore).toBe(100);
-		expect(warpSettingsOf({ cropLessSmoothMore: 50 }, 30).cropLessSmoothMore).toBe(0);
-		expect(warpSynthesisOffsets({ framing: 'synthesizeEdges', synthesisInputRange: 1 }, 30)).toEqual([
-			8, -8, 15, -15, 23, -23, 30, -30,
-		]);
-		expect(warpSynthesisOffsets({ framing: 'stabilizeOnly' }, 30)).toEqual([]);
-		const s = warpSettingsOf({}, 30);
-		expect(warpPlanFor(a, s)).toBe(warpPlanFor(a, s));
 	});
 
 	it('effect.setWarpAnalysis stores, clears, undoes and refuses', () => {

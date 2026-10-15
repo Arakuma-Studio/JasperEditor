@@ -483,7 +483,7 @@ const WAVE_PINNING = [
 ] as const;
 
 /** Padding of Wave Warp: the waves push pixels up to Wave Height outside the layer (none when all edges are pinned). */
-export function waveWarpPadding(height: number, pinning: string): number {
+function waveWarpPadding(height: number, pinning: string): number {
 	return pinning === 'allEdges' ? 0 : Math.ceil(Math.abs(height)) + 1;
 }
 

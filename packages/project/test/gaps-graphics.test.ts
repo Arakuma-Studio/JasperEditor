@@ -215,13 +215,16 @@ describe('essential graphics', () => {
 			(i) => i.kind === 'sequence' && (i as { sequenceId: string }).sequenceId === gid,
 		)!;
 		const tpl = graphicTemplateOf(h.doc, item.id, 'Lower Third', (d, ids) => buildItemsPayload(d, ids))!;
-		expect(tpl.format).toBe(GRAPHIC_TEMPLATE_FORMAT);
 		const json = JSON.parse(JSON.stringify(tpl));
-		const before = Object.values(h.doc.sequences).filter((s) => (s as { graphic?: unknown }).graphic).length;
 		h.ok([{ type: 'graphic.importTemplate', template: json, at: { frames: 300 }, track: 'V2' }]);
 		const graphics = Object.values(h.doc.sequences).filter((s) => (s as { graphic?: unknown }).graphic);
-		expect(graphics.length).toBe(before + 1);
-		expect(Object.values(h.seq.clips).filter((c) => c.kind === 'nest-video')).toHaveLength(2);
+		const imported = graphics.find((s) => s.id !== gid)!;
+		expect(imported.graphic).toMatchObject({ intro: 15, outro: 15 });
+		expect(
+			Object.values(imported.clips)
+				.filter((c) => c.kind === 'text')
+				.map((c) => c.content.text),
+		).toEqual(['Title']);
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 });

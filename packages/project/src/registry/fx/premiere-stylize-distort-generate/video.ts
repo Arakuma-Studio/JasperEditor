@@ -15,11 +15,11 @@ import { num, str } from './common.ts';
 import { GLSL_PSDG_FONT, PSDG_FONT_CELL } from './video-font.ts';
 
 /** Most characters drawn by one text effect. */
-export const PSDG_TEXT_MAX = 63;
+const PSDG_TEXT_MAX = 63;
 const TEXT_FLOATS = PSDG_TEXT_MAX / 3;
 
 /** Packs a string into `PSDG_TEXT_MAX / 3` floats (3 × 7-bit codes per float; printable ASCII, others → '?'). */
-export function encodeText(s: string): { floats: number[]; length: number } {
+function encodeText(s: string): { floats: number[]; length: number } {
 	const codes: number[] = [];
 	for (const ch of s.slice(0, PSDG_TEXT_MAX)) {
 		const c = ch.charCodeAt(0);

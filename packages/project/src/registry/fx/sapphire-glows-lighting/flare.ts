@@ -273,7 +273,7 @@ const classOf = (e: FlareElement) =>
 	e.kind === 'streak' || e.kind === 'spikes' || e.kind === 'burst' ? 1 : Math.abs(e.pos) < 1e-6 ? 0 : 2;
 
 /** The element list as floats (stride 11: kind, class, pos, size, a, b, r, g, b, i, salt). */
-export function packFlare(elements: readonly FlareElement[]): number[] {
+function packFlare(elements: readonly FlareElement[]): number[] {
 	return elements.flatMap((e, k) => [
 		KIND_INDEX[e.kind],
 		classOf(e),

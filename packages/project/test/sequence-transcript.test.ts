@@ -263,7 +263,9 @@ describe('caption blocks', () => {
 			speaker: i % 3 === 0 ? 'A' : 'B',
 		}));
 		const rules = { ...DEFAULT_CAPTION_RULES, gapFrames: 1 };
-		checkBlocks(captionBlocks(words, rules, R), rules);
+		const blocks = captionBlocks(words, rules, R);
+		expect(blocks.length).toBeGreaterThan(0);
+		checkBlocks(blocks, rules);
 	});
 	it('a short caption extends into the silence but never over the next caption', () => {
 		const words = [

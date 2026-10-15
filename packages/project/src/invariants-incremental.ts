@@ -119,7 +119,7 @@ function markVerified(doc: ProjectDocument, seen: ReadonlySet<string>, opts: Inv
 }
 
 /** Whether `doc` is known to be valid (it passed a check under these options). */
-export function isVerifiedDocument(doc: ProjectDocument, opts: InvariantOptions = {}): boolean {
+function isVerifiedDocument(doc: ProjectDocument, opts: InvariantOptions = {}): boolean {
 	const v = verified.get(doc);
 	return !!v && sameOpts(v.opts, opts);
 }
@@ -358,13 +358,11 @@ const pick = <T>(rec: Rec<T>, keys: readonly string[]): Record<string, T> => {
 	return out;
 };
 
-/** How transactions were checked since the last reset (tests and `pnpm perf` read it). */
+/** How transactions have been checked (`pnpm perf` and runtime diagnostics read it). */
 export type InvariantStats = { incremental: number; full: number; fallbacks: Record<string, number> };
-let stats: InvariantStats = { incremental: 0, full: 0, fallbacks: {} };
-export function invariantStats(reset = false): InvariantStats {
-	const out = stats;
-	if (reset) stats = { incremental: 0, full: 0, fallbacks: {} };
-	return out;
+const stats: InvariantStats = { incremental: 0, full: 0, fallbacks: {} };
+export function invariantStats(): InvariantStats {
+	return stats;
 }
 
 /** `incremental` with its outcome counted: true / false, or null when the full check must decide. */

@@ -30,7 +30,7 @@ import {
 import { GLSL_PSDG_HASH } from './noise-glsl.ts';
 
 /** Padding of Lens Flare: a quarter of the layer diagonal (glow, halo and ghosts spill past the edges). */
-export const lensFlarePadding = (w: number, h: number) => Math.ceil(0.25 * Math.hypot(w, h));
+const lensFlarePadding = (w: number, h: number) => Math.ceil(0.25 * Math.hypot(w, h));
 
 export const LENS_FLARE = defineShaderEffect({
 	id: 'jasper.lens-flare',
@@ -136,7 +136,7 @@ void main() {
 });
 
 /** Padding of Lightning: the bolt's width/glow plus its sideways amplitude may leave the start–end box. */
-export function lightningPadding(p: EffectParams, w: number, h: number): number {
+function lightningPadding(p: EffectParams, w: number, h: number): number {
 	const width = Math.max(0, num(p.width as number, 10));
 	const amp = Math.max(0, num(p.amplitude as number, 10));
 	return Math.min(1024, Math.ceil(width * 3 + (amp / 100) * Math.hypot(w, h) * 0.5));
@@ -520,7 +520,7 @@ const wColor = (v: ParamValue | undefined): number[] =>
  * else from now. `connect` = samples closer than a frame are joined into a continuous stroke. n = 1 (the brush at
  * its current position only, the original drawing) without `paramsAt`, at the first frame or for a still brush.
  */
-export function writeOnStroke(
+function writeOnStroke(
 	p: EffectParams,
 	ctx: { frame: number; fps: number; width: number; height: number; paramsAt?: (f: number) => EffectParams },
 ): { n: number; connect: boolean; pos: number[]; color: number[]; opacity: number[] } {

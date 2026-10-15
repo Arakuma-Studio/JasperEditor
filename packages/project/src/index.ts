@@ -50,7 +50,6 @@ export {
 	type InvariantStats,
 	invariantMode,
 	invariantStats,
-	isVerifiedDocument,
 	setInvariantMode,
 	verifyDocument,
 } from './invariants-incremental.ts';

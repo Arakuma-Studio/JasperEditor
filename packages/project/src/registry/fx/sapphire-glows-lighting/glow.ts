@@ -13,7 +13,7 @@ import type { GlslChunk, ShaderPass } from '../shader.ts';
 const pow2floor = (x: number) => 2 ** Math.floor(Math.log2(Math.max(1, x)));
 
 /** Downscale factor (power of two, 1…32) of a blur level whose total sigma is (sx, sy) canvas px. */
-export function levelDownscale(sx: number, sy: number): number {
+function levelDownscale(sx: number, sy: number): number {
 	const hi = Math.max(sx, sy);
 	const lo = Math.min(sx, sy);
 	// ≈ 6 level px of sigma along the long axis; never so coarse that the short axis turns blocky, unless the
