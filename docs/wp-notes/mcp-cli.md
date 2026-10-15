@@ -78,7 +78,9 @@ recorded in `licenses/ported/mcp-cli-effectcraft.md` and `licenses/ported/mcp-cl
 **Path.** MCP `ui_*` tool → engine `POST /api/agent/ui {projectId?, action, args}` → WS `/agent` request kind
 `ui` → the window's `AgentBridge` → `apps/web/src/agent-bridge/ui-automation.ts`. The target window: the lease
 holder of `projectId`, else its most recent window, else the most recently connected window of any project; the
-answer says which window replied. Works identically in the browser and in Electron (both load the same SPA).
+answer says which window replied. `ui_state.window` contains the editor's `width`, `height` (CSS pixels)
+and `devicePixelRatio` together with the relay's authoritative `projectId` and `sessionId`.
+Works identically in the browser and in Electron (both load the same SPA).
 
 - `ui-elements.ts`: interactive = native controls, interactive ARIA roles, focusable, `draggable`, or React
   pointer/click/keyboard handlers (read from the fiber props). Automation id = the element's unique
