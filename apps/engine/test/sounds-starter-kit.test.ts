@@ -48,7 +48,9 @@ describe('bundled starter kit', async () => {
 		expect(m.packs.length).toBeGreaterThan(0);
 		for (const p of m.packs) {
 			expect(p.id).toMatch(/^kenney-/);
-			expect(p.url).toMatch(/^https:\/\/kenney\.nl\/media\/pages\/assets\/[a-z-]+\/[^/]+\/kenney_[a-z-]+\.zip$/);
+			expect(p.url).toMatch(
+				/^https:\/\/kenney\.nl\/media\/pages\/assets\/[a-z-]+\/[^/]+\/kenney_[a-z-]+\.zip$/,
+			);
 			expect(p.sha256).toMatch(/^[0-9a-f]{64}$/);
 			expect(p.license).toBe('CC0-1.0');
 			expect(p.licenseUrl).toBe(CC0_URL);
@@ -110,7 +112,9 @@ describe('bundled starter kit', async () => {
 		}
 	});
 
-	it('every file decodes at 48 kHz and the judge accepts it as its first type', { timeout: 300_000 }, async () => {
+	it('every file decodes at 48 kHz and the judge accepts it as its first type', {
+		timeout: 300_000,
+	}, async () => {
 		const ff = new Ffmpeg({ ffmpeg: TEST_FFMPEG, ffprobe: TEST_FFPROBE });
 		const rejected: string[] = [];
 		for (const s of m.sounds) {
