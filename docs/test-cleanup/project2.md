@@ -638,6 +638,12 @@ Removed: draft-read DRAFT_READ_FAST/DELTA_FAST exports, recordDeltaByScan and se
 
 Documentation references needing root integration: docs/wp-notes/perf-core.md refers to setDeltaScans; docs/wp-notes/golden-fuzz.md refers to uncached memo comparisons.
 
+## Remaining support: production callers verified
+
+- `invariants.ts` retains `NO_MEMO` because `runInvariants` sets `{ ...opts, [NO_MEMO]: true }` when a replayed sequence ID collides with an ID already seen. This is a production duplicate-ID recovery path: the recursive walk must bypass the same cached hit to terminate and report `INV-001`. The removed `checkInvariantsUncached` wrapper was an additional test caller, not the only setter. The retained memo corruption regression protects duplicate IDs and missing-media invalidation through public outcomes.
+- `draft-read.ts` retains private `DRAFT_READ_FAST` because both `latest` and `recordDelta` use it to select compatible Immer reads. Private `DELTA_FAST` selects `draftDelta` in `recordDelta`. The startup probes remain production compatibility checks; `scanDelta` remains the runtime fallback when fast bookkeeping is unavailable, as well as the startup probe reference. None depends on the deleted test exports or scan-override switch.
+- `markNormalized`/`normalizedBase` and `markClean`/`isClean` remain production state used by transaction normalizers and cleanup. The removed `setDeltaScans`/`deltaScans` override, `recordDeltaByScan` wrapper and uncached invariant wrapper have no remaining production dependency.
+
 ## Completion and actual validation
 
 Completed test pruning and dead support removal; reviewed the production diff for runtime neutrality. Net test LOC reduction and commit are reported to root from git diff.
