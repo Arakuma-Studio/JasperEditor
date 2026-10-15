@@ -396,3 +396,78 @@ describe('Sound Library row menu in Spanish', () => {
 		}
 	});
 });
+
+describe('In Context: more exit paths and races (gap tests)', () => {
+	it('the user stopping the transport ends it and returns to the anchor; nothing written', async () => {
+		const h = harness();
+		const cueId = h.addCue(150);
+		h.session.select('cues', [cueId], 'replace');
+		const doc = h.session.getCommitted();
+		const n = h.labels().length;
+		expect((await auditionInContext(h.session, h.engine, h.list[0]!)).ok).toBe(true);
+		h.session.transport.reportFrame(120);
+		h.session.transport.pause();
+		expect(inContextStore.getState().active).toBe(false);
+		expect(h.session.gestureActive).toBe(false);
+		expect(h.session.transport.getState().frame).toBe(150);
+		expect(h.session.getCommitted()).toBe(doc);
+		expect(h.labels()).toHaveLength(n);
+	});
+
+	it('started while a drag holds the gesture: refused, the drag is untouched', async () => {
+		const h = harness();
+		const drag = h.session.beginGesture('Move Cue');
+		const r = await auditionInContext(h.session, h.engine, h.list[0]!);
+		expect(r).toMatchObject({ ok: false, message: 'Finish the current edit first' });
+		expect(drag.active).toBe(true);
+		expect(inContextStore.getState()).toMatchObject({ active: false, loading: false });
+		drag.cancel();
+	});
+
+	it('a drag beginning while the sound registers wins: the audition gives up, the drag keeps its gesture', async () => {
+		const h = harness();
+		const release = slowRegister(h);
+		const p = auditionInContext(h.session, h.engine, h.list[0]!);
+		const drag = h.session.beginGesture('Move Cue');
+		release();
+		expect(await p).toMatchObject({ ok: false });
+		expect(drag.active).toBe(true);
+		expect(inContextStore.getState()).toMatchObject({ active: false, loading: false });
+		drag.cancel();
+	});
+
+	it('two quick Shift+Space presses on the same sound (the second while it registers) leave nothing playing', async () => {
+		const h = harness();
+		const release = slowRegister(h);
+		const a = runCommand('soundLibrary.auditionInContext', h.ctx, { soundId: h.list[0]!.id });
+		await tick();
+		expect(inContextStore.getState().loading).toBe(true);
+		stopInContext(); // what the panel's toggle does for the same sound while it loads
+		release();
+		expect((await a).ran).toBe(true);
+		expect(inContextStore.getState()).toMatchObject({ active: false, loading: false });
+		expect(h.session.gestureActive).toBe(false);
+		expect(h.toasts).toEqual([]);
+	});
+
+	it('Replace mode: the muted clip is never muted in the committed document, on any exit', async () => {
+		const h = harness();
+		const cueId = h.addCue(90);
+		const r = await fillCueWithSound(h.session, h.engine, h.list[0]!, { sequenceId: h.seqId, cueId });
+		h.session.select('cues', [], 'replace');
+		h.session.select('timeline', [r.clipId], 'replace');
+		await runCommand('sound.swap', h.ctx);
+		for (const end of [
+			() => stopInContext(),
+			() => h.session.transport.pause(),
+			() => h.session.openSequence(h.seqId),
+		]) {
+			expect((await auditionInContext(h.session, h.engine, h.list[1]!)).ok).toBe(true);
+			expect(h.session.getState().transient!.sequences[h.seqId]!.clips[r.clipId]!.enabled).toBe(false);
+			end();
+			stopInContext();
+			expect(h.session.getCommitted().sequences[h.seqId]!.clips[r.clipId]!.enabled).toBe(true);
+			expect(h.session.getState().transient).toBeNull();
+		}
+	});
+});
