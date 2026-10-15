@@ -114,10 +114,15 @@ Validation remains in progress. Confirmed results so far:
   contracts. Golden inputs, pixel tolerances and committed golden records remain
   unchanged; the per-contract reporting change increases the cumulative watchdog
   allowance, as disclosed in the area ledgers.
-- Real speech-model validation: four model/sequence/cancellation cases passed; the
-  capability case hit its original five-second watchdog, then passed alone with
-  that same deadline. English WER was 1.92%, multilingual WER 5.77%, and trimmed
-  sequence WER 6.15%; measured word-boundary mean/max errors were 18/40 ms.
+- Real speech-model validation: all five cases passed together in the integrated
+  default run, following an earlier isolated capability recheck. English WER was
+  1.92%, multilingual WER 5.77%, and trimmed sequence WER 6.15%; measured
+  word-boundary mean/max errors were 18/40 ms.
+- Windows opener security oracle: all 21 unchanged cases passed with official
+  portable PowerShell 7.6.7, including the 14 previously skipped cases. The archive
+  checksum matched both official release metadata and the published hash manifest.
+  This exercises PowerShell Core on Linux; actual Windows/Explorer execution is
+  not claimed. No runtime was added to the repository or installed globally.
 - `pnpm mg:build`: native release build completed. The four native/TypeScript
   parity tests passed; their title-card raster pair was also inspected visually.
   The companion bundle command terminated with exit 143 before completion and is
