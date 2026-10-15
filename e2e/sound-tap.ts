@@ -21,6 +21,7 @@ export const TAP = () => {
 		ctxs: { ctx: BaseAudioContext; node: AudioWorkletNode | null; blocks: Block[]; starts: number }[];
 		stops: { t: number; player: number }[];
 		late: { t: number; by: number }[];
+		starts: number[];
 	};
 	const w = window as unknown as { __tap: Tap };
 	// Which player a buffer source belongs to: the node it is first connected to (each Remotion media player has its
@@ -28,7 +29,7 @@ export const TAP = () => {
 	const players = new WeakMap<AudioNode, number>();
 	const playerOf = new WeakMap<AudioBufferSourceNode, number>();
 	let nextPlayer = 0;
-	w.__tap = { on: false, ctxs: [], stops: [], late: [] };
+	w.__tap = { on: false, ctxs: [], stops: [], late: [], starts: [] };
 	const code = `class T extends AudioWorkletProcessor {
 		constructor() { super(); this.on = false; this.buf = [];
 			this.port.onmessage = (e) => { this.on = e.data.on; if (!this.on) { this.port.postMessage(this.buf); this.buf = []; } }; }
@@ -92,6 +93,7 @@ export const TAP = () => {
 		const ctx = this.context;
 		const entry = w.__tap.ctxs.find((c) => c.ctx === ctx);
 		if (entry) entry.starts++;
+		if (w.__tap.on && ctx.state === 'running') w.__tap.starts.push(ctx.currentTime);
 		// A start time already past (by more than a render quantum) on a running context: the buffer plays late.
 		// `0` means "now" (not a scheduled time).
 		if (w.__tap.on && when > 0 && ctx.state === 'running' && when < ctx.currentTime - 128 / ctx.sampleRate)
@@ -111,6 +113,8 @@ export type Recording = {
 	stops: { t: number; player: number }[];
 	/** Context times at which a buffer was started after its time, and by how much (s). */
 	late: { t: number; by: number }[];
+	/** Context times of every media buffer start (while the context ran). */
+	starts: number[];
 	marks: Record<string, number>;
 };
 
@@ -124,6 +128,7 @@ export async function arm(p: Page): Promise<void> {
 					ctxs: { ctx: BaseAudioContext; node: AudioWorkletNode | null; blocks: unknown[] }[];
 					stops: unknown[];
 					late: unknown[];
+					starts: unknown[];
 					armedAll?: number[];
 				};
 			}
@@ -134,6 +139,7 @@ export async function arm(p: Page): Promise<void> {
 		}
 		t.stops.length = 0;
 		t.late.length = 0;
+		t.starts.length = 0;
 		// the program context is suspended while paused: its frozen time is where the next Play starts
 		t.armedAll = t.ctxs.map((c) => c.ctx.currentTime);
 		t.on = true;
@@ -173,6 +179,7 @@ export async function disarm(p: Page): Promise<Recording> {
 					ctxs: { ctx: BaseAudioContext; blocks: { f: number; d: Float32Array }[] }[];
 					stops: { t: number; player: number }[];
 					late: { t: number; by: number }[];
+					starts: number[];
 					marks?: Record<string, number>;
 					armedAll?: number[];
 				};
@@ -197,6 +204,7 @@ export async function disarm(p: Page): Promise<Recording> {
 			data,
 			stops: t.stops.map((s) => ({ t: s.t, player: s.player })),
 			late: t.late.map((l) => ({ t: l.t, by: l.by })),
+			starts: [...t.starts],
 			marks,
 		};
 	});

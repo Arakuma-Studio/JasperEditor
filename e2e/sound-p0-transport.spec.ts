@@ -372,6 +372,15 @@ test('seek during playback: the audio from before the seek stops at the seek', a
 			.filter((t) => t !== stop)
 			.map((t) => `reschedule at ${(t - enter).toFixed(3)} s`);
 		const late = disturbances({ ...rec, stops: [] }, rec.armed, enter);
+		// Tone that comes back after the old audio had stopped at the seek is a buffer of the old position Remotion
+		// started again after its stop (a starved main thread): a new source, not what the graph held. (What the graph
+		// holds would go on without a break, up to the read-ahead after the stop.)
+		if (stop > 0) {
+			const silent = gaps(rec).find((g) => g.t0 >= stop - 0.001 && g.t0 <= stop + 0.008);
+			const back = silent ? rec.data.some((v, i) => Math.abs(v) > 0.01 && timeOf(rec, i) > silent.t1) : false;
+			if (silent && back && rec.starts.some((t) => t >= stop))
+				late.push(`old-position audio started again ${(silent.t1 - stop).toFixed(3)} s after the seek`);
+		}
 		last = [...other, ...late];
 		clean = last.length === 0;
 		if (stop > 0 && clean) break;
