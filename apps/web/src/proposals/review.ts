@@ -131,7 +131,11 @@ function rowOf(item: ReviewItem, ghost: GhostModel | null, gainOf: (id: string) 
 		sound: soundName(item),
 		role: text(m.role, 32),
 		gainDb: gain,
-		reason: text(m.cueReason, 160) ?? text(m.why, 160) ?? text(m.reason, 160),
+		reason:
+			text(m.cueReason, 160) ??
+			(item.selectedAlternative > 0 ? text(metaOf(item.selectedMeta).why, 160) : null) ??
+			text(m.why, 160) ??
+			text(m.reason, 160),
 		setup: [],
 	};
 }
@@ -139,9 +143,13 @@ function rowOf(item: ReviewItem, ghost: GhostModel | null, gainOf: (id: string) 
 /** The rows of the proposal under review. `ghost`: its ghosts in the drawn sequence (frames and gains), if any. */
 export function buildReviewModel(items: readonly ReviewItem[], ghost: GhostModel | null): ReviewModel {
 	const order = new Map(items.map((it, i) => [it.id, i]));
+	// An item's gain is the gain of what its own chosen command set places (the first clip it creates, else the first it
+	// changes), never a setup item's ghost folded under it (the delivery preset re-levels the music clips).
 	const gains = new Map<string, number>();
-	for (const c of ghost?.clips ?? [])
-		if (c.gainDb !== null && !gains.has(c.itemId)) gains.set(c.itemId, c.gainDb);
+	for (const pass of ['created', 'changed'] as const)
+		for (const c of ghost?.clips ?? [])
+			if (c.change === pass && c.sourceItemId === c.itemId && c.gainDb !== null && !gains.has(c.itemId))
+				gains.set(c.itemId, c.gainDb);
 	const gainOf = (id: string) => gains.get(id) ?? null;
 	const owners = setupOwners(items);
 	const byId: Record<string, ReviewRow> = {};

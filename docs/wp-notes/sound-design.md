@@ -4298,6 +4298,15 @@ all of it through MCP; tests are unit, property (state machine, fuzzed items) an
    150 ms → pending → stale). They are kept until the next preview (no dedicated test).
 8. Smaller: the Review panel's "Open a project…" line was not translated; its timecodes ignored drop-frame and the start
    timecode (now the sequence's `seqTimecode`).
+10. **A row's gain and why-line could be a setup item's** (reported by WP4.2b): the Review model took an item's gain from
+   the first ghost clip shown under it, and a setup item's ghosts are folded under the first item that needs it — with
+   the delivery preset that is the music clip it re-levels (a row read +14.6 dB). WP4.2b made the row text prefer the
+   plan's solved gain, which a selected alternative cannot use. Root fix: ghost clips and removals carry the item whose
+   own commands made them (`sourceItemId`); an item's gain is the first clip its own chosen set creates (else changes),
+   its facts list only its own clips, and its why-line / short reason come from the selected alternative's `meta` when
+   one is chosen (`ReviewItem.selectedMeta`). Test: review-model "the delivery setup re-levels the music…" (+14.6 dB
+   music under the item → row −11 dB, facts without it; alternative → −7 dB and its own why-line; mutation: the old
+   first-ghost rule fails it).
 9. Found by looking at the first e2e screenshots of this pass's own virtualised list: rows were laid out at fixed px
    heights while their lines are rem-based (`h-5` is 15 px at the editor's 12 px root), so a scrolled list showed blank
    bands where a row's lower part should be. The metrics are now rem-based (`reviewListMetrics(rootFontPx)`) and the

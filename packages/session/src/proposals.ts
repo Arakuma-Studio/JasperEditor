@@ -83,6 +83,8 @@ export type ReviewItem = {
 	selectedAlternative: number;
 	alternativeLabels: string[];
 	meta: unknown;
+	/** The meta of the chosen command set: the selected alternative's when it has one, else the item's. */
+	selectedMeta?: unknown;
 };
 
 export type ProposalPreviewState = {
@@ -954,6 +956,10 @@ export class ProposalsController {
 				alternatives: (it.alternatives?.length ?? 0) + 1,
 				selectedAlternative: it.selectedAlternative ?? 0,
 				alternativeLabels: [it.label, ...(it.alternatives ?? []).map((a) => a.label)],
+				selectedMeta:
+					(it.selectedAlternative ?? 0) > 0
+						? (it.alternatives?.[(it.selectedAlternative ?? 0) - 1]?.meta ?? it.meta)
+						: it.meta,
 				meta: it.meta,
 			};
 		});
