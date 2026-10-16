@@ -5370,7 +5370,14 @@ Phase 6's `ExportSettings.credits`; P6 should default the export dialog's credit
   `final-zoom.png` (5.5–9 s: ticks ≈ 19 LU under the dialogue, "As delivered (normalisation +3.5 dB)" from the check
   job). The looks found two drawing faults, fixed: flag labels overlapped in dense passages (now skipped when they would
   touch) and speech drawn as syllable stripes (now bridged like the check).
-- `pnpm typecheck`, `pnpm lint`, `pnpm notices --check` after merging (below).
+- Gate on this branch (the integration branch had not moved): `pnpm typecheck` (every package) and `pnpm lint` (Biome,
+  tokens, anime, layers, assets) pass; `pnpm notices --check` current; `node scripts/i18n.mjs --check` 9 618 strings.
+  `pnpm vitest run packages/audio-fx packages/api packages/engine-client apps/web/test/i18n.test.ts
+  apps/web/test/sound-i18n.test.tsx --maxWorkers=3`: 29 files, 390 passed. `pnpm vitest run --project @jasper/project
+  --maxWorkers=3`: 1 992 of 1 993 passed — the one failure is the pre-existing `sound-messages` template gap above.
+  `pnpm vitest run apps/mcp/test/sound* apps/mcp/test/{conventions,readme-tools,fuzz}.test.ts apps/engine/test/
+  {sound-check,sound-check-stems,sound-design-cues,sound-design-rebalance,security-review,fuzz-http}.test.ts
+  --maxWorkers=2` (load 35–60): 18 files, 638 passed.
 
 #### Limits and notes for the next packages
 
