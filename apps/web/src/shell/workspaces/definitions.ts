@@ -208,7 +208,7 @@ const soundDesign: WorkspaceDefinition = {
 		[
 			0.24,
 			col(
-				[0.55, g(['soundLibrary', 'project', 'mediaBrowser'], 'soundLibrary')],
+				[0.5, g(['soundLibrary', 'project', 'mediaBrowser'], 'soundLibrary')],
 				['fill', g(['review', 'markers', 'history', 'jobs'], 'review')],
 			),
 		],

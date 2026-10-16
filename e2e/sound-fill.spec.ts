@@ -1,7 +1,8 @@
 // WP2.4b in the built app (spec 12 §2.7, P2-R7): Suggest Cues → fill the cut cue from the Sound Library with Enter (Fill
 // mode from a double-click on the glyph) → Next Variation ×3 = ONE history entry "Swap Sound ×3" → Swap Sound… (Replace
 // banner, Enter) → Add Layer… (linked, next free track) → moving one layer moves the other (undone) → In Context
-// audition (Shift+Space: the Program chip, no document or history change) → Fill Unfilled Cues (one entry) → native
+// audition (Shift+Space: the Program chip, no document or history change) → Fill Unfilled Cues (a proposal, applied
+// from review as one entry; WP3.3b) → native
 // export: the peak of every peak-aligned single-layer fill is measured (ffmpeg) on its cue frame. Screenshots of the
 // badges, Essential Sound ▸ Sound Design, Properties ▸ Sound / Cue, the cue menu's Fill With ▸, the Replace banner and the
 // overlay chip go to test-results/e2e-sound-fill.
@@ -341,16 +342,29 @@ test('fill, variation ×3 = one entry, swap, layer, link move, in context, fill 
 	await page.screenshot({ path: join(outDir, 'fill-with-menu.png') });
 	await page.keyboard.press('Escape');
 
-	// Sequence ▸ Sound Design ▸ Fill Unfilled Cues: one entry
+	// Sequence ▸ Sound Design ▸ Fill Unfilled Cues proposes (WP3.3b): review opens on the proposal, nothing changes
+	// until Apply; Accept all + Apply = one entry
 	const n0 = (await appliedLabels(page)).length;
 	const unfilled = (await cues(page)).filter((c) => !(c.placedClipIds ?? []).length).length;
 	await menubar.getByRole('menuitem', { name: 'Sequence', exact: true }).click();
 	await page.getByRole('menuitem', { name: 'Sound Design' }).hover();
 	await page.getByRole('menuitem', { name: 'Fill Unfilled Cues' }).click();
+	await expect(page.getByTestId('review-bar')).toBeVisible({ timeout: 120_000 });
+	await expect(page.getByTestId('review-bar-title')).toContainText('Fill Unfilled Cues');
+	expect(await appliedLabels(page)).toHaveLength(n0);
+	await page.getByTestId('review-bar-accept-all').click();
+	await expect(page.getByTestId('review-bar-apply')).toHaveText(`Apply ${unfilled} of ${unfilled}`);
+	await page.getByTestId('review-bar-apply').click();
 	await expect
 		.poll(async () => (await appliedLabels(page)).at(-1), { timeout: 120_000 })
-		.toMatch(/^Fill Unfilled Cues \(\d+\)$/);
+		.toMatch(/^Accept Fill Unfilled Cues \(\d+ of \d+\)$/);
 	expect(await appliedLabels(page)).toHaveLength(n0 + 1);
+	// the apply toast would cover the export dialog's footer
+	await page
+		.getByTestId('toast')
+		.filter({ hasText: /^Applied/ })
+		.getByRole('button', { name: 'Dismiss' })
+		.click();
 	const after = await cues(page);
 	expect(after.filter((c) => (c.placedClipIds ?? []).length).length).toBe(after.length);
 	expect(unfilled).toBeGreaterThan(0);

@@ -221,7 +221,9 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 				<div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-center text-pr-small text-pr-muted">
 					<p>
 						{proposals.length
-							? t('{0} proposals have items to review. Choose one above.', proposals.length)
+							? proposals.length === 1
+								? t('1 proposal has items to review. Choose it above.')
+								: t('{0} proposals have items to review. Choose one above.', proposals.length)
 							: t('No proposals to review. Agents’ proposals and Auto Sound Pass results appear here.')}
 					</p>
 					<Button
@@ -647,7 +649,7 @@ function Details(p: {
 	};
 	return (
 		<section
-			className="flex max-h-[45%] shrink-0 flex-col gap-1 overflow-auto border-t border-pr-border px-2 py-1.5 text-pr-small"
+			className="flex max-h-[40%] shrink-0 flex-col gap-1 overflow-auto border-t border-pr-border px-2 py-1.5 text-pr-small"
 			aria-label={t('Details of {0}', it.label)}
 			data-testid="review-details"
 		>
@@ -679,7 +681,11 @@ function Details(p: {
 				>
 					◀
 				</Button>
-				<span className="text-pr-muted pr-tabular" data-review-alt-label>
+				<span
+					className="min-w-0 flex-1 truncate text-pr-muted pr-tabular"
+					data-review-alt-label
+					title={it.alternativeLabels[it.selectedAlternative] ?? ''}
+				>
 					⇄ {t('Alternate {0}/{1}', it.selectedAlternative + 1, it.alternatives)}
 					{it.alternatives > 1 ? `: ${it.alternativeLabels[it.selectedAlternative] ?? ''}` : ''}
 				</span>
@@ -743,7 +749,7 @@ function Details(p: {
 				</div>
 			)}
 			{p.row.setup.length ? (
-				<div className="text-pr-muted">
+				<div className="truncate text-pr-muted" title={p.row.setup.map((s) => s.label).join(', ')}>
 					{t('Comes with: {0}', p.row.setup.map((s) => s.label).join(', '))}
 				</div>
 			) : null}

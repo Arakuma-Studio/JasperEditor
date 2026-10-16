@@ -235,6 +235,10 @@ test('agent proposal → card → review: accept, reject, alternate, note → Ap
 	await expect(row(push.id)).toHaveAttribute('aria-label', /note: A bit softer, please/);
 	await expect(page.getByTestId('review-apply')).toHaveText('Apply 2 of 4');
 	await page.screenshot({ path: join(outDir, 'decided.png') });
+	// high contrast: state by glyph and word, 2 px solid ghost strokes
+	await page.evaluate(() => document.documentElement.setAttribute('data-pr-contrast', 'high'));
+	await page.screenshot({ path: join(outDir, 'decided-high-contrast.png') });
+	await page.evaluate(() => document.documentElement.removeAttribute('data-pr-contrast'));
 	let s = await stored(projectId, proposalId);
 	const st = (id: string) => s.items.find((i) => i.id === id)!;
 	expect(st(boom.id).state).toBe('rejected');
@@ -374,12 +378,16 @@ test('Auto Sound Pass… → Propose → review → Accept all → Apply → exp
 	await expect
 		.poll(async () => (await appliedLabels(page)).length, { timeout: 60_000 })
 		.toBe(before.length + 1);
-	await expect(page.getByTestId('toast').filter({ hasText: 'Applied 3 of 3 sounds from you' })).toBeVisible();
+	const applied = page.getByTestId('toast').filter({ hasText: 'Applied 3 of 3 sounds from you' });
+	await expect(applied).toBeVisible();
+	await expect(applied.getByRole('button', { name: 'Reopen review' })).toBeVisible();
 	// nothing left to decide: the review ended
 	await expect(page.getByTestId('review-bar')).toBeHidden();
 	await page.screenshot({ path: join(outDir, 'auto-pass-applied.png') });
 
-	// export: each single-layer, peak-aligned placement peaks on its cue frame
+	// export: each single-layer, peak-aligned placement peaks on its cue frame (the toast would cover the footer)
+	await applied.getByRole('button', { name: /Dismiss|Close/ }).click();
+	await expect(applied).toBeHidden();
 	const seq = await sequence(page);
 	const cues = Object.values(seq.soundDesign?.cues ?? {});
 	expect(cues.map((c) => c.frame).sort((a, b) => a - b)).toEqual([75, 150, 225]);
