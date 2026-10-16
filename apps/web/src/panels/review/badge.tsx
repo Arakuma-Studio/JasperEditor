@@ -17,7 +17,13 @@ function Badge({ session }: { session: EditorSession }) {
 	);
 	const reviewing = useProposals(session, (s) => !!s.activeId);
 	if (!n) return null;
-	const label = reviewing ? t('{0} items to review', n) : t('{0} proposals to review', n);
+	const label = reviewing
+		? n === 1
+			? t('1 item to review')
+			: t('{0} items to review', n)
+		: n === 1
+			? t('1 proposal to review')
+			: t('{0} proposals to review', n);
 	return (
 		<span
 			className="ml-1 inline-flex min-w-3.5 shrink-0 items-center justify-center rounded-full bg-pr-accent-fill px-[3px] text-[10px] leading-3.5 text-pr-on-accent pr-tabular"

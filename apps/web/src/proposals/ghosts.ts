@@ -308,8 +308,25 @@ export type GhostRow = {
 };
 
 /**
- * Rows of the tracks the proposal creates: below the last audio track (where the master row would start) and
- * above the top video track, in track order, at the default heights.
+ * The room the ghost lanes need in each region (px): pass it to `computeLayout` (`extraVideoPx` / `extraAudioPx`) so
+ * the regions' scroll ranges include the lanes `ghostTrackRows` draws (and shrink again when the review ends).
+ */
+export function ghostLaneExtent(model: Pick<GhostModel, 'tracks'> | null | undefined): {
+	videoPx: number;
+	audioPx: number;
+} {
+	let video = 0;
+	let audio = 0;
+	for (const tr of model?.tracks ?? []) {
+		if (tr.region === 'video') video++;
+		else if (tr.region === 'audio') audio++;
+	}
+	return { videoPx: video * DEFAULT_VIDEO_PX, audioPx: audio * DEFAULT_AUDIO_PX };
+}
+
+/**
+ * Rows of the tracks the proposal creates: below the last audio track (the room `computeLayout` keeps for them before
+ * the master row, see `ghostLaneExtent`) and above the top video track, in track order, at the default heights.
  */
 export function ghostTrackRows(model: GhostModel, layout: TrackAreaLayout): GhostRow[] {
 	const rows: GhostRow[] = [];
@@ -328,6 +345,28 @@ export function ghostTrackRows(model: GhostModel, layout: TrackAreaLayout): Ghos
 		rows.push({ trackId: tr.trackId, region: 'video', y: vy, height: DEFAULT_VIDEO_PX, track: tr });
 	}
 	return rows;
+}
+
+/**
+ * The row (track or ghost lane) an item's ghost is drawn on: its earliest ghost clip's, else its new track's lane;
+ * null when it shows nothing on a row (a cue only). The Timeline scrolls it into view when the item becomes current.
+ */
+export function ghostItemRow(
+	model: GhostModel,
+	layout: TrackAreaLayout,
+	itemId: string,
+): { trackId: string; kind: 'video' | 'audio'; index: number; y: number; height: number } | null {
+	const first = model.clips
+		.filter((c) => c.itemId === itemId)
+		.sort((a, b) => a.start - b.start || (a.trackId < b.trackId ? -1 : 1))[0];
+	const trackId = first?.trackId ?? model.tracks.find((tr) => tr.itemId === itemId)?.trackId;
+	if (!trackId) return null;
+	const real = rowOf(layout, trackId);
+	if (real) return real;
+	const lane = ghostTrackRows(model, layout).find((r) => r.trackId === trackId);
+	return lane
+		? { trackId, kind: lane.region, index: lane.track.index, y: lane.y, height: lane.height }
+		: null;
 }
 
 export type GhostRect = { x: number; y: number; w: number; h: number; region: 'video' | 'audio' };

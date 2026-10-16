@@ -35,9 +35,10 @@ import { formatTimecode, parseTimecodeEntry } from '../../gaps/time-display.ts';
 import { t as tr } from '../../i18n/runtime.ts';
 import { useRenderBar } from '../../previews/hooks.ts';
 import { GhostTrackHeaders, ProposalGhostLayer } from '../../proposals/GhostLayer.tsx';
+import { ghostItemRow, ghostLaneExtent } from '../../proposals/ghosts.ts';
 import { REVIEW_BAR_PX, ReviewBar, useReviewBarShown } from '../../proposals/ReviewBar.tsx';
 import { proposalRange } from '../../proposals/review.ts';
-import { proposalsFor, useGhostModel } from '../../proposals/state.ts';
+import { proposalsFor, useGhostModel, useProposals } from '../../proposals/state.ts';
 import { insertSoundWithFeedback } from '../../sound/controller.ts';
 import { CueSeam, CueSeamHeader } from '../../sound/cues/CueSeam.tsx';
 import { SEAM_PX } from '../../sound/cues/model.ts';
@@ -234,6 +235,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	// spec 12 §2.7 Review: the review bar on top while a proposal of this sequence is under review
 	const reviewBar = useReviewBarShown(session, seqId);
 	useLibraryMediaTracking(session);
+	// spec 12 §2.7 Review: the ghost lanes of the proposal's new tracks are part of the regions' scroll range
+	const ghostLanes = useMemo(() => ghostLaneExtent(ghostModel), [ghostModel]);
 	const layout = useMemo(
 		() =>
 			computeLayout({
@@ -245,8 +248,11 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				scrollYVideo: view.scrollYVideo,
 				scrollYAudio: view.scrollYAudio,
 				...(seamShown ? { dividerPx: SEAM_PX } : {}),
+				extraVideoPx: ghostLanes.videoPx,
+				extraAudioPx: ghostLanes.audioPx,
 			}),
 		[
+			ghostLanes,
 			seamShown,
 			size,
 			view.dividerRatio,
@@ -323,6 +329,25 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		const pad = Math.max(0, (min - (r.end - r.start)) / 2);
 		controller.zoomToRange(Math.max(0, r.start - pad), r.end + pad, 0.08);
 	}, [ghostModel, controller, session, size.w, committedSeq.settings.frameRate]);
+
+	// The current review item's ghost scrolls into view vertically (◀ ▶, a Review panel row, the keyboard): its track
+	// row or the ghost lane of the track it creates, which may sit below the visible audio tracks (or above the video).
+	// Only when the current item changes (not on every recomputed preview: the user may have scrolled away since).
+	const currentItem = useProposals(session, (s) => s.selection.at(-1) ?? null);
+	const ghostModelRef = useRef(ghostModel);
+	ghostModelRef.current = ghostModel;
+	useEffect(() => {
+		const model = ghostModelRef.current;
+		if (!currentItem || !model) return;
+		const { layout: lay } = geomRef.current;
+		const row = ghostItemRow(model, lay, currentItem);
+		if (!row) return;
+		const region = row.kind === 'video' ? lay.video : lay.audio;
+		const key = row.kind === 'video' ? 'scrollYVideo' : 'scrollYAudio';
+		const now = session.getState().views[seqId]?.[key] ?? 0;
+		const next = revealRowScroll(region, row, Math.min(region.maxScroll, Math.max(0, now)));
+		if (next !== null) controller.setView({ [key]: next });
+	}, [currentItem, controller, session, seqId]);
 
 	// A replaced or unmounted controller must not leave its session gesture open (every later
 	// beginGesture would throw and agent submits would queue forever).

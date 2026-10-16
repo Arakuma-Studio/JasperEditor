@@ -1204,10 +1204,16 @@ export class TimelineController {
 		const scrollV = (px: number) => {
 			const view = this.view();
 			if (!view) return;
-			if (e.y < layout.dividerTop)
-				this.setView({ scrollYVideo: Math.min(layout.video.maxScroll, Math.max(0, view.scrollYVideo - px)) });
-			else
-				this.setView({ scrollYAudio: Math.min(layout.audio.maxScroll, Math.max(0, view.scrollYAudio + px)) });
+			// From the scroll the layout shows: a stored one beyond the range (the range shrank: tracks removed or
+			// made smaller, a proposal's ghost lanes gone after its review) must not swallow the first wheel steps.
+			const clamp = (max: number, y: number) => Math.min(max, Math.max(0, y));
+			if (e.y < layout.dividerTop) {
+				const max = layout.video.maxScroll;
+				this.setView({ scrollYVideo: clamp(max, clamp(max, view.scrollYVideo) - px) });
+			} else {
+				const max = layout.audio.maxScroll;
+				this.setView({ scrollYAudio: clamp(max, clamp(max, view.scrollYAudio) + px) });
+			}
 		};
 		switch (intent.kind) {
 			case 'zoom':

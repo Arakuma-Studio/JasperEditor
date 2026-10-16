@@ -70,6 +70,13 @@ export function computeLayout(opts: {
 	showMaster?: boolean;
 	/** Divider height (default 4 px; the Cue Seam widens it to 18 px). */
 	dividerPx?: number;
+	/**
+	 * Room for lanes that are not tracks (yet): the new tracks of the proposal under review (spec 12 §2.7 ghost
+	 * lanes), px. Video lanes go above the top video row, audio lanes below the last audio row (the master row
+	 * after them); both count in their region's scroll range, so they can be scrolled to like tracks.
+	 */
+	extraVideoPx?: number;
+	extraAudioPx?: number;
 }): TrackAreaLayout {
 	const divider = Math.max(DIVIDER_PX, Math.round(opts.dividerPx ?? DIVIDER_PX));
 	const avail = Math.max(0, opts.height - divider);
@@ -81,13 +88,15 @@ export function computeLayout(opts: {
 
 	// Video: rows stack upward from the divider. Content coordinates measured from the content top.
 	const vHeights = opts.videoTracks.map((t) => trackHeight(opts.heights, t.id, 'video'));
-	const vContent = vHeights.reduce((a, b) => a + b, 0);
+	const vExtra = extraPx(opts.extraVideoPx);
+	const vContent = vHeights.reduce((a, b) => a + b, 0) + vExtra;
 	const vMax = Math.max(0, vContent - vh);
 	const vScroll = Math.min(vMax, Math.max(0, opts.scrollYVideo));
 	// scrollYVideo = px scrolled up from the bottom; bottom-aligned when content is shorter.
 	const vOffset = vh - vContent + vScroll;
 	const videoRows: TrackRow[] = [];
-	let acc = 0;
+	// the extra lanes are the top of the content: the tracks start below them
+	let acc = vExtra;
 	for (let i = opts.videoTracks.length - 1; i >= 0; i--) {
 		const h = vHeights[i]!;
 		videoRows.push({
@@ -101,7 +110,8 @@ export function computeLayout(opts: {
 	}
 
 	const aHeights = opts.audioTracks.map((t) => trackHeight(opts.heights, t.id, 'audio'));
-	const aContent = aHeights.reduce((a, b) => a + b, 0);
+	const aExtra = extraPx(opts.extraAudioPx);
+	const aContent = aHeights.reduce((a, b) => a + b, 0) + aExtra;
 	const master = opts.showMaster !== false ? MASTER_ROW_PX : 0;
 	const aMax = Math.max(0, aContent + master - ah);
 	const aScroll = Math.min(aMax, Math.max(0, opts.scrollYAudio));
@@ -132,9 +142,18 @@ export function computeLayout(opts: {
 			maxScroll: aMax,
 			rows: audioRows,
 		},
-		masterY: master ? acc : null,
+		masterY: master ? acc + aExtra : null,
 	};
 }
+
+/** A lane allowance from the caller: finite, ≥ 0, capped (hostile or broken input never breaks the layout). */
+function extraPx(px: number | undefined): number {
+	return typeof px === 'number' && Number.isFinite(px)
+		? Math.min(MAX_EXTRA_PX, Math.max(0, Math.round(px)))
+		: 0;
+}
+/** At most 256 default audio lanes of extra room. */
+const MAX_EXTRA_PX = 256 * DEFAULT_AUDIO_PX;
 
 /** Rows (plus one of overscan) that intersect the region's visible band (TL-151). */
 export function visibleRows(region: RegionLayout): TrackRow[] {
