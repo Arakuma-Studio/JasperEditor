@@ -136,7 +136,13 @@ describe('Fill', () => {
 			'snd_0000000000000ccc',
 		]);
 		expect(Math.abs(c.speed.rate - 1)).toBeLessThanOrEqual(0.02);
-		expect(Math.abs(c.gainDb)).toBeLessThanOrEqual(1);
+		// the default level of a hero (−16 LUFS momentary at web delivery; the sound measures −14) plus the seeded
+		// variation of at most ±1 dB, recorded for Phase 4
+		const level = c.sfx!.level!;
+		expect(level).toMatchObject({ by: 'default', targetLufs: -16 });
+		expect(Math.abs(level.offsetDb ?? 0)).toBeLessThanOrEqual(1);
+		expect(c.gainDb).toBeCloseTo(-2 + (level.offsetDb ?? 0), 6);
+		expect(level.gainDb).toBe(c.gainDb);
 		// the peak plays on the cue frame (to less than a frame, sub-frame exact for this unpadded file)
 		expect(pointAt(h, r.clipId)).toBeGreaterThanOrEqual(90 - 1e-6);
 		expect(pointAt(h, r.clipId)).toBeLessThan(91);

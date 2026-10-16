@@ -593,6 +593,8 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 				octaveBandsDb: whoosh.descriptors.octaveBandsDb,
 				centroidHz: whoosh.descriptors.centroidHz,
 				maxMomentaryLufs: whoosh.descriptors.maxMomentaryLufs,
+				// the true peak too (Phase 2 verification B: placement's default level caps by it)
+				truePeakDb: whoosh.descriptors.truePeakDb,
 			},
 			leadSilenceSec: lead,
 			snapshotHash: status.snapshotHash,

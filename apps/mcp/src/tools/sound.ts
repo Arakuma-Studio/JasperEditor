@@ -74,7 +74,8 @@ export const SOUND_CUES_GUIDE = `Sound cues (spec 12 Phase 2): a cue is a moment
 - Workflow: find_sound_cues {projectId} derives cue suggestions from the edit itself (cuts, transitions, keyframed motion, text animators and typewriters, motion-graphic intros/outros, graphics on V2+, 3D camera moves, markers named "sfx: whoosh+hit") with frame + timecode, kind, weight, suggested types, align, pan, confidence and a reason; it stores nothing. Check a few with render_frames around the cue frames (the frame before, on and after) before trusting them. Then store the ones you keep with set_sound_cues {add: [the suggestions as returned]} (one undo step; add, update, remove and resync in one call), and fill them with place_sound {cueId, layers: [{soundId} | {sound: {type, query?}}], alternatives: 1–3 soundIds, reason}. place_sound PROPOSES by default (mode "propose": a proposal the user reviews in the editor, nothing changes until they apply it); mode "apply" places at once — use it only when the user asked you to place sounds. Applied (by you or by the user's review) it is one undo step that imports the sounds and places them so the PEAK of hits, booms, lands and whooshes (the END of risers and reverses, the start of UI blips) lands exactly on the cue frame (sample-exact; layers on separate SFX tracks, grouped). sound: {type} picks a sound of that type from the library (palette first, ranked, rotated so neighbours differ, ±2 % speed and ±1 dB variation, deterministic for the sequence's seed).
 - Whole pass: plan_sound_design {projectId, style: {density, palette, sources, respectDialogue, seed}} does find → rank → import → place for every unfilled and derived cue in one engine job and stores the result as ONE proposal (one item per cue with its reason, role, alignment and 1–3 alternates; nothing applied). Workflow: propose → tell the user it waits in the Review panel → wait_for_proposal → read their decisions and notes → propose again for what they asked. Never accept_proposal on your own: only when the user asked you to apply it (and agents may apply only where they allowed it).
 - Density: keep what the density budget keeps (sparse ≤ 1 cue/s and a hero per 3 s, balanced ≤ 2/s and a hero per 2 s, rich ≤ 3/s and a hero per 1.5 s); plain dissolves and most cuts under dialogue stay silent; never put a hero under spoken words (find_sound_cues returns the dialogue ranges, place_sound warns). Less is more: do not fill every cue.
-- Fix: swap_sound {clipId, to: soundId | "next" | "previous"} replaces a placed sound keeping its peak frame, track, role, pan and gain ("next" cycles the alternates you gave, then the same family, then the most similar sounds). align_peak {clipId, to: frame | timecode | "playhead" | "cue"} moves a clip (with the other layers of its cue) so its peak lands exactly there. After editing the picture, set_sound_cues {resync: true} moves anchored cues and their sounds to follow the edit.
+- Levels: without gainDb a placed sound gets its default level from its own measurement — its loudest 400 ms to its role's momentary target at the sequence's delivery (web: hero −16, support −22, layer −24, ambience/room tone −30 LUFS), under the role's true-peak ceiling (−6 / −12 / −16 / −20 dBTP), within −30…+12 dB — so filled cues stay under full scale without normalisation (each clip's gainDb and level are in the result; the clip's sfx.level records it). Give gainDb only to override it; measure_loudness checks the mix.
+- Fix: swap_sound {clipId, to: soundId | "next" | "previous"} replaces a placed sound keeping its peak frame, track, role, pan and gain (a gain still at the default level becomes the new sound's default) ("next" cycles the alternates you gave, then the same family, then the most similar sounds). align_peak {clipId, to: frame | timecode | "playhead" | "cue"} moves a clip (with the other layers of its cue) so its peak lands exactly there. After editing the picture, set_sound_cues {resync: true} moves anchored cues and their sounds to follow the edit.
 - Check: get_timeline lists the SFX clips; render_frames around the cues shows the picture; you still cannot hear: report cue timecodes so the user can listen, never that it "sounds right".`;
 
 export const SOUND_GUIDE = `Sound library (sound effects; spec 12). You cannot hear audio. Judge sounds only by their measured descriptors and by pictures, and never claim that something "sounds good", "sounds right" or "fits": say what the numbers and pictures show and ask the user to listen.
@@ -602,7 +603,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 		'insert_sound',
 		{
 			title: 'Insert sound (peak-aligned)',
-			description: `Puts a library sound on the timeline so that its aligned point lands exactly on \`at\` — the agent version of the Sound Library's Insert. align "auto" (default) uses the sound type's: peak for hits, booms, impacts, whooshes; end for risers and reverses (they lead into the moment); start for UI blips; or give peak | start | end. The sub-frame rest is trimmed from the head of the registered file (library sounds whose head is not silent get 50 ms of lead silence when registered), so the aligned point is exact to the flick (errorFlicks 0). A sound that would start before frame 0 starts at 0 with its head trimmed (trimmedHeadSec). track "auto" (default) picks a free unmuted "SFX…" audio track over the clip's span, else adds "SFX n"; an explicit track must be free there (E_OVERLAP otherwise): it never overwrites audio and places one clip. ONE undo step registers and imports the sound (into the "${SOUND_EFFECTS_BIN}" bin, reusing the project's copy), adds the track if needed, places the clip, tags it Essential Sound ▸ SFX and sets gainDb. Returns the clip, its track, start, the aligned frame and errorFlicks.`,
+			description: `Puts a library sound on the timeline so that its aligned point lands exactly on \`at\` — the agent version of the Sound Library's Insert. align "auto" (default) uses the sound type's: peak for hits, booms, impacts, whooshes; end for risers and reverses (they lead into the moment); start for UI blips; or give peak | start | end. The sub-frame rest is trimmed from the head of the registered file (library sounds whose head is not silent get 50 ms of lead silence when registered), so the aligned point is exact to the flick (errorFlicks 0). A sound that would start before frame 0 starts at 0 with its head trimmed (trimmedHeadSec). track "auto" (default) picks a free unmuted "SFX…" audio track over the clip's span, else adds "SFX n"; an explicit track must be free there (E_OVERLAP otherwise): it never overwrites audio and places one clip. ONE undo step registers and imports the sound (into the "${SOUND_EFFECTS_BIN}" bin, reusing the project's copy), adds the track if needed, places the clip, tags it Essential Sound ▸ SFX and sets its gain: gainDb when given, else the sound's default level (its loudest 400 ms to the role's momentary target at the sequence's delivery — web: support −22 LUFS — under a true-peak ceiling, within −30…+12 dB; \`level\` in the result says what limited it). Returns the clip, its track, start, the aligned frame, errorFlicks and gainDb.`,
 			input: {
 				projectId: ProjectIdArg,
 				soundId: SoundIdArg.describe('Sound id from search_sounds'),
@@ -621,7 +622,12 @@ export function registerSoundTools(ctx: ToolContext): void {
 					.describe(
 						'"auto" (default), or an audio track ("A3", a track id or name) that is free over the span',
 					),
-				gainDb: z.number().min(-96).max(96).optional().describe('Clip gain in dB (default 0)'),
+				gainDb: z
+					.number()
+					.min(-96)
+					.max(96)
+					.optional()
+					.describe("Clip gain in dB (default: the sound's default level by its loudness and role)"),
 				sequenceId: SequenceIdArg,
 			},
 			annotations: EDIT,
@@ -710,7 +716,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 							mediaId: mediaRef,
 							align,
 							...(pick.kind === 'existing' ? { track: pick.trackId } : {}),
-							...(a.gainDb !== undefined && a.gainDb !== 0 ? { gainDb: a.gainDb } : {}),
+							...(a.gainDb !== undefined ? { gainDb: a.gainDb } : {}),
 							ref: '$soundClip',
 						},
 					],
@@ -783,7 +789,10 @@ export function registerSoundTools(ctx: ToolContext): void {
 								warning: `The sound would have started before frame 0: ${place.trimmedHeadSec} s of its head is cut.`,
 							}
 						: {}),
-					...(a.gainDb ? { gainDb: a.gainDb } : {}),
+					gainDb: (clip as { gainDb?: number }).gainDb ?? 0,
+					...((clip as { sfx?: { level?: unknown } }).sfx?.level
+						? { level: (clip as { sfx?: { level?: unknown } }).sfx!.level }
+						: {}),
 					...(requiresAttribution(entry.license) ? { credit: entry.attribution } : {}),
 					...(notes.length ? { notes } : {}),
 				});

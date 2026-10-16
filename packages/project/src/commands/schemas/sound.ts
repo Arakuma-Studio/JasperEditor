@@ -110,8 +110,14 @@ export const SoundLayerSchema = z.strictObject({
 	track: TrackRefSchema.optional(),
 	/** Which point of the sound lands on the cue: `auto` (default: the cue's `align`, else the sound type's). */
 	align: z.enum([...CUE_ALIGNS, 'auto']).optional(),
-	/** Clip gain (dB), default 0. */
+	/**
+	 * Clip gain (dB). Default: the sound's default level — its loudest 400 ms (`maxMomentaryLufs`) to the role's
+	 * momentary target at the sequence's delivery (web: hero −16, support −22, layer −24, beds −30 LUFS) under the
+	 * role's true-peak ceiling (−6 / −12 / −16 / −20 dBTP), within −30…+12 dB; recorded as `sfx.level`.
+	 */
 	gainDb: z.number().min(-96).max(96).optional(),
+	/** Added to the default level (dB; the seeded ±1 dB variation of a fill); ignored when `gainDb` is given. */
+	gainOffsetDb: z.number().min(-12).max(12).optional(),
 	/** Clip speed (varispeed; changes pitch), default 1. */
 	rate: z.number().min(0.25).max(4).optional(),
 	/** Pitch in semitones (default: the cue's): |st| ≤ 3 by varispeed, else the Pitch Shifter effect. */
@@ -155,14 +161,15 @@ export const SoundDesignPlaceCmd = cmd('soundDesign.place', {
 
 /**
  * Swaps the sound of a placed clip: the new media's aligned point lands where the old one did (same track, speed,
- * pan, gain, effects, group, role and cue link; keyframes keep their sequence times). `frame` lands it on that frame
+ * pan, gain, effects, group, role and cue link; keyframes keep their sequence times; a gain still at placement's
+ * default level, `sfx.level`, becomes the new sound's default). `frame` lands it on that frame
  * instead (with the clip's own media this re-aligns the clip: MCP `align_peak`), still sample-exact through the In
  * point. The same media with another `align` re-aligns the clip (its start, peak or end on the frame the old point
  * played at, or on `frame`); `pitchSt` re-pitches it around that point (|st| ≤ 3 by varispeed keeping the seeded ±2 %
  * variation, else the Pitch Shifter effect; 0 removes the shift). A sound that would start before frame 0 is refused,
  * except for a clip at frame 0 swapped in place (an insert near the start, `clampStart`): the new sound starts there
  * with its head trimmed. Fades on the clip's edges are shortened to its new length. Result `{clipId, mediaId, soundId,
- * start, sourceInFlicks, errorFlicks, alignedFrame, align, rate, pitchSt, trimmedHeadSec}`. `alternatives` replaces the
+ * start, sourceInFlicks, errorFlicks, alignedFrame, align, rate, pitchSt, trimmedHeadSec, gainDb}`. `alternatives` replaces the
  * clip's variation ring (`sfx.alternatives`, sound ids ≤ 16, the original first): variation cycling across separate
  * calls keeps one anchor even for a sound placed without alternatives (MCP `swap_sound` stores `[original]` on its
  * first swap).
@@ -178,7 +185,8 @@ export const SoundDesignSwapCmd = cmd('soundDesign.swap', {
 
 /**
  * Sets the sound-design role of placed clips (hero, support or layer; spec 12 §2.7 Essential Sound ▸ Role). Clips
- * without `sfx` metadata get it (not linked to a cue) when their media is a library sound. Result `{clipIds, role}`.
+ * without `sfx` metadata get it (not linked to a cue) when their media is a library sound. A gain still at
+ * placement's default level (`sfx.level`) follows the role's. Result `{clipIds, role}`.
  */
 export const SoundDesignSetRoleCmd = cmd('soundDesign.setRole', {
 	clipIds: z.array(IdRefSchema).min(1).max(SOUND_DESIGN_LIMITS.cues),

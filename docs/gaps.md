@@ -341,10 +341,18 @@ defects, 36 with a regression test that failed before the fix (model review 6, a
 listed in the wp-note). Limits: no keyboard-key recording in the kit (`key` is synth only); sounds over 120 s keep the
 ≤ 1-frame placement rule and, when lossy, can play up to 128 samples late after an In point; Fill Unfilled Cues
 applies directly until Phase 3 proposals; Detect Peak analyses at most 2 min of a clip; Auto gain / Room send / levels
-are Phase 4 (kit sounds at 0 dB overlap above 0 dBFS); `pitchSt: 0` after a fractional varispeed shift keeps up to
+against the bed are Phase 4 (placement gives a default level by role, below); `pitchSt: 0` after a fractional varispeed shift keeps up to
 ±0.5 st; razoring inside a transition's span fails with `E_INVARIANT` for any clips (edit-structure, not sound);
 Essential Sound Role / Align radio groups have no arrow-key navigation; "Undo <label>" in the Edit menu is composed in
 English (every feature).
+Phase 2 verification B ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 2 verification B"): the primed
+start's picture wait no longer gets cut short (`PrimedStartClock`; the Phase 0 transport e2e now measures the wait
+itself and replays plays the loaded host disturbed); placed sounds get a default level by role from their loudness and
+true peak (`sfx.level`; the Phase 2 fixture filled through MCP exports at −5 dBTP without normalisation); motion-graphic
+land / exit cues come from the fframes templates' rendered motion (the lower third lands at 350, not 360). Limits: anime
+templates keep the declared intro / outro timing (unmeasured, lower confidence); default levels are per sound, not
+against the bed (Phase 4); real-time audio e2e cannot measure on a host whose audio clock slips (load ≳ 90 here): the
+specs then fail saying every play was disturbed.
 
 ### Not covered by any workstream yet
 

@@ -11,6 +11,19 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import {
+	ATTEMPTS,
+	arm,
+	disarm,
+	disturbances,
+	mark,
+	peaks,
+	type Recording,
+	requireUndisturbed,
+	reschedules,
+	TAP,
+	timeOf,
+} from './sound-tap.ts';
+import {
 	clipBox,
 	clips,
 	createProject,
@@ -29,185 +42,6 @@ let page: Page;
 const outDir = join(ROOT, 'test-results', 'e2e-sound-p0-transport');
 const SR = 48000;
 
-/**
- * Taps every AudioContext destination through one bus per context: an AudioWorklet records channel 0 of whatever
- * reaches the speakers with its context frame. `stop()` calls of scheduled sources are logged with the context time
- * (Remotion stops a clip's queued buffers when it reschedules, e.g. at a seek).
- */
-const TAP = () => {
-	type Block = { f: number; d: Float32Array };
-	type Tap = {
-		on: boolean;
-		ctxs: { ctx: BaseAudioContext; node: AudioWorkletNode | null; blocks: Block[] }[];
-		stops: { t: number }[];
-	};
-	const w = window as unknown as { __tap: Tap };
-	w.__tap = { on: false, ctxs: [], stops: [] };
-	const code = `class T extends AudioWorkletProcessor {
-		constructor() { super(); this.on = false; this.buf = [];
-			this.port.onmessage = (e) => { this.on = e.data.on; if (!this.on) { this.port.postMessage(this.buf); this.buf = []; } }; }
-		process(inputs) { const x = inputs[0] && inputs[0][0];
-			if (this.on && x) { this.buf.push({ f: currentFrame, d: new Float32Array(x) });
-				if (this.buf.length >= 256) { this.port.postMessage(this.buf); this.buf = []; } }
-			return true; } }
-	registerProcessor('jasper-e2e-tap', T);`;
-	const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
-	const buses = new WeakMap<BaseAudioContext, GainNode>();
-	const connect = AudioNode.prototype.connect as (this: AudioNode, ...a: unknown[]) => unknown;
-	const busOf = (dest: AudioDestinationNode): GainNode => {
-		const ctx = dest.context;
-		let bus = buses.get(ctx);
-		if (bus) return bus;
-		bus = ctx.createGain();
-		buses.set(ctx, bus);
-		connect.call(bus, dest);
-		const entry = { ctx, node: null as AudioWorkletNode | null, blocks: [] as Block[] };
-		w.__tap.ctxs.push(entry);
-		void ctx.audioWorklet.addModule(url).then(() => {
-			const node = new AudioWorkletNode(ctx, 'jasper-e2e-tap', {
-				channelCount: 2,
-				channelCountMode: 'explicit',
-			});
-			node.port.onmessage = (e: MessageEvent<Block[]>) => entry.blocks.push(...e.data);
-			const mute = ctx.createGain();
-			mute.gain.value = 0;
-			connect.call(bus!, node);
-			connect.call(node, mute);
-			connect.call(mute, dest);
-			entry.node = node;
-		});
-		return bus;
-	};
-	AudioNode.prototype.connect = function (this: AudioNode, ...args: unknown[]) {
-		const dest = args[0];
-		if (dest instanceof AudioDestinationNode) return connect.apply(this, [busOf(dest), ...args.slice(1)]);
-		return connect.apply(this, args);
-	} as typeof AudioNode.prototype.connect;
-	const stop = AudioScheduledSourceNode.prototype.stop;
-	AudioScheduledSourceNode.prototype.stop = function (this: AudioScheduledSourceNode, when?: number) {
-		if (w.__tap.on) w.__tap.stops.push({ t: this.context.currentTime });
-		return stop.call(this, when);
-	};
-};
-
-type Recording = {
-	rate: number;
-	/** Context time (s) when the tap was armed (the frozen time of a suspended context = where playback resumes). */
-	armed: number;
-	/** First context frame and the samples of channel 0 from there (gaps, e.g. while suspended, are not filled). */
-	frames: number[];
-	data: number[];
-	stops: number[];
-	marks: Record<string, number>;
-};
-
-async function arm(p: Page): Promise<void> {
-	await p.evaluate(() => {
-		const t = (
-			window as unknown as {
-				__tap: {
-					on: boolean;
-					ctxs: { node: AudioWorkletNode | null; blocks: unknown[] }[];
-					stops: unknown[];
-				};
-			}
-		).__tap;
-		for (const c of t.ctxs) {
-			c.blocks.length = 0;
-			c.node?.port.postMessage({ on: true });
-		}
-		t.stops.length = 0;
-		t.on = true;
-	});
-}
-
-/** Marks the current context time of the program context under `name`. */
-async function mark(p: Page, name: string): Promise<void> {
-	await p.evaluate((n) => {
-		const t = (
-			window as unknown as {
-				__tap: { ctxs: { ctx: BaseAudioContext; blocks: unknown[] }[]; marks?: Record<string, number> };
-			}
-		).__tap;
-		t.marks ??= {};
-		const ctx = t.ctxs.find((c) => c.ctx.state === 'running')?.ctx ?? t.ctxs[0]?.ctx;
-		t.marks[n] = ctx?.currentTime ?? -1;
-	}, name);
-}
-
-async function disarm(p: Page): Promise<Recording> {
-	await p.evaluate(() => {
-		const t = (window as unknown as { __tap: { on: boolean; ctxs: { node: AudioWorkletNode | null }[] } })
-			.__tap;
-		t.on = false;
-		for (const c of t.ctxs) c.node?.port.postMessage({ on: false });
-	});
-	await p.waitForTimeout(300);
-	return p.evaluate(() => {
-		const t = (
-			window as unknown as {
-				__tap: {
-					ctxs: { ctx: BaseAudioContext; blocks: { f: number; d: Float32Array }[] }[];
-					stops: { t: number }[];
-					marks?: Record<string, number>;
-					armedAt?: number;
-				};
-			}
-		).__tap;
-		const peakOf = (bs: { d: Float32Array }[]) =>
-			bs.reduce((m, b) => b.d.reduce((x, v) => Math.max(x, Math.abs(v)), m), 0);
-		const bestIndex = t.ctxs.reduce((a, b, i) => (peakOf(b.blocks) > peakOf(t.ctxs[a]!.blocks) ? i : a), 0);
-		const best = t.ctxs[bestIndex]!;
-		const armedAll = (t as unknown as { armedAll?: number[] }).armedAll ?? [];
-		const frames: number[] = [];
-		const data: number[] = [];
-		for (const b of best.blocks) {
-			frames.push(b.f);
-			for (const v of b.d) data.push(v);
-		}
-		const marks = t.marks ?? {};
-		t.marks = {};
-		return {
-			rate: best.ctx.sampleRate,
-			armed: armedAll[bestIndex] ?? -1,
-			frames,
-			data,
-			stops: t.stops.map((s) => s.t),
-			marks,
-		};
-	});
-}
-
-/** Context time (s) of sample `i` of a recording (blocks are 128 frames). */
-function timeOf(r: Recording, i: number): number {
-	const b = Math.floor(i / 128);
-	return (r.frames[b]! + (i - b * 128)) / r.rate;
-}
-
-/** Local maxima of |x| above `min`, merged within 5 ms, as context times. */
-function peaks(r: Recording, min = 0.05): { t: number; v: number }[] {
-	const out: { t: number; v: number; i: number }[] = [];
-	for (let i = 0; i < r.data.length; i++) {
-		const v = Math.abs(r.data[i]!);
-		if (v < min) continue;
-		const last = out[out.length - 1];
-		if (last && i - last.i < r.rate * 0.005) {
-			if (v > last.v) Object.assign(last, { i, v, t: timeOf(r, i) });
-		} else out.push({ i, v, t: timeOf(r, i) });
-	}
-	return out.map(({ t, v }) => ({ t, v }));
-}
-
-/**
- * Context times where Remotion stopped every queued buffer at once inside [from, to] (it re-anchors and reschedules
- * every player when the picture and the audio clock drift apart, e.g. when the main thread stalls under load). Such a
- * play does not measure the graph; the tests play again (up to `ATTEMPTS` times).
- */
-function reschedules(r: Recording, from: number, to: number): number[] {
-	return [...new Set(r.stops.filter((t) => t >= from && t <= to).map((t) => Number(t.toFixed(4))))];
-}
-const ATTEMPTS = 3;
-
 async function seekPaused(p: Page, frame: number): Promise<void> {
 	await query(p, 'playhead.set', { frame });
 	await p.waitForTimeout(600);
@@ -217,16 +51,12 @@ async function seekPaused(p: Page, frame: number): Promise<void> {
 async function playFor(p: Page, ms: number, during?: (p: Page) => Promise<void>): Promise<Recording> {
 	await focusTimeline(p);
 	await arm(p);
-	await p.evaluate(() => {
-		const t = (window as unknown as { __tap: { ctxs: { ctx: BaseAudioContext }[]; armedAt?: number } }).__tap;
-		// the program context is suspended while paused: its frozen time is where the next Play starts
-		// the program context (the Player's) is the one Remotion created suspended; the tap picks the loudest one later
-		(t as unknown as { armedAll: number[] }).armedAll = t.ctxs.map((c) => c.ctx.currentTime);
-	});
 	await p.keyboard.press('Space');
 	if (during) await during(p);
 	await p.waitForTimeout(ms);
 	await focusTimeline(p);
+	// the stop's own `stop()` calls end every disturbance window
+	await mark(p, 'pause');
 	await p.keyboard.press('Space');
 	await p.waitForTimeout(200);
 	return disarm(p);
@@ -254,8 +84,6 @@ test.afterAll(async () => {
 });
 
 let ready = false;
-/** Effect instance ids of the A1 and Mix Hard Limiters. */
-let limiters: string[] = [];
 
 /** probe.wav on A1 (Hard Limiter) and A2, a Hard Limiter on the Mix (once per worker). */
 async function setup(): Promise<void> {
@@ -304,7 +132,6 @@ async function setup(): Promise<void> {
 		},
 	]);
 	expect(r.ok, JSON.stringify(r)).toBe(true);
-	if (r.ok) limiters = [r.refs!.$a1!, r.refs!.$mix!];
 	const s = await query<{ settings: { frameRate: { num: number; den: number } } }>(page, 'sequence.summary');
 	fps = s.settings.frameRate;
 	// let the media players and the graph settle
@@ -314,102 +141,182 @@ async function setup(): Promise<void> {
 
 /**
  * Samples (context time, Program frame) pairs for `ms` while playing: `min(time − frame / fps)` is the context time at
- * which the picture shows sequence time 0 (a frame is shown from its start until the next one).
+ * which the picture shows sequence time 0 (a frame is shown from its start until the next one). Only frames after the
+ * play position count: while a primed start waits, the picture holds the play position's frame, which says nothing
+ * about when it started.
  */
-async function pictureAnchor(p: Page, ms: number): Promise<number> {
+async function pictureAnchor(
+	p: Page,
+	ms: number,
+	fromFrame: number,
+	skipMs: number,
+): Promise<{ anchor: number; slip: number }> {
 	return p.evaluate(
-		async ([dur, num, den]) => {
+		async ([dur, num, den, from, skip]) => {
 			const w = window as unknown as {
-				__tap: { ctxs: { ctx: BaseAudioContext }[] };
+				__tap: { ctxs: { ctx: BaseAudioContext; starts: number }[] };
 				jasper: { query(n: string, a?: unknown): Promise<{ frame: number; playing: boolean }> };
 			};
-			const ctx = w.__tap.ctxs.find((c) => c.ctx.state === 'running')?.ctx;
-			if (!ctx) return Number.NaN;
-			let best = Number.POSITIVE_INFINITY;
 			// anime-allow: test-side wall clock bound of a sampling loop
-			const end = performance.now() + dur;
+			const t0 = performance.now();
+			const end = t0 + dur;
+			// the Program monitor's context: the running one Remotion schedules media buffers on
+			const program = () =>
+				w.__tap.ctxs
+					.filter((c) => c.ctx.state === 'running' && c.starts > 0)
+					.sort((a, b) => b.starts - a.starts)[0]?.ctx;
+			let ctx = program();
+			// anime-allow: test-side wall clock bound of a sampling loop
+			while (!ctx && performance.now() < end) {
+				await new Promise<number>((r) => requestAnimationFrame(r));
+				ctx = program();
+			}
+			if (!ctx) return { anchor: Number.NaN, slip: Number.NaN };
+			let best = Number.POSITIVE_INFINITY;
+			// wall clock − audio clock (s) of every valid output timestamp, from the program's first one on
+			const drift: number[] = [];
 			// anime-allow: test-side wall clock bound of a sampling loop
 			while (performance.now() < end) {
-				const now = await new Promise<number>((r) => requestAnimationFrame(r));
-				// the context time of the sample at the output at this frame (precise, unlike currentTime's steps)
+				await new Promise<number>((r) => requestAnimationFrame(r));
+				const { frame, playing } = await w.jasper.query('playhead.get');
+				// The context time of the sample at the output now (precise, unlike currentTime's steps), read after the
+				// frame: the Player set that frame at or before this moment and shows it from then on, so
+				// `t − frame / fps` is never earlier than the picture's anchor, and the smallest over many samples
+				// approaches it (a main thread that runs late only makes a sample later). Reading the time at the
+				// animation frame's start instead, before the Player's own callback set the frame, could undershoot it by
+				// that callback's delay (≈ 10–20 ms under load).
+				// anime-allow: test-side wall clock of a sample
+				const now = performance.now();
 				const o = (ctx as AudioContext).getOutputTimestamp();
 				const t = (o.contextTime ?? 0) + (now - (o.performanceTime ?? 0)) / 1000;
-				const { frame, playing } = await w.jasper.query('playhead.get');
-				if (playing) best = Math.min(best, t - (frame * den) / num);
+				if (playing && frame > from && now - t0 >= skip) best = Math.min(best, t - (frame * den) / num);
+				// the clocks from the program's first valid output timestamp on (Chrome reports none just after a resume)
+				if (o.performanceTime && (o.contextTime ?? 0) > 0)
+					drift.push(o.performanceTime / 1000 - (o.contextTime ?? 0));
 			}
-			return best;
+			// The picture runs on the wall clock, the program on the audio clock: when the audio thread falls behind (a
+			// starved host underruns), the two drift apart and their start offset is not what this measures.
+			// (medians of the first and last five readings: Chrome's readings jitter by a few ms, more just after a resume)
+			const med = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] ?? Number.NaN;
+			const slip = drift.length >= 10 ? med(drift.slice(-5)) - med(drift.slice(0, 5)) : Number.NaN;
+			return { anchor: best, slip };
 		},
-		[ms, fps.num, fps.den] as const,
+		[ms, fps.num, fps.den, fromFrame, skipMs] as const,
 	);
 }
 
+/** Hard Limiter latency at 20 ms look-ahead (samples, 48 kHz): every one on the path adds it to the read-ahead. */
+const HL20 = 998;
+
 test('Play: the first samples at the play position are heard (nothing lost to the read-ahead)', async () => {
-	test.setTimeout(240_000);
+	test.setTimeout(300_000);
 	await setup();
-	/** Plays from 0 and returns the clicks heard and the picture's sequence-time-0 context time. */
+	/** Plays from 0 and returns the recording and the picture's sequence-time-0 context time. */
 	const measure = async () => {
 		let m = { rec: null as unknown as Recording, picture: Number.NaN };
+		let clean = false;
+		let last: string[] = [];
 		for (let a = 0; a < ATTEMPTS; a++) {
 			await seekPaused(page, frameAt(1));
 			await seekPaused(page, 0);
-			let picture = Number.NaN;
+			let picture = { anchor: Number.NaN, slip: Number.NaN };
 			const rec = await playFor(page, 200, async (p) => {
-				await p.waitForTimeout(150);
-				picture = await pictureAnchor(p, 900);
+				// the clocks are compared from the start; the anchor sampled after 150 ms (the picture has started)
+				picture = await pictureAnchor(p, 1050, 0, 150);
 			});
-			m = { rec, picture };
-			const r = reschedules(rec, rec.armed, rec.armed + 1.2);
-			if (r.length === 0) break;
-			console.log(
-				'Remotion rescheduled during the play (load), again:',
-				r.map((t) => t - rec.armed).join(' '),
-			);
+			m = { rec, picture: picture.anchor };
+			// the whole span whose clicks are checked (up to 2 s), up to the pause
+			const d = disturbances(rec, rec.armed, Math.min(rec.armed + 2.2, (rec.marks.pause ?? 1e9) - 0.001));
+			if (!(Math.abs(picture.slip) < 0.01))
+				d.push(`the audio clock slipped ${(picture.slip * 1000).toFixed(1)} ms against the wall clock`);
+			last = d;
+			if (d.length === 0) {
+				clean = true;
+				break;
+			}
+			console.log('Remotion lost its scheduling during the play (load), again:', d.join('; '));
 		}
+		requireUndisturbed(clean, last);
 		return m;
 	};
-	// baseline without latency (both limiters off): how far the picture's frame report trails the audio here
-	const setEnabled = (enabled: boolean) =>
-		transact(
-			page,
-			limiters.map((id) => ({ type: 'effect.setEnabled', effectInstanceId: id, enabled })),
+	/**
+	 * Checks one primed play with the wait `wait` (s): every click is heard from the one 30 ms after the play position,
+	 * exactly `wait` after the resume, and returns picture − audio (s): the picture's sequence time 0 minus the
+	 * program's, both as context times at the output (the tap's frames are the context's, the picture's come from its
+	 * output timestamp).
+	 */
+	const check = (m: { rec: Recording; picture: number }, wait: number): number => {
+		// the clicks of the first 2 s (a slow page can play into the tone that follows them)
+		const ps = peaks(m.rec).filter((p) => p.t - m.rec.armed < wait + 1.95);
+		expect(ps.length).toBeGreaterThanOrEqual(3);
+		// both tracks summed (0.707): every click, 0.25 s apart
+		for (let i = 1; i < ps.length; i++)
+			expect(
+				Math.abs(ps[i]!.t - ps[i - 1]!.t - 0.25),
+				JSON.stringify({ armed: m.rec.armed, ps, late: m.rec.late, stops: m.rec.stops }),
+			).toBeLessThan(0.002);
+		for (const p of ps) expect(p.v).toBeGreaterThan(0.6);
+		// the click 30 ms after the play position is the first one heard, `wait` after the resume (sample-exact; the
+		// tolerance is one render quantum)
+		expect(Math.abs(ps[0]!.t - m.rec.armed - (wait + 0.03)), JSON.stringify(ps.slice(0, 3))).toBeLessThan(
+			128 / SR,
 		);
-	/** picture − audio (s): the picture's sequence time 0 minus the program output's (from the click at 0.28 s). */
-	const offsetOf = (m: { rec: Recording; picture: number }) => {
-		const c = peaks(m.rec).find((p) => p.v > 0.5 && p.t - m.rec.armed > 0.15);
-		return c ? m.picture - (c.t - 0.28) : Number.NaN;
+		return m.picture - (ps[0]!.t - 0.03);
 	};
-	// Two plays each: a frame report delayed by a stall only makes the picture look later, so the smaller is right.
-	// Under heavy load the frame reports scatter: the pair is measured again until both agree within 10 ms.
-	const pair = async () => {
-		for (let a = 0; ; a++) {
-			const m1 = await measure();
-			const m2 = await measure();
-			const o = [offsetOf(m1), offsetOf(m2)];
-			if (Math.abs(o[0]! - o[1]!) < 0.01 || a === ATTEMPTS - 1) return { offset: Math.min(...o), m: m1 };
-			console.log('scattered picture reports (load), again:', o.join(' '));
-		}
+	// Two plays each: a frame report delayed by a stall only makes the picture look later, so the smaller is kept
+	// (the stricter one for the lower bound below).
+	const primed = async (wait: number) => {
+		const m1 = await measure();
+		const m2 = await measure();
+		const o = [check(m1, wait), check(m2, wait)];
+		console.log('primed wait', wait, 'picture − audio', o.join(' '));
+		return { offset: Math.min(...o), m: m1 };
 	};
-	expect((await setEnabled(false)).ok).toBe(true);
-	const baseOffset = (await pair()).offset;
-	expect((await setEnabled(true)).ok).toBe(true);
-	const primed = await pair();
-	const { rec } = primed.m;
-	const { offset } = primed;
-	const ps = peaks(rec);
-	console.log('play-start peaks', rec.armed, rec.frames[0]! / rec.rate, JSON.stringify(ps));
-	test.info().annotations.push({ type: 'peaks', description: JSON.stringify({ armed: rec.armed, ps }) });
-	expect(ps.length).toBeGreaterThanOrEqual(3);
-	// both tracks summed (0.707): every click, 0.25 s apart
-	for (let i = 1; i < ps.length; i++) expect(Math.abs(ps[i]!.t - ps[i - 1]!.t - 0.25)).toBeLessThan(0.002);
-	for (const p of ps) expect(p.v).toBeGreaterThan(0.6);
-	// the click 30 ms after the play position is the first one heard: well before the next one (0.28 s)
-	expect(ps[0]!.t - rec.armed, JSON.stringify(ps.slice(0, 3))).toBeLessThan(0.2);
-	// A/V: the clicks give the context time of sequence time 0 in the program output, the frame reports the picture's.
-	// With the read-ahead primed the picture waits for the program: picture − audio stays what it is without latency
-	// (an unprimed start would show the picture the read-ahead, 41.6 ms, earlier relative to the audio).
-	console.log('picture − audio', offset, 'without latency', baseOffset);
-	test.info().annotations.push({ type: 'sync', description: JSON.stringify({ offset, baseOffset }) });
-	expect(Math.abs(offset - baseOffset)).toBeLessThan(0.02);
+	// The setup's read-ahead: Hard Limiters on A1 and the Mix (41.6 ms).
+	const w1 = (2 * HL20) / SR;
+	const p1 = await primed(w1);
+	console.log('play-start peaks', p1.m.rec.armed, JSON.stringify(peaks(p1.m.rec)));
+	test.info().annotations.push({
+		type: 'peaks',
+		description: JSON.stringify({ armed: p1.m.rec.armed, ps: peaks(p1.m.rec) }),
+	});
+	// A/V: the picture waits for the program. It must never show sequence time 0 before the program's sequence time 0
+	// is at the output. (Remotion starts the picture at its first animation frame after the output passed the resume
+	// time; at the end of an unprimed start that lag, 15–90 ms measured here, is the picture's, so a primed start is
+	// not compared with one: the wait hides that lag.)
+	expect(p1.offset).toBeGreaterThan(-0.01);
+	// A wait longer than Remotion's start lag tells a picture that waits apart from one that does not (without the
+	// wait it would lead by ≈ wait − lag, 35–110 ms): four more Hard Limiters on the Mix, six in all (125 ms; ten crashed
+	// the loaded host's renderer now and then).
+	const more = await transact(
+		page,
+		Array.from({ length: 4 }, (_, i) => ({
+			type: 'effect.add',
+			target: 'master',
+			effectId: 'jasper.audio.hard-limiter',
+			params: { lookAhead: 20 },
+			ref: `$m${i}`,
+		})),
+	);
+	expect(more.ok, JSON.stringify(more)).toBe(true);
+	const extra = more.ok ? Object.values(more.refs ?? {}) : [];
+	expect(extra).toHaveLength(4);
+	try {
+		const w2 = (6 * HL20) / SR;
+		const p2 = await primed(w2);
+		console.log('picture − audio', p1.offset, 'with a 125 ms wait', p2.offset);
+		test
+			.info()
+			.annotations.push({ type: 'sync', description: JSON.stringify({ w1: p1.offset, w2: p2.offset }) });
+		expect(p2.offset).toBeGreaterThan(-0.01);
+		// and not a second wait after it (≥ 0.125 s more)
+		expect(p2.offset).toBeLessThan(w2);
+	} finally {
+		await transact(
+			page,
+			extra.map((id) => ({ type: 'effect.remove', effectInstanceId: id })),
+		);
+	}
 });
 
 test('Play after a seek while paused: no audio from before the seek', async () => {
@@ -443,6 +350,9 @@ test('seek during playback: the audio from before the seek stops at the seek', a
 	let rec = null as unknown as Recording;
 	let enter = -1;
 	let stop = -1;
+	let ownStops = 0;
+	let clean = false;
+	let last: string[] = [];
 	for (let a = 0; a < ATTEMPTS; a++) {
 		await seekPaused(page, frameAt(2.2));
 		rec = await playFor(page, 700, async (p) => {
@@ -453,23 +363,74 @@ test('seek during playback: the audio from before the seek stops at the seek', a
 			await input.fill('00:00:04:15');
 			await mark(p, 'enter');
 			await input.press('Enter');
-			await p.waitForTimeout(100);
+			// the moment the playhead is seen at the target (Remotion has re-anchored by then: its stops come first)
+			await expect
+				.poll(async () => (await query<{ frame: number }>(p, 'playhead.get')).frame, { timeout: 5000 })
+				.toBeGreaterThanOrEqual(frameAt(4.5) - 1);
+			await mark(p, 'seeked');
 			console.log('after the typed seek', JSON.stringify(await query(p, 'playhead.get')));
 		});
 		enter = rec.marks.enter ?? -1;
-		// the seek's own reschedule, and any other one around it
-		stop = rec.stops.find((t) => t >= enter - 0.001) ?? -1;
-		const other = reschedules(rec, rec.armed, enter + 0.3).filter((t) => Math.abs(t - stop) > 0.002);
-		if (other.length === 0) break;
-		console.log('Remotion rescheduled around the seek (load), again:', other.map((t) => t - enter).join(' '));
+		const seeked = rec.marks.seeked ?? -1;
+		// The seek's own reschedule: Remotion's first stop of queued buffers between the Enter and the playhead at the
+		// target (under load the seek can take a while). Any other reschedule around it, or a buffer started late before
+		// it, disturbed the play.
+		const own = rec.stops.filter((x) => x.player >= 0 && x.t >= enter - 0.001 && x.t <= seeked + 0.001);
+		stop = own[0]?.t ?? -1;
+		ownStops = own.length;
+		const other = reschedules(rec, rec.armed, seeked + 0.3)
+			.filter((t) => Math.abs(t - stop) > 0.01)
+			.map((t) => `reschedule at ${(t - enter).toFixed(3)} s`);
+		const late = disturbances({ ...rec, stops: [] }, rec.armed, enter);
+		// Tone that comes back after the old audio had stopped at the seek is a buffer of the old position Remotion
+		// started again after its stop (a starved main thread): a new source, not what the graph held. (What the graph
+		// holds would go on without a break, up to the read-ahead after the stop.)
+		if (stop > 0) {
+			const silent = gaps(rec).find((g) => g.t0 >= stop - 0.001 && g.t0 <= stop + 0.008);
+			const back = silent ? rec.data.some((v, i) => Math.abs(v) > 0.01 && timeOf(rec, i) > silent.t1) : false;
+			if (silent && back && rec.starts.some((x) => x.t >= stop))
+				late.push(`old-position audio started again ${(silent.t1 - stop).toFixed(3)} s after the seek`);
+			// What the graph holds lasts at most its read-ahead (41.6 ms here) after the stop; old-position tone going on
+			// longer, with buffers started after the stop, was scheduled by Remotion after the seek (a lagging main thread).
+			let end = -1;
+			for (let i = 0; i < rec.data.length; i++) if (Math.abs(rec.data[i]!) > 0.01) end = i;
+			const held = (2 * HL20) / SR;
+			if (end >= 0 && timeOf(rec, end) - stop > held + 0.02 && rec.starts.some((x) => x.t >= stop))
+				late.push(`old-position audio went on ${(timeOf(rec, end) - stop).toFixed(3)} s after the seek`);
+		}
+		last = [...other, ...late];
+		clean = last.length === 0;
+		if (stop > 0 && clean) break;
+		console.log(
+			'Remotion lost its scheduling around the seek (load), again:',
+			stop > 0 ? '' : 'no reschedule at the seek;',
+			[...other, ...late].join('; '),
+		);
 	}
-	let last = -1;
-	for (let i = 0; i < rec.data.length; i++) if (Math.abs(rec.data[i]!) > 0.01) last = i;
-	const lastT = last >= 0 ? timeOf(rec, last) : -1;
+	requireUndisturbed(clean, last);
+	let tail = -1;
+	for (let i = 0; i < rec.data.length; i++) if (Math.abs(rec.data[i]!) > 0.01) tail = i;
+	const lastT = tail >= 0 ? timeOf(rec, tail) : -1;
 	console.log('seek while playing: enter', enter, 'stop', stop, 'last tone', lastT, 'tail', lastT - stop);
 	test.info().annotations.push({ type: 'tail', description: JSON.stringify({ enter, stop, lastT }) });
 	expect(stop).toBeGreaterThan(0);
-	expect(lastT - stop).toBeLessThan(0.008);
+	// for a failure: the tone's level in 5 ms windows around the stop, and the buffer starts after it
+	const env: string[] = [];
+	for (let t = stop - 0.01; t < lastT + 0.005; t += 0.005) {
+		let m = 0;
+		for (let i = 0; i < rec.data.length; i++) {
+			const ti = timeOf(rec, i);
+			if (ti >= t && ti < t + 0.005) m = Math.max(m, Math.abs(rec.data[i]!));
+		}
+		env.push(`${((t - stop) * 1000).toFixed(0)}ms:${m.toFixed(3)}`);
+	}
+	const after = rec.starts
+		.filter((x) => x.t >= stop - 0.001)
+		.map((x) => `${((x.t - stop) * 1000).toFixed(1)}ms/p${x.player}`);
+	expect(
+		lastT - stop,
+		JSON.stringify({ env, startsAfterStop: after.slice(0, 20), stops: ownStops }),
+	).toBeLessThan(0.008);
 });
 
 /** Runs of |x| < 0.01 longer than 2 ms (a 1 kHz tone of 0.35 crosses 0.01 for 9 µs): [start, end) context times. */
@@ -493,6 +454,8 @@ test('a latency change during playback: no dropout beyond the added latency', as
 	let rec = null as unknown as Recording;
 	let edit = -1;
 	let gap = Number.NaN;
+	let clean = false;
+	let last: string[] = [];
 	for (let a = 0; a < ATTEMPTS; a++) {
 		await seekPaused(page, frameAt(2.0));
 		let added = '';
@@ -524,10 +487,13 @@ test('a latency change during playback: no dropout beyond the added latency', as
 		// A valid play: the tone ran without a gap for 0.3 s before the edit (under heavy load Remotion's scheduling
 		// falls behind or it reschedules every player: that is not the graph) and nothing was rescheduled.
 		const before = all.some((g) => g.t1 > edit - 0.3 && g.t0 < edit);
-		const r = reschedules(rec, edit - 0.3, edit + 0.7);
-		if (!before && r.length === 0) break;
-		console.log('disturbed play (load), again:', before, r.map((t) => t - edit).join(' '));
+		const d = disturbances(rec, edit - 0.3, Math.min(edit + 0.7, (rec.marks.pause ?? 1e9) - 0.001));
+		last = before ? ['a gap before the edit', ...d] : d;
+		clean = last.length === 0;
+		if (clean) break;
+		console.log('disturbed play (load), again:', before ? 'a gap before the edit;' : '', d.join('; '));
 	}
+	requireUndisturbed(clean, last);
 	console.log('latency change: gap', gap * SR, 'samples', gap, 's');
 	test.info().annotations.push({ type: 'gap', description: JSON.stringify({ samples: gap * SR }) });
 	// one gap of the added latency (998 samples, 20.8 ms); re-created slots and delay lines gave twice that (41.6 ms)

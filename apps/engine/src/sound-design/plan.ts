@@ -51,7 +51,6 @@ import {
 	SOUND_DESIGN_LIMITS,
 	SOUND_TYPES,
 	type SoundCue,
-	SoundLayerSchema,
 	type SoundProposalMedia,
 	type SoundProposalPlacement,
 	type SoundTypeId,
@@ -87,12 +86,6 @@ const MAX_LAYERS = SOUND_DESIGN_LIMITS.layers;
 const HERO_MIN_SEC = 0.5;
 /** A report larger than this drops the score parts (the proposal's report must stay under 1 MB). */
 const REPORT_SOFT_BYTES = 900 * 1024;
-
-/** Does the placement command take `gainOffsetDb` (the seeded ±1 dB on top of the default level)? */
-const LAYER_TAKES_GAIN_OFFSET = Object.hasOwn(
-	(SoundLayerSchema as unknown as { shape: Record<string, unknown> }).shape,
-	'gainOffsetDb',
-);
 
 /** A cue the plan considers. */
 export type PlanCue = {
@@ -588,7 +581,7 @@ export function composePlanDraft(
 		const why = `${names} on ${p.cue.reason} at ${tc} · ${p.role} · ${p.align}`.slice(0, 1000);
 		const layer: Record<string, unknown> = { soundId: chosen!.entry.id, role: p.role };
 		if (p.rate !== 1) layer.rate = p.rate;
-		if (LAYER_TAKES_GAIN_OFFSET && p.gainOffsetDb !== 0) layer.gainOffsetDb = p.gainOffsetDb;
+		if (p.gainOffsetDb !== 0) layer.gainOffsetDb = p.gainOffsetDb;
 		const cueItemId = p.cue.derived ? `cue:${id}` : null;
 		const meta = {
 			feature: SOUND_DESIGN_FEATURE,
@@ -617,7 +610,7 @@ export function composePlanDraft(
 			soundId: l.sound.entry.id,
 			role: 'layer',
 			...(l.rate !== 1 ? { rate: l.rate } : {}),
-			...(LAYER_TAKES_GAIN_OFFSET && l.gainOffsetDb !== 0 ? { gainOffsetDb: l.gainOffsetDb } : {}),
+			...(l.gainOffsetDb !== 0 ? { gainOffsetDb: l.gainOffsetDb } : {}),
 		}));
 		placements.push({
 			id,
