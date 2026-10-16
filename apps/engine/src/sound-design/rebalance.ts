@@ -297,6 +297,9 @@ async function rebalance(ctx: JobContext, deps: RebalanceDeps): Promise<SfxRebal
 		sequenceId: seq.id,
 		gains: Object.fromEntries(list.map((e) => [e.clipId, e.gainDb])),
 		report: Object.fromEntries(list.map((e) => [e.clipId, gainReport(e)])),
+		// the selection above already kept the user's gains unless asked (named clips, userGains "replace"): a clip
+		// with Auto gain off that it solves is one the user asked for
+		...(list.some((e) => e.owner === 'user') ? { override: true } : {}),
 	});
 	if (mode === 'apply') {
 		ctx.progress(0.9, { stage: 'Applying' });

@@ -1,9 +1,10 @@
 // Sound design mixing handlers (spec 12 §2.4, §2.9; P4-R3, P4-R4; wp-note "Phase 4 → WP4.2a"): `audio.volumeDip`, the
-// stop-before and build realizations of a cue, the "SFX Room" glue and delivery presets. Each is made of the ordinary edit
-// handlers (`mixer.writeAutomation`, `mixer.addSubmix`, `mixer.addSend`, `effect.add`, `mixer.setLoudness`,
+// stop-before and build realizations of a cue, the "SFX Room" glue and delivery presets. Each writes ordinary document
+// data (track volume automation — the keys `mixer.writeAutomation` would write, with the edge keys keeping the eases of a
+// curve they cut —, clip Volume keys, `mixer.addSubmix`, `mixer.addSend`, `effect.add`, `mixer.setLoudness`,
 // `essentialSound.autoMatch`, `audio.autoDuck`…) so preview and every export render it with nothing new (spec 12 §1), and
-// records what it wrote in `soundDesign.mix` so it can be redone or taken out exactly. The pure curve math is
-// `sound/mix.ts`. This module never imports `sound.ts` (the placement handlers import its hooks).
+// records what it wrote in `soundDesign.mix` so it can be redone or taken out exactly (a stack per lane, below). The pure
+// curve math is `sound/mix.ts`. This module never imports `sound.ts` (the placement handlers import its hooks).
 import type { Draft } from 'immer';
 import { FADER_MAX_DB, FADER_MIN_DB, MAX_SENDS } from '../../audio/strip.ts';
 import { duckingDepthBy, readEssentialSound } from '../../essential/model.ts';

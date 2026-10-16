@@ -15,13 +15,18 @@ import {
 	checkInvariants,
 	clipLaneTime,
 	createCounterIdSource,
+	type Dip,
+	dipEnvelopeAt,
 	evaluate,
 	FLICKS_PER_SECOND,
 	type Keyframe,
 	type LibraryProvenance,
+	mergeDips,
 	repairDocument,
 	type SoundDesign,
+	SEQUENCE_LANE,
 	sfxGainOwner,
+	unwriteCurve,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
 import { LIB } from './sound-fixtures.ts';
@@ -345,6 +350,122 @@ describe('bug 2: Bézier volume curves', () => {
 	});
 });
 
+describe('bug 2: mergeDips on curved lanes (property)', () => {
+	const keyArb = fc.record({
+		t: fc.integer({ min: 0, max: 40 }),
+		v: fc.double({ min: -40, max: 10, noNaN: true }),
+		interp: fc.constantFrom('linear', 'hold', 'bezier', 'auto-bezier', 'continuous-bezier'),
+		inf: fc.double({ min: 0.05, max: 0.95, noNaN: true }),
+		slope: fc.double({ min: 0, max: 2, noNaN: true }),
+	});
+	const dipArb = fc
+		.record({
+			s: fc.integer({ min: 0, max: 380 }),
+			len: fc.integer({ min: 0, max: 60 }),
+			depth: fc.double({ min: -60, max: -0.5, noNaN: true }),
+			fade: fc.integer({ min: 0, max: 400 }),
+		})
+		.map((d) => ({ start: d.s * 10 * MS, end: (d.s + d.len) * 10 * MS, depthDb: d.depth, fadeMs: d.fade }));
+	const lanes = [
+		{ name: 'sequence', lane: SEQUENCE_LANE },
+		{
+			name: 'clip ×2 reversed',
+			lane: clipLaneTime(
+				{ start: 0, duration: 30 * 30, sourceIn: 0, speed: { rate: 2, reverse: true } },
+				{ num: 30, den: 1 },
+			),
+		},
+	];
+	it('outside the dips the curve is kept (to 0.05 dB on rebuilt curves), inside = min(curve, dip), keys outside kept, exact unwrite', () => {
+		let maxCurved = 0;
+		fc.assert(
+			fc.property(
+				fc.array(keyArb, { maxLength: 8 }),
+				fc.array(dipArb, { minLength: 1, maxLength: 3 }),
+				fc.constantFrom(0, 1),
+				(keys, dips: Dip[], li) => {
+					const { lane } = lanes[li]!;
+					const seen = new Set<number>();
+					const kfs: Keyframe<number>[] = [];
+					for (const k of keys) {
+						const time = k.t * 100 * MS * (li === 1 ? 2 : 1);
+						if (seen.has(time)) continue;
+						seen.add(time);
+						kfs.push({
+							id: `kf_${kfs.length}`,
+							time,
+							value: k.v,
+							interpolation: k.interp as Keyframe<number>['interpolation'],
+							easeIn: { influence: k.inf, slope: k.slope },
+							easeOut: { influence: 1 - k.inf, slope: k.slope },
+						});
+					}
+					kfs.sort((a, b) => a.time - b.time);
+					const anim: Animatable<number> = { value: -3, keyframes: kfs };
+					let i = 0;
+					const r = mergeDips(anim, lane, dips, { newId: () => `new_${i++}`, clamp: [-96, 15] });
+					if (!r) return;
+					const res: Animatable<number> = { value: -3, keyframes: r.keyframes };
+					const E = (t: number) => evaluate(anim, lane.toLane(t));
+					const G = (t: number) => evaluate(res, lane.toLane(t));
+					// the un-widened dip windows (as mergeDips merges them) and their reference levels
+					const w0: [number, number][] = [];
+					for (const d of [...dips].sort((a, b) => a.start - b.start)) {
+						const f = Math.max(1, d.fadeMs) * MS;
+						const w: [number, number] = [
+							Math.max(lane.span[0], d.start - f),
+							Math.min(lane.span[1], d.end + f),
+						];
+						if (!(w[1] > w[0])) continue;
+						const last = w0[w0.length - 1];
+						if (last && w[0] <= last[1]) last[1] = Math.max(last[1], w[1]);
+						else w0.push(w);
+					}
+					const curved = kfs.some((k) => k.interpolation !== 'linear' && k.interpolation !== 'hold');
+					// rebuilt curves: within sampling (1 ms samples at most 0.001 dB off; steeper bends a little more);
+					// straight ones: exact (to rounding)
+					const tolOut = curved ? 0.05 : 1e-6;
+					const tol = curved ? 0.05 : 1e-5;
+					const nearStep = (t: number) =>
+						kfs.some((kf, j) => j > 0 && Math.abs(lane.toSeq(kf.time) - t) <= 2 * (li === 1 ? 1 : 1) + 1);
+					const end = Math.min(lane.span[1], 4.5 * S);
+					for (let k = 0; k <= 300; k++) {
+						const t = (k / 300) * end;
+						if (nearStep(t)) continue;
+						const e = E(t);
+						const got = G(t);
+						expect(got).toBeLessThanOrEqual(e + tol);
+						const env = dipEnvelopeAt(dips, t);
+						if (env === 0) {
+							expect(Math.abs(got - e)).toBeLessThanOrEqual(tolOut);
+							maxCurved = curved ? Math.max(maxCurved, Math.abs(got - e)) : maxCurved;
+							continue;
+						}
+						const w = w0.find(([a, b]) => t >= a && t <= b);
+						if (!w) continue;
+						const ref = Math.max(E(w[0]), E(w[1]));
+						expect(Math.abs(got - Math.min(e, Math.min(15, Math.max(-96, ref + env))))).toBeLessThanOrEqual(
+							tol,
+						);
+					}
+					// keys outside the rewritten ranges are the same keys
+					for (const k of kfs) {
+						const ts = lane.toSeq(k.time);
+						if (!r.windows.some(([a, b]) => ts >= a - 1 && ts <= b + 1))
+							expect(r.keyframes).toContainEqual(k);
+					}
+					const back = unwriteCurve(r.keyframes, r);
+					expect(back.exact).toBe(true);
+					expect(back.keyframes).toEqual(kfs);
+				},
+			),
+			{ numRuns: 300 },
+		);
+		// the largest deviation of a rebuilt curve outside the dips in these runs
+		expect(maxCurved).toBeLessThan(0.05);
+	}, 300_000);
+});
+
 describe('bug 3: splitting a dipped music clip', () => {
 	it('both parts are in the records: clearing the stop-before / build restores both', () => {
 		const h = new Harness();
@@ -524,11 +645,16 @@ describe('bug 8: mute / unmute restore the mix exactly', () => {
 		const muted = clone(h.doc.sequences);
 		h.ok([{ type: 'soundCue.update', cueId: cue, muted: false }]);
 		expect(noIds(h.seq.audioTracks)).toEqual(noIds(realised));
-		// redo of the mute from the same document gives the same document
+		// undo / redo: each edit is pure (the document before is untouched), and applying it again from the same
+		// document gives the same document (up to fresh ids)
 		const afterUnmute = h.doc;
+		const unmuted = clone(h.doc.sequences);
 		h.doc = beforeMute;
 		h.ok([{ type: 'soundCue.update', cueId: cue, muted: true }]);
 		expect(noIds(h.doc.sequences)).toEqual(noIds(muted));
+		h.ok([{ type: 'soundCue.update', cueId: cue, muted: false }]);
+		expect(noIds(h.doc.sequences)).toEqual(noIds(unmuted));
+		expect(noIds(afterUnmute.sequences)).toEqual(noIds(unmuted));
 		h.doc = afterUnmute;
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});

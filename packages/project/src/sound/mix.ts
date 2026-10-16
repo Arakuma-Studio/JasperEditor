@@ -8,7 +8,7 @@
 //   edges D ≥ E, so the result is continuous and E is untouched outside W: keyframes outside W are never replaced. Exact
 //   for linear and hold curves. A curved segment (Bézier, auto-Bézier, roving) crossing an edge widens the rewritten
 //   range to its keys: there D = +∞ where no dip is (the curve is kept), the segment is rebuilt from adaptive samples
-//   (within 0.001 dB of the curve, ≥ 5 ms apart) and the edge keys keep the eases of the curve outside.
+//   (within 0.001 dB of the curve, ≥ 1 ms apart) and the edge keys keep the eases of the curve outside.
 // - STOP-BEFORE of a hero at T: one dip [T − seconds, T − 10 ms], 30 ms fades (down from T − s − 30 ms, back at
 //   T + 20 ms), on the music under it.
 // - BUILD of a hero at T: the cutoff of a 2nd-order Butterworth High Pass sweeps 20 Hz → fromHz at T − seconds →
@@ -53,8 +53,6 @@ export const ROOM_BUS_NAME = 'SFX Room';
 export const ROOM_REVERB_EFFECT_ID = 'jasper.audio.studio-reverb';
 /** Interface sound types: dry (spec 12 §2.4 "Interface types get no send"). */
 export const INTERFACE_SOUND_TYPES: readonly string[] = ['ui', 'click', 'key', 'tick'];
-/** Spacing of the samples a non-linear curve segment is rebuilt from (flicks: 5 ms). */
-const RESAMPLE_FLICKS = FLICKS_PER_SECOND / 200;
 const MS = FLICKS_PER_SECOND / 1000;
 
 const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
@@ -223,15 +221,15 @@ export function writeCurve(
 	return { keyframes, written, replaced };
 }
 
-/** Least spacing of the samples a curved segment is rebuilt from (lane flicks: 5 ms). */
-const MIN_SAMPLE = RESAMPLE_FLICKS;
+/** Least spacing of the samples a curved segment is rebuilt from (lane flicks: 1 ms; only steep eases get that close). */
+const MIN_SAMPLE = FLICKS_PER_SECOND / 1000;
 /** Largest deviation (dB) of the rebuilt line from a curved segment between two samples. */
 const SAMPLE_TOLERANCE_DB = 1e-3;
 
 /**
  * Sample times (lane flicks) of `f` over (a, b) so that the polyline through them stays within `SAMPLE_TOLERANCE_DB`
- * of `f` (checked at quarter points), never closer than `MIN_SAMPLE`: a smooth Bézier gets a few dozen keys instead of
- * one every 5 ms. Pure.
+ * of `f` (checked at eighths), never closer than `MIN_SAMPLE`: a smooth Bézier gets a few dozen keys instead of
+ * one every 5 ms as before. Pure.
  */
 function adaptiveSamples(f: (k: number) => number, a: number, b: number, out: number[]): void {
 	const go = (x0: number, v0: number, x1: number, v1: number, depth: number) => {
@@ -239,14 +237,13 @@ function adaptiveSamples(f: (k: number) => number, a: number, b: number, out: nu
 		const lin = (x: number) => v0 + ((v1 - v0) * (x - x0)) / (x1 - x0);
 		const m = (x0 + x1) / 2;
 		const vm = f(m);
-		const q1 = x0 + (x1 - x0) / 4;
-		const q3 = x0 + (3 * (x1 - x0)) / 4;
-		if (
-			Math.abs(vm - lin(m)) <= SAMPLE_TOLERANCE_DB &&
-			Math.abs(f(q1) - lin(q1)) <= SAMPLE_TOLERANCE_DB &&
-			Math.abs(f(q3) - lin(q3)) <= SAMPLE_TOLERANCE_DB
-		)
-			return;
+		let ok = Math.abs(vm - lin(m)) <= SAMPLE_TOLERANCE_DB;
+		for (let q = 1; ok && q < 8; q++) {
+			if (q === 4) continue;
+			const x = x0 + ((x1 - x0) * q) / 8;
+			ok = Math.abs(f(x) - lin(x)) <= SAMPLE_TOLERANCE_DB;
+		}
+		if (ok) return;
 		out.push(m);
 		go(x0, v0, m, vm, depth + 1);
 		go(m, vm, x1, v1, depth + 1);
@@ -324,37 +321,65 @@ export function mergeDips(
 	const written: string[] = [];
 	const replaced: Keyframe<number>[] = [];
 	const rewritten: [number, number][] = [];
-	const E = (t: number) => evaluate(cur, lane.toLane(t));
+	// Everything is measured on the curve as it was (the rewritten ranges below are disjoint).
+	const E0 = (t: number) => evaluate(anim, lane.toLane(t));
+	const E = E0;
 	// The lane span in lane time (a clip's content range; the whole lane for a track).
 	const spanA = lane.toLane(lane.span[0]);
 	const spanB = Number.isFinite(lane.span[1]) ? lane.toLane(lane.span[1]) : Number.POSITIVE_INFINITY;
 	const laneMin = Math.min(spanA, spanB);
 	const laneMax = Math.max(spanA, spanB);
-	for (const [s0, e0] of windows) {
-		const kfs = cur.keyframes;
-		const la = lane.toLane(s0);
-		const lb = lane.toLane(e0);
-		let [lo, hi] = widenedRange(kfs, Math.min(la, lb), Math.max(la, lb));
+	// Each dip window's local level (E at its own edges, not the widened ones) and the dip curve: only where a dip is
+	// (where the envelope is 0 the curve is left as it is: D = +∞); its continuous version (= ref at the window's
+	// edges) finds the crossings. Times are snapped to whole lane flicks: up to one lane flick off a window's edges.
+	const tol = Math.abs(lane.toSeq(1) - lane.toSeq(0)) + 1;
+	const refs = windows.map(([s0, e0]) => ({ s0, e0, ref: Math.max(E0(s0), E0(e0)) }));
+	const refAt = (t: number) => refs.find((w) => t >= w.s0 - tol && t <= w.e0 + tol)?.ref;
+	const env = (t: number) => dipEnvelopeAt(valid, t);
+	const D = (t: number) => {
+		const e = env(t);
+		const ref = e < 0 ? refAt(t) : undefined;
+		return ref === undefined ? Number.POSITIVE_INFINITY : clampV(ref + e);
+	};
+	const Dc = (t: number) => {
+		const ref = refAt(t);
+		return ref === undefined ? Number.POSITIVE_INFINITY : clampV(ref + env(t));
+	};
+	// The ranges to rewrite (lane time): each window widened over the curved segments crossing its edges; windows
+	// whose widened ranges overlap are rewritten together (and widened again at the joint range's edges).
+	const kfs0 = anim.keyframes;
+	const groups: { lo: number; hi: number; ws0: number[] }[] = [];
+	for (const w of refs) {
+		const la = lane.toLane(w.s0);
+		const lb = lane.toLane(w.e0);
+		let [lo, hi] = widenedRange(kfs0, Math.min(la, lb), Math.max(la, lb));
 		lo = Math.max(lo, laneMin);
 		hi = Math.min(hi, laneMax);
+		groups.push({ lo, hi, ws0: [w.s0, w.e0] });
+	}
+	groups.sort((a, b) => a.lo - b.lo);
+	for (let merged = true; merged; ) {
+		merged = false;
+		for (let g = 0; g + 1 < groups.length; g++) {
+			const a = groups[g]!;
+			const b = groups[g + 1]!;
+			if (b.lo > a.hi) continue;
+			let [lo, hi] = widenedRange(kfs0, Math.min(a.lo, b.lo), Math.max(a.hi, b.hi));
+			lo = Math.max(lo, laneMin);
+			hi = Math.min(hi, laneMax);
+			groups.splice(g, 2, { lo, hi, ws0: [...a.ws0, ...b.ws0] });
+			merged = true;
+			break;
+		}
+	}
+	for (const { lo, hi, ws0 } of groups) {
+		// the original keys (inside this range `cur` still has them: the ranges are disjoint)
+		const kfs = kfs0;
 		const ta = lane.toSeq(lo);
 		const tb = lane.toSeq(hi);
 		const ws = Math.min(ta, tb);
 		const we = Math.max(ta, tb);
-		// The local level: E at the dip window's own edges (not the widened ones).
-		const ref = Math.max(E(s0), E(e0));
-		const env = (t: number) => dipEnvelopeAt(valid, t);
-		// (times are snapped to whole lane flicks: up to one lane flick off the window's edges)
-		const tol = Math.abs(lane.toSeq(1) - lane.toSeq(0)) + 1;
-		const inW0 = (t: number) => t >= s0 - tol && t <= e0 + tol;
-		// The dip curve: only where a dip is (where the envelope is 0 the curve is left as it is: D = +∞), and its
-		// continuous version (= ref at the dip window's edges) for finding crossings.
-		const D = (t: number) => {
-			const e = env(t);
-			return e < 0 ? clampV(ref + e) : Number.POSITIVE_INFINITY;
-		};
-		const Dc = (t: number) => (inW0(t) || env(t) < 0 ? clampV(ref + env(t)) : Number.POSITIVE_INFINITY);
-		const pts = new Set<number>([ws, we, s0, e0]);
+		const pts = new Set<number>([ws, we, ...ws0]);
 		for (const d of valid) {
 			const f = fadeOf(d);
 			for (const t of [d.start - f, d.start, d.end, d.end + f]) if (t > ws && t < we) pts.add(t);
@@ -375,17 +400,32 @@ export function mergeDips(
 					}
 			}
 		}
+		// Where the dip curve meets the clamp (a kink of the clamped dip): a breakpoint too.
+		{
+			const corners = [...pts].sort((x, y) => x - y);
+			for (let c = 0; c + 1 < corners.length; c++) {
+				const a = corners[c]!;
+				const b = corners[c + 1]!;
+				const ra = refAt(a);
+				const rb = refAt(b);
+				if (ra === undefined || rb === undefined || ra !== rb) continue;
+				const va = ra + env(a);
+				const vb = rb + env(b);
+				for (const lim of [cmin, cmax])
+					if ((va - lim) * (vb - lim) < 0) pts.add(a + ((b - a) * (va - lim)) / (va - vb));
+			}
+		}
 		for (let i = 0; i < kfs.length; i++) {
 			const k = kfs[i]!.time;
-			if (k > lo && k < hi) {
-				pts.add(lane.toSeq(k));
-				// a step: the value just before it too
+			if (k > lo && k <= hi) {
+				if (k < hi) pts.add(lane.toSeq(k));
+				// a step (also one at the range's edge): the value just before it too
 				if (i > 0 && kfs[i - 1]!.interpolation === 'hold')
 					for (const x of [k - 1, k + 1]) if (x > lo && x < hi) pts.add(lane.toSeq(x));
 			}
 		}
 		// curved segments inside: adaptive samples (within SAMPLE_TOLERANCE_DB of the curve)
-		const fl = (k: number) => evaluate(cur, k);
+		const fl = (k: number) => evaluate(anim, k);
 		for (let i = 0; i < kfs.length - 1; i++) {
 			if (straightFrom(kfs, i)) continue;
 			const a = Math.max(lo, kfs[i]!.time);

@@ -150,6 +150,28 @@ describe('layout and hit testing', () => {
 		);
 	});
 
+	it('a muted cue’s suspended mix record (writes: []) draws as stored, a written one at the frame it was written for', () => {
+		const sb = { seconds: 1, depthDb: -24 };
+		const c = cue('m', 70, { stopBefore: sb, muted: true });
+		const rec = (writes: unknown[], extra: Record<string, unknown> = {}) =>
+			({ stopBefore: { ...sb, frame: 40, writes, ...extra } }) as never;
+		const suspended = layoutCues([c], V, {
+			rate: R30,
+			selected: new Set(),
+			mix: { m: rec([], { suspended: true }) },
+		});
+		expect(suspended[0]!.stopBeforeWritten).toBe(false);
+		expect(suspended[0]!.stopBefore).toEqual({ x0: 400, x1: 700 });
+		const w = { target: 'trackVolume', trackId: 'trk_a', written: ['kf_1'], replaced: [] };
+		const written = layoutCues([{ ...c, muted: false }], V, {
+			rate: R30,
+			selected: new Set(),
+			mix: { m: rec([w]) },
+		});
+		expect(written[0]!.stopBeforeWritten).toBe(true);
+		expect(written[0]!.stopBefore).toEqual({ x0: 100, x1: 400 });
+	});
+
 	it('caps the glyphs drawn, keeping selected and heroes first', () => {
 		const cs = Array.from({ length: 50 }, (_, i) =>
 			cue(`c${String(i).padStart(2, '0')}`, i, { weight: i % 10 === 0 ? 'hero' : 'ambient' }),
