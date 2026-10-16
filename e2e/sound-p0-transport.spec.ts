@@ -173,8 +173,8 @@ async function pictureAnchor(
 			}
 			if (!ctx) return { anchor: Number.NaN, slip: Number.NaN };
 			let best = Number.POSITIVE_INFINITY;
-			let first: AudioTimestamp | null = null;
-			let last: AudioTimestamp | null = null;
+			// wall clock − audio clock (s) of every valid output timestamp, from the program's first one on
+			const drift: number[] = [];
 			// anime-allow: test-side wall clock bound of a sampling loop
 			while (performance.now() < end) {
 				await new Promise<number>((r) => requestAnimationFrame(r));
@@ -191,18 +191,14 @@ async function pictureAnchor(
 				const t = (o.contextTime ?? 0) + (now - (o.performanceTime ?? 0)) / 1000;
 				if (playing && frame > from && now - t0 >= skip) best = Math.min(best, t - (frame * den) / num);
 				// the clocks from the program's first valid output timestamp on (Chrome reports none just after a resume)
-				if (o.performanceTime && (o.contextTime ?? 0) > 0) {
-					first ??= o;
-					last = o;
-				}
+				if (o.performanceTime && (o.contextTime ?? 0) > 0)
+					drift.push(o.performanceTime / 1000 - (o.contextTime ?? 0));
 			}
 			// The picture runs on the wall clock, the program on the audio clock: when the audio thread falls behind (a
 			// starved host underruns), the two drift apart and their start offset is not what this measures.
-			const slip =
-				first && last
-					? ((last.performanceTime ?? 0) - (first.performanceTime ?? 0)) / 1000 -
-						((last.contextTime ?? 0) - (first.contextTime ?? 0))
-					: Number.NaN;
+			// (medians of the first and last five readings: Chrome's readings jitter by a few ms, more just after a resume)
+			const med = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] ?? Number.NaN;
+			const slip = drift.length >= 10 ? med(drift.slice(-5)) - med(drift.slice(0, 5)) : Number.NaN;
 			return { anchor: best, slip };
 		},
 		[ms, fps.num, fps.den, fromFrame, skipMs] as const,
