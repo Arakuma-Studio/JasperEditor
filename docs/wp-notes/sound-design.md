@@ -3921,6 +3921,8 @@ scope keys are WP3.3b's).
   packages/api packages/project/test/{proposals,proposals-preview-ids,sound-proposal-draft}.test.ts` → 14 files, 302
   passed; `pnpm vitest run --project @jasper/project --maxWorkers=4` → 158 files, 1 955 passed; `pnpm typecheck`, `tsc -p e2e/tsconfig.json`, `pnpm lint`, `pnpm notices --check`,
   `node scripts/i18n.mjs --check` (9 213 strings): pass.
+- Then merged `feat/sound-design` 61f33b61 (WP4.1a, `packages/audio-fx` only; no conflicts): `pnpm typecheck` and
+  `pnpm lint` passed.
 - **Real app** (built stack): `E2E_PORT=50103 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-proposal-ghosts.spec.ts`.
   The Phase 2 fixture plus a click bed on A1 (0.25 every 0.5 s from 0.1 s) and hit.wav (0.6 at 0.25 s); an agent
   (token, `x-jasper-agent`, no editor key) creates a 4-item proposal (SFX track; hits on the cut 87, the push 177, the
