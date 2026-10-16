@@ -261,7 +261,12 @@ export const SfxLevelsMeasureSchema = z.object({
 	/** Bed clusters rendered (merged event windows with their margins) and their total length (seconds). */
 	clusters: z.number().int(),
 	clusterSeconds: z.number(),
-	renders: z.object({ bed: z.number().int(), sound: z.number().int(), voice: z.number().int(), cached: z.number().int() }),
+	renders: z.object({
+		bed: z.number().int(),
+		sound: z.number().int(),
+		voice: z.number().int(),
+		cached: z.number().int(),
+	}),
 	/** Milliseconds measuring and solving. */
 	ms: z.number(),
 });
