@@ -373,7 +373,7 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		},
 	},
 	// Auto gain off (Essential Sound ▸ Sound Design ▸ Auto gain): the current gain becomes the user's own, so a
-	// rebalance or a delivery preset leaves it alone; auto: true hands it back to the default / solver level.
+	// rebalance or a delivery preset leaves it alone; auto: true hands it back (the gain becomes the default / solver level).
 	'soundDesign.setAutoGain': {
 		type: 'soundDesign.setAutoGain',
 		clipIds: [{ clipAt: { track: 'A1', at: 30 } }],
