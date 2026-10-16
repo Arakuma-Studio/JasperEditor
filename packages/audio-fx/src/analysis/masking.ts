@@ -19,7 +19,7 @@
 // reports `conflict:<earlier>/<later>`. After step 6 every constraint is checked again on the final gain (rounded to
 // 0.01 dB, which may miss a bound by at most 0.005 dB when the allowed interval holds no 0.01 dB step); a violation
 // without a reported conflict is a W_UNRESOLVED warning (the tests require none).
-import { BAND_FLOOR_DB, OCTAVE_BAND_CENTRES_HZ, sumBandsDb } from './bands.ts';
+import { BAND_FLOOR_DB, OCTAVE_BAND_CENTRES_HZ } from './bands.ts';
 
 // ── constants (sources and reasoning: wp-note "Phase 4 → WP4.1a masking solver") ─────────────────────────────────
 
@@ -168,9 +168,17 @@ const BANDS = OCTAVE_BAND_CENTRES_HZ.length;
 const DIALOGUE_BAND_INDICES = DIALOGUE_BANDS_HZ.map((hz) => OCTAVE_BAND_CENTRES_HZ.indexOf(hz));
 /** Highest level accepted in a band or loudness field (dB); more is treated as invalid. */
 const LEVEL_CEILING_DB = 200;
+const BIT = /* @__PURE__ */ Object.fromEntries(SOLVER_CONSTRAINTS.map((c, i) => [c, 1 << i])) as Record<
+	SolverConstraint,
+	number
+>;
+const USER_OFFSET_BIT = 1 << 6;
+const SILENT_BIT = 1 << 7;
 /** Tolerance of the bound comparisons (dB). */
 const EPS = 1e-9;
 
+/** 10^(dB/10): energy of a level. */
+const energy = (db: number): number => Math.exp(db * 0.230_258_509_299_404_6);
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 /** Round to the solver step, never −0. */
 const q = (x: number): number => {
@@ -198,92 +206,133 @@ type Clean = {
 	speech: boolean;
 	base: number;
 	offset: number;
+	/** Dominant band indices, their combined level in the sound and in the bed (dB). */
+	dom: number[];
+	soundDom: number;
+	bedDom: number;
+	/** min over the speech bands of (bed − sound), dB. */
+	speechRoom: number;
 };
+
+type Raw = Record<string, unknown>;
+
+function readStr(e: Raw, k: string, fallback: string, notes: string[]): string {
+	const v = e[k];
+	if (typeof v === 'string') return v;
+	if (v !== undefined && v !== null) notes.push(`${k} is not a string`);
+	return fallback;
+}
+
+function readBands(e: Raw, k: string, notes: string[]): number[] {
+	const v = e[k];
+	const arr = Array.isArray(v) ? (v as unknown[]) : null;
+	if (!arr) notes.push(`${k} is not an array`);
+	else if (arr.length !== BANDS) notes.push(`${k} has ${arr.length} bands, not ${BANDS}`);
+	const out = new Array<number>(BANDS);
+	for (let i = 0; i < BANDS; i++) {
+		const x = arr ? arr[i] : undefined;
+		if (typeof x === 'number' && Number.isFinite(x) && x <= LEVEL_CEILING_DB) out[i] = Math.max(BAND_FLOOR_DB, x);
+		else {
+			// −Infinity (silence) and a missing band are the floor quietly; NaN / +Infinity are reported
+			if (x !== Number.NEGATIVE_INFINITY && x !== undefined) notes.push(`${k}[${i}] is not a finite level`);
+			out[i] = BAND_FLOOR_DB;
+		}
+	}
+	return out;
+}
+
+/** A level field: the number, or null for null / undefined / −Infinity (unmeasured, silence); others reported. */
+function readLevel(e: Raw, k: string, notes: string[]): number | null {
+	const v = e[k];
+	if (isNum(v) && v <= LEVEL_CEILING_DB) return v;
+	if (v === null || v === undefined || v === Number.NEGATIVE_INFINITY) return null;
+	notes.push(`${k} is not a finite level`);
+	return null;
+}
+
+function readNum(e: Raw, k: string, fallback: number, optional: boolean, notes: string[]): number {
+	const v = e[k];
+	if (isNum(v)) return v;
+	if (!(optional && v === undefined)) notes.push(`${k} is not a finite number`);
+	return fallback;
+}
 
 /** Sanitise one event; `notes` collects what was replaced. */
 function clean(raw: unknown, index: number, notes: string[]): Clean {
-	const e = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+	const e = (raw && typeof raw === 'object' ? raw : {}) as Raw;
 	if (raw === null || typeof raw !== 'object') notes.push('not an object');
-	const str = (k: string): string => {
-		const v = e[k];
-		if (typeof v === 'string') return v;
-		if (v !== undefined && v !== null) notes.push(`${k} is not a string`);
-		return k === 'clipId' ? `#${index}` : '';
-	};
-	const bands = (k: string): number[] => {
-		const v = e[k];
-		const out: number[] = [];
-		if (!Array.isArray(v)) notes.push(`${k} is not an array`);
-		else if (v.length !== BANDS) notes.push(`${k} has ${v.length} bands, not ${BANDS}`);
-		for (let i = 0; i < BANDS; i++) {
-			const x = Array.isArray(v) ? v[i] : undefined;
-			if (isNum(x) && x <= LEVEL_CEILING_DB) out.push(Math.max(BAND_FLOOR_DB, x));
-			else {
-				// −Infinity (silence) and a missing band are the floor quietly; NaN / +Infinity are reported
-				if (x !== Number.NEGATIVE_INFINITY && x !== undefined) notes.push(`${k}[${i}] is not a finite level`);
-				out.push(BAND_FLOOR_DB);
-			}
-		}
-		return out;
-	};
-	const level = (k: string, silentOk: boolean): number | null => {
-		const v = e[k];
-		if (isNum(v) && v <= LEVEL_CEILING_DB) return v;
-		if (v === null || v === undefined || (silentOk && v === Number.NEGATIVE_INFINITY)) return null;
-		notes.push(`${k} is not a finite level`);
-		return null;
-	};
-	const num = (k: string, fallback: number, optional = false): number => {
-		const v = e[k];
-		if (isNum(v)) return v;
-		if (!(optional && v === undefined)) notes.push(`${k} is not a finite number`);
-		return fallback;
-	};
 	let weight = e.weight as SolverWeight;
 	if (!SOLVER_WEIGHTS.includes(weight)) {
 		notes.push('weight is not hero, support or ambient (support used)');
 		weight = 'support';
 	}
-	let start = num('startSec', 0);
-	let end = num('endSec', start);
+	let start = readNum(e, 'startSec', 0, false, notes);
+	let end = readNum(e, 'endSec', start, false, notes);
 	if (end < start) {
 		notes.push('endSec is before startSec (swapped)');
 		[start, end] = [end, start];
 	}
 	if (typeof e.speechOverlap !== 'boolean' && e.speechOverlap !== undefined) notes.push('speechOverlap is not a boolean');
-	const base = Math.max(-1000, Math.min(1000, num('baseGainDb', 0)));
-	const offset = Math.max(-1000, Math.min(1000, num('userOffsetDb', 0, true)));
+	const base = Math.max(-1000, Math.min(1000, readNum(e, 'baseGainDb', 0, false, notes)));
+	const offset = Math.max(-1000, Math.min(1000, readNum(e, 'userOffsetDb', 0, true, notes)));
+	const clipId = readStr(e, 'clipId', `#${index}`, notes);
+	const soundId = readStr(e, 'soundId', '', notes);
+	const type = readStr(e, 'type', '', notes);
+	const sound = readBands(e, 'soundBandsDb', notes);
+	const bed = readBands(e, 'bedBandsDb', notes);
+	const soundPeak = readLevel(e, 'soundPeakLu', notes);
+	const truePeak = readLevel(e, 'truePeakDb', notes);
+	const bedPeak = readLevel(e, 'bedLocalPeakLu', notes);
+	const dom = dominant(sound);
+	// constraint 5 bound: 1 + min over the speech bands of (bed − sound)
+	let speechRoom = Number.POSITIVE_INFINITY;
+	for (const b of DIALOGUE_BAND_INDICES) speechRoom = Math.min(speechRoom, bed[b]! - sound[b]!);
 	return {
-		clipId: str('clipId'),
-		soundId: str('soundId'),
-		type: str('type'),
+		clipId,
+		soundId,
+		type,
 		weight,
 		start,
 		end,
-		sound: bands('soundBandsDb'),
-		bed: bands('bedBandsDb'),
-		soundPeak: level('soundPeakLu', true),
-		truePeak: level('truePeakDb', true),
-		bedPeak: level('bedLocalPeakLu', true),
+		sound,
+		bed,
+		soundPeak,
+		truePeak,
+		bedPeak,
 		speech: e.speechOverlap === true,
 		base,
 		offset,
+		dom,
+		soundDom: dom.length ? levelIn(sound, dom) : BAND_FLOOR_DB,
+		bedDom: dom.length ? levelIn(bed, dom) : BAND_FLOOR_DB,
+		speechRoom,
 	};
 }
 
 /** Dominant band indices: the strongest, plus the second when its energy share is ≥ {@link DOMINANT_SHARE}. */
 function dominant(bands: number[]): number[] {
 	let total = 0;
-	for (const b of bands) if (b > BAND_FLOOR_DB) total += 10 ** (b / 10);
-	if (!(total > 0)) return [];
-	const order = bands
-		.map((b, i) => ({ b, i }))
-		.filter((x) => x.b > BAND_FLOOR_DB)
-		.sort((x, y) => y.b - x.b || x.i - y.i);
-	const out = [order[0]!.i];
-	const second = order[1];
-	if (second && 10 ** (second.b / 10) / total >= DOMINANT_SHARE) out.push(second.i);
-	return out;
+	let i1 = -1;
+	let i2 = -1;
+	for (let i = 0; i < bands.length; i++) {
+		const b = bands[i]!;
+		if (!(b > BAND_FLOOR_DB)) continue;
+		total += energy(b);
+		if (i1 < 0 || b > bands[i1]!) {
+			i2 = i1;
+			i1 = i;
+		} else if (i2 < 0 || b > bands[i2]!) i2 = i;
+	}
+	if (i1 < 0 || !(total > 0)) return [];
+	if (i2 >= 0 && energy(bands[i2]!) / total >= DOMINANT_SHARE) return [i1, i2];
+	return [i1];
+}
+
+/** Combined level (dB) of the bands `idx` of `bands`. */
+function levelIn(bands: number[], idx: number[]): number {
+	let e = 0;
+	for (const i of idx) e += energy(bands[i]!);
+	return e > 0 ? Math.max(BAND_FLOOR_DB, 10 * Math.log10(e)) : BAND_FLOOR_DB;
 }
 
 const median = (xs: number[]): number => {
@@ -299,16 +348,19 @@ type State = {
 	loBy: SolverConstraint;
 	hi: number;
 	hiBy: SolverConstraint;
-	limited: Set<SolverLimit>;
+	/** Bit i: constraint i moved the gain; {@link USER_OFFSET_BIT}, {@link SILENT_BIT}. */
+	limited: number;
 	conflicts: [SolverConstraint, SolverConstraint][];
 	/** Bounds recorded by steps 3 and 4 (the re-verification checks them). */
-	shadowHi: number | null;
-	consistency: [number, number][];
+	shadowHi: number;
+	/** The consistency windows' intersection [consLo, consHi] (±Infinity when not a repeat). */
+	consLo: number;
+	consHi: number;
 };
 
 function conflict(st: State, kept: SolverConstraint, lost: SolverConstraint): void {
-	if (!st.conflicts.some(([a, b]) => a === kept && b === lost)) st.conflicts.push([kept, lost]);
-	st.limited.add(`conflict:${kept}/${lost}`);
+	for (const [a, b] of st.conflicts) if (a === kept && b === lost) return;
+	st.conflicts.push([kept, lost]);
 }
 
 /** Step `by` allows gains ≤ `bound`. */
@@ -320,13 +372,13 @@ function upper(st: State, by: SolverConstraint, bound: number): void {
 		}
 		if (st.g > st.hi + EPS) {
 			st.g = st.hi;
-			st.limited.add(by);
+			st.limited |= BIT[by];
 		}
 		return;
 	}
 	// the bound is under what an earlier step requires: the earlier one is kept
 	conflict(st, st.loBy, by);
-	if (st.g > st.lo + EPS) st.limited.add(by);
+	if (st.g > st.lo + EPS) st.limited |= BIT[by];
 	st.g = st.lo;
 	st.hi = st.lo;
 	st.hiBy = st.loBy;
@@ -341,18 +393,16 @@ function lower(st: State, by: SolverConstraint, bound: number): void {
 		}
 		if (st.g < st.lo - EPS) {
 			st.g = st.lo;
-			st.limited.add(by);
+			st.limited |= BIT[by];
 		}
 		return;
 	}
 	conflict(st, st.hiBy, by);
-	if (st.g < st.hi - EPS) st.limited.add(by);
+	if (st.g < st.hi - EPS) st.limited |= BIT[by];
 	st.g = st.hi;
 	st.lo = st.hi;
 	st.loBy = st.hiBy;
 }
-
-const levelIn = (bands: number[], idx: number[]): number => sumBandsDb(idx.map((i) => bands[i]!));
 
 /** Indices of the support events within {@link HERO_SHADOW_SEC} of a hero (gap between the windows). */
 function shadowed(states: State[]): Set<number> {
@@ -433,22 +483,22 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 			loBy: 'clamp',
 			hi: Number.POSITIVE_INFINITY,
 			hiBy: 'clamp',
-			limited: new Set(),
+			limited: 0,
 			conflicts: [],
-			shadowHi: null,
-			consistency: [],
+			shadowHi: Number.POSITIVE_INFINITY,
+			consLo: Number.NEGATIVE_INFINITY,
+			consHi: Number.POSITIVE_INFINITY,
 		};
-		const dom = dominant(ev.sound);
-		if (dom.length === 0) {
+		if (ev.dom.length === 0) {
 			st.g = ev.base + ev.offset;
-			st.limited.add('silent-sound');
+			st.limited |= SILENT_BIT;
 			warnings.push({
 				code: 'W_SILENT_SOUND',
 				clipId: ev.clipId,
 				message: `${ev.clipId}: the sound has no energy in 125 Hz … 8 kHz; it keeps its base gain`,
 			});
 		} else {
-			const need = levelIn(ev.bed, dom) + TARGET_LIFT_DB[ev.weight] - levelIn(ev.sound, dom);
+			const need = ev.bedDom + TARGET_LIFT_DB[ev.weight] - ev.soundDom;
 			st.g = Math.max(ev.base, need) + ev.offset;
 		}
 		if (ev.soundPeak === null || ev.truePeak === null)
@@ -477,7 +527,7 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 		st.lo = SOLVER_GAIN_MIN_DB;
 		st.hi = SOLVER_GAIN_MAX_DB;
 		const g = Math.min(SOLVER_GAIN_MAX_DB, Math.max(SOLVER_GAIN_MIN_DB, st.g));
-		if (Math.abs(g - st.g) > EPS) st.limited.add('clamp');
+		if (Math.abs(g - st.g) > EPS) st.limited |= BIT.clamp;
 		st.g = g;
 	}
 
@@ -503,7 +553,8 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 			const m = median(grp.map((i) => states[i]!.g));
 			for (const i of grp) {
 				const st = states[i]!;
-				st.consistency.push([m - CONSISTENCY_DB, m + CONSISTENCY_DB]);
+				st.consLo = Math.max(st.consLo, m - CONSISTENCY_DB);
+				st.consHi = Math.min(st.consHi, m + CONSISTENCY_DB);
 				upper(st, 'consistency', m + CONSISTENCY_DB);
 				lower(st, 'consistency', m - CONSISTENCY_DB);
 			}
@@ -511,33 +562,40 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 	}
 
 	// ── 5 dialogue guard ─────────────────────────────────────────────────────────────────────────────────────────
-	const speechLift = (ev: Clean, g: number): number =>
-		Math.max(...DIALOGUE_BAND_INDICES.map((b) => ev.sound[b]! + g - ev.bed[b]!));
-	const speechBands = (bands: number[]): boolean => bands.some((b) => DIALOGUE_BAND_INDICES.includes(b));
-	const clearTypes = new Set<string>();
-	const typeDominants = new Map<string, boolean>();
+	const speechLift = (ev: Clean, g: number): number => {
+		let m = Number.NEGATIVE_INFINITY;
+		for (const b of DIALOGUE_BAND_INDICES) m = Math.max(m, ev.sound[b]! + g - ev.bed[b]!);
+		return m;
+	};
+	const inSpeechBands = (dom: number[]): boolean => {
+		for (const b of dom) if (DIALOGUE_BAND_INDICES.includes(b)) return true;
+		return false;
+	};
+	// types whose every event has its dominant band outside 1–4 kHz (the dialogue advice)
+	const typeInSpeech = new Map<string, boolean>();
 	for (const st of states) {
-		const dom = dominant(st.ev.sound);
-		if (!st.ev.type || dom.length === 0) continue;
-		const inSpeech = speechBands(dom);
-		typeDominants.set(st.ev.type, (typeDominants.get(st.ev.type) ?? false) || inSpeech);
+		const { ev } = st;
+		if (!ev.type || ev.dom.length === 0) continue;
+		typeInSpeech.set(ev.type, (typeInSpeech.get(ev.type) ?? false) || inSpeechBands(ev.dom));
 	}
-	for (const [t, inSpeech] of typeDominants) if (!inSpeech) clearTypes.add(t);
+	let clearTypes: string | null = null;
 	for (const st of states) {
 		const { ev } = st;
 		if (!ev.speech) continue;
-		const bound = DIALOGUE_LIFT_DB + Math.min(...DIALOGUE_BAND_INDICES.map((b) => ev.bed[b]! - ev.sound[b]!));
-		upper(st, 'dialogue', bound);
-		const dom = dominant(ev.sound);
-		if (speechBands(dom)) {
-			const alt = [...clearTypes].sort();
+		upper(st, 'dialogue', DIALOGUE_LIFT_DB + ev.speechRoom);
+		if (inSpeechBands(ev.dom)) {
+			if (clearTypes === null)
+				clearTypes = [...typeInSpeech]
+					.filter(([, inSpeech]) => !inSpeech)
+					.map(([t]) => t)
+					.sort()
+					.join(', ');
+			const bands = ev.dom.map((b) => `${OCTAVE_BAND_CENTRES_HZ[b]} Hz`).join(', ');
 			warnings.push({
 				code: 'W_DIALOGUE_BAND',
 				clipId: ev.clipId,
-				message: `${ev.clipId}: during speech its dominant band (${dom
-					.map((b) => `${OCTAVE_BAND_CENTRES_HZ[b]} Hz`)
-					.join(', ')}) is in 1–4 kHz; prefer a type whose dominant band is outside 1–4 kHz${
-					alt.length ? ` (here: ${alt.join(', ')})` : ''
+				message: `${ev.clipId}: during speech its dominant band (${bands}) is in 1–4 kHz; prefer a type whose dominant band is outside 1–4 kHz${
+					clearTypes ? ` (here: ${clearTypes})` : ''
 				}`,
 			});
 		}
@@ -562,8 +620,8 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 		const violated: SolverConstraint[] = [];
 		if (g < SOLVER_GAIN_MIN_DB - tol || g > SOLVER_GAIN_MAX_DB + tol) violated.push('clamp');
 		if (ev.soundPeak !== null && ev.soundPeak + g - bedRef(ev) > BED_CAP_LU[ev.weight] + tol) violated.push('bed-cap');
-		if (st.shadowHi !== null && g > st.shadowHi + tol) violated.push('hero-shadow');
-		if (st.consistency.some(([a, b]) => g < a - tol || g > b + tol)) violated.push('consistency');
+		if (g > st.shadowHi + tol) violated.push('hero-shadow');
+		if (g < st.consLo - tol || g > st.consHi + tol) violated.push('consistency');
 		if (ev.speech && speechLift(ev, g) > DIALOGUE_LIFT_DB + tol) violated.push('dialogue');
 		if (g > (ev.truePeak === null ? 0 : ceiling - ev.truePeak) + tol) violated.push('headroom');
 		for (const c of violated) {
@@ -582,13 +640,16 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 				message: `${ev.clipId}: ${lost} could not hold without breaking ${kept}; ${kept} was kept`,
 			});
 
-		const dom = dominant(ev.sound);
+		const { dom } = ev;
 		const target = TARGET_LIFT_DB[ev.weight];
-		const achieved = dom.length ? levelIn(ev.sound, dom) + g - levelIn(ev.bed, dom) : null;
-		if (achieved !== null && ev.offset < 0 && achieved < target - 0.005 && st.limited.size === 0)
-			st.limited.add('user-offset');
-		const limitedBy = orderLimits(st.limited);
-		gains[ev.clipId] = g;
+		const achieved = dom.length ? ev.soundDom + g - ev.bedDom : null;
+		if (achieved !== null && ev.offset < 0 && achieved < target - 0.005 && st.limited === 0 && !st.conflicts.length)
+			st.limited |= USER_OFFSET_BIT;
+		const limitedBy = limits(st.limited, st.conflicts);
+		// an own data property even for the id "__proto__" (an assignment would set the prototype)
+		if (ev.clipId === '__proto__')
+			Object.defineProperty(gains, ev.clipId, { value: g, enumerable: true, writable: true, configurable: true });
+		else gains[ev.clipId] = g;
 		return {
 			clipId: ev.clipId,
 			gainDb: g,
@@ -605,15 +666,14 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 	return { gains, events: results, warnings };
 }
 
-/** Limits in a fixed order: constraints in solver order, then conflicts, then the others. */
-function orderLimits(set: Set<SolverLimit>): SolverLimit[] {
-	const rank = (l: SolverLimit): number => {
-		const i = (SOLVER_CONSTRAINTS as readonly string[]).indexOf(l);
-		if (i >= 0) return i;
-		if (l.startsWith('conflict:')) return 10;
-		return l === 'user-offset' ? 20 : 21;
-	};
-	return [...set].sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
+/** Limits in a fixed order: constraints in solver order, then conflicts (in the order they arose), then the others. */
+function limits(bits: number, conflicts: [SolverConstraint, SolverConstraint][]): SolverLimit[] {
+	const out: SolverLimit[] = [];
+	for (let i = 0; i < SOLVER_CONSTRAINTS.length; i++) if (bits & (1 << i)) out.push(SOLVER_CONSTRAINTS[i]!);
+	for (const [kept, lost] of conflicts) out.push(`conflict:${kept}/${lost}`);
+	if (bits & USER_OFFSET_BIT) out.push('user-offset');
+	if (bits & SILENT_BIT) out.push('silent-sound');
+	return out;
 }
 
 function reasonText(
