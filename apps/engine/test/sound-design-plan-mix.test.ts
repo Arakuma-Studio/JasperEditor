@@ -3,7 +3,7 @@
 // requiring its placement; deterministic by seed; the editor's accept applies all of it in one transaction. The same
 // fixture as the plan-levels test (the Phase 2 fixture + music on A1 + dialogue 4–8 s on A2, an indexed kit).
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { cpus, loadavg, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type EngineJob, type SoundDesignPlanResult, SoundDesignPlanResultSchema } from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
@@ -159,8 +159,11 @@ afterAll(async () => {
 	}
 });
 
+/** Real-engine plans render the whole sequence several times: the timeout follows the host's load (a shared host). */
+const LONG = 600_000 * Math.max(1, Math.ceil(loadavg()[0]! / Math.max(1, cpus().length) / 2));
+
 describe('sound-design plan: room glue, delivery, stop-before, build (real engine)', {
-	timeout: 600_000,
+	timeout: LONG,
 }, () => {
 	const STYLE = { seed: 11, roomGlue: true, stopBefore: true, build: true, delivery: 'web' } as const;
 	const get = async (id: string) =>
