@@ -3364,7 +3364,28 @@ descriptors (`defaultSfxLevel`, `packages/project/src/sound/level.ts`):
 
 #### Gate and integration
 
-PENDING
+Merged `feat/sound-design` 3e5f6f33 (Phase 2 verification A) into this branch: conflicts in the place / swap handler and
+schema docs (kept both: A's fades / alternatives / `trimmedHeadSec` and B's default level / `gainDb`), `fill.ts` (A's
+`alternatives.length > 1`, B's `gainOffsetDb`), gaps.md and this note (both sections kept). Then, on the merged code
+(shared host, load 46–63):
+
+- `pnpm typecheck`: passed (all workspaces); `pnpm exec tsc --noEmit -p e2e/tsconfig.json`: passed; `pnpm lint`:
+  passed (Biome, tokens, anime, layers, assets); `pnpm notices --check`: current; `pnpm build`: passed.
+- `pnpm vitest run packages/project/test/sound-*.test.ts packages/project/test/essential.test.ts
+  packages/project/test/invariants.test.ts packages/mg-templates/test packages/compositions/test/audio-primed-clock.test.ts
+  packages/compositions/test/audio-preview-transport.test.ts apps/web/test/sound-*.test.ts* --maxWorkers=2`: 44 files,
+  468 passed, 2 skipped.
+- `pnpm vitest run apps/engine/test/sound-design-cues.test.ts apps/engine/test/sound-placement-export.test.ts
+  apps/engine/test/sounds-provenance.test.ts apps/engine/test/sounds-unit.test.ts apps/engine/test/sounds-routes.test.ts
+  apps/mcp/test/sound-guide.test.ts apps/mcp/test/readme-tools.test.ts apps/mcp/test/conventions.test.ts
+  apps/mcp/test/sound-examples.test.ts --maxWorkers=1`: 75 passed (after `sounds-routes` learnt the provenance's new
+  `truePeakDb`); `apps/mcp/test/sound.test.ts apps/mcp/test/sound-cues.test.ts apps/mcp/test/sound-levels.test.ts`:
+  17 passed.
+- Real app, built stack: `e2e/sound-cues.spec.ts e2e/sound-fill.spec.ts e2e/sound-library.spec.ts
+  e2e/sound-p2-done.spec.ts`: 6 passed. `sound-p2-done`'s export (filled through the UI, default levels): true peak
+  **−7.5 dBTP**, −23.6 LUFS (verification A measured +3 dBTP with 0 dB inserts); every aligned point still within
+  ±1 sample. The Phase 0 specs: see §1 (50 + 50 passed).
+- The full `pnpm test` is verification A's gate; not rerun here.
 
 ## Phase 3: proposals and review
 
