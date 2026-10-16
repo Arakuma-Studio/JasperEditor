@@ -31,13 +31,17 @@ import {
 } from '../panels/timeline/model/layout.ts';
 import { frameToX, type Viewport } from '../panels/timeline/model/viewport.ts';
 import { cuesOf } from '../sound/cues/model.ts';
+import { problemText } from './stale-text.ts';
 
 /** States a ghost can show (applied items are in the document: no ghost). */
 export type GhostState = Exclude<ReviewItemState, 'applied'>;
 
 export type GhostClip = {
 	key: string;
+	/** The review item it is shown under (a setup item's ghosts are folded into the first item that needs it). */
 	itemId: string;
+	/** The item whose own commands made it (differs from `itemId` for a folded setup item's ghost). */
+	sourceItemId: string;
 	clipId: string;
 	trackId: string;
 	region: 'video' | 'audio';
@@ -53,6 +57,7 @@ export type GhostClip = {
 export type GhostRemoval = {
 	key: string;
 	itemId: string;
+	sourceItemId: string;
 	clipId: string;
 	trackId: string;
 	start: number;
@@ -163,12 +168,13 @@ export function buildGhostModel(input: {
 		s[what]++;
 		span.set(itemId, s);
 	};
-	const ghostClip = (itemId: string, c: Clip, change: 'created' | 'changed') => {
+	const ghostClip = (itemId: string, sourceItemId: string, c: Clip, change: 'created' | 'changed') => {
 		const r = region(after, c.trackId);
 		if (!r || !finite(c.start) || !finite(c.duration) || c.duration <= 0) return;
 		out.clips.push({
 			key: `${itemId}:${c.id}`,
 			itemId,
+			sourceItemId,
 			clipId: c.id,
 			trackId: c.trackId,
 			region: r,
@@ -181,11 +187,12 @@ export function buildGhostModel(input: {
 		});
 		touch(itemId, c.start, c.start + c.duration, 'c');
 	};
-	const removal = (itemId: string, c: Clip, change: 'changed' | 'deleted') => {
+	const removal = (itemId: string, sourceItemId: string, c: Clip, change: 'changed' | 'deleted') => {
 		if (!finite(c.start) || !finite(c.duration)) return;
 		out.removals.push({
 			key: `${itemId}:${c.id}:rm`,
 			itemId,
+			sourceItemId,
 			clipId: c.id,
 			trackId: c.trackId,
 			start: c.start,
@@ -199,7 +206,7 @@ export function buildGhostModel(input: {
 		for (const id of g.created) {
 			const c = after.clips[id] as Clip | undefined;
 			if (c && !before.clips[id]) {
-				ghostClip(itemId, c, 'created');
+				ghostClip(itemId, rawId, c, 'created');
 				continue;
 			}
 			const tr = findTrack(after, id);
@@ -226,8 +233,8 @@ export function buildGhostModel(input: {
 			const a = before.clips[id] as Clip | undefined;
 			const b = after.clips[id] as Clip | undefined;
 			if (a && b) {
-				removal(itemId, a, 'changed');
-				ghostClip(itemId, b, 'changed');
+				removal(itemId, rawId, a, 'changed');
+				ghostClip(itemId, rawId, b, 'changed');
 				continue;
 			}
 			const ca = cuesBefore.get(id);
@@ -239,7 +246,7 @@ export function buildGhostModel(input: {
 		}
 		for (const id of g.deleted) {
 			const a = before.clips[id] as Clip | undefined;
-			if (a) removal(itemId, a, 'deleted');
+			if (a) removal(itemId, rawId, a, 'deleted');
 		}
 	}
 	out.tracks.sort((x, y) => (x.region === y.region ? x.index - y.index : x.region === 'video' ? -1 : 1));
@@ -307,8 +314,25 @@ export type GhostRow = {
 };
 
 /**
- * Rows of the tracks the proposal creates: below the last audio track (where the master row would start) and
- * above the top video track, in track order, at the default heights.
+ * The room the ghost lanes need in each region (px): pass it to `computeLayout` (`extraVideoPx` / `extraAudioPx`) so
+ * the regions' scroll ranges include the lanes `ghostTrackRows` draws (and shrink again when the review ends).
+ */
+export function ghostLaneExtent(model: Pick<GhostModel, 'tracks'> | null | undefined): {
+	videoPx: number;
+	audioPx: number;
+} {
+	let video = 0;
+	let audio = 0;
+	for (const tr of model?.tracks ?? []) {
+		if (tr.region === 'video') video++;
+		else if (tr.region === 'audio') audio++;
+	}
+	return { videoPx: video * DEFAULT_VIDEO_PX, audioPx: audio * DEFAULT_AUDIO_PX };
+}
+
+/**
+ * Rows of the tracks the proposal creates: below the last audio track (the room `computeLayout` keeps for them before
+ * the master row, see `ghostLaneExtent`) and above the top video track, in track order, at the default heights.
  */
 export function ghostTrackRows(model: GhostModel, layout: TrackAreaLayout): GhostRow[] {
 	const rows: GhostRow[] = [];
@@ -327,6 +351,28 @@ export function ghostTrackRows(model: GhostModel, layout: TrackAreaLayout): Ghos
 		rows.push({ trackId: tr.trackId, region: 'video', y: vy, height: DEFAULT_VIDEO_PX, track: tr });
 	}
 	return rows;
+}
+
+/**
+ * The row (track or ghost lane) an item's ghost is drawn on: its earliest ghost clip's, else its new track's lane;
+ * null when it shows nothing on a row (a cue only). The Timeline scrolls it into view when the item becomes current.
+ */
+export function ghostItemRow(
+	model: GhostModel,
+	layout: TrackAreaLayout,
+	itemId: string,
+): { trackId: string; kind: 'video' | 'audio'; index: number; y: number; height: number } | null {
+	const first = model.clips
+		.filter((c) => c.itemId === itemId)
+		.sort((a, b) => a.start - b.start || (a.trackId < b.trackId ? -1 : 1))[0];
+	const trackId = first?.trackId ?? model.tracks.find((tr) => tr.itemId === itemId)?.trackId;
+	if (!trackId) return null;
+	const real = rowOf(layout, trackId);
+	if (real) return real;
+	const lane = ghostTrackRows(model, layout).find((r) => r.trackId === trackId);
+	return lane
+		? { trackId, kind: lane.region, index: lane.track.index, y: lane.y, height: lane.height }
+		: null;
 }
 
 export type GhostRect = { x: number; y: number; w: number; h: number; region: 'video' | 'audio' };
@@ -458,11 +504,13 @@ function metaFacts(meta: unknown): string[] {
 }
 
 /**
- * The why-line of an item: the creator's reason (`meta.why`, else `meta.reason`), then facts computed from the
- * preview (what lands where: track, timecode, length, gain) and the creator's own `meta.facts`, then why it is stale.
+ * The why-line of an item: the creator's reason for the chosen command set (the selected alternative's `meta.why`,
+ * else the item's `meta.why` / `meta.reason`), then facts computed from the preview of the item's own commands (what
+ * lands where: track, timecode, length, gain) and the creator's own `meta.facts`, then why it is stale.
  */
 export function whyLines(
-	item: Pick<ReviewItem, 'id' | 'meta' | 'state' | 'reason' | 'note'>,
+	item: Pick<ReviewItem, 'id' | 'meta' | 'state' | 'reason' | 'note' | 'problem'> &
+		Partial<Pick<ReviewItem, 'selectedMeta' | 'selectedAlternative'>>,
 	model: GhostModel,
 	seq: Sequence,
 	previewSeq: Sequence | undefined,
@@ -471,8 +519,10 @@ export function whyLines(
 	const fps = seq.settings.frameRate.num / seq.settings.frameRate.den;
 	const facts: string[] = [];
 	const lookup = previewSeq ?? seq;
+	// what the item's own commands (its chosen set) place: not what a setup item it requires changes (a delivery preset
+	// re-levels the music; that is "Comes with", not this item's sound)
 	for (const c of model.clips) {
-		if (c.itemId !== item.id || facts.length >= 3) continue;
+		if (c.itemId !== item.id || c.sourceItemId !== item.id || facts.length >= 3) continue;
 		const where = trackDisplay(lookup, c.trackId, c.newTrack);
 		const secs = fps > 0 ? (c.duration / fps).toFixed(2) : String(c.duration);
 		const gain = c.gainDb !== null ? `, ${c.gainDb >= 0 ? '+' : ''}${c.gainDb.toFixed(1)} dB` : '';
@@ -491,12 +541,20 @@ export function whyLines(
 		if (tr.itemId === item.id) facts.push(t('New track {0} · {1}', tr.label, tr.name));
 	for (const q of model.cues)
 		if (q.itemId === item.id && facts.length < 5) facts.push(t('Cue at {0}', tc(q.cue.frame)));
-	facts.push(...metaFacts(item.meta));
-	const problem =
-		item.state === 'stale' || item.state === 'invalid'
-			? (item.reason ?? (item.state === 'stale' ? t('Changed since it was proposed') : t('Does not apply')))
-			: null;
-	return { why: metaText(item.meta, 'why') ?? metaText(item.meta, 'reason'), facts, problem };
+	// the chosen command set's meta: a selected alternative's (it names its own sound), else the item's
+	const meta =
+		(item.selectedAlternative ?? 0) > 0 && item.selectedMeta !== undefined ? item.selectedMeta : item.meta;
+	facts.push(...metaFacts(meta));
+	const problem = problemText(item, seq);
+	return {
+		why:
+			metaText(meta, 'why') ??
+			metaText(meta, 'reason') ??
+			metaText(item.meta, 'why') ??
+			metaText(item.meta, 'reason'),
+		facts,
+		problem,
+	};
 }
 
 /** "A4", or "A4 · SFX 1 (new)" for a track the proposal creates. */

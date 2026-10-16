@@ -1687,6 +1687,14 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 							.max(4)
 							.optional()
 							.describe('Library sources to pick from (default all; synth always ranks last)'),
+						cueSources: z
+							.array(z.enum(CUE_DERIVE_SOURCES))
+							.min(1)
+							.max(CUE_DERIVE_SOURCES.length)
+							.optional()
+							.describe(
+								`Where derived cues come from with cues "auto" (default every source, as find_sound_cues): ${CUE_DERIVE_SOURCE_LIST}. Stored cues are planned whatever their source`,
+							),
 						respectDialogue: z
 							.boolean()
 							.optional()

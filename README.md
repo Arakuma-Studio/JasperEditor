@@ -509,9 +509,10 @@ Tools (347; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `list_sound_credits` · `add_sound_folder` `remove_sound_folder` `rescan_sound_library` · cues: `find_sound_cues`
   (derived from the edit) `set_sound_cues` `place_sound` (peak-exact, layers, alternates; proposes unless mode
   "apply") `swap_sound` `align_peak` · `plan_sound_design` (a whole pass as one proposal, gains solved against the
-  bed; style options room glue, stop-before, build, delivery) · `rebalance_sfx` (masking solver: each sound effect
-  clears the bed by its target lift, with what limited it) · `apply_delivery` (web / podcast / R128 / A/85: Mix
-  loudness, Auto-Match by type, ducking, measured) `set_room_glue` (a shared "SFX Room" reverb)
+  bed; style options room glue, stop-before, build, delivery; `style.cueSources` picks where derived cues come from) ·
+  `rebalance_sfx` (masking solver: each sound effect clears the bed by its target lift, with what limited it) ·
+  `apply_delivery` (web / podcast / R128 / A/85: Mix loudness, Auto-Match by type, ducking, measured) `set_room_glue` (a
+  shared "SFX Room" reverb)
   (`docs/specs/12-sound-design.md`, `docs/wp-notes/sound-design.md`).
 - Proposals (reviewed and applied by the user in the editor; one undo step): `list_proposals` `get_proposal` (with a
   ghost table) `wait_for_proposal` (decisions and notes) `accept_proposal` (policy-gated for agents) `reject_proposal`.
@@ -651,12 +652,17 @@ alternatives?, meta?}]}` validates every item by a dry run (failing ones are sto
 `GET …/proposals[/<proposalId>]` reads them; `POST …/<proposalId>/accept {itemIds: [...] | "all", partial?}` applies
 the items and what they require as one transaction ("Accept <title> (n of m)"); `reject`, `reopen`, `note`, `select`
 and `DELETE` record the review. A client with only the token may accept sound-design proposals only where the user
-allowed it ("Allow agents to apply sound proposals"), otherwise `403 APPROVAL_REQUIRED`. Reading a proposal again and
+allowed it ("Allow agents to apply sound proposals"), otherwise `403 APPROVAL_REQUIRED`; it may withdraw items
+(`reject`) or delete a proposal, while `reopen`, `note` and `select` are the reviewer's (editor key only). An accepted
+item is reopened only once its accept is undone (`409 PROPOSAL_STILL_APPLIED` while what it created is in the
+document). A stale item's `reason` names what changed with timecodes ("The cut cue at 00:00:03:00 moved to
+00:00:03:10"); the accept's `stale[].problem` carries the same, structured. Reading a proposal again and
 again without `?revalidate=1` (what `wait_for_proposal` does) marks the agent as waiting for the review: the list's
 `waiting: {agent, since}` and the event `proposal.changed` with `change: "waiting"` tell the editor, which shows "<agent>
 is waiting for your review" on the proposal card and the review bar. `POST …/<proposalId>/applied
-{itemIds, revision, refs}` is the editor window's own: a Redo of an undone accept records the items accepted again
-(agents get `403 APPROVAL_REQUIRED`).
+{itemIds, revision, refs, created?}` is the editor window's own: a Redo of an undone accept records the items accepted
+again (agents get `403 APPROVAL_REQUIRED`; `409 PROPOSAL_NOT_APPLIED` when the document does not have what the accept
+created).
 `POST /api/sound-design/plan {projectId, sequenceId?, range?, cues?: "auto" | [cueIds], style?: {density, palette,
 sources, cueSources, respectDialogue, seed, alternatives, roomGlue, stopBefore, build, delivery}, maxCues?, label?}`
 (`cueSources`: where derived cues come from, the Suggest Cues… sources; default all) starts a `sound-design` job (202);

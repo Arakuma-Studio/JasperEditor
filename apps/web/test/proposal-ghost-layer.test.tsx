@@ -6,9 +6,11 @@ import type { Sequence, SoundCue } from '@jasper/project';
 import { proposalsFor } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { registerAllCommands } from '../src/commands/index.ts';
 import { computeLayout } from '../src/panels/timeline/model/layout.ts';
 import { createTimelineUiStore } from '../src/panels/timeline/state/ui-store.ts';
+import { TimelinePanel } from '../src/panels/timeline/TimelinePanel.tsx';
 import { reviewAnnouncer } from '../src/proposals/actions.ts';
 import { GhostTrackHeaders, ProposalGhostLayer } from '../src/proposals/GhostLayer.tsx';
 import { useGhostModel } from '../src/proposals/state.ts';
@@ -258,5 +260,83 @@ describe('ghost cues on the Cue Seam', () => {
 		expect(onGhostFocus).toHaveBeenCalledWith('cue_ghost~ghost');
 		fireEvent.keyDown(lane, { key: 'Enter' });
 		expect(onGhost).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('ghost lanes in a short Timeline', () => {
+	beforeAll(() => registerAllCommands());
+	/** Ctrl+wheel (vertical scroll off the Mac) over the audio region (jsdom's WheelEvent has no modifiers). */
+	const wheel = (el: Element, deltaY: number) => {
+		const e = new Event('wheel', { bubbles: true, cancelable: true });
+		Object.assign(e, { deltaX: 0, deltaY, deltaMode: 0, ctrlKey: true, clientX: 100, clientY: 250 });
+		el.dispatchEvent(e);
+	};
+
+	it('the audio region scrolls to the new track lane while reviewing, the current item is revealed, and the range shrinks back', async () => {
+		const f = await proposalFixture();
+		// five audio tracks of 40 px fill the 141 px audio region of the default 300 px track area (Cue Seam shown)
+		const more = f.session.apply({
+			label: 'tracks',
+			origin: 'user',
+			sequenceId: f.seqId,
+			commands: [{ type: 'track.add', kind: 'audio', count: 2 }] as never[],
+		});
+		expect(more.ok).toBe(true);
+		act(() => f.flush());
+		const audioCount = f.seq().audioTracks.length;
+		expect(audioCount).toBeGreaterThanOrEqual(5);
+		// the view state the editor keeps per open sequence
+		act(() => f.session.setView(f.seqId, { scrollYAudio: 0 }));
+		render(
+			<SessionProvider session={f.session}>
+				<TimelinePanel instanceId="timeline-1" visible />
+			</SessionProvider>,
+		);
+		await settle();
+		const header = () => document.querySelector<HTMLElement>('[data-ghost-header]');
+		/** The ghost header's band inside the header column's audio box, and whether it is fully shown. */
+		const shown = () => {
+			const h = header()!;
+			const box = h.parentElement!;
+			const top = Number.parseFloat(h.style.top);
+			return top >= 0 && top + Number.parseFloat(h.style.height) <= Number.parseFloat(box.style.height);
+		};
+		const scrollY = () => f.session.getState().views[f.seqId]?.scrollYAudio ?? 0;
+		expect(header()?.textContent).toBe(`A${audioCount + 1} · SFX 1 (new)`);
+		expect(shown()).toBe(false);
+
+		// Ctrl+wheel (vertical scroll off the Mac) far down over the audio region: the lane comes into view
+		const area = document.querySelector('[data-testid="timeline-track-headers"]')!.parentElement!
+			.nextElementSibling as HTMLElement;
+		act(() => wheel(area, 5000));
+		expect(shown()).toBe(true);
+		const end = scrollY();
+		expect(end).toBeGreaterThan(0);
+		// the master row follows the lane (it no longer lies under it); both in track-area px
+		const master = document.querySelector<HTMLElement>('[data-master-row]')!;
+		const lane = header()!;
+		const laneY = Number.parseFloat(lane.style.top) - 1 + Number.parseFloat(lane.parentElement!.style.top);
+		expect(Number.parseFloat(master.style.top)).toBe(laneY + 40);
+
+		// the review ends: no lane, and the range is 40 px shorter — the first wheel step up already moves
+		act(() => f.c.exit());
+		await settle();
+		expect(header()).toBeNull();
+		act(() => wheel(area, -10));
+		expect(scrollY()).toBe(end - 40 - 10);
+
+		// back in review, scrolled to the top: making the hit (on the new track) current scrolls its lane into view
+		await act(async () => {
+			await f.c.setActive(f.p.id);
+		});
+		act(() => f.flush());
+		act(() => f.session.setView(f.seqId, { scrollYAudio: 0 }));
+		await settle();
+		expect(shown()).toBe(false);
+		act(() => f.c.select(['hit']));
+		await settle();
+		expect(shown()).toBe(true);
+		// just enough: the lane at the bottom of the band (the master row below it stays out of view)
+		expect(scrollY()).toBe(end - 28);
 	});
 });

@@ -8,8 +8,11 @@ import { describe, expect, it } from 'vitest';
 import { computeLayout } from '../src/panels/timeline/model/layout.ts';
 import {
 	buildGhostModel,
+	type GhostModel,
 	ghostAriaLabel,
 	ghostCueId,
+	ghostItemRow,
+	ghostLaneExtent,
 	ghostPaint,
 	ghostTrackRows,
 	layoutGhosts,
@@ -195,6 +198,138 @@ describe('ghost geometry', () => {
 		expect([wash.x, wash.y]).toEqual([0, layout.audio.rows[0]!.y]);
 		const scrolled = layoutGhosts(m, layout, { ...v, scrollFrame: 300 });
 		expect(scrolled.clips.find((c) => c.itemId === 'move')!.x).toBe(200);
+	});
+
+	it('the regions scroll to the ghost lanes of new tracks while they are shown, and back without them', async () => {
+		const f = await proposalFixture();
+		const m = model(f.session, f.seqId);
+		const seq = f.seq();
+		expect(ghostLaneExtent(m)).toEqual({ videoPx: 0, audioPx: 40 });
+		expect(ghostLaneExtent(null)).toEqual({ videoPx: 0, audioPx: 0 });
+		// a short Timeline: 160 px, half of it audio (78 px) for A1…An of 40 px each
+		const at = (scrollYAudio: number, lanes: boolean) =>
+			computeLayout({
+				height: 160,
+				dividerRatio: 0.5,
+				videoTracks: seq.videoTracks,
+				audioTracks: seq.audioTracks,
+				heights: {},
+				scrollYVideo: 0,
+				scrollYAudio,
+				...(lanes
+					? { extraVideoPx: ghostLaneExtent(m).videoPx, extraAudioPx: ghostLaneExtent(m).audioPx }
+					: {}),
+			});
+		const plain = at(0, false);
+		const withLanes = at(0, true);
+		// the tracks stay where they are; the range grows by the lane, the master row moves below it
+		expect(withLanes.audio.rows).toEqual(plain.audio.rows);
+		expect(withLanes.video.rows).toEqual(plain.video.rows);
+		expect(withLanes.audio.maxScroll).toBe(plain.audio.maxScroll + 40);
+		const lane = ghostTrackRows(m, withLanes)[0]!;
+		expect(withLanes.masterY).toBe(lane.y + lane.height);
+		// before: the lane sat where the master row is, and the furthest scroll left it below the band
+		const plainEnd = at(1e6, false);
+		const plainLane = ghostTrackRows(m, plainEnd)[0]!;
+		expect(plainLane.y + plainLane.height).toBeGreaterThan(plainEnd.audio.top + plainEnd.audio.height);
+		// now: scrolled to the end, the lane and the master row are inside the audio band
+		const end = at(1e6, true);
+		const endLane = ghostTrackRows(m, end)[0]!;
+		const bottom = end.audio.top + end.audio.height;
+		expect(endLane.y).toBeGreaterThanOrEqual(end.audio.top);
+		expect(endLane.y + endLane.height).toBeLessThanOrEqual(bottom);
+		expect(end.masterY! + 28).toBe(bottom);
+		// the review ended: the same stored scroll is clamped to the range without the lane
+		expect(at(1e6, false).audio.rows).toEqual(plainEnd.audio.rows);
+		// hostile allowances never break the layout
+		for (const bad of [Number.NaN, -500, Number.POSITIVE_INFINITY])
+			expect(
+				computeLayout({
+					height: 160,
+					dividerRatio: 0.5,
+					videoTracks: seq.videoTracks,
+					audioTracks: seq.audioTracks,
+					heights: {},
+					scrollYVideo: 0,
+					scrollYAudio: 0,
+					extraVideoPx: bad,
+					extraAudioPx: bad,
+				}),
+			).toEqual(plain);
+	});
+
+	it('new video tracks get lanes above the top video row inside the scroll range', () => {
+		const videoTracks = [{ id: 'v1' }, { id: 'v2' }, { id: 'v3' }];
+		const audioTracks = [{ id: 'a1' }];
+		const tracks: GhostModel['tracks'] = [
+			{ itemId: 'i1', trackId: 'v4', region: 'video', index: 3, label: 'V4', name: 'Titles' },
+			{ itemId: 'i1', trackId: 'v5', region: 'video', index: 4, label: 'V5', name: 'FX' },
+		];
+		const m = { tracks } as unknown as GhostModel;
+		const extent = ghostLaneExtent(m);
+		expect(extent).toEqual({ videoPx: 64, audioPx: 0 });
+		const at = (scrollYVideo: number, lanes: boolean) =>
+			computeLayout({
+				height: 160,
+				dividerRatio: 0.5,
+				videoTracks,
+				audioTracks,
+				heights: {},
+				scrollYVideo,
+				scrollYAudio: 0,
+				...(lanes ? { extraVideoPx: extent.videoPx } : {}),
+			});
+		const plain = at(0, false);
+		const shown = at(0, true);
+		// 3 × 32 px tracks in a 78 px region: bottom-aligned on the divider as before
+		expect(shown.video.rows).toEqual(plain.video.rows);
+		expect(shown.video.maxScroll).toBe(plain.video.maxScroll + 64);
+		const top = at(1e6, true);
+		const rows = ghostTrackRows(m, top);
+		expect(rows.map((r) => r.trackId)).toEqual(['v4', 'v5']);
+		// scrolled up to the end, the topmost lane starts at the region top
+		expect(Math.min(...rows.map((r) => r.y))).toBe(top.video.top);
+		expect(top.video.rows[0]!.y).toBe(64);
+		// a roomy Timeline: nothing moves, the lanes fit above the tracks without scrolling
+		const tall = computeLayout({
+			height: 600,
+			dividerRatio: 0.5,
+			videoTracks,
+			audioTracks,
+			heights: {},
+			scrollYVideo: 0,
+			scrollYAudio: 0,
+			extraVideoPx: extent.videoPx,
+		});
+		expect(tall.video.maxScroll).toBe(0);
+		expect(Math.min(...ghostTrackRows(m, tall).map((r) => r.y))).toBeGreaterThanOrEqual(0);
+	});
+
+	it("an item's row: its ghost clip's track or the lane of its new track; none for a cue", async () => {
+		const f = await proposalFixture();
+		const m = model(f.session, f.seqId);
+		const layout = computeLayout({
+			height: 400,
+			dividerRatio: 0.5,
+			videoTracks: f.seq().videoTracks,
+			audioTracks: f.seq().audioTracks,
+			heights: {},
+			scrollYVideo: 0,
+			scrollYAudio: 0,
+			extraAudioPx: ghostLaneExtent(m).audioPx,
+		});
+		const lane = ghostTrackRows(m, layout)[0]!;
+		expect(ghostItemRow(m, layout, 'hit')).toEqual({
+			trackId: lane.trackId,
+			kind: 'audio',
+			index: lane.track.index,
+			y: lane.y,
+			height: 40,
+		});
+		expect(ghostItemRow(m, layout, 'trk')?.trackId).toBe(lane.trackId);
+		expect(ghostItemRow(m, layout, 'move')).toEqual(layout.audio.rows[0]);
+		expect(ghostItemRow(m, layout, 'cue')).toBeNull();
+		expect(ghostItemRow(m, layout, 'nope')).toBeNull();
 	});
 
 	it('orders items by time for the keyboard', async () => {

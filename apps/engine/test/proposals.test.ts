@@ -3,6 +3,7 @@
 // policy gate for agents vs the editor window, destructive items, reject / reopen / note / select / delete, events,
 // the 50-proposal limit, concurrency, and deletion with the project.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpus, loadavg } from 'node:os';
 import { join } from 'node:path';
 import {
 	AGENT_NAME_HEADER,
@@ -29,6 +30,9 @@ import type { Broadcaster } from '../src/events/broadcaster.ts';
 import { closeApps, makeApp } from './helpers.ts';
 
 afterAll(closeApps);
+
+/** Each test starts an engine app (cold the first time): the timeout follows the shared host's load. */
+const TIMEOUT = 20_000 * Math.max(1, Math.ceil(loadavg()[0]! / Math.max(1, cpus().length)));
 
 const HOST = { host: '127.0.0.1:47900' };
 const TOKEN = 'tok_proposals_0123456789abcdef';
@@ -120,6 +124,32 @@ function draft(seqId: string, extra: Record<string, unknown> = {}) {
 	};
 }
 
+/** The user's own edit of the saved (headless) project, e.g. what undoing an accept leaves: saved as the next revision. */
+function userEdit(file: string, seqId: string, commands: unknown[]) {
+	const { doc, revision } = saved(file);
+	const r = applyTransaction(
+		doc,
+		{ label: 'user edit', origin: 'user', sequenceId: seqId, commands },
+		{
+			ids: createCounterIdSource(900),
+			now: () => '2026-10-02T00:00:00.000Z',
+			revision,
+			registries: defaultRegistries(),
+		},
+	);
+	if (!r.result.ok) throw new Error(JSON.stringify(r.result.errors));
+	writeFileSync(
+		file,
+		JSON.stringify(
+			makeEnvelope(r.document, {
+				revision: revision + 1,
+				savedAt: '2026-10-02T00:00:00.000Z',
+				platform: 'test',
+			}),
+		),
+	);
+}
+
 const base = (projectId: string) => `/api/projects/${projectId}/proposals`;
 async function post(app: App, url: string, payload: unknown, headers: Record<string, string> = HOST) {
 	return app.inject({ method: 'POST', url, headers: json(headers), payload: JSON.stringify(payload) });
@@ -145,7 +175,7 @@ async function agentTx(
 	return r.json() as { result: TransactionResult };
 }
 
-describe('proposal routes (headless)', () => {
+describe('proposal routes (headless)', { timeout: TIMEOUT }, () => {
 	it('creates a proposal validated against the live document; lists, gets, and publishes proposal.changed', async () => {
 		const app = await makeApp();
 		const { projectId, seqId, file } = seed(app);
@@ -275,7 +305,13 @@ describe('proposal routes (headless)', () => {
 			code: 'PROPOSAL_STALE',
 			detail: {
 				code: 'E_PROPOSAL_STALE',
-				stale: [{ itemId: 'mk', reason: `${MARKER} changed since the proposal was made (frame 100 → 120)` }],
+				stale: [
+					{
+						itemId: 'mk',
+						reason: 'The marker “Hit” at 00:00:03:10 moved to 00:00:04:00',
+						problem: { type: 'anchor', id: MARKER, entity: 'marker', change: 'frame', at: 100, to: 120 },
+					},
+				],
 			},
 		});
 		expect(saved(file).revision).toBe(4); // nothing applied
@@ -380,7 +416,19 @@ describe('proposal routes (headless)', () => {
 		expect([sfx.solo, sfx.mute]).toEqual([true, false]); // the selected alternative
 		const noReject = await post(app, `${url}/reject`, { itemIds: ['mute'] });
 		expect([noReject.statusCode, noReject.json().detail.code]).toEqual([400, 'E_INVALID_PARAM']);
-		// After the user undoes the accept, the review reopens with the note and the selection intact.
+		// While the accept is in the document its items cannot be reopened (accepting them again would apply them twice).
+		const accepted = acc.json().proposal as Proposal;
+		expect(accepted, acc.body).toBeDefined();
+		expect(accepted.items[2]!.applied?.created).toContain(accepted.items[2]!.applied!.refs.$sfx);
+		const held = await post(app, `${url}/reopen`, { itemIds: 'all' });
+		expect([held.statusCode, held.json().code, held.json().detail.code]).toEqual([
+			409,
+			'PROPOSAL_STILL_APPLIED',
+			'E_STILL_APPLIED',
+		]);
+		// After the accept is undone (here: what it created is gone), the review reopens with the note and the
+		// selection intact.
+		userEdit(file, seqId, [{ type: 'track.remove', trackIds: [accepted.items[2]!.applied!.refs.$sfx] }]);
 		const re = await post(app, `${url}/reopen`, { itemIds: 'all' });
 		expect(re.json().proposal.items.map((i: { state: string }) => i.state)).toEqual([
 			'pending',
@@ -402,6 +450,55 @@ describe('proposal routes (headless)', () => {
 			'reopened',
 			'deleted',
 		]);
+	});
+
+	it('reopen of an applied item: agents are refused; the editor only once the accept is out of the document', async () => {
+		const app = await secured();
+		const { projectId, seqId, file } = seed(app);
+		const p = await create(app, projectId, draft(seqId), AGENT_H);
+		const url = `${base(projectId)}/${p.id}`;
+		const acc = await post(app, `${url}/accept`, { itemIds: ['mute'] }, EDITOR_H);
+		expect(acc.statusCode, acc.body).toBe(200);
+		const trackId = (acc.json().proposal as Proposal).items[2]!.applied!.refs.$sfx!;
+		// an agent never reopens (an applied item, nor a decision of the user's), never notes or chooses alternatives
+		const agentReopen = await post(app, `${url}/reopen`, { itemIds: ['trk'] }, AGENT_H);
+		expect([agentReopen.statusCode, agentReopen.json().detail.code]).toEqual([403, 'E_APPROVAL_REQUIRED']);
+		const agentAll = await post(app, `${url}/reopen`, { itemIds: 'all' }, AGENT_H);
+		expect(agentAll.statusCode).toBe(403);
+		const agentNote = await post(app, `${url}/note`, { itemId: 'cut', note: 'mine' }, AGENT_H);
+		expect([agentNote.statusCode, agentNote.json().detail.code]).toEqual([403, 'E_APPROVAL_REQUIRED']);
+		const agentSelect = await post(app, `${url}/select`, { itemId: 'mute', alternative: 1 }, AGENT_H);
+		expect([agentSelect.statusCode, agentSelect.json().detail.code]).toEqual([403, 'E_APPROVAL_REQUIRED']);
+		// the editor while the track is still there: refused, nothing changes
+		const held = await post(app, `${url}/reopen`, { itemIds: ['trk', 'mute'] }, EDITOR_H);
+		expect([held.statusCode, held.json().detail.code]).toEqual([409, 'E_STILL_APPLIED']);
+		const still = await app.inject({ method: 'GET', url, headers: EDITOR_H });
+		expect((still.json().proposal as Proposal).items.map((i) => i.state)).toEqual([
+			'pending',
+			'pending',
+			'accepted',
+			'accepted',
+		]);
+		// an agent may withdraw its undecided items (reject); the user reopens them
+		expect((await post(app, `${url}/reject`, { itemIds: ['cut'] }, AGENT_H)).statusCode).toBe(200);
+		expect((await post(app, `${url}/reopen`, { itemIds: ['cut'] }, AGENT_H)).statusCode).toBe(403);
+		expect((await post(app, `${url}/reopen`, { itemIds: ['cut'] }, EDITOR_H)).statusCode).toBe(200);
+		// the accept undone (the track it created is gone): the editor reopens it
+		userEdit(file, seqId, [{ type: 'track.remove', trackIds: [trackId] }]);
+		const re = await post(app, `${url}/reopen`, { itemIds: ['trk', 'mute'] }, EDITOR_H);
+		expect(re.statusCode, re.body).toBe(200);
+		expect((re.json().proposal as Proposal).items.map((i) => i.state)).toEqual([
+			'pending',
+			'pending',
+			'pending',
+			'pending',
+		]);
+		// accepting again applies it once more (it is out of the document, so no duplicate)
+		const again = await post(app, `${url}/accept`, { itemIds: ['mute'] }, EDITOR_H);
+		expect(again.json().applied).toEqual(['trk', 'mute']);
+		// `applied` (the editor's Redo) is refused when the document does not have what the accept created
+		const re2 = await post(app, `${url}/reopen`, { itemIds: ['trk'] }, EDITOR_H);
+		expect(re2.statusCode).toBe(409);
 	});
 
 	it('keeps at most 50 proposals: refuses while all are under review, then evicts the oldest decided one', async () => {
@@ -541,7 +638,7 @@ const until = async (pred: () => boolean, ms = 5000) => {
 	}
 };
 
-describe('accept policy: agents vs the editor window', () => {
+describe('accept policy: agents vs the editor window', { timeout: TIMEOUT }, () => {
 	it('refuses an agent with 403 APPROVAL_REQUIRED unless the sequence allows agents; the editor needs nothing extra', async () => {
 		const app = await secured();
 		const { projectId, seqId, file } = seed(app);
@@ -589,6 +686,13 @@ describe('accept policy: agents vs the editor window', () => {
 			code: 'VALIDATION_FAILED',
 		});
 		expect((await post(app, url, { ...body, extra: 1 }, EDITOR_H)).statusCode).toBe(400);
+		// the Redo must have put back what the accept created: else nothing is recorded
+		const absent = await post(app, url, { ...body, created: ['trk_0000000000000099'] }, EDITOR_H);
+		expect([absent.statusCode, absent.json().code, absent.json().detail.code]).toEqual([
+			409,
+			'PROPOSAL_NOT_APPLIED',
+			'E_NOT_APPLIED',
+		]);
 		const ok = await post(app, url, body, EDITOR_H);
 		expect(ok.statusCode, ok.body).toBe(200);
 		const out = ok.json() as { proposal: Proposal; changed: string[] };

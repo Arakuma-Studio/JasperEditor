@@ -269,10 +269,12 @@ test('agent proposal → card → review: accept, reject, alternate, note → Ap
 	const altSound = cut.alternatives?.[0]?.meta?.soundId;
 	if (altSound) expect(cutClip.sfx!.soundId).toBe(altSound);
 
-	// leave review, Ctrl+Z, then the toast's Reopen review: decisions intact
+	// leave review, Ctrl+Z, then the toast's Reopen review: decisions intact. The toast lasts 15 s; on a loaded host the
+	// steps in between can take longer, so the pointer rests on it (hovering pauses it, as for a user reading it).
 	await page.getByTestId('review-bar-exit').click();
 	await expect(page.getByTestId('review-bar')).toBeHidden();
 	await focusTimeline(page);
+	await toast.hover();
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await appliedLabels(page)).length).toBe(before.length);
 	await toast.getByRole('button', { name: 'Reopen review' }).click();
@@ -293,7 +295,7 @@ test('agent proposal → card → review: accept, reject, alternate, note → Ap
 	] as never);
 	expect(moved.ok, JSON.stringify(moved)).toBe(true);
 	await expect(row(cut.id)).toHaveAttribute('data-review-state', 'stale', { timeout: 15_000 });
-	await expect(row(cut.id)).toContainText('90 → 100');
+	await expect(row(cut.id)).toContainText(/Cut cue at 00[:;]00[:;]03[:;]00 moved to 00[:;]00[:;]03[:;]10/);
 	await page.screenshot({ path: join(outDir, 'stale.png') });
 	const n = (await appliedLabels(page)).length;
 	await row(push.id).click();

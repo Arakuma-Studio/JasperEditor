@@ -29,6 +29,8 @@ export type ProposalStoreOptions = {
 	log?: (msg: string) => void;
 	maxPerProject?: number;
 	expiryDays?: number;
+	/** A proposal an accept or decision is working on: it is not expired or evicted until it is done. */
+	inUse?: (projectId: string, proposalId: string) => boolean;
 	/** A proposal left the store on its own (expired, evicted). */
 	onRemoved?: (projectId: string, proposal: Proposal, why: 'expired' | 'evicted') => void;
 };
@@ -57,8 +59,17 @@ export class ProposalStore {
 		return new Date((Number.isFinite(base) ? base : 0) + this.expiryDays * DAY_MS).toISOString();
 	}
 
-	private expired(p: Proposal): boolean {
-		return Date.parse(this.expiresAt(p)) <= this.now().getTime();
+	/** Past its expiry; `owner`: the caller is the accept / decision working on it (it expires for that caller). */
+	private expired(p: Proposal, owner = false): boolean {
+		return Date.parse(this.expiresAt(p)) <= this.now().getTime() && (owner || !this.inUse(p));
+	}
+
+	private inUse(p: Proposal): boolean {
+		try {
+			return this.opts.inUse?.(p.projectId, p.id) === true;
+		} catch {
+			return false;
+		}
 	}
 
 	private dir(projectId: string): string {
@@ -153,11 +164,14 @@ export class ProposalStore {
 		return { proposals: out, warnings };
 	}
 
-	/** One proposal, or null (absent, expired, unreadable). */
-	get(projectId: string, proposalId: string): Promise<Proposal | null> {
+	/**
+	 * One proposal, or null (absent, expired, unreadable). `owner`: the caller holds the proposal's lock (an accept or
+	 * decision); anyone else does not expire a proposal such a caller is working on.
+	 */
+	get(projectId: string, proposalId: string, opts: { owner?: boolean } = {}): Promise<Proposal | null> {
 		return this.mutex.run(projectId, async () => {
 			const p = await this.read(projectId, proposalId);
-			if (p && this.expired(p)) {
+			if (p && this.expired(p, opts.owner === true)) {
 				await rm(this.file(projectId, proposalId), { force: true });
 				this.opts.onRemoved?.(projectId, p, 'expired');
 				return null;
@@ -178,7 +192,7 @@ export class ProposalStore {
 			const evicted: string[] = [];
 			if (proposals.length >= this.maxPerProject) {
 				const decided = proposals
-					.filter((p) => proposalDecided(p))
+					.filter((p) => proposalDecided(p) && !this.inUse(p))
 					.sort((a, b) => (a.updatedAt < b.updatedAt ? -1 : a.updatedAt > b.updatedAt ? 1 : 0));
 				const need = proposals.length - this.maxPerProject + 1;
 				if (decided.length < need) {

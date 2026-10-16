@@ -5,7 +5,7 @@
 import type { ReviewItem } from '@jasper/session';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import type { GhostModel } from '../src/proposals/ghosts.ts';
+import { buildGhostModel, type GhostModel, whyLines } from '../src/proposals/ghosts.ts';
 import {
 	buildReviewModel,
 	cardSentence,
@@ -95,7 +95,7 @@ describe('review model', () => {
 
 	it('takes frames and gains from the ghosts when the item carries none', () => {
 		const ghost = {
-			clips: [{ itemId: 'trk', gainDb: -6 }],
+			clips: [{ itemId: 'trk', sourceItemId: 'trk', change: 'created', gainDb: -6 }],
 			byItem: { trk: { start: 400, end: 420 } },
 			items: [],
 		} as unknown as GhostModel;
@@ -203,5 +203,127 @@ describe('review model', () => {
 			}),
 			{ numRuns: 300 },
 		);
+	});
+});
+
+describe('approvalNeeds (Apply names what an agent could not do unasked)', () => {
+	it('destructive commands, force and the agents-may-apply grant, through the accept closure, once each', async () => {
+		const { approvalNeeds } = await import('../src/proposals/review.ts');
+		const p = {
+			id: 'prp_0000000000000001',
+			items: [
+				{
+					id: 'a',
+					label: 'a',
+					group: 'g',
+					requires: [],
+					state: 'pending',
+					commands: [{ type: 'marker.add', frame: 1 }],
+				},
+				{
+					id: 'b',
+					label: 'b',
+					group: 'g',
+					requires: ['a'],
+					state: 'pending',
+					commands: [{ type: 'soundDesign.setSettings', agentsMayApply: true }],
+				},
+				{
+					id: 'c',
+					label: 'c',
+					group: 'g',
+					requires: ['b'],
+					state: 'pending',
+					commands: [
+						{ type: 'track.remove', trackIds: ['A2'] },
+						{ type: 'clip.move', clipIds: ['x'], deltaFrames: 1, force: true },
+						{ type: 'track.remove', trackIds: ['A3'] },
+					],
+				},
+			],
+		} as never;
+		expect(approvalNeeds(p, ['a'])).toEqual([]);
+		expect(approvalNeeds(p, ['b'])).toEqual([{ kind: 'agentsMayApply' }]);
+		const c = approvalNeeds(p, ['c']);
+		expect(c.map((x) => x.kind)).toEqual(['agentsMayApply', 'command', 'force']);
+		expect(approvalNeeds(null, ['c'])).toEqual([]);
+		expect(approvalNeeds({ items: 'nope' } as never, ['c'])).toEqual([]);
+	});
+});
+
+describe('an item shows its own gain and why-line (its chosen command set), not a setup item folded under it', () => {
+	it("the delivery setup re-levels the music: the row keeps the placement's gain; an alternative shows its own", async () => {
+		const f = await proposalFixture();
+		f.c.exit();
+		const place = (gainDb: number) => [
+			{ type: 'clip.place', source: { mediaId: f.mediaId }, at: 30, tracks: { audio: '$sfx2' }, ref: '$h0' },
+			{ type: 'clip.update', clipIds: ['$h0'], patch: { gainDb } },
+		];
+		const p = f.engine.create({
+			feature: 'sound-design',
+			title: 'Mix pass',
+			sequenceId: f.seqId,
+			items: [
+				{
+					id: 'trk',
+					label: 'SFX track',
+					group: 'setup',
+					commands: [{ type: 'track.add', kind: 'audio', name: 'SFX 2', ref: '$sfx2' }],
+					meta: { setup: true },
+				},
+				{
+					id: 'delivery',
+					label: 'Web: loudness, Auto-Match, ducking',
+					group: 'setup',
+					commands: [{ type: 'clip.update', clipIds: [f.bed.id], patch: { gainDb: 14.6 } }],
+					meta: { setup: true, kind: 'delivery' },
+				},
+				{
+					id: 'hit',
+					label: 'Hit A · cut',
+					group: 'support',
+					requires: ['trk', 'delivery'],
+					commands: place(-11),
+					meta: { frame: 30, kind: 'cut', role: 'support', why: 'Hit A on the cut' },
+					alternatives: [{ label: 'Hit B', commands: place(-7), meta: { why: 'Hit B on the cut' } }],
+				},
+			],
+		});
+		await f.c.setActive(p.id);
+		f.flush();
+		const look = () => {
+			const st = f.c.getState();
+			const ghost = buildGhostModel({
+				preview: st.preview!,
+				committed: f.session.getCommitted(),
+				sequenceId: f.seqId,
+				items: st.items,
+				agent: true,
+			});
+			const hit = st.items.find((i) => i.id === 'hit')!;
+			return {
+				ghost,
+				row: buildReviewModel(st.items, ghost).byId.hit!,
+				lines: whyLines(hit, ghost, f.seq(), st.preview!.result.document.sequences[f.seqId]),
+			};
+		};
+		let v = look();
+		// the music clip's ghost is shown under "hit" (it requires the delivery setup) but it is the setup's change
+		const music = v.ghost.clips.find((c) => c.clipId === f.bed.id)!;
+		expect(music).toMatchObject({ itemId: 'hit', sourceItemId: 'delivery', gainDb: 14.6 });
+		expect(v.row.gainDb).toBe(-11);
+		expect(v.lines.why).toBe('Hit A on the cut');
+		expect(v.lines.facts.join(' · ')).toContain('-11.0 dB');
+		expect(v.lines.facts.join(' · ')).not.toContain('14.6');
+		// the user picks the alternative: its own clip's gain and its own why-line
+		expect((await f.c.selectAlternative('hit', 1)).ok).toBe(true);
+		f.flush();
+		v = look();
+		expect(v.row.gainDb).toBe(-7);
+		expect(v.row.reason).toBe('Hit B on the cut');
+		expect(v.lines.why).toBe('Hit B on the cut');
+		expect(v.lines.facts.join(' · ')).toContain('-7.0 dB');
+		expect(v.lines.facts.join(' · ')).not.toContain('14.6');
+		f.c.exit();
 	});
 });

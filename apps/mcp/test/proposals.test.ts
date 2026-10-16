@@ -239,6 +239,18 @@ describe('proposal MCP tools', { timeout: 900_000 }, () => {
 		expect((await fails('plan_sound_design', { projectId, style: { densty: 'rich' } })).code).toBe(
 			'E_UNKNOWN_ARGUMENT',
 		);
+		// style.cueSources: only the chosen sources derive cues (here the "sfx: boom+swoosh" marker alone)
+		const markersOnly = await ok<Planned>('plan_sound_design', {
+			projectId,
+			style: { seed: 5, cueSources: ['markers'] },
+		});
+		expect(markersOnly.events.map((e) => e.frame)).toEqual([250]);
+		expect(markersOnly.events[0]!.soundId).toBe(plan.events.find((e) => e.frame === 250)!.soundId);
+		await ok('reject_proposal', { projectId, proposalId: markersOnly.proposalId, itemIds: 'all' });
+		expect(
+			(await fails('plan_sound_design', { projectId, style: { cueSources: ['nonsense'] } })).code,
+		).toMatch(/^E_/);
+		expect((await fails('plan_sound_design', { projectId, style: { cueSources: [] } })).code).toMatch(/^E_/);
 	});
 
 	it('get_proposal lists items and a ghost table; an agent may not accept; reject works', async () => {

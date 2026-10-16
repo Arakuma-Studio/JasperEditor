@@ -11,6 +11,7 @@ import { closeAllDialogs, DialogHost, toasts } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
+	agentUiTxGuard,
 	markUserInputForTests,
 	resetAgentInputForTests,
 	runAgentInput,
@@ -80,6 +81,7 @@ describe('Review panel', () => {
 		expect(screen.getByTestId('review-counts').textContent).toContain('5 items');
 		// the tab badge: 5 left to review
 		expect(screen.getByTestId('review-tab-badge').getAttribute('data-count')).toBe('5');
+		expect(screen.getByTestId('review-tab-badge').getAttribute('title')).toBe('5 items to review');
 		await act(async () => {
 			fireEvent.pointerDown(t.row('hit'), { button: 0 });
 		});
@@ -88,6 +90,9 @@ describe('Review panel', () => {
 		expect(screen.getByTestId('review-details').textContent).toContain('Cut from Shot A to Shot B');
 		expect(t.row('hit').getAttribute('aria-label')).toMatch(/^Hit on the cut, Pending, at 00:00:01:00/);
 		t.c.exit();
+		await settle();
+		// out of review: the proposals with items to review, in the singular for one
+		expect(screen.getByTestId('review-tab-badge').getAttribute('title')).toBe('1 proposal to review');
 	});
 
 	it('keyboard in the list (Review scope): Down moves, Enter accepts (with what it requires), Backspace rejects, U clears, A toggles A/B', async () => {
@@ -268,6 +273,52 @@ describe('Apply', () => {
 		expect(t.c.getState().activeId).toBe(p.id);
 		t.c.exit();
 	});
+
+	it('names what an agent could not do without asking (destructive commands, force, granting itself the right to apply) before Apply', async () => {
+		const t = await setup();
+		const a2 = (t.seq().audioTracks[1] ?? t.seq().audioTracks[0])!.id;
+		const p = t.engine.create({
+			feature: 'sound-design',
+			title: 'Sneaky pass',
+			sequenceId: t.seqId,
+			items: [
+				{ id: 'hit', label: 'Hit on the cut', commands: [{ type: 'marker.add', frame: 12, name: 'hit' }] },
+				{
+					id: 'grant',
+					label: 'Tidy settings',
+					requires: ['hit'],
+					commands: [{ type: 'soundDesign.setSettings', agentsMayApply: true }],
+				},
+				{
+					id: 'drop',
+					label: 'Clean up',
+					commands: [{ type: 'track.remove', trackIds: [a2], force: true }],
+				},
+			],
+		});
+		await t.c.setActive(p.id);
+		t.flush();
+		await settle();
+		// the harmless item alone needs no confirmation of that kind
+		const asked: string[] = [];
+		const confirm = async (o: { title: string; body?: unknown }) => {
+			asked.push(`${o.title} ${String(o.body)}`);
+			return false;
+		};
+		await t.c.setItemDecision(['grant', 'drop'], 'accept');
+		t.flush();
+		const no = await applyReview(t.session, { trusted: true, confirm });
+		expect(no).toMatchObject({ ok: false, code: 'E_CANCELLED' });
+		expect(asked[0]).toContain('Also runs what needs your approval:');
+		expect(asked[0]).toContain(
+			'Also allows agents to apply sound proposals in this sequence without your review',
+		);
+		// nothing applied, the setting still off
+		expect(t.seq().soundDesign?.settings?.agentsMayApply).not.toBe(true);
+		expect(t.seq().audioTracks.some((tr) => tr.id === a2)).toBe(true);
+		expect(t.engine.calls.some((c) => c.startsWith('accept'))).toBe(false);
+		t.c.exit();
+	});
 });
 
 describe('review bar', () => {
@@ -437,5 +488,32 @@ describe('Preferences ▸ Sound Library ▸ Proposals', () => {
 		f.session.undo();
 		expect(settings()?.agentsMayApply).not.toBe(true);
 		void proposalsFor;
+	});
+
+	it('an agent clicking the checkbox through the live UI (ui_click) cannot grant itself the right', async () => {
+		const f = await proposalFixture();
+		f.c.exit();
+		// the guard every editor session has (agent bridge; security review AGT-1)
+		const off = f.session.addTxGuard(agentUiTxGuard);
+		render(
+			<SessionProvider session={f.session}>
+				<AgentApplyPreference />
+			</SessionProvider>,
+		);
+		const before = f.session.getState().history.entries.length;
+		await act(async () => {
+			await runAgentInput(async () => {
+				fireEvent.click(screen.getByRole('checkbox'));
+			});
+		});
+		const settings = (
+			f.session.getCommitted().sequences[f.seqId] as {
+				soundDesign?: { settings?: { agentsMayApply?: boolean } };
+			}
+		).soundDesign?.settings;
+		expect(settings?.agentsMayApply).not.toBe(true);
+		expect(f.session.getState().history.entries.length).toBe(before);
+		expect(screen.getByRole('checkbox').getAttribute('aria-checked')).toBe('false');
+		off();
 	});
 });

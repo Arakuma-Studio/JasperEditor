@@ -10,7 +10,14 @@ import type { Issue, Origin, Registries, TransactionResult } from '../commands/t
 import { createRandomIdSource, type IdSource } from '../ids.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Author } from '../schema/sequence.ts';
-import { anchorsProblem, commandEntityIds, documentHash, itemAnchors } from './anchors.ts';
+import {
+	type AnchorProblem,
+	anchorProblem,
+	anchorProblemText,
+	commandEntityIds,
+	documentHash,
+	itemAnchors,
+} from './anchors.ts';
 import { type ComposedAccept, composeAcceptTx, itemOfCommand } from './compose.ts';
 import {
 	PROPOSAL_LIMITS,
@@ -380,7 +387,16 @@ function createProposalUnchecked(
 	return { ok: true, proposal: validated };
 }
 
-export type StaleItem = { itemId: string; reason: string };
+/**
+ * Why an item is stale, for the editor to say in the user's language: an anchor moved or went (with what it was, where
+ * and where to), an item it requires is stale / invalid, or it no longer applies on the document (`issue`: the reason).
+ */
+export type StaleProblem =
+	| ({ type: 'anchor' } & AnchorProblem)
+	| { type: 'requires'; itemId: string; label: string; state: 'stale' | 'invalid' }
+	| { type: 'conflict'; issue: string };
+
+export type StaleItem = { itemId: string; reason: string; problem?: StaleProblem };
 
 /**
  * Re-validates the undecided (pending or stale) items on a changed document: an item is stale when an entity it was
@@ -392,6 +408,13 @@ export function revalidate(
 	doc: ProjectDocument,
 	proposal: Proposal,
 	ctx: ProposalContext,
+	opts: {
+		/**
+		 * false: anchors and requirements only, no dry runs (the editor's preview applies every item anyway and flags the
+		 * ones that fail; the accept re-validates with dry runs). Default true.
+		 */
+		dryRuns?: boolean;
+	} = {},
 ): { proposal: Proposal; changed: boolean; stale: StaleItem[] } {
 	const undecided = proposal.items.filter((it) => it.state === 'pending' || it.state === 'stale');
 	if (undecided.length === 0) return { proposal, changed: false, stale: [] };
@@ -412,28 +435,42 @@ export function revalidate(
 	// Cheap checks first (anchors); then one dry run of every remaining item together, and one per item only when
 	// that fails (`planAccept` dry-runs the exact set it applies in any case).
 	const candidates: string[] = [];
+	const problems = new Map<string, StaleProblem>();
 	for (const it0 of undecided) {
 		const it = items.get(it0.id)!;
 		const anchors = it.anchors
 			? Object.fromEntries(Object.entries(it.anchors).filter(([id]) => !ownTouched.has(id)))
 			: undefined;
-		const moved = anchorsProblem(doc, anchors);
-		if (moved) items.set(it.id, setState(it, 'stale', moved));
-		else candidates.push(it.id);
+		const moved = anchorProblem(doc, anchors, { sequenceId: proposal.sequenceId, meta: it.meta });
+		if (moved) {
+			items.set(it.id, setState(it, 'stale', anchorProblemText(doc, moved)));
+			problems.set(it.id, { type: 'anchor', ...moved });
+		} else candidates.push(it.id);
 	}
-	const together = candidates.length ? composeForCheck(current(), candidates) : null;
+	const dryRuns = opts.dryRuns !== false;
+	const together = candidates.length && dryRuns ? composeForCheck(current(), candidates) : null;
 	const allHold =
-		together?.ok === true &&
-		candidates.every((id) => {
-			const blocked = blockedBy(items.get(id)!);
-			return !blocked;
-		}) &&
-		dryRunCommands(doc, together.tx.commands, ctx, proposal.sequenceId).ok;
+		!dryRuns ||
+		(together?.ok === true &&
+			candidates.every((id) => {
+				const blocked = blockedBy(items.get(id)!);
+				return !blocked;
+			}) &&
+			dryRunCommands(doc, together.tx.commands, ctx, proposal.sequenceId).ok);
 	for (const id of candidates) {
 		const it = items.get(id)!;
 		const blocked = blockedBy(it);
 		if (blocked) {
-			items.set(it.id, setState(it, 'stale', `requires item ${blocked.id}, which is ${blocked.state}`));
+			items.set(
+				it.id,
+				setState(it, 'stale', `Requires item ${blocked.id} (“${blocked.label}”), which is ${blocked.state}`),
+			);
+			problems.set(it.id, {
+				type: 'requires',
+				itemId: blocked.id,
+				label: blocked.label,
+				state: blocked.state === 'invalid' ? 'invalid' : 'stale',
+			});
 			continue;
 		}
 		if (allHold) {
@@ -442,11 +479,18 @@ export function revalidate(
 		}
 		const composed = composeForCheck(current(), [it.id]);
 		if (!composed.ok) {
-			items.set(it.id, setState(it, 'stale', issueReason(composed.errors)));
+			const issue = issueReason(composed.errors);
+			items.set(it.id, setState(it, 'stale', issue));
+			problems.set(it.id, { type: 'conflict', issue });
 			continue;
 		}
 		const r = dryRunCommands(doc, composed.tx.commands, ctx, proposal.sequenceId);
-		items.set(it.id, r.ok ? setState(it, 'pending') : setState(it, 'stale', issueReason(r.errors)));
+		if (r.ok) items.set(it.id, setState(it, 'pending'));
+		else {
+			const issue = issueReason(r.errors);
+			items.set(it.id, setState(it, 'stale', issue));
+			problems.set(it.id, { type: 'conflict', issue });
+		}
 	}
 	const out = current();
 	const changed = out.items.some((it, i) => it !== proposal.items[i]);
@@ -455,7 +499,10 @@ export function revalidate(
 		changed,
 		stale: out.items
 			.filter((it) => it.state === 'stale')
-			.map((it) => ({ itemId: it.id, reason: it.reason ?? 'stale' })),
+			.map((it) => {
+				const problem = problems.get(it.id);
+				return { itemId: it.id, reason: it.reason ?? 'stale', ...(problem ? { problem } : {}) };
+			}),
 	};
 }
 
@@ -522,10 +569,14 @@ function planAcceptUnchecked(
 		itemIds === 'all'
 			? p.items.filter((it) => it.state === 'pending' || it.state === 'stale').map((it) => it.id)
 			: [...new Set(itemIds)];
+	const problemOf = new Map(rv.stale.flatMap((x) => (x.problem ? [[x.itemId, x.problem] as const] : [])));
 	const staleList = (): StaleItem[] =>
 		p.items
 			.filter((it) => it.state === 'stale')
-			.map((it) => ({ itemId: it.id, reason: it.reason ?? 'stale' }));
+			.map((it) => {
+				const problem = problemOf.get(it.id);
+				return { itemId: it.id, reason: it.reason ?? 'stale', ...(problem ? { problem } : {}) };
+			});
 	for (let pass = 0; pass <= MAX_CONFLICT_PASSES; pass++) {
 		// The first stale or invalid item in each item's closure (requires name earlier items: one pass).
 		const root = new Map<string, ProposalItem | null>();
@@ -574,6 +625,7 @@ function planAcceptUnchecked(
 				stale: staleList(),
 			};
 		// The item fails together with the others now: stale (the document or the selection changed since).
+		problemOf.set(culprit, { type: 'conflict', issue: issueReason(r.errors) });
 		p = {
 			...p,
 			items: p.items.map((it) =>

@@ -14,7 +14,7 @@ import type { Sequence } from '@jasper/project';
 import type { EditorSession, ReviewItem } from '@jasper/session';
 import { useSessionOrNull, useSessionState } from '@jasper/session/react';
 import { Button, Icon, Select } from '@jasper/ui';
-import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createCommandContext } from '../../commands/context.ts';
 import type { CommandCtx } from '../../commands/types.ts';
 import { t } from '../../i18n/runtime.ts';
@@ -38,12 +38,24 @@ import {
 	type ReviewRow,
 	reviewCounts,
 } from '../../proposals/review.ts';
+import { problemText } from '../../proposals/stale-text.ts';
 import { useGhostModel, useProposals, useProposalsController } from '../../proposals/state.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { glyphPath, KIND_GLYPH } from '../../sound/cues/model.ts';
+import { seqTimecode } from '../../sound/design-model.ts';
 import { reviewGainText } from '../../sound/mix-model.ts';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import type { PanelProps } from '../types.ts';
+import {
+	pinnedGroup,
+	type ReviewListEntry,
+	type ReviewListLayout,
+	reviewListLayout,
+	reviewListMetrics,
+	reviewRowHeight,
+	scrollToShow,
+	visibleEntries,
+} from './list-layout.ts';
 
 const STATE_GLYPH: Record<ReviewItem['state'], string> = {
 	pending: '·',
@@ -62,7 +74,7 @@ export function ReviewPanel(props: PanelProps) {
 				className="flex h-full items-center justify-center p-4 text-center text-pr-small text-pr-muted"
 				data-testid="review-panel"
 			>
-				Open a project to review proposals.
+				{t('Open a project to review proposals.')}
 			</div>
 		);
 	return <ReviewBody {...props} session={session} />;
@@ -70,12 +82,7 @@ export function ReviewPanel(props: PanelProps) {
 
 function fmtTc(seq: Sequence | undefined, frame: number | null): string {
 	if (frame === null || !seq) return '—';
-	const fps = seq.settings.frameRate.num / seq.settings.frameRate.den;
-	if (!(fps > 0)) return String(frame);
-	const s = frame / fps;
-	const ff = Math.round(frame - Math.floor(s) * fps);
-	const two = (n: number) => String(Math.max(0, Math.floor(n))).padStart(2, '0');
-	return `${two(s / 3600)}:${two((s / 60) % 60)}:${two(s % 60)}:${two(ff)}`;
+	return seqTimecode(seq, frame);
 }
 
 function ProposalOptionLabel(p: ProposalSummary): string {
@@ -98,6 +105,8 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 	const selection = useProposals(session, (s) => s.selection);
 	const busy = useProposals(session, (s) => s.busy);
 	const hear = useProposals(session, (s) => s.hear);
+	// a large proposal's preview (ghosts, what A/B plays) is built over several frames: say so meanwhile
+	const previewing = useProposals(session, (s) => s.previewing);
 	const readOnly = useSessionState((s) => s.readOnly);
 	const activeSeq = useSessionState((s) => s.activeSequenceId);
 	const seqId = proposal?.sequenceId ?? activeSeq ?? '';
@@ -137,11 +146,40 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 	);
 	const choose = (id: string) => focusItem(session, id, reveal);
 
-	// keep the current row in view
+	// the list is virtualised: only the rows in view (and the current one) are in the DOM
+	// row heights follow the UI scale (the root font size the rem-based line heights use)
+	const remPx = rootFontPx();
+	const layout = useMemo(() => reviewListLayout(model, open, reviewListMetrics(remPx)), [model, open, remPx]);
+	const [view, setView] = useState({ top: 0, height: 0 });
+	const listShown = !!(activeId && proposal);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the list element mounts when a review opens
+	useEffect(() => {
+		const el = listRef.current;
+		if (!el) return;
+		const measure = () =>
+			setView((v) =>
+				v.top === el.scrollTop && v.height === el.clientHeight
+					? v
+					: { top: el.scrollTop, height: el.clientHeight },
+			);
+		measure();
+		if (typeof ResizeObserver === 'undefined') return;
+		const ro = new ResizeObserver(measure);
+		ro.observe(el);
+		return () => ro.disconnect();
+	}, [listShown]);
+	// keep the current row in view (it may not be rendered: scroll by its computed place)
+	// biome-ignore lint/correctness/useExhaustiveDependencies: only when the current item changes, not on every layout
 	useEffect(() => {
 		if (!current) return;
-		const el = listRef.current?.querySelector(`[data-review-row="${CSS.escape(current)}"]`);
-		(el as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest' });
+		const el = listRef.current;
+		const entry = layout.entries[layout.rowIndex[current] ?? -1];
+		if (!el || !entry) return;
+		const to = scrollToShow(entry, el.scrollTop, el.clientHeight || UNMEASURED_PX, layout.metrics.header);
+		if (to !== null) {
+			el.scrollTop = to;
+			setView({ top: el.scrollTop, height: el.clientHeight });
+		}
 	}, [current]);
 
 	const proposals = useMemo(
@@ -264,6 +302,11 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 								</span>
 							) : null}
 							{counts.applied ? <span>{t('{0} applied', counts.applied)}</span> : null}
+							{previewing ? (
+								<span role="status" data-testid="review-previewing">
+									{t('Updating the preview…')}
+								</span>
+							) : null}
 						</div>
 						{activeSummary?.waiting ? (
 							<div className="text-pr-agent" data-testid="review-waiting">
@@ -277,8 +320,17 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 						tabIndex={0}
 						aria-label={t('Items of {0}', proposal.title)}
 						aria-activedescendant={current ? `${idPrefix}${current}` : undefined}
-						className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-pr-focus"
+						className="relative min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-pr-focus"
 						onKeyDown={onListKeyDown}
+						onScroll={(e) => {
+							const el = e.currentTarget;
+							setView((v) =>
+								v.top === el.scrollTop && v.height === el.clientHeight
+									? v
+									: { top: el.scrollTop, height: el.clientHeight },
+							);
+						}}
+						data-review-rows={layout.rows}
 						onPointerDown={() => {
 							pointing.current = true;
 						}}
@@ -289,48 +341,45 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 						}}
 						data-testid="review-list"
 					>
-						{model.groups.map((g) => (
-							// biome-ignore lint/a11y/useSemanticElements: a group of options inside a listbox (WAI-ARIA listbox grouping)
-							<div key={g.id} role="group" aria-labelledby={`${idPrefix}g-${g.id}`}>
-								<div
-									id={`${idPrefix}g-${g.id}`}
-									className="sticky top-0 z-[1] bg-pr-panel-alt px-2 py-0.5 text-pr-small font-semibold text-pr-muted"
-								>
-									{g.label} · {g.rows.length}
-								</div>
-								{g.rows.map((row) => (
-									<Row
-										key={row.item.id}
-										id={`${idPrefix}${row.item.id}`}
-										row={row}
-										seq={seq}
-										current={row.item.id === current}
-										selected={selection.includes(row.item.id)}
-										readOnly={readOnly}
-										expanded={open.has(row.item.id)}
-										onExpand={() =>
-											setOpen((s) => {
-												const n = new Set(s);
-												if (n.has(row.item.id)) n.delete(row.item.id);
-												else n.add(row.item.id);
-												return n;
-											})
-										}
-										onChoose={() => choose(row.item.id)}
-										onDecide={(d) => void decide(session, d, [row.item.id])}
-										onPlay={() => {
-											choose(row.item.id);
-											playReviewItem(session, row.item.id);
-										}}
-										onAlternate={() => void cycleAlternative(session, 1, row.item.id)}
-										onNote={() => {
-											choose(row.item.id);
-											setNoteFor(row.item.id);
-										}}
-									/>
-								))}
-							</div>
-						))}
+						<VirtualRows
+							layout={layout}
+							view={view}
+							current={current}
+							render={(row) => (
+								<Row
+									key={row.item.id}
+									id={`${idPrefix}${row.item.id}`}
+									row={row}
+									seq={seq}
+									position={layout.entries[layout.rowIndex[row.item.id]!]!}
+									setSize={layout.rows}
+									metrics={layout.metrics}
+									current={row.item.id === current}
+									selected={selection.includes(row.item.id)}
+									readOnly={readOnly}
+									expanded={open.has(row.item.id)}
+									onExpand={() =>
+										setOpen((s) => {
+											const n = new Set(s);
+											if (n.has(row.item.id)) n.delete(row.item.id);
+											else n.add(row.item.id);
+											return n;
+										})
+									}
+									onChoose={() => choose(row.item.id)}
+									onDecide={(d) => void decide(session, d, [row.item.id])}
+									onPlay={() => {
+										choose(row.item.id);
+										playReviewItem(session, row.item.id);
+									}}
+									onAlternate={() => void cycleAlternative(session, 1, row.item.id)}
+									onNote={() => {
+										choose(row.item.id);
+										setNoteFor(row.item.id);
+									}}
+								/>
+							)}
+						/>
 					</div>
 					{model.orphans.length ? (
 						<section
@@ -416,6 +465,96 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 	);
 }
 
+/** Viewport height assumed before the list is measured (jsdom, the first render). */
+const UNMEASURED_PX = 480;
+
+/** The root font size in px (the UI scale; 12 when it cannot be read). */
+function rootFontPx(): number {
+	if (typeof document === 'undefined' || typeof getComputedStyle === 'undefined') return 12;
+	const v = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+	return Number.isFinite(v) && v > 0 ? v : 12;
+}
+
+/**
+ * The visible part of the list: each group with rows in view is a WAI-ARIA group (labelled "Hero · 3") positioned at
+ * its place, its header and rows inside it at theirs; the current row is always rendered (aria-activedescendant names
+ * it). The label of the group at the top stays pinned while its rows scroll.
+ */
+function VirtualRows(p: {
+	layout: ReviewListLayout;
+	view: { top: number; height: number };
+	current: string | null;
+	render(row: ReviewRow): ReactNode;
+}) {
+	const { layout, view } = p;
+	const { start, end } = visibleEntries(layout, view.top, view.height || UNMEASURED_PX);
+	const shown = new Set<number>();
+	for (let i = start; i < end; i++) shown.add(i);
+	const cur = p.current !== null ? layout.rowIndex[p.current] : undefined;
+	if (cur !== undefined) shown.add(cur);
+	const byGroup = new Map<string, ReviewListEntry[]>();
+	for (const i of [...shown].sort((a, b) => a - b)) {
+		const e = layout.entries[i]!;
+		const list = byGroup.get(e.group.id);
+		if (list) list.push(e);
+		else byGroup.set(e.group.id, [e]);
+	}
+	const pinned = pinnedGroup(layout, view.top);
+	return (
+		<>
+			{pinned ? (
+				<div className="pointer-events-none sticky top-0 z-[2] h-0" aria-hidden="true">
+					<div
+						className="bg-pr-panel-alt px-2 text-pr-small font-semibold leading-5 text-pr-muted"
+						style={{ height: layout.metrics.header }}
+						data-review-pinned-group={pinned.id}
+					>
+						{pinned.label} · {pinned.rows.length}
+					</div>
+				</div>
+			) : null}
+			<div className="relative" style={{ height: layout.total }}>
+				{layout.groups.map((g) => {
+					const entries = byGroup.get(g.group.id);
+					if (!entries) return null;
+					return (
+						// biome-ignore lint/a11y/useSemanticElements: a group of options inside a listbox (WAI-ARIA listbox grouping)
+						<div
+							key={g.group.id}
+							role="group"
+							aria-label={`${g.group.label} · ${g.group.rows.length}`}
+							className="absolute inset-x-0"
+							style={{ top: g.top, height: g.height }}
+						>
+							{entries.map((e) =>
+								e.kind === 'header' ? (
+									<div
+										key={`h-${g.group.id}`}
+										aria-hidden="true"
+										className="absolute inset-x-0 bg-pr-panel-alt px-2 text-pr-small font-semibold leading-5 text-pr-muted"
+										style={{ top: e.top - g.top, height: e.height }}
+										data-review-group={g.group.id}
+									>
+										{g.group.label} · {g.group.rows.length}
+									</div>
+								) : (
+									<div
+										key={e.row.item.id}
+										className="absolute inset-x-0"
+										style={{ top: e.top - g.top, height: e.height }}
+									>
+										{p.render(e.row)}
+									</div>
+								),
+							)}
+						</div>
+					);
+				})}
+			</div>
+		</>
+	);
+}
+
 function KindGlyph({ kind }: { kind: ReviewRow['kind'] }) {
 	if (!kind) return <span className="inline-block w-3" aria-hidden="true" />;
 	const shape = KIND_GLYPH[kind];
@@ -448,7 +587,8 @@ export function rowAriaLabel(row: ReviewRow, seq: Sequence | undefined): string 
 		.join(', ');
 	if (what) parts.push(what);
 	if (it.alternatives > 1) parts.push(t('alternate {0} of {1}', it.selectedAlternative + 1, it.alternatives));
-	if ((it.state === 'stale' || it.state === 'invalid') && it.reason) parts.push(it.reason);
+	const problem = problemText(it, seq);
+	if (problem) parts.push(problem);
 	else if (row.reason) parts.push(row.reason);
 	if (it.note) parts.push(t('note: {0}', it.note));
 	return parts.join('. ');
@@ -458,6 +598,10 @@ function Row(p: {
 	id: string;
 	row: ReviewRow;
 	seq: Sequence | undefined;
+	/** Its place in the list (aria-posinset) and the rows in all (aria-setsize): the list is virtualised. */
+	position: ReviewListEntry;
+	setSize: number;
+	metrics: ReturnType<typeof reviewListMetrics>;
 	current: boolean;
 	selected: boolean;
 	readOnly: boolean;
@@ -472,6 +616,7 @@ function Row(p: {
 	const { row } = p;
 	const it = row.item;
 	const warn = it.state === 'stale' || it.state === 'invalid';
+	const problem = warn ? problemText(it, p.seq) : null;
 	const decided = it.state === 'applied';
 	const seg = (d: 'accept' | 'reject' | 'clear', glyph: string, label: string, on: boolean) => (
 		<button
@@ -520,18 +665,23 @@ function Row(p: {
 			role="option"
 			aria-selected={p.selected}
 			aria-label={rowAriaLabel(row, p.seq)}
+			aria-posinset={p.position.kind === 'row' ? p.position.position + 1 : undefined}
+			aria-setsize={p.setSize}
 			onPointerDown={(e) => {
 				// on press, not on click: the details below the list appear and move the rows before the release
 				if (e.button === 0) p.onChoose();
 			}}
-			className={`flex cursor-default flex-col border-b border-pr-border-subtle px-2 py-0.5 ${
+			className={`box-border flex cursor-default flex-col overflow-hidden border-b border-pr-border-subtle px-2 py-0.5 ${
 				p.current ? 'bg-pr-selected' : 'hover:bg-pr-hover'
 			} ${it.state === 'rejected' ? 'opacity-60' : ''}`}
-			style={p.current ? { boxShadow: 'inset 2px 0 0 var(--pr-focus-ring)' } : undefined}
+			style={{
+				height: reviewRowHeight(row, p.expanded, p.metrics),
+				...(p.current ? { boxShadow: 'inset 2px 0 0 var(--pr-focus-ring)' } : {}),
+			}}
 			data-review-row={it.id}
 			data-review-state={it.state}
 		>
-			<div className="flex min-w-0 items-center gap-1.5">
+			<div className="flex h-5 min-w-0 shrink-0 items-center gap-1.5">
 				<span
 					className="inline-flex shrink-0 overflow-hidden rounded-pr-control border border-pr-border"
 					data-review-seg
@@ -572,16 +722,16 @@ function Row(p: {
 					<span className={warn ? 'text-pr-warning' : 'text-pr-muted'}>{REVIEW_STATE_LABELS[it.state]}</span>
 				</span>
 			</div>
-			<div className="flex min-w-0 items-center gap-1.5 pl-[66px] text-pr-small text-pr-muted">
+			<div className="flex h-[1.375rem] min-w-0 shrink-0 items-center gap-1.5 pl-[66px] text-pr-small leading-[1.375rem] text-pr-muted">
 				{row.role ? <span className="shrink-0">{row.role}</span> : null}
 				{gainText(row) ? (
 					<span className="max-w-[60%] shrink-0 truncate pr-tabular" title={gainText(row)} data-review-gain>
 						{gainText(row)}
 					</span>
 				) : null}
-				{warn && it.reason ? (
-					<span className="min-w-0 truncate text-pr-warning" title={it.reason}>
-						! {it.reason}
+				{warn && problem ? (
+					<span className="min-w-0 truncate text-pr-warning" title={problem} data-review-problem>
+						! {problem}
 					</span>
 				) : row.reason ? (
 					<span className="min-w-0 truncate" title={row.reason}>
@@ -590,7 +740,7 @@ function Row(p: {
 				) : null}
 			</div>
 			{row.setup.length ? (
-				<div className="pl-[66px] text-pr-small text-pr-muted">
+				<div className="shrink-0 pl-[66px] text-pr-small leading-[1.375rem] text-pr-muted">
 					<button
 						type="button"
 						tabIndex={-1}
@@ -607,7 +757,7 @@ function Row(p: {
 					</button>
 					{p.expanded
 						? row.setup.map((s) => (
-								<div key={s.id} className="truncate pl-3" data-review-setup={s.id}>
+								<div key={s.id} className="h-[1.375rem] truncate pl-3" data-review-setup={s.id}>
 									{STATE_GLYPH[s.state]} {s.label}
 								</div>
 							))

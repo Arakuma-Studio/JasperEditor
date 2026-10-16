@@ -62,6 +62,8 @@ export function planResult(o: {
 export function fakePlanEngine(
 	session: EditorSession,
 	build: (req: SoundDesignPlanRequest) => SoundDesignPlanResult | Error,
+	/** Polls answered "running" before the result (default 1; Infinity: runs until cancelled). */
+	runningPolls = 1,
 ) {
 	const requests: SoundDesignPlanRequest[] = [];
 	const cancelled: string[] = [];
@@ -94,7 +96,8 @@ export function fakePlanEngine(
 			const j = jobs.get(id);
 			if (!j) throw Object.assign(new Error('no job'), { code: 'JOB_NOT_FOUND' });
 			j.polls++;
-			if (j.polls < 2) return job(id, 'running');
+			if (cancelled.includes(id)) return job(id, 'cancelled');
+			if (j.polls <= runningPolls) return job(id, 'running');
 			const r = build(j.req);
 			if (r instanceof Error)
 				return job(id, 'failed', { error: { code: 'E_PLAN', message: r.message, retryable: false } });

@@ -4,13 +4,17 @@
 // badge and the Apply button show, the navigation order, the frame range Review zooms to, what an Apply would remove
 // from the user's sequence (named in the confirmation) and the proposal card's sentence counts.
 import {
+	APPROVAL_COMMANDS,
+	COMMAND_CATALOG,
 	type CueKind,
 	createSeededIdSource,
+	dependencyClosure,
 	type ProjectDocument,
 	type Proposal,
 	type ProposalContext,
-	previewProposal,
+	previewProposalSteps,
 	type Sequence,
+	selectedCommands,
 } from '@jasper/project';
 import type { ProposalPreviewState, ReviewItem } from '@jasper/session';
 import { t } from '../i18n/runtime.ts';
@@ -127,7 +131,11 @@ function rowOf(item: ReviewItem, ghost: GhostModel | null, gainOf: (id: string) 
 		sound: soundName(item),
 		role: text(m.role, 32),
 		gainDb: gain,
-		reason: text(m.cueReason, 160) ?? text(m.why, 160) ?? text(m.reason, 160),
+		reason:
+			text(m.cueReason, 160) ??
+			(item.selectedAlternative > 0 ? text(metaOf(item.selectedMeta).why, 160) : null) ??
+			text(m.why, 160) ??
+			text(m.reason, 160),
 		setup: [],
 	};
 }
@@ -135,9 +143,13 @@ function rowOf(item: ReviewItem, ghost: GhostModel | null, gainOf: (id: string) 
 /** The rows of the proposal under review. `ghost`: its ghosts in the drawn sequence (frames and gains), if any. */
 export function buildReviewModel(items: readonly ReviewItem[], ghost: GhostModel | null): ReviewModel {
 	const order = new Map(items.map((it, i) => [it.id, i]));
+	// An item's gain is the gain of what its own chosen command set places (the first clip it creates, else the first it
+	// changes), never a setup item's ghost folded under it (the delivery preset re-levels the music clips).
 	const gains = new Map<string, number>();
-	for (const c of ghost?.clips ?? [])
-		if (c.gainDb !== null && !gains.has(c.itemId)) gains.set(c.itemId, c.gainDb);
+	for (const pass of ['created', 'changed'] as const)
+		for (const c of ghost?.clips ?? [])
+			if (c.change === pass && c.sourceItemId === c.itemId && c.gainDb !== null && !gains.has(c.itemId))
+				gains.set(c.itemId, c.gainDb);
 	const gainOf = (id: string) => gains.get(id) ?? null;
 	const owners = setupOwners(items);
 	const byId: Record<string, ReviewRow> = {};
@@ -248,6 +260,62 @@ export function removalsOf(
 	return out;
 }
 
+/** What applying the items would do that an agent's own transaction needs the user's approval for. */
+export type ApprovalNeed =
+	| { kind: 'command'; type: string; label: string }
+	| { kind: 'force'; type: string; label: string }
+	| { kind: 'agentsMayApply' };
+
+function forced(v: unknown, depth = 0): boolean {
+	if (depth > 8 || !v || typeof v !== 'object') return false;
+	if (Array.isArray(v)) return v.some((x) => forced(x, depth + 1));
+	for (const [k, x] of Object.entries(v))
+		if ((k === 'force' && x === true) || forced(x, depth + 1)) return true;
+	return false;
+}
+
+/**
+ * The commands among the items an Apply brings (their accept closure, the chosen command sets) that would need the
+ * user's approval if an agent ran them (the agent guard's rule, S01:AGT-011): destructive commands, `force`, and an
+ * agent's grant of "Allow agents to apply sound proposals". Applying in the editor is the user's own edit, so the
+ * Review names them in its confirmation instead of applying them unseen. Never throws.
+ */
+export function approvalNeeds(proposal: Proposal | null, itemIds: readonly string[]): ApprovalNeed[] {
+	if (!proposal) return [];
+	try {
+		const closure = dependencyClosure(
+			proposal,
+			itemIds.filter((id) => proposal.items.some((it) => it.id === id)),
+			(it) => it.state === 'accepted' || it.state === 'invalid',
+		);
+		const out: ApprovalNeed[] = [];
+		const seen = new Set<string>();
+		const add = (key: string, need: ApprovalNeed) => {
+			if (seen.has(key)) return;
+			seen.add(key);
+			out.push(need);
+		};
+		for (const it of closure)
+			for (const c of selectedCommands(it)) {
+				const type = (c as { type?: unknown }).type;
+				if (typeof type !== 'string') continue;
+				const label =
+					(COMMAND_CATALOG as Record<string, { label?: string } | undefined>)[type]?.label ?? type;
+				if ((APPROVAL_COMMANDS as readonly string[]).includes(type))
+					add(`c:${type}`, { kind: 'command', type, label });
+				else if (forced(c)) add(`f:${type}`, { kind: 'force', type, label });
+				else if (
+					type === 'soundDesign.setSettings' &&
+					(c as { agentsMayApply?: unknown }).agentsMayApply === true
+				)
+					add('agentsMayApply', { kind: 'agentsMayApply' });
+			}
+		return out;
+	} catch {
+		return [];
+	}
+}
+
 /** The proposal card's counts: sounds it places, tracks it creates, items to decide on. */
 export type CardCounts = { sounds: number; newTracks: number; items: number };
 
@@ -256,14 +324,34 @@ export type CardCounts = { sounds: number; newTracks: number; items: number };
  * committed document (never committed; ids seeded like the review's preview). Never throws.
  */
 export function proposalCardCounts(doc: ProjectDocument, p: Proposal, ctx: ProposalContext): CardCounts {
+	const run = proposalCardCountsSteps(doc, p, ctx);
+	for (;;) {
+		const step = run.next();
+		if (step.done) return step.value;
+	}
+}
+
+/**
+ * `proposalCardCounts` one item at a time (the card spreads a large proposal's preview over several frames,
+ * `runInSlices`). The items are applied without the per-item invariant check: only the counts are read.
+ */
+export function* proposalCardCountsSteps(
+	doc: ProjectDocument,
+	p: Proposal,
+	ctx: ProposalContext,
+): Generator<unknown, CardCounts, void> {
 	const items = p.items.filter((it) => {
 		const m = metaOf(it.meta);
 		return m.setup !== true && (it.state === 'pending' || it.state === 'stale');
 	}).length;
 	try {
-		const r = previewProposal(doc, p, 'undecided', ctx, {
-			idsFor: (it) => createSeededIdSource(`${p.id}:${it.id}:${it.selectedAlternative ?? 0}`),
-		});
+		const r = yield* previewProposalSteps(
+			doc,
+			p,
+			'undecided',
+			{ ...ctx, checkInvariants: false },
+			{ idsFor: (it) => createSeededIdSource(`${p.id}:${it.id}:${it.selectedAlternative ?? 0}`) },
+		);
 		let sounds = 0;
 		let newTracks = 0;
 		const created = new Set(r.ghost.created);

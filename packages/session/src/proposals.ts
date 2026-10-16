@@ -22,6 +22,7 @@ import type {
 } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
+	checkInvariants,
 	createSeededIdSource,
 	dependencyClosure,
 	isSetupItem,
@@ -34,7 +35,9 @@ import {
 	type ProposalItemState,
 	type ProposalPreview,
 	previewProposal,
+	previewProposalSteps,
 	revalidate,
+	type StaleProblem,
 } from '@jasper/project';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { EditorSession } from './session.ts';
@@ -70,14 +73,18 @@ export type ReviewItem = {
 	state: ReviewItemState;
 	/** The stored state (engine). */
 	engineState: ProposalItemState;
-	/** Why it is stale / invalid (or the stored reason). */
+	/** Why it is stale / invalid (or the stored reason), in English (agents read the same). */
 	reason?: string;
+	/** Why it is stale, structured (the editor says it in the user's language); absent for a stored reason only. */
+	problem?: StaleProblem;
 	note?: string;
 	/** Command sets to choose from (its own + alternatives), the chosen one and their labels. */
 	alternatives: number;
 	selectedAlternative: number;
 	alternativeLabels: string[];
 	meta: unknown;
+	/** The meta of the chosen command set: the selected alternative's when it has one, else the item's. */
+	selectedMeta?: unknown;
 };
 
 export type ProposalPreviewState = {
@@ -119,8 +126,12 @@ export type ProposalsState = {
 	preview: ProposalPreviewState | null;
 	/** Items the local re-validation found stale on the live document, with why. */
 	stale: Record<string, string>;
+	/** The same, structured (what moved where, which requirement, what failed). */
+	staleProblems: Record<string, StaleProblem>;
 	/** A route call is in flight. */
 	busy: boolean;
+	/** The preview is being rebuilt (a large proposal's preview is spread over several frames). */
+	previewing: boolean;
 	/** The last action that failed. */
 	lastError: { code: string; message: string } | null;
 };
@@ -148,19 +159,54 @@ export type ProposalsOptions = {
 	debounceMs?: number;
 	setTimer?: (fn: () => void, ms: number) => unknown;
 	clearTimer?: (handle: unknown) => void;
+	/**
+	 * A preview of more than `syncItems` items (default 64) is rebuilt in slices of at most `sliceMs` of work (default
+	 * 8 ms), yielding to the event loop between them, so a large proposal never blocks the editor; the previous preview
+	 * stays shown until the new one is complete.
+	 */
+	sliceMs?: number;
+	syncItems?: number;
+	/** Clock of the slices (default `performance.now`). */
+	clock?: () => number;
 };
 
 const DEBOUNCE_MS = 150;
+const SLICE_MS = 8;
+const SYNC_ITEMS = 64;
+
+/** What a preview depends on in a proposal: which items it applies, with which command set and recorded refs. */
+function previewKey(p: Proposal, itemIds: readonly string[]): string {
+	const want = new Set(itemIds);
+	const parts: string[] = [p.id];
+	for (const it of p.items) {
+		if (want.has(it.id)) parts.push(`${it.id}#${it.selectedAlternative ?? 0}`);
+		else if (it.state === 'accepted') parts.push(`${it.id}=${JSON.stringify(it.applied?.refs ?? {})}`);
+	}
+	return parts.join('|');
+}
 const LIST_DEBOUNCE_MS = 100;
 
-/** An applied accept this window made, followed through Undo / Redo of its History entry. */
+/**
+ * An applied accept followed through Undo / Redo of its History entry: this window's Apply, or any accept the engine
+ * relayed into this session (an allowed agent's), learnt from `proposal.changed` `accepted`.
+ */
 type AppliedRecord = {
 	proposalId: string;
 	itemIds: string[];
 	entryId: number;
 	refs: Record<string, string>;
+	/** What the accept created (`TransactionResult.created`): the engine checks it when recording a Redo. */
+	created: string[];
 	state: 'applied' | 'undone';
 };
+
+/** Engine answers to a follow-up that only say a race resolved itself (an Undo and a Redo in quick succession). */
+const BENIGN_FOLLOW_UP = new Set([
+	'E_STILL_APPLIED',
+	'E_NOT_APPLIED',
+	'PROPOSAL_STILL_APPLIED',
+	'PROPOSAL_NOT_APPLIED',
+]);
 
 function errorOf(e: unknown): { code: string; message: string } {
 	if (e && typeof e === 'object') {
@@ -185,11 +231,28 @@ export class ProposalsController {
 	private readonly setTimer: (fn: () => void, ms: number) => unknown;
 	private readonly clearTimer: (handle: unknown) => void;
 	private recomputeTimer: unknown = null;
+	private readonly sliceMs: number;
+	private readonly syncItems: number;
+	private readonly clock: () => number;
+	/** The preview being built in slices (null: none). */
+	private job: { run: Generator<unknown, void, void>; timer: unknown } | null = null;
+	/** The last previews built, reused while what they depend on is unchanged. */
+	private memo: { doc: ProjectDocument; key: string; preview: ProposalPreview } | null = null;
+	private heardMemo: { doc: ProjectDocument; key: string; preview: ProposalPreview } | null = null;
+	private revalidated: {
+		doc: ProjectDocument;
+		proposal: Proposal;
+		result: ReturnType<typeof revalidate>;
+	} | null = null;
+	/** Items the last preview could not apply (shown stale until the next preview says otherwise). */
+	private lastFailed: Record<string, string> = {};
 	private listTimer: unknown = null;
 	private activeFetch = 0;
 	private disposed = false;
 	private readonly offs: Unsubscribe[] = [];
 	private records: AppliedRecord[] = [];
+	/** Undo / Redo follow-ups (reopen, applied) reach the engine one after another, in History order. */
+	private followUps: Promise<void> = Promise.resolve();
 	/** Decisions in flight (the stored state they will give), shown before the engine answers. */
 	private optimistic = new Map<string, 'rejected' | 'pending'>();
 
@@ -199,6 +262,9 @@ export class ProposalsController {
 	) {
 		this.engine = opts.engine ?? (session.engine as ProposalsEngine | undefined) ?? null;
 		this.debounceMs = opts.debounceMs ?? DEBOUNCE_MS;
+		this.sliceMs = opts.sliceMs ?? SLICE_MS;
+		this.syncItems = opts.syncItems ?? SYNC_ITEMS;
+		this.clock = opts.clock ?? (() => globalThis.performance?.now?.() ?? Date.now());
 		this.setTimer = opts.setTimer ?? ((fn, ms) => globalThis.setTimeout(fn, ms));
 		this.clearTimer = opts.clearTimer ?? ((h) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>));
 		this.store = createStore<ProposalsState>(() => ({
@@ -214,7 +280,9 @@ export class ProposalsController {
 			hear: false,
 			preview: null,
 			stale: {},
+			staleProblems: {},
 			busy: false,
+			previewing: false,
 			lastError: null,
 		}));
 		this.offs.push(
@@ -249,6 +317,8 @@ export class ProposalsController {
 	handleEvent(e: ProposalChangedEvent): void {
 		if (this.disposed || e.projectId !== this.session.projectId) return;
 		this.scheduleList();
+		if (e.change === 'accepted' && typeof e.revision === 'number')
+			void this.learnAccept(e.proposalId, e.revision);
 		const s = this.store.getState();
 		// an agent started / stopped waiting for the review: only the list says so (the proposal did not change)
 		if (e.change === 'waiting' || e.proposalId !== s.activeId) return;
@@ -320,6 +390,7 @@ export class ProposalsController {
 		const engine = this.engine;
 		if (!engine) return fail('E_NO_ENGINE', 'The engine is not connected');
 		const prev = this.store.getState();
+		if (prev.activeId !== proposalId) this.lastFailed = {};
 		if (prev.activeId !== proposalId)
 			this.store.setState({
 				activeId: proposalId,
@@ -328,6 +399,7 @@ export class ProposalsController {
 				selection: [],
 				preview: null,
 				stale: {},
+				staleProblems: {},
 			});
 		const r = await this.fetchActive();
 		if (!r.ok && this.store.getState().activeId === proposalId) this.exit();
@@ -338,7 +410,9 @@ export class ProposalsController {
 	exit(): void {
 		if (this.recomputeTimer !== null) this.clearTimer(this.recomputeTimer);
 		this.recomputeTimer = null;
+		this.cancelJob();
 		this.optimistic.clear();
+		this.lastFailed = {};
 		this.store.setState({
 			activeId: null,
 			proposal: null,
@@ -347,6 +421,8 @@ export class ProposalsController {
 			hear: false,
 			preview: null,
 			stale: {},
+			staleProblems: {},
+			previewing: false,
 		});
 	}
 
@@ -409,7 +485,15 @@ export class ProposalsController {
 
 	setHear(on: boolean): void {
 		if (this.store.getState().hear !== on) this.store.setState({ hear: on });
-		if (on) this.flush();
+		if (!on) return;
+		// a small proposal's preview is made ready now; a large one's starts now and comes in slices
+		const n = this.store.getState().proposal?.items.length ?? 0;
+		if (n <= this.syncItems) this.flush();
+		else if (this.recomputeTimer !== null) {
+			this.clearTimer(this.recomputeTimer);
+			this.recomputeTimer = null;
+			this.recompute(false);
+		}
 	}
 	toggleHear(): boolean {
 		const on = !this.store.getState().hear;
@@ -594,11 +678,12 @@ export class ProposalsController {
 		if (r.applied.length && r.result?.ok) {
 			const entry = this.entryAt(r.revision);
 			if (entry !== null)
-				this.records.push({
+				this.track({
 					proposalId,
 					itemIds: [...r.applied],
 					entryId: entry,
 					refs: { ...r.result.refs },
+					created: [...r.result.created],
 					state: 'applied',
 				});
 		}
@@ -647,15 +732,43 @@ export class ProposalsController {
 
 	// ---- History: Undo of an applied accept reopens it, Redo records it again
 
+	/** The History entry a transaction made (by the revision after it), whoever's it was. */
 	private entryAt(revisionAfter: number | null): number | null {
 		if (revisionAfter === null) return null;
 		const h = this.session.getState().history;
-		const e = h.entries.find((x) => x.revisionAfter === revisionAfter && x.origin === 'user');
+		const e = h.entries.find((x) => x.revisionAfter === revisionAfter);
 		return e ? e.id : null;
 	}
 	private entryLabel(revisionAfter: number | null): string | null {
 		const h = this.session.getState().history;
 		return h.entries.find((x) => x.revisionAfter === revisionAfter)?.label ?? null;
+	}
+
+	private track(rec: AppliedRecord): void {
+		if (this.records.some((r) => r.entryId === rec.entryId)) return;
+		this.records.push(rec);
+		this.followHistory();
+	}
+
+	/**
+	 * An accept the engine applied into this session that this window did not make (an allowed agent's): follow its
+	 * History entry too, so undoing it puts the items back into review and redoing it records them again.
+	 */
+	private async learnAccept(proposalId: string, revision: number): Promise<void> {
+		const entryId = this.entryAt(revision);
+		if (entryId === null || this.records.some((r) => r.entryId === entryId)) return;
+		const p = await this.read(proposalId);
+		if (!p || this.disposed || this.records.some((r) => r.entryId === entryId)) return;
+		const items = p.items.filter((it) => it.state === 'accepted' && it.applied?.revision === revision);
+		if (!items.length) return;
+		this.track({
+			proposalId,
+			itemIds: items.map((it) => it.id),
+			entryId,
+			refs: { ...(items[0]!.applied?.refs ?? {}) },
+			created: [...(items[0]!.applied?.created ?? [])],
+			state: 'applied',
+		});
 	}
 
 	private followHistory(): void {
@@ -668,19 +781,28 @@ export class ProposalsController {
 			const applied = pos < h.index;
 			if (rec.state === 'applied' && !applied) {
 				rec.state = 'undone';
-				void this.reopenUndone(rec);
+				this.followUp(() => this.reopenUndone(rec));
 			} else if (rec.state === 'undone' && applied) {
 				rec.state = 'applied';
-				void this.recordRedone(rec);
+				this.followUp(() => this.recordRedone(rec));
 			}
 			keep.push(rec);
 		}
 		this.records = keep;
 	}
 
+	private followUp(fn: () => Promise<void>): void {
+		this.followUps = this.followUps.then(fn, fn);
+	}
+
+	/** Resolves once every Undo / Redo follow-up sent so far has been answered (tests, Apply). */
+	settled(): Promise<void> {
+		return this.followUps;
+	}
+
 	private async reopenUndone(rec: AppliedRecord): Promise<void> {
 		const engine = this.engine;
-		if (!engine) return;
+		if (!engine || this.disposed) return;
 		try {
 			const r = await engine.reopenProposal(this.session.projectId, rec.proposalId, { itemIds: rec.itemIds });
 			// decisions intact: the items come back accepted here, ready to apply again
@@ -690,13 +812,15 @@ export class ProposalsController {
 			if (s.activeId === rec.proposalId) this.adopt(r.proposal);
 			this.scheduleList();
 		} catch (e) {
-			this.store.setState({ lastError: errorOf(e) });
+			const err = errorOf(e);
+			// redone meanwhile: the engine kept them accepted, which is what the document says
+			if (!BENIGN_FOLLOW_UP.has(err.code)) this.store.setState({ lastError: err });
 		}
 	}
 
 	private async recordRedone(rec: AppliedRecord): Promise<void> {
 		const engine = this.engine;
-		if (!engine) return;
+		if (!engine || this.disposed) return;
 		const s = this.store.getState();
 		this.store.setState({
 			accepted: {
@@ -709,11 +833,14 @@ export class ProposalsController {
 				itemIds: rec.itemIds,
 				revision: this.session.revision,
 				refs: rec.refs,
+				...(rec.created.length ? { created: rec.created } : {}),
 			});
 			if (this.store.getState().activeId === rec.proposalId) this.adopt(r.proposal);
 			this.scheduleList();
 		} catch (e) {
-			this.store.setState({ lastError: errorOf(e) });
+			const err = errorOf(e);
+			// undone again meanwhile: nothing to record (the engine says pending, as the document does)
+			if (!BENIGN_FOLLOW_UP.has(err.code)) this.store.setState({ lastError: err });
 		}
 	}
 
@@ -738,18 +865,39 @@ export class ProposalsController {
 		if (this.recomputeTimer !== null) this.clearTimer(this.recomputeTimer);
 		this.recomputeTimer = this.setTimer(() => {
 			this.recomputeTimer = null;
-			this.recompute();
+			this.recompute(false);
 		}, this.debounceMs);
 	}
 
-	/** Recomputes now if a recompute is pending. */
+	/** Recomputes now (to completion, synchronously) if a recompute is pending or being built in slices. */
 	flush(): void {
-		if (this.recomputeTimer === null) return;
-		this.clearTimer(this.recomputeTimer);
+		const pending = this.recomputeTimer !== null || this.job !== null;
+		if (this.recomputeTimer !== null) this.clearTimer(this.recomputeTimer);
 		this.recomputeTimer = null;
-		this.recompute();
+		if (pending) this.recompute(true);
 	}
 
+	private cancelJob(): void {
+		if (!this.job) return;
+		if (this.job.timer !== null) this.clearTimer(this.job.timer);
+		this.job = null;
+	}
+
+	/** Runs the sliced preview job for at most `sliceMs`, then yields to the event loop (or to completion: `sync`). */
+	private step(job: NonNullable<ProposalsController['job']>, sync: boolean): void {
+		job.timer = null;
+		const start = this.clock();
+		for (;;) {
+			if (this.job !== job || this.disposed) return;
+			const r = job.run.next();
+			if (r.done) {
+				if (this.job === job) this.job = null;
+				return;
+			}
+			if (!sync && this.clock() - start >= this.sliceMs) break;
+		}
+		job.timer = this.setTimer(() => this.step(job, false), 0);
+	}
 	private context(): ProposalContext {
 		const ctx = this.session.ctx;
 		return {
@@ -761,8 +909,13 @@ export class ProposalsController {
 	}
 
 	/** The local review state of every item (engine state + local re-validation + decisions). */
-	private publishItems(stale = this.store.getState().stale, failed: Record<string, string> = {}): void {
+	private publishItems(
+		stale = this.store.getState().stale,
+		failed: Record<string, string> = this.lastFailed,
+	): void {
+		this.lastFailed = failed;
 		const s = this.store.getState();
+		const problems = s.staleProblems;
 		const p = s.proposal;
 		if (!p) {
 			if (s.items.length) this.store.setState({ items: [] });
@@ -774,15 +927,21 @@ export class ProposalsController {
 			const stored = this.optimistic.get(it.id) ?? it.state;
 			let state: ReviewItemState;
 			let reason = it.reason;
+			let problem: StaleProblem | undefined;
 			if (it.state === 'accepted') state = 'applied';
 			else if (it.state === 'invalid') state = 'invalid';
 			else if (stored === 'rejected') state = 'rejected';
 			else if (stale[it.id] !== undefined || failed[it.id] !== undefined) {
 				state = 'stale';
 				reason = stale[it.id] ?? failed[it.id];
+				problem =
+					stale[it.id] !== undefined ? problems[it.id] : { type: 'conflict', issue: failed[it.id] ?? '' };
 			} else if (local.has(it.id)) state = 'accepted';
 			else state = 'pending';
-			if (state === 'pending' || state === 'accepted' || state === 'rejected') reason = undefined;
+			if (state === 'pending' || state === 'accepted' || state === 'rejected') {
+				reason = undefined;
+				problem = undefined;
+			}
 			return {
 				id: it.id,
 				label: it.label,
@@ -792,29 +951,53 @@ export class ProposalsController {
 				state,
 				engineState: it.state,
 				...(reason ? { reason } : {}),
+				...(problem ? { problem } : {}),
 				...(it.note ? { note: it.note } : {}),
 				alternatives: (it.alternatives?.length ?? 0) + 1,
 				selectedAlternative: it.selectedAlternative ?? 0,
 				alternativeLabels: [it.label, ...(it.alternatives ?? []).map((a) => a.label)],
+				selectedMeta:
+					(it.selectedAlternative ?? 0) > 0
+						? (it.alternatives?.[(it.selectedAlternative ?? 0) - 1]?.meta ?? it.meta)
+						: it.meta,
 				meta: it.meta,
 			};
 		});
 		this.store.setState({ items });
 	}
 
-	private recompute(): void {
+	/**
+	 * Rebuilds the preview and the local re-validation on the committed document: anchors (cheap) at once, then the
+	 * previews — every reviewable item (the ghosts) and, when something is rejected, what Hear plays — reusing the last
+	 * ones while what they depend on did not change (a local accept or clear rebuilds nothing). Items are applied
+	 * without the per-item invariant check and the end result of a small proposal is checked once; only when that fails
+	 * are the items applied again with it, to tell which ones break it. A large proposal is built in slices (`sliceMs`)
+	 * unless `sync`.
+	 */
+	private recompute(sync: boolean): void {
 		if (this.disposed) return;
+		this.cancelJob();
 		const s = this.store.getState();
 		const p = s.proposal;
 		if (!p) {
-			if (s.preview) this.store.setState({ preview: null });
+			if (s.preview || s.previewing) this.store.setState({ preview: null, previewing: false });
 			return;
 		}
 		const doc = this.session.getCommitted();
 		const ctx = this.context();
-		const rv = revalidate(doc, p, ctx);
+		// the anchors' re-validation depends on the document and the stored proposal only (not on local decisions)
+		const rvMemo = this.revalidated;
+		const rv =
+			rvMemo && rvMemo.doc === doc && rvMemo.proposal === p
+				? rvMemo.result
+				: revalidate(doc, p, ctx, { dryRuns: false });
+		this.revalidated = { doc, proposal: p, result: rv };
 		const stale: Record<string, string> = {};
-		for (const x of rv.stale) stale[x.itemId] = x.reason;
+		const staleProblems: Record<string, StaleProblem> = {};
+		for (const x of rv.stale) {
+			stale[x.itemId] = x.reason;
+			if (x.problem) staleProblems[x.itemId] = x.problem;
+		}
 		// the decisions in flight count as made
 		const viewed: Proposal = {
 			...rv.proposal,
@@ -827,40 +1010,87 @@ export class ProposalsController {
 						: it;
 			}),
 		};
-		const idsFor = (it: ProposalItem) =>
-			createSeededIdSource(`${p.id}:${it.id}:${it.selectedAlternative ?? 0}`);
 		const all = viewed.items.filter((it) => reviewable(it.state)).map((it) => it.id);
-		const result = previewProposal(doc, viewed, all, ctx, { idsFor });
 		const rejected = new Set(viewed.items.filter((it) => it.state === 'rejected').map((it) => it.id));
 		const heardIds = all.filter((id) => !rejected.has(id));
-		// what accepting would apply: a rejected item that a heard one requires comes with it (as in `planAccept`)
-		const heard = rejected.size === 0 ? result : previewProposal(doc, viewed, heardIds, ctx, { idsFor });
-		const owner: Record<string, string> = {};
-		for (const [itemId, g] of Object.entries(result.items))
-			for (const id of [...g.created, ...g.changed, ...g.deleted]) owner[id] ??= itemId;
-		const failed: Record<string, string> = {};
-		for (const [itemId, errors] of Object.entries(result.failed))
-			if (!rejected.has(itemId)) failed[itemId] = issueReason(errors);
-		this.store.setState({
-			stale,
-			preview: {
-				proposalId: p.id,
-				revision: this.session.revision,
-				base: doc,
-				document: heard.document,
-				result,
-				ghost: result.ghost,
-				heard: heard.applied,
-				owner,
-			},
-		});
-		this.publishItems(stale, failed);
+		const key = previewKey(viewed, all);
+		const heardKey = previewKey(viewed, heardIds);
+		const revision = this.session.revision;
+		const finish = (result: ProposalPreview, heard: ProposalPreview) => {
+			const owner: Record<string, string> = {};
+			for (const [itemId, g] of Object.entries(result.items))
+				for (const id of [...g.created, ...g.changed, ...g.deleted]) owner[id] ??= itemId;
+			const failed: Record<string, string> = {};
+			for (const [itemId, errors] of Object.entries(result.failed))
+				if (!rejected.has(itemId)) failed[itemId] = issueReason(errors);
+			this.store.setState({
+				stale,
+				staleProblems,
+				previewing: false,
+				preview: {
+					proposalId: p.id,
+					revision,
+					base: doc,
+					document: heard.document,
+					result,
+					ghost: result.ghost,
+					heard: heard.applied,
+					owner,
+				},
+			});
+			this.publishItems(stale, failed);
+		};
+		const memo = this.memo;
+		const heardMemo = this.heardMemo;
+		const resultHit = memo && memo.doc === doc && memo.key === key ? memo.preview : null;
+		const heardHit =
+			rejected.size === 0
+				? resultHit
+				: heardMemo && heardMemo.doc === doc && heardMemo.key === heardKey
+					? heardMemo.preview
+					: null;
+		if (resultHit && heardHit) {
+			finish(resultHit, heardHit);
+			return;
+		}
+		// stale anchors show at once; the previews follow
+		this.store.setState({ stale, staleProblems, previewing: true });
+		this.publishItems(stale);
+		const idsFor = (it: ProposalItem) =>
+			createSeededIdSource(`${p.id}:${it.id}:${it.selectedAlternative ?? 0}`);
+		const effects = { effects: ctx.registries.effects };
+		const fast: ProposalContext = { ...ctx, checkInvariants: false };
+		// The whole result's invariant check (one full pass over the document, ≈ 100 ms for a 1 000-item proposal on a
+		// loaded machine) is skipped for a large proposal: its items were checked together by the engine on the document
+		// it was made for, a placement refuses overlaps itself, and an item that conflicts only through an invariant is
+		// reported stale by Apply (the engine's accept checks the exact set it applies) — never silently dropped.
+		const verifyTogether = all.length <= this.syncItems;
+		function* build(ids: readonly string[]): Generator<unknown, ProposalPreview, void> {
+			const quick = yield* previewProposalSteps(doc, viewed, ids, fast, { idsFor });
+			if (quick.applied.length === 0 || !verifyTogether) return quick;
+			if (checkInvariants(quick.document, effects).length === 0) return quick;
+			// together they break an invariant: once more with the check per item, to know which items do
+			return yield* previewProposalSteps(doc, viewed, ids, ctx, { idsFor });
+		}
+		const self = this;
+		function* work(): Generator<unknown, void, void> {
+			const result = resultHit ?? (yield* build(all));
+			self.memo = { doc, key, preview: result };
+			const heard = rejected.size === 0 ? result : (heardHit ?? (yield* build(heardIds)));
+			if (rejected.size) self.heardMemo = { doc, key: heardKey, preview: heard };
+			yield; // publishing (the store's listeners redraw) starts a slice of its own
+			finish(result, heard);
+		}
+		const job = { run: work(), timer: null as unknown };
+		this.job = job;
+		this.step(job, sync || all.length <= this.syncItems);
 	}
 
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
 		if (this.recomputeTimer !== null) this.clearTimer(this.recomputeTimer);
+		this.cancelJob();
 		if (this.listTimer !== null) this.clearTimer(this.listTimer);
 		for (const off of this.offs.splice(0)) off();
 		controllers.delete(this.session);

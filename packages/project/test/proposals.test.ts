@@ -320,8 +320,20 @@ describe('revalidate and planAccept on a changed document', () => {
 		h.ok([{ type: 'clip.move', clipIds: [clipId], deltaFrames: 12 }]);
 		const moved = revalidate(h.doc, p, CTX);
 		expect(moved.changed).toBe(true);
+		// a reason a person can read (timecodes, what it is), and the structured problem the editor translates
 		expect(moved.stale).toEqual([
-			{ itemId: 'a', reason: `${clipId} changed since the proposal was made (start 0 → 12)` },
+			{
+				itemId: 'a',
+				reason: expect.stringMatching(/^The clip( “[^”]*”)? at 00:00:00:00 moved to 00:00:00:12$/),
+				problem: expect.objectContaining({
+					type: 'anchor',
+					id: clipId,
+					entity: 'clip',
+					change: 'start',
+					at: 0,
+					to: 12,
+				}),
+			},
 		]);
 		expect(moved.proposal.items[1]!.state).toBe('pending');
 		const back = revalidate(base, moved.proposal, CTX);
@@ -329,7 +341,13 @@ describe('revalidate and planAccept on a changed document', () => {
 		expect(back.proposal.items[0]!.reason).toBeUndefined();
 		h.ok([{ type: 'clip.lift', clipIds: [clipId] }]);
 		const gone = revalidate(h.doc, p, CTX);
-		expect(gone.stale[0]!.reason).toBe(`${clipId} no longer exists`);
+		expect(gone.stale[0]!.reason).toBe('The clip at 00:00:00:00 was deleted');
+		expect(gone.stale[0]!.problem).toMatchObject({
+			type: 'anchor',
+			entity: 'clip',
+			change: 'deleted',
+			at: 0,
+		});
 	});
 
 	it('an item whose commands stop applying goes stale, and so do the items requiring it', () => {
@@ -345,7 +363,13 @@ describe('revalidate and planAccept on a changed document', () => {
 		const r = revalidate(h.doc, p, CTX);
 		expect(r.proposal.items.map((i) => i.state)).toEqual(['stale', 'stale']);
 		expect(r.proposal.items[0]!.reason).toMatch(/no longer exists|E_NOT_FOUND/);
-		expect(r.proposal.items[1]!.reason).toBe('requires item a, which is stale');
+		expect(r.proposal.items[1]!.reason).toMatch(/^Requires item a \(“[^”]+”\), which is stale$/);
+		expect(r.stale.find((x) => x.itemId === 'b')!.problem).toMatchObject({
+			type: 'requires',
+			itemId: 'a',
+			state: 'stale',
+		});
+		expect(r.stale.find((x) => x.itemId === 'a')!.problem).toMatchObject({ type: 'conflict' });
 	});
 
 	it('planAccept is all-or-nothing, or with partial applies the rest and reports the stale items', () => {
