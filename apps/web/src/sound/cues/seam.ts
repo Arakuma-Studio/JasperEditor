@@ -132,14 +132,18 @@ export function updateCuesCommands(
 		kind: SoundCue['kind'];
 		align: SoundCue['align'] | null;
 		stopBefore: SoundCue['stopBefore'] | null;
+		build: SoundCue['build'] | null;
 		muted: boolean;
 	}>,
 ): Command[] {
 	return ids.map((cueId) => ({ type: 'soundCue.update', cueId, ...patch }) as Command);
 }
 
-/** Stop Before Next: the music dips this long and deep before the cue (P4 renders it as volume keyframes). */
-export const STOP_BEFORE_DEFAULT = { seconds: 0.25, depthDb: -24 } as const;
+/**
+ * Stop Before Next: the music dips this long and deep before the cue (0.25 s, −24 dB). Phase 4 writes it into the mix
+ * (volume keyframes) when the cue is filled; the model owns the values.
+ */
+export { STOP_BEFORE_DEFAULT } from '@jasper/project';
 
 /** Convert to Marker: one `sfx: …` marker per cue (parsed back by Convert Markers to Cues), the cues removed. */
 export function cuesToMarkersCommands(cues: readonly SoundCue[]): Command[] {

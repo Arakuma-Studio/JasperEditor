@@ -22,6 +22,7 @@ const SOUND_COMMANDS = [
 	'soundDesign.setSettings',
 	'soundDesign.setPeak',
 	'soundDesign.applyGains',
+	'soundDesign.setAutoGain',
 	'audio.volumeDip',
 	'soundDesign.applyStopBefore',
 	'soundDesign.applyBuild',
@@ -89,6 +90,13 @@ const PRELUDE: Record<string, unknown[]> = {
 			type: 'soundDesign.place',
 			frame: 30,
 			layers: [{ mediaId: { mediaByName: 'clip-a.mp4' }, align: 'start', track: 'A1', ref: '$sfx' }],
+		},
+	],
+	'soundDesign.setAutoGain': [
+		{
+			type: 'soundDesign.place',
+			frame: 30,
+			layers: [{ mediaId: { mediaByName: 'clip-a.mp4' }, align: 'start', track: 'A1' }],
 		},
 	],
 	'audio.volumeDip': MUSIC,

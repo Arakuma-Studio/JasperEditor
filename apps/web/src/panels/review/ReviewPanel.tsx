@@ -43,6 +43,7 @@ import { useGhostModel, useProposals, useProposalsController } from '../../propo
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { glyphPath, KIND_GLYPH } from '../../sound/cues/model.ts';
 import { seqTimecode } from '../../sound/design-model.ts';
+import { reviewGainText } from '../../sound/mix-model.ts';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import type { PanelProps } from '../types.ts';
 import {
@@ -571,9 +572,9 @@ function KindGlyph({ kind }: { kind: ReviewRow['kind'] }) {
 	);
 }
 
-function gainText(db: number | null): string {
-	if (db === null) return '';
-	return `${db >= 0 ? '+' : ''}${db.toFixed(1)} dB`;
+/** The row's gain with what limited it ("−16.2 dB · limited by dialogue A2"; Phase 4 levels from the item's meta). */
+function gainText(row: ReviewRow): string {
+	return reviewGainText(row.gainDb, row.item.meta, row.item.selectedAlternative > 0);
 }
 
 /** The accessible name of a row: "Hit on the cut, accepted, at 00:00:02:15. Crunch, support, −3.0 dB. <reason>". */
@@ -581,12 +582,7 @@ export function rowAriaLabel(row: ReviewRow, seq: Sequence | undefined): string 
 	const it = row.item;
 	const parts = [`${it.label}, ${REVIEW_STATE_LABELS[it.state]}`];
 	if (row.frame !== null) parts[0] += `, ${t('at {0}', fmtTc(seq, row.frame))}`;
-	const what = [
-		row.kind ? kindName(row.kind) : null,
-		row.sound,
-		row.role,
-		row.gainDb !== null ? gainText(row.gainDb) : null,
-	]
+	const what = [row.kind ? kindName(row.kind) : null, row.sound, row.role, gainText(row) || null]
 		.filter(Boolean)
 		.join(', ');
 	if (what) parts.push(what);
@@ -728,7 +724,11 @@ function Row(p: {
 			</div>
 			<div className="flex h-[1.375rem] min-w-0 shrink-0 items-center gap-1.5 pl-[66px] text-pr-small leading-[1.375rem] text-pr-muted">
 				{row.role ? <span className="shrink-0">{row.role}</span> : null}
-				{row.gainDb !== null ? <span className="shrink-0 pr-tabular">{gainText(row.gainDb)}</span> : null}
+				{gainText(row) ? (
+					<span className="max-w-[60%] shrink-0 truncate pr-tabular" title={gainText(row)} data-review-gain>
+						{gainText(row)}
+					</span>
+				) : null}
 				{warn && problem ? (
 					<span className="min-w-0 truncate text-pr-warning" title={problem} data-review-problem>
 						! {problem}

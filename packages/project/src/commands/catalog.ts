@@ -356,6 +356,7 @@ const LABELS: Record<CommandType, string> = {
 	'soundDesign.setSettings': 'Sound Design Settings',
 	'soundDesign.setPeak': 'Set Peak',
 	'soundDesign.applyGains': 'Rebalance SFX Levels',
+	'soundDesign.setAutoGain': 'Auto Gain',
 	'audio.volumeDip': 'Volume Dip',
 	'soundDesign.applyStopBefore': 'Stop Before Cue',
 	'soundDesign.applyBuild': 'Build Into Cue',

@@ -8,7 +8,7 @@ import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine.ts';
-import { AutoSoundPassDialog, autoPassRequest } from '../src/sound/AutoSoundPassDialog.tsx';
+import { AutoSoundPassDialog, autoPassRequest, NO_MIX } from '../src/sound/AutoSoundPassDialog.tsx';
 import { fakePlanEngine, planResult, storeProposal } from './review-helpers.ts';
 import { fakeSoundEngine, soundEntry } from './sound-helpers.ts';
 import { makeSession } from './timeline-helpers.ts';
@@ -213,5 +213,61 @@ describe('Auto Sound Pass… dialog', () => {
 			range: { start: 10, end: 50 },
 			style: { cueSources: ['edits'], sources: ['synth'], palette: [] },
 		});
+	});
+
+	it('Phase 4 mix options: room glue with its send level, stop before / build into heroes, a delivery preset', async () => {
+		const t = setup();
+		const dialog = await screen.findByTestId('auto-sound-pass-dialog');
+		await settle();
+		const mix = screen.getByTestId('auto-pass-mix');
+		const room = within(mix).getByRole('checkbox', { name: /Room glue/ });
+		const slider = within(screen.getByTestId('auto-pass-room')).getByRole('slider');
+		expect(slider.getAttribute('data-disabled')).not.toBeNull();
+		fireEvent.click(room);
+		await act(async () => {
+			fireEvent.keyDown(within(screen.getByTestId('auto-pass-room')).getByRole('slider'), {
+				key: 'ArrowRight',
+			});
+		});
+		fireEvent.click(within(mix).getByRole('checkbox', { name: /Stop before heroes/ }));
+		fireEvent.click(within(mix).getByRole('checkbox', { name: /Build into heroes/ }));
+		await chooseOption(
+			screen.getByRole('combobox', { name: 'Delivery' }),
+			'Web / streaming · −14 LUFS · −1 dBTP',
+		);
+		await act(async () => {
+			fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
+		});
+		await waitFor(() => expect(t.closed).toHaveLength(1), { timeout: 5000 });
+		expect(t.plan.requests[0]!.style).toMatchObject({
+			roomGlue: { sendDb: -15.5 },
+			stopBefore: true,
+			build: true,
+			delivery: 'web',
+		});
+		t.c.exit();
+	});
+
+	it('the mix options stay out of the request when off', () => {
+		const { session, seqId } = makeSession();
+		const base = {
+			range: 'sequence' as const,
+			cueSources: new Set<never>(),
+			density: 'balanced' as const,
+			palette: 'none' as const,
+			soundSources: new Set<never>(),
+			respectDialogue: true,
+		};
+		const off = autoPassRequest(session, seqId, { ...base, mix: NO_MIX }, null, null).style!;
+		for (const k of ['roomGlue', 'stopBefore', 'build', 'delivery']) expect(off).not.toHaveProperty(k);
+		const on = autoPassRequest(
+			session,
+			seqId,
+			{ ...base, mix: { roomGlue: -20, stopBefore: true, build: false, delivery: 'podcast' } },
+			null,
+			null,
+		).style!;
+		expect(on).toMatchObject({ roomGlue: { sendDb: -20 }, stopBefore: true, delivery: 'podcast' });
+		expect(on).not.toHaveProperty('build');
 	});
 });

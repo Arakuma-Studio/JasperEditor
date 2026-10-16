@@ -306,6 +306,8 @@ export const SfxDefaultLevelSchema = z.looseObject({
 	targetLufs: z.number().min(-100).max(0),
 	/** What set it: the loudness target, the true-peak ceiling, the gain range, or no loudness descriptor. */
 	limitedBy: z.enum(['loudness', 'peak', 'range', 'unmeasured']),
+	/** Auto gain turned off (`soundDesign.setAutoGain`): the gain is the user's, the record stays for display. */
+	manual: z.boolean().optional(),
 });
 
 /** Most `limitedBy` entries and their length in a solver level (the solver reports a handful). */
@@ -333,6 +335,8 @@ export const SfxSolverLevelSchema = z.looseObject({
 		.max(SFX_SOLVER_LEVEL_LIMITS.limitedBy),
 	/** Human summary ("−3 dB, limited by dialogue A1"). */
 	reason: z.string().max(SFX_SOLVER_LEVEL_LIMITS.reason).optional(),
+	/** Auto gain turned off (`soundDesign.setAutoGain`): the gain is the user's, the record stays for display. */
+	manual: z.boolean().optional(),
 });
 
 export const SfxLevelSchema = z.union([SfxDefaultLevelSchema, SfxSolverLevelSchema]);

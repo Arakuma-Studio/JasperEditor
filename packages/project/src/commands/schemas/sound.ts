@@ -269,6 +269,21 @@ export const SoundDesignApplyGainsCmd = cmd('soundDesign.applyGains', {
 		.optional(),
 });
 
+/**
+ * Auto gain of sound effects on or off (Essential Sound ▸ Sound Design ▸ "Auto gain", spec 12 §2.7). `auto: false`
+ * keeps each clip's current gain as the user's own: its `sfx.level` (default or solver) stays for display and is marked
+ * `manual`, so a rebalance (unless it names the clip), a delivery preset, a swap or a role change leave the gain alone.
+ * `auto: true` hands it back: the level counts again while the gain still equals the recorded one (a gain changed since
+ * stays the user's until a solve names the clip: `soundDesign.applyGains`, MCP `rebalance_sfx {clipIds}`). Clips without
+ * a recorded level are left as they are. Clips must be sound effects (Essential Sound SFX or placed sounds) on unlocked
+ * tracks. Result `{clips: [{clipId, owner}]}` (the gain owner after the change).
+ */
+export const SoundDesignSetAutoGainCmd = cmd('soundDesign.setAutoGain', {
+	sequenceId: IdRefSchema.optional(),
+	clipIds: z.array(IdRefSchema).min(1).max(APPLY_GAINS_MAX_CLIPS),
+	auto: z.boolean(),
+});
+
 export const SOUND_COMMANDS = [
 	MediaSetLibraryInfoCmd,
 	SoundCueAddCmd,
@@ -282,4 +297,5 @@ export const SOUND_COMMANDS = [
 	SoundDesignSetSettingsCmd,
 	SoundDesignSetPeakCmd,
 	SoundDesignApplyGainsCmd,
+	SoundDesignSetAutoGainCmd,
 ] as const;

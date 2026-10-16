@@ -2,8 +2,9 @@
 // - Sound (an audio clip): its library sound's descriptors (types, length, peak, onset, centroid, loudness), where the
 //   peak plays, the cue it fills (select it), the licence and the credit line exactly as the Sound Credits export prints
 //   it (`creditLine`), Show Licence…; for project audio, Detect Peak.
-// - Cue (one selected cue, nothing else selected): timecode, role, kind, align, pan, pitch, build, stop-before, reason
-//   and the clips that fill it; every field is an edit through `soundCue.update` (one undo step).
+// - Cue (one selected cue, nothing else selected): timecode, role, kind, align, pan, pitch, build {seconds, fromHz, toHz}
+//   and stop-before {seconds, depthDb} (validated; written into the mix or only stored, Phase 4 WP4.2b), reason and the
+//   clips that fill it; every field is an edit through `soundCue.update` (one undo step).
 import {
 	type Command,
 	CUE_ALIGNS,
@@ -25,11 +26,10 @@ import type { ReactNode } from 'react';
 import { runCommand } from '../commands/registry.ts';
 import type { ClipSectionProps } from '../extensions/index.ts';
 import { t } from '../i18n/runtime.ts';
-import { CheckboxField, SelectField, TextField } from '../panels/properties/controls/fields.tsx';
+import { SelectField, TextField } from '../panels/properties/controls/fields.tsx';
 import { Section } from '../panels/properties/controls/Section.tsx';
 import { useShellRuntimeOrNull } from '../shell/context.tsx';
 import { CUE_ALIGN_LABELS, CUE_WEIGHT_LABELS, cuesOf, kindLabel, placedClips } from './cues/model.ts';
-import { STOP_BEFORE_DEFAULT } from './cues/seam.ts';
 import {
 	alignedFrameOf,
 	clipProvenance,
@@ -41,6 +41,7 @@ import {
 	sfxOf,
 	trackLabelOf,
 } from './design-model.ts';
+import { BuildEditor, StopBeforeEditor } from './MixFields.tsx';
 import { formatSeconds, LICENSE_BADGE_TITLES, typeLabel } from './model.ts';
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -337,30 +338,16 @@ export function CueProperties({ session, sequenceId }: { session: EditorSession;
 					/>
 				</Row>
 				<Row label={t('Build')}>
-					<CheckboxField
-						label={t('Build (a high-pass rise before the cue)')}
-						value={!!cue.build}
-						disabled={readOnly}
-						onChange={(on) =>
-							set(t('Cue Build'), { build: on ? { seconds: 1, fromHz: 200, toHz: 2000 } : null })
-						}
-					>
-						{cue.build
-							? t('{0} s, {1} → {2} Hz', cue.build.seconds, cue.build.fromHz, cue.build.toHz)
-							: t('Off')}
-					</CheckboxField>
+					<BuildEditor session={session} seq={seq} cue={cue} readOnly={readOnly} testId="cue-section-build" />
 				</Row>
 				<Row label={t('Stop before')}>
-					<CheckboxField
-						label={t('Stop Before Next')}
-						value={!!cue.stopBefore}
-						disabled={readOnly}
-						onChange={(on) =>
-							set(t('Stop Before Next'), { stopBefore: on ? { ...STOP_BEFORE_DEFAULT } : null })
-						}
-					>
-						{cue.stopBefore ? t('{0} s, {1} dB', cue.stopBefore.seconds, cue.stopBefore.depthDb) : t('Off')}
-					</CheckboxField>
+					<StopBeforeEditor
+						session={session}
+						seq={seq}
+						cue={cue}
+						readOnly={readOnly}
+						testId="cue-section-stop-before"
+					/>
 				</Row>
 				<Row label={t('Reason')}>
 					<TextField

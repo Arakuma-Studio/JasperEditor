@@ -66,6 +66,11 @@ for (const presets of presetFamilies) {
 	}
 }
 for (const p of project.builtinEssentialPresets()) add(p.name);
+// Delivery presets (sound design, Phase 4): the names and where their numbers come from (Delivery Target…).
+for (const p of Object.values(project.DELIVERY_PRESETS)) {
+	add(p.label);
+	add(p.source);
+}
 // Sound design: the History labels agents' tools compose and the refusals the editor shows in notices, as templates
 // (`{0}`… are ids, titles and numbers); the runtime translates a text that matches one (`translateName`).
 for (const t of project.SOUND_MODEL_STRINGS) add(t);

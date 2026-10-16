@@ -54,6 +54,7 @@ type Abstract =
 	| { k: 'setRole'; clip: number; role: number }
 	| { k: 'setPeak'; clip: number; peak: number }
 	| { k: 'applyGains'; clip: number; n: number; gain: number; limits: number }
+	| { k: 'autoGain'; clip: number; auto: boolean }
 	| { k: 'mix'; op: number; clip: number; cue: number; at: number; len: number; depth: number; hz: number };
 
 const frame = fc.integer({ min: 0, max: 900 });
@@ -167,6 +168,8 @@ const abstract: fc.Arbitrary<Abstract> = fc.oneof(
 		gain: fc.double({ min: -32, max: 14, noNaN: true }),
 		limits: fc.nat(3),
 	}),
+	// Phase 4 (WP4.2b): auto gain on / off (non-effect clips are refused)
+	fc.record({ k: fc.constant('autoGain' as const), clip: idx, auto: fc.boolean() }),
 	// Phase 4 (WP4.2a): music type, dips, stop-before, build, room glue, delivery
 	fc.record({
 		k: fc.constant('mix' as const),
@@ -372,6 +375,11 @@ function concretize(a: Abstract, doc: ProjectDocument, media: string[]): unknown
 				gains: Object.fromEntries(ids.map((id, i) => [id, Math.round((a.gain - i) * 100) / 100])),
 				report: { [ids[0]!]: { limitedBy, achievedLiftDb: a.limits ? a.gain / 3 : null, reason: 'fuzz' } },
 			};
+		}
+		case 'autoGain': {
+			const audio = clips.filter((c) => c.kind === 'audio');
+			const c = audio[a.clip % Math.max(1, audio.length)]?.id ?? pick(a.clip);
+			return { type: 'soundDesign.setAutoGain', clipIds: [c], auto: a.auto };
 		}
 		case 'mix': {
 			const audio = clips.filter((c) => c.kind === 'audio');
