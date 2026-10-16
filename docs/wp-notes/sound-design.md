@@ -2898,9 +2898,11 @@ things, made visible by load.** Evidence:
   whenever the lag exceeded ≈ 20 ms. The test now checks what the close-out promises: (1) the first click is heard
   exactly `wait + 30 ms` after the resume (one render quantum tolerance; was "< 0.2 s"), at both waits; (2) the picture
   never shows sequence time 0 before the program's sequence time 0 is at the output (picture − audio > −10 ms); (3) with
-  a wait longer than any start lag (10 Hard Limiters, 208 ms) the same lower bound, plus no second wait (< 150 ms).
-  Without the shim the 208 ms case reads −0.18 / −0.20 s (fails: measured with the shim removed); with the old shim
-  4/4 runs failed (−13 … −32 ms); with the fix 3/3 passed (0.0005–0.015 s, load ≈ 35).
+  a wait longer than the start lag (six Hard Limiters, 124.8 ms) the same lower bound, plus no second wait
+  (< the wait). Measured with ten limiters (208 ms) while developing it: without the shim −0.18 / −0.20 s (fails);
+  the old shim 4/4 runs failed (−13 … −32 ms); the fix 3/3 passed (0.0005–0.015 s, load ≈ 35). Ten limiters crashed
+  Chrome's renderer now and then on the loaded host ("Target crashed" in 2 of 10 runs at load 40–78), so the test uses
+  six: without the shim it would read ≈ lag − 125 ms (−35 … −110 ms for the 15–90 ms lags measured).
 - **Measurement fixes (no assertion loosened).** The picture's anchor is sampled after the frame report (the old sample
   at the animation frame's start could undershoot by the Player callback's delay); the program context is the one
   Remotion schedules buffers on (the first "running" context was sometimes another one: an offset of 15.8 s was read);
@@ -2908,13 +2910,38 @@ things, made visible by load.** Evidence:
 - **Flakes of the other Phase 0 e2e** (first 10× run of both specs, load 30–63: 19 of 76 failed): the preview spec's
   ScriptProcessor tap runs on the main thread and dropped or repeated 1024-sample buffers under load (clicks read 2048
   samples apart, a head click 128 samples off). Both specs now share `e2e/sound-tap.ts`: an AudioWorklet tap with exact
-  context frames, plus a log of what disturbs Remotion's scheduling — a reschedule (`stop()` of the buffers of two or
-  more players in one task; a clip that ends stops only its own) and a buffer started after its time — and, for the A/V
-  measurement, the audio clock slipping against the wall clock (> 10 ms over the sampling window). A disturbed play is
-  played again (up to 8 times, was 3; the assertions are unchanged); when every play is disturbed the test fails saying
-  so with the load average instead of judging the graph on a lost play. At load ≥ 90 (measured 100–117 for a while)
-  Chrome's audio clock slipped 180–850 ms per second and every play was disturbed: no real-time audio check can measure
-  on such a host.
+  context frames, plus a log of what disturbs Remotion's scheduling: a reschedule (a player's `stop()` of its queued
+  buffers followed by new starts of the same player — players are told apart by the node their buffers connect to; a
+  clip that ends stops its buffers and starts none), a buffer started after its time, and, for the A/V measurement, the
+  audio clock slipping against the wall clock (medians of the first and last five output timestamps, > 10 ms). For the
+  seek test also old-position tone that Remotion scheduled after the seek's stop (it comes back after a break, or lasts
+  longer than the graph's read-ahead + 20 ms with buffers started after the stop; what the graph holds lasts at most
+  the read-ahead and breaks nothing). A disturbed play is played again (up to 8 times, was 3; the assertions are
+  unchanged); when every play is disturbed the test fails saying so, with the load average, instead of judging the
+  graph on a lost play. At load ≥ 90 (100–117 for a while) Chrome's audio clock slipped 180–850 ms per second and
+  every play was disturbed: no real-time audio check can measure on such a host.
+- **Runs** (`/tmp`-logged, `E2E_PORT=49801 E2E_SKIP_BUILD=1 pnpm exec playwright test <spec> --repeat-each=10`, load
+  sampled every 30 s), on the final build of this branch:
+  - `e2e/sound-p0-transport.spec.ts` ×10 with the final spec: **50 passed, 0 failed** (load 17–67, 02:26–02:37). Primed
+    picture − audio, pairs: 41.6 ms wait 0.020–0.094 s, 125 ms wait 0.011–0.061 s (never below 0); first click at
+    exactly wait + 30 ms every time; latency change gap 998 samples (9 runs) and 358 (1); seek tail ≤ 2.6 ms; paused seek
+    max 0 (10/10); 8 plays of 50 tests replayed as disturbed.
+  - `e2e/sound-p0-preview.spec.ts` ×10 with the final tap: **50 passed, 0 failed** (load 38–83, 02:38–02:47): every
+    play clicks of 0.7071 exactly 24 000 samples apart (both tracks summed through the compensated insert); the clip at
+    frame 40 heard from its first sample (0.1768, 20 of 20 plays); the export six clicks at 0 … 120 000; 10 plays
+    replayed as disturbed. (The older tap also passed 50/50 twice, load 35–80.)
+  - Earlier runs while the detection was being completed (same build except the specs): 19 of 76 failed (old specs,
+    load 30–63); 7 of 100 (load 10–80: "no reschedule at the seek" until a reschedule's restart could come later than
+    0.5 s, a renderer crash, a 41.6 ms-wait pair at −19 ms whose clock slip the old two-reading estimate missed); 3 of 50
+    (load 10–55: one seek tail of 60 ms — the same value once before at load ≈ 80: the failure message now carries the
+    tone's envelope and the buffer starts after the stop to tell a graph fault from Remotion's —, one "every play
+    disturbed" from the two-reading slip estimate, one latency test all-disturbed at load 52).
+- **Open (seen once each, not explained, recorded for the next package):** at load ≈ 80 a primed play heard a click
+  20.9 ms after the resume (one Hard Limiter's latency) before the expected one — old-position audio from the seek
+  before (to 1 s), i.e. a queued buffer Remotion did not drop or a limiter state not flushed; at load ≈ 50 the first
+  click of a play came 256 samples early while the following ones were on time (Remotion's first buffer against a
+  re-anchored base). Neither reproduced in the 50-run pass above; the specs' messages now carry what tells them apart
+  (stops, starts, late starts, peaks).
 
 #### 2. Motion-graphic land / exit from the rendered motion
 
