@@ -729,7 +729,12 @@ describe('Sequence ▸ Sound Design: Rebalance, Room Glue…, Delivery Target…
 		expect(tt.actions!.map((a) => a.label)).toEqual(['Undo', 'Solver Notes…']);
 		act(() => tt.actions![1]!.run!());
 		expect(dialogs[0]!.kind).toBe(SOUND_NOTES_DIALOG);
-		render(<SoundNotesDialog {...(dialogs[0]!.props as never)} close={() => {}} />);
+		render(
+			<SoundNotesDialog
+				{...(dialogs[0]!.props as Parameters<typeof SoundNotesDialog>[0])}
+				close={() => {}}
+			/>,
+		);
 		const list = await screen.findByTestId('sound-notes-dialog-list');
 		const items = within(list).getAllByRole('listitem');
 		expect(items.map((li) => li.getAttribute('data-kind'))).toEqual(['warning', 'conflict']);
