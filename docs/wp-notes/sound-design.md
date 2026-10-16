@@ -4764,6 +4764,186 @@ the AC-25 integrity fuzz (2 000 runs; more than RUNS / 50 accepted transactions 
 - `packages/audio-fx` timing tests (WP4.1a's "solves 2000 events in under 50 ms", the Remix analyses) fail on this host at
   load ≳ 90 (50.6 ms and 131 ms measured; timeouts); they are load-sensitive checks of code this package does not change.
 
+### Phase 4 → WP4.2b mixing UI
+
+Scope: spec 12 §2.7 "Essential Sound SFX additions" (Auto gain with its reason, Room send, Stop before next), the Cue
+Seam's build / stop-before span bars, the Properties "Cue" section, Sequence ▸ Sound Design ▸ Rebalance SFX Levels,
+P4-R4 (delivery presets reachable from the UI) and P4-R5; the Auto Sound Pass… mix options (WP4.2a's plan style).
+
+Files: web `apps/web/src/sound/{mix-model.ts (pure: level views, review gain text, room view, written vs stored, field
+validation, delivery labels), mix-jobs.ts (rebalance / delivery jobs for the user, Undo by History entry),
+EssentialSfxMix.tsx, MixFields.tsx (NumberInput, StopBeforeEditor, BuildEditor), MixDialogs.tsx (Room Glue…, Delivery
+Target…)}`, `commands/sound-mix.ts` (+ `commands/index.ts`), `sound/EssentialSfx.tsx` (mounts the rows),
+`sound/SoundSection.tsx` (Properties ▸ Cue uses the editors), `sound/AutoSoundPassDialog.tsx` (Mix fieldset),
+`sound/PreferencesPage.tsx` (Delivery group), `sound/cues/{model.ts, CueSeam.tsx, seam.ts}` (written vs stored spans,
+Build Into Cue in the cue menu, the stored-only explanation), `panels/review/ReviewPanel.tsx` (the gain formatter only),
+`shell/menus/model.ts`, `i18n/model-strings.ts` (delivery preset names and sources), es.json (156 strings); model
+`packages/project` `soundDesign.setAutoGain` (schema, handler, catalog label "Auto Gain") and `sfx.level.manual`
+(`schema/sound.ts`, `sfxGainOwner`); `apps/mcp/src/examples.ts` (setAutoGain example), SOUND_GUIDE (manual gains).
+Tests: `packages/project/test/sound-auto-gain.test.ts` (5), `fuzz.test.ts` (AC-25 draws setAutoGain),
+`apps/mcp/test/sound-examples.test.ts` (+1), `apps/web/test/sound-mix-model.test.ts` (10), `sound-mix-ui.test.tsx` (11),
+`auto-sound-pass.test.tsx` (+2), `e2e/sound-mix.spec.ts`.
+
+#### What it does (usage)
+
+- **Essential Sound ▸ Sound Design ▸ Gain** (placed sounds): "Auto gain (masking-aware)" is on while placement's default
+  level or the masking solver owns the clip gain (`sfxGainOwner`), mixed for a mixed selection. Under it the level record:
+  a badge (Default / Solver / Manual, by text and outline, not colour alone) and "−3.0 dB · limited by dialogue A1" — the
+  solver's `limitedBy` codes in words (translated; the track names come from the stored reason), "target lift +5.0 dB
+  reached", "default level: its true-peak ceiling", "Auto gain off (last solve: −6.0 dB)", "set by you"; the lift line
+  "Lift over the bed +1.5 dB of +5.0 dB". **Off** = `soundDesign.setAutoGain {auto: false}` ("Auto Gain Off"): the gain
+  stays exactly where it is and becomes the user's (the record stays, marked `manual`), so Rebalance, a delivery preset, a
+  swap or a role change leave it alone. **On** = `sound.setAutoGain {auto: true}`: the engine's rebalance names those
+  clips (`POST /api/sound-design/rebalance {clipIds, mode: 'apply'}`: named clips are always solved), one undo step
+  "Rebalance SFX Levels" with a toast (Undo); a clip the solve did not change, or with no engine, just gets its mark
+  cleared ("Auto Gain On"). **Rebalance** solves the selection's automatic gains (disabled, with why, when none is on).
+- **Room**: "Send A3 to the SFX Room" + the send level slider (−48…+6 dB, double-click −16) and "Applies to the whole
+  track A3, not only this clip" (sends are per track). On without a room creates the glue (`soundDesign.ensureBus`: bus,
+  Studio Reverb, sends from every qualifying track; "SFX Room Glue"); with a room, adds the track's send at the glue's
+  level (`mixer.addSend`) or unmutes it; off mutes the send (`mixer.updateSend {mute}`: a re-run of the glue keeps it
+  muted; "Room Send Off"); a slider drag is one gesture → one History entry "Room Send Level". Disabled with the reason
+  for interface-only tracks ("… plays only interface sounds (UI, clicks, keys): they stay dry") and for tracks that also
+  play dialogue / music / other bed audio; an automated send level says "automated in the Audio Track Mixer".
+- **Stop / Build** (the cue the clip fills; disabled with "This sound fills no cue: …" otherwise) and **Properties ▸
+  Cue**: the same editors — a toggle (Stop before next = 0.25 s / −24 dB, Build = 2 s, 150 → 2000 Hz: the model's
+  `STOP_BEFORE_DEFAULT` / `BUILD_DEFAULT`, which replaced WP2.4b's 1 s / 200 Hz build default), Length / Depth or Length /
+  From / To fields (Enter or blur commits, Esc reverts; "0,25" and "−24" accepted) validated before anything is written
+  (length > 0 and ≤ 10 / 30 s, depth < 0 and ≥ −60 dB, 20–20000 Hz, To above From: `role="alert"` text,
+  `aria-invalid`), each edit ONE `soundCue.update` (a filled cue's mix follows in the same command, WP4.2a), and where it
+  stands: "● Written into the mix: A1 track volume" or "○ Stored on the cue: Written into the mix when the cue is
+  filled / No music plays under it / The music track is locked / The cue is muted" with **Write Now**
+  (`soundDesign.applyStopBefore` / `applyBuild`, which also writes an unfilled cue's; "Nothing was written" + the
+  engine's reason when there is no music).
+- **Cue Seam**: a stop-before bar / build wedge drawn from `soundDesign.mix.cues` where it was written (solid, `--pr-cue`)
+  and from the cue's fields when only stored (dashed `--pr-cue-unfilled` outline; `data-written` on both). The cue menu's
+  Stop Before Next keeps WP2.4a's toggle and gains **Build Into Cue**; turning either on for a filled cue whose music
+  could not take it shows "Stored on the cue, not written into the mix: <why>".
+- **Sequence ▸ Sound Design**: **Rebalance SFX Levels** (every sound effect of the sequence; user gains kept; progress
+  toast with the job, then "Rebalanced n sound effects" · "n solved · n limited · n kept (your gains)" with Undo, or
+  "Nothing to change …" without a History entry), **Room Glue…** (on / off, send level, decay, mix, pre-delay; "Sends
+  from: A3, A4", "Dry: <reason>" per track, the bus and whether sound design made it; Apply = one `ensureBus` or
+  `removeBus`), **Delivery Target…** (the four presets as "Web / streaming · −14 LUFS · −1 dBTP", the integrated / true
+  peak / under-the-voice numbers and their source; what to apply: normalisation, Auto-Match, ducking, re-solving; Apply
+  runs `POST /api/sound-design/delivery` in apply mode with a progress bar and Cancel, then shows what the engine
+  measured — mix before normalisation, the export's LUFS / dBTP, music and ambience under the voice, speech seconds,
+  matched clips, ducked groups, re-solved effects, warnings — and toasts "Applied <preset>" with Undo; the button becomes
+  Close).
+- **Preferences ▸ Sound Library ▸ Delivery**: the active sequence's target (`soundDesign.setSettings {delivery}`, "Sound
+  Delivery Target": what default levels and Rebalance aim at) and a Delivery Target… button.
+- **Auto Sound Pass… ▸ Mix**: Room glue (+ its send level), Stop before heroes, Build into heroes, Delivery (Keep the
+  current mix or a preset) → the plan's `style.roomGlue {sendDb} | stopBefore | build | delivery` (absent when off).
+- **Review rows** show the item's own solved gain and its limit ("−15.6 dB · limited by its repeats (±2 dB)"), from the
+  plan's `meta.level` / the rebalance item's meta; for a chosen alternative the drawn gain alone (its level is not in the
+  item's meta).
+- **Agents** (MCP parity, checked): every UI action has an MCP path — Rebalance → `rebalance_sfx` (propose by default,
+  `mode: 'apply'`, `clipIds`); Delivery Target… → `apply_delivery`; Room Glue… → `set_room_glue`; Essential's per-track
+  send → `apply_commands` `mixer.addSend` / `mixer.updateSend` (or `add_send`); Stop before / Build → `set_sound_cues`
+  `stopBefore` / `build` and `apply_commands` `soundDesign.applyStopBefore` / `applyBuild` (Write Now); Auto gain off /
+  on → `apply_commands` `soundDesign.setAutoGain` (+ `rebalance_sfx {clipIds}`); Auto Sound Pass mix options →
+  `plan_sound_design` `style`. The UI commands `sound.rebalanceSfx {clipIds?}` and `sound.setAutoGain {clipIds?, auto}`
+  are also in the UI command catalogue (`ui_command`).
+
+#### Decisions
+
+- **Auto gain off keeps the record** (`sfx.level.manual: true`, optional, validated by the level schemas; `sfxGainOwner`
+  answers `user`) instead of deleting `sfx.level`: the variation offset survives (turning it on solves with it, Phase 2 B
+  / WP4.1b offset semantics) and Essential Sound can still say what the last solve was. An older build ignores the flag
+  (loose object) and treats the gain as automatic again — it loses the preference, not data. No schema bump.
+- **Auto gain on is a solve, not a flag flip**: a sound handed back to the solver should be solved now; the flag flip is
+  the fallback for what the solve did not touch (unchanged gain, skipped, no engine).
+- **Rebalance in Essential names only the automatic clips** of the selection: a named clip is always solved by the
+  engine, so naming manual ones would override the user's choice.
+- **Room off mutes the send** instead of removing it: an `ensureBus` re-run (Room Glue… Apply, a plan's room item) would
+  add a removed send again; a muted one stays muted. Turning the room on for a track the glue skipped adds a plain send
+  (not recorded in `mix.room.sends`: `removeBus` removes the submix and with it every send to it, but not this send's
+  record — there is none).
+- **Bed tracks are blocked**, not just interface-only ones (task: interface-only): a send on a track that also plays
+  dialogue would put the dialogue in the room. The Audio Track Mixer still allows it by hand.
+- Delivery numbers are labelled with real minus signs; the presets' names and sources are model strings (translated).
+- Review: only the formatter changed (the verifier owns the Review panel); the misattributed ghost gain it works around
+  is reported below.
+
+#### Verified (measured, this branch; shared host, 16 cores, load average 35–140 during the runs)
+
+- `pnpm vitest run packages/project/test/sound-auto-gain.test.ts packages/project/test/sound-apply-gains.test.ts
+  --maxWorkers=2`: 5 + 7 passed — off keeps −6 dB and the whole solver record (offset 0.5, lifts, limits, reason) with
+  `manual: true`, owner `user`; undo = the untouched document, redo = the same sequences; on gives it back to the
+  solver; a manual gain survives `setRole`, `swap` and `applyDelivery` (R128) while an automatic neighbour follows them;
+  `applyGains` naming the clip replaces the record (no `manual`); on does not take back a gain changed by hand; an
+  Essential-SFX clip without metadata is left identical; refusals `E_NOT_FOUND` (clip, sequence), `E_INVALID_PARAM`
+  (video, bed audio), `E_SCHEMA` (empty, bad `auto`, unknown key), `E_TRACK_LOCKED`; the flag through load, a damaged
+  flag drops the level (gain kept), repair idempotent. `fuzz.test.ts` (AC-25, 2 000 runs, setAutoGain drawn) and
+  `apps/mcp/test/sound-examples.test.ts` (20, the setAutoGain example applies): pass. Project sound suites
+  (`sound-level`, `sound-mix`, `sound-swap-role`, `sound-apply-gains`, `sound-auto-gain`, `sound-design-place`): 60
+  passed.
+- `pnpm vitest run apps/web/test/sound-mix-model.test.ts`: 10 passed (dB format; solver / default / manual / user views
+  with translated limits and track names; review gain text: the item's own gain wins over the ghost's, alternatives
+  show the ghost's; a 300-run `fc.anything()` property never throws; written vs stored and why — filled → "A1 track
+  volume" / "A1 track filter", the build written from frame 90 for 2 s before 150, unfilled / muted / no music; room
+  view: none → can send, glue → its send at −12, a track that also plays dialogue → blocked with why; validation;
+  delivery labels).
+- `apps/web/test/sound-mix-ui.test.tsx`: 11 passed (testing-library, real session, a fake engine for the jobs):
+  Essential shows "−6.0 dB · limited by dialogue A1", Solver, "Lift over the bed +1.5 dB of +5.0 dB"; unchecking →
+  "Auto Gain Off", the gain unchanged, Manual, Rebalance disabled; checking → the rebalance request names the clip in
+  apply mode, ONE entry "Rebalance SFX Levels", "Rebalanced 1 sound effect" whose Undo restores −6 dB; Rebalance with
+  nothing to change adds no entry; Room: on creates the glue (send from A2 only), a keyboard step on the slider = ONE
+  "Room Send Level" (−15.5 dB), off mutes ("Room Send Off"), undo unmutes; a track with dialogue is disabled with the
+  reason; Stop before: on writes "A1 track volume", "0" is refused with the message and `aria-invalid`, "0,5" is
+  written; Build: From 3000 refused ("A build rises: To must be above From"), To 4000 written into "A1 track filter";
+  no cue → the reason; Properties ▸ Cue: an unfilled cue's dashed bar (`data-written="false"`), Write Now →
+  "Stop Before Cue" and a solid bar, depth 5 refused, −30 written; the menu lists the three entries; the menu's
+  Rebalance (no clip ids) with "1 solved · 1 limited · 1 kept (your gains)" and Undo; Room Glue… shows "Sends from: A2",
+  applies −16.5 dB / 0.6 / 100 / 8, then off removes it; Delivery Target…: podcast selected by its label, the request
+  (apply, all four options), the summary ("Export: −16.0 LUFS, −1.5 dBTP", "Music under the voice: 22.8 LU (at least
+  8)"), ONE entry, Close, the toast's Undo.
+- `apps/web/test/auto-sound-pass.test.tsx`: 6 passed (+2: Room glue with its slider, Stop before / Build into heroes, Web
+  delivery → `style {roomGlue: {sendDb: −15.5}, stopBefore, build, delivery: 'web'}`; off → none of the keys).
+- Regressions: `sound-cue-seam`, `sound-cue-seam-model`, `sound-fill-ui`, `sound-fill-swap`, `sound-cue-commands`,
+  `sound-p2v-seam`, `sound-review-misc`, `sound-library-review`, `review-ui`, `review-model`, `keymap`,
+  `polish-menu-wiring`, `polish-i18n`, `i18n`, `sound-i18n`: 16 files, 145 passed. `node scripts/i18n.mjs --check`:
+  9 526 strings covered. `pnpm typecheck` (workspace), `pnpm lint` (Biome, tokens, anime, layers, assets), `tsc -p
+  e2e/tsconfig.json`: pass.
+- **E2E** (`pnpm build`, then `E2E_PORT=50705 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-mix.spec.ts`; 12.1 min
+  at load ≈ 70–90): the Phase 2 fixture (without its fframes graphic, which the native export cannot render here) +
+  14 s of pink-noise music on A1 + a 4 s syllabic 1.5 kHz "voice" on A2 at 4 s → Auto Sound Pass… with Room glue, Stop
+  before heroes, Build into heroes and Web → 16 items in review → Accept all → Apply = ONE History entry; the document
+  has the "SFX Room" bus and its sends, `settings.delivery: web`, and the hero (the `sfx: boom+swoosh` marker at
+  00;00;08;10) with its dip and build recorded as written — the seam's bars carry `data-written="true"`; Essential Sound
+  shows "Solver · −20.5 dB · limited by its repeats (±2 dB), dialogue A2; conflict: its repeats (±2 dB) kept over
+  dialogue"; music +6 dB, then Sequence ▸ Sound Design ▸ Rebalance SFX Levels = ONE entry "Rebalance SFX Levels", gains
+  changed; Ctrl+Z gives back every gain, Ctrl+Shift+Z re-applies; Room Glue… shows "Sends from: A4, A5", "Bus: SFX Room
+  (made by sound design)"; Delivery Target… (Web) = ONE entry "Apply Delivery Preset: Web / streaming (−14 LUFS)",
+  summary "Mix before normalisation: −17.5 LUFS, −6.2 dBTP · Export: −14.0 LUFS, −2.8 dBTP · Music under the voice: 23.1
+  LU (at least 8) · Speech found: 4.3 s · Auto-Matched clips: 2; ducked groups: 1 · Sound effects re-solved: 12 changed,
+  9 limited"; **native export (H.264 + AAC) measured by ffmpeg `ebur128=peak=true`: −14.1 LUFS integrated, −2.8 dBTP**
+  (the two earlier runs that reached the export step measured the delivery's "Export" at −14.0 / −1.5 and −14.0 / −2.8
+  dBTP; their export step failed for reasons in the spec: the fframes graphic, a reset socket). Screenshots looked at
+  (`test-results/e2e-sound-mix/`): the dialog's Mix fieldset, review (rows "support −16.5 dB · limited by its repeats
+  (±2 dB)"), the seam's span bars and the timeline, Essential Sound ▸ Sound Design (badge, wrapped reason, lift,
+  Rebalance, Room A4 −16 dB, Stop / Build of a support cue off), Room Glue…, Delivery Target… with its summary, the
+  exported frame at the hero. The looks found: the Room glue checkbox squeezed by its slider in the dialog (now on its
+  own row), the review gain of an item that requires the delivery item showing the music's +14.6 dB (now the item's own
+  solved gain), the Essential reason truncated (now wraps).
+
+#### Limits and notes for the next packages
+
+- **Review gain attribution (Phase 3 verifier's area):** `buildReviewModel` takes an item's gain from its first ghost
+  clip; when the item requires a setup item that changes other clips (the delivery preset Auto-Matches the music), that
+  first clip can be the music. The row now prefers the item's own `meta.level.gainDb`; a chosen **alternative** still
+  shows the ghost's gain (its level is not in the item's meta). Fix in `review.ts` / `ghosts.ts`: prefer the clips the
+  item creates.
+- The Room row acts on the first selected clip's track; tracks that also play bed audio are blocked (the Audio Track
+  Mixer still sends by hand); a send added there for a track the glue skipped is not recorded in `mix.room.sends` (the
+  glue's removal removes it with the bus).
+- The Phase 4 Essential rows show for placed sounds (`sfx` metadata); an Essential-SFX clip without it has no level
+  record (Rebalance still solves it: `sound.rebalanceSfx` and the menu include it).
+- Auto gain on when the solve does not change the gain (or skips the clip) adds a second History entry ("Auto Gain On")
+  after "Rebalance SFX Levels" when both happen in one press (only for a mixed selection).
+- Delivery Target… keeps the dialog's Cancel next to Close after a run (Cancel closes; it never undoes).
+- No new keyboard shortcuts (none in spec 12 for these); `keymap.test.ts` passes unchanged.
+- The e2e removes the fixture's fframes motion graphic: in this environment the native export refuses it (`PATH_NOT_ELIGIBLE`,
+  "needs the fframes renderer, which is unavailable").
+
 ## Phase 5: Sound Check
 
 ## Phase 6: packs, cue sources, completion
