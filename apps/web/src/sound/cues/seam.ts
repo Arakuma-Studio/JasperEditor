@@ -50,14 +50,14 @@ export function cueSeamShownFor(session: EditorSession, sequenceId: string): boo
 	return cueSeamShown(st.views[sequenceId], { workspaceId: ws, hasCues: cuesOf(seq).length > 0 });
 }
 
-/** Hook form of `cueSeamShown`. */
-export function useCueSeamShown(sequenceId: string): boolean {
+/** Hook form of `cueSeamShown`; `ghostCues`: a proposal under review shows cues there (they count as cues). */
+export function useCueSeamShown(sequenceId: string, ghostCues = false): boolean {
 	const ws = useActiveWorkspace();
 	const choice = useSessionState((s) => s.views[sequenceId]?.cueSeam);
 	const hasCues = useSessionState(
 		(s) => cuesOf((s.transient ?? s.document).sequences[sequenceId]).length > 0,
 	);
-	return cueSeamShown({ cueSeam: choice }, { workspaceId: ws, hasCues });
+	return cueSeamShown({ cueSeam: choice }, { workspaceId: ws, hasCues: hasCues || ghostCues });
 }
 
 /** Selected cues of the session that belong to the sequence. */

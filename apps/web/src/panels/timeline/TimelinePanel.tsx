@@ -102,6 +102,8 @@ import { timelineGesturePreview } from './state/gesture-preview.ts';
 import { HEADER_MAX, HEADER_MIN, setPrefs, timelinePrefs } from './state/prefs.ts';
 import { enterTrimMode, refreshEditPoints } from './state/trim-mode.ts';
 import { type ContextMenuItem, createTimelineUiStore, type TransitionGhost } from './state/ui-store.ts';
+import { GhostTrackHeaders, ProposalGhostLayer } from '../../proposals/GhostLayer.tsx';
+import { proposalsFor, useGhostModel } from '../../proposals/state.ts';
 
 const EMPTY: readonly string[] = [];
 
@@ -222,7 +224,11 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		[view.scrollFrame, view.pxPerFrame, size.w],
 	);
 	// sound-design (spec 12 §2.7): the Cue Seam widens the video/audio divider into an 18 px lane.
-	const seamShown = useCueSeamShown(seqId);
+	// spec 12 §2.7 Review: the proposal under review's ghosts (clips, washes, new tracks, cues).
+	const ghostModel = useGhostModel(session, seqId);
+	const ghostCues = useMemo(() => ghostModel?.cues.map((g) => g.cue), [ghostModel]);
+	const ghostCard = useRef<((itemId: string, x: number, y: number) => void) | null>(null);
+	const seamShown = useCueSeamShown(seqId, !!ghostCues?.length);
 	useLibraryMediaTracking(session);
 	const layout = useMemo(
 		() =>
@@ -1603,6 +1609,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 								: undefined
 						}
 					/>
+					{ghostModel ? <GhostTrackHeaders session={session} model={ghostModel} layout={layout} /> : null}
 					<div
 						className="absolute top-0 right-[-3px] bottom-0 w-[6px] cursor-col-resize"
 						onPointerDown={(e) => {
@@ -1666,6 +1673,19 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 						showThroughEdits={showThroughEdits}
 						lanes={lanes}
 					/>
+					{ghostModel ? (
+						<ProposalGhostLayer
+							session={session}
+							seq={seq}
+							model={ghostModel}
+							layout={layout}
+							viewport={viewport}
+							instanceId={props.instanceId}
+							reveal={(f) => controller.reveal(f)}
+							toast={toast}
+							cardRef={ghostCard}
+						/>
+					) : null}
 					{seamShown ? (
 						<CueSeam
 							session={session}
@@ -1680,6 +1700,15 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 							openMenu={openMenu}
 							toast={toast}
 							reveal={(f) => controller.reveal(f)}
+							ghosts={ghostCues}
+							onGhost={(id, at) => {
+								const itemId = ghostModel?.cues.find((g) => g.cue.id === id)?.itemId;
+								if (itemId) ghostCard.current?.(itemId, at.x, at.y);
+							}}
+							onGhostFocus={(id) => {
+								const itemId = ghostModel?.cues.find((g) => g.cue.id === id)?.itemId;
+								if (itemId) proposalsFor(session).select([itemId]);
+							}}
 						/>
 					) : null}
 					<GestureTooltip tooltip={tooltip} width={size.w} />

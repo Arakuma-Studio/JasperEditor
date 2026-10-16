@@ -34,6 +34,7 @@ import { registerCommands } from './registry.ts';
 import { rotoCommands } from './roto.ts';
 import { shapeCommands } from './shapes.ts';
 import { soundCommands } from './sound.ts';
+import { proposalCommands } from './proposals.ts';
 import { soundCueCommands } from './sound-cues.ts';
 import { soundDesignCommands } from './sound-design.ts';
 import { speechCommands } from './speech.ts';
@@ -97,6 +98,8 @@ const COMMAND_MODULES: UiCommand[][] = [
 	soundCommands,
 	soundCueCommands,
 	soundDesignCommands,
+	// proposals (spec 12 §2.5): review in the Timeline, Hear proposal
+	proposalCommands,
 ];
 
 let registered = false;

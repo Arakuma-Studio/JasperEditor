@@ -76,8 +76,9 @@ export type ReviewItem = {
 
 export type ProposalPreviewState = {
 	proposalId: string;
-	/** Session revision the preview was built on. */
+	/** Session revision the preview was built on, and that committed document. */
 	revision: number;
+	base: ProjectDocument;
 	/** What "Hear proposal" plays: pending, stale and locally accepted items applied (rejected ones left out). */
 	document: ProjectDocument;
 	/** Every reviewable item applied (rejected included), one transaction each: the ghosts' geometry. */
@@ -801,6 +802,7 @@ export class ProposalsController {
 			preview: {
 				proposalId: p.id,
 				revision: this.session.revision,
+				base: doc,
 				document: heard.document,
 				result,
 				ghost: result.ghost,

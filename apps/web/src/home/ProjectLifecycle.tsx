@@ -16,6 +16,7 @@ import { Button, openDialog, Z } from '@jasper/ui';
 import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router';
 import { useAgentBridge } from '../agent-bridge/index.ts';
+import { useProposalsSync } from '../proposals/state.ts';
 import { ExportMode } from '../export/ExportMode.tsx';
 import { takeTrackedExport, useExportMode, useExportModeHostedByShell } from '../export/mode.ts';
 import { useLanguageEpoch } from '../i18n/react.ts';
@@ -86,6 +87,8 @@ function LifecycleBody(props: {
 }) {
 	const { session } = props;
 	useAgentBridge(session);
+	// spec 12 §2.5: the session's proposals follow the engine (list, proposal.changed)
+	useProposalsSync(session);
 	const engine = useEngine();
 	useLanguageEpoch(); // banners and notices follow a language change (the editor below remounts)
 	const exportState = useExportMode();
