@@ -3755,8 +3755,10 @@ is only for when the user asked.
   the integration branch (default levels, mg cue timing): the touched suites together — `apps/mcp/test/{proposals,
   sound-cues,sound-levels,sound-guide,readme-tools,conventions,fuzz,sound-examples}`, `apps/engine/test/{sound-design-plan,
   sound-design-cues,proposals,proposals-store,proposals-fuzz,fuzz-http}`, `packages/engine-client/test`, `packages/api/test`,
-  `packages/project/test/{proposals,sound-proposal-draft}` — 654 passed (two expectations updated for the merge: the
-  fixture's mg cues now at 350 / 408, and the ghost table's setup rows).
+  `packages/project/test/{proposals,sound-proposal-draft}` — 650 of 654 passed in one run; the 4 failures were mine to
+  update (the ghost table's setup rows in `proposals.test.ts`, cascading into two later steps; `sound-levels.test.ts`
+  placing without `mode: 'apply'`) and pass on rerun of those two files (5 + 1). The plan test's mg frames were updated
+  to the merged mg timing (350 / 408).
 - **Run for real** (dev engine `JASPER_APPDIR=.stage JASPER_DEV=1 tsx apps/engine/src/cli.ts --port 50001`, Vite on 50002,
   the full 60-sound kit + 152 synth sounds, a scratch MCP client over stdio, the Phase 2 fixture from
   `sound-cues-fixture.ts`): `plan_sound_design {style: {seed: 2026}}` → 17 cues, 60 items (1 bin, 25 sounds, 17 new
