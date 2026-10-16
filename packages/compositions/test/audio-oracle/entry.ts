@@ -4,8 +4,8 @@
 import type { Rational, RenderAudioClip, RenderAudioMix } from '@jasper/project';
 import { installAudioFxPreview } from '../../src/audio/fx-inserts.ts';
 import {
-	clipHasEffects,
 	clipLevelAt,
+	graphAppliesLevels,
 	MixGraph,
 	mixWorkletReady,
 	setMixWorkletUrl,
@@ -142,6 +142,13 @@ type PlayedSpec = Spec & {
 	fpsValue: number;
 	/** `graph.setPlaying(true)` before the start (the transport state while playing). */
 	playing?: boolean;
+	/**
+	 * `anchor` (the player): each update carries the picture frame's time and the composition clock, and the graph has
+	 * Remotion's sync anchor (context time 0 = sequence time 0 here), from which it reads the time of the audio it
+	 * renders; `frame`: the frame's time only (no anchor: the graph trusts the picture time, ≤ one quantum off here);
+	 * `exact`: no anchor, the update carries the audio's own time.
+	 */
+	clock?: 'anchor' | 'exact' | 'frame';
 };
 
 /**
@@ -164,6 +171,7 @@ async function played(spec: PlayedSpec): Promise<{ channels: number[][]; latency
 	graph.update(spec.mix, clips, 0, spec.fps);
 	await tick();
 	await tick();
+	if (spec.clock === 'anchor') graph.attachSync({ anchor: { value: 0 }, subscribe: () => () => {} });
 	if (spec.playing) graph.setPlaying(true);
 	graph.update(spec.mix, clips, 0, spec.fps);
 	await tick();
@@ -173,7 +181,7 @@ async function played(spec: PlayedSpec): Promise<{ channels: number[][]; latency
 	const levelAt = (i: number, frame: number) => {
 		// Remotion's callback for picture frame `frame`: the clip's level `graphLatency` ahead (AudioLayer's leadFrames)
 		const c = spec.clips[i]!.clip;
-		if (clipHasEffects(c)) return 1;
+		if (graphAppliesLevels(c)) return 1;
 		return clipLevelAt(c, frame - c.start + graph.latency * spec.fpsValue, spec.fps);
 	};
 	spec.clips.forEach((c, i) => {
@@ -196,7 +204,15 @@ async function played(spec: PlayedSpec): Promise<{ channels: number[][]; latency
 		const at = Math.round((k * sr) / spec.fpsValue / 128) * 128;
 		if (at <= 0 || at >= spec.length) continue;
 		void ctx.suspend(at / sr).then(async () => {
-			graph.update(spec.mix, clips, k * F, spec.fps);
+			if (spec.clock === 'exact') graph.update(spec.mix, clips, (at / sr) * 705_600_000, spec.fps);
+			else
+				graph.update(
+					spec.mix,
+					clips,
+					k * F,
+					spec.fps,
+					spec.clock === 'anchor' ? { compositionFlicks: k * F, rate: 1 } : undefined,
+				);
 			for (const [i, g] of gains.entries()) g.gain.value = levelAt(i, k);
 			await ctx.resume();
 		});

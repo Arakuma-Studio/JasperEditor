@@ -25,15 +25,20 @@ import { bundleForBrowser, findChrome } from '@jasper/testkit/browser';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Harness } from '../../project/test/helpers.ts';
-import { clipHasEffects, clipLevelAt } from '../src/audio/graph.ts';
+import { clipLevelAt, graphAppliesLevels } from '../src/audio/graph.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CHROME = findChrome();
 const SR = 48000;
 const FPS = 30;
 const S = FLICKS_PER_SECOND;
-/** The hero cue (frame 30 = 1 s): stop-before 0.25 s at −24 dB, build 0.5 s 150 → 2000 Hz. */
-const HERO = 30;
+/**
+ * Everything starts at frame 3 (0.1 s): a clip starting with the render would meet the graph's nodes settling (the
+ * static oracle does the same). The hero cue at frame 33 (1.1 s): stop-before 0.25 s at −24 dB, build 0.5 s
+ * 150 → 2000 Hz.
+ */
+const OFF = 3;
+const HERO = 33;
 const LEN = Math.round(1.8 * SR);
 
 function noise(seed: number, n: number, amp: number, env?: (i: number) => number): number[] {
@@ -61,20 +66,20 @@ function scene(kind: 'track' | 'clip'): Case {
 	const place = (m: string, at: number, track: string, ref: string, out?: number) => ({
 		type: 'clip.place',
 		source: { mediaId: m },
-		...(out !== undefined ? { sourceRange: { in: 0, out: out * (S / FPS) } } : {}),
+		...(out !== undefined ? { sourceRange: { in: { flicks: 0 }, out: { flicks: out * (S / FPS) } } } : {}),
 		at,
 		tracks: { audio: track },
 		ref,
 	});
 	const cmds: unknown[] = [
 		// the clip track: music until frame 29, then dialogue on the same track over the cue
-		place(music, 0, 'A1', '$music', kind === 'clip' ? 29 : undefined),
-		place(hit, 27, 'A2', '$hit'),
+		place(music, OFF, 'A1', '$music', kind === 'clip' ? 29 : undefined),
+		place(hit, OFF + 27, 'A2', '$hit'),
 		{ type: 'essentialSound.setType', clipIds: ['$music'], audioType: 'music' },
 		{ type: 'essentialSound.setType', clipIds: ['$hit'], audioType: 'sfx' },
 	];
 	if (kind === 'clip')
-		cmds.push(place(voice, 29, 'A1', '$voice'), {
+		cmds.push(place(voice, OFF + 29, 'A1', '$voice'), {
 			type: 'essentialSound.setType',
 			clipIds: ['$voice'],
 			audioType: 'dialogue',
@@ -99,14 +104,8 @@ function scene(kind: 'track' | 'clip'): Case {
 		{ type: 'soundDesign.applyStopBefore', cueId: '$cue' },
 		{ type: 'soundDesign.applyBuild', cueId: '$cue' },
 	);
-	const skip = (process.env.ORACLE_SKIP ?? '').split(',');
-	for (let i = cmds.length - 1; i >= 0; i--) {
-		const t = (cmds[i] as { type: string }).type;
-		if (skip.includes(t)) cmds.splice(i, 1);
-	}
 	const r = h.ok(cmds);
 	const results = r.results.slice(-4) as Record<string, unknown>[];
-	if (process.env.ORACLE_SKIP) results.splice(0, 4, {}, { sends: [1] }, { writes: [{ target: kind === 'track' ? 'trackVolume' : 'clipVolume' }] }, { writes: [{ target: kind === 'track' ? 'trackFilter' : 'clipFilter' }] });
 	const snapshot = buildRenderSnapshot(h.doc, h.seqId, {
 		resolveMedia: (a) => ({
 			url: a.id,
@@ -152,7 +151,9 @@ function reader(data: Map<string, number[][]>) {
 }
 
 /** RMS in dB of x over [a, b) samples. */
-function rmsDb(x: ArrayLike<number>, a: number, b: number): number {
+function rmsDb(x: ArrayLike<number>, a0: number, b0: number): number {
+	const a = Math.round(a0);
+	const b = Math.round(b0);
 	let e = 0;
 	for (let i = a; i < b; i++) e += x[i]! * x[i]!;
 	return 10 * Math.log10(Math.max(1e-30, e / Math.max(1, b - a)));
@@ -192,22 +193,21 @@ describe.runIf(!!CHROME)(
 			await browser?.close();
 		});
 
-		async function preview(c: Case) {
+		async function preview(c: Case, clock: 'anchor' | 'frame' = 'anchor') {
 			const fps = c.snapshot.settings.fps;
 			return page.evaluate(
 				(spec) =>
-					(window as unknown as { __mix: Record<string, (s: unknown) => Promise<unknown>> }).__mix[
-						spec.fn
-					]!(spec),
+					(window as unknown as { __mix: { played: (s: unknown) => Promise<unknown> } }).__mix.played(spec),
 				{
-					fn: process.env.ORACLE_FN ?? 'played',
+					playing: true,
+					clock,
 					workletUrl,
 					mix: c.snapshot.audioMix,
 					clips: c.snapshot.audioClips.map((clip) => ({
 						clip,
 						data: c.data.get(clip.clipId)!,
 						s0: spanOf(clip, fps, SR)[0],
-						volume: clipHasEffects(clip) ? 1 : clipLevelAt(clip, 0, fps),
+						volume: graphAppliesLevels(clip) ? 1 : clipLevelAt(clip, 0, fps),
 					})),
 					fps,
 					fpsValue: fps.num / fps.den,
@@ -227,7 +227,9 @@ describe.runIf(!!CHROME)(
 		}
 
 		/** Worst |preview − export| over [from, to) (both channels) and the export's peak there. */
-		function worst(p: number[][], e: Float32Array[], from: number, to: number) {
+		function worst(p: number[][], e: Float32Array[], from0: number, to0: number) {
+			const from = Math.round(from0);
+			const to = Math.round(to0);
 			let w = 0;
 			let at = from;
 			let peak = 0;
@@ -256,29 +258,34 @@ describe.runIf(!!CHROME)(
 				expect(room.sends.length).toBe(1);
 				expect(stop.writes[0]!.target).toBe(kind === 'track' ? 'trackVolume' : 'clipVolume');
 				expect(build.writes[0]!.target).toBe(kind === 'track' ? 'trackFilter' : 'clipFilter');
-				const [p, e] = await Promise.all([preview(c), Promise.resolve(exported(c))]);
+				const e = await exported(c);
+				const p = await preview(c);
 				const T = (HERO / FPS) * SR;
 				// the export does what the commands say: −24 dB under the dip (music alone, before the hit at 0.9 s)
-				const music0 = rmsDb(e[0]!, 0.1 * SR, 0.4 * SR);
+				const music0 = rmsDb(e[0]!, 0.2 * SR, 0.5 * SR);
 				const dipped = rmsDb(e[0]!, T - 0.22 * SR, T - 0.12 * SR);
 				const report: Record<string, unknown> = { kind, music0, dipDb: dipped - music0 };
 				const all = worst(p.channels, e, 0, LEN);
 				const regions = {
-					before: worst(p.channels, e, 0, 0.45 * SR),
-					build: worst(p.channels, e, 0.45 * SR, T - 0.3 * SR),
+					before: worst(p.channels, e, 0, 0.55 * SR),
+					build: worst(p.channels, e, 0.55 * SR, T - 0.3 * SR),
 					dip: worst(p.channels, e, T - 0.3 * SR, T + 0.05 * SR),
 					after: worst(p.channels, e, T + 0.05 * SR, LEN),
 				};
-				const profile: string[] = [];
-				for (let b = 0; b < LEN; b += 0.01 * SR) {
-					const w = worst(p.channels, e, b, Math.min(LEN, b + 0.01 * SR));
-					if (w.worst > 1e-4) profile.push(`${(b / SR).toFixed(2)}:${w.worst.toExponential(1)}`);
-				}
-				Object.assign(report, { all, regions, latency: p.latency, profile: profile.join(' ') });
+				// Without the anchor the graph trusts the picture frame's time, here up to one render quantum (1.3 ms)
+				// before the audio it renders: the automation is that much early (informational).
+				const framed = worst((await preview(c, 'frame')).channels, e, 0, LEN);
+				Object.assign(report, { all, regions, latency: p.latency, frameClock: framed });
 				console.log(JSON.stringify(report));
 				expect(all.peak).toBeGreaterThan(0.05);
-				expect(dipped - music0).toBeLessThan(-12);
-				expect(all.worst).toBeLessThan(1e-3);
+				expect(Math.abs(dipped - music0 + 24)).toBeLessThan(0.5);
+				// float32 Web Audio vs the float32 mixer, as the static oracle (audio-preview-oracle.test.ts). Measured
+				// 1.4e-5 for both scenes; before the graph followed automation sample by sample (frame steps, 8 ms
+				// smoothing, keyframes once per frame in the effect slots) 0.19 (track) and 0.15 (clip).
+				expect(all.worst).toBeLessThan(1e-4);
+				expect(regions.dip.worst).toBeLessThan(1e-4);
+				expect(regions.build.worst).toBeLessThan(1e-4);
+				expect(regions.after.worst).toBeLessThan(1e-4);
 			});
 	},
 );

@@ -1200,11 +1200,17 @@ function MixGraphDriver({
 	useEffect(() => {
 		graph.setPlaying(playing);
 	}, [graph, playing]);
+	// The playback rate (J / L shuttle): with Remotion's sync anchor the graph reads the audio clock's time from it.
+	const playbackRate = useContext(Internals.PlaybackRateContext)?.playbackRate ?? 1;
 	useEffect(() => {
 		if (!doc.audioMix) return;
-		const t = (frame + offset) * flicksPerFrame(doc.settings.fps);
-		graph.update(doc.audioMix, doc.audioClips, t, doc.settings.fps);
-	}, [graph, doc, frame, offset]);
+		const F = flicksPerFrame(doc.settings.fps);
+		const t = (frame + offset) * F;
+		graph.update(doc.audioMix, doc.audioClips, t, doc.settings.fps, {
+			compositionFlicks: frame * F,
+			rate: playbackRate,
+		});
+	}, [graph, doc, frame, offset, playbackRate]);
 	return null;
 }
 

@@ -4,7 +4,7 @@
 // loudness) of a slot are posted while someone listens (`audioFxMeters`, Effect Controls).
 import { effectLatency } from '@jasper/audio-fx';
 import { AUDIO_EFFECTS, type EffectInstance } from '@jasper/project/audio';
-import { FX_PROCESSOR_NAME, type FxSlotMessage, type FxSlotReading } from './fx-processor.ts';
+import { FX_PROCESSOR_NAME, type FxSlotMessage, type FxSlotReading, type SlotClock } from './fx-processor.ts';
 import { mixWorkletReady, type PreviewInsert, registerPreviewInsert } from './graph.ts';
 import { discreteGain } from './matrix-node.ts';
 
@@ -81,18 +81,19 @@ class FxInsert implements PreviewInsert {
 		this.post({ type: 'meters', on });
 	}
 
-	update(effect: EffectInstance, timeFlicks: number): void {
+	update(effect: EffectInstance, timeFlicks: number, clock?: SlotClock): void {
 		this.time = timeFlicks;
+		const c = clock ? { clock } : {};
 		if (effect !== this.effect) {
 			this.effect = effect;
 			const key = JSON.stringify(effect.params);
 			if (key !== this.sentKey) {
 				this.sentKey = key;
-				this.post({ type: 'effect', effect, time: timeFlicks });
+				this.post({ type: 'effect', effect, time: timeFlicks, ...c });
 				return;
 			}
 		}
-		this.post({ type: 'time', time: timeFlicks });
+		this.post({ type: 'time', time: timeFlicks, ...c });
 	}
 
 	dispose(): void {
