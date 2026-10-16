@@ -64,12 +64,17 @@ export type StemsResult = {
 
 type Chunk = { at: number; data: Float32Array[]; n: number };
 
+/** Samples a shared decoder keeps behind its newest one, so a mixer opening the clip in the same block still finds it. */
+const KEEP = 3 * BLOCK;
+
 /** One decoder shared by the mixers that play the same clip span. */
 class SharedClip {
 	readonly tees = new Set<TeeReader>();
 	private chunks: Chunk[] = [];
 	private end = 0;
 	private eof = false;
+	/** Some samples were dropped: a new reader cannot start at the span's beginning any more. */
+	trimmed = false;
 	constructor(
 		readonly channels: number,
 		private readonly reader: ClipReader,
@@ -100,19 +105,29 @@ class SharedClip {
 		}
 		return Math.max(0, stop - pos);
 	}
-	/** Drops what every reader has consumed. */
+	/** Drops what every reader has consumed and that is more than {@link KEEP} samples old. */
 	trim(): void {
 		let min = Number.POSITIVE_INFINITY;
 		for (const t of this.tees) min = Math.min(min, t.pos);
 		if (!Number.isFinite(min)) min = this.end;
-		this.chunks = this.chunks.filter((c) => c.at + c.n > min);
+		const cutoff = Math.min(min, this.end - KEEP);
+		const kept = this.chunks.filter((c) => c.at + c.n > cutoff);
+		if (kept.length !== this.chunks.length) {
+			this.trimmed = true;
+			this.chunks = kept;
+		}
 	}
+	/** A reader closed. The decoder stays until the end of the outer block (`SharedDecoders.sweep`): another stem's mixer
+	 * may still open this clip in the same block (a short clip is read and closed within one mixer's block). */
 	release(t: TeeReader): void {
 		this.tees.delete(t);
-		if (this.tees.size === 0) {
-			this.reader.close();
-			this.chunks = [];
-		} else this.trim();
+		if (this.tees.size > 0) this.trim();
+	}
+	/** Closes the decoder (no readers left). */
+	close(): void {
+		this.reader.close();
+		this.chunks = [];
+		this.trimmed = true;
 	}
 }
 
@@ -148,13 +163,27 @@ class SharedDecoders {
 		private readonly o: Pick<StemsOptions, 'ff' | 'snapshot' | 'media' | 'signal' | 'onSpawn'>,
 		private readonly soxr: boolean,
 	) {}
+	/** After every stem rendered a block: closes the decoders no reader uses any more. */
+	sweep(): void {
+		for (const [k, v] of this.open)
+			if (v.tees.size === 0) {
+				v.close();
+				this.open.delete(k);
+			}
+	}
+	/** Closes every decoder. */
+	closeAll(): void {
+		for (const v of this.open.values()) v.close();
+		this.open.clear();
+	}
 	reader(
 		clip: RenderAudioClip,
 		at: { offset: number; length: number; sampleRate: number },
 	): ClipReader | null {
 		const key = `${clip.clipId}|${at.offset}|${at.length}|${at.sampleRate}`;
 		const live = this.open.get(key);
-		if (live && live.tees.size > 0) return new TeeReader(live);
+		// share only while the span's beginning is still buffered (mixers open a clip in the same block)
+		if (live && !live.trimmed) return new TeeReader(live);
 		const m = this.o.media(clip.mediaId);
 		if (!m) return null;
 		const stream =
@@ -176,6 +205,7 @@ class SharedDecoders {
 			...(this.o.onSpawn ? { onSpawn: this.o.onSpawn } : {}),
 		});
 		this.started++;
+		live?.close();
 		const shared = new SharedClip(channels, new PcmStreamReader(channels, child));
 		this.open.set(key, shared);
 		return new TeeReader(shared);
@@ -217,11 +247,13 @@ export async function renderStems(o: StemsOptions): Promise<StemsResult> {
 				await m.mixer.render(view, n);
 				await o.onBlock(m.index, view, n, start + done);
 			}
+			decoders.sweep();
 			done += n;
 			o.onProgress?.(done / Math.max(1, total));
 		}
 	} finally {
 		for (const m of mixers) m.mixer.close();
+		decoders.closeAll();
 	}
 	return {
 		sampleRate: sr,

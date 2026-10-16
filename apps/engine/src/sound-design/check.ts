@@ -52,7 +52,6 @@ import {
 import {
 	type AudioClip,
 	applyTransaction,
-	type Clip,
 	type ClipSfx,
 	type CueKind,
 	createRandomIdSource,
