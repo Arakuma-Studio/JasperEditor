@@ -4314,6 +4314,156 @@ Tests: `packages/project/test/sound-apply-gains.test.ts`, `fuzz.test.ts` (applyG
 - The Web menu item "Sequence ▸ Sound Design ▸ Rebalance SFX Levels" is WP4.2: call `engine.rebalanceSfx({…, mode:
   'apply'})` from the editor (the editor key makes it the user's own edit, History "Rebalance SFX Levels").
 
+### Phase 4 → WP4.2a stop-before, build, room glue, delivery
+
+Scope: spec 12 §2.4 ("Stop-before", "Build", "Room glue", "Delivery presets"), §2.9 (`audio.volumeDip`,
+`soundDesign.ensureBus`), P4-R3, P4-R4 (model, engine, MCP; the web UI for these is WP4.2b). Files:
+`packages/project/src/sound/{delivery,mix}.ts` (presets; pure dip / sweep / room-send math),
+`commands/schemas/sound-mix.ts`, `commands/handlers/sound-mix.ts` (six commands), `handlers/sound-levels.ts` (default
+levels moved out of `sound.ts` so both handler files share them), `handlers/sound.ts` (cue edits and placement follow the
+mix records), `schema/sound.ts` (`SoundDesign.mix`), `sound/repair.ts`, `sound/proposal-draft.ts` (`requires`, `after`,
+`setup`), `audio/fingerprint.ts` (keyframe ids left out), `handlers/structure.ts` (`sequence.duplicate` fix, below),
+`catalog.ts`; `packages/audio-fx/src/effects/filter-eq/scientific.ts` (coefficient ramps, below); `packages/api`
+(`SoundDeliveryRequest/Report/Result`, plan style + report fields, route `soundDesignDelivery`);
+`packages/engine-client` (`applyDelivery`); `apps/engine/src/sound-design/{delivery,plan,bed}.ts`,
+`routes/sound-design.ts`; `apps/mcp/src/tools/{sound-design,sound}.ts` (`apply_delivery`, `set_room_glue`,
+`set_sound_cues` stopBefore / build, `plan_sound_design` style, SOUND_GUIDE "Mix"), `examples.ts`; README (347 tools),
+security review (route row and paragraph), i18n (6 History labels in model-strings / en / es). Tests:
+`packages/project/test/sound-mix.test.ts` (16), `fuzz.test.ts` (AC-25 with the six commands), `audio-mix.test.ts` (+1),
+`packages/audio-fx/test/build-sweep.test.ts` (3), `apps/engine/test/sound-design-{mix,delivery,plan-mix}.test.ts`,
+`apps/mcp/test/sound-mix.test.ts`, `sound-examples.test.ts` (+6).
+
+#### Commands (owner `sound-design`; History labels in brackets, Spanish in es.json)
+
+| Command | Arguments | Result | Refusals |
+|---|---|---|---|
+| `audio.volumeDip` [Volume Dip] | `clipIds`, `dips[1…64] {start, end (sequence flicks), depthDb −60…0, fadeMs 0…5000}` | `{clips: {id: {written, replaced} \| {skipped}}}` | not audio `E_INVALID_PARAM`; `E_NOT_FOUND`; locked `E_TRACK_LOCKED`; depth > 0, end < start `E_SCHEMA` |
+| `soundDesign.applyStopBefore` [Stop Before Cue] | `cueId`, `sequenceId?`, `ambience?` (dip ambience too; remembered) | `{cueId, applied, removed, writes[{target, track, clipId?, keyframes}], reason?}` | `E_NOT_FOUND`; music track locked `E_TRACK_LOCKED`; `E_LIMIT` (automation too dense to record) |
+| `soundDesign.applyBuild` [Build Into Cue] | `cueId`, `sequenceId?` | same | same |
+| `soundDesign.ensureBus` [SFX Room Glue] | `sequenceId?`, `roomGlue? {sendDb −16, decay 0.6, mix 100, preDelayMs 8}`, `sfxTracks?` | `{busId, label, reverbId, created, sends[{trackId, track, sendId, added}], removed[], skipped[{trackId, track, reason}]}` | track `E_NOT_FOUND` / `E_TRACK_KIND`; bus locked `E_TRACK_LOCKED`; ranges `E_SCHEMA` |
+| `soundDesign.removeBus` [Remove SFX Room Glue] | `sequenceId?` | `{busId, removedBus, removedSends}` | `E_NOT_FOUND` (sequence) |
+| `soundDesign.applyDelivery` [Apply Delivery Preset] | `sequenceId?`, `delivery`, `loudness?` (default true), `analysis?`, `measuredLufs? {clipId: LUFS \| null}`, `ducking?[{clipIds, regions[[a, b] flicks]}]` | `{sequenceId, delivery, loudness, matched, ducked, redipped, levels}` | clip `E_NOT_FOUND`, not audio / ducking a non-music clip `E_INVALID_PARAM`, `E_TRACK_LOCKED`, `E_SCHEMA` |
+
+Every command has undo / redo and refusal tests, a `describe_commands` example that applies to a real project, and is in
+the AC-25 integrity fuzz (2 000 runs; more than RUNS / 50 accepted transactions carry one).
+
+#### Design and decisions
+
+- **Dips merge by the minimum** (spec: "merges by taking the minimum with existing keyframes"). Inside each dip window
+  W = [start − fade, end + fade] the curve becomes min(E(t), D(t)) with D = ref + env, ref = the larger of E at W's two
+  edges (the local level), env 0 at the edges and `depthDb` on the floor. At the edges D ≥ E, so the result is
+  continuous and **outside W nothing changes** (keys outside W keep their ids and values). Breakpoints: W's edges, the
+  dips' corners, the existing keys inside, the crossings of E and D, and the kinks where overlapping dips' ramps cross
+  (found by the property test, below); values are taken at the times the keys are stored at (whole lane flicks), so the
+  line outside W is the same line. Linear and hold curves are exact; a Bézier segment crossing an edge widens W to its
+  key and is resampled every 5 ms (approximation within its sampling). A 0 ms fade is a 1 ms ramp (a step would click,
+  and W's edges must be at rest). So a static −3 dB clip dips to −27 dB, a clip ducked to −15 dB dips to −39 dB inside
+  the duck, and dipping twice is value-idempotent (the second min changes nothing).
+- **Stop-before** (`cue.stopBefore {seconds, depthDb}`, a hero at T): one dip [T − seconds, T − 10 ms] with 30 ms fades
+  (points T − s − 30 ms: 0, T − s: −depth, T − 10 ms: −depth, T + 20 ms: 0, relative to the local level). WP2.4a's "Stop
+  Before Next" (0.25 s at −24 dB) is the same field and default (`STOP_BEFORE_DEFAULT`): nothing to reconcile, the
+  values were already in the spec's units. On each audio track with music (Essential Sound type music; ambience with
+  `ambience: true`) under the window: the **track's volume lane** through `mixer.writeAutomation` (no thinning) when only
+  music plays on that track over the window and its automation mode is not Off; else **`audio.volumeDip` on the music
+  clips** (clip Volume, content time; reversed and varispeed clips mapped like the mixer's `contentAt`). Decision: "shares
+  its track" is judged over the dip window only (a dialogue clip elsewhere on the track does not matter).
+- **Build** (`cue.build {seconds, fromHz, toHz}`): one `jasper.audio.scientific-filter` (Butterworth, High Pass, order 2,
+  cutoff 20 Hz at rest) per music track, reused by every build on it (`mix.buildFilters`); keys: rest at T − s − 50 ms,
+  fromHz at T − s, nine log-spaced keys to toHz at T − 1 frame (an exponential sweep: equal musical steps; a linear-Hz
+  ramp would spend its time at the top), rest at T. Music sharing its track gets the filter as a clip effect on each music
+  clip instead (a track insert would filter the dialogue). The rest value is the curve's own at the window's edges.
+- **No clicks: coefficient ramps** (fix in the Scientific Filter). The oracle (`build-sweep.test.ts`: a sine through the
+  sweep hosted by `EffectSlot` like the export mixer, third difference ≤ 4 × a clean sine's A·ω³, where a 0.1 % step is
+  already over the limit) failed on the release at the hero: **3.2 × 10⁻³ at T + 1.4 ms (≈ −38 dB of the tone)** because
+  the coefficients jumped every 32 samples while the cutoff fell 2 kHz → 20 Hz in a frame. The filter now interpolates the
+  coefficients sample by sample from the design in use to the next (one 32-sample design interval of lag, 0.7 ms);
+  prototype, band or section-count changes still switch at once. After: **4.0 × 10⁻⁶** (limit 4.8 × 10⁻⁵) on the
+  rendered engine output (below). The filter's existing tests (filter-eq, 28) pass unchanged.
+- **Recorded writes, exact removal.** Each realisation stores in `SoundDesign.mix.cues[cueId].{stopBefore|build}` the
+  spec, the frame and per place written to (`trackVolume`, `clipVolume`, `trackFilter`, `clipFilter`) the key ids it added
+  and the keys it replaced. Removal takes its keys out and, when all of them are still there (nothing rewrote the range),
+  gives the replaced keys back — so clearing a stop-before gives the lane back exactly (deep-equal test with a recorded
+  fader ride). When something rewrote the range (e.g. `audio.autoDuck` replaces a clip's Volume keys), only its own
+  remaining keys go. A build filter left without keys and used by no other build is removed with its last build.
+- **The cue drives the mix** (decision; makes "apply realization automatically when a cue is filled" true on every
+  surface): `soundCue.update` / `resync` re-write a realised cue that moved or changed and remove it when the field is
+  cleared (null) or the cue is muted; `soundCue.remove` removes it; a **filled** cue (a placed sound) with a stored
+  `stopBefore` / `build` not written yet gets it written by `soundCue.update` and by `soundDesign.place` (skipping a
+  locked music track instead of refusing the placement). Explicit `applyStopBefore` / `applyBuild` work on any cue.
+  After unmuting, apply again (a muted cue's record is gone).
+- **Room glue rule** (sends are per track): a track sends when it holds sound effects (`isSfxClip`) or is one of the
+  settings' SFX tracks, unless all its sound effects are interface sounds (every library type in ui / click / key / tick:
+  dry by design) or it also plays bed audio (dialogue, music, ambience, untyped). `sfxTracks` names tracks explicitly
+  (they send even with bed audio; interface-only ones stay dry). Sends are post-fader at `sendDb`; the bus is a stereo
+  submix "SFX Room" into the Mix with a Studio Reverb (decay 0.6 s, mix 100 %, pre-delay 8 ms; damping / size defaults).
+  Idempotent: an existing glue (recorded, `settings.roomBus`, or a submix named "SFX Room" — adopted, `createdBus:
+  false`) is reused; levels and reverb follow new settings; its own sends on tracks that stopped qualifying go; a track
+  already sending to the room by hand is left alone. `soundDesign.place` adds the send to a track it places a
+  qualifying sound on (only adds). `removeBus` removes its sends and the submix it made (an adopted one stays).
+- **Room return is the sound's contribution** (WP4.1b's additivity): the bed is the mix with every SFX clip silent, so
+  the room carries none of their energy there; each sound's solo render now runs until the reverbs on its way to the
+  Mix die out (`soloTailSec`: max of `SOLO_TAIL_SEC` 0.5 s and decay + pre-delay of reverbs in its clip effects, track
+  inserts and the submixes its track sends / outputs to, ≤ 6 s). The reverb is linear, so full − bed = Σ solos still
+  holds (test below). The delivery's Mix normalisation is excluded from every measurement (as before: `withoutLoudness`).
+- **Delivery presets** (`delivery.ts`): web −14 LUFS / −1 dBTP, podcast −16 / −1 (AES TD1008), broadcast-r128 −23 / −1
+  (EBU R 128), atsc-a85 −24 / −2 (ATSC A/85); music ≥ 8 LU and ambience ≥ 10 LU under the voice (spec). `level.ts`'s
+  `DELIVERY_INTEGRATED_LUFS` / `DELIVERY_TRUE_PEAK_DBTP` now derive from it. `applyDelivery` Auto-Matches by type:
+  dialogue at the target, music target − 8 LU (the target itself when the sequence has no dialogue: the music is the
+  programme), ambience target − 10 LU; sound effects are skipped ("balanced by the masking solver"), untyped clips too.
+  Ducking uses each clip's own Essential Sound Ducking (music −15 dB, ambience −10 dB, 0.8 s fades by default), so
+  during speech the music sits ≥ 8 + 15 LU under (measured 22.8 LU, below); stop-before dips written on a ducked clip are
+  written again on the ducked curve (autoDuck replaces the clip's Volume keys); default-owned SFX levels move to the new
+  preset (solver-owned ones are re-solved by the engine job). The settings' delivery is what Phase 2 B's default levels
+  and the solver's programme loudness read, so they follow.
+- **The engine job measures** (`POST /api/sound-design/delivery`, `delivery.ts`): each dialogue / music / ambience clip's
+  own integrated loudness (Auto-Match's measure: effects without gain, Volume, fades or pan); with that match simulated
+  on a copy (`applyTransaction`, fresh ids), the activity of each music / ambience clip's "Duck against" clips grouped by
+  trigger set and sensitivity (the analysis job's envelope and `activeRegions`); then `applyDelivery` simulated, the
+  sound effects measured against the new bed and solved (WP4.1b), and the result rendered three times (mix, voice,
+  music / ambience) for the report: mix loudness and true peak before normalisation, the export's expected loudness and
+  peak, speech seconds (dialogue momentary ≥ −60 LUFS and within 20 LU of its loudest), music / ambience under the voice
+  during speech (energy mean of the 100 ms momentary values over the speech frames). The measured mix is stored as the
+  Mix's loudness analysis (so the preview normalises too). Apply: ONE transaction "Apply Delivery Preset: <preset>"
+  (`applyDelivery` + `applyGains` per changed sound effect) with `expectedRevision`; propose: items `delivery` and
+  `gain:NNN` (each requiring `delivery`).
+- **Fingerprint without keyframe ids** (`mixFingerprint`): the analysis is measured on the simulation, whose new keys
+  (ducking, dips) have other ids than the real transaction's; ids do not change the sound, so they are no longer hashed
+  and the stored analysis stays current (test: the delivered project's `analysis.mixHash` equals its fingerprint).
+  Effect: analyses stored before this build read stale once (they are re-measured; exports always re-measure).
+- **Plan style options** (`style.roomGlue: true | {sendDb}`, `stopBefore`, `build`, `delivery`): `room` (ensureBus) and
+  `delivery` (`planDelivery` without the SFX re-solve: the plan solves its own) are setup items every place item
+  requires, so the gains are solved against the glue and the preset (the preview applies them; `levels.delivery` is the
+  style's); for each hero (after the dialogue demotion) with music under its dip window a `stop:NNN` item
+  (`soundCue.update {stopBefore: 0.25 s / −24 dB}` + `applyStopBefore`), and for each hero after ≥ 2 s of music a
+  `build:NNN` item (2 s, 150 → 2000 Hz), each requiring its place item; a stored cue's own `stopBefore` / `build` is
+  proposed (without the update) even without the style. The report gains `mix {roomItemId, deliveryItemId, delivery,
+  stopBefore, build}` and per event `stopBeforeItemId` / `buildItemId`. Decision: build defaults 150 → 2000 Hz over 2 s
+  (a common riser sweep; undocumented in Adobe terms — Premiere has no "build"), stop-before 0.25 s / −24 dB (WP2.4a).
+- **`sequence.duplicate` re-identifies submixes and sends** (pre-existing bug found here; regression test in
+  `sound-mix.test.ts` "load and repair": duplicating a sequence with a submix that has an effect or a send failed INV-001
+  "Duplicate id trk_ / fx_ / snd_"). Submix ids, their effects and every send get new ids; outputs and send targets
+  follow; `settings.roomBus` maps to the copy's bus; the copy drops `soundDesign.mix` (its records name the original's
+  keys; running a realisation again on the copy merges by the minimum, so nothing doubles).
+
+#### API for WP4.2b (UI)
+
+- Cue menu "Stop Before Next" / Properties "Cue" build fields: `soundCue.update {cueId, stopBefore | build}` — on a filled
+  cue the mix follows in the same command; null removes exactly. Explicit re-apply: `soundDesign.applyStopBefore {cueId,
+  ambience?}` / `applyBuild {cueId}`. What is written: `seq.soundDesign.mix.cues[cueId]` (`stopBefore|build: {…spec,
+  frame, writes[]}`) — draw the Cue Seam's span bars from it (written) vs the cue fields (stored only).
+- Room glue: `soundDesign.ensureBus {roomGlue?, sfxTracks?}` / `removeBus`; state `seq.soundDesign.mix.room {busId,
+  reverbId, createdBus, sendDb, decay, mix, preDelayMs, sends[{trackId, sendId}]}` and `settings.roomBus`. Essential Sound
+  "Room send" per track: the send `sends.find(s => s.trackId === track)` → `mixer.updateSend` for its level.
+- Delivery: `engine.applyDelivery({projectId, sequenceId, delivery, mode: 'apply' | 'propose', loudness?, autoMatch?,
+  ducking?, rebalance?})` → job `sound-design` → `SoundDeliveryResult {applied, proposalId, revision, report {preset,
+  clips[{clipId, track, type, measuredLufs, targetLufs, gainDb, skipped?}], ducking[], sfx, measure {mixLufs,
+  mixTruePeakDb, expectedLufs, expectedTruePeakDb, speechSeconds, musicUnderVoiceLu, ambienceUnderVoiceLu}, warnings}}`;
+  the editor's call applies as the user's own edit. Presets for a select: `DELIVERY_PRESETS` (`@jasper/project`).
+- Plan dialog (Auto Sound Pass…): `style.roomGlue | stopBefore | build | delivery`; review items `room`, `delivery`
+  (setup, required by every placement), `stop:NNN`, `build:NNN` (group `mix`, `meta.kind`, `meta.why`).
+
+<!-- WP4.2a-VERIFIED -->
+
 ## Phase 5: Sound Check
 
 ## Phase 6: packs, cue sources, completion

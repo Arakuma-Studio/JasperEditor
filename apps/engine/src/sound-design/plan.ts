@@ -1080,7 +1080,7 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 	);
 	// Phase 4 setup items: the room glue, and the delivery preset measured on the edit as it is.
 	const mixSetup: ProposalItemInput[] = [];
-	const room = roomSetupItem(seq, style);
+	const room = picks.length ? roomSetupItem(seq, style) : null;
 	if (room) mixSetup.push(room);
 	if (style.delivery && picks.length) {
 		if (!deps.planDelivery || !deps.ffmpeg || !deps.registry)

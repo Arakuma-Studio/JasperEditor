@@ -146,9 +146,10 @@ function writeTarget(seq: DSeq, w: MixWrite): { anim: DAnim; track: DTrack } | n
 }
 
 /** Takes one recorded write out (its keys, and back the ones it replaced when nothing rewrote the range since). */
-function unwrite(seq: DSeq, w: MixWrite, h: HandlerContext): boolean {
+function unwrite(seq: DSeq, w: MixWrite, h: HandlerContext, skipLocked = false): boolean {
 	const t = writeTarget(seq, w);
 	if (!t) return false;
+	if (skipLocked && t.track.locked) return false;
 	assertUnlocked(t.track, h);
 	const r = unwriteCurve(plainCopy(t.anim.keyframes) as Keyframe<number>[], w);
 	t.anim.keyframes = r.keyframes as never;
@@ -217,10 +218,10 @@ const summary = (seq: DSeq, w: MixWrite): WriteSummary => {
 };
 
 /** Takes the cue's recorded stop-before dip out of the mix. Returns the number of writes undone. */
-function removeStopBefore(seq: DSeq, cueId: string, h: HandlerContext): number {
+function removeStopBefore(seq: DSeq, cueId: string, h: HandlerContext, skipLocked = false): number {
 	const rec = peekMix(seq)?.cues?.[cueId]?.stopBefore;
 	if (!rec) return 0;
-	for (const w of rec.writes) unwrite(seq, w, h);
+	for (const w of rec.writes) unwrite(seq, w, h, skipLocked);
 	const mix = mixOf(seq);
 	const c = mix.cues?.[cueId];
 	if (c) {
@@ -430,10 +431,10 @@ function writeSweep(
 	return { written: w.written, replaced: w.replaced };
 }
 
-function removeBuild(doc: DDoc, seq: DSeq, cueId: string, h: HandlerContext): number {
+function removeBuild(doc: DDoc, seq: DSeq, cueId: string, h: HandlerContext, skipLocked = false): number {
 	const rec = peekMix(seq)?.cues?.[cueId]?.build;
 	if (!rec) return 0;
-	for (const w of rec.writes) unwrite(seq, w, h);
+	for (const w of rec.writes) unwrite(seq, w, h, skipLocked);
 	const mix = mixOf(seq);
 	const c = mix.cues?.[cueId];
 	if (c) {
@@ -545,7 +546,12 @@ export function followCueMix(doc: DDoc, seq: DSeq, cueId: string, h: HandlerCont
 	const cue = removed ? null : (soundDesignOf(seq).cues[cueId] ?? null);
 	if (!rec && !cue) return;
 	const filled = !!cue && (cue.placedClipIds ?? []).some((id) => !!seq.clips[id]);
-	if (rec?.stopBefore) {
+	// A locked music track keeps what was written on it: the cue's own edit never fails because of it. A deleted cue
+	// takes out what it can; a moved or changed one leaves its realisation as it is until the track is unlocked.
+	const locked = (writes: readonly MixWrite[]) => writes.some((w) => !!writeTarget(seq, w)?.track.locked);
+	if (rec?.stopBefore && locked(rec.stopBefore.writes)) {
+		if (!cue) removeStopBefore(seq, cueId, h, true);
+	} else if (rec?.stopBefore) {
 		const s = cue?.stopBefore;
 		const same =
 			cue &&
@@ -567,7 +573,9 @@ export function followCueMix(doc: DDoc, seq: DSeq, cueId: string, h: HandlerCont
 		}
 	} else if (cue && filled && cue.stopBefore && !cue.muted)
 		realizeStopBefore(doc, seq, cue, { skipLocked: true }, h);
-	if (rec?.build) {
+	if (rec?.build && locked(rec.build.writes)) {
+		if (!cue) removeBuild(doc, seq, cueId, h, true);
+	} else if (rec?.build) {
 		const b = cue?.build;
 		const same =
 			cue &&

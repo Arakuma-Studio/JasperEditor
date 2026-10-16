@@ -325,7 +325,7 @@ export function mergeDips(
 			const g0 = e - d;
 			const g1 = en - dn;
 			if ((g0 > 1e-9 && g1 < -1e-9) || (g0 < -1e-9 && g1 > 1e-9)) {
-				const tc = t + ((tn - t) * g0) / (g0 - g1);
+				const tc = snap(t + ((tn - t) * g0) / (g0 - g1));
 				if (tc > t && tc < tn) out.push([tc, Math.min(E(tc), D(tc))]);
 			}
 		}

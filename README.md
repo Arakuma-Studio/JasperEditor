@@ -442,7 +442,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (345; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (347; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `browse_media_files` (folders and importable files on the engine's computer) `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -655,14 +655,20 @@ allowed it ("Allow agents to apply sound proposals"), otherwise `403 APPROVAL_RE
 {itemIds, revision, refs}` is the editor window's own: a Redo of an undone accept records the items accepted again
 (agents get `403 APPROVAL_REQUIRED`).
 `POST /api/sound-design/plan {projectId, sequenceId?, range?, cues?: "auto" | [cueIds], style?: {density, palette,
-sources, respectDialogue, seed, alternatives}, maxCues?, label?}` starts a `sound-design` job (202); its result names the
-proposal it stored (`proposalId`) with a per-cue report (sound, score parts, role, alignment, alternates, skipped cues,
-and each sound's gain solved against the bed with what limited it).
+sources, respectDialogue, seed, alternatives, roomGlue, stopBefore, build, delivery}, maxCues?, label?}` starts a
+`sound-design` job (202); its result names the proposal it stored (`proposalId`) with a per-cue report (sound, score
+parts, role, alignment, alternates, skipped cues, each sound's gain solved against the bed with what limited it, and the
+room glue / delivery / stop-before / build items the style asked for).
 `POST /api/sound-design/rebalance {projectId, sequenceId?, clipIds?, range?, delivery?, mode?: "propose" | "apply",
 userGains?: "keep" | "replace", label?}` starts a `sound-design` job (202) that measures every sound effect against the
 bed (rendered per cue cluster) and solves its gain with the masking solver; the result reports per clip the gain, target
 and achieved lift, `limitedBy` and the reason, and either names the proposal it stored (`propose`, the default) or applies
 the gains as one undoable transaction "Rebalance SFX Levels" (`apply`).
+`POST /api/sound-design/delivery {projectId, sequenceId?, delivery: "web" | "podcast" | "broadcast-r128" | "atsc-a85",
+mode?: "propose" | "apply", loudness?, autoMatch?, ducking?, rebalance?, label?}` starts a `sound-design` job (202) that
+measures the clips, the speech and the resulting mix and applies (one transaction "Apply Delivery Preset") or proposes the
+preset's Mix loudness normalisation, Auto-Match by type, ducking and re-solved sound-effect gains; the report gives the
+expected loudness and true peak and how far under the voice the music and ambience sit during speech.
 
 The engine binds loopback only. The packaged-like desktop engine requires its per-launch token
 (`JASPER_LOCAL_TOKEN`), so plain curl calls are meant for the dev or standalone engine.

@@ -323,7 +323,7 @@ e2e run, reproduced in a unit test).
 and preview defects), Phase 1 (a licensed, offline sound library that users and agents search, look at, audition and
 insert peak-aligned with provenance and credits), then cues and placement (P2), proposals and review (P3), mixing (P4),
 Sound Check (P5), packs and more cue sources (P6).
-**Status (on `feat/sound-design`, not merged to `main`):** partial — Phases 0, 1 and 2 done; Phase 3 in progress (WP3.1: the generic proposal model, engine store, routes, event and the agent accept gate; WP3.2: the `sound-design` plan job and route, `plan_sound_design`, `place_sound` propose mode and the five proposal MCP tools; WP3.3a: the session proposals slice, the preview document the Program monitor plays with "Hear proposal" (A/B, also while playing), timeline ghosts with their cards, Apply as one undo step and Undo back into review — rerun `e2e/sound-proposal-ghosts.spec.ts`; the Review panel, review bar, proposal card and Auto Sound Pass… dialog are not built yet); Phase 4 in progress (WP4.1a masking solver, WP4.1b bed render, `soundDesign.applyGains`, `rebalance_sfx`, plan gains); Phases 5–6 not started.
+**Status (on `feat/sound-design`, not merged to `main`):** partial — Phases 0, 1 and 2 done; Phase 3 in progress (WP3.1: the generic proposal model, engine store, routes, event and the agent accept gate; WP3.2: the `sound-design` plan job and route, `plan_sound_design`, `place_sound` propose mode and the five proposal MCP tools; WP3.3a: the session proposals slice, the preview document the Program monitor plays with "Hear proposal" (A/B, also while playing), timeline ghosts with their cards, Apply as one undo step and Undo back into review — rerun `e2e/sound-proposal-ghosts.spec.ts`; the Review panel, review bar, proposal card and Auto Sound Pass… dialog are not built yet); Phase 4 in progress (WP4.1a masking solver, WP4.1b bed render, `soundDesign.applyGains`, `rebalance_sfx`, plan gains; WP4.2a stop-before, build, room glue, delivery presets and the plan's style options — model, engine and MCP; their web UI is WP4.2b); Phases 5–6 not started.
 See [wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 1 verification": the Sound Library panel and Sound Design
 workspace, the engine library (60-sound Kenney CC0 kit, user folders with a declared licence, Jasper Synth), ten MCP
 tools, credits; inserts land on the frame to the sample (library sounds are registered with 50 ms of lead silence, and
@@ -362,8 +362,21 @@ lift or reports `limitedBy`; on a PCM export, each event's lift over the separat
 the report (AAC exports add up to 1.3 dB of codec noise to the difference); export true peak −4.8 dBTP; plan with gains
 10.2 s (levels 5.0 s) at load ≈ 17 on 16 cores. Limits: SFX do not mask each other in the model and the per-event
 true-peak ceiling is pre-master (overlapping events may sum higher); non-linear master processing (a limiter on the Mix)
-breaks the bed + sound additivity the measurement assumes; windows over 20 s are measured on their first 20 s; the
-"Rebalance SFX Levels" menu item, stop-before, build, room glue and delivery presets are the rest of Phase 4.
+breaks the bed + sound additivity the measurement assumes; windows over 20 s are measured on their first 20 s.
+Phase 4 → WP4.2a ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 4 → WP4.2a"): stop-before (music track
+volume automation, or `audio.volumeDip` on the music clips when the music shares its track; dips merge by the minimum),
+build (one Butterworth High Pass per music track, keyframed exponential sweep; the Scientific Filter now ramps its
+coefficients so the sweep does not click), room glue (`soundDesign.ensureBus`: "SFX Room" submix + Studio Reverb +
+post-fader sends, interface sounds dry; the return counts as each sound's contribution in the bed / solo measurement),
+delivery presets (`POST /api/sound-design/delivery`, MCP `apply_delivery`: Mix normalisation, Auto-Match by type,
+ducking, re-solved SFX gains) and the plan's style options. Measured: an exported stop-before dip −23.99 dB deep, its
+ramps' middles 0.2 ms from where they should be; a build raises the music's spectral centroid 3.45 → 8.50 kHz and has no
+click (third difference 4.0 × 10⁻⁶ vs 3.2 × 10⁻³ before the filter fix); a web delivery export measured by ffmpeg
+−14.1 LUFS / −1.5 dBTP with the music 22.8 LU under the voice during speech. Limits: the Essential Sound "Room send",
+"Stop before next" and delivery controls are WP4.2b's (web UI); a dip or build on a time-remapped clip is not modelled
+(audio clips have none); a Bézier volume segment crossing a dip edge is resampled every 5 ms; the plan's delivery item
+is measured without the plan's own sound effects (its stored analysis then reads stale until re-measured; exports
+always re-measure).
 
 ### Not covered by any workstream yet
 

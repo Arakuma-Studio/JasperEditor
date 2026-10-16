@@ -261,7 +261,7 @@ describe('mergeDips (property)', () => {
 							const step = kfs.some(
 								(kf, j) => j > 0 && kfs[j - 1]!.interpolation === 'hold' && Math.abs(kf.time - t) <= 2,
 							);
-							if (!step) expect(got).toBeCloseTo(Math.min(e, dd), 3);
+							if (!step) expect(got).toBeCloseTo(Math.min(e, dd), 2);
 							expect(got).toBeLessThanOrEqual(dd + 1e-3);
 							void d;
 						}
@@ -861,6 +861,35 @@ describe('stop-before and build follow the filled cue', () => {
 		h.ok([{ type: 'soundDesign.place', cueId: c4, layers: [{ mediaId: hitM, track: 'A2' }] }]);
 		expect(trackVol(h, 'A1', 600 * F30 - 0.1 * S)).toBe(0);
 		expect(sd(h)!.mix!.cues![c4]).toBeUndefined();
+		expect(checkInvariants(h.doc)).toEqual([]);
+	});
+});
+
+describe('a locked music track never makes a cue edit fail', () => {
+	it('moving or deleting a cue whose dip sits on a locked track: the track keeps it', () => {
+		const h = new Harness();
+		addAudio(h, 0, 'A1', 'music');
+		const cue = heroCue(h, 120, { stopBefore: { seconds: 0.25, depthDb: -24 } });
+		h.ok([{ type: 'soundDesign.applyStopBefore', cueId: cue }]);
+		const written = clone(track(h, 'A1').volumeDb);
+		h.ok([{ type: 'track.update', trackId: track(h, 'A1').id, patch: { locked: true } }]);
+		// moved: the cue moves, the locked lane stays as it was (and its record too, for later)
+		h.ok([{ type: 'soundCue.update', cueId: cue, frame: 200 }]);
+		expect(track(h, 'A1').volumeDb).toEqual(written);
+		expect(sd(h)!.mix!.cues![cue]!.stopBefore!.frame).toBe(120);
+		// explicit re-apply is refused while locked
+		expect(h.tx([{ type: 'soundDesign.applyStopBefore', cueId: cue }]).errors?.[0]?.code).toBe('E_TRACK_LOCKED');
+		// unlocked, the next edit catches up (the dip follows the cue to 200)
+		h.ok([{ type: 'track.update', trackId: track(h, 'A1').id, patch: { locked: false } }]);
+		h.ok([{ type: 'soundCue.update', cueId: cue, frame: 210 }]);
+		expect(trackVol(h, 'A1', 120 * F30 - 0.1 * S)).toBeCloseTo(0, 6);
+		expect(trackVol(h, 'A1', 210 * F30 - 0.1 * S)).toBeCloseTo(-24, 6);
+		// deleted while locked: the cue goes, the lane keeps its keys, the record is dropped
+		h.ok([{ type: 'track.update', trackId: track(h, 'A1').id, patch: { locked: true } }]);
+		const kept = clone(track(h, 'A1').volumeDb);
+		h.ok([{ type: 'soundCue.remove', cueIds: [cue] }]);
+		expect(track(h, 'A1').volumeDb).toEqual(kept);
+		expect(sd(h)!.mix?.cues?.[cue]).toBeUndefined();
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 });
