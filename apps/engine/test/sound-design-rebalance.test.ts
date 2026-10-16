@@ -90,7 +90,7 @@ async function saved(projectId: string): Promise<{ doc: ProjectDocument; revisio
 	const b = r.json() as { result: ProjectDocument; revision: number };
 	return { doc: b.result, revision: b.revision };
 }
-async function rebalance(body: unknown, headers = AGENT_H) {
+async function rebalance(body: unknown, headers: Record<string, string> = AGENT_H) {
 	return app.inject({
 		method: 'POST',
 		url: '/api/sound-design/rebalance',
@@ -100,7 +100,7 @@ async function rebalance(body: unknown, headers = AGENT_H) {
 }
 async function run(
 	body: unknown,
-	headers = AGENT_H,
+	headers: Record<string, string> = AGENT_H,
 ): Promise<{ job: EngineJob; result: SfxRebalanceResult }> {
 	const r = await rebalance(body, headers);
 	expect(r.statusCode, r.body).toBe(202);

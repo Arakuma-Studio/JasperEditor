@@ -210,9 +210,12 @@ describe('proposal MCP tools', { timeout: 900_000 }, () => {
 		expect(plan.proposalId).toMatch(/^prp_/);
 		expect(plan.placed).toBeGreaterThan(6);
 		expect(plan.counts.pending).toBe(plan.items);
-		expect(plan.table.split('\n')[0]).toBe('item | timecode | cue | sound | role | align | alternates | gain');
+		expect(plan.table.split('\n')[0]).toBe(
+			'item | timecode | cue | sound | role | align | alternates | gain',
+		);
 		// Phase 4: every row ends with its solved level ("−3 dB, …") or says the default level applies
-		for (const row of plan.table.split('\n').slice(1)) expect(row).toMatch(/\| (?:[−+]?[\d.]+ dB|default level)/);
+		for (const row of plan.table.split('\n').slice(1))
+			expect(row).toMatch(/\| (?:[−+]?[\d.]+ dB|default level)/);
 		expect(plan.table.split('\n').length).toBe(plan.placed + 1);
 		expect(plan.next).toMatch(/Review panel/);
 		expect(plan.next).toMatch(/wait_for_proposal/);

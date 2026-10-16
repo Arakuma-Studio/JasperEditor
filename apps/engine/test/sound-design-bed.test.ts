@@ -114,7 +114,8 @@ describe('bed render and sound measurements (real engine)', { timeout: 300_000 }
 		for (const k of SFX) {
 			const s = m.sounds.get(ids[k]!)!;
 			const want = bandLevels(whole.channels, sr, s.window);
-			s.bedBandsDb.forEach((v, i) => expect(Math.abs(v - want[i]!), `${k} band ${i}`).toBeLessThan(0.05));
+			for (const [i, v] of s.bedBandsDb.entries())
+				expect(Math.abs(v - want[i]!), `${k} band ${i}`).toBeLessThan(0.05);
 			const lp = bedLocalPeakLu(whole.channels, sr, s.window, WEIGHT[k]);
 			expect(Math.abs(s.bedLocalPeakLu! - lp), `${k} local peak`).toBeLessThan(0.05);
 			// the bed is the music (pink noise ≈ −30 dBFS RMS, under −30 dB per octave band) plus the speech (1.5 kHz,
@@ -142,7 +143,7 @@ describe('bed render and sound measurements (real engine)', { timeout: 300_000 }
 			const rest = await renderSequencePcm(without(d.doc, d.seqId, [id]), d.seqId, range, null, deps);
 			const contribution = full.channels.map((c, ch) => c.map((x, i) => x - rest.channels[ch]![i]!));
 			const s = m.sounds.get(id)!;
-			const gain = d.doc.sequences[d.seqId]!.clips[id]!.gainDb as number;
+			const gain = (d.doc.sequences[d.seqId]!.clips[id] as { gainDb: number }).gainDb;
 			const want = bandLevels(contribution, sr, s.window);
 			for (let i = 0; i < 7; i++) {
 				if (want[i]! < -90) continue; // empty bands: quantisation noise of the difference

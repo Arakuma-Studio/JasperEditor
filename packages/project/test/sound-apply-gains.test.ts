@@ -211,7 +211,7 @@ describe('soundDesign.applyGains', () => {
 		h.ok([{ type: 'track.update', trackId: track, patch: { locked: true } }]);
 		expect(code({ gains: { [a!]: -3 } })).toBe('E_TRACK_LOCKED');
 		h.ok([{ type: 'track.update', trackId: track, patch: { locked: false } }]);
-		expect(clipOf(h, a!).gainDb).toBe(before.sequences[h.seqId]!.clips[a!]!.gainDb);
+		expect(clipOf(h, a!).gainDb).toBe((before.sequences[h.seqId]!.clips[a!] as SfxClip).gainDb);
 	});
 
 	it('a solver level survives load; a damaged one is dropped (the gain kept), idempotently', () => {
