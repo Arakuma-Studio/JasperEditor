@@ -210,11 +210,22 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 		path: ['items'],
 	});
 	const itemOf = (n: string) => Object.values(items).find((i) => i.name === n)!.id;
+	// The whole Phase 2 fixture, its fframes motion graphic included, when the fframes renderer is built (`pnpm
+	// mg:build`; `pnpm e2e` builds it when cargo is installed): the native export renders it through jasper-mg.
+	// Without it the native path refuses the graphic with a named blocker (planner, AGENTS.md §4), so the spec leaves
+	// the graphic out and says so.
+	const caps = (await (await request.get('/api/capabilities')).json()) as {
+		render: { fframes: string; fframesReason?: string };
+	};
+	const withGraphic = caps.render.fframes === 'ready';
+	if (!withGraphic)
+		test.info().annotations.push({
+			type: 'fframes',
+			description: `the fixture's fframes graphic is left out: ${caps.render.fframesReason ?? 'jasper-mg is not built'}`,
+		});
 	const setup = await transact(page, [
-		// the Phase 2 fixture without its fframes motion graphic (no fframes renderer in this environment: the native
-		// export would refuse it)
 		...((FIXTURE_COMMANDS as { type: string }[]).filter(
-			(c) => c.type !== 'clip.addMotionGraphic',
+			(c) => withGraphic || c.type !== 'clip.addMotionGraphic',
 		) as never[]),
 		{
 			type: 'clip.place',
