@@ -6,8 +6,10 @@ import {
 	LutInfoSchema,
 	MediaKindSchema,
 	MediaLocatorSchema,
+	type MediaLocator,
 	MediaProbeSchema,
 	MgBundleInfoSchema,
+	importedDescriptors,
 	VectorInfoSchema,
 } from '@jasper/project';
 import { z } from 'zod';
@@ -177,3 +179,39 @@ export const UploadAppendResponseSchema = z.object({ offset: z.number().int().mi
 export type UploadAppendResponse = z.infer<typeof UploadAppendResponseSchema>;
 /** 409 detail when the chunk offset does not match the server's. */
 export const UploadOffsetMismatchSchema = z.object({ expectedOffset: z.number().int().min(0) });
+
+/** Engine identity used in `engine-store` locators (clients talk to exactly one local engine). */
+export const LOCAL_ENGINE_ID = 'local';
+
+/**
+ * RegisteredMedia (`POST /api/media/register`, `/api/sounds/:id/register`) → the `media.register` command that adds the
+ * asset and a Project item to the document (ARCHITECTURE D-09: an `engine-store` locator keyed by the engine's media key,
+ * plus the file's `path` locators; the probe is copied as is). Shared by jasper-mcp and the engine's sound-design plan.
+ */
+export function mediaRegisterCommand(reg: RegisteredMedia, ref: string, itemRef: string, name?: string) {
+	const locators: MediaLocator[] = [{ type: 'engine-store', engineId: LOCAL_ENGINE_ID, key: reg.mediaKey }];
+	const seen = new Set<string>();
+	for (const l of reg.locators)
+		if (l.type === 'path' && !seen.has(l.path)) {
+			seen.add(l.path);
+			locators.push(l);
+		}
+	return {
+		type: 'media.register' as const,
+		asset: {
+			kind: reg.kind,
+			fingerprint: reg.fingerprint,
+			originalName: reg.originalName,
+			sizeBytes: reg.sizeBytes,
+			container: reg.container,
+			probe: reg.probe,
+			locators,
+			...(reg.lut ? { lut: reg.lut } : {}),
+			...(reg.colorConfig ? { colorConfig: reg.colorConfig } : {}),
+			...importedDescriptors(reg),
+		},
+		...(name ? { name } : {}),
+		ref,
+		itemRef,
+	};
+}

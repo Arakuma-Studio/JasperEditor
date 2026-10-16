@@ -1,0 +1,865 @@
+// The `sound-design` plan job (spec 12 §2.8, P3-R3; wp-note "Phase 3 → WP3.2"): cues → rank → register → place →
+// PROPOSAL, deterministic by seed. Nothing is applied: the result is a proposal (feature `sound-design`) the user
+// reviews in the editor (or an allowed agent accepts).
+//   1. cues: the sequence's unfilled stored cues (or the ids asked for) and, with `cues: 'auto'`, cues derived from the
+//      edit (`deriveCues` with the engine's template registry); a new derived cue becomes a setup item (`soundCue.add`);
+//   2. rank: per cue, `rankSounds` with the cue's types, visual kind and window over the allowed sources, commercial-safe
+//      licences only, the palette first; `pickVariant` rotates over the top 4 so neighbours differ (seeded ±2 % speed and
+//      ±1 dB gain); the next 1–3 ranked sounds are the alternatives;
+//   3. register: every chosen and alternative sound is registered for the project (files copied into managed media;
+//      the `media.register` commands go into setup items, nothing is committed);
+//   4. place: one item per cue, `soundDesign.place` (role from the weight, align / pan / pan sweep from the cue, gain left
+//      to placement's default level), alternatives as command sets, `requires` linking it to its setup items;
+//   5. the proposal is created through the proposals service (validated by dry runs on the live document).
+// The selection (1–2) and the draft (4) are pure and exported for tests; the job does the I/O and reports progress.
+import {
+	type RegisterSoundResponse,
+	SOUND_DESIGN_PLAN_LIMITS,
+	SOUND_EFFECTS_BIN,
+	type SoundDesignPlanEvent,
+	type SoundDesignPlanReport,
+	type SoundDesignPlanRequest,
+	SoundDesignPlanRequestSchema,
+	type SoundDesignPlanResult,
+	type SoundDesignPlanSkip,
+	type SoundEntry,
+	type SoundSourceType,
+	mediaRegisterCommand,
+} from '@jasper/api';
+import {
+	type AudioClip,
+	bindExpressions,
+	type ClipSfx,
+	CUE_ALIGNS,
+	type CueDensity,
+	cueInputFromDerived,
+	type DerivedCue,
+	deriveCues,
+	documentHasActiveExpressions,
+	flicksPerFrame,
+	isSoundTypeId,
+	type MgTemplateRegistry,
+	type ProjectDocument,
+	type ProposalDraft,
+	pickVariant,
+	type Rational,
+	type RankedSound,
+	rankSounds,
+	SFX_ROLES,
+	SOUND_DESIGN_FEATURE,
+	SOUND_TYPES,
+	type Sequence,
+	type SoundCue,
+	type SoundProposalMedia,
+	type SoundProposalPlacement,
+	SoundLayerSchema,
+	type SoundTypeId,
+	sequenceDialogueRanges,
+	sequenceTimecode,
+	soundCuesOf,
+	soundDesignSettingsOf,
+	soundProposalItems,
+	typesForVisualKind,
+	VISUAL_KINDS,
+	type VisualKind,
+} from '@jasper/project';
+import type { AgentService } from '../agent/service.ts';
+import type { JobContext } from '../jobs/types.ts';
+import { JobError } from '../jobs/types.ts';
+import type { ProposalService, Requester } from '../proposals/service.ts';
+import type { SoundService } from '../sounds/service.ts';
+import { HttpError } from '../tools/reply.ts';
+import { matchStoredCues } from './match.ts';
+
+type CueKind = SoundCue['kind'];
+type CueWeight = SoundCue['weight'];
+type CueAlign = (typeof CUE_ALIGNS)[number];
+type Role = (typeof SFX_ROLES)[number];
+
+/** Candidates ranked per cue (the rotation looks at the top 4; alternatives follow the pick). */
+const RANKED_PER_CUE = 12;
+/** Derived cues this close (frames) to a stored cue are left to the stored one. */
+const NEAR_STORED_FRAMES = 2;
+/** Never two heroes within this (spec 12 §2.10 SOUND_GUIDE). */
+const HERO_MIN_SEC = 0.5;
+/** A report larger than this drops the score parts (the proposal's report must stay under 1 MB). */
+const REPORT_SOFT_BYTES = 900 * 1024;
+
+/** Does the placement command take `gainOffsetDb` (the seeded ±1 dB on top of the default level)? */
+const LAYER_TAKES_GAIN_OFFSET = Object.hasOwn(
+	(SoundLayerSchema as unknown as { shape: Record<string, unknown> }).shape,
+	'gainOffsetDb',
+);
+
+/** A cue the plan considers. */
+export type PlanCue = {
+	/** The stored cue, or null for a derived one. */
+	stored: SoundCue | null;
+	derived: DerivedCue | null;
+	frame: number;
+	kind: CueKind;
+	weight: CueWeight;
+	types: SoundTypeId[];
+	align: CueAlign | null;
+	reason: string;
+	windowFrames: number | null;
+	/** Key of the rotation and variation hash: the cue id, or `derived:<key>`. */
+	key: string;
+};
+
+export type PlanStyle = {
+	density: CueDensity;
+	respectDialogue: boolean;
+	seed: number;
+	sources: SoundSourceType[];
+	palette: string[];
+	alternatives: number;
+	maxCues: number;
+};
+
+export type PlanPick = {
+	cue: PlanCue;
+	role: Role;
+	align: CueAlign;
+	/** The chosen sound first, then the alternatives (ranked order). */
+	sounds: RankedSound<SoundEntry>[];
+	rate: number;
+	gainOffsetDb: number;
+	notes: string[];
+};
+
+const ALL_SOURCES: SoundSourceType[] = ['starter', 'pack', 'folder', 'synth'];
+
+/** The style with its defaults from the request and the sequence's settings. */
+export function resolveStyle(req: SoundDesignPlanRequest, seq: Sequence): PlanStyle {
+	const settings = soundDesignSettingsOf(seq);
+	const st = req.style ?? {};
+	const palette = st.palette === undefined || st.palette === 'project' ? (settings.palette ?? []) : st.palette;
+	return {
+		density: st.density ?? settings.density,
+		respectDialogue: st.respectDialogue ?? true,
+		seed: st.seed ?? settings.seed,
+		sources: st.sources?.length ? [...new Set(st.sources)] : ALL_SOURCES,
+		palette: [...new Set(palette)],
+		alternatives: st.alternatives ?? SOUND_DESIGN_PLAN_LIMITS.maxAlternatives,
+		maxCues: req.maxCues ?? SOUND_DESIGN_PLAN_LIMITS.maxCues,
+	};
+}
+
+const fpsOf = (seq: Sequence) => {
+	const r = seq.settings.frameRate as Rational;
+	const fps = r.num / r.den;
+	return Number.isFinite(fps) && fps > 0 ? fps : 30;
+};
+
+function knownTypes(types: readonly unknown[] | undefined, kind: CueKind): SoundTypeId[] {
+	const own = (types ?? []).filter(isSoundTypeId);
+	if (own.length) return [...new Set(own)];
+	return (VISUAL_KINDS as readonly string[]).includes(kind) ? typesForVisualKind(kind as VisualKind) : [];
+}
+
+function skip(seq: Sequence, c: PlanCue, code: SoundDesignPlanSkip['code'], reason: string): SoundDesignPlanSkip {
+	return {
+		cueId: c.stored?.id ?? null,
+		cueKey: c.derived?.key ?? null,
+		frame: c.frame,
+		timecode: sequenceTimecode(seq, c.frame),
+		kind: c.kind,
+		code,
+		reason,
+	};
+}
+
+function fromStored(c: SoundCue): PlanCue {
+	return {
+		stored: c,
+		derived: null,
+		frame: c.frame,
+		kind: c.kind,
+		weight: c.weight,
+		types: knownTypes(c.types, c.kind),
+		align: c.align ?? null,
+		reason: c.reason ?? c.label ?? `${c.kind} cue`,
+		windowFrames: c.window && c.window.end > c.window.start ? c.window.end - c.window.start : null,
+		key: c.id,
+	};
+}
+
+function fromDerived(d: DerivedCue): PlanCue {
+	return {
+		stored: null,
+		derived: d,
+		frame: d.frame,
+		kind: d.kind,
+		weight: d.weight,
+		types: knownTypes(d.types, d.kind),
+		align: d.align,
+		reason: d.reason,
+		windowFrames: d.window && d.window.end > d.window.start ? d.window.end - d.window.start : null,
+		key: `derived:${d.key}`,
+	};
+}
+
+export class PlanInputError extends Error {
+	constructor(
+		readonly code: 'SEQUENCE_NOT_FOUND' | 'CUE_NOT_FOUND',
+		message: string,
+	) {
+		super(message);
+	}
+}
+
+/** The sequence a request names (default the first), or a typed error. */
+export function planSequence(doc: ProjectDocument, sequenceId: string | undefined): Sequence {
+	const id = sequenceId ?? Object.keys(doc.sequences ?? {})[0];
+	const seq = id !== undefined && Object.hasOwn(doc.sequences, id) ? doc.sequences[id] : undefined;
+	if (!seq)
+		throw new PlanInputError(
+			'SEQUENCE_NOT_FOUND',
+			sequenceId ? `Sequence not found: ${sequenceId}` : 'The project has no sequence',
+		);
+	return seq;
+}
+
+/** Unknown cue ids of an explicit request (the route refuses them before a job starts). */
+export function unknownCueIds(seq: Sequence, ids: readonly string[]): string[] {
+	const have = new Set(soundCuesOf(seq).map((c) => c.id));
+	return [...new Set(ids)].filter((id) => !have.has(id));
+}
+
+/**
+ * The cues of a plan, frame order (stored before derived at one frame), and the cues left out with why. Pure: `doc`
+ * should have its expressions bound (the route does) so derived motion is what the Program monitor shows.
+ */
+export function collectPlanCues(
+	doc: ProjectDocument,
+	seq: Sequence,
+	req: SoundDesignPlanRequest,
+	style: PlanStyle,
+	opts: { mgTemplates?: MgTemplateRegistry } = {},
+): { cues: PlanCue[]; skipped: SoundDesignPlanSkip[]; warnings: { code: string; message: string }[] } {
+	const range = req.range ?? null;
+	const inRange = (f: number) => !range || (f >= range.start && f < range.end);
+	const dialogue = style.respectDialogue ? sequenceDialogueRanges(doc, seq) : [];
+	const inDialogue = (f: number) => dialogue.some(([s, e]) => f >= s && f < e);
+	const stored = soundCuesOf(seq);
+	const filledBy = (c: SoundCue) => (c.placedClipIds ?? []).find((id) => Object.hasOwn(seq.clips, id));
+	const explicit = Array.isArray(req.cues);
+	const wanted = explicit ? new Set(req.cues as string[]) : null;
+	const out: PlanCue[] = [];
+	const skipped: SoundDesignPlanSkip[] = [];
+	const warnings: { code: string; message: string }[] = [];
+	for (const c of stored) {
+		if (wanted && !wanted.has(c.id)) continue;
+		const pc = fromStored(c);
+		if (!inRange(c.frame)) {
+			if (explicit) skipped.push(skip(seq, pc, 'OUT_OF_RANGE', 'outside the range'));
+			continue;
+		}
+		const by = filledBy(c);
+		if (by) {
+			if (explicit) skipped.push(skip(seq, pc, 'FILLED', `already has a sound (${by})`));
+			continue;
+		}
+		if (c.muted) {
+			skipped.push(skip(seq, pc, 'MUTED', 'the cue is muted'));
+			continue;
+		}
+		if (c.kind === 'silence') {
+			skipped.push(skip(seq, pc, 'SILENCE', 'a silence cue asks for no sound'));
+			continue;
+		}
+		if (style.respectDialogue && c.kind === 'cut' && inDialogue(c.frame)) {
+			skipped.push(skip(seq, pc, 'DIALOGUE', 'a plain cut under spoken words gets no sound'));
+			continue;
+		}
+		out.push(pc);
+	}
+	if (!explicit) {
+		const derived = deriveCues(doc, seq.id, {
+			...(range ? { range } : {}),
+			density: style.density,
+			respectDialogue: style.respectDialogue,
+			...(opts.mgTemplates ? { mgTemplates: opts.mgTemplates } : {}),
+		});
+		for (const w of derived.warnings) warnings.push({ code: w.code, message: w.message });
+		const matches = matchStoredCues(seq, derived.cues);
+		derived.cues.forEach((d, i) => {
+			const pc = fromDerived(d);
+			const match = matches[i];
+			if (match) {
+				const c = stored.find((x) => x.id === match);
+				const by = c ? filledBy(c) : undefined;
+				// An unfilled stored cue is planned as itself (above); a filled one already has its sound.
+				if (by) skipped.push(skip(seq, pc, 'STORED', `stored as ${match}, which already has a sound (${by})`));
+				return;
+			}
+			const near = stored.find((c) => Math.abs(c.frame - d.frame) <= NEAR_STORED_FRAMES);
+			if (near) {
+				skipped.push(
+					skip(seq, pc, 'NEAR_STORED', `within ${NEAR_STORED_FRAMES} frames of the stored cue ${near.id}`),
+				);
+				return;
+			}
+			out.push(pc);
+		});
+	}
+	out.sort(
+		(a, b) =>
+			a.frame - b.frame ||
+			Number(a.stored === null) - Number(b.stored === null) ||
+			(a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+	);
+	return { cues: out, skipped, warnings };
+}
+
+type SfxClip = AudioClip & { sfx?: ClipSfx };
+
+/** Placed library sounds of the sequence: where their aligned point plays (frames), their sound and role. */
+function placedSounds(seq: Sequence): { frame: number; soundId: string | null; hero: boolean }[] {
+	const F = flicksPerFrame(seq.settings.frameRate as Rational);
+	const out: { frame: number; soundId: string | null; hero: boolean }[] = [];
+	for (const c of Object.values(seq.clips) as SfxClip[]) {
+		const sfx = c.kind === 'audio' ? c.sfx : undefined;
+		if (!sfx?.placement || !(F > 0)) continue;
+		const flicks =
+			c.start * F + (sfx.placement.peakFlicks - c.sourceIn) / (c.speed?.rate || 1) - sfx.placement.errorFlicks;
+		if (!Number.isFinite(flicks)) continue;
+		out.push({ frame: flicks / F, soundId: sfx.soundId ?? null, hero: sfx.role === 'hero' });
+	}
+	return out;
+}
+
+const round4 = (x: number) => Math.round(x * 10_000) / 10_000;
+
+/**
+ * Picks the sounds of each cue (frame order): ranked candidates (palette first), the rotation's pick, the alternatives,
+ * the role and alignment. Cues beyond `maxCues` and cues no sound fits are skipped. Pure and deterministic for the same
+ * document, pool (library snapshot) and style.
+ */
+export function selectPlanSounds(
+	doc: ProjectDocument,
+	seq: Sequence,
+	cues: readonly PlanCue[],
+	pool: readonly SoundEntry[],
+	style: PlanStyle,
+): { picks: PlanPick[]; skipped: SoundDesignPlanSkip[]; paletteMissing: number } {
+	const fps = fpsOf(seq);
+	const dialogue = style.respectDialogue ? sequenceDialogueRanges(doc, seq) : [];
+	const inDialogue = (f: number) => dialogue.some(([s, e]) => f >= s && f < e);
+	const palette = new Set(style.palette);
+	const poolIds = new Set(pool.map((e) => e.id));
+	const paletteMissing = style.palette.filter((id) => !poolIds.has(id)).length;
+	const placed = placedSounds(seq);
+	const used: { frame: number; soundId: string }[] = placed
+		.filter((p): p is { frame: number; soundId: string; hero: boolean } => !!p.soundId)
+		.map((p) => ({ frame: p.frame, soundId: p.soundId }));
+	const heroes: number[] = placed.filter((p) => p.hero).map((p) => p.frame);
+	const picks: PlanPick[] = [];
+	const skipped: SoundDesignPlanSkip[] = [];
+	// Ranking per distinct request (types, kind, window, align) is shared by cues that ask the same.
+	const rankCache = new Map<string, RankedSound<SoundEntry>[]>();
+	for (const cue of cues) {
+		if (picks.length >= style.maxCues) {
+			skipped.push(
+				skip(seq, cue, 'LIMIT', `over the plan's limit of ${style.maxCues} cues: plan a later range for it`),
+			);
+			continue;
+		}
+		if (cue.types.length === 0) {
+			skipped.push(skip(seq, cue, 'NO_TYPES', 'the cue names no sound type'));
+			continue;
+		}
+		const visualKind = (VISUAL_KINDS as readonly string[]).includes(cue.kind)
+			? (cue.kind as VisualKind)
+			: undefined;
+		const windowSec = cue.windowFrames ? round4(cue.windowFrames / fps) : undefined;
+		const cacheKey = `${cue.types.join(',')}|${visualKind ?? ''}|${windowSec ?? ''}|${cue.align ?? ''}`;
+		let ranked = rankCache.get(cacheKey);
+		if (!ranked) {
+			ranked = rankSounds(pool, {
+				types: cue.types,
+				...(visualKind ? { visualKind } : {}),
+				...(windowSec ? { windowSec } : {}),
+				...(cue.align ? { align: cue.align } : {}),
+				license: 'commercial-safe',
+			});
+			rankCache.set(cacheKey, ranked);
+		}
+		// Rotation context: sounds used nearest this cue first (earlier picks of this plan and placed clips).
+		const recent = [
+			...new Set(
+				used
+					.map((u) => ({ id: u.soundId, d: Math.abs(u.frame - cue.frame) }))
+					.sort((a, b) => a.d - b.d || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+					.map((u) => u.id),
+			),
+		].slice(0, 16);
+		// The rotation penalty belongs to this cue's neighbourhood, so the cached order is re-ranked by it.
+		const top = ranked.length
+			? rankSounds(
+					ranked.slice(0, Math.max(RANKED_PER_CUE * 2, 24)).map((r) => r.entry),
+					{
+						types: cue.types,
+						...(visualKind ? { visualKind } : {}),
+						...(windowSec ? { windowSec } : {}),
+						...(cue.align ? { align: cue.align } : {}),
+						license: 'commercial-safe',
+					},
+					{ usedNearby: recent },
+				).slice(0, RANKED_PER_CUE)
+			: [];
+		const candidates = [...top.filter((r) => palette.has(r.entry.id)), ...top.filter((r) => !palette.has(r.entry.id))];
+		const v = pickVariant(
+			candidates.map((r) => r.entry.id),
+			{ seed: style.seed, cueId: cue.key, sequenceId: seq.id, layer: 0, recentSoundIds: recent },
+		);
+		if (!v) {
+			skipped.push(
+				skip(
+					seq,
+					cue,
+					'NO_SOUND',
+					`no commercial-safe sound of type ${cue.types.slice(0, 4).join('/')} in the allowed sources (${style.sources.join(', ')})`,
+				),
+			);
+			continue;
+		}
+		const chosen = candidates[v.index]!;
+		const alternatives = candidates.filter((r) => r !== chosen).slice(0, style.alternatives);
+		const notes: string[] = [];
+		let role: Role = cue.weight === 'hero' ? 'hero' : 'support';
+		if (role === 'hero' && style.respectDialogue && inDialogue(cue.frame)) {
+			role = 'support';
+			notes.push('a hero under spoken words: placed as support');
+		}
+		if (role === 'hero') {
+			const close = heroes.find((h) => Math.abs(h - cue.frame) / fps < HERO_MIN_SEC);
+			if (close !== undefined) {
+				role = 'support';
+				notes.push(
+					`another hero ${round4(Math.abs(close - cue.frame) / fps)} s away (never two heroes within ${HERO_MIN_SEC} s): placed as support`,
+				);
+			}
+		}
+		if (role === 'hero') heroes.push(cue.frame);
+		const firstType = chosen.entry.types.find(isSoundTypeId);
+		const align: CueAlign = cue.align ?? (firstType ? SOUND_TYPES[firstType].defaultAlign : 'peak');
+		if (chosen.entry.source.type === 'synth')
+			notes.push('a Jasper Synth (procedural) sound: no recording of this type fits');
+		picks.push({
+			cue,
+			role,
+			align,
+			sounds: [chosen, ...alternatives],
+			rate: v.rate,
+			gainOffsetDb: v.gainDb,
+			notes,
+		});
+		used.push({ frame: cue.frame, soundId: chosen.entry.id });
+	}
+	return { picks, skipped, paletteMissing };
+}
+
+const r3 = (x: number) => Math.round(x * 1000) / 1000;
+
+function planSound(r: RankedSound<SoundEntry>, palette: Set<string>) {
+	return {
+		soundId: r.entry.id,
+		title: r.entry.title,
+		license: r.entry.license,
+		source: r.entry.source.type,
+		score: round4(r.score),
+		palette: palette.has(r.entry.id),
+	};
+}
+
+export type PlanDraft = {
+	draft: ProposalDraft | null;
+	report: SoundDesignPlanReport;
+};
+
+/**
+ * The proposal draft of the picks with the registered sounds (`registered` by sound id; a pick whose sounds are not all
+ * there was already pruned by the caller) and the report. Pure.
+ */
+export function composePlanDraft(
+	doc: ProjectDocument,
+	seq: Sequence,
+	req: SoundDesignPlanRequest,
+	style: PlanStyle,
+	picks: readonly PlanPick[],
+	registered: ReadonlyMap<string, RegisterSoundResponse>,
+	extra: {
+		skipped: SoundDesignPlanSkip[];
+		warnings: { code: string; message: string }[];
+		considered: number;
+		snapshotHash: string;
+		librarySize: number;
+	},
+): PlanDraft {
+	const fps = fpsOf(seq);
+	const palette = new Set(style.palette);
+	const media: SoundProposalMedia[] = [];
+	for (const [soundId, reg] of registered) {
+		const entryTitle = picks.flatMap((p) => p.sounds).find((s) => s.entry.id === soundId)?.entry.title;
+		const title = entryTitle || reg.library.title || reg.originalName;
+		media.push({
+			soundId,
+			title,
+			fingerprint: reg.fingerprint,
+			kind: reg.kind,
+			existingMediaId: reg.existingMediaId,
+			library: reg.library,
+			register: mediaRegisterCommand(reg, '$x', '$xi', title) as SoundProposalMedia['register'],
+		});
+	}
+	const width = Math.max(3, String(picks.length).length);
+	const placements: SoundProposalPlacement[] = [];
+	const events: SoundDesignPlanEvent[] = [];
+	picks.forEach((p, i) => {
+		const id = `sfx:${String(i + 1).padStart(width, '0')}`;
+		const [chosen, ...alts] = p.sounds;
+		const tc = sequenceTimecode(seq, p.cue.frame);
+		const title = chosen!.entry.title;
+		const why = `${title} on ${p.cue.reason} at ${tc} · ${p.role} · ${p.align}`.slice(0, 1000);
+		const layer: Record<string, unknown> = { soundId: chosen!.entry.id, role: p.role };
+		if (p.rate !== 1) layer.rate = p.rate;
+		if (LAYER_TAKES_GAIN_OFFSET && p.gainOffsetDb !== 0) layer.gainOffsetDb = p.gainOffsetDb;
+		const cueItemId = p.cue.derived ? `cue:${id}` : null;
+		const meta = {
+			feature: SOUND_DESIGN_FEATURE,
+			frame: p.cue.frame,
+			timecode: tc,
+			kind: p.cue.kind,
+			weight: p.cue.weight,
+			role: p.role,
+			align: p.align,
+			cueId: p.cue.stored?.id ?? null,
+			cueKey: p.cue.derived?.key ?? null,
+			cueReason: p.cue.reason,
+			why,
+			soundId: chosen!.entry.id,
+			title,
+			license: chosen!.entry.license,
+			score: round4(chosen!.score),
+			rate: p.rate,
+			gainOffsetDb: p.gainOffsetDb,
+			...(p.notes.length ? { notes: p.notes } : {}),
+		};
+		placements.push({
+			id,
+			label: `${title} · ${p.cue.kind} ${tc}`,
+			group: p.role,
+			meta,
+			cue: p.cue.stored
+				? { cueId: p.cue.stored.id }
+				: {
+						add: cueInputFromDerived(p.cue.derived!),
+						label: `Cue: ${p.cue.kind} at ${tc}`,
+						meta: { cueKey: p.cue.derived!.key, frame: p.cue.frame, timecode: tc, kind: p.cue.kind },
+					},
+			layers: [layer],
+			ring: p.sounds.map((s) => s.entry.id),
+			alternatives: alts.map((a) => ({
+				soundId: a.entry.id,
+				label: a.entry.title || a.entry.id,
+				meta: {
+					soundId: a.entry.id,
+					title: a.entry.title,
+					license: a.entry.license,
+					score: round4(a.score),
+					why: `${a.entry.title} on ${p.cue.reason} at ${tc} · ${p.role} · ${p.align}`.slice(0, 1000),
+				},
+			})),
+		});
+		events.push({
+			itemId: id,
+			cueId: p.cue.stored?.id ?? null,
+			cueKey: p.cue.derived?.key ?? null,
+			cueItemId,
+			frame: p.cue.frame,
+			timecode: tc,
+			seconds: r3(p.cue.frame / fps),
+			kind: p.cue.kind,
+			weight: p.cue.weight,
+			role: p.role,
+			align: p.align,
+			cueReason: p.cue.reason,
+			why,
+			types: p.cue.types,
+			sound: planSound(chosen!, palette),
+			parts: chosen!.parts,
+			rate: p.rate,
+			gainOffsetDb: p.gainOffsetDb,
+			alternatives: alts.map((a) => planSound(a, palette)),
+			notes: p.notes,
+		});
+	});
+	const built = soundProposalItems(doc, seq.id, media, placements, { binName: SOUND_EFFECTS_BIN });
+	const newCues = picks.filter((p) => p.cue.derived).length;
+	const skippedAll = extra.skipped;
+	const report: SoundDesignPlanReport = {
+		version: 1,
+		sequenceId: seq.id,
+		seed: style.seed,
+		density: style.density,
+		respectDialogue: style.respectDialogue,
+		sources: style.sources,
+		cues: Array.isArray(req.cues) ? 'ids' : 'auto',
+		range: req.range ? { start: req.range.start, end: req.range.end } : null,
+		snapshotHash: extra.snapshotHash,
+		librarySize: extra.librarySize,
+		palette: {
+			size: style.palette.length,
+			used: picks.filter((p) => palette.has(p.sounds[0]!.entry.id)).length,
+		},
+		events,
+		skipped: skippedAll.slice(0, SOUND_DESIGN_PLAN_LIMITS.maxSkippedListed),
+		counts: {
+			cues: extra.considered,
+			placed: picks.length,
+			newCues,
+			skipped: skippedAll.length,
+			sounds: registered.size,
+			items: built.items.length,
+		},
+		warnings: [
+			...extra.warnings,
+			...(skippedAll.length > SOUND_DESIGN_PLAN_LIMITS.maxSkippedListed
+				? [
+						{
+							code: 'W_SKIPPED_TRUNCATED',
+							message: `${skippedAll.length} cues were skipped; the first ${SOUND_DESIGN_PLAN_LIMITS.maxSkippedListed} are listed`,
+						},
+					]
+				: []),
+		],
+	};
+	if (JSON.stringify(report).length > REPORT_SOFT_BYTES) {
+		for (const e of report.events) (e as { parts: unknown }).parts = { ...e.parts, text: null };
+		report.warnings.push({ code: 'W_REPORT_TRIMMED', message: 'The report was trimmed to stay under 1 MB' });
+	}
+	if (built.items.length === 0 || picks.length === 0) return { draft: null, report };
+	const name = (seq as { name?: unknown }).name;
+	const placedWord = picks.length === 1 ? 'sound' : 'sounds';
+	const draft: ProposalDraft = {
+		sequenceId: seq.id,
+		feature: SOUND_DESIGN_FEATURE,
+		title: (req.label ?? `Sound design: ${typeof name === 'string' && name ? name : seq.id}`).slice(0, 200),
+		summary:
+			`${picks.length} ${placedWord} on ${picks.length} cue${picks.length === 1 ? '' : 's'}` +
+			`${newCues ? ` (${newCues} new cue${newCues === 1 ? '' : 's'})` : ''}` +
+			` · ${style.density} · seed ${style.seed}` +
+			`${skippedAll.length ? ` · ${skippedAll.length} cue${skippedAll.length === 1 ? '' : 's'} skipped` : ''}`,
+		items: built.items,
+		report,
+	};
+	return { draft, report };
+}
+
+/** Parsed job input (the route validated it; a journaled input is checked again). */
+export type PlanJobInput = { request: SoundDesignPlanRequest; who: Requester };
+
+function parseInput(raw: unknown): PlanJobInput {
+	const r = raw as { request?: unknown; who?: { editor?: unknown; agent?: unknown } } | null;
+	const parsed = SoundDesignPlanRequestSchema.safeParse(r?.request);
+	if (!parsed.success) throw new JobError('VALIDATION_FAILED', 'The plan request is invalid', false);
+	const who: Requester = {
+		editor: r?.who?.editor === true,
+		agent: typeof r?.who?.agent === 'string' ? r.who.agent.slice(0, 64) : 'An agent',
+	};
+	return { request: parsed.data, who };
+}
+
+export type PlanDeps = {
+	agent: () => AgentService | undefined;
+	sounds: () => SoundService | undefined;
+	proposals: () => ProposalService | undefined;
+	mgTemplates?: MgTemplateRegistry;
+};
+
+/** The live document of a project (the open editor's when one holds it, else the saved one) and its revision. */
+export async function liveDocument(
+	agent: AgentService,
+	projectId: string,
+): Promise<{ doc: ProjectDocument; revision: number | null }> {
+	const r = await agent.query({ projectId, query: 'doc.get', args: {} });
+	const d = r.result as ProjectDocument | undefined;
+	if (!d || typeof d !== 'object' || !d.sequences || typeof d.sequences !== 'object')
+		throw new HttpError(422, 'VALIDATION_FAILED', 'The project has no readable document');
+	return { doc: d, revision: typeof r.revision === 'number' ? r.revision : null };
+}
+
+const asJobError = (e: unknown): unknown => {
+	if (e instanceof HttpError)
+		return new JobError(e.code, e.message, e.status === 503 || e.code === 'PROPOSAL_LIMIT', e.detail);
+	if (e instanceof PlanInputError) return new JobError(e.code, e.message, false);
+	return e;
+};
+
+/** The `sound-design` job runner. */
+export async function runSoundDesignPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlanResult> {
+	try {
+		return await runPlan(ctx, deps);
+	} catch (e) {
+		throw asJobError(e);
+	}
+}
+
+async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlanResult> {
+	const { request: req, who } = parseInput(ctx.input);
+	const agent = deps.agent();
+	const sounds = deps.sounds();
+	const proposals = deps.proposals();
+	if (!agent || !sounds || !proposals)
+		throw new JobError('NOT_AVAILABLE', 'The agent, sound library or proposal service is not running', true);
+	const aborted = () => ctx.signal.aborted;
+	ctx.progress(0.02, { stage: 'Reading the edit' });
+	const live = await liveDocument(agent, req.projectId);
+	let doc = live.doc;
+	const seq0 = planSequence(doc, req.sequenceId);
+	if (Array.isArray(req.cues)) {
+		const unknown = unknownCueIds(seq0, req.cues);
+		if (unknown.length)
+			throw new JobError('CUE_NOT_FOUND', `Sound cue not found: ${unknown.slice(0, 5).join(', ')}`, false);
+	}
+	// Derived motion follows what the Program monitor shows (expressions bound), like the cue route.
+	if (documentHasActiveExpressions(doc)) doc = bindExpressions(doc);
+	const seq = doc.sequences[seq0.id]!;
+	const style = resolveStyle(req, seq);
+	ctx.progress(0.05, { stage: 'Finding cues' });
+	const collected = collectPlanCues(doc, seq, req, style, {
+		...(deps.mgTemplates ? { mgTemplates: deps.mgTemplates } : {}),
+	});
+	if (aborted()) return cancelledResult(req, seq, style);
+	ctx.progress(0.1, { stage: `Ranking sounds for ${collected.cues.length} cues` });
+	const pool = await sounds.rankingPool(style.sources);
+	const selected = selectPlanSounds(doc, seq, collected.cues, pool.entries, style);
+	const warnings = [...collected.warnings];
+	if (selected.paletteMissing)
+		warnings.push({
+			code: 'W_PALETTE_MISSING',
+			message: `${selected.paletteMissing} palette sound(s) are not in the library or the allowed sources`,
+		});
+	if (pool.entries.length === 0)
+		warnings.push({
+			code: 'W_LIBRARY_EMPTY',
+			message:
+				'No sound of the allowed sources is indexed: install the starter kit or rescan the sound library',
+		});
+	// Register every sound a pick may use (chosen and alternatives), in order of need.
+	const order: string[] = [];
+	for (const p of selected.picks) for (const s of p.sounds) if (!order.includes(s.entry.id)) order.push(s.entry.id);
+	const registered = new Map<string, RegisterSoundResponse>();
+	const failed = new Map<string, string>();
+	for (const [i, id] of order.entries()) {
+		if (aborted()) return cancelledResult(req, seq, style);
+		ctx.progress(0.15 + (0.65 * i) / Math.max(1, order.length), {
+			stage: `Registering sounds (${i + 1} of ${order.length})`,
+		});
+		try {
+			registered.set(id, await sounds.register(id, req.projectId));
+		} catch (e) {
+			if (e instanceof HttpError && (e.code === 'PROJECT_NOT_FOUND' || e.status === 503)) throw e;
+			const msg = e instanceof Error ? e.message : String(e);
+			failed.set(id, msg);
+			ctx.log(`register ${id}: ${msg}`);
+		}
+	}
+	const skipped = [...collected.skipped, ...selected.skipped];
+	const picks: PlanPick[] = [];
+	for (const p of selected.picks) {
+		const ok = p.sounds.filter((s) => registered.has(s.entry.id));
+		if (ok.length === 0) {
+			const why = failed.get(p.sounds[0]!.entry.id) ?? 'unknown error';
+			skipped.push(skip(seq, p.cue, 'REGISTER_FAILED', `the sound could not be added to the project: ${why}`));
+			continue;
+		}
+		const notes = [...p.notes];
+		if (ok[0] !== p.sounds[0])
+			notes.push(
+				`${p.sounds[0]!.entry.title} could not be added (${failed.get(p.sounds[0]!.entry.id) ?? 'error'}): ${ok[0]!.entry.title} instead`,
+			);
+		picks.push({ ...p, sounds: ok, notes });
+	}
+	// Only the sounds still used are imported.
+	const usedIds = new Set(picks.flatMap((p) => p.sounds.map((s) => s.entry.id)));
+	for (const id of [...registered.keys()]) if (!usedIds.has(id)) registered.delete(id);
+	skipped.sort((a, b) => a.frame - b.frame || (a.cueKey ?? a.cueId ?? '').localeCompare(b.cueKey ?? b.cueId ?? ''));
+	const { draft, report } = composePlanDraft(doc, seq, req, style, picks, registered, {
+		skipped,
+		warnings,
+		considered: collected.cues.length + collected.skipped.length,
+		snapshotHash: pool.snapshotHash,
+		librarySize: pool.librarySize,
+	});
+	if (aborted()) return cancelledResult(req, seq, style);
+	if (!draft) {
+		ctx.progress(1, { stage: 'Nothing to propose' });
+		return {
+			proposalId: null,
+			projectId: req.projectId,
+			sequenceId: seq.id,
+			revision: live.revision,
+			itemCount: 0,
+			counts: null,
+			invalid: [],
+			report,
+		};
+	}
+	ctx.progress(0.85, { stage: `Checking ${draft.items.length} proposal items` });
+	const created = await proposals.create(req.projectId, draft as unknown as Record<string, unknown>, who);
+	if (aborted()) {
+		// Cancelled while it was being stored: a cancelled plan leaves no proposal behind.
+		await proposals.delete(req.projectId, created.proposal.id).catch(() => undefined);
+		return cancelledResult(req, seq, style);
+	}
+	const p = created.proposal;
+	const counts = { pending: 0, accepted: 0, rejected: 0, stale: 0, invalid: 0 };
+	for (const it of p.items) counts[it.state]++;
+	ctx.progress(1, { stage: 'Proposal ready for review' });
+	return {
+		proposalId: p.id,
+		projectId: req.projectId,
+		sequenceId: seq.id,
+		revision: created.revision,
+		itemCount: p.items.length,
+		counts,
+		invalid: p.items
+			.filter((it) => it.state === 'invalid')
+			.map((it) => ({ itemId: it.id, reason: it.reason ?? 'does not apply' })),
+		report,
+	};
+}
+
+/** What a cancelled run returns (the queue records the job as cancelled and drops it). */
+function cancelledResult(req: SoundDesignPlanRequest, seq: Sequence, style: PlanStyle): SoundDesignPlanResult {
+	return {
+		proposalId: null,
+		projectId: req.projectId,
+		sequenceId: seq.id,
+		revision: null,
+		itemCount: 0,
+		counts: null,
+		invalid: [],
+		report: {
+			version: 1,
+			sequenceId: seq.id,
+			seed: style.seed,
+			density: style.density,
+			respectDialogue: style.respectDialogue,
+			sources: style.sources,
+			cues: Array.isArray(req.cues) ? 'ids' : 'auto',
+			range: req.range ?? null,
+			snapshotHash: '',
+			librarySize: 0,
+			palette: { size: style.palette.length, used: 0 },
+			events: [],
+			skipped: [],
+			counts: { cues: 0, placed: 0, newCues: 0, skipped: 0, sounds: 0, items: 0 },
+			warnings: [{ code: 'W_CANCELLED', message: 'The plan was cancelled' }],
+		},
+	};
+}
+

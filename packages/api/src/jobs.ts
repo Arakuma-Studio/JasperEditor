@@ -47,6 +47,7 @@ export const JOB_KINDS = [
 	'reframe',
 
 	'sound-index',
+	'sound-design',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;

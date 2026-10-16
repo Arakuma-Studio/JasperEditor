@@ -51,6 +51,7 @@ import {
 	type RouteResponse,
 	type SceneDetectRequest,
 	type SoundCuesRequest,
+	type SoundDesignPlanRequest,
 	type SoundIndexRequest,
 	type SoundRootsPutRequest,
 	type SoundSearchRequest,
@@ -374,6 +375,13 @@ export class EngineClient {
 	/** Cue suggestions derived from the edit (spec 12 §2.8; `deriveCues` with the engine's template registry). */
 	soundDesignCues(req: SoundCuesRequest, signal?: AbortSignal) {
 		return this.call('soundDesignCues', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/**
+	 * Starts a `sound-design` plan job (spec 12 §2.8, P3-R3); its result (`SoundDesignPlanResult`) names the proposal it
+	 * stored. Nothing is applied: the user reviews the proposal.
+	 */
+	planSoundDesign(req: SoundDesignPlanRequest, signal?: AbortSignal) {
+		return this.call('soundDesignPlan', { body: req, ...(signal ? { signal } : {}) });
 	}
 	/** Proposals of a project (spec 12 §2.5): summaries, newest first. */
 	listProposals(projectId: string) {
