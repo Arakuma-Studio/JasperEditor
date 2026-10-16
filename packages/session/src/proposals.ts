@@ -24,6 +24,7 @@ import type { EngineClient } from '@jasper/engine-client';
 import {
 	createSeededIdSource,
 	dependencyClosure,
+	isSetupItem,
 	issueReason,
 	type ProjectDocument,
 	type Proposal,
@@ -61,6 +62,11 @@ export type ReviewItem = {
 	label: string;
 	group: string;
 	requires: string[];
+	/**
+	 * A setup item (`meta.setup`: a bin, a sound's media, a cue the placements need; WP3.2): the review folds it under
+	 * the items that require it — their accept brings it, their reject settles it.
+	 */
+	setup: boolean;
 	state: ReviewItemState;
 	/** The stored state (engine). */
 	engineState: ProposalItemState;
@@ -770,6 +776,7 @@ export class ProposalsController {
 				label: it.label,
 				group: it.group,
 				requires: it.requires,
+				setup: isSetupItem(it),
 				state,
 				engineState: it.state,
 				...(reason ? { reason } : {}),

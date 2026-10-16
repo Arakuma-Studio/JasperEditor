@@ -144,6 +144,8 @@ export function buildGhostModel(input: {
 	const before = committed?.sequences?.[sequenceId];
 	if (!after || !before) return out;
 	const stateOf = new Map(input.items.map((it) => [it.id, it]));
+	// A setup item's ghosts (a cue the placement needs, WP3.2) belong to the first item that needs it, transitively.
+	const owner = setupOwners(input.items);
 	const cuesAfter = new Map(cuesOf(after).map((c) => [c.id, c]));
 	const cuesBefore = new Map(cuesOf(before).map((c) => [c.id, c]));
 	const span = new Map<string, { start: number; end: number; c: number; t: number; q: number; r: number }>();
@@ -192,7 +194,8 @@ export function buildGhostModel(input: {
 		});
 		touch(itemId, c.start, c.start + c.duration, 'r');
 	};
-	for (const [itemId, g] of Object.entries(preview.result.items)) {
+	for (const [rawId, g] of Object.entries(preview.result.items)) {
+		const itemId = owner.get(rawId) ?? rawId;
 		for (const id of g.created) {
 			const c = after.clips[id] as Clip | undefined;
 			if (c && !before.clips[id]) {
@@ -266,6 +269,32 @@ export function buildGhostModel(input: {
 	out.removals = out.removals.filter(keep);
 	out.tracks = out.tracks.filter(keep);
 	out.cues = out.cues.filter(keep);
+	return out;
+}
+
+/** Setup item id → the non-setup item it is shown under (the first in proposal order that requires it, transitively). */
+export function setupOwners(
+	items: readonly Pick<ReviewItem, 'id' | 'requires' | 'setup'>[],
+): Map<string, string> {
+	const out = new Map<string, string>();
+	const dependents = new Map<string, string[]>();
+	for (const it of items)
+		for (const r of it.requires) dependents.set(r, [...(dependents.get(r) ?? []), it.id]);
+	const setup = new Set(items.filter((it) => it.setup).map((it) => it.id));
+	for (const id of setup) {
+		const seen = new Set([id]);
+		const queue = [...(dependents.get(id) ?? [])];
+		while (queue.length) {
+			const d = queue.shift()!;
+			if (seen.has(d)) continue;
+			seen.add(d);
+			if (!setup.has(d)) {
+				out.set(id, d);
+				break;
+			}
+			queue.push(...(dependents.get(d) ?? []));
+		}
+	}
 	return out;
 }
 

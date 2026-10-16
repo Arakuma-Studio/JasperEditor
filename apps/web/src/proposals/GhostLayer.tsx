@@ -488,10 +488,12 @@ function GhostCard(props: {
 	const { controller, card, model, seq } = props;
 	const ref = useRef<HTMLDivElement>(null);
 	const item = useProposals(props.session, (s) => s.items.find((it) => it.id === card.itemId));
-	const accepted = useProposals(props.session, (s) =>
-		s.activeId ? (s.accepted[s.activeId] ?? []).length : 0,
+	// "Apply n of m" counts the items the user decides on (setup items come with them, WP3.2)
+	const accepted = useProposals(
+		props.session,
+		(s) => s.items.filter((it) => !it.setup && it.state === 'accepted').length,
 	);
-	const total = useProposals(props.session, (s) => s.items.length);
+	const total = useProposals(props.session, (s) => s.items.filter((it) => !it.setup).length);
 	const busy = useProposals(props.session, (s) => s.busy);
 	const previewSeq = useProposals(props.session, (s) => s.preview?.result.document.sequences[seq.id]);
 	const readOnly = useSessionState((s) => s.readOnly);

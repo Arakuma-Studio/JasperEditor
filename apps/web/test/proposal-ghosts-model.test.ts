@@ -14,6 +14,7 @@ import {
 	ghostTrackRows,
 	layoutGhosts,
 	neighbourItem,
+	setupOwners,
 	stateGlyph,
 	whyLines,
 } from '../src/proposals/ghosts.ts';
@@ -118,6 +119,61 @@ describe('buildGhostModel', () => {
 			agent: false,
 		});
 		expect(broken.clips).toEqual([]);
+	});
+});
+
+describe('setup items (WP3.2)', () => {
+	it('are folded under the first item that needs them: their ghosts are drawn as that item', async () => {
+		expect(
+			[
+				...setupOwners([
+					{ id: 'bin', requires: [], setup: true },
+					{ id: 'snd', requires: ['bin'], setup: true },
+					{ id: 'cue', requires: [], setup: true },
+					{ id: 'sfx:1', requires: ['snd', 'cue'], setup: false },
+					{ id: 'sfx:2', requires: ['snd'], setup: false },
+					{ id: 'lonely', requires: [], setup: true },
+				]),
+			].sort(),
+		).toEqual([
+			['bin', 'sfx:1'],
+			['cue', 'sfx:1'],
+			['snd', 'sfx:1'],
+		]);
+		const f = await proposalFixture();
+		const p = f.engine.create({
+			feature: 'sound-design',
+			title: 'Plan',
+			sequenceId: f.seqId,
+			items: [
+				{
+					id: 'cue:1',
+					label: 'Cue',
+					group: 'setup',
+					meta: { setup: true },
+					commands: [
+						{ type: 'soundCue.add', cues: [{ frame: 80, kind: 'land', weight: 'hero', source: 'agent' }] },
+					],
+				},
+				{
+					id: 'sfx:001',
+					label: 'Thud on the land',
+					group: 'hero',
+					requires: ['cue:1'],
+					commands: [{ type: 'clip.place', source: { mediaId: f.mediaId }, at: 80, tracks: { audio: 'A2' } }],
+				},
+			],
+		});
+		await f.c.setActive(p.id);
+		f.flush();
+		expect(f.c.getState().items.map((it) => [it.id, it.setup])).toEqual([
+			['cue:1', true],
+			['sfx:001', false],
+		]);
+		const m = model(f.session, f.seqId);
+		expect(m.cues.map((q) => q.itemId)).toEqual(['sfx:001']);
+		expect(m.items.map((x) => x.id)).toEqual(['sfx:001']);
+		expect(m.byItem['sfx:001']).toMatchObject({ cues: 1, clips: 1 });
 	});
 });
 
