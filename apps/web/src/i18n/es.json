@@ -9189,5 +9189,6 @@
   "The peak is past the end of the media ({0} flicks)": "El pico está después del final del medio ({0} flicks)",
   "The sound has no timing": "El sonido no tiene datos de tiempo",
   "The sound has no length": "El sonido no tiene duración",
-  "the sound's {0} is {1} s into it: aligned at frame {2} it would start at frame {3}, before the sequence": "el punto «{0}» del sonido está a {1} s de su inicio: alineado en el fotograma {2} empezaría en el fotograma {3}, antes de la secuencia"
+  "the sound's {0} is {1} s into it: aligned at frame {2} it would start at frame {3}, before the sequence": "el punto «{0}» del sonido está a {1} s de su inicio: alineado en el fotograma {2} empezaría en el fotograma {3}, antes de la secuencia",
+  "Rebalance SFX Levels": "Reequilibrar niveles de efectos de sonido"
 }

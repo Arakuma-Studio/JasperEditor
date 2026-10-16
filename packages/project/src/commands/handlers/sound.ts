@@ -26,12 +26,13 @@ import {
 	type SoundTrackSequence,
 	soundTimingOf,
 } from '../../sound/insert.ts';
-import { defaultSfxLevel } from '../../sound/level.ts';
+import { defaultSfxLevel, sfxGainOwner } from '../../sound/level.ts';
 import {
 	type LibraryProvenance,
 	libraryDescriptorIssue,
 	readLibraryProvenance,
 } from '../../sound/provenance.ts';
+import { isSfxClip } from '../../sound/sfx-clip.ts';
 import { isSoundTypeId, SOUND_TYPE_IDS } from '../../sound/taxonomy.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
@@ -513,12 +514,13 @@ function sfxDefaultLevel(
 }
 
 /**
- * After a swap or a role change: a clip whose gain is still the default placement gave it (`sfx.level`, untouched)
- * gets the default of its current sound and role (with the same variation offset). A gain set since is kept.
+ * After a swap or a role change: a clip whose gain is still the default placement gave it or the masking solver's
+ * (`sfx.level`, untouched) gets the default of its current sound and role (with the same variation offset): a solved
+ * gain belongs to the old sound or role (rebalance again to solve the new one). A gain set since is kept.
  */
 function refreshDefaultLevel(doc: DDoc, seq: DSeq, clip: DAudio): void {
 	const level = clip.sfx?.level;
-	if (!clip.sfx || !level || level.by !== 'default' || Math.abs(clip.gainDb - level.gainDb) > 0.005) return;
+	if (!clip.sfx || !level || sfxGainOwner(clip) === 'user') return;
 	const prov = readLibraryProvenance((doc.media[clip.mediaId] as { library?: unknown } | undefined)?.library);
 	const settings = readSoundDesignSettings((seq as { soundDesign?: SoundDesign }).soundDesign?.settings);
 	const next = sfxDefaultLevel(
@@ -1098,6 +1100,75 @@ function setPeak(doc: DDoc, cmd: CommandOf<'soundDesign.setPeak'>, h: HandlerCon
 	return { clipId: clip.id, peakFlicks: cmd.peakFlicks, errorFlicks };
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Solved gains (Phase 4: the masking solver)
+
+const REF_KEY_RE = /^\$[A-Za-z_][\w.-]*$/;
+
+function applyGains(doc: DDoc, cmd: CommandOf<'soundDesign.applyGains'>, h: HandlerContext) {
+	const only = cmd.sequenceId !== undefined ? h.sequence(doc, cmd.sequenceId).id : null;
+	const keys = Object.keys(cmd.gains);
+	for (const k of Object.keys(cmd.report ?? {}))
+		if (!Object.hasOwn(cmd.gains, k))
+			h.fail('E_INVALID_PARAM', `report names ${k}, which has no gain`, { path: ['report', k] });
+	const seen = new Set<string>();
+	const out: { clipId: string; fromDb: number; gainDb: number }[] = [];
+	for (const key of keys) {
+		const path = ['gains', key];
+		let id = key;
+		if (REF_KEY_RE.test(key)) {
+			const bound = h.refs.get(key);
+			if (!bound)
+				h.fail(
+					'E_NOT_FOUND',
+					`Unknown temp ref ${key}: bind it with \`ref\` on a placement layer earlier in the transaction`,
+					{ path },
+				);
+			id = bound;
+		}
+		if (seen.has(id)) h.fail('E_INVALID_PARAM', `${id} is given twice`, { path });
+		seen.add(id);
+		const sid = h.sequenceOfClip(doc, id);
+		if (sid === null || (only !== null && sid !== only))
+			h.fail('E_NOT_FOUND', `Clip not found${only ? ` in ${only}` : ''}: ${id}`, { path });
+		const { seq, clip: c } = h.clip(doc, id);
+		if (c.kind !== 'audio') h.fail('E_INVALID_PARAM', `${id} is not an audio clip`, { path });
+		if (!isSfxClip(c))
+			h.fail(
+				'E_INVALID_PARAM',
+				`${id} is not a sound effect (Essential Sound type SFX, or a placed sound): the solver sets sound effect gains only`,
+				{ path },
+			);
+		const clip = c as DAudio;
+		const track = findTrackIn(seq, clip.trackId);
+		if (!track) h.fail('E_NOT_FOUND', `Track not found: ${clip.trackId}`, { path });
+		assertUnlocked(track.track, h);
+		const gainDb = Math.round(cmd.gains[key]! * 100) / 100;
+		const fromDb = clip.gainDb;
+		clip.gainDb = Object.is(gainDb, -0) ? 0 : gainDb;
+		if (clip.sfx) {
+			const prev = clip.sfx.level;
+			const r = cmd.report?.[key];
+			const level: SfxLevel = {
+				by: 'solver',
+				gainDb: clip.gainDb,
+				...(prev?.offsetDb !== undefined && prev.offsetDb !== 0 ? { offsetDb: prev.offsetDb } : {}),
+				...(r?.targetLiftDb !== undefined ? { targetLiftDb: Math.round(r.targetLiftDb * 100) / 100 } : {}),
+				...(r?.achievedLiftDb !== undefined
+					? {
+							achievedLiftDb: r.achievedLiftDb === null ? null : Math.round(r.achievedLiftDb * 100) / 100,
+						}
+					: {}),
+				limitedBy: [...new Set(r?.limitedBy ?? [])],
+				...(r?.reason ? { reason: r.reason } : {}),
+			};
+			clip.sfx.level = level as Draft<SfxLevel>;
+		}
+		out.push({ clipId: id, fromDb, gainDb: clip.gainDb });
+	}
+	return { clips: out };
+}
+
 export const soundHandlers = {
 	'media.setLibraryInfo': setLibraryInfo,
 	'soundCue.add': addCues,
@@ -1110,6 +1181,7 @@ export const soundHandlers = {
 	'soundDesign.setPalette': setPalette,
 	'soundDesign.setSettings': setSettings,
 	'soundDesign.setPeak': setPeak,
+	'soundDesign.applyGains': applyGains,
 } satisfies HandlerMap;
 
 export type { Clip, DClip };

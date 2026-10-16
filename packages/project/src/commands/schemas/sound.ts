@@ -5,11 +5,13 @@ import {
 	CUE_ALIGNS,
 	CueAnchorSchema,
 	SFX_ROLES,
+	SFX_SOLVER_LEVEL_LIMITS,
 	SOUND_DELIVERIES,
 	SOUND_DENSITIES,
 	SOUND_DESIGN_LIMITS,
 	soundCueFields,
 } from '../../schema/sound.ts';
+import { SFX_DEFAULT_GAIN_MAX_DB, SFX_DEFAULT_GAIN_MIN_DB } from '../../sound/level.ts';
 import { LibraryProvenanceSchema } from '../../sound/provenance.ts';
 import { cmd, IdRefSchema, RefDeclSchema, TimeInputSchema, TrackRefSchema } from './common.ts';
 
@@ -222,6 +224,51 @@ export const SoundDesignSetPeakCmd = cmd('soundDesign.setPeak', {
 	peakFlicks: z.number().int().min(0),
 });
 
+/** Most clips one `soundDesign.applyGains` may set. */
+export const APPLY_GAINS_MAX_CLIPS = 2000;
+/** A clip id, or a `$ref` a placement earlier in the transaction bound (`soundDesign.place` layer `ref`). */
+const GainClipKeySchema = z
+	.string()
+	.min(1)
+	.max(SOUND_DESIGN_LIMITS.id)
+	.regex(/^(?:\$[A-Za-z_][\w.-]*|[A-Za-z0-9_-]+)$/, 'a clip id or a $ref');
+
+/** Why one solved gain is what it is (stored in `sfx.level`). */
+export const SolverGainReportSchema = z.strictObject({
+	/** Target lift of the dominant band over the bed (dB). */
+	targetLiftDb: z.number().min(-100).max(100).optional(),
+	/** Lift reached at the gain (dB); null for a silent sound. */
+	achievedLiftDb: z.number().min(-400).max(400).nullable().optional(),
+	/** Constraints that held it under the target (`dialogue`, `bed-cap`, `conflict:bed-cap/consistency`…). */
+	limitedBy: z
+		.array(z.string().min(1).max(SFX_SOLVER_LEVEL_LIMITS.limit))
+		.max(SFX_SOLVER_LEVEL_LIMITS.limitedBy)
+		.optional(),
+	reason: z.string().max(SFX_SOLVER_LEVEL_LIMITS.reason).optional(),
+});
+
+/**
+ * Sets the clip gains the masking solver chose for sound effects (spec 12 §2.4, §2.9; MCP `rebalance_sfx`, the plan
+ * job): `gains` maps clip ids (or `$refs` bound earlier in the transaction) to a gain in the solver's range −30…+12 dB;
+ * `report` (same keys) says why. Each clip's `sfx.level` becomes `{by: 'solver', gainDb, offsetDb (kept from its
+ * previous level), targetLiftDb, achievedLiftDb, limitedBy, reason}`; a sound effect without `sfx` metadata (Essential
+ * Sound type SFX only) just gets the gain. Clips must be sound effects (Essential Sound SFX or placed sounds) on
+ * unlocked tracks. Result `{clips: [{clipId, fromDb, gainDb}]}`.
+ */
+export const SoundDesignApplyGainsCmd = cmd('soundDesign.applyGains', {
+	sequenceId: IdRefSchema.optional(),
+	gains: z
+		.record(GainClipKeySchema, z.number().min(SFX_DEFAULT_GAIN_MIN_DB).max(SFX_DEFAULT_GAIN_MAX_DB))
+		.refine((g) => {
+			const n = Object.keys(g).length;
+			return n >= 1 && n <= APPLY_GAINS_MAX_CLIPS;
+		}, `1–${APPLY_GAINS_MAX_CLIPS} clips`),
+	report: z
+		.record(GainClipKeySchema, SolverGainReportSchema)
+		.refine((g) => Object.keys(g).length <= APPLY_GAINS_MAX_CLIPS, `at most ${APPLY_GAINS_MAX_CLIPS} clips`)
+		.optional(),
+});
+
 export const SOUND_COMMANDS = [
 	MediaSetLibraryInfoCmd,
 	SoundCueAddCmd,
@@ -234,4 +281,5 @@ export const SOUND_COMMANDS = [
 	SoundDesignSetPaletteCmd,
 	SoundDesignSetSettingsCmd,
 	SoundDesignSetPeakCmd,
+	SoundDesignApplyGainsCmd,
 ] as const;

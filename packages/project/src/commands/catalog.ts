@@ -354,6 +354,7 @@ const LABELS: Record<CommandType, string> = {
 	'soundDesign.setPalette': 'Sound Palette',
 	'soundDesign.setSettings': 'Sound Design Settings',
 	'soundDesign.setPeak': 'Set Peak',
+	'soundDesign.applyGains': 'Rebalance SFX Levels',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [

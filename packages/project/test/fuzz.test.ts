@@ -52,7 +52,8 @@ type Abstract =
 	| { k: 'resync' }
 	| { k: 'swap'; clip: number; media: number; pitch: number; align: number }
 	| { k: 'setRole'; clip: number; role: number }
-	| { k: 'setPeak'; clip: number; peak: number };
+	| { k: 'setPeak'; clip: number; peak: number }
+	| { k: 'applyGains'; clip: number; n: number; gain: number; limits: number };
 
 const frame = fc.integer({ min: 0, max: 900 });
 const idx = fc.nat(1000);
@@ -156,6 +157,14 @@ const abstract: fc.Arbitrary<Abstract> = fc.oneof(
 		k: fc.constant('setPeak' as const),
 		clip: idx,
 		peak: fc.integer({ min: -1, max: 2_000_000_000 }),
+	}),
+	// Phase 4: solved gains (out-of-range gains and non-effect clips are refused)
+	fc.record({
+		k: fc.constant('applyGains' as const),
+		clip: idx,
+		n: fc.integer({ min: 1, max: 3 }),
+		gain: fc.double({ min: -32, max: 14, noNaN: true }),
+		limits: fc.nat(3),
 	}),
 );
 
@@ -333,6 +342,25 @@ function concretize(a: Abstract, doc: ProjectDocument, media: string[]): unknown
 			const c = audio[a.clip % Math.max(1, audio.length)]?.id ?? pick(a.clip);
 			return { type: 'soundDesign.setPeak', clipId: c, peakFlicks: a.peak };
 		}
+		case 'applyGains': {
+			const audio = clips.filter((c) => c.kind === 'audio');
+			const ids = [
+				...new Set(
+					Array.from(
+						{ length: a.n },
+						(_, i) => audio[(a.clip + i) % Math.max(1, audio.length)]?.id ?? pick(a.clip + i),
+					),
+				),
+			];
+			const limitedBy = [[], ['dialogue'], ['bed-cap', 'conflict:bed-cap/consistency'], ['headroom']][
+				a.limits
+			]!;
+			return {
+				type: 'soundDesign.applyGains',
+				gains: Object.fromEntries(ids.map((id, i) => [id, Math.round((a.gain - i) * 100) / 100])),
+				report: { [ids[0]!]: { limitedBy, achievedLiftDb: a.limits ? a.gain / 3 : null, reason: 'fuzz' } },
+			};
+		}
 	}
 }
 
@@ -375,6 +403,7 @@ describe('AC-25: invariants under random transactions', () => {
 		const base = h.doc;
 		let accepted = 0;
 		let soundAccepted = 0;
+		let gainsAccepted = 0;
 		const ids = createRandomIdSource();
 		fc.assert(
 			fc.property(
@@ -394,6 +423,8 @@ describe('AC-25: invariants under random transactions', () => {
 							accepted++;
 							if (commands.some((c) => /^sound(Cue|Design)\./.test((c as { type: string }).type)))
 								soundAccepted++;
+							if (commands.some((c) => (c as { type: string }).type === 'soundDesign.applyGains'))
+								gainsAccepted++;
 							const issues = checkInvariants(document);
 							if (issues.length)
 								throw new Error(
@@ -416,5 +447,6 @@ describe('AC-25: invariants under random transactions', () => {
 		);
 		expect(accepted).toBeGreaterThan(0);
 		expect(soundAccepted).toBeGreaterThan(RUNS / 10);
+		expect(gainsAccepted).toBeGreaterThan(RUNS / 100);
 	}, 600_000);
 });
