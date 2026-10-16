@@ -168,6 +168,99 @@ describe('EditorSession history (S01 §17)', () => {
 		expect(Object.values(Object.values(s.getCommitted().sequences)[0]!.clips)[0]!.start).toBe(3);
 	});
 
+	it('a coalesced run: one undo returns the exact document before its first step, redo its last; every step is seen', async () => {
+		let now = 1000;
+		const { store, doc, ctx } = setup();
+		const s = new EditorSession({
+			projectId: doc.projectId,
+			document: (await store.open(doc.projectId)).document,
+			ctx,
+			clock: () => now,
+		});
+		s.apply({ label: 'Add', origin: 'user', commands: [solid(0)] });
+		const [id] = clipIds(s.getCommitted());
+		s.select('timeline', [id!]);
+		const before = s.getCommitted();
+		const selectionBefore = s.getState().selection;
+		const changes: number[] = [];
+		s.on('doc.changed', (e) => changes.push(e.revision));
+		const states: ProjectDocument[] = [];
+		for (let k = 1; k <= 5; k++) {
+			s.apply({
+				label: `Swap Sound ×${k}`,
+				origin: 'user',
+				coalesceKey: 'variation:1',
+				coalesceWindowMs: Number.POSITIVE_INFINITY,
+				coalesceRelabel: true,
+				commands: [{ type: 'clip.move', clipIds: [id!], deltaFrames: k }],
+			});
+			// every step dirties the session and is announced (autosave and the crash journal see it)
+			expect(s.getState().dirty).toBe(true);
+			states.push(s.getCommitted());
+			now += 30_000;
+		}
+		expect(changes).toHaveLength(5);
+		expect(s.getState().history.entries.map((e) => e.label)).toEqual(['Add', 'Swap Sound ×5']);
+		s.undo();
+		expect(s.getCommitted()).toBe(before);
+		expect(s.getState().selection).toEqual(selectionBefore);
+		s.redo();
+		expect(s.getCommitted()).toBe(states[4]);
+		expect(s.getState().history.entries).toHaveLength(2);
+	});
+
+	it('never coalesces across an undo or redo, even with the same key and window (UND-006)', async () => {
+		let now = 1000;
+		const { store, doc, ctx } = setup();
+		const s = new EditorSession({
+			projectId: doc.projectId,
+			document: (await store.open(doc.projectId)).document,
+			ctx,
+			clock: () => now,
+		});
+		s.apply({ label: 'Add', origin: 'user', commands: [solid(0)] });
+		const [id] = clipIds(s.getCommitted());
+		const step = (label = 'Swap Sound') =>
+			s.apply({
+				label,
+				origin: 'user',
+				coalesceKey: 'variation:1',
+				coalesceWindowMs: Number.POSITIVE_INFINITY,
+				coalesceRelabel: true,
+				commands: [{ type: 'clip.move', clipIds: [id!], deltaFrames: 1 }],
+			});
+		const labels = () => s.getState().history.entries.map((e) => e.label);
+		step();
+		// an intervening edit, undone: the next step starts a new entry (it does not reach back past the undo)
+		s.apply({ label: 'Other', origin: 'user', commands: [solid(100)] });
+		s.undo();
+		step();
+		expect(labels()).toEqual(['Add', 'Swap Sound', 'Swap Sound']);
+		const mid = s.getCommitted();
+		// undo + redo, then the same key within the default window: a new entry too
+		s.undo();
+		s.redo();
+		step();
+		expect(labels()).toEqual(['Add', 'Swap Sound', 'Swap Sound', 'Swap Sound']);
+		s.undo();
+		expect(s.getCommitted()).toBe(mid);
+		// nudges (750 ms window) after an undo do not merge into the entry below either
+		now += 10;
+		const nudge = () =>
+			s.apply({
+				label: 'Nudge',
+				origin: 'user',
+				coalesceKey: `nudge:${id}`,
+				commands: [{ type: 'clip.move', clipIds: [id!], deltaFrames: 1 }],
+			});
+		nudge();
+		s.undo();
+		s.redo();
+		now += 10;
+		nudge();
+		expect(labels().slice(-2)).toEqual(['Nudge', 'Nudge']);
+	});
+
 	it('refuses writes in read-only sessions and when the lease is held elsewhere (PER-040)', async () => {
 		const { open } = setup();
 		const a = await open('a');

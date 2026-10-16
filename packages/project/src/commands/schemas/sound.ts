@@ -36,7 +36,7 @@ export const SoundIdSchema = z
 export const SoundCueInputSchema = z.strictObject({
 	...soundCueFields,
 	soundIds: z.array(SoundIdSchema).max(SOUND_DESIGN_LIMITS.soundIds).optional(),
-	id: z.string().optional(),
+	id: z.string().max(SOUND_DESIGN_LIMITS.id).optional(),
 	ref: RefDeclSchema.optional(),
 });
 export type SoundCueInput = z.infer<typeof SoundCueInputSchema>;
@@ -166,8 +166,13 @@ export const SoundDesignPlaceCmd = cmd('soundDesign.place', {
  * instead (with the clip's own media this re-aligns the clip: MCP `align_peak`), still sample-exact through the In
  * point. The same media with another `align` re-aligns the clip (its start, peak or end on the frame the old point
  * played at, or on `frame`); `pitchSt` re-pitches it around that point (|st| ≤ 3 by varispeed keeping the seeded ±2 %
- * variation, else the Pitch Shifter effect; 0 removes the shift). Result `{clipId, mediaId, soundId, start,
- * sourceInFlicks, errorFlicks, alignedFrame, align, rate, pitchSt, gainDb}`.
+ * variation, else the Pitch Shifter effect; 0 removes the shift). A sound that would start before frame 0 is refused,
+ * except for a clip at frame 0 swapped in place (an insert near the start, `clampStart`): the new sound starts there
+ * with its head trimmed. Fades on the clip's edges are shortened to its new length. Result `{clipId, mediaId, soundId,
+ * start, sourceInFlicks, errorFlicks, alignedFrame, align, rate, pitchSt, trimmedHeadSec, gainDb}`. `alternatives` replaces the
+ * clip's variation ring (`sfx.alternatives`, sound ids ≤ 16, the original first): variation cycling across separate
+ * calls keeps one anchor even for a sound placed without alternatives (MCP `swap_sound` stores `[original]` on its
+ * first swap).
  */
 export const SoundDesignSwapCmd = cmd('soundDesign.swap', {
 	clipId: IdRefSchema,
@@ -175,6 +180,7 @@ export const SoundDesignSwapCmd = cmd('soundDesign.swap', {
 	align: z.enum(CUE_ALIGNS).optional(),
 	frame: TimeInputSchema.optional(),
 	pitchSt: z.number().min(-12).max(12).optional(),
+	alternatives: z.array(SoundIdSchema).min(1).max(SOUND_DESIGN_LIMITS.alternatives).optional(),
 });
 
 /**

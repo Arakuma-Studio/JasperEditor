@@ -22,6 +22,7 @@ import {
 import type { EditorSession } from '@jasper/session';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { transitionPreferences } from '../panels/effects/transition-prefs.ts';
+import { runBeforeAgentTransaction } from './hooks.ts';
 import { AgentRelayClient, type RelayState } from './relay-client.ts';
 import type { AgentBridgeEvent, JasperAgentApi } from './types.ts';
 
@@ -324,7 +325,10 @@ export class AgentBridge {
 		if (unknownKeys.length) return this.record(tx, via, { ok: false, revision, errors: unknownKeys });
 
 		const pseudo = historyPseudoCommand(tx);
-		if (pseudo) return this.record(tx, via, this.historyStep(pseudo, tx.origin.agent));
+		if (pseudo) {
+			runBeforeAgentTransaction(this.session);
+			return this.record(tx, via, this.historyStep(pseudo, tx.origin.agent));
+		}
 
 		const addr = resolveAgentAddresses(this.session.getCommitted(), tx.commands, {
 			sequenceId: tx.sequenceId,
@@ -353,6 +357,7 @@ export class AgentBridge {
 			...(tx.dryRun ? { dryRun: true } : {}),
 			...(tx.sequenceId ? { sequenceId: tx.sequenceId } : {}),
 		};
+		runBeforeAgentTransaction(this.session);
 		const result = await this.session.submit(input);
 		return this.record(tx, via, result);
 	}

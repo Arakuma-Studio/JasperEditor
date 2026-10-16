@@ -274,9 +274,15 @@ function issueOf(r: { success: boolean; error?: z.ZodError }): string | null {
 
 /** The problem with a stored `Sequence.soundDesign`, or null when it is valid (INV-SOUND). */
 export function soundDesignIssue(raw: unknown): string | null {
-	const p = issueOf(SoundDesignSchema.safeParse(raw));
+	const parsed = SoundDesignSchema.safeParse(raw);
+	const p = issueOf(parsed);
 	if (p) return p;
-	for (const [key, cue] of Object.entries((raw as SoundDesign).cues))
+	// zod's record parser skips a `__proto__` key (it never reaches the parsed value), so such a cue was never checked:
+	// every own key must have come through.
+	const rawCues = (raw as SoundDesign).cues;
+	if (parsed.success && Object.keys(parsed.data.cues).length !== Object.keys(rawCues).length)
+		return 'cues: a cue key the schema cannot read (e.g. __proto__)';
+	for (const [key, cue] of Object.entries(rawCues))
 		if (cue.id !== key) return `cues.${key}: key does not match the cue id ${cue.id}`;
 	if (Object.keys((raw as SoundDesign).cues).length > SOUND_DESIGN_LIMITS.cues)
 		return `more than ${SOUND_DESIGN_LIMITS.cues} cues`;

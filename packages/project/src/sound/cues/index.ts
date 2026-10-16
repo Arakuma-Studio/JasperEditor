@@ -23,3 +23,4 @@ export {
 export { PATTERN_MAX_PER_CLIP, PATTERN_MAX_PER_SEC, thinPattern, typewriterOffsets } from './text.ts';
 export { type TransitionClass, transitionClass, transitionTravel, transitionWindow } from './transitions.ts';
 export * from './types.ts';
+export { MAX_SAMPLES_PER_DERIVATION } from './util.ts';

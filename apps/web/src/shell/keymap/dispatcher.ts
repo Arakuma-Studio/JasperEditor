@@ -114,6 +114,21 @@ function suspendedInEditable(e: Mods & { code: string }): boolean {
 
 const MODIFIER_CODES = /^(Control|Shift|Alt|Meta|OS)(Left|Right)?$/;
 
+const beforeKey = new Set<(e: KeyboardEvent) => void>();
+
+/**
+ * Called on every non-modifier key press before the keymap resolves it. Something that holds the session gesture and
+ * ends on any key (the Sound Library's In Context audition, spec 12 §2.7) ends itself here, so the key's own command
+ * then runs on the committed document in the same press (before: the first Ctrl+Z only stopped the audition).
+ * Returns the unregister function.
+ */
+export function onBeforeKey(fn: (e: KeyboardEvent) => void): () => void {
+	beforeKey.add(fn);
+	return () => {
+		beforeKey.delete(fn);
+	};
+}
+
 /** Installs the dispatcher on a window; returns the uninstaller. */
 export function installKeyboardDispatcher(win: Window, env: DispatcherEnv): () => void {
 	const held = new Map<string, UiCommand>();
@@ -157,6 +172,7 @@ export function installKeyboardDispatcher(win: Window, env: DispatcherEnv): () =
 			return;
 		}
 		altTap = false;
+		for (const fn of [...beforeKey]) fn(e);
 		if (e.isComposing || env.isSuspended?.()) return;
 		if (e.code === 'Escape' && pressed.size > 0) return;
 		const kind = classifyTarget(e.target);

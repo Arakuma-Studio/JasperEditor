@@ -157,11 +157,15 @@ export function cueLabel(seq: Pick<Sequence, 'settings'>, cue: SoundCue): string
 	);
 }
 
-/** The cue a clip fills (its `sfx.cueId`, when the cue still exists). */
+/**
+ * The cue a clip fills: its `sfx.cueId`, when that cue still exists and lists the clip (the link is two-way; a
+ * duplicated or pasted copy carries the cue id but fills nothing).
+ */
 export function cueOfClip(seq: Sequence, clip: Clip): SoundCue | null {
 	const id = sfxOf(clip)?.cueId;
 	if (!id) return null;
-	return cuesOf(seq).find((c) => c.id === id) ?? null;
+	const cue = cuesOf(seq).find((c) => c.id === id);
+	return cue && (cue.placedClipIds ?? []).includes(clip.id) ? cue : null;
 }
 
 /**

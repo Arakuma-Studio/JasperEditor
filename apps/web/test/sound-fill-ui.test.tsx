@@ -145,8 +145,9 @@ describe('Sound Library: Fill, Replace, palette, In Context', () => {
 		expect(cue.placedClipIds).toHaveLength(1);
 		const clip = s.seq().clips[cue.placedClipIds![0]!] as SfxClip;
 		expect(clip.sfx).toMatchObject({ cueId: s.cueId, role: 'hero' });
-		// the two other results are its alternatives
-		expect(clip.sfx!.alternatives).toHaveLength(2);
+		// its variation ring: the chosen sound first, then the two other results
+		expect(clip.sfx!.alternatives).toHaveLength(3);
+		expect(clip.sfx!.alternatives![0]).toBe(clip.sfx!.soundId);
 		await waitFor(() => expect(screen.queryByTestId('sound-fill-chip')).toBeNull());
 	});
 

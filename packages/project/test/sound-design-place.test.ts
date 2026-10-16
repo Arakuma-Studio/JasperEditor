@@ -433,6 +433,36 @@ describe('soundDesign.swap', () => {
 	});
 });
 
+describe('soundDesign.swap alternatives (the variation ring of stateless cycling)', () => {
+	it('stores the ring on a clip placed without one (deduplicated); undo; bad ids are refused', () => {
+		const h = new Harness();
+		const a = libMedia(h);
+		const b = libMedia(h, { peakSec: 0.2, durationSec: 0.8 });
+		const r = h.ok([{ type: 'soundDesign.place', frame: 60, layers: [{ mediaId: a }] }]);
+		const id = (r.results[0] as { clips: { clipId: string }[] }).clips[0]!.clipId;
+		expect(clip(h, id).sfx!.alternatives).toBeUndefined();
+		const original = clip(h, id).sfx!.soundId!;
+		const before = h.doc;
+		h.ok([{ type: 'soundDesign.swap', clipId: id, mediaId: b, alternatives: [original, original] }]);
+		expect(clip(h, id).sfx!.alternatives).toEqual([original]);
+		expect(clip(h, id).mediaId).toBe(b);
+		expect(checkInvariants(h.doc)).toEqual([]);
+		// undo = the untouched document
+		expect((before.sequences[h.seqId]!.clips[id] as SfxClip).sfx!.alternatives).toBeUndefined();
+		h.doc = before;
+		// without alternatives the ring is kept as it is
+		h.ok([{ type: 'soundDesign.swap', clipId: id, mediaId: b, alternatives: [original] }]);
+		h.ok([{ type: 'soundDesign.swap', clipId: id, mediaId: a }]);
+		expect(clip(h, id).sfx!.alternatives).toEqual([original]);
+		expect(
+			err(h.tx([{ type: 'soundDesign.swap', clipId: id, mediaId: b, alternatives: ['nope'] }]))?.code,
+		).toBe('E_SCHEMA');
+		expect(err(h.tx([{ type: 'soundDesign.swap', clipId: id, mediaId: b, alternatives: [] }]))?.code).toBe(
+			'E_SCHEMA',
+		);
+	});
+});
+
 describe('soundDesign.swap with frame (re-align: MCP align_peak)', () => {
 	it('lands the aligned point exactly on the new frame at every rate; pan keyframes travel with it; undo / redo; refusals', () => {
 		for (const fps of ALLOWED_SEQUENCE_RATES) {

@@ -1,6 +1,18 @@
 import { AGENT_UI_REFUSED_COMMANDS, agentInputActive } from '../agent-bridge/agent-input.ts';
 import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
 
+/**
+ * An error a command has already shown to the user (its own toast with a precise message): it still makes the run fail
+ * (agents get `ran: false` with the error), but the runner does not toast it a second time.
+ */
+export class ReportedCommandError extends Error {
+	readonly reported = true;
+	constructor(error: unknown) {
+		super(error instanceof Error ? error.message : String(error));
+		this.name = 'ReportedCommandError';
+	}
+}
+
 const commands = new Map<string, UiCommand>();
 const listeners = new Set<() => void>();
 
@@ -91,11 +103,12 @@ export async function runCommand(id: string, ctx: CommandCtx, args?: unknown): P
 		await cmd.run(ctx, args);
 		return { ran: true };
 	} catch (error) {
-		ctx.ui.toast({
-			kind: 'error',
-			message: `${cmd.label} failed`,
-			detail: error instanceof Error ? error.message : String(error),
-		});
+		if (!(error instanceof ReportedCommandError))
+			ctx.ui.toast({
+				kind: 'error',
+				message: `${cmd.label} failed`,
+				detail: error instanceof Error ? error.message : String(error),
+			});
 		return { ran: false, reason: 'error', error };
 	}
 }

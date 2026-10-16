@@ -128,8 +128,9 @@ describe('Fill', () => {
 		expect(h.labels().at(-1)).toBe('Fill Cue Crunch');
 		const c = h.clip(r.clipId);
 		expect(c.sfx).toMatchObject({ cueId, role: 'hero', soundId: entry.id, layer: 0 });
-		// the chosen sound is not its own alternative; at most 3
+		// the variation ring (original first, as MCP place_sound stores it): the chosen sound, then at most 3 others
 		expect(c.sfx!.alternatives).toEqual([
+			entry.id,
 			'snd_0000000000000aaa',
 			'snd_0000000000000bbb',
 			'snd_0000000000000ccc',
@@ -197,7 +198,11 @@ describe('Fill', () => {
 			for (const c of cuesOf(h.seq())) expect(c.placedClipIds?.length).toBe(1);
 			for (let i = 1; i < r.filled.length; i++)
 				expect(r.filled[i]!.soundId).not.toBe(r.filled[i - 1]!.soundId);
-			for (const f of r.filled) expect(h.clip(f.clipId).sfx!.alternatives?.length).toBe(3);
+			// the ring: the pick first, then 3 alternatives
+			for (const f of r.filled) {
+				expect(h.clip(f.clipId).sfx!.alternatives?.[0]).toBe(f.soundId);
+				expect(h.clip(f.clipId).sfx!.alternatives).toHaveLength(4);
+			}
 			// nothing left: the command is disabled
 			const again = await runCommand('sound.fillUnfilledCues', h.ctx);
 			expect(again.ran).toBe(false);

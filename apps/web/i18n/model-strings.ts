@@ -1,5 +1,6 @@
 // UI-6: the model's names the UI shows (effects and their parameters / options, transitions, command labels shown in
-// History and menus, property labels of the inspectors) → apps/web/src/i18n/model-strings.json (`pnpm i18n:model`).
+// History and menus, property labels of the inspectors, sound-design label and refusal templates)
+// → apps/web/src/i18n/model-strings.json (`pnpm i18n:model`).
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -65,6 +66,11 @@ for (const presets of presetFamilies) {
 	}
 }
 for (const p of project.builtinEssentialPresets()) add(p.name);
+// Sound design: the History labels agents' tools compose and the refusals the editor shows in notices, as templates
+// (`{0}`… are ids, titles and numbers); the runtime translates a text that matches one (`translateName`).
+for (const t of project.SOUND_MODEL_STRINGS) add(t);
+// The prefix of agents' History entries ("Agent: Sound Cues (add 2)", @jasper/session `agentLabel`).
+add('Agent');
 const list = [...out].sort((a, b) => a.localeCompare(b, 'en'));
 writeFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), `${JSON.stringify(list, null, 2)}\n`);
 console.log(`model strings: ${list.length}`);

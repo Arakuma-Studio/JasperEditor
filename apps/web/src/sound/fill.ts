@@ -2,7 +2,8 @@
 // Fill With ▸ / Fill from Library… / Add Layer…; Sequence ▸ Sound Design ▸ Fill Unfilled Cues). Every fill is ONE
 // transaction: the library sound becomes project media (`soundMediaCommands`), then `soundDesign.place {cueId}` puts
 // it on the cue — the cue gives the role (hero / support), the alignment (its `align`, else the sound type's), the pan
-// or pan sweep; the alternatives (the next 1–3 ranked sounds) are stored for variation cycling; `variationOf` gives
+// or pan sweep; the variation ring (the chosen sound, then the next 1–3 ranked sounds) is stored for variation cycling
+// (`sfx.alternatives`, original first, as MCP place_sound stores it); `variationOf` gives
 // the seeded ±2 % speed and ±1 dB gain. A layer (Add Layer…) is placed on the next free SFX track, aligned to the same
 // point, and linked to the cue's other clips (Premiere-style link: moving one moves the others).
 // Fill Unfilled Cues ranks sounds per cue with the engine, picks one with `pickVariant` (round-robin over the top 4,
@@ -96,7 +97,9 @@ export async function fillCueWithSound(
 	const layer = !!opts.layer && existing.length > 0;
 	const settings = soundDesignSettingsOf(seq as { soundDesign?: unknown });
 	const v = variationOf({ seed: settings.seed, cueId: cue.id, sequenceId: seq.id, layer: existing.length });
-	const alternatives = (opts.alternatives ?? []).filter((id) => id !== entry.id).slice(0, 3);
+	// the clip's variation ring: the chosen sound first (the cycle's anchor), then up to 3 ranked alternatives
+	const others = (opts.alternatives ?? []).filter((id) => id !== entry.id).slice(0, 3);
+	const alternatives = others.length ? [entry.id, ...others] : [];
 	const commands: Command[] = [
 		...prepared.commands,
 		{
@@ -207,10 +210,14 @@ export async function fillUnfilledCues(
 			entry: ranked[pick.index]!,
 			rate: pick.rate,
 			gainDb: pick.gainDb,
-			alternatives: ranked
-				.map((e) => e.id)
-				.filter((id) => id !== pick.soundId)
-				.slice(0, 3),
+			// the ring: the pick first (the variation cycle's anchor), then the next 3 ranked
+			alternatives: [
+				pick.soundId,
+				...ranked
+					.map((e) => e.id)
+					.filter((id) => id !== pick.soundId)
+					.slice(0, 3),
+			],
 		});
 	}
 	opts.onProgress?.(cues.length, cues.length);
@@ -242,7 +249,7 @@ export async function fillUnfilledCues(
 					sequenceId,
 					cueId: p.cue.id,
 					layers: [{ mediaId: prepared.media.get(p.entry.id)!.ref, rate: p.rate, gainOffsetDb: p.gainDb }],
-					...(p.alternatives.length ? { alternatives: p.alternatives } : {}),
+					...(p.alternatives.length > 1 ? { alternatives: p.alternatives } : {}),
 					clampStart: true,
 				}) as Command,
 		);

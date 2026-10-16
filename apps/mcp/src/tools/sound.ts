@@ -32,10 +32,12 @@ import {
 	resolveSoundAlign,
 	type Sequence,
 	SOUND_FAMILIES,
+	SOUND_LABELS,
 	type SoundAlign,
 	type SoundTrackChoice,
 	sequenceTimecode,
 	soundCredits,
+	soundText,
 	soundTimingOf,
 	TimeInputSchema,
 	trackLabel,
@@ -723,7 +725,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 					ctx,
 					a.projectId,
 					{
-						label: `Add Sound ${title}`,
+						label: soundText(SOUND_LABELS.addSound, title),
 						commands,
 						sequenceId: seq.id,
 						...(revision !== undefined ? { expectedRevision: revision } : {}),
@@ -761,7 +763,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 					);
 				return jsonResult({
 					...txBody(res, r),
-					historyLabel: `Add Sound ${title}`,
+					historyLabel: soundText(SOUND_LABELS.addSound, title),
 					clipId,
 					mediaId,
 					soundId: a.soundId,
