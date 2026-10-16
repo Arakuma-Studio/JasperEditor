@@ -65,6 +65,12 @@ export const SOUND_MESSAGES = [
 	'The sound has no length',
 	'The sound is too short to place',
 	"the sound's {0} is {1} s into it: aligned at frame {2} it would start at frame {3}, before the sequence",
+	'report names {0}, which has no gain',
+	'Unknown temp ref {0}: bind it with "ref" on a placement layer earlier in the transaction',
+	'{0} is given twice',
+	'Clip not found: {0}',
+	'Clip not found in {0}: {1}',
+	'{0} is not a sound effect (Essential Sound type SFX, or a placed sound): the solver sets sound effect gains only',
 ] as const;
 
 /** Every sound-design template the editor translates (labels and refusals). */

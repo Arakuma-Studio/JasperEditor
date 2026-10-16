@@ -9226,5 +9226,11 @@
   "Stale": "Obsoleto",
   "Stop reviewing the proposal: its ghosts go and the Program monitor plays the sequence again": "Deja de revisar la propuesta: sus fantasmas desaparecen y el monitor de programa vuelve a reproducir la secuencia",
   "A/B: the Program monitor plays the proposal under review (picture and sound of its preview document) or the sequence as it is; switches while playing. `on` sets it instead of toggling.": "A/B: el monitor de programa reproduce la propuesta en revisión (imagen y sonido de su documento de vista previa) o la secuencia tal como está; cambia durante la reproducción. `on` lo fija en lugar de alternarlo.",
-  "Rebalance SFX Levels": "Reequilibrar niveles de efectos de sonido"
+  "Rebalance SFX Levels": "Reequilibrar niveles de efectos de sonido",
+  "{0} is given twice": "{0} se indica dos veces",
+  "{0} is not a sound effect (Essential Sound type SFX, or a placed sound): the solver sets sound effect gains only": "{0} no es un efecto de sonido (tipo SFX de Sonido esencial, o un sonido colocado): el solucionador solo ajusta la ganancia de los efectos de sonido",
+  "Clip not found in {0}: {1}": "No se encuentra el clip en {0}: {1}",
+  "Clip not found: {0}": "No se encuentra el clip: {0}",
+  "report names {0}, which has no gain": "el informe nombra {0}, que no tiene ganancia",
+  "Unknown temp ref {0}: bind it with \"ref\" on a placement layer earlier in the transaction": "Referencia temporal desconocida {0}: vincúlela con \"ref\" en una capa de colocación anterior de la transacción"
 }

@@ -1121,7 +1121,7 @@ function applyGains(doc: DDoc, cmd: CommandOf<'soundDesign.applyGains'>, h: Hand
 			if (!bound)
 				h.fail(
 					'E_NOT_FOUND',
-					`Unknown temp ref ${key}: bind it with \`ref\` on a placement layer earlier in the transaction`,
+					`Unknown temp ref ${key}: bind it with "ref" on a placement layer earlier in the transaction`,
 					{ path },
 				);
 			id = bound;
@@ -1129,8 +1129,8 @@ function applyGains(doc: DDoc, cmd: CommandOf<'soundDesign.applyGains'>, h: Hand
 		if (seen.has(id)) h.fail('E_INVALID_PARAM', `${id} is given twice`, { path });
 		seen.add(id);
 		const sid = h.sequenceOfClip(doc, id);
-		if (sid === null || (only !== null && sid !== only))
-			h.fail('E_NOT_FOUND', `Clip not found${only ? ` in ${only}` : ''}: ${id}`, { path });
+		if (sid === null) h.fail('E_NOT_FOUND', `Clip not found: ${id}`, { path });
+		if (only !== null && sid !== only) h.fail('E_NOT_FOUND', `Clip not found in ${only}: ${id}`, { path });
 		const { seq, clip: c } = h.clip(doc, id);
 		if (c.kind !== 'audio') h.fail('E_INVALID_PARAM', `${id} is not an audio clip`, { path });
 		if (!isSfxClip(c))
