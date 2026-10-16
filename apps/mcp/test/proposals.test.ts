@@ -246,7 +246,11 @@ describe('proposal MCP tools', { timeout: 900_000 }, () => {
 			(l) => l.startsWith(`${plan.events[0]!.itemId} |`) && l.includes('create clip'),
 		)!;
 		expect(placeRow).toMatch(/SFX|A\d/);
-		expect(lines.some((l) => l.includes('create cue'))).toBe(true);
+		// setup items in one line each (the new cue, the imported sounds); the place item fills its cue
+		expect(lines.some((l) => l.startsWith(`cue:${plan.events[0]!.itemId} | pending | setup |`))).toBe(true);
+		expect(lines.some((l) => l.startsWith(`${plan.events[0]!.itemId} |`) && l.includes('change cue'))).toBe(
+			true,
+		);
 		const rev = await revisionOf(projectId);
 		const refused = await fails('accept_proposal', {
 			projectId,
