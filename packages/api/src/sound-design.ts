@@ -236,6 +236,8 @@ export const SoundDesignPlanEventSchema = z.object({
 	/** Seeded gain variation (±1 dB) the placement adds to the default level. */
 	gainOffsetDb: z.number(),
 	alternatives: z.array(PlanSoundSchema),
+	/** Further layers on the same cue (a marker naming several types: "sfx: boom+whoosh"). */
+	extraLayers: z.array(PlanSoundSchema),
 	/** Decisions taken for this cue (a hero demoted under dialogue, a sound that failed to register…). */
 	notes: z.array(z.string()),
 });

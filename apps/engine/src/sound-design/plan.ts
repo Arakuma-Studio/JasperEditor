@@ -48,6 +48,7 @@ import {
 	type Sequence,
 	type SFX_ROLES,
 	SOUND_DESIGN_FEATURE,
+	SOUND_DESIGN_LIMITS,
 	SOUND_TYPES,
 	type SoundCue,
 	SoundLayerSchema,
@@ -80,6 +81,8 @@ type Role = (typeof SFX_ROLES)[number];
 const RANKED_PER_CUE = 12;
 /** Derived cues this close (frames) to a stored cue are left to the stored one. */
 const NEAR_STORED_FRAMES = 2;
+/** Layers of one placement (`soundDesign.place`). */
+const MAX_LAYERS = SOUND_DESIGN_LIMITS.layers;
 /** Never two heroes within this (spec 12 §2.10 SOUND_GUIDE). */
 const HERO_MIN_SEC = 0.5;
 /** A report larger than this drops the score parts (the proposal's report must stay under 1 MB). */
@@ -105,6 +108,8 @@ export type PlanCue = {
 	windowFrames: number | null;
 	/** Key of the rotation and variation hash: the cue id, or `derived:<key>`. */
 	key: string;
+	/** A marker cue naming several types: one layer per type. */
+	layered: boolean;
 };
 
 export type PlanStyle = {
@@ -121,10 +126,12 @@ export type PlanPick = {
 	cue: PlanCue;
 	role: Role;
 	align: CueAlign;
-	/** The chosen sound first, then the alternatives (ranked order). */
+	/** Layer 0: the chosen sound first, then the alternatives (ranked order). */
 	sounds: RankedSound<SoundEntry>[];
 	rate: number;
 	gainOffsetDb: number;
+	/** Further layers (a marker naming several types), each with its own seeded variation. */
+	extraLayers: { sound: RankedSound<SoundEntry>; rate: number; gainOffsetDb: number }[];
 	notes: string[];
 };
 
@@ -188,6 +195,7 @@ function fromStored(c: SoundCue): PlanCue {
 		reason: c.reason ?? c.label ?? `${c.kind} cue`,
 		windowFrames: c.window && c.window.end > c.window.start ? c.window.end - c.window.start : null,
 		key: c.id,
+		layered: c.source === 'marker' && knownTypes(c.types, c.kind).length > 1,
 	};
 }
 
@@ -203,6 +211,7 @@ function fromDerived(d: DerivedCue): PlanCue {
 		reason: d.reason,
 		windowFrames: d.window && d.window.end > d.window.start ? d.window.end - d.window.start : null,
 		key: `derived:${d.key}`,
+		layered: d.source === 'marker' && knownTypes(d.types, d.kind).length > 1,
 	};
 }
 
@@ -383,18 +392,6 @@ export function selectPlanSounds(
 			? (cue.kind as VisualKind)
 			: undefined;
 		const windowSec = cue.windowFrames ? round4(cue.windowFrames / fps) : undefined;
-		const cacheKey = `${cue.types.join(',')}|${visualKind ?? ''}|${windowSec ?? ''}|${cue.align ?? ''}`;
-		let ranked = rankCache.get(cacheKey);
-		if (!ranked) {
-			ranked = rankSounds(pool, {
-				types: cue.types,
-				...(visualKind ? { visualKind } : {}),
-				...(windowSec ? { windowSec } : {}),
-				...(cue.align ? { align: cue.align } : {}),
-				license: 'commercial-safe',
-			});
-			rankCache.set(cacheKey, ranked);
-		}
 		// Rotation context: sounds used nearest this cue first (earlier picks of this plan and placed clips).
 		const recent = [
 			...new Set(
@@ -404,29 +401,48 @@ export function selectPlanSounds(
 					.map((u) => u.id),
 			),
 		].slice(0, 16);
-		// The rotation penalty belongs to this cue's neighbourhood, so the cached order is re-ranked by it.
-		const top = ranked.length
-			? rankSounds(
-					ranked.slice(0, Math.max(RANKED_PER_CUE * 2, 24)).map((r) => r.entry),
-					{
-						types: cue.types,
-						...(visualKind ? { visualKind } : {}),
-						...(windowSec ? { windowSec } : {}),
-						...(cue.align ? { align: cue.align } : {}),
-						license: 'commercial-safe',
-					},
-					{ usedNearby: recent },
-				).slice(0, RANKED_PER_CUE)
-			: [];
-		const candidates = [
-			...top.filter((r) => palette.has(r.entry.id)),
-			...top.filter((r) => !palette.has(r.entry.id)),
-		];
-		const v = pickVariant(
-			candidates.map((r) => r.entry.id),
-			{ seed: style.seed, cueId: cue.key, sequenceId: seq.id, layer: 0, recentSoundIds: recent },
-		);
-		if (!v) {
+		/** Candidates of these types, best first (palette first), re-ranked with this cue's rotation penalty. */
+		const candidatesOf = (types: SoundTypeId[], recentIds: string[]) => {
+			const req = {
+				types,
+				...(visualKind ? { visualKind } : {}),
+				...(windowSec ? { windowSec } : {}),
+				...(cue.align ? { align: cue.align } : {}),
+				license: 'commercial-safe' as const,
+			};
+			const cacheKey = `${types.join(',')}|${visualKind ?? ''}|${windowSec ?? ''}|${cue.align ?? ''}`;
+			let ranked = rankCache.get(cacheKey);
+			if (!ranked) {
+				ranked = rankSounds(pool, req);
+				rankCache.set(cacheKey, ranked);
+			}
+			const top = ranked.length
+				? rankSounds(
+						ranked.slice(0, RANKED_PER_CUE * 2).map((r) => r.entry),
+						req,
+						{ usedNearby: recentIds },
+					).slice(0, RANKED_PER_CUE)
+				: [];
+			return [...top.filter((r) => palette.has(r.entry.id)), ...top.filter((r) => !palette.has(r.entry.id))];
+		};
+		// A marker naming several types ("sfx: boom+whoosh") asks for layers, one per type; other cues list
+		// suitable types best first, for one sound.
+		const layerTypes = cue.layered ? cue.types.slice(0, MAX_LAYERS).map((t) => [t]) : [cue.types];
+		const picked: { candidates: RankedSound<SoundEntry>[]; index: number; rate: number; gainDb: number }[] =
+			[];
+		const missingTypes: string[] = [];
+		for (const [layer, types] of layerTypes.entries()) {
+			// Layers of one cue differ from each other too.
+			const recentIds = [...picked.map((p) => p.candidates[p.index]!.entry.id).reverse(), ...recent];
+			const candidates = candidatesOf(types, recentIds);
+			const v = pickVariant(
+				candidates.map((r) => r.entry.id),
+				{ seed: style.seed, cueId: cue.key, sequenceId: seq.id, layer, recentSoundIds: recentIds },
+			);
+			if (!v) missingTypes.push(types.slice(0, 4).join('/'));
+			else picked.push({ candidates, index: v.index, rate: v.rate, gainDb: v.gainDb });
+		}
+		if (picked.length === 0 || (missingTypes.length && !cue.layered)) {
 			skipped.push(
 				skip(
 					seq,
@@ -437,9 +453,17 @@ export function selectPlanSounds(
 			);
 			continue;
 		}
-		const chosen = candidates[v.index]!;
-		const alternatives = candidates.filter((r) => r !== chosen).slice(0, style.alternatives);
-		const notes: string[] = [];
+		const first = picked[0]!;
+		const chosen = first.candidates[first.index]!;
+		const alternatives = first.candidates.filter((r) => r !== chosen).slice(0, style.alternatives);
+		const extraLayers = picked.slice(1).map((p) => ({
+			sound: p.candidates[p.index]!,
+			rate: p.rate,
+			gainOffsetDb: p.gainDb,
+		}));
+		const notes: string[] = missingTypes.map(
+			(t) => `no commercial-safe sound of type ${t} in the allowed sources: that layer is left out`,
+		);
 		let role: Role = cue.weight === 'hero' ? 'hero' : 'support';
 		if (role === 'hero' && style.respectDialogue && inDialogue(cue.frame)) {
 			role = 'support';
@@ -457,18 +481,20 @@ export function selectPlanSounds(
 		if (role === 'hero') heroes.push(cue.frame);
 		const firstType = chosen.entry.types.find(isSoundTypeId);
 		const align: CueAlign = cue.align ?? (firstType ? SOUND_TYPES[firstType].defaultAlign : 'peak');
-		if (chosen.entry.source.type === 'synth')
+		if ([chosen, ...extraLayers.map((l) => l.sound)].some((r) => r.entry.source.type === 'synth'))
 			notes.push('a Jasper Synth (procedural) sound: no recording of this type fits');
 		picks.push({
 			cue,
 			role,
 			align,
 			sounds: [chosen, ...alternatives],
-			rate: v.rate,
-			gainOffsetDb: v.gainDb,
+			rate: first.rate,
+			gainOffsetDb: first.gainDb,
+			extraLayers,
 			notes,
 		});
 		used.push({ frame: cue.frame, soundId: chosen.entry.id });
+		for (const l of extraLayers) used.push({ frame: cue.frame, soundId: l.sound.entry.id });
 	}
 	return { picks, skipped, paletteMissing };
 }
@@ -514,7 +540,9 @@ export function composePlanDraft(
 	const palette = new Set(style.palette);
 	const media: SoundProposalMedia[] = [];
 	for (const [soundId, reg] of registered) {
-		const entryTitle = picks.flatMap((p) => p.sounds).find((s) => s.entry.id === soundId)?.entry.title;
+		const entryTitle = picks
+			.flatMap((p) => [...p.sounds, ...p.extraLayers.map((l) => l.sound)])
+			.find((s) => s.entry.id === soundId)?.entry.title;
 		const title = entryTitle || reg.library.title || reg.originalName;
 		media.push({
 			soundId,
@@ -534,7 +562,8 @@ export function composePlanDraft(
 		const [chosen, ...alts] = p.sounds;
 		const tc = sequenceTimecode(seq, p.cue.frame);
 		const title = chosen!.entry.title;
-		const why = `${title} on ${p.cue.reason} at ${tc} · ${p.role} · ${p.align}`.slice(0, 1000);
+		const names = [title, ...p.extraLayers.map((l) => l.sound.entry.title)].join(' + ');
+		const why = `${names} on ${p.cue.reason} at ${tc} · ${p.role} · ${p.align}`.slice(0, 1000);
 		const layer: Record<string, unknown> = { soundId: chosen!.entry.id, role: p.role };
 		if (p.rate !== 1) layer.rate = p.rate;
 		if (LAYER_TAKES_GAIN_OFFSET && p.gainOffsetDb !== 0) layer.gainOffsetDb = p.gainOffsetDb;
@@ -557,11 +586,20 @@ export function composePlanDraft(
 			score: round4(chosen!.score),
 			rate: p.rate,
 			gainOffsetDb: p.gainOffsetDb,
+			...(p.extraLayers.length
+				? { layers: p.extraLayers.map((l) => ({ soundId: l.sound.entry.id, title: l.sound.entry.title })) }
+				: {}),
 			...(p.notes.length ? { notes: p.notes } : {}),
 		};
+		const extra = p.extraLayers.map((l) => ({
+			soundId: l.sound.entry.id,
+			role: 'layer',
+			...(l.rate !== 1 ? { rate: l.rate } : {}),
+			...(LAYER_TAKES_GAIN_OFFSET && l.gainOffsetDb !== 0 ? { gainOffsetDb: l.gainOffsetDb } : {}),
+		}));
 		placements.push({
 			id,
-			label: `${title} · ${p.cue.kind} ${tc}`,
+			label: `${names} · ${p.cue.kind} ${tc}`.slice(0, 200),
 			group: p.role,
 			meta,
 			cue: p.cue.stored
@@ -571,7 +609,7 @@ export function composePlanDraft(
 						label: `Cue: ${p.cue.kind} at ${tc}`,
 						meta: { cueKey: p.cue.derived!.key, frame: p.cue.frame, timecode: tc, kind: p.cue.kind },
 					},
-			layers: [layer],
+			layers: [layer, ...extra],
 			ring: p.sounds.map((s) => s.entry.id),
 			alternatives: alts.map((a) => ({
 				soundId: a.entry.id,
@@ -605,6 +643,7 @@ export function composePlanDraft(
 			rate: p.rate,
 			gainOffsetDb: p.gainOffsetDb,
 			alternatives: alts.map((a) => planSound(a, palette)),
+			extraLayers: p.extraLayers.map((l) => planSound(l.sound, palette)),
 			notes: p.notes,
 		});
 	});
@@ -796,10 +835,19 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 			notes.push(
 				`${p.sounds[0]!.entry.title} could not be added (${failed.get(p.sounds[0]!.entry.id) ?? 'error'}): ${ok[0]!.entry.title} instead`,
 			);
-		picks.push({ ...p, sounds: ok, notes });
+		const extraLayers = p.extraLayers.filter((l) => {
+			if (registered.has(l.sound.entry.id)) return true;
+			notes.push(
+				`${l.sound.entry.title} could not be added (${failed.get(l.sound.entry.id) ?? 'error'}): that layer is left out`,
+			);
+			return false;
+		});
+		picks.push({ ...p, sounds: ok, extraLayers, notes });
 	}
 	// Only the sounds still used are imported.
-	const usedIds = new Set(picks.flatMap((p) => p.sounds.map((s) => s.entry.id)));
+	const usedIds = new Set(
+		picks.flatMap((p) => [...p.sounds, ...p.extraLayers.map((l) => l.sound)].map((s) => s.entry.id)),
+	);
 	for (const id of [...registered.keys()]) if (!usedIds.has(id)) registered.delete(id);
 	skipped.sort(
 		(a, b) => a.frame - b.frame || (a.cueKey ?? a.cueId ?? '').localeCompare(b.cueKey ?? b.cueId ?? ''),
