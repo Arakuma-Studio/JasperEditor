@@ -288,7 +288,7 @@ const commandFix = (
 	safe,
 	...(why ? { why } : {}),
 	tool: 'apply_commands',
-	args: { projectId, label: label.text.slice(0, 200), commands },
+	args: { projectId, label: label.text.slice(0, 80), commands },
 	commands: commands as SoundCheckFix['commands'],
 });
 

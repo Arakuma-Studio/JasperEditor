@@ -40,6 +40,7 @@ import { ROTO_GUIDE, registerRotoTools } from './tools/roto.ts';
 import { registerShapeTools, registerVectorShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
 import { registerSimWarpTools, SIM_WARP_GUIDE } from './tools/sim-warp.ts';
 import { registerSoundTools, SOUND_GUIDE } from './tools/sound.ts';
+import { registerSoundCheckTools } from './tools/sound-check.ts';
 import { registerSoundDesignTools } from './tools/sound-design.ts';
 import { registerSpeechTools, SPEECH_GUIDE } from './tools/speech.ts';
 import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
@@ -169,6 +170,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerAudioFxTools(ctx);
 	registerSoundTools(ctx);
 	registerSoundDesignTools(ctx);
+	registerSoundCheckTools(ctx);
 	registerProposalTools(ctx);
 	registerCaptionTools(ctx);
 	registerSpeechTools(ctx);

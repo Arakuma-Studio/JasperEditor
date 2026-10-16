@@ -179,7 +179,11 @@ import {
 	VisionModelsResponseSchema,
 } from './roto.ts';
 import { SceneDetectRequestSchema } from './scenes.ts';
-import { SoundCheckRequestSchema, SoundVisualRequestSchema, SoundVisualResponseSchema } from './sound-check.ts';
+import {
+	SoundCheckRequestSchema,
+	SoundVisualRequestSchema,
+	SoundVisualResponseSchema,
+} from './sound-check.ts';
 import {
 	SfxRebalanceRequestSchema,
 	SoundCuesRequestSchema,

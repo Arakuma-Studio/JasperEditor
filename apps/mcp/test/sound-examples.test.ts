@@ -23,6 +23,7 @@ const SOUND_COMMANDS = [
 	'soundDesign.setPeak',
 	'soundDesign.applyGains',
 	'soundDesign.setAutoGain',
+	'soundDesign.setCheck',
 	'audio.volumeDip',
 	'soundDesign.applyStopBefore',
 	'soundDesign.applyBuild',

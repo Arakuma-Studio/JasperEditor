@@ -379,6 +379,18 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		clipIds: [{ clipAt: { track: 'A1', at: 30 } }],
 		auto: false,
 	},
+	// Phase 5: the summary of a Sound Check (sound_check store: true writes it; the full report is the job's result).
+	// mixHash / inputsHash are the hashes the check measured (`mixFingerprint`, `soundCheckInputsHash`).
+	'soundDesign.setCheck': {
+		type: 'soundDesign.setCheck',
+		summary: {
+			mixHash: '7f3a9c0e5b2d4a11',
+			verdict: 'warn',
+			counts: { MASKED: 1, warning: 1 },
+			at: '2026-10-16T12:00:00.000Z',
+			preset: 'web',
+		},
+	},
 	// Phase 4 mixing (spec 12 §2.4): a music dip on clips (minimum with their Volume; times in sequence flicks)…
 	'audio.volumeDip': {
 		type: 'audio.volumeDip',
