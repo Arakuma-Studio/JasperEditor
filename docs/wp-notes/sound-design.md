@@ -4742,8 +4742,8 @@ the AC-25 integrity fuzz (2 000 runs; more than RUNS / 50 accepted transactions 
   `sound-design-plan-mix` passes (its first plan took 966 s at load ≈ 100: its timeout now follows the load);
   `sound-design-plan-levels`' timing assertion (≤ 45 s) fails at load ≈ 140 (138 s). MCP after the merge: `sound-mix`,
   `conventions`, `readme-tools`, `sound-guide`, `sound-examples`, `sound-rebalance`, `sound-cues`, `fuzz` pass;
-  `proposals.test.ts` (whose plan-table header this package extends with a `mix` column) could not start its engine
-  within its 120 s at load 70–100 in three attempts — the new header is the one the real run printed.
+  `proposals.test.ts` (whose plan-table header this package extends with a `mix` column; `MCP_PROPOSALS_TEST_PORT=50511`)
+  could not start its engine within its 120 s at load 70–100 three times, then passed (5 of 5) at load ≈ 75.
 
 #### Limits and notes for the next packages
 
