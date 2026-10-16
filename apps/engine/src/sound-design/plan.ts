@@ -12,6 +12,7 @@
 //      to placement's default level), alternatives as command sets, `requires` linking it to its setup items;
 //   5. the proposal is created through the proposals service (validated by dry runs on the live document).
 // The selection (1–2) and the draft (4) are pure and exported for tests; the job does the I/O and reports progress.
+import { appendFile } from 'node:fs/promises';
 import {
 	mediaRegisterCommand,
 	type RegisterSoundResponse,
@@ -1224,7 +1225,12 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 	lap('proposal');
 	timing.total = Date.now() - tJob;
 	ctx.log(`timing ${JSON.stringify(timing)}`);
-	if (process.env.JASPER_SD_TIMING === '1') console.error(`[sound-design plan] timing ${JSON.stringify(timing)}`);
+	const timingOut = process.env.JASPER_SD_TIMING;
+	if (timingOut === '1') console.error(`[sound-design plan] timing ${JSON.stringify(timing)}`);
+	else if (timingOut?.startsWith('/'))
+		await appendFile(timingOut, `${JSON.stringify({ at: new Date().toISOString(), ...timing })}\n`).catch(
+			() => undefined,
+		);
 	const p = created.proposal;
 	const counts = { pending: 0, accepted: 0, rejected: 0, stale: 0, invalid: 0 };
 	for (const it of p.items) counts[it.state]++;
