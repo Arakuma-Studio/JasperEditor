@@ -253,7 +253,9 @@ export const SolverGainReportSchema = z.strictObject({
  * `report` (same keys) says why. Each clip's `sfx.level` becomes `{by: 'solver', gainDb, offsetDb (kept from its
  * previous level), targetLiftDb, achievedLiftDb, limitedBy, reason}`; a sound effect without `sfx` metadata (Essential
  * Sound type SFX only) just gets the gain. Clips must be sound effects (Essential Sound SFX or placed sounds) on
- * unlocked tracks. Result `{clips: [{clipId, fromDb, gainDb}]}`.
+ * unlocked tracks. A clip whose Auto gain is off (`level.manual`, `setAutoGain {auto: false}`) keeps its gain unless
+ * `override: true` (a rebalance the user asked for names it); it is listed in `skipped`. Result `{clips: [{clipId,
+ * fromDb, gainDb}], skipped?: [{clipId, reason}]}`.
  */
 export const SoundDesignApplyGainsCmd = cmd('soundDesign.applyGains', {
 	sequenceId: IdRefSchema.optional(),
@@ -267,16 +269,19 @@ export const SoundDesignApplyGainsCmd = cmd('soundDesign.applyGains', {
 		.record(GainClipKeySchema, SolverGainReportSchema)
 		.refine((g) => Object.keys(g).length <= APPLY_GAINS_MAX_CLIPS, `at most ${APPLY_GAINS_MAX_CLIPS} clips`)
 		.optional(),
+	/** Also solve clips whose Auto gain is off (the user asked for them by name). Default false: they are skipped. */
+	override: z.boolean().optional(),
 });
 
 /**
  * Auto gain of sound effects on or off (Essential Sound ▸ Sound Design ▸ "Auto gain", spec 12 §2.7). `auto: false`
  * keeps each clip's current gain as the user's own: its `sfx.level` (default or solver) stays for display and is marked
  * `manual`, so a rebalance (unless it names the clip), a delivery preset, a swap or a role change leave the gain alone.
- * `auto: true` hands it back: the level counts again while the gain still equals the recorded one (a gain changed since
- * stays the user's until a solve names the clip: `soundDesign.applyGains`, MCP `rebalance_sfx {clipIds}`). Clips without
- * a recorded level are left as they are. Clips must be sound effects (Essential Sound SFX or placed sounds) on unlocked
- * tracks. Result `{clips: [{clipId, owner}]}` (the gain owner after the change).
+ * `auto: true` hands it back (spec 12 §2.7: Auto gain on = the solver owns the gain): the clip's gain becomes its
+ * recorded level (the solver's or placement's default) again, also when the gain was changed by hand since. Clips
+ * without a recorded level are left as they are (`skipped`: rebalance to solve them). Clips must be sound effects
+ * (Essential Sound SFX or placed sounds) on unlocked tracks. Result `{clips: [{clipId, owner, skipped?}]}` (the gain
+ * owner after the change).
  */
 export const SoundDesignSetAutoGainCmd = cmd('soundDesign.setAutoGain', {
 	sequenceId: IdRefSchema.optional(),

@@ -175,8 +175,19 @@ describe('cue stop-before / build: written vs stored', () => {
 		expect(st.build.written?.start).toBe(90);
 		f.ok([{ type: 'soundCue.update', cueId: f.cueId, muted: true }]);
 		st = cueMixState(f.seq(), cuesOf(f.seq())[0]!);
+		// the record is kept suspended (writes: []): not written
+		expect(
+			(f.seq().soundDesign?.mix?.cues?.[f.cueId]?.stopBefore as { suspended?: boolean } | undefined)
+				?.suspended,
+		).toBe(true);
 		expect(st.stopBefore.written).toBeNull();
 		expect(st.stopBefore.why).toBe('The cue is muted');
+		expect(st.build.written).toBeNull();
+		// unmuted: written again where it was
+		f.ok([{ type: 'soundCue.update', cueId: f.cueId, muted: false }]);
+		st = cueMixState(f.seq(), cuesOf(f.seq())[0]!);
+		expect(st.stopBefore.written).toEqual({ start: 135, end: 150, places: ['A1 track volume'] });
+		expect(st.build.written?.places).toEqual(['A1 track filter']);
 	});
 
 	it('a filled cue with no music under it says so', () => {

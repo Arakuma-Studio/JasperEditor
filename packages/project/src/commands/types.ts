@@ -60,6 +60,8 @@ export const WARNING_CODES = [
 	'W_TRACKING_UNLINKED',
 	/** edit-structure × wp masks: a Track Matte Key's track did not come along into the other sequence (cleared). */
 	'W_TRACK_MATTE_CLEARED',
+	/** sound design: a cue's stop-before / build skipped a place (its track is locked, or its automation is too dense). */
+	'W_MIX_SKIPPED',
 ] as const;
 
 /** A problem report. `commandIndex` is -1 for transaction-level issues (invariants, revision). */

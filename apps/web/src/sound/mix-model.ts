@@ -11,6 +11,7 @@ import {
 	type AudioClip,
 	type Clip,
 	type ClipSfx,
+	cueMixWritten,
 	DELIVERY_PRESETS,
 	type DeliveryPreset,
 	musicTracksUnder,
@@ -308,7 +309,8 @@ export function cueMixState(seq: Sequence, cue: SoundCue): CueMixState {
 		fps > 0 && fin(seconds) && seconds > 0 ? { start: frame - seconds * fps, end: frame } : null;
 	const part = (kind: CueMixKind): CueMixPart => {
 		const spec = cue[kind];
-		const r = rec?.[kind];
+		// a muted cue's record is kept suspended (nothing written): stored only
+		const r = cueMixWritten(rec?.[kind]) ? rec?.[kind] : undefined;
 		const stored = spec ? span(cue.frame, spec.seconds) : null;
 		const w = r ? span(r.frame, r.seconds) : null;
 		const written = w && r ? { ...w, places: r.writes.map((x) => placeLabel(seq, x)) } : null;

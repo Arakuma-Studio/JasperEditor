@@ -111,19 +111,24 @@ describe('soundDesign.setAutoGain', () => {
 		// the automatic one followed the role and the delivery
 		expect(clipOf(h, b!).gainDb).not.toBe(gain);
 		expect(sfxGainOwner(clipOf(h, b!))).toBe('default');
-		h.ok([{ type: 'soundDesign.applyGains', gains: { [a!]: -9 } }]);
+		// a solve that does not name it on purpose (no override) leaves it: skipped, reported
+		const skip = h.ok([{ type: 'soundDesign.applyGains', gains: { [a!]: -9 } }]);
+		expect(skip.results[0]).toMatchObject({ clips: [], skipped: [{ clipId: a }] });
+		expect(clipOf(h, a!).gainDb).toBe(gain);
+		h.ok([{ type: 'soundDesign.applyGains', gains: { [a!]: -9 }, override: true }]);
 		expect(clipOf(h, a!).sfx!.level).toEqual({ by: 'solver', gainDb: -9, limitedBy: [] });
 		expect(sfxGainOwner(clipOf(h, a!))).toBe('solver');
 	});
 
-	it('on does not take back a gain the user changed since; clips without a level are left alone', () => {
+	it('on hands a gain the user changed since back to the recorded level (spec 12 §2.7); clips without a level are left alone', () => {
 		const h = new Harness();
 		const m = libMedia(h);
 		const [a] = placed(h.ok([{ type: 'soundDesign.place', frame: 40, layers: [{ mediaId: m }] }]));
+		const level = clipOf(h, a!).sfx!.level!.gainDb;
 		h.ok([{ type: 'audio.setGain', clipIds: [a!], mode: 'set', db: 2 }]);
 		const r = h.ok([{ type: 'soundDesign.setAutoGain', clipIds: [a!], auto: true }]);
-		expect(r.results[0]).toEqual({ clips: [{ clipId: a, owner: 'user' }] });
-		expect(clipOf(h, a!).gainDb).toBe(2);
+		expect(r.results[0]).toEqual({ clips: [{ clipId: a, owner: 'default' }] });
+		expect(clipOf(h, a!).gainDb).toBe(level);
 		// an Essential-SFX clip without sfx metadata: nothing to mark, accepted
 		const v = h.registerVideo({ audio: true });
 		const placedRefs = h.ok([
@@ -135,6 +140,18 @@ describe('soundDesign.setAutoGain', () => {
 		const before = clone(h.doc.sequences);
 		const r2 = h.ok([{ type: 'soundDesign.setAutoGain', clipIds: [c.id], auto: false }]);
 		expect(r2.results[0]).toEqual({ clips: [{ clipId: c.id, owner: 'user' }] });
+		expect(clone(h.doc.sequences)).toEqual(before);
+		// on: nothing to hand it to, reported
+		const r3 = h.ok([{ type: 'soundDesign.setAutoGain', clipIds: [c.id], auto: true }]);
+		expect(r3.results[0]).toEqual({
+			clips: [
+				{
+					clipId: c.id,
+					owner: 'user',
+					skipped: 'no recorded level to hand the gain to (rebalance to solve it)',
+				},
+			],
+		});
 		expect(clone(h.doc.sequences)).toEqual(before);
 	});
 

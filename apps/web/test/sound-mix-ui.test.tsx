@@ -230,6 +230,8 @@ describe('Essential Sound ▸ Auto gain', () => {
 						type: 'soundDesign.applyGains',
 						gains: { [req.clipIds![0]!]: -4.5 },
 						report: { [req.clipIds![0]!]: { targetLiftDb: 5, achievedLiftDb: 5, limitedBy: [] } },
+						// the engine's rebalance names the clip the user asked for: it solves an Auto-gain-off clip
+						override: true,
 					},
 				],
 				'Rebalance SFX Levels',
