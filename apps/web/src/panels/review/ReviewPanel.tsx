@@ -47,10 +47,10 @@ import { useEngineOrNull } from '../../state/engine.tsx';
 import type { PanelProps } from '../types.ts';
 import {
 	pinnedGroup,
-	REVIEW_HEADER_PX,
 	type ReviewListEntry,
 	type ReviewListLayout,
 	reviewListLayout,
+	reviewListMetrics,
 	reviewRowHeight,
 	scrollToShow,
 	visibleEntries,
@@ -146,7 +146,9 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 	const choose = (id: string) => focusItem(session, id, reveal);
 
 	// the list is virtualised: only the rows in view (and the current one) are in the DOM
-	const layout = useMemo(() => reviewListLayout(model, open), [model, open]);
+	// row heights follow the UI scale (the root font size the rem-based line heights use)
+	const remPx = rootFontPx();
+	const layout = useMemo(() => reviewListLayout(model, open, reviewListMetrics(remPx)), [model, open, remPx]);
 	const [view, setView] = useState({ top: 0, height: 0 });
 	const listShown = !!(activeId && proposal);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: the list element mounts when a review opens
@@ -172,7 +174,7 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 		const el = listRef.current;
 		const entry = layout.entries[layout.rowIndex[current] ?? -1];
 		if (!el || !entry) return;
-		const to = scrollToShow(entry, el.scrollTop, el.clientHeight || UNMEASURED_PX);
+		const to = scrollToShow(entry, el.scrollTop, el.clientHeight || UNMEASURED_PX, layout.metrics.header);
 		if (to !== null) {
 			el.scrollTop = to;
 			setView({ top: el.scrollTop, height: el.clientHeight });
@@ -350,6 +352,7 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 									seq={seq}
 									position={layout.entries[layout.rowIndex[row.item.id]!]!}
 									setSize={layout.rows}
+									metrics={layout.metrics}
 									current={row.item.id === current}
 									selected={selection.includes(row.item.id)}
 									readOnly={readOnly}
@@ -464,6 +467,13 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 /** Viewport height assumed before the list is measured (jsdom, the first render). */
 const UNMEASURED_PX = 480;
 
+/** The root font size in px (the UI scale; 12 when it cannot be read). */
+function rootFontPx(): number {
+	if (typeof document === 'undefined' || typeof getComputedStyle === 'undefined') return 12;
+	const v = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+	return Number.isFinite(v) && v > 0 ? v : 12;
+}
+
 /**
  * The visible part of the list: each group with rows in view is a WAI-ARIA group (labelled "Hero · 3") positioned at
  * its place, its header and rows inside it at theirs; the current row is always rendered (aria-activedescendant names
@@ -495,7 +505,7 @@ function VirtualRows(p: {
 				<div className="pointer-events-none sticky top-0 z-[2] h-0" aria-hidden="true">
 					<div
 						className="bg-pr-panel-alt px-2 text-pr-small font-semibold leading-5 text-pr-muted"
-						style={{ height: REVIEW_HEADER_PX }}
+						style={{ height: layout.metrics.header }}
 						data-review-pinned-group={pinned.id}
 					>
 						{pinned.label} · {pinned.rows.length}
@@ -595,6 +605,7 @@ function Row(p: {
 	/** Its place in the list (aria-posinset) and the rows in all (aria-setsize): the list is virtualised. */
 	position: ReviewListEntry;
 	setSize: number;
+	metrics: ReturnType<typeof reviewListMetrics>;
 	current: boolean;
 	selected: boolean;
 	readOnly: boolean;
@@ -668,7 +679,7 @@ function Row(p: {
 				p.current ? 'bg-pr-selected' : 'hover:bg-pr-hover'
 			} ${it.state === 'rejected' ? 'opacity-60' : ''}`}
 			style={{
-				height: reviewRowHeight(row, p.expanded),
+				height: reviewRowHeight(row, p.expanded, p.metrics),
 				...(p.current ? { boxShadow: 'inset 2px 0 0 var(--pr-focus-ring)' } : {}),
 			}}
 			data-review-row={it.id}
@@ -715,7 +726,7 @@ function Row(p: {
 					<span className={warn ? 'text-pr-warning' : 'text-pr-muted'}>{REVIEW_STATE_LABELS[it.state]}</span>
 				</span>
 			</div>
-			<div className="flex h-4 min-w-0 shrink-0 items-center gap-1.5 pl-[66px] text-pr-small leading-4 text-pr-muted">
+			<div className="flex h-[1.375rem] min-w-0 shrink-0 items-center gap-1.5 pl-[66px] text-pr-small leading-[1.375rem] text-pr-muted">
 				{row.role ? <span className="shrink-0">{row.role}</span> : null}
 				{row.gainDb !== null ? <span className="shrink-0 pr-tabular">{gainText(row.gainDb)}</span> : null}
 				{warn && problem ? (
@@ -729,7 +740,7 @@ function Row(p: {
 				) : null}
 			</div>
 			{row.setup.length ? (
-				<div className="shrink-0 pl-[66px] text-pr-small leading-4 text-pr-muted">
+				<div className="shrink-0 pl-[66px] text-pr-small leading-[1.375rem] text-pr-muted">
 					<button
 						type="button"
 						tabIndex={-1}
@@ -746,7 +757,7 @@ function Row(p: {
 					</button>
 					{p.expanded
 						? row.setup.map((s) => (
-								<div key={s.id} className="h-4 truncate pl-3" data-review-setup={s.id}>
+								<div key={s.id} className="h-[1.375rem] truncate pl-3" data-review-setup={s.id}>
 									{STATE_GLYPH[s.state]} {s.label}
 								</div>
 							))

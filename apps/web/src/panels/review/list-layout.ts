@@ -4,10 +4,20 @@
 // scroll position shows.
 import type { ReviewGroup, ReviewModel, ReviewRow } from '../../proposals/review.ts';
 
-/** Heights (CSS px) the rows are drawn at; the row component sets them explicitly. */
-export const REVIEW_HEADER_PX = 20;
-export const REVIEW_ROW_PX = 41;
-export const REVIEW_LINE_PX = 16;
+/**
+ * The heights the rows are drawn at, from the root font size (the UI scale): a row's first line is `h-5` (1.25 rem), its
+ * small-text lines `h-[1.375rem]`, with `py-0.5` and a 1 px border; a group header is 1.25 rem. The row component sets
+ * the same heights explicitly, so the stacked layout and what is drawn agree at every UI scale.
+ */
+export type ReviewListMetrics = { header: number; row: number; line: number };
+
+/** The metrics at a root font size in px (the editor's is 12 px; 14 px with the larger UI). */
+export function reviewListMetrics(remPx = 12): ReviewListMetrics {
+	const rem = Number.isFinite(remPx) && remPx > 0 ? remPx : 12;
+	const line = 1.375 * rem; // a small-text line (`h-[1.375rem]`, its own leading)
+	return { header: 1.25 * rem, row: 1.25 * rem + line + 0.25 * rem + 1, line };
+}
+
 /** Drawn beyond the visible part above and below (px). */
 export const REVIEW_OVERSCAN_PX = 480;
 
@@ -25,15 +35,24 @@ export type ReviewListLayout = {
 	rowIndex: Record<string, number>;
 	/** Rows in all (an option's `aria-setsize`). */
 	rows: number;
+	metrics: ReviewListMetrics;
 };
 
 /** The height of a row: two lines, plus the setup toggle line, plus one line per setup item when unfolded. */
-export function reviewRowHeight(row: ReviewRow, expanded: boolean): number {
-	if (!row.setup.length) return REVIEW_ROW_PX;
-	return REVIEW_ROW_PX + REVIEW_LINE_PX + (expanded ? row.setup.length * REVIEW_LINE_PX : 0);
+export function reviewRowHeight(
+	row: ReviewRow,
+	expanded: boolean,
+	m: ReviewListMetrics = reviewListMetrics(),
+): number {
+	if (!row.setup.length) return m.row;
+	return m.row + m.line + (expanded ? row.setup.length * m.line : 0);
 }
 
-export function reviewListLayout(model: ReviewModel, expanded: ReadonlySet<string>): ReviewListLayout {
+export function reviewListLayout(
+	model: ReviewModel,
+	expanded: ReadonlySet<string>,
+	m: ReviewListMetrics = reviewListMetrics(),
+): ReviewListLayout {
 	const entries: ReviewListEntry[] = [];
 	const groups: ReviewListLayout['groups'] = [];
 	const rowIndex: Record<string, number> = {};
@@ -41,17 +60,17 @@ export function reviewListLayout(model: ReviewModel, expanded: ReadonlySet<strin
 	let position = 0;
 	for (const group of model.groups) {
 		const groupTop = top;
-		entries.push({ kind: 'header', group, top, height: REVIEW_HEADER_PX });
-		top += REVIEW_HEADER_PX;
+		entries.push({ kind: 'header', group, top, height: m.header });
+		top += m.header;
 		for (const row of group.rows) {
-			const height = reviewRowHeight(row, expanded.has(row.item.id));
+			const height = reviewRowHeight(row, expanded.has(row.item.id), m);
 			rowIndex[row.item.id] = entries.length;
 			entries.push({ kind: 'row', group, row, top, height, position: position++ });
 			top += height;
 		}
 		groups.push({ group, top: groupTop, height: top - groupTop });
 	}
-	return { entries, total: top, groups, rowIndex, rows: position };
+	return { entries, total: top, groups, rowIndex, rows: position, metrics: m };
 }
 
 /** First entry whose bottom is below `y` (binary search over the stacked entries). */
@@ -87,7 +106,7 @@ export function scrollToShow(
 	entry: Pick<ReviewListEntry, 'top' | 'height'>,
 	scrollTop: number,
 	viewport: number,
-	stickyPx = REVIEW_HEADER_PX,
+	stickyPx = reviewListMetrics().header,
 ): number | null {
 	if (entry.top - stickyPx < scrollTop) return Math.max(0, entry.top - stickyPx);
 	if (viewport > 0 && entry.top + entry.height > scrollTop + viewport)

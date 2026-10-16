@@ -10,12 +10,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine.ts';
 import { registerAllCommands } from '../src/commands/index.ts';
-import {
-	REVIEW_HEADER_PX,
-	REVIEW_ROW_PX,
-	reviewListLayout,
-	visibleEntries,
-} from '../src/panels/review/list-layout.ts';
+import { reviewListLayout, reviewListMetrics, visibleEntries } from '../src/panels/review/list-layout.ts';
 import { ReviewPanel } from '../src/panels/review/ReviewPanel.tsx';
 import { buildReviewModel } from '../src/proposals/review.ts';
 import { storeProposal } from './review-helpers.ts';
@@ -82,9 +77,10 @@ describe(`Review panel with ${N} items`, { timeout: 300_000 }, () => {
 		const active = list.getAttribute('aria-activedescendant')!;
 		expect(document.getElementById(active)?.getAttribute('data-review-row')).toBe(last);
 		expect(document.getElementById(active)?.getAttribute('aria-posinset')).toBe(String(N));
-		expect(list.scrollTop).toBeGreaterThan((N - 30) * REVIEW_ROW_PX);
+		const m = reviewListMetrics(Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 12);
+		expect(list.scrollTop).toBeGreaterThan((N - 30) * m.row);
 		// scroll to the middle: the rows there are rendered, the first ones are not
-		const mid = REVIEW_HEADER_PX + Math.floor(N / 2) * REVIEW_ROW_PX;
+		const mid = m.header + Math.floor(N / 2) * m.row;
 		await act(async () => {
 			list.scrollTop = mid;
 			fireEvent.scroll(list);
@@ -151,9 +147,13 @@ describe(`Review panel with ${N} items`, { timeout: 300_000 }, () => {
 			meta: { frame: i * 10 },
 		}));
 		const model = buildReviewModel(items, null);
-		const layout = reviewListLayout(model, new Set());
+		const m = reviewListMetrics(12);
+		// at 12 px: a 1.25 rem first line + a 1.375 rem small-text line + py-0.5 + a 1 px border; the larger UI scales it
+		expect(m).toEqual({ header: 15, row: 35.5, line: 16.5 });
+		expect(reviewListMetrics(14).row).toBeCloseTo(41.25, 6);
+		const layout = reviewListLayout(model, new Set(), m);
 		expect(layout.rows).toBe(300);
-		expect(layout.total).toBe(model.groups.length * REVIEW_HEADER_PX + 300 * REVIEW_ROW_PX);
+		expect(layout.total).toBe(model.groups.length * m.header + 300 * m.row);
 		// entries are stacked without gaps
 		for (let i = 1; i < layout.entries.length; i++)
 			expect(layout.entries[i]!.top).toBe(layout.entries[i - 1]!.top + layout.entries[i - 1]!.height);
@@ -161,7 +161,7 @@ describe(`Review panel with ${N} items`, { timeout: 300_000 }, () => {
 		expect(layout.entries[start]!.top).toBeLessThanOrEqual(5000);
 		expect(layout.entries[start]!.top + layout.entries[start]!.height).toBeGreaterThan(5000);
 		expect(layout.entries[end - 1]!.top).toBeLessThan(5400);
-		expect(end - start).toBeLessThanOrEqual(Math.ceil(400 / REVIEW_HEADER_PX) + 1);
+		expect(end - start).toBeLessThanOrEqual(Math.ceil(400 / m.header) + 1);
 		expect(visibleEntries(layout, 1e9, 400, 0)).toEqual({
 			start: layout.entries.length,
 			end: layout.entries.length,
