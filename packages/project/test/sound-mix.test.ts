@@ -44,6 +44,9 @@ function addAudio(h: Harness, at: number, track: string, type: string | null, se
 	if (type) h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: type }]);
 	return id;
 }
+/** A transaction expected to be refused (its errors, typed loosely). */
+const txr = (h: Harness, commands: unknown[]) =>
+	h.tx(commands) as { ok: boolean; errors?: { code: string }[] };
 const clipOf = (h: Harness, id: string) => h.seq.clips[id] as Clip;
 const track = (h: Harness, label: string) => h.seq.audioTracks[Number(label.slice(1)) - 1]!;
 const trackVol = (h: Harness, label: string, t: number) => {
@@ -134,20 +137,21 @@ describe('audio.volumeDip', () => {
 		const v = h.registerVideo({ seconds: 5, audio: false });
 		const vr = h.ok([{ type: 'clip.place', source: { mediaId: v }, at: 0, tracks: { video: 'V1' } }]);
 		const vid = (vr.results[0] as { clipIds: string[] }).clipIds[0]!;
-		expect(h.tx([{ type: 'audio.volumeDip', clipIds: [vid], dips: [dip] }]).errors?.[0]?.code).toBe(
+		expect(txr(h, [{ type: 'audio.volumeDip', clipIds: [vid], dips: [dip] }]).errors?.[0]?.code).toBe(
 			'E_INVALID_PARAM',
 		);
-		expect(h.tx([{ type: 'audio.volumeDip', clipIds: ['clp_nope'], dips: [dip] }]).errors?.[0]?.code).toBe(
+		expect(txr(h, [{ type: 'audio.volumeDip', clipIds: ['clp_nope'], dips: [dip] }]).errors?.[0]?.code).toBe(
 			'E_NOT_FOUND',
 		);
 		expect(
-			h.tx([{ type: 'audio.volumeDip', clipIds: [music], dips: [{ ...dip, depthDb: 3 }] }]).errors?.[0]?.code,
+			txr(h, [{ type: 'audio.volumeDip', clipIds: [music], dips: [{ ...dip, depthDb: 3 }] }]).errors?.[0]
+				?.code,
 		).toBe('E_SCHEMA');
 		expect(
-			h.tx([{ type: 'audio.volumeDip', clipIds: [music], dips: [{ ...dip, end: 1 }] }]).errors?.[0]?.code,
+			txr(h, [{ type: 'audio.volumeDip', clipIds: [music], dips: [{ ...dip, end: 1 }] }]).errors?.[0]?.code,
 		).toBe('E_SCHEMA');
 		h.ok([{ type: 'track.update', trackId: track(h, 'A1').id, patch: { locked: true } }]);
-		expect(h.tx([{ type: 'audio.volumeDip', clipIds: [music], dips: [dip] }]).errors?.[0]?.code).toBe(
+		expect(txr(h, [{ type: 'audio.volumeDip', clipIds: [music], dips: [dip] }]).errors?.[0]?.code).toBe(
 			'E_TRACK_LOCKED',
 		);
 	});
@@ -462,13 +466,13 @@ describe('soundDesign.applyStopBefore', () => {
 		});
 		// refusals
 		expect(
-			h.tx([{ type: 'soundDesign.applyStopBefore', cueId: 'cue_0000000000000000' }]).errors?.[0]?.code,
+			txr(h, [{ type: 'soundDesign.applyStopBefore', cueId: 'cue_0000000000000000' }]).errors?.[0]?.code,
 		).toBe('E_NOT_FOUND');
 		h.ok([{ type: 'track.update', trackId: track(h, 'A1').id, patch: { locked: true } }]);
-		expect(h.tx([{ type: 'soundDesign.applyStopBefore', cueId: cue }]).errors?.[0]?.code).toBe(
+		expect(txr(h, [{ type: 'soundDesign.applyStopBefore', cueId: cue }]).errors?.[0]?.code).toBe(
 			'E_TRACK_LOCKED',
 		);
-		expect(h.tx([{ type: 'soundDesign.applyStopBefore', cueId: cue, bogus: 1 }]).errors?.[0]?.code).toBe(
+		expect(txr(h, [{ type: 'soundDesign.applyStopBefore', cueId: cue, bogus: 1 }]).errors?.[0]?.code).toBe(
 			'E_SCHEMA',
 		);
 	});
@@ -541,12 +545,12 @@ describe('soundDesign.applyBuild', () => {
 		expect(h.ok([{ type: 'soundDesign.applyBuild', cueId: none }]).results[0]).toMatchObject({
 			applied: false,
 		});
-		expect(h.tx([{ type: 'soundDesign.applyBuild', cueId: 'cue_0000000000000000' }]).errors?.[0]?.code).toBe(
-			'E_NOT_FOUND',
-		);
+		expect(
+			txr(h, [{ type: 'soundDesign.applyBuild', cueId: 'cue_0000000000000000' }]).errors?.[0]?.code,
+		).toBe('E_NOT_FOUND');
 		h.ok([{ type: 'track.update', trackId: track(h, 'A1').id, patch: { locked: true } }]);
 		h.ok([{ type: 'soundCue.update', cueId: cue, build: { seconds: 2, fromHz: 150, toHz: 2000 } }]);
-		expect(h.tx([{ type: 'soundDesign.applyBuild', cueId: cue }]).errors?.[0]?.code).toBe('E_TRACK_LOCKED');
+		expect(txr(h, [{ type: 'soundDesign.applyBuild', cueId: cue }]).errors?.[0]?.code).toBe('E_TRACK_LOCKED');
 	});
 });
 
@@ -648,16 +652,16 @@ describe('soundDesign.ensureBus / removeBus (room glue)', () => {
 		h.ok([{ type: 'soundDesign.removeBus' }]);
 		expect(h.seq.submixTracks!.map((x) => x.id)).toEqual([adopted]);
 		expect(h.seq.audioTracks.every((x) => (x.mixer?.sends ?? []).length === 0)).toBe(true);
-		expect(h.tx([{ type: 'soundDesign.ensureBus', sfxTracks: ['A9'] }]).errors?.[0]?.code).toBe(
+		expect(txr(h, [{ type: 'soundDesign.ensureBus', sfxTracks: ['A9'] }]).errors?.[0]?.code).toBe(
 			'E_NOT_FOUND',
 		);
-		expect(h.tx([{ type: 'soundDesign.ensureBus', sfxTracks: ['V1'] }]).errors?.[0]?.code).toBe(
+		expect(txr(h, [{ type: 'soundDesign.ensureBus', sfxTracks: ['V1'] }]).errors?.[0]?.code).toBe(
 			'E_TRACK_KIND',
 		);
-		expect(h.tx([{ type: 'soundDesign.ensureBus', roomGlue: { decay: 99 } }]).errors?.[0]?.code).toBe(
+		expect(txr(h, [{ type: 'soundDesign.ensureBus', roomGlue: { decay: 99 } }]).errors?.[0]?.code).toBe(
 			'E_SCHEMA',
 		);
-		expect(h.tx([{ type: 'soundDesign.ensureBus', sequenceId: 'seq_nope' }]).errors?.[0]?.code).toBe(
+		expect(txr(h, [{ type: 'soundDesign.ensureBus', sequenceId: 'seq_nope' }]).errors?.[0]?.code).toBe(
 			'E_NOT_FOUND',
 		);
 	});
@@ -748,11 +752,11 @@ describe('soundDesign.applyDelivery', () => {
 		expect(res.matched[untyped]).toEqual({ skipped: 'no audio type' });
 		expect(h.seq.master.loudness?.enabled ?? false).toBe(false);
 		expect(
-			h.tx([{ type: 'soundDesign.applyDelivery', delivery: 'podcast', measuredLufs: { clp_nope: -20 } }])
+			txr(h, [{ type: 'soundDesign.applyDelivery', delivery: 'podcast', measuredLufs: { clp_nope: -20 } }])
 				.errors?.[0]?.code,
 		).toBe('E_NOT_FOUND');
 		expect(
-			h.tx([
+			txr(h, [
 				{
 					type: 'soundDesign.applyDelivery',
 					delivery: 'podcast',
@@ -760,12 +764,12 @@ describe('soundDesign.applyDelivery', () => {
 				},
 			]).errors?.[0]?.code,
 		).toBe('E_INVALID_PARAM');
-		expect(h.tx([{ type: 'soundDesign.applyDelivery', delivery: 'cinema' }]).errors?.[0]?.code).toBe(
+		expect(txr(h, [{ type: 'soundDesign.applyDelivery', delivery: 'cinema' }]).errors?.[0]?.code).toBe(
 			'E_SCHEMA',
 		);
 		h.ok([{ type: 'track.update', trackId: track(h, 'A1').id, patch: { locked: true } }]);
 		expect(
-			h.tx([{ type: 'soundDesign.applyDelivery', delivery: 'web', measuredLufs: { [music]: -20 } }])
+			txr(h, [{ type: 'soundDesign.applyDelivery', delivery: 'web', measuredLufs: { [music]: -20 } }])
 				.errors?.[0]?.code,
 		).toBe('E_TRACK_LOCKED');
 	});
@@ -878,7 +882,7 @@ describe('a locked music track never makes a cue edit fail', () => {
 		expect(track(h, 'A1').volumeDb).toEqual(written);
 		expect(sd(h)!.mix!.cues![cue]!.stopBefore!.frame).toBe(120);
 		// explicit re-apply is refused while locked
-		expect(h.tx([{ type: 'soundDesign.applyStopBefore', cueId: cue }]).errors?.[0]?.code).toBe(
+		expect(txr(h, [{ type: 'soundDesign.applyStopBefore', cueId: cue }]).errors?.[0]?.code).toBe(
 			'E_TRACK_LOCKED',
 		);
 		// unlocked, the next edit catches up (the dip follows the cue to 200)
