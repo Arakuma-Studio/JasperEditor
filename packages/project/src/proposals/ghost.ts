@@ -124,7 +124,9 @@ export function previewProposal(
 	for (const it of closure) {
 		const missing = it.requires.find((r) => failed[r]);
 		if (missing) {
-			failed[it.id] = [{ commandIndex: -1, code: 'E_NOT_FOUND', message: `requires item ${missing}, which failed` }];
+			failed[it.id] = [
+				{ commandIndex: -1, code: 'E_NOT_FOUND', message: `requires item ${missing}, which failed` },
+			];
 			continue;
 		}
 		const commands = selectedCommands(it).map((c) => substituteKnownRefs(c, refs));

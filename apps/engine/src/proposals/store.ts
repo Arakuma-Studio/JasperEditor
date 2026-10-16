@@ -8,7 +8,13 @@ import { existsSync } from 'node:fs';
 import { readdir, readFile, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AppdirPaths } from '@jasper/config';
-import { PROPOSAL_ID_RE, PROPOSAL_LIMITS, type Proposal, ProposalSchema, proposalDecided } from '@jasper/project';
+import {
+	PROPOSAL_ID_RE,
+	PROPOSAL_LIMITS,
+	type Proposal,
+	ProposalSchema,
+	proposalDecided,
+} from '@jasper/project';
 import { atomicWriteFile } from '../tools/fs.ts';
 import { KeyedMutex } from '../tools/mutex.ts';
 import { HttpError } from '../tools/reply.ts';
@@ -141,7 +147,9 @@ export class ProposalStore {
 			}
 			out.push(p);
 		}
-		out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : a.id < b.id ? 1 : -1));
+		out.sort((a, b) =>
+			a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : a.id < b.id ? 1 : -1,
+		);
 		return { proposals: out, warnings };
 	}
 

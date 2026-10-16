@@ -22,7 +22,10 @@ const doc = createEmptyProject({ ids: createCounterIdSource(5), name: 'Fuzz', pr
 const seqId = Object.keys(doc.sequences)[0]!;
 const file = appdirPaths(app.appdir).projectFile(doc.projectId);
 mkdirSync(join(file, '..'), { recursive: true });
-writeFileSync(file, JSON.stringify(makeEnvelope(doc, { revision: 1, savedAt: '2026-10-01T00:00:00.000Z', platform: 'test' })));
+writeFileSync(
+	file,
+	JSON.stringify(makeEnvelope(doc, { revision: 1, savedAt: '2026-10-01T00:00:00.000Z', platform: 'test' })),
+);
 const base = `/api/projects/${doc.projectId}/proposals`;
 
 const draft = {
@@ -30,14 +33,22 @@ const draft = {
 	title: 'Fuzz',
 	sequenceId: seqId,
 	items: [
-		{ id: 'a', label: 'A', commands: [{ type: 'marker.add', frame: 3, name: 'm' }], group: 'hero', meta: { why: 1 } },
+		{
+			id: 'a',
+			label: 'A',
+			commands: [{ type: 'marker.add', frame: 3, name: 'm' }],
+			group: 'hero',
+			meta: { why: 1 },
+		},
 		{ id: 't', label: 'T', commands: [{ type: 'track.add', kind: 'audio', ref: '$t' }] },
 		{
 			id: 'u',
 			label: 'U',
 			requires: ['t'],
 			commands: [{ type: 'track.update', trackId: '$t', patch: { mute: true } }],
-			alternatives: [{ label: 'solo', commands: [{ type: 'track.update', trackId: '$t', patch: { solo: true } }] }],
+			alternatives: [
+				{ label: 'solo', commands: [{ type: 'track.update', trackId: '$t', patch: { solo: true } }] },
+			],
 		},
 	],
 };
@@ -94,7 +105,10 @@ describeFuzz(
 				{ path: 'reopen', body: { itemIds: 'all' } },
 			],
 			async (input) => {
-				const { path, body } = (input && typeof input === 'object' ? input : {}) as { path?: unknown; body?: unknown };
+				const { path, body } = (input && typeof input === 'object' ? input : {}) as {
+					path?: unknown;
+					body?: unknown;
+				};
 				const p = ['reject', 'note', 'select', 'reopen'].includes(String(path)) ? String(path) : 'reject';
 				checked(ProposalDecisionResponseSchema)(await call('POST', `${one}/${p}`, body));
 				checked(ProposalResponseSchema)(await call('GET', `${one}?revalidate=1`));

@@ -2,7 +2,9 @@
 // document: rejecting leaves it identical, accepting is recorded after the composed transaction applied.
 import { PROPOSAL_LIMITS, type Proposal, type ProposalIssue, type ProposalItem } from './schema.ts';
 
-export type DecisionResult = { ok: true; proposal: Proposal; changed: string[] } | { ok: false; errors: ProposalIssue[] };
+export type DecisionResult =
+	| { ok: true; proposal: Proposal; changed: string[] }
+	| { ok: false; errors: ProposalIssue[] };
 
 function withItems(p: Proposal, map: (it: ProposalItem) => ProposalItem, now: string): DecisionResult {
 	const changed: string[] = [];
@@ -33,8 +35,8 @@ export function markAccepted(
 	applied: { revision: number; refs: Record<string, string>; at: string },
 ): Proposal {
 	const ids = new Set(itemIds);
-	const items = p.items.map((it): ProposalItem =>
-		ids.has(it.id) ? { ...stripReason(it), state: 'accepted', applied } : it,
+	const items = p.items.map(
+		(it): ProposalItem => (ids.has(it.id) ? { ...stripReason(it), state: 'accepted', applied } : it),
 	);
 	return ids.size ? { ...p, items, updatedAt: applied.at } : p;
 }
@@ -98,7 +100,13 @@ export function setItemNote(p: Proposal, itemId: string, note: string | null, no
 	if (note !== null && note.length > PROPOSAL_LIMITS.maxNote)
 		return {
 			ok: false,
-			errors: [{ code: 'E_INVALID_PARAM', message: `A note holds at most ${PROPOSAL_LIMITS.maxNote} characters`, itemId }],
+			errors: [
+				{
+					code: 'E_INVALID_PARAM',
+					message: `A note holds at most ${PROPOSAL_LIMITS.maxNote} characters`,
+					itemId,
+				},
+			],
 		};
 	return withItems(
 		p,
@@ -119,7 +127,12 @@ export function setItemNote(p: Proposal, itemId: string, note: string | null, no
  * Selects the command set an undecided item applies: 0 = its own, k ≥ 1 = `alternatives[k − 1]`. The caller
  * validates the new set against the document (`dryRunCommands`) before storing it.
  */
-export function selectAlternative(p: Proposal, itemId: string, alternative: number, now: string): DecisionResult {
+export function selectAlternative(
+	p: Proposal,
+	itemId: string,
+	alternative: number,
+	now: string,
+): DecisionResult {
 	const errors = unknownIds(p, [itemId]);
 	if (errors.length) return { ok: false, errors };
 	const it = p.items.find((x) => x.id === itemId)!;

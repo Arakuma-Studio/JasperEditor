@@ -4,14 +4,19 @@
 // the 50-proposal limit, concurrency, and deletion with the project.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AGENT_NAME_HEADER, type EventEnvelope, ProposalAcceptResponseSchema, ProposalCreateResponseSchema } from '@jasper/api';
+import {
+	AGENT_NAME_HEADER,
+	type EnvelopeJson,
+	type EventEnvelope,
+	ProposalAcceptResponseSchema,
+	ProposalCreateResponseSchema,
+} from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
 import {
 	applyTransaction,
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
-	type EnvelopeJson,
 	loadProject,
 	makeEnvelope,
 	type ProjectDocument,
@@ -56,7 +61,10 @@ function seed(app: App, opts: { agentsMayApply?: boolean } = {}) {
 	doc = r.document;
 	const file = appdirPaths(app.appdir).projectFile(doc.projectId);
 	mkdirSync(join(file, '..'), { recursive: true });
-	writeFileSync(file, JSON.stringify(makeEnvelope(doc, { revision: 3, savedAt: '2026-10-01T00:00:00.000Z', platform: 'test' })));
+	writeFileSync(
+		file,
+		JSON.stringify(makeEnvelope(doc, { revision: 3, savedAt: '2026-10-01T00:00:00.000Z', platform: 'test' })),
+	);
 	return { projectId: doc.projectId, seqId, file };
 }
 
@@ -85,14 +93,27 @@ function draft(seqId: string, extra: Record<string, unknown> = {}) {
 		sequenceId: seqId,
 		items: [
 			{ id: 'cut', label: 'Hit on the cut', group: 'hero', commands: [cue(30)], meta: { why: 'cut' } },
-			{ id: 'mk', label: 'Rename the hit', commands: [{ type: 'marker.update', markerId: MARKER, name: 'Boom' }] },
-			{ id: 'trk', label: 'SFX track', commands: [{ type: 'track.add', kind: 'audio', name: 'SFX 1', ref: '$sfx' }] },
+			{
+				id: 'mk',
+				label: 'Rename the hit',
+				commands: [{ type: 'marker.update', markerId: MARKER, name: 'Boom' }],
+			},
+			{
+				id: 'trk',
+				label: 'SFX track',
+				commands: [{ type: 'track.add', kind: 'audio', name: 'SFX 1', ref: '$sfx' }],
+			},
 			{
 				id: 'mute',
 				label: 'Mute it',
 				requires: ['trk'],
 				commands: [{ type: 'track.update', trackId: '$sfx', patch: { mute: true } }],
-				alternatives: [{ label: 'Solo instead', commands: [{ type: 'track.update', trackId: '$sfx', patch: { solo: true } }] }],
+				alternatives: [
+					{
+						label: 'Solo instead',
+						commands: [{ type: 'track.update', trackId: '$sfx', patch: { solo: true } }],
+					},
+				],
 			},
 		],
 		...extra,
@@ -108,8 +129,18 @@ async function create(app: App, projectId: string, d: unknown, headers: Record<s
 	if (r.statusCode !== 200) throw new Error(r.body);
 	return ProposalCreateResponseSchema.parse(r.json()).proposal as Proposal;
 }
-async function agentTx(app: App, projectId: string, commands: unknown[], headers: Record<string, string> = HOST) {
-	const r = await post(app, '/api/agent/tx', { projectId, transaction: { label: 'User edit', origin: { agent: 'other' }, commands } }, headers);
+async function agentTx(
+	app: App,
+	projectId: string,
+	commands: unknown[],
+	headers: Record<string, string> = HOST,
+) {
+	const r = await post(
+		app,
+		'/api/agent/tx',
+		{ projectId, transaction: { label: 'User edit', origin: { agent: 'other' }, commands } },
+		headers,
+	);
 	expect(r.statusCode).toBe(200);
 	return r.json() as { result: TransactionResult };
 }
@@ -139,7 +170,9 @@ describe('proposal routes (headless)', () => {
 		const list = await app.inject({ method: 'GET', url: base(projectId), headers: HOST });
 		expect(list.statusCode).toBe(200);
 		expect(list.json()).toMatchObject({
-			proposals: [{ id: p.id, itemCount: 4, counts: { pending: 4 }, decided: false, feature: 'sound-design' }],
+			proposals: [
+				{ id: p.id, itemCount: 4, counts: { pending: 4 }, decided: false, feature: 'sound-design' },
+			],
 			warnings: [],
 		});
 		const got = await app.inject({ method: 'GET', url: `${base(projectId)}/${p.id}`, headers: HOST });
@@ -164,7 +197,13 @@ describe('proposal routes (headless)', () => {
 		]);
 		const bad = [
 			[{ title: 'x', items: [] }, 400],
-			[{ ...draft(seqId), items: [{ id: 'a', label: 'A', commands: [{ type: 'marker.add', frame: 1, frme: 2 }] }] }, 400],
+			[
+				{
+					...draft(seqId),
+					items: [{ id: 'a', label: 'A', commands: [{ type: 'marker.add', frame: 1, frme: 2 }] }],
+				},
+				400,
+			],
 			[{ ...draft(seqId), sequenceId: 'seq_00000000000NOPE1' }, 400],
 			[{ ...draft(seqId), extra: 1 }, 400],
 			['nope', 400],
@@ -178,7 +217,11 @@ describe('proposal routes (headless)', () => {
 		expect([unknown.statusCode, unknown.json().code]).toEqual([404, 'PROJECT_NOT_FOUND']);
 		const badId = await app.inject({ method: 'GET', url: `${base(projectId)}/..%2F..%2Fx`, headers: HOST });
 		expect([badId.statusCode, badId.json().code]).toEqual([404, 'PROPOSAL_NOT_FOUND']);
-		const missing = await app.inject({ method: 'GET', url: `${base(projectId)}/prp_0000000000000000`, headers: HOST });
+		const missing = await app.inject({
+			method: 'GET',
+			url: `${base(projectId)}/prp_0000000000000000`,
+			headers: HOST,
+		});
 		expect(missing.statusCode).toBe(404);
 	});
 
@@ -198,12 +241,21 @@ describe('proposal routes (headless)', () => {
 		expect(revision).toBe(4);
 		const seq = doc.sequences[seqId]!;
 		expect(seq.markers.find((m) => m.id === MARKER)!.name).toBe('Boom');
-		expect(Object.values((seq as { soundDesign?: { cues: Record<string, { frame: number }> } }).soundDesign!.cues).map((c) => c.frame)).toEqual([30]);
+		expect(
+			Object.values(
+				(seq as { soundDesign?: { cues: Record<string, { frame: number }> } }).soundDesign!.cues,
+			).map((c) => c.frame),
+		).toEqual([30]);
 		const sfx = seq.audioTracks.find((t) => t.name === 'SFX 1')!;
 		expect(sfx.mute).toBe(true);
 		expect(body.proposal.items.every((i) => i.state === 'accepted')).toBe(true);
 		expect(body.proposal.items[2]!.applied).toMatchObject({ revision: 4, refs: { $sfx: sfx.id } });
-		const change = ev.at(-1)!.payload as { change: string; itemIds: string[]; revision: number; counts: object };
+		const change = ev.at(-1)!.payload as {
+			change: string;
+			itemIds: string[];
+			revision: number;
+			counts: object;
+		};
 		expect(change).toMatchObject({ change: 'accepted', revision: 4, counts: { accepted: 4, pending: 0 } });
 		// accepting again applies nothing
 		const again = await post(app, `${base(projectId)}/${p.id}/accept`, { itemIds: ['cut'] });
@@ -221,20 +273,40 @@ describe('proposal routes (headless)', () => {
 		expect(strict.statusCode).toBe(409);
 		expect(strict.json()).toMatchObject({
 			code: 'PROPOSAL_STALE',
-			detail: { code: 'E_PROPOSAL_STALE', stale: [{ itemId: 'mk', reason: `${MARKER} changed since the proposal was made (frame 100 → 120)` }] },
+			detail: {
+				code: 'E_PROPOSAL_STALE',
+				stale: [{ itemId: 'mk', reason: `${MARKER} changed since the proposal was made (frame 100 → 120)` }],
+			},
 		});
 		expect(saved(file).revision).toBe(4); // nothing applied
 		const stored = await app.inject({ method: 'GET', url: `${base(projectId)}/${p.id}`, headers: HOST });
 		expect(stored.json().proposal.items[1].state).toBe('stale');
-		const partial = await post(app, `${base(projectId)}/${p.id}/accept`, { itemIds: ['mute', 'mk'], partial: true });
+		const partial = await post(app, `${base(projectId)}/${p.id}/accept`, {
+			itemIds: ['mute', 'mk'],
+			partial: true,
+		});
 		expect(partial.statusCode, partial.body).toBe(200);
-		expect(partial.json()).toMatchObject({ applied: ['trk', 'mute'], added: ['trk'], stale: [{ itemId: 'mk' }], revision: 5 });
+		expect(partial.json()).toMatchObject({
+			applied: ['trk', 'mute'],
+			added: ['trk'],
+			stale: [{ itemId: 'mk' }],
+			revision: 5,
+		});
 		expect(partial.json().result.ok).toBe(true);
 		// moved back: the item is pending again on revalidation and can be accepted
 		await agentTx(app, projectId, [{ type: 'marker.update', markerId: MARKER, frame: 100 }]);
-		const rv = await app.inject({ method: 'GET', url: `${base(projectId)}/${p.id}?revalidate=1`, headers: HOST });
+		const rv = await app.inject({
+			method: 'GET',
+			url: `${base(projectId)}/${p.id}?revalidate=1`,
+			headers: HOST,
+		});
 		expect(rv.json()).toMatchObject({ revision: 6 });
-		expect(rv.json().proposal.items.map((i: { state: string }) => i.state)).toEqual(['pending', 'pending', 'accepted', 'accepted']);
+		expect(rv.json().proposal.items.map((i: { state: string }) => i.state)).toEqual([
+			'pending',
+			'pending',
+			'accepted',
+			'accepted',
+		]);
 		const rest = await post(app, `${base(projectId)}/${p.id}/accept`, { itemIds: 'all' });
 		expect(rest.json()).toMatchObject({ applied: ['cut', 'mk'], revision: 7 });
 		const bad = await post(app, `${base(projectId)}/${p.id}/accept`, { itemIds: ['zz'] });
@@ -249,15 +321,29 @@ describe('proposal routes (headless)', () => {
 			title: 'T',
 			sequenceId: seqId,
 			items: [
-				{ id: 'a2', label: 'Name A2', commands: [{ type: 'track.update', trackId: 'A2', patch: { name: 'Music' } }] },
+				{
+					id: 'a2',
+					label: 'Name A2',
+					commands: [{ type: 'track.update', trackId: 'A2', patch: { name: 'Music' } }],
+				},
 				{ id: 'm', label: 'Marker', commands: [{ type: 'marker.add', frame: 7, name: 'x' }] },
 			],
 		});
-		const ahead = await post(app, `${base(projectId)}/${p.id}/accept`, { itemIds: 'all', expectedRevision: 99 });
-		expect([ahead.statusCode, ahead.json().code, ahead.json().detail.code]).toEqual([409, 'REVISION_CONFLICT', 'E_REVISION_MISMATCH']);
+		const ahead = await post(app, `${base(projectId)}/${p.id}/accept`, {
+			itemIds: 'all',
+			expectedRevision: 99,
+		});
+		expect([ahead.statusCode, ahead.json().code, ahead.json().detail.code]).toEqual([
+			409,
+			'REVISION_CONFLICT',
+			'E_REVISION_MISMATCH',
+		]);
 		// someone renames A2 after the reviewer looked at revision 3
 		await agentTx(app, projectId, [{ type: 'track.update', trackId: 'A2', patch: { name: 'Dialogue' } }]);
-		const conflict = await post(app, `${base(projectId)}/${p.id}/accept`, { itemIds: ['a2'], expectedRevision: 3 });
+		const conflict = await post(app, `${base(projectId)}/${p.id}/accept`, {
+			itemIds: ['a2'],
+			expectedRevision: 3,
+		});
 		expect([conflict.statusCode, conflict.json().code, conflict.json().detail.code]).toEqual([
 			409,
 			'REVISION_CONFLICT',
@@ -296,7 +382,12 @@ describe('proposal routes (headless)', () => {
 		expect([noReject.statusCode, noReject.json().detail.code]).toEqual([400, 'E_INVALID_PARAM']);
 		// After the user undoes the accept, the review reopens with the note and the selection intact.
 		const re = await post(app, `${url}/reopen`, { itemIds: 'all' });
-		expect(re.json().proposal.items.map((i: { state: string }) => i.state)).toEqual(['pending', 'pending', 'pending', 'pending']);
+		expect(re.json().proposal.items.map((i: { state: string }) => i.state)).toEqual([
+			'pending',
+			'pending',
+			'pending',
+			'pending',
+		]);
 		expect(re.json().proposal.items[0].note).toBe('too early');
 		expect(re.json().proposal.items[3].selectedAlternative).toBe(1);
 		const del = await app.inject({ method: 'DELETE', url, headers: HOST });
@@ -316,11 +407,20 @@ describe('proposal routes (headless)', () => {
 	it('keeps at most 50 proposals: refuses while all are under review, then evicts the oldest decided one', async () => {
 		const app = await makeApp();
 		const { projectId, seqId } = seed(app);
-		const small = { feature: 'sound-design', title: 'P', sequenceId: seqId, items: [{ id: 'a', label: 'A', commands: [cue(3)] }] };
+		const small = {
+			feature: 'sound-design',
+			title: 'P',
+			sequenceId: seqId,
+			items: [{ id: 'a', label: 'A', commands: [cue(3)] }],
+		};
 		const made: Proposal[] = [];
 		for (let i = 0; i < 50; i++) made.push(await create(app, projectId, small));
 		const full = await post(app, base(projectId), small);
-		expect([full.statusCode, full.json().code, full.json().detail.code]).toEqual([409, 'PROPOSAL_LIMIT', 'E_PROPOSAL_LIMIT']);
+		expect([full.statusCode, full.json().code, full.json().detail.code]).toEqual([
+			409,
+			'PROPOSAL_LIMIT',
+			'E_PROPOSAL_LIMIT',
+		]);
 		await post(app, `${base(projectId)}/${made[7]!.id}/reject`, { itemIds: 'all' });
 		const next = await post(app, base(projectId), small);
 		expect(next.statusCode).toBe(200);
@@ -383,19 +483,28 @@ async function liveEditor(app: App, projectId: string, file: string, headers: Re
 		if (m.type === 'welcome') welcome();
 		if (m.type === 'event' && m.event === 'agent.approval.requested') cards.push(m.payload as never);
 		if (m.type !== 'request') return;
-		const payload = m.payload as { query?: string; transaction?: Record<string, unknown>; approved?: boolean; asUser?: boolean };
+		const payload = m.payload as {
+			query?: string;
+			transaction?: Record<string, unknown>;
+			approved?: boolean;
+			asUser?: boolean;
+		};
 		if (m.kind === 'query') {
 			ws.send(JSON.stringify({ type: 'response', id: m.id, result: { result: doc, revision } }));
 			return;
 		}
 		txs.push(payload as Msg);
 		const t = payload.transaction!;
-		const r = applyTransaction(doc, { ...t, ...(payload.asUser ? { origin: 'user' } : {}) }, {
-			ids,
-			now: () => '2026-10-16T00:00:00.000Z',
-			revision,
-			registries: defaultRegistries(),
-		});
+		const r = applyTransaction(
+			doc,
+			{ ...t, ...(payload.asUser ? { origin: 'user' } : {}) },
+			{
+				ids,
+				now: () => '2026-10-16T00:00:00.000Z',
+				revision,
+				registries: defaultRegistries(),
+			},
+		);
 		if (r.result.ok && r.document !== doc) {
 			doc = r.document;
 			revision = r.result.revision;
@@ -405,7 +514,13 @@ async function liveEditor(app: App, projectId: string, file: string, headers: Re
 	ws.send(JSON.stringify({ type: 'hello', projectId, sessionId: 'ses_live', leaseId: 'lease_live' }));
 	await welcomed;
 	const answer = (card: { approvalId: string; answerKey: string }, decision: 'approved' | 'denied') =>
-		ws.send(JSON.stringify({ type: 'event', event: 'agent.approval.resolve', payload: { approvalId: card.approvalId, decision, answerKey: card.answerKey } }));
+		ws.send(
+			JSON.stringify({
+				type: 'event',
+				event: 'agent.approval.resolve',
+				payload: { approvalId: card.approvalId, decision, answerKey: card.answerKey },
+			}),
+		);
 	return {
 		ws,
 		txs,
@@ -437,10 +552,18 @@ describe('accept policy: agents vs the editor window', () => {
 		expect(forged.author).toEqual({ agent: 'sound-agent' });
 		const refused = await post(app, `${base(projectId)}/${p.id}/accept`, { itemIds: 'all' }, AGENT_H);
 		expect(refused.statusCode).toBe(403);
-		expect(refused.json()).toMatchObject({ code: 'APPROVAL_REQUIRED', detail: { code: 'E_APPROVAL_REQUIRED', feature: 'sound-design' } });
+		expect(refused.json()).toMatchObject({
+			code: 'APPROVAL_REQUIRED',
+			detail: { code: 'E_APPROVAL_REQUIRED', feature: 'sound-design' },
+		});
 		expect(saved(file).revision).toBe(3);
 		// the agent cannot grant itself the permission headlessly either (soundDesign.setSettings agentsMayApply)
-		const grant = await agentTx(app, projectId, [{ type: 'soundDesign.setSettings', agentsMayApply: true }], AGENT_H);
+		const grant = await agentTx(
+			app,
+			projectId,
+			[{ type: 'soundDesign.setSettings', agentsMayApply: true }],
+			AGENT_H,
+		);
 		expect(grant.result).toMatchObject({ ok: false, errors: [{ code: 'E_APPROVAL_DENIED' }] });
 		// the editor window accepts (as the user's own edit)
 		const ok = await post(app, `${base(projectId)}/${p.id}/accept`, { itemIds: ['cut'] }, EDITOR_H);
@@ -473,16 +596,24 @@ describe('accept policy: agents vs the editor window', () => {
 		};
 		const p = await create(app, projectId, destructive, AGENT_H);
 		const headless = await post(app, `${base(projectId)}/${p.id}/accept`, { itemIds: 'all' }, AGENT_H);
-		expect([headless.statusCode, headless.json().code, headless.json().detail.code]).toEqual([403, 'APPROVAL_DENIED', 'E_APPROVAL_DENIED']);
+		expect([headless.statusCode, headless.json().code, headless.json().detail.code]).toEqual([
+			403,
+			'APPROVAL_DENIED',
+			'E_APPROVAL_DENIED',
+		]);
 		expect(saved(file).revision).toBe(3);
-		const stillPending = await app.inject({ method: 'GET', url: `${base(projectId)}/${p.id}`, headers: AGENT_H });
+		const stillPending = await app.inject({
+			method: 'GET',
+			url: `${base(projectId)}/${p.id}`,
+			headers: AGENT_H,
+		});
 		expect(stillPending.json().proposal.items[0].state).toBe('pending');
 		const byEditor = await post(app, `${base(projectId)}/${p.id}/accept`, { itemIds: 'all' }, EDITOR_H);
 		expect(byEditor.statusCode, byEditor.body).toBe(200);
 		expect(saved(file).doc.sequences[seqId]!.audioTracks).toHaveLength(2);
 	});
 
-	it('live: accept goes to the open editor as ONE transaction; the editor\'s accept is the user\'s, an agent\'s waits for the card', async () => {
+	it("live: accept goes to the open editor as ONE transaction; the editor's accept is the user's, an agent's waits for the card", async () => {
 		const app = await secured();
 		const { projectId, seqId, file } = seed(app, { agentsMayApply: true });
 		const editor = await liveEditor(app, projectId, file, EDITOR_H);
@@ -492,18 +623,30 @@ describe('accept policy: agents vs the editor window', () => {
 		expect(mine.statusCode, mine.body).toBe(200);
 		expect(mine.json()).toMatchObject({ appliedBy: 'session', applied: ['trk', 'mute'], revision: 4 });
 		expect(editor.txs).toHaveLength(1);
-		expect(editor.txs[0]).toMatchObject({ approved: true, asUser: true, transaction: { label: 'Accept Sound pass (2 of 4)' } });
+		expect(editor.txs[0]).toMatchObject({
+			approved: true,
+			asUser: true,
+			transaction: { label: 'Accept Sound pass (2 of 4)' },
+		});
 		expect(editor.doc.sequences[seqId]!.audioTracks.at(-1)!.mute).toBe(true);
 		// an allowed agent's accept is relayed as the agent's
 		const theirs = await post(app, `${base(projectId)}/${p.id}/accept`, { itemIds: ['cut'] }, AGENT_H);
 		expect(theirs.statusCode, theirs.body).toBe(200);
-		expect(editor.txs[1]).toMatchObject({ approved: false, transaction: { origin: { agent: 'sound-agent', runId: p.id } } });
+		expect(editor.txs[1]).toMatchObject({
+			approved: false,
+			transaction: { origin: { agent: 'sound-agent', runId: p.id } },
+		});
 		expect(editor.txs[1]!.asUser).toBeUndefined();
 		// a destructive proposal accepted by the agent shows the card; denied → 403, approved → applied
 		const rm = await create(
 			app,
 			projectId,
-			{ feature: 'sound-design', title: 'Remove', sequenceId: seqId, items: [{ id: 'rm', label: 'Remove A3', commands: [{ type: 'track.remove', trackIds: ['A3'] }] }] },
+			{
+				feature: 'sound-design',
+				title: 'Remove',
+				sequenceId: seqId,
+				items: [{ id: 'rm', label: 'Remove A3', commands: [{ type: 'track.remove', trackIds: ['A3'] }] }],
+			},
 			AGENT_H,
 		);
 		const denied = post(app, `${base(projectId)}/${rm.id}/accept`, { itemIds: 'all' }, AGENT_H);

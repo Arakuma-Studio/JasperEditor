@@ -25,7 +25,16 @@ function proposal(over: Partial<Proposal> = {}): Proposal {
 		updatedAt: `2026-10-01T00:00:${String(n % 60).padStart(2, '0')}.000Z`,
 		baseRevision: 0,
 		docHash: '0',
-		items: [{ id: 'a', label: 'A', group: '', commands: [{ type: 'marker.add', frame: 1 }], requires: [], state: 'pending' }],
+		items: [
+			{
+				id: 'a',
+				label: 'A',
+				group: '',
+				commands: [{ type: 'marker.add', frame: 1 }],
+				requires: [],
+				state: 'pending',
+			},
+		],
 		...over,
 	};
 }
@@ -81,8 +90,14 @@ describe('ProposalStore', () => {
 
 	it('evicts the oldest decided proposals at the limit and refuses (E_PROPOSAL_LIMIT) when all are undecided', async () => {
 		const { store, removed } = setup({ max: 3 });
-		const decidedOld = proposal({ items: [{ ...proposal().items[0]!, state: 'rejected' }], updatedAt: '2026-10-01T00:00:01.000Z' });
-		const decidedNew = proposal({ items: [{ ...proposal().items[0]!, state: 'accepted' }], updatedAt: '2026-10-01T00:00:05.000Z' });
+		const decidedOld = proposal({
+			items: [{ ...proposal().items[0]!, state: 'rejected' }],
+			updatedAt: '2026-10-01T00:00:01.000Z',
+		});
+		const decidedNew = proposal({
+			items: [{ ...proposal().items[0]!, state: 'accepted' }],
+			updatedAt: '2026-10-01T00:00:05.000Z',
+		});
 		const pending = proposal();
 		for (const p of [decidedNew, pending, decidedOld]) await store.create(PID, p);
 		const fourth = proposal();
@@ -96,7 +111,9 @@ describe('ProposalStore', () => {
 			code: 'PROPOSAL_LIMIT',
 			detail: { code: 'E_PROPOSAL_LIMIT', limit: 3, undecided: 3 },
 		});
-		expect((await store.list(PID)).proposals.map((p) => p.id).sort()).toEqual([pending.id, fourth.id, fifth.id].sort());
+		expect((await store.list(PID)).proposals.map((p) => p.id).sort()).toEqual(
+			[pending.id, fourth.id, fifth.id].sort(),
+		);
 	});
 
 	it('expires proposals 30 days after their last change', async () => {

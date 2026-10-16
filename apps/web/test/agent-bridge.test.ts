@@ -192,6 +192,60 @@ describe('WS /agent relay client (ARCHITECTURE §11)', () => {
 		expect(bridge.store.getState().relay).toBe('disconnected');
 	});
 
+	it("applies a proposal accept the engine relays for this window's user as the user's own edit (spec 12 §2.5)", async () => {
+		const sockets: FakeSocket[] = [];
+		vi.stubGlobal(
+			'WebSocket',
+			class extends FakeSocket {
+				constructor() {
+					super();
+					sockets.push(this);
+				}
+			},
+		);
+		const session = makeSession();
+		const engine = { agentWsUrl: () => 'ws://test/agent' } as EngineClient;
+		const bridge = new AgentBridge(session, engine, { relay: true }).start();
+		bridges.push(bridge);
+		const ws = sockets[0]!;
+		ws.open();
+		const accept = {
+			label: 'Accept Sound pass (1 of 2)',
+			origin: { agent: 'sound-agent', runId: 'prp_0000000000000001' },
+			commands: [{ type: 'track.remove', trackIds: ['A3'] }],
+		};
+		ws.server({
+			type: 'request',
+			id: 'u1',
+			kind: 'tx',
+			payload: { transaction: accept, approved: true, asUser: true },
+		});
+		await tick();
+		await tick();
+		expect(ws.sent.find((m) => m.id === 'u1')).toMatchObject({ result: { ok: true } });
+		const entry = session.getState().history.entries[0]!;
+		expect([entry.label, entry.origin]).toEqual(['Accept Sound pass (1 of 2)', 'user']);
+		expect(bridge.store.getState().activity).toEqual([]); // not an agent's activity
+		// `asUser` without the engine's approval is an agent transaction like any other
+		ws.server({
+			type: 'request',
+			id: 'u2',
+			kind: 'tx',
+			payload: {
+				transaction: { ...accept, commands: [{ type: 'marker.add', frame: 2 }] },
+				approved: false,
+				asUser: true,
+			},
+		});
+		await tick();
+		await tick();
+		expect(session.getState().history.entries[1]!.origin).toEqual({
+			agent: 'sound-agent',
+			runId: 'prp_0000000000000001',
+		});
+		expect(bridge.store.getState().activity).toHaveLength(1);
+	});
+
 	it('throttles playhead.changed to ≤ 10 Hz with a trailing update', async () => {
 		const { bridge, session } = makeBridge();
 		const frames: number[] = [];

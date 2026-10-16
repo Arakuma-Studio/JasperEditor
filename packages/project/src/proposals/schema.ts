@@ -57,7 +57,10 @@ const bounded = (max: number, what: string) =>
 
 export const ProposalItemIdSchema = z
 	.string()
-	.regex(PROPOSAL_ITEM_ID_RE, 'item ids are 1–64 letters, digits, "_", ".", ":" or "-" (starting alphanumeric)');
+	.regex(
+		PROPOSAL_ITEM_ID_RE,
+		'item ids are 1–64 letters, digits, "_", ".", ":" or "-" (starting alphanumeric)',
+	);
 const CommandListSchema = z.array(z.record(z.string(), z.unknown())).min(1).max(PROPOSAL_LIMITS.maxCommands);
 
 /** One alternative command set of an item (e.g. another sound for the same cue). */
@@ -157,7 +160,9 @@ export function proposalDecided(p: Pick<Proposal, 'items'>): boolean {
 }
 
 /** The command set an item applies: its own (0) or `alternatives[selectedAlternative − 1]`. */
-export function selectedCommands(item: Pick<ProposalItem, 'commands' | 'alternatives' | 'selectedAlternative'>) {
+export function selectedCommands(
+	item: Pick<ProposalItem, 'commands' | 'alternatives' | 'selectedAlternative'>,
+) {
 	const k = item.selectedAlternative ?? 0;
 	if (k === 0) return item.commands;
 	return item.alternatives?.[k - 1]?.commands ?? item.commands;

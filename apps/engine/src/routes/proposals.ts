@@ -7,10 +7,10 @@
 //   DELETE …/:proposalId
 // Every change publishes `proposal.changed`.
 import {
-	type ProposalAcceptResponse,
 	ProposalAcceptRequestSchema,
-	type ProposalCreateResponse,
+	type ProposalAcceptResponse,
 	ProposalCreateRequestSchema,
+	type ProposalCreateResponse,
 	type ProposalDecisionResponse,
 	type ProposalDeleteResponse,
 	ProposalGetQuerySchema,
@@ -53,7 +53,8 @@ export default async function proposalRoutes(app: FastifyInstance): Promise<void
 	const store = new ProposalStore({
 		paths: config.paths,
 		log: (m) => app.log.warn(m),
-		onRemoved: (projectId, p, why) => service?.publish(projectId, null, why, { feature: p.feature, sequenceId: p.sequenceId }, p.id),
+		onRemoved: (projectId, p, why) =>
+			service?.publish(projectId, null, why, { feature: p.feature, sequenceId: p.sequenceId }, p.id),
 	});
 	service = new ProposalService({
 		agent: () => services.agent as AgentService | undefined,
@@ -134,10 +135,7 @@ export default async function proposalRoutes(app: FastifyInstance): Promise<void
 		}),
 	);
 
-	const decision = (
-		path: string,
-		build: (body: unknown) => Parameters<ProposalService['decide']>[2],
-	) =>
+	const decision = (path: string, build: (body: unknown) => Parameters<ProposalService['decide']>[2]) =>
 		app.post<PP>(
 			`/api/projects/:projectId/proposals/:proposalId/${path}`,
 			guarded<PP>(async (req) => {
@@ -146,8 +144,14 @@ export default async function proposalRoutes(app: FastifyInstance): Promise<void
 				return out;
 			}),
 		);
-	decision('reject', (b) => ({ kind: 'reject', itemIds: parseOr400(ProposalRejectRequestSchema, b).itemIds }));
-	decision('reopen', (b) => ({ kind: 'reopen', itemIds: parseOr400(ProposalReopenRequestSchema, b).itemIds }));
+	decision('reject', (b) => ({
+		kind: 'reject',
+		itemIds: parseOr400(ProposalRejectRequestSchema, b).itemIds,
+	}));
+	decision('reopen', (b) => ({
+		kind: 'reopen',
+		itemIds: parseOr400(ProposalReopenRequestSchema, b).itemIds,
+	}));
 	decision('note', (b) => {
 		const r = parseOr400(ProposalNoteRequestSchema, b);
 		return { kind: 'note', itemId: r.itemId, note: r.note };

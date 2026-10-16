@@ -35,7 +35,7 @@ import {
 import type { AgentService } from '../agent/service.ts';
 import { KeyedMutex } from '../tools/mutex.ts';
 import { HttpError } from '../tools/reply.ts';
-import { ProposalStore, proposalNotFound } from './store.ts';
+import { type ProposalStore, proposalNotFound } from './store.ts';
 
 /** Who asks: the editor window (editor key) or anything else (an agent), with the agent's display name. */
 export type Requester = { editor: boolean; agent: string };
@@ -78,7 +78,10 @@ function newProposalId(): string {
 }
 
 const VALIDATION_ORIGIN: Origin = { agent: 'proposal-validation' };
-const issuesDetail = (code: string, errors: readonly ProposalIssue[]) => ({ code, errors: errors.slice(0, 50) });
+const issuesDetail = (code: string, errors: readonly ProposalIssue[]) => ({
+	code,
+	errors: errors.slice(0, 50),
+});
 
 type Publish = (type: string, payload: unknown, projectId?: string) => void;
 
@@ -113,7 +116,12 @@ export class ProposalService {
 	}
 
 	private ctx(revision: number): ProposalContext {
-		return { registries: this.registries, revision, now: () => this.now().toISOString(), invariants: 'incremental' };
+		return {
+			registries: this.registries,
+			revision,
+			now: () => this.now().toISOString(),
+			invariants: 'incremental',
+		};
 	}
 
 	private agent(): AgentService {
@@ -122,12 +130,20 @@ export class ProposalService {
 		return a;
 	}
 
-	publish(projectId: string, p: Proposal | null, change: ProposalChangedEvent['change'], extra: Partial<ProposalChangedEvent> = {}, proposalId?: string): void {
+	publish(
+		projectId: string,
+		p: Proposal | null,
+		change: ProposalChangedEvent['change'],
+		extra: Partial<ProposalChangedEvent> = {},
+		proposalId?: string,
+	): void {
 		const payload: ProposalChangedEvent = {
 			projectId,
 			proposalId: p?.id ?? proposalId ?? '',
 			change,
-			...(p ? { feature: p.feature, sequenceId: p.sequenceId, counts: proposalCounts(p) as ProposalCountsJson } : {}),
+			...(p
+				? { feature: p.feature, sequenceId: p.sequenceId, counts: proposalCounts(p) as ProposalCountsJson }
+				: {}),
 			...extra,
 		};
 		try {
@@ -254,14 +270,17 @@ export class ProposalService {
 				const notFound = plan.errors.every((e) => e.code === 'E_NOT_FOUND');
 				const stale = plan.errors.some((e) => e.code === 'E_STALE' || e.code === 'E_INVALID_PARAM');
 				if (notFound)
-					throw new HttpError(404, 'NOT_FOUND', plan.errors[0]!.message, issuesDetail('E_NOT_FOUND', plan.errors));
-				if (stale)
 					throw new HttpError(
-						409,
-						'PROPOSAL_STALE',
-						`Nothing was applied: ${plan.errors[0]!.message}`,
-						{ ...issuesDetail('E_PROPOSAL_STALE', plan.errors), stale: plan.stale },
+						404,
+						'NOT_FOUND',
+						plan.errors[0]!.message,
+						issuesDetail('E_NOT_FOUND', plan.errors),
 					);
+				if (stale)
+					throw new HttpError(409, 'PROPOSAL_STALE', `Nothing was applied: ${plan.errors[0]!.message}`, {
+						...issuesDetail('E_PROPOSAL_STALE', plan.errors),
+						stale: plan.stale,
+					});
 				throw new HttpError(
 					409,
 					'TRANSACTION_REJECTED',
@@ -275,7 +294,10 @@ export class ProposalService {
 					proposal: p,
 					applied: [],
 					added: [],
-					skipped: req.itemIds === 'all' ? [] : req.itemIds.filter((id) => p.items.find((i) => i.id === id)?.state === 'accepted'),
+					skipped:
+						req.itemIds === 'all'
+							? []
+							: req.itemIds.filter((id) => p.items.find((i) => i.id === id)?.state === 'accepted'),
 					stale: plan.stale,
 					result: null,
 					appliedBy: null,
@@ -293,7 +315,11 @@ export class ProposalService {
 				throw txError(result);
 			}
 			const at = this.now().toISOString();
-			const accepted = markAccepted(p, composed.itemIds, { revision: result.revision, refs: result.refs, at });
+			const accepted = markAccepted(p, composed.itemIds, {
+				revision: result.revision,
+				refs: result.refs,
+				at,
+			});
 			await this.store.put(projectId, accepted);
 			p = accepted;
 			this.publish(projectId, accepted, 'accepted', { itemIds: composed.itemIds, revision: result.revision });

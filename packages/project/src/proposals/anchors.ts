@@ -88,8 +88,7 @@ function anchorIndex(doc: ProjectDocument): Map<string, string> {
 				`transition:${String(t.trackId)}:${String(t.outgoingClipId)}:${String(t.incomingClipId)}:${num(t.duration)}:${String(t.alignment)}`,
 			);
 		}
-		for (const key of ['links', 'groups'])
-			for (const id of Object.keys(rec(seq[key]))) m.set(id, key);
+		for (const key of ['links', 'groups']) for (const id of Object.keys(rec(seq[key]))) m.set(id, key);
 		for (const mk of Array.isArray(seq.markers) ? (seq.markers as unknown[]) : []) {
 			const r = rec(mk);
 			if (typeof r.id === 'string') m.set(r.id, `marker:${num(r.frame)}:${num(r.duration)}`);
@@ -117,7 +116,10 @@ export function itemAnchors(doc: ProjectDocument, commands: readonly unknown[]):
 }
 
 /** Describes why anchors no longer hold ("clp_… was deleted", "clp_… moved"), or null when all hold. */
-export function anchorsProblem(doc: ProjectDocument, anchors: Record<string, string> | undefined): string | null {
+export function anchorsProblem(
+	doc: ProjectDocument,
+	anchors: Record<string, string> | undefined,
+): string | null {
 	if (!anchors) return null;
 	for (const [id, fp] of Object.entries(anchors)) {
 		const now = anchorFingerprint(doc, id);

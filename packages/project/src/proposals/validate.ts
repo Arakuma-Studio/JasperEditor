@@ -8,8 +8,8 @@ import { applyTransaction } from '../commands/apply.ts';
 import { COMMAND_CATALOG, isCommandType } from '../commands/catalog.ts';
 import type { Issue, Origin, Registries, TransactionResult } from '../commands/types.ts';
 import { createRandomIdSource, type IdSource } from '../ids.ts';
-import type { Author } from '../schema/sequence.ts';
 import type { ProjectDocument } from '../schema/document.ts';
+import type { Author } from '../schema/sequence.ts';
 import { anchorsProblem, commandEntityIds, documentHash, itemAnchors } from './anchors.ts';
 import { type ComposedAccept, composeAcceptTx, itemOfCommand } from './compose.ts';
 import {
@@ -22,7 +22,7 @@ import {
 	ProposalSchema,
 	selectedCommands,
 } from './schema.ts';
-import { appliedRefs, dependencyClosure, dependents, proposalStructureIssues } from './structure.ts';
+import { dependents, proposalStructureIssues } from './structure.ts';
 
 /** What dry runs need: the registries of the document's session or engine. */
 export type ProposalContext = {
@@ -115,7 +115,9 @@ export function validateProposal(doc: ProjectDocument, proposal: Proposal, ctx: 
 	// The whole set first, with the invariant checker. When it holds, each item's own dry run only has to show that
 	// its commands apply without the other items (handlers refuse what is missing); the invariants were checked on
 	// the full set, and `planAccept` checks the exact set it applies again. This keeps 2 000 items affordable.
-	const undecided = proposal.items.filter((it) => it.state === 'pending' || it.state === 'stale').map((it) => it.id);
+	const undecided = proposal.items
+		.filter((it) => it.state === 'pending' || it.state === 'stale')
+		.map((it) => it.id);
 	const whole = undecided.length ? composeForCheck(current(), undecided) : null;
 	const wholeOk = !!whole?.ok && dryRunCommands(doc, whole.tx.commands, ctx, proposal.sequenceId).ok;
 	const itemCtx: ProposalContext = wholeOk ? { ...ctx, checkInvariants: false } : ctx;
@@ -130,7 +132,10 @@ export function validateProposal(doc: ProjectDocument, proposal: Proposal, ctx: 
 		const r = dryRunCommands(doc, composed.tx.commands, itemCtx, proposal.sequenceId);
 		if (!r.ok) {
 			const at = r.errors[0] ? itemOfCommand(composed.ranges, r.errors[0].commandIndex) : null;
-			invalidate(it.id, at && at !== it.id ? `with item ${at}: ${issueReason(r.errors)}` : issueReason(r.errors));
+			invalidate(
+				it.id,
+				at && at !== it.id ? `with item ${at}: ${issueReason(r.errors)}` : issueReason(r.errors),
+			);
 			continue;
 		}
 		items.set(it.id, setState(it, 'pending'));
@@ -245,7 +250,10 @@ function createProposalUnchecked(
 		errors.push({ code: 'E_NOT_FOUND', message: `Sequence not found: ${sequenceId}`, path: ['sequenceId'] });
 	const sets = (it: ProposalDraft['items'][number]) => [
 		{ path: ['commands'] as (string | number)[], commands: it.commands },
-		...(it.alternatives ?? []).map((a, k) => ({ path: ['alternatives', k, 'commands'], commands: a.commands })),
+		...(it.alternatives ?? []).map((a, k) => ({
+			path: ['alternatives', k, 'commands'],
+			commands: a.commands,
+		})),
 	];
 	draft.items.forEach((it, i) => {
 		for (const s of sets(it))
@@ -287,7 +295,10 @@ function createProposalUnchecked(
 		if (addressFailures.has(it.id)) return;
 		const all = [
 			{ path: ['commands'] as (string | number)[], commands: it.commands },
-			...(it.alternatives ?? []).map((a, k) => ({ path: ['alternatives', k, 'commands'], commands: a.commands })),
+			...(it.alternatives ?? []).map((a, k) => ({
+				path: ['alternatives', k, 'commands'],
+				commands: a.commands,
+			})),
 		];
 		for (const s of all)
 			s.commands.forEach((c, ci) => {
@@ -305,7 +316,8 @@ function createProposalUnchecked(
 				if (!r.success)
 					errors.push({
 						code: 'E_SCHEMA',
-						message: `item ${it.id}: ${type}: ${r.error.issues[0]?.path.join('.') ?? ''} ${r.error.issues[0]?.message ?? 'invalid'}`.trim(),
+						message:
+							`item ${it.id}: ${type}: ${r.error.issues[0]?.path.join('.') ?? ''} ${r.error.issues[0]?.message ?? 'invalid'}`.trim(),
 						itemId: it.id,
 						path: ['items', i, ...s.path, ci],
 					});
@@ -340,7 +352,12 @@ function createProposalUnchecked(
 	if (bytes > PROPOSAL_LIMITS.maxBytes)
 		return {
 			ok: false,
-			errors: [{ code: 'E_LIMIT', message: `A proposal may be at most ${PROPOSAL_LIMITS.maxBytes} bytes (got ${bytes})` }],
+			errors: [
+				{
+					code: 'E_LIMIT',
+					message: `A proposal may be at most ${PROPOSAL_LIMITS.maxBytes} bytes (got ${bytes})`,
+				},
+			],
 		};
 	// Items requiring an address-invalid item are invalid too; validation then dry-runs the rest.
 	let withDeps = proposal;
@@ -493,7 +510,11 @@ function planAcceptUnchecked(
 	if (unknown.length)
 		return {
 			ok: false,
-			errors: unknown.map((id) => ({ code: 'E_NOT_FOUND', message: `No item ${id} in the proposal`, itemId: id })),
+			errors: unknown.map((id) => ({
+				code: 'E_NOT_FOUND',
+				message: `No item ${id} in the proposal`,
+				itemId: id,
+			})),
 			proposal: p,
 			stale: rv.stale,
 		};
@@ -502,7 +523,9 @@ function planAcceptUnchecked(
 			? p.items.filter((it) => it.state === 'pending' || it.state === 'stale').map((it) => it.id)
 			: [...new Set(itemIds)];
 	const staleList = (): StaleItem[] =>
-		p.items.filter((it) => it.state === 'stale').map((it) => ({ itemId: it.id, reason: it.reason ?? 'stale' }));
+		p.items
+			.filter((it) => it.state === 'stale')
+			.map((it) => ({ itemId: it.id, reason: it.reason ?? 'stale' }));
 	for (let pass = 0; pass <= MAX_CONFLICT_PASSES; pass++) {
 		// The first stale or invalid item in each item's closure (requires name earlier items: one pass).
 		const root = new Map<string, ProposalItem | null>();
@@ -554,7 +577,9 @@ function planAcceptUnchecked(
 		p = {
 			...p,
 			items: p.items.map((it) =>
-				it.id === culprit ? setState(it, 'stale', `does not apply with the other items: ${issueReason(r.errors)}`) : it,
+				it.id === culprit
+					? setState(it, 'stale', `does not apply with the other items: ${issueReason(r.errors)}`)
+					: it,
 			),
 		};
 		byId.set(culprit, p.items.find((it) => it.id === culprit)!);

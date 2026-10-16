@@ -5,6 +5,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	applyTransaction,
+	approvalReasons,
 	composeAcceptTx,
 	createCounterIdSource,
 	createProposal,
@@ -12,10 +13,11 @@ import {
 	dependencyClosure,
 	markAccepted,
 	PROPOSAL_LIMITS,
-	planAccept,
+	type ProjectDocument,
 	type Proposal,
 	type ProposalContext,
 	ProposalSchema,
+	planAccept,
 	previewProposal,
 	proposalCounts,
 	proposalGhost,
@@ -24,7 +26,6 @@ import {
 	revalidate,
 	selectAlternative,
 	setItemNote,
-	type ProjectDocument,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
@@ -129,7 +130,9 @@ describe('createProposal', () => {
 	it('marks the later of two items that only conflict together invalid (one transaction must apply)', () => {
 		const { h } = setup();
 		const id = 'cue_0000000000000ZZZ';
-		const p = create(h, { items: [item('a', [cue(30, { id })]), item('b', [cue(40, { id })]), item('c', [marker(5)])] });
+		const p = create(h, {
+			items: [item('a', [cue(30, { id })]), item('b', [cue(40, { id })]), item('c', [marker(5)])],
+		});
 		expect(p.items.map((i) => i.state)).toEqual(['pending', 'invalid', 'pending']);
 		expect(p.items[1]!.reason).toMatch(/^conflicts with the items before it: E_INVALID_PARAM/);
 	});
@@ -137,12 +140,20 @@ describe('createProposal', () => {
 	it('resolves addressing forms against the document and stores ids', () => {
 		const { h, clipId } = setup();
 		const p = create(h, {
-			items: [item('a', [{ type: 'clip.update', clipId: { clipAt: { track: 'V1', at: 5 } }, patch: { name: 'Shot' } }])],
+			items: [
+				item('a', [
+					{ type: 'clip.update', clipId: { clipAt: { track: 'V1', at: 5 } }, patch: { name: 'Shot' } },
+				]),
+			],
 		});
 		expect(p.items[0]!.state).toBe('pending');
 		expect((p.items[0]!.commands[0] as { clipId: string }).clipId).toBe(clipId);
 		const q = create(h, {
-			items: [item('a', [{ type: 'clip.update', clipId: { clipAt: { track: 'V1', at: 900 } }, patch: { name: 'x' } }])],
+			items: [
+				item('a', [
+					{ type: 'clip.update', clipId: { clipAt: { track: 'V1', at: 900 } }, patch: { name: 'x' } },
+				]),
+			],
 		});
 		expect(q.items[0]!.state).toBe('invalid');
 	});
@@ -167,27 +178,44 @@ describe('createProposal', () => {
 			codes({ items: [item('a', [t('$t')], { alternatives: [{ label: 'other', commands: [marker(3)] }] })] }),
 		).toEqual(['E_INVALID_PARAM']);
 		expect(
-			codes({ items: [item('a', [marker(1)], { alternatives: [{ label: 'x', commands: [marker(2)] }], selectedAlternative: 2 })] }),
+			codes({
+				items: [
+					item('a', [marker(1)], {
+						alternatives: [{ label: 'x', commands: [marker(2)] }],
+						selectedAlternative: 2,
+					}),
+				],
+			}),
 		).toEqual(['E_INVALID_PARAM']);
 		// strict commands: unknown keys and types are the creator's error
 		expect(codes({ items: [item('a', [{ ...marker(1), frme: 2 }])] })).toEqual(['E_SCHEMA']);
 		expect(codes({ items: [item('a', [{ type: 'marker.explode' }])] })).toEqual(['E_SCHEMA']);
 		expect(codes({ items: [item('a', [{ type: 'marker.add', frame: 'soon' }])] })).toEqual(['E_SCHEMA']);
-		expect(codes({ sequenceId: 'seq_000000000000NOPE', items: [item('a', [marker(1)])] })).toEqual(['E_NOT_FOUND']);
-		expect(codes({ items: [item('a', [marker(1)], { meta: 'x'.repeat(PROPOSAL_LIMITS.maxMetaBytes) })] })).toEqual([
-			'E_SCHEMA',
+		expect(codes({ sequenceId: 'seq_000000000000NOPE', items: [item('a', [marker(1)])] })).toEqual([
+			'E_NOT_FOUND',
 		]);
+		expect(
+			codes({ items: [item('a', [marker(1)], { meta: 'x'.repeat(PROPOSAL_LIMITS.maxMetaBytes) })] }),
+		).toEqual(['E_SCHEMA']);
 		// limits: items and commands
 		const many = Array.from({ length: PROPOSAL_LIMITS.maxItems + 1 }, (_, i) => item(`i${i}`, [marker(i)]));
 		expect(codes({ items: many })).toEqual(['E_SCHEMA']);
 		const heavy = Array.from({ length: 3 }, (_, i) =>
-			item(`i${i}`, Array.from({ length: 2000 }, (_, k) => marker(k))),
+			item(
+				`i${i}`,
+				Array.from({ length: 2000 }, (_, k) => marker(k)),
+			),
 		);
 		expect(codes({ items: heavy })).toEqual(['E_LIMIT']);
 		for (const junk of [null, 1, 'x', [], { items: 'x' }, { feature: 'a', title: 'b', items: [{}] }])
-			expect(createProposal(h.doc, junk, { id: nextId(), projectId: 'p', author: 'user', now: NOW, revision: 0 }, CTX).ok).toBe(
-				false,
-			);
+			expect(
+				createProposal(
+					h.doc,
+					junk,
+					{ id: nextId(), projectId: 'p', author: 'user', now: NOW, revision: 0 },
+					CTX,
+				).ok,
+			).toBe(false);
 	});
 });
 
@@ -198,7 +226,9 @@ describe('composeAcceptTx', () => {
 			items: [
 				item('track', [{ type: 'track.add', kind: 'audio', name: 'SFX 1', ref: '$sfx' }]),
 				item('x', [marker(5)]),
-				item('name', [{ type: 'track.update', trackId: '$sfx', patch: { mute: true } }], { requires: ['track'] }),
+				item('name', [{ type: 'track.update', trackId: '$sfx', patch: { mute: true } }], {
+					requires: ['track'],
+				}),
 			],
 		});
 		expect(p.items.map((i) => i.state)).toEqual(['pending', 'pending', 'pending']);
@@ -228,7 +258,12 @@ describe('composeAcceptTx', () => {
 				item('track', [{ type: 'track.add', kind: 'audio', name: 'SFX 1', ref: '$sfx' }]),
 				item('mute', [{ type: 'track.update', trackId: '$sfx', patch: { mute: true } }], {
 					requires: ['track'],
-					alternatives: [{ label: 'solo instead', commands: [{ type: 'track.update', trackId: '$sfx', patch: { solo: true } }] }],
+					alternatives: [
+						{
+							label: 'solo instead',
+							commands: [{ type: 'track.update', trackId: '$sfx', patch: { solo: true } }],
+						},
+					],
 				}),
 			],
 		});
@@ -276,13 +311,18 @@ describe('revalidate and planAccept on a changed document', () => {
 	it('an anchored item goes stale when its clip moves or is deleted, and pending again when it is back', () => {
 		const { h, clipId } = setup();
 		const p = create(h, {
-			items: [item('a', [cue(30, { anchor: { type: 'clip', clipId, edge: 'start' } })]), item('b', [marker(80)])],
+			items: [
+				item('a', [cue(30, { anchor: { type: 'clip', clipId, edge: 'start' } })]),
+				item('b', [marker(80)]),
+			],
 		});
 		const base = h.doc;
 		h.ok([{ type: 'clip.move', clipIds: [clipId], deltaFrames: 12 }]);
 		const moved = revalidate(h.doc, p, CTX);
 		expect(moved.changed).toBe(true);
-		expect(moved.stale).toEqual([{ itemId: 'a', reason: `${clipId} changed since the proposal was made (start 0 → 12)` }]);
+		expect(moved.stale).toEqual([
+			{ itemId: 'a', reason: `${clipId} changed since the proposal was made (start 0 → 12)` },
+		]);
 		expect(moved.proposal.items[1]!.state).toBe('pending');
 		const back = revalidate(base, moved.proposal, CTX);
 		expect(back.proposal.items.map((i) => i.state)).toEqual(['pending', 'pending']);
@@ -421,10 +461,7 @@ describe('ghosts', () => {
 			{
 				label: 'x',
 				origin: 'user',
-				commands: [
-					{ type: 'effect.add', target: { clipId }, effectId: 'jasper.gaussian-blur' },
-					marker(12),
-				],
+				commands: [{ type: 'effect.add', target: { clipId }, effectId: 'jasper.gaussian-blur' }, marker(12)],
 			},
 			h.ctx(),
 		);
@@ -513,36 +550,41 @@ const specArb = fc.array(
 describe('properties', () => {
 	it('accepting A then B equals accepting A ∪ B (A before B in proposal order)', () => {
 		fc.assert(
-			fc.property(specArb, fc.integer({ min: 0, max: 8 }), fc.array(fc.boolean(), { minLength: 8, maxLength: 8 }), (spec, cut, pick) => {
-				const { h } = setup();
-				const p = create(h, { items: generatedDraft(spec) });
-				const ids = p.items.map((i) => i.id);
-				const A = ids.slice(0, cut).filter((_, i) => pick[i]);
-				const B = ids.slice(cut).filter((_, i) => pick[(i + cut) % 8]);
-				if (A.length === 0 || B.length === 0) return;
-				const base = h.doc;
-				const run = (steps: string[][]) => {
-					let doc = base;
-					let rev = 0;
-					let pp = p;
-					const ids2 = createCounterIdSource(900);
-					for (const s of steps) {
-						const c = composeAcceptTx(pp, s, AGENT);
-						if (!c.ok) throw new Error(JSON.stringify(c.errors));
-						if (c.itemIds.length === 0) continue;
-						const r = applyTransaction(doc, c.tx, { ...h.ctx(), ids: ids2, revision: rev });
-						if (!r.result.ok) throw new Error(JSON.stringify(r.result.errors));
-						doc = r.document;
-						rev = r.result.revision;
-						pp = markAccepted(pp, c.itemIds, { revision: rev, refs: r.result.refs, at: NOW });
-					}
-					return { doc, pp };
-				};
-				const twoSteps = run([A, B]);
-				const oneStep = run([[...A, ...B]]);
-				expect(normalizeIds(twoSteps.doc)).toBe(normalizeIds(oneStep.doc));
-				expect(twoSteps.pp.items.map((i) => i.state)).toEqual(oneStep.pp.items.map((i) => i.state));
-			}),
+			fc.property(
+				specArb,
+				fc.integer({ min: 0, max: 8 }),
+				fc.array(fc.boolean(), { minLength: 8, maxLength: 8 }),
+				(spec, cut, pick) => {
+					const { h } = setup();
+					const p = create(h, { items: generatedDraft(spec) });
+					const ids = p.items.map((i) => i.id);
+					const A = ids.slice(0, cut).filter((_, i) => pick[i]);
+					const B = ids.slice(cut).filter((_, i) => pick[(i + cut) % 8]);
+					if (A.length === 0 || B.length === 0) return;
+					const base = h.doc;
+					const run = (steps: string[][]) => {
+						let doc = base;
+						let rev = 0;
+						let pp = p;
+						const ids2 = createCounterIdSource(900);
+						for (const s of steps) {
+							const c = composeAcceptTx(pp, s, AGENT);
+							if (!c.ok) throw new Error(JSON.stringify(c.errors));
+							if (c.itemIds.length === 0) continue;
+							const r = applyTransaction(doc, c.tx, { ...h.ctx(), ids: ids2, revision: rev });
+							if (!r.result.ok) throw new Error(JSON.stringify(r.result.errors));
+							doc = r.document;
+							rev = r.result.revision;
+							pp = markAccepted(pp, c.itemIds, { revision: rev, refs: r.result.refs, at: NOW });
+						}
+						return { doc, pp };
+					};
+					const twoSteps = run([A, B]);
+					const oneStep = run([[...A, ...B]]);
+					expect(normalizeIds(twoSteps.doc)).toBe(normalizeIds(oneStep.doc));
+					expect(twoSteps.pp.items.map((i) => i.state)).toEqual(oneStep.pp.items.map((i) => i.state));
+				},
+			),
 			{ numRuns: 40 },
 		);
 	});
@@ -559,7 +601,8 @@ describe('properties', () => {
 				if (!r.ok) throw new Error('reject');
 				expect(h.doc).toBe(doc);
 				expect(JSON.stringify(doc)).toBe(snapshot);
-				for (const it of r.proposal.items) expect(it.state).toBe(rejected.includes(it.id) ? 'rejected' : 'pending');
+				for (const it of r.proposal.items)
+					expect(it.state).toBe(rejected.includes(it.id) ? 'rejected' : 'pending');
 				// 'all' after rejecting composes only the undecided items (plus what they require)
 				const c = composeAcceptTx(r.proposal, 'all', AGENT);
 				if (!c.ok) throw new Error('compose');
@@ -649,9 +692,15 @@ describe('properties', () => {
 								{ maxLength: 3 },
 							),
 							requires: fc.array(fc.constantFrom('a', 'b', 'c', 'zz'), { maxLength: 2 }),
-							alternatives: fc.array(fc.record({ label: fc.string(), commands: fc.array(fc.constant(marker(9)), { maxLength: 2 }) }), {
-								maxLength: 2,
-							}),
+							alternatives: fc.array(
+								fc.record({
+									label: fc.string(),
+									commands: fc.array(fc.constant(marker(9)), { maxLength: 2 }),
+								}),
+								{
+									maxLength: 2,
+								},
+							),
 							selectedAlternative: fc.integer({ min: -1, max: 3 }),
 							meta: fc.jsonValue(),
 						},
@@ -664,7 +713,12 @@ describe('properties', () => {
 		);
 		fc.assert(
 			fc.property(fc.oneof(draftArb, fc.anything()), (draft) => {
-				const r = createProposal(doc, draft, { id: nextId(), projectId: doc.projectId, author: 'user', now: NOW, revision: 0 }, CTX);
+				const r = createProposal(
+					doc,
+					draft,
+					{ id: nextId(), projectId: doc.projectId, author: 'user', now: NOW, revision: 0 },
+					CTX,
+				);
 				if (!r.ok) {
 					expect(r.errors.length).toBeGreaterThan(0);
 					for (const e of r.errors) expect(e.code).toMatch(/^E_[A-Z_]+$/);
@@ -680,5 +734,25 @@ describe('properties', () => {
 			}),
 			{ numRuns: 150 },
 		);
+	});
+});
+
+describe('agent guard', () => {
+	it('an agent granting itself "Allow agents to apply sound proposals" needs the user\'s approval', () => {
+		expect(
+			approvalReasons({ commands: [{ type: 'soundDesign.setSettings', agentsMayApply: true }] }),
+		).toEqual([
+			'agentsMayApply: true in soundDesign.setSettings (command 1) lets agents apply sound proposals',
+		]);
+		expect(
+			approvalReasons({ commands: [{ type: 'soundDesign.setSettings', agentsMayApply: false }] }),
+		).toEqual([]);
+		expect(approvalReasons({ commands: [{ type: 'soundDesign.setSettings', density: 'rich' }] })).toEqual([]);
+		expect(
+			approvalReasons({
+				dryRun: true,
+				commands: [{ type: 'soundDesign.setSettings', agentsMayApply: true }],
+			}),
+		).toEqual([]);
 	});
 });

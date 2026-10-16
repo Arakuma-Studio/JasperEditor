@@ -9,7 +9,10 @@ import {
 	type ProposalItemInput,
 } from './schema.ts';
 
-type ItemLike = Pick<ProposalItemInput, 'id' | 'requires' | 'commands' | 'alternatives' | 'selectedAlternative'>;
+type ItemLike = Pick<
+	ProposalItemInput,
+	'id' | 'requires' | 'commands' | 'alternatives' | 'selectedAlternative'
+>;
 
 /** Temp refs a command set declares (`ref`, `itemRef`, `cameraRef`, … at any depth), in order, with repeats. */
 export function declaredRefs(commands: readonly unknown[]): string[] {
@@ -156,6 +159,7 @@ export function dependents(p: Pick<Proposal, 'items'>, id: string): ProposalItem
 export function appliedRefs(p: Pick<Proposal, 'items'>): Map<string, string> {
 	const out = new Map<string, string>();
 	for (const it of p.items)
-		if (it.state === 'accepted' && it.applied) for (const [k, v] of Object.entries(it.applied.refs)) out.set(k, v);
+		if (it.state === 'accepted' && it.applied)
+			for (const [k, v] of Object.entries(it.applied.refs)) out.set(k, v);
 	return out;
 }

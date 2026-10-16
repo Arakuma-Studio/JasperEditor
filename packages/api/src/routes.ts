@@ -156,14 +156,6 @@ import {
 	VersionRestoreResponseSchema,
 } from './projects.ts';
 import {
-	RotoSegmentRequestSchema,
-	RotoStoreInfoSchema,
-	RotoTraceRequestSchema,
-	RotoTraceResponseSchema,
-	VisionModelsResponseSchema,
-} from './roto.ts';
-import { SceneDetectRequestSchema } from './scenes.ts';
-import {
 	ProposalAcceptRequestSchema,
 	ProposalAcceptResponseSchema,
 	ProposalCreateRequestSchema,
@@ -178,6 +170,14 @@ import {
 	ProposalResponseSchema,
 	ProposalSelectRequestSchema,
 } from './proposals.ts';
+import {
+	RotoSegmentRequestSchema,
+	RotoStoreInfoSchema,
+	RotoTraceRequestSchema,
+	RotoTraceResponseSchema,
+	VisionModelsResponseSchema,
+} from './roto.ts';
+import { SceneDetectRequestSchema } from './scenes.ts';
 import { SoundCuesRequestSchema, SoundCuesResponseSchema } from './sound-design.ts';
 import {
 	RegisterSoundRequestSchema,

@@ -61,7 +61,8 @@ export function composeAcceptTx(
 			: [...new Set(itemIds)];
 	const errors: ProposalIssue[] = [];
 	for (const id of requested)
-		if (!byId.has(id)) errors.push({ code: 'E_NOT_FOUND', message: `No item ${id} in the proposal`, itemId: id });
+		if (!byId.has(id))
+			errors.push({ code: 'E_NOT_FOUND', message: `No item ${id} in the proposal`, itemId: id });
 	if (errors.length) return { ok: false, errors };
 	const skipped = requested.filter((id) => byId.get(id)!.state === 'accepted');
 	const closure = dependencyClosure(
