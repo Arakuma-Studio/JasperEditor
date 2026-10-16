@@ -1,11 +1,13 @@
 // Sound design clip and cue commands (spec 12 §2.7, P2-R7, WP2.4b): Swap Sound… (Alt+Shift+S, Replace mode), Next /
 // Previous Variation (Ctrl+Alt+. / Ctrl+Alt+,), Align Peak to Playhead (Ctrl+Alt+P), Align Peak to Nearest Cue, Set
 // Peak at Playhead, Find Similar Sounds, Reveal in Sound Library, Add to Palette, Role ▸, Show Licence…, Add Layer…,
-// Link / Unlink Layers; for project audio Detect Peak and Add to Sound Library…; Sequence ▸ Sound Design ▸ Fill
-// Unfilled Cues; the Sound Library's In Context audition (Shift+Space), its toggle and Esc (leave Fill / Replace).
+// Link / Unlink Layers; for project audio Detect Peak and Add to Sound Library…; Sequence ▸ Sound Design ▸ Auto Sound
+// Pass… and Fill Unfilled Cues (both propose: the engine's plan job stores a proposal and review opens on it, WP3.3b);
+// the Sound Library's In Context audition (Shift+Space), its toggle and Esc (leave Fill / Replace).
 // Every document edit is an ordinary command (`soundDesign.*`, `clip.move`, `clip.link`…) in one undo step; agents
 // reach every entry through the UI command catalogue (`clipId` / `cueId` arguments where they need a target).
-import { SoundIdSchema } from '@jasper/api';
+import { SOUND_DESIGN_PLAN_LIMITS, SoundIdSchema } from '@jasper/api';
+import { toasts, toast as uiToast } from '@jasper/ui';
 import {
 	type AudioClip,
 	type Clip,
@@ -46,10 +48,12 @@ import {
 	sfxOf,
 } from '../sound/design-model.ts';
 import { detectClipPeak } from '../sound/detect-peak.ts';
+import { AUTO_SOUND_PASS_DIALOG, registerAutoSoundPassDialog } from '../sound/AutoSoundPassDialog.tsx';
 import { SOUND_LICENSE_DIALOG } from '../sound/dialogs.tsx';
-import { cueCandidates, fillCueWithSound, fillUnfilledCues, linkLayersCommands } from '../sound/fill.ts';
+import { cueCandidates, fillCueWithSound, linkLayersCommands } from '../sound/fill.ts';
 import { inContextActive, inContextEndedBy, stopInContext } from '../sound/in-context.ts';
 import { soundLibraryPrefs } from '../sound/prefs.ts';
+import { reviewPlanResult, runSoundPlan, unfilledCueIdsFor } from '../sound/plan-run.ts';
 import { registerSoundDesignUi } from '../sound/register.tsx';
 import { cycleVariation, swappableClips } from '../sound/swap.ts';
 import { ReportedCommandError, runCommand } from './registry.ts';
@@ -61,7 +65,9 @@ import {
 import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
 
 registerAddToLibraryDialog();
+registerAutoSoundPassDialog();
 registerSoundDesignUi();
+
 
 const E: CommandScope = 'editing';
 const G: CommandScope = 'global';
@@ -320,36 +326,82 @@ export const soundDesignCommands: UiCommand[] = [
 		id: 'sound.fillUnfilledCues',
 		label: 'Fill Unfilled Cues',
 		description:
-			'Fill every unfilled, unmuted sound cue of the active sequence with a ranked library sound (round-robin over the best 4, seeded variation): one undo step',
+			'Propose a ranked library sound (rotated, seeded variation, alternates) for every unfilled, unmuted sound cue of the active sequence: the engine’s sound-design plan stores a proposal and review opens on it (nothing changes until you apply it there)',
 		scope: G,
 		capability: 'engine',
 		agentExposed: true,
 		when: (ctx) => {
 			const e = sequenceContext(ctx);
-			return (
-				!!e &&
-				!e.session.getState().readOnly &&
-				cuesOf(e.seq).some((c) => !c.muted && !(c.placedClipIds ?? []).some((id) => e.seq.clips[id]))
-			);
+			return !!e && !e.session.getState().readOnly && unfilledCueIdsFor(e.session, e.seq.id).length > 0;
 		},
 		disabledReason: () => t('Every cue is filled (or there are none)'),
 		run: async (ctx) => {
 			const e = sequenceContext(ctx);
 			if (!e) return;
+			const ids = unfilledCueIdsFor(e.session, e.seq.id).slice(0, SOUND_DESIGN_PLAN_LIMITS.maxCueIds);
+			const key = `fill-unfilled:${e.seq.id}`;
+			const progressTitle = t('Proposing sounds for {0} cues…', ids.length);
+			const progress = uiToast({ kind: 'progress', title: progressTitle, progress: { value: null }, dedupeKey: key });
 			try {
-				const r = await fillUnfilledCues(e.session, ctx.engine, e.seq.id);
+				const r = await runSoundPlan(
+					ctx.engine,
+					{
+						projectId: e.session.projectId,
+						sequenceId: e.seq.id,
+						cues: ids,
+						label: t('Fill Unfilled Cues'),
+						maxCues: Math.min(SOUND_DESIGN_PLAN_LIMITS.maxCues, Math.max(1, ids.length)),
+						// the user chose these cues: every one gets a sound, also under dialogue
+						style: { respectDialogue: false },
+					},
+					{
+						onJob: (j) =>
+							uiToast({
+								kind: 'progress',
+								title: progressTitle,
+								...(j.stage ? { detail: j.stage } : {}),
+								progress: { value: j.progress, jobId: j.id },
+								dedupeKey: key,
+							}),
+					},
+				);
+				toasts.dismiss(progress);
+				const out = await reviewPlanResult(e.session, r);
 				ctx.ui.toast({
-					kind: r.filled.length ? 'success' : 'warning',
-					message: r.filled.length ? t('Filled {0} cues', r.filled.length) : t('No cue could be filled'),
-					...(r.skipped.length
-						? { detail: t('{0} skipped: {1}', r.skipped.length, r.skipped[0]!.reason) }
-						: {}),
-					...(r.filled.length ? { action: { label: t('Undo'), command: 'history.undo' } } : {}),
+					kind: out.ok ? 'success' : 'warning',
+					message: out.ok ? t('Review the proposed sounds') : t('No cue could be filled'),
+					detail: out.message,
 				});
+				if (out.ok) await runCommand('panel.focus.review', ctx);
 			} catch (err) {
+				toasts.dismiss(progress);
 				toastError(ctx, t('Could not fill the cues'), err);
 				throw new ReportedCommandError(err);
 			}
+		},
+	},
+	{
+		id: 'sound.autoSoundPass',
+		label: 'Auto Sound Pass…',
+		description:
+			'Find the cues of the active sequence (or a range) and propose a ranked sound for each: range, cue sources, density, palette, sound sources and respect dialogue; Propose runs the engine’s sound-design plan and opens review on the proposal',
+		scope: G,
+		capability: 'engine',
+		when: (ctx) => {
+			const e = sequenceContext(ctx);
+			return !!e && !e.session.getState().readOnly;
+		},
+		disabledReason: () => t('Open a sequence first'),
+		run: (ctx) => {
+			const e = sequenceContext(ctx);
+			if (!e) return;
+			ctx.ui.openDialog(AUTO_SOUND_PASS_DIALOG, {
+				session: e.session,
+				engine: ctx.engine,
+				sequenceId: e.seq.id,
+				toast: ctx.ui.toast,
+				onReview: () => void runCommand('panel.focus.review', ctx),
+			});
 		},
 	},
 	// ---------------------------------------------------------------- clips

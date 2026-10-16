@@ -295,7 +295,10 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			sep,
 			sub('Sound Design', [
 				c('sound.suggestCues', 'Suggest Cues…'),
+				c('sound.autoSoundPass', 'Auto Sound Pass…'),
 				c('sound.fillUnfilledCues', 'Fill Unfilled Cues'),
+				sep,
+				c('proposals.review', 'Review Proposal'),
 				c('sound.toggleCueSeam', 'Show Cue Seam'),
 				c('sound.clearUnfilledCues', 'Clear Unfilled Cues'),
 			]),

@@ -1,5 +1,5 @@
 // WP2.4b flows (spec 12 §2.7, P2-R7): Fill a cue (one undo step, role / alternatives / variation from the cue), Add
-// Layer (next free track, linked, "Layer 2 of 2"), Fill Unfilled Cues (one transaction, rotation, deterministic), variation
+// Layer (next free track, linked, "Layer 2 of 2"), Fill Unfilled Cues (a proposal through the plan route, WP3.3b), variation
 // cycling coalesced into ONE history entry ("Swap Sound ×3") and closed by another edit, Replace mode swap, the In
 // Context audition (transient only: no document or history change, the replaced clip muted, back to the anchor), Align
 // Peak / Set Peak / Role / Palette / Detect Peak commands.
@@ -22,10 +22,13 @@ import {
 import { cuesOf } from '../src/sound/cues/model.ts';
 import { alignedFrameOf, clipSoundLabel, layersOf, sfxOf } from '../src/sound/design-model.ts';
 import { detectClipPeak } from '../src/sound/detect-peak.ts';
-import { fillCueWithSound, fillUnfilledCues } from '../src/sound/fill.ts';
+import { fillCueWithSound } from '../src/sound/fill.ts';
 import { auditionInContext, inContextStore, stopInContext } from '../src/sound/in-context.ts';
 import { soundLibraryPrefs } from '../src/sound/prefs.ts';
 import { cycleVariation, resetVariationRun, swapClipSound } from '../src/sound/swap.ts';
+import { proposalsFor } from '@jasper/session';
+import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine.ts';
+import { fakePlanEngine, planResult, storeProposal } from './review-helpers.ts';
 import { fakeSoundEngine, soundEntry } from './sound-helpers.ts';
 import { makeSession, videoAsset } from './timeline-helpers.ts';
 
@@ -185,45 +188,68 @@ describe('Fill', () => {
 		expect(h.clip(second.clipId).linkId).toBe(h.clip(first.clipId).linkId);
 	});
 
-	it('Fill Unfilled Cues: one transaction, a different sound on neighbouring cues, deterministic', async () => {
-		const run = async () => {
-			const h = harness();
-			for (const f of [30, 60, 90, 120]) h.addCue(f, 'support');
-			const n = h.labels().length;
-			const r = await fillUnfilledCues(h.session, h.engine, h.seqId);
-			expect(h.labels()).toHaveLength(n + 1);
-			expect(h.labels().at(-1)).toBe('Fill Unfilled Cues (4)');
-			expect(r.filled).toHaveLength(4);
-			expect(r.skipped).toEqual([]);
-			for (const c of cuesOf(h.seq())) expect(c.placedClipIds?.length).toBe(1);
-			for (let i = 1; i < r.filled.length; i++)
-				expect(r.filled[i]!.soundId).not.toBe(r.filled[i - 1]!.soundId);
-			// the ring: the pick first, then 3 alternatives
-			for (const f of r.filled) {
-				expect(h.clip(f.clipId).sfx!.alternatives?.[0]).toBe(f.soundId);
-				expect(h.clip(f.clipId).sfx!.alternatives).toHaveLength(4);
-			}
-			// nothing left: the command is disabled
-			const again = await runCommand('sound.fillUnfilledCues', h.ctx);
-			expect(again.ran).toBe(false);
-			// entries get new ids per harness: compare by title
-			const doc = h.session.getCommitted();
-			return r.filled.map((f) => {
-				const c = h.clip(f.clipId);
-				return (doc.media[c.mediaId] as { library?: { title: string } }).library?.title;
+	it('Fill Unfilled Cues proposes (WP3.3b): the plan route with the unfilled, unmuted cues; nothing applied; review opens', async () => {
+		const h = harness();
+		const cues = [30, 60, 90, 120].map((f) => h.addCue(f, 'support'));
+		const muted = h.addCue(150, 'support');
+		h.apply([{ type: 'soundCue.update', cueId: muted, muted: true }]);
+		const proposals = new FakeEngine(() => h.session);
+		const c = proposalsFor(h.session, { engine: proposals });
+		let stored = '';
+		const plan = fakePlanEngine(h.session, (req) => {
+			stored = storeProposal(proposals, h.seqId, 'Fill Unfilled Cues', [30, 60, 90, 120]).id;
+			return planResult({
+				proposalId: stored,
+				projectId: req.projectId,
+				sequenceId: h.seqId,
+				placed: 4,
 			});
-		};
-		expect(await run()).toEqual(await run());
+		});
+		Object.assign(h.fake.client, plan);
+		const n = h.labels().length;
+		const rev = h.session.revision;
+		await h.run('sound.fillUnfilledCues');
+		expect(plan.requests).toHaveLength(1);
+		expect(plan.requests[0]).toMatchObject({
+			projectId: h.session.projectId,
+			sequenceId: h.seqId,
+			cues,
+			label: 'Fill Unfilled Cues',
+			style: { respectDialogue: false },
+		});
+		expect(plan.requests[0]!.cues).not.toContain(muted);
+		// nothing applied: same history, same revision; the review is on the stored proposal
+		expect(h.labels()).toHaveLength(n);
+		expect(h.session.revision).toBe(rev);
+		expect(c.getState().activeId).toBe(stored);
+		expect(h.toasts.at(-1)).toMatchObject({ kind: 'success', message: 'Review the proposed sounds' });
+		c.exit();
 	});
 
-	it('Fill Unfilled Cues leaves muted cues out', async () => {
+	it('Fill Unfilled Cues: nothing to propose is a warning with the reason; disabled when every cue is filled', async () => {
 		const h = harness();
-		h.addCue(60, 'support');
-		const lockedCue = h.addCue(150, 'support');
-		h.apply([{ type: 'soundCue.update', cueId: lockedCue, muted: true }]);
-		const r = await fillUnfilledCues(h.session, h.engine, h.seqId);
-		expect(r.filled.map((f) => f.cueId)).not.toContain(lockedCue);
-		expect(r.filled).toHaveLength(1);
+		const cue = h.addCue(60, 'support');
+		const proposals = new FakeEngine(() => h.session);
+		const c = proposalsFor(h.session, { engine: proposals });
+		Object.assign(
+			h.fake.client,
+			fakePlanEngine(h.session, (req) =>
+				planResult({
+					proposalId: null,
+					projectId: req.projectId,
+					sequenceId: h.seqId,
+					skipped: [{ cueId: cue, frame: 60, reason: 'no commercial-safe sound of type hit' }],
+				}),
+			),
+		);
+		await h.run('sound.fillUnfilledCues');
+		expect(c.getState().activeId).toBeNull();
+		expect(h.toasts.at(-1)?.kind).toBe('warning');
+		expect(h.toasts.at(-1)?.detail).toMatch(/no commercial-safe sound of type hit/);
+		// fill it directly: the command is disabled
+		const entries = (await h.fake.client.searchSounds({})).results.map((x) => x.sound);
+		await fillCueWithSound(h.session, h.engine, entries[0]!, { sequenceId: h.seqId, cueId: cue });
+		expect((await runCommand('sound.fillUnfilledCues', h.ctx)).ran).toBe(false);
 	});
 });
 
