@@ -3,6 +3,7 @@
 // policy gate for agents vs the editor window, destructive items, reject / reopen / note / select / delete, events,
 // the 50-proposal limit, concurrency, and deletion with the project.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpus, loadavg } from 'node:os';
 import { join } from 'node:path';
 import {
 	AGENT_NAME_HEADER,
@@ -29,6 +30,9 @@ import type { Broadcaster } from '../src/events/broadcaster.ts';
 import { closeApps, makeApp } from './helpers.ts';
 
 afterAll(closeApps);
+
+/** Each test starts an engine app (cold the first time): the timeout follows the shared host's load. */
+const TIMEOUT = 20_000 * Math.max(1, Math.ceil(loadavg()[0]! / Math.max(1, cpus().length)));
 
 const HOST = { host: '127.0.0.1:47900' };
 const TOKEN = 'tok_proposals_0123456789abcdef';
@@ -171,7 +175,7 @@ async function agentTx(
 	return r.json() as { result: TransactionResult };
 }
 
-describe('proposal routes (headless)', () => {
+describe('proposal routes (headless)', { timeout: TIMEOUT }, () => {
 	it('creates a proposal validated against the live document; lists, gets, and publishes proposal.changed', async () => {
 		const app = await makeApp();
 		const { projectId, seqId, file } = seed(app);
@@ -634,7 +638,7 @@ const until = async (pred: () => boolean, ms = 5000) => {
 	}
 };
 
-describe('accept policy: agents vs the editor window', () => {
+describe('accept policy: agents vs the editor window', { timeout: TIMEOUT }, () => {
 	it('refuses an agent with 403 APPROVAL_REQUIRED unless the sequence allows agents; the editor needs nothing extra', async () => {
 		const app = await secured();
 		const { projectId, seqId, file } = seed(app);

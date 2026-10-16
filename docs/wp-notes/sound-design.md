@@ -4238,7 +4238,12 @@ all of it through MCP; tests are unit, property (state machine, fuzzed items) an
     too (`runInSlices`).
   - **After**, same test, same host: opening review 11 122 ms of work in 616 slices, after an edit 7 734 ms in 446, after a
     reject 9 426 ms in 461, after a local accept **74 ms, no rebuild** (load 77–93); longest single slices 209 / 213 / 114 ms
-    (one item's placement plus a GC pause at that load). Final run with p50 / p95: see "Verified" below. The 120-item
+    (one item's placement plus a GC pause at that load). **Final run** (after merging WP4.2a, load 40–48, the same
+    test): opening review 16.0 s of work in 734 slices — p50 16 ms, p95 52 ms, longest 107 ms; after an edit 13.4 s in 643
+    (p50 15, p95 59, longest 106 ms); after a reject 12.5 s in 651 (p50 13, p95 44, longest 169 ms: the first slice, the
+    anchors' re-validation of a new proposal object); after a local accept **43 ms, nothing rebuilt**. Before: one
+    main-thread task of 62–567 s per recompute. The longest task the editor sees went from about a minute to ≤ 0.17 s;
+    the total work is unchanged in kind (see Limits). The 120-item
     variant runs in the gate and checks the structure (sliced, equal to the one-shot preview, accept rebuilds nothing,
     reject reuses the ghosts' preview).
 - **(d) Stored workspace layouts** (helper; `apps/web/src/shell/workspaces/migrations.ts`). No earlier panel addition had
@@ -4354,15 +4359,19 @@ directed tests (undo + redo before the engine answers, in both orders; an agent'
     sound-p2-done lost a kept-alive socket while polling its export job (`ECONNRESET`) — the shared `waitForJob` retries
     that up to 5 times; sound-review's Apply toast (15 s) expired during the undo at load 145 — the spec rests the pointer
     on it (hover pauses toasts, as for a user); the stale text expected colons (the sequence is drop-frame).
-- GHOSTS_RESULT
+- `e2e/sound-proposal-ghosts.spec.ts` **passed** (3.6 min, load 36–47; at load 105–117 earlier it could not measure:
+  "every one of 8 plays was disturbed by the host"): Hear on → the cut's hit at sample **146 539** (exact, as in WP3.3a),
+  switched on while playing on the first attempt, Hear off and switched off after retries of plays Remotion re-scheduled
+  (the WP3.3a limit); Apply = one entry, Ctrl+Z → back in review with ✓ / ✕ intact (screenshots looked at: ghosts,
+  decided, high contrast, reduced motion, applied, undone).
 - **Gate**: GATE_RESULT
 
 #### Limits (after this pass)
 
-- **Large proposals.** The placement handler is O(document) per item, so a 1 000-item proposal (500 places) is ≈ 8–11 s of
-  sliced work before its ghosts appear at load 77–93 (the previous preview stays, the panel says "Updating the
-  preview…"); with the host saturated by other builds the same work took minutes. A slice holds one item at least: on a
-  loaded host one item's placement plus a GC pause made single slices of 100–200 ms (PERF_FINAL). Not moved to a worker:
+- **Large proposals.** The placement handler is O(document) per item, so a 1 000-item proposal (500 places) is 13–16 s of
+  sliced work before its ghosts appear (load 40–48, after the WP4.2a merge; 8–11 s before it at load 77–93); the previous
+  preview stays and the panel says "Updating the preview…"; with the host saturated by other builds it took minutes. A slice holds one item at least: on a
+  loaded host one item's placement plus a GC pause made single slices of 100–200 ms (p95 44–59 ms, longest 107–169 ms at load 40–48 in the final run). Not moved to a worker:
   the preview document feeds the Program monitor, which keeps unchanged clips' render objects by identity
   (`stabilizeRenderDoc`), and a cloned document would lose that.
 - An invariant conflict among the items of a proposal of more than 64 items shows at Apply (reported stale, never
