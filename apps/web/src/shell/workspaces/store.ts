@@ -10,6 +10,7 @@ import {
 	LAYOUT_PRESETS,
 	RETIRED_BUILTIN_WORKSPACES,
 } from './definitions.ts';
+import { migrateWorkspacesState } from './migrations.ts';
 import { loadVersioned, type ShellStorage, saveVersioned, type VersionedKey } from './storage.ts';
 
 export type WorkspaceRecord = {
@@ -30,7 +31,8 @@ export type WorkspacesState = {
 };
 
 export const WORKSPACES_KEY = 'jasper:workspaces';
-const WORKSPACES_VERSION = 1;
+/** 2: the Sound Design workspace's stored layouts gain the Review panel (`migrations.ts`, WP3.3b). */
+export const WORKSPACES_VERSION = 2;
 const SAVE_DEBOUNCE_MS = 300;
 
 function builtinRecord(id: string, name: string): WorkspaceRecord {
@@ -91,6 +93,7 @@ const SPEC: VersionedKey<WorkspacesState> = {
 	key: WORKSPACES_KEY,
 	version: WORKSPACES_VERSION,
 	parse: parseWorkspacesState,
+	migrate: (data, fromVersion) => migrateWorkspacesState(data, fromVersion, WORKSPACES_VERSION),
 	fallback: defaultWorkspacesState,
 };
 
