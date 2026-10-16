@@ -189,9 +189,7 @@ export const SoundDesignPlanRequestSchema = z.strictObject({
 	 * `auto` (default): the sequence's unfilled stored cues plus cues derived from the edit (new ones become setup items
 	 * of the proposal); or ids of stored cues to fill (nothing is derived).
 	 */
-	cues: z
-		.union([z.literal('auto'), z.array(id).min(1).max(SOUND_DESIGN_PLAN_LIMITS.maxCueIds)])
-		.optional(),
+	cues: z.union([z.literal('auto'), z.array(id).min(1).max(SOUND_DESIGN_PLAN_LIMITS.maxCueIds)]).optional(),
 	style: SoundDesignPlanStyleSchema.optional(),
 	/** At most this many cues get a sound (1–200, default 200). */
 	maxCues: z.number().int().min(1).max(SOUND_DESIGN_PLAN_LIMITS.maxCues).optional(),

@@ -13,6 +13,7 @@
 //   5. the proposal is created through the proposals service (validated by dry runs on the live document).
 // The selection (1–2) and the draft (4) are pure and exported for tests; the job does the I/O and reports progress.
 import {
+	mediaRegisterCommand,
 	type RegisterSoundResponse,
 	SOUND_DESIGN_PLAN_LIMITS,
 	SOUND_EFFECTS_BIN,
@@ -24,13 +25,12 @@ import {
 	type SoundDesignPlanSkip,
 	type SoundEntry,
 	type SoundSourceType,
-	mediaRegisterCommand,
 } from '@jasper/api';
 import {
 	type AudioClip,
 	bindExpressions,
 	type ClipSfx,
-	CUE_ALIGNS,
+	type CUE_ALIGNS,
 	type CueDensity,
 	cueInputFromDerived,
 	type DerivedCue,
@@ -42,17 +42,17 @@ import {
 	type ProjectDocument,
 	type ProposalDraft,
 	pickVariant,
-	type Rational,
 	type RankedSound,
+	type Rational,
 	rankSounds,
-	SFX_ROLES,
+	type Sequence,
+	type SFX_ROLES,
 	SOUND_DESIGN_FEATURE,
 	SOUND_TYPES,
-	type Sequence,
 	type SoundCue,
+	SoundLayerSchema,
 	type SoundProposalMedia,
 	type SoundProposalPlacement,
-	SoundLayerSchema,
 	type SoundTypeId,
 	sequenceDialogueRanges,
 	sequenceTimecode,
@@ -134,7 +134,8 @@ const ALL_SOURCES: SoundSourceType[] = ['starter', 'pack', 'folder', 'synth'];
 export function resolveStyle(req: SoundDesignPlanRequest, seq: Sequence): PlanStyle {
 	const settings = soundDesignSettingsOf(seq);
 	const st = req.style ?? {};
-	const palette = st.palette === undefined || st.palette === 'project' ? (settings.palette ?? []) : st.palette;
+	const palette =
+		st.palette === undefined || st.palette === 'project' ? (settings.palette ?? []) : st.palette;
 	return {
 		density: st.density ?? settings.density,
 		respectDialogue: st.respectDialogue ?? true,
@@ -158,7 +159,12 @@ function knownTypes(types: readonly unknown[] | undefined, kind: CueKind): Sound
 	return (VISUAL_KINDS as readonly string[]).includes(kind) ? typesForVisualKind(kind as VisualKind) : [];
 }
 
-function skip(seq: Sequence, c: PlanCue, code: SoundDesignPlanSkip['code'], reason: string): SoundDesignPlanSkip {
+function skip(
+	seq: Sequence,
+	c: PlanCue,
+	code: SoundDesignPlanSkip['code'],
+	reason: string,
+): SoundDesignPlanSkip {
 	return {
 		cueId: c.stored?.id ?? null,
 		cueKey: c.derived?.key ?? null,
@@ -291,7 +297,8 @@ export function collectPlanCues(
 				const c = stored.find((x) => x.id === match);
 				const by = c ? filledBy(c) : undefined;
 				// An unfilled stored cue is planned as itself (above); a filled one already has its sound.
-				if (by) skipped.push(skip(seq, pc, 'STORED', `stored as ${match}, which already has a sound (${by})`));
+				if (by)
+					skipped.push(skip(seq, pc, 'STORED', `stored as ${match}, which already has a sound (${by})`));
 				return;
 			}
 			const near = stored.find((c) => Math.abs(c.frame - d.frame) <= NEAR_STORED_FRAMES);
@@ -323,7 +330,9 @@ function placedSounds(seq: Sequence): { frame: number; soundId: string | null; h
 		const sfx = c.kind === 'audio' ? c.sfx : undefined;
 		if (!sfx?.placement || !(F > 0)) continue;
 		const flicks =
-			c.start * F + (sfx.placement.peakFlicks - c.sourceIn) / (c.speed?.rate || 1) - sfx.placement.errorFlicks;
+			c.start * F +
+			(sfx.placement.peakFlicks - c.sourceIn) / (c.speed?.rate || 1) -
+			sfx.placement.errorFlicks;
 		if (!Number.isFinite(flicks)) continue;
 		out.push({ frame: flicks / F, soundId: sfx.soundId ?? null, hero: sfx.role === 'hero' });
 	}
@@ -409,7 +418,10 @@ export function selectPlanSounds(
 					{ usedNearby: recent },
 				).slice(0, RANKED_PER_CUE)
 			: [];
-		const candidates = [...top.filter((r) => palette.has(r.entry.id)), ...top.filter((r) => !palette.has(r.entry.id))];
+		const candidates = [
+			...top.filter((r) => palette.has(r.entry.id)),
+			...top.filter((r) => !palette.has(r.entry.id)),
+		];
 		const v = pickVariant(
 			candidates.map((r) => r.entry.id),
 			{ seed: style.seed, cueId: cue.key, sequenceId: seq.id, layer: 0, recentSoundIds: recent },
@@ -750,7 +762,8 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 		});
 	// Register every sound a pick may use (chosen and alternatives), in order of need.
 	const order: string[] = [];
-	for (const p of selected.picks) for (const s of p.sounds) if (!order.includes(s.entry.id)) order.push(s.entry.id);
+	for (const p of selected.picks)
+		for (const s of p.sounds) if (!order.includes(s.entry.id)) order.push(s.entry.id);
 	const registered = new Map<string, RegisterSoundResponse>();
 	const failed = new Map<string, string>();
 	for (const [i, id] of order.entries()) {
@@ -773,7 +786,9 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 		const ok = p.sounds.filter((s) => registered.has(s.entry.id));
 		if (ok.length === 0) {
 			const why = failed.get(p.sounds[0]!.entry.id) ?? 'unknown error';
-			skipped.push(skip(seq, p.cue, 'REGISTER_FAILED', `the sound could not be added to the project: ${why}`));
+			skipped.push(
+				skip(seq, p.cue, 'REGISTER_FAILED', `the sound could not be added to the project: ${why}`),
+			);
 			continue;
 		}
 		const notes = [...p.notes];
@@ -786,7 +801,9 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 	// Only the sounds still used are imported.
 	const usedIds = new Set(picks.flatMap((p) => p.sounds.map((s) => s.entry.id)));
 	for (const id of [...registered.keys()]) if (!usedIds.has(id)) registered.delete(id);
-	skipped.sort((a, b) => a.frame - b.frame || (a.cueKey ?? a.cueId ?? '').localeCompare(b.cueKey ?? b.cueId ?? ''));
+	skipped.sort(
+		(a, b) => a.frame - b.frame || (a.cueKey ?? a.cueId ?? '').localeCompare(b.cueKey ?? b.cueId ?? ''),
+	);
 	const { draft, report } = composePlanDraft(doc, seq, req, style, picks, registered, {
 		skipped,
 		warnings,
@@ -834,7 +851,11 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 }
 
 /** What a cancelled run returns (the queue records the job as cancelled and drops it). */
-function cancelledResult(req: SoundDesignPlanRequest, seq: Sequence, style: PlanStyle): SoundDesignPlanResult {
+function cancelledResult(
+	req: SoundDesignPlanRequest,
+	seq: Sequence,
+	style: PlanStyle,
+): SoundDesignPlanResult {
 	return {
 		proposalId: null,
 		projectId: req.projectId,
@@ -862,4 +883,3 @@ function cancelledResult(req: SoundDesignPlanRequest, seq: Sequence, style: Plan
 		},
 	};
 }
-

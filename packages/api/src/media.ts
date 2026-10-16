@@ -1,15 +1,15 @@
 import {
 	ColorConfigInfoSchema,
 	ImageSequenceInfoSchema,
+	importedDescriptors,
 	LayeredInfoSchema,
 	LottieInfoSchema,
 	LutInfoSchema,
 	MediaKindSchema,
-	MediaLocatorSchema,
 	type MediaLocator,
+	MediaLocatorSchema,
 	MediaProbeSchema,
 	MgBundleInfoSchema,
-	importedDescriptors,
 	VectorInfoSchema,
 } from '@jasper/project';
 import { z } from 'zod';

@@ -225,10 +225,7 @@ export function soundProposalItems(
 			},
 			...(p.extraCommands ?? []),
 		];
-		for (const s of [
-			...p.layers.map((l) => l.soundId),
-			...(p.alternatives ?? []).map((a) => a.soundId),
-		]) {
+		for (const s of [...p.layers.map((l) => l.soundId), ...(p.alternatives ?? []).map((a) => a.soundId)]) {
 			const req = s ? setupOf.get(s) : undefined;
 			if (req && !requires.includes(req)) requires.push(req);
 		}

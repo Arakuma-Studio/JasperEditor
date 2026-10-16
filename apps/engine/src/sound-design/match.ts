@@ -42,4 +42,3 @@ export function matchStoredCues(seq: Sequence, cues: readonly DerivedCue[]): (st
 		return null;
 	});
 }
-

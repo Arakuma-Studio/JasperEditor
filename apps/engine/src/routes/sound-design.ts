@@ -76,7 +76,10 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 				if (Array.isArray(body.cues)) {
 					const unknown = unknownCueIds(seq, body.cues);
 					if (unknown.length)
-						throw new PlanInputError('CUE_NOT_FOUND', `Sound cue not found: ${unknown.slice(0, 5).join(', ')}`);
+						throw new PlanInputError(
+							'CUE_NOT_FOUND',
+							`Sound cue not found: ${unknown.slice(0, 5).join(', ')}`,
+						);
 				}
 			} catch (e) {
 				if (e instanceof PlanInputError) throw new HttpError(404, e.code, e.message);
