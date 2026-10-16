@@ -54,6 +54,19 @@ export type SoundProposalPlacement = {
 	clampStart?: boolean;
 	/** Commands after the placement (e.g. a `soundCue.update` of the reason). */
 	extraCommands?: Record<string, unknown>[];
+	/** Further items the place item requires (Phase 4: the room glue, the delivery preset). */
+	requires?: string[];
+	/**
+	 * Items acting on the placement's cue once it is filled (Phase 4: stop-before, build), each requiring the place item;
+	 * `commands` gets the cue id (a stored id, or the `$ref` the cue's setup item binds). Not for bare-frame placements.
+	 */
+	after?: {
+		id: string;
+		label: string;
+		group: string;
+		meta?: Record<string, unknown>;
+		commands: (cueId: string) => Record<string, unknown>[];
+	}[];
 };
 
 export const SOUND_PROPOSAL_SETUP_GROUP = 'setup';
@@ -102,7 +115,11 @@ export function soundProposalItems(
 	sequenceId: string,
 	media: readonly SoundProposalMedia[],
 	placements: readonly SoundProposalPlacement[],
-	opts: { binName: string },
+	opts: {
+		binName: string;
+		/** Setup items of the whole proposal (room glue, delivery), placed after the sounds' setup items. */
+		setup?: readonly ProposalItemInput[];
+	},
 ): SoundProposalItems {
 	const byId = new Map(media.map((m) => [m.soundId, m]));
 	const missing = new Set<string>();
@@ -190,6 +207,7 @@ export function soundProposalItems(
 	}
 	const cues: ProposalItemInput[] = [];
 	const places: ProposalItemInput[] = [];
+	const follow: ProposalItemInput[] = [];
 	let cueN = 0;
 	for (const p of usable) {
 		const requires: string[] = [];
@@ -229,6 +247,18 @@ export function soundProposalItems(
 			const req = s ? setupOf.get(s) : undefined;
 			if (req && !requires.includes(req)) requires.push(req);
 		}
+		for (const r of p.requires ?? []) if (!requires.includes(r)) requires.push(r);
+		const cueTarget = typeof target.cueId === 'string' ? target.cueId : null;
+		if (cueTarget)
+			for (const a of p.after ?? [])
+				follow.push({
+					id: a.id,
+					label: a.label.slice(0, 200),
+					group: a.group,
+					commands: a.commands(cueTarget),
+					requires: [p.id],
+					...(a.meta ? { meta: a.meta } : {}),
+				});
 		places.push({
 			id: p.id,
 			label: p.label.slice(0, 200),
@@ -247,5 +277,9 @@ export function soundProposalItems(
 				: {}),
 		});
 	}
-	return { items: [...setup, ...cues, ...places], mediaOf, missing: [...missing] };
+	return {
+		items: [...setup, ...(opts.setup ?? []), ...cues, ...places, ...follow],
+		mediaOf,
+		missing: [...missing],
+	};
 }

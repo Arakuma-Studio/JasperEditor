@@ -28,6 +28,8 @@ import {
 } from '@jasper/api';
 import {
 	type AudioClip,
+	BUILD_DEFAULT,
+	BUILD_MIN_MUSIC_SEC,
 	bindExpressions,
 	type ClipSfx,
 	type CUE_ALIGNS,
@@ -35,31 +37,42 @@ import {
 	cueInputFromDerived,
 	type DerivedCue,
 	defaultRegistries,
+	deliveryPreset,
 	deriveCues,
 	documentHasActiveExpressions,
 	flicksPerFrame,
 	isSoundTypeId,
 	type MgTemplateRegistry,
+	musicCovers,
+	musicTracksUnder,
 	type ProjectDocument,
 	type ProposalDraft,
+	type ProposalItemInput,
 	pickVariant,
 	type RankedSound,
 	type Rational,
+	ROOM_BUS_NAME,
+	ROOM_GLUE_DEFAULT,
 	rankSounds,
 	type Sequence,
 	type SFX_ROLES,
 	SOUND_DESIGN_FEATURE,
 	SOUND_DESIGN_LIMITS,
+	SOUND_PROPOSAL_SETUP_GROUP,
 	SOUND_TYPES,
 	type SoundCue,
+	type SoundDelivery,
+	type SoundDesignMix,
 	type SoundProposalMedia,
 	type SoundProposalPlacement,
 	type SoundTypeId,
+	STOP_BEFORE_DEFAULT,
 	sequenceDialogueRanges,
 	sequenceTimecode,
 	soundCuesOf,
 	soundDesignSettingsOf,
 	soundProposalItems,
+	stopBeforeDip,
 	typesForVisualKind,
 	VISUAL_KINDS,
 	type VisualKind,
@@ -118,6 +131,14 @@ export type PlanStyle = {
 	palette: string[];
 	alternatives: number;
 	maxCues: number;
+	/** Phase 4 (WP4.2a): room glue send level, or null for none. */
+	roomGlue: { sendDb: number } | null;
+	/** Phase 4: a stop-before dip for heroes with music under them. */
+	stopBefore: boolean;
+	/** Phase 4: a High Pass build for heroes after ≥ 2 s of music. */
+	build: boolean;
+	/** Phase 4: a delivery preset as a setup item (null: none). */
+	delivery: SoundDelivery | null;
 };
 
 export type PlanPick = {
@@ -149,7 +170,136 @@ export function resolveStyle(req: SoundDesignPlanRequest, seq: Sequence): PlanSt
 		palette: [...new Set(palette)],
 		alternatives: st.alternatives ?? SOUND_DESIGN_PLAN_LIMITS.maxAlternatives,
 		maxCues: req.maxCues ?? SOUND_DESIGN_PLAN_LIMITS.maxCues,
+		roomGlue:
+			st.roomGlue === undefined || st.roomGlue === false
+				? null
+				: { sendDb: (st.roomGlue === true ? undefined : st.roomGlue.sendDb) ?? ROOM_GLUE_DEFAULT.sendDb },
+		stopBefore: st.stopBefore ?? false,
+		build: st.build ?? false,
+		delivery: st.delivery ?? null,
 	};
+}
+
+/** Item ids of the Phase 4 setup items. */
+export const ROOM_ITEM_ID = 'room';
+export const DELIVERY_ITEM_ID = 'delivery';
+
+/**
+ * The room glue setup item of a plan (style `roomGlue`), or null when there is none to make: the sequence already has
+ * the glue at that send level. Pure.
+ */
+export function roomSetupItem(seq: Sequence, style: PlanStyle): ProposalItemInput | null {
+	if (!style.roomGlue) return null;
+	const rec = (seq.soundDesign as { mix?: SoundDesignMix } | undefined)?.mix?.room;
+	if (rec && (seq.submixTracks ?? []).some((t) => t.id === rec.busId) && rec.sendDb === style.roomGlue.sendDb)
+		return null;
+	return {
+		id: ROOM_ITEM_ID,
+		label: `${ROOM_BUS_NAME}: shared reverb, sends at ${style.roomGlue.sendDb} dB`,
+		group: SOUND_PROPOSAL_SETUP_GROUP,
+		commands: [
+			{ type: 'soundDesign.ensureBus', sequenceId: seq.id, roomGlue: { sendDb: style.roomGlue.sendDb } },
+		],
+		meta: {
+			setup: true,
+			kind: 'room',
+			why: `One "${ROOM_BUS_NAME}" reverb (decay ${ROOM_GLUE_DEFAULT.decay} s, pre-delay ${ROOM_GLUE_DEFAULT.preDelayMs} ms) the sound effects share, so they sit in one space; interface sounds stay dry`,
+		},
+	};
+}
+
+/**
+ * The Phase 4 items that act on a placed cue (style `stopBefore` / `build`, or the cue's own stored `stopBefore` /
+ * `build` not yet realised): a stop-before dip for a hero with music under it, a build for a hero after ≥ 2 s of music.
+ * Pure.
+ */
+export function cueMixItems(
+	seq: Sequence,
+	pick: Pick<PlanPick, 'cue' | 'role'>,
+	style: Pick<PlanStyle, 'stopBefore' | 'build'>,
+	itemNo: string,
+	tc: string,
+): {
+	stop: NonNullable<SoundProposalPlacement['after']>[number] | null;
+	build: NonNullable<SoundProposalPlacement['after']>[number] | null;
+} {
+	const rate = seq.settings.frameRate as Rational;
+	const fps = fpsOf(seq);
+	const frame = pick.cue.frame;
+	const stored = pick.cue.stored;
+	const realised = stored
+		? (seq.soundDesign as { mix?: SoundDesignMix } | undefined)?.mix?.cues?.[stored.id]
+		: undefined;
+	let stop: ReturnType<typeof cueMixItems>['stop'] = null;
+	const ownStop = stored?.stopBefore;
+	if ((ownStop || (style.stopBefore && pick.role === 'hero')) && !realised?.stopBefore) {
+		const spec = ownStop ?? STOP_BEFORE_DEFAULT;
+		const dip = stopBeforeDip(frame, spec, rate);
+		const F = flicksPerFrame(rate);
+		if (dip) {
+			const a = Math.max(0, Math.floor((dip.start - (dip.fadeMs * F * fps) / 1000) / F));
+			const b = Math.ceil((dip.end + (dip.fadeMs * F * fps) / 1000) / F);
+			if (musicTracksUnder(seq, a, b).length)
+				stop = {
+					id: `stop:${itemNo}`,
+					label: `Stop before ${tc}: music ${spec.depthDb} dB for ${spec.seconds} s`,
+					group: 'mix',
+					meta: {
+						feature: SOUND_DESIGN_FEATURE,
+						kind: 'stopBefore',
+						frame,
+						timecode: tc,
+						stopBefore: { seconds: spec.seconds, depthDb: spec.depthDb },
+						why: `The music drops ${-spec.depthDb} dB for ${spec.seconds} s before the hit at ${tc}, so it lands in a gap`,
+					},
+					commands: (cueId) => [
+						...(ownStop
+							? []
+							: [
+									{
+										type: 'soundCue.update',
+										cueId,
+										stopBefore: { seconds: spec.seconds, depthDb: spec.depthDb },
+									},
+								]),
+						{ type: 'soundDesign.applyStopBefore', cueId },
+					],
+				};
+		}
+	}
+	let build: ReturnType<typeof cueMixItems>['build'] = null;
+	const ownBuild = stored?.build;
+	if ((ownBuild || (style.build && pick.role === 'hero')) && !realised?.build) {
+		const spec = ownBuild ?? BUILD_DEFAULT;
+		const lead = Math.ceil(Math.max(BUILD_MIN_MUSIC_SEC, spec.seconds) * fps);
+		if (frame - lead >= 0 && musicCovers(seq, frame - lead, frame))
+			build = {
+				id: `build:${itemNo}`,
+				label: `Build into ${tc}: high-pass ${spec.fromHz} → ${spec.toHz} Hz over ${spec.seconds} s`,
+				group: 'mix',
+				meta: {
+					feature: SOUND_DESIGN_FEATURE,
+					kind: 'build',
+					frame,
+					timecode: tc,
+					build: { seconds: spec.seconds, fromHz: spec.fromHz, toHz: spec.toHz },
+					why: `The music thins out (high-pass ${spec.fromHz} → ${spec.toHz} Hz) over ${spec.seconds} s and comes back full on the hit at ${tc}`,
+				},
+				commands: (cueId) => [
+					...(ownBuild
+						? []
+						: [
+								{
+									type: 'soundCue.update',
+									cueId,
+									build: { seconds: spec.seconds, fromHz: spec.fromHz, toHz: spec.toHz },
+								},
+							]),
+					{ type: 'soundDesign.applyBuild', cueId },
+				],
+			};
+	}
+	return { stop, build };
 }
 
 const fpsOf = (seq: Sequence) => {
@@ -554,6 +704,8 @@ export function composePlanDraft(
 		considered: number;
 		snapshotHash: string;
 		librarySize: number;
+		/** Phase 4 setup items (room glue, delivery) every place item requires. */
+		mixSetup?: ProposalItemInput[];
 	},
 ): PlanDraft {
 	const fps = fpsOf(seq);
@@ -577,6 +729,9 @@ export function composePlanDraft(
 	const width = Math.max(3, String(picks.length).length);
 	const placements: SoundProposalPlacement[] = [];
 	const events: SoundDesignPlanEvent[] = [];
+	const mixSetup = extra.mixSetup ?? [];
+	let stops = 0;
+	let builds = 0;
 	picks.forEach((p, i) => {
 		const id = `sfx:${String(i + 1).padStart(width, '0')}`;
 		const [chosen, ...alts] = p.sounds;
@@ -617,8 +772,15 @@ export function composePlanDraft(
 			...(l.rate !== 1 ? { rate: l.rate } : {}),
 			...(l.gainOffsetDb !== 0 ? { gainOffsetDb: l.gainOffsetDb } : {}),
 		}));
+		const num = String(i + 1).padStart(width, '0');
+		const mixItems = cueMixItems(seq, p, style, num, tc);
+		const after = [mixItems.stop, mixItems.build].filter((x): x is NonNullable<typeof x> => x !== null);
+		if (mixItems.stop) stops++;
+		if (mixItems.build) builds++;
 		placements.push({
 			id,
+			...(mixSetup.length ? { requires: mixSetup.map((m) => m.id) } : {}),
+			...(after.length ? { after } : {}),
 			label: `${names} · ${p.cue.kind} ${tc}`.slice(0, 200),
 			group: p.role,
 			meta,
@@ -665,9 +827,14 @@ export function composePlanDraft(
 			alternatives: alts.map((a) => planSound(a, palette)),
 			extraLayers: p.extraLayers.map((l) => planSound(l.sound, palette)),
 			notes: p.notes,
+			...(mixItems.stop ? { stopBeforeItemId: mixItems.stop.id } : {}),
+			...(mixItems.build ? { buildItemId: mixItems.build.id } : {}),
 		});
 	});
-	const built = soundProposalItems(doc, seq.id, media, placements, { binName: SOUND_EFFECTS_BIN });
+	const built = soundProposalItems(doc, seq.id, media, placements, {
+		binName: SOUND_EFFECTS_BIN,
+		setup: mixSetup,
+	});
 	const newCues = picks.filter((p) => p.cue.derived).length;
 	const skippedAll = extra.skipped;
 	const report: SoundDesignPlanReport = {
@@ -695,6 +862,17 @@ export function composePlanDraft(
 			sounds: registered.size,
 			items: built.items.length,
 		},
+		...(mixSetup.length || stops || builds || style.roomGlue || style.delivery
+			? {
+					mix: {
+						roomItemId: mixSetup.some((m) => m.id === ROOM_ITEM_ID) ? ROOM_ITEM_ID : null,
+						deliveryItemId: mixSetup.some((m) => m.id === DELIVERY_ITEM_ID) ? DELIVERY_ITEM_ID : null,
+						delivery: style.delivery,
+						stopBefore: stops,
+						build: builds,
+					},
+				}
+			: {}),
 		warnings: [
 			...extra.warnings,
 			...(skippedAll.length > SOUND_DESIGN_PLAN_LIMITS.maxSkippedListed
@@ -756,6 +934,26 @@ export type PlanDeps = {
 	ffmpeg?: Ffmpeg;
 	registry?: Pick<MediaRegistry, 'get' | 'resolvePath'>;
 	measureCache?: MeasureCache;
+	/**
+	 * Phase 4: measures a delivery preset for the plan's `style.delivery` setup item (`delivery.ts` `planDelivery`, given
+	 * by the route: delivery.ts imports this module).
+	 */
+	planDelivery?: (
+		doc: ProjectDocument,
+		seq: Sequence,
+		opts: { delivery: SoundDelivery; rebalance: false },
+		deps: {
+			ff: Ffmpeg;
+			registry: Pick<MediaRegistry, 'get' | 'resolvePath'>;
+			registries: ReturnType<typeof defaultRegistries>;
+			signal?: AbortSignal;
+			onSpawn?(child: import('node:child_process').ChildProcess): void;
+			onProgress?(fraction: number, stage: string): void;
+		},
+	) => Promise<{
+		command: Record<string, unknown>;
+		report: { warnings: { code: string; message: string }[] };
+	}>;
 };
 
 /** The live document of a project (the open editor's when one holds it, else the saved one) and its revision. */
@@ -880,12 +1078,62 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 	skipped.sort(
 		(a, b) => a.frame - b.frame || (a.cueKey ?? a.cueId ?? '').localeCompare(b.cueKey ?? b.cueId ?? ''),
 	);
+	// Phase 4 setup items: the room glue, and the delivery preset measured on the edit as it is.
+	const mixSetup: ProposalItemInput[] = [];
+	const room = roomSetupItem(seq, style);
+	if (room) mixSetup.push(room);
+	if (style.delivery && picks.length) {
+		if (!deps.planDelivery || !deps.ffmpeg || !deps.registry)
+			warnings.push({
+				code: 'W_DELIVERY_UNMEASURED',
+				message:
+					'The engine cannot measure the mix here: the delivery preset is left out (apply it with apply_delivery)',
+			});
+		else {
+			ctx.progress(0.58, { stage: `Measuring the ${style.delivery} delivery` });
+			try {
+				const d = await deps.planDelivery(
+					doc,
+					seq,
+					{ delivery: style.delivery, rebalance: false },
+					{
+						ff: deps.ffmpeg,
+						registry: deps.registry,
+						registries: defaultRegistries(deps.mgTemplates),
+						signal: ctx.signal,
+						onSpawn: ctx.trackChild,
+					},
+				);
+				const preset = deliveryPreset(style.delivery);
+				mixSetup.push({
+					id: DELIVERY_ITEM_ID,
+					label: `${preset.label}: loudness, Auto-Match, ducking`,
+					group: SOUND_PROPOSAL_SETUP_GROUP,
+					commands: [d.command],
+					meta: {
+						setup: true,
+						kind: 'delivery',
+						delivery: style.delivery,
+						why: `${preset.source}; the sounds are balanced against this mix`,
+					},
+				});
+				warnings.push(...d.report.warnings);
+			} catch (e) {
+				if (aborted()) return cancelledResult(req, seq, style);
+				warnings.push({
+					code: 'W_DELIVERY_UNMEASURED',
+					message: `The ${style.delivery} delivery could not be measured (${e instanceof Error ? e.message : String(e)}): it is left out`,
+				});
+			}
+		}
+	}
 	const composed = composePlanDraft(doc, seq, req, style, picks, registered, {
 		skipped,
 		warnings,
 		considered: collected.cues.length + collected.skipped.length,
 		snapshotHash: pool.snapshotHash,
 		librarySize: pool.librarySize,
+		mixSetup,
 	});
 	const draft = composed.draft;
 	let report = composed.report;
@@ -895,15 +1143,24 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 		ctx.progress(0.6, { stage: 'Balancing levels against the bed' });
 		let levels: Awaited<ReturnType<typeof solvePlanGains>>;
 		try {
-			levels = await solvePlanGains(doc, seq, draft, report, {
-				...(deps.ffmpeg ? { ffmpeg: deps.ffmpeg } : {}),
-				...(deps.registry ? { registry: deps.registry } : {}),
-				...(deps.measureCache ? { cache: deps.measureCache } : {}),
-				registries: defaultRegistries(deps.mgTemplates),
-				signal: ctx.signal,
-				onSpawn: ctx.trackChild,
-				onProgress: (f, stage) => ctx.progress(0.6 + 0.25 * f, { stage }),
-			});
+			levels = await solvePlanGains(
+				doc,
+				seq,
+				draft,
+				report,
+				{
+					...(deps.ffmpeg ? { ffmpeg: deps.ffmpeg } : {}),
+					...(deps.registry ? { registry: deps.registry } : {}),
+					...(deps.measureCache ? { cache: deps.measureCache } : {}),
+					registries: defaultRegistries(deps.mgTemplates),
+					signal: ctx.signal,
+					onSpawn: ctx.trackChild,
+					onProgress: (f, stage) => ctx.progress(0.6 + 0.25 * f, { stage }),
+				},
+				style.delivery && draft.items.some((it) => it.id === DELIVERY_ITEM_ID)
+					? { delivery: style.delivery }
+					: {},
+			);
 		} catch (e) {
 			if (aborted()) return cancelledResult(req, seq, style);
 			throw e;

@@ -174,6 +174,22 @@ export const SoundDesignPlanStyleSchema = z.strictObject({
 	seed: z.number().int().min(0).max(0xffff_ffff).optional(),
 	/** Alternatives per cue, 0–3 (default 3). */
 	alternatives: z.number().int().min(0).max(SOUND_DESIGN_PLAN_LIMITS.maxAlternatives).optional(),
+	/**
+	 * Phase 4: the "SFX Room" glue (`soundDesign.ensureBus`) as a setup item the placements require — `true` (−16 dB
+	 * sends) or `{sendDb}`. Off by default.
+	 */
+	roomGlue: z
+		.union([z.boolean(), z.strictObject({ sendDb: z.number().min(-96).max(15).optional() })])
+		.optional(),
+	/** Phase 4: a stop-before dip (0.25 s, −24 dB) for each hero with music under it, one item per hero (default off). */
+	stopBefore: z.boolean().optional(),
+	/** Phase 4: a High Pass build (2 s, 150 Hz → 2 kHz) for each hero after ≥ 2 s of music (default off). */
+	build: z.boolean().optional(),
+	/**
+	 * Phase 4: a delivery preset (`soundDesign.applyDelivery`, measured like `POST /api/sound-design/delivery`) as a setup
+	 * item the placements require; the gains are then solved against that delivery's mix.
+	 */
+	delivery: z.enum(SOUND_DELIVERIES).optional(),
 });
 export type SoundDesignPlanStyle = z.infer<typeof SoundDesignPlanStyleSchema>;
 
@@ -313,6 +329,9 @@ export const SoundDesignPlanEventSchema = z.object({
 	layerLevels: z.array(SfxSolvedLevelSchema).optional(),
 	/** Solved gain of each alternative sound (same order as `alternatives`). */
 	alternativeLevels: z.array(SfxSolvedLevelSchema.nullable()).optional(),
+	/** Phase 4: the items that dip the music before it / build into it (style `stopBefore` / `build`). */
+	stopBeforeItemId: z.string().optional(),
+	buildItemId: z.string().optional(),
 });
 export type SoundDesignPlanEvent = z.infer<typeof SoundDesignPlanEventSchema>;
 
@@ -371,6 +390,16 @@ export const SoundDesignPlanReportSchema = z.object({
 	conflicts: z.array(SfxLevelConflictSchema).optional(),
 	/** Phase 4: how the levels were measured (absent when they could not be). */
 	levels: SfxLevelsMeasureSchema.optional(),
+	/** Phase 4: the mixing items (room glue, delivery, stop-before dips, builds). */
+	mix: z
+		.object({
+			roomItemId: z.string().nullable(),
+			deliveryItemId: z.string().nullable(),
+			delivery: z.enum(SOUND_DELIVERIES).nullable(),
+			stopBefore: z.number().int(),
+			build: z.number().int(),
+		})
+		.optional(),
 });
 export type SoundDesignPlanReport = z.infer<typeof SoundDesignPlanReportSchema>;
 
@@ -487,3 +516,99 @@ export const SfxRebalanceResultSchema = z.object({
 	report: SfxRebalanceReportSchema,
 });
 export type SfxRebalanceResult = z.infer<typeof SfxRebalanceResultSchema>;
+
+// ── Delivery presets (spec 12 §2.4 "Delivery presets", P4-R4; wp-note "Phase 4 → WP4.2a") ─────────────────────────
+
+/**
+ * `POST /api/sound-design/delivery`: a `sound-design` job that measures the sequence and applies (or proposes) a delivery
+ * preset — Mix loudness normalisation at the preset, Essential Sound Auto-Match by type (dialogue at the target, music
+ * 8 LU and ambience 10 LU under it), music / ambience ducked under dialogue, sound effects solved again against the new
+ * bed — as ONE transaction "Apply Delivery Preset" (`soundDesign.applyDelivery` + `soundDesign.applyGains`) or a proposal.
+ */
+export const SoundDeliveryRequestSchema = z.strictObject({
+	projectId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'a project id'),
+	sequenceId: id.optional(),
+	delivery: z.enum(SOUND_DELIVERIES),
+	/** `propose` (default): a proposal to review; `apply`: one undoable transaction. */
+	mode: z.enum(['propose', 'apply']).optional(),
+	/** Mix loudness normalisation at the preset (default true). */
+	loudness: z.boolean().optional(),
+	/** Auto-Match dialogue, music and ambience clips by type (default true). */
+	autoMatch: z.boolean().optional(),
+	/** Duck music and ambience under their "Duck against" clips (dialogue by default; default true). */
+	ducking: z.boolean().optional(),
+	/** Solve the sound effects again against the new bed (default true). */
+	rebalance: z.boolean().optional(),
+	label: z.string().min(1).max(200).optional(),
+});
+export type SoundDeliveryRequest = z.infer<typeof SoundDeliveryRequestSchema>;
+
+export const SoundDeliveryClipSchema = z.object({
+	clipId: z.string(),
+	track: z.string(),
+	type: z.string(),
+	/** Integrated loudness of the clip's own signal (LUFS); null: silent or shorter than 400 ms. */
+	measuredLufs: z.number().nullable(),
+	targetLufs: z.number().nullable(),
+	/** The Auto-Match gain (dB), or null when the clip is left as it is (`skipped` says why). */
+	gainDb: z.number().nullable(),
+	skipped: z.string().optional(),
+});
+export type SoundDeliveryClip = z.infer<typeof SoundDeliveryClipSchema>;
+
+/** Loudness of the resulting mix (measured on the engine's export mixer). */
+export const SoundDeliveryMeasureSchema = z.object({
+	/** Integrated loudness / true peak before the Mix normalisation (LUFS / dBTP). */
+	mixLufs: z.number().nullable(),
+	mixTruePeakDb: z.number().nullable(),
+	/** After the normalisation the export applies: the preset's target, and the peak under the limiter's ceiling. */
+	expectedLufs: z.number().nullable(),
+	expectedTruePeakDb: z.number().nullable(),
+	/** Seconds of speech found (dialogue louder than −60 LUFS and within 20 LU of its loudest moment). */
+	speechSeconds: z.number(),
+	/** How far under the voice the music / ambience is during speech (LU; null without speech or without them). */
+	musicUnderVoiceLu: z.number().nullable(),
+	ambienceUnderVoiceLu: z.number().nullable(),
+});
+export type SoundDeliveryMeasure = z.infer<typeof SoundDeliveryMeasureSchema>;
+
+export const SoundDeliveryReportSchema = z.object({
+	version: z.literal(1),
+	sequenceId: z.string(),
+	delivery: z.enum(SOUND_DELIVERIES),
+	preset: z.object({
+		label: z.string(),
+		integratedLufs: z.number(),
+		truePeakDb: z.number(),
+		source: z.string(),
+	}),
+	hasDialogue: z.boolean(),
+	clips: z.array(SoundDeliveryClipSchema),
+	ducking: z.array(
+		z.object({ clipIds: z.array(z.string()), triggers: z.array(z.string()), regions: z.number().int() }),
+	),
+	/** The sound effects solved again against the new bed (null: not asked, or none). */
+	sfx: z
+		.object({
+			solved: z.number().int(),
+			changed: z.number().int(),
+			limited: z.number().int(),
+			skipped: z.number().int(),
+		})
+		.nullable(),
+	measure: SoundDeliveryMeasureSchema.nullable(),
+	warnings: z.array(z.object({ code: z.string(), message: z.string() })),
+	ms: z.number(),
+});
+export type SoundDeliveryReport = z.infer<typeof SoundDeliveryReportSchema>;
+
+export const SoundDeliveryResultSchema = z.object({
+	projectId: z.string(),
+	sequenceId: z.string(),
+	mode: z.enum(['propose', 'apply']),
+	applied: z.boolean(),
+	revision: z.number().int().nullable(),
+	proposalId: z.string().nullable(),
+	report: SoundDeliveryReportSchema,
+});
+export type SoundDeliveryResult = z.infer<typeof SoundDeliveryResultSchema>;

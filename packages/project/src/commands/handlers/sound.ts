@@ -660,11 +660,13 @@ function place(doc: DDoc, cmd: CommandOf<'soundDesign.place'>, h: HandlerContext
 	}
 	if (cue) {
 		cue.placedClipIds = all;
+		// the cue is filled: its stored stop-before / build go into the mix (followCueMix after the soundIds below)
 		const soundIds = [...(cue.soundIds ?? [])];
 		for (const p of placed) if (p.soundId) soundIds[p.layer] = p.soundId;
 		const dense = soundIds.filter((s): s is string => typeof s === 'string');
 		if (dense.length) cue.soundIds = dense.slice(0, SOUND_DESIGN_LIMITS.soundIds);
 	}
+	if (cue) followCueMix(doc, seq, cue.id, h, false);
 	// Room glue: a track that now plays sound effects sends to the "SFX Room" like the others.
 	syncRoomSends(
 		doc,

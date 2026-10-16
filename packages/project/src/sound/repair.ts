@@ -319,7 +319,8 @@ export function remapSoundDesign(
 		delete (sd as { mix?: unknown }).mix;
 		if (isRecord(sd.settings)) {
 			const rb = (sd.settings as { roomBus?: unknown }).roomBus;
-			(sd.settings as { roomBus?: unknown }).roomBus = typeof rb === 'string' ? (maps.tracks.get(rb) ?? null) : null;
+			(sd.settings as { roomBus?: unknown }).roomBus =
+				typeof rb === 'string' ? (maps.tracks.get(rb) ?? null) : null;
 		}
 		const s = sd.settings;
 		if (isRecord(s) && Array.isArray(s.sfxTrackIds))

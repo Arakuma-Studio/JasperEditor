@@ -1,5 +1,6 @@
 // `mixFingerprint`: a hash of everything a sequence's mix depends on (audio tracks and their clips, submixes, the Mix
-// without its loudness settings, audio transitions, the media fingerprints and interpretations and the nested sequences they play). A stored
+// without its loudness settings, audio transitions, the media fingerprints and interpretations and the nested sequences they play;
+// keyframe ids are not part of it). A stored
 // loudness analysis whose `mixHash` differs is stale (audio-mix).
 import { mediaTimeMap } from '../interpret/model.ts';
 import type { ProjectDocument } from '../schema/document.ts';
@@ -8,10 +9,17 @@ import { fnv1a64 } from '../structure/nest.ts';
 
 const AUDIO_KINDS = new Set(['audio', 'nest-audio', 'synthetic-audio']);
 
+/** A keyframe: its id names it, it does not change the sound. */
+const isKeyframe = (o: object) => 'time' in o && 'value' in o && 'interpolation' in o;
+
 function stable(v: unknown): string {
 	if (v === null || typeof v !== 'object') return JSON.stringify(v) ?? 'null';
 	if (Array.isArray(v)) return `[${v.map(stable).join(',')}]`;
-	const keys = Object.keys(v as object).sort();
+	// Keyframe ids are left out: the same curve written again (a re-applied dip, a copy) is the same mix, so a loudness
+	// analysis measured on an engine-side simulation of a transaction stays current after the real one (Phase 4 WP4.2a).
+	const keys = Object.keys(v as object)
+		.filter((k) => !(k === 'id' && isKeyframe(v as object)))
+		.sort();
 	return `{${keys.map((k) => `${JSON.stringify(k)}:${stable((v as Record<string, unknown>)[k])}`).join(',')}}`;
 }
 

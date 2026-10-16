@@ -52,10 +52,14 @@ const trackVol = (h: Harness, label: string, t: number) => {
 };
 const clipVol = (h: Harness, id: string, seqFlicks: number) => {
 	const c = clipOf(h, id);
-	return evaluate(c.volumeDb as Animatable<number>, clipLaneTime(c, h.seq.settings.frameRate).toLane(seqFlicks));
+	return evaluate(
+		c.volumeDb as Animatable<number>,
+		clipLaneTime(c, h.seq.settings.frameRate).toLane(seqFlicks),
+	);
 };
 /** A document with fresh-id differences removed (keys and records written again get new ids). */
-const noIds = (x: unknown) => JSON.parse(JSON.stringify(x).replace(/"(kf|snd|fx|trk)_[0-9A-Za-z]+"/g, '"$1"'));
+const noIds = (x: unknown) =>
+	JSON.parse(JSON.stringify(x).replace(/"(kf|snd|fx|trk)_[0-9A-Za-z]+"/g, '"$1"'));
 const sd = (h: Harness) => h.seq.soundDesign as SoundDesign | undefined;
 
 let n = 0;
@@ -117,7 +121,11 @@ describe('audio.volumeDip', () => {
 		expect(noIds(h.doc.sequences)).toEqual(noIds(after));
 		// outside the clip: skipped
 		const r2 = h.ok([
-			{ type: 'audio.volumeDip', clipIds: [music], dips: [{ start: 60 * S, end: 61 * S, depthDb: -6, fadeMs: 0 }] },
+			{
+				type: 'audio.volumeDip',
+				clipIds: [music],
+				dips: [{ start: 60 * S, end: 61 * S, depthDb: -6, fadeMs: 0 }],
+			},
 		]);
 		expect((r2.results[0] as { clips: Record<string, unknown> }).clips[music]).toEqual({
 			skipped: 'no dip in the clip',
@@ -149,11 +157,21 @@ describe('audio.volumeDip', () => {
 		const music = addAudio(h, 0, 'A1', 'music');
 		// duck −15 dB from 1 s to 4 s (800 ms ramps)
 		h.ok([
-			{ type: 'audio.autoDuck', targetClipIds: [music], regions: [[1.8 * S, 4 * S]], amountDb: 15, fadeMs: 800 },
+			{
+				type: 'audio.autoDuck',
+				targetClipIds: [music],
+				regions: [[1.8 * S, 4 * S]],
+				amountDb: 15,
+				fadeMs: 800,
+			},
 		]);
 		const ducked = clone(clipOf(h, music).volumeDb);
 		h.ok([
-			{ type: 'audio.volumeDip', clipIds: [music], dips: [{ start: 2.5 * S, end: 3 * S, depthDb: -24, fadeMs: 30 }] },
+			{
+				type: 'audio.volumeDip',
+				clipIds: [music],
+				dips: [{ start: 2.5 * S, end: 3 * S, depthDb: -24, fadeMs: 30 }],
+			},
 		]);
 		// inside the duck the window edges are at −15: the dip floor is −39
 		expect(clipVol(h, music, 2.7 * S)).toBeCloseTo(-39, 6);
@@ -167,7 +185,11 @@ describe('audio.volumeDip', () => {
 		const music = addAudio(h, 30, 'A1', 'music', 20);
 		h.ok([{ type: 'clip.setSpeed', clipIds: [music], rate: 2, reverse: true, ripple: false }]);
 		h.ok([
-			{ type: 'audio.volumeDip', clipIds: [music], dips: [{ start: 3 * S, end: 3.5 * S, depthDb: -12, fadeMs: 0 }] },
+			{
+				type: 'audio.volumeDip',
+				clipIds: [music],
+				dips: [{ start: 3 * S, end: 3.5 * S, depthDb: -12, fadeMs: 0 }],
+			},
 		]);
 		expect(clipVol(h, music, 3.2 * S)).toBeCloseTo(-12, 6);
 		expect(clipVol(h, music, 2.5 * S)).toBeCloseTo(0, 6);
@@ -213,7 +235,11 @@ describe('mergeDips (property)', () => {
 					}
 					kfs.sort((a, b) => a.time - b.time);
 					const anim: Animatable<number> = { value, keyframes: kfs };
-					const lane = { toLane: (t: number) => t, toSeq: (t: number) => t, span: [0, Infinity] as [number, number] };
+					const lane = {
+						toLane: (t: number) => t,
+						toSeq: (t: number) => t,
+						span: [0, Infinity] as [number, number],
+					};
 					let i = 0;
 					const r = mergeDips(anim, lane, dips, { newId: () => `new_${i++}`, clamp: [-96, 15] });
 					if (!r) return;
@@ -232,7 +258,9 @@ describe('mergeDips (property)', () => {
 							const ref = Math.max(evaluate(anim, w[0]), evaluate(anim, w[1]));
 							const dd = Math.min(15, Math.max(-96, ref + dipEnvelopeAt(dips, t)));
 							// a hold step between two samples is drawn as a 1-flick ramp: skip its instant
-							const step = kfs.some((kf, j) => j > 0 && kfs[j - 1]!.interpolation === 'hold' && Math.abs(kf.time - t) <= 2);
+							const step = kfs.some(
+								(kf, j) => j > 0 && kfs[j - 1]!.interpolation === 'hold' && Math.abs(kf.time - t) <= 2,
+							);
 							if (!step) expect(got).toBeCloseTo(Math.min(e, dd), 3);
 							expect(got).toBeLessThanOrEqual(dd + 1e-3);
 							void d;
@@ -350,7 +378,8 @@ describe('soundDesign.applyStopBefore', () => {
 		const ref = Math.max(E(T - 0.25 * S - 30 * MS), E(T + 20 * MS));
 		expect(trackVol(h, 'A1', T - 0.1 * S)).toBeCloseTo(Math.min(E(T - 0.1 * S), ref - 24), 6);
 		// keys outside the window are the same keys
-		for (const k of ride.keyframes) if (Math.abs(k.time - T) > 0.4 * S) expect(track(h, 'A1').volumeDb!.keyframes).toContainEqual(k);
+		for (const k of ride.keyframes)
+			if (Math.abs(k.time - T) > 0.4 * S) expect(track(h, 'A1').volumeDb!.keyframes).toContainEqual(k);
 		h.ok([{ type: 'soundCue.update', cueId: cue, stopBefore: null }]);
 		expect(h.seq.audioTracks.find((t) => t.id === A1)!.volumeDb).toEqual(ride);
 	});
@@ -367,9 +396,7 @@ describe('soundDesign.applyStopBefore', () => {
 		// a dialogue clip on A1 under the cue: the music clip's Volume instead
 		h.ok([{ type: 'soundCue.update', cueId: cue, stopBefore: null }]);
 		const m2 = h.registerVideo({ kind: 'audio', seconds: 30 });
-		const p = h.ok([
-			{ type: 'clip.place', source: { mediaId: m2 }, at: 0, tracks: { audio: 'A3' } },
-		]);
+		const p = h.ok([{ type: 'clip.place', source: { mediaId: m2 }, at: 0, tracks: { audio: 'A3' } }]);
 		const music2 = (p.results[0] as { clipIds: string[] }).clipIds[0]!;
 		h.ok([{ type: 'essentialSound.setType', clipIds: [music2], audioType: 'music' }]);
 		const dlg = addAudio(h, 100, 'A3', 'dialogue', 1);
@@ -434,12 +461,16 @@ describe('soundDesign.applyStopBefore', () => {
 			reason: 'the cue has no stop-before',
 		});
 		// refusals
-		expect(h.tx([{ type: 'soundDesign.applyStopBefore', cueId: 'cue_0000000000000000' }]).errors?.[0]?.code).toBe(
-			'E_NOT_FOUND',
-		);
+		expect(
+			h.tx([{ type: 'soundDesign.applyStopBefore', cueId: 'cue_0000000000000000' }]).errors?.[0]?.code,
+		).toBe('E_NOT_FOUND');
 		h.ok([{ type: 'track.update', trackId: track(h, 'A1').id, patch: { locked: true } }]);
-		expect(h.tx([{ type: 'soundDesign.applyStopBefore', cueId: cue }]).errors?.[0]?.code).toBe('E_TRACK_LOCKED');
-		expect(h.tx([{ type: 'soundDesign.applyStopBefore', cueId: cue, bogus: 1 }]).errors?.[0]?.code).toBe('E_SCHEMA');
+		expect(h.tx([{ type: 'soundDesign.applyStopBefore', cueId: cue }]).errors?.[0]?.code).toBe(
+			'E_TRACK_LOCKED',
+		);
+		expect(h.tx([{ type: 'soundDesign.applyStopBefore', cueId: cue, bogus: 1 }]).errors?.[0]?.code).toBe(
+			'E_SCHEMA',
+		);
 	});
 });
 
@@ -499,12 +530,17 @@ describe('soundDesign.applyBuild', () => {
 		const c = clipOf(h, music);
 		const fx = c.effects.find((e) => e.effectId === BUILD_FILTER_EFFECT_ID)!;
 		const lane = clipLaneTime(c, h.seq.settings.frameRate);
-		expect(evaluate(fx.params.cutoff as Animatable<number>, lane.toLane(125 * F30 - 2 * S))).toBeCloseTo(150, 3);
+		expect(evaluate(fx.params.cutoff as Animatable<number>, lane.toLane(125 * F30 - 2 * S))).toBeCloseTo(
+			150,
+			3,
+		);
 		expect(track(h, 'A1').effects ?? []).toEqual([]);
 		h.ok([{ type: 'soundCue.update', cueId: cue, build: null }]);
 		expect(clipOf(h, music).effects.some((e) => e.effectId === BUILD_FILTER_EFFECT_ID)).toBe(false);
 		const none = heroCue(h, 2000, { build: { seconds: 2, fromHz: 150, toHz: 2000 } });
-		expect(h.ok([{ type: 'soundDesign.applyBuild', cueId: none }]).results[0]).toMatchObject({ applied: false });
+		expect(h.ok([{ type: 'soundDesign.applyBuild', cueId: none }]).results[0]).toMatchObject({
+			applied: false,
+		});
 		expect(h.tx([{ type: 'soundDesign.applyBuild', cueId: 'cue_0000000000000000' }]).errors?.[0]?.code).toBe(
 			'E_NOT_FOUND',
 		);
@@ -612,10 +648,18 @@ describe('soundDesign.ensureBus / removeBus (room glue)', () => {
 		h.ok([{ type: 'soundDesign.removeBus' }]);
 		expect(h.seq.submixTracks!.map((x) => x.id)).toEqual([adopted]);
 		expect(h.seq.audioTracks.every((x) => (x.mixer?.sends ?? []).length === 0)).toBe(true);
-		expect(h.tx([{ type: 'soundDesign.ensureBus', sfxTracks: ['A9'] }]).errors?.[0]?.code).toBe('E_NOT_FOUND');
-		expect(h.tx([{ type: 'soundDesign.ensureBus', sfxTracks: ['V1'] }]).errors?.[0]?.code).toBe('E_TRACK_KIND');
-		expect(h.tx([{ type: 'soundDesign.ensureBus', roomGlue: { decay: 99 } }]).errors?.[0]?.code).toBe('E_SCHEMA');
-		expect(h.tx([{ type: 'soundDesign.ensureBus', sequenceId: 'seq_nope' }]).errors?.[0]?.code).toBe('E_NOT_FOUND');
+		expect(h.tx([{ type: 'soundDesign.ensureBus', sfxTracks: ['A9'] }]).errors?.[0]?.code).toBe(
+			'E_NOT_FOUND',
+		);
+		expect(h.tx([{ type: 'soundDesign.ensureBus', sfxTracks: ['V1'] }]).errors?.[0]?.code).toBe(
+			'E_TRACK_KIND',
+		);
+		expect(h.tx([{ type: 'soundDesign.ensureBus', roomGlue: { decay: 99 } }]).errors?.[0]?.code).toBe(
+			'E_SCHEMA',
+		);
+		expect(h.tx([{ type: 'soundDesign.ensureBus', sequenceId: 'seq_nope' }]).errors?.[0]?.code).toBe(
+			'E_NOT_FOUND',
+		);
 	});
 });
 
@@ -692,24 +736,37 @@ describe('soundDesign.applyDelivery', () => {
 		const music = addAudio(h, 0, 'A1', 'music', 5);
 		const untyped = addAudio(h, 0, 'A2', null, 5);
 		const r = h.ok([
-			{ type: 'soundDesign.applyDelivery', delivery: 'podcast', loudness: false, measuredLufs: { [music]: -20, [untyped]: -20 } },
+			{
+				type: 'soundDesign.applyDelivery',
+				delivery: 'podcast',
+				loudness: false,
+				measuredLufs: { [music]: -20, [untyped]: -20 },
+			},
 		]);
 		const res = r.results[0] as { matched: Record<string, unknown> };
 		expect(res.matched[music]).toMatchObject({ targetLufs: -16 });
 		expect(res.matched[untyped]).toEqual({ skipped: 'no audio type' });
 		expect(h.seq.master.loudness?.enabled ?? false).toBe(false);
 		expect(
-			h.tx([{ type: 'soundDesign.applyDelivery', delivery: 'podcast', measuredLufs: { clp_nope: -20 } }]).errors?.[0]
-				?.code,
+			h.tx([{ type: 'soundDesign.applyDelivery', delivery: 'podcast', measuredLufs: { clp_nope: -20 } }])
+				.errors?.[0]?.code,
 		).toBe('E_NOT_FOUND');
 		expect(
-			h.tx([{ type: 'soundDesign.applyDelivery', delivery: 'podcast', ducking: [{ clipIds: [untyped], regions: [] }] }])
-				.errors?.[0]?.code,
+			h.tx([
+				{
+					type: 'soundDesign.applyDelivery',
+					delivery: 'podcast',
+					ducking: [{ clipIds: [untyped], regions: [] }],
+				},
+			]).errors?.[0]?.code,
 		).toBe('E_INVALID_PARAM');
-		expect(h.tx([{ type: 'soundDesign.applyDelivery', delivery: 'cinema' }]).errors?.[0]?.code).toBe('E_SCHEMA');
+		expect(h.tx([{ type: 'soundDesign.applyDelivery', delivery: 'cinema' }]).errors?.[0]?.code).toBe(
+			'E_SCHEMA',
+		);
 		h.ok([{ type: 'track.update', trackId: track(h, 'A1').id, patch: { locked: true } }]);
 		expect(
-			h.tx([{ type: 'soundDesign.applyDelivery', delivery: 'web', measuredLufs: { [music]: -20 } }]).errors?.[0]?.code,
+			h.tx([{ type: 'soundDesign.applyDelivery', delivery: 'web', measuredLufs: { [music]: -20 } }])
+				.errors?.[0]?.code,
 		).toBe('E_TRACK_LOCKED');
 	});
 });
@@ -720,7 +777,10 @@ describe('mix records: load and repair', () => {
 		addAudio(h, 0, 'A1', 'music');
 		const hitM = libMedia(h, ['hit']);
 		h.ok([{ type: 'soundDesign.place', frame: 60, layers: [{ mediaId: hitM, track: 'A2' }] }]);
-		const cue = heroCue(h, 120, { stopBefore: { seconds: 0.25, depthDb: -24 }, build: { seconds: 2, fromHz: 150, toHz: 2000 } });
+		const cue = heroCue(h, 120, {
+			stopBefore: { seconds: 0.25, depthDb: -24 },
+			build: { seconds: 2, fromHz: 150, toHz: 2000 },
+		});
 		h.ok([
 			{ type: 'soundDesign.applyStopBefore', cueId: cue },
 			{ type: 'soundDesign.applyBuild', cueId: cue },
@@ -762,6 +822,45 @@ describe('mix records: load and repair', () => {
 		expect(checkInvariants(h.doc)).toEqual([]);
 		// ensureBus on the copy adopts its room
 		h.ok([{ type: 'soundDesign.ensureBus', sequenceId: copyId }]);
-		expect((h.doc.sequences[copyId]!.soundDesign as SoundDesign).mix!.room!.busId).toBe(cs.submixTracks![0]!.id);
+		expect((h.doc.sequences[copyId]!.soundDesign as SoundDesign).mix!.room!.busId).toBe(
+			cs.submixTracks![0]!.id,
+		);
+	});
+});
+
+describe('stop-before and build follow the filled cue', () => {
+	it('filling a cue with a stored stop-before / build writes them; the cue menu toggle on a filled cue too', () => {
+		const h = new Harness();
+		addAudio(h, 0, 'A1', 'music');
+		const hitM = libMedia(h, ['hit']);
+		h.ok([{ type: 'track.add', kind: 'audio', count: 1 }]);
+		const cue = heroCue(h, 150, {
+			stopBefore: { seconds: 0.25, depthDb: -24 },
+			build: { seconds: 2, fromHz: 150, toHz: 2000 },
+		});
+		// unfilled: stored only
+		expect(track(h, 'A1').volumeDb?.keyframes ?? []).toEqual([]);
+		h.ok([{ type: 'soundDesign.place', cueId: cue, layers: [{ mediaId: hitM, track: 'A2' }] }]);
+		const T = 150 * F30;
+		expect(trackVol(h, 'A1', T - 0.1 * S)).toBeCloseTo(-24, 6);
+		expect(track(h, 'A1').effects?.[0]?.effectId).toBe(BUILD_FILTER_EFFECT_ID);
+		expect(sd(h)!.mix!.cues![cue]).toMatchObject({ stopBefore: { frame: 150 }, build: { frame: 150 } });
+		// "Stop Before Next" on another, filled cue: written at once
+		const p = h.ok([{ type: 'soundDesign.place', frame: 450, layers: [{ mediaId: hitM, track: 'A2' }] }]);
+		void p;
+		const cue2 = heroCue(h, 450);
+		h.ok([{ type: 'soundCue.remove', cueIds: [cue2] }]);
+		const c3 = heroCue(h, 400);
+		h.ok([{ type: 'soundDesign.place', cueId: c3, layers: [{ mediaId: hitM, track: 'A2' }] }]);
+		expect(trackVol(h, 'A1', 400 * F30 - 0.1 * S)).toBe(0);
+		h.ok([{ type: 'soundCue.update', cueId: c3, stopBefore: { seconds: 0.25, depthDb: -24 } }]);
+		expect(trackVol(h, 'A1', 400 * F30 - 0.1 * S)).toBeCloseTo(-24, 6);
+		// a locked music track does not block placing: the dip is skipped there
+		h.ok([{ type: 'track.update', trackId: track(h, 'A1').id, patch: { locked: true } }]);
+		const c4 = heroCue(h, 600, { stopBefore: { seconds: 0.25, depthDb: -24 } });
+		h.ok([{ type: 'soundDesign.place', cueId: c4, layers: [{ mediaId: hitM, track: 'A2' }] }]);
+		expect(trackVol(h, 'A1', 600 * F30 - 0.1 * S)).toBe(0);
+		expect(sd(h)!.mix!.cues![c4]).toBeUndefined();
+		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 });

@@ -7,17 +7,21 @@
 //   POST /api/sound-design/rebalance  a `sound-design` job (202): the sequence's sound effects measured against the bed
 //                                 and solved by the masking solver (sound-design/rebalance.ts): a report, and one
 //                                 applied transaction "Rebalance SFX Levels" or a proposal.
+//   POST /api/sound-design/delivery  a `sound-design` job (202): a delivery preset measured and applied as ONE
+//                                 transaction "Apply Delivery Preset", or proposed (sound-design/delivery.ts).
 import {
 	type EnvelopeJson,
 	SfxRebalanceRequestSchema,
 	type SoundCueSuggestion,
 	SoundCuesRequestSchema,
 	type SoundCuesResponse,
+	SoundDeliveryRequestSchema,
 	SoundDesignPlanRequestSchema,
 } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
 	bindExpressions,
+	defaultRegistries,
 	deriveCues,
 	documentHasActiveExpressions,
 	loadProject,
@@ -34,6 +38,7 @@ import type { AgentService } from '../agent/service.ts';
 import { agentNameOf } from '../agent/user-approval.ts';
 import { isProjectId } from '../projects/store.ts';
 import type { ProposalService } from '../proposals/service.ts';
+import { planDelivery, runDelivery } from '../sound-design/delivery.ts';
 import { matchStoredCues } from '../sound-design/match.ts';
 import {
 	liveDocument,
@@ -57,23 +62,32 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 	const agentOf = () => services.agent as AgentService | undefined;
 	// Registered by the proposal routes (after these): looked up when a job runs.
 	const proposalsOf = () => services.proposals as ProposalService | undefined;
-	// One job kind for both: rebalance jobs carry `rebalance` in their input.
+	// One job kind for all three: rebalance jobs carry `rebalance` in their input, delivery jobs `delivery`.
 	core.queue.registerRunner('sound-design', (ctx) =>
-		(ctx.input as { rebalance?: unknown } | null)?.rebalance
-			? runRebalance(ctx, {
+		(ctx.input as { delivery?: unknown } | null)?.delivery
+			? runDelivery(ctx, {
 					agent: agentOf,
 					proposals: proposalsOf,
 					ffmpeg: core.ffmpeg,
 					registry: core.registry,
+					registries: defaultRegistries(mgRegistry),
 				})
-			: runSoundDesignPlan(ctx, {
-					agent: agentOf,
-					sounds: () => services.sounds as SoundService | undefined,
-					proposals: proposalsOf,
-					mgTemplates: mgRegistry,
-					ffmpeg: core.ffmpeg,
-					registry: core.registry,
-				}),
+			: (ctx.input as { rebalance?: unknown } | null)?.rebalance
+				? runRebalance(ctx, {
+						agent: agentOf,
+						proposals: proposalsOf,
+						ffmpeg: core.ffmpeg,
+						registry: core.registry,
+					})
+				: runSoundDesignPlan(ctx, {
+						agent: agentOf,
+						sounds: () => services.sounds as SoundService | undefined,
+						proposals: proposalsOf,
+						mgTemplates: mgRegistry,
+						ffmpeg: core.ffmpeg,
+						registry: core.registry,
+						planDelivery,
+					}),
 	);
 
 	app.post(
@@ -106,6 +120,40 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 				origin: editor ? { type: 'user' } : { type: 'agent', agentRunId: who.agent },
 				projectId: body.projectId,
 				input: { rebalance: body, who },
+				stage: 'Waiting',
+			});
+		}),
+	);
+
+	app.post(
+		'/api/sound-design/delivery',
+		guarded(async (req, reply) => {
+			const body = parseOr400(SoundDeliveryRequestSchema, req.body ?? {});
+			if (!isProjectId(body.projectId)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
+			const agent = agentOf();
+			if (!agent || !services.proposals)
+				throw new HttpError(503, 'NOT_AVAILABLE', 'The sound design services are not running');
+			if (!(await agent.projectExists(body.projectId)))
+				throw new HttpError(404, 'PROJECT_NOT_FOUND', `Project not found: ${body.projectId}`);
+			// Refused at once rather than as a failed job: an unknown sequence.
+			const { doc } = await liveDocument(agent, body.projectId);
+			try {
+				planSequence(doc, body.sequenceId);
+			} catch (e) {
+				if (e instanceof PlanInputError) throw new HttpError(404, e.code, e.message);
+				throw e;
+			}
+			const editor = req.jasperEditor === true;
+			const who = { editor, agent: agentNameOf(req) };
+			reply.code(202);
+			return core.queue.submit({
+				kind: 'sound-design',
+				title: `Delivery preset: ${body.delivery}`,
+				priority: 'user',
+				cpuSlots: 1,
+				origin: editor ? { type: 'user' } : { type: 'agent', agentRunId: who.agent },
+				projectId: body.projectId,
+				input: { delivery: body, who },
 				stage: 'Waiting',
 			});
 		}),

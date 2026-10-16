@@ -572,6 +572,19 @@ describe('mixer commands', () => {
 		expect(mixFingerprint(h.doc, h.seqId)).not.toBe(hash);
 	});
 
+	it('mixFingerprint ignores keyframe ids (the same curve written again is the same mix)', () => {
+		const h = new Harness();
+		const m = h.registerVideo({ seconds: 10 });
+		h.ok([{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { video: 'V1', audio: 'A1' } }]);
+		h.ok([{ type: 'mixer.writeAutomation', stripId: 'A1', lane: 'volume', points: [[0, -3], [705_600_000, -9]] }]);
+		const fp = mixFingerprint(h.doc, h.seqId);
+		const doc = JSON.parse(JSON.stringify(h.doc)) as ProjectDocument;
+		for (const k of doc.sequences[h.seqId]!.audioTracks[0]!.volumeDb!.keyframes) k.id = `${k.id}x`;
+		expect(mixFingerprint(doc, h.seqId)).toBe(fp);
+		doc.sequences[h.seqId]!.audioTracks[0]!.volumeDb!.keyframes[0]!.value = -4;
+		expect(mixFingerprint(doc, h.seqId)).not.toBe(fp);
+	});
+
 	it("mixFingerprint changes when Interpret Footage changes how a clip's media plays", () => {
 		const h = new Harness();
 		const m = h.registerVideo({ seconds: 10 });

@@ -235,7 +235,7 @@ function writeStopBefore(
 	doc: DDoc,
 	seq: DSeq,
 	cue: Draft<SoundCue>,
-	opts: { ambience?: boolean },
+	opts: { ambience?: boolean; skipLocked?: boolean },
 	h: HandlerContext,
 ): { writes: MixWrite[]; reason: string | null } {
 	const spec = cue.stopBefore!;
@@ -252,6 +252,7 @@ function writeStopBefore(
 	const writes: MixWrite[] = [];
 	for (const u of uses) {
 		const track = audioTrack(seq, u.trackId)!;
+		if (opts.skipLocked && track.locked) continue;
 		assertUnlocked(track, h);
 		if (!u.shared && !u.automationOff) {
 			// The music track's volume lane (mixer.writeAutomation: keys outside the range are kept).
@@ -312,7 +313,7 @@ function realizeStopBefore(
 	doc: DDoc,
 	seq: DSeq,
 	cue: Draft<SoundCue>,
-	opts: { ambience?: boolean },
+	opts: { ambience?: boolean; skipLocked?: boolean },
 	h: HandlerContext,
 ): { applied: boolean; removed: number; writes: MixWrite[]; reason: string | null } {
 	const removed = removeStopBefore(seq, cue.id, h);
@@ -460,6 +461,7 @@ function writeBuild(
 	seq: DSeq,
 	cue: Draft<SoundCue>,
 	h: HandlerContext,
+	opts: { skipLocked?: boolean } = {},
 ): { writes: MixWrite[]; reason: string | null } {
 	const rate = rateOf(seq);
 	const F = flicksPerFrame(rate);
@@ -471,6 +473,7 @@ function writeBuild(
 	const writes: MixWrite[] = [];
 	for (const u of uses) {
 		const track = audioTrack(seq, u.trackId)!;
+		if (opts.skipLocked && track.locked) continue;
 		assertUnlocked(track, h);
 		if (!u.shared) {
 			const { fx } = buildFilter(doc, seq, { trackId: track.id }, h);
@@ -497,11 +500,12 @@ function realizeBuild(
 	seq: DSeq,
 	cue: Draft<SoundCue>,
 	h: HandlerContext,
+	opts: { skipLocked?: boolean } = {},
 ): { applied: boolean; removed: number; writes: MixWrite[]; reason: string | null } {
 	const removed = removeBuild(doc, seq, cue.id, h);
 	if (!cue.build) return { applied: false, removed, writes: [], reason: 'the cue has no build' };
 	if (cue.muted) return { applied: false, removed, writes: [], reason: 'the cue is muted' };
-	const r = writeBuild(doc, seq, cue, h);
+	const r = writeBuild(doc, seq, cue, h, opts);
 	if (r.writes.length) {
 		const mix = mixOf(seq);
 		mix.cues ??= {} as never;
@@ -530,15 +534,18 @@ function applyBuild(doc: DDoc, cmd: CommandOf<'soundDesign.applyBuild'>, h: Hand
 }
 
 /**
- * Keeps a cue's realised stop-before and build in step with the cue (`soundCue.update`, `soundCue.resync`, and
- * `soundCue.remove`): a removed cue, a cleared or muted field takes its writes out; a moved cue or a changed field
- * writes them again. Cues never realised are left alone. Exported for the cue handlers.
+ * Keeps a cue's stop-before and build in step with the cue (`soundCue.update`, `soundCue.resync`, `soundCue.remove`,
+ * `soundDesign.place`): a removed cue, a cleared or muted field takes its writes out; a moved cue or a changed field
+ * writes them again; a FILLED cue (a placed sound) with a `stopBefore` / `build` not written yet gets it written —
+ * "apply when the cue is filled" — skipping locked music tracks rather than refusing the edit. Exported for the cue and
+ * placement handlers.
  */
 export function followCueMix(doc: DDoc, seq: DSeq, cueId: string, h: HandlerContext, removed: boolean): void {
 	const rec = peekMix(seq)?.cues?.[cueId];
-	if (!rec) return;
 	const cue = removed ? null : (soundDesignOf(seq).cues[cueId] ?? null);
-	if (rec.stopBefore) {
+	if (!rec && !cue) return;
+	const filled = !!cue && (cue.placedClipIds ?? []).some((id) => !!seq.clips[id]);
+	if (rec?.stopBefore) {
 		const s = cue?.stopBefore;
 		const same =
 			cue &&
@@ -558,8 +565,9 @@ export function followCueMix(doc: DDoc, seq: DSeq, cueId: string, h: HandlerCont
 					h,
 				);
 		}
-	}
-	if (rec.build) {
+	} else if (cue && filled && cue.stopBefore && !cue.muted)
+		realizeStopBefore(doc, seq, cue, { skipLocked: true }, h);
+	if (rec?.build) {
 		const b = cue?.build;
 		const same =
 			cue &&
@@ -573,7 +581,7 @@ export function followCueMix(doc: DDoc, seq: DSeq, cueId: string, h: HandlerCont
 			if (!cue) removeBuild(doc, seq, cueId, h);
 			else realizeBuild(doc, seq, cue, h);
 		}
-	}
+	} else if (cue && filled && cue.build && !cue.muted) realizeBuild(doc, seq, cue, h, { skipLocked: true });
 }
 
 // ---------------------------------------------------------------------------------------------------------------

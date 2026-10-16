@@ -183,6 +183,7 @@ import {
 	SfxRebalanceRequestSchema,
 	SoundCuesRequestSchema,
 	SoundCuesResponseSchema,
+	SoundDeliveryRequestSchema,
 	SoundDesignPlanRequestSchema,
 } from './sound-design.ts';
 import {
@@ -1123,6 +1124,17 @@ export const ROUTES = {
 		method: 'POST',
 		path: '/api/sound-design/rebalance',
 		body: SfxRebalanceRequestSchema,
+		response: EngineJobSchema,
+	},
+	/**
+	 * Delivery preset (spec 12 §2.4, P4-R4): a `sound-design` job (202) that measures the clips, the ducking triggers and
+	 * the resulting mix and applies (`mode: 'apply'`, ONE transaction "Apply Delivery Preset") or proposes (the default)
+	 * Mix loudness normalisation, Auto-Match by type, ducking and solved sound-effect gains.
+	 */
+	soundDesignDelivery: {
+		method: 'POST',
+		path: '/api/sound-design/delivery',
+		body: SoundDeliveryRequestSchema,
 		response: EngineJobSchema,
 	},
 	/**

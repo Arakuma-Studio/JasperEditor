@@ -308,7 +308,9 @@ export function mergeDips(
 		}
 		// Values at the times the keys are stored at (whole lane flicks), so the curve outside stays the same line.
 		const snap = (t: number) => lane.toSeq(Math.round(lane.toLane(t)));
-		const times = [...new Set([...pts].map(snap))].filter((t) => t >= ws - 1 && t <= we + 1).sort((x, y) => x - y);
+		const times = [...new Set([...pts].map(snap))]
+			.filter((t) => t >= ws - 1 && t <= we + 1)
+			.sort((x, y) => x - y);
 		const out: [number, number][] = [];
 		for (let i = 0; i < times.length; i++) {
 			const t = times[i]!;
@@ -354,7 +356,7 @@ export function unwriteCurve(
 	const kept = keyframes.filter((k) => !ids.has(k.id));
 	if (exact) {
 		const times = new Set(kept.map((k) => k.time));
-		for (const k of write.replaced) if (!times.has(k.time)) kept.push(structuredClone(k));
+		for (const k of write.replaced) if (!times.has(k.time)) kept.push({ ...k, easeIn: { ...k.easeIn }, easeOut: { ...k.easeOut } });
 	}
 	return { keyframes: kept.sort((a, b) => a.time - b.time), exact };
 }
