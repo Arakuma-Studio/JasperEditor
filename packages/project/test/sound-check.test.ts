@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	checkInvariants,
+	createCounterIdSource,
 	type LibraryProvenance,
 	loadProject,
 	makeEnvelope,
@@ -178,8 +179,8 @@ describe('soundDesign.setCheck', () => {
 		sd.settings!.credits = 'pdf';
 		expect(readSoundDesign(sd)!.lastCheck).toBeUndefined();
 		expect(readSoundDesign(sd)!.settings!.credits).toBeUndefined();
-		const once = repairDocument(bad).document;
-		const twice = repairDocument(once).document;
+		const once = repairDocument(bad, createCounterIdSource(77)).document;
+		const twice = repairDocument(once, createCounterIdSource(78)).document;
 		expect(twice).toEqual(once);
 		expect(soundCheckStatus(once, h.seqId).state).toBe('none');
 		expect(checkInvariants(once)).toEqual([]);
