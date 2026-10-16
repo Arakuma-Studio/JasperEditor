@@ -136,12 +136,7 @@ function locate(mix: Float32Array, ref: Float32Array, w0: number, w1: number, gu
 const reviewPanel = () => page.locator('[data-panel-kind="review"][data-instance-id]');
 const row = (id: string) => page.locator(`[data-review-row="${id}"]`);
 
-type Planned = {
-	proposalId: string;
-	placed: number;
-	events: { itemId: string; frame: number; soundId: string }[];
-	skipped: { code: string }[];
-};
+type Planned = { proposalId: string };
 type WaitItem = { itemId: string; state: string; note?: string; swapped?: { alternative: number } };
 type Waited = {
 	status: string;
@@ -173,13 +168,36 @@ test('an MCP agent proposes, the user reviews and applies, the agent reads the r
 	await expect(reviewPanel()).toBeVisible({ timeout: 60_000 });
 	const before = await appliedLabels(page);
 
-	// 1. the agent plans: the three stored cues plus the cues derived from the markers only (style.cueSources)
-	const plan = await tool<Planned>('plan_sound_design', {
+	// 1. the agent plans: the three stored cues plus the cues derived from the markers only (style.cueSources). On a
+	// loaded host the job can outlast one call: the tool then names the job, and the agent waits for it (wait_for_job).
+	const planned = await call('plan_sound_design', {
 		projectId,
 		style: { seed: 7, cueSources: ['markers'] },
-		timeoutSeconds: 600,
+		timeoutSeconds: 900,
 	});
-	expect(plan.proposalId).toMatch(/^prp_/);
+	expect(planned.isError, `plan_sound_design: ${text(planned)}\n${mcpLog.join('').slice(-2000)}`).toBeFalsy();
+	let planBody = JSON.parse(text(planned)) as Partial<Planned> & { jobId?: string };
+	for (let i = 0; !planBody.proposalId && planBody.jobId && i < 6; i++) {
+		const j = await tool<{ timedOut?: boolean; result?: { proposalId?: string | null } }>('wait_for_job', {
+			jobId: planBody.jobId,
+			timeoutSeconds: 900,
+		});
+		if (!j.timedOut) planBody = { ...planBody, proposalId: j.result?.proposalId ?? undefined };
+	}
+	const proposalId = planBody.proposalId!;
+	expect(proposalId, JSON.stringify(planBody).slice(0, 2000)).toMatch(/^prp_/);
+	type StoredItem = { id: string; meta?: { setup?: boolean; frame?: number } };
+	const storedItems = async () =>
+		(
+			(await (await request.get(`/api/projects/${projectId}/proposals/${proposalId}`)).json()) as {
+				proposal: { items: StoredItem[] };
+			}
+		).proposal.items;
+	const placeItems = (await storedItems()).filter((it) => !it.meta?.setup);
+	const plan = {
+		proposalId,
+		events: placeItems.map((it) => ({ itemId: it.id, frame: it.meta?.frame ?? -1 })),
+	};
 	const frames = plan.events.map((e) => e.frame).sort((a, b) => a - b);
 	expect(frames).toEqual([90, 180, 250, 300]); // 250: the "sfx: boom+swoosh" marker; no other derived source
 	expect(await appliedLabels(page)).toEqual(before); // nothing applied
