@@ -34,6 +34,8 @@ import { labelName } from '../../gaps/app-prefs.ts';
 import { formatTimecode, parseTimecodeEntry } from '../../gaps/time-display.ts';
 import { t as tr } from '../../i18n/runtime.ts';
 import { useRenderBar } from '../../previews/hooks.ts';
+import { GhostTrackHeaders, ProposalGhostLayer } from '../../proposals/GhostLayer.tsx';
+import { proposalsFor, useGhostModel } from '../../proposals/state.ts';
 import { insertSoundWithFeedback } from '../../sound/controller.ts';
 import { CueSeam, CueSeamHeader } from '../../sound/cues/CueSeam.tsx';
 import { SEAM_PX } from '../../sound/cues/model.ts';
@@ -102,8 +104,6 @@ import { timelineGesturePreview } from './state/gesture-preview.ts';
 import { HEADER_MAX, HEADER_MIN, setPrefs, timelinePrefs } from './state/prefs.ts';
 import { enterTrimMode, refreshEditPoints } from './state/trim-mode.ts';
 import { type ContextMenuItem, createTimelineUiStore, type TransitionGhost } from './state/ui-store.ts';
-import { GhostTrackHeaders, ProposalGhostLayer } from '../../proposals/GhostLayer.tsx';
-import { proposalsFor, useGhostModel } from '../../proposals/state.ts';
 
 const EMPTY: readonly string[] = [];
 

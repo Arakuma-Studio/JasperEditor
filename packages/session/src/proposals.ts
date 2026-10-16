@@ -303,7 +303,14 @@ export class ProposalsController {
 		if (!engine) return fail('E_NO_ENGINE', 'The engine is not connected');
 		const prev = this.store.getState();
 		if (prev.activeId !== proposalId)
-			this.store.setState({ activeId: proposalId, proposal: null, items: [], selection: [], preview: null, stale: {} });
+			this.store.setState({
+				activeId: proposalId,
+				proposal: null,
+				items: [],
+				selection: [],
+				preview: null,
+				stale: {},
+			});
 		const r = await this.fetchActive();
 		if (!r.ok && this.store.getState().activeId === proposalId) this.exit();
 		return r;
@@ -413,9 +420,14 @@ export class ProposalsController {
 		if (applied && decision !== 'accept')
 			return fail('E_INVALID_PARAM', `Item ${applied} is already applied: undo it in History instead`);
 		if (decision === 'accept') {
-			const closure = dependencyClosure(p, itemIds, (it) => it.state === 'accepted' || it.state === 'invalid');
+			const closure = dependencyClosure(
+				p,
+				itemIds,
+				(it) => it.state === 'accepted' || it.state === 'invalid',
+			);
 			const invalid = itemIds.find((id) => byId.get(id)!.state === 'invalid');
-			if (invalid) return fail('E_INVALID_PARAM', `Item ${invalid} is invalid: ${byId.get(invalid)!.reason ?? ''}`);
+			if (invalid)
+				return fail('E_INVALID_PARAM', `Item ${invalid} is invalid: ${byId.get(invalid)!.reason ?? ''}`);
 			const ids = closure.map((it) => it.id);
 			const rejected = closure.filter((it) => it.state === 'rejected').map((it) => it.id);
 			this.setLocal(p.id, ids, true);
@@ -517,7 +529,7 @@ export class ProposalsController {
 		const it = this.store.getState().proposal?.items.find((x) => x.id === itemId);
 		if (!it) return Promise.resolve(fail('E_NOT_FOUND', `No item ${itemId} in the proposal`));
 		const n = (it.alternatives?.length ?? 0) + 1;
-		return this.selectAlternative(itemId, (((it.selectedAlternative ?? 0) + dir) % n + n) % n);
+		return this.selectAlternative(itemId, ((((it.selectedAlternative ?? 0) + dir) % n) + n) % n);
 	}
 
 	/** The reviewer's note on an item (null / "" clears it); returned to agents. */
@@ -560,7 +572,7 @@ export class ProposalsController {
 			return { ...fail(err.code, err.message), ...(stale ? { stale } : {}) };
 		}
 		this.store.setState({ busy: false, lastError: null });
-		const label = r.result && r.result.ok ? this.entryLabel(r.revision) : null;
+		const label = r.result?.ok ? this.entryLabel(r.revision) : null;
 		if (r.applied.length && r.result?.ok) {
 			const entry = this.entryAt(r.revision);
 			if (entry !== null)
@@ -843,7 +855,8 @@ export function heardDocument(
 	proposals: Pick<ProposalsState, 'hear' | 'preview' | 'activeId'>,
 	session: Pick<EditorSession, 'gestureActive'>,
 ): ProjectDocument | null {
-	if (!proposals.hear || !proposals.preview || proposals.preview.proposalId !== proposals.activeId) return null;
+	if (!proposals.hear || !proposals.preview || proposals.preview.proposalId !== proposals.activeId)
+		return null;
 	if (session.gestureActive) return null;
 	return proposals.preview.document;
 }

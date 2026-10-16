@@ -3,196 +3,12 @@
 // attribution, stale items after a document change, Apply as ONE undo entry through the accept route, Undo → the
 // items back in review with their decisions, Redo → recorded applied again. The engine is a fake built on the pure
 // model (`planAccept`, decisions) that relays accepts into the session as the user's edit, like the real one.
-import type { ProposalChangedEvent, ProposalSummary } from '@jasper/api';
-import {
-	createCounterIdSource,
-	createEmptyProject,
-	createProposal,
-	defaultRegistries,
-	markAccepted,
-	type Proposal,
-	planAccept,
-	proposalCounts,
-	proposalDecided,
-	rejectItems,
-	reopenItems,
-	selectAlternative,
-	setItemNote,
-} from '@jasper/project';
+import { createCounterIdSource, createEmptyProject, defaultRegistries } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
-import {
-	EditorSession,
-	heardDocument,
-	type ProposalsController,
-	type ProposalsEngine,
-	proposalsFor,
-} from '../src/index.ts';
+import { EditorSession, heardDocument, type ProposalsController, proposalsFor } from '../src/index.ts';
+import { FakeEngine } from './fake-proposals-engine.ts';
 
 const REG = defaultRegistries();
-
-class FakeEngine implements ProposalsEngine {
-	readonly proposals = new Map<string, Proposal>();
-	readonly calls: string[] = [];
-	private readonly listeners = new Set<(e: ProposalChangedEvent) => void>();
-	private t = Date.parse('2026-10-16T10:00:00.000Z');
-	private n = 0;
-	failNext: string | null = null;
-	constructor(private readonly session: () => EditorSession) {}
-	now = () => new Date((this.t += 1000)).toISOString();
-	subscribe = (cb: (e: ProposalChangedEvent) => void) => {
-		this.listeners.add(cb);
-		return () => this.listeners.delete(cb);
-	};
-	private emit(p: Proposal, change: ProposalChangedEvent['change'], itemIds?: string[]) {
-		for (const l of this.listeners)
-			l({ projectId: p.projectId, proposalId: p.id, change, counts: proposalCounts(p), ...(itemIds ? { itemIds } : {}) });
-	}
-	private put(p: Proposal, change: ProposalChangedEvent['change'], itemIds?: string[]) {
-		const stamped = { ...p, updatedAt: this.now() };
-		this.proposals.set(p.id, stamped);
-		this.emit(stamped, change, itemIds);
-		return stamped;
-	}
-	private get(id: string): Proposal {
-		if (this.failNext) {
-			const code = this.failNext;
-			this.failNext = null;
-			throw Object.assign(new Error(`failed: ${code}`), { code, status: 409, detail: { code } });
-		}
-		const p = this.proposals.get(id);
-		if (!p) throw Object.assign(new Error('not found'), { code: 'PROPOSAL_NOT_FOUND', status: 404 });
-		return p;
-	}
-	create(draft: Record<string, unknown>, author: Proposal['author'] = { agent: 'sound-agent' }): Proposal {
-		const s = this.session();
-		const r = createProposal(
-			s.getCommitted(),
-			draft,
-			{
-				id: `prp_${String(++this.n).padStart(16, '0')}`,
-				projectId: s.projectId,
-				author,
-				now: this.now(),
-				revision: s.revision,
-			},
-			{ registries: REG },
-		);
-		if (!r.ok) throw new Error(JSON.stringify(r.errors));
-		return this.put(r.proposal, 'created');
-	}
-	async listProposals(): Promise<{ proposals: ProposalSummary[]; warnings: string[] }> {
-		this.calls.push('list');
-		return {
-			proposals: [...this.proposals.values()].map((p) => ({
-				id: p.id,
-				projectId: p.projectId,
-				sequenceId: p.sequenceId,
-				feature: p.feature,
-				title: p.title,
-				summary: p.summary,
-				author: p.author,
-				createdAt: p.createdAt,
-				updatedAt: p.updatedAt,
-				expiresAt: p.updatedAt,
-				baseRevision: p.baseRevision,
-				itemCount: p.items.length,
-				counts: proposalCounts(p),
-				decided: proposalDecided(p),
-			})),
-			warnings: [],
-		};
-	}
-	async getProposal(_pid: string, id: string) {
-		this.calls.push(`get ${id}`);
-		return { proposal: this.get(id), expiresAt: 'x', revision: null };
-	}
-	async acceptProposal(
-		_pid: string,
-		id: string,
-		req: { itemIds: string[] | 'all'; partial?: boolean; expectedRevision?: number },
-	) {
-		this.calls.push(`accept ${JSON.stringify(req.itemIds)}`);
-		const s = this.session();
-		const p0 = this.get(id);
-		const plan = planAccept(s.getCommitted(), p0, req.itemIds, 'user', { registries: REG, revision: s.revision }, {
-			partial: req.partial === true,
-		});
-		if (!plan.ok)
-			throw Object.assign(new Error(plan.errors[0]!.message), {
-				code: 'PROPOSAL_STALE',
-				detail: { code: 'E_PROPOSAL_STALE', stale: plan.stale },
-			});
-		if (!plan.composed)
-			return {
-				proposal: plan.proposal,
-				applied: [],
-				added: [],
-				skipped: [],
-				stale: plan.stale,
-				result: null,
-				appliedBy: null,
-				revision: s.revision,
-			};
-		// the engine relays the ONE composed transaction into the open editor as the user's edit (asUser)
-		const result = await s.submit({ ...plan.composed.tx, origin: 'user' });
-		if (!result.ok) throw Object.assign(new Error('rejected'), { code: 'TRANSACTION_REJECTED' });
-		const accepted = this.put(
-			markAccepted(plan.proposal, plan.composed.itemIds, { revision: result.revision, refs: result.refs, at: this.now() }),
-			'accepted',
-			plan.composed.itemIds,
-		);
-		return {
-			proposal: accepted,
-			applied: plan.composed.itemIds,
-			added: plan.composed.added,
-			skipped: plan.composed.skipped,
-			stale: plan.stale,
-			result,
-			appliedBy: 'session' as const,
-			revision: result.revision,
-		};
-	}
-	private decide(id: string, r: { ok: boolean }, change: ProposalChangedEvent['change']) {
-		if (!r.ok) throw Object.assign(new Error('refused'), { code: 'VALIDATION_FAILED' });
-		const ok = r as { proposal: Proposal; changed: string[] };
-		if (!ok.changed.length) return { proposal: this.get(id), changed: [] };
-		return { proposal: this.put(ok.proposal, change, ok.changed), changed: ok.changed };
-	}
-	async rejectProposal(_pid: string, id: string, req: { itemIds: string[] | 'all' }) {
-		this.calls.push(`reject ${JSON.stringify(req.itemIds)}`);
-		return this.decide(id, rejectItems(this.get(id), req.itemIds, this.now()), 'rejected');
-	}
-	async reopenProposal(_pid: string, id: string, req: { itemIds: string[] | 'all' }) {
-		this.calls.push(`reopen ${JSON.stringify(req.itemIds)}`);
-		return this.decide(id, reopenItems(this.get(id), req.itemIds, this.now()), 'reopened');
-	}
-	async noteProposalItem(_pid: string, id: string, req: { itemId: string; note: string | null }) {
-		this.calls.push(`note ${req.itemId}`);
-		return this.decide(id, setItemNote(this.get(id), req.itemId, req.note, this.now()), 'noted');
-	}
-	async selectProposalAlternative(_pid: string, id: string, req: { itemId: string; alternative: number }) {
-		this.calls.push(`select ${req.itemId} ${req.alternative}`);
-		return this.decide(id, selectAlternative(this.get(id), req.itemId, req.alternative, this.now()), 'selected');
-	}
-	async markProposalApplied(
-		_pid: string,
-		id: string,
-		req: { itemIds: string[]; revision: number; refs: Record<string, string> },
-	) {
-		this.calls.push(`applied ${JSON.stringify(req.itemIds)}`);
-		const p = this.get(id);
-		const ids = req.itemIds.filter((x) => p.items.find((it) => it.id === x)?.state !== 'accepted');
-		const next = markAccepted(p, ids, { revision: req.revision, refs: req.refs, at: this.now() });
-		return { proposal: this.put(next, 'accepted', ids), changed: ids };
-	}
-	async deleteProposal(_pid: string, id: string) {
-		this.calls.push(`delete ${id}`);
-		const p = this.get(id);
-		this.proposals.delete(id);
-		this.emit(p, 'deleted');
-		return { proposalId: id, deleted: true as const };
-	}
-}
 
 /** Manual timers: the debounced work runs when the test says so. */
 function timers() {
@@ -242,21 +58,31 @@ async function setup() {
 	if (!base.ok) throw new Error(JSON.stringify(base.errors));
 	const markerId = base.refs.$m!;
 	const t = timers();
-	const c: ProposalsController = proposalsFor(session, { engine, setTimer: t.setTimer, clearTimer: t.clearTimer });
+	const c: ProposalsController = proposalsFor(session, {
+		engine,
+		setTimer: t.setTimer,
+		clearTimer: t.clearTimer,
+	});
 	c.connect(engine.subscribe);
 	const draft = {
 		feature: 'sound-design',
 		title: 'Sound pass',
 		sequenceId: seqId,
 		items: [
-			{ id: 'trk', label: 'SFX track', commands: [{ type: 'track.add', kind: 'audio', name: 'SFX 1', ref: '$sfx' }] },
+			{
+				id: 'trk',
+				label: 'SFX track',
+				commands: [{ type: 'track.add', kind: 'audio', name: 'SFX 1', ref: '$sfx' }],
+			},
 			{
 				id: 'cut',
 				label: 'Marker at 30',
 				group: 'hero',
 				commands: [{ type: 'marker.add', frame: 30, name: 'Whoosh' }],
 				meta: { why: 'Cut on V1' },
-				alternatives: [{ label: 'Marker at 31', commands: [{ type: 'marker.add', frame: 31, name: 'Swoosh' }] }],
+				alternatives: [
+					{ label: 'Marker at 31', commands: [{ type: 'marker.add', frame: 31, name: 'Swoosh' }] },
+				],
 			},
 			{
 				id: 'mk',
@@ -274,7 +100,8 @@ async function setup() {
 	return { session, engine, c, t, seqId, markerId, draft };
 }
 
-const states = (c: ProposalsController) => Object.fromEntries(c.getState().items.map((it) => [it.id, it.state]));
+const states = (c: ProposalsController) =>
+	Object.fromEntries(c.getState().items.map((it) => [it.id, it.state]));
 const engineStates = (e: FakeEngine, id: string) =>
 	Object.fromEntries(e.proposals.get(id)!.items.map((it) => [it.id, it.state]));
 
@@ -479,7 +306,12 @@ describe('proposals slice: apply, undo, redo', () => {
 		const seq = session.getCommitted().sequences[seqId]!;
 		expect(seq.markers).toHaveLength(markersBefore + 1);
 		expect(seq.audioTracks.find((x) => x.name === 'SFX 1')?.mute).toBe(true);
-		expect(engineStates(engine, p.id)).toEqual({ trk: 'accepted', cut: 'accepted', mk: 'rejected', mute: 'accepted' });
+		expect(engineStates(engine, p.id)).toEqual({
+			trk: 'accepted',
+			cut: 'accepted',
+			mk: 'rejected',
+			mute: 'accepted',
+		});
 		expect(states(c)).toEqual({ trk: 'applied', cut: 'applied', mk: 'rejected', mute: 'applied' });
 		expect(c.acceptedIds()).toEqual([]);
 		t.run();
@@ -489,14 +321,24 @@ describe('proposals slice: apply, undo, redo', () => {
 		expect(session.undo().ok).toBe(true);
 		await settle();
 		expect(session.getCommitted().sequences[seqId]!.markers).toHaveLength(markersBefore);
-		expect(engineStates(engine, p.id)).toEqual({ trk: 'pending', cut: 'pending', mk: 'rejected', mute: 'pending' });
+		expect(engineStates(engine, p.id)).toEqual({
+			trk: 'pending',
+			cut: 'pending',
+			mk: 'rejected',
+			mute: 'pending',
+		});
 		expect(states(c)).toEqual({ trk: 'accepted', cut: 'accepted', mk: 'rejected', mute: 'accepted' });
 		expect(engine.calls).toContain('reopen ["trk","cut","mute"]');
 
 		// Redo → applied again, recorded (nothing applied twice)
 		expect(session.redo().ok).toBe(true);
 		await settle();
-		expect(engineStates(engine, p.id)).toEqual({ trk: 'accepted', cut: 'accepted', mk: 'rejected', mute: 'accepted' });
+		expect(engineStates(engine, p.id)).toEqual({
+			trk: 'accepted',
+			cut: 'accepted',
+			mk: 'rejected',
+			mute: 'accepted',
+		});
 		expect(session.getCommitted().sequences[seqId]!.markers).toHaveLength(markersBefore + 1);
 		expect(c.acceptedIds()).toEqual([]);
 

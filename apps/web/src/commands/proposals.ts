@@ -5,8 +5,8 @@
 // with WP3.3b, the review bar). Also registers the Program overlay chip "Hearing proposal".
 import { z } from 'zod';
 import { t } from '../i18n/runtime.ts';
-import { proposalsFor } from '../proposals/state.ts';
 import { registerProposalUi } from '../proposals/register.tsx';
+import { proposalsFor } from '../proposals/state.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 registerProposalUi();
@@ -20,7 +20,8 @@ const ReviewArgs = z
 	.optional();
 
 const hasSession = (ctx: CommandCtx) => !!ctx.session;
-const reviewing = (ctx: CommandCtx) => !!ctx.session && proposalsFor(ctx.session).getState().activeId !== null;
+const reviewing = (ctx: CommandCtx) =>
+	!!ctx.session && proposalsFor(ctx.session).getState().activeId !== null;
 
 export const proposalCommands: UiCommand[] = [
 	{
@@ -58,7 +59,8 @@ export const proposalCommands: UiCommand[] = [
 	{
 		id: 'proposals.exitReview',
 		label: 'Exit Proposal Review',
-		description: 'Stop reviewing the proposal: its ghosts go and the Program monitor plays the sequence again',
+		description:
+			'Stop reviewing the proposal: its ghosts go and the Program monitor plays the sequence again',
 		scope: 'global',
 		agentExposed: true,
 		when: reviewing,

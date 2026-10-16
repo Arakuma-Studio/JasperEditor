@@ -140,8 +140,8 @@ export function buildGhostModel(input: {
 		items: [],
 		byItem: {},
 	};
-	const after = preview.result.document.sequences[sequenceId];
-	const before = committed.sequences[sequenceId];
+	const after = preview.result.document?.sequences?.[sequenceId];
+	const before = committed?.sequences?.[sequenceId];
 	if (!after || !before) return out;
 	const stateOf = new Map(input.items.map((it) => [it.id, it]));
 	const cuesAfter = new Map(cuesOf(after).map((c) => [c.id, c]));
@@ -269,7 +269,13 @@ export function buildGhostModel(input: {
 	return out;
 }
 
-export type GhostRow = { trackId: string; region: 'video' | 'audio'; y: number; height: number; track: GhostTrack };
+export type GhostRow = {
+	trackId: string;
+	region: 'video' | 'audio';
+	y: number;
+	height: number;
+	track: GhostTrack;
+};
 
 /**
  * Rows of the tracks the proposal creates: below the last audio track (where the master row would start) and
@@ -382,7 +388,11 @@ export function ghostPaint(
 	return {
 		borderStyle: opts.highContrast || state !== 'pending' ? 'solid' : 'dashed',
 		borderWidth: opts.highContrast || opts.selected ? 2 : 1,
-		borderColor: warn ? 'var(--pr-warning)' : opts.selected ? 'var(--pr-focus-ring)' : 'var(--pr-ghost-stroke)',
+		borderColor: warn
+			? 'var(--pr-warning)'
+			: opts.selected
+				? 'var(--pr-focus-ring)'
+				: 'var(--pr-ghost-stroke)',
 		opacity: state === 'rejected' ? 0.35 : 1,
 		hatch: state === 'rejected',
 		glyphColor:

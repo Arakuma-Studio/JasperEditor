@@ -39,7 +39,11 @@ export function useProposalsSync(session: EditorSession): void {
 }
 
 /** A slice of the session's proposals state. */
-export function useProposals<T>(session: EditorSession, select: (s: ProposalsState) => T, eq?: (a: T, b: T) => boolean): T {
+export function useProposals<T>(
+	session: EditorSession,
+	select: (s: ProposalsState) => T,
+	eq?: (a: T, b: T) => boolean,
+): T {
 	const c = proposalsFor(session);
 	return useStoreSelector(c.store, select, eq);
 }
@@ -69,7 +73,11 @@ export function useGhostModel(session: EditorSession, sequenceId: string): Ghost
 	const st = useProposals(
 		session,
 		(s) => ({ preview: s.preview, items: s.items, proposal: s.proposal, activeId: s.activeId }),
-		(a, b) => a.preview === b.preview && a.items === b.items && a.proposal === b.proposal && a.activeId === b.activeId,
+		(a, b) =>
+			a.preview === b.preview &&
+			a.items === b.items &&
+			a.proposal === b.proposal &&
+			a.activeId === b.activeId,
 	);
 	return useMemo(() => {
 		if (!st.activeId || !st.preview || !st.proposal || st.preview.proposalId !== st.activeId) return null;

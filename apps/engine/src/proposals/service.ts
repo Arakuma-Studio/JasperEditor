@@ -436,7 +436,9 @@ export class ProposalService {
 			if (unknown.length)
 				throw new HttpError(404, 'NOT_FOUND', `No item ${unknown[0]} in the proposal`, {
 					code: 'E_NOT_FOUND',
-					errors: unknown.slice(0, 50).map((id) => ({ code: 'E_NOT_FOUND', message: `No item ${id}`, itemId: id })),
+					errors: unknown
+						.slice(0, 50)
+						.map((id) => ({ code: 'E_NOT_FOUND', message: `No item ${id}`, itemId: id })),
 				});
 			const badRef = Object.entries(req.refs).find(([, v]) => !looksLikeId(v));
 			if (badRef)

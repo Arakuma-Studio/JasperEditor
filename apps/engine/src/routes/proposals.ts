@@ -168,7 +168,12 @@ export default async function proposalRoutes(app: FastifyInstance): Promise<void
 		guarded<PP>(async (req) => {
 			const { projectId, proposalId } = ids(req);
 			const body = parseOr400(ProposalMarkAppliedRequestSchema, req.body ?? {});
-			const out: ProposalDecisionResponse = await svc.markApplied(projectId, proposalId, body, requester(req));
+			const out: ProposalDecisionResponse = await svc.markApplied(
+				projectId,
+				proposalId,
+				body,
+				requester(req),
+			);
 			return out;
 		}),
 	);

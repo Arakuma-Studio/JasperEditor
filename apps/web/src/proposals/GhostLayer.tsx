@@ -11,8 +11,8 @@ import { useSessionState } from '@jasper/session/react';
 import { Button, Z } from '@jasper/ui';
 import {
 	type KeyboardEvent as ReactKeyboardEvent,
-	type PointerEvent as ReactPointerEvent,
 	type ReactNode,
+	type PointerEvent as ReactPointerEvent,
 	useEffect,
 	useMemo,
 	useRef,
@@ -41,7 +41,9 @@ import { useProposals, useProposalsController } from './state.ts';
 
 /** Whether the high-contrast theme is on (`data-pr-contrast="high"` on the root element). */
 function readContrast(): boolean {
-	return typeof document !== 'undefined' && document.documentElement.getAttribute('data-pr-contrast') === 'high';
+	return (
+		typeof document !== 'undefined' && document.documentElement.getAttribute('data-pr-contrast') === 'high'
+	);
 }
 function subscribeContrast(cb: () => void): () => void {
 	if (typeof MutationObserver === 'undefined' || typeof document === 'undefined') return () => undefined;
@@ -189,12 +191,15 @@ export function ProposalGhostLayer(p: GhostLayerProps) {
 		else if (plain && e.key === 'ArrowLeft') move(-1);
 		else if (plain && e.key === 'Home') move('first');
 		else if (plain && e.key === 'End') move('last');
-		else if (plain && !e.shiftKey && (e.key === 'Enter' || e.code === 'NumpadEnter') && id) void decide([id], 'accept');
-		else if (plain && !e.shiftKey && (e.key === 'Delete' || e.key === 'Backspace') && id) void decide([id], 'reject');
+		else if (plain && !e.shiftKey && (e.key === 'Enter' || e.code === 'NumpadEnter') && id)
+			void decide([id], 'accept');
+		else if (plain && !e.shiftKey && (e.key === 'Delete' || e.key === 'Backspace') && id)
+			void decide([id], 'reject');
 		else if (plain && !e.shiftKey && (e.key === 'u' || e.key === 'U') && id) void decide([id], 'clear');
 		else if (plain && !e.shiftKey && (e.key === 'a' || e.key === 'A')) controller.toggleHear();
 		else if ((e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10') || (plain && e.key === 'i')) && id) {
-			const el = listRef.current?.parentElement?.querySelector(`[data-ghost-item="${CSS.escape(id)}"]`) ?? null;
+			const el =
+				listRef.current?.parentElement?.querySelector(`[data-ghost-item="${CSS.escape(id)}"]`) ?? null;
 			openAt(id, el, true, true);
 		} else if (plain && e.key === 'Escape' && (card || selection.length)) {
 			if (card) setCard(null);
@@ -265,8 +270,12 @@ export function ProposalGhostLayer(p: GhostLayerProps) {
 									backgroundImage: paint.hatch
 										? 'repeating-linear-gradient(135deg, var(--pr-ghost-stroke) 0 1px, transparent 1px 6px)'
 										: undefined,
-									border: `${paint.borderWidth}px ${paint.borderStyle} ${paint.borderColor}`,
-									borderLeft: model.agent ? '3px solid var(--pr-agent)' : undefined,
+									borderTop: `${paint.borderWidth}px ${paint.borderStyle} ${paint.borderColor}`,
+									borderRight: `${paint.borderWidth}px ${paint.borderStyle} ${paint.borderColor}`,
+									borderBottom: `${paint.borderWidth}px ${paint.borderStyle} ${paint.borderColor}`,
+									borderLeft: model.agent
+										? '3px solid var(--pr-agent)'
+										: `${paint.borderWidth}px ${paint.borderStyle} ${paint.borderColor}`,
 									borderRadius: 'var(--pr-radius-clip)',
 									opacity: paint.opacity,
 									outline: isActive ? '2px solid var(--pr-focus-ring)' : undefined,
@@ -287,6 +296,7 @@ export function ProposalGhostLayer(p: GhostLayerProps) {
 								data-ghost-clip={x.clipId}
 								data-ghost-change={x.change}
 								data-ghost-state={it.state}
+								data-ghost-border={`${paint.borderWidth}px ${paint.borderStyle} ${paint.borderColor}`}
 								data-ghost-agent={model.agent || undefined}
 								data-ghost-new-track={x.newTrack || undefined}
 								data-selected={sel || undefined}
@@ -322,7 +332,6 @@ export function ProposalGhostLayer(p: GhostLayerProps) {
 				role="listbox"
 				aria-label={t('Proposal review: {0} items', model.items.length)}
 				aria-activedescendant={activeItem ? `${idPrefix}${activeItem.id}` : undefined}
-				// biome-ignore lint/a11y/noNoninteractiveTabindex: a composite widget (listbox, one tab stop, aria-activedescendant)
 				tabIndex={0}
 				data-keymap-local
 				data-testid="proposal-ghost-items"
@@ -345,6 +354,7 @@ export function ProposalGhostLayer(p: GhostLayerProps) {
 							key={it.id}
 							id={`${idPrefix}${it.id}`}
 							role="option"
+							tabIndex={-1}
 							aria-selected={selected.has(it.id)}
 							aria-label={ghostAriaLabel(it, why, seq)}
 							data-ghost-option={it.id}
@@ -397,10 +407,17 @@ function GhostTrackLane(props: { row: GhostRow; top: number; hc: boolean }) {
 }
 
 /** Ghost track headers ("A4 · SFX 1 (new)") in the header column, at the rows of the ghost lanes. */
-export function GhostTrackHeaders(props: { session: EditorSession; model: GhostModel; layout: TrackAreaLayout }) {
+export function GhostTrackHeaders(props: {
+	session: EditorSession;
+	model: GhostModel;
+	layout: TrackAreaLayout;
+}) {
 	const hc = useHighContrast();
 	const items = useProposals(props.session, (s) => s.items);
-	const rows = useMemo(() => layoutGhosts(props.model, props.layout, { scrollFrame: 0, pxPerFrame: 1, width: 0 }).rows, [props.model, props.layout]);
+	const rows = useMemo(
+		() => layoutGhosts(props.model, props.layout, { scrollFrame: 0, pxPerFrame: 1, width: 0 }).rows,
+		[props.model, props.layout],
+	);
 	if (!rows.length) return null;
 	const stateOf = new Map(items.map((it) => [it.id, it.state]));
 	return (
@@ -409,7 +426,10 @@ export function GhostTrackHeaders(props: { session: EditorSession; model: GhostM
 				const box =
 					r === 'video'
 						? { top: props.layout.video.top, height: props.layout.video.height }
-						: { top: props.layout.audio.top, height: Math.max(0, props.layout.height - props.layout.audio.top) };
+						: {
+								top: props.layout.audio.top,
+								height: Math.max(0, props.layout.height - props.layout.audio.top),
+							};
 				const list = rows.filter((x) => x.region === r);
 				if (!list.length) return null;
 				return (
@@ -428,13 +448,18 @@ export function GhostTrackHeaders(props: { session: EditorSession; model: GhostM
 									style={{
 										top: row.y - box.top + 1,
 										height: row.height - 2,
-										border: `${hc ? 2 : 1}px ${hc ? 'solid' : 'dashed'} var(--pr-ghost-stroke)`,
-										borderLeft: props.model.agent ? '3px solid var(--pr-agent)' : undefined,
+										borderTop: `${hc ? 2 : 1}px ${hc ? 'solid' : 'dashed'} var(--pr-ghost-stroke)`,
+										borderRight: `${hc ? 2 : 1}px ${hc ? 'solid' : 'dashed'} var(--pr-ghost-stroke)`,
+										borderBottom: `${hc ? 2 : 1}px ${hc ? 'solid' : 'dashed'} var(--pr-ghost-stroke)`,
+										borderLeft: props.model.agent
+											? '3px solid var(--pr-agent)'
+											: `${hc ? 2 : 1}px ${hc ? 'solid' : 'dashed'} var(--pr-ghost-stroke)`,
 										borderRadius: 'var(--pr-radius-control)',
 										background: 'var(--pr-bg-panel)',
 										opacity: st === 'rejected' ? 0.35 : 1,
 									}}
 									data-ghost-header={row.trackId}
+									data-ghost-border={`${hc ? 2 : 1}px ${hc ? 'solid' : 'dashed'}`}
 									data-ghost-item={row.track.itemId}
 								>
 									<span className="truncate">{t('{0} · {1} (new)', row.track.label, row.track.name)}</span>
@@ -463,7 +488,9 @@ function GhostCard(props: {
 	const { controller, card, model, seq } = props;
 	const ref = useRef<HTMLDivElement>(null);
 	const item = useProposals(props.session, (s) => s.items.find((it) => it.id === card.itemId));
-	const accepted = useProposals(props.session, (s) => (s.activeId ? (s.accepted[s.activeId] ?? []).length : 0));
+	const accepted = useProposals(props.session, (s) =>
+		s.activeId ? (s.accepted[s.activeId] ?? []).length : 0,
+	);
 	const total = useProposals(props.session, (s) => s.items.length);
 	const busy = useProposals(props.session, (s) => s.busy);
 	const previewSeq = useProposals(props.session, (s) => s.preview?.result.document.sequences[seq.id]);
@@ -496,7 +523,6 @@ function GhostCard(props: {
 	const left = Math.max(4, Math.min(card.x, vw - 340));
 	const top = card.y + 220 > vh ? Math.max(4, card.y - 250) : card.y;
 	const body: ReactNode = (
-		// biome-ignore lint/a11y/noStaticElementInteractions: hover keeps the transient card open; the card is a dialog
 		<div
 			ref={ref}
 			role="dialog"
