@@ -363,6 +363,78 @@ describe('offline mixer', () => {
 		}
 	});
 
+	it('audibleClips: skipping the strips no audible clip reaches equals silencing the other clips', async () => {
+		const { h, a, b } = audioHarness();
+		const c = h.registerVideo({ kind: 'audio', seconds: 20 });
+		h.ok([{ type: 'clip.place', source: { mediaId: c }, at: 0, tracks: { audio: 'A3' } }]);
+		const r0 = h.ok([{ type: 'mixer.addSubmix', ref: '$s' }]);
+		const s1 = (r0.results[0] as { stripId: string }).stripId;
+		h.ok([
+			{ type: 'mixer.updateStrip', stripId: 'A2', patch: { output: 'S1', volumeDb: -3 } },
+			{ type: 'mixer.addSend', stripId: 'A1', target: s1, preFader: false, levelDb: -6 },
+			{ type: 'mixer.updateStrip', stripId: 'A1', patch: { pan: -40 } },
+		]);
+		const snapshot = snapOf(h);
+		// a latency-reporting insert on a strip no audible clip reaches (A3) and one on the submix: the route
+		// delays and the read-ahead stay those of the whole graph
+		const calls: Record<number, number> = { 37: 0, 91: 0 };
+		const lat = (n: number) =>
+			registerAudioProcessor(`test.lat${n}`, () => {
+				const buf: number[][] = [];
+				return {
+					latency: n,
+					reset() {},
+					process(ch, k) {
+						calls[n]!++;
+						for (let x = 0; x < ch.length; x++) {
+							buf[x] ??= Array(n).fill(0);
+							for (let i = 0; i < k; i++) {
+								buf[x]!.push(ch[x]![i]! * 0.7);
+								ch[x]![i] = buf[x]!.shift()!;
+							}
+						}
+					},
+				};
+			});
+		const offs = [lat(37), lat(91)];
+		const fx = (effectId: string) => ({
+			id: `fx_${effectId.slice(-4)}`,
+			effectId,
+			effectVersion: 1,
+			enabled: true,
+			params: {},
+		});
+		snapshot.audioMix!.strips.find((s) => s.label === 'A3')!.inserts = [fx('test.lat91')];
+		snapshot.audioMix!.strips.find((s) => s.label === 'S1')!.inserts = [fx('test.lat37')];
+		try {
+			for (const only of [a, b, c]) {
+				const id = snapshot.audioClips.find((x) => x.mediaId === only)!.clipId;
+				const levels = { [a]: [0.5, 0.4], [b]: [0.3, 0.2], [c]: [0.25, 0.1] };
+				const reader = constReader(levels);
+				const silenced = await renderMixToBuffers({
+					snapshot,
+					openClip: (clip, at) => (clip.clipId === id ? reader(clip, at) : null),
+					startSample: 0,
+					length: 5000,
+				});
+				calls[91] = 0;
+				const pruned = await renderMixToBuffers({
+					snapshot,
+					openClip: reader,
+					startSample: 0,
+					length: 5000,
+					audibleClips: new Set([id]),
+				});
+				expect(pruned).toEqual(silenced);
+				// A3's insert only runs when A3's clip is the audible one
+				expect(calls[91]! > 0).toBe(only === c);
+				expect(Math.max(...pruned[0]!.map(Math.abs))).toBeGreaterThan(0.01);
+			}
+		} finally {
+			for (const off of offs) off();
+		}
+	});
+
 	it('a synthetic tone sped up past Nyquist is silent instead of aliasing', () => {
 		const clip = {
 			start: 0,
