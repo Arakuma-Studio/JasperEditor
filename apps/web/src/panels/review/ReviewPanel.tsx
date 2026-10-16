@@ -78,8 +78,8 @@ function fmtTc(seq: Sequence | undefined, frame: number | null): string {
 }
 
 function ProposalOptionLabel(p: ProposalSummary): string {
-	const left = p.counts.pending + p.counts.stale;
-	return t('{0} · {1} · {2} to review', p.title, authorName(p.author), left);
+	// (the summary's counts include setup items: the panel shows the reviewer's own counts once it is open)
+	return t('{0} · {1}', p.title, authorName(p.author));
 }
 
 function ReviewBody(props: PanelProps & { session: EditorSession }) {
@@ -106,6 +106,7 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 	const model = useMemo(() => buildReviewModel(items, ghost), [items, ghost]);
 	const counts = useMemo(() => reviewCounts(items), [items]);
 	const listRef = useRef<HTMLDivElement>(null);
+	const pointing = useRef(false);
 	const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
 	// a row's ✎ opens the note editor of the details below the list
 	const [noteFor, setNoteFor] = useState<string | null>(null);
@@ -184,6 +185,8 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 		<div
 			className="flex h-full min-h-0 flex-col bg-pr-panel text-pr-ui text-pr-text"
 			data-testid="review-panel"
+			data-panel-kind="review"
+			data-instance-id={props.instanceId}
 			data-keymap-local
 			onKeyDown={onRootKeyDown}
 		>
@@ -273,8 +276,13 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 						aria-activedescendant={current ? `${idPrefix}${current}` : undefined}
 						className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-pr-focus"
 						onKeyDown={onListKeyDown}
+						onPointerDown={() => {
+							pointing.current = true;
+						}}
 						onFocus={() => {
-							if (!current && model.listOrder[0]) choose(model.listOrder[0]);
+							// keyboard focus starts on the first row; a click chooses its own row
+							if (!pointing.current && !current && model.listOrder[0]) choose(model.listOrder[0]);
+							pointing.current = false;
 						}}
 						data-testid="review-list"
 					>
@@ -475,6 +483,7 @@ function Row(p: {
 			title={label}
 			disabled={p.readOnly || decided || (d === 'accept' && it.state === 'invalid')}
 			onPointerDown={(e) => e.stopPropagation()}
+			onMouseDown={(e) => e.preventDefault()}
 			onClick={(e) => {
 				e.stopPropagation();
 				p.onDecide(d);
@@ -495,6 +504,7 @@ function Row(p: {
 			title={label}
 			disabled={disabled}
 			onPointerDown={(e) => e.stopPropagation()}
+			onMouseDown={(e) => e.preventDefault()}
 			onClick={(e) => {
 				e.stopPropagation();
 				run();
@@ -507,13 +517,15 @@ function Row(p: {
 	);
 	return (
 		// biome-ignore lint/a11y/useFocusableInteractive: listbox options are reached with aria-activedescendant
-		// biome-ignore lint/a11y/useKeyWithClickEvents: the listbox handles the keys
 		<div
 			id={p.id}
 			role="option"
 			aria-selected={p.selected}
 			aria-label={rowAriaLabel(row, p.seq)}
-			onClick={p.onChoose}
+			onPointerDown={(e) => {
+				// on press, not on click: the details below the list appear and move the rows before the release
+				if (e.button === 0) p.onChoose();
+			}}
 			className={`flex cursor-default flex-col border-b border-pr-border-subtle px-2 py-0.5 ${
 				p.current ? 'bg-pr-selected' : 'hover:bg-pr-hover'
 			} ${it.state === 'rejected' ? 'opacity-60' : ''}`}
@@ -537,12 +549,6 @@ function Row(p: {
 				<span className="min-w-0 flex-1 truncate" title={row.sound ?? it.label}>
 					{row.sound ?? it.label}
 				</span>
-				{row.role ? <span className="shrink-0 text-pr-small text-pr-muted">{row.role}</span> : null}
-				{row.gainDb !== null ? (
-					<span className="w-[52px] shrink-0 text-right text-pr-small text-pr-muted pr-tabular">
-						{gainText(row.gainDb)}
-					</span>
-				) : null}
 				{tool('play', '▶', t('Play in context (Space)'), p.onPlay, row.frame === null)}
 				{tool(
 					'alternate',
@@ -563,22 +569,26 @@ function Row(p: {
 					p.onNote,
 					decided,
 				)}
-				<span className="w-[56px] shrink-0 text-right text-pr-small" data-review-state-word>
+				<span className="shrink-0 text-right text-pr-small" data-review-state-word>
 					<span aria-hidden="true">{STATE_GLYPH[it.state]} </span>
 					<span className={warn ? 'text-pr-warning' : 'text-pr-muted'}>{REVIEW_STATE_LABELS[it.state]}</span>
 				</span>
 			</div>
-			{warn && it.reason ? (
-				<div className="truncate pl-[146px] text-pr-small text-pr-warning" title={it.reason}>
-					! {it.reason}
-				</div>
-			) : row.reason ? (
-				<div className="truncate pl-[146px] text-pr-small text-pr-muted" title={row.reason}>
-					{row.reason}
-				</div>
-			) : null}
+			<div className="flex min-w-0 items-center gap-1.5 pl-[66px] text-pr-small text-pr-muted">
+				{row.role ? <span className="shrink-0">{row.role}</span> : null}
+				{row.gainDb !== null ? <span className="shrink-0 pr-tabular">{gainText(row.gainDb)}</span> : null}
+				{warn && it.reason ? (
+					<span className="min-w-0 truncate text-pr-warning" title={it.reason}>
+						! {it.reason}
+					</span>
+				) : row.reason ? (
+					<span className="min-w-0 truncate" title={row.reason}>
+						{row.reason}
+					</span>
+				) : null}
+			</div>
 			{row.setup.length ? (
-				<div className="pl-[146px] text-pr-small text-pr-muted">
+				<div className="pl-[66px] text-pr-small text-pr-muted">
 					<button
 						type="button"
 						tabIndex={-1}

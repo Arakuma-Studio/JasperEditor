@@ -81,7 +81,7 @@ describe('Review panel', () => {
 		// the tab badge: 5 left to review
 		expect(screen.getByTestId('review-tab-badge').getAttribute('data-count')).toBe('5');
 		await act(async () => {
-			fireEvent.click(t.row('hit'));
+			fireEvent.pointerDown(t.row('hit'), { button: 0 });
 		});
 		expect(t.c.getState().selection).toEqual(['hit']);
 		expect(t.session.transport.getState().frame).toBe(30);
@@ -103,7 +103,7 @@ describe('Review panel', () => {
 		expect(second).not.toBe(first);
 		// go to "hit" and accept it: its track comes along
 		await act(async () => {
-			fireEvent.click(t.row('hit'));
+			fireEvent.pointerDown(t.row('hit'), { button: 0 });
 		});
 		await t.key('Enter');
 		expect(t.state('hit')).toBe('accepted');
@@ -127,7 +127,7 @@ describe('Review panel', () => {
 	it('alternates and the note editor (stored by the engine for the agent)', async () => {
 		const t = await setup();
 		await act(async () => {
-			fireEvent.click(t.row('hit'));
+			fireEvent.pointerDown(t.row('hit'), { button: 0 });
 		});
 		const details = screen.getByTestId('review-details');
 		expect(details.textContent).toContain('Alternate 1/2');

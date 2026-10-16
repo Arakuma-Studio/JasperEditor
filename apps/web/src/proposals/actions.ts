@@ -378,7 +378,7 @@ export async function applyReview(
 					),
 				}
 			: {}),
-		durationMs: 10_000,
+		durationMs: 15_000,
 		actions: [
 			{
 				label: t('Undo'),
