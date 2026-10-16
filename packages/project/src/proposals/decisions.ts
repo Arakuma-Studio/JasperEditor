@@ -1,5 +1,7 @@
 // Review decisions on a proposal (pure state transitions; the engine store persists them). None touches the
 // document: rejecting leaves it identical, accepting is recorded after the composed transaction applied.
+import type { ProjectDocument } from '../schema/document.ts';
+import { anchorFingerprint } from './anchors.ts';
 import { PROPOSAL_LIMITS, type Proposal, type ProposalIssue, type ProposalItem } from './schema.ts';
 
 export type DecisionResult =
@@ -28,17 +30,62 @@ function stripReason(it: ProposalItem): Omit<ProposalItem, 'reason'> {
 	return rest;
 }
 
-/** Marks items accepted after their transaction applied (`applied`: revision, refs, time). */
+/**
+ * Marks items accepted after their transaction applied (`applied`: revision, refs, time, and the entity ids the
+ * transaction created, bounded to `PROPOSAL_LIMITS.maxCreated`).
+ */
 export function markAccepted(
 	p: Proposal,
 	itemIds: readonly string[],
-	applied: { revision: number; refs: Record<string, string>; at: string },
+	applied: { revision: number; refs: Record<string, string>; at: string; created?: readonly string[] },
 ): Proposal {
 	const ids = new Set(itemIds);
+	const { created, ...rest } = applied;
+	const record: NonNullable<ProposalItem['applied']> = {
+		...rest,
+		...(created?.length ? { created: created.slice(0, PROPOSAL_LIMITS.maxCreated) } : {}),
+	};
 	const items = p.items.map(
-		(it): ProposalItem => (ids.has(it.id) ? { ...stripReason(it), state: 'accepted', applied } : it),
+		(it): ProposalItem => (ids.has(it.id) ? { ...stripReason(it), state: 'accepted', applied: record } : it),
 	);
 	return ids.size ? { ...p, items, updatedAt: applied.at } : p;
+}
+
+/**
+ * An entity the accept of `item` created that the document still has (null: none, or nothing was recorded): the
+ * accept is not undone, so reopening the item would let it be applied twice.
+ */
+export function stillApplied(
+	doc: ProjectDocument,
+	item: Pick<ProposalItem, 'state' | 'applied'>,
+): string | null {
+	if (item.state !== 'accepted') return null;
+	for (const id of item.applied?.created ?? []) if (anchorFingerprint(doc, id) !== null) return id;
+	return null;
+}
+
+/**
+ * Accepted items among `itemIds` ('all' = every accepted one) whose accept is still in the document (`stillApplied`),
+ * as refusals: reopening them would let them be applied twice. Undo the accept in History first.
+ */
+export function reopenRefusals(
+	doc: ProjectDocument,
+	p: Proposal,
+	itemIds: readonly string[] | 'all',
+): ProposalIssue[] {
+	const ids = itemIds === 'all' ? null : new Set(itemIds);
+	const out: ProposalIssue[] = [];
+	for (const it of p.items) {
+		if (ids && !ids.has(it.id)) continue;
+		const held = stillApplied(doc, it);
+		if (held)
+			out.push({
+				code: 'E_STILL_APPLIED',
+				message: `Item ${it.id} is still applied (${held} is in the document): undo its accept in History first`,
+				itemId: it.id,
+			});
+	}
+	return out;
 }
 
 /**

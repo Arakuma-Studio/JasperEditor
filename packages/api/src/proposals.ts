@@ -156,6 +156,11 @@ export const ProposalMarkAppliedRequestSchema = z.strictObject({
 	refs: z
 		.record(z.string().min(1).max(128), z.string().min(1).max(128))
 		.refine((r) => Object.keys(r).length <= PROPOSAL_LIMITS.maxCommands, 'too many refs'),
+	/**
+	 * The entity ids the original accept created (`TransactionResult.created`): the engine checks the document has them
+	 * again (else `409 NOT_APPLIED`, nothing recorded) and keeps them, so the item cannot be reopened while applied.
+	 */
+	created: z.array(z.string().min(1).max(128)).max(PROPOSAL_LIMITS.maxCreated).optional(),
 });
 export type ProposalMarkAppliedRequest = z.infer<typeof ProposalMarkAppliedRequestSchema>;
 

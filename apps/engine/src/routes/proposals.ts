@@ -57,6 +57,8 @@ export default async function proposalRoutes(app: FastifyInstance): Promise<void
 	const store = new ProposalStore({
 		paths: config.paths,
 		log: (m) => app.log.warn(m),
+		// a proposal being accepted or decided is never expired or evicted under it
+		inUse: (projectId, proposalId) => service?.busy(projectId, proposalId) ?? false,
 		onRemoved: (projectId, p, why) =>
 			service?.publish(projectId, null, why, { feature: p.feature, sequenceId: p.sequenceId }, p.id),
 	});
@@ -151,7 +153,12 @@ export default async function proposalRoutes(app: FastifyInstance): Promise<void
 			`/api/projects/:projectId/proposals/:proposalId/${path}`,
 			guarded<PP>(async (req) => {
 				const { projectId, proposalId } = ids(req);
-				const out: ProposalDecisionResponse = await svc.decide(projectId, proposalId, build(req.body ?? {}));
+				const out: ProposalDecisionResponse = await svc.decide(
+					projectId,
+					proposalId,
+					build(req.body ?? {}),
+					requester(req),
+				);
 				return out;
 			}),
 		);

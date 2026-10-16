@@ -2,6 +2,7 @@
 // and accept relayed into the session as the user's ONE transaction, like the engine with the editor key.
 import type { ProposalChangedEvent, ProposalSummary } from '@jasper/api';
 import {
+	anchorFingerprint,
 	createProposal,
 	type DecisionResult,
 	defaultRegistries,
@@ -12,6 +13,7 @@ import {
 	proposalDecided,
 	rejectItems,
 	reopenItems,
+	reopenRefusals,
 	selectAlternative,
 	setItemNote,
 } from '@jasper/project';
@@ -143,6 +145,7 @@ export class FakeEngine implements ProposalsEngine {
 				revision: result.revision,
 				refs: result.refs,
 				at: this.now(),
+				created: result.created,
 			}),
 			'accepted',
 			plan.composed.itemIds,
@@ -170,7 +173,16 @@ export class FakeEngine implements ProposalsEngine {
 	}
 	async reopenProposal(_pid: string, id: string, req: { itemIds: string[] | 'all' }) {
 		this.calls.push(`reopen ${JSON.stringify(req.itemIds)}`);
-		return this.decide(id, reopenItems(this.get(id), req.itemIds, this.now()), 'reopened');
+		const p = this.get(id);
+		// like the engine: an accepted item whose accept is still in the document is not reopened
+		const refused = reopenRefusals(this.session().getCommitted(), p, req.itemIds);
+		if (refused.length)
+			throw Object.assign(new Error(refused[0]!.message), {
+				code: 'PROPOSAL_STILL_APPLIED',
+				status: 409,
+				detail: { code: 'E_STILL_APPLIED' },
+			});
+		return this.decide(id, reopenItems(p, req.itemIds, this.now()), 'reopened');
 	}
 	async noteProposalItem(_pid: string, id: string, req: { itemId: string; note: string | null }) {
 		this.calls.push(`note ${req.itemId}`);
@@ -187,12 +199,25 @@ export class FakeEngine implements ProposalsEngine {
 	async markProposalApplied(
 		_pid: string,
 		id: string,
-		req: { itemIds: string[]; revision: number; refs: Record<string, string> },
+		req: { itemIds: string[]; revision: number; refs: Record<string, string>; created?: string[] },
 	) {
 		this.calls.push(`applied ${JSON.stringify(req.itemIds)}`);
 		const p = this.get(id);
 		const ids = req.itemIds.filter((x) => p.items.find((it) => it.id === x)?.state !== 'accepted');
-		const next = markAccepted(p, ids, { revision: req.revision, refs: req.refs, at: this.now() });
+		if (ids.length === 0) return { proposal: p, changed: [] };
+		const doc = this.session().getCommitted();
+		if (req.created?.length && !req.created.some((x) => anchorFingerprint(doc, x) !== null))
+			throw Object.assign(new Error('the document does not have what the accept created'), {
+				code: 'PROPOSAL_NOT_APPLIED',
+				status: 409,
+				detail: { code: 'E_NOT_APPLIED' },
+			});
+		const next = markAccepted(p, ids, {
+			revision: req.revision,
+			refs: req.refs,
+			at: this.now(),
+			...(req.created ? { created: req.created } : {}),
+		});
 		return { proposal: this.put(next, 'accepted', ids), changed: ids };
 	}
 	async deleteProposal(_pid: string, id: string) {

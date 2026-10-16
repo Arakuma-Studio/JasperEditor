@@ -31,6 +31,8 @@ export const PROPOSAL_LIMITS = {
 	maxPerProject: 50,
 	/** Days a proposal is kept after its last change. */
 	expiryDays: 30,
+	/** Entity ids recorded per accept (`applied.created`: what the transaction created, to tell an undone accept). */
+	maxCreated: 10_000,
 } as const;
 
 export const PROPOSAL_ITEM_STATES = ['pending', 'accepted', 'rejected', 'stale', 'invalid'] as const;
@@ -101,12 +103,17 @@ export const ProposalItemSchema = ProposalItemInputSchema.extend({
 	/** The reviewer's note, returned to agents. */
 	note: z.string().max(PROPOSAL_LIMITS.maxNote).optional(),
 	anchors: AnchorsSchema.optional(),
-	/** Set when accepted: the revision it was applied at and the temp refs it defined (later items use them). */
+	/**
+	 * Set when accepted: the revision it was applied at, the temp refs it defined (later items use them) and the entity
+	 * ids its transaction created (shared by the items accepted together): while any of them is in the document the
+	 * accept is not undone, so the item cannot be reopened (accepting it again would apply it twice).
+	 */
 	applied: z
 		.strictObject({
 			revision: z.number().int().min(0),
 			at: z.string(),
 			refs: z.record(z.string(), z.string()),
+			created: z.array(z.string().max(128)).max(PROPOSAL_LIMITS.maxCreated).optional(),
 		})
 		.optional(),
 });

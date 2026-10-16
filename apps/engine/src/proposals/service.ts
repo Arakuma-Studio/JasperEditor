@@ -9,6 +9,7 @@ import type { ProposalChangedEvent, ProposalCountsJson } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
 	type Author,
+	anchorFingerprint,
 	CROCKFORD_ALPHABET,
 	createProposal,
 	defaultRegistries,
@@ -25,6 +26,7 @@ import {
 	type Registries,
 	rejectItems,
 	reopenItems,
+	reopenRefusals,
 	revalidate,
 	SOUND_DESIGN_FEATURE,
 	selectAlternative,
@@ -109,6 +111,11 @@ export class ProposalService {
 		this.now = opts.now ?? (() => new Date());
 	}
 
+	/** An accept or decision on the proposal is running (the store does not expire or evict it meanwhile). */
+	busy(projectId: string, proposalId: string): boolean {
+		return this.locks.isBusy(`${projectId}/${proposalId}`);
+	}
+
 	/** Lets a feature allow agent accepts under its own rule (default: refused). */
 	registerPolicy(feature: string, policy: ProposalPolicy): () => void {
 		this.policies.set(feature, policy);
@@ -169,8 +176,9 @@ export class ProposalService {
 			throw new HttpError(404, 'PROJECT_NOT_FOUND', `Project not found: ${projectId}`);
 	}
 
+	/** The stored proposal, read by the holder of its lock (404 when absent or expired). */
 	private async load(projectId: string, proposalId: string): Promise<Proposal> {
-		const p = await this.store.get(projectId, proposalId);
+		const p = await this.store.get(projectId, proposalId, { owner: true });
 		if (!p) throw proposalNotFound(proposalId);
 		return p;
 	}
@@ -182,7 +190,12 @@ export class ProposalService {
 
 	async get(projectId: string, proposalId: string, opts: { revalidate?: boolean } = {}) {
 		await this.ensureProject(projectId);
-		if (!opts.revalidate) return { proposal: await this.load(projectId, proposalId), revision: null };
+		if (!opts.revalidate) {
+			// a plain read (not the lock holder): it does not expire a proposal an accept is working on
+			const p = await this.store.get(projectId, proposalId);
+			if (!p) throw proposalNotFound(proposalId);
+			return { proposal: p, revision: null };
+		}
 		return this.locks.run(`${projectId}/${proposalId}`, async () => {
 			const p = await this.load(projectId, proposalId);
 			const { doc, revision } = await this.liveDocument(projectId);
@@ -323,6 +336,7 @@ export class ProposalService {
 				revision: result.revision,
 				refs: result.refs,
 				at,
+				created: result.created,
 			});
 			// Setup items only rejected items needed are done too (the proposal can be decided).
 			const accepted = settleSetupItems(marked, at).proposal;
@@ -351,11 +365,13 @@ export class ProposalService {
 			| { kind: 'reopen'; itemIds: string[] | 'all' }
 			| { kind: 'note'; itemId: string; note: string | null }
 			| { kind: 'select'; itemId: string; alternative: number },
+		who: Requester = { editor: true, agent: 'editor' },
 	) {
 		await this.ensureProject(projectId);
 		return this.locks.run(`${projectId}/${proposalId}`, async () => {
 			const p = await this.load(projectId, proposalId);
 			const now = this.now().toISOString();
+			if (decision.kind === 'reopen') await this.checkReopen(projectId, p, decision.itemIds, who);
 			const r =
 				decision.kind === 'reject'
 					? rejectItems(p, decision.itemIds, now)
@@ -424,6 +440,37 @@ export class ProposalService {
 	}
 
 	/**
+	 * Reopening an accepted item puts it back into review: only right after its accept was undone in the editor's
+	 * History (the session does it), never while the document still has what it applied (accepting it again would apply
+	 * it twice). Agents cannot reopen accepted items at all (they would hide nothing, but could set up a duplicate).
+	 */
+	private async checkReopen(projectId: string, p: Proposal, itemIds: string[] | 'all', who: Requester) {
+		const ids = itemIds === 'all' ? null : new Set(itemIds);
+		const accepted = p.items.filter((it) => it.state === 'accepted' && (!ids || ids.has(it.id)));
+		if (accepted.length === 0) return;
+		if (!who.editor)
+			throw new HttpError(
+				403,
+				'APPROVAL_REQUIRED',
+				`Item ${accepted[0]!.id} is applied: only the editor reopens it, after the user undoes the accept in History`,
+				{ code: 'E_APPROVAL_REQUIRED' },
+			);
+		const { doc } = await this.liveDocument(projectId);
+		const refused = reopenRefusals(
+			doc,
+			p,
+			accepted.map((it) => it.id),
+		);
+		if (refused.length)
+			throw new HttpError(
+				409,
+				'PROPOSAL_STILL_APPLIED',
+				refused[0]!.message,
+				issuesDetail('E_STILL_APPLIED', refused),
+			);
+	}
+
+	/**
 	 * The editor's Redo of an accept the user had undone (and the session reopened): the document has the items again,
 	 * so they are recorded as accepted with the revision after the redo and the refs the original accept defined.
 	 * Nothing is applied here. Editor only: an agent could otherwise hide items from review without applying them.
@@ -431,7 +478,7 @@ export class ProposalService {
 	async markApplied(
 		projectId: string,
 		proposalId: string,
-		req: { itemIds: string[]; revision: number; refs: Record<string, string> },
+		req: { itemIds: string[]; revision: number; refs: Record<string, string>; created?: string[] },
 		who: Requester,
 	) {
 		if (!who.editor)
@@ -460,8 +507,24 @@ export class ProposalService {
 				});
 			const ids = req.itemIds.filter((id) => p.items.find((it) => it.id === id)?.state !== 'accepted');
 			if (ids.length === 0) return { proposal: p, changed: [] };
+			if (req.created?.length) {
+				// the redo must have put back what the accept created (else a later undo raced it: nothing to record)
+				const { doc } = await this.liveDocument(projectId);
+				if (!req.created.some((id) => anchorFingerprint(doc, id) !== null))
+					throw new HttpError(
+						409,
+						'PROPOSAL_NOT_APPLIED',
+						`The document does not have what the accept created (${req.created[0]}): nothing was recorded`,
+						{ code: 'E_NOT_APPLIED' },
+					);
+			}
 			const at = this.now().toISOString();
-			const next = markAccepted(p, ids, { revision: req.revision, refs: req.refs, at });
+			const next = markAccepted(p, ids, {
+				revision: req.revision,
+				refs: req.refs,
+				at,
+				...(req.created ? { created: req.created } : {}),
+			});
 			await this.store.put(projectId, next);
 			this.publish(projectId, next, 'accepted', { itemIds: ids, revision: req.revision });
 			return { proposal: next, changed: ids };

@@ -111,7 +111,8 @@ export type PreviewOptions = {
  * Applies the requested items ('undecided' = every pending or stale item) and what they require on top of `doc`,
  * one transaction per item in proposal order with refs carried over, so each ghost belongs to one item. For previews
  * only: what is committed is `composeAcceptTx`'s single transaction. Invalid and accepted items are not applied; an
- * item whose requirement failed fails too.
+ * item whose requirement failed fails too. `ctx.checkInvariants: false` skips the per-item invariant check (a
+ * preview is never committed; the accept checks the exact set it applies).
  */
 export function previewProposal(
 	doc: ProjectDocument,
@@ -120,6 +121,25 @@ export function previewProposal(
 	ctx: ProposalContext,
 	opts: PreviewOptions = {},
 ): ProposalPreview {
+	const run = previewProposalSteps(doc, p, itemIds, ctx, opts);
+	for (;;) {
+		const step = run.next();
+		if (step.done) return step.value;
+	}
+}
+
+/**
+ * `previewProposal` one item at a time: the generator yields after each item's transaction (how many of how many
+ * are done) and returns the preview, so a caller can spread a large proposal's preview over several turns of the
+ * event loop (the editor's review keeps the main thread responsive with hundreds of items). Pure; never throws.
+ */
+export function* previewProposalSteps(
+	doc: ProjectDocument,
+	p: Proposal,
+	itemIds: readonly string[] | 'undecided',
+	ctx: ProposalContext,
+	opts: PreviewOptions = {},
+): Generator<{ done: number; total: number }, ProposalPreview, void> {
 	const requested =
 		itemIds === 'undecided'
 			? p.items.filter((it) => it.state === 'pending' || it.state === 'stale').map((it) => it.id)
@@ -131,7 +151,9 @@ export function previewProposal(
 	const items: Record<string, ProposalGhost> = {};
 	const applied: string[] = [];
 	let cur = doc;
+	let done = 0;
 	for (const it of closure) {
+		done++;
 		const missing = it.requires.find((r) => failed[r]);
 		if (missing) {
 			failed[it.id] = [
@@ -139,23 +161,32 @@ export function previewProposal(
 			];
 			continue;
 		}
-		const commands = selectedCommands(it).map((c) => substituteKnownRefs(c, refs));
-		const r = applyTransaction(
-			cur,
-			{
-				label: it.label,
-				origin: { agent: 'proposal-preview' },
-				...(p.sequenceId ? { sequenceId: p.sequenceId } : {}),
-				commands,
-			},
-			{
-				ids: opts.idsFor?.(it) ?? ids,
-				now: ctx.now ?? (() => new Date().toISOString()),
-				revision: ctx.revision ?? 0,
-				registries: ctx.registries,
-				...(ctx.invariants ? { invariants: ctx.invariants } : {}),
-			},
-		);
+		let r: ReturnType<typeof applyTransaction>;
+		try {
+			const commands = selectedCommands(it).map((c) => substituteKnownRefs(c, refs));
+			r = applyTransaction(
+				cur,
+				{
+					label: it.label,
+					origin: { agent: 'proposal-preview' },
+					...(p.sequenceId ? { sequenceId: p.sequenceId } : {}),
+					commands,
+				},
+				{
+					ids: opts.idsFor?.(it) ?? ids,
+					now: ctx.now ?? (() => new Date().toISOString()),
+					revision: ctx.revision ?? 0,
+					registries: ctx.registries,
+					...(ctx.invariants ? { invariants: ctx.invariants } : {}),
+					...(ctx.checkInvariants === false ? { checkInvariants: false } : {}),
+				},
+			);
+		} catch (e) {
+			failed[it.id] = [
+				{ commandIndex: -1, code: 'E_INTERNAL', message: e instanceof Error ? e.message : String(e) },
+			];
+			continue;
+		}
 		if (!r.result.ok) {
 			failed[it.id] = r.result.errors;
 			continue;
@@ -164,6 +195,9 @@ export function previewProposal(
 		items[it.id] = proposalGhost(cur, r.document);
 		applied.push(it.id);
 		cur = r.document;
+		yield { done, total: closure.length };
 	}
+	// the whole preview's ghost is its own step (a diff of the two documents)
+	yield { done, total: closure.length };
 	return { document: cur, ghost: proposalGhost(doc, cur), items, failed, applied };
 }

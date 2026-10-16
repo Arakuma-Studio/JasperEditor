@@ -392,6 +392,13 @@ export function revalidate(
 	doc: ProjectDocument,
 	proposal: Proposal,
 	ctx: ProposalContext,
+	opts: {
+		/**
+		 * false: anchors and requirements only, no dry runs (the editor's preview applies every item anyway and flags the
+		 * ones that fail; the accept re-validates with dry runs). Default true.
+		 */
+		dryRuns?: boolean;
+	} = {},
 ): { proposal: Proposal; changed: boolean; stale: StaleItem[] } {
 	const undecided = proposal.items.filter((it) => it.state === 'pending' || it.state === 'stale');
 	if (undecided.length === 0) return { proposal, changed: false, stale: [] };
@@ -421,14 +428,16 @@ export function revalidate(
 		if (moved) items.set(it.id, setState(it, 'stale', moved));
 		else candidates.push(it.id);
 	}
-	const together = candidates.length ? composeForCheck(current(), candidates) : null;
+	const dryRuns = opts.dryRuns !== false;
+	const together = candidates.length && dryRuns ? composeForCheck(current(), candidates) : null;
 	const allHold =
-		together?.ok === true &&
-		candidates.every((id) => {
-			const blocked = blockedBy(items.get(id)!);
-			return !blocked;
-		}) &&
-		dryRunCommands(doc, together.tx.commands, ctx, proposal.sequenceId).ok;
+		!dryRuns ||
+		(together?.ok === true &&
+			candidates.every((id) => {
+				const blocked = blockedBy(items.get(id)!);
+				return !blocked;
+			}) &&
+			dryRunCommands(doc, together.tx.commands, ctx, proposal.sequenceId).ok);
 	for (const id of candidates) {
 		const it = items.get(id)!;
 		const blocked = blockedBy(it);
