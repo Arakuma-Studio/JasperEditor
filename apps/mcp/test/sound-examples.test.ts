@@ -32,7 +32,13 @@ const SOUND_COMMANDS = [
 
 /** A music clip on A1 (Phase 4 mixing examples). */
 const MUSIC = [
-	{ type: 'clip.place', source: { mediaByName: 'clip-a.mp4' }, at: 0, tracks: { audio: 'A1' }, ref: '$music' },
+	{
+		type: 'clip.place',
+		source: { mediaByName: 'clip-a.mp4' },
+		at: 0,
+		tracks: { audio: 'A1' },
+		ref: '$music',
+	},
 	{ type: 'essentialSound.setType', clipIds: ['$music'], audioType: 'music' },
 ];
 const HERO = (extra: Record<string, unknown>) => ({

@@ -8,13 +8,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-	type AudioClip,
-	type ClipSfx,
-	evaluate,
-	type ProjectDocument,
-	type SoundDesign,
-} from '@jasper/project';
+import { evaluate, type ProjectDocument, type SoundDesign } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';

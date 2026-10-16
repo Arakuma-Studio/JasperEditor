@@ -576,7 +576,17 @@ describe('mixer commands', () => {
 		const h = new Harness();
 		const m = h.registerVideo({ seconds: 10 });
 		h.ok([{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { video: 'V1', audio: 'A1' } }]);
-		h.ok([{ type: 'mixer.writeAutomation', stripId: 'A1', lane: 'volume', points: [[0, -3], [705_600_000, -9]] }]);
+		h.ok([
+			{
+				type: 'mixer.writeAutomation',
+				stripId: 'A1',
+				lane: 'volume',
+				points: [
+					[0, -3],
+					[705_600_000, -9],
+				],
+			},
+		]);
 		const fp = mixFingerprint(h.doc, h.seqId);
 		const doc = JSON.parse(JSON.stringify(h.doc)) as ProjectDocument;
 		for (const k of doc.sequences[h.seqId]!.audioTracks[0]!.volumeDb!.keyframes) k.id = `${k.id}x`;

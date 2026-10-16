@@ -878,7 +878,9 @@ describe('a locked music track never makes a cue edit fail', () => {
 		expect(track(h, 'A1').volumeDb).toEqual(written);
 		expect(sd(h)!.mix!.cues![cue]!.stopBefore!.frame).toBe(120);
 		// explicit re-apply is refused while locked
-		expect(h.tx([{ type: 'soundDesign.applyStopBefore', cueId: cue }]).errors?.[0]?.code).toBe('E_TRACK_LOCKED');
+		expect(h.tx([{ type: 'soundDesign.applyStopBefore', cueId: cue }]).errors?.[0]?.code).toBe(
+			'E_TRACK_LOCKED',
+		);
 		// unlocked, the next edit catches up (the dip follows the cue to 200)
 		h.ok([{ type: 'track.update', trackId: track(h, 'A1').id, patch: { locked: false } }]);
 		h.ok([{ type: 'soundCue.update', cueId: cue, frame: 210 }]);

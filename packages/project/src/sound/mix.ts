@@ -356,7 +356,8 @@ export function unwriteCurve(
 	const kept = keyframes.filter((k) => !ids.has(k.id));
 	if (exact) {
 		const times = new Set(kept.map((k) => k.time));
-		for (const k of write.replaced) if (!times.has(k.time)) kept.push({ ...k, easeIn: { ...k.easeIn }, easeOut: { ...k.easeOut } });
+		for (const k of write.replaced)
+			if (!times.has(k.time)) kept.push({ ...k, easeIn: { ...k.easeIn }, easeOut: { ...k.easeOut } });
 	}
 	return { keyframes: kept.sort((a, b) => a.time - b.time), exact };
 }
