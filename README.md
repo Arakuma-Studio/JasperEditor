@@ -639,6 +639,14 @@ curl -s -X POST http://127.0.0.1:47900/api/agent/tx -H "authorization: Bearer $T
 # → {"result":{"ok":true,"revision":1,"created":["mrk_…"],…},"appliedBy":"headless"}
 ```
 
+**Proposals** (spec 12 §2.5) are reviewable sets of edits stored next to a project, outside its undo history:
+`POST /api/projects/<id>/proposals` with `{feature, title, sequenceId, items: [{id, label, commands, requires?,
+alternatives?, meta?}]}` validates every item by a dry run (failing ones are stored `invalid` with the reason);
+`GET …/proposals[/<proposalId>]` reads them; `POST …/<proposalId>/accept {itemIds: [...] | "all", partial?}` applies
+the items and what they require as one transaction ("Accept <title> (n of m)"); `reject`, `reopen`, `note`, `select`
+and `DELETE` record the review. A client with only the token may accept sound-design proposals only where the user
+allowed it ("Allow agents to apply sound proposals"), otherwise `403 APPROVAL_REQUIRED`.
+
 The engine binds loopback only. The packaged-like desktop engine requires its per-launch token
 (`JASPER_LOCAL_TOKEN`), so plain curl calls are meant for the dev or standalone engine.
 

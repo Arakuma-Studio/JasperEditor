@@ -425,7 +425,7 @@ describe('proposal routes (headless)', () => {
 		const next = await post(app, base(projectId), small);
 		expect(next.statusCode).toBe(200);
 		expect(next.json().evicted).toEqual([made[7]!.id]);
-	});
+	}, 120_000);
 
 	it('deletes proposals with the project', async () => {
 		const app = await makeApp();

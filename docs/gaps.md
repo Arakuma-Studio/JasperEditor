@@ -323,7 +323,7 @@ e2e run, reproduced in a unit test).
 and preview defects), Phase 1 (a licensed, offline sound library that users and agents search, look at, audition and
 insert peak-aligned with provenance and credits), then cues and placement (P2), proposals and review (P3), mixing (P4),
 Sound Check (P5), packs and more cue sources (P6).
-**Status (on `feat/sound-design`, not merged to `main`):** partial — Phases 0, 1 and 2 done; Phases 3–6 not started.
+**Status (on `feat/sound-design`, not merged to `main`):** partial — Phases 0, 1 and 2 done; Phase 3 in progress (WP3.1: the generic proposal model, engine store, routes, event and the agent accept gate; the plan job, session preview, MCP tools and the Review UI are not built yet); Phases 4–6 not started.
 See [wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 1 verification": the Sound Library panel and Sound Design
 workspace, the engine library (60-sound Kenney CC0 kit, user folders with a declared licence, Jasper Synth), ten MCP
 tools, credits; inserts land on the frame to the sample (library sounds are registered with 50 ms of lead silence, and

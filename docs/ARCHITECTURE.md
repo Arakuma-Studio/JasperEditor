@@ -756,7 +756,7 @@ MCP client ──Streamable HTTP /mcp──▶ engine (same tools)      └─ n
 
 ### 11.3 Later
 
-Agent proposals rendered as timeline ghosts (dry-run results), UI command tools generated from the command registry (`agentExposed`), vision self-checks beyond `render_frame`, agent-authored fframes graphics in a sandboxed compile service (R-FF Design A), macro tools (remove silences, scene cuts) using engine analyses. All of them are MCP tools; none needs an in-app chat.
+Agent proposals rendered as timeline ghosts (dry-run results; the generic proposal model, engine store and routes exist since spec 12 WP3.1: `packages/project/src/proposals/`, `/api/projects/:id/proposals`), UI command tools generated from the command registry (`agentExposed`), vision self-checks beyond `render_frame`, agent-authored fframes graphics in a sandboxed compile service (R-FF Design A), macro tools (remove silences, scene cuts) using engine analyses. All of them are MCP tools; none needs an in-app chat.
 
 ---
 
