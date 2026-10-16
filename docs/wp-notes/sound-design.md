@@ -4661,7 +4661,93 @@ the AC-25 integrity fuzz (2 000 runs; more than RUNS / 50 accepted transactions 
 - Plan dialog (Auto Sound Pass…): `style.roomGlue | stopBefore | build | delivery`; review items `room`, `delivery`
   (setup, required by every placement), `stop:NNN`, `build:NNN` (group `mix`, `meta.kind`, `meta.why`).
 
-<!-- WP4.2a-VERIFIED -->
+#### Verified (measured, this branch; shared host, 16 cores, load average 60–100 during the runs)
+
+- `pnpm vitest run packages/project/test/sound-mix.test.ts --maxWorkers=1`: 17 passed — volumeDip (relative floor −27 dB on
+  a −3 dB clip, fades, outside untouched, undo = untouched document, redo = same document up to fresh ids, 6 refusals),
+  minimum with a duck (−39 dB inside it, the ducked curve identical outside to 10⁻⁹), reversed 2× clips; the **property**
+  (300 runs + 3 pinned counterexamples): inside each window the result is min(existing, dip) (≤ both everywhere), outside
+  identical to 10⁻⁶ with the same keys, and unwriting gives the original keys back. It found two bugs, fixed: overlapping
+  dips' ramps crossing between corners were not breakpoints (0.5 mdB error), and a key restored through a JSON copy lost
+  its −0. Stop-before (track lane values at the four points, idempotent re-apply, clear = the lane exactly as before,
+  a recorded fader ride kept outside the window and given back, shared track / automation Off → clip dips, follows a
+  moved / muted / deleted cue, ambience remembered, no music → not applied, refusals), build (one filter for two heroes,
+  exponential sweep at the geometric mean, removal keeps the filter for the other build then removes it; clip filter
+  when the music shares its track), room glue (bus, reverb 0.6 / 100 / 8, −16 dB post-fader sends, interface-only and
+  mixed tracks skipped with reasons, idempotent = identical document, settings follow, explicit tracks, removal,
+  adoption, a placement on a new SFX track gets its send, an interface sound's new track stays dry, refusals), delivery
+  (settings, Mix loudness + analysis, Auto-Match targets −23 / −31 / −33 LUFS for R128, SFX and untyped skipped,
+  ducking by each clip's own amount, the music's stop-before written again on the ducked curve, the default SFX level
+  −2 → −11 dB, undo / redo, no-dialogue rule, loudness false, refusals), filled cues realise (place, update), a locked
+  music track never fails a cue edit, mix records through load / repair / duplicate.
+- `pnpm vitest run packages/project/test/fuzz.test.ts`: AC-25 passed (2 000 runs; the six commands mixed in, more than
+  RUNS / 50 accepted transactions carry one). `audio-mix.test.ts`: 27 passed (+ keyframe ids not in the fingerprint).
+- `pnpm vitest run packages/audio-fx/test/build-sweep.test.ts packages/audio-fx/test/filter-eq.test.ts`: 3 + 28 passed.
+  **Mutation:** with the filter as it was (coefficients switched every 32 samples) the build oracle fails at the release:
+  third difference 3.2 × 10⁻³ at T + 1.4 ms (220 Hz), 2.8 × 10⁻³ (110 Hz), limit 5 × 10⁻⁵.
+- `pnpm vitest run apps/engine/test/sound-design-mix.test.ts --maxWorkers=1` (real engine, export mixer): 5 passed.
+  **Stop-before on a native export** (440 Hz music, hero at 5 s, 24-bit PCM MOV decoded by ffmpeg): floor **−23.99 dB**,
+  −12 dB crossed at **−264.8 ms** going down (expected −265) and **+4.8 ms** coming back (expected +5), 0.05 dB outside.
+  **Build** (pink-noise music, 2 s, 150 → 2000 Hz): spectral centroid 3 452 Hz before → 5 040, 5 512, 6 534, 7 690,
+  8 502 Hz across the window (rising) → 3 575 Hz after the hero; a 220 Hz tone through it: third difference max
+  **4.0 × 10⁻⁶** (limit 4.8 × 10⁻⁵; a 0.1 % step reads 8.4 × 10⁻⁴). **Room glue:** the hit's room tail −92.8 dBFS where
+  the dry render is silent (−240), the interface click renders identically with or without the room (max difference 0);
+  the bed with the room equals the bed without it (≤ 10⁻⁶), and full − bed equals the hit's solo measurement (with its
+  tail, `soloTailSec` 0.608 s) within 0.1 dB per octave band.
+- `apps/engine/test/sound-design-delivery.test.ts`: 3 passed. **Web delivery applied by the editor, then exported**
+  (native, 24-bit PCM; ffmpeg `ebur128=peak=true`): **−14.1 LUFS integrated, −1.5 dBTP**; stems on the export mixer
+  over the speech (4.2–7.8 s): voice −13.7 LUFS, music −37.0 LUFS (**23.3 LU under**); the report: mix −16.41 LUFS /
+  −4.09 dBTP before normalisation, expected −14 / −1.68, speech 4.3 s, music 22.77 LU under the voice; the stored
+  analysis' hash equals the delivered document's fingerprint; one transaction (revision + 1); applying again measures the
+  same mix. Propose (R128): `delivery` + `gain:*` items, agent accept 403, editor accept revision + 1 at −23 / −1.
+  Refusals: bad preset, unknown key, malformed / unknown project, unknown sequence.
+- `apps/engine/test/sound-design-plan-mix.test.ts`: 2 passed (room + delivery setup items required by every placement,
+  one stop-before and one build item for the fixture's hero, each requiring its placement; the same seed gives the same
+  items and commands; the editor's accept: one transaction with the room bus and its sends, the delivery, the dip and
+  the build recorded). First plan 59.5 s at load ≈ 80 (the delivery's measurement renders the whole sequence three times
+  and every clip once; estimated ≈ 15 s at load ≈ 15 from WP4.1b's 3.6 s → 10.4 s scaling).
+- Engine regressions: `sound-design-{plan,rebalance,bed,cues,plan-levels}`, `proposals`, `fuzz-http`, `security-review`,
+  `server`: 9 files, 247 passed. MCP: `sound-mix` (stopBefore / build on a filled cue written and removed exactly, room glue
+  on / again / off, apply_delivery propose then apply, strict arguments), `conventions`, `readme-tools`, `sound-guide`,
+  `sound-examples` (18): pass.
+- **Real run** (dev engine `JASPER_APPDIR=.stage JASPER_DEV=1 pnpm exec tsx apps/engine/src/cli.ts --port 50501`, the
+  full 212-sound library, a scratch jasper-mcp client over stdio; the Phase 2 fixture `FIXTURE_COMMANDS` + the 10 s
+  pink-noise music on A1 + dialogue 4–8 s on A2): `plan_sound_design {style: {seed: 2026, roomGlue: true, stopBefore:
+  true, build: true, delivery: "web"}}` → 17 placements, `room`, `delivery`, `stop:013` and `build:013` on the hero (the
+  "sfx: boom+swoosh" marker at 00:00:08:10), 78 s at load ≈ 95 (levels 48.4 s, 69 sound renders). Accepted with the
+  editor key (one transaction). The document: "SFX Room" (S1) with a Studio Reverb 0.6 s / 100 % / 8 ms and sends from
+  "SFX 1" and "SFX 2"; A1 (music) with 4 volume keys (the dip) and one Scientific Filter with 11 cutoff keys (the
+  build); the Mix normalising to −14 / −1. **Export** (ProRes 422 HQ + PCM, 14 s): ffmpeg `ebur128` **−14.0 LUFS, −2.8
+  dBTP** (LRA 17.2 LU). Looked at: waveform and spectrogram (ffmpeg `showwavespic` / `showspectrumpic`) of the export
+  from 5.8 to 9.3 s — the speech syllables until 8.0 s over the ducked, thinning music, then the hit at 8.33 s — and of a
+  music-only export of the same window (the other tracks and the room muted): the low end fades from 6.33 s (T − 2 s)
+  with the cut edge climbing past 2 kHz by ≈ 8.05 s, the whole band drops ≈ 24 dB from ≈ 8.08 s to ≈ 8.35 s (the dip;
+  times read off the picture, estimated ± 20 ms) and the full band is back at the hero. A first run with the dialogue
+  clip spanning 0–10 s (silent outside 4–8 s) proposed neither a stop-before nor a build: the only hero cue was "under
+  spoken words" (dialogue ranges are clip spans without a transcript, WP3.2) and placed as support — as designed; its
+  export also measured −14.0 LUFS / −1.4 dBTP. The pictures, plan reports and logs are in
+  `/var/lib/orquester/tmp/p4-dips-room-run/` (generated media: not committed).
+- `pnpm typecheck`, `pnpm lint` (Biome, tokens, anime, layers, assets), `node scripts/i18n.mjs --check` (9 375 strings):
+  pass after merging the integration branch (WP3.3b).
+
+#### Limits and notes for the next packages
+
+- **UI is WP4.2b**: Essential Sound "Room send" / "Stop before next", the delivery select, the plan dialog's options and
+  the Cue Seam's written-vs-stored span bars (API above).
+- The plan's `delivery` item is measured on the edit before the plan's own sounds, so its stored analysis (the real run:
+  −16.9 LUFS) is not the final mix's: the preview's normalisation gain is off by the effects' share until the mix is
+  analysed again; exports always re-measure (the real run's export: −14.0 LUFS). `apply_delivery` after a plan is exact.
+- The default ducking (music −15 dB) puts the music far further under the voice than the 8 LU minimum (measured
+  22.8–23.3 LU); lower the clip's Ducking amount for a fuller bed.
+- Muting a cue removes its dip / build; after unmuting apply again (or edit the cue). A cue edit leaves a realisation on
+  a locked music track as it is (it catches up after unlocking); explicit `applyStopBefore` / `applyBuild` refuse it.
+- Sends are per track: an interface sound sharing a track with other sound effects gets the room; a sound effect on a
+  dialogue track gets none (unless the track is named in `sfxTracks`).
+- A Bézier volume segment crossing a dip edge is rebuilt from 5 ms samples; the build filter's cutoff lags its keys by
+  one 32-sample design interval (0.7 ms) while gliding.
+- `soloTailSec` caps a sound's reverb tail at 6 s; a room with a longer decay measures the first 6 s.
+- `packages/audio-fx` "solves 2000 events in under 50 ms" (WP4.1a's timing test) measured 50.6 ms once at load ≈ 90 here
+  and passed on rerun; it is a load-sensitive timing check, not changed.
 
 ## Phase 5: Sound Check
 

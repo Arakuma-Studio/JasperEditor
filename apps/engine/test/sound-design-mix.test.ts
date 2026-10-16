@@ -302,7 +302,7 @@ describe('room glue on rendered audio', { timeout: 300_000 }, () => {
 		const sr = full.sampleRate;
 		const contrib = full.channels.map((c, k) => c.map((v, i) => v - bedRoom.channels[k]![i]!));
 		const w = hit.window;
-		const gain = seq.clips[ids.hit]!.gainDb;
+		const gain = (seq.clips[ids.hit] as { gainDb: number }).gainDb;
 		const mine = bandLevels(contrib, sr, w);
 		for (let b = 0; b < 7; b++)
 			if (hit.soundBandsDb[b]! > -80)
