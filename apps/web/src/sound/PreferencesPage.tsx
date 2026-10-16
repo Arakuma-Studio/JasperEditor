@@ -10,16 +10,24 @@ import {
 	type SoundRootsPutRequest,
 } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
-import { readSoundDesignSettings, requiresAttribution } from '@jasper/project';
+import {
+	DELIVERY_PRESETS,
+	readSoundDesignSettings,
+	requiresAttribution,
+	type SoundDelivery,
+} from '@jasper/project';
 import type { SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { Button, Checkbox, ScrubbyNumber, Select, TextField, Toggle } from '@jasper/ui';
 import { useCallback, useEffect, useState } from 'react';
+import { runCommand } from '../commands/registry.ts';
 import { t } from '../i18n/runtime.ts';
 import { EMPTY_SESSION_STORE } from '../panels/session-store.ts';
 import { getDesktopBridge } from '../runtime/platform.ts';
+import { useShellRuntimeOrNull } from '../shell/context.tsx';
 import { PrefGroup, PrefRow } from '../shell/preferences/GeneralPage.tsx';
 import { useEngine } from '../state/engine.tsx';
+import { DELIVERY_IDS, deliveryOptionLabel, sequenceDelivery } from './mix-model.ts';
 import {
 	MAX_AUDITION_DB,
 	MAX_PRE_ROLL_SEC,
@@ -436,6 +444,7 @@ export function SoundLibraryPreferencesPage() {
 			</PrefGroup>
 
 			<AgentApplyPreference />
+			<DeliveryPreference />
 
 			<PrefGroup title="Display">
 				<Checkbox
@@ -506,6 +515,74 @@ export function AgentApplyPreference() {
 				Off (the default): agents only propose; you apply in review. Saved with the sequence; an agent cannot
 				turn it on by itself.
 			</p>
+			{error ? <p className="text-pr-small text-pr-warning">{error}</p> : null}
+		</PrefGroup>
+	);
+}
+
+/**
+ * The active sequence's delivery target (spec 12 §2.4 "Delivery presets"; WP4.2b): what placement's default levels and
+ * the masking solver aim at (`soundDesign.setSettings {delivery}`, the user's undoable edit). Mixing the sequence to it
+ * (normalisation, Auto-Match, ducking) is Sequence ▸ Sound Design ▸ Delivery Target…, linked here.
+ */
+export function DeliveryPreference() {
+	const session = useSessionOrNull();
+	const runtime = useShellRuntimeOrNull();
+	const seqId = useStoreSelector(
+		session?.store ?? EMPTY_SESSION_STORE,
+		(s: SessionState | null) => s?.activeSequenceId ?? null,
+	);
+	const delivery = useStoreSelector(session?.store ?? EMPTY_SESSION_STORE, (s: SessionState | null) => {
+		const seq = seqId ? s?.document.sequences[seqId] : undefined;
+		return sequenceDelivery(seq);
+	});
+	const readOnly = useStoreSelector(
+		session?.store ?? EMPTY_SESSION_STORE,
+		(s: SessionState | null) => !!s?.readOnly,
+	);
+	const [error, setError] = useState<string | null>(null);
+	const set = (v: SoundDelivery) => {
+		if (!session || !seqId || v === delivery) return;
+		const r = session.apply({
+			label: t('Sound Delivery Target'),
+			origin: 'user',
+			sequenceId: seqId,
+			commands: [{ type: 'soundDesign.setSettings', sequenceId: seqId, delivery: v } as never],
+		});
+		setError(r.ok ? null : (r.errors[0]?.message ?? t('Edit failed')));
+	};
+	return (
+		<PrefGroup title="Delivery" testId="prefs-sound-delivery">
+			<div className="flex items-center gap-2">
+				<span className="w-[140px] shrink-0 text-pr-muted">{t('Sequence target')}</span>
+				<Select
+					label={t('Sequence delivery target')}
+					value={delivery}
+					disabled={!session || !seqId || readOnly}
+					onValueChange={(v) => set(v as SoundDelivery)}
+					options={DELIVERY_IDS.map((id) => ({
+						value: id,
+						label: deliveryOptionLabel(DELIVERY_PRESETS[id]),
+					}))}
+				/>
+			</div>
+			<p className="text-pr-small text-pr-muted">
+				Default levels and Rebalance aim at this target. To mix the sequence to it (normalisation, Auto-Match,
+				ducking), use Delivery Target….
+			</p>
+			<div>
+				<Button
+					variant="secondary"
+					disabled={!session || !seqId || readOnly}
+					onClick={() => {
+						const ctx = runtime?.getCtx();
+						if (ctx) void runCommand('sound.deliveryTarget', ctx);
+					}}
+					data-testid="prefs-delivery-open"
+				>
+					Delivery Target…
+				</Button>
+			</div>
 			{error ? <p className="text-pr-small text-pr-warning">{error}</p> : null}
 		</PrefGroup>
 	);

@@ -9,11 +9,13 @@
 // `aria-activedescendant`), Left/Right/Home/End move between cues (Shift extends the selection), Enter fills, Delete
 // removes, the context-menu key or Shift+F10 opens the menu, Esc deselects. Every edit is a `soundCue.*` command.
 import {
+	BUILD_DEFAULT,
 	type Clip,
 	type Command,
 	formatTimecode,
 	type MediaAsset,
 	type Rational,
+	readSoundDesignMix,
 	type Sequence,
 	type SoundCue,
 	trackLabel,
@@ -41,6 +43,7 @@ import {
 import { deltaFramesFromPx, frameToX, type Viewport } from '../../panels/timeline/model/viewport.ts';
 import type { ContextMenuItem, TimelineUiStore } from '../../panels/timeline/state/ui-store.ts';
 import { endSoundDrag, isSoundDrag, readSoundDrag } from '../insert.ts';
+import { type CueMixKind, cueMixState } from '../mix-model.ts';
 import {
 	CUE_ALIGN_LABELS,
 	CUE_WEIGHT_LABELS,
@@ -134,6 +137,8 @@ export function CueSeam(p: CueSeamProps) {
 	const rate = seq.settings.frameRate as Rational;
 	const conflicts = useMemo(() => heroConflicts(cues, rate), [cues, rate]);
 	const ghostCues = p.ghosts ?? [];
+	// Phase 4: what stop-before / build wrote into the mix (solid bars) vs only stored on the cue (dashed)
+	const mixCues = useMemo(() => readSoundDesignMix(seq.soundDesign?.mix)?.cues, [seq.soundDesign]);
 	const geoms = useMemo(
 		() =>
 			layoutCues([...cues, ...ghostCues], v, {
@@ -142,8 +147,9 @@ export function CueSeam(p: CueSeamProps) {
 				conflicts,
 				ghosts: new Set(ghostCues.map((g) => g.id)),
 				clips: seq.clips,
+				...(mixCues ? { mix: mixCues } : {}),
 			}),
-		[cues, ghostCues, v, rate, selected, conflicts, seq.clips],
+		[cues, ghostCues, v, rate, selected, conflicts, seq.clips, mixCues],
 	);
 	const tc = tcOf(seq);
 	const byId = useMemo(() => new Map(cues.map((c) => [c.id, c])), [cues]);
@@ -205,6 +211,18 @@ export function CueSeam(p: CueSeamProps) {
 		const r = session.apply({ label, origin: 'user', sequenceId: seq.id, commands });
 		if (!r.ok) p.toast('warning', r.errors[0]?.message ?? t('{0} failed', label));
 		return r;
+	};
+	/** After turning stop-before / build on: say when a filled cue's could not be written into the mix (and why). */
+	const explainStored = (kind: CueMixKind, ids: readonly string[]) => {
+		const now = session.getCommitted().sequences[seq.id];
+		if (!now) return;
+		for (const c of cuesOf(now)) {
+			if (!ids.includes(c.id) || !c[kind]) continue;
+			const st = cueMixState(now, c)[kind];
+			if (st.written || !(c.placedClipIds ?? []).some((x) => !!now.clips[x])) continue;
+			p.toast('info', t('Stored on the cue, not written into the mix: {0}', st.why ?? ''));
+			return;
+		}
 	};
 	const selectCue = (id: string, mode: 'replace' | 'toggle' | 'add') => {
 		// one selection domain at a time (Delete has one meaning): selecting a cue, even with Shift, deselects clips —
@@ -385,6 +403,7 @@ export function CueSeam(p: CueSeamProps) {
 		const set = (label: string, patch: Parameters<typeof updateCuesCommands>[1]) =>
 			apply(label, updateCuesCommands(ids, patch));
 		const allStop = sel.every((c) => !!c.stopBefore);
+		const allBuild = sel.every((c) => !!c.build);
 		const ext = collectMenuItems(cueMenuExtensions.list(), {
 			session,
 			sequenceId: seq.id,
@@ -431,7 +450,20 @@ export function CueSeam(p: CueSeamProps) {
 				label: t('Stop Before Next'),
 				checked: allStop,
 				disabled: readOnly,
-				run: () => set(t('Stop Before Next'), { stopBefore: allStop ? null : { ...STOP_BEFORE_DEFAULT } }),
+				run: () => {
+					set(t('Stop Before Next'), { stopBefore: allStop ? null : { ...STOP_BEFORE_DEFAULT } });
+					if (!allStop) explainStored('stopBefore', ids);
+				},
+			},
+			{
+				kind: 'item',
+				label: t('Build Into Cue'),
+				checked: allBuild,
+				disabled: readOnly,
+				run: () => {
+					set(t('Cue Build'), { build: allBuild ? null : { ...BUILD_DEFAULT } });
+					if (!allBuild) explainStored('build', ids);
+				},
 			},
 			{
 				kind: 'item',
@@ -639,29 +671,46 @@ export function CueSeam(p: CueSeamProps) {
 								</g>
 							) : null}
 							{g.build ? (
+								// written into the mix: a filled wedge; stored on the cue only: a dashed outline
 								<polygon
 									data-cue-build={g.id}
+									data-written={g.buildWritten ? 'true' : 'false'}
 									points={`${g.build.x0},${SEAM_PX - 1} ${g.build.x1},${SEAM_PX - 1} ${g.build.x1},${SEAM_PX - 5}`}
-									fill="var(--pr-cue)"
-									opacity={0.5}
+									fill={g.buildWritten ? 'var(--pr-cue)' : 'none'}
+									stroke={g.buildWritten ? 'none' : 'var(--pr-cue-unfilled)'}
+									strokeWidth={1}
+									strokeDasharray={g.buildWritten ? undefined : '3 2'}
+									opacity={g.buildWritten ? 0.5 : 0.9}
 								/>
 							) : null}
 							{g.stopBefore ? (
-								<g data-cue-stop={g.id}>
-									<rect
-										x={g.stopBefore.x0}
-										y={1}
-										width={Math.max(1, g.stopBefore.x1 - g.stopBefore.x0)}
-										height={2}
-										fill="var(--pr-cue)"
-										opacity={0.6}
-									/>
+								<g data-cue-stop={g.id} data-written={g.stopBeforeWritten ? 'true' : 'false'}>
+									{g.stopBeforeWritten ? (
+										<rect
+											x={g.stopBefore.x0}
+											y={1}
+											width={Math.max(1, g.stopBefore.x1 - g.stopBefore.x0)}
+											height={2}
+											fill="var(--pr-cue)"
+											opacity={0.6}
+										/>
+									) : (
+										<line
+											x1={g.stopBefore.x0}
+											x2={g.stopBefore.x1}
+											y1={2}
+											y2={2}
+											stroke="var(--pr-cue-unfilled)"
+											strokeWidth={1.5}
+											strokeDasharray="3 2"
+										/>
+									)}
 									<line
 										x1={g.stopBefore.x1}
 										x2={g.stopBefore.x1}
 										y1={0}
 										y2={5}
-										stroke="var(--pr-cue)"
+										stroke={g.stopBeforeWritten ? 'var(--pr-cue)' : 'var(--pr-cue-unfilled)'}
 										strokeWidth={1.5}
 									/>
 								</g>

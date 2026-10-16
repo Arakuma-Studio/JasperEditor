@@ -5,6 +5,7 @@ import {
 	type ClipSfx,
 	CUE_KINDS,
 	type CueKind,
+	type CueMix,
 	type CueWeight,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
@@ -310,6 +311,12 @@ export type CueGeom = {
 	build: SpanPx | null;
 	/** Music dip before the cue: a bar along the top. */
 	stopBefore: SpanPx | null;
+	/**
+	 * Written into the mix (`soundDesign.mix.cues`, Phase 4: the span is where it was written) vs only stored on the cue
+	 * (drawn dashed: an unfilled cue, no music under it, a muted cue).
+	 */
+	buildWritten: boolean;
+	stopBeforeWritten: boolean;
 };
 
 const fpsOf = (rate: Rational) => (rate.den > 0 && rate.num > 0 ? rate.num / rate.den : 0);
@@ -325,6 +332,8 @@ export function layoutCues(
 		ghosts?: ReadonlySet<string>;
 		/** The sequence's clips (dangling `placedClipIds` do not make a cue filled). */
 		clips?: Readonly<Record<string, unknown>>;
+		/** What stop-before / build wrote per cue (`soundDesign.mix.cues`, Phase 4). */
+		mix?: Readonly<Record<string, CueMix>>;
 		max?: number;
 	},
 ): CueGeom[] {
@@ -335,10 +344,13 @@ export function layoutCues(
 		const x = frameToX(v, c.frame);
 		const span = (start: number, end: number): SpanPx => ({ x0: frameToX(v, start), x1: frameToX(v, end) });
 		const window = c.window && c.window.end > c.window.start ? span(c.window.start, c.window.end) : null;
-		const secSpan = (sec: number | undefined) =>
-			fps > 0 && fin(sec) && sec > 0 ? span(c.frame - sec * fps, c.frame) : null;
-		const build = secSpan(c.build?.seconds);
-		const stopBefore = secSpan(c.stopBefore?.seconds);
+		const secSpan = (sec: number | undefined, at = c.frame) =>
+			fps > 0 && fin(sec) && sec > 0 && fin(at) ? span(at - sec * fps, at) : null;
+		const rec = opts.mix && Object.hasOwn(opts.mix, c.id) ? opts.mix[c.id] : undefined;
+		const buildW = rec?.build ? secSpan(rec.build.seconds, rec.build.frame) : null;
+		const stopW = rec?.stopBefore ? secSpan(rec.stopBefore.seconds, rec.stopBefore.frame) : null;
+		const build = buildW ?? secSpan(c.build?.seconds);
+		const stopBefore = stopW ?? secSpan(c.stopBefore?.seconds);
 		const left = Math.min(x, window?.x0 ?? x, build?.x0 ?? x, stopBefore?.x0 ?? x);
 		const right = Math.max(x, window?.x1 ?? x);
 		if (right < -margin || left > v.width + margin) continue;
@@ -362,6 +374,8 @@ export function layoutCues(
 			window,
 			build,
 			stopBefore,
+			buildWritten: !!buildW,
+			stopBeforeWritten: !!stopW,
 		});
 	}
 	const max = opts.max ?? MAX_RENDERED_CUES;

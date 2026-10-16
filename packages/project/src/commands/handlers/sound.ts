@@ -26,12 +26,12 @@ import {
 	type SoundTrackSequence,
 	soundTimingOf,
 } from '../../sound/insert.ts';
+import { sfxGainOwner } from '../../sound/level.ts';
 import {
 	type LibraryProvenance,
 	libraryDescriptorIssue,
 	readLibraryProvenance,
 } from '../../sound/provenance.ts';
-import { sfxGainOwner } from '../../sound/level.ts';
 import { isSfxClip } from '../../sound/sfx-clip.ts';
 import { isSoundTypeId, SOUND_TYPE_IDS } from '../../sound/taxonomy.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../../time.ts';

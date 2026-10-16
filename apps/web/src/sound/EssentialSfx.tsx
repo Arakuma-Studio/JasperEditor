@@ -2,8 +2,9 @@
 // source, licence badge, Swap…, ◀ ▶ variation, Find Similar), Role (Hero / Support / Layer: `soundDesign.setRole`),
 // Align (Peak / Start / End: `soundDesign.swap` with the same media re-aligns the clip on the frame its point played
 // at), Pitch ± semitones (`soundDesign.swap {pitchSt}`: varispeed up to ±3 st keeping the seeded variation, the Pitch
-// Shifter beyond) and the layer position ("Layer 1 of 2"). Auto gain, Room send and Stop before next are Phase 4.
-// Each control is one undoable command for every selected clip it applies to.
+// Shifter beyond) and the layer position ("Layer 1 of 2"); then the Phase 4 rows (`EssentialSfxMix`: Auto gain with
+// its reason and Rebalance, Room send, Stop before next and Build of the linked cue). Each control is one undoable
+// command for every selected clip it applies to.
 import type { AudioClip, Command, Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Button, cx, toast } from '@jasper/ui';
@@ -19,6 +20,7 @@ import {
 	licenceWarns,
 	sfxOf,
 } from './design-model.ts';
+import { EssentialSfxMix } from './EssentialSfxMix.tsx';
 import { licenseBadge, typeLabel } from './model.ts';
 
 const ROLES = [
@@ -248,6 +250,7 @@ export function EssentialSfxSection(props: { session: EditorSession; seq: Sequen
 				<p className="text-pr-small text-pr-dim">
 					{t('Swaps, variations, align and pitch keep the sound on its cue: the peak frame stays.')}
 				</p>
+				<EssentialSfxMix session={session} seq={seq} clips={placed} />
 			</div>
 		</section>
 	);

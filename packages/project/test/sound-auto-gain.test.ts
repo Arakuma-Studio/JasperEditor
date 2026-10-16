@@ -51,7 +51,9 @@ describe('soundDesign.setAutoGain', () => {
 	it('off keeps the solved gain as the user’s (level kept, manual); on hands it back; undo / redo', () => {
 		const h = new Harness();
 		const m = libMedia(h);
-		const [a] = placed(h.ok([{ type: 'soundDesign.place', frame: 40, layers: [{ mediaId: m, gainOffsetDb: 0.5 }] }]));
+		const [a] = placed(
+			h.ok([{ type: 'soundDesign.place', frame: 40, layers: [{ mediaId: m, gainOffsetDb: 0.5 }] }]),
+		);
 		h.ok([
 			{
 				type: 'soundDesign.applyGains',
@@ -174,7 +176,8 @@ describe('soundDesign.setAutoGain', () => {
 		expect(g.sfx!.level).toMatchObject({ by: 'default', manual: true });
 		expect(sfxGainOwner(g)).toBe('user');
 		const raw = clone(h.doc);
-		const sfx = (raw.sequences[h.seqId]!.clips[a!] as unknown as { sfx: { level: Record<string, unknown> } }).sfx;
+		const sfx = (raw.sequences[h.seqId]!.clips[a!] as unknown as { sfx: { level: Record<string, unknown> } })
+			.sfx;
 		sfx.level.manual = 'yes';
 		const loaded = loadProject(raw, { ids: createCounterIdSource(901) });
 		const out = loaded.document.sequences[h.seqId]!.clips[a!] as SfxClip;
