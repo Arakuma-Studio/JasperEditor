@@ -448,6 +448,7 @@ Every state-changing engine route and what an agent may do with it:
 | `soundDesign.setSettings` with `agentsMayApply: true` in an agent transaction | **Gated** (approval card, `approvalReasons`) | An agent may not grant itself the right to apply its own proposals |
 | `POST /api/projects/:id/proposals`, `…/:proposalId/reject`, `/reopen`, `/note`, `/select`, `DELETE …/:proposalId` | Open | Nothing in the project changes (proposals live outside the document and its history); an agent is always recorded as the author (`{agent}`), only the editor may name the author; deleting one loses review notes only |
 | `POST /api/sound-design/plan` (`plan_sound_design`), `place_sound` mode "propose" | Open | Stores a proposal (nothing in the document changes); registers the planned library sounds like `POST /api/sounds/:id/register` (copies into managed media, folder files in place only on a local engine); applying it is the gated accept above |
+| `POST /api/sound-design/rebalance` (`rebalance_sfx`) | Open | Mode `propose` (the default) stores a proposal (nothing changes); mode `apply` is one ordinary, undoable transaction of `soundDesign.applyGains` (clip gains of sound effects within −30…+12 dB, nothing deleted), classified like any agent transaction (labelled "Agent: Rebalance SFX Levels"); renders are measure-only (no file is written) |
 | `PUT /api/settings/processing` (`set_processing_settings`) | **Gated**, now for every caller without the editor key | Where media is sent (was opt-in by a query parameter) |
 | `POST /api/project-manager` (`project_manager`) | Open | Copies into a new destination under free names; sources untouched |
 | `POST /api/assets/:id/relink`, `…/relink-scan` (`link_media`) | Open | Registers and compares files; the relink itself is a transaction (undoable; `force` is gated) |
@@ -683,6 +684,15 @@ them, but it was reviewed by its author, not by this review.
   cancelled job deletes a proposal it had just stored. Tests: `apps/engine/test/sound-design-plan.test.ts` (typed
   refusals, a fuzz target over mutated bodies: no 5xx, every started job ends succeeded with a result of the schema or
   failed with a code) and `fuzz-http.test.ts`.
+- **Rebalance SFX levels** (spec 12 WP4.1b, `apps/engine/src/sound-design/{rebalance,bed,levels}.ts`; `POST
+  /api/sound-design/rebalance`): a strict zod body (project id `[A-Za-z0-9_-]{1,128}`, ≤ 2 000 clip ids, a frame range,
+  a delivery enum, `mode` / `userGains` enums); the project, sequence and explicit clips are checked before a job
+  starts (typed `404 CLIP_NOT_FOUND`, `400 NOT_SFX`); the job reads the live document through the agent service,
+  renders only through the export mixer with `measureOnly` (bounded: windows ≤ 20 s, ≤ 2 000 clips, bed PCM cache ≤ 96
+  MB), media resolved through the registry (engine-store keys only, like exports); apply mode goes through the agent
+  service's transaction path with `expectedRevision` (a concurrent edit fails the job `CONFLICT`, retryable). Tests:
+  `apps/engine/test/sound-design-rebalance.test.ts` (refusals and a fuzz target: no 5xx, every started job ends
+  succeeded with a result of the schema or failed with a code).
 - **Proposals** (spec 12 WP3.1, `apps/engine/src/routes/proposals.ts`, `proposals/{store,service}.ts`; `GET/POST
   /api/projects/:id/proposals`, `GET/DELETE …/:proposalId`, `POST …/:proposalId/accept|reject|reopen|note|select`):
   project ids are matched against `prj_` + 16 Crockford characters and proposal ids against `prp_` + 16 before any path

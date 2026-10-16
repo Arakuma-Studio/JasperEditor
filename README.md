@@ -652,7 +652,13 @@ and `DELETE` record the review. A client with only the token may accept sound-de
 allowed it ("Allow agents to apply sound proposals"), otherwise `403 APPROVAL_REQUIRED`.
 `POST /api/sound-design/plan {projectId, sequenceId?, range?, cues?: "auto" | [cueIds], style?: {density, palette,
 sources, respectDialogue, seed, alternatives}, maxCues?, label?}` starts a `sound-design` job (202); its result names the
-proposal it stored (`proposalId`) with a per-cue report (sound, score parts, role, alignment, alternates, skipped cues).
+proposal it stored (`proposalId`) with a per-cue report (sound, score parts, role, alignment, alternates, skipped cues,
+and each sound's gain solved against the bed with what limited it).
+`POST /api/sound-design/rebalance {projectId, sequenceId?, clipIds?, range?, delivery?, mode?: "propose" | "apply",
+userGains?: "keep" | "replace", label?}` starts a `sound-design` job (202) that measures every sound effect against the
+bed (rendered per cue cluster) and solves its gain with the masking solver; the result reports per clip the gain, target
+and achieved lift, `limitedBy` and the reason, and either names the proposal it stored (`propose`, the default) or applies
+the gains as one undoable transaction "Rebalance SFX Levels" (`apply`).
 
 The engine binds loopback only. The packaged-like desktop engine requires its per-launch token
 (`JASPER_LOCAL_TOKEN`), so plain curl calls are meant for the dev or standalone engine.
