@@ -456,11 +456,15 @@ describe('proposal routes (headless)', () => {
 		const acc = await post(app, `${url}/accept`, { itemIds: ['mute'] }, EDITOR_H);
 		expect(acc.statusCode, acc.body).toBe(200);
 		const trackId = (acc.json().proposal as Proposal).items[2]!.applied!.refs.$sfx!;
-		// an agent may reject or reopen what is undecided, never put an applied item back into review
+		// an agent never reopens (an applied item, nor a decision of the user's), never notes or chooses alternatives
 		const agentReopen = await post(app, `${url}/reopen`, { itemIds: ['trk'] }, AGENT_H);
 		expect([agentReopen.statusCode, agentReopen.json().detail.code]).toEqual([403, 'E_APPROVAL_REQUIRED']);
 		const agentAll = await post(app, `${url}/reopen`, { itemIds: 'all' }, AGENT_H);
 		expect(agentAll.statusCode).toBe(403);
+		const agentNote = await post(app, `${url}/note`, { itemId: 'cut', note: 'mine' }, AGENT_H);
+		expect([agentNote.statusCode, agentNote.json().detail.code]).toEqual([403, 'E_APPROVAL_REQUIRED']);
+		const agentSelect = await post(app, `${url}/select`, { itemId: 'mute', alternative: 1 }, AGENT_H);
+		expect([agentSelect.statusCode, agentSelect.json().detail.code]).toEqual([403, 'E_APPROVAL_REQUIRED']);
 		// the editor while the track is still there: refused, nothing changes
 		const held = await post(app, `${url}/reopen`, { itemIds: ['trk', 'mute'] }, EDITOR_H);
 		expect([held.statusCode, held.json().detail.code]).toEqual([409, 'E_STILL_APPLIED']);
@@ -471,9 +475,10 @@ describe('proposal routes (headless)', () => {
 			'accepted',
 			'accepted',
 		]);
-		// an agent rejecting and reopening its own undecided item is fine
+		// an agent may withdraw its undecided items (reject); the user reopens them
 		expect((await post(app, `${url}/reject`, { itemIds: ['cut'] }, AGENT_H)).statusCode).toBe(200);
-		expect((await post(app, `${url}/reopen`, { itemIds: ['cut'] }, AGENT_H)).statusCode).toBe(200);
+		expect((await post(app, `${url}/reopen`, { itemIds: ['cut'] }, AGENT_H)).statusCode).toBe(403);
+		expect((await post(app, `${url}/reopen`, { itemIds: ['cut'] }, EDITOR_H)).statusCode).toBe(200);
 		// the accept undone (the track it created is gone): the editor reopens it
 		userEdit(file, seqId, [{ type: 'track.remove', trackIds: [trackId] }]);
 		const re = await post(app, `${url}/reopen`, { itemIds: ['trk', 'mute'] }, EDITOR_H);

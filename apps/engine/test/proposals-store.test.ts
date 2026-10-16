@@ -39,7 +39,7 @@ function proposal(over: Partial<Proposal> = {}): Proposal {
 	};
 }
 
-function setup(opts: { now?: () => Date; max?: number } = {}) {
+function setup(opts: { now?: () => Date; max?: number; inUse?: (pid: string, id: string) => boolean } = {}) {
 	const appdir = tempAppdir('jasper-proposals-');
 	const paths = appdirPaths(appdir);
 	mkdirSync(join(paths.projectFile(PID), '..'), { recursive: true });
@@ -51,6 +51,7 @@ function setup(opts: { now?: () => Date; max?: number } = {}) {
 		now: opts.now ?? (() => new Date('2026-10-02T00:00:00.000Z')),
 		log: (m) => logs.push(m),
 		...(opts.max ? { maxPerProject: opts.max } : {}),
+		...(opts.inUse ? { inUse: opts.inUse } : {}),
 		onRemoved: (_pid, p, why) => removed.push([p.id, why]),
 	});
 	return { store, paths, dir: paths.projectProposalsDir(PID), removed, logs };
@@ -130,6 +131,27 @@ describe('ProposalStore', () => {
 		expect(readdirSync(dir)).toEqual([`${recent.id}.json`]);
 		now = new Date('2026-11-20T00:00:00.000Z');
 		expect(await store.get(PID, recent.id)).toBeNull();
+	});
+
+	it('never expires or evicts a proposal an accept or decision is working on (it does for that caller)', async () => {
+		let now = new Date('2026-10-02T00:00:00.000Z');
+		const busy = new Set<string>();
+		const { store, removed } = setup({ now: () => now, max: 2, inUse: (_pid, id) => busy.has(id) });
+		const decided = (p: Proposal): Proposal => ({ ...p, items: p.items.map((i) => ({ ...i, state: 'rejected' as const })) });
+		const old = decided(proposal({ updatedAt: '2026-10-01T00:00:00.000Z' }));
+		const other = decided(proposal({ updatedAt: '2026-10-01T00:00:01.000Z' }));
+		await store.create(PID, old);
+		await store.create(PID, other);
+		busy.add(old.id);
+		// over the limit: the busy one is skipped, the next decided one goes
+		expect(await store.create(PID, proposal())).toEqual({ evicted: [other.id] });
+		// past its expiry: a list or another reader keeps it while busy; the lock holder sees it expired
+		now = new Date('2026-11-15T00:00:00.000Z');
+		expect((await store.list(PID)).proposals.map((p) => p.id)).toContain(old.id);
+		expect(await store.get(PID, old.id)).not.toBeNull();
+		expect(await store.get(PID, old.id, { owner: true })).toBeNull();
+		expect(removed.at(-1)).toEqual([old.id, 'expired']);
+		busy.delete(old.id);
 	});
 
 	it('moves unreadable files aside with a warning and never throws', async () => {

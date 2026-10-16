@@ -14,6 +14,7 @@ import { inContextStore, playTimelineWindow } from '../sound/in-context.ts';
 import { soundLibraryPrefs } from '../sound/prefs.ts';
 import { buildGhostModel, type GhostItem, type GhostModel } from './ghosts.ts';
 import {
+	approvalNeeds,
 	authorName,
 	buildReviewModel,
 	type ReviewModel,
@@ -346,18 +347,35 @@ export async function applyReview(
 	}
 	const n = st.items.filter((it) => !it.setup && it.state === 'accepted').length;
 	const removals = removalsOf(st.preview, accepted);
-	if (removals.length) {
-		const names = removals
-			.slice(0, 5)
-			.map((r) => `“${r.name}”`)
-			.join(', ');
-		const more = removals.length > 5 ? ` ${t('and {0} more', removals.length - 5)}` : '';
-		const ok = await (opts.confirm ?? confirmDialog)({
-			title: t('Apply {0} of {1}?', n, counts.total),
-			body:
+	// what an agent could not do without asking: named in the same confirmation (applying is the user's own edit)
+	const needs = approvalNeeds(p, accepted);
+	if (removals.length || needs.length) {
+		const lines: string[] = [];
+		if (removals.length) {
+			const names = removals
+				.slice(0, 5)
+				.map((r) => `“${r.name}”`)
+				.join(', ');
+			const more = removals.length > 5 ? ` ${t('and {0} more', removals.length - 5)}` : '';
+			lines.push(
 				removals.length === 1
 					? t('Also removes 1 of your clips: {0}', `${names}${more}`)
 					: t('Also removes {0} of your clips: {1}', removals.length, `${names}${more}`),
+			);
+		}
+		const commands = needs.filter((x) => x.kind !== 'agentsMayApply') as { label: string; kind: string }[];
+		if (commands.length)
+			lines.push(
+				t(
+					'Also runs what needs your approval: {0}',
+					commands.map((x) => (x.kind === 'force' ? t('{0} (forced)', x.label) : x.label)).join(', '),
+				),
+			);
+		if (needs.some((x) => x.kind === 'agentsMayApply'))
+			lines.push(t('Also allows agents to apply sound proposals in this sequence without your review'));
+		const ok = await (opts.confirm ?? confirmDialog)({
+			title: t('Apply {0} of {1}?', n, counts.total),
+			body: lines.join(' '),
 			confirmLabel: t('Apply'),
 		});
 		if (!ok) return { ok: false, code: 'E_CANCELLED', message: t('Apply cancelled') };

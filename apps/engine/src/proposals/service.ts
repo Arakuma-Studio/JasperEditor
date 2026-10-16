@@ -367,11 +367,24 @@ export class ProposalService {
 			| { kind: 'select'; itemId: string; alternative: number },
 		who: Requester = { editor: true, agent: 'editor' },
 	) {
+		// The reviewer's own actions: reopening a decision, a note, the alternative to apply. An agent proposes and may
+		// withdraw (reject, delete) its items; it never overrides the user's decisions, notes or choices.
+		if (!who.editor && decision.kind !== 'reject')
+			throw new HttpError(
+				403,
+				'APPROVAL_REQUIRED',
+				decision.kind === 'reopen'
+					? 'Only the user reopens items in the editor; propose again instead'
+					: decision.kind === 'note'
+						? 'Notes are the reviewer’s: agents read them (get_proposal, wait_for_proposal)'
+						: 'The reviewer chooses the alternative in the editor; agents read the choice',
+				{ code: 'E_APPROVAL_REQUIRED' },
+			);
 		await this.ensureProject(projectId);
 		return this.locks.run(`${projectId}/${proposalId}`, async () => {
 			const p = await this.load(projectId, proposalId);
 			const now = this.now().toISOString();
-			if (decision.kind === 'reopen') await this.checkReopen(projectId, p, decision.itemIds, who);
+			if (decision.kind === 'reopen') await this.checkReopen(projectId, p, decision.itemIds);
 			const r =
 				decision.kind === 'reject'
 					? rejectItems(p, decision.itemIds, now)
@@ -442,19 +455,12 @@ export class ProposalService {
 	/**
 	 * Reopening an accepted item puts it back into review: only right after its accept was undone in the editor's
 	 * History (the session does it), never while the document still has what it applied (accepting it again would apply
-	 * it twice). Agents cannot reopen accepted items at all (they would hide nothing, but could set up a duplicate).
+	 * it twice).
 	 */
-	private async checkReopen(projectId: string, p: Proposal, itemIds: string[] | 'all', who: Requester) {
+	private async checkReopen(projectId: string, p: Proposal, itemIds: string[] | 'all') {
 		const ids = itemIds === 'all' ? null : new Set(itemIds);
 		const accepted = p.items.filter((it) => it.state === 'accepted' && (!ids || ids.has(it.id)));
 		if (accepted.length === 0) return;
-		if (!who.editor)
-			throw new HttpError(
-				403,
-				'APPROVAL_REQUIRED',
-				`Item ${accepted[0]!.id} is applied: only the editor reopens it, after the user undoes the accept in History`,
-				{ code: 'E_APPROVAL_REQUIRED' },
-			);
 		const { doc } = await this.liveDocument(projectId);
 		const refused = reopenRefusals(
 			doc,

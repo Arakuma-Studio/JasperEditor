@@ -205,3 +205,48 @@ describe('review model', () => {
 		);
 	});
 });
+
+describe('approvalNeeds (Apply names what an agent could not do unasked)', () => {
+	it('destructive commands, force and the agents-may-apply grant, through the accept closure, once each', async () => {
+		const { approvalNeeds } = await import('../src/proposals/review.ts');
+		const p = {
+			id: 'prp_0000000000000001',
+			items: [
+				{
+					id: 'a',
+					label: 'a',
+					group: 'g',
+					requires: [],
+					state: 'pending',
+					commands: [{ type: 'marker.add', frame: 1 }],
+				},
+				{
+					id: 'b',
+					label: 'b',
+					group: 'g',
+					requires: ['a'],
+					state: 'pending',
+					commands: [{ type: 'soundDesign.setSettings', agentsMayApply: true }],
+				},
+				{
+					id: 'c',
+					label: 'c',
+					group: 'g',
+					requires: ['b'],
+					state: 'pending',
+					commands: [
+						{ type: 'track.remove', trackIds: ['A2'] },
+						{ type: 'clip.move', clipIds: ['x'], deltaFrames: 1, force: true },
+						{ type: 'track.remove', trackIds: ['A3'] },
+					],
+				},
+			],
+		} as never;
+		expect(approvalNeeds(p, ['a'])).toEqual([]);
+		expect(approvalNeeds(p, ['b'])).toEqual([{ kind: 'agentsMayApply' }]);
+		const c = approvalNeeds(p, ['c']);
+		expect(c.map((x) => x.kind)).toEqual(['agentsMayApply', 'command', 'force']);
+		expect(approvalNeeds(null, ['c'])).toEqual([]);
+		expect(approvalNeeds({ items: 'nope' } as never, ['c'])).toEqual([]);
+	});
+});

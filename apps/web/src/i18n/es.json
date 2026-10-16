@@ -9428,5 +9428,8 @@
   "Needs “{0}”, which changed since it was proposed": "Necesita «{0}», que ha cambiado desde que se propuso",
   "Needs “{0}”, which does not apply": "Necesita «{0}», que no se puede aplicar",
   "Something it uses changed": "Algo que usa ha cambiado",
-  "Something it uses was deleted": "Algo que usa se eliminó"
+  "Something it uses was deleted": "Algo que usa se eliminó",
+  "{0} (forced)": "{0} (forzado)",
+  "Also allows agents to apply sound proposals in this sequence without your review": "También permite que los agentes apliquen propuestas de sonido en esta secuencia sin tu revisión",
+  "Also runs what needs your approval: {0}": "También ejecuta lo que necesita tu aprobación: {0}"
 }

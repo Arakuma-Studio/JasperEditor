@@ -4,13 +4,17 @@
 // badge and the Apply button show, the navigation order, the frame range Review zooms to, what an Apply would remove
 // from the user's sequence (named in the confirmation) and the proposal card's sentence counts.
 import {
+	APPROVAL_COMMANDS,
+	COMMAND_CATALOG,
 	type CueKind,
 	createSeededIdSource,
+	dependencyClosure,
 	type ProjectDocument,
 	type Proposal,
 	type ProposalContext,
 	previewProposalSteps,
 	type Sequence,
+	selectedCommands,
 } from '@jasper/project';
 import type { ProposalPreviewState, ReviewItem } from '@jasper/session';
 import { t } from '../i18n/runtime.ts';
@@ -246,6 +250,62 @@ export function removalsOf(
 		}
 	}
 	return out;
+}
+
+/** What applying the items would do that an agent's own transaction needs the user's approval for. */
+export type ApprovalNeed =
+	| { kind: 'command'; type: string; label: string }
+	| { kind: 'force'; type: string; label: string }
+	| { kind: 'agentsMayApply' };
+
+function forced(v: unknown, depth = 0): boolean {
+	if (depth > 8 || !v || typeof v !== 'object') return false;
+	if (Array.isArray(v)) return v.some((x) => forced(x, depth + 1));
+	for (const [k, x] of Object.entries(v))
+		if ((k === 'force' && x === true) || forced(x, depth + 1)) return true;
+	return false;
+}
+
+/**
+ * The commands among the items an Apply brings (their accept closure, the chosen command sets) that would need the
+ * user's approval if an agent ran them (the agent guard's rule, S01:AGT-011): destructive commands, `force`, and an
+ * agent's grant of "Allow agents to apply sound proposals". Applying in the editor is the user's own edit, so the
+ * Review names them in its confirmation instead of applying them unseen. Never throws.
+ */
+export function approvalNeeds(proposal: Proposal | null, itemIds: readonly string[]): ApprovalNeed[] {
+	if (!proposal) return [];
+	try {
+		const closure = dependencyClosure(
+			proposal,
+			itemIds.filter((id) => proposal.items.some((it) => it.id === id)),
+			(it) => it.state === 'accepted' || it.state === 'invalid',
+		);
+		const out: ApprovalNeed[] = [];
+		const seen = new Set<string>();
+		const add = (key: string, need: ApprovalNeed) => {
+			if (seen.has(key)) return;
+			seen.add(key);
+			out.push(need);
+		};
+		for (const it of closure)
+			for (const c of selectedCommands(it)) {
+				const type = (c as { type?: unknown }).type;
+				if (typeof type !== 'string') continue;
+				const label =
+					(COMMAND_CATALOG as Record<string, { label?: string } | undefined>)[type]?.label ?? type;
+				if ((APPROVAL_COMMANDS as readonly string[]).includes(type))
+					add(`c:${type}`, { kind: 'command', type, label });
+				else if (forced(c)) add(`f:${type}`, { kind: 'force', type, label });
+				else if (
+					type === 'soundDesign.setSettings' &&
+					(c as { agentsMayApply?: unknown }).agentsMayApply === true
+				)
+					add('agentsMayApply', { kind: 'agentsMayApply' });
+			}
+		return out;
+	} catch {
+		return [];
+	}
 }
 
 /** The proposal card's counts: sounds it places, tracks it creates, items to decide on. */
