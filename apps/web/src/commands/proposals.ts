@@ -19,6 +19,14 @@ const ReviewArgs = z
 	.strict()
 	.optional();
 
+const HearArgs = z
+	.object({
+		/** Set it (true: hear the proposal, false: the sequence) instead of toggling. */
+		on: z.boolean().optional(),
+	})
+	.strict()
+	.optional();
+
 const hasSession = (ctx: CommandCtx) => !!ctx.session;
 const reviewing = (ctx: CommandCtx) =>
 	!!ctx.session && proposalsFor(ctx.session).getState().activeId !== null;
@@ -73,14 +81,19 @@ export const proposalCommands: UiCommand[] = [
 		id: 'proposals.toggleHear',
 		label: 'Hear Proposal',
 		description:
-			'A/B: the Program monitor plays the proposal under review (picture and sound of its preview document) or the sequence as it is; switches while playing',
+			'A/B: the Program monitor plays the proposal under review (picture and sound of its preview document) or the sequence as it is; switches while playing. `on` sets it instead of toggling.',
 		scope: 'global',
 		agentExposed: true,
 		when: reviewing,
+		argsSchema: HearArgs,
 		checked: (ctx) => !!ctx.session && proposalsFor(ctx.session).getState().hear,
 		disabledReason: () => t('No proposal is under review'),
-		run: (ctx) => {
-			if (ctx.session) proposalsFor(ctx.session).toggleHear();
+		run: (ctx, args) => {
+			if (!ctx.session) return;
+			const on = (args as z.infer<typeof HearArgs>)?.on;
+			const c = proposalsFor(ctx.session);
+			if (on === undefined) c.toggleHear();
+			else c.setHear(on);
 		},
 	},
 ];

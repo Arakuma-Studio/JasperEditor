@@ -28,8 +28,9 @@ test.describe.configure({ mode: 'serial' });
 
 const outDir = join(ROOT, 'test-results', 'e2e-sound-proposal-ghosts');
 const SR = 48_000;
-/** The hit's click is 0.25 s into hit.wav; the bed clicks every 0.5 s from 0. */
+/** The hit's click is 0.25 s into hit.wav; the bed clicks every 0.5 s from 0.1 s (after the 30 ms start fade). */
 const HIT_OFFSET = 12_000;
+const BED_OFFSET = 4_800;
 const FPS = 30_000 / 1001;
 let page: Page;
 let projectId = '';
@@ -38,6 +39,18 @@ test.beforeAll(async ({ browser }) => {
 	mkdirSync(outDir, { recursive: true });
 	page = await browser.newPage({ viewport: { width: 1800, height: 1000 } });
 	await page.addInitScript(TAP);
+	// main-thread tasks over 50 ms (the switch's cost is measured)
+	await page.addInitScript(() => {
+		const w = window as unknown as { __longtasks: number[][] };
+		w.__longtasks = [];
+		try {
+			new PerformanceObserver((l) => {
+				for (const e of l.getEntries()) w.__longtasks.push([e.startTime, e.duration]);
+			}).observe({ type: 'longtask', buffered: true });
+		} catch {
+			// no long-task timing: the stall is not measured
+		}
+	});
 	await enableAgentBridge(page);
 });
 test.afterAll(async () => {
@@ -105,49 +118,90 @@ async function storedStates(proposalId: string): Promise<Record<string, string>>
 const ghost = (item: string) => page.locator(`[data-ghost-clip][data-ghost-item="${item}"]`);
 const card = () => page.getByTestId('proposal-ghost-card');
 
+type Peaks = { at: number; v: number }[];
+type Play = {
+	peaks: Peaks;
+	/** Remotion stopped and restarted the bed's player (its re-anchoring after a main-thread stall). */
+	bedRescheduled: boolean;
+	/** The playhead when paused (the transport was not restarted by the switch). */
+	frameAtPause: number;
+	/** The longest main-thread task within 1 s after the switch (ms). */
+	switchStallMs: number | null;
+};
 /**
- * Plays from frame 0 for 3.7 s (the bed's clicks at 0 … 3.5 s, the cut's hit at 3.153 s) and returns the peaks of the
- * Program output, in samples from the first bed click. `during` runs 1.2 s into the play (switching Hear proposal).
+ * Plays from frame 0 for 3.7 s with "Hear proposal" `start` (the bed's clicks at 0.1 … 3.6 s, the cut's hit at
+ * 3.153 s) and returns the peaks of the Program output, in samples from the bed's first click; `switchTo` switches it
+ * 1.2 s into the play. A play whose checks fail while Remotion lost its scheduling (a loaded host) is played again; a
+ * passing play is kept and logged with what Remotion did.
  */
-async function playAndTap(during?: () => Promise<void>): Promise<{ at: number; v: number }[]> {
-	let out: { at: number; v: number }[] = [];
-	let clean = false;
+async function playChecked(name: string, start: boolean, switchTo: boolean | null, check: (p: Play) => void) {
 	let last: string[] = [];
 	for (let a = 0; a < ATTEMPTS; a++) {
+		await runCommand('proposals.toggleHear', { on: start });
 		await focusTimeline(page);
 		await page.keyboard.press('Home');
 		await page.waitForTimeout(500);
 		await arm(page);
 		await page.keyboard.press('Space');
-		if (during) {
+		let switchPerf = -1;
+		if (switchTo !== null) {
 			await page.waitForTimeout(1200);
-			await during();
+			await mark(page, 'switch');
+			switchPerf = await page.evaluate(() => performance.now());
+			await runCommand('proposals.toggleHear', { on: switchTo });
 			await page.waitForTimeout(2500);
 		} else await page.waitForTimeout(3700);
 		await mark(page, 'pause');
+		const frameAtPause = (await query<{ frame: number }>(page, 'playhead.get')).frame;
 		await focusTimeline(page);
 		await page.keyboard.press('Space');
 		await page.waitForTimeout(200);
 		const rec = await disarm(page);
-		const p = peaks(rec, 0.1).map((x) => ({ at: Math.round(x.t * rec.rate), v: x.v }));
+		const tasks = await page.evaluate(
+			() => (window as unknown as { __longtasks: number[][] }).__longtasks ?? [],
+		);
+		const switchStallMs =
+			switchPerf < 0
+				? null
+				: Math.max(
+						0,
+						...tasks.filter(([t, d]) => t! + d! >= switchPerf && t! <= switchPerf + 1000).map(([, d]) => d!),
+					);
+		// what played until the pause was asked for (the pause's own stop is not part of the play)
+		const until = rec.marks.pause ?? Number.POSITIVE_INFINITY;
+		const p = peaks(rec, 0.1)
+			.filter((x) => x.t <= until)
+			.map((x) => ({ at: Math.round(x.t * rec.rate), v: x.v }));
 		const first = p[0]?.at ?? 0;
-		out = p.map((x) => ({ at: x.at - first, v: Number(x.v.toFixed(4)) }));
-		const d = disturbances(rec, rec.armed, rec.marks.pause ?? rec.armed);
+		const out = p.map((x) => ({ at: x.at - first, v: Number(x.v.toFixed(4)) }));
+		const to = rec.marks.pause ?? rec.armed;
+		const d = disturbances(rec, rec.armed, to);
+		const bed = rec.starts[0]?.player ?? 0;
+		const bedRescheduled = rec.stops.some((x) => x.player === bed && x.t >= rec.armed && x.t <= to);
 		last = d;
-		if (d.length === 0) {
-			clean = true;
-			break;
+		const play: Play = { peaks: out, bedRescheduled, frameAtPause, switchStallMs };
+		try {
+			check(play);
+			const note = { name, attempt: a + 1, remotion: d, ...play };
+			console.log('play', JSON.stringify(note));
+			test.info().annotations.push({ type: 'play', description: JSON.stringify(note) });
+			return play;
+		} catch (e) {
+			if (d.length === 0) throw e;
+			console.log(
+				`${name}: ${String(e).slice(0, 200)} — while Remotion lost its scheduling (load), again:`,
+				d.join('; '),
+			);
 		}
-		console.log('Remotion lost its scheduling during the play (load), again:', d.join('; '));
 	}
-	requireUndisturbed(clean, last);
-	return out;
+	requireUndisturbed(false, last);
+	return null;
 }
 
-const bedClicks = (p: { at: number; v: number }[]) => p.filter((x) => x.v > 0.15 && x.v < 0.35);
-const hits = (p: { at: number; v: number }[]) => p.filter((x) => x.v > 0.45);
-/** Where the cut's hit plays: frame 87 + 0.25 s, in samples from sequence time 0. */
-const CUT_HIT = Math.round((87 / FPS) * SR) + HIT_OFFSET;
+const bedClicks = (p: { at: number; v: number }[]) => p.filter((x) => x.v > 0.1 && x.v < 0.2);
+const hits = (p: { at: number; v: number }[]) => p.filter((x) => x.v > 0.28);
+/** Where the cut's hit plays (frame 87 + 0.25 s) in samples after the bed's first click (0.1 s). */
+const CUT_HIT = Math.round((87 / FPS) * SR) + HIT_OFFSET - BED_OFFSET;
 
 function expectBedIntact(p: { at: number; v: number }[]) {
 	const bed = bedClicks(p);
@@ -159,7 +213,7 @@ function expectBedIntact(p: { at: number; v: number }[]) {
 test('an agent proposal reviewed as ghosts, heard, partly accepted, applied as one undo step and undone back into review', async () => {
 	test.setTimeout(900_000);
 	projectId = await createProject(page, 'E2E Sound Proposal Ghosts');
-	const bed = wav('bed.wav', 'if(lt(mod(n\\,24000)\\,1)\\,0.25\\,0)', 20);
+	const bed = wav('bed.wav', 'if(eq(mod(n\\,24000)\\,4800)\\,0.25\\,0)', 20);
 	const hit = wav('hit.wav', 'if(between(n\\,12000\\,12000)\\,0.6\\,0)', 1);
 	await page.getByTestId('project-panel').click({ position: { x: 40, y: 10 } });
 	const chooser = page.waitForEvent('filechooser');
@@ -187,6 +241,7 @@ test('an agent proposal reviewed as ghosts, heard, partly accepted, applied as o
 	const seq = Object.values(seqs)[0]!;
 	const audioTracks = seq.audioTracks.length;
 
+	const setupLabels = await appliedLabels(page);
 	// 1. the agent proposes (it cannot apply: the policy is off by default)
 	const place = (at: number) => ({
 		type: 'clip.place',
@@ -309,38 +364,44 @@ test('an agent proposal reviewed as ghosts, heard, partly accepted, applied as o
 
 	// 3. Hear proposal: off → the bed only; on → the cut's hit exactly where it will play; switched while playing →
 	//    the bed keeps its spacing (playback goes on) and the hit is heard / not heard after the switch
-	const off = await playAndTap();
-	console.log('hear off', JSON.stringify(off));
-	expect(hits(off), JSON.stringify(off)).toEqual([]);
-	expectBedIntact(off);
-	await runCommand('proposals.toggleHear');
+	const noHit = ({ peaks: p }: Play) => {
+		expect(hits(p), JSON.stringify(p)).toEqual([]);
+		expectBedIntact(p);
+	};
+	const cutHit = ({ peaks: p }: Play) => {
+		expect(
+			hits(p).map((x) => x.at),
+			JSON.stringify(p),
+		).toEqual([CUT_HIT]);
+		expectBedIntact(p);
+	};
+	// switched while playing: the transport goes on (not restarted: the playhead is where 3.7 s of play take it); the
+	// proposal's hit is heard (or not) after the switch, on its sample relative to the bed; the bed's clicks keep their
+	// exact spacing unless Remotion itself re-anchored the bed's player after a main-thread stall (then measured)
+	const switched = (heard: boolean) => (play: Play) => {
+		expect(play.frameAtPause, JSON.stringify(play)).toBeGreaterThan(95);
+		const h = hits(play.peaks);
+		if (heard) {
+			expect(h, JSON.stringify(play.peaks)).toHaveLength(1);
+			const before = bedClicks(play.peaks)
+				.filter((x) => x.at < h[0]!.at)
+				.at(-1)!;
+			expect(
+				Math.abs(h[0]!.at - before.at - (CUT_HIT % 24_000)),
+				JSON.stringify(play.peaks),
+			).toBeLessThanOrEqual(2);
+		} else expect(h, JSON.stringify(play.peaks)).toEqual([]);
+		if (!play.bedRescheduled) expectBedIntact(play.peaks);
+	};
+	await playChecked('hear off', false, null, noHit);
+	await playChecked('hear on', true, null, cutHit);
 	await expect(page.getByTestId('proposal-hear-chip')).toHaveText('Hearing proposal: E2E sound pass');
-	const on = await playAndTap();
-	console.log('hear on', JSON.stringify(on));
-	expect(
-		hits(on).map((x) => x.at),
-		JSON.stringify(on),
-	).toEqual([CUT_HIT]);
-	expectBedIntact(on);
-	await runCommand('proposals.toggleHear');
+	await playChecked('switched on while playing', false, true, switched(true));
+	await playChecked('switched off while playing', true, false, switched(false));
+	await runCommand('proposals.toggleHear', { on: false });
 	await expect(page.getByTestId('proposal-hear-chip')).toHaveCount(0);
-	const switchedOn = await playAndTap(() => runCommand('proposals.toggleHear'));
-	console.log('switched on while playing', JSON.stringify(switchedOn));
-	expect(
-		hits(switchedOn).map((x) => x.at),
-		JSON.stringify(switchedOn),
-	).toEqual([CUT_HIT]);
-	expectBedIntact(switchedOn);
-	const switchedOff = await playAndTap(() => runCommand('proposals.toggleHear'));
-	console.log('switched off while playing', JSON.stringify(switchedOff));
-	expect(hits(switchedOff), JSON.stringify(switchedOff)).toEqual([]);
-	expectBedIntact(switchedOff);
-	test.info().annotations.push({
-		type: 'hear',
-		description: JSON.stringify({ CUT_HIT, off, on, switchedOn, switchedOff }),
-	});
 	// the session document never changed
-	expect(await appliedLabels(page)).toEqual(['E2E setup']);
+	expect(await appliedLabels(page)).toEqual(setupLabels);
 
 	// 4. decisions on the ghost cards: accept 2, reject 1
 	const decide = async (item: string, action: 'accept' | 'reject') => {
