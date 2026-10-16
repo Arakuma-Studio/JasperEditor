@@ -108,7 +108,7 @@ export const SETUP_NOT_NEEDED = 'Not needed: every item that requires it was rej
  * imported, a cue added for a placement the user turned down). Accepting such a dependent later still accepts its
  * rejected requirements with it (`planAccept`). Pure; the document is not touched.
  */
-export function settleSetupItems(p: Proposal, now: string): DecisionResult {
+export function settleSetupItems(p: Proposal, now: string): Extract<DecisionResult, { ok: true }> {
 	let items = p.items;
 	const changed: string[] = [];
 	for (let pass = 0; pass < 64; pass++) {

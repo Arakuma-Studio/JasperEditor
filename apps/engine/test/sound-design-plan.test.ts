@@ -92,7 +92,7 @@ function entry(
 			headQuietSec: 0.01,
 			loopable: false,
 		},
-		judge: { ok: true, score: 0.9, reasons: [] },
+		judge: { ok: true, score: 0.9, reasons: [], type: types[0] ?? 'hit' },
 		indexedAt: '2026-10-16T00:00:00.000Z',
 		analysisVersion: 1001,
 	} as SoundEntry;
@@ -228,7 +228,7 @@ describe('plan selection (pure)', () => {
 		const cut = a.selected.picks.find((p) => p.cue.frame === 90)!;
 		expect(cut.cue.types[0]).toBe('hit');
 		expect(cut.sounds.every((s) => s.entry.types.includes('hit'))).toBe(true);
-				// Real recordings rank before synth; the NC-licensed sound is never offered.
+		// Real recordings rank before synth; the NC-licensed sound is never offered.
 		expect(push.sounds.every((s) => s.entry.source.type !== 'synth')).toBe(true);
 		for (const p of a.selected.picks) expect(p.sounds.some((s) => s.entry.title === 'Shimmer')).toBe(false);
 		// Neighbouring cues of one type rotate (the typewriter keys never repeat the previous key).

@@ -216,8 +216,7 @@ export class ProposalService {
 				issuesDetail(r.errors[0]?.code ?? 'E_SCHEMA', r.errors),
 			);
 		// Setup items only invalid items need are settled at once (nothing would ever apply them).
-		const settled = settleSetupItems(r.proposal, r.proposal.updatedAt);
-		const proposal = settled.ok ? settled.proposal : r.proposal;
+		const proposal = settleSetupItems(r.proposal, r.proposal.updatedAt).proposal;
 		const { evicted } = await this.store.create(projectId, proposal);
 		for (const id of evicted) this.publish(projectId, null, 'evicted', {}, id);
 		this.publish(projectId, proposal, 'created');
@@ -325,8 +324,7 @@ export class ProposalService {
 				at,
 			});
 			// Setup items only rejected items needed are done too (the proposal can be decided).
-			const settled = settleSetupItems(marked, at);
-			const accepted = settled.ok ? settled.proposal : marked;
+			const accepted = settleSetupItems(marked, at).proposal;
 			await this.store.put(projectId, accepted);
 			p = accepted;
 			this.publish(projectId, accepted, 'accepted', { itemIds: composed.itemIds, revision: result.revision });
@@ -378,7 +376,7 @@ export class ProposalService {
 			let changedIds = r.changed;
 			if (decision.kind === 'reject' && r.changed.length) {
 				const settled = settleSetupItems(next, now);
-				if (settled.ok && settled.changed.length) {
+				if (settled.changed.length) {
 					next = settled.proposal;
 					changedIds = [...r.changed, ...settled.changed];
 				}
