@@ -453,6 +453,7 @@ Every state-changing engine route and what an agent may do with it:
 | `GET /api/projects/:id/proposals/:proposalId` without `?revalidate` by an agent (WP3.3b: `wait_for_proposal` polling) | Open | Read-only; two such reads within 2.5 s mark the agent "waiting for your review" (list `waiting`, event `proposal.changed` `waiting`, the card's line) until 3.5 s pass without one. The name shown is the `x-jasper-agent` header after `agentNameOf` (control characters removed, ≤ 64 characters), rendered as text; ≤ 1 000 proposals followed, nothing stored |
 | `POST /api/sound-design/plan` (`plan_sound_design`), `place_sound` mode "propose" | Open | Stores a proposal (nothing in the document changes); registers the planned library sounds like `POST /api/sounds/:id/register` (copies into managed media, folder files in place only on a local engine); applying it is the gated accept above |
 | `POST /api/sound-design/rebalance` (`rebalance_sfx`) | Open | Mode `propose` (the default) stores a proposal (nothing changes); mode `apply` is one ordinary, undoable transaction of `soundDesign.applyGains` (clip gains of sound effects within −30…+12 dB, nothing deleted), classified like any agent transaction (labelled "Agent: Rebalance SFX Levels"); renders are measure-only (no file is written) |
+| `POST /api/sound-design/delivery` (`apply_delivery`) | Open | Mode `propose` (the default) stores a proposal (nothing changes); mode `apply` is one ordinary, undoable transaction of `soundDesign.applyDelivery` (settings, the Mix's loudness normalisation, Essential Sound Auto-Match gains, ducking Volume keyframes) and `soundDesign.applyGains`, classified like any agent transaction ("Agent: Apply Delivery Preset"); nothing is deleted; renders are measure-only (no file is written) |
 | `PUT /api/settings/processing` (`set_processing_settings`) | **Gated**, now for every caller without the editor key | Where media is sent (was opt-in by a query parameter) |
 | `POST /api/project-manager` (`project_manager`) | Open | Copies into a new destination under free names; sources untouched |
 | `POST /api/assets/:id/relink`, `…/relink-scan` (`link_media`) | Open | Registers and compares files; the relink itself is a transaction (undoable; `force` is gated) |
@@ -697,6 +698,17 @@ them, but it was reviewed by its author, not by this review.
   service's transaction path with `expectedRevision` (a concurrent edit fails the job `CONFLICT`, retryable). Tests:
   `apps/engine/test/sound-design-rebalance.test.ts` (refusals and a fuzz target: no 5xx, every started job ends
   succeeded with a result of the schema or failed with a code).
+- **Delivery presets** (spec 12 WP4.2a, `apps/engine/src/sound-design/delivery.ts`; `POST /api/sound-design/delivery`): a
+  strict zod body (project id `[A-Za-z0-9_-]{1,128}`, a delivery enum, `mode` enum, four booleans, a ≤ 200-character
+  label); the project and sequence are checked before a job starts (typed `404`); the job reads the live document
+  through the agent service, simulates the commands on a copy (`applyTransaction`, so a refused command fails the job
+  with its code before anything is applied), renders only through the export mixer with `measureOnly` (per clip, the
+  ducking triggers, the sound effects' clusters as WP4.1b, and the whole sequence three times: mix, voice, music /
+  ambience), media resolved through the registry; apply mode goes through the agent service's transaction path with
+  `expectedRevision` (a concurrent edit fails the job `CONFLICT`, retryable). The commands it builds are bounded by
+  their schemas (≤ 5 000 measured clips, ≤ 256 ducking groups of ≤ 20 000 regions). Tests:
+  `apps/engine/test/sound-design-delivery.test.ts` (typed refusals: bad preset, unknown key, unknown or malformed
+  project, unknown sequence).
 - **Proposals** (spec 12 WP3.1, `apps/engine/src/routes/proposals.ts`, `proposals/{store,service}.ts`; `GET/POST
   /api/projects/:id/proposals`, `GET/DELETE …/:proposalId`, `POST …/:proposalId/accept|reject|reopen|note|select|applied`):
   project ids are matched against `prj_` + 16 Crockford characters and proposal ids against `prp_` + 16 before any path

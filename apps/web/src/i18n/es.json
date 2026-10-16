@@ -9432,5 +9432,11 @@
   "{0} (forced)": "{0} (forzado)",
   "Also allows agents to apply sound proposals in this sequence without your review": "También permite que los agentes apliquen propuestas de sonido en esta secuencia sin tu revisión",
   "Also runs what needs your approval: {0}": "También ejecuta lo que necesita tu aprobación: {0}",
-  "Updating the preview…": "Actualizando la vista previa…"
+  "Updating the preview…": "Actualizando la vista previa…",
+  "Apply Delivery Preset": "Aplicar preset de entrega",
+  "Build Into Cue": "Crescendo hacia la señal",
+  "Remove SFX Room Glue": "Quitar la sala común de efectos",
+  "SFX Room Glue": "Sala común de efectos",
+  "Stop Before Cue": "Parar antes de la señal",
+  "Volume Dip": "Bajada de volumen"
 }

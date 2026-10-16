@@ -9,7 +9,7 @@
 // prunes them on load (anchor → null with a report line). No schema bump: every field is optional or loose (v7).
 import { z } from 'zod';
 import { StoredSoundTypeSchema } from '../sound/provenance.ts';
-import type { DeepStrip } from './common.ts';
+import { type DeepStrip, keyframeSchema } from './common.ts';
 
 /** Bounds for untrusted cue data (counts, strings). */
 export const SOUND_DESIGN_LIMITS = {
@@ -194,10 +194,89 @@ export const SoundCheckSummarySchema = z.looseObject({
 });
 export type SoundCheckSummary = DeepStrip<z.infer<typeof SoundCheckSummarySchema>>;
 
+/** Bounds of the mix records (`SoundDesign.mix`). */
+export const SOUND_MIX_LIMITS = {
+	/** Places one realization writes to (music tracks or clips under a cue). */
+	writes: 64,
+	/** Keyframes one write adds. */
+	written: 512,
+	/** Keyframes one write replaced (kept to give them back on removal). */
+	replaced: 2000,
+	/** Room sends recorded. */
+	sends: 64,
+} as const;
+
+/**
+ * One place a realization wrote to (Phase 4 WP4.2a): a music track's volume lane (`trackVolume`), a music clip's Volume
+ * (`clipVolume`, the `audio.volumeDip` fallback), or the cutoff of a High Pass build filter on a track (`trackFilter`) or a
+ * clip (`clipFilter`). `written` are the keyframe ids it added; `replaced` the keyframes it removed from that range (given
+ * back on removal); `createdEffect` — the filter insert was added for it.
+ */
+export const MixWriteSchema = z.looseObject({
+	target: z.enum(['trackVolume', 'clipVolume', 'trackFilter', 'clipFilter']),
+	trackId: id().optional(),
+	clipId: id().optional(),
+	effectInstanceId: id().optional(),
+	written: z.array(id()).max(SOUND_MIX_LIMITS.written),
+	replaced: z.array(keyframeSchema(z.number())).max(SOUND_MIX_LIMITS.replaced),
+});
+export type MixWrite = DeepStrip<z.infer<typeof MixWriteSchema>>;
+
+/** What a cue's stop-before / build wrote into the mix (`soundDesign.applyStopBefore` / `applyBuild`), for exact removal. */
+export const CueMixSchema = z.looseObject({
+	stopBefore: z
+		.looseObject({
+			seconds: z.number().min(0).max(10),
+			depthDb: z.number().min(-60).max(0),
+			/** The cue frame it was written for. */
+			frame: frame(),
+			writes: z.array(MixWriteSchema).max(SOUND_MIX_LIMITS.writes),
+		})
+		.optional(),
+	build: z
+		.looseObject({
+			seconds: z.number().min(0).max(30),
+			fromHz: z.number().min(20).max(20_000),
+			toHz: z.number().min(20).max(20_000),
+			frame: frame(),
+			writes: z.array(MixWriteSchema).max(SOUND_MIX_LIMITS.writes),
+		})
+		.optional(),
+});
+export type CueMix = DeepStrip<z.infer<typeof CueMixSchema>>;
+
+/** The "SFX Room" glue (`soundDesign.ensureBus`): the submix, its reverb, the settings and the sends it added. */
+export const RoomGlueSchema = z.looseObject({
+	busId: id(),
+	reverbId: id().nullable(),
+	/** The bus (submix) was created by `ensureBus` (removed with the glue), not adopted. */
+	createdBus: z.boolean(),
+	sendDb: z.number().min(-96).max(15),
+	decay: z.number().min(0.1).max(20),
+	mix: z.number().min(0).max(100),
+	preDelayMs: z.number().min(0).max(200),
+	sends: z.array(z.looseObject({ trackId: id(), sendId: id() })).max(SOUND_MIX_LIMITS.sends),
+});
+export type RoomGlue = DeepStrip<z.infer<typeof RoomGlueSchema>>;
+
+/**
+ * What sound design wrote into the mix with ordinary commands (Phase 4), so it can be redone and removed exactly: per cue
+ * the stop-before dips and build sweeps, the build filter reused per track / clip, and the room glue. Metadata only.
+ */
+export const SoundDesignMixSchema = z.looseObject({
+	cues: z.record(z.string(), CueMixSchema).optional(),
+	/** The build filter (`jasper.audio.scientific-filter` effect instance id) of a music track or clip, by its id. */
+	buildFilters: z.record(z.string(), id()).optional(),
+	room: RoomGlueSchema.optional(),
+});
+export type SoundDesignMix = DeepStrip<z.infer<typeof SoundDesignMixSchema>>;
+
 export const SoundDesignSchema = z.looseObject({
 	cues: z.record(z.string(), SoundCueSchema),
 	settings: SoundDesignSettingsSchema.optional(),
 	lastCheck: SoundCheckSummarySchema.optional(),
+	/** Phase 4: what stop-before, build and room glue wrote (absent = nothing). */
+	mix: SoundDesignMixSchema.optional(),
 });
 export type SoundDesign = DeepStrip<z.infer<typeof SoundDesignSchema>>;
 
@@ -434,7 +513,44 @@ export function readSoundDesign(raw: unknown): SoundDesign | null {
 	if (raw.settings !== undefined) out.settings = readSoundDesignSettings(raw.settings);
 	const lc = opt(SoundCheckSummarySchema, raw.lastCheck);
 	if (lc !== undefined) out.lastCheck = lc;
+	const mix = readSoundDesignMix(raw.mix);
+	if (mix) out.mix = mix;
+	else delete out.mix;
 	return soundDesignIssue(out) === null ? (out as SoundDesign) : { cues: rec };
+}
+
+/**
+ * Lenient read of `SoundDesign.mix`: each cue record, build filter and the room glue on its own (unreadable ones
+ * dropped: the automation they wrote stays in the mix as ordinary keyframes, it can no longer be removed as a unit).
+ * Null when nothing readable is left. Pure; never throws.
+ */
+export function readSoundDesignMix(raw: unknown): SoundDesignMix | null {
+	if (!isRecord(raw)) return null;
+	const ok = SoundDesignMixSchema.safeParse(raw);
+	if (ok.success) return ok.data as SoundDesignMix;
+	const out: Record<string, unknown> = { ...unknownFields(raw, SoundDesignMixSchema.shape) };
+	if (isRecord(raw.cues)) {
+		const cues: Record<string, CueMix> = Object.create(null);
+		for (const [k, v] of Object.entries(raw.cues)) {
+			if (!isRecord(v)) continue;
+			const c: Record<string, unknown> = { ...unknownFields(v, CueMixSchema.shape) };
+			const sb = opt(CueMixSchema.shape.stopBefore, v.stopBefore);
+			if (sb) c.stopBefore = sb;
+			const b = opt(CueMixSchema.shape.build, v.build);
+			if (b) c.build = b;
+			if (c.stopBefore || c.build) cues[k] = c as CueMix;
+		}
+		out.cues = cues;
+	}
+	if (isRecord(raw.buildFilters)) {
+		const f: Record<string, string> = Object.create(null);
+		for (const [k, v] of Object.entries(raw.buildFilters)) if (id().safeParse(v).success) f[k] = v as string;
+		out.buildFilters = f;
+	}
+	const room = opt(RoomGlueSchema, raw.room);
+	if (room) out.room = room;
+	const r = SoundDesignMixSchema.safeParse(out);
+	return r.success ? (r.data as SoundDesignMix) : null;
 }
 
 /** Lenient read of a stored `AudioClip.sfx` (field by field); null when it is not an object. Pure; never throws. */

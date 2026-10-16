@@ -22,6 +22,7 @@ import { SHAPE_COMMANDS } from './shape.ts';
 import { SIM_WARP_COMMANDS } from './sim-warp.ts';
 import { SIMPLIFY_COMMANDS } from './simplify.ts';
 import { SOUND_COMMANDS } from './sound.ts';
+import { SOUND_MIX_COMMANDS } from './sound-mix.ts';
 import { SPEECH_COMMANDS } from './speech.ts';
 import { STRUCTURE_COMMANDS } from './structure.ts';
 import { TEXT_ANIMATOR_COMMANDS } from './text-animators.ts';
@@ -53,6 +54,7 @@ export * from './shape.ts';
 export * from './sim-warp.ts';
 export * from './simplify.ts';
 export * from './sound.ts';
+export * from './sound-mix.ts';
 export * from './speech.ts';
 export * from './structure.ts';
 export * from './text-animators.ts';
@@ -91,6 +93,7 @@ export const ALL_COMMAND_SCHEMAS = [
 	...PREVIEWS_COMMANDS,
 	...GAPS_COMMANDS,
 	...SOUND_COMMANDS,
+	...SOUND_MIX_COMMANDS,
 ] as const;
 
 export type CommandInput = z.input<(typeof ALL_COMMAND_SCHEMAS)[number]>;

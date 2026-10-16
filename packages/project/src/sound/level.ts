@@ -11,14 +11,15 @@
 // hero −16, support −22, layer −24, ambience −30 LUFS momentary. Sources and reasoning: wp-note "Phase 2
 // verification B". Pure.
 import type { SfxRole, SoundDelivery } from '../schema/sound.ts';
+import { DELIVERY_PRESETS } from './delivery.ts';
 import { SOUND_BED_TYPES } from './taxonomy.ts';
 
-/** Integrated loudness target of each delivery preset (LUFS; spec 12 §2.4). */
+/** Integrated loudness target of each delivery preset (LUFS; spec 12 §2.4; `delivery.ts`). */
 export const DELIVERY_INTEGRATED_LUFS: Record<SoundDelivery, number> = {
-	web: -14,
-	podcast: -16,
-	'broadcast-r128': -23,
-	'atsc-a85': -24,
+	web: DELIVERY_PRESETS.web.integratedLufs,
+	podcast: DELIVERY_PRESETS.podcast.integratedLufs,
+	'broadcast-r128': DELIVERY_PRESETS['broadcast-r128'].integratedLufs,
+	'atsc-a85': DELIVERY_PRESETS['atsc-a85'].integratedLufs,
 };
 
 /** What a placed sound's level follows: its role, or `ambience` for beds (ambience, room tone). */
@@ -122,10 +123,10 @@ export function defaultSfxLevel(input: {
 
 /** True-peak ceiling of each delivery preset (dBTP; spec 12 §2.4): the masking solver's headroom constraint. */
 export const DELIVERY_TRUE_PEAK_DBTP: Record<SoundDelivery, number> = {
-	web: -1,
-	podcast: -1,
-	'broadcast-r128': -1,
-	'atsc-a85': -2,
+	web: DELIVERY_PRESETS.web.truePeakDb,
+	podcast: DELIVERY_PRESETS.podcast.truePeakDb,
+	'broadcast-r128': DELIVERY_PRESETS['broadcast-r128'].truePeakDb,
+	'atsc-a85': DELIVERY_PRESETS['atsc-a85'].truePeakDb,
 };
 
 /** Within this (dB) a clip's gain still equals its recorded level (levels are stored to 0.01 dB). */

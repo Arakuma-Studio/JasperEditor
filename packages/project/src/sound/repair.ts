@@ -47,6 +47,8 @@ export function soundCuesOf(seq: { soundDesign?: unknown }): SoundCue[] {
 	return Object.values(sd.cues as Record<string, SoundCue>);
 }
 
+const t0 = (seq: Sequence) => trackIds(seq);
+
 /** Every audio track id of a sequence (and submix ids). */
 function trackIds(seq: Sequence): { audio: Set<string>; submix: Set<string> } {
 	return {
@@ -83,6 +85,8 @@ export function soundDesignNeedsRepair(doc: ProjectDocument): boolean {
 				if (s.sfxTrackIds.some((id) => !t.audio.has(id))) return true;
 				if (s.roomBus !== null && !t.submix.has(s.roomBus)) return true;
 			}
+			const room = sd.mix?.room;
+			if (room && !t0(seq).submix.has(room.busId)) return true;
 		}
 		for (const c of Object.values(seq.clips)) {
 			const sfx = (c as { sfx?: unknown }).sfx;
@@ -184,6 +188,11 @@ export function repairSoundDesign(doc: ProjectDocument, ids: IdSource, note: Not
 					s.roomBus = null;
 					note('reset-room-bus', seq.id, 'the SFX room submix no longer exists');
 				}
+			}
+			// The room glue record of a submix that is gone (its sends went with it).
+			if (sd.mix?.room && !t.submix.has(sd.mix.room.busId)) {
+				delete sd.mix.room;
+				note('drop-room-glue', seq.id, 'the SFX room submix no longer exists: its glue record is removed');
 			}
 		}
 		// A clip's cue must be a cue of its own sequence (renamed with it).
@@ -305,6 +314,14 @@ export function remapSoundDesign(
 			cues[id] = cue;
 		}
 		(sd as { cues: unknown }).cues = cues;
+		// What stop-before, build and room glue wrote names the original's keys, effects and sends: the copy keeps the
+		// automation as ordinary keys, without the records (running them again on the copy merges by the minimum).
+		delete (sd as { mix?: unknown }).mix;
+		if (isRecord(sd.settings)) {
+			const rb = (sd.settings as { roomBus?: unknown }).roomBus;
+			(sd.settings as { roomBus?: unknown }).roomBus =
+				typeof rb === 'string' ? (maps.tracks.get(rb) ?? null) : null;
+		}
 		const s = sd.settings;
 		if (isRecord(s) && Array.isArray(s.sfxTrackIds))
 			s.sfxTrackIds = (s.sfxTrackIds as string[])

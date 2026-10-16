@@ -26,7 +26,6 @@ import {
 	type SoundTrackSequence,
 	soundTimingOf,
 } from '../../sound/insert.ts';
-import { defaultSfxLevel, sfxGainOwner } from '../../sound/level.ts';
 import {
 	type LibraryProvenance,
 	libraryDescriptorIssue,
@@ -44,6 +43,8 @@ import { effectHandlers } from './effect.ts';
 import { essentialHandlers } from './essential.ts';
 import { newKeyframe } from './param.ts';
 import { sequenceHandlers } from './sequence.ts';
+import { refreshDefaultLevel, sfxDefaultLevel } from './sound-levels.ts';
+import { followCueMix, syncRoomSends } from './sound-mix.ts';
 import { structureHandlers } from './structure.ts';
 import { type HandlerMap, peek, peekKeys } from './util.ts';
 
@@ -270,6 +271,8 @@ function updateCue(doc: DDoc, cmd: CommandOf<'soundCue.update'>, h: HandlerConte
 			moved = clips.map((c) => c.id);
 		}
 	}
+	// A realised stop-before / build follows the cue (moved, changed, cleared or muted).
+	followCueMix(doc, seq, cue.id, h, false);
 	return { cueId: cue.id, frame: cue.frame, movedClipIds: moved };
 }
 
@@ -294,6 +297,8 @@ function removeCues(doc: DDoc, cmd: CommandOf<'soundCue.remove'>, h: HandlerCont
 			if (c.kind === 'audio' && sfx?.cueId === id) sfx.cueId = null;
 		}
 		delete sd.cues[id];
+		// its stop-before / build come out of the mix with it
+		followCueMix(doc, seq, id, h, true);
 		removed.push(id);
 	}
 	for (const seq of touched) cleanupSequence(seq, h);
@@ -340,6 +345,7 @@ function resyncCues(doc: DDoc, cmd: CommandOf<'soundCue.resync'>, h: HandlerCont
 		cue.frame = f;
 	}
 	moveClips(seq, moves, h);
+	for (const m of moved) followCueMix(doc, seq, m.cueId, h, false);
 	return { moved, unresolved, unanchored };
 }
 
@@ -479,59 +485,6 @@ function layerTrack(
 		h,
 	) as { trackIds: string[] };
 	return { trackId: r.trackIds[0]!, created: true };
-}
-
-/**
- * The default level of a library sound placed with `role` (`defaultSfxLevel` on its descriptors), plus `offsetDb`, as
- * stored in `sfx.level`.
- */
-function sfxDefaultLevel(
-	prov: LibraryProvenance | null,
-	role: ClipSfx['role'],
-	types: readonly unknown[],
-	delivery: SoundDesignSettings['delivery'],
-	offsetDb = 0,
-): SfxLevel {
-	const d = prov?.descriptors as
-		| (LibraryProvenance['descriptors'] & { truePeakDb?: number | null })
-		| undefined;
-	const l = defaultSfxLevel({
-		role,
-		types,
-		maxMomentaryLufs: d?.maxMomentaryLufs ?? null,
-		truePeakDb: d?.truePeakDb ?? null,
-		delivery,
-	});
-	const off = Number.isFinite(offsetDb) ? Math.max(-12, Math.min(12, offsetDb)) : 0;
-	const gainDb = Math.round((l.gainDb + off) * 100) / 100;
-	return {
-		by: 'default',
-		gainDb: Object.is(gainDb, -0) ? 0 : gainDb,
-		...(off !== 0 ? { offsetDb: off } : {}),
-		targetLufs: l.targetLufs,
-		limitedBy: l.limitedBy,
-	};
-}
-
-/**
- * After a swap or a role change: a clip whose gain is still the default placement gave it or the masking solver's
- * (`sfx.level`, untouched) gets the default of its current sound and role (with the same variation offset): a solved
- * gain belongs to the old sound or role (rebalance again to solve the new one). A gain set since is kept.
- */
-function refreshDefaultLevel(doc: DDoc, seq: DSeq, clip: DAudio): void {
-	const level = clip.sfx?.level;
-	if (!clip.sfx || !level || sfxGainOwner(clip) === 'user') return;
-	const prov = readLibraryProvenance((doc.media[clip.mediaId] as { library?: unknown } | undefined)?.library);
-	const settings = readSoundDesignSettings((seq as { soundDesign?: SoundDesign }).soundDesign?.settings);
-	const next = sfxDefaultLevel(
-		prov,
-		clip.sfx.role,
-		prov?.types ?? [],
-		settings.delivery,
-		level.offsetDb ?? 0,
-	);
-	clip.gainDb = next.gainDb;
-	clip.sfx.level = next as Draft<SfxLevel>;
 }
 
 function place(doc: DDoc, cmd: CommandOf<'soundDesign.place'>, h: HandlerContext) {
@@ -707,11 +660,20 @@ function place(doc: DDoc, cmd: CommandOf<'soundDesign.place'>, h: HandlerContext
 	}
 	if (cue) {
 		cue.placedClipIds = all;
+		// the cue is filled: its stored stop-before / build go into the mix (followCueMix after the soundIds below)
 		const soundIds = [...(cue.soundIds ?? [])];
 		for (const p of placed) if (p.soundId) soundIds[p.layer] = p.soundId;
 		const dense = soundIds.filter((s): s is string => typeof s === 'string');
 		if (dense.length) cue.soundIds = dense.slice(0, SOUND_DESIGN_LIMITS.soundIds);
 	}
+	if (cue) followCueMix(doc, seq, cue.id, h, false);
+	// Room glue: a track that now plays sound effects sends to the "SFX Room" like the others.
+	syncRoomSends(
+		doc,
+		seq,
+		placed.map((p) => p.trackId),
+		h,
+	);
 	cleanupSequence(seq, h);
 	return { sequenceId: seq.id, cueId: cue?.id ?? null, frame: cueFrame, groupId, clips: placed };
 }

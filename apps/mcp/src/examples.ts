@@ -372,6 +372,25 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 			},
 		},
 	},
+	// Phase 4 mixing (spec 12 §2.4): a music dip on clips (minimum with their Volume; times in sequence flicks)…
+	'audio.volumeDip': {
+		type: 'audio.volumeDip',
+		clipIds: [{ clipAt: { track: 'A1', at: 0 } }],
+		dips: [{ start: 352_800_000, end: 529_200_000, depthDb: -18, fadeMs: 30 }],
+	},
+	// …the cue's stopBefore / build written into the mix (re-running replaces; a cleared field removes)…
+	'soundDesign.applyStopBefore': { type: 'soundDesign.applyStopBefore', cueId: 'cue_00000000000000EX' },
+	'soundDesign.applyBuild': { type: 'soundDesign.applyBuild', cueId: 'cue_00000000000000EX' },
+	// …the shared "SFX Room" reverb with post-fader sends from the sound-effect tracks, and its removal…
+	'soundDesign.ensureBus': { type: 'soundDesign.ensureBus', roomGlue: { sendDb: -16, decay: 0.6 } },
+	'soundDesign.removeBus': { type: 'soundDesign.removeBus' },
+	// …and a delivery preset (the engine's POST /api/sound-design/delivery measures `measuredLufs` and the ducking
+	// regions; with neither it sets the delivery, the Mix loudness and the default SFX levels).
+	'soundDesign.applyDelivery': {
+		type: 'soundDesign.applyDelivery',
+		delivery: 'broadcast-r128',
+		ducking: [{ clipIds: [{ clipAt: { track: 'A1', at: 0 } }], regions: [[176_400_000, 529_200_000]] }],
+	},
 };
 
 /** A multi-command transaction showing temp refs. */

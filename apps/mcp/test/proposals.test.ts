@@ -211,7 +211,7 @@ describe('proposal MCP tools', { timeout: 900_000 }, () => {
 		expect(plan.placed).toBeGreaterThan(6);
 		expect(plan.counts.pending).toBe(plan.items);
 		expect(plan.table.split('\n')[0]).toBe(
-			'item | timecode | cue | sound | role | align | alternates | gain',
+			'item | timecode | cue | sound | role | align | alternates | gain | mix',
 		);
 		// Phase 4: every row ends with its solved level ("−3 dB, …") or says the default level applies
 		for (const row of plan.table.split('\n').slice(1))

@@ -191,7 +191,7 @@ async function pool<T, R>(items: readonly T[], n: number, fn: (x: T, i: number) 
 }
 
 /** The snapshot of a document's sequence for audio (media resolved to engine-local files) and the mixer's media. */
-type AudioWorld = {
+export type AudioWorld = {
 	snapshot: RenderSnapshot;
 	media(id: string): MixSource | null;
 	fingerprint(id: string): string | null;
@@ -199,7 +199,7 @@ type AudioWorld = {
 	mixHash: string;
 };
 
-async function audioWorld(
+export async function audioWorld(
 	doc: ProjectDocument,
 	sequenceId: string,
 	registry: MeasureDeps['registry'],
@@ -234,6 +234,58 @@ async function audioWorld(
 		fingerprint: (id) => local.get(id)?.fingerprint ?? null,
 		mixHash: sha(topology),
 	};
+}
+
+/** Reverb-like effects whose tail outlasts the dry sound: `decay` (s) + `preDelay` (ms). */
+const TAIL_EFFECTS: ReadonlySet<string> = new Set([
+	'jasper.audio.studio-reverb',
+	'jasper.audio.surround-reverb',
+]);
+/** Longest tail a solo render waits for (s). */
+export const MAX_TAIL_SEC = 6;
+
+/**
+ * Seconds a sound plays on after its clip through reverbs on its way to the Mix — its clip effects, its track's inserts,
+ * the submixes its track sends or outputs to (the "SFX Room" return is part of the sound's contribution, Phase 4
+ * WP4.2a) — at least `SOLO_TAIL_SEC`. Pure; never throws.
+ */
+export function soloTailSec(seq: Sequence, clip: Clip): number {
+	const num = (v: unknown) => {
+		const a = v as { value?: unknown; keyframes?: { value?: unknown }[] } | undefined;
+		const xs = [a?.value, ...(a?.keyframes ?? []).map((k) => k.value)].filter(
+			(x): x is number => typeof x === 'number' && Number.isFinite(x),
+		);
+		return xs.length ? Math.max(...xs) : 0;
+	};
+	const tailOf = (effects: unknown) => {
+		let t = 0;
+		for (const fx of (Array.isArray(effects) ? effects : []) as {
+			effectId?: string;
+			enabled?: boolean;
+			params?: Record<string, unknown>;
+		}[])
+			if (fx.enabled !== false && fx.effectId && TAIL_EFFECTS.has(fx.effectId))
+				t = Math.max(t, num(fx.params?.decay) + num(fx.params?.preDelay) / 1000);
+		return t;
+	};
+	let tail = tailOf((clip as { effects?: unknown }).effects);
+	const strips = new Map<
+		string,
+		{ effects?: unknown; mixer?: { output?: unknown; sends?: { target?: unknown }[] } }
+	>();
+	for (const t of [...seq.audioTracks, ...(seq.submixTracks ?? [])]) strips.set(t.id, t as never);
+	const seen = new Set<string>();
+	const walk = (id: string) => {
+		if (seen.has(id) || seen.size > 64) return;
+		seen.add(id);
+		const s = strips.get(id);
+		if (!s) return;
+		tail = Math.max(tail, tailOf(s.effects));
+		if (typeof s.mixer?.output === 'string') walk(s.mixer.output);
+		for (const x of s.mixer?.sends ?? []) if (typeof x.target === 'string') walk(x.target);
+	};
+	walk(clip.trackId);
+	return Math.min(MAX_TAIL_SEC, Math.max(SOLO_TAIL_SEC, tail));
 }
 
 /** Frame span `[start, end)` a clip plays in the snapshot (crossfade handles included). */
@@ -417,7 +469,8 @@ export async function measureSfxEvents(
 			return null;
 		}
 		const [s, e] = clipSpan(rc);
-		const range = { start: Math.max(0, s), end: e + Math.ceil(SOLO_TAIL_SEC * fpsNum) };
+		// the clip's reverb tails (its room send) are part of its contribution: render until they die out
+		const range = { start: Math.max(0, s), end: e + Math.ceil(soloTailSec(seq!, docClip) * fpsNum) };
 		const key = sha({ v: 1, clip: { ...rc, gainDb: 0 }, mix: world.mixHash, fp, range, sr });
 		const hit = cache.getSound(key);
 		if (hit) {

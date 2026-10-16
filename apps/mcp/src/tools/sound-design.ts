@@ -9,12 +9,14 @@ import {
 	SOUND_EFFECTS_BIN,
 	type SoundCueSuggestion,
 	type SoundCuesResponse,
+	SoundDeliveryResultSchema,
 	SoundDesignPlanResultSchema,
 	type SoundEntry,
 	type SoundSearchResponse,
 } from '@jasper/api';
 import {
 	type AudioClip,
+	BUILD_DEFAULT,
 	type ClipSfx,
 	CUE_ALIGNS,
 	CUE_DENSITIES,
@@ -44,6 +46,7 @@ import {
 	type SoundProposalMedia,
 	type SoundProposalPlacement,
 	type SoundTypeId,
+	STOP_BEFORE_DEFAULT,
 	sequenceDialogueRanges,
 	sequenceTimecode,
 	soundCueFields,
@@ -285,8 +288,26 @@ const CueAddArg = z.object({
 		.optional()
 		.describe('A suggestion already stored as this cue is skipped (not added twice)'),
 	muted: soundCueFields.muted,
+	stopBefore: z
+		.union([z.literal(true), soundCueFields.stopBefore.unwrap()])
+		.optional()
+		.describe(
+			'Dip the music before the cue: {seconds, depthDb} or true (0.25 s at −24 dB); written into the mix when the cue is filled',
+		),
+	build: z
+		.union([z.literal(true), soundCueFields.build.unwrap()])
+		.optional()
+		.describe(
+			'High-pass build into the cue: {seconds, fromHz, toHz} or true (2 s, 150 → 2000 Hz); written when the cue is filled',
+		),
 });
 type CueAdd = z.infer<typeof CueAddArg>;
+
+/** `true` → the defaults (Stop Before Next: 0.25 s at −24 dB; build 2 s, 150 → 2000 Hz). */
+const stopBeforeOf = (v: true | { seconds: number; depthDb: number }) =>
+	v === true ? { ...STOP_BEFORE_DEFAULT } : { seconds: v.seconds, depthDb: v.depthDb };
+const buildOf = (v: true | { seconds: number; fromHz: number; toHz: number }) =>
+	v === true ? { ...BUILD_DEFAULT } : { seconds: v.seconds, fromHz: v.fromHz, toHz: v.toHz };
 
 const nullable = <T extends z.ZodType>(s: T) => s.nullable().optional();
 const CueUpdateArg = z.object({
@@ -307,6 +328,12 @@ const CueUpdateArg = z.object({
 	window: nullable(z.object({ start: z.number().int().min(0), end: z.number().int().min(0) })),
 	muted: z.boolean().optional(),
 	moveClips: z.boolean().optional().describe('A new frame moves the cue’s placed clips too (default true)'),
+	stopBefore: nullable(z.union([z.literal(true), soundCueFields.stopBefore.unwrap()])).describe(
+		'Dip the music before the cue ({seconds, depthDb} or true = 0.25 s at −24 dB; null removes it and its dip). A filled cue gets it in the mix at once',
+	),
+	build: nullable(z.union([z.literal(true), soundCueFields.build.unwrap()])).describe(
+		'High-pass build into the cue ({seconds, fromHz, toHz} or true = 2 s, 150 → 2000 Hz; null removes it). A filled cue gets it at once',
+	),
 });
 
 /** Sound type names (ids or synonyms) → taxonomy ids; unknown names are a typed error. */
@@ -427,6 +454,7 @@ function recentSounds(seq: Sequence, frame: number, F: number): string[] {
 export function registerSoundDesignTools(ctx: ToolContext): void {
 	registerPlanSoundDesign(ctx);
 	registerRebalanceSfx(ctx);
+	registerMixTools(ctx);
 	defineTool(
 		ctx,
 		'find_sound_cues',
@@ -543,7 +571,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 		{
 			title: 'Set sound cues',
 			description:
-				'Adds, edits, removes and resyncs the sound cues of a sequence in ONE transaction (one undo step). add: find_sound_cues suggestions verbatim (their informational keys are accepted; a suggestion already stored, storedCueId set, is skipped) or manual cues {at | frame, kind (default manual), weight (default support), types, align, pan, reason…} (source agent). update: [{cueId, …fields}] (null clears an optional field; a new frame moves the cue’s placed sounds unless moveClips: false). remove: {cueIds, withClips?} (withClips also deletes their placed sounds; otherwise they stay, unlinked). resync: true (or {cueIds}) moves anchored cues and their sounds to where their picture events are now. Returns the new cue ids in add order.',
+				'Adds, edits, removes and resyncs the sound cues of a sequence in ONE transaction (one undo step). add: find_sound_cues suggestions verbatim (their informational keys are accepted; a suggestion already stored, storedCueId set, is skipped) or manual cues {at | frame, kind (default manual), weight (default support), types, align, pan, reason…} (source agent). update: [{cueId, …fields}] (null clears an optional field; a new frame moves the cue’s placed sounds unless moveClips: false). remove: {cueIds, withClips?} (withClips also deletes their placed sounds; otherwise they stay, unlinked). resync: true (or {cueIds}) moves anchored cues and their sounds to where their picture events are now. stopBefore (a music dip before the hit) and build (a high-pass sweep into it) are cue fields: once the cue is filled (now, or when a sound is placed on it) they are written into the mix — the music track’s volume automation (or the music clips’ Volume when the music shares its track) and one High Pass filter per music track — and they follow the cue (moved, changed, cleared with null, muted, deleted). Returns the new cue ids in add order.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -605,7 +633,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 						if (cues.length) commands.push({ type: 'soundCue.add', sequenceId: seq.id, cues });
 					}
 					for (const [i, u] of (a.update ?? []).entries()) {
-						const { at, frame, types, ...rest } = u;
+						const { at, frame, types, stopBefore, build, ...rest } = u;
 						const f =
 							frame !== undefined
 								? frameOf(seq, frame)
@@ -619,6 +647,10 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 							...(types !== undefined
 								? { types: types === null ? null : typeIds(types, `update[${i}].types`) }
 								: {}),
+							...(stopBefore !== undefined
+								? { stopBefore: stopBefore === null ? null : stopBeforeOf(stopBefore) }
+								: {}),
+							...(build !== undefined ? { build: build === null ? null : buildOf(build) } : {}),
 						});
 					}
 					if (a.remove)
@@ -1367,6 +1399,8 @@ async function cueCommandInput(
 		...(c.reason !== undefined ? { reason: c.reason } : {}),
 		...(c.window ? { window: c.window } : {}),
 		...(c.muted !== undefined ? { muted: c.muted } : {}),
+		...(c.stopBefore !== undefined ? { stopBefore: stopBeforeOf(c.stopBefore) } : {}),
+		...(c.build !== undefined ? { build: buildOf(c.build) } : {}),
 	};
 }
 
@@ -1673,6 +1707,30 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 							.max(3)
 							.optional()
 							.describe('Alternates per cue (default 3)'),
+						roomGlue: z
+							.union([z.boolean(), z.object({ sendDb: z.number().min(-96).max(15).optional() })])
+							.optional()
+							.describe(
+								'Shared "SFX Room" reverb (setup item every placement requires): true (sends at −16 dB) or {sendDb}',
+							),
+						stopBefore: z
+							.boolean()
+							.optional()
+							.describe(
+								'A music dip (0.25 s, −24 dB) before each hero with music under it: one item per hero',
+							),
+						build: z
+							.boolean()
+							.optional()
+							.describe(
+								'A high-pass build (2 s, 150 → 2000 Hz) into each hero after ≥ 2 s of music: one item per hero',
+							),
+						delivery: z
+							.enum(SOUND_DELIVERIES)
+							.optional()
+							.describe(
+								'Delivery preset as a setup item (loudness, Auto-Match, ducking; see apply_delivery); gains are solved against it',
+							),
 					})
 					.optional(),
 				maxCues: z.number().int().min(1).max(200).optional().describe('Cues that get a sound (default 200)'),
@@ -1733,10 +1791,10 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 			const r = SoundDesignPlanResultSchema.parse(done.result);
 			const rep = r.report;
 			const table = [
-				'item | timecode | cue | sound | role | align | alternates | gain',
+				'item | timecode | cue | sound | role | align | alternates | gain | mix',
 				...rep.events.map(
 					(e) =>
-						`${e.itemId} | ${e.timecode} | ${e.kind} ${e.weight} | ${[e.sound.title, ...e.extraLayers.map((l) => l.title)].join(' + ')}${e.sound.source === 'synth' ? ' (synth)' : ''} | ${e.role} | ${e.align} | ${e.alternatives.length} | ${e.level?.reason ?? 'default level'}`,
+						`${e.itemId} | ${e.timecode} | ${e.kind} ${e.weight} | ${[e.sound.title, ...e.extraLayers.map((l) => l.title)].join(' + ')}${e.sound.source === 'synth' ? ' (synth)' : ''} | ${e.role} | ${e.align} | ${e.alternatives.length} | ${e.level?.reason ?? 'default level'} | ${[e.stopBeforeItemId, e.buildItemId].filter(Boolean).join(', ') || '—'}`,
 				),
 			].join('\n');
 			return jsonResult({
@@ -1775,9 +1833,12 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 								limitedBy: e.level.limitedBy,
 							}
 						: {}),
+					...(e.stopBeforeItemId ? { stopBeforeItemId: e.stopBeforeItemId } : {}),
+					...(e.buildItemId ? { buildItemId: e.buildItemId } : {}),
 				})),
 				...(rep.conflicts?.length ? { conflicts: rep.conflicts } : {}),
 				...(rep.levels ? { levels: rep.levels } : {}),
+				...(rep.mix ? { mix: rep.mix } : {}),
 				skipped: rep.skipped.map((s) => ({
 					timecode: s.timecode,
 					kind: s.kind,
@@ -1909,6 +1970,168 @@ function registerRebalanceSfx(ctx: ToolContext): void {
 					: r.applied
 						? 'Applied as one undo step "Rebalance SFX Levels". You cannot hear: give the user the timecodes of the limited events to listen to; sound_check / measure_loudness measure the mix.'
 						: 'Nothing to change: every sound effect is already at its solved gain (or none was solved: see skipped).',
+			});
+		},
+	);
+}
+
+/** apply_delivery and set_room_glue (Phase 4 WP4.2a: spec 12 §2.4 delivery presets and room glue). */
+function registerMixTools(ctx: ToolContext): void {
+	defineTool(
+		ctx,
+		'apply_delivery',
+		{
+			title: 'Apply a loudness delivery preset',
+			description: `Mixes a sequence to a delivery preset — web −14 LUFS / −1 dBTP, podcast −16 / −1, broadcast-r128 −23 / −1, atsc-a85 −24 / −2 — with ordinary edits: the Mix's loudness normalisation at the preset (the export measures the final mix and limits the true peak), Essential Sound Auto-Match by type (dialogue at the target, music 8 LU and ambience 10 LU under it; music at the target when there is no dialogue; clips without a type and sound effects are left alone), music and ambience ducked under their "Duck against" clips (dialogue by default, with each clip's own Ducking amount and fades), stop-before dips on ducked clips written again, default sound-effect levels moved to the preset, and the sound effects solved again against the new bed (rebalance). The engine measures every clip, the speech and the resulting mix and reports how far under the voice the music and ambience are during speech (targets ≥ 8 / ≥ 10 LU) and the loudness the export will deliver. mode "propose" (default) stores a proposal (a delivery item, then one item per sound-effect gain) for the user to review; "apply" applies everything as ONE undo step "Apply Delivery Preset" (only when the user asked you to). Waits for the job (timeoutSeconds, default 300).`,
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: SequenceIdArg,
+				delivery: z.enum(SOUND_DELIVERIES).describe('web | podcast | broadcast-r128 | atsc-a85'),
+				mode: z
+					.enum(['propose', 'apply'])
+					.optional()
+					.describe('"propose" (default): a proposal to review; "apply": one undoable edit'),
+				loudness: z.boolean().optional().describe('Mix loudness normalisation at the preset (default true)'),
+				autoMatch: z
+					.boolean()
+					.optional()
+					.describe('Auto-Match dialogue / music / ambience by type (default true)'),
+				ducking: z.boolean().optional().describe('Duck music and ambience under dialogue (default true)'),
+				rebalance: z.boolean().optional().describe('Solve the sound effects again (default true)'),
+				label: z.string().min(1).max(200).optional().describe('Proposal title'),
+				timeoutSeconds: z
+					.number()
+					.int()
+					.min(1)
+					.max(900)
+					.optional()
+					.describe('Wait for the job (default 300)'),
+			},
+			annotations: EDIT,
+		},
+		async (a, extra) => {
+			const { doc } = await loadDoc(ctx, a.projectId);
+			const seq = pickSequence(doc, a.sequenceId);
+			const job = await ctx.engine((c) =>
+				c.applyDelivery(
+					{
+						projectId: a.projectId,
+						sequenceId: seq.id,
+						delivery: a.delivery,
+						mode: a.mode ?? 'propose',
+						...(a.loudness !== undefined ? { loudness: a.loudness } : {}),
+						...(a.autoMatch !== undefined ? { autoMatch: a.autoMatch } : {}),
+						...(a.ducking !== undefined ? { ducking: a.ducking } : {}),
+						...(a.rebalance !== undefined ? { rebalance: a.rebalance } : {}),
+						...(a.label ? { label: a.label } : {}),
+					},
+					extra.signal,
+				),
+			);
+			await cancelIfAborted(ctx, extra, job.id);
+			const { job: done, timedOut } = await waitJob(ctx, job.id, (a.timeoutSeconds ?? 300) * 1000, extra);
+			if (timedOut)
+				return jsonResult({
+					jobId: done.id,
+					state: done.state,
+					progress: done.progress,
+					...(done.stage ? { stage: done.stage } : {}),
+					next: `The delivery is still running: wait_for_job {jobId: "${done.id}"}.`,
+				});
+			if (done.state !== 'succeeded')
+				throw new ToolError(
+					done.error?.code ?? 'JOB_FAILED',
+					done.error?.message ?? `The delivery ${done.state}`,
+					'Check that the media is online (list_offline_media) and the clips have audio types (set_essential_sound), then try again.',
+				);
+			const r = SoundDeliveryResultSchema.parse(done.result);
+			const rep = r.report;
+			const lufs = (x: number | null) => (x === null ? '—' : `${fmtGain(x)} LUFS`);
+			const table = [
+				'clip | track | type | measured | target | Auto-Match gain',
+				...rep.clips.map(
+					(c) =>
+						`${c.clipId} | ${c.track} | ${c.type} | ${lufs(c.measuredLufs)} | ${lufs(c.targetLufs)} | ${c.gainDb === null ? (c.skipped ?? '—') : `${fmtGain(c.gainDb)} dB`}`,
+				),
+			].join('\n');
+			const m = rep.measure;
+			return jsonResult({
+				mode: r.mode,
+				applied: r.applied,
+				proposalId: r.proposalId,
+				revision: r.revision,
+				delivery: rep.delivery,
+				preset: rep.preset,
+				table,
+				ducking: rep.ducking,
+				...(rep.sfx ? { sfx: rep.sfx } : {}),
+				...(m ? { measure: m } : {}),
+				...(rep.warnings.length ? { warnings: rep.warnings } : {}),
+				next: r.proposalId
+					? `Nothing was changed. Ask the user to review proposal ${r.proposalId} in the editor (Review panel), then wait_for_proposal. You cannot hear: tell them the measured numbers, not that it "sounds right".`
+					: `Applied as one undo step "Apply Delivery Preset". The export normalises to ${rep.preset.integratedLufs} LUFS and limits the true peak to ${rep.preset.truePeakDb} dBTP; measure an export (measure_loudness) to confirm, and give the user the timecodes of the ducked passages to listen to.`,
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'set_room_glue',
+		{
+			title: 'Room glue (shared SFX reverb)',
+			description:
+				'Puts the sound effects in one shared space (spec 12 §2.4 "Room glue"): an "SFX Room" submix with a Studio Reverb (decay 0.6 s, mix 100 %, pre-delay 8 ms) and post-fader sends at −16 dB from the sound-effect tracks. Tracks whose sound effects are all interface sounds (ui, click, key, tick) stay dry, and tracks that also play dialogue, music or ambience get no send (sends are per track) unless named in sfxTracks. Run again it updates the levels, adds missing sends and removes its own sends from tracks that no longer qualify (idempotent); sounds placed later on new SFX tracks get their send automatically. enabled: false removes its sends and the submix it made. One undo step. The room return counts as each sound effect’s own contribution when rebalance_sfx measures it.',
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: SequenceIdArg,
+				enabled: z.boolean().optional().describe('false removes the glue (default true)'),
+				sendDb: z.number().min(-96).max(15).optional().describe('Send level, dB (default −16)'),
+				decay: z.number().min(0.1).max(20).optional().describe('Reverb RT60, s (default 0.6)'),
+				mix: z.number().min(0).max(100).optional().describe('Reverb mix, % (default 100)'),
+				preDelayMs: z.number().min(0).max(200).optional().describe('Pre-delay, ms (default 8)'),
+				sfxTracks: z
+					.array(z.string().min(1).max(128))
+					.max(64)
+					.optional()
+					.describe('Exactly these tracks ("A3" or ids) instead of the automatic choice'),
+			},
+			annotations: EDIT_IDEMPOTENT,
+		},
+		async (a, extra) => {
+			const { doc } = await loadDoc(ctx, a.projectId);
+			const seq = pickSequence(doc, a.sequenceId);
+			const off = a.enabled === false;
+			const roomGlue = {
+				...(a.sendDb !== undefined ? { sendDb: a.sendDb } : {}),
+				...(a.decay !== undefined ? { decay: a.decay } : {}),
+				...(a.mix !== undefined ? { mix: a.mix } : {}),
+				...(a.preDelayMs !== undefined ? { preDelayMs: a.preDelayMs } : {}),
+			};
+			const command = off
+				? { type: 'soundDesign.removeBus', sequenceId: seq.id }
+				: {
+						type: 'soundDesign.ensureBus',
+						sequenceId: seq.id,
+						...(Object.keys(roomGlue).length ? { roomGlue } : {}),
+						...(a.sfxTracks ? { sfxTracks: a.sfxTracks } : {}),
+					};
+			const res = await transact(
+				ctx,
+				a.projectId,
+				{
+					label: off ? 'Remove SFX Room Glue' : 'SFX Room Glue',
+					commands: [command],
+					sequenceId: seq.id,
+				},
+				extra,
+			);
+			const r = requireOk(res);
+			return jsonResult({
+				...txBody(res, r),
+				...(r.results[0] as Record<string, unknown>),
+				next: off
+					? 'The room glue is removed (one undo step).'
+					: 'Done (one undo step). Re-run rebalance_sfx: the room return now counts in each sound effect’s level.',
 			});
 		},
 	);
