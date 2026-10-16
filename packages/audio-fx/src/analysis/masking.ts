@@ -57,7 +57,7 @@ export const DEFAULT_PROGRAM_LUFS = -14;
 export const HERO_SHADOW_SEC = 0.15;
 /** …by this amplitude factor (−4.437 dB). */
 export const HERO_SHADOW_FACTOR = 0.6;
-export const HERO_SHADOW_DB = 20 * Math.log10(HERO_SHADOW_FACTOR);
+export const HERO_SHADOW_DB = /* @__PURE__ */ Math.log10(HERO_SHADOW_FACTOR) * 20;
 /** Constraint 4: repeats stay within the group median ± this (dB). */
 export const CONSISTENCY_DB = 2;
 /** Constraint 5: most lift over the bed in a speech band during dialogue (dB). */
@@ -173,8 +173,8 @@ export interface SolverResult {
 
 // ── helpers ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
-const BANDS = OCTAVE_BAND_CENTRES_HZ.length;
-const DIALOGUE_BAND_INDICES = DIALOGUE_BANDS_HZ.map((hz) => OCTAVE_BAND_CENTRES_HZ.indexOf(hz));
+const BANDS = 7; // OCTAVE_BAND_CENTRES_HZ.length
+const DIALOGUE_BAND_INDICES = /* @__PURE__ */ DIALOGUE_BANDS_HZ.map((hz) => OCTAVE_BAND_CENTRES_HZ.indexOf(hz));
 /** Highest level accepted in a band or loudness field (dB); more is treated as invalid. */
 const LEVEL_CEILING_DB = 200;
 const BIT = /* @__PURE__ */ Object.fromEntries(SOLVER_CONSTRAINTS.map((c, i) => [c, 1 << i])) as Record<
