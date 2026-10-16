@@ -4186,7 +4186,7 @@ so every timing below states its load and is a before/after on the same build an
 | P3-R4 session slice and preview document; the Program monitor plays a proposal's picture and sound | done | `packages/session/test/proposals.test.ts`, `proposals-perf.test.ts` (new), `apps/web/test/proposal-program.test.tsx`, `e2e/sound-proposal-ghosts.spec.ts` (Hear on: the hit on its exact sample) |
 | P3-R5 MCP `plan_sound_design`, `place_sound` propose, `list_proposals`, `get_proposal`, `wait_for_proposal`, `accept_proposal`, `reject_proposal`, `PROPOSALS_GUIDE` | done | `apps/mcp/test/proposals.test.ts` (+ `style.cueSources` here), `sound-guide.test.ts`, `readme-tools.test.ts`; `e2e/sound-p3-mcp.spec.ts` (new: the whole loop through the built jasper-mcp) |
 | P3-R6 card, ghosts, review bar, Review panel, A/B, alternates on ghosts, notes, stale handling, trusted Apply, Undo with Reopen review, Auto Sound Pass… | done | `apps/web/test/review-ui.test.tsx` (+2 here), `review-model.test.ts` (+1), `review-virtual.test.tsx` (new, 500 items), `review-stale-text.test.ts` (new), `proposal-ghost-layer.test.tsx`, `proposal-ghosts-model.test.ts`, `auto-sound-pass.test.tsx`, `workspace-migration.test.ts` (new); `e2e/sound-review.spec.ts` |
-| "Done when": reviewed, partly accepted, applied as one undo step, undone back into review; accept on a changed document reports stale; E2E | done | `e2e/sound-review.spec.ts` (agent plan → card → review → Apply 2 of 4 = one entry → Ctrl+Z → Reopen review with decisions intact → a cue moves → stale with "Cut cue at 00:00:03:00 moved to 00:00:03:10" → Apply reports it), `e2e/sound-p3-mcp.spec.ts`; results below |
+| "Done when": reviewed, partly accepted, applied as one undo step, undone back into review; accept on a changed document reports stale; E2E | done | `e2e/sound-review.spec.ts` (agent plan → card → review → Apply 2 of 4 = one entry → Ctrl+Z → Reopen review with decisions intact → a cue moves → stale with "Cut cue at 00;00;03;00 moved to 00;00;03;10" (a drop-frame sequence) → Apply reports it), `e2e/sound-p3-mcp.spec.ts`; results below |
 
 Definition of Done: no schema change in this pass (proposals live outside the document; `soundDesign.settings.agentsMayApply`
 already had its read-time default and repair); every document edit is an ordinary command (accept = one transaction, the
@@ -4266,7 +4266,7 @@ all of it through MCP; tests are unit, property (state machine, fuzzed items) an
   V7 "Titles (new)" likewise, gone after Exit (screenshots looked at). The Review tab badge reads "1 proposal / 1 item
   to review" in the singular.
 
-#### Review findings and fixes (each with a test that fails without the fix)
+#### Review findings and fixes (tests named; mutation-checked where stated)
 
 1. **An applied item could be reopened and applied twice.** `reopen` reset accepted items to pending whatever the
    document held, and any token holder could call it: a stray reopen (another window, a script, an agent over HTTP)
@@ -4295,7 +4295,7 @@ all of it through MCP; tests are unit, property (state machine, fuzzed items) an
    approval rule over the accept closure's chosen commands). Tests: review-model `approvalNeeds`, review-ui "names what an
    agent could not do without asking…" (cancel applies nothing, the setting stays off).
 7. **Failed-preview flags flickered**: a local decision republished the items without the preview's failures (stale for
-   150 ms → pending → stale). They are kept until the next preview. (Covered by the perf test's accept step.)
+   150 ms → pending → stale). They are kept until the next preview (no dedicated test).
 8. Smaller: the Review panel's "Open a project…" line was not translated; its timecodes ignored drop-frame and the start
    timecode (now the sequence's `seqTimecode`).
 9. Found by looking at the first e2e screenshots of this pass's own virtualised list: rows were laid out at fixed px
@@ -4364,7 +4364,20 @@ directed tests (undo + redo before the engine answers, in both orders; an agent'
   switched on while playing on the first attempt, Hear off and switched off after retries of plays Remotion re-scheduled
   (the WP3.3a limit); Apply = one entry, Ctrl+Z → back in review with ✓ / ✕ intact (screenshots looked at: ghosts,
   decided, high contrast, reduced motion, applied, undone).
-- **Gate**: GATE_RESULT
+- **Gate**: after merging `feat/sound-design` (WP4.2a: b1ccef8e; conflicts in README, gaps, es.json kept both sides) —
+  `pnpm lint` pass, `pnpm typecheck` pass, `pnpm build` pass, `pnpm notices --check` current (150 packages, 31 ported
+  records), `node scripts/i18n.mjs --check` 9 417 strings. `pnpm test`, run per project because one `pnpm verify` outlived
+  the host's 2-hour limit at load ≈ 140 (its lint and typecheck had passed): packages 312 of 319 files (3 486 tests),
+  engine 74 of 115, web / mcp / desktop / scripts 182 of 191 at load 80–140, every failure a timeout, a time budget or
+  a realtime playback; rerun with fewer workers: the 16 non-engine files → 15 pass, left `packages/audio-fx`
+  masking "solves 2000 events in under 50 ms" (min 73 ms at load 38–58: Phase 4's budget, also failing in this
+  morning's baseline); the 41 engine files → 29 pass at 3 workers, then 6 of the 8 light ones one at a time (left:
+  `gaps-avc3-playback`, Chrome saw 41 / 33 of ≥ 45 frames in realtime, and `browse`, a 5 s timeout — both in the
+  baseline too), then the 4 heavy ones (2 workers, load 46–64): `export`, `camtrack-job`, `processing-steps` pass, `camtrack-solve` keeps 3 of 12 failing on its 600 s solve timeouts (baseline too). One Phase 3 test was the host's and is fixed: the Auto Sound Pass cancel test raced its
+  fake job (it now runs until cancelled). The baseline run of `pnpm verify` on d932e86a this morning (load 36–100) had
+  21 failing files of the same kinds and no Phase 3 file among them. After the merge, on the fresh build (load 54–62): `e2e/sound-p3-mcp.spec.ts` and
+  `e2e/sound-review.spec.ts` (2) → **3 passed** (10.1 min); MCP session peaks 0 / −1 / 0 samples (r ≥ 0.968), Auto Sound
+  Pass peaks 0 / 0 / −1.
 
 #### Limits (after this pass)
 
