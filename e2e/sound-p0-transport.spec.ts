@@ -352,6 +352,7 @@ test('seek during playback: the audio from before the seek stops at the seek', a
 	let rec = null as unknown as Recording;
 	let enter = -1;
 	let stop = -1;
+	let ownStops = 0;
 	let clean = false;
 	let last: string[] = [];
 	for (let a = 0; a < ATTEMPTS; a++) {
@@ -378,6 +379,7 @@ test('seek during playback: the audio from before the seek stops at the seek', a
 		// it, disturbed the play.
 		const own = rec.stops.filter((x) => x.player >= 0 && x.t >= enter - 0.001 && x.t <= seeked + 0.001);
 		stop = own[0]?.t ?? -1;
+		ownStops = own.length;
 		const other = reschedules(rec, rec.armed, seeked + 0.3)
 			.filter((t) => Math.abs(t - stop) > 0.01)
 			.map((t) => `reschedule at ${(t - enter).toFixed(3)} s`);
@@ -414,7 +416,23 @@ test('seek during playback: the audio from before the seek stops at the seek', a
 	console.log('seek while playing: enter', enter, 'stop', stop, 'last tone', lastT, 'tail', lastT - stop);
 	test.info().annotations.push({ type: 'tail', description: JSON.stringify({ enter, stop, lastT }) });
 	expect(stop).toBeGreaterThan(0);
-	expect(lastT - stop).toBeLessThan(0.008);
+	// for a failure: the tone's level in 5 ms windows around the stop, and the buffer starts after it
+	const env: string[] = [];
+	for (let t = stop - 0.01; t < lastT + 0.005; t += 0.005) {
+		let m = 0;
+		for (let i = 0; i < rec.data.length; i++) {
+			const ti = timeOf(rec, i);
+			if (ti >= t && ti < t + 0.005) m = Math.max(m, Math.abs(rec.data[i]!));
+		}
+		env.push(`${((t - stop) * 1000).toFixed(0)}ms:${m.toFixed(3)}`);
+	}
+	const after = rec.starts
+		.filter((x) => x.t >= stop - 0.001)
+		.map((x) => `${((x.t - stop) * 1000).toFixed(1)}ms/p${x.player}`);
+	expect(
+		lastT - stop,
+		JSON.stringify({ env, startsAfterStop: after.slice(0, 20), stops: ownStops }),
+	).toBeLessThan(0.008);
 });
 
 /** Runs of |x| < 0.01 longer than 2 ms (a 1 kHz tone of 0.35 crosses 0.01 for 9 µs): [start, end) context times. */
