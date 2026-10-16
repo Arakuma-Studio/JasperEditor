@@ -213,7 +213,9 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 	const setup = await transact(page, [
 		// the Phase 2 fixture without its fframes motion graphic (no fframes renderer in this environment: the native
 		// export would refuse it)
-		...((FIXTURE_COMMANDS as { type: string }[]).filter((c) => c.type !== 'clip.addMotionGraphic') as never[]),
+		...((FIXTURE_COMMANDS as { type: string }[]).filter(
+			(c) => c.type !== 'clip.addMotionGraphic',
+		) as never[]),
 		{
 			type: 'clip.place',
 			source: { projectItemId: itemOf('music.wav') },
@@ -391,6 +393,30 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 	test.info().annotations.push({ type: 'loudness', description: JSON.stringify(m) });
 	expect(Math.abs(m.integrated + 14), JSON.stringify(m)).toBeLessThanOrEqual(1);
 	expect(m.truePeak, JSON.stringify(m)).toBeLessThanOrEqual(-1);
+	// an unfilled cue's stop-before and build are only stored: the seam draws them dashed
+	const stored = await transact(page, [
+		{
+			type: 'soundCue.add',
+			cues: [
+				{
+					frame: 390,
+					kind: 'manual',
+					weight: 'hero',
+					source: 'user',
+					stopBefore: { seconds: 0.5, depthDb: -24 },
+					build: { seconds: 2, fromHz: 150, toHz: 2000 },
+				},
+			],
+		},
+	] as never);
+	expect(stored.ok, JSON.stringify(stored)).toBe(true);
+	const unfilled = Object.values((await sequence(page)).soundDesign!.cues!).find((c) => c.frame === 390)!;
+	await expect(seam.locator(`[data-cue-stop="${unfilled.id}"]`)).toHaveAttribute('data-written', 'false');
+	await expect(seam.locator(`[data-cue-build="${unfilled.id}"]`)).toHaveAttribute('data-written', 'false');
+	await query(page, 'playhead.set', { frame: 360 });
+	await focusTimeline(page);
+	await page.waitForTimeout(400);
+	await seam.screenshot({ path: join(outDir, 'cue-span-bars-stored.png'), timeout: 60_000 });
 	// a frame of the picture at the hero (the export renders it)
 	spawnSync(FFMPEG, [
 		'-v',
