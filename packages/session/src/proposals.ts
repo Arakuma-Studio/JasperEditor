@@ -701,6 +701,19 @@ export class ProposalsController {
 
 	// ---- preview
 
+	/**
+	 * A non-committed preview of some items of the proposal under review on the committed document (spec 12 §2.5
+	 * `previewProposal(id, itemIds)`), with the same seeded ids as the slice's own preview: e.g. one item alone for
+	 * "▶ in context". Null when `proposalId` is not under review. Never touches the session.
+	 */
+	previewProposal(proposalId: string, itemIds: readonly string[] | 'undecided'): ProposalPreview | null {
+		const p = this.store.getState().proposal;
+		if (!p || p.id !== proposalId) return null;
+		const idsFor = (it: ProposalItem) =>
+			createSeededIdSource(`${p.id}:${it.id}:${it.selectedAlternative ?? 0}`);
+		return previewProposal(this.session.getCommitted(), p, itemIds, this.context(), { idsFor });
+	}
+
 	/** Recompute the preview and the local re-validation after the debounce. */
 	schedule(): void {
 		if (this.disposed) return;

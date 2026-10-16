@@ -645,7 +645,9 @@ alternatives?, meta?}]}` validates every item by a dry run (failing ones are sto
 `GET …/proposals[/<proposalId>]` reads them; `POST …/<proposalId>/accept {itemIds: [...] | "all", partial?}` applies
 the items and what they require as one transaction ("Accept <title> (n of m)"); `reject`, `reopen`, `note`, `select`
 and `DELETE` record the review. A client with only the token may accept sound-design proposals only where the user
-allowed it ("Allow agents to apply sound proposals"), otherwise `403 APPROVAL_REQUIRED`.
+allowed it ("Allow agents to apply sound proposals"), otherwise `403 APPROVAL_REQUIRED`. `POST …/<proposalId>/applied
+{itemIds, revision, refs}` is the editor window's own: a Redo of an undone accept records the items accepted again
+(agents get `403 APPROVAL_REQUIRED`).
 
 The engine binds loopback only. The packaged-like desktop engine requires its per-launch token
 (`JASPER_LOCAL_TOKEN`), so plain curl calls are meant for the dev or standalone engine.

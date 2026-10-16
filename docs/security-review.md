@@ -446,6 +446,7 @@ Every state-changing engine route and what an agent may do with it:
 | `POST /api/sounds/index`, `POST /api/sounds/:id/register` (`rescan_sound_library`, `import_sounds`) | Open | The index is derived data rebuilt from files; registering copies a kit, pack or synth file under an engine-chosen name, or registers a folder file in place like `/api/media/register` |
 | `POST /api/projects/:id/proposals/:proposalId/accept` (`accept_proposal`) | **Gated** for agents by the feature's policy: sound design only where the proposal's sequence has `soundDesign.settings.agentsMayApply` (default off), every other feature refused → `403 APPROVAL_REQUIRED` (`E_APPROVAL_REQUIRED`); destructive commands inside the items then still need the approval card (`APPROVAL_DENIED` / `APPROVAL_TIMEOUT`). The editor window's own accept needs nothing more (the Review UI requires a trusted gesture) and is applied as the user's edit | Applies edits nobody reviewed; spec 12 §0 "agents propose, the user applies" |
 | `soundDesign.setSettings` with `agentsMayApply: true` in an agent transaction | **Gated** (approval card, `approvalReasons`) | An agent may not grant itself the right to apply its own proposals |
+| `POST /api/projects/:id/proposals/:proposalId/applied` (WP3.3a: the editor's Redo of an undone accept) | **Editor only**: without the editor key (or with `x-jasper-agent-input`) `403 APPROVAL_REQUIRED`; nothing in the project changes, refs must be id-shaped | An agent could otherwise mark items applied without applying them and hide them from review |
 | `POST /api/projects/:id/proposals`, `…/:proposalId/reject`, `/reopen`, `/note`, `/select`, `DELETE …/:proposalId` | Open | Nothing in the project changes (proposals live outside the document and its history); an agent is always recorded as the author (`{agent}`), only the editor may name the author; deleting one loses review notes only |
 | `PUT /api/settings/processing` (`set_processing_settings`) | **Gated**, now for every caller without the editor key | Where media is sent (was opt-in by a query parameter) |
 | `POST /api/project-manager` (`project_manager`) | Open | Copies into a new destination under free names; sources untouched |
@@ -674,7 +675,7 @@ them, but it was reviewed by its author, not by this review.
   10 000) and the returned curves (≤ 20 000 frames per clip) are bounded; `deriveCues` never throws (each source in
   its own try/catch, sampling capped). Tests: `apps/engine/test/sound-design-cues.test.ts` and `fuzz-http.test.ts`.
 - **Proposals** (spec 12 WP3.1, `apps/engine/src/routes/proposals.ts`, `proposals/{store,service}.ts`; `GET/POST
-  /api/projects/:id/proposals`, `GET/DELETE …/:proposalId`, `POST …/:proposalId/accept|reject|reopen|note|select`):
+  /api/projects/:id/proposals`, `GET/DELETE …/:proposalId`, `POST …/:proposalId/accept|reject|reopen|note|select|applied`):
   project ids are matched against `prj_` + 16 Crockford characters and proposal ids against `prp_` + 16 before any path
   is built; bodies are strict zod objects (drafts: ≤ 2 000 items, ≤ 5 000 commands, ≤ 16 alternatives per item, meta ≤
   64 KB, report ≤ 1 MB, ≤ 20 MB in all; every command is checked for unknown keys and against its schema, temp refs
@@ -683,7 +684,9 @@ them, but it was reviewed by its author, not by this review.
   `409 PROPOSAL_LIMIT`), expire 30 days after their last change, are read with a 21 MB cap, and a file that does not
   parse or names another id or project is moved aside (`*.corrupt-<time>`) with a warning. Accept gate: AGT-3 table.
   The relay flag `asUser` (the editor's accept is the user's History entry) is set by the engine only for requests
-  carrying the editor key and honoured by the bridge only together with `approved`. Tests:
+  carrying the editor key and honoured by the bridge only together with `approved`. The editor's Apply (WP3.3a session
+  slice) needs a trusted user gesture (`event.isTrusted`; an agent's `ui_click` is synthetic and its live-UI requests
+  carry `x-jasper-agent-input`, so the engine treats them as an agent's anyway). Tests:
   `apps/engine/test/proposals{,-store,-fuzz}.test.ts`, `fuzz-http.test.ts`, `apps/web/test/agent-bridge.test.ts`.
   *Residual:* an agent-owned project (created by the agent, AGT-3) can be rewritten with `agentsMayApply` already on;
   the policy reads the live document, so a user who turned it on lets every agent apply in that sequence.

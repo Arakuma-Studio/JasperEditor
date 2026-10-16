@@ -176,6 +176,18 @@ describe('proposals slice: preview document and ghosts', () => {
 		expect(heardDocument(c.getState(), session)).toBeNull();
 	});
 
+	it('previewProposal(id, itemIds): one item alone, same ids as the slice preview; another proposal → null', async () => {
+		const { c, engine, t, seqId, draft } = await setup();
+		const p = engine.create(draft);
+		await c.setActive(p.id);
+		t.run();
+		const one = c.previewProposal(p.id, ['cut'])!;
+		expect(one.applied).toEqual(['cut']);
+		expect(one.items.cut!.created).toEqual(c.getState().preview!.result.items.cut!.created);
+		expect(one.document.sequences[seqId]!.markers.map((m) => m.name).sort()).toEqual(['Hit', 'Whoosh']);
+		expect(c.previewProposal('prp_0000000000000099', ['cut'])).toBeNull();
+	});
+
 	it('recomputes debounced on doc.changed, keeping the preview entities on the same ids', async () => {
 		const { c, engine, t, session, seqId, draft } = await setup();
 		const p = engine.create(draft);
