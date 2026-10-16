@@ -4303,7 +4303,7 @@ Tests: `packages/project/test/sound-apply-gains.test.ts`, `fuzz.test.ts` (applyG
 - The solver's model: SFX do not mask each other, and the true-peak ceiling is per event and pre-master (overlapping
   events can sum higher; Sound Check's TP check and the master limiter are the net). The measurement assumes the mix is
   bed + sounds (additive): a non-linear master (a limiter or compressor on the Mix or on an SFX track) breaks that; a
-  reverb send's tail is part of the sound's contribution (correct) but feeds back into nothing.
+  send's reverb tail is part of the sound's contribution, as in the mix.
 - Windows over 20 s (beds placed as SFX) are measured on their first 20 s. Rebalance handles ≤ 2 000 clips per request.
 - Existing SFX are not part of a plan's solve (the plan solves what it proposes); `rebalance_sfx` solves everything.
 - Each alternative is solved with the other items' chosen sounds; choosing alternatives on two neighbouring items can
