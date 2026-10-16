@@ -3,12 +3,14 @@
 // seeded rotation), swap a placed sound (explicitly or cycling its alternates) and re-align a clip's peak.
 // Cue derivation runs on the engine (`POST /api/sound-design/cues`: it has the motion-graphic template registry),
 // placement and swaps are ordinary undoable commands (`soundCue.*`, `soundDesign.place`, `soundDesign.swap`).
-import type {
-	RegisterSoundResponse,
-	SoundCueSuggestion,
-	SoundCuesResponse,
-	SoundEntry,
-	SoundSearchResponse,
+import {
+	type RegisterSoundResponse,
+	SOUND_EFFECTS_BIN,
+	type SoundCueSuggestion,
+	type SoundCuesResponse,
+	SoundDesignPlanResultSchema,
+	type SoundEntry,
+	type SoundSearchResponse,
 } from '@jasper/api';
 import {
 	type AudioClip,
@@ -32,16 +34,20 @@ import {
 	requiresAttribution,
 	type Sequence,
 	SFX_ROLES,
+	SOUND_DESIGN_FEATURE,
 	SOUND_DESIGN_LIMITS,
 	SOUND_LABELS,
 	SOUND_TYPES,
 	type SoundCue,
+	type SoundProposalMedia,
+	type SoundProposalPlacement,
 	type SoundTypeId,
 	sequenceDialogueRanges,
 	sequenceTimecode,
 	soundCueFields,
 	soundCuesOf,
 	soundDesignSettingsOf,
+	soundProposalItems,
 	soundText,
 	synonymType,
 	TimeInputSchema,
@@ -52,6 +58,7 @@ import {
 import { z } from 'zod';
 import { ProjectIdArg, SequenceIdArg, TIME_FORMATS } from '../arguments.ts';
 import {
+	cancelIfAborted,
 	defineTool,
 	EDIT,
 	type Extra,
@@ -62,10 +69,12 @@ import {
 	type ToolContext,
 	transact,
 	txBody,
+	waitJob,
 } from '../context.ts';
 import { toolEnvelope } from '../envelope.ts';
-import { jsonResult, ToolError } from '../errors.ts';
+import { jsonResult, ToolError, TX_ERROR_HINTS } from '../errors.ts';
 import { pickSequence } from '../format.ts';
+import { mediaRegisterCommand } from '../media.ts';
 import { livePlayhead } from './color.ts';
 import { importCommands, type Registered, resolveAudioTrack, SoundIdArg, soundCall } from './sound.ts';
 
@@ -406,6 +415,7 @@ function recentSounds(seq: Sequence, frame: number, F: number): string[] {
 }
 
 export function registerSoundDesignTools(ctx: ToolContext): void {
+	registerPlanSoundDesign(ctx);
 	defineTool(
 		ctx,
 		'find_sound_cues',
@@ -651,7 +661,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 		'place_sound',
 		{
 			title: 'Place sound (on a cue)',
-			description: `Places 1–6 layers of sound on a stored cue (cueId) or at a time (at; a cue is created there unless createCue: false) so that each layer's aligned point lands EXACTLY on the cue frame: the peak for hits, booms, lands, whooshes; the end for risers and reverses; the start for UI blips (align auto, or say peak|start|end). Each layer is a library sound (soundId), a project media (mediaId) or a pick: sound {type, query?} chooses among the best-ranked sounds of that type (palette first), rotated so neighbouring cues differ, with the seeded ±2 % speed and ±1 dB variation. ONE undo step: imports the sounds into the "Sound Effects" bin, places one clip per layer on free SFX tracks (never over audio; a new "SFX n" when none is free), tags them Essential Sound ▸ SFX, groups the layers and links them to the cue. alternatives (1–3 soundIds) are stored on the clip for swap_sound "next"/"previous"; reason is recorded on the cue. Returns each clip with its track, start, aligned frame, peak frame and errorFlicks (0 = sample-exact), plus warnings (a hero under dialogue or within 0.5 s of another hero).`,
+			description: `PROPOSES (mode "propose", the default) or places (mode "apply": only when the user asked you to place sounds) 1–6 layers of sound on a stored cue (cueId) or at a time (at; a cue is created there unless createCue: false) so that each layer's aligned point lands EXACTLY on the cue frame: the peak for hits, booms, lands, whooshes; the end for risers and reverses; the start for UI blips (align auto, or say peak|start|end). Each layer is a library sound (soundId), a project media (mediaId) or a pick: sound {type, query?} chooses among the best-ranked sounds of that type (palette first), rotated so neighbouring cues differ, with the seeded ±2 % speed and ±1 dB variation. ONE undo step: imports the sounds into the "Sound Effects" bin, places one clip per layer on free SFX tracks (never over audio; a new "SFX n" when none is free), tags them Essential Sound ▸ SFX, groups the layers and links them to the cue. alternatives (1–3 soundIds) are stored on the clip for swap_sound "next"/"previous"; reason is recorded on the cue. Apply returns each clip with its track, start, aligned frame, peak frame and errorFlicks (0 = sample-exact), plus warnings (a hero under dialogue or within 0.5 s of another hero). Propose stores the same edit as a proposal (feature sound-design; setup items import the sounds and add the cue, the place item carries the alternatives as switchable sets) and changes nothing: ask the user to review it in the editor's Review panel, then wait_for_proposal.`,
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -681,6 +691,12 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 					.optional()
 					.describe(
 						'A sound that would start before frame 0 starts at 0 with its head trimmed (default false: refused)',
+					),
+				mode: z
+					.enum(['propose', 'apply'])
+					.optional()
+					.describe(
+						'"propose" (default): store a proposal for the user to review in the editor; "apply": place now (one undo step) — only when the user asked you to place sounds',
 					),
 			},
 			annotations: EDIT,
@@ -785,6 +801,8 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 			}
 			for (const id of a.alternatives ?? []) await entry(id);
 			const title = registered[0]?.title ?? 'Sound';
+			if ((a.mode ?? 'propose') === 'propose')
+				return proposePlacement(ctx, a, { seq0, frame0, picks, soundIds, registered, entries, title });
 			const label =
 				a.layers.length > 1
 					? soundText(SOUND_LABELS.placeSounds, a.layers.length)
@@ -875,34 +893,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 							});
 					}
 					// Warnings against the edit as it is now (before this placement).
-					const warnings: { code: string; message: string }[] = [];
-					const weightHere = cue?.weight ?? a.weight ?? (a.layers[0]!.role === 'hero' ? 'hero' : 'support');
-					const heroHere = weightHere === 'hero' || a.layers.some((l) => l.role === 'hero');
-					if (heroHere) {
-						const dialogue = sequenceDialogueRanges(doc, seq);
-						if (dialogue.some(([s, e]) => frame >= s && frame < e))
-							warnings.push({
-								code: 'W_HERO_UNDER_DIALOGUE',
-								message: `A hero sound at ${sequenceTimecode(seq, frame)} plays under spoken words: make it support, or move it.`,
-							});
-						const fps = FLICKS_PER_SECOND / F;
-						for (const c of sfxClipsOf(seq)) {
-							if (c.sfx!.role !== 'hero' || (cue && filledCueOf(seq, c)?.id === cue.id)) continue;
-							const at = alignedFrameOf(c, F);
-							if (at === null) continue;
-							const dt = Math.abs(at - frame) / fps;
-							if (dt < 0.5)
-								warnings.push({
-									code: 'W_HERO_TOO_CLOSE',
-									message: `Another hero (${c.id}) is ${r3(dt)} s away: never two heroes within 0.5 s.`,
-								});
-							else if (dt < 2)
-								warnings.push({
-									code: 'W_HERO_DENSITY',
-									message: `Another hero (${c.id}) is ${r3(dt)} s away: about one hero per 2 s.`,
-								});
-						}
-					}
+					const warnings = placementWarnings(doc, seq, cue, frame, a);
 					return {
 						commands,
 						sequenceId: seq.id,
@@ -1356,4 +1347,404 @@ async function cueCommandInput(
 		...(c.window ? { window: c.window } : {}),
 		...(c.muted !== undefined ? { muted: c.muted } : {}),
 	};
+}
+
+/** place_sound's arguments (what the propose path and the warnings read). */
+type PlaceArgs = {
+	projectId: string;
+	sequenceId?: string | undefined;
+	cueId?: string | undefined;
+	layers: Layer[];
+	alternatives?: string[] | undefined;
+	reason?: string | undefined;
+	kind?: SoundCue['kind'] | undefined;
+	weight?: SoundCue['weight'] | undefined;
+	createCue?: boolean | undefined;
+	clampStart?: boolean | undefined;
+};
+
+/** Hero warnings of a placement against the edit as it is (before it). */
+function placementWarnings(
+	doc: ProjectDocument,
+	seq: Sequence,
+	cue: SoundCue | null,
+	frame: number,
+	a: PlaceArgs,
+): { code: string; message: string }[] {
+	const warnings: { code: string; message: string }[] = [];
+	const weightHere = cue?.weight ?? a.weight ?? (a.layers[0]!.role === 'hero' ? 'hero' : 'support');
+	const heroHere = weightHere === 'hero' || a.layers.some((l) => l.role === 'hero');
+	if (!heroHere) return warnings;
+	const F = flicksPerFrame(seq.settings.frameRate as Rational);
+	const dialogue = sequenceDialogueRanges(doc, seq);
+	if (dialogue.some(([s, e]) => frame >= s && frame < e))
+		warnings.push({
+			code: 'W_HERO_UNDER_DIALOGUE',
+			message: `A hero sound at ${sequenceTimecode(seq, frame)} plays under spoken words: make it support, or move it.`,
+		});
+	const fps = FLICKS_PER_SECOND / F;
+	for (const c of sfxClipsOf(seq)) {
+		if (c.sfx!.role !== 'hero' || (cue && filledCueOf(seq, c)?.id === cue.id)) continue;
+		const at = alignedFrameOf(c, F);
+		if (at === null) continue;
+		const dt = Math.abs(at - frame) / fps;
+		if (dt < 0.5)
+			warnings.push({
+				code: 'W_HERO_TOO_CLOSE',
+				message: `Another hero (${c.id}) is ${r3(dt)} s away: never two heroes within 0.5 s.`,
+			});
+		else if (dt < 2)
+			warnings.push({
+				code: 'W_HERO_DENSITY',
+				message: `Another hero (${c.id}) is ${r3(dt)} s away: about one hero per 2 s.`,
+			});
+	}
+	return warnings;
+}
+
+/** "E_OVERLAP: …" → E_OVERLAP (an item's reason starts with the refusal code). */
+const reasonCode = (reason: string | undefined) =>
+	/^(E_[A-Z_]+):/.exec(reason ?? '')?.[1] ?? 'E_INVALID_PARAM';
+
+/**
+ * place_sound {mode: 'propose'}: the same placement as a proposal (feature sound-design) for the user to review —
+ * setup items import the sounds (and add the cue for `at`), the place item carries the alternatives as switchable
+ * sets. Nothing in the project changes. A placement that does not apply now is refused (the proposal is removed).
+ */
+async function proposePlacement(
+	ctx: ToolContext,
+	a: PlaceArgs,
+	st: {
+		seq0: Sequence;
+		frame0: number;
+		picks: (null | { soundId: string; rate: number; gainDb: number; from: string[] })[];
+		soundIds: (string | null)[];
+		registered: Registered[];
+		entries: Map<string, SoundEntry>;
+		title: string;
+	},
+) {
+	// The alternatives are imported too (the user may pick one).
+	const registered = [...st.registered];
+	for (const id of a.alternatives ?? [])
+		if (!registered.some((r) => r.soundId === id)) {
+			const reg = await soundCall<RegisterSoundResponse>(ctx, (c) => c.registerSound(id, a.projectId));
+			const e = st.entries.get(id);
+			registered.push({ soundId: id, reg, title: e?.title || reg.library.title || reg.originalName });
+		}
+	const { doc } = await loadDoc(ctx, a.projectId);
+	const seq = a.cueId ? findCue(doc, a.cueId, st.seq0.id).seq : pickSequence(doc, st.seq0.id);
+	const cue = a.cueId ? findCue(doc, a.cueId, seq.id).cue : null;
+	const frame = cue ? cue.frame : st.frame0;
+	const tc = sequenceTimecode(seq, frame);
+	const layerTypes: string[] = [];
+	const layers = a.layers.map((l: Layer, i) => {
+		const pick = st.picks[i];
+		const sid = st.soundIds[i];
+		if (sid) {
+			for (const t of st.entries.get(sid)?.types ?? [])
+				if (isSoundTypeId(t) && !layerTypes.includes(t)) layerTypes.push(t);
+		} else if (!Object.hasOwn(doc.media, l.mediaId!))
+			throw new ToolError(
+				'E_NOT_FOUND',
+				`Media not found: ${l.mediaId}`,
+				'list_media lists the project’s media.',
+			);
+		const track = !l.track || l.track.toLowerCase() === 'auto' ? undefined : resolveAudioTrack(seq, l.track);
+		const gain = (l.gainDb ?? 0) + (pick?.gainDb ?? 0);
+		return {
+			...(sid ? { soundId: sid } : { mediaId: l.mediaId! }),
+			...(track ? { track } : {}),
+			...(l.align ? { align: l.align } : {}),
+			...(gain !== 0 ? { gainDb: Math.round(gain * 100) / 100 } : {}),
+			...(pick && pick.rate !== 1 ? { rate: pick.rate } : {}),
+			...(l.pitchSt !== undefined ? { pitchSt: l.pitchSt } : {}),
+			...(l.pan !== undefined ? { pan: l.pan } : {}),
+			...(l.role ? { role: l.role } : {}),
+		};
+	});
+	const weight = a.weight ?? (a.layers[0]!.role === 'hero' ? 'hero' : 'support');
+	const kind = a.kind ?? 'manual';
+	const extraCommands: Record<string, unknown>[] = [];
+	if (cue && a.reason) {
+		const prev = cue.reason ?? '';
+		const next = prev.includes(a.reason) ? prev : prev ? `${prev} · Sound: ${a.reason}` : a.reason;
+		if (next !== prev)
+			extraCommands.push({
+				type: 'soundCue.update',
+				cueId: cue.id,
+				reason: next.slice(0, SOUND_DESIGN_LIMITS.reason),
+			});
+	}
+	const names = st.soundIds.map((s, i) =>
+		s ? (st.entries.get(s)?.title ?? s) : (a.layers[i]!.mediaId ?? ''),
+	);
+	const role = a.layers[0]!.role ?? (i0Hero(cue, weight) ? 'hero' : 'support');
+	const first = st.soundIds[0];
+	const why = `${names.join(' + ')} on ${cue?.reason ?? a.reason ?? `${kind} cue`} at ${tc} · ${role}`.slice(
+		0,
+		1000,
+	);
+	const media: SoundProposalMedia[] = registered.map((r) => ({
+		soundId: r.soundId,
+		title: r.title,
+		fingerprint: r.reg.fingerprint,
+		kind: r.reg.kind,
+		existingMediaId: r.reg.existingMediaId,
+		library: r.reg.library,
+		register: mediaRegisterCommand(r.reg, '$x', '$xi', r.title) as SoundProposalMedia['register'],
+	}));
+	const placement: SoundProposalPlacement = {
+		id: 'place',
+		label: `${names.join(' + ')} at ${tc}`.slice(0, 200),
+		group: role,
+		meta: {
+			feature: SOUND_DESIGN_FEATURE,
+			frame,
+			timecode: tc,
+			kind: cue?.kind ?? kind,
+			role,
+			...(first ? { soundId: first, title: st.entries.get(first)?.title ?? first } : {}),
+			why,
+			...(a.reason ? { reason: a.reason } : {}),
+		},
+		cue: cue
+			? { cueId: cue.id }
+			: a.createCue !== false
+				? {
+						add: {
+							frame,
+							kind,
+							weight,
+							...(layerTypes.length ? { types: layerTypes.slice(0, SOUND_DESIGN_LIMITS.types) } : {}),
+							source: 'agent',
+							...(a.reason ? { reason: a.reason } : {}),
+						},
+						label: `Cue: ${kind} at ${tc}`,
+					}
+				: { frame },
+		layers,
+		...(a.alternatives?.length ? { ring: [...new Set([...(first ? [first] : []), ...a.alternatives])] } : {}),
+		...(a.alternatives?.length
+			? {
+					alternatives: a.alternatives.map((id) => ({
+						soundId: id,
+						label: st.entries.get(id)?.title ?? id,
+						meta: { soundId: id, title: st.entries.get(id)?.title ?? id },
+					})),
+				}
+			: {}),
+		...(a.clampStart ? { clampStart: true } : {}),
+		...(extraCommands.length ? { extraCommands } : {}),
+	};
+	const built = soundProposalItems(doc, seq.id, media, [placement], { binName: SOUND_EFFECTS_BIN });
+	const warnings = placementWarnings(doc, seq, cue, frame, a);
+	const label =
+		a.layers.length > 1
+			? soundText(SOUND_LABELS.placeSounds, a.layers.length)
+			: soundText(SOUND_LABELS.placeSound, st.title);
+	const created = await ctx.engine((c) =>
+		c.createProposal(a.projectId, {
+			sequenceId: seq.id,
+			feature: SOUND_DESIGN_FEATURE,
+			title: label.slice(0, 200),
+			summary: why,
+			items: built.items as never,
+		}),
+	);
+	const p = created.proposal;
+	const place = p.items.find((i) => i.id === 'place');
+	if (!place || place.state === 'invalid') {
+		await ctx.engine((c) => c.deleteProposal(a.projectId, p.id)).catch(() => undefined);
+		const reason = place?.reason ?? 'the placement does not apply to the project';
+		throw new ToolError(
+			reasonCode(reason),
+			`The placement does not apply: ${reason}`,
+			TX_ERROR_HINTS[reasonCode(reason)] ?? 'Check the cue, the tracks and the time (get_timeline).',
+		);
+	}
+	const notes: string[] = [];
+	if (registered.some((r) => st.entries.get(r.soundId)?.source.type === 'synth'))
+		notes.push('A Jasper Synth (procedural) sound was used: a fallback; prefer a recording if one fits.');
+	if (registered.some((r) => requiresAttribution(r.reg.library.license)))
+		notes.push('CC-BY sounds are in it: list_sound_credits gives the credit lines once it is applied.');
+	return jsonResult({
+		mode: 'propose',
+		proposalId: p.id,
+		title: p.title,
+		frame: { frame, timecode: tc },
+		items: p.items.map((i) => ({
+			itemId: i.id,
+			label: i.label,
+			group: i.group,
+			state: i.state,
+			...(i.requires.length ? { requires: i.requires } : {}),
+			...(i.alternatives?.length ? { alternatives: i.alternatives.map((x) => x.label) } : {}),
+		})),
+		why,
+		...(warnings.length ? { placementWarnings: warnings } : {}),
+		...(notes.length ? { notes } : {}),
+		next: 'Nothing was placed yet. Tell the user the proposal is waiting in the editor’s Review panel (they can hear it in context, swap the alternates and apply it as one undo step), then call wait_for_proposal {projectId, proposalId}. Use mode "apply" only when the user asked you to place sounds directly.',
+	});
+}
+
+/** The first layer of a hero cue (or a hero weight for a new cue) is the hero. */
+const i0Hero = (cue: SoundCue | null, weight: SoundCue['weight']) => (cue?.weight ?? weight) === 'hero';
+
+/** plan_sound_design: the engine's `sound-design` plan job → a proposal for the user to review. */
+function registerPlanSoundDesign(ctx: ToolContext): void {
+	defineTool(
+		ctx,
+		'plan_sound_design',
+		{
+			title: 'Plan sound design (propose)',
+			description: `Plans sound effects for a sequence and stores them as a PROPOSAL for the user to review — nothing in the project changes (spec 12 P3-R3). The engine takes the cues (cues "auto", the default: the sequence's unfilled stored cues plus cues derived from the edit — cuts, transitions, moves and lands, text animators, motion graphics, "sfx:" markers — within the density budget, never a plain cut under spoken words; or cue ids of stored cues), ranks library sounds for each (its types, visual kind and window, commercial-safe licences only, palette sounds first, real recordings before Jasper Synth), rotates among the best so neighbours differ (seeded ±2 % speed, ±1 dB), and proposes one placement per cue (peak-aligned, role from the cue weight, align / pan / sweep from the cue, default level by role) with 1–3 alternatives and a why-line; a marker naming several types ("sfx: boom+whoosh") gets one layer per type. Deterministic for the same edit, library and seed. Waits for the job (timeoutSeconds, default 300) and returns the proposalId, a table (timecode | cue | sound | role | align | alternates), the skipped cues with reasons and warnings. Then ASK THE USER to review it in the editor's Review panel (hear in context, keep / reject, swap alternates, notes, apply as one undo step) and call wait_for_proposal; never accept it yourself unless the user asked you to apply it.`,
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: SequenceIdArg,
+				range: z
+					.object({ start: TimeInputSchema, end: TimeInputSchema })
+					.optional()
+					.describe(`Only cues in [start, end). ${TIME_FORMATS}`),
+				cues: z
+					.union([z.literal('auto'), z.array(z.string().min(1).max(128)).min(1).max(2000)])
+					.optional()
+					.describe('"auto" (default): unfilled stored cues + cues derived from the edit; or stored cue ids'),
+				style: z
+					.object({
+						density: z
+							.enum(CUE_DENSITIES)
+							.optional()
+							.describe('Derived cues budget (default: the sequence’s)'),
+						palette: z
+							.union([z.literal('project'), z.array(SoundIdArg).max(500)])
+							.optional()
+							.describe('Sounds ranked first: ids, or "project" (default: the sequence palette)'),
+						sources: z
+							.array(z.enum(['starter', 'pack', 'folder', 'synth']))
+							.min(1)
+							.max(4)
+							.optional()
+							.describe('Library sources to pick from (default all; synth always ranks last)'),
+						respectDialogue: z
+							.boolean()
+							.optional()
+							.describe('No cut cues under words, no hero under words (default true)'),
+						seed: z.number().int().min(0).max(0xffff_ffff).optional().describe('Default: the sequence seed'),
+						alternatives: z
+							.number()
+							.int()
+							.min(0)
+							.max(3)
+							.optional()
+							.describe('Alternates per cue (default 3)'),
+					})
+					.optional(),
+				maxCues: z.number().int().min(1).max(200).optional().describe('Cues that get a sound (default 200)'),
+				label: z.string().min(1).max(200).optional().describe('Proposal title'),
+				timeoutSeconds: z
+					.number()
+					.int()
+					.min(1)
+					.max(900)
+					.optional()
+					.describe('Wait for the plan (default 300)'),
+			},
+			annotations: EDIT,
+		},
+		async (a, extra) => {
+			const { doc } = await loadDoc(ctx, a.projectId);
+			const seq = pickSequence(doc, a.sequenceId);
+			let range: { start: number; end: number } | undefined;
+			if (a.range) {
+				range = { start: frameOf(seq, a.range.start), end: frameOf(seq, a.range.end) };
+				if (range.end <= range.start)
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						`range.end (${range.end}) must be after range.start (${range.start})`,
+						TIME_FORMATS,
+					);
+			}
+			const job = await ctx.engine((c) =>
+				c.planSoundDesign(
+					{
+						projectId: a.projectId,
+						sequenceId: seq.id,
+						...(range ? { range } : {}),
+						...(a.cues ? { cues: a.cues } : {}),
+						...(a.style ? { style: a.style } : {}),
+						...(a.maxCues ? { maxCues: a.maxCues } : {}),
+						...(a.label ? { label: a.label } : {}),
+					},
+					extra.signal,
+				),
+			);
+			await cancelIfAborted(ctx, extra, job.id);
+			const { job: done, timedOut } = await waitJob(ctx, job.id, (a.timeoutSeconds ?? 300) * 1000, extra);
+			if (timedOut)
+				return jsonResult({
+					jobId: done.id,
+					state: done.state,
+					progress: done.progress,
+					...(done.stage ? { stage: done.stage } : {}),
+					next: `The plan is still running: wait_for_job {jobId: "${done.id}"}; its result names the proposal.`,
+				});
+			if (done.state !== 'succeeded')
+				throw new ToolError(
+					done.error?.code ?? 'JOB_FAILED',
+					done.error?.message ?? `The plan ${done.state}`,
+					'Check the project (get_project), the sound library (sound_library_status) and the arguments, then plan again.',
+				);
+			const r = SoundDesignPlanResultSchema.parse(done.result);
+			const rep = r.report;
+			const table = [
+				'item | timecode | cue | sound | role | align | alternates',
+				...rep.events.map(
+					(e) =>
+						`${e.itemId} | ${e.timecode} | ${e.kind} ${e.weight} | ${[e.sound.title, ...e.extraLayers.map((l) => l.title)].join(' + ')}${e.sound.source === 'synth' ? ' (synth)' : ''} | ${e.role} | ${e.align} | ${e.alternatives.length}`,
+				),
+			].join('\n');
+			return jsonResult({
+				proposalId: r.proposalId,
+				sequenceId: r.sequenceId,
+				items: r.itemCount,
+				counts: r.counts,
+				...(r.invalid.length ? { invalid: r.invalid } : {}),
+				placed: rep.counts.placed,
+				newCues: rep.counts.newCues,
+				sounds: rep.counts.sounds,
+				seed: rep.seed,
+				density: rep.density,
+				table,
+				events: rep.events.map((e) => ({
+					itemId: e.itemId,
+					timecode: e.timecode,
+					frame: e.frame,
+					kind: e.kind,
+					soundId: e.sound.soundId,
+					title: e.sound.title,
+					license: e.sound.license,
+					role: e.role,
+					align: e.align,
+					why: e.why,
+					alternatives: e.alternatives.map((x) => ({ soundId: x.soundId, title: x.title })),
+					...(e.extraLayers.length
+						? { layers: e.extraLayers.map((x) => ({ soundId: x.soundId, title: x.title })) }
+						: {}),
+					...(e.notes.length ? { notes: e.notes } : {}),
+				})),
+				skipped: rep.skipped.map((s) => ({
+					timecode: s.timecode,
+					kind: s.kind,
+					code: s.code,
+					reason: s.reason,
+				})),
+				...(rep.counts.skipped > rep.skipped.length ? { skippedTotal: rep.counts.skipped } : {}),
+				...(rep.warnings.length ? { warnings: rep.warnings } : {}),
+				next: r.proposalId
+					? `Nothing was applied. Ask the user to review proposal ${r.proposalId} in the editor (Review panel: hear each sound in context, keep or reject it, swap alternates, leave notes, apply as one undo step), then call wait_for_proposal {projectId, proposalId} and read their decisions and notes. Do not accept it yourself unless the user asked you to apply it. You cannot hear: give the user the timecodes to listen to.`
+					: 'No cue got a sound (see skipped and warnings): nothing was stored.',
+			});
+		},
+	);
 }
