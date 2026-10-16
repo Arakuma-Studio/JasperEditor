@@ -714,7 +714,11 @@ export function composePlanDraft(
 		report.warnings.push({ code: 'W_REPORT_TRIMMED', message: 'The report was trimmed to stay under 1 MB' });
 	}
 	if (built.items.length === 0 || picks.length === 0) return { draft: null, report };
-	const name = (seq as { name?: unknown }).name;
+	// The sequence's name is its Project item's.
+	const item = Object.values(doc.items ?? {}).find(
+		(it) => it?.kind === 'sequence' && (it as { sequenceId?: unknown }).sequenceId === seq.id,
+	);
+	const name = item?.name;
 	const placedWord = picks.length === 1 ? 'sound' : 'sounds';
 	const draft: ProposalDraft = {
 		sequenceId: seq.id,

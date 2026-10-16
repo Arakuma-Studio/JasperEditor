@@ -389,6 +389,7 @@ describe('plan draft (pure)', () => {
 		});
 		expect(draft).not.toBeNull();
 		expect(draft!.feature).toBe('sound-design');
+		expect(draft!.title).toBe('Sound design: Sequence 01');
 		expect(report.events).toHaveLength(r.selected.picks.length);
 		expect(report.counts).toMatchObject({ placed: r.selected.picks.length, items: draft!.items.length });
 		expect(draft!.items.length).toBeLessThan(400);
