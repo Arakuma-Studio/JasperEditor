@@ -90,6 +90,13 @@ export type CueSeamProps = {
 	reveal(frame: number): void;
 	/** Proposal cues drawn as ghosts (P3); never edited here. */
 	ghosts?: readonly SoundCue[];
+	/**
+	 * A ghost cue was clicked or chosen with the keyboard (Enter): the review shows its proposal item (P3-R6). The
+	 * point is the glyph's bottom in client coordinates.
+	 */
+	onGhost?(ghostCueId: string, at: { x: number; y: number }): void;
+	/** The keyboard reached a ghost cue (its item becomes the selected review item). */
+	onGhostFocus?(ghostCueId: string): void;
 };
 
 type Drag = {
@@ -140,15 +147,29 @@ export function CueSeam(p: CueSeamProps) {
 	);
 	const tc = tcOf(seq);
 	const byId = useMemo(() => new Map(cues.map((c) => [c.id, c])), [cues]);
+	const ghostById = useMemo(() => new Map(ghostCues.map((c) => [c.id, c])), [ghostCues]);
+	// keyboard order: the cues and the proposal's ghost cues together, by frame
+	const navCues = useMemo(
+		() =>
+			ghostCues.length
+				? [...cues, ...ghostCues].sort((a, b) => a.frame - b.frame || a.id.localeCompare(b.id))
+				: cues,
+		[cues, ghostCues],
+	);
+	const ghostAt = (id: string) => {
+		const g = geoms.find((x) => x.id === id);
+		const r = laneRef.current?.getBoundingClientRect();
+		return { x: (r?.left ?? 0) + (g?.x ?? 0), y: (r?.top ?? 0) + SEAM_PX };
+	};
 	const idPrefix = `cue-${p.instanceId}-`;
 	const readOnly = useSessionState((s) => s.readOnly);
 
 	// The keyboard focus follows the selection when it changes from elsewhere (Next Cue, agents).
 	useEffect(() => {
-		if (active && byId.has(active)) return;
+		if (active && (byId.has(active) || ghostById.has(active))) return;
 		const last = selectedIds[selectedIds.length - 1];
 		setActive(last && byId.has(last) ? last : null);
-	}, [active, byId, selectedIds]);
+	}, [active, byId, ghostById, selectedIds]);
 
 	// A drag never outlives the seam: unmounting mid-drag (the Timeline closed, a workspace switched) cancels its
 	// gesture, which would otherwise hold the session (Undo, agents' edits, autosave) until the app reloads.
@@ -215,6 +236,11 @@ export function CueSeam(p: CueSeamProps) {
 		if (e.button !== 0) return;
 		const id = hitCue(geoms, localX(e));
 		const cue = id ? byId.get(id) : undefined;
+		if (id && !cue && ghostById.has(id)) {
+			setActive(id);
+			p.onGhost?.(id, ghostAt(id));
+			return;
+		}
 		if (!cue) {
 			if (!e.shiftKey) session.select('cues', [], 'replace');
 			return;
@@ -487,18 +513,28 @@ export function CueSeam(p: CueSeamProps) {
 	// ---- keyboard
 	const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
 		const move = (dir: 1 | -1 | 'first' | 'last') => {
-			const id = neighbourCue(cues, active, dir, session.transport.getState().frame);
+			const id = neighbourCue(navCues, active, dir, session.transport.getState().frame);
 			if (!id) return;
+			const ghost = ghostById.get(id);
+			if (ghost) {
+				setActive(id);
+				p.onGhostFocus?.(id);
+				p.reveal(ghost.frame);
+				return;
+			}
 			selectCue(id, e.shiftKey ? 'add' : 'replace');
 			const c = byId.get(id);
 			if (c) p.reveal(c.frame);
 		};
+		const onGhost = active !== null && ghostById.has(active);
 		const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
 		let handled = true;
 		if (plain && e.key === 'ArrowRight') move(1);
 		else if (plain && e.key === 'ArrowLeft') move(-1);
 		else if (plain && e.key === 'Home') move('first');
 		else if (plain && e.key === 'End') move('last');
+		else if (plain && !e.shiftKey && (e.key === 'Enter' || e.code === 'NumpadEnter') && active && onGhost)
+			p.onGhost?.(active, ghostAt(active));
 		else if (plain && !e.shiftKey && (e.key === 'Enter' || e.code === 'NumpadEnter') && active) fill(active);
 		else if (plain && !e.shiftKey && (e.key === 'Delete' || e.key === 'Backspace') && selected.size)
 			removeSelected();
@@ -702,12 +738,14 @@ function CueGlyph(props: {
 		.map((id) => seq.clips[id])
 		.filter((c): c is Clip => !!c)
 		.map((c) => `${trackLabel(seq, c.trackId) ?? ''} ${c.name}`.trim());
-	const label = cueAriaLabel(cue, {
+	const named = cueAriaLabel(cue, {
 		timecode: props.tc(cue.frame),
 		placedNames,
 		conflict: g.state.conflict,
 		clips: seq.clips,
 	});
+	// a proposal's cue (P3 review): not in the document yet
+	const label = g.state.ghost ? t('Proposed: {0}', named) : named;
 	return (
 		// biome-ignore lint/a11y/useSemanticElements: an item of the seam's composite (aria-activedescendant); the lane owns focus and keys
 		<div

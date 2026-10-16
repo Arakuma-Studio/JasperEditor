@@ -24,6 +24,7 @@ import { createMediaRuntimeSync } from '../import/media-runtime.ts';
 import { EngineImportService } from '../import/service.ts';
 import { ProjectDialogHost } from '../panels/project/dialogs.tsx';
 import { activeProjectBin } from '../panels/project/instances.ts';
+import { useProposalsSync } from '../proposals/state.ts';
 import { autoSavePolicy } from '../runtime/save.ts';
 import { useEngine } from '../state/engine.tsx';
 import { registerImportService } from '../state/services.ts';
@@ -86,6 +87,8 @@ function LifecycleBody(props: {
 }) {
 	const { session } = props;
 	useAgentBridge(session);
+	// spec 12 §2.5: the session's proposals follow the engine (list, proposal.changed)
+	useProposalsSync(session);
 	const engine = useEngine();
 	useLanguageEpoch(); // banners and notices follow a language change (the editor below remounts)
 	const exportState = useExportMode();

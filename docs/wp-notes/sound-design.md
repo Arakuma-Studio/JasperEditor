@@ -3796,6 +3796,178 @@ is only for when the user asked.
 - The session preview (P3-R4) and the Review UI (P3-R6) are the next packages: use `isSetupItem` / `settleSetupItems` as
   above; the report's `events[].itemId` maps to items, `meta.why` is the why-line.
 
+### Phase 3 → WP3.3a session slice, preview and ghosts
+
+Scope: spec 12 §2.5 "Session", §2.7 "Review" (the ghost parts), P3-R4 and the ghost part of P3-R6. The Review panel,
+review bar, proposal card and Auto Sound Pass… dialog are WP3.3b; this package is the foundation they use.
+
+Files: `packages/session/src/proposals.ts` (the slice; exported from `@jasper/session`), `packages/project/src/ids.ts`
+(`createSeededIdSource`), `proposals/ghost.ts` (`previewProposal(…, {idsFor})`), `packages/api` / `engine-client` /
+`apps/engine/src/{proposals/service,routes/proposals}.ts` (route `applied`, below); web `apps/web/src/proposals/{state,
+ghosts,GhostLayer,register}.ts(x)`, `commands/proposals.ts`, `panels/program/ProgramMonitor.tsx` (the heard document),
+`panels/timeline/TimelinePanel.tsx` (ghost layer, ghost headers, ghost cues), `sound/cues/{CueSeam.tsx,seam.ts}` (ghost
+cues clickable / keyboard-reachable; the seam shows for ghost cues), `home/ProjectLifecycle.tsx` (sync), es.json (36
+strings). Tests: `packages/session/test/proposals.test.ts` (+ `fake-proposals-engine.ts`, shared with the web tests),
+`packages/project/test/proposals-preview-ids.test.ts`, `apps/web/test/proposal-{ghosts-model,ghost-layer,program}.test.*`
+(+ `proposal-helpers.ts`), `apps/engine/test/proposals.test.ts` (+1), `packages/engine-client/test/client.test.ts`,
+`e2e/sound-proposal-ghosts.spec.ts`.
+
+#### API for WP3.3b (`proposalsFor(session)` → `ProposalsController`; never throws, actions resolve `{ok, …}`)
+
+```ts
+proposalsFor(session, opts?: {engine?, debounceMs = 150, setTimer?, clearTimer?}) → ProposalsController  // one per session
+c.store: StoreApi<ProposalsState>   // web: useProposals(session, selector, eq?) / useProposalsController(session)
+ProposalsState = { status: idle|loading|ready|error|offline, error, list: ProposalSummary[], warnings,
+  activeId, proposal: Proposal|null /* as last read from the engine */, items: ReviewItem[], accepted: {[pid]: itemIds},
+  selection: itemIds, hear: boolean, preview: ProposalPreviewState|null, stale: {[itemId]: reason}, busy, lastError }
+ReviewItem = { id, label, group, requires, setup /* meta.setup (WP3.2) */, state: pending|accepted|rejected|stale|invalid
+  |applied, engineState, reason?, note?, alternatives /* sets incl. its own */, selectedAlternative, alternativeLabels, meta }
+ProposalPreviewState = { proposalId, revision, base /* the committed doc it was built on */, document /* what Hear plays:
+  pending + stale + locally accepted (rejected left out) */, result: ProposalPreview /* every reviewable item, rejected
+  included: the ghost geometry */, ghost, heard: itemIds, owner: {entityId: itemId} }
+c.connect(subscribe) / c.handleEvent(ProposalChangedEvent)   // web: useProposalsSync(session) (mounted in LifecycleBody)
+c.load(); c.refresh(); c.setActive(id | null); c.exit()
+c.select(itemIds, 'replace'|'add'|'toggle'|'remove')
+c.setItemDecision(itemIds, 'accept'|'reject'|'clear')      // accept: local (+ its requires closure; reopens rejected ones)
+c.selectAlternative(itemId, k); c.cycleAlternative(itemId, ±1); c.note(itemId, text|null)
+c.apply({trusted: event.isTrusted, itemIds?}) → {ok, applied, stale, label, revision} | {ok:false, code: E_UNTRUSTED|…}
+c.discard()   // rejects every undecided item, leaves review; c.remove(proposalId) deletes it
+c.setHear(on); c.toggleHear(); c.acceptedIds(); c.flush(); c.previewProposal(id, itemIds|'undecided') → ProposalPreview
+heardDocument(state, session)   // web: useHeardDocument(session); useGhostModel(session, seqId)
+```
+
+UI commands (agent-exposed, `ui_command`): `proposals.review {proposalId?}` (default: the newest undecided proposal of
+the active sequence), `proposals.exitReview`, `proposals.toggleHear {on?}`. No keymap bindings were added (the Review
+scope keys are WP3.3b's).
+
+#### Design and decisions
+
+- **Decisions.** The engine stores rejected and applied (`accepted`); "accepted, not applied yet" is local to this
+  window (`accepted[proposalId]`, kept per proposal while switching reviews) until Apply. Accept takes the item's
+  `requires` closure along (as `planAccept` will) and reopens rejected ones first; reject / clear go to the engine
+  (`reject` / `reopen`), shown optimistically until it answers; an item the engine decided otherwise drops its local
+  accept. Rejecting an applied item is refused ("undo it in History").
+- **Apply path: the engine's accept route with the editor key** (WP3.1's design), not a local `session.apply`: the
+  engine composes ONE transaction, relays it into this session as the user's edit (History "Accept <title> (n of m)",
+  origin `user`) and records the items accepted with the transaction's revision and refs, atomically under its
+  per-proposal lock — the stored states can never disagree with the document. `partial: true` (stale items are left
+  out and returned: never silently dropped), `expectedRevision` = the session's. `apply` refuses without `trusted`
+  (`event.isTrusted`): an agent's `ui_click` is synthetic, and its live-UI requests carry `x-jasper-agent-input`, so
+  the engine would treat them as an agent's (403) anyway.
+- **Undo / Redo.** The slice records the History entry of each Apply (by its `revisionAfter`). When that entry is undone
+  (Ctrl+Z, History panel) it calls `reopen` and puts the items back as locally accepted — decisions intact, rejected
+  ones still rejected, ready to Apply again. Redo would put the clips back while the engine says pending (accepting
+  again would duplicate them), so a redo calls the new **editor-only route `POST …/:id/applied {itemIds, revision,
+  refs}`** (records them accepted with the original refs; nothing is applied; agents get `403 APPROVAL_REQUIRED`;
+  ids/refs checked; README, security review AGT-3 table). An entry dropped by a later edit ends the follow-up.
+- **Preview.** `previewProposal` on the committed document, recomputed 150 ms after `doc.changed` or a decision, with a
+  local `revalidate` (stale items flagged with the reason; an item that does not apply in the preview is stale too).
+  Ids are **seeded per item and alternative** (`createSeededIdSource('<prp>:<item>:<k>')`, new `idsFor` option): a
+  recomputed preview keeps its clips on the same ids whatever else changed, so the Program monitor's render document
+  keeps them (`stabilizeRenderDoc`) and their players. Two previews when something is rejected: the ghost geometry
+  (rejected included, drawn hatched) and the heard document (without them, but with any rejected item a heard one
+  requires, as accepting would).
+- **Hear proposal.** The Program monitor's document is `heard ?? drawn` (`useHeardDocument`): picture AND sound come
+  from it (the mix graph lives in the composition), the session document and History are untouched (tests), a gesture
+  (a drag, an In Context audition) shows its own transient instead, rendered previews are not used while hearing. A
+  chip "Hearing proposal: <title>" says so. Switching swaps the Player's document in place: no seek, no restart.
+- **Ghosts.** `buildGhostModel` (pure) from `preview.result.items` (one transaction per item, so every created / changed
+  / deleted entity has its item): created clips → ghost clips; created tracks → ghost lanes (below the last audio row,
+  above the top video row) and ghost headers "A4 · SFX 1 (new)"; changed clips → the ghost at the new place over a
+  `--pr-ghost-remove` wash at the old one; deleted → the wash; created / changed cues → ghost cues on the Cue Seam
+  (changed ones under `<id>~ghost`). Setup items (WP3.2 `meta.setup`) are folded into the first item that needs them
+  (their cue ghosts belong to the placement). Paint (tokens only): pending 1 px dashed `--pr-ghost-stroke` over
+  `--pr-ghost-fill`; accepted solid + ✓ `--pr-success`; rejected 35 % opacity, a hatch and ✕; stale / invalid
+  `--pr-warning` + "!"; agent proposals a 3 px `--pr-agent` left bar; selected 2 px `--pr-focus-ring`; high contrast
+  2 px solid everywhere and pending gets ○ (state by glyph); nothing animates.
+- **Interaction.** Click: select the item, open its card (pinned); rest 350 ms: the card (transient). Card = why-line
+  (`meta.why`, else `meta.reason`; WP3.2 writes `why`), facts computed from the preview (what lands where, length, gain;
+  "New track A4 · SFX 1"; removals; cues) plus `meta.facts` (≤ 4 strings), the stale reason, the note; buttons Accept /
+  Reject (toggles), ⇄ Alternate k/n (route `select`), ▶ Play (Hear on for the item's window: pre-roll from the Sound
+  Library preference, 1 s after, then Hear as it was; WP2.4b's `playTimelineWindow`), ✎ Note, and **Apply n of m**
+  (n = accepted non-setup items) for a trusted click. Keyboard: the review items are one tab stop (listbox,
+  `aria-activedescendant`, names "Proposed: <label>, <state>, at <tc>. <why>"): ←/→/Home/End in time order, Enter
+  accept, Delete/Backspace reject, U clear, A Hear, I / Shift+F10 / context-menu key open the card (focus moves in), Esc;
+  on the Cue Seam ←/→ reach ghost cues too (their item is selected) and Enter / click opens the item's card.
+
+#### Verified (measured, this branch; shared host, 16 cores)
+
+- `pnpm vitest run packages/session/test/proposals.test.ts --maxWorkers=2`: 10 passed — list + `proposal.changed` sync
+  (another client's reject re-reads the active proposal; deletion ends the review), typed failures, the preview document
+  (heard items, ghosts attributed per item, the session document and History untouched, `heardDocument` off / during a
+  gesture), the 150 ms debounce on `doc.changed` with stable ids, stale after a moved anchor ("frame 100 → 120") and
+  revived when moved back, local accept (+ closure) vs stored reject / clear / reopen-then-accept, alternatives and
+  notes, `previewProposal(id, itemIds)`, Apply refused untrusted, Apply = ONE History entry "Accept Sound pass (3 of 4)"
+  (origin user), Undo → reopened with decisions intact, Redo → recorded through `applied`, Undo + Apply again, stale
+  items reported by Apply. Mutation checks: without the Undo hook, or without the trust check, the apply test fails.
+- `pnpm vitest run packages/project/test/proposals-preview-ids.test.ts`: 4 passed (seeded ids deterministic and
+  well-formed, 300-run property; 20 000 ids without a repeat; an item keeps its ids whatever else is previewed).
+- `pnpm vitest run apps/web/test/proposal-ghosts-model.test.ts apps/web/test/proposal-ghost-layer.test.tsx
+  apps/web/test/proposal-program.test.tsx`: 8 + 7 + 2 passed — the model (ghost clips on a new track, wash + ghost for a
+  moved clip, ghost cue for a moved cue, setup items folded, hostile input), geometry (new track rows, x at the frame,
+  culling and scroll), keyboard order, paint per state and high contrast, glyphs, why-line (hostile `meta` too); the
+  layer on a real session: styles, agent bar, ghost header, card actions (Accept / Alternate / Note / Reject), synthetic
+  Apply refused, the keyboard composite (←/→, Enter, Delete, U, A, I, Home / End), high contrast, nothing animated, ghost
+  cues on the Cue Seam (click, ←/→, Enter); the Program monitor: with Hear on its duration is the preview's (00:00:17:10
+  vs 00:00:04:00), the chip shows, the session document and History are untouched, a gesture shows its transient; the
+  render document carries the proposal's audio clips and keeps the unchanged clips' render objects across A → B → A.
+  Mutation check: with the Program monitor reading the drawn document only, the first Program test fails.
+- `apps/engine/test/proposals.test.ts` (+1: `applied` — agent 403, unknown item 404, bad ref 400, unknown key 400,
+  recorded with revision and refs, nothing saved, event, idempotent), `packages/engine-client/test/client.test.ts`
+  (+`markProposalApplied`), `fuzz-http.test.ts` (finds the new route).
+- After merging `feat/sound-design` (WP3.2; load 30–37): `pnpm vitest run --project @jasper/session --project
+  @jasper/web --maxWorkers=4` → 139 files, 982 tests passed; `apps/engine/test/{proposals,proposals-store,
+  proposals-fuzz,fuzz-http,sound-design-plan,security-review}.test.ts apps/mcp/test/proposals.test.ts packages/engine-client
+  packages/api packages/project/test/{proposals,proposals-preview-ids,sound-proposal-draft}.test.ts` → 14 files, 302
+  passed; `pnpm vitest run --project @jasper/project --maxWorkers=4` → 158 files, 1 955 passed; `pnpm typecheck`, `tsc -p e2e/tsconfig.json`, `pnpm lint`, `pnpm notices --check`,
+  `node scripts/i18n.mjs --check` (9 213 strings): pass.
+- Then merged `feat/sound-design` 61f33b61 (WP4.1a, `packages/audio-fx` only; no conflicts): `pnpm typecheck` and
+  `pnpm lint` passed.
+- **Real app** (built stack): `E2E_PORT=50103 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-proposal-ghosts.spec.ts`.
+  The Phase 2 fixture plus a click bed on A1 (0.25 every 0.5 s from 0.1 s) and hit.wav (0.6 at 0.25 s); an agent
+  (token, `x-jasper-agent`, no editor key) creates a 4-item proposal (SFX track; hits on the cut 87, the push 177, the
+  marker 247); its accept → 403 APPROVAL_REQUIRED. `proposals.review` → 3 ghost clips within 2 px of their frames'
+  x, all pending, `1px dashed var(--pr-ghost-stroke)`, computed left border `3px solid` in the agent colour, inside the
+  ghost lane; header "A4 · SFX 1 (new)". Program audio tapped (`e2e/sound-tap.ts`), samples after the bed's first click:
+  Hear off → bed only, every gap 24 000; Hear on → the cut's hit at **146 539 = round(87 / 29.97 × 48 000) + 12 000 −
+  4 800, exactly**; switched on 1.2 s into the play → the hit at the same 146 539, bed gaps exact; switched off → no hit.
+  Runs: 1 (load ≈ 50) + 3 (`--repeat-each=3`, load 14–21) + 1 (merged build, load ≈ 30): 5 of 5 passed. The hit
+  after a switch on was on its sample in 5 of 5; the bed stayed sample-exact across the switch in 4 of 5 switch-on and
+  3 of 5 switch-off plays — in the others Remotion re-anchored every player (+8 000 … +9 024 samples, see Limits; both
+  in the load ≈ 50 run, one at 14–21); playhead at the pause 109–124 frames (never restarted); longest main-thread task
+  within 1 s after the switch 0–123 ms (long-task timing). Then on the cards: accept cut, accept push, reject boom
+  (stored: rejected; ✓ / ✕ glyphs, 0.35 opacity), high contrast (2 px solid, header too), reduced motion (no ghost
+  animates or transitions); Apply 3 of 4 (a real click) → History gains exactly "Accept E2E sound pass (3 of 4)",
+  stored accepted / rejected, audio clips at 0, 87, 177, the rejected ghost stays; Ctrl+Z → History as before, the
+  cut and push ghosts back **accepted**, boom rejected, the ghost header back, stored pending / rejected.
+  Screenshots looked at (`test-results/e2e-sound-proposal-ghosts/`: ghosts, decided, high-contrast, reduced-motion,
+  applied, undone), and earlier on the dev stack (ports 50101/50102): the card, the hatched rejected ghost, the applied
+  clips on A4, ghosts back after Undo.
+- **Every sound e2e on the merged build** (load ≈ 15–30): `e2e/sound-proposal-ghosts.spec.ts e2e/sound-p0-transport.spec.ts
+  e2e/sound-p0-preview.spec.ts e2e/sound-cues.spec.ts e2e/sound-fill.spec.ts e2e/sound-library.spec.ts
+  e2e/sound-p2-done.spec.ts`: **17 passed** (6.0 min) — the Phase 0 transport and preview checks (primed start, seeks,
+  latency change) unaffected.
+- Investigated (scratch, dev stack): Remotion's "reschedule" the tap reports ≈ 1.0 s into a play is the premount of a
+  clip that starts later (≈ 2.9 s); it happens the same with the clip committed (not a preview effect) and leaves the
+  audio exact. Adding a track by an agent transaction during playback (no proposal at all) makes Remotion re-anchor the
+  bed by ≈ 185 ms in 3 of 3 plays on the dev build: the switch's occasional skip is the same transport behaviour.
+
+#### Limits and notes for WP3.3b
+
+- **Switching while playing** keeps the transport going (never a seek or restart) and the proposal's sounds land on
+  their exact samples, but Remotion may re-anchor every player after a main-thread stall: then the audio skips ≈ 185 ms
+  (8 000–9 100 samples) — in 1 of 5 switch-on and 2 of 5 switch-off plays (load 14–50), and in unswitched plays alike
+  under load (7 of 8 Hear-off plays at load ≈ 50 were replayed for it). It happens the same when an agent adds a track
+  during playback without any proposal. Static A and B are sample-exact. Not fixed here (Remotion's transport; Phase 0
+  close-out limits).
+- Ghost lanes of new tracks are drawn below the last audio track; the audio region's scroll range does not grow for
+  them, so in a short Timeline they can be off-panel until the panel is taller.
+- The preview and the re-validation run on the main thread (dry runs; ≈ 5 ms per item for the re-validation per WP3.1's
+  measurement): several hundred items make each recompute (150 ms after an edit) noticeable.
+- Entering review has no menu or card yet (`proposals.review` via the command catalogue): WP3.3b's proposal card / Review
+  panel call `setActive`. Keymap Review scope, the review bar (◀ ▶, A/B, Accept all, Reject all, Apply, Discard, Exit),
+  the "Undo / Reopen review" toast and grouping by role (fold setup items with `ReviewItem.setup`) are WP3.3b's.
+
 ## Phase 4: mixing
 
 ### Phase 4 → WP4.1a masking solver

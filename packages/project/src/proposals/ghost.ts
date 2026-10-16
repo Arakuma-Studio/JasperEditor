@@ -7,9 +7,9 @@ import { applyTransaction } from '../commands/apply.ts';
 import { substituteKnownRefs } from '../commands/context.ts';
 import { type DocDiff, diffDocuments } from '../commands/diff.ts';
 import type { Issue } from '../commands/types.ts';
-import { createRandomIdSource, looksLikeId } from '../ids.ts';
+import { createRandomIdSource, type IdSource, looksLikeId } from '../ids.ts';
 import type { ProjectDocument } from '../schema/document.ts';
-import { type Proposal, selectedCommands } from './schema.ts';
+import { type Proposal, type ProposalItem, selectedCommands } from './schema.ts';
 import { appliedRefs, dependencyClosure } from './structure.ts';
 import type { ProposalContext } from './validate.ts';
 
@@ -98,6 +98,15 @@ export type ProposalPreview = {
 	applied: string[];
 };
 
+export type PreviewOptions = {
+	/**
+	 * The ids an item's transaction creates its entities with (default `ctx.ids`). A per-item seeded source
+	 * (`createSeededIdSource`) keeps a recomputed preview's entities on the same ids whatever else is applied, so the
+	 * Program monitor keeps playing them (spec 12 §2.5 session preview).
+	 */
+	idsFor?: (item: ProposalItem) => IdSource;
+};
+
 /**
  * Applies the requested items ('undecided' = every pending or stale item) and what they require on top of `doc`,
  * one transaction per item in proposal order with refs carried over, so each ghost belongs to one item. For previews
@@ -109,6 +118,7 @@ export function previewProposal(
 	p: Proposal,
 	itemIds: readonly string[] | 'undecided',
 	ctx: ProposalContext,
+	opts: PreviewOptions = {},
 ): ProposalPreview {
 	const requested =
 		itemIds === 'undecided'
@@ -139,7 +149,7 @@ export function previewProposal(
 				commands,
 			},
 			{
-				ids,
+				ids: opts.idsFor?.(it) ?? ids,
 				now: ctx.now ?? (() => new Date().toISOString()),
 				revision: ctx.revision ?? 0,
 				registries: ctx.registries,

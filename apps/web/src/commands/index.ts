@@ -30,6 +30,7 @@ import { previewCommands } from './previews.ts';
 import { processCommands } from './process.ts';
 import { projectCommands } from './project.ts';
 import { projectFileCommands } from './project-files.ts';
+import { proposalCommands } from './proposals.ts';
 import { registerCommands } from './registry.ts';
 import { rotoCommands } from './roto.ts';
 import { shapeCommands } from './shapes.ts';
@@ -97,6 +98,8 @@ const COMMAND_MODULES: UiCommand[][] = [
 	soundCommands,
 	soundCueCommands,
 	soundDesignCommands,
+	// proposals (spec 12 §2.5): review in the Timeline, Hear proposal
+	proposalCommands,
 ];
 
 let registered = false;

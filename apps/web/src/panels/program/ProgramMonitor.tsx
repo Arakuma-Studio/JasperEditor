@@ -34,6 +34,7 @@ import { installMulticamRecorder } from '../../multicam/recorder.ts';
 import { multicamViewStore } from '../../multicam/state.ts';
 import { usePlaybackPreviews } from '../../previews/hooks.ts';
 import { registerProgramPerf } from '../../previews/perf.ts';
+import { useHeardDocument } from '../../proposals/state.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { threeDViews, viewCamOf } from '../../three-d/view-store.ts';
@@ -134,7 +135,12 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const overlays = useRegistry(programOverlays);
 	const seqId = useSessionState((s) => s.activeSequenceId);
 	// gesture frames reach the Player as often as it can afford (useGestureFrameDocument); commits at once.
-	const drawn = useGestureFrameDocument();
+	const gestureDrawn = useGestureFrameDocument();
+	// spec 12 §2.5: while "Hear proposal" is on, picture AND sound come from the proposal's preview document (never
+	// committed; the session's document and History are untouched). Toggling swaps the Player's document in place:
+	// unchanged clips keep their players, so playback goes on.
+	const heard = useHeardDocument(session);
+	const drawn = heard ?? gestureDrawn;
 	const media = useSessionState((s) => s.media);
 	const autoProxies = useSessionState((s) => s.toggles.useProxies);
 	// gaps (PRJ-8): Toggle Proxies plays attached proxies.

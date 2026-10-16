@@ -4,6 +4,7 @@
 //   GET    …/:proposalId[?revalidate=1]
 //   POST   …/:proposalId/accept      ONE transaction, live into the open editor or headless; policy-gated for agents
 //   POST   …/:proposalId/reject | reopen | note | select
+//   POST   …/:proposalId/applied     editor only: a Redo in the editor re-applied an undone accept (records it)
 //   DELETE …/:proposalId
 // Every change publishes `proposal.changed`.
 import {
@@ -15,6 +16,7 @@ import {
 	type ProposalDeleteResponse,
 	ProposalGetQuerySchema,
 	type ProposalListResponse,
+	ProposalMarkAppliedRequestSchema,
 	ProposalNoteRequestSchema,
 	ProposalRejectRequestSchema,
 	ProposalReopenRequestSchema,
@@ -160,6 +162,21 @@ export default async function proposalRoutes(app: FastifyInstance): Promise<void
 		const r = parseOr400(ProposalSelectRequestSchema, b);
 		return { kind: 'select', itemId: r.itemId, alternative: r.alternative };
 	});
+
+	app.post<PP>(
+		'/api/projects/:projectId/proposals/:proposalId/applied',
+		guarded<PP>(async (req) => {
+			const { projectId, proposalId } = ids(req);
+			const body = parseOr400(ProposalMarkAppliedRequestSchema, req.body ?? {});
+			const out: ProposalDecisionResponse = await svc.markApplied(
+				projectId,
+				proposalId,
+				body,
+				requester(req),
+			);
+			return out;
+		}),
+	);
 
 	app.delete<PP>(
 		'/api/projects/:projectId/proposals/:proposalId',

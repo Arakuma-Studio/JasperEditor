@@ -135,6 +135,21 @@ export const ProposalSelectRequestSchema = z.strictObject({
 });
 export type ProposalSelectRequest = z.infer<typeof ProposalSelectRequestSchema>;
 
+/**
+ * `POST …/:proposalId/applied` (the editor window only): records items as accepted whose accept the user undid and
+ * then redid in History — the document has them again, applied by the editor's Redo (not by the engine), so the
+ * engine only records it (`revision` after the redo, the `refs` the original accept defined). An agent gets
+ * `403 APPROVAL_REQUIRED`; items already accepted are left as they are.
+ */
+export const ProposalMarkAppliedRequestSchema = z.strictObject({
+	itemIds: z.array(ProposalItemIdSchema).min(1).max(PROPOSAL_LIMITS.maxItems),
+	revision: z.number().int().min(0),
+	refs: z
+		.record(z.string().min(1).max(128), z.string().min(1).max(128))
+		.refine((r) => Object.keys(r).length <= PROPOSAL_LIMITS.maxCommands, 'too many refs'),
+});
+export type ProposalMarkAppliedRequest = z.infer<typeof ProposalMarkAppliedRequestSchema>;
+
 export const ProposalDecisionResponseSchema = z.object({
 	proposal: ProposalSchema,
 	/** Items whose state, note or selection changed. */

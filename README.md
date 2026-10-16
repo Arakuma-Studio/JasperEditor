@@ -649,7 +649,9 @@ alternatives?, meta?}]}` validates every item by a dry run (failing ones are sto
 `GET …/proposals[/<proposalId>]` reads them; `POST …/<proposalId>/accept {itemIds: [...] | "all", partial?}` applies
 the items and what they require as one transaction ("Accept <title> (n of m)"); `reject`, `reopen`, `note`, `select`
 and `DELETE` record the review. A client with only the token may accept sound-design proposals only where the user
-allowed it ("Allow agents to apply sound proposals"), otherwise `403 APPROVAL_REQUIRED`.
+allowed it ("Allow agents to apply sound proposals"), otherwise `403 APPROVAL_REQUIRED`. `POST …/<proposalId>/applied
+{itemIds, revision, refs}` is the editor window's own: a Redo of an undone accept records the items accepted again
+(agents get `403 APPROVAL_REQUIRED`).
 `POST /api/sound-design/plan {projectId, sequenceId?, range?, cues?: "auto" | [cueIds], style?: {density, palette,
 sources, respectDialogue, seed, alternatives}, maxCues?, label?}` starts a `sound-design` job (202); its result names the
 proposal it stored (`proposalId`) with a per-cue report (sound, score parts, role, alignment, alternates, skipped cues,

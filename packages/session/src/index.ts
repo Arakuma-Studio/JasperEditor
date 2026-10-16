@@ -4,6 +4,7 @@ export * from './defaults.ts';
 export * from './gesture-frames.ts';
 export * from './history.ts';
 export * from './persistence/index.ts';
+export * from './proposals.ts';
 export * from './selection.ts';
 export * from './session.ts';
 export * from './transport.ts';

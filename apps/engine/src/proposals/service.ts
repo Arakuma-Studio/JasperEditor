@@ -13,6 +13,7 @@ import {
 	createProposal,
 	defaultRegistries,
 	itemAnchors,
+	looksLikeId,
 	markAccepted,
 	type Origin,
 	type ProjectDocument,
@@ -419,6 +420,51 @@ export class ProposalService {
 							: 'selected';
 			this.publish(projectId, next, change, { itemIds: changedIds });
 			return { proposal: next, changed: changedIds };
+		});
+	}
+
+	/**
+	 * The editor's Redo of an accept the user had undone (and the session reopened): the document has the items again,
+	 * so they are recorded as accepted with the revision after the redo and the refs the original accept defined.
+	 * Nothing is applied here. Editor only: an agent could otherwise hide items from review without applying them.
+	 */
+	async markApplied(
+		projectId: string,
+		proposalId: string,
+		req: { itemIds: string[]; revision: number; refs: Record<string, string> },
+		who: Requester,
+	) {
+		if (!who.editor)
+			throw new HttpError(
+				403,
+				'APPROVAL_REQUIRED',
+				'Only the editor window records a redone accept; agents accept with accept_proposal',
+				{ code: 'E_APPROVAL_REQUIRED' },
+			);
+		await this.ensureProject(projectId);
+		return this.locks.run(`${projectId}/${proposalId}`, async () => {
+			const p = await this.load(projectId, proposalId);
+			const known = new Set(p.items.map((it) => it.id));
+			const unknown = req.itemIds.filter((id) => !known.has(id));
+			if (unknown.length)
+				throw new HttpError(404, 'NOT_FOUND', `No item ${unknown[0]} in the proposal`, {
+					code: 'E_NOT_FOUND',
+					errors: unknown
+						.slice(0, 50)
+						.map((id) => ({ code: 'E_NOT_FOUND', message: `No item ${id}`, itemId: id })),
+				});
+			const badRef = Object.entries(req.refs).find(([, v]) => !looksLikeId(v));
+			if (badRef)
+				throw new HttpError(400, 'VALIDATION_FAILED', `Ref ${badRef[0]} does not name an entity id`, {
+					code: 'E_INVALID_PARAM',
+				});
+			const ids = req.itemIds.filter((id) => p.items.find((it) => it.id === id)?.state !== 'accepted');
+			if (ids.length === 0) return { proposal: p, changed: [] };
+			const at = this.now().toISOString();
+			const next = markAccepted(p, ids, { revision: req.revision, refs: req.refs, at });
+			await this.store.put(projectId, next);
+			this.publish(projectId, next, 'accepted', { itemIds: ids, revision: req.revision });
+			return { proposal: next, changed: ids };
 		});
 	}
 
