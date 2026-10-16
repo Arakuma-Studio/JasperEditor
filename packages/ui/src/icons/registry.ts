@@ -45,6 +45,7 @@ import {
 	LibraryBig,
 	Link,
 	List,
+	ListChecks,
 	ListTodo,
 	LoaderCircle,
 	Lock,
@@ -229,6 +230,7 @@ export const ICONS = {
 	'panel.text': Captions,
 	'panel.mediaBrowser': FolderSearch,
 	'panel.soundLibrary': LibraryBig,
+	'panel.review': ListChecks,
 
 	'media.video': Film,
 	'media.image': Image,

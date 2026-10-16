@@ -177,7 +177,7 @@ describe('Variation commands are enabled only where they can act', () => {
 });
 
 describe('A failing sound command reports once (one toast), and fails for agents', () => {
-	it('Fill Unfilled Cues with the library search failing', async () => {
+	it('Fill Unfilled Cues with the plan route failing', async () => {
 		const h = await filled();
 		h.apply([
 			{
@@ -185,7 +185,7 @@ describe('A failing sound command reports once (one toast), and fails for agents
 				cues: [{ frame: 200, kind: 'cut', weight: 'support', types: ['hit'], source: 'user' }],
 			},
 		]);
-		h.fake.client.searchSounds = async () => {
+		(h.fake.client as unknown as { planSoundDesign: () => Promise<never> }).planSoundDesign = async () => {
 			throw new Error('engine offline');
 		};
 		h.toasts.length = 0;

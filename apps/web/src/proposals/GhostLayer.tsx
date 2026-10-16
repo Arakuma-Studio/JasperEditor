@@ -23,8 +23,7 @@ import { createPortal } from 'react-dom';
 import { t } from '../i18n/runtime.ts';
 import type { TrackAreaLayout } from '../panels/timeline/model/layout.ts';
 import { frameToX, type Viewport } from '../panels/timeline/model/viewport.ts';
-import { inContextStore, playTimelineWindow } from '../sound/in-context.ts';
-import { soundLibraryPrefs } from '../sound/prefs.ts';
+import { applyReview, playWithHear } from './actions.ts';
 import {
 	GHOST_STATE_LABELS,
 	type GhostItem,
@@ -82,26 +81,7 @@ export function playItem(
 	seq: Sequence,
 	item: Pick<GhostItem, 'start' | 'end' | 'label'>,
 ): void {
-	const was = controller.getState().hear;
-	controller.setHear(true);
-	const fps = seq.settings.frameRate.num / seq.settings.frameRate.den;
-	const span = fps > 0 ? Math.max(0, (item.end - item.start) / fps) : 0;
-	playTimelineWindow(session, seq, {
-		center: item.start,
-		returnTo: Math.round(session.transport.getState().frame),
-		title: item.label,
-		before: soundLibraryPrefs.get().preRollSec,
-		after: span + 1,
-	});
-	if (was) return;
-	let started = inContextStore.getState().active;
-	const off = inContextStore.subscribe((s) => {
-		if (s.active) started = true;
-		if (started && !s.active && !s.loading) {
-			off();
-			controller.setHear(false);
-		}
-	});
+	playWithHear(session, controller, seq, item);
 }
 
 export function ProposalGhostLayer(p: GhostLayerProps) {
@@ -657,17 +637,8 @@ function GhostCard(props: {
 						disabled={readOnly}
 						disabledReason={readOnly ? t('The project is read-only') : undefined}
 						onClick={async (e) => {
-							const r = await controller.apply({ trusted: e.nativeEvent.isTrusted });
-							if (!r.ok) props.toast(r.code === 'E_UNTRUSTED' ? 'error' : 'warning', r.message);
-							else {
-								props.toast(
-									'info',
-									r.stale.length
-										? t('{0} — {1} stale items left in review', r.label ?? t('Applied'), r.stale.length)
-										: (r.label ?? t('Applied')),
-								);
-								props.onClose();
-							}
+							const r = await applyReview(props.session, { trusted: e.nativeEvent.isTrusted });
+							if (r.ok) props.onClose();
 						}}
 						data-ghost-action="apply"
 					>

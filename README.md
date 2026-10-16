@@ -651,14 +651,18 @@ alternatives?, meta?}]}` validates every item by a dry run (failing ones are sto
 `GET …/proposals[/<proposalId>]` reads them; `POST …/<proposalId>/accept {itemIds: [...] | "all", partial?}` applies
 the items and what they require as one transaction ("Accept <title> (n of m)"); `reject`, `reopen`, `note`, `select`
 and `DELETE` record the review. A client with only the token may accept sound-design proposals only where the user
-allowed it ("Allow agents to apply sound proposals"), otherwise `403 APPROVAL_REQUIRED`. `POST …/<proposalId>/applied
+allowed it ("Allow agents to apply sound proposals"), otherwise `403 APPROVAL_REQUIRED`. Reading a proposal again and
+again without `?revalidate=1` (what `wait_for_proposal` does) marks the agent as waiting for the review: the list's
+`waiting: {agent, since}` and the event `proposal.changed` with `change: "waiting"` tell the editor, which shows "<agent>
+is waiting for your review" on the proposal card and the review bar. `POST …/<proposalId>/applied
 {itemIds, revision, refs}` is the editor window's own: a Redo of an undone accept records the items accepted again
 (agents get `403 APPROVAL_REQUIRED`).
 `POST /api/sound-design/plan {projectId, sequenceId?, range?, cues?: "auto" | [cueIds], style?: {density, palette,
-sources, respectDialogue, seed, alternatives, roomGlue, stopBefore, build, delivery}, maxCues?, label?}` starts a
-`sound-design` job (202); its result names the proposal it stored (`proposalId`) with a per-cue report (sound, score
-parts, role, alignment, alternates, skipped cues, each sound's gain solved against the bed with what limited it, and the
-room glue / delivery / stop-before / build items the style asked for).
+sources, cueSources, respectDialogue, seed, alternatives, roomGlue, stopBefore, build, delivery}, maxCues?, label?}`
+(`cueSources`: where derived cues come from, the Suggest Cues… sources; default all) starts a `sound-design` job (202);
+its result names the proposal it stored (`proposalId`) with a per-cue report (sound, score parts, role, alignment,
+alternates, skipped cues, each sound's gain solved against the bed with what limited it, and the room glue / delivery /
+stop-before / build items the style asked for).
 `POST /api/sound-design/rebalance {projectId, sequenceId?, clipIds?, range?, delivery?, mode?: "propose" | "apply",
 userGains?: "keep" | "replace", label?}` starts a `sound-design` job (202) that measures every sound effect against the
 bed (rendered per cue cluster) and solves its gain with the masking solver; the result reports per clip the gain, target

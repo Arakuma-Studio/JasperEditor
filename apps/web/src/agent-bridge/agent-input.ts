@@ -56,6 +56,30 @@ export function agentInputActive(at = now()): boolean {
 	return at - lastAgentInputAt < AGENT_INPUT_GRACE_MS && lastUserInputAt < lastAgentInputAt;
 }
 
+/** How recent a real key press or click must be for a command it ran to count as the user's own gesture. */
+export const USER_GESTURE_MS = 1500;
+
+/** Starts noting real (trusted) user input early, so `userGestureActive` can answer for the first gesture. */
+export function trackUserInput(): void {
+	listen();
+}
+
+/**
+ * Whether the command running now was started by the user's own key press or click (a keyboard shortcut, a menu, the
+ * palette): a trusted input within `USER_GESTURE_MS` and no agent live-UI input in flight. Used where only a trusted
+ * user gesture may act (Apply of a proposal, spec 12 §2.5): an agent's `ui_key` / `ui_command` never counts.
+ */
+export function userGestureActive(at = now()): boolean {
+	listen();
+	if (agentInputActive(at)) return false;
+	return at - lastUserInputAt < USER_GESTURE_MS;
+}
+
+/** Tests: as if the user just pressed a key. */
+export function markUserInputForTests(): void {
+	lastUserInputAt = now();
+}
+
 /** The session guard: transactions that need approval are refused while agent input is active. */
 export function agentUiTxGuard(tx: SessionTxInput): Issue | null {
 	if (tx.origin !== 'user' || tx.dryRun || !agentInputActive()) return null;

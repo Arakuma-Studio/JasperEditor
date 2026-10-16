@@ -21,6 +21,10 @@ export const ProposalCountsSchema = z.object(
 export type ProposalCountsJson = z.infer<typeof ProposalCountsSchema>;
 
 /** One row of `GET /api/projects/:projectId/proposals` (no commands). */
+/** Who is waiting for the review of a proposal (inferred by the engine from an agent polling it). */
+export const ProposalWaitingSchema = z.object({ agent: z.string(), since: z.string() });
+export type ProposalWaiting = z.infer<typeof ProposalWaitingSchema>;
+
 export const ProposalSummarySchema = z.object({
 	id: z.string(),
 	projectId: z.string(),
@@ -38,6 +42,11 @@ export const ProposalSummarySchema = z.object({
 	counts: ProposalCountsSchema,
 	/** Nothing left to decide (every item accepted, rejected or invalid). */
 	decided: z.boolean(),
+	/**
+	 * An agent is waiting for the review (its `wait_for_proposal` is polling the proposal right now): the agent's name
+	 * and since when. Absent / null: nobody is waiting.
+	 */
+	waiting: ProposalWaitingSchema.nullable().optional(),
 });
 export type ProposalSummary = z.infer<typeof ProposalSummarySchema>;
 
@@ -171,6 +180,8 @@ export const PROPOSAL_CHANGES = [
 	'deleted',
 	'expired',
 	'evicted',
+	/** An agent started or stopped waiting for the review (`waiting`); nothing in the proposal changed. */
+	'waiting',
 ] as const;
 
 /** Event `proposal.changed` (engine `/events`, scoped to the project). */
@@ -186,5 +197,7 @@ export const ProposalChangedEventSchema = z.object({
 	itemIds: z.array(z.string()).optional(),
 	/** Document revision after an accept. */
 	revision: z.number().int().optional(),
+	/** With `waiting`: who waits (null: nobody any more). */
+	waiting: ProposalWaitingSchema.nullable().optional(),
 });
 export type ProposalChangedEvent = z.infer<typeof ProposalChangedEventSchema>;

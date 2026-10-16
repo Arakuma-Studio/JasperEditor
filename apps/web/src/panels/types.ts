@@ -26,6 +26,7 @@ export const PANEL_KINDS = [
 	'essentialGraphics',
 	'mediaBrowser',
 	'soundLibrary',
+	'review',
 ] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];
 
@@ -68,5 +69,7 @@ export interface PanelDefinition {
 	dockWith?: PanelKind;
 	/** One line for the agent's UI catalog (S05 §17.6). */
 	agentDescription: string;
+	/** A count shown on the panel's tab (e.g. items left to review); renders nothing when there is none. */
+	badge?: ComponentType;
 	component: ComponentType<PanelProps>;
 }

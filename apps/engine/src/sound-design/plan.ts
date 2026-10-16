@@ -34,6 +34,7 @@ import {
 	type ClipSfx,
 	type CUE_ALIGNS,
 	type CueDensity,
+	type CueDeriveSource,
 	cueInputFromDerived,
 	type DerivedCue,
 	defaultRegistries,
@@ -139,6 +140,8 @@ export type PlanStyle = {
 	build: boolean;
 	/** Phase 4: a delivery preset as a setup item (null: none). */
 	delivery: SoundDelivery | null;
+	/** Sources of derived cues (undefined: every source). */
+	cueSources?: CueDeriveSource[];
 };
 
 export type PlanPick = {
@@ -177,6 +180,7 @@ export function resolveStyle(req: SoundDesignPlanRequest, seq: Sequence): PlanSt
 		stopBefore: st.stopBefore ?? false,
 		build: st.build ?? false,
 		delivery: st.delivery ?? null,
+		...(st.cueSources?.length ? { cueSources: [...new Set(st.cueSources)] } : {}),
 	};
 }
 
@@ -443,6 +447,7 @@ export function collectPlanCues(
 			...(range ? { range } : {}),
 			density: style.density,
 			respectDialogue: style.respectDialogue,
+			...(style.cueSources ? { sources: style.cueSources } : {}),
 			...(opts.mgTemplates ? { mgTemplates: opts.mgTemplates } : {}),
 		});
 		for (const w of derived.warnings) warnings.push({ code: w.code, message: w.message });

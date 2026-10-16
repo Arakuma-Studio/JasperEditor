@@ -250,7 +250,8 @@ export class ProposalsController {
 		if (this.disposed || e.projectId !== this.session.projectId) return;
 		this.scheduleList();
 		const s = this.store.getState();
-		if (e.proposalId !== s.activeId) return;
+		// an agent started / stopped waiting for the review: only the list says so (the proposal did not change)
+		if (e.change === 'waiting' || e.proposalId !== s.activeId) return;
 		if (e.change === 'deleted' || e.change === 'expired' || e.change === 'evicted') {
 			this.store.setState({
 				lastError: { code: 'E_PROPOSAL_GONE', message: `The proposal under review was ${e.change}` },
@@ -279,6 +280,17 @@ export class ProposalsController {
 			const err = errorOf(e);
 			this.store.setState({ status: 'error', error: err.message });
 			return fail(err.code, err.message);
+		}
+	}
+
+	/** Reads any proposal of the project as stored (e.g. for a card's counts); null when it cannot be read. */
+	async read(proposalId: string): Promise<Proposal | null> {
+		const engine = this.engine;
+		if (!engine) return null;
+		try {
+			return (await engine.getProposal(this.session.projectId, proposalId)).proposal;
+		} catch {
+			return null;
 		}
 	}
 

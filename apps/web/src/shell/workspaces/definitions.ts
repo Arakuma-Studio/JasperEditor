@@ -197,15 +197,21 @@ const captions: WorkspaceDefinition = {
 };
 
 /**
- * Sound Design (spec 12 §2.7; the 9th built-in, Alt+Shift+9): the Sound Library with Project, Media Browser, Markers,
- * History and Jobs on the left; Program and the Timeline strip in the centre; Essential Sound, Properties and the
- * mixers on the right. (Review and Sound Check join the left group when their phases land.)
+ * Sound Design (spec 12 §2.7; the 9th built-in, Alt+Shift+9): the Sound Library with Project and Media Browser on the
+ * left, Review with Markers, History and Jobs below it; Program and the Timeline strip in the centre; Essential Sound,
+ * Properties and the mixers on the right. (Sound Check joins the Review group when Phase 5 lands.)
  */
 const soundDesign: WorkspaceDefinition = {
 	id: 'sound-design',
 	name: 'Sound Design',
 	layout: row(
-		[0.24, g(['soundLibrary', 'project', 'mediaBrowser', 'markers', 'history', 'jobs'], 'soundLibrary')],
+		[
+			0.24,
+			col(
+				[0.5, g(['soundLibrary', 'project', 'mediaBrowser'], 'soundLibrary')],
+				['fill', g(['review', 'markers', 'history', 'jobs'], 'review')],
+			),
+		],
 		['fill', col([0.55, g(['program'])], ['fill', TIMELINE_STRIP()])],
 		[
 			0.24,

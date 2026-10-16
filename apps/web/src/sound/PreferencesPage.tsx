@@ -2,6 +2,7 @@
 // only) with a licence declaration per folder, enable / disable, rescan and remove; the library status and reindexing
 // (an engine `sound-index` job, also listed in the Jobs panel); and the audition options (audition on hover, loop,
 // auto-play, volume) and row density. Folder changes are validated by the engine and saved with "Save Folders".
+// Proposals: "Allow agents to apply sound proposals" for the active sequence (WP3.3b).
 import {
 	SOUND_ROOT_LICENSES,
 	type SoundLibraryStatus,
@@ -9,10 +10,13 @@ import {
 	type SoundRootsPutRequest,
 } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
-import { requiresAttribution } from '@jasper/project';
+import { readSoundDesignSettings, requiresAttribution } from '@jasper/project';
+import type { SessionState } from '@jasper/session';
+import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { Button, Checkbox, ScrubbyNumber, Select, TextField, Toggle } from '@jasper/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { t } from '../i18n/runtime.ts';
+import { EMPTY_SESSION_STORE } from '../panels/session-store.ts';
 import { getDesktopBridge } from '../runtime/platform.ts';
 import { PrefGroup, PrefRow } from '../shell/preferences/GeneralPage.tsx';
 import { useEngine } from '../state/engine.tsx';
@@ -431,6 +435,8 @@ export function SoundLibraryPreferencesPage() {
 				</PrefRow>
 			</PrefGroup>
 
+			<AgentApplyPreference />
+
 			<PrefGroup title="Display">
 				<Checkbox
 					checked={p.density === 'compact'}
@@ -439,5 +445,68 @@ export function SoundLibraryPreferencesPage() {
 				/>
 			</PrefGroup>
 		</div>
+	);
+}
+
+/**
+ * "Allow agents to apply sound proposals" (spec 12 §0, §2.7 Preferences; WP3.3b): per sequence, stored in the project
+ * (`soundDesign.settings.agentsMayApply`, default off) with `soundDesign.setSettings` as the user's own undoable edit.
+ * Off, an agent's `accept_proposal` is refused (E_APPROVAL_REQUIRED) and only the user applies, in review. An agent can
+ * never turn it on by itself: the engine asks the user on an approval card (the guard in `@jasper/project`).
+ */
+export function AgentApplyPreference() {
+	const session = useSessionOrNull();
+	const seqId = useStoreSelector(
+		session?.store ?? EMPTY_SESSION_STORE,
+		(s: SessionState | null) => s?.activeSequenceId ?? null,
+	);
+	const on = useStoreSelector(session?.store ?? EMPTY_SESSION_STORE, (s: SessionState | null) => {
+		const seq = seqId ? s?.document.sequences[seqId] : undefined;
+		return (
+			readSoundDesignSettings(
+				(seq as { soundDesign?: { settings?: unknown } } | undefined)?.soundDesign?.settings,
+			).agentsMayApply === true
+		);
+	});
+	const name = useStoreSelector(session?.store ?? EMPTY_SESSION_STORE, (s: SessionState | null) => {
+		if (!s || !seqId) return null;
+		const item = Object.values(s.document.items).find(
+			(i) => i.kind === 'sequence' && (i as { sequenceId?: string }).sequenceId === seqId,
+		);
+		return item?.name ?? null;
+	});
+	const readOnly = useStoreSelector(
+		session?.store ?? EMPTY_SESSION_STORE,
+		(s: SessionState | null) => !!s?.readOnly,
+	);
+	const [error, setError] = useState<string | null>(null);
+	const set = (v: boolean) => {
+		if (!session || !seqId) return;
+		const r = session.apply({
+			label: v ? t('Allow Agents to Apply Sound Proposals') : t('Stop Agents Applying Sound Proposals'),
+			origin: 'user',
+			sequenceId: seqId,
+			commands: [{ type: 'soundDesign.setSettings', sequenceId: seqId, agentsMayApply: v } as never],
+		});
+		setError(r.ok ? null : (r.errors[0]?.message ?? t('Edit failed')));
+	};
+	return (
+		<PrefGroup title="Proposals" testId="prefs-sound-proposals">
+			<Checkbox
+				checked={on}
+				disabled={!session || !seqId || readOnly}
+				onCheckedChange={set}
+				label={
+					name
+						? t('Allow agents to apply sound proposals in “{0}”', name)
+						: t('Allow agents to apply sound proposals (open a sequence first)')
+				}
+			/>
+			<p className="text-pr-small text-pr-muted">
+				Off (the default): agents only propose; you apply in review. Saved with the sequence; an agent cannot
+				turn it on by itself.
+			</p>
+			{error ? <p className="text-pr-small text-pr-warning">{error}</p> : null}
+		</PrefGroup>
 	);
 }

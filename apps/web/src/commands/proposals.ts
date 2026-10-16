@@ -1,15 +1,33 @@
-// Proposal review commands (spec 12 §2.5 / §2.7 "Review", P3-R4 / P3-R6 ghost part): start reviewing a proposal (its
-// ghosts appear on the Timeline and "Hear proposal" becomes available), leave the review, and "Hear proposal" (A/B:
-// the Program monitor plays the proposal's preview document instead of the sequence). Agents reach them through the
-// UI command catalogue; the decisions and Apply are the user's (Apply needs a trusted gesture: the ghost card and,
-// with WP3.3b, the review bar). Also registers the Program overlay chip "Hearing proposal".
+// Proposal review commands (spec 12 §2.5 / §2.7 "Review", P3-R4 / P3-R6): start reviewing a proposal (its ghosts
+// appear on the Timeline and "Hear proposal" becomes available), leave the review, "Hear proposal" (A/B: the Program
+// monitor plays the proposal's preview document instead of the sequence), and the Review keymap scope (WP3.3b):
+// Enter accept, Backspace / Delete reject, U clear, A A/B, Space ▶ the item in context, Shift+Space the whole range,
+// Ctrl+Enter Apply, Esc exit, Up / Down move between items. Agents reach the review, navigation, decisions and
+// playback through the UI command catalogue; Apply and Discard are the user's (Apply needs a trusted key press or click:
+// an agent's `ui_key` / `ui_command` is refused). Also registers the Program overlay chip "Hearing proposal".
 import { z } from 'zod';
+import { trackUserInput, userGestureActive } from '../agent-bridge/agent-input.ts';
 import { t } from '../i18n/runtime.ts';
+import {
+	acceptAll,
+	applyReview,
+	cycleAlternative,
+	decide,
+	discardReview,
+	exitReview,
+	openReview,
+	playReviewItem,
+	playReviewRange,
+	rejectAll,
+	stepReviewItem,
+} from '../proposals/actions.ts';
 import { registerProposalUi } from '../proposals/register.tsx';
+import { reviewCounts } from '../proposals/review.ts';
 import { proposalsFor } from '../proposals/state.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 registerProposalUi();
+trackUserInput();
 
 const ReviewArgs = z
 	.object({
@@ -27,9 +45,39 @@ const HearArgs = z
 	.strict()
 	.optional();
 
+const ItemArgs = z
+	.object({
+		/** The item (default: the one the review is on, i.e. the last selected). */
+		itemId: z.string().min(1).max(64).optional(),
+	})
+	.strict()
+	.optional();
+
+const StepArgs = z
+	.object({
+		/** `time` (default): timeline order (◀ ▶); `list`: the Review panel's order (↑ ↓). */
+		order: z.enum(['time', 'list']).optional(),
+	})
+	.strict()
+	.optional();
+
+const AltArgs = z
+	.object({
+		itemId: z.string().min(1).max(64).optional(),
+		/** 1 (default): next alternate; -1: previous. */
+		dir: z.union([z.literal(1), z.literal(-1)]).optional(),
+	})
+	.strict()
+	.optional();
+
 const hasSession = (ctx: CommandCtx) => !!ctx.session;
 const reviewing = (ctx: CommandCtx) =>
 	!!ctx.session && proposalsFor(ctx.session).getState().activeId !== null;
+const writableReview = (ctx: CommandCtx) => reviewing(ctx) && !ctx.session!.getState().readOnly;
+const itemsOf = (ctx: CommandCtx) => (ctx.session ? proposalsFor(ctx.session).getState().items : []);
+const onItem = (ctx: CommandCtx) => writableReview(ctx) && itemsOf(ctx).some((it) => !it.setup);
+const reveal = (ctx: CommandCtx) => (f: number) => ctx.services.get('timelineViewport')?.scrollToFrame(f);
+const notReviewing = () => t('No proposal is under review');
 
 export const proposalCommands: UiCommand[] = [
 	{
@@ -60,8 +108,7 @@ export const proposalCommands: UiCommand[] = [
 				ctx.ui.toast({ kind: 'info', message: t('No proposal to review') });
 				return;
 			}
-			const r = await c.setActive(id);
-			if (!r.ok) ctx.ui.toast({ kind: 'warning', message: t('Cannot review the proposal: {0}', r.message) });
+			await openReview(session, id);
 		},
 	},
 	{
@@ -74,7 +121,7 @@ export const proposalCommands: UiCommand[] = [
 		when: reviewing,
 		disabledReason: () => t('No proposal is under review'),
 		run: (ctx) => {
-			if (ctx.session) proposalsFor(ctx.session).exit();
+			if (ctx.session) exitReview(ctx.session);
 		},
 	},
 	{
@@ -94,6 +141,160 @@ export const proposalCommands: UiCommand[] = [
 			const c = proposalsFor(ctx.session);
 			if (on === undefined) c.toggleHear();
 			else c.setHear(on);
+		},
+	},
+	{
+		id: 'proposals.acceptItem',
+		label: 'Accept Proposal Item',
+		description:
+			'Accept an item of the proposal under review (default: the current one) and what it requires; it is applied with the others by Apply',
+		scope: 'review',
+		agentExposed: true,
+		argsSchema: ItemArgs,
+		when: onItem,
+		disabledReason: notReviewing,
+		run: async (ctx, args) => {
+			const id = (args as z.infer<typeof ItemArgs>)?.itemId;
+			if (ctx.session) await decide(ctx.session, 'accept', id ? [id] : undefined);
+		},
+	},
+	{
+		id: 'proposals.rejectItem',
+		label: 'Reject Proposal Item',
+		description: 'Reject an item of the proposal under review (default: the current one); the agent reads it',
+		scope: 'review',
+		agentExposed: true,
+		argsSchema: ItemArgs,
+		when: onItem,
+		disabledReason: notReviewing,
+		run: async (ctx, args) => {
+			const id = (args as z.infer<typeof ItemArgs>)?.itemId;
+			if (ctx.session) await decide(ctx.session, 'reject', id ? [id] : undefined);
+		},
+	},
+	{
+		id: 'proposals.clearItem',
+		label: 'Clear Proposal Item Decision',
+		description: 'Put an item of the proposal under review back to pending (default: the current one)',
+		scope: 'review',
+		agentExposed: true,
+		argsSchema: ItemArgs,
+		when: onItem,
+		disabledReason: notReviewing,
+		run: async (ctx, args) => {
+			const id = (args as z.infer<typeof ItemArgs>)?.itemId;
+			if (ctx.session) await decide(ctx.session, 'clear', id ? [id] : undefined);
+		},
+	},
+	{
+		id: 'proposals.acceptAll',
+		label: 'Accept All Proposal Items',
+		description:
+			'Accept every pending or stale item of the proposal under review (rejected items stay rejected)',
+		scope: 'global',
+		agentExposed: true,
+		when: (ctx) =>
+			writableReview(ctx) &&
+			itemsOf(ctx).some((it) => !it.setup && (it.state === 'pending' || it.state === 'stale')),
+		disabledReason: () => t('Nothing left to accept'),
+		run: async (ctx) => {
+			if (ctx.session) await acceptAll(ctx.session);
+		},
+	},
+	{
+		id: 'proposals.rejectAll',
+		label: 'Reject All Proposal Items',
+		description: 'Reject every item of the proposal under review that is not applied yet',
+		scope: 'global',
+		agentExposed: true,
+		when: (ctx) =>
+			writableReview(ctx) && reviewCounts(itemsOf(ctx)).open + reviewCounts(itemsOf(ctx)).accepted > 0,
+		disabledReason: () => t('Nothing left to reject'),
+		run: async (ctx) => {
+			if (ctx.session) await rejectAll(ctx.session);
+		},
+	},
+	...([1, -1] as const).map(
+		(dir): UiCommand => ({
+			id: dir > 0 ? 'proposals.nextItem' : 'proposals.prevItem',
+			label: dir > 0 ? 'Next Proposal Item' : 'Previous Proposal Item',
+			description:
+				'Go to the next / previous item of the proposal under review: its ghost is selected and the playhead moves to its anchor',
+			scope: 'review',
+			agentExposed: true,
+			repeat: true,
+			argsSchema: StepArgs,
+			when: (ctx) => reviewing(ctx) && itemsOf(ctx).some((it) => !it.setup),
+			disabledReason: notReviewing,
+			run: (ctx, args) => {
+				if (ctx.session)
+					stepReviewItem(ctx.session, dir, (args as z.infer<typeof StepArgs>)?.order ?? 'time', reveal(ctx));
+			},
+		}),
+	),
+	{
+		id: 'proposals.cycleAlternative',
+		label: 'Next Proposal Alternate',
+		description:
+			'Swap an item of the proposal under review to its next (dir 1) or previous (dir -1) alternate (default: the current item); the choice is stored for the agent',
+		scope: 'review',
+		agentExposed: true,
+		argsSchema: AltArgs,
+		when: onItem,
+		disabledReason: notReviewing,
+		run: async (ctx, args) => {
+			const a = args as z.infer<typeof AltArgs>;
+			if (ctx.session) await cycleAlternative(ctx.session, a?.dir ?? 1, a?.itemId);
+		},
+	},
+	{
+		id: 'proposals.playItem',
+		label: 'Play Proposal Item in Context',
+		description:
+			'Play the current item of the proposal under review in context: pre-roll, the item and 1 s after, with "Hear proposal" on',
+		scope: 'review',
+		agentExposed: true,
+		argsSchema: ItemArgs,
+		when: (ctx) => reviewing(ctx) && itemsOf(ctx).some((it) => !it.setup),
+		disabledReason: notReviewing,
+		run: (ctx, args) => {
+			if (ctx.session) playReviewItem(ctx.session, (args as z.infer<typeof ItemArgs>)?.itemId);
+		},
+	},
+	{
+		id: 'proposals.playRange',
+		label: 'Play Proposal Range',
+		description:
+			'Play the whole proposal under review with "Hear proposal" on: from 2 s before its first item to the end of its last',
+		scope: 'review',
+		agentExposed: true,
+		when: reviewing,
+		disabledReason: notReviewing,
+		run: (ctx) => {
+			if (ctx.session) playReviewRange(ctx.session);
+		},
+	},
+	{
+		id: 'proposals.apply',
+		label: 'Apply Accepted Proposal Items',
+		description:
+			'Apply the accepted items of the proposal under review as ONE undoable step. Only your own key press or click applies: agents cannot run it',
+		scope: 'review',
+		when: (ctx) => writableReview(ctx) && itemsOf(ctx).some((it) => it.state === 'accepted'),
+		disabledReason: () => t('Accept items first'),
+		run: async (ctx) => {
+			if (ctx.session) await applyReview(ctx.session, { trusted: userGestureActive() });
+		},
+	},
+	{
+		id: 'proposals.discard',
+		label: 'Discard Proposal',
+		description: 'Delete the proposal under review (after a confirmation); nothing in the sequence changes',
+		scope: 'global',
+		when: writableReview,
+		disabledReason: notReviewing,
+		run: async (ctx) => {
+			if (ctx.session) await discardReview(ctx.session);
 		},
 	},
 ];
