@@ -1,9 +1,9 @@
 // Spec 12 Phase 2 "Done when", end to end in the built app on the Phase 2 fixture (cuts, a push transition, a keyframed
 // logo, a typewriter title, a lower third and an `sfx:` marker; the same commands as the MCP test's fixture):
 // Sequence ▸ Sound Design ▸ Suggest Cues… finds each event with a reason, and the engine route (what MCP
-// find_sound_cues calls) derives the same cues from the same document → Fill Unfilled Cues (one History entry) →
-// Next Variation ×2 (one entry; one undo restores the sequence exactly; redo) → Add Layer… → undo / redo of the whole
-// fill → export (the planner's path: the lower third rules out native when the fframes renderer is not built), where
+// find_sound_cues calls) derives the same cues from the same document → Fill Unfilled Cues (a proposal since WP3.3b;
+// Accept all + Apply = one History entry) → Next Variation ×2 (one entry; one undo restores the sequence exactly;
+// redo) → Add Layer… → undo / redo of the whole fill → export (the planner's path: the lower third rules out native when the fframes renderer is not built), where
 // the aligned point of every peak- or start-aligned fill is located in the decoded mix (normalised cross-correlation
 // with the registered media, varispeed like its clip) and must sit on its cue frame.
 // Screenshots go to test-results/e2e-sound-p2-done; the measured offsets are printed and attached.
@@ -213,10 +213,21 @@ test('Phase 2 done-when: suggest (= engine route), fill, vary, layer, undo/redo,
 	const n0 = (await appliedLabels(page)).length;
 	const beforeFill = await sequence(page);
 	await soundDesignMenu('Fill Unfilled Cues');
+	// since WP3.3b it proposes: review opens, nothing changes until Accept all + Apply (one History entry)
+	await expect(page.getByTestId('review-bar')).toBeVisible({ timeout: 180_000 });
+	expect(await appliedLabels(page)).toHaveLength(n0);
+	await page.getByTestId('review-bar-accept-all').click();
+	await expect(page.getByTestId('review-bar-apply')).toBeEnabled();
+	await page.getByTestId('review-bar-apply').click();
 	await expect
 		.poll(async () => (await appliedLabels(page)).at(-1), { timeout: 180_000 })
-		.toMatch(/^Fill Unfilled Cues \(\d+\)$/);
+		.toMatch(/^Accept Fill Unfilled Cues \(\d+ of \d+\)$/);
 	expect(await appliedLabels(page)).toHaveLength(n0 + 1);
+	await page
+		.getByTestId('toast')
+		.filter({ hasText: /^Applied/ })
+		.getByRole('button', { name: 'Dismiss' })
+		.click();
 	let seq = await sequence(page);
 	const after = Object.values(seq.soundDesign!.cues!);
 	const unfilled = after.filter((c) => !(c.placedClipIds ?? []).length);
