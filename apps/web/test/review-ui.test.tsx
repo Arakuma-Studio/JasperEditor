@@ -507,7 +507,9 @@ describe('Preferences ▸ Sound Library ▸ Proposals', () => {
 			});
 		});
 		const settings = (
-			f.session.getCommitted().sequences[f.seqId] as { soundDesign?: { settings?: { agentsMayApply?: boolean } } }
+			f.session.getCommitted().sequences[f.seqId] as {
+				soundDesign?: { settings?: { agentsMayApply?: boolean } };
+			}
 		).soundDesign?.settings;
 		expect(settings?.agentsMayApply).not.toBe(true);
 		expect(f.session.getState().history.entries.length).toBe(before);

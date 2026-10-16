@@ -398,7 +398,6 @@ export class ProposalsController {
 				preview: null,
 				stale: {},
 				staleProblems: {},
-				staleProblems: {},
 			});
 		const r = await this.fetchActive();
 		if (!r.ok && this.store.getState().activeId === proposalId) this.exit();

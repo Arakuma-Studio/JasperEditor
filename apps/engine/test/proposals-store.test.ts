@@ -137,7 +137,10 @@ describe('ProposalStore', () => {
 		let now = new Date('2026-10-02T00:00:00.000Z');
 		const busy = new Set<string>();
 		const { store, removed } = setup({ now: () => now, max: 2, inUse: (_pid, id) => busy.has(id) });
-		const decided = (p: Proposal): Proposal => ({ ...p, items: p.items.map((i) => ({ ...i, state: 'rejected' as const })) });
+		const decided = (p: Proposal): Proposal => ({
+			...p,
+			items: p.items.map((i) => ({ ...i, state: 'rejected' as const })),
+		});
 		const old = decided(proposal({ updatedAt: '2026-10-01T00:00:00.000Z' }));
 		const other = decided(proposal({ updatedAt: '2026-10-01T00:00:01.000Z' }));
 		await store.create(PID, old);
