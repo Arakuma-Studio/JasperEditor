@@ -9431,5 +9431,6 @@
   "Something it uses was deleted": "Algo que usa se eliminó",
   "{0} (forced)": "{0} (forzado)",
   "Also allows agents to apply sound proposals in this sequence without your review": "También permite que los agentes apliquen propuestas de sonido en esta secuencia sin tu revisión",
-  "Also runs what needs your approval: {0}": "También ejecuta lo que necesita tu aprobación: {0}"
+  "Also runs what needs your approval: {0}": "También ejecuta lo que necesita tu aprobación: {0}",
+  "Updating the preview…": "Actualizando la vista previa…"
 }

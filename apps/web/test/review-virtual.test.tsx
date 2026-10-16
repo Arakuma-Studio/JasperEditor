@@ -111,6 +111,23 @@ describe(`Review panel with ${N} items`, { timeout: 300_000 }, () => {
 		expect(list.querySelector(`[data-review-row="${midId}"]`)?.getAttribute('data-review-state')).toBe(
 			'accepted',
 		);
+		// a document change: the preview is rebuilt in slices; meanwhile the panel says so, then the new one replaces it
+		await act(async () => {
+			session.apply({
+				label: 'edit',
+				origin: 'user',
+				sequenceId: seqId,
+				commands: [{ type: 'marker.add', frame: 3, name: 'x' }] as never[],
+			});
+			timers.shift()?.(); // the debounce: the build starts, its first slice runs
+		});
+		expect(c.getState().previewing).toBe(true);
+		expect(screen.getByTestId('review-previewing').textContent).toBe('Updating the preview…');
+		const stalePreview = c.getState().preview;
+		await act(async () => flush());
+		expect(c.getState().previewing).toBe(false);
+		expect(screen.queryByTestId('review-previewing')).toBeNull();
+		expect(c.getState().preview).not.toBe(stalePreview);
 		if (process.env.REVIEW_VIRTUAL_OUT)
 			writeFileSync(
 				process.env.REVIEW_VIRTUAL_OUT,

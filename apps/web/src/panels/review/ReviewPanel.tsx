@@ -104,6 +104,8 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 	const selection = useProposals(session, (s) => s.selection);
 	const busy = useProposals(session, (s) => s.busy);
 	const hear = useProposals(session, (s) => s.hear);
+	// a large proposal's preview (ghosts, what A/B plays) is built over several frames: say so meanwhile
+	const previewing = useProposals(session, (s) => s.previewing);
 	const readOnly = useSessionState((s) => s.readOnly);
 	const activeSeq = useSessionState((s) => s.activeSequenceId);
 	const seqId = proposal?.sequenceId ?? activeSeq ?? '';
@@ -297,6 +299,11 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 								</span>
 							) : null}
 							{counts.applied ? <span>{t('{0} applied', counts.applied)}</span> : null}
+							{previewing ? (
+								<span role="status" data-testid="review-previewing">
+									{t('Updating the preview…')}
+								</span>
+							) : null}
 						</div>
 						{activeSummary?.waiting ? (
 							<div className="text-pr-agent" data-testid="review-waiting">
