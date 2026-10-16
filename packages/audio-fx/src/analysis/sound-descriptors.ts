@@ -23,8 +23,14 @@
 // onset count over at most `MAX_ONSET_SECONDS` of the active span, and the spectrum over at most `MAX_SPECTRAL_FRAMES`
 // evenly spaced frames, so analysis time is bounded.
 import { LoudnessMeter } from '@jasper/audio-dsp';
-import { Fft } from '../core/fft.ts';
-import { hann } from '../core/stft.ts';
+import {
+	FramePower,
+	fftLength,
+	MAX_BAND_FRAMES,
+	OCTAVE_BAND_CENTRES_HZ,
+	octaveBandsFromPower,
+	welchPower,
+} from './bands.ts';
 
 /** Bumped whenever a definition or quantisation changes (library indexes re-analyse older entries). */
 export const SOUND_DESCRIPTORS_VERSION = 1;
@@ -33,16 +39,13 @@ export const MAX_ANALYSIS_SECONDS = 120;
 /** Longest stretch of the active span searched for onsets (seconds). */
 export const MAX_ONSET_SECONDS = 30;
 /** Most spectral frames averaged (evenly spaced over the active span beyond that). */
-export const MAX_SPECTRAL_FRAMES = 1500;
+export const MAX_SPECTRAL_FRAMES = MAX_BAND_FRAMES;
 /** Most channels accepted. */
 export const MAX_SOUND_CHANNELS = 32;
 /** Accepted sample rates (Hz). */
 export const MIN_SOUND_SAMPLE_RATE = 1000;
 export const MAX_SOUND_SAMPLE_RATE = 768_000;
-/** Octave band centres of `octaveBandsDb` (Hz); each band spans centre/√2 … centre·√2. */
-export const OCTAVE_BAND_CENTRES_HZ: readonly number[] = /* @__PURE__ */ Object.freeze([
-	125, 250, 500, 1000, 2000, 4000, 8000,
-]);
+/** Octave band centres of `octaveBandsDb` (Hz): `OCTAVE_BAND_CENTRES_HZ`, exported from `./bands.ts`. */
 /** Level reported for an empty band or silence (dB). */
 export const DESCRIPTOR_FLOOR_DB = -120;
 /** Highest level a descriptor reports (dB / LUFS): huge finite input (±3.4e38) would read ≈ +730. */
@@ -255,64 +258,6 @@ function crossingRef(env: Envelope, ref: number, j0: number, j1: number, thrDb: 
 
 // ── spectrum ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** FFT length ≈ `seconds` at the rate, a power of two in [256, 32768]. */
-function fftLength(sr: number, seconds: number): number {
-	let n = 256;
-	while (n < sr * seconds && n < 32768) n *= 2;
-	return n;
-}
-
-/**
- * One-sided power spectra of frame `[start, start + N)` (zeros outside the input) for every channel, added into
- * `acc` (scaled so that the bins of one frame sum to the frame's windowed mean square). Channels are transformed
- * in pairs with one complex FFT.
- */
-class FramePower {
-	readonly n: number;
-	private readonly fft: Fft;
-	private readonly win: Float64Array;
-	private readonly re: Float64Array;
-	private readonly im: Float64Array;
-	private readonly scale: number;
-
-	constructor(n: number) {
-		this.n = n;
-		this.fft = new Fft(n);
-		this.win = hann(n);
-		this.re = new Float64Array(n);
-		this.im = new Float64Array(n);
-		let w2 = 0;
-		for (let i = 0; i < n; i++) w2 += this.win[i]! * this.win[i]!;
-		this.scale = 1 / (n * w2);
-	}
-
-	add(ch: Float32Array[], len: number, start: number, acc: Float64Array): void {
-		const { n, re, im, win } = this;
-		const half = n / 2;
-		for (let c = 0; c < ch.length; c += 2) {
-			const a = ch[c]!;
-			const b = c + 1 < ch.length ? ch[c + 1]! : null;
-			for (let i = 0; i < n; i++) {
-				const s = start + i;
-				const inside = s >= 0 && s < len;
-				re[i] = inside ? a[s]! * win[i]! : 0;
-				im[i] = inside && b ? b[s]! * win[i]! : 0;
-			}
-			this.fft.forward(re, im);
-			for (let k = 0; k <= half; k++) {
-				const m = (n - k) % n;
-				// A = (X[k] + conj X[n−k]) / 2, B = (X[k] − conj X[n−k]) / 2i
-				const ar = (re[k]! + re[m]!) / 2;
-				const ai = (im[k]! - im[m]!) / 2;
-				const br = (im[k]! + im[m]!) / 2;
-				const bi = (re[m]! - re[k]!) / 2;
-				const mult = k === 0 || k === half ? 1 : 2;
-				acc[k] += mult * this.scale * (ar * ar + ai * ai + (b ? br * br + bi * bi : 0));
-			}
-		}
-	}
-}
-
 type Spectral = {
 	centroidHz: number;
 	rolloff85Hz: number;
@@ -335,22 +280,11 @@ function spectral(pr: Prepared, s0: number, s1: number): Spectral {
 	const { ch, n: len, sr } = pr;
 	if (ch.length === 0 || s1 <= s0)
 		return { ...EMPTY_SPECTRAL, octaveBandsDb: [...EMPTY_SPECTRAL.octaveBandsDb] };
-	const N = fftLength(sr, 0.04);
-	const hop = N / 2;
-	const fp = new FramePower(N);
-	const acc = new Float64Array(N / 2 + 1);
-	// frames centred from s0 to s1 (inclusive of both edges)
-	const first = s0 - hop;
-	const count = Math.max(1, Math.ceil((s1 - first) / hop));
-	const used = Math.min(count, MAX_SPECTRAL_FRAMES);
-	for (let f = 0; f < used; f++) {
-		const idx = used === count ? f : Math.round((f * (count - 1)) / Math.max(1, used - 1));
-		fp.add(ch, len, first + idx * hop, acc);
-	}
-	// mean square per bin over the frames, per channel
-	const norm = 1 / (used * ch.length);
-	for (let k = 0; k < acc.length; k++) acc[k] *= norm;
-	const binHz = sr / N;
+	// Welch frames centred from s0 to s1 (inclusive of both edges); mean square per bin over frames and channels
+	const w = welchPower(ch, len, sr, s0, s1);
+	if (!w) return { ...EMPTY_SPECTRAL, octaveBandsDb: [...EMPTY_SPECTRAL.octaveBandsDb] };
+	const acc = w.power;
+	const binHz = w.binHz;
 	let total = 0;
 	let low = 0;
 	let high = 0;
@@ -395,20 +329,7 @@ function spectral(pr: Prepared, s0: number, s1: number): Spectral {
 			flatness = Math.exp(logSum / cnt) / (linSum / cnt);
 		}
 	}
-	const octaveBandsDb = OCTAVE_BAND_CENTRES_HZ.map((fc) => {
-		const lo = fc / Math.SQRT2;
-		const hi = fc * Math.SQRT2;
-		// each bin stands for [f − Δ/2, f + Δ/2): it counts with the share of that interval inside the band
-		let e = 0;
-		const k0 = Math.max(0, Math.floor(lo / binHz - 0.5));
-		const k1 = Math.min(acc.length - 1, Math.ceil(hi / binHz + 0.5));
-		for (let k = k0; k <= k1; k++) {
-			const a = Math.max(lo, (k - 0.5) * binHz);
-			const b = Math.min(hi, (k + 0.5) * binHz);
-			if (b > a) e += (acc[k]! * (b - a)) / binHz;
-		}
-		return Math.max(DESCRIPTOR_FLOOR_DB, dbPow(e));
-	});
+	const octaveBandsDb = octaveBandsFromPower(acc, binHz);
 	return {
 		centroidHz: powF / total,
 		rolloff85Hz: rolloff,
