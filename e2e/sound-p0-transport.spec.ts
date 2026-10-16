@@ -288,10 +288,11 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 	// not compared with one: the wait hides that lag.)
 	expect(p1.offset).toBeGreaterThan(-0.01);
 	// A wait longer than Remotion's start lag tells a picture that waits apart from one that does not (without the
-	// wait it would lead by ≈ wait − lag, 0.1–0.2 s): eight more Hard Limiters on the Mix, ten in all (208 ms).
+	// wait it would lead by ≈ wait − lag, 35–110 ms): four more Hard Limiters on the Mix, six in all (125 ms; ten crashed
+	// the loaded host's renderer now and then).
 	const more = await transact(
 		page,
-		Array.from({ length: 8 }, (_, i) => ({
+		Array.from({ length: 4 }, (_, i) => ({
 			type: 'effect.add',
 			target: 'master',
 			effectId: 'jasper.audio.hard-limiter',
@@ -301,18 +302,17 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 	);
 	expect(more.ok, JSON.stringify(more)).toBe(true);
 	const extra = more.ok ? Object.values(more.refs ?? {}) : [];
-	expect(extra).toHaveLength(8);
+	expect(extra).toHaveLength(4);
 	try {
-		const w2 = (10 * HL20) / SR;
+		const w2 = (6 * HL20) / SR;
 		const p2 = await primed(w2);
-		console.log('picture − audio', p1.offset, 'with a 208 ms wait', p2.offset);
+		console.log('picture − audio', p1.offset, 'with a 125 ms wait', p2.offset);
 		test
 			.info()
 			.annotations.push({ type: 'sync', description: JSON.stringify({ w1: p1.offset, w2: p2.offset }) });
 		expect(p2.offset).toBeGreaterThan(-0.01);
-		// and not a second wait after it (≈ 0.2 s): on a loaded host the picture's own start and the sampling lag by up
-		// to ≈ 0.1 s
-		expect(p2.offset).toBeLessThan(0.15);
+		// and not a second wait after it (≥ 0.125 s more)
+		expect(p2.offset).toBeLessThan(w2);
 	} finally {
 		await transact(
 			page,
