@@ -135,6 +135,8 @@ const REF_WINDOW: Record<'peak' | 'start' | 'end', [number, number]> = {
 	start: [0, 0.25],
 	end: [0.25, 0],
 };
+/** A clip that ends less than this after its aligned point (s) cuts the sound it is placed for. */
+const CUT_MIN_SEC = 0.02;
 /** Reference decodes at once. */
 const DECODE_CONCURRENCY = 4;
 /** "Audible" for the measurable-loudness rule: a 10 ms hop over BS.1770's absolute gate level (−70 dBFS). */
@@ -470,11 +472,27 @@ export async function checkSequence(
 	// sync captures (the SFX stem around each filled cue)
 	const captures: Capture[] = [];
 	const unmeasured = new Map<SfxRow, string>();
+	const cut = new Map<SfxRow, { afterMs: number; trimFrames: number }>();
 	for (const row of rows) {
 		const sfx = row.sfx;
 		if (!row.cue || !sfx?.placement) continue;
 		const kind = row.cue.kind as CueKind;
 		if (kind === 'silence') continue;
+		// the clip ends at (or before) its aligned point while the sound goes on: what the cue is for does not play
+		if (row.alignedFrame !== null && sfx.placement.align !== 'end') {
+			const durF = (doc.media?.[row.clip.mediaId] as { probe?: { durationFlicks?: number } } | undefined)
+				?.probe?.durationFlicks;
+			const rate = row.clip.speed?.rate || 1;
+			const clipEnd = row.clip.start + row.clip.duration;
+			const afterSec = (clipEnd - row.alignedFrame) / fpsNum;
+			const soundAfterSec = fin(durF) ? (durF - sfx.placement.peakFlicks) / FLICKS_PER_SECOND / rate : 0;
+			if (afterSec < CUT_MIN_SEC && soundAfterSec > afterSec + CUT_MIN_SEC && fin(durF)) {
+				const needEnd =
+					row.clip.start + Math.ceil(((durF - row.clip.sourceIn) / rate / FLICKS_PER_SECOND) * fpsNum - 1e-9);
+				cut.set(row, { afterMs: r1(afterSec * 1000), trimFrames: Math.max(1, needEnd - clipEnd) });
+				continue;
+			}
+		}
 		if (!playing.has(row.clip.id)) {
 			unmeasured.set(row, 'it is not in the mix (disabled, muted track or offline media)');
 			continue;
@@ -914,7 +932,11 @@ export async function checkSequence(
 							: `The solver's gain does not resolve it: ${level.reason}`,
 				);
 			};
-			const min = row.info.weight === 'ambient' ? null : MASKED_MIN_LIFT_DB[row.info.weight];
+			// layers of a cue are judged with the cue's first layer; ambient beds sit under by design (decisions)
+			const min =
+				row.info.weight === 'ambient' || row.sfx?.role === 'layer'
+					? null
+					: MASKED_MIN_LIFT_DB[row.info.weight];
 			if (min !== null && cur.liftDb !== null && cur.liftDb < min) {
 				row.codes.add('MASKED');
 				const fix = gainFix(at.liftDb !== null && at.liftDb >= min);
@@ -1025,6 +1047,44 @@ export async function checkSequence(
 			clipIds: [row.clip.id],
 			cueId: row.cue.id,
 		};
+		const c = cut.get(row);
+		if (c) {
+			row.codes.add('OUT_OF_SYNC');
+			const cmd = { type: 'clip.trim', clipId: row.clip.id, edge: 'out', deltaFrames: c.trimFrames };
+			// the trim must really lengthen the clip (it is clamped where the media ends inside the next frame)
+			const run = dryRun(doc, seq.id, [cmd], env.registries);
+			const after = run.ok
+				? (run.doc.sequences[seq.id]?.clips[row.clip.id] as { duration?: number } | undefined)?.duration
+				: undefined;
+			const ok = fin(after) && after >= row.clip.duration + c.trimFrames;
+			issues.add({
+				...base,
+				severity: 'error',
+				...(ok
+					? {}
+					: {
+							measured: {
+								afterAlignedMs: c.afterMs,
+								missingFrames: c.trimFrames,
+								measuredIn: 'document',
+								cause: 'the media ends inside the next frame: the clip cannot be longer (whole frames)',
+							},
+						}),
+				message: soundCheckMessage(
+					'syncCut',
+					row.info.title,
+					c.afterMs,
+					tc(row.clip.start + row.clip.duration),
+				),
+				...(ok
+					? { measured: { afterAlignedMs: c.afterMs, missingFrames: c.trimFrames, measuredIn: 'document' } }
+					: {}),
+				...(ok
+					? { fix: commandFix(projectId, soundCheckMessage('fixUncut', c.trimFrames), [cmd], true) }
+					: {}),
+			});
+			continue;
+		}
 		if (why) {
 			// not measurable in the mix: judge by the document
 			if (metaOffMs !== null && Math.abs(metaOffMs) > tolMs + 0.5) {
@@ -1699,7 +1759,8 @@ export async function checkSequence(
 			correlation: r.correlation,
 			gainDb: r2(r.info.gainDb),
 			liftDb: r.liftDb,
-			minLiftDb: r.info.weight === 'ambient' ? null : MASKED_MIN_LIFT_DB[r.info.weight],
+			minLiftDb:
+				r.info.weight === 'ambient' || r.sfx?.role === 'layer' ? null : MASKED_MIN_LIFT_DB[r.info.weight],
 			targetLiftDb: r.targetLiftDb,
 			peakOverBedLu: r.peakOverBedLu,
 			bedCapLu: r.bedCapLu,

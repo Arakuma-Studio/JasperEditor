@@ -131,12 +131,28 @@ export async function soundVisual(
 	let gain = 0;
 	let applied = false;
 	let reason: string | undefined;
+	const fromJob = (() => {
+		const job = env.checkJob;
+		if (job?.kind !== 'sound-check' || job.state !== 'succeeded') return null;
+		const r = SoundCheckResultSchema.safeParse(job.result);
+		return r.success && r.data.sequenceId === seq.id ? r.data.report : null;
+	})();
+	const mixHash = mixFingerprint(doc, seq.id);
 	if (!loud?.enabled) reason = 'Loudness normalisation is off: the curves are the mix as it is';
 	else if (
+		fromJob &&
+		fromJob.mixHash === mixHash &&
+		fromJob.wholeSequence &&
+		fromJob.loudness.normalization.gainDb !== null
+	) {
+		// the check measured this mix: its normalisation gain is the export's
+		gain = fromJob.loudness.normalization.gainDb;
+		applied = true;
+	} else if (
 		!analysis ||
 		typeof analysis.integratedLufs !== 'number' ||
 		!Number.isFinite(analysis.integratedLufs) ||
-		analysis.mixHash !== mixFingerprint(doc, seq.id)
+		analysis.mixHash !== mixHash
 	)
 		reason =
 			'The Mix normalises, but its loudness analysis is missing or out of date: the curves are before normalisation';
@@ -174,14 +190,19 @@ export async function soundVisual(
 		const th = Math.max(vadThreshold(db), VAD_FLOOR_DBFS);
 		for (let i = 0; i < db.length; i++) if (db[i]! >= th) mark[i] = 1;
 	}
+	// voiced runs, gaps under 0.3 s bridged (pauses between syllables), as the check does
+	const runs: [number, number][] = [];
 	for (let i = 0, a = -1; i <= rangeHops; i++) {
 		const on = i < rangeHops && mark[i] === 1;
 		if (on && a < 0) a = i;
 		else if (!on && a >= 0) {
-			speech.push([r3((rangeStart + a * hop) / sr), r3((rangeStart + i * hop) / sr)]);
+			const last = runs[runs.length - 1];
+			if (last && a - last[1] <= 30) last[1] = i;
+			else runs.push([a, i]);
 			a = -1;
 		}
 	}
+	for (const [a, b] of runs) speech.push([r3((rangeStart + a * hop) / sr), r3((rangeStart + b * hop) / sr)]);
 	// motion: the fastest keyframed layer per frame
 	const derived = deriveCues(doc, seq.id, {
 		density: 'rich',
@@ -233,23 +254,20 @@ export async function soundVisual(
 		});
 	// findings of a check job over the range
 	const issues: SoundVisualResponse['issues'] = [];
-	const job = env.checkJob;
-	if (job && job.kind === 'sound-check' && job.state === 'succeeded') {
-		const r = SoundCheckResultSchema.safeParse(job.result);
-		if (r.success && r.data.sequenceId === seq.id)
-			for (const i of r.data.report.issues) {
-				const s = i.range?.start ?? i.frame;
-				const e = i.range?.end ?? (i.frame !== undefined ? i.frame + 1 : undefined);
-				if (s === undefined || e === undefined || s >= range.end || e <= range.start) continue;
-				issues.push({
-					id: i.id,
-					code: i.code,
-					severity: i.severity,
-					...(i.frame !== undefined ? { frame: i.frame } : {}),
-					...(i.range ? { range: i.range } : {}),
-					text: i.message.text,
-				});
-			}
+	if (fromJob) {
+		for (const i of fromJob.issues) {
+			const s = i.range?.start ?? i.frame;
+			const e = i.range?.end ?? (i.frame !== undefined ? i.frame + 1 : undefined);
+			if (s === undefined || e === undefined || s >= range.end || e <= range.start) continue;
+			issues.push({
+				id: i.id,
+				code: i.code,
+				severity: i.severity,
+				...(i.frame !== undefined ? { frame: i.frame } : {}),
+				...(i.range ? { range: i.range } : {}),
+				text: i.message.text,
+			});
+		}
 	}
 	return {
 		projectId: req.projectId,

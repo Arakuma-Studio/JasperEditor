@@ -252,6 +252,7 @@ export function drawSoundTimeline(
 		);
 	// findings as flags
 	drawText(img, 'check', 4, flagY + 7, DIM);
+	let labelEnd = -1;
 	const issues = (Array.isArray(v.issues) ? v.issues.slice(0, 500) : []).map((i) => {
 		const sev = (
 			['error', 'warning', 'info'].includes(i.severity) ? i.severity : 'info'
@@ -269,7 +270,11 @@ export function drawSoundTimeline(
 				vline(img, x, flagY, flagY + flagH - 1, SEVERITY[sev]);
 				fillRect(img, x, flagY, 6, 5, SEVERITY[sev]);
 				const label = i.code.replace(/_/g, ' ').slice(0, 14);
-				if (x + 8 + textWidth(label) < W) drawText(img, label, x + 8, flagY + 1, SEVERITY[sev]);
+				// labels never overlap: a flag too close to the previous label keeps its mark only
+				if (x + 8 + textWidth(label) < W && x + 8 > labelEnd) {
+					drawText(img, label, x + 8, flagY + 1, SEVERITY[sev]);
+					labelEnd = x + 8 + textWidth(label) + 4;
+				}
 				vline(img, x, curveY, curveY + curveH - 1, SEVERITY[sev], true, 0.5);
 			}
 		}

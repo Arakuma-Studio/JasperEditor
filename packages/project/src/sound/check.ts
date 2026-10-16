@@ -225,6 +225,8 @@ export const SOUND_CHECK_MESSAGES = {
 	syncMetadataOnly:
 		'{0} plays {1} ms off its cue at {2} though it is placed on it (the mix renders it there)',
 	syncUnmeasurable: '{0}: its timing cannot be measured ({1})',
+	syncCut:
+		'{0} is cut {1} ms after its aligned point by the end of its clip at {2}: the sound it is placed for does not play',
 	maskedHero:
 		'Hero sound {0} at {1} clears the bed by only {2} dB in its dominant band ({3} Hz; at least {4} dB)',
 	maskedSupport:
@@ -258,6 +260,7 @@ export const SOUND_CHECK_MESSAGES = {
 	listenDensest: 'Busiest moment: {0} sound effects within one second',
 	listenPassing: 'A cue that passes every check: {0}',
 	fixAlign: 'Align its peak to the cue',
+	fixUncut: 'Lengthen the clip by {0} frames so the whole sound plays',
 	fixGain: 'Set its gain to {0} dB (masking solver)',
 	fixRebalance: 'Rebalance the sound effects against the bed (masking solver)',
 	fixLoudness: 'Normalise the mix to {0} LUFS / {1} dBTP',

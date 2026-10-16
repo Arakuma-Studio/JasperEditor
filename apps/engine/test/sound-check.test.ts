@@ -73,7 +73,7 @@ async function waitJob(r: { statusCode: number; body: string; json(): unknown })
 async function check(
 	body: Record<string, unknown>,
 	name: string,
-	headers = AGENT_H,
+	headers: Record<string, string> = AGENT_H,
 ): Promise<{ job: EngineJob; result: SoundCheckResult; report: SoundCheckReport }> {
 	const t0 = Date.now();
 	const job = await waitJob(await post('/api/sound-design/check', body, headers));
@@ -251,6 +251,18 @@ describe('Sound Check (real engine)', { timeout: 600_000 }, () => {
 		expect(again.verdict, describeIssues(again)).toBe('pass');
 	});
 
+	it('a clip that ends at its peak → OUT_OF_SYNC (the sound is cut); lengthening it resolves it', async () => {
+		const fx = buildCheckDoc(media);
+		const clip = fx.doc().sequences[fx.b.seqId]!.clips[fx.ids.clipB]!;
+		// the click aligned at frame 90 starts at 89: one frame long, it ends on its peak
+		fx.b.tx([{ type: 'clip.trim', clipId: fx.ids.clipB, edge: 'out', deltaFrames: 1 - clip.duration }]);
+		const { issue } = await seededDefect('cut', fx, 'OUT_OF_SYNC', (i) => i.cueId === fx.ids.cueB, {
+			expectSafe: true,
+		});
+		expect(issue.message.key).toMatch(/^\{0\} is cut \{1\} ms after its aligned point/);
+		expect(issue.fix!.commands![0]).toMatchObject({ type: 'clip.trim', edge: 'out' });
+	});
+
 	it('masked hit under loud music → MASKED; the solver gain fix lifts it', async () => {
 		const fx = buildCheckDoc(media);
 		fx.b.tx([
@@ -356,6 +368,20 @@ describe('Sound Check (real engine)', { timeout: 600_000 }, () => {
 		const { report: s } = await check({ projectId: sp, range: { start: 60, end: 90 } }, 'short silent');
 		expect(s.verdict).not.toBe('pass');
 		expect(codes(s)).toEqual(expect.arrayContaining(['LOUDNESS', 'SILENCE']));
+	});
+
+	it('an empty sequence is never a pass: silent, nothing to measure', async () => {
+		const b = buildCheckDoc(media);
+		const empty = { ...b.doc(), sequences: { ...b.doc().sequences } };
+		const seqId = Object.keys(empty.sequences)[0]!;
+		empty.sequences[seqId] = { ...empty.sequences[seqId]!, clips: {}, soundDesign: undefined } as never;
+		const { report } = await check({ projectId: seed(empty) }, 'empty');
+		expect(report.verdict).toBe('warn');
+		expect(report.issues.map((i) => i.message.key)).toContain(
+			'The mix is silent: there is no loudness to measure',
+		);
+		expect(report.loudness.integratedLufs).toBeNull();
+		expect(report.events).toEqual([]);
 	});
 
 	it('a cue whose marker moved → STALE_CUE; resync resolves it', async () => {

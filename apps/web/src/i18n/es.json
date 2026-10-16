@@ -9640,5 +9640,7 @@
   "The same sound \"{0}\" plays twice in a row, at {1} and at {2}": "El mismo sonido \"{0}\" suena dos veces seguidas, en {1} y en {2}",
   "True peak {0} dBTP is over the {1} ceiling of {2} dBTP": "El pico real de {0} dBTP supera el techo de {1} de {2} dBTP",
   "Two heroes {0} s apart at {1} and {2} (at most one per {3} s at {4} density, never within 0.5 s)": "Dos sonidos principales separados {0} s en {1} y {2} (como máximo uno cada {3} s con densidad {4}, nunca a menos de 0,5 s)",
-  "Worst finding: {0}": "Peor hallazgo: {0}"
+  "Worst finding: {0}": "Peor hallazgo: {0}",
+  "{0} is cut {1} ms after its aligned point by the end of its clip at {2}: the sound it is placed for does not play": "{0} se corta {1} ms después de su punto de alineación por el final de su clip en {2}: el sonido para el que se colocó no suena",
+  "Lengthen the clip by {0} frames so the whole sound plays": "Alargar el clip {0} fotogramas para que suene el sonido completo"
 }
