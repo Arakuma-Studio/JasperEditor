@@ -31,6 +31,7 @@ import {
 	libraryDescriptorIssue,
 	readLibraryProvenance,
 } from '../../sound/provenance.ts';
+import { sfxGainOwner } from '../../sound/level.ts';
 import { isSfxClip } from '../../sound/sfx-clip.ts';
 import { isSoundTypeId, SOUND_TYPE_IDS } from '../../sound/taxonomy.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../../time.ts';
@@ -1131,6 +1132,36 @@ function applyGains(doc: DDoc, cmd: CommandOf<'soundDesign.applyGains'>, h: Hand
 	return { clips: out };
 }
 
+function setAutoGain(doc: DDoc, cmd: CommandOf<'soundDesign.setAutoGain'>, h: HandlerContext) {
+	const only = cmd.sequenceId !== undefined ? h.sequence(doc, cmd.sequenceId).id : null;
+	const out: { clipId: string; owner: 'default' | 'solver' | 'user' }[] = [];
+	for (const [i, id] of [...new Set(cmd.clipIds)].entries()) {
+		const path = ['clipIds', String(i)];
+		const sid = h.sequenceOfClip(doc, id);
+		if (sid === null) h.fail('E_NOT_FOUND', `Clip not found: ${id}`, { path });
+		if (only !== null && sid !== only) h.fail('E_NOT_FOUND', `Clip not found in ${only}: ${id}`, { path });
+		const { seq, clip: c } = h.clip(doc, id);
+		if (c.kind !== 'audio') h.fail('E_INVALID_PARAM', `${id} is not an audio clip`, { path });
+		if (!isSfxClip(c))
+			h.fail(
+				'E_INVALID_PARAM',
+				`${id} is not a sound effect (Essential Sound type SFX, or a placed sound): auto gain applies to sound effects`,
+				{ path },
+			);
+		const clip = c as DAudio;
+		const track = findTrackIn(seq, clip.trackId);
+		if (!track) h.fail('E_NOT_FOUND', `Track not found: ${clip.trackId}`, { path });
+		assertUnlocked(track.track, h);
+		const level = clip.sfx?.level as (Draft<SfxLevel> & { manual?: boolean }) | undefined;
+		if (level) {
+			if (cmd.auto) delete level.manual;
+			else level.manual = true;
+		}
+		out.push({ clipId: c.id, owner: sfxGainOwner(clip) });
+	}
+	return { clips: out };
+}
+
 export const soundHandlers = {
 	'media.setLibraryInfo': setLibraryInfo,
 	'soundCue.add': addCues,
@@ -1144,6 +1175,7 @@ export const soundHandlers = {
 	'soundDesign.setSettings': setSettings,
 	'soundDesign.setPeak': setPeak,
 	'soundDesign.applyGains': applyGains,
+	'soundDesign.setAutoGain': setAutoGain,
 } satisfies HandlerMap;
 
 export type { Clip, DClip };

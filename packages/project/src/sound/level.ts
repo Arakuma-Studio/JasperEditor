@@ -135,16 +135,17 @@ export const SFX_LEVEL_MATCH_DB = 0.005;
 /**
  * Who owns a placed sound's gain (Phase 2 verification B, Phase 4 WP4.1b): `default` (placement's default level) or
  * `solver` (the masking solver, `soundDesign.applyGains`) while the clip's gain still equals the recorded
- * `sfx.level.gainDb`; `user` when there is no level or the gain was changed since. Rebalancing replaces `default` and
- * `solver` gains and keeps `user` gains unless asked to replace them; a swap or a role change refreshes `default` and
- * `solver` gains to the new default. Never throws.
+ * `sfx.level.gainDb`; `user` when there is no level, the gain was changed since, or Auto gain was turned off
+ * (`level.manual`, `soundDesign.setAutoGain`). Rebalancing replaces `default` and `solver` gains and keeps `user` gains
+ * unless asked to replace them; a swap or a role change refreshes `default` and `solver` gains to the new default.
+ * Never throws.
  */
 export function sfxGainOwner(clip: {
 	gainDb?: unknown;
-	sfx?: { level?: { by?: unknown; gainDb?: unknown } | null } | null;
+	sfx?: { level?: { by?: unknown; gainDb?: unknown; manual?: unknown } | null } | null;
 }): 'default' | 'solver' | 'user' {
 	const level = clip.sfx?.level;
-	if (!level) return 'user';
+	if (!level || level.manual === true) return 'user';
 	const { by, gainDb } = level;
 	if ((by !== 'default' && by !== 'solver') || !fin(gainDb) || !fin(clip.gainDb)) return 'user';
 	return Math.abs(clip.gainDb - gainDb) <= SFX_LEVEL_MATCH_DB ? by : 'user';

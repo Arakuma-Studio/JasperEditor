@@ -372,6 +372,13 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 			},
 		},
 	},
+	// Auto gain off (Essential Sound ▸ Sound Design ▸ Auto gain): the current gain becomes the user's own, so a
+	// rebalance or a delivery preset leaves it alone; auto: true hands it back to the default / solver level.
+	'soundDesign.setAutoGain': {
+		type: 'soundDesign.setAutoGain',
+		clipIds: [{ clipAt: { track: 'A1', at: 30 } }],
+		auto: false,
+	},
 	// Phase 4 mixing (spec 12 §2.4): a music dip on clips (minimum with their Volume; times in sequence flicks)…
 	'audio.volumeDip': {
 		type: 'audio.volumeDip',
