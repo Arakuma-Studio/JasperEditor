@@ -4727,8 +4727,12 @@ the AC-25 integrity fuzz (2 000 runs; more than RUNS / 50 accepted transactions 
   spoken words" (dialogue ranges are clip spans without a transcript, WP3.2) and placed as support — as designed; its
   export also measured −14.0 LUFS / −1.4 dBTP. The pictures, plan reports and logs are in
   `/var/lib/orquester/tmp/p4-dips-room-run/` (generated media: not committed).
-- `pnpm typecheck`, `pnpm lint` (Biome, tokens, anime, layers, assets), `node scripts/i18n.mjs --check` (9 375 strings):
-  pass after merging the integration branch (WP3.3b).
+- After merging the integration branch (WP3.3b): `pnpm lint` (Biome, tokens, anime, layers, assets) and `node
+  scripts/i18n.mjs --check` (9 375 strings) pass; `pnpm typecheck` passed every package up to `apps/web`, whose check the
+  workspace run's 50 min timeout cut at load ≈ 115 — `pnpm --filter @jasper/web typecheck` alone then passed.
+  `pnpm vitest run packages/audio-fx packages/api packages/engine-client apps/web/test/i18n.test.ts`: 374 of 377 passed;
+  the 3 failures are timing tests at load ≈ 110 (WP4.1a's "2000 events in under 50 ms": 131 ms; two Music Remix
+  analyses over their 120 s timeout) in code this package does not touch (`masking.ts`, `remix.ts`).
 
 #### Limits and notes for the next packages
 
@@ -4746,8 +4750,8 @@ the AC-25 integrity fuzz (2 000 runs; more than RUNS / 50 accepted transactions 
 - A Bézier volume segment crossing a dip edge is rebuilt from 5 ms samples; the build filter's cutoff lags its keys by
   one 32-sample design interval (0.7 ms) while gliding.
 - `soloTailSec` caps a sound's reverb tail at 6 s; a room with a longer decay measures the first 6 s.
-- `packages/audio-fx` "solves 2000 events in under 50 ms" (WP4.1a's timing test) measured 50.6 ms once at load ≈ 90 here
-  and passed on rerun; it is a load-sensitive timing check, not changed.
+- `packages/audio-fx` timing tests (WP4.1a's "solves 2000 events in under 50 ms", the Remix analyses) fail on this host at
+  load ≳ 90 (50.6 ms and 131 ms measured; timeouts); they are load-sensitive checks of code this package does not change.
 
 ## Phase 5: Sound Check
 
