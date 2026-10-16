@@ -608,6 +608,39 @@ describe('accept policy: agents vs the editor window', () => {
 		expect(reopened.statusCode).toBe(200);
 	});
 
+	it('an agent polling a proposal (wait_for_proposal) is announced and listed as waiting; the editor and revalidating reads are not', async () => {
+		const app = await secured();
+		const { projectId, seqId } = seed(app);
+		const p = await create(app, projectId, draft(seqId), AGENT_H);
+		const ev = events(app);
+		const read = (h: Record<string, string>, q = '') =>
+			app.inject({ method: 'GET', url: `${base(projectId)}/${p.id}${q}`, headers: h });
+		const listed = async () =>
+			((await app.inject({ method: 'GET', url: base(projectId), headers: EDITOR_H })).json() as {
+				proposals: { id: string; waiting?: unknown }[];
+			}).proposals.find((x) => x.id === p.id)?.waiting ?? null;
+		// the editor's own reads and an agent's get_proposal (revalidating) are not a wait
+		for (let i = 0; i < 3; i++) expect((await read(EDITOR_H)).statusCode).toBe(200);
+		for (let i = 0; i < 3; i++) expect((await read(AGENT_H, '?revalidate=1')).statusCode).toBe(200);
+		expect(await listed()).toBeNull();
+		expect(ev.filter((e) => (e.payload as { change: string }).change === 'waiting')).toEqual([]);
+		// one plain read: not yet; the second (a poll) → waiting, announced once
+		await read(AGENT_H);
+		expect(await listed()).toBeNull();
+		await read(AGENT_H);
+		await read(AGENT_H);
+		const waiting = await listed();
+		expect(waiting).toMatchObject({ agent: 'sound-agent' });
+		expect(Date.parse((waiting as { since: string }).since)).toBeGreaterThan(0);
+		const w = ev.filter((e) => (e.payload as { change: string }).change === 'waiting');
+		expect(w.map((e) => e.payload)).toEqual([
+			{ projectId, proposalId: p.id, change: 'waiting', waiting },
+		]);
+		// deleting it ends the wait without an announcement
+		await app.inject({ method: 'DELETE', url: `${base(projectId)}/${p.id}`, headers: EDITOR_H });
+		expect(ev.filter((e) => (e.payload as { change: string }).change === 'waiting')).toHaveLength(1);
+	});
+
 	it('lets an agent accept where agentsMayApply is on; other features keep refusing', async () => {
 		const app = await secured();
 		const { projectId, seqId, file } = seed(app, { agentsMayApply: true });

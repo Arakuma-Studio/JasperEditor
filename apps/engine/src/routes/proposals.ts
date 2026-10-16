@@ -6,7 +6,8 @@
 //   POST   …/:proposalId/reject | reopen | note | select
 //   POST   …/:proposalId/applied     editor only: a Redo in the editor re-applied an undone accept (records it)
 //   DELETE …/:proposalId
-// Every change publishes `proposal.changed`.
+// Every change publishes `proposal.changed`. An agent reading a proposal again and again without revalidating (MCP
+// `wait_for_proposal`) is "waiting for the review": announced as `proposal.changed` `waiting` and listed as `waiting`.
 import {
 	ProposalAcceptRequestSchema,
 	type ProposalAcceptResponse,
@@ -31,6 +32,7 @@ import { agentNameOf } from '../agent/user-approval.ts';
 import { isProjectId } from '../projects/store.ts';
 import { ProposalService } from '../proposals/service.ts';
 import { ProposalStore, proposalNotFound } from '../proposals/store.ts';
+import { ProposalWaitWatch } from '../proposals/waiting.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 
 type P = { Params: { projectId: string } };
@@ -72,6 +74,11 @@ export default async function proposalRoutes(app: FastifyInstance): Promise<void
 	services.proposals = service;
 	const svc = service;
 	const expiresAt = (p: Proposal) => store.expiresAt(p);
+	const waits = new ProposalWaitWatch({
+		publish: (projectId, proposalId, waiting) =>
+			svc.publish(projectId, null, 'waiting', { waiting }, proposalId),
+	});
+	app.addHook('onClose', async () => waits.dispose());
 
 	app.get<P>(
 		'/api/projects/:projectId/proposals',
@@ -94,6 +101,7 @@ export default async function proposalRoutes(app: FastifyInstance): Promise<void
 						itemCount: p.items.length,
 						counts: proposalCounts(p),
 						decided: proposalDecided(p),
+						waiting: waits.waiting(p.projectId, p.id),
 					}),
 				),
 				warnings,
@@ -119,9 +127,10 @@ export default async function proposalRoutes(app: FastifyInstance): Promise<void
 		guarded<PP>(async (req) => {
 			const { projectId, proposalId } = ids(req);
 			const q = parseOr400(ProposalGetQuerySchema, req.query ?? {});
-			const r = await svc.get(projectId, proposalId, {
-				revalidate: q.revalidate === '1' || q.revalidate === 'true',
-			});
+			const revalidate = q.revalidate === '1' || q.revalidate === 'true';
+			const r = await svc.get(projectId, proposalId, { revalidate });
+			// a plain read by an agent: one poll of a wait for the user's review
+			if (!revalidate && req.jasperEditor !== true) waits.poll(projectId, proposalId, agentNameOf(req));
 			const out: ProposalResponse = { ...r, expiresAt: expiresAt(r.proposal) };
 			return out;
 		}),
@@ -183,6 +192,7 @@ export default async function proposalRoutes(app: FastifyInstance): Promise<void
 		guarded<PP>(async (req) => {
 			const { projectId, proposalId } = ids(req);
 			const out: ProposalDeleteResponse = await svc.delete(projectId, proposalId);
+			waits.forget(projectId, proposalId);
 			return out;
 		}),
 	);
