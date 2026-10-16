@@ -609,19 +609,19 @@ export function warningNote(w: WarningLike, where: string | null): SoundNote {
 			);
 			break;
 		case 'W_MUSIC_OVER_VOICE': {
-			const lu = num(/is (−?-?[\d.]+) LU under/);
+			const lu = num(/is ([−+-]?[\d.]+) LU under/);
 			text = t(
 				'The music is only {0} LU under the voice during speech (target at least {1} LU): turn Ducking on for it or lower it',
-				lu === null ? '?' : lu.toFixed(1),
+				lu === null ? '?' : lu.toFixed(1).replace('-', '−'),
 				DELIVERY_RELATIVE_LU.music,
 			);
 			break;
 		}
 		case 'W_AMBIENCE_OVER_VOICE': {
-			const lu = num(/is (−?-?[\d.]+) LU under/);
+			const lu = num(/is ([−+-]?[\d.]+) LU under/);
 			text = t(
 				'The ambience is only {0} LU under the voice during speech (target at least {1} LU): turn Ducking on for it or lower it',
-				lu === null ? '?' : lu.toFixed(1),
+				lu === null ? '?' : lu.toFixed(1).replace('-', '−'),
 				DELIVERY_RELATIVE_LU.ambience,
 			);
 			break;

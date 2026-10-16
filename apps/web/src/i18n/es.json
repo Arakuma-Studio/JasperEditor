@@ -9572,13 +9572,11 @@
   "A sound": "Un sonido",
   "A sound: {0} kept over {1}": "Un sonido: {0} prevalece sobre {1}",
   "Applies to the whole tracks {0}, not only these clips": "Se aplica a las pistas completas {0}, no solo a estos clips",
-  "Details…": "Detalles…",
   "Mixed: {0} to {1} dB": "Mixto: de {0} a {1} dB",
   "No conflicts or warnings": "Sin conflictos ni avisos",
   "No sound of the allowed sources is indexed: install the starter kit or rescan the sound library": "No hay ningún sonido indexado de los orígenes permitidos: instala el kit de inicio o vuelve a analizar la biblioteca de sonidos",
   "Nothing was ducked: no music or ambience clip has audible clips of its “Duck against” types": "No se atenuó nada: ningún clip de música o ambiente tiene clips audibles de sus tipos de “Atenuar frente a”",
   "Plan notes: {0}": "Notas del plan: {0}",
-  "Rebalance Details": "Detalles del reequilibrio",
   "Skipped: {0}": "Omitida: {0}",
   "The ambience is only {0} LU under the voice during speech (target at least {1} LU): turn Ducking on for it or lower it": "El ambiente está solo {0} LU por debajo de la voz durante el habla (objetivo: al menos {1} LU): activa la atenuación para él o bájalo",
   "The delivery preset could not be measured here and is left out: apply it with Delivery Target…": "El ajuste de entrega no se pudo medir aquí y se deja fuera: aplícalo con Objetivo de entrega…",
@@ -9586,5 +9584,11 @@
   "The music is only {0} LU under the voice during speech (target at least {1} LU): turn Ducking on for it or lower it": "La música está solo {0} LU por debajo de la voz durante el habla (objetivo: al menos {1} LU): activa la atenuación para ella o bájala",
   "The report was shortened; the first entries are listed": "El informe se acortó; se muestran las primeras entradas",
   "The selected sounds fill {0} different cues ({1}): select the sounds of one cue to edit its stop-before and build": "Los sonidos seleccionados rellenan {0} señales distintas ({1}): selecciona los sonidos de una sola señal para editar su parada previa y su subida",
-  "The sequence is silent: there is nothing to normalise": "La secuencia está en silencio: no hay nada que normalizar"
+  "The sequence is silent: there is nothing to normalise": "La secuencia está en silencio: no hay nada que normalizar",
+  "Solver Notes…": "Notas del cálculo…",
+  "Solver Notes": "Notas del cálculo",
+  "Rebalance: Solver Notes": "Reequilibrio: notas del cálculo",
+  "{0} off": "{0} desactivado",
+  "{0} automated": "{0} automatizado",
+  "{0} {1} dB": "{0} {1} dB"
 }

@@ -64,7 +64,7 @@ export function registerMixDialogs(): void {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Notes: a mixing job's conflicts and warnings (Rebalance's Details…, Delivery Target…, Auto Sound Pass…)
+// Notes: a mixing job's conflicts and warnings (Rebalance's Solver Notes…, Delivery Target…, Auto Sound Pass…)
 
 /** The notes of a job, the ones to act on marked "!" (text and colour, not colour alone). */
 export function SoundNotesList(props: { notes: readonly SoundNote[]; testId?: string; max?: number }) {
@@ -97,7 +97,7 @@ export function SoundNotesList(props: { notes: readonly SoundNote[]; testId?: st
 	);
 }
 
-/** Details… of a Rebalance: every conflict and warning of the solve. */
+/** Solver Notes… of a Rebalance: every conflict and warning of the solve (read-only; Esc or × closes). */
 export function SoundNotesDialog(
 	props: HostedDialogProps<{ title?: string; summary?: string; notes?: SoundNote[] }>,
 ) {
@@ -109,17 +109,17 @@ export function SoundNotesDialog(
 			onOpenChange={(o) => {
 				if (!o) finish();
 			}}
-			title={props.title ?? t('Rebalance Details')}
+			title={props.title ?? t('Solver Notes')}
 			size="medium"
-			primaryLabel={t('Close')}
-			onPrimary={() => true}
 			data-testid="sound-notes-dialog"
 		>
 			<div className="flex flex-col gap-2 text-pr-ui">
 				{props.summary ? <p className="text-pr-small text-pr-text">{props.summary}</p> : null}
-				<p className="text-pr-small text-pr-muted">
-					A conflict means two of the solver's rules could not both hold: the earlier, safer one was kept.
-				</p>
+				{notes.some((n) => n.kind === 'conflict') ? (
+					<p className="text-pr-small text-pr-muted">
+						A conflict means two of the solver's rules could not both hold: the earlier, safer one was kept.
+					</p>
+				) : null}
 				{notes.length ? (
 					<SoundNotesList notes={notes} max={200} testId="sound-notes-dialog-list" />
 				) : (

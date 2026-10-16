@@ -87,7 +87,7 @@ async function rebalance(
 		const sum = rebalanceSummary(r);
 		const entry = entryOfRevision(e.session, r.revision);
 		// conflicts (which rule won over which) and warnings (with their advice), named by sound and time: the toast
-		// says how many and the most important one; Details… lists them all
+		// says how many and the most important one; Solver Notes… lists them all
 		const doc = e.session.getCommitted();
 		const notes = rebalanceNotes(r, doc, doc.sequences[e.seq.id]);
 		const count = notesCount(notes);
@@ -107,10 +107,10 @@ async function rebalance(
 			...(notes.length
 				? [
 						{
-							label: t('Details…'),
+							label: t('Solver Notes…'),
 							run: () =>
 								ctx.ui.openDialog(SOUND_NOTES_DIALOG, {
-									title: t('Rebalance Details'),
+									title: t('Rebalance: Solver Notes'),
 									summary: [sum.title, sum.detail].filter(Boolean).join(' · '),
 									notes,
 								}),

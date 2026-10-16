@@ -515,13 +515,20 @@ describe('solver notes in words', () => {
 				{
 					code: 'W_MUSIC_OVER_VOICE',
 					message:
-						'The music is 5.2 LU under the voice during speech (target ≥ 8 LU): turn Ducking on for it or lower it',
+						// the engine's format (levels.ts fmtDb: a sign, a real minus)
+						'The music is +5.2 LU under the voice during speech (target ≥ 8 LU): turn Ducking on for it or lower it',
 				},
 				null,
 			).text,
 		).toBe(
 			'The music is only 5.2 LU under the voice during speech (target at least 8 LU): turn Ducking on for it or lower it',
 		);
+		expect(
+			warningNote(
+				{ code: 'W_AMBIENCE_OVER_VOICE', message: 'The ambience is −1 LU under the voice during speech' },
+				null,
+			).text,
+		).toContain('only −1.0 LU under');
 	});
 
 	it('reports name the sounds: rebalance by its events, plans by their items', () => {

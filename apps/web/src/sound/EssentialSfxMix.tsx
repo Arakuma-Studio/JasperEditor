@@ -25,6 +25,7 @@ import {
 	fmtDb,
 	levelSelectionOf,
 	type RoomSelection,
+	type RoomView,
 	roomLevelCommands,
 	roomSelectionOf,
 	roomToggleEdit,
@@ -203,6 +204,11 @@ export function EssentialSfxMix(props: { session: EditorSession; seq: Sequence; 
 												: t('{0} dB', fmtDb(room.levelDb))}
 								</span>
 							</div>
+							{room.targets.length > 1 && (room.state === 'mixed' || roomMixedLevel) ? (
+								<span className="text-pr-small text-pr-muted" data-testid="essential-room-tracks">
+									{room.targets.map((v) => roomTrackState(v)).join(' · ')}
+								</span>
+							) : null}
 							<span className="text-pr-small text-pr-dim" data-testid="essential-room-note">
 								{roomNote(room)}
 							</span>
@@ -280,6 +286,14 @@ export function EssentialSfxMix(props: { session: EditorSession; seq: Sequence; 
 			</div>
 		</div>
 	);
+}
+
+/** One track of a mixed Room row: "A2 −16.0 dB", "A3 off", "A4 automated". */
+function roomTrackState(v: RoomView): string {
+	if (!v.send || v.send.mute) return t('{0} off', v.trackLabel);
+	return v.levelDb === null
+		? t('{0} automated', v.trackLabel)
+		: t('{0} {1} dB', v.trackLabel, fmtDb(v.levelDb));
 }
 
 /** What the Room row says under the slider: where the sends apply, or why none can be made. */

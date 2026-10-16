@@ -401,6 +401,7 @@ describe('Essential Sound ▸ Room with several tracks selected', () => {
 			},
 		]);
 		expect(box().getAttribute('aria-checked')).toBe('mixed');
+		expect(screen.getByTestId('essential-room-tracks').textContent).toBe('A2 −16.0 dB · A3 off');
 		n = f.labels().length;
 		await act(async () => {
 			fireEvent.click(box());
@@ -419,6 +420,7 @@ describe('Essential Sound ▸ Room with several tracks selected', () => {
 		]);
 		const db = screen.getByTestId('essential-room-db');
 		expect(db.textContent).toBe('Mixed');
+		expect(screen.getByTestId('essential-room-tracks').textContent).toBe('A2 −16.0 dB · A3 −10.0 dB');
 		expect(db.getAttribute('data-mixed')).toBe('true');
 		const thumb = within(room).getAllByRole('slider')[0]!;
 		expect(thumb.getAttribute('aria-valuetext')).toBe('Mixed: −16.0 to −10.0 dB');
@@ -429,6 +431,7 @@ describe('Essential Sound ▸ Room with several tracks selected', () => {
 		expect(f.labels().slice(n)).toEqual(['Room Send Level']);
 		expect([sendOf(1).levelDb.value, sendOf(2).levelDb.value]).toEqual([-15.5, -15.5]);
 		expect(screen.getByTestId('essential-room-db').textContent).toBe('−15.5 dB');
+		expect(screen.queryByTestId('essential-room-tracks')).toBeNull();
 		// off: both muted, one entry; one undo gives both back
 		n = f.labels().length;
 		await act(async () => {
@@ -678,7 +681,7 @@ describe('Sequence ▸ Sound Design: Rebalance, Room Glue…, Delivery Target…
 		expect(f.clip().gainDb).toBe(-6);
 	});
 
-	it('Rebalance: conflicts and warnings in the toast and in Details…', async () => {
+	it('Rebalance: conflicts and warnings in the toast and in Solver Notes…', async () => {
 		const f = fixture();
 		f.engine.onRebalance(() => {
 			f.ok([{ type: 'soundDesign.applyGains', gains: { [f.clipId]: -9 } }], 'Rebalance SFX Levels');
@@ -723,7 +726,7 @@ describe('Sequence ▸ Sound Design: Rebalance, Room Glue…, Delivery Target…
 		expect(tt.detail).toBe(
 			`1 solved · 1 limited · 1 conflict · 1 warning. ${where}: its energy is in the speech band (1–4 kHz) while someone speaks; move it or pick a sound whose energy is outside 1–4 kHz, e.g. boom`,
 		);
-		expect(tt.actions!.map((a) => a.label)).toEqual(['Undo', 'Details…']);
+		expect(tt.actions!.map((a) => a.label)).toEqual(['Undo', 'Solver Notes…']);
 		act(() => tt.actions![1]!.run!());
 		expect(dialogs[0]!.kind).toBe(SOUND_NOTES_DIALOG);
 		render(<SoundNotesDialog {...(dialogs[0]!.props as never)} close={() => {}} />);
@@ -817,7 +820,7 @@ describe('Sequence ▸ Sound Design: Rebalance, Room Glue…, Delivery Target…
 						{
 							code: 'W_MUSIC_OVER_VOICE',
 							message:
-								'The music is 5.0 LU under the voice during speech (target ≥ 8 LU): turn Ducking on for it or lower it',
+								'The music is +5 LU under the voice during speech (target ≥ 8 LU): turn Ducking on for it or lower it',
 						},
 					],
 					conflicts: [{ clipId: f.clipId, kept: 'headroom', lost: 'bed-cap', message: 'x' }],
