@@ -821,7 +821,8 @@ export function audioCodecOf(encoder: EncoderChoice | null, output: Pick<OutputS
 	return base;
 }
 
-function localHandle(asset: MediaAsset, m: LocalMedia): MediaHandle {
+/** The snapshot handle of an engine-local media file (exports, bed renders). */
+export function localHandle(asset: MediaAsset, m: LocalMedia): MediaHandle {
 	const r = m.record;
 	return {
 		url: m.path,

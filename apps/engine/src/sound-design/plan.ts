@@ -34,6 +34,7 @@ import {
 	type CueDensity,
 	cueInputFromDerived,
 	type DerivedCue,
+	defaultRegistries,
 	deriveCues,
 	documentHasActiveExpressions,
 	flicksPerFrame,
@@ -66,10 +67,14 @@ import {
 import type { AgentService } from '../agent/service.ts';
 import type { JobContext } from '../jobs/types.ts';
 import { JobError } from '../jobs/types.ts';
+import type { MediaRegistry } from '../media/registry.ts';
 import type { ProposalService, Requester } from '../proposals/service.ts';
 import type { SoundService } from '../sounds/service.ts';
+import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { HttpError } from '../tools/reply.ts';
+import type { MeasureCache } from './bed.ts';
 import { matchStoredCues } from './match.ts';
+import { solvePlanGains } from './plan-levels.ts';
 
 type CueKind = SoundCue['kind'];
 type CueWeight = SoundCue['weight'];
@@ -747,6 +752,10 @@ export type PlanDeps = {
 	sounds: () => SoundService | undefined;
 	proposals: () => ProposalService | undefined;
 	mgTemplates?: MgTemplateRegistry;
+	/** Phase 4: renders the bed and the sounds for the masking solver (without them the default levels apply). */
+	ffmpeg?: Ffmpeg;
+	registry?: Pick<MediaRegistry, 'get' | 'resolvePath'>;
+	measureCache?: MeasureCache;
 };
 
 /** The live document of a project (the open editor's when one holds it, else the saved one) and its revision. */
@@ -826,7 +835,7 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 	const failed = new Map<string, string>();
 	for (const [i, id] of order.entries()) {
 		if (aborted()) return cancelledResult(req, seq, style);
-		ctx.progress(0.15 + (0.65 * i) / Math.max(1, order.length), {
+		ctx.progress(0.15 + (0.45 * i) / Math.max(1, order.length), {
 			stage: `Registering sounds (${i + 1} of ${order.length})`,
 		});
 		try {
@@ -871,13 +880,50 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 	skipped.sort(
 		(a, b) => a.frame - b.frame || (a.cueKey ?? a.cueId ?? '').localeCompare(b.cueKey ?? b.cueId ?? ''),
 	);
-	const { draft, report } = composePlanDraft(doc, seq, req, style, picks, registered, {
+	const composed = composePlanDraft(doc, seq, req, style, picks, registered, {
 		skipped,
 		warnings,
 		considered: collected.cues.length + collected.skipped.length,
 		snapshotHash: pool.snapshotHash,
 		librarySize: pool.librarySize,
 	});
+	const draft = composed.draft;
+	let report = composed.report;
+	if (aborted()) return cancelledResult(req, seq, style);
+	// Phase 4: gains solved against the bed (each place item applies them; the why-lines say what limited them).
+	if (draft) {
+		ctx.progress(0.6, { stage: 'Balancing levels against the bed' });
+		let levels: Awaited<ReturnType<typeof solvePlanGains>>;
+		try {
+			levels = await solvePlanGains(doc, seq, draft, report, {
+				...(deps.ffmpeg ? { ffmpeg: deps.ffmpeg } : {}),
+				...(deps.registry ? { registry: deps.registry } : {}),
+				...(deps.measureCache ? { cache: deps.measureCache } : {}),
+				registries: defaultRegistries(deps.mgTemplates),
+				signal: ctx.signal,
+				onSpawn: ctx.trackChild,
+				onProgress: (f, stage) => ctx.progress(0.6 + 0.25 * f, { stage }),
+			});
+		} catch (e) {
+			if (aborted()) return cancelledResult(req, seq, style);
+			throw e;
+		}
+		if (levels.ok) {
+			draft.items = levels.items;
+			report = levels.report;
+		} else report.warnings.push(levels.warning);
+		if (JSON.stringify(report).length > REPORT_SOFT_BYTES) {
+			for (const e of report.events) {
+				delete (e as { alternativeLevels?: unknown }).alternativeLevels;
+				delete (e as { layerLevels?: unknown }).layerLevels;
+			}
+			report.warnings.push({
+				code: 'W_REPORT_TRIMMED',
+				message: 'The report was trimmed to stay under 1 MB (alternative and layer levels left out)',
+			});
+		}
+		draft.report = report;
+	}
 	if (aborted()) return cancelledResult(req, seq, style);
 	if (!draft) {
 		ctx.progress(1, { stage: 'Nothing to propose' });

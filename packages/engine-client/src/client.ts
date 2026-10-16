@@ -51,6 +51,7 @@ import {
 	type RouteResponse,
 	type SceneDetectRequest,
 	type SoundCuesRequest,
+	type SfxRebalanceRequest,
 	type SoundDesignPlanRequest,
 	type SoundIndexRequest,
 	type SoundRootsPutRequest,
@@ -382,6 +383,14 @@ export class EngineClient {
 	 */
 	planSoundDesign(req: SoundDesignPlanRequest, signal?: AbortSignal) {
 		return this.call('soundDesignPlan', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/**
+	 * Rebalance SFX levels (spec 12 §2.4, §2.10): a `sound-design` job (202) solving the sound effects' gains against the
+	 * bed; its result (`SfxRebalanceResult`) is a report per clip and either one applied transaction ("Rebalance SFX
+	 * Levels", `mode: 'apply'`) or a proposal (`mode: 'propose'`, the default).
+	 */
+	rebalanceSfx(req: SfxRebalanceRequest, signal?: AbortSignal) {
+		return this.call('soundDesignRebalance', { body: req, ...(signal ? { signal } : {}) });
 	}
 	/** Proposals of a project (spec 12 §2.5): summaries, newest first. */
 	listProposals(projectId: string) {
