@@ -13,6 +13,7 @@ import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
 	clipBox,
+	clipElement,
 	createProject,
 	enableAgentBridge,
 	exportViaUi,
@@ -186,12 +187,15 @@ test('fill, variation ×3 = one entry, swap, layer, link move, in context, fill 
 			const area = await page.getByTestId('timeline-clip-area').boundingBox();
 			return !area || (b.x + 8 >= area.x && b.x + Math.min(20, b.width / 3) <= area.x + area.width - 8);
 		};
-		let b = await clipBox(page, id).catch(() => null);
-		if (b && !(await inView(b))) {
+		// a clip outside the rendered window is not in the DOM at all: never wait for it (boundingBox would wait forever)
+		const box = async () =>
+			(await clipElement(page, id).count()) ? await clipBox(page, id).catch(() => null) : null;
+		let b = await box();
+		if (!(await inView(b))) {
 			await focusTimeline(page);
 			await page.keyboard.press('Backslash');
 			await page.waitForTimeout(300);
-			b = await clipBox(page, id).catch(() => null);
+			b = await box();
 		}
 		for (let i = 0; (!b || b.width < 40 || !(await inView(b))) && i < 10; i++) {
 			const c = (await sequence(page)).clips[id]!;
@@ -199,7 +203,7 @@ test('fill, variation ×3 = one entry, swap, layer, link move, in context, fill 
 			await focusTimeline(page);
 			await page.keyboard.press('Equal');
 			await page.waitForTimeout(200);
-			b = await clipBox(page, id).catch(() => null);
+			b = await box();
 		}
 		if (!b || !(await inView(b))) throw new Error(`clip ${id} is not visible`);
 		await page.mouse.click(b.x + Math.min(20, b.width / 3), b.y + b.height - 6, { button });
