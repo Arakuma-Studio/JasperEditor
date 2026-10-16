@@ -35,6 +35,7 @@ import type { MediaRegistry } from '../media/registry.ts';
 import type { ProposalService, Requester } from '../proposals/service.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { HttpError } from '../tools/reply.ts';
+import { applyMeasuredMix } from './apply-guard.ts';
 import { type MeasureCache, measureSfxEvents } from './bed.ts';
 import {
 	conflictsOf,
@@ -300,33 +301,18 @@ async function rebalance(ctx: JobContext, deps: RebalanceDeps): Promise<SfxRebal
 	});
 	if (mode === 'apply') {
 		ctx.progress(0.9, { stage: 'Applying' });
-		const out = await agent.transact(
-			req.projectId,
-			{
-				label: REBALANCE_LABEL,
-				origin: { agent: who.agent },
-				sequenceId: seq.id,
-				...(live.revision !== null ? { expectedRevision: live.revision } : {}),
-				commands: [command(changes)],
-			},
-			{ fallbackAgent: who.agent, ...(who.editor ? { preApproved: true, asUser: true } : {}) },
-		);
-		const result = out.result as {
-			ok: boolean;
-			revision?: number;
-			errors?: { code: string; message: string }[];
-		};
-		if (!result.ok) {
-			const e = result.errors?.[0];
-			throw new JobError(
-				e?.code === 'E_CONFLICT' ? 'CONFLICT' : (e?.code ?? 'TRANSACTION_REJECTED'),
-				`The gains were not applied: ${e?.message ?? 'the transaction was refused'}`,
-				e?.code === 'E_CONFLICT',
-				{ errors: result.errors?.slice(0, 5) ?? [] },
-			);
-		}
+		const revision = await applyMeasuredMix(agent, {
+			projectId: req.projectId,
+			sequenceId: seq.id,
+			measured: doc,
+			label: REBALANCE_LABEL,
+			agentName: who.agent,
+			editor: who.editor,
+			commands: [command(changes)],
+			what: 'The gains were not applied',
+		});
 		ctx.progress(1, { stage: 'Applied' });
-		return { ...base, applied: true, revision: result.revision ?? null, proposalId: null, report };
+		return { ...base, applied: true, revision, proposalId: null, report };
 	}
 	const proposals = deps.proposals();
 	if (!proposals) throw new JobError('NOT_AVAILABLE', 'The proposal service is not running', true);
@@ -334,6 +320,12 @@ async function rebalance(ctx: JobContext, deps: RebalanceDeps): Promise<SfxRebal
 	changes.forEach((e, i) => {
 		e.itemId = `gain:${String(i + 1).padStart(width, '0')}`;
 	});
+	// each conflict names the item that carries its clip's gain (a clip whose gain does not change has none)
+	const itemOf = new Map(changes.map((e) => [e.clipId, e.itemId!]));
+	for (const c of conflicts) {
+		const itemId = itemOf.get(c.clipId);
+		if (itemId) c.itemId = itemId;
+	}
 	const name = Object.values(doc.items ?? {}).find(
 		(it) => it?.kind === 'sequence' && (it as { sequenceId?: unknown }).sequenceId === seq.id,
 	)?.name;

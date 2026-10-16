@@ -59,6 +59,7 @@ import type { MediaRegistry } from '../media/registry.ts';
 import type { ProposalService, Requester } from '../proposals/service.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { HttpError } from '../tools/reply.ts';
+import { applyMeasuredMix } from './apply-guard.ts';
 import { type AudioWorld, audioWorld, type MeasureCache, measureSfxEvents } from './bed.ts';
 import { fmtDb, gainReport, solveAt, solvedLevel, solverEventOf } from './levels.ts';
 import { liveDocument, PlanInputError, planSequence } from './plan.ts';
@@ -626,29 +627,18 @@ async function delivery(ctx: JobContext, deps: DeliveryDeps): Promise<SoundDeliv
 	const preset = deliveryPreset(req.delivery);
 	if (mode === 'apply') {
 		ctx.progress(0.9, { stage: 'Applying' });
-		const out = await agent.transact(
-			req.projectId,
-			{
-				label: `${DELIVERY_LABEL}: ${preset.label}`.slice(0, 200),
-				origin: { agent: who.agent },
-				sequenceId: seq.id,
-				...(live.revision !== null ? { expectedRevision: live.revision } : {}),
-				commands: [plan.command, ...plan.gains.map((g) => g.command)],
-			},
-			{ fallbackAgent: who.agent, ...(who.editor ? { preApproved: true, asUser: true } : {}) },
-		);
-		const r = out.result as { ok: boolean; revision?: number; errors?: { code: string; message: string }[] };
-		if (!r.ok) {
-			const e = r.errors?.[0];
-			throw new JobError(
-				e?.code === 'E_CONFLICT' ? 'CONFLICT' : (e?.code ?? 'TRANSACTION_REJECTED'),
-				`The delivery was not applied: ${e?.message ?? 'the transaction was refused'}`,
-				e?.code === 'E_CONFLICT',
-				{ errors: r.errors?.slice(0, 5) ?? [] },
-			);
-		}
+		const revision = await applyMeasuredMix(agent, {
+			projectId: req.projectId,
+			sequenceId: seq.id,
+			measured: live.doc,
+			label: `${DELIVERY_LABEL}: ${preset.label}`.slice(0, 200),
+			agentName: who.agent,
+			editor: who.editor,
+			commands: [plan.command, ...plan.gains.map((g) => g.command)],
+			what: 'The delivery was not applied',
+		});
 		ctx.progress(1, { stage: 'Applied' });
-		return { ...result, applied: true, revision: r.revision ?? null, proposalId: null, report: plan.report };
+		return { ...result, applied: true, revision, proposalId: null, report: plan.report };
 	}
 	const proposals = deps.proposals();
 	if (!proposals) throw new JobError('NOT_AVAILABLE', 'The proposal service is not running', true);
