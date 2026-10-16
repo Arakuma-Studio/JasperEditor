@@ -3386,6 +3386,9 @@ schema docs (kept both: A's fades / alternatives / `trimmedHeadSec` and B's defa
   **−7.5 dBTP**, −23.6 LUFS (verification A measured +3 dBTP with 0 dB inserts); every aligned point still within
   ±1 sample. The Phase 0 specs: see §1 (50 + 50 passed).
 - The full `pnpm test` is verification A's gate; not rerun here.
+- Then merged `feat/sound-design` e233d588 (WP3.1 proposals; no conflicts): `pnpm typecheck` and `pnpm lint` passed,
+  notices current, `sound-level`, `sound-design-place`, `sound-mg-phases`, `proposals`, `audio-primed-clock` and the
+  mg-templates tests: 108 passed, 2 skipped.
 
 ## Phase 3: proposals and review
 
