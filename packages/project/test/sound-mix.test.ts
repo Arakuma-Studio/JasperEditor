@@ -422,12 +422,11 @@ describe('soundDesign.applyStopBefore', () => {
 		expect(trackVol(h, 'A1', T - 0.3 * S)).toBeCloseTo(0, 6);
 		expect(trackVol(h, 'A1', 240 * F30 - 0.3 * S)).toBeCloseTo(-18, 6);
 		expect(sd(h)!.mix!.cues![cue]!.stopBefore!.frame).toBe(240);
-		// muting takes it out, unmuting writes it again
+		// muting takes it out (the record is kept suspended), unmuting writes it again
 		h.ok([{ type: 'soundCue.update', cueId: cue, muted: true }]);
 		expect(trackVol(h, 'A1', 240 * F30 - 0.3 * S)).toBeCloseTo(0, 6);
+		expect(sd(h)!.mix!.cues![cue]!.stopBefore).toMatchObject({ suspended: true, writes: [] });
 		h.ok([{ type: 'soundCue.update', cueId: cue, muted: false }]);
-		expect(trackVol(h, 'A1', 240 * F30 - 0.3 * S)).toBeCloseTo(0, 6); // a muted record is gone: apply again
-		h.ok([{ type: 'soundDesign.applyStopBefore', cueId: cue }]);
 		expect(trackVol(h, 'A1', 240 * F30 - 0.3 * S)).toBeCloseTo(-18, 6);
 		// deleting the cue removes its dip
 		h.ok([{ type: 'soundCue.remove', cueIds: [cue] }]);
@@ -616,14 +615,14 @@ describe('soundDesign.ensureBus / removeBus (room glue)', () => {
 		// explicit tracks: A4 sends although it plays music too; A3 stays dry (interface only); A2's send goes
 		const r3 = h.ok([{ type: 'soundDesign.ensureBus', sfxTracks: ['A3', 'A4'] }]);
 		expect((r3.results[0] as { removed: string[] }).removed).toEqual([track(h, 'A2').id]);
-		expect(track(h, 'A2').mixer!.sends ?? []).toEqual([]);
+		expect(track(h, 'A2').mixer?.sends ?? []).toEqual([]);
 		expect(track(h, 'A4').mixer!.sends![0]!.levelDb.value).toBe(-12);
-		// remove: sends and the bus it made go; settings.roomBus null
+		// remove: sends and the bus it made go; settings.roomBus null (the settings it created go too)
 		h.ok([{ type: 'soundDesign.removeBus' }]);
 		expect(h.seq.submixTracks ?? []).toEqual([]);
-		expect(track(h, 'A4').mixer!.sends ?? []).toEqual([]);
-		expect(sd(h)!.settings!.roomBus).toBeNull();
-		expect(sd(h)!.mix?.room).toBeUndefined();
+		expect(track(h, 'A4').mixer?.sends ?? []).toEqual([]);
+		expect(sd(h)?.settings?.roomBus ?? null).toBeNull();
+		expect(sd(h)?.mix?.room).toBeUndefined();
 		// remove again: nothing to do
 		expect(h.ok([{ type: 'soundDesign.removeBus' }]).results[0]).toEqual({
 			busId: null,
@@ -716,9 +715,10 @@ describe('soundDesign.applyDelivery', () => {
 		expect(res.matched[amb]).toMatchObject({ targetLufs: -33, gainDb: -3 });
 		expect(res.matched[hit]).toEqual({ skipped: 'sound effects are balanced by the masking solver' });
 		expect(Object.keys(res.ducked).sort()).toEqual([music, amb].sort());
-		// ducked by each clip's own amount (music −15, ambience −10), and the music's dip written again on the ducked curve
-		expect(clipVol(h, music, 2.5 * S)).toBeCloseTo(-15, 6);
-		expect(clipVol(h, amb, 2.5 * S)).toBeCloseTo(-10, 6);
+		// type-default Ducking amounts are the delivery's (DELIVERY_DUCK_DB = 6 dB on top of the matched bed: music ≈ 14 LU,
+		// ambience ≈ 16 LU under the voice), and the music's dip written again on the ducked curve
+		expect(clipVol(h, music, 2.5 * S)).toBeCloseTo(-6, 6);
+		expect(clipVol(h, amb, 2.5 * S)).toBeCloseTo(-6, 6);
 		expect(res.redipped).toEqual([cue]);
 		expect(clipVol(h, music, 15 * S - 0.1 * S)).toBeCloseTo(-24, 6);
 		// the default-level sound follows the preset: R128 support −31 − (−20) = −11
@@ -812,11 +812,16 @@ describe('mix records: load and repair', () => {
 		expect(sd2.settings!.roomBus).toBeNull();
 		expect(fixed.report.map((r) => r.action)).toContain('drop-room-glue');
 		expect(repairDocument(fixed.document, createCounterIdSource(7000)).report).toEqual([]);
-		// a duplicated sequence keeps the automation, not the records
+		// a duplicated sequence keeps the automation and its records, mapped to the copy's cue, tracks, keys and sends
 		const d = h.ok([{ type: 'sequence.duplicate', sequenceId: h.seqId }]);
 		const copyId = (d.results[0] as { sequenceId: string }).sequenceId;
 		const copy = h.doc.sequences[copyId]!.soundDesign as SoundDesign;
-		expect(copy.mix).toBeUndefined();
+		const copyCue = Object.keys(copy.cues).find((k) => copy.cues[k]!.frame === 120)!;
+		expect(Object.keys(copy.mix!.cues!)).toEqual([copyCue]);
+		expect(copy.mix!.cues![copyCue]!.stopBefore!.writes[0]!.trackId).toBe(
+			h.doc.sequences[copyId]!.audioTracks[0]!.id,
+		);
+		expect(copy.mix!.room!.busId).toBe(h.doc.sequences[copyId]!.submixTracks![0]!.id);
 		// the copy has its own room submix (new ids), its sends point at it, and the settings follow
 		const cs = h.doc.sequences[copyId]!;
 		expect(cs.submixTracks).toHaveLength(1);
@@ -890,12 +895,14 @@ describe('a locked music track never makes a cue edit fail', () => {
 		h.ok([{ type: 'soundCue.update', cueId: cue, frame: 210 }]);
 		expect(trackVol(h, 'A1', 120 * F30 - 0.1 * S)).toBeCloseTo(0, 6);
 		expect(trackVol(h, 'A1', 210 * F30 - 0.1 * S)).toBeCloseTo(-24, 6);
-		// deleted while locked: the cue goes, the lane keeps its keys, the record is dropped
+		// deleted while locked: the cue goes, the lane keeps its keys, the record is kept as an orphan (taken out when
+		// the track is unlocked: sound-p4v-mix.test.ts)
 		h.ok([{ type: 'track.update', trackId: track(h, 'A1').id, patch: { locked: true } }]);
 		const kept = clone(track(h, 'A1').volumeDb);
 		h.ok([{ type: 'soundCue.remove', cueIds: [cue] }]);
 		expect(track(h, 'A1').volumeDb).toEqual(kept);
 		expect(sd(h)!.mix?.cues?.[cue]).toBeUndefined();
+		expect(sd(h)!.mix?.orphans?.[cue]?.stopBefore).toBeTruthy();
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 });

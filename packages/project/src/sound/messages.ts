@@ -71,6 +71,7 @@ export const SOUND_MESSAGES = [
 	'Clip not found: {0}',
 	'Clip not found in {0}: {1}',
 	'{0} is not a sound effect (Essential Sound type SFX, or a placed sound): the solver sets sound effect gains only',
+	'{0} is not a sound effect (Essential Sound type SFX, or a placed sound): auto gain applies to sound effects',
 ] as const;
 
 /** Every sound-design template the editor translates (labels and refusals). */

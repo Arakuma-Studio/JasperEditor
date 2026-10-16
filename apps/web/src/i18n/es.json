@@ -9387,6 +9387,7 @@
   "Rebalance SFX Levels": "Reequilibrar niveles de efectos de sonido",
   "{0} is given twice": "{0} se indica dos veces",
   "{0} is not a sound effect (Essential Sound type SFX, or a placed sound): the solver sets sound effect gains only": "{0} no es un efecto de sonido (tipo SFX de Sonido esencial, o un sonido colocado): el solucionador solo ajusta la ganancia de los efectos de sonido",
+  "{0} is not a sound effect (Essential Sound type SFX, or a placed sound): auto gain applies to sound effects": "{0} no es un efecto de sonido (tipo SFX de Sonido esencial, o un sonido colocado): la ganancia automática solo se aplica a los efectos de sonido",
   "Clip not found in {0}: {1}": "No se encuentra el clip en {0}: {1}",
   "Clip not found: {0}": "No se encuentra el clip: {0}",
   "report names {0}, which has no gain": "el informe nombra {0}, que no tiene ganancia",

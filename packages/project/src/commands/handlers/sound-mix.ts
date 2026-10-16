@@ -6,13 +6,14 @@
 // `sound/mix.ts`. This module never imports `sound.ts` (the placement handlers import its hooks).
 import type { Draft } from 'immer';
 import { FADER_MAX_DB, FADER_MIN_DB, MAX_SENDS } from '../../audio/strip.ts';
-import { readEssentialSound } from '../../essential/model.ts';
+import { duckingDepthBy, readEssentialSound } from '../../essential/model.ts';
 import { evaluate } from '../../keyframes.ts';
 import type { Animatable, Keyframe } from '../../schema/common.ts';
 import type { AudioClip, Clip, EffectInstance, Sequence, Track } from '../../schema/sequence.ts';
 import {
 	type ClipSfx,
 	type CueMix,
+	cueMixWritten,
 	type MixWrite,
 	readSoundDesignSettings,
 	SOUND_MIX_LIMITS,
@@ -21,13 +22,15 @@ import {
 	type SoundDesignMix,
 	type SoundDesignSettings,
 } from '../../schema/sound.ts';
-import { deliveryMatchTargets, deliveryPreset } from '../../sound/delivery.ts';
+import { DELIVERY_DUCK_DB, deliveryMatchTargets, deliveryPreset } from '../../sound/delivery.ts';
 import {
 	BUILD_FILTER_EFFECT_ID,
 	BUILD_FILTER_PARAMS,
 	BUILD_REST_HZ,
+	type BuildSweep,
 	buildSweepPoints,
 	clipLaneTime,
+	clipSweep,
 	type Dip,
 	type LaneTime,
 	mergeDips,
@@ -41,6 +44,7 @@ import {
 	unwriteCurve,
 	writeCurve,
 } from '../../sound/mix.ts';
+import { sfxGainOwner } from '../../sound/level.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn, resolveTrackIn } from '../placement.ts';
@@ -124,6 +128,57 @@ const rateOf = (seq: DSeq) => seq.settings.frameRate as Rational;
 
 // ---------------------------------------------------------------------------------------------------------------
 // Recorded writes
+//
+// Every realisation (a cue's stop-before or build) records per place it wrote to (a LANE: a track's volume, a clip's
+// Volume, a build filter's cutoff) the keys it added and the keys it replaced, and its stacking `order`. Realisations
+// on one lane form a stack: a later one merged with (and may have replaced keys of) the earlier ones. Taking one out
+// takes the later ones on that lane out first (each exactly, top down), then itself, then writes the later ones again
+// from their own records — so any removal order gives the lane back exactly, and the min-merge keeps the values right.
+
+type Kind = 'stopBefore' | 'build';
+type Bucket = 'cues' | 'orphans';
+/** Where a realisation record lives: `mix.cues[cueId]` (a cue's) or `mix.orphans[cueId]` (a deleted cue's, locked). */
+type RecRef = { bucket: Bucket; cueId: string; kind: Kind };
+type StopRec = NonNullable<CueMix['stopBefore']>;
+type BuildRec = NonNullable<CueMix['build']>;
+type AnyRec = StopRec | BuildRec;
+const KINDS: readonly Kind[] = ['stopBefore', 'build'];
+const BUCKETS: readonly Bucket[] = ['cues', 'orphans'];
+
+function peekRec(seq: DSeq, ref: RecRef): AnyRec | undefined {
+	const mix = peekMix(seq);
+	return (mix?.[ref.bucket]?.[ref.cueId]?.[ref.kind] as AnyRec | undefined) ?? undefined;
+}
+
+/** Stores a record (drafted). */
+function setRec(seq: DSeq, ref: RecRef, rec: AnyRec): void {
+	const mix = mixOf(seq);
+	const bucket = (mix[ref.bucket] ??= {} as never) as Record<string, Draft<CueMix>>;
+	const c = (bucket[ref.cueId] ??= {} as Draft<CueMix>);
+	c[ref.kind] = rec as never;
+}
+
+/** Deletes a record (and its cue / orphan entry when empty). */
+function dropRec(seq: DSeq, ref: RecRef): void {
+	if (!peekRec(seq, ref)) return;
+	const bucket = mixOf(seq)[ref.bucket] as Record<string, Draft<CueMix>>;
+	const c = bucket[ref.cueId]!;
+	delete c[ref.kind];
+	if (!c.stopBefore && !c.build) delete bucket[ref.cueId];
+}
+
+/** Empty record tables (and an empty `mix`) go: taking everything out gives the sequence back as it was. */
+function tidyMix(seq: DSeq): void {
+	const m = peekMix(seq);
+	if (!m) return;
+	const empty = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as object).length === 0;
+	if (!(empty(m.cues) || empty(m.orphans) || empty(m.buildFilters) || Object.keys(m).length === 0)) return;
+	const mix = mixOf(seq);
+	if (empty(m.cues)) delete mix.cues;
+	if (empty(m.orphans)) delete mix.orphans;
+	if (empty(m.buildFilters)) delete mix.buildFilters;
+	if (Object.keys(mix).length === 0) delete soundDesignOf(seq).mix;
+}
 
 /** The animatable a recorded write points at (a draft), or null when it is gone. */
 function writeTarget(seq: DSeq, w: MixWrite): { anim: DAnim; track: DTrack } | null {
@@ -145,31 +200,169 @@ function writeTarget(seq: DSeq, w: MixWrite): { anim: DAnim; track: DTrack } | n
 	return p ? { anim: p, track: t.track as DTrack } : null;
 }
 
-/** Takes one recorded write out (its keys, and back the ones it replaced when nothing rewrote the range since). */
-function unwrite(seq: DSeq, w: MixWrite, h: HandlerContext, skipLocked = false): boolean {
+/** Whether a write's lane is on a locked track. */
+const lockedWrite = (seq: DSeq, w: MixWrite) => !!writeTarget(seq, w)?.track.locked;
+
+/** Takes one recorded write out of its lane (its keys; the ones it replaced back when nothing rewrote them since). */
+function unwriteRaw(seq: DSeq, w: MixWrite): boolean {
 	const t = writeTarget(seq, w);
 	if (!t) return false;
-	if (skipLocked && t.track.locked) return false;
-	assertUnlocked(t.track, h);
 	const r = unwriteCurve(plainCopy(t.anim.keyframes) as Keyframe<number>[], w);
 	t.anim.keyframes = r.keyframes as never;
 	return r.exact;
 }
 
-/** A write record from the keys of a lane before and after (keys added; keys gone). */
-function diffWrite(
-	before: readonly Keyframe<number>[],
-	after: readonly Keyframe<number>[],
-	base: Omit<MixWrite, 'written' | 'replaced'>,
+/** One write of a realisation, with its lane and stacking order. */
+type Entry = { ref: RecRef; index: number; order: number; w: MixWrite; lane: string };
+
+const laneOf = (w: MixWrite): string =>
+	w.target === 'trackVolume'
+		? `tv:${w.trackId}`
+		: w.target === 'clipVolume'
+			? `cv:${w.clipId}`
+			: `fx:${w.effectInstanceId}`;
+
+const sameRef = (a: RecRef, b: RecRef) => a.bucket === b.bucket && a.cueId === b.cueId && a.kind === b.kind;
+
+function entriesOf(seq: DSeq): Entry[] {
+	const mix = peekMix(seq);
+	const out: Entry[] = [];
+	if (!mix) return out;
+	for (const bucket of BUCKETS)
+		for (const [cueId, c] of Object.entries(mix[bucket] ?? {}))
+			for (const kind of KINDS) {
+				const r = c[kind] as AnyRec | undefined;
+				if (!r) continue;
+				r.writes.forEach((w, index) =>
+					out.push({ ref: { bucket, cueId, kind }, index, order: r.order ?? 0, w, lane: laneOf(w) }),
+				);
+			}
+	return out;
+}
+
+/** Stacking order: by `order`; records of older builds (equal orders) by whose keys the other replaced, then by key. */
+function stackCmp(a: Entry, b: Entry): number {
+	if (a.order !== b.order) return a.order - b.order;
+	const aw = new Set(a.w.written);
+	if (b.w.replaced.some((k) => aw.has(k.id))) return -1;
+	const bw = new Set(b.w.written);
+	if (a.w.replaced.some((k) => bw.has(k.id))) return 1;
+	const ka = `${a.ref.bucket}:${a.ref.cueId}:${a.ref.kind}`;
+	const kb = `${b.ref.bucket}:${b.ref.cueId}:${b.ref.kind}`;
+	return ka < kb ? -1 : ka > kb ? 1 : 0;
+}
+
+/** The order a new realisation stacks at: above every recorded one. */
+function nextOrder(seq: DSeq): number {
+	let max = 0;
+	const mix = peekMix(seq);
+	for (const bucket of BUCKETS)
+		for (const c of Object.values(mix?.[bucket] ?? {}))
+			for (const kind of KINDS) max = Math.max(max, (c[kind] as AnyRec | undefined)?.order ?? 0);
+	return max + 1;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Lane writes
+
+/** One place written: the write, or the reason it could not be recorded (too dense), or null (nothing to write). */
+type LaneOut = { write: MixWrite } | { limit: string } | null;
+
+function limitOf(written: number, replaced: number): string | null {
+	return written > SOUND_MIX_LIMITS.written || replaced > SOUND_MIX_LIMITS.replaced
+		? `the automation under the cue is too dense to record (${written} keys to write, ${replaced} to replace; thin it first)`
+		: null;
+}
+
+/** A dip on a music track's own volume lane (sequence time). */
+function dipTrackLane(seq: DSeq, track: DTrack, dip: Dip, h: HandlerContext): LaneOut {
+	const cur = (
+		track.volumeDb ? plainCopy(track.volumeDb) : { value: 0, keyframes: [] }
+	) as Animatable<number>;
+	const r = mergeDips(cur, SEQUENCE_LANE, [dip], {
+		newId: () => h.ids.next('kf'),
+		clamp: [FADER_MIN_DB, FADER_MAX_DB],
+	});
+	if (!r) return null;
+	const lim = limitOf(r.written.length, r.replaced.length);
+	if (lim) return { limit: lim };
+	track.volumeDb ??= { value: 0, keyframes: [] } as never;
+	track.volumeDb!.keyframes = r.keyframes as never;
+	return {
+		write: { target: 'trackVolume', trackId: track.id, written: r.written, replaced: plainCopy(r.replaced) },
+	};
+}
+
+/** A dip on a music clip's Volume (content time). */
+function dipClipLane(seq: DSeq, clip: DAudio, dip: Dip, h: HandlerContext): LaneOut {
+	const lane = clipLaneTime(clip as AudioClip, rateOf(seq));
+	const r = mergeDips(plainCopy(clip.volumeDb) as Animatable<number>, lane, [dip], {
+		newId: () => h.ids.next('kf'),
+		clamp: [FADER_MIN_DB, FADER_MAX_DB],
+	});
+	if (!r) return null;
+	const lim = limitOf(r.written.length, r.replaced.length);
+	if (lim) return { limit: lim };
+	clip.volumeDb.keyframes = r.keyframes as never;
+	return {
+		write: { target: 'clipVolume', clipId: clip.id, written: r.written, replaced: plainCopy(r.replaced) },
+	};
+}
+
+type FilterOwner = { trackId: string } | { clipId: string };
+
+/** The build filter of a track or clip (`fxId`, else the recorded one), or undefined. */
+function findBuildFilter(seq: DSeq, owner: FilterOwner, fxId?: string): DEffect | undefined {
+	const list =
+		'trackId' in owner
+			? (audioTrack(seq, owner.trackId)?.effects ?? [])
+			: ((seq.clips[owner.clipId] as DAudio | undefined)?.effects ?? []);
+	const id = fxId ?? peekMix(seq)?.buildFilters?.['trackId' in owner ? owner.trackId : owner.clipId];
+	if (!id) return undefined;
+	return list.find((e) => e.id === id && e.effectId === BUILD_FILTER_EFFECT_ID) as DEffect | undefined;
+}
+
+/** Writes a sweep on a filter's cutoff; its rest points take the curve's own value at the sweep's edges. Pure. */
+function sweepWrite(anim: Animatable<number>, lane: LaneTime, sweep: BuildSweep, h: HandlerContext) {
+	const restA = evaluate(anim, lane.toLane(sweep.ws));
+	const restB = evaluate(anim, lane.toLane(sweep.we));
+	const last = sweep.points.length - 1;
+	const pts = sweep.points.map(
+		([t, v], i) => [t, sweep.rest[i] ? (i === 0 ? restA : i === last ? restB : v) : v] as [number, number],
+	);
+	return writeCurve(anim, lane, sweep.ws, sweep.we, pts, () => h.ids.next('kf'));
+}
+
+/** A build sweep on the build filter of a track or clip (added when missing; `fxId`: that filter only). */
+function sweepLane(
+	doc: DDoc,
+	seq: DSeq,
+	owner: FilterOwner,
+	lane: LaneTime,
+	sweep: BuildSweep,
 	h: HandlerContext,
-): MixWrite {
-	const was = new Set(before.map((k) => k.id));
-	const now = new Set(after.map((k) => k.id));
-	const written = after.filter((k) => !was.has(k.id)).map((k) => k.id);
-	const replaced = before.filter((k) => !now.has(k.id));
-	if (written.length > SOUND_MIX_LIMITS.written || replaced.length > SOUND_MIX_LIMITS.replaced)
-		h.fail('E_LIMIT', 'The automation under the cue is too dense to record (thin it first)');
-	return { ...base, written, replaced: plainCopy(replaced) };
+	fxId?: string,
+): LaneOut {
+	const existing = findBuildFilter(seq, owner, fxId);
+	if (fxId && !existing) return null;
+	const anim = (
+		existing?.params.cutoff ? plainCopy(existing.params.cutoff) : { value: BUILD_REST_HZ, keyframes: [] }
+	) as Animatable<number>;
+	const w = sweepWrite(anim, lane, sweep, h);
+	const lim = limitOf(w.written.length, w.replaced.length);
+	if (lim) return { limit: lim };
+	const fx = existing ?? buildFilter(doc, seq, owner, h).fx;
+	fx.params.cutoff ??= { value: BUILD_REST_HZ, keyframes: [] } as never;
+	(fx.params.cutoff as unknown as DAnim).keyframes = w.keyframes as never;
+	return {
+		write: {
+			target: 'trackId' in owner ? 'trackFilter' : 'clipFilter',
+			...owner,
+			effectInstanceId: fx.id,
+			written: w.written,
+			replaced: plainCopy(w.replaced),
+		},
+	};
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -203,7 +396,7 @@ function volumeDip(doc: DDoc, cmd: CommandOf<'audio.volumeDip'>, h: HandlerConte
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Stop-before
+// Writing and removing realisations
 
 type WriteSummary = { target: MixWrite['target']; track: string; clipId?: string; keyframes: number };
 
@@ -217,129 +410,308 @@ const summary = (seq: DSeq, w: MixWrite): WriteSummary => {
 	};
 };
 
-/** Takes the cue's recorded stop-before dip out of the mix. Returns the number of writes undone. */
-function removeStopBefore(seq: DSeq, cueId: string, h: HandlerContext, skipLocked = false): number {
-	const rec = peekMix(seq)?.cues?.[cueId]?.stopBefore;
-	if (!rec) return 0;
-	for (const w of rec.writes) unwrite(seq, w, h, skipLocked);
-	const mix = mixOf(seq);
-	const c = mix.cues?.[cueId];
-	if (c) {
-		delete c.stopBefore;
-		if (!c.build) delete mix.cues![cueId];
+/**
+ * How a realisation is written: `ambience` dips the ambience too; `skipLocked` skips locked music tracks (else
+ * E_TRACK_LOCKED); `soft` (cue edits, placement) skips a place whose automation is too dense to record (else E_LIMIT).
+ */
+type WriteOpts = { ambience?: boolean; skipLocked?: boolean; soft?: boolean };
+type WriteOut = { writes: MixWrite[]; skipped: string[]; reason: string | null };
+
+function take(out: WriteOut, r: LaneOut, where: string, soft: boolean | undefined, h: HandlerContext): void {
+	if (!r) return;
+	if ('limit' in r) {
+		if (!soft) h.fail('E_LIMIT', `${where}: ${r.limit}`);
+		out.skipped.push(`${where}: ${r.limit}`);
+		return;
 	}
-	return rec.writes.length;
+	out.writes.push(r.write);
 }
 
-/** Writes the cue's stop-before dip (its `stopBefore` must be set). */
+/** Writes a stop-before dip for a hero at `frame` on the music under it. */
 function writeStopBefore(
-	doc: DDoc,
 	seq: DSeq,
-	cue: Draft<SoundCue>,
-	opts: { ambience?: boolean; skipLocked?: boolean },
+	spec: { seconds: number; depthDb: number },
+	frame: number,
+	opts: WriteOpts,
 	h: HandlerContext,
-): { writes: MixWrite[]; reason: string | null } {
-	const spec = cue.stopBefore!;
+): WriteOut {
+	const out: WriteOut = { writes: [], skipped: [], reason: null };
 	const rate = rateOf(seq);
 	const F = flicksPerFrame(rate);
-	const dip = stopBeforeDip(cue.frame, spec, rate);
-	if (!dip)
-		return { writes: [], reason: 'the dip has no length (seconds 0, depth 0 dB, or at the very start)' };
+	const dip = stopBeforeDip(frame, spec, rate);
+	if (!dip) return { ...out, reason: 'the dip has no length (seconds 0, depth 0 dB, or at the very start)' };
 	const fade = dip.fadeMs * MS;
 	const a = Math.max(0, Math.floor((dip.start - fade) / F));
 	const b = Math.ceil((dip.end + fade) / F);
 	const uses = musicTracksUnder(seq as Sequence, a, b, opts.ambience ? ['music', 'ambience'] : ['music']);
-	if (uses.length === 0) return { writes: [], reason: 'no music plays under the cue' };
-	const writes: MixWrite[] = [];
+	if (uses.length === 0) return { ...out, reason: 'no music plays under the cue' };
 	for (const u of uses) {
 		const track = audioTrack(seq, u.trackId)!;
-		if (opts.skipLocked && track.locked) continue;
-		assertUnlocked(track, h);
-		if (!u.shared && !u.automationOff) {
-			// The music track's volume lane (mixer.writeAutomation: keys outside the range are kept).
-			track.volumeDb ??= { value: 0, keyframes: [] } as never;
-			const before = plainCopy(track.volumeDb!.keyframes) as Keyframe<number>[];
-			const merged = mergeDips(plainCopy(track.volumeDb!) as Animatable<number>, SEQUENCE_LANE, [dip], {
-				newId: () => 'tmp',
-				clamp: [FADER_MIN_DB, FADER_MAX_DB],
-			});
-			if (!merged) continue;
-			for (const [ws, we] of merged.windows) {
-				const pts = merged.keyframes
-					.filter((k) => k.time >= Math.round(ws) && k.time <= Math.round(we))
-					.map((k) => [k.time, k.value] as [number, number]);
-				if (pts.length === 0) continue;
-				audioHandlers['mixer.writeAutomation'](
-					doc,
-					{
-						type: 'mixer.writeAutomation',
-						sequenceId: seq.id,
-						stripId: track.id,
-						lane: 'volume',
-						points: pts,
-						thinning: { tolerance: 0 },
-					},
-					h,
-				);
+		const where = label(seq, track.id);
+		if (track.locked) {
+			if (opts.skipLocked) {
+				out.skipped.push(`${where}: the track is locked`);
+				continue;
 			}
-			writes.push(
-				diffWrite(
-					before,
-					track.volumeDb!.keyframes as Keyframe<number>[],
-					{ target: 'trackVolume', trackId: track.id },
-					h,
-				),
-			);
+			assertUnlocked(track, h);
+		}
+		// The music track's own volume lane when only music plays there over the window and its lane is played;
+		// else (shared with other audio, or automation Off) the music clips' Volume.
+		if (!u.shared && !u.automationOff) {
+			take(out, dipTrackLane(seq, track, dip, h), where, opts.soft, h);
 			continue;
 		}
-		// Shared with other audio there (or its lane is not played): the music clips' Volume.
-		for (const id of u.clipIds) {
-			const clip = seq.clips[id] as DAudio;
-			const before = plainCopy(clip.volumeDb.keyframes) as Keyframe<number>[];
-			if (!dipClip(seq, clip, [dip], h)) continue;
-			writes.push(
-				diffWrite(
-					before,
-					clip.volumeDb.keyframes as Keyframe<number>[],
-					{ target: 'clipVolume', clipId: id },
-					h,
-				),
-			);
-		}
+		for (const id of u.clipIds)
+			take(out, dipClipLane(seq, seq.clips[id] as DAudio, dip, h), where, opts.soft, h);
 	}
-	return { writes, reason: writes.length ? null : 'no music plays under the cue' };
+	out.reason = out.writes.length
+		? null
+		: out.skipped.length
+			? out.skipped.join('; ')
+			: 'no music plays under the cue';
+	return out;
 }
 
-function realizeStopBefore(
+/** Writes a build sweep for a hero at `frame` on the music before it. */
+function writeBuild(
+	doc: DDoc,
+	seq: DSeq,
+	spec: { seconds: number; fromHz: number; toHz: number },
+	frame: number,
+	opts: WriteOpts,
+	h: HandlerContext,
+): WriteOut {
+	const out: WriteOut = { writes: [], skipped: [], reason: null };
+	const rate = rateOf(seq);
+	const F = flicksPerFrame(rate);
+	const sweep = buildSweepPoints(frame, spec, rate);
+	if (!sweep) return { ...out, reason: 'the build has no length (seconds 0, or at the very start)' };
+	const a = Math.max(0, Math.floor(sweep.ws / F));
+	const uses = musicTracksUnder(seq as Sequence, a, frame, ['music']);
+	if (uses.length === 0) return { ...out, reason: 'no music plays before the cue' };
+	for (const u of uses) {
+		const track = audioTrack(seq, u.trackId)!;
+		const where = label(seq, track.id);
+		if (track.locked) {
+			if (opts.skipLocked) {
+				out.skipped.push(`${where}: the track is locked`);
+				continue;
+			}
+			assertUnlocked(track, h);
+		}
+		if (!u.shared) {
+			take(out, sweepLane(doc, seq, { trackId: track.id }, SEQUENCE_LANE, sweep, h), where, opts.soft, h);
+			continue;
+		}
+		// The music shares its track with other audio: a clip filter on each music clip (the sweep cut to the clip:
+		// a clip ending before the hero keeps rising to its end).
+		for (const id of u.clipIds) {
+			const clip = seq.clips[id] as DAudio;
+			const lane = clipLaneTime(clip as AudioClip, rate);
+			const cut = clipSweep(sweep, lane.span[0], lane.span[1]);
+			if (!cut || cut.points.length < 2) continue;
+			take(out, sweepLane(doc, seq, { clipId: id }, lane, cut, h), where, opts.soft, h);
+		}
+	}
+	out.reason = out.writes.length
+		? null
+		: out.skipped.length
+			? out.skipped.join('; ')
+			: 'no music plays before the cue';
+	return out;
+}
+
+/** Writes one recorded place again from its record (the stack's re-realisation); null when nothing falls there now. */
+function rewriteEntry(doc: DDoc, seq: DSeq, e: Entry, h: HandlerContext): MixWrite | null {
+	const rec = peekRec(seq, e.ref);
+	if (!rec) return null;
+	const rate = rateOf(seq);
+	const w = e.w;
+	let r: LaneOut = null;
+	if (e.ref.kind === 'stopBefore') {
+		const dip = stopBeforeDip(rec.frame, rec as StopRec, rate);
+		if (dip && w.target === 'trackVolume') {
+			const t = w.trackId ? audioTrack(seq, w.trackId) : null;
+			if (t) r = dipTrackLane(seq, t, dip, h);
+		} else if (dip && w.target === 'clipVolume') {
+			const c = w.clipId ? (seq.clips[w.clipId] as DAudio | undefined) : undefined;
+			if (c?.kind === 'audio') r = dipClipLane(seq, c, dip, h);
+		}
+	} else {
+		const sweep = buildSweepPoints(rec.frame, rec as BuildRec, rate);
+		if (sweep && w.target === 'trackFilter' && w.trackId && audioTrack(seq, w.trackId))
+			r = sweepLane(doc, seq, { trackId: w.trackId }, SEQUENCE_LANE, sweep, h, w.effectInstanceId);
+		else if (sweep && w.target === 'clipFilter' && w.clipId) {
+			const c = seq.clips[w.clipId] as DAudio | undefined;
+			if (c?.kind === 'audio') {
+				const lane = clipLaneTime(c as AudioClip, rate);
+				const cut = clipSweep(sweep, lane.span[0], lane.span[1]);
+				if (cut && cut.points.length >= 2)
+					r = sweepLane(doc, seq, { clipId: c.id }, lane, cut, h, w.effectInstanceId);
+			}
+		}
+	}
+	if (r && 'limit' in r) return h.fail('E_LIMIT', `${laneOf(w)}: ${r.limit}`);
+	return r ? r.write : null;
+}
+
+/**
+ * Takes one write of a record out of its lane exactly: the later writes on the lane come out first (top down), then
+ * this one, then the later ones are written again from their records (fresh key ids, same order).
+ */
+function removeWrite(doc: DDoc, seq: DSeq, ref: RecRef, index: number, h: HandlerContext): void {
+	const all = entriesOf(seq);
+	const self = all.find((e) => sameRef(e.ref, ref) && e.index === index);
+	if (!self) return;
+	const stack = all.filter((e) => e.lane === self.lane).sort(stackCmp);
+	const later = stack.slice(stack.indexOf(self) + 1);
+	for (let i = later.length - 1; i >= 0; i--) unwriteRaw(seq, later[i]!.w);
+	unwriteRaw(seq, self.w);
+	for (const e of later) {
+		const nw = rewriteEntry(doc, seq, e, h);
+		const bucket = mixOf(seq)[e.ref.bucket] as Record<string, Draft<CueMix>>;
+		const rec = bucket[e.ref.cueId]![e.ref.kind] as Draft<AnyRec>;
+		if (nw) rec.writes[e.index] = nw as never;
+		else rec.writes.splice(e.index, 1);
+	}
+	for (const e of later) {
+		const r = peekRec(seq, e.ref);
+		if (r && r.suspended !== true && r.writes.length === 0) dropRec(seq, e.ref);
+	}
+}
+
+/** A build filter no build uses any more and without keys left goes (with its `buildFilters` entry). */
+function dropUnusedFilters(doc: DDoc, seq: DSeq, writes: readonly MixWrite[], h: HandlerContext): void {
+	const used = new Set<string>();
+	for (const e of entriesOf(seq)) if (e.w.effectInstanceId) used.add(e.w.effectInstanceId);
+	for (const w of writes) {
+		const id = w.effectInstanceId;
+		if (!id || used.has(id)) continue;
+		const t = writeTarget(seq, w);
+		if (!t || t.track.locked || t.anim.keyframes.length > 0) continue;
+		effectHandlers['effect.remove']!(doc, { type: 'effect.remove', effectInstanceId: id }, h);
+		used.add(id);
+		const filters = peekMix(seq)?.buildFilters;
+		if (filters)
+			for (const [k, v] of Object.entries(filters)) if (v === id) delete mixOf(seq).buildFilters![k];
+	}
+}
+
+/**
+ * Takes a realisation out of the mix exactly (each write through its lane's stack). A write on a locked track is
+ * refused (E_TRACK_LOCKED; nothing changed), or with `keepLocked` left in place and kept as an ORPHAN record
+ * (`mix.orphans[cueId]`), taken out when the track is unlocked. Returns the number of writes the record had.
+ */
+function removeRec(
+	doc: DDoc,
+	seq: DSeq,
+	ref: RecRef,
+	h: HandlerContext,
+	opts: { keepLocked?: boolean } = {},
+) {
+	const rec = peekRec(seq, ref);
+	if (!rec) return 0;
+	const copy = plainCopy(rec) as AnyRec;
+	const kept = new Set<number>();
+	copy.writes.forEach((w, i) => {
+		const t = writeTarget(seq, w);
+		if (!t?.track.locked) return;
+		if (opts.keepLocked) kept.add(i);
+		else assertUnlocked(t.track, h);
+	});
+	for (let i = copy.writes.length - 1; i >= 0; i--) if (!kept.has(i)) removeWrite(doc, seq, ref, i, h);
+	dropRec(seq, ref);
+	if (kept.size) {
+		const { suspended: _s, ...spec } = copy as AnyRec & { suspended?: boolean };
+		setRec(seq, { ...ref, bucket: 'orphans' }, {
+			...spec,
+			writes: copy.writes.filter((_, i) => kept.has(i)),
+		} as AnyRec);
+	}
+	if (ref.kind === 'build')
+		dropUnusedFilters(
+			doc,
+			seq,
+			copy.writes.filter((_, i) => !kept.has(i)),
+			h,
+		);
+	return copy.writes.length;
+}
+
+/**
+ * After a track is unlocked (`track.update`): the orphan realisations of deleted cues written on it come out (exactly,
+ * through the stacks). Exported for the track handlers.
+ */
+export function settleMixOrphans(doc: DDoc, seq: DSeq, h: HandlerContext): void {
+	const orphans = peekMix(seq)?.orphans;
+	if (!orphans) return;
+	for (const [cueId, c] of Object.entries(orphans))
+		for (const kind of KINDS) {
+			const r = c[kind] as AnyRec | undefined;
+			if (r && r.writes.some((w) => !lockedWrite(seq, w)))
+				removeRec(doc, seq, { bucket: 'orphans', cueId, kind }, h, { keepLocked: true });
+		}
+	tidyMix(seq);
+}
+
+type Realized = { applied: boolean; removed: number; writes: MixWrite[]; reason: string | null };
+
+/**
+ * (Re)writes a cue's stop-before or build: the recorded one comes out first (exactly), then the cue's current field is
+ * written on top of the stack. A muted cue keeps a SUSPENDED record (`writes: []`, its options) so unmuting writes it
+ * again exactly as it was.
+ */
+function realize(
 	doc: DDoc,
 	seq: DSeq,
 	cue: Draft<SoundCue>,
-	opts: { ambience?: boolean; skipLocked?: boolean },
+	kind: Kind,
+	opts: WriteOpts,
 	h: HandlerContext,
-): { applied: boolean; removed: number; writes: MixWrite[]; reason: string | null } {
-	const removed = removeStopBefore(seq, cue.id, h);
-	if (!cue.stopBefore) return { applied: false, removed, writes: [], reason: 'the cue has no stop-before' };
-	if (cue.muted) return { applied: false, removed, writes: [], reason: 'the cue is muted' };
-	const r = writeStopBefore(doc, seq, cue, opts, h);
-	if (r.writes.length) {
-		const mix = mixOf(seq);
-		mix.cues ??= {} as never;
-		const c = (mix.cues![cue.id] ??= {} as Draft<CueMix>);
-		c.stopBefore = {
-			seconds: cue.stopBefore.seconds,
-			depthDb: cue.stopBefore.depthDb,
-			frame: cue.frame,
-			...(opts.ambience ? { ambience: true } : {}),
-			writes: r.writes,
-		} as never;
+): Realized {
+	const ref: RecRef = { bucket: 'cues', cueId: cue.id, kind };
+	const removed = removeRec(doc, seq, ref, h);
+	const spec = cue[kind];
+	const none = kind === 'stopBefore' ? 'the cue has no stop-before' : 'the cue has no build';
+	if (!spec) {
+		tidyMix(seq);
+		return { applied: false, removed, writes: [], reason: none };
 	}
+	const fields =
+		kind === 'stopBefore'
+			? {
+					seconds: (spec as StopRec).seconds,
+					depthDb: (spec as StopRec).depthDb,
+					...(opts.ambience ? { ambience: true } : {}),
+				}
+			: {
+					seconds: (spec as BuildRec).seconds,
+					fromHz: (spec as BuildRec).fromHz,
+					toHz: (spec as BuildRec).toHz,
+				};
+	const order = nextOrder(seq);
+	if (cue.muted) {
+		setRec(seq, ref, { ...fields, frame: cue.frame, writes: [], order, suspended: true } as AnyRec);
+		return { applied: false, removed, writes: [], reason: 'the cue is muted' };
+	}
+	const r =
+		kind === 'stopBefore'
+			? writeStopBefore(seq, spec as StopRec, cue.frame, opts, h)
+			: writeBuild(doc, seq, spec as BuildRec, cue.frame, opts, h);
+	if (r.writes.length) setRec(seq, ref, { ...fields, frame: cue.frame, writes: r.writes, order } as AnyRec);
+	for (const s of r.skipped)
+		h.warn(
+			'W_MIX_SKIPPED',
+			`${kind === 'stopBefore' ? 'Stop-before' : 'Build'} of cue ${cue.id} skipped on ${s}`,
+		);
+	tidyMix(seq);
 	return { applied: r.writes.length > 0, removed, writes: r.writes, reason: r.reason };
 }
 
 function applyStopBefore(doc: DDoc, cmd: CommandOf<'soundDesign.applyStopBefore'>, h: HandlerContext) {
 	const { seq, cue } = cueOf(doc, h, cmd.cueId, cmd.sequenceId);
-	const prev = peekMix(seq)?.cues?.[cue.id]?.stopBefore as { ambience?: boolean } | undefined;
-	const r = realizeStopBefore(doc, seq, cue, { ambience: cmd.ambience ?? prev?.ambience ?? false }, h);
+	const prev = peekRec(seq, { bucket: 'cues', cueId: cue.id, kind: 'stopBefore' }) as StopRec | undefined;
+	const r = realize(doc, seq, cue, 'stopBefore', { ambience: cmd.ambience ?? prev?.ambience ?? false }, h);
 	return {
 		cueId: cue.id,
 		applied: r.applied,
@@ -356,17 +728,12 @@ function applyStopBefore(doc: DDoc, cmd: CommandOf<'soundDesign.applyStopBefore'
 function buildFilter(
 	doc: DDoc,
 	seq: DSeq,
-	owner: { trackId: string } | { clipId: string },
+	owner: FilterOwner,
 	h: HandlerContext,
 ): { fx: DEffect; created: boolean } {
 	const key = 'trackId' in owner ? owner.trackId : owner.clipId;
-	const list =
-		'trackId' in owner
-			? (audioTrack(seq, owner.trackId)!.effects ?? [])
-			: (seq.clips[owner.clipId] as DAudio).effects;
-	const known = peekMix(seq)?.buildFilters?.[key];
-	const found = known ? (list.find((e) => e.id === known) as DEffect | undefined) : undefined;
-	if (found && found.effectId === BUILD_FILTER_EFFECT_ID) return { fx: found, created: false };
+	const found = findBuildFilter(seq, owner);
+	if (found) return { fx: found, created: false };
 	const r = effectHandlers['effect.add']!(
 		doc,
 		{
@@ -387,144 +754,9 @@ function buildFilter(
 	return { fx: after.find((e) => e.id === r.effectInstanceId) as DEffect, created: true };
 }
 
-/** Clips a polyline (sequence flicks) to [s0, s1], with interpolated end points. */
-function clipPolyline(points: readonly [number, number][], s0: number, s1: number): [number, number][] {
-	const at = (t: number) => {
-		if (t <= points[0]![0]) return points[0]![1];
-		for (let i = 1; i < points.length; i++) {
-			const [ta, va] = points[i - 1]!;
-			const [tb, vb] = points[i]!;
-			if (t <= tb) return tb === ta ? vb : va + ((vb - va) * (t - ta)) / (tb - ta);
-		}
-		return points[points.length - 1]![1];
-	};
-	const a = Math.max(s0, points[0]![0]);
-	const b = Math.min(s1, points[points.length - 1]![0]);
-	if (!(b > a)) return [];
-	const out: [number, number][] = [[a, at(a)]];
-	for (const p of points) if (p[0] > a && p[0] < b) out.push([p[0], p[1]]);
-	out.push([b, at(b)]);
-	return out;
-}
-
-/** Writes a sweep on a filter's cutoff (lane time `lane`); the rest value is the curve's own at the window's edges. */
-function writeSweep(
-	fx: DEffect,
-	lane: LaneTime,
-	sweep: { ws: number; we: number; points: [number, number][] },
-	h: HandlerContext,
-): { written: string[]; replaced: Keyframe<number>[] } {
-	fx.params.cutoff ??= { value: BUILD_REST_HZ, keyframes: [] } as never;
-	const anim = fx.params.cutoff as unknown as DAnim;
-	const plain = plainCopy(anim) as Animatable<number>;
-	const restA = evaluate(plain, lane.toLane(sweep.ws));
-	const restB = evaluate(plain, lane.toLane(sweep.we));
-	const pts = sweep.points.map(
-		([t, v], i) =>
-			[t, i === 0 && v === BUILD_REST_HZ ? restA : i === sweep.points.length - 1 ? restB : v] as [
-				number,
-				number,
-			],
-	);
-	const w = writeCurve(plain, lane, sweep.ws, sweep.we, pts, () => h.ids.next('kf'));
-	anim.keyframes = w.keyframes as never;
-	return { written: w.written, replaced: w.replaced };
-}
-
-function removeBuild(doc: DDoc, seq: DSeq, cueId: string, h: HandlerContext, skipLocked = false): number {
-	const rec = peekMix(seq)?.cues?.[cueId]?.build;
-	if (!rec) return 0;
-	for (const w of rec.writes) unwrite(seq, w, h, skipLocked);
-	const mix = mixOf(seq);
-	const c = mix.cues?.[cueId];
-	if (c) {
-		delete c.build;
-		if (!c.stopBefore) delete mix.cues![cueId];
-	}
-	// A build filter no other build uses and without keys left goes.
-	const used = new Set<string>();
-	for (const other of Object.values(peekMix(seq)?.cues ?? {}))
-		for (const w of other.build?.writes ?? []) if (w.effectInstanceId) used.add(w.effectInstanceId);
-	for (const w of rec.writes) {
-		const id = w.effectInstanceId;
-		if (!id || used.has(id)) continue;
-		const t = writeTarget(seq, w);
-		if (!t || t.anim.keyframes.length > 0) continue;
-		effectHandlers['effect.remove']!(doc, { type: 'effect.remove', effectInstanceId: id }, h);
-		const filters = mix.buildFilters;
-		if (filters) for (const [k, v] of Object.entries(filters)) if (v === id) delete filters[k];
-	}
-	return rec.writes.length;
-}
-
-function writeBuild(
-	doc: DDoc,
-	seq: DSeq,
-	cue: Draft<SoundCue>,
-	h: HandlerContext,
-	opts: { skipLocked?: boolean } = {},
-): { writes: MixWrite[]; reason: string | null } {
-	const rate = rateOf(seq);
-	const F = flicksPerFrame(rate);
-	const sweep = buildSweepPoints(cue.frame, cue.build!, rate);
-	if (!sweep) return { writes: [], reason: 'the build has no length (seconds 0, or at the very start)' };
-	const a = Math.max(0, Math.floor(sweep.ws / F));
-	const uses = musicTracksUnder(seq as Sequence, a, cue.frame, ['music']);
-	if (uses.length === 0) return { writes: [], reason: 'no music plays before the cue' };
-	const writes: MixWrite[] = [];
-	for (const u of uses) {
-		const track = audioTrack(seq, u.trackId)!;
-		if (opts.skipLocked && track.locked) continue;
-		assertUnlocked(track, h);
-		if (!u.shared) {
-			const { fx } = buildFilter(doc, seq, { trackId: track.id }, h);
-			const w = writeSweep(fx, SEQUENCE_LANE, sweep, h);
-			writes.push({ target: 'trackFilter', trackId: track.id, effectInstanceId: fx.id, ...plainCopy(w) });
-			continue;
-		}
-		// The music shares its track with other audio: a clip filter on each music clip.
-		for (const id of u.clipIds) {
-			const clip = seq.clips[id] as DAudio;
-			const lane = clipLaneTime(clip as AudioClip, rate);
-			const pts = clipPolyline(sweep.points, lane.span[0], lane.span[1]);
-			if (pts.length < 2) continue;
-			const { fx } = buildFilter(doc, seq, { clipId: id }, h);
-			const w = writeSweep(fx, lane, { ws: pts[0]![0], we: pts[pts.length - 1]![0], points: pts }, h);
-			writes.push({ target: 'clipFilter', clipId: id, effectInstanceId: fx.id, ...plainCopy(w) });
-		}
-	}
-	return { writes, reason: writes.length ? null : 'no music plays before the cue' };
-}
-
-function realizeBuild(
-	doc: DDoc,
-	seq: DSeq,
-	cue: Draft<SoundCue>,
-	h: HandlerContext,
-	opts: { skipLocked?: boolean } = {},
-): { applied: boolean; removed: number; writes: MixWrite[]; reason: string | null } {
-	const removed = removeBuild(doc, seq, cue.id, h);
-	if (!cue.build) return { applied: false, removed, writes: [], reason: 'the cue has no build' };
-	if (cue.muted) return { applied: false, removed, writes: [], reason: 'the cue is muted' };
-	const r = writeBuild(doc, seq, cue, h, opts);
-	if (r.writes.length) {
-		const mix = mixOf(seq);
-		mix.cues ??= {} as never;
-		const c = (mix.cues![cue.id] ??= {} as Draft<CueMix>);
-		c.build = {
-			seconds: cue.build.seconds,
-			fromHz: cue.build.fromHz,
-			toHz: cue.build.toHz,
-			frame: cue.frame,
-			writes: r.writes,
-		} as never;
-	}
-	return { applied: r.writes.length > 0, removed, writes: r.writes, reason: r.reason };
-}
-
 function applyBuild(doc: DDoc, cmd: CommandOf<'soundDesign.applyBuild'>, h: HandlerContext) {
 	const { seq, cue } = cueOf(doc, h, cmd.cueId, cmd.sequenceId);
-	const r = realizeBuild(doc, seq, cue, h);
+	const r = realize(doc, seq, cue, 'build', {}, h);
 	return {
 		cueId: cue.id,
 		applied: r.applied,
@@ -534,62 +766,72 @@ function applyBuild(doc: DDoc, cmd: CommandOf<'soundDesign.applyBuild'>, h: Hand
 	};
 }
 
+const sameSpec = (kind: Kind, a: Record<string, unknown>, b: Record<string, unknown>) =>
+	kind === 'stopBefore'
+		? a.seconds === b.seconds && a.depthDb === b.depthDb
+		: a.seconds === b.seconds && a.fromHz === b.fromHz && a.toHz === b.toHz;
+
 /**
  * Keeps a cue's stop-before and build in step with the cue (`soundCue.update`, `soundCue.resync`, `soundCue.remove`,
- * `soundDesign.place`): a removed cue, a cleared or muted field takes its writes out; a moved cue or a changed field
- * writes them again; a FILLED cue (a placed sound) with a `stopBefore` / `build` not written yet gets it written —
- * "apply when the cue is filled" — skipping locked music tracks rather than refusing the edit. Exported for the cue and
- * placement handlers.
+ * `soundDesign.place`): a removed cue or a cleared field takes its writes out; a muted cue's are taken out and kept
+ * SUSPENDED (written again, with the same options, when unmuted); a moved cue or a changed field writes them again; a
+ * FILLED cue (a placed sound) with a `stopBefore` / `build` not written yet gets it written — "apply when the cue is
+ * filled". A cue edit never fails because of the mix: locked music tracks are skipped (a realisation already on one
+ * stays as it is until the track is unlocked; a deleted cue's stays as an orphan, taken out on unlock) and a place
+ * whose automation is too dense to record is skipped (W_MIX_SKIPPED). Exported for the cue and placement handlers.
  */
 export function followCueMix(doc: DDoc, seq: DSeq, cueId: string, h: HandlerContext, removed: boolean): void {
-	const rec = peekMix(seq)?.cues?.[cueId];
+	const recs = peekMix(seq)?.cues?.[cueId];
 	const cue = removed ? null : (soundDesignOf(seq).cues[cueId] ?? null);
-	if (!rec && !cue) return;
+	if (!recs && !cue) return;
 	const filled = !!cue && (cue.placedClipIds ?? []).some((id) => !!seq.clips[id]);
-	// A locked music track keeps what was written on it: the cue's own edit never fails because of it. A deleted cue
-	// takes out what it can; a moved or changed one leaves its realisation as it is until the track is unlocked.
-	const locked = (writes: readonly MixWrite[]) => writes.some((w) => !!writeTarget(seq, w)?.track.locked);
-	if (rec?.stopBefore && locked(rec.stopBefore.writes)) {
-		if (!cue) removeStopBefore(seq, cueId, h, true);
-	} else if (rec?.stopBefore) {
-		const s = cue?.stopBefore;
-		const same =
-			cue &&
-			!cue.muted &&
-			s &&
-			s.seconds === rec.stopBefore.seconds &&
-			s.depthDb === rec.stopBefore.depthDb &&
-			cue.frame === rec.stopBefore.frame;
-		if (!same) {
-			if (!cue) removeStopBefore(seq, cueId, h);
-			else
-				realizeStopBefore(
-					doc,
-					seq,
-					cue,
-					{ ambience: (rec.stopBefore as { ambience?: boolean }).ambience },
-					h,
-				);
+	for (const kind of KINDS) {
+		const ref: RecRef = { bucket: 'cues', cueId, kind };
+		const r = peekRec(seq, ref);
+		const spec = cue?.[kind] as Record<string, unknown> | undefined;
+		const ambience = kind === 'stopBefore' && (r as StopRec | undefined)?.ambience === true;
+		const opts: WriteOpts = { ...(ambience ? { ambience: true } : {}), skipLocked: true, soft: true };
+		if (r?.suspended) {
+			if (!cue || !spec) dropRec(seq, ref);
+			else if (!cue.muted) realize(doc, seq, cue, kind, opts, h);
+			continue;
 		}
-	} else if (cue && filled && cue.stopBefore && !cue.muted)
-		realizeStopBefore(doc, seq, cue, { skipLocked: true }, h);
-	if (rec?.build && locked(rec.build.writes)) {
-		if (!cue) removeBuild(doc, seq, cueId, h, true);
-	} else if (rec?.build) {
-		const b = cue?.build;
-		const same =
-			cue &&
-			!cue.muted &&
-			b &&
-			b.seconds === rec.build.seconds &&
-			b.fromHz === rec.build.fromHz &&
-			b.toHz === rec.build.toHz &&
-			cue.frame === rec.build.frame;
-		if (!same) {
-			if (!cue) removeBuild(doc, seq, cueId, h);
-			else realizeBuild(doc, seq, cue, h);
+		if (r) {
+			if (!cue) {
+				removeRec(doc, seq, ref, h, { keepLocked: true });
+				continue;
+			}
+			const same = !cue.muted && !!spec && sameSpec(kind, spec, r as never) && cue.frame === r.frame;
+			if (same) continue;
+			if (r.writes.some((w) => lockedWrite(seq, w))) continue;
+			realize(doc, seq, cue, kind, opts, h);
+			continue;
 		}
-	} else if (cue && filled && cue.build && !cue.muted) realizeBuild(doc, seq, cue, h, { skipLocked: true });
+		if (cue && filled && spec && !cue.muted) realize(doc, seq, cue, kind, opts, h);
+	}
+	tidyMix(seq);
+}
+
+/**
+ * Stop-before dips written again on a curve something rewrote (delivery ducking replaced the clips' Volume keys),
+ * bottom of the stack first. Returns the cue ids.
+ */
+function redip(doc: DDoc, seq: DSeq, clipIds: ReadonlySet<string>, h: HandlerContext): string[] {
+	const todo = Object.entries(peekMix(seq)?.cues ?? {})
+		.filter(
+			([, rec]) =>
+				cueMixWritten(rec.stopBefore) &&
+				rec.stopBefore!.writes.some((w) => w.clipId && clipIds.has(w.clipId)),
+		)
+		.sort(([a, x], [b, y]) => (x.stopBefore!.order ?? 0) - (y.stopBefore!.order ?? 0) || (a < b ? -1 : 1));
+	const out: string[] = [];
+	for (const [cueId, rec] of todo) {
+		const cue = soundDesignOf(seq).cues[cueId];
+		if (!cue) continue;
+		realize(doc, seq, cue, 'stopBefore', { ...(rec.stopBefore!.ambience ? { ambience: true } : {}) }, h);
+		out.push(cueId);
+	}
+	return out;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -614,9 +856,46 @@ function setParam(fx: DEffect, name: string, value: number): void {
 	else if (p.keyframes.length === 0) p.value = value;
 }
 
+/** What adding a send to `t` creates: its mixer, or its sends list (removed with the glue's send). */
+function madeBySend(t: DTrack): 'mixer' | 'sends' | undefined {
+	const mixer = peek<{ sends?: unknown }>(t, 'mixer');
+	if (!mixer) return 'mixer';
+	return peek(mixer, 'sends') ? undefined : 'sends';
+}
+
+/** Removes one of the glue's sends, and what adding it created when that is empty again. */
+function removeOwnSend(
+	doc: DDoc,
+	seq: DSeq,
+	t: DTrack,
+	sendId: string,
+	made: 'mixer' | 'sends' | undefined,
+	h: HandlerContext,
+): void {
+	audioHandlers['mixer.removeSend'](
+		doc,
+		{ type: 'mixer.removeSend', sequenceId: seq.id, stripId: t.id, sendId },
+		h,
+	);
+	const mixer = t.mixer as (Draft<NonNullable<Track['mixer']>> & Record<string, unknown>) | undefined;
+	if (!made || !mixer || (mixer.sends ?? []).length > 0) return;
+	delete mixer.sends;
+	if (made === 'mixer' && Object.keys(mixer).length === 0) delete (t as { mixer?: unknown }).mixer;
+}
+
 function ensureBus(doc: DDoc, cmd: CommandOf<'soundDesign.ensureBus'>, h: HandlerContext) {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const prev = peekMix(seq)?.room;
+	// What removeBus gives back: recorded once, before the first glue changes anything.
+	const sd0 = peek<SoundDesign>(seq, 'soundDesign');
+	const before = prev
+		? prev.before
+		: {
+				soundDesign: !!sd0,
+				settings: !!sd0?.settings,
+				submixes: !!peek(seq, 'submixTracks'),
+				roomBus: readSoundDesignSettings(plainCopy(sd0?.settings)).roomBus,
+			};
 	const opts = {
 		sendDb: cmd.roomGlue?.sendDb ?? prev?.sendDb ?? ROOM_GLUE_DEFAULT.sendDb,
 		decay: cmd.roomGlue?.decay ?? prev?.decay ?? ROOM_GLUE_DEFAULT.decay,
@@ -665,10 +944,13 @@ function ensureBus(doc: DDoc, cmd: CommandOf<'soundDesign.ensureBus'>, h: Handle
 		) as { effectInstanceId: string };
 		reverb = bus.effects!.find((e) => e.id === r.effectInstanceId) as DEffect;
 	} else {
-		assertUnlocked(bus, h);
-		setParam(reverb, 'decay', opts.decay);
-		setParam(reverb, 'mix', opts.mix);
-		setParam(reverb, 'preDelay', opts.preDelayMs);
+		// Only settings that changed since the glue was recorded (or first adopted) are applied: a reverb tuned by
+		// hand keeps its values when the glue is ensured again.
+		const changed = (k: 'decay' | 'mix' | 'preDelayMs') => !prev || opts[k] !== prev[k];
+		if (changed('decay') || changed('mix') || changed('preDelayMs')) assertUnlocked(bus, h);
+		if (changed('decay')) setParam(reverb, 'decay', opts.decay);
+		if (changed('mix')) setParam(reverb, 'mix', opts.mix);
+		if (changed('preDelayMs')) setParam(reverb, 'preDelay', opts.preDelayMs);
 	}
 	// Sends.
 	const plan = roomSendPlan(doc as never, seq as Sequence, explicit);
@@ -685,29 +967,30 @@ function ensureBus(doc: DDoc, cmd: CommandOf<'soundDesign.ensureBus'>, h: Handle
 		const existing = mine ? list.find((s) => s.id === mine && s.target === bus.id) : undefined;
 		if (!d.send) {
 			if (existing) {
-				audioHandlers['mixer.removeSend'](
-					doc,
-					{ type: 'mixer.removeSend', sequenceId: seq.id, stripId: t.id, sendId: existing.id },
-					h,
-				);
+				removeOwnSend(doc, seq, t, existing.id, prev?.sends.find((x) => x.sendId === existing.id)?.made, h);
 				removed.push(t.id);
 			}
 			skipped.push({ trackId: t.id, track: label(seq, t.id), reason: d.reason });
 			continue;
 		}
 		if (existing) {
-			audioHandlers['mixer.updateSend'](
-				doc,
-				{
-					type: 'mixer.updateSend',
-					sequenceId: seq.id,
-					stripId: t.id,
-					sendId: existing.id,
-					patch: { levelDb: opts.sendDb, ...(existing.preFader ? { preFader: false } : {}) },
-				},
-				h,
-			);
-			sends.push({ trackId: t.id, sendId: existing.id });
+			// The level follows a new sendDb only while it is still the glue's own (not tuned by hand, no automation).
+			const lv = existing.levelDb as unknown as Animatable<number>;
+			const own = lv.keyframes.length === 0 && (!prev || Math.abs(lv.value - prev.sendDb) < 1e-9);
+			if (own && lv.value !== opts.sendDb)
+				audioHandlers['mixer.updateSend'](
+					doc,
+					{
+						type: 'mixer.updateSend',
+						sequenceId: seq.id,
+						stripId: t.id,
+						sendId: existing.id,
+						patch: { levelDb: opts.sendDb },
+					},
+					h,
+				);
+			const made = (prev?.sends ?? []).find((x) => x.sendId === existing.id)?.made;
+			sends.push({ trackId: t.id, sendId: existing.id, ...(made ? { made } : {}) });
 			out.push({ trackId: t.id, track: label(seq, t.id), sendId: existing.id, added: false });
 			continue;
 		}
@@ -727,25 +1010,22 @@ function ensureBus(doc: DDoc, cmd: CommandOf<'soundDesign.ensureBus'>, h: Handle
 			});
 			continue;
 		}
+		const made = madeBySend(t);
 		const r = audioHandlers['mixer.addSend'](
 			doc,
 			{ type: 'mixer.addSend', sequenceId: seq.id, stripId: t.id, target: bus.id, levelDb: opts.sendDb },
 			h,
 		) as { sendId: string };
-		sends.push({ trackId: t.id, sendId: r.sendId });
+		sends.push({ trackId: t.id, sendId: r.sendId, ...(made ? { made } : {}) });
 		out.push({ trackId: t.id, track: label(seq, t.id), sendId: r.sendId, added: true });
 	}
 	// Own sends on tracks the plan no longer names (a track removed from sfxTracks, now bed-only, deleted).
 	for (const [trackId, sendId] of own) {
 		if (plan.some((d) => d.trackId === trackId)) continue;
 		const t = audioTrack(seq, trackId);
-		const s = t?.mixer?.sends?.find((x) => x.id === sendId);
+		const s = t?.mixer?.sends?.find((x) => x.id === sendId && x.target === bus.id);
 		if (t && s) {
-			audioHandlers['mixer.removeSend'](
-				doc,
-				{ type: 'mixer.removeSend', sequenceId: seq.id, stripId: t.id, sendId },
-				h,
-			);
+			removeOwnSend(doc, seq, t, sendId, prev?.sends.find((x) => x.sendId === sendId)?.made, h);
 			removed.push(trackId);
 		}
 	}
@@ -758,6 +1038,7 @@ function ensureBus(doc: DDoc, cmd: CommandOf<'soundDesign.ensureBus'>, h: Handle
 		createdBus,
 		...opts,
 		sends,
+		...(before ? { before } : {}),
 	} as never;
 	return {
 		busId: bus.id,
@@ -778,12 +1059,9 @@ function removeBus(doc: DDoc, cmd: CommandOf<'soundDesign.removeBus'>, h: Handle
 	if (rec) {
 		for (const s of rec.sends) {
 			const t = audioTrack(seq, s.trackId);
-			if (!t?.mixer?.sends?.some((x) => x.id === s.sendId)) continue;
-			audioHandlers['mixer.removeSend'](
-				doc,
-				{ type: 'mixer.removeSend', sequenceId: seq.id, stripId: t.id, sendId: s.sendId },
-				h,
-			);
+			// a send retargeted by hand is the user's now
+			if (!t?.mixer?.sends?.some((x) => x.id === s.sendId && x.target === rec.busId)) continue;
+			removeOwnSend(doc, seq, t, s.sendId, s.made, h);
 			removedSends++;
 		}
 		if (rec.createdBus && (seq.submixTracks ?? []).some((t) => t.id === rec.busId)) {
@@ -795,9 +1073,29 @@ function removeBus(doc: DDoc, cmd: CommandOf<'soundDesign.removeBus'>, h: Handle
 			removedBus = true;
 		}
 		delete mixOf(seq).room;
+		tidyMix(seq);
+		if (rec.before?.submixes === false && (peek<unknown[]>(seq, 'submixTracks') ?? []).length === 0)
+			delete (seq as DSeq & { submixTracks?: unknown }).submixTracks;
 	}
+	const before = rec?.before;
 	const sd = peek<SoundDesign>(seq, 'soundDesign');
-	if (sd?.settings && sd.settings.roomBus !== null) settingsOf(seq).roomBus = null;
+	const roomBus =
+		before?.roomBus && (seq.submixTracks ?? []).some((t) => t.id === before.roomBus) ? before.roomBus : null;
+	if (sd?.settings && sd.settings.roomBus !== roomBus) settingsOf(seq).roomBus = roomBus;
+	// Exactly as before the glue: settings it created (still the defaults) and a sound design it created (still empty) go.
+	if (before && sd) {
+		const defaults = JSON.stringify(readSoundDesignSettings(undefined));
+		const cur = peek<SoundDesign>(seq, 'soundDesign')!;
+		if (!before.settings && cur.settings && JSON.stringify(plainCopy(cur.settings)) === defaults)
+			delete soundDesignOf(seq).settings;
+		const left = peek<SoundDesign>(seq, 'soundDesign')!;
+		if (
+			!before.soundDesign &&
+			Object.keys(left.cues ?? {}).length === 0 &&
+			Object.keys(left).every((k) => k === 'cues')
+		)
+			delete (seq as DSeq & { soundDesign?: unknown }).soundDesign;
+	}
 	return { busId: rec?.busId ?? null, removedBus, removedSends };
 }
 
@@ -818,12 +1116,13 @@ export function syncRoomSends(doc: DDoc, seq: DSeq, trackIds: readonly string[],
 		const list = t.mixer?.sends ?? [];
 		if (list.some((s) => s.target === rec.busId) || list.length >= MAX_SENDS) continue;
 		if (sends.length >= SOUND_MIX_LIMITS.sends) break;
+		const made = madeBySend(t);
 		const r = audioHandlers['mixer.addSend'](
 			doc,
 			{ type: 'mixer.addSend', sequenceId: seq.id, stripId: t.id, target: rec.busId, levelDb: rec.sendDb },
 			h,
 		) as { sendId: string };
-		sends.push({ trackId: t.id, sendId: r.sendId });
+		sends.push({ trackId: t.id, sendId: r.sendId, ...(made ? { made } : {}) });
 	}
 	if (sends.length !== rec.sends.length) mixOf(seq).room!.sends = sends as never;
 }
@@ -892,8 +1191,12 @@ function applyDelivery(doc: DDoc, cmd: CommandOf<'soundDesign.applyDelivery'>, h
 		for (const [id, v] of Object.entries(r.clips))
 			matched[id] = 'gainDb' in v ? { type: typeOf.get(id)!, targetLufs, gainDb: v.gainDb } : v;
 	}
-	// Ducking (music / ambience under their triggers), each clip with its own Ducking amount and fades.
+	// Ducking (music / ambience under their triggers). The depth: a clip's own Ducking amount when the user set it;
+	// a type default is the delivery's (DELIVERY_DUCK_DB under the matched bed, so during speech the bed sits the
+	// relative target + DELIVERY_DUCK_DB under the voice) and is written into the clip's Ducking (`depthBy:
+	// 'delivery'`) so the panel and Generate Keyframes show what was used.
 	const ducked: Record<string, number> = {};
+	const duckDepth: Record<string, { reduceDb: number; by: 'delivery' | 'user' }> = {};
 	for (const [gi, g] of (cmd.ducking ?? []).entries()) {
 		for (const id of g.clipIds) {
 			const c = seq.clips[id] as Clip | undefined;
@@ -903,19 +1206,30 @@ function applyDelivery(doc: DDoc, cmd: CommandOf<'soundDesign.applyDelivery'>, h
 				h.fail('E_INVALID_PARAM', `Ducking applies to Music or Ambience clips (${id})`, {
 					path: ['ducking', String(gi)],
 				});
-			if (!es.ducking.enabled)
+			const by = duckingDepthBy(es);
+			const reduceDb = by === 'user' || !hasDialogue ? es.ducking.reduceDb : -DELIVERY_DUCK_DB;
+			const values: Record<string, unknown> = {};
+			if (!es.ducking.enabled) values['ducking.enabled'] = true;
+			if (reduceDb !== es.ducking.reduceDb) values['ducking.reduceDb'] = reduceDb;
+			if (Object.keys(values).length)
 				essentialHandlers['essentialSound.set'](
 					doc,
-					{ type: 'essentialSound.set', clipIds: [id], values: { 'ducking.enabled': true } },
+					{ type: 'essentialSound.set', clipIds: [id], values } as CommandOf<'essentialSound.set'>,
 					h,
 				);
+			// essentialSound.set marks a depth it sets as the user's: this one is the delivery's
+			const ducking = ((seq.clips[id] as DAudio).essential as { ducking?: { depthBy?: string } } | undefined)
+				?.ducking;
+			if (ducking && by !== 'user' && hasDialogue && ducking.depthBy !== 'delivery')
+				ducking.depthBy = 'delivery';
+			duckDepth[id] = { reduceDb, by: by === 'user' || !hasDialogue ? 'user' : 'delivery' };
 			const r = audioHandlers['audio.autoDuck'](
 				doc,
 				{
 					type: 'audio.autoDuck',
 					targetClipIds: [id],
 					regions: g.regions,
-					amountDb: -es.ducking.reduceDb,
+					amountDb: -reduceDb,
 					fadeMs: es.ducking.fadeSeconds * 1000,
 				},
 				h,
@@ -924,21 +1238,29 @@ function applyDelivery(doc: DDoc, cmd: CommandOf<'soundDesign.applyDelivery'>, h
 		}
 	}
 	// Ducking rewrote those clips' Volume: their stop-before dips are written again on the ducked curve.
-	const redipped: string[] = [];
-	const duckedIds = new Set(Object.keys(ducked));
-	for (const [cueId, rec] of Object.entries(peekMix(seq)?.cues ?? {})) {
-		if (!rec.stopBefore?.writes.some((w) => w.clipId && duckedIds.has(w.clipId))) continue;
-		const cue = soundDesignOf(seq).cues[cueId];
-		if (!cue) continue;
-		realizeStopBefore(doc, seq, cue, { ambience: (rec.stopBefore as { ambience?: boolean }).ambience }, h);
-		redipped.push(cueId);
-	}
-	// Placed sounds still at placement's default level follow the preset's default.
+	const redipped = redip(doc, seq, new Set(Object.keys(ducked)), h);
+	// Placed sounds still at placement's default level follow the preset's default (not on a locked track).
 	const levels: string[] = [];
-	for (const c of Object.values(seq.clips))
-		if (c.kind === 'audio' && refreshDefaultLevel(doc, seq, c as DAudio, { onlyDefault: true }))
-			levels.push(c.id);
-	return { sequenceId: seq.id, delivery: cmd.delivery, loudness, matched, ducked, redipped, levels };
+	const levelsSkipped: { clipId: string; reason: string }[] = [];
+	for (const c of Object.values(seq.clips)) {
+		if (c.kind !== 'audio' || sfxGainOwner(c as DAudio) !== 'default') continue;
+		if (findTrackIn(seq, c.trackId)?.track.locked) {
+			levelsSkipped.push({ clipId: c.id, reason: 'its track is locked' });
+			continue;
+		}
+		if (refreshDefaultLevel(doc, seq, c as DAudio, { onlyDefault: true })) levels.push(c.id);
+	}
+	return {
+		sequenceId: seq.id,
+		delivery: cmd.delivery,
+		loudness,
+		matched,
+		ducked,
+		duckDepth,
+		redipped,
+		levels,
+		...(levelsSkipped.length ? { levelsSkipped } : {}),
+	};
 }
 
 export const soundMixHandlers = {

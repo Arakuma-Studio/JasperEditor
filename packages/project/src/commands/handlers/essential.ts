@@ -173,6 +173,9 @@ export const essentialHandlers = {
 				});
 			let next = cur!;
 			for (const [k, v] of entries) next = tryValue(() => setEssentialValue(next, k, v), h, c.id);
+			// a Ducking amount set here is the user's own (a delivery preset leaves it alone)
+			if (Object.hasOwn(cmd.values, 'ducking.reduceDb') || Object.hasOwn(cmd.values, 'ducking'))
+				next = { ...next, ducking: { ...next.ducking, depthBy: 'user' } } as EssentialSound;
 			update(c, next, timeIn(seq, c, cmd.at, h), h);
 		}
 		return { clips: clips.map((c) => c.id) };

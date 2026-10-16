@@ -53,6 +53,16 @@ export const DELIVERY_PRESETS: Readonly<Record<SoundDelivery, DeliveryPreset>> =
 /** How far the bed sits under the voice (LU, spec 12 §2.4): music ≥ 8 LU, ambience ≥ 10 LU. */
 export const DELIVERY_RELATIVE_LU = { music: 8, ambience: 10 } as const;
 
+/**
+ * Ducking depth (dB) `applyDelivery` uses for a Music / Ambience clip whose Ducking amount is still its type's default
+ * (Phase 4 verification decision): the Auto-Match already puts the bed its relative target under the voice (music
+ * −8 LU, ambience −10 LU of the programme), so during speech the duck only adds headroom on top of the spec's minimum:
+ * music ≈ 14 LU, ambience ≈ 16 LU under the voice (the type defaults −15 / −10 dB gave ≈ 23 / 20 LU). 6 dB keeps the
+ * minimum with margin for bed swells, fades and the ±1 LU tolerance while leaving the bed audible. A depth the user
+ * set is kept.
+ */
+export const DELIVERY_DUCK_DB = 6;
+
 /** Integrated loudness tolerance an export of a preset is checked against (LU; R 128 allows ±1 LU live, ±0.5 file). */
 export const DELIVERY_TOLERANCE_LU = 1;
 
