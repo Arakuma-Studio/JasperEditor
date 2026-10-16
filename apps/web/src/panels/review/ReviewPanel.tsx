@@ -9,6 +9,7 @@
 // Ctrl+Enter Apply, Esc exit, Up / Down / Home / End move. Decisions and Apply are announced (aria-live). Nothing
 // animates; state is told by glyph and word, never by colour alone.
 import type { ProposalSummary } from '@jasper/api';
+import type { EngineClient } from '@jasper/engine-client';
 import type { Sequence } from '@jasper/project';
 import type { EditorSession, ReviewItem } from '@jasper/session';
 import { useSessionOrNull, useSessionState } from '@jasper/session/react';
@@ -40,7 +41,7 @@ import {
 import { useGhostModel, useProposals, useProposalsController } from '../../proposals/state.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { glyphPath, KIND_GLYPH } from '../../sound/cues/model.ts';
-import { useEngine } from '../../state/engine.tsx';
+import { useEngineOrNull } from '../../state/engine.tsx';
 import type { PanelProps } from '../types.ts';
 
 const STATE_GLYPH: Record<ReviewItem['state'], string> = {
@@ -84,7 +85,9 @@ function ProposalOptionLabel(p: ProposalSummary): string {
 function ReviewBody(props: PanelProps & { session: EditorSession }) {
 	const { session } = props;
 	const runtime = useShellRuntimeOrNull();
-	const { client: engine, status: engineStatus } = useEngine();
+	const engineState = useEngineOrNull();
+	const engine = engineState?.client ?? (session.engine as EngineClient | undefined) ?? null;
+	const engineStatus = engineState?.status;
 	const c = useProposalsController(session);
 	const list = useProposals(session, (s) => s.list);
 	const status = useProposals(session, (s) => s.status);
@@ -120,7 +123,7 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 		(): CommandCtx =>
 			runtime?.getCtx() ??
 			createCommandContext({
-				engine,
+				engine: engine as EngineClient,
 				session,
 				capabilities: engineStatus === 'connected' ? ['engine'] : [],
 			}),

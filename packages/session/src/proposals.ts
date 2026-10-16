@@ -283,6 +283,17 @@ export class ProposalsController {
 		}
 	}
 
+	/** Reads any proposal of the project as stored (e.g. for a card's counts); null when it cannot be read. */
+	async read(proposalId: string): Promise<Proposal | null> {
+		const engine = this.engine;
+		if (!engine) return null;
+		try {
+			return (await engine.getProposal(this.session.projectId, proposalId)).proposal;
+		} catch {
+			return null;
+		}
+	}
+
 	/** Re-reads the list and the proposal under review. */
 	async refresh(): Promise<ActionResult> {
 		const r = await this.load();

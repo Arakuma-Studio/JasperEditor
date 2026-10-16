@@ -9,6 +9,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { computeLayout } from '../src/panels/timeline/model/layout.ts';
 import { createTimelineUiStore } from '../src/panels/timeline/state/ui-store.ts';
+import { reviewAnnouncer } from '../src/proposals/actions.ts';
 import { GhostTrackHeaders, ProposalGhostLayer } from '../src/proposals/GhostLayer.tsx';
 import { useGhostModel } from '../src/proposals/state.ts';
 import { CueSeam } from '../src/sound/cues/CueSeam.tsx';
@@ -138,7 +139,9 @@ describe('proposal ghost layer', () => {
 		await t.action('accept');
 		const before = t.session.getCommitted();
 		await t.action('apply');
-		expect(t.toasts.at(-1)).toBe('Apply needs a click or key press by the user');
+		// WP3.3b: the card's Apply is the review's shared Apply (announced, and a toast of the window)
+		expect(reviewAnnouncer.getState().message).toMatch(/^Only you can apply a proposal/);
+		expect(t.engine.calls.some((c) => c.startsWith('accept'))).toBe(false);
 		expect(t.session.getCommitted()).toBe(before);
 	});
 

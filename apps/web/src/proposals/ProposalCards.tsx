@@ -14,10 +14,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { createStore } from 'zustand/vanilla';
 import { t } from '../i18n/runtime.ts';
 import { useShellRuntimeOrNull } from '../shell/context.tsx';
-import { useEngineOrNull } from '../state/engine.tsx';
 import { openReview, reviewAnnouncer } from './actions.ts';
 import { type CardCounts, cardSentence, proposalCardCounts } from './review.ts';
-import { useProposals } from './state.ts';
+import { proposalsFor, useProposals } from './state.ts';
 
 /** Most cards shown at once (the Review panel lists every proposal). */
 export const MAX_PROPOSAL_CARDS = 3;
@@ -78,33 +77,30 @@ export function ProposalCards({ session }: { session: EditorSession }) {
 }
 
 function ProposalCard({ session, summary: p }: { session: EditorSession; summary: ProposalSummary }) {
-	const engine = useEngineOrNull()?.client ?? null;
 	const runtime = useShellRuntimeOrNull();
 	const [counts, setCounts] = useState<CardCounts | null>(null);
 	const agent = typeof p.author === 'object' ? p.author.agent : '';
 	// "n sounds on k new tracks": a preview of the undecided items (never committed), once per change of the proposal
 	// biome-ignore lint/correctness/useExhaustiveDependencies: p.updatedAt re-reads the proposal when it changed
 	useEffect(() => {
-		if (!engine) return;
 		let live = true;
-		void engine.getProposal(session.projectId, p.id).then(
-			(r) => {
-				if (!live) return;
+		void proposalsFor(session)
+			.read(p.id)
+			.then((proposal) => {
+				if (!live || !proposal) return;
 				const ctx = session.ctx;
 				setCounts(
-					proposalCardCounts(session.getCommitted(), r.proposal, {
+					proposalCardCounts(session.getCommitted(), proposal, {
 						registries: ctx.registries,
 						revision: session.revision,
 						invariants: 'incremental',
 					}),
 				);
-			},
-			() => undefined,
-		);
+			});
 		return () => {
 			live = false;
 		};
-	}, [engine, session, p.id, p.updatedAt]);
+	}, [session, p.id, p.updatedAt]);
 	const sentence = cardSentence(agent, p.title, p.feature, counts);
 	return (
 		<li
