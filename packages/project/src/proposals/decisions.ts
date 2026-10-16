@@ -93,6 +93,49 @@ export function reopenItems(p: Proposal, itemIds: readonly string[] | 'all', now
 	);
 }
 
+/** A setup item (`meta.setup: true`): it exists only as the requirement of other items (a bin, an imported sound, a cue). */
+export function isSetupItem(item: { meta?: unknown }): boolean {
+	const m = item.meta;
+	return !!m && typeof m === 'object' && (m as { setup?: unknown }).setup === true;
+}
+
+/** Reason recorded on a setup item nothing needs any more. */
+export const SETUP_NOT_NEEDED = 'Not needed: every item that requires it was rejected or does not apply';
+
+/**
+ * Setup items nothing left needs: a pending or stale setup item whose dependents are all rejected or invalid becomes
+ * rejected (transitively), so a reviewed proposal is decided and "all" never applies a requirement alone (a sound
+ * imported, a cue added for a placement the user turned down). Accepting such a dependent later still accepts its
+ * rejected requirements with it (`planAccept`). Pure; the document is not touched.
+ */
+export function settleSetupItems(p: Proposal, now: string): DecisionResult {
+	let items = p.items;
+	const changed: string[] = [];
+	for (let pass = 0; pass < 64; pass++) {
+		const dependents = new Map<string, ProposalItem[]>();
+		for (const it of items)
+			for (const r of it.requires) {
+				const list = dependents.get(r);
+				if (list) list.push(it);
+				else dependents.set(r, [it]);
+			}
+		const settle = new Set<string>();
+		for (const it of items) {
+			if (!isSetupItem(it) || (it.state !== 'pending' && it.state !== 'stale')) continue;
+			const deps = dependents.get(it.id) ?? [];
+			if (deps.length && deps.every((d) => d.state === 'rejected' || d.state === 'invalid'))
+				settle.add(it.id);
+		}
+		if (settle.size === 0) break;
+		items = items.map((it) => {
+			if (!settle.has(it.id)) return it;
+			changed.push(it.id);
+			return { ...stripReason(it), state: 'rejected' as const, reason: SETUP_NOT_NEEDED };
+		});
+	}
+	return { ok: true, proposal: changed.length ? { ...p, items, updatedAt: now } : p, changed };
+}
+
 /** Sets (or with null / "" clears) the reviewer's note of an item. */
 export function setItemNote(p: Proposal, itemId: string, note: string | null, now: string): DecisionResult {
 	const errors = unknownIds(p, [itemId]);

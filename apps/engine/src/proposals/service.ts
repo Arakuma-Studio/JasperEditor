@@ -29,6 +29,7 @@ import {
 	selectAlternative,
 	selectedCommands,
 	setItemNote,
+	settleSetupItems,
 	soundDesignSettingsOf,
 	type TransactionResult,
 } from '@jasper/project';
@@ -214,10 +215,13 @@ export class ProposalService {
 				`The proposal is malformed: ${r.errors[0]?.message ?? 'invalid'}`,
 				issuesDetail(r.errors[0]?.code ?? 'E_SCHEMA', r.errors),
 			);
-		const { evicted } = await this.store.create(projectId, r.proposal);
+		// Setup items only invalid items need are settled at once (nothing would ever apply them).
+		const settled = settleSetupItems(r.proposal, r.proposal.updatedAt);
+		const proposal = settled.ok ? settled.proposal : r.proposal;
+		const { evicted } = await this.store.create(projectId, proposal);
 		for (const id of evicted) this.publish(projectId, null, 'evicted', {}, id);
-		this.publish(projectId, r.proposal, 'created');
-		return { proposal: r.proposal, revision, evicted };
+		this.publish(projectId, proposal, 'created');
+		return { proposal, revision, evicted };
 	}
 
 	async accept(
@@ -315,11 +319,14 @@ export class ProposalService {
 				throw txError(result);
 			}
 			const at = this.now().toISOString();
-			const accepted = markAccepted(p, composed.itemIds, {
+			const marked = markAccepted(p, composed.itemIds, {
 				revision: result.revision,
 				refs: result.refs,
 				at,
 			});
+			// Setup items only rejected items needed are done too (the proposal can be decided).
+			const settled = settleSetupItems(marked, at);
+			const accepted = settled.ok ? settled.proposal : marked;
 			await this.store.put(projectId, accepted);
 			p = accepted;
 			this.publish(projectId, accepted, 'accepted', { itemIds: composed.itemIds, revision: result.revision });
@@ -368,6 +375,14 @@ export class ProposalService {
 				);
 			}
 			let next = r.proposal;
+			let changedIds = r.changed;
+			if (decision.kind === 'reject' && r.changed.length) {
+				const settled = settleSetupItems(next, now);
+				if (settled.ok && settled.changed.length) {
+					next = settled.proposal;
+					changedIds = [...r.changed, ...settled.changed];
+				}
+			}
 			if (decision.kind === 'select' && r.changed.length) {
 				// The chosen command set must apply to the document now (with what the item requires); its anchors are
 				// where things are now. A working alternative also revives an item whose own set was invalid.
@@ -404,8 +419,8 @@ export class ProposalService {
 						: decision.kind === 'note'
 							? 'noted'
 							: 'selected';
-			this.publish(projectId, next, change, { itemIds: r.changed });
-			return { proposal: next, changed: r.changed };
+			this.publish(projectId, next, change, { itemIds: changedIds });
+			return { proposal: next, changed: changedIds };
 		});
 	}
 

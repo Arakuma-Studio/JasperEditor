@@ -13,9 +13,11 @@ import {
 	type AudioClip,
 	type ClipSfx,
 	flicksPerFrame,
+	makeEnvelope,
 	type ProjectDocument,
 	type Sequence,
 	type SoundDesign,
+	soundDesignSettingsOf,
 } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -260,7 +262,12 @@ describe('proposal MCP tools', { timeout: 900_000 }, () => {
 			proposalId: plan.proposalId,
 			itemIds: [plan.events[0]!.itemId, plan.events[1]!.itemId],
 		});
-		expect(rej.changed).toEqual([plan.events[0]!.itemId, plan.events[1]!.itemId]);
+		expect(rej.changed.slice(0, 2)).toEqual([plan.events[0]!.itemId, plan.events[1]!.itemId]);
+		// their own new cues (setup items nothing else needs) are settled with them
+		const after = await ok<Got>('get_proposal', { projectId, proposalId: plan.proposalId, ghosts: false });
+		for (const id of rej.changed.slice(2))
+			expect(after.items.find((i) => i.itemId === id)).toMatchObject({ setup: true, state: 'rejected' });
+		expect(rej.changed.slice(2)).toContain(`cue:${plan.events[0]!.itemId}`);
 	});
 
 	it('wait_for_proposal returns the user’s decisions: accepted, rejected, swapped, notes', async () => {
@@ -333,15 +340,24 @@ describe('proposal MCP tools', { timeout: 900_000 }, () => {
 
 	it('an allowed agent accepts the rest ("all" = the remaining place items with their setup); decided', async () => {
 		// The user turns on "Allow agents to apply sound proposals" (an agent cannot grant it to itself).
-		const tx = await editor('/api/agent/tx', {
-			projectId,
-			transaction: {
-				label: 'Allow agents',
-				origin: 'user',
-				commands: [{ type: 'soundDesign.setSettings', agentsMayApply: true }],
-			},
+		// (Saved from the editor window: the setting's command needs the user's approval card, which a headless
+		// test cannot answer.)
+		const doc = await documentOf(projectId);
+		const seq = seqOf(doc);
+		const sd = (seq.soundDesign ?? { cues: {} }) as SoundDesign;
+		(seq as { soundDesign?: unknown }).soundDesign = {
+			...sd,
+			settings: { ...soundDesignSettingsOf(seq), agentsMayApply: true },
+		};
+		const rev0 = await revisionOf(projectId);
+		const put = await fetch(`${BASE}/api/projects/${projectId}`, {
+			method: 'PUT',
+			headers: { ...EDITOR, 'if-match': String(rev0) },
+			body: JSON.stringify(
+				makeEnvelope(doc, { revision: rev0 + 1, savedAt: new Date().toISOString(), platform: 'test' }),
+			),
 		});
-		expect((tx.result as { ok: boolean }).ok, JSON.stringify(tx)).toBe(true);
+		expect(put.status, await put.clone().text()).toBeLessThan(300);
 		const rev = await revisionOf(projectId);
 		const r = await ok<{ applied: string[]; counts: Record<string, number> }>('accept_proposal', {
 			projectId,
@@ -360,9 +376,9 @@ describe('proposal MCP tools', { timeout: 900_000 }, () => {
 		});
 		expect(w.status).toBe('applied');
 		// rejected items stay unplaced: their cues (new ones) were never added
-		const seq = seqOf(await documentOf(projectId));
+		const final = seqOf(await documentOf(projectId));
 		expect(
-			cuesOf(seq).some((c) => c.frame === plan.events[0]!.frame && c.kind === plan.events[0]!.kind),
+			cuesOf(final).some((c) => c.frame === plan.events[0]!.frame && c.kind === plan.events[0]!.kind),
 		).toBe(false);
 	});
 

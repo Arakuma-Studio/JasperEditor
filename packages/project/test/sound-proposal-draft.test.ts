@@ -3,8 +3,8 @@
 // sound on the cue in one transaction, an alternative places another sound, and nothing a place item needs is missing.
 import { describe, expect, it } from 'vitest';
 import {
-	applyTransaction,
 	type AudioClip,
+	applyTransaction,
 	type ClipSfx,
 	composeAcceptTx,
 	createProposal,
@@ -15,9 +15,12 @@ import {
 	type Proposal,
 	type ProposalContext,
 	planAccept,
-	selectAlternative,
+	rejectItems,
+	SETUP_NOT_NEEDED,
 	type SoundProposalMedia,
 	type SoundProposalPlacement,
+	selectAlternative,
+	settleSetupItems,
 	soundCuesOf,
 	soundProposalItems,
 } from '../src/index.ts';
@@ -37,7 +40,13 @@ function sound(title: string, fingerprint?: string): SoundProposalMedia {
 		soundId,
 		title,
 		types: ['hit'],
-		descriptors: { ...LIB.descriptors!, peakSec: 0.0705, onsetSec: 0.06, headQuietSec: 0.05, durationSec: 0.55 },
+		descriptors: {
+			...LIB.descriptors!,
+			peakSec: 0.0705,
+			onsetSec: 0.06,
+			headQuietSec: 0.05,
+			durationSec: 0.55,
+		},
 		leadSilenceSec: 0.05,
 	};
 	const asset = videoAsset({ kind: 'audio', seconds: 0.55 }) as Record<string, unknown>;
@@ -101,7 +110,14 @@ describe('soundProposalItems', () => {
 				label: 'Hit C · land',
 				group: 'hero',
 				cue: {
-					add: { frame: 120, kind: 'land', weight: 'hero', align: 'peak', source: 'derived', reason: 'logo lands' },
+					add: {
+						frame: 120,
+						kind: 'land',
+						weight: 'hero',
+						align: 'peak',
+						source: 'derived',
+						reason: 'logo lands',
+					},
 					label: 'Cue: land',
 				},
 				layers: [{ soundId: c.soundId, role: 'hero' }],
@@ -123,7 +139,11 @@ describe('soundProposalItems', () => {
 		expect(built.items.filter(isSetupItem).map((i) => i.group)).toEqual(Array(5).fill('setup'));
 		const place2 = built.items.find((i) => i.id === 'sfx:002')!;
 		expect(place2.requires).toEqual(['cue:sfx:002', `sound:${c.soundId}`, `sound:${a.soundId}`]);
-		expect(place2.commands[0]).toMatchObject({ type: 'soundDesign.place', cueId: '$cue0', alternatives: [c.soundId, a.soundId] });
+		expect(place2.commands[0]).toMatchObject({
+			type: 'soundDesign.place',
+			cueId: '$cue0',
+			alternatives: [c.soundId, a.soundId],
+		});
 		const altLayer = (place2.alternatives![0]!.commands[0] as { layers: { mediaId: string }[] }).layers[0]!;
 		expect(altLayer.mediaId).toBe(built.mediaOf.get(a.soundId));
 
@@ -139,7 +159,12 @@ describe('soundProposalItems', () => {
 		const land = cues.find((x) => x.frame === 120)!;
 		expect(land.placedClipIds).toHaveLength(1);
 		const clip = seq.clips[land.placedClipIds![0]!] as SfxClip;
-		expect(clip.sfx).toMatchObject({ cueId: land.id, soundId: c.soundId, role: 'hero', alternatives: [c.soundId, a.soundId] });
+		expect(clip.sfx).toMatchObject({
+			cueId: land.id,
+			soundId: c.soundId,
+			role: 'hero',
+			alternatives: [c.soundId, a.soundId],
+		});
 		// The bin holds the two imported sounds (A comes along as C's alternative).
 		const bin = Object.values(doc.items).find((i) => i.kind === 'bin' && i.name === 'Sound Effects')!;
 		expect(bin).toBeDefined();
@@ -171,7 +196,9 @@ describe('soundProposalItems', () => {
 		const sel = selectAlternative(p0, 'sfx:001', 1, NOW);
 		if (!sel.ok) throw new Error('select failed');
 		const { doc } = accept(h, sel.proposal, ['sfx:001']);
-		const clip = Object.values(Object.values(doc.sequences)[0]!.clips).find((c) => c.kind === 'audio') as SfxClip;
+		const clip = Object.values(Object.values(doc.sequences)[0]!.clips).find(
+			(c) => c.kind === 'audio',
+		) as SfxClip;
 		expect(clip.sfx!.soundId).toBe(b.soundId);
 		expect(clip.sfx!.alternatives).toEqual([a.soundId, b.soundId]);
 	});
@@ -197,8 +224,16 @@ describe('soundProposalItems', () => {
 			],
 			{ binName: 'Sound Effects' },
 		);
-		expect(built.items.map((i) => i.id)).toEqual([`sound:${a.soundId}`, `sound:${b.soundId}`, 'p1', 'p2', 'p3']);
-		expect(built.items[0]!.commands).toEqual([{ type: 'media.setLibraryInfo', mediaId: reg.mediaId, library: a.library }]);
+		expect(built.items.map((i) => i.id)).toEqual([
+			`sound:${a.soundId}`,
+			`sound:${b.soundId}`,
+			'p1',
+			'p2',
+			'p3',
+		]);
+		expect(built.items[0]!.commands).toEqual([
+			{ type: 'media.setLibraryInfo', mediaId: reg.mediaId, library: a.library },
+		]);
 		expect(built.mediaOf.get(a.soundId)).toBe(reg.mediaId);
 		expect(built.mediaOf.get(twin.soundId)).toBe(built.mediaOf.get(b.soundId));
 		expect(built.items.find((i) => i.id === 'p3')!.requires).toEqual([`sound:${b.soundId}`]);
@@ -234,5 +269,59 @@ describe('soundProposalItems', () => {
 		// "all" through composeAcceptTx is valid structure
 		const p = create(h, built.items);
 		expect(composeAcceptTx(p, 'all', 'user').ok).toBe(true);
+	});
+
+	it('settles setup items nothing needs any more; accepting a rejected item later brings its requirements back', () => {
+		const h = new Harness();
+		const a = sound('Hit A');
+		const b = sound('Hit B');
+		const built = soundProposalItems(
+			h.doc,
+			h.seqId,
+			[a, b],
+			[
+				{
+					id: 'p1',
+					label: 'a',
+					group: 'support',
+					cue: { add: { frame: 30, kind: 'cut', weight: 'support', source: 'derived' }, label: 'Cue 30' },
+					layers: [{ soundId: a.soundId }],
+				},
+				{
+					id: 'p2',
+					label: 'b',
+					group: 'support',
+					cue: { add: { frame: 90, kind: 'cut', weight: 'support', source: 'derived' }, label: 'Cue 90' },
+					layers: [{ soundId: b.soundId }],
+					alternatives: [{ soundId: a.soundId, label: 'Hit A' }],
+				},
+			],
+			{ binName: 'Sound Effects' },
+		);
+		const p0 = create(h, built.items);
+		const r = rejectItems(p0, ['p1'], NOW);
+		if (!r.ok) throw new Error('reject failed');
+		const s1 = settleSetupItems(r.proposal, NOW);
+		if (!s1.ok) throw new Error('settle failed');
+		// p1's own cue goes; sound A and the bin are still needed by p2 (its alternative).
+		expect(s1.changed).toEqual(['cue:p1']);
+		expect(s1.proposal.items.find((i) => i.id === 'cue:p1')).toMatchObject({
+			state: 'rejected',
+			reason: SETUP_NOT_NEEDED,
+		});
+		const r2 = rejectItems(s1.proposal, ['p2'], NOW);
+		if (!r2.ok) throw new Error('reject failed');
+		const s2 = settleSetupItems(r2.proposal, NOW);
+		if (!s2.ok) throw new Error('settle failed');
+		expect(new Set(s2.changed)).toEqual(
+			new Set([`sound:${a.soundId}`, `sound:${b.soundId}`, 'cue:p2', 'bin']),
+		);
+		expect(s2.proposal.items.every((i) => i.state === 'rejected')).toBe(true);
+		// settling again changes nothing; non-setup items are never settled
+		expect(settleSetupItems(s2.proposal, NOW).changed).toEqual([]);
+		// the user changes their mind: accepting p1 brings its rejected requirements along
+		const { doc } = accept(h, s2.proposal, ['p1']);
+		const seq = Object.values(doc.sequences)[0]!;
+		expect(soundCuesOf(seq).find((c) => c.frame === 30)!.placedClipIds).toHaveLength(1);
 	});
 });

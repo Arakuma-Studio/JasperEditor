@@ -249,9 +249,3 @@ export function soundProposalItems(
 	}
 	return { items: [...setup, ...cues, ...places], mediaOf, missing: [...missing] };
 }
-
-/** True for a setup item (`meta.setup`): accepted only as the requirement of a place item. */
-export function isSetupItem(item: { meta?: unknown }): boolean {
-	const m = item.meta;
-	return !!m && typeof m === 'object' && (m as { setup?: unknown }).setup === true;
-}
