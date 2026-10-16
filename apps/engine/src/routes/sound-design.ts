@@ -15,10 +15,10 @@
 import {
 	type EnvelopeJson,
 	SfxRebalanceRequestSchema,
+	SoundCheckRequestSchema,
 	type SoundCueSuggestion,
 	SoundCuesRequestSchema,
 	type SoundCuesResponse,
-	SoundCheckRequestSchema,
 	SoundDeliveryRequestSchema,
 	SoundDesignPlanRequestSchema,
 	SoundVisualRequestSchema,
@@ -32,8 +32,8 @@ import {
 	loadProject,
 	type ProjectDocument,
 	type Rational,
-	sequenceDialogueRanges,
 	SOUND_CHECK_THRESHOLDS,
+	sequenceDialogueRanges,
 	sequenceDuration,
 	sequenceTimecode,
 	soundCuesOf,
@@ -134,7 +134,11 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 				throw new HttpError(400, 'RANGE_EMPTY', `The range is outside the sequence (0–${duration} frames)`);
 			const span = body.range ? Math.min(body.range.end, duration) - body.range.start : duration;
 			if (span / fps > SOUND_CHECK_THRESHOLDS.maxRangeSec)
-				throw new HttpError(400, 'RANGE_TOO_LONG', 'Sound Check takes at most 4 hours at once: check a range');
+				throw new HttpError(
+					400,
+					'RANGE_TOO_LONG',
+					'Sound Check takes at most 4 hours at once: check a range',
+				);
 			const editor = req.jasperEditor === true;
 			const who = { editor, agent: agentNameOf(req) };
 			reply.code(202);
@@ -173,7 +177,7 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 			let checkJob = null;
 			if (body.checkJobId) {
 				checkJob = core.queue.get(body.checkJobId);
-				if (!checkJob || checkJob.kind !== 'sound-check' || checkJob.projectId !== body.projectId)
+				if (checkJob?.kind !== 'sound-check' || checkJob.projectId !== body.projectId)
 					throw new HttpError(404, 'JOB_NOT_FOUND', `No Sound Check job ${body.checkJobId} of this project`);
 			}
 			const ac = new AbortController();
