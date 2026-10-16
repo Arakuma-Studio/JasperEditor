@@ -247,8 +247,19 @@ export async function waitForJob(
 	timeoutMs = 240_000,
 ): Promise<EngineJob> {
 	const t0 = Date.now();
+	let resets = 0;
 	for (;;) {
-		const res = await request.get(`/api/jobs/${jobId}`);
+		let res: Awaited<ReturnType<APIRequestContext['get']>>;
+		try {
+			res = await request.get(`/api/jobs/${jobId}`);
+		} catch (e) {
+			// a kept-alive socket the loaded engine closed under the poll: ask again (a few times), never hide a failure
+			if (resets++ < 5 && /ECONNRESET|socket hang up/i.test(String((e as Error).message))) {
+				await new Promise((r) => setTimeout(r, 500));
+				continue;
+			}
+			throw e;
+		}
 		expect(res.ok()).toBe(true);
 		const job = EngineJobSchema.parse(await res.json());
 		if (TERMINAL_JOB_STATES.has(job.state)) return job;
