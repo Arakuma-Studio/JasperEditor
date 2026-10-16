@@ -174,7 +174,9 @@ export interface SolverResult {
 // ── helpers ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 const BANDS = 7; // OCTAVE_BAND_CENTRES_HZ.length
-const DIALOGUE_BAND_INDICES = /* @__PURE__ */ DIALOGUE_BANDS_HZ.map((hz) => OCTAVE_BAND_CENTRES_HZ.indexOf(hz));
+const DIALOGUE_BAND_INDICES = /* @__PURE__ */ DIALOGUE_BANDS_HZ.map((hz) =>
+	OCTAVE_BAND_CENTRES_HZ.indexOf(hz),
+);
 /** Highest level accepted in a band or loudness field (dB); more is treated as invalid. */
 const LEVEL_CEILING_DB = 200;
 const BIT = /* @__PURE__ */ Object.fromEntries(SOLVER_CONSTRAINTS.map((c, i) => [c, 1 << i])) as Record<
