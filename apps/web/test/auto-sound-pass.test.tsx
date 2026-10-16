@@ -27,7 +27,7 @@ async function chooseOption(trigger: HTMLElement, name: string | RegExp) {
 	});
 }
 
-function setup(build?: Parameters<typeof fakePlanEngine>[1]) {
+function setup(build?: Parameters<typeof fakePlanEngine>[1], runningPolls?: number) {
 	const { session, seqId } = makeSession();
 	const r = session.apply({
 		label: 'setup',
@@ -53,6 +53,7 @@ function setup(build?: Parameters<typeof fakePlanEngine>[1]) {
 				stored = storeProposal(proposals, seqId, 'Sound design: Seq', [60, 120, 150]).id;
 				return planResult({ proposalId: stored, projectId: req.projectId, sequenceId: seqId, placed: 3 });
 			}),
+		runningPolls,
 	);
 	const engine = { ...sounds.client, ...plan };
 	const closed: unknown[] = [];
@@ -148,7 +149,8 @@ describe('Auto Sound Pass… dialog', () => {
 	});
 
 	it('closing it while the job runs cancels the job (and leaves no review)', async () => {
-		const t = setup();
+		// the job runs until it is cancelled (a loaded host must not let it finish before the click)
+		const t = setup(undefined, Number.POSITIVE_INFINITY);
 		const dialog = await screen.findByTestId('auto-sound-pass-dialog');
 		await act(async () => {
 			fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
