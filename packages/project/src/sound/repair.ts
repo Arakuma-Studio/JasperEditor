@@ -317,7 +317,10 @@ export function remapSoundDesign(
 		// What stop-before, build and room glue wrote names the original's keys, effects and sends: the copy keeps the
 		// automation as ordinary keys, without the records (running them again on the copy merges by the minimum).
 		delete (sd as { mix?: unknown }).mix;
-		if (isRecord(sd.settings)) (sd.settings as { roomBus?: unknown }).roomBus = null;
+		if (isRecord(sd.settings)) {
+			const rb = (sd.settings as { roomBus?: unknown }).roomBus;
+			(sd.settings as { roomBus?: unknown }).roomBus = typeof rb === 'string' ? (maps.tracks.get(rb) ?? null) : null;
+		}
 		const s = sd.settings;
 		if (isRecord(s) && Array.isArray(s.sfxTrackIds))
 			s.sfxTrackIds = (s.sfxTrackIds as string[])

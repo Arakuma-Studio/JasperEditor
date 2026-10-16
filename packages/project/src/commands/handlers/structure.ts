@@ -1001,6 +1001,23 @@ function duplicateSequence(src: Sequence, h: HandlerContext): Sequence {
 		t.id = id;
 		reidentifyClipChildren(t as never, h);
 	}
+	// Submixes (and the sends and outputs naming them) are entities of the sequence too: a copy that kept their ids
+	// failed INV-001 (duplicate track, effect and send ids) as soon as the source had a submix with an effect or a send.
+	for (const t of seq.submixTracks ?? []) {
+		const id = h.ids.next('trk');
+		trackMap.set(t.id, id);
+		t.id = id;
+		reidentifyClipChildren(t as never, h);
+	}
+	for (const t of [...seq.audioTracks, ...(seq.submixTracks ?? [])]) {
+		const mixer = t.mixer;
+		if (!mixer) continue;
+		if (typeof mixer.output === 'string') mixer.output = trackMap.get(mixer.output) ?? mixer.output;
+		for (const x of mixer.sends ?? []) {
+			x.id = h.ids.next('snd');
+			x.target = trackMap.get(x.target) ?? x.target;
+		}
+	}
 	reidentifyClipChildren(seq.master as never, h);
 	const markerMap = new Map<string, string>();
 	for (const m of seq.markers) {

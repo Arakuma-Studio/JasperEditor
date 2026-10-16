@@ -55,7 +55,7 @@ type DAudio = Draft<AudioClip> & { sfx?: ClipSfx };
 type DAnim = Draft<Animatable<number>>;
 type DEffect = Draft<EffectInstance>;
 
-const plainCopy = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+const plainCopy = <T>(v: T): T => (v === undefined ? v : (JSON.parse(JSON.stringify(v)) as T));
 const MS = 705_600_000 / 1000;
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -687,7 +687,7 @@ function ensureBus(doc: DDoc, cmd: CommandOf<'soundDesign.ensureBus'>, h: Handle
 					sequenceId: seq.id,
 					stripId: t.id,
 					sendId: existing.id,
-					patch: { levelDb: opts.sendDb, preFader: false },
+					patch: { levelDb: opts.sendDb, ...(existing.preFader ? { preFader: false } : {}) },
 				},
 				h,
 			);

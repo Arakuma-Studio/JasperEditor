@@ -268,6 +268,22 @@ export function mergeDips(
 			const f = fadeOf(d);
 			for (const t of [d.start - f, d.start, d.end, d.end + f]) if (t > ws && t < we) pts.add(t);
 		}
+		// Overlapping dips: where one's ramp crosses another's (the deepest wins: a kink of the dip curve).
+		if (valid.length > 1) {
+			const corners = [...pts].sort((x, y) => x - y);
+			for (let c = 0; c + 1 < corners.length; c++) {
+				const a = corners[c]!;
+				const b = corners[c + 1]!;
+				const va = valid.map((d) => dipEnvelopeAt([d], a));
+				const vb = valid.map((d) => dipEnvelopeAt([d], b));
+				for (let i = 0; i < valid.length; i++)
+					for (let j = i + 1; j < valid.length; j++) {
+						const da = va[i]! - va[j]!;
+						const db = vb[i]! - vb[j]!;
+						if ((da > 0 && db < 0) || (da < 0 && db > 0)) pts.add(a + ((b - a) * da) / (da - db));
+					}
+			}
+		}
 		const kfs = cur.keyframes;
 		const st = seqTimes();
 		for (let i = 0; i < kfs.length; i++) {
@@ -290,7 +306,9 @@ export function mergeDips(
 			const b = Math.min(we, Math.max(st[i]!, st[i + 1]!));
 			for (let t = a + RESAMPLE_FLICKS; t < b; t += RESAMPLE_FLICKS) pts.add(t);
 		}
-		const times = [...pts].sort((x, y) => x - y);
+		// Values at the times the keys are stored at (whole lane flicks), so the curve outside stays the same line.
+		const snap = (t: number) => lane.toSeq(Math.round(lane.toLane(t)));
+		const times = [...new Set([...pts].map(snap))].filter((t) => t >= ws - 1 && t <= we + 1).sort((x, y) => x - y);
 		const out: [number, number][] = [];
 		for (let i = 0; i < times.length; i++) {
 			const t = times[i]!;
@@ -336,7 +354,7 @@ export function unwriteCurve(
 	const kept = keyframes.filter((k) => !ids.has(k.id));
 	if (exact) {
 		const times = new Set(kept.map((k) => k.time));
-		for (const k of write.replaced) if (!times.has(k.time)) kept.push(JSON.parse(JSON.stringify(k)));
+		for (const k of write.replaced) if (!times.has(k.time)) kept.push(structuredClone(k));
 	}
 	return { keyframes: kept.sort((a, b) => a.time - b.time), exact };
 }
