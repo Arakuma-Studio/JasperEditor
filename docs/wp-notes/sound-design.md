@@ -4733,6 +4733,17 @@ the AC-25 integrity fuzz (2 000 runs; more than RUNS / 50 accepted transactions 
   `pnpm vitest run packages/audio-fx packages/api packages/engine-client apps/web/test/i18n.test.ts`: 374 of 377 passed;
   the 3 failures are timing tests at load ≈ 110 (WP4.1a's "2000 events in under 50 ms": 131 ms; two Music Remix
   analyses over their 120 s timeout) in code this package does not touch (`masking.ts`, `remix.ts`).
+  `pnpm vitest run --project @jasper/project --maxWorkers=3` at load 85–105: 1 975 of 1 980 passed; the 5 failures are
+  tests over their own time limits (hostile parser fuzz MCC / .3dl / LUT, the glTF mesh budget's 20 s, and
+  `sound-p2v-model`'s repair property at 120 s) — run alone the property passes (35 of 35) and so do the parser fuzz
+  targets (47 of 48 with the glTF timing check failing again at 52 s); before the merge the whole suite passed (160 files,
+  1 977 tests). Engine after the merge: `sound-design-{mix,delivery,bed,rebalance}` pass; `proposals` and
+  `sound-design-plan` pass with `--testTimeout=900000` (their 5 s defaults time out at load ≈ 140);
+  `sound-design-plan-mix` passes (its first plan took 966 s at load ≈ 100: its timeout now follows the load);
+  `sound-design-plan-levels`' timing assertion (≤ 45 s) fails at load ≈ 140 (138 s). MCP after the merge: `sound-mix`,
+  `conventions`, `readme-tools`, `sound-guide`, `sound-examples`, `sound-rebalance`, `sound-cues`, `fuzz` pass;
+  `proposals.test.ts` (whose plan-table header this package extends with a `mix` column) could not start its engine
+  within its 120 s at load 70–100 in three attempts — the new header is the one the real run printed.
 
 #### Limits and notes for the next packages
 
