@@ -159,6 +159,11 @@ export function ghostTable(doc: ProjectDocument, p: Proposal): { table: string; 
 		const ghost = preview.items[id];
 		const it = label.get(id)!;
 		if (!ghost) continue;
+		// Setup items (a bin, an imported sound, a new cue) in one line each: what they are for is the place item.
+		if (isSetupItem(it)) {
+			if (rows.length <= MAX_GHOST_ROWS) rows.push(`${id} | ${it.state} | setup | — | — | — | ${it.label}`);
+			continue;
+		}
 		for (const [kind, ids] of [
 			['create', ghost.created],
 			['change', ghost.changed],
@@ -190,12 +195,14 @@ export function ghostTable(doc: ProjectDocument, p: Proposal): { table: string; 
 						break;
 					}
 				}
-				if (!line) {
+				if (!line && kind !== 'change') {
+					// Media and their Project items: one row (the media); bins and other entities by name.
 					const media = src.media[eid];
+					const item = src.items[eid];
 					if (media) line = `${id} | ${it.state} | ${kind} media | — | — | — | ${media.originalName}`;
-					else if (src.items[eid])
-						line = `${id} | ${it.state} | ${kind} ${src.items[eid]!.kind} | — | — | — | ${src.items[eid]!.name}`;
-					else if (kind !== 'change') line = `${id} | ${it.state} | ${kind} | — | — | — | ${eid}`;
+					else if (item && item.kind !== 'media')
+						line = `${id} | ${it.state} | ${kind} ${item.kind} | — | — | — | ${item.name}`;
+					else if (!item) line = `${id} | ${it.state} | ${kind} | — | — | — | ${eid}`;
 				}
 				if (line) rows.push(line);
 			}

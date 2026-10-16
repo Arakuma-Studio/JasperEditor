@@ -351,6 +351,25 @@ function placedSounds(seq: Sequence): { frame: number; soundId: string | null; h
 const round4 = (x: number) => Math.round(x * 10_000) / 10_000;
 
 /**
+ * The cue's types are best first (a cut wants a hit before a glitch, WP2.2): ranked sounds are ordered by the first cue
+ * type they carry, keeping the ranking's order within a type — after the ranking's own tier, real recordings before
+ * Jasper Synth (spec 12 §0). Stable.
+ */
+export function byTypeOrder<T extends RankedSound<SoundEntry>>(
+	ranked: readonly T[],
+	types: readonly string[],
+): T[] {
+	const tier = (r: T) => {
+		const i = types.findIndex((t) => r.entry.types.includes(t));
+		return i < 0 ? types.length : i;
+	};
+	return ranked
+		.map((r, i) => ({ r, i, synth: r.entry.source.type === 'synth' ? 1 : 0, tier: tier(r) }))
+		.sort((a, b) => a.synth - b.synth || a.tier - b.tier || a.i - b.i)
+		.map((x) => x.r);
+}
+
+/**
  * Picks the sounds of each cue (frame order): ranked candidates (palette first), the rotation's pick, the alternatives,
  * the role and alignment. Cues beyond `maxCues` and cues no sound fits are skipped. Pure and deterministic for the same
  * document, pool (library snapshot) and style.
@@ -413,14 +432,17 @@ export function selectPlanSounds(
 			const cacheKey = `${types.join(',')}|${visualKind ?? ''}|${windowSec ?? ''}|${cue.align ?? ''}`;
 			let ranked = rankCache.get(cacheKey);
 			if (!ranked) {
-				ranked = rankSounds(pool, req);
+				ranked = byTypeOrder(rankSounds(pool, req), types);
 				rankCache.set(cacheKey, ranked);
 			}
 			const top = ranked.length
-				? rankSounds(
-						ranked.slice(0, RANKED_PER_CUE * 2).map((r) => r.entry),
-						req,
-						{ usedNearby: recentIds },
+				? byTypeOrder(
+						rankSounds(
+							ranked.slice(0, RANKED_PER_CUE * 2).map((r) => r.entry),
+							req,
+							{ usedNearby: recentIds },
+						),
+						types,
 					).slice(0, RANKED_PER_CUE)
 				: [];
 			return [...top.filter((r) => palette.has(r.entry.id)), ...top.filter((r) => !palette.has(r.entry.id))];

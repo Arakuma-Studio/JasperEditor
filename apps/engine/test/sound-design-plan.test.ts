@@ -106,6 +106,7 @@ const POOL: SoundEntry[] = [
 	entry('Blade swish', ['swish']),
 	...['Key a', 'Key b', 'Key c'].map((t) => entry(t, ['key'])),
 	entry('Bubble pop', ['pop']),
+	...['Error buzz', 'Data glitch'].map((t) => entry(t, ['glitch'])),
 	entry('Shimmer', ['shimmer'], { license: 'CC-BY-NC-4.0' }),
 	...['hit', 'whoosh', 'thump', 'boom', 'key', 'pop', 'tap', 'swish', 'reverse'].map((t) =>
 		entry(`Synth ${t}`, [t], { source: 'synth' }),
@@ -223,7 +224,11 @@ describe('plan selection (pure)', () => {
 		expect(push.sounds[0]!.entry.types).toContain('whoosh');
 		expect(push.sounds.length).toBe(4);
 		expect(new Set(push.sounds.map((s) => s.entry.id)).size).toBe(4);
-		// Real recordings rank before synth; the NC-licensed sound is never offered.
+		// A cut lists hit first (WP2.2): hits are offered before thumps or glitches, even where the taxonomy fits a glitch.
+		const cut = a.selected.picks.find((p) => p.cue.frame === 90)!;
+		expect(cut.cue.types[0]).toBe('hit');
+		expect(cut.sounds.every((s) => s.entry.types.includes('hit'))).toBe(true);
+				// Real recordings rank before synth; the NC-licensed sound is never offered.
 		expect(push.sounds.every((s) => s.entry.source.type !== 'synth')).toBe(true);
 		for (const p of a.selected.picks) expect(p.sounds.some((s) => s.entry.title === 'Shimmer')).toBe(false);
 		// Neighbouring cues of one type rotate (the typewriter keys never repeat the previous key).
