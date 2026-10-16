@@ -10,6 +10,7 @@ import { appdirPaths } from '@jasper/config';
 import {
 	isSetupItem,
 	makeEnvelope,
+	mixFingerprint,
 	type ProjectDocument,
 	type Proposal,
 	type SoundDesign,
@@ -260,6 +261,8 @@ describe('sound-design plan: room glue, delivery, stop-before, build (real engin
 		const core = coreServices(app);
 		const deps = { ff: core.ffmpeg, registry: core.registry, cache: new MeasureCache() };
 		const stored = seq.master.loudness!.analysis!;
+		// and current: the fingerprint has no entity ids, so the preview's (seeded ids) is the accepted mix's (fresh ids)
+		expect(stored.mixHash).toBe(mixFingerprint(after.doc, seqId));
 		const real = (await mixAnalysis(after.doc, seqId, deps))!;
 		expect(
 			Math.abs((stored.integratedLufs ?? Number.NaN) - (real.integratedLufs as number)),

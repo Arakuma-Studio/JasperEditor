@@ -24,7 +24,7 @@ import {
 } from '../src/index.ts';
 import { evaluate } from '../src/keyframes.ts';
 import type { Sequence } from '../src/schema/sequence.ts';
-import { Harness } from './helpers.ts';
+import { Harness, videoAsset } from './helpers.ts';
 
 const F30 = 705_600_000 / 30;
 const K = Math.SQRT1_2;
@@ -665,6 +665,47 @@ describe('mixer commands', () => {
 		expect(mixFingerprint(doc, h.seqId)).toBe(fp);
 		doc.sequences[h.seqId]!.audioTracks[0]!.volumeDb!.keyframes[0]!.value = -4;
 		expect(mixFingerprint(doc, h.seqId)).not.toBe(fp);
+	});
+
+	it('mixFingerprint ignores entity ids: the same mix built with other ids is the same mix (Phase 4 verification)', () => {
+		// Two documents built by the same edits with different id sources (an accepted proposal vs its preview, a
+		// re-applied realisation): clips, tracks, submixes, sends, effects and media all get other ids.
+		const build = (seed: number, swap = false) => {
+			const h = new Harness({ seed });
+			const reg = (fp: string, seconds: number) =>
+				(
+					h.ok([
+						{ type: 'media.register', asset: { ...videoAsset({ kind: 'audio', seconds }), fingerprint: fp } },
+					]).results[0] as { mediaId: string }
+				).mediaId;
+			const a = reg(`q1:${'a'.repeat(64)}`, 4);
+			const b = reg(`q1:${'b'.repeat(64)}`, 6);
+			h.ok([{ type: 'track.add', kind: 'audio' }]);
+			h.ok([
+				{ type: 'clip.place', source: { mediaId: swap ? b : a }, at: 0, tracks: { audio: 'A1' } },
+				{ type: 'clip.place', source: { mediaId: swap ? a : b }, at: 30, tracks: { audio: 'A2' } },
+			]);
+			h.ok([{ type: 'mixer.addSubmix' }]);
+			const sub = h.seq.submixTracks![0]!.id;
+			h.ok([{ type: 'mixer.addSend', stripId: 'A2', target: sub, levelDb: -16 }]);
+			return h;
+		};
+		const one = build(1);
+		const two = build(7);
+		expect(Object.keys(two.seq.clips)).not.toEqual(Object.keys(one.seq.clips));
+		expect(mixFingerprint(two.doc, two.seqId)).toBe(mixFingerprint(one.doc, one.seqId));
+		// what plays where still counts
+		const swapped = build(7, true);
+		expect(mixFingerprint(swapped.doc, swapped.seqId)).not.toBe(mixFingerprint(one.doc, one.seqId));
+		two.ok([
+			{
+				type: 'mixer.updateSend',
+				stripId: 'A2',
+				sendId: two.seq.audioTracks[1]!.mixer!.sends![0]!.id,
+				patch: { levelDb: -15 },
+			},
+		]);
+		expect(mixFingerprint(two.doc, two.seqId)).not.toBe(mixFingerprint(one.doc, one.seqId));
 	});
 
 	it("mixFingerprint changes when Interpret Footage changes how a clip's media plays", () => {
