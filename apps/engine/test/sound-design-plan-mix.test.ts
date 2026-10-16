@@ -261,7 +261,9 @@ describe('sound-design plan: room glue, delivery, stop-before, build (real engin
 		const deps = { ff: core.ffmpeg, registry: core.registry, cache: new MeasureCache() };
 		const stored = seq.master.loudness!.analysis!;
 		const real = (await mixAnalysis(after.doc, seqId, deps))!;
-		expect(Math.abs(stored.integratedLufs - (real.integratedLufs as number))).toBeLessThanOrEqual(0.1);
+		expect(
+			Math.abs((stored.integratedLufs ?? Number.NaN) - (real.integratedLufs as number)),
+		).toBeLessThanOrEqual(0.1);
 		expect(
 			Math.abs((stored.truePeakDbtp ?? 0) - ((real.truePeakDbtp as number | null) ?? 0)),
 		).toBeLessThanOrEqual(0.1);

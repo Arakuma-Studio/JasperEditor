@@ -19,15 +19,19 @@ import type {
 } from '@jasper/api';
 import type { SolverEvent } from '@jasper/audio-fx';
 import {
+	appliedRefs,
+	applyTransaction,
 	createSeededIdSource,
+	dependencyClosure,
 	type MgTemplateRegistry,
 	type ProjectDocument,
 	type Proposal,
 	type ProposalDraft,
-	previewProposal,
 	type Registries,
 	readClipSfx,
 	type Sequence,
+	selectedCommands,
+	substituteKnownRefs,
 	type SoundDelivery,
 	soundDesignSettingsOf,
 } from '@jasper/project';
@@ -84,19 +88,28 @@ const placeLayersOf = (items: readonly Item[], itemId: string): number => {
 	return it ? placeLayers(it.commands as Cmd[]) : 0;
 };
 
-/** The preview of the draft with alternative `slot` selected where an item has one (0 = the chosen sounds). */
-function preview(
+type SlotPreview = { doc: ProjectDocument; clips: Map<string, string[]> };
+
+/**
+ * The previews of the draft, slot 0 with the chosen sounds and slot k with alternative k selected where an item has
+ * one: every item applied on top of the edit in proposal order, one transaction each with refs carried over and ids
+ * seeded by item and selected alternative (as `previewProposal` does; an item whose requirement failed fails too).
+ * Slot k starts from slot 0's document right before the first item it selects differently (the documents before are
+ * the same), and only the clips each item creates are noted (no ghosts): the same documents for less work.
+ */
+function previewSlots(
 	doc: ProjectDocument,
 	draft: ProposalDraft,
 	items: Item[],
-	slot: number,
-	ctx: { registries: Registries },
-) {
+	slots: number,
+	ctx: { registries: Registries; signal?: AbortSignal | undefined },
+): SlotPreview[] {
+	const seqId = draft.sequenceId ?? null;
 	const p: Proposal = {
 		version: 1,
 		id: 'prp_0000000000000000',
 		projectId: doc.projectId,
-		sequenceId: draft.sequenceId ?? null,
+		sequenceId: seqId,
 		feature: draft.feature,
 		title: draft.title,
 		summary: draft.summary ?? '',
@@ -110,55 +123,104 @@ function preview(
 			group: it.group ?? '',
 			requires: it.requires ?? [],
 			state: 'pending' as const,
-			...(slot > 0 && (it.alternatives?.length ?? 0) >= slot ? { selectedAlternative: slot } : {}),
 		})),
 	};
-	return previewProposal(
-		doc,
+	const order = dependencyClosure(
 		p,
-		'undecided',
-		{
-			registries: ctx.registries,
-			now: () => '2026-01-01T00:00:00.000Z',
-			invariants: 'incremental',
-		},
-		{
-			// the same item with the same sound selected gets the same ids in every slot and every run
-			idsFor: (it) =>
-				createSeededIdSource(
-					`sound-design-plan:${p.sequenceId ?? ''}:${it.id}:${it.selectedAlternative ?? 0}`,
-				),
-		},
+		p.items.map((it) => it.id),
 	);
+	const refs0 = appliedRefs(p);
+	type State = {
+		doc: ProjectDocument;
+		refs: Map<string, string>;
+		failed: Set<string>;
+		created: Map<string, string[]>;
+	};
+	/** Applies `order[from…]` with `slot` selected on top of `st`; `snap` records the state before each item. */
+	const run = (slot: number, from: number, st: State, snap?: State[]): State => {
+		let cur = st.doc;
+		const refs = new Map(st.refs);
+		const failed = new Set(st.failed);
+		const created = new Map(st.created);
+		for (let i = from; i < order.length; i++) {
+			if (ctx.signal?.aborted) throw new Error('aborted');
+			snap?.push({ doc: cur, refs: new Map(refs), failed: new Set(failed), created: new Map(created) });
+			const it = order[i]!;
+			const sel = slot > 0 && (it.alternatives?.length ?? 0) >= slot ? slot : 0;
+			if (it.requires.some((r) => failed.has(r))) {
+				failed.add(it.id);
+				continue;
+			}
+			const commands = selectedCommands({ ...it, selectedAlternative: sel }).map((c) =>
+				substituteKnownRefs(c, refs),
+			);
+			const r = applyTransaction(
+				cur,
+				{
+					label: it.label,
+					origin: { agent: 'proposal-preview' },
+					...(seqId ? { sequenceId: seqId } : {}),
+					commands,
+				},
+				{
+					ids: createSeededIdSource(`sound-design-plan:${seqId ?? ''}:${it.id}:${sel}`),
+					now: () => '2026-01-01T00:00:00.000Z',
+					revision: 0,
+					registries: ctx.registries,
+					invariants: 'incremental',
+				},
+			);
+			if (!r.result.ok) {
+				failed.add(it.id);
+				continue;
+			}
+			for (const [k, v] of Object.entries(r.result.refs)) refs.set(k, v);
+			const before = seqId ? cur.sequences[seqId]?.clips : undefined;
+			const after = seqId ? r.document.sequences[seqId]?.clips : undefined;
+			if (before && after && before !== after)
+				created.set(
+					it.id,
+					Object.keys(after).filter((id) => !Object.hasOwn(before, id)),
+				);
+			cur = r.document;
+		}
+		return { doc: cur, refs, failed, created };
+	};
+	const snaps: State[] = [];
+	const empty: State = { doc, refs: refs0, failed: new Set(), created: new Map() };
+	const states = [run(0, 0, empty, snaps)];
+	for (let k = 1; k <= slots; k++) {
+		const j = order.findIndex((it) => (it.alternatives?.length ?? 0) >= k);
+		states.push(j < 0 ? states[0]! : run(k, j, snaps[j]!));
+	}
+	return states.map((st) => ({ doc: st.doc, clips: clipsByItem(st.doc, seqId, st.created) }));
 }
 
 /**
  * The document accepting every item of `draft` (its chosen sounds) would give, or null when no item applies. The
- * same seeded preview the solve measured (`preview`).
+ * same seeded preview the solve measured.
  */
 export function planPreviewDocument(
 	doc: ProjectDocument,
 	draft: ProposalDraft,
 	registries: Registries,
 ): ProjectDocument | null {
-	const pv = preview(doc, draft, draft.items, 0, { registries });
-	return pv.applied.length ? pv.document : null;
+	const pv = previewSlots(doc, draft, draft.items, 0, { registries })[0]!;
+	return pv.doc === doc ? null : pv.doc;
 }
 
-/** Per place item: its clip ids by layer, in the preview document. */
+/** Per place item: its clip ids by layer (the audio clips with sound-design metadata it created). */
 function clipsByItem(
-	pv: ReturnType<typeof preview>,
-	seqId: string,
-	placeIds: readonly string[],
+	doc: ProjectDocument,
+	seqId: string | null,
+	created: ReadonlyMap<string, string[]>,
 ): Map<string, string[]> {
-	const seq = pv.document.sequences[seqId];
+	const seq = seqId ? doc.sequences[seqId] : undefined;
 	const out = new Map<string, string[]>();
 	if (!seq) return out;
-	for (const id of placeIds) {
-		const g = pv.items[id];
-		if (!g) continue;
+	for (const [id, ids] of created) {
 		const layers: string[] = [];
-		for (const cid of g.created) {
+		for (const cid of ids) {
 			const c = seq.clips[cid] as { kind?: string; sfx?: unknown } | undefined;
 			if (c?.kind !== 'audio' || c.sfx === undefined) continue;
 			const sfx = readClipSfx(c.sfx);
@@ -217,12 +279,14 @@ export async function solvePlanGains(
 	if (placeIds.length === 0) return { ok: true, items, report };
 	const slots = Math.max(0, ...items.map((it) => (isPlaceItem(it) ? (it.alternatives?.length ?? 0) : 0)));
 	deps.onProgress?.(0, 'Previewing the placements');
-	const previews: { doc: ProjectDocument; clips: Map<string, string[]> }[] = [];
-	for (let k = 0; k <= slots; k++) {
-		if (deps.signal?.aborted) throw new Error('aborted');
-		const pv = preview(doc, draft, items, k, deps);
-		previews.push({ doc: pv.document, clips: clipsByItem(pv, seq.id, placeIds) });
-	}
+	if (deps.signal?.aborted) throw new Error('aborted');
+	const previews = previewSlots(
+		doc,
+		{ ...draft, sequenceId: draft.sequenceId ?? seq.id },
+		items,
+		slots,
+		deps,
+	);
 	if (deps.timing) deps.timing.previews = (deps.timing.previews ?? 0) + (Date.now() - t0);
 	const main = previews[0]!;
 	const mainSeq = main.doc.sequences[seq.id] as Sequence;
