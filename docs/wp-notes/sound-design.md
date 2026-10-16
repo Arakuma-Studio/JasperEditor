@@ -3798,6 +3798,194 @@ is only for when the user asked.
 
 ## Phase 4: mixing
 
+### Phase 4 → WP4.1a masking solver
+
+Scope: `packages/audio-fx` only (pure; imports `@jasper/audio-dsp` only). Spec 12 §2.4 "Masking solver", P4-R1.
+
+Files: `src/analysis/bands.ts` (octave bands and local loudness, shared with the descriptors), `src/analysis/masking.ts`
+(`solveSfxGains`); `src/analysis/sound-descriptors.ts` now takes its Welch spectrum and octave integration from
+`bands.ts` (same code moved, no behaviour change: the descriptor, synth and ffmpeg-oracle tests pass unchanged); tests
+`test/bands.test.ts`, `test/masking.test.ts`, `test/masking-oracle.test.ts`; `test/util.ts` gained `powerLawNoise`.
+Everything is exported from `@jasper/audio-fx`.
+
+#### API (for the engine bed render, `soundDesign.applyGains`, `rebalance_sfx`, the plan job)
+
+```ts
+// bands.ts
+const OCTAVE_BAND_CENTRES_HZ: readonly number[];   // [125, 250, 500, 1000, 2000, 4000, 8000] (moved here; same values)
+const BAND_FLOOR_DB = -120, MAX_BAND_FRAMES = 1500, MOMENTARY_WINDOW_SEC = 0.4, LOCAL_PEAK_HOP_SEC = 0.01;
+const BED_PEAK_MARGIN_SEC: { hero: 1, support: 0.15, ambient: 0.15 };
+type TimeWindow = { start: number; end: number };                       // seconds
+function bandLevels(channels: Float32Array[], sampleRate: number, window: TimeWindow): number[];   // 7 levels, dB
+function shortTermPeakLu(channels: Float32Array[], sampleRate: number, window: TimeWindow, marginSec = 0): number;
+function bedLocalPeakLu(channels: Float32Array[], sampleRate: number, window: TimeWindow,
+  weight: 'hero' | 'support' | 'ambient'): number;          // shortTermPeakLu with the weight's margin
+function sumBandsDb(levels: readonly number[]): number;     // 10·log10 Σ 10^(L/10)
+// also exported for the descriptors: fftLength, FramePower, welchPower, octaveBandsFromPower
+
+// masking.ts
+type SolverWeight = 'hero' | 'support' | 'ambient';
+interface SolverEvent {
+  clipId: string; soundId: string; type: string; weight: SolverWeight;
+  startSec: number; endSec: number;          // the sound's active window on the timeline
+  soundBandsDb: number[];                    // bandLevels of the sound at 0 dB clip gain over its window
+  soundPeakLu: number | null;                // its loudest momentary loudness at 0 dB (shortTermPeakLu or maxMomentaryLufs)
+  truePeakDb: number | null;                 // its true peak at 0 dB (descriptor truePeakDb)
+  bedBandsDb: number[];                      // bandLevels of the bed over the same window (−Infinity = silence)
+  bedLocalPeakLu: number | null;             // bedLocalPeakLu(bed, sr, window, weight); null / −Infinity = silence
+  speechOverlap: boolean;
+  baseGainDb: number;                        // its current / default level (sfx.level.gainDb)
+  userOffsetDb?: number;                     // e.g. the fill's ±1 dB variation (gainOffsetDb)
+}
+interface SolverOptions { truePeakCeilingDb?: number /* −1 */; programLufs?: number /* −14: the delivery target */ }
+function solveSfxGains(events: SolverEvent[], opts?: SolverOptions): SolverResult;   // never throws
+interface SolverResult {
+  gains: Record<string, number>;             // clipId → gain dB (0.01 dB steps); duplicates: the last wins
+  events: SolverEventResult[];               // input order
+  warnings: { code: SolverWarningCode; clipId?: string; message: string }[];
+}
+interface SolverEventResult {
+  clipId: string; gainDb: number; targetLiftDb: number;
+  achievedLiftDb: number | null;             // null for a silent sound
+  dominantBands: number[];                   // centres in Hz, strongest first
+  limitedBy: SolverLimit[];                  // see below; empty = target reached (or the base level already exceeds it)
+  reason: string;                            // "−11 dB, limited by dialogue", "−10.5 dB, target lift +5 dB reached", …
+  peakOverBedLu: number | null; truePeakDb: number | null;   // at the solved gain
+  speechBandLiftDb: number | null;           // max lift in 1/2/4 kHz at the solved gain, only with speechOverlap
+}
+type SolverLimit = 'clamp' | 'bed-cap' | 'hero-shadow' | 'consistency' | 'dialogue' | 'headroom'
+  | 'user-offset' | 'silent-sound' | `conflict:${kept}/${lost}`;
+type SolverWarningCode = 'W_INVALID_INPUT' | 'W_SANITISED' | 'W_DUPLICATE_CLIP' | 'W_SILENT_SOUND' | 'W_UNMEASURED'
+  | 'W_CONFLICT' | 'W_DIALOGUE_BAND' | 'W_UNRESOLVED';
+// constants: TARGET_LIFT_DB, SOLVER_GAIN_MIN_DB/MAX_DB, BED_CAP_LU, QUIET_BED_OFFSET_LU, DEFAULT_PROGRAM_LUFS,
+// HERO_SHADOW_SEC, HERO_SHADOW_FACTOR, HERO_SHADOW_DB, CONSISTENCY_DB, DIALOGUE_LIFT_DB, DIALOGUE_BANDS_HZ,
+// DEFAULT_TRUE_PEAK_CEILING_DB, DOMINANT_SHARE, SOLVER_STEP_DB, SOLVER_CONSTRAINTS, SOLVER_WEIGHTS
+```
+
+How the engine package (P4-R2) should feed it: render the bed (non-SFX tracks) per cue cluster; for each placed clip
+`window = [clip start + headQuiet, clip start + active length]`; `soundBandsDb = bandLevels(sound decoded at 0 dB,
+sr, {0, len})`, `bedBandsDb = bandLevels(bed, sr, window)` — **the same window length for both**, see limits;
+`bedLocalPeakLu = bedLocalPeakLu(bed, sr, window, weight)`; `soundPeakLu` / `truePeakDb` from the descriptors (or
+`shortTermPeakLu` for consistency with the bed). Role mapping is the caller's: hero → hero, support and layer →
+support, ambience / room tone → ambient (decision for P4-R2 to confirm).
+
+#### Algorithm
+
+1. **Target.** Dominant bands D = the strongest octave band of the sound, plus the second strongest when it carries
+   ≥ 10 % of the sound's band energy. Lift = level(sound in D) + gain − level(bed in D), levels as energy sums over D.
+   Needed gain = bed(D) + target − sound(D); the starting gain is **max(base, needed) + userOffset** — the solver
+   raises a masked sound and never lowers an unmasked one under its default level except for a constraint (a silent
+   bed would otherwise ask for −100 dB). A silent sound (no band over the floor) keeps its base (`silent-sound`).
+2. **Constraints, in this order.** Each of 1, 2, 3, 5, 6 narrows a per-event interval [lo, hi] and moves the gain into
+   it; a bound that does not meet the interval left by the earlier steps loses: the earlier constraint is kept and
+   `conflict:<earlier>/<later>` reported (W_CONFLICT).
+   1. clamp [−30, +12] dB;
+   2. bed cap: soundPeak + gain − ref ≤ +10 LU (hero) / +6 LU (support, ambient), ref = max(bedLocalPeak,
+      programLufs − 12); no cap (W_UNMEASURED) without a peak loudness;
+   3. hero shadow: a support whose window is within 0.15 s of a hero's window (gap ≤ 0.15 s, overlap included):
+      bound = its gain − 4.437 dB (× 0.6);
+   4. consistency: disjoint repeat groups (same soundId when it occurs ≥ 2 times; else same type and weight); every
+      member within median ± 2 dB. Consistency is a relation, not a bound: the median is taken over the members
+      that can reach the window (a member held under median − 2 by steps 1–3 leaves the median — it is raised to
+      its steps 1–3 cap and reports `conflict:<cap>/consistency`), the others are clamped into the window;
+   5. dialogue guard (speechOverlap): gain ≤ 1 + min over the 1, 2, 4 kHz bands of (bed − sound), i.e. the lift in
+      each speech band ≤ +1 dB; when the sound's dominant band is in 1–4 kHz, W_DIALOGUE_BAND advises a type whose
+      dominant band is outside 1–4 kHz and names those present in the input ("here: boom");
+   6. headroom: truePeak + gain ≤ ceiling (default −1 dBTP); without a measured true peak the gain is ≤ 0 (never
+      boosts, as the default level).
+3. **Re-verify.** After step 6 each group is settled again around its current median (steps 5–6 only lower gains:
+   a group lowered together stays consistent; a member above median + 2 comes down; one under median − 2 goes back
+   up, over a step 5/6 bound only as `conflict:consistency/dialogue|headroom`, since consistency is earlier).
+   Clamping into a window centred on the median keeps the median, so one settle suffices. Then every constraint is
+   checked on the final gain (rounded to 0.01 dB): clamp, bed cap, shadow bound, |g − final median| ≤ 2 for group
+   members, speech lift, headroom. A violation not named by a reported conflict is W_UNRESOLVED; the tests (and
+   15 500 fast-check cases in a stress run) never see one.
+
+Bug in the inspiration tool, avoided by construction: there, step 4 (repeat consistency) pulled a repeat over its bed
+cap. Here step 4 cannot leave the steps 1–3 interval; the test "step 4 would break step 2" pins it.
+
+#### Constants: sources and decisions
+
+| Constant | Value | Source / reasoning |
+|---|---|---|
+| Target lift | hero +5, support +3.5, ambient +2 dB | spec 12 §2.4. A sound inside a critical band of noise is masked until it comes within a few dB of the noise level (Zwicker & Fastl, *Psychoacoustics: Facts and Models*, ch. 4, masking by noise); an octave spans several critical bands, so a positive lift over the whole octave leaves margin over the masked threshold |
+| Dominant share | ≥ 10 % | task / spec; with 7 bands the strongest always has ≥ 1/7 |
+| Clamp | −30 … +12 dB | spec 12 §2.4; the same range as the default insert level (`level.ts`) |
+| Bed cap | +6 LU support, +10 LU hero; ambient = support | spec 12 gives support and hero; ambient is not named — an ambience is quieter by role, so it gets the tighter cap (decision) |
+| Local bed peak | max BS.1770-4 momentary (400 ms) loudness with window centres in [start − m, end + m], 10 ms hop; m = 1 s hero, 0.15 s otherwise | ITU-R BS.1770-4 (K-weighting, channel weights) and EBU Tech 3341 (momentary = 400 ms); margins from the task; the 10 ms hop (vs the meter's 100 ms) so a short event's neighbourhood is sampled finely (decision) |
+| Quiet-bed reference | programme − 12 LU | decision: with a silent bed the cap would mute the sound. At −12 LU the hero cap is programme − 2 LU = the default hero level (Phase 2 verification B), support programme − 6 LU just over its default − 8 LU |
+| Hero shadow | gap ≤ 0.15 s, × 0.6 (−4.44 dB) | spec; "within 0.15 s" measured between the windows (a long support overlapping a hero is shadowed too; decision) |
+| Consistency | median ± 2 dB; disjoint groups | spec gives ±2 dB and "same soundId, then same type". Disjoint groups (soundId when it repeats, else type + weight) avoid chains between overlapping groups; weight in the type key so a hero hit is not pulled to support hits (decision) |
+| Dialogue | 1, 2, 4 kHz octaves (707 Hz … 5.66 kHz), lift ≤ +1 dB | spec; the region carrying most speech intelligibility (ANSI S3.5-1997 Speech Intelligibility Index band-importance functions peak around 1.5–3 kHz) |
+| Headroom | −1 dBTP per event, pre-master | spec 12 delivery presets (−1 dBTP web / podcast / R128), EBU R 128 max true peak −1 dBTP; true peak per BS.1770-4 annex 2 (the descriptors' meter) |
+| Rounding | 0.01 dB | decision (finer than the default level's 0.1 dB so bounds are met to ≤ 0.005 dB) |
+
+#### Verified (measured, this branch; shared host, 16 cores, load average 16–58)
+
+- `pnpm vitest run packages/audio-fx/test/bands.test.ts packages/audio-fx/test/masking.test.ts packages/audio-fx/test/masking-oracle.test.ts --maxWorkers=2`:
+  10 + 27 + 1 passed. bands: equals the descriptors' `octaveBandsDb` within 0.01 dB over a fully active sound; a
+  full-scale 1 kHz sine reads −3.01 ± 0.1 in its band; window restriction; pink noise flat within 0.5 dB;
+  `shortTermPeakLu` = `LoudnessMeter.maxMomentary` within 0.05 LU on a −20 dBFS stereo sine (−20 LUFS); hero vs
+  support margins; degenerate input → floor / −∞; fast-check (150 runs each) never throws, always finite.
+  Solver: each weight's target, second dominant band at 36 % and not at 9.9 %, base floor, silent bed, user offset,
+  silent sound, empty input; each constraint alone (clamp both ends; bed cap for the three weights, unmeasured peak,
+  programme reference; hero shadow at gaps 0.1 / 0.15 / 0.16 s, before, overlapping, not ambient, not the hero;
+  consistency by sound then type + weight, hero not grouped with supports; dialogue guard bound −11 dB with the
+  advice naming `boom`; headroom −1 / custom ceiling / unmeasured → 0 dB); order: step 4 vs step 2
+  (`conflict:bed-cap/consistency`, the cap holds), step 4 vs step 3, step 5 vs clamp, step 6 vs step 4; properties:
+  caps hold or a conflict names the loser and nothing is unresolved (400 runs), monotone in the bed under a uniform
+  bed raise with caps still holding (300), a lone event follows the bed dB for dB until a cap (+9 dB headroom),
+  deterministic and independent of the input order (150); NaN / ±Infinity / wrong lengths / bad types sanitised
+  with W_SANITISED, a hostile fast-check (300 runs) never throws and keeps gains finite in range; duplicate ids;
+  **2000 events: min 7.1–11.2 ms, median 10.2–19.2 ms over 9 runs** (the test asserts the minimum < 50 ms: on this
+  loaded host the median measures the load — an earlier version took a median of 196 ms before the allocation cuts).
+- Stress (temporary copy with 6000 / 4000 / 1500 / 4000 runs of the property and hostile tests): 5 passed.
+- **Oracle-ish integration** (`masking-oracle.test.ts`): an 8 s stereo bed (pink noise ≈ −30 dBFS RMS + a 1.5 kHz
+  tone with a 4 Hz syllable envelope from 4 s, the "speech"), six Jasper Synth sounds (hit hero, whoosh support
+  0.1 s before it, boom, two repeats of one click in the speech, chime ambient). Measured with `bandLevels` /
+  `shortTermPeakLu` / `LoudnessMeter`, solved (programme −14, ceiling −1), mixed sample by sample at the solved gains
+  and measured again. Lift (dB over the bed in the dominant bands; report / measured from mix energy − bed energy /
+  exact from mix − bed):
+
+| event | bands | gain | report | mix | exact | reason |
+|---|---|---|---|---|---|---|
+| hit (hero) | 125+250 | −10.46 | 5.00 | 5.07 | 5.00 | target reached |
+| whoosh | 2k+4k | −21.22 | −0.94 | −0.91 | −0.94 | limited by hero-shadow |
+| boom | 125 | −11.08 | 3.50 | 3.67 | 3.50 | target reached |
+| click1 | 4k+2k | −19.09 | −3.64 | −3.43 | −3.64 | limited by dialogue |
+| click2 | 4k+2k | −18.80 | −3.68 | −4.08 | −3.68 | limited by dialogue |
+| chime (ambient) | 1k+2k | −22.83 | −11.54 | −11.44 | −11.54 | limited by dialogue |
+
+  Asserted: the exact lift within 0.5 dB of the report for every event, the mix-energy estimate within 0.5 dB for
+  lifts ≥ −3 dB (below that the bed/sound cross term dominates the energy difference); measured in this run, all six
+  mix estimates are within 0.40 dB (worst click2, a 0.1 s window). True peak, peak over the bed and the speech-band
+  lift are checked on the rendered, gained audio. This run found a design bug,
+  fixed: with the consistency window fixed at step 4, the two clicks (both lowered by the dialogue guard) were
+  pushed back over it as a "conflict"; consistency is now settled around the group's median after steps 5–6.
+- `pnpm vitest run packages/audio-fx --maxWorkers=2`: 21 files, 332 passed; `JASPER_REQUIRE_ORACLES=1 pnpm vitest
+  run packages/audio-fx/test/sound-oracle.test.ts`: 5 passed (descriptors vs ffmpeg after the spectrum moved to
+  `bands.ts`). `pnpm --filter @jasper/audio-fx typecheck`, Biome and `check-layers` pass.
+
+#### Limits and notes for the next packages
+
+- **Each event is solved against the bed only.** SFX do not mask each other in the model, and the headroom ceiling is
+  per event: overlapping events can sum over it (the master limiter / Sound Check's TP check catch that). The bed
+  must not contain the SFX being solved.
+- **Consistency beats the dialogue guard and headroom** (spec order): a repeat in speech whose group is mostly
+  outside speech is raised back to median − 2 dB and reports `conflict:consistency/dialogue`; the reason text says
+  so. The plan UI should surface these (or the user moves the cue).
+- Repeat groups are disjoint: two repeats of sound A are not compared to a single B of the same type.
+- `bandLevels` keeps the descriptors' Welch normalisation (frames centred from the window start to its end, signal
+  outside = silence), which reads low on short windows — **measured** on a 1 kHz sine: −2.27 dB at 0.05 s, −1.13 at
+  0.1 s, −0.68 at 0.2 s, −0.28 at 0.5 s, −0.11 at 1 s, −0.03 at 4 s. It cancels in the lift only when the sound and
+  the bed are measured over windows of the same length (as above); do not mix descriptor `octaveBandsDb` (active span)
+  with a bed window of another length.
+- Monotonicity in the bed is property-tested for a uniform raise of every event's bed; for a single event inside a
+  repeat group it holds through the median but is not separately property-tested.
+- Gains are rounded to 0.01 dB; a bound can be missed by ≤ 0.005 dB when the allowed interval holds no 0.01 dB step.
+- The Sound Check package can reuse `shortTermPeakLu` / `bandLevels` for "masked hit" detection with the same
+  definitions.
+
 ## Phase 5: Sound Check
 
 ## Phase 6: packs, cue sources, completion
