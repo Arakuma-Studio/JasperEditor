@@ -162,7 +162,9 @@ async function pictureAnchor(
 			const end = t0 + dur;
 			// the Program monitor's context: the running one Remotion schedules media buffers on
 			const program = () =>
-				w.__tap.ctxs.filter((c) => c.ctx.state === 'running').sort((a, b) => b.starts - a.starts)[0]?.ctx;
+				w.__tap.ctxs
+					.filter((c) => c.ctx.state === 'running' && c.starts > 0)
+					.sort((a, b) => b.starts - a.starts)[0]?.ctx;
 			let ctx = program();
 			// anime-allow: test-side wall clock bound of a sampling loop
 			while (!ctx && performance.now() < end) {

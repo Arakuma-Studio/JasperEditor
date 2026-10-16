@@ -126,7 +126,7 @@ export async function arm(p: Page): Promise<void> {
 			window as unknown as {
 				__tap: {
 					on: boolean;
-					ctxs: { ctx: BaseAudioContext; node: AudioWorkletNode | null; blocks: unknown[] }[];
+					ctxs: { ctx: BaseAudioContext; node: AudioWorkletNode | null; blocks: unknown[]; starts: number }[];
 					stops: unknown[];
 					late: unknown[];
 					starts: unknown[];
@@ -136,6 +136,8 @@ export async function arm(p: Page): Promise<void> {
 		).__tap;
 		for (const c of t.ctxs) {
 			c.blocks.length = 0;
+			// buffers started during this play tell the program context (Remotion's) from the others
+			c.starts = 0;
 			c.node?.port.postMessage({ on: true });
 		}
 		t.stops.length = 0;
