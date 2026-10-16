@@ -4923,7 +4923,17 @@ Tests: `packages/project/test/sound-auto-gain.test.ts` (5), `fuzz.test.ts` (AC-2
   Rebalance, Room A4 −16 dB, Stop / Build of a support cue off), Room Glue…, Delivery Target… with its summary, the
   exported frame at the hero. The looks found: the Room glue checkbox squeezed by its slider in the dialog (now on its
   own row), the review gain of an item that requires the delivery item showing the music's +14.6 dB (now the item's own
-  solved gain), the Essential reason truncated (now wraps).
+  solved gain), the Essential reason truncated (now wraps). The spec also adds an unfilled cue with a stop-before and a
+  build and checks both are drawn stored-only (`data-written="false"`, dashed; `cue-span-bars-stored.png`).
+- **Every sound e2e** (same build, one run of all nine spec files, 1.2 h at load 46–97): 16 passed, 4 failed —
+  `sound-mix` passed (7.1 min, with the stored-only check); the failures are not from this package:
+  `sound-p0-transport` "first samples…" and `sound-proposal-ghosts` ("Every one of 8 plays was disturbed by the host
+  (load average 46–59) … nothing was measured": the documented load-sensitive real-time checks), `sound-fill` (the
+  right-click on the filled clip landed off it: the timeline was scrolled to 3;20–4;20 with the clip at 2;15 — the
+  case the Phase 3 verifier's `clipBodyClick` fix on `feat/sd-p3-verify` handles; its screenshot shows this package's
+  Essential rows working: "Default · −6.6 dB · default level: its true-peak ceiling") and `sound-p2-done` (its export
+  job still running when the 25 min test timeout hit, at load ≈ 90). `sound-cues`, `sound-library` (3), `sound-p0-preview`
+  (5), the other four `sound-p0-transport` tests and `sound-review` (2) passed.
 
 #### Limits and notes for the next packages
 
