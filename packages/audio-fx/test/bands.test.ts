@@ -25,7 +25,8 @@ describe('bandLevels', () => {
 		const y = noise(4, 1 << 16, 0.3);
 		const d = analyzeSound([x, y], SR);
 		const b = bandLevels([x, y], SR, { start: 0, end: x.length / SR });
-		for (let k = 0; k < 7; k++) expect(Math.abs(b[k]! - d.octaveBandsDb[k]!), `${b} / ${d.octaveBandsDb}`).toBeLessThan(0.01);
+		for (let k = 0; k < 7; k++)
+			expect(Math.abs(b[k]! - d.octaveBandsDb[k]!), `${b} / ${d.octaveBandsDb}`).toBeLessThan(0.01);
 	});
 
 	it('a full-scale 1 kHz sine reads −3.01 dB in the 1 kHz band and ≥ 40 dB less elsewhere', () => {
@@ -41,7 +42,9 @@ describe('bandLevels', () => {
 	it('measures only inside the window', () => {
 		const x = new Float32Array(5 * SR);
 		x.set(sine(2000, 0.5, SR, SR), 2 * SR);
-		expect(bandLevels([x], SR, { start: 3.2, end: 4.8 })).toEqual(OCTAVE_BAND_CENTRES_HZ.map(() => BAND_FLOOR_DB));
+		expect(bandLevels([x], SR, { start: 3.2, end: 4.8 })).toEqual(
+			OCTAVE_BAND_CENTRES_HZ.map(() => BAND_FLOOR_DB),
+		);
 		const inside = bandLevels([x], SR, { start: 2, end: 3 });
 		expect(Math.abs(inside[4]! - 20 * Math.log10(0.5 / Math.SQRT2))).toBeLessThan(0.3);
 		// a window that runs past the end counts the missing part as silence, never throws
@@ -71,7 +74,9 @@ describe('bandLevels', () => {
 		const bad = new Float32Array(x);
 		for (let i = 0; i < bad.length; i += 97) bad[i] = i % 2 ? Number.NaN : Number.POSITIVE_INFINITY;
 		const clean = new Float32Array(bad.map((v) => (Number.isFinite(v) ? v : 0)));
-		expect(bandLevels([bad], SR, { start: 0, end: 1 })).toEqual(bandLevels([clean], SR, { start: 0, end: 1 }));
+		expect(bandLevels([bad], SR, { start: 0, end: 1 })).toEqual(
+			bandLevels([clean], SR, { start: 0, end: 1 }),
+		);
 	});
 
 	it('property: any samples and window give 7 finite levels ≥ the floor', () => {
@@ -131,11 +136,17 @@ describe('shortTermPeakLu', () => {
 		expect(shortTermPeakLu([x], SR, { start: 0, end: 1 }, Number.NaN)).toBeGreaterThan(-30);
 		expect(shortTermPeakLu([new Float32Array(SR)], SR, { start: 0, end: 1 })).toBe(Number.NEGATIVE_INFINITY);
 		fc.assert(
-			fc.property(fc.float32Array({ maxLength: 4000 }), fc.double(), fc.double(), fc.double(), (c, a, b, m) => {
-				const v = shortTermPeakLu([c], 8000, { start: a, end: b }, m);
-				expect(Number.isNaN(v)).toBe(false);
-				expect(v).not.toBe(Number.POSITIVE_INFINITY);
-			}),
+			fc.property(
+				fc.float32Array({ maxLength: 4000 }),
+				fc.double(),
+				fc.double(),
+				fc.double(),
+				(c, a, b, m) => {
+					const v = shortTermPeakLu([c], 8000, { start: a, end: b }, m);
+					expect(Number.isNaN(v)).toBe(false);
+					expect(v).not.toBe(Number.POSITIVE_INFINITY);
+				},
+			),
 			{ numRuns: 150 },
 		);
 	});

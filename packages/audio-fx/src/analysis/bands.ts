@@ -151,7 +151,8 @@ export function octaveBandsFromPower(power: Float64Array, binHz: number): number
 
 // ── input guards ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-const validRate = (sr: unknown): sr is number => typeof sr === 'number' && Number.isFinite(sr) && sr >= 1 && sr <= 1e7;
+const validRate = (sr: unknown): sr is number =>
+	typeof sr === 'number' && Number.isFinite(sr) && sr >= 1 && sr <= 1e7;
 
 /** The channels that are sample arrays (at most {@link MAX_BAND_CHANNELS}); others are dropped. */
 function usableChannels(channels: unknown): Float32Array[] {
@@ -168,7 +169,8 @@ function usableChannels(channels: unknown): Float32Array[] {
 function sampleRange(window: unknown, sr: number, len: number): [number, number] | null {
 	if (!window || typeof window !== 'object') return null;
 	const { start, end } = window as { start?: unknown; end?: unknown };
-	if (typeof start !== 'number' || typeof end !== 'number' || Number.isNaN(start) || Number.isNaN(end)) return null;
+	if (typeof start !== 'number' || typeof end !== 'number' || Number.isNaN(start) || Number.isNaN(end))
+		return null;
 	const a = Math.max(0, Math.min(len, Math.round(Math.max(-1e12, Math.min(1e12, start)) * sr)));
 	const b = Math.max(0, Math.min(len, Math.round(Math.max(-1e12, Math.min(1e12, end)) * sr)));
 	return b > a ? [a, b] : null;

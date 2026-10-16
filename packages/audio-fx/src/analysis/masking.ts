@@ -10,13 +10,18 @@
 //   2 bed-cap      sound peak (max momentary, LUFS) + gain − local bed peak ≤ +10 LU hero / +6 LU support, ambient;
 //                  the bed reference is never under programme −12 LU (a silent bed would otherwise mute the sound)
 //   3 hero-shadow  a support within 0.15 s of a hero: gain × 0.6 (−4.44 dB)
-//   4 consistency  repeats (same soundId, then same type and weight) within the group median ±2 dB
+//   4 consistency  repeats within the group median ±2 dB: disjoint groups, by soundId when it repeats, else by type
+//                  and weight
 //   5 dialogue     during speech, lift in each of the 1, 2 and 4 kHz bands ≤ +1 dB
 //   6 headroom     sound true peak + gain ≤ the ceiling (default −1 dBTP, pre-master); unmeasured peak: no boost
 //
-// Each step narrows a per-event interval [lo, hi] of allowed gains and moves the gain into it. A step whose bound
-// does not meet the interval left by the earlier steps loses: the earlier (safety) constraint is kept and the event
-// reports `conflict:<earlier>/<later>`. After step 6 every constraint is checked again on the final gain (rounded to
+// Steps 1, 2, 3, 5 and 6 narrow a per-event interval [lo, hi] of allowed gains and move the gain into it. A step whose
+// bound does not meet the interval left by the earlier steps loses: the earlier (safety) constraint is kept and the
+// event reports `conflict:<earlier>/<later>`. Consistency is a relation, not a bound: it is settled at step 4 and
+// again after step 6 around each group's median (a group lowered together by steps 5–6 stays consistent; a member
+// pushed out of the window goes back to it, reporting the step-5/6 bound it breaks; a member that steps 1–3 hold
+// under the window leaves the median and reports that conflict). After step 6 every constraint is checked on the
+// final gain (rounded to
 // 0.01 dB, which may miss a bound by at most 0.005 dB when the allowed interval holds no 0.01 dB step); a violation
 // without a reported conflict is a W_UNRESOLVED warning (the tests require none).
 import { BAND_FLOOR_DB, OCTAVE_BAND_CENTRES_HZ } from './bands.ts';
@@ -24,7 +29,11 @@ import { BAND_FLOOR_DB, OCTAVE_BAND_CENTRES_HZ } from './bands.ts';
 // ── constants (sources and reasoning: wp-note "Phase 4 → WP4.1a masking solver") ─────────────────────────────────
 
 export type SolverWeight = 'hero' | 'support' | 'ambient';
-export const SOLVER_WEIGHTS: readonly SolverWeight[] = /* @__PURE__ */ Object.freeze(['hero', 'support', 'ambient']);
+export const SOLVER_WEIGHTS: readonly SolverWeight[] = /* @__PURE__ */ Object.freeze([
+	'hero',
+	'support',
+	'ambient',
+]);
 /** Target lift of the dominant band over the bed, by weight (dB; spec 12 §2.4). */
 export const TARGET_LIFT_DB: Readonly<Record<SolverWeight, number>> = /* @__PURE__ */ Object.freeze({
 	hero: 5,
@@ -231,7 +240,8 @@ function readBands(e: Raw, k: string, notes: string[]): number[] {
 	const out = new Array<number>(BANDS);
 	for (let i = 0; i < BANDS; i++) {
 		const x = arr ? arr[i] : undefined;
-		if (typeof x === 'number' && Number.isFinite(x) && x <= LEVEL_CEILING_DB) out[i] = Math.max(BAND_FLOOR_DB, x);
+		if (typeof x === 'number' && Number.isFinite(x) && x <= LEVEL_CEILING_DB)
+			out[i] = Math.max(BAND_FLOOR_DB, x);
 		else {
 			// −Infinity (silence) and a missing band are the floor quietly; NaN / +Infinity are reported
 			if (x !== Number.NEGATIVE_INFINITY && x !== undefined) notes.push(`${k}[${i}] is not a finite level`);
@@ -272,7 +282,8 @@ function clean(raw: unknown, index: number, notes: string[]): Clean {
 		notes.push('endSec is before startSec (swapped)');
 		[start, end] = [end, start];
 	}
-	if (typeof e.speechOverlap !== 'boolean' && e.speechOverlap !== undefined) notes.push('speechOverlap is not a boolean');
+	if (typeof e.speechOverlap !== 'boolean' && e.speechOverlap !== undefined)
+		notes.push('speechOverlap is not a boolean');
 	const base = Math.max(-1000, Math.min(1000, readNum(e, 'baseGainDb', 0, false, notes)));
 	const offset = Math.max(-1000, Math.min(1000, readNum(e, 'userOffsetDb', 0, true, notes)));
 	const clipId = readStr(e, 'clipId', `#${index}`, notes);
@@ -351,11 +362,17 @@ type State = {
 	/** Bit i: constraint i moved the gain; {@link USER_OFFSET_BIT}, {@link SILENT_BIT}. */
 	limited: number;
 	conflicts: [SolverConstraint, SolverConstraint][];
-	/** Bounds recorded by steps 3 and 4 (the re-verification checks them). */
+	/** The bound step 3 set (+Infinity when not shadowed; the re-verification checks it). */
 	shadowHi: number;
-	/** The consistency windows' intersection [consLo, consHi] (±Infinity when not a repeat). */
-	consLo: number;
-	consHi: number;
+	/** The interval left by steps 1–3 (consistency may not leave it: those constraints come first). */
+	hi3: number;
+	hi3By: SolverConstraint;
+	/** The bounds of steps 5 and 6 (consistency may break them, reporting the conflict). */
+	dialogueHi: number;
+	headroomHi: number;
+	/** Index of the repeat group (constraint 4), −1 for none; whether the member takes part in its median. */
+	group: number;
+	inGroup: boolean;
 };
 
 function conflict(st: State, kept: SolverConstraint, lost: SolverConstraint): void {
@@ -382,26 +399,6 @@ function upper(st: State, by: SolverConstraint, bound: number): void {
 	st.g = st.lo;
 	st.hi = st.lo;
 	st.hiBy = st.loBy;
-}
-
-/** Step `by` allows gains ≥ `bound`. */
-function lower(st: State, by: SolverConstraint, bound: number): void {
-	if (bound <= st.hi + EPS) {
-		if (bound > st.lo) {
-			st.lo = Math.min(st.hi, bound);
-			st.loBy = by;
-		}
-		if (st.g < st.lo - EPS) {
-			st.g = st.lo;
-			st.limited |= BIT[by];
-		}
-		return;
-	}
-	conflict(st, st.hiBy, by);
-	if (st.g < st.hi - EPS) st.limited |= BIT[by];
-	st.g = st.hi;
-	st.lo = st.hi;
-	st.loBy = st.hiBy;
 }
 
 /** Indices of the support events within {@link HERO_SHADOW_SEC} of a hero (gap between the windows). */
@@ -431,17 +428,75 @@ function shadowed(states: State[]): Set<number> {
 	return out;
 }
 
-/** Groups of ≥ 2 event indices sharing a key (empty keys are not grouped), in first-occurrence order. */
-function groups(states: State[], key: (s: State) => string): number[][] {
+/**
+ * Repeat groups (constraint 4), disjoint, of ≥ 2 event indices in first-occurrence order: events whose sound id
+ * occurs more than once are grouped by sound id; the others by type and weight (an empty id or type groups nothing).
+ */
+function repeatGroups(states: State[]): number[][] {
+	const idCount = new Map<string, number>();
+	for (const s of states) if (s.ev.soundId) idCount.set(s.ev.soundId, (idCount.get(s.ev.soundId) ?? 0) + 1);
 	const map = new Map<string, number[]>();
-	states.forEach((s, i) => {
-		const k = key(s);
-		if (k === '') return;
+	for (let i = 0; i < states.length; i++) {
+		const { soundId, type, weight } = states[i]!.ev;
+		const k =
+			soundId && (idCount.get(soundId) ?? 0) >= 2
+				? `s\u0000${soundId}`
+				: type
+					? `t\u0000${type}\u0000${weight}`
+					: '';
+		if (k === '') continue;
 		const g = map.get(k);
 		if (g) g.push(i);
 		else map.set(k, [i]);
-	});
-	return [...map.values()].filter((g) => g.length >= 2);
+	}
+	const out: number[][] = [];
+	for (const g of map.values()) if (g.length >= 2) out.push(g);
+	return out;
+}
+
+/**
+ * Constraint 4 for one repeat group. The median is taken over the members that can reach the window: a member
+ * whose steps 1–3 cap is under median − 2 is left out (and the median recomputed) — at step 4 it is raised to that
+ * cap, after the last step it reports `conflict:<cap>/consistency`. The others are clamped into median ± 2; after
+ * the last step (`final`) a raise over a step 5 / 6 bound reports `conflict:consistency/<step>`. Clamping every
+ * member into a window centred on the median keeps the median, so one settle is enough.
+ */
+function settleGroup(states: State[], grp: number[], final: boolean): void {
+	let active = grp;
+	let m = median(active.map((i) => states[i]!.g));
+	for (;;) {
+		const keep = active.filter((i) => states[i]!.hi3 >= m - CONSISTENCY_DB - EPS);
+		if (keep.length === active.length) break;
+		active = keep; // never empty: the member with the largest gain g ≥ m has hi3 ≥ g ≥ m
+		m = median(active.map((i) => states[i]!.g));
+	}
+	for (const i of grp) states[i]!.inGroup = false;
+	for (const i of active) states[i]!.inGroup = true;
+	for (const i of grp) {
+		const st = states[i]!;
+		if (!st.inGroup) {
+			if (final) conflict(st, st.hi3By, 'consistency');
+			else if (st.g < st.hi3 - EPS) {
+				st.g = st.hi3;
+				st.limited |= BIT.consistency;
+			}
+			continue;
+		}
+		if (st.g > m + CONSISTENCY_DB + EPS) {
+			st.g = m + CONSISTENCY_DB;
+			st.limited |= BIT.consistency;
+		} else if (st.g < m - CONSISTENCY_DB - EPS) {
+			const t = m - CONSISTENCY_DB;
+			if (final) {
+				if (t > st.dialogueHi + EPS) conflict(st, 'consistency', 'dialogue');
+				if (t > st.headroomHi + EPS) conflict(st, 'consistency', 'headroom');
+			}
+			st.g = t;
+			st.limited |= BIT.consistency;
+		}
+		st.lo = Math.min(st.lo, st.g);
+		st.hi = Math.max(st.hi, st.g);
+	}
 }
 
 // ── solver ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -458,11 +513,19 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 			? o.truePeakCeilingDb
 			: DEFAULT_TRUE_PEAK_CEILING_DB;
 	const program =
-		isNum(o.programLufs) && Math.abs(o.programLufs) <= LEVEL_CEILING_DB ? o.programLufs : DEFAULT_PROGRAM_LUFS;
+		isNum(o.programLufs) && Math.abs(o.programLufs) <= LEVEL_CEILING_DB
+			? o.programLufs
+			: DEFAULT_PROGRAM_LUFS;
 	if (o.truePeakCeilingDb !== undefined && ceiling !== o.truePeakCeilingDb)
-		warnings.push({ code: 'W_INVALID_INPUT', message: `truePeakCeilingDb is not a finite level; ${ceiling} dBTP used` });
+		warnings.push({
+			code: 'W_INVALID_INPUT',
+			message: `truePeakCeilingDb is not a finite level; ${ceiling} dBTP used`,
+		});
 	if (o.programLufs !== undefined && program !== o.programLufs)
-		warnings.push({ code: 'W_INVALID_INPUT', message: `programLufs is not a finite level; ${program} LUFS used` });
+		warnings.push({
+			code: 'W_INVALID_INPUT',
+			message: `programLufs is not a finite level; ${program} LUFS used`,
+		});
 	if (!Array.isArray(events)) {
 		if (events !== undefined && events !== null)
 			warnings.push({ code: 'W_INVALID_INPUT', message: 'events is not an array; nothing solved' });
@@ -486,8 +549,12 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 			limited: 0,
 			conflicts: [],
 			shadowHi: Number.POSITIVE_INFINITY,
-			consLo: Number.NEGATIVE_INFINITY,
-			consHi: Number.POSITIVE_INFINITY,
+			hi3: Number.POSITIVE_INFINITY,
+			hi3By: 'clamp',
+			dialogueHi: Number.POSITIVE_INFINITY,
+			headroomHi: Number.POSITIVE_INFINITY,
+			group: -1,
+			inGroup: false,
 		};
 		if (ev.dom.length === 0) {
 			st.g = ev.base + ev.offset;
@@ -547,19 +614,19 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 		st.shadowHi = bound;
 	}
 
-	// ── 4 consistency: same sound, then same type and weight ─────────────────────────────────────────────────────
-	for (const key of [(s: State) => s.ev.soundId, (s: State) => (s.ev.type ? `${s.ev.type}\u0000${s.ev.weight}` : '')]) {
-		for (const grp of groups(states, key)) {
-			const m = median(grp.map((i) => states[i]!.g));
-			for (const i of grp) {
-				const st = states[i]!;
-				st.consLo = Math.max(st.consLo, m - CONSISTENCY_DB);
-				st.consHi = Math.min(st.consHi, m + CONSISTENCY_DB);
-				upper(st, 'consistency', m + CONSISTENCY_DB);
-				lower(st, 'consistency', m - CONSISTENCY_DB);
-			}
-		}
+	// ── 4 consistency: repeats (same sound, else same type and weight) within the median ± 2 dB ─────────────────
+	// Steps 1–3 come first: a member whose steps 1–3 cap is under its group's window cannot join it; it goes as high
+	// as that cap allows and is left out of the median (the conflict is reported after the last step). The window is
+	// not a fixed bound for steps 5 and 6: the relation is settled again around the group's median after them.
+	const groupsList = repeatGroups(states);
+	for (const st of states) {
+		st.hi3 = st.hi;
+		st.hi3By = st.hiBy;
 	}
+	groupsList.forEach((grp, gi) => {
+		for (const i of grp) states[i]!.group = gi;
+		settleGroup(states, grp, false);
+	});
 
 	// ── 5 dialogue guard ─────────────────────────────────────────────────────────────────────────────────────────
 	const speechLift = (ev: Clean, g: number): number => {
@@ -582,7 +649,8 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 	for (const st of states) {
 		const { ev } = st;
 		if (!ev.speech) continue;
-		upper(st, 'dialogue', DIALOGUE_LIFT_DB + ev.speechRoom);
+		st.dialogueHi = DIALOGUE_LIFT_DB + ev.speechRoom;
+		upper(st, 'dialogue', st.dialogueHi);
 		if (inSpeechBands(ev.dom)) {
 			if (clearTypes === null)
 				clearTypes = [...typeInSpeech]
@@ -604,26 +672,46 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 	// ── 6 headroom ───────────────────────────────────────────────────────────────────────────────────────────────
 	for (const st of states) {
 		const { ev } = st;
-		upper(st, 'headroom', ev.truePeak === null ? 0 : ceiling - ev.truePeak);
+		st.headroomHi = ev.truePeak === null ? 0 : ceiling - ev.truePeak;
+		upper(st, 'headroom', st.headroomHi);
 	}
 
+	// ── re-verify 4 against the steps after it ──────────────────────────────────────────────────────────────────
+	// Steps 5 and 6 only lower gains. Around each group's (new) median, a member left above median + 2 comes down
+	// (nothing breaks), one left under median − 2 goes back up to it — over a step 5 / 6 bound only as a reported
+	// conflict, since consistency comes first.
+	for (const grp of groupsList) settleGroup(states, grp, true);
+
 	// ── quantise, re-verify, report ──────────────────────────────────────────────────────────────────────────────
-	const gains: Record<string, number> = {};
-	const results: SolverEventResult[] = states.map((st) => {
-		const { ev } = st;
+	const finalGain = (st: State): number => {
 		// round to the step, staying inside the interval when the step allows it
 		let g = q(st.g);
 		if (g > st.hi + EPS && q(g - SOLVER_STEP_DB) >= st.lo - EPS) g = q(g - SOLVER_STEP_DB);
 		else if (g < st.lo - EPS && q(g + SOLVER_STEP_DB) <= st.hi + EPS) g = q(g + SOLVER_STEP_DB);
+		return g;
+	};
+	const finals = states.map(finalGain);
+	const groupMedian = groupsList.map((grp) => {
+		const active = grp.filter((i) => states[i]!.inGroup);
+		return median(active.map((i) => finals[i]!));
+	});
+	const gains: Record<string, number> = {};
+	const results: SolverEventResult[] = states.map((st, si) => {
+		const { ev } = st;
+		const g = finals[si]!;
 		// an interval narrower than the step may hold no step: rounding may then miss a bound by half a step
 		const tol = SOLVER_STEP_DB / 2 + 1e-9;
 		const violated: SolverConstraint[] = [];
 		if (g < SOLVER_GAIN_MIN_DB - tol || g > SOLVER_GAIN_MAX_DB + tol) violated.push('clamp');
-		if (ev.soundPeak !== null && ev.soundPeak + g - bedRef(ev) > BED_CAP_LU[ev.weight] + tol) violated.push('bed-cap');
+		if (ev.soundPeak !== null && ev.soundPeak + g - bedRef(ev) > BED_CAP_LU[ev.weight] + tol)
+			violated.push('bed-cap');
 		if (g > st.shadowHi + tol) violated.push('hero-shadow');
-		if (g < st.consLo - tol || g > st.consHi + tol) violated.push('consistency');
+		if (st.group >= 0 && Math.abs(g - groupMedian[st.group]!) > CONSISTENCY_DB + 2 * tol)
+			violated.push('consistency');
+		if (st.group >= 0 && !st.inGroup && !st.conflicts.some(([, lost]) => lost === 'consistency'))
+			violated.push('consistency');
 		if (ev.speech && speechLift(ev, g) > DIALOGUE_LIFT_DB + tol) violated.push('dialogue');
-		if (g > (ev.truePeak === null ? 0 : ceiling - ev.truePeak) + tol) violated.push('headroom');
+		if (g > st.headroomHi + tol) violated.push('headroom');
 		for (const c of violated) {
 			const explained = st.conflicts.some(([, lost]) => lost === c);
 			if (!explained)
@@ -643,12 +731,23 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 		const { dom } = ev;
 		const target = TARGET_LIFT_DB[ev.weight];
 		const achieved = dom.length ? ev.soundDom + g - ev.bedDom : null;
-		if (achieved !== null && ev.offset < 0 && achieved < target - 0.005 && st.limited === 0 && !st.conflicts.length)
+		if (
+			achieved !== null &&
+			ev.offset < 0 &&
+			achieved < target - 0.005 &&
+			st.limited === 0 &&
+			!st.conflicts.length
+		)
 			st.limited |= USER_OFFSET_BIT;
 		const limitedBy = limits(st.limited, st.conflicts);
 		// an own data property even for the id "__proto__" (an assignment would set the prototype)
 		if (ev.clipId === '__proto__')
-			Object.defineProperty(gains, ev.clipId, { value: g, enumerable: true, writable: true, configurable: true });
+			Object.defineProperty(gains, ev.clipId, {
+				value: g,
+				enumerable: true,
+				writable: true,
+				configurable: true,
+			});
 		else gains[ev.clipId] = g;
 		return {
 			clipId: ev.clipId,

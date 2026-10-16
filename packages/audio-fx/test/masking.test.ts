@@ -55,7 +55,9 @@ describe('target lift', () => {
 		expect(e.targetLiftDb).toBe(lift);
 		expect(e.dominantBands).toEqual([500]);
 		expect(e.limitedBy).toEqual([]);
-		expect(e.reason).toBe(`${e.gainDb < 0 ? '−' : '+'}${Math.abs(Math.round(e.gainDb * 10) / 10)} dB, target lift +${lift} dB reached`);
+		expect(e.reason).toBe(
+			`${e.gainDb < 0 ? '−' : '+'}${Math.abs(Math.round(e.gainDb * 10) / 10)} dB, target lift +${lift} dB reached`,
+		);
 		expect(r.warnings).toEqual([]);
 	});
 
@@ -116,7 +118,9 @@ describe('target lift', () => {
 	});
 
 	it('a silent sound keeps its base gain and says so', () => {
-		const r = solveSfxGains([ev({ clipId: 'a', soundBandsDb: Array(7).fill(-120), soundPeakLu: null, truePeakDb: null })]);
+		const r = solveSfxGains([
+			ev({ clipId: 'a', soundBandsDb: Array(7).fill(-120), soundPeakLu: null, truePeakDb: null }),
+		]);
 		const e = one(r, 'a');
 		expect(e.gainDb).toBe(-20);
 		expect(e.achievedLiftDb).toBeNull();
@@ -134,7 +138,13 @@ describe('target lift', () => {
 describe('constraints, one at a time', () => {
 	it('1 clamp: [−30, +12]', () => {
 		const r = solveSfxGains([
-			ev({ clipId: 'hi', bedBandsDb: Array(7).fill(0), soundPeakLu: -60, truePeakDb: -40, bedLocalPeakLu: 0 }),
+			ev({
+				clipId: 'hi',
+				bedBandsDb: Array(7).fill(0),
+				soundPeakLu: -60,
+				truePeakDb: -40,
+				bedLocalPeakLu: 0,
+			}),
 			ev({ clipId: 'lo', baseGainDb: -45, bedBandsDb: Array(7).fill(-100) }),
 		]);
 		expect(one(r, 'hi').gainDb).toBe(SOLVER_GAIN_MAX_DB);
@@ -203,7 +213,16 @@ describe('constraints, one at a time', () => {
 			ev({ clipId: 'c', soundId: 'x', bedBandsDb: bed(-30), bedLocalPeakLu: -20 }), // −6.5 → −13.5
 			ev({ clipId: 'd', soundId: 'y', type: 'hit', bedBandsDb: bed(-30), bedLocalPeakLu: -20 }), // −6.5
 			ev({ clipId: 'e', soundId: 'z', type: 'hit', bedBandsDb: bed(-45) }), // base −20 → −8.5 … median −13.25
-			ev({ clipId: 'f', soundId: 'w', type: 'hit', weight: 'hero', bedBandsDb: bed(-30), bedLocalPeakLu: -20, startSec: 30, endSec: 31 }),
+			ev({
+				clipId: 'f',
+				soundId: 'w',
+				type: 'hit',
+				weight: 'hero',
+				bedBandsDb: bed(-30),
+				bedLocalPeakLu: -20,
+				startSec: 30,
+				endSec: 31,
+			}),
 		]);
 		expect(one(r, 'a').gainDb).toBeCloseTo(-16.5, 9);
 		expect(one(r, 'b').gainDb).toBeCloseTo(-15.5, 9);
@@ -224,8 +243,24 @@ describe('constraints, one at a time', () => {
 		const boom = [-15, -25, -45, -60, -70, -80, -90];
 		const r = solveSfxGains([
 			ev({ clipId: 'k', type: 'click', soundBandsDb: click, bedBandsDb: speechBed, speechOverlap: true }),
-			ev({ clipId: 'b', type: 'boom', soundBandsDb: boom, bedBandsDb: speechBed, speechOverlap: true, baseGainDb: -30, startSec: 5, endSec: 6 }),
-			ev({ clipId: 'free', type: 'tick', soundBandsDb: click, bedBandsDb: speechBed, startSec: 9, endSec: 10 }),
+			ev({
+				clipId: 'b',
+				type: 'boom',
+				soundBandsDb: boom,
+				bedBandsDb: speechBed,
+				speechOverlap: true,
+				baseGainDb: -30,
+				startSec: 5,
+				endSec: 6,
+			}),
+			ev({
+				clipId: 'free',
+				type: 'tick',
+				soundBandsDb: click,
+				bedBandsDb: speechBed,
+				startSec: 9,
+				endSec: 10,
+			}),
 		]);
 		const k = one(r, 'k');
 		expect(k.dominantBands).toEqual([2000, 4000]);
@@ -272,7 +307,13 @@ describe('order and post-verification (an earlier constraint is never silently b
 		const r = solveSfxGains([
 			ev({ clipId: 'a', soundId: 'x', ...loud, soundPeakLu: -20 }),
 			ev({ clipId: 'b', soundId: 'x', ...loud, soundPeakLu: -20 }),
-			ev({ clipId: 'q', soundId: 'x', bedBandsDb: Array(7).fill(-60), bedLocalPeakLu: -40, soundPeakLu: -20 }),
+			ev({
+				clipId: 'q',
+				soundId: 'x',
+				bedBandsDb: Array(7).fill(-60),
+				bedLocalPeakLu: -40,
+				soundPeakLu: -20,
+			}),
 		]);
 		const q = one(r, 'q');
 		// bed cap: max(−40, −26) + 6 − (−20) = 0 … the base −20 is under it, so q sits at −20; the median +3.5 asks ≥ +1.5
@@ -282,7 +323,9 @@ describe('order and post-verification (an earlier constraint is never silently b
 		expect(q.limitedBy).toEqual(['consistency', 'conflict:bed-cap/consistency']);
 		expect(q.reason).toBe('0 dB, limited by consistency; conflict: bed-cap kept over consistency');
 		expect(r.warnings.map((w) => w.code)).toEqual(['W_CONFLICT']);
-		expect(r.warnings[0]!.message).toBe('q: consistency could not hold without breaking bed-cap; bed-cap was kept');
+		expect(r.warnings[0]!.message).toBe(
+			'q: consistency could not hold without breaking bed-cap; bed-cap was kept',
+		);
 	});
 
 	it('step 4 would break step 3: a shadowed support stays shadowed', () => {
@@ -320,13 +363,21 @@ describe('order and post-verification (an earlier constraint is never silently b
 			ev({ clipId: 'hot', soundId: 'x', ...loud, truePeakDb: 0 }),
 		]);
 		expect(one(h, 'hot').gainDb).toBeCloseTo(1.5, 9);
-		expect(one(h, 'hot').limitedBy).toEqual(['headroom', 'conflict:consistency/headroom']);
+		// headroom took it to −1 dB, consistency (earlier) back up to the median − 2
+		expect(one(h, 'hot').limitedBy).toEqual(['consistency', 'headroom', 'conflict:consistency/headroom']);
 		expect(one(h, 'hot').truePeakDb).toBeCloseTo(1.5, 9);
 		expect(h.warnings.some((w) => w.code === 'W_UNRESOLVED')).toBe(false);
 	});
 
 	it('the constraints are applied in the spec order', () => {
-		expect(SOLVER_CONSTRAINTS).toEqual(['clamp', 'bed-cap', 'hero-shadow', 'consistency', 'dialogue', 'headroom']);
+		expect(SOLVER_CONSTRAINTS).toEqual([
+			'clamp',
+			'bed-cap',
+			'hero-shadow',
+			'consistency',
+			'dialogue',
+			'headroom',
+		]);
 	});
 });
 
@@ -353,9 +404,7 @@ const arbEvent = (i: number) =>
 const arbEvents = fc
 	.integer({ min: 1, max: 12 })
 	.chain((n) => fc.tuple(...Array.from({ length: n }, (_, i) => arbEvent(i))))
-	.map((xs) =>
-		xs.map(({ len, ...e }): SolverEvent => ({ ...e, endSec: e.startSec + len })),
-	);
+	.map((xs) => xs.map(({ len, ...e }): SolverEvent => ({ ...e, endSec: e.startSec + len })));
 const arbOpts = fc.record({
 	truePeakCeilingDb: fc.double({ min: -12, max: 0, noNaN: true }),
 	programLufs: fc.double({ min: -31, max: -10, noNaN: true }),
@@ -369,7 +418,11 @@ const shiftBed = (events: SolverEvent[], d: number): SolverEvent[] =>
 	}));
 
 /** The checks a reviewer would run on the output, from the inputs only. */
-function checkCaps(events: SolverEvent[], r: SolverResult, opts: { truePeakCeilingDb: number; programLufs: number }) {
+function checkCaps(
+	events: SolverEvent[],
+	r: SolverResult,
+	opts: { truePeakCeilingDb: number; programLufs: number },
+) {
 	const tol = 0.005 + 1e-9;
 	expect(r.warnings.filter((w) => w.code === 'W_UNRESOLVED')).toEqual([]);
 	events.forEach((e, i) => {
@@ -389,7 +442,10 @@ function checkCaps(events: SolverEvent[], r: SolverResult, opts: { truePeakCeili
 				expect(Math.max(-120, e.soundBandsDb[b]!) + g - Math.max(-120, e.bedBandsDb[b]!)).toBeLessThanOrEqual(
 					DIALOGUE_LIFT_DB + tol,
 				);
-		if (!lost('headroom')) expect(g).toBeLessThanOrEqual((e.truePeakDb === null ? 0 : opts.truePeakCeilingDb - e.truePeakDb) + tol);
+		if (!lost('headroom'))
+			expect(g).toBeLessThanOrEqual(
+				(e.truePeakDb === null ? 0 : opts.truePeakCeilingDb - e.truePeakDb) + tol,
+			);
 		// a lift short of the target always has a reason
 		if (out.achievedLiftDb !== null && out.achievedLiftDb < out.targetLiftDb - 0.01)
 			expect(out.limitedBy.length, JSON.stringify(out)).toBeGreaterThan(0);
@@ -402,7 +458,8 @@ function checkCaps(events: SolverEvent[], r: SolverResult, opts: { truePeakCeili
 		if (out.limitedBy.some((l) => l.startsWith('conflict:') && l.endsWith('/consistency'))) return;
 		bySound.set(e.soundId, [...(bySound.get(e.soundId) ?? []), out.gainDb]);
 	});
-	for (const gs of bySound.values()) expect(Math.max(...gs) - Math.min(...gs)).toBeLessThanOrEqual(2 * CONSISTENCY_DB + 2 * tol);
+	for (const gs of bySound.values())
+		expect(Math.max(...gs) - Math.min(...gs)).toBeLessThanOrEqual(2 * CONSISTENCY_DB + 2 * tol);
 }
 
 describe('properties', () => {
@@ -420,7 +477,9 @@ describe('properties', () => {
 			fc.property(arbEvents, arbOpts, fc.double({ min: 0, max: 30, noNaN: true }), (events, opts, d) => {
 				const a = solveSfxGains(events, opts);
 				const b = solveSfxGains(shiftBed(events, d), opts);
-				a.events.forEach((e, i) => expect(b.events[i]!.gainDb, `${e.clipId}`).toBeGreaterThanOrEqual(e.gainDb - 0.01 - 1e-9));
+				a.events.forEach((e, i) => {
+					expect(b.events[i]!.gainDb, `${e.clipId}`).toBeGreaterThanOrEqual(e.gainDb - 0.01 - 1e-9);
+				});
 				checkCaps(shiftBed(events, d), b, opts);
 			}),
 			{ numRuns: 300 },
@@ -451,7 +510,10 @@ describe('properties', () => {
 			fc.property(arbEvents, arbOpts, fc.integer(), (events, opts, seed) => {
 				const a = solveSfxGains(events, opts);
 				expect(solveSfxGains(structuredClone(events), opts)).toEqual(a);
-				const perm = [...events].sort((x, y) => ((x.clipId.charCodeAt(1) * 7919 + seed) % 13) - ((y.clipId.charCodeAt(1) * 7919 + seed) % 13));
+				const perm = [...events].sort(
+					(x, y) =>
+						((x.clipId.charCodeAt(1) * 7919 + seed) % 13) - ((y.clipId.charCodeAt(1) * 7919 + seed) % 13),
+				);
 				expect(solveSfxGains(perm, opts).gains).toEqual(a.gains);
 			}),
 			{ numRuns: 150 },
@@ -483,7 +545,21 @@ describe('sanitisation', () => {
 		expect(Number.isFinite(e.gainDb)).toBe(true);
 		expect(e.dominantBands).toEqual([500]);
 		expect(r.warnings[0]!.code).toBe('W_SANITISED');
-		for (const what of ['soundBandsDb has 5 bands', 'soundBandsDb[0]', 'soundBandsDb[3]', 'bedBandsDb has 8', 'bedBandsDb[1]', 'soundPeakLu', 'truePeakDb', 'bedLocalPeakLu', 'startSec', 'baseGainDb', 'userOffsetDb', 'weight', 'speechOverlap'])
+		for (const what of [
+			'soundBandsDb has 5 bands',
+			'soundBandsDb[0]',
+			'soundBandsDb[3]',
+			'bedBandsDb has 8',
+			'bedBandsDb[1]',
+			'soundPeakLu',
+			'truePeakDb',
+			'bedLocalPeakLu',
+			'startSec',
+			'baseGainDb',
+			'userOffsetDb',
+			'weight',
+			'speechOverlap',
+		])
 			expect(r.warnings[0]!.message).toContain(what);
 		// −Infinity bands (silence) are not a sanitisation
 		expect(r.warnings[0]!.message).not.toContain('bedBandsDb[0]');
@@ -492,27 +568,55 @@ describe('sanitisation', () => {
 	it('hostile input never throws and always gives finite gains in range', () => {
 		const anything = fc.oneof(
 			fc.double(),
-			fc.constantFrom(null, undefined, '', 'x', true, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY),
+			fc.constantFrom(
+				null,
+				undefined,
+				'',
+				'x',
+				true,
+				Number.NaN,
+				Number.POSITIVE_INFINITY,
+				Number.NEGATIVE_INFINITY,
+			),
 			fc.array(fc.oneof(fc.double(), fc.constant(null)), { maxLength: 9 }),
 			fc.object(),
 		);
 		const hostile = fc.dictionary(
-			fc.constantFrom('clipId', 'soundId', 'type', 'weight', 'startSec', 'endSec', 'soundBandsDb', 'bedBandsDb', 'soundPeakLu', 'truePeakDb', 'bedLocalPeakLu', 'speechOverlap', 'baseGainDb', 'userOffsetDb'),
+			fc.constantFrom(
+				'clipId',
+				'soundId',
+				'type',
+				'weight',
+				'startSec',
+				'endSec',
+				'soundBandsDb',
+				'bedBandsDb',
+				'soundPeakLu',
+				'truePeakDb',
+				'bedLocalPeakLu',
+				'speechOverlap',
+				'baseGainDb',
+				'userOffsetDb',
+			),
 			anything,
 		);
 		fc.assert(
-			fc.property(fc.array(fc.oneof(hostile, anything), { maxLength: 8 }), fc.oneof(fc.object(), fc.record({ truePeakCeilingDb: fc.double(), programLufs: fc.double() })), (events, opts) => {
-				const r = solveSfxGains(events as unknown as SolverEvent[], opts as never);
-				expect(r.events).toHaveLength(events.length);
-				for (const e of r.events) {
-					expect(Number.isFinite(e.gainDb)).toBe(true);
-					expect(e.gainDb).toBeGreaterThanOrEqual(SOLVER_GAIN_MIN_DB);
-					expect(e.gainDb).toBeLessThanOrEqual(SOLVER_GAIN_MAX_DB);
-					if (e.achievedLiftDb !== null) expect(Number.isFinite(e.achievedLiftDb)).toBe(true);
-					expect(typeof e.reason).toBe('string');
-				}
-				expect(r.warnings.filter((w) => w.code === 'W_UNRESOLVED')).toEqual([]);
-			}),
+			fc.property(
+				fc.array(fc.oneof(hostile, anything), { maxLength: 8 }),
+				fc.oneof(fc.object(), fc.record({ truePeakCeilingDb: fc.double(), programLufs: fc.double() })),
+				(events, opts) => {
+					const r = solveSfxGains(events as unknown as SolverEvent[], opts as never);
+					expect(r.events).toHaveLength(events.length);
+					for (const e of r.events) {
+						expect(Number.isFinite(e.gainDb)).toBe(true);
+						expect(e.gainDb).toBeGreaterThanOrEqual(SOLVER_GAIN_MIN_DB);
+						expect(e.gainDb).toBeLessThanOrEqual(SOLVER_GAIN_MAX_DB);
+						if (e.achievedLiftDb !== null) expect(Number.isFinite(e.achievedLiftDb)).toBe(true);
+						expect(typeof e.reason).toBe('string');
+					}
+					expect(r.warnings.filter((w) => w.code === 'W_UNRESOLVED')).toEqual([]);
+				},
+			),
 			{ numRuns: 300 },
 		);
 		expect(solveSfxGains(null as never)).toEqual({ gains: {}, events: [], warnings: [] });
@@ -521,7 +625,10 @@ describe('sanitisation', () => {
 	});
 
 	it('duplicate clip ids: every event is reported, gains keeps the last', () => {
-		const r = solveSfxGains([ev({ clipId: 'a' }), ev({ clipId: 'a', weight: 'hero', startSec: 40, endSec: 41 })]);
+		const r = solveSfxGains([
+			ev({ clipId: 'a' }),
+			ev({ clipId: 'a', weight: 'hero', startSec: 40, endSec: 41 }),
+		]);
 		expect(r.events).toHaveLength(2);
 		expect(r.gains.a).toBeCloseTo(-15, 9);
 		expect(r.warnings.map((w) => w.code)).toEqual(['W_DUPLICATE_CLIP']);
@@ -563,7 +670,9 @@ describe('performance', () => {
 			expect(r.events).toHaveLength(2000);
 		}
 		times.sort((a, b) => a - b);
-		console.log(`solveSfxGains 2000 events: min ${times[0]!.toFixed(1)} ms, median ${times[4]!.toFixed(1)} ms`);
+		console.log(
+			`solveSfxGains 2000 events: min ${times[0]!.toFixed(1)} ms, median ${times[4]!.toFixed(1)} ms`,
+		);
 		expect(times[0]!).toBeLessThan(50);
 	});
 });
