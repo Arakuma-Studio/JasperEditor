@@ -358,6 +358,20 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		clipId: { clipAt: { track: 'A1', at: 30 } },
 		peakFlicks: 176_400_000,
 	},
+	// Solved gains (MCP rebalance_sfx, the plan job): clip ids, or a $ref a placement layer bound earlier in the
+	// same transaction; the report is stored as the clip's sfx.level {by: 'solver'}.
+	'soundDesign.applyGains': {
+		type: 'soundDesign.applyGains',
+		gains: { $sfx: -6.5 },
+		report: {
+			$sfx: {
+				targetLiftDb: 3.5,
+				achievedLiftDb: 1.2,
+				limitedBy: ['dialogue'],
+				reason: '−6.5 dB, limited by dialogue A1',
+			},
+		},
+	},
 };
 
 /** A multi-command transaction showing temp refs. */

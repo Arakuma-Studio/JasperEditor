@@ -323,7 +323,7 @@ e2e run, reproduced in a unit test).
 and preview defects), Phase 1 (a licensed, offline sound library that users and agents search, look at, audition and
 insert peak-aligned with provenance and credits), then cues and placement (P2), proposals and review (P3), mixing (P4),
 Sound Check (P5), packs and more cue sources (P6).
-**Status (on `feat/sound-design`, not merged to `main`):** partial — Phases 0, 1 and 2 done; Phase 3 in progress (WP3.1: the generic proposal model, engine store, routes, event and the agent accept gate; WP3.2: the `sound-design` plan job and route, `plan_sound_design`, `place_sound` propose mode and the five proposal MCP tools; WP3.3a: the session proposals slice, the preview document the Program monitor plays with "Hear proposal" (A/B, also while playing), timeline ghosts with their cards, Apply as one undo step and Undo back into review — rerun `e2e/sound-proposal-ghosts.spec.ts`; WP3.3b: the proposal card in the agent notices stack ("<agent> proposes …: n sounds on k new tracks", "<agent> is waiting for your review"), the Review panel (rows by role, decisions, alternates, notes, ▶ in context, stale reasons, tab badge), the review bar on the Timeline, the Review keymap scope, Apply only for a trusted key press / click with the toast "Applied n of m sounds from <author>" (Undo, Reopen review), the Auto Sound Pass… dialog, Fill Unfilled Cues as a proposal and the "Allow agents to apply sound proposals" preference — rerun `e2e/sound-review.spec.ts` (Phase 3 "Done when", export peaks 0 / 0 / −1 samples from the cue frames); Phase 3 verification pending); Phases 4–6 not started.
+**Status (on `feat/sound-design`, not merged to `main`):** partial — Phases 0, 1 and 2 done; Phase 3 in progress (WP3.1: the generic proposal model, engine store, routes, event and the agent accept gate; WP3.2: the `sound-design` plan job and route, `plan_sound_design`, `place_sound` propose mode and the five proposal MCP tools; WP3.3a: the session proposals slice, the preview document the Program monitor plays with "Hear proposal" (A/B, also while playing), timeline ghosts with their cards, Apply as one undo step and Undo back into review — rerun `e2e/sound-proposal-ghosts.spec.ts`; WP3.3b: the proposal card in the agent notices stack ("<agent> proposes …: n sounds on k new tracks", "<agent> is waiting for your review"), the Review panel (rows by role, decisions, alternates, notes, ▶ in context, stale reasons, tab badge), the review bar on the Timeline, the Review keymap scope, Apply only for a trusted key press / click with the toast "Applied n of m sounds from <author>" (Undo, Reopen review), the Auto Sound Pass… dialog, Fill Unfilled Cues as a proposal and the "Allow agents to apply sound proposals" preference — rerun `e2e/sound-review.spec.ts` (Phase 3 "Done when", export peaks 0 / 0 / −1 samples from the cue frames); Phase 3 verification pending); Phase 4 in progress (WP4.1a masking solver, WP4.1b bed render, `soundDesign.applyGains`, `rebalance_sfx`, plan gains); Phases 5–6 not started.
 See [wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 1 verification": the Sound Library panel and Sound Design
 workspace, the engine library (60-sound Kenney CC0 kit, user folders with a declared licence, Jasper Synth), ten MCP
 tools, credits; inserts land on the frame to the sample (library sounds are registered with 50 ms of lead silence, and
@@ -353,6 +353,17 @@ land / exit cues come from the fframes templates' rendered motion (the lower thi
 templates keep the declared intro / outro timing (unmeasured, lower confidence); default levels are per sound, not
 against the bed (Phase 4); real-time audio e2e cannot measure on a host whose audio clock slips (load ≳ 90 here): the
 specs then fail saying every play was disturbed.
+Phase 4 → WP4.1b ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 4 → WP4.1b"): the bed is rendered per cue
+cluster and every sound effect alone by the export mixer, the masking solver (WP4.1a) sets the gains:
+`soundDesign.applyGains` (`sfx.level {by: 'solver'}`), `POST /api/sound-design/rebalance` / MCP `rebalance_sfx` (propose or
+apply as one undo step) and the plan job (each item applies its solved gain, why-lines name the limit: "−16.2 dB,
+limited by dialogue A2"). Measured on the Phase 2 fixture with a music bed and dialogue: every event reaches its target
+lift or reports `limitedBy`; on a PCM export, each event's lift over the separately exported bed is within 0.14 dB of
+the report (AAC exports add up to 1.3 dB of codec noise to the difference); export true peak −4.8 dBTP; plan with gains
+10.2 s (levels 5.0 s) at load ≈ 17 on 16 cores. Limits: SFX do not mask each other in the model and the per-event
+true-peak ceiling is pre-master (overlapping events may sum higher); non-linear master processing (a limiter on the Mix)
+breaks the bed + sound additivity the measurement assumes; windows over 20 s are measured on their first 20 s; the
+"Rebalance SFX Levels" menu item, stop-before, build, room glue and delivery presets are the rest of Phase 4.
 
 ### Not covered by any workstream yet
 

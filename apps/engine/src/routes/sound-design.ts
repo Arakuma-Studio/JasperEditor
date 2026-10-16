@@ -3,9 +3,13 @@
 //                                 engine's motion-graphic template registry), for an inline envelope or a project's
 //                                 live document. Read-only: nothing is stored.
 //   POST /api/sound-design/plan   a `sound-design` job (202): cues → rank → register → place → a proposal for review
-//                                 (sound-design/plan.ts). Nothing is applied.
+//                                 (sound-design/plan.ts), with gains solved against the bed. Nothing is applied.
+//   POST /api/sound-design/rebalance  a `sound-design` job (202): the sequence's sound effects measured against the bed
+//                                 and solved by the masking solver (sound-design/rebalance.ts): a report, and one
+//                                 applied transaction "Rebalance SFX Levels" or a proposal.
 import {
 	type EnvelopeJson,
+	SfxRebalanceRequestSchema,
 	type SoundCueSuggestion,
 	SoundCuesRequestSchema,
 	type SoundCuesResponse,
@@ -38,6 +42,7 @@ import {
 	runSoundDesignPlan,
 	unknownCueIds,
 } from '../sound-design/plan.ts';
+import { RebalanceInputError, rebalanceTargets, runRebalance } from '../sound-design/rebalance.ts';
 import type { SoundService } from '../sounds/service.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
@@ -49,13 +54,60 @@ const MAX_CURVE_FRAMES = 20_000;
 export default async function soundDesignRoutes(app: FastifyInstance): Promise<void> {
 	const { services } = app.jasper;
 	const core = coreServices(app);
+	const agentOf = () => services.agent as AgentService | undefined;
+	// Registered by the proposal routes (after these): looked up when a job runs.
+	const proposalsOf = () => services.proposals as ProposalService | undefined;
+	// One job kind for both: rebalance jobs carry `rebalance` in their input.
 	core.queue.registerRunner('sound-design', (ctx) =>
-		runSoundDesignPlan(ctx, {
-			agent: () => services.agent as AgentService | undefined,
-			sounds: () => services.sounds as SoundService | undefined,
-			// Registered by the proposal routes (after these): looked up when a job runs.
-			proposals: () => services.proposals as ProposalService | undefined,
-			mgTemplates: mgRegistry,
+		(ctx.input as { rebalance?: unknown } | null)?.rebalance
+			? runRebalance(ctx, {
+					agent: agentOf,
+					proposals: proposalsOf,
+					ffmpeg: core.ffmpeg,
+					registry: core.registry,
+				})
+			: runSoundDesignPlan(ctx, {
+					agent: agentOf,
+					sounds: () => services.sounds as SoundService | undefined,
+					proposals: proposalsOf,
+					mgTemplates: mgRegistry,
+					ffmpeg: core.ffmpeg,
+					registry: core.registry,
+				}),
+	);
+
+	app.post(
+		'/api/sound-design/rebalance',
+		guarded(async (req, reply) => {
+			const body = parseOr400(SfxRebalanceRequestSchema, req.body ?? {});
+			if (!isProjectId(body.projectId)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
+			const agent = agentOf();
+			if (!agent || !services.proposals)
+				throw new HttpError(503, 'NOT_AVAILABLE', 'The sound design services are not running');
+			if (!(await agent.projectExists(body.projectId)))
+				throw new HttpError(404, 'PROJECT_NOT_FOUND', `Project not found: ${body.projectId}`);
+			// Refused at once rather than as a failed job: an unknown sequence, unknown or non-SFX clips.
+			const { doc } = await liveDocument(agent, body.projectId);
+			try {
+				rebalanceTargets(doc, planSequence(doc, body.sequenceId), body);
+			} catch (e) {
+				if (e instanceof PlanInputError) throw new HttpError(404, e.code, e.message);
+				if (e instanceof RebalanceInputError) throw new HttpError(e.status, e.code, e.message);
+				throw e;
+			}
+			const editor = req.jasperEditor === true;
+			const who = { editor, agent: agentNameOf(req) };
+			reply.code(202);
+			return core.queue.submit({
+				kind: 'sound-design',
+				title: 'Rebalance SFX levels',
+				priority: 'user',
+				cpuSlots: 1,
+				origin: editor ? { type: 'user' } : { type: 'agent', agentRunId: who.agent },
+				projectId: body.projectId,
+				input: { rebalance: body, who },
+				stage: 'Waiting',
+			});
 		}),
 	);
 
@@ -64,7 +116,7 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 		guarded(async (req, reply) => {
 			const body = parseOr400(SoundDesignPlanRequestSchema, req.body ?? {});
 			if (!isProjectId(body.projectId)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
-			const agent = services.agent as AgentService | undefined;
+			const agent = agentOf();
 			if (!agent || !services.sounds || !services.proposals)
 				throw new HttpError(503, 'NOT_AVAILABLE', 'The sound design services are not running');
 			if (!(await agent.projectExists(body.projectId)))

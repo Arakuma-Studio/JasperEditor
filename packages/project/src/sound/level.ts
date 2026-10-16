@@ -119,3 +119,32 @@ export function defaultSfxLevel(input: {
 	const gainDb = Math.round(gain * 10) / 10;
 	return { gainDb: Object.is(gainDb, -0) ? 0 : gainDb, targetLufs, ceilingDbtp, levelClass, limitedBy };
 }
+
+/** True-peak ceiling of each delivery preset (dBTP; spec 12 §2.4): the masking solver's headroom constraint. */
+export const DELIVERY_TRUE_PEAK_DBTP: Record<SoundDelivery, number> = {
+	web: -1,
+	podcast: -1,
+	'broadcast-r128': -1,
+	'atsc-a85': -2,
+};
+
+/** Within this (dB) a clip's gain still equals its recorded level (levels are stored to 0.01 dB). */
+export const SFX_LEVEL_MATCH_DB = 0.005;
+
+/**
+ * Who owns a placed sound's gain (Phase 2 verification B, Phase 4 WP4.1b): `default` (placement's default level) or
+ * `solver` (the masking solver, `soundDesign.applyGains`) while the clip's gain still equals the recorded
+ * `sfx.level.gainDb`; `user` when there is no level or the gain was changed since. Rebalancing replaces `default` and
+ * `solver` gains and keeps `user` gains unless asked to replace them; a swap or a role change refreshes `default` and
+ * `solver` gains to the new default. Never throws.
+ */
+export function sfxGainOwner(clip: {
+	gainDb?: unknown;
+	sfx?: { level?: { by?: unknown; gainDb?: unknown } | null } | null;
+}): 'default' | 'solver' | 'user' {
+	const level = clip.sfx?.level;
+	if (!level) return 'user';
+	const { by, gainDb } = level;
+	if ((by !== 'default' && by !== 'solver') || !fin(gainDb) || !fin(clip.gainDb)) return 'user';
+	return Math.abs(clip.gainDb - gainDb) <= SFX_LEVEL_MATCH_DB ? by : 'user';
+}

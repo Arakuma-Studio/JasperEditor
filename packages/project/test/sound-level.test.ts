@@ -236,7 +236,8 @@ describe('soundDesign.place default level', () => {
 		]);
 		const [x, y] = r.results.map((q) => clipOf(h, (q as { clips: { clipId: string }[] }).clips[0]!.clipId));
 		expect(x!.gainDb).toBe(-11); // −31 − (−20)
-		expect(x!.sfx!.level!.targetLufs).toBe(-31);
+		const lx = x!.sfx!.level!;
+		expect(lx.by === 'default' ? lx.targetLufs : null).toBe(-31);
 		expect(y!.gainDb).toBe(0);
 		expect(y!.sfx!.level!.limitedBy).toBe('unmeasured');
 	});

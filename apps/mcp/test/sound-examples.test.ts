@@ -21,7 +21,11 @@ const SOUND_COMMANDS = [
 	'soundDesign.setPalette',
 	'soundDesign.setSettings',
 	'soundDesign.setPeak',
+	'soundDesign.applyGains',
 ];
+
+/** Examples whose prelude runs in the same transaction (they use a `$ref` the prelude binds). */
+const SAME_TX = new Set(['soundDesign.applyGains']);
 
 /** What an example needs in the project first (a cue to edit, a placed sound to swap). */
 const PRELUDE: Record<string, unknown[]> = {
@@ -56,6 +60,13 @@ const PRELUDE: Record<string, unknown[]> = {
 			type: 'soundDesign.place',
 			frame: 30,
 			layers: [{ mediaId: { mediaByName: 'clip-a.mp4' }, align: 'start', track: 'A1' }],
+		},
+	],
+	'soundDesign.applyGains': [
+		{
+			type: 'soundDesign.place',
+			frame: 30,
+			layers: [{ mediaId: { mediaByName: 'clip-a.mp4' }, align: 'start', track: 'A1', ref: '$sfx' }],
 		},
 	],
 };
@@ -107,7 +118,7 @@ describe('sound-design describe_commands examples', () => {
 		const example = COMMAND_EXAMPLES[type];
 		expect(example).toBeDefined();
 		let doc = reg.document;
-		const prelude = PRELUDE[type];
+		const prelude = SAME_TX.has(type) ? undefined : PRELUDE[type];
 		if (prelude) {
 			const p = resolveAgentAddresses(doc, prelude);
 			expect(p.ok).toBe(true);
@@ -120,7 +131,7 @@ describe('sound-design describe_commands examples', () => {
 			expect(pr.result.ok, JSON.stringify(pr.result)).toBe(true);
 			doc = pr.document;
 		}
-		const resolved = resolveAgentAddresses(doc, [example]);
+		const resolved = resolveAgentAddresses(doc, [...(SAME_TX.has(type) ? PRELUDE[type]! : []), example]);
 		expect(resolved.ok).toBe(true);
 		if (!resolved.ok) return;
 		const r = applyTransaction(

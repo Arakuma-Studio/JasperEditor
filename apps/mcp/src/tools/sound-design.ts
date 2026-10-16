@@ -5,6 +5,7 @@
 // placement and swaps are ordinary undoable commands (`soundCue.*`, `soundDesign.place`, `soundDesign.swap`).
 import {
 	type RegisterSoundResponse,
+	SfxRebalanceResultSchema,
 	SOUND_EFFECTS_BIN,
 	type SoundCueSuggestion,
 	type SoundCuesResponse,
@@ -34,6 +35,7 @@ import {
 	requiresAttribution,
 	type Sequence,
 	SFX_ROLES,
+	SOUND_DELIVERIES,
 	SOUND_DESIGN_FEATURE,
 	SOUND_DESIGN_LIMITS,
 	SOUND_LABELS,
@@ -61,6 +63,7 @@ import {
 	cancelIfAborted,
 	defineTool,
 	EDIT,
+	EDIT_IDEMPOTENT,
 	type Extra,
 	frameOf,
 	loadDoc,
@@ -423,6 +426,7 @@ function recentSounds(seq: Sequence, frame: number, F: number): string[] {
 
 export function registerSoundDesignTools(ctx: ToolContext): void {
 	registerPlanSoundDesign(ctx);
+	registerRebalanceSfx(ctx);
 	defineTool(
 		ctx,
 		'find_sound_cues',
@@ -1721,10 +1725,10 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 			const r = SoundDesignPlanResultSchema.parse(done.result);
 			const rep = r.report;
 			const table = [
-				'item | timecode | cue | sound | role | align | alternates',
+				'item | timecode | cue | sound | role | align | alternates | gain',
 				...rep.events.map(
 					(e) =>
-						`${e.itemId} | ${e.timecode} | ${e.kind} ${e.weight} | ${[e.sound.title, ...e.extraLayers.map((l) => l.title)].join(' + ')}${e.sound.source === 'synth' ? ' (synth)' : ''} | ${e.role} | ${e.align} | ${e.alternatives.length}`,
+						`${e.itemId} | ${e.timecode} | ${e.kind} ${e.weight} | ${[e.sound.title, ...e.extraLayers.map((l) => l.title)].join(' + ')}${e.sound.source === 'synth' ? ' (synth)' : ''} | ${e.role} | ${e.align} | ${e.alternatives.length} | ${e.level?.reason ?? 'default level'}`,
 				),
 			].join('\n');
 			return jsonResult({
@@ -1755,7 +1759,17 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 						? { layers: e.extraLayers.map((x) => ({ soundId: x.soundId, title: x.title })) }
 						: {}),
 					...(e.notes.length ? { notes: e.notes } : {}),
+					...(e.level
+						? {
+								gainDb: e.level.gainDb,
+								targetLiftDb: e.level.targetLiftDb,
+								achievedLiftDb: e.level.achievedLiftDb,
+								limitedBy: e.level.limitedBy,
+							}
+						: {}),
 				})),
+				...(rep.conflicts?.length ? { conflicts: rep.conflicts } : {}),
+				...(rep.levels ? { levels: rep.levels } : {}),
 				skipped: rep.skipped.map((s) => ({
 					timecode: s.timecode,
 					kind: s.kind,
@@ -1767,6 +1781,126 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 				next: r.proposalId
 					? `Nothing was applied. Ask the user to review proposal ${r.proposalId} in the editor (Review panel: hear each sound in context, keep or reject it, swap alternates, leave notes, apply as one undo step), then call wait_for_proposal {projectId, proposalId} and read their decisions and notes. Do not accept it yourself unless the user asked you to apply it. You cannot hear: give the user the timecodes to listen to.`
 					: 'No cue got a sound (see skipped and warnings): nothing was stored.',
+			});
+		},
+	);
+}
+
+const fmtGain = (x: number) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${Math.abs(Math.round(x * 10) / 10)}`;
+
+/** rebalance_sfx: the engine's rebalance job (masking solver against the bed) → a report, a proposal or one applied edit. */
+function registerRebalanceSfx(ctx: ToolContext): void {
+	defineTool(
+		ctx,
+		'rebalance_sfx',
+		{
+			title: 'Rebalance SFX levels (masking solver)',
+			description: `Sets the gains of a sequence's sound effects so each clears the BED (dialogue, music, ambience: everything that is not a sound effect) by its role's target lift in its dominant octave band — hero +5, support +3.5, ambient +2 dB — under ordered safety constraints: the gain range −30…+12 dB, a peak over the local bed of at most +10 LU (hero) / +6 LU, a support within 0.15 s of a hero × 0.6, repeats within ±2 dB, no more than +1 dB in 1–4 kHz during speech (transcript words or voice activity of dialogue clips), and the delivery's true-peak ceiling. The engine renders the bed only around the cues and each sound alone, measures, solves and returns a table: clip | timecode | sound | role | from → gain | target | achieved | limited by | why ("−3 dB, limited by dialogue A1"), plus conflicts (the earlier, safety constraint kept) and skipped clips. mode "propose" (default) stores a proposal with one item per changed clip for the user to review in the editor; mode "apply" applies every change as ONE undo step "Rebalance SFX Levels" (only when the user asked you to). Gains set by hand are kept unless userGains "replace" or you name the clips. Solving again without changes changes nothing (idempotent). Sound effects = clips typed SFX in Essential Sound or placed by sound design. Waits for the job (timeoutSeconds, default 300).`,
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: SequenceIdArg,
+				clipIds: z
+					.array(z.string().min(1).max(128))
+					.min(1)
+					.max(2000)
+					.optional()
+					.describe('Only these sound effect clips (default every sound effect of the sequence)'),
+				range: z
+					.object({ start: TimeInputSchema, end: TimeInputSchema })
+					.optional()
+					.describe(`Only sound effects overlapping [start, end). ${TIME_FORMATS}`),
+				delivery: z
+					.enum(SOUND_DELIVERIES)
+					.optional()
+					.describe('Loudness / true-peak preset (default the sequence’s: web −14 LUFS −1 dBTP…)'),
+				mode: z
+					.enum(['propose', 'apply'])
+					.optional()
+					.describe('"propose" (default): a proposal to review; "apply": one undoable edit'),
+				userGains: z
+					.enum(['keep', 'replace'])
+					.optional()
+					.describe('Gains set by hand: keep (default) or solve them too'),
+				label: z.string().min(1).max(200).optional().describe('Proposal title'),
+				timeoutSeconds: z
+					.number()
+					.int()
+					.min(1)
+					.max(900)
+					.optional()
+					.describe('Wait for the job (default 300)'),
+			},
+			annotations: EDIT_IDEMPOTENT,
+		},
+		async (a, extra) => {
+			const { doc } = await loadDoc(ctx, a.projectId);
+			const seq = pickSequence(doc, a.sequenceId);
+			let range: { start: number; end: number } | undefined;
+			if (a.range) {
+				range = { start: frameOf(seq, a.range.start), end: frameOf(seq, a.range.end) };
+				if (range.end <= range.start)
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						`range.end (${range.end}) must be after range.start (${range.start})`,
+						TIME_FORMATS,
+					);
+			}
+			const job = await ctx.engine((c) =>
+				c.rebalanceSfx(
+					{
+						projectId: a.projectId,
+						sequenceId: seq.id,
+						...(a.clipIds ? { clipIds: a.clipIds } : {}),
+						...(range ? { range } : {}),
+						...(a.delivery ? { delivery: a.delivery } : {}),
+						mode: a.mode ?? 'propose',
+						...(a.userGains ? { userGains: a.userGains } : {}),
+						...(a.label ? { label: a.label } : {}),
+					},
+					extra.signal,
+				),
+			);
+			await cancelIfAborted(ctx, extra, job.id);
+			const { job: done, timedOut } = await waitJob(ctx, job.id, (a.timeoutSeconds ?? 300) * 1000, extra);
+			if (timedOut)
+				return jsonResult({
+					jobId: done.id,
+					state: done.state,
+					progress: done.progress,
+					...(done.stage ? { stage: done.stage } : {}),
+					next: `The rebalance is still running: wait_for_job {jobId: "${done.id}"}.`,
+				});
+			if (done.state !== 'succeeded')
+				throw new ToolError(
+					done.error?.code ?? 'JOB_FAILED',
+					done.error?.message ?? `The rebalance ${done.state}`,
+					'Check the clip ids (get_timeline), that the media is online (list_offline_media) and the arguments, then try again.',
+				);
+			const r = SfxRebalanceResultSchema.parse(done.result);
+			const rep = r.report;
+			const table = [
+				'clip | timecode | sound | role | gain dB (from → to) | target | achieved | limited by | why',
+				...rep.events.map(
+					(e) =>
+						`${e.clipId} | ${e.timecode} | ${e.title} (${e.track}) | ${e.role ?? e.weight} | ${fmtGain(e.fromDb)} → ${fmtGain(e.gainDb)} | ${fmtGain(e.targetLiftDb)} | ${e.achievedLiftDb === null ? 'silent' : fmtGain(e.achievedLiftDb)} | ${e.limitedBy.join(', ') || '—'} | ${e.reason}`,
+				),
+			].join('\n');
+			return jsonResult({
+				mode: r.mode,
+				applied: r.applied,
+				proposalId: r.proposalId,
+				revision: r.revision,
+				counts: rep.counts,
+				table,
+				...(rep.skipped.length ? { skipped: rep.skipped } : {}),
+				...(rep.conflicts.length ? { conflicts: rep.conflicts } : {}),
+				...(rep.warnings.length ? { warnings: rep.warnings } : {}),
+				levels: rep.levels,
+				next: r.proposalId
+					? `Nothing was changed. Ask the user to review proposal ${r.proposalId} in the editor (Review panel), then wait_for_proposal. You cannot hear: give them the timecodes of the limited events to listen to.`
+					: r.applied
+						? 'Applied as one undo step "Rebalance SFX Levels". You cannot hear: give the user the timecodes of the limited events to listen to; sound_check / measure_loudness measure the mix.'
+						: 'Nothing to change: every sound effect is already at its solved gain (or none was solved: see skipped).',
 			});
 		},
 	);

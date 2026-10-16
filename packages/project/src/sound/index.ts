@@ -7,4 +7,5 @@ export * from './messages.ts';
 export * from './place.ts';
 export * from './provenance.ts';
 export * from './rank.ts';
+export * from './sfx-clip.ts';
 export * from './taxonomy.ts';

@@ -180,6 +180,7 @@ import {
 } from './roto.ts';
 import { SceneDetectRequestSchema } from './scenes.ts';
 import {
+	SfxRebalanceRequestSchema,
 	SoundCuesRequestSchema,
 	SoundCuesResponseSchema,
 	SoundDesignPlanRequestSchema,
@@ -1110,6 +1111,18 @@ export const ROUTES = {
 		method: 'POST',
 		path: '/api/sound-design/plan',
 		body: SoundDesignPlanRequestSchema,
+		response: EngineJobSchema,
+	},
+	/**
+	 * Rebalance SFX levels (spec 12 §2.4, §2.10; P4-R2): a `sound-design` job (202) that renders the bed per cue cluster,
+	 * measures each sound effect alone and solves their gains with the masking solver; the result reports per clip the
+	 * gain, target and achieved lift, what limited it and why, and either applies them as one undoable transaction
+	 * ("Rebalance SFX Levels", `mode: 'apply'`) or stores a proposal (`mode: 'propose'`, the default).
+	 */
+	soundDesignRebalance: {
+		method: 'POST',
+		path: '/api/sound-design/rebalance',
+		body: SfxRebalanceRequestSchema,
 		response: EngineJobSchema,
 	},
 	/**

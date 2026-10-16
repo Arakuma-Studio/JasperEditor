@@ -10,6 +10,7 @@ import {
 	CUE_WEIGHTS,
 	CueAnchorSchema,
 	SFX_ROLES,
+	SOUND_DELIVERIES,
 	SOUND_DESIGN_LIMITS,
 } from '@jasper/project';
 import { z } from 'zod';
@@ -213,6 +214,69 @@ const PlanSoundSchema = z.object({
 	palette: z.boolean(),
 });
 
+/**
+ * A sound effect's level as the masking solver set it (spec 12 §2.4; wp-note "Phase 4 → WP4.1b"): the gain, the lift it
+ * reaches over the bed in its dominant octave bands, what held it under the target and why (a why-line naming the
+ * dialogue or bed tracks).
+ */
+export const SfxSolvedLevelSchema = z.object({
+	/** The solved clip gain (dB). */
+	gainDb: z.number(),
+	/** Target lift of the dominant bands over the bed (hero +5, support +3.5, ambient +2 dB). */
+	targetLiftDb: z.number(),
+	/** Lift reached at the gain (dB); null for a silent sound. */
+	achievedLiftDb: z.number().nullable(),
+	/** The constraints that held it under its target (empty: target reached). */
+	limitedBy: z.array(z.string()),
+	/** "−3 dB, limited by dialogue A1". */
+	reason: z.string(),
+	/** Dominant octave bands (Hz), strongest first. */
+	dominantBandsHz: z.array(z.number()),
+	/** Its peak loudness over the bed reference at the gain (LU). */
+	peakOverBedLu: z.number().nullable(),
+	/** Its true peak at the gain (dBTP; pre-master). */
+	truePeakDb: z.number().nullable(),
+	/** The window overlaps speech (the dialogue guard applies). */
+	speech: z.boolean(),
+	/** Tracks of the speech under it ("A1"). */
+	speechTracks: z.array(z.string()),
+	/** Bed tracks with clips under it. */
+	bedTracks: z.array(z.string()),
+	/** Its active window on the timeline (seconds), where sound and bed were measured. */
+	window: z.object({ start: z.number(), end: z.number() }),
+});
+export type SfxSolvedLevel = z.infer<typeof SfxSolvedLevelSchema>;
+
+/** A constraint the solver could not satisfy together with an earlier one (the earlier, safety one is kept). */
+export const SfxLevelConflictSchema = z.object({
+	clipId: z.string(),
+	/** The plan item, for plan reports. */
+	itemId: z.string().optional(),
+	kept: z.string(),
+	lost: z.string(),
+	message: z.string(),
+});
+export type SfxLevelConflict = z.infer<typeof SfxLevelConflictSchema>;
+
+/** How the levels were measured: the delivery, the clusters rendered, renders and cache hits. */
+export const SfxLevelsMeasureSchema = z.object({
+	delivery: z.enum(SOUND_DELIVERIES),
+	programLufs: z.number(),
+	truePeakCeilingDb: z.number(),
+	/** Bed clusters rendered (merged event windows with their margins) and their total length (seconds). */
+	clusters: z.number().int(),
+	clusterSeconds: z.number(),
+	renders: z.object({
+		bed: z.number().int(),
+		sound: z.number().int(),
+		voice: z.number().int(),
+		cached: z.number().int(),
+	}),
+	/** Milliseconds measuring and solving. */
+	ms: z.number(),
+});
+export type SfxLevelsMeasure = z.infer<typeof SfxLevelsMeasureSchema>;
+
 /** One placed cue of a plan. */
 export const SoundDesignPlanEventSchema = z.object({
 	/** The proposal item that places it. */
@@ -245,6 +309,15 @@ export const SoundDesignPlanEventSchema = z.object({
 	extraLayers: z.array(PlanSoundSchema),
 	/** Decisions taken for this cue (a hero demoted under dialogue, a sound that failed to register…). */
 	notes: z.array(z.string()),
+	/**
+	 * The solved level of the chosen sound (layer 0) against the bed (Phase 4); absent when the levels could not be
+	 * measured (the placement's default level applies: see the report's warnings).
+	 */
+	level: SfxSolvedLevelSchema.optional(),
+	/** Solved levels of the further layers, in order. */
+	layerLevels: z.array(SfxSolvedLevelSchema).optional(),
+	/** Solved gain of each alternative sound (same order as `alternatives`). */
+	alternativeLevels: z.array(SfxSolvedLevelSchema.nullable()).optional(),
 });
 export type SoundDesignPlanEvent = z.infer<typeof SoundDesignPlanEventSchema>;
 
@@ -299,6 +372,10 @@ export const SoundDesignPlanReportSchema = z.object({
 		items: z.number().int(),
 	}),
 	warnings: z.array(z.object({ code: z.string(), message: z.string() })),
+	/** Phase 4: constraints in conflict per event (the earlier one kept). */
+	conflicts: z.array(SfxLevelConflictSchema).optional(),
+	/** Phase 4: how the levels were measured (absent when they could not be). */
+	levels: SfxLevelsMeasureSchema.optional(),
 });
 export type SoundDesignPlanReport = z.infer<typeof SoundDesignPlanReportSchema>;
 
@@ -326,3 +403,92 @@ export const SoundDesignPlanResultSchema = z.object({
 	report: SoundDesignPlanReportSchema,
 });
 export type SoundDesignPlanResult = z.infer<typeof SoundDesignPlanResultSchema>;
+
+// ── Rebalance SFX levels (spec 12 §2.10 `rebalance_sfx`, P4-R2) ────────────────────────────────────────────────────
+
+export const SFX_REBALANCE_LIMITS = { maxClipIds: 2000, maxEvents: 2000 } as const;
+
+export const SfxRebalanceRequestSchema = z.strictObject({
+	projectId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'a project id'),
+	/** Default: the project's first sequence. */
+	sequenceId: id.optional(),
+	/** Only these sound effect clips (default: every sound effect of the sequence, in `range`). */
+	clipIds: z.array(id).min(1).max(SFX_REBALANCE_LIMITS.maxClipIds).optional(),
+	/** Sequence frames `[start, end)`: sound effects overlapping it (default the whole sequence). */
+	range: z
+		.strictObject({ start: frame, end: frame })
+		.refine((r) => r.end > r.start, 'range.end must be after range.start')
+		.optional(),
+	/** Delivery preset whose loudness and true peak the solver uses (default the sequence's). */
+	delivery: z.enum(SOUND_DELIVERIES).optional(),
+	/** `propose` (default): a proposal to review, one item per clip; `apply`: one undoable transaction. */
+	mode: z.enum(['propose', 'apply']).optional(),
+	/**
+	 * Gains the user set by hand (not the default level or an earlier solve): `keep` (default) leaves them; `replace`
+	 * solves them too. Clips named in `clipIds` are always solved.
+	 */
+	userGains: z.enum(['keep', 'replace']).optional(),
+	/** Proposal title (default "Rebalance SFX Levels: <sequence>"). */
+	label: z.string().min(1).max(200).optional(),
+});
+export type SfxRebalanceRequest = z.infer<typeof SfxRebalanceRequestSchema>;
+
+/** One solved sound effect of a rebalance. */
+export const SfxRebalanceEventSchema = SfxSolvedLevelSchema.extend({
+	clipId: z.string(),
+	/** The proposal item (propose mode). */
+	itemId: z.string().nullable(),
+	title: z.string(),
+	soundId: z.string().nullable(),
+	track: z.string(),
+	frame,
+	timecode: z.string(),
+	role: z.enum(SFX_ROLES).nullable(),
+	weight: z.enum(['hero', 'support', 'ambient']),
+	/** Its gain before (dB) and who owned it: the default level, an earlier solve, or the user. */
+	fromDb: z.number(),
+	owner: z.enum(['default', 'solver', 'user']),
+	/** gainDb − fromDb. */
+	changeDb: z.number(),
+});
+export type SfxRebalanceEvent = z.infer<typeof SfxRebalanceEventSchema>;
+
+export const SFX_REBALANCE_SKIP_CODES = ['USER_GAIN', 'LOCKED', 'NOT_IN_MIX', 'OFFLINE', 'LIMIT'] as const;
+
+export const SfxRebalanceReportSchema = z.object({
+	version: z.literal(1),
+	sequenceId: z.string(),
+	events: z.array(SfxRebalanceEventSchema),
+	skipped: z.array(
+		z.object({ clipId: z.string(), code: z.enum(SFX_REBALANCE_SKIP_CODES), reason: z.string() }),
+	),
+	conflicts: z.array(SfxLevelConflictSchema),
+	warnings: z.array(z.object({ code: z.string(), message: z.string(), clipId: z.string().optional() })),
+	counts: z.object({
+		/** Sound effects considered. */
+		clips: z.number().int(),
+		solved: z.number().int(),
+		/** Solved clips whose gain changes (≥ 0.01 dB). */
+		changed: z.number().int(),
+		/** Solved clips held under their target (limitedBy not empty). */
+		limited: z.number().int(),
+		skipped: z.number().int(),
+	}),
+	levels: SfxLevelsMeasureSchema,
+});
+export type SfxRebalanceReport = z.infer<typeof SfxRebalanceReportSchema>;
+
+/** The rebalance job's result. */
+export const SfxRebalanceResultSchema = z.object({
+	projectId: z.string(),
+	sequenceId: z.string(),
+	mode: z.enum(['propose', 'apply']),
+	/** Apply mode: the transaction ran (false when nothing changed). */
+	applied: z.boolean(),
+	/** The document revision after applying (apply) or the one measured (propose). */
+	revision: z.number().int().nullable(),
+	/** Propose mode: the stored proposal (null when nothing changes). */
+	proposalId: z.string().nullable(),
+	report: SfxRebalanceReportSchema,
+});
+export type SfxRebalanceResult = z.infer<typeof SfxRebalanceResultSchema>;

@@ -217,7 +217,7 @@ export type SfxPlacement = DeepStrip<z.infer<typeof SfxPlacementSchema>>;
  * is that default (a swap or a role change recomputes it; Phase 4's masking solver replaces it); a gain the user set
  * since is theirs.
  */
-export const SfxLevelSchema = z.looseObject({
+export const SfxDefaultLevelSchema = z.looseObject({
 	by: z.literal('default'),
 	/** The clip gain applied (dB): the default plus `offsetDb`. */
 	gainDb: z.number().min(-96).max(96),
@@ -228,7 +228,38 @@ export const SfxLevelSchema = z.looseObject({
 	/** What set it: the loudness target, the true-peak ceiling, the gain range, or no loudness descriptor. */
 	limitedBy: z.enum(['loudness', 'peak', 'range', 'unmeasured']),
 });
-export type SfxLevel = DeepStrip<z.infer<typeof SfxLevelSchema>>;
+
+/** Most `limitedBy` entries and their length in a solver level (the solver reports a handful). */
+export const SFX_SOLVER_LEVEL_LIMITS = { limitedBy: 16, limit: 64, reason: 300 } as const;
+
+/**
+ * `AudioClip.sfx.level` written by the masking solver (`soundDesign.applyGains`, spec 12 §2.4 / §2.9; Phase 4 WP4.1b):
+ * the gain that clears the bed by the role's target lift under the ordered constraints, and why it is what it is.
+ * Like a default level it stays the solver's while `gainDb` equals the clip's gain (a rebalance may replace it; a swap
+ * or role change returns it to the default level of the new sound or role); a gain the user set since is theirs.
+ */
+export const SfxSolverLevelSchema = z.looseObject({
+	by: z.literal('solver'),
+	/** The clip gain applied (dB): the solved gain, `offsetDb` included. */
+	gainDb: z.number().min(-96).max(96),
+	/** The variation offset carried over from the default level (the solver adds it), dB. */
+	offsetDb: z.number().min(-12).max(12).optional(),
+	/** Target lift of the dominant band over the bed (dB): hero +5, support +3.5, ambient +2. */
+	targetLiftDb: z.number().min(-100).max(100).optional(),
+	/** Lift reached at this gain (dB; null: a silent sound). */
+	achievedLiftDb: z.number().min(-400).max(400).nullable().optional(),
+	/** The constraints that held it under its target (`dialogue`, `bed-cap`, `conflict:bed-cap/consistency`…). */
+	limitedBy: z
+		.array(z.string().min(1).max(SFX_SOLVER_LEVEL_LIMITS.limit))
+		.max(SFX_SOLVER_LEVEL_LIMITS.limitedBy),
+	/** Human summary ("−3 dB, limited by dialogue A1"). */
+	reason: z.string().max(SFX_SOLVER_LEVEL_LIMITS.reason).optional(),
+});
+
+export const SfxLevelSchema = z.union([SfxDefaultLevelSchema, SfxSolverLevelSchema]);
+export type SfxLevelDefault = DeepStrip<z.infer<typeof SfxDefaultLevelSchema>>;
+export type SfxLevelSolver = DeepStrip<z.infer<typeof SfxSolverLevelSchema>>;
+export type SfxLevel = SfxLevelDefault | SfxLevelSolver;
 
 /** `AudioClip.sfx`: a clip placed by sound design (spec 12 §2.2). */
 export const ClipSfxSchema = z.looseObject({
