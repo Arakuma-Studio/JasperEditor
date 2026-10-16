@@ -3968,6 +3968,205 @@ scope keys are WP3.3b's).
   panel call `setActive`. Keymap Review scope, the review bar (◀ ▶, A/B, Accept all, Reject all, Apply, Discard, Exit),
   the "Undo / Reopen review" toast and grouping by role (fold setup items with `ReviewItem.setup`) are WP3.3b's.
 
+### Phase 3 → WP3.3b Review panel, review bar, Auto Sound Pass
+
+Scope: spec 12 §2.7 "Review" (proposal card, review bar, Review panel, A/B, alternates, notes, stale handling,
+trusted-event Apply, Undo with Reopen review, Auto Sound Pass… dialog), the Review keymap scope, the Sound Design
+workspace's Review group, the "Allow agents to apply sound proposals" preference, P3-R6 (the parts WP3.3a left) and the
+Phase 3 "Done when". Built on WP3.3a's session slice (`proposalsFor`) and ghosts; nothing in it applies or decides
+except through the WP3.1 routes.
+
+Files: web `apps/web/src/proposals/{review.ts (pure model), actions.ts (shared actions + announcer), keys.ts,
+ReviewBar.tsx, ProposalCards.tsx, GhostLayer.tsx (card Apply → shared Apply)}`, `panels/review/{index.ts, ReviewPanel.tsx,
+badge.tsx}`, `panels/types.ts` (`review` kind, optional `badge`), `panels/registry.ts`, `shell/dock/DockHost.tsx` (tab
+badge), `shell/AgentApprovals.tsx` (cards + live region in the stack), `shell/workspaces/definitions.ts`,
+`commands/{proposals.ts, keymap-defaults.ts, app.ts, sound-design.ts}`, `shell/menus/model.ts`,
+`sound/{AutoSoundPassDialog.tsx, plan-run.ts, PreferencesPage.tsx, fill.ts (direct Fill Unfilled removed)}`,
+`agent-bridge/agent-input.ts` (`userGestureActive`), `panels/timeline/TimelinePanel.tsx` (bar, zoom to the proposal,
+playhead offset), es.json (158 strings); `packages/ui` icon `panel.review`; `packages/session/src/proposals.ts`
+(`read(proposalId)`; a `waiting` event does not re-read the proposal); `packages/api` (`ProposalSummary.waiting`,
+`proposal.changed` `waiting`, plan `style.cueSources`); engine `apps/engine/src/proposals/waiting.ts`,
+`routes/proposals.ts`, and two lines in `sound-design/plan.ts` (`cueSources` → `deriveCues({sources})`; see Decisions).
+Tests: `apps/web/test/{review-model,review-ui,auto-sound-pass}.test.*` (+ `review-helpers.ts`),
+`sound-fill-swap.test.tsx` / `sound-p2v-variation.test.tsx` / `proposal-ghost-layer.test.tsx` (updated),
+`apps/engine/test/{proposals-waiting,sound-design-plan-cue-sources}.test.ts`, `proposals.test.ts` (+1),
+`e2e/sound-review.spec.ts`, `e2e/sound-fill.spec.ts` (updated). Docs: README (HTTP: `waiting`, `cueSources`), security
+review (the polling row), gaps.
+
+#### What it does (usage)
+
+- **Proposal card** (the agent notices stack, top centre; `ProposalCards.tsx`): one per agent-authored proposal with items
+  to review that is not under review and not dismissed (newest three): "<agent> proposes <title>: <n> sounds on <k> new
+  tracks" (counted from a preview of the undecided items: created audio clips and tracks; other features "n items"), the
+  proposal's summary, and "<agent> is waiting for your review" while the agent polls it. No countdown, never takes focus.
+  **Review** opens it (its sequence becomes active, ghosts appear, the Timeline zooms to it, the Review panel is
+  focused); **Dismiss** hides the card in this window (sessionStorage; the proposal stays in the Review panel's list).
+  The user's own proposals (Auto Sound Pass…, Fill Unfilled Cues) open review directly and never get a card.
+- **Review panel** (`review`; Window ▸ Review; in the Sound Design workspace below the Library group, with Markers,
+  History and Jobs): the proposal selector (the project's proposals with items to review, newest first); the title,
+  author and counts (n items, ✓ accepted, ✕ rejected, · pending, ! stale or invalid, applied) and the waiting line; the
+  item list — a listbox, one tab stop, `aria-activedescendant`, names like "Hit on the cut, Accepted, at 00:00:03:00.
+  Cut, Heavy metal hit, support, −11.0 dB. alternate 2 of 4. cut cue. note: …" — grouped by role (Hero, Support, Bed,
+  Layers, other groups, Tracks) in time order. A row: ✓ / ✕ / · decision buttons, timecode, the cue kind's glyph (the
+  Cue Seam's shapes), the sound of the chosen set, ▶ (in context), ⇄ n/m (next alternate), ✎ (note), the state in
+  glyph + word; a second line with role, gain (the ghost clip's, else the plan's offset) and the cue's reason, or the
+  stale / invalid reason in `--pr-warning`; "▸ n setup items" folds the bin / sound / cue items under the first row that
+  needs them (setup items nothing needs are listed apart, outside the listbox). Pressing a row selects its ghost, moves
+  the playhead to its anchor (when not playing), scrolls the Timeline there and shows the **details**: why-line, facts
+  (what lands where, new tracks, removals), the problem, ▶ Play in context, ◀ ⇄ Alternate k/n: <label> ▶, the note editor
+  (Ctrl+Enter saves, Esc cancels; stored by the engine, read by agents), "Comes with: …". Footer: ✓ Accept all, ✕ Reject
+  all, A/B (pressed state), **Apply n of m**. The tab shows a count (items left in the proposal under review, else
+  proposals with items to review).
+- **Review bar** (top of the Timeline while a proposal of its sequence is under review): ✦ "Reviewing: <author> ·
+  <title> · n items" (the agent's 3 px bar), the waiting line, ◀ ▶ (time order), A/B, Accept all, Reject all, Apply n of
+  m, Discard (confirmation "Discard “<title>”? The proposal is deleted; <agent> is told it was discarded. Nothing in
+  your sequence changes." → the delete route), ✕ Exit. Entering review zooms the Timeline to the proposal's ghosts (at
+  least 4 s, once per review).
+- **Review keymap scope** (the Review panel): Enter / NumpadEnter accept (with what the item requires), Backspace /
+  Delete reject, U clear, A A/B, Space ▶ the item in context (pre-roll from the Sound Library preference → its tail + 1 s,
+  heard), Shift+Space the range (2 s before the first item to the end of the last, heard), Ctrl+Enter (mac Cmd+Enter)
+  Apply, Esc exit, Up / Down the rows (Home / End in the list). Rebindable (Keyboard Shortcuts); the list resolves the
+  scope itself because the dispatcher treats a listbox as an overlay (as the Sound Library does). Every `proposals.*`
+  binding is in the `review` scope only (tested on win / linux / mac; the Timeline's Space is still Play).
+- **Apply** (`actions.ts applyReview`, used by the panel, the bar, the ghost card and `proposals.apply`): only for a
+  trusted gesture — a button's `event.isTrusted`, or for the shortcut / menu / palette `userGestureActive()` (a real key
+  press or click within 1.5 s and no agent live-UI input running; an agent's `ui_key` / `ui_command` is agent input, so
+  it is refused). Items that would remove the user's clips are named first ("Apply 1 of 1? Also removes 1 of your clips:
+  “Shot B”"); confirming is the approval (the engine's editor-key accept is `approved`, no second card). Then the
+  WP3.3a engine accept (ONE History entry "Accept <title> (n of m)", origin user, stale items left out and reported). The
+  toast: "Applied <n> of <m> sounds from <author>" (15 s) with **Undo** (when it is still the top History entry) and
+  **Reopen review** (undoes it if it is the top entry, then reviews the reopened proposal; after a Ctrl+Z it just
+  reopens). The review stays open after Apply (rejected items stay visible, Ctrl+Z brings the applied ones back
+  into it as accepted; WP3.3a's e2e relies on it); Exit / Esc ends it. Every decision, navigation and Apply is announced in
+  one aria-live region (`ReviewAnnouncer`, mounted with the stack).
+- **Auto Sound Pass…** (Sequence ▸ Sound Design, the Review panel's empty state and menu): Range (whole sequence, In to
+  Out, selected clips), "Find cues from" (the eight Suggest Cues sources with "n found · k kept"), Density, Palette / kit
+  (the sequence palette, no preference, or prefer the sounds of one source: up to 500 of its commercial-safe ids as the
+  plan's palette), "Sounds from" (starter kit / packs / your folders / Jasper Synth with their library counts), Respect
+  dialogue. The only button is **Propose**: it runs `POST /api/sound-design/plan` (the job shows in the Jobs panel and
+  as a progress bar in the dialog; closing the dialog cancels the job, a cancelled plan stores nothing) and opens review
+  on the proposal; "Nothing to propose. 1 cue skipped: …" keeps the dialog open.
+- **Fill Unfilled Cues** now proposes: the plan route with the ids of the unfilled, unmuted, non-silence cues
+  (`respectDialogue: false`: the user picked these cues), label "Fill Unfilled Cues"; a progress toast, then review opens
+  (Review panel focused). The direct-apply path (`fillUnfilledCues`) is removed.
+- **Preferences ▸ Sound Library ▸ Proposals**: "Allow agents to apply sound proposals in “<sequence>”" — the active
+  sequence's `soundDesign.settings.agentsMayApply` written with `soundDesign.setSettings` as the user's undoable edit
+  ("Allow Agents to Apply Sound Proposals"); off by default; an agent setting it is still the approval-card case (WP3.1).
+- **Agents**: `proposals.review`, `exitReview`, `toggleHear`, `nextItem` / `prevItem {order}`, `acceptItem` /
+  `rejectItem` / `clearItem {itemId?}`, `acceptAll`, `rejectAll`, `cycleAlternative {itemId?, dir?}`, `playItem`,
+  `playRange` are in the UI command catalogue (`ui_command`); `proposals.apply` and `proposals.discard` are not exposed
+  (Apply refuses agent input anyway). An agent waiting in `wait_for_proposal` is shown to the user without any MCP change.
+
+#### Decisions
+
+- **"Waiting" is inferred by the engine** (`proposals/waiting.ts`): jasper-mcp is not this package's to change, and
+  `wait_for_proposal` reads the proposal every second without `?revalidate` while `get_proposal` revalidates. Two such
+  agent reads within 2.5 s = waiting (since the first), none for 3.5 s = stopped; each flip is a `proposal.changed`
+  `waiting` event, the list carries `waiting`. An agent that polls `get_proposal {revalidate: false}` in a loop would show
+  as waiting too (it is, in effect).
+- **`style.cueSources` in the plan** (API + `resolveStyle` + the `deriveCues` call, 5 lines in `sound-design/plan.ts`):
+  the dialog's "Find cues from" cannot be honoured otherwise (`cues: 'auto'` derived from every source). The parallel
+  WP4.1b works in that file; its hunks (imports, `PlanDeps`, `runPlan` gains) do not overlap these lines (checked against
+  `feat/sd-p4-bed-rebalance` 60802a50). jasper-mcp's `plan_sound_design` does not expose `cueSources` yet (apps/mcp is
+  WP4.1b's now): left for the next MCP change.
+- **Accept all** = every pending or stale item (a rejected one stays rejected: "Accept all" after rejecting two keeps
+  your two rejections); **Reject all** = everything not applied. Setup items never count in "n of m".
+- **Discard deletes** the proposal (the delete route, after a confirmation), as the task asked; WP3.3a's `discard()`
+  (reject everything) stays available for code but is not on any button. An agent waiting gets `deleted`.
+- **Rows select on press**, not on click: the details pane appears under the list and moves the rows before the
+  release, so a click could land on another row (found in the first e2e run: the click on the cut row chose the hero
+  row). A click into the list never selects the first row (only keyboard focus does).
+- The proposal selector shows "<title> · <author>" (the summary's counts include setup items; the panel's own counts
+  are the reviewer's).
+- The panel tab badge is an optional `PanelDefinition.badge` component (rendered in the dock tab next to the title,
+  with a screen-reader sentence).
+- One aria-live region for the review (in the notices stack) instead of one per surface (no double announcements).
+- The Apply toast lasts 15 s (success toasts are 4 s by default) so Reopen review stays reachable.
+
+#### Verified (measured, this branch; shared host, 16 cores, load average 10–56)
+
+- `pnpm vitest run apps/web/test/review-model.test.ts`: 8 passed — grouping by role / time order / setup folding
+  (bin needed through a sound folds under the first row needing it), frames and gains from the ghosts, counts without
+  setup items, navigation ends, the range, the card sentence (singular / plural, other features), card counts and
+  removals from a real preview (the fixture: 2 sounds on 1 new track), and a 300-run property over fuzzed items and
+  `fc.anything()` meta (never throws, every non-setup item shown once).
+- `apps/web/test/review-ui.test.tsx`: 12 passed (real session + the fake proposals engine): options and states, the tab
+  badge, a row press selects / seeks to 30 / shows the why-line; keyboard in the list (↓, Enter accepts with its
+  requirement, Backspace rejects through the engine, U, A twice) with nothing applied; Next alternate stored
+  (`selectedAlternative` 1) and the note stored and in the row's name; Accept all keeps a rejection, "Apply 4 of 5",
+  Reject all clears the badge; Apply refused for a synthetic click and for `proposals.apply` inside agent input (no
+  accept call); Ctrl+Enter by the user → History "Accept Sound pass (2 of 5)", toast "Applied 2 of 5 sounds from
+  sound-agent" with Undo / Reopen review, Reopen review → undone (index 1), back in review, hit / trk accepted, boom
+  rejected, `reopen` called; the destructive confirmation text "Apply 1 of 1? Also removes 1 of your clips: “…”" —
+  cancel applies nothing, confirm removes the clip; the bar (title, ◀ ▶, A/B, Exit), Discard's confirmation → deleted;
+  the card (agent only — the user's own gets none —, "sound-agent proposes Sound pass: 2 sounds on 1 new track", the
+  waiting line, Review opens it and hides the card, Dismiss); the review-scope bindings on win / linux / mac, all
+  `proposals.*` bindings in `review` only, Timeline Space still Play; the preference writes `agentsMayApply` as
+  "Allow Agents to Apply Sound Proposals" (origin user) and undo restores it. Mutation checks: with
+  `proposals.apply` trusting every caller the untrusted test fails; with the card's agent filter removed the card test
+  fails.
+- `apps/web/test/auto-sound-pass.test.tsx`: 4 passed — "2 found · 2 kept" / "1 found · 1 kept", library counts, only
+  Propose; unticking markers and synth and "Prefer Starter kit" → the request's `cueSources` (7), `sources` (3), the
+  kit's ids as palette, no range; nothing applied, review on the stored proposal, toast "Proposed sounds for 3 cues";
+  nothing to propose keeps the dialog open with "Nothing to propose. 1 cue skipped: …"; closing while the job runs
+  cancels `job_1`; the request builder (defaults when every source is on, a range for In–Out).
+- `apps/web/test/sound-fill-swap.test.tsx` (Fill Unfilled Cues: the plan request with the four unfilled cue ids, the
+  muted one left out, `respectDialogue: false`, nothing applied, review on the stored proposal; nothing to propose →
+  warning with the skip reason; disabled once filled), `sound-p2v-variation.test.tsx` (the plan route failing → one
+  toast "Could not fill the cues"), `proposal-ghost-layer.test.tsx` (the card's Apply refusal through the shared Apply).
+- Engine: `apps/engine/test/proposals-waiting.test.ts` (3: a 1 s poll is a wait from its first read, announced once,
+  ends 3.5 s after the last read; far-apart reads, another agent, forget, separate proposals; bounded) and
+  `proposals.test.ts` (+1: the editor's reads and an agent's revalidating reads are not a wait; two plain agent reads
+  → listed `waiting` and one `waiting` event; deletion is silent), `sound-design-plan-cue-sources.test.ts` (2: only the
+  chosen sources' derived cues, all of them in the full run; the schema refuses `[]` and unknown sources; mutation:
+  without the `sources` pass-through the first test fails).
+- Before merging the integration branch: `pnpm vitest run --project @jasper/web --project @jasper/session
+  --maxWorkers=4` → 142 files, 1 006 passed; the engine / api / engine-client / MCP proposal suites (15 files) → 290
+  passed. After merging `feat/sound-design` (WP4.1b): the touched suites (19 files, incl. the plan, plan-levels, MCP
+  proposals, fuzz-http, the web review tests, i18n, keymap) → 299 passed; `pnpm typecheck`, `pnpm lint`, `tsc -p
+  e2e/tsconfig.json`, `pnpm notices --check`, `node scripts/i18n.mjs --check` (9 369 strings): pass.
+- **E2E** (built stack, `E2E_PORT=50405 E2E_SKIP_BUILD=1 pnpm exec playwright test …`): `e2e/sound-review.spec.ts`
+  (2 tests) — the agent (token, `x-jasper-agent`, no editor key) runs the plan on four stored cues of the Phase 2
+  fixture → nothing applied → the card "e2e-sound-agent proposes Sound design: Sequence 01: 4 sounds on 1 new track" and,
+  while it polls, "… is waiting for your review" → Review: the bar, every ghost inside the zoomed track area → press
+  rows + Enter / Enter / Backspace, Next alternate, a note (stored by the engine: rejected, alternative 1, the note) →
+  Ctrl+Enter = ONE History entry "Accept Sound design: …", toast "Applied 2 of 4 sounds from e2e-sound-agent", the cut
+  plays its alternate's sound → Exit, Ctrl+Z, toast ▸ Reopen review → rows accepted / accepted / rejected / pending,
+  stored pending with the alternative and the note intact → `soundCue.update` 90 → 100 under the cut → the row stale
+  "… (frame 90 → 100)" → Ctrl+Enter → "Applied 1 of 4 sounds", "1 stale items left in review", the push applied, no clip
+  on the moved cue. Then Auto Sound Pass… on four solids ("3 found · 3 kept") → Propose → review (no card), Accept
+  all → "Apply 3 of 3" → one entry, "Applied 3 of 3 sounds from you" → native export, each placement located by
+  cross-correlation with its registered media, in samples from the cue frames: **0 / 0 / −1, 0 / 0 / +1 and 0 / 0 / 0**
+  (three runs; equal to the offset from where the document puts them; r ≥ 0.99). Screenshots looked at (`test-results/e2e-sound-review/`: card, review,
+  decided, decided-high-contrast, applied, reopened, stale, auto-pass-dialog, auto-pass-review, auto-pass-applied); the
+  first looks found the row click selecting the wrong row (fixed: select on press), names truncated by the role / gain
+  columns (moved to the second line), the details pane squeezing the list (capped at 40 %, one-line alternates) and "1
+  proposals" (singular).
+- Every sound e2e (before the merge; load 37–56): `sound-review`, `sound-fill`, `sound-cues`, `sound-library`,
+  `sound-p0-preview`, `sound-p0-transport`, `sound-proposal-ghosts`, `sound-p2-done` → 17 of 19 passed in the first run;
+  the two failures were this package's: `sound-p2-done` still expected Fill Unfilled Cues to apply (updated like
+  `sound-fill`: review → Accept all → Apply, label "Accept Fill Unfilled Cues (n of m)") and `sound-proposal-ghosts`
+  expected the review to stay open after Apply (the review no longer exits by itself). Rerun: both pass; `sound-p2-done`
+  then found the cut's added layer 8 samples off (r 0.70) under the plan's (different) base sound on the same peak — a
+  correlation artefact: re-measured in an export with the other clip disabled it is 0 samples (r 1.00). The spec now
+  does that re-measurement for an overlapped clip outside ±2 samples, with the same ±2-sample bound.
+- After the merge (WP4.1b's plan gains; `pnpm build`, load 49–69): `sound-fill`, `sound-p2-done`, `sound-review` (2) pass;
+  `sound-proposal-ghosts` failed once on its "Hear off" bed spacing (a click 512 samples late after three plays
+  retried for Remotion re-scheduling — the WP3.3a limit "switching / load", Hear off involves no proposal) and passed
+  alone on the rerun (load 55–63).
+
+#### Limits and notes for the next packages
+
+- jasper-mcp `plan_sound_design` cannot pass `style.cueSources` yet (MCP strict args); the route takes it.
+- The stale reason comes from the model ("cue_… changed since the proposal was made (frame 90 → 100)"): it names the
+  cue by id, not by its timecode.
+- With a proposal of several hundred items the panel renders every row (no virtualisation); measured only with ≤ 60
+  items (the e2e fixture). The card's counts preview runs once per proposal change on the main thread (≈ 5 ms per item,
+  WP3.1's measurement; estimated).
+- "Waiting" disappears 3.5 s after the agent's last poll; an engine restart forgets it until the next poll.
+- The Sound Design workspace layout changed (Review group below the Library); a stored workspace layout keeps its old
+  shape until Window ▸ Workspaces ▸ Reset to Saved Layout (the panel opens next to Markers from Window ▸ Review).
+
 ## Phase 4: mixing
 
 ### Phase 4 → WP4.1a masking solver
