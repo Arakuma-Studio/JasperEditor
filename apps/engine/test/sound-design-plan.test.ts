@@ -219,7 +219,7 @@ describe('plan selection (pure)', () => {
 			a.selected.picks.map((p) => [p.rate, p.gainOffsetDb]),
 		);
 		const frames = a.selected.picks.map((p) => p.cue.frame);
-		expect(frames).toEqual(expect.arrayContaining([46, 52, 90, 180, 200, 250, 330, 360, 405]));
+		expect(frames).toEqual(expect.arrayContaining([46, 52, 90, 180, 200, 250, 330, 350, 408]));
 		const push = a.selected.picks.find((p) => p.cue.frame === 180)!;
 		expect(push.sounds[0]!.entry.types).toContain('whoosh');
 		expect(push.sounds.length).toBe(4);
@@ -618,6 +618,11 @@ describe('POST /api/sound-design/plan (real engine)', { timeout: 600_000 }, () =
 			const clip = seq.clips[cue.placedClipIds![0]!] as AudioClip & { sfx: ClipSfx };
 			expect(clip.sfx.soundId).toBe(e.sound.soundId);
 			expect(clip.sfx.role).toBe(e.role);
+			// Gain is placement's default level by role, with the seeded ±1 dB variation on top (no explicit gain).
+			const level = (clip.sfx as { level?: { by: string; offsetDb?: number; gainDb: number } }).level!;
+			expect(level.by).toBe('default');
+			expect(level.offsetDb ?? 0).toBe(e.gainOffsetDb);
+			expect(clip.gainDb).toBe(level.gainDb);
 			const at = clip.start * F + (clip.sfx.placement.peakFlicks - clip.sourceIn) / clip.speed.rate;
 			expect(Math.abs(at - e.frame * F)).toBeLessThanOrEqual(1);
 		}
