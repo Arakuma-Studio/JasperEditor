@@ -4158,6 +4158,162 @@ cap. Here step 4 cannot leave the steps 1–3 interval; the test "step 4 would b
 - The Sound Check package can reuse `shortTermPeakLu` / `bandLevels` for "masked hit" detection with the same
   definitions.
 
+### Phase 4 → WP4.1b bed render, applyGains, rebalance
+
+Scope: spec 12 §2.4 (bed render, solver integration), §2.9 (`soundDesign.applyGains`), §2.10 (`rebalance_sfx`), P4-R2.
+Files: `apps/engine/src/sound-design/bed.ts` (bed and sound measurements, caches), `levels.ts` (solver inputs, why-lines),
+`rebalance.ts` (job), `plan-levels.ts` (plan integration), `plan.ts` (calls it), `routes/sound-design.ts` (route, one
+`sound-design` runner for both jobs), `export/planner.ts` (`localHandle` exported); `packages/project/src/sound/sfx-clip.ts`
+(`isSfxClip`, `sfxSolverWeight`), `sound/level.ts` (`DELIVERY_TRUE_PEAK_DBTP`, `sfxGainOwner`), `schema/sound.ts`
+(solver level), `commands/schemas|handlers/sound.ts`, `catalog.ts`, `sound/messages.ts`; `packages/api/src/sound-design.ts`
+(`SfxRebalance*`, `SfxSolvedLevel`, plan event `level` / `layerLevels` / `alternativeLevels`, report `conflicts` /
+`levels`), `routes.ts` (`soundDesignRebalance`); `packages/engine-client` (`rebalanceSfx`); `apps/mcp/src/tools/sound-design.ts`
+(`rebalance_sfx`, plan table "gain" column), `tools/sound.ts` (SOUND_GUIDE "Balance against the bed"), `examples.ts`;
+i18n (label, six refusal templates); README (345 tools, HTTP section), security review (AGT-3 row, route paragraph), gaps.
+Tests: `packages/project/test/sound-apply-gains.test.ts`, `fuzz.test.ts` (applyGains in AC-25),
+`apps/engine/test/sound-design-bed.test.ts`, `sound-design-rebalance.test.ts`, `sound-design-plan-levels.test.ts`,
+`sound-bed-fixture.ts` (generated music / speech / hit / click), `apps/mcp/test/sound-rebalance.test.ts`; updated
+`sound-design-plan.test.ts` (placements take the solver's level), `apps/mcp/test/proposals.test.ts` (table column),
+`sound-examples.test.ts`, `sound-level.test.ts` (type narrowing).
+
+#### Definitions (decisions)
+
+- **SFX clip** (`isSfxClip`): an audio clip of the sequence whose Essential Sound type is `sfx`, or that has no Essential
+  Sound type and carries readable `sfx` metadata. Typed dialogue / music / ambience is bed even with `sfx` metadata
+  (Detect Peak gives project audio a peak). Clips inside nested sequences play as part of the nest: bed.
+- **Bed**: everything else the mix plays, rendered by the export mixer (`renderMixdown`, master output, `measureOnly`, the
+  Mix's loudness normalisation left out, `onlyClips` = the non-SFX clips under the cluster) — so mute / solo, faders,
+  inserts, sends and the master are as in the export. Spec 12 says `onlyTracks: non-SFX`; clips are used instead because
+  SFX and bed may share a track (an Essential-SFX clip on a dialogue track).
+- **Cue clusters**: each measured sound's active window widened by its local-peak margin (±1 s hero, ±0.15 s support /
+  ambient, WP4.1a `BED_PEAK_MARGIN_SEC`), 0.7 s before (0.5 s K-weighting warm-up + half the 400 ms momentary window)
+  and 0.2 s after; overlapping spans merged. Only clusters are rendered (a cluster with no bed clip is silence, no render).
+- **Sound alone**: the same mixer over the clip's span + 0.5 s with only that clip audible and its snapshot clip gain set
+  to 0 dB (In point, speed, channels, clip effects, volume keyframes, fades, pan, its track strip, sends, master: as in
+  the mix). **Active window**: first to last 10 ms frame within 30 dB of its loudest (≥ 50 ms, ≤ 20 s; a silent sound uses
+  its clip span). Sound and bed bands, the sound's peak loudness (`shortTermPeakLu`) and the bed's local peak
+  (`bedLocalPeakLu`) are all measured over that same window, as WP4.1a requires; the true peak is the solo render's
+  (BS.1770 meter of the mixdown).
+- **Speech**: transcript words (`sequenceWords`) plus voice activity of Essential Sound dialogue clips without a transcript,
+  rendered alone over the cluster: 10 ms frames ≥ max(`vadThreshold` of the speech module, −50 dBFS). An event overlaps
+  speech when a word or voiced frame falls in its window; the tracks are named in the why-line.
+- **Roles → solver weights**: a sound typed ambience / room tone → `ambient` (whatever its role); hero → `hero`; support
+  and layer → `support` (confirming WP4.1a's proposal). Layers of a hero cue are therefore shadowed by their hero (× 0.6).
+- **Base gain and offset**: base = the sound's default insert level for its role at the delivery (`defaultSfxLevel`), or for
+  media without provenance its current gain less its offset; user offset = `sfx.level.offsetDb` (the fill's ±1 dB). So
+  solving again gives the same gains (idempotent) and a solved gain never sits under the default without a constraint.
+- **Gain ownership** (`sfxGainOwner`): `default` / `solver` while the clip gain equals `sfx.level.gainDb` (±0.005 dB),
+  else `user`. Rebalance replaces default and solver gains, keeps user gains (`USER_GAIN`) unless `userGains: 'replace'` or
+  the clip is named. A swap or a role change returns an untouched solver gain to the new default (the solve belonged to
+  the old sound / role).
+- **Delivery**: programme loudness and true-peak ceiling from the sequence's delivery (or the request's): web −14 / −1,
+  podcast −16 / −1, R128 −23 / −1, A/85 −24 / −2 (spec 12 §2.4).
+- **Caches** (per engine): bed PCM by `mixFingerprint` of the document without its SFX clips + cluster frames (≤ 96 MB,
+  LRU); sound measurements by the clip at 0 dB + mixer topology hash + media fingerprint + span (≤ 4 000). A gain change
+  re-renders nothing (test).
+
+#### API
+
+- Command `soundDesign.applyGains {sequenceId?, gains: Record<clipId | $ref, −30…+12 dB> (1–2 000), report?:
+  Record<same keys, {targetLiftDb?, achievedLiftDb?, limitedBy?[≤16], reason?}>}` ("Rebalance SFX Levels"). Keys may be
+  `$refs` bound earlier in the transaction (the plan's `$sfx_<n>_<layer>` placement refs; resolved by the handler since
+  record keys are not id contexts). Records `sfx.level = {by: 'solver', gainDb, offsetDb (kept), targetLiftDb,
+  achievedLiftDb, limitedBy, reason}`; an Essential-SFX clip without `sfx` only gets the gain. Result `{clips: [{clipId,
+  fromDb, gainDb}]}`. Refusals: unknown clip / ref / sequence `E_NOT_FOUND`; not audio, not a sound effect, report key
+  without a gain, a clip twice `E_INVALID_PARAM`; locked track `E_TRACK_LOCKED`; out of range, empty, malformed keys
+  `E_SCHEMA`. **Deviation:** the task wrote `sfx.level.source: 'solver'`; the stored discriminator stays `by` (Phase 2 B's
+  field), so one reader handles both levels. No schema bump: `level` is optional loose metadata (an older build drops an
+  unreadable level and keeps the gain, as Phase 2 B).
+- `POST /api/sound-design/rebalance {projectId, sequenceId?, clipIds?, range?, delivery?, mode?: 'propose' (default) |
+  'apply', userGains?: 'keep' | 'replace', label?}` → 202 job `sound-design` ("Rebalance SFX levels"); typed refusals before
+  the job: 400 `VALIDATION_FAILED`, 404 `PROJECT_NOT_FOUND` / `SEQUENCE_NOT_FOUND` / `CLIP_NOT_FOUND`, 400 `NOT_SFX`.
+  Result `SfxRebalanceResult {projectId, sequenceId, mode, applied, revision, proposalId, report: {events[{clipId, itemId,
+  title, soundId, track, frame, timecode, role, weight, fromDb, owner, changeDb, gainDb, targetLiftDb, achievedLiftDb,
+  limitedBy, reason, dominantBandsHz, peakOverBedLu, truePeakDb, speech, speechTracks, bedTracks, window}], skipped[{clipId,
+  code USER_GAIN|LOCKED|NOT_IN_MIX|OFFLINE|LIMIT, reason}], conflicts[{clipId, kept, lost, message}], warnings, counts,
+  levels{delivery, programLufs, truePeakCeilingDb, clusters, clusterSeconds, renders{bed, sound, voice, cached}, ms}}}`.
+  Apply: one agent-service transaction "Rebalance SFX Levels" with `expectedRevision` (a concurrent edit → job `CONFLICT`,
+  retryable); the editor's call applies as the user's edit. Nothing to change → no transaction (`applied: false`).
+  Propose: one item `gain:NNN` per changed clip (group = weight; meta: clipId, timecode, track, from / to, lifts, limitedBy,
+  why), feature `sound-design` (the agent accept gate applies). Engine client `rebalanceSfx`.
+- MCP `rebalance_sfx` (EDIT_IDEMPOTENT): the route's arguments (range takes any time input), `mode` default propose, waits
+  (≤ 900 s), returns `table` (`clip | timecode | sound | role | gain dB (from → to) | target | achieved | limited by | why`),
+  counts, skipped, conflicts, warnings, levels, next.
+- **Plan job**: after drafting, `solvePlanGains` previews the proposal (`previewProposal` on the live document, once with
+  the chosen sounds and once per alternative slot k), measures every layer of the chosen sounds and layer 0 of each
+  alternative against the bed of the main preview (one call: the bed is the same for every slot), solves the chosen
+  sounds together and each alternative in place of its item's layer 0 with the other chosen sounds, and appends
+  `soundDesign.applyGains` (keys `$sfx_<n>_<layer>`, bound by `ref` on the place layers; every alternative set declares
+  the same refs) to each place item and each alternative. `meta.why`, `meta.level`, `meta.gainDb` and the report's
+  `events[].why / level / layerLevels / alternativeLevels`, `conflicts`, `levels` carry the result ("Pneumatic whoosh on
+  Push at 00:00:06:00 · support · peak · −16.2 dB, limited by dialogue A2"). If the levels cannot be measured (no ffmpeg,
+  a render error) the plan keeps placement's default levels and warns `W_LEVELS_UNMEASURED`; a sound the mix does not play
+  warns `W_LEVEL_UNMEASURED`. MCP `plan_sound_design` adds a `gain` column and per-event `gainDb / targetLiftDb /
+  achievedLiftDb / limitedBy`.
+
+#### Verified (measured, this branch; shared host, 16 cores, load average 3–40)
+
+- `pnpm vitest run packages/project/test/sound-apply-gains.test.ts packages/project/test/sound-messages.test.ts`: 7 + 2
+  passed (solver level with the offset kept, rounding, dedup of limits; undo = untouched document, redo = same sequences;
+  ownership default → solver → user; `$ref` keys; Essential-SFX clip without metadata; dialogue-typed clip with a peak is
+  not an effect; swap / role back to the default; every refusal; a solver level survives load, a damaged one is dropped
+  with the gain kept, repair idempotent). `fuzz.test.ts` (AC-25, 2 000 runs with applyGains mixed in, > 20 accepted):
+  passed. Full `@jasper/project`: 159 files, 1 962 passed.
+- `pnpm vitest run apps/engine/test/sound-design-bed.test.ts --maxWorkers=1`: 4 passed. Oracles on a real engine with
+  generated media: the cluster bed equals a whole-sequence render of the document without SFX over every window
+  (bands < 0.05 dB, local peak < 0.05 LU), 3 clusters < 6 s of a 10 s sequence; each sound alone at 0 dB plus its clip
+  gain equals its contribution to the full mix (full − mix without it) within 0.1 dB per band, with rate 0.98 and pan −40;
+  the click under the speech overlaps it (`A2`), the others not; a second measurement after a gain change is served from
+  the caches with identical results; a disabled clip is reported `not in the mix`. **Mutations:** without the 0 dB
+  override the solo test fails; with SFX left in the bed the bed and cache tests fail.
+- `apps/engine/test/sound-design-rebalance.test.ts`: 4 passed (apply as the editor: revision + 1, every event reaches its
+  target or names a limit, the click under speech `limited by dialogue A2`, the support 0.1 s after the hero
+  `hero-shadow`, offset 0.6 kept in the solver level, 2 clusters < 5 s; again → nothing to change, same revision;
+  `userGains: 'replace'` by an agent solves the hand-set click; propose with `broadcast-r128`: one item per changed clip,
+  agent accept 403, editor accept revision + 1 with the reported gains; explicit ids and range; 7 typed refusals; a fuzz
+  target (20 iterations + 6 properties): no 5xx, every job succeeded with a result of the schema or failed with a code).
+- `apps/engine/test/sound-design-plan-levels.test.ts`: 2 passed (the Phase 2 fixture + music on A1 + dialogue 4–8 s on
+  A2, indexed 8-sound kit + synth: every event has a level and reaches its target or reports `limitedBy`; under-speech
+  events limited by dialogue name `A2`; every place item and alternative ends with applyGains on `$sfx_<n>_0…`; same seed →
+  same gains and alternative levels; the editor selects alternative 2 on one item and accepts all: one transaction, every
+  clip at its reported gain, the alternative at its own solved gain, `sfx.level.by: 'solver'`). **Plan time:** 3.6 s
+  (levels 2.1 s, 67 sound renders) at load 3 / 16 cores; 10.4 s (levels 6.2 s) at load 40.
+- `apps/engine/test/sound-design-plan.test.ts` 12, `proposals*`, `security-*`, `server`, `fuzz-http`, `audio-*`, `sounds-*`,
+  `sound-placement-export`: 24 files, 384 passed. `apps/mcp/test/{sound*,proposals,conventions,readme-tools,fuzz}` +
+  `apps/web/test/i18n.test.ts`: 12 files, 407 passed (`sound-rebalance.test.ts`: propose by default with nothing changed,
+  the table naming `dialogue A2`, apply, idempotent, strict arguments, `NOT_SFX`). `@jasper/web`: 123 files, 894 passed.
+  `pnpm typecheck`, `pnpm lint`, `node scripts/i18n.mjs --check`, `pnpm notices --check`: pass.
+- **Real run** (dev engine `JASPER_APPDIR=.stage … --port 50301`, Vite 50302, the full 212-sound library, jasper-mcp over
+  stdio; the Phase 2 fixture from `sound-cues-fixture.ts` + 14 s music on A1 + dialogue 4–8 s on A2):
+  `plan_sound_design {seed: 2026}` → 17 cues, 18 clips, **10.2 s** (levels 5.0 s, 69 sound renders, 2 clusters; first plan
+  of the project, registering 25 sounds; load ≈ 17). Opened in the editor (browser), the editor key accepted every place
+  item: History one entry "Accept Sound design: Sequence 01 (60 of 60)". Export (ProRes + 24-bit PCM MOV, 14 s; frame
+  6.9 s looked at: the typewriter mid-word): ffmpeg `ebur128` **true peak −4.8 dBTP**, −20.1 LUFS. Bed exported separately
+  (the same document without SFX clips) and each SFX clip with the bed alone (video stripped, native): the lift of each
+  clip's contribution over the bed in its dominant bands, over its reported window, against the report: **all 18 within
+  0.14 dB** (Δ −0.10 … +0.14; e.g. the whoosh under speech 1.33 / 1.33 dB "limited by dialogue A2", the hero 14.22 /
+  14.22). The first attempt exported AAC (the vendor LGPL ffmpeg's H.264 forces MP4 / AAC): its codec noise in the
+  difference read up to +1.3 dB high — measure lifts on PCM. `rebalance_sfx {mode: 'apply'}` right after accept: "Nothing
+  to change" (the plan's and the rebalance's solves agree). Music +6 dB, then `rebalance_sfx apply`: 16 of 18 gains raised
+  (e.g. the whoosh under speech −16.2 → −10.2 dB, still at its +1.3 dB dialogue cap); History "Agent: Rebalance SFX
+  Levels" one entry; one Ctrl+Z in the editor restored all 18 gains (and their solver levels).
+
+#### Limits and notes for the next packages
+
+- The solver's model: SFX do not mask each other, and the true-peak ceiling is per event and pre-master (overlapping
+  events can sum higher; Sound Check's TP check and the master limiter are the net). The measurement assumes the mix is
+  bed + sounds (additive): a non-linear master (a limiter or compressor on the Mix or on an SFX track) breaks that; a
+  reverb send's tail is part of the sound's contribution (correct) but feeds back into nothing.
+- Windows over 20 s (beds placed as SFX) are measured on their first 20 s. Rebalance handles ≤ 2 000 clips per request.
+- Existing SFX are not part of a plan's solve (the plan solves what it proposes); `rebalance_sfx` solves everything.
+- Each alternative is solved with the other items' chosen sounds; choosing alternatives on two neighbouring items can
+  leave their hero-shadow / consistency relation unsolved until a rebalance.
+- `limitedBy` lists every constraint that moved the gain (WP4.1a semantics): "limited by the gain range" appears when the
+  start gain was clamped before a later constraint lowered it; `user-offset` when the variation offset alone took it under
+  the target.
+- The Web menu item "Sequence ▸ Sound Design ▸ Rebalance SFX Levels" is WP4.2: call `engine.rebalanceSfx({…, mode:
+  'apply'})` from the editor (the editor key makes it the user's own edit, History "Rebalance SFX Levels").
+
 ## Phase 5: Sound Check
 
 ## Phase 6: packs, cue sources, completion
