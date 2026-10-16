@@ -4,11 +4,14 @@
 //   its badge and why ("−3.0 dB · limited by dialogue A1"). Off keeps the current gain as the user's own
 //   (`soundDesign.setAutoGain`); on solves the clips again (`sound.setAutoGain` → the engine's rebalance, named clips).
 //   Rebalance solves the selection's automatic gains (`sound.rebalanceSfx`, a job; one undo step).
-// - Room: the clip's track send to the "SFX Room" bus (sends are per track: the row names the track). On creates the
-//   glue when there is none (`soundDesign.ensureBus`), else adds or unmutes the track's send; off mutes it; the slider
-//   sets its level (`mixer.updateSend`, one undo step per drag). Interface-only tracks and tracks that also play bed
-//   audio cannot send (the reason is shown).
-// - Stop before next / Build: the linked cue's (the cue the clip fills), edited like Properties ▸ Cue.
+// - Room: the selected clips' tracks' sends to the "SFX Room" bus (sends are per track: the row names the tracks). On
+//   creates the glue when there is none (`soundDesign.ensureBus`), else adds or unmutes each track's send; off mutes
+//   them; the slider sets their level (`mixer.updateSend`, one undo step per drag). With several tracks the toggle is
+//   mixed while their sends differ and the level reads "Mixed" while their levels differ; a gesture acts on every
+//   track that can send, in ONE transaction. Interface-only tracks and tracks that also play bed audio cannot send:
+//   they are listed with the reason and skipped.
+// - Stop before next / Build: the cue the selected sounds fill, edited like Properties ▸ Cue; sounds of different cues
+//   (or some of no cue) show the state over their cues, disabled, with why (a stop-before is a cue's own).
 import type { AudioClip, Command, Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Button, Checkbox, cx, Slider, toast } from '@jasper/ui';
@@ -16,9 +19,18 @@ import { runCommand } from '../commands/registry.ts';
 import { t } from '../i18n/runtime.ts';
 import { useInspectorOps } from '../panels/properties/lib/ops.ts';
 import { useShellRuntimeOrNull } from '../shell/context.tsx';
-import { cueOfClip } from './design-model.ts';
 import { BuildEditor, StopBeforeEditor } from './MixFields.tsx';
-import { fmtDb, roomViewOf, sfxLevelView } from './mix-model.ts';
+import {
+	cueSelectionOf,
+	fmtDb,
+	levelSelectionOf,
+	type RoomSelection,
+	type RoomView,
+	roomLevelCommands,
+	roomSelectionOf,
+	roomToggleEdit,
+	sfxLevelView,
+} from './mix-model.ts';
 
 const ROOM_MIN_DB = -48;
 const ROOM_MAX_DB = 6;
@@ -47,78 +59,36 @@ export function EssentialSfxMix(props: { session: EditorSession; seq: Sequence; 
 	};
 
 	// ---- Auto gain
-	const views = clips.map((c) => sfxLevelView(c)).filter((v) => !!v);
+	const level = levelSelectionOf(clips);
+	const views = level?.views ?? [];
 	const autoCount = views.filter((v) => v.auto).length;
 	const autoState: boolean | 'mixed' = autoCount === 0 ? false : autoCount === views.length ? true : 'mixed';
-	const v0 = sfxLevelView(first);
 	const autoIds = clips.filter((c) => sfxLevelView(c)?.auto).map((c) => c.id);
 
-	// ---- Room
-	const room = roomViewOf(doc, seq, first);
-	const roomOn = !!room?.send && !room.send.mute;
-	const roomDb = room?.levelDb ?? room?.glue?.sendDb ?? -16;
+	// ---- Room (sends are per track: every selected clip's track that can send)
+	const room = roomSelectionOf(doc, seq, clips);
+	const roomDb = room?.levelDb ?? room?.levels[0] ?? room?.glue?.sendDb ?? -16;
+	const roomMixedLevel = !!room && room.levels.length > 1;
+	const levelTargets = room ? room.on.filter((v) => v.levelDb !== null).length : 0;
 	const setRoom = (on: boolean) => {
 		if (!room) return;
-		if (!on) {
-			if (room.send)
-				apply(t('Room Send Off'), [
-					{
-						type: 'mixer.updateSend',
-						sequenceId: seq.id,
-						stripId: room.trackId,
-						sendId: room.send.id,
-						patch: { mute: true },
-					} as Command,
-				]);
-			return;
+		const edit = roomToggleEdit(seq, room, on);
+		if (!edit) return;
+		if (apply(edit.label, edit.commands) && edit.commands[0]?.type === 'soundDesign.ensureBus') {
+			// the glue sends from the tracks that qualify: say so when a selected one still does not
+			const after = session.getCommitted().sequences[seq.id];
+			const now = after ? roomSelectionOf(session.getCommitted(), after, clips) : null;
+			const dry = now ? now.targets.filter((v) => !v.send) : [];
+			if (dry.length)
+				toast({
+					kind: 'info',
+					title: t('The room was created; {0} does not send to it', dry.map((v) => v.trackLabel).join(', ')),
+				});
 		}
-		if (room.send) {
-			apply(t('Room Send On'), [
-				{
-					type: 'mixer.updateSend',
-					sequenceId: seq.id,
-					stripId: room.trackId,
-					sendId: room.send.id,
-					patch: { mute: false },
-				} as Command,
-			]);
-			return;
-		}
-		if (!room.bus) {
-			// no room yet: the glue (bus, reverb, sends from every sound-effect track that qualifies)
-			if (apply(t('SFX Room Glue'), [{ type: 'soundDesign.ensureBus', sequenceId: seq.id } as Command])) {
-				const after = session.getCommitted().sequences[seq.id];
-				const now = after?.clips[first.id];
-				if (after && now && !roomViewOf(session.getCommitted(), after, now)?.send)
-					toast({ kind: 'info', title: t('The room was created; {0} does not send to it', room.trackLabel) });
-			}
-			return;
-		}
-		apply(t('Room Send On'), [
-			{
-				type: 'mixer.addSend',
-				sequenceId: seq.id,
-				stripId: room.trackId,
-				target: room.bus.id,
-				levelDb: room.glue?.sendDb ?? -16,
-			} as Command,
-		]);
 	};
-	const sendCmd = (db: number): Command[] =>
-		room?.send
-			? [
-					{
-						type: 'mixer.updateSend',
-						sequenceId: seq.id,
-						stripId: room.trackId,
-						sendId: room.send.id,
-						patch: { levelDb: db },
-					} as Command,
-				]
-			: [];
 
-	// ---- Stop before / build (the linked cue)
-	const cue = cueOfClip(seq, first);
+	// ---- Stop before / build (the cue the selected sounds fill)
+	const cueSel = cueSelectionOf(seq, clips);
 
 	return (
 		<div className="flex flex-col gap-2" data-testid="essential-sfx-mix">
@@ -131,7 +101,7 @@ export function EssentialSfxMix(props: { session: EditorSession; seq: Sequence; 
 						label={t('Auto gain (masking-aware)')}
 						onCheckedChange={(on) => run('sound.setAutoGain', { clipIds: clips.map((c) => c.id), auto: on })}
 					/>
-					{v0 ? (
+					{level ? (
 						<div
 							className="flex min-w-0 items-start gap-1 text-pr-small"
 							data-testid="essential-auto-gain-level"
@@ -139,24 +109,30 @@ export function EssentialSfxMix(props: { session: EditorSession; seq: Sequence; 
 							<span
 								className={cx(
 									'shrink-0 rounded-[2px] border px-1 leading-[14px]',
-									v0.auto ? 'border-pr-accent text-pr-accent' : 'border-pr-border-strong text-pr-muted',
+									level.owner === 'default' || level.owner === 'solver'
+										? 'border-pr-accent text-pr-accent'
+										: 'border-pr-border-strong text-pr-muted',
 								)}
-								data-owner={v0.owner}
+								data-owner={level.owner}
 							>
-								{v0.badge}
+								{level.badge}
 							</span>
 							<span
 								className="min-w-0 break-words text-pr-text"
-								title={v0.text}
+								title={level.text}
 								data-testid="essential-auto-gain-text"
 							>
-								{v0.text}
+								{level.text}
 							</span>
 						</div>
 					) : null}
-					{v0 && v0.targetLiftDb !== null && v0.achievedLiftDb !== null ? (
+					{level?.lift ? (
 						<span className="text-pr-small text-pr-dim" data-testid="essential-auto-gain-lift">
-							{t('Lift over the bed {0} dB of {1} dB', fmtDb(v0.achievedLiftDb), fmtDb(v0.targetLiftDb))}
+							{t(
+								'Lift over the bed {0} dB of {1} dB',
+								fmtDb(level.lift.achievedDb),
+								fmtDb(level.lift.targetDb),
+							)}
 						</span>
 					) : null}
 					{clips.length > 1 ? (
@@ -187,40 +163,75 @@ export function EssentialSfxMix(props: { session: EditorSession; seq: Sequence; 
 					{room ? (
 						<>
 							<Checkbox
-								checked={roomOn}
-								disabled={readOnly || (!room.send && !!room.blocked)}
-								label={t('Send {0} to the SFX Room', room.trackLabel)}
+								checked={room.state}
+								disabled={readOnly || room.targets.length === 0}
+								label={t('Send {0} to the SFX Room', room.label)}
 								onCheckedChange={setRoom}
 							/>
 							<div className="flex items-center gap-2">
 								<Slider
 									className="min-w-0 flex-1"
-									label={t('Room send level of {0}', room.trackLabel)}
-									valueText={t('{0} dB', fmtDb(roomDb))}
+									label={t('Room send level of {0}', room.label)}
+									valueText={
+										roomMixedLevel
+											? t('Mixed: {0} to {1} dB', fmtDb(room.levels[0]!), fmtDb(room.levels.at(-1)!))
+											: t('{0} dB', fmtDb(roomDb))
+									}
 									value={Math.max(ROOM_MIN_DB, Math.min(ROOM_MAX_DB, roomDb))}
 									min={ROOM_MIN_DB}
 									max={ROOM_MAX_DB}
 									step={0.5}
 									defaultValue={-16}
-									disabled={readOnly || !roomOn || room.levelDb === null}
+									disabled={readOnly || levelTargets === 0}
 									onChangeStart={() => ops.scrub.start(t('Room Send Level'))}
 									onChange={(db) => {
-										const cmds = sendCmd(db);
+										const cmds = roomLevelCommands(seq, room, db);
 										if (cmds.length && !ops.scrub.update(cmds)) apply(t('Room Send Level'), cmds);
 									}}
 									onCommit={() => ops.scrub.end(false)}
 								/>
-								<span className="w-14 text-right text-pr-small pr-tabular" data-testid="essential-room-db">
-									{roomOn ? t('{0} dB', fmtDb(roomDb)) : t('Off')}
+								<span
+									className="w-14 text-right text-pr-small pr-tabular"
+									data-testid="essential-room-db"
+									data-mixed={roomMixedLevel || room.state === 'mixed' ? 'true' : undefined}
+								>
+									{room.on.length === 0
+										? t('Off')
+										: roomMixedLevel
+											? t('Mixed')
+											: room.levelDb === null
+												? '–'
+												: t('{0} dB', fmtDb(room.levelDb))}
 								</span>
 							</div>
+							{room.targets.length > 1 && (room.state === 'mixed' || roomMixedLevel) ? (
+								<span className="text-pr-small text-pr-muted" data-testid="essential-room-tracks">
+									{room.targets.map((v) => roomTrackState(v)).join(' · ')}
+								</span>
+							) : null}
 							<span className="text-pr-small text-pr-dim" data-testid="essential-room-note">
-								{room.send || !room.blocked
-									? room.levelDb === null && room.send
-										? t('{0}: automated in the Audio Track Mixer', room.trackLabel)
-										: t('Applies to the whole track {0}, not only this clip', room.trackLabel)
-									: room.blocked}
+								{roomNote(room)}
 							</span>
+							{room.targets.length > 0
+								? room.blocked.map((v) => (
+										<span
+											key={v.trackId}
+											className="text-pr-small text-pr-dim"
+											data-testid="essential-room-skipped"
+										>
+											{t('Skipped: {0}', v.blocked ?? '')}
+										</span>
+									))
+								: null}
+							{room.automated.map((v) => (
+								<span
+									key={v.trackId}
+									className="text-pr-small text-pr-dim"
+									data-testid="essential-room-automated"
+								>
+									{t('{0}: automated in the Audio Track Mixer', v.trackLabel)}
+								</span>
+							))}
 						</>
 					) : (
 						<span className="text-pr-small text-pr-dim">{t('Not on an audio track')}</span>
@@ -230,13 +241,20 @@ export function EssentialSfxMix(props: { session: EditorSession; seq: Sequence; 
 			<div className="flex items-start gap-2" data-testid="essential-stop-before">
 				<Label>{t('Stop')}</Label>
 				<div className="min-w-0 flex-1">
-					{cue ? (
+					{cueSel.kind === 'one' ? (
 						<StopBeforeEditor
 							session={session}
 							seq={seq}
-							cue={cue}
+							cue={cueSel.cue}
 							readOnly={readOnly}
 							testId="essential-stop"
+						/>
+					) : cueSel.kind === 'mixed' ? (
+						<MixedCues
+							state={cueSel.state.stopBefore}
+							label={t('Stop before next (dip the music before the cue)')}
+							reason={cueSel.reason}
+							testId="essential-stop-mixed"
 						/>
 					) : (
 						<NoCue />
@@ -246,13 +264,56 @@ export function EssentialSfxMix(props: { session: EditorSession; seq: Sequence; 
 			<div className="flex items-start gap-2" data-testid="essential-build-row">
 				<Label>{t('Build')}</Label>
 				<div className="min-w-0 flex-1">
-					{cue ? (
-						<BuildEditor session={session} seq={seq} cue={cue} readOnly={readOnly} testId="essential-build" />
+					{cueSel.kind === 'one' ? (
+						<BuildEditor
+							session={session}
+							seq={seq}
+							cue={cueSel.cue}
+							readOnly={readOnly}
+							testId="essential-build"
+						/>
+					) : cueSel.kind === 'mixed' ? (
+						<MixedCues
+							state={cueSel.state.build}
+							label={t('Build (a rising high-pass on the music into the cue)')}
+							reason={cueSel.reason}
+							testId="essential-build-mixed"
+						/>
 					) : (
 						<NoCue />
 					)}
 				</div>
 			</div>
+		</div>
+	);
+}
+
+/** One track of a mixed Room row: "A2 −16.0 dB", "A3 off", "A4 automated". */
+function roomTrackState(v: RoomView): string {
+	if (!v.send || v.send.mute) return t('{0} off', v.trackLabel);
+	return v.levelDb === null
+		? t('{0} automated', v.trackLabel)
+		: t('{0} {1} dB', v.trackLabel, fmtDb(v.levelDb));
+}
+
+/** What the Room row says under the slider: where the sends apply, or why none can be made. */
+function roomNote(room: RoomSelection): string {
+	if (room.targets.length === 0)
+		return room.blocked.map((v) => v.blocked).join(' · ') || t('Not on an audio track');
+	const names = room.targets.map((v) => v.trackLabel);
+	return names.length === 1
+		? t('Applies to the whole track {0}, not only this clip', names[0]!)
+		: t('Applies to the whole tracks {0}, not only these clips', names.join(', '));
+}
+
+/** Stop / Build for sounds of different cues: the state over their cues, disabled, with why. */
+function MixedCues(props: { state: boolean | 'mixed'; label: string; reason: string; testId: string }) {
+	return (
+		<div className="flex flex-col gap-1" data-testid={props.testId}>
+			<Checkbox checked={props.state} disabled label={props.label} onCheckedChange={() => {}} />
+			<span className="pl-5 text-pr-small text-pr-dim" data-testid={`${props.testId}-reason`}>
+				{props.reason}
+			</span>
 		</div>
 	);
 }

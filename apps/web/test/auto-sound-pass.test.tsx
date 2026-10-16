@@ -27,7 +27,12 @@ async function chooseOption(trigger: HTMLElement, name: string | RegExp) {
 	});
 }
 
-function setup(build?: Parameters<typeof fakePlanEngine>[1]) {
+function setup(
+	build?: (
+		req: SoundDesignPlanRequest,
+		proposals: FakeEngine,
+	) => ReturnType<Parameters<typeof fakePlanEngine>[1]>,
+) {
 	const { session, seqId } = makeSession();
 	const r = session.apply({
 		label: 'setup',
@@ -48,7 +53,7 @@ function setup(build?: Parameters<typeof fakePlanEngine>[1]) {
 	let stored = '';
 	const plan = fakePlanEngine(
 		session,
-		build ??
+		(build && ((req) => build(req, proposals))) ??
 			((req) => {
 				stored = storeProposal(proposals, seqId, 'Sound design: Seq', [60, 120, 150]).id;
 				return planResult({ proposalId: stored, projectId: req.projectId, sequenceId: seqId, placed: 3 });
@@ -145,6 +150,56 @@ describe('Auto Sound Pass… dialog', () => {
 		);
 		expect(t.closed).toEqual([]);
 		expect(t.c.getState().activeId).toBeNull();
+	});
+
+	it('a plan with warnings or conflicts: review opens and the dialog lists them until Close', async () => {
+		const t = setup((req, proposals) => {
+			const stored = storeProposal(proposals, req.sequenceId!, 'Sound design: Seq', [150]).id;
+			const r = planResult({
+				proposalId: stored,
+				projectId: req.projectId,
+				sequenceId: req.sequenceId!,
+				placed: 1,
+			});
+			return {
+				...r,
+				report: {
+					...r.report,
+					// (the model test names a conflict by its item's sound and cue time; a valid event is long to build)
+					warnings: [
+						{
+							code: 'W_DIALOGUE_BAND',
+							message:
+								'clp_9: during speech its dominant band (2000 Hz) is in 1–4 kHz; prefer a type whose dominant band is outside 1–4 kHz (here: boom)',
+						},
+					],
+					conflicts: [
+						{ clipId: 'clp_9', itemId: 'place:001', kept: 'consistency', lost: 'dialogue', message: 'x' },
+					],
+				},
+			};
+		});
+		const dialog = await screen.findByTestId('auto-sound-pass-dialog');
+		await act(async () => {
+			fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
+		});
+		const notes = await screen.findByTestId('auto-pass-notes', undefined, { timeout: 5000 });
+		expect(notes.textContent).toContain('Plan notes: 1 conflict · 1 warning');
+		const items = within(screen.getByTestId('auto-pass-notes-list')).getAllByRole('listitem');
+		expect(items.map((li) => li.textContent?.slice(1))).toEqual([
+			'A sound: its energy is in the speech band (1–4 kHz) while someone speaks; move it or pick a sound whose energy is outside 1–4 kHz, e.g. boom',
+			'A sound: its repeats (±2 dB) kept over dialogue',
+		]);
+		expect(t.reviewed).toEqual([1]);
+		expect(t.closed).toEqual([]);
+		expect(screen.getByTestId('auto-pass-summary').textContent).toBe('Proposed a sound for 1 cue');
+		await act(async () => {
+			const primary = dialog.querySelector('[data-dialog-primary]') as HTMLButtonElement;
+			expect(primary.textContent).toBe('Close');
+			fireEvent.click(primary);
+		});
+		await waitFor(() => expect(t.closed).toHaveLength(1));
+		t.c.exit();
 	});
 
 	it('closing it while the job runs cancels the job (and leaves no review)', async () => {
