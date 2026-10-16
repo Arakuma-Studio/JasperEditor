@@ -483,8 +483,10 @@ type App = Awaited<ReturnType<typeof makeApp>>;
 let app: App;
 
 /** Writes the fixture as a saved project (revision 3) and returns its ids. */
+let projects = 0;
 function seedProject(a: App, f: ReturnType<typeof fixture>) {
-	const doc = f.get();
+	// Every test gets its own project (the fixture's ids are deterministic).
+	const doc = { ...f.get(), projectId: `prj_${(++projects).toString().padStart(16, '0')}` };
 	const file = appdirPaths(a.appdir).projectFile(doc.projectId);
 	mkdirSync(join(file, '..'), { recursive: true });
 	writeFileSync(
