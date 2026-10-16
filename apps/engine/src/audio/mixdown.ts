@@ -60,6 +60,16 @@ export type MixdownOptions = {
 	measureOnly?: boolean;
 	/** Every rendered block (before normalisation), e.g. for activity envelopes. */
 	onBlock?(planar: Float32Array[], frames: number): void;
+	/**
+	 * Opt-in with `onlyClips` (analysis renders of a few clips): strips none of them reaches are not processed
+	 * (`OfflineMixer` `audibleClips`; the output is the same).
+	 */
+	skipSilentStrips?: boolean;
+	/**
+	 * Measure the loudness of the result (default true). `false` (measure-only renders whose caller does not read
+	 * `loudness`): no meter runs and `loudness` is a silent summary.
+	 */
+	meter?: boolean;
 };
 
 export type MixdownResult = {
@@ -115,6 +125,9 @@ function interleave(planar: Float32Array[], n: number): Buffer {
 
 const BLOCK = 48_000;
 
+/** The `loudness` of a render without a meter (`meter: false`). */
+const SILENT_SUMMARY: LoudnessSummary = new LoudnessMeter(48_000, 1).summary();
+
 /** Renders the mix of `snapshot` over `range` (see MixdownOptions). */
 export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 	const snap = o.snapshot;
@@ -161,10 +174,15 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 		...(o.mixdown ? { mixdown: o.mixdown } : {}),
 		...(o.onlyTracks ? { onlyTracks: o.onlyTracks } : {}),
 		...(sourceLevels || o.tap === 'track-inputs' ? { tap: 'track-inputs' as const } : {}),
+		...(o.skipSilentStrips && o.onlyClips ? { audibleClips: o.onlyClips } : {}),
 	});
 	const channels = mixer.outputLayout === 'mono' ? 1 : mixer.outputLayout === '5.1' ? 6 : 2;
-	const meter = new LoudnessMeter(sr, channels, { weights: defaultChannelWeights(channels) });
 	const keep = !o.measureOnly;
+	// the meter is needed for normalisation and for every kept file's report
+	const meter =
+		o.meter === false && !keep
+			? null
+			: new LoudnessMeter(sr, channels, { weights: defaultChannelWeights(channels) });
 	const pass1 = keep ? join(o.scratchDir, o.normalize ? 'mix-pass1.wav' : 'mix.wav') : null;
 	const fh = pass1 ? await open(pass1, 'w') : null;
 	try {
@@ -175,7 +193,7 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 			const n = Math.min(BLOCK, total - done);
 			const view = block.map((c) => c.subarray(0, n));
 			await mixer.render(view, n);
-			meter.process(view, 0, n);
+			meter?.process(view, 0, n);
 			o.onBlock?.(view, n);
 			if (fh) await fh.write(interleave(view, n));
 			done += n;
@@ -185,8 +203,8 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 		mixer.close();
 		await fh?.close();
 	}
-	meter.flush();
-	const before = meter.summary();
+	meter?.flush();
+	const before = meter ? meter.summary() : SILENT_SUMMARY;
 	if (!o.normalize || !keep || !pass1) {
 		return { path: pass1, sampleRate: sr, channels, samples: total, loudness: before };
 	}

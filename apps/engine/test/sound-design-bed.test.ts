@@ -176,9 +176,93 @@ describe('bed render and sound measurements (real engine)', { timeout: 300_000 }
 			{ bedDoc: changed.doc, sequenceId: d.seqId, targets: targets.map((t) => ({ ...t, doc: changed.doc })) },
 			{ ...deps, cache },
 		);
-		expect(b.renders).toMatchObject({ bed: 0, sound: 0 });
-		expect(b.renders.cached).toBe(a.renders.bed + a.renders.sound);
+		expect(b.renders).toMatchObject({ bed: 0, sound: 0, voice: 0 });
+		expect(b.renders.cached).toBe(a.renders.bed + a.renders.voice + targets.length);
 		for (const [id, s] of a.sounds) expect(b.sounds.get(id)).toEqual(s);
+	});
+
+	it('the same sound placed the same way elsewhere is rendered once (relative key, exact)', async () => {
+		// "inSpeech" and "clear" play the same click file the same way (0 dB solo, no automation on their way): one
+		// render; the other measurement is the same entry shifted to its own place
+		const cache = new MeasureCache();
+		const targets = SFX.map((k) => ({ doc: d.doc, clipId: ids[k]!, weight: WEIGHT[k] }));
+		const a = await measureSfxEvents({ bedDoc: d.doc, sequenceId: d.seqId, targets }, { ...deps, cache });
+		expect(a.renders.sound).toBe(3);
+		expect(a.renders.cached).toBe(1);
+		const x = a.sounds.get(ids.inSpeech!)!;
+		const y = a.sounds.get(ids.clear!)!;
+		expect(y.soundBandsDb).toEqual(x.soundBandsDb);
+		const seq = d.doc.sequences[d.seqId]!;
+		const shift = (seq.clips[ids.clear!]!.start - seq.clips[ids.inSpeech!]!.start) / 30;
+		expect(y.window.start - x.window.start).toBeCloseTo(shift, 9);
+		// alone (a cold cache), the second click measures the same
+		const alone = await measureSfxEvents(
+			{ bedDoc: d.doc, sequenceId: d.seqId, targets: [targets[3]!] },
+			{ ...deps, cache: new MeasureCache() },
+		);
+		const z = alone.sounds.get(ids.clear!)!;
+		expect(z.soundBandsDb).toEqual(y.soundBandsDb);
+		expect(z.window.start).toBeCloseTo(y.window.start, 9);
+		expect(z.truePeakDb).toBe(y.truePeakDb);
+	});
+
+	it('cache keys do not depend on entity ids: the same edit with fresh ids is served from the caches', async () => {
+		const cache = new MeasureCache();
+		const targets = SFX.map((k) => ({ doc: d.doc, clipId: ids[k]!, weight: WEIGHT[k] }));
+		const a = await measureSfxEvents({ bedDoc: d.doc, sequenceId: d.seqId, targets }, { ...deps, cache });
+		// every clip, track, effect, keyframe and transcript id renamed (as accepting a previewed plan does)
+		let json = JSON.stringify(d.doc);
+		const rename = new Map<string, string>();
+		let n = 0;
+		for (const id of new Set(json.match(/"(clp|trk|fx|kf|lnk|grp|snd|cue)_[0-9A-Z]{16}"/g) ?? [])) {
+			const raw = id.slice(1, -1);
+			const fresh = `${raw.slice(0, raw.indexOf('_'))}_${(++n).toString().padStart(16, 'Z')}`;
+			rename.set(raw, fresh);
+			json = json.split(raw).join(fresh);
+		}
+		const doc2 = JSON.parse(json) as ProjectDocument;
+		const b = await measureSfxEvents(
+			{
+				bedDoc: doc2,
+				sequenceId: d.seqId,
+				targets: targets.map((t) => ({ ...t, doc: doc2, clipId: rename.get(t.clipId)! })),
+			},
+			{ ...deps, cache },
+		);
+		expect(b.renders).toMatchObject({ bed: 0, sound: 0, voice: 0 });
+		for (const [id, s] of a.sounds)
+			expect(b.sounds.get(rename.get(id)!)).toEqual({ ...s, clipId: rename.get(id) });
+	});
+
+	it('a bed measured with its media offline is not served after relinking', async () => {
+		const core = coreServices(app);
+		const musicKey = (() => {
+			const asset =
+				d.doc.media[(d.doc.sequences[d.seqId]!.clips[ids.music!] as { mediaId: string }).mediaId]!;
+			return asset.locators.find((l) => l.type === 'engine-store')!.key as string;
+		})();
+		let offline = true;
+		const registry: MeasureDeps['registry'] = {
+			get: (k) => (offline && k === musicKey ? null : core.registry.get(k)),
+			resolvePath: (k) => core.registry.resolvePath(k),
+		};
+		const cache = new MeasureCache();
+		const targets = [{ doc: d.doc, clipId: ids.hero!, weight: 'hero' as const }];
+		const off = await measureSfxEvents(
+			{ bedDoc: d.doc, sequenceId: d.seqId, targets },
+			{ ...deps, registry, cache },
+		);
+		expect(off.renders.bed).toBe(1);
+		offline = false; // relinked: the same document, the file back
+		const on = await measureSfxEvents(
+			{ bedDoc: d.doc, sequenceId: d.seqId, targets },
+			{ ...deps, registry, cache },
+		);
+		expect(on.renders.bed).toBe(1);
+		// the music is back under the hit (pink noise in every band)
+		const before = off.sounds.get(ids.hero!)!.bedBandsDb;
+		const after = on.sounds.get(ids.hero!)!.bedBandsDb;
+		expect(after[0]!).toBeGreaterThan(before[0]! + 10);
 	});
 
 	it('reports sounds the mix does not play', async () => {
