@@ -231,7 +231,10 @@ describe('POST /api/sound-design/rebalance (real engine)', { timeout: 300_000 },
 		const sfxGains = (doc: ProjectDocument) => {
 			const seq = doc.sequences[Object.keys(doc.sequences)[0]!]!;
 			return Object.fromEntries(
-				[ids.hero, ids.shadowed, ids.inSpeech, ids.userGain].map((id) => [id, (seq.clips[id!] as SfxClip).gainDb]),
+				[ids.hero, ids.shadowed, ids.inSpeech, ids.userGain].map((id) => [
+					id,
+					(seq.clips[id!] as SfxClip).gainDb,
+				]),
 			);
 		};
 		try {

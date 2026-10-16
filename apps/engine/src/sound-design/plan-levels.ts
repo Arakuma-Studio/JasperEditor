@@ -30,10 +30,10 @@ import {
 	type Registries,
 	readClipSfx,
 	type Sequence,
-	selectedCommands,
-	substituteKnownRefs,
 	type SoundDelivery,
+	selectedCommands,
 	soundDesignSettingsOf,
+	substituteKnownRefs,
 } from '@jasper/project';
 import type { MediaRegistry } from '../media/registry.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
