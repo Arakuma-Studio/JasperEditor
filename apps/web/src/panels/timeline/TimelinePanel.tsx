@@ -35,6 +35,8 @@ import { formatTimecode, parseTimecodeEntry } from '../../gaps/time-display.ts';
 import { t as tr } from '../../i18n/runtime.ts';
 import { useRenderBar } from '../../previews/hooks.ts';
 import { GhostTrackHeaders, ProposalGhostLayer } from '../../proposals/GhostLayer.tsx';
+import { REVIEW_BAR_PX, ReviewBar, useReviewBarShown } from '../../proposals/ReviewBar.tsx';
+import { proposalRange } from '../../proposals/review.ts';
 import { proposalsFor, useGhostModel } from '../../proposals/state.ts';
 import { insertSoundWithFeedback } from '../../sound/controller.ts';
 import { CueSeam, CueSeamHeader } from '../../sound/cues/CueSeam.tsx';
@@ -229,6 +231,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	const ghostCues = useMemo(() => ghostModel?.cues.map((g) => g.cue), [ghostModel]);
 	const ghostCard = useRef<((itemId: string, x: number, y: number) => void) | null>(null);
 	const seamShown = useCueSeamShown(seqId, !!ghostCues?.length);
+	// spec 12 §2.7 Review: the review bar on top while a proposal of this sequence is under review
+	const reviewBar = useReviewBarShown(session, seqId);
 	useLibraryMediaTracking(session);
 	const layout = useMemo(
 		() =>
@@ -299,6 +303,26 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			}),
 		[session, seqId, ui, toast, mac],
 	);
+
+	// Entering review zooms the Timeline to the proposal's range (once per proposal under review).
+	const zoomedFor = useRef<string | null>(null);
+	useEffect(() => {
+		const id = ghostModel?.proposalId ?? null;
+		if (!id) {
+			if (!proposalsFor(session).getState().activeId) zoomedFor.current = null;
+			return;
+		}
+		if (zoomedFor.current === id || !(size.w > 0)) return;
+		const r = proposalRange(ghostModel);
+		if (!r) return;
+		zoomedFor.current = id;
+		// at least 4 s (and the pre-roll before the first item) so a single cue is shown in context
+		const fr = committedSeq.settings.frameRate;
+		const fps = fr.num / fr.den;
+		const min = fps > 0 ? 4 * fps : 120;
+		const pad = Math.max(0, (min - (r.end - r.start)) / 2);
+		controller.zoomToRange(Math.max(0, r.start - pad), r.end + pad, 0.08);
+	}, [ghostModel, controller, session, size.w, committedSeq.settings.frameRate]);
 
 	// A replaced or unmounted controller must not leave its session gesture open (every later
 	// beginGesture would throw and agent submits would queue forever).
@@ -1524,6 +1548,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			onPointerDownCapture={() => touchTimelineInstance(props.instanceId)}
 		>
 			<SequenceTabs session={session} activeId={seqId} hideSingle />
+			{reviewBar ? <ReviewBar session={session} reveal={(f) => controller.reveal(f)} /> : null}
 			<div className="flex shrink-0" style={{ height: RULER_H }}>
 				<div
 					className="flex shrink-0 flex-col justify-between border-r border-pr-border px-2 pt-[2px]"
@@ -1726,6 +1751,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				viewportRef={viewportRef}
 				onFrame={onFrame}
 				tabsOffset={openTabs > 1}
+				extraTop={reviewBar ? REVIEW_BAR_PX : 0}
 				controller={controller}
 			/>
 			{menu ? (
@@ -1747,13 +1773,20 @@ function PlayheadOverlay(props: {
 	viewportRef: React.RefObject<Viewport>;
 	onFrame(frame: number, playing: boolean): void;
 	tabsOffset: boolean;
+	/** Height of what sits between the tabs and the ruler (the review bar), px. */
+	extraTop?: number;
 	controller: TimelineController;
 }) {
 	const scrub = useRef(false);
+	const extra = props.extraTop ?? 0;
 	return (
 		<div
 			className="pointer-events-none absolute right-0 overflow-hidden"
-			style={{ left: props.headerWidth, top: props.tabsOffset ? 'var(--pr-tab-h)' : 0, bottom: 14 }}
+			style={{
+				left: props.headerWidth,
+				top: props.tabsOffset ? `calc(var(--pr-tab-h) + ${extra}px)` : extra,
+				bottom: 14,
+			}}
 		>
 			<PlayheadLine
 				transport={props.transport}

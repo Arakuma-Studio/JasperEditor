@@ -32,6 +32,7 @@ import {
 	type ClipSfx,
 	type CUE_ALIGNS,
 	type CueDensity,
+	type CueDeriveSource,
 	cueInputFromDerived,
 	type DerivedCue,
 	deriveCues,
@@ -113,6 +114,8 @@ export type PlanStyle = {
 	palette: string[];
 	alternatives: number;
 	maxCues: number;
+	/** Sources of derived cues (undefined: every source). */
+	cueSources?: CueDeriveSource[];
 };
 
 export type PlanPick = {
@@ -144,6 +147,7 @@ export function resolveStyle(req: SoundDesignPlanRequest, seq: Sequence): PlanSt
 		palette: [...new Set(palette)],
 		alternatives: st.alternatives ?? SOUND_DESIGN_PLAN_LIMITS.maxAlternatives,
 		maxCues: req.maxCues ?? SOUND_DESIGN_PLAN_LIMITS.maxCues,
+		...(st.cueSources?.length ? { cueSources: [...new Set(st.cueSources)] } : {}),
 	};
 }
 
@@ -288,6 +292,7 @@ export function collectPlanCues(
 			...(range ? { range } : {}),
 			density: style.density,
 			respectDialogue: style.respectDialogue,
+			...(style.cueSources ? { sources: style.cueSources } : {}),
 			...(opts.mgTemplates ? { mgTemplates: opts.mgTemplates } : {}),
 		});
 		for (const w of derived.warnings) warnings.push({ code: w.code, message: w.message });

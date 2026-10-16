@@ -11,7 +11,7 @@
 import type { ProposalSummary } from '@jasper/api';
 import type { Sequence } from '@jasper/project';
 import type { EditorSession, ReviewItem } from '@jasper/session';
-import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
+import { useSessionOrNull, useSessionState } from '@jasper/session/react';
 import { Button, Icon, Select } from '@jasper/ui';
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createCommandContext } from '../../commands/context.ts';
@@ -27,7 +27,6 @@ import {
 	playReviewItem,
 	REVIEW_STATE_LABELS,
 	rejectAll,
-	reviewAnnouncer,
 } from '../../proposals/actions.ts';
 import { whyLines } from '../../proposals/ghosts.ts';
 import { isOwnKey, runScopedKey } from '../../proposals/keys.ts';
@@ -103,7 +102,6 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 	const previewSeq = useProposals(session, (s) => s.preview?.result.document.sequences[seqId]);
 	const model = useMemo(() => buildReviewModel(items, ghost), [items, ghost]);
 	const counts = useMemo(() => reviewCounts(items), [items]);
-	const live = useStoreSelector(reviewAnnouncer, (s) => s.message);
 	const listRef = useRef<HTMLDivElement>(null);
 	const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
 	// a row's ✎ opens the note editor of the details below the list
@@ -206,9 +204,6 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 						{t('Exit')}
 					</Button>
 				) : null}
-			</div>
-			<div aria-live="polite" className="sr-only" data-testid="review-live">
-				{live}
 			</div>
 			{!reviewing ? (
 				<div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-center text-pr-small text-pr-muted">

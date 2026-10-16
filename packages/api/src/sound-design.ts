@@ -169,6 +169,11 @@ export const SoundDesignPlanStyleSchema = z.strictObject({
 	sources: z.array(z.enum(SOUND_SOURCE_TYPES)).min(1).max(SOUND_SOURCE_TYPES.length).optional(),
 	/** No cut cues under dialogue, and no hero under spoken words (default true). */
 	respectDialogue: z.boolean().optional(),
+	/**
+	 * Where derived cues come from (`cues: "auto"`; default every source, as Suggest Cues…). Stored cues are planned
+	 * whatever their source.
+	 */
+	cueSources: z.array(z.enum(CUE_DERIVE_SOURCES)).min(1).max(CUE_DERIVE_SOURCES.length).optional(),
 	/** Rotation and variation seed (default: the sequence's `soundDesign.settings.seed`). */
 	seed: z.number().int().min(0).max(0xffff_ffff).optional(),
 	/** Alternatives per cue, 0–3 (default 3). */

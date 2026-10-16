@@ -5,10 +5,12 @@
 //  - activity: a toast for every transaction an external agent applied, with Undo while it is the top
 //    History entry.
 // Cards look like toasts (same frame, agent accent) but never time out on their own and never steal focus.
+// The stack also holds the proposal cards (spec 12 §2.7 "Review": an agent's proposal to review, no countdown, Review /
+// Dismiss; `proposals/ProposalCards.tsx`) and the review's aria-live region.
 import type { EditorSession } from '@jasper/session';
-import { useSessionOrNull } from '@jasper/session/react';
+import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { Button, Icon, toast } from '@jasper/ui';
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import {
 	type ActivityEntry,
 	type AgentBridge,
@@ -16,6 +18,8 @@ import {
 	useAgentBridgeFor,
 	useAgentBridgeState,
 } from '../agent-bridge/index.ts';
+import { cardProposals, dismissedProposals, ProposalCards, ReviewAnnouncer } from '../proposals/ProposalCards.tsx';
+import { useProposals } from '../proposals/state.ts';
 
 /** "claude-code wants to run 1 command: track.remove", or for an operation "claude-code wants to delete the preset …" */
 function approvalSentence(a: Pick<PendingApproval, 'agent' | 'commandCount' | 'summary' | 'kind'>): string {
@@ -173,16 +177,33 @@ export function AgentApprovals() {
 		};
 	}, [bridge, session]);
 
-	if (!bridge || approvals.length === 0) return null;
+	const shown = bridge ? approvals : [];
+	const list = (cards: boolean) =>
+		shown.length || cards ? (
+			<ul
+				className="pointer-events-none fixed top-[72px] left-1/2 z-[var(--pr-z-toast)] flex -translate-x-1/2 flex-col items-center gap-2"
+				data-testid="agent-approvals"
+				aria-label="Agent requests"
+			>
+				{bridge ? shown.map((a) => <ApprovalCard key={a.approvalId} approval={a} bridge={bridge} />) : null}
+				{session && cards ? <ProposalCards session={session} /> : null}
+			</ul>
+		) : null;
+	if (!session) return list(false);
+	return <WithProposals session={session} render={list} />;
+}
+
+/** The stack with the session's proposal cards (and the review's aria-live region). */
+function WithProposals(props: { session: EditorSession; render: (cards: boolean) => ReactNode }) {
+	const dismissed = useStoreSelector(dismissedProposals, (s) => s.ids);
+	const cards = useProposals(
+		props.session,
+		(st) => cardProposals(st.list, st.activeId, dismissed).length > 0,
+	);
 	return (
-		<ul
-			className="pointer-events-none fixed top-[72px] left-1/2 z-[var(--pr-z-toast)] flex -translate-x-1/2 flex-col items-center gap-2"
-			data-testid="agent-approvals"
-			aria-label="Agent requests waiting for approval"
-		>
-			{approvals.map((a) => (
-				<ApprovalCard key={a.approvalId} approval={a} bridge={bridge} />
-			))}
-		</ul>
+		<>
+			<ReviewAnnouncer />
+			{props.render(cards)}
+		</>
 	);
 }
