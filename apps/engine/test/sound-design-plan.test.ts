@@ -618,11 +618,13 @@ describe('POST /api/sound-design/plan (real engine)', { timeout: 600_000 }, () =
 			const clip = seq.clips[cue.placedClipIds![0]!] as AudioClip & { sfx: ClipSfx };
 			expect(clip.sfx.soundId).toBe(e.sound.soundId);
 			expect(clip.sfx.role).toBe(e.role);
-			// Gain is placement's default level by role, with the seeded ±1 dB variation on top (no explicit gain).
+			// Phase 4: the gain is the masking solver's (the plan's level for the event; this fixture's bed is silent, so
+			// it starts from the default level by role), the seeded ±1 dB variation kept as its offset.
 			const level = (clip.sfx as { level?: { by: string; offsetDb?: number; gainDb: number } }).level!;
-			expect(level.by).toBe('default');
+			expect(level.by).toBe('solver');
 			expect(level.offsetDb ?? 0).toBe(e.gainOffsetDb);
 			expect(clip.gainDb).toBe(level.gainDb);
+			expect(clip.gainDb).toBe(e.level!.gainDb);
 			const at = clip.start * F + (clip.sfx.placement.peakFlicks - clip.sourceIn) / clip.speed.rate;
 			expect(Math.abs(at - e.frame * F)).toBeLessThanOrEqual(1);
 		}
