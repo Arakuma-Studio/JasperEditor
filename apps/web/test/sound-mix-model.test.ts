@@ -76,6 +76,10 @@ describe('levels', () => {
 		expect(solverReason({ limitedBy: [], targetLiftDb: 3.5, achievedLiftDb: 9 })).toBe(
 			'clears the bed by +9.0 dB',
 		);
+		// a lift over silence is not quoted (a sound after the music ends: "+86.7 dB" in the Phase 4 real run)
+		expect(solverReason({ limitedBy: [], targetLiftDb: 3.5, achievedLiftDb: 86.7 })).toBe(
+			'nothing plays under it in the bed: default level kept',
+		);
 	});
 
 	it('default, manual (auto off) and a gain set by hand', () => {

@@ -26,6 +26,12 @@
 // without a reported conflict is a W_UNRESOLVED warning (the tests require none).
 import { BAND_FLOOR_DB, OCTAVE_BAND_CENTRES_HZ } from './bands.ts';
 
+/**
+ * A lift this large means the bed under the sound is at the measurement floor (nothing plays under it): the reason
+ * says so instead of quoting a lift over silence ("+86.7 dB", Phase 4 verification real run).
+ */
+export const SILENT_BED_LIFT_DB = 60;
+
 // ── constants (sources and reasoning: wp-note "Phase 4 → WP4.1a masking solver") ─────────────────────────────────
 
 export type SolverWeight = 'hero' | 'support' | 'ambient';
@@ -795,9 +801,11 @@ function reasonText(
 	for (const [kept, lost] of conflicts) parts.push(`conflict: ${kept} kept over ${lost}`);
 	if (parts.length === 0 && achieved !== null)
 		parts.push(
-			achieved > target + 0.05
-				? `default level already clears the bed by ${fmtDb(achieved)} dB`
-				: `target lift ${fmtDb(target)} dB reached`,
+			achieved >= SILENT_BED_LIFT_DB
+				? 'nothing plays under it in the bed, default level kept'
+				: achieved > target + 0.05
+					? `default level already clears the bed by ${fmtDb(achieved)} dB`
+					: `target lift ${fmtDb(target)} dB reached`,
 		);
 	return parts.length ? `${head}, ${parts.join('; ')}` : head;
 }

@@ -7,6 +7,7 @@
 //   on the cue, and why a stored one is not written;
 // - validation of the Properties "Cue" stop-before / build fields;
 // - the delivery presets for a select (with their numbers).
+import { SILENT_BED_LIFT_DB } from '@jasper/audio-fx';
 import {
 	type AudioClip,
 	type Clip,
@@ -129,9 +130,11 @@ export function solverReason(level: {
 	for (const c of conflicts) parts.push(limitPhrase(c));
 	if (parts.length === 0 && fin(level.achievedLiftDb) && fin(level.targetLiftDb))
 		parts.push(
-			level.achievedLiftDb > level.targetLiftDb + 0.05
-				? t('clears the bed by {0} dB', fmtDb(level.achievedLiftDb))
-				: t('target lift {0} dB reached', fmtDb(level.targetLiftDb)),
+			level.achievedLiftDb >= SILENT_BED_LIFT_DB
+				? t('nothing plays under it in the bed: default level kept')
+				: level.achievedLiftDb > level.targetLiftDb + 0.05
+					? t('clears the bed by {0} dB', fmtDb(level.achievedLiftDb))
+					: t('target lift {0} dB reached', fmtDb(level.targetLiftDb)),
 		);
 	return parts.join('; ');
 }

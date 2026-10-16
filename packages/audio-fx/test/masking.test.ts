@@ -98,6 +98,8 @@ describe('target lift', () => {
 		expect(r.warnings).toEqual([]);
 		expect(one(r, 'a').gainDb).toBe(-20);
 		expect(one(r, 'a').achievedLiftDb).toBeCloseTo(80, 9); // −20 − 20 − (−120)
+		// not "clears the bed by +80 dB": nothing plays under it (Phase 4 verification)
+		expect(one(r, 'a').reason).toBe('−20 dB, nothing plays under it in the bed, default level kept');
 		// b: −10 LUFS + 5 dB would be 15 LU over the quiet-bed reference (−14 − 12 = −26): capped at +6 LU
 		const b = one(r, 'b');
 		expect(b.gainDb).toBeCloseTo(-26 + 6 + 10, 9);

@@ -9633,5 +9633,6 @@
   "Rebalance: Solver Notes": "Reequilibrio: notas del cálculo",
   "{0} off": "{0} desactivado",
   "{0} automated": "{0} automatizado",
-  "{0} {1} dB": "{0} {1} dB"
+  "{0} {1} dB": "{0} {1} dB",
+  "nothing plays under it in the bed: default level kept": "no suena nada debajo en el fondo: se mantiene el nivel por defecto"
 }
