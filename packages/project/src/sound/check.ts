@@ -42,23 +42,24 @@ export type SoundCheckSeverity = (typeof SOUND_CHECK_SEVERITIES)[number];
 export const SOUND_CHECK_VERDICTS = ['pass', 'warn', 'fail'] as const;
 export type SoundCheckVerdict = (typeof SOUND_CHECK_VERDICTS)[number];
 /** Groups of the Sound Check panel (spec 12 §2.7 "issues grouped by category"). */
-export const SOUND_CHECK_CATEGORY: Readonly<Record<SoundCheckCode, 'loudness' | 'sync' | 'mix' | 'cues' | 'licence'>> =
-	{
-		LOUDNESS: 'loudness',
-		TRUE_PEAK: 'loudness',
-		OUT_OF_SYNC: 'sync',
-		MASKED: 'mix',
-		OVERLOAD: 'mix',
-		MUSIC_OVER_VOICE: 'mix',
-		SILENCE: 'mix',
-		DIP: 'mix',
-		STALE_CUE: 'cues',
-		NO_PICTURE_EVENT: 'cues',
-		DENSITY: 'cues',
-		REPEAT: 'cues',
-		LICENSE: 'licence',
-		CREDITS: 'licence',
-	};
+export const SOUND_CHECK_CATEGORY: Readonly<
+	Record<SoundCheckCode, 'loudness' | 'sync' | 'mix' | 'cues' | 'licence'>
+> = {
+	LOUDNESS: 'loudness',
+	TRUE_PEAK: 'loudness',
+	OUT_OF_SYNC: 'sync',
+	MASKED: 'mix',
+	OVERLOAD: 'mix',
+	MUSIC_OVER_VOICE: 'mix',
+	SILENCE: 'mix',
+	DIP: 'mix',
+	STALE_CUE: 'cues',
+	NO_PICTURE_EVENT: 'cues',
+	DENSITY: 'cues',
+	REPEAT: 'cues',
+	LICENSE: 'licence',
+	CREDITS: 'licence',
+};
 
 /**
  * Sync tolerance by cue kind (frames either side): spec 12 §2.6 gives cut ±1, land ±2, move ±3, appear (start) ±1; the
@@ -149,7 +150,11 @@ function stable(v: unknown): string {
  * normalisation settings (not its analysis), the delivery preset checked and the credits setting. Picture edits are not
  * in it (a moved anchor makes a cue stale: the next check reports it). Never throws ('' for an unknown sequence).
  */
-export function soundCheckInputsHash(doc: ProjectDocument, sequenceId: string, preset: SoundDelivery): string {
+export function soundCheckInputsHash(
+	doc: ProjectDocument,
+	sequenceId: string,
+	preset: SoundDelivery,
+): string {
 	try {
 		const seq = doc.sequences?.[sequenceId] as Sequence | undefined;
 		if (!seq) return '';
@@ -194,9 +199,13 @@ export function soundCheckStatus(doc: ProjectDocument, sequenceId: string): Soun
 	const reasons: SoundCheckStatus['reasons'] = [];
 	if (summary.mixHash !== mixHash) reasons.push('mix');
 	const preset = (summary.preset ?? soundDesignSettingsOf(seq).delivery) as SoundDelivery;
-	if (summary.inputsHash !== undefined && summary.inputsHash !== soundCheckInputsHash(doc, sequenceId, preset))
+	if (
+		summary.inputsHash !== undefined &&
+		summary.inputsHash !== soundCheckInputsHash(doc, sequenceId, preset)
+	)
 		reasons.push('inputs');
-	if (summary.preset !== undefined && summary.preset !== soundDesignSettingsOf(seq).delivery) reasons.push('preset');
+	if (summary.preset !== undefined && summary.preset !== soundDesignSettingsOf(seq).delivery)
+		reasons.push('preset');
 	return { state: reasons.length ? 'stale' : 'current', summary, reasons, mixHash };
 }
 
@@ -213,23 +222,29 @@ export const SOUND_CHECK_MESSAGES = {
 	syncEarly: '{0} plays {1} ms early on its {2} cue at {3} (tolerance ±{4} frames)',
 	syncLate: '{0} plays {1} ms late on its {2} cue at {3} (tolerance ±{4} frames)',
 	syncNotFound: '{0} was not found in the sound-effects mix within ±{1} frames of its cue at {2}',
-	syncMetadataOnly: '{0} plays {1} ms off its cue at {2} though it is placed on it (the mix renders it there)',
+	syncMetadataOnly:
+		'{0} plays {1} ms off its cue at {2} though it is placed on it (the mix renders it there)',
 	syncUnmeasurable: '{0}: its timing cannot be measured ({1})',
-	maskedHero: 'Hero sound {0} at {1} clears the bed by only {2} dB in its dominant band ({3} Hz; at least {4} dB)',
+	maskedHero:
+		'Hero sound {0} at {1} clears the bed by only {2} dB in its dominant band ({3} Hz; at least {4} dB)',
 	maskedSupport:
 		'Support sound {0} at {1} clears the bed by only {2} dB in its dominant band ({3} Hz; at least {4} dB)',
 	overloadBed: '{0} at {1} peaks {2} LU over the bed (at most {3} LU)',
-	overloadLimiter: 'The export limiter pulls the mix down by {0} dB at {1} (more than {2} dB flattens the hits)',
+	overloadLimiter:
+		'The export limiter pulls the mix down by {0} dB at {1} (more than {2} dB flattens the hits)',
 	overloadClip: 'The mix reaches {0} dBFS at {1} and loudness normalisation is off: the export clips',
-	musicOverVoice: 'From {0} to {1} the music is only {2} LU under the voice (at least {3} LU); its ducking is off',
+	musicOverVoice:
+		'From {0} to {1} the music is only {2} LU under the voice (at least {3} LU); its ducking is off',
 	musicOverVoiceDucked:
 		'From {0} to {1} the music is only {2} LU under the voice (at least {3} LU) although it is ducked',
 	silence: 'Silence under −60 dBFS for {0} s from {1} to {2}',
 	dip: 'The mix drops {0} LU at {1} (short-term loudness) with no stop-before, cut or silence cue to explain it',
 	staleCue: 'Cue {0} at {1} is out of date: what it follows is now at {2}',
 	staleCueLost: 'Cue {0} at {1} follows something that no longer exists',
-	noPictureEvent: 'Cue {0} at {1}: no picture event within ±{2} frames (no cut, transition, motion, text or graphic)',
-	densityHeroes: 'Two heroes {0} s apart at {1} and {2} (at most one per {3} s at {4} density, never within 0.5 s)',
+	noPictureEvent:
+		'Cue {0} at {1}: no picture event within ±{2} frames (no cut, transition, motion, text or graphic)',
+	densityHeroes:
+		'Two heroes {0} s apart at {1} and {2} (at most one per {3} s at {4} density, never within 0.5 s)',
 	densityRate: '{0} sound cues within one second at {1} (at most {2} per second at {3} density)',
 	repeat: 'The same sound "{0}" plays twice in a row, at {1} and at {2}',
 	licenseNc: '"{0}" is licensed {1}: non-commercial use only',
@@ -244,6 +259,7 @@ export const SOUND_CHECK_MESSAGES = {
 	listenPassing: 'A cue that passes every check: {0}',
 	fixAlign: 'Align its peak to the cue',
 	fixGain: 'Set its gain to {0} dB (masking solver)',
+	fixRebalance: 'Rebalance the sound effects against the bed (masking solver)',
 	fixLoudness: 'Normalise the mix to {0} LUFS / {1} dBTP',
 	fixDuck: 'Duck the music under the voice',
 	fixDelivery: 'Apply the {0} delivery (Auto-Match and ducking)',

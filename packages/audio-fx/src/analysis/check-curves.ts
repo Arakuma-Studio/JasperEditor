@@ -152,7 +152,14 @@ export class CurveMeter {
 			const p = this.pk[i]!;
 			peakDb[i] = p > 0 ? Math.max(LOUDNESS_FLOOR_LUFS, 20 * Math.log10(p)) : LOUDNESS_FLOOR_LUFS;
 		}
-		return { sampleRate: this.sampleRate, hop: this.hop, count: n, kEnergy: this.kE.slice(0, n), msDb, peakDb };
+		return {
+			sampleRate: this.sampleRate,
+			hop: this.hop,
+			count: n,
+			kEnergy: this.kE.slice(0, n),
+			msDb,
+			peakDb,
+		};
 	}
 }
 

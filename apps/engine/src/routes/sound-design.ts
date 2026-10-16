@@ -9,14 +9,19 @@
 //                                 applied transaction "Rebalance SFX Levels" or a proposal.
 //   POST /api/sound-design/delivery  a `sound-design` job (202): a delivery preset measured and applied as ONE
 //                                 transaction "Apply Delivery Preset", or proposed (sound-design/delivery.ts).
+//   POST /api/sound-design/check  a `sound-check` job (202): Sound Check (sound-design/check.ts): findings with fixes,
+//                                 listen-here moments, the per-event table and a verdict; `store` writes the summary.
+//   POST /api/sound-design/visual the curves, cue ticks, motion and findings over ≤ 120 s (sound-design/visual.ts).
 import {
 	type EnvelopeJson,
 	SfxRebalanceRequestSchema,
 	type SoundCueSuggestion,
 	SoundCuesRequestSchema,
 	type SoundCuesResponse,
+	SoundCheckRequestSchema,
 	SoundDeliveryRequestSchema,
 	SoundDesignPlanRequestSchema,
+	SoundVisualRequestSchema,
 } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
@@ -28,6 +33,7 @@ import {
 	type ProjectDocument,
 	type Rational,
 	sequenceDialogueRanges,
+	SOUND_CHECK_THRESHOLDS,
 	sequenceDuration,
 	sequenceTimecode,
 	soundCuesOf,
@@ -38,6 +44,7 @@ import type { AgentService } from '../agent/service.ts';
 import { agentNameOf } from '../agent/user-approval.ts';
 import { isProjectId } from '../projects/store.ts';
 import type { ProposalService } from '../proposals/service.ts';
+import { runSoundCheck } from '../sound-design/check.ts';
 import { planDelivery, runDelivery } from '../sound-design/delivery.ts';
 import { matchStoredCues } from '../sound-design/match.ts';
 import {
@@ -48,6 +55,7 @@ import {
 	unknownCueIds,
 } from '../sound-design/plan.ts';
 import { RebalanceInputError, rebalanceTargets, runRebalance } from '../sound-design/rebalance.ts';
+import { soundVisual, VisualInputError, visualRange } from '../sound-design/visual.ts';
 import type { SoundService } from '../sounds/service.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
@@ -88,6 +96,98 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 						registry: core.registry,
 						planDelivery,
 					}),
+	);
+
+	core.queue.registerRunner('sound-check', (ctx) =>
+		runSoundCheck(ctx, {
+			agent: agentOf,
+			sounds: () => services.sounds as SoundService | undefined,
+			ffmpeg: core.ffmpeg,
+			registry: core.registry,
+			registries: defaultRegistries(mgRegistry),
+			mgTemplates: mgRegistry,
+		}),
+	);
+
+	app.post(
+		'/api/sound-design/check',
+		guarded(async (req, reply) => {
+			const body = parseOr400(SoundCheckRequestSchema, req.body ?? {});
+			if (!isProjectId(body.projectId)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
+			const agent = agentOf();
+			if (!agent) throw new HttpError(503, 'NOT_AVAILABLE', 'The sound design services are not running');
+			if (!(await agent.projectExists(body.projectId)))
+				throw new HttpError(404, 'PROJECT_NOT_FOUND', `Project not found: ${body.projectId}`);
+			// Refused at once rather than as a failed job: an unknown sequence, a range outside it or over 4 h.
+			const { doc } = await liveDocument(agent, body.projectId);
+			let seq: ReturnType<typeof planSequence>;
+			try {
+				seq = planSequence(doc, body.sequenceId);
+			} catch (e) {
+				if (e instanceof PlanInputError) throw new HttpError(404, e.code, e.message);
+				throw e;
+			}
+			const rate = seq.settings.frameRate as Rational;
+			const fps = rate.num / rate.den;
+			const duration = Math.max(0, Math.ceil(sequenceDuration(seq)));
+			if (body.range && body.range.start >= Math.max(1, duration))
+				throw new HttpError(400, 'RANGE_EMPTY', `The range is outside the sequence (0–${duration} frames)`);
+			const span = body.range ? Math.min(body.range.end, duration) - body.range.start : duration;
+			if (span / fps > SOUND_CHECK_THRESHOLDS.maxRangeSec)
+				throw new HttpError(400, 'RANGE_TOO_LONG', 'Sound Check takes at most 4 hours at once: check a range');
+			const editor = req.jasperEditor === true;
+			const who = { editor, agent: agentNameOf(req) };
+			reply.code(202);
+			return core.queue.submit({
+				kind: 'sound-check',
+				title: 'Sound Check',
+				priority: 'user',
+				cpuSlots: 1,
+				origin: editor ? { type: 'user' } : { type: 'agent', agentRunId: who.agent },
+				projectId: body.projectId,
+				input: { request: body, who },
+				stage: 'Waiting',
+			});
+		}),
+	);
+
+	app.post(
+		'/api/sound-design/visual',
+		guarded(async (req) => {
+			const body = parseOr400(SoundVisualRequestSchema, req.body ?? {});
+			if (!isProjectId(body.projectId)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
+			const agent = agentOf();
+			if (!agent) throw new HttpError(503, 'NOT_AVAILABLE', 'The sound design services are not running');
+			if (!(await agent.projectExists(body.projectId)))
+				throw new HttpError(404, 'PROJECT_NOT_FOUND', `Project not found: ${body.projectId}`);
+			const { doc } = await liveDocument(agent, body.projectId);
+			let seq: ReturnType<typeof planSequence>;
+			try {
+				seq = planSequence(doc, body.sequenceId);
+				visualRange(seq, body);
+			} catch (e) {
+				if (e instanceof PlanInputError) throw new HttpError(404, e.code, e.message);
+				if (e instanceof VisualInputError) throw new HttpError(400, e.code, e.message);
+				throw e;
+			}
+			let checkJob = null;
+			if (body.checkJobId) {
+				checkJob = core.queue.get(body.checkJobId);
+				if (!checkJob || checkJob.kind !== 'sound-check' || checkJob.projectId !== body.projectId)
+					throw new HttpError(404, 'JOB_NOT_FOUND', `No Sound Check job ${body.checkJobId} of this project`);
+			}
+			const ac = new AbortController();
+			req.raw.on('close', () => {
+				if (!req.raw.complete || req.raw.destroyed) ac.abort();
+			});
+			return soundVisual(doc, seq, body, {
+				ff: core.ffmpeg,
+				registry: core.registry,
+				mgTemplates: mgRegistry,
+				checkJob,
+				signal: ac.signal,
+			});
+		}),
 	);
 
 	app.post(

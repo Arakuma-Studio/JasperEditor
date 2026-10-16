@@ -1,0 +1,279 @@
+// Sound Check visual data (spec 12 §2.6 "Visual data comes from the engine", §2.8 `POST /api/sound-design/visual`, P5-R2;
+// wp-note "Phase 5 → WP5.1"): over a bounded range (≤ 120 s) the 10 ms momentary and short-term loudness of the mix and
+// of each stem (bed, sound effects, music, dialogue, ambience), the mix's 10 ms sample peaks, the cue ticks, the sound
+// effect clips with their aligned points, speech, the picture's motion curve (the fastest keyframed layer per frame,
+// from `deriveCues`) and — given a finished `sound-check` job — its findings over the range. MCP draws it into PNGs
+// (`view_sound_timeline`, `sound_check` images); the web panel draws the same data on a canvas.
+//
+// As delivered: when the Mix normalises and its stored loudness analysis is current (`mixHash` = `mixFingerprint`), the
+// normalisation gain is added to every curve (the limiter is not applied here: `sound_check` measures it); otherwise
+// the curves are as mixed and `normalization.reason` says why.
+import type { EngineJob, SoundVisualRequest, SoundVisualResponse } from '@jasper/api';
+import { SoundCheckResultSchema } from '@jasper/api';
+import {
+	CURVE_HOP_SEC,
+	CurveMeter,
+	LOUDNESS_FLOOR_LUFS,
+	loudnessCurve,
+	silentCurves,
+} from '@jasper/audio-fx';
+import {
+	type AudioClip,
+	type ClipSfx,
+	deriveCues,
+	FLICKS_PER_SECOND,
+	flicksPerFrame,
+	frameToSample,
+	isSfxClip,
+	type MgTemplateRegistry,
+	mixFingerprint,
+	type ProjectDocument,
+	type Rational,
+	readClipSfx,
+	readLibraryProvenance,
+	type Sequence,
+	sequenceDuration,
+	sequenceTimecode,
+	sequenceWords,
+	soundCuesOf,
+} from '@jasper/project';
+import type { MediaRegistry } from '../media/registry.ts';
+import { vadThreshold } from '../speech/core/vad.ts';
+import type { Ffmpeg } from '../tools/ffmpeg.ts';
+import { audioWorld, VAD_FLOOR_DBFS } from './bed.ts';
+import { classifyStems, renderStems, STEM_NAMES, type StemName } from './stems.ts';
+
+/** Longest range (seconds). */
+export const VISUAL_MAX_SEC = 120;
+const PRE_HOPS = 150;
+const POST_HOPS = 150;
+const r2 = (x: number) => Math.round(x * 100) / 100;
+const r3 = (x: number) => Math.round(x * 1000) / 1000;
+
+export class VisualInputError extends Error {
+	constructor(
+		readonly code: 'RANGE_TOO_LONG' | 'RANGE_EMPTY',
+		message: string,
+	) {
+		super(message);
+	}
+}
+
+export type VisualEnv = {
+	ff: Ffmpeg;
+	registry: Pick<MediaRegistry, 'get' | 'resolvePath'>;
+	mgTemplates: MgTemplateRegistry;
+	/** The check job named by `checkJobId` (null: unknown / not finished). */
+	checkJob?: EngineJob | null;
+	signal?: AbortSignal;
+};
+
+/** The frames a request covers (clamped to the sequence), or a typed error. */
+export function visualRange(
+	seq: Sequence,
+	req: Pick<SoundVisualRequest, 'range'>,
+): { start: number; end: number } {
+	const rate = seq.settings.frameRate as Rational;
+	const fps = rate.num / rate.den;
+	const duration = Math.max(0, Math.ceil(sequenceDuration(seq)));
+	const start = Math.min(req.range.start, duration);
+	const end = Math.min(req.range.end, duration);
+	if (end <= start)
+		throw new VisualInputError('RANGE_EMPTY', `The range is outside the sequence (0–${duration} frames)`);
+	if ((end - start) / fps > VISUAL_MAX_SEC + 1e-9)
+		throw new VisualInputError('RANGE_TOO_LONG', `At most ${VISUAL_MAX_SEC} s per request`);
+	return { start, end };
+}
+
+/** Builds the visual data of `seq` over `req.range` (see the module docs). */
+export async function soundVisual(
+	doc: ProjectDocument,
+	seq: Sequence,
+	req: SoundVisualRequest,
+	env: VisualEnv,
+): Promise<SoundVisualResponse> {
+	const range = visualRange(seq, req);
+	const rate = seq.settings.frameRate as Rational;
+	const F = flicksPerFrame(rate);
+	const tc = (f: number) => sequenceTimecode(seq, Math.max(0, Math.round(f)));
+	const world = await audioWorld(doc, seq.id, env.registry);
+	const snap = world.snapshot;
+	const sr = snap.audioMix?.sampleRate ?? snap.settings.sampleRate;
+	const hop = Math.max(1, Math.round(sr * CURVE_HOP_SEC));
+	const stems = classifyStems(
+		seq,
+		snap.audioClips.map((c) => c.clipId),
+	);
+	const rangeStart = frameToSample(range.start, rate, sr);
+	const rangeEnd = frameToSample(range.end, rate, sr);
+	const rangeHops = Math.ceil((rangeEnd - rangeStart) / hop);
+	const preHops = Math.min(PRE_HOPS, Math.floor(rangeStart / hop));
+	const renderStart = rangeStart - preHops * hop;
+	const renderEnd = rangeEnd + POST_HOPS * hop;
+	const channels = snap.audioMix?.masterFormat === '5.1' ? 6 : 2;
+	const meters: Partial<Record<StemName, CurveMeter>> = {};
+	for (const s of STEM_NAMES) if (stems[s].size > 0) meters[s] = new CurveMeter(sr, channels);
+	if (stems.mix.size > 0)
+		await renderStems({
+			ff: env.ff,
+			snapshot: snap,
+			media: world.media,
+			startSample: renderStart,
+			samples: renderEnd - renderStart,
+			stems: STEM_NAMES.map((s) => ({ name: s, clipIds: s === 'mix' ? null : stems[s] })),
+			...(env.signal ? { signal: env.signal } : {}),
+			onBlock: (i, planar, n) => meters[STEM_NAMES[i]!]?.push(planar, n),
+		});
+	const total = Math.ceil((renderEnd - renderStart) / hop);
+	// normalisation as delivered (the stored analysis, when current)
+	const loud = (seq.master as { loudness?: Record<string, unknown> }).loudness;
+	const analysis = loud?.analysis as { integratedLufs?: unknown; mixHash?: unknown } | null | undefined;
+	let gain = 0;
+	let applied = false;
+	let reason: string | undefined;
+	if (!loud?.enabled) reason = 'Loudness normalisation is off: the curves are the mix as it is';
+	else if (
+		!analysis ||
+		typeof analysis.integratedLufs !== 'number' ||
+		!Number.isFinite(analysis.integratedLufs) ||
+		analysis.mixHash !== mixFingerprint(doc, seq.id)
+	)
+		reason =
+			'The Mix normalises, but its loudness analysis is missing or out of date: the curves are before normalisation';
+	else {
+		gain = (loud.targetLufs as number) - analysis.integratedLufs;
+		applied = Number.isFinite(gain);
+		if (!applied) gain = 0;
+	}
+	const crop = (c: Float32Array) => Array.from(c.subarray(preHops, preHops + rangeHops), (v) => r2(v));
+	const curveOf = (s: StemName) => {
+		const c = meters[s]?.finish() ?? silentCurves(sr, total);
+		return { c, momentary: crop(loudnessCurve(c, 0.4, gain)), shortTerm: crop(loudnessCurve(c, 3, gain)) };
+	};
+	const all = Object.fromEntries(STEM_NAMES.map((s) => [s, curveOf(s)])) as Record<
+		StemName,
+		ReturnType<typeof curveOf>
+	>;
+	const waveformPeakDb = Array.from(all.mix.c.peakDb.subarray(preHops, preHops + rangeHops), (v) =>
+		r2(v > LOUDNESS_FLOOR_LUFS ? Math.max(LOUDNESS_FLOOR_LUFS, v + gain) : LOUDNESS_FLOOR_LUFS),
+	);
+	// speech
+	const speech: [number, number][] = [];
+	const mark = new Uint8Array(rangeHops);
+	try {
+		for (const w of sequenceWords(doc, seq)) {
+			const a = Math.max(0, Math.floor(((w.start / FLICKS_PER_SECOND) * sr - rangeStart) / hop));
+			const b = Math.min(rangeHops, Math.ceil(((w.end / FLICKS_PER_SECOND) * sr - rangeStart) / hop));
+			for (let i = a; i < b; i++) mark[i] = 1;
+		}
+	} catch {
+		// voice activity only
+	}
+	if (stems.dialogue.size > 0) {
+		const db = all.dialogue.c.msDb.subarray(preHops, preHops + rangeHops);
+		const th = Math.max(vadThreshold(db), VAD_FLOOR_DBFS);
+		for (let i = 0; i < db.length; i++) if (db[i]! >= th) mark[i] = 1;
+	}
+	for (let i = 0, a = -1; i <= rangeHops; i++) {
+		const on = i < rangeHops && mark[i] === 1;
+		if (on && a < 0) a = i;
+		else if (!on && a >= 0) {
+			speech.push([r3((rangeStart + a * hop) / sr), r3((rangeStart + i * hop) / sr)]);
+			a = -1;
+		}
+	}
+	// motion: the fastest keyframed layer per frame
+	const derived = deriveCues(doc, seq.id, {
+		density: 'rich',
+		respectDialogue: false,
+		mgTemplates: env.mgTemplates,
+		range: { start: range.start, end: range.end },
+	});
+	const speed = new Array<number>(range.end - range.start).fill(0);
+	for (const c of derived.curves)
+		for (let i = 0; i < c.speed.length; i++) {
+			const f = c.start + i - range.start;
+			if (f >= 0 && f < speed.length && c.speed[i]! > speed[f]!) speed[f] = c.speed[i]!;
+		}
+	// cues and sound effect clips
+	const cues = soundCuesOf(seq)
+		.filter((c) => c.frame >= range.start && c.frame < range.end)
+		.sort((a, b) => a.frame - b.frame || (a.id < b.id ? -1 : 1))
+		.map((c) => ({
+			cueId: c.id,
+			frame: c.frame,
+			timecode: tc(c.frame),
+			kind: c.kind,
+			weight: c.weight,
+			filled: (c.placedClipIds?.length ?? 0) > 0,
+			muted: c.muted === true,
+			label: c.label ?? null,
+		}));
+	const clips = Object.values(seq.clips)
+		.filter(
+			(c) => c.kind === 'audio' && isSfxClip(c) && c.start < range.end && c.start + c.duration > range.start,
+		)
+		.sort((a, b) => a.start - b.start || (a.id < b.id ? -1 : 1))
+		.map((c) => {
+			const a = c as AudioClip & { sfx?: unknown };
+			const sfx: ClipSfx | null = a.sfx !== undefined ? readClipSfx(a.sfx) : null;
+			const aligned = sfx?.placement
+				? (a.start * F + (sfx.placement.peakFlicks - a.sourceIn) / (a.speed?.rate || 1)) / F
+				: null;
+			const prov = readLibraryProvenance(
+				(doc.media?.[a.mediaId] as { library?: unknown } | undefined)?.library,
+			);
+			return {
+				clipId: c.id,
+				start: c.start,
+				end: c.start + c.duration,
+				alignedFrame: aligned === null ? null : r3(aligned),
+				title: (prov?.title || a.name || c.id).slice(0, 200),
+			};
+		});
+	// findings of a check job over the range
+	const issues: SoundVisualResponse['issues'] = [];
+	const job = env.checkJob;
+	if (job && job.kind === 'sound-check' && job.state === 'succeeded') {
+		const r = SoundCheckResultSchema.safeParse(job.result);
+		if (r.success && r.data.sequenceId === seq.id)
+			for (const i of r.data.report.issues) {
+				const s = i.range?.start ?? i.frame;
+				const e = i.range?.end ?? (i.frame !== undefined ? i.frame + 1 : undefined);
+				if (s === undefined || e === undefined || s >= range.end || e <= range.start) continue;
+				issues.push({
+					id: i.id,
+					code: i.code,
+					severity: i.severity,
+					...(i.frame !== undefined ? { frame: i.frame } : {}),
+					...(i.range ? { range: i.range } : {}),
+					text: i.message.text,
+				});
+			}
+	}
+	return {
+		projectId: req.projectId,
+		sequenceId: seq.id,
+		range,
+		rangeTimecode: { start: tc(range.start), end: tc(range.end) },
+		fps: { num: rate.num, den: rate.den },
+		hopSec: CURVE_HOP_SEC,
+		startSec: r3(rangeStart / sr),
+		points: rangeHops,
+		normalization: { applied, gainDb: r2(gain), ...(reason ? { reason } : {}) },
+		curves: {
+			mix: { momentary: all.mix.momentary, shortTerm: all.mix.shortTerm },
+			bed: { momentary: all.bed.momentary, shortTerm: all.bed.shortTerm },
+			sfx: { momentary: all.sfx.momentary, shortTerm: all.sfx.shortTerm },
+			music: { momentary: all.music.momentary, shortTerm: all.music.shortTerm },
+			dialogue: { momentary: all.dialogue.momentary, shortTerm: all.dialogue.shortTerm },
+			ambience: { momentary: all.ambience.momentary, shortTerm: all.ambience.shortTerm },
+		},
+		waveformPeakDb,
+		motion: { startFrame: range.start, speed: speed.map(r3) },
+		cues,
+		clips,
+		speech,
+		issues,
+	};
+}

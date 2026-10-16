@@ -825,10 +825,16 @@ export interface SfxGainEvaluation {
  * bands): Sound Check's MASKED and OVERLOAD findings use it so they agree with what `solveSfxGains` aims at. Pure;
  * never throws (the event is sanitised like the solver's input; a non-finite gain counts as 0 dB).
  */
-export function evaluateSfxGain(event: SolverEvent, gainDb: number, opts: SolverOptions = {}): SfxGainEvaluation {
+export function evaluateSfxGain(
+	event: SolverEvent,
+	gainDb: number,
+	opts: SolverOptions = {},
+): SfxGainEvaluation {
 	const o = opts && typeof opts === 'object' ? opts : {};
 	const program =
-		isNum(o.programLufs) && Math.abs(o.programLufs) <= LEVEL_CEILING_DB ? o.programLufs : DEFAULT_PROGRAM_LUFS;
+		isNum(o.programLufs) && Math.abs(o.programLufs) <= LEVEL_CEILING_DB
+			? o.programLufs
+			: DEFAULT_PROGRAM_LUFS;
 	const ev = clean(event, 0, []);
 	const g = isNum(gainDb) ? Math.max(-1000, Math.min(1000, gainDb)) : 0;
 	const ref = Math.max(ev.bedPeak ?? Number.NEGATIVE_INFINITY, program + QUIET_BED_OFFSET_LU);
