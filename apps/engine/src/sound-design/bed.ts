@@ -584,3 +584,25 @@ export async function measureSfxEvents(
 	deps.onProgress?.(1, 'Measured');
 	return { sampleRate: sr, sounds, missing, clusters, renders };
 }
+
+/**
+ * Renders frames `range` of a document's sequence through the export mixer (master, no loudness normalisation) with
+ * only `clipIds` audible (null: every clip): the oracle the tests and the real-run checks compare measurements with.
+ */
+export async function renderSequencePcm(
+	doc: ProjectDocument,
+	sequenceId: string,
+	range: { start: number; end: number },
+	clipIds: ReadonlySet<string> | null,
+	deps: MeasureDeps,
+): Promise<{ sampleRate: number; startSample: number; channels: Float32Array[]; truePeakDb: number | null }> {
+	const world = await audioWorld(doc, sequenceId, deps.registry);
+	const ids = clipIds ?? new Set(world.snapshot.audioClips.map((c) => c.clipId));
+	const r = await renderPcm(world, range, ids, deps);
+	return {
+		sampleRate: r.sampleRate,
+		startSample: r.pcm.startSample,
+		channels: r.pcm.channels,
+		truePeakDb: r.truePeakDb,
+	};
+}
