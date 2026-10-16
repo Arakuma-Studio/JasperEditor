@@ -8,7 +8,9 @@
 // Each place item (and each alternative command set) then ends with `soundDesign.applyGains` naming its clips by the
 // `$sfx_<n>_<layer>` refs its placement binds, so accepting it places the sound AT the solved gain with `sfx.level`
 // {by: 'solver'} and the why-line (meta.why, the report) says "−3 dB, limited by dialogue A1". The solve is
-// deterministic (renders, measurements and the solver are; preview ids are not used by any of them).
+// deterministic: the previews create their entities with ids seeded by item and alternative (so the same plan gives
+// the same preview documents), the measurement caches are keyed by content, not ids (`bed.ts`), and the report names
+// the plan's sounds by their item, layer ref (`$sfx_<n>_<layer>`) and alternative, never by preview clip ids.
 import type {
 	SfxLevelConflict,
 	SfxSolvedLevel,
@@ -17,6 +19,7 @@ import type {
 } from '@jasper/api';
 import type { SolverEvent } from '@jasper/audio-fx';
 import {
+	createSeededIdSource,
 	type MgTemplateRegistry,
 	type ProjectDocument,
 	type Proposal,
@@ -76,6 +79,10 @@ function withRefs(commands: Cmd[], itemId: string): Cmd[] {
 
 const placeLayers = (commands: readonly Cmd[]): number =>
 	(commands.find(isPlace)?.layers as unknown[] | undefined)?.length ?? 0;
+const placeLayersOf = (items: readonly Item[], itemId: string): number => {
+	const it = items.find((x) => x.id === itemId);
+	return it ? placeLayers(it.commands as Cmd[]) : 0;
+};
 
 /** The preview of the draft with alternative `slot` selected where an item has one (0 = the chosen sounds). */
 function preview(
@@ -106,11 +113,36 @@ function preview(
 			...(slot > 0 && (it.alternatives?.length ?? 0) >= slot ? { selectedAlternative: slot } : {}),
 		})),
 	};
-	return previewProposal(doc, p, 'undecided', {
-		registries: ctx.registries,
-		now: () => '2026-01-01T00:00:00.000Z',
-		invariants: 'incremental',
-	});
+	return previewProposal(
+		doc,
+		p,
+		'undecided',
+		{
+			registries: ctx.registries,
+			now: () => '2026-01-01T00:00:00.000Z',
+			invariants: 'incremental',
+		},
+		{
+			// the same item with the same sound selected gets the same ids in every slot and every run
+			idsFor: (it) =>
+				createSeededIdSource(
+					`sound-design-plan:${p.sequenceId ?? ''}:${it.id}:${it.selectedAlternative ?? 0}`,
+				),
+		},
+	);
+}
+
+/**
+ * The document accepting every item of `draft` (its chosen sounds) would give, or null when no item applies. The
+ * same seeded preview the solve measured (`preview`).
+ */
+export function planPreviewDocument(
+	doc: ProjectDocument,
+	draft: ProposalDraft,
+	registries: Registries,
+): ProjectDocument | null {
+	const pv = preview(doc, draft, draft.items, 0, { registries });
+	return pv.applied.length ? pv.document : null;
 }
 
 /** Per place item: its clip ids by layer, in the preview document. */
@@ -247,13 +279,37 @@ export async function solvePlanGains(
 		solverEventOf(t.info, measured.sounds.get(t.clipId)!),
 	);
 	const solved = solveAt(mainEvents, delivery);
+	// The preview's clips do not exist in the project: the report names them by item, layer ref and alternative.
+	const nameOf = new Map<string, { ref: string; itemId: string; label: string }>();
+	for (const t of targets)
+		nameOf.set(t.clipId, {
+			ref: layerRef(t.itemId, t.layer),
+			itemId: t.itemId,
+			label:
+				t.slot > 0
+					? `${t.itemId} (alternative ${t.slot})`
+					: `${t.itemId}${placeLayersOf(items, t.itemId) > 1 ? ` layer ${t.layer + 1}` : ''}`,
+		});
+	const named = (text: string) => {
+		let out = text;
+		for (const [id, n] of nameOf) if (out.includes(id)) out = out.split(id).join(n.label);
+		return out;
+	};
 	const levelOf = new Map<string, SfxSolvedLevel>();
 	const conflicts: SfxLevelConflict[] = [];
 	solved.events.forEach((r, i) => {
 		const t = mainTargets[i]!;
 		levelOf.set(t.clipId, solvedLevel(r, measured.sounds.get(t.clipId)!, lo.truePeakCeilingDb));
-		conflicts.push(...conflictsOf(r, t.itemId));
+		for (const c of conflictsOf(r, t.itemId))
+			conflicts.push({ ...c, clipId: layerRef(t.itemId, t.layer), message: named(c.message) });
 	});
+	const solverWarnings = new Map<string, { code: string; message: string }>();
+	const keepWarning = (w: { code: string; message: string }) => {
+		if (w.code === 'W_CONFLICT') return; // reported as `conflicts`
+		const m = { code: w.code, message: named(w.message).slice(0, 1000) };
+		solverWarnings.set(`${m.code}\u0000${m.message}`, m);
+	};
+	for (const w of solved.warnings) keepWarning(w);
 	// Each alternative in place of its item's chosen sound (layer 0), with the other chosen sounds.
 	const altLevel = new Map<string, SfxSolvedLevel>();
 	for (const t of targets) {
@@ -261,11 +317,14 @@ export async function solvePlanGains(
 		const own = mainTargets.findIndex((m) => m.itemId === t.itemId && m.layer === 0);
 		const ev = solverEventOf(t.info, measured.sounds.get(t.clipId)!);
 		const events = own >= 0 ? mainEvents.map((e, i) => (i === own ? ev : e)) : [...mainEvents, ev];
-		const r = solveAt(events, delivery).events[own >= 0 ? own : events.length - 1]!;
+		const res = solveAt(events, delivery);
+		const r = res.events[own >= 0 ? own : events.length - 1]!;
 		altLevel.set(
 			`${t.itemId}#${t.slot}`,
 			solvedLevel(r, measured.sounds.get(t.clipId)!, lo.truePeakCeilingDb),
 		);
+		// what this solve says about the alternative itself (the chosen sounds' own warnings come from the main solve)
+		for (const w of res.warnings) if (w.clipId === t.clipId) keepWarning(w);
 	}
 	const gainsCommand = (itemId: string, levels: (SfxSolvedLevel | undefined)[]) => {
 		const gains: Record<string, number> = {};
@@ -294,6 +353,8 @@ export async function solvePlanGains(
 			meta.gainDb = l0.gainDb;
 			meta.level = levelMeta(l0);
 		}
+		// the further layers of a marker naming several types ("sfx: boom+whoosh"), in layer order
+		if (levels.length > 1) meta.layerLevels = levels.slice(1).map((l) => (l ? levelMeta(l) : null));
 		const ev = reportEvents.get(it.id) as (SoundDesignPlanEvent & Record<string, unknown>) | undefined;
 		if (ev && l0) {
 			ev.why = `${ev.why} · ${l0.reason}`.slice(0, 1000);
@@ -328,11 +389,9 @@ export async function solvePlanGains(
 		...report.warnings,
 		...measured.missing.map((m) => ({
 			code: 'W_LEVEL_UNMEASURED',
-			message: `${m.clipId}: ${m.reason}; placement’s default level applies`,
+			message: `${nameOf.get(m.clipId)?.label ?? m.clipId}: ${m.reason}; placement’s default level applies`,
 		})),
-		...solved.warnings
-			.filter((w) => w.code !== 'W_CONFLICT')
-			.map((w) => ({ code: w.code, message: w.message })),
+		...solverWarnings.values(),
 	];
 	return {
 		ok: true,

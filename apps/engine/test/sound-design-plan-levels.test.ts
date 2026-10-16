@@ -203,11 +203,35 @@ describe('sound-design plan with solved gains (real engine)', { timeout: 600_000
 				expect(Object.keys(last.gains)[0]).toBe(`$sfx_${n}_0`);
 			}
 		}
-		// deterministic: the same seed gives the same gains
+		// the report never names preview clips (they do not exist in the project): items, layer refs, alternatives
+		const docNow = await saved();
+		const clipIds = new Set(Object.keys(docNow.doc.sequences[seqId]!.clips));
+		const named = JSON.stringify([rep.warnings, rep.conflicts ?? []]);
+		for (const id of named.match(/clp_[0-9A-Z]{16}/g) ?? []) expect(clipIds.has(id), id).toBe(true);
+		for (const c of rep.conflicts ?? []) {
+			expect(c.clipId).toMatch(/^\$sfx_\d+_\d+$/);
+			expect(c.itemId).toMatch(/^sfx:/);
+		}
+		// extra layers carry their own levels in the item's meta
+		for (const it of places) {
+			const layers = (
+				it.commands.find((c) => (c as { type: string }).type === 'soundDesign.place') as {
+					layers: unknown[];
+				}
+			).layers.length;
+			const meta = it.meta as { layerLevels?: unknown[] };
+			if (layers > 1) expect(meta.layerLevels?.length).toBe(layers - 1);
+			else expect(meta.layerLevels).toBeUndefined();
+		}
+		// deterministic: the same seed gives the same gains, warnings and conflicts — and, the measurements being keyed
+		// by content (not by the previews' ids), nothing is rendered again
 		const again = await plan({ projectId, sequenceId: seqId, style: { seed: 11 } });
 		expect(
 			again.result.report.events.map((e) => [e.sound.soundId, e.level!.gainDb, e.alternativeLevels]),
 		).toEqual(rep.events.map((e) => [e.sound.soundId, e.level!.gainDb, e.alternativeLevels]));
+		expect(again.result.report.warnings).toEqual(rep.warnings);
+		expect(again.result.report.conflicts ?? []).toEqual(rep.conflicts ?? []);
+		expect(again.result.report.levels!.renders).toMatchObject({ bed: 0, sound: 0, voice: 0 });
 		// performance (spec: < 15 s at moderate load; generous when the shared host is overloaded)
 		const load = loadavg()[0]! / Math.max(1, cpus().length);
 		expect(first.ms).toBeLessThan(load > 1 ? 45_000 : 15_000);
@@ -257,5 +281,21 @@ describe('sound-design plan with solved gains (real engine)', { timeout: 600_000
 			expect(clip.sfx!.level).toMatchObject({ by: 'solver', gainDb: want.gainDb, limitedBy: want.limitedBy });
 			if (e.itemId === withAlt.id) expect(clip.sfx!.soundId).toBe(e.alternatives[1]!.soundId);
 		}
+		// a rebalance right after the accept measures the accepted sounds from the plan's caches (fresh ids, same
+		// content): only the alternative picked may need a render (its preview slot had the other items' alternatives
+		// selected too, which can put it on another track); the bed is rendered again only where its clusters differ
+		const rb = await app.inject({
+			method: 'POST',
+			url: '/api/sound-design/rebalance',
+			headers: json(EDITOR_H),
+			payload: JSON.stringify({ projectId, sequenceId: seqId }),
+		});
+		expect(rb.statusCode, rb.body).toBe(202);
+		const rbJob = await coreServices(app).queue.wait((rb.json() as EngineJob).id);
+		expect(rbJob.state, JSON.stringify(rbJob.error)).toBe('succeeded');
+		const renders = (rbJob.result as { report: { levels: { renders: Record<string, number> } } }).report
+			.levels.renders;
+		expect(renders.sound, JSON.stringify(renders)).toBeLessThanOrEqual(1);
+		expect(renders.cached, JSON.stringify(renders)).toBeGreaterThanOrEqual(result.report.events.length - 1);
 	});
 });

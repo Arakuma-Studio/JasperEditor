@@ -602,7 +602,10 @@ export const SoundDeliveryReportSchema = z.object({
 		})
 		.nullable(),
 	measure: SoundDeliveryMeasureSchema.nullable(),
-	warnings: z.array(z.object({ code: z.string(), message: z.string() })),
+	/** Warnings, the masking solver's included (W_DIALOGUE_BAND, W_UNRESOLVED…; `clipId` names the sound effect). */
+	warnings: z.array(z.object({ code: z.string(), message: z.string(), clipId: z.string().optional() })),
+	/** The sound effects' constraints in conflict (the earlier, safety one kept), as rebalance_sfx reports them. */
+	conflicts: z.array(SfxLevelConflictSchema).optional(),
 	ms: z.number(),
 });
 export type SoundDeliveryReport = z.infer<typeof SoundDeliveryReportSchema>;

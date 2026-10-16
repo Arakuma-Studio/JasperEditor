@@ -134,6 +134,13 @@ export function provenanceOf(e: SoundEntry, snapshotHash: string, leadSilenceSec
 	return LibraryProvenanceSchema.parse(candidate) as LibraryProvenance;
 }
 
+/** Remembers `v` under `k` in a bounded insertion-ordered map. */
+function remember<T>(m: Map<string, T>, k: string, v: T, max = 4096): void {
+	m.delete(k);
+	m.set(k, v);
+	while (m.size > max) m.delete(m.keys().next().value!);
+}
+
 export class SoundService {
 	readonly library: SoundLibrary;
 	readonly roots: SoundRootStore;
@@ -144,6 +151,10 @@ export class SoundService {
 	/** The index's entries in id order, for the snapshot they were made from (search). */
 	private sorted: { sounds: LibrarySnapshot['sounds']; list: SoundEntry[] } | null = null;
 	private auto: AutoAttempt | null = null;
+	/** Registering (bounded, per engine): a sound file's audio stream by content fingerprint… */
+	private readonly streamOf = new Map<string, Awaited<ReturnType<typeof probeAudioStream>>>();
+	/** …and the media key of its padded / PCM copy by content, padding, codec and rate. */
+	private readonly copyOf = new Map<string, string>();
 
 	constructor(
 		private readonly core: CoreServices,
@@ -492,7 +503,12 @@ export class SoundService {
 		let reg: RegisteredMedia;
 		let leadSec = 0;
 		const copyable = e.descriptors.durationSec > 0 && e.descriptors.durationSec <= LIBRARY_PAD_MAX_SECONDS;
-		const stream = copyable ? await this.mediaCall(() => probeAudioStream(this.core.ffmpeg, path)) : null;
+		// the audio stream of this content (probed once per engine: a plan registers the same sounds on every run)
+		let stream = copyable ? (this.streamOf.get(e.fingerprint) ?? null) : null;
+		if (copyable && !stream) {
+			stream = await this.mediaCall(() => probeAudioStream(this.core.ffmpeg, path));
+			remember(this.streamOf, e.fingerprint, stream);
+		}
 		const samples = stream?.sampleRate ? libraryLeadSilenceSamples(e.descriptors, stream.sampleRate) : 0;
 		// A lossy source (Vorbis, Opus, MP3, AAC…) is copied as PCM even when its head is quiet: ffmpeg's seeked
 		// decode of such a stream is not sample-aligned with its full decode (Vorbis: 128 samples late), and the
@@ -500,18 +516,26 @@ export class SoundService {
 		const lossy = !!stream?.codec && !isPcmCodec(stream.codec);
 		if ((samples > 0 || lossy) && stream?.sampleRate) {
 			if ((await fingerprintFile(path)).fingerprint !== e.fingerprint) throw changed();
-			const tmp = await this.mediaCall(() =>
-				writePaddedSound(this.core.ffmpeg, {
-					path,
-					samples,
-					codec: stream.codec,
-					tmpDir: join(this.core.config.paths.mediaDir, '.sound-tmp'),
-				}),
-			);
-			try {
-				reg = await this.core.media.registerUploaded(tmp, paddedFileName(path), { projectId });
-			} finally {
-				await rm(tmp, { force: true });
+			// the same content padded the same way is the same managed file: reuse it while it is online
+			const copyKey = `${e.fingerprint}|${samples}|${stream.codec ?? ''}|${stream.sampleRate}`;
+			const known = this.copyOf.get(copyKey);
+			const again = known ? await this.core.media.registeredIfOnline(known, { projectId }) : null;
+			if (again) reg = again;
+			else {
+				const tmp = await this.mediaCall(() =>
+					writePaddedSound(this.core.ffmpeg, {
+						path,
+						samples,
+						codec: stream.codec,
+						tmpDir: join(this.core.config.paths.mediaDir, '.sound-tmp'),
+					}),
+				);
+				try {
+					reg = await this.core.media.registerUploaded(tmp, paddedFileName(path), { projectId });
+				} finally {
+					await rm(tmp, { force: true });
+				}
+				remember(this.copyOf, copyKey, reg.mediaKey);
 			}
 			leadSec = samples / stream.sampleRate;
 		} else {

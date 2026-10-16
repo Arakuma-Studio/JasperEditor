@@ -89,13 +89,15 @@ import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { HttpError } from '../tools/reply.ts';
 import type { MeasureCache } from './bed.ts';
 import { matchStoredCues } from './match.ts';
-import { solvePlanGains } from './plan-levels.ts';
+import { planPreviewDocument, solvePlanGains } from './plan-levels.ts';
 
 type CueKind = SoundCue['kind'];
 type CueWeight = SoundCue['weight'];
 type CueAlign = (typeof CUE_ALIGNS)[number];
 type Role = (typeof SFX_ROLES)[number];
 
+/** Sounds registered at once (each probes and may copy the file: mostly waiting for ffmpeg). */
+const REGISTER_CONCURRENCY = 3;
 /** Candidates ranked per cue (the rotation looks at the top 4; alternatives follow the pick). */
 const RANKED_PER_CUE = 12;
 /** Derived cues this close (frames) to a stored cue are left to the stored one. */
@@ -947,11 +949,12 @@ export type PlanDeps = {
 	planDelivery?: (
 		doc: ProjectDocument,
 		seq: Sequence,
-		opts: { delivery: SoundDelivery; rebalance: false },
+		opts: { delivery: SoundDelivery; rebalance: false; measure: false },
 		deps: {
 			ff: Ffmpeg;
 			registry: Pick<MediaRegistry, 'get' | 'resolvePath'>;
 			registries: ReturnType<typeof defaultRegistries>;
+			cache?: MeasureCache;
 			signal?: AbortSignal;
 			onSpawn?(child: import('node:child_process').ChildProcess): void;
 			onProgress?(fraction: number, stage: string): void;
@@ -961,6 +964,22 @@ export type PlanDeps = {
 		command: Record<string, unknown>;
 		report: { warnings: { code: string; message: string }[] };
 	}>;
+	/**
+	 * Phase 4: the Mix's loudness analysis of a document (`delivery.ts` `mixAnalysis`): the plan's delivery item stores
+	 * the analysis of the mix WITH the plan's sounds at their solved gains, so the preview normalises right after the
+	 * accept.
+	 */
+	mixAnalysis?: (
+		doc: ProjectDocument,
+		seqId: string,
+		deps: {
+			ff: Ffmpeg;
+			registry: Pick<MediaRegistry, 'get' | 'resolvePath'>;
+			cache?: MeasureCache;
+			signal?: AbortSignal;
+			onSpawn?(child: import('node:child_process').ChildProcess): void;
+		},
+	) => Promise<Record<string, unknown> | null>;
 };
 
 /** The live document of a project (the open editor's when one holds it, else the saved one) and its revision. */
@@ -1046,19 +1065,44 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 		for (const s of p.sounds) if (!order.includes(s.entry.id)) order.push(s.entry.id);
 	const registered = new Map<string, RegisterSoundResponse>();
 	const failed = new Map<string, string>();
-	for (const [i, id] of order.entries()) {
+	{
+		// a few at once (each is a probe and maybe a copy: mostly waiting for ffmpeg); results kept in order of need
+		const results: ({ ok: RegisterSoundResponse } | { error: string } | null)[] = order.map(() => null);
+		let next = 0;
+		let doneCount = 0;
+		let fatal: unknown = null;
+		const worker = async () => {
+			while (next < order.length && !fatal && !aborted()) {
+				const i = next++;
+				const id = order[i]!;
+				try {
+					results[i] = { ok: await sounds.register(id, req.projectId) };
+				} catch (e) {
+					if (e instanceof HttpError && (e.code === 'PROJECT_NOT_FOUND' || e.status === 503)) {
+						fatal ??= e;
+						return;
+					}
+					results[i] = { error: e instanceof Error ? e.message : String(e) };
+				}
+				doneCount++;
+				ctx.progress(0.15 + (0.4 * doneCount) / Math.max(1, order.length), {
+					stage: `Registering sounds (${doneCount} of ${order.length})`,
+				});
+			}
+		};
+		await Promise.all(
+			Array.from({ length: Math.min(REGISTER_CONCURRENCY, Math.max(1, order.length)) }, worker),
+		);
+		if (fatal) throw fatal;
 		if (aborted()) return cancelledResult(req, seq, style);
-		ctx.progress(0.15 + (0.45 * i) / Math.max(1, order.length), {
-			stage: `Registering sounds (${i + 1} of ${order.length})`,
+		order.forEach((id, i) => {
+			const r = results[i];
+			if (r && 'ok' in r) registered.set(id, r.ok);
+			else if (r) {
+				failed.set(id, r.error);
+				ctx.log(`register ${id}: ${r.error}`);
+			}
 		});
-		try {
-			registered.set(id, await sounds.register(id, req.projectId));
-		} catch (e) {
-			if (e instanceof HttpError && (e.code === 'PROJECT_NOT_FOUND' || e.status === 503)) throw e;
-			const msg = e instanceof Error ? e.message : String(e);
-			failed.set(id, msg);
-			ctx.log(`register ${id}: ${msg}`);
-		}
 	}
 	lap('register');
 	const skipped = [...collected.skipped, ...selected.skipped];
@@ -1106,18 +1150,21 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 					'The engine cannot measure the mix here: the delivery preset is left out (apply it with apply_delivery)',
 			});
 		else {
-			ctx.progress(0.58, { stage: `Measuring the ${style.delivery} delivery` });
+			ctx.progress(0.55, { stage: `Measuring the ${style.delivery} delivery` });
 			try {
 				const d = await deps.planDelivery(
 					doc,
 					seq,
-					{ delivery: style.delivery, rebalance: false },
+					// the resulting mix is measured once the plan's sounds and gains are known (below)
+					{ delivery: style.delivery, rebalance: false, measure: false },
 					{
 						ff: deps.ffmpeg,
 						registry: deps.registry,
 						registries: defaultRegistries(deps.mgTemplates),
+						...(deps.measureCache ? { cache: deps.measureCache } : {}),
 						signal: ctx.signal,
 						onSpawn: ctx.trackChild,
+						onProgress: (f, stage) => ctx.progress(0.55 + 0.05 * f, { stage }),
 						timing,
 					},
 				);
@@ -1201,6 +1248,41 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 		draft.report = report;
 	}
 	lap('levels');
+	// The delivery's loudness analysis: the mix as accepting the plan makes it (its sounds at their solved gains, the
+	// room, the dips), so the preview normalises by the right gain right after the accept.
+	const deliveryItem = draft?.items.find((it) => it.id === DELIVERY_ITEM_ID);
+	if (draft && deliveryItem && deps.ffmpeg && deps.registry) {
+		ctx.progress(0.86, { stage: 'Measuring the mix with the planned sounds' });
+		const cmd = (deliveryItem.commands as Record<string, unknown>[]).find(
+			(c) => c.type === 'soundDesign.applyDelivery',
+		);
+		let analysis: Record<string, unknown> | null = null;
+		let why: string | null = null;
+		try {
+			const pv = planPreviewDocument(doc, draft, defaultRegistries(deps.mgTemplates));
+			if (!pv) why = 'the plan does not apply to the edit';
+			else if (deps.mixAnalysis)
+				analysis = await deps.mixAnalysis(pv, seq.id, {
+					ff: deps.ffmpeg,
+					registry: deps.registry,
+					...(deps.measureCache ? { cache: deps.measureCache } : {}),
+					signal: ctx.signal,
+					onSpawn: ctx.trackChild,
+				});
+			else why = 'the engine cannot measure the mix here';
+		} catch (e) {
+			if (aborted()) return cancelledResult(req, seq, style);
+			why = e instanceof Error ? e.message : String(e);
+		}
+		// null clears an older analysis: never normalise the preview by a gain measured on another mix
+		if (cmd && cmd.loudness !== false) cmd.analysis = analysis;
+		if (!analysis && why)
+			report.warnings.push({
+				code: 'W_MIX_UNMEASURED',
+				message: `The mix with the planned sounds could not be measured (${why}): the preview is not loudness-normalised until the mix is analysed (exports always measure it)`,
+			});
+		lap('delivery.planMix');
+	}
 	if (aborted()) return cancelledResult(req, seq, style);
 	if (!draft) {
 		ctx.progress(1, { stage: 'Nothing to propose' });
@@ -1215,7 +1297,7 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 			report,
 		};
 	}
-	ctx.progress(0.85, { stage: `Checking ${draft.items.length} proposal items` });
+	ctx.progress(0.9, { stage: `Checking ${draft.items.length} proposal items` });
 	const created = await proposals.create(req.projectId, draft as unknown as Record<string, unknown>, who);
 	if (aborted()) {
 		// Cancelled while it was being stored: a cancelled plan leaves no proposal behind.

@@ -25,6 +25,7 @@
 // skip the strips no audible clip reaches (`OfflineMixer` `audibleClips`; the same output).
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
+import type { LoudnessSummary } from '@jasper/audio-dsp';
 import { bandLevels, bedLocalPeakLu, shortTermPeakLu, type TimeWindow } from '@jasper/audio-fx';
 import {
 	type AudioStream,
@@ -131,6 +132,8 @@ export class MeasureCache {
 	private bedBytes = 0;
 	private readonly sounds = new Map<string, SoundEntry>();
 	private readonly voices = new Map<string, VoiceEntry>();
+	private readonly loudness = new Map<string, number | null>();
+	private readonly mixes = new Map<string, LoudnessSummary>();
 	constructor(
 		readonly maxBedBytes = 96 * 1024 * 1024,
 		readonly maxSounds = 4000,
@@ -171,20 +174,35 @@ export class MeasureCache {
 	putVoice(key: string, v: VoiceEntry): void {
 		bounded(this.voices, key, v, this.maxSounds);
 	}
+	/** A clip's own integrated loudness (delivery Auto-Match), null for silence. */
+	getLoudness(key: string): number | null | undefined {
+		return this.loudness.has(key) ? lru(this.loudness, key) : undefined;
+	}
+	putLoudness(key: string, v: number | null): void {
+		bounded(this.loudness, key, v, this.maxSounds);
+	}
+	/** A whole mix's loudness summary (the plan's delivery analysis). */
+	getMix(key: string): LoudnessSummary | undefined {
+		return lru(this.mixes, key);
+	}
+	putMix(key: string, v: LoudnessSummary): void {
+		bounded(this.mixes, key, v, 64);
+	}
 	clear(): void {
 		this.beds.clear();
 		this.sounds.clear();
 		this.voices.clear();
+		this.loudness.clear();
+		this.mixes.clear();
 		this.bedBytes = 0;
 	}
 }
 
 function lru<T>(m: Map<string, T>, key: string): T | undefined {
-	const v = m.get(key);
-	if (v !== undefined) {
-		m.delete(key);
-		m.set(key, v);
-	}
+	if (!m.has(key)) return undefined;
+	const v = m.get(key) as T;
+	m.delete(key);
+	m.set(key, v);
 	return v;
 }
 function bounded<T>(m: Map<string, T>, key: string, v: T, max: number): void {
@@ -340,6 +358,43 @@ const keyStrips = (strips: readonly MixStrip[], full: (s: MixStrip) => boolean) 
 		return full(s) ? rest : staticOnly(rest);
 	});
 
+/** Key of the whole mix of a world over `range` (every clip it plays). */
+export function wholeMixKey(world: AudioWorld, range: { start: number; end: number }): string {
+	return mixKey('mix', world, world.snapshot.audioClips, range);
+}
+
+/**
+ * Key of a clip's own signal at source level (delivery Auto-Match: no gain, volume, fades or pan, no strips; the
+ * track's and the Mix's channel formats convert it): relative to the clip's start unless nest levels place it.
+ */
+export function clipLoudnessKey(
+	world: AudioWorld,
+	rc: RenderAudioClip,
+	range: { start: number; end: number },
+): string {
+	const snap = world.snapshot;
+	const mix = snap.audioMix;
+	const fps = snap.settings.fps as Rational;
+	const sr = mix?.sampleRate ?? snap.settings.sampleRate;
+	const absolute = (rc.nestGain?.length ?? 0) > 0;
+	const { clipId: _c, gainDb: _g, volumeDb: _v, pan: _p, fades: _f, track: _t, trackId: _tr, ...own } = rc;
+	const track = mix?.strips.find((s) => s.id === rc.trackId);
+	const map = new Map<string, string>();
+	return sha({
+		v: 1,
+		kind: 'clip-source',
+		clip: canonicalIds({ ...own, start: rc.start - range.start }, map),
+		trackFormat: track?.format ?? null,
+		master: mix?.masterFormat ?? null,
+		fp: world.fingerprint(rc.mediaId),
+		len: range.end - range.start,
+		sr,
+		fps,
+		phase: (((range.start * sr * fps.den) % fps.num) + fps.num) % fps.num,
+		at: absolute ? range.start : null,
+	});
+}
+
 /**
  * Key of a sound's solo render (the clip at 0 dB over `range`, every other clip silent). It holds the clip as it
  * plays (media fingerprint, In point, speed, channels, clip effects, volume, pan…), the strips its signal goes
@@ -389,9 +444,9 @@ function soundKey(
 	};
 }
 
-/** Key of the mix of `clips` over `range` (the bed, the voices): the whole graph, the clips, their media. */
+/** Key of the mix of `clips` over `range` (the bed, the voices, a whole mix): the graph, the clips, their media. */
 function mixKey(
-	kind: 'bed' | 'voice',
+	kind: 'bed' | 'voice' | 'mix',
 	world: AudioWorld,
 	clips: readonly RenderAudioClip[],
 	range: { start: number; end: number },
