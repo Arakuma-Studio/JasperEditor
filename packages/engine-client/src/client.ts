@@ -53,6 +53,7 @@ import {
 	type SceneDetectRequest,
 	type SfxRebalanceRequest,
 	type SoundCuesRequest,
+	type SoundDeliveryRequest,
 	type SoundDesignPlanRequest,
 	type SoundIndexRequest,
 	type SoundRootsPutRequest,
@@ -392,6 +393,14 @@ export class EngineClient {
 	 */
 	rebalanceSfx(req: SfxRebalanceRequest, signal?: AbortSignal) {
 		return this.call('soundDesignRebalance', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/**
+	 * Delivery preset (spec 12 §2.4, P4-R4; `POST /api/sound-design/delivery`): a `sound-design` job that measures the
+	 * sequence and applies (`mode: 'apply'`, one transaction "Apply Delivery Preset") or proposes (the default) the
+	 * preset's loudness normalisation, Auto-Match by type, ducking and re-solved sound-effect gains (`SoundDeliveryResult`).
+	 */
+	applyDelivery(req: SoundDeliveryRequest, signal?: AbortSignal) {
+		return this.call('soundDesignDelivery', { body: req, ...(signal ? { signal } : {}) });
 	}
 	/** Proposals of a project (spec 12 §2.5): summaries, newest first. */
 	listProposals(projectId: string) {

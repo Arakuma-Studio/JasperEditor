@@ -9232,5 +9232,11 @@
   "Clip not found in {0}: {1}": "No se encuentra el clip en {0}: {1}",
   "Clip not found: {0}": "No se encuentra el clip: {0}",
   "report names {0}, which has no gain": "el informe nombra {0}, que no tiene ganancia",
-  "Unknown temp ref {0}: bind it with \"ref\" on a placement layer earlier in the transaction": "Referencia temporal desconocida {0}: vincúlela con \"ref\" en una capa de colocación anterior de la transacción"
+  "Unknown temp ref {0}: bind it with \"ref\" on a placement layer earlier in the transaction": "Referencia temporal desconocida {0}: vincúlela con \"ref\" en una capa de colocación anterior de la transacción",
+  "Apply Delivery Preset": "Aplicar preset de entrega",
+  "Build Into Cue": "Crescendo hacia la señal",
+  "Remove SFX Room Glue": "Quitar la sala común de efectos",
+  "SFX Room Glue": "Sala común de efectos",
+  "Stop Before Cue": "Parar antes de la señal",
+  "Volume Dip": "Bajada de volumen"
 }

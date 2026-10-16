@@ -45,7 +45,7 @@ nobody outside has used it, only Linux was checked — is [`docs/gaps.md`](docs/
 - **Export and interchange.** A planner routes each sequence to the native FFmpeg path, a hybrid layer bake or
   Remotion and refuses by name what a path cannot render; H.264, HEVC, VP9, AV1, ProRes, alpha; render previews and
   smart rendering; FCP 7 XML, FCPXML, EDL, AAF, OMF, ALE and OTIO in both directions.
-- **Agents.** `jasper-mcp` exposes 345 tools and the whole command catalogue; every edit is an undoable
+- **Agents.** `jasper-mcp` exposes 347 tools and the whole command catalogue; every edit is an undoable
   transaction, destructive ones need the user's approval in the editor; a `jasper` CLI; tools that look at and
   operate the live window.
 - **Safety net.** Atomic saves, single-writer leases (a reloaded tab keeps its own), crash-recovery journal, saved
@@ -509,7 +509,9 @@ Tools (345; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `list_sound_credits` · `add_sound_folder` `remove_sound_folder` `rescan_sound_library` · cues: `find_sound_cues`
   (derived from the edit) `set_sound_cues` `place_sound` (peak-exact, layers, alternates; proposes unless mode
   "apply") `swap_sound` `align_peak` · `plan_sound_design` (a whole pass as one proposal, gains solved against the
-  bed) · `rebalance_sfx` (masking solver: each sound effect clears the bed by its target lift, with what limited it)
+  bed; style options room glue, stop-before, build, delivery) · `rebalance_sfx` (masking solver: each sound effect
+  clears the bed by its target lift, with what limited it) · `apply_delivery` (web / podcast / R128 / A/85: Mix
+  loudness, Auto-Match by type, ducking, measured) `set_room_glue` (a shared "SFX Room" reverb)
   (`docs/specs/12-sound-design.md`, `docs/wp-notes/sound-design.md`).
 - Proposals (reviewed and applied by the user in the editor; one undo step): `list_proposals` `get_proposal` (with a
   ghost table) `wait_for_proposal` (decisions and notes) `accept_proposal` (policy-gated for agents) `reject_proposal`.

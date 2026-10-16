@@ -22,7 +22,23 @@ const SOUND_COMMANDS = [
 	'soundDesign.setSettings',
 	'soundDesign.setPeak',
 	'soundDesign.applyGains',
+	'audio.volumeDip',
+	'soundDesign.applyStopBefore',
+	'soundDesign.applyBuild',
+	'soundDesign.ensureBus',
+	'soundDesign.removeBus',
+	'soundDesign.applyDelivery',
 ];
+
+/** A music clip on A1 (Phase 4 mixing examples). */
+const MUSIC = [
+	{ type: 'clip.place', source: { mediaByName: 'clip-a.mp4' }, at: 0, tracks: { audio: 'A1' }, ref: '$music' },
+	{ type: 'essentialSound.setType', clipIds: ['$music'], audioType: 'music' },
+];
+const HERO = (extra: Record<string, unknown>) => ({
+	type: 'soundCue.add',
+	cues: [{ id: 'cue_00000000000000EX', frame: 25, kind: 'land', weight: 'hero', source: 'user', ...extra }],
+});
 
 /** Examples whose prelude runs in the same transaction (they use a `$ref` the prelude binds). */
 const SAME_TX = new Set(['soundDesign.applyGains']);
@@ -69,6 +85,18 @@ const PRELUDE: Record<string, unknown[]> = {
 			layers: [{ mediaId: { mediaByName: 'clip-a.mp4' }, align: 'start', track: 'A1', ref: '$sfx' }],
 		},
 	],
+	'audio.volumeDip': MUSIC,
+	'soundDesign.applyStopBefore': [...MUSIC, HERO({ stopBefore: { seconds: 0.25, depthDb: -24 } })],
+	'soundDesign.applyBuild': [...MUSIC, HERO({ build: { seconds: 0.5, fromHz: 150, toHz: 2000 } })],
+	'soundDesign.ensureBus': [
+		{
+			type: 'soundDesign.place',
+			frame: 30,
+			layers: [{ mediaId: { mediaByName: 'clip-a.mp4' }, align: 'start', track: 'A1' }],
+		},
+	],
+	'soundDesign.removeBus': [{ type: 'soundDesign.ensureBus' }],
+	'soundDesign.applyDelivery': MUSIC,
 };
 
 describe('sound-design describe_commands examples', () => {
