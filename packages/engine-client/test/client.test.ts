@@ -223,7 +223,8 @@ describe('EngineClient requests', () => {
 				url.endsWith('/note') ||
 				url.endsWith('/reject') ||
 				url.endsWith('/select') ||
-				url.endsWith('/reopen')
+				url.endsWith('/reopen') ||
+				url.endsWith('/applied')
 			)
 				return json({ proposal, changed: ['a'] });
 			if (init.method === 'DELETE') return json({ proposalId: proposal.id, deleted: true });
@@ -247,6 +248,16 @@ describe('EngineClient requests', () => {
 		await c.selectProposalAlternative('prj_0000000000000001', proposal.id, { itemId: 'a', alternative: 1 });
 		await c.rejectProposal('prj_0000000000000001', proposal.id, { itemIds: ['a'] });
 		await c.reopenProposal('prj_0000000000000001', proposal.id, { itemIds: 'all' });
+		await c.markProposalApplied('prj_0000000000000001', proposal.id, {
+			itemIds: ['a'],
+			revision: 4,
+			refs: { $x: 'trk_0000000000000001' },
+		});
+		expect(JSON.parse(String(m.calls[7]!.init.body))).toEqual({
+			itemIds: ['a'],
+			revision: 4,
+			refs: { $x: 'trk_0000000000000001' },
+		});
 		expect((await c.deleteProposal('prj_0000000000000001', proposal.id)).deleted).toBe(true);
 		expect(m.calls.map((x) => x.url.slice(base.length))).toEqual([
 			'',
@@ -256,6 +267,7 @@ describe('EngineClient requests', () => {
 			`/${proposal.id}/select`,
 			`/${proposal.id}/reject`,
 			`/${proposal.id}/reopen`,
+			`/${proposal.id}/applied`,
 			`/${proposal.id}`,
 		]);
 	});

@@ -164,6 +164,7 @@ import {
 	ProposalDeleteResponseSchema,
 	ProposalGetQuerySchema,
 	ProposalListResponseSchema,
+	ProposalMarkAppliedRequestSchema,
 	ProposalNoteRequestSchema,
 	ProposalRejectRequestSchema,
 	ProposalReopenRequestSchema,
@@ -1147,6 +1148,12 @@ export const ROUTES = {
 		method: 'POST',
 		path: '/api/projects/:projectId/proposals/:proposalId/select',
 		body: ProposalSelectRequestSchema,
+		response: ProposalDecisionResponseSchema,
+	},
+	proposalMarkApplied: {
+		method: 'POST',
+		path: '/api/projects/:projectId/proposals/:proposalId/applied',
+		body: ProposalMarkAppliedRequestSchema,
 		response: ProposalDecisionResponseSchema,
 	},
 	proposalDelete: {

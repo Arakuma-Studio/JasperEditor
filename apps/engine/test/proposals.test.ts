@@ -571,6 +571,37 @@ describe('accept policy: agents vs the editor window', () => {
 		expect(saved(file).revision).toBe(4);
 	});
 
+	it('applied (a Redo of an undone accept): the editor records it, an agent is refused, nothing is applied', async () => {
+		const app = await secured();
+		const { projectId, seqId, file } = seed(app);
+		const p = await create(app, projectId, draft(seqId), AGENT_H);
+		const seen = events(app);
+		const url = `${base(projectId)}/${p.id}/applied`;
+		const body = { itemIds: ['trk', 'mute'], revision: 9, refs: { $sfx: 'trk_0000000000000099' } };
+		const refused = await post(app, url, body, AGENT_H);
+		expect(refused.statusCode).toBe(403);
+		expect(refused.json()).toMatchObject({ code: 'APPROVAL_REQUIRED', detail: { code: 'E_APPROVAL_REQUIRED' } });
+		expect((await post(app, url, { ...body, itemIds: ['nope'] }, EDITOR_H)).statusCode).toBe(404);
+		expect(
+			(await post(app, url, { ...body, refs: { $sfx: '../etc' } }, EDITOR_H)).json(),
+		).toMatchObject({ code: 'VALIDATION_FAILED' });
+		expect((await post(app, url, { ...body, extra: 1 }, EDITOR_H)).statusCode).toBe(400);
+		const ok = await post(app, url, body, EDITOR_H);
+		expect(ok.statusCode, ok.body).toBe(200);
+		const out = ok.json() as { proposal: Proposal; changed: string[] };
+		expect(out.changed).toEqual(['trk', 'mute']);
+		const trk = out.proposal.items.find((i) => i.id === 'trk')!;
+		expect(trk).toMatchObject({ state: 'accepted', applied: { revision: 9, refs: { $sfx: 'trk_0000000000000099' } } });
+		expect(saved(file).revision).toBe(3);
+		expect(seen.at(-1)?.payload).toMatchObject({ change: 'accepted', itemIds: ['trk', 'mute'], revision: 9 });
+		// again: already accepted items are left alone
+		const again = await post(app, url, body, EDITOR_H);
+		expect((again.json() as { changed: string[] }).changed).toEqual([]);
+		// a later item requiring `trk` composes with the recorded ref
+		const reopened = await post(app, `${base(projectId)}/${p.id}/reopen`, { itemIds: ['mute'] }, EDITOR_H);
+		expect(reopened.statusCode).toBe(200);
+	});
+
 	it('lets an agent accept where agentsMayApply is on; other features keep refusing', async () => {
 		const app = await secured();
 		const { projectId, seqId, file } = seed(app, { agentsMayApply: true });

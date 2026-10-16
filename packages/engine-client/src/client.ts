@@ -37,6 +37,7 @@ import {
 	type ProjectViewJson,
 	type ProposalAcceptRequest,
 	type ProposalCreateRequest,
+	type ProposalMarkAppliedRequest,
 	type ProposalNoteRequest,
 	type ProposalRejectRequest,
 	type ProposalReopenRequest,
@@ -406,6 +407,10 @@ export class EngineClient {
 	}
 	selectProposalAlternative(projectId: string, proposalId: string, req: ProposalSelectRequest) {
 		return this.call('proposalSelect', { params: { projectId, proposalId }, body: req });
+	}
+	/** Editor only: records items whose undone accept the user redid in History as accepted again (nothing applies). */
+	markProposalApplied(projectId: string, proposalId: string, req: ProposalMarkAppliedRequest) {
+		return this.call('proposalMarkApplied', { params: { projectId, proposalId }, body: req });
 	}
 	deleteProposal(projectId: string, proposalId: string) {
 		return this.call('proposalDelete', { params: { projectId, proposalId } });
