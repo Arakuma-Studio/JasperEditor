@@ -4167,6 +4167,215 @@ review (the polling row), gaps.
 - The Sound Design workspace layout changed (Review group below the Library); a stored workspace layout keeps its old
   shape until Window ▸ Workspaces ▸ Reset to Saved Layout (the panel opens next to Markers from Window ▸ Review).
 
+### Phase 3 verification
+
+Branch `feat/sd-p3-verify` (from `feat/sound-design` d932e86a; the helper branch `feat/sd-p3v-web` merged into it). Scope:
+the whole of Phase 3 (P3-R1…R6, "Done when", the Definition of Done) after WP3.1–WP3.3b, the five follow-ups the
+WP3.3b note left (cueSources in MCP, stale reasons, a large Review list, stored workspace layouts, ghost lanes and the
+vertical scroll), and a review of the Phase 3 code for security, atomicity and the accept / undo / redo / reopen state
+machine. Shared host, 16 cores; the load average was **36–187** for the whole pass (other projects' builds and agents),
+so every timing below states its load and is a before/after on the same build and host.
+
+#### Requirements (spec 12 Phase 3) with evidence
+
+| Requirement | Status | Evidence (rerun) |
+|---|---|---|
+| P3-R1 model, `composeAcceptTx`, `proposalGhost`, validation; A then B ≡ A ∪ B; reject leaves the document identical | done | `packages/project/test/proposals.test.ts` (the four fast-check properties, WP3.1), `proposals-preview-ids.test.ts`, `sound-proposal-draft.test.ts`; new here: readable stale reasons and `StaleProblem` (moved / deleted clip, cue, marker; requirement; conflict) |
+| P3-R2 engine store, routes, event, expiry, policy gate | done | `apps/engine/test/proposals.test.ts` (+2 here: reviewer-only routes, reopen while applied, redo record), `proposals-store.test.ts` (+1: no expiry / eviction under an accept), `proposals-fuzz.test.ts`, `proposals-waiting.test.ts`, `fuzz-http.test.ts` |
+| P3-R3 plan job: cues → rank → register → place → proposal, deterministic by seed; style density, palette, sources, respect dialogue (+ `cueSources`) | done | `apps/engine/test/sound-design-plan.test.ts`, `sound-design-plan-cue-sources.test.ts`, `sound-design-plan-levels.test.ts` (Phase 4 gains) |
+| P3-R4 session slice and preview document; the Program monitor plays a proposal's picture and sound | done | `packages/session/test/proposals.test.ts`, `proposals-perf.test.ts` (new), `apps/web/test/proposal-program.test.tsx`, `e2e/sound-proposal-ghosts.spec.ts` (Hear on: the hit on its exact sample) |
+| P3-R5 MCP `plan_sound_design`, `place_sound` propose, `list_proposals`, `get_proposal`, `wait_for_proposal`, `accept_proposal`, `reject_proposal`, `PROPOSALS_GUIDE` | done | `apps/mcp/test/proposals.test.ts` (+ `style.cueSources` here), `sound-guide.test.ts`, `readme-tools.test.ts`; `e2e/sound-p3-mcp.spec.ts` (new: the whole loop through the built jasper-mcp) |
+| P3-R6 card, ghosts, review bar, Review panel, A/B, alternates on ghosts, notes, stale handling, trusted Apply, Undo with Reopen review, Auto Sound Pass… | done | `apps/web/test/review-ui.test.tsx` (+2 here), `review-model.test.ts` (+1), `review-virtual.test.tsx` (new, 500 items), `review-stale-text.test.ts` (new), `proposal-ghost-layer.test.tsx`, `proposal-ghosts-model.test.ts`, `auto-sound-pass.test.tsx`, `workspace-migration.test.ts` (new); `e2e/sound-review.spec.ts` |
+| "Done when": reviewed, partly accepted, applied as one undo step, undone back into review; accept on a changed document reports stale; E2E | done | `e2e/sound-review.spec.ts` (agent plan → card → review → Apply 2 of 4 = one entry → Ctrl+Z → Reopen review with decisions intact → a cue moves → stale with "Cut cue at 00:00:03:00 moved to 00:00:03:10" → Apply reports it), `e2e/sound-p3-mcp.spec.ts`; results below |
+
+Definition of Done: no schema change in this pass (proposals live outside the document; `soundDesign.settings.agentsMayApply`
+already had its read-time default and repair); every document edit is an ordinary command (accept = one transaction, the
+preference = `soundDesign.setSettings`); UI wired with menus, the Review keymap scope (keymap tests) and Window ▸ Review;
+the Program monitor previews a proposal and every export path renders what is applied (ordinary clips, D-42); agents drive
+all of it through MCP; tests are unit, property (state machine, fuzzed items) and fuzz (routes); ran in the real app
+(below); no new assets or ported code.
+
+#### Follow-ups closed
+
+- **(a) `style.cueSources` in MCP.** `plan_sound_design` takes `style.cueSources` (the find_sound_cues sources, strict;
+  `[]` and unknown names refused); README tool list and `SOUND_GUIDE` say so. `apps/mcp/test/proposals.test.ts`: a plan with
+  `cueSources: ['markers']` plans only the marker's event (frame 250) with the same sound as the full plan.
+- **(b) Stale reasons.** The model names what changed with timecodes and the cue's kind, never an id: "The cut cue at
+  00:00:03:00 moved to 00:00:03:10", "The marker “Logo” at 00:00:04:00 moved to 00:00:05:00", "The clip “Shot B” at
+  00:00:02:00 moved to another track", "The cut cue at 00:00:03:00 was deleted" (the kind of a deleted cue comes from the
+  item's own `meta`), "Requires item sfx:003 (“Hit · cut”), which is stale". That English text is what agents read
+  (`reason`); `revalidate` / `planAccept` also return it structured (`StaleItem.problem`: `anchor` with entity, change,
+  frames, name, cue kind, sequence; `requires`; `conflict`), carried by the accept route's `stale[].problem` (API schema).
+  The editor renders the structured problem with `t()` (`apps/web/src/proposals/stale-text.ts`: 36 strings, es.json),
+  using the cue kind's own label; a stored reason without structure is translated when it matches a model template.
+  Rows, their accessible names, the details pane, the ghost card, the announcer and the Apply toasts all use it.
+- **(c) A large Review list; the preview's cost.**
+  - *Virtualised list* (`panels/review/list-layout.ts`, pure): fixed row heights in rem (the UI scale: a 1.25 rem first
+    line, 1.375 rem small-text lines, `py-0.5`, a 1 px border — 35.5 px at the editor's 12 px, +16.5 px for the folded
+    setup line and per unfolded setup item; the row component draws the same heights), groups stacked with their headers, only the rows in view ± 480 px and the current row
+    in the DOM, each group a WAI-ARIA group labelled "Support · 500", options with `aria-posinset` / `aria-setsize`, the
+    group at the top pinned, the current row scrolled to by its computed place. `apps/web/test/review-virtual.test.tsx`
+    (500 items): 36 of 500 options in the DOM, End → the last item current, rendered, named by `aria-activedescendant`
+    and scrolled to; scrolling renders the middle rows; a decision there re-renders without rebuilding the preview.
+    Measured (jsdom, the same 500-marker proposal, old vs new panel side by side, load 110–145): first render 39.2 /
+    49.6 s → 2.1 / 3.4 s, a decision 27.3 / 37.5 s → 3.7 / 5.7 s (60 items: 6.1 / 10.8 s → 1.1 / 3.9 s).
+  - *Preview recompute* — measured first (`packages/session/test/proposals-perf.test.ts`, `PROPOSALS_PERF_ITEMS=500`: 500
+    place items + 526 setup items as the WP3.2 plan builds them, manual timers): **before**, at load ≈ 100, opening review
+    62 397 ms of one main-thread task, after an edit 67 320 ms, after a local accept 62 416 ms, after a reject 567 293 ms.
+    Far over the 50 ms bound: a 500-item review froze the editor for a minute per keystroke. Profile: 80 % in the
+    per-item invariant check, which falls back to the full check for every item (a sound placement changes `media`,
+    `items` and the sequence's `soundDesign`, outside what the incremental checker covers), the rest in the placement
+    handler (O(document) per item).
+  - What changed (`packages/session/src/proposals.ts`, `packages/project/src/proposals/ghost.ts`): items are previewed
+    without the per-item invariant check (a small proposal's result is checked once, and only a failure re-runs it per
+    item to find the culprit; a large one relies on the engine's check of the exact accepted set at Apply, which reports
+    such an item stale — placements refuse overlaps themselves); the anchors' re-validation runs without dry runs (the
+    preview applies every item anyway and flags the ones that fail) and is memoised per (document, proposal); the ghosts'
+    preview and the heard one are memoised (a local accept or clear rebuilds nothing; a reject rebuilds only what Hear
+    plays); `previewProposalSteps` (a generator) lets the session build a preview of more than 64 items in slices of
+    8 ms, yielding between them — the previous preview stays shown, the Review panel says "Updating the preview…",
+    and A/B on a large proposal starts the build instead of blocking. The proposal card's counts are built in slices
+    too (`runInSlices`).
+  - **After**, same test, same host: opening review 11 122 ms of work in 616 slices, after an edit 7 734 ms in 446, after a
+    reject 9 426 ms in 461, after a local accept **74 ms, no rebuild** (load 77–93); longest single slices 209 / 213 / 114 ms
+    (one item's placement plus a GC pause at that load). Final run with p50 / p95: see "Verified" below. The 120-item
+    variant runs in the gate and checks the structure (sliced, equal to the one-shot preview, accept rebuilds nothing,
+    reject reuses the ghosts' preview).
+- **(d) Stored workspace layouts** (helper; `apps/web/src/shell/workspaces/migrations.ts`). No earlier panel addition had
+  been migrated (the storage format was always version 1; Essential Graphics in Motion and the Sound Library in Audio
+  never were): `WORKSPACES_VERSION` 1 → 2 wires the storage's existing `migrate` hook. Only the built-in Sound Design
+  record changes (current and saved): Review is added as a background tab in the group that holds Markers (else History,
+  Jobs, Sound Library, Media Browser, Project), before the first of Markers / History / Jobs — where Window ▸ Review would
+  open it in an old layout; nothing split or resized, active tabs kept; layouts that already have a Review panel (any
+  instance, docked or floating), `null` (factory) layouts and custom workspaces are left alone. Unknown versions still
+  reset (`invalid` / `newer` / `corrupt`). `apps/web/test/workspace-migration.test.ts` (5, including a 300-run property;
+  mutation: identity migration fails the first test). Real app: a stored v1 layout loads as v2 with Review in the left
+  group (screenshot looked at).
+- **(e) Ghost lanes and the vertical scroll** (helper). `computeLayout` takes `extraVideoPx` / `extraAudioPx`: during a review
+  the ghost lanes of new tracks are part of each region's content (40 px per new audio track below the last audio row,
+  pushing the Master row down; 32 px per new video track above the top one); tracks stay where they were, only the
+  scroll range grows, and it shrinks back when the review ends (a stored scroll beyond it is clamped; the wheel starts
+  from the clamped value). The current review item's row or lane is revealed vertically when it changes.
+  `proposal-ghosts-model.test.ts` / `proposal-ghost-layer.test.tsx` (+4; mutations: `extraAudioPx: 0` and no wheel clamp
+  each fail a test); real app with 6 + 7 tracks in a 221 px Timeline: the "A8 · SFX 1 (new)" lane scrolled into view,
+  V7 "Titles (new)" likewise, gone after Exit (screenshots looked at). The Review tab badge reads "1 proposal / 1 item
+  to review" in the singular.
+
+#### Review findings and fixes (each with a test that fails without the fix)
+
+1. **An applied item could be reopened and applied twice.** `reopen` reset accepted items to pending whatever the
+   document held, and any token holder could call it: a stray reopen (another window, a script, an agent over HTTP)
+   followed by Accept placed every sound again. Now an accepted item records the ids its transaction created
+   (`applied.created`, ≤ 10 000) and `reopen` refuses while any of them is in the live document
+   (`409 PROPOSAL_STILL_APPLIED`, pure `reopenRefusals`); `applied` (the Redo record) checks the document has them
+   (`409 PROPOSAL_NOT_APPLIED`). Test: engine "reopen of an applied item…"; the state-machine property's `strayReopen`
+   step (mutation: without the refusal the property fails with `[accept(trk), apply, strayReopen, accept(trk)]`).
+2. **Reviewer actions open to agents.** An agent could reopen the user's rejections, overwrite their notes or swap the
+   alternative they chose just before Apply. `reopen`, `note` and `select` are now editor-only (`403 APPROVAL_REQUIRED`,
+   like `applied`); agents keep create, read, reject (withdraw), delete and the policy-gated accept. MCP never exposed
+   them. Security review AGT-3 table updated.
+3. **Undo / Redo follow-ups could reach the engine out of order**: an Undo and a quick Redo fired `reopen` and `applied`
+   concurrently. They are now queued in History order per session (`settled()` for tests), and the benign answers of a
+   race that resolved itself are not shown as errors. Test: "undo then redo before the engine answered…".
+4. **An allowed agent's accept was not followed through Undo**: undoing it in the editor left the engine saying accepted
+   while the document no longer had it. The session now learns every accept relayed into it from `proposal.changed`
+   `accepted` (with its revision) and follows that History entry like its own. Test: "an allowed agent's accept…"
+   (mutation: without it the property fails with `[agentAccept, undo]`).
+5. **Expiry or eviction under an accept**: a proposal could expire (list) or be evicted (another create) between its
+   accept's transaction and the write of its states. The store skips proposals whose lock is held (`inUse`); the lock
+   holder still sees them expire. Test: "never expires or evicts a proposal an accept or decision is working on".
+6. **Apply showed only clip removals**: an agent's proposal could carry destructive commands (`track.remove`), `force`,
+   or `soundDesign.setSettings {agentsMayApply: true}` inside a harmless label; the editor's accept is the user's edit, so
+   none of it asked. Apply's confirmation now also names what an agent could not run unasked (`approvalNeeds`: the
+   approval rule over the accept closure's chosen commands). Tests: review-model `approvalNeeds`, review-ui "names what an
+   agent could not do without asking…" (cancel applies nothing, the setting stays off).
+7. **Failed-preview flags flickered**: a local decision republished the items without the preview's failures (stale for
+   150 ms → pending → stale). They are kept until the next preview. (Covered by the perf test's accept step.)
+8. Smaller: the Review panel's "Open a project…" line was not translated; its timecodes ignored drop-frame and the start
+   timecode (now the sequence's `seqTimecode`).
+9. Found by looking at the first e2e screenshots of this pass's own virtualised list: rows were laid out at fixed px
+   heights while their lines are rem-based (`h-5` is 15 px at the editor's 12 px root), so a scrolled list showed blank
+   bands where a row's lower part should be. The metrics are now rem-based (`reviewListMetrics(rootFontPx)`) and the
+   row draws exactly those heights (checked in the browser: row children 15 / 17 / 17 px, no gap; e2e screenshots).
+
+Checked and found sound (no change): the policy gate (engine `soundDesignPolicy` reads the live document; an agent's
+`soundDesign.setSettings {agentsMayApply: true}` needs the approval card; the Preferences checkbox clicked through an
+agent's live-UI input is refused by the session's `agentUiTxGuard` — new test; `proposals.apply` refuses agent input and
+untrusted clicks; `x-jasper-agent-input` never counts as the editor; only the editor names a proposal's author);
+accept's atomicity under its per-proposal lock (one transaction; states written after it; concurrent accepts apply
+once — WP3.1 tests); the waiting heuristic (agent reads without `revalidate` only; bounded; forgotten on delete);
+tokens, layers and the Review keymap scope (lint, keymap tests).
+
+#### State machine (property test)
+
+`packages/session/test/proposals-state-machine.test.ts`: the real session and the fake engine (the pure model behind every
+route, with the engine's guards), a 6-item proposal (a track, a mute requiring it, four markers with alternatives); 60
+random sequences of ≤ 24 steps from accept / reject / clear / select alternative / Apply / Undo / Redo / an unrelated
+edit / a stray reopen / an allowed agent's accept; after each step (follow-ups settled) for every item: stored
+`accepted` ⇔ what it adds is in the document, never twice, and the Review shows "applied" exactly for those. Plus two
+directed tests (undo + redo before the engine answers, in both orders; an agent's accept undone and redone).
+
+#### Verified (measured, this branch)
+
+- **Targeted suites** (after the last change; `--maxWorkers=2`, long `--testTimeout` because of the load):
+  `pnpm vitest run packages/project/test/proposals.test.ts packages/session/test/proposals.test.ts
+  packages/session/test/proposals-state-machine.test.ts apps/engine/test/proposals.test.ts` → 4 files, 50 passed;
+  `apps/engine/test/{proposals,proposals-store,sound-design-plan}.test.ts apps/web/test/{review-ui,review-model}.test.*`
+  → 5 files, 57 passed; `apps/web/test/{review-virtual,review-ui}.test.tsx` → 2 files, 16 passed;
+  `apps/web/test/{review-stale-text,review-model,proposal-ghosts-model,proposal-ghost-layer,proposal-program,auto-sound-pass}`
+  → 41 passed; `packages/session/test/proposals-perf.test.ts` (N = 120) passed; `apps/mcp/test/proposals.test.ts`
+  (`MCP_PROPOSALS_TEST_PORT=50611`) → 5 passed (with the `cueSources` case); the helper's 14 web files → 123 passed.
+  Mutation checks: the reopen refusal off in the fake engine → the state-machine property fails
+  (`[accept(trk), apply, strayReopen, accept(trk)]`); `learnAccept` off → it fails (`[agentAccept, undo]`) and so does
+  the directed agent test.
+- **Real app, built stack** (`E2E_PORT=50605 E2E_SKIP_BUILD=1 pnpm exec playwright test -c <config with a 600 s web-server
+  start-up> …`; the stock 60 s start-up timed out twice at load ≈ 80–100, nothing else changed):
+  - `e2e/sound-p3-mcp.spec.ts` (new) **passed** (10.4 min, load 76–99): jasper-mcp `plan_sound_design {style: {seed: 7,
+    cueSources: ['markers']}}` → items at 90 / 180 / 250 (the marker) / 300, nothing applied; the card "e2e-p3-agent
+    proposes Sound design: Sequence 01: 5 sounds on 2 new tracks" with "… is waiting for your review" while
+    `wait_for_proposal` polls; the user rejects the marker's item → that wait returns `changed` with it; accepts two, an
+    alternate on one, a note on the other, Ctrl+Enter → one History entry, "Applied 2 of 4 sounds from e2e-p3-agent";
+    `wait_for_proposal {since}` → accepted / accepted / rejected / pending, `swapped.alternative` 1, the note;
+    `accept_proposal "all"` → `E_APPROVAL_REQUIRED` (the hint names the Review panel and the preference), nothing
+    applied; Preferences ▸ Sound Library ▸ Proposals ticked by a real click → History "Allow Agents to Apply Sound
+    Proposals"; `accept_proposal "all"` → the remaining item applied (the rejection stands), History "Agent: Accept Sound
+    design: Sequence 01 (1 of 18)"; `wait_for_proposal {until: 'decided'}` → `applied`; `start_export {wait: true}` →
+    every placed sound located by cross-correlation with its media: **0 / 0 / 0 samples** from where the document puts it
+    and from the cue frame (r 1.000 / 0.978 / 1.000). Screenshots looked at (`test-results/e2e-sound-p3-mcp/`: card,
+    review with the A4 / A5 ghost lanes, decided, applied, the preference, the agent's apply).
+  - `e2e/sound-review.spec.ts` **2 passed** (3.0 + 3.1 min): the stale row reads "Cut cue at 00;00;03;00 moved to
+    00;00;03;10" (drop-frame sequence); Auto Sound Pass export peaks 0 / 0 / +1 samples (r ≥ 0.991). Screenshots looked
+    at (card, review, decided, applied, reopened — decisions intact after Ctrl+Z and Reopen review, stale).
+  - `e2e/sound-fill.spec.ts` **passed** (5.7 min; export peaks 0 / 0 / −1 samples), `e2e/sound-p2-done.spec.ts` **passed**
+    (23.6 min).
+  - First runs failed on the host, not the feature: sound-fill clicked a clip the timeline had scrolled out of view (the
+    In Context audition's playback page-scrolls the timeline and leaves it there while the playhead returns) and then
+    waited for one outside the rendered window — the spec now fits the sequence and never waits for an unrendered clip;
+    sound-p2-done lost a kept-alive socket while polling its export job (`ECONNRESET`) — the shared `waitForJob` retries
+    that up to 5 times; sound-review's Apply toast (15 s) expired during the undo at load 145 — the spec rests the pointer
+    on it (hover pauses toasts, as for a user); the stale text expected colons (the sequence is drop-frame).
+- GHOSTS_RESULT
+- **Gate**: GATE_RESULT
+
+#### Limits (after this pass)
+
+- **Large proposals.** The placement handler is O(document) per item, so a 1 000-item proposal (500 places) is ≈ 8–11 s of
+  sliced work before its ghosts appear at load 77–93 (the previous preview stays, the panel says "Updating the
+  preview…"); with the host saturated by other builds the same work took minutes. A slice holds one item at least: on a
+  loaded host one item's placement plus a GC pause made single slices of 100–200 ms (PERF_FINAL). Not moved to a worker:
+  the preview document feeds the Program monitor, which keeps unchanged clips' render objects by identity
+  (`stabilizeRenderDoc`), and a cloned document would lose that.
+- An invariant conflict among the items of a proposal of more than 64 items shows at Apply (reported stale, never
+  dropped), not before.
+- An engine crash (or a lost relay answer) between an accept's transaction and the write of its states leaves the items
+  pending although applied; the window is one atomic file write and is not journalled.
+- An allowed agent's accept made headless and undone headless (no editor open) stays recorded as accepted.
+- After an In Context audition the timeline stays scrolled where playback took it while the playhead returns (Phase 2
+  behaviour, seen through `sound-fill`; not changed here).
+- A Sound Design layout saved by a WP3.3b-era build in which the user closed Review gets Review back once.
+- The rest of WP3.1–WP3.3b's limits stand (waiting is inferred from polling; `'all'` never includes invalid / rejected
+  items; an item whose commands name no entity goes stale only when it stops applying).
+
 ## Phase 4: mixing
 
 ### Phase 4 → WP4.1a masking solver
