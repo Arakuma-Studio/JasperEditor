@@ -30,6 +30,7 @@ import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } fro
 import { SIM_WARP_OWNER, simWarpHandlers } from './handlers/sim-warp.ts';
 import { simplifyHandlers } from './handlers/simplify.ts';
 import { SOUND_DESIGN_OWNER, soundHandlers } from './handlers/sound.ts';
+import { soundMixHandlers } from './handlers/sound-mix.ts';
 import { spatialHandlers } from './handlers/spatial.ts';
 import { SPEECH_OWNER, speechHandlers } from './handlers/speech.ts';
 import { STRUCTURE_OWNER, structureHandlers } from './handlers/structure.ts';
@@ -355,6 +356,12 @@ const LABELS: Record<CommandType, string> = {
 	'soundDesign.setSettings': 'Sound Design Settings',
 	'soundDesign.setPeak': 'Set Peak',
 	'soundDesign.applyGains': 'Rebalance SFX Levels',
+	'audio.volumeDip': 'Volume Dip',
+	'soundDesign.applyStopBefore': 'Stop Before Cue',
+	'soundDesign.applyBuild': 'Build Into Cue',
+	'soundDesign.ensureBus': 'SFX Room Glue',
+	'soundDesign.removeBus': 'Remove SFX Room Glue',
+	'soundDesign.applyDelivery': 'Apply Delivery Preset',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -396,6 +403,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[previewsHandlers, PREVIEWS_OWNER],
 	[gapsHandlers, GAPS_OWNER],
 	[soundHandlers, SOUND_DESIGN_OWNER],
+	[soundMixHandlers, SOUND_DESIGN_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
