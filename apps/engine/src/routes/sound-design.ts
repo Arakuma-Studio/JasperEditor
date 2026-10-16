@@ -38,7 +38,7 @@ import type { AgentService } from '../agent/service.ts';
 import { agentNameOf } from '../agent/user-approval.ts';
 import { isProjectId } from '../projects/store.ts';
 import type { ProposalService } from '../proposals/service.ts';
-import { planDelivery, runDelivery } from '../sound-design/delivery.ts';
+import { mixAnalysis, planDelivery, runDelivery } from '../sound-design/delivery.ts';
 import { matchStoredCues } from '../sound-design/match.ts';
 import {
 	liveDocument,
@@ -87,6 +87,7 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 						ffmpeg: core.ffmpeg,
 						registry: core.registry,
 						planDelivery,
+						mixAnalysis,
 					}),
 	);
 

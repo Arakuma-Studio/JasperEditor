@@ -66,6 +66,14 @@ export type MixerOptions = {
 	onlyTracks?: ReadonlySet<string>;
 	/** Skip strip processing after the track input (track-level analysis): output the sum of the track inputs. */
 	tap?: 'master' | 'track-inputs';
+	/**
+	 * Opt-in (analysis renders of a few clips: the sound-design solo and bed renders): only these clips play, and the
+	 * strips none of them reaches (through outputs and sends) are not processed. Exact: such a strip only ever gets
+	 * silence, and every audio effect maps silence to silence from its reset state (audio-fx
+	 * `silence-in-silence-out.test.ts`); latencies and route delays are those of the whole graph, so the output is
+	 * the full graph's with every other clip silent. Default: every clip, every strip.
+	 */
+	audibleClips?: ReadonlySet<string>;
 };
 
 export function dbToGain(db: number): number {
@@ -181,6 +189,8 @@ export class OfflineMixer {
 	private readonly scratch: Float64Array;
 	private readonly scratch2: Float64Array;
 	private readonly tmp: Float32Array[];
+	/** Per strip: whether it is processed (`audibleClips`: reached by an audible clip; the Mix always). */
+	private readonly live: boolean[];
 
 	constructor(private readonly o: MixerOptions) {
 		const snap = o.snapshot;
@@ -280,7 +290,25 @@ export class OfflineMixer {
 				};
 			})
 			.filter((v) => v.trackIndex >= 0 && v.s1 > o.startSample)
+			.filter((v) => !o.audibleClips || o.audibleClips.has(v.clip.clipId))
 			.sort((a, b) => a.s0 - b.s0);
+		this.live = this.strips.map(() => !o.audibleClips);
+		if (o.audibleClips) {
+			// strips feed later ones (processing order), so one pass closes the set; repeated until stable anyway
+			for (const v of this.voices) this.live[v.trackIndex] = true;
+			for (let changed = true, guard = 0; changed && guard <= this.strips.length; guard++) {
+				changed = false;
+				this.strips.forEach((st, i) => {
+					if (!this.live[i]) return;
+					for (const t of [st.out?.target, ...st.sends.map((x) => x.route.target)])
+						if (t !== undefined && !this.live[t]) {
+							this.live[t] = true;
+							changed = true;
+						}
+				});
+			}
+			this.live[this.strips.length - 1] = true;
+		}
 	}
 
 	/** Opens a clip: synthetic sounds (Bars and Tone, leader blips) are generated here; media goes to `openClip`. */
@@ -349,7 +377,7 @@ export class OfflineMixer {
 			this.pos = p1;
 			return;
 		}
-		for (const st of this.strips) this.stripBlock(st, p0, n);
+		for (let i = 0; i < this.strips.length; i++) if (this.live[i]) this.stripBlock(this.strips[i]!, p0, n);
 		this.writeOut(this.master.input, out, n);
 		this.pos = p1;
 	}

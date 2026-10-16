@@ -8,7 +8,9 @@
 // Each place item (and each alternative command set) then ends with `soundDesign.applyGains` naming its clips by the
 // `$sfx_<n>_<layer>` refs its placement binds, so accepting it places the sound AT the solved gain with `sfx.level`
 // {by: 'solver'} and the why-line (meta.why, the report) says "−3 dB, limited by dialogue A1". The solve is
-// deterministic (renders, measurements and the solver are; preview ids are not used by any of them).
+// deterministic: the previews create their entities with ids seeded by item and alternative (so the same plan gives
+// the same preview documents), the measurement caches are keyed by content, not ids (`bed.ts`), and the report names
+// the plan's sounds by their item, layer ref (`$sfx_<n>_<layer>`) and alternative, never by preview clip ids.
 import type {
 	SfxLevelConflict,
 	SfxSolvedLevel,
@@ -17,16 +19,21 @@ import type {
 } from '@jasper/api';
 import type { SolverEvent } from '@jasper/audio-fx';
 import {
+	appliedRefs,
+	applyTransaction,
+	createSeededIdSource,
+	dependencyClosure,
 	type MgTemplateRegistry,
 	type ProjectDocument,
 	type Proposal,
 	type ProposalDraft,
-	previewProposal,
 	type Registries,
 	readClipSfx,
 	type Sequence,
 	type SoundDelivery,
+	selectedCommands,
 	soundDesignSettingsOf,
+	substituteKnownRefs,
 } from '@jasper/project';
 import type { MediaRegistry } from '../media/registry.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
@@ -50,6 +57,8 @@ export type PlanLevelDeps = {
 	signal?: AbortSignal;
 	onSpawn?(child: import('node:child_process').ChildProcess): void;
 	onProgress?(fraction: number, stage: string): void;
+	/** Wall time per stage (ms) is added here (diagnostics). */
+	timing?: Record<string, number>;
 };
 
 type Item = ProposalDraft['items'][number];
@@ -74,20 +83,33 @@ function withRefs(commands: Cmd[], itemId: string): Cmd[] {
 
 const placeLayers = (commands: readonly Cmd[]): number =>
 	(commands.find(isPlace)?.layers as unknown[] | undefined)?.length ?? 0;
+const placeLayersOf = (items: readonly Item[], itemId: string): number => {
+	const it = items.find((x) => x.id === itemId);
+	return it ? placeLayers(it.commands as Cmd[]) : 0;
+};
 
-/** The preview of the draft with alternative `slot` selected where an item has one (0 = the chosen sounds). */
-function preview(
+type SlotPreview = { doc: ProjectDocument; clips: Map<string, string[]> };
+
+/**
+ * The previews of the draft, slot 0 with the chosen sounds and slot k with alternative k selected where an item has
+ * one: every item applied on top of the edit in proposal order, one transaction each with refs carried over and ids
+ * seeded by item and selected alternative (as `previewProposal` does; an item whose requirement failed fails too).
+ * Slot k starts from slot 0's document right before the first item it selects differently (the documents before are
+ * the same), and only the clips each item creates are noted (no ghosts): the same documents for less work.
+ */
+function previewSlots(
 	doc: ProjectDocument,
 	draft: ProposalDraft,
 	items: Item[],
-	slot: number,
-	ctx: { registries: Registries },
-) {
+	slots: number,
+	ctx: { registries: Registries; signal?: AbortSignal | undefined },
+): SlotPreview[] {
+	const seqId = draft.sequenceId ?? null;
 	const p: Proposal = {
 		version: 1,
 		id: 'prp_0000000000000000',
 		projectId: doc.projectId,
-		sequenceId: draft.sequenceId ?? null,
+		sequenceId: seqId,
 		feature: draft.feature,
 		title: draft.title,
 		summary: draft.summary ?? '',
@@ -101,30 +123,104 @@ function preview(
 			group: it.group ?? '',
 			requires: it.requires ?? [],
 			state: 'pending' as const,
-			...(slot > 0 && (it.alternatives?.length ?? 0) >= slot ? { selectedAlternative: slot } : {}),
 		})),
 	};
-	return previewProposal(doc, p, 'undecided', {
-		registries: ctx.registries,
-		now: () => '2026-01-01T00:00:00.000Z',
-		invariants: 'incremental',
-	});
+	const order = dependencyClosure(
+		p,
+		p.items.map((it) => it.id),
+	);
+	const refs0 = appliedRefs(p);
+	type State = {
+		doc: ProjectDocument;
+		refs: Map<string, string>;
+		failed: Set<string>;
+		created: Map<string, string[]>;
+	};
+	/** Applies `order[from…]` with `slot` selected on top of `st`; `snap` records the state before each item. */
+	const run = (slot: number, from: number, st: State, snap?: State[]): State => {
+		let cur = st.doc;
+		const refs = new Map(st.refs);
+		const failed = new Set(st.failed);
+		const created = new Map(st.created);
+		for (let i = from; i < order.length; i++) {
+			if (ctx.signal?.aborted) throw new Error('aborted');
+			snap?.push({ doc: cur, refs: new Map(refs), failed: new Set(failed), created: new Map(created) });
+			const it = order[i]!;
+			const sel = slot > 0 && (it.alternatives?.length ?? 0) >= slot ? slot : 0;
+			if (it.requires.some((r) => failed.has(r))) {
+				failed.add(it.id);
+				continue;
+			}
+			const commands = selectedCommands({ ...it, selectedAlternative: sel }).map((c) =>
+				substituteKnownRefs(c, refs),
+			);
+			const r = applyTransaction(
+				cur,
+				{
+					label: it.label,
+					origin: { agent: 'proposal-preview' },
+					...(seqId ? { sequenceId: seqId } : {}),
+					commands,
+				},
+				{
+					ids: createSeededIdSource(`sound-design-plan:${seqId ?? ''}:${it.id}:${sel}`),
+					now: () => '2026-01-01T00:00:00.000Z',
+					revision: 0,
+					registries: ctx.registries,
+					invariants: 'incremental',
+				},
+			);
+			if (!r.result.ok) {
+				failed.add(it.id);
+				continue;
+			}
+			for (const [k, v] of Object.entries(r.result.refs)) refs.set(k, v);
+			const before = seqId ? cur.sequences[seqId]?.clips : undefined;
+			const after = seqId ? r.document.sequences[seqId]?.clips : undefined;
+			if (before && after && before !== after)
+				created.set(
+					it.id,
+					Object.keys(after).filter((id) => !Object.hasOwn(before, id)),
+				);
+			cur = r.document;
+		}
+		return { doc: cur, refs, failed, created };
+	};
+	const snaps: State[] = [];
+	const empty: State = { doc, refs: refs0, failed: new Set(), created: new Map() };
+	const states = [run(0, 0, empty, snaps)];
+	for (let k = 1; k <= slots; k++) {
+		const j = order.findIndex((it) => (it.alternatives?.length ?? 0) >= k);
+		states.push(j < 0 ? states[0]! : run(k, j, snaps[j]!));
+	}
+	return states.map((st) => ({ doc: st.doc, clips: clipsByItem(st.doc, seqId, st.created) }));
 }
 
-/** Per place item: its clip ids by layer, in the preview document. */
+/**
+ * The document accepting every item of `draft` (its chosen sounds) would give, or null when no item applies. The
+ * same seeded preview the solve measured.
+ */
+export function planPreviewDocument(
+	doc: ProjectDocument,
+	draft: ProposalDraft,
+	registries: Registries,
+): ProjectDocument | null {
+	const pv = previewSlots(doc, draft, draft.items, 0, { registries })[0]!;
+	return pv.doc === doc ? null : pv.doc;
+}
+
+/** Per place item: its clip ids by layer (the audio clips with sound-design metadata it created). */
 function clipsByItem(
-	pv: ReturnType<typeof preview>,
-	seqId: string,
-	placeIds: readonly string[],
+	doc: ProjectDocument,
+	seqId: string | null,
+	created: ReadonlyMap<string, string[]>,
 ): Map<string, string[]> {
-	const seq = pv.document.sequences[seqId];
+	const seq = seqId ? doc.sequences[seqId] : undefined;
 	const out = new Map<string, string[]>();
 	if (!seq) return out;
-	for (const id of placeIds) {
-		const g = pv.items[id];
-		if (!g) continue;
+	for (const [id, ids] of created) {
 		const layers: string[] = [];
-		for (const cid of g.created) {
+		for (const cid of ids) {
 			const c = seq.clips[cid] as { kind?: string; sfx?: unknown } | undefined;
 			if (c?.kind !== 'audio' || c.sfx === undefined) continue;
 			const sfx = readClipSfx(c.sfx);
@@ -183,12 +279,15 @@ export async function solvePlanGains(
 	if (placeIds.length === 0) return { ok: true, items, report };
 	const slots = Math.max(0, ...items.map((it) => (isPlaceItem(it) ? (it.alternatives?.length ?? 0) : 0)));
 	deps.onProgress?.(0, 'Previewing the placements');
-	const previews: { doc: ProjectDocument; clips: Map<string, string[]> }[] = [];
-	for (let k = 0; k <= slots; k++) {
-		if (deps.signal?.aborted) throw new Error('aborted');
-		const pv = preview(doc, draft, items, k, deps);
-		previews.push({ doc: pv.document, clips: clipsByItem(pv, seq.id, placeIds) });
-	}
+	if (deps.signal?.aborted) throw new Error('aborted');
+	const previews = previewSlots(
+		doc,
+		{ ...draft, sequenceId: draft.sequenceId ?? seq.id },
+		items,
+		slots,
+		deps,
+	);
+	if (deps.timing) deps.timing.previews = (deps.timing.previews ?? 0) + (Date.now() - t0);
 	const main = previews[0]!;
 	const mainSeq = main.doc.sequences[seq.id] as Sequence;
 	// What to measure: every layer of the chosen sounds; layer 0 of each alternative.
@@ -233,19 +332,48 @@ export async function solvePlanGains(
 			},
 		};
 	}
+	if (deps.timing) {
+		deps.timing.solo = (deps.timing.solo ?? 0) + measured.ms.sound;
+		deps.timing.bed = (deps.timing.bed ?? 0) + measured.ms.bed;
+		deps.timing.voice = (deps.timing.voice ?? 0) + measured.ms.voice;
+	}
 	// The chosen sounds, solved together.
 	const mainTargets = targets.filter((t) => t.slot === 0 && measured.sounds.has(t.clipId));
 	const mainEvents: SolverEvent[] = mainTargets.map((t) =>
 		solverEventOf(t.info, measured.sounds.get(t.clipId)!),
 	);
 	const solved = solveAt(mainEvents, delivery);
+	// The preview's clips do not exist in the project: the report names them by item, layer ref and alternative.
+	const nameOf = new Map<string, { ref: string; itemId: string; label: string }>();
+	for (const t of targets)
+		nameOf.set(t.clipId, {
+			ref: layerRef(t.itemId, t.layer),
+			itemId: t.itemId,
+			label:
+				t.slot > 0
+					? `${t.itemId} (alternative ${t.slot})`
+					: `${t.itemId}${placeLayersOf(items, t.itemId) > 1 ? ` layer ${t.layer + 1}` : ''}`,
+		});
+	const named = (text: string) => {
+		let out = text;
+		for (const [id, n] of nameOf) if (out.includes(id)) out = out.split(id).join(n.label);
+		return out;
+	};
 	const levelOf = new Map<string, SfxSolvedLevel>();
 	const conflicts: SfxLevelConflict[] = [];
 	solved.events.forEach((r, i) => {
 		const t = mainTargets[i]!;
 		levelOf.set(t.clipId, solvedLevel(r, measured.sounds.get(t.clipId)!, lo.truePeakCeilingDb));
-		conflicts.push(...conflictsOf(r, t.itemId));
+		for (const c of conflictsOf(r, t.itemId))
+			conflicts.push({ ...c, clipId: layerRef(t.itemId, t.layer), message: named(c.message) });
 	});
+	const solverWarnings = new Map<string, { code: string; message: string }>();
+	const keepWarning = (w: { code: string; message: string }) => {
+		if (w.code === 'W_CONFLICT') return; // reported as `conflicts`
+		const m = { code: w.code, message: named(w.message).slice(0, 1000) };
+		solverWarnings.set(`${m.code}\u0000${m.message}`, m);
+	};
+	for (const w of solved.warnings) keepWarning(w);
 	// Each alternative in place of its item's chosen sound (layer 0), with the other chosen sounds.
 	const altLevel = new Map<string, SfxSolvedLevel>();
 	for (const t of targets) {
@@ -253,11 +381,14 @@ export async function solvePlanGains(
 		const own = mainTargets.findIndex((m) => m.itemId === t.itemId && m.layer === 0);
 		const ev = solverEventOf(t.info, measured.sounds.get(t.clipId)!);
 		const events = own >= 0 ? mainEvents.map((e, i) => (i === own ? ev : e)) : [...mainEvents, ev];
-		const r = solveAt(events, delivery).events[own >= 0 ? own : events.length - 1]!;
+		const res = solveAt(events, delivery);
+		const r = res.events[own >= 0 ? own : events.length - 1]!;
 		altLevel.set(
 			`${t.itemId}#${t.slot}`,
 			solvedLevel(r, measured.sounds.get(t.clipId)!, lo.truePeakCeilingDb),
 		);
+		// what this solve says about the alternative itself (the chosen sounds' own warnings come from the main solve)
+		for (const w of res.warnings) if (w.clipId === t.clipId) keepWarning(w);
 	}
 	const gainsCommand = (itemId: string, levels: (SfxSolvedLevel | undefined)[]) => {
 		const gains: Record<string, number> = {};
@@ -286,6 +417,8 @@ export async function solvePlanGains(
 			meta.gainDb = l0.gainDb;
 			meta.level = levelMeta(l0);
 		}
+		// the further layers of a marker naming several types ("sfx: boom+whoosh"), in layer order
+		if (levels.length > 1) meta.layerLevels = levels.slice(1).map((l) => (l ? levelMeta(l) : null));
 		const ev = reportEvents.get(it.id) as (SoundDesignPlanEvent & Record<string, unknown>) | undefined;
 		if (ev && l0) {
 			ev.why = `${ev.why} · ${l0.reason}`.slice(0, 1000);
@@ -320,11 +453,9 @@ export async function solvePlanGains(
 		...report.warnings,
 		...measured.missing.map((m) => ({
 			code: 'W_LEVEL_UNMEASURED',
-			message: `${m.clipId}: ${m.reason}; placement’s default level applies`,
+			message: `${nameOf.get(m.clipId)?.label ?? m.clipId}: ${m.reason}; placement’s default level applies`,
 		})),
-		...solved.warnings
-			.filter((w) => w.code !== 'W_CONFLICT')
-			.map((w) => ({ code: w.code, message: w.message })),
+		...solverWarnings.values(),
 	];
 	return {
 		ok: true,

@@ -14,6 +14,8 @@
 // changed sound effect, each requiring it). The plan job uses `planDelivery` for its `style.delivery` setup item.
 import { tmpdir } from 'node:os';
 import {
+	type SfxLevelConflict,
+	type SfxSolvedLevel,
 	type SoundDeliveryClip,
 	type SoundDeliveryMeasure,
 	type SoundDeliveryReport,
@@ -26,7 +28,9 @@ import {
 	DUCK_BRIDGE_S,
 	DUCK_HOP_S,
 	DUCK_MIN_ON_S,
+	defaultChannelWeights,
 	LoudnessMeter,
+	type LoudnessSummary,
 	sensitivityThresholdDb,
 } from '@jasper/audio-dsp';
 import {
@@ -59,8 +63,17 @@ import type { MediaRegistry } from '../media/registry.ts';
 import type { ProposalService, Requester } from '../proposals/service.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { HttpError } from '../tools/reply.ts';
-import { type AudioWorld, audioWorld, type MeasureCache, measureSfxEvents } from './bed.ts';
-import { fmtDb, gainReport, solveAt, solvedLevel, solverEventOf } from './levels.ts';
+import { applyMeasuredMix } from './apply-guard.ts';
+import {
+	type AudioWorld,
+	audioWorld,
+	clipLoudnessKey,
+	type MeasureCache,
+	measureCache,
+	measureSfxEvents,
+	wholeMixKey,
+} from './bed.ts';
+import { conflictsOf, fmtDb, gainReport, solveAt, solvedLevel, solverEventOf } from './levels.ts';
 import { liveDocument, PlanInputError, planSequence } from './plan.ts';
 import { rebalanceTargets } from './rebalance.ts';
 
@@ -73,6 +86,8 @@ const HOP_SEC = 0.1;
 /** "Under the voice" is capped at this (LU) when the bed is silent during speech. */
 const MAX_UNDER_LU = 99;
 const SAME_DB = 0.005;
+/** Clip loudness renders at once (each decodes one clip: mostly waiting for ffmpeg). */
+const CLIP_CONCURRENCY = 3;
 
 type Cmd = Record<string, unknown>;
 const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
@@ -87,6 +102,8 @@ export type DeliveryMeasureDeps = {
 	signal?: AbortSignal;
 	onSpawn?(child: import('node:child_process').ChildProcess): void;
 	onProgress?(fraction: number, stage: string): void;
+	/** Wall time per stage (ms) is added here (diagnostics). */
+	timing?: Record<string, number>;
 };
 
 export type DeliveryOptions = {
@@ -95,13 +112,26 @@ export type DeliveryOptions = {
 	autoMatch?: boolean;
 	ducking?: boolean;
 	rebalance?: boolean;
+	/**
+	 * Measure the resulting mix (default true): the report's `measure` and the Mix's loudness analysis in the command.
+	 * The plan job passes false: its delivery is measured on the plan's own preview, with its sounds (`mixAnalysis`).
+	 */
+	measure?: boolean;
 };
 
 export type DeliveryPlan = {
 	/** `soundDesign.applyDelivery` (with the measured analysis when loudness is on). */
 	command: Cmd;
 	/** `soundDesign.applyGains` per changed sound effect (clip id → command), in timeline order. */
-	gains: { clipId: string; title: string; fromDb: number; gainDb: number; reason: string; command: Cmd }[];
+	gains: {
+		clipId: string;
+		title: string;
+		fromDb: number;
+		gainDb: number;
+		reason: string;
+		level: SfxSolvedLevel;
+		command: Cmd;
+	}[];
 	report: SoundDeliveryReport;
 	/** The document after both (simulated). */
 	doc: ProjectDocument;
@@ -162,15 +192,41 @@ async function clipLoudness(
 ): Promise<number | null> {
 	const rc = world.snapshot.audioClips.find((c) => c.clipId === clipId);
 	if (!rc) return null;
+	const range = { start: rc.start, end: rc.start + rc.duration };
+	// the clip's own signal (source levels, no strips): the same content measures the same wherever it sits
+	const key = clipLoudnessKey(world, rc, range);
+	const cache = deps.cache ?? measureCache;
+	const hit = cache.getLoudness(key);
+	if (hit !== undefined) return hit;
 	const r = await renderMixdown({
 		...base(world, deps),
-		range: { start: rc.start, end: rc.start + rc.duration },
+		range,
 		onlyClips: new Set([clipId]),
 		clipLevels: 'source',
 		tap: 'track-inputs',
 	});
 	const v = r.loudness.integrated;
-	return fin(v) ? r3(v) : null;
+	const out = fin(v) ? r3(v) : null;
+	cache.putLoudness(key, out);
+	return out;
+}
+
+/** Runs `fn` over `items` with at most `n` at once; results in input order. */
+async function pooled<T, R>(
+	items: readonly T[],
+	n: number,
+	fn: (x: T, i: number) => Promise<R>,
+): Promise<R[]> {
+	const out = new Array<R>(items.length);
+	let next = 0;
+	const worker = async () => {
+		while (next < items.length) {
+			const i = next++;
+			out[i] = await fn(items[i]!, i);
+		}
+	};
+	await Promise.all(Array.from({ length: Math.max(1, Math.min(n, items.length)) }, worker));
+	return out;
 }
 
 /** Activity regions (sequence flicks) of `triggers` played together over `range` (frames), like the analysis job. */
@@ -224,9 +280,11 @@ async function mixLoudness(
 	const r = await renderMixdown({
 		...base(world, deps),
 		range,
-		...(clipIds ? { onlyClips: clipIds } : {}),
+		...(clipIds ? { onlyClips: clipIds, skipSilentStrips: true } : {}),
+		// one meter: this one (the mixdown's own would measure the same samples again)
+		meter: false,
 		onBlock: (planar, n) => {
-			meter ??= new LoudnessMeter(sr, planar.length);
+			meter ??= new LoudnessMeter(sr, planar.length, { weights: defaultChannelWeights(planar.length) });
 			let i = 0;
 			while (i < n) {
 				const k = Math.min(n - i, hop - (pos % hop));
@@ -237,7 +295,45 @@ async function mixLoudness(
 			}
 		},
 	});
-	return { summary: r.loudness, momentary: mom };
+	const m = (meter ?? new LoudnessMeter(sr, Math.max(1, r.channels))) as LoudnessMeter;
+	m.flush();
+	return { summary: m.summary(), momentary: mom };
+}
+
+/**
+ * The Mix's loudness analysis of `doc`'s sequence as it plays (master, before the Mix normalisation): one render of
+ * the whole sequence; null when it is silent. Cached by content (the render's clips, media and graph).
+ */
+export async function mixAnalysis(
+	doc: ProjectDocument,
+	seqId: string,
+	deps: Pick<DeliveryMeasureDeps, 'ff' | 'registry' | 'cache' | 'signal' | 'onSpawn'>,
+): Promise<Cmd | null> {
+	const world = await audioWorld(doc, seqId, deps.registry);
+	const seq = doc.sequences[seqId] as Sequence;
+	const range = { start: 0, end: Math.max(1, Math.ceil(sequenceDuration(seq))) };
+	const cache = deps.cache ?? measureCache;
+	const key = wholeMixKey(world, range);
+	let s = cache.getMix(key);
+	if (!s) {
+		s = (await mixLoudness(world, range, null, deps as DeliveryMeasureDeps)).summary;
+		cache.putMix(key, s);
+	}
+	return analysisOf(s, doc, seqId);
+}
+
+/** A stored loudness analysis of a measured mix (`mixer.setLoudness` / `soundDesign.applyDelivery` `analysis`). */
+function analysisOf(s: LoudnessSummary, doc: ProjectDocument, seqId: string): Cmd | null {
+	if (!fin(s.integrated)) return null;
+	return {
+		integratedLufs: r3(s.integrated),
+		truePeakDbtp: fin(s.truePeakDb) ? r3(s.truePeakDb) : null,
+		lra: fin(s.lra) ? r3(s.lra) : null,
+		maxMomentaryLufs: fin(s.maxMomentary) ? r3(s.maxMomentary) : null,
+		maxShortTermLufs: fin(s.maxShortTerm) ? r3(s.maxShortTerm) : null,
+		mixHash: mixFingerprint(doc, seqId),
+		analyzedAt: new Date().toISOString(),
+	};
 }
 
 /** Energy mean of momentary values (LUFS) over the frames `use` marks; −∞ when silent there. */
@@ -313,19 +409,7 @@ async function measureResult(
 		musicUnderVoiceLu: musicUnder,
 		ambienceUnderVoiceLu: ambienceUnder,
 	};
-	const s = all.summary;
-	const analysis = fin(integ)
-		? {
-				integratedLufs: r3(integ),
-				truePeakDbtp: fin(s.truePeakDb) ? r3(s.truePeakDb) : null,
-				lra: fin(s.lra) ? r3(s.lra) : null,
-				maxMomentaryLufs: fin(s.maxMomentary) ? r3(s.maxMomentary) : null,
-				maxShortTermLufs: fin(s.maxShortTerm) ? r3(s.maxShortTerm) : null,
-				mixHash: mixFingerprint(doc, seqId),
-				analyzedAt: new Date().toISOString(),
-			}
-		: null;
-	return { measure, analysis };
+	return { measure, analysis: analysisOf(all.summary, doc, seqId) };
 }
 
 /**
@@ -340,11 +424,16 @@ export async function planDelivery(
 ): Promise<DeliveryPlan> {
 	const t0 = Date.now();
 	const preset = deliveryPreset(opts.delivery);
-	const warnings: { code: string; message: string }[] = [];
+	const warnings: SoundDeliveryReport['warnings'] = [];
 	const aborted = () => {
 		if (deps.signal?.aborted) throw new JobError('CANCELLED', 'Cancelled', false);
 	};
 	const progress = (f: number, s: string) => deps.onProgress?.(f, s);
+	let tLap = Date.now();
+	const lap = (name: string) => {
+		if (deps.timing) deps.timing[name] = (deps.timing[name] ?? 0) + (Date.now() - tLap);
+		tLap = Date.now();
+	};
 	// 1. Auto-Match measurements.
 	progress(0.02, 'Measuring dialogue, music and ambience');
 	const world0 = await audioWorld(doc, seq.id, deps.registry);
@@ -357,10 +446,19 @@ export async function planDelivery(
 		const ids = ['dialogue', 'music', 'ambience'].flatMap((t) =>
 			(types0.get(t) ?? []).map((id) => ({ id, t })),
 		);
-		for (const [i, { id, t }] of ids.entries()) {
+		let doneClips = 0;
+		const lufsOf = await pooled(ids, CLIP_CONCURRENCY, async ({ id }) => {
 			aborted();
-			progress(0.02 + (0.25 * i) / Math.max(1, ids.length), `Measuring clip ${i + 1} of ${ids.length}`);
-			const lufs = await clipLoudness(world0, id, deps);
+			const v = await clipLoudness(world0, id, deps);
+			doneClips++;
+			progress(
+				0.02 + (0.25 * doneClips) / Math.max(1, ids.length),
+				`Measuring clip ${doneClips} of ${ids.length}`,
+			);
+			return v;
+		});
+		for (const [i, { id, t }] of ids.entries()) {
+			const lufs = lufsOf[i] ?? null;
 			measured[id] = lufs;
 			const target = targets[t as 'dialogue' | 'music' | 'ambience'];
 			clips.push({
@@ -374,6 +472,7 @@ export async function planDelivery(
 			});
 		}
 	}
+	lap('delivery.clipLoudness');
 	const matchCmd: Cmd = {
 		type: 'soundDesign.applyDelivery',
 		sequenceId: seq.id,
@@ -431,6 +530,7 @@ export async function planDelivery(
 					'No music or ambience clip has audible clips of its "Duck against" types: nothing was ducked',
 			});
 	}
+	lap('delivery.activity');
 	const command: Cmd = {
 		type: 'soundDesign.applyDelivery',
 		sequenceId: seq.id,
@@ -444,6 +544,7 @@ export async function planDelivery(
 	const seq2 = doc2.sequences[seq.id] as Sequence;
 	// 3. Sound effects against the new bed.
 	const gains: DeliveryPlan['gains'] = [];
+	const conflicts: SfxLevelConflict[] = [];
 	let sfx: SoundDeliveryReport['sfx'] = null;
 	let doc3 = doc2;
 	if (opts.rebalance !== false) {
@@ -471,9 +572,13 @@ export async function planDelivery(
 			);
 			const ceiling = preset.truePeakDb;
 			let limited = 0;
+			for (const w of solved.warnings)
+				if (w.code !== 'W_CONFLICT')
+					warnings.push({ code: w.code, message: w.message, ...(w.clipId ? { clipId: w.clipId } : {}) });
 			solved.events.forEach((r, i) => {
 				const info = solvable[i]!;
 				const level = solvedLevel(r, m.sounds.get(info.clipId)!, ceiling);
+				conflicts.push(...conflictsOf(r));
 				if (level.limitedBy.length) limited++;
 				if (Math.abs(level.gainDb - info.gainDb) < SAME_DB && info.owner === 'solver') return;
 				gains.push({
@@ -482,6 +587,7 @@ export async function planDelivery(
 					fromDb: info.gainDb,
 					gainDb: level.gainDb,
 					reason: level.reason,
+					level,
 					command: {
 						type: 'soundDesign.applyGains',
 						sequenceId: seq.id,
@@ -504,17 +610,27 @@ export async function planDelivery(
 			);
 		}
 	}
+	lap('delivery.sfx');
 	// 4. The result.
 	aborted();
 	progress(0.75, 'Measuring the delivered mix');
-	const res = await measureResult(doc3, seq.id, opts.delivery, opts.loudness !== false, deps);
+	const res =
+		opts.measure === false
+			? { measure: null, analysis: null }
+			: await measureResult(doc3, seq.id, opts.delivery, opts.loudness !== false, deps);
 	if (opts.loudness !== false && res.analysis) command.analysis = res.analysis;
-	if (res.measure.musicUnderVoiceLu !== null && res.measure.musicUnderVoiceLu < DELIVERY_RELATIVE_LU.music)
+	lap('delivery.measure');
+	if (
+		res.measure &&
+		res.measure.musicUnderVoiceLu !== null &&
+		res.measure.musicUnderVoiceLu < DELIVERY_RELATIVE_LU.music
+	)
 		warnings.push({
 			code: 'W_MUSIC_OVER_VOICE',
 			message: `The music is ${fmtDb(res.measure.musicUnderVoiceLu)} LU under the voice during speech (target ≥ ${DELIVERY_RELATIVE_LU.music} LU): turn Ducking on for it or lower it`,
 		});
 	if (
+		res.measure &&
 		res.measure.ambienceUnderVoiceLu !== null &&
 		res.measure.ambienceUnderVoiceLu < DELIVERY_RELATIVE_LU.ambience
 	)
@@ -522,7 +638,7 @@ export async function planDelivery(
 			code: 'W_AMBIENCE_OVER_VOICE',
 			message: `The ambience is ${fmtDb(res.measure.ambienceUnderVoiceLu)} LU under the voice during speech (target ≥ ${DELIVERY_RELATIVE_LU.ambience} LU)`,
 		});
-	if (res.measure.mixLufs === null)
+	if (res.measure && res.measure.mixLufs === null)
 		warnings.push({ code: 'W_SILENT_MIX', message: 'The sequence is silent: there is nothing to normalise' });
 	const report: SoundDeliveryReport = {
 		version: 1,
@@ -540,6 +656,7 @@ export async function planDelivery(
 		sfx,
 		measure: res.measure,
 		warnings,
+		...(conflicts.length ? { conflicts } : {}),
 		ms: Date.now() - t0,
 	};
 	progress(0.95, 'Measured');
@@ -615,29 +732,18 @@ async function delivery(ctx: JobContext, deps: DeliveryDeps): Promise<SoundDeliv
 	const preset = deliveryPreset(req.delivery);
 	if (mode === 'apply') {
 		ctx.progress(0.9, { stage: 'Applying' });
-		const out = await agent.transact(
-			req.projectId,
-			{
-				label: `${DELIVERY_LABEL}: ${preset.label}`.slice(0, 200),
-				origin: { agent: who.agent },
-				sequenceId: seq.id,
-				...(live.revision !== null ? { expectedRevision: live.revision } : {}),
-				commands: [plan.command, ...plan.gains.map((g) => g.command)],
-			},
-			{ fallbackAgent: who.agent, ...(who.editor ? { preApproved: true, asUser: true } : {}) },
-		);
-		const r = out.result as { ok: boolean; revision?: number; errors?: { code: string; message: string }[] };
-		if (!r.ok) {
-			const e = r.errors?.[0];
-			throw new JobError(
-				e?.code === 'E_CONFLICT' ? 'CONFLICT' : (e?.code ?? 'TRANSACTION_REJECTED'),
-				`The delivery was not applied: ${e?.message ?? 'the transaction was refused'}`,
-				e?.code === 'E_CONFLICT',
-				{ errors: r.errors?.slice(0, 5) ?? [] },
-			);
-		}
+		const revision = await applyMeasuredMix(agent, {
+			projectId: req.projectId,
+			sequenceId: seq.id,
+			measured: live.doc,
+			label: `${DELIVERY_LABEL}: ${preset.label}`.slice(0, 200),
+			agentName: who.agent,
+			editor: who.editor,
+			commands: [plan.command, ...plan.gains.map((g) => g.command)],
+			what: 'The delivery was not applied',
+		});
 		ctx.progress(1, { stage: 'Applied' });
-		return { ...result, applied: true, revision: r.revision ?? null, proposalId: null, report: plan.report };
+		return { ...result, applied: true, revision, proposalId: null, report: plan.report };
 	}
 	const proposals = deps.proposals();
 	if (!proposals) throw new JobError('NOT_AVAILABLE', 'The proposal service is not running', true);
@@ -646,6 +752,13 @@ async function delivery(ctx: JobContext, deps: DeliveryDeps): Promise<SoundDeliv
 	)?.name;
 	const m = plan.report.measure;
 	const width = Math.max(3, String(plan.gains.length).length);
+	const gainItemId = (i: number) => `gain:${String(i + 1).padStart(width, '0')}`;
+	// each conflict names the item carrying its clip's gain
+	const itemOf = new Map(plan.gains.map((g, i) => [g.clipId, gainItemId(i)]));
+	for (const c of plan.report.conflicts ?? []) {
+		const itemId = itemOf.get(c.clipId);
+		if (itemId) c.itemId = itemId;
+	}
 	const draft: ProposalDraft = {
 		sequenceId: seq.id,
 		feature: SOUND_DESIGN_FEATURE,
@@ -681,7 +794,7 @@ async function delivery(ctx: JobContext, deps: DeliveryDeps): Promise<SoundDeliv
 				},
 			},
 			...plan.gains.map((g, i) => ({
-				id: `gain:${String(i + 1).padStart(width, '0')}`,
+				id: gainItemId(i),
 				label: `${g.title} ${fmtDb(g.fromDb)} → ${fmtDb(g.gainDb)} dB`.slice(0, 200),
 				group: 'gain',
 				requires: ['delivery'],
@@ -692,6 +805,9 @@ async function delivery(ctx: JobContext, deps: DeliveryDeps): Promise<SoundDeliv
 					clipId: g.clipId,
 					fromDb: g.fromDb,
 					gainDb: g.gainDb,
+					targetLiftDb: g.level.targetLiftDb,
+					achievedLiftDb: g.level.achievedLiftDb,
+					limitedBy: g.level.limitedBy,
 					why: `${g.title}: ${g.reason} (against the ${preset.label} mix)`.slice(0, 1000),
 				},
 			})),

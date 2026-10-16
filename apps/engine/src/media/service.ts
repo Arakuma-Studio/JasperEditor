@@ -178,6 +178,22 @@ export class MediaService {
 	}
 
 	/**
+	 * The registration of media already in the store and online (what registering the same content again returns),
+	 * or null: lets a caller that knows which content it would produce skip producing it.
+	 */
+	async registeredIfOnline(
+		mediaKey: string,
+		opts: { projectId?: string } = {},
+	): Promise<RegisteredMedia | null> {
+		return this.mutex.run(mediaKey, async () => {
+			const existing = this.deps.registry.get(mediaKey);
+			if (!existing || (await this.deps.registry.availability(mediaKey)) !== 'online') return null;
+			this.deps.derivatives.autoQueue(existing, opts.projectId);
+			return this.deps.registry.toRegistered(existing, { exposePath: this.deps.exposePaths });
+		});
+	}
+
+	/**
 	 * Registers a completed upload: moves `tmpFile` to `<appdir>/media/<mediaKey>/<name>` (or discards it
 	 * when the same content is already managed) and probes it.
 	 */

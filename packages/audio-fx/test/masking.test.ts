@@ -328,6 +328,43 @@ describe('order and post-verification (an earlier constraint is never silently b
 		);
 	});
 
+	it('a step 2 / 3 bound under the gain range: the repeat conflict names that constraint, not the clamp', () => {
+		// q's bed cap allows −32 dB (quiet bed reference −26, +6 LU, a sound peaking at +12 LU at 0 dB): the clamp keeps
+		// −30 (conflict:clamp/bed-cap); its repeats sit at +3.5, so consistency loses — to the BED CAP, which is what
+		// holds q down (before: "conflict:clamp/consistency", as if the gain range were the reason)
+		const loud = { bedBandsDb: Array(7).fill(-20), bedLocalPeakLu: -10 };
+		const r = solveSfxGains([
+			ev({ clipId: 'a', soundId: 'x', ...loud }),
+			ev({ clipId: 'b', soundId: 'x', ...loud }),
+			ev({ clipId: 'q', soundId: 'x', bedBandsDb: Array(7).fill(-60), bedLocalPeakLu: -40, soundPeakLu: 12 }),
+		]);
+		const q = one(r, 'q');
+		expect(q.gainDb).toBeCloseTo(-30, 9);
+		expect(q.limitedBy).toContain('conflict:clamp/bed-cap');
+		expect(q.limitedBy).toContain('conflict:bed-cap/consistency');
+		expect(q.limitedBy).not.toContain('conflict:clamp/consistency');
+		expect(r.warnings.some((w) => w.code === 'W_UNRESOLVED')).toBe(false);
+		// the same for a hero shadow under −30: a support at −28 next to a hero (−28 × 0.6 → −32.4)
+		const r2 = solveSfxGains([
+			ev({ clipId: 'h', weight: 'hero', startSec: 0, endSec: 0.3, soundId: 'hh' }),
+			ev({
+				clipId: 's1',
+				soundId: 'y',
+				startSec: 0.05,
+				endSec: 0.5,
+				baseGainDb: -28,
+				soundBandsDb: Array(7).fill(-10),
+			}),
+			ev({ clipId: 's2', soundId: 'y', startSec: 10, endSec: 10.5, ...loud }),
+			ev({ clipId: 's3', soundId: 'y', startSec: 20, endSec: 20.5, ...loud }),
+		]);
+		const s1 = one(r2, 's1');
+		expect(s1.limitedBy).toContain('conflict:clamp/hero-shadow');
+		expect(s1.limitedBy).toContain('conflict:hero-shadow/consistency');
+		expect(s1.limitedBy).not.toContain('conflict:clamp/consistency');
+		expect(r2.warnings.some((w) => w.code === 'W_UNRESOLVED')).toBe(false);
+	});
+
 	it('step 4 would break step 3: a shadowed support stays shadowed', () => {
 		const r = solveSfxGains([
 			ev({ clipId: 'h', weight: 'hero', startSec: 0, endSec: 0.3, soundId: 'hh' }),

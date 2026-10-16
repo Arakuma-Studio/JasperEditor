@@ -400,7 +400,9 @@ function upper(st: State, by: SolverConstraint, bound: number): void {
 	if (st.g > st.lo + EPS) st.limited |= BIT[by];
 	st.g = st.lo;
 	st.hi = st.lo;
-	st.hiBy = st.loBy;
+	// the gain is held at the floor because THIS constraint wants it lower: it is what a later step (consistency)
+	// loses to, not the floor (which only stopped it going further down)
+	st.hiBy = by;
 }
 
 /** Indices of the support events within {@link HERO_SHADOW_SEC} of a hero (gap between the windows). */
