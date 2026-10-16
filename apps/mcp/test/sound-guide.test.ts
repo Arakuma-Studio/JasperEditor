@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { PROPOSALS_GUIDE } from '../src/tools/proposals.ts';
 import { SOUND_GUIDE } from '../src/tools/sound.ts';
 
 describe('SOUND_GUIDE (spec 12 §2.10)', () => {
@@ -36,5 +37,39 @@ describe('SOUND_GUIDE (spec 12 §2.10)', () => {
 			src.indexOf('];', src.indexOf('const FULL_GUIDE = [')),
 		);
 		expect(full).toContain('SOUND_GUIDE');
+	});
+});
+
+describe('PROPOSALS_GUIDE (spec 12 §2.10, P3-R5)', () => {
+	it('teaches propose → wait → read the notes, and the policy gate', () => {
+		const g = PROPOSALS_GUIDE.toLowerCase();
+		for (const phrase of [
+			"propose, don't apply",
+			'review panel',
+			'wait_for_proposal',
+			'notes',
+			'one transaction',
+			'one undo step',
+			'allow agents to apply sound proposals',
+			'e_approval_required',
+			'never accept your own proposal unless the user asked',
+			'partial',
+			'reject_proposal',
+			'get_proposal',
+			'list_proposals',
+		])
+			expect(g, phrase).toContain(phrase);
+		// SOUND_GUIDE points at the workflow too
+		const s = SOUND_GUIDE.toLowerCase();
+		for (const phrase of ['plan_sound_design', 'wait_for_proposal', 'mode "apply"'])
+			expect(s, phrase).toContain(phrase);
+	});
+	it('is part of FULL_GUIDE', () => {
+		const src = readFileSync(join(import.meta.dirname, '..', 'src', 'server.ts'), 'utf8');
+		const full = src.slice(
+			src.indexOf('const FULL_GUIDE = ['),
+			src.indexOf('];', src.indexOf('const FULL_GUIDE = [')),
+		);
+		expect(full).toContain('PROPOSALS_GUIDE');
 	});
 });

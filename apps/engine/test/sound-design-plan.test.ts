@@ -28,11 +28,11 @@ import {
 	planAccept,
 	soundCuesOf,
 } from '@jasper/project';
+import { describeFuzz, jsonTarget } from '@jasper/testkit/fuzz';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
 	collectPlanCues,
 	composePlanDraft,
-	type PlanStyle,
 	resolveStyle,
 	selectPlanSounds,
 } from '../src/sound-design/plan.ts';
@@ -704,3 +704,64 @@ describe('POST /api/sound-design/plan (real engine)', { timeout: 600_000 }, () =
 		expect(coreServices(app).queue.list({ kind: 'sound-design', projectId })).toEqual([]);
 	});
 });
+
+// Mutated plan requests (structure, values, truncations, arbitrary JSON) against a stored project: a typed answer,
+// never a 5xx; a started job ends succeeded (with a result of the schema) or failed with a code, never stuck.
+let fuzzApp: App | null = null;
+const FUZZ_PROJECT = 'prj_00000000000000FZ';
+async function fuzzPost(body: unknown) {
+	if (!fuzzApp) {
+		fuzzApp = await makeApp();
+		const f = fixture();
+		const doc = { ...f.get(), projectId: FUZZ_PROJECT };
+		const file = appdirPaths(fuzzApp.appdir).projectFile(FUZZ_PROJECT);
+		mkdirSync(join(file, '..'), { recursive: true });
+		writeFileSync(
+			file,
+			JSON.stringify(
+				makeEnvelope(doc, { revision: 1, savedAt: '2026-10-16T00:00:00.000Z', platform: 'test' }),
+			),
+		);
+	}
+	const a = fuzzApp;
+	const r = await a.inject({
+		method: 'POST',
+		url: '/api/sound-design/plan',
+		headers: { host: '127.0.0.1:47900', 'content-type': 'application/json' },
+		payload: JSON.stringify(body),
+	});
+	if (r.statusCode >= 500) throw new Error(`${r.statusCode} ${r.body.slice(0, 300)}`);
+	if (r.statusCode === 202) {
+		const job = await coreServices(a).queue.wait((r.json() as EngineJob).id);
+		if (job.state === 'succeeded') SoundDesignPlanResultSchema.parse(job.result);
+		else if (job.state !== 'failed' || typeof job.error?.code !== 'string')
+			throw new Error(`job ${job.state}: ${JSON.stringify(job.error)}`);
+	}
+}
+describeFuzz(
+	'POST /api/sound-design/plan',
+	[
+		jsonTarget(
+			'sound design plan request',
+			[
+				{ projectId: FUZZ_PROJECT, style: { seed: 1, density: 'rich' } },
+				{
+					projectId: FUZZ_PROJECT,
+					range: { start: 10, end: 300 },
+					maxCues: 3,
+					style: { sources: ['synth'] },
+				},
+				{
+					projectId: FUZZ_PROJECT,
+					cues: ['cue_0000000000000001'],
+					style: { palette: 'project', alternatives: 0 },
+				},
+			],
+			fuzzPost,
+			undefined,
+			{ iterations: 30, properties: 8, slowMs: 30_000 },
+		),
+	],
+	600_000,
+);
+afterAll(closeApps);
