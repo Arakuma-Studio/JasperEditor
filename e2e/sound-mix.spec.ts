@@ -13,6 +13,7 @@ import { FIXTURE_COMMANDS } from '../apps/mcp/test/sound-cues-fixture.ts';
 import {
 	appliedLabels,
 	clipBox,
+	clipElement,
 	enableAgentBridge,
 	exportViaUi,
 	focusTimeline,
@@ -156,18 +157,34 @@ async function menu(p: Page, item: string) {
 	await p.getByRole('menuitem', { name: item }).click();
 }
 
-/** Clicks a clip's body (zooming in around it first when it is too narrow to hit). */
+/**
+ * Clicks a clip's body (zooming in around it first when it is too narrow or out of view). A clip outside the rendered
+ * window is not in the DOM: never wait for it (boundingBox would wait forever).
+ */
 async function clipBodyClick(id: string) {
-	let b = await clipBox(page, id).catch(() => null);
-	for (let i = 0; (!b || b.width < 40) && i < 10; i++) {
+	const inView = async (b: { x: number; y: number; width: number; height: number } | null) => {
+		if (!b) return false;
+		const area = await page.getByTestId('timeline-clip-area').boundingBox();
+		return (
+			!area ||
+			(b.x + 8 >= area.x &&
+				b.x + Math.min(20, b.width / 3) <= area.x + area.width - 8 &&
+				b.y + b.height - 6 <= area.y + area.height &&
+				b.y + b.height - 6 >= area.y)
+		);
+	};
+	const box = async () =>
+		(await clipElement(page, id).count()) ? await clipBox(page, id).catch(() => null) : null;
+	let b = await box();
+	for (let i = 0; (!b || b.width < 40 || !(await inView(b))) && i < 10; i++) {
 		const c = (await sequence(page)).clips[id]!;
 		await query(page, 'playhead.set', { frame: c.start });
 		await focusTimeline(page);
-		await page.keyboard.press('Equal');
-		await page.waitForTimeout(200);
-		b = await clipBox(page, id).catch(() => null);
+		await page.keyboard.press(i === 0 ? 'Backslash' : 'Equal');
+		await page.waitForTimeout(300);
+		b = await box();
 	}
-	if (!b) throw new Error(`clip ${id} is not visible`);
+	if (!b || !(await inView(b))) throw new Error(`clip ${id} is not visible`);
 	await page.mouse.click(b.x + Math.min(20, b.width / 3), b.y + b.height - 6);
 }
 
@@ -227,7 +244,7 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 	await mix.getByRole('checkbox', { name: /Build into heroes/ }).click();
 	await mix.getByRole('combobox', { name: 'Delivery' }).click();
 	await page.getByRole('option', { name: 'Web / streaming · −14 LUFS · −1 dBTP' }).click();
-	await dialog.screenshot({ path: join(outDir, 'auto-pass-mix-options.png') });
+	await dialog.screenshot({ path: join(outDir, 'auto-pass-mix-options.png'), timeout: 60_000 });
 	const before = await appliedLabels(page);
 	await dialog.getByRole('button', { name: 'Propose' }).click();
 	await expect(dialog).toBeHidden({ timeout: 1_500_000 });
@@ -263,10 +280,17 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 	await focusTimeline(page);
 	for (let i = 0; i < 3; i++) await page.keyboard.press('Equal');
 	await page.waitForTimeout(400);
-	await seam.screenshot({ path: join(outDir, 'cue-span-bars.png') });
+	await seam.screenshot({ path: join(outDir, 'cue-span-bars.png'), timeout: 60_000 });
+	await page
+		.getByTestId('timeline-track-area')
+		.screenshot({ path: join(outDir, 'timeline-mix.png'), timeout: 60_000 });
 
 	// 2. Essential Sound ▸ Sound Design: a placed sound's solver gain and why
-	const solved = sfxClips(seq).find((c) => c.sfx?.level?.by === 'solver');
+	// a solved sound on the first sound-effect track (visible without scrolling the audio tracks), the longest
+	const trackIndex = (c: Clip) => seq.audioTracks.findIndex((t) => t.id === c.trackId);
+	const solved = sfxClips(seq)
+		.filter((c) => c.sfx?.level?.by === 'solver')
+		.sort((a, b) => trackIndex(a) - trackIndex(b) || b.duration - a.duration)[0];
 	expect(solved, JSON.stringify(sfxClips(seq).map((c) => c.sfx?.level))).toBeTruthy();
 	await clipBodyClick(solved!.id);
 	await expect
@@ -321,7 +345,7 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 	await expect(glue).toBeVisible();
 	await expect(glue.getByTestId('room-glue-tracks')).toContainText('Sends from:');
 	await expect(glue.getByTestId('room-glue-tracks')).toContainText('Bus: SFX Room (made by sound design)');
-	await glue.screenshot({ path: join(outDir, 'room-glue-dialog.png') });
+	await glue.screenshot({ path: join(outDir, 'room-glue-dialog.png'), timeout: 60_000 });
 	await glue.getByRole('button', { name: 'Cancel' }).click();
 	await expect(glue).toBeHidden();
 
@@ -337,7 +361,7 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 	console.log('delivery summary', summary);
 	test.info().annotations.push({ type: 'delivery', description: summary });
 	expect(summary).toContain('Music under the voice:');
-	await delivery.screenshot({ path: join(outDir, 'delivery-dialog.png') });
+	await delivery.screenshot({ path: join(outDir, 'delivery-dialog.png'), timeout: 60_000 });
 	expect((await appliedLabels(page)).length).toBe(n1 + 1);
 	expect((await appliedLabels(page)).at(-1)).toBe('Apply Delivery Preset: Web / streaming (−14 LUFS)');
 	await expect(
