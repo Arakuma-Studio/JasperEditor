@@ -33,6 +33,8 @@ export type ProposalContext = {
 	ids?: IdSource;
 	now?: () => string;
 	invariants?: 'full' | 'incremental' | 'verify';
+	/** Run the invariant checker in dry runs (default true). */
+	checkInvariants?: boolean;
 };
 
 const VALIDATE_ORIGIN: Origin = { agent: 'proposal-validation' };
@@ -72,6 +74,7 @@ export function dryRunCommands(
 			revision: ctx.revision ?? 0,
 			registries: ctx.registries,
 			...(ctx.invariants ? { invariants: ctx.invariants } : {}),
+			...(ctx.checkInvariants === false ? { checkInvariants: false } : {}),
 		},
 	).result;
 }
@@ -109,6 +112,13 @@ export function validateProposal(doc: ProjectDocument, proposal: Proposal, ctx: 
 			if (items.get(d.id)!.state !== 'accepted' && items.get(d.id)!.state !== 'invalid')
 				items.set(d.id, setState(items.get(d.id)!, 'invalid', `requires item ${id}, which is invalid`));
 	};
+	// The whole set first, with the invariant checker. When it holds, each item's own dry run only has to show that
+	// its commands apply without the other items (handlers refuse what is missing); the invariants were checked on
+	// the full set, and `planAccept` checks the exact set it applies again. This keeps 2 000 items affordable.
+	const undecided = proposal.items.filter((it) => it.state === 'pending' || it.state === 'stale').map((it) => it.id);
+	const whole = undecided.length ? composeForCheck(current(), undecided) : null;
+	const wholeOk = !!whole?.ok && dryRunCommands(doc, whole.tx.commands, ctx, proposal.sequenceId).ok;
+	const itemCtx: ProposalContext = wholeOk ? { ...ctx, checkInvariants: false } : ctx;
 	for (const it0 of proposal.items) {
 		const it = items.get(it0.id)!;
 		if (it.state !== 'pending' && it.state !== 'stale') continue;
@@ -117,7 +127,7 @@ export function validateProposal(doc: ProjectDocument, proposal: Proposal, ctx: 
 			invalidate(it.id, issueReason(composed.errors));
 			continue;
 		}
-		const r = dryRunCommands(doc, composed.tx.commands, ctx, proposal.sequenceId);
+		const r = dryRunCommands(doc, composed.tx.commands, itemCtx, proposal.sequenceId);
 		if (!r.ok) {
 			const at = r.errors[0] ? itemOfCommand(composed.ranges, r.errors[0].commandIndex) : null;
 			invalidate(it.id, at && at !== it.id ? `with item ${at}: ${issueReason(r.errors)}` : issueReason(r.errors));
@@ -126,7 +136,8 @@ export function validateProposal(doc: ProjectDocument, proposal: Proposal, ctx: 
 		items.set(it.id, setState(it, 'pending'));
 	}
 	// Everything valid together: an item that conflicts with the items before it is invalid.
-	for (let pass = 0; ; pass++) {
+	const stillAll = current().items.filter((it) => it.state === 'pending').length === undecided.length;
+	for (let pass = 0; !(wholeOk && stillAll); pass++) {
 		const p = current();
 		const live = p.items.filter((it) => it.state === 'pending').map((it) => it.id);
 		if (live.length === 0) break;
@@ -493,10 +504,14 @@ function planAcceptUnchecked(
 	const staleList = (): StaleItem[] =>
 		p.items.filter((it) => it.state === 'stale').map((it) => ({ itemId: it.id, reason: it.reason ?? 'stale' }));
 	for (let pass = 0; pass <= MAX_CONFLICT_PASSES; pass++) {
-		const blockedOf = (id: string) =>
-			dependencyClosure(p, [id], (it) => it.state === 'accepted').find(
-				(it) => it.state === 'stale' || it.state === 'invalid',
-			);
+		// The first stale or invalid item in each item's closure (requires name earlier items: one pass).
+		const root = new Map<string, ProposalItem | null>();
+		for (const it of p.items) {
+			if (it.state === 'accepted') root.set(it.id, null);
+			else if (it.state === 'stale' || it.state === 'invalid') root.set(it.id, it);
+			else root.set(it.id, it.requires.map((r) => root.get(r) ?? null).find((x) => x !== null) ?? null);
+		}
+		const blockedOf = (id: string) => root.get(id) ?? undefined;
 		const blocked = requested
 			.map((id) => ({ id, by: blockedOf(id) }))
 			.filter((b): b is { id: string; by: ProposalItem } => !!b.by);
