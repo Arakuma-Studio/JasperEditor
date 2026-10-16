@@ -4384,7 +4384,9 @@ directed tests (undo + redo before the engine answers, in both orders; an agent'
   `gaps-avc3-playback`, Chrome saw 41 / 33 of ≥ 45 frames in realtime, and `browse`, a 5 s timeout — both in the
   baseline too), then the 4 heavy ones (2 workers, load 46–64): `export`, `camtrack-job`, `processing-steps` pass, `camtrack-solve` keeps 3 of 12 failing on its 600 s solve timeouts (baseline too). One Phase 3 test was the host's and is fixed: the Auto Sound Pass cancel test raced its
   fake job (it now runs until cancelled). The baseline run of `pnpm verify` on d932e86a this morning (load 36–100) had
-  21 failing files of the same kinds and no Phase 3 file among them. After the merge, on the fresh build (load 54–62): `e2e/sound-p3-mcp.spec.ts` and
+  21 failing files of the same kinds and no Phase 3 file among them. Then merged WP4.2b (6ab79253; conflicts in `ReviewPanel.tsx` — its own-gain row text kept with the
+  virtualised rows and readable stale text —, en.json, gaps) and fixed finding 10: `pnpm lint` pass, `pnpm typecheck` pass,
+  the review / ghost / mix-model / session suites (12 files, 84 tests) pass. After the WP4.2a merge, on the fresh build (load 54–62): `e2e/sound-p3-mcp.spec.ts` and
   `e2e/sound-review.spec.ts` (2) → **3 passed** (10.1 min); MCP session peaks 0 / −1 / 0 samples (r ≥ 0.968), Auto Sound
   Pass peaks 0 / 0 / −1.
 
