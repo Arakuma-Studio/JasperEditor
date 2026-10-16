@@ -441,7 +441,7 @@
   "A wave travels through the characters, lifting them as it passes (repeats over the clip).",
   "a zip of the output of `npx remotion bundle`",
   "A{0}",
-  "A/B: the Program monitor plays the proposal under review (picture and sound of its preview document) or the sequence as it is; switches while playing",
+  "A/B: the Program monitor plays the proposal under review (picture and sound of its preview document) or the sequence as it is; switches while playing. `on` sets it instead of toggling.",
   "AAF…",
   "About JasperEditor",
   "Above Average",

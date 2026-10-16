@@ -9194,7 +9194,6 @@
   "{0} · {1} (new)": "{0} · {1} (nueva)",
   "{0} changes on {1} at {2}": "{0} cambia en {1} en {2}",
   "{0} on {1} at {2} ({3} s{4})": "{0} en {1} en {2} ({3} s{4})",
-  "A/B: the Program monitor plays the proposal under review (picture and sound of its preview document) or the sequence as it is; switches while playing": "A/B: el monitor de programa reproduce la propuesta en revisión (imagen y sonido de su documento de vista previa) o la secuencia tal como está; cambia durante la reproducción",
   "Accept": "Aceptar",
   "Accepted": "Aceptado",
   "Alternate {0}/{1}": "Alternativa {0}/{1}",
@@ -9225,5 +9224,6 @@
   "Review Proposal": "Revisar propuesta",
   "Save Note": "Guardar nota",
   "Stale": "Obsoleto",
-  "Stop reviewing the proposal: its ghosts go and the Program monitor plays the sequence again": "Deja de revisar la propuesta: sus fantasmas desaparecen y el monitor de programa vuelve a reproducir la secuencia"
+  "Stop reviewing the proposal: its ghosts go and the Program monitor plays the sequence again": "Deja de revisar la propuesta: sus fantasmas desaparecen y el monitor de programa vuelve a reproducir la secuencia",
+  "A/B: the Program monitor plays the proposal under review (picture and sound of its preview document) or the sequence as it is; switches while playing. `on` sets it instead of toggling.": "A/B: el monitor de programa reproduce la propuesta en revisión (imagen y sonido de su documento de vista previa) o la secuencia tal como está; cambia durante la reproducción. `on` lo fija en lugar de alternarlo."
 }
