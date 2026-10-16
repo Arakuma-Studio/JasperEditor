@@ -179,6 +179,7 @@ import {
 	VisionModelsResponseSchema,
 } from './roto.ts';
 import { SceneDetectRequestSchema } from './scenes.ts';
+import { SoundCheckRequestSchema, SoundVisualRequestSchema, SoundVisualResponseSchema } from './sound-check.ts';
 import {
 	SfxRebalanceRequestSchema,
 	SoundCuesRequestSchema,
@@ -1136,6 +1137,27 @@ export const ROUTES = {
 		path: '/api/sound-design/delivery',
 		body: SoundDeliveryRequestSchema,
 		response: EngineJobSchema,
+	},
+	/**
+	 * Sound Check (spec 12 §2.6, P5-R1): a `sound-check` job (202) that renders the delivered mix and its stems, measures
+	 * them and returns `SoundCheckResult` (findings with fixes, listen-here moments, per-event table, verdict);
+	 * `store: true` also writes the summary into the sequence (`soundDesign.setCheck`).
+	 */
+	soundDesignCheck: {
+		method: 'POST',
+		path: '/api/sound-design/check',
+		body: SoundCheckRequestSchema,
+		response: EngineJobSchema,
+	},
+	/**
+	 * Sound Check visual data (spec 12 §2.6, P5-R2): 10 ms loudness curves of the mix and its stems, the mix waveform,
+	 * cue ticks, the motion curve and a check job's findings over a range of at most 120 s.
+	 */
+	soundDesignVisual: {
+		method: 'POST',
+		path: '/api/sound-design/visual',
+		body: SoundVisualRequestSchema,
+		response: SoundVisualResponseSchema,
 	},
 	/**
 	 * Proposals (spec 12 §2.5, §2.8): reviewable sets of edits stored per project. Accept composes ONE transaction

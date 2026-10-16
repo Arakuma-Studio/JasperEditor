@@ -168,6 +168,10 @@ export const SoundCueSchema = z.looseObject({
 });
 export type SoundCue = DeepStrip<z.infer<typeof SoundCueSchema>>;
 
+/** Sound credits sidecar formats (`SoundDesignSettings.credits`, spec 12 §2.11 `ExportSettings.credits`). */
+export const SOUND_CREDITS_FORMATS = ['txt', 'md'] as const;
+export type SoundCreditsFormat = (typeof SOUND_CREDITS_FORMATS)[number];
+
 export const SoundDesignSettingsSchema = z.looseObject({
 	/** Loudness delivery target (P4 presets). */
 	delivery: z.enum(SOUND_DELIVERIES),
@@ -182,15 +186,32 @@ export const SoundDesignSettingsSchema = z.looseObject({
 	agentsMayApply: z.boolean().optional(),
 	/** Preferred library sounds (the Sound Library's Palette collection), most recent last. */
 	palette: z.array(id()).max(SOUND_DESIGN_LIMITS.palette).optional(),
+	/**
+	 * Sound credits go with the sequence's exports as a sidecar file in this format (P5: Sound Check's CREDITS finding
+	 * is resolved by setting it; the export dialog's credits option defaults to it). Absent / null = not configured.
+	 */
+	credits: z.enum(SOUND_CREDITS_FORMATS).nullable().optional(),
 });
 export type SoundDesignSettings = DeepStrip<z.infer<typeof SoundDesignSettingsSchema>>;
 
-/** Summary of the last Sound Check (P5); stale when `mixHash` differs from the mix's fingerprint. */
+/**
+ * Summary of the last Sound Check (P5, `soundDesign.setCheck`); stale when `mixHash` differs from the mix's fingerprint
+ * (`mixFingerprint`) or `inputsHash` from `soundCheckInputsHash` (cues, Mix loudness, preset, credits: `soundCheckStatus`).
+ * The full report is the `sound-check` job's result (`jobId`).
+ */
 export const SoundCheckSummarySchema = z.looseObject({
 	mixHash: z.string().max(256),
 	verdict: z.string().max(64),
 	counts: z.record(z.string().max(64), z.number().int().min(0)),
 	at: z.string().max(64),
+	/** Delivery preset checked against. */
+	preset: z.enum(SOUND_DELIVERIES).optional(),
+	/** Hash of the other inputs of the check (`soundCheckInputsHash`). */
+	inputsHash: z.string().max(256).optional(),
+	/** The `sound-check` job whose result is the full report. */
+	jobId: z.string().max(128).optional(),
+	/** Sequence frames checked `[start, end)` (absent: the whole sequence). */
+	range: z.looseObject({ start: z.number().int().min(0), end: z.number().int().min(0) }).optional(),
 });
 export type SoundCheckSummary = DeepStrip<z.infer<typeof SoundCheckSummarySchema>>;
 
@@ -488,6 +509,8 @@ export function readSoundDesignSettings(raw: unknown): SoundDesignSettings {
 		Array.isArray(v) ? [...new Set(v.filter((x) => id().safeParse(x).success))].slice(0, max) : [];
 	out.sfxTrackIds = ids(raw.sfxTrackIds, SOUND_DESIGN_LIMITS.sfxTracks);
 	if (raw.palette !== undefined) out.palette = ids(raw.palette, SOUND_DESIGN_LIMITS.palette);
+	const cr = opt(shape.credits, raw.credits);
+	if (cr !== undefined) out.credits = cr;
 	const r = SoundDesignSettingsSchema.safeParse(out);
 	return r.success ? (r.data as SoundDesignSettings) : { ...d, sfxTrackIds: [], palette: [] };
 }
