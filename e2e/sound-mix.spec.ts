@@ -211,7 +211,9 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 	});
 	const itemOf = (n: string) => Object.values(items).find((i) => i.name === n)!.id;
 	const setup = await transact(page, [
-		...(FIXTURE_COMMANDS as never[]),
+		// the Phase 2 fixture without its fframes motion graphic (no fframes renderer in this environment: the native
+		// export would refuse it)
+		...((FIXTURE_COMMANDS as { type: string }[]).filter((c) => c.type !== 'clip.addMotionGraphic') as never[]),
 		{
 			type: 'clip.place',
 			source: { projectItemId: itemOf('music.wav') },

@@ -133,7 +133,7 @@ export function EssentialSfxMix(props: { session: EditorSession; seq: Sequence; 
 					/>
 					{v0 ? (
 						<div
-							className="flex min-w-0 items-center gap-1 text-pr-small"
+							className="flex min-w-0 items-start gap-1 text-pr-small"
 							data-testid="essential-auto-gain-level"
 						>
 							<span
@@ -146,7 +146,7 @@ export function EssentialSfxMix(props: { session: EditorSession; seq: Sequence; 
 								{v0.badge}
 							</span>
 							<span
-								className="min-w-0 truncate text-pr-text"
+								className="min-w-0 break-words text-pr-text"
 								title={v0.text}
 								data-testid="essential-auto-gain-text"
 							>
