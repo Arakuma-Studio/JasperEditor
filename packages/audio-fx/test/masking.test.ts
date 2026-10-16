@@ -285,6 +285,24 @@ describe('constraints, one at a time', () => {
 		expect(advice[0]!.message).toContain('prefer a type whose dominant band is outside 1–4 kHz (here: boom)');
 	});
 
+	it('dialogue advice names only the dominant bands inside the speech octaves', () => {
+		// dominant 8 kHz, second 4 kHz (≥ 10 % of the energy): only 4 kHz is a speech octave
+		const bright = [-80, -80, -80, -60, -40, -23, -20];
+		const r = solveSfxGains([
+			ev({
+				clipId: 's',
+				type: 'tick',
+				soundBandsDb: bright,
+				bedBandsDb: Array(7).fill(-30),
+				speechOverlap: true,
+			}),
+		]);
+		expect(one(r, 's').dominantBands).toEqual([8000, 4000]);
+		const w = r.warnings.find((x) => x.code === 'W_DIALOGUE_BAND')!;
+		expect(w.message).toContain('its dominant band (4000 Hz) is in 1–4 kHz');
+		expect(w.message).not.toContain('8000');
+	});
+
 	it('6 headroom: true peak after the gain ≤ the ceiling (default −1 dBTP); unmeasured → no boost', () => {
 		const masked = { bedBandsDb: Array(7).fill(-15), bedLocalPeakLu: 0 }; // needs +8.5 dB
 		const r = solveSfxGains([

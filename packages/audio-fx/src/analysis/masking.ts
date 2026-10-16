@@ -668,7 +668,11 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 					.map(([t]) => t)
 					.sort()
 					.join(', ');
-			const bands = ev.dom.map((b) => `${OCTAVE_BAND_CENTRES_HZ[b]} Hz`).join(', ');
+			// only the dominant bands that ARE in the speech octaves ("8000 Hz, 4000 Hz is in 1–4 kHz" misled)
+			const bands = ev.dom
+				.filter((b) => DIALOGUE_BAND_INDICES.includes(b))
+				.map((b) => `${OCTAVE_BAND_CENTRES_HZ[b]} Hz`)
+				.join(', ');
 			warnings.push({
 				code: 'W_DIALOGUE_BAND',
 				clipId: ev.clipId,
