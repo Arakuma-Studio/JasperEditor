@@ -268,7 +268,7 @@ export function roomViewOfTrack(
 		const sfx = roomSendPlan(doc, seq).find((x) => x.trackId === track.id);
 		if (d && !d.send) blocked = t('{0} plays only interface sounds (UI, clicks, keys): they stay dry', label);
 		// a track the glue does not consider holds no sound effect: the selected clip on it is bed audio (library music)
-		else if (!sfx || !sfx.send)
+		else if (!sfx?.send)
 			blocked = t(
 				'{0} also plays dialogue, music or other bed audio: a send would put them in the room too',
 				label,

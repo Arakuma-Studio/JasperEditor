@@ -54,7 +54,11 @@ export async function runSoundJob<T>(
 	engine: Pick<EngineClient, 'getJob' | 'cancelJob'>,
 	start: (signal?: AbortSignal) => Promise<unknown>,
 	schema: ZodType<T>,
-	opts: SoundJobOptions & { failure: string },
+	opts: SoundJobOptions & {
+		failure: string;
+		/** Carries fields of the raw result the schema does not know yet over to the parsed one. */
+		keep?(raw: unknown, parsed: T): T;
+	},
 ): Promise<T> {
 	const sleep = opts.sleep ?? defaultSleep;
 	let job: EngineJob;
@@ -88,7 +92,7 @@ export async function runSoundJob<T>(
 	}
 	const parsed = schema.safeParse(job.result);
 	if (!parsed.success) throw new SoundJobError('E_BAD_RESULT', t('The engine returned an unreadable result'));
-	return parsed.data;
+	return opts.keep ? opts.keep(job.result, parsed.data) : parsed.data;
 }
 
 /** Rebalance SFX Levels for the user (apply mode: one transaction, the user's own). */
@@ -115,8 +119,24 @@ export function runDelivery(
 		engine,
 		(signal) => engine.applyDelivery({ ...req, mode: 'apply' }, signal),
 		SoundDeliveryResultSchema,
-		{ ...opts, failure: t('Applying the delivery target failed') },
+		{ ...opts, failure: t('Applying the delivery target failed'), keep: keepDeliveryConflicts },
 	);
+}
+
+/**
+ * The re-solved sound effects' conflicts of a delivery report (`report.conflicts`): kept from the raw result while the
+ * report schema does not list them (a zod object drops unknown keys); read defensively by `deliveryNotes`.
+ */
+export function keepDeliveryConflicts(raw: unknown, parsed: SoundDeliveryResult): SoundDeliveryResult {
+	const report = parsed.report as SoundDeliveryResult['report'] & { conflicts?: unknown };
+	if (report.conflicts !== undefined) return parsed;
+	const r = raw && typeof raw === 'object' ? (raw as { report?: unknown }).report : undefined;
+	const conflicts = r && typeof r === 'object' ? (r as { conflicts?: unknown }).conflicts : undefined;
+	if (!Array.isArray(conflicts)) return parsed;
+	return {
+		...parsed,
+		report: { ...report, conflicts: conflicts.slice(0, 2000) } as SoundDeliveryResult['report'],
+	};
 }
 
 /** The History entry an engine-applied transaction became in this session (the user's), by its revision. */
