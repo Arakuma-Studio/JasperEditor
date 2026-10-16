@@ -799,3 +799,51 @@ function reasonText(
 		);
 	return parts.length ? `${head}, ${parts.join('; ')}` : head;
 }
+
+/** What a sound effect measures like at a given clip gain, with the solver's own definitions (Sound Check, spec 12 §2.6). */
+export interface SfxGainEvaluation {
+	clipId: string;
+	weight: SolverWeight;
+	gainDb: number;
+	/** The weight's target lift (dB). */
+	targetLiftDb: number;
+	/** Lift of the dominant bands over the bed at `gainDb` (dB, 0.01 steps); null for a silent sound. */
+	liftDb: number | null;
+	/** Centres (Hz) of the dominant bands, strongest first. */
+	dominantBands: number[];
+	/** Sound peak over the solver's bed reference (local bed peak, never under programme −12 LU); null unmeasured. */
+	peakOverBedLu: number | null;
+	/** The weight's bed cap (LU). */
+	bedCapLu: number;
+	truePeakDb: number | null;
+	/** Largest lift in a speech band at `gainDb`; null unless the event overlaps speech. */
+	speechBandLiftDb: number | null;
+}
+
+/**
+ * Evaluates one event at a clip gain with exactly the solver's definitions (dominant bands, lift, bed reference, speech
+ * bands): Sound Check's MASKED and OVERLOAD findings use it so they agree with what `solveSfxGains` aims at. Pure;
+ * never throws (the event is sanitised like the solver's input; a non-finite gain counts as 0 dB).
+ */
+export function evaluateSfxGain(event: SolverEvent, gainDb: number, opts: SolverOptions = {}): SfxGainEvaluation {
+	const o = opts && typeof opts === 'object' ? opts : {};
+	const program =
+		isNum(o.programLufs) && Math.abs(o.programLufs) <= LEVEL_CEILING_DB ? o.programLufs : DEFAULT_PROGRAM_LUFS;
+	const ev = clean(event, 0, []);
+	const g = isNum(gainDb) ? Math.max(-1000, Math.min(1000, gainDb)) : 0;
+	const ref = Math.max(ev.bedPeak ?? Number.NEGATIVE_INFINITY, program + QUIET_BED_OFFSET_LU);
+	let speech = Number.NEGATIVE_INFINITY;
+	for (const b of DIALOGUE_BAND_INDICES) speech = Math.max(speech, ev.sound[b]! + g - ev.bed[b]!);
+	return {
+		clipId: ev.clipId,
+		weight: ev.weight,
+		gainDb: q(g),
+		targetLiftDb: TARGET_LIFT_DB[ev.weight],
+		liftDb: ev.dom.length ? q(ev.soundDom + g - ev.bedDom) : null,
+		dominantBands: ev.dom.map((b) => OCTAVE_BAND_CENTRES_HZ[b]!),
+		peakOverBedLu: ev.soundPeak === null ? null : q(ev.soundPeak + g - ref),
+		bedCapLu: BED_CAP_LU[ev.weight],
+		truePeakDb: ev.truePeak === null ? null : q(ev.truePeak + g),
+		speechBandLiftDb: ev.speech ? q(speech) : null,
+	};
+}
