@@ -35,6 +35,12 @@ import {
 	type PreviewStatusRequest,
 	type ProjectCreateRequest,
 	type ProjectViewJson,
+	type ProposalAcceptRequest,
+	type ProposalCreateRequest,
+	type ProposalNoteRequest,
+	type ProposalRejectRequest,
+	type ProposalReopenRequest,
+	type ProposalSelectRequest,
 	type RecoveryPutRequest,
 	type RegisteredMedia,
 	type RelinkScanRequest,
@@ -368,6 +374,41 @@ export class EngineClient {
 	/** Cue suggestions derived from the edit (spec 12 §2.8; `deriveCues` with the engine's template registry). */
 	soundDesignCues(req: SoundCuesRequest, signal?: AbortSignal) {
 		return this.call('soundDesignCues', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** Proposals of a project (spec 12 §2.5): summaries, newest first. */
+	listProposals(projectId: string) {
+		return this.call('proposalsList', { params: { projectId } });
+	}
+	/** A proposal with its items; `revalidate` checks the undecided items on the live document first. */
+	getProposal(projectId: string, proposalId: string, opts: { revalidate?: boolean } = {}) {
+		return this.call('proposalGet', {
+			params: { projectId, proposalId },
+			query: opts.revalidate ? { revalidate: '1' } : {},
+		});
+	}
+	/** Stores a proposal after validating it by dry runs (failing items become `invalid`). */
+	createProposal(projectId: string, req: ProposalCreateRequest) {
+		return this.call('proposalCreate', { params: { projectId }, body: req });
+	}
+	/** Applies items as ONE transaction (all-or-nothing unless `partial`). */
+	acceptProposal(projectId: string, proposalId: string, req: ProposalAcceptRequest) {
+		return this.call('proposalAccept', { params: { projectId, proposalId }, body: req });
+	}
+	rejectProposal(projectId: string, proposalId: string, req: ProposalRejectRequest) {
+		return this.call('proposalReject', { params: { projectId, proposalId }, body: req });
+	}
+	/** Decided items back to review (after their accept was undone in History). */
+	reopenProposal(projectId: string, proposalId: string, req: ProposalReopenRequest) {
+		return this.call('proposalReopen', { params: { projectId, proposalId }, body: req });
+	}
+	noteProposalItem(projectId: string, proposalId: string, req: ProposalNoteRequest) {
+		return this.call('proposalNote', { params: { projectId, proposalId }, body: req });
+	}
+	selectProposalAlternative(projectId: string, proposalId: string, req: ProposalSelectRequest) {
+		return this.call('proposalSelect', { params: { projectId, proposalId }, body: req });
+	}
+	deleteProposal(projectId: string, proposalId: string) {
+		return this.call('proposalDelete', { params: { projectId, proposalId } });
 	}
 	registerMedia(req: MediaRegisterRequest) {
 		return this.call('mediaRegister', { body: req });
