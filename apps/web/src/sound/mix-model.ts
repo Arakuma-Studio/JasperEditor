@@ -188,15 +188,19 @@ export function sfxLevelView(clip: Clip): SfxLevelView | null {
 
 /**
  * The gain a review row shows with its limit ("−16.2 dB · limited by dialogue A2"), from a plan item's `meta.level` or a
- * rebalance item's meta (`limitedBy`). `alternative`: the chosen set is an alternative (its own level is not in the
- * item's meta: the gain alone is shown).
+ * rebalance item's meta (`gainDb`, `limitedBy`); `db` (the drawn ghost's gain) when the meta has none. `alternative`: the
+ * chosen set is an alternative (its own level is not in the item's meta: the ghost's gain alone is shown).
  */
 export function reviewGainText(db: number | null, meta: unknown, alternative = false): string {
-	if (db === null || !fin(db)) return '';
-	const head = `${fmtDb(db)} dB`;
-	if (alternative || !meta || typeof meta !== 'object') return head;
-	const m = meta as Record<string, unknown>;
-	const lv = (m.level && typeof m.level === 'object' ? m.level : m) as Record<string, unknown>;
+	const m = !alternative && meta && typeof meta === 'object' ? (meta as Record<string, unknown>) : null;
+	const lv = m ? ((m.level && typeof m.level === 'object' ? m.level : m) as Record<string, unknown>) : null;
+	// the item's own solved gain (its first layer) wins over the drawn ghost's: an item that requires a setup item
+	// (the delivery preset) also changes the music's gain in its preview
+	const own = lv && fin(lv.gainDb) ? lv.gainDb : null;
+	const g = own ?? db;
+	if (g === null || !fin(g)) return '';
+	const head = `${fmtDb(g)} dB`;
+	if (!lv) return head;
 	const limitedBy = Array.isArray(lv.limitedBy)
 		? lv.limitedBy.filter((x): x is string => typeof x === 'string').slice(0, 16)
 		: [];

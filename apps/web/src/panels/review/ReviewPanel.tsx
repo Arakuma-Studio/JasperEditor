@@ -574,7 +574,7 @@ function Row(p: {
 			</div>
 			<div className="flex min-w-0 items-center gap-1.5 pl-[66px] text-pr-small text-pr-muted">
 				{row.role ? <span className="shrink-0">{row.role}</span> : null}
-				{row.gainDb !== null ? (
+				{gainText(row) ? (
 					<span className="max-w-[60%] shrink-0 truncate pr-tabular" title={gainText(row)} data-review-gain>
 						{gainText(row)}
 					</span>

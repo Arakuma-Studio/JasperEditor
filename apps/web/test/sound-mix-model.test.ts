@@ -92,7 +92,15 @@ describe('levels', () => {
 		expect(reviewGainText(-4, { limitedBy: ['hero-shadow'] })).toBe(
 			'−4.0 dB · limited by a hero within 0.15 s',
 		);
-		expect(reviewGainText(null, meta)).toBe('');
+		// the item's own solved gain wins over the drawn ghost's (a delivery setup item changes the music in the preview)
+		expect(reviewGainText(14.6, { level: { gainDb: -15.6, limitedBy: ['consistency'] } })).toBe(
+			'−15.6 dB · limited by its repeats (±2 dB)',
+		);
+		expect(reviewGainText(14.6, { level: { gainDb: -15.6, limitedBy: ['consistency'] } }, true)).toBe(
+			'+14.6 dB',
+		);
+		expect(reviewGainText(null, { gainDb: -3, limitedBy: [] })).toBe('−3.0 dB');
+		expect(reviewGainText(null, {})).toBe('');
 		expect(reviewGainText(1, null)).toBe('+1.0 dB');
 	});
 

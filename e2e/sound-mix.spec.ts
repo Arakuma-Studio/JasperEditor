@@ -13,7 +13,6 @@ import { FIXTURE_COMMANDS } from '../apps/mcp/test/sound-cues-fixture.ts';
 import {
 	appliedLabels,
 	clipBox,
-	createProject,
 	enableAgentBridge,
 	exportViaUi,
 	focusTimeline,
@@ -87,6 +86,21 @@ function ebur128(file: string): { integrated: number; truePeak: number } {
 	const p = /True peak:\s+Peak:\s+(-?[\d.]+|-inf) dBFS/.exec(summary);
 	if (!i || !p) throw new Error(`ebur128 output not understood: ${summary.slice(0, 500)}`);
 	return { integrated: Number(i[1]), truePeak: Number(p[1]) };
+}
+
+/** `createProject` with timeouts for a loaded host (the editor can take more than 15 s to open). */
+async function createProject(p: Page, name: string): Promise<string> {
+	await p.goto('/');
+	await expect(p.getByTestId('home')).toBeVisible({ timeout: 120_000 });
+	await p.getByTestId('home-new').click();
+	await p.getByTestId('new-project-name').fill(name);
+	await p.getByTestId('new-project-create').click();
+	await expect(p.getByTestId('editor-shell')).toBeVisible({ timeout: 180_000 });
+	await expect(p.getByTestId('timeline-track-area')).toBeVisible({ timeout: 120_000 });
+	await expect.poll(() => p.evaluate(() => !!window.jasper), { timeout: 120_000 }).toBe(true);
+	const m = /\/project\/([^/?#]+)/.exec(p.url());
+	if (!m) throw new Error(`Unexpected editor URL ${p.url()}`);
+	return decodeURIComponent(m[1]!);
 }
 
 async function libraryReady(request: APIRequestContext) {

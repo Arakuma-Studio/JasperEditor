@@ -354,27 +354,30 @@ export function AutoSoundPassDialog(
 				/>
 				<fieldset className="flex flex-col gap-1" data-testid="auto-pass-mix">
 					<legend className="mb-1 text-pr-muted">Mix</legend>
-					<div className="flex items-center gap-2" data-testid="auto-pass-room">
+					<div className="flex flex-col gap-1" data-testid="auto-pass-room">
 						<Checkbox
 							checked={roomOn}
 							onCheckedChange={setRoomOn}
 							label={t('Room glue (a shared short reverb for the sound effects)')}
 						/>
-						<Slider
-							className="ml-auto w-[120px] shrink-0"
-							label={t('Room send level')}
-							valueText={t('{0} dB', fmtDb(roomDb))}
-							value={roomDb}
-							min={-48}
-							max={6}
-							step={0.5}
-							defaultValue={ROOM_GLUE_DEFAULT.sendDb}
-							disabled={!roomOn}
-							onChange={setRoomDb}
-						/>
-						<span className="w-[56px] shrink-0 text-right text-pr-small pr-tabular">
-							{t('{0} dB', fmtDb(roomDb))}
-						</span>
+						<div className="flex items-center gap-2 pl-6">
+							<span className="w-[96px] shrink-0 text-pr-small text-pr-muted">{t('Send level')}</span>
+							<Slider
+								className="min-w-0 flex-1"
+								label={t('Room send level')}
+								valueText={t('{0} dB', fmtDb(roomDb))}
+								value={roomDb}
+								min={-48}
+								max={6}
+								step={0.5}
+								defaultValue={ROOM_GLUE_DEFAULT.sendDb}
+								disabled={!roomOn}
+								onChange={setRoomDb}
+							/>
+							<span className="w-[64px] shrink-0 text-right text-pr-small pr-tabular">
+								{t('{0} dB', fmtDb(roomDb))}
+							</span>
+						</div>
 					</div>
 					<Checkbox
 						checked={stopBefore}
