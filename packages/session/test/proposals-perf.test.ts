@@ -31,14 +31,25 @@ describe(`review preview with ${N} place items`, { timeout: 600_000 }, () => {
 			const t = performance.now();
 			let ran = 0;
 			let longest = 0;
+			const slices: number[] = [];
 			while (queue.length && ran < 100_000) {
 				const f = queue.shift()!;
 				const t1 = performance.now();
 				f();
-				longest = Math.max(longest, performance.now() - t1);
+				const d = performance.now() - t1;
+				slices.push(d);
+				longest = Math.max(longest, d);
 				ran++;
 			}
-			return { ms: performance.now() - t, ran, longest };
+			// the five longest slices with their position (0 = the debounce's first slice)
+			const top = slices
+				.map((ms, i) => ({ i, ms: Math.round(ms) }))
+				.sort((a, b) => b.ms - a.ms)
+				.slice(0, 5);
+			const sorted = [...slices].sort((a, b) => a - b);
+			const pct = (q: number) =>
+				Math.round(sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0);
+			return { ms: performance.now() - t, ran, longest, top, p50: pct(0.5), p95: pct(0.95) };
 		};
 		await c.setActive(p.id);
 		const first = run();
@@ -79,10 +90,13 @@ describe(`review preview with ${N} place items`, { timeout: 600_000 }, () => {
 		// the ghosts' preview (rejected items included) is reused; only what Hear plays was rebuilt
 		expect(c.getState().preview!.result).toBe(resultBeforeReject);
 		const items = c.getState().items.length;
-		const ms = (r: { ms: number; ran: number; longest: number }) => ({
+		const ms = (r: ReturnType<typeof run>) => ({
 			totalMs: Math.round(r.ms),
 			slices: r.ran,
 			longestSliceMs: Math.round(r.longest),
+			p50SliceMs: r.p50,
+			p95SliceMs: r.p95,
+			top: r.top,
 		});
 		const report = JSON.stringify({
 			items: p.items.length,

@@ -15,7 +15,8 @@ import { createStore } from 'zustand/vanilla';
 import { t } from '../i18n/runtime.ts';
 import { useShellRuntimeOrNull } from '../shell/context.tsx';
 import { openReview, reviewAnnouncer } from './actions.ts';
-import { type CardCounts, cardSentence, proposalCardCounts } from './review.ts';
+import { type CardCounts, cardSentence, proposalCardCountsSteps } from './review.ts';
+import { runInSlices } from './slices.ts';
 import { proposalsFor, useProposals } from './state.ts';
 
 /** Most cards shown at once (the Review panel lists every proposal). */
@@ -84,21 +85,28 @@ function ProposalCard({ session, summary: p }: { session: EditorSession; summary
 	// biome-ignore lint/correctness/useExhaustiveDependencies: p.updatedAt re-reads the proposal when it changed
 	useEffect(() => {
 		let live = true;
+		let job: { cancel(): void } | null = null;
 		void proposalsFor(session)
 			.read(p.id)
 			.then((proposal) => {
 				if (!live || !proposal) return;
 				const ctx = session.ctx;
-				setCounts(
-					proposalCardCounts(session.getCommitted(), proposal, {
+				// in slices: a proposal of hundreds of items never blocks the editor while its card is counted
+				const run = runInSlices(
+					proposalCardCountsSteps(session.getCommitted(), proposal, {
 						registries: ctx.registries,
 						revision: session.revision,
 						invariants: 'incremental',
 					}),
 				);
+				job = run;
+				void run.promise.then((c) => {
+					if (live) setCounts(c);
+				});
 			});
 		return () => {
 			live = false;
+			job?.cancel();
 		};
 	}, [session, p.id, p.updatedAt]);
 	const sentence = cardSentence(agent, p.title, p.feature, counts);

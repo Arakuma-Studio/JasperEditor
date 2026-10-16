@@ -9,7 +9,7 @@ import type { Sequence } from '@jasper/project';
 import type { EditorSession, ProposalsController, ReviewItem } from '@jasper/session';
 import { confirmDialog, toast } from '@jasper/ui';
 import { createStore } from 'zustand/vanilla';
-import { t } from '../i18n/runtime.ts';
+import { t, translateName } from '../i18n/runtime.ts';
 import { inContextStore, playTimelineWindow } from '../sound/in-context.ts';
 import { soundLibraryPrefs } from '../sound/prefs.ts';
 import { buildGhostModel, type GhostItem, type GhostModel } from './ghosts.ts';
@@ -21,6 +21,7 @@ import {
 	reviewCounts,
 	stepItem,
 } from './review.ts';
+import { describeProblem, problemText } from './stale-text.ts';
 import { proposalsFor } from './state.ts';
 
 /** The last thing the review did, for screen readers (the panel and the bar render it in an aria-live region). */
@@ -106,9 +107,28 @@ export const REVIEW_STATE_LABELS: Record<ReviewItem['state'], string> = {
 	applied: 'Applied',
 };
 
+function reviewSequence(session: EditorSession): Sequence | undefined {
+	const seqId = reviewSequenceId(session);
+	return seqId ? (session.getCommitted().sequences[seqId] as Sequence | undefined) : undefined;
+}
+
 function itemAnnouncement(it: ReviewItem, frame: number | null, session: EditorSession): string {
 	const at = frame !== null ? ` ${t('at {0}', tcOf(session, frame))}` : '';
-	return `${it.label}, ${REVIEW_STATE_LABELS[it.state]}${at}${it.reason ? `. ${it.reason}` : ''}`;
+	const problem = problemText(it, reviewSequence(session));
+	return `${it.label}, ${REVIEW_STATE_LABELS[it.state]}${at}${problem ? `. ${problem}` : ''}`;
+}
+
+/** Why an item the engine reported stale is stale, in the user's language (the review's own problem when it has one). */
+export function staleReportText(
+	session: EditorSession,
+	s: { itemId: string; reason: string; problem?: ReviewItem['problem'] },
+): string {
+	const seq = reviewSequence(session);
+	const local = proposalsFor(session)
+		.getState()
+		.items.find((x) => x.id === s.itemId)?.problem;
+	const problem = s.problem ?? local;
+	return problem ? describeProblem(problem, seq) : (translateName(s.reason) ?? s.reason);
 }
 
 /** ◀ ▶ (time order, the timeline's) or ↑ ↓ (list order, the panel's). */
@@ -348,7 +368,11 @@ export async function applyReview(
 	const r = await c.apply({ trusted: true });
 	if (!r.ok) {
 		const detail = r.stale?.length
-			? t('{0} items changed since they were proposed: {1}', r.stale.length, r.stale[0]!.reason)
+			? t(
+					'{0} items changed since they were proposed: {1}',
+					r.stale.length,
+					staleReportText(session, r.stale[0]!),
+				)
 			: r.message;
 		toast({ kind: 'warning', title: t('The proposal could not be applied'), detail });
 		announce(detail);
@@ -374,7 +398,7 @@ export async function applyReview(
 					detail: t(
 						'{0} stale items left in review: {1}',
 						r.stale.length,
-						r.stale.map((s) => s.reason).join('; '),
+						r.stale.map((s) => staleReportText(session, s)).join('; '),
 					),
 				}
 			: {}),

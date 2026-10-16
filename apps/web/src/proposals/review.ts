@@ -9,7 +9,7 @@ import {
 	type ProjectDocument,
 	type Proposal,
 	type ProposalContext,
-	previewProposal,
+	previewProposalSteps,
 	type Sequence,
 } from '@jasper/project';
 import type { ProposalPreviewState, ReviewItem } from '@jasper/session';
@@ -256,14 +256,34 @@ export type CardCounts = { sounds: number; newTracks: number; items: number };
  * committed document (never committed; ids seeded like the review's preview). Never throws.
  */
 export function proposalCardCounts(doc: ProjectDocument, p: Proposal, ctx: ProposalContext): CardCounts {
+	const run = proposalCardCountsSteps(doc, p, ctx);
+	for (;;) {
+		const step = run.next();
+		if (step.done) return step.value;
+	}
+}
+
+/**
+ * `proposalCardCounts` one item at a time (the card spreads a large proposal's preview over several frames,
+ * `runInSlices`). The items are applied without the per-item invariant check: only the counts are read.
+ */
+export function* proposalCardCountsSteps(
+	doc: ProjectDocument,
+	p: Proposal,
+	ctx: ProposalContext,
+): Generator<unknown, CardCounts, void> {
 	const items = p.items.filter((it) => {
 		const m = metaOf(it.meta);
 		return m.setup !== true && (it.state === 'pending' || it.state === 'stale');
 	}).length;
 	try {
-		const r = previewProposal(doc, p, 'undecided', ctx, {
-			idsFor: (it) => createSeededIdSource(`${p.id}:${it.id}:${it.selectedAlternative ?? 0}`),
-		});
+		const r = yield* previewProposalSteps(
+			doc,
+			p,
+			'undecided',
+			{ ...ctx, checkInvariants: false },
+			{ idsFor: (it) => createSeededIdSource(`${p.id}:${it.id}:${it.selectedAlternative ?? 0}`) },
+		);
 		let sounds = 0;
 		let newTracks = 0;
 		const created = new Set(r.ghost.created);

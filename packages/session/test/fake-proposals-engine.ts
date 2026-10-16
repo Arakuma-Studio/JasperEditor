@@ -34,7 +34,12 @@ export class FakeEngine implements ProposalsEngine {
 		this.listeners.add(cb);
 		return () => this.listeners.delete(cb);
 	};
-	private emit(p: Proposal, change: ProposalChangedEvent['change'], itemIds?: string[]) {
+	private emit(
+		p: Proposal,
+		change: ProposalChangedEvent['change'],
+		itemIds?: string[],
+		extra: Partial<ProposalChangedEvent> = {},
+	) {
 		for (const l of this.listeners)
 			l({
 				projectId: p.projectId,
@@ -42,12 +47,18 @@ export class FakeEngine implements ProposalsEngine {
 				change,
 				counts: proposalCounts(p),
 				...(itemIds ? { itemIds } : {}),
+				...extra,
 			});
 	}
-	private put(p: Proposal, change: ProposalChangedEvent['change'], itemIds?: string[]) {
+	private put(
+		p: Proposal,
+		change: ProposalChangedEvent['change'],
+		itemIds?: string[],
+		extra: Partial<ProposalChangedEvent> = {},
+	) {
 		const stamped = { ...p, updatedAt: this.now() };
 		this.proposals.set(p.id, stamped);
-		this.emit(stamped, change, itemIds);
+		this.emit(stamped, change, itemIds, extra);
 		return stamped;
 	}
 	private get(id: string): Proposal {
@@ -107,6 +118,8 @@ export class FakeEngine implements ProposalsEngine {
 		_pid: string,
 		id: string,
 		req: { itemIds: string[] | 'all'; partial?: boolean; expectedRevision?: number },
+		/** Who accepts: the editor (default; relayed as the user's edit) or an allowed agent. */
+		as: { agent: string } | 'user' = 'user',
 	) {
 		this.calls.push(`accept ${JSON.stringify(req.itemIds)}`);
 		const s = this.session();
@@ -115,7 +128,7 @@ export class FakeEngine implements ProposalsEngine {
 			s.getCommitted(),
 			p0,
 			req.itemIds,
-			'user',
+			as,
 			{ registries: REG, revision: s.revision },
 			{
 				partial: req.partial === true,
@@ -138,7 +151,7 @@ export class FakeEngine implements ProposalsEngine {
 				revision: s.revision,
 			};
 		// the engine relays the ONE composed transaction into the open editor as the user's edit (asUser)
-		const result = await s.submit({ ...plan.composed.tx, origin: 'user' } as never);
+		const result = await s.submit({ ...plan.composed.tx, origin: as } as never);
 		if (!result.ok) throw Object.assign(new Error('rejected'), { code: 'TRANSACTION_REJECTED' });
 		const accepted = this.put(
 			markAccepted(plan.proposal, plan.composed.itemIds, {
@@ -149,6 +162,7 @@ export class FakeEngine implements ProposalsEngine {
 			}),
 			'accepted',
 			plan.composed.itemIds,
+			{ revision: result.revision },
 		);
 		return {
 			proposal: accepted,
@@ -218,7 +232,7 @@ export class FakeEngine implements ProposalsEngine {
 			at: this.now(),
 			...(req.created ? { created: req.created } : {}),
 		});
-		return { proposal: this.put(next, 'accepted', ids), changed: ids };
+		return { proposal: this.put(next, 'accepted', ids, { revision: req.revision }), changed: ids };
 	}
 	async deleteProposal(_pid: string, id: string) {
 		this.calls.push(`delete ${id}`);

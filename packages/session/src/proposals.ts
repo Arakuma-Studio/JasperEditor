@@ -37,6 +37,7 @@ import {
 	previewProposal,
 	previewProposalSteps,
 	revalidate,
+	type StaleProblem,
 } from '@jasper/project';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { EditorSession } from './session.ts';
@@ -72,8 +73,10 @@ export type ReviewItem = {
 	state: ReviewItemState;
 	/** The stored state (engine). */
 	engineState: ProposalItemState;
-	/** Why it is stale / invalid (or the stored reason). */
+	/** Why it is stale / invalid (or the stored reason), in English (agents read the same). */
 	reason?: string;
+	/** Why it is stale, structured (the editor says it in the user's language); absent for a stored reason only. */
+	problem?: StaleProblem;
 	note?: string;
 	/** Command sets to choose from (its own + alternatives), the chosen one and their labels. */
 	alternatives: number;
@@ -121,6 +124,8 @@ export type ProposalsState = {
 	preview: ProposalPreviewState | null;
 	/** Items the local re-validation found stale on the live document, with why. */
 	stale: Record<string, string>;
+	/** The same, structured (what moved where, which requirement, what failed). */
+	staleProblems: Record<string, StaleProblem>;
 	/** A route call is in flight. */
 	busy: boolean;
 	/** The preview is being rebuilt (a large proposal's preview is spread over several frames). */
@@ -232,6 +237,11 @@ export class ProposalsController {
 	/** The last previews built, reused while what they depend on is unchanged. */
 	private memo: { doc: ProjectDocument; key: string; preview: ProposalPreview } | null = null;
 	private heardMemo: { doc: ProjectDocument; key: string; preview: ProposalPreview } | null = null;
+	private revalidated: {
+		doc: ProjectDocument;
+		proposal: Proposal;
+		result: ReturnType<typeof revalidate>;
+	} | null = null;
 	/** Items the last preview could not apply (shown stale until the next preview says otherwise). */
 	private lastFailed: Record<string, string> = {};
 	private listTimer: unknown = null;
@@ -268,6 +278,7 @@ export class ProposalsController {
 			hear: false,
 			preview: null,
 			stale: {},
+			staleProblems: {},
 			busy: false,
 			previewing: false,
 			lastError: null,
@@ -386,6 +397,8 @@ export class ProposalsController {
 				selection: [],
 				preview: null,
 				stale: {},
+				staleProblems: {},
+				staleProblems: {},
 			});
 		const r = await this.fetchActive();
 		if (!r.ok && this.store.getState().activeId === proposalId) this.exit();
@@ -407,6 +420,7 @@ export class ProposalsController {
 			hear: false,
 			preview: null,
 			stale: {},
+			staleProblems: {},
 			previewing: false,
 		});
 	}
@@ -900,6 +914,7 @@ export class ProposalsController {
 	): void {
 		this.lastFailed = failed;
 		const s = this.store.getState();
+		const problems = s.staleProblems;
 		const p = s.proposal;
 		if (!p) {
 			if (s.items.length) this.store.setState({ items: [] });
@@ -911,15 +926,21 @@ export class ProposalsController {
 			const stored = this.optimistic.get(it.id) ?? it.state;
 			let state: ReviewItemState;
 			let reason = it.reason;
+			let problem: StaleProblem | undefined;
 			if (it.state === 'accepted') state = 'applied';
 			else if (it.state === 'invalid') state = 'invalid';
 			else if (stored === 'rejected') state = 'rejected';
 			else if (stale[it.id] !== undefined || failed[it.id] !== undefined) {
 				state = 'stale';
 				reason = stale[it.id] ?? failed[it.id];
+				problem =
+					stale[it.id] !== undefined ? problems[it.id] : { type: 'conflict', issue: failed[it.id] ?? '' };
 			} else if (local.has(it.id)) state = 'accepted';
 			else state = 'pending';
-			if (state === 'pending' || state === 'accepted' || state === 'rejected') reason = undefined;
+			if (state === 'pending' || state === 'accepted' || state === 'rejected') {
+				reason = undefined;
+				problem = undefined;
+			}
 			return {
 				id: it.id,
 				label: it.label,
@@ -929,6 +950,7 @@ export class ProposalsController {
 				state,
 				engineState: it.state,
 				...(reason ? { reason } : {}),
+				...(problem ? { problem } : {}),
 				...(it.note ? { note: it.note } : {}),
 				alternatives: (it.alternatives?.length ?? 0) + 1,
 				selectedAlternative: it.selectedAlternative ?? 0,
@@ -943,8 +965,9 @@ export class ProposalsController {
 	 * Rebuilds the preview and the local re-validation on the committed document: anchors (cheap) at once, then the
 	 * previews — every reviewable item (the ghosts) and, when something is rejected, what Hear plays — reusing the last
 	 * ones while what they depend on did not change (a local accept or clear rebuilds nothing). Items are applied
-	 * without the per-item invariant check and the end result is checked once; only when that fails are the items
-	 * applied again with it, to tell which ones break it. A large proposal is built in slices (`sliceMs`) unless `sync`.
+	 * without the per-item invariant check and the end result of a small proposal is checked once; only when that fails
+	 * are the items applied again with it, to tell which ones break it. A large proposal is built in slices (`sliceMs`)
+	 * unless `sync`.
 	 */
 	private recompute(sync: boolean): void {
 		if (this.disposed) return;
@@ -957,9 +980,19 @@ export class ProposalsController {
 		}
 		const doc = this.session.getCommitted();
 		const ctx = this.context();
-		const rv = revalidate(doc, p, ctx, { dryRuns: false });
+		// the anchors' re-validation depends on the document and the stored proposal only (not on local decisions)
+		const rvMemo = this.revalidated;
+		const rv =
+			rvMemo && rvMemo.doc === doc && rvMemo.proposal === p
+				? rvMemo.result
+				: revalidate(doc, p, ctx, { dryRuns: false });
+		this.revalidated = { doc, proposal: p, result: rv };
 		const stale: Record<string, string> = {};
-		for (const x of rv.stale) stale[x.itemId] = x.reason;
+		const staleProblems: Record<string, StaleProblem> = {};
+		for (const x of rv.stale) {
+			stale[x.itemId] = x.reason;
+			if (x.problem) staleProblems[x.itemId] = x.problem;
+		}
 		// the decisions in flight count as made
 		const viewed: Proposal = {
 			...rv.proposal,
@@ -987,6 +1020,7 @@ export class ProposalsController {
 				if (!rejected.has(itemId)) failed[itemId] = issueReason(errors);
 			this.store.setState({
 				stale,
+				staleProblems,
 				previewing: false,
 				preview: {
 					proposalId: p.id,
@@ -1015,16 +1049,20 @@ export class ProposalsController {
 			return;
 		}
 		// stale anchors show at once; the previews follow
-		this.store.setState({ stale, previewing: true });
+		this.store.setState({ stale, staleProblems, previewing: true });
 		this.publishItems(stale);
 		const idsFor = (it: ProposalItem) =>
 			createSeededIdSource(`${p.id}:${it.id}:${it.selectedAlternative ?? 0}`);
 		const effects = { effects: ctx.registries.effects };
 		const fast: ProposalContext = { ...ctx, checkInvariants: false };
+		// The whole result's invariant check (one full pass over the document, ≈ 100 ms for a 1 000-item proposal on a
+		// loaded machine) is skipped for a large proposal: its items were checked together by the engine on the document
+		// it was made for, a placement refuses overlaps itself, and an item that conflicts only through an invariant is
+		// reported stale by Apply (the engine's accept checks the exact set it applies) — never silently dropped.
+		const verifyTogether = all.length <= this.syncItems;
 		function* build(ids: readonly string[]): Generator<unknown, ProposalPreview, void> {
 			const quick = yield* previewProposalSteps(doc, viewed, ids, fast, { idsFor });
-			if (quick.applied.length === 0) return quick;
-			yield; // the invariant check of the result is a step of its own
+			if (quick.applied.length === 0 || !verifyTogether) return quick;
 			if (checkInvariants(quick.document, effects).length === 0) return quick;
 			// together they break an invariant: once more with the check per item, to know which items do
 			return yield* previewProposalSteps(doc, viewed, ids, ctx, { idsFor });

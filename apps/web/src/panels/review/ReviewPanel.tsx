@@ -38,9 +38,11 @@ import {
 	type ReviewRow,
 	reviewCounts,
 } from '../../proposals/review.ts';
+import { problemText } from '../../proposals/stale-text.ts';
 import { useGhostModel, useProposals, useProposalsController } from '../../proposals/state.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { glyphPath, KIND_GLYPH } from '../../sound/cues/model.ts';
+import { seqTimecode } from '../../sound/design-model.ts';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import type { PanelProps } from '../types.ts';
 
@@ -61,7 +63,7 @@ export function ReviewPanel(props: PanelProps) {
 				className="flex h-full items-center justify-center p-4 text-center text-pr-small text-pr-muted"
 				data-testid="review-panel"
 			>
-				Open a project to review proposals.
+				{t('Open a project to review proposals.')}
 			</div>
 		);
 	return <ReviewBody {...props} session={session} />;
@@ -69,12 +71,7 @@ export function ReviewPanel(props: PanelProps) {
 
 function fmtTc(seq: Sequence | undefined, frame: number | null): string {
 	if (frame === null || !seq) return '—';
-	const fps = seq.settings.frameRate.num / seq.settings.frameRate.den;
-	if (!(fps > 0)) return String(frame);
-	const s = frame / fps;
-	const ff = Math.round(frame - Math.floor(s) * fps);
-	const two = (n: number) => String(Math.max(0, Math.floor(n))).padStart(2, '0');
-	return `${two(s / 3600)}:${two((s / 60) % 60)}:${two(s % 60)}:${two(ff)}`;
+	return seqTimecode(seq, frame);
 }
 
 function ProposalOptionLabel(p: ProposalSummary): string {
@@ -452,7 +449,8 @@ export function rowAriaLabel(row: ReviewRow, seq: Sequence | undefined): string 
 		.join(', ');
 	if (what) parts.push(what);
 	if (it.alternatives > 1) parts.push(t('alternate {0} of {1}', it.selectedAlternative + 1, it.alternatives));
-	if ((it.state === 'stale' || it.state === 'invalid') && it.reason) parts.push(it.reason);
+	const problem = problemText(it, seq);
+	if (problem) parts.push(problem);
 	else if (row.reason) parts.push(row.reason);
 	if (it.note) parts.push(t('note: {0}', it.note));
 	return parts.join('. ');
@@ -476,6 +474,7 @@ function Row(p: {
 	const { row } = p;
 	const it = row.item;
 	const warn = it.state === 'stale' || it.state === 'invalid';
+	const problem = warn ? problemText(it, p.seq) : null;
 	const decided = it.state === 'applied';
 	const seg = (d: 'accept' | 'reject' | 'clear', glyph: string, label: string, on: boolean) => (
 		<button
@@ -579,9 +578,9 @@ function Row(p: {
 			<div className="flex min-w-0 items-center gap-1.5 pl-[66px] text-pr-small text-pr-muted">
 				{row.role ? <span className="shrink-0">{row.role}</span> : null}
 				{row.gainDb !== null ? <span className="shrink-0 pr-tabular">{gainText(row.gainDb)}</span> : null}
-				{warn && it.reason ? (
-					<span className="min-w-0 truncate text-pr-warning" title={it.reason}>
-						! {it.reason}
+				{warn && problem ? (
+					<span className="min-w-0 truncate text-pr-warning" title={problem} data-review-problem>
+						! {problem}
 					</span>
 				) : row.reason ? (
 					<span className="min-w-0 truncate" title={row.reason}>

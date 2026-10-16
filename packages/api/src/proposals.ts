@@ -8,6 +8,7 @@ import {
 	ProposalDraftSchema,
 	ProposalItemIdSchema,
 	ProposalSchema,
+	type StaleProblem,
 } from '@jasper/project';
 import { z } from 'zod';
 import { TransactionResultSchema } from './agent.ts';
@@ -106,7 +107,24 @@ export const ProposalAcceptRequestSchema = z.strictObject({
 });
 export type ProposalAcceptRequest = z.infer<typeof ProposalAcceptRequestSchema>;
 
-export const ProposalStaleItemSchema = z.object({ itemId: z.string(), reason: z.string() });
+/**
+ * A stale item: `reason` in English (timecodes and what changed: "The cut cue at 00:00:03:00 moved to 00:00:03:10"),
+ * `problem` the same structured (`StaleProblem`: an anchor that moved or went, a requirement, a failure) for the editor
+ * to say in the user's language.
+ */
+export const ProposalStaleItemSchema = z.object({
+	itemId: z.string(),
+	reason: z.string(),
+	problem: z
+		.custom<StaleProblem>(
+			(v) =>
+				!!v &&
+				typeof v === 'object' &&
+				['anchor', 'requires', 'conflict'].includes(String((v as { type?: unknown }).type)),
+			'a stale problem',
+		)
+		.optional(),
+});
 
 export const ProposalAcceptResponseSchema = z.object({
 	proposal: ProposalSchema,

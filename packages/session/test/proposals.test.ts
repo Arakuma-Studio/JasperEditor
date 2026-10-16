@@ -227,7 +227,15 @@ describe('proposals slice: preview document and ghosts', () => {
 		t.run();
 		const mk = c.getState().items.find((it) => it.id === 'mk')!;
 		expect(mk.state).toBe('stale');
-		expect(mk.reason).toMatch(/frame 100 → 120/);
+		expect(mk.reason).toBe('The marker “Hit” at 00:00:03:10 moved to 00:00:04:00');
+		expect(mk.problem).toMatchObject({
+			type: 'anchor',
+			entity: 'marker',
+			change: 'frame',
+			at: 100,
+			to: 120,
+			name: 'Hit',
+		});
 		expect(c.getState().stale.mk).toBeDefined();
 		// the stored state is the engine's (not re-validated): only this window's view says stale
 		expect(engineStates(engine, p.id).mk).toBe('pending');

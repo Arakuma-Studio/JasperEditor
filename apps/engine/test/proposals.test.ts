@@ -301,7 +301,13 @@ describe('proposal routes (headless)', () => {
 			code: 'PROPOSAL_STALE',
 			detail: {
 				code: 'E_PROPOSAL_STALE',
-				stale: [{ itemId: 'mk', reason: `${MARKER} changed since the proposal was made (frame 100 → 120)` }],
+				stale: [
+					{
+						itemId: 'mk',
+						reason: 'The marker “Hit” at 00:00:03:10 moved to 00:00:04:00',
+						problem: { type: 'anchor', id: MARKER, entity: 'marker', change: 'frame', at: 100, to: 120 },
+					},
+				],
 			},
 		});
 		expect(saved(file).revision).toBe(4); // nothing applied

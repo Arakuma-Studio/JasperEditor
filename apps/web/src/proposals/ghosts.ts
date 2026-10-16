@@ -31,6 +31,7 @@ import {
 } from '../panels/timeline/model/layout.ts';
 import { frameToX, type Viewport } from '../panels/timeline/model/viewport.ts';
 import { cuesOf } from '../sound/cues/model.ts';
+import { problemText } from './stale-text.ts';
 
 /** States a ghost can show (applied items are in the document: no ghost). */
 export type GhostState = Exclude<ReviewItemState, 'applied'>;
@@ -462,7 +463,7 @@ function metaFacts(meta: unknown): string[] {
  * preview (what lands where: track, timecode, length, gain) and the creator's own `meta.facts`, then why it is stale.
  */
 export function whyLines(
-	item: Pick<ReviewItem, 'id' | 'meta' | 'state' | 'reason' | 'note'>,
+	item: Pick<ReviewItem, 'id' | 'meta' | 'state' | 'reason' | 'note' | 'problem'>,
 	model: GhostModel,
 	seq: Sequence,
 	previewSeq: Sequence | undefined,
@@ -492,10 +493,7 @@ export function whyLines(
 	for (const q of model.cues)
 		if (q.itemId === item.id && facts.length < 5) facts.push(t('Cue at {0}', tc(q.cue.frame)));
 	facts.push(...metaFacts(item.meta));
-	const problem =
-		item.state === 'stale' || item.state === 'invalid'
-			? (item.reason ?? (item.state === 'stale' ? t('Changed since it was proposed') : t('Does not apply')))
-			: null;
+	const problem = problemText(item, seq);
 	return { why: metaText(item.meta, 'why') ?? metaText(item.meta, 'reason'), facts, problem };
 }
 
