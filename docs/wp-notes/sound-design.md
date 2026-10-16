@@ -3389,6 +3389,217 @@ schema docs (kept both: A's fades / alternatives / `trimmedHeadSec` and B's defa
 
 ## Phase 3: proposals and review
 
+### Phase 3 → WP3.1 proposal model, store and routes
+
+Scope: spec 12 §2.5 (generic proposals), §2.8 (proposal routes), P3-R1, P3-R2; ARCHITECTURE §11.3 / D-18 "proposals
+later". Files: `packages/project/src/proposals/{schema,structure,anchors,compose,validate,decisions,ghost,index}.ts`
+(exported from `@jasper/project` and the subpath `@jasper/project/proposals`), `commands/context.ts`
+(`substituteKnownRefs`, `isTempRef`), `agent/guard.ts` (agentsMayApply needs approval); `packages/api/src/proposals.ts`
+(contracts), `routes.ts` (9 routes), `events.ts` (`proposal.changed`), `common.ts` (codes `APPROVAL_REQUIRED`,
+`PROPOSAL_NOT_FOUND`, `PROPOSAL_LIMIT`, `PROPOSAL_STALE`); `packages/engine-client/src/client.ts` (9 methods);
+`apps/engine/src/proposals/{store,service}.ts`, `routes/proposals.ts` (registered last), `agent/service.ts`
+(`transact` options `preApproved`, `asUser`); `apps/web/src/agent-bridge/bridge.ts` (relay flag `asUser`). Tests:
+`packages/project/test/proposals.test.ts`, `apps/engine/test/proposals{,-store,-fuzz}.test.ts`,
+`apps/web/test/agent-bridge.test.ts` (1 new), `packages/engine-client/test/client.test.ts` (1 new). Docs: security
+review (AGT-3 table rows and §9), gaps, README "HTTP API underneath", ARCHITECTURE §11.3.
+
+#### Model (`@jasper/project`; pure, never throws — problems are typed `ProposalIssue {code, message, itemId?, path?}`)
+
+```ts
+PROPOSAL_LIMITS = { maxItems: 2000, maxCommands: 5000 /* items' own sets together = one tx */, maxAlternatives: 16,
+  maxAlternativeCommands: 50_000, maxRequires: 64, maxBytes: 20 MB, maxMetaBytes: 64 KB, maxReportBytes: 1 MB,
+  maxTitle: 200, maxSummary: 4000, maxLabel: 200, maxGroup: 64, maxNote: 4000, maxReason: 1000,
+  maxPerProject: 50, expiryDays: 30 }
+PROPOSAL_ITEM_STATES = pending | accepted | rejected | stale | invalid
+PROPOSAL_ID_RE /^prp_[Crockford]{16}$/, PROPOSAL_ITEM_ID_RE /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/,
+PROPOSAL_FEATURE_RE /^[a-z][a-z0-9-]{0,63}$/, SOUND_DESIGN_FEATURE = 'sound-design'
+
+ProposalDraftSchema (what creators send; strict) = { sequenceId?: string|null, feature, title, summary?, report?,
+  items: [{ id, label, group?, commands: Command[1..5000], requires?: earlier item ids, meta?,
+            alternatives?: [{label, commands, meta?}] ≤16, selectedAlternative?: 0 (own set) | k (alternatives[k-1]) }] }
+ProposalSchema (stored; strict) = { version: 1, id: 'prp_…', projectId, sequenceId|null, feature, title, summary,
+  author: 'user'|{agent}, createdAt, updatedAt, baseRevision, docHash, report?,
+  items: [{ …draft item, group, requires, state, reason?, note?, anchors?: {entityId: fingerprint},
+            applied?: {revision, at, refs: {$ref: id}} }] }
+
+createProposal(doc, draftUnknown, {id, projectId, author, now, revision}, ctx) → {ok, proposal} | {ok:false, errors}
+validateProposal(doc, proposal, ctx) → proposal        // states + anchors; accepted/rejected/invalid untouched
+revalidate(doc, proposal, ctx) → {proposal, changed, stale: [{itemId, reason}]}
+planAccept(doc, proposal, itemIds|'all', origin, ctx, {partial?, expectedRevision?})
+  → {ok:true, composed: ComposedAccept|null, proposal, stale} | {ok:false, errors, proposal, stale}
+composeAcceptTx(proposal, itemIds|'all', origin, {expectedRevision?, exclude?, maxCommands?})
+  → {ok:true, tx: {protocol, label: 'Accept <title> (n of m)', origin, sequenceId?, expectedRevision?, commands},
+     itemIds /* closure, proposal order */, added, skipped /* already accepted */, ranges: [{itemId, start, end}]}
+  | {ok:false, errors}
+markAccepted(p, itemIds, {revision, refs, at}); rejectItems(p, ids|'all', now); reopenItems(p, ids|'all', now);
+setItemNote(p, itemId, note|null, now); selectAlternative(p, itemId, k, now)      // → {ok, proposal, changed}
+proposalGhost(before, after | applyTransaction result) → {created, changed, deleted}  // incl. effects etc. in clips
+previewProposal(doc, p, itemIds|'undecided', ctx) → {document, ghost, items: {itemId → ghost}, failed, applied}
+dependencyClosure(p, ids, stopAt?), dependents(p, id), appliedRefs(p), declaredRefs(commands),
+proposalStructureIssues(items), proposalCounts(p), proposalDecided(p), selectedCommands(item), itemOfCommand(ranges, i),
+documentHash(doc), anchorFingerprint(doc, id), itemAnchors(doc, commands), anchorsProblem(doc, anchors),
+dryRunCommands(doc, commands, ctx, sequenceId?), issueReason(errors)
+ProposalContext = { registries, revision?, ids? (default random), now?, invariants?, checkInvariants? }
+```
+
+How it works:
+
+- **Creation** refuses (whole proposal, `E_SCHEMA` / `E_LIMIT` / `E_INVALID_PARAM` / `E_NOT_FOUND`) what is the
+  creator's error: draft shape, unknown command keys at any depth (the agent strictness rule), unknown command types,
+  command schemas, duplicate item ids, `requires` naming a later / unknown item or itself, a temp ref declared by two
+  items (accepting items together is one transaction), an alternative that declares other refs than its item (later
+  items use them), an unknown `sequenceId`, the limits. Agent addressing forms (`mediaByName`, `clipAt`, …) are resolved
+  against the document and stored resolved; an address that fails makes its item `invalid`.
+- **Validation** (document-dependent problems → item `invalid` + reason, and the items requiring it too): first ALL
+  undecided items in one dry run with the invariant checker; then each item's dependency closure alone (without the
+  checker when the whole set held — the handlers refuse what is missing, and `planAccept` re-checks the exact set with
+  invariants before anything is applied); if the whole set fails, the item owning the failing command (or, for a
+  transaction-level failure, the shortest failing prefix found by bisection) becomes `invalid` ("conflicts with the
+  items before it: …") and the rest is tried again (≤ 50 passes). Each pending item records its **anchors**: every
+  entity id its commands name, with a fingerprint (clips: track, start, length, In, speed; transitions: track, clips,
+  length, alignment; sequence markers and sound cues: frame; others: presence).
+- **Re-validation** (on GET `?revalidate=1`, accept, select): pending/stale items whose anchors are gone or moved become
+  `stale` ("clp_… changed since the proposal was made (start 0 → 12)", "mrk_… (frame 100 → 120)", "… no longer exists");
+  entities named by the proposal's own accepted items are not anchors any more; then one dry run of the rest together
+  (fast path) or one per item, and items requiring a stale/invalid item are stale. Same content hash and nothing
+  accepted → everything stale is pending again without dry runs. Stale is recomputed every time (undo or moving
+  things back revives items); invalid is sticky (except `select` of a working alternative).
+- **Accept** (`planAccept` → `composeAcceptTx`): `'all'` = every pending or stale item (invalid, rejected and accepted
+  ones are not part of "all"); explicit ids may include rejected items (the user changed their mind). The closure is
+  taken over `requires` (an accepted requirement is not re-applied: its recorded `applied.refs` are substituted into
+  the later item's id positions with `substituteKnownRefs`); a rejected requirement is accepted with it. All-or-nothing:
+  any stale/invalid item in the closure refuses (`E_STALE` / `E_INVALID_PARAM`). With `partial` those requested items
+  drop out with whatever requires them, and an item that newly conflicts in the composed dry run becomes stale and
+  drops out too (≤ 50 passes). One transaction, label `Accept <title> (n of m)` (title cut at 80 characters).
+- **Decisions** never touch the document: reject (refused for accepted items: "undo it in History, then reopen it"),
+  reopen (accepted/rejected → pending, clears `applied`, keeps notes and selections: the Review UI's "After Undo, the
+  proposal reopens with its decisions intact"), note (≤ 4 000, null/"" clears), select (0 = own set).
+- **Ghosts**: `proposalGhost` is `diffDocuments` plus, inside each changed clip, the id-bearing children (effects,
+  keyframes, masks, clip markers; depth ≤ 8, ≤ 5 000). `previewProposal` applies items one transaction each on a copy
+  with refs carried over, so every created id is attributed to its item — this is what the session preview (P3-R4)
+  needs; what is committed is always `composeAcceptTx`'s single transaction.
+
+#### Engine store (`apps/engine/src/proposals/store.ts`)
+
+`<appdir>/projects/<pid>/proposals/<prp_id>.json` (inside the project folder: deleting the project deletes them),
+written with `atomicWriteFile` (temp file, fsync, rename, fsync dir), serialized per project. ≤ 50 per project:
+creating the 51st evicts the oldest **decided** proposal (no pending or stale item) by last change; when every stored
+one is still under review, `409 PROPOSAL_LIMIT` (`detail: {code: 'E_PROPOSAL_LIMIT', limit, undecided}`), nothing
+evicted. Expiry: 30 days after `updatedAt` (decisions refresh it); expired files are deleted on list/get and announced
+(`proposal.changed` `expired`). A file that is not JSON, fails `ProposalSchema`, names another id or project, or is over
+21 MB is renamed `<id>.json.corrupt-<ms>` and reported in the list's `warnings` and the log; never a crash. Creating
+for a missing project is `404 PROJECT_NOT_FOUND` (no folder is created); writing a proposal deleted meanwhile is
+`404 PROPOSAL_NOT_FOUND`.
+
+#### Routes (exact API for the session, web and MCP agents)
+
+All under `/api/projects/:projectId/proposals` (ids checked: `prj_…`, `prp_…`); client methods in brackets. Errors are
+the usual `{code, message, detail?, retryable}`; `detail.code` carries the `E_*` code where there is one.
+
+| Route | Body / query | Answer | Errors |
+|---|---|---|---|
+| `GET …` [`listProposals(pid)`] | | `{proposals: [{id, projectId, sequenceId, feature, title, summary, author, createdAt, updatedAt, expiresAt, baseRevision, itemCount, counts {pending, accepted, rejected, stale, invalid}, decided}], warnings}` newest first | 404 PROJECT_NOT_FOUND |
+| `POST …` [`createProposal(pid, req)`] | `ProposalDraft` + `author?` (taken from the editor only; an agent is always `{agent: <x-jasper-agent>}`) | `{proposal, expiresAt, revision, evicted: [ids]}` | 400 VALIDATION_FAILED (`detail {code, errors[]}`), 404, 409 PROPOSAL_LIMIT |
+| `GET …/:id` [`getProposal(pid, id, {revalidate?})`] | `?revalidate=1` re-validates on the live document (and stores/announces changed states) | `{proposal, expiresAt, revision /* null without revalidate */}` | 404 PROPOSAL_NOT_FOUND |
+| `POST …/:id/accept` [`acceptProposal`] | `{itemIds: [ids] \| 'all', partial?, expectedRevision?}` | `{proposal, applied, added, skipped, stale: [{itemId, reason}], result: TransactionResult \| null, appliedBy: 'session' \| 'headless' \| null, revision}` | 403 APPROVAL_REQUIRED (agent, policy), 403 APPROVAL_DENIED / APPROVAL_TIMEOUT (destructive items, agent), 409 PROPOSAL_STALE (`detail {code: E_PROPOSAL_STALE, errors, stale}`), 409 REVISION_CONFLICT (`expectedRevision` ahead, or behind with a conflicting edit: fast-forward rule), 409 TRANSACTION_REJECTED, 409 NO_SESSION, 404 NOT_FOUND (unknown item) |
+| `POST …/:id/reject` [`rejectProposal`] | `{itemIds \| 'all'}` | `{proposal, changed}` | 400 (accepted item), 404 |
+| `POST …/:id/reopen` [`reopenProposal`] | `{itemIds \| 'all'}` | `{proposal, changed}` | 404 |
+| `POST …/:id/note` [`noteProposalItem`] | `{itemId, note: string \| null}` | `{proposal, changed}` | 400, 404 |
+| `POST …/:id/select` [`selectProposalAlternative`] | `{itemId, alternative: 0…16}` — the chosen set is dry-run with its closure on the live document first; its anchors are recorded anew; a working alternative revives an invalid item | `{proposal, changed}` | 400 (out of range, accepted, does not apply), 404 |
+| `DELETE …/:id` [`deleteProposal`] | | `{proposalId, deleted: true}` | 404 |
+
+Event `proposal.changed` (project-scoped): `{projectId, proposalId, change: created | accepted | rejected | reopened |
+noted | selected | revalidated | deleted | expired | evicted, feature?, sequenceId?, counts?, itemIds?, revision?}`.
+`ProposalService` is also `app.jasper.services.proposals` (the P3-R3 plan job creates through `service.create(pid,
+draft, {editor, agent})`; `registerPolicy(feature, fn)` lets another feature allow agent accepts).
+
+#### Decisions
+
+- **Policy gate.** A request without the editor key (an agent, jasper-mcp, the CLI, the editor acting on an agent's
+  live-UI input) may accept only where the feature's policy allows it: `sound-design` = the proposal's sequence has
+  `soundDesign.settings.agentsMayApply === true` (read from the live document); any other feature refuses by default.
+  `403 APPROVAL_REQUIRED` / `E_APPROVAL_REQUIRED` (new code; the agent cannot answer it, the user applies in the editor).
+  An allowed agent's accept goes through the ordinary classification: `track.remove`, `item.delete`, `force: true` …
+  inside the items still show the approval card (headless → `APPROVAL_DENIED`). **Closing a bypass:** an agent setting
+  `agentsMayApply: true` with `soundDesign.setSettings` now needs the approval card too (`approvalReasons`), otherwise
+  it could grant itself the right.
+- **The editor's accept is the user's edit.** With the editor key the engine relays the composed transaction with
+  `approved: true, asUser: true`; the bridge commits it with origin `user` (History "Accept Live pass (2 of 2)", no
+  "Agent:" prefix, not in the agent activity feed) and honours `asUser` only together with `approved` (only the engine
+  sets both, only for editor-key requests). Headless it is saved with origin `user`. An agent's accept is
+  `{agent: <name>, runId: <proposalId>}` (so that agent may `history.undo` it).
+- **Concurrency.** Accept, decisions and deletion of one proposal are serialized (per-proposal mutex held across the
+  transaction): two simultaneous accepts of the same items apply once (the second reports them `skipped`). Accept
+  re-validates on the live document and sends `expectedRevision` (the caller's, default the revision it validated at),
+  so an edit landing in between is caught by the fast-forward rule (S01:AGT-010) or applies cleanly; never both lost.
+- **Additions to the spec's route list** (generic and needed by P3-R6): `reopen` (Undo back into review) and `select`
+  (alternate cycling on ghosts, stored so agents read the choice). Items carry `alternatives` (command sets) and
+  `selectedAlternative`; `applied.refs` makes accepting A then B equal accepting A ∪ B.
+- **Stale vs invalid.** Invalid = never applied on the document it was validated against (sticky); stale = was valid
+  but the document changed (recomputed on every re-validation). The spec's "Ghosts follow their anchors" is served by
+  the anchors' current frames (the session resolves them); moved anchors make items stale, never silently re-targeted.
+
+#### Verified (measured, this branch; shared host, 16 cores, load average 20–78)
+
+- `pnpm vitest run packages/project/test/proposals.test.ts --maxWorkers=2`: 21 passed. Includes the four properties
+  (fast-check): accepting A then B ≡ accepting A ∪ B (40 runs, markers, tracks with refs and items using them across the
+  two accepts; documents equal up to id renumbering, same item states); rejecting leaves the document identical (same
+  reference and JSON) and `'all'` then composes exactly the closure of the rest (40 runs); compose deterministic and the
+  closure contains the request, is closed under `requires`, equals the reachable set and keeps proposal order (200
+  random DAGs); never throws on fuzzed drafts / `fc.anything()` (150 runs: create, compose, plan, revalidate, preview;
+  every refusal code is `E_*`).
+- `pnpm vitest run apps/engine/test/proposals.test.ts apps/engine/test/proposals-store.test.ts
+  apps/engine/test/proposals-fuzz.test.ts --maxWorkers=2`: 13 + 6 + 3 passed. Store: round trip with no temp files,
+  path-shaped ids refused, no folder for a missing project, eviction order and `E_PROPOSAL_LIMIT`, 30-day expiry
+  (exact `expiresAt`), three kinds of corrupt files moved aside with warnings, 8 concurrent creates against a limit
+  of 5 → exactly 5 stored. Routes: create/list/get/events; invalid items stored with reasons; 5 malformed bodies → 400;
+  accept all = one transaction (saved revision 3 → 4, refs recorded, accepting again applies nothing); stale anchor →
+  409 PROPOSAL_STALE with "frame 100 → 120", partial applies the rest, moving back revives; `expectedRevision` ahead /
+  conflicting / fast-forward; reject (project file byte-identical), note, select (the solo alternative is what got
+  applied), reopen with notes and selection intact, delete, the event sequence; the 50 limit then eviction; deletion
+  with the project; concurrent accepts apply once; accept racing an edit keeps both. Policy (engine with token and
+  editor key): agent → 403 APPROVAL_REQUIRED, agent cannot forge `author: 'user'` nor grant itself `agentsMayApply`
+  (E_APPROVAL_DENIED), editor accepts; allowed agent accepts, a non-sound feature stays refused; destructive item:
+  allowed agent headless → APPROVAL_DENIED, editor applies; live (fake editor session over WS /agent): editor accept
+  relayed `approved + asUser`, agent accept relayed as the agent's, destructive card denied → 403 and approved → applied.
+  Mutation check: with the policy check disabled, the two policy tests fail.
+- `pnpm vitest run apps/engine/test/fuzz-http.test.ts --maxWorkers=2`: 165 passed (the generic route fuzzer discovers
+  the 9 new routes). `apps/web/test/agent-bridge.test.ts` (5 passed, new: `asUser` + `approved` → History origin
+  `user`, no activity entry; `asUser` without `approved` → an ordinary agent transaction), `packages/engine-client/test`
+  (20 passed, new: every proposal method's path, query and body), and, before the bridge test was added, `packages/api/test`, `packages/project/test/agent*.test.ts`,
+  `apps/engine/test/{agent,security-hardening,security-review,server,events}.test.ts` with the bridge file: 11 files, 128 passed.
+- **Run for real** (dev engine `JASPER_APPDIR=.stage JASPER_DEV=1 tsx apps/engine/src/cli.ts --port 49901`, curl with
+  the token / with the editor cookies): a 4-item proposal by `x-jasper-agent: curl-agent` → author `{agent:
+  'curl-agent'}`, `bad` stored `invalid` "E_NOT_FOUND: Track not found: A9"; agent accept → 403 APPROVAL_REQUIRED; agent
+  `soundDesign.setSettings {agentsMayApply: true}` → E_APPROVAL_DENIED; editor accept `["mute"]` → applied `trk, mute`
+  (added `trk`), revision 1, saved track "SFX 1" muted; `'all'` → `cut` (invalid `bad` is not part of all), revision 2.
+  Then **in the editor** (Vite on 49902, the project open in a browser): a 2-marker proposal accepted with the editor key
+  → `appliedBy: session`, the History list showed ONE entry `Accept Live pass (2 of 2)`, origin `user`; both markers
+  visible on the timeline ruler (screenshot looked at); **one Ctrl+Z removed both** (saved revision 4, no markers);
+  `reopen all` → both pending; `?revalidate=1` → still pending at revision 4; accepting `m2` alone → applied, revision 5.
+- Measured cost (vitest, `invariants: 'incremental'`, 2 000 `soundCue.add` items anchored to 200 clips on a 400-clip
+  document, load ≈ 66): create 9.9–10.8 s (≈ 5 ms per item: one dry run each), revalidate after an unrelated edit
+  1.1–2.1 s, planAccept of all 1.8 s. Before the whole-set-first change, create took 68 s (load ≈ 40); a quadratic
+  closure scan in `planAccept` (6.3 s) was made linear.
+- `pnpm typecheck` (all packages) and `pnpm lint` (Biome, tokens, anime, layers, assets): pass.
+
+#### Limits and notes for the next packages
+
+- **Creation and accept run on the engine's main thread**: a 2 000-item proposal blocks the engine for ≈ 10 s on this
+  host (≈ 100 items ≈ 0.5 s). The P3-R3 plan job should create large proposals from its job (it can call
+  `services.proposals.create`), and keep proposals near the hundreds; a worker for validation is not built.
+- `'all'` never includes invalid, rejected or accepted items; accept of explicit rejected ids is allowed.
+- Stale detection is by anchors (named entity ids) and dry runs: an item whose commands name no entity (a `frame`-only
+  placement) goes stale only when it stops applying, not when the picture under it changed.
+- The policy reads `agentsMayApply` of the proposal's `sequenceId`; a proposal with `sequenceId: null` can be accepted
+  by an agent only through a feature policy that allows it (sound design does not).
+- The editor's accept over the relay is `asUser`; if the editor window has no lease (read-only) the accept is applied
+  headless when the lease expired, else `409 NO_SESSION` (like agent transactions).
+- MCP tools (`list_proposals`, `get_proposal`, `wait_for_proposal`, `accept_proposal`, `reject_proposal`,
+  `PROPOSALS_GUIDE`), the session slice / preview document (P3-R4, use `previewProposal` + `revalidate` on
+  `doc.changed`), the Review UI (P3-R6, call `reopen` after Undo) and the plan job (P3-R3, feature `'sound-design'`,
+  `SOUND_DESIGN_FEATURE`) are the next packages; none of them exists yet.
+
 ## Phase 4: mixing
 
 ## Phase 5: Sound Check

@@ -26,6 +26,7 @@ export * from './mg-bundles.ts';
 export * from './previews.ts';
 export * from './processing.ts';
 export * from './projects.ts';
+export * from './proposals.ts';
 export * from './roto.ts';
 export * from './routes.ts';
 export * from './scenes.ts';

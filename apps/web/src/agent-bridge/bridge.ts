@@ -68,6 +68,11 @@ export type TransactOptions = {
 	via?: ActivityEntry['via'];
 	/** Agent name when the transaction's origin is not an agent. */
 	fallbackAgent?: string;
+	/**
+	 * The engine relays the user's own decision made in this window (accepting a proposal with the editor key): the
+	 * edit is the user's (History "Accept …"), already approved, and not an agent activity.
+	 */
+	asUser?: boolean;
 };
 
 export type AgentBridgeOptions = {
@@ -351,7 +356,7 @@ export class AgentBridge {
 		}
 		const input: TxInput = {
 			label: tx.label,
-			origin: tx.origin,
+			origin: opts.asUser ? 'user' : tx.origin,
 			commands: addr.commands as TxInput['commands'],
 			...(tx.expectedRevision !== undefined ? { expectedRevision: tx.expectedRevision } : {}),
 			...(tx.dryRun ? { dryRun: true } : {}),
@@ -359,7 +364,7 @@ export class AgentBridge {
 		};
 		runBeforeAgentTransaction(this.session);
 		const result = await this.session.submit(input);
-		return this.record(tx, via, result);
+		return opts.asUser ? result : this.record(tx, via, result);
 	}
 
 	/** history.undo / history.redo for agents: only their own entry (S01:UND-008). */
@@ -517,8 +522,14 @@ export class AgentBridge {
 				const result = await this.query(String(p.query), p.args ?? {});
 				return { result: { result, revision: this.session.revision } };
 			}
-			const p = (payload ?? {}) as { transaction?: AgentTxInput; approved?: boolean };
-			const result = await this.transact(p.transaction ?? {}, { via: 'relay', approved: !!p.approved });
+			const p = (payload ?? {}) as { transaction?: AgentTxInput; approved?: boolean; asUser?: boolean };
+			// `asUser` comes from the engine only for a request that carried this window's editor key.
+			const asUser = p.asUser === true && p.approved === true;
+			const result = await this.transact(p.transaction ?? {}, {
+				via: 'relay',
+				approved: !!p.approved,
+				...(asUser ? { asUser: true } : {}),
+			});
 			return { result };
 		} catch (e) {
 			if (e instanceof AgentQueryError || e instanceof UiAutomationError)

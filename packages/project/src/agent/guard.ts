@@ -49,6 +49,14 @@ export function approvalReasons(tx: Pick<AgentTxInput, 'commands' | 'dryRun'>): 
 		if (typeof type === 'string' && (APPROVAL_COMMANDS as readonly string[]).includes(type))
 			reasons.push(`${type} (command ${i + 1})`);
 		else if (hasForce(c)) reasons.push(`force: true in ${String(type)} (command ${i + 1})`);
+		// Spec 12 §0: only the user lets agents apply sound proposals without review; an agent may not grant it itself.
+		else if (
+			type === 'soundDesign.setSettings' &&
+			(c as { agentsMayApply?: unknown }).agentsMayApply === true
+		)
+			reasons.push(
+				`agentsMayApply: true in soundDesign.setSettings (command ${i + 1}) lets agents apply sound proposals`,
+			);
 	});
 	return reasons;
 }

@@ -156,6 +156,21 @@ import {
 	VersionRestoreResponseSchema,
 } from './projects.ts';
 import {
+	ProposalAcceptRequestSchema,
+	ProposalAcceptResponseSchema,
+	ProposalCreateRequestSchema,
+	ProposalCreateResponseSchema,
+	ProposalDecisionResponseSchema,
+	ProposalDeleteResponseSchema,
+	ProposalGetQuerySchema,
+	ProposalListResponseSchema,
+	ProposalNoteRequestSchema,
+	ProposalRejectRequestSchema,
+	ProposalReopenRequestSchema,
+	ProposalResponseSchema,
+	ProposalSelectRequestSchema,
+} from './proposals.ts';
+import {
 	RotoSegmentRequestSchema,
 	RotoStoreInfoSchema,
 	RotoTraceRequestSchema,
@@ -1081,6 +1096,63 @@ export const ROUTES = {
 		path: '/api/sound-design/cues',
 		body: SoundCuesRequestSchema,
 		response: SoundCuesResponseSchema,
+	},
+	/**
+	 * Proposals (spec 12 §2.5, §2.8): reviewable sets of edits stored per project. Accept composes ONE transaction
+	 * (live to the open editor or headless); an agent may accept only where the feature's policy allows it
+	 * (sound design: the sequence's `agentsMayApply`), otherwise `403 APPROVAL_REQUIRED`.
+	 */
+	proposalsList: {
+		method: 'GET',
+		path: '/api/projects/:projectId/proposals',
+		response: ProposalListResponseSchema,
+	},
+	proposalCreate: {
+		method: 'POST',
+		path: '/api/projects/:projectId/proposals',
+		body: ProposalCreateRequestSchema,
+		response: ProposalCreateResponseSchema,
+	},
+	proposalGet: {
+		method: 'GET',
+		path: '/api/projects/:projectId/proposals/:proposalId',
+		query: ProposalGetQuerySchema,
+		response: ProposalResponseSchema,
+	},
+	proposalAccept: {
+		method: 'POST',
+		path: '/api/projects/:projectId/proposals/:proposalId/accept',
+		body: ProposalAcceptRequestSchema,
+		response: ProposalAcceptResponseSchema,
+	},
+	proposalReject: {
+		method: 'POST',
+		path: '/api/projects/:projectId/proposals/:proposalId/reject',
+		body: ProposalRejectRequestSchema,
+		response: ProposalDecisionResponseSchema,
+	},
+	proposalReopen: {
+		method: 'POST',
+		path: '/api/projects/:projectId/proposals/:proposalId/reopen',
+		body: ProposalReopenRequestSchema,
+		response: ProposalDecisionResponseSchema,
+	},
+	proposalNote: {
+		method: 'POST',
+		path: '/api/projects/:projectId/proposals/:proposalId/note',
+		body: ProposalNoteRequestSchema,
+		response: ProposalDecisionResponseSchema,
+	},
+	proposalSelect: {
+		method: 'POST',
+		path: '/api/projects/:projectId/proposals/:proposalId/select',
+		body: ProposalSelectRequestSchema,
+		response: ProposalDecisionResponseSchema,
+	},
+	proposalDelete: {
+		method: 'DELETE',
+		path: '/api/projects/:projectId/proposals/:proposalId',
+		response: ProposalDeleteResponseSchema,
 	},
 } as const satisfies Record<string, RouteDef>;
 

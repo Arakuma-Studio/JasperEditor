@@ -214,6 +214,35 @@ const ID_KEY_RE = /(?:Id|Ids)$|^(?:target|track|tracks|matteTrack)$/;
 // ids are never refs or selections.
 const DECL_KEYS = new Set(['ref', 'itemRef', 'type', 'payload', 'preset']);
 
+/** True for a temp ref (`$name`); `$selection` forms are not refs. */
+export function isTempRef(v: unknown): v is string {
+	return typeof v === 'string' && REF_RE.test(v) && v !== '$selection' && v !== '$selection.primary';
+}
+
+/**
+ * Replaces the temp refs named in `refs` in id-bearing arguments (the same positions `substituteRefs` resolves) and
+ * leaves every other value untouched. Proposals use it to point a later item at what an earlier, already accepted
+ * item created (its refs no longer exist in a new transaction).
+ */
+export function substituteKnownRefs<T>(value: T, refs: ReadonlyMap<string, string>): T {
+	if (refs.size === 0) return value;
+	const walk = (v: unknown, idContext: boolean): unknown => {
+		if (typeof v === 'string') return idContext && REF_RE.test(v) ? (refs.get(v) ?? v) : v;
+		if (Array.isArray(v)) return v.map((x) => walk(x, idContext));
+		if (v && typeof v === 'object') {
+			const out: Record<string, unknown> = {};
+			for (const [k, x] of Object.entries(v)) {
+				const nx = DECL_KEYS.has(k) ? x : walk(x, idContext || ID_KEY_RE.test(k));
+				// A JSON key "__proto__" stays an own property (assignment would set the prototype).
+				Object.defineProperty(out, k, { value: nx, enumerable: true, writable: true, configurable: true });
+			}
+			return out;
+		}
+		return v;
+	};
+	return walk(value, false) as T;
+}
+
 /**
  * Replaces temp refs (`$name`), `"$selection"` and `"$selection.primary"` in id-bearing arguments
  * (keys ending in `Id`/`Ids`, `target`, `track`, `tracks`) at execution time (S01:CMD-006, SEL-009).

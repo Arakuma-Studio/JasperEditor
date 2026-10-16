@@ -181,6 +181,84 @@ describe('EngineClient requests', () => {
 			opts: { density: 'sparse', sources: ['edits'] },
 		});
 	});
+
+	it('calls the proposal routes (spec 12 §2.5) with their paths, queries and bodies', async () => {
+		const proposal = {
+			version: 1,
+			id: 'prp_0000000000000001',
+			projectId: 'prj_0000000000000001',
+			sequenceId: null,
+			feature: 'sound-design',
+			title: 'T',
+			summary: '',
+			author: 'user',
+			createdAt: 'x',
+			updatedAt: 'x',
+			baseRevision: 0,
+			docHash: '0',
+			items: [
+				{
+					id: 'a',
+					label: 'A',
+					group: '',
+					commands: [{ type: 'marker.add' }],
+					requires: [],
+					state: 'pending',
+				},
+			],
+		};
+		const m = mockFetch((url, init) => {
+			if (url.endsWith('/accept'))
+				return json({
+					proposal,
+					applied: [],
+					added: [],
+					skipped: [],
+					stale: [],
+					result: null,
+					appliedBy: null,
+					revision: 3,
+				});
+			if (
+				url.endsWith('/note') ||
+				url.endsWith('/reject') ||
+				url.endsWith('/select') ||
+				url.endsWith('/reopen')
+			)
+				return json({ proposal, changed: ['a'] });
+			if (init.method === 'DELETE') return json({ proposalId: proposal.id, deleted: true });
+			if (url.includes('/proposals/')) return json({ proposal, expiresAt: 'y', revision: 2 });
+			return json({ proposals: [], warnings: [] });
+		});
+		const c = new EngineClient({ fetch: m.fetch });
+		const base = '/api/projects/prj_0000000000000001/proposals';
+		await c.listProposals('prj_0000000000000001');
+		expect((await c.getProposal('prj_0000000000000001', proposal.id, { revalidate: true })).revision).toBe(2);
+		expect(m.calls[1]!.url).toBe(`${base}/${proposal.id}?revalidate=1`);
+		const acc = await c.acceptProposal('prj_0000000000000001', proposal.id, {
+			itemIds: 'all',
+			partial: true,
+		});
+		expect(acc.revision).toBe(3);
+		expect([m.calls[2]!.url, m.calls[2]!.init.method]).toEqual([`${base}/${proposal.id}/accept`, 'POST']);
+		expect(JSON.parse(String(m.calls[2]!.init.body))).toEqual({ itemIds: 'all', partial: true });
+		await c.noteProposalItem('prj_0000000000000001', proposal.id, { itemId: 'a', note: 'quieter' });
+		expect(JSON.parse(String(m.calls[3]!.init.body))).toEqual({ itemId: 'a', note: 'quieter' });
+		await c.selectProposalAlternative('prj_0000000000000001', proposal.id, { itemId: 'a', alternative: 1 });
+		await c.rejectProposal('prj_0000000000000001', proposal.id, { itemIds: ['a'] });
+		await c.reopenProposal('prj_0000000000000001', proposal.id, { itemIds: 'all' });
+		expect((await c.deleteProposal('prj_0000000000000001', proposal.id)).deleted).toBe(true);
+		expect(m.calls.map((x) => x.url.slice(base.length))).toEqual([
+			'',
+			`/${proposal.id}?revalidate=1`,
+			`/${proposal.id}/accept`,
+			`/${proposal.id}/note`,
+			`/${proposal.id}/select`,
+			`/${proposal.id}/reject`,
+			`/${proposal.id}/reopen`,
+			`/${proposal.id}`,
+		]);
+	});
 });
 
 describe('uploadFile (S04:IN-005)', () => {

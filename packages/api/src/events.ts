@@ -6,6 +6,7 @@ import { MediaVariantReadyEventSchema } from './imports.ts';
 import { EngineJobSchema } from './jobs.ts';
 import { DerivativeKindSchema, DerivativeStatusSchema } from './media.ts';
 import { MgBundleRebuiltEventSchema } from './mg-bundles.ts';
+import { ProposalChangedEventSchema } from './proposals.ts';
 
 export const HEARTBEAT_INTERVAL_MS = 15_000;
 
@@ -66,6 +67,8 @@ export const EVENT_PAYLOADS = {
 	'effectPresets.changed': z.object({ revision: z.number().int() }),
 	/** The sound library index changed (an index job finished, a folder was removed); the Sound Library refreshes. */
 	'sounds.changed': z.object({ snapshotHash: z.string(), sounds: z.number().int().min(0) }),
+	/** A proposal of the project was created, decided, re-validated, deleted or expired (spec 12 §2.5). */
+	'proposal.changed': ProposalChangedEventSchema,
 	/**
 	 * preview files appeared (a segment finished rendering) or were deleted; the render bar asks again. A
 	 * deletion carries `deleted` (count), a render the segment.

@@ -64,6 +64,13 @@ export const ENGINE_ERROR_CODES = [
 	'APPROVAL_DENIED',
 	'APPROVAL_TIMEOUT',
 	'TRANSACTION_REJECTED',
+	/** Proposals (spec 12 §2.5): an agent may not accept this feature's proposals (detail.code E_APPROVAL_REQUIRED). */
+	'APPROVAL_REQUIRED',
+	'PROPOSAL_NOT_FOUND',
+	/** 50 proposals with undecided items: decide or delete one first (detail.code E_PROPOSAL_LIMIT). */
+	'PROPOSAL_LIMIT',
+	/** Accept refused: items are stale or invalid on the current document (detail.code E_PROPOSAL_STALE). */
+	'PROPOSAL_STALE',
 ] as const;
 export const EngineErrorCodeSchema = z.enum(ENGINE_ERROR_CODES);
 export type EngineErrorCode = z.infer<typeof EngineErrorCodeSchema>;
