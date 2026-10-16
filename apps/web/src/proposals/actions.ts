@@ -405,8 +405,7 @@ export async function applyReview(
 		],
 	});
 	announce(title);
-	// nothing left to decide: the review ends (the toast can bring it back)
-	if (reviewCounts(after.items).open === 0 && c.acceptedIds().length === 0) c.exit();
+	// the review stays open (rejected items stay visible; Ctrl+Z brings the applied ones back here): Exit ends it
 	return { ok: true, applied: appliedNow, total, stale: r.stale.length, entryId };
 }
 

@@ -365,6 +365,7 @@ test('fill, variation ×3 = one entry, swap, layer, link move, in context, fill 
 		.filter({ hasText: /^Applied/ })
 		.getByRole('button', { name: 'Dismiss' })
 		.click();
+	await page.getByTestId('review-bar-exit').click();
 	const after = await cues(page);
 	expect(after.filter((c) => (c.placedClipIds ?? []).length).length).toBe(after.length);
 	expect(unfilled).toBeGreaterThan(0);

@@ -228,6 +228,7 @@ test('Phase 2 done-when: suggest (= engine route), fill, vary, layer, undo/redo,
 		.filter({ hasText: /^Applied/ })
 		.getByRole('button', { name: 'Dismiss' })
 		.click();
+	await page.getByTestId('review-bar-exit').click();
 	let seq = await sequence(page);
 	const after = Object.values(seq.soundDesign!.cues!);
 	const unfilled = after.filter((c) => !(c.placedClipIds ?? []).length);

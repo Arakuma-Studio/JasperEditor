@@ -381,7 +381,9 @@ test('Auto Sound Pass… → Propose → review → Accept all → Apply → exp
 	const applied = page.getByTestId('toast').filter({ hasText: 'Applied 3 of 3 sounds from you' });
 	await expect(applied).toBeVisible();
 	await expect(applied.getByRole('button', { name: 'Reopen review' })).toBeVisible();
-	// nothing left to decide: the review ended
+	// every item applied: the rows say so; Exit ends the review
+	await expect(reviewPanel().locator('[data-review-state="applied"]')).toHaveCount(3);
+	await page.getByTestId('review-bar-exit').click();
 	await expect(page.getByTestId('review-bar')).toBeHidden();
 	await page.screenshot({ path: join(outDir, 'auto-pass-applied.png') });
 

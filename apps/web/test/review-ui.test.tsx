@@ -264,8 +264,9 @@ describe('Apply', () => {
 		const yes = await applyReview(t.session, { trusted: true, confirm: async () => true });
 		expect(yes).toMatchObject({ ok: true, applied: 1, total: 1 });
 		expect((t.session.getCommitted().sequences[t.seqId] as Sequence).clips[t.bed.id]).toBeUndefined();
-		// nothing left to decide: the review ends
-		expect(t.c.getState().activeId).toBeNull();
+		// the review stays until the user exits it
+		expect(t.c.getState().activeId).toBe(p.id);
+		t.c.exit();
 	});
 });
 
