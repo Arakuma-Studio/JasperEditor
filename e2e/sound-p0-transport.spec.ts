@@ -390,6 +390,13 @@ test('seek during playback: the audio from before the seek stops at the seek', a
 			const back = silent ? rec.data.some((v, i) => Math.abs(v) > 0.01 && timeOf(rec, i) > silent.t1) : false;
 			if (silent && back && rec.starts.some((x) => x.t >= stop))
 				late.push(`old-position audio started again ${(silent.t1 - stop).toFixed(3)} s after the seek`);
+			// What the graph holds lasts at most its read-ahead (41.6 ms here) after the stop; old-position tone going on
+			// longer, with buffers started after the stop, was scheduled by Remotion after the seek (a lagging main thread).
+			let end = -1;
+			for (let i = 0; i < rec.data.length; i++) if (Math.abs(rec.data[i]!) > 0.01) end = i;
+			const held = (2 * HL20) / SR;
+			if (end >= 0 && timeOf(rec, end) - stop > held + 0.02 && rec.starts.some((x) => x.t >= stop))
+				late.push(`old-position audio went on ${(timeOf(rec, end) - stop).toFixed(3)} s after the seek`);
 		}
 		last = [...other, ...late];
 		clean = last.length === 0;
