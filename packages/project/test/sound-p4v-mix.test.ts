@@ -409,17 +409,20 @@ describe('bug 2: mergeDips on curved lanes (property)', () => {
 					const E = (t: number) => evaluate(anim, lane.toLane(t));
 					const G = (t: number) => evaluate(res, lane.toLane(t));
 					// the un-widened dip windows (as mergeDips merges them) and their reference levels
+					// (sorted by window start: dips with longer fades start earlier than their start — sorting by dip start
+					// merged [1299, 1301] ms with [917, 1703] ms into [1299, 1703] ms, seed 2097034364)
 					const w0: [number, number][] = [];
-					for (const d of [...dips].sort((a, b) => a.start - b.start)) {
-						const f = Math.max(1, d.fadeMs) * MS;
-						const w: [number, number] = [
-							Math.max(lane.span[0], d.start - f),
-							Math.min(lane.span[1], d.end + f),
-						];
-						if (!(w[1] > w[0])) continue;
+					const ws = dips
+						.map((d): [number, number] => {
+							const f = Math.max(1, d.fadeMs) * MS;
+							return [Math.max(lane.span[0], d.start - f), Math.min(lane.span[1], d.end + f)];
+						})
+						.filter((w) => w[1] > w[0])
+						.sort((a, b) => a[0] - b[0]);
+					for (const w of ws) {
 						const last = w0[w0.length - 1];
 						if (last && w[0] <= last[1]) last[1] = Math.max(last[1], w[1]);
-						else w0.push(w);
+						else w0.push([w[0], w[1]]);
 					}
 					const curved = kfs.some((k) => k.interpolation !== 'linear' && k.interpolation !== 'hold');
 					// rebuilt curves: within sampling (1 ms samples at most 0.001 dB off; steeper bends a little more);
@@ -459,7 +462,24 @@ describe('bug 2: mergeDips on curved lanes (property)', () => {
 					expect(back.keyframes).toEqual(kfs);
 				},
 			),
-			{ numRuns: 300 },
+			{
+				numRuns: 300,
+				// the counterexample that found the model's window-merge bug (keys 0 → 1.3 s; dips at 1.31 s with 393 ms
+				// fades and at 1.3 s with none)
+				examples: [
+					[
+						[
+							{ t: 0, v: 0.00003403141361112716, interp: 'linear', inf: 0.05, slope: 0 },
+							{ t: 13, v: 0, interp: 'linear', inf: 0.05, slope: 0 },
+						],
+						[
+							{ start: 924336000, end: 924336000, depthDb: -4.832902467924639, fadeMs: 393 },
+							{ start: 917280000, end: 917280000, depthDb: -0.5, fadeMs: 0 },
+						],
+						0,
+					],
+				],
+			},
 		);
 		// the largest deviation of a rebuilt curve outside the dips in these runs
 		expect(maxCurved).toBeLessThan(0.05);

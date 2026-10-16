@@ -5196,6 +5196,206 @@ Tests: `packages/project/test/sound-auto-gain.test.ts` (5), `fuzz.test.ts` (AC-2
 - The e2e removes the fixture's fframes motion graphic: in this environment the native export refuses it (`PATH_NOT_ELIGIBLE`,
   "needs the fframes renderer, which is unavailable").
 
+### Phase 4 verification
+
+Branch `feat/sd-p4-verify` (from `feat/sound-design` 6ab79253), with three helper branches merged into it:
+`feat/sd-p4v-model` (project model fixes), `feat/sd-p4v-engine` (engine fixes and performance), `feat/sd-p4v-web` (web
+UI); then the integration branch again (Phase 3 verification, 1ab1256f). Scope: the whole of Phase 4 (P4-R1…R5, "Done
+when", the Definition of Done) after WP4.1a–WP4.2b, the review list of the orchestrator (solver order, conflict
+reporting, bed with room return, dips / builds / room glue exactness, delivery atomicity, `mixFingerprint`, auto gain,
+mute / unmute, the plan's delivery measurement, ducking depth, multi-selection, the fframes refusal) and the slow plan
+job. Shared host, 16 cores; load average 8–70 during the pass, stated with every timing.
+
+#### Requirements (spec 12 Phase 4) with evidence
+
+| Requirement | Status | Evidence (rerun) |
+|---|---|---|
+| P4-R1 masking solver, constraints in order (clamp, bed cap, hero shadow, consistency, dialogue, headroom), re-verified after the last step; earlier wins and the conflict is reported; unit + property (monotone in the bed until a cap, caps hold) | done | `packages/audio-fx/test/masking.test.ts` (31: +1 the binding constraint named in a conflict instead of "clamp", +1 dialogue advice names only speech-octave bands, +1 silent bed wording), `masking-oracle.test.ts`; reviewed: no path to `W_UNRESOLVED` (rounding leaves ≤ 2.010 dB against 2.010 + 2·10⁻⁹) |
+| P4-R2 engine bed render per cue cluster; `soundDesign.applyGains`; `rebalance_sfx`; plan job with `limitedBy` | done | `apps/engine/test/sound-design-bed.test.ts` (+ id-free cache, offline-media key), `sound-design-rebalance.test.ts` (+ CONFLICT on a concurrent bed edit), `sound-design-plan-levels.test.ts` (+ a second identical plan renders nothing), `packages/project/test/sound-apply-gains.test.ts`, `apps/mcp/test/sound-rebalance.test.ts` |
+| P4-R3 stop-before, build, `audio.volumeDip`, `soundDesign.ensureBus` | done | `packages/project/test/sound-mix.test.ts`, `sound-p4v-mix.test.ts` (new: 12 regression tests + 2 properties: overlapping realisations removed in any order give the lanes back exactly; curved lanes), `packages/audio-fx/test/build-sweep.test.ts`, `apps/engine/test/sound-design-mix.test.ts` (exported dip, sweep, room tail) |
+| P4-R4 delivery presets wired to `mixer.setLoudness`, Auto-Match and ducking | done | `apps/engine/test/sound-design-delivery.test.ts` (+ conflicts / solver warnings in the report, CONFLICT), `sound-mix.test.ts` (delivery, ducking depth), `apps/mcp/test/sound-mix.test.ts`; real run below: −14.0 LUFS / −1.3 dBTP, music 14.1 LU under the voice |
+| P4-R5 Essential Sound SFX additions, Sequence ▸ Sound Design ▸ Rebalance SFX Levels | done | `apps/web/test/sound-mix-model.test.ts` (20), `sound-mix-ui.test.tsx` (15: multi-selection Room / Stop / Build, solver notes), `auto-sound-pass.test.tsx`; `e2e/sound-mix.spec.ts` |
+| "Done when" (a): on the fixture every placed event reaches its target lift or reports `limitedBy` | done | `apps/engine/test/sound-design-plan-levels.test.ts` and `sound-design-plan-mix.test.ts` assert it per event; the real run's table below (17 items, each "target reached", "already clears the bed", "nothing plays under it" or "limited by …") |
+| "Done when" (b): the export matches the preview mix (sample-level oracle) | **done here** (it did not exist for automation; it failed, the preview was fixed) | `packages/compositions/test/audio-preview-mix-oracle.test.ts` (new): the preview graph in headless Chrome driven as while playing vs the export mixer, for solver gain + room send + stop-before + build, max \|Δ\| **1.4·10⁻⁵** in both scenes (track lane / clip fallback); before the fix **0.19 / 0.15** |
+
+Definition of Done: schema fields added here are optional with read-time defaults and repair (`sfx.level.manual` from
+WP4.2b; `mix.cues[*].{stopBefore,build}.order | suspended`, `mix.orphans`, `essential.ducking.depthBy`); no schema
+bump: Phase 4 is unreleased (`feat/sound-design` is not on `main`) and an older build of this branch only misreads a
+suspended record as written (it keeps every key). Every edit is an undoable command with undo / redo and refusal
+tests; the UI is wired (menus, Essential Sound, Properties, dialogs; no new shortcuts); the Program monitor previews
+it (oracle above) and every export path renders it (ordinary clips, automation, inserts and sends, D-42; the planner
+refuses an fframes graphic natively only without jasper-mg, below); agents drive it through MCP (`plan_sound_design`
+style, `rebalance_sfx`, `apply_delivery`, `set_room_glue`, `set_sound_cues`, `apply_commands`); ran in the real app and
+through MCP (below).
+
+#### Findings and fixes
+
+26 defects fixed, each with a regression test that failed before the fix: preview 2, project model 13, engine 8 (the
+masking label included), lead 3 (fingerprint, two solver wordings).
+
+Preview (lead, `packages/compositions`):
+
+- **The preview did not follow automation between picture frames** — the "Done when" oracle did not exist for anything
+  but static levels. Driven as while playing (one `graph.update` and one Remotion clip volume per frame), the preview of
+  a Phase 4 mix was up to **0.19** (track lane dip) and **0.15** (clip Volume dip) off the export: strip lanes were set
+  once per frame with an 8 ms glide, a clip's Volume keyframes were Remotion's per-frame steps (a 24 dB step in one
+  frame on a stop-before ramp: a click), and effect slots evaluated keyframes once per frame (a build sweep 1·10⁻² off,
+  its release 2·10⁻²). Fix: while playing, automated gains (strip fader / mute / send level, a clip's Volume, fades,
+  nested gain) follow their curve sample by sample: each update schedules linear pieces through the lane's own values
+  over the next 0.12 s, cut where it bends (keyframes as break points, ≤ 10⁻⁴ relative between pieces; `automation.ts`
+  `followCurve`); clips whose level changes play at unity into the graph, which applies the levels (`graphAppliesLevels`);
+  effect slots get a clock with each time message and evaluate keyframes every 32 samples on the export's grid
+  (`SlotClock`, `FxSlotCore`); the level node closes on the sample at a clip's end like the export (an effect tail
+  rang past it); the graph reads the time of the audio it renders from Remotion's sync anchor and the playback rate
+  (`update(…, {compositionFlicks, rate})`), not the picture frame's time (which trails it by the output latency and the
+  frame callback). Chrome's `cancelAndHoldAtTime` held wrong values after a few replaced ramps (a flat 1.0 read 0.27 a
+  frame later), so the hold value is computed from the scheduled curve and set explicitly. Measured
+  (`audio-preview-mix-oracle.test.ts`, the graph with the anchor): **1.4·10⁻⁵** for both scenes; with the picture
+  frame's time instead of the anchor (≤ one render quantum early in the harness) 2.6·10⁻² / 6.4·10⁻³, which is why the
+  anchor matters. `audio-fx-slot-clock.test.ts`: a slot with frame-rate time messages equals the export's `EffectSlot`
+  to < 10⁻⁶ (without the clock > 10⁻³); `audio-automation.test.ts` (curve pieces within tolerance, corners on keys,
+  hostile values). The Phase 0 preview / transport e2e still pass (10 of 10, `e2e/sound-p0-preview.spec.ts`,
+  `sound-p0-transport.spec.ts`, load ≈ 45–55).
+
+Project model (`feat/sd-p4v-model`; regression tests in `packages/project/test/sound-p4v-mix.test.ts`, each failed
+before):
+
+1. **Overlapping realisations** could not be removed one at a time: clearing cue A then B left A's floor at −27.39 dB
+   with orphan keys (expected the original −4.22 dB ride); moving A then removing both left a −23.91 dB ghost dip; two
+   overlapping builds left the filter with 6 keys. Each written lane is now a stack (records carry `order`): removing a
+   record takes out the later ones, itself, and writes the later ones again. Property (40 runs): random overlapping
+   stop-befores and builds on track and clip lanes, moved, removed in random order → every lane deep-equal to the
+   original.
+2. **Bézier volume keys**: a swell outside the dip was flattened (0.029 dB off → < 0.002 dB), edge keys lost their eases
+   (−5.00 → −3.75 dB 0.5 s outside → exact), and widening cascaded into `E_LIMIT`, failing even `soundDesign.place` of a
+   filled cue; curved parts are now rebuilt adaptively (≈ 0.001 dB, ≥ 1 ms apart), cue edits and placement skip a
+   too-dense lane with `W_MIX_SKIPPED` (explicit apply still refuses `E_LIMIT`). Curved-lane property (300 runs).
+3. **Splitting a music clip** orphaned its dip / filter on the right part (stayed at −24 dB after clearing): records
+   follow `splitClipAt` (razor, ripple, multicam, caption and time-remap splits go through it).
+4. **A duplicated sequence** dropped `soundDesign.mix` but kept the keys, so its dips could not be removed: records are
+   remapped onto the copy; repair renames `mix.cues` with re-identified cues and prunes stale records.
+5. **Locked music track**: moving a realised cue over it failed `soundCue.update` with `E_TRACK_LOCKED`; now skipped
+   (`W_MIX_SKIPPED`); a cue deleted while its dip sits on a locked track leaves `mix.orphans`, removed exactly on unlock.
+6. **Delivery changed default SFX gains on locked tracks** (−2 → −11 dB): skipped and reported (`levelsSkipped`).
+7. **A build on music ending before the hero swept down** at the clip end (20 Hz forced): only rest points rest now
+   (> 500 Hz at the end).
+8. **Mute / unmute restores the mix exactly** (the WP4.2a limit is gone): muting keeps a suspended record (no writes);
+   unmuting writes it again with its options (ambience kept; unfilled cues too). Test: mute → the lanes from before the
+   realisation, unmute → the realised lanes (deep-equal up to fresh ids), undo / redo of both. The Cue Seam, Essential
+   Sound and the delivery's re-dip read a suspended record as not written (`cueMixWritten`).
+9. **Auto gain on** after a hand change did nothing (owner stayed `user`): the gain returns to the recorded level;
+   clips without one are reported skipped.
+10. **Track build keys at negative times** near the sequence start: clipped at 0.
+11. **Room glue exactness**: `removeBus` leaves the document as it was before `ensureBus`; only sends that still target
+    the bus are removed; running `ensureBus` again keeps hand-tuned send levels (−9 dB stayed −9, was reset to −16).
+12. **Ducking depth vs the 8 LU rule** (decision): Auto-Match already puts music 8 LU and ambience 10 LU under the voice;
+    the default Ducking amounts (−15 / −10 dB) then put the music ≈ 23 LU under it. A clip whose Ducking amount is still
+    its type default is now ducked 6 dB by the delivery (written into its Ducking, `depthBy: 'delivery'`); an amount
+    the user set is kept. Measured in the real run below: **14.13 LU** under the voice during speech (the engine's
+    report and the exported stems agree to 0.01 LU). The 8 / 10 LU minimums are spec 12's; EBU R 128 and AES TD1008
+    set programme loudness and give no music-under-voice ratio; 6 dB is our choice (undocumented in Adobe terms).
+13. `soundDesign.applyGains` silently cleared Auto gain off (`manual`) when an agent named the clip: such clips are now
+    skipped and listed unless `override: true` (the engine's rebalance passes it only for clips the user named or
+    `userGains: 'replace'`). The setAutoGain refusal had no message template (`sound-messages.test.ts` failed on the
+    integration branch): added, with Spanish.
+
+Engine (`feat/sd-p4v-engine`):
+
+- **CONFLICT could never be produced**: a stale revision failed rebalance / delivery with `E_REVISION_MISMATCH`, not
+  retryable; and **bed edits during a job were fast-forwarded** (only the gain clips are diffed): gains solved against
+  the old bed were applied. Now the job re-reads the edit before applying; if the mix fingerprint or the delivery
+  changed it applies nothing and fails with a retryable `CONFLICT`; the transaction carries the checked revision
+  (`apply-guard.ts`; tests raise the music during the measurement and edit the hero between check and apply; mutation:
+  without the check the job succeeded). Limit: an edit landing in the milliseconds between the re-read and the
+  transaction that touches no gain clip is still fast-forwarded.
+- **Plan previews used random ids**: warnings and `conflicts[].clipId` named clips that never exist and every cache
+  key missed. Previews are seeded; reports name the item / layer ref (`$sfx_<n>_<layer>`) and `itemId`; caches are keyed
+  by content with ids renamed in order of appearance (a second identical plan renders nothing; a rebalance right after
+  accept renders at most one sound).
+- **A stale bed after relinking offline media** (the silent bed stayed cached): media online state is in the key.
+- **Solver output now reaches users**: `apply_delivery` reports conflicts and the solver's warnings, gain items carry
+  `limitedBy`; the plan keeps the alternatives' warnings and gives extra layers their levels; MCP descriptions and
+  SOUND_GUIDE match; the web shows them (below).
+- **The plan's delivery item was measured before the plan's own sounds** (its stored analysis read −16.9 LUFS for a mix
+  that was not the final one): the plan now measures the final preview (chosen sounds at their solved gains, room,
+  dips, build) and stores that. Test: the stored −16.995 LUFS equals a fresh measurement of the accepted document;
+  and, with the fingerprint fix below, its `mixHash` equals the accepted document's (asserted).
+- Solo tails cover every effect with a tail (reverbs, convolution, delays by their feedback, flanger) and the Mix's own
+  inserts (`sound-design-tail.test.ts`).
+
+Fingerprint (lead): `mixFingerprint` now ignores entity ids and names (ids renamed in order of first appearance, clips
+ordered by track and position): the same mix built with other ids — an accepted plan measured on its seeded preview, a
+re-applied realisation — is current (`audio-mix.test.ts`: two documents built with different id sources hash the same;
+swapping which media plays where, or a send level, changes it). Consumers checked: the Loudness dialog's staleness
+(web), MCP `analysisCurrent`, the engine analysis writer, the delivery analysis, the apply guard, speech transcription
+(dedupe key and attach check), `SoundCheckSummary.mixHash` (unused yet); not the export planner (exports always
+re-measure) nor proposal `docHash` nor any render cache (the engine's bed caches use their own keys). Effect: an
+analysis stored by an earlier build of this branch reads stale once (re-measured on demand), and a transcription that
+finished before the upgrade and is attached after it is refused with the existing message (transcribe again).
+
+Solver wording (lead): a sound over a silent bed said "its default level already clears the bed by +86.7 dB" (a lift
+over the measurement floor); it now says "nothing plays under it in the bed" (`SILENT_BED_LIFT_DB` = 60 dB); the
+dialogue advice named non-speech octaves ("(8000 Hz, 4000 Hz) is in 1–4 kHz"): only the speech octaves are named.
+
+Web (`feat/sd-p4v-web`): the Room / Stop / Build rows act on the whole selection — Room names every track that can
+send ("Send A2, A3 to the SFX Room"), is indeterminate (`aria-checked="mixed"`) while their sends differ, lists each
+track's state and the skipped ones with their reason, and one gesture is one History entry; Stop / Build act on the
+cue when every selected sound fills the same cue, otherwise show the state across those cues, disabled, with the cue
+timecodes (length and depth belong to each cue). The Auto gain line shows a range across the selection. Solver notes:
+the Rebalance toast gives counts and the most important note with a **Solver Notes…** list (conflicts in words, e.g.
+"Click at 00:00:04:10: its repeats (±2 dB) kept over dialogue", dialogue-band advice, `W_UNRESOLVED` first); Delivery
+Target… translates its warnings; Auto Sound Pass… lists the plan's notes after Propose. Screenshots looked at:
+`/var/lib/orquester/tmp/p4-verify/web/` (not committed).
+
+fframes refusal (WP4.2b limit): not a bug. The native planner needs the jasper-mg master for an fframes graphic
+(`apps/engine/src/export/planner.ts`; preview draws the TypeScript twin, Remotion / `auto` exports render it); the
+worktrees had no `native/mg/target/release/jasper-mg` (`pnpm build` does not build it and `E2E_SKIP_BUILD=1` skips
+`scripts/mg-build.mjs`). With `pnpm mg:build` (7 min here) the native export renders it: `e2e/sound-mix.spec.ts` now
+keeps the fixture's graphic when `/api/capabilities` says fframes is ready, and annotates why when not.
+
+#### Performance (the plan job)
+
+Profiled by stage (`JASPER_SD_TIMING`): the first plan with every style option was dominated by solo renders (69, each
+a decode + mixer run on the engine's main thread), registration (25 sounds, sequential, 75–100 ffmpeg spawns on every
+run), the delivery's three whole-sequence renders (whose analysis was then wrong) and previews rebuilt from scratch.
+Changes: content-keyed caches, deduplicated solo renders, `audibleClips` in the mixer (strips no audible clip reaches
+are skipped; exact because every one of the 60 effects maps silence to silence, `silence-in-silence-out.test.ts`),
+no loudness meter where unused, clip loudness three at a time and cached, registration three at a time with
+probe / padded copy remembered, previews sharing the documents up to the first differing item, and the delivery
+measured once on the final preview. Measured back to back on the same host (helper branch, before at load 24–51 /
+after at load 19–37): `sound-design-plan-levels.test.ts` 104.7 → 67.3 s (plans 2 and 3: 15.3 / 12.2 → 2.8 / 3.0 s);
+`sound-design-plan-mix.test.ts` 134.2 → 102.3 s (first plan 34.5 → 29.0 s, plans 2 / 3 16.6 / 13.8 → 5.3 / 2.6 s); at
+load 57–77 / 60–70 (not back to back) the first plan 90.8 → 39.1 s. The real run below: the first plan with every style
+option **13.4 s and 18.8 s at load ≈ 18–21** (WP4.2a: 78 s at load ≈ 95; WP4.2b noted 966 s at load ≈ 140). What
+remains of a first plan (29 s at load ≈ 30): solo renders 14.3 s (≈ 69 distinct: alternatives differ in sound, rate,
+pan), final-mix measurement 4.7 s, registration 2.9 s. Not done: moving the mixer into worker threads (a large change).
+Budgets unchanged: plan-levels ≤ 45 s passed every run; the 2000-event solver's 50 ms minimum is unchanged and still
+load-sensitive (64.6 ms once at load ≈ 50).
+
+#### Real app and agent runs (measured)
+
+- **MCP**, built from this branch (a scratch stdio client, `jasper-mcp` from source, dev engine on 50801 with
+  `JASPER_APPDIR=.stage`, the 212-sound library; the Phase 2 fixture with its fframes graphic + 10 s pink-noise music
+  on A1 + dialogue 4–8 s on A2): `plan_sound_design {style: {seed: 2026, roomGlue, stopBefore, build, delivery: 'web'}}`
+  → 17 placements + `room` + `delivery` + `stop:013` / `build:013` on the hero (the "sfx: boom+swoosh" marker at
+  00:00:08:10), 13.4 s; accepted with the editor key (200, one transaction); `rebalance_sfx {mode: 'apply'}` right
+  after: 18 solved, **0 changed** (the plan's and the rebalance's solves agree), no transaction; `apply_delivery {web,
+  apply}`: Auto-Match dialogue +2.9 dB, music +5.8 dB, one ducked group; report: mix −16.47 LUFS / −3.73 dBTP before
+  normalisation, expected −14 / −1.25, speech 4.3 s, music 14.13 LU under the voice. **Exports** (ProRes 422 HQ + PCM,
+  native, measured by ffmpeg / numpy, `p4v-measure.py`): the mix **−14.0 LUFS integrated, −1.3 dBTP** (LRA 16.7);
+  stems with the Mix normalisation off — voice −14.34 LUFS and music −28.46 LUFS over the speech frames: **14.13 LU**;
+  the stop-before floor **−23.3 dB** under the music 0.6 s before it (both inside the duck) and +6.6 dB after the hero
+  (duck released); the build: spectral centroid 3 487 Hz before → 4 731, 5 188, 6 137, 6 535, 7 395, 7 804 Hz across
+  the 2 s (rising), full band back at the hero; room return (mix − mix without the room) −47.5 dBFS RMS over 1.5 s
+  after the hero, −49.9 dBFS from 0.8 to 1.5 s (the tail). Looked at: spectrograms and waveforms of the mix and the
+  music stem from T − 3 s to T + 1.5 s — the syllables until 8.0 s over the ducked music, the low end fading from
+  6.33 s with the cut edge climbing, the ≈ 24 dB band-wide dip from ≈ 8.06 s, the full band and the hit at 8.33 s.
+  Files (generated media, not committed): `/var/lib/orquester/tmp/p4-verify/run/`.
+- **E2E** (`pnpm build` + `pnpm mg:build`, `E2E_PORT=50806 E2E_SKIP_BUILD=1 pnpm exec playwright test
+  e2e/sound-mix.spec.ts`): passed with the fixture's fframes graphic, Delivery Target… "Export: −14.0 LUFS, −1.0
+  dBTP", "Music under the voice: 23.1 LU" (before the ducking-depth decision was merged), native export measured
+  −14.1 LUFS / −1.1 dBTP.
+
 ## Phase 5: Sound Check
 
 ## Phase 6: packs, cue sources, completion
