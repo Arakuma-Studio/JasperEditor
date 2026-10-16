@@ -3603,6 +3603,199 @@ draft, {editor, agent})`; `registerPolicy(feature, fn)` lets another feature all
   `doc.changed`), the Review UI (P3-R6, call `reopen` after Undo) and the plan job (P3-R3, feature `'sound-design'`,
   `SOUND_DESIGN_FEATURE`) are the next packages; none of them exists yet.
 
+### Phase 3 → WP3.2 plan job & MCP proposal tools
+
+Scope: spec 12 §2.5, §2.8 (`POST /api/sound-design/plan`, job `sound-design`), §2.10 (`plan_sound_design`, `place_sound`
+propose mode, `list_proposals`, `get_proposal`, `wait_for_proposal`, `accept_proposal`, `reject_proposal`,
+`PROPOSALS_GUIDE`), P3-R3, P3-R5. Files: `apps/engine/src/sound-design/plan.ts` (selection, draft, job runner),
+`sound-design/match.ts` (`matchStoredCues`, moved out of the cue route), `routes/sound-design.ts` (route + runner),
+`sounds/service.ts` (`rankingPool`), `proposals/service.ts` (settles setup items); `packages/project/src/sound/proposal-draft.ts`
+(`soundProposalItems`, shared by the engine and MCP), `proposals/decisions.ts` (`isSetupItem`, `settleSetupItems`);
+`packages/api/src/sound-design.ts` (plan request / report / result contracts), `jobs.ts` (kind `sound-design`),
+`routes.ts` (`soundDesignPlan`), `media.ts` (`mediaRegisterCommand`, moved from jasper-mcp so the engine builds the same
+`media.register`); `packages/engine-client` (`planSoundDesign`); `apps/mcp/src/tools/proposals.ts` (5 tools,
+`PROPOSALS_GUIDE` in `FULL_GUIDE`), `tools/sound-design.ts` (`plan_sound_design`, `place_sound {mode}`), `tools/sound.ts`
+(`SOUND_GUIDE` workflow), `errors.ts` (hints `E_APPROVAL_REQUIRED`, `E_PROPOSAL_STALE`, `E_PROPOSAL_LIMIT`). Docs: README
+(344 tools, HTTP section), security review (AGT-3 row, route paragraph), gaps. Tests: `apps/engine/test/sound-design-plan.test.ts`,
+`sound-design-fixture.ts` (the Phase 2 fixture, extracted from the cue route test), `packages/project/test/sound-proposal-draft.test.ts`,
+`apps/mcp/test/proposals.test.ts`, `sound-guide.test.ts`, `packages/engine-client/test/client.test.ts`; `apps/mcp/test/sound-cues.test.ts`
+and `sound-levels.test.ts` (Phase 2 verification B) now pass `mode: 'apply'` where they place directly.
+
+#### Route and job
+
+`POST /api/sound-design/plan` (strict body, 202 + an `EngineJob` of kind `sound-design`; client `planSoundDesign`):
+
+```ts
+SoundDesignPlanRequest = { projectId, sequenceId? /* default the first */, range?: {start, end} /* frames */,
+  cues?: 'auto' /* default */ | cueIds[≤2000], maxCues?: 1…200 /* default 200 */, label? /* proposal title */,
+  style?: { density? /* derived cues; default the sequence's */, palette?: 'project' /* default */ | soundIds[≤500],
+            sources?: ('starter'|'pack'|'folder'|'synth')[] /* default all */, respectDialogue? /* default true */,
+            seed? /* default the sequence's settings.seed */, alternatives?: 0…3 /* default 3 */ } }
+job.result = SoundDesignPlanResult = { proposalId | null, projectId, sequenceId, revision, itemCount, counts, invalid[],
+  report: { version, sequenceId, seed, density, respectDialogue, sources, cues: 'auto'|'ids', range, snapshotHash,
+    librarySize, palette {size, used}, events[{itemId, cueId|null, cueKey|null, cueItemId|null, frame, timecode, seconds,
+      kind, weight, role, align, cueReason, why, types, sound {soundId, title, license, source, score, palette}, parts
+      (rankSounds score parts), rate, gainOffsetDb, alternatives[sound], extraLayers[sound], notes[]}],
+    skipped[{cueId, cueKey, frame, timecode, kind, code, reason}] (≤ 500 listed), counts {cues, placed, newCues, skipped,
+    sounds, items}, warnings[] } }
+```
+
+Refusals before a job starts: `400 VALIDATION_FAILED` (body), `404 PROJECT_NOT_FOUND`, `404 SEQUENCE_NOT_FOUND`,
+`404 CUE_NOT_FOUND` (explicit ids). Skip codes: `FILLED` (explicit id already has a sound), `MUTED`, `SILENCE`, `DIALOGUE`
+(a stored plain cut under words), `NO_TYPES`, `NO_SOUND` (no commercial-safe sound of its types in the allowed sources),
+`REGISTER_FAILED`, `LIMIT`, `NEAR_STORED` (a derived cue within 2 frames of a stored one), `STORED` (a derived cue whose
+stored cue already has a sound), `OUT_OF_RANGE`.
+
+How it works (`plan.ts`; selection and draft are pure and tested without an engine):
+
+1. **Cues.** The live document (`doc.get`: the editor's when open), expressions bound like the cue route. Stored cues of
+   the sequence that are unfilled (no `placedClipIds` naming a clip that exists), in range, not muted, not `silence`, and
+   (with `respectDialogue`) not a plain `cut` under words; with `cues: 'auto'` also `deriveCues` (the engine's template
+   registry, the density, the range, `respectDialogue`), minus suggestions `matchStoredCues` pairs with a stored cue and
+   those within 2 frames of one. Frame order, stored first at one frame.
+2. **Rank.** Per cue `rankSounds` over the library snapshot (`SoundService.rankingPool`: the allowed sources; folder sounds
+   only on a local engine) with the cue's types, its kind as `visualKind`, its window and alignment, commercial-safe only.
+   **Decision:** the cue's types are best first (WP2.2: a cut lists hit before glitch), so ranked sounds are reordered by the
+   first cue type they carry — after the real-recordings-before-synth tier (spec 12 §0) — keeping the ranking's order
+   within a type (`byTypeOrder`; without it the fixture's second cut got "Error buzz", found in the real run; the unit test
+   fails with the ordering removed). The top 24 are re-ranked with the cue's neighbourhood as `usedNearby` (earlier picks of
+   this plan and placed clips, nearest first), palette sounds moved first, then `pickVariant` (seed, key = the cue id or
+   `derived:<key>`, sequence, layer) picks among the top 4 and gives the ±2 % rate and ±1 dB gain offset. The next
+   1–3 ranked sounds are the alternatives. **A marker naming several types** (`sfx: boom+whoosh`, `source: 'marker'`) gets
+   one layer per type (≤ 6; extra layers role `layer`, their own variation); other cues get one sound.
+3. **Roles.** Hero cue → `hero`, else `support` (ambient too); a hero under words (`respectDialogue`) or within 0.5 s of
+   another hero (planned or placed) is placed as `support` with a note.
+4. **Register.** Every chosen and alternative sound, in order of need, through `SoundService.register` (the WAV copy /
+   lead silence rules of §2.1; registering media files is allowed at plan time, the `media.register` commands go into
+   the proposal). A failing chosen sound falls back to its first alternative (noted); a failing extra layer is left out
+   (noted); a cue with nothing registered is `REGISTER_FAILED`. Sounds no pick uses any more are not imported.
+5. **Draft** (`soundProposalItems`, shared with MCP): setup items first — `bin` (`bin.create` "Sound Effects" when the
+   project has none), `sound:<soundId>` (`media.register` with the provenance into the bin; a project media of the same
+   file is reused, with `media.setLibraryInfo` when it lacks provenance; two library ids of one file share one media),
+   `cue:<itemId>` (`soundCue.add` of a derived cue via `cueInputFromDerived`, ref `$cueN`) — all `group: 'setup'`,
+   `meta.setup: true`; then one place item `sfx:NNN` per cue: `soundDesign.place {sequenceId, cueId (stored id or $cueN),
+   layers [{mediaId, role, rate?, gainOffsetDb?}], alternatives (the ring: chosen + alternates)}`, group = role, `requires`
+   = its cue item and the setup items of every sound it or an alternative uses, `alternatives` = command sets with layer
+   0's media swapped, `meta` = {frame, timecode, kind, weight, role, align, cueId, cueKey, cueReason, why, soundId, title,
+   license, score, rate, gainOffsetDb, layers?, notes?}. **No explicit gain**: placement's descriptor-based default level by
+   role applies (Phase 2 verification B), plus the seeded `gainOffsetDb`; align, pan and pan sweep come from the cue.
+   Why-line: `<sound(s)> on <cue reason> at <tc> · <role> · <align>`. Title "Sound design: <sequence name>" (or `label`).
+6. **Proposal.** `services.proposals.create(projectId, draft, {editor, agent})` (validation by dry runs; author the editor's
+   `user` or `{agent}`), from inside the job. Progress: reading, cues, ranking, "Registering sounds (i of n)", checking;
+   cancellation is checked between steps and registrations, and a proposal stored just before a cancel is deleted (a
+   cancelled plan leaves none). No cue with a sound → succeeded with `proposalId: null` and the report (nothing stored).
+   The job's input is re-validated when read back.
+
+**Setup items are settled (change to the WP3.1 model and service).** Found in the MCP test: after the user rejected some
+place items and accepted the rest, the setup items only the rejected ones needed (their new cues, sounds nobody else
+used) stayed pending for ever, so the proposal was never `decided` (never evictable: 50 of them would hit
+`PROPOSAL_LIMIT`) and "Accept all" would have added unused cues and media. `settleSetupItems` (pure, in
+`proposals/decisions.ts`): a pending or stale item with `meta.setup: true` whose dependents are all rejected or invalid
+becomes rejected ("Not needed: …"), transitively; the service applies it after create, accept and reject. Accepting such a
+dependent later still brings its rejected requirements (WP3.1 `planAccept`), so nothing is lost (test). MCP
+`accept_proposal {itemIds: "all"}` sends the pending / stale **non-setup** items (their closure brings the setup).
+**For the Review UI (P3-R6):** do the same for "Accept all" / "Apply n of m" (accept place items, not setup items), show
+setup items folded under the items that require them, and call `reopen` after Undo as WP3.1 says.
+
+#### MCP tools
+
+| Tool | Annotations | What |
+|---|---|---|
+| `plan_sound_design` | EDIT | the route's arguments (`range` takes any time input); waits for the job (`timeoutSeconds` default 300, ≤ 900; progress notifications; a cancelled request cancels the job); returns `proposalId`, item counts, a text table (`item \| timecode \| cue \| sound \| role \| align \| alternates`), events (why-lines, alternates, layers, notes), skipped cues with codes, warnings, and `next`: ask the user to review it in the Review panel, then `wait_for_proposal`; never accept it yourself. On timeout: the job id for `wait_for_job`. |
+| `place_sound` | EDIT | gains `mode: 'propose' \| 'apply'`, **default `propose`** (spec 12 §0 "agents propose"): the same layers, picks, alternates, reason and cue creation as apply mode become one proposal (setup items + one `place` item with the alternates as sets) and nothing changes; a placement that does not apply now (e.g. `track: 'V1'` → `E_TRACK_KIND`) is refused with the item's code and the proposal deleted. `mode: 'apply'` is the Phase 2 behaviour (one transaction). |
+| `list_proposals` | READ_ONLY | summaries (counts, decided, expiry); `feature`, `undecided` filters. |
+| `get_proposal` | READ_ONLY | revalidates by default; every item with state, reason, selected alternative (`swapped`), note, requires, `setup`, why-line; `ghosts`: a text table `item \| state \| ghost \| track \| start \| end \| what` from `previewProposal` on the live document (setup items one line each; clips with track and timecodes, cues, tracks; ≤ 300 rows, ≤ 400 undecided items previewed); `includeCommands`. |
+| `wait_for_proposal` | READ_ONLY | polls every second until `updatedAt` differs from `since` (default: now) or, with `until: 'decided'`, nothing is left to review; ≤ 900 s (default 300); returns `changed \| decided \| applied \| deleted \| timeout`, counts and per non-setup item its state, `swapped {alternative, label}` and note, plus a `notes` list. |
+| `accept_proposal` | EDIT | `itemIds: 'all' \| ids`, `partial`; the policy gate's 403 becomes `E_APPROVAL_REQUIRED` with the hint "ask the user to apply it in the Review panel, or to turn on 'Allow agents to apply sound proposals'; do not retry". |
+| `reject_proposal` | EDIT_IDEMPOTENT | `itemIds: 'all' \| ids`; returns the changed items (settled setup items included). |
+
+No `note` tool for agents (notes are the reviewer's). `PROPOSALS_GUIDE` (in `FULL_GUIDE`) teaches propose → tell the user
+→ `wait_for_proposal` → read the notes → propose again; `SOUND_GUIDE` and its cue section say the same and that apply mode
+is only for when the user asked.
+
+#### Verified (measured, this branch; shared host, 16 cores, load average 45–80)
+
+- `pnpm vitest run apps/engine/test/sound-design-plan.test.ts --maxWorkers=2`: 12 passed. Pure (Phase 2 fixture,
+  synthetic 36-sound library): every fixture event planned (46, 52, 90, 180, 200…, 250, 330, 350, 408), the same seed gives
+  the same picks, rates and offsets, another seed differs; push → 4 distinct whooshes, real recordings before synth, the
+  NC sound never offered; typewriter keys never repeat the previous key; rates within ±2 %, offsets ±1 dB; the cut offers
+  only hits (mutation: with the type ordering removed this test fails); palette ids (explicit or `'project'`) first;
+  sources synth-only / starter-only, the marker as boom + whoosh layers, `NO_SOUND` with its reason; dialogue: no cut under
+  words (derived or stored → `DIALOGUE`), a hero under words → support with a note, both back with
+  `respectDialogue: false`; stored + derived planned once, `NEAR_STORED`, `MUTED`, `SILENCE`, `NO_TYPES`, explicit ids,
+  range; `maxCues` 3 → `LIMIT` for the later cues, alternatives 1; the draft: setup before place items, every `requires`
+  earlier, why-line text, title from the sequence name, `createProposal` → all pending, the push's closure = bin, its
+  cue, its 4 sounds, itself; accepting all place items composes every item. Real engine (indexed generated kit + Jasper
+  Synth, token + editor key): proposal stored with nothing applied (same revision), agent author, origin agent, the push
+  a starter whoosh, the same seed again gives the same picks; agent accept → 403 `APPROVAL_REQUIRED`; the editor applies
+  every place item in **one transaction (revision + 1)**, every clip's aligned point within 1 flick of its cue frame,
+  role as planned, `sfx.level.by: 'default'` with `offsetDb` = the plan's `gainOffsetDb`; planning again → nothing to
+  propose; an allowed agent (agentsMayApply) accepts; synth-only sources and explicit cue ids; cancellation during
+  registration → job `cancelled`, no proposal (mutation: without the abort checks the proposal list is not empty); 9
+  hostile bodies → typed 400 / 404 with no job; a fuzz target (testkit, 30 iterations + 8 properties of mutated bodies):
+  no 5xx, every started job ends succeeded with a result of the schema or failed with a code.
+- `pnpm vitest run packages/project/test/sound-proposal-draft.test.ts packages/project/test/proposals.test.ts --maxWorkers=2`:
+  5 + 21 passed (builder: order, requires, alternatives, the selected alternative placed, reuse of project media with
+  provenance added, twins sharing one media, missing sounds left out; settle: own cue settled first, sounds and bin when
+  nothing needs them, idempotent, a later accept brings rejected requirements back).
+- `pnpm vitest run apps/mcp/test/proposals.test.ts --maxWorkers=1`: 5 passed (real engine on 50011 with token + editor key, 8
+  kit files + synth, jasper-mcp over stdio): plan (table, why-lines, marker layers, nothing applied, same seed same
+  sounds, strict `style.densty` → `E_UNKNOWN_ARGUMENT`), `list_proposals {undecided}`, `get_proposal` ghosts (create clip
+  rows with SFX tracks, cue rows), agent accept → `E_APPROVAL_REQUIRED` with the Review-panel hint, reject 2 items (their
+  cues settled), `wait_for_proposal` answered by a note the "user" wrote 1.5 s into the wait, then select alternative 1 +
+  editor accept of three items (headless, revision + 1) → `changed` with rejected / accepted / `swapped` / note, the
+  swapped item placed the alternate on its cue to 1 flick, a 2 s wait → `timeout`; the user enables agentsMayApply (editor
+  save), the agent's `accept_proposal "all"` → revision + 1, no pending or stale left, `wait_for_proposal {until:
+  'decided'}` → `applied`, rejected items' cues absent; `place_sound` without mode → a proposal (`place` item with one
+  alternate, nothing changed), `track: 'V1'` → `E_TRACK_KIND` and no proposal left.
+- `pnpm vitest run apps/mcp/test/sound-cues.test.ts apps/engine/test/sound-design-cues.test.ts apps/engine/test/fuzz-http.test.ts
+  apps/engine/test/proposals-fuzz.test.ts`: 181 passed (before merging the integration branch); `apps/mcp/test/{sound-guide,
+  readme-tools,conventions,fuzz,sound-examples}.test.ts` + `packages/engine-client/test/client.test.ts`: 393 passed;
+  `apps/engine/test/{proposals,proposals-store,security-review,security-hardening,server}.test.ts`: pass. After merging
+  the integration branch (default levels, mg cue timing): the touched suites together — `apps/mcp/test/{proposals,
+  sound-cues,sound-levels,sound-guide,readme-tools,conventions,fuzz,sound-examples}`, `apps/engine/test/{sound-design-plan,
+  sound-design-cues,proposals,proposals-store,proposals-fuzz,fuzz-http}`, `packages/engine-client/test`, `packages/api/test`,
+  `packages/project/test/{proposals,sound-proposal-draft}` — 650 of 654 passed in one run; the 4 failures were mine to
+  update (the ghost table's setup rows in `proposals.test.ts`, cascading into two later steps; `sound-levels.test.ts`
+  placing without `mode: 'apply'`) and pass on rerun of those two files (5 + 1). The plan test's mg frames were updated
+  to the merged mg timing (350 / 408).
+- **Run for real** (dev engine `JASPER_APPDIR=.stage JASPER_DEV=1 tsx apps/engine/src/cli.ts --port 50001`, Vite on 50002,
+  the full 60-sound kit + 152 synth sounds, a scratch MCP client over stdio, the Phase 2 fixture from
+  `sound-cues-fixture.ts`): `plan_sound_design {style: {seed: 2026}}` → 17 cues, 60 items (1 bin, 25 sounds, 17 new
+  cues, 17 place items), all pending, nothing skipped, 6.9 s (registering 25 sounds as WAV copies; a later plan on the
+  registered kit 2.9 s); the agent's accept → `E_APPROVAL_REQUIRED`. In the editor (project open in a browser): accept of
+  the 17 place items with the editor key → `appliedBy: session`, History **one** entry "Accept Sound design: … (60 of
+  60)", origin `user`, the Cue Seam showing 17 filled cues and the "Sound Effects" bin (screenshot looked at);
+  **one Ctrl+Z removed everything** (no cues, no bin, screenshot); `reopen all` → 60 pending, `?revalidate=1` still
+  pending; accepted again (revision 4). Document: 18 clips (the marker's two layers) on "SFX 1" / "SFX 2", every aligned
+  point exactly on its cue frame, `errorFlicks` 0, rates 0.9835–1.0159. **Export** (`start_export`, Remotion path —
+  the lower third needs it — 14 s H.264/AAC) decoded with ffmpeg (mono 48 kHz), loudest 2 ms-RMS point (0.5 ms hop)
+  near each cue: 15 of 17 events at 0.00 / −1.00 ms (the clicks' −1 ms is the envelope's resolution); the logo-move whoosh
+  (+99 ms) and the marker (+127.5 ms: boom + whoosh layers together, as in WP2.3) were measured again with "SFX 2" muted
+  (one MCP transaction, exported, undone): marker boom **0.00 ms**; the whoosh still +99.5 ms — its own file's envelope peak
+  is at the descriptor's 0.528 s, but it is flat within 5 % over 100 ms and the cue's pan sweep reweights it in the mono
+  downmix, so the loudest point moves (placement exact by the document; not a timing error). Integrated loudness of
+  that export −13.7 LUFS, true peak +3.5 dBTP before the merge brought default levels into this branch (gains were 0
+  then): levels are Phase 4.
+- `pnpm typecheck` (whole workspace) and `pnpm lint` (Biome, tokens, anime, layers, assets): pass (after the merge).
+
+#### Limits and notes for the next packages
+
+- Accepting a place item imports its alternates' sounds too (their setup items are its requirements, so switching to an
+  alternate in review always applies): ≤ 4 media per cue, shared across cues by the rotation (25 for the fixture's 17 cues).
+- The proposal is validated on the engine's main thread inside the job (≈ 5 ms per item, WP3.1): ≤ 200 cues keeps a plan
+  under ≈ 600 items (≈ 3 s, estimated from WP3.1's measurement).
+- Ranking is per cue over the whole snapshot once per distinct (types, kind, window, align) request, then the top 24 are
+  re-ranked with the neighbourhood; a pack library of thousands of sounds was not measured here.
+- `respectDialogue` uses transcript words and Essential Sound dialogue clips (no VAD: P6-R3); stored non-cut cues under
+  words are planned (a hero there becomes support).
+- `wait_for_proposal` polls (1 s); it reports changes by `updatedAt`, so a revalidation that changed states also counts as
+  a change.
+- The plan does not touch masking, stop-before, build or room glue (Phase 4); `pan: 'auto'` cues place centred unless the
+  deriver wrote a number (WP2.1).
+- The session preview (P3-R4) and the Review UI (P3-R6) are the next packages: use `isSetupItem` / `settleSetupItems` as
+  above; the report's `events[].itemId` maps to items, `meta.why` is the why-line.
+
 ## Phase 4: mixing
 
 ## Phase 5: Sound Check

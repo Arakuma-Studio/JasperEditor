@@ -448,6 +448,7 @@ Every state-changing engine route and what an agent may do with it:
 | `soundDesign.setSettings` with `agentsMayApply: true` in an agent transaction | **Gated** (approval card, `approvalReasons`) | An agent may not grant itself the right to apply its own proposals |
 | `POST /api/projects/:id/proposals/:proposalId/applied` (WP3.3a: the editor's Redo of an undone accept) | **Editor only**: without the editor key (or with `x-jasper-agent-input`) `403 APPROVAL_REQUIRED`; nothing in the project changes, refs must be id-shaped | An agent could otherwise mark items applied without applying them and hide them from review |
 | `POST /api/projects/:id/proposals`, `…/:proposalId/reject`, `/reopen`, `/note`, `/select`, `DELETE …/:proposalId` | Open | Nothing in the project changes (proposals live outside the document and its history); an agent is always recorded as the author (`{agent}`), only the editor may name the author; deleting one loses review notes only |
+| `POST /api/sound-design/plan` (`plan_sound_design`), `place_sound` mode "propose" | Open | Stores a proposal (nothing in the document changes); registers the planned library sounds like `POST /api/sounds/:id/register` (copies into managed media, folder files in place only on a local engine); applying it is the gated accept above |
 | `PUT /api/settings/processing` (`set_processing_settings`) | **Gated**, now for every caller without the editor key | Where media is sent (was opt-in by a query parameter) |
 | `POST /api/project-manager` (`project_manager`) | Open | Copies into a new destination under free names; sources untouched |
 | `POST /api/assets/:id/relink`, `…/relink-scan` (`link_media`) | Open | Registers and compares files; the relink itself is a transaction (undoable; `force` is gated) |
@@ -674,6 +675,15 @@ them, but it was reviewed by its author, not by this review.
   `[A-Za-z0-9_-]{1,128}` and read through the agent service like `doc.get`; option ranges, counts (`maxCues` ≤
   10 000) and the returned curves (≤ 20 000 frames per clip) are bounded; `deriveCues` never throws (each source in
   its own try/catch, sampling capped). Tests: `apps/engine/test/sound-design-cues.test.ts` and `fuzz-http.test.ts`.
+- **Sound design plan** (spec 12 WP3.2, `apps/engine/src/sound-design/plan.ts`; `POST /api/sound-design/plan`): a
+  strict zod body (project id `[A-Za-z0-9_-]{1,128}`, ≤ 2 000 cue ids, palette ≤ 500 sound ids `snd_` + 16 hex,
+  `maxCues` ≤ 200, alternatives ≤ 3); the project, sequence and cue ids are checked before a job starts (typed 404s);
+  the job reads the live document through the agent service, ranks only commercial-safe sounds of the allowed sources
+  (folder sounds only on a local engine, D-47), registers through the sound service and creates the proposal through
+  the proposal service (its validation and limits); its input is re-validated when read back from the journal; a
+  cancelled job deletes a proposal it had just stored. Tests: `apps/engine/test/sound-design-plan.test.ts` (typed
+  refusals, a fuzz target over mutated bodies: no 5xx, every started job ends succeeded with a result of the schema or
+  failed with a code) and `fuzz-http.test.ts`.
 - **Proposals** (spec 12 WP3.1, `apps/engine/src/routes/proposals.ts`, `proposals/{store,service}.ts`; `GET/POST
   /api/projects/:id/proposals`, `GET/DELETE …/:proposalId`, `POST …/:proposalId/accept|reject|reopen|note|select|applied`):
   project ids are matched against `prj_` + 16 Crockford characters and proposal ids against `prp_` + 16 before any path

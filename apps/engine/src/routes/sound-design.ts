@@ -1,24 +1,24 @@
-// Sound design routes (spec 12 §2.8; wp-note "WP2.3 cue route & MCP tools"):
+// Sound design routes (spec 12 §2.8; wp-notes "WP2.3 cue route & MCP tools", "Phase 3 → WP3.2"):
 //   POST /api/sound-design/cues   cue suggestions derived from the edit (`deriveCues` of @jasper/project with the
 //                                 engine's motion-graphic template registry), for an inline envelope or a project's
 //                                 live document. Read-only: nothing is stored.
+//   POST /api/sound-design/plan   a `sound-design` job (202): cues → rank → register → place → a proposal for review
+//                                 (sound-design/plan.ts). Nothing is applied.
 import {
 	type EnvelopeJson,
 	type SoundCueSuggestion,
 	SoundCuesRequestSchema,
 	type SoundCuesResponse,
+	SoundDesignPlanRequestSchema,
 } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
 	bindExpressions,
-	type CueAnchor,
-	type DerivedCue,
 	deriveCues,
 	documentHasActiveExpressions,
 	loadProject,
 	type ProjectDocument,
 	type Rational,
-	type Sequence,
 	sequenceDialogueRanges,
 	sequenceDuration,
 	sequenceTimecode,
@@ -27,55 +27,80 @@ import {
 } from '@jasper/project';
 import type { FastifyInstance } from 'fastify';
 import type { AgentService } from '../agent/service.ts';
+import { agentNameOf } from '../agent/user-approval.ts';
+import { isProjectId } from '../projects/store.ts';
+import type { ProposalService } from '../proposals/service.ts';
+import { matchStoredCues } from '../sound-design/match.ts';
+import {
+	liveDocument,
+	PlanInputError,
+	planSequence,
+	runSoundDesignPlan,
+	unknownCueIds,
+} from '../sound-design/plan.ts';
+import type { SoundService } from '../sounds/service.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
-
-/** Keys sorted at every depth: two anchors with the same content compare equal. */
-function canonical(v: unknown): string {
-	if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
-	if (v && typeof v === 'object')
-		return `{${Object.keys(v)
-			.sort()
-			.map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`)
-			.join(',')}}`;
-	return JSON.stringify(v) ?? 'null';
-}
-
-/**
- * The stored cue each derived cue stands for: one with the same anchor (or one of the merged anchors), else one at
- * the same frame with the same kind. A stored cue matches at most one suggestion.
- */
-export function matchStoredCues(seq: Sequence, cues: readonly DerivedCue[]): (string | null)[] {
-	const stored = soundCuesOf(seq);
-	const byAnchor = new Map<string, string>();
-	const byFrameKind = new Map<string, string>();
-	for (const c of stored) {
-		if (c.anchor) byAnchor.set(canonical(c.anchor), c.id);
-		const k = `${c.frame}|${c.kind}`;
-		if (!byFrameKind.has(k)) byFrameKind.set(k, c.id);
-	}
-	const used = new Set<string>();
-	return cues.map((d) => {
-		for (const a of [d.anchor, ...(d.also ?? [])] as CueAnchor[]) {
-			const id = byAnchor.get(canonical(a));
-			if (id && !used.has(id)) {
-				used.add(id);
-				return id;
-			}
-		}
-		const id = byFrameKind.get(`${d.frame}|${d.kind}`);
-		if (id && !used.has(id)) {
-			used.add(id);
-			return id;
-		}
-		return null;
-	});
-}
+import { coreServices } from '../tools/services.ts';
 
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
 /** Longest curve returned per clip (frames): the 20 000 the deriver samples at most. */
 const MAX_CURVE_FRAMES = 20_000;
 
 export default async function soundDesignRoutes(app: FastifyInstance): Promise<void> {
+	const { services } = app.jasper;
+	const core = coreServices(app);
+	core.queue.registerRunner('sound-design', (ctx) =>
+		runSoundDesignPlan(ctx, {
+			agent: () => services.agent as AgentService | undefined,
+			sounds: () => services.sounds as SoundService | undefined,
+			// Registered by the proposal routes (after these): looked up when a job runs.
+			proposals: () => services.proposals as ProposalService | undefined,
+			mgTemplates: mgRegistry,
+		}),
+	);
+
+	app.post(
+		'/api/sound-design/plan',
+		guarded(async (req, reply) => {
+			const body = parseOr400(SoundDesignPlanRequestSchema, req.body ?? {});
+			if (!isProjectId(body.projectId)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
+			const agent = services.agent as AgentService | undefined;
+			if (!agent || !services.sounds || !services.proposals)
+				throw new HttpError(503, 'NOT_AVAILABLE', 'The sound design services are not running');
+			if (!(await agent.projectExists(body.projectId)))
+				throw new HttpError(404, 'PROJECT_NOT_FOUND', `Project not found: ${body.projectId}`);
+			// Refused at once rather than as a failed job: an unknown sequence or cue.
+			const { doc } = await liveDocument(agent, body.projectId);
+			try {
+				const seq = planSequence(doc, body.sequenceId);
+				if (Array.isArray(body.cues)) {
+					const unknown = unknownCueIds(seq, body.cues);
+					if (unknown.length)
+						throw new PlanInputError(
+							'CUE_NOT_FOUND',
+							`Sound cue not found: ${unknown.slice(0, 5).join(', ')}`,
+						);
+				}
+			} catch (e) {
+				if (e instanceof PlanInputError) throw new HttpError(404, e.code, e.message);
+				throw e;
+			}
+			const editor = req.jasperEditor === true;
+			const who = { editor, agent: agentNameOf(req) };
+			reply.code(202);
+			return core.queue.submit({
+				kind: 'sound-design',
+				title: body.label ? `Sound design: ${body.label}`.slice(0, 200) : 'Sound design plan',
+				priority: 'user',
+				cpuSlots: 1,
+				origin: editor ? { type: 'user' } : { type: 'agent', agentRunId: who.agent },
+				projectId: body.projectId,
+				input: { request: body, who },
+				stage: 'Waiting',
+			});
+		}),
+	);
+
 	app.post(
 		'/api/sound-design/cues',
 		guarded(async (req) => {

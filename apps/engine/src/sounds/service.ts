@@ -334,6 +334,22 @@ export class SoundService {
 	}
 
 	/**
+	 * The entries ranking may pick from (id order), for the sound-design plan: folder sounds only on a local engine (D-47),
+	 * and only of the given sources when `sources` is set.
+	 */
+	async rankingPool(
+		sources?: readonly SoundSourceType[],
+	): Promise<{ entries: SoundEntry[]; snapshotHash: string; librarySize: number }> {
+		const snapshot = await this.library.snapshot();
+		const all = this.sortedEntries(snapshot);
+		const allowed = sources?.length ? new Set<string>(sources) : null;
+		const entries = all.filter(
+			(e) => (this.local || e.source.type !== 'folder') && (!allowed || allowed.has(e.source.type)),
+		);
+		return { entries, snapshotHash: snapshot.snapshotHash, librarySize: all.length };
+	}
+
+	/**
 	 * The file of a sound on this engine, checked: inside its kit, pack or folder after resolving links, an audio file,
 	 * existing. Synth sounds are rendered when their file is gone. Folder sounds need local mode.
 	 */

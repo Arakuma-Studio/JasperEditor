@@ -85,6 +85,7 @@ export * from './sound/anchor.ts';
 export * from './sound/cue-input.ts';
 export * from './sound/cues/index.ts';
 export * from './sound/index.ts';
+export * from './sound/proposal-draft.ts';
 export * from './sound/repair.ts';
 export * from './sound/variant.ts';
 export * from './speech/index.ts';

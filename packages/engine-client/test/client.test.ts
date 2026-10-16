@@ -182,6 +182,28 @@ describe('EngineClient requests', () => {
 		});
 	});
 
+	it('starts a sound-design plan job (spec 12 §2.8, P3-R3)', async () => {
+		const m = mockFetch((url, init) =>
+			url === '/api/sound-design/plan' && init.method === 'POST'
+				? json({ ...job, kind: 'sound-design', title: 'Sound design plan' }, 202)
+				: json({ code: 'NOT_FOUND', message: 'nope', retryable: false }, 404),
+		);
+		const c = new EngineClient({ fetch: m.fetch });
+		const body = {
+			projectId: 'prj_0000000000000001',
+			cues: 'auto' as const,
+			style: {
+				density: 'sparse' as const,
+				sources: ['starter' as const],
+				seed: 4,
+				palette: 'project' as const,
+			},
+			maxCues: 20,
+		};
+		expect((await c.planSoundDesign(body)).kind).toBe('sound-design');
+		expect(JSON.parse(String(m.calls[0]!.init.body))).toEqual(body);
+	});
+
 	it('calls the proposal routes (spec 12 §2.5) with their paths, queries and bodies', async () => {
 		const proposal = {
 			version: 1,

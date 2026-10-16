@@ -238,10 +238,17 @@ describe('default insert levels on the Phase 2 fixture', { timeout: 1_200_000 },
 				cue.weight === 'hero'
 					? [{ sound: { type: types[0]! } }, { sound: { type: types[1] ?? types[0]! } }]
 					: [{ sound: { type: types[0]! } }];
-			let r = await call('place_sound', { projectId, cueId: cue.id, layers, clampStart: true });
+			let r = await call('place_sound', {
+				projectId,
+				mode: 'apply',
+				cueId: cue.id,
+				layers,
+				clampStart: true,
+			});
 			if (r.isError)
 				r = await call('place_sound', {
 					projectId,
+					mode: 'apply',
 					cueId: cue.id,
 					layers: layers.map(() => ({ sound: { type: 'hit' } })),
 					clampStart: true,

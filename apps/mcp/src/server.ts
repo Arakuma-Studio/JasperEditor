@@ -34,6 +34,7 @@ import { PRESETS_GUIDE, registerPresetTools } from './tools/presets.ts';
 import { PREVIEWS_GUIDE, registerPreviewTools } from './tools/previews.ts';
 import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts';
 import { registerProjectTools } from './tools/projects.ts';
+import { PROPOSALS_GUIDE, registerProposalTools } from './tools/proposals.ts';
 import { registerRenderTools } from './tools/render.ts';
 import { ROTO_GUIDE, registerRotoTools } from './tools/roto.ts';
 import { registerShapeTools, registerVectorShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
@@ -104,6 +105,7 @@ const FULL_GUIDE = [
 	AUDIO_GUIDE,
 	AUDIO_FX_GUIDE,
 	SOUND_GUIDE,
+	PROPOSALS_GUIDE,
 	CAPTIONS_GUIDE,
 	SPEECH_GUIDE,
 	ROTO_GUIDE,
@@ -167,6 +169,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerAudioFxTools(ctx);
 	registerSoundTools(ctx);
 	registerSoundDesignTools(ctx);
+	registerProposalTools(ctx);
 	registerCaptionTools(ctx);
 	registerSpeechTools(ctx);
 	registerRotoTools(ctx);

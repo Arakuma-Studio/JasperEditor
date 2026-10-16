@@ -1,7 +1,7 @@
 // Sound design cue tools end to end (spec 12 §2.10, P2-R6; wp-note "WP2.3 cue route & MCP tools"): a real engine in
 // a temp appdir indexes a few starter-kit recordings plus Jasper Synth, jasper-mcp (stdio) drives it on the Phase 2
 // fixture built from solids, a shape, a typewriter title, a lower third and an `sfx:` marker: find_sound_cues,
-// set_sound_cues (one transaction), place_sound (peak-exact layers, picks by type, alternates), swap_sound (keeps
+// set_sound_cues (one transaction), place_sound mode "apply" (peak-exact layers, picks by type, alternates), swap_sound (keeps
 // the aligned frame, role, pan, gain; cycles alternates), align_peak (exact, layers together), strict arguments.
 // No network.
 import { type ChildProcess, spawn } from 'node:child_process';
@@ -343,6 +343,7 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		const rev = await revisionOf(projectId);
 		const one = await ok<Placed>('place_sound', {
 			projectId,
+			mode: 'apply',
 			cueId: cut.id,
 			layers: [{ soundId: hits[0], pan: -20, gainDb: -3 }],
 			alternatives: [hits[1], hits[2]],
@@ -366,6 +367,7 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		const marker = cuesOf(s).find((c) => c.source === 'marker')!;
 		const three = await ok<Placed>('place_sound', {
 			projectId,
+			mode: 'apply',
 			cueId: marker.id,
 			layers: [
 				{ soundId: sounds['Low boom'] ?? hits[0] },
@@ -393,6 +395,7 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		const push = cuesOf(s).find((c) => c.kind === 'transition')!;
 		const whoosh = await ok<Placed>('place_sound', {
 			projectId,
+			mode: 'apply',
 			cueId: push.id,
 			layers: [{ sound: { type: 'whoosh' } }],
 		});
@@ -404,6 +407,7 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		// a riser at a time: its END lands on the frame; a cue is created with the reason
 		const riser = await ok<Placed>('place_sound', {
 			projectId,
+			mode: 'apply',
 			at: '00:00:12:00',
 			layers: [{ sound: { type: 'riser' } }],
 			kind: 'reveal',
@@ -420,6 +424,7 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		// a second hero within 0.5 s of the marker's hero is flagged
 		const near = await ok<Placed>('place_sound', {
 			projectId,
+			mode: 'apply',
 			at: 255,
 			layers: [{ soundId: hits[2], role: 'hero' }],
 			weight: 'hero',
@@ -442,8 +447,14 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 			(await fails('place_sound', { projectId, at: 30, layers: [{ sound: { type: 'kazoo' } }] })).code,
 		).toBe('E_INVALID_PARAM');
 		expect(
-			(await fails('place_sound', { projectId, at: 0, layers: [{ soundId: sounds['Low boom'] ?? hits[0] }] }))
-				.code,
+			(
+				await fails('place_sound', {
+					projectId,
+					mode: 'apply',
+					at: 0,
+					layers: [{ soundId: sounds['Low boom'] ?? hits[0] }],
+				})
+			).code,
 		).toBe('E_INVALID_PARAM');
 		expect(
 			(

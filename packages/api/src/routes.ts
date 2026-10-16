@@ -179,7 +179,11 @@ import {
 	VisionModelsResponseSchema,
 } from './roto.ts';
 import { SceneDetectRequestSchema } from './scenes.ts';
-import { SoundCuesRequestSchema, SoundCuesResponseSchema } from './sound-design.ts';
+import {
+	SoundCuesRequestSchema,
+	SoundCuesResponseSchema,
+	SoundDesignPlanRequestSchema,
+} from './sound-design.ts';
 import {
 	RegisterSoundRequestSchema,
 	RegisterSoundResponseSchema,
@@ -1097,6 +1101,16 @@ export const ROUTES = {
 		path: '/api/sound-design/cues',
 		body: SoundCuesRequestSchema,
 		response: SoundCuesResponseSchema,
+	},
+	/**
+	 * Sound design plan (spec 12 §2.8, P3-R3): a `sound-design` job (202) whose result (`SoundDesignPlanResult`) names the
+	 * proposal it stored: cues → rank → register → place, deterministic by seed. Nothing is applied.
+	 */
+	soundDesignPlan: {
+		method: 'POST',
+		path: '/api/sound-design/plan',
+		body: SoundDesignPlanRequestSchema,
+		response: EngineJobSchema,
 	},
 	/**
 	 * Proposals (spec 12 §2.5, §2.8): reviewable sets of edits stored per project. Accept composes ONE transaction
