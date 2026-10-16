@@ -509,7 +509,7 @@ Tools (345; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `list_sound_credits` · `add_sound_folder` `remove_sound_folder` `rescan_sound_library` · cues: `find_sound_cues`
   (derived from the edit) `set_sound_cues` `place_sound` (peak-exact, layers, alternates; proposes unless mode
   "apply") `swap_sound` `align_peak` · `plan_sound_design` (a whole pass as one proposal, gains solved against the
-  bed) · `rebalance_sfx` (masking solver: each sound effect clears the bed by its target lift, with what limited it)
+  bed; `style.cueSources` picks where derived cues come from) · `rebalance_sfx` (masking solver: each sound effect clears the bed by its target lift, with what limited it)
   (`docs/specs/12-sound-design.md`, `docs/wp-notes/sound-design.md`).
 - Proposals (reviewed and applied by the user in the editor; one undo step): `list_proposals` `get_proposal` (with a
   ghost table) `wait_for_proposal` (decisions and notes) `accept_proposal` (policy-gated for agents) `reject_proposal`.
