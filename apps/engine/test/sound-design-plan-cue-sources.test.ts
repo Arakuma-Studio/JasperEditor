@@ -32,10 +32,12 @@ describe('sound-design plan: cue sources', () => {
 
 	it('the request schema takes known derivation sources only', () => {
 		const base = { projectId: 'prj_1' };
-		expect(SoundDesignPlanRequestSchema.safeParse({ ...base, style: { cueSources: ['edits'] } }).success).toBe(
-			true,
+		expect(
+			SoundDesignPlanRequestSchema.safeParse({ ...base, style: { cueSources: ['edits'] } }).success,
+		).toBe(true);
+		expect(SoundDesignPlanRequestSchema.safeParse({ ...base, style: { cueSources: [] } }).success).toBe(
+			false,
 		);
-		expect(SoundDesignPlanRequestSchema.safeParse({ ...base, style: { cueSources: [] } }).success).toBe(false);
 		expect(SoundDesignPlanRequestSchema.safeParse({ ...base, style: { cueSources: ['nope'] } }).success).toBe(
 			false,
 		);

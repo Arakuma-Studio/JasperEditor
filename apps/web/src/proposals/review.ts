@@ -6,15 +6,15 @@
 import {
 	type CueKind,
 	createSeededIdSource,
+	type ProjectDocument,
 	type Proposal,
 	type ProposalContext,
-	type ProjectDocument,
 	previewProposal,
 	type Sequence,
 } from '@jasper/project';
 import type { ProposalPreviewState, ReviewItem } from '@jasper/session';
 import { t } from '../i18n/runtime.ts';
-import { CUE_KIND_LABELS, KIND_GLYPH } from '../sound/cues/model.ts';
+import { KIND_GLYPH, kindLabel } from '../sound/cues/model.ts';
 import { type GhostModel, setupOwners } from './ghosts.ts';
 
 export type ReviewRow = {
@@ -106,7 +106,7 @@ export function kindOf(meta: unknown): CueKind | null {
 	const k = metaOf(meta).kind;
 	return typeof k === 'string' && k in KIND_GLYPH ? (k as CueKind) : null;
 }
-export const kindName = (k: CueKind) => CUE_KIND_LABELS[k].replace(/\s*\[[^\]]*\]$/, '');
+export const kindName = (k: CueKind) => kindLabel(k);
 
 /** The sound the item's chosen command set places (alternatives carry their own title / label). */
 function soundName(item: ReviewItem): string | null {
@@ -136,7 +136,8 @@ function rowOf(item: ReviewItem, ghost: GhostModel | null, gainOf: (id: string) 
 export function buildReviewModel(items: readonly ReviewItem[], ghost: GhostModel | null): ReviewModel {
 	const order = new Map(items.map((it, i) => [it.id, i]));
 	const gains = new Map<string, number>();
-	for (const c of ghost?.clips ?? []) if (c.gainDb !== null && !gains.has(c.itemId)) gains.set(c.itemId, c.gainDb);
+	for (const c of ghost?.clips ?? [])
+		if (c.gainDb !== null && !gains.has(c.itemId)) gains.set(c.itemId, c.gainDb);
 	const gainOf = (id: string) => gains.get(id) ?? null;
 	const owners = setupOwners(items);
 	const byId: Record<string, ReviewRow> = {};
@@ -254,11 +255,7 @@ export type CardCounts = { sounds: number; newTracks: number; items: number };
  * Counts for "<agent> proposes <title>: <n> sounds on <k> new tracks", from a preview of every undecided item on the
  * committed document (never committed; ids seeded like the review's preview). Never throws.
  */
-export function proposalCardCounts(
-	doc: ProjectDocument,
-	p: Proposal,
-	ctx: ProposalContext,
-): CardCounts {
+export function proposalCardCounts(doc: ProjectDocument, p: Proposal, ctx: ProposalContext): CardCounts {
 	const items = p.items.filter((it) => {
 		const m = metaOf(it.meta);
 		return m.setup !== true && (it.state === 'pending' || it.state === 'stale');

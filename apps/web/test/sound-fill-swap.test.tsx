@@ -5,7 +5,9 @@
 // Peak / Set Peak / Role / Palette / Detect Peak commands.
 import type { SoundEntry } from '@jasper/api';
 import { type AudioClip, type ClipSfx, FLICKS_PER_SECOND, type Sequence } from '@jasper/project';
+import { proposalsFor } from '@jasper/session';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine.ts';
 import {
 	type CommandCtx,
 	createCommandContext,
@@ -26,8 +28,6 @@ import { fillCueWithSound } from '../src/sound/fill.ts';
 import { auditionInContext, inContextStore, stopInContext } from '../src/sound/in-context.ts';
 import { soundLibraryPrefs } from '../src/sound/prefs.ts';
 import { cycleVariation, resetVariationRun, swapClipSound } from '../src/sound/swap.ts';
-import { proposalsFor } from '@jasper/session';
-import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine.ts';
 import { fakePlanEngine, planResult, storeProposal } from './review-helpers.ts';
 import { fakeSoundEngine, soundEntry } from './sound-helpers.ts';
 import { makeSession, videoAsset } from './timeline-helpers.ts';

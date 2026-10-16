@@ -189,10 +189,13 @@ export const proposalCommands: UiCommand[] = [
 	{
 		id: 'proposals.acceptAll',
 		label: 'Accept All Proposal Items',
-		description: 'Accept every pending or stale item of the proposal under review (rejected items stay rejected)',
+		description:
+			'Accept every pending or stale item of the proposal under review (rejected items stay rejected)',
 		scope: 'global',
 		agentExposed: true,
-		when: (ctx) => writableReview(ctx) && itemsOf(ctx).some((it) => !it.setup && (it.state === 'pending' || it.state === 'stale')),
+		when: (ctx) =>
+			writableReview(ctx) &&
+			itemsOf(ctx).some((it) => !it.setup && (it.state === 'pending' || it.state === 'stale')),
 		disabledReason: () => t('Nothing left to accept'),
 		run: async (ctx) => {
 			if (ctx.session) await acceptAll(ctx.session);
@@ -204,7 +207,8 @@ export const proposalCommands: UiCommand[] = [
 		description: 'Reject every item of the proposal under review that is not applied yet',
 		scope: 'global',
 		agentExposed: true,
-		when: (ctx) => writableReview(ctx) && reviewCounts(itemsOf(ctx)).open + reviewCounts(itemsOf(ctx)).accepted > 0,
+		when: (ctx) =>
+			writableReview(ctx) && reviewCounts(itemsOf(ctx)).open + reviewCounts(itemsOf(ctx)).accepted > 0,
 		disabledReason: () => t('Nothing left to reject'),
 		run: async (ctx) => {
 			if (ctx.session) await rejectAll(ctx.session);

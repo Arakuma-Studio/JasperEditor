@@ -18,7 +18,12 @@ import {
 	useAgentBridgeFor,
 	useAgentBridgeState,
 } from '../agent-bridge/index.ts';
-import { cardProposals, dismissedProposals, ProposalCards, ReviewAnnouncer } from '../proposals/ProposalCards.tsx';
+import {
+	cardProposals,
+	dismissedProposals,
+	ProposalCards,
+	ReviewAnnouncer,
+} from '../proposals/ProposalCards.tsx';
 import { useProposals } from '../proposals/state.ts';
 
 /** "claude-code wants to run 1 command: track.remove", or for an operation "claude-code wants to delete the preset …" */

@@ -330,7 +330,10 @@ export function AutoSoundPassDialog(
 						aria-valuenow={pct ?? undefined}
 						data-testid="auto-pass-progress"
 					>
-						<div className="h-full bg-pr-accent-fill" style={{ width: `${pct ?? 100}%`, opacity: pct === null ? 0.5 : 1 }} />
+						<div
+							className="h-full bg-pr-accent-fill"
+							style={{ width: `${pct ?? 100}%`, opacity: pct === null ? 0.5 : 1 }}
+						/>
 					</div>
 				) : null}
 			</div>

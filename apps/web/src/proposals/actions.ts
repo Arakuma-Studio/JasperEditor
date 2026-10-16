@@ -13,7 +13,14 @@ import { t } from '../i18n/runtime.ts';
 import { inContextStore, playTimelineWindow } from '../sound/in-context.ts';
 import { soundLibraryPrefs } from '../sound/prefs.ts';
 import { buildGhostModel, type GhostItem, type GhostModel } from './ghosts.ts';
-import { authorName, buildReviewModel, type ReviewModel, removalsOf, reviewCounts, stepItem } from './review.ts';
+import {
+	authorName,
+	buildReviewModel,
+	type ReviewModel,
+	removalsOf,
+	reviewCounts,
+	stepItem,
+} from './review.ts';
 import { proposalsFor } from './state.ts';
 
 /** The last thing the review did, for screen readers (the panel and the bar render it in an aria-live region). */
@@ -39,7 +46,8 @@ export function reviewSequenceId(session: EditorSession): string | null {
 export function currentGhostModel(session: EditorSession): GhostModel | null {
 	const st = proposalsFor(session).getState();
 	const seqId = reviewSequenceId(session);
-	if (!seqId || !st.activeId || !st.preview || !st.proposal || st.preview.proposalId !== st.activeId) return null;
+	if (!seqId || !st.activeId || !st.preview || !st.proposal || st.preview.proposalId !== st.activeId)
+		return null;
 	try {
 		const m = buildGhostModel({
 			preview: st.preview,
@@ -130,7 +138,12 @@ export async function decide(
 	}
 	const r = await c.setItemDecision(ids, d);
 	if (!r.ok) {
-		toast({ kind: 'warning', title: t('Review: not possible'), detail: r.message, dedupeKey: 'review-decide' });
+		toast({
+			kind: 'warning',
+			title: t('Review: not possible'),
+			detail: r.message,
+			dedupeKey: 'review-decide',
+		});
 		announce(r.message);
 		return false;
 	}
@@ -168,7 +181,11 @@ export function rejectAll(session: EditorSession): Promise<boolean> {
 }
 
 /** Next / previous alternative of an item (default the current one). */
-export async function cycleAlternative(session: EditorSession, dir: 1 | -1, itemId?: string): Promise<boolean> {
+export async function cycleAlternative(
+	session: EditorSession,
+	dir: 1 | -1,
+	itemId?: string,
+): Promise<boolean> {
 	const id = itemId ?? currentItemId(session);
 	if (!id) return false;
 	const c = proposalsFor(session);
@@ -298,7 +315,8 @@ export async function applyReview(
 	}
 	const st = c.getState();
 	const p = st.proposal;
-	if (!p || !st.activeId) return { ok: false, code: 'E_NOT_FOUND', message: t('No proposal is under review') };
+	if (!p || !st.activeId)
+		return { ok: false, code: 'E_NOT_FOUND', message: t('No proposal is under review') };
 	const counts = reviewCounts(st.items);
 	const accepted = c.acceptedIds();
 	if (!accepted.length) {
@@ -340,9 +358,7 @@ export async function applyReview(
 	const appliedNow = r.applied.filter((id) => !after.items.find((x) => x.id === id)?.setup).length;
 	const entry =
 		r.revision !== null
-			? session
-					.getState()
-					.history.entries.find((e) => e.revisionAfter === r.revision && e.origin === 'user')
+			? session.getState().history.entries.find((e) => e.revisionAfter === r.revision && e.origin === 'user')
 			: undefined;
 	const entryId = entry?.id ?? null;
 	const sounds = p.feature === 'sound-design';
@@ -406,7 +422,10 @@ export async function discardReview(
 		title: t('Discard “{0}”?', p.title),
 		body:
 			typeof p.author === 'object'
-				? t('The proposal is deleted; {0} is told it was discarded. Nothing in your sequence changes.', p.author.agent)
+				? t(
+						'The proposal is deleted; {0} is told it was discarded. Nothing in your sequence changes.',
+						p.author.agent,
+					)
 				: t('The proposal is deleted. Nothing in your sequence changes.'),
 		confirmLabel: t('Discard'),
 	});

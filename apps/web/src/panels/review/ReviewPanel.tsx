@@ -177,6 +177,7 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 	const why = currentRow && ghost && seq ? whyLines(currentRow.item, ghost, seq, previewSeq) : null;
 
 	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: keeps Enter / Space on the panel's own buttons and fields (the Review scope runs for the rest)
 		<div
 			className="flex h-full min-h-0 flex-col bg-pr-panel text-pr-ui text-pr-text"
 			data-testid="review-panel"
@@ -200,7 +201,12 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 					className="min-w-0 flex-1"
 				/>
 				{reviewing ? (
-					<Button variant="quiet" onClick={() => c.exit()} data-testid="review-exit" title={t('Exit review (Esc)')}>
+					<Button
+						variant="quiet"
+						onClick={() => c.exit()}
+						data-testid="review-exit"
+						title={t('Exit review (Esc)')}
+					>
 						{t('Exit')}
 					</Button>
 				) : null}
@@ -235,13 +241,18 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 							</span>
 							<span className="shrink-0 text-pr-muted">· {authorName(proposal.author)}</span>
 						</div>
-						<div className="flex flex-wrap items-center gap-x-2 text-pr-muted pr-tabular" data-testid="review-counts">
+						<div
+							className="flex flex-wrap items-center gap-x-2 text-pr-muted pr-tabular"
+							data-testid="review-counts"
+						>
 							<span>{t('{0} items', counts.total)}</span>
 							<span>✓ {t('{0} accepted', counts.accepted)}</span>
 							<span>✕ {t('{0} rejected', counts.rejected)}</span>
 							<span>· {t('{0} pending', counts.pending)}</span>
 							{counts.stale + counts.invalid ? (
-								<span className="text-pr-warning">! {t('{0} stale or invalid', counts.stale + counts.invalid)}</span>
+								<span className="text-pr-warning">
+									! {t('{0} stale or invalid', counts.stale + counts.invalid)}
+								</span>
 							) : null}
 							{counts.applied ? <span>{t('{0} applied', counts.applied)}</span> : null}
 						</div>
@@ -265,6 +276,7 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 						data-testid="review-list"
 					>
 						{model.groups.map((g) => (
+							// biome-ignore lint/a11y/useSemanticElements: a group of options inside a listbox (WAI-ARIA listbox grouping)
 							<div key={g.id} role="group" aria-labelledby={`${idPrefix}g-${g.id}`}>
 								<div
 									id={`${idPrefix}g-${g.id}`}
@@ -305,25 +317,28 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 								))}
 							</div>
 						))}
-						{model.orphans.length ? (
-							<div role="group" aria-label={t('Setup')}>
-								<div className="sticky top-0 bg-pr-panel-alt px-2 py-0.5 text-pr-small font-semibold text-pr-muted">
-									{t('Setup')} · {model.orphans.length}
-								</div>
-								{model.orphans.map((it) => (
-									<div
-										key={it.id}
-										className="flex items-center gap-2 px-2 py-0.5 text-pr-small text-pr-muted"
-										data-review-setup={it.id}
-									>
-										<span aria-hidden="true">{STATE_GLYPH[it.state]}</span>
-										<span className="truncate">{it.label}</span>
-										<span className="ml-auto">{REVIEW_STATE_LABELS[it.state]}</span>
-									</div>
-								))}
-							</div>
-						) : null}
 					</div>
+					{model.orphans.length ? (
+						<section
+							aria-label={t('Setup items nothing in the list needs')}
+							className="max-h-24 shrink-0 overflow-auto border-t border-pr-border-subtle"
+						>
+							<div className="sticky top-0 bg-pr-panel-alt px-2 py-0.5 text-pr-small font-semibold text-pr-muted">
+								{t('Setup')} · {model.orphans.length}
+							</div>
+							{model.orphans.map((it) => (
+								<div
+									key={it.id}
+									className="flex items-center gap-2 px-2 py-0.5 text-pr-small text-pr-muted"
+									data-review-setup={it.id}
+								>
+									<span aria-hidden="true">{STATE_GLYPH[it.state]}</span>
+									<span className="truncate">{it.label}</span>
+									<span className="ml-auto">{REVIEW_STATE_LABELS[it.state]}</span>
+								</div>
+							))}
+						</section>
+					) : null}
 					{currentRow ? (
 						<Details
 							key={currentRow.item.id}
@@ -368,7 +383,11 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 							busy={busy}
 							disabled={readOnly || counts.accepted === 0}
 							disabledReason={
-								readOnly ? t('The project is read-only') : counts.accepted === 0 ? t('Accept items first') : undefined
+								readOnly
+									? t('The project is read-only')
+									: counts.accepted === 0
+										? t('Accept items first')
+										: undefined
 							}
 							onClick={(e) => void apply(e)}
 							title={t('Apply the accepted items as one undo step (Ctrl+Enter)')}
@@ -410,7 +429,12 @@ export function rowAriaLabel(row: ReviewRow, seq: Sequence | undefined): string 
 	const it = row.item;
 	const parts = [`${it.label}, ${REVIEW_STATE_LABELS[it.state]}`];
 	if (row.frame !== null) parts[0] += `, ${t('at {0}', fmtTc(seq, row.frame))}`;
-	const what = [row.kind ? kindName(row.kind) : null, row.sound, row.role, row.gainDb !== null ? gainText(row.gainDb) : null]
+	const what = [
+		row.kind ? kindName(row.kind) : null,
+		row.sound,
+		row.role,
+		row.gainDb !== null ? gainText(row.gainDb) : null,
+	]
 		.filter(Boolean)
 		.join(', ');
 	if (what) parts.push(what);
@@ -499,11 +523,13 @@ function Row(p: {
 					className="inline-flex shrink-0 overflow-hidden rounded-pr-control border border-pr-border"
 					data-review-seg
 				>
-					{seg('accept', '✓', 'Accept (Enter)', it.state === 'accepted' || it.state === 'applied')}
-					{seg('reject', '✕', 'Reject (Backspace)', it.state === 'rejected')}
-					{seg('clear', '·', 'Back to pending (U)', it.state === 'pending')}
+					{seg('accept', '✓', t('Accept (Enter)'), it.state === 'accepted' || it.state === 'applied')}
+					{seg('reject', '✕', t('Reject (Backspace)'), it.state === 'rejected')}
+					{seg('clear', '·', t('Back to pending (U)'), it.state === 'pending')}
 				</span>
-				<span className="w-[74px] shrink-0 text-pr-small text-pr-muted pr-tabular">{fmtTc(p.seq, row.frame)}</span>
+				<span className="w-[74px] shrink-0 text-pr-small text-pr-muted pr-tabular">
+					{fmtTc(p.seq, row.frame)}
+				</span>
 				<KindGlyph kind={row.kind} />
 				<span className="min-w-0 flex-1 truncate" title={row.sound ?? it.label}>
 					{row.sound ?? it.label}
@@ -514,17 +540,26 @@ function Row(p: {
 						{gainText(row.gainDb)}
 					</span>
 				) : null}
-				{tool('play', '▶', 'Play in context (Space)', p.onPlay, row.frame === null)}
+				{tool('play', '▶', t('Play in context (Space)'), p.onPlay, row.frame === null)}
 				{tool(
 					'alternate',
 					`⇄ ${it.selectedAlternative + 1}/${it.alternatives}`,
 					it.alternatives > 1
-						? t('Next alternate: {0}', it.alternativeLabels[(it.selectedAlternative + 1) % it.alternatives] ?? '')
+						? t(
+								'Next alternate: {0}',
+								it.alternativeLabels[(it.selectedAlternative + 1) % it.alternatives] ?? '',
+							)
 						: t('No alternates for this item'),
 					p.onAlternate,
 					p.readOnly || decided || it.alternatives < 2,
 				)}
-				{tool('note', it.note ? '✎•' : '✎', it.note ? t('Note: {0}', it.note) : t('Write a note for the agent'), p.onNote, decided)}
+				{tool(
+					'note',
+					it.note ? '✎•' : '✎',
+					it.note ? t('Note: {0}', it.note) : t('Write a note for the agent'),
+					p.onNote,
+					decided,
+				)}
 				<span className="w-[56px] shrink-0 text-right text-pr-small" data-review-state-word>
 					<span aria-hidden="true">{STATE_GLYPH[it.state]} </span>
 					<span className={warn ? 'text-pr-warning' : 'text-pr-muted'}>{REVIEW_STATE_LABELS[it.state]}</span>
@@ -614,7 +649,11 @@ function Details(p: {
 			) : null}
 			{p.why?.problem ? <div className="text-pr-warning">! {p.why.problem}</div> : null}
 			<div className="flex flex-wrap items-center gap-1">
-				<Button variant="secondary" onClick={() => playReviewItem(p.session, it.id)} data-review-detail="play">
+				<Button
+					variant="secondary"
+					onClick={() => playReviewItem(p.session, it.id)}
+					data-review-detail="play"
+				>
 					▶ {t('Play in context')}
 				</Button>
 				<Button

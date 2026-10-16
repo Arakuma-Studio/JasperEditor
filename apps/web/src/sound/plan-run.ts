@@ -75,7 +75,10 @@ export async function runSoundPlan(
 	}
 	if (job.state !== 'succeeded') {
 		if (job.state === 'cancelled') throw new PlanError('E_CANCELLED', t('Cancelled'));
-		throw new PlanError(job.error?.code ?? 'E_JOB_FAILED', job.error?.message ?? t('The sound design plan failed'));
+		throw new PlanError(
+			job.error?.code ?? 'E_JOB_FAILED',
+			job.error?.message ?? t('The sound design plan failed'),
+		);
 	}
 	const parsed = SoundDesignPlanResultSchema.safeParse(job.result);
 	if (!parsed.success) throw new PlanError('E_BAD_RESULT', t('The engine returned an unreadable plan'));

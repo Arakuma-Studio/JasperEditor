@@ -38,7 +38,9 @@ function readDismissed(): Record<string, true> {
 }
 
 /** Proposals whose card the user dismissed in this window (kept for the browser session). */
-export const dismissedProposals = createStore<{ ids: Record<string, true> }>(() => ({ ids: readDismissed() }));
+export const dismissedProposals = createStore<{ ids: Record<string, true> }>(() => ({
+	ids: readDismissed(),
+}));
 export function dismissProposalCard(id: string): void {
 	const ids = { ...dismissedProposals.getState().ids, [id]: true as const };
 	dismissedProposals.setState({ ids });
@@ -81,6 +83,7 @@ function ProposalCard({ session, summary: p }: { session: EditorSession; summary
 	const [counts, setCounts] = useState<CardCounts | null>(null);
 	const agent = typeof p.author === 'object' ? p.author.agent : '';
 	// "n sounds on k new tracks": a preview of the undecided items (never committed), once per change of the proposal
+	// biome-ignore lint/correctness/useExhaustiveDependencies: p.updatedAt re-reads the proposal when it changed
 	useEffect(() => {
 		if (!engine) return;
 		let live = true;

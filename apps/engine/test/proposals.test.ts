@@ -616,9 +616,11 @@ describe('accept policy: agents vs the editor window', () => {
 		const read = (h: Record<string, string>, q = '') =>
 			app.inject({ method: 'GET', url: `${base(projectId)}/${p.id}${q}`, headers: h });
 		const listed = async () =>
-			((await app.inject({ method: 'GET', url: base(projectId), headers: EDITOR_H })).json() as {
-				proposals: { id: string; waiting?: unknown }[];
-			}).proposals.find((x) => x.id === p.id)?.waiting ?? null;
+			(
+				(await app.inject({ method: 'GET', url: base(projectId), headers: EDITOR_H })).json() as {
+					proposals: { id: string; waiting?: unknown }[];
+				}
+			).proposals.find((x) => x.id === p.id)?.waiting ?? null;
 		// the editor's own reads and an agent's get_proposal (revalidating) are not a wait
 		for (let i = 0; i < 3; i++) expect((await read(EDITOR_H)).statusCode).toBe(200);
 		for (let i = 0; i < 3; i++) expect((await read(AGENT_H, '?revalidate=1')).statusCode).toBe(200);
@@ -633,9 +635,7 @@ describe('accept policy: agents vs the editor window', () => {
 		expect(waiting).toMatchObject({ agent: 'sound-agent' });
 		expect(Date.parse((waiting as { since: string }).since)).toBeGreaterThan(0);
 		const w = ev.filter((e) => (e.payload as { change: string }).change === 'waiting');
-		expect(w.map((e) => e.payload)).toEqual([
-			{ projectId, proposalId: p.id, change: 'waiting', waiting },
-		]);
+		expect(w.map((e) => e.payload)).toEqual([{ projectId, proposalId: p.id, change: 'waiting', waiting }]);
 		// deleting it ends the wait without an announcement
 		await app.inject({ method: 'DELETE', url: `${base(projectId)}/${p.id}`, headers: EDITOR_H });
 		expect(ev.filter((e) => (e.payload as { change: string }).change === 'waiting')).toHaveLength(1);

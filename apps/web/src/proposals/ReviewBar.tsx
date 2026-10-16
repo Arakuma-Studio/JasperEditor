@@ -27,7 +27,10 @@ export const REVIEW_BAR_PX = 30;
 export function useReviewBarShown(session: EditorSession, sequenceId: string): boolean {
 	return useProposals(
 		session,
-		(s) => !!s.activeId && !!s.proposal && (s.proposal.sequenceId === null || s.proposal.sequenceId === sequenceId),
+		(s) =>
+			!!s.activeId &&
+			!!s.proposal &&
+			(s.proposal.sequenceId === null || s.proposal.sequenceId === sequenceId),
 	);
 }
 
@@ -61,8 +64,8 @@ export function ReviewBar(props: { session: EditorSession; reveal: RevealFn }) {
 			</span>
 			<span className="min-w-0 truncate" data-testid="review-bar-title" title={proposal.title}>
 				<span className="text-pr-muted">{t('Reviewing:')} </span>
-				{authorName(proposal.author)} · <span className="font-semibold text-pr-strong">{proposal.title}</span> ·{' '}
-				{t('{0} items', counts.total)}
+				{authorName(proposal.author)} · <span className="font-semibold text-pr-strong">{proposal.title}</span>{' '}
+				· {t('{0} items', counts.total)}
 			</span>
 			{waiting ? (
 				<span className="shrink-0 truncate text-pr-agent" data-testid="review-bar-waiting">

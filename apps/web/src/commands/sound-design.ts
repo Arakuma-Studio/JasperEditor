@@ -7,7 +7,6 @@
 // Every document edit is an ordinary command (`soundDesign.*`, `clip.move`, `clip.link`…) in one undo step; agents
 // reach every entry through the UI command catalogue (`clipId` / `cueId` arguments where they need a target).
 import { SOUND_DESIGN_PLAN_LIMITS, SoundIdSchema } from '@jasper/api';
-import { toasts, toast as uiToast } from '@jasper/ui';
 import {
 	type AudioClip,
 	type Clip,
@@ -16,6 +15,7 @@ import {
 	SFX_ROLES,
 	type SfxRole,
 } from '@jasper/project';
+import { toasts, toast as uiToast } from '@jasper/ui';
 import { z } from 'zod';
 import { t } from '../i18n/runtime.ts';
 import {
@@ -24,6 +24,7 @@ import {
 	mediaFilePath,
 	registerAddToLibraryDialog,
 } from '../sound/AddToLibraryDialog.tsx';
+import { AUTO_SOUND_PASS_DIALOG, registerAutoSoundPassDialog } from '../sound/AutoSoundPassDialog.tsx';
 import { auditionPlayer } from '../sound/audition.ts';
 import {
 	cancelLibraryMode,
@@ -48,12 +49,11 @@ import {
 	sfxOf,
 } from '../sound/design-model.ts';
 import { detectClipPeak } from '../sound/detect-peak.ts';
-import { AUTO_SOUND_PASS_DIALOG, registerAutoSoundPassDialog } from '../sound/AutoSoundPassDialog.tsx';
 import { SOUND_LICENSE_DIALOG } from '../sound/dialogs.tsx';
 import { cueCandidates, fillCueWithSound, linkLayersCommands } from '../sound/fill.ts';
 import { inContextActive, inContextEndedBy, stopInContext } from '../sound/in-context.ts';
-import { soundLibraryPrefs } from '../sound/prefs.ts';
 import { reviewPlanResult, runSoundPlan, unfilledCueIdsFor } from '../sound/plan-run.ts';
+import { soundLibraryPrefs } from '../sound/prefs.ts';
 import { registerSoundDesignUi } from '../sound/register.tsx';
 import { cycleVariation, swappableClips } from '../sound/swap.ts';
 import { ReportedCommandError, runCommand } from './registry.ts';
@@ -67,7 +67,6 @@ import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
 registerAddToLibraryDialog();
 registerAutoSoundPassDialog();
 registerSoundDesignUi();
-
 
 const E: CommandScope = 'editing';
 const G: CommandScope = 'global';
@@ -341,7 +340,12 @@ export const soundDesignCommands: UiCommand[] = [
 			const ids = unfilledCueIdsFor(e.session, e.seq.id).slice(0, SOUND_DESIGN_PLAN_LIMITS.maxCueIds);
 			const key = `fill-unfilled:${e.seq.id}`;
 			const progressTitle = t('Proposing sounds for {0} cues…', ids.length);
-			const progress = uiToast({ kind: 'progress', title: progressTitle, progress: { value: null }, dedupeKey: key });
+			const progress = uiToast({
+				kind: 'progress',
+				title: progressTitle,
+				progress: { value: null },
+				dedupeKey: key,
+			});
 			try {
 				const r = await runSoundPlan(
 					ctx.engine,
