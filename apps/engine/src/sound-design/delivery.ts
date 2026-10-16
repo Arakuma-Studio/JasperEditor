@@ -87,6 +87,8 @@ export type DeliveryMeasureDeps = {
 	signal?: AbortSignal;
 	onSpawn?(child: import('node:child_process').ChildProcess): void;
 	onProgress?(fraction: number, stage: string): void;
+	/** Wall time per stage (ms) is added here (diagnostics). */
+	timing?: Record<string, number>;
 };
 
 export type DeliveryOptions = {
@@ -345,6 +347,11 @@ export async function planDelivery(
 		if (deps.signal?.aborted) throw new JobError('CANCELLED', 'Cancelled', false);
 	};
 	const progress = (f: number, s: string) => deps.onProgress?.(f, s);
+	let tLap = Date.now();
+	const lap = (name: string) => {
+		if (deps.timing) deps.timing[name] = (deps.timing[name] ?? 0) + (Date.now() - tLap);
+		tLap = Date.now();
+	};
 	// 1. Auto-Match measurements.
 	progress(0.02, 'Measuring dialogue, music and ambience');
 	const world0 = await audioWorld(doc, seq.id, deps.registry);
@@ -374,6 +381,7 @@ export async function planDelivery(
 			});
 		}
 	}
+	lap('delivery.clipLoudness');
 	const matchCmd: Cmd = {
 		type: 'soundDesign.applyDelivery',
 		sequenceId: seq.id,
@@ -431,6 +439,7 @@ export async function planDelivery(
 					'No music or ambience clip has audible clips of its "Duck against" types: nothing was ducked',
 			});
 	}
+	lap('delivery.activity');
 	const command: Cmd = {
 		type: 'soundDesign.applyDelivery',
 		sequenceId: seq.id,
@@ -504,11 +513,13 @@ export async function planDelivery(
 			);
 		}
 	}
+	lap('delivery.sfx');
 	// 4. The result.
 	aborted();
 	progress(0.75, 'Measuring the delivered mix');
 	const res = await measureResult(doc3, seq.id, opts.delivery, opts.loudness !== false, deps);
 	if (opts.loudness !== false && res.analysis) command.analysis = res.analysis;
+	lap('delivery.measure');
 	if (res.measure.musicUnderVoiceLu !== null && res.measure.musicUnderVoiceLu < DELIVERY_RELATIVE_LU.music)
 		warnings.push({
 			code: 'W_MUSIC_OVER_VOICE',

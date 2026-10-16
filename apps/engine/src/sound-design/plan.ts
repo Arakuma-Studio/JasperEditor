@@ -954,6 +954,7 @@ export type PlanDeps = {
 			signal?: AbortSignal;
 			onSpawn?(child: import('node:child_process').ChildProcess): void;
 			onProgress?(fraction: number, stage: string): void;
+			timing?: Record<string, number>;
 		},
 	) => Promise<{
 		command: Record<string, unknown>;
@@ -997,6 +998,13 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 	if (!agent || !sounds || !proposals)
 		throw new JobError('NOT_AVAILABLE', 'The agent, sound library or proposal service is not running', true);
 	const aborted = () => ctx.signal.aborted;
+	const tJob = Date.now();
+	const timing: Record<string, number> = {};
+	let tLap = Date.now();
+	const lap = (name: string) => {
+		timing[name] = (timing[name] ?? 0) + (Date.now() - tLap);
+		tLap = Date.now();
+	};
 	ctx.progress(0.02, { stage: 'Reading the edit' });
 	const live = await liveDocument(agent, req.projectId);
 	let doc = live.doc;
@@ -1030,6 +1038,7 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 			message:
 				'No sound of the allowed sources is indexed: install the starter kit or rescan the sound library',
 		});
+	lap('cues');
 	// Register every sound a pick may use (chosen and alternatives), in order of need.
 	const order: string[] = [];
 	for (const p of selected.picks)
@@ -1050,6 +1059,7 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 			ctx.log(`register ${id}: ${msg}`);
 		}
 	}
+	lap('register');
 	const skipped = [...collected.skipped, ...selected.skipped];
 	const picks: PlanPick[] = [];
 	for (const p of selected.picks) {
@@ -1107,6 +1117,7 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 						registries: defaultRegistries(deps.mgTemplates),
 						signal: ctx.signal,
 						onSpawn: ctx.trackChild,
+						timing,
 					},
 				);
 				const preset = deliveryPreset(style.delivery);
@@ -1132,6 +1143,7 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 			}
 		}
 	}
+	lap('delivery');
 	const composed = composePlanDraft(doc, seq, req, style, picks, registered, {
 		skipped,
 		warnings,
@@ -1161,6 +1173,7 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 					signal: ctx.signal,
 					onSpawn: ctx.trackChild,
 					onProgress: (f, stage) => ctx.progress(0.6 + 0.25 * f, { stage }),
+					timing,
 				},
 				style.delivery && draft.items.some((it) => it.id === DELIVERY_ITEM_ID)
 					? { delivery: style.delivery }
@@ -1186,6 +1199,7 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 		}
 		draft.report = report;
 	}
+	lap('levels');
 	if (aborted()) return cancelledResult(req, seq, style);
 	if (!draft) {
 		ctx.progress(1, { stage: 'Nothing to propose' });
@@ -1207,6 +1221,10 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 		await proposals.delete(req.projectId, created.proposal.id).catch(() => undefined);
 		return cancelledResult(req, seq, style);
 	}
+	lap('proposal');
+	timing.total = Date.now() - tJob;
+	ctx.log(`timing ${JSON.stringify(timing)}`);
+	if (process.env.JASPER_SD_TIMING === '1') console.error(`[sound-design plan] timing ${JSON.stringify(timing)}`);
 	const p = created.proposal;
 	const counts = { pending: 0, accepted: 0, rejected: 0, stale: 0, invalid: 0 };
 	for (const it of p.items) counts[it.state]++;

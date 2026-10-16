@@ -50,6 +50,8 @@ export type PlanLevelDeps = {
 	signal?: AbortSignal;
 	onSpawn?(child: import('node:child_process').ChildProcess): void;
 	onProgress?(fraction: number, stage: string): void;
+	/** Wall time per stage (ms) is added here (diagnostics). */
+	timing?: Record<string, number>;
 };
 
 type Item = ProposalDraft['items'][number];
@@ -189,6 +191,7 @@ export async function solvePlanGains(
 		const pv = preview(doc, draft, items, k, deps);
 		previews.push({ doc: pv.document, clips: clipsByItem(pv, seq.id, placeIds) });
 	}
+	if (deps.timing) deps.timing.previews = (deps.timing.previews ?? 0) + (Date.now() - t0);
 	const main = previews[0]!;
 	const mainSeq = main.doc.sequences[seq.id] as Sequence;
 	// What to measure: every layer of the chosen sounds; layer 0 of each alternative.
@@ -232,6 +235,11 @@ export async function solvePlanGains(
 				message: `The levels could not be measured (${e instanceof Error ? e.message : String(e)}): placement’s default levels apply`,
 			},
 		};
+	}
+	if (deps.timing) {
+		deps.timing.solo = (deps.timing.solo ?? 0) + measured.ms.sound;
+		deps.timing.bed = (deps.timing.bed ?? 0) + measured.ms.bed;
+		deps.timing.voice = (deps.timing.voice ?? 0) + measured.ms.voice;
 	}
 	// The chosen sounds, solved together.
 	const mainTargets = targets.filter((t) => t.slot === 0 && measured.sounds.has(t.clipId));

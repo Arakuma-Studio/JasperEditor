@@ -101,6 +101,8 @@ export type BedMeasurement = {
 	clusters: TimeWindow[];
 	/** Renders run, and served from the caches. */
 	renders: { bed: number; sound: number; voice: number; cached: number };
+	/** Wall time of each stage (ms): the sounds alone, the bed, the voices. */
+	ms: { sound: number; bed: number; voice: number };
 };
 
 type Pcm = { startSample: number; channels: Float32Array[] };
@@ -445,6 +447,8 @@ export async function measureSfxEvents(
 	const missing: BedMeasurement['missing'] = [];
 
 	// 1. Each sound alone, at 0 dB clip gain.
+	const ms = { sound: 0, bed: 0, voice: 0 };
+	let tStage = Date.now();
 	let done = 0;
 	const steps = () => input.targets.length + 2;
 	const measured = await pool(input.targets, concurrency, async (t) => {
@@ -504,6 +508,8 @@ export async function measureSfxEvents(
 		return { target: t, m };
 	});
 	const ok = measured.filter((x): x is NonNullable<typeof x> => x !== null);
+	ms.sound = Date.now() - tStage;
+	tStage = Date.now();
 
 	// 2. Cue clusters and the bed over them.
 	const clusters = mergeSpans(ok.map(({ target, m }) => bedSpanOf(m.window, target.weight)));
@@ -551,6 +557,8 @@ export async function measureSfxEvents(
 		return { range, pcm: r.pcm };
 	});
 	deps.onProgress?.((input.targets.length + 1) / steps(), 'Rendering the bed');
+	ms.bed = Date.now() - tStage;
+	tStage = Date.now();
 
 	// 3. Speech: transcript words, and voice activity of untranscribed dialogue clips per cluster.
 	const words = (() => {
@@ -595,6 +603,7 @@ export async function measureSfxEvents(
 			if (db[f]! >= th) voiced.push({ start: t0 + f * hop, end: t0 + (f + 1) * hop, tracks });
 	});
 
+	ms.voice = Date.now() - tStage;
 	// 4. Per sound: the bed over its window, its speech, the bed tracks under it.
 	const sounds = new Map<string, MeasuredSound>();
 	for (const { target, m } of ok) {
@@ -635,7 +644,7 @@ export async function measureSfxEvents(
 		});
 	}
 	deps.onProgress?.(1, 'Measured');
-	return { sampleRate: sr, sounds, missing, clusters, renders };
+	return { sampleRate: sr, sounds, missing, clusters, renders, ms };
 }
 
 /**
