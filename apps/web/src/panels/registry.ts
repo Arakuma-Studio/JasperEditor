@@ -17,6 +17,7 @@ import motionTemplates from './motionTemplates/index.ts';
 import program from './program/index.ts';
 import project from './project/index.ts';
 import properties from './properties/index.ts';
+import review from './review/index.ts';
 import scopes from './scopes/index.ts';
 import soundLibrary from './soundLibrary/index.ts';
 import source from './source/index.ts';
@@ -49,6 +50,7 @@ const PANEL_DEFINITIONS: readonly PanelDefinition[] = [
 	essentialGraphics,
 	mediaBrowser,
 	soundLibrary,
+	review,
 ];
 
 export function listPanels(): readonly PanelDefinition[] {

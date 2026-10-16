@@ -341,6 +341,22 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('sound.nextVariation', 'Ctrl+Alt+Period', E, { mac: 'Opt+Cmd+Period', repeat: true }),
 	b('sound.prevVariation', 'Ctrl+Alt+Comma', E, { mac: 'Opt+Cmd+Comma', repeat: true }),
 	b('sound.alignPeakToPlayhead', 'Ctrl+Alt+KeyP', E, { mac: 'Opt+Cmd+KeyP' }),
+	// WP3.3b (spec 12 §2.7 Shortcuts, Review scope: the Review panel): Enter accept, Backspace / Delete reject, U clear,
+	// A A/B, Space ▶ the item in context, Shift+Space the range, Ctrl+Enter (mac Cmd+Enter) Apply, Esc exit, Up / Down
+	// move between the rows
+	b('proposals.acceptItem', 'Enter', 'review'),
+	b('proposals.acceptItem', 'NumpadEnter', 'review'),
+	b('proposals.rejectItem', 'Backspace', 'review'),
+	b('proposals.rejectItem', 'Delete', 'review'),
+	b('proposals.clearItem', 'KeyU', 'review'),
+	b('proposals.toggleHear', 'KeyA', 'review'),
+	b('proposals.playItem', 'Space', 'review'),
+	b('proposals.playRange', 'Shift+Space', 'review'),
+	b('proposals.apply', 'Ctrl+Enter', 'review'),
+	b('proposals.apply', 'Ctrl+NumpadEnter', 'review'),
+	b('proposals.exitReview', 'Escape', 'review'),
+	b('proposals.prevItem', 'ArrowUp', 'review', { repeat: true, args: { order: 'list' } }),
+	b('proposals.nextItem', 'ArrowDown', 'review', { repeat: true, args: { order: 'list' } }),
 	b('history.stepBackward', 'ArrowLeft', 'history', R),
 	b('history.stepForward', 'ArrowRight', 'history', R),
 ];
