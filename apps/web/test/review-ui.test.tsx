@@ -80,6 +80,7 @@ describe('Review panel', () => {
 		expect(screen.getByTestId('review-counts').textContent).toContain('5 items');
 		// the tab badge: 5 left to review
 		expect(screen.getByTestId('review-tab-badge').getAttribute('data-count')).toBe('5');
+		expect(screen.getByTestId('review-tab-badge').getAttribute('title')).toBe('5 items to review');
 		await act(async () => {
 			fireEvent.pointerDown(t.row('hit'), { button: 0 });
 		});
@@ -88,6 +89,9 @@ describe('Review panel', () => {
 		expect(screen.getByTestId('review-details').textContent).toContain('Cut from Shot A to Shot B');
 		expect(t.row('hit').getAttribute('aria-label')).toMatch(/^Hit on the cut, Pending, at 00:00:01:00/);
 		t.c.exit();
+		await settle();
+		// out of review: the proposals with items to review, in the singular for one
+		expect(screen.getByTestId('review-tab-badge').getAttribute('title')).toBe('1 proposal to review');
 	});
 
 	it('keyboard in the list (Review scope): Down moves, Enter accepts (with what it requires), Backspace rejects, U clears, A toggles A/B', async () => {
