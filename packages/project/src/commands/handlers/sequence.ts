@@ -28,8 +28,8 @@ import {
 import { placeSource } from './clip-core.ts';
 import { applyColorSettings, hdrWorkingSpaceOf } from './color-mgmt.ts';
 import { assertBin, insertItem } from './project-items.ts';
-import { remapTextAnimationFrames } from './text-animation.ts';
 import { settleMixOrphans } from './sound-mix.ts';
+import { remapTextAnimationFrames } from './text-animation.ts';
 import type { HandlerMap } from './util.ts';
 
 /**

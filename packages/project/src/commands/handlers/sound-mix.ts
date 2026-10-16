@@ -24,6 +24,7 @@ import {
 	type SoundDesignSettings,
 } from '../../schema/sound.ts';
 import { DELIVERY_DUCK_DB, deliveryMatchTargets, deliveryPreset } from '../../sound/delivery.ts';
+import { sfxGainOwner } from '../../sound/level.ts';
 import {
 	BUILD_FILTER_EFFECT_ID,
 	BUILD_FILTER_PARAMS,
@@ -45,7 +46,6 @@ import {
 	unwriteCurve,
 	writeCurve,
 } from '../../sound/mix.ts';
-import { sfxGainOwner } from '../../sound/level.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn, resolveTrackIn } from '../placement.ts';
@@ -234,9 +234,8 @@ function entriesOf(seq: DSeq): Entry[] {
 			for (const kind of KINDS) {
 				const r = c[kind] as AnyRec | undefined;
 				if (!r) continue;
-				r.writes.forEach((w, index) =>
-					out.push({ ref: { bucket, cueId, kind }, index, order: r.order ?? 0, w, lane: laneOf(w) }),
-				);
+				for (const [index, w] of r.writes.entries())
+					out.push({ ref: { bucket, cueId, kind }, index, order: r.order ?? 0, w, lane: laneOf(w) });
 			}
 	return out;
 }
@@ -276,7 +275,7 @@ function limitOf(written: number, replaced: number): string | null {
 }
 
 /** A dip on a music track's own volume lane (sequence time). */
-function dipTrackLane(seq: DSeq, track: DTrack, dip: Dip, h: HandlerContext): LaneOut {
+function dipTrackLane(track: DTrack, dip: Dip, h: HandlerContext): LaneOut {
 	const cur = (
 		track.volumeDb ? plainCopy(track.volumeDb) : { value: 0, keyframes: [] }
 	) as Animatable<number>;
@@ -459,7 +458,7 @@ function writeStopBefore(
 		// The music track's own volume lane when only music plays there over the window and its lane is played;
 		// else (shared with other audio, or automation Off) the music clips' Volume.
 		if (!u.shared && !u.automationOff) {
-			take(out, dipTrackLane(seq, track, dip, h), where, opts.soft, h);
+			take(out, dipTrackLane(track, dip, h), where, opts.soft, h);
 			continue;
 		}
 		for (const id of u.clipIds)
@@ -533,7 +532,7 @@ function rewriteEntry(doc: DDoc, seq: DSeq, e: Entry, h: HandlerContext): MixWri
 		const dip = stopBeforeDip(rec.frame, rec as StopRec, rate);
 		if (dip && w.target === 'trackVolume') {
 			const t = w.trackId ? audioTrack(seq, w.trackId) : null;
-			if (t) r = dipTrackLane(seq, t, dip, h);
+			if (t) r = dipTrackLane(t, dip, h);
 		} else if (dip && w.target === 'clipVolume') {
 			const c = w.clipId ? (seq.clips[w.clipId] as DAudio | undefined) : undefined;
 			if (c?.kind === 'audio') r = dipClipLane(seq, c, dip, h);
@@ -649,7 +648,7 @@ export function settleMixOrphans(doc: DDoc, seq: DSeq, h: HandlerContext): void 
 	for (const [cueId, c] of Object.entries(orphans))
 		for (const kind of KINDS) {
 			const r = c[kind] as AnyRec | undefined;
-			if (r && r.writes.some((w) => !lockedWrite(seq, w)))
+			if (r?.writes.some((w) => !lockedWrite(seq, w)))
 				removeRec(doc, seq, { bucket: 'orphans', cueId, kind }, h, { keepLocked: true });
 		}
 	tidyMix(seq);

@@ -23,8 +23,8 @@ import {
 	type LibraryProvenance,
 	mergeDips,
 	repairDocument,
-	type SoundDesign,
 	SEQUENCE_LANE,
+	type SoundDesign,
 	sfxGainOwner,
 	unwriteCurve,
 } from '../src/index.ts';
