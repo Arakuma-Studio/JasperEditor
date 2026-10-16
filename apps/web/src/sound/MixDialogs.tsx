@@ -20,6 +20,7 @@ import {
 import type { EditorSession } from '@jasper/session';
 import {
 	Checkbox,
+	cx,
 	Dialog,
 	type HostedDialogProps,
 	registerDialog,
@@ -32,11 +33,26 @@ import type { ToastRequest } from '../commands/types.ts';
 import { useDialogClose } from '../extensions/dialog.ts';
 import { t } from '../i18n/runtime.ts';
 import { trackLabelOf } from './design-model.ts';
-import { deliverySummary, entryOfRevision, runDelivery, SoundJobError, undoIfTop } from './mix-jobs.ts';
-import { DELIVERY_IDS, deliveryOptionLabel, fmtDb, roomBusOf, sequenceDelivery } from './mix-model.ts';
+import {
+	deliveryNotes,
+	deliverySummary,
+	entryOfRevision,
+	runDelivery,
+	SoundJobError,
+	undoIfTop,
+} from './mix-jobs.ts';
+import {
+	DELIVERY_IDS,
+	deliveryOptionLabel,
+	fmtDb,
+	roomBusOf,
+	type SoundNote,
+	sequenceDelivery,
+} from './mix-model.ts';
 
 export const ROOM_GLUE_DIALOG = 'sound.roomGlue';
 export const DELIVERY_DIALOG = 'sound.deliveryTarget';
+export const SOUND_NOTES_DIALOG = 'sound.mixNotes';
 
 let registered = false;
 export function registerMixDialogs(): void {
@@ -44,6 +60,74 @@ export function registerMixDialogs(): void {
 	registered = true;
 	registerDialog(ROOM_GLUE_DIALOG, RoomGlueDialog);
 	registerDialog(DELIVERY_DIALOG, DeliveryDialog);
+	registerDialog(SOUND_NOTES_DIALOG, SoundNotesDialog);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Notes: a mixing job's conflicts and warnings (Rebalance's Details…, Delivery Target…, Auto Sound Pass…)
+
+/** The notes of a job, the ones to act on marked "!" (text and colour, not colour alone). */
+export function SoundNotesList(props: { notes: readonly SoundNote[]; testId?: string; max?: number }) {
+	const max = props.max ?? 50;
+	if (!props.notes.length) return null;
+	const shown = props.notes.slice(0, max);
+	return (
+		<ul className="flex flex-col gap-1 text-pr-small" data-testid={props.testId ?? 'sound-notes'}>
+			{shown.map((n) => (
+				<li
+					key={`${n.code}|${n.text}`}
+					className={cx(
+						'flex items-start gap-1',
+						n.severity === 'warning' ? 'text-pr-warning' : 'text-pr-muted',
+					)}
+					data-kind={n.kind}
+					data-severity={n.severity}
+					data-code={n.code}
+				>
+					<span aria-hidden="true" className="w-2 shrink-0">
+						{n.severity === 'warning' ? '!' : n.kind === 'conflict' ? '⇄' : '·'}
+					</span>
+					<span className="min-w-0 break-words">{n.text}</span>
+				</li>
+			))}
+			{props.notes.length > shown.length ? (
+				<li className="text-pr-dim">{t('{0} more', props.notes.length - shown.length)}</li>
+			) : null}
+		</ul>
+	);
+}
+
+/** Details… of a Rebalance: every conflict and warning of the solve. */
+export function SoundNotesDialog(
+	props: HostedDialogProps<{ title?: string; summary?: string; notes?: SoundNote[] }>,
+) {
+	const { open, finish } = useDialogClose(props.close);
+	const notes = Array.isArray(props.notes) ? props.notes : [];
+	return (
+		<Dialog
+			open={open}
+			onOpenChange={(o) => {
+				if (!o) finish();
+			}}
+			title={props.title ?? t('Rebalance Details')}
+			size="medium"
+			primaryLabel={t('Close')}
+			onPrimary={() => true}
+			data-testid="sound-notes-dialog"
+		>
+			<div className="flex flex-col gap-2 text-pr-ui">
+				{props.summary ? <p className="text-pr-small text-pr-text">{props.summary}</p> : null}
+				<p className="text-pr-small text-pr-muted">
+					A conflict means two of the solver's rules could not both hold: the earlier, safer one was kept.
+				</p>
+				{notes.length ? (
+					<SoundNotesList notes={notes} max={200} testId="sound-notes-dialog-list" />
+				) : (
+					<p className="text-pr-small text-pr-muted">{t('No conflicts or warnings')}</p>
+				)}
+			</div>
+		</Dialog>
+	);
 }
 
 function Field(props: { label: string; value: string; children: ReactNode; testId?: string }) {
@@ -246,9 +330,9 @@ export function DeliveryDialog(
 	});
 	const [running, setRunning] = useState<{ progress: number | null; stage: string } | null>(null);
 	const [message, setMessage] = useState<string | null>(null);
-	const [result, setResult] = useState<(ReturnType<typeof deliverySummary> & { lines: string[] }) | null>(
-		null,
-	);
+	const [result, setResult] = useState<
+		(ReturnType<typeof deliverySummary> & { lines: string[]; notes: SoundNote[] }) | null
+	>(null);
 	const abort = useRef<AbortController | null>(null);
 	useEffect(() => () => abort.current?.abort(), []);
 	const readOnly = session.getState().readOnly;
@@ -313,8 +397,10 @@ export function DeliveryDialog(
 				lines.push(
 					t('Sound effects re-solved: {0} changed, {1} limited', r.report.sfx.changed, r.report.sfx.limited),
 				);
-			for (const w of r.report.warnings.slice(0, 3)) lines.push(`! ${w.message}`);
-			setResult({ ...sum, lines });
+			// warnings in the UI language and, once the report carries them, the re-solved effects' conflicts
+			const now = session.getCommitted();
+			const notes = deliveryNotes(r, now, now.sequences[sequenceId]);
+			setResult({ ...sum, lines, notes });
 			const entry = entryOfRevision(session, r.revision);
 			uiToast({
 				kind: 'success',
@@ -440,10 +526,11 @@ export function DeliveryDialog(
 						<>
 							<span className="text-pr-text">{result.title}</span>
 							{result.lines.map((l) => (
-								<span key={l} className={l.startsWith('!') ? 'text-pr-warning' : 'text-pr-muted'}>
+								<span key={l} className="text-pr-muted">
 									{l}
 								</span>
 							))}
+							<SoundNotesList notes={result.notes} testId="delivery-notes" />
 						</>
 					) : message ? (
 						<span className="text-pr-warning">{message}</span>

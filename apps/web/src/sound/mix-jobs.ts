@@ -12,13 +12,14 @@ import {
 	type SoundDeliveryRequest,
 	type SoundDeliveryResult,
 	SoundDeliveryResultSchema,
+	type SoundDesignPlanReport,
 } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
-import { DELIVERY_PRESETS } from '@jasper/project';
+import { DELIVERY_PRESETS, type ProjectDocument, type Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import type { ZodType } from 'zod';
 import { t } from '../i18n/runtime.ts';
-import { deliveryOptionLabel, fmtDb } from './mix-model.ts';
+import { clipWhere, deliveryOptionLabel, fmtDb, type SoundNote, soundNotes } from './mix-model.ts';
 
 export class SoundJobError extends Error {
 	constructor(
@@ -134,6 +135,54 @@ export function undoIfTop(session: EditorSession, entryId: number | null): boole
 	if (entryId === null || top?.id !== entryId) return false;
 	session.undo();
 	return true;
+}
+
+/**
+ * A rebalance's conflicts and warnings in words, each naming its sound ("Click at 00:00:04:10: its repeats (±2 dB) kept
+ * over dialogue"): from the report's events, else the clip in the sequence.
+ */
+export function rebalanceNotes(
+	r: SfxRebalanceResult,
+	doc?: Pick<ProjectDocument, 'media'>,
+	seq?: Sequence,
+): SoundNote[] {
+	const events = new Map(r.report.events.map((e) => [e.clipId, e]));
+	return soundNotes(r.report, (clipId) => {
+		const ev = clipId ? events.get(clipId) : undefined;
+		if (ev) return t('{0} at {1}', ev.title, ev.timecode);
+		return doc && seq ? clipWhere(doc, seq, clipId) : null;
+	});
+}
+
+/**
+ * A delivery's notes: its warnings and, once the report carries them, the re-solved sound effects' conflicts (read
+ * defensively: `conflicts` may be absent).
+ */
+export function deliveryNotes(
+	r: SoundDeliveryResult,
+	doc?: Pick<ProjectDocument, 'media'>,
+	seq?: Sequence,
+): SoundNote[] {
+	return soundNotes(r.report, (clipId) => (doc && seq ? clipWhere(doc, seq, clipId) : null));
+}
+
+/** A plan's notes: its warnings and the conflicts of its solved levels (named by the item's sound and cue time). */
+export function planNotes(report: SoundDesignPlanReport): SoundNote[] {
+	const byItem = new Map(report.events.map((e) => [e.itemId, e]));
+	return soundNotes(report, (_clipId, itemId) => {
+		const ev = itemId ? byItem.get(itemId) : undefined;
+		return ev ? t('{0} at {1}', ev.sound.title, ev.timecode) : null;
+	});
+}
+
+/** "2 conflicts · 1 warning" (empty when there are none). */
+export function notesCount(notes: readonly SoundNote[]): string {
+	const c = notes.filter((n) => n.kind === 'conflict').length;
+	const w = notes.length - c;
+	return [
+		...(c ? [c === 1 ? t('1 conflict') : t('{0} conflicts', c)] : []),
+		...(w ? [w === 1 ? t('1 warning') : t('{0} warnings', w)] : []),
+	].join(' · ');
 }
 
 /** "Rebalanced 12 sound effects" / detail "3 limited · 2 kept (your gains)". */

@@ -31,7 +31,9 @@ import { useDialogClose } from '../extensions/dialog.ts';
 import { t } from '../i18n/runtime.ts';
 import { CUE_DENSITY_LABELS, CUE_SOURCE_LABELS } from './cues/SuggestCuesDialog.tsx';
 import { type ProjectCueSource, planSuggestion, type SuggestRange, suggestRange } from './cues/suggest.ts';
-import { DELIVERY_IDS, deliveryOptionLabel, fmtDb } from './mix-model.ts';
+import { SoundNotesList } from './MixDialogs.tsx';
+import { notesCount, planNotes } from './mix-jobs.ts';
+import { DELIVERY_IDS, deliveryOptionLabel, fmtDb, type SoundNote } from './mix-model.ts';
 import { PlanError, reviewPlanResult, runSoundPlan } from './plan-run.ts';
 
 export const AUTO_SOUND_PASS_DIALOG = 'sound.autoSoundPass';
@@ -150,6 +152,11 @@ export function AutoSoundPassDialog(
 	const [status, setStatus] = useState<SoundLibraryStatus | null>(null);
 	const [running, setRunning] = useState<{ progress: number | null; stage: string } | null>(null);
 	const [message, setMessage] = useState<string | null>(null);
+	/**
+	 * The last run's warnings and conflicts, listed under the summary; `proposed`: review opened on its proposal (the
+	 * button becomes Close).
+	 */
+	const [done, setDone] = useState<{ notes: SoundNote[]; proposed: boolean } | null>(null);
 	const abort = useRef<AbortController | null>(null);
 	const expressionsReady = useExpressionsFor(doc);
 	const waitingForExpressions = !expressionsReady && documentHasActiveExpressions(doc);
@@ -227,14 +234,25 @@ export function AutoSoundPassDialog(
 				onJob: (j) => setRunning({ progress: j.progress, stage: j.stage ?? j.title }),
 			});
 			const out = await reviewPlanResult(session, result);
+			const notes = planNotes(result.report);
 			if (!result.proposalId) {
 				setRunning(null);
 				setMessage(out.message);
+				setDone(notes.length ? { notes, proposed: false } : null);
 				return false;
 			}
-			props.toast?.({ kind: 'success', message: out.message });
+			props.toast?.({
+				kind: 'success',
+				message: out.message,
+				...(notes.length ? { detail: notesCount(notes) } : {}),
+			});
 			props.onReview?.();
-			return true;
+			if (!notes.length) return true;
+			// the plan's warnings and the conflicts of its levels: listed until the user closes (review is open)
+			setRunning(null);
+			setMessage(out.message);
+			setDone({ notes, proposed: true });
+			return false;
 		} catch (e) {
 			setRunning(null);
 			if (e instanceof PlanError && e.code === 'E_CANCELLED') return false;
@@ -258,9 +276,18 @@ export function AutoSoundPassDialog(
 			onCancel={() => abort.current?.abort()}
 			title="Auto Sound Pass"
 			size="medium"
-			primaryLabel={running ? t('Proposing…') : t('Propose')}
-			primaryDisabled={readOnly || !!running || !plan.range || waitingForExpressions || noSounds}
-			onPrimary={propose}
+			primaryLabel={done?.proposed ? t('Close') : running ? t('Proposing…') : t('Propose')}
+			primaryDisabled={
+				!done?.proposed && (readOnly || !!running || !plan.range || waitingForExpressions || noSounds)
+			}
+			onPrimary={async () => {
+				if (done?.proposed) {
+					finish();
+					return true;
+				}
+				setDone(null);
+				return propose();
+			}}
 			data-testid="auto-sound-pass-dialog"
 		>
 			<div className="flex flex-col gap-3 text-pr-ui">
@@ -419,6 +446,12 @@ export function AutoSoundPassDialog(
 									? t('Nothing to search in this range.')
 									: t('{0} new cues found; unfilled cues in the range are included.', plan.adds.length)}
 				</p>
+				{done && !running ? (
+					<div className="flex flex-col gap-1" aria-live="polite" data-testid="auto-pass-notes">
+						<span className="text-pr-small text-pr-text">{t('Plan notes: {0}', notesCount(done.notes))}</span>
+						<SoundNotesList notes={done.notes} testId="auto-pass-notes-list" />
+					</div>
+				) : null}
 				{running ? (
 					<div
 						className="h-1 w-full overflow-hidden rounded-pr-pill bg-pr-field"

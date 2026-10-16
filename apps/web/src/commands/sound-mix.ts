@@ -9,8 +9,20 @@ import { toasts, toast as uiToast } from '@jasper/ui';
 import { z } from 'zod';
 import { t } from '../i18n/runtime.ts';
 import { sfxOf } from '../sound/design-model.ts';
-import { DELIVERY_DIALOG, ROOM_GLUE_DIALOG, registerMixDialogs } from '../sound/MixDialogs.tsx';
-import { entryOfRevision, rebalanceSummary, runRebalance, undoIfTop } from '../sound/mix-jobs.ts';
+import {
+	DELIVERY_DIALOG,
+	ROOM_GLUE_DIALOG,
+	registerMixDialogs,
+	SOUND_NOTES_DIALOG,
+} from '../sound/MixDialogs.tsx';
+import {
+	entryOfRevision,
+	notesCount,
+	rebalanceNotes,
+	rebalanceSummary,
+	runRebalance,
+	undoIfTop,
+} from '../sound/mix-jobs.ts';
 import { sfxLevelView } from '../sound/mix-model.ts';
 import { ReportedCommandError } from './registry.ts';
 import { type ResolvedSequenceCommandContext, sequenceContext } from './sequence-context.ts';
@@ -74,24 +86,44 @@ async function rebalance(
 		toasts.dismiss(progress);
 		const sum = rebalanceSummary(r);
 		const entry = entryOfRevision(e.session, r.revision);
-		uiToast({
-			kind: r.applied ? 'success' : 'info',
-			title: sum.title,
-			detail: sum.detail,
-			durationMs: 15_000,
+		// conflicts (which rule won over which) and warnings (with their advice), named by sound and time: the toast
+		// says how many and the most important one; Details… lists them all
+		const doc = e.session.getCommitted();
+		const notes = rebalanceNotes(r, doc, doc.sequences[e.seq.id]);
+		const count = notesCount(notes);
+		const top = notes[0];
+		const actions = [
 			...(r.applied
-				? {
-						actions: [
-							{
-								label: t('Undo'),
-								run: () => {
-									if (!undoIfTop(e.session, entry))
-										uiToast({ kind: 'info', title: t('Newer edits came after it; use the History panel') });
-								},
+				? [
+						{
+							label: t('Undo'),
+							run: () => {
+								if (!undoIfTop(e.session, entry))
+									uiToast({ kind: 'info', title: t('Newer edits came after it; use the History panel') });
 							},
-						],
-					}
-				: {}),
+						},
+					]
+				: []),
+			...(notes.length
+				? [
+						{
+							label: t('Details…'),
+							run: () =>
+								ctx.ui.openDialog(SOUND_NOTES_DIALOG, {
+									title: t('Rebalance Details'),
+									summary: [sum.title, sum.detail].filter(Boolean).join(' · '),
+									notes,
+								}),
+						},
+					]
+				: []),
+		];
+		uiToast({
+			kind: notes.some((n) => n.severity === 'warning') ? 'warning' : r.applied ? 'success' : 'info',
+			title: sum.title,
+			detail: [sum.detail, count].filter(Boolean).join(' · ') + (top ? `. ${top.text}` : ''),
+			durationMs: notes.length ? 30_000 : 15_000,
+			...(actions.length ? { actions } : {}),
 		});
 		return {
 			applied: r.applied,
