@@ -15,6 +15,8 @@ import {
 	type SoundDesign,
 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { MeasureCache } from '../src/sound-design/bed.ts';
+import { mixAnalysis } from '../src/sound-design/delivery.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, makeApp, register, tempAppdir } from './helpers.ts';
 import { writeBedFixture } from './sound-bed-fixture.ts';
@@ -253,5 +255,25 @@ describe('sound-design plan: room glue, delivery, stop-before, build (real engin
 			result.report.mix!.stopBefore,
 		);
 		expect(recs.filter((r) => r.build && r.build.writes.length > 0).length).toBe(result.report.mix!.build);
+		// the delivery's stored analysis is the accepted mix's (the planned sounds at their gains, the room, the dips),
+		// so the preview normalises by the right gain at once: re-measured from scratch on the accepted document
+		const core = coreServices(app);
+		const deps = { ff: core.ffmpeg, registry: core.registry, cache: new MeasureCache() };
+		const stored = seq.master.loudness!.analysis!;
+		const real = (await mixAnalysis(after.doc, seqId, deps))!;
+		expect(Math.abs(stored.integratedLufs - (real.integratedLufs as number))).toBeLessThanOrEqual(0.1);
+		expect(
+			Math.abs((stored.truePeakDbtp ?? 0) - ((real.truePeakDbtp as number | null) ?? 0)),
+		).toBeLessThanOrEqual(0.1);
+		// (measured before the plan's sounds, as it was, it read the edit without them)
+		const without = (await mixAnalysis(before.doc, seqId, deps))!;
+		writeFileSync(
+			join(tmpdir(), 'jasper-plan-mix-analysis.json'),
+			JSON.stringify({
+				stored: stored.integratedLufs,
+				real: real.integratedLufs,
+				before: without.integratedLufs,
+			}),
+		);
 	});
 });
