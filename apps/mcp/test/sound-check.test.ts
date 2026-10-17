@@ -14,7 +14,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { provenance, writeBedFixture } from '../../engine/test/sound-bed-fixture.ts';
+import { provenance, writeBedFixture, writeTick } from '../../engine/test/sound-bed-fixture.ts';
 import { decodePng } from '../src/png.ts';
 import { cleanEnv, waitFor } from './helpers.ts';
 
@@ -111,6 +111,9 @@ type Check = {
 describe('sound_check / view_sound_timeline', { timeout: 900_000 }, () => {
 	it('finds a 2-frame late hit, its safe fix resolves it, the re-check passes and is stored; pictures decode', async () => {
 		const files = writeBedFixture(join(work, 'media'));
+		// the clean mix of the engine's Sound Check fixture (wp-note "Phase 6 → WP-E1"): a 1 kHz click (the 3 kHz one is
+		// harsh over this music, P6-E2), the music 1.5 dB up and faded out over its last 2 s (P6-E3 ENDING)
+		files.click = writeTick(join(work, 'media'));
 		const { json: created } = await ok<{ projectId: string }>('create_project', {
 			name: 'Sound Check',
 			preset: 'hd-1080p-30',
@@ -135,8 +138,21 @@ describe('sound_check / view_sound_timeline', { timeout: 900_000 }, () => {
 				{ type: 'essentialSound.setType', clipIds: ['$m'], audioType: 'music' },
 				{ type: 'essentialSound.setType', clipIds: ['$s'], audioType: 'dialogue' },
 				{ type: 'mixer.setLoudness', enabled: true, targetLufs: -14, truePeakDb: -1 },
+				{ type: 'audio.setGain', clipIds: ['$m'], mode: 'set', db: 1.5 },
+				{ type: 'transition.add', clipId: '$m', edge: 'out', effectId: 'jasper.exponential-fade', duration: 60 },
 				{ type: 'media.setLibraryInfo', mediaId: hit, library: provenance('hit') },
-				{ type: 'media.setLibraryInfo', mediaId: click, library: provenance('click') },
+				{
+					type: 'media.setLibraryInfo',
+					mediaId: click,
+					library: {
+						...provenance('click'),
+						descriptors: {
+							...provenance('click').descriptors,
+							octaveBandsDb: [-80, -70, -40, -14, -24, -50, -70],
+							centroidHz: 1000,
+						},
+					},
+				},
 				{
 					type: 'soundCue.add',
 					cues: [{ frame: 30, kind: 'cut', weight: 'hero', source: 'agent', ref: '$a' }],

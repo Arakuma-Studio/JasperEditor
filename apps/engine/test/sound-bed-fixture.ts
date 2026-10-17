@@ -94,6 +94,29 @@ export function clickSamples(): Float32Array[] {
 	return [l, l.slice()];
 }
 
+/**
+ * The Sound Check fixture's click (spec 12 P6-E2): 50 ms of silence, then a 1 kHz burst decaying over 30 ms — the
+ * envelope of `clickSamples` an octave and a half lower, out of the 2–6 kHz band where the 3 kHz click is harsh.
+ */
+export function tickSamples(): Float32Array[] {
+	const n = Math.round(0.25 * SR);
+	const l = new Float32Array(n);
+	for (let i = 0; i < n; i++) {
+		const t = i / SR - 0.05;
+		if (t < 0) continue;
+		l[i] = 0.5 * Math.sin(2 * Math.PI * 1000 * t) * Math.exp(-t / 0.03);
+	}
+	return [l, l.slice()];
+}
+
+/** Writes `tick.wav` (`tickSamples`) into `dir`; returns its path. */
+export function writeTick(dir: string): string {
+	mkdirSync(dir, { recursive: true });
+	const p = join(dir, 'tick.wav');
+	writeFileSync(p, encodeWav(tickSamples(), SR, 's16'));
+	return p;
+}
+
 /** Writes the four files into `dir`; returns their paths. */
 export function writeBedFixture(dir: string): { music: string; speech: string; hit: string; click: string } {
 	mkdirSync(dir, { recursive: true });

@@ -13,24 +13,12 @@ import { join } from 'node:path';
 import { encodeWav } from '@jasper/audio-dsp';
 import type { LibraryProvenance, ProjectDocument } from '@jasper/project';
 import { DocBuilder, register, type TestApp } from './helpers.ts';
-import { hitSamples, provenance, SR, writeBedFixture } from './sound-bed-fixture.ts';
+import { hitSamples, provenance, SR, tickSamples, writeBedFixture } from './sound-bed-fixture.ts';
 
 export type FixtureMedia = Record<
 	'music' | 'speech' | 'hit' | 'hit2' | 'click',
 	Awaited<ReturnType<typeof register>>
 >;
-
-/** The fixture's click: 50 ms of silence, then a 1 kHz burst decaying over 30 ms (`clickSamples`' envelope, 1 kHz). */
-export function tickSamples(): Float32Array[] {
-	const n = Math.round(0.25 * SR);
-	const l = new Float32Array(n);
-	for (let i = 0; i < n; i++) {
-		const t = i / SR - 0.05;
-		if (t < 0) continue;
-		l[i] = 0.5 * Math.sin(2 * Math.PI * 1000 * t) * Math.exp(-t / 0.03);
-	}
-	return [l, l.slice()];
-}
 
 /** Writes and registers the fixture's media once (shared by every variant). */
 export async function registerCheckMedia(app: TestApp, dir: string, token: string): Promise<FixtureMedia> {
