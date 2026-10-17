@@ -86,6 +86,10 @@ export interface SoundTypeProfile {
 	singleHit: boolean;
 	/** Smallest acceptable `maxMomentaryLufs` (less is quiet). */
 	minMaxMomentaryLufs: number;
+	/** The type needs air: `rolloff95Hz` under 12 kHz in a ≥ 44.1 kHz file is `lowpassed` (P6-E9). */
+	needsAir?: boolean;
+	/** Loudest acceptable `floorDb` between events (`noisy-floor`, P6-E9); null = not checked. */
+	maxFloorDb?: number | null;
 }
 
 /**
@@ -123,6 +127,8 @@ const P = (
 	maxFlatness: number | null,
 	singleHit: boolean,
 	minMaxMomentaryLufs: number,
+	needsAir: boolean,
+	maxFloorDb: number | null,
 ): SoundTypeProfile =>
 	Object.freeze({
 		minDurSec,
@@ -134,7 +140,12 @@ const P = (
 		maxFlatness,
 		singleHit,
 		minMaxMomentaryLufs,
+		needsAir,
+		maxFloorDb,
 	});
+
+/** The floor between events most one-shot types accept (dBFS; `@jasper/audio-fx` `NOISY_FLOOR_DB`). */
+const NOISY_FLOOR_DB = -55;
 
 const D = (minSec: number, idealSec: number, maxSec: number, window: DurationFit['window']): DurationFit =>
 	Object.freeze({ minSec, idealSec, maxSec, window });
@@ -165,7 +176,7 @@ const T = (
  * docs/wp-notes/sound-design.md "WP1.1b"); the other fields are decisions recorded in "WP1.1a".
  */
 export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.freeze({
-	//                                                                    profile: minDur maxDur rise decay <150 >6k flat single momentary
+	//                                                                    profile: minDur maxDur rise decay <150 >6k flat single momentary air floor
 	hit: T(
 		'hit',
 		'impact',
@@ -174,7 +185,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'hero',
 		['land', 'cut', 'emphasis', 'reveal', 'beat'],
 		D(0.15, 1.2, 4, null),
-		P(0.05, 6, 25, true, 0.6, 0.5, null, true, -40),
+		P(0.05, 6, 25, true, 0.6, 0.5, null, true, -40, false, NOISY_FLOOR_DB),
 	),
 	boom: T(
 		'boom',
@@ -184,7 +195,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'hero',
 		['reveal', 'cut', 'emphasis', 'land'],
 		D(0.5, 2.5, 8, null),
-		P(0.2, 10, 60, true, 1, 0.25, null, true, -45),
+		P(0.2, 10, 60, true, 1, 0.25, null, true, -45, false, NOISY_FLOOR_DB),
 	),
 	riser: T(
 		'riser',
@@ -194,7 +205,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['reveal', 'transition'],
 		D(1, 3, 12, 'lead'),
-		P(0.5, 30, null, false, 0.6, 0.6, null, false, -45),
+		P(0.5, 30, null, false, 0.6, 0.6, null, false, -45, false, null),
 	),
 	reverse: T(
 		'reverse',
@@ -204,7 +215,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['transition', 'reveal', 'appear'],
 		D(0.4, 1.5, 6, 'lead'),
-		P(0.3, 12, null, false, 0.6, 0.6, null, false, -45),
+		P(0.3, 12, null, false, 0.6, 0.6, null, false, -45, false, null),
 	),
 	transition: T(
 		'transition',
@@ -214,7 +225,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['transition', 'cut'],
 		D(0.4, 1.5, 6, 'span'),
-		P(0.2, 12, null, false, 0.7, 0.6, null, false, -45),
+		P(0.2, 12, null, false, 0.7, 0.6, null, false, -45, false, null),
 	),
 	whoosh: T(
 		'whoosh',
@@ -224,7 +235,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['move', 'transition', 'exit', 'appear'],
 		D(0.3, 1, 3, 'lead'),
-		P(0.15, 6, null, false, 0.5, 0.7, null, false, -45),
+		P(0.15, 6, null, false, 0.5, 0.7, null, false, -45, false, null),
 	),
 	swish: T(
 		'swish',
@@ -234,7 +245,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['move', 'exit', 'appear', 'transition'],
 		D(0.1, 0.35, 1.2, 'lead'),
-		P(0.05, 3, null, false, 0.3, 0.85, null, false, -45),
+		P(0.05, 3, null, false, 0.3, 0.85, null, false, -45, true, null),
 	),
 	glitch: T(
 		'glitch',
@@ -244,7 +255,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['cut', 'transition', 'appear', 'exit', 'emphasis'],
 		D(0.1, 0.4, 2, 'span'),
-		P(0.03, 5, null, false, 0.5, 0.7, null, false, -45),
+		P(0.03, 5, null, false, 0.5, 0.7, null, false, -45, false, NOISY_FLOOR_DB),
 	),
 	ui: T(
 		'ui',
@@ -254,7 +265,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['appear', 'emphasis'],
 		D(0.03, 0.25, 1, null),
-		P(0.01, 2, 30, true, 0.3, 0.6, null, false, -50),
+		P(0.01, 2, 30, true, 0.3, 0.6, null, false, -50, false, NOISY_FLOOR_DB),
 	),
 	click: T(
 		'click',
@@ -264,7 +275,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['appear', 'cut', 'beat'],
 		D(0.01, 0.08, 0.5, null),
-		P(0.002, 1, 6, true, 0.3, 0.85, null, true, -55),
+		P(0.002, 1, 6, true, 0.3, 0.85, null, true, -55, true, NOISY_FLOOR_DB),
 	),
 	key: T(
 		'key',
@@ -274,7 +285,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['appear'],
 		D(0.02, 0.12, 0.5, null),
-		P(0.005, 1, 10, true, 0.4, 0.7, null, true, -55),
+		P(0.005, 1, 10, true, 0.4, 0.7, null, true, -55, true, NOISY_FLOOR_DB),
 	),
 	tick: T(
 		'tick',
@@ -284,7 +295,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['appear', 'beat'],
 		D(0.01, 0.06, 0.4, null),
-		P(0.002, 1, 6, true, 0.3, 0.85, null, true, -55),
+		P(0.002, 1, 6, true, 0.3, 0.85, null, true, -55, true, NOISY_FLOOR_DB),
 	),
 	tap: T(
 		'tap',
@@ -294,7 +305,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['land', 'appear', 'beat'],
 		D(0.03, 0.25, 1, null),
-		P(0.01, 1.5, 12, true, 0.5, 0.6, null, true, -55),
+		P(0.01, 1.5, 12, true, 0.5, 0.6, null, true, -55, true, NOISY_FLOOR_DB),
 	),
 	pop: T(
 		'pop',
@@ -304,7 +315,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['appear', 'emphasis'],
 		D(0.03, 0.15, 0.8, null),
-		P(0.01, 1.5, 15, true, 0.5, 0.5, null, true, -50),
+		P(0.01, 1.5, 15, true, 0.5, 0.5, null, true, -50, false, NOISY_FLOOR_DB),
 	),
 	thump: T(
 		'thump',
@@ -314,7 +325,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['land', 'cut', 'beat', 'emphasis'],
 		D(0.1, 0.5, 2, null),
-		P(0.05, 3, 25, true, 0.95, 0.25, null, true, -45),
+		P(0.05, 3, 25, true, 0.95, 0.25, null, true, -45, false, NOISY_FLOOR_DB),
 	),
 	paper: T(
 		'paper',
@@ -324,7 +335,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['appear', 'exit', 'move'],
 		D(0.15, 0.8, 3, 'span'),
-		P(0.05, 6, null, false, 0.3, 0.85, null, false, -50),
+		P(0.05, 6, null, false, 0.3, 0.85, null, false, -50, true, null),
 	),
 	chime: T(
 		'chime',
@@ -334,7 +345,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['reveal', 'appear', 'emphasis'],
 		D(0.4, 2, 6, null),
-		P(0.2, 10, 40, true, 0.3, 0.5, 0.3, false, -45),
+		P(0.2, 10, 40, true, 0.3, 0.5, 0.3, false, -45, false, NOISY_FLOOR_DB),
 	),
 	shimmer: T(
 		'shimmer',
@@ -344,7 +355,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['reveal', 'appear'],
 		D(0.5, 2, 6, 'span'),
-		P(0.3, 12, null, false, 0.2, 0.85, 0.5, false, -50),
+		P(0.3, 12, null, false, 0.2, 0.85, 0.5, false, -50, true, null),
 	),
 	zap: T(
 		'zap',
@@ -354,7 +365,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['appear', 'transition', 'emphasis', 'exit'],
 		D(0.1, 0.35, 1.5, null),
-		P(0.05, 3, 30, false, 0.5, 0.6, null, false, -45),
+		P(0.05, 3, 30, false, 0.5, 0.6, null, false, -45, false, NOISY_FLOOR_DB),
 	),
 	ambience: T(
 		'ambience',
@@ -364,7 +375,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'ambient',
 		[],
 		D(5, 60, 3600, 'span'),
-		P(2, 3600, null, false, 0.8, 0.6, null, false, -60),
+		P(2, 3600, null, false, 0.8, 0.6, null, false, -60, false, null),
 	),
 	roomtone: T(
 		'roomtone',
@@ -374,7 +385,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'ambient',
 		[],
 		D(5, 30, 3600, 'span'),
-		P(2, 3600, null, false, 0.9, 0.6, null, false, -75),
+		P(2, 3600, null, false, 0.9, 0.6, null, false, -75, false, null),
 	),
 });
 

@@ -12,12 +12,14 @@
 // follow-up job (`followUp`). After a commit, cache entries of fingerprints the index no longer has and Jasper Synth
 // renders it no longer uses are deleted (`pruneSoundCache`).
 import { readdir, rm, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
 	SOUND_VISUAL_VERSION,
 	type SoundEntry,
 	SoundEntrySchema,
 	SoundIndexRequestSchema,
+	type SoundTake,
+	SoundTakeSchema,
 	type SoundIndexResult,
 	type SoundManifestPack,
 	type SoundRoot,
@@ -30,11 +32,14 @@ import {
 	isSoundTypeId,
 	JASPER_LICENSE,
 	licenseUrlOf,
+	materialsOf,
 	requiresAttribution,
 	SOUND_TYPE_PROFILES,
+	type SoundTypeId,
 	StoredSoundTypeSchema,
 	tokenizeSoundText,
 } from '@jasper/project';
+import { z } from 'zod';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import { fingerprintFile, fingerprintHex } from '../media/fingerprint.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
@@ -46,10 +51,13 @@ import type { FileRecord, LibrarySnapshot, SoundLibrary } from './library.ts';
 import type { SoundRootStore } from './roots.ts';
 import { isSoundFileName, type LoadedManifest, loadManifest, loadPackManifest } from './starter.ts';
 import { ensureSynthFile, type SynthItem, synthFileName } from './synth.ts';
-import { visualCacheFile, writeVisual } from './visual.ts';
+import { takeAudioCacheFile, takeVisualCacheFile, visualCacheFile, writeVisual } from './visual.ts';
 
-/** Engine-side analysis revision (decode settings); with SOUND_DESCRIPTORS_VERSION it versions cached analyses. */
-const ENGINE_ANALYSIS_REVISION = 1;
+/**
+ * Engine-side analysis revision (decode settings); with SOUND_DESCRIPTORS_VERSION it versions cached analyses. 2: files
+ * of up to 120 s are decoded whole and split into takes (P6-E9).
+ */
+const ENGINE_ANALYSIS_REVISION = 2;
 export const ANALYSIS_VERSION = SOUND_DESCRIPTORS_VERSION * 1000 + ENGINE_ANALYSIS_REVISION;
 
 /** Folder scans are bounded (security review §5: depth and count, no symlinked folders). */
@@ -99,12 +107,44 @@ export type IndexItem = {
 	meta: ItemMeta;
 };
 
+/** A take as the analysis cache keeps it: everything but the judge (which depends on the sound's type). */
+const CachedTakeSchema = SoundTakeSchema.omit({ judge: true });
+type CachedTake = z.infer<typeof CachedTakeSchema>;
+
 type CachedAnalysis = {
 	fingerprint: string;
 	version: number;
 	format: SoundFormat;
 	descriptors: SoundDescriptors;
+	/** Takes of a multi-hit file (P6-E9): absent when none were searched (one onset, or longer than 120 s). */
+	takes?: CachedTake[];
 };
+
+/**
+ * The takes an entry of these types carries (P6-E9): the analysis's takes, judged as one event against the profile of
+ * its first known type, when that type is a single-hit one (a typing run typed `key`, a clock `tick`) or it has no
+ * known type; none for other types (two onsets of a whoosh or a chime are one sound). Pure.
+ */
+export function entryTakes(
+	types: readonly string[],
+	takes: readonly CachedTake[] | undefined,
+): SoundTake[] | undefined {
+	if (!takes?.length) return undefined;
+	const judgeType = types.find(isSoundTypeId) as SoundTypeId | undefined;
+	if (judgeType && !SOUND_TYPE_PROFILES[judgeType].singleHit) return undefined;
+	const profile = judgeType ? { ...SOUND_TYPE_PROFILES[judgeType], singleHit: false } : null;
+	return takes.map((t) => {
+		const j = profile ? judgeSound(t.descriptors as SoundDescriptors, profile) : null;
+		return { ...t, judge: j ? { ...j, type: judgeType! } : null };
+	});
+}
+
+/** Materials of an item: the words of its title, tags and file path (P6-E10). */
+function itemMaterials(item: Pick<IndexItem, 'meta' | 'source'>): SoundEntry['materials'] {
+	const src = item.source;
+	const path = src.type === 'folder' ? src.relPath : src.type === 'synth' ? src.recipe : src.file;
+	return materialsOf([item.meta.title, ...item.meta.tags, path]);
+}
 
 export function soundIdOf(fingerprint: string): string {
 	return `snd_${fingerprintHex(fingerprint).slice(0, 16)}`;
@@ -334,8 +374,9 @@ export function rootDeclaration(r: SoundRoot): string {
 
 /**
  * Deletes cache entries the committed index no longer uses: `cache/<fingerprintHex>/` folders of fingerprints it has
- * neither as a sound nor as a file record, analyses and visual data of older versions, and Jasper Synth renders of
- * sounds it does not list (older SYNTH_VERSIONs included). Never throws; returns what it removed.
+ * neither as a sound nor as a file record, analyses and visual data of older versions, take visuals and take audio of
+ * takes it no longer lists (or of older versions), and Jasper Synth renders of sounds it does not list (older
+ * SYNTH_VERSIONs included). Never throws; returns what it removed.
  */
 export async function pruneSoundCache(
 	o: { cacheDir: string; synthDir: string },
@@ -350,9 +391,22 @@ export async function pruneSoundCache(
 		}
 	};
 	const synthKeep = new Set<string>();
+	// visual data and audio of the takes the index lists, current versions (P6-E9)
+	const takeFiles = new Set<string>();
 	for (const e of Object.values(snapshot.sounds)) {
 		hex(e.fingerprint);
 		if (e.source.type === 'synth') synthKeep.add(synthFileName(e.source.recipe, e.source.seed));
+		if (!e.takes?.length) continue;
+		let h: string;
+		try {
+			h = fingerprintHex(e.fingerprint);
+		} catch {
+			continue;
+		}
+		for (const t of e.takes) {
+			takeFiles.add(`${h}/${basename(takeVisualCacheFile('', h, t.index))}`);
+			takeFiles.add(`${h}/${basename(takeAudioCacheFile('', h, t.index))}`);
+		}
 	}
 	for (const f of Object.values(snapshot.files)) hex(f.fingerprint);
 	let dirs = 0;
@@ -374,7 +428,8 @@ export async function pruneSoundCache(
 		for (const f of await readdir(dir).catch(() => [] as string[])) {
 			const old =
 				(/^analysis-v\d+\.json$/.test(f) && f !== analysisName) ||
-				(/^visual-v\d+\.json$/.test(f) && f !== visualName);
+				(/^visual-v\d+\.json$/.test(f) && f !== visualName) ||
+				(/^take-\d+-(?:visual-v\d+\.json|audio-v\d+\.wav)$/.test(f) && !takeFiles.has(`${name}/${f}`));
 			if (old)
 				await rm(join(dir, f), { force: true }).then(
 					() => files++,
@@ -405,7 +460,20 @@ async function readCachedAnalysis(file: string, fingerprint: string): Promise<Ca
 		return null;
 	const check = SoundEntrySchema.shape.descriptors.safeParse(r.descriptors);
 	const fmt = SoundEntrySchema.shape.format.safeParse(r.format);
-	return check.success && fmt.success ? { ...r, descriptors: r.descriptors, format: fmt.data } : null;
+	if (!check.success || !fmt.success) return null;
+	let takes: CachedTake[] | undefined;
+	if (r.takes !== undefined) {
+		const t = z.array(CachedTakeSchema).max(64).safeParse(r.takes);
+		if (!t.success) return null;
+		takes = t.data;
+	}
+	return {
+		fingerprint: r.fingerprint,
+		version: r.version,
+		descriptors: r.descriptors,
+		format: fmt.data,
+		...(takes ? { takes } : {}),
+	};
 }
 
 /** Installed packs: `<packsDir>/<id>/pack.json`. */
@@ -617,6 +685,7 @@ export class SoundIndexer {
 					const decoded = await decodeSound(d.ffmpeg, path, {
 						signal: ctx.signal,
 						onSpawn: (c) => ctx.trackChild(c),
+						seconds: 'index',
 					});
 					let out: AnalysisResult;
 					try {
@@ -636,13 +705,23 @@ export class SoundIndexer {
 						throw new JobError('UNSUPPORTED_MEDIA', `The sound cannot be analysed: ${(e as Error).message}`);
 					}
 					const descriptors = out.descriptors!;
-					analysis = { fingerprint, version: ANALYSIS_VERSION, format: decoded.format, descriptors };
+					const takes = out.takes?.map(({ visual: _v, startSample: _s, endSample: _e, ...t }): CachedTake => t);
+					analysis = {
+						fingerprint,
+						version: ANALYSIS_VERSION,
+						format: decoded.format,
+						descriptors,
+						...(takes ? { takes } : {}),
+					};
 					await atomicWriteJson(cacheFile, analysis);
-					await writeVisual(visualCacheFile(d.cacheDir, fingerprintHex(fingerprint)), out.visual);
+					const hex = fingerprintHex(fingerprint);
+					await writeVisual(visualCacheFile(d.cacheDir, hex), out.visual);
+					for (const t of out.takes ?? []) await writeVisual(takeVisualCacheFile(d.cacheDir, hex, t.index), t.visual);
 					analysed++;
 				}
 				const judgeType = item.meta.types.find(isSoundTypeId);
 				const judged = judgeType ? judgeSound(analysis.descriptors, SOUND_TYPE_PROFILES[judgeType]) : null;
+				const takes = entryTakes(item.meta.types, analysis.takes);
 				const previous = Object.hasOwn(prev.sounds, id) ? prev.sounds[id] : undefined;
 				const candidate = {
 					id,
@@ -664,6 +743,8 @@ export class SoundIndexer {
 							? previous.indexedAt
 							: this.now(),
 					analysisVersion: ANALYSIS_VERSION,
+					materials: itemMaterials(item),
+					...(takes ? { takes } : {}),
 				};
 				const entry = SoundEntrySchema.safeParse(candidate);
 				if (!entry.success) {

@@ -8,8 +8,10 @@
 //                      tailSec (→ −60 dB), the active span (first … last point within 60 dB of the peak)
 //   samples          headQuietSec (first sample ≥ 1 % = −40 dB of the sample peak), stereoWidth, loopable
 //   spectrum         Welch average of Hann frames (≈ 40 ms, 50 % overlap) over the active span, channels summed
-//                    → power-weighted centroidHz and rolloff85Hz, below150Share, above6kShare, octaveBandsDb,
-//                      flatness (50 Hz … 16 kHz)
+//                    → power-weighted centroidHz, rolloff85Hz and rolloff95Hz, below150Share, above6kShare,
+//                      octaveBandsDb, flatness (50 Hz … 16 kHz)
+//   floor / DC       floorDb: 10th percentile of 20 ms RMS windows (the level between events; earshot's real-sound
+//                    `analyze.py` rule), dcDb: the largest channel mean (both version 2, P6-E9)
 //   onsets           SuperFlux-style band flux (Böck & Widmer 2013): third-octave log band energies, rise against
 //                    the max of the two previous frames, per-band rise capped at 30 dB, peak-picked
 //   pitch            YIN (de Cheveigné & Kawahara 2002) on up to 16 frames from the onset
@@ -33,7 +35,7 @@ import {
 } from './bands.ts';
 
 /** Bumped whenever a definition or quantisation changes (library indexes re-analyse older entries). */
-export const SOUND_DESCRIPTORS_VERSION = 1;
+export const SOUND_DESCRIPTORS_VERSION = 2;
 /** Longest stretch analysed (seconds); later audio only counts towards `durationSec`. */
 export const MAX_ANALYSIS_SECONDS = 120;
 /** Longest stretch of the active span searched for onsets (seconds). */
@@ -46,6 +48,8 @@ export const MAX_SOUND_CHANNELS = 32;
 export const MIN_SOUND_SAMPLE_RATE = 1000;
 export const MAX_SOUND_SAMPLE_RATE = 768_000;
 /** Octave band centres of `octaveBandsDb` (Hz): `OCTAVE_BAND_CENTRES_HZ`, exported from `./bands.ts`. */
+/** Lowest analysis rate whose `rolloff95Hz` is reported (a file can only hold air above 12 kHz from 44.1 kHz on). */
+export const AIR_MIN_SAMPLE_RATE = 44_100;
 /** Level reported for an empty band or silence (dB). */
 export const DESCRIPTOR_FLOOR_DB = -120;
 /** Highest level a descriptor reports (dB / LUFS): huge finite input (±3.4e38) would read ≈ +730. */
@@ -70,6 +74,20 @@ export interface SoundDescriptors {
 	centroidHz: number;
 	/** Frequency below which 85 % of the average power lies (Hz). */
 	rolloff85Hz: number;
+	/**
+	 * Frequency below which 95 % of the average power lies (Hz); null when the analysis rate is under 44.1 kHz (the file
+	 * cannot hold the air above 12 kHz the judge's `lowpassed` looks for) or for silence. Absent in version-1 analyses.
+	 */
+	rolloff95Hz?: number | null;
+	/**
+	 * Noise floor between events (dBFS): the 10th percentile of the 20 ms RMS windows (mean power over channels; a
+	 * full-scale sine reads −3.01), −120 for digital silence. Null when there are fewer than 10 windows (under 0.2 s) or
+	 * the percentile is within 12 dB of the loudest window (the sound fills the file: there is no "between"). Absent in
+	 * version-1 analyses.
+	 */
+	floorDb?: number | null;
+	/** DC offset: 20·log10 of the largest |mean| of a channel (dBFS); null when every mean is 0. Absent in version 1. */
+	dcDb?: number | null;
 	/** Share of the power below 150 Hz (0…1). */
 	below150Share: number;
 	/** Share of the power above 6 kHz (0…1). */
@@ -261,6 +279,7 @@ function crossingRef(env: Envelope, ref: number, j0: number, j1: number, thrDb: 
 type Spectral = {
 	centroidHz: number;
 	rolloff85Hz: number;
+	rolloff95Hz: number;
 	below150Share: number;
 	above6kShare: number;
 	flatness: number;
@@ -270,6 +289,7 @@ type Spectral = {
 const EMPTY_SPECTRAL: Spectral = {
 	centroidHz: 0,
 	rolloff85Hz: 0,
+	rolloff95Hz: 0,
 	below150Share: 0,
 	above6kShare: 0,
 	flatness: 0,
@@ -300,12 +320,19 @@ function spectral(pr: Prepared, s0: number, s1: number): Spectral {
 	if (!(total > 0) || !Number.isFinite(total))
 		return { ...EMPTY_SPECTRAL, octaveBandsDb: [...EMPTY_SPECTRAL.octaveBandsDb] };
 	let rolloff = 0;
+	let rolloff95 = 0;
 	const target = 0.85 * total;
+	const target95 = 0.95 * total;
 	let run = 0;
+	let found85 = false;
 	for (let k = 0; k < acc.length; k++) {
 		run += acc[k]!;
-		if (run >= target) {
+		if (!found85 && run >= target) {
 			rolloff = k * binHz;
+			found85 = true;
+		}
+		if (run >= target95) {
+			rolloff95 = k * binHz;
 			break;
 		}
 	}
@@ -333,6 +360,7 @@ function spectral(pr: Prepared, s0: number, s1: number): Spectral {
 	return {
 		centroidHz: powF / total,
 		rolloff85Hz: rolloff,
+		rolloff95Hz: rolloff95,
 		below150Share: low / total,
 		above6kShare: high / total,
 		flatness,
@@ -356,8 +384,18 @@ const ONSET_ENERGY_RISE = 10 ** (3 / 10);
 const ONSET_MIN_GAP_S = 0.05;
 
 function onsetCount(pr: Prepared, s0: number, s1: number): number {
+	return onsetPositions(pr, s0, s1, MAX_ONSET_SECONDS).length;
+}
+
+/**
+ * Onsets of [s0, s1) (at most `maxSec` of it): the sample at the centre of each onset frame (≈ 21 ms frames, half
+ * overlapping, so within about one hop of the attack), ascending. `onsetCount` is their number over
+ * `MAX_ONSET_SECONDS`; takes (takes.ts) search up to `MAX_ANALYSIS_SECONDS`.
+ */
+function onsetPositions(pr: Prepared, s0: number, s1: number, maxSec: number): number[] {
 	const { ch, n: len, sr } = pr;
-	if (ch.length === 0 || s1 <= s0) return 0;
+	const out: number[] = [];
+	if (ch.length === 0 || s1 <= s0) return out;
 	const N = fftLength(sr, 0.02);
 	const hop = N / 2;
 	const binHz = sr / N;
@@ -374,8 +412,8 @@ function onsetCount(pr: Prepared, s0: number, s1: number): number {
 	}
 	edges.push(Math.min(N / 2 + 1, Math.max(k, (edges[edges.length - 1] ?? 0) + 1)));
 	const nb = edges.length - 1;
-	if (nb < 1) return 0;
-	const end = Math.min(s1, s0 + Math.floor(MAX_ONSET_SECONDS * sr));
+	if (nb < 1) return out;
+	const end = Math.min(s1, s0 + Math.floor(maxSec * sr));
 	const first = s0 - N;
 	const frames = Math.max(1, Math.ceil((end - first) / hop) + 1);
 	const fp = new FramePower(N);
@@ -396,7 +434,7 @@ function onsetCount(pr: Prepared, s0: number, s1: number): number {
 		}
 		frameE[t] = fe;
 	}
-	if (!(ref > 0)) return 0;
+	if (!(ref > 0)) return out;
 	const floorDb = dbPow(ref) - 80;
 	const bandDb = (t: number, b: number): number =>
 		t < 0 ? floorDb : Math.max(floorDb, dbPow(bandE[t * nb + b]!));
@@ -416,7 +454,6 @@ function onsetCount(pr: Prepared, s0: number, s1: number): number {
 	const thr = Math.max(FLUX_MIN_DB, FLUX_REL * maxFlux);
 	const gate = maxFrame * 10 ** (-ONSET_GATE_DB / 10);
 	const minGap = Math.max(1, Math.round((ONSET_MIN_GAP_S * sr) / hop));
-	let count = 0;
 	let last = Number.NEGATIVE_INFINITY;
 	for (let t = 0; t < frames; t++) {
 		const f = flux[t]!;
@@ -436,10 +473,11 @@ function onsetCount(pr: Prepared, s0: number, s1: number): number {
 				break;
 			}
 		if (!isPeak || t - last < minGap) continue;
-		count++;
+		// frame t spans [first + t·hop, first + t·hop + N): its centre is s0 + (t − 1)·hop (N = 2·hop)
+		out.push(Math.min(len - 1, Math.max(0, first + t * hop + N / 2)));
 		last = t;
 	}
-	return count;
+	return out;
 }
 
 // ── pitch (YIN) ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -610,6 +648,110 @@ function isLoopable(pr: Prepared, headQuietSec: number): boolean {
 	return true;
 }
 
+// ── floor and DC ────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Window of the floor measurement (20 ms) and the percentile taken (10th). */
+const FLOOR_WINDOW_SEC = 0.02;
+const FLOOR_PERCENTILE = 0.1;
+/** Fewer windows than this (0.2 s) give no floor. */
+const FLOOR_MIN_WINDOWS = 10;
+/** The floor must be this far under the loudest window, else the sound fills the file and has no floor (dB). */
+const FLOOR_MIN_CONTRAST_DB = 12;
+
+/**
+ * Noise floor between events (dBFS; `SoundDescriptors.floorDb`): the 10th percentile of non-overlapping 20 ms windows
+ * of the mean power over channels. Pure; never throws (non-finite samples must already be sanitised).
+ */
+function floorOf(ch: readonly Float32Array[], n: number, sr: number): number | null {
+	if (ch.length === 0) return null;
+	const w = Math.max(1, Math.round(sr * FLOOR_WINDOW_SEC));
+	const k = Math.floor(n / w);
+	if (k < FLOOR_MIN_WINDOWS) return null;
+	const pw = new Float64Array(k);
+	for (const c of ch)
+		for (let j = 0; j < k; j++) {
+			let s = 0;
+			const end = (j + 1) * w;
+			for (let i = j * w; i < end; i++) {
+				const x = c[i]!;
+				s += x * x;
+			}
+			pw[j] += s;
+		}
+	const norm = 1 / (w * ch.length);
+	for (let j = 0; j < k; j++) pw[j] *= norm;
+	const sorted = Float64Array.from(pw).sort();
+	const max = sorted[k - 1]!;
+	if (!(max > 0)) return null;
+	const p = sorted[Math.floor(FLOOR_PERCENTILE * (k - 1))]!;
+	if (!(p > 0)) return DESCRIPTOR_FLOOR_DB;
+	const db = dbPow(p);
+	if (dbPow(max) - db < FLOOR_MIN_CONTRAST_DB) return null;
+	return qDb(Math.max(DESCRIPTOR_FLOOR_DB, Math.min(DESCRIPTOR_CEILING_DB, db)));
+}
+
+/** DC offset (dBFS; `SoundDescriptors.dcDb`): the largest |mean| over channels; null when every mean is 0. */
+function dcOf(ch: readonly Float32Array[], n: number): number | null {
+	if (n === 0) return null;
+	let worst = 0;
+	for (const c of ch) {
+		let s = 0;
+		for (let i = 0; i < n; i++) s += c[i]!;
+		worst = Math.max(worst, Math.abs(s / n));
+	}
+	if (!(worst > 0) || !Number.isFinite(worst)) return null;
+	const db = 20 * Math.log10(worst);
+	return db < DESCRIPTOR_FLOOR_DB ? null : qDb(Math.min(DESCRIPTOR_CEILING_DB, db));
+}
+
+/** Input checked and sanitised like {@link analyzeSound} does (shared with takes.ts). */
+export type PreparedSound = { channels: Float32Array[]; frames: number; totalFrames: number; sampleRate: number };
+
+/**
+ * Validates and sanitises analysis input exactly like {@link analyzeSound} (throws `SoundAnalysisError` for invalid
+ * arguments; non-finite samples → 0; at most `MAX_ANALYSIS_SECONDS`).
+ */
+export function prepareSound(channels: Float32Array[], sampleRate: number): PreparedSound {
+	const pr = prepare(channels, sampleRate);
+	return { channels: pr.ch, frames: pr.n, totalFrames: pr.total, sampleRate: pr.sr };
+}
+
+/** The recording's noise floor between events ({@link SoundDescriptors.floorDb}) of prepared input. */
+export function soundFloorDb(p: PreparedSound): number | null {
+	return floorOf(p.channels, p.frames, p.sampleRate);
+}
+
+/**
+ * Onset positions (samples, ascending) of prepared input over at most `maxSec` of its active span: the detector behind
+ * `onsetCount`, each within about one 10 ms hop of its attack. Empty for silence.
+ */
+export function soundOnsets(p: PreparedSound, maxSec = MAX_ANALYSIS_SECONDS): number[] {
+	const pr: Prepared = { ch: p.channels, n: p.frames, total: p.totalFrames, sr: p.sampleRate };
+	if (pr.ch.length === 0 || pr.n === 0) return [];
+	const env = envelope(pr);
+	if (!(env.max > 0)) return [];
+	const span = activeSpan(env, pr.n);
+	return onsetPositions(pr, span.s0, span.s1, maxSec);
+}
+
+/** The first run of maximal envelope windows [a, b] and the active span (samples within 60 dB of the peak). */
+function activeSpan(env: Envelope, n: number): { a: number; b: number; jFirst: number; jLast: number; s0: number; s1: number } {
+	const len = env.p.length;
+	const rel = (j: number): number => dbPow(env.p[j]! / env.max);
+	const tie = env.max * (1 - 1e-9);
+	let a = 0;
+	while (a < len && env.p[a]! < tie) a++;
+	let b = a;
+	while (b + 1 < len && env.p[b + 1]! >= tie) b++;
+	let jLast = len - 1;
+	while (jLast > b && rel(jLast) < -60) jLast--;
+	let jFirst = 0;
+	while (jFirst < a && rel(jFirst) < -60) jFirst++;
+	const s0 = Math.max(0, (jFirst - ENV_BLOCKS + 1) * env.hop);
+	const s1 = Math.min(n, (jLast + 1) * env.hop);
+	return { a, b, jFirst, jLast, s0, s1 };
+}
+
 // ── entry point ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 function silentResult(durationSec: number): SoundDescriptors {
@@ -623,6 +765,7 @@ function silentResult(durationSec: number): SoundDescriptors {
 		tailSec: 0,
 		centroidHz: 0,
 		rolloff85Hz: 0,
+		rolloff95Hz: null,
 		below150Share: 0,
 		above6kShare: 0,
 		flatness: 0,
@@ -636,6 +779,8 @@ function silentResult(durationSec: number): SoundDescriptors {
 		stereoWidth: 0,
 		headQuietSec: Math.floor(finite(durationSec) * 10_000) / 10_000,
 		loopable: false,
+		floorDb: null,
+		dcDb: null,
 	};
 }
 
@@ -654,12 +799,8 @@ export function analyzeSound(channels: Float32Array[], sampleRate: number): Soun
 	const len = env.p.length;
 	const rel = (j: number): number => dbPow(env.p[j]! / env.max);
 
-	// peak: centre of the first run of maximal windows
-	const tie = env.max * (1 - 1e-9);
-	let a = 0;
-	while (a < len && env.p[a]! < tie) a++;
-	let b = a;
-	while (b + 1 < len && env.p[b + 1]! >= tie) b++;
+	// peak: centre of the first run of maximal windows; active span: first … last point within 60 dB of the peak
+	const { a, b, jLast, s0, s1 } = activeSpan(env, n);
 	const peakSec = (env.time(a) + env.time(b)) / 2;
 
 	// onset: first point within 30 dB of the peak
@@ -687,15 +828,9 @@ export function analyzeSound(channels: Float32Array[], sampleRate: number): Soun
 	const decayEnd = decays ? crossing(env, jd - 1, jd, -20) : durationSec;
 	const decayMs = Math.max(0, (Math.min(decayEnd, durationSec) - peakSec) * 1000);
 
-	// tail and active span: last / first points within 60 dB of the peak
-	let jLast = len - 1;
-	while (jLast > b && rel(jLast) < -60) jLast--;
+	// tail: the last point within 60 dB of the peak
 	const tailEnd = jLast + 1 < len ? crossing(env, jLast, jLast + 1, -60) : env.time(jLast);
 	const tailSec = Math.max(0, tailEnd - peakSec);
-	let jFirst = 0;
-	while (jFirst < a && rel(jFirst) < -60) jFirst++;
-	const s0 = Math.max(0, (jFirst - ENV_BLOCKS + 1) * env.hop);
-	const s1 = Math.min(n, (jLast + 1) * env.hop);
 
 	// head below −40 dB of the sample peak (sample-exact)
 	let samplePeak = 0;
@@ -745,6 +880,7 @@ export function analyzeSound(channels: Float32Array[], sampleRate: number): Soun
 		tailSec: qSec(tailSec),
 		centroidHz: qHz(Math.min(sr / 2, spec.centroidHz)),
 		rolloff85Hz: qHz(Math.min(sr / 2, spec.rolloff85Hz)),
+		rolloff95Hz: sr >= AIR_MIN_SAMPLE_RATE ? qHz(Math.min(sr / 2, spec.rolloff95Hz)) : null,
 		below150Share: qUnit(spec.below150Share),
 		above6kShare: qUnit(spec.above6kShare),
 		flatness: qUnit(spec.flatness),
@@ -760,5 +896,7 @@ export function analyzeSound(channels: Float32Array[], sampleRate: number): Soun
 		stereoWidth: qUnit(stereoWidth),
 		headQuietSec,
 		loopable: isLoopable(pr, headQuietSec),
+		floorDb: floorOf(ch, n, sr),
+		dcDb: dcOf(ch, n),
 	};
 }

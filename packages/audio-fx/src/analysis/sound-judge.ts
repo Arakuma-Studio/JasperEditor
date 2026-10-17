@@ -50,6 +50,13 @@ export interface SoundTypeProfile {
 	singleHit: boolean;
 	/** Smallest acceptable `maxMomentaryLufs` (less is quiet). */
 	minMaxMomentaryLufs: number;
+	/**
+	 * The type needs air (P6-E9 `lowpassed`): a `rolloff95Hz` under {@link LOWPASSED_ROLLOFF_HZ} in a ≥ 44.1 kHz file
+	 * is a lossy cliff. Absent (older or hostile profiles) = not checked.
+	 */
+	needsAir?: boolean;
+	/** Loudest acceptable `floorDb` between events (P6-E9 `noisy-floor`); null or absent = not checked (beds, swells). */
+	maxFloorDb?: number | null;
 }
 
 export type JudgeReason =
@@ -62,7 +69,10 @@ export type JudgeReason =
 	| 'too-short'
 	| 'clipped'
 	| 'multi-hit'
-	| 'quiet';
+	| 'quiet'
+	| 'lowpassed'
+	| 'noisy-floor'
+	| 'dc-offset';
 
 export const JUDGE_REASONS: readonly JudgeReason[] = /* @__PURE__ */ Object.freeze([
 	'boomy',
@@ -75,6 +85,9 @@ export const JUDGE_REASONS: readonly JudgeReason[] = /* @__PURE__ */ Object.free
 	'clipped',
 	'multi-hit',
 	'quiet',
+	'lowpassed',
+	'noisy-floor',
+	'dc-offset',
 ]);
 
 export interface JudgeResult {
@@ -92,6 +105,16 @@ export interface JudgeResult {
  */
 export const CLIPPED_TRUE_PEAK_DB = 0.3;
 
+/**
+ * `lowpassed` (P6-E9, from earshot's real-sound sourcing rules): 95 % of the power under 12 kHz in a file that could
+ * hold more (`rolloff95Hz` is only reported from 44.1 kHz) and a type that needs air — the cliff of a low-bitrate encode.
+ */
+export const LOWPASSED_ROLLOFF_HZ = 12_000;
+/** The floor between events most one-shot types accept (dBFS; earshot real-sound rule of thumb, not a film norm). */
+export const NOISY_FLOOR_DB = -55;
+/** `dc-offset`: a channel mean above this (dBFS). */
+export const DC_OFFSET_DB = -40;
+
 /** How much each reason costs at full severity. */
 const WEIGHT: Record<JudgeReason, number> = {
 	boomy: 0.5,
@@ -104,6 +127,9 @@ const WEIGHT: Record<JudgeReason, number> = {
 	clipped: 0.6,
 	'multi-hit': 0.5,
 	quiet: 0.5,
+	lowpassed: 0.4,
+	'noisy-floor': 0.4,
+	'dc-offset': 0.3,
 };
 
 const severity = (excess: number, scale: number): number =>
@@ -111,7 +137,10 @@ const severity = (excess: number, scale: number): number =>
 
 const fin = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
 
-/** Judge descriptors against a type profile. Never throws; missing or non-finite profile limits are not checked. */
+/**
+ * Judge descriptors against a type profile. Never throws; missing or non-finite profile limits (and descriptors of
+ * older analyses) are not checked. A take (P6-E9) is judged with `singleHit: false`: it is one event by construction.
+ */
 export function judgeSound(d: SoundDescriptors, profile: SoundTypeProfile): JudgeResult {
 	// Nothing to judge (missing descriptors or profile from hostile input): not accepted, never a throw.
 	if (!d || typeof d !== 'object' || !profile || typeof profile !== 'object')
@@ -139,6 +168,14 @@ export function judgeSound(d: SoundDescriptors, profile: SoundTypeProfile): Judg
 		if (m === null || m < profile.minMaxMomentaryLufs)
 			sev.set('quiet', m === null ? 1 : severity(profile.minMaxMomentaryLufs - m, 20));
 	}
+	const roll = d.rolloff95Hz;
+	if (profile.needsAir === true && fin(roll) && roll < LOWPASSED_ROLLOFF_HZ)
+		sev.set('lowpassed', severity(LOWPASSED_ROLLOFF_HZ - roll, 6000));
+	const floor = d.floorDb;
+	if (fin(profile.maxFloorDb) && fin(floor) && floor > profile.maxFloorDb)
+		sev.set('noisy-floor', severity(floor - profile.maxFloorDb, 15));
+	const dc = d.dcDb;
+	if (fin(dc) && dc > DC_OFFSET_DB) sev.set('dc-offset', severity(dc - DC_OFFSET_DB, 20));
 	const reasons = JUDGE_REASONS.filter((r) => sev.has(r));
 	let score = 1;
 	for (const r of reasons) score *= 1 - WEIGHT[r] * sev.get(r)!;
@@ -155,6 +192,8 @@ const P = /* @__NO_SIDE_EFFECTS__ */ (
 	maxFlatness: number | null,
 	singleHit: boolean,
 	minMaxMomentaryLufs: number,
+	needsAir: boolean,
+	maxFloorDb: number | null,
 ): SoundTypeProfile =>
 	Object.freeze({
 		minDurSec,
@@ -166,6 +205,8 @@ const P = /* @__NO_SIDE_EFFECTS__ */ (
 		maxFlatness,
 		singleHit,
 		minMaxMomentaryLufs,
+		needsAir,
+		maxFloorDb,
 	});
 
 /**
@@ -175,26 +216,26 @@ const P = /* @__NO_SIDE_EFFECTS__ */ (
  */
 export const DEFAULT_TYPE_PROFILES: Readonly<Record<SoundTypeId, SoundTypeProfile>> =
 	/* @__PURE__ */ Object.freeze({
-		//              minDur maxDur rise   decay  <150  >6k   flat  single momentary
-		hit: P(0.05, 6, 25, true, 0.6, 0.5, null, true, -40),
-		boom: P(0.2, 10, 60, true, 1, 0.25, null, true, -45),
-		riser: P(0.5, 30, null, false, 0.6, 0.6, null, false, -45),
-		reverse: P(0.3, 12, null, false, 0.6, 0.6, null, false, -45),
-		transition: P(0.2, 12, null, false, 0.7, 0.6, null, false, -45),
-		whoosh: P(0.15, 6, null, false, 0.5, 0.7, null, false, -45),
-		swish: P(0.05, 3, null, false, 0.3, 0.85, null, false, -45),
-		glitch: P(0.03, 5, null, false, 0.5, 0.7, null, false, -45),
-		ui: P(0.01, 2, 30, true, 0.3, 0.6, null, false, -50),
-		click: P(0.002, 1, 6, true, 0.3, 0.85, null, true, -55),
-		key: P(0.005, 1, 10, true, 0.4, 0.7, null, true, -55),
-		tick: P(0.002, 1, 6, true, 0.3, 0.85, null, true, -55),
-		tap: P(0.01, 1.5, 12, true, 0.5, 0.6, null, true, -55),
-		pop: P(0.01, 1.5, 15, true, 0.5, 0.5, null, true, -50),
-		thump: P(0.05, 3, 25, true, 0.95, 0.25, null, true, -45),
-		paper: P(0.05, 6, null, false, 0.3, 0.85, null, false, -50),
-		chime: P(0.2, 10, 40, true, 0.3, 0.5, 0.3, false, -45),
-		shimmer: P(0.3, 12, null, false, 0.2, 0.85, 0.5, false, -50),
-		zap: P(0.05, 3, 30, false, 0.5, 0.6, null, false, -45),
-		ambience: P(2, 3600, null, false, 0.8, 0.6, null, false, -60),
-		roomtone: P(2, 3600, null, false, 0.9, 0.6, null, false, -75),
+		//              minDur maxDur rise   decay  <150  >6k   flat  single momentary air floor
+		hit: P(0.05, 6, 25, true, 0.6, 0.5, null, true, -40, false, NOISY_FLOOR_DB),
+		boom: P(0.2, 10, 60, true, 1, 0.25, null, true, -45, false, NOISY_FLOOR_DB),
+		riser: P(0.5, 30, null, false, 0.6, 0.6, null, false, -45, false, null),
+		reverse: P(0.3, 12, null, false, 0.6, 0.6, null, false, -45, false, null),
+		transition: P(0.2, 12, null, false, 0.7, 0.6, null, false, -45, false, null),
+		whoosh: P(0.15, 6, null, false, 0.5, 0.7, null, false, -45, false, null),
+		swish: P(0.05, 3, null, false, 0.3, 0.85, null, false, -45, true, null),
+		glitch: P(0.03, 5, null, false, 0.5, 0.7, null, false, -45, false, NOISY_FLOOR_DB),
+		ui: P(0.01, 2, 30, true, 0.3, 0.6, null, false, -50, false, NOISY_FLOOR_DB),
+		click: P(0.002, 1, 6, true, 0.3, 0.85, null, true, -55, true, NOISY_FLOOR_DB),
+		key: P(0.005, 1, 10, true, 0.4, 0.7, null, true, -55, true, NOISY_FLOOR_DB),
+		tick: P(0.002, 1, 6, true, 0.3, 0.85, null, true, -55, true, NOISY_FLOOR_DB),
+		tap: P(0.01, 1.5, 12, true, 0.5, 0.6, null, true, -55, true, NOISY_FLOOR_DB),
+		pop: P(0.01, 1.5, 15, true, 0.5, 0.5, null, true, -50, false, NOISY_FLOOR_DB),
+		thump: P(0.05, 3, 25, true, 0.95, 0.25, null, true, -45, false, NOISY_FLOOR_DB),
+		paper: P(0.05, 6, null, false, 0.3, 0.85, null, false, -50, true, null),
+		chime: P(0.2, 10, 40, true, 0.3, 0.5, 0.3, false, -45, false, NOISY_FLOOR_DB),
+		shimmer: P(0.3, 12, null, false, 0.2, 0.85, 0.5, false, -50, true, null),
+		zap: P(0.05, 3, 30, false, 0.5, 0.6, null, false, -45, false, NOISY_FLOOR_DB),
+		ambience: P(2, 3600, null, false, 0.8, 0.6, null, false, -60, false, null),
+		roomtone: P(2, 3600, null, false, 0.9, 0.6, null, false, -75, false, null),
 	});

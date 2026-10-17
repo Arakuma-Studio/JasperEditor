@@ -1,8 +1,12 @@
 // Rotation and variation (spec 12 §2.3): which of the ranked candidates fills a cue, and a small seeded random
 // variation of its speed and gain so repeated sounds do not sound mechanical. Round-robin over the top-N candidates
 // (the least recently used one wins, ties by rank), never the same file twice in a row when another candidate exists;
-// ±2 % varispeed and ±1 dB gain from a hash of (sequence, cue, seed, layer). Deterministic: the same inputs always
-// give the same pick. Pure.
+// ±2 % varispeed and ±1 dB gain from a hash of (sequence, cue, seed, layer). When the best candidate is a take of a
+// recording (spec 12 P6-E9), the recording's takes among the candidates are the pool ("vary the take, not the
+// pitch"): repeated cues cycle through its takes, never the same take twice in a row. Deterministic: the same inputs
+// always give the same pick. Pure.
+import { parseTakeId, SOUND_TAKES_MAX } from './provenance.ts';
+
 
 /** Candidates the rotation cycles through (the best N of the ranking). */
 export const ROTATION_TOP_N = 4;
@@ -74,9 +78,21 @@ export function variationOf(ctx: Pick<VariantContext, 'seed' | 'cueId' | 'sequen
 }
 
 /**
+ * The variation pool when the best candidate is a take: every take of its recording among the candidates (rank order,
+ * at most `SOUND_TAKES_MAX`), or null when the best is no take or its recording has only that one take here.
+ */
+function takePool<T extends { id: string }>(ranked: readonly T[]): T[] | null {
+	const parent = parseTakeId(ranked[0]!.id)?.parentId;
+	if (!parent) return null;
+	const siblings = ranked.filter((c) => parseTakeId(c.id)?.parentId === parent).slice(0, SOUND_TAKES_MAX);
+	return siblings.length > 1 ? siblings : null;
+}
+
+/**
  * Picks the sound for a cue from ranked `candidates` (best first): among the top N, the one used least recently
- * (never used beats used; ties go to the better rank), skipping the sound used last whenever another exists. Null when
- * there is no candidate. Never throws.
+ * (never used beats used; ties go to the better rank), skipping the sound used last whenever another exists; when the
+ * best candidate is a take, among its recording's takes instead (`takePool`). Null when there is no candidate. Never
+ * throws.
  */
 export function pickVariant(candidates: readonly string[], ctx: VariantContext): VariantPick | null {
 	if (!Array.isArray(candidates)) return null;
@@ -90,7 +106,7 @@ export function pickVariant(candidates: readonly string[], ctx: VariantContext):
 	});
 	if (ranked.length === 0) return null;
 	const n = Math.max(1, Math.min(16, Math.floor(Number.isFinite(ctx.topN) ? ctx.topN! : ROTATION_TOP_N)));
-	const pool = ranked.slice(0, n);
+	const pool = takePool(ranked) ?? ranked.slice(0, n);
 	const recent = Array.isArray(ctx.recentSoundIds)
 		? ctx.recentSoundIds.filter((x) => typeof x === 'string')
 		: [];

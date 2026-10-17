@@ -6,9 +6,14 @@ import {
 	LIBRARY_LIMITS,
 	LICENSE_FILTERS,
 	LibraryProvenanceSchema,
+	parseTakeId,
 	type RankableSound,
 	SOUND_FAMILIES,
+	SOUND_MATERIALS,
+	SOUND_REF_RE,
+	SOUND_TAKES_MAX,
 	StoredSoundTypeSchema,
+	takeIdOf,
 	VISUAL_KINDS,
 } from '@jasper/project';
 import { z } from 'zod';
@@ -17,7 +22,14 @@ import { RegisteredMediaSchema } from './media.ts';
 
 /** `snd_` + the first 16 hex digits of the file's content fingerprint: the same bytes are the same sound. */
 export const SOUND_ID_RE = /^snd_[0-9a-f]{16}$/;
-export const SoundIdSchema = z.string().regex(SOUND_ID_RE, 'sound id (snd_ + 16 hex digits)');
+/**
+ * A sound id: a file's (`SOUND_ID_RE`) or one of its takes, `snd_<16 hex>~t<n>` (n = 1…64, spec 12 P6-E9). Every
+ * route and field that names a library sound takes both.
+ */
+export const SoundIdSchema = z
+	.string()
+	.regex(SOUND_REF_RE, 'sound id (snd_ + 16 hex digits; a take: snd_<16 hex>~t<n>)');
+export { SOUND_REF_RE };
 
 /** A pack's id (its folder under `<appdir>/sounds/packs/`): lower-case letters, digits, `.`, `_`, `-`. */
 export const SOUND_PACK_ID_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
@@ -92,6 +104,8 @@ export const SoundDescriptorsSchema = z.object({
 	tailSec: fin().min(0),
 	centroidHz: fin().min(0),
 	rolloff85Hz: fin().min(0),
+	/** 95 % rolloff (Hz); null under 44.1 kHz; absent in analyses before version 2 (P6-E9). */
+	rolloff95Hz: fin().min(0).nullable().optional(),
 	below150Share: fin().min(0).max(1),
 	above6kShare: fin().min(0).max(1),
 	flatness: fin().min(0).max(1),
@@ -105,6 +119,10 @@ export const SoundDescriptorsSchema = z.object({
 	stereoWidth: fin().min(0).max(1),
 	headQuietSec: fin().min(0),
 	loopable: z.boolean(),
+	/** Noise floor between events (dBFS; 10th percentile of 20 ms RMS); null when unmeasurable; absent before v2. */
+	floorDb: fin().nullable().optional(),
+	/** DC offset (dBFS, the largest channel mean); null when none; absent before v2. */
+	dcDb: fin().nullable().optional(),
 });
 export type SoundDescriptorsJson = z.infer<typeof SoundDescriptorsSchema>;
 
@@ -127,6 +145,47 @@ export const SoundFormatSchema = z.object({
 
 /** Seconds of each file the index decodes and analyses (descriptors and visual data); `format.durationSec` is the whole file. */
 export const SOUND_ANALYSIS_SECONDS = 30;
+/** Files up to this long are also split into takes (P6-E9), over their whole length. */
+export const SOUND_TAKES_MAX_FILE_SECONDS = 120;
+
+/** Why a take is never offered (P6-E9): it starts inside a sound or ends before its sound has decayed. */
+export const SOUND_TAKE_FLAGS = ['head-cut', 'tail-cut'] as const;
+
+/**
+ * One take of a multi-hit recording (spec 12 P6-E9; `@jasper/audio-fx` `analyzeTakes`): its range in the file, how
+ * cleanly it starts and ends, its own descriptors and judge. A take with `flags` is recorded, never offered (search,
+ * ranking pools and pickers skip it).
+ */
+export const SoundTakeSchema = z.object({
+	/** 1-based in time order: the take's id is `<recording id>~t<index>`. */
+	index: z.number().int().min(1).max(SOUND_TAKES_MAX),
+	/** Where it lies in the file (seconds; whole samples of the analysis rate, to 0.1 µs). */
+	startSec: fin().min(0),
+	endSec: fin().min(0),
+	/** First 5 ms / last 10 ms against the take's loudest 5 ms (dB). Clean: head ≤ −15 and tail ≤ −30. */
+	headDb: fin(),
+	tailDb: fin(),
+	flags: z.array(z.enum(SOUND_TAKE_FLAGS)).max(2),
+	/** Strokes in it: 1, or 2 for a joined pair (a key's down- and up-stroke). */
+	strokes: z.number().int().min(1).max(2),
+	descriptors: SoundDescriptorsSchema,
+	/** `judgeSound` against the recording's judge type, as one event (never `multi-hit`). */
+	judge: SoundJudgeSchema.nullable(),
+});
+export type SoundTake = z.infer<typeof SoundTakeSchema>;
+
+/** What a take entry (an entry whose id is a take id) says about its recording. */
+export const SoundEntryTakeSchema = z.object({
+	/** The recording's sound id. */
+	soundId: z.string().regex(SOUND_ID_RE),
+	index: z.number().int().min(1).max(SOUND_TAKES_MAX),
+	startSec: fin().min(0),
+	endSec: fin().min(0),
+	headDb: fin(),
+	tailDb: fin(),
+	flags: z.array(z.enum(SOUND_TAKE_FLAGS)).max(2),
+	strokes: z.number().int().min(1).max(2),
+});
 
 export const SoundEntrySchema = z.object({
 	id: SoundIdSchema,
@@ -150,8 +209,70 @@ export const SoundEntrySchema = z.object({
 	indexedAt: z.string().max(40),
 	/** Analysis version the descriptors were computed with (a bump re-analyses). */
 	analysisVersion: z.number().int().min(0),
+	/**
+	 * Materials named by its title, tags and folder words (`materialsOf`, P6-E10's index field); absent in indexes
+	 * written before them, empty when its words name none.
+	 */
+	materials: z.array(z.enum(SOUND_MATERIALS)).max(SOUND_MATERIALS.length).optional(),
+	/**
+	 * The takes of a multi-hit recording (P6-E9; ≤ 120 s, a single-hit type, ≥ 2 onsets), in time order. Absent for
+	 * other sounds and in indexes written before takes. Search rows leave it out (they carry `takeCount`).
+	 */
+	takes: z.array(SoundTakeSchema).max(SOUND_TAKES_MAX).optional(),
+	/** Present on a take entry (`id` = `<recording>~t<n>`): where it lies in its recording. */
+	take: SoundEntryTakeSchema.optional(),
 });
 export type SoundEntry = z.infer<typeof SoundEntrySchema>;
+
+/** The takes of an entry that are offered (clean: no flags). */
+export function offeredTakes(e: Pick<SoundEntry, 'takes'>): SoundTake[] {
+	return (e.takes ?? []).filter((t) => t.flags.length === 0);
+}
+
+/**
+ * The library entry of take `t` of recording `parent`: the recording's identity, licence, credit, source and materials,
+ * the take's own descriptors, judge and length, `take` saying where it lies. Pure.
+ */
+export function takeEntryOf(parent: SoundEntry, t: SoundTake): SoundEntry {
+	const { takes: _takes, take: _take, ...rest } = parent;
+	return {
+		...rest,
+		id: takeIdOf(parent.id, t.index),
+		title: `${parent.title} (take ${t.index})`.slice(0, LIBRARY_LIMITS.title),
+		format: { ...parent.format, durationSec: Math.round((t.endSec - t.startSec) * 10_000) / 10_000 },
+		descriptors: t.descriptors,
+		judge: t.judge,
+		take: {
+			soundId: parent.id,
+			index: t.index,
+			startSec: t.startSec,
+			endSec: t.endSec,
+			headDb: t.headDb,
+			tailDb: t.tailDb,
+			flags: t.flags,
+			strokes: t.strokes,
+		},
+	};
+}
+
+/** The entry an id names in a lookup of recordings: the recording, or the take entry of a take id; null when unknown. */
+export function soundEntryById(id: string, lookup: (id: string) => SoundEntry | null | undefined): SoundEntry | null {
+	const t = parseTakeId(id);
+	if (!t) return lookup(id) ?? null;
+	const parent = lookup(t.parentId);
+	const take = parent?.takes?.find((x) => x.index === t.index);
+	return parent && take ? takeEntryOf(parent, take) : null;
+}
+
+/** Recordings followed by their offered take entries (id order is kept: a take id sorts right after its recording's). */
+export function withOfferedTakes(entries: readonly SoundEntry[]): SoundEntry[] {
+	const out: SoundEntry[] = [];
+	for (const e of entries) {
+		out.push(e);
+		for (const t of offeredTakes(e)) out.push(takeEntryOf(e, t));
+	}
+	return out;
+}
 
 // Compile-time check: the engine's entries are what `rankSounds` ranks (spec 12 §2.1, wp-note WP1.1a).
 type AssertRankable<T extends RankableSound> = T;
@@ -230,6 +351,13 @@ export const SoundSearchQuerySchema = z.object({
 	similarTo: SoundIdSchema.optional(),
 	/** Sounds used near the target, nearest first: they rank lower (rotation). */
 	usedNearby: csv(64, SoundIdSchema).optional(),
+	/** Material named by the sound's words (P6-E10), e.g. `wood`, `glass`, `metal`. */
+	material: z.enum(SOUND_MATERIALS).optional(),
+	/** `true`: the offered takes of multi-hit recordings are rows too, ranked with the other sounds (P6-E9). */
+	takes: z
+		.enum(['true', 'false'])
+		.transform((v) => v === 'true')
+		.optional(),
 	limit: intString(1, SOUND_SEARCH_MAX_LIMIT).optional(),
 	offset: intString(0, 1_000_000).optional(),
 });
@@ -254,6 +382,8 @@ export type SoundSearchRequest = {
 	packId?: string;
 	similarTo?: string;
 	usedNearby?: readonly string[];
+	material?: (typeof SOUND_MATERIALS)[number];
+	takes?: boolean;
 	limit?: number;
 	offset?: number;
 };
@@ -302,6 +432,8 @@ export const SoundFacetsSchema = z.object({
 	licenses: counts,
 	/** Per source type. */
 	sources: counts,
+	/** Per material (the material filter's own counts ignore it; absent from engines before P6-E10). */
+	materials: counts.optional(),
 });
 export type SoundFacets = z.infer<typeof SoundFacetsSchema>;
 
@@ -312,7 +444,15 @@ export const SoundSearchResponseSchema = z.object({
 	/** Sounds that match (before `offset` / `limit`). */
 	total: z.number().int().min(0),
 	offset: z.number().int().min(0),
-	results: z.array(z.object({ sound: SoundEntrySchema, score: fin(), parts: SoundRankPartsSchema })),
+	results: z.array(
+		z.object({
+			sound: SoundEntrySchema,
+			score: fin(),
+			parts: SoundRankPartsSchema,
+			/** Offered takes of a recording row ("12 takes"; its `takes` are left out: get the sound for them). */
+			takeCount: z.number().int().min(0).optional(),
+		}),
+	),
 	facets: SoundFacetsSchema,
 	/** An index job is queued or running: results may change (`sounds.changed` event). */
 	indexing: z.boolean(),

@@ -1,8 +1,9 @@
 // Sound library routes (spec 12 §2.1, §2.8; wp-note "WP1.2 engine library"):
 //   GET  /api/sounds                     search (rankSounds) with facets
 //   GET  /api/sounds/status              library status (counts, starter kit, indexing)
-//   GET  /api/sounds/:soundId            one sound
-//   GET  /api/sounds/:soundId/audio      its bytes (audio types only, nosniff, CSP sandbox, Range)
+//   GET  /api/sounds/:soundId            one sound (a take id `snd_…~t<n>` names a take of a recording, P6-E9;
+//                                        every :soundId route takes both)
+//   GET  /api/sounds/:soundId/audio      its bytes (audio types only, nosniff, CSP sandbox, Range; a take's range as WAV)
 //   GET  /api/sounds/:soundId/visual     waveform peaks + spectrogram (u8, base64)
 //   POST /api/sounds/:soundId/register   registers its file for a project; returns RegisteredMedia + provenance
 //   POST /api/sounds/index               a `sound-index` job
@@ -199,7 +200,7 @@ export default async function soundRoutes(app: FastifyInstance): Promise<void> {
 		'/api/sounds/:soundId/audio',
 		guarded<P>(async (req, reply) => {
 			const e = await svc.get(req.params.soundId);
-			const file = await svc.fileOf(e);
+			const file = await svc.audioFileOf(e);
 			return serveFile(req, reply, file, { cache: 'revalidate', contentType: svc.audioType(file) });
 		}),
 	);

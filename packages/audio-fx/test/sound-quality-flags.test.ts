@@ -1,0 +1,178 @@
+// Version-2 descriptors and the judge flags they feed (spec 12 P6-E9): `rolloff95Hz` → `lowpassed`, `floorDb` →
+// `noisy-floor`, `dcDb` → `dc-offset`.
+import { describe, expect, it } from 'vitest';
+import { Fft } from '../src/core/fft.ts';
+import { Prng } from '../src/core/util.ts';
+import {
+	analyzeSound,
+	DC_OFFSET_DB,
+	DEFAULT_TYPE_PROFILES,
+	JUDGE_REASONS,
+	judgeSound,
+	LOWPASSED_ROLLOFF_HZ,
+	NOISY_FLOOR_DB,
+	SOUND_DESCRIPTORS_VERSION,
+	SOUND_TYPE_IDS,
+	type SoundDescriptors,
+} from '../src/index.ts';
+import { addClick, floorNoise, TAKE_SR as SR } from './take-fixtures.ts';
+import { sine } from './util.ts';
+
+/** White noise band-limited to [lo, hi] Hz (random-phase bins), peak 0.5. */
+function bandNoise(seed: number, n: number, sr: number, lo: number, hi: number): Float32Array {
+	const re = new Float64Array(n);
+	const im = new Float64Array(n);
+	const r = new Prng(seed);
+	for (let k = 1; k < n / 2; k++) {
+		const f = (k * sr) / n;
+		if (f < lo || f > hi) continue;
+		const ph = r.unit() * 2 * Math.PI;
+		re[k] = Math.cos(ph);
+		im[k] = Math.sin(ph);
+		re[n - k] = re[k]!;
+		im[n - k] = -im[k]!;
+	}
+	new Fft(n).inverse(re, im);
+	let peak = 0;
+	for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(re[i]!));
+	return Float32Array.from(re, (v) => (0.5 * v) / peak);
+}
+
+/** Hits (5 % of the time) over a floor of uniform noise at amplitude `floorAmp` (0 = digital silence). */
+function hitsOverFloor(floorAmp: number): Float32Array {
+	const x = floorNoise(2 * SR, floorAmp, 3);
+	for (let k = 0; k < 4; k++) addClick(x, Math.round((0.2 + k * 0.45) * SR), { tauMs: 3, lenMs: 25, seed: k });
+	return x;
+}
+
+describe('descriptors version 2', () => {
+	it('is version 2', () => {
+		expect(SOUND_DESCRIPTORS_VERSION).toBe(2);
+	});
+
+	it('floorDb is the 10th percentile of 20 ms RMS between the events', () => {
+		// uniform noise of amplitude a has power a²/3: a = 0.005466 reads −50.0 dBFS
+		const d = analyzeSound([hitsOverFloor(0.005466)], SR);
+		expect(d.floorDb).not.toBeNull();
+		expect(Math.abs(d.floorDb! + 50)).toBeLessThan(0.5);
+		expect(analyzeSound([hitsOverFloor(0)], SR).floorDb).toBe(-120);
+	});
+
+	it('floorDb is null when there is no "between": a sound that fills the file, or under 0.2 s', () => {
+		expect(analyzeSound([floorNoise(SR, 0.3)], SR).floorDb).toBeNull();
+		const short = new Float32Array(Math.round(0.15 * SR));
+		addClick(short, 100);
+		expect(analyzeSound([short], SR).floorDb).toBeNull();
+	});
+
+	it('dcDb is the largest channel mean', () => {
+		const x = sine(1000, 0.3, SR, SR).map((v) => v + 0.02);
+		const d = analyzeSound([x, sine(1000, 0.3, SR, SR)], SR);
+		expect(Math.abs(d.dcDb! - 20 * Math.log10(0.02))).toBeLessThan(0.05);
+		expect(analyzeSound([new Float32Array(SR)], SR).dcDb).toBeNull();
+	});
+
+	it('rolloff95Hz: full-band noise near the top, an 8 kHz lowpass under it, null under 44.1 kHz', () => {
+		const wide = analyzeSound([bandNoise(1, 1 << 16, SR, 20, 23_900)], SR);
+		expect(wide.rolloff95Hz!).toBeGreaterThan(21_000);
+		const dull = analyzeSound([bandNoise(2, 1 << 16, SR, 20, 8000)], SR);
+		expect(dull.rolloff95Hz!).toBeLessThan(8200);
+		expect(dull.rolloff95Hz!).toBeGreaterThan(7000);
+		expect(dull.rolloff95Hz!).toBeGreaterThanOrEqual(dull.rolloff85Hz);
+		expect(analyzeSound([bandNoise(3, 1 << 15, 32_000, 20, 8000)], 32_000).rolloff95Hz).toBeNull();
+		expect(analyzeSound([new Float32Array(SR)], SR).rolloff95Hz).toBeNull();
+	});
+});
+
+/** A clean key press (inside every limit of `key`). */
+const KEY: SoundDescriptors = {
+	durationSec: 0.2,
+	peakSec: 0.006,
+	onsetSec: 0.005,
+	riseMs: 1,
+	decayMs: 20,
+	decays: true,
+	tailSec: 0.1,
+	centroidHz: 4000,
+	rolloff85Hz: 9000,
+	rolloff95Hz: 15_000,
+	below150Share: 0.01,
+	above6kShare: 0.3,
+	flatness: 0.3,
+	octaveBandsDb: [-50, -45, -40, -30, -25, -22, -24],
+	pitchMidi: null,
+	pitchConfidence: 0.1,
+	onsetCount: 1,
+	integratedLufs: -30,
+	maxMomentaryLufs: -28,
+	truePeakDb: -3,
+	stereoWidth: 0,
+	headQuietSec: 0.004,
+	loopable: false,
+	floorDb: -80,
+	dcDb: null,
+};
+
+describe('judge flags lowpassed, noisy-floor, dc-offset', () => {
+	const key = DEFAULT_TYPE_PROFILES.key;
+	it('a clean key passes', () => {
+		expect(judgeSound(KEY, key)).toEqual({ ok: true, score: 1, reasons: [] });
+	});
+
+	it('lowpassed: rolloff95 under 12 kHz for a type that needs air only', () => {
+		expect(judgeSound({ ...KEY, rolloff95Hz: 9000 }, key).reasons).toEqual(['lowpassed']);
+		expect(judgeSound({ ...KEY, rolloff95Hz: LOWPASSED_ROLLOFF_HZ }, key).ok).toBe(true);
+		expect(judgeSound({ ...KEY, rolloff95Hz: null }, key).ok).toBe(true);
+		const hit = { ...KEY, durationSec: 0.6, rolloff95Hz: 4000 };
+		expect(judgeSound(hit, DEFAULT_TYPE_PROFILES.hit).reasons).not.toContain('lowpassed');
+	});
+
+	it('noisy-floor: a floor between events over −55 dBFS for one-shot types, never for beds or swells', () => {
+		expect(NOISY_FLOOR_DB).toBe(-55);
+		expect(judgeSound({ ...KEY, floorDb: -45 }, key).reasons).toEqual(['noisy-floor']);
+		expect(judgeSound({ ...KEY, floorDb: -56 }, key).ok).toBe(true);
+		expect(judgeSound({ ...KEY, floorDb: null }, key).ok).toBe(true);
+		for (const t of ['riser', 'whoosh', 'ambience', 'roomtone'] as const)
+			expect(DEFAULT_TYPE_PROFILES[t].maxFloorDb, t).toBeNull();
+	});
+
+	it('dc-offset: a channel mean over −40 dBFS, whatever the type', () => {
+		expect(DC_OFFSET_DB).toBe(-40);
+		expect(judgeSound({ ...KEY, dcDb: -30 }, key).reasons).toEqual(['dc-offset']);
+		expect(judgeSound({ ...KEY, dcDb: -41 }, key).ok).toBe(true);
+		expect(judgeSound({ ...KEY, dcDb: -30 }, DEFAULT_TYPE_PROFILES.ambience).reasons).toContain('dc-offset');
+	});
+
+	it('the new reasons come last in JUDGE_REASONS and lower the score', () => {
+		expect(JUDGE_REASONS.slice(-3)).toEqual(['lowpassed', 'noisy-floor', 'dc-offset']);
+		const r = judgeSound({ ...KEY, rolloff95Hz: 6000, floorDb: -40, dcDb: -20 }, key);
+		expect(r.reasons).toEqual(['lowpassed', 'noisy-floor', 'dc-offset']);
+		expect(r.score).toBeLessThan(0.5);
+	});
+
+	it('version-1 descriptors (without the new fields) judge as before', () => {
+		const { rolloff95Hz: _r, floorDb: _f, dcDb: _d, ...v1 } = KEY;
+		expect(judgeSound(v1, key)).toEqual({ ok: true, score: 1, reasons: [] });
+		expect(judgeSound({ ...v1, onsetCount: 3 }, key).reasons).toEqual(['multi-hit']);
+	});
+
+	it('a take is judged as one event: singleHit false never reports multi-hit', () => {
+		expect(judgeSound({ ...KEY, onsetCount: 2 }, { ...key, singleHit: false }).ok).toBe(true);
+	});
+
+	it('every profile has both new fields', () => {
+		for (const t of SOUND_TYPE_IDS) {
+			expect(typeof DEFAULT_TYPE_PROFILES[t].needsAir, t).toBe('boolean');
+			expect(DEFAULT_TYPE_PROFILES[t].maxFloorDb === null || DEFAULT_TYPE_PROFILES[t].maxFloorDb === -55).toBe(true);
+		}
+	});
+
+	it('a measured lowpassed key (an 8 kHz band-limit at 48 kHz) is flagged; the same band at 32 kHz is not', () => {
+		const x = new Float32Array(Math.round(0.3 * SR));
+		const n = bandNoise(4, 1 << 14, SR, 300, 8000);
+		for (let i = 0; i < 4800; i++) x[240 + i] = n[i]! * Math.exp(-i / 300);
+		const d = analyzeSound([x], SR);
+		expect(d.rolloff95Hz!).toBeLessThan(LOWPASSED_ROLLOFF_HZ);
+		expect(judgeSound(d, key).reasons).toContain('lowpassed');
+	});
+});

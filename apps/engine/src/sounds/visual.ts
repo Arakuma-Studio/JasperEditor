@@ -25,6 +25,19 @@ export function visualCacheFile(cacheDir: string, fingerprintHex: string): strin
 	return join(cacheDir, fingerprintHex, `visual-v${SOUND_VISUAL_VERSION}.json`);
 }
 
+/** Path of the cached visual data of take `index` of a recording (P6-E9; the samples of the take alone). */
+export function takeVisualCacheFile(cacheDir: string, fingerprintHex: string, index: number): string {
+	return join(cacheDir, fingerprintHex, `take-${index}-visual-v${SOUND_VISUAL_VERSION}.json`);
+}
+
+/** Version of the take audio files (the take's samples as PCM WAV, for auditioning). */
+export const TAKE_AUDIO_VERSION = 1;
+
+/** Path of the cached audio of take `index` of a recording (P6-E9: its range of the file, PCM WAV, for auditioning). */
+export function takeAudioCacheFile(cacheDir: string, fingerprintHex: string, index: number): string {
+	return join(cacheDir, fingerprintHex, `take-${index}-audio-v${TAKE_AUDIO_VERSION}.wav`);
+}
+
 const b64 = (u8: Uint8Array) => Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength).toString('base64');
 
 /** Max |sample| over channels per 1/perSecond s, as u8 (255 = full scale). NaN and ±Inf count as silence / full. */
