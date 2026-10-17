@@ -401,6 +401,14 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		slot: 'worst',
 		clipId: { clipAt: { track: 'A1', at: 15 } },
 	},
+	// WP6.5b: a precondition for changes computed from a measurement of the mix (the `mixHash` of a loudness analysis,
+	// a Sound Check or a job report): the transaction is refused (E_REVISION_MISMATCH, nothing applied) if the mix
+	// changed since; put it first.
+	'soundDesign.expectMix': {
+		type: 'soundDesign.expectMix',
+		mixHash: '7f3a9c0e5b2d4a11',
+		delivery: 'web',
+	},
 	// Phase 4 mixing (spec 12 §2.4): a music dip on clips (minimum with their Volume; times in sequence flicks)…
 	'audio.volumeDip': {
 		type: 'audio.volumeDip',

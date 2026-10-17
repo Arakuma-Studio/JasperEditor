@@ -348,6 +348,58 @@ describe('POST /api/sound-design/delivery (real engine)', { timeout: 600_000 }, 
 		);
 	});
 
+	it('apply: an edit of the mix between the check and the apply (the race) is a CONFLICT too; nothing applied', async () => {
+		// WP6.5b: a sound added to the mix after the job re-read the edit and before its transaction. The transaction
+		// touches the Mix, the music, the dialogue and the sound effects it levels, not the new clip, so the fast-forward
+		// rule (S01:AGT-010) let it through and the loudness solved for the old mix was applied; `soundDesign.expectMix`
+		// in the transaction now refuses it
+		const projectId = seed(base.doc);
+		const before = await saved(projectId);
+		soundDesignApplyHooks.beforeApply = async (id) => {
+			if (id !== projectId) return;
+			const r = await app.inject({
+				method: 'POST',
+				url: '/api/agent/tx',
+				headers: json(EDITOR_H),
+				payload: JSON.stringify({
+					projectId,
+					transaction: {
+						label: 'Add a hit',
+						origin: 'user',
+						commands: [
+							{
+								type: 'clip.place',
+								source: {
+									mediaId: (before.doc.sequences[base.seqId]!.clips[base.ids.hit] as AudioClip).mediaId,
+								},
+								at: 450,
+								tracks: { audio: 'A3' },
+							},
+						],
+					},
+				}),
+			});
+			expect((r.json() as { result: { ok: boolean } }).result.ok, r.body).toBe(true);
+		};
+		try {
+			const r = await deliver({ projectId, delivery: 'web', mode: 'apply' }, EDITOR_H);
+			expect(r.statusCode, r.body).toBe(202);
+			const job = await coreServices(app).queue.wait((r.json() as EngineJob).id);
+			expect(job.state, JSON.stringify(job.result)).toBe('failed');
+			expect(job.error).toMatchObject({ code: 'CONFLICT', retryable: true });
+			expect(job.error?.message).toMatch(/changed before it could be applied/);
+		} finally {
+			soundDesignApplyHooks.beforeApply = undefined;
+		}
+		const after = await saved(projectId);
+		expect(after.revision).toBe(before.revision + 1); // the user's edit only
+		const seq = after.doc.sequences[base.seqId]!;
+		expect(seq.master.loudness).toEqual(before.doc.sequences[base.seqId]!.master.loudness);
+		expect((seq.soundDesign as SoundDesign | undefined)?.settings?.delivery).toBe(
+			(before.doc.sequences[base.seqId]!.soundDesign as SoundDesign | undefined)?.settings?.delivery,
+		);
+	});
+
 	it('typed refusals before a job starts', async () => {
 		const projectId = seed(base.doc);
 		const cases: [unknown, number, string][] = [

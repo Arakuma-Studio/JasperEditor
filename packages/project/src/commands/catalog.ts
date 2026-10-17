@@ -360,6 +360,7 @@ const LABELS: Record<CommandType, string> = {
 	'soundDesign.setAutoGain': 'Auto Gain',
 	'soundDesign.setCheck': 'Sound Check Result',
 	'soundDesign.setVerdict': 'Sound Check Verdict',
+	'soundDesign.expectMix': 'Check Mix Unchanged',
 	'audio.volumeDip': 'Volume Dip',
 	'soundDesign.applyStopBefore': 'Stop Before Cue',
 	'soundDesign.applyBuild': 'Build Into Cue',

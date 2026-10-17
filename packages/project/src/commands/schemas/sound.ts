@@ -218,6 +218,20 @@ export const SoundDesignSetSettingsCmd = cmd('soundDesign.setSettings', {
 	credits: z.enum(SOUND_CREDITS_FORMATS).nullable().optional(),
 });
 
+/**
+ * A precondition (WP6.5b): refuses the transaction with `E_REVISION_MISMATCH`, changing nothing, unless the mix of the
+ * sequence is still the one `mixHash` describes (`mixFingerprint`: its audio tracks and clips, submixes, the Mix
+ * without its loudness settings, transitions, media) and, when given, its delivery setting is still `delivery`. Put it
+ * first in a transaction whose changes were computed from a measurement of that mix (rebalance, delivery): it is
+ * checked where the transaction applies, so an edit landing just before cannot be fast-forwarded over (S01:AGT-010
+ * only refuses edits of the entities a transaction touches). Changes nothing; result `{sequenceId, mixHash}`.
+ */
+export const SoundDesignExpectMixCmd = cmd('soundDesign.expectMix', {
+	sequenceId: IdRefSchema.optional(),
+	mixHash: z.string().min(1).max(256),
+	delivery: z.enum(SOUND_DELIVERIES).optional(),
+});
+
 /** Sound Check verdicts (spec 12 §2.6). */
 export const SOUND_CHECK_VERDICT_VALUES = ['pass', 'warn', 'fail'] as const;
 
@@ -372,4 +386,5 @@ export const SOUND_COMMANDS = [
 	SoundDesignSetAutoGainCmd,
 	SoundDesignSetCheckCmd,
 	SoundDesignSetVerdictCmd,
+	SoundDesignExpectMixCmd,
 ] as const;

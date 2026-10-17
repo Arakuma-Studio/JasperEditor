@@ -4,6 +4,7 @@ import {
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
+	mixFingerprint,
 	resolveAgentAddresses,
 } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
@@ -25,6 +26,7 @@ const SOUND_COMMANDS = [
 	'soundDesign.setAutoGain',
 	'soundDesign.setCheck',
 	'soundDesign.setVerdict',
+	'soundDesign.expectMix',
 	'audio.volumeDip',
 	'soundDesign.applyStopBefore',
 	'soundDesign.applyBuild',
@@ -176,7 +178,15 @@ describe('sound-design describe_commands examples', () => {
 			expect(pr.result.ok, JSON.stringify(pr.result)).toBe(true);
 			doc = pr.document;
 		}
-		const resolved = resolveAgentAddresses(doc, [...(SAME_TX.has(type) ? PRELUDE[type]! : []), example]);
+		// the precondition's example names a hash: the measured mix's (here the document's own); the literal one refuses
+		const seqId = Object.keys(doc.sequences)[0]!;
+		let cmd = example;
+		if (type === 'soundDesign.expectMix') {
+			const stale = applyTransaction(doc, { label: 'stale', origin: 'user', commands: [example] }, ctx);
+			expect(stale.result.ok ? null : stale.result.errors[0]!.code).toBe('E_REVISION_MISMATCH');
+			cmd = { ...(example as Record<string, unknown>), mixHash: mixFingerprint(doc, seqId) };
+		}
+		const resolved = resolveAgentAddresses(doc, [...(SAME_TX.has(type) ? PRELUDE[type]! : []), cmd]);
 		expect(resolved.ok).toBe(true);
 		if (!resolved.ok) return;
 		const r = applyTransaction(
