@@ -12,6 +12,7 @@ import {
 	CUE_WEIGHTS,
 	creditLine,
 	FLICKS_PER_SECOND,
+	isShareAlike,
 	licenseClass,
 	licenseUrlOf,
 	type Rational,
@@ -73,6 +74,7 @@ export function provenanceCredit(p: NonNullable<ReturnType<typeof clipProvenance
 		sourceUrl: p.sourceUrl ?? null,
 		attribution: p.attribution,
 		requiresAttribution: requiresAttribution(p.license),
+		shareAlike: isShareAlike(p.license),
 		usedIn: [],
 		sequenceIds: [],
 	});

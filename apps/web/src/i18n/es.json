@@ -10050,5 +10050,8 @@
   "The loudest moment of the mix ({0}, {1} LUFS short-term) is in the last 15 % of the sequence with no hero there": "El momento más fuerte de la mezcla ({0}, {1} LUFS a corto plazo) está en el último 15 % de la secuencia sin ningún sonido principal allí",
   "The mix ends mid-sound at {0}: its last 50 ms are at {1} dBFS (RMS) and its last 10 ms peak at {2} dBFS": "La mezcla termina a mitad de un sonido en {0}: sus últimos 50 ms están a {1} dBFS (RMS) y sus últimos 10 ms alcanzan {2} dBFS",
   "The mix starts mid-sound at {0}: its first 5 ms peak at {1} dBFS (a click on the first sample)": "La mezcla empieza a mitad de un sonido en {0}: sus primeros 5 ms alcanzan {1} dBFS (un clic en la primera muestra)",
-  "The music {0} is chopped at {1}: it keeps sounding ({2} dBFS) over what enters ({3} dBFS) with a {4} ms crossfade": "La música {0} queda cortada en {1}: sigue sonando ({2} dBFS) por encima de lo que entra ({3} dBFS) con un fundido cruzado de {4} ms"
+  "The music {0} is chopped at {1}: it keeps sounding ({2} dBFS) over what enters ({3} dBFS) with a {4} ms crossfade": "La música {0} queda cortada en {1}: sigue sonando ({2} dBFS) por encima de lo que entra ({3} dBFS) con un fundido cruzado de {4} ms",
+  "Also list CC BY-SA sounds: a video synced with one must be shared under CC BY-SA": "Mostrar también sonidos CC BY-SA: un vídeo sincronizado con uno debe compartirse bajo CC BY-SA",
+  "Include ShareAlike": "Incluir CompartirIgual",
+  "Only licences that allow commercial use (no NC / ND, no undeclared folders, no ShareAlike unless included)": "Solo licencias que permiten el uso comercial (sin NC / ND, sin carpetas sin declarar, sin CompartirIgual salvo que se incluya)"
 }

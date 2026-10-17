@@ -4,6 +4,7 @@
 import type { SoundEntry } from '@jasper/api';
 import {
 	creditLine,
+	isShareAlike,
 	licenseClass,
 	licenseUrlOf,
 	requiresAttribution,
@@ -42,6 +43,7 @@ export function soundCreditLine(e: SoundEntry): string {
 		sourceUrl: e.sourceUrl ?? null,
 		attribution: e.attribution,
 		requiresAttribution: requiresAttribution(e.license),
+		shareAlike: isShareAlike(e.license),
 		usedIn: [],
 		sequenceIds: [],
 	};

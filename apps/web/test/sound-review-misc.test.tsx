@@ -157,6 +157,7 @@ describe('credits warnings', () => {
 		sourceUrl: null,
 		attribution: null,
 		requiresAttribution: true,
+		shareAlike: false,
 		usedIn: [],
 		sequenceIds: [],
 		...over,
@@ -174,7 +175,14 @@ describe('credits warnings', () => {
 		);
 		await setLanguage('es');
 		const texts = (
-			['W_LICENSE_NC', 'W_LICENSE_ND', 'W_USER_PROVIDED', 'W_LICENSE_UNKNOWN', 'W_CREDIT_INCOMPLETE'] as const
+			[
+				'W_LICENSE_NC',
+				'W_LICENSE_ND',
+				'W_USER_PROVIDED',
+				'W_LICENSE_UNKNOWN',
+				'W_CREDIT_INCOMPLETE',
+				'W_SHARE_ALIKE',
+			] as const
 		).map((c) => creditWarningText(warn(c), rows));
 		expect(texts[0]).toBe('“Crunch” (med_1) solo tiene licencia para uso no comercial (CC-BY-NC-4.0)');
 		for (const t of texts) {
