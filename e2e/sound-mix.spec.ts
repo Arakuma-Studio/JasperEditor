@@ -262,8 +262,19 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 	await dialog.screenshot({ path: join(outDir, 'auto-pass-mix-options.png'), timeout: 60_000 });
 	const before = await appliedLabels(page);
 	await dialog.getByRole('button', { name: 'Propose' }).click();
-	await expect(dialog).toBeHidden({ timeout: 1_500_000 });
-	await expect(page.getByTestId('review-bar')).toBeVisible();
+	// review opens; a plan whose solve has notes (conflicts, dialogue-band advice) keeps the dialog open listing them
+	// until Close (Phase 4 verification)
+	await expect(page.getByTestId('review-bar')).toBeVisible({ timeout: 1_500_000 });
+	const notes = dialog.getByTestId('auto-pass-notes');
+	if (await notes.isVisible()) {
+		const items = await dialog.getByTestId('auto-pass-notes-list').getByRole('listitem').allTextContents();
+		console.log('plan notes', JSON.stringify(items));
+		test.info().annotations.push({ type: 'plan notes', description: JSON.stringify(items) });
+		expect(items.length).toBeGreaterThan(0);
+		await dialog.screenshot({ path: join(outDir, 'auto-pass-notes.png'), timeout: 60_000 });
+		await dialog.locator('[data-dialog-primary]').click();
+	}
+	await expect(dialog).toBeHidden();
 	expect(await appliedLabels(page)).toEqual(before);
 	await page.screenshot({ path: join(outDir, 'review.png') });
 	await page.getByTestId('review-bar-accept-all').click();
