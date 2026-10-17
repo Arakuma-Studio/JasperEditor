@@ -8,7 +8,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { encodeWav } from '@jasper/audio-dsp';
 import { type ProjectDocument, parseTakeId } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -45,6 +44,30 @@ async function fails(name: string, args: Record<string, unknown> = {}) {
 	const r = await call(name, args);
 	expect(r.isError, `${name} should fail: ${textOf(r)}`).toBe(true);
 	return (JSON.parse(textOf(r)) as { error: { code: string; message: string } }).error;
+}
+
+/** 16-bit PCM WAV of planar float channels. */
+function encodeWav(channels: Float32Array[], sr: number, _fmt: 's16'): Buffer {
+	const n = channels[0]!.length;
+	const ch = channels.length;
+	const data = Buffer.alloc(n * ch * 2);
+	for (let i = 0; i < n; i++)
+		for (let c = 0; c < ch; c++)
+			data.writeInt16LE(Math.round(Math.max(-1, Math.min(1, channels[c]![i]!)) * 32767), (i * ch + c) * 2);
+	const h = Buffer.alloc(44);
+	h.write('RIFF', 0, 'ascii');
+	h.writeUInt32LE(36 + data.length, 4);
+	h.write('WAVEfmt ', 8, 'ascii');
+	h.writeUInt32LE(16, 16);
+	h.writeUInt16LE(1, 20);
+	h.writeUInt16LE(ch, 22);
+	h.writeUInt32LE(sr, 24);
+	h.writeUInt32LE(sr * ch * 2, 28);
+	h.writeUInt16LE(ch * 2, 32);
+	h.writeUInt16LE(16, 34);
+	h.write('data', 36, 'ascii');
+	h.writeUInt32LE(data.length, 40);
+	return Buffer.concat([h, data]);
 }
 
 function lcg(seed: number) {
