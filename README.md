@@ -685,10 +685,13 @@ its result names the proposal it stored (`proposalId`) with a per-cue report (so
 alternates, skipped cues, each sound's gain solved against the bed with what limited it, and the room glue / delivery /
 stop-before / build items the style asked for).
 `POST /api/sound-design/rebalance {projectId, sequenceId?, clipIds?, range?, delivery?, mode?: "propose" | "apply",
-userGains?: "keep" | "replace", label?}` starts a `sound-design` job (202) that measures every sound effect against the
+userGains?: "keep" | "replace", label?, autoGain?: true}` starts a `sound-design` job (202) that measures every sound effect against the
 bed (rendered per cue cluster) and solves its gain with the masking solver; the result reports per clip the gain, target
 and achieved lift, `limitedBy` and the reason, and either names the proposal it stored (`propose`, the default) or applies
-the gains as one undoable transaction "Rebalance SFX Levels" (`apply`).
+the gains as one undoable transaction "Rebalance SFX Levels" (`apply`). `autoGain: true` (with `mode: "apply"` and
+`clipIds`; Essential Sound ▸ Auto gain on) also hands the named clips back to Auto gain in that same transaction
+(`soundDesign.setAutoGain` first, then the solved gains), also the ones the solve leaves unchanged or cannot measure;
+the result's `autoGain.clipIds` lists them.
 `POST /api/sound-design/delivery {projectId, sequenceId?, delivery: "web" | "podcast" | "broadcast-r128" | "atsc-a85",
 mode?: "propose" | "apply", loudness?, autoMatch?, ducking?, rebalance?, label?}` starts a `sound-design` job (202) that
 measures the clips, the speech and the resulting mix and applies (one transaction "Apply Delivery Preset") or proposes the

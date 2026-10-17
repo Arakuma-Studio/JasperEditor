@@ -295,6 +295,58 @@ describe('POST /api/sound-design/rebalance (real engine)', { timeout: 300_000 },
 		}
 	});
 
+	it('autoGain: Essential Sound ▸ Auto gain on hands the named clips back in the rebalance transaction (one undo step)', async () => {
+		// WP6.5b (WP6.5a item 7k): two clips with Auto gain off — one the solve measures, one it cannot (disabled: not in
+		// the mix) — named with autoGain: ONE transaction; both lose the mark; the measured one takes its solved gain, the
+		// other its recorded level. Before, the editor made a second "Auto Gain On" transaction for the second clip.
+		const { ids } = base;
+		const doc = structuredClone(base.doc) as ProjectDocument;
+		const seq0 = doc.sequences[Object.keys(doc.sequences)[0]!]!;
+		const hero = seq0.clips[ids.hero!] as SfxClip;
+		const off = seq0.clips[ids.shadowed!] as SfxClip & { enabled?: boolean };
+		(hero.sfx!.level as { manual?: boolean }).manual = true;
+		(off.sfx!.level as { manual?: boolean }).manual = true;
+		off.enabled = false;
+		const recorded = off.sfx!.level!.gainDb;
+		const projectId = seed(doc);
+		const before = await saved(projectId);
+		const { result } = await run(
+			{ projectId, mode: 'apply', clipIds: [ids.hero, ids.shadowed], autoGain: true },
+			EDITOR_H,
+		);
+		expect(result.applied).toBe(true);
+		expect(result.autoGain?.clipIds.sort()).toEqual([ids.hero, ids.shadowed].sort());
+		expect(result.report.skipped.map((x) => [x.clipId, x.code])).toEqual([[ids.shadowed, 'NOT_IN_MIX']]);
+		const after = await saved(projectId);
+		expect(after.revision).toBe(before.revision + 1);
+		const seq = after.doc.sequences[seq0.id]!;
+		const h = seq.clips[ids.hero!] as SfxClip;
+		const o = seq.clips[ids.shadowed!] as SfxClip;
+		const ev = result.report.events.find((e) => e.clipId === ids.hero)!;
+		expect(h.gainDb).toBe(ev.gainDb);
+		expect(h.sfx!.level).toMatchObject({ by: 'solver', gainDb: ev.gainDb });
+		expect((h.sfx!.level as { manual?: boolean }).manual).toBeUndefined();
+		expect((o.sfx!.level as { manual?: boolean }).manual).toBeUndefined();
+		expect(o.gainDb).toBe(recorded);
+		// only the named clips' marks: nothing to hand back → no transaction when nothing changes
+		const again = await run({ projectId, mode: 'apply', clipIds: [ids.shadowed], autoGain: true }, EDITOR_H);
+		expect(again.result.applied).toBe(false);
+		expect(again.result.autoGain).toEqual({ clipIds: [] });
+		expect((await saved(projectId)).revision).toBe(after.revision);
+		// refused unless apply mode with named clips
+		for (const body of [
+			{ projectId, autoGain: true, clipIds: [ids.hero] },
+			{ projectId, autoGain: true, mode: 'apply' },
+			{ projectId, autoGain: false, mode: 'apply', clipIds: [ids.hero] },
+		]) {
+			const r = await rebalance(body);
+			expect([r.statusCode, (r.json() as { code: string }).code], JSON.stringify(body)).toEqual([
+				400,
+				'VALIDATION_FAILED',
+			]);
+		}
+	});
+
 	it('explicit clip ids and a range; typed refusals before a job starts', async () => {
 		const projectId = seed(base.doc);
 		const { ids } = base;

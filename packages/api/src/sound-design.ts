@@ -580,7 +580,18 @@ export const SfxRebalanceRequestSchema = z.strictObject({
 	userGains: z.enum(['keep', 'replace']).optional(),
 	/** Proposal title (default "Rebalance SFX Levels: <sequence>"). */
 	label: z.string().min(1).max(200).optional(),
-});
+	/**
+	 * Essential Sound ▸ Auto gain on (WP6.5b): the named clips are handed back to the solver in the SAME transaction
+	 * (`soundDesign.setAutoGain {auto: true}` first, then the solved gains): one undo step. Clips the solve leaves
+	 * unchanged lose their Auto gain off mark too; named clips it cannot measure take their recorded level. Needs
+	 * `mode: 'apply'` and `clipIds`.
+	 */
+	autoGain: z.literal(true).optional(),
+})
+	.refine((r) => r.autoGain !== true || (r.mode === 'apply' && !!r.clipIds?.length), {
+		message: 'autoGain needs mode "apply" and clipIds',
+		path: ['autoGain'],
+	});
 export type SfxRebalanceRequest = z.infer<typeof SfxRebalanceRequestSchema>;
 
 /** One solved sound effect of a rebalance. */
@@ -640,6 +651,8 @@ export const SfxRebalanceResultSchema = z.object({
 	/** Propose mode: the stored proposal (null when nothing changes). */
 	proposalId: z.string().nullable(),
 	report: SfxRebalanceReportSchema,
+	/** `autoGain` requests: the clips handed back to Auto gain in the transaction (absent from older engines). */
+	autoGain: z.object({ clipIds: z.array(z.string()) }).optional(),
 });
 export type SfxRebalanceResult = z.infer<typeof SfxRebalanceResultSchema>;
 

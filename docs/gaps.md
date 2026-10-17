@@ -363,8 +363,9 @@ measurement renders on worker threads, Sound Check's safe fixes judged together 
 mono Mixes checked in mono, kept reports deleted with their sequence, one shot-change rule, the beat tracker's tempo
 octave and 3/4, measured picture motion in `view_sound_timeline`, untouched footage decoded at the analysis size,
 journalled accepts, invariant conflicts found in previews of any size, a 1 000-item preview 2.2–2.9× less work, the anime templates' cues
-measured, heard dialogue only (clip gain / automation, mutes, faders), a strict CPU budget for search and a
-configurable E2E start-up timeout. Rerun the tests listed in that section's table.
+measured, heard dialogue only (clip gain / automation, mutes, faders), a strict CPU budget for search, a
+configurable E2E start-up timeout, and Auto gain on for a mixed selection as one undo step (the rebalance job's
+`autoGain`; WP6.5a item 7k). Rerun the tests listed in that section's table.
 See [wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 1 verification": the Sound Library panel and Sound Design
 workspace, the engine library (60-sound Kenney CC0 kit, user folders with a declared licence, Jasper Synth), ten MCP
 tools, credits; inserts land on the frame to the sample (library sounds are registered with 50 ms of lead silence, and
@@ -486,9 +487,7 @@ In Context audition the Timeline view comes back; Delivery Target… and Auto So
 a gain fix's "why" is said in the UI language; `set_sound_cues` counts only the cues it adds. Rerun
 `packages/project/test/transition-razor.test.ts`, `apps/engine/test/export-container.test.ts`,
 `apps/web/test/{wp65a-i18n,wp65a-audition-view,essential-autotag-on-add,export-format}.test.*`,
-`e2e/sound-p65a-polish.spec.ts`. Limits left: turning Auto gain on for a mixed selection whose solve leaves some clips
-unchanged still makes two History entries (the rebalance job's transaction would have to carry the Auto gain flag:
-engine `sound-design/rebalance.ts`); messages the engine composes (export warnings and the finished-export detail, solver
+`e2e/sound-p65a-polish.spec.ts`. Limits left: messages the engine composes (export warnings and the finished-export detail, solver
 notes outside Sound Check fixes) stay English; auto-tagging on add ignores agents' placements (they tag with
 `auto_tag_audio`) and is its own undo step; a clip added to a new or duplicated sequence is not auto-tagged.
 

@@ -62,7 +62,8 @@ async function rebalance(
 	ctx: CommandCtx,
 	e: ResolvedSequenceCommandContext,
 	clipIds: string[] | undefined,
-): Promise<{ applied: boolean; changed: string[] }> {
+	opts: { autoGain?: true } = {},
+): Promise<{ applied: boolean; changed: string[]; handedBack: string[] | null }> {
 	const key = `rebalance:${e.seq.id}`;
 	const title = clipIds
 		? t('Rebalancing {0} sound effects…', clipIds.length)
@@ -71,7 +72,12 @@ async function rebalance(
 	try {
 		const r = await runRebalance(
 			ctx.engine,
-			{ projectId: e.session.projectId, sequenceId: e.seq.id, ...(clipIds ? { clipIds } : {}) },
+			{
+				projectId: e.session.projectId,
+				sequenceId: e.seq.id,
+				...(clipIds ? { clipIds } : {}),
+				...(opts.autoGain && clipIds?.length ? { autoGain: true as const } : {}),
+			},
 			{
 				onJob: (j) =>
 					uiToast({
@@ -128,6 +134,8 @@ async function rebalance(
 		return {
 			applied: r.applied,
 			changed: r.report.events.filter((ev) => Math.abs(ev.changeDb) >= 0.01).map((ev) => ev.clipId),
+			// the engine handed the clips back to Auto gain in its own transaction (null: an engine without `autoGain`)
+			handedBack: r.autoGain?.clipIds ?? null,
 		};
 	} catch (err) {
 		toasts.dismiss(progress);
@@ -217,8 +225,10 @@ export const soundMixCommands: UiCommand[] = [
 				flag(true, manual);
 				return;
 			}
-			const r = await rebalance(ctx, e, manual);
-			// a clip the solve did not change (same gain) or skipped keeps its manual mark: clear it
+			// one undo step (WP6.5b): the rebalance transaction hands the clips back to Auto gain itself
+			const r = await rebalance(ctx, e, manual, { autoGain: true });
+			if (r.handedBack) return;
+			// an engine without `autoGain`: a clip the solve did not change (same gain) or skipped keeps its manual mark
 			const now = sequenceContext(ctx);
 			if (!now) return;
 			const left = manual.filter((id) => {

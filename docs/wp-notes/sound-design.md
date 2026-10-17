@@ -7140,7 +7140,8 @@ Every command ran on the build server through `remote.sh`:
 ### Phase 6 → WP6.5b carry-over polish (engine/model)
 
 Branch `feat/sd-p6-polish-engine` (with the work of `feat/sd-p6pe-{media,solver,jobs,check,cues,proposals}` merged into
-it and finished there). The nineteen engine / model / MCP items of the carry-over list (`CARRYOVER.md`), each fixed with
+it and finished there). The nineteen engine / model / MCP items of the carry-over list (`CARRYOVER.md`) and one handed over by WP6.5a
+(item 20), each fixed with
 a regression test that failed before the fix, or — where the request itself had to be decided — decided with the
 evidence. Every number below was **measured**: on the build server (`jasper-build`: 16 × Intel Haswell vCPU, Node
 20.20.2; shared with one other agent's runs, the load average is given with each benchmark) through `remote.sh`, with
@@ -7170,6 +7171,7 @@ compute rule (said there). Before = the branch point `5d80ed30` (a detached work
 | 17 | `place_sound` hero warning used whole dialogue clips; solver speech ignored clip volume automation | fixed | `dialogueSpans` keeps only the dialogue the mix lets through: clip gain, clip Volume keyframes, track mute (static, automated), track Volume automation, solo, submix and Mix faders evaluated with the renderers' topology (`buildAudioMix`); at or under −40 dB it is not speech for any consumer (solver, cue suppression, `place_sound`'s W_HERO_UNDER_DIALOGUE — now from the engine's heard dialogue —, Sound Check) | `packages/project/test/sound-dialogue-audible.test.ts`, `apps/engine/test/sound-design-heard-speech.test.ts` (real engine: muted by gain, ducked out by keyframes from 4.5 s, track muted by automation), `apps/mcp/test/sound-cues.test.ts` | — |
 | 18 | Search perf threshold scaled with load | decided: strict CPU budget | the search and ranking speed tests measure the main thread's CPU time (Linux `/proc/self/task/<tid>/schedstat`; `process.cpuUsage` counted V8's GC / compiler threads: 26 ms of CPU in 12 ms of wall time at load 53) against a fixed 50 ms, whatever the load | `apps/engine/test/sounds-search.test.ts`, `packages/project/test/sound-rank-scale.test.ts` | see Verified |
 | 19 | E2E web server start-up needed 600 s at high load | fixed | `E2E_SERVER_TIMEOUT_MS` (1 000 … 3 600 000; default 180 s, was a fixed 60 s; a malformed value is refused naming the variable), README | `scripts/e2e-server-timeout.test.mjs` (the config test failed before the wiring) | — |
+| 20 | (from WP6.5a, item 7k) Auto gain on for a mixed selection made two History entries | fixed | `POST /api/sound-design/rebalance {autoGain: true}` (apply mode, named clips; `SfxRebalanceRequestSchema` refuses it otherwise): the job's one transaction is `soundDesign.expectMix`, `soundDesign.setAutoGain {auto: true}` for the named unlocked clips whose gain is the user's, then `soundDesign.applyGains` — clips the solve leaves unchanged or cannot measure lose their Auto gain off mark in the same step; the result lists them (`autoGain.clipIds`); the editor's Auto gain toggle passes it and only falls back to its own transaction against an engine without it | `apps/engine/test/sound-design-rebalance.test.ts` "autoGain: …" (real engine: one revision, a measured and a not-in-the-mix clip handed back; refusals), `apps/web/test/sound-mix-ui.test.tsx` "on: a clip the solve leaves unchanged …" (one History entry; before: "Rebalance SFX Levels" + "Auto Gain On") | — |
 
 #### Decisions (and why)
 
