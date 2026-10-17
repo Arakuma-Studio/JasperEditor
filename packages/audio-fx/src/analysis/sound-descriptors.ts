@@ -82,8 +82,8 @@ export interface SoundDescriptors {
 	/**
 	 * Band-limit edge of a lossy encode or a resample (Hz, on a 250 Hz grid): the lowest frequency from 2 kHz where the
 	 * average power spectrum falls off a cliff — the 1.5 kHz under it broadband (≥ 4 of its six 250 Hz bands within
-	 * 15 dB of its loudest) and every 250 Hz band from it to the top at least 30 dB under that 1.5 kHz. Null when there
-	 * is no cliff (a natural roll-off, a tone), under 44.1 kHz, or for silence. Absent in version-1 analyses.
+	 * 15 dB of its loudest) and every 250 Hz band from it to 1 kHz under Nyquist at least 30 dB under that 1.5 kHz. Null
+	 * when there is no cliff (a natural roll-off, a tone), under 44.1 kHz, or for silence. Absent in version-1 analyses.
 	 */
 	cutoffHz?: number | null;
 	/**
@@ -388,6 +388,8 @@ const CUTOFF_BROAD_BANDS = 4;
 const CUTOFF_BROAD_DB = 15;
 /** Drop that makes a cliff: every band from the edge up this far under the 1.5 kHz below it (dB). */
 const CUTOFF_DROP_DB = 30;
+/** The last kHz under Nyquist is not looked at. */
+const CUTOFF_TOP_MARGIN_HZ = 1000;
 
 /** The band-limit edge of an average power spectrum (see `SoundDescriptors.cutoffHz`), or null. */
 function cutoffOf(acc: Float64Array, binHz: number, sr: number): number | null {
@@ -404,11 +406,13 @@ function cutoffOf(acc: Float64Array, binHz: number, sr: number): number | null {
 	if (!(peak > 0)) return null;
 	// dB re the loudest band, floored 200 dB under it
 	const db = Array.from(band, (v) => 10 * Math.log10(Math.max(v, peak * 1e-20) / peak));
-	// loudest band from each band to the top (the "above" side)
+	// loudest band from each band up to 1 kHz under Nyquist (the "above" side; the last kHz holds the anti-alias
+	// filter's skirt and the analysis window's Nyquist artefacts)
+	const top = Math.max(0, Math.min(nb, Math.floor((nyq - CUTOFF_TOP_MARGIN_HZ) / CUTOFF_BAND_HZ)));
 	const maxFrom = new Float64Array(nb + 1).fill(-Infinity);
-	for (let b = nb - 1; b >= 0; b--) maxFrom[b] = Math.max(db[b]!, maxFrom[b + 1]!);
+	for (let b = top - 1; b >= 0; b--) maxFrom[b] = Math.max(db[b]!, maxFrom[b + 1]!);
 	const first = Math.ceil(CUTOFF_MIN_HZ / CUTOFF_BAND_HZ);
-	const last = Math.min(Math.floor(CUTOFF_MAX_HZ / CUTOFF_BAND_HZ), nb - 2);
+	const last = Math.min(Math.floor(CUTOFF_MAX_HZ / CUTOFF_BAND_HZ), top - 2);
 	for (let e = first; e <= last; e++) {
 		if (e < CUTOFF_BELOW_BANDS) continue;
 		let below = 0;
