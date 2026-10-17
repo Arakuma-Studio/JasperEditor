@@ -362,7 +362,7 @@ export function dialogueSpans(
 		// only what the mix lets through (clip gain and Volume, track mute and Volume automation, solo, routing)
 		let mix: RenderAudioMix | null = null;
 		try {
-			mix = buildAudioMix(seq);
+			if (pieces.length) mix = buildAudioMix(seq);
 		} catch {
 			mix = null;
 		}
