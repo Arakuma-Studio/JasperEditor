@@ -27,8 +27,8 @@ import {
 	soundDesignSettingsOf,
 } from '@jasper/project';
 import type { IconId } from '@jasper/ui';
-import { t } from '../i18n/runtime.ts';
-import { kindLabel } from './cues/model.ts';
+import { t, withoutContext } from '../i18n/runtime.ts';
+import { CUE_KIND_LABELS } from './cues/model.ts';
 import { deliveryOptionLabel, fmtDb } from './mix-model.ts';
 
 export type CheckCategory = SoundCheckIssue['category'];
@@ -86,7 +86,8 @@ export const SLOT_LABELS: Record<SoundCheckListen['slot'], string> = {
 	passing: 'A cue that passes',
 };
 
-const DENSITY_LABELS: Record<string, string> = { sparse: 'sparse', balanced: 'balanced', rich: 'rich' };
+/** Density names inside density messages (translated, then lower-cased: "at balanced density"). */
+const DENSITY_LABELS: Record<string, string> = { sparse: 'Sparse', balanced: 'Balanced', rich: 'Rich' };
 /** Templates whose parameter at this index is a cue kind id / a density id. */
 const KIND_PARAM = new Map<string, number>([
 	[SOUND_CHECK_MESSAGES.syncEarly, 2],
@@ -109,8 +110,11 @@ export function messageText(m: SoundCheckMessageJson | null | undefined): string
 		const densityAt = DENSITY_PARAM.get(m.key);
 		const params = m.params.map((p, i) => {
 			if (typeof p !== 'string') return p;
-			if (i === kindAt) return kindLabel(p).toLocaleLowerCase();
-			if (i === densityAt && DENSITY_LABELS[p]) return t(DENSITY_LABELS[p]!);
+			if (i === kindAt) {
+				const label = (CUE_KIND_LABELS as Record<string, string>)[p];
+				return label ? withoutContext(t(label)).toLocaleLowerCase() : p;
+			}
+			if (i === densityAt && DENSITY_LABELS[p]) return t(DENSITY_LABELS[p]!).toLocaleLowerCase();
 			return p;
 		});
 		return t(m.key, ...params);

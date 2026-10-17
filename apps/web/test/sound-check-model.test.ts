@@ -1,0 +1,294 @@
+// WP5.2 Sound Check panel model (pure): translated finding texts (template keys + params; cue kinds translated), the
+// grouping and order of the findings, the fix plan (duplicates once, swaps once per clip, safe only), the delivery
+// target choice and what "Use as sequence target" writes, the custom target fields, the verdict marker commands, the
+// sync strip geometry and waveform, and hostile input (never throws).
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { SoundCheckIssue } from '@jasper/api';
+import {
+	applyTransaction,
+	createCounterIdSource,
+	createEmptyProject,
+	defaultRegistries,
+	type ProjectDocument,
+	type Sequence,
+	SOUND_CHECK_VERDICT_MARKER,
+	soundCheckHumanVerdicts,
+	soundCheckMessage,
+} from '@jasper/project';
+import fc from 'fast-check';
+import { afterEach, describe, expect, it } from 'vitest';
+import { reportFixture } from '../../mcp/test/sound-check-report-fixture.ts';
+import { __setCatalogForTests } from '../src/i18n/runtime.ts';
+import {
+	defaultChoice,
+	groupIssues,
+	isSequenceTarget,
+	listenRows,
+	messageText,
+	orderedIssues,
+	parseCustomTarget,
+	planFixes,
+	safeFixable,
+	sequenceTargetCommands,
+	staleText,
+	summaryChips,
+	verdictCommands,
+	verdictSentence,
+} from '../src/sound/check-model.ts';
+import { stripGeometry, wavePath } from '../src/sound/SyncStrip.tsx';
+
+const root = join(__dirname, '../../..');
+const ES = JSON.parse(readFileSync(join(root, 'apps/web/src/i18n/es.json'), 'utf8')) as Record<
+	string,
+	string
+>;
+const NAMES = JSON.parse(
+	readFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), 'utf8'),
+) as string[];
+afterEach(() => __setCatalogForTests('en', null));
+
+function doc() {
+	const ids = createCounterIdSource(3);
+	let d: ProjectDocument = createEmptyProject({ ids, name: 'M', preset: 'hd-1080p-30' });
+	const seqId = Object.keys(d.sequences)[0]!;
+	const tx = (commands: unknown[]) => {
+		const r = applyTransaction(
+			d,
+			{ protocol: 'jasper.tx/1', label: 'x', origin: 'user', sequenceId: seqId, commands } as never,
+			{ ids, now: () => '2026-10-17T00:00:00.000Z', revision: 0, registries: defaultRegistries() },
+		);
+		if (!r.result.ok) throw new Error(JSON.stringify(r.result.errors));
+		d = r.document;
+	};
+	return { seq: () => d.sequences[seqId] as Sequence, seqId, tx };
+}
+
+const report = () => reportFixture({ projectId: 'prj_x', sequenceId: 'seq_x' });
+
+describe('finding texts', () => {
+	it('fills the template; cue kinds and densities become labels; Spanish translates the template', () => {
+		const m = soundCheckMessage('syncLate', 'Impact', 66.7, 'cut', '00:00:03:00', 1);
+		expect(messageText(m)).toBe(
+			'Impact plays 66.7 ms late on its cut cue at 00:00:03:00 (tolerance ±1 frames)',
+		);
+		__setCatalogForTests('es', ES, NAMES);
+		const es = messageText(m);
+		expect(es).toContain('Impact');
+		expect(es).toContain('66.7');
+		expect(es).toContain('corte');
+		expect(es).not.toBe(m.text);
+		expect(messageText(soundCheckMessage('fixAlign'))).toBe(ES['Align its peak to the cue']);
+	});
+
+	it('falls back to the English text on malformed messages; never throws', () => {
+		expect(messageText({ key: 3 as never, params: [], text: 'x' })).toBe('x');
+		expect(messageText(null)).toBe('');
+		fc.assert(
+			fc.property(fc.anything(), (m) => typeof messageText(m as never) === 'string'),
+			{ numRuns: 300 },
+		);
+	});
+
+	it('summary chips, verdict sentence and the stale line', () => {
+		const r = report();
+		const chips = Object.fromEntries(summaryChips(r).map((c) => [c.id, c.value]));
+		expect(chips).toMatchObject({
+			integrated: '−17.2 LUFS',
+			truePeak: '−2.1 dBTP',
+			lra: '6.3 LU',
+			errors: '1',
+			warnings: '4',
+		});
+		expect(verdictSentence('fail', { error: 1, warning: 2 })).toBe('Sound Check Fail: 1 error, 2 warnings');
+		expect(staleText({ state: 'current', reasons: [] })).toBeNull();
+		expect(staleText({ state: 'stale', reasons: ['mix', 'preset'] })).toBe(
+			'Stale: the mix changed, the delivery target changed since this check',
+		);
+	});
+});
+
+describe('grouping', () => {
+	it('categories in the panel order, errors first, then time; the list order follows', () => {
+		const r = report();
+		expect(groupIssues(r.issues).map((g) => [g.category, g.issues.map((i) => i.code)])).toEqual([
+			['sync', ['OUT_OF_SYNC', 'TRUNCATED']],
+			['loudness', ['LOUDNESS']],
+			['mix', ['MUSIC_OVER_VOICE', 'SILENCE']],
+		]);
+		expect(orderedIssues(r.issues).map((i) => i.code)).toEqual([
+			'OUT_OF_SYNC',
+			'TRUNCATED',
+			'LOUDNESS',
+			'MUSIC_OVER_VOICE',
+			'SILENCE',
+		]);
+	});
+});
+
+describe('fix plan', () => {
+	it('safe only: commands of each fix together, one swap per clip, the jobs; the same fix twice once', () => {
+		const r = report();
+		const tp: SoundCheckIssue = {
+			...r.issues.find((i) => i.code === 'LOUDNESS')!,
+			id: 'TRUE_PEAK:mix',
+			code: 'TRUE_PEAK',
+		};
+		const twice = [...r.issues, tp];
+		const plan = planFixes(twice, { safeOnly: true });
+		expect(plan.commands.map((c) => c.type)).toEqual(['clip.move', 'mixer.setLoudness']);
+		expect(plan.swaps).toEqual([{ clipId: 'clp_b', soundId: 'snd_00000000000000b1' }]);
+		expect(plan.jobs).toEqual([expect.objectContaining({ route: 'delivery' })]);
+		expect(plan.units).toHaveLength(4);
+		expect(plan.issueIds).toContain('TRUE_PEAK:mix');
+		expect(plan.units.find((u) => u.issueIds.includes('TRUE_PEAK:mix'))!.issueIds).toEqual([
+			'LOUDNESS:mix',
+			'TRUE_PEAK:mix',
+		]);
+		// unsafe fixes only when asked for one by one
+		expect(planFixes(twice, { safeOnly: false }).units).toHaveLength(5);
+		expect(safeFixable(r.issues).map((i) => i.code)).toEqual([
+			'OUT_OF_SYNC',
+			'TRUNCATED',
+			'LOUDNESS',
+			'MUSIC_OVER_VOICE',
+		]);
+	});
+
+	it('never throws on hostile findings; every unit points at an input finding (property)', () => {
+		const issue = fc.record({
+			id: fc.string(),
+			code: fc.constantFrom('OUT_OF_SYNC', 'LOUDNESS', 'SILENCE'),
+			severity: fc.constantFrom('error', 'warning', 'info'),
+			category: fc.constantFrom('sync', 'mix'),
+			message: fc.constant(soundCheckMessage('fixAlign')),
+			fix: fc.option(
+				fc.record({
+					kind: fc.constantFrom('commands', 'job', 'swap'),
+					label: fc.constant(soundCheckMessage('fixAlign')),
+					safe: fc.boolean(),
+					tool: fc.string(),
+					args: fc.constant({}),
+					commands: fc.option(fc.array(fc.record({ type: fc.string() }), { maxLength: 3 }), {
+						nil: undefined,
+					}),
+					job: fc.option(
+						fc.record({ route: fc.constantFrom('rebalance', 'delivery', 'x'), body: fc.object() }),
+						{
+							nil: undefined,
+						},
+					),
+					swap: fc.option(fc.record({ clipId: fc.string(), soundId: fc.string() }), { nil: undefined }),
+				}),
+				{ nil: undefined },
+			),
+		});
+		fc.assert(
+			fc.property(fc.array(issue, { maxLength: 12 }), fc.boolean(), (list, safeOnly) => {
+				const p = planFixes(list as SoundCheckIssue[], { safeOnly });
+				const ids = new Set(list.map((i) => i.id));
+				return p.units.every((u) => u.issueIds.every((id) => ids.has(id)));
+			}),
+			{ numRuns: 300 },
+		);
+	});
+});
+
+describe('delivery target', () => {
+	it('defaults to the sequence preset; a stored custom check or a non-preset normalisation is custom', () => {
+		const f = doc();
+		expect(defaultChoice(f.seq())).toEqual({ kind: 'preset', preset: 'web' });
+		f.tx([{ type: 'mixer.setLoudness', enabled: true, targetLufs: -18, truePeakDb: -1.5 }]);
+		expect(defaultChoice(f.seq())).toEqual({
+			kind: 'custom',
+			target: { integratedLufs: -18, truePeakDb: -1.5 },
+		});
+		expect(isSequenceTarget(defaultChoice(f.seq()), f.seq())).toBe(true);
+		f.tx(sequenceTargetCommands({ kind: 'preset', preset: 'podcast' }, f.seqId));
+		expect(defaultChoice(f.seq())).toEqual({ kind: 'preset', preset: 'podcast' });
+		expect(isSequenceTarget({ kind: 'preset', preset: 'podcast' }, f.seq())).toBe(true);
+		expect(isSequenceTarget({ kind: 'preset', preset: 'web' }, f.seq())).toBe(false);
+		expect(defaultChoice(undefined)).toEqual({ kind: 'preset', preset: 'web' });
+	});
+
+	it('custom fields: real minus and comma accepted, ranges refused with which field', () => {
+		expect(parseCustomTarget('−18,5', '-1')).toEqual({
+			ok: true,
+			target: { integratedLufs: -18.5, truePeakDb: -1 },
+		});
+		expect(parseCustomTarget('', '-1')).toMatchObject({ ok: false, field: 'lufs' });
+		expect(parseCustomTarget('-4', '-1')).toMatchObject({ ok: false, field: 'lufs' });
+		expect(parseCustomTarget('-16', '0.5')).toMatchObject({ ok: false, field: 'tp' });
+		expect(parseCustomTarget('-16', 'abc')).toMatchObject({ ok: false, field: 'tp' });
+		fc.assert(
+			fc.property(fc.string(), fc.string(), (a, b) => {
+				const r = parseCustomTarget(a, b);
+				return !r.ok || (r.target.integratedLufs <= -5 && r.target.integratedLufs >= -40);
+			}),
+			{ numRuns: 300 },
+		);
+	});
+});
+
+describe('verdict markers', () => {
+	it('adds a user comment marker, then updates the one at that frame (duplicates merged)', () => {
+		const f = doc();
+		f.tx(verdictCommands(f.seq(), 90, 'flag', '  late  '));
+		expect(soundCheckHumanVerdicts(f.seq())).toEqual([
+			expect.objectContaining({ frame: 90, verdict: 'flag', note: 'late' }),
+		]);
+		// another verdict marker at 90 written by hand: the next verdict keeps one
+		f.tx([{ type: 'marker.add', frame: 90, name: SOUND_CHECK_VERDICT_MARKER.ok, markerType: 'comment' }]);
+		f.tx(verdictCommands(f.seq(), 90, 'ok', ''));
+		expect(soundCheckHumanVerdicts(f.seq())).toEqual([
+			expect.objectContaining({ frame: 90, verdict: 'ok', note: null }),
+		]);
+		expect(f.seq().markers.filter((m) => m.frame === 90)).toHaveLength(1);
+	});
+
+	it('listen rows carry the verdict at their frame', () => {
+		const f = doc();
+		f.tx(verdictCommands(f.seq(), 91, 'ok', ''));
+		const rows = listenRows(report(), f.seq());
+		expect(rows.map((r) => [r.frame, r.verdict?.verdict ?? null])).toEqual([
+			[90, null],
+			[91, 'ok'],
+			[120, null],
+			[150, null],
+			[270, null],
+		]);
+	});
+});
+
+describe('sync strip', () => {
+	it('5 frames around the cue; the picture line at the cue, the measured line after it for a late sound', () => {
+		const f = doc();
+		const g = stripGeometry(f.seq(), 90, 66.7, 300);
+		expect(g.frames).toEqual([88, 89, 90, 91, 92]);
+		expect(g.range).toEqual({ start: 81, end: 100 });
+		expect(g.eventX).toBeCloseTo(9 / 19, 5);
+		expect(g.measuredX!).toBeCloseTo((9 + 2.001) / 19, 3);
+		expect(stripGeometry(f.seq(), 1, null, 300)).toMatchObject({ frames: [0, 1, 2, 3], measuredX: null });
+		expect(stripGeometry(f.seq(), 299, -10, 300).frames).toEqual([297, 298, 299]);
+	});
+
+	it('the waveform path is closed and inside the box; empty input draws nothing; hostile numbers never throw', () => {
+		expect(wavePath([], 100, 50)).toBe('');
+		const p = wavePath([-60, -6, Number.NaN, 0, 12], 100, 50);
+		expect(p.startsWith('M')).toBe(true);
+		expect(p.endsWith('Z')).toBe(true);
+		const nums = [...p.matchAll(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g)].map((m) => [
+			Number(m[1]),
+			Number(m[2]),
+		]);
+		expect(nums.every(([x, y]) => x! >= 0 && x! <= 100 && y! >= 0 && y! <= 50)).toBe(true);
+		fc.assert(
+			fc.property(
+				fc.array(fc.double()),
+				fc.integer({ min: -5, max: 2000 }),
+				(a, w) => typeof wavePath(a, w, 40) === 'string',
+			),
+			{ numRuns: 300 },
+		);
+	});
+});

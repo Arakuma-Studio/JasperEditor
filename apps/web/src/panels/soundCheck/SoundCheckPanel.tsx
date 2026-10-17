@@ -510,6 +510,11 @@ function Summary(props: {
 
 // ── findings ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
+/** A finding over the whole checked range (integrated loudness, credits) has no moment to go to. */
+function wholeRange(r: { start: number; end: number }, all: { start: number; end: number }): boolean {
+	return r.start <= all.start && r.end >= all.end;
+}
+
 function issueName(i: SoundCheckIssue, fixedNow: boolean): string {
 	const parts = [t(SEVERITY_LABELS[i.severity]), i.timecode ?? '', messageText(i.message)];
 	if (fixedNow) parts.push(t('fixed, run again to confirm'));
@@ -663,7 +668,7 @@ function Findings(props: {
 										<Icon id={SEVERITY_ICON[i.severity]} size={14} />
 										<span className="w-12">{t(SEVERITY_LABELS[i.severity])}</span>
 									</span>
-									{i.timecode || i.range ? (
+									{i.frame !== undefined || (i.range && !wholeRange(i.range, report.range)) ? (
 										<button
 											type="button"
 											tabIndex={-1}
@@ -833,8 +838,7 @@ function Listen(props: {
 								>
 									{row.timecode}
 								</button>
-								<span className="min-w-0 flex-1 text-pr-small">
-									<span className="mr-1 text-pr-muted">{t(row.slotLabel)}:</span>
+								<span className="min-w-0 flex-1 text-pr-small" title={t(row.slotLabel)}>
 									{row.text}
 								</span>
 								<Button

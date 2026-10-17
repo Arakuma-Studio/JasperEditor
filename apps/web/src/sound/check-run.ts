@@ -137,6 +137,11 @@ export async function runSoundCheck(
 	aborts.get(session)?.abort();
 	const ac = new AbortController();
 	aborts.set(session, ac);
+	// cancel the engine job at once (a poll in flight would otherwise finish it first)
+	ac.signal.addEventListener('abort', () => {
+		const id = store.getState().running?.jobId;
+		if (id) void engine.cancelJob(id).catch(() => undefined);
+	});
 	const choice = opts.choice ?? choiceOf(session, seq.id);
 	if (opts.choice) setChoice(session, seq.id, opts.choice);
 	const req = choiceRequest(choice, seq);
@@ -181,6 +186,7 @@ export async function runSoundCheck(
 			},
 		);
 		if (aborts.get(session) === ac) aborts.delete(session);
+		if (ac.signal.aborted) throw new SoundJobError('E_CANCELLED', t('Cancelled'));
 		const jobId = store.getState().running?.jobId ?? null;
 		store.setState({ result, jobId, running: null, error: null, fixed: [] });
 		announce(session, verdictSentence(result.report.verdict, result.report.counts));
@@ -188,7 +194,7 @@ export async function runSoundCheck(
 	} catch (e) {
 		if (aborts.get(session) === ac) aborts.delete(session);
 		const err = e instanceof SoundJobError ? e : new SoundJobError('E_ENGINE', String(e));
-		const cancelled = err.code === 'E_CANCELLED';
+		const cancelled = err.code === 'E_CANCELLED' || ac.signal.aborted;
 		// a newer run replaced this one: it owns the state
 		if (ac.signal.aborted && aborts.get(session))
 			return { ok: false, code: err.code, message: err.message, cancelled };
