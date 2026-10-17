@@ -783,27 +783,49 @@ describe('performance', () => {
 		expect(t.min).toBeLessThan(50);
 	});
 
-	it('with the masking between overlapping sound effects: under 50 ms when repeats keep their weight (3 passes)', () => {
+	/** Best-of-5 wall time of the masking solve and of the one-pass (bed-alone) solve, interleaved in this process. */
+	function ratioToOnePass(events: SolverEvent[]) {
+		solveSfxGains(events, {});
+		solveSfxGains(events, { sfxMasking: false });
+		const masking: number[] = [];
+		const onePass: number[] = [];
+		let iterations = 0;
+		for (let k = 0; k < 5; k++) {
+			let t0 = performance.now();
+			solveSfxGains(events, { sfxMasking: false });
+			onePass.push(performance.now() - t0);
+			t0 = performance.now();
+			iterations = solveSfxGains(events, {}).stats.iterations;
+			masking.push(performance.now() - t0);
+		}
+		const m = Math.min(...masking);
+		const o = Math.min(...onePass);
+		return { masking: m, onePass: o, ratio: m / o, iterations };
+	}
+
+	// The masking budgets are ratios to the one-pass solve measured in the same process, interleaved (a loaded host
+	// slows both alike), and exact pass counts (WP6.5b; measured on the idle build server: 31 ms ≈ 1.8× in 3 passes,
+	// 45 ms ≈ 2.6× in 13 passes; the absolute "under 50 ms" of these cases failed at a load of 20–50).
+	it('with the masking between overlapping sound effects: 3 passes, ≤ 2.5× one pass, when repeats keep their weight', () => {
 		// a plan places a repeated sound with one role: the masking settles in one pass per weight rank
-		const t = bestOf9(events2000(true), {});
+		const t = ratioToOnePass(events2000(true));
 		console.log(
-			`solveSfxGains 2000 events, masking: min ${t.min.toFixed(1)} ms, median ${t.median.toFixed(1)} ms, ${t.iterations} passes`,
+			`solveSfxGains 2000 events, masking: ${t.masking.toFixed(1)} ms vs one pass ${t.onePass.toFixed(1)} ms (${t.ratio.toFixed(2)}×), ${t.iterations} passes`,
 		);
-		expect(t.iterations).toBeLessThanOrEqual(4);
-		expect(t.min).toBeLessThan(50);
+		expect(t.iterations).toBe(3);
+		expect(t.ratio).toBeLessThan(2.5);
 	});
 
-	it('with the masking and one sound repeated across hero, support and ambient: under 100 ms (≈ 13 passes)', () => {
-		// The stress case (WP6.5b): every repeat group spans the weights, so a hero's masked bed moves its group's
-		// median, which moves the ambient members under the other heroes… the fixed point takes ≈ 13 passes of ≈ 3 ms
-		// (measured on the idle 16-core build server: min 44–45 ms, 13 passes; one pass of the bed-alone model 17–19 ms).
-		// The budget is the 50 ms of one pass's era doubled for the iteration the model needs; the pass count is
-		// bounded by MAX_MASKING_ITERATIONS.
-		const t = bestOf9(events2000(false), {});
+	it('with the masking and one sound repeated across hero, support and ambient: ≤ 4× one pass (13 passes)', () => {
+		// The stress case: every repeat group spans the weights, so a hero's masked bed moves its group's median, which
+		// moves the ambient members under the other heroes… the fixed point takes 13 passes; only the events whose bed
+		// moved are solved again, so 13 passes cost ≈ 2.6 one-pass solves.
+		const t = ratioToOnePass(events2000(false));
 		console.log(
-			`solveSfxGains 2000 events, masking, repeats across weights: min ${t.min.toFixed(1)} ms, median ${t.median.toFixed(1)} ms, ${t.iterations} passes`,
+			`solveSfxGains 2000 events, masking, repeats across weights: ${t.masking.toFixed(1)} ms vs one pass ${t.onePass.toFixed(1)} ms (${t.ratio.toFixed(2)}×), ${t.iterations} passes`,
 		);
+		expect(t.iterations).toBe(13);
 		expect(t.iterations).toBeLessThanOrEqual(1 + MAX_MASKING_ITERATIONS);
-		expect(t.min).toBeLessThan(100);
+		expect(t.ratio).toBeLessThan(4);
 	});
 });

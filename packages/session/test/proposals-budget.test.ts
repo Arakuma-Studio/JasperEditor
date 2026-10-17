@@ -1,13 +1,29 @@
 // Regression budget of the review preview's work (WP6.5b item 15), robust to the machine's load: it counts
 // operations (transactions applied, items they carried, batches applied again one by one, invariant checks; the
-// `previewStats` counters) and compares CPU time (`process.cpuUsage`) with the one-transaction-per-item reference
+// `previewStats` counters) and compares the main thread's CPU time with the one-transaction-per-item reference
 // measured in the same process, never wall time. 120 place items as the WP3.2 plan builds them (≈ 266 items).
+import { readFileSync } from 'node:fs';
 import { createSeededIdSource, type ProposalItem, previewProposal, previewStats } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { proposalsFor } from '../src/index.ts';
 import { bigProposal, bigSession } from './big-proposal.ts';
 
 const N = 120;
+
+/**
+ * CPU time (ms) of this thread: Linux `/proc/self/task/<tid>/schedstat` (the main thread of the forked test process),
+ * not `process.cpuUsage`, which adds V8's GC and compiler threads (noisy on a loaded host); elsewhere the process's.
+ */
+function threadCpuMs(): number {
+	try {
+		const ns = Number(readFileSync(`/proc/self/task/${process.pid}/schedstat`, 'utf8').split(' ')[0]);
+		if (Number.isFinite(ns)) return ns / 1e6;
+	} catch {
+		// no procfs
+	}
+	const c = process.cpuUsage();
+	return (c.user + c.system) / 1000;
+}
 
 describe(`review preview work budget (${N} place items)`, { timeout: 600_000 }, () => {
 	it('the session builds the preview in batches: few transactions, each item applied once, one invariant check', async () => {
@@ -42,7 +58,7 @@ describe(`review preview work budget (${N} place items)`, { timeout: 600_000 }, 
 		c.dispose();
 	});
 
-	it('costs under 0.8 of the CPU time of one transaction per item (same process, interleaved, best of 3)', () => {
+	it('costs under 0.8 of the CPU time of one transaction per item (same process, interleaved, best of 5)', () => {
 		const { session, engine } = bigSession(N);
 		const p = bigProposal(session, engine, N);
 		const doc = session.getCommitted();
@@ -55,17 +71,17 @@ describe(`review preview work budget (${N} place items)`, { timeout: 600_000 }, 
 		const idsFor = (it: ProposalItem) =>
 			createSeededIdSource(`${p.id}:${it.id}:${it.selectedAlternative ?? 0}`);
 		const cpu = (batch: number) => {
-			const t = process.cpuUsage();
+			const t = threadCpuMs();
 			const r = previewProposal(doc, p, 'undecided', ctx, { idsFor, batch });
-			const d = process.cpuUsage(t);
+			const d = threadCpuMs() - t;
 			expect(r.applied).toHaveLength(p.items.length);
-			return (d.user + d.system) / 1000;
+			return d;
 		};
 		cpu(32); // warm up both paths
 		cpu(1);
 		const ref: number[] = [];
 		const got: number[] = [];
-		for (let i = 0; i < 3; i++) {
+		for (let i = 0; i < 5; i++) {
 			ref.push(cpu(1));
 			got.push(cpu(32));
 		}
