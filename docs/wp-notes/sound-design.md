@@ -6084,7 +6084,7 @@ Phase 5 code and the real app (e2e, MCP). Every defect fixed here has a regressi
 | DoD: undoable commands with undo / redo / refusals | done | `soundDesign.setVerdict` (catalog "Sound Check Verdict", example in `apps/mcp/src/examples.ts`, `sound-examples.test.ts`): add / update / remove, undo = the document before, redo, 8 refusals (`sound-check-verdicts.test.ts`) |
 | DoD: UI wired — panel, menu, shortcuts without conflicts | done | Sequence ▸ Sound Design ▸ Run Sound Check; the findings list keys are `soundCheck`-scope commands (Keyboard Shortcuts lists them, remapping works: panel test); `apps/web/test/keymap.test.ts`, `edit-ux-keyboard.test.tsx` pass |
 | DoD: preview / export | n/a (metadata) | Sound Check renders nothing new; verdicts are comment markers; "Run Sound Check before export" in the Export dialog (panel test, e2e) |
-| DoD: agents (MCP tools, README, guide) | done | `sound_check` (`humanVerdicts` with `stale`), `get_sound_check` (new), `view_sound_timeline`; README tool list (353), SOUND_GUIDE "Check"; `readme-tools`, `conventions`, `sound-guide`, `sound-check-verdicts` tests |
+| DoD: agents (MCP tools, README, guide) | done | `sound_check` (`humanVerdicts` with `stale`), `get_sound_check` (new), `view_sound_timeline`; README tool list (354 after the WP6.2 merge), SOUND_GUIDE "Check"; `readme-tools`, `conventions`, `sound-guide`, `sound-check-verdicts` tests |
 | DoD: i18n (en / es), a11y, tokens | done | every Sound Check template, fix reason and unmeasured reason is a model string with a Spanish text and the same placeholders (`sound-check-model.test.ts`); `node scripts/i18n.mjs --check`; `check-tokens` |
 | DoD: run in the real app and look | done | e2e (Chromium, built stack) and MCP real run below |
 
