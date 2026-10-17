@@ -213,6 +213,49 @@ export function bandLevels(channels: Float32Array[], sampleRate: number, window:
 	return octaveBandsFromPower(w.power, w.binHz);
 }
 
+/** Points of an energy profile (`energyProfile`): the cumulative share at k / N of the window, k = 0 … N. */
+export const ENERGY_PROFILE_POINTS = 32;
+
+/**
+ * How a sound's energy is spread over `window` (seconds): the cumulative share of its energy (all channels, broadband)
+ * at k / {@link ENERGY_PROFILE_POINTS} of the window, k = 0 … N — N + 1 non-decreasing numbers from 0 to 1. The
+ * masking solver uses it to count a masker by the energy that falls under another sound's window (a decaying chime has
+ * most of it at its start), instead of spreading it evenly. Silence or an invalid window: the even spread (k / N).
+ * Never throws.
+ */
+export function energyProfile(channels: Float32Array[], sampleRate: number, window: TimeWindow): number[] {
+	const N = ENERGY_PROFILE_POINTS;
+	const even = (): number[] => Array.from({ length: N + 1 }, (_, k) => k / N);
+	if (!validRate(sampleRate)) return even();
+	const ch = usableChannels(channels);
+	let len = 0;
+	for (const c of ch) len = Math.max(len, c.length);
+	const range = sampleRange(window, sampleRate, len);
+	if (ch.length === 0 || !range) return even();
+	const [s0, s1] = range;
+	// energy of N equal slices of the window, then their running share
+	const slice = new Float64Array(N);
+	for (const c of ch) {
+		const m = Math.min(c.length, s1);
+		for (let i = s0; i < m; i++) {
+			const x = c[i]!;
+			if (x - x !== 0) continue;
+			const k = Math.min(N - 1, Math.floor(((i - s0) * N) / (s1 - s0)));
+			slice[k] = slice[k]! + x * x;
+		}
+	}
+	let total = 0;
+	for (let k = 0; k < N; k++) total += slice[k]!;
+	if (!(total > 0) || !Number.isFinite(total)) return even();
+	const out = [0];
+	let acc = 0;
+	for (let k = 0; k < N; k++) {
+		acc += slice[k]!;
+		out.push(k === N - 1 ? 1 : Math.min(1, acc / total));
+	}
+	return out;
+}
+
 /** Combined level (dB) of a set of band levels: 10·log10 Σ 10^(L/10); {@link BAND_FLOOR_DB} for none. */
 export function sumBandsDb(levels: readonly number[]): number {
 	let e = 0;

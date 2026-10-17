@@ -78,6 +78,27 @@ describe('overlapping sound effects mask the sounds of a higher weight', () => {
 		expect(one(t, 'h').maskedBy).toEqual([]);
 	});
 
+	it('an energy profile counts a decaying masker by the energy it has under the event', () => {
+		// a 4 s ambience with 90 % of its energy in its first second; a hero over its last second gets the rest
+		const prof = Array.from({ length: 33 }, (_, k) => {
+			const x = k / 32;
+			return x <= 0.25 ? 0.9 * (x / 0.25) : 0.9 + 0.1 * ((x - 0.25) / 0.75);
+		});
+		const amb = { clipId: 'amb', weight: 'ambient' as const, startSec: 0, endSec: 4 };
+		const late = ev({ clipId: 'h', weight: 'hero', startSec: 3, endSec: 4 });
+		const r = solveSfxGains([ev({ ...amb, energyProfile: prof }), late]);
+		// its mean power over 4 s is −38 dB at 500 Hz; the last second holds 0.1 / 3 of its energy: × 4 s / 1 s
+		const eff = dB10(e10(-40) + ((0.1 / 3) * 4) * e10(-38));
+		expect(one(r, 'h').gainDb).toBeCloseTo(Math.round((eff + 25) * 100) / 100, 9);
+		// spread evenly: 1 s of 4 → 1 × its mean power
+		const even = solveSfxGains([ev(amb), late]);
+		expect(one(even, 'h').gainDb).toBeCloseTo(Math.round((dB10(e10(-40) + e10(-38)) + 25) * 100) / 100, 9);
+		// a broken profile is reported and replaced by the even spread
+		const bad = solveSfxGains([ev({ ...amb, energyProfile: [0, 2, 1] }), late]);
+		expect(one(bad, 'h').gainDb).toBe(one(even, 'h').gainDb);
+		expect(bad.warnings.map((w) => w.code)).toContain('W_SANITISED');
+	});
+
 	it('a support masks a hero (not the other way round); peers and the layers of one cue do not mask each other', () => {
 		const r = solveSfxGains([
 			ev({ clipId: 'h', weight: 'hero', startSec: 0, endSec: 0.5 }),

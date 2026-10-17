@@ -1,7 +1,9 @@
 // Masking solver, end to end on real signals (spec 12 §2.4, P4-R1): a bed (pink noise plus an amplitude-modulated
 // speech-band tone during "dialogue") and Jasper Synth sounds are measured with the shared band / loudness analysis,
 // solved, mixed sample by sample at the solved gains, and the mix is measured again. The lift each event achieves in
-// the mix must match what the solver reported, and the caps must hold on the rendered audio.
+// the mix must match what the solver reported, and the caps must hold on the rendered audio. The lift is over the bed
+// plus the lower-weight sound effects playing under the event (an ambient chime under the clicks; WP6.5b), rendered
+// at their solved gains; and all the sound effects together never pass the true-peak ceiling (BS.1770 meter).
 import { LoudnessMeter } from '@jasper/audio-dsp';
 import { describe, expect, it } from 'vitest';
 import {
@@ -9,6 +11,7 @@ import {
 	bandLevels,
 	bedLocalPeakLu,
 	DIALOGUE_LIFT_DB,
+	energyProfile,
 	OCTAVE_BAND_CENTRES_HZ,
 	QUIET_BED_OFFSET_LU,
 	renderSynth,
@@ -94,6 +97,7 @@ describe('masking solver on rendered audio', () => {
 				startSec: win.start,
 				endSec: win.end,
 				soundBandsDb: bandLevels(s.channels, SR, own),
+				energyProfile: energyProfile(s.channels, SR, own),
 				soundPeakLu: shortTermPeakLu(s.channels, SR, own),
 				truePeakDb: truePeakDb(s.channels),
 				bedBandsDb: bandLevels(bed, SR, win),
@@ -106,33 +110,47 @@ describe('masking solver on rendered audio', () => {
 		expect(result.warnings.filter((w) => w.code === 'W_UNRESOLVED')).toEqual([]);
 
 		const rows: string[] = [];
+		const gainOf = (id: string) => result.events.find((x) => x.clipId === id)!.gainDb;
+		/** `into` += the event's sound × its solved gain at its start sample. */
+		const addSound = (into: Float32Array[], e: SolverEvent, g: number) => {
+			const s = sounds.get(e.clipId)!;
+			const off = Math.round(e.startSec * SR);
+			const n = Math.round((e.endSec - e.startSec) * SR);
+			const k = 10 ** (g / 20);
+			for (let c = 0; c < into.length; c++)
+				for (let j = 0; j < n; j++) into[c]![off + j] = into[c]![off + j]! + s[c]![j]! * k;
+		};
 		events.forEach((e, i) => {
 			const out = result.events[i]!;
 			const s = sounds.get(e.clipId)!;
 			const g = out.gainDb;
-			// render this event over the bed: mix = bed + sound × gain, the sound placed at its start sample
-			const off = Math.round(e.startSec * SR);
-			const n = Math.round((e.endSec - e.startSec) * SR);
-			const mix = bed.map((c) => new Float32Array(c));
-			const k = 10 ** (g / 20);
-			for (let c = 0; c < mix.length; c++)
-				for (let j = 0; j < n; j++) mix[c]![off + j] = mix[c]![off + j]! + s[c]![j]! * k;
+			// the bed this event has to clear: the bed + the lower sound effects under it, at their solved gains
+			const masked = bed.map((c) => new Float32Array(c));
+			for (const id of out.maskedBy) addSound(masked, events.find((x) => x.clipId === id)!, gainOf(id));
+			// render this event over it: mix = masked bed + sound × gain, the sound placed at its start sample
+			const mix = masked.map((c) => new Float32Array(c));
+			addSound(mix, e, g);
 			const win = { start: e.startSec, end: e.endSec };
 			const mixBands = bandLevels(mix, SR, win);
-			const bedBands = e.bedBandsDb;
+			const maskedBands = bandLevels(masked, SR, win);
 			const dom = out.dominantBands.map((hz) => OCTAVE_BAND_CENTRES_HZ.indexOf(hz));
 			expect(dom.length).toBeGreaterThan(0);
-			// the sound's share of the mix energy (bed and sound are uncorrelated) over the bed, in the dominant bands
+			const bedBands = e.bedBandsDb;
+			// the sound's share of the mix energy (bed and sound are uncorrelated) over the masked bed, in the dominant bands
 			const eMix = 10 ** (energyDb(mixBands, dom) / 10);
-			const eBed = 10 ** (energyDb(bedBands, dom) / 10);
+			const eBed = 10 ** (energyDb(maskedBands, dom) / 10);
 			const measuredLift = 10 * Math.log10((eMix - eBed) / eBed);
-			// and exactly: the mix minus the bed is the gained sound
-			const diff = mix.map((c, ci) => c.map((v, j) => v - bed[ci]![j]!));
-			const exactLift = energyDb(bandLevels(diff, SR, win), dom) - energyDb(bedBands, dom);
+			// and exactly: the mix minus the masked bed is the gained sound
+			const diff = mix.map((c, ci) => c.map((v, j) => v - masked[ci]![j]!));
+			const exactLift = energyDb(bandLevels(diff, SR, win), dom) - energyDb(maskedBands, dom);
+			// the masking the solver estimated (maskers' power spread over their windows) vs the rendered one
+			const maskingDb = energyDb(maskedBands, dom) - energyDb(bedBands, dom);
 			rows.push(
-				`${e.clipId.padEnd(7)} ${out.dominantBands.join('+').padEnd(10)} gain ${g.toFixed(2).padStart(7)} report ${out.achievedLiftDb!.toFixed(2).padStart(6)} mix ${measuredLift.toFixed(2).padStart(6)} exact ${exactLift.toFixed(2).padStart(6)}  ${out.reason}`,
+				`${e.clipId.padEnd(7)} ${out.dominantBands.join('+').padEnd(10)} gain ${g.toFixed(2).padStart(7)} report ${out.achievedLiftDb!.toFixed(2).padStart(6)} mix ${measuredLift.toFixed(2).padStart(6)} exact ${exactLift.toFixed(2).padStart(6)} masking ${out.sfxMaskingDb!.toFixed(2)}/${maskingDb.toFixed(2)} [${out.maskedBy.join(',')}]  ${out.reason}`,
 			);
 			expect(Math.abs(exactLift - out.achievedLiftDb!), e.clipId).toBeLessThan(0.5);
+			// the masking estimate from the maskers' energy profiles is close to the rendered masking
+			expect(Math.abs(out.sfxMaskingDb! - maskingDb), `${e.clipId} masking`).toBeLessThan(0.25);
 			if (out.achievedLiftDb! >= -3)
 				expect(Math.abs(measuredLift - out.achievedLiftDb!), e.clipId).toBeLessThan(0.5);
 			// a lift short of its target always has a reason
@@ -157,6 +175,13 @@ describe('masking solver on rendered audio', () => {
 			}
 		});
 		console.log(`masking oracle (lift in dB over the bed):\n${rows.join('\n')}`);
+		// every sound effect together (no bed), at the solved gains: the true peak (BS.1770-4 annex 2) of the sum is
+		// under the ceiling — the summed-overlap check bounds it by the sum of the overlapping events' true peaks
+		const sfx = bed.map((c) => new Float32Array(c.length));
+		for (const e of events) addSound(sfx, e, gainOf(e.clipId));
+		const sumTp = truePeakDb(sfx);
+		console.log(`all sound effects together: true peak ${sumTp.toFixed(2)} dBTP (ceiling ${CEILING})`);
+		expect(sumTp).toBeLessThanOrEqual(CEILING + 0.01);
 		// the scene exercises the shadow and the dialogue guard
 		const by = (id: string) => result.events.find((e) => e.clipId === id)!;
 		expect(by('whoosh').limitedBy).toContain('hero-shadow');

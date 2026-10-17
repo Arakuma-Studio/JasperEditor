@@ -739,4 +739,68 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 			expect(Math.abs(playsAt(s.clips[id] as SfxClip, F) - 250 * F)).toBeLessThanOrEqual(1);
 		expect(FLICKS_PER_SECOND).toBe(705_600_000);
 	});
+
+	it('place_sound warns of a hero under dialogue only where speech is heard (voice activity, mix gains)', async () => {
+		// 8 s of "dialogue": silence until 4 s, then a voiced 180 Hz buzz with a 4 Hz syllable envelope (no transcript:
+		// the engine's voice activity finds it)
+		const sr = 48_000;
+		const n = 8 * sr;
+		const pcm = Buffer.alloc(44 + n * 2);
+		pcm.write('RIFF', 0);
+		pcm.writeUInt32LE(36 + n * 2, 4);
+		pcm.write('WAVEfmt ', 8);
+		pcm.writeUInt32LE(16, 16);
+		pcm.writeUInt16LE(1, 20);
+		pcm.writeUInt16LE(1, 22);
+		pcm.writeUInt32LE(sr, 24);
+		pcm.writeUInt32LE(sr * 2, 28);
+		pcm.writeUInt16LE(2, 32);
+		pcm.writeUInt16LE(16, 34);
+		pcm.write('data', 36);
+		pcm.writeUInt32LE(n * 2, 40);
+		for (let i = 0; i < n; i++) {
+			const t = i / sr;
+			const v =
+				t < 4
+					? 0
+					: 0.3 * (0.5 - 0.5 * Math.cos(2 * Math.PI * 4 * (t - 4))) * Math.sign(Math.sin(2 * Math.PI * 180 * t));
+			pcm.writeInt16LE(Math.round(v * 32767), 44 + i * 2);
+		}
+		const wav = join(work, 'dialogue.wav');
+		writeFileSync(wav, pcm);
+		const pid = (await ok<{ projectId: string }>('create_project', { name: 'Hero under dialogue' })).projectId;
+		const media = await ok<{ imported: { mediaId: string }[] }>('import_media', { projectId: pid, paths: [wav] });
+		const placed = await ok<{ clips: { id: string; kind: string }[] }>('add_clip', {
+			projectId: pid,
+			media: media.imported[0]!.mediaId,
+			at: 0,
+		});
+		const voice = placed.clips.find((c) => c.kind === 'audio')!.id;
+		await ok('apply_commands', {
+			projectId: pid,
+			label: 'Dialogue',
+			commands: [{ type: 'essentialSound.setType', clipIds: [voice], audioType: 'dialogue' }],
+		});
+		const heroAt = async (at: number) =>
+			(
+				await ok<{ placementWarnings?: { code: string }[] }>('place_sound', {
+					projectId: pid,
+					at,
+					createCue: false,
+					weight: 'hero',
+					layers: [{ sound: { type: 'hit' }, role: 'hero' }],
+				})
+			).placementWarnings?.map((w) => w.code) ?? [];
+		// 2 s: inside the clip but nobody speaks (the whole-clip rule warned here)
+		expect(await heroAt(60)).not.toContain('W_HERO_UNDER_DIALOGUE');
+		// 6 s: in the speech
+		expect(await heroAt(180)).toContain('W_HERO_UNDER_DIALOGUE');
+		// the dialogue clip muted by its gain: not heard, so not dialogue
+		await ok('apply_commands', {
+			projectId: pid,
+			label: 'Mute the dialogue',
+			commands: [{ type: 'audio.setGain', clipIds: [voice], mode: 'set', db: -96 }],
+		});
+		expect(await heroAt(180)).not.toContain('W_HERO_UNDER_DIALOGUE');
+	});
 });

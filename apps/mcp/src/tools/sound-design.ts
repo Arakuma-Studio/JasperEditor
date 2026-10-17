@@ -990,7 +990,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 							});
 					}
 					// Warnings against the edit as it is now (before this placement).
-					const warnings = placementWarnings(doc, seq, cue, frame, a);
+					const warnings = await placementWarnings(ctx, doc, seq, cue, frame, a, extra.signal);
 					return {
 						commands,
 						sequenceId: seq.id,
@@ -1476,24 +1476,61 @@ type PlaceArgs = {
 	clampStart?: boolean | undefined;
 };
 
+/**
+ * Where dialogue is heard in `seq` (the project's one definition, `dialogueSpans`): asked of the engine, which measures
+ * the voice activity of dialogue clips without a transcript (cached per media range), so a hero in a pause of a long
+ * dialogue clip is not "under dialogue"; mix gains (a muted or ducked-out stretch) count either way. When the engine
+ * cannot say, the pure rule here: transcript words, else whole dialogue clips (`whole: true`).
+ */
+async function heardDialogue(
+	ctx: ToolContext,
+	doc: ProjectDocument,
+	seq: Sequence,
+	signal?: AbortSignal,
+): Promise<{ ranges: Array<[number, number]>; whole: boolean }> {
+	try {
+		const res = await soundCall<SoundCuesResponse>(ctx, (c) =>
+			c.soundDesignCues(
+				{
+					envelope: toolEnvelope(doc, 0),
+					sequenceId: seq.id,
+					// the dialogue spans are what is asked; the derivation is kept to one frame of one source
+					opts: { sources: ['markers'], range: { start: 0, end: 1 }, maxCues: 1 },
+				},
+				signal,
+			),
+		);
+		return {
+			ranges: res.dialogue.map((d) => [d.start, d.end] as [number, number]),
+			whole: res.voice?.state === 'partial' || res.voice?.state === 'failed',
+		};
+	} catch {
+		return { ranges: sequenceDialogueRanges(doc, seq), whole: true };
+	}
+}
+
 /** Hero warnings of a placement against the edit as it is (before it). */
-function placementWarnings(
+async function placementWarnings(
+	ctx: ToolContext,
 	doc: ProjectDocument,
 	seq: Sequence,
 	cue: SoundCue | null,
 	frame: number,
 	a: PlaceArgs,
-): { code: string; message: string }[] {
+	signal?: AbortSignal,
+): Promise<{ code: string; message: string }[]> {
 	const warnings: { code: string; message: string }[] = [];
 	const weightHere = cue?.weight ?? a.weight ?? (a.layers[0]!.role === 'hero' ? 'hero' : 'support');
 	const heroHere = weightHere === 'hero' || a.layers.some((l) => l.role === 'hero');
 	if (!heroHere) return warnings;
 	const F = flicksPerFrame(seq.settings.frameRate as Rational);
-	const dialogue = sequenceDialogueRanges(doc, seq);
-	if (dialogue.some(([s, e]) => frame >= s && frame < e))
+	const dialogue = await heardDialogue(ctx, doc, seq, signal);
+	if (dialogue.ranges.some(([s, e]) => frame >= s && frame < e))
 		warnings.push({
 			code: 'W_HERO_UNDER_DIALOGUE',
-			message: `A hero sound at ${sequenceTimecode(seq, frame)} plays under spoken words: make it support, or move it.`,
+			message: `A hero sound at ${sequenceTimecode(seq, frame)} plays under spoken words${
+				dialogue.whole ? ' (or a dialogue clip whose voice activity could not be measured)' : ''
+			}: make it support, or move it.`,
 		});
 	const fps = FLICKS_PER_SECOND / F;
 	for (const c of sfxClipsOf(seq)) {
@@ -1657,7 +1694,7 @@ async function proposePlacement(
 		...(extraCommands.length ? { extraCommands } : {}),
 	};
 	const built = soundProposalItems(doc, seq.id, media, [placement], { binName: SOUND_EFFECTS_BIN });
-	const warnings = placementWarnings(doc, seq, cue, frame, a);
+	const warnings = await placementWarnings(ctx, doc, seq, cue, frame, a);
 	const label =
 		a.layers.length > 1
 			? soundText(SOUND_LABELS.placeSounds, a.layers.length)

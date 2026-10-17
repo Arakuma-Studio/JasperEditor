@@ -131,6 +131,7 @@ export function solverEventOf(info: SfxInfo, m: MeasuredSound): SolverEvent {
 		baseGainDb: info.baseGainDb,
 		userOffsetDb: info.userOffsetDb,
 		...(info.cueKey ? { cueKey: `cue:${info.cueKey}` } : {}),
+		...(m.energyProfile ? { energyProfile: m.energyProfile } : {}),
 	};
 }
 

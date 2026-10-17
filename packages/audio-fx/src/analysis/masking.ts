@@ -21,8 +21,8 @@
 //
 // Overlapping sound effects (spec 12 §2.4 "hero vs support"; wp-note "WP6.5b"): a sound effect of a LOWER weight that
 // plays under an event is part of that event's bed for the target lift (ambient → support → hero: an ambience masks the
-// supports and heroes over it, a support masks a hero), its power spread evenly over its own window and counted by the
-// share of the event's window it covers. Peers (the same weight) do not mask each other — two equal sounds cannot
+// supports and heroes over it, a support masks a hero), counted by the energy it has under the event's window (its
+// `energyProfile`, else spread evenly over its own window) averaged over that window. Peers (the same weight) do not mask each other — two equal sounds cannot
 // each clear the other by a positive lift — and the layers of one cue (`cueKey`) are one designed sound. A hero does
 // not mask its supports: step 3 keeps them under it on purpose. The bed cap and the dialogue guard stay against the
 // bed (the non-SFX mix and the speech in it). The gains depend on each other through the masking, so the solve is
@@ -39,7 +39,7 @@
 // final gain (rounded to
 // 0.01 dB, which may miss a bound by at most 0.005 dB when the allowed interval holds no 0.01 dB step); a violation
 // without a reported conflict is a W_UNRESOLVED warning (the tests require none).
-import { BAND_FLOOR_DB, OCTAVE_BAND_CENTRES_HZ } from './bands.ts';
+import { BAND_FLOOR_DB, ENERGY_PROFILE_POINTS, OCTAVE_BAND_CENTRES_HZ } from './bands.ts';
 
 /**
  * A lift this large means the bed under the sound is at the measurement floor (nothing plays under it): the reason
@@ -152,6 +152,12 @@ export interface SolverEvent {
 	 * other. Absent / empty: its own.
 	 */
 	cueKey?: string;
+	/**
+	 * How its energy is spread over its window (`energyProfile`: the cumulative share at k / 32 of the window, 33
+	 * non-decreasing numbers from 0 to 1): as a masker it counts by the energy under the other sound's window. Absent:
+	 * spread evenly.
+	 */
+	energyProfile?: number[];
 }
 
 export interface SolverOptions {
@@ -279,6 +285,8 @@ type Clean = {
 	/** min over the speech bands of (bed − sound), dB. */
 	speechRoom: number;
 	cueKey: string;
+	/** Cumulative energy share at k / N of the window (k = 0 … N); null = even. */
+	profile: Float64Array | null;
 };
 
 type Raw = Record<string, unknown>;
@@ -346,6 +354,7 @@ function clean(raw: unknown, index: number, notes: string[]): Clean {
 	const offset = Math.max(-1000, Math.min(1000, readNum(e, 'userOffsetDb', 0, true, notes)));
 	const clipId = readStr(e, 'clipId', `#${index}`, notes);
 	const cueKey = readStr(e, 'cueKey', '', notes);
+	const profile = readProfile(e.energyProfile, notes);
 	const soundId = readStr(e, 'soundId', '', notes);
 	const type = readStr(e, 'type', '', notes);
 	const sound = readBands(e, 'soundBandsDb', notes);
@@ -377,7 +386,52 @@ function clean(raw: unknown, index: number, notes: string[]): Clean {
 		bedDom: dom.length ? levelIn(bed, dom) : BAND_FLOOR_DB,
 		speechRoom,
 		cueKey,
+		profile,
 	};
+}
+
+/** An energy profile: N + 1 finite, non-decreasing numbers from 0 to 1 (null / undefined: even; else reported). */
+function readProfile(v: unknown, notes: string[]): Float64Array | null {
+	if (v === undefined || v === null) return null;
+	const n = ENERGY_PROFILE_POINTS;
+	if (!Array.isArray(v) || v.length !== n + 1) {
+		notes.push(`energyProfile is not ${n + 1} numbers (even spread used)`);
+		return null;
+	}
+	const out = new Float64Array(n + 1);
+	let prev = 0;
+	for (let k = 0; k <= n; k++) {
+		const x = v[k];
+		if (typeof x !== 'number' || !Number.isFinite(x) || x < prev - 1e-9 || x > 1 + 1e-9) {
+			notes.push('energyProfile is not a cumulative share from 0 to 1 (even spread used)');
+			return null;
+		}
+		prev = Math.min(1, Math.max(prev, x));
+		out[k] = prev;
+	}
+	if (Math.abs(out[0]!) > 1e-9 || Math.abs(out[n]! - 1) > 1e-9) {
+		notes.push('energyProfile does not run from 0 to 1 (even spread used)');
+		return null;
+	}
+	out[0] = 0;
+	out[n] = 1;
+	return out;
+}
+
+/** Share of an event's energy in `[a, b]` (seconds on the timeline), from its profile. */
+function energyShare(ev: Clean, a: number, b: number): number {
+	const len = ev.end - ev.start;
+	if (!(len > 0) || !ev.profile) return 0;
+	const x0 = Math.max(0, Math.min(1, (a - ev.start) / len));
+	const x1 = Math.max(0, Math.min(1, (b - ev.start) / len));
+	const at = (x: number): number => {
+		const p = ev.profile!;
+		const n = p.length - 1;
+		const t = x * n;
+		const k = Math.min(n - 1, Math.floor(t));
+		return p[k]! + (p[k + 1]! - p[k]!) * (t - k);
+	};
+	return Math.max(0, at(x1) - at(x0));
 }
 
 /** Dominant band indices: the strongest, plus the second when its energy share is ≥ {@link DOMINANT_SHARE}. */
@@ -605,7 +659,7 @@ const masks = (m: Clean, t: Clean): boolean =>
 	t.dom.length > 0 &&
 	!(t.cueKey !== '' && t.cueKey === m.cueKey);
 
-/** Per event: its maskers (event indices, canonical order) and the share of its window each covers. */
+/** Per event: its maskers (event indices, canonical order) and the factor on each one's mean power (energy under it). */
 type Maskers = { j: number[]; share: number[] }[];
 
 /** The maskers of every event, or null when nothing masks anything. One sweep over the canonical order. */
@@ -623,16 +677,19 @@ function maskerLists(evs: Clean[], order: number[]): Maskers | null {
 			if (!(eb.start < ea.end)) break;
 			const lb = eb.end - eb.start;
 			if (!(lb > 0)) continue;
-			const ov = Math.min(ea.end, eb.end) - eb.start; // eb.start ≥ ea.start
-			if (!(ov > 0)) continue;
+			const ov0 = eb.start; // eb.start ≥ ea.start
+			const ov1 = Math.min(ea.end, eb.end);
+			if (!(ov1 > ov0)) continue;
+			// the masker's mean power over its window × its window / the target's window × its energy share under
+			// the target: its energy there, averaged over the target's window
 			if (masks(eb, ea)) {
 				out[a]!.j.push(b);
-				out[a]!.share.push(Math.min(1, ov / la));
+				out[a]!.share.push(eb.profile ? (energyShare(eb, ov0, ov1) * lb) / la : (ov1 - ov0) / la);
 				any = true;
 			}
 			if (masks(ea, eb)) {
 				out[b]!.j.push(a);
-				out[b]!.share.push(Math.min(1, ov / lb));
+				out[b]!.share.push(ea.profile ? (energyShare(ea, ov0, ov1) * la) / lb : (ov1 - ov0) / lb);
 				any = true;
 			}
 		}
