@@ -100,7 +100,17 @@ export function checkLinearDips(
  * the dips the curve is kept (to 0.05 dB on rebuilt curves), inside = min(curve, dip), keys outside kept, exact
  * unwrite. Returns the largest deviation of a rebuilt curve outside the dips.
  */
-export function checkCurvedDips(kfs: Keyframe<number>[], dips: Dip[], li: 0 | 1, value = -3): number {
+export function checkCurvedDips(
+	kfs: Keyframe<number>[],
+	dips: Dip[],
+	li: 0 | 1,
+	value = -3,
+	/**
+	 * Straight lanes' tolerance (dB). 1e-5 for dips on whole flicks; dips between flicks are drawn with keys on whole
+	 * lane flicks (≤ half a lane flick off: ≤ 60 dB/ms × 0.5 flick ≈ 4.3e-5 dB on the steepest 1 ms fade).
+	 */
+	straightTol = 1e-5,
+): number {
 	let maxCurved = 0;
 	const { lane } = CURVED_LANES[li];
 	const anim: Animatable<number> = { value, keyframes: kfs };
@@ -132,7 +142,7 @@ export function checkCurvedDips(kfs: Keyframe<number>[], dips: Dip[], li: 0 | 1,
 	// rebuilt curves: within sampling (1 ms samples at most 0.001 dB off; steeper bends a little more);
 	// straight ones: exact (to rounding)
 	const tolOut = curved ? 0.05 : 1e-6;
-	const tol = curved ? 0.05 : 1e-5;
+	const tol = curved ? 0.05 : straightTol;
 	const nearStep = (t: number) => kfs.some((kf, j) => j > 0 && Math.abs(lane.toSeq(kf.time) - t) <= 3);
 	const end = Math.min(lane.span[1], 4.5 * S);
 	for (let k = 0; k <= 300; k++) {

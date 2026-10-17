@@ -451,16 +451,28 @@ export function mergeDips(
 			adaptiveSamples(fl, a, b, xs);
 			for (const x of xs) pts.add(lane.toSeq(x));
 		}
-		// Values at the times the keys are stored at (whole lane flicks), so the curve outside stays the same line.
+		// Values at the times the keys are stored at (whole lane flicks), so the curve outside stays the same line; the
+		// dip's value is the one at the breakpoint itself (WP6.5b: a window edge between two flicks, stored half a flick
+		// inside, took the dip there, and as a lane's first key carried it over everything before the window).
 		const snap = (t: number) => lane.toSeq(Math.round(lane.toLane(t)));
-		const times = [...new Set([...pts].map(snap))]
-			.filter((t) => t >= ws - 1 && t <= we + 1)
-			.sort((x, y) => x - y);
+		const rawOf = new Map<number, number[]>();
+		for (const p of pts) {
+			const t = snap(p);
+			const list = rawOf.get(t);
+			if (list) list.push(p);
+			else rawOf.set(t, [p]);
+		}
+		const dipAt = (t: number) => {
+			let v = Number.POSITIVE_INFINITY;
+			for (const p of rawOf.get(t) ?? [t]) v = Math.min(v, D(p));
+			return v;
+		};
+		const times = [...rawOf.keys()].filter((t) => t >= ws - 1 && t <= we + 1).sort((x, y) => x - y);
 		const out: [number, number][] = [];
 		for (let i = 0; i < times.length; i++) {
 			const t = times[i]!;
 			const e = E(t);
-			out.push([t, Math.min(e, D(t))]);
+			out.push([t, Math.min(e, dipAt(t))]);
 			const tn = times[i + 1];
 			if (tn === undefined) break;
 			// where the two lines cross between two breakpoints (the dip's continuous curve; both ends inside it)

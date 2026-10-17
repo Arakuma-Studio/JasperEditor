@@ -180,7 +180,9 @@ describe('mergeDips targeted hunt (properties)', () => {
 					const kfs = keysOf(keys.map((k) => ({ ...k, time: k.t * 100 * MS * (li === 1 ? 2 : 1) })));
 					// the curved check's tolerances assume dips that dip (≤ −0.5 dB) and levels inside the clamp
 					const deep = ds.map((d) => ({ ...d, depthDb: Math.min(-0.5, Math.max(-60, d.depthDb)) }));
-					checkCurvedDips(kfs, deep, li);
+					// dips between whole flicks (the generator's thirds and halves): straight lanes within 1e-4 dB
+					const whole = deep.every((d) => Number.isInteger(d.start) && Number.isInteger(d.end));
+					checkCurvedDips(kfs, deep, li, -3, whole ? 1e-5 : 1e-4);
 				}),
 				{ numRuns: RUNS },
 			);
@@ -279,9 +281,45 @@ describe('mergeDips: a steep Bézier rebuilt next to a dip (WP6.5b hunt)', () =>
 		expect(r.windows).toEqual([[3071 * MS, 3900 * MS]]);
 		let worst = 0;
 		for (let t = 3801 * MS; t <= 3900 * MS; t += MS / 40)
-			worst = Math.max(worst, Math.abs(evaluate({ value: -3, keyframes: r.keyframes }, t) - evaluate(anim, t)));
+			worst = Math.max(
+				worst,
+				Math.abs(evaluate({ value: -3, keyframes: r.keyframes }, t) - evaluate(anim, t)),
+			);
 		expect(worst).toBeLessThanOrEqual(0.01);
 		expect(r.written.length).toBeLessThanOrEqual(512);
 		checkCurvedDips(kfs, ds, 0);
+	});
+
+	it('a dip between flicks on a reversed 2× clip: straight lanes within half a lane flick of the dip', () => {
+		// the curved generator's counterexample (0.000014 dB over the straight lanes' 1e-5): a dip whose edges fall
+		// between flicks; keys live on whole lane flicks
+		checkCurvedDips(
+			[],
+			[{ start: 89_204_493.666_666_67, end: 178_408_987.333_333_34, depthDb: -60, fadeMs: 0 }],
+			1,
+			-3,
+			1e-4,
+		);
+	});
+});
+
+describe('mergeDips: a dip window edge between two flicks (WP6.5b hunt)', () => {
+	it('the key written at the edge holds the curve, not the dip (the static lane before it stays at its level)', () => {
+		// the grid generator's counterexample: a zero-length dip at 7 056 001.5 flicks (10 ms + 1.5 flicks), 1 ms fades:
+		// its window starts at 6 350 401.5; the edge key, stored at 6 350 402, took the dip there (−0.0000425 dB) and,
+		// as the first key, carried it over the whole lane before the window
+		const ds: Dip[] = [{ start: 7_056_001.5, end: 7_056_001.5, depthDb: -59.999, fadeMs: 0 }];
+		let i = 0;
+		const r = mergeDips({ value: 0, keyframes: [] }, SEQUENCE_LANE, ds, {
+			newId: () => `n${i++}`,
+			clamp: [-96, 15],
+		})!;
+		expect(r.keyframes[0]!.value).toBe(0);
+		expect(r.keyframes.at(-1)!.value).toBe(0);
+		expect(evaluate({ value: 0, keyframes: r.keyframes }, 0)).toBe(0);
+		checkLinearDips([], 0, [{ start: 7_056_000, end: 7_056_003, depthDb: 0, fadeMs: 0 }, ...ds], {
+			samples: 900,
+			step: 5 * MS,
+		});
 	});
 });
