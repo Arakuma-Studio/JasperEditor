@@ -773,7 +773,7 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 				{ path: ['clipId'] },
 			);
 		align = resolveSoundAlign(old!.types, 'auto');
-		const pt = align === 'peak' ? t.peakSec : align === 'start' ? t.onsetSec : t.durationSec;
+		const pt = align === 'peak' ? t.peakSec : align === 'start' ? t.onsetSec : (t.endSec ?? t.durationSec);
 		pointFlicks = clip.start * F + (pt * FLICKS_PER_SECOND - clip.sourceIn) / clip.speed.rate;
 	}
 	align = cmd.align ?? align!;

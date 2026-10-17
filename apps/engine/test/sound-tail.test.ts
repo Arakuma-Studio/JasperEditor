@@ -17,8 +17,10 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { renderMixdown, WAV_F32_HEADER_BYTES } from '../src/audio/mixdown.ts';
 import { audioWorld } from '../src/sound-design/bed.ts';
+import { writePaddedSound } from '../src/sounds/pad.ts';
+import { provenanceOf } from '../src/sounds/service.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, H, JSON_H, makeApp, TEST_FFMPEG, tempAppdir } from './helpers.ts';
+import { closeApps, DocBuilder, H, JSON_H, makeApp, register, TEST_FFMPEG, tempAppdir } from './helpers.ts';
 import { makeStarter } from './sound-fixtures.ts';
 
 const SR = 48_000;
@@ -49,6 +51,8 @@ let app: FastifyInstance;
 let folder = '';
 let projectId = '';
 const files: Record<string, string> = {};
+/** "tick 30" as registering copied it before the fix: 50 ms of lead silence, nothing after it. */
+let oldCopy = '';
 
 beforeAll(async () => {
 	process.env.JASPER_SOUND_STARTER_DIR = makeStarter(tempAppdir('jasper-tail-starter-'));
@@ -85,6 +89,12 @@ beforeAll(async () => {
 		payload: { name: 'Tails', preset: 'hd-1080p-30' },
 	});
 	projectId = (created.json() as { projectId: string }).projectId;
+	oldCopy = await writePaddedSound(coreServices(app).ffmpeg, {
+		path: files['tick 30']!,
+		samples: 2400,
+		codec: 'pcm_s16le',
+		tmpDir: tempAppdir('jasper-tail-old-'),
+	});
 }, 300_000);
 
 afterAll(async () => {
@@ -125,12 +135,27 @@ describe('a placed short sound plays whole, its tail included', { timeout: 300_0
 		const b = new DocBuilder(`hd-1080p-${label}`, 600);
 		if (df) b.tx([{ type: 'sequence.updateSettings', settings: { dropFrame: true } }]);
 		const placed: { clipId: string; frame: number; source: Float32Array; peakSample: number }[] = [];
-		for (const [i, title] of ['tick 20', 'tick 30', 'tick 40', 'late tick'].entries()) {
-			const e = await soundByTitle(title);
-			const reg = await registerSound(e.id);
-			const { mediaKey: _k, browserPlayable: _b, library, existingMediaId: _x, ...asset } = reg;
-			const r0 = b.tx([{ type: 'media.register', asset: { ...asset, derivation: null, library } }]);
-			const mediaId = (r0.results[0] as { mediaId: string }).mediaId;
+		for (const [i, title] of ['tick 20', 'tick 30', 'tick 40', 'late tick', 'old copy'].entries()) {
+			const old = title === 'old copy';
+			const e = await soundByTitle(old ? 'tick 30' : title);
+			let mediaId: string;
+			if (old) {
+				// an existing project's media: the head-only copy with the provenance it was given then (no trail, no tail)
+				const { tailSec: _t, ...descriptors } = provenanceOf(e, 'h', 0.05).descriptors!;
+				mediaId = b.addMedia(await register(app, oldCopy));
+				b.tx([
+					{
+						type: 'media.setLibraryInfo',
+						mediaId,
+						library: { ...provenanceOf(e, 'h', 0.05), descriptors },
+					},
+				]);
+			} else {
+				const reg = await registerSound(e.id);
+				const { mediaKey: _k, browserPlayable: _b, library, existingMediaId: _x, ...asset } = reg;
+				const r0 = b.tx([{ type: 'media.register', asset: { ...asset, derivation: null, library } }]);
+				mediaId = (r0.results[0] as { mediaId: string }).mediaId;
+			}
 			// cues on frames that are not whole seconds, so the In point keeps a sub-frame rest
 			const frame = Math.round((0.6 + 0.7 * i) * (fps.num / fps.den)) + i;
 			const r = b.tx([
@@ -144,7 +169,7 @@ describe('a placed short sound plays whole, its tail included', { timeout: 300_0
 				.clips[0]!;
 			expect(clip.errorFlicks).toBe(0);
 			// the source sound (left channel) and where its peak is in it
-			const src = decodeF32(files[title]!).filter((_, k) => k % 2 === 0);
+			const src = decodeF32(files[old ? 'tick 30' : title]!).filter((_, k) => k % 2 === 0);
 			placed.push({
 				clipId: clip.clipId,
 				frame,

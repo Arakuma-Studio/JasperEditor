@@ -7,7 +7,9 @@
 //   engine pads short library sounds with lead silence when it registers them (`LIBRARY_LEAD_SILENCE_SEC`) so the
 //   sub-frame rest always comes out of a quiet head and the aligned point lands exactly on the frame;
 // - placement: `peakAlignedStart` with `clampStart` (a sound that would start before frame 0 starts there with its head
-//   trimmed) and the clip covering `[In, end of media)` as `clip.place` makes it;
+//   trimmed) and the clip covering `[In, end of media)` in whole frames — and always the whole sound: its length is
+//   rounded UP to reach the sound's end (its −60 dB tail when the provenance knows it), so no clip ends inside its sound
+//   (the engine pads short sounds with trailing silence too, `LIBRARY_TRAIL_SILENCE_SEC`, so that frame is in the media);
 // - track: the preferred (drop) track, a targeted track, an unmuted "SFX…" track — the first that is unlocked and free
 //   over the clip's span — else a new "SFX n"; the clip is placed as ONE clip (`audioMapping: 'stereo'`, never the
 //   Project item's Modify ▸ Audio Channels routing, which could add clips on other tracks). Never overwrites audio.
@@ -27,6 +29,14 @@ export type SoundAlignRequest = SoundAlign | 'auto';
 export const LIBRARY_LEAD_SILENCE_SEC = 0.05;
 /** Library sounds longer than this are registered as they are (beds: aligned by their start; padding would copy them). */
 export const LIBRARY_PAD_MAX_SECONDS = 120;
+/**
+ * Seconds of silence the engine puts after a library sound that does not already end in that much quiet (its −60 dB
+ * tail closer than this to the end of the file) when it registers it: a placed clip is whole frames and its length is
+ * rounded up to the end of the sound, so the frame that holds the sound's last samples must be inside the media (one
+ * frame at 23.976 fps is 41.7 ms; 50 ms leaves room for +19 % speed). Without it a click shorter than a frame after its
+ * peak was cut at its peak (wp-note "Fix: SFX tail truncation").
+ */
+export const LIBRARY_TRAIL_SILENCE_SEC = 0.05;
 
 /**
  * Samples of lead silence a library sound gets when registered (0 = registered as it is): sounds whose quiet head is
@@ -44,15 +54,42 @@ export function libraryLeadSilenceSamples(
 	return Math.ceil(LIBRARY_LEAD_SILENCE_SEC * sampleRate - 1e-9);
 }
 
-/** Library descriptors moved by `leadSec` of silence put in front of the file (time points shift; levels do not). */
-export function shiftLibraryDescriptors(d: LibraryDescriptors, leadSec: number): LibraryDescriptors {
-	if (!(leadSec > 0)) return d;
+/**
+ * Samples of trailing silence a library sound gets when registered (0 = none): sounds of at most
+ * `LIBRARY_PAD_MAX_SECONDS` whose quiet end — the file's length after its −60 dB tail (`peakSec + tailSec`) — is shorter
+ * than `LIBRARY_TRAIL_SILENCE_SEC`, or unknown (no `tailSec`, or descriptors that analysed only the first `analysedSec`
+ * of a longer file). Whole samples at the file's rate (`ceil(0.05 · rate)`). Pure; never throws.
+ */
+export function libraryTrailSilenceSamples(
+	d: { peakSec: number; durationSec: number; tailSec?: number | null },
+	sampleRate: number,
+	opts: { analysedSec?: number } = {},
+): number {
+	if (!Number.isFinite(sampleRate) || sampleRate < 1000 || sampleRate > 768_000) return 0;
+	if (!Number.isFinite(d.durationSec) || d.durationSec <= 0 || d.durationSec > LIBRARY_PAD_MAX_SECONDS) return 0;
+	const pad = Math.ceil(LIBRARY_TRAIL_SILENCE_SEC * sampleRate - 1e-9);
+	const analysed = opts.analysedSec;
+	if (analysed !== undefined && !(analysed >= d.durationSec)) return pad;
+	const tail = d.tailSec;
+	if (typeof tail !== 'number' || !Number.isFinite(tail) || tail < 0 || !Number.isFinite(d.peakSec)) return pad;
+	const quietEnd = d.durationSec - (d.peakSec + tail);
+	return quietEnd >= LIBRARY_TRAIL_SILENCE_SEC ? 0 : pad;
+}
+
+/**
+ * Library descriptors of the registered file: moved by `leadSec` of silence put in front of the file (time points shift;
+ * levels and `tailSec`, which is measured from the peak, do not) and lengthened by `trailSec` of silence after it.
+ */
+export function shiftLibraryDescriptors(d: LibraryDescriptors, leadSec: number, trailSec = 0): LibraryDescriptors {
+	const lead = leadSec > 0 ? leadSec : 0;
+	const trail = trailSec > 0 ? trailSec : 0;
+	if (!lead && !trail) return d;
 	return {
 		...d,
-		peakSec: d.peakSec + leadSec,
-		onsetSec: d.onsetSec + leadSec,
-		headQuietSec: d.headQuietSec + leadSec,
-		durationSec: d.durationSec + leadSec,
+		peakSec: d.peakSec + lead,
+		onsetSec: d.onsetSec + lead,
+		headQuietSec: d.headQuietSec + lead,
+		durationSec: d.durationSec + lead + trail,
 	};
 }
 
@@ -73,26 +110,48 @@ export function resolveSoundAlign(
 }
 
 /** The time points placement needs, in seconds of the file placed. */
-export type SoundTiming = { peakSec: number; onsetSec: number; headQuietSec: number; durationSec: number };
+export type SoundTiming = {
+	peakSec: number;
+	onsetSec: number;
+	headQuietSec: number;
+	/** Length of the file placed (trailing silence included). */
+	durationSec: number;
+	/** Where the sound ends in the file: before the trailing silence registration added (default `durationSec`). */
+	endSec?: number;
+	/** Where the sound has faded to −60 dB re its peak (`peakSec + tailSec`, ≤ `endSec`), when the provenance knows it. */
+	tailEndSec?: number;
+};
 
 /**
  * The timing of the media a sound is placed from: its provenance descriptors (they describe the registered file,
- * padding included); without them the library entry's (`fallback`, the unpadded file: only right for media that was
- * not padded, e.g. provenance repaired without descriptors).
+ * padding included; `trailSilenceSec` and `descriptors.tailSec` give where the sound ends and fades); without them the
+ * library entry's (`fallback`, the unpadded file: only right for media that was not padded, e.g. provenance repaired
+ * without descriptors).
  */
 export function soundTimingOf(
-	provenance: { descriptors?: Partial<SoundTiming> | null } | null | undefined,
+	provenance:
+		| {
+				descriptors?: (Partial<SoundTiming> & { tailSec?: number | null }) | null;
+				trailSilenceSec?: number | null;
+		  }
+		| null
+		| undefined,
 	fallback: SoundTiming,
 ): SoundTiming {
 	const d = provenance?.descriptors;
 	const ok = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
-	if (d && ok(d.peakSec) && ok(d.onsetSec) && ok(d.headQuietSec) && ok(d.durationSec) && d.durationSec > 0)
+	if (d && ok(d.peakSec) && ok(d.onsetSec) && ok(d.headQuietSec) && ok(d.durationSec) && d.durationSec > 0) {
+		const trail = ok(provenance?.trailSilenceSec) ? provenance.trailSilenceSec : 0;
+		const endSec = Math.max(d.peakSec, d.onsetSec, d.durationSec - trail);
 		return {
 			peakSec: d.peakSec,
 			onsetSec: d.onsetSec,
 			headQuietSec: d.headQuietSec,
 			durationSec: d.durationSec,
+			...(trail > 0 ? { endSec } : {}),
+			...(ok(d.tailSec) ? { tailEndSec: Math.min(endSec, d.peakSec + d.tailSec) } : {}),
 		};
+	}
 	return fallback;
 }
 
@@ -103,8 +162,13 @@ export type SoundInsertPlacement = {
 	sourceInFlicks: number;
 	/** Clip Out point (content flicks): the end of the media. */
 	outFlicks: number;
-	/** Clip length in frames (what `clip.place` gives for `[In, Out)`). */
+	/**
+	 * Clip length in frames: `[In, Out)` in whole frames, rounded UP when that ends inside the sound (`soundEndFlicks`), so
+	 * the whole sound plays; such a clip ends less than one frame after its media (INV-005's tolerance: silence there).
+	 */
 	frames: number;
+	/** The source point the clip reaches at least (content flicks): the sound's −60 dB tail, else its end. */
+	soundEndFlicks: number;
 	/** The frame the aligned point lands on. */
 	cueFrame: number;
 	align: SoundAlign;
@@ -144,11 +208,16 @@ export function planSoundInsert(input: {
 	const durSec = durFlicks / FLICKS_PER_SECOND;
 	const cue = Number.isFinite(input.cueFrame) ? Math.max(0, Math.round(input.cueFrame)) : 0;
 	const rate = input.rate ?? 1;
+	const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+	// where the sound ends (risers align by it) and the point every clip must reach: its −60 dB tail, else its end
+	const endSec = Math.min(durSec, fin(t.endSec) && t.endSec > 0 ? t.endSec : durSec);
+	const reachSec = Math.min(endSec, fin(t.tailEndSec) && t.tailEndSec >= 0 ? t.tailEndSec : endSec);
 	const r = peakAlignedStart({
 		cueFrame: cue,
 		peakSec: Math.min(t.peakSec, durSec),
 		onsetSec: Math.min(t.onsetSec, durSec),
 		durationSec: durSec,
+		endSec,
 		headQuietSec: t.headQuietSec,
 		fps: input.fps,
 		align: input.align,
@@ -159,13 +228,19 @@ export function planSoundInsert(input: {
 	if (!(durFlicks > r.sourceInFlicks))
 		return { ok: false, code: 'E_INVALID_PARAM', message: 'The sound is too short to place' };
 	const F = flicksPerFrame(input.fps);
+	const soundEndFlicks = Math.round(reachSec * FLICKS_PER_SECOND);
+	// whole frames inside the media, or — when the last of them would end inside the sound — rounded up to the frame that
+	// holds its end (less than one frame past the media's end: INV-005's tolerance; the mixers play silence there)
+	const fit = Math.floor((durFlicks - r.sourceInFlicks) / rate / F + FRAME_EPS);
+	const need = Math.ceil((soundEndFlicks - r.sourceInFlicks) / rate / F - 1e-6);
 	return {
 		ok: true,
 		placement: {
 			start: r.start,
 			sourceInFlicks: r.sourceInFlicks,
 			outFlicks: durFlicks,
-			frames: Math.max(1, Math.floor((durFlicks - r.sourceInFlicks) / rate / F + FRAME_EPS)),
+			frames: Math.max(1, fit, need),
+			soundEndFlicks,
 			cueFrame: cue,
 			align: input.align,
 			alignFlicks: r.alignFlicks,
