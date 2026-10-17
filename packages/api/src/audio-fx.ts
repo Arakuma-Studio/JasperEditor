@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EnvelopeSchema } from './projects.ts';
 
 /** Longest music range the Remix analyses (seconds). */
 export const MAX_REMIX_SOURCE_SECONDS = 30 * 60;
@@ -76,3 +77,96 @@ export const BeatsResultSchema = z.object({
 	cached: z.boolean(),
 });
 export type BeatsResult = z.infer<typeof BeatsResultSchema>;
+
+// ---------------------------------------------------------------------------------------------------------------
+// `POST /api/audio/classify` (spec 12 P6-R3; wp-note "Phase 6 → WP6.3"): Essential Sound Auto Tag. Each clip's media
+// (over the source range it plays) or each media is classified as dialogue, music, SFX or ambience by `classifyAudio`
+// (@jasper/audio-fx). A job `audio-classify`; results cached by the file's fingerprint and the range.
+
+export const AUDIO_CLASSIFY_CATEGORIES = ['dialogue', 'music', 'sfx', 'ambience'] as const;
+/** Most clips / media per request. */
+export const AUDIO_CLASSIFY_MAX_ITEMS = 500;
+
+export const AudioClassifyRequestSchema = z
+	.strictObject({
+		/** The project (its live document) for `clipIds`, or the document inline (`envelope`). */
+		projectId: z
+			.string()
+			.regex(/^[A-Za-z0-9_-]{1,128}$/, 'a project id')
+			.optional(),
+		envelope: EnvelopeSchema.optional(),
+		sequenceId: z.string().min(1).max(200).optional(),
+		/** Audio clips of the sequence (each classified over the media range it plays). */
+		clipIds: z.array(z.string().min(1).max(200)).min(1).max(AUDIO_CLASSIFY_MAX_ITEMS).optional(),
+		/** Registered media (whole files, first audio stream unless `streamIndex`). */
+		mediaKeys: z.array(z.string().min(1).max(256)).min(1).max(AUDIO_CLASSIFY_MAX_ITEMS).optional(),
+		streamIndex: z.number().int().min(0).max(1000).optional(),
+	})
+	.refine((r) => (r.clipIds === undefined) !== (r.mediaKeys === undefined), 'give clipIds or mediaKeys')
+	.refine(
+		(r) => r.clipIds === undefined || (r.projectId === undefined) !== (r.envelope === undefined),
+		'clipIds need projectId or envelope',
+	);
+export type AudioClassifyRequest = z.infer<typeof AudioClassifyRequestSchema>;
+
+const CategoryScoresSchema = z.object({
+	dialogue: z.number(),
+	music: z.number(),
+	sfx: z.number(),
+	ambience: z.number(),
+});
+
+/** One classification (the cached unit: a media range). */
+export const AudioClassificationSchema = z.object({
+	/** null = silent (nothing to tag). */
+	category: z.enum(AUDIO_CLASSIFY_CATEGORIES).nullable(),
+	/** 0…1; under `lowConfidence` (0.6) say so and let the user confirm. */
+	confidence: z.number().min(0).max(1),
+	scores: CategoryScoresSchema,
+	reasons: z.array(z.string()),
+	silent: z.boolean(),
+	/** Seconds of the range and seconds analysed (long ranges are sampled: windows spread over them). */
+	durationSec: z.number(),
+	analysedSec: z.number(),
+	/** The measured features (`audioCategoryFeatures`), for agents that want the evidence. */
+	features: z.record(z.string(), z.union([z.number(), z.boolean()])),
+});
+export type AudioClassification = z.infer<typeof AudioClassificationSchema>;
+
+export const AudioClassifyItemSchema = z.object({
+	clipId: z.string().optional(),
+	mediaKey: z.string().optional(),
+	/** The clip's or the media's name. */
+	name: z.string(),
+	/** The clip's current audio type and whether Auto Tag set it (clips only). */
+	currentType: z.enum(AUDIO_CLASSIFY_CATEGORIES).nullable().optional(),
+	autoTagged: z.boolean().optional(),
+	/** Media seconds classified. */
+	startSeconds: z.number(),
+	durationSeconds: z.number(),
+	result: AudioClassificationSchema.nullable(),
+	/** Why there is no result: NOT_AUDIO, NO_AUDIO_STREAM, MEDIA_OFFLINE, NOT_IN_ENGINE, DECODE_FAILED, CLIP_NOT_FOUND. */
+	error: z.object({ code: z.string(), message: z.string() }).optional(),
+	cached: z.boolean(),
+});
+export type AudioClassifyItem = z.infer<typeof AudioClassifyItemSchema>;
+
+export const AudioClassifyResultSchema = z.object({
+	projectId: z.string().nullable(),
+	sequenceId: z.string().nullable(),
+	items: z.array(AudioClassifyItemSchema),
+	/** Results under this confidence are "low" (report them; the user should confirm). */
+	lowConfidence: z.number(),
+	counts: z.object({
+		dialogue: z.number().int(),
+		music: z.number().int(),
+		sfx: z.number().int(),
+		ambience: z.number().int(),
+		silent: z.number().int(),
+		failed: z.number().int(),
+		low: z.number().int(),
+	}),
+	version: z.number().int(),
+	ms: z.number(),
+});
+export type AudioClassifyResult = z.infer<typeof AudioClassifyResultSchema>;
