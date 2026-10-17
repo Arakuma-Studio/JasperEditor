@@ -920,7 +920,9 @@ REMOTION_E2E=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome \
 
 `pnpm e2e` starts `e2e/serve.mjs`: the built engine (`apps/engine/dist/engine.mjs`) serving the built web app
 on `127.0.0.1:${E2E_PORT:-48110}` with a throwaway appdir. `E2E_SKIP_BUILD=1` reuses existing builds,
-`E2E_KEEP_APPDIR=1` keeps the appdir for inspection. The pre-step also fetches the LGPL FFmpeg directory
+`E2E_KEEP_APPDIR=1` keeps the appdir for inspection. Playwright waits up to 180 s for that server to answer `/health`;
+`E2E_SERVER_TIMEOUT_MS=<ms>` (1 000 … 3 600 000) changes it for one run, e.g. `E2E_SERVER_TIMEOUT_MS=600000` on a
+heavily loaded shared host. The pre-step also fetches the LGPL FFmpeg directory
 where a pinned prebuilt exists (`E2E_SKIP_LGPL=1` skips it), so the exports in the specs are made by the
 shipped build (H.264 by OpenH264).
 
