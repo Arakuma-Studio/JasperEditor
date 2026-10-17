@@ -7136,3 +7136,270 @@ Every command ran on the build server through `remote.sh`:
   a new / duplicated sequence, are not tagged by it; a clip added while the engine is offline is not tagged later.
 - The container rule is ffmpeg's muxers as used here: Opus in MP4 and AV1 / VP9 in MOV are not offered (reported as
   changed when asked).
+
+### Phase 6 → earshot analysis
+
+Branch `feat/sd-p6-earshot-spec` (docs only). The user found `github.com/Leonxlnx/earshot` and asked whether our sound
+design features could be improved from it, or new ones added, for both human users and AI agents. Spec 12 §4 holds the
+result as requirements P6-E1…P6-E14 and work packages WP-E1…WP-E9. This section is the analysis behind it.
+
+**Method.**
+- `git clone --depth 50` into `/tmp/earshot-analysis` (read-only, outside the repo), at commit `9721326` (v0.2.0,
+  2026-10-17).
+- Read: the README; every document in `docs/` (DESIGN, INTEGRATION, LIMITS, VALIDATION, FORGE_V2, FIT, the
+  motion-SFX study and techniques, the launch-video playbook); `OVERNIGHT.md`; both agent skills and their references
+  and prompt templates.
+- Read in the code: the module headers and key functions of `timeline.py` (event detection, swells, silences,
+  sync, chance), `critique.py` (scorecard spec), `profile.py` (metric definitions), `search.py` (rank / find
+  candidates), `realness.py`, `mcp_server.py`, `llm.py`, and `skills/real-sound/scripts/{qa,mix,arrange}.py`.
+- Inspected the data files (`launch_profile.json`, `vocab.json`, `realness_model.json`).
+- Checked the Hugging Face API for the CLAP model's licence and its ONNX exports.
+- Nothing was run (PROTOCOL: no heavy local processes), and nothing from earshot was copied into this repository.
+
+#### What earshot is
+
+"Ears for coding agents": a Python 3.10+ package (CLI, Python API, MCP server) that turns sound into evidence an agent
+that cannot hear can reason about. Around it are two Claude Code skills and a procedural SFX synthesizer.
+
+- **Author and maturity.** One author (Leon Lin). The repository was created and grew to v0.2.0 between 2026-10-16
+  and 2026-10-17, largely in an agent-run overnight session (`OVERNIGHT.md`: six rounds, 02:40–19:40). It is
+  classified alpha. It has 429 pytest functions, and its evaluation write-ups are unusually honest: every number
+  names its command, data and what it was tuned on. The data behind them is small: one licensed library (219 + 125
+  Freesound / Mixkit files), one 60 s film, 7–8 third-party launch films, and blind tests with one listener and
+  15–20 trials.
+- **Licence.**
+  - Code: MIT.
+  - Models: downloaded on first use, about 1.4 GB, from Hugging Face. CLAP `laion/larger_clap_general` is
+    Apache-2.0; the AudioSet tagger `MIT/ast-finetuned-audioset-10-10-0.4593` is BSD-3-Clause.
+  - No audio or video is in the repository; only derived numbers (a realness model as JSON weights, vocabulary
+    calibration, a 7-film launch profile).
+  - `skills/real-sound/scripts/master.py` is "vendored from the Cinetic skill by the same author"; Cinetic's own
+    licence is not stated.
+- **Dependencies and services.**
+  - Python: numpy, scipy, soundfile, soxr, librosa, pyloudnorm, scikit-learn, pillow, matplotlib, torch (CPU),
+    transformers; optional `mcp`, and `requests` for the LLM.
+  - ffmpeg / ffprobe. The music stretch uses ffmpeg's **`rubberband` filter (GPL)**.
+  - Optional **Google Gemini** critique, which uploads audio and needs the user's own `GEMINI_API_KEY` and
+    explicit consent (paid / quota service).
+  - The real-sound skill sources audio from **Freesound** (HQ previews), **Mixkit** and **Pixabay** by downloading
+    and reading licence pages.
+- **Workflow (what an agent does with it).** The MCP `INSTRUCTIONS` and the skill describe four loops:
+  1. *Choose an asset*: `rank` many files by a description → `find` the best moment (sample trims) in the winner →
+     `describe` + `realness` to verify → `ab` / `compare` against approved references.
+  2. *Review a mix or film*: `timeline` (a listening transcript: events, sections, loudness, beat grid, sync to cuts
+     and cues) → `sheet` (an annotated PNG the agent opens) → `critique` (a scorecard against a reference profile).
+  3. *A/B a change*: `ab` before vs after, then `timeline` again.
+  4. *Make a sound in code* (`forge`): a synthesis recipe, an evolutionary search scored by a model-based critic.
+     Or *translate a recording into code* (`fit`).
+
+  The real-sound skill is a 10-step multi-agent soundtrack process:
+  - cue list from the picture code;
+  - a brief;
+  - sourcing agents per category;
+  - a licence audit;
+  - a music supervisor;
+  - designers writing JSON fragments;
+  - a lead integrating with a deterministic mixer;
+  - measured QA plus earshot listening;
+  - five read-only critic lenses (sync, edges, masking, tonal, director), each testing its fixes as a **variant** in
+    its own folder;
+  - **one fixer** applying the merged operations;
+  - master, credits, mux.
+
+#### Every feature and option
+
+| Command / part | What it gives | How (models?) |
+|---|---|---|
+| `measure FILE` | LUFS, true peak, LRA, noise floor, digital-silence share, attack / decay, centroid, bands, flatness, tonal-peak ratio, harmonic ratio, f0, onsets, tempo / key | model-free (BS.1770, librosa) |
+| `describe FILE [--start --end]` | calibrated tags per vocabulary category (z among 322 descriptions), closest alternative readings, AudioSet labels, measurements, a one-paragraph summary | CLAP + AST |
+| `match FILE QUERY [--alts]` | cosine, z vs the vocabulary, rank in the vocabulary, a softmax over query + alternatives, verdict strong ≥ 3 / plausible 2.5–3 / weak 2–2.5 / no match | CLAP; five prompt templates, term-bias removal, per-sound z |
+| `rank QUERY PATHS` | files sorted by calibrated match; near-silent files last | CLAP (long files: mean of ≤ 6 windows) |
+| `find FILE QUERY [--kind]` | best moments as sample trims: `stroke` (onset → −35 dB), `event` (joined strokes < 0.25 s, never across ≥ 10 ms digital silence), `window` (edges snapped onto the sound); `head_db` / `tail_db` with `head cut` / `tail cut` flags | onset candidates model-free; scoring by CLAP |
+| `compare FILE --refs` / `ab A B` | nearest references, typicality z; which of A / B is closer, deltas in words | CLAP + measurements |
+| `realness FILE…` | p_real (real or pro-produced vs code-synthesized), verdict, evidence, per-4 s windows | logistic heads on CLAP + signal features (the fitted fusion gives the signal head weight 0) |
+| `timeline FILE [--video] [--cues]` | listening transcript: onsets refined to the attack (1 ms), prominence over the K-weighted bed, band, swells, sections (Foote novelty + CLAP genre / mood), loudness curves, beat grid + downbeat guess, sync per cut / cue (OK ≤ 1 frame, near ≤ 100 ms, swell ≤ 300 ms, level peak ≤ 150 ms) **with chance levels** | detection model-free; tags by CLAP (right ~25–50 % in mixes, by its own measurement) |
+| `sheet FILE -o png` | PNG: video frames, sections, labelled events, spectrogram, waveform, loudness, beats, cue markers coloured by sync | from `timeline` |
+| `critique FILE [--video] [--profile]` | ≈ 35 metrics vs a reference profile (default: 7 launch films): status, weight (critical / major / minor / info), why, actions with timecodes, verdict launch-grade / close / needs work | mostly model-free (`music_frac` uses AST, `p_real` uses realness) |
+| `profile REFS… -o p.json` | a profile from your own reference films: median, p10–p90, min–max per metric | as critique |
+| `forge RECIPE` | procedural SFX: 21 recipes in 34 motion-design categories (modal resonators, contact excitations, noise, air, Shepard risers, sub drops, FM bells; reverb, saturation, transient shaping, limiter, EQ match, Doppler, glitch, granular), an evolutionary search with a pre-screen and robust re-renders | critic = CLAP match + realness + typicality + model-free tone / envelope / artifact checks |
+| `fit FILE -o recipe.py` | analysis-by-synthesis: a recording becomes a recipe module (modal / sines / spectral / hybrid) that re-renders it, with knobs and morphs | model-free fit, CLAP-checked |
+| `gallery DIR -o page.html` | static HTML listening page of forge outputs (players, spectrograms, numbers, embed options) | — |
+| `llm FILE --yes-upload` | Gemini rubric critique: scores 1–10 for sync, realism, mix, loudness, music, then cheap moments and fixes with times, as JSON | **online, uploads audio, user key** |
+| `mcp` | the tools above as one MCP server (models stay warm; summary text then compact JSON; `full=true`) | — |
+| real-sound scripts | `analyze.py` (format, floor, bandwidth, spikes, tempo / key), `audit.py` + `licences.py` (licence policy), `arrange.py` (music edit at bar lines), `mix.py` (deterministic JSON mixer), `qa.py` (clicks, edges, audibility, harshness, loudness, coverage, sync, density, layers), `variant.py` (critic sandboxes, fixer apply), `master.py`, `credits.py`, `mux.mjs` | model-free except `--listen` / `--realness` |
+
+**How it uses LLMs and agents.** earshot calls no LLM itself, except the optional Gemini critique (`llm.py`: mono
+64 kbps upload, a rubric prompt for a "senior re-recording mixer", a JSON answer that is parsed tolerantly). The agent
+side is entirely tools and text:
+
+- the MCP server (13 tools; strings in, a plain-language summary plus JSON out);
+- two skills: `earshot` (how to listen, how to read z / p / cosine, "never say how audio sounds without a number");
+- `real-sound` with 10 prompt templates (sourcing, licence audit, music supervisor, designer, five critic lenses,
+  fixer). Each is a fill-in brief with `{{PLACEHOLDERS}}`: what to measure, how to test fixes as variants, return
+  JSON (ranked issues with exact operations and before → after numbers), "at most 12 issues", "every claim needs a
+  measurement".
+
+The process rules are worth keeping: one owner per file; critics read-only; one fixer; at least one critique round.
+
+**Audio techniques (the parts that matter to us).**
+- *Analysis*: the attack rule (first millisecond within 20 dB of the peak above the bed); prominence measured against
+  the K-weighted bed just before the event; band contrast; swell detection for build-ups; Foote-novelty sections.
+- *Selection*: calibrated text-audio z rather than raw cosine; describe "source + material + action + character", not
+  the use; realistic alternatives as confusions; trims judged by their head and tail level.
+- *Placement*: align attack / peak / end / start per type. Pools in `cycle` mode (never the same take twice). A
+  hashed jitter so a solo render equals the full mix. `pitch_ramp` / `gain_ramp` across runs; `weight_db` per
+  doubling of the event weight. Slices that cut one take of many hits into single hits.
+- *Mixing*: three buses with rides; dips under typing; the music's drop on the hero; stop or filter-down before the
+  logo; effects dry, mono and centred; low end mono; a 1/3-octave audibility margin ≥ 3 dB over the bed; nothing in
+  2–6 kHz hotter than the music's presence peaks.
+- *QA*: an HF-burst click detector attributed to placements; abrupt entries and chopped decays of trims; music
+  splices; audibility per event and per layer; harshness; sync windows by alignment; coverage of action classes;
+  "machine-gun" rules; loudness gate; head and tail of the master.
+- *Music*: a beat grid moved onto measured attacks (trackers lag 20–50 ms); downbeat phase with a confidence; drop
+  candidates; a DP arrangement over film bars against a target arc with jump and phrase costs.
+
+**Data formats.**
+- `cues.json` (Cinetic's: `{fps, total, events[{f, kind, id, weight, pan, variant, dur, apexFrac}]}`).
+- `sounddesign.json` plus fragments: samples, slices, pools, rules (regex on kind / id), place, ambience, music
+  segments, buses, master, `qa_ok`.
+- Manifests and `audit.json`.
+- Mix report, trace (`adds.json`), `cues_sounded.json`, `qa.json`.
+- Profile JSON (per metric `{n, median, p10, p90, min, max, values}`, plus chance and arc).
+- `report.json` from forge.
+
+**Bugs and weak spots.** Most are measured by earshot's own documents; the others I found reading the code.
+- It hears through models it optimises against (Goodhart). After a forge search every model check calls the made
+  sounds real. `realness` is easy to fool (a modal resonator plus a room plus a noise floor reads "real").
+- Event tags in a mix are right about 25–50 % of the time. AudioSet hears ≤ 8 kHz and CLAP ≤ 14 kHz. Short sounds
+  are padded to a 10 s window (cost).
+- The downbeat was half a bar off on one of the two tracks it was tested on. The cut detector misses slow crossfades.
+- The launch profile describes 7 films one user picked. Some rules were changed after the first run, so the
+  scorecard was not blind (`docs/LIMITS.md`).
+- Caches are keyed on path, size, mtime and 16 sampled blocks, so stale results are possible (documented). Each CLI
+  call has a 20–40 s cold start.
+- Licence issues for reuse: the `rubberband` filter is GPL. `master.py`'s upstream licence is unstated. The skill's
+  sourcing reads licences from web pages (Freesound previews are lossy 192 kbps Ogg).
+- No functional defect was found in the code read (timeline detection and sync, chance, critique's spec table, the
+  find candidates, qa's header logic). I did not run it.
+
+**Clever ideas.**
+1. Report **chance levels** next to every sync share ("60 % of cuts have a sound" means little if random times score
+   50 %).
+2. Calibrate text-audio similarity as a z among a fixed vocabulary, with hub-phrase damping, and verdict bands
+   validated on a held-out set.
+3. Trims judged by head / tail level, never across digital-silence edit gaps.
+4. Sound-to-picture sync answered with a ladder (onset → strong onset → swell → level peak).
+5. A reference **profile you build yourself** and a scorecard with weights, tolerances and leave-one-out.
+6. Critics test fixes as **variants**, and one fixer merges them.
+7. `qa_ok`: acknowledged exceptions with a reason.
+8. The launch grammar: one click voice; vary the take, not the pitch; runs climb in pitch; music carries the cuts;
+   the drop on the hero; a stop before the logo; a tail into silence.
+9. The **ShareAlike** catch: a BY-SA sound synced to picture makes the video BY-SA.
+10. Measured "cheap tells" as checks: machine-gun, partial coverage, clicks at cuts, chopped music, the logo louder
+    than the drop, an ending that stops mid-note.
+
+#### Compared with what we have
+
+| Area | JasperEditor (Phases 0–6) | earshot | Verdict |
+|---|---|---|---|
+| Library search | token, type, length and descriptor ranking; facets; Refine pills; contact sheets; similar-to | CLAP description search, calibrated z, verdicts | ours is better for curated packs; theirs wins on badly named user folders → P6-E14 (gated) |
+| Multi-hit files | the judge marks them down (`multi-hit`) | `find` / `slices` turn them into single hits | adopt → P6-E9 takes |
+| Descriptors / judge | rich (peak, onset, rise, decay, tail, bands, YIN, loudness, width, loopable) | `measure` similar, plus floor, bandwidth, DC, tonal-peak ratio | small additions → P6-E9 judge flags |
+| Cues | derived from the edit (cuts, transitions, keyframes, text, mg, 3D camera, markers) plus pixel motion / scenes / beats, with anchors | typed or exported from picture code | ours is far ahead |
+| Placement | sample-exact peak / start / end alignment, padding, layers, rotation ±2 % / ±1 dB | attack / peak / end / start, pools, cycle, hashed jitter, ramps | adopt the grammar → P6-E10 (variation policy, runs, typing, music-led cuts, personality, materials) |
+| Mixing | masking solver with ordered caps, stop-before, build, room glue, delivery presets, ducking | bus rides, master chain (HP 28 Hz, mono < 120 Hz, glue compressor, TP limiter) | ours is ahead; their master chain needs DSP we decided not to add |
+| Music | Remix (duration) with beat analysis | arrange.py: bar-line edit, drop anchoring, attack-phase grid | adopt → P6-E11 (drop on hero, stop on bar, key) |
+| Beds | bed render for masking only; no ambience laying | ambience beds from clean windows, looped, cut with the picture | adopt → P6-E12 |
+| QA | Sound Check: 15 codes with fixes, listen-here, verdict markers, stems, cross-correlated sync | qa.py + critique: clicks, edges, harshness, coverage, layers, loudness arc, head / tail | adopt the missing checks → P6-E1…E3 |
+| Exceptions | none | `qa_ok` | adopt → P6-E4 |
+| What-if | proposals preview (picture and sound) | variants + qa before / after | adopt → P6-E5 (check a proposal) |
+| Agent ears | `view_sounds`, `view_sound_timeline`, `sound_check` | `timeline` transcript, `sheet` with frames and spectrogram | adopt → P6-E6, P6-E7 (with clip attribution, which earshot cannot do) |
+| Style targets | delivery presets | critique against a profile | adopt self-built profiles → P6-E8 |
+| Licences | SPDX classes, commercial-safe filter, credits, sidecars | policy forbids NC / ND / SA | adopt the SA warning → P6-E13 |
+| Generation | Jasper Synth as test fixture and offline fallback only | forge, fit | rejected (human decision 4) |
+
+#### Accepted (spec 12 §4)
+
+- **P1** (now):
+  - P6-E1 CLICK / EDGE;
+  - P6-E2 HARSH / LAYER_INAUDIBLE;
+  - P6-E3 COVERAGE / ENDING / ARC and the riser window;
+  - P6-E4 acknowledged findings;
+  - P6-E5 check a proposal, with the review lenses and the "one writer" rule in the guides;
+  - P6-E6 listening transcript;
+  - P6-E7 annotated sheet;
+  - P6-E9 takes and judge flags;
+  - P6-E10 grammar, variation policy, personality, materials;
+  - P6-E13 ShareAlike.
+- **P2** (next): P6-E8 reference profiles; P6-E11 music to picture; P6-E12 ambience and room-tone beds.
+- **P3, gated**: P6-E14 describe-it search with CLAP.
+
+The work packages, their lanes, dependencies and owned files are in spec 12 §4.2. Effort is estimated relative to
+WP5.1 (= L) from the number of layers each package touches (model, engine, MCP, web). It was not measured.
+
+**Users get:**
+- pops at edits and chopped music found and fixed;
+- harsh or useless layers flagged;
+- endings that stop mid-sound caught;
+- deliberate choices acknowledged once;
+- a proposal's Sound Check before reviewing it;
+- takes they can audition in multi-hit recordings;
+- one click voice;
+- climbing runs;
+- quieter cuts under music;
+- a personality select;
+- a material filter;
+- the drop landing on the hero;
+- in-key chimes;
+- ambience beds and room-tone fill;
+- a reference-profile comparison;
+- an SA warning.
+
+**Agents get:**
+- `listen_to_sequence` (a text transcript with clip attribution and chance-aware sync);
+- the sheet with frames and spectrogram;
+- `sound_check {proposalId}` deltas;
+- `acknowledge_sound_issue`;
+- the `takes` option in search;
+- `plan_sound_design` style options (personality, runs, typing, `musicCarriesCuts`, `tuneToMusic`, `stopOnBar`);
+- `remix_audio {landDropAt}` and `find_music_drops`;
+- `lay_ambience_bed` and `fill_room_tone`;
+- `build_sound_profile` and `sound_check {profileId}`;
+- the review-lenses guide.
+
+#### Rejected, and why
+
+| Idea | Why not |
+|---|---|
+| `forge` (procedural SFX made by search against a model critic) | Human decision 4 (no AI / generated sounds) and the orchestrator's decision that Jasper Synth is only a fixture and fallback. Its quality rests on models it optimises against, which its own docs call Goodhart. |
+| `fit` (recording → synthesis code, variations, morphs) | Generates new audio derived from recordings (same decision). It also carries a licence-of-derivative question per source. |
+| `realness` detector | Needs CLAP and a model fitted on earshot's private data. We already know every library sound's provenance, and real recordings outrank synth by source. Easy to fool, by its own measurement. |
+| Gemini `llm` critique | An online, paid / quota service that uploads the user's audio. Violates local-first and no paid services. |
+| real-sound sourcing (Freesound previews, Mixkit, Pixabay downloads, licence pages read by agents) | Human decision 2 (no Freesound or online sound sources). The Mixkit and Pixabay licences are not on our allowlist. |
+| Rubber Band music stretch | GPL, so it violates LGPL-only ffmpeg (AGENTS §2). Our Remix edits at beats without stretching. If a stretch is ever needed, ffmpeg `atempo` is LGPL. |
+| AST AudioSet tagging | A second ~350 MB model that hears ≤ 8 kHz and is weak on one-shots (earshot LIMITS). Our Auto Tag covers the clip categories without a model. |
+| Bundling earshot's 7-film launch profile (or porting its vocabulary) | One user's style (modern SaaS launch films). Its own docs say it does not describe every good film, and its scorecard was not blind. Users build their own profiles (P6-E8). We write our own vocabulary if P6-E14 is approved. |
+| The JSON mix DSL (rules with regex on kinds, pools, buses) | It would duplicate our model, where every result is an ordinary undoable command on clips. Its useful ideas (pools, cycle, ramps, classes of action) are taken as P6-E9, P6-E10 and P6-E3 COVERAGE. |
+| Master chain (HP 28 Hz, mono below 120 Hz, glue compressor) | Needs a new DSP processor on the Mix; spec 12 §0 says none. The delivery normalisation and TP limiter cover loudness. |
+| Gallery (static HTML listening page) | The Library panel, Review and Sound Check already serve listening inside the app. Low value. |
+| Separate "machine-gun" check | Our rotation and REPEAT already prevent and catch it; P6-E10's policy makes the remaining case deliberate. |
+| Click press + release pairs (release ~85 ms after) | Low value for the effort (a per-layer offset in the placement model). Revisit if users ask. |
+| Multi-agent orchestration (sub-agent critics) | We are the tool, not the orchestrator. The lenses become Sound Check categories and guide text (P6-E5). |
+| True peak measured after an AAC round trip | The measured pro films decode at a median of +0.6 dBTP, so it is a weak target. Our delivery ceilings already leave headroom. |
+
+#### Needs a human decision
+
+1. **P6-E13 default.** Should the default "Commercial-safe" filter exclude CC BY-SA sounds? Proposed: yes. CC BY-SA
+   4.0 §1(a) and §3(b) make a video synced with a BY-SA sound Adapted Material that must be shared under BY-SA. The
+   sounds stay allowed when chosen explicitly. The warning, badge and credits notice are built either way.
+2. **P6-E14 (CLAP).** May we offer `laion/larger_clap_general` (Apache-2.0 weights; trained on LAION-Audio data) as
+   an optional download? It would be ≈ 205 MB int8 or ≈ 783 MB fp32, exported to ONNX by us, because the community
+   ONNX conversion `Xenova/larger_clap_general` declares no licence. Not built until a human answers.
+3. Carried over from WP6.1, still open: BigSoundBank. Its robots.txt / ai.txt exclude automated access. Takes (P6-E9)
+   and beds (P6-E12) are most useful with real recordings of keys, risers and room tone, which the Kenney packs lack.
+
+#### Verified
+
+Docs only; no code changed. The facts above were checked by reading the cloned files (paths given) and by one
+read-only Hugging Face API query (model licences, ONNX file sizes). No tests or builds were run, as PROTOCOL allows
+for documentation.

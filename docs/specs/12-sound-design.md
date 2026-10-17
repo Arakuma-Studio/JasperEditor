@@ -50,6 +50,10 @@ Decisions taken by the orchestrator:
 - Cues live in `Sequence.soundDesign` (a `looseObject`), not in markers.
 - No new DSP processor. Every mixing decision is an ordinary undoable command.
 
+A second source, `github.com/Leonxlnx/earshot` (MIT), was analysed on 2026-10-17. What we took from it is in §4
+(requirements P6-E1…P6-E14 and their work packages). The analysis and the rejected ideas are in the wp-note, "Phase 6
+→ earshot analysis".
+
 ## 1. Principles
 
 - **Ordinary edits only.** Every result is a normal `AudioClip`, gain, volume or pan keyframes, effect, submix,
@@ -767,3 +771,441 @@ reason, and the export matches the preview mix (sample-level oracle).
 - P6-R6. `e2e/sound-design.spec.ts`: fixture → Suggest Cues → Auto Sound Pass → review → accept part → one undo →
   Sound Check → export → frames and audio timing checked.
 - P6-R7. `pnpm verify` and `pnpm notices --check` green; then merge `feat/sound-design` into `main`.
+
+## 4. Earshot-inspired additions (Phase 6 extension, P6-E)
+
+Source: `github.com/Leonxlnx/earshot` ("ears for coding agents"), **MIT**, `Copyright (c) 2026 Leon Lin`, analysed at
+commit `9721326` (v0.2.0, 2026-10-17). The full analysis, the comparison with what we have and every rejected idea with
+its reason are in the wp-note, "Phase 6 → earshot analysis". This section lists only what we accepted.
+
+### 4.0 Rules for this section
+
+- **Ideas, numbers and named algorithms; no code.** earshot is Python; nothing is copied. Where a requirement says
+  *adapted from earshot*, it reimplements a specific algorithm or threshold set described there. AGENTS.md §3.4 covers
+  algorithms too, so the first work package that adapts one creates `licenses/ported/earshot.md` (upstream URL, MIT,
+  the copyright line above, upstream path → our path per algorithm). Each later package adds its rows and runs
+  `pnpm notices`.
+- **Human decisions still hold.** There is no Freesound or online sound source, no AI or generated audio (earshot's
+  `forge` / `fit` are out), only CC0 or permissive assets, local-first, no paid services and LGPL-only ffmpeg
+  (earshot's music stretch uses the GPL `rubberband` filter; we never do). The ML models earshot depends on (CLAP,
+  AST) are not adopted. The only exception is P6-E14, which is gated on a human decision.
+- **Our §1 principles apply to every item.** Results are ordinary undoable edits. Analyses are deterministic and
+  quantised. Every UI action has an MCP / route twin and the reverse. Bulk changes go through proposals. Every
+  audible property has a measured or visual proxy.
+- **earshot's measured norms are defaults, not truths.** Some come from 7–8 third-party films measured by one
+  person. Wherever a number below is such a norm, the wp-note cites it as "earshot norm (n = …)" and the user can
+  change it.
+- Each requirement's "Done when" is in addition to the CLAUDE.md Definition of Done. That includes: i18n with es.json
+  complete, design tokens, keyboard operation, README tool list and guide, undo/redo/refusal tests, fuzz where input
+  is untrusted, a real-app run with frames looked at, and the wp-note.
+
+Priority: **P1** = build now (highest value per effort); **P2** = next; **P3** = gated.
+
+### 4.1 Requirements
+
+**P6-E1 (P1). Sound Check: clicks and cut edges (`CLICK`, `EDGE`).** Today's checks look at placed library sounds.
+Pops at edits come from user trims, music splices and remix joints, and nothing finds them yet.
+
+- `CLICK`: a burst detector on the delivered mix and on each stem. A burst is a sample of the signal high-passed at
+  14 kHz that is > 9× its 20 ms RMS and > 6× its 4 ms RMS, with ≥ 80 % of the burst's energy inside 1 ms (adapted
+  from earshot `qa.py`).
+  - A burst within 2 ms of an audio clip's start or end, a remix joint or a transition edge is an **error** ("click
+    at an edit"), naming the clip and the edge.
+  - A burst inside a clip's body is **info** (a transient in the recording).
+  - Fix: the shortest fade the model expresses at that edge (a 1-frame constant-power audio transition, or volume
+    keyframes when the edge allows sub-frame keys). Dry-run; safe.
+- `EDGE`, on every audio clip edge that is not library padding:
+  - *abrupt entry*: the source in the 20 ms before the in point is within 20 dB of the clip's peak, there is no
+    fade-in ≥ 5 ms, and no attack within 10 ms covers it;
+  - *chopped decay*: at the out point the level is > −35 dB re the clip's peak, the source after it continues above
+    −35 dB, and the fade-out is < 30 ms;
+  - *chopped music*: a music piece (remix piece, or a cut music clip followed by another) keeps sounding within 6 dB
+    after its out point, over 6 dB above what enters, with a crossfade < 100 ms.
+  - Severity warning. Fix: lengthen the fade or crossfade (safe when the dry-run applies), or trim to the decay (not
+    safe).
+- Edges at the sequence's own start and end belong to P6-E3, not here.
+
+*Done when* seeded fixtures are each reported with the right code, clip and frame (± 1 ms), and applying the reported
+fix clears them on the re-check: a clip whose head starts mid-sound, a click sample at an edit, a music clip cut
+mid-note, a remix piece joined on a sustained chord. The Phase 5 clean fixture still passes. The detectors survive
+fast-check fuzz (NaN, DC, silence, one-sample and 30-minute inputs) and never throw. The panel and `sound_check` show
+the same findings.
+
+**P6-E2 (P1). Sound Check: harshness and dead layers (`HARSH`, `LAYER_INAUDIBLE`).**
+
+- `HARSH`: a placed sound's 2–6 kHz 5 ms-RMS peak on the delivered scale is more than 6 dB above the loudest 2–6 kHz
+  5 ms RMS of the music stem anywhere in the range. With no music the dialogue stem is used; with neither the check
+  is not judged. Severity warning. A sound whose centroid is > 6.5 kHz gets an info. (2–6 kHz is the band phone and
+  laptop speakers make painful first; adapted from earshot `qa.py`.)
+  - Fix: −excess dB of gain, safe only when the MASKED minimum still holds after it. Otherwise a parametric dip at
+    the sound's 2–6 kHz peak with the existing EQ effect (not safe).
+- `LAYER_INAUDIBLE`: a layer of a multi-layer cue that adds < 1 dB in every 1/3-octave band (100 Hz–12.6 kHz) over
+  the bed plus the cue's other layers, measured over the layer's loudest 60 ms. Severity info. Fix: remove the layer
+  (not safe), or apply the gain that would make it add 3 dB in its dominant band (not safe).
+  - This also closes the Phase 4 limit "SFX do not mask each other" for layers.
+
+*Done when* a hot 4 kHz click over quiet music is reported as `HARSH` and its safe fix clears it; a layer
+50 dB under its partner is reported as `LAYER_INAUDIBLE`; the clean fixture passes; the measurements are
+property-tested (monotone in gain, never throw).
+
+**P6-E3 (P1). Sound Check: coverage, ending and arc (`COVERAGE`, `ENDING`, `ARC`); riser sync window.**
+
+- `COVERAGE` ("once a class of action is sounded, every instance is"). A class is the cues sharing kind and anchor
+  source. Within that, text and keyframe cues group by clip or pattern group, and cuts by track. When ≥ 2 cues of a
+  class are filled and ≥ 1 is not, the check warns and lists the unfilled ones. Muted cues, `ambient` cues and cues
+  silenced by dialogue are excluded.
+  - Fix: fill them with the sound the class already uses (a proposal; not safe), or mute them (which makes the
+    silence deliberate).
+- `ENDING`: the delivered mix's last 50 ms RMS is > −45 dBFS, or its last 10 ms peak is > −60 dBFS, at the end of
+  the sequence. Severity warning ("ends mid-sound"). The same check runs on the range end when the range reaches the
+  sequence end.
+  - Fix: a fade on the Mix volume lane (`mixer.writeAutomation`, 0.5 s by default; not safe).
+  - `HEAD` (info): the first 5 ms peak is > −40 dBFS, so the file starts with a click at sample 0. Fix: a 3 ms fade
+    on the same lane.
+- `ARC` (info): the loudest 3 s short-term window of the delivered mix holds no hero cue while hero cues exist, or it
+  lies in the last 15 % of the sequence with no hero there. The message names the loudest moment and the biggest
+  hero.
+- Sync of end-aligned sounds (risers, reverses): `OUT_OF_SYNC` accepts an end from −250 ms to +30 ms of the cue. A
+  riser ending just before its hit leaves "a beat of air", which is deliberate (earshot norm). Other kinds keep their
+  frame tolerances.
+
+*Done when* seeded fixtures fail and pass as described, with fixes: 3 of 4 staggered cards filled; a mix cut at a loud
+frame; a 2 s fade-out passes; a riser ending 120 ms early passes and one ending 400 ms early fails.
+
+**P6-E4 (P1). Acknowledged findings.** Deliberate exceptions should stop coming back, and agents should stop "fixing"
+them (earshot's `qa_ok`).
+
+- Model: `SoundDesign.acknowledged?: Record<key, {code, reason (1–300 chars), by: 'user'|'agent', at, target:
+  {clipIds?, cueId?, frame?}, inputsHash}>`, at most 500 entries.
+  - `key` is a stable fingerprint of the finding: its code, its target ids, and its frame rounded to the frame when
+    there are no ids.
+  - `inputsHash` covers the target clips' and cue's relevant fields.
+  - `repairDocument` drops malformed entries and is idempotent.
+- Commands: `soundDesign.acknowledgeIssue {key, code, reason, target}` and `soundDesign.unacknowledgeIssue {key}`.
+  Both are undoable. Agents may acknowledge `info` and `warning` findings only; an `error` needs the user
+  (`E_APPROVAL_REQUIRED` otherwise).
+- Sound Check marks matching findings `acknowledged: {reason, by}`. They are left out of the verdict and counted in
+  `counts.acknowledged`. When the target's `inputsHash` changed, the finding is reported again, as "acknowledged
+  before the change".
+- MCP `acknowledge_sound_issue` (EDIT). The panel gets "Acknowledge…" (reason field), a collapsed "Acknowledged (n)"
+  group, and Unacknowledge.
+
+*Done when* there are undo/redo/refusal tests (including an agent acknowledging an error). A re-check after
+acknowledging improves the verdict and lists the finding as acknowledged. Editing the clip brings the finding back.
+The panel and MCP agree.
+
+**P6-E5 (P1). Check a proposal before review (what-if).** This is earshot's "variants" idea: critics test their fixes
+in a copy before one writer applies them. Ours is the proposal.
+
+- `POST /api/sound-design/check {…, proposalId, itemIds?}` runs the `sound-check` job on the proposal's preview
+  document: `composeAcceptTx` on the current document, never committed. Stale and invalid items are skipped and
+  listed.
+  - The result adds `delta` against the current document's kept report, or against a fresh base run when there is
+    none or it is stale (`base: 'kept'|'run'`). `delta` holds:
+    - per-code counts before and after;
+    - `fixed[]` (finding keys present before and absent after);
+    - `introduced[]`, each with the `itemId` whose clips it names.
+  - It never writes `lastCheck` and never changes the document revision.
+- The engine stores the summary on the proposal (`report.check`). The Review panel shows "Sound Check of this
+  proposal: fixes 3 · introduces 1" with each introduced finding linked to its item.
+- MCP: `sound_check {proposalId, itemIds?}`; `plan_sound_design {check: true}` checks the new proposal and returns the
+  delta.
+- `SOUND_GUIDE` and `PROPOSALS_GUIDE` gain a **review-lenses** section, each lens mapped to our tools:
+  - sync: sync rows and the listening transcript;
+  - edges: CLICK / EDGE;
+  - masking: MASKED / LAYER_INAUDIBLE;
+  - tonal: HARSH and the reference bands;
+  - director: ARC / ENDING, the reference profile and the transcript.
+- The guide also states these rules:
+  - **one writer**: one proposal per pass, alternatives merged into it, checked with `sound_check {proposalId}`
+    before handing it over;
+  - never hand over a proposal that introduces errors without saying so;
+  - acknowledge deliberate exceptions with a reason (P6-E4);
+  - write search queries as "source + material + action + character", not the use.
+
+*Done when* a proposal that fixes a seeded MASKED and introduces a REPEAT reports exactly that, with the item id;
+the document revision is unchanged; the result is deterministic; the Review panel and MCP show the same delta; an
+e2e step covers it.
+
+**P6-E6 (P1). Listening transcript: an agent's ears for the whole mix.** Sound Check lists defects. Agents also need a
+chronological account of what is audible and why. We can attribute every sound to its clip, which earshot cannot.
+
+- Pure `packages/audio-fx/src/analysis/events.ts` (adapted from earshot `timeline.py`):
+  - onsets from spectral flux (5 ms hop, robust z ≥ 3), refined to the attack on a 1 ms band envelope: the first
+    millisecond within 20 dB of the event's peak above its bed;
+  - per event:
+    - prominence over the K-weighted bed: 10 ms windows; the bed is the median of the 20–300 ms before;
+    - the band it stands out in: low < 200 Hz, high > 2 kHz, or full;
+    - length to −20 dB;
+  - swells: rises ≥ 8 dB over 0.25–2 s, mostly monotone, timed at their peak;
+  - silences and drops: fast loudness 20 LU under integrated for ≥ 0.25 s;
+  - accents: the top 20 % by prominence and ≥ 6 dB over the bed.
+- Engine job `sound-listen` (`POST /api/sound-design/listen {projectId, sequenceId?, range ≤ 10 min, detail}`):
+  - renders the stems with `stems.ts`;
+  - detects events on the mix and attributes each to the stem and clip whose own event explains it, and to the cue
+    it fills;
+  - attributes sections to the Auto Tag classes per stem (dialogue, music with its ducking depth, ambience,
+    silence);
+  - matches picture events (edits, transitions, cues, cached measured motion) to the event that answers them: OK
+    within 1 frame, near ≤ 100 ms, swell ≤ 300 ms, else none;
+  - reports **chance levels** next to every sync share: the share random times would score with the same event
+    density (adapted from earshot), so "60 % of cuts have a sound" means something;
+  - adds on-beat stats when beats are known.
+- Output: `lines[]` (text, frame, timecode), `events[]` (frame, ms, shape, band, prominenceDb, bedDb, stem, clipId,
+  cueId, answers), `sections[]`, `sync {…, chance…}`, `unanswered[]` (picture events with no sound), `loudness`.
+  - Example line: `00:00:03:00 hit, high band, +18 dB over the bed · SFX A3 "Impact 2" (hero, cue cut) · answers Cut
+    V1 "A"→"B", 0 ms`.
+  - Events not explained by any placed sound are named by their clip, for example "production audio, A1
+    'Interview'". Agents see existing hits before stacking new ones.
+- MCP `listen_to_sequence {projectId, sequenceId?, range?, detail?, images?}`: READ_ONLY, waits for the job, returns
+  the text first, then compact JSON, and the P6-E7 sheet when `images`. Web: a "Log" tab in the Sound Check panel
+  lists the same lines; clicking a line jumps the playhead there.
+
+*Done when*, on the Phase 4 fixture plus a production-audio hit inside the dialogue: every placed sound's event is
+found within 1 ms of its aligned point and attributed to its clip; the dialogue hit is attributed to the dialogue clip;
+≥ 90 % of placed sounds are found in a mix where they sit 6 dB under the music (measured and recorded). The chance
+numbers equal a brute-force computation; fuzz never throws; the time for a 10-minute sequence is measured and
+recorded; the panel and MCP lines are identical.
+
+**P6-E7 (P1). Annotated sound sheet.** `/api/sound-design/visual` and `view_sound_timeline` gain new lanes (as
+earshot's `sheet`):
+
+- a **picture lane**: thumbnails at the cut, cue and event frames, rendered through the export path, at most 12 per
+  strip, like `analyze_picture_motion`'s PNG;
+- a **spectrogram lane** of the mix: log frequency, u8, 10 ms × 96 bands;
+- a **sections band** from P6-E6;
+- **cue markers drawn by answer status** (OK / near / none, by shape and colour, never colour alone).
+
+`cells` gives each lane's geometry. `listen_to_sequence {images: true}` returns this sheet. The web Log tab can show
+the spectrogram lane.
+
+*Done when* the PNG decodes and `cells` locates every lane, cue and thumbnail in tests on the fixture, and the sheet
+of a real run has been looked at (recorded in the wp-note).
+
+**P6-E8 (P2). Reference sound profile ("compare with a reference").** "Make it sound like the films I like",
+measured and without models (adapted from earshot `profile.py` / `critique.py`).
+
+- Build a profile from 1–20 reference media the user owns: project media, or absolute paths in local mode with the
+  usual path rules. Metrics per reference:
+  - loudness: integrated, true peak, LRA, crest (loudest 3 s minus integrated);
+  - arc: 11 points; intro and end 10 % level; peak position; first sound; longest gap; end silence; fade length;
+    final-hit level and tail;
+  - density: onsets per second (P6-E6); salient hits per second (100 ms loudness jumps ≥ 6 dB within 80 ms to
+    within 8 LU of integrated); stop-downs per minute;
+  - sync: picture events per second, from our scene detector on the reference picture, and the share with an onset
+    within ±100 ms and within 1 frame, each with its chance level;
+  - spectrum: energy share in sub 20–60, low 60–250, low-mid 250–1k, mid 1–4k, presence 4–8k and air 8–16k Hz;
+    brightness;
+  - stereo: side/mid dB, correlation;
+  - speech share (VAD).
+- A profile holds, per metric, the median, p10–p90, min–max and n. It stores numbers only, never audio:
+  `<appdir>/sounds/profiles/<id>.json` (atomic), with each reference's title and fingerprint.
+- Sound Check `profileId?` adds a "Reference" category with one row per metric:
+  - value; range (min–max widened by a per-metric measurement tolerance); status ok / low / high; weight;
+  - what to do, with timecodes from P6-E6 (the cuts with no sound, the gaps, the dead end).
+  - Rows are info or warning, never error: they describe a style, not a defect. LOUDNESS / TRUE_PEAK keep following
+    the delivery preset. A reference checked against its own profile is scored leave-one-out.
+- MCP: `build_sound_profile {name, mediaIds | paths}` (job), `list_sound_profiles`, `delete_sound_profile` (approval
+  card: user data), `sound_check {profileId}`. Web: "Compare with reference…" in the Sound Check panel, a "New
+  reference profile…" dialog that picks media from the bins, and the list in Preferences ▸ Sound Library.
+- **No bundled profile.** earshot's 7-film launch profile describes one style, so we reject it; the reason is in the
+  wp-note.
+
+*Done when*:
+- every metric passes known-answer tests: −20 LUFS pink noise; a 1 s gap; a hard end vs a 2 s fade; clicks at 2/s
+  give 2 onsets/s; a generated 0.5 cut/s picture;
+- a profile of three generated "films" gives the expected ranges;
+- a matching sequence passes every row;
+- a seeded mismatch (air −6 dB, 2 s dead end, no sound on 5 of 6 cuts) is flagged by the right rows with timecodes;
+- leave-one-out works;
+- the panel and MCP show the same rows.
+
+**P6-E9 (P1). Takes: multi-hit recordings become variation pools.** The judge marks multi-hit files down today, but a
+recording of ten key presses is the best variation pool there is ("vary the take, not the pitch").
+
+- The library analysis splits a file of several hits into **takes** (`onsetCount ≥ 2`, ≤ 120 s; adapted from earshot
+  `search.find` candidates):
+  - a take runs from one onset until the sound has decayed 35 dB, never into the next onset;
+  - onsets < 0.25 s apart join into one event (a key's down- and up-stroke);
+  - never across ≥ 10 ms of digital silence (separate takes in a pack);
+  - each take starts 5 ms before its attack and ends 20 ms after the decay.
+- Each take records `headDb` / `tailDb` (its first 5 ms / last 10 ms against its peak). Clean means tail ≤ −30 dB
+  and head ≤ −15 dB. A `head cut` or `tail cut` take is recorded but never offered.
+- At most 64 takes per file. Each take gets its own descriptors and judge; a take is never `multi-hit`.
+  `SoundEntry.takes?: SoundTake[]` is optional, so old index files load. Take ids are `snd_<16 hex>~t<n>`, and the
+  snapshot hash covers them.
+- Registering a take makes a managed WAV copy of its range with the existing lead and trail padding (sample-exact
+  placement). The provenance gets `take {soundId, index, sourceStartSec, sourceEndSec}`; licence and credit are the
+  parent's. Rotation, swap, variation cycling and REPEAT treat the takes of one file as its first variation pool.
+- Search rows say "12 takes"; `takes: true` returns takes as rows. The Library panel has a disclosure under the row
+  listing the takes (mini waveform, audition, insert, drag). MCP: `search_sounds {takes}`; `get_sound` lists the
+  takes; `view_sounds` and `import_sounds` accept take ids.
+- New judge flags in the same pass, from the sourcing rules of earshot's real-sound skill:
+  - `lowpassed`: 95 % rolloff < 12 kHz in a ≥ 44.1 kHz file of a type that needs air (a lossy cliff);
+  - `noisy-floor`: the floor between events is > −55 dBFS;
+  - `dc-offset`: |mean| > −40 dBFS.
+
+*Done when*:
+- a generated file of 10 clicks separated by digital silence gives 10 clean takes;
+- a typing file with down/up pairs gives joined pairs;
+- a take cut at a boundary is flagged and not offered;
+- a registered take placed on a cue peaks on the cue frame in the exported audio (measured);
+- rotation over takes never repeats consecutively;
+- the index stays deterministic and old indexes load;
+- fuzz (hostile files, 1-sample, all-silence) never throws.
+
+**P6-E10 (P1). Cue grammar and variation policy.** These rules make a pass sound designed rather than random. They
+come from earshot's launch-film grammar and study; the norms are cited in the wp-note.
+
+- **Variation policy per type**, in the taxonomy (`variation`):
+  - `ui` and `click` keep **one voice per sequence**: the palette sound or the first one placed, with no varispeed
+    and no gain jitter ("one click voice, same level every time");
+  - `key`, `tick` and `tap` rotate takes and sounds with ±1 dB gain jitter and **no varispeed** (random pitch on
+    typing is a cheap tell);
+  - other types keep §2.3 (±2 % varispeed, ±1 dB);
+  - explicit user or agent rates and pitches are never overridden.
+- **Runs climb.** A run is ≥ 3 consecutive `appear` / `emphasis` cues ≤ 0.6 s apart, filled with pop, ui, chime or
+  tick (staggered cards, successive notifications). Each step is pitched +1 semitone (varispeed, `maintainPitch:
+  false`), capped at +4 st. Run members share `group`; the reason reads "run 3 of 5: +2 st". `style.runs:
+  'climb'|'flat'`, default climb.
+- **Typing.** Above 25 typed units per second, place one key per word start instead of thinning to 12/s.
+  `style.typing: 'auto'|'keys'|'words'|'silent'`. When music is present, an optional 6 dB `audio.volumeDip` sits
+  under typing runs (`style.duckUnderTyping`, default off).
+- **Music carries the cuts.** A cut inside an unmuted music clip (Essential or Auto Tag type music), outside
+  dialogue, has its confidence halved; the reason reads "music carries the cut". `style.musicCarriesCuts`, default
+  on. (earshot norm: most cuts in the measured films have no sound of their own.)
+- **Personality** (`style.personality: 'calm'|'energetic'|'bright'|'precise'|'mechanical'|'warm'`). Each personality
+  maps to Refine preferences (tone, attack, weight, texture), type boosts and exclusions, preferred materials and a
+  default density. The table is a decision recorded in the wp-note; for example, calm means no boom or hit heroes,
+  soft attacks and a dark tone. It is a select with a one-line description in Auto Sound Pass… and Suggest Cues…, and
+  an option of `plan_sound_design`.
+- **Palette coherence.** The ranking bonus for sounds that share the dominant material of the sequence's placed
+  sounds of the same family uses `materials` from P6-E9's index ("one material family per film"). The index
+  extracts materials from title, tag and folder words (`MATERIAL_SYNONYMS`: wood, glass, metal, plastic, paper,
+  cloth, stone, water, air, electronic, rubber, ceramic). There is a Refine pill "Material" and `search_sounds
+  {material}`. The bonus applies only when the field is present.
+
+*Done when*:
+- each rule has unit and property tests (deterministic, budgets hold, never throws);
+- on the fixture a 4-card stagger climbs 0 / +1 / +2 / +3 st, measured in the export;
+- clicks share one sound and one level;
+- key sounds play at rate 1;
+- a cut under music is dropped in balanced, with its reason;
+- each personality moves the ranking in its documented direction;
+- the material counts of the starter kit and packs are recorded.
+
+**P6-E11 (P2). Music to picture: land the drop, stop on the bar, tune to the key.**
+
+- Beat-grid phase: the remix analysis puts joints ≥ 3 ms before the measured attack of the downbeat. Beat trackers
+  lag attacks by 20–50 ms, and a joint on a lagging grid chops the downbeat (adapted from earshot `arrange.py`).
+  Verify the current `remix.ts` and fix it if it lags.
+- Drop candidates: `analyzeBeats` returns `drops[] {sourceSec, bar, score}`. A drop is a bar within 3 dB of the loud
+  bars that stays loud for 4 bars, scored by its lift over the 4 bars before it plus its novelty (adapted from
+  earshot).
+- `planRemix` gains `anchors[] {sourceSec, sequenceFrame}`: the drop, or any downbeat, lands on the frame within
+  1 ms, with joints at bar lines, together with the duration target. It refuses with `E_INVALID_PARAM` (and says why)
+  when no plan exists within half a beat.
+  - Route: `/api/audio/remix-plan {anchors?}`.
+  - MCP: `remix_audio {landDropAt: frame | {cueId} | 'hero', dropSec?}` and `find_music_drops {clipId}`.
+  - The Remix dialog gets "Land the drop on: playhead / marker / hero cue", with the candidates listed with ▶.
+- Stop-before on the bar: when the music clip's beats are known, the stop's ramp ends on the downbeat (else the
+  beat) before the hero, inside the cue's `stopBefore.seconds` window. The reason reads "on the bar line".
+  `style.stopOnBar`, default on.
+- Tune to the key: `estimateKey(chroma)` uses the Krumhansl–Schmuckler profiles and returns a confidence.
+  - Tonal types (chime, shimmer), and any sound with `pitchConfidence ≥ 0.8`, placed over a music clip with key
+    confidence ≥ 0.6 are pitched to the nearest in-key note within ±2 st by varispeed. Reason: "tuned +1 st to A
+    minor".
+  - `style.tuneToMusic`, default on.
+
+*Done when*:
+- a synthetic track with a known drop at bar 17 gives that drop as the top candidate;
+- the anchored plan lands it on the hero frame within 1 ms in the export (cross-correlation, measured);
+- the remix joints of the Phase 4 music cause no P6-E1 finding;
+- a chime of MIDI 70 over a C-major track is pitched to an in-key note within ±1 st;
+- the stop ramp ends on the downbeat;
+- hostile inputs (no beats, steady tone, 1 s clip) are refused with typed errors.
+
+**P6-E12 (P2). Ambience and room-tone beds.** We place one-shots but cannot lay a bed: one ambience per location, cut
+with the picture, looped without an audible seam.
+
+- Pure `packages/audio-fx/src/analysis/loop-window.ts` finds the **clean window** of a bed recording: the stretch with
+  the lowest onset activity and level variance, with no spike ≥ 10 dB over its 1 s neighbourhood.
+- Command `soundDesign.layBed {range | shots, mediaId, gainDb?, fadeSec?, crossfadeSec?, duckUnder?: 'dialogue' |
+  'heroes' | null, track?}` lays ordinary clips on an "Ambience" track:
+  - one bed per scene or shot run (from scene cuts, V1 edits or a user range);
+  - the clean window, looped with equal-power crossfades (≥ 1.5 s);
+  - 1 s fades in and out by default, and a short crossfade at scene changes;
+  - optional ducking through `audio.volumeDip`;
+  - one undo step, and a proposal mode through the generic mechanism.
+- Room tone: a `SILENCE` finding inside a dialogue region (a gap of < 10 s between dialogue) gets the fix "Fill with
+  room tone" (not safe, dry-run). The tone is a `roomtone` sound from the palette or library, else the quietest 0.5–3 s
+  stretch without speech (VAD) in the dialogue clip's own media, looped.
+- MCP: `lay_ambience_bed {mode: 'propose'|'apply'}` and `fill_room_tone`. UI: Sequence ▸ Sound Design ▸ Lay Ambience
+  Bed…, and the Sound Check SILENCE row's fix.
+
+*Done when* a 3-scene sequence with a 4 s ambience over 20 s gets looped pieces with crossfades, and the Sound Check
+of the result has no CLICK, EDGE, DIP or SILENCE there; the room-tone fix removes a seeded SILENCE in a dialogue gap;
+undo is one step; an agent can propose it and the user can apply it.
+
+**P6-E13 (P1). ShareAlike sounds.** Under CC BY-SA 4.0 §1(a), a sound recording synced in timed relation with a
+moving image always produces Adapted Material. Under §3(b), the video must then be shared under BY-SA 4.0 or a
+compatible licence. earshot forbids SA for this reason. We currently count BY-SA as commercial-safe with no warning.
+
+- `licenseObligations(license)` returns `{attribution, shareAlike}`.
+- BY-SA sounds get an "SA" badge in the Library and in clip badges. The credits text adds the ShareAlike notice.
+- Sound Check `LICENSE` warns (variant `shareAlike`) when a BY-SA sound is placed. The ranking already puts BY-SA
+  below CC-BY.
+- **Human decision:** should the default "Commercial-safe" filter exclude BY-SA? Proposed: yes. BY-SA stays allowed
+  when chosen explicitly.
+
+*Done when* the obligations, badge, credits notice and check warning are tested and match between panel and MCP; the
+default follows the human's answer.
+
+**P6-E14 (P3, GATED: human decision). Describe-it search and "find the moment" with a local audio-text model.**
+This is the one model-based idea worth having: folder sounds named `SFX_0023.wav` cannot be found by words, and a long
+recording cannot be searched for "a single clean key press".
+
+- An optional downloadable analysis model (`laion/larger_clap_general`, Apache-2.0; ONNX exports exist at about
+  205 MB int8 text + audio and 783 MB fp32). It is installed through the processing-model catalogue pattern: pinned
+  revision, sha256, licence shown before install, never bundled, never required.
+- Embeddings are computed in `sound-index`: one repeat-padded 10 s window per sound or take, cached by fingerprint.
+- Scores are calibrated as a z of the query among ≈ 300 descriptions **we write** from the taxonomy, materials and
+  actions, with hub-phrase damping (the idea is earshot's; the vocabulary is ours). Verdict bands are re-validated on
+  our library before any claim.
+- Uses: `search_sounds {describe}`, `match_sound {soundId, description, alts?}`, take ranking by description, and
+  event tags in P6-E6.
+- Without the model everything works as it does now.
+- **Not to be built until a human approves.** The open questions:
+  1. whether this model's weights, and the licence of the ONNX export (the community conversion declares none; we
+     would export from the Apache-2.0 base ourselves), are acceptable;
+  2. whether a ≈ 200–800 MB optional download is acceptable.
+
+*Done when* (after approval): install, index and search work offline; the verdict bands are measured on a held-out
+labelled set from our packs (method and numbers in the wp-note); removing the model leaves search as before.
+
+### 4.2 Work packages (P6-E WP list)
+
+Lanes can run in parallel. Inside a lane, packages run in order. "Shared registries" are the files almost every
+package appends to: `packages/api/src/routes.ts`, `jobs.ts`, `apps/mcp/src/server.ts`, `README.md` tool list,
+`SOUND_GUIDE` in `apps/mcp/src/tools/sound.ts`, `apps/web/src/i18n/{en,es,model-strings}.json`,
+`licenses/ported/earshot.md`, `THIRD_PARTY_NOTICES.md` and `docs/security-review.md`. Conflicts there are append-only;
+resolve them by keeping both sides.
+
+| WP | Requirements | Lane | Size | Depends on | Main files (owned) |
+|---|---|---|---|---|---|
+| **WP-E1** Sound Check: new findings | P6-E1, P6-E2, P6-E3, P6-E13 | A | L | — | `packages/audio-fx/src/analysis/{clicks,edges,harshness}.ts` (new), `check-curves.ts`; `packages/project/src/sound/{check,messages,license,credits}.ts`; `apps/engine/src/sound-design/{check,stems}.ts`; `apps/web/src/sound/check-model.ts`, `apps/web/src/panels/soundCheck/*`; `apps/mcp/src/tools/sound-check.ts`; creates `licenses/ported/earshot.md` |
+| **WP-E2** Acknowledge + check a proposal + review lenses | P6-E4, P6-E5 | A | M | WP-E1 merged | `packages/project/src/schema/sound.ts`, `commands/{schemas,handlers}/sound.ts`, `catalog.ts`, `examples.ts`, `sound/repair.ts`; `apps/engine/src/sound-design/check.ts`, `apps/engine/src/proposals/*`, `routes/sound-design.ts`; `packages/api/src/sound-check.ts`; Review panel and Sound Check panel; `apps/mcp/src/tools/{sound-check,proposals,sound}.ts` (guides) |
+| **WP-E3** Listen: events, transcript, sheet | P6-E6, P6-E7 | B | L | — | `packages/audio-fx/src/analysis/events.ts` (new); `apps/engine/src/sound-design/{listen.ts (new), visual.ts}`; `packages/api/src/sound-design.ts` (listen schemas); `packages/engine-client`; `apps/mcp/src/tools/{sound-listen.ts (new), sound-timeline.ts}`; `apps/web/src/panels/soundCheck/LogTab.tsx` (new, registered in the panel only) |
+| **WP-E4** Reference profiles | P6-E8 | B | M | WP-E3 (`events.ts`), WP-E1 (check.ts categories) | `packages/audio-fx/src/analysis/profile-metrics.ts` (new); `packages/project/src/sound/profile.ts` (new); `apps/engine/src/sound-design/profile.ts` (new), profile store, `check.ts` (Reference category); `apps/mcp/src/tools/sound-profile.ts` (new); web dialog and panel section |
+| **WP-E5** Takes, judge flags, materials | P6-E9 (+ the `materials` index field of P6-E10) | C | L | — | `packages/audio-fx/src/analysis/{takes.ts (new), sound-judge.ts}`; `packages/api/src/sounds.ts`; `apps/engine/src/sounds/{analysis*,index-job,library,search,pad,service,visual}.ts`; `packages/project/src/sound/{provenance,materials (new)}.ts`, `schema` media library field; `apps/web/src/panels/soundLibrary/*`; `apps/mcp/src/tools/sound.ts` (search / get / view / import) |
+| **WP-E6** Cue grammar, variation policy, personality, palette coherence | P6-E10 (without the index field) | D | M | none to start; palette coherence reads `materials` when WP-E5 has merged; takes as the rotation pool once WP-E5 has merged | `packages/project/src/sound/{taxonomy,variant,rank}.ts`, `sound/cues/{derive,budget,text-*}.ts`; `apps/engine/src/sound-design/plan.ts`; plan `style` schema in `packages/api/src/sound-design.ts`; `apps/web/src/sound/{AutoSoundPassDialog.tsx, cues/SuggestCuesDialog.tsx}`; `apps/mcp/src/tools/sound-design.ts` |
+| **WP-E7** Music to picture | P6-E11 | E | M | its `plan.ts` integration (tune to key, stop on bar) after WP-E6 merges | `packages/audio-fx/src/analysis/{remix.ts, key.ts (new)}`; `apps/engine/src/audio/beats.ts`, remix-plan route; `packages/api/src/audio-fx.ts`; `packages/project/src/sound/{tuning.ts (new), mix.ts}`; `apps/mcp/src/tools/audio-fx.ts`; web Remix dialog |
+| **WP-E8** Ambience and room-tone beds | P6-E12 | F | M | WP-E1 (SILENCE fix in `check.ts`), WP-E2 (`commands/*/sound.ts`) merged | `packages/audio-fx/src/analysis/loop-window.ts` (new); `packages/project/src/sound/ambience-bed.ts` (new), the `soundDesign.layBed` command; an engine route; `apps/mcp/src/tools/sound-beds.ts` (new); web menu and dialog |
+| **WP-E9** Describe-it search (CLAP) | P6-E14 | G | L | **human approval**; WP-E5 (takes) | processing-model catalogue, `apps/engine/src/sounds/semantic.ts` (new), search route, `apps/mcp/src/tools/sound.ts` |
+
+Start now in parallel: **WP-E1, WP-E3, WP-E5, WP-E6, WP-E7** (lanes A–E; their owned files do not overlap, apart from
+the shared registries). Next: **WP-E2** after WP-E1, **WP-E4** after WP-E3 (and WP-E1), **WP-E8** after WP-E2.
+**WP-E9** waits for the human.
+
+Each package appends a wp-note section "Phase 6 → WP-E<n> …" (what was built, usage, the commands it ran and their
+results, limits). It must not raise any number in `docs/gaps.md` or `docs/parity.md` without rerunnable evidence.
