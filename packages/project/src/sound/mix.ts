@@ -297,7 +297,8 @@ function widenedRange(kfs: readonly Keyframe<number>[], lo0: number, hi0: number
 
 /**
  * Merges dips into a volume curve (lane `anim`, its lane time `lane`; dips in sequence flicks) by taking the minimum
- * (see the module docs). `clamp` bounds the values (dB). Returns null when no dip falls in the lane's span. `windows`
+ * (see the module docs). `clamp`: the dip curve's floor is its low end (dB; its top is not used: the result never
+ * goes above the curve). Returns null when no dip falls in the lane's span. `windows`
  * are the ranges actually rewritten (sequence flicks, widened over curved segments crossing an edge). Pure.
  */
 export function mergeDips(
@@ -306,8 +307,11 @@ export function mergeDips(
 	dips: readonly Dip[],
 	opts: { newId: () => string; clamp?: [number, number] },
 ): (CurveWrite & { windows: [number, number][] }) | null {
-	const [cmin, cmax] = opts.clamp ?? [-96, 15];
-	const clampV = (v: number) => Math.min(cmax, Math.max(cmin, v));
+	const [cmin] = opts.clamp ?? [-96, 15];
+	// The dip curve stops at the floor of the range; it is never capped at its top: the result is min(E, D) ≤ E, so it
+	// never goes above the curve, and a curve overshooting the top (a Bézier past +15 dB) at a window's edge is not cut
+	// down there in one step (WP6.5b).
+	const clampV = (v: number) => Math.max(cmin, v);
 	// A dip of no depth (0 dB, −0) is no dip: it writes nothing and does not widen the window (and so the reference
 	// level) of a dip it overlaps (WP6.5b: the 0 dB dip's window kept a swell the property expected dipped, and moved the
 	// reference level of the real dip under it).
@@ -427,18 +431,17 @@ export function mergeDips(
 				if (ra === undefined || rb === undefined || ra !== rb) continue;
 				const va = ra + env(a);
 				const vb = rb + env(b);
-				for (const lim of [cmin, cmax])
+				for (const lim of [cmin])
 					if ((va - lim) * (vb - lim) < 0) pts.add(a + ((b - a) * (va - lim)) / (va - vb));
 			}
 		}
 		for (let i = 0; i < kfs.length; i++) {
 			const k = kfs[i]!.time;
-			if (k > lo && k <= hi) {
-				if (k < hi) pts.add(lane.toSeq(k));
-				// a step (also one at the range's edge): the value just before it too
-				if (i > 0 && kfs[i - 1]!.interpolation === 'hold')
-					for (const x of [k - 1, k + 1]) if (x > lo && x < hi) pts.add(lane.toSeq(x));
-			}
+			if (k > lo && k < hi) pts.add(lane.toSeq(k));
+			// a step (also one at the range's edge, or one an edge between two flicks rounds onto: WP6.5b): the values
+			// just before and after it too
+			if (k > lo - 1 && k <= hi + 1 && i > 0 && kfs[i - 1]!.interpolation === 'hold')
+				for (const x of [k - 1, k + 1]) if (x > lo && x < hi) pts.add(lane.toSeq(x));
 		}
 		// curved segments inside: adaptive samples (within SAMPLE_TOLERANCE_DB of the curve)
 		const fl = (k: number) => evaluate(anim, k);

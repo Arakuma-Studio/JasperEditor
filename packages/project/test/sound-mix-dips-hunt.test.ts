@@ -8,6 +8,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	type Dip,
+	dipEnvelopeAt,
 	evaluate,
 	FLICKS_PER_SECOND,
 	type Keyframe,
@@ -321,5 +322,44 @@ describe('mergeDips: a dip window edge between two flicks (WP6.5b hunt)', () => 
 			samples: 900,
 			step: 5 * MS,
 		});
+	});
+});
+
+describe('mergeDips: more hunt counterexamples (WP6.5b, second round)', () => {
+	it('a window edge that rounds onto a hold step: the fade back ends at the level before the step', () => {
+		// keys: hold 0 dB from 0, +14.999 dB at 1.07 s; a −60 dB dip at 670 ms with a 399.9999992913831 ms fade: its
+		// window ends half a flick before the step, the edge key (rounded onto the step) took +14.999 and the whole fade
+		// back ramped towards it (0.19 dB off at 670 ms + 5 ms)
+		const kfs = keysOf([
+			{ time: 0, v: 0, interp: 'hold' },
+			{ time: 754_992_000, v: 14.999, interp: 'linear' },
+		]);
+		const ds: Dip[] = [{ start: 472_752_000, end: 472_752_000, depthDb: -60, fadeMs: 399.999_999_291_383_1 }];
+		checkLinearDips(kfs, 0, ds, { samples: 900, step: 5 * MS });
+		checkLinearDips(kfs, 0, ds, { samples: 2400, step: 0.5 * MS });
+	});
+
+	it("a Bézier overshooting the clamp at a dip window's edge is not cut to +15 dB there (no step at the edge)", () => {
+		// the curved generator's counterexample: continuous Bézier −96 dB at 0 → +15 dB at 1.4 s overshoots to ≈ +25 dB;
+		// a dip window's edge at 914 ms (+22.6 dB there): the dip curve was capped at +15 dB, a 7.6 dB step in 2 ms
+		const kfs = keysOf([
+			{ time: 0, v: -96, interp: 'continuous-bezier', inf: 0.05, slope: 2 },
+			{ time: 1400 * MS, v: 15, interp: 'linear', inf: 0.05, slope: 0 },
+		]);
+		const ds: Dip[] = [
+			{ start: 781_804_800, end: 781_804_800, depthDb: -0.5, fadeMs: 194 },
+			{ start: 0, end: 0, depthDb: -0.5, fadeMs: 0 },
+		];
+		let i = 0;
+		const anim = { value: -3, keyframes: kfs };
+		const r = mergeDips(anim, SEQUENCE_LANE, ds, { newId: () => `n${i++}`, clamp: [-96, 15] })!;
+		const res = { value: -3, keyframes: r.keyframes };
+		// just inside the edge the dip is ≈ 0 dB deep: the result follows the curve, never jumps to +15 dB
+		for (const ms of [914.5, 915, 916, 920]) {
+			const t = ms * MS;
+			const want = Math.min(evaluate(anim, t), evaluate(anim, 914 * MS) + dipEnvelopeAt(ds, t));
+			expect(Math.abs(evaluate(res, t) - want)).toBeLessThan(0.05);
+		}
+		checkCurvedDips(kfs, ds, 0);
 	});
 });

@@ -76,7 +76,7 @@ export function checkLinearDips(
 			// ≤ the dip curve relative to the window's reference level, = the minimum of both
 			const w = r.windows.find(([a, b]) => t >= a && t <= b)!;
 			const ref = Math.max(evaluate(anim, w[0]), evaluate(anim, w[1]));
-			const dd = Math.min(15, Math.max(-96, ref + dipEnvelopeAt(dips, t)));
+			const dd = Math.max(-96, ref + dipEnvelopeAt(dips, t));
 			// a hold step between two samples is drawn as a 1-flick ramp: skip its instant
 			const stepAt = kfs.some(
 				(kf, j) => j > 0 && kfs[j - 1]!.interpolation === 'hold' && Math.abs(kf.time - t) <= 2,
@@ -162,7 +162,8 @@ export function checkCurvedDips(
 		const w = w0.find(([a, b]) => t >= a && t <= b);
 		if (!w) continue;
 		const ref = Math.max(E(w[0]), E(w[1]));
-		le(Math.abs(got - Math.min(e, Math.min(15, Math.max(-96, ref + env)))), tol);
+		// the dip curve stops at the floor (−96 dB), it is not capped at the top (WP6.5b: the result never exceeds the curve)
+		le(Math.abs(got - Math.min(e, Math.max(-96, ref + env))), tol);
 	}
 	// keys outside the rewritten ranges are the same keys
 	for (const k of kfs) {
