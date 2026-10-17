@@ -14,9 +14,12 @@ import {
 } from '@jasper/api';
 import {
 	type Rational,
+	type Sequence,
+	SOUND_CHECK_TARGET_LIMITS,
 	SOUND_DELIVERIES,
 	sequenceDuration,
 	sequenceTimecode,
+	soundCheckHumanVerdicts,
 	TimeInputSchema,
 } from '@jasper/project';
 import { z } from 'zod';
@@ -68,6 +71,25 @@ function issueLine(i: SoundCheckIssue): string {
 	return `${i.severity.toUpperCase()} ${i.code}${i.timecode ? ` @ ${i.timecode}` : ''}: ${i.message.text}${fix}`;
 }
 
+/**
+ * The user's listen-here verdicts (spec 12 §2.7: "Sounds right" / "Flag" + note, stored by the editor's Sound Check
+ * panel as `comment` markers): each with its timecode and, when it sits on one of this report's listen-here moments,
+ * that moment's slot.
+ */
+function humanVerdictsOf(seq: Sequence, r: SoundCheckReport) {
+	return soundCheckHumanVerdicts(seq).map((v) => {
+		const at = r.listen.find((l) => l.frame === v.frame);
+		return {
+			timecode: sequenceTimecode(seq, v.frame),
+			frame: v.frame,
+			verdict: v.verdict === 'ok' ? 'sounds right' : 'flagged',
+			note: v.note,
+			markerId: v.markerId,
+			...(at ? { slot: at.slot } : {}),
+		};
+	});
+}
+
 /** The frames of up to `n` worst moments (errors first, then warnings, then the listen-here worst). */
 function worstFrames(r: SoundCheckReport, n: number): number[] {
 	const rank = { error: 0, warning: 1, info: 2 } as const;
@@ -95,7 +117,7 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 		'sound_check',
 		{
 			title: 'Sound Check (measured QA of the mix)',
-			description: `Measures a sequence's sound the way it will be delivered and returns what to fix and where to listen. You cannot hear: this is how you check your sound design. The engine renders the mix (with the Mix's loudness normalisation and true-peak limiter, exactly as an export) and its stems — sound effects, dialogue, music, ambience, bed — in one pass, finds speech (transcript + voice activity) and checks: LOUDNESS (integrated vs the delivery preset ±1 LU; under 400 ms of audible audio it is "not measurable", never a pass), TRUE_PEAK (over the preset's ceiling), OUT_OF_SYNC (each placed sound located in the sound-effects mix by cross-correlation within ±3 frames of its cue: cut ±1, land ±2, move ±3, appear ±1 frame; offset in ms; or "cut": its clip ends at its peak), TRUNCATED (a placed sound's clip ends before the sound has faded to −60 dB: older copies without trailing silence; the safe fix is swap_sound to the same sound, which re-registers it, or soundDesign.swap on its own media), MASKED (dominant-band lift over the bed under 1.5 dB support / 3 dB hero, the masking solver's own definition), OVERLOAD (a sound over the bed cap, the export limiter pulling > 3 dB, clipping without normalisation), MUSIC_OVER_VOICE (music not 8 LU under the voice during speech), SILENCE (< −60 dBFS for ≥ 0.5 s outside silence cues), DIP (short-term drop > 10 LU with no stop-before, cut or silence cue), STALE_CUE (the cue's anchor moved), NO_PICTURE_EVENT (a derived cue with nothing on screen), DENSITY (heroes too close, too many cues per second), REPEAT (the same file back to back), LICENSE (non-commercial, no-derivatives, unknown or undeclared licences) and CREDITS (CC-BY sounds without a credits file). Each finding has a severity, a timecode, a message and, where one exists, a fix: {kind: commands → apply_commands args | job → rebalance_sfx / apply_delivery args | swap → swap_sound args, safe}. Apply ONLY fixes marked safe (each is one undo step that resolves its finding), then run sound_check again; leave the others to the user. listen: up to five "listen here" moments (worst finding, biggest hero, loudest moment, busiest moment, a cue that passes) — give them to the user VERBATIM and never say the result "sounds good". verdict: pass | warn | fail. images (default true) adds ONE PNG of up to three of the worst moments (±2 s each: loudness curves, waveform, cue ticks, findings). store: true writes the summary into the sequence (one undo step "Sound Check Result"; the editor shows whether it is still current). Waits for the job (timeoutSeconds, default 300).`,
+			description: `Measures a sequence's sound the way it will be delivered and returns what to fix and where to listen. You cannot hear: this is how you check your sound design. The engine renders the mix (with the Mix's loudness normalisation and true-peak limiter, exactly as an export) and its stems — sound effects, dialogue, music, ambience, bed — in one pass, finds speech (transcript + voice activity) and checks: LOUDNESS (integrated vs the delivery preset ±1 LU; under 400 ms of audible audio it is "not measurable", never a pass), TRUE_PEAK (over the preset's ceiling), OUT_OF_SYNC (each placed sound located in the sound-effects mix by cross-correlation within ±3 frames of its cue: cut ±1, land ±2, move ±3, appear ±1 frame; offset in ms; or "cut": its clip ends at its peak), TRUNCATED (a placed sound's clip ends before the sound has faded to −60 dB: older copies without trailing silence; the safe fix is swap_sound to the same sound, which re-registers it, or soundDesign.swap on its own media), MASKED (dominant-band lift over the bed under 1.5 dB support / 3 dB hero, the masking solver's own definition), OVERLOAD (a sound over the bed cap, the export limiter pulling > 3 dB, clipping without normalisation), MUSIC_OVER_VOICE (music not 8 LU under the voice during speech), SILENCE (< −60 dBFS for ≥ 0.5 s outside silence cues), DIP (short-term drop > 10 LU with no stop-before, cut or silence cue), STALE_CUE (the cue's anchor moved), NO_PICTURE_EVENT (a derived cue with nothing on screen), DENSITY (heroes too close, too many cues per second), REPEAT (the same file back to back), LICENSE (non-commercial, no-derivatives, unknown or undeclared licences) and CREDITS (CC-BY sounds without a credits file). Each finding has a severity, a timecode, a message and, where one exists, a fix: {kind: commands → apply_commands args | job → rebalance_sfx / apply_delivery args | swap → swap_sound args, safe}. Apply ONLY fixes marked safe (each is one undo step that resolves its finding), then run sound_check again; leave the others to the user. listen: up to five "listen here" moments (worst finding, biggest hero, loudest moment, busiest moment, a cue that passes) — give them to the user VERBATIM and never say the result "sounds good". verdict: pass | warn | fail. images (default true) adds ONE PNG of up to three of the worst moments (±2 s each: loudness curves, waveform, cue ticks, findings). store: true writes the summary into the sequence (one undo step "Sound Check Result"; the editor shows whether it is still current). target: {integratedLufs, truePeakDb} checks a custom delivery target instead of the preset's numbers. humanVerdicts: what the user said after listening in the editor's Sound Check panel — "sounds right" or "flagged" with their note, at a timecode (and the listen slot when it is one of this report's moments); they are the user's comment markers: read them, fix what is flagged, and never add or change them yourself. Waits for the job (timeoutSeconds, default 300).`,
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -103,6 +125,21 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 					.enum(SOUND_DELIVERIES)
 					.optional()
 					.describe('Delivery preset to check against (default the sequence’s: web −14 LUFS / −1 dBTP…)'),
+				target: z
+					.object({
+						integratedLufs: z
+							.number()
+							.min(SOUND_CHECK_TARGET_LIMITS.integratedLufs.min)
+							.max(SOUND_CHECK_TARGET_LIMITS.integratedLufs.max),
+						truePeakDb: z
+							.number()
+							.min(SOUND_CHECK_TARGET_LIMITS.truePeakDb.min)
+							.max(SOUND_CHECK_TARGET_LIMITS.truePeakDb.max),
+					})
+					.optional()
+					.describe(
+						'A custom delivery target (integrated LUFS, true-peak ceiling dBTP) checked instead of the preset’s numbers; the preset still sets the default sound-effect levels',
+					),
 				range: RangeArg.optional(),
 				store: z.boolean().optional().describe('Store the summary in the sequence (default false)'),
 				images: z.boolean().optional().describe('Add a PNG of the worst moments (default true)'),
@@ -136,6 +173,7 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 							projectId: a.projectId,
 							sequenceId: seq.id,
 							...(a.preset ? { preset: a.preset } : {}),
+							...(a.target ? { target: a.target } : {}),
 							...(range ? { range } : {}),
 							...(a.store ? { store: true } : {}),
 						},
@@ -210,6 +248,7 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 					counts: r.counts,
 					loudness: r.loudness,
 					listen,
+					humanVerdicts: humanVerdictsOf(seq, r),
 					findings: r.issues.map(issueLine),
 					issues: r.issues,
 					table,
