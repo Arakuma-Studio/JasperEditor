@@ -80,10 +80,17 @@ export interface SoundDescriptors {
 	 */
 	rolloff95Hz?: number | null;
 	/**
+	 * Band-limit edge of a lossy encode or a resample (Hz, on a 250 Hz grid): the lowest frequency from 2 kHz where the
+	 * average power spectrum falls off a cliff — the 1.5 kHz under it broadband (≥ 4 of its six 250 Hz bands within
+	 * 15 dB of its loudest) and every 250 Hz band from it to the top at least 30 dB under that 1.5 kHz. Null when there
+	 * is no cliff (a natural roll-off, a tone), under 44.1 kHz, or for silence. Absent in version-1 analyses.
+	 */
+	cutoffHz?: number | null;
+	/**
 	 * Noise floor between events (dBFS): the 10th percentile of the 20 ms RMS windows (mean power over channels; a
-	 * full-scale sine reads −3.01), −120 for digital silence. Null when there are fewer than 10 windows (under 0.2 s) or
-	 * the percentile is within 12 dB of the loudest window (the sound fills the file: there is no "between"). Absent in
-	 * version-1 analyses.
+	 * full-scale sine reads −3.01), −120 for digital silence. Null with fewer than two onsets (one event has no
+	 * "between": the percentile would read its own decay), fewer than 10 windows (under 0.2 s), or a percentile within
+	 * 12 dB of the loudest window (the sound fills the file). Absent in version-1 analyses.
 	 */
 	floorDb?: number | null;
 	/** DC offset: 20·log10 of the largest |mean| of a channel (dBFS); null when every mean is 0. Absent in version 1. */
@@ -280,6 +287,7 @@ type Spectral = {
 	centroidHz: number;
 	rolloff85Hz: number;
 	rolloff95Hz: number;
+	cutoffHz: number | null;
 	below150Share: number;
 	above6kShare: number;
 	flatness: number;
@@ -290,6 +298,7 @@ const EMPTY_SPECTRAL: Spectral = {
 	centroidHz: 0,
 	rolloff85Hz: 0,
 	rolloff95Hz: 0,
+	cutoffHz: null,
 	below150Share: 0,
 	above6kShare: 0,
 	flatness: 0,
@@ -361,11 +370,60 @@ function spectral(pr: Prepared, s0: number, s1: number): Spectral {
 		centroidHz: powF / total,
 		rolloff85Hz: rolloff,
 		rolloff95Hz: rolloff95,
+		cutoffHz: cutoffOf(acc, binHz, sr),
 		below150Share: low / total,
 		above6kShare: high / total,
 		flatness,
 		octaveBandsDb,
 	};
+}
+
+/** Cliff search (`SoundDescriptors.cutoffHz`): 250 Hz bands, edges from 2 kHz to 20 kHz. */
+const CUTOFF_BAND_HZ = 250;
+const CUTOFF_MIN_HZ = 2000;
+const CUTOFF_MAX_HZ = 20_000;
+/** Bands under the edge that must be broadband, and how many of them within 15 dB of their loudest. */
+const CUTOFF_BELOW_BANDS = 6;
+const CUTOFF_BROAD_BANDS = 4;
+const CUTOFF_BROAD_DB = 15;
+/** Drop that makes a cliff: every band from the edge up this far under the 1.5 kHz below it (dB). */
+const CUTOFF_DROP_DB = 30;
+
+/** The band-limit edge of an average power spectrum (see `SoundDescriptors.cutoffHz`), or null. */
+function cutoffOf(acc: Float64Array, binHz: number, sr: number): number | null {
+	if (sr < AIR_MIN_SAMPLE_RATE || !(binHz > 0)) return null;
+	const nyq = sr / 2;
+	const nb = Math.floor(nyq / CUTOFF_BAND_HZ);
+	const band = new Float64Array(nb);
+	for (let k = 1; k < acc.length; k++) {
+		const b = Math.floor((k * binHz) / CUTOFF_BAND_HZ);
+		if (b < nb) band[b] += acc[k]!;
+	}
+	let peak = 0;
+	for (const v of band) peak = Math.max(peak, v);
+	if (!(peak > 0)) return null;
+	// dB re the loudest band, floored 200 dB under it
+	const db = Array.from(band, (v) => 10 * Math.log10(Math.max(v, peak * 1e-20) / peak));
+	// loudest band from each band to the top (the "above" side)
+	const maxFrom = new Float64Array(nb + 1).fill(-Infinity);
+	for (let b = nb - 1; b >= 0; b--) maxFrom[b] = Math.max(db[b]!, maxFrom[b + 1]!);
+	const first = Math.ceil(CUTOFF_MIN_HZ / CUTOFF_BAND_HZ);
+	const last = Math.min(Math.floor(CUTOFF_MAX_HZ / CUTOFF_BAND_HZ), nb - 2);
+	for (let e = first; e <= last; e++) {
+		if (e < CUTOFF_BELOW_BANDS) continue;
+		let below = 0;
+		let loud = -Infinity;
+		for (let b = e - CUTOFF_BELOW_BANDS; b < e; b++) {
+			below += band[b]!;
+			loud = Math.max(loud, db[b]!);
+		}
+		let broad = 0;
+		for (let b = e - CUTOFF_BELOW_BANDS; b < e; b++) if (db[b]! >= loud - CUTOFF_BROAD_DB) broad++;
+		if (broad < CUTOFF_BROAD_BANDS) continue;
+		const belowDb = 10 * Math.log10(Math.max(below / CUTOFF_BELOW_BANDS, peak * 1e-20) / peak);
+		if (belowDb - maxFrom[e]! >= CUTOFF_DROP_DB) return e * CUTOFF_BAND_HZ;
+	}
+	return null;
 }
 
 // ── onsets ──────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -716,7 +774,10 @@ export function prepareSound(channels: Float32Array[], sampleRate: number): Prep
 	return { channels: pr.ch, frames: pr.n, totalFrames: pr.total, sampleRate: pr.sr };
 }
 
-/** The recording's noise floor between events ({@link SoundDescriptors.floorDb}) of prepared input. */
+/**
+ * The recording's noise floor between events ({@link SoundDescriptors.floorDb}) of prepared input, for a recording
+ * known to hold two or more events (its takes).
+ */
 export function soundFloorDb(p: PreparedSound): number | null {
 	return floorOf(p.channels, p.frames, p.sampleRate);
 }
@@ -766,6 +827,7 @@ function silentResult(durationSec: number): SoundDescriptors {
 		centroidHz: 0,
 		rolloff85Hz: 0,
 		rolloff95Hz: null,
+		cutoffHz: null,
 		below150Share: 0,
 		above6kShare: 0,
 		flatness: 0,
@@ -868,6 +930,7 @@ export function analyzeSound(channels: Float32Array[], sampleRate: number): Soun
 
 	const spec = spectral(pr, s0, s1);
 	const p = pitch(pr, s0, s1, env);
+	const onsets = onsetCount(pr, s0, s1);
 	const loud = loudness(pr);
 
 	return {
@@ -881,6 +944,7 @@ export function analyzeSound(channels: Float32Array[], sampleRate: number): Soun
 		centroidHz: qHz(Math.min(sr / 2, spec.centroidHz)),
 		rolloff85Hz: qHz(Math.min(sr / 2, spec.rolloff85Hz)),
 		rolloff95Hz: sr >= AIR_MIN_SAMPLE_RATE ? qHz(Math.min(sr / 2, spec.rolloff95Hz)) : null,
+		cutoffHz: spec.cutoffHz,
 		below150Share: qUnit(spec.below150Share),
 		above6kShare: qUnit(spec.above6kShare),
 		flatness: qUnit(spec.flatness),
@@ -889,14 +953,14 @@ export function analyzeSound(channels: Float32Array[], sampleRate: number): Soun
 		),
 		pitchMidi: p.midi === null || !Number.isFinite(p.midi) ? null : quant(p.midi, 100),
 		pitchConfidence: qUnit(p.confidence),
-		onsetCount: onsetCount(pr, s0, s1),
+		onsetCount: onsets,
 		integratedLufs: qDbOrNull(loud.integrated),
 		maxMomentaryLufs: qDbOrNull(loud.maxMomentary),
 		truePeakDb: qDbOrNull(loud.truePeak),
 		stereoWidth: qUnit(stereoWidth),
 		headQuietSec,
 		loopable: isLoopable(pr, headQuietSec),
-		floorDb: floorOf(ch, n, sr),
+		floorDb: onsets >= 2 ? floorOf(ch, n, sr) : null,
 		dcDb: dcOf(ch, n),
 	};
 }

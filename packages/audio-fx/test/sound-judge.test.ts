@@ -118,7 +118,7 @@ describe('judgeSound', () => {
 			truePeakDb: 3,
 			onsetCount: 6,
 			maxMomentaryLufs: -70,
-			rolloff95Hz: 5000,
+			cutoffHz: 5000,
 			floorDb: -30,
 			dcDb: -20,
 		};

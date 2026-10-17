@@ -51,8 +51,8 @@ export interface SoundTypeProfile {
 	/** Smallest acceptable `maxMomentaryLufs` (less is quiet). */
 	minMaxMomentaryLufs: number;
 	/**
-	 * The type needs air (P6-E9 `lowpassed`): a `rolloff95Hz` under {@link LOWPASSED_ROLLOFF_HZ} in a ≥ 44.1 kHz file
-	 * is a lossy cliff. Absent (older or hostile profiles) = not checked.
+	 * The type needs air (P6-E9 `lowpassed`): a band-limit cliff (`cutoffHz`) under {@link LOWPASSED_ROLLOFF_HZ} in a
+	 * ≥ 44.1 kHz file is a lossy encode. Absent (older or hostile profiles) = not checked.
 	 */
 	needsAir?: boolean;
 	/** Loudest acceptable `floorDb` between events (P6-E9 `noisy-floor`); null or absent = not checked (beds, swells). */
@@ -106,8 +106,10 @@ export interface JudgeResult {
 export const CLIPPED_TRUE_PEAK_DB = 0.3;
 
 /**
- * `lowpassed` (P6-E9, from earshot's real-sound sourcing rules): 95 % of the power under 12 kHz in a file that could
- * hold more (`rolloff95Hz` is only reported from 44.1 kHz) and a type that needs air — the cliff of a low-bitrate encode.
+ * `lowpassed` (P6-E9, from earshot's real-sound sourcing rules: "rolloff95 > 12 kHz, not dull; a cliff means a
+ * low-bitrate encode"): a type that needs air whose spectrum ends in a cliff (`cutoffHz`, only reported from 44.1 kHz)
+ * under 12 kHz. Not the 95 % roll-off itself: that is under 12 kHz for nearly every natural click and key (measured on
+ * the starter kit; wp-note "Phase 6 → WP-E5"), so it cannot tell an encode from a sound.
  */
 export const LOWPASSED_ROLLOFF_HZ = 12_000;
 /** The floor between events most one-shot types accept (dBFS; earshot real-sound rule of thumb, not a film norm). */
@@ -168,9 +170,9 @@ export function judgeSound(d: SoundDescriptors, profile: SoundTypeProfile): Judg
 		if (m === null || m < profile.minMaxMomentaryLufs)
 			sev.set('quiet', m === null ? 1 : severity(profile.minMaxMomentaryLufs - m, 20));
 	}
-	const roll = d.rolloff95Hz;
-	if (profile.needsAir === true && fin(roll) && roll < LOWPASSED_ROLLOFF_HZ)
-		sev.set('lowpassed', severity(LOWPASSED_ROLLOFF_HZ - roll, 6000));
+	const cut = d.cutoffHz;
+	if (profile.needsAir === true && fin(cut) && cut < LOWPASSED_ROLLOFF_HZ)
+		sev.set('lowpassed', severity(LOWPASSED_ROLLOFF_HZ - cut, 6000));
 	const floor = d.floorDb;
 	if (fin(profile.maxFloorDb) && fin(floor) && floor > profile.maxFloorDb)
 		sev.set('noisy-floor', severity(floor - profile.maxFloorDb, 15));
@@ -218,14 +220,14 @@ export const DEFAULT_TYPE_PROFILES: Readonly<Record<SoundTypeId, SoundTypeProfil
 	/* @__PURE__ */ Object.freeze({
 		//              minDur maxDur rise   decay  <150  >6k   flat  single momentary air floor
 		hit: P(0.05, 6, 25, true, 0.6, 0.5, null, true, -40, false, NOISY_FLOOR_DB),
-		boom: P(0.2, 10, 60, true, 1, 0.25, null, true, -45, false, NOISY_FLOOR_DB),
+		boom: P(0.2, 10, 60, true, 1, 0.25, null, true, -45, false, null),
 		riser: P(0.5, 30, null, false, 0.6, 0.6, null, false, -45, false, null),
 		reverse: P(0.3, 12, null, false, 0.6, 0.6, null, false, -45, false, null),
 		transition: P(0.2, 12, null, false, 0.7, 0.6, null, false, -45, false, null),
 		whoosh: P(0.15, 6, null, false, 0.5, 0.7, null, false, -45, false, null),
 		swish: P(0.05, 3, null, false, 0.3, 0.85, null, false, -45, true, null),
-		glitch: P(0.03, 5, null, false, 0.5, 0.7, null, false, -45, false, NOISY_FLOOR_DB),
-		ui: P(0.01, 2, 30, true, 0.3, 0.6, null, false, -50, false, NOISY_FLOOR_DB),
+		glitch: P(0.03, 5, null, false, 0.5, 0.7, null, false, -45, false, null),
+		ui: P(0.01, 2, 30, true, 0.3, 0.6, null, false, -50, false, null),
 		click: P(0.002, 1, 6, true, 0.3, 0.85, null, true, -55, true, NOISY_FLOOR_DB),
 		key: P(0.005, 1, 10, true, 0.4, 0.7, null, true, -55, true, NOISY_FLOOR_DB),
 		tick: P(0.002, 1, 6, true, 0.3, 0.85, null, true, -55, true, NOISY_FLOOR_DB),
@@ -233,9 +235,9 @@ export const DEFAULT_TYPE_PROFILES: Readonly<Record<SoundTypeId, SoundTypeProfil
 		pop: P(0.01, 1.5, 15, true, 0.5, 0.5, null, true, -50, false, NOISY_FLOOR_DB),
 		thump: P(0.05, 3, 25, true, 0.95, 0.25, null, true, -45, false, NOISY_FLOOR_DB),
 		paper: P(0.05, 6, null, false, 0.3, 0.85, null, false, -50, true, null),
-		chime: P(0.2, 10, 40, true, 0.3, 0.5, 0.3, false, -45, false, NOISY_FLOOR_DB),
+		chime: P(0.2, 10, 40, true, 0.3, 0.5, 0.3, false, -45, false, null),
 		shimmer: P(0.3, 12, null, false, 0.2, 0.85, 0.5, false, -50, true, null),
-		zap: P(0.05, 3, 30, false, 0.5, 0.6, null, false, -45, false, NOISY_FLOOR_DB),
+		zap: P(0.05, 3, 30, false, 0.5, 0.6, null, false, -45, false, null),
 		ambience: P(2, 3600, null, false, 0.8, 0.6, null, false, -60, false, null),
 		roomtone: P(2, 3600, null, false, 0.9, 0.6, null, false, -75, false, null),
 	});

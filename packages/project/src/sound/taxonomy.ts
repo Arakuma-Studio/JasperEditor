@@ -86,7 +86,7 @@ export interface SoundTypeProfile {
 	singleHit: boolean;
 	/** Smallest acceptable `maxMomentaryLufs` (less is quiet). */
 	minMaxMomentaryLufs: number;
-	/** The type needs air: `rolloff95Hz` under 12 kHz in a ≥ 44.1 kHz file is `lowpassed` (P6-E9). */
+	/** The type needs air: a band-limit cliff (`cutoffHz`) under 12 kHz in a ≥ 44.1 kHz file is `lowpassed` (P6-E9). */
 	needsAir?: boolean;
 	/** Loudest acceptable `floorDb` between events (`noisy-floor`, P6-E9); null = not checked. */
 	maxFloorDb?: number | null;
@@ -195,7 +195,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'hero',
 		['reveal', 'cut', 'emphasis', 'land'],
 		D(0.5, 2.5, 8, null),
-		P(0.2, 10, 60, true, 1, 0.25, null, true, -45, false, NOISY_FLOOR_DB),
+		P(0.2, 10, 60, true, 1, 0.25, null, true, -45, false, null),
 	),
 	riser: T(
 		'riser',
@@ -255,7 +255,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['cut', 'transition', 'appear', 'exit', 'emphasis'],
 		D(0.1, 0.4, 2, 'span'),
-		P(0.03, 5, null, false, 0.5, 0.7, null, false, -45, false, NOISY_FLOOR_DB),
+		P(0.03, 5, null, false, 0.5, 0.7, null, false, -45, false, null),
 	),
 	ui: T(
 		'ui',
@@ -265,7 +265,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['appear', 'emphasis'],
 		D(0.03, 0.25, 1, null),
-		P(0.01, 2, 30, true, 0.3, 0.6, null, false, -50, false, NOISY_FLOOR_DB),
+		P(0.01, 2, 30, true, 0.3, 0.6, null, false, -50, false, null),
 	),
 	click: T(
 		'click',
@@ -345,7 +345,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['reveal', 'appear', 'emphasis'],
 		D(0.4, 2, 6, null),
-		P(0.2, 10, 40, true, 0.3, 0.5, 0.3, false, -45, false, NOISY_FLOOR_DB),
+		P(0.2, 10, 40, true, 0.3, 0.5, 0.3, false, -45, false, null),
 	),
 	shimmer: T(
 		'shimmer',
@@ -365,7 +365,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['appear', 'transition', 'emphasis', 'exit'],
 		D(0.1, 0.35, 1.5, null),
-		P(0.05, 3, 30, false, 0.5, 0.6, null, false, -45, false, NOISY_FLOOR_DB),
+		P(0.05, 3, 30, false, 0.5, 0.6, null, false, -45, false, null),
 	),
 	ambience: T(
 		'ambience',

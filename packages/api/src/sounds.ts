@@ -106,6 +106,8 @@ export const SoundDescriptorsSchema = z.object({
 	rolloff85Hz: fin().min(0),
 	/** 95 % rolloff (Hz); null under 44.1 kHz; absent in analyses before version 2 (P6-E9). */
 	rolloff95Hz: fin().min(0).nullable().optional(),
+	/** Band-limit cliff of a lossy encode (Hz); null when none or under 44.1 kHz; absent before version 2. */
+	cutoffHz: fin().min(0).nullable().optional(),
 	below150Share: fin().min(0).max(1),
 	above6kShare: fin().min(0).max(1),
 	flatness: fin().min(0).max(1),

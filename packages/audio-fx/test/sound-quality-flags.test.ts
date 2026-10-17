@@ -58,8 +58,14 @@ describe('descriptors version 2', () => {
 		expect(analyzeSound([hitsOverFloor(0)], SR).floorDb).toBe(-120);
 	});
 
-	it('floorDb is null when there is no "between": a sound that fills the file, or under 0.2 s', () => {
+	it('floorDb is null when there is no "between": one event, a sound that fills the file, or under 0.2 s', () => {
 		expect(analyzeSound([floorNoise(SR, 0.3)], SR).floorDb).toBeNull();
+		// one hit decaying over a long file: its tail is not a floor
+		const one = floorNoise(2 * SR, 0.005466, 4);
+		addClick(one, 4800, { tauMs: 300, lenMs: 1900, seed: 3 });
+		const d1 = analyzeSound([one], SR);
+		expect(d1.onsetCount).toBe(1);
+		expect(d1.floorDb).toBeNull();
 		const short = new Float32Array(Math.round(0.15 * SR));
 		addClick(short, 100);
 		expect(analyzeSound([short], SR).floorDb).toBeNull();
@@ -70,6 +76,25 @@ describe('descriptors version 2', () => {
 		const d = analyzeSound([x, sine(1000, 0.3, SR, SR)], SR);
 		expect(Math.abs(d.dcDb! - 20 * Math.log10(0.02))).toBeLessThan(0.05);
 		expect(analyzeSound([new Float32Array(SR)], SR).dcDb).toBeNull();
+	});
+
+	it('cutoffHz: the cliff of a band limit; none for full-band noise, a natural slope or a tone; null under 44.1 kHz', () => {
+		const at = (lo: number, hi: number, sr = SR) => analyzeSound([bandNoise(7, 1 << 16, sr, lo, hi)], sr).cutoffHz;
+		// the edge, or the next 250 Hz band (the analysis window's leakage)
+		for (const edge of [8000, 11_000, 16_000]) expect([edge, edge + 250], String(edge)).toContain(at(20, edge));
+		expect(at(20, 23_900)).toBeNull();
+		expect(at(20, 8000, 32_000)).toBeNull();
+		// a natural slope (power ∝ 1/f²) and a 3 kHz tone have no cliff
+		const pink = new Float32Array(1 << 16);
+		const r = new Prng(9);
+		let y = 0;
+		for (let i = 0; i < pink.length; i++) {
+			y = 0.995 * y + 0.05 * r.uniform();
+			pink[i] = y;
+		}
+		expect(analyzeSound([pink], SR).cutoffHz).toBeNull();
+		expect(analyzeSound([sine(3000, 0.5, SR, SR)], SR).cutoffHz).toBeNull();
+		expect(analyzeSound([new Float32Array(SR)], SR).cutoffHz).toBeNull();
 	});
 
 	it('rolloff95Hz: full-band noise near the top, an 8 kHz lowpass under it, null under 44.1 kHz', () => {
@@ -96,6 +121,7 @@ const KEY: SoundDescriptors = {
 	centroidHz: 4000,
 	rolloff85Hz: 9000,
 	rolloff95Hz: 15_000,
+	cutoffHz: null,
 	below150Share: 0.01,
 	above6kShare: 0.3,
 	flatness: 0.3,
@@ -119,11 +145,12 @@ describe('judge flags lowpassed, noisy-floor, dc-offset', () => {
 		expect(judgeSound(KEY, key)).toEqual({ ok: true, score: 1, reasons: [] });
 	});
 
-	it('lowpassed: rolloff95 under 12 kHz for a type that needs air only', () => {
-		expect(judgeSound({ ...KEY, rolloff95Hz: 9000 }, key).reasons).toEqual(['lowpassed']);
-		expect(judgeSound({ ...KEY, rolloff95Hz: LOWPASSED_ROLLOFF_HZ }, key).ok).toBe(true);
-		expect(judgeSound({ ...KEY, rolloff95Hz: null }, key).ok).toBe(true);
-		const hit = { ...KEY, durationSec: 0.6, rolloff95Hz: 4000 };
+	it('lowpassed: a band-limit cliff under 12 kHz for a type that needs air only (not the 95 % roll-off)', () => {
+		expect(judgeSound({ ...KEY, cutoffHz: 9000 }, key).reasons).toEqual(['lowpassed']);
+		expect(judgeSound({ ...KEY, cutoffHz: LOWPASSED_ROLLOFF_HZ }, key).ok).toBe(true);
+		expect(judgeSound({ ...KEY, cutoffHz: null }, key).ok).toBe(true);
+		expect(judgeSound({ ...KEY, rolloff95Hz: 5000 }, key).ok).toBe(true);
+		const hit = { ...KEY, durationSec: 0.6, cutoffHz: 4000 };
 		expect(judgeSound(hit, DEFAULT_TYPE_PROFILES.hit).reasons).not.toContain('lowpassed');
 	});
 
@@ -132,7 +159,7 @@ describe('judge flags lowpassed, noisy-floor, dc-offset', () => {
 		expect(judgeSound({ ...KEY, floorDb: -45 }, key).reasons).toEqual(['noisy-floor']);
 		expect(judgeSound({ ...KEY, floorDb: -56 }, key).ok).toBe(true);
 		expect(judgeSound({ ...KEY, floorDb: null }, key).ok).toBe(true);
-		for (const t of ['riser', 'whoosh', 'ambience', 'roomtone'] as const)
+		for (const t of ['riser', 'whoosh', 'ambience', 'roomtone', 'boom', 'chime', 'ui'] as const)
 			expect(DEFAULT_TYPE_PROFILES[t].maxFloorDb, t).toBeNull();
 	});
 
@@ -145,13 +172,13 @@ describe('judge flags lowpassed, noisy-floor, dc-offset', () => {
 
 	it('the new reasons come last in JUDGE_REASONS and lower the score', () => {
 		expect(JUDGE_REASONS.slice(-3)).toEqual(['lowpassed', 'noisy-floor', 'dc-offset']);
-		const r = judgeSound({ ...KEY, rolloff95Hz: 6000, floorDb: -40, dcDb: -20 }, key);
+		const r = judgeSound({ ...KEY, cutoffHz: 6000, floorDb: -40, dcDb: -20 }, key);
 		expect(r.reasons).toEqual(['lowpassed', 'noisy-floor', 'dc-offset']);
 		expect(r.score).toBeLessThan(0.5);
 	});
 
 	it('version-1 descriptors (without the new fields) judge as before', () => {
-		const { rolloff95Hz: _r, floorDb: _f, dcDb: _d, ...v1 } = KEY;
+		const { rolloff95Hz: _r, cutoffHz: _c, floorDb: _f, dcDb: _d, ...v1 } = KEY;
 		expect(judgeSound(v1, key)).toEqual({ ok: true, score: 1, reasons: [] });
 		expect(judgeSound({ ...v1, onsetCount: 3 }, key).reasons).toEqual(['multi-hit']);
 	});
@@ -167,12 +194,18 @@ describe('judge flags lowpassed, noisy-floor, dc-offset', () => {
 		}
 	});
 
-	it('a measured lowpassed key (an 8 kHz band-limit at 48 kHz) is flagged; the same band at 32 kHz is not', () => {
-		const x = new Float32Array(Math.round(0.3 * SR));
-		const n = bandNoise(4, 1 << 14, SR, 300, 8000);
-		for (let i = 0; i < 4800; i++) x[240 + i] = n[i]! * Math.exp(-i / 300);
-		const d = analyzeSound([x], SR);
-		expect(d.rolloff95Hz!).toBeLessThan(LOWPASSED_ROLLOFF_HZ);
-		expect(judgeSound(d, key).reasons).toContain('lowpassed');
+	it('a measured key band-limited at 8 kHz (a low-bitrate encode) is lowpassed; the same key full-band is not', () => {
+		const press = (hi: number) => {
+			const x = new Float32Array(Math.round(0.3 * SR));
+			const n = bandNoise(4, 1 << 14, SR, 300, hi);
+			for (let i = 0; i < 4800; i++) x[240 + i] = n[i]! * Math.exp(-i / 300);
+			return analyzeSound([x], SR);
+		};
+		const cut = press(8000);
+		expect([8000, 8250]).toContain(cut.cutoffHz);
+		expect(judgeSound(cut, key).reasons).toContain('lowpassed');
+		const full = press(23_900);
+		expect(full.cutoffHz).toBeNull();
+		expect(judgeSound(full, key).reasons).not.toContain('lowpassed');
 	});
 });
