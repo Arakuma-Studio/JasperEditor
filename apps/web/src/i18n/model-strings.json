@@ -33,7 +33,7 @@
   "{0} ends {1} ms late on its {2} cue at {3} (an end-aligned sound may end 250 ms before to 30 ms after it)",
   "{0} has audio between frames {1} and {2}; placing never overwrites (use track \"auto\")",
   "{0} is a {1} track; sounds go on audio tracks",
-  "{0} is chopped at {1}: it ends {2} dB under its peak while its source goes on ({3} dB) with a {4} ms fade-out",
+  "{0} is chopped at {1}: it ends {2} dB under its peak while its source goes on at {3} dB re that peak, with a {4} ms fade-out",
   "{0} is cut {1} ms after its aligned point by the end of its clip at {2}: the sound it is placed for does not play",
   "{0} is cut by the end of its clip at {1}, {2} ms before the sound has faded (−60 dB)",
   "{0} is given twice",
