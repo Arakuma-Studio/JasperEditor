@@ -1,8 +1,10 @@
 // Sound ranking at library scale and against hostile names (spec 12 §2.1; wp-note "WP1.2 engine library" ▸ "Review
 // fixes", findings 10 and 11): prototype keys name no type, query words are deduplicated and capped, `soundFilterOf`
-// agrees with `rankSounds`, and ranking 5 000 sounds takes < 50 ms.
-import { availableParallelism, loadavg } from 'node:os';
+// agrees with `rankSounds`, and ranking 5 000 sounds takes < 50 ms of main-thread CPU time (not wall time).
+import { readFileSync } from 'node:fs';
+import { loadavg } from 'node:os';
 import { performance } from 'node:perf_hooks';
+import { isMainThread } from 'node:worker_threads';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -222,28 +224,57 @@ function library(n: number): RankableSound[] {
 }
 
 /**
- * The time budget of one search: 50 ms. On an oversubscribed shared host (1-minute load above 2 per core) wall time
- * mostly measures the wait for a core, so the budget grows with the load (load 64 on 16 cores: 100 ms); the previous
- * code took ≈ 560 ms at load ≈ 28, so the check still catches a regression of that kind.
+ * The budget of one search: 50 ms of CPU time, whatever the host's load. Wall time on an oversubscribed shared host
+ * mostly measures the wait for a core (the old check scaled its budget with the load average: 100 ms at load 64 on 16
+ * cores, so it was loose when strict mattered and still flaky in spikes); CPU time is what the search itself costs. The
+ * code before finding 10 took ≈ 560 ms, so a regression of that kind still fails by an order of magnitude.
  */
-function budgetMs(): number {
-	return 50 * Math.max(1, loadavg()[0]! / availableParallelism() / 2);
+const BUDGET_CPU_MS = 50;
+
+/**
+ * CPU time (ms) of this thread on the CPU, ns-exact: the first field of Linux's `/proc/self/task/<tid>/schedstat`.
+ * Only the main thread is counted — `process.cpuUsage` adds V8's concurrent GC and compiler threads, which made one
+ * search "cost" 26 ms of CPU in 12 ms of wall time at load 53. Vitest runs each test file in its own forked process
+ * (the default `forks` pool), whose main thread is this one. Elsewhere (no procfs) `process.cpuUsage` stands in.
+ */
+function threadCpuMs(): number {
+	try {
+		const ns = Number(readFileSync(`/proc/self/task/${process.pid}/schedstat`, 'utf8').split(' ')[0]);
+		if (Number.isFinite(ns)) return ns / 1e6;
+	} catch {
+		// no procfs: fall through
+	}
+	const c = process.cpuUsage();
+	return (c.user + c.system) / 1000;
 }
 
-/** Min and median of 7 runs (`run(1)` … `run(7)`); up to 3 batches until the min is under 50 ms (load spikes). */
-function measure(run: (i: number) => number): { min: number; median: number } {
-	let best = { min: Number.POSITIVE_INFINITY, median: Number.POSITIVE_INFINITY };
-	for (let batch = 0; batch < 3 && best.min >= 50; batch++) {
-		const times: number[] = [];
-		for (let i = 1; i <= 7; i++) times.push(run(batch * 7 + i));
-		times.sort((a, b) => a - b);
-		if (times[0]! < best.min) best = { min: times[0]!, median: times[3]! };
+/** Main-thread CPU time and wall time (ms) of `fn`. */
+function cpuTimed(fn: () => void): { cpu: number; wall: number } {
+	if (!isMainThread) throw new Error('the CPU-time budget needs the forks pool (one process per test file)');
+	const c0 = threadCpuMs();
+	const t0 = performance.now();
+	fn();
+	const wall = performance.now() - t0;
+	return { cpu: threadCpuMs() - c0, wall };
+}
+
+/** Min CPU (and the median wall time) of 7 runs (`run(1)` … `run(7)`); up to 3 batches until the min fits the budget. */
+function measure(run: (i: number) => { cpu: number; wall: number }): { min: number; wallMedian: number } {
+	let best = { min: Number.POSITIVE_INFINITY, wallMedian: Number.POSITIVE_INFINITY };
+	for (let batch = 0; batch < 3 && best.min >= BUDGET_CPU_MS; batch++) {
+		const runs: { cpu: number; wall: number }[] = [];
+		for (let i = 1; i <= 7; i++) runs.push(run(batch * 7 + i));
+		const cpu = runs.map((r) => r.cpu).sort((a, b) => a - b);
+		const wall = runs.map((r) => r.wall).sort((a, b) => a - b);
+		if (cpu[0]! < best.min) best = { min: cpu[0]!, wallMedian: wall[3]! };
 	}
 	return best;
 }
 
 describe('ranking 5 000 sounds (finding 10)', () => {
-	it('takes < 50 ms (min of 7 runs after a warm-up, a new query each run)', { timeout: 300_000 }, () => {
+	it('takes < 50 ms of CPU time (min of 7 runs after a warm-up, a new query each run)', {
+		timeout: 300_000,
+	}, () => {
 		const lib = library(5000);
 		const report: string[] = [];
 		for (const base of [
@@ -255,23 +286,25 @@ describe('ranking 5 000 sounds (finding 10)', () => {
 			const run = (i: number) => {
 				// Another query string each run (trailing spaces: the same words), so no text score is reused.
 				const query = base.query === undefined ? undefined : `${base.query}${' '.repeat(i)}`;
-				const t0 = performance.now();
-				const out = rankSounds(lib, { ...base, ...(query !== undefined ? { query } : {}) });
-				return { ms: performance.now() - t0, n: out.length };
+				let n = 0;
+				const t = cpuTimed(() => {
+					n = rankSounds(lib, { ...base, ...(query !== undefined ? { query } : {}) }).length;
+				});
+				return { ...t, n };
 			};
 			const warm = run(0);
 			const t = measure((i) => {
 				const r = run(i);
 				expect(r.n).toBe(warm.n);
-				return r.ms;
+				return r;
 			});
 			report.push(
-				`${JSON.stringify(base)}: ${warm.n} results, min ${t.min.toFixed(2)} ms, median ${t.median.toFixed(2)} ms`,
+				`${JSON.stringify(base)}: ${warm.n} results, min CPU ${t.min.toFixed(2)} ms, median wall ${t.wallMedian.toFixed(2)} ms`,
 			);
-			expect(t.min).toBeLessThan(budgetMs());
+			expect(t.min).toBeLessThan(BUDGET_CPU_MS);
 		}
 		console.log(
-			`rankSounds, 5000 sounds (load ${loadavg()[0]!.toFixed(1)}, budget ${budgetMs().toFixed(0)} ms):\n${report.join('\n')}`,
+			`rankSounds, 5000 sounds (load ${loadavg()[0]!.toFixed(1)}, CPU budget ${BUDGET_CPU_MS} ms):\n${report.join('\n')}`,
 		);
 	});
 });
