@@ -401,6 +401,17 @@ export function jobBody(job: EngineJob, baseUrl: string) {
 						...result,
 						...(result.downloadUrl ? { downloadUrl: abs(result.downloadUrl) } : {}),
 						...(result.url ? { url: abs(result.url) } : {}),
+						// spec 12 §2.11: the sound credits sidecar of an export
+						...(result.credits && typeof result.credits === 'object'
+							? {
+									credits: {
+										...(result.credits as Record<string, unknown>),
+										...((result.credits as { url?: unknown }).url
+											? { url: abs((result.credits as { url?: unknown }).url) }
+											: {}),
+									},
+								}
+							: {}),
 					},
 				}
 			: {}),
