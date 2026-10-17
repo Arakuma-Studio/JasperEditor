@@ -7377,7 +7377,7 @@ WP5.1 (= L) from the number of layers each package touches (model, engine, MCP, 
 | Gemini `llm` critique | An online, paid / quota service that uploads the user's audio. Violates local-first and no paid services. |
 | real-sound sourcing (Freesound previews, Mixkit, Pixabay downloads, licence pages read by agents) | Human decision 2 (no Freesound or online sound sources). The Mixkit and Pixabay licences are not on our allowlist. |
 | Rubber Band music stretch | GPL, so it violates LGPL-only ffmpeg (AGENTS §2). Our Remix edits at beats without stretching. If a stretch is ever needed, ffmpeg `atempo` is LGPL. |
-| AST AudioSet tagging | A second ~350 MB model that hears ≤ 8 kHz and is weak on one-shots (earshot LIMITS). Our Auto Tag covers the clip categories without a model. |
+| AST AudioSet tagging | A second model (≈ 350 MB fp32, estimated from its size class; not measured) that hears ≤ 8 kHz and is weak on one-shots (earshot LIMITS). Our Auto Tag covers the clip categories without a model. |
 | Bundling earshot's 7-film launch profile (or porting its vocabulary) | One user's style (modern SaaS launch films). Its own docs say it does not describe every good film, and its scorecard was not blind. Users build their own profiles (P6-E8). We write our own vocabulary if P6-E14 is approved. |
 | The JSON mix DSL (rules with regex on kinds, pools, buses) | It would duplicate our model, where every result is an ordinary undoable command on clips. Its useful ideas (pools, cycle, ramps, classes of action) are taken as P6-E9, P6-E10 and P6-E3 COVERAGE. |
 | Master chain (HP 28 Hz, mono below 120 Hz, glue compressor) | Needs a new DSP processor on the Mix; spec 12 §0 says none. The delivery normalisation and TP limiter cover loudness. |
@@ -7392,8 +7392,8 @@ WP5.1 (= L) from the number of layers each package touches (model, engine, MCP, 
 1. **P6-E13 default.** Should the default "Commercial-safe" filter exclude CC BY-SA sounds? Proposed: yes. CC BY-SA
    4.0 §1(a) and §3(b) make a video synced with a BY-SA sound Adapted Material that must be shared under BY-SA. The
    sounds stay allowed when chosen explicitly. The warning, badge and credits notice are built either way.
-2. **P6-E14 (CLAP).** May we offer `laion/larger_clap_general` (Apache-2.0 weights; trained on LAION-Audio data) as
-   an optional download? It would be ≈ 205 MB int8 or ≈ 783 MB fp32, exported to ONNX by us, because the community
+2. **P6-E14 (CLAP).** May we offer `laion/larger_clap_general` (Apache-2.0 weights; its training data is described on
+   its model card, which was not reviewed here) as an optional download? It would be ≈ 205 MB int8 or ≈ 783 MB fp32, exported to ONNX by us, because the community
    ONNX conversion `Xenova/larger_clap_general` declares no licence. Not built until a human answers.
 3. Carried over from WP6.1, still open: BigSoundBank. Its robots.txt / ai.txt exclude automated access. Takes (P6-E9)
    and beds (P6-E12) are most useful with real recordings of keys, risers and room tone, which the Kenney packs lack.
