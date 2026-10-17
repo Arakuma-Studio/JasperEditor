@@ -126,6 +126,12 @@ export type SoundTiming = {
 	endSec?: number;
 	/** Where the sound has faded to −60 dB re its peak (`peakSec + tailSec`, ≤ `endSec`), when the provenance knows it. */
 	tailEndSec?: number;
+	/**
+	 * Seconds of silence registration put after the sound (exactly `samples / rate`), when it did. With the placed media's
+	 * own length (`planSoundInsert`'s `mediaDurationFlicks`, sample-exact) the sound ends at `media − trailSec`: `endSec`
+	 * comes from descriptors quantised to 0.1 ms, this does not (an end-aligned riser ends on the sample, like a peak).
+	 */
+	trailSec?: number;
 };
 
 /**
@@ -154,7 +160,7 @@ export function soundTimingOf(
 			onsetSec: d.onsetSec,
 			headQuietSec: d.headQuietSec,
 			durationSec: d.durationSec,
-			...(trail > 0 ? { endSec } : {}),
+			...(trail > 0 ? { endSec, trailSec: trail } : {}),
 			...(ok(d.tailSec) ? { tailEndSec: Math.min(endSec, d.peakSec + d.tailSec) } : {}),
 		};
 	}
@@ -216,8 +222,23 @@ export function planSoundInsert(input: {
 	const cue = Number.isFinite(input.cueFrame) ? Math.max(0, Math.round(input.cueFrame)) : 0;
 	const rate = input.rate ?? 1;
 	const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
-	// where the sound ends (risers align by it) and the point every clip must reach: its −60 dB tail, else its end
-	const endSec = Math.min(durSec, fin(t.endSec) && t.endSec > 0 ? t.endSec : durSec);
+	// where the sound ends (risers align by it) and the point every clip must reach: its −60 dB tail, else its end. With
+	// the media's own length and the trail registration added, the end is exact (`media − trail`): the descriptors'
+	// `endSec` is 0.1 ms-quantised (the Phase 5 verification measured a riser ending 0.03 ms early)
+	const mediaKnown = !!input.mediaDurationFlicks && Number.isFinite(input.mediaDurationFlicks);
+	const exactEnd =
+		mediaKnown && fin(t.trailSec) && t.trailSec > 0 && fin(t.endSec) && t.endSec > 0
+			? durSec - t.trailSec
+			: Number.NaN;
+	// only when it describes the same file (within the descriptors' quantisation and more): another media's length is not
+	const endSec = Math.min(
+		durSec,
+		Number.isFinite(exactEnd) && exactEnd > 0 && Math.abs(exactEnd - t.endSec!) <= 0.002
+			? Math.max(exactEnd, Math.min(t.peakSec, durSec), Math.min(t.onsetSec, durSec))
+			: fin(t.endSec) && t.endSec > 0
+				? t.endSec
+				: durSec,
+	);
 	const reachSec = Math.min(endSec, fin(t.tailEndSec) && t.tailEndSec >= 0 ? t.tailEndSec : endSec);
 	const r = peakAlignedStart({
 		cueFrame: cue,
