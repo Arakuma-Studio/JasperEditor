@@ -24,6 +24,7 @@ export const SOUND_CHECK_CODES = [
 	'LOUDNESS',
 	'TRUE_PEAK',
 	'OUT_OF_SYNC',
+	'TRUNCATED',
 	'MASKED',
 	'OVERLOAD',
 	'MUSIC_OVER_VOICE',
@@ -48,6 +49,7 @@ export const SOUND_CHECK_CATEGORY: Readonly<
 	LOUDNESS: 'loudness',
 	TRUE_PEAK: 'loudness',
 	OUT_OF_SYNC: 'sync',
+	TRUNCATED: 'sync',
 	MASKED: 'mix',
 	OVERLOAD: 'mix',
 	MUSIC_OVER_VOICE: 'mix',
@@ -227,6 +229,7 @@ export const SOUND_CHECK_MESSAGES = {
 	syncUnmeasurable: '{0}: its timing cannot be measured ({1})',
 	syncCut:
 		'{0} is cut {1} ms after its aligned point by the end of its clip at {2}: the sound it is placed for does not play',
+	truncated: '{0} is cut by the end of its clip at {1}, {2} ms before the sound has faded (−60 dB)',
 	maskedHero:
 		'Hero sound {0} at {1} clears the bed by only {2} dB in its dominant band ({3} Hz; at least {4} dB)',
 	maskedSupport:
@@ -261,6 +264,8 @@ export const SOUND_CHECK_MESSAGES = {
 	listenPassing: 'A cue that passes every check: {0}',
 	fixAlign: 'Align its peak to the cue',
 	fixUncut: 'Lengthen the clip by {0} frames so the whole sound plays',
+	fixRepad: 'Register "{0}" again (its copy ends in silence now) and swap it in, so the whole sound plays',
+	fixRunOut: 'Let the clip play to the end of its sound (past the end of its media)',
 	fixGain: 'Set its gain to {0} dB (masking solver)',
 	fixRebalance: 'Rebalance the sound effects against the bed (masking solver)',
 	fixLoudness: 'Normalise the mix to {0} LUFS / {1} dBTP',

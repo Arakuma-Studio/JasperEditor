@@ -15,6 +15,7 @@ import {
 	type ClipSfx,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
+	libraryTrailSilenceSamples,
 	type ProjectDocument,
 	type Sequence,
 	type SoundDesign,
@@ -538,6 +539,104 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		);
 		expect((await fails('swap_sound', { projectId, clipId: clip.id, to: 'snd_zz' })).code).toBe(
 			'E_INVALID_ARGUMENT',
+		);
+	});
+
+	it('swap_sound to the clip’s own sound swaps an old copy of it (no trailing silence) for the current one', async () => {
+		// Fix "SFX tail truncation": Sound Check's fix for a cut tail is swap_sound to the same sound. An old copy is
+		// stood in for by the kit file itself, with the library's provenance (no lead, no trailing silence).
+		const seq = seqOf(await documentOf(projectId));
+		const F = flicksPerFrame(seq.settings.frameRate);
+		const clip = Object.values(seq.clips).find(
+			(c) => c.kind === 'audio' && (c as SfxClip).sfx?.alternatives?.length,
+		) as SfxClip;
+		const soundId = clip.sfx!.soundId!;
+		const at = playsAt(clip, F) - clip.sfx!.placement.errorFlicks;
+		const e = await ok<{
+			title: string;
+			types: string[];
+			source: { type: string; file: string; packId?: string };
+			license: string;
+			author: string;
+			attribution: string | null;
+			descriptors: Record<string, number | null>;
+			format: { sampleRate: number };
+		}>('get_sound', { soundId });
+		const imp = await ok<{ imported: { mediaId: string }[] }>('import_media', {
+			projectId,
+			paths: [join(work, 'kit', e.source.file)],
+		});
+		const oldMedia = imp.imported[0]!.mediaId;
+		const d = e.descriptors;
+		await ok('apply_commands', {
+			projectId,
+			label: 'An old copy',
+			commands: [
+				{
+					type: 'media.setLibraryInfo',
+					mediaId: oldMedia,
+					library: {
+						soundId,
+						title: e.title,
+						types: e.types,
+						source: e.source,
+						license: e.license,
+						author: e.author,
+						attribution: e.attribution,
+						descriptors: {
+							peakSec: d.peakSec,
+							onsetSec: d.onsetSec,
+							headQuietSec: d.headQuietSec,
+							durationSec: d.durationSec,
+							octaveBandsDb: d.octaveBandsDb,
+							centroidHz: d.centroidHz,
+							maxMomentaryLufs: d.maxMomentaryLufs,
+						},
+					},
+				},
+				{ type: 'soundDesign.swap', clipId: clip.id, mediaId: oldMedia },
+			],
+		});
+		const r = await ok<{ to: { soundId: string; mediaId: string }; alignedFrame: { frame: number } }>(
+			'swap_sound',
+			{
+				projectId,
+				clipId: clip.id,
+				to: soundId,
+			},
+		);
+		expect(r.to.soundId).toBe(soundId);
+		expect(r.to.mediaId).not.toBe(oldMedia);
+		const doc = await documentOf(projectId);
+		const after = seqOf(doc).clips[clip.id] as SfxClip;
+		// the engine's copy of the (lossy) kit file: PCM, with trailing silence when the sound does not end in quiet
+		const lib = (
+			doc.media[after.mediaId] as {
+				library?: { trailSilenceSec?: number; descriptors?: { peakSec: number; tailSec?: number } };
+			}
+		).library;
+		const trail =
+			libraryTrailSilenceSamples(
+				{ peakSec: d.peakSec!, durationSec: d.durationSec!, tailSec: d.tailSec },
+				e.format.sampleRate,
+				{ analysedSec: 30 },
+			) / e.format.sampleRate;
+		expect(lib?.trailSilenceSec ?? 0).toBe(trail);
+		// where the sound plays, its role, pan and gain are kept; the clip reaches past the end of the sound
+		expect(Math.abs(playsAt(after, F) - after.sfx!.placement.errorFlicks - at)).toBeLessThanOrEqual(1);
+		expect(after.sfx!.role).toBe(clip.sfx!.role);
+		expect(after.gainDb).toBe(clip.gainDb);
+		expect(after.pan.value).toBe(clip.pan.value);
+		const durF = (doc.media[after.mediaId] as { probe: { durationFlicks: number } }).probe.durationFlicks;
+		// (to where it has faded to −60 dB when the provenance knows it, else to the end of the sound)
+		const faded =
+			lib?.descriptors?.tailSec !== undefined ? lib.descriptors.peakSec + lib.descriptors.tailSec : null;
+		expect(after.sourceIn + after.duration * F * after.speed.rate).toBeGreaterThanOrEqual(
+			(faded !== null ? faded * FLICKS_PER_SECOND : durF - trail * FLICKS_PER_SECOND) - 1,
+		);
+		// the copy is current now: the same sound again is refused
+		expect((await fails('swap_sound', { projectId, clipId: clip.id, to: soundId })).code).toBe(
+			'E_INVALID_PARAM',
 		);
 	});
 

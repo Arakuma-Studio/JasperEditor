@@ -5633,10 +5633,11 @@ Phase 6's `ExportSettings.credits`; P6 should default the export dialog's credit
 
 #### Limits and notes for the next packages
 
-- **Upstream defect found (not fixed here; Phase 1/2 owners):** short library sounds whose peak lies in the last partial
+- ~~**Upstream defect found (not fixed here; Phase 1/2 owners):** short library sounds whose peak lies in the last partial
   frame of the media are cut at their peak — registration pads the head (50 ms) but not the tail, and clips are whole
   frames inside the media. Padding the tail by one frame at the highest frame rate (or letting a clip's last frame run past
-  the media end as silence) fixes it; Sound Check reports these clips as OUT_OF_SYNC "cut" without a fix.
+  the media end as silence) fixes it; Sound Check reports these clips as OUT_OF_SYNC "cut" without a fix.~~ Fixed: "Fix: SFX
+  tail truncation" below (both remedies, and a safe Sound Check fix for older projects).
 - Sync is searched within ±3 frames of the cue (spec); a larger offset is judged from the document (`measuredIn:
   'document'`). Two identical sounds within ±3 frames can be confused (the stronger correlation wins). A layer under
   another sound of its cue may be "not measurable" (info). Reversed clips are not measured. Maintain-pitch speed changes
@@ -5654,5 +5655,145 @@ Phase 6's `ExportSettings.credits`; P6 should default the export dialog's credit
   them with the cue-kind labels it already has.
 - WP5.2 owns the panel, "Fix all safe", the listen-here markers and the Export dialog option; the API is above.
 
+
+### Fix: SFX tail truncation
+
+Branch `feat/sd-fix-sfx-tail`. The defect WP5.1's real run measured: short sounds placed by `soundDesign.place` were cut
+at their peak.
+
+#### Root cause (measured)
+
+Registration padded 50 ms of silence in front of a sound only; `planSoundInsert` made the clip `⌊(media − sourceIn) /
+rate / F⌋` whole frames. With the sub-frame rest taken out of the lead (`sourceIn = r`), the whole frames from the In
+point end before the media does, and for a sound shorter than one frame after its peak they end exactly ON the peak: the
+aligned frame is a frame boundary, so the clip covers `k` frames up to it plus `⌊(sound after the peak + rest) / F⌋ = 0`
+more. Failing test first (`apps/engine/test/sound-tail.test.ts`, before any fix, commit `b9635b06`): at 23.976 / 29.97 /
+30 / 60 fps, real folder sounds registered through `/api/sounds/:id/register`, placed on cues and rendered alone by the
+engine's mixer — all four rate cases failed (and the registration case), e.g. "30 fps … worst difference 0.554 at source sample 51 of 960" (sample 51 =
+the click's peak: everything after it was silence); at 60 fps the cut was later (sample 849 of 960) but still inside the
+tail.
+
+#### What changed
+
+- **Registration pads the tail** (`apps/engine/src/sounds/pad.ts`, `service.ts`; `packages/project/src/sound/insert.ts`):
+  `LIBRARY_TRAIL_SILENCE_SEC` = 50 ms (≥ one frame at 23.976 fps = 41.7 ms; room for +19 % speed), `ceil(0.05 · rate)`
+  whole samples via `apad=pad_len=N` after the `adelay` lead, same bit-exact, deterministic `-bitexact` WAV (repeated
+  registrations still dedupe; a copy made before the fix has another fingerprint). `libraryTrailSilenceSamples` pads a
+  sound of ≤ 120 s whose quiet end — file length after its −60 dB tail (`peakSec + tailSec`) — is under 50 ms, or whose
+  tail is unknown (the library analyses the first 30 s: a longer file is always padded). A sound that needs only the
+  trail is now copied too (folder sounds included: before, a folder sound with a quiet head was registered in place even
+  when it ended abruptly). Provenance: `trailSilenceSec` (new, optional), `descriptors.durationSec` = the copy's length
+  (lead + sound + trail), `descriptors.tailSec` (new, optional; written only when the analysis covered the whole file).
+  Schema stays v7 (optional fields; `readLibraryProvenance` repairs `trailSilenceSec` on its own, `libraryDescriptorIssue`
+  refuses a tail past the end or a trail over the peak; `docs/project-files.md`).
+- **Placement rounds up to the sound's end** (`planSoundInsert`, used by `soundDesign.place`, `soundDesign.swap`, the web
+  insert / drag ghost and MCP `insert_sound`): `frames = max(⌊(end − sourceIn) / rate / F⌋, ⌈(faded − sourceIn) / rate /
+  F⌉)`, `end` = the end of the sound in the file (before the trail), `faded` = its −60 dB point when the provenance knows
+  it, else `end`. So no clip ends inside its sound, and none plays the trailing silence for its own sake (a riser aligned
+  by its end still ends on its frame: MCP `insert_sound` test). `end` alignment uses the end of the sound, not of the
+  trail (`peakAlignedStart` gained `endSec`). Media without room after the sound (copies registered before the fix,
+  sounds over 120 s, project audio, a speed over +19 % at 23.976 fps) end less than one frame past their media — INV-005
+  already allows one frame (`sourceIn + span ≤ media + F·rate`), both mixers play silence past the end (shared mixer
+  "reads past the end return fewer frames", engine decode `apad`), and trim handles clamp at 0 (decision: that is the only
+  way to never cut an unpadded sound; recorded in spec 12 §2.3). Placement results report `soundEndFlicks`.
+- **Sound Check finds and fixes older clips** (`apps/engine/src/sound-design/check.ts`, `packages/project/src/sound/check.ts`):
+  where a sound has faded is the provenance's tail, else the library entry's (moved by the copy's lead; copies made before
+  the fix have no `tailSec`), else measured on the file (`measureTailEnd`: last sample within 60 dB of the file's sample
+  peak, any channel, files ≤ 30 s). OUT_OF_SYNC "cut" (the clip ends < 20 ms after its aligned point) now uses that point
+  instead of the end of the media; new code **TRUNCATED** (warning, category sync; spec 12 §2.6): the clip ends > 0.5 ms
+  before the sound has faded while it runs to the last whole frame of its media — the frame grid cut it, not the user (a
+  clip shortened with room left in its media is not reported). Fixes, the first that reaches the end in a dry run: (1)
+  `clip.trim` out (as before); (2) **register the sound again and swap it in** — `fix {kind: 'swap', swap: {clipId,
+  soundId: its own}, tool: 'swap_sound', args: {to: its own soundId}}`, safe; dry-run on a copy of the media as the engine
+  will write it (media + trail, provenance with `trailSilenceSec`); the panel's swap path (`swapSounds`, which registers
+  and swaps even for the same sound) and MCP `swap_sound` apply it; (3) `soundDesign.swap` on its own media (commands,
+  safe): the clip is re-planned and runs to the end of its sound, past its media by under a frame. When none applies
+  (`E_OVERLAP` with the next clip, a locked track) `measured.cause` says why. `libraryMedia` (REPEAT / LICENSE swaps)
+  prefers a project copy with trailing silence over an older one of the same sound.
+- **MCP `swap_sound` to the clip's own sound** re-registers it: allowed when the registered copy is another media (an
+  old copy), refused `E_INVALID_PARAM` as before when the project's copy is current. Docs: `swap_sound`, `sound_check`
+  (TRUNCATED), `insert_sound` / `import_sounds` (trailing silence), SOUND_GUIDE "Check" code list.
+- **Fresh inserts use the padded copy**: every surface reuses project media by the engine's fingerprint match only
+  (web `existingMediaFor`, MCP `importCommands`, plan job / proposal drafts), so registering the sound again gives the new
+  copy as a new media; existing clips keep their old copy until swapped.
+- Web: Properties ▸ Sound shows the sound's length without the trailing silence; the drag ghost's timing knows the
+  library tail (`timingOf`), so the ghost is as long as the clip will be. i18n: 3 new model strings (en / es).
+
+#### Placement paths checked
+
+| Path | Goes through | Evidence |
+|---|---|---|
+| Sound Library insert / drag (web) | `soundDesign.place` (`planSoundInsert`) | `apps/web/test/sound-*` 188 passed; ghost timing |
+| Fill, variation, Add Layer, Swap (web) | `soundDesign.place` / `soundDesign.swap` via `swapSounds` | same suites; swap of the same sound registers again |
+| MCP `insert_sound`, `place_sound`, `swap_sound`, `align_peak` | `planSoundInsert` + `soundDesign.place` / `swap` | `apps/mcp/test/sound.test.ts` (riser end on its frame), `sound-cues.test.ts` (+ refresh test) |
+| plan job → accept | proposal items of `soundDesign.place` | real run below: every click placed whole |
+| rebalance (`soundDesign.applyGains`) | gain only | `packages/project/test/sound-tail.test.ts`: duration unchanged |
+| resync (`soundCue.resync`) | moves by whole frames | same test: duration unchanged |
+
+#### Verified (measured, this branch; shared host, 16 cores, load average 7–40)
+
+- `pnpm vitest run apps/engine/test/sound-tail.test.ts --maxWorkers=2`: 8 passed. At 23.976 / 29.97 DF / 30 / 60 fps, four
+  real folder sounds (20, 30, 40 ms clicks with no quiet end; one with an 80 ms quiet head and an abrupt end) registered by
+  the route and placed by peak on cues, plus "tick 30" as a head-only copy (an existing project's media): the engine's
+  mixer render equals each source **sample for sample over the whole sound** (worst difference < 1e-5 × peak, i.e. the
+  float path; before the fix 0.554 at the peak). Registration: lead + trail 2 400 samples each, the abrupt-end sound copied
+  (not in place) with the trail only, registering twice = same fingerprint. Sound Check on an existing project: the
+  head-only copy cut by the old rule → OUT_OF_SYNC "cut" with the safe `swap` fix (`swap_sound` to its own sound); applied
+  as the clients do (register → `media.register` → `soundDesign.swap`) → aligned frame 40 kept, track and gain kept, no
+  cut / TRUNCATED finding, rendered whole; a 40 ms click at 60 fps cut after its peak → TRUNCATED (warning, 0 < missing <
+  16.7 ms) with the `swap` fix; the same sound gone from the library → TRUNCATED measured on the file, fix = the commands
+  `soundDesign.swap` on its own media, applied → clip past its media end, rendered whole, no finding; a clip the user
+  trimmed with room left → not reported.
+- `pnpm vitest run packages/project/test/sound-tail.test.ts`: 14 passed — `libraryTrailSilenceSamples` (padded / not /
+  unknown tail / analysed span / > 120 s / hostile numbers), descriptor shift, provenance read / repair (`repairDocument`
+  drops a bad `trailSilenceSec`, idempotent) and refusals; a **2 000-run property** over the 8 sequence rates, cue frames,
+  peaks, sound lengths, speeds 0.84…1.19, padded or not, align peak / start / end: the clip always reaches the end of the
+  sound, never more than INV-005's frame past the media, inside the media whenever the trail covers a frame at that speed,
+  never past the frame holding the sound's end, `end` aligned on the sound's end; per rate a 30 ms click placed inside its
+  padded media with invariants clean; the WP5.1 case (85 ms copy, peak at 58 ms) placed and a same-media swap of the
+  old-rule clip; a swap to the padded copy keeping aligned frame, role, gain, pan; resync / applyGains keep the length.
+- `pnpm vitest run apps/engine/test/sounds-*.test.ts apps/engine/test/sound-*.test.ts apps/mcp/test/sound*.test.ts
+  apps/mcp/test/{readme-tools,conventions}.test.ts --maxWorkers=2`: 30 files, 200 passed after the updates
+  (`sounds-routes`: the whoosh copy carries 2 400 samples of trail, bit-exact between the two silences; the "late punch"
+  folder sound now has quiet at both ends to stay in place). `apps/engine/test/sound-check.test.ts` 16 passed unchanged
+  (the seeded "cut" still gets its trim fix: the fixture click's fade is measured on the file).
+- `pnpm vitest run --project @jasper/project --maxWorkers=3` (final code): 2 005 of 2 007, then `sound-check.test.ts` (its
+  code-list contract now names TRUNCATED) 8 / 8 alone — the one failure left is the pre-existing `sound-messages` template
+  gap (`setAutoGain`, WP5.1 notes it). Final apps run: `pnpm vitest run apps/engine/test/sounds-*.test.ts
+  apps/engine/test/sound-*.test.ts apps/engine/test/{security-review,fuzz-http}.test.ts apps/mcp/test/sound*.test.ts
+  apps/mcp/test/{readme-tools,conventions,fuzz}.test.ts apps/web/test/sound-* apps/web/test/i18n.test.ts --maxWorkers=3`:
+  **52 files, 940 passed**.
+- **Real run** (dev engine `JASPER_APPDIR=.stage … --port 51001`, starter kit + Jasper Synth, jasper-mcp over stdio; script
+  and outputs in `/var/lib/orquester/tmp/sfx-tail-run/`, not committed): the Phase 4 fixture, `plan_sound_design {seed:
+  2026, delivery: web}` accepted as the editor. (A) `sound_check`: warn, **no** cut / TRUNCATED finding (MASKED 6, one
+  "not measurable" info); the 8 interface sounds (typewriter ticks and clicks, speeds 0.997…1.017) each exported alone
+  (native, ProRes + 24-bit PCM in MOV, loudness and the room bus off) and compared with the clip's media decoded past the
+  clip's end exactly as renderers decode a clip (`clipDecodeArgs`, i.e. the whole sound at its speed): per-channel gain
+  fit, lag 0, **residual −94.7 … −106 dB over the whole sound** (24-bit quantisation), the export's −60 dB end = the
+  sound's (52.3 … 227.5 ms). (B) the same 8 clips put on head-only copies (the registered copies minus their trail, bit for
+  bit, with the provenance of before) and cut to whole frames inside them (the old rule: 7 of 8 got a frame shorter):
+  `sound_check` **fail** — OUT_OF_SYNC "cut" ×4 (error) + TRUNCATED ×3, every one with the safe `swap_sound` fix; their
+  solo exports end at 33.3 ms (the clip end) where the sound fades at 52–62 ms (residual ≈ 0 dB); the fixes applied as
+  given → `sound_check` warn with **no** cut / TRUNCATED finding, solo exports residual **−105 … −114 dB**, faded end
+  = the sound's. The one not reported ("Switch click", 233 ms, quiet end) was whole before and after. Check times 5–21 s
+  (load 27–37). A first version of the comparison used an H.264 export, which fell back to MP4 + AAC on this LGPL build
+  (residual −30 dB from the codec, not the clips): the script now refuses a non-PCM export.
+- Gate: `pnpm typecheck` (every package), `pnpm lint` (Biome, tokens, anime, layers, assets), `pnpm notices --check`
+  (current) and `node scripts/i18n.mjs --check` (es.json covers all 9 621 strings) pass. The full `pnpm verify` was not run
+  (shared host; the targeted suites above cover every package touched).
+
+#### Limits
+
+- Clips of media without room after the sound end under one frame past their media (silence). A later `clip.trim`,
+  speed change or Time Remapping off that clamps to the media end can cut that frame again (Sound Check reports it as
+  TRUNCATED / "cut" and the same-media swap restores it).
+- A clip faster than +19 % at 23.976 fps (+50 % at 60 fps) on a padded copy also needs that past-the-end frame (the trail
+  is 50 ms); the lead has the same bound (Phase 2 limits).
+- TRUNCATED only judges clips at their media's last whole frame; a clip shortened on purpose is the user's. Fades are
+  judged at −60 dB of the peak (descriptor `tailSec`; on the file: of the sample peak); a quieter residue after that may
+  be cut.
+- `measureTailEnd` decodes files up to 30 s; a longer file without tail data is judged by its end (no TRUNCATED unless
+  the clip ends before it within the last frame).
+- The re-register fix makes a new media per sound; the old copy stays in the project (Remove Unused cleans it).
 
 ## Phase 6: packs, cue sources, completion

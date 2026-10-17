@@ -20,6 +20,7 @@ import {
 	AGENT_NAME_HEADER,
 	type EngineJob,
 	RegisterSoundResponseSchema,
+	SOUND_ANALYSIS_SECONDS,
 	type SoundEntry,
 	SoundEntrySchema,
 	SoundIndexResultSchema,
@@ -36,6 +37,7 @@ import {
 	inferTypesFromName,
 	LIBRARY_LEAD_SILENCE_SEC,
 	LibraryProvenanceSchema,
+	libraryTrailSilenceSamples,
 	makeEnvelope,
 } from '@jasper/project';
 import fc from 'fast-check';
@@ -575,6 +577,12 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 		expect(out.kind).toBe('audio');
 		expect(out.existingMediaId).toBeNull();
 		const lead = 2400 / 48000;
+		// …and as it does not end in 50 ms of quiet, silence after it too (fix "SFX tail truncation")
+		const trailSamples = libraryTrailSilenceSamples(whoosh.descriptors, 48000, {
+			analysedSec: SOUND_ANALYSIS_SECONDS,
+		});
+		expect(trailSamples).toBe(2400);
+		const trail = trailSamples / 48000;
 		expect(LibraryProvenanceSchema.parse(out.library)).toEqual({
 			soundId: whoosh.id,
 			title: 'Fast whoosh',
@@ -589,29 +597,35 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 				peakSec: whoosh.descriptors.peakSec + lead,
 				onsetSec: whoosh.descriptors.onsetSec + lead,
 				headQuietSec: whoosh.descriptors.headQuietSec + lead,
-				durationSec: whoosh.descriptors.durationSec + lead,
+				durationSec: whoosh.descriptors.durationSec + lead + trail,
 				octaveBandsDb: whoosh.descriptors.octaveBandsDb,
 				centroidHz: whoosh.descriptors.centroidHz,
 				maxMomentaryLufs: whoosh.descriptors.maxMomentaryLufs,
 				// the true peak too (Phase 2 verification B: placement's default level caps by it)
 				truePeakDb: whoosh.descriptors.truePeakDb,
+				// where it has faded (the analysis covered the whole file)
+				tailSec: whoosh.descriptors.tailSec,
 			},
 			leadSilenceSec: lead,
+			trailSilenceSec: trail,
 			snapshotHash: status.snapshotHash,
 		});
 		// Copied into managed media (the project does not depend on the app's install folder).
 		const media = appdirPaths(app.appdir).mediaDir;
 		expect(readdirSync(join(media, out.mediaKey))).toEqual(['whoosh_fast.wav']);
-		// The copy is the library file's samples exactly, after 2400 samples of digital silence.
+		// The copy is the library file's samples exactly, between 2400 samples of digital silence on each side.
 		const original = decodeF32(join(starter, 'movement', 'whoosh_fast.wav'));
 		const padded = decodeF32(join(media, out.mediaKey, 'whoosh_fast.wav'));
-		expect(padded.length).toBe(original.length + 2 * 2400);
+		expect(padded.length).toBe(original.length + 2 * 2400 + 2 * trailSamples);
 		expect(padded.subarray(0, 2 * 2400).every((v) => v === 0)).toBe(true);
-		const body = padded.subarray(2 * 2400);
+		expect(padded.subarray(padded.length - 2 * trailSamples).every((v) => v === 0)).toBe(true);
+		const body = padded.subarray(2 * 2400, padded.length - 2 * trailSamples);
 		expect(
 			Buffer.from(body.buffer, body.byteOffset, body.byteLength).equals(Buffer.from(original.buffer)),
 		).toBe(true);
-		expect(out.probe.durationFlicks).toBe(Math.round((whoosh.format.durationSec + lead) * 705_600_000));
+		expect(out.probe.durationFlicks).toBe(
+			Math.round((whoosh.format.durationSec + lead + trail) * 705_600_000),
+		);
 		expect(readdirSync(media).filter((f) => f.startsWith('.sound-tmp'))).toEqual(
 			existsSync(join(media, '.sound-tmp')) ? ['.sound-tmp'] : [],
 		);
@@ -643,11 +657,12 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 		const app = await makeApp();
 		const folder = tempAppdir('jasper-sfx-place-');
 		const wav = writeWav(join(folder, 'Hits', 'punch.wav'), 'hit', 0.3, 77);
-		// A hit after 80 ms of silence: its quiet head absorbs any sub-frame rest, so it is registered in place.
+		// A hit after 80 ms of silence and before 80 ms more: its quiet head absorbs any sub-frame rest and its quiet end
+		// holds the last frame of a placed clip, so it is registered in place.
 		const late = join(folder, 'Hits', 'late punch.wav');
 		const [l, r] = samples('hit', 0.3, 79);
 		const pad = (c: Float32Array) => {
-			const o = new Float32Array(c.length + 0.08 * SR);
+			const o = new Float32Array(c.length + 0.16 * SR);
 			o.set(c, 0.08 * SR);
 			return o;
 		};
@@ -705,6 +720,7 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 		expect(inPlace.locators).toContainEqual(expect.objectContaining({ type: 'path', path: late }));
 		expect(inPlace.library.license).toBe('CC0-1.0');
 		expect(inPlace.library.leadSilenceSec).toBeUndefined();
+		expect(inPlace.library.trailSilenceSec).toBeUndefined();
 		expect(inPlace.library.descriptors?.peakSec).toBe(latePunch.descriptors.peakSec);
 		expect(existsSync(join(appdirPaths(app.appdir).mediaDir, inPlace.mediaKey))).toBe(false);
 		// A folder hit with a loud head gets a managed padded copy (decision: exact placement over in-place).

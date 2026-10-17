@@ -15,6 +15,8 @@ export interface PeakAlignInput {
 	onsetSec?: number;
 	/** Length of the sound file, seconds. */
 	durationSec: number;
+	/** Where the sound ends in the file, for `end` alignment (before trailing silence; default `durationSec`). */
+	endSec?: number;
 	/** Quiet head (descriptor `headQuietSec`): at most this much may be trimmed off the start; default 0. */
 	headQuietSec?: number;
 	/** Playback rate of the clip (its speed; varispeed). Default 1. */
@@ -95,12 +97,14 @@ export function peakAlignedStart(input: PeakAlignInput): PeakAlignResult {
 	if (Number.isNaN(peak)) return refuse('peakSec must be a number ≥ 0');
 	const onset = point('onsetSec', input.onsetSec, 0);
 	if (typeof onset === 'string') return refuse(onset);
+	const end = point('endSec', input.endSec, dur);
+	if (typeof end === 'string') return refuse(end);
 	const quiet = input.headQuietSec === undefined ? 0 : input.headQuietSec;
 	if (!fin(quiet) || quiet < 0) return refuse('headQuietSec must be a number ≥ 0');
 	let offsetSec: number;
 	if (align === 'peak') offsetSec = peak;
 	else if (align === 'start') offsetSec = onset;
-	else if (align === 'end') offsetSec = dur;
+	else if (align === 'end') offsetSec = end;
 	else return refuse('align must be peak, start or end');
 
 	const F = flicksPerFrame(input.fps);

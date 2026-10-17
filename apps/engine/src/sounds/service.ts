@@ -7,6 +7,7 @@ import {
 	type EngineJob,
 	type RegisteredMedia,
 	type RegisterSoundResponse,
+	SOUND_ANALYSIS_SECONDS,
 	SOUND_SOURCE_TYPES,
 	type SoundEntry,
 	type SoundLibraryStatus,
@@ -22,6 +23,7 @@ import {
 	type LibraryProvenance,
 	LibraryProvenanceSchema,
 	libraryLeadSilenceSamples,
+	libraryTrailSilenceSamples,
 	shiftLibraryDescriptors,
 } from '@jasper/project';
 import { isLoopbackHost } from '../context.ts';
@@ -77,9 +79,19 @@ function inside(base: string, child: string): boolean {
 	return child === base || child.startsWith(base.endsWith(sep) ? base : base + sep);
 }
 
-/** The provenance a registered library sound carries in the project (`MediaAsset.library`). */
-export function provenanceOf(e: SoundEntry, snapshotHash: string, leadSilenceSec = 0): LibraryProvenance {
+/**
+ * The provenance a registered library sound carries in the project (`MediaAsset.library`): the library entry's, with
+ * time points of the registered file (`leadSilenceSec` in front, `trailSilenceSec` after). `tailSec` (where the sound has
+ * faded to −60 dB) is kept only when the library's analysis covered the whole file.
+ */
+export function provenanceOf(
+	e: SoundEntry,
+	snapshotHash: string,
+	leadSilenceSec = 0,
+	trailSilenceSec = 0,
+): LibraryProvenance {
 	const lead = leadSilenceSec > 0 ? leadSilenceSec : 0;
+	const trail = trailSilenceSec > 0 ? trailSilenceSec : 0;
 	// Analyses cached by older builds (or ffprobe's estimate for a broken file) may hold values the provenance schema
 	// bounds: keep them inside, so registering never fails on a number.
 	const clamp = (v: number, lo: number, hi: number) =>
@@ -104,6 +116,13 @@ export function provenanceOf(e: SoundEntry, snapshotHash: string, leadSilenceSec
 				? null
 				: Math.min(400, raw.truePeakDb),
 	};
+	// the tail is measured on the analysed span: only a whole-file analysis says where the sound fades
+	const tailKnown =
+		typeof raw.tailSec === 'number' &&
+		Number.isFinite(raw.tailSec) &&
+		raw.tailSec >= 0 &&
+		d.durationSec <= SOUND_ANALYSIS_SECONDS &&
+		d.peakSec + raw.tailSec <= d.durationSec + 0.001;
 	const candidate = {
 		soundId: e.id,
 		title: e.title,
@@ -125,10 +144,13 @@ export function provenanceOf(e: SoundEntry, snapshotHash: string, leadSilenceSec
 				centroidHz: d.centroidHz,
 				maxMomentaryLufs: d.maxMomentaryLufs,
 				truePeakDb: d.truePeakDb,
+				...(tailKnown ? { tailSec: Math.min(raw.tailSec, d.durationSec - d.peakSec + 0.001) } : {}),
 			},
 			lead,
+			trail,
 		),
 		...(lead > 0 ? { leadSilenceSec: lead } : {}),
+		...(trail > 0 ? { trailSilenceSec: trail } : {}),
 		snapshotHash,
 	};
 	return LibraryProvenanceSchema.parse(candidate) as LibraryProvenance;
@@ -476,8 +498,10 @@ export class SoundService {
 	/**
 	 * Registers a sound's file as media for a project. A sound whose head is not quiet (and which is at most
 	 * `LIBRARY_PAD_MAX_SECONDS` long) is registered as a managed WAV copy with `LIBRARY_LEAD_SILENCE_SEC` of silence in
-	 * front (`pad.ts`), whatever its source, so placement is sample-exact; the provenance's descriptors then describe that
-	 * file and `leadSilenceSec` says how much was added. A lossy sound (Vorbis, MP3…) of that length is also registered
+	 * front (`pad.ts`), whatever its source, so placement is sample-exact; a sound that does not end in
+	 * `LIBRARY_TRAIL_SILENCE_SEC` of quiet gets that much silence after it too, so a placed clip (whole frames, rounded up
+	 * to the sound's end) stays inside its media; the provenance's descriptors then describe that file and
+	 * `leadSilenceSec` / `trailSilenceSec` say how much was added. A lossy sound (Vorbis, MP3…) of that length is also registered
 	 * as a PCM WAV copy (without silence when its head is quiet): seeks into lossy streams are not sample-exact. Other
 	 * sounds (PCM, or longer than the limit): starter, pack and synth files are copied into
 	 * managed media, folder files registered in place (local mode). Returns the registered media, the provenance to
@@ -510,14 +534,18 @@ export class SoundService {
 			remember(this.streamOf, e.fingerprint, stream);
 		}
 		const samples = stream?.sampleRate ? libraryLeadSilenceSamples(e.descriptors, stream.sampleRate) : 0;
+		const trailSamples = stream?.sampleRate
+			? libraryTrailSilenceSamples(e.descriptors, stream.sampleRate, { analysedSec: SOUND_ANALYSIS_SECONDS })
+			: 0;
+		let trailSec = 0;
 		// A lossy source (Vorbis, Opus, MP3, AAC…) is copied as PCM even when its head is quiet: ffmpeg's seeked
 		// decode of such a stream is not sample-aligned with its full decode (Vorbis: 128 samples late), and the
 		// descriptors (the peak) are measured on the full decode, so an In point after 0 would play the peak late.
 		const lossy = !!stream?.codec && !isPcmCodec(stream.codec);
-		if ((samples > 0 || lossy) && stream?.sampleRate) {
+		if ((samples > 0 || trailSamples > 0 || lossy) && stream?.sampleRate) {
 			if ((await fingerprintFile(path)).fingerprint !== e.fingerprint) throw changed();
 			// the same content padded the same way is the same managed file: reuse it while it is online
-			const copyKey = `${e.fingerprint}|${samples}|${stream.codec ?? ''}|${stream.sampleRate}`;
+			const copyKey = `${e.fingerprint}|${samples}|${trailSamples}|${stream.codec ?? ''}|${stream.sampleRate}`;
 			const known = this.copyOf.get(copyKey);
 			const again = known ? await this.core.media.registeredIfOnline(known, { projectId }) : null;
 			if (again) reg = again;
@@ -526,6 +554,7 @@ export class SoundService {
 					writePaddedSound(this.core.ffmpeg, {
 						path,
 						samples,
+						trailSamples,
 						codec: stream.codec,
 						tmpDir: join(this.core.config.paths.mediaDir, '.sound-tmp'),
 					}),
@@ -538,6 +567,7 @@ export class SoundService {
 				remember(this.copyOf, copyKey, reg.mediaKey);
 			}
 			leadSec = samples / stream.sampleRate;
+			trailSec = trailSamples / stream.sampleRate;
 		} else {
 			reg = await this.core.media.registerPath(path, {
 				projectId,
@@ -545,7 +575,7 @@ export class SoundService {
 			});
 			if (reg.fingerprint !== e.fingerprint) throw changed();
 		}
-		const library = provenanceOf(e, snapshot.snapshotHash, leadSec);
+		const library = provenanceOf(e, snapshot.snapshotHash, leadSec, trailSec);
 		let existingMediaId: string | null = null;
 		const media = (project.envelope.document as { media?: unknown }).media;
 		if (media && typeof media === 'object')

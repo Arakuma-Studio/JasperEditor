@@ -80,6 +80,12 @@ export const LibraryDescriptorsSchema = z.looseObject({
 	 * recorded: the default insert level then never boosts (`defaultSfxLevel`).
 	 */
 	truePeakDb: z.number().min(-400).max(400).nullable().optional(),
+	/**
+	 * Peak → the last point within 60 dB of the peak (s): where the sound has faded, `peakSec + tailSec`. Written only when
+	 * the library's analysis covered the whole file; placement reaches at least that far (wp-note "Fix: SFX tail
+	 * truncation"). Absent in provenance written before.
+	 */
+	tailSec: sec().optional(),
 });
 export type LibraryDescriptors = DeepStrip<z.infer<typeof LibraryDescriptorsSchema>>;
 
@@ -104,6 +110,12 @@ export const LibraryProvenanceSchema = z.looseObject({
 	 * spec 12 §2.3); absent or 0 when the media is the library file itself.
 	 */
 	leadSilenceSec: z.number().min(0).max(1).optional(),
+	/**
+	 * Seconds of silence the engine put after the library file when it registered it (the sound's end is
+	 * `descriptors.durationSec − trailSilenceSec`; placed clips end in whole frames after it, inside the media); absent or
+	 * 0 when none was added (the file already ended in quiet, or a copy registered before the tail fix).
+	 */
+	trailSilenceSec: z.number().min(0).max(1).optional(),
 	/** Hash of the library snapshot the sound was registered from. */
 	snapshotHash: z.string().max(LIBRARY_LIMITS.hash).optional(),
 });
@@ -151,6 +163,8 @@ export function readLibraryProvenance(raw: unknown): LibraryProvenance | null {
 	if (d.success) out.descriptors = d.data;
 	const lead = LibraryProvenanceSchema.shape.leadSilenceSec.safeParse(raw.leadSilenceSec);
 	if (lead.success && lead.data !== undefined) out.leadSilenceSec = lead.data;
+	const trail = LibraryProvenanceSchema.shape.trailSilenceSec.safeParse(raw.trailSilenceSec);
+	if (trail.success && trail.data !== undefined) out.trailSilenceSec = trail.data;
 	const hash = str(raw.snapshotHash, LIBRARY_LIMITS.hash);
 	if (hash !== undefined) out.snapshotHash = hash;
 	const r = LibraryProvenanceSchema.safeParse(out);
@@ -175,5 +189,10 @@ export function libraryDescriptorIssue(library: LibraryProvenance): string | nul
 	for (const key of ['peakSec', 'onsetSec', 'headQuietSec'] as const)
 		if (d[key] > d.durationSec + DESCRIPTOR_SLACK_SEC)
 			return `descriptors.${key} (${d[key]} s) is past the end of the sound (${d.durationSec} s)`;
+	if (d.tailSec !== undefined && d.peakSec + d.tailSec > d.durationSec + DESCRIPTOR_SLACK_SEC)
+		return `descriptors.tailSec (${d.tailSec} s after the peak) is past the end of the sound (${d.durationSec} s)`;
+	const trail = library.trailSilenceSec ?? 0;
+	if (trail > 0 && d.durationSec - trail < d.peakSec - DESCRIPTOR_SLACK_SEC)
+		return `trailSilenceSec (${trail} s) covers the sound's peak (${d.peakSec} s of ${d.durationSec} s)`;
 	return null;
 }

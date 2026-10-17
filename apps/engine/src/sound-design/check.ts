@@ -29,8 +29,14 @@ import type {
 	SoundCheckReport,
 	SoundCheckRequest,
 	SoundCheckResult,
+	SoundEntry,
 } from '@jasper/api';
-import { SOUND_CHECK_LIMITS, SoundCheckRequestSchema, SoundSearchQuerySchema } from '@jasper/api';
+import {
+	SOUND_ANALYSIS_SECONDS,
+	SOUND_CHECK_LIMITS,
+	SoundCheckRequestSchema,
+	SoundSearchQuerySchema,
+} from '@jasper/api';
 import {
 	defaultChannelWeights,
 	LoudnessMeter,
@@ -64,9 +70,13 @@ import {
 	HERO_MIN_SEC,
 	isCommercialSafe,
 	isSfxClip,
+	type LibraryProvenance,
+	libraryTrailSilenceSamples,
 	licenseClass,
 	MASKED_MIN_LIFT_DB,
+	type MediaAsset,
 	type MgTemplateRegistry,
+	mediaDurationFlicks,
 	mixFingerprint,
 	type ProjectDocument,
 	type Rational,
@@ -98,6 +108,7 @@ import {
 	soundCredits,
 	soundCuesOf,
 	soundDesignSettingsOf,
+	soundTimingOf,
 	trackLabel,
 } from '@jasper/project';
 import type { AgentService } from '../agent/service.ts';
@@ -137,6 +148,8 @@ const REF_WINDOW: Record<'peak' | 'start' | 'end', [number, number]> = {
 };
 /** A clip that ends less than this after its aligned point (s) cuts the sound it is placed for. */
 const CUT_MIN_SEC = 0.02;
+/** TRUNCATED: a clip ending this much (s) before its sound has faded cuts its tail (a sample is 0.02 ms). */
+const TAIL_SLACK_SEC = 0.0005;
 /** Reference decodes at once. */
 const DECODE_CONCURRENCY = 4;
 /** "Audible" for the measurable-loudness rule: a 10 ms hop over BS.1770's absolute gate level (−70 dBFS). */
@@ -214,6 +227,60 @@ type SfxRow = {
 	/** Momentary peak in the mix (sound peak at 0 dB + gain), for "biggest hero". */
 	peakLu: number | null;
 };
+
+/** Where a placed sound ends against its clip (content flicks): the media, the sound's −60 dB end, the clip's end. */
+type TailInfo = {
+	durF: number;
+	reach: number;
+	contentEnd: number;
+	rate: number;
+	prov: LibraryProvenance | null;
+	entry: SoundEntry | null;
+	/** Whether `reach` is where the sound fades (provenance or library tail), not just the end of its file. */
+	known: boolean;
+};
+
+/** Longest file `measureTailEnd` decodes (s): sound effects are short; a longer file is judged by its end. */
+const TAIL_MEASURE_MAX_SEC = 30;
+
+/**
+ * Where a media's sound has faded (content flicks): its last sample within 60 dB of the file's sample peak, any
+ * channel; null when it cannot be decoded or is longer than `TAIL_MEASURE_MAX_SEC`.
+ */
+async function measureTailEnd(env: CheckEnv, world: AudioWorld, mediaId: string): Promise<number | null> {
+	const src = world.media(mediaId);
+	const stream = src?.streams.find((x) => x.type === 'audio') ?? src?.streams[0];
+	if (!src || !stream) return null;
+	const channels = Math.max(1, Math.min(32, (stream as { channels?: number }).channels ?? 2));
+	const rate = (stream as { sampleRate?: number }).sampleRate ?? 48_000;
+	const signal = env.signal ?? new AbortController().signal;
+	let child: import('node:child_process').ChildProcess;
+	try {
+		child = env.ff.spawnRaw(
+			[...LOCAL_PROTOCOLS, '-i', src.path, '-map', `0:${stream.index}`, '-vn', '-f', 'f32le', 'pipe:1'],
+			{ signal },
+		);
+	} catch {
+		return null;
+	}
+	env.onSpawn?.(child);
+	let planes: Float32Array[];
+	try {
+		planes = await readPlanar(child, channels, Math.ceil(TAIL_MEASURE_MAX_SEC * rate) + 1, signal);
+	} catch {
+		if (signal.aborted) throw new JobError('CANCELLED', 'Cancelled', false);
+		return null;
+	}
+	const n = planes[0]?.length ?? 0;
+	if (n === 0 || n > TAIL_MEASURE_MAX_SEC * rate) return null;
+	let peak = 0;
+	for (const p of planes) for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(p[i]!));
+	if (!(peak > 0)) return 0;
+	const floor = peak / 1000;
+	let last = n - 1;
+	while (last > 0 && planes.every((p) => Math.abs(p[last]!) < floor)) last--;
+	return Math.round(((last + 1) / rate) * FLICKS_PER_SECOND);
+}
 
 /** One capture of the SFX stem (mono sum) over absolute samples `[a, a + data.length)`. */
 type Capture = { row: SfxRow; a: number; data: Float32Array; ref: RefPlan };
@@ -469,10 +536,138 @@ export async function checkSequence(
 		});
 	}
 
+	// ── where each placed sound has faded (fix "SFX tail truncation") ──────────────────────────────────────────────
+	// The provenance's −60 dB tail; for copies registered before it was recorded, the library entry's (moved by the
+	// copy's lead silence); else the end of the sound in its file (before any trailing silence).
+	const entries = new Map<string, SoundEntry | null>();
+	if (env.sounds)
+		for (const row of rows) {
+			const id = row.info.librarySoundId;
+			if (id && !entries.has(id)) entries.set(id, await env.sounds.get(id).catch(() => null));
+		}
+	const tailOf = (row: SfxRow): TailInfo | null => {
+		const asset = doc.media?.[row.clip.mediaId] as MediaAsset | undefined;
+		const durF = asset ? mediaDurationFlicks(asset) : null;
+		if (!asset || !fin(durF) || durF <= 0 || row.clip.speed?.reverse) return null;
+		const prov = readLibraryProvenance((asset as { library?: unknown }).library);
+		const durSec = durF / FLICKS_PER_SECOND;
+		const t = soundTimingOf(prov, { peakSec: 0, onsetSec: 0, headQuietSec: 0, durationSec: durSec });
+		let reachSec = Math.min(durSec, t.tailEndSec ?? t.endSec ?? durSec);
+		const e = row.info.librarySoundId ? entries.get(row.info.librarySoundId) : null;
+		const lead = prov?.leadSilenceSec ?? 0;
+		const ed = e?.descriptors;
+		if (
+			t.tailEndSec === undefined &&
+			ed &&
+			prov?.descriptors &&
+			e.format.durationSec <= SOUND_ANALYSIS_SECONDS &&
+			fin(ed.tailSec) &&
+			Math.abs(ed.peakSec + lead - prov.descriptors.peakSec) < 0.001
+		)
+			reachSec = Math.min(reachSec, lead + ed.peakSec + ed.tailSec);
+		const known = t.tailEndSec !== undefined || reachSec < Math.min(durSec, t.endSec ?? durSec);
+		const measured = measuredTail.get(row.clip.mediaId);
+		if (!known && measured !== undefined && measured !== null)
+			reachSec = Math.min(reachSec, measured / FLICKS_PER_SECOND);
+		const rate = row.clip.speed?.rate || 1;
+		return {
+			durF,
+			reach: Math.round(reachSec * FLICKS_PER_SECOND),
+			contentEnd: row.clip.sourceIn + row.clip.duration * F * rate,
+			rate,
+			prov,
+			entry: e ?? null,
+			known,
+		};
+	};
+	// Media whose fade is not on record (project audio, old copies of sounds no longer in the library): measured on the
+	// file — its last sample within 60 dB of its sample peak — for the clips that end before the file does.
+	const measuredTail = new Map<string, number | null>();
+	for (const row of rows) {
+		if (!row.sfx?.placement || measuredTail.has(row.clip.mediaId)) continue;
+		const tl = tailOf(row);
+		if (!tl || tl.known || tl.contentEnd >= tl.reach - TAIL_SLACK_SEC * FLICKS_PER_SECOND) continue;
+		measuredTail.set(row.clip.mediaId, await measureTailEnd(env, world, row.clip.mediaId));
+	}
+	/** Whole frames a clip lacks to reach its sound's end. */
+	const missingFrames = (tl: TailInfo) =>
+		Math.max(1, Math.ceil((tl.reach - tl.contentEnd) / (F * tl.rate) - 1e-6));
+	/** A clip's content end after the commands, or null when they do not apply. */
+	const endAfter = (commands: Record<string, unknown>[], clipId: string): number | null => {
+		const run = dryRun(doc, seq.id, commands, env.registries);
+		if (!run.ok) return null;
+		const c = run.doc.sequences[seq.id]?.clips[clipId] as AudioClip | undefined;
+		return c ? c.sourceIn + c.duration * F * (c.speed?.rate || 1) : null;
+	};
+	/**
+	 * The safe fix of a clip that ends inside its sound, in order: lengthen it inside its media (`clip.trim`); register
+	 * its library sound again — a copy made before the tail fix has no trailing silence, the new one does — and swap it
+	 * in (`swap_sound` to the same sound: aligned frame, track, role, pan and gain kept), dry-run on a copy of the media
+	 * as the engine will write it; else re-plan the clip on its own media (`soundDesign.swap`), which rounds it up to the
+	 * end of the sound, under one frame past its media (silence there). Each only when it really reaches the end.
+	 */
+	const tailFix = (row: SfxRow, tl: TailInfo): { fix?: SoundCheckFix; cause?: string } => {
+		const clipId = row.clip.id;
+		const reaches = (end: number | null) =>
+			end !== null && end >= tl.reach - TAIL_SLACK_SEC * FLICKS_PER_SECOND;
+		const frames = missingFrames(tl);
+		const trim = { type: 'clip.trim', clipId, edge: 'out', deltaFrames: frames };
+		if (reaches(endAfter([trim], clipId)))
+			return { fix: commandFix(projectId, soundCheckMessage('fixUncut', frames), [trim], true) };
+		const id = row.info.librarySoundId;
+		const e = tl.entry;
+		const asset = doc.media?.[row.clip.mediaId] as MediaAsset | undefined;
+		if (id && e && env.sounds && asset && tl.prov?.descriptors && !(tl.prov.trailSilenceSec ?? 0)) {
+			const samples = libraryTrailSilenceSamples(e.descriptors, e.format.sampleRate, {
+				analysedSec: SOUND_ANALYSIS_SECONDS,
+			});
+			if (samples > 0 && e.format.sampleRate > 0) {
+				const trail = samples / e.format.sampleRate;
+				const trailF = Math.round(trail * FLICKS_PER_SECOND);
+				const { id: _id, ...rest } = asset as MediaAsset & { id: string };
+				const library: LibraryProvenance = {
+					...tl.prov,
+					trailSilenceSec: trail,
+					descriptors: { ...tl.prov.descriptors, durationSec: tl.prov.descriptors.durationSec + trail },
+				};
+				const copy = {
+					...rest,
+					fingerprint: `${asset.fingerprint}#sound-check-tail`,
+					probe: { ...asset.probe, durationFlicks: (asset.probe.durationFlicks ?? tl.durF) + trailF },
+					library,
+				};
+				const cmds = [
+					{ type: 'media.register', asset: copy, ref: '$tailCopy' },
+					{ type: 'soundDesign.swap', clipId, mediaId: '$tailCopy' },
+				];
+				if (reaches(endAfter(cmds, clipId)))
+					return {
+						fix: {
+							kind: 'swap',
+							label: soundCheckMessage('fixRepad', row.info.title),
+							safe: true,
+							tool: 'swap_sound',
+							args: { projectId, clipId, to: id },
+							swap: { clipId, soundId: id },
+						},
+					};
+			}
+		}
+		const same = { type: 'soundDesign.swap', clipId, mediaId: row.clip.mediaId };
+		const end = endAfter([same], clipId);
+		if (reaches(end)) return { fix: commandFix(projectId, soundCheckMessage('fixRunOut'), [same], true) };
+		return {
+			cause:
+				end === null
+					? 'the clip cannot be re-placed where it is (the next clip on its track, or a locked track)'
+					: 'the media ends inside the next frame: the clip cannot be longer (whole frames)',
+		};
+	};
+
 	// sync captures (the SFX stem around each filled cue)
 	const captures: Capture[] = [];
 	const unmeasured = new Map<SfxRow, string>();
-	const cut = new Map<SfxRow, { afterMs: number; trimFrames: number }>();
+	const cut = new Map<SfxRow, { afterMs: number; trimFrames: number; tail: TailInfo }>();
 	for (const row of rows) {
 		const sfx = row.sfx;
 		if (!row.cue || !sfx?.placement) continue;
@@ -480,16 +675,12 @@ export async function checkSequence(
 		if (kind === 'silence') continue;
 		// the clip ends at (or before) its aligned point while the sound goes on: what the cue is for does not play
 		if (row.alignedFrame !== null && sfx.placement.align !== 'end') {
-			const durF = (doc.media?.[row.clip.mediaId] as { probe?: { durationFlicks?: number } } | undefined)
-				?.probe?.durationFlicks;
-			const rate = row.clip.speed?.rate || 1;
+			const tl = tailOf(row);
 			const clipEnd = row.clip.start + row.clip.duration;
 			const afterSec = (clipEnd - row.alignedFrame) / fpsNum;
-			const soundAfterSec = fin(durF) ? (durF - sfx.placement.peakFlicks) / FLICKS_PER_SECOND / rate : 0;
-			if (afterSec < CUT_MIN_SEC && soundAfterSec > afterSec + CUT_MIN_SEC && fin(durF)) {
-				const needEnd =
-					row.clip.start + Math.ceil(((durF - row.clip.sourceIn) / rate / FLICKS_PER_SECOND) * fpsNum - 1e-9);
-				cut.set(row, { afterMs: r1(afterSec * 1000), trimFrames: Math.max(1, needEnd - clipEnd) });
+			const soundAfterSec = tl ? (tl.reach - sfx.placement.peakFlicks) / FLICKS_PER_SECOND / tl.rate : 0;
+			if (tl && afterSec < CUT_MIN_SEC && soundAfterSec > afterSec + CUT_MIN_SEC) {
+				cut.set(row, { afterMs: r1(afterSec * 1000), trimFrames: missingFrames(tl), tail: tl });
 				continue;
 			}
 		}
@@ -1050,38 +1241,23 @@ export async function checkSequence(
 		const c = cut.get(row);
 		if (c) {
 			row.codes.add('OUT_OF_SYNC');
-			const cmd = { type: 'clip.trim', clipId: row.clip.id, edge: 'out', deltaFrames: c.trimFrames };
-			// the trim must really lengthen the clip (it is clamped where the media ends inside the next frame)
-			const run = dryRun(doc, seq.id, [cmd], env.registries);
-			const after = run.ok
-				? (run.doc.sequences[seq.id]?.clips[row.clip.id] as { duration?: number } | undefined)?.duration
-				: undefined;
-			const ok = fin(after) && after >= row.clip.duration + c.trimFrames;
+			const { fix, cause } = tailFix(row, c.tail);
 			issues.add({
 				...base,
 				severity: 'error',
-				...(ok
-					? {}
-					: {
-							measured: {
-								afterAlignedMs: c.afterMs,
-								missingFrames: c.trimFrames,
-								measuredIn: 'document',
-								cause: 'the media ends inside the next frame: the clip cannot be longer (whole frames)',
-							},
-						}),
 				message: soundCheckMessage(
 					'syncCut',
 					row.info.title,
 					c.afterMs,
 					tc(row.clip.start + row.clip.duration),
 				),
-				...(ok
-					? { measured: { afterAlignedMs: c.afterMs, missingFrames: c.trimFrames, measuredIn: 'document' } }
-					: {}),
-				...(ok
-					? { fix: commandFix(projectId, soundCheckMessage('fixUncut', c.trimFrames), [cmd], true) }
-					: {}),
+				measured: {
+					afterAlignedMs: c.afterMs,
+					missingFrames: c.trimFrames,
+					measuredIn: 'document',
+					...(cause ? { cause } : {}),
+				},
+				...(fix ? { fix } : {}),
 			});
 			continue;
 		}
@@ -1166,6 +1342,36 @@ export async function checkSequence(
 					measured: { correlation: row.correlation },
 				});
 		}
+	}
+	// TRUNCATED: a placed sound whose clip ends before the sound has faded (−60 dB) while the clip runs to the last
+	// whole frame of its media — the end of the sound cut by the frame grid (a copy registered before the tail fix),
+	// not a clip shortened on purpose.
+	for (const row of rows) {
+		if (!row.sfx?.placement || cut.has(row) || row.cue?.kind === 'silence') continue;
+		const tl = tailOf(row);
+		if (!tl || tl.contentEnd >= tl.reach - TAIL_SLACK_SEC * FLICKS_PER_SECOND) continue;
+		if (tl.contentEnd + F * tl.rate <= tl.durF + 1) continue;
+		const clipEnd = row.clip.start + row.clip.duration;
+		const missingMs = r1(((tl.reach - tl.contentEnd) / FLICKS_PER_SECOND / tl.rate) * 1000);
+		row.codes.add('TRUNCATED');
+		const { fix, cause } = tailFix(row, tl);
+		issues.add({
+			subject: row.clip.id,
+			code: 'TRUNCATED',
+			severity: 'warning',
+			frame: clipEnd,
+			timecode: tc(clipEnd),
+			clipIds: [row.clip.id],
+			...(row.cue ? { cueId: row.cue.id } : {}),
+			message: soundCheckMessage('truncated', row.info.title, tc(clipEnd), missingMs),
+			measured: {
+				missingMs,
+				missingFrames: missingFrames(tl),
+				measuredIn: 'document',
+				...(cause ? { cause } : {}),
+			},
+			...(fix ? { fix } : {}),
+		});
 	}
 	lap('sync', t);
 
@@ -1581,7 +1787,13 @@ export async function checkSequence(
 	const libraryMedia = new Map<string, string>();
 	for (const [mid, m] of Object.entries(doc.media ?? {})) {
 		const p = readLibraryProvenance((m as { library?: unknown }).library);
-		if (p?.soundId && !libraryMedia.has(p.soundId)) libraryMedia.set(p.soundId, mid);
+		if (!p?.soundId) continue;
+		// a copy with trailing silence (registered since the tail fix) over an older one of the same sound
+		const had = libraryMedia.get(p.soundId);
+		const hadTrail = had
+			? (readLibraryProvenance((doc.media[had] as { library?: unknown }).library)?.trailSilenceSec ?? 0) > 0
+			: false;
+		if (!had || (!hadTrail && (p.trailSilenceSec ?? 0) > 0)) libraryMedia.set(p.soundId, mid);
 	}
 	const soundOf = (r: SfxRow) => r.info.librarySoundId ?? `media:${r.clip.mediaId}`;
 	const swapFix = async (

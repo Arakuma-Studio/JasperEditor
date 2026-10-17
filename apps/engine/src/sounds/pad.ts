@@ -6,7 +6,10 @@
 // re-encoded lossily. Deterministic (`-bitexact`, no metadata): the same file gives the same bytes, so the media
 // registry and the project dedupe repeated registrations by fingerprint. A lossy sound (Vorbis, Opus, MP3, AAC…) is
 // written the same way with no silence when its head is already quiet: a seeked decode of a lossy stream is not
-// sample-aligned with its full decode (Vorbis: 128 samples), so only PCM keeps an In point after 0 exact.
+// sample-aligned with its full decode (Vorbis: 128 samples), so only PCM keeps an In point after 0 exact. A sound that
+// does not end in quiet also gets `LIBRARY_TRAIL_SILENCE_SEC` of silence after it (`trailSamples`): a placed clip is
+// whole frames rounded up to the sound's end, and that last frame must be inside the media (wp-note "Fix: SFX tail
+// truncation"); the copy is then the decoded samples, then digital silence, bit for bit.
 import { mkdir, rm } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { JobError } from '../jobs/types.ts';
@@ -60,14 +63,29 @@ export function paddedFileName(libraryFile: string): string {
 
 /**
  * Writes `<tmpDir>/<unique>.wav`: `samples` (≥ 0) of silence, then the first audio stream of `path` at its own rate
- * and channel count. Returns the temp file (the caller registers or deletes it). `codec` is the source's audio codec.
+ * and channel count, then `trailSamples` (≥ 0, default 0) of silence. Returns the temp file (the caller registers or
+ * deletes it). `codec` is the source's audio codec.
  */
 export async function writePaddedSound(
 	ff: Ffmpeg,
-	opts: { path: string; samples: number; codec: string | null; tmpDir: string; signal?: AbortSignal },
+	opts: {
+		path: string;
+		samples: number;
+		trailSamples?: number;
+		codec: string | null;
+		tmpDir: string;
+		signal?: AbortSignal;
+	},
 ): Promise<string> {
 	if (!Number.isSafeInteger(opts.samples) || opts.samples < 0 || opts.samples > 1_000_000)
 		throw new JobError('E_INVALID_PARAM', 'Bad lead-silence length');
+	const trail = opts.trailSamples ?? 0;
+	if (!Number.isSafeInteger(trail) || trail < 0 || trail > 1_000_000)
+		throw new JobError('E_INVALID_PARAM', 'Bad trailing-silence length');
+	const filters = [
+		...(opts.samples > 0 ? [`adelay=delays=${opts.samples}S:all=1`] : []),
+		...(trail > 0 ? [`apad=pad_len=${trail}`] : []),
+	];
 	await mkdir(opts.tmpDir, { recursive: true });
 	const out = join(opts.tmpDir, `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.wav`);
 	const codec = opts.codec && KEEP_CODECS.has(opts.codec) ? opts.codec : 'pcm_f32le';
@@ -85,7 +103,7 @@ export async function writePaddedSound(
 				'-vn',
 				'-sn',
 				'-dn',
-				...(opts.samples > 0 ? ['-af', `adelay=delays=${opts.samples}S:all=1`] : []),
+				...(filters.length ? ['-af', filters.join(',')] : []),
 				'-c:a',
 				codec,
 				'-map_metadata',

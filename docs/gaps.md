@@ -400,9 +400,14 @@ on a mix, cue, loudness-setting or preset change); `POST /api/sound-design/visua
 `view_sound_timeline` (PNG). Limits: sync is located within ±3 frames of the cue (larger offsets are judged from the
 document) and a layer covered by another sound of its cue is "not measurable"; identical sounds closer than ±3 frames can
 be confused; MASKED skips ambient beds and cue layers; the visual route's curves omit the limiter; NO_PICTURE_EVENT uses
-keyframed motion only (pixel motion is P6). Found by its real run: short library sounds placed on a cue can end exactly at
-their peak (clip durations are whole frames inside the media; the padded copies have no tail room) — reported as
-OUT_OF_SYNC "cut", no command can lengthen them (registration should pad the tail; not fixed here).
+keyframed motion only (pixel motion is P6). Found by its real run and fixed since ("Fix: SFX tail truncation" in the
+wp-note): short library sounds placed on a cue ended at their peak (whole-frame clips inside media padded only in front).
+Registration now pads 50 ms of trailing silence, placement rounds every clip up to the end of its sound (under one frame
+past media that has no room), and Sound Check reports clips of older projects that still end inside their sound
+(OUT_OF_SYNC "cut", TRUNCATED) with a safe fix (re-register + swap, or re-plan on the same media) — measured sample-exact on
+rendered audio at 23.976 / 29.97 / 30 / 60 fps. Limits: a clip faster than +19 % at 23.976 fps, a sound over 120 s or project
+audio ends past its media by under a frame (silence; later trims clamp to the media and can cut that frame again);
+TRUNCATED needs the clip to reach its media's last whole frame (a clip shortened on purpose is not reported).
 
 ### Not covered by any workstream yet
 
