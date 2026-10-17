@@ -99,8 +99,40 @@ export const SoundCheckFixSchema = z.object({
 		.object({ route: z.enum(['rebalance', 'delivery']), body: z.record(z.string(), z.unknown()) })
 		.optional(),
 	swap: z.object({ clipId: z.string(), soundId: z.string() }).optional(),
+	/**
+	 * Safe on its own but not applied with the safe fixes before it (`planSoundCheckFixes`): the findings whose fixes it
+	 * conflicts with (`safe` is then false and `why` says what it would do). Absent when it is not safe on its own.
+	 */
+	conflictsWith: z.array(z.string()).optional(),
 });
 export type SoundCheckFix = z.infer<typeof SoundCheckFixSchema>;
+
+/** What the check measured about one sound effect, linear in its clip gain (`SoundCheckLevelModel`). */
+export const SoundCheckLevelModelSchema = z.object({
+	clipId: z.string(),
+	title: z.string(),
+	gainDb: z.number(),
+	liftAt0Db: z.number().nullable(),
+	peakOverBedAt0Lu: z.number().nullable(),
+	truePeakAt0Db: z.number().nullable(),
+	mixTruePeakDb: z.number().nullable(),
+	start: z.number(),
+	end: z.number(),
+	speech: z.boolean(),
+});
+
+/**
+ * The numbers safe fixes are judged by together (`planSoundCheckFixes`, WP6.5b): the delivery's and the solver's
+ * true-peak ceilings, the bed caps by weight and each measured sound effect. Absent from reports before WP6.5b.
+ */
+export const SoundCheckLevelGuardSchema = z.object({
+	ceilingDb: z.number(),
+	eventCeilingDb: z.number(),
+	bedCapLu: z.object({ hero: z.number(), support: z.number(), ambient: z.number() }),
+	capToleranceLu: z.number(),
+	levels: z.array(SoundCheckLevelModelSchema).max(2000),
+});
+export type SoundCheckLevelGuardJson = z.infer<typeof SoundCheckLevelGuardSchema>;
 
 export const SoundCheckIssueSchema = z.object({
 	/** Stable within a report (`<code>:<subject>`), e.g. `OUT_OF_SYNC:clp_…`. */
@@ -206,6 +238,8 @@ export const SoundCheckLoudnessSchema = z.object({
 		gainDb: z.number().nullable(),
 	}),
 	limiterMaxGrDb: z.number().nullable(),
+	/** Channel layout the mix was checked in: the Mix's own (WP6.5b; absent from older reports: stereo or 5.1). */
+	layout: z.enum(['mono', 'stereo', '5.1']).optional(),
 	before: z.object({
 		integratedLufs: z.number().nullable(),
 		truePeakDb: z.number().nullable(),
@@ -249,6 +283,7 @@ export const SoundCheckReportSchema = z.object({
 	stems: z.record(z.string(), z.number().int()),
 	warnings: z.array(z.object({ code: z.string(), message: z.string() })),
 	timings: z.record(z.string(), z.number()),
+	levelGuard: SoundCheckLevelGuardSchema.optional(),
 });
 export type SoundCheckReport = z.infer<typeof SoundCheckReportSchema>;
 
