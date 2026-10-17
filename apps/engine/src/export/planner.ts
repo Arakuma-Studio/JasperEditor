@@ -52,6 +52,7 @@ import {
 import { type EncoderRequest, LEGACY_X264_CHOICE } from '../tools/encoders.ts';
 import { CaptionExportError, captionBurnMode, captionPlanWarnings } from './captions.ts';
 import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from './native-ext.ts';
+import { soundPlanWarnings } from './sound-credits.ts';
 import { needsSubpixel } from './stream/plan.ts';
 
 // audio-fx: the audio effect processors (clip effects and track / submix / Mix inserts) for the offline mixer.
@@ -354,6 +355,10 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				message: `The sequence is ${f.fieldOrder} field first; exports are progressive (field-rendered interlaced output is not available)`,
 			});
 	}
+	// spec 12 §2.11: sounds heard that need a credit without a credits sidecar; a stale / failed Sound Check (info).
+	warnings.push(
+		...soundPlanWarnings(document, input.sequenceId, snapshot, settings, input.still ? { still: true } : {}),
+	);
 	if (draftProxies.length)
 		warnings.push({
 			code: 'DRAFT_PROXIES',

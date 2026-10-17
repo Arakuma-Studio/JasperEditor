@@ -3,6 +3,7 @@
 // fragment is applied by the `project.importTimeline` command (one undoable transaction).
 import {
 	type Animatable,
+	audioMixIssues,
 	type Clip,
 	createRandomIdSource,
 	defaultLabelForMedia,
@@ -25,7 +26,9 @@ import {
 	type Sequence,
 	type SyntheticSource,
 	type TimedClip,
+	MixerStripSchema,
 	type Track,
+	TrackSchema,
 	type Transcript,
 	type Transform,
 	type Transition,
@@ -454,6 +457,81 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 			};
 		};
 
+		/**
+		 * OTIO: the submix tracks (room bus…) and each audio track's mixer strip (output, sends, mute / 5.1 automation)
+		 * from the JasperEditor metadata, with new submix ids. Validated: a strip or submix that does not parse is
+		 * dropped, a send or output naming no submix of the file is dropped, and routing that the mixer refuses (a
+		 * cycle, a submix feeding an earlier one) drops all of it — each reported.
+		 */
+		const restoreMixer = (seq: Sequence, s: ISequence, audioAt: Track[]) => {
+			const rawSubs = (s.jasper as { submixTracks?: unknown } | undefined)?.submixTracks;
+			const subMap = new Map<string, string>();
+			const subs: Track[] = [];
+			if (Array.isArray(rawSubs))
+				for (const raw of rawSubs.slice(0, 64)) {
+					const r = TrackSchema.safeParse(raw);
+					if (!r.success || r.data.kind !== 'audio') {
+						report.warn(`a submix track of "${s.name}" in the document's metadata is unreadable and was skipped`, {
+							subject: { kind: 'track', name: String((raw as { name?: unknown })?.name ?? 'Submix') },
+							instead: 'nothing (tracks routed to it play to the Mix)',
+						});
+						continue;
+					}
+					const id = ids.next('trk');
+					subMap.set(r.data.id, id);
+					subs.push({ ...(clone(r.data) as Track), id });
+				}
+			let dropped = 0;
+			const strip = (raw: unknown) => {
+				if (raw === undefined) return undefined;
+				const r = MixerStripSchema.safeParse(raw);
+				if (!r.success) {
+					dropped++;
+					return undefined;
+				}
+				const m = clone(r.data) as NonNullable<Track['mixer']>;
+				if (typeof m.output === 'string') {
+					const to = subMap.get(m.output);
+					if (!to) dropped++;
+					m.output = to ?? null;
+				}
+				if (m.sends) {
+					const kept = m.sends.filter((x) => subMap.has(x.target));
+					dropped += m.sends.length - kept.length;
+					m.sends = kept.map((x) => ({ ...x, id: ids.next('snd'), target: subMap.get(x.target)! }));
+				}
+				return m;
+			};
+			for (const sub of subs) {
+				const m = strip(sub.mixer);
+				if (m) sub.mixer = m;
+				else delete sub.mixer;
+			}
+			const mixers = s.audio.map((t) => strip((t.jasper as { mixer?: unknown } | undefined)?.mixer));
+			const before = { subs: seq.submixTracks, mixers: audioAt.map((t) => t.mixer) };
+			if (subs.length) seq.submixTracks = subs;
+			audioAt.forEach((t, i) => {
+				if (mixers[i]) t.mixer = mixers[i];
+			});
+			if (dropped)
+				report.warn(
+					`${dropped} mixer setting(s) of "${s.name}" (outputs or sends) name a submix the document does not carry and were dropped`,
+					{ subject: { kind: 'sequence', name: s.name }, instead: 'the track mixed straight to the Mix' },
+				);
+			if ((subs.length || mixers.some(Boolean)) && audioMixIssues(seq, []).length) {
+				if (before.subs) seq.submixTracks = before.subs;
+				else delete seq.submixTracks;
+				audioAt.forEach((t, i) => {
+					if (before.mixers[i]) t.mixer = before.mixers[i];
+					else delete t.mixer;
+				});
+				report.warn(`the submix routing of "${s.name}" in the document's metadata is invalid and was not restored`, {
+					subject: { kind: 'sequence', name: s.name },
+					instead: 'every track mixed straight to the Mix',
+				});
+			}
+		};
+
 		const placeClips = (t: ITrack, track: Track, list: Clip[]) => {
 			let prevEnd = 0;
 			for (const c of t.clips) {
@@ -513,6 +591,7 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 		}
 		if (seq.videoTracks.length === 0) seq.videoTracks.push(makeTrack('video', null));
 		if (seq.audioTracks.length === 0) seq.audioTracks.push(makeTrack('audio', null));
+		restoreMixer(seq, s, audioAt);
 		if (s.multicam) {
 			const mc = multicamIn(s, videoAt, audioAt);
 			if (mc) seq.multicam = mc;

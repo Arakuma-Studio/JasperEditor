@@ -49,4 +49,18 @@ export default async function exportsRoutes(app: FastifyInstance): Promise<void>
 			});
 		}),
 	);
+
+	// spec 12 §2.11: the sound credits sidecar of a finished export.
+	app.get<{ Params: { jobId: string; name: string } }>(
+		'/renders/:jobId/credits/:name',
+		guarded<{ Params: { jobId: string; name: string } }>(async (req, reply) => {
+			const file = await exports.creditsFile(req.params.jobId, req.params.name);
+			if (!file) return fail(reply, 404, 'NOT_FOUND', 'No such credits file for this job');
+			const q = req.query as { download?: string };
+			return serveFile(req, reply, file, {
+				cache: 'revalidate',
+				...(q.download ? { downloadName: req.params.name.replace(/^output/, req.params.jobId) } : {}),
+			});
+		}),
+	);
 }
