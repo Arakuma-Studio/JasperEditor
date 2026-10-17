@@ -203,8 +203,11 @@ test('Sound Check panel: seeded defects found with timecodes, the same as MCP; v
 	const dialog = page.getByTestId('auto-sound-pass-dialog');
 	await expect(dialog).toBeVisible();
 	await dialog.getByRole('button', { name: 'Propose' }).click();
-	await expect(dialog).toBeHidden({ timeout: 1_500_000 });
-	await expect(page.getByTestId('review-bar')).toBeVisible();
+	// review opens; a plan with notes keeps the dialog open listing them until Close (Phase 4 verification)
+	await expect(page.getByTestId('review-bar')).toBeVisible({ timeout: 1_500_000 });
+	if (await dialog.getByTestId('auto-pass-notes').isVisible())
+		await dialog.locator('[data-dialog-primary]').click();
+	await expect(dialog).toBeHidden();
 	const before = await appliedLabels(page);
 	await page.getByTestId('review-bar-accept-all').click();
 	await page.getByTestId('review-bar-apply').click();
