@@ -6646,7 +6646,7 @@ audio-fx.ts` (`auto_tag_audio`, guide), `tools/sound.ts` (SOUND_GUIDE), `tools/s
 `voice`). Web: `apps/web/src/audio-fx/{ops,commands}.ts` (`autoTagClips`, `audio.autoTag`, the clip menu entry),
 `panels/essentialSound/EssentialSoundPanel.tsx` (Auto Tag button, auto banner), `sound/register.tsx` (dotted badge),
 `shell/menus/model.ts`, `sound/cues/{EngineSources.tsx,suggest.ts,SuggestCuesDialog.tsx}` (voice activity into the
-dialog's derivation), i18n (25 strings, es.json complete). Docs: README (354 tools, HTTP section), ARCHITECTURE §4.3
+dialog's derivation), i18n (25 strings, es.json complete). Docs: README (355 tools after merging Phase 5 verification, HTTP section), ARCHITECTURE §4.3
 (`sounds/analysis/{classify,voice}`), security review (route row + paragraph), gaps. Tests: listed under Verified.
 
 #### Premiere's Auto Tag (research; sources)
@@ -6840,7 +6840,7 @@ Speed (measured, `prof3.mts`, 60 s of stereo 48 kHz band music): 0.56–0.91 s a
   apps/mcp/test/audio-fx.test.ts --maxWorkers=2`: 18 passed — `auto_tag_audio` defaults to the untyped clips, sends the
   envelope and waits, applies one transaction with the mark, reports `low` and the table ("45 % (low)"), leaves a silent
   clip untyped, propose changes nothing, a user type is kept (USER_TYPE) unless force, `minConfidence`; engine failure,
-  unknown argument, unknown clip and bad mode are tool errors; README lists 354 tools.
+  unknown argument, unknown clip and bad mode are tool errors; README lists 355 tools after the merge.
 - `pnpm vitest run apps/web/test/essential-autotag.test.tsx apps/web/test/sound-fill-ui.test.tsx --maxWorkers=1`: 12
   passed — the panel's Auto Tag on two selected clips (one History entry "Auto Tag Audio Types", the engine asked with
   the envelope), the mixed-types banner, "Auto-tagged as Music · 81 % confident" with its reason, Confirm ("Confirm Audio
