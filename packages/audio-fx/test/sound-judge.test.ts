@@ -47,6 +47,8 @@ const PROFILE: SoundTypeProfile = {
 	maxFlatness: 0.5,
 	singleHit: true,
 	minMaxMomentaryLufs: -40,
+	needsAir: true,
+	maxFloorDb: -55,
 };
 
 describe('judgeSound', () => {
@@ -116,6 +118,9 @@ describe('judgeSound', () => {
 			truePeakDb: 3,
 			onsetCount: 6,
 			maxMomentaryLufs: -70,
+			rolloff95Hz: 5000,
+			floorDb: -30,
+			dcDb: -20,
 		};
 		const all = judgeSound(worst, PROFILE);
 		expect(all.reasons).toEqual(JUDGE_REASONS.filter((r) => r !== 'too-long'));
