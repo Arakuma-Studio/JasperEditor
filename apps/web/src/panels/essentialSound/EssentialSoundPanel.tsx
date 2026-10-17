@@ -45,6 +45,7 @@ import {
 import { runCommand } from '../../commands/registry.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { EssentialSfxSection } from '../../sound/EssentialSfx.tsx';
+import { t } from '../../i18n/runtime.ts';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { useInspectorOps } from '../properties/lib/ops.ts';
 import type { PanelProps } from '../types.ts';
@@ -639,12 +640,13 @@ function AutoTagBanner({ clips, apply }: { clips: AudioClip[]; apply(label: stri
 	const low = Math.min(...tagged.map((x) => x.tag!.confidence));
 	const pct = (x: number) => `${Math.round(x * 100)} %`;
 	const why = (first.tag!.reasons ?? []).join('; ');
+	const typeName = t(AUDIO_TYPE_LABELS[first.es!.type]);
 	const text =
 		tagged.length === 1
-			? `Auto-tagged as ${AUDIO_TYPE_LABELS[first.es!.type]} · ${pct(first.tag!.confidence)} confident`
+			? t('Auto-tagged as {0} · {1} confident', typeName, pct(first.tag!.confidence))
 			: sameType
-				? `${tagged.length} clips auto-tagged as ${AUDIO_TYPE_LABELS[first.es!.type]} · from ${pct(low)} confident`
-				: `${tagged.length} clips auto-tagged · from ${pct(low)} confident`;
+				? t('{0} clips auto-tagged as {1} · from {2} confident', tagged.length, typeName, pct(low))
+				: t('{0} clips auto-tagged · from {1} confident', tagged.length, pct(low));
 	const confirm = () => {
 		const byType = new Map<string, string[]>();
 		for (const x of tagged) byType.set(x.es!.type, [...(byType.get(x.es!.type) ?? []), x.c.id]);

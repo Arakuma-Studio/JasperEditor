@@ -102,7 +102,7 @@ function fixture(answers: Answer[], fail = false) {
 	const mount = () => {
 		const view = () => (
 			<SessionProvider session={session}>
-				<EssentialSoundPanel {...({} as never)} />
+				<EssentialSoundPanel {...({} as Parameters<typeof EssentialSoundPanel>[0])} />
 			</SessionProvider>
 		);
 		const rr = render(view());
