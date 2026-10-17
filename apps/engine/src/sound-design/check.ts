@@ -23,13 +23,13 @@ import { join } from 'node:path';
 import type {
 	SoundCheckEvent,
 	SoundCheckFix,
-	SoundEntry,
 	SoundCheckIssue,
 	SoundCheckListen,
 	SoundCheckLoudness,
 	SoundCheckReport,
 	SoundCheckRequest,
 	SoundCheckResult,
+	SoundEntry,
 } from '@jasper/api';
 import {
 	SOUND_ANALYSIS_SECONDS,
@@ -75,8 +75,8 @@ import {
 	licenseClass,
 	MASKED_MIN_LIFT_DB,
 	type MediaAsset,
-	mediaDurationFlicks,
 	type MgTemplateRegistry,
+	mediaDurationFlicks,
 	mixFingerprint,
 	type ProjectDocument,
 	type Rational,
@@ -608,7 +608,8 @@ export async function checkSequence(
 	 */
 	const tailFix = (row: SfxRow, tl: TailInfo): { fix?: SoundCheckFix; cause?: string } => {
 		const clipId = row.clip.id;
-		const reaches = (end: number | null) => end !== null && end >= tl.reach - TAIL_SLACK_SEC * FLICKS_PER_SECOND;
+		const reaches = (end: number | null) =>
+			end !== null && end >= tl.reach - TAIL_SLACK_SEC * FLICKS_PER_SECOND;
 		const frames = missingFrames(tl);
 		const trim = { type: 'clip.trim', clipId, edge: 'out', deltaFrames: frames };
 		if (reaches(endAfter([trim], clipId)))

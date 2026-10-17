@@ -66,12 +66,14 @@ export function libraryTrailSilenceSamples(
 	opts: { analysedSec?: number } = {},
 ): number {
 	if (!Number.isFinite(sampleRate) || sampleRate < 1000 || sampleRate > 768_000) return 0;
-	if (!Number.isFinite(d.durationSec) || d.durationSec <= 0 || d.durationSec > LIBRARY_PAD_MAX_SECONDS) return 0;
+	if (!Number.isFinite(d.durationSec) || d.durationSec <= 0 || d.durationSec > LIBRARY_PAD_MAX_SECONDS)
+		return 0;
 	const pad = Math.ceil(LIBRARY_TRAIL_SILENCE_SEC * sampleRate - 1e-9);
 	const analysed = opts.analysedSec;
 	if (analysed !== undefined && !(analysed >= d.durationSec)) return pad;
 	const tail = d.tailSec;
-	if (typeof tail !== 'number' || !Number.isFinite(tail) || tail < 0 || !Number.isFinite(d.peakSec)) return pad;
+	if (typeof tail !== 'number' || !Number.isFinite(tail) || tail < 0 || !Number.isFinite(d.peakSec))
+		return pad;
 	const quietEnd = d.durationSec - (d.peakSec + tail);
 	return quietEnd >= LIBRARY_TRAIL_SILENCE_SEC ? 0 : pad;
 }
@@ -80,7 +82,11 @@ export function libraryTrailSilenceSamples(
  * Library descriptors of the registered file: moved by `leadSec` of silence put in front of the file (time points shift;
  * levels and `tailSec`, which is measured from the peak, do not) and lengthened by `trailSec` of silence after it.
  */
-export function shiftLibraryDescriptors(d: LibraryDescriptors, leadSec: number, trailSec = 0): LibraryDescriptors {
+export function shiftLibraryDescriptors(
+	d: LibraryDescriptors,
+	leadSec: number,
+	trailSec = 0,
+): LibraryDescriptors {
 	const lead = leadSec > 0 ? leadSec : 0;
 	const trail = trailSec > 0 ? trailSec : 0;
 	if (!lead && !trail) return d;

@@ -578,7 +578,9 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 		expect(out.existingMediaId).toBeNull();
 		const lead = 2400 / 48000;
 		// …and as it does not end in 50 ms of quiet, silence after it too (fix "SFX tail truncation")
-		const trailSamples = libraryTrailSilenceSamples(whoosh.descriptors, 48000, { analysedSec: SOUND_ANALYSIS_SECONDS });
+		const trailSamples = libraryTrailSilenceSamples(whoosh.descriptors, 48000, {
+			analysedSec: SOUND_ANALYSIS_SECONDS,
+		});
 		expect(trailSamples).toBe(2400);
 		const trail = trailSamples / 48000;
 		expect(LibraryProvenanceSchema.parse(out.library)).toEqual({
@@ -621,7 +623,9 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 		expect(
 			Buffer.from(body.buffer, body.byteOffset, body.byteLength).equals(Buffer.from(original.buffer)),
 		).toBe(true);
-		expect(out.probe.durationFlicks).toBe(Math.round((whoosh.format.durationSec + lead + trail) * 705_600_000));
+		expect(out.probe.durationFlicks).toBe(
+			Math.round((whoosh.format.durationSec + lead + trail) * 705_600_000),
+		);
 		expect(readdirSync(media).filter((f) => f.startsWith('.sound-tmp'))).toEqual(
 			existsSync(join(media, '.sound-tmp')) ? ['.sound-tmp'] : [],
 		);

@@ -35,7 +35,11 @@ import { closeApps, DocBuilder, H, JSON_H, makeApp, register, TEST_FFMPEG, tempA
 import { makeStarter } from './sound-fixtures.ts';
 
 const SR = 48_000;
-const ENV_KEYS = ['JASPER_SOUND_STARTER_DIR', 'JASPER_SOUND_SYNTH_VARIANTS', 'JASPER_SOUND_AUTO_INDEX'] as const;
+const ENV_KEYS = [
+	'JASPER_SOUND_STARTER_DIR',
+	'JASPER_SOUND_SYNTH_VARIANTS',
+	'JASPER_SOUND_AUTO_INDEX',
+] as const;
 const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 
 /**
@@ -48,7 +52,8 @@ function click(ms: number, freq: number, quietHeadMs = 0): Float32Array {
 	const head = Math.round((quietHeadMs / 1000) * SR);
 	const out = new Float32Array(head + n);
 	const tau = (n - 1) / Math.log(1000);
-	for (let i = 0; i < n; i++) out[head + i] = 0.8 * Math.exp(-i / tau) * Math.sin((2 * Math.PI * freq * i) / SR);
+	for (let i = 0; i < n; i++)
+		out[head + i] = 0.8 * Math.exp(-i / tau) * Math.sin((2 * Math.PI * freq * i) / SR);
 	return out;
 }
 
@@ -134,7 +139,6 @@ async function registerSound(id: string) {
 	return RegisterSoundResponseSchema.parse(r.json());
 }
 
-
 type Placed = { clipId: string; frame: number; source: Float32Array; peakSample: number };
 
 /** Renders the sequence with the engine's mixer and checks each placed sound against its source, sample for sample. */
@@ -187,54 +191,58 @@ const RATES: [string, { num: number; den: number }, boolean][] = [
 ];
 
 describe('a placed short sound plays whole, its tail included', { timeout: 300_000 }, () => {
-	it.each(RATES)('%s fps: every click is rendered sample for sample to its −60 dB end', async (label, fps, df) => {
-		const b = new DocBuilder(`hd-1080p-${label}`, 600);
-		if (df) b.tx([{ type: 'sequence.updateSettings', settings: { dropFrame: true } }]);
-		const placed: Placed[] = [];
-		for (const [i, title] of ['tick 20', 'tick 30', 'tick 40', 'late tick', 'old copy'].entries()) {
-			const old = title === 'old copy';
-			const e = await soundByTitle(old ? 'tick 30' : title);
-			let mediaId: string;
-			if (old) {
-				// an existing project's media: the head-only copy with the provenance it was given then (no trail, no tail)
-				const { tailSec: _t, ...descriptors } = provenanceOf(e, 'h', 0.05).descriptors!;
-				mediaId = b.addMedia(await register(app, oldCopy));
-				b.tx([
+	it.each(RATES)(
+		'%s fps: every click is rendered sample for sample to its −60 dB end',
+		async (label, fps, df) => {
+			const b = new DocBuilder(`hd-1080p-${label}`, 600);
+			if (df) b.tx([{ type: 'sequence.updateSettings', settings: { dropFrame: true } }]);
+			const placed: Placed[] = [];
+			for (const [i, title] of ['tick 20', 'tick 30', 'tick 40', 'late tick', 'old copy'].entries()) {
+				const old = title === 'old copy';
+				const e = await soundByTitle(old ? 'tick 30' : title);
+				let mediaId: string;
+				if (old) {
+					// an existing project's media: the head-only copy with the provenance it was given then (no trail, no tail)
+					const { tailSec: _t, ...descriptors } = provenanceOf(e, 'h', 0.05).descriptors!;
+					mediaId = b.addMedia(await register(app, oldCopy));
+					b.tx([
+						{
+							type: 'media.setLibraryInfo',
+							mediaId,
+							library: { ...provenanceOf(e, 'h', 0.05), descriptors },
+						},
+					]);
+				} else {
+					const reg = await registerSound(e.id);
+					const { mediaKey: _k, browserPlayable: _b, library, existingMediaId: _x, ...asset } = reg;
+					const r0 = b.tx([{ type: 'media.register', asset: { ...asset, derivation: null, library } }]);
+					mediaId = (r0.results[0] as { mediaId: string }).mediaId;
+				}
+				// cues on frames that are not whole seconds, so the In point keeps a sub-frame rest
+				const frame = Math.round((0.6 + 0.7 * i) * (fps.num / fps.den)) + i;
+				const r = b.tx([
 					{
-						type: 'media.setLibraryInfo',
-						mediaId,
-						library: { ...provenanceOf(e, 'h', 0.05), descriptors },
+						type: 'soundCue.add',
+						cues: [{ frame, kind: 'cut', weight: 'support', source: 'user', align: 'peak', ref: '$c' }],
 					},
+					{ type: 'soundDesign.place', cueId: '$c', layers: [{ mediaId, gainDb: 0 }] },
 				]);
-			} else {
-				const reg = await registerSound(e.id);
-				const { mediaKey: _k, browserPlayable: _b, library, existingMediaId: _x, ...asset } = reg;
-				const r0 = b.tx([{ type: 'media.register', asset: { ...asset, derivation: null, library } }]);
-				mediaId = (r0.results[0] as { mediaId: string }).mediaId;
+				const clip = (
+					r.results[1] as { clips: { clipId: string; errorFlicks: number; sourceInFlicks: number }[] }
+				).clips[0]!;
+				expect(clip.errorFlicks).toBe(0);
+				// the source sound (left channel) and where its peak is in it
+				const src = decodeF32(files[old ? 'tick 30' : title]!).filter((_, k) => k % 2 === 0);
+				placed.push({
+					clipId: clip.clipId,
+					frame,
+					source: src,
+					peakSample: Math.round(e.descriptors.peakSec * SR),
+				});
 			}
-			// cues on frames that are not whole seconds, so the In point keeps a sub-frame rest
-			const frame = Math.round((0.6 + 0.7 * i) * (fps.num / fps.den)) + i;
-			const r = b.tx([
-				{
-					type: 'soundCue.add',
-					cues: [{ frame, kind: 'cut', weight: 'support', source: 'user', align: 'peak', ref: '$c' }],
-				},
-				{ type: 'soundDesign.place', cueId: '$c', layers: [{ mediaId, gainDb: 0 }] },
-			]);
-			const clip = (r.results[1] as { clips: { clipId: string; errorFlicks: number; sourceInFlicks: number }[] })
-				.clips[0]!;
-			expect(clip.errorFlicks).toBe(0);
-			// the source sound (left channel) and where its peak is in it
-			const src = decodeF32(files[old ? 'tick 30' : title]!).filter((_, k) => k % 2 === 0);
-			placed.push({
-				clipId: clip.clipId,
-				frame,
-				source: src,
-				peakSample: Math.round(e.descriptors.peakSec * SR),
-			});
-		}
-		await expectWhole(b, placed, `${label} fps`);
-	});
+			await expectWhole(b, placed, `${label} fps`);
+		},
+	);
 
 	it('registration pads silence after a sound that ends abruptly, in front of one that starts at once', async () => {
 		const tick = await soundByTitle('tick 30');
@@ -271,7 +279,10 @@ async function oldPlacement(b: DocBuilder, title: string, frame: number, soundId
 		},
 	]);
 	const r = b.tx([
-		{ type: 'soundCue.add', cues: [{ frame, kind: 'cut', weight: 'support', source: 'user', align: 'peak', ref: '$c' }] },
+		{
+			type: 'soundCue.add',
+			cues: [{ frame, kind: 'cut', weight: 'support', source: 'user', align: 'peak', ref: '$c' }],
+		},
 		{ type: 'soundDesign.place', cueId: '$c', layers: [{ mediaId, gainDb: 0 }] },
 	]);
 	const clipId = (r.results[1] as { clips: { clipId: string }[] }).clips[0]!.clipId;
@@ -281,7 +292,12 @@ async function oldPlacement(b: DocBuilder, title: string, frame: number, soundId
 	const fit = Math.floor((mediaDurationFlicks(b.doc.media[mediaId]!)! - c.sourceIn) / F + 1e-3);
 	if (fit < c.duration) b.tx([{ type: 'clip.trim', clipId, edge: 'out', deltaFrames: fit - c.duration }]);
 	const source = decodeF32(files[title]!).filter((_, k) => k % 2 === 0);
-	return { e, mediaId, clipId, placed: { clipId, frame, source, peakSample: Math.round(e.descriptors.peakSec * SR) } };
+	return {
+		e,
+		mediaId,
+		clipId,
+		placed: { clipId, frame, source, peakSample: Math.round(e.descriptors.peakSec * SR) },
+	};
 }
 
 async function check(b: DocBuilder) {
@@ -298,7 +314,8 @@ async function check(b: DocBuilder) {
 				registries: defaultRegistries(mgRegistry),
 				mgTemplates: mgRegistry,
 				scratchDir: scratch,
-				sounds: (app as unknown as { jasper: { services: { sounds?: SoundService } } }).jasper.services.sounds,
+				sounds: (app as unknown as { jasper: { services: { sounds?: SoundService } } }).jasper.services
+					.sounds,
 			},
 		);
 	} finally {
@@ -306,7 +323,9 @@ async function check(b: DocBuilder) {
 	}
 }
 
-describe('Sound Check finds cut tails in existing projects and fixes them safely', { timeout: 300_000 }, () => {
+describe('Sound Check finds cut tails in existing projects and fixes them safely', {
+	timeout: 300_000,
+}, () => {
 	it('a head-only copy cut at its peak: OUT_OF_SYNC "cut" with a safe re-register + swap; applied, the sound plays whole', async () => {
 		const b = new DocBuilder('hd-1080p-30', 300);
 		const old = await oldPlacement(b, 'tick 30', 40);
@@ -364,14 +383,20 @@ describe('Sound Check finds cut tails in existing projects and fixes them safely
 		expect(t1!.measured!.missingMs as number).toBeLessThan(1000 / 60);
 		expect(t1!.fix).toMatchObject({ kind: 'swap', safe: true, swap: { soundId: old.e.id } });
 		expect(t2!.fix).toMatchObject({ kind: 'commands', safe: true });
-		expect(t2!.fix!.commands).toEqual([{ type: 'soundDesign.swap', clipId: gone.clipId, mediaId: gone.mediaId }]);
+		expect(t2!.fix!.commands).toEqual([
+			{ type: 'soundDesign.swap', clipId: gone.clipId, mediaId: gone.mediaId },
+		]);
 		// the commands fix as given (one transaction): the clip now runs to the end of its sound, past its media
 		b.tx(t2!.fix!.commands as never);
 		const c = b.doc.sequences[b.seqId]!.clips[gone.clipId] as AudioClip;
 		const F = flicksPerFrame(b.doc.sequences[b.seqId]!.settings.frameRate);
-		expect(c.sourceIn + c.duration * F).toBeGreaterThanOrEqual(mediaDurationFlicks(b.doc.media[gone.mediaId]!)!);
+		expect(c.sourceIn + c.duration * F).toBeGreaterThanOrEqual(
+			mediaDurationFlicks(b.doc.media[gone.mediaId]!)!,
+		);
 		const again = await check(b);
-		expect(again.issues.filter((i) => i.clipIds?.includes(gone.clipId) && i.code === 'TRUNCATED')).toEqual([]);
+		expect(again.issues.filter((i) => i.clipIds?.includes(gone.clipId) && i.code === 'TRUNCATED')).toEqual(
+			[],
+		);
 		expect(again.issues.some((i) => i.clipIds?.includes(old.clipId) && i.code === 'TRUNCATED')).toBe(true);
 		await expectWhole(b, [gone.placed], 'past its media');
 	});
@@ -389,9 +414,9 @@ describe('Sound Check finds cut tails in existing projects and fixes them safely
 		// the user trims its tail off: the media has room left, so it is a choice, not the frame grid
 		b.tx([{ type: 'clip.trim', clipId, edge: 'out', deltaFrames: -1 }]);
 		const c = b.doc.sequences[b.seqId]!.clips[clipId] as AudioClip;
-		expect(c.sourceIn + c.duration * flicksPerFrame(b.doc.sequences[b.seqId]!.settings.frameRate)).toBeLessThan(
-			(0.05 + 0.04) * FLICKS_PER_SECOND,
-		);
+		expect(
+			c.sourceIn + c.duration * flicksPerFrame(b.doc.sequences[b.seqId]!.settings.frameRate),
+		).toBeLessThan((0.05 + 0.04) * FLICKS_PER_SECOND);
 		const report = await check(b);
 		expect(report.issues.filter((i) => i.clipIds?.includes(clipId) && i.code === 'TRUNCATED')).toEqual([]);
 	});

@@ -597,11 +597,14 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 				{ type: 'soundDesign.swap', clipId: clip.id, mediaId: oldMedia },
 			],
 		});
-		const r = await ok<{ to: { soundId: string; mediaId: string }; alignedFrame: { frame: number } }>('swap_sound', {
-			projectId,
-			clipId: clip.id,
-			to: soundId,
-		});
+		const r = await ok<{ to: { soundId: string; mediaId: string }; alignedFrame: { frame: number } }>(
+			'swap_sound',
+			{
+				projectId,
+				clipId: clip.id,
+				to: soundId,
+			},
+		);
 		expect(r.to.soundId).toBe(soundId);
 		expect(r.to.mediaId).not.toBe(oldMedia);
 		const doc = await documentOf(projectId);
@@ -626,12 +629,15 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		expect(after.pan.value).toBe(clip.pan.value);
 		const durF = (doc.media[after.mediaId] as { probe: { durationFlicks: number } }).probe.durationFlicks;
 		// (to where it has faded to −60 dB when the provenance knows it, else to the end of the sound)
-		const faded = lib?.descriptors?.tailSec !== undefined ? lib.descriptors.peakSec + lib.descriptors.tailSec : null;
+		const faded =
+			lib?.descriptors?.tailSec !== undefined ? lib.descriptors.peakSec + lib.descriptors.tailSec : null;
 		expect(after.sourceIn + after.duration * F * after.speed.rate).toBeGreaterThanOrEqual(
 			(faded !== null ? faded * FLICKS_PER_SECOND : durF - trail * FLICKS_PER_SECOND) - 1,
 		);
 		// the copy is current now: the same sound again is refused
-		expect((await fails('swap_sound', { projectId, clipId: clip.id, to: soundId })).code).toBe('E_INVALID_PARAM');
+		expect((await fails('swap_sound', { projectId, clipId: clip.id, to: soundId })).code).toBe(
+			'E_INVALID_PARAM',
+		);
 	});
 
 	it('swap_sound cycles a sound placed without alternates: next ×3 progresses, previous ×3 returns to it', async () => {

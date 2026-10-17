@@ -1115,7 +1115,10 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 					c.registerSound(t.soundId, a.projectId),
 				);
 				const title = e.title || reg.library.title || reg.originalName;
-				if (refresh && importCommands(doc, [{ soundId: t.soundId, reg, title }]).media[0]!.mediaId === clip.mediaId)
+				if (
+					refresh &&
+					importCommands(doc, [{ soundId: t.soundId, reg, title }]).media[0]!.mediaId === clip.mediaId
+				)
 					throw new ToolError(
 						'E_INVALID_PARAM',
 						`The clip already plays ${current} from its current copy`,

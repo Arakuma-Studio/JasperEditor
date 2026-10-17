@@ -79,9 +79,9 @@ describe('registration: trailing silence', () => {
 		expect(
 			libraryTrailSilenceSamples({ peakSec: 1, tailSec: 2, durationSec: 60 }, SR, { analysedSec: 30 }),
 		).toBe(pad);
-		expect(libraryTrailSilenceSamples({ peakSec: 1, tailSec: 2, durationSec: 60 }, SR, { analysedSec: 60 })).toBe(
-			0,
-		);
+		expect(
+			libraryTrailSilenceSamples({ peakSec: 1, tailSec: 2, durationSec: 60 }, SR, { analysedSec: 60 }),
+		).toBe(0);
 		// beds over 120 s are never copied; hostile numbers give 0
 		expect(libraryTrailSilenceSamples({ peakSec: 1, durationSec: LIBRARY_PAD_MAX_SECONDS + 1 }, SR)).toBe(0);
 		for (const bad of [Number.NaN, -1, 0, Number.POSITIVE_INFINITY])
@@ -108,12 +108,18 @@ describe('registration: trailing silence', () => {
 		expect(
 			libraryDescriptorIssue({ ...p, descriptors: { ...p.descriptors, tailSec: 5 } } as LibraryProvenance),
 		).toMatch(/tailSec/);
-		expect(libraryDescriptorIssue({ ...p, trailSilenceSec: 0.9 } as LibraryProvenance)).toMatch(/trailSilenceSec/);
+		expect(libraryDescriptorIssue({ ...p, trailSilenceSec: 0.9 } as LibraryProvenance)).toMatch(
+			/trailSilenceSec/,
+		);
 		// media.setLibraryInfo refuses the impossible one
 		const h = new Harness();
 		const m = media(h, { peakAfterLead: 0.001, soundSec: 0.03 });
 		const r = h.tx([
-			{ type: 'media.setLibraryInfo', mediaId: m, library: { ...p, descriptors: { ...p.descriptors, tailSec: 5 } } },
+			{
+				type: 'media.setLibraryInfo',
+				mediaId: m,
+				library: { ...p, descriptors: { ...p.descriptors, tailSec: 5 } },
+			},
 		]);
 		expect(r.ok).toBe(false);
 	});
@@ -294,7 +300,11 @@ describe('soundDesign.place / swap keep the whole sound (commands)', () => {
 		const old = media(h, { peakAfterLead: 0.008, soundSec: 0.035 });
 		const fresh = media(h, { peakAfterLead: 0.008, soundSec: 0.035, trailSec: 0.05, tailSec: 0.03 });
 		const r = h.ok([
-			{ type: 'soundDesign.place', frame: 90, layers: [{ mediaId: old, gainDb: -9, pan: -30, role: 'hero' }] },
+			{
+				type: 'soundDesign.place',
+				frame: 90,
+				layers: [{ mediaId: old, gainDb: -9, pan: -30, role: 'hero' }],
+			},
 		]);
 		const c = clipOf(h, r);
 		h.ok([{ type: 'soundDesign.swap', clipId: c.id, mediaId: fresh }]);
