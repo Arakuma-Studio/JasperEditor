@@ -7071,7 +7071,7 @@ compute rule (said there). Before = the branch point `5d80ed30` (a detached work
 | 13 | Accept-state crash window | fixed | an accept writes an intent (atomic, with the id bodies its transaction will take, recorded from its dry run) before the transaction and removes it after the states are written; an intent found later is settled from the document when the proposal is next read (applied → recorded accepted with refs and created ids; not → rolled back); the relay carries the ids to the editor (≤ 50 000 well-formed bodies, `docs/security-review.md`) | `apps/engine/test/proposals-journal.test.ts` (crash points injected between each step, a restart, a lost relay answer; never applied twice) | — |
 | 14 | Proposals > 64 items: invariant-only conflicts stale only at Apply | fixed | the preview checks the result as Apply does at any size; a failure is pinned by bisection over the batches on the first item after which the document breaks an invariant, which is shown stale ("conflicts with the items before it: …"), Hear leaves it out, the rest is previewed | `packages/project/test/proposals-preview-batch.test.ts` (equal to one transaction per item on random proposals, invariant-only conflicts at any size), `packages/session/test/proposals-conflict.test.ts` (130-item proposal) — before: previewed as fine, stale at Apply | the check is one 84 ms task for 1 026 items (below) |
 | 15 | 1 000-item preview ≈ 13–16 s of work | fixed (3.0 → 1.1–1.4 s wall on the build server) | items applied in batches (≤ 32 per transaction, sized to the 8 ms slice, ghosts attributed per item exactly, else one by one), checkpoints reused by the next preview of the same document (Hear after a reject); merged here: placement reads Project items without drafting them (`valuesOf` in `placeSource`: drafting every item copied the record and pushed every transaction's orphan check into a full scan of all clips — 289 of 336 preview transactions), and library provenance of finished documents is read once (frozen cache) | `packages/session/test/proposals-budget.test.ts` (operation counts; CPU time vs one transaction per item < 0.8, measured 0.63–0.66), `proposals-preview-batch.test.ts` | see Verified (preview bench) |
-| 16 | Anime mg templates (4) kept declared intro / outro (est. 1–3 frames late) | fixed | each anime template's motion as a pure model in `@jasper/mg-templates` (`templates/anime/motion.ts`: the phases the implementations build their anime.js timelines from, and anime.js's ease curves ported as functions — `licenses/ported/anime-template-motion.md`, MIT); the registry measures land / exit on it like the fframes templates' SVG twins; `@jasper/motion` builds its timelines from the same phase definitions | `packages/motion/test/mg-cue-timing.test.ts` (the model equals anime.js at every frame and between frames for every template, rate, length and ease; derived land / exit within ±1 frame of where the real animation comes to rest / starts leaving), `packages/mg-templates/test/motion-cues.test.ts` (every shipped template is measured) | ⟨MG⟩ |
+| 16 | Anime mg templates (4) kept declared intro / outro (est. 1–3 frames late) | fixed | each anime template's motion as a pure model in `@jasper/mg-templates` (`templates/anime/motion.ts`: the phases the implementations build their anime.js timelines from, and anime.js's ease curves ported as functions — `licenses/ported/anime-template-motion.md`, MIT); the registry measures land / exit on it like the fframes templates' SVG twins; `@jasper/motion` builds its timelines from the same phase definitions | `packages/motion/test/mg-cue-timing.test.ts` (the model equals anime.js at every frame and between frames for every template, rate, length and ease; derived land / exit within ±1 frame of where the real animation comes to rest / starts leaving), `packages/mg-templates/test/motion-cues.test.ts` (every shipped template is measured) | derived land / exit = the real anime.js frame in every case of the test's report (4 templates × 6 rates + 16 parameter variants); the declared timing they used was off by up to 25 frames (callout with motion path at 59.94: land 84 vs 59), exits up to 16 (counter at 59.94: 270 vs 286) — the "1–3 frames" was an underestimate |
 | 17 | `place_sound` hero warning used whole dialogue clips; solver speech ignored clip volume automation | fixed | `dialogueSpans` keeps only the dialogue the mix lets through: clip gain, clip Volume keyframes, track mute (static, automated), track Volume automation, solo, submix and Mix faders evaluated with the renderers' topology (`buildAudioMix`); at or under −40 dB it is not speech for any consumer (solver, cue suppression, `place_sound`'s W_HERO_UNDER_DIALOGUE — now from the engine's heard dialogue —, Sound Check) | `packages/project/test/sound-dialogue-audible.test.ts`, `apps/engine/test/sound-design-heard-speech.test.ts` (real engine: muted by gain, ducked out by keyframes from 4.5 s, track muted by automation), `apps/mcp/test/sound-cues.test.ts` | — |
 | 18 | Search perf threshold scaled with load | decided: strict CPU budget | the search and ranking speed tests measure the main thread's CPU time (Linux `/proc/self/task/<tid>/schedstat`; `process.cpuUsage` counted V8's GC / compiler threads: 26 ms of CPU in 12 ms of wall time at load 53) against a fixed 50 ms, whatever the load | `apps/engine/test/sounds-search.test.ts`, `packages/project/test/sound-rank-scale.test.ts` | see Verified |
 | 19 | E2E web server start-up needed 600 s at high load | fixed | `E2E_SERVER_TIMEOUT_MS` (1 000 … 3 600 000; default 180 s, was a fixed 60 s; a malformed value is refused naming the variable), README | `scripts/e2e-server-timeout.test.mjs` (the config test failed before the wiring) | — |
@@ -7137,6 +7137,44 @@ compute rule (said there). Before = the branch point `5d80ed30` (a detached work
   placement reads were the larger part. Longest task 18–23 ms → 65–79 ms: the one end-of-preview invariant check
   (84 ms measured alone), item 14's price; p95 15–17 ms both. In the session test: batched 180–205 ms CPU vs 285–311 ms
   one transaction per item (0.63–0.66).
+- **Item 7, plan job** — `SD_PLAN_BENCH=thread|worker SD_PLAN_BENCH_OUT=… pnpm vitest run
+  apps/engine/test/sound-design-plan-bench.test.ts` (the plan-mix fixture, the first plan with every style option, cold
+  caches, 67 solo + 2 bed renders), two runs each, alternating, load 2–8: main thread **wall 15.5 / 13.8 s, event-loop
+  delay p90 125 ms, p99 418 / 390 ms, mean 47 / 44 ms, levels stage 9.3 / 8.4 s** → workers **wall 12.3 / 12.0 s, p90
+  16 ms, p99 98 / 122 ms, mean 16 ms, levels 6.3 / 6.2 s**; the same placements and levels. The maximum delay stays
+  ≈ 1 s in both modes (935–1 141 ms → 979–1 013 ms): a stall outside the measurements (not identified in this pass).
+- **Item 12, motion analysis** — `SOUND_PERF=1 SOUND_PERF_OUT=… pnpm vitest run apps/engine/test/sound-design-motion.test.ts
+  -t perf` (one minute of generated 1080p30 footage, untouched), before / after alternating, load 1–4: **31.7 s and
+  24.9 s (render 31.1 / 24.1 s, native path) → 3.6 s and 3.8 s (decode 3.1 / 3.2 s, source path)**; the same 2 events.
+  The equivalence test: the 4 s box at 1080p, source decode 553–695 ms vs render 2 405–3 240 ms, every frame on the
+  same side of MOVE_ON / MOVE_OFF, per-frame speeds within 10.3 % (the rendered reference's own H.264 noise), the same
+  events and cues; also with half the clip at 99 % opacity (source + render pieces across the move). Fixed while
+  verifying (the WIP had not run): the move cue of a measured constant move followed the noise (41 vs 45 on the same
+  picture; 43 vs 37 on the split one) → `MOVE_STRETCH_SHARE` 0.85 over a 5-frame median with 2-frame gaps
+  (`sound-cues-engine.test.ts` pins both measured curves); the source decode's seek read the frame-time table only
+  as a list (`frameTime` now).
+- **Item 4 / 17, real mixer** — `apps/engine/test/sound-design-overlap.test.ts`: the two heroes at the per-event
+  headroom of before sum to **+0.72 dBTP**; solved with the summed ceiling every sound effect together peaks at
+  **−2.95 dBTP** (ceiling −1); each hero's lift over bed + rain measured −1.28 / −1.45 dB vs reported −1.29 / −1.41.
+  `sound-design-heard-speech.test.ts`: the click under muted / ducked-out / track-muted dialogue is no longer under
+  speech (3 cases), and still is with the dialogue audible.
+- **Item 8 (b)** — `apps/engine/test/sound-check-joint.test.ts`: normalisation off, mix TP −1.12 dBTP; the masked
+  support's gain fix (−24 → −7.42 dB) has a bound of +0.80 dBTP and is not safe; applied anyway the re-check measures
+  **−0.59 dBTP** (over the −1 ceiling): the rule was right. (c): the mono Mix measures as the mono export, 3.01 LU under
+  its stereo upmix.
+- **Item 6, hunt** — `FC_HUNT_RUNS=200000 pnpm vitest run packages/project/test/sound-mix-dips-hunt.test.ts` (11 min):
+  two failures, both with their seed and path reported by the new setup file (`FC_SEED=-2132445674 FC_PATH=161234:…`,
+  `FC_SEED=-1701500363 FC_PATH=63429:…`) and replayed: (1) a real defect — a window edge key took a fade's value from
+  half a flick inside (−5·10⁻⁷ dB held after the window) — fixed (an edge decides its key); (2) the checker's 10⁻⁵ dB
+  straight-lane tolerance assumed no fractional breakpoints, but overlapping dips' ramps cross between flicks (keys are
+  stored on whole flicks): the property now uses the half-flick bound (10⁻⁴ dB) when windows overlap. Both pinned.
+  ⟨HUNT2⟩
+- **Item 15 / 14 / 13, proposals** — `packages/session/test/proposals-{budget,conflict}.test.ts`,
+  `packages/project/test/proposals-preview-batch.test.ts`, `apps/engine/test/proposals-journal.test.ts` pass (full run).
+- **Full suite** — ⟨FULL⟩
+- **E2E** (`pnpm build`, then `E2E_SKIP_BUILD=1 E2E_SERVER_TIMEOUT_MS=600000 pnpm exec playwright test …`, Google Chrome
+  142): ⟨E2E⟩
+
 #### Limits and notes for the next packages
 
 - **The editor does not say when a sound is registered inexact** (item 2): `RegisterSoundResponse.inexact` (over 1 h,

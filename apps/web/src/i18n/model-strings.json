@@ -1192,6 +1192,7 @@
   "Cone Feather",
   "Config",
   "Config File",
+  "conflicts with the items before it: {0}",
   "Constant",
   "Constant Blobs",
   "Constant Gain",

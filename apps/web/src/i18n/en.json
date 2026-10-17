@@ -2170,6 +2170,7 @@
   "Confirm",
   "conflict: {0} kept over {1}",
   "conflicts with another hero cue",
+  "conflicts with the items before it: {0}",
   "Conform to:",
   "Connect",
   "Connect an AI Agent",

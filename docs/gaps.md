@@ -332,7 +332,7 @@ sources; "snap to the beat" (≤ 2 frames, `anchorOffset`); Suggest Cues… / Au
 Analyze… — rerun `apps/engine/test/sound-design-motion.test.ts`, `packages/project/test/sound-cues-engine.test.ts`,
 `packages/audio-fx/test/beats.test.ts`, `apps/mcp/test/sound-motion.test.ts`, `apps/web/test/sound-engine-sources.test.tsx`,
 `e2e/sound-cue-sources.spec.ts`. Limits: a stretch that is not untouched footage (effects, transforms, speed, fades, other layers) is still rendered
-through the export before it is measured (one minute of untouched 1080p footage: ⟨MOTION⟩ since WP6.5b, which decodes such
+through the export before it is measured (one minute of untouched 1080p footage: 3.6–3.8 s since WP6.5b, 24.9–31.7 s before on the same build server, which decodes such
 stretches straight at the analysis size; 41–47 s before, measured at load 7–12 on 16 cores); motion
 under ≈ 0.6 px per frame at 128 px (≈ 0.12 screen diagonals per second, the keyframe source's threshold) is not seen, and
 small objects (≤ 2 blocks of 8 px) are noise to it; the beat tracker reads 60–200 BPM clicks and generated drum patterns at
