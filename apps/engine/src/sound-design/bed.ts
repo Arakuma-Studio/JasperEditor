@@ -27,7 +27,14 @@
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import type { LoudnessSummary } from '@jasper/audio-dsp';
-import { bandLevels, bedLocalPeakLu, energyProfile, shortTermPeakLu, type TimeWindow } from '@jasper/audio-fx';
+import {
+	bandLevels,
+	bedLocalPeakLu,
+	energyProfile,
+	peakProfile,
+	shortTermPeakLu,
+	type TimeWindow,
+} from '@jasper/audio-fx';
 import {
 	type AudioStream,
 	buildRenderSnapshot,
@@ -89,6 +96,8 @@ export type MeasuredSound = {
 	truePeakDb: number | null;
 	/** How its energy is spread over its window (`energyProfile`): it masks other sounds by what it has under them. */
 	energyProfile?: number[];
+	/** Its peaks along its window (`peakProfile`, dB at 0 dB): overlapping sounds share the ceiling where they meet. */
+	peakProfileDb?: number[];
 	bedBandsDb: number[];
 	bedLocalPeakLu: number | null;
 	speechOverlap: boolean;
@@ -124,10 +133,11 @@ type SoundEntry = {
 	soundPeakLu: number | null;
 	truePeakDb: number | null;
 	energyProfile?: number[];
+	peakProfileDb?: number[];
 };
 type SoundMeasure = Pick<
 	MeasuredSound,
-	'window' | 'silent' | 'soundBandsDb' | 'soundPeakLu' | 'truePeakDb' | 'energyProfile'
+	'window' | 'silent' | 'soundBandsDb' | 'soundPeakLu' | 'truePeakDb' | 'energyProfile' | 'peakProfileDb'
 >;
 /** Per-engine caches (bounded): bed PCM per cluster by bytes, sound measurements and voice activity by count. */
 export class MeasureCache {
@@ -812,6 +822,7 @@ export async function measureSfxEvents(
 			soundPeakLu: x.soundPeakLu,
 			truePeakDb: x.truePeakDb,
 			...(x.energyProfile ? { energyProfile: x.energyProfile } : {}),
+			...(x.peakProfileDb ? { peakProfileDb: x.peakProfileDb } : {}),
 		});
 		// the same render asked twice in this call (the same sound played the same way) is measured once
 		let entry = cache.getSound(key) ?? null;
@@ -834,6 +845,7 @@ export async function measureSfxEvents(
 							end: Math.min((rc.start + rc.duration - range.start) / fpsNum, head + MAX_WINDOW_SEC),
 						};
 				const peak = shortTermPeakLu(r.pcm.channels, sr, rel, 0);
+				const peaks = span && r.truePeakDb !== null ? peakProfile(r.pcm.channels, sr, rel, r.truePeakDb) : null;
 				const x: SoundEntry = {
 					rel,
 					silent: span === null,
@@ -841,6 +853,7 @@ export async function measureSfxEvents(
 					soundPeakLu: Number.isFinite(peak) ? peak : null,
 					truePeakDb: r.truePeakDb,
 					...(span ? { energyProfile: energyProfile(r.pcm.channels, sr, rel) } : {}),
+					...(peaks ? { peakProfileDb: peaks } : {}),
 				};
 				cache.putSound(key, x);
 				return x;
@@ -945,6 +958,7 @@ export async function measureSfxEvents(
 			soundPeakLu: m.soundPeakLu,
 			truePeakDb: m.truePeakDb,
 			...(m.energyProfile ? { energyProfile: m.energyProfile } : {}),
+			...(m.peakProfileDb ? { peakProfileDb: m.peakProfileDb } : {}),
 			bedBandsDb,
 			bedLocalPeakLu: Number.isFinite(lp) ? lp : null,
 			speechOverlap: speechTracks.size > 0,

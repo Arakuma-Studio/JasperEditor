@@ -14,10 +14,11 @@
 //                  and weight
 //   5 dialogue     during speech, lift in each of the 1, 2 and 4 kHz bands ≤ +1 dB
 //   6 headroom     sound true peak + gain ≤ the ceiling (default −1 dBTP, pre-master); unmeasured peak: no boost;
-//                  then the SUMMED true peak of the measured events playing at once (each clique of overlapping
-//                  windows: Σ 10^(tp/20) ≤ 10^(ceiling/20), an upper bound of the true peak of their sum) — a clique
-//                  over it is lowered together by the same dB (members an earlier step holds at their floor keep it,
-//                  the others take the rest; `overlap-headroom`)
+//                  then the SUMMED true peak of the measured events playing at once: at every moment, Σ 10^(p/20) ≤
+//                  10^(ceiling/20) over the events active then, p = each one's peak there (its peak-profile slice,
+//                  else its true peak) + gain — an upper bound of the true peak of their sum; the events of a moment
+//                  over it are lowered together by the same dB (members an earlier step holds at their floor keep
+//                  it, the others take the rest; `overlap-headroom`)
 //
 // Overlapping sound effects (spec 12 §2.4 "hero vs support"; wp-note "WP6.5b"): a sound effect of a LOWER weight that
 // plays under an event is part of that event's bed for the target lift (ambient → support → hero: an ambience masks the
@@ -39,7 +40,7 @@
 // final gain (rounded to
 // 0.01 dB, which may miss a bound by at most 0.005 dB when the allowed interval holds no 0.01 dB step); a violation
 // without a reported conflict is a W_UNRESOLVED warning (the tests require none).
-import { BAND_FLOOR_DB, ENERGY_PROFILE_POINTS, OCTAVE_BAND_CENTRES_HZ } from './bands.ts';
+import { BAND_FLOOR_DB, ENERGY_PROFILE_POINTS, OCTAVE_BAND_CENTRES_HZ, PEAK_PROFILE_SLICES } from './bands.ts';
 
 /**
  * A lift this large means the bed under the sound is at the measurement floor (nothing plays under it): the reason
@@ -95,7 +96,7 @@ export const SOLVER_STEP_DB = 0.01;
 export const MAX_MASKING_ITERATIONS = 32;
 /** The masking fixed point is reached when no gain moved more than this between two passes (dB). */
 export const MASKING_TOLERANCE_DB = 1e-4;
-/** Passes of the summed-true-peak cut (each pass satisfies every clique it sees; the next one only checks). */
+/** Passes of the summed-true-peak cut (each pass satisfies every moment it sees; the next one only checks). */
 const OVERLAP_PASSES = 4;
 
 /** The ordered constraints. */
@@ -158,6 +159,12 @@ export interface SolverEvent {
 	 * spread evenly.
 	 */
 	energyProfile?: number[];
+	/**
+	 * Its peaks along its window at 0 dB clip gain (`peakProfile`: 32 slices, dB, the loudest = its true peak): the
+	 * summed-true-peak check adds the overlapping sounds slice by slice, so sounds whose peaks do not meet are not cut
+	 * as if they did. Absent: its true peak throughout the window.
+	 */
+	peakProfileDb?: number[];
 }
 
 export interface SolverOptions {
@@ -287,6 +294,8 @@ type Clean = {
 	cueKey: string;
 	/** Cumulative energy share at k / N of the window (k = 0 … N); null = even. */
 	profile: Float64Array | null;
+	/** Peak (dB at 0 dB gain) of each of the window's slices, never over the true peak; null = the true peak. */
+	peaks: Float64Array | null;
 };
 
 type Raw = Record<string, unknown>;
@@ -361,6 +370,7 @@ function clean(raw: unknown, index: number, notes: string[]): Clean {
 	const bed = readBands(e, 'bedBandsDb', notes);
 	const soundPeak = readLevel(e, 'soundPeakLu', notes);
 	const truePeak = readLevel(e, 'truePeakDb', notes);
+	const peaks = readPeaks(e.peakProfileDb, truePeak, notes);
 	const bedPeak = readLevel(e, 'bedLocalPeakLu', notes);
 	const dom = dominant(sound);
 	// constraint 5 bound: 1 + min over the speech bands of (bed − sound)
@@ -387,7 +397,40 @@ function clean(raw: unknown, index: number, notes: string[]): Clean {
 		speechRoom,
 		cueKey,
 		profile,
+		peaks,
 	};
+}
+
+/** A peak profile: 32 levels (dB; −Infinity = silence), each capped at the true peak; needs a measured true peak. */
+function readPeaks(v: unknown, truePeak: number | null, notes: string[]): Float64Array | null {
+	if (v === undefined || v === null) return null;
+	const n = PEAK_PROFILE_SLICES;
+	if (!Array.isArray(v) || v.length !== n) {
+		notes.push(`peakProfileDb is not ${n} levels (the true peak is used throughout)`);
+		return null;
+	}
+	if (truePeak === null) return null; // nothing to scale against: unmeasured sounds stay out of the sum anyway
+	const out = new Float64Array(n);
+	for (let k = 0; k < n; k++) {
+		const x = v[k];
+		if (x === Number.NEGATIVE_INFINITY) out[k] = BAND_FLOOR_DB;
+		else if (typeof x === 'number' && Number.isFinite(x) && x <= LEVEL_CEILING_DB)
+			out[k] = Math.min(truePeak, Math.max(BAND_FLOOR_DB, x));
+		else {
+			notes.push('peakProfileDb has a level that is not finite (the true peak is used throughout)');
+			return null;
+		}
+	}
+	return out;
+}
+
+/** An event's peak (dB at 0 dB gain) at timeline time `t` inside its window: its slice's, else its true peak. */
+function peakAt(ev: Clean, t: number): number {
+	const p = ev.peaks;
+	const len = ev.end - ev.start;
+	if (!p || !(len > 0)) return ev.truePeak!;
+	const k = Math.max(0, Math.min(p.length - 1, Math.floor(((t - ev.start) / len) * p.length + 1e-9)));
+	return p[k]!;
 }
 
 /** An energy profile: N + 1 finite, non-decreasing numbers from 0 to 1 (null / undefined: even; else reported). */
@@ -746,23 +789,45 @@ function maskedBedDom(
 }
 
 /**
- * The cliques of measured events that play at once: at each distinct start, the events active there (start ≤ t <
- * end, or an instant event at t), in canonical order. Calls `visit(members)` per distinct start.
+ * The moments when measured events play together: at each event start and each boundary of an event's peak-profile
+ * slices, the events active there (start ≤ t < end, or an instant event at t), in canonical order, and each one's
+ * peak there (dB at 0 dB gain; `peakAt`). Between two such moments nothing changes, so these cover every instant.
  */
-function eachClique(evs: Clean[], order: number[], visit: (members: number[]) => void): void {
+function eachMoment(
+	evs: Clean[],
+	order: number[],
+	visit: (members: number[], peak: Float64Array, t: number) => void,
+): void {
+	const times: number[] = [];
+	for (const i of order) {
+		const e = evs[i]!;
+		times.push(e.start);
+		const len = e.end - e.start;
+		if (e.peaks && len > 0) for (let k = 1; k < e.peaks.length; k++) times.push(e.start + (len * k) / e.peaks.length);
+	}
+	times.sort((x, y) => x - y);
 	const active: number[] = [];
+	const peak = new Float64Array(evs.length);
 	let p = 0;
-	while (p < order.length) {
-		const t = evs[order[p]!]!.start;
+	let last = Number.NaN;
+	for (const t of times) {
+		if (t === last) continue;
+		last = t;
 		let w = 0;
 		for (let k = 0; k < active.length; k++) {
 			const e = evs[active[k]!]!;
 			if (e.end > t || (e.end === e.start && e.start === t)) active[w++] = active[k]!;
 		}
 		active.length = w;
-		while (p < order.length && evs[order[p]!]!.start === t) active.push(order[p++]!);
 		// insertion keeps the canonical order (starts ascend; ties pushed in order)
-		visit(active);
+		while (p < order.length && evs[order[p]!]!.start <= t) {
+			const i = order[p++]!;
+			const e = evs[i]!;
+			if (e.end > t || (e.end === e.start && e.start === t)) active.push(i);
+		}
+		if (active.length === 0) continue;
+		for (const i of active) peak[i] = peakAt(evs[i]!, t);
+		visit(active, peak, t);
 	}
 }
 
@@ -770,13 +835,14 @@ function eachClique(evs: Clean[], order: number[], visit: (members: number[]) =>
 const amp = (db: number): number => Math.exp(db * 0.115_129_254_649_702_3);
 
 /**
- * Step 6, summed: every clique of overlapping measured events whose summed true peak (Σ 10^(tp/20)) is over the
- * ceiling is lowered by one dB amount for all its members; a member an earlier step holds at its floor keeps it (the
+ * Step 6, summed: at every moment (`eachMoment`) where the measured events playing together sum over the ceiling
+ * (Σ 10^((peak + gain)/20), peak = the slice of each one's peak profile there, else its true peak), they are lowered by
+ * one dB amount for all of them; a member an earlier step holds at its floor keeps it (the
  * others take the rest); when the held members alone are over, the others go to their floors and the held ones
- * report `conflict:<floor>/headroom`. An event in several cliques takes the largest cut. Deterministic.
+ * report `conflict:<floor>/headroom`. An event in several such moments takes the largest cut. Deterministic.
  * `holdRepeats` (the pass after the last consistency settle): members of a repeat group are held where they are — the
  * settle may have raised one back over the summed ceiling, and lowering it alone could break the ±2 dB window again —
- * so the other sounds of the clique absorb the cut, and only what they cannot absorb is a reported
+ * so the other sounds of the moment absorb the cut, and only what they cannot absorb is a reported
  * `conflict:consistency/headroom` (consistency comes first in the spec order).
  */
 function overlapHeadroom(states: State[], order: number[], ceiling: number, holdRepeats: boolean): void {
@@ -790,9 +856,9 @@ function overlapHeadroom(states: State[], order: number[], ceiling: number, hold
 		const cut = new Float64Array(states.length);
 		const atFloor = new Set<number>();
 		let over = false;
-		eachClique(evs, measured, (members) => {
+		eachMoment(evs, measured, (members, peak) => {
 			if (members.length < 2) return; // alone: per-event headroom already holds it
-			const a = members.map((i) => amp(evs[i]!.truePeak! + states[i]!.g));
+			const a = members.map((i) => amp(peak[i]! + states[i]!.g));
 			let sum = 0;
 			for (const x of a) sum += x;
 			if (!(sum > cAmp * (1 + 1e-12))) return;
@@ -803,7 +869,7 @@ function overlapHeadroom(states: State[], order: number[], ceiling: number, hold
 				let sf = 0;
 				let sr = 0;
 				members.forEach((i, k) => {
-					if (fixed[k]) sf += amp(evs[i]!.truePeak! + Math.min(states[i]!.g, floorOf(states[i]!)));
+					if (fixed[k]) sf += amp(peak[i]! + Math.min(states[i]!.g, floorOf(states[i]!)));
 					else sr += a[k]!;
 				});
 				if (sr === 0 || sf >= cAmp) {
@@ -1127,16 +1193,16 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 		lists && be
 			? maskedBedDom(evs, lists, be, finals, new Float64Array(evs.length), new Float64Array(evs.length))
 			: null;
-	// the summed true peak at the final gains: each event's worst clique; cliques over the ceiling must be explained
+	// the summed true peak at the final gains: each event's worst moment; moments over the ceiling must be explained
 	const overlapTp = new Float64Array(evs.length).fill(Number.NEGATIVE_INFINITY);
 	const tol = SOLVER_STEP_DB / 2 + 1e-9;
 	const unresolvedOverlap: number[] = [];
-	eachClique(
+	eachMoment(
 		evs,
 		order.filter((i) => evs[i]!.truePeak !== null),
-		(members) => {
+		(members, peak) => {
 			let sum = 0;
-			for (const i of members) sum += amp(evs[i]!.truePeak! + finals[i]!);
+			for (const i of members) sum += amp(peak[i]! + finals[i]!);
 			const db = 20 * Math.log10(sum);
 			for (const i of members) overlapTp[i] = Math.max(overlapTp[i]!, db);
 			if (members.length > 1 && db > ceiling + tol) {
@@ -1144,7 +1210,7 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 				if (!explained) {
 					let loud = members[0]!;
 					for (const i of members)
-						if (evs[i]!.truePeak! + finals[i]! > evs[loud]!.truePeak! + finals[loud]!) loud = i;
+						if (peak[i]! + finals[i]! > peak[loud]! + finals[loud]!) loud = i;
 					if (!unresolvedOverlap.includes(loud)) unresolvedOverlap.push(loud);
 				}
 			}

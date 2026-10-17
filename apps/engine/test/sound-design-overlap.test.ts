@@ -88,7 +88,7 @@ describe('overlapping sound effects on the real mixer', { timeout: 300_000 }, ()
 		);
 		expect(m.missing).toEqual([]);
 		const events = infos.map((i) => solverEventOf(i, m.sounds.get(i.clipId)!));
-		expect(events.every((e) => e.energyProfile?.length === 33)).toBe(true);
+		expect(events.every((e) => e.energyProfile?.length === 33 && e.peakProfileDb?.length === 32)).toBe(true);
 		const solved = solveAt(events, 'web');
 		const ceiling = levelOptions('web').truePeakCeilingDb;
 		expect(ceiling).toBe(-1);

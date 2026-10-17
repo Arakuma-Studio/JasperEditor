@@ -177,6 +177,33 @@ describe('summed true peak of overlapping sounds', () => {
 		expect(one(apart, 'a').overlapTruePeakDb).toBeCloseTo(-1, 9);
 	});
 
+	it('with peak profiles, overlapping sounds whose peaks do not meet keep (nearly) their own headroom', () => {
+		// each hit peaks in its first slice (1/32 of its window) and is 60 dB lower after: a's peak is long gone
+		// when b's comes
+		const prof = Array.from({ length: 32 }, (_, k) => (k === 0 ? -3 : -63));
+		const r = solveSfxGains([
+			ev({ clipId: 'a', weight: 'hero', ...hot, startSec: 0, endSec: 1, peakProfileDb: prof }),
+			ev({ clipId: 'b', weight: 'hero', ...hot, startSec: 0.5, endSec: 1.5, peakProfileDb: prof }),
+		]);
+		for (const id of ['a', 'b']) {
+			// −1 dBTP alone; the other's −61 dB tail asks for a few hundredths of a dB
+			expect(one(r, id).gainDb, id).toBeGreaterThanOrEqual(1.95);
+			expect(one(r, id).gainDb, id).toBeLessThanOrEqual(2);
+			expect(one(r, id).overlapTruePeakDb!, id).toBeLessThanOrEqual(-1 + 0.005);
+		}
+		// the same sounds peaking together (a profile with the peak in the overlap) are cut like two true peaks
+		const late = Array.from({ length: 32 }, (_, k) => (k === 20 ? -3 : -63)); // 0.625–0.656 s into a
+		const early = Array.from({ length: 32 }, (_, k) => (k === 4 ? -3 : -63)); // 0.625–0.656 s on the timeline for b
+		const t = solveSfxGains([
+			ev({ clipId: 'a', weight: 'hero', ...hot, startSec: 0, endSec: 1, peakProfileDb: late }),
+			ev({ clipId: 'b', weight: 'hero', ...hot, startSec: 0.5, endSec: 1.5, peakProfileDb: early }),
+		]);
+		expect(one(t, 'a').gainDb).toBeCloseTo(Math.floor((2 - 20 * Math.log10(2)) * 100) / 100, 2);
+		// a profile without a measured true peak, or of the wrong length, is ignored (and the latter reported)
+		const bad = solveSfxGains([ev({ clipId: 'a', weight: 'hero', ...hot, peakProfileDb: [1, 2] })]);
+		expect(bad.warnings.map((w) => w.code)).toContain('W_SANITISED');
+	});
+
 	it('a chain: the middle event is in both cliques and takes the larger cut; each clique holds', () => {
 		const r = solveSfxGains([
 			ev({ clipId: 'a', weight: 'hero', ...hot, startSec: 0, endSec: 1 }),
@@ -304,7 +331,50 @@ function worstOverlapDb(events: SolverEvent[], r: SolverResult, unexplained: boo
 	return worst;
 }
 
+/** Summed peak (dBTP) at the solved gains at every slice midpoint and start of every event (independent of the solver). */
+function worstMomentDb(events: SolverEvent[], r: SolverResult): number {
+	const N = 32;
+	const times: number[] = [];
+	for (const e of events) {
+		times.push(e.startSec);
+		const len = e.endSec - e.startSec;
+		if (len > 0) for (let k = 0; k < N; k++) times.push(e.startSec + ((k + 0.5) * len) / N);
+	}
+	let worst = Number.NEGATIVE_INFINITY;
+	for (const t of times) {
+		let s = 0;
+		events.forEach((e, j) => {
+			if (e.truePeakDb === null) return;
+			const len = e.endSec - e.startSec;
+			const on = len > 0 ? e.startSec <= t && t < e.endSec : e.startSec === t;
+			if (!on) return;
+			let p = e.truePeakDb;
+			if (e.peakProfileDb && len > 0) {
+				const k = Math.max(0, Math.min(N - 1, Math.floor(((t - e.startSec) / len) * N)));
+				p = Math.min(e.truePeakDb, e.peakProfileDb[k]!);
+			}
+			s += amp(p + r.events[j]!.gainDb);
+		});
+		if (s > 0) worst = Math.max(worst, 20 * Math.log10(s));
+	}
+	return worst;
+}
+
 describe('properties', () => {
+	it('with peak profiles: the summed peak holds at every moment (no repeat groups to override it)', () => {
+		const prof = fc.array(fc.double({ min: -90, max: 6, noNaN: true }), { minLength: 32, maxLength: 32 });
+		fc.assert(
+			fc.property(arbEvents, fc.array(prof, { minLength: 12, maxLength: 12 }), ceilingArb, (raw, profs, ceiling) => {
+				const events = raw.map((e, i) => ({ ...e, soundId: `u${i}`, type: `t${i}`, peakProfileDb: profs[i]! }));
+				const r = solveSfxGains(events, { truePeakCeilingDb: ceiling });
+				expect(r.warnings.filter((w) => w.code === 'W_UNRESOLVED')).toEqual([]);
+				const held = r.events.some((e) => e.limitedBy.some((l) => l.endsWith('/headroom')));
+				if (!held) expect(worstMomentDb(events, r)).toBeLessThanOrEqual(ceiling + 0.005 * events.length + 1e-9);
+			}),
+			{ numRuns: 400 },
+		);
+	});
+
 	it('the summed true peak of overlapping sounds never exceeds the ceiling (unless a reported conflict says so)', () => {
 		fc.assert(
 			fc.property(arbEvents, ceilingArb, (events, ceiling) => {
