@@ -21,18 +21,30 @@ import { fnv1a64 } from '../structure/nest.ts';
 const isRecord = (v: unknown): v is Record<string, unknown> =>
 	typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/**
+ * Codes in the order the "worst finding" prefers among equal severities. Phase 6 (spec 12 §4, earshot-inspired; wp-note
+ * "Phase 6 → WP-E1") added CLICK, EDGE (P6-E1), HARSH, LAYER_INAUDIBLE (P6-E2), COVERAGE, ENDING, HEAD and ARC (P6-E3).
+ */
 export const SOUND_CHECK_CODES = [
 	'LOUDNESS',
 	'TRUE_PEAK',
 	'OUT_OF_SYNC',
 	'TRUNCATED',
+	'CLICK',
+	'EDGE',
+	'ENDING',
+	'HEAD',
 	'MASKED',
+	'LAYER_INAUDIBLE',
+	'HARSH',
 	'OVERLOAD',
 	'MUSIC_OVER_VOICE',
 	'SILENCE',
 	'DIP',
+	'ARC',
 	'STALE_CUE',
 	'NO_PICTURE_EVENT',
+	'COVERAGE',
 	'DENSITY',
 	'REPEAT',
 	'LICENSE',
@@ -43,21 +55,32 @@ export const SOUND_CHECK_SEVERITIES = ['error', 'warning', 'info'] as const;
 export type SoundCheckSeverity = (typeof SOUND_CHECK_SEVERITIES)[number];
 export const SOUND_CHECK_VERDICTS = ['pass', 'warn', 'fail'] as const;
 export type SoundCheckVerdict = (typeof SOUND_CHECK_VERDICTS)[number];
-/** Groups of the Sound Check panel (spec 12 §2.7 "issues grouped by category"). */
-export const SOUND_CHECK_CATEGORY: Readonly<
-	Record<SoundCheckCode, 'loudness' | 'sync' | 'mix' | 'cues' | 'licence'>
-> = {
+/**
+ * Groups of the Sound Check panel (spec 12 §2.7 "issues grouped by category"). `edges` (clicks, cut edges, the mix's
+ * own start and end) and `tonal` (harshness) are the P6-E review lenses of the same names (spec 12 §4 P6-E5).
+ */
+export const SOUND_CHECK_CATEGORIES = ['loudness', 'sync', 'edges', 'mix', 'tonal', 'cues', 'licence'] as const;
+export type SoundCheckCategory = (typeof SOUND_CHECK_CATEGORIES)[number];
+export const SOUND_CHECK_CATEGORY: Readonly<Record<SoundCheckCode, SoundCheckCategory>> = {
 	LOUDNESS: 'loudness',
 	TRUE_PEAK: 'loudness',
+	ARC: 'loudness',
 	OUT_OF_SYNC: 'sync',
 	TRUNCATED: 'sync',
+	CLICK: 'edges',
+	EDGE: 'edges',
+	ENDING: 'edges',
+	HEAD: 'edges',
 	MASKED: 'mix',
+	LAYER_INAUDIBLE: 'mix',
 	OVERLOAD: 'mix',
 	MUSIC_OVER_VOICE: 'mix',
 	SILENCE: 'mix',
 	DIP: 'mix',
+	HARSH: 'tonal',
 	STALE_CUE: 'cues',
 	NO_PICTURE_EVENT: 'cues',
+	COVERAGE: 'cues',
 	DENSITY: 'cues',
 	REPEAT: 'cues',
 	LICENSE: 'licence',
@@ -84,6 +107,12 @@ export const SYNC_TOLERANCE_FRAMES: Readonly<Record<CueKind, number>> = {
 };
 /** The SFX stem is searched this far either side of the cue (spec 12 §2.6: "around the cue ±3 frames"). */
 export const SYNC_SEARCH_FRAMES = 3;
+/**
+ * End-aligned sounds (risers, reverses: `placement.align: 'end'`) are judged by a window, not by frames (spec 12 §4
+ * P6-E3): their end may play from 250 ms before to 30 ms after the cue. A riser ending just before its hit leaves "a
+ * beat of air", which is deliberate (earshot norm: its `qa.py` sync rule, measured on n = 7–8 launch films).
+ */
+export const SYNC_END_WINDOW_MS = { early: 250, late: 30 } as const;
 /** Least normalised correlation that counts as "found" (the sound is in the stem there). */
 export const SYNC_MIN_CORRELATION = 0.3;
 /** MASKED: the dominant-band lift (solver definition) a placed sound needs (spec 12 §2.6). Ambient beds are not checked. */
@@ -117,6 +146,64 @@ export const SOUND_CHECK_THRESHOLDS = {
 	motionEventSpeed: 0.05,
 	/** Longest range one check renders (s): 4 h. */
 	maxRangeSec: 4 * 3600,
+} as const;
+
+/**
+ * The Phase 6 checks (spec 12 §4 P6-E1…E3; wp-note "Phase 6 → WP-E1"). Numbers adapted from earshot's `qa.py`
+ * (MIT, licenses/ported/earshot.md) are marked "earshot"; they are defaults, not truths.
+ */
+export const SOUND_CHECK_EDGE_THRESHOLDS = {
+	/** CLICK: a burst this close to a clip edge, a remix joint or a transition edge (ms) is "a click at an edit". */
+	clickEdgeMs: 2,
+	/** CLICK: the burst (high-passed at 14 kHz) must reach this level on the delivered scale (dBFS; earshot 0.01). */
+	clickMinDbfs: -40,
+	/** EDGE abrupt entry: the source in the 20 ms before the In point within this of the clip's peak (dB; earshot). */
+	entryPreDb: -20,
+	/** …with no fade-in of at least this (ms)… */
+	entryFadeMs: 5,
+	/** …and no attack within this of the In point covering it (ms), unless the source before is over `entryExposedDb`. */
+	entryAttackMs: 10,
+	entryExposedDb: -10,
+	/** EDGE chopped decay: the clip's last ms over this re its peak (dB), the source after it too, a fade-out under 30 ms. */
+	decayTailDb: -35,
+	decayPostDb: -35,
+	decayFadeMs: 30,
+	/** EDGE chopped music: the source after the out point within 6 dB of the piece's last 50 ms, over 6 dB above what
+	 * enters, with a crossfade under 100 ms (earshot `check_splices`). */
+	musicSustainDb: 6,
+	musicOverNextDb: 6,
+	musicCrossfadeMs: 100,
+	/** Windows: the source outside an edge (ms), the levels of music pieces (ms). */
+	edgeWindowMs: 20,
+	musicWindowMs: 50,
+	/** The clip's peak is measured over at most this much of it nearest the edge (s): a local peak (decision). */
+	peakWindowSec: 10,
+	/** At most this many clip edges are decoded per check (the rest are reported in `warnings`). */
+	maxEdges: 400,
+	/** HARSH: a sound's 2–6 kHz 5 ms-RMS peak more than this over the music's (or dialogue's) loudest (dB; earshot). */
+	harshOverDb: 6,
+	harshBandHz: [2000, 6000] as const,
+	harshRmsMs: 5,
+	/** HARSH info: a sound whose spectral centroid is over this (Hz; earshot). */
+	brightCentroidHz: 6500,
+	/** LAYER_INAUDIBLE: a layer adding less than this in every 1/3-octave band (dB), over its loudest 60 ms. */
+	layerAddDb: 1,
+	/** …its fix: the gain that makes it add this much in its dominant band (dB). */
+	layerTargetAddDb: 3,
+	layerWindowMs: 60,
+	/** At most this many layers are measured per check. */
+	maxLayers: 64,
+	/** ENDING: the last 50 ms RMS over −45 dBFS or the last 10 ms peak over −60 dBFS (earshot). */
+	endRmsDbfs: -45,
+	endPeakDbfs: -60,
+	/** ENDING fix: a fade on the Mix volume lane (s). */
+	endFadeSec: 0.5,
+	/** HEAD: the first 5 ms peak over −40 dBFS (earshot); its fix a 3 ms fade (ms). */
+	headPeakDbfs: -40,
+	headFadeMs: 3,
+	/** ARC: the loudest short-term (3 s) window; "late" = the last 15 % of the sequence (earshot). */
+	arcWindowSec: 3,
+	arcLateShare: 0.15,
 } as const;
 
 /** Verdict of a set of findings: fail with an error, warn with a warning, else pass (info never fails). */
@@ -536,6 +623,41 @@ export const SOUND_CHECK_MESSAGES = {
 	licenseUnknown: '"{0}" has no known licence ({1})',
 	licenseUser: '"{0}" comes from a sound folder whose licence was not declared',
 	credits: '{0} sounds need a credit ({1}) and the exports of this sequence carry no credits file',
+	// Phase 6 (spec 12 §4 P6-E1…E3, P6-E13)
+	clickStart: 'Click at an edit: the start of {0} at {1} ({2} dB over its surroundings above 14 kHz)',
+	clickEnd: 'Click at an edit: the end of {0} at {1} ({2} dB over its surroundings above 14 kHz)',
+	clickJoint: 'Click at an edit: the remix joint of {0} at {1} ({2} dB over its surroundings above 14 kHz)',
+	clickTransition:
+		'Click at an edit: the edge of a transition of {0} at {1} ({2} dB over its surroundings above 14 kHz)',
+	clickBody: 'A click inside {0} at {1}: a transient in the recording, not an edit',
+	clickMix: 'A click in the mix at {0}: no clip edge explains it',
+	edgeEntry:
+		'{0} starts mid-sound at {1}: its source 20 ms before the In point is only {2} dB under its peak and it has no fade-in',
+	edgeDecay:
+		'{0} is chopped at {1}: it ends {2} dB under its peak while its source goes on ({3} dB) with a {4} ms fade-out',
+	edgeMusic:
+		'The music {0} is chopped at {1}: it keeps sounding ({2} dBFS) over what enters ({3} dBFS) with a {4} ms crossfade',
+	harshMusic:
+		'{0} at {1} peaks {2} dB over the loudest 2–6 kHz of the music (at most {3} dB): harsh on phones and laptops',
+	harshDialogue:
+		'{0} at {1} peaks {2} dB over the loudest 2–6 kHz of the dialogue (at most {3} dB): harsh on phones and laptops',
+	bright: '{0} at {1} is bright: its spectral centroid is {2} Hz (over {3} Hz)',
+	layerInaudible:
+		'Layer {0} of cue {1} at {2} adds at most {3} dB in any band over the bed and the other layers (less than {4} dB): it is not heard',
+	coverage: '{0} of {1} {2} cues like these have a sound; {3} do not: {4}',
+	ending:
+		'The mix ends mid-sound at {0}: its last 50 ms are at {1} dBFS (RMS) and its last 10 ms peak at {2} dBFS',
+	head: 'The mix starts mid-sound at {0}: its first 5 ms peak at {1} dBFS (a click on the first sample)',
+	arcNoHero:
+		'The loudest moment of the mix ({0}, {1} LUFS short-term) holds no hero sound; the biggest hero is {2}',
+	arcLate:
+		'The loudest moment of the mix ({0}, {1} LUFS short-term) is in the last 15 % of the sequence with no hero there',
+	syncEndEarly:
+		'{0} ends {1} ms early on its {2} cue at {3} (an end-aligned sound may end 250 ms before to 30 ms after it)',
+	syncEndLate:
+		'{0} ends {1} ms late on its {2} cue at {3} (an end-aligned sound may end 250 ms before to 30 ms after it)',
+	licenseShareAlike:
+		'"{0}" is licensed {1} (ShareAlike): a video synced with it must be shared under CC BY-SA or a compatible licence',
 	listenWorst: 'Worst finding: {0}',
 	listenHero: 'Biggest hero: {0} ({1} LUFS momentary)',
 	listenLoudest: 'Loudest moment of the mix: {0} LUFS momentary',
@@ -556,6 +678,19 @@ export const SOUND_CHECK_MESSAGES = {
 	fixDemote: 'Make the later hero a support sound',
 	fixSwap: 'Swap to "{0}" ({1})',
 	fixCredits: 'Export the credits with the sequence ({0} file)',
+	fixFadeIn: 'Fade it in with a {0}-frame constant-power transition',
+	fixFadeOut: 'Fade it out with a {0}-frame constant-power transition',
+	fixLengthenTransition: 'Lengthen its transition to {0} frames',
+	fixCrossfade: 'Crossfade the joint over {0} frames (constant power)',
+	fixExtendDecay: 'Lengthen the clip by {0} frames to where its sound has decayed',
+	fixHarshGain: 'Lower it by {0} dB',
+	fixHarshEq: 'Dip {0} Hz by {1} dB with the Parametric EQ',
+	fixLayerGain: 'Raise the layer by {0} dB so it adds 3 dB at {1} Hz',
+	fixRemoveLayer: 'Remove the layer',
+	fixFillCoverage: 'Fill them with "{0}", the sound the others use',
+	fixMuteCoverage: 'Mute these cues (the silence is deliberate)',
+	fixEndingFade: 'Fade the Mix out over its last {0} s',
+	fixHeadFade: 'Fade the Mix in over its first {0} ms',
 	// why a fix needs the user's judgement (`fix.whyMessage`; Phase 5 verification: translated like the rest)
 	whyNormalise: 'The export then normalises to the target',
 	whyLimiterCeiling: 'The export limiter then holds the ceiling',
@@ -571,6 +706,12 @@ export const SOUND_CHECK_MESSAGES = {
 	whyKeepCue: 'Or keep it where it is: it no longer follows the picture',
 	whyNoPicture: 'Only if nothing on screen calls for it',
 	whySimilar: 'A different sound found by similarity: listen before keeping it',
+	whyExtendDecay: 'It changes the edit: the clip plays on until its sound has decayed',
+	whyHarshMasked: 'Lowering it by {0} dB would leave it masked (under {1} dB over the bed in its dominant band)',
+	whyHarshEq: 'An EQ dip changes its tone: listen to it',
+	whyLayer: 'Only if the layer should be heard: listen to the cue first',
+	whyCoverage: 'Only if these moments should sound like the others; mute them instead to keep them silent',
+	whyEnding: 'It changes how the mix ends: listen to it',
 } as const;
 export type SoundCheckMessageKey = keyof typeof SOUND_CHECK_MESSAGES;
 

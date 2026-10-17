@@ -11,6 +11,7 @@ import {
 	CUE_KINDS,
 	CUE_WEIGHTS,
 	SFX_ROLES,
+	SOUND_CHECK_CATEGORIES,
 	SOUND_CHECK_CODES,
 	SOUND_CHECK_SEVERITIES,
 	SOUND_CHECK_TARGET_LIMITS,
@@ -107,7 +108,8 @@ export const SoundCheckIssueSchema = z.object({
 	id: z.string(),
 	code: z.enum(SOUND_CHECK_CODES),
 	severity: z.enum(SOUND_CHECK_SEVERITIES),
-	category: z.enum(['loudness', 'sync', 'mix', 'cues', 'licence']),
+	/** Panel group (`SOUND_CHECK_CATEGORY`): loudness, sync, edges (P6-E1/E3), mix, tonal (P6-E2), cues, licence. */
+	category: z.enum(SOUND_CHECK_CATEGORIES),
 	/** Where to look (sequence frame) and its timecode. */
 	frame: frame.optional(),
 	timecode: z.string().optional(),

@@ -75,6 +75,7 @@ import {
 	HERO_MIN_SEC,
 	isCommercialSafe,
 	isSfxClip,
+	isShareAlike,
 	type LibraryProvenance,
 	libraryTrailSilenceSamples,
 	licenseClass,
@@ -103,6 +104,7 @@ import {
 	type SoundCheckTarget,
 	type SoundCue,
 	type SoundDelivery,
+	SYNC_END_WINDOW_MS,
 	SYNC_MIN_CORRELATION,
 	SYNC_SEARCH_FRAMES,
 	SYNC_TOLERANCE_FRAMES,
@@ -131,6 +133,17 @@ import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { sec } from '../tools/ffmpeg.ts';
 import { HttpError } from '../tools/reply.ts';
 import { type AudioWorld, audioWorld, type MeasureCache, measureSfxEvents, VAD_FLOOR_DBFS } from './bed.ts';
+import {
+	arcFindings,
+	CheckProbes,
+	coverageFindings,
+	EdgeTap,
+	edgeFindings,
+	type FindCtx,
+	harshFindings,
+	layerFindings,
+	endingFindings,
+} from './check-findings.ts';
 import type { EngineCueSources } from './engine-cues.ts';
 import {
 	gainReport,
@@ -242,6 +255,8 @@ type SfxRow = {
 	speech: boolean;
 	/** Momentary peak in the mix (sound peak at 0 dB + gain), for "biggest hero". */
 	peakLu: number | null;
+	/** The solver's event of this sound and its options (MASKED pass), for the HARSH fix's MASKED guard. */
+	solver?: { ev: SolverEvent; lo: { programLufs: number; truePeakCeilingDb: number } } | null;
 };
 
 /** Where a placed sound ends against its clip (content flicks): the media, the sound's −60 dB end, the clip's end. */
@@ -316,6 +331,9 @@ type RefPlan = {
 	documented: number;
 	toleranceFrames: number;
 	align: 'peak' | 'start' | 'end';
+	/** Samples searched before / after the expected position (end-aligned sounds: their −250…+30 ms window). */
+	searchBefore: number;
+	searchAfter: number;
 };
 
 class IssueList {
@@ -553,6 +571,7 @@ export async function checkSequence(
 		: { start: 0, end: duration };
 	const whole = !opts.range || (range.start === 0 && range.end >= duration);
 	const tc = (f: number) => sequenceTimecode(seq, Math.max(0, Math.round(f)));
+	const inRangeFrame = (f: number) => f >= range.start && f < range.end;
 	const issues = new IssueList();
 	const projectId = opts.projectId;
 
@@ -799,9 +818,14 @@ export async function checkSequence(
 		}
 		const expected = Math.round((row.cue.frame / fpsNum) * sr);
 		const search = Math.ceil((SYNC_SEARCH_FRAMES / fpsNum) * sr);
+		// end-aligned sounds are judged by a window (P6-E3): search past it on both sides
+		const searchBefore =
+			align === 'end' ? Math.max(search, Math.ceil(((SYNC_END_WINDOW_MS.early + 50) / 1000) * sr)) : search;
+		const searchAfter =
+			align === 'end' ? Math.max(search, Math.ceil(((SYNC_END_WINDOW_MS.late + 30) / 1000) * sr)) : search;
 		const refLen = Math.ceil((before + post) * sr);
-		const a = expected - Math.round(before * sr) - search - hop;
-		const len = refLen + 2 * search + 2 * hop;
+		const a = expected - Math.round(before * sr) - searchBefore - hop;
+		const len = refLen + searchBefore + searchAfter + 2 * hop;
 		// before sample 0 nothing plays: a capture of a sound on the first frames starts with silence
 		if ((a < renderStart && renderStart > 0) || a + len > renderEnd) {
 			unmeasured.set(row, SOUND_CHECK_UNMEASURED.edge);
@@ -822,6 +846,8 @@ export async function checkSequence(
 				documented: Math.round(((row.alignedFrame ?? row.cue.frame) / fpsNum) * sr),
 				toleranceFrames: SYNC_TOLERANCE_FRAMES[kind] ?? 1,
 				align,
+				searchBefore,
+				searchAfter,
 			},
 		});
 	}
@@ -840,6 +866,10 @@ export async function checkSequence(
 	const stemSpecs: StemSpec[] = STEMS.map((s) => ({ name: s, clipIds: s === 'mix' ? null : stemIds[s] }));
 	if (stemIds.mix.size === 0) stemSpecs[0] = { name: 'mix', clipIds: new Set() };
 	let decoders = 0;
+	// Phase 6 probes (spec 12 §4 P6-E1…E3): clicks per stem, presence of the SFX / music / dialogue stems, and the first
+	// 5 ms and last 50 ms of the delivered mix (from this pass without normalisation, else from the delivery pass)
+	const probes = new CheckProbes(sr, channels, stemIds);
+	const tap = new EdgeTap(sr, channels);
 	try {
 		if (stemIds.mix.size > 0 && renderEnd > renderStart) {
 			const res = await renderStems({
@@ -855,6 +885,7 @@ export async function checkSequence(
 				onBlock: async (stem, planar, n, at) => {
 					const name = STEMS[stem]!;
 					meters[name]?.push(planar, n);
+					probes.push(name, planar, n);
 					if (name === 'sfx')
 						for (const c of captures) {
 							const a = Math.max(at, c.a);
@@ -872,6 +903,11 @@ export async function checkSequence(
 					if (b <= a) return;
 					const off = a - at;
 					mixMeter.process(planar, off, b - a);
+					if (!fh)
+						tap.push(
+							planar.map((c) => c.subarray(off, off + (b - a))),
+							b - a,
+						);
 					if (fh) {
 						const buf = Buffer.alloc((b - a) * planar.length * 4);
 						for (let i = 0; i < b - a; i++)
@@ -935,6 +971,7 @@ export async function checkSequence(
 				const view = block.map((c) => c.subarray(from, from + m));
 				meter2.process(view, 0, m);
 				cm.push(view, m);
+				tap.push(view, m);
 				const h = Math.min(rangeHops - 1, Math.floor(written / hop));
 				if (h >= 0 && gr > grHop[h]!) grHop[h] = gr;
 				written += m;
@@ -1189,6 +1226,7 @@ export async function checkSequence(
 			row.bedCapLu = cur.bedCapLu;
 			row.speech = ms.speechOverlap;
 			row.peakLu = ms.soundPeakLu === null ? null : ms.soundPeakLu + row.info.gainDb;
+			row.solver = { ev, lo };
 			const res = solved.events[i]!;
 			const at = evaluateSfxGain(ev, res.gainDb, lo);
 			const level = solvedLevel(res, ms, lo.truePeakCeilingDb);
@@ -1287,11 +1325,10 @@ export async function checkSequence(
 			unmeasured.set(c.row, SOUND_CHECK_UNMEASURED.undecodable);
 			return;
 		}
-		const search = Math.ceil((SYNC_SEARCH_FRAMES / fpsNum) * sr);
 		const nominal = c.ref.expected - c.ref.anchor - c.a;
 		// the same sound twice near the cue (a repeat, a doubled layer) matches twice: its own copy is where the document
 		// plays it, unless that match is much weaker than the best one
-		const found = locateByCorrelation(ref, c.data, nominal - search - hop, nominal + search + hop, {
+		const found = locateByCorrelation(ref, c.data, nominal - c.ref.searchBefore - hop, nominal + c.ref.searchAfter + hop, {
 			prefer: c.ref.documented - c.ref.anchor - c.a,
 			separation: Math.round(sr / fpsNum),
 		});
@@ -1312,6 +1349,29 @@ export async function checkSequence(
 		const tol = SYNC_TOLERANCE_FRAMES[kind] ?? 1;
 		const tolMs = (tol / fpsNum) * 1000;
 		const metaOffMs = row.alignedFrame === null ? null : ((row.alignedFrame - row.cue.frame) / fpsNum) * 1000;
+		// end-aligned sounds (risers, reverses): their end may play 250 ms before to 30 ms after the cue (P6-E3)
+		const endAligned = row.sfx.placement.align === 'end';
+		const offside = (ms: number) =>
+			endAligned
+				? ms < -SYNC_END_WINDOW_MS.early - 0.5 || ms > SYNC_END_WINDOW_MS.late + 0.5
+				: Math.abs(ms) > tolMs + 0.5;
+		const offMessage = (ms: number) =>
+			endAligned
+				? soundCheckMessage(
+						ms < 0 ? 'syncEndEarly' : 'syncEndLate',
+						row.info.title,
+						r1(Math.abs(ms)),
+						kind,
+						tc(row.cue!.frame),
+					)
+				: soundCheckMessage(
+						ms < 0 ? 'syncEarly' : 'syncLate',
+						row.info.title,
+						r1(Math.abs(ms)),
+						kind,
+						tc(row.cue!.frame),
+						tol,
+					);
 		const why = unmeasured.get(row);
 		const realign = (): SoundCheckFix | undefined => {
 			const cmd = {
@@ -1361,20 +1421,13 @@ export async function checkSequence(
 		}
 		if (why) {
 			// not measurable in the mix: judge by the document
-			if (metaOffMs !== null && Math.abs(metaOffMs) > tolMs + 0.5) {
+			if (metaOffMs !== null && offside(metaOffMs)) {
 				row.codes.add('OUT_OF_SYNC');
 				const fix = realign();
 				issues.add({
 					...base,
 					severity: 'error',
-					message: soundCheckMessage(
-						metaOffMs < 0 ? 'syncEarly' : 'syncLate',
-						row.info.title,
-						r1(Math.abs(metaOffMs)),
-						kind,
-						tc(row.cue.frame),
-						tol,
-					),
+					message: offMessage(metaOffMs),
 					measured: { offsetMs: r1(metaOffMs), toleranceFrames: tol, measuredIn: 'document' },
 					...(fix ? { fix } : {}),
 				});
@@ -1387,7 +1440,7 @@ export async function checkSequence(
 			continue;
 		}
 		if (row.located === 'found' && row.offsetMs !== null) {
-			if (Math.abs(row.offsetMs) <= tolMs + 0.5) continue;
+			if (!offside(row.offsetMs)) continue;
 			row.codes.add('OUT_OF_SYNC');
 			const moved = metaOffMs !== null && Math.abs(metaOffMs) > 0.5;
 			const fix = moved ? realign() : undefined;
@@ -1395,14 +1448,7 @@ export async function checkSequence(
 				...base,
 				severity: 'error',
 				message: moved
-					? soundCheckMessage(
-							row.offsetMs < 0 ? 'syncEarly' : 'syncLate',
-							row.info.title,
-							r1(Math.abs(row.offsetMs)),
-							kind,
-							tc(row.cue.frame),
-							tol,
-						)
+					? offMessage(row.offsetMs)
 					: soundCheckMessage('syncMetadataOnly', row.info.title, r1(row.offsetMs), tc(row.cue.frame)),
 				measured: {
 					offsetMs: row.offsetMs,
@@ -1413,7 +1459,7 @@ export async function checkSequence(
 				...(fix ? { fix } : {}),
 			});
 		} else if (row.located === 'not-found') {
-			if (metaOffMs !== null && Math.abs(metaOffMs) > tolMs + 0.5) {
+			if (metaOffMs !== null && offside(metaOffMs)) {
 				row.codes.add('OUT_OF_SYNC');
 				const fix = realign();
 				issues.add({
@@ -1737,11 +1783,67 @@ export async function checkSequence(
 	}
 	lap('mix', t);
 
+	// ── Phase 6: CLICK, EDGE, HARSH, LAYER_INAUDIBLE, ENDING, HEAD, ARC (spec 12 §4 P6-E1…E3; check-findings.ts) ────────
+	aborted();
+	progress(0.74, 'Checking edits, edges and layers');
+	t = Date.now();
+	const fctx: FindCtx = {
+		doc,
+		seq,
+		projectId,
+		sr,
+		rate,
+		fps: fpsNum,
+		F,
+		range,
+		whole,
+		duration,
+		renderStart,
+		rangeStart,
+		rangeEnd,
+		hop,
+		preHops,
+		rangeHops,
+		gainDb: gainDb ?? 0,
+		world,
+		playing,
+		stemIds,
+		ff: env.ff,
+		registry: env.registry,
+		registries: env.registries,
+		signal: env.signal,
+		onSpawn: env.onSpawn,
+		tc,
+		add: (i) => {
+			issues.add(i);
+		},
+		warn: (code, message) => {
+			if (warnings.length < 200) warnings.push({ code, message });
+		},
+		dryRun: (commands) => dryRun(doc, seq.id, commands, env.registries),
+		commandFix: (label, commands, safe, why) => commandFix(projectId, label, commands, safe, why),
+	};
+	const probed = probes.finish();
+	await edgeFindings(fctx, probed.bursts);
+	harshFindings(fctx, rows, probed.presence);
+	await layerFindings(fctx, rows);
+	endingFindings(fctx, tap.result());
+	arcFindings(
+		fctx,
+		mixShortTerm,
+		rows
+			.filter((r) => r.info.weight === 'hero' && r.peakLu !== null && inRangeFrame(r.frame))
+			.sort((a, b) => b.peakLu! - a.peakLu! || a.frame - b.frame)
+			.map((r) => ({ frame: r.frame, title: r.info.title })),
+		LOUDNESS_FLOOR_LUFS,
+	);
+	lap('edges', t);
+
 	// ── STALE_CUE, NO_PICTURE_EVENT ─────────────────────────────────────────────────────────────────────────────────
 	aborted();
 	progress(0.8, 'Checking the cues against the picture');
 	t = Date.now();
-	const inRange = (f: number) => f >= range.start && f < range.end;
+	const inRange = inRangeFrame;
 	// Footage: what the engine already measured of the picture (shot changes, picture motion; never analysed here).
 	let measured: Awaited<ReturnType<EngineCueSources['collect']>> | null = null;
 	try {
@@ -1862,6 +1964,13 @@ export async function checkSequence(
 		});
 	}
 
+	// ── COVERAGE (P6-E3): a class of action sounded only in part (cues under dialogue are silenced by it: excluded) ──
+	coverageFindings(
+		fctx,
+		cues,
+		dialogueSpans(doc, seq, { voice: voice.voice }).map((d) => [d.start, d.end] as [number, number]),
+	);
+
 	// ── DENSITY ──────────────────────────────────────────────────────────────────────────────────────────────────────
 	const budget = DENSITY_BUDGETS[settings.density] ?? DENSITY_BUDGETS.balanced;
 	const filled = cues
@@ -1944,9 +2053,20 @@ export async function checkSequence(
 		if (!had || (!hadTrail && (p.trailSilenceSec ?? 0) > 0)) libraryMedia.set(p.soundId, mid);
 	}
 	const soundOf = (r: SfxRow) => r.info.librarySoundId ?? `media:${r.clip.mediaId}`;
-	/** LICENSE severity of a licence: commercial-safe (or the project's own audio) 0, user-provided 1 (warning), else 2. */
+	/**
+	 * LICENSE severity of a licence: commercial-safe (or the project's own audio) 0, ShareAlike 0.5 (a warning, P6-E13),
+	 * user-provided 1 (warning), else 2.
+	 */
 	const licenceRank = (l: string | null) =>
-		l === null || isCommercialSafe(l) ? 0 : licenseClass(l) === 'user-provided' ? 1 : 2;
+		l === null
+			? 0
+			: isCommercialSafe(l)
+				? isShareAlike(l)
+					? 0.5
+					: 0
+				: licenseClass(l) === 'user-provided'
+					? 1
+					: 2;
 	const swapFix = async (
 		row: SfxRow,
 		exclude: Set<string>,
@@ -2049,7 +2169,29 @@ export async function checkSequence(
 		const p = readLibraryProvenance(
 			(doc.media?.[(c as AudioClip).mediaId] as { library?: unknown } | undefined)?.library,
 		);
-		if (!p || isCommercialSafe(p.license)) continue;
+		if (!p) continue;
+		if (isCommercialSafe(p.license)) {
+			// ShareAlike (P6-E13): allowed, but the video synced with it must be shared alike — a warning, with a
+			// commercial-safe alternative that is not ShareAlike
+			if (!isShareAlike(p.license)) continue;
+			const row = rows.find((r) => r.clip.id === c.id);
+			row?.codes.add('LICENSE');
+			const fix = row
+				? await swapFix(row, new Set([p.soundId]), (l) => isCommercialSafe(l) && !isShareAlike(l))
+				: undefined;
+			issues.add({
+				subject: c.id,
+				code: 'LICENSE',
+				severity: 'warning',
+				frame: Math.max(range.start, c.start),
+				timecode: tc(Math.max(range.start, c.start)),
+				clipIds: [c.id],
+				message: soundCheckMessage('licenseShareAlike', p.title, p.license),
+				measured: { license: p.license, class: licenseClass(p.license), variant: 'shareAlike' },
+				...(fix ? { fix } : {}),
+			});
+			continue;
+		}
 		const cls = licenseClass(p.license);
 		const row = rows.find((r) => r.clip.id === c.id);
 		row?.codes.add('LICENSE');

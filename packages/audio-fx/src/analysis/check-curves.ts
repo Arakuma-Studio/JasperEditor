@@ -372,3 +372,133 @@ export function locateByCorrelation(
 	}
 	return { lag: lo + best + frac, ncc: Math.min(1, bestV) };
 }
+
+// ── Layer audibility (spec 12 §4 P6-E2 `LAYER_INAUDIBLE`; wp-note "Phase 6 → WP-E1") ─────────────────────────────────
+// Adapted from earshot `skills/real-sound/scripts/qa.py` `bands` / `read_metrics` (MIT, Copyright (c) 2026 Leon Lin;
+// licenses/ported/earshot.md): 1/3-octave band energies (100 Hz … 12.6 kHz, 22 bands) of a Tukey(0.25)-windowed
+// segment, summed over the channels, and how much a layer adds in each band over everything else.
+
+/** Centres of the 1/3-octave bands judged (Hz): 10^(k/10), k = 20 … 41. */
+export const THIRD_OCTAVE_CENTRES_HZ: readonly number[] = Array.from({ length: 22 }, (_, i) => 10 ** ((20 + i) / 10));
+
+/**
+ * Energies of `len` samples from `from` in each 1/3-octave band (Tukey 0.25 window, FFT zero-padded to a power of
+ * two, channels summed). Non-finite samples count as 0; bands over the Nyquist frequency are 0. Never throws.
+ */
+export function thirdOctaveEnergies(
+	planar: readonly ArrayLike<number>[],
+	from: number,
+	len: number,
+	sampleRate: number,
+): Float64Array {
+	const out = new Float64Array(THIRD_OCTAVE_CENTRES_HZ.length);
+	const n = Math.max(0, Math.min(1 << 18, Math.floor(fin(len) ? len : 0)));
+	const sr = fin(sampleRate) && sampleRate >= 1000 ? sampleRate : 48_000;
+	if (n < 8) return out;
+	let size = 8;
+	while (size < n) size *= 2;
+	const fft = new Fft(size);
+	const power = new Float64Array(size / 2 + 1);
+	const a = Math.floor(fin(from) ? from : 0);
+	// Tukey window, alpha 0.25 (scipy.signal.windows.tukey)
+	const alpha = 0.25;
+	const edge = (alpha * (n - 1)) / 2;
+	const win = new Float64Array(n);
+	for (let i = 0; i < n; i++) {
+		const d = Math.min(i, n - 1 - i);
+		win[i] = d >= edge || edge <= 0 ? 1 : 0.5 * (1 + Math.cos(Math.PI * (d / edge - 1)));
+	}
+	for (const ch of planar) {
+		const re = new Float64Array(size);
+		const im = new Float64Array(size);
+		for (let i = 0; i < n; i++) {
+			const v = ch[a + i];
+			re[i] = typeof v === 'number' && fin(v) ? v * win[i]! : 0;
+		}
+		fft.forward(re, im);
+		for (let k = 0; k <= size / 2; k++) power[k]! += re[k]! * re[k]! + im[k]! * im[k]!;
+	}
+	THIRD_OCTAVE_CENTRES_HZ.forEach((fc, b) => {
+		const lo = fc * 2 ** (-1 / 6);
+		const hi = fc * 2 ** (1 / 6);
+		let e = 0;
+		for (let k = Math.ceil((lo * size) / sr); k <= size / 2 && (k * sr) / size < hi; k++) e += power[k]!;
+		out[b] = e;
+	});
+	return out;
+}
+
+/** Start of the `len`-sample window of `planar` with the most energy (stepped by `step`); 0 for an empty signal. */
+export function loudestWindowStart(planar: readonly ArrayLike<number>[], len: number, step = 48): number {
+	const n = planar[0]?.length ?? 0;
+	const w = Math.max(1, Math.floor(fin(len) ? len : 1));
+	if (n <= w) return 0;
+	const prefix = new Float64Array(n + 1);
+	for (let i = 0; i < n; i++) {
+		let e = 0;
+		for (const ch of planar) {
+			const v = ch[i];
+			if (typeof v === 'number' && fin(v)) e += v * v;
+		}
+		prefix[i + 1] = prefix[i]! + e;
+	}
+	const s = Math.max(1, Math.floor(step));
+	let best = 0;
+	let bestE = -1;
+	for (let i = 0; i + w <= n; i += s) {
+		const e = prefix[i + w]! - prefix[i]!;
+		if (e > bestE) {
+			bestE = e;
+			best = i;
+		}
+	}
+	return best;
+}
+
+export type LayerAudibility = {
+	/** Largest addition over the bands the layer has energy in (dB; capped at 60). */
+	maxAddDb: number;
+	/** The band where the layer stands out most against the rest (index into THIRD_OCTAVE_CENTRES_HZ) and its centre. */
+	dominantBand: number;
+	dominantHz: number;
+	/** Gain (dB) that makes the layer add `targetDb` in its dominant band (null when the layer is silent there). */
+	gainForTargetDb: number | null;
+};
+
+/**
+ * How much a layer adds over the rest of the mix per band: 10·log10((E_layer + E_rest) / E_rest), over the bands where
+ * the layer is within 30 dB of its strongest band (earshot's "ok" bands). A layer with no energy adds 0 dB.
+ */
+export function layerAudibility(
+	layer: ArrayLike<number>,
+	rest: ArrayLike<number>,
+	targetDb = 3,
+): LayerAudibility {
+	let top = 0;
+	for (let b = 0; b < layer.length; b++) if (layer[b]! > top) top = layer[b]!;
+	let maxAdd = 0;
+	let dom = 0;
+	let domRatio = -1;
+	if (top > 0)
+		for (let b = 0; b < layer.length; b++) {
+			const L = layer[b]!;
+			if (!(L >= top * 1e-3)) continue;
+			const R = Math.max(1e-30, rest[b] ?? 0);
+			const add = Math.min(60, 10 * Math.log10((L + R) / R));
+			if (add > maxAdd) maxAdd = add;
+			const ratio = L / R;
+			if (ratio > domRatio) {
+				domRatio = ratio;
+				dom = b;
+			}
+		}
+	const L = layer[dom] ?? 0;
+	const R = Math.max(1e-30, rest[dom] ?? 0);
+	const want = 10 ** ((fin(targetDb) ? targetDb : 3) / 10) - 1;
+	return {
+		maxAddDb: Math.round(maxAdd * 100) / 100,
+		dominantBand: dom,
+		dominantHz: Math.round(THIRD_OCTAVE_CENTRES_HZ[dom] ?? 0),
+		gainForTargetDb: L > 0 ? Math.round(10 * Math.log10((want * R) / L) * 10) / 10 : null,
+	};
+}

@@ -5,7 +5,7 @@ import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset } from '../schema/media.ts';
 import { soundDesignSettingsOf } from '../schema/sound.ts';
 import { MAX_NEST_DEPTH, nestedClosure } from '../structure/nest.ts';
-import { licenseClass, licenseUrlOf, requiresAttribution } from './license.ts';
+import { isShareAlike, licenseClass, licenseUrlOf, requiresAttribution } from './license.ts';
 import { type LibraryProvenance, readLibraryProvenance } from './provenance.ts';
 
 export interface SoundCreditRow {
@@ -21,6 +21,8 @@ export interface SoundCreditRow {
 	/** The credit line the licence asks for, verbatim. */
 	attribution: string | null;
 	requiresAttribution: boolean;
+	/** The licence is ShareAlike (CC BY-SA…): the video it is synced to must be shared alike (spec 12 P6-E13). */
+	shareAlike: boolean;
 	/** Clips that play the sound (in the sequence and the sequences nested in it), sorted. */
 	usedIn: string[];
 	/** Sequences those clips are in, sorted. */
@@ -33,6 +35,7 @@ export type SoundCreditWarningCode =
 	| 'W_LICENSE_UNKNOWN'
 	| 'W_USER_PROVIDED'
 	| 'W_CREDIT_INCOMPLETE'
+	| 'W_SHARE_ALIKE'
 	| 'W_SEQUENCE_NOT_FOUND';
 
 export interface SoundCreditWarning {
@@ -240,6 +243,7 @@ export function soundCredits(
 		sourceUrl: l.sourceUrl ?? null,
 		attribution: l.attribution,
 		requiresAttribution: requiresAttribution(l.license),
+		shareAlike: isShareAlike(l.license),
 		usedIn: [...clips].sort(),
 		sequenceIds: [...seqs].sort(),
 	}));
@@ -280,6 +284,12 @@ export function soundCredits(
 			default:
 				break;
 		}
+		if (r.shareAlike)
+			warnings.push({
+				code: 'W_SHARE_ALIKE',
+				mediaId: r.mediaId,
+				message: `${name} is ShareAlike (${r.license}): a video synced with it must be shared under CC BY-SA or a compatible licence`,
+			});
 		if (r.requiresAttribution && !r.attribution?.trim() && !r.author.trim())
 			warnings.push({
 				code: 'W_CREDIT_INCOMPLETE',
@@ -288,7 +298,10 @@ export function soundCredits(
 			});
 	}
 
-	const text = listed.length ? ['Sound credits', '', ...listed.map(creditLine)].join('\n') : '';
+	const sa = shareAlikeNotice(listed);
+	const text = listed.length
+		? ['Sound credits', '', ...listed.map(creditLine), ...(sa ? ['', sa] : [])].join('\n')
+		: '';
 	const markdown = listed.length
 		? [
 				'## Sound credits',
@@ -303,9 +316,25 @@ export function soundCredits(
 								: mdCell(r.license)
 						} | ${mdCell(r.sourceUrl)} | ${mdCell(creditLine(r))} |`,
 				),
+				...(sa ? ['', mdCell(sa)] : []),
 			].join('\n')
 		: '';
 	return { rows: listed, text, markdown, csv: csvOf(listed), warnings };
+}
+
+/**
+ * The ShareAlike notice the credits carry when a listed sound is CC BY-SA (spec 12 §4 P6-E13): CC BY-SA 4.0 §1(a) makes
+ * a sound synced in timed relation with a moving image Adapted Material, and §3(b) asks for that to be shared under
+ * BY-SA 4.0 or a compatible licence. Null when no listed sound is ShareAlike. English, like the rest of the file.
+ */
+export function shareAlikeNotice(rows: readonly Pick<SoundCreditRow, 'shareAlike' | 'title' | 'soundId'>[]): string | null {
+	const sa = rows.filter((r) => r.shareAlike);
+	if (!sa.length) return null;
+	const names = sa
+		.slice(0, 20)
+		.map((r) => `"${oneLine(r.title) || r.soundId}"`)
+		.join(', ');
+	return `ShareAlike: ${names}${sa.length > 20 ? ` and ${sa.length - 20} more` : ''} ${sa.length === 1 ? 'is' : 'are'} licensed CC BY-SA. Under CC BY-SA 4.0 §1(a) and §3(b), a video with ${sa.length === 1 ? 'this sound' : 'these sounds'} synced to its picture is Adapted Material and must be shared under CC BY-SA 4.0 or a compatible licence.`;
 }
 
 function csvOf(rows: SoundCreditRow[]): string {

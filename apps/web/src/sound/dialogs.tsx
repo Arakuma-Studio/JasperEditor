@@ -171,6 +171,13 @@ export function creditWarningText(w: SoundCreditWarning, rows: readonly SoundCre
 				r.mediaId,
 				r.license,
 			);
+		case 'W_SHARE_ALIKE':
+			return t(
+				'“{0}” ({1}) is ShareAlike ({2}): a video synced with it must be shared under CC BY-SA or a compatible licence',
+				title,
+				r.mediaId,
+				r.license,
+			);
 		default:
 			return w.message;
 	}

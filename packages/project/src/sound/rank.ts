@@ -9,7 +9,7 @@
 // sounds whose title names more of its words (exactly or by prefix) come next, so a title match always outranks a
 // match through a type or synonym ("punch" finds "Punch" before "Crunchy impact", typed hit); then by score, then by
 // id. Filters remove entries before scoring. Decisions and thresholds: wp-note "WP1.1a".
-import { isCommercialSafe, licensePreference } from './license.ts';
+import { licensePreference, passesCommercialSafeFilter } from './license.ts';
 import {
 	isSoundTypeId,
 	SOUND_TYPES,
@@ -438,15 +438,18 @@ function namedTypesOf(t: EntryText): SoundTypeId[] {
 	return t.namedTypes;
 }
 
-/** Licence class results by licence string (a library has a handful of distinct licences). */
+/**
+ * Licence class results by licence string (a library has a handful of distinct licences). `safe` = passes the
+ * "Commercial-safe" filter (`passesCommercialSafeFilter`: the ShareAlike decision of spec 12 P6-E13 is its constant).
+ */
 const LICENSE_MEMO = new Map<string, { safe: boolean; preference: number }>();
 function licenseInfo(license: unknown): { safe: boolean; preference: number } {
 	if (typeof license !== 'string')
-		return { safe: isCommercialSafe(license), preference: licensePreference(license) };
+		return { safe: passesCommercialSafeFilter(license), preference: licensePreference(license) };
 	let r = LICENSE_MEMO.get(license);
 	if (!r) {
 		if (LICENSE_MEMO.size >= 4096) LICENSE_MEMO.clear();
-		r = { safe: isCommercialSafe(license), preference: licensePreference(license) };
+		r = { safe: passesCommercialSafeFilter(license), preference: licensePreference(license) };
 		LICENSE_MEMO.set(license, r);
 	}
 	return r;

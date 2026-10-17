@@ -74,6 +74,51 @@ export function isCommercialSafe(license: unknown): boolean {
 	);
 }
 
+/** What a licence asks of the work a sound is used in (spec 12 §4 P6-E13). */
+export type LicenseObligations = {
+	/** A credit (attribution) is required. */
+	attribution: boolean;
+	/**
+	 * ShareAlike: under CC BY-SA 4.0 §1(a) a sound recording synced in timed relation with a moving image always makes
+	 * Adapted Material, and §3(b) then requires the video to be shared under BY-SA 4.0 or a compatible licence.
+	 */
+	shareAlike: boolean;
+};
+
+/** A ShareAlike Creative Commons licence (CC-BY-SA, CC-BY-NC-SA, any version or port). */
+export function isShareAlike(license: unknown): boolean {
+	if (typeof license !== 'string') return false;
+	const u = license.trim().toUpperCase();
+	if (!u.startsWith('CC-BY') || u.length > 200) return false;
+	return /(?:^|-)SA(?:-|\+|$)/.test(u.slice(5));
+}
+
+/** The obligations of a licence: attribution and ShareAlike (spec 12 §4 P6-E13). Total: never throws. */
+export function licenseObligations(license: unknown): LicenseObligations {
+	return { attribution: requiresAttribution(license), shareAlike: isShareAlike(license) };
+}
+
+/**
+ * HUMAN DECISION PENDING (spec 12 §4 P6-E13, wp-note "Phase 6 → WP-E1"): whether the default "Commercial-safe" filter
+ * of the Sound Library (search, the panel, MCP `search_sounds`, the plan's sound choice) keeps CC BY-SA sounds. The
+ * proposal is to exclude them (`false`): they stay allowed when chosen explicitly (`license: 'any'`), carry an "SA"
+ * badge, a credits notice and a Sound Check LICENSE warning either way. Until a human answers, the current behaviour is
+ * kept (`true`). This constant is the only switch.
+ */
+export const COMMERCIAL_SAFE_FILTER_KEEPS_SHARE_ALIKE = true;
+
+/**
+ * Whether a sound passes the default "Commercial-safe" licence filter: commercial-safe, and not ShareAlike unless
+ * {@link COMMERCIAL_SAFE_FILTER_KEEPS_SHARE_ALIKE}. (`isCommercialSafe` stays the licence-class question: BY-SA is on
+ * the asset allowlist, AGENTS.md §3.2, so it is never a LICENSE error.)
+ */
+export function passesCommercialSafeFilter(
+	license: unknown,
+	keepShareAlike: boolean = COMMERCIAL_SAFE_FILTER_KEEPS_SHARE_ALIKE,
+): boolean {
+	return isCommercialSafe(license) && (keepShareAlike || !isShareAlike(license));
+}
+
 /** The licence obliges a credit (attribution) when the sound is used. */
 export function requiresAttribution(license: unknown): boolean {
 	const c = licenseClass(license);
