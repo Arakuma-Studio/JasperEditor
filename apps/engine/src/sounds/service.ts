@@ -256,11 +256,13 @@ export class SoundService {
 		};
 		const stallMs = ms('JASPER_SOUND_PACK_STALL_MS');
 		const timeoutMs = ms('JASPER_SOUND_PACK_TIMEOUT_MS');
+		const fileIntervalMs = ms('JASPER_SOUND_PACK_FILE_INTERVAL_MS');
 		this.packs = new SoundPackStore({
 			packsDir: paths.soundPacksDir,
 			catalog: () => this.packCatalog(),
 			...(stallMs ? { stallMs } : {}),
 			...(timeoutMs ? { timeoutMs } : {}),
+			...(fileIntervalMs ? { fileIntervalMs } : {}),
 		});
 		this.packsReady = this.packs
 			.cleanup()

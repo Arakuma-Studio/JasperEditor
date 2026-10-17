@@ -613,6 +613,11 @@ export const SoundPackFileSchema = z.object({
 	author: z.string().min(1).max(LIBRARY_LIMITS.author).optional(),
 	/** `files` packs: the file's own page (its licence statement). */
 	sourceUrl: packUrl.optional(),
+	/**
+	 * Where this file's own licence was checked (spec 12 §0 decision 5: BigSoundBank items are catalogued only after
+	 * their own page was seen to state CC0): normally its `sourceUrl` and the statement it makes, verbatim.
+	 */
+	licenseEvidence: SoundPackEvidenceSchema.optional(),
 	/** `false`: empty `types` stay empty (see `SoundManifestSoundSchema.inferTypes`). */
 	inferTypes: z.boolean().optional(),
 });

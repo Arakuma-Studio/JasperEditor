@@ -40,6 +40,14 @@ export const SOUND_CATALOG_ENV = 'JASPER_SOUND_CATALOG';
 export const PACK_STALL_MS = 60_000;
 /** A whole pack download (all its bytes) must finish within this. */
 export const PACK_DOWNLOAD_TIMEOUT_MS = 30 * 60_000;
+/**
+ * A `files` pack downloads its files one after the other, starting at most one http(s) request per this interval
+ * (BigSoundBank asks for polite fetching; a 40-file pack takes ≥ 40 s).
+ */
+export const PACK_FILE_INTERVAL_MS = 1000;
+/** Sent with every pack download: who is fetching, and why. */
+export const PACK_USER_AGENT =
+	'JasperEditor sound-pack installer (video editor; downloads a sound pack the user asked for; <=1 request/s)';
 /** Partial downloads not touched for this long are deleted when the engine starts. */
 const STALE_PARTIAL_MS = 30 * 24 * 3600_000;
 const STAGING = '.staging';
@@ -71,7 +79,7 @@ function httpsOnly(e: SoundPackCatalogEntry): string | null {
 		e.pageUrl,
 		...e.licenseEvidence.map((x) => x.url),
 		...(e.download.type === 'zip' ? [e.download.url] : []),
-		...e.files.flatMap((f) => [f.url, f.sourceUrl].filter((u): u is string => !!u)),
+		...e.files.flatMap((f) => [f.url, f.sourceUrl, f.licenseEvidence?.url].filter((u): u is string => !!u)),
 	];
 	const bad = urls.find((u) => !HTTPS.test(u));
 	return bad ? `${e.id}: "${bad.slice(0, 120)}" is not an https URL` : null;
@@ -295,7 +303,7 @@ export async function downloadTo(
 					redirect: 'follow',
 					signal,
 					headers: {
-						'user-agent': 'JasperEditor sound-pack installer',
+						'user-agent': PACK_USER_AGENT,
 						...(have > 0 ? { range: `bytes=${have}-` } : {}),
 					},
 				});
@@ -476,6 +484,8 @@ export type PackStoreOptions = {
 	/** Stall / overall timeouts (tests make them short). */
 	stallMs?: number;
 	timeoutMs?: number;
+	/** Least time between two http(s) requests of a `files` pack (default {@link PACK_FILE_INTERVAL_MS}). */
+	fileIntervalMs?: number;
 	now?: () => Date;
 };
 
@@ -830,21 +840,32 @@ export class SoundPackStore {
 		kept: number,
 	): Promise<number> {
 		const total = missing.reduce((s, f) => s + f.sizeBytes, 0);
+		const interval = this.o.fileIntervalMs ?? PACK_FILE_INTERVAL_MS;
 		let done = 0;
 		let got = 0;
-		for (const f of missing) {
+		let lastRequest = Number.NEGATIVE_INFINITY;
+		for (const [i, f] of missing.entries()) {
 			if (ctx.signal.aborted) throw new PackError('JOB_CANCELLED', 'Cancelled');
 			if (!f.url) throw new PackError('PACK_INVALID', `${e.title}: "${f.path}" has no URL`);
 			const partial = join(this.o.packsDir, DOWNLOADS, partialName(e.id, f.sha256));
+			const src = sourceOf(f.url, base);
+			if (src.kind === 'http') {
+				// One request at a time and at most one per `interval` (the sites that publish these files are small and
+				// ask to be fetched politely); local files are not paced.
+				const wait = lastRequest + interval - Date.now();
+				if (wait > 0) await abortableDelay(wait, ctx.signal);
+				lastRequest = Date.now();
+			}
+			const label = `Downloading ${kept + i + 1} of ${kept + missing.length}…`;
 			try {
-				got += await downloadTo(sourceOf(f.url, base), partial, {
+				got += await downloadTo(src, partial, {
 					sizeBytes: f.sizeBytes,
 					sha256: f.sha256,
 					signal: ctx.signal,
 					label: `${e.title}: ${f.path}`,
 					...(this.o.stallMs !== undefined ? { stallMs: this.o.stallMs } : {}),
 					...(this.o.timeoutMs !== undefined ? { timeoutMs: this.o.timeoutMs } : {}),
-					onProgress: (n) => ctx.progress?.(total ? (done + n) / total : null, `Downloading ${kept + 1}…`),
+					onProgress: (n) => ctx.progress?.(total ? (done + n) / total : null, label),
 				});
 			} catch (err) {
 				if (ctx.signal.aborted) await rm(partial, { force: true });
@@ -907,6 +928,8 @@ export class SoundPackStore {
 				}
 			}
 			const evidence = e?.licenseEvidence.map((x) => x.url).join(', ');
+			const perFile = e?.files.filter((f) => f.licenseEvidence).length ?? 0;
+			const checked = e?.files.map((f) => f.licenseEvidence?.checkedAt).find(Boolean);
 			out.push({
 				id: `sound-pack:${p.id}`,
 				name: `${p.title} — sound pack (${p.sounds} sounds)`,
@@ -919,6 +942,9 @@ export class SoundPackStore {
 					p.licenseUrl ? `Licence: ${p.licenseUrl}.` : '',
 					p.record.attribution ? `Attribution: ${p.record.attribution}.` : 'No attribution is required.',
 					evidence ? `Licence evidence: ${evidence}.` : '',
+					perFile
+						? `The licence of each of its ${perFile} sounds was also checked on the sound's own page${checked ? ` (${checked})` : ''}.`
+						: '',
 				]
 					.filter(Boolean)
 					.join(' '),
@@ -927,6 +953,22 @@ export class SoundPackStore {
 		}
 		return out;
 	}
+}
+
+/** Waits `ms`, or rejects with `JOB_CANCELLED` as soon as `signal` aborts. */
+function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal.aborted) return reject(new PackError('JOB_CANCELLED', 'Cancelled'));
+		const onAbort = () => {
+			clearTimeout(timer);
+			reject(new PackError('JOB_CANCELLED', 'Cancelled'));
+		};
+		const timer = setTimeout(() => {
+			signal.removeEventListener('abort', onAbort);
+			resolve();
+		}, ms);
+		signal.addEventListener('abort', onAbort, { once: true });
+	});
 }
 
 export function partialName(id: string, sha256: string): string {

@@ -99,6 +99,104 @@ export function measure(d: Decoded): SoundDescriptors {
 	return analyzeSound(d.channels, d.rate);
 }
 
+/** Seconds of a file the engine's index analyses (`SOUND_ANALYSIS_SECONDS` of @jasper/api). */
+export const ENGINE_ANALYSIS_SECONDS = 30;
+
+export type Probed = { durationSec: number; rate: number; channels: number };
+
+/** Duration, sample rate and channel count of the first audio stream (ffprobe). */
+export function probe(ffmpeg: string, path: string): Probed {
+	const r = spawnSync(
+		ffmpeg.replace(/ffmpeg(\.exe)?$/, 'ffprobe$1'),
+		[
+			'-v',
+			'error',
+			'-select_streams',
+			'a:0',
+			'-show_entries',
+			'stream=sample_rate,channels:format=duration',
+			'-of',
+			'json',
+			path,
+		],
+		{ encoding: 'utf8' },
+	);
+	const j = JSON.parse(r.stdout || '{}') as {
+		streams?: { sample_rate?: string; channels?: number }[];
+		format?: { duration?: string };
+	};
+	const s = j.streams?.[0];
+	return {
+		durationSec: Number(j.format?.duration) || 0,
+		rate: Number(s?.sample_rate) || OUTPUT_RATE,
+		channels: s?.channels ?? 2,
+	};
+}
+
+/** Decodes `[startSec, startSec + seconds)` at `rate` (planar f32, ≤ 2 channels). */
+function decodeRange(
+	ffmpeg: string,
+	path: string,
+	rate: number,
+	nch: number,
+	startSec: number,
+	seconds: number,
+) {
+	const raw = runFfmpeg(ffmpeg, [
+		...(startSec > 0 ? ['-ss', String(startSec)] : []),
+		'-t',
+		String(seconds),
+		'-i',
+		path,
+		'-vn',
+		'-f',
+		'f32le',
+		'-ac',
+		String(nch),
+		'-ar',
+		String(rate),
+		'-',
+	]);
+	const frames = Math.floor(raw.length / 4 / nch);
+	const view = new Float32Array(raw.buffer, raw.byteOffset, frames * nch);
+	const channels = Array.from({ length: nch }, () => new Float32Array(frames));
+	for (let i = 0; i < frames; i++) for (let c = 0; c < nch; c++) channels[c]![i] = view[i * nch + c]!;
+	return channels;
+}
+
+/**
+ * Descriptors the way the engine's index computes them (apps/engine/src/sounds/decode.ts + analysis-core.ts): the
+ * first {@link ENGINE_ANALYSIS_SECONDS} at the file's own rate (at most 48 kHz), with `durationSec` the whole file's.
+ * Plus `loopableWhole`: whether the WHOLE file loops (its first and last second joined end to end are measured by the
+ * same `loopable` rule; the engine's own `loopable` only sees the analysed excerpt).
+ */
+export function measureLikeEngine(
+	ffmpeg: string,
+	path: string,
+): { desc: SoundDescriptors; probed: Probed; loopableWhole: boolean } {
+	const probed = probe(ffmpeg, path);
+	const rate = Math.min(OUTPUT_RATE, probed.rate);
+	const nch = Math.min(2, Math.max(1, probed.channels));
+	let desc = analyzeSound(decodeRange(ffmpeg, path, rate, nch, 0, ENGINE_ANALYSIS_SECONDS), rate);
+	if (probed.durationSec > desc.durationSec + 0.05) desc = { ...desc, durationSec: probed.durationSec };
+	let loopableWhole = desc.loopable && probed.durationSec <= ENGINE_ANALYSIS_SECONDS;
+	if (probed.durationSec > 2.5) {
+		const head = decodeRange(ffmpeg, path, rate, nch, 0, 1);
+		const tail = decodeRange(ffmpeg, path, rate, nch, Math.max(0, probed.durationSec - 1), 1);
+		// head ‖ tail starts like the file and ends like it: exactly what `loopable` compares (levels of the first and
+		// last 100 ms, fades, the click at the wrap from the last sample to the first).
+		const headTail = head.map((h, c) => {
+			const t = tail[c]!;
+			const out = new Float32Array(h.length + t.length);
+			out.set(h, 0);
+			out.set(t, h.length);
+			return out;
+		});
+		loopableWhole = analyzeSound(headTail, rate).loopable;
+	}
+	return { desc, probed, loopableWhole };
+}
+
 export function judge(desc: SoundDescriptors, type: SoundTypeId): JudgeResult {
 	return judgeSound(desc, SOUND_TYPE_PROFILES[type]);
 }
