@@ -9,6 +9,7 @@ import {
 	CUE_KINDS,
 	CUE_WEIGHTS,
 	CueAnchorSchema,
+	ENGINE_CUE_SOURCES,
 	SFX_ROLES,
 	SOUND_DELIVERIES,
 	SOUND_DESIGN_LIMITS,
@@ -37,6 +38,12 @@ export const SoundCuesOptionsSchema = z.strictObject({
 	maxCues: z.number().int().min(1).max(10_000).optional(),
 	/** Also return the per-frame motion speed curves (the Cue Seam's), rounded to 0.001. */
 	curves: z.boolean().optional(),
+	/**
+	 * Snap moves, transitions, emphases and reveals to the nearest music beat within 2 frames (the cue keeps following
+	 * its picture event at that `anchorOffset`). Analyses the beats of the Essential music clips (`POST /api/audio/beats`)
+	 * when needed.
+	 */
+	snapToBeats: z.boolean().optional(),
 });
 export type SoundCuesOptions = z.infer<typeof SoundCuesOptionsSchema>;
 
@@ -74,6 +81,13 @@ export const SoundCueSuggestionSchema = z.object({
 	pan: z.number().optional(),
 	panSweep: z.object({ from: z.number(), to: z.number() }).optional(),
 	anchor: CueAnchorSchema,
+	/** Frames from the anchor's frame to the cue (`snapToBeats` moved it onto a beat); store it with the cue. */
+	anchorOffset: z
+		.number()
+		.int()
+		.min(-SOUND_DESIGN_LIMITS.anchorOffset)
+		.max(SOUND_DESIGN_LIMITS.anchorOffset)
+		.optional(),
 	/** Events merged into this cue (within 2 frames). */
 	also: z.array(CueAnchorSchema).optional(),
 	confidence: z.number(),
@@ -87,6 +101,25 @@ export const SoundCueSuggestionSchema = z.object({
 	storedCueId: z.string().nullable(),
 });
 export type SoundCueSuggestion = z.infer<typeof SoundCueSuggestionSchema>;
+
+/** An engine source's cue (`ExtraCue` of `deriveCues`): measured, not yet merged or budgeted. */
+export const EngineCueSchema = z.object({
+	key: z.string().max(400),
+	frame,
+	kind: z.enum(CUE_KINDS),
+	weight: z.enum(CUE_WEIGHTS),
+	types: z.array(z.string().max(32)).max(SOUND_DESIGN_LIMITS.types),
+	align: z.enum(CUE_ALIGNS),
+	pan: z.number().min(-100).max(100).optional(),
+	panSweep: z.object({ from: z.number().min(-100).max(100), to: z.number().min(-100).max(100) }).optional(),
+	anchor: CueAnchorSchema,
+	confidence: z.number().min(0).max(1),
+	reason: z.string().max(SOUND_DESIGN_LIMITS.reason),
+	window: z.object({ start: z.number().int(), end: z.number().int() }).optional(),
+	from: z.enum(ENGINE_CUE_SOURCES),
+	size: z.number().min(0).max(1).optional(),
+});
+export type EngineCue = z.infer<typeof EngineCueSchema>;
 
 const SourceStatsSchema = z.object({
 	found: z.number().int(),
@@ -118,6 +151,8 @@ export const SoundCuesResponseSchema = z.object({
 			range: z.number().int(),
 		}),
 		heroesDemoted: z.number().int(),
+		/** Cues `snapToBeats` moved onto a beat. */
+		snappedToBeat: z.number().int().optional(),
 		found: z.number().int(),
 		kept: z.number().int(),
 	}),
@@ -127,12 +162,37 @@ export const SoundCuesResponseSchema = z.object({
 			message: z.string(),
 			source: z.string().optional(),
 			clipId: z.string().optional(),
+			/** `W_ANALYSIS_PENDING`: the jobs measuring the media; ask again when they finish. */
+			jobIds: z.array(z.string()).optional(),
 		}),
 	),
 	/** Frame ranges `[start, end)` where dialogue is heard (transcript words, Essential Sound dialogue clips). */
 	dialogue: z.array(z.object({ start: z.number().int(), end: z.number().int() })),
 	/** Cues already stored in the sequence. */
 	storedCues: z.number().int(),
+	/**
+	 * Engine sources asked for (`opts.sources` naming scene, beat or pixel, or `snapToBeats`): what each measured.
+	 * `pending` = its analysis is running (`jobIds`; a `W_ANALYSIS_PENDING` warning says so too) and its cues are not in
+	 * this answer yet; `ready` = measured (from the cache or just now); `none` = nothing to measure (no footage, no
+	 * Essential music clip); `failed` = the analysis failed (`message`).
+	 */
+	analysis: z
+		.partialRecord(
+			z.enum(ENGINE_CUE_SOURCES),
+			z.object({
+				state: z.enum(['ready', 'pending', 'none', 'failed']),
+				jobIds: z.array(z.string()),
+				/** Cues the source found (before merging). */
+				found: z.number().int(),
+				message: z.string().optional(),
+			}),
+		)
+		.optional(),
+	/**
+	 * The engine sources' own cues before merging and budgets (for clients that derive the project sources themselves
+	 * and pass these as `extraCues`, like the editor's Suggest Cues…).
+	 */
+	engineCues: z.array(EngineCueSchema).optional(),
 	/** Per-frame motion speed of moving clips (with `opts.curves`). */
 	curves: z
 		.array(z.object({ clipId: z.string(), start: z.number().int(), speed: z.array(z.number()) }))
@@ -175,6 +235,11 @@ export const SoundDesignPlanStyleSchema = z.strictObject({
 	 * whatever their source.
 	 */
 	cueSources: z.array(z.enum(CUE_DERIVE_SOURCES)).min(1).max(CUE_DERIVE_SOURCES.length).optional(),
+	/**
+	 * Snap derived moves, transitions, emphases and reveals to the music's beats within 2 frames (the beats of the
+	 * Essential music clips are analysed in the job; default off).
+	 */
+	snapToBeats: z.boolean().optional(),
 	/** Rotation and variation seed (default: the sequence's `soundDesign.settings.seed`). */
 	seed: z.number().int().min(0).max(0xffff_ffff).optional(),
 	/** Alternatives per cue, 0–3 (default 3). */
@@ -620,3 +685,96 @@ export const SoundDeliveryResultSchema = z.object({
 	report: SoundDeliveryReportSchema,
 });
 export type SoundDeliveryResult = z.infer<typeof SoundDeliveryResultSchema>;
+
+// ---------------------------------------------------------------------------------------------------------------
+// `POST /api/sound-design/motion` (spec 12 §2.8, P6-R2; wp-note "Phase 6 → WP6.2"): a `motion-analysis` job that renders
+// the sequence's picture small through the export planner and measures its motion frame by frame (pixel motion curve:
+// the cue source for footage, Sound Check's NO_PICTURE_EVENT, `analyze_picture_motion`). Cached by the picture's
+// fingerprint; nothing is stored in the project.
+
+/** Bounds of a motion analysis. */
+export const MOTION_ANALYSIS_LIMITS = {
+	/** Longest range analysed at once (seconds of sequence time): analyse a longer sequence by ranges. */
+	maxSeconds: 600,
+	/** Long side of the analysed picture (pixels). */
+	size: 128,
+} as const;
+
+export const MotionAnalysisRequestSchema = z.strictObject({
+	projectId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'a project id'),
+	/** Default: the project's first sequence. */
+	sequenceId: id.optional(),
+	/** Sequence frames `[start, end)` (default the whole sequence; at most 10 min). */
+	range: z
+		.strictObject({ start: frame, end: frame })
+		.refine((r) => r.end > r.start, 'range.end must be after range.start')
+		.optional(),
+});
+export type MotionAnalysisRequest = z.infer<typeof MotionAnalysisRequestSchema>;
+
+/** The measured curve: index i is sequence frame `startFrame + i`, measured against the frame before it. */
+export const MotionCurveSchema = z.object({
+	startFrame: z.number().int(),
+	fps: z.number(),
+	/** Analysis picture size (pixels). */
+	width: z.number().int(),
+	height: z.number().int(),
+	/** Speed of the moving parts (screen diagonals per second; the keyframe source's unit). */
+	speed: z.array(z.number()),
+	/** Mean signed velocity of the moving parts (diagonals per second; x right, y down). */
+	vx: z.array(z.number()),
+	vy: z.array(z.number()),
+	/** Share of the frame that moves (0…1). */
+	area: z.array(z.number()),
+	/** Centre x of the moving parts (0 = left … 1 = right). */
+	cx: z.array(z.number()),
+	/** Change motion does not explain (0…1): cuts, flashes. */
+	residual: z.array(z.number()),
+	/** Mean absolute frame difference (0…1). */
+	diff: z.array(z.number()),
+});
+export type MotionCurve = z.infer<typeof MotionCurveSchema>;
+
+export const MotionEventSchema = z.object({
+	kind: z.enum(['move', 'land', 'cut']),
+	frame,
+	timecode: z.string(),
+	/** move: first frame that shows it … the frame after it arrives (exclusive). */
+	start: z.number().int().optional(),
+	end: z.number().int().optional(),
+	peakSpeed: z.number().optional(),
+	area: z.number().optional(),
+	/** move: a camera move (≥ half the frame moves). */
+	global: z.boolean().optional(),
+	direction: z.enum(['left', 'right', 'up', 'down']).optional(),
+	pan: z.number().optional(),
+	panSweep: z.object({ from: z.number(), to: z.number() }).optional(),
+	/** land: how it settles. */
+	how: z.enum(['overshoot', 'bounce', 'abrupt stop']).optional(),
+	energy: z.number().optional(),
+	/** cut: the unexplained change. */
+	residual: z.number().optional(),
+});
+export type MotionEvent = z.infer<typeof MotionEventSchema>;
+
+export const MotionAnalysisResultSchema = z.object({
+	projectId: z.string(),
+	sequenceId: z.string(),
+	/** The picture's fingerprint over the range (the cache key: any picture edit changes it). */
+	fingerprint: z.string(),
+	range: z.object({ start: z.number().int(), end: z.number().int() }),
+	frameRate: z.object({ num: z.number(), den: z.number() }),
+	frames: z.number().int(),
+	/** Served from the cache (no render). */
+	cached: z.boolean(),
+	/** The export path that rendered the picture (`native`, `hybrid`, `remotion`, `copy`), null when cached. */
+	renderPath: z.string().nullable(),
+	curve: MotionCurveSchema,
+	/** Moves, landings and cuts the curve shows (pixelMotionEvents; edit points are not repeated as cuts). */
+	events: z.array(MotionEventSchema),
+	/** Sequence frames of the edit points in the range (motion never spans them). */
+	edits: z.array(z.number().int()),
+	timings: z.object({ renderMs: z.number(), analyseMs: z.number(), totalMs: z.number() }),
+	warnings: z.array(z.object({ code: z.string(), message: z.string() })),
+});
+export type MotionAnalysisResult = z.infer<typeof MotionAnalysisResultSchema>;

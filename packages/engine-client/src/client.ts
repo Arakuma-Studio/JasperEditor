@@ -8,6 +8,8 @@ import {
 	type AssetRelinkRequest,
 	type AudioAnalyzeRequest,
 	type AutoToneRequest,
+	type BeatsRequest,
+	type BeatsResult,
 	buildPath,
 	type CaptionFileReadRequest,
 	type ColorMatchRequest,
@@ -28,6 +30,7 @@ import {
 	type MediaRegisterRequest,
 	type MediaVariantRequest,
 	type MgRenderRequest,
+	type MotionAnalysisRequest,
 	type PreviewDeleteRequest,
 	type PreviewDeleteResult,
 	type PreviewRenderRequest,
@@ -428,6 +431,13 @@ export class EngineClient {
 	soundVisual(req: SoundVisualRequest, signal?: AbortSignal) {
 		return this.call('soundDesignVisual', { body: req, ...(signal ? { signal } : {}) });
 	}
+	/**
+	 * Starts a `motion-analysis` job (`POST /api/sound-design/motion`, P6-R2): the sequence's picture rendered small and
+	 * measured per frame; result `MotionAnalysisResult` (curve + events), cached by the picture's fingerprint.
+	 */
+	analyzeMotion(req: MotionAnalysisRequest, signal?: AbortSignal) {
+		return this.call('soundDesignMotion', { body: req, ...(signal ? { signal } : {}) });
+	}
 	/** Proposals of a project (spec 12 §2.5): summaries, newest first. */
 	listProposals(projectId: string) {
 		return this.call('proposalsList', { params: { projectId } });
@@ -522,6 +532,10 @@ export class EngineClient {
 	/** A music remix plan for a clip's content range (synchronous). */
 	remixPlan(req: RemixPlanRequest): Promise<RemixPlanResult> {
 		return this.call('audioRemixPlan', { body: req });
+	}
+	/** Tempo, beats and downbeats of a media's audio range (`POST /api/audio/beats`; cached per file and range). */
+	audioBeats(req: BeatsRequest, signal?: AbortSignal): Promise<BeatsResult> {
+		return this.call('audioBeats', { body: req, ...(signal ? { signal } : {}) });
 	}
 	/** A loudness-normalised WAV version of a media (job; result LoudnessNormalizeResult). */
 	normalizeMediaLoudness(mediaKey: string, req: LoudnessNormalizeRequest, wait = false): Promise<EngineJob> {

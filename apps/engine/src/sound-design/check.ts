@@ -132,6 +132,7 @@ import {
 	solvedLevel,
 	solverEventOf,
 } from './levels.ts';
+import type { EngineCueSources } from './engine-cues.ts';
 import { liveDocument, PlanInputError, planSequence } from './plan.ts';
 import { classifyStems, renderStems, STEM_NAMES, type StemName, type StemSpec } from './stems.ts';
 
@@ -179,6 +180,8 @@ export type SoundCheckDeps = {
 	registries: Registries;
 	mgTemplates: MgTemplateRegistry;
 	cache?: MeasureCache;
+	/** P6: measured shot changes and picture motion (only what is already analysed) for NO_PICTURE_EVENT. */
+	engineCues?: () => EngineCueSources | undefined;
 };
 
 export type CheckEnv = {
@@ -188,6 +191,8 @@ export type CheckEnv = {
 	mgTemplates: MgTemplateRegistry;
 	sounds?: SoundService | undefined;
 	cache?: MeasureCache;
+	/** P6: footage cues are checked against the measured picture (shot changes, picture motion) when analysed. */
+	engineCues?: EngineCueSources | undefined;
 	scratchDir: string;
 	signal?: AbortSignal;
 	onSpawn?(child: import('node:child_process').ChildProcess): void;
@@ -1613,16 +1618,34 @@ export async function checkSequence(
 	progress(0.8, 'Checking the cues against the picture');
 	t = Date.now();
 	const inRange = (f: number) => f >= range.start && f < range.end;
+	// Footage: what the engine already measured of the picture (shot changes, picture motion; never analysed here).
+	let measured: Awaited<ReturnType<EngineCueSources['collect']>> | null = null;
+	try {
+		measured = env.engineCues
+			? await env.engineCues.collect(doc, seq, {
+					sources: ['scene', 'pixel'],
+					range: { start: Math.max(0, range.start - 3), end: range.end + 3 },
+					mode: { kind: 'cached' },
+				})
+			: null;
+	} catch {
+		measured = null;
+	}
 	const derived = deriveCues(doc, seq.id, {
 		density: 'rich',
 		respectDialogue: false,
 		mgTemplates: env.mgTemplates,
 		range: { start: Math.max(0, range.start - 3), end: range.end + 3 },
+		...(measured ? { extraCues: measured.extraCues } : {}),
 	});
 	const derivedFrames = derived.cues.map((c) => c.frame);
+	const motionCurves: { start: number; speed: ArrayLike<number> }[] = [
+		...derived.curves,
+		...(measured?.pixelCurves ?? []).map((c) => ({ start: c.startFrame, speed: c.speed })),
+	];
 	const motionAt = (f: number) => {
 		let best = 0;
-		for (const c of derived.curves) {
+		for (const c of motionCurves) {
 			const i = f - c.start;
 			for (
 				let d = -SOUND_CHECK_THRESHOLDS.pictureEventFrames;
@@ -2174,6 +2197,7 @@ async function soundCheckJob(ctx: JobContext, deps: SoundCheckDeps): Promise<Sou
 			mgTemplates: deps.mgTemplates,
 			sounds: deps.sounds(),
 			...(deps.cache ? { cache: deps.cache } : {}),
+			engineCues: deps.engineCues?.(),
 			scratchDir: await ctx.scratchDir(),
 			signal: ctx.signal,
 			onSpawn: ctx.trackChild,
