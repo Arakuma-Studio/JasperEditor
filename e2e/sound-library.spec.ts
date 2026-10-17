@@ -55,10 +55,14 @@ async function media(p: Page): Promise<Record<string, Media>> {
 function alignedPointSec(m: Media): number {
 	const d = m.library!.descriptors!;
 	const t = m.library!.types?.[0];
-	// the end of the SOUND: registration pads short sounds with trailing silence, which `end` alignment leaves out
-	// (spec 12 §2.3, fix "SFX tail truncation")
+	// the end of the SOUND: registration pads short sounds with trailing silence, which `end` alignment leaves out —
+	// the provenance's `durationSec − trailSilenceSec`, as placement computes it (spec 12 §2.3, fix "SFX tail
+	// truncation"); a copy without a trail ends where its media does
+	const trail = m.library!.trailSilenceSec ?? 0;
 	if (t === 'riser' || t === 'reverse')
-		return (m.probe?.durationFlicks ?? d.durationSec * FLICKS) / FLICKS - (m.library!.trailSilenceSec ?? 0);
+		return trail > 0
+			? Math.max(d.peakSec, d.onsetSec, d.durationSec - trail)
+			: (m.probe?.durationFlicks ?? d.durationSec * FLICKS) / FLICKS;
 	return t === 'ui' ? d.onsetSec : d.peakSec;
 }
 
