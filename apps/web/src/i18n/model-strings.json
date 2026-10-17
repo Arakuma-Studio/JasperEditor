@@ -5704,5 +5704,14 @@
   "Zoom Lens",
   "Zoom Level",
   "Zoom Producer Point",
-  "Zooms"
+  "Zooms",
+  "It would leave {0} {1} LU over the bed (at most {2} LU for its role)",
+  "It would leave {0} only {1} dB over the bed in its dominant band (at least {2} dB for its role)",
+  "It would make {0} peak at {1} dBTP on its own (ceiling {2} dBTP)",
+  "With loudness normalisation off, the mix where {0} plays could reach {1} dBTP (ceiling {2} dBTP)",
+  "It no longer applies after the safe fixes before it: {0}",
+  "After the safe fixes before it, it no longer resolves its finding",
+  "Another safe fix changes the sound or the position of {0}: its level is judged again on the next check",
+  "The safe fixes before it change sound-effect levels over the speech: run the check again before ducking",
+  "The Mix is mono and was checked in mono: an export with 2 channels plays it in both and measures {0} LU louder while loudness normalisation is off"
 ]

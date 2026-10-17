@@ -427,7 +427,9 @@ export function planSoundCheckFixes(
 			const soundChanged = a.place !== b.place || a.sound !== b.sound;
 			const base = baseStates.get(m.clipId);
 			const invalid = !base || b.place !== base.place || b.sound !== base.sound;
-			if (levelChanged && (invalid || soundChanged))
+			// (a fix that itself changes the sound — a swap re-levels the clip for its new sound — is not a level fix: its
+			// clip's model no longer applies after it, under the "equivalent alternative" assumption of the swap)
+			if (levelChanged && invalid && !soundChanged)
 				return no(soundCheckMessage('whyFixSoundChanged', titleOf(m.clipId)), soundBy.get(m.clipId) ?? []);
 			if (soundChanged && (levelBy.get(m.clipId)?.length ?? 0) > 0)
 				return no(soundCheckMessage('whyFixSoundChanged', titleOf(m.clipId)), levelBy.get(m.clipId) ?? []);

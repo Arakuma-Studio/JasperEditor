@@ -297,6 +297,36 @@ describe('planSoundCheckFixes', () => {
 		expect(p2.skipped[0]!.conflictsWith).toEqual(['OUT_OF_SYNC:A']);
 	});
 
+	it('a swap that re-levels its clip for the new sound is accepted alone; a gain of that clip after it waits', () => {
+		const { h, A } = fixture();
+		const gA = gainOf(h, h.doc, A.clip).gainDb;
+		// a louder alternative: its default level is lower
+		const r = h.ok([
+			{
+				type: 'media.register',
+				asset: {
+					...videoAsset({ kind: 'audio', seconds: 0.5 }),
+					library: { ...LIB, soundId: 'snd_00000000000000e5', title: 'Alt', types: ['hit'], descriptors: { ...LIB.descriptors!, maxMomentaryLufs: -6 } },
+				},
+			},
+		]);
+		const alt = (r.results[0] as { mediaId: string }).mediaId;
+		const swap: SoundCheckFixCandidate = {
+			issueIds: ['REPEAT:A'],
+			kind: 'commands',
+			commands: [{ type: 'soundDesign.swap', clipId: A.clip, mediaId: alt }],
+		};
+		const guard = guardOf([model(h, A.clip, { liftAt0Db: 1 - gA })]);
+		const p = planSoundCheckFixes(h.doc, h.seqId, [swap, gainFix(h, 'MASKED:A', A.clip, gA + 3, 'masked')], {
+			registries,
+			guard,
+		});
+		expect(gainOf(h, p.document, A.clip).gainDb).not.toBeCloseTo(gA, 3);
+		expect(p.accepted.map((c) => c.issueIds[0])).toEqual(['REPEAT:A']);
+		expect(p.skipped[0]!.reason.key).toBe(SOUND_CHECK_MESSAGES.whyFixSoundChanged);
+		expect(p.skipped[0]!.conflictsWith).toEqual(['REPEAT:A']);
+	});
+
 	it('jobs: ducking after a gain change over the speech waits; without one it goes', () => {
 		const { h, C } = fixture();
 		const g = gainOf(h, h.doc, C.clip).gainDb;

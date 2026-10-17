@@ -518,8 +518,8 @@ Tools (355; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   bed; style options room glue, stop-before, build, delivery; `style.cueSources` picks where derived cues come from) ·
   `rebalance_sfx` (masking solver: each sound effect clears the bed by its target lift, with what limited it) ·
   `apply_delivery` (web / podcast / R128 / A/85: Mix loudness, Auto-Match by type, ducking, measured) `set_room_glue` (a
-  shared "SFX Room" reverb) · `sound_check` (the delivered mix measured: findings with safe fixes, five listen-here
-  timecodes, a verdict, a PNG of the worst moments; a custom delivery target; humanVerdicts: what the user said after
+  shared "SFX Room" reverb) · `sound_check` (the delivered mix measured: findings with safe fixes judged together, in the
+  order to apply them, five listen-here timecodes, a verdict, a PNG of the worst moments; a custom delivery target; humanVerdicts: what the user said after
   listening in the editor's Sound Check panel, each bound to the moment it judged and marked stale when that moment
   changed) `get_sound_check` (the last full report the engine keeps per sequence, across restarts: current or stale)
   `view_sound_timeline` (PNG: loudness of the mix and its stems, cues, motion, findings)

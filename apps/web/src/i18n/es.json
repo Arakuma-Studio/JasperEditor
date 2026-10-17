@@ -9965,5 +9965,15 @@
   "Low confidence": "Confianza baja",
   "Nothing was tagged": "No se etiquetó nada",
   "Or assign an audio type to the selection:": "O asigna un tipo de audio a la selección:",
-  "Tagged {0}": "Etiquetados: {0}"
+  "Tagged {0}": "Etiquetados: {0}",
+  "It would leave {0} {1} LU over the bed (at most {2} LU for its role)": "Dejaría {0} {1} LU por encima del fondo (como mucho {2} LU para su papel)",
+  "It would leave {0} only {1} dB over the bed in its dominant band (at least {2} dB for its role)": "Dejaría {0} solo {1} dB por encima del fondo en su banda dominante (al menos {2} dB para su papel)",
+  "It would make {0} peak at {1} dBTP on its own (ceiling {2} dBTP)": "Haría que {0} llegue a un pico de {1} dBTP por sí solo (techo {2} dBTP)",
+  "With loudness normalisation off, the mix where {0} plays could reach {1} dBTP (ceiling {2} dBTP)": "Con la normalización de sonoridad desactivada, la mezcla donde suena {0} podría llegar a {1} dBTP (techo {2} dBTP)",
+  "It no longer applies after the safe fixes before it: {0}": "Ya no se puede aplicar después de las correcciones seguras anteriores: {0}",
+  "After the safe fixes before it, it no longer resolves its finding": "Después de las correcciones seguras anteriores, ya no resuelve su hallazgo",
+  "Another safe fix changes the sound or the position of {0}: its level is judged again on the next check": "Otra corrección segura cambia el sonido o la posición de {0}: su nivel se vuelve a juzgar en la próxima comprobación",
+  "The safe fixes before it change sound-effect levels over the speech: run the check again before ducking": "Las correcciones seguras anteriores cambian niveles de efectos de sonido sobre la voz: vuelve a ejecutar la comprobación antes de atenuar",
+  "The Mix is mono and was checked in mono: an export with 2 channels plays it in both and measures {0} LU louder while loudness normalisation is off": "La mezcla es mono y se comprobó en mono: una exportación con 2 canales la reproduce en ambos y mide {0} LU más fuerte mientras la normalización de sonoridad está desactivada",
+  "{0} left for the next check (not safe with the fixes before them): {1}": "{0} quedan para la próxima comprobación (no son seguras junto con las correcciones anteriores): {1}"
 }

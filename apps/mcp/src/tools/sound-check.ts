@@ -22,6 +22,8 @@ import {
 	SOUND_DELIVERIES,
 	sequenceDuration,
 	sequenceTimecode,
+	soundCheckFixCandidates,
+	soundCheckFixOrder,
 	soundCheckHumanVerdicts,
 	TimeInputSchema,
 } from '@jasper/project';
@@ -67,12 +69,24 @@ function toolError(e: unknown): never {
 	throw e;
 }
 
-/** One line per finding for the agent: severity, code, where, what, and the fix. */
+/** One line per finding for the agent: severity, code, where, what, and the fix (why it is not safe). */
 function issueLine(i: SoundCheckIssue): string {
-	const fix = i.fix
-		? ` → fix (${i.fix.safe ? 'safe' : 'needs the user'}): ${i.fix.label.text} [${i.fix.tool}]`
-		: '';
+	const f = i.fix;
+	const why = f && !f.safe && f.why ? ` — ${f.why}${f.conflictsWith?.length ? ` (with the fixes of ${f.conflictsWith.join(', ')})` : ''}` : '';
+	const fix = f ? ` → fix (${f.safe ? 'safe' : 'needs the user'}): ${f.label.text} [${f.tool}]${why}` : '';
 	return `${i.severity.toUpperCase()} ${i.code}${i.timecode ? ` @ ${i.timecode}` : ''}: ${i.message.text}${fix}`;
+}
+
+/**
+ * The safe fixes in the order to apply them (document commands, then sound swaps, then engine jobs; a fix two findings
+ * share once): the engine judged each one safe on its own AND after the ones before it in this order.
+ */
+function safeFixesOf(r: SoundCheckReport) {
+	const byId = new Map(r.issues.map((i) => [i.id, i]));
+	return soundCheckFixOrder(soundCheckFixCandidates(r.issues, { safeOnly: true })).map((c) => {
+		const fix = byId.get(c.issueIds[0]!)!.fix!;
+		return { issueIds: c.issueIds, tool: fix.tool, args: fix.args };
+	});
 }
 
 /**
@@ -116,9 +130,10 @@ function eventTable(r: SoundCheckReport): string {
 /** What to do next with a report (the same advice for a fresh and a kept one). */
 function nextOf(r: SoundCheckReport, listen: string[]): string {
 	const safe = r.issues.filter((i) => i.fix?.safe);
+	const fixes = safeFixesOf(r).length;
 	return r.verdict === 'pass'
 		? `No warnings or errors. Give the user these moments to listen to, verbatim: ${listen.join(' | ') || '(none)'}. Do not say it sounds good: say what was measured.`
-		: `${safe.length} finding(s) have a safe fix: apply exactly those (each fix's tool and args), then run sound_check again. Leave the others to the user and tell them what each says. Give the user the listen-here moments verbatim: ${listen.join(' | ') || '(none)'}.`;
+		: `${safe.length} finding(s) have a safe fix (${fixes} fix(es) in safeFixes): apply exactly those, in the order of safeFixes (each tool + args once — they were judged together in that order), then run sound_check again. Leave the others to the user and tell them what each says (a fix that is not safe says why). Give the user the listen-here moments verbatim: ${listen.join(' | ') || '(none)'}.`;
 }
 
 /** The frames of up to `n` worst moments (errors first, then warnings, then the listen-here worst). */
@@ -148,7 +163,7 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 		'sound_check',
 		{
 			title: 'Sound Check (measured QA of the mix)',
-			description: `Measures a sequence's sound the way it will be delivered and returns what to fix and where to listen. You cannot hear: this is how you check your sound design. The engine renders the mix (with the Mix's loudness normalisation and true-peak limiter, exactly as an export) and its stems — sound effects, dialogue, music, ambience, bed — in one pass, finds speech (transcript + voice activity) and checks: LOUDNESS (integrated vs the delivery preset ±1 LU; under 400 ms of audible audio it is "not measurable", never a pass), TRUE_PEAK (over the preset's ceiling), OUT_OF_SYNC (each placed sound located in the sound-effects mix by cross-correlation within ±3 frames of its cue: cut ±1, land ±2, move ±3, appear ±1 frame; offset in ms; or "cut": its clip ends at its peak), TRUNCATED (a placed sound's clip ends before the sound has faded to −60 dB: older copies without trailing silence; the safe fix is swap_sound to the same sound, which re-registers it, or soundDesign.swap on its own media), MASKED (dominant-band lift over the bed under 1.5 dB support / 3 dB hero, the masking solver's own definition), OVERLOAD (a sound over the bed cap, the export limiter pulling > 3 dB, clipping without normalisation), MUSIC_OVER_VOICE (music not 8 LU under the voice during speech), SILENCE (< −60 dBFS in every channel for ≥ 0.5 s outside silence cues), DIP (short-term drop > 10 LU with no stop-before, cut, silence cue, Volume keyframes lowering the level there; only the bed under the voice and effects dropping counts), STALE_CUE (the cue's anchor moved), NO_PICTURE_EVENT (a derived cue with nothing on screen), DENSITY (heroes too close, too many cues per second), REPEAT (the same file back to back), LICENSE (non-commercial, no-derivatives, unknown or undeclared licences) and CREDITS (CC-BY sounds without a credits file). Each finding has a severity, a timecode, a message and, where one exists, a fix: {kind: commands → apply_commands args | job → rebalance_sfx / apply_delivery args | swap → swap_sound args, safe}. Apply ONLY fixes marked safe (each is one undo step that resolves its finding), then run sound_check again; leave the others to the user. listen: up to five "listen here" moments (worst finding, biggest hero, loudest moment, busiest moment, a cue that passes) — give them to the user VERBATIM and never say the result "sounds good". verdict: pass | warn | fail. images (default true) adds ONE PNG of up to three of the worst moments (±2 s each: loudness curves, waveform, cue ticks, findings). store: true writes the summary into the sequence (one undo step "Sound Check Result"; the editor shows whether it is still current). target: {integratedLufs, truePeakDb} checks a custom delivery target instead of the preset's numbers. humanVerdicts: what the user said after listening in the editor's Sound Check panel — "sounds right" or "flagged" with their note, at a timecode, with the listen slot and the clip / cue it judged; stale: true (staleReasons moment / moved / gone) when what plays there changed since they listened, so the verdict no longer covers it (null for older verdicts that cannot tell); they are the user's comment markers: read them, fix what is flagged, ask the user to listen again to stale ones, and never add or change them yourself. get_sound_check returns the last report without running the check. Waits for the job (timeoutSeconds, default 300).`,
+			description: `Measures a sequence's sound the way it will be delivered and returns what to fix and where to listen. You cannot hear: this is how you check your sound design. The engine renders the mix (with the Mix's loudness normalisation and true-peak limiter, exactly as an export) and its stems — sound effects, dialogue, music, ambience, bed — in one pass, finds speech (transcript + voice activity) and checks: LOUDNESS (integrated vs the delivery preset ±1 LU; under 400 ms of audible audio it is "not measurable", never a pass), TRUE_PEAK (over the preset's ceiling), OUT_OF_SYNC (each placed sound located in the sound-effects mix by cross-correlation within ±3 frames of its cue: cut ±1, land ±2, move ±3, appear ±1 frame; offset in ms; or "cut": its clip ends at its peak), TRUNCATED (a placed sound's clip ends before the sound has faded to −60 dB: older copies without trailing silence; the safe fix is swap_sound to the same sound, which re-registers it, or soundDesign.swap on its own media), MASKED (dominant-band lift over the bed under 1.5 dB support / 3 dB hero, the masking solver's own definition), OVERLOAD (a sound over the bed cap, the export limiter pulling > 3 dB, clipping without normalisation), MUSIC_OVER_VOICE (music not 8 LU under the voice during speech), SILENCE (< −60 dBFS in every channel for ≥ 0.5 s outside silence cues), DIP (short-term drop > 10 LU with no stop-before, cut, silence cue, Volume keyframes lowering the level there; only the bed under the voice and effects dropping counts), STALE_CUE (the cue's anchor moved), NO_PICTURE_EVENT (a derived cue with nothing on screen), DENSITY (heroes too close, too many cues per second), REPEAT (the same file back to back), LICENSE (non-commercial, no-derivatives, unknown or undeclared licences) and CREDITS (CC-BY sounds without a credits file). Each finding has a severity, a timecode, a message and, where one exists, a fix: {kind: commands → apply_commands args | job → rebalance_sfx / apply_delivery args | swap → swap_sound args, safe}. Apply ONLY the fixes marked safe, in the order of safeFixes (each one undo step, each once), then run sound_check again; leave the others to the user. The safe fixes are judged together: each is safe on its own and after the safe fixes before it in safeFixes — a fix that would undo or overload what another one does (a hero's gain and its demotion), or with loudness normalisation off push the mix's true peak over the ceiling, is not safe and says why (fix.why; fix.conflictsWith names the findings it conflicts with: run sound_check again after the others). A mono Mix is checked in mono (loudness.layout). listen: up to five "listen here" moments (worst finding, biggest hero, loudest moment, busiest moment, a cue that passes) — give them to the user VERBATIM and never say the result "sounds good". verdict: pass | warn | fail. images (default true) adds ONE PNG of up to three of the worst moments (±2 s each: loudness curves, waveform, cue ticks, findings). store: true writes the summary into the sequence (one undo step "Sound Check Result"; the editor shows whether it is still current). target: {integratedLufs, truePeakDb} checks a custom delivery target instead of the preset's numbers. humanVerdicts: what the user said after listening in the editor's Sound Check panel — "sounds right" or "flagged" with their note, at a timecode, with the listen slot and the clip / cue it judged; stale: true (staleReasons moment / moved / gone) when what plays there changed since they listened, so the verdict no longer covers it (null for older verdicts that cannot tell); they are the user's comment markers: read them, fix what is flagged, ask the user to listen again to stale ones, and never add or change them yourself. get_sound_check returns the last report without running the check. Waits for the job (timeoutSeconds, default 300).`,
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -275,6 +290,7 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 					humanVerdicts: humanVerdictsOf(doc, seq, r),
 					findings: r.issues.map(issueLine),
 					issues: r.issues,
+					safeFixes: safeFixesOf(r),
 					table,
 					speech: r.speech,
 					stems: r.stems,
@@ -330,6 +346,7 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 				humanVerdicts: humanVerdictsOf(doc, seq, r),
 				findings: r.issues.map(issueLine),
 				issues: r.issues,
+				safeFixes: kept.state === 'stale' ? [] : safeFixesOf(r),
 				table: eventTable(r),
 				next:
 					kept.state === 'stale'
