@@ -26,6 +26,12 @@
 // without a reported conflict is a W_UNRESOLVED warning (the tests require none).
 import { BAND_FLOOR_DB, OCTAVE_BAND_CENTRES_HZ } from './bands.ts';
 
+/**
+ * A lift this large means the bed under the sound is at the measurement floor (nothing plays under it): the reason
+ * says so instead of quoting a lift over silence ("+86.7 dB", Phase 4 verification real run).
+ */
+export const SILENT_BED_LIFT_DB = 60;
+
 // ── constants (sources and reasoning: wp-note "Phase 4 → WP4.1a masking solver") ─────────────────────────────────
 
 export type SolverWeight = 'hero' | 'support' | 'ambient';
@@ -400,7 +406,9 @@ function upper(st: State, by: SolverConstraint, bound: number): void {
 	if (st.g > st.lo + EPS) st.limited |= BIT[by];
 	st.g = st.lo;
 	st.hi = st.lo;
-	st.hiBy = st.loBy;
+	// the gain is held at the floor because THIS constraint wants it lower: it is what a later step (consistency)
+	// loses to, not the floor (which only stopped it going further down)
+	st.hiBy = by;
 }
 
 /** Indices of the support events within {@link HERO_SHADOW_SEC} of a hero (gap between the windows). */
@@ -660,7 +668,11 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 					.map(([t]) => t)
 					.sort()
 					.join(', ');
-			const bands = ev.dom.map((b) => `${OCTAVE_BAND_CENTRES_HZ[b]} Hz`).join(', ');
+			// only the dominant bands that ARE in the speech octaves ("8000 Hz, 4000 Hz is in 1–4 kHz" misled)
+			const bands = ev.dom
+				.filter((b) => DIALOGUE_BAND_INDICES.includes(b))
+				.map((b) => `${OCTAVE_BAND_CENTRES_HZ[b]} Hz`)
+				.join(', ');
 			warnings.push({
 				code: 'W_DIALOGUE_BAND',
 				clipId: ev.clipId,
@@ -793,9 +805,11 @@ function reasonText(
 	for (const [kept, lost] of conflicts) parts.push(`conflict: ${kept} kept over ${lost}`);
 	if (parts.length === 0 && achieved !== null)
 		parts.push(
-			achieved > target + 0.05
-				? `default level already clears the bed by ${fmtDb(achieved)} dB`
-				: `target lift ${fmtDb(target)} dB reached`,
+			achieved >= SILENT_BED_LIFT_DB
+				? 'nothing plays under it in the bed, default level kept'
+				: achieved > target + 0.05
+					? `default level already clears the bed by ${fmtDb(achieved)} dB`
+					: `target lift ${fmtDb(target)} dB reached`,
 		);
 	return parts.length ? `${head}, ${parts.join('; ')}` : head;
 }

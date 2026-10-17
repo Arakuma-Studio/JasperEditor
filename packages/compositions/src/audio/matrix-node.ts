@@ -1,3 +1,5 @@
+import { holdParam, isFollowing } from './automation.ts';
+
 // A channel matrix in Web Audio: `in` (N channels, discrete) → splitter → one GainNode per non-zero coefficient →
 // merger (M channels) → `out`. Coefficients are set with short ramps so automation and fader moves never click.
 
@@ -17,13 +19,17 @@ export function discreteGain(ctx: BaseAudioContext, channels: number, value = 1)
 export function setParam(p: AudioParam, v: number, ctx: BaseAudioContext, instant = false): void {
 	if (!Number.isFinite(v)) v = 0;
 	const t = ctx.currentTime;
+	// A param that was following an automation curve (`followCurve`): stop the curve where it is.
+	const wasFollowing = isFollowing(p);
 	if (instant) {
+		if (wasFollowing) holdParam(p, t);
 		p.cancelScheduledValues(t);
 		p.setValueAtTime(v, t);
 		return;
 	}
-	if (Math.abs(p.value - v) < 1e-7) return;
-	p.cancelScheduledValues(t);
+	if (wasFollowing) holdParam(p, t);
+	else if (Math.abs(p.value - v) < 1e-7) return;
+	else p.cancelScheduledValues(t);
 	p.setTargetAtTime(v, t, PARAM_TC);
 }
 

@@ -25,7 +25,7 @@ import { Audio } from '@remotion/media';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { cancelRender, continueRender, delayRender, getRemotionEnvironment, Internals } from 'remotion';
 import { MixGraphContext } from '../audio/context.ts';
-import { clipEffectsLatency, clipHasEffects, type MixGraph } from '../audio/graph.ts';
+import { clipEffectsLatency, graphAppliesLevels, type MixGraph } from '../audio/graph.ts';
 import { mappedAudioUrl, reversedAudioUrl } from '../audio/reversed.ts';
 import { audioGainAt, dbToGain, mediaSrc, videoTrimBefore, volumeFrameToClipFrame } from '../pipeline.ts';
 import type { RenderOptions } from '../types.ts';
@@ -87,10 +87,12 @@ export function AudioLayer({
 	const node = graph ? graph.clipInput(clip) : null;
 	useEffect(() => (graph ? () => graph.releaseClip(clip.clipId) : undefined), [graph, clip.clipId]);
 	// audio-fx: a clip with enabled effects plays at unity into the graph, which applies its levels after the effect
-	// slots (export order). The source is scheduled early by the latency of its effect slots plus the graph's
+	// slots (export order); so does a clip whose level changes over time (Volume keyframes, fades, nested gain): the
+	// graph follows it sample by sample while playing, where this callback would step once per frame (sound-design
+	// Phase 4 verification). The source is scheduled early by the latency of its effect slots plus the graph's
 	// read-ahead (track / submix / Mix inserts and the loudness limiter, compensated like the export: `MixGraph`), so
 	// what leaves the Mix lines up with the picture.
-	const fx = !!node && clipHasEffects(clip);
+	const fx = !!node && graphAppliesLevels(clip);
 	const graphLatency = useGraphLatency(node ? graph : null);
 	const epoch = useGraphEpoch(node ? graph : null);
 	const fxLatency = useMemo(

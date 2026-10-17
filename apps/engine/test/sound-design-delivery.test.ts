@@ -23,6 +23,7 @@ import {
 	type SoundDesign,
 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { soundDesignApplyHooks } from '../src/sound-design/apply-guard.ts';
 import { MeasureCache, renderSequencePcm } from '../src/sound-design/bed.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, makeApp, register, TEST_FFMPEG, type TestApp } from './helpers.ts';
@@ -196,6 +197,12 @@ describe('POST /api/sound-design/delivery (real engine)', { timeout: 600_000 }, 
 		expect(rep.sfx).toMatchObject({ solved: 2 });
 		for (const id of [ids.hit!, ids.click!])
 			expect((seq.clips[id] as SfxClip).sfx!.level).toMatchObject({ by: 'solver' });
+		// the solver's own findings reach the report: the click under the speech is too bright for it (its dominant
+		// band is in 1–4 kHz), and every conflict names one of the solved clips
+		expect(rep.warnings).toContainEqual(
+			expect.objectContaining({ code: 'W_DIALOGUE_BAND', clipId: ids.click }),
+		);
+		for (const c of rep.conflicts ?? []) expect([ids.hit, ids.click]).toContain(c.clipId);
 		// the report's own measurement
 		const m = rep.measure!;
 		expect(m.expectedLufs).toBe(-14);
@@ -272,6 +279,16 @@ describe('POST /api/sound-design/delivery (real engine)', { timeout: 600_000 }, 
 		expect(p.items.slice(1).every((i) => i.id.startsWith('gain:') && i.requires.includes('delivery'))).toBe(
 			true,
 		);
+		// each gain item says what limited it (as rebalance_sfx's do)
+		for (const it of p.items.slice(1)) {
+			const meta = it.meta as { limitedBy?: unknown; targetLiftDb?: unknown; why?: unknown };
+			expect(Array.isArray(meta.limitedBy)).toBe(true);
+			expect(typeof meta.targetLiftDb).toBe('number');
+			expect(String(meta.why)).toMatch(/ dB/);
+		}
+		for (const c of result.report.conflicts ?? [])
+			if (p.items.some((i) => (i.meta as { clipId?: string }).clipId === c.clipId))
+				expect(c.itemId).toMatch(/^gain:/);
 		const denied = await app.inject({
 			method: 'POST',
 			url: `/api/projects/${projectId}/proposals/${p.id}/accept`,
@@ -291,6 +308,44 @@ describe('POST /api/sound-design/delivery (real engine)', { timeout: 600_000 }, 
 		const seq = after.doc.sequences[base.seqId]!;
 		expect(seq.master.loudness).toMatchObject({ enabled: true, targetLufs: -23, truePeakDb: -1 });
 		expect((seq.soundDesign as SoundDesign).settings!.delivery).toBe('broadcast-r128');
+	});
+
+	it('apply: an edit of the mix while it measures is a CONFLICT (retryable) and nothing is applied', async () => {
+		const projectId = seed(base.doc);
+		const before = await saved(projectId);
+		soundDesignApplyHooks.afterMeasure = async (id) => {
+			if (id !== projectId) return;
+			const r = await app.inject({
+				method: 'POST',
+				url: '/api/agent/tx',
+				headers: json(EDITOR_H),
+				payload: JSON.stringify({
+					projectId,
+					transaction: {
+						label: 'Music up',
+						origin: 'user',
+						commands: [{ type: 'audio.setGain', clipIds: [base.ids.music], mode: 'adjust', db: 4 }],
+					},
+				}),
+			});
+			expect((r.json() as { result: { ok: boolean } }).result.ok, r.body).toBe(true);
+		};
+		try {
+			const r = await deliver({ projectId, delivery: 'web', mode: 'apply' }, EDITOR_H);
+			expect(r.statusCode, r.body).toBe(202);
+			const job = await coreServices(app).queue.wait((r.json() as EngineJob).id);
+			expect(job.state).toBe('failed');
+			expect(job.error).toMatchObject({ code: 'CONFLICT', retryable: true });
+		} finally {
+			soundDesignApplyHooks.afterMeasure = undefined;
+		}
+		const after = await saved(projectId);
+		expect(after.revision).toBe(before.revision + 1); // the user's edit only
+		const seq = after.doc.sequences[base.seqId]!;
+		expect(seq.master.loudness).toEqual(before.doc.sequences[base.seqId]!.master.loudness);
+		expect((seq.soundDesign as SoundDesign | undefined)?.settings?.delivery).toBe(
+			(before.doc.sequences[base.seqId]!.soundDesign as SoundDesign | undefined)?.settings?.delivery,
+		);
 	});
 
 	it('typed refusals before a job starts', async () => {

@@ -210,11 +210,22 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 		path: ['items'],
 	});
 	const itemOf = (n: string) => Object.values(items).find((i) => i.name === n)!.id;
+	// The whole Phase 2 fixture, its fframes motion graphic included, when the fframes renderer is built (`pnpm
+	// mg:build`; `pnpm e2e` builds it when cargo is installed): the native export renders it through jasper-mg.
+	// Without it the native path refuses the graphic with a named blocker (planner, AGENTS.md §4), so the spec leaves
+	// the graphic out and says so.
+	const caps = (await (await request.get('/api/capabilities')).json()) as {
+		render: { fframes: string; fframesReason?: string };
+	};
+	const withGraphic = caps.render.fframes === 'ready';
+	if (!withGraphic)
+		test.info().annotations.push({
+			type: 'fframes',
+			description: `the fixture's fframes graphic is left out: ${caps.render.fframesReason ?? 'jasper-mg is not built'}`,
+		});
 	const setup = await transact(page, [
-		// the Phase 2 fixture without its fframes motion graphic (no fframes renderer in this environment: the native
-		// export would refuse it)
 		...((FIXTURE_COMMANDS as { type: string }[]).filter(
-			(c) => c.type !== 'clip.addMotionGraphic',
+			(c) => withGraphic || c.type !== 'clip.addMotionGraphic',
 		) as never[]),
 		{
 			type: 'clip.place',
@@ -251,8 +262,19 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 	await dialog.screenshot({ path: join(outDir, 'auto-pass-mix-options.png'), timeout: 60_000 });
 	const before = await appliedLabels(page);
 	await dialog.getByRole('button', { name: 'Propose' }).click();
-	await expect(dialog).toBeHidden({ timeout: 1_500_000 });
-	await expect(page.getByTestId('review-bar')).toBeVisible();
+	// review opens; a plan whose solve has notes (conflicts, dialogue-band advice) keeps the dialog open listing them
+	// until Close (Phase 4 verification)
+	await expect(page.getByTestId('review-bar')).toBeVisible({ timeout: 1_500_000 });
+	const notes = dialog.getByTestId('auto-pass-notes');
+	if (await notes.isVisible()) {
+		const items = await dialog.getByTestId('auto-pass-notes-list').getByRole('listitem').allTextContents();
+		console.log('plan notes', JSON.stringify(items));
+		test.info().annotations.push({ type: 'plan notes', description: JSON.stringify(items) });
+		expect(items.length).toBeGreaterThan(0);
+		await dialog.screenshot({ path: join(outDir, 'auto-pass-notes.png'), timeout: 60_000 });
+		await dialog.locator('[data-dialog-primary]').click();
+	}
+	await expect(dialog).toBeHidden();
 	expect(await appliedLabels(page)).toEqual(before);
 	await page.screenshot({ path: join(outDir, 'review.png') });
 	await page.getByTestId('review-bar-accept-all').click();
@@ -373,12 +395,17 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 	).toBeVisible();
 	await delivery.getByRole('button', { name: 'Close' }).last().click();
 	await expect(delivery).toBeHidden();
-	for (const t of await page.getByTestId('toast').all())
-		await t
-			.getByRole('button', { name: /Dismiss|Close/ })
-			// bounded: dismissing one toast shifts the others' indices, so a captured `nth` can point at nothing
-			.click({ timeout: 2000 })
+	// every toast still up (the rebalance toast with solver notes is a warning and stays until dismissed) would cover
+	// the Export button: dismiss them all, never waiting on one without a Dismiss button
+	const toastHost = page.getByTestId('toast-host');
+	for (let i = 0; i < 10; i++) {
+		const dismiss = toastHost.getByRole('button', { name: 'Dismiss' });
+		if ((await dismiss.count()) === 0) break;
+		await dismiss
+			.first()
+			.click({ timeout: 5_000 })
 			.catch(() => undefined);
+	}
 
 	// 6. Export: the delivered mix measured by ffmpeg
 	seq = await sequence(page);

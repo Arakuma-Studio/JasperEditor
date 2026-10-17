@@ -1,0 +1,537 @@
+{
+  "$comment": "Sources of the downloadable sound packs (spec 12 P6-R1; wp-note \"Phase 6 → WP6.1 sound packs\"). `scripts/sounds/curate-packs.ts build` turns this into apps/engine/src/sounds/packs.json: every audio file of each archive (minus the files the starter kit already ships unchanged, Kenney's own byte-identical duplicates and Preview.ogg) with its sha256, size, title, tags and the types of its rule that the judge accepts on the measured file. `rules` match the file name without extension (first match wins); `{1}`… are capture groups; a trailing number becomes the title's number. `strict`: when the judge accepts none of the rule's types the file stays untyped (else it keeps the first). `types: []` = untyped on purpose (music, voice).",
+  "checkedAt": "2026-10-17",
+  "author": "Kenney (www.kenney.nl)",
+  "license": "CC0-1.0",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "pageStatement": "License: Creative Commons CC0",
+  "packs": [
+    {
+      "id": "kenney-casino-audio",
+      "title": "Casino Audio",
+      "page": "https://kenney.nl/assets/casino-audio",
+      "url": "https://kenney.nl/media/pages/assets/casino-audio/2472606a04-1721639069/kenney_casino-audio.zip",
+      "sha256": "f36250766ac5bc378c13708ddf12a23a8e54a3251f8d482c7536e51b5dbafa18",
+      "sizeBytes": 876839,
+      "description": "Card, chip and dice foley recorded on a felt table: card fans, slides, shoves, shuffles, chip stacks and dice throws.",
+      "tags": ["casino", "foley"],
+      "rules": [
+        { "match": "^card-fan", "title": "Card fan", "types": ["swish", "paper"], "tags": ["card"] },
+        { "match": "^card-place", "title": "Card placed", "types": ["tap", "paper"], "tags": ["card"] },
+        { "match": "^card-shove", "title": "Card shove", "types": ["swish"], "tags": ["card"] },
+        {
+          "match": "^card-shuffle",
+          "title": "Card shuffle",
+          "types": ["paper"],
+          "tags": ["card", "shuffle"]
+        },
+        {
+          "match": "^card-slide",
+          "title": "Card slide",
+          "types": ["swish", "paper"],
+          "tags": ["card", "slide"]
+        },
+        {
+          "match": "^cards-pack-open",
+          "title": "Card pack opened",
+          "types": ["paper"],
+          "tags": ["card", "pack"]
+        },
+        {
+          "match": "^cards-pack-take-out",
+          "title": "Cards taken out of the pack",
+          "types": ["paper", "swish"],
+          "tags": ["card", "pack"]
+        },
+        {
+          "match": "^chip-lay",
+          "title": "Chip laid down",
+          "types": ["tap", "click"],
+          "tags": ["chip", "poker"]
+        },
+        {
+          "match": "^chips-collide",
+          "title": "Chips colliding",
+          "types": ["click", "tap"],
+          "tags": ["chip", "poker"]
+        },
+        {
+          "match": "^chips-handle",
+          "title": "Chips handled",
+          "types": ["click"],
+          "tags": ["chip", "poker", "rattle"]
+        },
+        {
+          "match": "^chips-stack",
+          "title": "Chip stack",
+          "types": ["click", "tap"],
+          "tags": ["chip", "poker", "stack"]
+        },
+        { "match": "^dice-grab", "title": "Dice grabbed", "types": ["click"], "tags": ["dice"] },
+        { "match": "^dice-shake", "title": "Dice shaken", "types": ["click"], "tags": ["dice", "rattle"] },
+        {
+          "match": "^dice-throw",
+          "title": "Dice thrown",
+          "types": ["tap", "click"],
+          "tags": ["dice", "roll"]
+        },
+        {
+          "match": "^die-throw",
+          "title": "Die thrown",
+          "types": ["tap", "click"],
+          "tags": ["dice", "die", "roll"]
+        }
+      ]
+    },
+    {
+      "id": "kenney-digital-audio",
+      "title": "Digital Audio",
+      "page": "https://kenney.nl/assets/digital-audio",
+      "url": "https://kenney.nl/media/pages/assets/digital-audio/216eac4753-1677590265/kenney_digital-audio.zip",
+      "sha256": "24e6ce28b76a6d8c89cff4d331e0965ff5c3de8a73c612028e9d363cc64e4f06",
+      "sizeBytes": 990367,
+      "description": "Synthesised game sounds: lasers, zaps, phasers, power-ups, tones and digital trash.",
+      "tags": ["digital", "synth", "game"],
+      "rules": [
+        { "match": "^highDown", "title": "High sweep down", "types": ["zap"], "tags": ["sweep", "down"] },
+        { "match": "^highUp", "title": "High sweep up", "types": ["zap", "ui"], "tags": ["sweep", "up"] },
+        { "match": "^lowDown", "title": "Low sweep down", "types": ["zap"], "tags": ["sweep", "down"] },
+        {
+          "match": "^lowRandom",
+          "title": "Low random blips",
+          "types": ["glitch"],
+          "tags": ["random", "blips"]
+        },
+        {
+          "match": "^lowThreeTone",
+          "title": "Low three-tone",
+          "types": ["chime", "ui"],
+          "tags": ["tone", "notification"]
+        },
+        { "match": "^laser", "title": "Laser", "types": ["zap"], "tags": ["laser", "shot"] },
+        { "match": "^pepSound", "title": "Pep blip", "types": ["ui", "pop"], "tags": ["blip"] },
+        { "match": "^phaseJump", "title": "Phase jump", "types": ["zap"], "tags": ["jump", "phase"] },
+        { "match": "^phaserDown", "title": "Phaser down", "types": ["zap"], "tags": ["phaser", "down"] },
+        { "match": "^phaserUp", "title": "Phaser up", "types": ["zap"], "tags": ["phaser", "up"] },
+        {
+          "match": "^powerUp",
+          "title": "Power-up",
+          "types": ["ui", "shimmer"],
+          "tags": ["power", "up", "bonus"]
+        },
+        { "match": "^spaceTrash", "title": "Space trash", "types": ["glitch"], "tags": ["space", "noise"] },
+        {
+          "match": "^threeTone",
+          "title": "Three-tone",
+          "types": ["chime", "ui"],
+          "tags": ["tone", "notification"]
+        },
+        {
+          "match": "^twoTone",
+          "title": "Two-tone",
+          "types": ["chime", "ui"],
+          "tags": ["tone", "notification"]
+        },
+        { "match": "^tone", "title": "Tone", "types": ["chime", "ui"], "tags": ["tone"] },
+        { "match": "^zapThreeToneDown", "title": "Zap three-tone down", "types": ["zap"], "tags": ["down"] },
+        { "match": "^zapThreeToneUp", "title": "Zap three-tone up", "types": ["zap"], "tags": ["up"] },
+        { "match": "^zapTwoTone", "title": "Zap two-tone", "types": ["zap"], "tags": [] },
+        { "match": "^zap", "title": "Zap", "types": ["zap"], "tags": [] }
+      ]
+    },
+    {
+      "id": "kenney-impact-sounds",
+      "title": "Impact Sounds",
+      "page": "https://kenney.nl/assets/impact-sounds",
+      "url": "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip",
+      "sha256": "029d734af1582474edf3a694d1b0cebc97c1c152f2f39fa34d4c2bafc5de77f8",
+      "sizeBytes": 800850,
+      "description": "Impacts on bell, glass, metal, plates, planks, wood, tin and soft surfaces in light, medium and heavy variants, punches, mining hits and footsteps on five surfaces.",
+      "tags": ["impact", "foley"],
+      "rules": [
+        {
+          "match": "^footstep_(\\w+?)_",
+          "title": "Footstep on {1}",
+          "types": ["tap", "thump"],
+          "tags": ["footstep", "{1}"]
+        },
+        {
+          "match": "^impactBell_heavy",
+          "title": "Bell impact",
+          "types": ["chime", "hit"],
+          "tags": ["bell", "metal"]
+        },
+        {
+          "match": "^impactGeneric_light",
+          "title": "Light impact",
+          "types": ["hit", "tap"],
+          "tags": ["light"]
+        },
+        {
+          "match": "^impactGlass_(\\w+?)_",
+          "title": "Glass impact, {1}",
+          "types": ["hit", "tap"],
+          "tags": ["glass", "{1}"]
+        },
+        {
+          "match": "^impactMetal_heavy",
+          "title": "Metal impact, heavy",
+          "types": ["hit", "thump"],
+          "tags": ["metal", "heavy"]
+        },
+        {
+          "match": "^impactMetal_(\\w+?)_",
+          "title": "Metal impact, {1}",
+          "types": ["hit"],
+          "tags": ["metal", "{1}"]
+        },
+        {
+          "match": "^impactMining",
+          "title": "Mining hit",
+          "types": ["hit", "thump"],
+          "tags": ["mining", "pickaxe", "rock"]
+        },
+        {
+          "match": "^impactPlank_medium",
+          "title": "Plank impact",
+          "types": ["thump", "hit"],
+          "tags": ["plank", "wood"]
+        },
+        {
+          "match": "^impactPlate_heavy",
+          "title": "Plate impact, heavy",
+          "types": ["thump", "hit"],
+          "tags": ["plate", "metal", "heavy"]
+        },
+        {
+          "match": "^impactPlate_(\\w+?)_",
+          "title": "Plate impact, {1}",
+          "types": ["hit"],
+          "tags": ["plate", "metal", "{1}"]
+        },
+        {
+          "match": "^impactPunch_heavy",
+          "title": "Punch, heavy",
+          "types": ["thump", "hit"],
+          "tags": ["punch", "fight", "heavy"]
+        },
+        {
+          "match": "^impactPunch_medium",
+          "title": "Punch",
+          "types": ["hit", "thump"],
+          "tags": ["punch", "fight"]
+        },
+        {
+          "match": "^impactSoft_(\\w+?)_",
+          "title": "Soft impact, {1}",
+          "types": ["thump"],
+          "tags": ["soft", "{1}"]
+        },
+        {
+          "match": "^impactTin_medium",
+          "title": "Tin impact",
+          "types": ["hit"],
+          "tags": ["tin", "metal", "can"]
+        },
+        {
+          "match": "^impactWood_heavy",
+          "title": "Wood impact, heavy",
+          "types": ["thump", "hit"],
+          "tags": ["wood", "heavy"]
+        },
+        {
+          "match": "^impactWood_light",
+          "title": "Wood impact, light",
+          "types": ["tap", "hit"],
+          "tags": ["wood", "light"]
+        },
+        { "match": "^impactWood_medium", "title": "Wood impact", "types": ["hit", "tap"], "tags": ["wood"] }
+      ]
+    },
+    {
+      "id": "kenney-interface-sounds",
+      "title": "Interface Sounds",
+      "page": "https://kenney.nl/assets/interface-sounds",
+      "url": "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip",
+      "sha256": "f2193d072726d6758a5f7871b2dcc54dcce0d5c35c6f0a62f92549b327c81232",
+      "sizeBytes": 834536,
+      "description": "Interface sounds: clicks, toggles, selects, confirmations, errors, questions, open / close / maximise / minimise swooshes, drops, glass pings, plucks, scrolls, scratches and glitches.",
+      "tags": ["interface", "ui"],
+      "rules": [
+        { "match": "^back", "title": "Back", "types": ["ui"], "tags": ["back", "button"] },
+        { "match": "^bong", "title": "Bong", "types": ["pop", "ui"], "tags": ["bong"] },
+        { "match": "^click", "title": "Click", "types": ["click"], "tags": ["button"] },
+        { "match": "^close", "title": "Close", "types": ["swish", "ui"], "tags": ["close", "window"] },
+        {
+          "match": "^confirmation",
+          "title": "Confirmation",
+          "types": ["ui", "chime"],
+          "tags": ["confirm", "success"]
+        },
+        { "match": "^drop", "title": "Drop", "types": ["pop"], "tags": ["drop"] },
+        { "match": "^error", "title": "Error", "types": ["ui", "glitch"], "tags": ["error", "fail"] },
+        { "match": "^glass", "title": "Glass ping", "types": ["chime"], "tags": ["glass", "ping"] },
+        {
+          "match": "^glitch",
+          "title": "Glitch blip",
+          "types": ["glitch", "click"],
+          "tags": ["glitch", "blip"]
+        },
+        {
+          "match": "^maximize",
+          "title": "Maximise",
+          "types": ["reverse", "swish"],
+          "tags": ["maximize", "window"]
+        },
+        {
+          "match": "^minimize",
+          "title": "Minimise",
+          "types": ["swish", "ui"],
+          "tags": ["minimize", "window"]
+        },
+        { "match": "^open", "title": "Open", "types": ["swish", "ui"], "tags": ["open", "window"] },
+        { "match": "^pluck", "title": "Pluck", "types": ["pop"], "tags": ["pluck"] },
+        { "match": "^question", "title": "Question", "types": ["ui"], "tags": ["question", "notification"] },
+        { "match": "^scratch", "title": "Scratch", "types": ["glitch"], "tags": ["scratch"] },
+        { "match": "^scroll", "title": "Scroll", "types": ["tick", "click"], "tags": ["scroll"] },
+        { "match": "^select", "title": "Select", "types": ["ui", "click"], "tags": ["select", "button"] },
+        { "match": "^switch", "title": "Switch", "types": ["click"], "tags": ["switch", "toggle"] },
+        { "match": "^tick", "title": "Tick", "types": ["tick"], "tags": ["tick"] },
+        { "match": "^toggle", "title": "Toggle", "types": ["ui", "click"], "tags": ["toggle", "switch"] }
+      ]
+    },
+    {
+      "id": "kenney-music-jingles",
+      "title": "Music Jingles",
+      "page": "https://kenney.nl/assets/music-jingles",
+      "url": "https://kenney.nl/media/pages/assets/music-jingles/f37e530b9e-1677590399/kenney_music-jingles.zip",
+      "sha256": "b729ba57959bd58793d2c5cafa348aaf2655d354f3da35ec4729e03ec77197b8",
+      "sizeBytes": 1239525,
+      "description": "85 short musical stings (1–4 s) in five styles: 8-bit, hit, pizzicato, saxophone and steel drums. Music, not effects: they carry no sound type.",
+      "tags": ["music", "jingle", "sting"],
+      "rules": [
+        {
+          "match": "^jingles_NES",
+          "title": "8-bit jingle",
+          "types": [],
+          "tags": ["8-bit", "chiptune", "retro"]
+        },
+        { "match": "^jingles_HIT", "title": "Hit jingle", "types": [], "tags": ["orchestral", "accent"] },
+        {
+          "match": "^jingles_PIZZI",
+          "title": "Pizzicato jingle",
+          "types": [],
+          "tags": ["pizzicato", "strings"]
+        },
+        { "match": "^jingles_SAX", "title": "Saxophone jingle", "types": [], "tags": ["saxophone", "jazz"] },
+        {
+          "match": "^jingles_STEEL",
+          "title": "Steel drum jingle",
+          "types": [],
+          "tags": ["steel", "drum", "caribbean"]
+        }
+      ]
+    },
+    {
+      "id": "kenney-rpg-audio",
+      "title": "RPG Audio",
+      "page": "https://kenney.nl/assets/rpg-audio",
+      "url": "https://kenney.nl/media/pages/assets/rpg-audio/8e99002d76-1677590336/kenney_rpg-audio.zip",
+      "sha256": "6dbeaf8544da958d8f2adcb4a4a4b76c1ade34a05f8ab9edccd327da7375f38b",
+      "sizeBytes": 964837,
+      "description": "Foley for adventures: books, cloth, belts, leather, coins, doors and creaks, knives drawn and slicing, metal latches and pots, chopping and footsteps.",
+      "tags": ["foley", "rpg"],
+      "rules": [
+        { "match": "^beltHandle", "title": "Belt handled", "types": ["tap"], "tags": ["belt", "leather"] },
+        { "match": "^bookClose", "title": "Book closed", "types": ["thump", "paper"], "tags": ["book"] },
+        { "match": "^bookFlip", "title": "Book page flip", "types": ["paper"], "tags": ["book", "page"] },
+        { "match": "^bookOpen", "title": "Book opened", "types": ["paper"], "tags": ["book"] },
+        { "match": "^bookPlace", "title": "Book put down", "types": ["thump", "tap"], "tags": ["book"] },
+        { "match": "^chop", "title": "Chop", "types": ["hit"], "tags": ["chop", "axe", "wood"] },
+        { "match": "^clothBelt", "title": "Cloth and belt", "types": ["swish"], "tags": ["cloth", "belt"] },
+        { "match": "^cloth", "title": "Cloth", "types": ["swish"], "tags": ["cloth", "fabric"] },
+        { "match": "^creak", "title": "Creak", "types": [], "tags": ["creak", "wood", "door"] },
+        { "match": "^doorClose", "title": "Door closed", "types": ["thump", "hit"], "tags": ["door"] },
+        { "match": "^doorOpen", "title": "Door opened", "types": [], "tags": ["door", "creak"] },
+        {
+          "match": "^drawKnife",
+          "title": "Knife drawn",
+          "types": ["swish"],
+          "tags": ["knife", "blade", "draw"]
+        },
+        {
+          "match": "^dropLeather",
+          "title": "Leather dropped",
+          "types": ["thump"],
+          "tags": ["leather", "drop"]
+        },
+        { "match": "^footstep", "title": "Footstep", "types": ["tap", "thump"], "tags": ["footstep"] },
+        { "match": "^handleCoins", "title": "Coins handled", "types": ["click"], "tags": ["coins", "money"] },
+        {
+          "match": "^handleSmallLeather",
+          "title": "Small leather handled",
+          "types": ["tap"],
+          "tags": ["leather"]
+        },
+        {
+          "match": "^knifeSlice",
+          "title": "Knife slice",
+          "types": ["swish"],
+          "tags": ["knife", "blade", "slice"]
+        },
+        { "match": "^metalClick", "title": "Metal click", "types": ["click"], "tags": ["metal"] },
+        { "match": "^metalLatch", "title": "Metal latch", "types": ["click"], "tags": ["metal", "latch"] },
+        { "match": "^metalPot", "title": "Metal pot", "types": ["hit"], "tags": ["metal", "pot"] }
+      ]
+    },
+    {
+      "id": "kenney-sci-fi-sounds",
+      "title": "Sci-fi Sounds",
+      "page": "https://kenney.nl/assets/sci-fi-sounds",
+      "url": "https://kenney.nl/media/pages/assets/sci-fi-sounds/6b296f9ecf-1677589334/kenney_sci-fi-sounds.zip",
+      "sha256": "119340f351a5098ad814f78719438c0da355a9ce8a4c8a3af6a8d48aa3d49e04",
+      "sizeBytes": 5875104,
+      "description": "Science-fiction sounds: lasers, force fields, explosions, metal impacts, doors, computer noise, slime and space-engine and thruster loops.",
+      "tags": ["sci-fi", "space"],
+      "rules": [
+        {
+          "match": "^computerNoise",
+          "title": "Computer noise",
+          "types": ["glitch", "ui"],
+          "tags": ["computer", "data"]
+        },
+        {
+          "match": "^doorClose",
+          "title": "Sci-fi door closing",
+          "types": ["swish", "whoosh"],
+          "tags": ["door", "hiss"]
+        },
+        {
+          "match": "^doorOpen",
+          "title": "Sci-fi door opening",
+          "types": ["swish", "whoosh"],
+          "tags": ["door", "hiss"]
+        },
+        {
+          "match": "^engineCircular",
+          "title": "Circular engine",
+          "types": ["ambience"],
+          "strict": true,
+          "tags": ["engine", "loop", "hum"]
+        },
+        {
+          "match": "^explosionCrunch",
+          "title": "Crunchy explosion",
+          "types": ["boom", "hit"],
+          "tags": ["explosion", "crunch"]
+        },
+        {
+          "match": "^forceField",
+          "title": "Force field",
+          "types": ["zap", "transition"],
+          "tags": ["force", "field", "energy"]
+        },
+        {
+          "match": "^impactMetal",
+          "title": "Heavy metal impact",
+          "types": ["hit", "thump"],
+          "tags": ["metal", "heavy"]
+        },
+        { "match": "^laserLarge", "title": "Large laser", "types": ["zap"], "tags": ["laser", "shot"] },
+        { "match": "^laserRetro", "title": "Retro laser", "types": ["zap"], "tags": ["laser", "retro"] },
+        { "match": "^laserSmall", "title": "Small laser", "types": ["zap"], "tags": ["laser", "shot"] },
+        {
+          "match": "^lowFrequency_explosion",
+          "title": "Low explosion",
+          "types": ["boom"],
+          "tags": ["explosion", "low"]
+        },
+        { "match": "^slime", "title": "Slime", "types": [], "tags": ["slime", "goo"] },
+        {
+          "match": "^spaceEngineLarge",
+          "title": "Large space engine",
+          "types": ["ambience"],
+          "strict": true,
+          "tags": ["engine", "loop", "hum"]
+        },
+        {
+          "match": "^spaceEngineLow",
+          "title": "Low space engine",
+          "types": ["ambience"],
+          "strict": true,
+          "tags": ["engine", "loop", "hum"]
+        },
+        {
+          "match": "^spaceEngineSmall",
+          "title": "Small space engine",
+          "types": ["ambience"],
+          "strict": true,
+          "tags": ["engine", "loop", "hum"]
+        },
+        {
+          "match": "^spaceEngine",
+          "title": "Space engine",
+          "types": ["ambience"],
+          "strict": true,
+          "tags": ["engine", "loop", "hum"]
+        },
+        {
+          "match": "^thrusterFire",
+          "title": "Thruster fire",
+          "types": ["whoosh"],
+          "strict": true,
+          "tags": ["thruster", "fire", "engine"]
+        }
+      ]
+    },
+    {
+      "id": "kenney-ui-audio",
+      "title": "UI Audio",
+      "page": "https://kenney.nl/assets/ui-audio",
+      "url": "https://kenney.nl/media/pages/assets/ui-audio/490d233f68-1677590494/kenney_ui-audio.zip",
+      "sha256": "946fc23a63d535d693eb31b2eabb80c8c28d6351e2186b344ceb71b2cb1d5eb6",
+      "sizeBytes": 411949,
+      "description": "Button clicks, mouse clicks and releases, rollovers and 38 switches.",
+      "tags": ["ui", "button"],
+      "rules": [
+        { "match": "^mouseclick", "title": "Mouse click", "types": ["click"], "tags": ["mouse"] },
+        {
+          "match": "^mouserelease",
+          "title": "Mouse release",
+          "types": ["click"],
+          "tags": ["mouse", "release"]
+        },
+        { "match": "^click", "title": "Click", "types": ["click"], "tags": ["button"] },
+        { "match": "^rollover", "title": "Rollover", "types": ["ui", "tick"], "tags": ["rollover", "hover"] },
+        { "match": "^switch", "title": "Switch", "types": ["click", "tick"], "tags": ["switch"] }
+      ]
+    },
+    {
+      "id": "kenney-voiceover-pack",
+      "title": "Voiceover Pack",
+      "page": "https://kenney.nl/assets/voiceover-pack",
+      "url": "https://kenney.nl/media/pages/assets/voiceover-pack/3f7f168698-1677589897/kenney_voiceover-pack.zip",
+      "sha256": "a5194df2f05f7ec439a8d4c1a7c20ba12ffe700d363a0733ae6fa826846af458",
+      "sizeBytes": 1851632,
+      "description": "Game announcer lines by a male and a female voice: numbers, \"Ready\", \"Go\", \"Game over\", \"Level up\", \"Mission completed\" and war-game call-outs. Voice, not effects: they carry no sound type.",
+      "tags": ["voice", "announcer", "voiceover"],
+      "voices": {
+        "Male/": { "tag": "male", "author": "Kenney (www.kenney.nl); voice: Jeffrey M. Smith" },
+        "Female/": { "tag": "female", "author": "Kenney (www.kenney.nl); voice: Giselle" }
+      },
+      "rules": [{ "match": "^(.+)$", "title": "“{1}”", "types": [], "tags": [], "numbered": false }]
+    },
+    {
+      "id": "kenney-voiceover-pack-fighter",
+      "title": "Voiceover Pack (Fighter)",
+      "page": "https://kenney.nl/assets/voiceover-pack-fighter",
+      "url": "https://kenney.nl/media/pages/assets/voiceover-pack-fighter/6ceb77c6f1-1677589837/kenney_voiceover-pack-fighter.zip",
+      "sha256": "368ac0711e59521aff965a833e22e2b5218c397cf8b059ce3cb72e8d13219ee2",
+      "sizeBytes": 1265449,
+      "description": "Fighting-game announcer lines by a male voice: \"Fight!\", \"Round 1\", \"Final round\", \"Flawless victory\", \"Combo\", \"You win\" and numbers. Voice, not effects: they carry no sound type.",
+      "tags": ["voice", "announcer", "voiceover", "fighter", "male"],
+      "voiceSuffix": "male voice",
+      "rules": [{ "match": "^(.+)$", "title": "“{1}”", "types": [], "tags": [], "numbered": false }]
+    }
+  ]
+}

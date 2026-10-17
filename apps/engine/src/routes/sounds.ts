@@ -7,6 +7,10 @@
 //   POST /api/sounds/:soundId/register   registers its file for a project; returns RegisteredMedia + provenance
 //   POST /api/sounds/index               a `sound-index` job
 //   GET  /api/sounds/roots               user folders
+//   GET  /api/sounds/packs               the pack catalogue with what is installed (WP6.1)
+//   POST /api/sounds/packs/:packId/install   a `sound-pack-install` job (202; open to agents like model installs:
+//                                        catalogue-pinned, size-bounded downloads)
+//   DELETE /api/sounds/packs/:packId     removes an installed pack (an agent needs the user's approval: AGT-3)
 //   PUT  /api/sounds/roots               the new folder list (local mode; an agent adding, removing, relicensing or
 //                                        re-crediting a folder needs the user's approval: security review AGT-3;
 //                                        409 SOUND_ROOTS_CHANGED when the list changed while the approval waited)
@@ -21,10 +25,14 @@ import { agentNameOf, type OperationApproval, requireUserApproval } from '../age
 import type { SoundRootsPlan } from '../sounds/roots.ts';
 import { SoundService } from '../sounds/service.ts';
 import { serveFile } from '../tools/http.ts';
+import { registerLicenseProvider } from '../tools/licenses.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
 type P = { Params: { soundId: string } };
+type PackP = { Params: { packId: string } };
+
+const MB = (n: number) => `${(n / 1_048_576).toFixed(n < 10 * 1_048_576 ? 1 : 0)} MB`;
 
 /** Longest path or change shown per folder on the approval card (the card's summary holds 600 characters). */
 const CARD_ITEM_CHARS = 120;
@@ -100,9 +108,11 @@ export default async function soundRoutes(app: FastifyInstance): Promise<void> {
 			.autoIndex()
 			.catch((e) => app.log.warn(`sound library: auto-index failed: ${(e as Error).message}`));
 	};
+	const unregisterLicenses = registerLicenseProvider(() => svc.packs.licenses());
 	app.addHook('onReady', async () => auto());
 	app.addHook('onClose', async () => {
 		unregister();
+		unregisterLicenses();
 		await svc.analyzer.close();
 	});
 
@@ -127,6 +137,41 @@ export default async function soundRoutes(app: FastifyInstance): Promise<void> {
 			const body = parseOr400(SoundIndexRequestSchema, req.body ?? {});
 			reply.code(202);
 			return svc.startIndex({ ...(body.full ? { full: true } : {}), origin: originOf(req) });
+		}),
+	);
+	app.get(
+		'/api/sounds/packs',
+		guarded(async () => svc.listPacks()),
+	);
+	app.post<PackP>(
+		'/api/sounds/packs/:packId/install',
+		guarded<PackP>(async (req, reply) => {
+			const job = await svc.submitPackInstall(req.params.packId, originOf(req));
+			reply.code(202);
+			return job;
+		}),
+	);
+	app.delete<PackP>(
+		'/api/sounds/packs/:packId',
+		guarded<PackP>(async (req) => {
+			const id = req.params.packId;
+			const { packs } = await svc.listPacks();
+			const p = packs.find((x) => x.id === id);
+			if (!p) throw new HttpError(404, 'SOUND_PACK_UNKNOWN', `Unknown sound pack ${String(id).slice(0, 64)}`);
+			if (p.job)
+				throw new HttpError(409, 'SOUND_PACK_BUSY', 'The pack is being installed; cancel the job first');
+			// Nothing installed: nothing to ask about (idempotent).
+			if (p.state !== 'available')
+				// Security review AGT-3: like removing a downloaded model.
+				await requireUserApproval(app, req, {
+					label: 'Remove a sound pack',
+					summary: `remove the sound pack "${p.title.slice(0, 120)}" (${p.sounds} sounds, ${MB(p.installedBytes ?? p.installBytes)}) from this computer's sound library`,
+					reasons: [
+						'its sounds leave the sound library for every project and agent until it is installed again (a download)',
+						'projects that already use its sounds keep their own copies',
+					],
+				});
+			return svc.removePack(id, originOf(req));
 		}),
 	);
 	app.get(

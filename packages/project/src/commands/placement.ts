@@ -9,7 +9,7 @@ import { trackKindFor } from '../registry/kinds.ts';
 import { ROTO_OBJECT_PARAMS } from '../roto/index.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { Clip, Sequence, TrackKind } from '../schema/sequence.ts';
-import { followSfxSplit } from '../sound/repair.ts';
+import { followMixSplit, followSfxSplit, mixNamesClip, nestedEntityIds } from '../sound/repair.ts';
 import { contentSpanFlicks } from '../time.ts';
 import type { DClip, DSeq, DTrack, HandlerContext } from './context.ts';
 import { deltaScans, isClean, keysOf, latest, peekIn, recordDelta, valuesOf } from './draft-read.ts';
@@ -246,6 +246,9 @@ export function splitClipAt(seq: DSeq, clip: DClip, at: number, h: HandlerContex
 	const r = seq.settings.frameRate;
 	const right = snapshot(clip) as Clip;
 	right.id = h.ids.next('clp');
+	// sound design: a music clip the mix records write into keeps both parts in them (old → new child ids)
+	const followMix = mixNamesClip(seq as Sequence, clip.id);
+	const childIds = followMix ? nestedEntityIds(right) : [];
 	reidentifyClipChildren(right, h);
 	right.linkId = null;
 	const oldEnd = end(clip);
@@ -267,6 +270,12 @@ export function splitClipAt(seq: DSeq, clip: DClip, at: number, h: HandlerContex
 	}
 	// sound-design: both parts of a filled SFX clip keep filling its cue.
 	followSfxSplit(seq as Sequence, clip.id, right.id);
+	if (followMix) {
+		const now = nestedEntityIds(right);
+		const idMap = new Map<string, string>();
+		if (now.length === childIds.length) for (const [k, old] of childIds.entries()) idMap.set(old, now[k]!);
+		followMixSplit(seq as Sequence, clip.id, right.id, idMap, () => h.ids.next('kf'));
+	}
 	return seq.clips[right.id]!;
 }
 

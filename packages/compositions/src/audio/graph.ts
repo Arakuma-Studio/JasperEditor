@@ -35,6 +35,8 @@ import {
 	type RenderStrip,
 } from '@jasper/project';
 import { audioGainAt, MAX_PREVIEW_GAIN, dbToGain as pipelineDbToGain } from '../pipeline.ts';
+import { followCurve } from './automation.ts';
+import type { SlotClock } from './fx-processor.ts';
 import { discreteGain, MatrixNode, setParam } from './matrix-node.ts';
 import { PrimedStartClock } from './primed-clock.ts';
 
@@ -64,7 +66,8 @@ export interface PreviewInsert {
 	input: AudioNode;
 	output: AudioNode;
 	/** Called every rendered frame with the current instance (time: sequence flicks for inserts, content for clips). */
-	update(effect: EffectInstance, timeFlicks: number): void;
+	/** `clock`: while playing, the time's clock (the slot advances it sample by sample, `SlotClock`). */
+	update(effect: EffectInstance, timeFlicks: number, clock?: SlotClock): void;
 	dispose(): void;
 }
 export type PreviewInsertFactory = (
@@ -309,6 +312,16 @@ export const LIMITER_LOOKAHEAD_MS = 5;
 const dbToGain = (db: number) => (db <= -96 || !Number.isFinite(db) ? 0 : 10 ** (db / 20));
 const widthOf = (f: string) => (f === 'mono' ? 1 : f === '5.1' ? 6 : 2);
 
+/** Seconds after lane time `t` (flicks) of the lane's keyframes within `horizon` (break points of a followed curve). */
+function laneBreaks(a: Animatable<number>, t: number, horizon = 0.25): number[] {
+	const out: number[] = [];
+	for (const k of a.keyframes) {
+		const dt = (k.time - t) / FLICKS_PER_SECOND;
+		if (dt > 0 && dt < horizon) out.push(dt);
+	}
+	return out;
+}
+
 function laneAt(a: Animatable<number>, t: number, hold = false): number {
 	if (!isAnimated(a)) return a.value;
 	return hold ? holdValueAt(a, t) : evaluate(a, t);
@@ -387,7 +400,7 @@ class SlotChain {
 	 * their processor (state and audio in flight): adding, removing or reordering one effect does not restart the
 	 * others (sound-design Phase 0 close-out).
 	 */
-	sync(effects: readonly EffectInstance[], time: number): void {
+	sync(effects: readonly EffectInstance[], time: number, clock?: SlotClock): void {
 		const key = effects.map((e) => `${e.id}:${e.effectId}`).join(',');
 		if (key !== this.slots.map((s) => `${s.id}:${s.effectId}`).join(',')) {
 			const old = new Map<string, Slot>();
@@ -407,7 +420,7 @@ class SlotChain {
 		}
 		this.effects = effects;
 		effects.forEach((e, i) => {
-			this.slots[i]?.ins?.update(e, time);
+			this.slots[i]?.ins?.update(e, time, clock);
 		});
 	}
 
@@ -591,6 +604,23 @@ export function clipHasEffects(clip: Pick<RenderAudioClip, 'effects'>): boolean 
 	return clip.effects.some((e) => e.enabled);
 }
 
+/** Whether a clip's level changes over time: Volume keyframes, fades or a nested sequence's gain. */
+export function clipLevelsAnimated(clip: Pick<RenderAudioClip, 'volumeDb' | 'fades' | 'nestGain'>): boolean {
+	return isAnimated(clip.volumeDb) || (clip.fades?.length ?? 0) > 0 || (clip.nestGain?.length ?? 0) > 0;
+}
+
+/**
+ * Whether the graph applies the clip's levels (gain, Volume, fades, nested gain) in its level node, Remotion playing
+ * the clip at unity: clips with enabled effects (export order: effects, then levels) and clips whose level changes
+ * over time — the graph follows those sample by sample while playing (`followCurve`, sound-design Phase 4
+ * verification), where Remotion's per-clip volume would step once per frame.
+ */
+export function graphAppliesLevels(
+	clip: Pick<RenderAudioClip, 'effects' | 'volumeDb' | 'fades' | 'nestGain'>,
+): boolean {
+	return clipHasEffects(clip) || clipLevelsAnimated(clip);
+}
+
 /**
  * Linear clip level (gain + Volume + fades + nested gain, no track/Mix faders) at clip-local frame `f` (negative in
  * the head handle) — the AudioLayer's volume callback, applied after the effect slots instead.
@@ -621,6 +651,29 @@ export function clipGainExcess(
 		: clip.sourceIn + i * F * clip.speed.rate;
 	const g = pipelineDbToGain(clip.gainDb + evaluate(clip.volumeDb, content));
 	return Number.isFinite(g) && g > MAX_PREVIEW_GAIN ? g / MAX_PREVIEW_GAIN : 1;
+}
+
+/**
+ * Seconds after sequence time `t` (flicks) where a clip's level may bend within `horizon`: its Volume keyframes
+ * (content time mapped to the sequence; forward or reversed constant speed) and its fades' edges.
+ */
+function clipLevelBreaks(clip: RenderAudioClip, t: number, fps: Rational, horizon = 0.25): number[] {
+	const F = flicksPerFrame(fps);
+	const out: number[] = [];
+	const push = (seqFrame: number) => {
+		const dt = (seqFrame * F - t) / FLICKS_PER_SECOND;
+		if (dt > 0 && dt < horizon) out.push(dt);
+	};
+	const rate = clip.speed.rate > 0 ? clip.speed.rate : 1;
+	for (const k of clip.volumeDb.keyframes) {
+		const local = (k.time - clip.sourceIn) / (F * rate);
+		push(clip.start + (clip.speed.reverse ? clip.duration - 1 - local : local));
+	}
+	for (const f of clip.fades ?? []) {
+		push(f.start);
+		push(f.start + f.frames);
+	}
+	return out;
 }
 
 class ClipNodes {
@@ -703,13 +756,19 @@ class ClipNodes {
 		this.update(clip, time, null, true, fps);
 	}
 
-	/** Clip pan, effects and the Clip Mixer trim at sequence time `t` (flicks). */
+	/**
+	 * Clip pan, effects and the Clip Mixer trim at sequence time `t` (flicks). `follow` (playing): an animated level
+	 * the graph applies follows its curve from `t` on, sample by sample (`followCurve`).
+	 */
 	update(
 		clip: RenderAudioClip,
 		t: number,
 		override: { volume?: number; pan?: number } | null,
 		instant = false,
 		fps?: Rational,
+		follow = false,
+		/** Sequence flicks per second of context time while following (the playback rate). */
+		followRate = 1,
 	): void {
 		this.clip = clip;
 		if (!this.pan) return;
@@ -730,21 +789,50 @@ class ClipNodes {
 				: 1;
 		// Gain above Remotion's volume limit: the trim (before the effect slots) for a clip Remotion plays at its levels,
 		// the level node (after them) for a clip with effects.
-		const fx = clipHasEffects(clip);
+		const fx = graphAppliesLevels(clip);
 		const excess = clipGainExcess(clip, t / F - clip.start, rate);
 		const trimGain = (Number.isFinite(trim) ? Math.min(trim, 64) : 1) * (fx ? 1 : excess);
 		setParam(this.trim.gain, trimGain, this.ctx, instant);
 		this.slots?.sync(
 			clip.effects.filter((e) => e.enabled),
 			content,
+			follow ? this.slotClock(clip, t, rate, followRate) : undefined,
 		);
-		if (this.level)
+		if (!this.level) return;
+		// The export plays a clip over its span only (handles included): an effect's tail (a filter's ringing, a
+		// reverb) stops at its end, so the level node closes there, on the sample.
+		const end = clip.duration + (clip.tailHandle ?? 0);
+		if (fx && follow && !instant && override?.volume === undefined) {
+			const level = (dt: number) => {
+				const f = (t + dt * followRate * FLICKS_PER_SECOND) / F - clip.start;
+				return clipLevelAt(clip, f, rate) * clipGainExcess(clip, f, rate);
+			};
+			const cut = ((clip.start + end) * F - t) / FLICKS_PER_SECOND / followRate;
+			const breaks = clipLevelBreaks(clip, t, rate).map((b) => b / followRate);
+			followCurve(this.level.gain, this.ctx, level, undefined, cut, breaks);
+		} else {
+			const f = t / F - clip.start;
 			setParam(
 				this.level.gain,
-				fx ? clipLevelAt(clip, t / F - clip.start, rate) * excess : 1,
+				fx ? (f < end ? clipLevelAt(clip, f, rate) * excess : 0) : 1,
 				this.ctx,
 				instant,
 			);
+		}
+	}
+
+	/**
+	 * The clock of the clip's effect slots at sequence time `t`: content time, its rate (content flicks per sequence
+	 * flick) and the export's control-block grid (samples since the clip's start, where its slots start in the export).
+	 */
+	private slotClock(clip: RenderAudioClip, t: number, rate: Rational, playbackRate: number): SlotClock {
+		const F = flicksPerFrame(rate);
+		const sr = this.ctx.sampleRate;
+		return {
+			at: this.ctx.currentTime,
+			rate: clip.speed.rate * (clip.speed.reverse ? -1 : 1) * playbackRate,
+			grid: ((t - clip.start * F) * sr) / FLICKS_PER_SECOND,
+		};
 	}
 
 	/** Fresh clip effect processors (a discontinuity: nothing of the audio before it stays in flight). */
@@ -782,6 +870,12 @@ export class MixGraph {
 	private clipList: RenderAudioClip[] = [];
 	private fps: Rational = { num: 30, den: 1 };
 	private time = 0;
+	/**
+	 * While playing with Remotion's sync anchor: the sequence time (flicks) of the samples leaving the graph at the
+	 * context's current time, and the playback rate (sound-design Phase 4 verification). Automation curves start
+	 * there. Null: the picture time stands.
+	 */
+	private audioClock: { time: number; rate: number } | null = null;
 	mixdown: Mixdown = 'frontRear';
 	/** Output channels soloed on the Audio Meters (monitoring only; empty = all). */
 	private monitorSolo = new Set<number>();
@@ -1065,6 +1159,25 @@ export class MixGraph {
 		return this.time;
 	}
 
+	/** Most a clock reading may differ from the picture time before it is distrusted (a stale anchor). */
+	private static readonly CLOCK_TRUST = 0.25 * FLICKS_PER_SECOND;
+
+	private clockFrom(
+		timeFlicks: number,
+		clock: { compositionFlicks: number; rate: number } | undefined,
+	): { time: number; rate: number } | null {
+		const sync = this.sync;
+		if (!clock || !sync || !this.playing) return null;
+		const rate = clock.rate;
+		if (!Number.isFinite(rate) || rate <= 0 || !Number.isFinite(clock.compositionFlicks)) return null;
+		const anchor = sync.anchor.value;
+		if (!Number.isFinite(anchor)) return null;
+		const time =
+			(this.ctx.currentTime - anchor) * rate * FLICKS_PER_SECOND + (timeFlicks - clock.compositionFlicks);
+		if (!Number.isFinite(time) || Math.abs(time - timeFlicks) > MixGraph.CLOCK_TRUST) return null;
+		return { time, rate };
+	}
+
 	/** The latency plan in use (route delays, stage latencies, read-ahead). */
 	get latencyPlan(): MixLatencyPlan {
 		return this.plan;
@@ -1214,11 +1327,23 @@ export class MixGraph {
 		return node;
 	}
 
-	update(mix: RenderAudioMix, clips: readonly RenderAudioClip[], timeFlicks: number, fps: Rational): void {
+	/**
+	 * `clock` (the player, while playing): the composition time of the frame (`timeFlicks` minus the sequence offset)
+	 * and the playback rate, so the graph can tell, from Remotion's audio sync anchor, the sequence time of the samples
+	 * it renders now — the picture frame's time trails them by the output latency and the frame callback's delay.
+	 */
+	update(
+		mix: RenderAudioMix,
+		clips: readonly RenderAudioClip[],
+		timeFlicks: number,
+		fps: Rational,
+		clock?: { compositionFlicks: number; rate: number },
+	): void {
 		this.mix = mix;
 		this.clipList = clips as RenderAudioClip[];
 		this.fps = fps;
 		this.time = timeFlicks;
+		this.audioClock = this.clockFrom(timeFlicks, clock);
 		const key = JSON.stringify([
 			this.workletReady,
 			mix.masterFormat,
@@ -1374,15 +1499,47 @@ export class MixGraph {
 	private applyValues(instant: boolean): void {
 		const mix = this.mix!;
 		const sr = this.ctx.sampleRate;
+		// Playing: automated lanes follow their curves sample by sample until the next update (`followCurve`), from the
+		// audio clock's time when the anchor tells it (else the picture's).
+		const follow = this.playing && !instant;
+		const clock = follow ? this.audioClock : null;
+		const base = clock?.time ?? this.time;
+		const rate = clock?.rate ?? 1;
+		const at = (t: number) => (dt: number) => t + dt * rate * FLICKS_PER_SECOND;
+		const insertClock = (t: number): SlotClock | undefined =>
+			follow ? { at: this.ctx.currentTime, rate, grid: (t * sr) / FLICKS_PER_SECOND } : undefined;
 		for (const s of this.order) {
 			const st = this.strips.get(s.id);
 			if (!st) continue;
-			const times = stripStageTimes(this.plan, s.id, this.time, sr, this.readAhead);
+			const times = stripStageTimes(this.plan, s.id, follow ? base : this.time, sr, this.readAhead);
 			const t = times.fader;
-			const vol = this.ov(s.id, 'volume') ?? laneAt(s.volumeDb, t);
-			setParam(st.fader.gain, dbToGain(vol), this.ctx, instant);
-			const mute = s.kind === 'master' ? 0 : (this.ov(s.id, 'mute') ?? laneAt(s.mute, t, true));
-			setParam(st.mute.gain, mute >= 0.5 ? 0 : 1, this.ctx, instant);
+			const volOv = this.ov(s.id, 'volume');
+			if (follow && volOv === undefined && isAnimated(s.volumeDb)) {
+				const ft = at(t);
+				followCurve(
+					st.fader.gain,
+					this.ctx,
+					(dt) => dbToGain(laneAt(s.volumeDb, ft(dt))),
+					undefined,
+					undefined,
+					laneBreaks(s.volumeDb, t).map((b) => b / rate),
+				);
+			} else setParam(st.fader.gain, dbToGain(volOv ?? laneAt(s.volumeDb, t)), this.ctx, instant);
+			const muteOv = s.kind === 'master' ? 0 : this.ov(s.id, 'mute');
+			if (follow && muteOv === undefined && isAnimated(s.mute)) {
+				const ft = at(t);
+				followCurve(
+					st.mute.gain,
+					this.ctx,
+					(dt) => (laneAt(s.mute, ft(dt), true) >= 0.5 ? 0 : 1),
+					undefined,
+					undefined,
+					laneBreaks(s.mute, t).map((b) => b / rate),
+				);
+			} else {
+				const mute = muteOv ?? laneAt(s.mute, t, true);
+				setParam(st.mute.gain, mute >= 0.5 ? 0 : 1, this.ctx, instant);
+			}
 			setParam(st.gate.gain, s.silent ? 0 : 1, this.ctx, true);
 			if (st.inputMap) {
 				const m =
@@ -1423,8 +1580,18 @@ export class MixGraph {
 				const send = s.sends.find((y) => y.id === x.id);
 				if (!send) continue;
 				const ts = send.preFader ? times.fader : times.pan;
-				const lv = this.ov(s.id, `send.${x.id}.level`) ?? laneAt(send.levelDb, ts);
-				setParam(x.level.gain, dbToGain(lv), this.ctx, instant);
+				const lvOv = this.ov(s.id, `send.${x.id}.level`);
+				if (follow && lvOv === undefined && isAnimated(send.levelDb)) {
+					const ft = at(ts);
+					followCurve(
+						x.level.gain,
+						this.ctx,
+						(dt) => dbToGain(laneAt(send.levelDb, ft(dt))),
+						undefined,
+						undefined,
+						laneBreaks(send.levelDb, ts).map((b) => b / rate),
+					);
+				} else setParam(x.level.gain, dbToGain(lvOv ?? laneAt(send.levelDb, ts)), this.ctx, instant);
 				const target = this.strips.get(x.target);
 				x.matrix.set(
 					panStageMatrix(st.width, target?.width ?? 2, send.pan, this.puck(s, ts), this.mixdown),
@@ -1435,10 +1602,12 @@ export class MixGraph {
 			st.pre.sync(
 				s.inserts.filter((e) => !e.postFader),
 				times.preInserts,
+				insertClock(times.preInserts),
 			);
 			st.post.sync(
 				s.inserts.filter((e) => !!e.postFader),
 				times.postInserts,
+				insertClock(times.postInserts),
 			);
 		}
 		// loudness normalisation
@@ -1446,7 +1615,7 @@ export class MixGraph {
 		this.limiter?.port.postMessage({ enabled: !!mix.loudness, ceilingDb: mix.loudness?.truePeakDb ?? -1 });
 		// clips: their nodes process the samples `total` ahead of the picture (the read-ahead)
 		const t = this.time;
-		const ahead = this.aheadTime();
+		const ahead = follow ? base + (this.readAhead * FLICKS_PER_SECOND) / sr : this.aheadTime();
 		const byId = new Map(this.clipList.map((c) => [c.clipId, c]));
 		for (const [id, c] of this.clips) {
 			const clip = byId.get(id);
@@ -1459,7 +1628,7 @@ export class MixGraph {
 				under && (vo !== undefined || po !== undefined)
 					? { ...(vo !== undefined ? { volume: vo } : {}), ...(po !== undefined ? { pan: po } : {}) }
 					: null;
-			c.update(clip, ahead, override, instant, this.fps);
+			c.update(clip, ahead, override, instant, this.fps, follow, rate);
 		}
 	}
 

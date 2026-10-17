@@ -1,5 +1,11 @@
 // Shared fixtures of the Sound Library tests: library entries, a registered-sound answer, a fake engine client.
-import type { RegisterSoundResponse, SoundEntry, SoundSearchRequest, SoundSearchResponse } from '@jasper/api';
+import type {
+	RegisterSoundResponse,
+	SoundEntry,
+	SoundPackInfo,
+	SoundSearchRequest,
+	SoundSearchResponse,
+} from '@jasper/api';
 import { rankSounds } from '@jasper/project';
 
 let n = 0;
@@ -132,7 +138,7 @@ export function registeredPadded(e: SoundEntry, leadSec = 0.05): RegisterSoundRe
 }
 
 /** A fake engine client over a list of entries (search ranks them with the shared `rankSounds`). */
-export function fakeSoundEngine(entries: SoundEntry[]) {
+export function fakeSoundEngine(entries: SoundEntry[], opts: { packs?: SoundPackInfo[] } = {}) {
 	const calls: { search: SoundSearchRequest[]; register: string[] } = { search: [], register: [] };
 	return {
 		calls,
@@ -152,6 +158,7 @@ export function fakeSoundEngine(entries: SoundEntry[]) {
 				local: true,
 			}),
 			getSoundRoots: async () => ({ roots: [], local: true }),
+			listSoundPacks: async () => ({ packs: opts.packs ?? [], catalogErrors: [] }),
 			searchSounds: async (req: SoundSearchRequest): Promise<SoundSearchResponse> => {
 				calls.search.push(req);
 				const ranked = rankSounds(entries, {
@@ -192,5 +199,38 @@ export function fakeSoundEngine(entries: SoundEntry[]) {
 			indexSounds: async () => ({}) as never,
 			putSoundRoots: async () => ({}) as never,
 		},
+	};
+}
+
+/** A pack as `GET /api/sounds/packs` lists it. */
+export function soundPack(over: Partial<SoundPackInfo> = {}): SoundPackInfo {
+	return {
+		id: 'kenney-ui-audio',
+		title: 'UI Audio',
+		author: 'Kenney (www.kenney.nl)',
+		description: 'Button clicks and switches.',
+		license: 'CC0-1.0',
+		licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+		licenseEvidence: [
+			{
+				url: 'https://kenney.nl/assets/ui-audio',
+				statement: 'License: Creative Commons CC0',
+				checkedAt: '2026-10-17',
+			},
+		],
+		attribution: null,
+		pageUrl: 'https://kenney.nl/assets/ui-audio',
+		downloadUrl: 'https://kenney.nl/media/pages/assets/ui-audio/x/kenney_ui-audio.zip',
+		sha256: 'a'.repeat(64),
+		downloadBytes: 411_949,
+		installBytes: 288_000,
+		sounds: 45,
+		inCatalog: true,
+		state: 'available',
+		installedAt: null,
+		installedBytes: null,
+		indexedSounds: 0,
+		job: null,
+		...over,
 	};
 }

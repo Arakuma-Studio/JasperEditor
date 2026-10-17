@@ -10,6 +10,7 @@
 import type { SfxLevelConflict, SfxSolvedLevel } from '@jasper/api';
 import {
 	DEFAULT_TRUE_PEAK_CEILING_DB,
+	SILENT_BED_LIFT_DB,
 	type SolverEvent,
 	type SolverEventResult,
 	type SolverResult,
@@ -177,9 +178,11 @@ export function levelReason(r: SolverEventResult, m: MeasuredSound, ceilingDb: n
 	}
 	if (parts.length === 0 && r.achievedLiftDb !== null)
 		parts.push(
-			r.achievedLiftDb > r.targetLiftDb + 0.05
-				? `its default level already clears the bed by ${fmtDb(r.achievedLiftDb)} dB`
-				: `target lift ${fmtDb(r.targetLiftDb)} dB reached`,
+			r.achievedLiftDb >= SILENT_BED_LIFT_DB
+				? 'nothing plays under it in the bed: its default level is kept'
+				: r.achievedLiftDb > r.targetLiftDb + 0.05
+					? `its default level already clears the bed by ${fmtDb(r.achievedLiftDb)} dB`
+					: `target lift ${fmtDb(r.targetLiftDb)} dB reached`,
 		);
 	return (parts.length ? `${head}, ${parts.join('; ')}` : head).slice(0, 300);
 }

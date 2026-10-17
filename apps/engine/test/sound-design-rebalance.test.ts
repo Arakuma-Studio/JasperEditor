@@ -18,6 +18,7 @@ import {
 } from '@jasper/project';
 import { describeFuzz, jsonTarget } from '@jasper/testkit/fuzz';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { soundDesignApplyHooks } from '../src/sound-design/apply-guard.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, makeApp, register, type TestApp } from './helpers.ts';
 import { provenance, writeBedFixture } from './sound-bed-fixture.ts';
@@ -207,6 +208,73 @@ describe('POST /api/sound-design/rebalance (real engine)', { timeout: 300_000 },
 		expect(after.revision).toBe(before.revision + 1);
 		const seq = after.doc.sequences[Object.keys(after.doc.sequences)[0]!]!;
 		for (const e of result.report.events) expect((seq.clips[e.clipId] as SfxClip).gainDb).toBe(e.gainDb);
+	});
+
+	it('an edit while the job runs: CONFLICT (retryable), nothing applied by the job', async () => {
+		const { ids } = base;
+		/** Applies a transaction as the editor (the user's concurrent edit). */
+		const edit = async (projectId: string, commands: unknown[]) => {
+			const r = await app.inject({
+				method: 'POST',
+				url: '/api/agent/tx',
+				headers: json(EDITOR_H),
+				payload: JSON.stringify({ projectId, transaction: { label: 'User edit', origin: 'user', commands } }),
+			});
+			expect(r.statusCode, r.body).toBe(200);
+			expect((r.json() as { result: { ok: boolean } }).result.ok, r.body).toBe(true);
+		};
+		const failed = async (projectId: string) => {
+			const r = await rebalance({ projectId, mode: 'apply' }, EDITOR_H);
+			expect(r.statusCode, r.body).toBe(202);
+			return coreServices(app).queue.wait((r.json() as EngineJob).id);
+		};
+		const sfxGains = (doc: ProjectDocument) => {
+			const seq = doc.sequences[Object.keys(doc.sequences)[0]!]!;
+			return Object.fromEntries(
+				[ids.hero, ids.shadowed, ids.inSpeech, ids.userGain].map((id) => [
+					id,
+					(seq.clips[id!] as SfxClip).gainDb,
+				]),
+			);
+		};
+		try {
+			// 1. the user raises the music (the bed) while the sounds are measured: the gains were solved against the old
+			// bed; the transaction alone would fast-forward (it touches only the sound effects)
+			const p1 = seed(base.doc);
+			const before1 = await saved(p1);
+			soundDesignApplyHooks.afterMeasure = async (projectId) => {
+				if (projectId === p1)
+					await edit(p1, [{ type: 'audio.setGain', clipIds: [ids.music], mode: 'adjust', db: 6 }]);
+			};
+			const job1 = await failed(p1);
+			expect(job1.state).toBe('failed');
+			expect(job1.error).toMatchObject({ code: 'CONFLICT', retryable: true });
+			const after1 = await saved(p1);
+			expect(after1.revision).toBe(before1.revision + 1); // the user's edit only
+			expect(sfxGains(after1.doc)).toEqual(sfxGains(before1.doc));
+			soundDesignApplyHooks.afterMeasure = undefined;
+			// 2. an edit of a clip the transaction touches lands between the check and the apply: the stale revision
+			// (E_REVISION_MISMATCH) is the same retryable CONFLICT
+			const p2 = seed(base.doc);
+			const before2 = await saved(p2);
+			soundDesignApplyHooks.beforeApply = async (projectId) => {
+				if (projectId === p2)
+					await edit(p2, [{ type: 'audio.setGain', clipIds: [ids.hero], mode: 'adjust', db: -1 }]);
+			};
+			const job2 = await failed(p2);
+			expect(job2.state).toBe('failed');
+			expect(job2.error).toMatchObject({ code: 'CONFLICT', retryable: true });
+			expect(job2.error?.message).toMatch(/changed before it could be applied/);
+			const after2 = await saved(p2);
+			expect(after2.revision).toBe(before2.revision + 1);
+			const g2 = sfxGains(after2.doc);
+			const g0 = sfxGains(before2.doc);
+			expect(g2[ids.hero!]).toBeCloseTo(g0[ids.hero!]! - 1, 6);
+			for (const id of [ids.shadowed, ids.inSpeech, ids.userGain]) expect(g2[id!]).toBe(g0[id!]);
+		} finally {
+			soundDesignApplyHooks.afterMeasure = undefined;
+			soundDesignApplyHooks.beforeApply = undefined;
+		}
 	});
 
 	it('explicit clip ids and a range; typed refusals before a job starts', async () => {

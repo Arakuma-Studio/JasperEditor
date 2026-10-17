@@ -373,6 +373,18 @@ export class EngineClient {
 	getSoundRoots() {
 		return this.call('soundRootsGet');
 	}
+	/** The downloadable sound-pack catalogue with what is installed (spec 12 P6-R1). */
+	listSoundPacks() {
+		return this.call('soundPacks');
+	}
+	/** Starts (or joins) a `sound-pack-install` job: download, sha256 check, extraction, then a `sound-index` job. */
+	installSoundPack(packId: string) {
+		return this.call('soundPackInstall', { params: { packId } });
+	}
+	/** Removes an installed pack (an agent's request waits for the user's approval in an editor window). */
+	removeSoundPack(packId: string) {
+		return this.call('soundPackRemove', { params: { packId } });
+	}
 	/** Replaces the user sound folders (local engines); an agent adding, removing or relicensing one is asked about. */
 	putSoundRoots(req: SoundRootsPutRequest) {
 		return this.call('soundRootsPut', { body: req });

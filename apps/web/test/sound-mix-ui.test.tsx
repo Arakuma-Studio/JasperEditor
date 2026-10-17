@@ -19,7 +19,13 @@ import { MENUBAR } from '../src/shell/menus/model.ts';
 import { CueSeam } from '../src/sound/cues/CueSeam.tsx';
 import { cuesOf, SEAM_PX } from '../src/sound/cues/model.ts';
 import { EssentialSfxSection } from '../src/sound/EssentialSfx.tsx';
-import { DeliveryDialog, RoomGlueDialog } from '../src/sound/MixDialogs.tsx';
+import {
+	DeliveryDialog,
+	RoomGlueDialog,
+	SOUND_NOTES_DIALOG,
+	SoundNotesDialog,
+} from '../src/sound/MixDialogs.tsx';
+import { fmtDb } from '../src/sound/mix-model.ts';
 import { CueProperties } from '../src/sound/SoundSection.tsx';
 import { audioAsset } from './proposal-helpers.ts';
 import { makeSession } from './timeline-helpers.ts';
@@ -177,11 +183,11 @@ function fixture() {
 	return { session, seqId, ok, seq, cueId, cue2, clipId, clip, hit, engine, labels };
 }
 
-function mountEssential(f: ReturnType<typeof fixture>) {
+function mountEssential(f: ReturnType<typeof fixture>, clips?: () => AudioClip[]) {
 	const view = () => (
 		<SessionProvider session={f.session}>
 			<ShellRuntimeProvider session={f.session}>
-				<EssentialSfxSection session={f.session} seq={f.seq()} clips={[f.clip()]} />
+				<EssentialSfxSection session={f.session} seq={f.seq()} clips={clips ? clips() : [f.clip()]} />
 				<DialogHost />
 			</ShellRuntimeProvider>
 		</SessionProvider>
@@ -230,6 +236,8 @@ describe('Essential Sound ▸ Auto gain', () => {
 						type: 'soundDesign.applyGains',
 						gains: { [req.clipIds![0]!]: -4.5 },
 						report: { [req.clipIds![0]!]: { targetLiftDb: 5, achievedLiftDb: 5, limitedBy: [] } },
+						// the engine's rebalance names the clip the user asked for: it solves an Auto-gain-off clip
+						override: true,
 					},
 				],
 				'Rebalance SFX Levels',
@@ -351,6 +359,136 @@ describe('Essential Sound ▸ Room', () => {
 		expect(screen.getByTestId('essential-room-note').textContent).toBe(
 			'A2 also plays dialogue, music or other bed audio: a send would put them in the room too',
 		);
+	});
+});
+
+/** The fixture plus a second placed sound on A3 filling the cue at 240. */
+function twoTracks() {
+	const f = fixture();
+	f.ok([
+		{ type: 'soundDesign.place', cueId: f.cue2, layers: [{ mediaId: f.hit, track: 'A3', align: 'start' }] },
+	]);
+	const second = () =>
+		Object.values(f.seq().clips).find((c) => c.trackId === f.seq().audioTracks[2]!.id) as AudioClip;
+	const both = () => [f.clip(), second()];
+	return { ...f, second, both };
+}
+
+describe('Essential Sound ▸ Room with several tracks selected', () => {
+	it('names every track, is mixed while their sends differ, acts on all of them in one History entry', async () => {
+		const f = twoTracks();
+		mountEssential(f, f.both);
+		const room = screen.getByTestId('essential-room');
+		const box = () => within(room).getByRole('checkbox', { name: 'Send A2, A3 to the SFX Room' });
+		expect(box().getAttribute('aria-checked')).toBe('false');
+		expect(screen.getByTestId('essential-room-note').textContent).toBe(
+			'Applies to the whole tracks A2, A3, not only these clips',
+		);
+		let n = f.labels().length;
+		await act(async () => {
+			fireEvent.click(box());
+		});
+		expect(f.labels().slice(n)).toEqual(['SFX Room Glue']);
+		const sendOf = (i: number) => f.seq().audioTracks[i]!.mixer!.sends![0]!;
+		expect([sendOf(1).mute ?? false, sendOf(2).mute ?? false]).toEqual([false, false]);
+		expect(box().getAttribute('aria-checked')).toBe('true');
+		// A3's send muted elsewhere (the mixer): the toggle is mixed
+		f.ok([
+			{
+				type: 'mixer.updateSend',
+				sequenceId: f.seqId,
+				stripId: f.seq().audioTracks[2]!.id,
+				sendId: sendOf(2).id,
+				patch: { mute: true },
+			},
+		]);
+		expect(box().getAttribute('aria-checked')).toBe('mixed');
+		expect(screen.getByTestId('essential-room-tracks').textContent).toBe('A2 −16.0 dB · A3 off');
+		n = f.labels().length;
+		await act(async () => {
+			fireEvent.click(box());
+		});
+		expect(f.labels().slice(n)).toEqual(['Room Send On']);
+		expect(sendOf(2).mute).toBe(false);
+		// different levels: "Mixed"; one slider step sets both, one History entry
+		f.ok([
+			{
+				type: 'mixer.updateSend',
+				sequenceId: f.seqId,
+				stripId: f.seq().audioTracks[2]!.id,
+				sendId: sendOf(2).id,
+				patch: { levelDb: -10 },
+			},
+		]);
+		const db = screen.getByTestId('essential-room-db');
+		expect(db.textContent).toBe('Mixed');
+		expect(screen.getByTestId('essential-room-tracks').textContent).toBe('A2 −16.0 dB · A3 −10.0 dB');
+		expect(db.getAttribute('data-mixed')).toBe('true');
+		const thumb = within(room).getAllByRole('slider')[0]!;
+		expect(thumb.getAttribute('aria-valuetext')).toBe('Mixed: −16.0 to −10.0 dB');
+		n = f.labels().length;
+		await act(async () => {
+			fireEvent.keyDown(thumb, { key: 'ArrowRight' });
+		});
+		expect(f.labels().slice(n)).toEqual(['Room Send Level']);
+		expect([sendOf(1).levelDb.value, sendOf(2).levelDb.value]).toEqual([-15.5, -15.5]);
+		expect(screen.getByTestId('essential-room-db').textContent).toBe('−15.5 dB');
+		expect(screen.queryByTestId('essential-room-tracks')).toBeNull();
+		// off: both muted, one entry; one undo gives both back
+		n = f.labels().length;
+		await act(async () => {
+			fireEvent.click(box());
+		});
+		expect(f.labels().slice(n)).toEqual(['Room Send Off']);
+		expect([sendOf(1).mute, sendOf(2).mute]).toEqual([true, true]);
+		act(() => f.session.undo());
+		expect([sendOf(1).mute ?? false, sendOf(2).mute ?? false]).toEqual([false, false]);
+	});
+
+	it('a track that cannot send is listed with its reason and skipped', async () => {
+		const f = twoTracks();
+		f.ok([
+			{ type: 'clip.place', source: { mediaId: f.hit }, at: 400, tracks: { audio: 'A3' }, ref: '$d' },
+			{ type: 'essentialSound.setType', clipIds: ['$d'], audioType: 'dialogue' },
+		]);
+		mountEssential(f, f.both);
+		const room = screen.getByTestId('essential-room');
+		const box = within(room).getByRole('checkbox', { name: 'Send A2 to the SFX Room' });
+		expect(screen.getByTestId('essential-room-skipped').textContent).toBe(
+			'Skipped: A3 also plays dialogue, music or other bed audio: a send would put them in the room too',
+		);
+		await act(async () => {
+			fireEvent.click(box);
+		});
+		expect(f.labels().at(-1)).toBe('SFX Room Glue');
+		expect(f.seq().audioTracks[1]!.mixer?.sends ?? []).toHaveLength(1);
+		expect(f.seq().audioTracks[2]!.mixer?.sends ?? []).toEqual([]);
+		expect(box.getAttribute('aria-checked')).toBe('true');
+	});
+
+	it('Stop / Build for sounds of different cues: the state over the cues, disabled, with why', () => {
+		const f = twoTracks();
+		f.ok([{ type: 'soundCue.update', cueId: f.cueId, stopBefore: { seconds: 0.25, depthDb: -24 } }]);
+		mountEssential(f, f.both);
+		const stop = screen.getByTestId('essential-stop-mixed');
+		const box = within(stop).getByRole('checkbox');
+		expect(box.getAttribute('aria-checked')).toBe('mixed');
+		expect((box as HTMLButtonElement).disabled).toBe(true);
+		expect(screen.getByTestId('essential-stop-mixed-reason').textContent).toBe(
+			'The selected sounds fill 2 different cues (00:00:05:00, 00:00:08:00): select the sounds of one cue to edit its stop-before and build',
+		);
+		expect(
+			within(screen.getByTestId('essential-build-mixed')).getByRole('checkbox').getAttribute('aria-checked'),
+		).toBe('false');
+		expect(screen.queryByTestId('essential-stop')).toBeNull();
+		// the level line of two sounds with different owners and gains: Mixed, and the range
+		const g2 = f.second().gainDb;
+		const [lo, hi] = [Math.min(-6, g2), Math.max(-6, g2)];
+		expect(within(screen.getByTestId('essential-auto-gain-level')).getByText('Mixed')).toBeTruthy();
+		expect(screen.getByTestId('essential-auto-gain-text').textContent).toBe(
+			`${fmtDb(lo)} to ${fmtDb(hi)} dB across 2 sounds`,
+		);
+		expect(screen.queryByTestId('essential-auto-gain-lift')).toBeNull();
 	});
 });
 
@@ -545,6 +683,66 @@ describe('Sequence ▸ Sound Design: Rebalance, Room Glue…, Delivery Target…
 		expect(f.clip().gainDb).toBe(-6);
 	});
 
+	it('Rebalance: conflicts and warnings in the toast and in Solver Notes…', async () => {
+		const f = fixture();
+		f.engine.onRebalance(() => {
+			f.ok([{ type: 'soundDesign.applyGains', gains: { [f.clipId]: -9 } }], 'Rebalance SFX Levels');
+			return {
+				projectId: f.session.projectId,
+				sequenceId: f.seqId,
+				mode: 'apply',
+				applied: true,
+				revision: f.session.revision,
+				proposalId: null,
+				report: {
+					version: 1,
+					sequenceId: f.seqId,
+					events: [],
+					skipped: [],
+					conflicts: [{ clipId: f.clipId, kept: 'consistency', lost: 'dialogue', message: 'x' }],
+					warnings: [
+						{
+							code: 'W_DIALOGUE_BAND',
+							clipId: f.clipId,
+							message: `${f.clipId}: during speech its dominant band (2000 Hz) is in 1–4 kHz; prefer a type whose dominant band is outside 1–4 kHz (here: boom)`,
+						},
+					],
+					counts: counts(),
+					levels,
+				},
+			};
+		});
+		const dialogs: { kind: string; props?: Record<string, unknown> }[] = [];
+		const ctx = createCommandContext({
+			engine: f.engine.client as never,
+			session: f.session,
+			capabilities: ['engine'],
+			openDialog: (kind, props) => dialogs.push({ kind, props }),
+		});
+		await act(async () => {
+			await runCommand('sound.rebalanceSfx', ctx);
+		});
+		const tt = toasts.getState().toasts.find((x) => x.title === 'Rebalanced 1 sound effect')!;
+		expect(tt.kind).toBe('warning');
+		const where = `${f.clip().name} at 00:00:05:00`;
+		expect(tt.detail).toBe(
+			`1 solved · 1 limited · 1 conflict · 1 warning. ${where}: its energy is in the speech band (1–4 kHz) while someone speaks; move it or pick a sound whose energy is outside 1–4 kHz, e.g. boom`,
+		);
+		expect(tt.actions!.map((a) => a.label)).toEqual(['Undo', 'Solver Notes…']);
+		act(() => tt.actions![1]!.run!());
+		expect(dialogs[0]!.kind).toBe(SOUND_NOTES_DIALOG);
+		render(
+			<SoundNotesDialog
+				{...(dialogs[0]!.props as Parameters<typeof SoundNotesDialog>[0])}
+				close={() => {}}
+			/>,
+		);
+		const list = await screen.findByTestId('sound-notes-dialog-list');
+		const items = within(list).getAllByRole('listitem');
+		expect(items.map((li) => li.getAttribute('data-kind'))).toEqual(['warning', 'conflict']);
+		expect(items[1]!.textContent).toContain(`${where}: its repeats (±2 dB) kept over dialogue`);
+	});
+
 	it('Room Glue…: shows which tracks send; Apply creates it with the settings; again off removes it', async () => {
 		const f = fixture();
 		const msgs: string[] = [];
@@ -625,7 +823,14 @@ describe('Sequence ▸ Sound Design: Rebalance, Room Glue…, Delivery Target…
 						musicUnderVoiceLu: 22.8,
 						ambienceUnderVoiceLu: null,
 					},
-					warnings: [],
+					warnings: [
+						{
+							code: 'W_MUSIC_OVER_VOICE',
+							message:
+								'The music is +5 LU under the voice during speech (target ≥ 8 LU): turn Ducking on for it or lower it',
+						},
+					],
+					conflicts: [{ clipId: f.clipId, kept: 'headroom', lost: 'bed-cap', message: 'x' }],
 					ms: 100,
 				},
 			};
@@ -670,6 +875,12 @@ describe('Sequence ▸ Sound Design: Rebalance, Room Glue…, Delivery Target…
 		expect(summary).toContain('Music under the voice: 22.8 LU (at least 8)');
 		expect(summary).toContain('Mix before normalisation: −18.2 LUFS, −3.1 dBTP');
 		expect(f.labels().slice(n)).toEqual(['Apply Delivery Preset: podcast']);
+		// warnings in the UI language and the re-solved effects' conflicts (read even before the schema lists them)
+		const notes = within(screen.getByTestId('delivery-notes')).getAllByRole('listitem');
+		expect(notes.map((li) => li.textContent?.slice(1))).toEqual([
+			'The music is only 5.0 LU under the voice during speech (target at least 8 LU): turn Ducking on for it or lower it',
+			`${f.clip().name} at 00:00:05:00: headroom kept over the bed level`,
+		]);
 		expect(
 			within(dialog)
 				.getAllByRole('button')

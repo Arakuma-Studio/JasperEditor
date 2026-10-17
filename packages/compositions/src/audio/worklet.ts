@@ -13,6 +13,7 @@ import { FX_PROCESSOR_NAME, FxSlotCore, type FxSlotMessage } from './fx-processo
 import type { MeterReading } from './graph.ts';
 
 declare const sampleRate: number;
+declare const currentTime: number;
 declare function registerProcessor(name: string, ctor: new (options: Options) => AudioWorkletProcessor): void;
 declare class AudioWorkletProcessor {
 	readonly port: MessagePort;
@@ -239,7 +240,8 @@ class FxProcessor extends AudioWorkletProcessor {
 	process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
 		if (!this.core.alive) return false;
 		const out = outputs[0];
-		if (out) this.core.render(inputs[0], out);
+		// `currentTime`: the context time of this quantum (absent where a host stubs the worklet scope)
+		if (out) this.core.render(inputs[0], out, typeof currentTime === 'number' ? currentTime : undefined);
 		return true;
 	}
 }

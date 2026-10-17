@@ -9,7 +9,7 @@ import { contentDurationFlicks, isBoundedContent, kindCapabilities } from '../..
 import type { ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
 import type { Clip, Sequence, TrackKind, Transition } from '../../schema/sequence.ts';
-import { remapSoundDesign } from '../../sound/repair.ts';
+import { nestedEntityIds, remapSoundDesign } from '../../sound/repair.ts';
 import { conformSequenceRate, isNestClip, wouldCreateNestCycle } from '../../structure/nest.ts';
 import { SYNTHETIC_INFO, syntheticFromParams } from '../../structure/synthetic.ts';
 import { clipToRange } from '../../structure/through.ts';
@@ -995,11 +995,21 @@ function duplicateSequence(src: Sequence, h: HandlerContext): Sequence {
 	const seq = plain(src);
 	seq.id = h.ids.next('seq');
 	const trackMap = new Map<string, string>();
+	// Old → new ids of the clips' and tracks' children (keyframes, clip markers, effects…), for the cue anchors and the
+	// sound-design mix records naming them.
+	const childMap = new Map<string, string>();
+	const reidentify = (x: object) => {
+		const before = nestedEntityIds(x);
+		reidentifyClipChildren(x as never, h);
+		const after = nestedEntityIds(x);
+		if (after.length === before.length)
+			for (const [k, old] of before.entries()) if (old !== after[k]) childMap.set(old, after[k]!);
+	};
 	for (const t of [...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks]) {
 		const id = h.ids.next('trk');
 		trackMap.set(t.id, id);
 		t.id = id;
-		reidentifyClipChildren(t as never, h);
+		reidentify(t);
 	}
 	// Submixes (and the sends and outputs naming them) are entities of the sequence too: a copy that kept their ids
 	// failed INV-001 (duplicate track, effect and send ids) as soon as the source had a submix with an effect or a send.
@@ -1007,14 +1017,17 @@ function duplicateSequence(src: Sequence, h: HandlerContext): Sequence {
 		const id = h.ids.next('trk');
 		trackMap.set(t.id, id);
 		t.id = id;
-		reidentifyClipChildren(t as never, h);
+		reidentify(t);
 	}
+	const sendMap = new Map<string, string>();
 	for (const t of [...seq.audioTracks, ...(seq.submixTracks ?? [])]) {
 		const mixer = t.mixer;
 		if (!mixer) continue;
 		if (typeof mixer.output === 'string') mixer.output = trackMap.get(mixer.output) ?? mixer.output;
 		for (const x of mixer.sends ?? []) {
-			x.id = h.ids.next('snd');
+			const id = h.ids.next('snd');
+			sendMap.set(x.id, id);
+			x.id = id;
 			x.target = trackMap.get(x.target) ?? x.target;
 		}
 	}
@@ -1028,8 +1041,6 @@ function duplicateSequence(src: Sequence, h: HandlerContext): Sequence {
 	const clipMap = new Map<string, string>();
 	const clips: Sequence['clips'] = {};
 	const trackerMaps = new Map<string, Map<string, string>>();
-	// Old → new ids of the clips' children (keyframes, clip markers, effects…), for the cue anchors naming them.
-	const childMap = new Map<string, string>();
 	for (const c of Object.values(seq.clips)) {
 		const before = ((c as { trackers?: { id: string }[] }).trackers ?? []).map((t) => t.id);
 		const childrenBefore = nestedIds(c);
@@ -1082,8 +1093,16 @@ function duplicateSequence(src: Sequence, h: HandlerContext): Sequence {
 	// sound-design: cues, their anchors and placed clips follow the copy.
 	remapSoundDesign(
 		seq,
-		{ clips: clipMap, tracks: trackMap, transitions: transitionMap, markers: markerMap, children: childMap },
+		{
+			clips: clipMap,
+			tracks: trackMap,
+			transitions: transitionMap,
+			markers: markerMap,
+			children: childMap,
+			sends: sendMap,
+		},
 		() => h.ids.next('cue'),
+		() => h.ids.next('kf'),
 	);
 	return seq;
 }

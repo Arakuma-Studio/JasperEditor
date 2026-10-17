@@ -247,15 +247,29 @@ export const MixWriteSchema = z.looseObject({
 });
 export type MixWrite = DeepStrip<z.infer<typeof MixWriteSchema>>;
 
+/** Fields every realisation record shares (Phase 4 verification; optional, read-time defaults). */
+const realisationFields = {
+	/** The cue frame it was written for. */
+	frame: frame(),
+	writes: z.array(MixWriteSchema).max(SOUND_MIX_LIMITS.writes),
+	/**
+	 * Stacking order of the realisations (later = higher; absent on records of older builds = 0): a removal first
+	 * takes out the later writes on the same lane, then writes them again, so overlapping realisations come out exactly.
+	 */
+	order: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+	/** Muted cue: nothing written (`writes: []`); written again, with the same options, when the cue is unmuted. */
+	suspended: z.boolean().optional(),
+};
+
 /** What a cue's stop-before / build wrote into the mix (`soundDesign.applyStopBefore` / `applyBuild`), for exact removal. */
 export const CueMixSchema = z.looseObject({
 	stopBefore: z
 		.looseObject({
 			seconds: z.number().min(0).max(10),
 			depthDb: z.number().min(-60).max(0),
-			/** The cue frame it was written for. */
-			frame: frame(),
-			writes: z.array(MixWriteSchema).max(SOUND_MIX_LIMITS.writes),
+			/** The ambience was dipped too (`applyStopBefore {ambience: true}`; remembered). */
+			ambience: z.boolean().optional(),
+			...realisationFields,
 		})
 		.optional(),
 	build: z
@@ -263,8 +277,7 @@ export const CueMixSchema = z.looseObject({
 			seconds: z.number().min(0).max(30),
 			fromHz: z.number().min(20).max(20_000),
 			toHz: z.number().min(20).max(20_000),
-			frame: frame(),
-			writes: z.array(MixWriteSchema).max(SOUND_MIX_LIMITS.writes),
+			...realisationFields,
 		})
 		.optional(),
 });
@@ -280,7 +293,28 @@ export const RoomGlueSchema = z.looseObject({
 	decay: z.number().min(0.1).max(20),
 	mix: z.number().min(0).max(100),
 	preDelayMs: z.number().min(0).max(200),
-	sends: z.array(z.looseObject({ trackId: id(), sendId: id() })).max(SOUND_MIX_LIMITS.sends),
+	sends: z
+		.array(
+			z.looseObject({
+				trackId: id(),
+				sendId: id(),
+				/** What adding the send created on the track (`mixer`, or its `sends` list): removed with the send. */
+				made: z.enum(['mixer', 'sends']).optional(),
+			}),
+		)
+		.max(SOUND_MIX_LIMITS.sends),
+	/**
+	 * What `removeBus` gives back (absent on glue of older builds): whether the sequence had a sound design, its
+	 * settings and a submix list before, and the settings' room bus.
+	 */
+	before: z
+		.looseObject({
+			soundDesign: z.boolean(),
+			settings: z.boolean(),
+			submixes: z.boolean().optional(),
+			roomBus: z.string().max(SOUND_DESIGN_LIMITS.id).nullable(),
+		})
+		.optional(),
 });
 export type RoomGlue = DeepStrip<z.infer<typeof RoomGlueSchema>>;
 
@@ -290,6 +324,11 @@ export type RoomGlue = DeepStrip<z.infer<typeof RoomGlueSchema>>;
  */
 export const SoundDesignMixSchema = z.looseObject({
 	cues: z.record(z.string(), CueMixSchema).optional(),
+	/**
+	 * Realisations of deleted cues still written on a locked track (keyed by the cue id they had): taken out when the
+	 * track is unlocked (`track.update {locked: false}`).
+	 */
+	orphans: z.record(z.string(), CueMixSchema).optional(),
 	/** The build filter (`jasper.audio.scientific-filter` effect instance id) of a music track or clip, by its id. */
 	buildFilters: z.record(z.string(), id()).optional(),
 	room: RoomGlueSchema.optional(),
@@ -560,9 +599,11 @@ export function readSoundDesignMix(raw: unknown): SoundDesignMix | null {
 	const ok = SoundDesignMixSchema.safeParse(raw);
 	if (ok.success) return ok.data as SoundDesignMix;
 	const out: Record<string, unknown> = { ...unknownFields(raw, SoundDesignMixSchema.shape) };
-	if (isRecord(raw.cues)) {
+	for (const bucket of ['cues', 'orphans'] as const) {
+		const rawBucket = raw[bucket];
+		if (!isRecord(rawBucket)) continue;
 		const cues: Record<string, CueMix> = Object.create(null);
-		for (const [k, v] of Object.entries(raw.cues)) {
+		for (const [k, v] of Object.entries(rawBucket)) {
 			if (!isRecord(v)) continue;
 			const c: Record<string, unknown> = { ...unknownFields(v, CueMixSchema.shape) };
 			const sb = opt(CueMixSchema.shape.stopBefore, v.stopBefore);
@@ -571,7 +612,7 @@ export function readSoundDesignMix(raw: unknown): SoundDesignMix | null {
 			if (b) c.build = b;
 			if (c.stopBefore || c.build) cues[k] = c as CueMix;
 		}
-		out.cues = cues;
+		out[bucket] = cues;
 	}
 	if (isRecord(raw.buildFilters)) {
 		const f: Record<string, string> = Object.create(null);
@@ -582,6 +623,16 @@ export function readSoundDesignMix(raw: unknown): SoundDesignMix | null {
 	if (room) out.room = room;
 	const r = SoundDesignMixSchema.safeParse(out);
 	return r.success ? (r.data as SoundDesignMix) : null;
+}
+
+/**
+ * Whether a cue's realisation record is written into the mix (Cue Seam "written" spans, delivery re-dips): a record of
+ * a muted cue (`suspended`, `writes: []`) is not. Never throws.
+ */
+export function cueMixWritten(
+	rec: { writes?: readonly unknown[]; suspended?: boolean } | null | undefined,
+): boolean {
+	return !!rec && rec.suspended !== true && Array.isArray(rec.writes) && rec.writes.length > 0;
 }
 
 /** Lenient read of a stored `AudioClip.sfx` (field by field); null when it is not an object. Pure; never throws. */

@@ -1078,6 +1078,7 @@ function applyGains(doc: DDoc, cmd: CommandOf<'soundDesign.applyGains'>, h: Hand
 			h.fail('E_INVALID_PARAM', `report names ${k}, which has no gain`, { path: ['report', k] });
 	const seen = new Set<string>();
 	const out: { clipId: string; fromDb: number; gainDb: number }[] = [];
+	const skipped: { clipId: string; reason: string }[] = [];
 	for (const key of keys) {
 		const path = ['gains', key];
 		let id = key;
@@ -1107,6 +1108,14 @@ function applyGains(doc: DDoc, cmd: CommandOf<'soundDesign.applyGains'>, h: Hand
 		const clip = c as DAudio;
 		const track = findTrackIn(seq, clip.trackId);
 		if (!track) h.fail('E_NOT_FOUND', `Track not found: ${clip.trackId}`, { path });
+		// Auto gain off: the gain is the user's; only an explicit override (a rebalance the user asked for) solves it.
+		if ((clip.sfx?.level as { manual?: unknown } | undefined)?.manual === true && cmd.override !== true) {
+			skipped.push({
+				clipId: id,
+				reason: 'Auto gain is off for it (its gain is the user’s): pass override to solve it',
+			});
+			continue;
+		}
 		assertUnlocked(track.track, h);
 		const gainDb = Math.round(cmd.gains[key]! * 100) / 100;
 		const fromDb = clip.gainDb;
@@ -1131,12 +1140,12 @@ function applyGains(doc: DDoc, cmd: CommandOf<'soundDesign.applyGains'>, h: Hand
 		}
 		out.push({ clipId: id, fromDb, gainDb: clip.gainDb });
 	}
-	return { clips: out };
+	return { clips: out, ...(skipped.length ? { skipped } : {}) };
 }
 
 function setAutoGain(doc: DDoc, cmd: CommandOf<'soundDesign.setAutoGain'>, h: HandlerContext) {
 	const only = cmd.sequenceId !== undefined ? h.sequence(doc, cmd.sequenceId).id : null;
-	const out: { clipId: string; owner: 'default' | 'solver' | 'user' }[] = [];
+	const out: { clipId: string; owner: 'default' | 'solver' | 'user'; skipped?: string }[] = [];
 	for (const [i, id] of [...new Set(cmd.clipIds)].entries()) {
 		const path = ['clipIds', String(i)];
 		const sid = h.sequenceOfClip(doc, id);
@@ -1155,11 +1164,18 @@ function setAutoGain(doc: DDoc, cmd: CommandOf<'soundDesign.setAutoGain'>, h: Ha
 		if (!track) h.fail('E_NOT_FOUND', `Track not found: ${clip.trackId}`, { path });
 		assertUnlocked(track.track, h);
 		const level = clip.sfx?.level as (Draft<SfxLevel> & { manual?: boolean }) | undefined;
-		if (level) {
-			if (cmd.auto) delete level.manual;
-			else level.manual = true;
-		}
-		out.push({ clipId: c.id, owner: sfxGainOwner(clip) });
+		if (level && cmd.auto) {
+			// Auto gain on: the recorded level (the solver's or placement's default) owns the gain again
+			delete level.manual;
+			if (Number.isFinite(level.gainDb) && clip.gainDb !== level.gainDb) clip.gainDb = level.gainDb;
+		} else if (level) level.manual = true;
+		out.push({
+			clipId: c.id,
+			owner: sfxGainOwner(clip),
+			...(cmd.auto && !level
+				? { skipped: 'no recorded level to hand the gain to (rebalance to solve it)' }
+				: {}),
+		});
 	}
 	return { clips: out };
 }

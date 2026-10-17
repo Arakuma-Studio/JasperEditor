@@ -108,6 +108,12 @@ export const EssentialSoundSchema = z.looseObject({
 		reduceDb: z.number().min(-40).max(0),
 		/** Fade length (s). */
 		fadeSeconds: z.number().min(0).max(5),
+		/**
+		 * Who set `reduceDb` (Phase 4 verification): `user` (the panel or `essentialSound.set`), `delivery`
+		 * (`soundDesign.applyDelivery` chose it). Absent: the type default unless it differs from it (`duckingDepthBy`).
+		 * An unreadable value reads as absent.
+		 */
+		depthBy: z.enum(['delivery', 'user']).optional().catch(undefined),
 	}),
 	pan: z.looseObject({ enabled: z.boolean(), value: z.number().min(-100).max(100) }),
 	/** Clip Volume (panel footer): an offset in dB on the clip's Volume while on. */
@@ -270,6 +276,16 @@ export function readEssentialSound(raw: unknown): EssentialSound | null {
 		r = EssentialSoundSchema.safeParse(merged);
 	}
 	return r.success ? (r.data as EssentialSound) : (defaults as EssentialSound);
+}
+
+/**
+ * Who owns a clip's Ducking amount: `user` when the user set it (or it differs from the type's default on settings of
+ * older builds), `delivery` when a delivery preset chose it, `default` when it is the type's default. Never throws.
+ */
+export function duckingDepthBy(es: EssentialSound): 'default' | 'delivery' | 'user' {
+	const by = (es.ducking as { depthBy?: unknown }).depthBy;
+	if (by === 'user' || by === 'delivery') return by;
+	return es.ducking.reduceDb === newEssentialSound(es.type).ducking.reduceDb ? 'default' : 'user';
 }
 
 /**

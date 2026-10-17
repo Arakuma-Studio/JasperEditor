@@ -18,6 +18,9 @@ import { RegisteredMediaSchema } from './media.ts';
 export const SOUND_ID_RE = /^snd_[0-9a-f]{16}$/;
 export const SoundIdSchema = z.string().regex(SOUND_ID_RE, 'sound id (snd_ + 16 hex digits)');
 
+/** A pack's id (its folder under `<appdir>/sounds/packs/`): lower-case letters, digits, `.`, `_`, `-`. */
+export const SOUND_PACK_ID_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+
 /** A user folder's id (`root_` + 12 hex digits), stable across renames of its label. */
 export const SOUND_ROOT_ID_RE = /^root_[0-9a-f]{12}$/;
 
@@ -217,6 +220,8 @@ export const SoundSearchQuerySchema = z.object({
 	sources: csv(4, z.enum(SOUND_SOURCE_TYPES)).optional(),
 	/** Only sounds of this user folder. */
 	rootId: z.string().regex(SOUND_ROOT_ID_RE).optional(),
+	/** Only sounds of this installed pack (WP6.1). */
+	packId: z.string().regex(SOUND_PACK_ID_RE).optional(),
 	/** Rank by similarity to this sound (left out of the results). */
 	similarTo: SoundIdSchema.optional(),
 	/** Sounds used near the target, nearest first: they rank lower (rotation). */
@@ -242,6 +247,7 @@ export type SoundSearchRequest = {
 	license?: 'any' | 'commercial-safe';
 	sources?: readonly SoundSourceType[];
 	rootId?: string;
+	packId?: string;
 	similarTo?: string;
 	usedNearby?: readonly string[];
 	limit?: number;
@@ -506,7 +512,7 @@ export const SoundCapabilitiesSchema = z.object({
  * asset allowlist; every bundled file also has its `.attribution` sidecar (AGENTS.md §3).
  */
 export const SoundManifestPackSchema = z.object({
-	id: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/),
+	id: z.string().regex(SOUND_PACK_ID_RE),
 	title: z.string().min(1).max(200),
 	/** Where the pack was downloaded from. */
 	url: z.string().max(LIBRARY_LIMITS.url),
@@ -530,6 +536,11 @@ export const SoundManifestSoundSchema = z.object({
 	packId: z.string().max(64).optional(),
 	/** A credit line to use verbatim (else one is generated when the licence requires attribution). */
 	attribution: z.string().max(LIBRARY_LIMITS.attribution).optional(),
+	/**
+	 * `false`: an empty `types` stays empty (the file name is not read for types; a jingle in a "Hit jingles" folder is
+	 * not a hit). Default true.
+	 */
+	inferTypes: z.boolean().optional(),
 });
 export const SoundManifestSchema = z.object({
 	version: z.literal(1),
@@ -538,3 +549,225 @@ export const SoundManifestSchema = z.object({
 });
 export type SoundManifestPack = z.infer<typeof SoundManifestPackSchema>;
 export type SoundManifestSound = z.infer<typeof SoundManifestSoundSchema>;
+
+// ---------------------------------------------------------------------------------------------------------------
+// Downloadable packs (spec 12 §2.1 source 2, §2.8, P6-R1; wp-note "Phase 6 → WP6.1 sound packs")
+
+/**
+ * Licences a catalogue pack may have: the asset allowlist of AGENTS.md §3.2 that sound packs use (CC0, CC BY,
+ * CC BY-SA; never NC/ND). WTFPL alone is not on the allowlist (spec 12 §0 decision 5): a pack offered under CC0 *and*
+ * WTFPL is catalogued as CC0.
+ */
+export const SOUND_PACK_LICENSES = [
+	'CC0-1.0',
+	'CC-BY-3.0',
+	'CC-BY-4.0',
+	'CC-BY-SA-3.0',
+	'CC-BY-SA-4.0',
+] as const;
+export const SoundPackLicenseSchema = z.enum(SOUND_PACK_LICENSES);
+/** Largest archive a pack may download (the archive is read into memory to extract it). */
+export const SOUND_PACK_MAX_ARCHIVE_BYTES = 256 * 1024 * 1024;
+/** Largest installed pack (the sum of its files). */
+export const SOUND_PACK_MAX_INSTALL_BYTES = 1024 * 1024 * 1024;
+/** Most files a pack may install. */
+export const SOUND_PACK_MAX_FILES = 5000;
+
+const sha256Hex = z.string().regex(/^[0-9a-f]{64}$/, 'sha256 (64 lower-case hex digits)');
+const packUrl = z.string().min(1).max(LIBRARY_LIMITS.url);
+
+/**
+ * Where a catalogue says its licence comes from (checked by the curator; repeated in the wp-note): a page or file and
+ * the statement it makes, verbatim, and the day it was checked.
+ */
+export const SoundPackEvidenceSchema = z.object({
+	url: packUrl,
+	statement: z.string().min(1).max(1000),
+	checkedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD'),
+});
+export type SoundPackEvidence = z.infer<typeof SoundPackEvidenceSchema>;
+
+/**
+ * One file a pack installs: its path in the archive (`zip`) or its own `url` (`files`), the pinned sha256 and size,
+ * and its library metadata. `path` is also where it lands under the pack's folder (forward slashes, no `..`, no hidden
+ * segment, an audio extension).
+ */
+export const SoundPackFileSchema = z.object({
+	path: relFile,
+	/** `files` packs: where this file downloads from. */
+	url: packUrl.optional(),
+	sha256: sha256Hex,
+	sizeBytes: z.number().int().min(1).max(SOUND_PACK_MAX_ARCHIVE_BYTES),
+	title: z.string().min(1).max(LIBRARY_LIMITS.title),
+	types: z.array(StoredSoundTypeSchema).max(LIBRARY_LIMITS.types).default([]),
+	tags: z.array(z.string().min(1).max(64)).max(64).default([]),
+	/** Overrides the pack's author for this file (e.g. the voice actor of a voice line). */
+	author: z.string().min(1).max(LIBRARY_LIMITS.author).optional(),
+	/** `files` packs: the file's own page (its licence statement). */
+	sourceUrl: packUrl.optional(),
+	/** `false`: empty `types` stay empty (see `SoundManifestSoundSchema.inferTypes`). */
+	inferTypes: z.boolean().optional(),
+});
+export type SoundPackFile = z.infer<typeof SoundPackFileSchema>;
+
+/** How a pack downloads: one archive (zip) whose listed members are extracted, or one download per file. */
+export const SoundPackDownloadSchema = z.discriminatedUnion('type', [
+	z.object({
+		type: z.literal('zip'),
+		url: packUrl,
+		sha256: sha256Hex,
+		sizeBytes: z.number().int().min(22).max(SOUND_PACK_MAX_ARCHIVE_BYTES),
+	}),
+	z.object({ type: z.literal('files') }),
+]);
+export type SoundPackDownload = z.infer<typeof SoundPackDownloadSchema>;
+
+/** A catalogue entry (`apps/engine/src/sounds/packs.json`; same rules as the model catalogue). */
+export const SoundPackCatalogEntrySchema = z
+	.object({
+		id: z.string().regex(SOUND_PACK_ID_RE),
+		title: z.string().min(1).max(200),
+		author: z.string().min(1).max(LIBRARY_LIMITS.author),
+		description: z.string().max(1000).default(''),
+		license: SoundPackLicenseSchema,
+		licenseUrl: packUrl,
+		licenseEvidence: z.array(SoundPackEvidenceSchema).min(1).max(16),
+		/** The credit line projects print (required for CC BY / BY-SA; null for CC0). */
+		attribution: z.string().min(1).max(LIBRARY_LIMITS.attribution).nullable(),
+		/** The pack's page (shown with the licence; each sound's `sourceUrl` unless the file has its own). */
+		pageUrl: packUrl,
+		download: SoundPackDownloadSchema,
+		/** A licence or readme file of the archive installed with the pack and shown in Help ▸ About ▸ Licenses. */
+		licenseFile: z
+			.object({
+				path: z.string().min(1).max(256),
+				sha256: sha256Hex,
+				sizeBytes: z.number().int().min(1).max(1_048_576),
+			})
+			.optional(),
+		files: z.array(SoundPackFileSchema).min(1).max(SOUND_PACK_MAX_FILES),
+		/** Archive members deliberately left out, with the reason (documentation; never installed). */
+		skipped: z
+			.array(
+				z.object({
+					path: z.string().min(1).max(LIBRARY_LIMITS.pathPart),
+					reason: z.string().min(1).max(300),
+				}),
+			)
+			.max(SOUND_PACK_MAX_FILES)
+			.default([]),
+	})
+	.superRefine((e, ctx) => {
+		const seen = new Set<string>();
+		for (const [i, f] of e.files.entries()) {
+			// case-insensitively unique: two names that differ only in case are one file on macOS and Windows
+			const key = f.path.toLowerCase();
+			if (seen.has(key))
+				ctx.addIssue({ code: 'custom', path: ['files', i, 'path'], message: `"${f.path}" is listed twice` });
+			seen.add(key);
+			if (!/\.(wav|aif|aiff|flac|mp3|ogg|opus|m4a|aac)$/i.test(f.path))
+				ctx.addIssue({ code: 'custom', path: ['files', i, 'path'], message: 'not an audio file' });
+			if (f.path.split('/').some((seg) => seg.startsWith('.')))
+				ctx.addIssue({ code: 'custom', path: ['files', i, 'path'], message: 'hidden path segment' });
+			if (e.download.type === 'files' && !f.url)
+				ctx.addIssue({
+					code: 'custom',
+					path: ['files', i, 'url'],
+					message: 'a "files" pack needs a url per file',
+				});
+			if (e.download.type === 'zip' && f.url)
+				ctx.addIssue({
+					code: 'custom',
+					path: ['files', i, 'url'],
+					message: 'a "zip" pack extracts its files',
+				});
+		}
+		const total = e.files.reduce((s, f) => s + f.sizeBytes, 0);
+		if (total > SOUND_PACK_MAX_INSTALL_BYTES)
+			ctx.addIssue({ code: 'custom', path: ['files'], message: 'the pack is larger than 1 GB' });
+		if (e.license !== 'CC0-1.0' && !e.attribution)
+			ctx.addIssue({ code: 'custom', path: ['attribution'], message: `${e.license} needs a credit line` });
+		if (
+			e.licenseFile &&
+			(e.download.type !== 'zip' || e.licenseFile.path.includes('..') || e.licenseFile.path.startsWith('/'))
+		)
+			ctx.addIssue({ code: 'custom', path: ['licenseFile'], message: 'a licence file is an archive member' });
+	});
+export type SoundPackCatalogEntry = z.infer<typeof SoundPackCatalogEntrySchema>;
+
+export const SoundPackCatalogSchema = z.object({
+	$comment: z.string().optional(),
+	version: z.literal(1),
+	packs: z.array(z.unknown()).max(500),
+});
+
+/** A pack's state on this engine. */
+export const SOUND_PACK_STATES = ['available', 'installed', 'outdated', 'damaged'] as const;
+
+/** `GET /api/sounds/packs` item: a catalogue pack and what is installed of it (or an installed pack the catalogue no longer lists). */
+export const SoundPackInfoSchema = z.object({
+	id: z.string().regex(SOUND_PACK_ID_RE),
+	title: z.string(),
+	author: z.string(),
+	description: z.string(),
+	license: z.string(),
+	licenseUrl: z.string().nullable(),
+	licenseEvidence: z.array(SoundPackEvidenceSchema),
+	attribution: z.string().nullable(),
+	pageUrl: z.string().nullable(),
+	/** The archive URL (`zip` packs), else null. */
+	downloadUrl: z.string().nullable(),
+	/** sha256 of the archive (`zip`) or of the file list (`files`). */
+	sha256: z.string(),
+	/** Bytes to download (the archive, or the sum of the files). */
+	downloadBytes: z.number().int().min(0),
+	/** Bytes on disk once installed (the listed files). */
+	installBytes: z.number().int().min(0),
+	/** Sounds the pack installs. */
+	sounds: z.number().int().min(0),
+	/** Listed by the engine's catalogue (an installed pack that is not can only be removed). */
+	inCatalog: z.boolean(),
+	/**
+	 * `available` (not installed), `installed`, `outdated` (installed from another catalogue revision: install again to
+	 * update), `damaged` (its pack.json is unreadable or files are missing: install again or remove it).
+	 */
+	state: z.enum(SOUND_PACK_STATES),
+	installedAt: z.string().nullable(),
+	/** Bytes of the installed folder's files, when installed. */
+	installedBytes: z.number().int().min(0).nullable(),
+	/** Sounds of this pack in the library index now. */
+	indexedSounds: z.number().int().min(0),
+	/** The queued or running `sound-pack-install` job of this pack. */
+	job: EngineJobSchema.nullable(),
+});
+export type SoundPackInfo = z.infer<typeof SoundPackInfoSchema>;
+
+export const SoundPacksResponseSchema = z.object({
+	packs: z.array(SoundPackInfoSchema),
+	/** Catalogue entries that did not validate (skipped), e.g. from a `JASPER_SOUND_CATALOG` override. */
+	catalogErrors: z.array(z.string()),
+});
+export type SoundPacksResponse = z.infer<typeof SoundPacksResponseSchema>;
+
+/** `EngineJob.result` of a `sound-pack-install` job. */
+export const SoundPackInstallResultSchema = z.object({
+	packId: z.string(),
+	alreadyInstalled: z.boolean(),
+	sounds: z.number().int().min(0),
+	installedBytes: z.number().int().min(0),
+	downloadedBytes: z.number().int().min(0),
+	/** The `sound-index` job that adds the pack's sounds to the library (follow it to know when they are searchable). */
+	indexJobId: z.string().nullable(),
+});
+export type SoundPackInstallResult = z.infer<typeof SoundPackInstallResultSchema>;
+
+export const SoundPackRemoveResponseSchema = z.object({
+	packId: z.string(),
+	/** false: the pack was not installed (nothing changed). */
+	removed: z.boolean(),
+	removedSounds: z.number().int().min(0),
+	freedBytes: z.number().int().min(0),
+	/** The `sound-index` job started afterwards (a sound also found in a folder comes back under that folder). */
+	job: EngineJobSchema.nullable(),
+});
+export type SoundPackRemoveResponse = z.infer<typeof SoundPackRemoveResponseSchema>;

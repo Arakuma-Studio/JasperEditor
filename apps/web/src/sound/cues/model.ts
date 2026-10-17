@@ -7,6 +7,7 @@ import {
 	type CueKind,
 	type CueMix,
 	type CueWeight,
+	cueMixWritten,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	isRemapped,
@@ -347,8 +348,11 @@ export function layoutCues(
 		const secSpan = (sec: number | undefined, at = c.frame) =>
 			fps > 0 && fin(sec) && sec > 0 && fin(at) ? span(at - sec * fps, at) : null;
 		const rec = opts.mix && Object.hasOwn(opts.mix, c.id) ? opts.mix[c.id] : undefined;
-		const buildW = rec?.build ? secSpan(rec.build.seconds, rec.build.frame) : null;
-		const stopW = rec?.stopBefore ? secSpan(rec.stopBefore.seconds, rec.stopBefore.frame) : null;
+		// written into the mix (a muted cue's suspended record is not)
+		const buildW = cueMixWritten(rec?.build) ? secSpan(rec!.build!.seconds, rec!.build!.frame) : null;
+		const stopW = cueMixWritten(rec?.stopBefore)
+			? secSpan(rec!.stopBefore!.seconds, rec!.stopBefore!.frame)
+			: null;
 		const build = buildW ?? secSpan(c.build?.seconds);
 		const stopBefore = stopW ?? secSpan(c.stopBefore?.seconds);
 		const left = Math.min(x, window?.x0 ?? x, build?.x0 ?? x, stopBefore?.x0 ?? x);

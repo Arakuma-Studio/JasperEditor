@@ -332,13 +332,17 @@ test('an MCP agent proposes, the user reviews and applies, the agent reads the r
 		.filter((c) => (c.placedClipIds ?? []).some((id) => seq.clips[id]))
 		.sort((a, b) => a.frame - b.frame);
 	expect(placed.map((c) => c.frame)).toEqual([90, 180, 300]);
+	// PCM audio (ProRes master): the default preset's AAC drops and smears the top octaves, so a bright sound's
+	// correlation with its source fell to 0.86–0.92 whenever the plan picked one (Phase 4 verification: residual within
+	// 1 dB of the signal over 16 kHz, 7 dB under it at 8–12 kHz) — the peak positions were exact (lag 0)
 	const exported = await tool<{ path?: string; result?: { path?: string }; state?: string }>('start_export', {
 		projectId,
+		preset: 'master-prores-422hq',
 		wait: true,
 		timeoutSeconds: 1500,
-		outputPath: join(outDir, 'p3-mcp.mp4'),
+		outputPath: join(outDir, 'p3-mcp.mov'),
 	});
-	const file = exported.result?.path ?? exported.path ?? join(outDir, 'p3-mcp.mp4');
+	const file = exported.result?.path ?? exported.path ?? join(outDir, 'p3-mcp.mov');
 	expect(existsSync(file), JSON.stringify(exported)).toBe(true);
 	const mix = decodeMono(file);
 	const SR = 48_000;

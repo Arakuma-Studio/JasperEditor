@@ -98,6 +98,8 @@ describe('target lift', () => {
 		expect(r.warnings).toEqual([]);
 		expect(one(r, 'a').gainDb).toBe(-20);
 		expect(one(r, 'a').achievedLiftDb).toBeCloseTo(80, 9); // −20 − 20 − (−120)
+		// not "clears the bed by +80 dB": nothing plays under it (Phase 4 verification)
+		expect(one(r, 'a').reason).toBe('−20 dB, nothing plays under it in the bed, default level kept');
 		// b: −10 LUFS + 5 dB would be 15 LU over the quiet-bed reference (−14 − 12 = −26): capped at +6 LU
 		const b = one(r, 'b');
 		expect(b.gainDb).toBeCloseTo(-26 + 6 + 10, 9);
@@ -283,6 +285,24 @@ describe('constraints, one at a time', () => {
 		expect(advice[0]!.message).toContain('prefer a type whose dominant band is outside 1–4 kHz (here: boom)');
 	});
 
+	it('dialogue advice names only the dominant bands inside the speech octaves', () => {
+		// dominant 8 kHz, second 4 kHz (≥ 10 % of the energy): only 4 kHz is a speech octave
+		const bright = [-80, -80, -80, -60, -40, -23, -20];
+		const r = solveSfxGains([
+			ev({
+				clipId: 's',
+				type: 'tick',
+				soundBandsDb: bright,
+				bedBandsDb: Array(7).fill(-30),
+				speechOverlap: true,
+			}),
+		]);
+		expect(one(r, 's').dominantBands).toEqual([8000, 4000]);
+		const w = r.warnings.find((x) => x.code === 'W_DIALOGUE_BAND')!;
+		expect(w.message).toContain('its dominant band (4000 Hz) is in 1–4 kHz');
+		expect(w.message).not.toContain('8000');
+	});
+
 	it('6 headroom: true peak after the gain ≤ the ceiling (default −1 dBTP); unmeasured → no boost', () => {
 		const masked = { bedBandsDb: Array(7).fill(-15), bedLocalPeakLu: 0 }; // needs +8.5 dB
 		const r = solveSfxGains([
@@ -326,6 +346,43 @@ describe('order and post-verification (an earlier constraint is never silently b
 		expect(r.warnings[0]!.message).toBe(
 			'q: consistency could not hold without breaking bed-cap; bed-cap was kept',
 		);
+	});
+
+	it('a step 2 / 3 bound under the gain range: the repeat conflict names that constraint, not the clamp', () => {
+		// q's bed cap allows −32 dB (quiet bed reference −26, +6 LU, a sound peaking at +12 LU at 0 dB): the clamp keeps
+		// −30 (conflict:clamp/bed-cap); its repeats sit at +3.5, so consistency loses — to the BED CAP, which is what
+		// holds q down (before: "conflict:clamp/consistency", as if the gain range were the reason)
+		const loud = { bedBandsDb: Array(7).fill(-20), bedLocalPeakLu: -10 };
+		const r = solveSfxGains([
+			ev({ clipId: 'a', soundId: 'x', ...loud }),
+			ev({ clipId: 'b', soundId: 'x', ...loud }),
+			ev({ clipId: 'q', soundId: 'x', bedBandsDb: Array(7).fill(-60), bedLocalPeakLu: -40, soundPeakLu: 12 }),
+		]);
+		const q = one(r, 'q');
+		expect(q.gainDb).toBeCloseTo(-30, 9);
+		expect(q.limitedBy).toContain('conflict:clamp/bed-cap');
+		expect(q.limitedBy).toContain('conflict:bed-cap/consistency');
+		expect(q.limitedBy).not.toContain('conflict:clamp/consistency');
+		expect(r.warnings.some((w) => w.code === 'W_UNRESOLVED')).toBe(false);
+		// the same for a hero shadow under −30: a support at −28 next to a hero (−28 × 0.6 → −32.4)
+		const r2 = solveSfxGains([
+			ev({ clipId: 'h', weight: 'hero', startSec: 0, endSec: 0.3, soundId: 'hh' }),
+			ev({
+				clipId: 's1',
+				soundId: 'y',
+				startSec: 0.05,
+				endSec: 0.5,
+				baseGainDb: -28,
+				soundBandsDb: Array(7).fill(-10),
+			}),
+			ev({ clipId: 's2', soundId: 'y', startSec: 10, endSec: 10.5, ...loud }),
+			ev({ clipId: 's3', soundId: 'y', startSec: 20, endSec: 20.5, ...loud }),
+		]);
+		const s1 = one(r2, 's1');
+		expect(s1.limitedBy).toContain('conflict:clamp/hero-shadow');
+		expect(s1.limitedBy).toContain('conflict:hero-shadow/consistency');
+		expect(s1.limitedBy).not.toContain('conflict:clamp/consistency');
+		expect(r2.warnings.some((w) => w.code === 'W_UNRESOLVED')).toBe(false);
 	});
 
 	it('step 4 would break step 3: a shadowed support stays shadowed', () => {

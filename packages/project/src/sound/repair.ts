@@ -8,12 +8,17 @@ import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
 import {
 	type ClipSfx,
+	type CueMix,
 	clipSfxIssue,
+	type MixWrite,
 	readClipSfx,
 	readSoundDesign,
+	readSoundDesignMix,
 	SOUND_DESIGN_LIMITS,
+	SOUND_MIX_LIMITS,
 	type SoundCue,
 	type SoundDesign,
+	type SoundDesignMix,
 	soundDesignIssue,
 } from '../schema/sound.ts';
 import { cueAnchorTargetExists } from './anchor.ts';
@@ -57,6 +62,65 @@ function trackIds(seq: Sequence): { audio: Set<string>; submix: Set<string> } {
 	};
 }
 
+/** Whether the place a mix record wrote to is still there (track / clip, and its build filter). */
+function mixTargetExists(seq: Sequence, w: MixWrite): boolean {
+	if (w.target === 'trackVolume' || w.target === 'trackFilter') {
+		const t = seq.audioTracks.find((x) => x.id === w.trackId);
+		return !!t && (w.target === 'trackVolume' || (t.effects ?? []).some((e) => e.id === w.effectInstanceId));
+	}
+	const c = w.clipId ? seq.clips[w.clipId] : undefined;
+	if (c?.kind !== 'audio') return false;
+	return w.target === 'clipVolume' || (c.effects ?? []).some((e) => e.id === w.effectInstanceId);
+}
+
+/**
+ * Stale mix records (soft references): a cue record whose cue is gone, writes whose track / clip / filter is gone (a
+ * record left with none dropped, unless suspended), build filters of owners or effects that are gone. Returns what is
+ * stale; with `apply` removes it (empty tables it emptied go too). The automation they wrote stays as ordinary keys.
+ */
+function pruneMix(seq: Sequence, mix: SoundDesignMix, cueIds: ReadonlySet<string>, apply: boolean): string[] {
+	const out: string[] = [];
+	const m = mix as SoundDesignMix & Record<string, unknown>;
+	for (const bucket of ['cues', 'orphans'] as const) {
+		const table = m[bucket] as Record<string, CueMix> | undefined;
+		if (!table) continue;
+		for (const [k, c] of Object.entries(table)) {
+			if (bucket === 'cues' && !cueIds.has(k)) {
+				out.push(`the mix record of cue ${k}, which no longer exists`);
+				if (apply) delete table[k];
+				continue;
+			}
+			for (const kind of ['stopBefore', 'build'] as const) {
+				const r = c[kind];
+				if (!r) continue;
+				const keep = r.writes.filter((w) => mixTargetExists(seq, w));
+				if (keep.length === r.writes.length) continue;
+				out.push(
+					`${r.writes.length - keep.length} write(s) of cue ${k} on tracks, clips or filters that are gone`,
+				);
+				if (!apply) continue;
+				if (keep.length || r.suspended === true) r.writes = keep;
+				else delete c[kind];
+			}
+			if (apply && !c.stopBefore && !c.build) delete table[k];
+		}
+		if (apply && Object.keys(table).length === 0) delete m[bucket];
+	}
+	const filters = m.buildFilters as Record<string, string> | undefined;
+	if (filters) {
+		for (const [owner, fx] of Object.entries(filters)) {
+			const t = seq.audioTracks.find((x) => x.id === owner);
+			const c = seq.clips[owner];
+			const list = t ? (t.effects ?? []) : c?.kind === 'audio' ? (c.effects ?? []) : [];
+			if (list.some((e) => e.id === fx)) continue;
+			out.push(`the build filter record of ${owner}, whose filter is gone`);
+			if (apply) delete filters[owner];
+		}
+		if (apply && Object.keys(filters).length === 0) delete m.buildFilters;
+	}
+	return out;
+}
+
 /**
  * Whether the document has soft references to tidy (dangling anchors, placed clips or cues that are gone, cue ids
  * shared by two sequences, settings naming missing tracks). Invariant problems are reported by INV-SOUND / INV-SFX;
@@ -87,6 +151,7 @@ export function soundDesignNeedsRepair(doc: ProjectDocument): boolean {
 			}
 			const room = sd.mix?.room;
 			if (room && !t0(seq).submix.has(room.busId)) return true;
+			if (sd.mix && pruneMix(seq, sd.mix, cueIds, false).length) return true;
 		}
 		for (const c of Object.values(seq.clips)) {
 			const sfx = (c as { sfx?: unknown }).sfx;
@@ -194,6 +259,19 @@ export function repairSoundDesign(doc: ProjectDocument, ids: IdSource, note: Not
 				delete sd.mix.room;
 				note('drop-room-glue', seq.id, 'the SFX room submix no longer exists: its glue record is removed');
 			}
+			// Mix records follow a renamed cue; stale ones go (their automation stays as ordinary keys).
+			const mixCues = sd.mix?.cues;
+			if (mixCues && renamed.size) {
+				const next: Record<string, CueMix> = Object.create(null);
+				for (const [k, v] of Object.entries(mixCues)) {
+					const id = renamed.get(k) ?? k;
+					if (!Object.hasOwn(next, id)) next[id] = v;
+				}
+				sd.mix!.cues = next;
+			}
+			if (sd.mix)
+				for (const what of pruneMix(seq, sd.mix, new Set(Object.keys(sd.cues)), true))
+					note('prune-mix', seq.id, `${what}: removed (its automation stays as ordinary keyframes)`);
 		}
 		// A clip's cue must be a cue of its own sequence (renamed with it).
 		for (const c of Object.values(seq.clips)) {
@@ -238,10 +316,189 @@ export function followSfxSplit(seq: Sequence, leftId: string, rightId: string): 
 	else list.splice(i + 1, 0, rightId);
 }
 
+/** The ids of the entities inside a clip or track (depth > 0), in document order: before / after a re-identification. */
+export function nestedEntityIds(v: unknown): string[] {
+	const out: string[] = [];
+	const visit = (x: unknown, depth: number): void => {
+		if (depth > 64 || !x || typeof x !== 'object') return;
+		if (Array.isArray(x)) {
+			for (const y of x) visit(y, depth + 1);
+			return;
+		}
+		for (const [k, y] of Object.entries(x as Record<string, unknown>)) {
+			if (k === 'id' && depth > 0 && typeof y === 'string') out.push(y);
+			else visit(y, depth + 1);
+		}
+	};
+	visit(v, 0);
+	return out;
+}
+
+/** Whether any realisation record writes into clip `clipId` (a cheap check before a split follows the records). */
+export function mixNamesClip(seq: Sequence, clipId: string): boolean {
+	const mix = (seq.soundDesign as SoundDesign | undefined)?.mix;
+	if (!isRecord(mix)) return false;
+	if (isRecord(mix.buildFilters) && Object.hasOwn(mix.buildFilters, clipId)) return true;
+	for (const bucket of [mix.cues, mix.orphans])
+		for (const c of Object.values(isRecord(bucket) ? bucket : {}))
+			for (const r of [c?.stopBefore, c?.build]) if (r?.writes.some((w) => w.clipId === clipId)) return true;
+	return false;
+}
+
+/**
+ * A split music clip keeps both parts in the mix records (`splitClipAt`): each clip Volume / clip filter write naming
+ * the left part is cloned for the right part (a copy with re-identified keys and effects: `idMap` old → new ids; the
+ * replaced keys get fresh ids so both parts can give theirs back), and the right part's build filter is recorded. A
+ * record already at `SOUND_MIX_LIMITS.writes` leaves the right part's keys as ordinary keyframes. Mutates `seq`.
+ */
+export function followMixSplit(
+	seq: Sequence,
+	leftId: string,
+	rightId: string,
+	idMap: ReadonlyMap<string, string>,
+	newKeyId: () => string,
+): void {
+	const mix = (seq.soundDesign as SoundDesign | undefined)?.mix;
+	if (!isRecord(mix)) return;
+	for (const bucket of [mix.cues, mix.orphans]) {
+		if (!isRecord(bucket)) continue;
+		for (const c of Object.values(bucket))
+			for (const r of [c?.stopBefore, c?.build]) {
+				if (!r) continue;
+				const writes = r.writes as MixWrite[];
+				for (const w of [...writes]) {
+					if (w.clipId !== leftId || (w.target !== 'clipVolume' && w.target !== 'clipFilter')) continue;
+					if (writes.length >= SOUND_MIX_LIMITS.writes) continue;
+					const fx = w.effectInstanceId ? idMap.get(w.effectInstanceId) : undefined;
+					if (w.effectInstanceId && !fx) continue;
+					writes.push({
+						...w,
+						clipId: rightId,
+						...(fx ? { effectInstanceId: fx } : {}),
+						// a key the left part no longer has is not in the right part either (a fresh id: missing)
+						written: w.written.map((id) => idMap.get(id) ?? newKeyId()),
+						replaced: w.replaced.map((k) => ({
+							...k,
+							id: newKeyId(),
+							easeIn: { ...k.easeIn },
+							easeOut: { ...k.easeOut },
+						})),
+					});
+				}
+			}
+	}
+	const filters = mix.buildFilters as Record<string, string> | undefined;
+	const fx = filters?.[leftId] ? idMap.get(filters[leftId]!) : undefined;
+	if (filters && fx) filters[rightId] = fx;
+}
+
+/** The mix records of a sequence copy (see `remapSoundDesign`): ids mapped, anything that did not come along dropped. */
+function remapMix(
+	raw: unknown,
+	cueMap: ReadonlyMap<string, string>,
+	maps: {
+		clips: ReadonlyMap<string, string>;
+		tracks: ReadonlyMap<string, string>;
+		children?: ReadonlyMap<string, string>;
+		sends?: ReadonlyMap<string, string>;
+	},
+	newCueId: () => string,
+	newKeyId: () => string,
+): SoundDesignMix | null {
+	const mix = readSoundDesignMix(raw);
+	if (!mix) return null;
+	const children = maps.children ?? new Map<string, string>();
+	const writeOf = (w: MixWrite): MixWrite | null => {
+		const trackId = w.trackId ? maps.tracks.get(w.trackId) : undefined;
+		const clipId = w.clipId ? maps.clips.get(w.clipId) : undefined;
+		const fx = w.effectInstanceId ? children.get(w.effectInstanceId) : undefined;
+		if ((w.trackId && !trackId) || (w.clipId && !clipId) || (w.effectInstanceId && !fx)) return null;
+		return {
+			...w,
+			...(trackId ? { trackId } : {}),
+			...(clipId ? { clipId } : {}),
+			...(fx ? { effectInstanceId: fx } : {}),
+			// a key the original no longer has is not in the copy either (a fresh id: missing)
+			written: w.written.map((id) => children.get(id) ?? newKeyId()),
+			replaced: w.replaced.map((k) => ({
+				...k,
+				id: newKeyId(),
+				easeIn: { ...k.easeIn },
+				easeOut: { ...k.easeOut },
+			})),
+		};
+	};
+	const recOf = <R extends { writes: MixWrite[]; suspended?: boolean }>(r: R | undefined): R | undefined => {
+		if (!r) return undefined;
+		const writes = r.writes.map(writeOf).filter((w): w is MixWrite => !!w);
+		return writes.length || r.suspended === true ? { ...r, writes } : undefined;
+	};
+	const tableOf = (t: Record<string, CueMix> | undefined, key: (k: string) => string | undefined) => {
+		if (!t) return undefined;
+		const out: Record<string, CueMix> = Object.create(null);
+		for (const [k, v] of Object.entries(t)) {
+			const id = key(k);
+			if (!id) continue;
+			const c: CueMix = { ...v };
+			const sb = recOf(v.stopBefore as never);
+			const b = recOf(v.build as never);
+			if (sb) c.stopBefore = sb;
+			else delete c.stopBefore;
+			if (b) c.build = b;
+			else delete c.build;
+			if (c.stopBefore || c.build) out[id] = c;
+		}
+		return Object.keys(out).length ? out : undefined;
+	};
+	const out: SoundDesignMix & Record<string, unknown> = { ...mix };
+	const cues = tableOf(mix.cues, (k) => cueMap.get(k));
+	const orphans = tableOf(mix.orphans as Record<string, CueMix> | undefined, () => newCueId());
+	if (cues) out.cues = cues;
+	else delete out.cues;
+	if (orphans) out.orphans = orphans;
+	else delete out.orphans;
+	if (mix.buildFilters) {
+		const f: Record<string, string> = Object.create(null);
+		for (const [owner, fx] of Object.entries(mix.buildFilters)) {
+			const o = maps.clips.get(owner) ?? maps.tracks.get(owner);
+			const x = children.get(fx);
+			if (o && x) f[o] = x;
+		}
+		if (Object.keys(f).length) out.buildFilters = f;
+		else delete out.buildFilters;
+	}
+	const room = mix.room;
+	if (room) {
+		const busId = maps.tracks.get(room.busId);
+		if (!busId) delete out.room;
+		else
+			out.room = {
+				...room,
+				busId,
+				reverbId: room.reverbId ? (children.get(room.reverbId) ?? null) : null,
+				sends: room.sends.flatMap((x) => {
+					const trackId = maps.tracks.get(x.trackId);
+					const sendId = maps.sends?.get(x.sendId);
+					return trackId && sendId ? [{ ...x, trackId, sendId }] : [];
+				}),
+				...(room.before
+					? {
+							before: {
+								...room.before,
+								roomBus: room.before.roomBus ? (maps.tracks.get(room.before.roomBus) ?? null) : null,
+							},
+						}
+					: {}),
+			};
+	}
+	return Object.keys(out).length ? out : null;
+}
+
 /**
  * A copied sequence's sound design follows the copy (`sequence.duplicate`): new cue ids, placed clips, anchors and
  * clip links mapped to the copy's clips, transitions, tracks and markers (references that did not come along dangle,
- * like after an edit, and are dropped). Mutates `seq` (a plain copy).
+ * like after an edit, and are dropped), and the mix records (stop-before, build, room glue) mapped to the copy's keys,
+ * filters and sends (`children`, `sends`; fresh ids for the keys they replaced). Mutates `seq` (a plain copy).
  */
 export function remapSoundDesign(
 	seq: Sequence,
@@ -250,10 +507,13 @@ export function remapSoundDesign(
 		tracks: ReadonlyMap<string, string>;
 		transitions: ReadonlyMap<string, string>;
 		markers: ReadonlyMap<string, string>;
-		/** Ids of things inside clips that a copy re-identifies (keyframes, clip markers, effects). */
+		/** Ids of things inside clips and tracks that a copy re-identifies (keyframes, clip markers, effects). */
 		children?: ReadonlyMap<string, string>;
+		/** Send ids of the copy's mixer strips. */
+		sends?: ReadonlyMap<string, string>;
 	},
 	newCueId: () => string,
+	newKeyId: () => string = () => newCueId().replace(/^cue_/, 'kf_'),
 ): void {
 	const children = maps.children ?? new Map<string, string>();
 	const r = seq as { soundDesign?: unknown };
@@ -314,9 +574,11 @@ export function remapSoundDesign(
 			cues[id] = cue;
 		}
 		(sd as { cues: unknown }).cues = cues;
-		// What stop-before, build and room glue wrote names the original's keys, effects and sends: the copy keeps the
-		// automation as ordinary keys, without the records (running them again on the copy merges by the minimum).
-		delete (sd as { mix?: unknown }).mix;
+		// What stop-before, build and room glue wrote follows the copy: its records name the copy's cues, tracks, clips,
+		// keys, filters and sends, so clearing a stop-before on the copy takes the copy's dip out exactly.
+		const mix = remapMix((sd as { mix?: unknown }).mix, cueMap, maps, newCueId, newKeyId);
+		if (mix) (sd as { mix?: unknown }).mix = mix;
+		else delete (sd as { mix?: unknown }).mix;
 		if (isRecord(sd.settings)) {
 			const rb = (sd.settings as { roomBus?: unknown }).roomBus;
 			(sd.settings as { roomBus?: unknown }).roomBus =

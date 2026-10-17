@@ -1,5 +1,6 @@
 // Preferences ▸ Sound Library (spec 12 §2.7, P1-R7): your sound folders (indexed in place by the engine, local engines
-// only) with a licence declaration per folder, enable / disable, rescan and remove; the library status and reindexing
+// only) with a licence declaration per folder, enable / disable, rescan and remove; downloadable sound packs (install
+// after the licence is shown, remove; WP6.1, PacksSection.tsx); the library status and reindexing
 // (an engine `sound-index` job, also listed in the Jobs panel); and the audition options (audition on hover, loop,
 // auto-play, volume) and row density. Folder changes are validated by the engine and saved with "Save Folders".
 // Proposals: "Allow agents to apply sound proposals" for the active sequence (WP3.3b).
@@ -28,6 +29,7 @@ import { useShellRuntimeOrNull } from '../shell/context.tsx';
 import { PrefGroup, PrefRow } from '../shell/preferences/GeneralPage.tsx';
 import { useEngine } from '../state/engine.tsx';
 import { DELIVERY_IDS, deliveryOptionLabel, sequenceDelivery } from './mix-model.ts';
+import { PacksSection } from './PacksSection.tsx';
 import {
 	MAX_AUDITION_DB,
 	MAX_PRE_ROLL_SEC,
@@ -392,6 +394,8 @@ export function SoundLibraryPreferencesPage() {
 					the credits say. Undeclared folders are flagged.
 				</p>
 			</PrefGroup>
+
+			<PacksSection />
 
 			<PrefGroup title="Audition">
 				<Checkbox
