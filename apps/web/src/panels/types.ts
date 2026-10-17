@@ -27,6 +27,7 @@ export const PANEL_KINDS = [
 	'mediaBrowser',
 	'soundLibrary',
 	'review',
+	'soundCheck',
 ] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];
 

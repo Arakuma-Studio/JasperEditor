@@ -9,6 +9,11 @@
 // else moves: no group is split or resized and the active tab stays. A layout that already has a Review panel
 // (opened by hand, or saved by a build that had it) is left as it is; null layouts are the factory layout, which has
 // it. Custom workspaces are the user's own and are never changed (Window ▸ Review still opens the panel there).
+//
+// v2 → v3 (spec 12 §2.7, WP5.2): the same group gained the Sound Check panel, right after Review (the factory group is
+// Review, Sound Check, Markers, History, Jobs). The same rules: a background tab after Review (else before Markers /
+// History / Jobs in their group, else the Sound Library's group), only in the built-in Sound Design record, never
+// twice, null layouts and custom workspaces left alone.
 import { panelState } from './layout.ts';
 
 type Obj = Record<string, unknown>;
@@ -17,6 +22,11 @@ const isObj = (x: unknown): x is Obj => !!x && typeof x === 'object' && !Array.i
 
 /** The workspace whose stored layouts gain the Review panel. */
 export const SOUND_DESIGN_WORKSPACE_ID = 'sound-design';
+/** The Sound Check panel's state as `buildLayout` writes it (minimum size of `panels/soundCheck`; tested against it). */
+export const SOUND_CHECK_PANEL_STATE = panelState({ kind: 'soundCheck', minSize: { w: 320, h: 200 } }, 'Sound Check');
+/** Panel kinds whose group receives Sound Check, in order of preference: Review's, then the old hosts. */
+const SOUND_CHECK_HOSTS = ['review', 'markers', 'history', 'jobs', 'soundLibrary', 'mediaBrowser', 'project'] as const;
+
 /** Panel kinds whose group receives Review, in order of preference (the old Sound Design left group). */
 const REVIEW_HOSTS = ['markers', 'history', 'jobs', 'soundLibrary', 'mediaBrowser', 'project'] as const;
 /** Review sits before these in its group (the factory order: Review, Markers, History, Jobs). */
@@ -44,49 +54,79 @@ function leaves(layout: Obj): LayoutLeafLike[] {
 }
 
 /**
- * The layout with a Review tab added (a new object; the input is not mutated), or the layout itself when it already
- * has one, cannot be read, or has none of the host groups.
+ * The layout with a tab of `kind` added (a new object; the input is not mutated) to the first group holding one of
+ * `hosts`: right after `after` when that group has it, else before the first of `before`, else at its end. The layout
+ * itself when it already has such a panel, cannot be read, or has none of the host groups.
  */
-export function addReviewPanel(layout: unknown): unknown {
+function addPanelTab(
+	layout: unknown,
+	kind: string,
+	state: { id: string },
+	hosts: readonly string[],
+	place: { after?: string; before: ReadonlySet<string> },
+): unknown {
 	if (!isObj(layout) || !isObj(layout.panels) || !isObj(layout.grid)) return layout;
 	const panels = layout.panels;
-	if (Object.values(panels).some((p) => kindOfPanel(p) === 'review')) return layout;
-	const id = REVIEW_PANEL_STATE.id;
+	if (Object.values(panels).some((p) => kindOfPanel(p) === kind)) return layout;
+	const id = state.id;
 	if (Object.hasOwn(panels, id)) return layout;
 	const kindOfView = (v: unknown) =>
 		typeof v === 'string' && Object.hasOwn(panels, v) ? kindOfPanel(panels[v]) : null;
 	const copy = structuredClone(layout) as Obj;
 	const groups = leaves(copy);
 	let host: LayoutLeafLike | undefined;
-	for (const kind of REVIEW_HOSTS) {
-		host = groups.find((g) => g.data.views.some((v) => kindOfView(v) === kind));
+	for (const k of hosts) {
+		host = groups.find((g) => g.data.views.some((v) => kindOfView(v) === k));
 		if (host) break;
 	}
 	if (!host) return layout;
 	const views = host.data.views;
-	const at = views.findIndex((v) => REVIEW_BEFORE.has(kindOfView(v) ?? ''));
+	const after = place.after ? views.findIndex((v) => kindOfView(v) === place.after) : -1;
+	const at = after >= 0 ? after + 1 : views.findIndex((v) => place.before.has(kindOfView(v) ?? ''));
 	views.splice(at < 0 ? views.length : at, 0, id);
-	(copy.panels as Obj)[id] = { ...REVIEW_PANEL_STATE };
+	(copy.panels as Obj)[id] = { ...state };
 	return copy;
 }
 
-function v1ToV2(data: unknown): unknown {
-	if (!isObj(data) || !isObj(data.workspaces)) return data;
-	const record = Object.hasOwn(data.workspaces, SOUND_DESIGN_WORKSPACE_ID)
-		? data.workspaces[SOUND_DESIGN_WORKSPACE_ID]
-		: undefined;
-	if (!isObj(record)) return data;
-	const current = addReviewPanel(record.current);
-	const saved = addReviewPanel(record.saved);
-	if (current === record.current && saved === record.saved) return data;
-	return {
-		...data,
-		workspaces: { ...data.workspaces, [SOUND_DESIGN_WORKSPACE_ID]: { ...record, current, saved } },
+/**
+ * The layout with a Review tab added (a new object; the input is not mutated), or the layout itself when it already
+ * has one, cannot be read, or has none of the host groups.
+ */
+export function addReviewPanel(layout: unknown): unknown {
+	return addPanelTab(layout, 'review', REVIEW_PANEL_STATE, REVIEW_HOSTS, { before: REVIEW_BEFORE });
+}
+
+/** The layout with a Sound Check tab added after Review (see the v2 → v3 note); unchanged when it has one. */
+export function addSoundCheckPanel(layout: unknown): unknown {
+	return addPanelTab(layout, 'soundCheck', SOUND_CHECK_PANEL_STATE, SOUND_CHECK_HOSTS, {
+		after: 'review',
+		before: REVIEW_BEFORE,
+	});
+}
+
+/** A step that changes the Sound Design record's current and saved layouts with `add`. */
+function soundDesignStep(add: (layout: unknown) => unknown) {
+	return (data: unknown): unknown => {
+		if (!isObj(data) || !isObj(data.workspaces)) return data;
+		const record = Object.hasOwn(data.workspaces, SOUND_DESIGN_WORKSPACE_ID)
+			? data.workspaces[SOUND_DESIGN_WORKSPACE_ID]
+			: undefined;
+		if (!isObj(record)) return data;
+		const current = add(record.current);
+		const saved = add(record.saved);
+		if (current === record.current && saved === record.saved) return data;
+		return {
+			...data,
+			workspaces: { ...data.workspaces, [SOUND_DESIGN_WORKSPACE_ID]: { ...record, current, saved } },
+		};
 	};
 }
 
 /** Migrations by the version they start from. */
-const STEPS: Record<number, (data: unknown) => unknown> = { 1: v1ToV2 };
+const STEPS: Record<number, (data: unknown) => unknown> = {
+	1: soundDesignStep(addReviewPanel),
+	2: soundDesignStep(addSoundCheckPanel),
+};
 
 /**
  * Migrates the workspace state stored at `fromVersion` to `toVersion`. A version no build wrote (not an integer ≥ 1)

@@ -19,6 +19,7 @@ import project from './project/index.ts';
 import properties from './properties/index.ts';
 import review from './review/index.ts';
 import scopes from './scopes/index.ts';
+import soundCheck from './soundCheck/index.ts';
 import soundLibrary from './soundLibrary/index.ts';
 import source from './source/index.ts';
 import text from './text/index.ts';
@@ -51,6 +52,7 @@ const PANEL_DEFINITIONS: readonly PanelDefinition[] = [
 	mediaBrowser,
 	soundLibrary,
 	review,
+	soundCheck,
 ];
 
 export function listPanels(): readonly PanelDefinition[] {

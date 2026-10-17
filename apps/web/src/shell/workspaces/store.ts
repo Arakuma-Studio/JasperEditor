@@ -32,7 +32,7 @@ export type WorkspacesState = {
 
 export const WORKSPACES_KEY = 'jasper:workspaces';
 /** 2: the Sound Design workspace's stored layouts gain the Review panel (`migrations.ts`, WP3.3b). */
-export const WORKSPACES_VERSION = 2;
+export const WORKSPACES_VERSION = 3;
 const SAVE_DEBOUNCE_MS = 300;
 
 function builtinRecord(id: string, name: string): WorkspaceRecord {
