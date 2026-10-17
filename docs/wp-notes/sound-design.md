@@ -6878,3 +6878,160 @@ Speed (measured, `prof3.mts`, 60 s of stereo 48 kHz band music): 0.56–0.91 s a
 - MCP `place_sound`'s W_HERO_UNDER_DIALOGUE uses the pure rule (whole dialogue clips), not voice activity.
 - The cue route measures voice activity synchronously (first time per media range: one ffmpeg decode — estimated ≈ 50× faster than real time, not benchmarked —
   at 16 kHz; cached after).
+
+### Phase 6 → WP6.4 credits sidecar, export warnings, interchange
+
+Scope: spec 12 §2.11 (export credits sidecar, W_SOUND_CREDITS, W_SOUND_CHECK_STALE, interchange cues as markers, the
+export oracle), P6-R4; the WP5.1 / WP5.2 notes ("default `ExportSettings.credits` from `soundDesign.settings.credits`").
+
+Files: `packages/api/src/exports.ts` (`ExportCreditsSchema`, `ExportSettings.credits`, `RenderPlan.warnings[].level`,
+`ExportResult.credits` / `warnings[].level`), `routes.ts` (`renderCreditsFile`), `packages/engine-client` (`renderCreditsFileUrl`);
+`packages/project/src/sound/credits.ts` (`played`, `playedLibraryClips`, `soundCreditsFileText`, `SOUND_CREDITS_FILE`,
+`defaultCreditsSidecar`), `schema/sound.ts` (`SOUND_CREDITS_FORMATS` + `csv`), `sound/cues/markers.ts` (`cueMarkers`,
+`parseSfxRequest` reads `(hero|support|ambient)`), `commands/handlers/clipboard.ts` (`copySequence` fix, below);
+`apps/engine/src/export/sound-credits.ts` (new), `planner.ts`, `service.ts`, `routes/exports.ts`;
+`packages/interchange/src/{jasper-export,jasper-import,comp,edl}.ts`; `apps/mcp/src/tools/{render,interchange,sound}.ts`,
+`context.ts`; web `export/{ExportMode.tsx,PlanSummary.tsx,settings.ts}`, `panels/jobs/JobsPanel.tsx`,
+`home/ProjectLifecycle.tsx`, `sound/cues/model.ts`, i18n (4 strings). Tests: `packages/project/test/sound-export-credits.test.ts`,
+`apps/engine/test/sound-export-credits.test.ts`, `packages/interchange/test/sound-design.test.ts`,
+`apps/mcp/test/export-credits.test.ts`, `apps/web/test/export-credits.test.tsx`, `sound-cue-seam-model.test.ts` (+1),
+`e2e/sound-credits-export.spec.ts`.
+
+#### What it does (usage)
+
+- **Export dialog** (Export mode ▸ SOUND, shown when the sequence uses library sounds, has sound effects or the plan has a
+  sound warning): **Credits** Off / Text (.txt) / Markdown (.md) / CSV (.csv). Default: the last choice for this sequence
+  (remembered with the other export choices), else `soundDesign.settings.credits` (null there = Off), else Markdown when
+  a sound the sequence (or its nests) uses asks for a credit (`requiresAttribution`: CC BY, CC BY-SA, NC, ND, open-source
+  licences), else Off. The plan's sound warnings are listed under it (⚠ warning, ⓘ information) and not repeated in the
+  summary list. The finished-export notice says "Sound credits file written (n sounds)" plus the sound warnings; the Jobs
+  panel row offers `credits.md` (etc.) next to Download.
+- **Engine**: `ExportSettings.credits {sidecar: 'txt'|'md'|'csv'|null, scope?: 'all'|'attribution'}`. The export writes
+  `credits/output.credits.<ext>` in its job folder (so `output.*` stays the job's only output file), served at
+  `GET /renders/:jobId/credits/output.credits.<ext>` (name allow-list, only for succeeded jobs, `?download=1`); with a
+  `destination.path` it is copied to `<stem>.credits.<ext>` next to the video with the same no-overwrite rule and partial
+  cleanup as caption sidecars (`cut (2).mov` → `cut (2).credits.csv`). `result.credits {format, scope, count, name?, url?,
+  path?}`; `count: 0` and no file when no library sound is heard in the range.
+- **What is credited**: what the export's mixer PLAYS — `playedLibraryClips(planned.snapshot)`: the snapshot's audio clips
+  (enabled clips intersecting the range, including crossfade handles; tracks the mixer never hears — muted throughout —
+  left out; nested sequences flattened over the part of the nest in the range), processed versions credit their library
+  original. File ▸ Export ▸ Sound Credits… and `list_sound_credits` still list every clip of the sequence (unchanged).
+- **Warnings** (plan, Export dialog, job result, MCP): `W_SOUND_CREDITS` — sounds heard need a credit and no sidecar is
+  written ("1 sound heard in this export needs a credit (CC-BY-4.0: "Credit Ding") and no credits file is written: choose
+  a Credits format or credit it yourself"); `W_SOUND_LICENSE_NC` (addition: a non-commercial sound is heard);
+  `W_SOUND_CHECK_STALE` with `level: 'info'` — the stored Sound Check is stale (with the reason: mix / delivery target /
+  cues, loudness or credits settings) or current but failed (with the error count). None for stills, picture-only renders
+  (`videoOnly`) and alpha masters. The job result repeats the plan's `W_SOUND_*` warnings (W_SOUND_CREDITS only when no
+  file was written).
+- **MCP** `start_export {credits: "md"|"txt"|"csv"|null|{sidecar, scope}}`: default as the dialog (setting, else Markdown for
+  a sound needing a credit); returns `credits {sidecar, scope?, defaulted}` and `soundWarnings [{code, message, level?}]`;
+  `wait: true` / `wait_for_job` return `result.credits` (absolute `url`) and `result.warnings`. SOUND_GUIDE and the
+  start_export / wait_for_job descriptions say so; INTERCHANGE_GUIDE has a sound design bullet. No new tool (count unchanged).
+- **Interchange**: every exporter's IR gets one sequence marker per cue, `SFX: <type>[+<type>] (<weight>)` at the cue frame
+  (types: the cue's, else the library types of the sound placed on it, else its kind; comment: label · reason · "muted"),
+  colour mango, no JasperEditor metadata (re-imports make plain markers). Cues made from a marker the sequence still has
+  are skipped (that marker is exported already). FCP7, FCPXML, OTIO, EDL (with Markers on) and AAF write them; OMF has no
+  sequence markers (its writer already reports markers) and ALE is a media log. The report has one info entry per sequence
+  with a sound design: "the n sound design cue(s) of "…" are exported as "SFX: <type> (<weight>)" markers; proposals and the
+  sound design's mix metadata (settings, mix records, the last Sound Check, the SFX placement data of clips) are not
+  carried" (→ "markers (after importing, Sequence ▸ Sound Design ▸ Convert Markers to Cues makes them cues again)"), or
+  "… are not carried (an ALE is a media log …)" / "(OMF has no sequence markers)".
+- **Back to cues**: `parseSfxRequest` reads the trailing `(hero|support|ambient)`, so Convert Markers to Cues
+  (`markerToCueInput`) and the `markers` cue source keep the weight and the types; kind becomes `manual` and the cue
+  window is not carried (point markers).
+
+#### Mixer data sound design produces, per exporter (AGENTS §4: nothing silently dropped)
+
+Checked: the SFX Room (`soundDesign.ensureBus`: a submix with a reverb insert + sends), stop-before / ducking automation
+(track Volume keyframes; clip Volume keyframes on clip fallback), build filters and pitch shifts (clip audio effects), pan
+keyframes, the Mix's loudness normalisation (`mixer.setLoudness` / delivery presets).
+
+| Exporter | Before | Now |
+|---|---|---|
+| OTIO | submixes **silently dropped** (not in the metadata; track `mixer` exported but never restored, sends dangling); master restored | submixes in the sequence metadata; import restores submixes (new ids) and each track's mixer strip (outputs, sends, lanes), validated with the schemas; unknown targets dropped and reported; invalid routing (`audioMixIssues`) drops all of it, reported |
+| FCP7, FCPXML | submix / sends / lanes, master volume+effects, track volume/pan reported; **loudness normalisation not reported** | + "the loudness normalisation of … (−16 LUFS, −1 dBTP ceiling) is not carried" |
+| EDL | clip levels and effects reported; **track volume/pan and loudness not reported**; markers off silently | + track volume/pan, + loudness, + "the n sequence marker(s) … are not written (Markers is off)" (info) |
+| AAF, OMF | **audio clip effects and track volume/pan silently dropped**; loudness not reported | + "the audio effects (…) of … are not carried by AAF/OMF" (only for linked/embedded media essence, which is never rendered with effects), + track volume/pan, + loudness |
+| ALE | media log; nothing of the mix applies | the sound design entry says the cues are not carried |
+
+Also found and fixed: **pasting or importing a sequence with a submix failed** (`copySequence`, shared by
+`project.pasteItems` and `project.importTimeline`, kept the submix, send and cue ids and did not remap cue anchors /
+placed clips: a second paste, or a sequence with sends, broke INV-001 — the transaction was refused). It now re-identifies
+submixes and sends and calls `remapSoundDesign` like `sequence.duplicate`. Regression test failed before (measured: "transaction failed"), passes after.
+
+#### Decisions
+
+- Header strings stay English ("Sound credits" / "## Sound credits", the CSV header): the sidecar is a deliverable for any
+  audience and the engine has no user locale; credit lines are the licences' verbatim attribution lines. Same text as File
+  ▸ Export ▸ Sound Credits… for the same sounds.
+- No file for nothing heard (an empty credits file next to a video invites a wrong conclusion); `count: 0` says it.
+- `SOUND_CREDITS_FORMATS` gained `csv` (the setting, the dialog and the sidecar share it). No schema bump: the field is new on
+  this unreleased branch.
+- `W_SOUND_CREDITS` uses `requiresAttribution` (broader than CC BY / BY-SA: a credit too many is harmless).
+- No audio-only or image-sequence export destination exists in this build (Export mode lists "Audio Only" as disabled;
+  image sequences are import-only), so the sidecar applies to every media export with sound; stills, picture-only previews
+  and alpha masters get neither the file nor the warnings.
+- Oracle: Phase 4 verification compared the preview graph with the export mixer; nothing compared an exported FILE with the
+  offline render, so it is added here (below).
+
+#### Verified (measured, this branch; shared host, 16 cores, load average 60–90 during the runs)
+
+- `pnpm vitest run packages/project/test/sound-export-credits.test.ts`: 8 passed — played credits over range 90–240 = the
+  CC0 sound and the nested CC BY one (`nest>inner` id), not the muted-track, disabled or out-of-range sounds; whole range;
+  unmute / enable brings them in; sidecar text exact (TXT, MD, CSV, attribution-only, '' when nothing plays); hostile
+  `played` lists (300-run property); the dialog default (setting csv / null, CC BY → md, CC0 → none); cue markers (types,
+  placed-sound types, kind fallback, marker-made cue skipped, muted comment), `parseSfxRequest` weight, the marker cue
+  source keeps weight + types, 500-run hostile `cueMarkers` property; **paste of a sequence with the SFX Room twice**:
+  invariants clean, own submix / sends / cues. Mutation check: with `clipboard.ts` from `ca23a4c5` the paste test fails
+  ("transaction failed").
+- `pnpm vitest run apps/engine/test/sound-export-credits.test.ts --maxWorkers=1`: 6 passed (real engine + ffmpeg):
+  W_SOUND_CREDITS (2 sounds: CC-BY-4.0, CC-BY-SA-4.0) / none with a sidecar / none for frames 60–200 / none for
+  `videoOnly`; W_SOUND_CHECK_STALE info for a failed current check ("… failed (2 errors) …") and after a mix change ("out
+  of date (the mix changed since)"), none for a current pass; Markdown sidecar with 3 heard sounds (muted-track and
+  disabled-clip sounds absent; whole-project credits list 5), served, 4 hostile names → 404; TXT attribution-only next to a
+  destination (`cut.credits.txt` exact text), CSV again → `cut (2).credits.csv`, nothing overwritten; `count: 0`, no file,
+  404 and W_SOUND_CHECK_STALE in the result; W_SOUND_CREDITS in a result without sidecar. **Oracle**: ProRes MOV + 24-bit
+  PCM export of frames 15–285 with SFX (hero hit + click), SFX Room (send + reverb), stop-before track automation and
+  −16 LUFS normalisation vs `renderMixdown` of the same plan: same length (2 × 9 s × 48 000), max |Δ| ≤ 2⁻²³ (one 24-bit
+  step), integrated −16 ±1 LU, the hit above the dip.
+- `pnpm vitest run packages/interchange/test/sound-design.test.ts`: 17 passed — the report entry for all 7 formats; FCP7,
+  FCPXML, OTIO, EDL, AAF re-import `SFX: whoosh+hit (hero)` at 30 and `SFX: hit (support)` at 90; re-imported FCPXML
+  markers → cues (manual, hero / support, types) → `soundCue.add`; the mixer reports per format (submix, sends, loudness,
+  track volume/pan; AAF/OMF pitch-shifter effect); OTIO restores submix + reverb, sends → the new submix id, the stop-before
+  keyframes and the loudness, no warnings, a second import of the same file stays valid; hostile metadata (unreadable
+  submix, unknown targets) reported; 150-run property of arbitrary submix / mixer metadata: import never fails, invariants
+  clean. Whole `packages/interchange` before the merge: 16 files, 109 passed (+ this file).
+- `apps/mcp/test/export-credits.test.ts`: 4 passed (default md + `defaulted`, csv / {txt, attribution} / null reach the
+  engine, unknown format and extra key refused, setting wins, CC0 → none, `soundWarnings`, `result.credits.url` absolute
+  in `wait: true` and `wait_for_job`); with `conventions`, `readme-tools`, `sound-guide`: 20 passed.
+- `apps/web/test/export-credits.test.tsx`: 3 passed (default Markdown, the option labels, plan settings follow the select,
+  the info / warning classes, the warning shown once, CSV reaches the export; setting txt / null / CC0; notice detail and
+  the Jobs panel `credits.md` link); `sound-cue-seam-model.test.ts` 23 passed (+1: `SFX: … (support)` read back);
+  `wp2e/ui.test.tsx` unchanged and passing.
+- After merging `feat/sound-design` (WP6.3 Auto Tag): `pnpm lint` and `pnpm typecheck` pass, `pnpm build` passes,
+  `node scripts/i18n.mjs --check` (9 944 strings). 32 touched test files: 288 passed, 2 failed — `packages/interchange/test/
+  fuzz.test.ts` "omf → project" and "any document (sniffed)", both by the 2 s hang limit on two OMF seeds (FUZZ_SEED=24301);
+  timed by hand on the same inputs at load ≈ 71: 2.6–3.6 s with this branch and 2.7–5.4 s with the integration branch's
+  code (not caused by this package; load). `captions-export.test.ts` failed once to load at load ≈ 85 and passed alone
+  (5 passed).
+- **E2E** (built stack, `E2E_PORT=51603 E2E_SKIP_BUILD=1 playwright test e2e/sound-credits-export.spec.ts`): passed (5.4 min;
+  a first attempt was SIGKILLed from outside before the test started). A folder declared CC BY 4.0 (author "Ada Tester",
+  template `"{title}" by {author}, licensed under {license}`) → "Credit Ding" inserted from the Sound Library → Export
+  mode: Credits = Markdown; Off → "⚠ 1 sound heard in this export needs a credit (CC-BY-4.0: "Credit Ding") and no credits
+  file is written…"; Markdown → gone → export → `result.credits {md, count 1}`, the file has `| "Credit Ding" by Ada
+  Tester, licensed under CC-BY-4.0 |`, the Jobs panel row shows Download + credits.md. Screenshots looked at
+  (`test-results/e2e-sound-credits-export/`): the SOUND section with the warning in the warning tone under the Credits
+  select; the Jobs row.
+
+#### Limits and notes for the next packages
+
+- No audio-only / image-sequence export destination exists to carry a sidecar; when one is added it should call
+  `writeCreditsSidecar` (the engine helper only needs `planned.snapshot`).
+- Credits follow the mixer's track audibility: a track muted only part of the time, a clip at −∞ dB Volume or a muted
+  channel map still counts (a credit too many is harmless). Solo is whatever the export mixer does.
+- Interchange cue markers carry types and weight; the cue's kind, window, anchor, placed clips and alternates are not
+  carried (`manual` cues after Convert Markers to Cues). OTIO carries no `soundDesign` either (anchors name clip ids the
+  import regenerates).
+- The finished-export notice detail and the warnings come from the engine in English (as the other export messages).
+- Observed, not changed: an H.264 export requested with `audio.codec: 'pcm'` / `container: 'mov'` came out as MP4 with
+  this host's OpenH264 encoder (the encoder decides the container); the oracle uses ProRes to keep 24-bit PCM in MOV.
