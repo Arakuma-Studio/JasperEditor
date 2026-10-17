@@ -15,6 +15,7 @@ export * from './primitives/fields.tsx';
 export * from './primitives/IconButton.tsx';
 export * from './primitives/layout.tsx';
 export * from './primitives/ScrubbyNumber.tsx';
+export * from './primitives/Segmented.tsx';
 export * from './primitives/Slider.tsx';
 export * from './primitives/TimecodeField.tsx';
 export * from './primitives/TimecodeText.tsx';

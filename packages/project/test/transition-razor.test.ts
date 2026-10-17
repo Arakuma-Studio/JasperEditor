@@ -155,19 +155,37 @@ describe('razor inside a transition (WP6.5a item 1)', () => {
 
 		const fades = twoLinked();
 		fades.h.ok([
-			{ type: 'transition.add', clipId: fades.va, edge: 'in', effectId: 'jasper.cross-dissolve', duration: 30 },
-			{ type: 'transition.add', clipId: fades.vb, edge: 'out', effectId: 'jasper.cross-dissolve', duration: 30 },
+			{
+				type: 'transition.add',
+				clipId: fades.va,
+				edge: 'in',
+				effectId: 'jasper.cross-dissolve',
+				duration: 30,
+			},
+			{
+				type: 'transition.add',
+				clipId: fades.vb,
+				edge: 'out',
+				effectId: 'jasper.cross-dissolve',
+				duration: 30,
+			},
 		]);
 		expect(fades.h.tx([{ type: 'clip.split', at: 12, scope: 'all-unlocked' }]).ok).toBe(true);
 		expect(fades.h.tx([{ type: 'clip.split', at: 190, scope: 'all-unlocked' }]).ok).toBe(true);
 		expect(checkInvariants(fades.h.doc)).toEqual([]);
-		expect(transitions(fades.h).map((t) => t.duration).sort()).toEqual([10, 12]);
+		expect(
+			transitions(fades.h)
+				.map((t) => t.duration)
+				.sort(),
+		).toEqual([10, 12]);
 	});
 
 	it('an insert edit that splits a clip inside a transition span is accepted too', () => {
 		const { h, vb } = withCrossfades();
 		const c = h.registerVideo({ audio: false });
-		const r = h.tx([{ type: 'clip.place', source: { mediaId: c }, at: 104, mode: 'insert', tracks: { video: 'V1' } }]);
+		const r = h.tx([
+			{ type: 'clip.place', source: { mediaId: c }, at: 104, mode: 'insert', tracks: { video: 'V1' } },
+		]);
 		expect(r.ok, JSON.stringify(!r.ok && r.errors)).toBe(true);
 		expect(checkInvariants(h.doc)).toEqual([]);
 		const t = onTrack(h, 'V1')[0]!;

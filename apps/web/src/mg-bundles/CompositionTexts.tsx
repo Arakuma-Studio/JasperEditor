@@ -25,7 +25,7 @@ import {
 	validateTextEdit,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { cx } from '@jasper/ui';
+import { cx, SegmentedControl } from '@jasper/ui';
 import {
 	AlignCenter,
 	AlignJustify,
@@ -526,20 +526,29 @@ function StyleEditor(props: {
 	if (role === 'align') {
 		const options = spec.options ?? ['left', 'center', 'right'];
 		return (
-			<div className="flex items-center gap-[2px]" role="radiogroup" aria-label={spec.label}>
-				{options.map((o) => (
-					<MiniButton
-						key={o}
-						label={`Align ${o}`}
-						active={value === o}
-						disabled={disabled}
-						onClick={() => props.onSet(o)}
-						data-testid={`${testId}-${o}`}
-					>
-						{ALIGN_ICONS[o.toLowerCase()] ?? <span className="text-pr-small">{o}</span>}
-					</MiniButton>
-				))}
-			</div>
+			<SegmentedControl
+				label={spec.label}
+				value={typeof value === 'string' && options.includes(value) ? value : null}
+				disabled={disabled}
+				onChange={(o) => props.onSet(o)}
+				className="items-center"
+				optionClassName={(on) =>
+					cx(
+						'inline-flex size-[18px] shrink-0 items-center justify-center rounded-pr-control outline-none',
+						'focus-visible:ring-1 focus-visible:ring-pr-focus disabled:pointer-events-none disabled:text-pr-dim',
+						on
+							? 'text-pr-accent hover:bg-pr-hover'
+							: 'text-pr-icon hover:bg-pr-hover hover:text-pr-icon-hover',
+					)
+				}
+				options={options.map((o) => ({
+					value: o,
+					ariaLabel: `Align ${o}`,
+					title: `Align ${o}`,
+					testId: `${testId}-${o}`,
+					label: ALIGN_ICONS[o.toLowerCase()] ?? <span className="text-pr-small">{o}</span>,
+				}))}
+			/>
 		);
 	}
 	if (role === 'fontFamily' && spec.kind !== 'enum' && props.fonts.length > 0) {
