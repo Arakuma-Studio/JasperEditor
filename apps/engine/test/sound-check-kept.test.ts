@@ -32,7 +32,7 @@ let media: FixtureMedia;
 let projects = 0;
 
 function seed(doc: ProjectDocument): string {
-	const projectId = `prj_kept${(++projects).toString().padStart(12, '0')}`;
+	const projectId = `prj_${(9000 + ++projects).toString().padStart(16, '0')}`;
 	const file = appdirPaths(appdir).projectFile(projectId);
 	mkdirSync(join(file, '..'), { recursive: true });
 	writeFileSync(
@@ -207,7 +207,7 @@ describe('the last report on a real engine', { timeout: 600_000 }, () => {
 			state: 'current',
 			reasons: [],
 		});
-		expect(kept.result.report).toEqual(result.report);
+		expect(kept.result.report).toEqual(JSON.parse(JSON.stringify(result.report)));
 		// the engine restarts on the same appdir and has forgotten the job (its journal keeps the newest 500 finished
 		// jobs for 7 days: a busy session's stills push a check out): the report is still there
 		await closeApps();
@@ -218,7 +218,7 @@ describe('the last report on a real engine', { timeout: 600_000 }, () => {
 			(await post('/api/sound-design/check/last', { projectId, sequenceId: result.sequenceId })).json(),
 		);
 		expect(after).toMatchObject({ jobId: job.id, state: 'current' });
-		expect(after.result.report.issues).toEqual(result.report.issues);
+		expect(after.result.report.issues).toEqual(JSON.parse(JSON.stringify(result.report.issues)));
 		// an edit of the mix: stale (mix); an unknown sequence: 404
 		const tx = await post(
 			'/api/agent/tx',
