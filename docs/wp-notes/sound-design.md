@@ -5421,6 +5421,13 @@ load-sensitive (64.6 ms once at load ≈ 50).
   the failure is `gaps-avc3-playback.test.ts` "plays in Electron with every frame" (44 of ≥ 45 frames seen in real-time
   playback); run alone at load ≈ 15: 2 passed. `pnpm build` pass; `pnpm notices --check`: current (150 packages, 31
   ported records). The plan-levels ≤ 45 s budget and the 2000-event solver budget passed inside both full runs.
+- After merging the integration branch once more (the SFX tail fix, f86eb4a9; one conflict in sound registration: the
+  padded-copy memo now keys on the trailing pad too): `pnpm lint`, `pnpm typecheck`, `pnpm build` pass; every sound test
+  file (`apps/engine/test/sound*`, `packages/project/test/sound*`, `apps/mcp/test/sound*`, masking, the mix models, the
+  Phase 4 oracle): 60 files, 559 passed; proposals, fuzz, audio-mix, i18n, Auto Sound Pass, README tools and every
+  `packages/compositions/test/audio-*` file: 20 files, 174 passed (load 5–12); e2e `sound-mix`, `sound-p3-mcp`,
+  `sound-review` on that build: 4 passed (2.9 min), export −14.1 LUFS / −2.0 dBTP, MCP peaks r ≥ 0.996 at 0 / −1 / +1
+  sample.
 - Not explained: `sound-mix.test.ts` "mergeDips (property)" (WP4.2a's, linear / hold keys) failed once in a targeted run
   after the Phase 5 merge; its seed was not captured, and 6 × 300 + 8 000 + 3 × 40 000 further runs did not reproduce it.
 
