@@ -18,6 +18,15 @@ import {
 const S = FLICKS_PER_SECOND;
 const MS = S / 1000;
 
+// The per-sample checks call `expect` only when they fail (same matcher, same message): ≈ 10× faster, for the hunt's
+// millions of runs.
+const le = (a: number, b: number) => {
+	if (!(a <= b)) expect(a).toBeLessThanOrEqual(b);
+};
+const close = (a: number, b: number, digits: number) => {
+	if (!(Math.abs(a - b) < 10 ** -digits / 2)) expect(a).toBeCloseTo(b, digits);
+};
+
 /** The identity lane the linear property uses (a track lane spanning everything). */
 export const IDENTITY_LANE: LaneTime = {
 	toLane: (t: number) => t,
@@ -61,8 +70,8 @@ export function checkLinearDips(
 		const t = k * step;
 		const e = evaluate(anim, t);
 		const got = evaluate(res, t);
-		expect(got).toBeLessThanOrEqual(e + 1e-3);
-		if (!inWin(t)) expect(got).toBeCloseTo(e, 6);
+		le(got, e + 1e-3);
+		if (!inWin(t)) close(got, e, 6);
 		else {
 			// ≤ the dip curve relative to the window's reference level, = the minimum of both
 			const w = r.windows.find(([a, b]) => t >= a && t <= b)!;
@@ -72,8 +81,8 @@ export function checkLinearDips(
 			const stepAt = kfs.some(
 				(kf, j) => j > 0 && kfs[j - 1]!.interpolation === 'hold' && Math.abs(kf.time - t) <= 2,
 			);
-			if (!stepAt) expect(got).toBeCloseTo(Math.min(e, dd), 2);
-			expect(got).toBeLessThanOrEqual(dd + 1e-3);
+			if (!stepAt) close(got, Math.min(e, dd), 2);
+			le(got, dd + 1e-3);
 		}
 	}
 	// keys outside the windows are untouched
@@ -131,19 +140,19 @@ export function checkCurvedDips(kfs: Keyframe<number>[], dips: Dip[], li: 0 | 1,
 		if (nearStep(t)) continue;
 		const e = E(t);
 		const got = G(t);
-		expect(got).toBeLessThanOrEqual(e + tol);
+		le(got, e + tol);
 		const env = dipEnvelopeAt(dips, t);
 		// strictly inside a window the dip curve holds also where the envelope touches 0 (one dip's fade ending as the
 		// next one's begins)
 		if (env === 0 && !w0.some(([a, b]) => t > a && t < b)) {
-			expect(Math.abs(got - e)).toBeLessThanOrEqual(tolOut);
+			le(Math.abs(got - e), tolOut);
 			maxCurved = curved ? Math.max(maxCurved, Math.abs(got - e)) : maxCurved;
 			continue;
 		}
 		const w = w0.find(([a, b]) => t >= a && t <= b);
 		if (!w) continue;
 		const ref = Math.max(E(w[0]), E(w[1]));
-		expect(Math.abs(got - Math.min(e, Math.min(15, Math.max(-96, ref + env))))).toBeLessThanOrEqual(tol);
+		le(Math.abs(got - Math.min(e, Math.min(15, Math.max(-96, ref + env)))), tol);
 	}
 	// keys outside the rewritten ranges are the same keys
 	for (const k of kfs) {
