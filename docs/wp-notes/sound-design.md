@@ -5505,9 +5505,12 @@ tail.
   (`sounds-routes`: the whoosh copy carries 2 400 samples of trail, bit-exact between the two silences; the "late punch"
   folder sound now has quiet at both ends to stay in place). `apps/engine/test/sound-check.test.ts` 16 passed unchanged
   (the seeded "cut" still gets its trim fix: the fixture click's fade is measured on the file).
-- `pnpm vitest run --project @jasper/project --maxWorkers=3`: 2 005 of 2 006 — the one failure is the pre-existing
-  `sound-messages` template gap (`setAutoGain`, WP5.1 notes it). `pnpm vitest run apps/web/test/sound-*`: 18 files, 188
-  passed.
+- `pnpm vitest run --project @jasper/project --maxWorkers=3` (final code): 2 005 of 2 007, then `sound-check.test.ts` (its
+  code-list contract now names TRUNCATED) 8 / 8 alone — the one failure left is the pre-existing `sound-messages` template
+  gap (`setAutoGain`, WP5.1 notes it). Final apps run: `pnpm vitest run apps/engine/test/sounds-*.test.ts
+  apps/engine/test/sound-*.test.ts apps/engine/test/{security-review,fuzz-http}.test.ts apps/mcp/test/sound*.test.ts
+  apps/mcp/test/{readme-tools,conventions,fuzz}.test.ts apps/web/test/sound-* apps/web/test/i18n.test.ts --maxWorkers=3`:
+  **52 files, 940 passed**.
 - **Real run** (dev engine `JASPER_APPDIR=.stage … --port 51001`, starter kit + Jasper Synth, jasper-mcp over stdio; script
   and outputs in `/var/lib/orquester/tmp/sfx-tail-run/`, not committed): the Phase 4 fixture, `plan_sound_design {seed:
   2026, delivery: web}` accepted as the editor. (A) `sound_check`: warn, **no** cut / TRUNCATED finding (MASKED 6, one
@@ -5523,8 +5526,9 @@ tail.
   = the sound's. The one not reported ("Switch click", 233 ms, quiet end) was whole before and after. Check times 5–21 s
   (load 27–37). A first version of the comparison used an H.264 export, which fell back to MP4 + AAC on this LGPL build
   (residual −30 dB from the codec, not the clips): the script now refuses a non-PCM export.
-- Gate: `pnpm lint` (Biome, tokens, anime, layers, assets) and `pnpm typecheck` pass; `node scripts/i18n.mjs --check`
-  (es.json covers all 9 621 strings).
+- Gate: `pnpm typecheck` (every package), `pnpm lint` (Biome, tokens, anime, layers, assets), `pnpm notices --check`
+  (current) and `node scripts/i18n.mjs --check` (es.json covers all 9 621 strings) pass. The full `pnpm verify` was not run
+  (shared host; the targeted suites above cover every package touched).
 
 #### Limits
 
