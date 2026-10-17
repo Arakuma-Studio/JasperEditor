@@ -1,6 +1,6 @@
 // Merging, scoring and density budgets of derived cues (spec 12 §2.2).
-// - Cues within 2 frames merge: the primary is the heavier one (hero > support > ambient; then explicit, confidence,
-//   size, earlier frame, key); the others' anchors go to `also` and their reasons are appended. Two members of the
+// - Cues within 2 frames merge: the primary is the heavier one (hero > support > ambient; then explicit, a project
+//   source before an engine measurement (scene, beat, pixel), confidence, size, earlier frame, key); the others' anchors go to `also` and their reasons are appended. Two members of the
 //   same pattern group never merge with each other.
 // - Score = confidence × weight × size × novelty (weights 1 / 0.7 / 0.4; size factor 0.5 + 0.5·√area; novelty
 //   1 / (1 + 0.5·n) with n earlier cues of the same kind and first type within 2 s).
@@ -27,11 +27,16 @@ const NOVELTY_SEC = 2;
 
 const cmpStr = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
+/** Engine sources measure media; a project source naming the same event keeps its (exact) anchor. */
+const ENGINE_SOURCES: ReadonlySet<string> = new Set(['scene', 'beat', 'pixel']);
+const measured = (c: CueCandidate) => Number(ENGINE_SOURCES.has(c.from));
+
 /** Primary of a merge: heavier first. */
 function better(a: CueCandidate, b: CueCandidate): boolean {
 	const d =
 		WEIGHT_RANK[b.weight] - WEIGHT_RANK[a.weight] ||
 		Number(!!b.explicit) - Number(!!a.explicit) ||
+		measured(a) - measured(b) ||
 		b.confidence - a.confidence ||
 		b.size - a.size ||
 		a.frame - b.frame ||

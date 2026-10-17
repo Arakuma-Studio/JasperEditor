@@ -19,7 +19,7 @@ import {
 	type SoundDesign,
 	type SoundDesignSettings,
 } from '../../schema/sound.ts';
-import { cueAnchorTargetExists, resolveCueAnchor } from '../../sound/anchor.ts';
+import { cueAnchorFrame, cueAnchorTargetExists } from '../../sound/anchor.ts';
 import {
 	SOUND_CHECK_VERDICT_MARKER,
 	type SoundCheckVerdictMeta,
@@ -225,6 +225,8 @@ function addCues(doc: DDoc, cmd: CommandOf<'soundCue.add'>, h: HandlerContext) {
 		const path = ['cues', String(i)];
 		checkTypes(c.types, h, [...path, 'types']);
 		checkAnchor(doc, seq, c.anchor, h, [...path, 'anchor']);
+		if (c.anchorOffset && !c.anchor)
+			h.fail('E_INVALID_PARAM', 'anchorOffset needs an anchor', { path: [...path, 'anchorOffset'] });
 		let id: string;
 		if (c.id === undefined) {
 			do id = h.ids.next('cue');
@@ -255,6 +257,7 @@ const CLEARABLE = [
 	'confidence',
 	'reason',
 	'window',
+	'anchorOffset',
 ] as const;
 
 function updateCue(doc: DDoc, cmd: CommandOf<'soundCue.update'>, h: HandlerContext) {
@@ -270,6 +273,10 @@ function updateCue(doc: DDoc, cmd: CommandOf<'soundCue.update'>, h: HandlerConte
 	}
 	for (const k of ['kind', 'weight', 'source', 'muted'] as const) if (cmd[k] !== undefined) r[k] = cmd[k];
 	if (cmd.anchor !== undefined) cue.anchor = cmd.anchor === null ? null : (plainCopy(cmd.anchor) as never);
+	// An offset is relative to the anchor: it goes with it, and means nothing without one.
+	if (!cue.anchor || cue.anchorOffset === 0) delete r.anchorOffset;
+	if (cmd.anchorOffset && !cue.anchor)
+		h.fail('E_INVALID_PARAM', 'anchorOffset needs an anchor', { path: ['anchorOffset'] });
 	let moved: string[] = [];
 	if (cmd.frame !== undefined && cmd.frame !== before) {
 		cue.frame = cmd.frame;
@@ -341,7 +348,7 @@ function resyncCues(doc: DDoc, cmd: CommandOf<'soundCue.resync'>, h: HandlerCont
 			if (cmd.cueIds) unanchored.push(id);
 			continue;
 		}
-		const f = resolveCueAnchor(doc as never, seq as never, cue.anchor as never, opts);
+		const f = cueAnchorFrame(doc as never, seq as never, cue as never, opts);
 		if (f === null) {
 			unresolved.push(id);
 			continue;

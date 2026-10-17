@@ -72,6 +72,8 @@ export const SoundCueUpdateCmd = cmd('soundCue.update', {
 	stopBefore: clearable(soundCueFields.stopBefore.unwrap()),
 	build: clearable(soundCueFields.build.unwrap()),
 	anchor: CueAnchorSchema.nullable().optional(),
+	/** Frames between the anchor's frame and the cue (null / 0 = on it); dropped with the anchor. */
+	anchorOffset: clearable(soundCueFields.anchorOffset.unwrap()),
 	source: soundCueFields.source.optional(),
 	confidence: clearable(soundCueFields.confidence.unwrap()),
 	reason: clearable(soundCueFields.reason.unwrap()),

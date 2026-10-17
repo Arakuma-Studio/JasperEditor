@@ -42,6 +42,8 @@ import {
 	deliveryPreset,
 	deriveCues,
 	documentHasActiveExpressions,
+	ENGINE_CUE_SOURCES,
+	type ExtraCue,
 	flicksPerFrame,
 	isSoundTypeId,
 	type MgTemplateRegistry,
@@ -88,6 +90,7 @@ import type { SoundService } from '../sounds/service.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { HttpError } from '../tools/reply.ts';
 import type { MeasureCache } from './bed.ts';
+import type { EngineCueSource, EngineCueSources } from './engine-cues.ts';
 import { matchStoredCues } from './match.ts';
 import { planPreviewDocument, solvePlanGains } from './plan-levels.ts';
 
@@ -145,6 +148,8 @@ export type PlanStyle = {
 	delivery: SoundDelivery | null;
 	/** Sources of derived cues (undefined: every source). */
 	cueSources?: CueDeriveSource[];
+	/** Snap derived moves, transitions, emphases and reveals to the music's beats (≤ 2 frames). */
+	snapToBeats?: boolean;
 };
 
 export type PlanPick = {
@@ -184,6 +189,7 @@ export function resolveStyle(req: SoundDesignPlanRequest, seq: Sequence): PlanSt
 		build: st.build ?? false,
 		delivery: st.delivery ?? null,
 		...(st.cueSources?.length ? { cueSources: [...new Set(st.cueSources)] } : {}),
+		...(st.snapToBeats ? { snapToBeats: true } : {}),
 	};
 }
 
@@ -406,7 +412,13 @@ export function collectPlanCues(
 	seq: Sequence,
 	req: SoundDesignPlanRequest,
 	style: PlanStyle,
-	opts: { mgTemplates?: MgTemplateRegistry } = {},
+	opts: {
+		mgTemplates?: MgTemplateRegistry;
+		/** Cues of the engine sources (scene, beat, pixel) measured for this plan. */
+		extraCues?: readonly ExtraCue[];
+		/** Beat frames `style.snapToBeats` snaps to. */
+		beatFrames?: readonly number[];
+	} = {},
 ): { cues: PlanCue[]; skipped: SoundDesignPlanSkip[]; warnings: { code: string; message: string }[] } {
 	const range = req.range ?? null;
 	const inRange = (f: number) => !range || (f >= range.start && f < range.end);
@@ -452,6 +464,8 @@ export function collectPlanCues(
 			respectDialogue: style.respectDialogue,
 			...(style.cueSources ? { sources: style.cueSources } : {}),
 			...(opts.mgTemplates ? { mgTemplates: opts.mgTemplates } : {}),
+			...(opts.extraCues ? { extraCues: opts.extraCues } : {}),
+			...(style.snapToBeats ? { snapToBeats: true, beatFrames: opts.beatFrames ?? [] } : {}),
 		});
 		for (const w of derived.warnings) warnings.push({ code: w.code, message: w.message });
 		const matches = matchStoredCues(seq, derived.cues);
@@ -935,6 +949,8 @@ function parseInput(raw: unknown): PlanJobInput {
 
 export type PlanDeps = {
 	agent: () => AgentService | undefined;
+	/** P6: the engine cue sources (scene, beat, pixel), run inside the job when the style asks for them. */
+	engineCues?: () => EngineCueSources | undefined;
 	sounds: () => SoundService | undefined;
 	proposals: () => ProposalService | undefined;
 	mgTemplates?: MgTemplateRegistry;
@@ -1038,10 +1054,38 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 	if (documentHasActiveExpressions(doc)) doc = bindExpressions(doc);
 	const seq = doc.sequences[seq0.id]!;
 	const style = resolveStyle(req, seq);
-	ctx.progress(0.05, { stage: 'Finding cues' });
+	// P6: engine sources (shot changes, beats, picture motion) are measured inside this job (not queued: a job never
+	// waits for another job's slot), on the document as saved (the renderer evaluates expressions itself).
+	const engineSources = (style.cueSources ?? []).filter((x): x is EngineCueSource =>
+		(ENGINE_CUE_SOURCES as readonly string[]).includes(x),
+	);
+	const engineWarnings: { code: string; message: string }[] = [];
+	let measured: Awaited<ReturnType<EngineCueSources['collect']>> | null = null;
+	if (!Array.isArray(req.cues) && (engineSources.length || style.snapToBeats)) {
+		const sources = deps.engineCues?.();
+		if (!sources)
+			engineWarnings.push({
+				code: 'W_ANALYSIS_FAILED',
+				message: 'Shot, beat and picture-motion analysis is not available on this engine',
+			});
+		else {
+			measured = await sources.collect(live.doc, live.doc.sequences[seq0.id]!, {
+				sources: engineSources,
+				...(style.snapToBeats ? { snapToBeats: true } : {}),
+				...(req.range ? { range: req.range } : {}),
+				mode: { kind: 'inline', ctx, projectId: req.projectId, from: 0.03, to: 0.09 },
+			});
+			for (const w of measured.warnings) engineWarnings.push({ code: w.code, message: w.message });
+		}
+		if (aborted()) return cancelledResult(req, seq, style);
+	}
+	ctx.progress(0.09, { stage: 'Finding cues' });
 	const collected = collectPlanCues(doc, seq, req, style, {
 		...(deps.mgTemplates ? { mgTemplates: deps.mgTemplates } : {}),
+		...(measured ? { extraCues: measured.extraCues } : {}),
+		...(measured?.beatFrames ? { beatFrames: measured.beatFrames } : {}),
 	});
+	collected.warnings.push(...engineWarnings);
 	if (aborted()) return cancelledResult(req, seq, style);
 	ctx.progress(0.1, { stage: `Ranking sounds for ${collected.cues.length} cues` });
 	const pool = await sounds.rankingPool(style.sources);

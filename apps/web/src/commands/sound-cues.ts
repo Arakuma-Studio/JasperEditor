@@ -196,6 +196,7 @@ export const soundCueCommands: UiCommand[] = [
 				session: e.session,
 				sequenceId: e.seq.id,
 				toast: ctx.ui.toast,
+				engine: ctx.engine,
 			});
 		},
 	},

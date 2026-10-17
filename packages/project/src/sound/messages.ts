@@ -41,6 +41,7 @@ export const SOUND_MESSAGES = [
 	'A sequence holds at most {0} sound cues',
 	'Malformed cue id: {0}',
 	'Cue id already in use: {0}',
+	'anchorOffset needs an anchor',
 	'Pan keyframe offsets must increase',
 	'{0} is a {1} track; sounds go on audio tracks',
 	'{0} has audio between frames {1} and {2}; placing never overwrites (use track "auto")',

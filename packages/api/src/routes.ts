@@ -13,7 +13,12 @@ import {
 	AgentUiResponseSchema,
 } from './agent.ts';
 import { AudioAnalyzeRequestSchema, LoudnessNormalizeRequestSchema } from './audio.ts';
-import { RemixPlanRequestSchema, RemixPlanResultSchema } from './audio-fx.ts';
+import {
+	BeatsRequestSchema,
+	BeatsResultSchema,
+	RemixPlanRequestSchema,
+	RemixPlanResultSchema,
+} from './audio-fx.ts';
 import {
 	CacheCleanRequestSchema,
 	CacheGcReportSchema,
@@ -187,6 +192,7 @@ import {
 	SoundVisualResponseSchema,
 } from './sound-check.ts';
 import {
+	MotionAnalysisRequestSchema,
 	SfxRebalanceRequestSchema,
 	SoundCuesRequestSchema,
 	SoundCuesResponseSchema,
@@ -737,6 +743,13 @@ export const ROUTES = {
 		body: RemixPlanRequestSchema,
 		response: RemixPlanResultSchema,
 	},
+	/** Tempo, beats and downbeats of a media's audio range (Sound Design beat cues; cached per file and range). */
+	audioBeats: {
+		method: 'POST',
+		path: '/api/audio/beats',
+		body: BeatsRequestSchema,
+		response: BeatsResultSchema,
+	},
 
 	speechModels: {
 		method: 'GET',
@@ -1182,6 +1195,17 @@ export const ROUTES = {
 		path: '/api/sound-design/check/last',
 		body: SoundCheckLastRequestSchema,
 		response: SoundCheckLastResponseSchema,
+	},
+	/**
+	 * Pixel motion analysis (spec 12 §2.8, P6-R2): a `motion-analysis` job (202) rendering the sequence's picture small
+	 * through the export planner and measuring its motion per frame; result `MotionAnalysisResult` (curve + events),
+	 * cached by the picture's fingerprint.
+	 */
+	soundDesignMotion: {
+		method: 'POST',
+		path: '/api/sound-design/motion',
+		body: MotionAnalysisRequestSchema,
+		response: EngineJobSchema,
 	},
 	/**
 	 * Sound Check visual data (spec 12 §2.6, P5-R2): 10 ms loudness curves of the mix and its stems, the mix waveform,

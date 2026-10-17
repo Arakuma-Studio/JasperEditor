@@ -5,8 +5,8 @@ import { mgRegistry } from '@jasper/mg-templates';
 import {
 	type Command,
 	type CueWeight,
+	cueAnchorFrame,
 	type ProjectDocument,
-	resolveCueAnchor,
 	type Sequence,
 	type SoundCue,
 } from '@jasper/project';
@@ -69,14 +69,17 @@ export function selectedCues(session: EditorSession, seq: Pick<Sequence, 'soundD
 // ---------------------------------------------------------------------------------------------------------------
 // Commands
 
-/** The frame a cue's anchor resolves to now (motion graphics read the template registry), or null. */
+/**
+ * The frame a cue's anchor puts it on now (motion graphics read the template registry; a cue snapped to a beat keeps
+ * its `anchorOffset`), or null.
+ */
 export function anchorFrame(
 	doc: Pick<ProjectDocument, 'media'>,
 	seq: Sequence,
 	cue: SoundCue,
 ): number | null {
 	if (!cue.anchor) return null;
-	return resolveCueAnchor(doc, seq, cue.anchor, { mgTemplates: mgRegistry });
+	return cueAnchorFrame(doc, seq, cue, { mgTemplates: mgRegistry });
 }
 
 /**

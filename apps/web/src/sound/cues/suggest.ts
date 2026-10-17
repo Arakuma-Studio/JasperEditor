@@ -7,12 +7,15 @@ import { mgRegistry } from '@jasper/mg-templates';
 import {
 	bindExpressions,
 	type Command,
+	CUE_DERIVE_SOURCES,
 	type CueDensity,
 	type CueDeriveSource,
 	cueInputFromDerived,
 	type DeriveCuesWarning,
 	type DerivedCue,
 	deriveCues,
+	ENGINE_CUE_SOURCES,
+	type ExtraCue,
 	PROJECT_CUE_SOURCES,
 	type ProjectDocument,
 	type Sequence,
@@ -23,10 +26,17 @@ import {
 import { type CueInput, cuesOf, duplicatesStored, isFilled } from './model.ts';
 
 export type ProjectCueSource = (typeof PROJECT_CUE_SOURCES)[number];
+export type EngineCueSource = (typeof ENGINE_CUE_SOURCES)[number];
 export type SuggestRange = 'sequence' | 'inout' | 'selection';
 
 export type SuggestOptions = {
 	sources: ReadonlySet<ProjectCueSource>;
+	/** Engine sources chosen (their cues are `engineCues`, measured by the engine; P6). */
+	engineSources?: ReadonlySet<EngineCueSource>;
+	/** The engine's measured cues of every engine source (`POST /api/sound-design/cues` `engineCues`). */
+	engineCues?: readonly ExtraCue[];
+	/** Snap moves, transitions, emphases and reveals to the beats of `engineCues` (±2 frames). */
+	snapToBeats?: boolean;
 	range: SuggestRange;
 	density: CueDensity;
 	respectDialogue: boolean;
@@ -39,8 +49,8 @@ export type SuggestOptions = {
 export type SuggestPlan = {
 	/** Frames `[start, end)` searched, or null when the chosen range is empty / unavailable. */
 	range: { start: number; end: number } | null;
-	found: Record<ProjectCueSource, number>;
-	kept: Record<ProjectCueSource, number>;
+	found: Record<CueDeriveSource, number>;
+	kept: Record<CueDeriveSource, number>;
 	/** Cues the transaction adds (after the duplicates of cues that stay were dropped). */
 	adds: CueInput[];
 	/** Earlier unfilled suggestions it removes (`replace`). */
@@ -73,8 +83,8 @@ export function suggestRange(
 	return e > s ? { start: s, end: e } : null;
 }
 
-const zero = (): Record<ProjectCueSource, number> =>
-	Object.fromEntries(PROJECT_CUE_SOURCES.map((s) => [s, 0])) as Record<ProjectCueSource, number>;
+const zero = (): Record<CueDeriveSource, number> =>
+	Object.fromEntries(CUE_DERIVE_SOURCES.map((s) => [s, 0])) as Record<CueDeriveSource, number>;
 
 /** The plan of a Suggest Cues run (never throws: `deriveCues` reports problems as warnings). */
 export function planSuggestion(doc: ProjectDocument, sequenceId: string, o: SuggestOptions): SuggestPlan {
@@ -103,16 +113,40 @@ export function planSuggestion(doc: ProjectDocument, sequenceId: string, o: Sugg
 		mgTemplates: mgRegistry,
 	};
 	// Found counts do not depend on the selection; kept counts do (merging), so both runs are needed unless all are on.
-	const all = deriveCues(bound, sequenceId, { ...base, sources: [...PROJECT_CUE_SOURCES] });
-	const allOn = PROJECT_CUE_SOURCES.every((s) => o.sources.has(s));
+	const engineSources = o.engineSources ?? new Set<EngineCueSource>();
+	const extraCues = o.engineCues ?? [];
+	const engineOn = ENGINE_CUE_SOURCES.filter((s) => engineSources.has(s));
+	const snap = o.snapToBeats
+		? {
+				snapToBeats: true,
+				beatFrames: [...new Set(extraCues.filter((c) => c.from === 'beat').map((c) => c.frame))].sort(
+					(a, b) => a - b,
+				),
+			}
+		: {};
+	const all = deriveCues(bound, sequenceId, {
+		...base,
+		sources: [...PROJECT_CUE_SOURCES, ...ENGINE_CUE_SOURCES],
+		...(extraCues.length ? { extraCues } : {}),
+	});
+	const allOn =
+		PROJECT_CUE_SOURCES.every((s) => o.sources.has(s)) &&
+		ENGINE_CUE_SOURCES.every((s) => engineSources.has(s)) &&
+		!o.snapToBeats;
 	const chosen = allOn
 		? all
-		: deriveCues(bound, sequenceId, { ...base, sources: [...o.sources] as CueDeriveSource[] });
+		: deriveCues(bound, sequenceId, {
+				...base,
+				sources: [...o.sources, ...engineOn] as CueDeriveSource[],
+				...(extraCues.length ? { extraCues } : {}),
+				...snap,
+			});
 	const found = zero();
 	const kept = zero();
-	for (const s of PROJECT_CUE_SOURCES) {
+	for (const s of CUE_DERIVE_SOURCES) {
+		const on = o.sources.has(s as ProjectCueSource) || engineSources.has(s as EngineCueSource);
 		found[s] = all.stats.bySource[s]?.found ?? 0;
-		kept[s] = o.sources.has(s) ? (chosen.stats.bySource[s]?.kept ?? 0) : 0;
+		kept[s] = on ? (chosen.stats.bySource[s]?.kept ?? 0) : 0;
 	}
 	const stored = cuesOf(seq);
 	const inRange = (c: SoundCue) => c.frame >= range.start && c.frame < range.end;

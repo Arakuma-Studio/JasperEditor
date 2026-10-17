@@ -9923,5 +9923,22 @@
   "The export limiter then keeps the mix under its ceiling": "El limitador de la exportación mantiene entonces la mezcla bajo su techo",
   "The export then normalises to the target": "La exportación normaliza entonces al objetivo",
   "The music is ducked already: Auto-Match levels the dialogue and music clips by type (it changes their gains)": "La música ya está atenuada: Auto-Match nivela los clips de diálogo y música por tipo (cambia sus ganancias)",
-  "The solver's gain does not resolve it: {0}": "La ganancia del solucionador no lo resuelve: {0}"
+  "The solver's gain does not resolve it: {0}": "La ganancia del solucionador no lo resuelve: {0}",
+  "{0} found · partly analysed": "{0} encontrados · análisis parcial",
+  "Analysing… {0} %": "Analizando… {0} %",
+  "Analysis failed": "El análisis ha fallado",
+  "Analyze {0}": "Analizar {0}",
+  "Analyze…": "Analizar…",
+  "anchorOffset needs an anchor": "anchorOffset necesita un anclaje",
+  "Failed": "Ha fallado",
+  "Measured in the media": "Medido en los medios",
+  "Music beats (Essential Sound music clips)": "Tiempos de la música (clips de música de Sonido esencial)",
+  "Not analysed yet": "Aún sin analizar",
+  "Picture motion in footage": "Movimiento de la imagen en el metraje",
+  "Shot changes inside footage": "Cambios de plano dentro del metraje",
+  "Snap moves and transitions to the beat (within 2 frames)": "Ajustar movimientos y transiciones al tiempo (a 2 fotogramas como máximo)",
+  "Sources not analysed yet are measured while proposing (slower the first time).": "Las fuentes aún sin analizar se miden al proponer (más lento la primera vez).",
+  "The engine is not available": "El motor no está disponible",
+  "No footage in the range": "No hay metraje en el intervalo",
+  "No music clip in the range": "No hay clips de música en el intervalo"
 }

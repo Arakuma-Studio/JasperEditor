@@ -32,6 +32,8 @@ export const SOUND_DESIGN_LIMITS = {
 	property: 200,
 	/** Largest frame a cue may name (≈ 24 h at 120 fps). */
 	maxFrame: 10_368_000,
+	/** Largest `SoundCue.anchorOffset` either side (frames; beat snapping moves a cue ≤ 2). */
+	anchorOffset: 10,
 } as const;
 
 export const CUE_KINDS = [
@@ -72,8 +74,9 @@ const frame = () => z.number().int().min(0).max(SOUND_DESIGN_LIMITS.maxFrame);
  *   (the motion comes to rest) / `peak-speed`;
  * - `text`: a text clip's In or Out animation (`unit` = the 0-based typed unit of a typewriter);
  * - `mg`: a motion graphic's intro end / outro start; `clip`: a clip's first frame or end;
- * - `scene`: a media time (seconds) of a media, wherever the sequence shows it; `beat`: a beat of a (music) clip
- *   (`mediaSec`, when known, is the beat's media time);
+ * - `scene`: a media time (seconds) of a media, wherever the sequence shows it (`clipId`, when given, is the clip that
+ *   showed it when the cue was derived: it is preferred while it still shows that media time); `beat`: a beat of a
+ *   (music) clip (`mediaSec`, when known, is the beat's media time);
  * - `marker`: a sequence marker (or a clip marker).
  */
 export const CueAnchorSchema = z.discriminatedUnion('type', [
@@ -94,7 +97,12 @@ export const CueAnchorSchema = z.discriminatedUnion('type', [
 	}),
 	z.looseObject({ type: z.literal('mg'), clipId: id(), event: z.enum(['intro-end', 'outro-start']) }),
 	z.looseObject({ type: z.literal('clip'), clipId: id(), edge: z.enum(['start', 'end']) }),
-	z.looseObject({ type: z.literal('scene'), mediaId: id(), mediaSec: z.number().min(0).max(864_000) }),
+	z.looseObject({
+		type: z.literal('scene'),
+		mediaId: id(),
+		mediaSec: z.number().min(0).max(864_000),
+		clipId: id().optional(),
+	}),
 	z.looseObject({
 		type: z.literal('beat'),
 		clipId: id(),
@@ -148,6 +156,16 @@ export const soundCueFields = {
 		})
 		.optional(),
 	anchor: CueAnchorSchema.nullable().optional(),
+	/**
+	 * Frames between where the anchor resolves and the cue (the cue = anchor frame + offset): a cue snapped to a nearby
+	 * music beat (`deriveCues` `snapToBeats`, ≤ 2 frames) keeps following its picture event at that offset. Absent = 0.
+	 */
+	anchorOffset: z
+		.number()
+		.int()
+		.min(-SOUND_DESIGN_LIMITS.anchorOffset)
+		.max(SOUND_DESIGN_LIMITS.anchorOffset)
+		.optional(),
 	source: z.enum(CUE_SOURCES),
 	confidence: z.number().min(0).max(1).optional(),
 	reason: z.string().max(SOUND_DESIGN_LIMITS.reason).optional(),
@@ -516,6 +534,7 @@ export function readSoundCue(raw: unknown, key?: string): SoundCue | null {
 		'stopBefore',
 		'build',
 		'anchor',
+		'anchorOffset',
 		'confidence',
 		'reason',
 		'muted',

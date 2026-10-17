@@ -29,6 +29,7 @@ import type { ToastRequest } from '../commands/types.ts';
 import { useExpressionsFor } from '../expressions/engine.ts';
 import { useDialogClose } from '../extensions/dialog.ts';
 import { t } from '../i18n/runtime.ts';
+import { type EngineCueSource, EngineSourceRows, useEngineSources } from './cues/EngineSources.tsx';
 import { CUE_DENSITY_LABELS, CUE_SOURCE_LABELS } from './cues/SuggestCuesDialog.tsx';
 import { type ProjectCueSource, planSuggestion, type SuggestRange, suggestRange } from './cues/suggest.ts';
 import { SoundNotesList } from './MixDialogs.tsx';
@@ -58,6 +59,10 @@ export function registerAutoSoundPassDialog(): void {
 export type AutoPassChoices = {
 	range: SuggestRange;
 	cueSources: ReadonlySet<ProjectCueSource>;
+	/** P6: engine sources measured inside the plan job (shot changes, beats, picture motion). */
+	engineSources?: ReadonlySet<EngineCueSource>;
+	/** P6: snap moves and transitions to the music's beats. */
+	snapToBeats?: boolean;
 	density: CueDensity;
 	palette: PaletteChoice;
 	soundSources: ReadonlySet<SoundSourceType>;
@@ -88,7 +93,8 @@ export function autoPassRequest(
 	range: { start: number; end: number } | null,
 	kit: string[] | null,
 ): SoundDesignPlanRequest {
-	const allCueSources = PROJECT_CUE_SOURCES.every((s) => c.cueSources.has(s));
+	const engineOn = [...(c.engineSources ?? [])];
+	const allCueSources = PROJECT_CUE_SOURCES.every((s) => c.cueSources.has(s)) && engineOn.length === 0;
 	const allSoundSources = SOUND_SOURCE_TYPES.every((s) => c.soundSources.has(s));
 	const whole = c.range === 'sequence';
 	return {
@@ -101,7 +107,10 @@ export function autoPassRequest(
 			respectDialogue: c.respectDialogue,
 			palette: c.palette === 'project' ? 'project' : c.palette === 'none' ? [] : (kit ?? []),
 			...(allSoundSources ? {} : { sources: SOUND_SOURCE_TYPES.filter((s) => c.soundSources.has(s)) }),
-			...(allCueSources ? {} : { cueSources: PROJECT_CUE_SOURCES.filter((s) => c.cueSources.has(s)) }),
+			...(allCueSources
+				? {}
+				: { cueSources: [...PROJECT_CUE_SOURCES.filter((s) => c.cueSources.has(s)), ...engineOn] }),
+			...(c.snapToBeats ? { snapToBeats: true } : {}),
 			...(c.mix?.roomGlue != null ? { roomGlue: { sendDb: c.mix.roomGlue } } : {}),
 			...(c.mix?.stopBefore ? { stopBefore: true } : {}),
 			...(c.mix?.build ? { build: true } : {}),
@@ -115,7 +124,7 @@ export function AutoSoundPassDialog(
 		session: EditorSession;
 		engine: Pick<
 			EngineClient,
-			'planSoundDesign' | 'getJob' | 'cancelJob' | 'soundLibraryStatus' | 'searchSounds'
+			'planSoundDesign' | 'getJob' | 'cancelJob' | 'soundLibraryStatus' | 'searchSounds' | 'soundDesignCues'
 		>;
 		sequenceId: string;
 		toast?: (r: ToastRequest) => void;
@@ -149,6 +158,13 @@ export function AutoSoundPassDialog(
 	const [stopBefore, setStopBefore] = useState(false);
 	const [build, setBuild] = useState(false);
 	const [delivery, setDelivery] = useState<SoundDelivery | 'none'>('none');
+	const [engineSources, setEngineSources] = useState<ReadonlySet<EngineCueSource>>(() => new Set());
+	const [snapToBeats, setSnapToBeats] = useState(false);
+	const rangeNow = seq ? suggestRange(seq, range, selectedClips) : null;
+	const rs = rangeNow?.start ?? -1;
+	const re = rangeNow?.end ?? -1;
+	const engineRange = useMemo(() => (rs >= 0 && re > rs ? { start: rs, end: re } : null), [rs, re]);
+	const measured = useEngineSources(engine, session.projectId, sequenceId, engineRange);
 	const [status, setStatus] = useState<SoundLibraryStatus | null>(null);
 	const [running, setRunning] = useState<{ progress: number | null; stage: string } | null>(null);
 	const [message, setMessage] = useState<string | null>(null);
@@ -183,8 +199,23 @@ export function AutoSoundPassDialog(
 				respectDialogue,
 				replace: false,
 				selectedClips,
+				engineSources,
+				engineCues: measured.cues,
+				snapToBeats,
 			}),
-		[doc, sequenceId, cueSources, range, density, respectDialogue, selectedClips, expressionsReady],
+		[
+			doc,
+			sequenceId,
+			cueSources,
+			range,
+			density,
+			respectDialogue,
+			selectedClips,
+			expressionsReady,
+			engineSources,
+			measured.cues,
+			snapToBeats,
+		],
 	);
 	const readOnly = session.getState().readOnly;
 	const toggle = <T,>(set: (f: (cur: ReadonlySet<T>) => ReadonlySet<T>) => void, v: T, on: boolean) =>
@@ -215,6 +246,8 @@ export function AutoSoundPassDialog(
 				{
 					range,
 					cueSources,
+					engineSources,
+					snapToBeats,
 					density,
 					palette,
 					soundSources,
@@ -329,6 +362,20 @@ export function AutoSoundPassDialog(
 						Unfilled cues already on the Cue Seam in the range get a sound too.
 					</p>
 				</fieldset>
+				<EngineSourceRows
+					engine={measured}
+					selected={engineSources}
+					onToggle={(src, on) => toggle(setEngineSources, src, on)}
+					counts={{
+						scene: { found: plan.found.scene, kept: plan.kept.scene },
+						beat: { found: plan.found.beat, kept: plan.kept.beat },
+						pixel: { found: plan.found.pixel, kept: plan.kept.pixel },
+					}}
+					snapToBeats={snapToBeats}
+					onSnapToBeats={setSnapToBeats}
+					testId="auto-pass-engine-sources"
+					hint={t('Sources not analysed yet are measured while proposing (slower the first time).')}
+				/>
 				<div className="flex items-center gap-2" data-testid="auto-pass-density">
 					<span className="w-[120px] shrink-0 text-pr-muted">Density</span>
 					<Select

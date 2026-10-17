@@ -5,6 +5,7 @@
 // (variable-frame-rate footage too).
 import { createHash } from 'node:crypto';
 import type { EngineJob, SceneDetectRequest, SceneDetectResult } from '@jasper/api';
+import { SceneDetectResultSchema } from '@jasper/api';
 import {
 	detectSceneCuts,
 	frameIndexAt,
@@ -16,6 +17,7 @@ import {
 } from '@jasper/project';
 import { cachedFrameTimes } from '../export/retime/frames.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
+import { AnalysisCache } from '../sound-design/analysis-cache.ts';
 import { HttpError } from '../tools/reply.ts';
 import type { CoreServices } from '../tools/services.ts';
 
@@ -27,17 +29,85 @@ type SceneJobInput = {
 	height: number;
 };
 
+/** Bump when the detection changes (cached results of older versions are not reused). */
+const SCENE_RESULTS_VERSION = 1;
+const CacheEntrySchema = SceneDetectResultSchema;
+
 export class SceneService {
+	/** Finished detections by media file, settings and range (Sound Design's scene cue source reuses them). */
+	private readonly results: AnalysisCache<SceneDetectResult> | null;
+
 	constructor(
 		private readonly core: CoreServices,
 		private readonly cacheDir: string,
-	) {}
+		resultsDir?: string,
+	) {
+		this.results = resultsDir
+			? new AnalysisCache(resultsDir, CacheEntrySchema, { max: 2000, memory: 32 })
+			: null;
+	}
 
 	registerRunner(): void {
 		this.core.queue.registerRunner('scene-detect', (ctx) => this.run(ctx));
 	}
 
-	async submit(r: SceneDetectRequest): Promise<EngineJob> {
+	/** `<file>-<settings>-` prefix of a request's cache keys (null: unknown media). */
+	private keyPrefix(r: SceneDetectRequest): string | null {
+		const rec = this.core.registry.get(r.mediaKey);
+		if (!rec) return null;
+		const fp = createHash('sha256')
+			.update(JSON.stringify([SCENE_RESULTS_VERSION, rec.fingerprint, rec.sizeBytes, rec.mtimeMs]))
+			.digest('hex')
+			.slice(0, 32);
+		return `${fp}-${Math.round(r.sensitivity)}-${r.minShotFrames}-`;
+	}
+
+	/**
+	 * A finished detection of the media that covers the request's range with the same settings (null: none yet). Cuts,
+	 * scores and times outside the request's range are left out.
+	 */
+	async cachedCovering(r: SceneDetectRequest): Promise<SceneDetectResult | null> {
+		if (!this.results) return null;
+		const prefix = this.keyPrefix(r);
+		if (!prefix) return null;
+		for (const key of await this.results.keys(prefix)) {
+			const m = /-(\d+)-(\d+)$/.exec(key);
+			if (!m) continue;
+			const a = Number(m[1]) / 1000;
+			const b = Number(m[2]) / 1000;
+			if (a > r.startSec + 1e-3 || b < r.endSec - 1e-3) continue;
+			const hit = await this.results.get(key);
+			if (!hit) continue;
+			const keep = hit.times.map((t) => t >= r.startSec - 1e-6 && t < r.endSec + 1e-6);
+			return {
+				...hit,
+				cuts: hit.cuts.filter((t) => t >= r.startSec - 1e-6 && t < r.endSec + 1e-6),
+				scores: hit.scores.filter((_, i) => keep[i]),
+				times: hit.times.filter((_, i) => keep[i]),
+				frames: keep.filter(Boolean).length,
+			};
+		}
+		return null;
+	}
+
+	private async remember(r: SceneDetectRequest, result: SceneDetectResult): Promise<void> {
+		const prefix = this.results ? this.keyPrefix(r) : null;
+		if (!this.results || !prefix) return;
+		const key = `${prefix}${Math.round(r.startSec * 1000)}-${Math.round(r.endSec * 1000)}`;
+		await this.results.put(key, result).catch(() => undefined);
+	}
+
+	/**
+	 * Detects inside another job (the Sound Design plan job): the same analysis without a queue entry of its own, so a
+	 * job never waits for a slot another job holds. Cached like a job's result.
+	 */
+	async detectInline(r: SceneDetectRequest, ctx: JobContext): Promise<SceneDetectResult> {
+		const cached = await this.cachedCovering(r);
+		if (cached) return cached;
+		return this.analyze(await this.inputOf(r), ctx);
+	}
+
+	private async inputOf(r: SceneDetectRequest): Promise<SceneJobInput> {
 		const rec = this.core.registry.get(r.mediaKey);
 		if (!rec) throw new HttpError(404, 'ASSET_NOT_FOUND', `Unknown media key ${r.mediaKey}`);
 		const file = await this.core.registry.resolvePath(r.mediaKey);
@@ -50,13 +120,17 @@ export class SceneService {
 		const s = Math.min(1, SCENE_DECODE / Math.max(display.width, display.height));
 		const width = Math.max(8, Math.round((display.width * s) / 2) * 2);
 		const height = Math.max(8, Math.round((display.height * s) / 2) * 2);
-		const input: SceneJobInput = {
+		return {
 			request: r,
 			file,
 			fingerprint: `${rec.fingerprint}|${rec.sizeBytes}|${rec.mtimeMs}`,
 			width,
 			height,
 		};
+	}
+
+	async submit(r: SceneDetectRequest): Promise<EngineJob> {
+		const input = await this.inputOf(r);
 		const seconds = r.endSec - r.startSec;
 		return this.core.queue.submit({
 			kind: 'scene-detect',
@@ -75,7 +149,11 @@ export class SceneService {
 	}
 
 	private async run(ctx: JobContext): Promise<SceneDetectResult> {
-		const { request: r, file, fingerprint, width, height } = ctx.input as SceneJobInput;
+		return this.analyze(ctx.input as SceneJobInput, ctx);
+	}
+
+	private async analyze(input: SceneJobInput, ctx: JobContext): Promise<SceneDetectResult> {
+		const { request: r, file, fingerprint, width, height } = input;
 		const started = Date.now();
 		ctx.progress(null, { stage: 'Reading frame times' });
 		const ft = await cachedFrameTimes(
@@ -156,7 +234,7 @@ export class SceneService {
 		const frameTimes = sigs.map((_, k) => times[first + k] ?? t0);
 		const secs = (Date.now() - started) / 1000;
 		ctx.log(`scene-detect: ${sigs.length} frames, ${cutIdx.length} cut(s) in ${secs.toFixed(1)} s`);
-		return {
+		const result: SceneDetectResult = {
 			cuts: cutIdx.map((k) => frameTimes[k]!),
 			frames: sigs.length,
 			scores,
@@ -164,5 +242,7 @@ export class SceneService {
 			threshold: sceneThreshold(r.sensitivity),
 			framesPerSec: sigs.length / Math.max(1e-3, secs),
 		};
+		await this.remember(r, result);
+		return result;
 	}
 }

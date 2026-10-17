@@ -6385,3 +6385,224 @@ pack (test-pinned).
 - The install reads the archive into memory (≤ 256 MB by the schema; Kenney's largest is 5.9 MB).
 - The e2e harness points `JASPER_SOUND_CATALOG` at an (empty) file in its throwaway appdir, so e2e runs never download;
   Preferences there shows "This engine offers no sound packs" unless a spec writes one.
+
+### Phase 6 → WP6.2 picture motion, scene and beat cues
+
+Branch `feat/sd-p6-cue-sources`. Scope: spec 12 §2.2 (engine-only sources: scene cuts, beats, pixel motion curve), §2.8
+(`POST /api/sound-design/motion` job `motion-analysis`, `POST /api/audio/beats`), §2.10 (`analyze_picture_motion`),
+P6-R2. Phase 5's limit "NO_PICTURE_EVENT sees keyframed motion only; footage needs P6" is closed here.
+
+Files. Model (pure): `packages/project/src/sound/cues/pixel-motion.ts` (`measureFrameMotion`, `pixelAnalysisSize`),
+`cues/curve.ts` (`pixelMotionEvents`, `pixelMotionCues`, `pixelCutIndices`), `cues/engine-sources.ts` (`footageClips`,
+`musicClips`, `sceneCutCues`, `beatCues`, `sceneAnchorAt`, `snapCuesToBeats`, `BEAT_SNAP_KINDS`), `cues/derive.ts` (engine
+cues: dialogue, pixel fallback, `snapToBeats`), `cues/budget.ts` (merge tie-break), `cues/types.ts` (`anchorOffset`,
+options, `stats.snappedToBeat`), `sound/anchor.ts` (`cueAnchorFrame`, scene `clipId`, exact remap pass),
+`schema/sound.ts` (scene anchor `clipId?`, `SoundCue.anchorOffset?`, repair), `commands/{schemas,handlers}/sound.ts`
+(`anchorOffset` on add / update / resync), `sound/repair.ts` (duplicate remaps scene `clipId`), `sound/cue-input.ts`,
+`sound/messages.ts`. Audio: `packages/audio-fx/src/analysis/remix.ts` (`analyzeBeats`, the remix tracker shared). API:
+`packages/api/src/audio-fx.ts` (`BeatsRequest/Result`), `sound-design.ts` (`MotionAnalysis*`, `EngineCue`, cue-route
+`snapToBeats` / `analyze` / `analysis` / `engineCues` / warning `jobIds`, plan style `snapToBeats`), `jobs.ts`
+(`motion-analysis`), `routes.ts` (`soundDesignMotion`, `audioBeats`); client `analyzeMotion`, `audioBeats`. Engine:
+`apps/engine/src/sound-design/motion.ts` (MotionService, job, plan, cache), `engine-cues.ts` (EngineCueSources: submit /
+inline / cached), `analysis-cache.ts`, `audio/beats.ts` (BeatService, `decodeMono`), `time/scenes.ts` (result cache,
+`cachedCovering`, `detectInline`), `routes/{sound-design,audio-fx,time}.ts`, `sound-design/{plan,check}.ts`. MCP:
+`apps/mcp/src/tools/sound-motion.ts` (`analyze_picture_motion`), `motion-strip.ts` (the PNG), `tools/sound-design.ts`
+(`find_sound_cues` engine sources, `snapToBeats`, waiting; `plan_sound_design` `style.snapToBeats`), `tools/sound.ts`
+(guide). Web: `apps/web/src/sound/cues/EngineSources.tsx` (hook + rows), `suggest.ts`, `SuggestCuesDialog.tsx`,
+`AutoSoundPassDialog.tsx`, `seam.ts`, `commands/sound-cues.ts`, i18n (17 strings, es.json complete). Fixture
+`box-move.mp4` in `scripts/make-fixtures.mjs`. Docs: README (353 tools), security review (route row + paragraph),
+ARCHITECTURE §4.3 (`sounds/analysis/`), gaps.
+
+#### What it does (usage)
+
+- **Picture motion** (`POST /api/sound-design/motion {projectId, sequenceId?, range?}` → 202 job `motion-analysis`;
+  MCP `analyze_picture_motion`): the sequence's picture is rendered small through the export service and measured per
+  frame. Result `MotionAnalysisResult`: `curve` (per frame: `speed` of what moves in screen diagonals per second — the
+  keyframe source's unit —, signed `vx`/`vy`, moving `area`, its centre `cx`, `residual` = change motion does not explain,
+  `diff`), `events` (move `{start, end, frame, peakSpeed, area, global, direction, pan, panSweep}`, land `{frame, how}`,
+  cut `{frame, residual}`), `edits`, `fingerprint`, `cached`, `renderPath`, `timings`, `warnings`. At most 10 minutes per
+  analysis (`RANGE_TOO_LONG`), `RANGE_EMPTY` under 2 frames.
+- **Beats** (`POST /api/audio/beats {mediaKey, streamIndex?, startSeconds, durationSeconds ≤ 30 min}`, synchronous):
+  `{bpm | null, beats[] (media seconds of each attack), downbeats[] | null, downbeatConfidence, analysedSeconds, reason?:
+  NO_BEAT, cached}`.
+- **Cue route** (`POST /api/sound-design/cues`): `opts.sources` may name `scene`, `beat`, `pixel` (never by default: the
+  default stays the edit's own sources, so nothing expensive starts unasked); `opts.snapToBeats`; `opts.analyze: false`
+  uses only what is measured. The answer adds `analysis[source] = {state: ready | pending | missing | none | failed,
+  jobIds, found, message?}`, `engineCues` (the measured cues before merging) and, while a job runs,
+  `W_ANALYSIS_PENDING {source, jobIds}` (never a silent omission); `W_ANALYSIS_FAILED`, `W_NO_BEAT`,
+  `W_MEDIA_UNAVAILABLE`, `W_ANALYSIS_TRUNCATED`. Suggestions may carry `anchorOffset`.
+- **Plan job**: `style.cueSources` with engine sources measures them inside the job (progress "Picture motion: …");
+  `style.snapToBeats`.
+- **MCP** `find_sound_cues {sources: ["pixel"|"scene"|"beat"…], snapToBeats?, waitForAnalysis? (default true),
+  timeoutSeconds?}` waits for the jobs it started and derives again; `analyze_picture_motion {projectId, range?, images?,
+  thumbnails?}` → events in words, pooled curve (≤ 400 points), ONE PNG (frames at the events above the speed / area /
+  residual curves, every event marked, timecode axis, legend).
+- **Editor**: Suggest Cues… and Auto Sound Pass… have "Measured in the media": Shot changes inside footage, Music beats,
+  Picture motion in footage — counts "n found · k kept", "Not analysed yet" + Analyze… (starts the job, shows "Analysing…
+  45 %", asks again when it ends), "No footage in the range" / "No music clip in the range"; "Snap moves and transitions to
+  the beat (within 2 frames)" (analyses the beats on the spot when needed). Auto Sound Pass… measures unanalysed sources
+  while proposing.
+- **Sound Check**: NO_PICTURE_EVENT also counts measured picture events (cached motion and shot changes; Sound Check never
+  starts an analysis) and the measured motion curve; STALE_CUE honours `anchorOffset`.
+
+#### Design and decisions
+
+- **The picture, not the media.** Motion is measured on the rendered sequence (`ExportService.renderToFile`: the export
+  planner, its paths, fallbacks and blockers — what the Program monitor shows and an export writes), not on the source
+  files: footage under graphics, scaled or cropped clips and nests are measured as seen. 128 px long side (16:9 →
+  128×72; spec: "e.g. 64×36"; 128 gives 8 px blocks enough texture), H.264 intra at ≈ 3 bits per pixel (no GOP
+  artefacts), picture only, smart rendering off; decoded to gray by ffmpeg in the job (cancel kills it). A refusal of the
+  planner fails the job with its code.
+- **Measurement** (`measureFrameMotion`): 8×8 blocks; still when the unmoved cost is ≤ 1.5 gray levels per pixel or the
+  block has < 2 levels of mean gradient (flat areas are ambiguous); else a coarse search ±6 px on half-size frames, ±2 px
+  refinement, then one Lucas–Kanade step (sub-pixel; the parabola fit when the gradients are degenerate). A block moves
+  when its match costs < 50 % of staying put AND ≤ 10 gray levels per pixel (across a cut every block finds a "match", none
+  that close) and |v| ≥ 0.3 px. Frame speed / direction = the MEDIAN over moving blocks (outliers at edges), 0 under 2
+  moving blocks. `residual` adds the unmoved cost of blocks motion does not explain. Found by tests: the first version
+  (mean vector, gain 0.7, no cost cap) read a cut between two textures as 10 px motion on 88 % of the frame with residual
+  0.08; a 0.7 px/frame move was invisible without the LK step.
+- **Events share the keyframe source's thresholds** (`speedSegments`, MOVE_ON 0.12 / MOVE_OFF 0.03, bridge
+  max(2, 0.1 s), ≥ 2 frames, ABRUPT_STOP 0.35, the 0.3 s whoosh / swish split, impact bands 0.5 / 0.15). Measured speeds
+  are noisy, so the move's frame is the middle of the stretch within 10 % of the peak (keyframes: 10⁻⁴). Land = the first
+  reversal along the peak's direction (overshoot; a second = bounce) or the arrival when the last moving frame keeps
+  ≥ 35 % of the peak. Cut = residual ≥ 0.08 and ≥ 3× the median of the surrounding second and a local maximum; the curve is
+  split at cuts and edit points (motion never spans them), edit points are not reported again (the edits source has them).
+  Pan: ≥ 50 % of the frame moving = a camera move → sweep ±40 the way the picture travels (when |vx| ≥ ¼ |v|); else pan at
+  the moving parts' x (±60) with a sweep from where they start to where they end (≥ 10 units).
+- **Pixel cues are a fallback**: confidence ≤ 0.5 (move 0.3 + 0.2·min(1, peak); land 0.45 / 0.5; cut 0.4), weight support
+  (a measurement never makes a hero). Anchored only where footage is shown (`sceneAnchorAt`: the topmost enabled video
+  clip of a media at the frame → `{type: 'scene', mediaId, mediaSec: the media time it shows there, clipId}`); events over
+  graphics alone are left out (their sources describe them). In `deriveCues` a pixel cue gives way to a project source
+  describing the same event (its frame within 3 frames of it, or inside its window ± 2: counted as `merged`), and at equal
+  weight a merge keeps a project source's cue as primary (its exact anchor) before an engine one (new tie-break, after
+  weight and explicit).
+- **Scene anchors gained `clipId`** (optional; schema, repair of `sequence.duplicate`, refs): the same media used twice
+  resolves each cue to its own clip; the earliest showing remains the fallback when that clip is gone. The resolver's
+  time-remap / frame-hold branch first looks for a frame showing the media time exactly: in slow motion several frames lie
+  within half a frame of it and the old rule returned an earlier one (found by the 40 % remap round-trip test).
+- **Shot changes** (Scene Edit Detection, sensitivity 50, shots ≥ 2 frames, per media over the union of the ranges its
+  clips show, ±(0.5 s + a frame), on a half-second grid): a change at media time c is a cue at the first frame whose shown
+  media time crosses c, through speed, reverse, time remap and frame hold (`clipMediaTimeFn`; the rule of
+  `clip.applySceneEdits`, with 1 ms of tolerance for frame timestamps written to the µs); reversed, that is the first frame
+  of the old shot. Not on a clip's first frame (an edit point). `cut` (support, 0.45, hit / thump / transition / glitch /
+  click) — or `move` (whoosh / swish, 0.4) when the detector's score stays ≥ 60 % of its threshold on both neighbouring
+  frames (a smeared change). Results are cached by SceneService (file fingerprint + settings + range; a cached range
+  covering the request is reused) — Scene Edit Detection itself benefits.
+- **Beats** (`analyzeBeats`): the remix tracker (tempo by autocorrelation with the 120 BPM prior, DP beats, trimmed ends),
+  each beat moved to the strongest 1 ms-RMS rise within 1.5 hops of the flux estimate (attack, not the remix's joint
+  position). Downbeats: 4/4 assumed; the phase of four whose beats have the strongest onset is used when it is ≥ 15 %
+  above the other phases' mean over ≥ 8 beats, else null. Beat cues: Essential Sound **music** clips on unmuted tracks
+  only (`essential.type`), anchor `{type: 'beat', clipId, beatIndex, mediaSec}`, kind `beat`, downbeats support 0.35, other
+  beats ambient 0.25 — so sparse (min 0.4) keeps none, balanced (0.3) the downbeats, rich (0.15) all; never heroes.
+  Analysed inline (fast) and cached per file and range; ≤ 32 music clips per call.
+- **Snap to the beat** (`deriveCues` `snapToBeats` + `beatFrames`; route / plan / dialogs): after budgets, cues of kinds
+  that tolerate it — move, transition, emphasis, reveal (Sound Check tolerances ≥ 2 frames, not impacts) — move onto the
+  nearest beat within 2 frames; never cuts, lands, appear / exit, markers or beats. The shift is kept as
+  `SoundCue.anchorOffset` (new optional field, −10…10, schema + repair; `soundCue.add` refuses it without an anchor,
+  `soundCue.update` drops it with the anchor, `soundCue.resync` and Sound Check's STALE_CUE resolve anchor + offset
+  — `cueAnchorFrame`), so a snapped cue keeps following its picture event 2 frames off, and "never more than 2 frames from
+  explicit motion" holds by construction. The reason says "…; on the beat (+2 frames)".
+- **Never silently omitted**: the cue route starts missing analyses (scene-detect / motion-analysis jobs, deduplicated by
+  fingerprint) and answers `pending` with the job ids; a failed job is reported (`failed`, `W_ANALYSIS_FAILED`) and not
+  restarted for 5 minutes. Engine sources are opt-in everywhere (route, MCP, plan, dialogs): an unasked request derives
+  exactly as before (the Phase 2 cue-route and web-equivalence tests are unchanged).
+- **Inline in jobs**: the plan job runs scene detection and motion analysis inside itself (`detectInline`,
+  `analyzeInline`, progress mapped with `subContext`) — a job waiting for another job's slot could deadlock the queue.
+- **Caches**: `<appdir>/sounds/analysis/{motion,beats,scenes}/<sha>.json`, atomic writes, read through their zod schema,
+  newest 300 / 2 000 / 2 000 kept; the motion key is the picture fingerprint = the render-preview segment hashes over the
+  range + size + rate + version (any picture edit misses; audio edits do not). The motion job takes half the CPU slots
+  (`max(2, ⌈slots / 2⌉)`, min 1) — its render is an export.
+
+#### Verified (measured, this branch; shared host, 16 cores)
+
+- `pnpm vitest run packages/project/test/sound-cues-engine.test.ts --maxWorkers=2`: 27 passed — frame motion (still → 0;
+  a box 3 px right → vx 2.7–3.3, |vy| < 0.3, area 1–25 %; up-left; 9 px (coarse search); a 2 px camera pan → area > 0.8,
+  vx −2.2…−1.8; half a pixel → 0.5 ± 0.15 (LK); 0.7 px box ± 0.25; a cut → residual > 0.1; hostile sizes / buffers →
+  still; 40 random frames finite); curve events on synthetic curves (constant move with an abrupt stop: window 120–140,
+  move 129, land 139; ease-out → no land; drift under MOVE_ON → nothing; overshoot → land at the turnaround 124; bounce;
+  camera pan sweep +40 → −40 for leftward travel; a cut at 145 reported once and splitting the motion; an edit there not
+  reported but still splitting); cues (confidence ≤ 0.5, support, whoosh, hit by impact, unanchored left out); 200
+  fast-check hostile curves deterministic; footage / music listing; scene cuts at 100 % (60, 135), 200 % (30, 68), reverse
+  (the frame showing 59/30 s), a 40 % time remap — every anchor resolves back to its frame, and follows a moved clip; a
+  soft change → `move`; the same media twice → each cue to its own clip, the first showing after the clip is lifted;
+  topmost footage anchors; beat cues (frames 8, 23, 38, 53; downbeats support; 50 % speed doubles spacing; resolve back;
+  not music → none); snapping (only the move 2 frames off moves; offset 2 stored; `cueAnchorFrame`); deriveCues: scene cut
+  under dialogue suppressed (`suppressedByDialogue` 1) and back with `respectDialogue: false`, a pixel move 2 frames from a
+  keyframe move given way (`merged` 1), kept without the keyframe source; snapToBeats on a derived move (+2, resync keeps
+  it on the beat and follows the clip, explicit `beatFrames`); `anchorOffset` add / undo (untouched document) / redo (same
+  document) / dropped with the anchor / refusals (no anchor, 11) / repair; testkit fuzz of the mappers (mutateJson, 200
+  cases; found `snapCuesToBeats` crashing on a non-array `beatFrames` — fixed). `FUZZ=1 FUZZ_SEED=777` (20×) then hung
+  at case 2841: a music clip starting at frame 2⁵³ + 2 passed `Number.isInteger`, and the frame loop `f += 1` never
+  advanced there — clips must now be safe integers ending before frame 10 368 000 (regression test "a clip starting at
+  1e20 does not hang"); after the fix `FUZZ=1 FUZZ_SEED=777 pnpm vitest run packages/project/test/sound-cues-engine.test.ts`
+  27 passed (32 s) and `FUZZ=1 FUZZ_SEED=2026 … -t hostile` 4 passed.
+- `pnpm vitest run packages/audio-fx/test/beats.test.ts packages/audio-fx/test/remix.test.ts --maxWorkers=2`: 10 passed —
+  click tracks at 90 / 100 / 120 / 128 BPM: tempo within 1 BPM, every beat within 5 ms of its click; accented every 4
+  beats → downbeats on the accents within 5 ms, an even track → null; the generated test music (120 BPM, beats within 12 ms
+  of the drums, deterministic); 48 kHz; noise / silence / 2 beats → NO_BEAT. The remix tests are unchanged (the tracker
+  was only factored out).
+- `pnpm vitest run apps/engine/test/sound-design-motion.test.ts --maxWorkers=1` (generated 1080p footage; system ffmpeg
+  to make it, the engine's for the rest): 8 passed (+1 perf, opt-in) — the box rests, moves 20 px per frame (1.33 px at
+  128 px) and stops: move start 31 ± 2, end 61 ± 2, direction right, not global, land 60 ± 2 "abrupt stop", still before
+  and after (< 0.03), the median moving speed within 15 % of 0.272 screens/s, cached the second time; pixel cues on the
+  clip moved to 10: first answer `pending` with the job id and no pixel cues, then a move whose window starts 39–43 and a
+  land at 70 ± 2, anchors `scene` with the clip, resolving back, deterministic; scene cuts at 60 (and 30 at 200 %) after a
+  pending job; `/api/audio/beats` on a 120 BPM click WAV (beats within 5 ms, downbeats, cached, 404 / 400s); beat cues
+  within ±1 frame of the clicks and a keyframed move snapped onto a beat; the plan job measuring motion inline (its report
+  has `pixel:` cues; the analysis is cached for the route); Sound Check after analysis: a derived cue at the landing
+  passes NO_PICTURE_EVENT, one at frame 100 (still) does not — and on a picture never analysed both are flagged;
+  cancellation → `cancelled`; refusals 400 / 404 / RANGE_EMPTY / RANGE_TOO_LONG.
+- **Performance** (`SOUND_PERF=1 SOUND_PERF_OUT=… pnpm vitest run apps/engine/test/sound-design-motion.test.ts -t perf`):
+  one minute of 1080p30 footage (1 800 frames), native path: **46.8 s** (render 46.1 s, measure 0.52 s) at load 11–12 with
+  2 slots, **41.0 s** (render 40.4 s, measure 0.42 s) at load 7–13 with half the slots (8). The render composites at the
+  sequence's 1920×1080 before scaling to 128 px (the job log's filter graph) — that is the cost, not the measurement.
+- `pnpm vitest run apps/mcp/test/sound-motion.test.ts --maxWorkers=1` (real engine on 49571, jasper-mcp over stdio): 1
+  passed — `find_sound_cues {sources: ["pixel"]}` waits for the job and returns the move (window 31 ± 2, anchorText
+  "… s into box.mp4 in 'box.mp4'") and land (60 ± 2), `analysis.pixel` ready; `analyze_picture_motion` (cached) events
+  with timecodes, "moves right", 120-point curve, ONE 1 200 px PNG with a thumbnail per event; strict arguments, RANGE_EMPTY,
+  E_INVALID_PARAM. **Looked at the PNG** (`MOTION_STRIP_OUT`): the two thumbnails (box left at 01:08, further right at
+  02:00), the speed curve above the dashed move threshold over the shaded move span 01:00–02:00, the landing line at
+  02:00 — the look found stretched thumbnails (fixed: the picture's aspect, centred).
+- `pnpm vitest run apps/web/test/sound-engine-sources.test.tsx --maxWorkers=1`: 3 passed — opening asks with `analyze:
+  false` (nothing starts), "Not analysed yet" → Analyze… → `analyze: true` → the job followed → "2 found · 0 kept" → ticked
+  "2 found · 2 kept" → Suggest adds move 45 / land 60 with `scene` anchors in one History entry; an engine error leaves
+  the edit sources usable ("Analysis failed" ×3); `planSuggestion` snapping (+2, `anchorOffset` 2).
+- `E2E_PORT=51303 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-cue-sources.spec.ts` (after `pnpm build`): 1
+  passed (13 s) — `box-move.mp4` imported, Suggest Cues…: Picture motion "Not analysed yet", music "No music clip in the
+  range" → Analyze… → "2 found · 0 kept" → ticked → Suggest 2 Cues → move window 31 ± 2, land 60 ± 2 (29.97 fps
+  sequence), anchor `scene`, reason "Picture motion…", Cue Seam shown, one Ctrl+Z removes both. Screenshots looked at
+  (`test-results/e2e-sound-cue-sources/`): the dialog before (three engine rows, two Analyze… buttons, beats greyed with
+  its reason), after (Picture motion ticked, 2 found · 2 kept), the timeline with the two glyphs over the clip and the
+  "Suggested 2 cues" toast.
+- Regression suites: `apps/engine/test/{sound-design-cues,sound-design-plan,fuzz-http,server,security-review}.test.ts`
+  230 passed (the fuzzers discover the two new routes); `apps/engine/test/{time-export,audio-fx,sound-check}.test.ts` 29
+  passed; `packages/project/test/sound*` 320 passed after adding the refusal template; `packages/api`,
+  `packages/engine-client` 39 passed; `apps/mcp/test/{readme-tools,conventions,sound-guide,fuzz}.test.ts` 370 passed;
+  `apps/web/test/{auto-sound-pass,sound-cue-commands,sound-cue-seam,sound-p2v-suggest,sound-cue-seam-model,i18n}` +
+  the engine cue-route test 61 passed; `node scripts/i18n.mjs --check`: es.json covers all 9 717 strings.
+- **After merging the integration branch** (`8af31459`, WP5.2's panel): `pnpm typecheck` (every package) and `pnpm lint`
+  (Biome, tokens, anime, layers, assets) pass; `node scripts/i18n.mjs --check` 9 835 strings; the engine and MCP suites
+  above plus `sound-check`, `time-export`, `audio-fx` and the MCP fuzz: 14 files, 639 passed (1 opt-in perf skipped),
+  `--testTimeout=900000` at load 40–70; `packages/project/test/sound*`, audio-fx beats + remix, api, engine-client and the
+  web dialog tests: 429 tests, 424 passed in a run at load ≈ 60 — the 5 failures were timeouts (60 / 120 s limits, a < 1 s
+  perf bound at 4 s) of files this package does not change the hot paths of; rerun at `--testTimeout=900000`
+  (`sound-cues`, `sound-mix`, `sound-p2v-model`: 86 passed) and serially (`remix`, `sound-cues-property`: passed).
+
+#### Limits and notes for the next packages
+
+- The picture render dominates (≈ 0.7× real time for 1080p at moderate load, measured above): long sequences take
+  minutes the first time (10-minute windows, each one job; cached after). Using existing render previews or rendering the
+  composite at a reduced canvas would be faster but is not exact (a smaller canvas changes pixel-space layouts) — not done.
+- Sensitivity: motion slower than ≈ 0.6 px per frame at 128 px (≈ 0.12 screen diagonals per second, MOVE_ON) is not a
+  move; objects of ≤ 2 blocks (16 px of 128, ≈ 12 % of the width) are below `PIXEL_MIN_BLOCKS`; flat-coloured objects are
+  measured by their textured edges only. Pixel events over graphics alone are not cues (the project sources cover them).
+  Zooms and rotations read as motion of many blocks in different directions (median direction weak; no pan sweep).
+- Beats: the tracker can lock to half the tempo of very regular fast material (a pure 150 BPM click track read as 75;
+  generated music at 120 BPM is right); downbeats assume 4/4 and need an accent; music under 4 beats → `W_NO_BEAT`.
+- Scene detection is per media range (union of what the clips show); trimming a clip outside its analysed range starts
+  another analysis. The tolerance of `clip.applySceneEdits` (1 flick) is stricter than this source's (1 ms); not changed
+  here (no failing case was built).
+- `anchorOffset` is only written by snapping; dragging a cue on the Cue Seam detaches its anchor as before.
+- The visual route (`/api/sound-design/visual`, `view_sound_timeline`) still draws the keyframe motion curve only.
+- The web Suggest Cues… asks the engine with the project id (the live document), so engine counts follow the open editor;
+  an edit while the dialog is open is measured on the next Analyze… / reopen.

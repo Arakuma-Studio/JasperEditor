@@ -18,7 +18,8 @@
 // | `mg` | where the template's intro settles / its outro starts (`mgCuePhases`: its measured motion when the registry |
 // |   | exposes it, else the declared intro / outro, written at 30 fps and scaled like the renderer) |
 // | `clip` | the clip's first frame or its end (the first frame after it) |
-// | `scene` | the first frame (earliest clip) that shows `mediaSec` of the media |
+// | `scene` | the first frame of `clipId` that shows `mediaSec` of the media while that clip still shows it, else the |
+// |   | first frame (earliest clip) that shows it |
 // | `beat` | the frame of the clip that shows `mediaSec` (when known) |
 // | `marker` | the sequence marker's frame (or a clip marker's frame) |
 import { evaluateKeyframes } from '../keyframes.ts';
@@ -146,6 +147,13 @@ function resolve(
 			const rate = rateOf(seq);
 			if (!rate || !fin(anchor.mediaSec)) return null;
 			const m = anchor.mediaSec * FLICKS_PER_SECOND;
+			// The clip it was derived on, while it still shows that moment (the same media used twice resolves to the right
+			// one); else wherever the sequence shows it first.
+			const own = typeof anchor.clipId === 'string' ? clipOf(seq, anchor.clipId) : null;
+			if (own && (own as { mediaId?: unknown }).mediaId === anchor.mediaId) {
+				const f = mediaTimeFrame(own, m, rate);
+				if (f !== null) return f;
+			}
 			let best: number | null = null;
 			let n = 0;
 			for (const c of Object.values(seq.clips)) {
@@ -165,6 +173,28 @@ function resolve(
 		default:
 			return null;
 	}
+}
+
+/**
+ * The frame a stored cue belongs on now: where its anchor resolves plus its `anchorOffset` (a cue snapped to a music
+ * beat keeps that offset). Null without an anchor or when it does not resolve.
+ */
+export function cueAnchorFrame(
+	doc: AnchorDocument,
+	seq: AnchorSequence,
+	cue: { anchor?: CueAnchor | null; anchorOffset?: number },
+	opts: AnchorResolveOptions = {},
+): number | null {
+	if (!cue?.anchor) return null;
+	const f = resolveCueAnchor(doc, seq, cue.anchor, opts);
+	if (f === null) return null;
+	const off = Number.isInteger(cue.anchorOffset)
+		? Math.max(
+				-SOUND_DESIGN_LIMITS.anchorOffset,
+				Math.min(SOUND_DESIGN_LIMITS.anchorOffset, cue.anchorOffset as number),
+			)
+		: 0;
+	return frameOrNull(f + off);
 }
 
 /** The frame a sequence marker (or a clip marker, through its clip) is on. */
@@ -193,10 +223,14 @@ function mediaTimeFrame(c: Clip, m: number, rate: Rational): number | null {
 		if (f < c.start - 0.5 || f >= c.start + c.duration - 0.5 + 1e-9) return null;
 		return frameOrNull(f);
 	}
-	// Time-remapped or held: scan the clip's frames for the first one that reaches `m` (bounded).
+	// Time-remapped or held: scan the clip's frames for the first one that reaches `m` (bounded). A frame that shows
+	// exactly `m` (what a derived anchor names: the media time of its own frame) wins over an earlier near one: in slow
+	// motion several frames lie within half a frame of it.
 	const at = clipMediaTimeFn(c, rate);
 	const half = flicksPerFrame(rate) / 2;
 	const n = Math.min(c.duration, MAX_SAMPLES);
+	const exact = Math.max(1, half / 500);
+	for (let i = 0; i < n; i++) if (Math.abs(at(c.start + i) - m) <= exact) return frameOrNull(c.start + i);
 	let prev = at(c.start);
 	if (Math.abs(prev - m) <= half) return frameOrNull(c.start);
 	for (let i = 1; i < n; i++) {
@@ -448,7 +482,7 @@ export function cueAnchorRefs(anchor: CueAnchor | null | undefined): string[] {
 		case 'marker':
 			return [anchor.markerId];
 		case 'scene':
-			return [anchor.mediaId];
+			return typeof anchor.clipId === 'string' ? [anchor.mediaId, anchor.clipId] : [anchor.mediaId];
 		case 'keyframe':
 		case 'text':
 		case 'mg':

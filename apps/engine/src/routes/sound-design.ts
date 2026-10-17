@@ -14,8 +14,16 @@
 //   POST /api/sound-design/check/last  the sequence's last full Sound Check report, kept across restarts
 //                                 (sound-design/report-store.ts), with whether it is stale against the live document.
 //   POST /api/sound-design/visual the curves, cue ticks, motion and findings over ≤ 120 s (sound-design/visual.ts).
+//   POST /api/sound-design/motion a `motion-analysis` job (202): the picture rendered small and measured per frame
+//                                 (sound-design/motion.ts), cached by the picture's fingerprint.
+// The cue route also runs the engine's cue sources (scene, beat, pixel: sound-design/engine-cues.ts) when asked; what is
+// still being analysed comes back as `W_ANALYSIS_PENDING` with the job ids, never silently left out.
+
+import { join } from 'node:path';
 import {
+	type EngineCue,
 	type EnvelopeJson,
+	MotionAnalysisRequestSchema,
 	SfxRebalanceRequestSchema,
 	SoundCheckLastRequestSchema,
 	type SoundCheckLastResponse,
@@ -34,6 +42,7 @@ import {
 	defaultRegistries,
 	deriveCues,
 	documentHasActiveExpressions,
+	ENGINE_CUE_SOURCES,
 	loadProject,
 	mixFingerprint,
 	type ProjectDocument,
@@ -49,11 +58,14 @@ import {
 import type { FastifyInstance } from 'fastify';
 import type { AgentService } from '../agent/service.ts';
 import { agentNameOf } from '../agent/user-approval.ts';
+import type { BeatService } from '../audio/beats.ts';
 import { isProjectId } from '../projects/store.ts';
 import type { ProposalService } from '../proposals/service.ts';
 import { runSoundCheck } from '../sound-design/check.ts';
 import { mixAnalysis, planDelivery, runDelivery } from '../sound-design/delivery.ts';
+import { type EngineCueSource, EngineCueSources } from '../sound-design/engine-cues.ts';
 import { matchStoredCues } from '../sound-design/match.ts';
+import { MotionInputError, MotionService, planMotion } from '../sound-design/motion.ts';
 import {
 	liveDocument,
 	PlanInputError,
@@ -65,10 +77,12 @@ import { RebalanceInputError, rebalanceTargets, runRebalance } from '../sound-de
 import { SoundCheckReportStore } from '../sound-design/report-store.ts';
 import { soundVisual, VisualInputError, visualRange } from '../sound-design/visual.ts';
 import type { SoundService } from '../sounds/service.ts';
+import type { SceneService } from '../time/scenes.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
+const ENGINE_SOURCES: ReadonlySet<string> = new Set(ENGINE_CUE_SOURCES);
 /** Longest curve returned per clip (frames): the 20 000 the deriver samples at most. */
 const MAX_CURVE_FRAMES = 20_000;
 
@@ -76,6 +90,17 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 	const { services } = app.jasper;
 	const core = coreServices(app);
 	const agentOf = () => services.agent as AgentService | undefined;
+	// Picture motion (P6): its own job kind and cache; the engine cue sources share it with scene detection and beats.
+	const motion = new MotionService(core, join(app.jasper.config.paths.soundsDir, 'analysis', 'motion'));
+	motion.registerRunner();
+	services.motion = motion;
+	const engineCues = new EngineCueSources({
+		queue: core.queue,
+		scenes: () => services.scenes as SceneService | undefined,
+		beats: () => services.beats as BeatService | undefined,
+		motion: () => motion,
+	});
+	services.engineCues = engineCues;
 	// Registered by the proposal routes (after these): looked up when a job runs.
 	const proposalsOf = () => services.proposals as ProposalService | undefined;
 	// One job kind for all three: rebalance jobs carry `rebalance` in their input, delivery jobs `delivery`.
@@ -97,6 +122,7 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 					})
 				: runSoundDesignPlan(ctx, {
 						agent: agentOf,
+						engineCues: () => engineCues,
 						sounds: () => services.sounds as SoundService | undefined,
 						proposals: proposalsOf,
 						mgTemplates: mgRegistry,
@@ -115,6 +141,7 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 	core.queue.registerRunner('sound-check', async (ctx) => {
 		const result: SoundCheckResult = await runSoundCheck(ctx, {
 			agent: agentOf,
+			engineCues: () => engineCues,
 			sounds: () => services.sounds as SoundService | undefined,
 			ffmpeg: core.ffmpeg,
 			registry: core.registry,
@@ -368,6 +395,34 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 	);
 
 	app.post(
+		'/api/sound-design/motion',
+		guarded(async (req, reply) => {
+			const body = parseOr400(MotionAnalysisRequestSchema, req.body ?? {});
+			if (!isProjectId(body.projectId)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
+			const agent = agentOf();
+			if (!agent) throw new HttpError(503, 'NOT_AVAILABLE', 'The sound design services are not running');
+			if (!(await agent.projectExists(body.projectId)))
+				throw new HttpError(404, 'PROJECT_NOT_FOUND', `Project not found: ${body.projectId}`);
+			const live = await liveDocument(agent, body.projectId);
+			let plan: ReturnType<typeof planMotion>;
+			try {
+				plan = planMotion(live.doc, planSequence(live.doc, body.sequenceId), body.range);
+			} catch (e) {
+				if (e instanceof PlanInputError) throw new HttpError(404, e.code, e.message);
+				if (e instanceof MotionInputError) throw new HttpError(400, e.code, e.message);
+				throw e;
+			}
+			const editor = req.jasperEditor === true;
+			reply.code(202);
+			return motion.submit(live.doc, plan, {
+				projectId: body.projectId,
+				origin: editor ? { type: 'user' } : { type: 'agent', agentRunId: agentNameOf(req) },
+				...(live.revision !== null ? { revision: live.revision } : {}),
+			});
+		}),
+	);
+
+	app.post(
 		'/api/sound-design/cues',
 		guarded(async (req) => {
 			const body = parseOr400(SoundCuesRequestSchema, req.body ?? {});
@@ -400,9 +455,37 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 					'SEQUENCE_NOT_FOUND',
 					body.sequenceId ? `Sequence not found: ${body.sequenceId}` : 'The project has no sequence',
 				);
+			const opts = body.opts ?? {};
+			// Engine sources (scene, beat, pixel) measure media: run (or join) their analyses; the ones still running are
+			// reported as pending with their jobs, the measured ones become extra cues. Measured on the document as saved
+			// (the renderer evaluates expressions itself).
+			const engineSources = (opts.sources ?? []).filter((x): x is EngineCueSource => ENGINE_SOURCES.has(x));
+			const measured =
+				engineSources.length || opts.snapToBeats
+					? await engineCues.collect(doc, seq, {
+							sources: engineSources,
+							...(opts.snapToBeats ? { snapToBeats: true } : {}),
+							...(opts.range ? { range: opts.range } : {}),
+							mode:
+								opts.analyze === false
+									? { kind: 'cached' }
+									: {
+											kind: 'submit',
+											projectId:
+												body.projectId ??
+												(typeof doc.projectId === 'string' && isProjectId(doc.projectId)
+													? doc.projectId
+													: null),
+											origin:
+												req.jasperEditor === true
+													? { type: 'user' }
+													: { type: 'agent', agentRunId: agentNameOf(req) },
+											...(revision !== null ? { revision } : {}),
+										},
+						})
+					: null;
 			// Expression-driven motion moves like the renderer shows it (deriveCues samples resolved properties).
 			if (documentHasActiveExpressions(doc)) doc = bindExpressions(doc);
-			const opts = body.opts ?? {};
 			const density = opts.density ?? soundDesignSettingsOf(seq).density;
 			const respectDialogue = opts.respectDialogue ?? true;
 			const out = deriveCues(doc, seqId, {
@@ -413,6 +496,8 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 				...(opts.minGapFrames !== undefined ? { minGapFrames: opts.minGapFrames } : {}),
 				...(opts.maxCues !== undefined ? { maxCues: opts.maxCues } : {}),
 				mgTemplates: mgRegistry,
+				...(measured ? { extraCues: measured.extraCues } : {}),
+				...(opts.snapToBeats ? { snapToBeats: true, beatFrames: measured?.beatFrames ?? [] } : {}),
 			});
 			const rate = seq.settings.frameRate as Rational;
 			const fps = rate.num / rate.den;
@@ -429,6 +514,7 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 				...(c.pan !== undefined ? { pan: c.pan } : {}),
 				...(c.panSweep ? { panSweep: { from: c.panSweep.from, to: c.panSweep.to } } : {}),
 				anchor: c.anchor,
+				...(c.anchorOffset ? { anchorOffset: c.anchorOffset } : {}),
 				...(c.also?.length ? { also: c.also } : {}),
 				confidence: round3(c.confidence),
 				reason: c.reason,
@@ -449,7 +535,33 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 				respectDialogue,
 				cues,
 				stats: out.stats,
-				warnings: out.warnings,
+				warnings: [...out.warnings, ...(measured?.warnings ?? [])],
+				...(measured
+					? {
+							analysis: measured.analysis,
+							engineCues: measured.extraCues
+								.filter((c) => engineSources.includes(c.from as EngineCueSource))
+								.slice(0, 10_000)
+								.map(
+									(c): EngineCue => ({
+										key: c.key ?? `${c.from}:${c.frame}`,
+										frame: c.frame,
+										kind: c.kind,
+										weight: c.weight,
+										types: c.types,
+										align: c.align,
+										...(c.pan !== undefined ? { pan: c.pan } : {}),
+										...(c.panSweep ? { panSweep: { ...c.panSweep } } : {}),
+										anchor: c.anchor,
+										confidence: round3(c.confidence),
+										reason: c.reason,
+										...(c.window ? { window: { ...c.window } } : {}),
+										from: c.from as EngineCueSource,
+										...(c.size !== undefined ? { size: round3(c.size) } : {}),
+									}),
+								),
+						}
+					: {}),
 				dialogue: respectDialogue
 					? sequenceDialogueRanges(doc, seq).map(([start, end]) => ({ start: Math.max(0, start), end }))
 					: [],

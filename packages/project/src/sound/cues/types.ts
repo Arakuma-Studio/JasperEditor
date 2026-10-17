@@ -53,6 +53,11 @@ export type DerivedCue = {
 	/** Whooshes: pan at `window.start` → at `window.end` (placement keyframes the pan, spec 12 §2.3). */
 	panSweep?: { from: number; to: number };
 	anchor: DerivedCueAnchor;
+	/**
+	 * Frames from where the anchor resolves to the cue (`snapToBeats` moved it onto a beat, ≤ 2); absent = on it.
+	 * Stored as `SoundCue.anchorOffset`.
+	 */
+	anchorOffset?: number;
 	/** Other events merged into this cue (within 2 frames); their description is also in `reason`. */
 	also?: DerivedCueAnchor[];
 	/** 0…1. */
@@ -93,8 +98,18 @@ export type DeriveCuesOptions = {
 	respectDialogue?: boolean;
 	/** Motion-graphic templates (intro/outro lengths); without it the `mg` source finds nothing. */
 	mgTemplates?: MgTemplateRegistry;
-	/** Cues of engine-only sources (scene, beat, pixel) to merge in. */
+	/**
+	 * Cues of engine-only sources (scene, beat, pixel) to merge in. Scene and pixel `cut`s respect dialogue like edit
+	 * points; pixel cues (a measurement of the rendered picture) give way to a project source describing the same event
+	 * (inside its window, or within 3 frames of it).
+	 */
 	extraCues?: readonly ExtraCue[];
+	/**
+	 * Snap the kept cues of the kinds that tolerate it (move, transition, emphasis, reveal) to the nearest of these
+	 * beat frames within 2 frames (`snapToBeats`); the beat cues in `extraCues` are used when absent.
+	 */
+	snapToBeats?: boolean;
+	beatFrames?: readonly number[];
 };
 
 export type CueSourceStats = {
@@ -116,6 +131,8 @@ export type DeriveCuesStats = {
 	dropped: { rate: number; gap: number; maxCues: number; confidence: number; range: number };
 	/** Heroes turned into support cues by the hero spacing (≤ 1 per 1.5/2/3 s, never two within 0.5 s). */
 	heroesDemoted: number;
+	/** Cues `snapToBeats` moved onto a beat. */
+	snappedToBeat: number;
 	found: number;
 	kept: number;
 };
