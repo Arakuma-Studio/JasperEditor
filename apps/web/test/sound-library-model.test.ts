@@ -139,6 +139,10 @@ describe('requests, collections, badges, names', () => {
 		expect(licenseBadge({ license: 'CC0-1.0', source: src })).toMatchObject({ text: 'CC0', warn: false });
 		expect(licenseBadge({ license: 'CC-BY-4.0', source: src }).text).toBe('BY');
 		expect(licenseBadge({ license: 'CC-BY-SA-4.0', source: src }).text).toBe('BY-SA');
+		// ShareAlike (spec 12 P6-E13): flagged, and the title says what it asks of the video
+		expect(licenseBadge({ license: 'CC-BY-SA-4.0', source: src })).toMatchObject({ shareAlike: true, warn: false });
+		expect(licenseBadge({ license: 'CC-BY-SA-4.0', source: src }).title).toMatch(/shared under CC BY-SA/);
+		expect(licenseBadge({ license: 'CC-BY-4.0', source: src }).shareAlike).toBeUndefined();
 		expect(
 			licenseBadge({ license: 'LicenseRef-JasperEditor', source: { type: 'synth', recipe: 'hit', seed: 1 } })
 				.text,

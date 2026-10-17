@@ -1318,6 +1318,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 												)}
 												title={badge.title}
 												data-license-badge={badge.text}
+												data-share-alike={badge.shareAlike ? 'true' : undefined}
 											>
 												{badge.text}
 											</span>

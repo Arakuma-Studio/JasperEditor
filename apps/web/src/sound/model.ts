@@ -265,13 +265,15 @@ export function usedSoundIds(doc: Pick<ProjectDocument, 'media'>): string[] {
 // ---------------------------------------------------------------------------------------------------------------
 // Badges, names, tooltips
 
-export type LicenseBadge = { text: string; warn: boolean; title: string };
+/** `shareAlike`: CC BY-SA (spec 12 P6-E13): a video synced with the sound must be shared alike (the "SA" mark). */
+export type LicenseBadge = { text: string; warn: boolean; title: string; shareAlike?: boolean };
 
 export const LICENSE_BADGE_TITLES: Record<LicenseClass, string> = {
 	cc0: 'Public domain (CC0): no credit needed',
 	jasper: 'Made for JasperEditor: free to use',
 	'cc-by': 'Creative Commons Attribution: credit the author',
-	'cc-by-sa': 'Creative Commons Attribution-ShareAlike: credit the author, share alike',
+	'cc-by-sa':
+		'Creative Commons Attribution-ShareAlike: credit the author; a video synced with it must be shared under CC BY-SA',
 	permissive: 'Open licence: keep the notice',
 	'royalty-free': 'Your folder, declared royalty-free',
 	'user-provided': 'Your folder: no licence declared, make sure you may use it',
@@ -296,7 +298,7 @@ export function licenseBadge(entry: {
 		case 'cc-by':
 			return { text: 'BY', warn: false, title };
 		case 'cc-by-sa':
-			return { text: 'BY-SA', warn: false, title };
+			return { text: 'BY-SA', warn: false, title, shareAlike: true };
 		case 'permissive':
 			return { text: withoutContext(t('Open [licence badge]')), warn: false, title };
 		case 'royalty-free':

@@ -40,12 +40,25 @@ export type CheckCategory = SoundCheckIssue['category'];
 export type CheckSeverity = SoundCheckIssue['severity'];
 export type CheckVerdict = SoundCheckReport['verdict'];
 
-/** Category order of the results list (what a user fixes first: timing, then delivery, then the mix…). */
-export const CATEGORY_ORDER: readonly CheckCategory[] = ['sync', 'loudness', 'mix', 'cues', 'licence'];
+/**
+ * Category order of the results list (what a user fixes first: timing, then clicks and cut edges, delivery, the mix,
+ * its tone…). `edges` and `tonal` are the Phase 6 review lenses (spec 12 §4 P6-E1…E3).
+ */
+export const CATEGORY_ORDER: readonly CheckCategory[] = [
+	'sync',
+	'edges',
+	'loudness',
+	'mix',
+	'tonal',
+	'cues',
+	'licence',
+];
 export const CATEGORY_LABELS: Record<CheckCategory, string> = {
 	sync: 'Sync',
+	edges: 'Edges',
 	loudness: 'Loudness',
 	mix: 'Mix',
+	tonal: 'Tone',
 	cues: 'Cues',
 	licence: 'Licence',
 };
@@ -97,6 +110,9 @@ const DENSITY_LABELS: Record<string, string> = { sparse: 'Sparse', balanced: 'Ba
 const KIND_PARAM = new Map<string, number>([
 	[SOUND_CHECK_MESSAGES.syncEarly, 2],
 	[SOUND_CHECK_MESSAGES.syncLate, 2],
+	[SOUND_CHECK_MESSAGES.syncEndEarly, 2],
+	[SOUND_CHECK_MESSAGES.syncEndLate, 2],
+	[SOUND_CHECK_MESSAGES.coverage, 2],
 ]);
 const DENSITY_PARAM = new Map<string, number>([
 	[SOUND_CHECK_MESSAGES.densityHeroes, 4],

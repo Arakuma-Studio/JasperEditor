@@ -11,7 +11,7 @@
 // - the Program overlay chip "Auditioning: <name>" (`programOverlays`);
 // - the Properties "Sound" section (`clipSections`).
 import type { SoundEntry } from '@jasper/api';
-import { type AudioClip, type Clip, essentialAutoTag, type Sequence } from '@jasper/project';
+import { type AudioClip, type Clip, essentialAutoTag, isShareAlike, type Sequence } from '@jasper/project';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { Link2, Mic, Music, Wind, Zap } from 'lucide-react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
@@ -67,7 +67,7 @@ export const BADGE_FULL_PX = 80;
 export function clipBadges(
 	seq: Sequence | null,
 	clip: Clip,
-	opts: { width: number; licenceWarning: boolean },
+	opts: { width: number; licenceWarning: boolean; license?: string | null },
 ): {
 	type: AudioTypeId | null;
 	/** Auto Tag chose the type and the user has not confirmed it: its confidence (0…1); null otherwise. */
@@ -75,6 +75,8 @@ export function clipBadges(
 	hero: boolean;
 	layer: boolean;
 	warn: boolean;
+	/** CC BY-SA (spec 12 P6-E13): the "SA" badge — the video synced with it must be shared alike. */
+	shareAlike: boolean;
 } {
 	const full = opts.width >= BADGE_FULL_PX;
 	const sfx = sfxOf(clip);
@@ -85,6 +87,7 @@ export function clipBadges(
 		hero: full && sfx?.role === 'hero',
 		layer: full && !!seq && isLayered(seq, clip),
 		warn: opts.licenceWarning,
+		shareAlike: isShareAlike(opts.license ?? null),
 	};
 }
 
@@ -98,6 +101,7 @@ function SoundBadges(p: ClipDecorationProps) {
 	const b = clipBadges(seq?.clips[p.clip.id] ? seq : null, p.clip, {
 		width: p.w,
 		licenceWarning: !!lib && licenceWarns(lib.license),
+		license: lib?.license ?? null,
 	});
 	const focusEssential = (e: ReactMouseEvent | ReactPointerEvent) => {
 		e.stopPropagation();
@@ -120,6 +124,17 @@ function SoundBadges(p: ClipDecorationProps) {
 					style={{ background: 'var(--pr-warning)' }}
 					data-sound-badge="licence"
 				/>
+			) : null}
+			{b.shareAlike ? (
+				<span
+					role="img"
+					aria-label={t('ShareAlike licence ({0}): share the video under CC BY-SA', lib?.license ?? '')}
+					title={t('ShareAlike licence ({0}): share the video under CC BY-SA', lib?.license ?? '')}
+					className="rounded-[2px] border border-pr-warning px-[2px] text-[9px] leading-[10px] font-semibold text-pr-warning"
+					data-sound-badge="share-alike"
+				>
+					SA
+				</span>
 			) : null}
 			{layers ? (
 				<span

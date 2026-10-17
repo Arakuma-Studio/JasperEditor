@@ -366,6 +366,7 @@ describe('clip menu, badges, Essential Sound, Properties', () => {
 			hero: true,
 			layer: false,
 			warn: false,
+			shareAlike: false,
 		});
 		expect(clipBadges(s.seq(), clip, { width: 50, licenceWarning: true })).toEqual({
 			type: 'sfx',
@@ -373,7 +374,12 @@ describe('clip menu, badges, Essential Sound, Properties', () => {
 			hero: false,
 			layer: false,
 			warn: true,
+			shareAlike: false,
 		});
+		// a CC BY-SA sound: the "SA" badge (spec 12 P6-E13), at any width
+		expect(
+			clipBadges(s.seq(), clip, { width: 50, licenceWarning: false, license: 'CC-BY-SA-4.0' }).shareAlike,
+		).toBe(true);
 		const deco = clipDecorations.list().find((d) => d.id === 'sound.badges')!;
 		expect(deco.appliesTo(clip)).toBe(true);
 		const Badge = deco.badge!;
