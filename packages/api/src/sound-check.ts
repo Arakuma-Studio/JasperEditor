@@ -261,6 +261,30 @@ export const SoundCheckResultSchema = z.object({
 });
 export type SoundCheckResult = z.infer<typeof SoundCheckResultSchema>;
 
+/**
+ * The last full Sound Check report of a sequence, kept by the engine across restarts (Phase 5 verification, follow-up
+ * (e)): `POST /api/sound-design/check/last`. `state` compares the report with the live document — `stale` when the mix
+ * (`mixFingerprint`) or the other inputs (`soundCheckInputsHash`: cues, loudness settings, credits, the target) changed.
+ */
+export const SoundCheckLastRequestSchema = z.strictObject({
+	projectId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'a project id'),
+	/** Default: the project's first sequence. */
+	sequenceId: id.optional(),
+});
+export type SoundCheckLastRequest = z.infer<typeof SoundCheckLastRequestSchema>;
+
+export const SoundCheckLastResponseSchema = z.object({
+	projectId: z.string(),
+	sequenceId: z.string(),
+	/** The job that produced it (the engine may have forgotten the job since). */
+	jobId: z.string().nullable(),
+	savedAt: z.string(),
+	state: z.enum(['current', 'stale']),
+	reasons: z.array(z.enum(['mix', 'inputs'])),
+	result: SoundCheckResultSchema,
+});
+export type SoundCheckLastResponse = z.infer<typeof SoundCheckLastResponseSchema>;
+
 export const SoundVisualRequestSchema = z.strictObject({
 	projectId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'a project id'),
 	sequenceId: id.optional(),
@@ -299,6 +323,11 @@ export const SoundVisualResponseSchema = z.object({
 	}),
 	/** Mix waveform per 10 ms: the sample peak (dBFS, floored at −120). */
 	waveformPeakDb: z.array(z.number()),
+	/**
+	 * The same 10 ms sample peaks of the sound-effects stem and of the bed (everything else), as delivered — the sync
+	 * strip draws the sound effects over the bed. Absent from engines before the Phase 5 verification.
+	 */
+	stemPeakDb: z.object({ sfx: z.array(z.number()), bed: z.array(z.number()) }).optional(),
 	/** Motion speed per video frame from `motion.startFrame` (screen diagonals / s; the fastest moving layer). */
 	motion: z.object({ startFrame: frame, speed: z.array(z.number()) }),
 	cues: z.array(

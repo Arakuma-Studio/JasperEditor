@@ -24,7 +24,12 @@ const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 /** Music 0–20 s on A1, a hit on a cue at frame 120 (4 s), a second hit at frame 450 (15 s): 30 fps. */
 function fixture() {
 	const h = new Harness();
-	const library: LibraryProvenance = { ...LIB, soundId: 'snd_000000000000c0de', title: 'Hit', types: ['hit'] };
+	const library: LibraryProvenance = {
+		...LIB,
+		soundId: 'snd_000000000000c0de',
+		title: 'Hit',
+		types: ['hit'],
+	};
 	const r = h.ok([
 		{ type: 'media.register', asset: { ...videoAsset({ kind: 'audio', seconds: 0.5 }), library } },
 	]);
@@ -109,7 +114,10 @@ describe('soundDesign.setVerdict', () => {
 		// undo = the document before (untouched); redo = the same sequences
 		expect(before).toEqual(snapshot);
 		const noIds = (d: typeof h.doc) =>
-			Object.values(clone(d.sequences)).map((q) => ({ ...q, markers: q.markers.map(({ id: _id, ...x }) => x) }));
+			Object.values(clone(d.sequences)).map((q) => ({
+				...q,
+				markers: q.markers.map(({ id: _id, ...x }) => x),
+			}));
 		const after = noIds(h.doc);
 		h.doc = before;
 		h.ok([cmd]);
@@ -156,7 +164,7 @@ describe('soundDesign.setVerdict', () => {
 	});
 
 	it('stale when the listened window changes or its clip moves / goes; an edit elsewhere only changes the mix', () => {
-		const { h, clipId, clip2, cueId } = fixture();
+		const { h, clipId, clip2 } = fixture();
 		h.ok([
 			{ type: 'soundDesign.setVerdict', frame: 120, verdict: 'ok', slot: 'hero', clipId },
 			{ type: 'soundDesign.setVerdict', frame: 450, verdict: 'ok', slot: 'passing', clipId: clip2 },

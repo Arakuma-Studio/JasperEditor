@@ -16,8 +16,10 @@ import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
 import { Button, Icon, Select, TextField } from '@jasper/ui';
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { createCommandContext } from '../../commands/context.ts';
+import type { CommandCtx } from '../../commands/types.ts';
 import { t } from '../../i18n/runtime.ts';
-import { isOwnKey } from '../../proposals/keys.ts';
+import { isOwnKey, runScopedKey } from '../../proposals/keys.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import {
 	CUSTOM_VALUE,
@@ -35,6 +37,7 @@ import {
 	messageText,
 	orderedIssues,
 	parseCustomTarget,
+	reportStatus,
 	SEVERITY_ICON,
 	SEVERITY_LABELS,
 	SEVERITY_TONE,
@@ -45,6 +48,7 @@ import {
 	VERDICT_ICON,
 	VERDICT_LABELS,
 	VERDICT_TONE,
+	verdictStaleText,
 } from '../../sound/check-model.ts';
 import {
 	applyCheckFix,
@@ -54,11 +58,14 @@ import {
 	fixAllSafe,
 	jumpTo,
 	jumpToIssue,
+	LISTEN_KEEP_ATTR,
 	loadStoredReport,
 	playListen,
 	recordVerdict,
 	runSoundCheck,
 	setChoice,
+	setFindingCursor,
+	setSyncStrip,
 	soundCheckStore,
 	stopListen,
 } from '../../sound/check-run.ts';
@@ -130,7 +137,10 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 	const run = () => {
 		if (engine && seq) void runSoundCheck(session, engine, { sequenceId: seq.id });
 	};
-	const stale = staleText(status);
+	// the report shown is judged by its own hashes (it may be one the engine kept across a restart); without one, the
+	// stored summary is
+	const shownStatus = useMemo(() => (report ? reportStatus(doc, report) : status), [doc, report, status]);
+	const stale = staleText(shownStatus);
 	const safe = report ? safeFixable(report.issues).filter((i) => !fixed.includes(i.id)) : [];
 
 	return (
@@ -239,7 +249,7 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 						<Listen
 							session={session}
 							seq={seq}
-							rows={listenRows(report, seq)}
+							rows={listenRows(report, seq, doc)}
 							playing={playing && playing.sequenceId === seq.id ? playing : null}
 							readOnly={readOnly}
 							reveal={reveal}
@@ -541,69 +551,35 @@ function Findings(props: {
 	const { session, engine, report, seq } = props;
 	const groups = useMemo(() => groupIssues(report.issues), [report]);
 	const order = useMemo(() => orderedIssues(report.issues), [report]);
-	const [current, setCurrent] = useState<string | null>(null);
-	const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+	const store = soundCheckStore(session);
+	const current = useStoreSelector(store, (s) => s.cursor);
+	const openList = useStoreSelector(store, (s) => s.openStrips);
+	const open = useMemo(() => new Set(openList), [openList]);
+	const runtime = useShellRuntimeOrNull();
+	const engineState = useEngineOrNull();
+	const engineStatus = engineState?.status;
 	const listRef = useRef<HTMLDivElement>(null);
 	const idPrefix = `sound-check-${props.instanceId}-`;
 	const cur = current && order.some((i) => i.id === current) ? current : null;
-	const toggle = (id: string, to?: boolean) =>
-		setOpen((s) => {
-			const n = new Set(s);
-			if (to ?? !n.has(id)) n.add(id);
-			else n.delete(id);
-			return n;
-		});
+	const toggle = (i: SoundCheckIssue, to?: boolean) => setSyncStrip(session, i, to);
 	const fix = (i: SoundCheckIssue) => {
 		if (engine) void applyCheckFix(session, engine, i);
 	};
+	const ctx = (): CommandCtx =>
+		runtime?.getCtx() ??
+		createCommandContext({
+			engine: engine as unknown as EngineClient,
+			session,
+			capabilities: engineStatus === 'connected' || !engineState ? ['engine'] : [],
+		});
 	// keep the current row in view
 	useEffect(() => {
 		if (!cur) return;
 		document.getElementById(`${idPrefix}${cur}`)?.scrollIntoView?.({ block: 'nearest' });
 	}, [cur, idPrefix]);
+	// the list's keys are the Sound Check scope's commands (Keyboard Shortcuts lists them; remappable)
 	const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-		if (e.ctrlKey || e.metaKey || e.altKey) return;
-		const at = cur ? order.findIndex((i) => i.id === cur) : -1;
-		const go = (n: number) => {
-			const i = order[Math.max(0, Math.min(order.length - 1, n))];
-			if (i) setCurrent(i.id);
-		};
-		const issue = at >= 0 ? order[at] : undefined;
-		let handled = true;
-		if (e.key === 'ArrowDown') go(at + 1);
-		else if (e.key === 'ArrowUp') go(at < 0 ? 0 : at - 1);
-		else if (e.key === 'Home') go(0);
-		else if (e.key === 'End') go(order.length - 1);
-		else if (e.key === 'Enter' && issue) jumpToIssue(session, issue, props.reveal);
-		else if ((e.key === 'f' || e.key === 'F') && issue && issue.fix && canApply(issue)) fix(issue);
-		else if (e.key === 'ArrowRight' && issue && hasSyncStrip(issue)) toggle(issue.id, true);
-		else if (e.key === 'ArrowLeft' && issue) toggle(issue.id, false);
-		else if (e.key === ' ' && issue) {
-			jumpToIssue(session, issue, props.reveal);
-			const frame = issue.frame ?? issue.range?.start;
-			if (frame !== undefined)
-				playListen(
-					session,
-					seq.id,
-					[
-						{
-							slot: 'worst',
-							frame,
-							timecode: issue.timecode ?? '',
-							seconds: 0,
-							why: issue.message,
-							slotLabel: '',
-							text: messageText(issue.message),
-							verdict: null,
-						},
-					],
-					0,
-				);
-		} else handled = false;
-		if (handled) {
-			e.preventDefault();
-			e.stopPropagation();
-		}
+		runScopedKey(e, 'soundCheck', ctx(), runtime ?? {});
 	};
 	if (!report.issues.length)
 		return (
@@ -659,7 +635,7 @@ function Findings(props: {
 								data-code={i.code}
 								data-frame={i.frame ?? i.range?.start ?? ''}
 								className={`border-t border-pr-border-subtle px-2 py-1 ${cur === i.id ? 'bg-pr-selected' : ''}`}
-								onPointerDown={() => setCurrent(i.id)}
+								onPointerDown={() => setFindingCursor(session, i.id)}
 							>
 								<div className="flex items-start gap-1.5">
 									<span
@@ -698,7 +674,7 @@ function Findings(props: {
 											aria-label={expanded ? t('Hide the sync strip') : t('Show the sync strip')}
 											className="shrink-0 text-pr-muted hover:text-pr-text"
 											data-testid="sound-check-strip-toggle"
-											onClick={() => toggle(i.id)}
+											onClick={() => toggle(i)}
 										>
 											<Icon id={expanded ? 'app.chevronDown' : 'app.chevronRight'} size={14} />
 										</button>
@@ -759,11 +735,12 @@ function Listen(props: {
 	reveal(f: number): void;
 }) {
 	const { session, seq, rows } = props;
-	const [noteFor, setNoteFor] = useState<number | null>(null);
+	const [noteFor, setNoteFor] = useState<string | null>(null);
+	const keyOf = (row: ListenRow) => `${row.slot}:${row.frame}`;
 	const [note, setNote] = useState('');
 	if (!rows.length) return null;
 	const openNote = (row: ListenRow) => {
-		setNoteFor(row.frame);
+		setNoteFor(keyOf(row));
 		setNote(row.verdict?.note ?? '');
 	};
 	const save = (row: ListenRow, verdict: 'ok' | 'flag', text: string) => {
@@ -798,6 +775,7 @@ function Listen(props: {
 			<ol className="m-0 flex list-none flex-col gap-1 p-0">
 				{rows.map((row, idx) => {
 					const v = row.verdict?.verdict ?? null;
+					const stale = verdictStaleText(row.verdict);
 					const isPlaying = props.playing?.index === idx;
 					return (
 						<li
@@ -807,6 +785,7 @@ function Listen(props: {
 							data-slot={row.slot}
 							data-frame={row.frame}
 							data-verdict={v ?? ''}
+							data-verdict-stale={stale ? 'true' : undefined}
 						>
 							<div className="flex items-center gap-1.5">
 								<Button
@@ -841,32 +820,43 @@ function Listen(props: {
 								<span className="min-w-0 flex-1 text-pr-small" title={t(row.slotLabel)}>
 									{row.text}
 								</span>
-								<Button
-									variant={v === 'ok' ? 'primary' : 'quiet'}
-									aria-pressed={v === 'ok'}
-									disabled={props.readOnly}
-									data-testid="sound-check-sounds-right"
-									onClick={() => save(row, 'ok', row.verdict?.note ?? '')}
-								>
-									✓ {t('Sounds right')}
-								</Button>
-								<Button
-									variant={v === 'flag' ? 'danger' : 'quiet'}
-									aria-pressed={v === 'flag'}
-									disabled={props.readOnly}
-									data-testid="sound-check-flag"
-									onClick={() => openNote(row)}
-								>
-									✕ {t('Flag')}
-								</Button>
+								<span className="flex items-center gap-1.5" {...{ [LISTEN_KEEP_ATTR]: '' }}>
+									<Button
+										variant={v === 'ok' ? 'primary' : 'quiet'}
+										aria-pressed={v === 'ok'}
+										disabled={props.readOnly}
+										data-testid="sound-check-sounds-right"
+										onClick={() => save(row, 'ok', row.verdict?.note ?? '')}
+									>
+										✓ {t('Sounds right')}
+									</Button>
+									<Button
+										variant={v === 'flag' ? 'danger' : 'quiet'}
+										aria-pressed={v === 'flag'}
+										disabled={props.readOnly}
+										data-testid="sound-check-flag"
+										onClick={() => openNote(row)}
+									>
+										✕ {t('Flag')}
+									</Button>
+								</span>
 							</div>
-							{row.verdict?.note && noteFor !== row.frame ? (
+							{stale ? (
+								<p
+									className="m-0 ml-8 flex items-center gap-1 text-pr-small text-pr-warning"
+									data-testid="sound-check-verdict-stale"
+								>
+									<Icon id="status.warning" size={12} />
+									{stale}
+								</p>
+							) : null}
+							{row.verdict?.note && noteFor !== keyOf(row) ? (
 								<p className="m-0 ml-8 text-pr-small text-pr-muted" data-testid="sound-check-note">
 									{t('Note: {0}', row.verdict.note)}
 								</p>
 							) : null}
-							{noteFor === row.frame ? (
-								<div className="ml-8 mt-1 flex items-center gap-1">
+							{noteFor === keyOf(row) ? (
+								<div className="ml-8 mt-1 flex items-center gap-1" {...{ [LISTEN_KEEP_ATTR]: '' }}>
 									<TextField
 										autoFocus
 										className="min-w-0 flex-1"

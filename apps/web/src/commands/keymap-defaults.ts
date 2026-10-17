@@ -357,6 +357,18 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('proposals.exitReview', 'Escape', 'review'),
 	b('proposals.prevItem', 'ArrowUp', 'review', { repeat: true, args: { order: 'list' } }),
 	b('proposals.nextItem', 'ArrowDown', 'review', { repeat: true, args: { order: 'list' } }),
+	// Phase 5 verification (spec 12 §2.7 Sound Check panel; follow-up (f)): the findings list — ↑ ↓ Home End move, Enter
+	// jumps to the finding, F applies its fix, → / ← open / close the sync strip, Space plays 4 s around it
+	b('soundCheck.prevFinding', 'ArrowUp', 'soundCheck', R),
+	b('soundCheck.nextFinding', 'ArrowDown', 'soundCheck', R),
+	b('soundCheck.firstFinding', 'Home', 'soundCheck'),
+	b('soundCheck.lastFinding', 'End', 'soundCheck'),
+	b('soundCheck.goToFinding', 'Enter', 'soundCheck'),
+	b('soundCheck.goToFinding', 'NumpadEnter', 'soundCheck'),
+	b('soundCheck.fixFinding', 'KeyF', 'soundCheck'),
+	b('soundCheck.openSyncStrip', 'ArrowRight', 'soundCheck'),
+	b('soundCheck.closeSyncStrip', 'ArrowLeft', 'soundCheck'),
+	b('soundCheck.playFinding', 'Space', 'soundCheck'),
 	b('history.stepBackward', 'ArrowLeft', 'history', R),
 	b('history.stepForward', 'ArrowRight', 'history', R),
 ];

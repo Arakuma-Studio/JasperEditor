@@ -1,7 +1,7 @@
 // Sound Check visual data (spec 12 §2.6 "Visual data comes from the engine", §2.8 `POST /api/sound-design/visual`, P5-R2;
 // wp-note "Phase 5 → WP5.1"): over a bounded range (≤ 120 s) the 10 ms momentary and short-term loudness of the mix and
 // of each stem (bed, sound effects, music, dialogue, ambience), the mix's 10 ms sample peaks, the cue ticks, the sound
-// effect clips with their aligned points, speech, the picture's motion curve (the fastest keyframed layer per frame,
+// effect clips with their aligned points, the 10 ms sample peaks of the sound-effects stem and the bed, speech, the picture's motion curve (the fastest keyframed layer per frame,
 // from `deriveCues`) and — given a finished `sound-check` job — its findings over the range. MCP draws it into PNGs
 // (`view_sound_timeline`, `sound_check` images); the web panel draws the same data on a canvas.
 //
@@ -170,9 +170,13 @@ export async function soundVisual(
 		StemName,
 		ReturnType<typeof curveOf>
 	>;
-	const waveformPeakDb = Array.from(all.mix.c.peakDb.subarray(preHops, preHops + rangeHops), (v) =>
-		r2(v > LOUDNESS_FLOOR_LUFS ? Math.max(LOUDNESS_FLOOR_LUFS, v + gain) : LOUDNESS_FLOOR_LUFS),
-	);
+	const peaksOf = (s: StemName) =>
+		Array.from(all[s].c.peakDb.subarray(preHops, preHops + rangeHops), (v) =>
+			r2(v > LOUDNESS_FLOOR_LUFS ? Math.max(LOUDNESS_FLOOR_LUFS, v + gain) : LOUDNESS_FLOOR_LUFS),
+		);
+	const waveformPeakDb = peaksOf('mix');
+	// the sync strip draws the sound effects over the bed (Phase 5 verification): their own peaks, as delivered
+	const stemPeakDb = { sfx: peaksOf('sfx'), bed: peaksOf('bed') };
 	// speech
 	const speech: [number, number][] = [];
 	const mark = new Uint8Array(rangeHops);
@@ -288,6 +292,7 @@ export async function soundVisual(
 			ambience: { momentary: all.ambience.momentary, shortTerm: all.ambience.shortTerm },
 		},
 		waveformPeakDb,
+		stemPeakDb,
 		motion: { startFrame: range.start, speed: speed.map(r3) },
 		cues,
 		clips,

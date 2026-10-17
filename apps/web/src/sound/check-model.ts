@@ -14,16 +14,21 @@ import type {
 import {
 	type Command,
 	DELIVERY_PRESETS,
+	mixFingerprint,
+	type ProjectDocument,
 	readSoundCheckTarget,
 	type Sequence,
 	SOUND_CHECK_MESSAGES,
 	SOUND_CHECK_TARGET_LIMITS,
-	SOUND_CHECK_VERDICT_MARKER,
+	type SOUND_CHECK_VERDICT_MARKER,
 	type SoundCheckHumanVerdict,
 	type SoundCheckStatus,
 	type SoundCheckTarget,
 	type SoundDelivery,
+	sequenceTimecode,
 	soundCheckHumanVerdicts,
+	soundCheckInputsHash,
+	soundCheckVerdictFor,
 	soundDesignSettingsOf,
 } from '@jasper/project';
 import type { IconId } from '@jasper/ui';
@@ -234,6 +239,28 @@ export function staleText(status: Pick<SoundCheckStatus, 'state' | 'reasons'>): 
 	return t('Stale: {0} since this check', words.join(', '));
 }
 
+/**
+ * Whether a report still describes the document (as `soundCheckStatus` does for the stored summary): the mix, the other
+ * inputs (cues, loudness settings, credits, a custom target) and the sequence's delivery preset. A report kept by the
+ * engine across a restart is judged by this, whatever summary the sequence stores.
+ */
+export function reportStatus(
+	doc: ProjectDocument,
+	report: Pick<SoundCheckReport, 'sequenceId' | 'mixHash' | 'inputsHash' | 'preset'>,
+): Pick<SoundCheckStatus, 'state' | 'reasons'> {
+	const seq = doc.sequences?.[report.sequenceId] as Sequence | undefined;
+	if (!seq) return { state: 'none', reasons: [] };
+	const reasons: SoundCheckStatus['reasons'] = [];
+	if (report.mixHash !== mixFingerprint(doc, report.sequenceId)) reasons.push('mix');
+	const target = report.preset.custom
+		? { integratedLufs: report.preset.integratedLufs, truePeakDb: report.preset.truePeakDb }
+		: null;
+	if (report.inputsHash !== soundCheckInputsHash(doc, report.sequenceId, report.preset.id, target))
+		reasons.push('inputs');
+	if (report.preset.id !== soundDesignSettingsOf(seq).delivery) reasons.push('preset');
+	return { state: reasons.length ? 'stale' : 'current', reasons };
+}
+
 // ── fixes ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type FixJob = { route: 'rebalance' | 'delivery'; body: Record<string, unknown> };
@@ -310,6 +337,141 @@ export function planFixes(issues: readonly SoundCheckIssue[], opts: { safeOnly: 
 	return plan;
 }
 
+type AnyCmd = Record<string, unknown> & { type: string };
+
+/** A clip's name for the confirmation ("Crunchy impact"), else its id. */
+function clipName(seq: Sequence | undefined, id: unknown): string {
+	if (typeof id !== 'string') return '?';
+	const c =
+		seq && Object.hasOwn(seq.clips, id) ? (seq.clips[id] as { name?: unknown } | undefined) : undefined;
+	return typeof c?.name === 'string' && c.name ? c.name : id;
+}
+
+const tcOf = (seq: Sequence | undefined, f: unknown, fallback: string): string =>
+	typeof f === 'number' && Number.isFinite(f) && f >= 0 && seq
+		? sequenceTimecode(seq, Math.round(f))
+		: fallback;
+
+/**
+ * What applying a finding's fix will change, one sentence per change (the confirmation of a fix that needs the user's
+ * judgement names them before anything is applied; Phase 5 verification follow-up (a)). Never throws.
+ */
+export function fixChangeSummary(issue: SoundCheckIssue, seq: Sequence | undefined): string[] {
+	const f = issue.fix;
+	if (!f) return [];
+	const at = issue.timecode ?? '';
+	try {
+		if (f.kind === 'swap' && f.swap)
+			return [
+				t('Replaces the sound of “{0}” at {1}: {2}', clipName(seq, f.swap.clipId), at, messageText(f.label)),
+			];
+		if (f.kind === 'job' && f.job) {
+			const b = f.job.body;
+			if (f.job.route === 'rebalance')
+				return [
+					t(
+						'Re-levels the sound effects of the sequence against the bed and the true-peak ceiling: the gain of any of them may change',
+					),
+				];
+			const lines: string[] = [];
+			if (b.loudness !== false) lines.push(t('Normalises the Mix to the delivery target'));
+			if (b.autoMatch !== false)
+				lines.push(
+					t('Auto-Match sets the gains of the dialogue and music clips by their Essential Sound type'),
+				);
+			lines.push(t('Turns on ducking of the music under the voice'));
+			if (b.rebalance !== false) lines.push(t('Re-levels the sound effects against the bed'));
+			return lines;
+		}
+		const out: string[] = [];
+		for (const c of (f.commands ?? []) as AnyCmd[]) {
+			switch (c.type) {
+				case 'soundCue.add': {
+					for (const q of (Array.isArray(c.cues) ? c.cues : []) as Record<string, unknown>[]) {
+						const w = q.window as { start?: unknown; end?: unknown } | undefined;
+						out.push(
+							q.kind === 'silence' && w
+								? t(
+										'Adds a silence cue from {0} to {1}: Sound Check no longer reports silence there',
+										tcOf(seq, w.start, at),
+										tcOf(seq, w.end, at),
+									)
+								: t('Adds a sound cue at {0}', tcOf(seq, q.frame, at)),
+						);
+					}
+					break;
+				}
+				case 'soundCue.remove': {
+					const ids = Array.isArray(c.cueIds) ? (c.cueIds as string[]) : [];
+					const cues = (
+						seq as { soundDesign?: { cues?: Record<string, { placedClipIds?: string[]; frame?: number }> } }
+					)?.soundDesign?.cues;
+					for (const id of ids) {
+						const cue = cues && Object.hasOwn(cues, id) ? cues[id] : undefined;
+						const n = c.withClips ? (cue?.placedClipIds?.length ?? 0) : 0;
+						const where = tcOf(seq, cue?.frame, at);
+						out.push(
+							n === 0
+								? t('Deletes the sound cue at {0}', where)
+								: n === 1
+									? t('Deletes the sound cue at {0} and the sound placed on it', where)
+									: t('Deletes the sound cue at {0} and the {1} sounds placed on it', where, n),
+						);
+					}
+					break;
+				}
+				case 'soundDesign.applyGains': {
+					const gains = (c.gains ?? {}) as Record<string, unknown>;
+					for (const [id, g] of Object.entries(gains)) {
+						const was =
+							seq && Object.hasOwn(seq.clips, id) ? (seq.clips[id] as { gainDb?: unknown }).gainDb : null;
+						out.push(
+							typeof was === 'number' && typeof g === 'number'
+								? t('Sets the gain of “{0}” from {1} dB to {2} dB', clipName(seq, id), fmtDb(was), fmtDb(g))
+								: t(
+										'Sets the gain of “{0}” to {1} dB',
+										clipName(seq, id),
+										typeof g === 'number' ? fmtDb(g) : '?',
+									),
+						);
+					}
+					break;
+				}
+				case 'mixer.setLoudness':
+					out.push(
+						t(
+							'Normalises the Mix to {0} LUFS with a {1} dBTP ceiling',
+							typeof c.targetLufs === 'number' ? fmtDb(c.targetLufs) : '?',
+							typeof c.truePeakDb === 'number' ? fmtDb(c.truePeakDb) : '?',
+						),
+					);
+					break;
+				case 'soundCue.resync':
+					out.push(t('Moves the cue at {0} and its sounds to what it follows', at));
+					break;
+				case 'clip.trim':
+					out.push(t('Lengthens “{0}” so the whole sound plays', clipName(seq, c.clipId)));
+					break;
+				case 'soundDesign.swap':
+					out.push(t('Replaces the sound of “{0}” at {1}', clipName(seq, c.clipId), at));
+					break;
+				case 'soundCue.update':
+				case 'soundDesign.setRole':
+					out.push(t('Makes the sound at {0} a support sound', at));
+					break;
+				case 'soundDesign.setSettings':
+					out.push(t('Exports a credits file with this sequence'));
+					break;
+				default:
+					out.push(t('Applies “{0}”', c.type));
+			}
+		}
+		return [...new Set(out)];
+	} catch {
+		return [messageText(f.label)];
+	}
+}
+
 /** Findings with a safe fix the panel can apply. */
 export function safeFixable(issues: readonly SoundCheckIssue[]): SoundCheckIssue[] {
 	return issues.filter((i) => i.fix?.safe && canApply(i));
@@ -320,57 +482,71 @@ export function safeFixable(issues: readonly SoundCheckIssue[]): SoundCheckIssue
 export type ListenRow = SoundCheckListen & {
 	slotLabel: string;
 	text: string;
+	/** The listener's verdict on this moment (same frame and clip / cue; an unbound older one at the frame). */
 	verdict: SoundCheckHumanVerdict | null;
 };
 
-/** The listen-here rows (≤ 5) with the user's verdict at each frame (the last one written there). */
-export function listenRows(report: SoundCheckReport, seq: Sequence | undefined): ListenRow[] {
-	const verdicts = seq ? soundCheckHumanVerdicts(seq) : [];
+/**
+ * The listen-here rows (≤ 5) with the user's verdict on each moment — the last one at its frame about the same clip or
+ * cue (`soundCheckVerdictFor`); with `doc` each verdict says whether it is stale (what plays there changed since).
+ */
+export function listenRows(
+	report: SoundCheckReport,
+	seq: Sequence | undefined,
+	doc?: ProjectDocument,
+): ListenRow[] {
+	const verdicts = seq ? soundCheckHumanVerdicts(seq, doc ? { doc } : {}) : [];
 	return report.listen.slice(0, 5).map((l) => ({
 		...l,
 		slotLabel: SLOT_LABELS[l.slot] ?? l.slot,
 		text: messageText(l.why),
-		verdict: verdicts.filter((v) => v.frame === l.frame).at(-1) ?? null,
+		verdict: soundCheckVerdictFor(verdicts, { frame: l.frame, clipId: l.clipId, cueId: l.cueId }),
 	}));
 }
 
+/** Why a verdict no longer describes its moment, in words (null when it does or cannot be told). */
+export function verdictStaleText(v: SoundCheckHumanVerdict | null): string | null {
+	if (!v?.stale) return null;
+	const r = v.staleReasons ?? [];
+	const what = r.includes('gone')
+		? v.cueId
+			? t('its cue is gone')
+			: t('its sound is gone')
+		: r.includes('moved')
+			? v.cueId
+				? t('its cue moved')
+				: t('its sound moved')
+			: t('the sound here changed');
+	return t('Out of date: {0} since you listened', what);
+}
+
 /**
- * The commands that record a verdict at a listen-here frame: a user `comment` marker named as
- * `SOUND_CHECK_VERDICT_MARKER` with the note as its comment; an existing verdict marker at that frame is updated
- * instead of adding another.
+ * The command that records a verdict on a listen-here moment (`soundDesign.setVerdict`): a user `comment` marker named
+ * as `SOUND_CHECK_VERDICT_MARKER` with the note as its comment, bound to the moment — its slot, the clip (else cue) it
+ * is about when that still exists, and the report's mix hash; the verdict on the same moment is updated instead of
+ * adding another.
  */
 export function verdictCommands(
 	seq: Sequence,
-	frame: number,
+	row: Pick<SoundCheckListen, 'frame'> & Partial<Pick<SoundCheckListen, 'slot' | 'clipId' | 'cueId'>>,
 	verdict: keyof typeof SOUND_CHECK_VERDICT_MARKER,
 	note: string,
+	reportMixHash?: string | null,
 ): Command[] {
-	const name = SOUND_CHECK_VERDICT_MARKER[verdict];
-	const comment = note.trim().slice(0, 2000);
-	const color = verdict === 'ok' ? 'green' : 'rose';
-	const existing = soundCheckHumanVerdicts(seq).filter((v) => v.frame === frame);
-	const keep = existing.at(-1);
-	if (keep)
-		return [
-			{ type: 'marker.update', markerId: keep.markerId, name, comment, color } as Command,
-			...(existing.length > 1
-				? [
-						{
-							type: 'marker.remove',
-							markerIds: existing.slice(0, -1).map((v) => v.markerId),
-						} as Command,
-					]
-				: []),
-		];
+	const clipId = row.clipId && Object.hasOwn(seq.clips, row.clipId) ? row.clipId : undefined;
+	const cues = (seq as { soundDesign?: { cues?: Record<string, unknown> } }).soundDesign?.cues;
+	const cueId = !clipId && row.cueId && cues && Object.hasOwn(cues, row.cueId) ? row.cueId : undefined;
 	return [
 		{
-			type: 'marker.add',
+			type: 'soundDesign.setVerdict',
 			sequenceId: seq.id,
-			frame,
-			name,
-			markerType: 'comment',
-			comment,
-			color,
+			frame: row.frame,
+			verdict,
+			note: note.trim().slice(0, 2000),
+			...(row.slot ? { slot: row.slot } : {}),
+			...(clipId ? { clipId } : {}),
+			...(cueId ? { cueId } : {}),
+			...(reportMixHash ? { reportMixHash: reportMixHash.slice(0, 256) } : {}),
 		} as Command,
 	];
 }

@@ -123,6 +123,8 @@ type Running = {
 	token: number;
 	/** Told how a window ended: it played to its end (`window`), or something stopped it first (`stopped`). */
 	onEnd?: ((how: 'window' | 'stopped') => void) | undefined;
+	/** Inputs that do not end it (the Sound Check's verdict buttons during Play all). */
+	keep?: ((e: Event) => boolean) | undefined;
 };
 
 let running: Running | null = null;
@@ -177,14 +179,22 @@ export function inContextEndedBy(codes: readonly string[]): boolean {
 	return endedByKey !== null && codes.includes(endedByKey);
 }
 
-/** Ends the audition on the next key or pointer press anywhere (installed after the gesture that started it). */
-function endOnInput(stop: () => void): () => void {
+/**
+ * Ends the audition on the next key or pointer press anywhere (installed after the gesture that started it), except the
+ * presses `keep` accepts.
+ */
+function endOnInput(stop: () => void, keep?: (e: Event) => boolean): () => void {
 	if (typeof window === 'undefined') return () => undefined;
 	let on = false;
 	let ended = false;
 	let offKey: () => void = () => undefined;
 	const handler = (e: Event) => {
 		if (ended) return;
+		try {
+			if (keep?.(e)) return;
+		} catch {
+			// a failing filter ends it, as any input does
+		}
 		if (e instanceof KeyboardEvent) {
 			// modifier keys alone (holding Shift of Shift+Space) do not end it
 			if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
@@ -271,7 +281,7 @@ function begin(r: Running, title: string | null, soundId: string | null): void {
 	r.offs.push(
 		endOnInput(() => {
 			if (running === r) stopInContext();
-		}),
+		}, r.keep),
 		watchSession(r.session, () => {
 			if (running === r) stopInContext({ returnToAnchor: false });
 		}),
@@ -402,6 +412,8 @@ export function playTimelineWindow(
 		after?: number;
 		/** Told when this window ends (it played to its end, or was stopped: a key, a click, the transport…). */
 		onEnd?: (how: 'window' | 'stopped') => void;
+		/** Key or pointer presses that do not stop it (every other press does). */
+		keepPlayingOn?: (e: Event) => boolean;
 	},
 ): void {
 	const previous = running && running.session === session ? running.returnTo : null;
@@ -417,6 +429,7 @@ export function playTimelineWindow(
 		offs: [],
 		token: my,
 		onEnd: opts.onEnd,
+		keep: opts.keepPlayingOn,
 	};
 	try {
 		begin(run, opts.title, null);

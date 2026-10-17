@@ -1,7 +1,9 @@
 // The sync strip of a Sound Check sync finding (spec 12 §2.7 "Sync rows expand into a strip of 5 frames plus the
 // waveform"; wp-note "Phase 5 → WP5.2"): the picture at the cue frame and two frames either side (engine stills of
-// the committed sequence, the Program's own render), above the mix waveform around the cue (the engine's visual data,
-// `POST /api/sound-design/visual`, 10 ms peaks — the same data the MCP pictures draw), with a solid line at the picture
+// the committed sequence, the Program's own render), above the waveform around the cue (the engine's visual data,
+// `POST /api/sound-design/visual`, 10 ms peaks — the same data the MCP pictures draw): the sound-effects stem drawn
+// over the bed (everything else) — what the sync search measured, against what it sits in; an engine without stem peaks
+// gives the mix (Phase 5 verification follow-up (d)) — with a solid line at the picture
 // event (the cue frame) and a dashed line where the sound's aligned point was measured (cue + the report's offset).
 // Ticks under the frames show where each thumbnail sits in time. Drawn as SVG with design tokens (high contrast
 // follows the theme); the lines are told apart by dash and label, not colour alone. Nothing animates.
@@ -203,7 +205,10 @@ export function SyncStrip(props: {
 					offsetMs >= 0 ? t('late') : t('early'),
 					Math.abs(offsetFrames!).toFixed(1),
 				);
-	const path = visual ? wavePath(visual.waveformPeakDb, width, WAVE_H) : '';
+	const stems = visual?.stemPeakDb;
+	const path = visual && !stems ? wavePath(visual.waveformPeakDb, width, WAVE_H) : '';
+	const bedPath = stems ? wavePath(stems.bed, width, WAVE_H) : '';
+	const sfxPath = stems ? wavePath(stems.sfx, width, WAVE_H) : '';
 	return (
 		<div
 			className="mt-1 flex flex-col gap-1 rounded-pr-control bg-pr-field-deep p-2"
@@ -249,6 +254,27 @@ export function SyncStrip(props: {
 			>
 				<rect x={0} y={0} width={width} height={WAVE_H} fill="var(--pr-bg-panel)" />
 				{path ? <path d={path} fill="var(--pr-text-secondary)" data-testid="sound-check-wave-path" /> : null}
+				{bedPath ? (
+					<path
+						d={bedPath}
+						fill="var(--pr-text-tertiary)"
+						fillOpacity={0.45}
+						data-testid="sound-check-wave-bed"
+					>
+						<title>{t('Bed (everything but sound effects)')}</title>
+					</path>
+				) : null}
+				{sfxPath ? (
+					<path
+						d={sfxPath}
+						fill="none"
+						stroke="var(--pr-cue)"
+						strokeWidth={1.25}
+						data-testid="sound-check-wave-sfx"
+					>
+						<title>{t('Sound effects')}</title>
+					</path>
+				) : null}
 				{geo.frameX.map((x, i) => (
 					<line
 						key={geo.frames[i]}
@@ -295,6 +321,25 @@ export function SyncStrip(props: {
 					</>
 				) : null}
 			</svg>
+			{stems ? (
+				<p
+					className="m-0 flex flex-wrap items-center gap-3 text-pr-small text-pr-muted"
+					data-testid="sound-check-wave-legend"
+				>
+					<span className="inline-flex items-center gap-1">
+						<svg width={14} height={8} aria-hidden="true">
+							<rect x={0} y={1} width={14} height={6} fill="none" stroke="var(--pr-cue)" strokeWidth={1.25} />
+						</svg>
+						{t('Sound effects (outline)')}
+					</span>
+					<span className="inline-flex items-center gap-1">
+						<svg width={14} height={8} aria-hidden="true">
+							<rect x={0} y={1} width={14} height={6} fill="var(--pr-text-tertiary)" fillOpacity={0.45} />
+						</svg>
+						{t('Bed (filled)')}
+					</span>
+				</p>
+			) : null}
 			<p className="m-0 text-pr-small text-pr-muted">{error ? t('No waveform: {0}', error) : summary}</p>
 		</div>
 	);

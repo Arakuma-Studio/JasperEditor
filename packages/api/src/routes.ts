@@ -180,6 +180,8 @@ import {
 } from './roto.ts';
 import { SceneDetectRequestSchema } from './scenes.ts';
 import {
+	SoundCheckLastRequestSchema,
+	SoundCheckLastResponseSchema,
 	SoundCheckRequestSchema,
 	SoundVisualRequestSchema,
 	SoundVisualResponseSchema,
@@ -1170,6 +1172,16 @@ export const ROUTES = {
 		path: '/api/sound-design/check',
 		body: SoundCheckRequestSchema,
 		response: EngineJobSchema,
+	},
+	/**
+	 * The last full Sound Check report of a sequence (kept per sequence across engine restarts, bounded), with whether
+	 * it is stale against the live document (Phase 5 verification). 404 `SOUND_CHECK_NOT_FOUND` when there is none.
+	 */
+	soundDesignCheckLast: {
+		method: 'POST',
+		path: '/api/sound-design/check/last',
+		body: SoundCheckLastRequestSchema,
+		response: SoundCheckLastResponseSchema,
 	},
 	/**
 	 * Sound Check visual data (spec 12 §2.6, P5-R2): 10 ms loudness curves of the mix and its stems, the mix waveform,
