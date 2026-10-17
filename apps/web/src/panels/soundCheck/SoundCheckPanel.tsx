@@ -761,6 +761,8 @@ function Listen(props: {
 					variant="secondary"
 					className="ml-auto"
 					data-testid="sound-check-play-all"
+					// its own click starts / stops Play all (a press here must not stop the window first: it would restart)
+					{...{ [LISTEN_KEEP_ATTR]: '' }}
 					onClick={() =>
 						props.playing?.all ? stopListen(session) : playListen(session, seq.id, rows, 0, { all: true })
 					}
@@ -795,6 +797,7 @@ function Listen(props: {
 									}
 									aria-pressed={isPlaying}
 									data-testid="sound-check-listen-play"
+									{...{ [LISTEN_KEEP_ATTR]: '' }}
 									onClick={() => (isPlaying ? stopListen(session) : playListen(session, seq.id, rows, idx))}
 								>
 									<Icon id={isPlaying ? 'transport.pause' : 'transport.play'} size={12} />

@@ -767,8 +767,10 @@ describe('Sound Check panel', () => {
 		};
 		expect(keep(press(within(rows()[2]!).getByTestId('sound-check-sounds-right')))).toBe(true);
 		expect(keep(press(within(rows()[2]!).getByTestId('sound-check-flag')))).toBe(true);
-		expect(keep(press(within(rows()[2]!).getByTestId('sound-check-listen-play')))).toBe(false);
-		expect(keep(press(screen.getByTestId('sound-check-play-all')))).toBe(false);
+		// ▶ and Play all / Stop act on their own click (a press that stopped first would let the click restart it)
+		expect(keep(press(within(rows()[2]!).getByTestId('sound-check-listen-play')))).toBe(true);
+		expect(keep(press(screen.getByTestId('sound-check-play-all')))).toBe(true);
+		expect(keep(press(screen.getByTestId('sound-check-panel')))).toBe(false);
 		// a verdict during Play all: recorded, and the chain goes on
 		await act(async () => {
 			fireEvent.click(within(rows()[0]!).getByTestId('sound-check-sounds-right'));

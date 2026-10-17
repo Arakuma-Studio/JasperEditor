@@ -50,7 +50,7 @@ describe('listen-here windows keep playing on the verdict controls', () => {
 		// Escape stops it everywhere; a letter on a verdict button is a shortcut, not the verdict
 		expect(keepsListening(kd(el.note, 'Escape'))).toBe(false);
 		expect(keepsListening(kd(el.ok, 'j', 'KeyJ'))).toBe(false);
-		// the row's ▶, Play all / Stop and anything else stop it
+		// a button outside the listen controls, and anything else, stops it
 		expect(keepsListening(pd(el.play))).toBe(false);
 		expect(keepsListening(pd(document.body))).toBe(false);
 		expect(keepsListening(new Event('pointerdown'))).toBe(false);

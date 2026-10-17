@@ -710,9 +710,10 @@ const playingReturn = new WeakMap<EditorSession, number>();
 export const LISTEN_KEEP_ATTR = 'data-listen-keep';
 
 /**
- * Whether a key or pointer press keeps a listen-here window playing: presses inside the listen-here verdict controls
- * (`LISTEN_KEEP_ATTR`) — Sounds right, Flag, the note field and its buttons — except Escape and the transport's own keys
- * there (Space on the panel, not on a button, stops as before). Everything else stops it (the In Context rule).
+ * Whether a key or pointer press keeps a listen-here window playing: presses inside the listen-here controls
+ * (`LISTEN_KEEP_ATTR`) — Sounds right, Flag, the note field and its buttons, and the ▶ / Play all buttons, whose own
+ * click starts or stops playback (stopping on the press would let the click start it again) — except Escape and keys
+ * that are not typing or activating a button there. Everything else stops it (the In Context rule).
  */
 export function keepsListening(e: Event): boolean {
 	const el = e.target as Element | null;
