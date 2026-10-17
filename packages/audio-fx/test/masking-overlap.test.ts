@@ -7,10 +7,13 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+	evaluateSfxGains,
 	MAX_MASKING_ITERATIONS,
 	type SolverEvent,
 	type SolverResult,
 	type SolverWeight,
+	sfxOverlapTerms,
+	sfxWeightMasks,
 	solveSfxGains,
 	TARGET_LIFT_DB,
 } from '../src/index.ts';
@@ -456,6 +459,46 @@ describe('properties', () => {
 				expect(solveSfxGains(perm).gains).toEqual(a.gains);
 			}),
 			{ numRuns: 200 },
+		);
+	});
+
+	it('sfxOverlapTerms rebuild the masked bed evaluateSfxGains uses, for any gains and for changed weights (Sound Check joint fixes)', () => {
+		const weightArb = fc.constantFrom<SolverWeight>('ambient', 'support', 'hero');
+		fc.assert(
+			fc.property(
+				arbEvents,
+				fc.array(fc.double({ min: -30, max: 12, noNaN: true }), { minLength: 12, maxLength: 12 }),
+				fc.array(weightArb, { minLength: 12, maxLength: 12 }),
+				(events, gains, weights) => {
+					const terms = sfxOverlapTerms(events);
+					const masked = (i: number, ws: readonly SolverWeight[]) => {
+						const t = terms[i]!;
+						let e = e10(t.bedDomDb);
+						for (const x of t.terms) if (sfxWeightMasks(ws[x.index]!, ws[i]!)) e += e10(x.at0Db + gains[x.index]!);
+						return Math.max(-200, dB10(e));
+					};
+					// as given, and with every weight changed (the solver evaluated on the re-weighted events)
+					for (const ws of [events.map((e) => e.weight), weights.slice(0, events.length)]) {
+						const evs = events.map((e, i) => ({ ...e, weight: ws[i]! }));
+						const ev = evaluateSfxGains(evs, gains.slice(0, evs.length));
+						const t2 = sfxOverlapTerms(evs);
+						evs.forEach((e, i) => {
+							const r = ev[i]!;
+							if (r.liftDb === null) {
+								expect(terms[i]).toBeNull();
+								return;
+							}
+							// the terms do not depend on the weights; liftDb = sound + g − masked (0.01 dB steps)
+							expect(t2[i]!.terms.map((x) => [x.index, x.at0Db])).toEqual(terms[i]!.terms.map((x) => [x.index, x.at0Db]));
+							const soundDom = r.liftDb - gains[i]! + (r.sfxMaskingDb ?? 0) + terms[i]!.bedDomDb;
+							expect(r.sfxMaskingDb!).toBeCloseTo(masked(i, ws) - terms[i]!.bedDomDb, 1);
+							expect(Number.isFinite(soundDom)).toBe(true);
+							expect(e.clipId).toBe(r.clipId);
+						});
+					}
+				},
+			),
+			{ numRuns: 400 },
 		);
 	});
 });
