@@ -1,18 +1,20 @@
 // Sound Check fixes judged together (spec 12 §2.6 "Fix all safe"; wp-note "WP6.5b → Sound Check"). Each fix the engine
-// marks safe was judged on its own; two of them on the same sound can still overload it together (a hero's solved gain
-// and its demotion to support: the gain was solved under the hero's bed cap), and with loudness normalisation off a
-// gain that lifts a masked sound can push the mix's true peak over the ceiling. `planSoundCheckFixes` applies the
-// candidate fixes IN SEQUENCE on a dry-run copy of the document — commands first, then sound swaps, then engine jobs, each
-// group in report order (an align before a swap of the same clip keeps the aligned frame) — and re-validates after each
-// one: a fix is skipped (with a translatable reason and the findings it conflicts with) when its commands no longer
-// apply, when it makes any measured sound worse than before it (further under its minimum lift, further over its bed
-// cap, its own true peak further over the ceiling, or — normalisation off — the bound on the mix's true peak where it
-// plays further over the ceiling), when it no longer resolves its own finding, when it changes the level of a sound
-// another accepted fix moves or replaces (or the other way round: the level was measured for the old sound or place),
-// or — for an engine job — when accepted fixes changed sound-effect levels the job's bed would move under. Earlier fixes
-// win; the result is deterministic. Used by the engine (the report's `safe` flags are jointly safe for the checked
-// document, so an agent applying every safe fix in `soundCheckFixOrder` gets the same result) and by the editor's Fix all
-// safe (re-validated on the current document with the real swap commands).
+// marks safe was judged on its own; two of them on the same sound can still undo or overload each other (a hero's
+// solved gain and its demotion: `soundDesign.setRole` resets a solver gain to the new role's default level, and a
+// hero-solved gain applied to a support can sit over the support's bed cap), and with loudness normalisation off a gain
+// that lifts a masked sound can push the mix's true peak over the ceiling. `planSoundCheckFixes` applies the candidate
+// fixes IN SEQUENCE on a dry-run copy of the document — commands first, then sound swaps, then engine jobs, each group in
+// report order (an align before a swap of the same clip keeps the aligned frame). Each fix is judged on its own first (on
+// the document as given), then after the fixes accepted before it; it is skipped, with a translatable reason and the
+// findings it conflicts with (none when it is not safe on its own), when its commands no longer apply; when it leaves
+// any measured sound worse than before it (further under its minimum lift, further over its bed cap, its own true peak
+// further over the ceiling, or — normalisation off — the bound on the mix's true peak where it plays further over the
+// ceiling); when it no longer resolves its own finding; when it changes the level of a sound another accepted fix moves
+// or replaces, or the other way round (the level was measured for the old sound and place); or — an engine job — when
+// accepted fixes changed sound-effect levels the job's bed would move under. Earlier fixes win; the result is
+// deterministic. Used by the engine (a report's `safe` flags are safe alone and in `soundCheckFixOrder` after the safe
+// fixes before them, for the checked document) and by the editor (Fix all safe, and a single Fix, re-judged on the
+// current document with the real swap commands).
 //
 // Level model (from the check's measurements, `report.levelGuard`): the masking solver's quantities are linear in the
 // clip gain g — lift(g) = liftAt0Db + g, peak over the bed(g) = peakOverBedAt0Lu + g, the sound's true peak(g) =
@@ -361,64 +363,62 @@ export function planSoundCheckFixes(
 			return JSON.parse(s) as Record<string, unknown>;
 		});
 	const baseStates = statesOf(dry, sequenceId, guard, new Set());
-	const replaced = new Set<string>();
-	/** Issue ids of accepted fixes that changed a clip's level / its sound or place. */
-	const levelBy = new Map<string, string[]>();
-	const soundBy = new Map<string, string[]>();
-	const accepted: SoundCheckFixCandidate[] = [];
-	const skipped: SoundCheckFixSkip[] = [];
 	const titleOf = (clipId: string) => {
 		const m = guard?.levels.find((l) => l.clipId === clipId);
 		return m?.title ? `“${m.title}”` : clipId;
 	};
-	const skip = (c: SoundCheckFixCandidate, reason: SoundCheckMessage, conflictsWith: string[] = []) =>
-		skipped.push({ candidate: c, reason, conflictsWith: [...new Set(conflictsWith)] });
-
-	for (const c of soundCheckFixOrder(candidates)) {
+	type State = {
+		dry: ProjectDocument;
+		replaced: Set<string>;
+		/** Issue ids of accepted fixes that changed a clip's level / its sound or place. */
+		levelBy: Map<string, string[]>;
+		soundBy: Map<string, string[]>;
+		accepted: SoundCheckFixCandidate[];
+	};
+	type Verdict =
+		| { ok: true; state: State }
+		| { ok: false; reason: SoundCheckMessage; conflictsWith: string[] };
+	const no = (reason: SoundCheckMessage, conflictsWith: string[] = []): Verdict => ({
+		ok: false,
+		reason,
+		conflictsWith,
+	});
+	/** Judges `c` applied after the fixes of `st` (see the module docs). */
+	const judge = (c: SoundCheckFixCandidate, st: State): Verdict => {
+		const { levelBy, soundBy, replaced } = st;
 		// jobs: an engine job's bed moves under accepted level changes (ducking under speech; a rebalance everywhere)
 		if (c.kind === 'job') {
 			const moved = [...levelBy.entries()].filter(([clipId]) => {
 				if (c.job?.route === 'rebalance') return true;
 				return guard?.levels.some((l) => l.clipId === clipId && l.speech) ?? false;
 			});
-			if (moved.length) {
-				skip(
-					c,
+			if (moved.length)
+				return no(
 					soundCheckMessage('whyFixBedChanged'),
 					moved.flatMap(([, by]) => by),
 				);
-				continue;
-			}
-			accepted.push(c);
-			continue;
+			return { ok: true, state: { ...st, accepted: [...st.accepted, c] } };
 		}
-		let next = dry;
+		let next = st.dry;
 		if (c.commands?.length) {
-			if (preludeError && c.kind === 'swap') {
-				skip(c, soundCheckMessage('whyFixRefused', preludeError));
-				continue;
-			}
-			const r = run(dry, substitute(c.commands));
-			if (!r.ok) {
-				skip(c, soundCheckMessage('whyFixRefused', r.message), accepted.flatMap((a) => a.issueIds));
-				continue;
-			}
+			if (preludeError && c.kind === 'swap') return no(soundCheckMessage('whyFixRefused', preludeError));
+			const r = run(st.dry, substitute(c.commands));
+			if (!r.ok)
+				return no(
+					soundCheckMessage('whyFixRefused', r.message),
+					st.accepted.flatMap((a) => a.issueIds),
+				);
 			next = r.doc;
 		}
-		if (!guard) {
-			dry = next;
-			accepted.push(c);
-			continue;
-		}
+		if (!guard) return { ok: true, state: { ...st, dry: next, accepted: [...st.accepted, c] } };
 		const nextReplaced = new Set(replaced);
-		const before = statesOf(dry, sequenceId, guard, replaced);
+		const before = statesOf(st.dry, sequenceId, guard, replaced);
 		if (c.swap) {
 			const s = before.get(c.swap.clipId);
 			if (s && s.sound !== c.swap.soundId && !s.sound.endsWith('#replaced')) nextReplaced.add(c.swap.clipId);
 		}
 		const after = statesOf(next, sequenceId, guard, nextReplaced);
 		// a level change and a move / sound change of the same clip do not go together: the level was measured there
-		let conflict: { clipId: string; with: string[] } | null = null;
 		for (const m of guard.levels) {
 			const b = before.get(m.clipId);
 			const a = after.get(m.clipId);
@@ -427,20 +427,12 @@ export function planSoundCheckFixes(
 			const soundChanged = a.place !== b.place || a.sound !== b.sound;
 			const base = baseStates.get(m.clipId);
 			const invalid = !base || b.place !== base.place || b.sound !== base.sound;
-			if (levelChanged && (invalid || soundChanged)) {
-				conflict = { clipId: m.clipId, with: soundBy.get(m.clipId) ?? [] };
-				break;
-			}
-			if (soundChanged && (levelBy.get(m.clipId)?.length ?? 0) > 0) {
-				conflict = { clipId: m.clipId, with: levelBy.get(m.clipId) ?? [] };
-				break;
-			}
+			if (levelChanged && (invalid || soundChanged))
+				return no(soundCheckMessage('whyFixSoundChanged', titleOf(m.clipId)), soundBy.get(m.clipId) ?? []);
+			if (soundChanged && (levelBy.get(m.clipId)?.length ?? 0) > 0)
+				return no(soundCheckMessage('whyFixSoundChanged', titleOf(m.clipId)), levelBy.get(m.clipId) ?? []);
 		}
-		if (conflict) {
-			skip(c, soundCheckMessage('whyFixSoundChanged', titleOf(conflict.clipId)), conflict.with);
-			continue;
-		}
-		const e0 = evaluate(dry, sequenceId, guard, before, baseStates);
+		const e0 = evaluate(st.dry, sequenceId, guard, before, baseStates);
 		const e1 = evaluate(next, sequenceId, guard, after, baseStates);
 		let worse: { clipId: string; v: Violation } | null = null;
 		for (const v of VIOLATIONS) {
@@ -455,26 +447,26 @@ export function planSoundCheckFixes(
 			if (worse) break;
 		}
 		if (worse) {
-			const st = after.get(worse.clipId);
-			const value = e1.by.get(worse.clipId)!.value[worse.v];
-			const title = titleOf(worse.clipId);
-			const weight = st?.weight ?? 'support';
+			const w = worse;
+			const value = e1.by.get(w.clipId)!.value[w.v];
+			const title = titleOf(w.clipId);
+			const weight = after.get(w.clipId)?.weight ?? 'support';
 			const reason =
-				worse.v === 'overcap'
+				w.v === 'overcap'
 					? soundCheckMessage(
 							'whyFixOverCap',
 							title,
 							fmt(value - guard.bedCapLu[weight]),
 							r1(guard.bedCapLu[weight]),
 						)
-					: worse.v === 'masked'
+					: w.v === 'masked'
 						? soundCheckMessage(
 								'whyFixMasked',
 								title,
 								fmt(value),
 								weight === 'ambient' ? 0 : MASKED_MIN_LIFT_DB[weight],
 							)
-						: worse.v === 'eventTp'
+						: w.v === 'eventTp'
 							? soundCheckMessage('whyFixEventPeak', title, fmt(value), r1(guard.eventCeilingDb))
 							: soundCheckMessage(
 									'whyFixMixPeak',
@@ -482,45 +474,65 @@ export function planSoundCheckFixes(
 									Number.isFinite(value) ? fmt(value) : '+∞',
 									r1(guard.ceilingDb),
 								);
-			const m = guard.levels.find((l) => l.clipId === worse.clipId)!;
+			const m = guard.levels.find((l) => l.clipId === w.clipId)!;
 			const related =
-				worse.v === 'mixTp'
+				w.v === 'mixTp'
 					? [...levelBy.entries()]
 							.filter(([id]) => {
 								const o = guard.levels.find((l) => l.clipId === id);
 								return !!o && o.start < m.end && m.start < o.end;
 							})
 							.flatMap(([, by]) => by)
-					: (levelBy.get(worse.clipId) ?? []);
-			skip(c, reason, related);
-			continue;
+					: (levelBy.get(w.clipId) ?? []);
+			return no(reason, related);
 		}
 		const unresolved = (c.targets ?? []).find((t) => {
 			const x = e1.by.get(t.clipId);
 			return !x || x.mag[t.kind] > EPS;
 		});
-		if (unresolved) {
-			skip(
-				c,
+		if (unresolved)
+			return no(
 				soundCheckMessage('whyFixUnresolved'),
 				levelBy.get(unresolved.clipId) ?? soundBy.get(unresolved.clipId) ?? [],
 			);
-			continue;
-		}
 		// accepted: what it changed
+		const lb = new Map(levelBy);
+		const sb = new Map(soundBy);
 		for (const m of guard.levels) {
 			const b = before.get(m.clipId);
 			const a = after.get(m.clipId);
 			if (!b || !a) continue;
 			if (Math.abs(a.gainDb - b.gainDb) > EPS || a.weight !== b.weight || a.layer !== b.layer)
-				levelBy.set(m.clipId, [...(levelBy.get(m.clipId) ?? []), ...c.issueIds]);
+				lb.set(m.clipId, [...(lb.get(m.clipId) ?? []), ...c.issueIds]);
 			if (a.place !== b.place || a.sound !== b.sound)
-				soundBy.set(m.clipId, [...(soundBy.get(m.clipId) ?? []), ...c.issueIds]);
+				sb.set(m.clipId, [...(sb.get(m.clipId) ?? []), ...c.issueIds]);
 		}
-		for (const id of nextReplaced) replaced.add(id);
-		dry = next;
-		accepted.push(c);
+		return {
+			ok: true,
+			state: { dry: next, replaced: nextReplaced, levelBy: lb, soundBy: sb, accepted: [...st.accepted, c] },
+		};
+	};
+
+	const initial: State = { dry, replaced: new Set(), levelBy: new Map(), soundBy: new Map(), accepted: [] };
+	let state = initial;
+	const skipped: SoundCheckFixSkip[] = [];
+	for (const c of soundCheckFixOrder(candidates)) {
+		// safe on its own first (on the document as given), then after the accepted ones
+		const alone = judge(c, initial);
+		if (!alone.ok) {
+			skipped.push({ candidate: c, reason: alone.reason, conflictsWith: [] });
+			continue;
+		}
+		const v = state.accepted.length ? judge(c, state) : alone;
+		if (!v.ok) {
+			const conflicts = v.conflictsWith.length ? v.conflictsWith : state.accepted.flatMap((a) => a.issueIds);
+			skipped.push({ candidate: c, reason: v.reason, conflictsWith: [...new Set(conflicts)] });
+			continue;
+		}
+		state = v.state;
 	}
+	const accepted = state.accepted;
+	dry = state.dry;
 	const anySwap = accepted.some((c) => c.kind === 'swap' && c.commands?.length);
 	const commands = [
 		...(anySwap ? prelude : []),

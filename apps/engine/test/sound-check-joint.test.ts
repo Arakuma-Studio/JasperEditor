@@ -1,9 +1,9 @@
 // Sound Check fixes judged together and true-peak headroom, and a mono Mix checked in mono (wp-note "WP6.5b → Sound
 // Check"), on a real engine with generated media (sound-check-fixture.ts), each case measured by applying the fixes
 // and checking again:
-//   (a) a masked hero that is also too close to the previous hero: its gain fix and its demotion are each "safe"; applied
-//       together the demotion resets the solved gain to the support default and the hero is masked again (measured on
-//       the re-check). The report marks the demotion not safe (it conflicts with the gain); the safe set resolves it.
+//   (a) a masked hero that is also too close to the previous hero: its gain fix and its demotion were both "safe";
+//       applied together (Fix all safe before) the demotion resets the solved gain to the support default and the hero
+//       is masked again (measured on the re-check). The demotion is now not safe; the safe set resolves the masking.
 //   (b) normalisation off: the gain that unmasks a support under loud music pushes the mix's true peak over the
 //       ceiling. Not safe; applied anyway, the re-check measures the true peak over the ceiling (and under the bound).
 //   (c) a mono Mix is rendered and measured in mono: the integrated loudness and true peak equal the export mixer's mono
@@ -82,10 +82,11 @@ describe('Sound Check fixes together (real engine)', { timeout: 600_000 }, () =>
 		expect(masked, describeIssues(report)).toBeDefined();
 		expect(density, describeIssues(report)).toBeDefined();
 		expect(masked!.fix?.safe, describeIssues(report)).toBe(true);
-		// the demotion is not safe with (after) the gain fix: it resets the gain to the support default
+		// the demotion is not safe: it resets B's gain to the support default (6 dB under the hero's), where B is masked
+		// — alone, and after the gain fix (it undoes it)
 		expect(density!.fix?.safe, describeIssues(report)).toBe(false);
 		expect(density!.fix!.whyMessage?.key).toBe(SOUND_CHECK_MESSAGES.whyFixMasked);
-		expect(density!.fix!.conflictsWith).toEqual([masked!.id]);
+		expect(density!.fix!.conflictsWith).toBeUndefined();
 		expect(report.levelGuard?.levels.map((l) => l.clipId)).toContain(fx.ids.clipB);
 
 		// measured: both applied in one transaction (what "Fix all safe" did before) → B masked again on the re-check
@@ -107,12 +108,15 @@ describe('Sound Check fixes together (real engine)', { timeout: 600_000 }, () =>
 
 	it('(b) normalisation off: a gain fix that would raise the true peak over the ceiling is not safe (measured)', async () => {
 		const build = (normalise: boolean) => {
-			const fx = buildCheckDoc(media);
+			// the support B is the hit, at 5.13 s: on a syllable peak of the dialogue's 1.5 kHz tone, whose constant
+			// amplitude sets the mix's true peak there (≈ −1.5 dBTP with +9.9 dB); the music masks the hit's 125 Hz band
+			const fx = buildCheckDoc(media, { cueB: { frame: 154, media: 'hit' } });
 			fx.b.tx([
 				{ type: 'mixer.setLoudness', enabled: normalise, targetLufs: -14, truePeakDb: -1 },
-				// the heroes out of the way (hand-set gains), the music loud, the support click buried under it
+				// the heroes out of the way (hand-set gains), the music and the voice loud, the support buried under them
 				{ type: 'audio.setGain', clipIds: [fx.ids.clipA, fx.ids.clipC], mode: 'set', db: -40 },
 				{ type: 'audio.setGain', clipIds: [fx.ids.music], mode: 'set', db: 9 },
+				{ type: 'audio.setGain', clipIds: [fx.ids.speech], mode: 'set', db: 9.9 },
 				{ type: 'soundDesign.applyGains', gains: { [fx.ids.clipB]: -24 } },
 			]);
 			return fx;
@@ -122,7 +126,7 @@ describe('Sound Check fixes together (real engine)', { timeout: 600_000 }, () =>
 		const tp = report.loudness.truePeakDb!;
 		// the mix peaks under the −1 dBTP ceiling: no TRUE_PEAK before the fix
 		expect(issuesOf(report, 'TRUE_PEAK'), describeIssues(report)).toEqual([]);
-		expect(tp).toBeLessThanOrEqual(-1.1);
+		expect(tp).toBeLessThanOrEqual(-1);
 		const masked = issuesOf(report, 'MASKED').find((i) => i.clipIds?.[0] === fx.ids.clipB);
 		expect(masked, describeIssues(report)).toBeDefined();
 		expect(masked!.fix?.kind).toBe('commands');

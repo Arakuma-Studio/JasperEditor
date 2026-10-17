@@ -41,7 +41,7 @@ import type { MediaRegistry } from '../media/registry.ts';
 import { vadThreshold } from '../speech/core/vad.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { audioWorld, VAD_FLOOR_DBFS } from './bed.ts';
-import { classifyStems, renderStems, STEM_NAMES, type StemName } from './stems.ts';
+import { classifyStems, mixLayoutOf, renderStems, STEM_NAMES, type StemName } from './stems.ts';
 
 /** Longest range (seconds). */
 export const VISUAL_MAX_SEC = 120;
@@ -110,7 +110,7 @@ export async function soundVisual(
 	const preHops = Math.min(PRE_HOPS, Math.floor(rangeStart / hop));
 	const renderStart = rangeStart - preHops * hop;
 	const renderEnd = rangeEnd + POST_HOPS * hop;
-	const channels = snap.audioMix?.masterFormat === '5.1' ? 6 : 2;
+	const { channels } = mixLayoutOf(snap);
 	const meters: Partial<Record<StemName, CurveMeter>> = {};
 	for (const s of STEM_NAMES) if (stems[s].size > 0) meters[s] = new CurveMeter(sr, channels);
 	if (stems.mix.size > 0)

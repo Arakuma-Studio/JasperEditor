@@ -63,9 +63,35 @@ type ProjectStoreOptions = {
 	keepVersions?: number;
 };
 
+/** What changed in the store: a saved or restored document (the new one), a deleted project. */
+export type ProjectStoreChange =
+	| { projectId: string; kind: 'saved' | 'restored'; document: Record<string, unknown> }
+	| { projectId: string; kind: 'deleted' };
+
 export class ProjectStoreFs {
 	private readonly mutex = new KeyedMutex();
 	private readonly now: () => Date;
+	private readonly listeners = new Set<(c: ProjectStoreChange) => void>();
+
+	/**
+	 * Calls `fn` after every save, in-place version restore and project deletion (after the write, outside the store's
+	 * lock; a throwing listener is ignored). Returns the unsubscribe function. Used to drop per-sequence caches of
+	 * sequences the saved project no longer has (the kept Sound Check reports).
+	 */
+	onChange(fn: (c: ProjectStoreChange) => void): () => void {
+		this.listeners.add(fn);
+		return () => this.listeners.delete(fn);
+	}
+
+	private emit(c: ProjectStoreChange): void {
+		for (const fn of this.listeners) {
+			try {
+				fn(c);
+			} catch {
+				// a listener never breaks a save
+			}
+		}
+	}
 
 	constructor(private readonly opts: ProjectStoreOptions) {
 		this.now = opts.now ?? (() => new Date());
@@ -197,7 +223,17 @@ export class ProjectStoreFs {
 	 * Saves an envelope when `ifMatch` equals the stored revision (or is `'*'`). The stored revision is
 	 * `max(envelope.revision, current + 1)`; a mismatch throws 409 REVISION_CONFLICT with `{revision}`.
 	 */
-	save(projectId: string, envelope: EnvelopeJson, ifMatch: number | '*'): Promise<{ revision: number }> {
+	async save(projectId: string, envelope: EnvelopeJson, ifMatch: number | '*'): Promise<{ revision: number }> {
+		const saved = await this.saveLocked(projectId, envelope, ifMatch);
+		this.emit({ projectId, kind: 'saved', document: envelope.document });
+		return saved;
+	}
+
+	private saveLocked(
+		projectId: string,
+		envelope: EnvelopeJson,
+		ifMatch: number | '*',
+	): Promise<{ revision: number }> {
 		this.check(projectId);
 		return this.mutex.run(projectId, async () => {
 			const current = await this.readEnvelope(projectId);
@@ -398,7 +434,7 @@ export class ProjectStoreFs {
 			await atomicWriteJson(this.opts.paths.projectFile(newId), env);
 			return { projectId: newId, revision: 0, keptAs: null };
 		}
-		return this.mutex.run(projectId, async () => {
+		const restored = await this.mutex.run(projectId, async () => {
 			const lease = this.opts.leases.get(projectId);
 			if (lease && lease.leaseId !== opts.leaseId)
 				throw new ProjectError('LEASE_HELD', 409, 'The project is open in an editor: restore it from there', {
@@ -417,6 +453,8 @@ export class ProjectStoreFs {
 			await atomicWriteJson(this.opts.paths.projectFile(projectId), next);
 			return { projectId, revision, keptAs };
 		});
+		this.emit({ projectId, kind: 'restored', document: envelope.document });
+		return restored;
 	}
 
 	async saveView(projectId: string, view: Record<string, unknown>): Promise<void> {
@@ -430,6 +468,7 @@ export class ProjectStoreFs {
 			rm(this.opts.paths.projectDir(projectId), { recursive: true, force: true }),
 		);
 		this.opts.leases.forget(projectId);
+		this.emit({ projectId, kind: 'deleted' });
 	}
 }
 

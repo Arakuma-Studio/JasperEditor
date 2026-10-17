@@ -159,7 +159,9 @@ describe('planSoundCheckFixes', () => {
 		);
 		expect(plan.accepted.map((c) => c.issueIds[0])).toEqual(['MASKED:B']);
 		expect(plan.skipped[0]!.reason.key).toBe(SOUND_CHECK_MESSAGES.whyFixMasked);
-		expect(plan.skipped[0]!.conflictsWith).toEqual(['MASKED:B']);
+		// the demotion alone would leave B masked too (its support default is 6 dB lower): not safe on its own
+		expect(plan.skipped[0]!.conflictsWith).toEqual([]);
+		expect(gainOf(h, plan.document, B.clip).gainDb).toBeCloseTo(3.5 - (1 - gS), 6);
 	});
 
 	it('a demotion alone that would leave a hand-set loud hero over the support cap is not safe (no conflict named)', () => {

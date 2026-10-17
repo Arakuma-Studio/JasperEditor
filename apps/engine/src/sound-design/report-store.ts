@@ -6,9 +6,13 @@
 // older one. Bounded: at most 32 sequences per project (writing the 33rd evicts the least recently written) and 16 MB
 // per report (a larger one is not kept, with a log line; the job's result is unchanged). A file that does not parse is
 // moved aside as `<file>.corrupt-<time>` with a warning, never a crash. The folder lives inside the project's, so deleting
-// the project deletes its reports. Staleness is the caller's (`POST /api/sound-design/check/last` compares the report's
-// hashes with the live document).
-import { readdir, readFile, rename, rm, stat } from 'node:fs/promises';
+// the project deletes its reports; a check that finishes after its project was deleted keeps nothing (`exists`), and
+// one whose sequence is gone keeps nothing (`keep`). A report goes with its sequence (WP6.5b, `prune`): the routes drop
+// the reports of sequences the saved project no longer has whenever no editing session could bring them back — on a
+// save or restore while no editor holds the project, when the editor's session ends and when a new one starts (decision:
+// while an editor is open its History can undo the delete, so its report stays until then). Staleness is the caller's
+// (`POST /api/sound-design/check/last` compares the report's hashes with the live document).
+import { readdir, readFile, rename, rm, rmdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type SoundCheckResult, SoundCheckResultSchema } from '@jasper/api';
 import { z } from 'zod';
@@ -34,6 +38,10 @@ export type SoundCheckReportStoreOptions = {
 	log?: (msg: string) => void;
 	perProject?: number;
 	maxBytes?: number;
+	/** Whether the project still exists (a check finishing after its project was deleted keeps nothing). */
+	exists?: (projectId: string) => Promise<boolean>;
+	/** Whether a finished check of this sequence is still worth keeping (its sequence was not deleted meanwhile). */
+	keep?: (projectId: string, sequenceId: string) => Promise<boolean>;
 };
 
 export class SoundCheckReportStore {
@@ -67,6 +75,8 @@ export class SoundCheckReportStore {
 			try {
 				const file = this.file(projectId, result.sequenceId);
 				if (!file) return false;
+				if (this.opts.exists && !(await this.opts.exists(projectId))) return false;
+				if (this.opts.keep && !(await this.opts.keep(projectId, result.sequenceId))) return false;
 				const stored: StoredSoundCheck = { version: 1, savedAt: this.now().toISOString(), jobId, result };
 				const text = JSON.stringify(stored);
 				if (text.length > this.maxBytes) {
@@ -76,6 +86,11 @@ export class SoundCheckReportStore {
 					return false;
 				}
 				await atomicWriteFile(file, text);
+				// the project deleted while writing (its folder was removed, the write made it again): nothing is kept
+				if (this.opts.exists && !(await this.opts.exists(projectId))) {
+					await this.forgetProject(projectId);
+					return false;
+				}
 				await this.evict(projectId, `${result.sequenceId}.json`);
 				return true;
 			} catch (e) {
@@ -120,6 +135,43 @@ export class SoundCheckReportStore {
 			const file = this.file(projectId, sequenceId);
 			if (file) await rm(file, { force: true });
 		});
+	}
+
+	/**
+	 * Deletes the reports (and moved-aside copies) of every sequence not in `sequenceIds` — the sequences of the saved
+	 * project. Resolves the sequence ids removed; never rejects (a failure is logged).
+	 */
+	prune(projectId: string, sequenceIds: ReadonlySet<string>): Promise<string[]> {
+		return this.mutex.run(projectId, async () => {
+			const removed: string[] = [];
+			let names: string[];
+			try {
+				names = await readdir(this.dir(projectId));
+			} catch {
+				return removed;
+			}
+			try {
+				for (const name of names) {
+					const m = /^([A-Za-z0-9_-]{1,128})\.json(?:\.corrupt-\d+)?$/.exec(name);
+					if (!m || sequenceIds.has(m[1]!)) continue;
+					await rm(join(this.dir(projectId), name), { force: true });
+					if (name.endsWith('.json')) removed.push(m[1]!);
+				}
+			} catch (e) {
+				this.log(`[sound-check] reports of ${projectId} not pruned: ${(e as Error).message}`);
+			}
+			return removed;
+		});
+	}
+
+	/** Removes what a write after the project's deletion created: the reports folder, then the project folder if empty. */
+	private async forgetProject(projectId: string): Promise<void> {
+		await rm(this.dir(projectId), { recursive: true, force: true });
+		try {
+			await rmdir(this.opts.projectDir(projectId));
+		} catch {
+			// not empty (the project exists again) or gone
+		}
 	}
 
 	private async aside(file: string, problem: string): Promise<null> {

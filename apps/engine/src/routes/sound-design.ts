@@ -144,9 +144,40 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 	);
 
 	// The last full report per sequence outlives the job (and the engine): the panel reloads it after a restart.
+	const savedSequences = async (pid: string): Promise<Set<string> | null> => {
+		const g = await core.projects.get(pid).catch(() => null);
+		const seqs = (g?.envelope.document as { sequences?: unknown } | undefined)?.sequences;
+		return g ? new Set(seqs && typeof seqs === 'object' ? Object.keys(seqs) : []) : null;
+	};
 	const reports = new SoundCheckReportStore({
 		projectDir: (pid) => app.jasper.config.paths.projectDir(pid),
 		log: (m) => app.log.warn(m),
+		exists: async (pid) => (await core.projects.revision(pid).catch(() => null)) !== null,
+		// a sequence missing from the saved project is kept while an editor holds it (it may be unsaved, or its delete
+		// undone), else it is gone
+		keep: async (pid, sequenceId) =>
+			!!core.leases.get(pid) || ((await savedSequences(pid))?.has(sequenceId) ?? false),
+	});
+	// A kept report goes with its sequence (WP6.5b): when no editing session could bring a deleted sequence back — a
+	// save or restore with no editor holding the project, the end of the editor's session, the start of a new one (a
+	// fresh History) — the reports of sequences the saved project no longer has are deleted. While an editor holds the
+	// project its History can undo the delete: the report stays until then.
+	const prune = (pid: string, force: boolean) => {
+		void (async () => {
+			if (!force && core.leases.get(pid)) return;
+			const seqs = await savedSequences(pid);
+			if (!seqs) return; // deleted: its folder went with it
+			const gone = await reports.prune(pid, seqs);
+			if (gone.length) app.log.info(`[sound-check] reports of deleted sequences removed: ${pid} ${gone.join(', ')}`);
+		})().catch((e) => app.log.warn(`[sound-check] reports of ${pid} not pruned: ${(e as Error).message}`));
+	};
+	const offStore = core.projects.onChange((c) => {
+		if (c.kind !== 'deleted') prune(c.projectId, false);
+	});
+	const offLeases = core.leases.onChange((c) => prune(c.projectId, c.kind === 'acquired'));
+	app.addHook('onClose', async () => {
+		offStore();
+		offLeases();
 	});
 	core.queue.registerRunner('sound-check', async (ctx) => {
 		const result: SoundCheckResult = await runSoundCheck(ctx, {

@@ -22,7 +22,7 @@ import {
 	type Sequence,
 } from '@jasper/project';
 import { clipDecodeArgs, hasSoxr, PcmStreamReader } from '../audio/decode.ts';
-import { layoutOf, type MixSource } from '../audio/mixdown.ts';
+import type { MixSource } from '../audio/mixdown.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 
 const BLOCK = 48_000;
@@ -41,7 +41,7 @@ export type StemsOptions = {
 	startSample: number;
 	samples: number;
 	stems: readonly StemSpec[];
-	/** Output layout of every stem (default the export's: 5.1 for a 5.1 Mix, else stereo). */
+	/** Output layout of every stem (default the Mix's own: mono, stereo or 5.1 — `mixLayoutOf`). */
 	outputLayout?: Layout;
 	signal?: AbortSignal;
 	onSpawn?(child: ChildProcess): void;
@@ -212,6 +212,18 @@ class SharedDecoders {
 	}
 }
 
+/**
+ * The layout Sound Check renders and measures in: the Mix's own (WP6.5b — a mono Mix in mono, not as the stereo upmix
+ * the export writes by default: BS.1770 measures a mono programme as one channel), and its channel count.
+ */
+export function mixLayoutOf(snap: { audioMix?: { masterFormat?: string } | null }): {
+	layout: 'mono' | 'stereo' | '5.1';
+	channels: 1 | 2 | 6;
+} {
+	const f = snap.audioMix?.masterFormat;
+	return f === '5.1' ? { layout: '5.1', channels: 6 } : f === 'mono' ? { layout: 'mono', channels: 1 } : { layout: 'stereo', channels: 2 };
+}
+
 /** Renders every stem over `range` in one pass (see the module docs). Throws on abort. */
 export async function renderStems(o: StemsOptions): Promise<StemsResult> {
 	const snap = o.snapshot;
@@ -220,7 +232,7 @@ export async function renderStems(o: StemsOptions): Promise<StemsResult> {
 	const sr = mix.sampleRate;
 	const start = Math.max(0, Math.floor(o.startSample));
 	const total = Math.max(0, Math.floor(o.samples));
-	const layout = o.outputLayout ?? (mix.masterFormat === '5.1' ? '5.1' : layoutOf(2));
+	const layout = o.outputLayout ?? mixLayoutOf(snap).layout;
 	const decoders = new SharedDecoders(o, await hasSoxr(o.ff));
 	const mixers: { index: number; mixer: OfflineMixer; block: Float32Array[] }[] = [];
 	const rendered: string[] = [];

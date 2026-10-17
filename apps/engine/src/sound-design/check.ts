@@ -41,9 +41,11 @@ import {
 	defaultChannelWeights,
 	LoudnessMeter,
 	type LoudnessSummary,
+	TruePeakDetector,
 	TruePeakLimiter,
 } from '@jasper/audio-dsp';
 import {
+	BED_CAP_LU,
 	CURVE_HOP_SEC,
 	CurveMeter,
 	evaluateSfxGain,
@@ -84,6 +86,7 @@ import {
 	mediaDurationFlicks,
 	mixFingerprint,
 	type ProjectDocument,
+	planSoundCheckFixes,
 	type Rational,
 	type Registries,
 	readClipSfx,
@@ -92,12 +95,15 @@ import {
 	readSoundCheckTarget,
 	requiresAttribution,
 	type Sequence,
+	SOUND_CHECK_CAP_TOLERANCE_LU,
 	SOUND_CHECK_CATEGORY,
 	SOUND_CHECK_CODES,
 	SOUND_CHECK_CUSTOM_LABEL,
 	SOUND_CHECK_THRESHOLDS,
 	SOUND_CHECK_UNMEASURED,
 	type SoundCheckCode,
+	type SoundCheckLevelGuard,
+	type SoundCheckLevelModel,
 	type SoundCheckMessage,
 	type SoundCheckSeverity,
 	type SoundCheckTarget,
@@ -110,6 +116,7 @@ import {
 	sequenceTimecode,
 	sequenceWords,
 	soundCheckCounts,
+	soundCheckFixCandidates,
 	soundCheckInputsHash,
 	soundCheckMessage,
 	soundCheckVerdict,
@@ -142,7 +149,14 @@ import {
 	solverEventOf,
 } from './levels.ts';
 import { liveDocument, PlanInputError, planSequence } from './plan.ts';
-import { classifyStems, renderStems, STEM_NAMES, type StemName, type StemSpec } from './stems.ts';
+import {
+	classifyStems,
+	mixLayoutOf,
+	renderStems,
+	STEM_NAMES,
+	type StemName,
+	type StemSpec,
+} from './stems.ts';
 import { voiceServiceFor } from './voice.ts';
 
 export const SOUND_CHECK_LABEL = 'Sound Check Result';
@@ -164,6 +178,8 @@ const TAIL_SLACK_SEC = 0.0005;
 const DECODE_CONCURRENCY = 4;
 /** "Audible" for the measurable-loudness rule: a 10 ms hop over BS.1770's absolute gate level (−70 dBFS). */
 const AUDIBLE_DBFS = -70;
+/** A sound's level model covers its clip and this much after it (s): effect tails (decision; WP6.5b). */
+const LEVEL_TAIL_SEC = 0.5;
 /** Interface types: patterns (typewriter keys) are not counted against the cue rate and repeat by design. */
 const INTERFACE_TYPES: ReadonlySet<string> = new Set(['ui', 'click', 'key', 'tick']);
 
@@ -830,12 +846,17 @@ export async function checkSequence(
 	aborted();
 	progress(0.05, 'Rendering the mix and its stems');
 	let t = Date.now();
-	const channels = snap.audioMix?.masterFormat === '5.1' ? 6 : 2;
+	// the Mix's own layout (a mono Mix in mono: WP6.5b), as `measureSfxEvents` renders the sounds and the bed
+	const { layout, channels } = mixLayoutOf(snap);
 	const meters: Partial<Record<Stem, CurveMeter>> = {};
 	for (const s of STEMS) if (stemIds[s].size > 0) meters[s] = new CurveMeter(sr, channels);
 	const mixMeter = new LoudnessMeter(sr, channels, { weights: defaultChannelWeights(channels) });
 	const pass1 = normalize ? join(env.scratchDir, 'check-pass1.f32') : null;
 	const fh = pass1 ? await open(pass1, 'w') : null;
+	// without normalisation the mix is delivered as it is: its true peak per 10 ms hop (from renderStart) bounds what a
+	// gain fix may add where a sound plays (`planSoundCheckFixes`)
+	const tpDetector = normalize ? null : new TruePeakDetector(sr, channels);
+	const tpHop = normalize ? null : new Float32Array(Math.ceil((renderEnd - renderStart) / hop) + 1);
 	let audibleHops = 0;
 	const stemSpecs: StemSpec[] = STEMS.map((s) => ({ name: s, clipIds: s === 'mix' ? null : stemIds[s] }));
 	if (stemIds.mix.size === 0) stemSpecs[0] = { name: 'mix', clipIds: new Set() };
@@ -848,6 +869,7 @@ export async function checkSequence(
 				media: world.media,
 				startSample: renderStart,
 				samples: renderEnd - renderStart,
+				outputLayout: layout,
 				stems: stemSpecs,
 				...(env.signal ? { signal: env.signal } : {}),
 				...(env.onSpawn ? { onSpawn: env.onSpawn } : {}),
@@ -866,6 +888,15 @@ export async function checkSequence(
 							}
 						}
 					if (name !== 'mix') return;
+					if (tpDetector && tpHop)
+						for (let i = 0; i < n; ) {
+							const h = Math.floor((at + i - renderStart) / hop);
+							const end = Math.min(n, renderStart + (h + 1) * hop - at);
+							tpDetector.process(planar, i, end - i);
+							const p = tpDetector.takePeak();
+							if (h >= 0 && h < tpHop.length && p > tpHop[h]!) tpHop[h] = p;
+							i = end;
+						}
 					// the range only: the export's loudness and the normalisation pass
 					const a = Math.max(at, rangeStart);
 					const b = Math.min(at + n, rangeEnd);
@@ -1159,6 +1190,18 @@ export async function checkSequence(
 	aborted();
 	t = Date.now();
 	const solvable = rows.filter((r) => playing.has(r.clip.id));
+	/** Each measured sound effect, linear in its gain: what the safe fixes are judged by together (below). */
+	const levels: SoundCheckLevelModel[] = [];
+	const tailFrames = Math.ceil(LEVEL_TAIL_SEC * fpsNum);
+	/** True peak (dBTP) of the un-normalised mix over sequence frames `[a, b)` (± one hop); null with normalisation. */
+	const spanTruePeak = (a: number, b: number): number | null => {
+		if (!tpHop) return null;
+		const from = Math.max(0, Math.floor((frameToSample(a, rate, sr) - renderStart) / hop) - 1);
+		const to = Math.min(tpHop.length, Math.ceil((frameToSample(b, rate, sr) - renderStart) / hop) + 1);
+		let m = 0;
+		for (let i = from; i < to; i++) if (tpHop[i]! > m) m = tpHop[i]!;
+		return m > 0 ? r2(20 * Math.log10(m)) : LOUDNESS_FLOOR_LUFS;
+	};
 	if (solvable.length) {
 		const m = await measureSfxEvents(
 			{
@@ -1191,6 +1234,20 @@ export async function checkSequence(
 			row.peakLu = ms.soundPeakLu === null ? null : ms.soundPeakLu + row.info.gainDb;
 			const res = solved.events[i]!;
 			const at = evaluateSfxGain(ev, res.gainDb, lo);
+			const at0 = evaluateSfxGain(ev, 0, lo);
+			if (levels.length < SOUND_CHECK_LIMITS.events)
+				levels.push({
+					clipId: row.clip.id,
+					title: row.info.title,
+					gainDb: row.info.gainDb,
+					liftAt0Db: at0.liftDb,
+					peakOverBedAt0Lu: at0.peakOverBedLu,
+					truePeakAt0Db: at0.truePeakDb,
+					mixTruePeakDb: spanTruePeak(row.clip.start, row.clip.start + row.clip.duration + tailFrames),
+					start: row.clip.start,
+					end: row.clip.start + row.clip.duration + tailFrames,
+					speech: ms.speechOverlap,
+				});
 			const level = solvedLevel(res, ms, lo.truePeakCeilingDb);
 			const gainCmd = {
 				type: 'soundDesign.applyGains',
@@ -2097,6 +2154,40 @@ export async function checkSequence(
 	}
 	lap('document', t);
 
+	// ── safe fixes judged together (WP6.5b): applied in order on a dry-run copy, each re-validated after the ones
+	// before it (two safe fixes of one sound can overload it together; normalisation off, a gain can push the mix's
+	// true peak over the ceiling): a fix that is no longer safe is marked so, with why and what it conflicts with
+	const levelGuard: SoundCheckLevelGuard = {
+		ceilingDb: preset.truePeakDb,
+		eventCeilingDb: levelOptions(opts.preset).truePeakCeilingDb,
+		bedCapLu: { hero: BED_CAP_LU.hero, support: BED_CAP_LU.support, ambient: BED_CAP_LU.ambient },
+		capToleranceLu: SOUND_CHECK_CAP_TOLERANCE_LU,
+		levels,
+	};
+	{
+		const joint = planSoundCheckFixes(
+			doc,
+			seq.id,
+			soundCheckFixCandidates(issues.items, { safeOnly: true }),
+			{ registries: env.registries, guard: levelGuard },
+		);
+		const byId = new Map(issues.items.map((i) => [i.id, i]));
+		for (const s of joint.skipped)
+			for (const id of s.candidate.issueIds) {
+				const i = byId.get(id);
+				if (!i?.fix) continue;
+				i.fix = {
+					...i.fix,
+					safe: false,
+					why: s.reason.text,
+					whyMessage: s.reason,
+					...(s.conflictsWith.length ? { conflictsWith: s.conflictsWith } : {}),
+				};
+			}
+	}
+	if (layout === 'mono' && !normalize)
+		warnings.push({ code: 'W_MONO_MIX', message: soundCheckMessage('monoMix', '3.0').text });
+
 	// ── the per-event table, listen-here, verdict ────────────────────────────────────────────────────────────────────
 	const severityOf = new Map<string, SoundCheckSeverity[]>();
 	for (const i of issues.items)
@@ -2249,6 +2340,7 @@ export async function checkSequence(
 				gainDb: gainDb === null ? null : r2(gainDb),
 			},
 			limiterMaxGrDb: normalize ? r2(limiterMax) : null,
+			layout,
 			before: {
 				integratedLufs: finOrNull(before.integrated),
 				truePeakDb: finOrNull(before.truePeakDb),
@@ -2275,6 +2367,7 @@ export async function checkSequence(
 		stems: Object.fromEntries(STEMS.map((s) => [s, stemIds[s].size])),
 		warnings,
 		timings: { ...timings, decoders, total: Date.now() - t0 },
+		levelGuard,
 	};
 	progress(0.97, 'Checked');
 	return report;
