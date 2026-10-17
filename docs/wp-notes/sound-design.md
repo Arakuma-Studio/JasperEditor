@@ -7138,7 +7138,7 @@ compute rule (said there). Before = the branch point `5d80ed30` (a detached work
   3 281 → 1 078 / 1 250 (load 1.8–2). The batches alone (as merged, before the read fixes) gave 2 038 / 2 401: the
   placement reads were the larger part. Longest task 18–23 ms → 65–79 ms: the one end-of-preview invariant check
   (84 ms measured alone), item 14's price; p95 15–17 ms both. In the session test: batched 180–205 ms CPU vs 285–311 ms
-  one transaction per item (0.63–0.66).
+  one transaction per item (0.63–0.66, process CPU); on the main thread's CPU 142 vs 222 ms (0.64), the final budget.
 - **Item 7, plan job** — `SD_PLAN_BENCH=thread|worker SD_PLAN_BENCH_OUT=… pnpm vitest run
   apps/engine/test/sound-design-plan-bench.test.ts` (the plan-mix fixture, the first plan with every style option, cold
   caches, 67 solo + 2 bed renders), two runs each, alternating, load 2–8: main thread **wall 15.5 / 13.8 s, event-loop
