@@ -310,6 +310,7 @@ export function AutoSoundPassDialog(
 			title="Auto Sound Pass"
 			size="medium"
 			primaryLabel={done?.proposed ? t('Close') : running ? t('Proposing…') : t('Propose')}
+			hideCancel={!!done?.proposed}
 			primaryDisabled={
 				!done?.proposed && (readOnly || !!running || !plan.range || waitingForExpressions || noSounds)
 			}

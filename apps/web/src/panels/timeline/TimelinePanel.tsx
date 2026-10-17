@@ -44,6 +44,7 @@ import { CueSeam, CueSeamHeader } from '../../sound/cues/CueSeam.tsx';
 import { SEAM_PX } from '../../sound/cues/model.ts';
 import { useLibraryMediaTracking } from '../../sound/cues/peak.ts';
 import { useCueSeamShown } from '../../sound/cues/seam.ts';
+import { onInContextView } from '../../sound/in-context.ts';
 import { endSoundDrag, isSoundDrag, readSoundDrag, soundDragInfo } from '../../sound/insert.ts';
 import { createEditorEngineClient, useEngineOrNull } from '../../state/engine.tsx';
 import {
@@ -101,7 +102,14 @@ import {
 	type TransitionGeom,
 	transitionIndex,
 } from './model/transitions.ts';
-import { boundaryFrameAt, extentEnd, followPage, followSmooth, type Viewport } from './model/viewport.ts';
+import {
+	boundaryFrameAt,
+	extentEnd,
+	followPage,
+	followSmooth,
+	scrollAfterAudition,
+	type Viewport,
+} from './model/viewport.ts';
 import { type Geometry, type PointerInfo, TimelineController } from './state/controller.ts';
 import { timelineGesturePreview } from './state/gesture-preview.ts';
 import { HEADER_MAX, HEADER_MIN, setPrefs, timelinePrefs } from './state/prefs.ts';
@@ -641,6 +649,25 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		},
 		[controller],
 	);
+
+	// WP6.5a: an In Context audition (or a listen window) scrolls the view with playback; when it returns the playhead,
+	// the view it had comes back (or the playhead is revealed).
+	useEffect(() => {
+		let before: number | null = null;
+		const mine = (s: EditorSession) => s === session && s.getState().activeSequenceId === seqId;
+		return onInContextView({
+			start: (s) => {
+				if (mine(s)) before = geomRef.current.viewport.scrollFrame;
+			},
+			end: (s, frame) => {
+				const saved = before;
+				before = null;
+				if (!mine(s) || frame === null) return;
+				const next = scrollAfterAudition(geomRef.current.viewport, saved, frame);
+				if (next !== null) controller.setScroll(next);
+			},
+		});
+	}, [session, controller, seqId]);
 
 	const selectedSet = useMemo(() => new Set(selectedClips), [selectedClips]);
 	// S10:TUI-004: per-track transition index of the drawn sequence (follows gestures, TUI-005).

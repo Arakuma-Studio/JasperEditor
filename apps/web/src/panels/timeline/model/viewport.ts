@@ -148,6 +148,19 @@ export function revealFrame(v: Viewport, frame: number): number | null {
 	return x < 0 ? frame - visible * 0.25 : frame - visible * 0.75;
 }
 
+/**
+ * Where the view goes when an In Context audition (or a listen window) returns the playhead (WP6.5a): back to the view
+ * it had before playback scrolled it (`before`, its scrollFrame) when the playhead is in that view, else the playhead
+ * revealed with minimum movement. Null: stay.
+ */
+export function scrollAfterAudition(v: Viewport, before: number | null, frame: number): number | null {
+	if (before !== null && Number.isFinite(before)) {
+		const x = frameToX({ ...v, scrollFrame: before }, frame);
+		if (x >= 0 && x <= v.width) return before === v.scrollFrame ? null : before;
+	}
+	return revealFrame(v, frame);
+}
+
 /** TL-117 auto-scroll speed (px per animation frame) for a pointer `depth` px into the edge band. */
 function autoScrollSpeed(depth: number, band: number, maxSpeed: number): number {
 	const t = Math.min(1, Math.max(0, depth / band));

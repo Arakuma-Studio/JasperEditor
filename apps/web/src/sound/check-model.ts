@@ -34,7 +34,7 @@ import {
 import type { IconId } from '@jasper/ui';
 import { t, withoutContext } from '../i18n/runtime.ts';
 import { CUE_KIND_LABELS } from './cues/model.ts';
-import { deliveryOptionLabel, fmtDb } from './mix-model.ts';
+import { deliveryOptionLabel, fmtDb, solverReason } from './mix-model.ts';
 
 export type CheckCategory = SoundCheckIssue['category'];
 export type CheckSeverity = SoundCheckIssue['severity'];
@@ -481,11 +481,44 @@ export function fixChangeSummary(issue: SoundCheckIssue, seq: Sequence | undefin
 	}
 }
 
-/** Why a fix needs the user's judgement, in the UI language (the engine's message; else its English text). */
+/**
+ * Why a fix needs the user's judgement, in the UI language (the engine's message; else its English text). "The solver's
+ * gain does not resolve it: {0}" carries the solver's English reason: the fix's own gain report (its `limitedBy` codes,
+ * the lifts) says it in the UI language instead (WP6.5a), as Essential Sound's Auto gain line does.
+ */
 export function fixWhyText(fix: SoundCheckIssue['fix']): string | null {
 	if (!fix) return null;
-	if (fix.whyMessage) return messageText(fix.whyMessage);
+	if (fix.whyMessage) {
+		if (fix.whyMessage.key === SOUND_CHECK_MESSAGES.whySolverGain) {
+			const why = solverGainWhy(fix);
+			if (why) return t(SOUND_CHECK_MESSAGES.whySolverGain, why);
+		}
+		return messageText(fix.whyMessage);
+	}
 	return fix.why ?? null;
+}
+
+/** The solver's why of a gain fix, from the report its `soundDesign.applyGains` command carries (null: none). */
+function solverGainWhy(fix: NonNullable<SoundCheckIssue['fix']>): string | null {
+	const commands = (fix as { commands?: unknown }).commands;
+	if (!Array.isArray(commands)) return null;
+	for (const c of commands as { type?: unknown; report?: unknown }[]) {
+		if (c?.type !== 'soundDesign.applyGains' || !c.report || typeof c.report !== 'object') continue;
+		for (const r of Object.values(c.report as Record<string, unknown>)) {
+			if (!r || typeof r !== 'object') continue;
+			const lv = r as { limitedBy?: unknown; targetLiftDb?: unknown; achievedLiftDb?: unknown; reason?: unknown };
+			const why = solverReason({
+				limitedBy: Array.isArray(lv.limitedBy)
+					? lv.limitedBy.filter((x): x is string => typeof x === 'string')
+					: [],
+				targetLiftDb: typeof lv.targetLiftDb === 'number' ? lv.targetLiftDb : null,
+				achievedLiftDb: typeof lv.achievedLiftDb === 'number' ? lv.achievedLiftDb : null,
+				...(typeof lv.reason === 'string' ? { reason: lv.reason } : {}),
+			});
+			if (why) return why;
+		}
+	}
+	return null;
 }
 
 /** Findings with a safe fix the panel can apply. */
