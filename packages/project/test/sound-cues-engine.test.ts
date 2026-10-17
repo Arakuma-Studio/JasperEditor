@@ -137,6 +137,26 @@ describe('measureFrameMotion', () => {
 		expect(m.vx).toBeLessThan(-1.8);
 		expect(Math.abs(m.vy)).toBeLessThan(0.2);
 		expect(m.residual).toBeLessThan(0.01);
+		// under a pixel per frame (Lucas–Kanade): half a pixel right, the average of two neighbours
+		const half = new Uint8Array(W * H);
+		const one = shifted(base, 1);
+		for (let i = 0; i < half.length; i++) half[i] = Math.round((base[i]! + one[i]!) / 2);
+		const h = measureFrameMotion(base, half, W, H);
+		expect(h.area).toBeGreaterThan(0.5);
+		expect(Math.abs(h.vx - 0.5)).toBeLessThan(0.15);
+		expect(Math.abs(h.vy)).toBeLessThan(0.15);
+	});
+
+	it('a box moving 0.7 px per frame (sub-pixel) is measured', () => {
+		// a box drawn at fractional x by blending two whole-pixel positions
+		const a = boxFrame(40, 24);
+		const b0 = boxFrame(40, 24);
+		const b1 = boxFrame(41, 24);
+		const b = new Uint8Array(W * H);
+		for (let i = 0; i < b.length; i++) b[i] = Math.round(0.3 * b0[i]! + 0.7 * b1[i]!);
+		const m = measureFrameMotion(a, b, W, H);
+		expect(m.area).toBeGreaterThan(0.01);
+		expect(Math.abs(m.vx - 0.7)).toBeLessThan(0.25);
 	});
 
 	it('a cut is change that motion does not explain', () => {

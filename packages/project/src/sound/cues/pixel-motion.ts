@@ -107,6 +107,62 @@ function median(v: number[]): number {
 	return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
 }
 
+/**
+ * One Lucas–Kanade step for a block displaced by whole pixels (dx, dy): the sub-pixel correction δ minimising
+ * Σ(cur(p) − prev(p − d − δ))² to first order, and the linearised cost Σ|It + ∇prev·δ| it predicts. Null when the
+ * block's gradients do not determine both components (an edge, a flat area).
+ */
+function lucasKanade(
+	cur: Uint8Array,
+	prev: Uint8Array,
+	w: number,
+	h: number,
+	x0: number,
+	y0: number,
+	b: number,
+	dx: number,
+	dy: number,
+): { dx: number; dy: number; cost: number } | null {
+	let sxx = 0;
+	let sxy = 0;
+	let syy = 0;
+	let sxt = 0;
+	let syt = 0;
+	const n = b * b;
+	const ix = new Float64Array(n);
+	const iy = new Float64Array(n);
+	const it = new Float64Array(n);
+	const px = (x: number, y: number) => prev[Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))]!;
+	let k = 0;
+	for (let y = 0; y < b; y++)
+		for (let x = 0; x < b; x++, k++) {
+			const X = x0 + x - dx;
+			const Y = y0 + y - dy;
+			const gx = (px(X + 1, Y) - px(X - 1, Y)) / 2;
+			const gy = (px(X, Y + 1) - px(X, Y - 1)) / 2;
+			const t = cur[(y0 + y) * w + x0 + x]! - px(X, Y);
+			ix[k] = gx;
+			iy[k] = gy;
+			it[k] = t;
+			sxx += gx * gx;
+			sxy += gx * gy;
+			syy += gy * gy;
+			sxt += gx * t;
+			syt += gy * t;
+		}
+	const det = sxx * syy - sxy * sxy;
+	const tr = sxx + syy;
+	// both eigenvalues well away from 0 (a corner-like, textured block)
+	if (!(det > 1e-6 * tr * tr) || !(tr > n)) return null;
+	// cur ≈ prev(p − d) − ∇prev·δ  ⇒  It ≈ −∇prev·δ  ⇒  δ = −(AᵀA)⁻¹ Aᵀ It
+	const ddx = -(syy * sxt - sxy * syt) / det;
+	const ddy = -(sxx * syt - sxy * sxt) / det;
+	if (!Number.isFinite(ddx) || !Number.isFinite(ddy)) return null;
+	let cost = 0;
+	for (let i = 0; i < n; i++) cost += Math.abs(it[i]! + ix[i]! * ddx + iy[i]! * ddy);
+	return { dx: ddx, dy: ddy, cost };
+}
+
 /** Sub-pixel offset of a parabola through (−1, a), (0, b), (1, c), within ±0.5. */
 function parabola(a: number, b: number, c: number): number {
 	const den = a - 2 * b + c;
@@ -214,14 +270,27 @@ export function measureFrameMotion(prev: Uint8Array, cur: Uint8Array, w: number,
 						vy = dy;
 					}
 				}
-			if (!(best < PIXEL_MATCH_GAIN * zero) || best > PIXEL_MATCH_MAX_COST * P || (vx === 0 && vy === 0)) {
+			// Sub-pixel: one Lucas–Kanade step around the best whole-pixel match (motion under a pixel per frame, which
+			// whole-pixel matching cannot tell from noise); the parabola fit when the block's gradients are degenerate.
+			const lk = lucasKanade(cur, prev, w, h, x0, y0, B, vx, vy);
+			let fx: number;
+			let fy: number;
+			let cost: number;
+			if (lk && Math.abs(lk.dx) <= 1.5 && Math.abs(lk.dy) <= 1.5 && lk.cost < best) {
+				fx = vx + lk.dx;
+				fy = vy + lk.dy;
+				cost = lk.cost;
+			} else {
+				fx = vx === 0 && vy === 0 ? 0 : vx + parabola(at(vx - 1, vy), best, at(vx + 1, vy));
+				fy = vx === 0 && vy === 0 ? 0 : vy + parabola(at(vx, vy - 1), best, at(vx, vy + 1));
+				cost = best;
+			}
+			if (!(cost < PIXEL_MATCH_GAIN * zero) || cost > PIXEL_MATCH_MAX_COST * P || (fx === 0 && fy === 0)) {
 				// motion does not explain this block's change
 				resid += zero;
 				continue;
 			}
-			const fx = vx + parabola(at(vx - 1, vy), best, at(vx + 1, vy));
-			const fy = vy + parabola(at(vx, vy - 1), best, at(vx, vy + 1));
-			resid += best;
+			resid += cost;
 			const len = Math.hypot(fx, fy);
 			if (len < PIXEL_MIN_VECTOR) continue;
 			moving++;
