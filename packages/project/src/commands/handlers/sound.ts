@@ -38,6 +38,7 @@ import {
 	soundTimingOf,
 } from '../../sound/insert.ts';
 import { sfxGainOwner } from '../../sound/level.ts';
+import { clipPitchOf, PITCH_SHIFTER_EFFECT_ID, pitchPlan, roundedRate } from '../../sound/pitch.ts';
 import {
 	type LibraryProvenance,
 	libraryDescriptorIssue,
@@ -64,9 +65,8 @@ export const SOUND_DESIGN_OWNER = 'sound-design' as const;
 
 /** Media kinds that can be a library sound (it is audio, or a video file whose audio is the sound). */
 const SOUND_MEDIA_KINDS: ReadonlySet<string> = new Set(['audio', 'video']);
-/** Pitch shifts up to this many semitones are made by varispeed (spec 12 §2.3); larger ones by the Pitch Shifter. */
-export const VARISPEED_PITCH_MAX_ST = 3;
-export const PITCH_SHIFTER_EFFECT_ID = 'jasper.audio.pitch-shifter';
+
+export { PITCH_SHIFTER_EFFECT_ID, pitchPlan, VARISPEED_PITCH_MAX_ST } from '../../sound/pitch.ts';
 
 type DAudio = Draft<AudioClip> & { sfx?: ClipSfx };
 type DCue = Draft<SoundCue>;
@@ -371,13 +371,6 @@ function resyncCues(doc: DDoc, cmd: CommandOf<'soundCue.resync'>, h: HandlerCont
 // ---------------------------------------------------------------------------------------------------------------
 // soundDesign.place
 
-/** Clip speed and Pitch Shifter semitones for a pitch shift (spec 12 §2.3). */
-export function pitchPlan(pitchSt: number, rate: number): { rate: number; shifterSt: number } {
-	if (!pitchSt) return { rate, shifterSt: 0 };
-	if (Math.abs(pitchSt) <= VARISPEED_PITCH_MAX_ST) return { rate: rate * 2 ** (pitchSt / 12), shifterSt: 0 };
-	return { rate, shifterSt: pitchSt };
-}
-
 /** The timing placement uses for a media: its provenance's descriptors, else only its length (no peak). */
 function timingOfMedia(prov: LibraryProvenance | null, durFlicks: number): SoundTiming | null {
 	const durationSec = durFlicks / FLICKS_PER_SECOND;
@@ -575,7 +568,8 @@ function place(doc: DDoc, cmd: CommandOf<'soundDesign.place'>, h: HandlerContext
 			timing = { peakSec: 0, onsetSec: 0, headQuietSec: 0, durationSec: dur / FLICKS_PER_SECOND };
 		}
 		const pitchSt = layer.pitchSt ?? cue?.pitchSt ?? 0;
-		const pp = pitchPlan(pitchSt, layer.rate ?? 1);
+		const baseRate = layer.rate ?? 1;
+		const pp = pitchPlan(pitchSt, baseRate);
 		if (pp.rate < 0.01 || pp.rate > 100)
 			h.fail('E_INVALID_PARAM', 'The resulting speed is out of range', { path });
 		const plan = planSoundInsert({
@@ -647,6 +641,8 @@ function place(doc: DDoc, cmd: CommandOf<'soundDesign.place'>, h: HandlerContext
 			...(i === 0 && cmd.alternatives?.length ? { alternatives: [...new Set(cmd.alternatives)] } : {}),
 			placement: { align, peakFlicks: p.alignFlicks, errorFlicks: p.errorFlicks },
 			...(level ? { level } : {}),
+			// the shift and the speed under it: a later reset or re-pitch is exact (`clipPitchOf`); none at 0 st, speed 1
+			...(pitchSt !== 0 || baseRate !== 1 ? { pitch: { st: pitchSt, baseRate } } : {}),
 		} as ClipSfx;
 		placed.push({
 			clipId,
@@ -747,17 +743,6 @@ function remapContentTimes(
 	for (const m of clip.markers) m.flicks = map(m.flicks);
 }
 
-/** Semitones of a clip's current pitch shift: its varispeed (whole semitones, the ±2 % variation left out) and Pitch Shifter. */
-function currentPitch(clip: DAudio): { varispeedSt: number; variation: number; shifterIds: string[] } {
-	const rate = clip.speed.rate;
-	const st = Math.round(12 * Math.log2(rate > 0 ? rate : 1));
-	const varispeedSt = Math.abs(st) <= VARISPEED_PITCH_MAX_ST ? st : 0;
-	const shifterIds = clip.effects
-		.filter((fx) => (fx as { effectId?: string }).effectId === PITCH_SHIFTER_EFFECT_ID)
-		.map((fx) => fx.id);
-	return { varispeedSt, variation: rate / 2 ** (varispeedSt / 12), shifterIds };
-}
-
 function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) {
 	const { seq, clip: c } = h.clip(doc, cmd.clipId);
 	if (c.kind !== 'audio')
@@ -804,9 +789,13 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 	}
 	// A pitch change keeps the seeded variation of the speed: new rate = variation · 2^(st/12) (varispeed), or the
 	// variation alone plus the Pitch Shifter for larger shifts.
-	const pitch = currentPitch(clip);
-	const pp = cmd.pitchSt !== undefined ? pitchPlan(cmd.pitchSt, pitch.variation) : null;
-	const newRate = pp ? Math.round(pp.rate * 1e6) / 1e6 : clip.speed.rate;
+	// The shift and the variation come from the clip's record when it still describes the clip (exact), else from its
+	// speed (whole semitones of varispeed; clips placed before the record, or re-timed by another command since).
+	const pitch = clipPitchOf(clip);
+	const baseRate = pitch.recorded ? pitch.baseRate : roundedRate(pitch.baseRate);
+	const pp = cmd.pitchSt !== undefined ? pitchPlan(cmd.pitchSt, baseRate) : null;
+	// a reset (or the Pitch Shifter range) is the base speed itself, never a rounded copy of it
+	const newRate = pp ? (pp.rate === baseRate ? baseRate : roundedRate(pp.rate)) : clip.speed.rate;
 	if (!(newRate >= 0.01 && newRate <= 100))
 		h.fail('E_INVALID_PARAM', 'The resulting speed is out of range', { path: ['pitchSt'] });
 	const asset = doc.media[cmd.mediaId] as Draft<MediaAsset> | undefined;
@@ -863,8 +852,9 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 	if (pp) {
 		clip.speed.rate = newRate;
 		if (newRate !== 1) clip.speed.maintainPitch = false;
-		if (pitch.shifterIds.length)
-			clip.effects = clip.effects.filter((fx) => !pitch.shifterIds.includes(fx.id)) as never;
+		clip.effects = clip.effects.filter(
+			(fx) => (fx as { effectId?: string }).effectId !== PITCH_SHIFTER_EFFECT_ID,
+		) as never;
 		if (pp.shifterSt) {
 			const whole = Math.trunc(pp.shifterSt);
 			effectHandlers['effect.add']!(
@@ -899,6 +889,11 @@ function swap(doc: DDoc, cmd: CommandOf<'soundDesign.swap'>, h: HandlerContext) 
 			role: 'support',
 			placement,
 		} as ClipSfx;
+	// The shift and the speed under it (exact resets later); a record the clip's speed no longer matches is dropped.
+	// (none at 0 st over speed 1: the speed alone says so)
+	if (pp && (cmd.pitchSt !== 0 || baseRate !== 1) && baseRate >= 0.01 && baseRate <= 100)
+		clip.sfx!.pitch = { st: cmd.pitchSt!, baseRate };
+	else if (clip.sfx!.pitch !== undefined && (pp || !clipPitchOf(clip).recorded)) delete clip.sfx!.pitch;
 	// Fades on the clip's edges fit the new length (INV-010); crossfades whose cut moved are removed by the cleanup.
 	for (const t of Object.values(seq.transitions)) {
 		if (t.outgoingClipId !== clip.id && t.incomingClipId !== clip.id) continue;

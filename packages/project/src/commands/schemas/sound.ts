@@ -171,7 +171,8 @@ export const SoundDesignPlaceCmd = cmd('soundDesign.place', {
  * instead (with the clip's own media this re-aligns the clip: MCP `align_peak`), still sample-exact through the In
  * point. The same media with another `align` re-aligns the clip (its start, peak or end on the frame the old point
  * played at, or on `frame`); `pitchSt` re-pitches it around that point (|st| ≤ 3 by varispeed keeping the seeded ±2 %
- * variation, else the Pitch Shifter effect; 0 removes the shift). A sound that would start before frame 0 is refused,
+ * variation, else the Pitch Shifter effect; 0 removes the shift: the speed is the variation again, exactly, read from the
+ * clip's `sfx.pitch` record of the applied shift, which placement and every re-pitch write). A sound that would start before frame 0 is refused,
  * except for a clip at frame 0 swapped in place (an insert near the start, `clampStart`): the new sound starts there
  * with its head trimmed. Fades on the clip's edges are shortened to its new length. Result `{clipId, mediaId, soundId,
  * start, sourceInFlicks, errorFlicks, alignedFrame, align, rate, pitchSt, trimmedHeadSec, gainDb}`. `alternatives` replaces the
