@@ -17,7 +17,9 @@ export function e2eServerTimeoutMs(env: Record<string, string | undefined> = pro
 	const raw = env.E2E_SERVER_TIMEOUT_MS?.trim();
 	if (raw === undefined || raw === '') return E2E_SERVER_TIMEOUT_DEFAULT_MS;
 	if (!/^\d+$/.test(raw)) {
-		throw new Error(`E2E_SERVER_TIMEOUT_MS must be a whole number of milliseconds, got "${raw.slice(0, 40)}"`);
+		throw new Error(
+			`E2E_SERVER_TIMEOUT_MS must be a whole number of milliseconds, got "${raw.slice(0, 40)}"`,
+		);
 	}
 	const ms = Number(raw);
 	if (ms < E2E_SERVER_TIMEOUT_MIN_MS || ms > E2E_SERVER_TIMEOUT_MAX_MS) {
