@@ -42,13 +42,9 @@ export function installConfirmBody(p: SoundPackInfo): string {
 		t('Licence: {0} ({1}).', p.license, p.licenseUrl ?? ''),
 		p.attribution ? t('Credit required: {0}', p.attribution) : t('No credit is required.'),
 	];
-	if (p.licenseEvidence.length)
-		parts.push(
-			t(
-				'Licence checked on {0}.',
-				p.licenseEvidence.map((e) => `${hostOf(e.url)} (${e.checkedAt})`).join(', '),
-			),
-		);
+	// one mention per site and day (a pack page and its archive's licence file are both on the author's site)
+	const checked = [...new Set(p.licenseEvidence.map((e) => `${hostOf(e.url)} (${e.checkedAt})`))];
+	if (checked.length) parts.push(t('Licence checked on {0}.', checked.join(', ')));
 	return parts.join(' ');
 }
 
@@ -132,6 +128,7 @@ export function PacksSection() {
 				});
 				return;
 			}
+			load();
 			const r = SoundPackInstallResultSchema.safeParse(end.result);
 			if (r.success && r.data.indexJobId) {
 				setBusy((s) => ({ ...s, [p.id]: t('Adding its sounds to the library…') }));
