@@ -7042,3 +7042,93 @@ submixes and sends and calls `remapSoundDesign` like `sequence.duplicate`. Regre
 - The finished-export notice detail and the warnings come from the engine in English (as the other export messages).
 - Observed, not changed: an H.264 export requested with `audio.codec: 'pcm'` / `container: 'mov'` came out as MP4 with
   this host's OpenH264 encoder (the encoder decides the container); the oracle uses ProRes to keep 24-bit PCM in MOV.
+
+### Phase 6 → WP6.5a carry-over polish (UI / editing)
+
+Branch `feat/sd-p6-polish-ui`. Scope: the UI- and editing-side carry-overs of Phases 0–6 (CARRYOVER.md) — razor inside a
+transition, i18n of Undo / Redo and workspace names, keyboard navigation of the Essential Sound segmented controls,
+Premiere's "Auto-tag audio types in the timeline" preference and "select all clips of a tag", the export container /
+audio codec that changed silently, and the UI leftovers in the Phase 2–6 limits. The engine / model carry-overs (solver,
+jobs, proposals performance, media padding, beats, motion, mg cues, Sound Check fix interactions) are WP6.5b's.
+
+#### Item table
+
+| # | Item | Result | Evidence (failed before the fix, passes after) |
+|---|---|---|---|
+| 1 | Razoring inside a transition failed `E_INVARIANT` (INV-010 "longer than clip") for any clip | **Fixed.** `splitClipAt` (`packages/project/src/commands/placement.ts`) shortens a transition the split leaves longer than the part it still touches (`fitTransitionsAfterSplit`, `W_TRANSITION_SHORTENED`); it stays on its edit with its alignment. Covers Razor, Add Edit (one clip / all tracks), Alt-razor one side, insert edits through a span; video and audio, centre / start / end alignments, dip to black, single-sided fades | `packages/project/test/transition-razor.test.ts` (5; all failed before, the first with `INV-010: Transition … is longer than clip …`); `e2e/sound-p65a-polish.spec.ts` "the Razor inside a video and an audio transition" (Razor tool, 30-frame cross dissolve + constant-power crossfade → both ≤ 8 frames, History "Razor") |
+| 2 | "Undo / Redo <label>" built in English | **Fixed.** `apps/web/src/shell/history-labels.ts`: `t('Undo {0}', step)` / `t('Redo {0}', step)` — the step's label is translated as the History panel shows it (`translateName`: model names, sound-design templates, "Agent: …"); the crash-recovery list's journalled "Undo …" too. Found on the way: Edit ▸ Select All / Deselect All (commands that delegate to the Timeline) stayed English — their label is now a getter through `t` | `apps/web/test/wp65a-i18n.test.tsx` ("Deshacer Añadir marcador", "Rehacer …", "Deshacer Agente: Añadir marcador"; failed before with "Undo Add Marker"); e2e screenshot `es-edit-menu.png` |
+| 3 | Built-in workspace names not translated | **Fixed.** `workspaceName(record)` (`shell/workspaces/definitions.ts`, explicit `t()` per built-in id) at every place a name is shown (header tabs and overflow, Window ▸ Workspaces, Edit Workspaces, the palette, the "Saved changes" toast); records keep the English name (name clashes, export) and the ids never change; custom names are the user's | `wp65a-i18n.test.tsx` (store ids / names unchanged, Edit Workspaces lists "Diseño de sonido", "Edición"); e2e `workspace-tab-sound-design` = "Diseño de sonido" |
+| 4 | Essential Sound Role / Align without arrow keys | **Fixed.** `SegmentedControl` in `@jasper/ui` (`primitives/Segmented.tsx`): a WAI-ARIA radio group with roving tabindex (the checked option is the one Tab stop, else the first enabled), ← ↑ / → ↓ with wrap (RTL aware), Home / End, choosing follows focus, disabled options skipped, `data-keymap-local` so a consumed key runs no shortcut. Essential Sound Role / Align and the composition text alignment (a `radiogroup` of toggle buttons) use it | `packages/ui/test/primitives.test.tsx` (3), `apps/web/test/sound-fill-ui.test.tsx` "Role / Align are one Tab stop each…" (failed before: tabIndex `[0, 0, 0]`); e2e `role-keyboard.png` |
+| 5 | Premiere's "Auto-tag audio types in the timeline" and "select all clips of a tag" | **Done.** Preferences ▸ Audio ▸ Essential Sound ▸ "Auto-tag audio types in the timeline" (`audioPrefs.autoTagInTimeline`, **off** by default — see research); `audio-fx/auto-tag-on-add.tsx` watches the user's transactions and tags the audio clips they add through the same route and command as Auto Tag (`autoTagClips` → `POST /api/audio/classify` + `essentialSound.autoTag`). Essential Sound shows "In this sequence: Dialogue 2 · Music 1 …"; a click selects that tag's clips (audio only, not their linked video); Clip ▸ Audio Options and the clip menu ▸ "Select All <Type> Clips" (`audio.selectAudioType {type?}`, agent-exposed; MCP guide: `ui_command`) | `apps/web/test/essential-autotag-on-add.test.tsx` (9); e2e "auto-tag in the timeline…" (a dropped `music.wav` becomes Music, auto, one "Auto Tag Audio Types" step; the tag strip selects it) — screenshots `auto-tagged-on-drop.png`, `essential-tags.png` |
+| 6 | MOV + PCM requested, MP4 + AAC written on the LGPL OpenH264 build | **Fixed (honoured where it fits, reported where not).** The container followed the codec only (H.264 → MP4 + AAC, whatever was asked) — a silent change (AGENTS §4). `fitOutputFormat` (`apps/engine/src/tools/encoders.ts`) writes the requested container when the codec fits it (MP4: H.264, HEVC, AV1, VP9; MOV: H.264, HEVC, ProRes; WebM: VP9, AV1 with Opus) and the requested audio codec when the container carries it (MP4: AAC; MOV: PCM, AAC; WebM: Opus); ProRes masters keep PCM. What cannot be written as asked is a plan warning (`OUTPUT_CONTAINER_CHANGED`, `AUDIO_CODEC_CHANGED`, in words: "PCM audio was requested but MP4 does not carry PCM audio (PCM needs MOV): the audio is AAC") shown by the dialog's plan summary, carried into the job result (with the new `audioCodec`) and repeated by the finished-export notice. The Export dialog now asks for the codec's own format (ProRes: MOV + 24-bit PCM, VP9: WebM + Opus when the engine has Opus, else MP4 + AAC); MCP presets ask MOV presets for PCM; the dev-only Remotion GPL direct path is used only for MP4 + AAC | `apps/engine/test/export-container.test.ts` (5; the real-engine cases failed on the old code: plan encoder container `mp4` for a MOV request, no warning); measured: an H.264 export with `container: 'mov'`, `audio: pcm` on the vendored LGPL ffmpeg 7.1.5 (OpenH264) is `mov` with `h264` + `pcm_s24le` (ffprobe), job result `{container: 'mov', audioCodec: 'pcm_s24le'}`; `apps/web/test/export-format.test.ts` (3) |
+| 7a | Room row multi-selection (P4) | Already fixed (P4 verification, web): acts on every selected track, mixed state | `sound-mix-ui.test.tsx` (passes) |
+| 7b | Play all / verdict (P5) | Already fixed (P5 verification (b)) | `sound-check-listen-keep.test.ts` (passes) |
+| 7c | Stale stored workspace layouts (P3) | Already fixed (P3 verification (d), `migrations.ts`) | `workspace-migration.test.ts` (passes) |
+| 7d | Review list virtualisation (P3) | Already fixed (P3 verification (c)) | `review-virtual.test.tsx` (passes) |
+| 7e | Review row gain attribution (P4 limit) | Already fixed (P3 verification finding 10) | review-model test (passes) |
+| 7f | Ghost lanes not in the scroll range (P3) | Already fixed (P3 verification (e)) | `proposal-ghosts-model.test.ts` (passes) |
+| 7g | After an In Context audition the Timeline stayed scrolled where playback took it (P3 verification limit) | **Fixed.** `onInContextView` (`sound/in-context.ts`) tells a Timeline when a session's first window starts and when the last ends (not between a window and its replacement); the Timeline puts back the view it had (`scrollAfterAudition`: the old view when the returned playhead is in it, else the playhead revealed) | `apps/web/test/wp65a-audition-view.test.ts` (3) |
+| 7h | Delivery Target… kept Cancel next to Close after a run (P4 limit); Auto Sound Pass… the same | **Fixed.** `Dialog.hideCancel` (`@jasper/ui`); both dialogs show Close alone once their work is done | `sound-mix-ui.test.tsx`, `auto-sound-pass.test.tsx` (new assertions; the old footer always rendered Cancel) |
+| 7i | A gain fix's why "The solver's gain does not resolve it: {0}" carried the solver's English reason (P5 limit) | **Fixed.** The panel says the reason from the fix's own `soundDesign.applyGains` report (`limitedBy`, lifts) with `solverReason` | `sound-check-model.test.ts` ("… no lo resuelve: limitado por diálogo A1") |
+| 7j | `set_sound_cues` counted skipped (stored) suggestions in "add n" (P2 agent review) | **Fixed** (`apps/mcp/src/tools/sound-design.ts`) | `apps/mcp/test/sound-cues.test.ts` ("Sound Cues (add 1)", "Sound Cues (edit 1)") |
+| 7k | Auto gain on for a mixed selection makes two History entries (P4 limit) | **Justified, not fixed here.** The engine's rebalance job makes the "Rebalance SFX Levels" transaction (relayed into the session); clips the solve leaves unchanged keep their manual mark, so the editor clears it in a second, local transaction. One entry needs the job's transaction to carry `soundDesign.setAutoGain` for the named clips (`apps/engine/src/sound-design/rebalance.ts`, the jobs area of WP6.5b in this phase). Repro: two placed SFX with Auto gain off, one whose solved gain equals its gain; Essential Sound ▸ Auto gain on → History "Rebalance SFX Levels", "Auto Gain On" | recorded in docs/gaps.md |
+| 7l | Messages the engine composes (export warnings, the finished-export detail) are English (WP6.4) | **Justified.** Every engine-composed message (planner blockers and warnings, job errors) is English across the app; translating them needs structured messages from the engine (as Sound Check has) — a cross-cutting change outside this package. The new container / audio warnings are English like the rest | docs/gaps.md |
+
+UI-side limits looked at and left as designed (documented decisions, not defects): Swap does not rename a clip the user
+renamed; badges need 80 px; the Sound Library list is one column; Reveal in Folder only for folder sounds on desktop;
+no "move the cue only" drag modifier; Suggest Cues… measures an edit made while it is open on the next Analyze….
+
+#### Decisions and research
+
+- **Razor inside a transition.** helpx.adobe.com answers 403 to this host. Adobe's "Transitions overview" text, as quoted
+  by search engines: "If a transition contains trimmed frames, but not enough to fill the transition duration, Premiere
+  Pro adjusts the duration to match the frames"; Premiere never lets a transition be longer than its clips. Undocumented
+  for the razor itself; chosen as the most plausible: the edit is made, the transition stays on its edit point with its
+  alignment and is shortened to the shorter of its clips (a shorter span around the same cut needs no more media handles,
+  so it still fits). Removing the transition instead would lose the user's work.
+- **"Auto-tag audio types in the timeline".** Adobe's "Auto tag audio categories in Premiere" page, as quoted by search
+  engines: "To enable this feature, you can enable Auto-tag audio types in the timeline which can be found in Preferences
+  > Audio. This setting allows auto tagging to happen anytime you add an audio clip to your sequence"; Adobe documents no
+  default (community threads, e.g. "Disable Essential Sound Tagging", report it on in some builds). Off by default here:
+  it starts an engine job on every add. Only the user's own edits count (not undo / redo, not agents — they call
+  `auto_tag_audio` —, not the right part of a razor or an insert edit, not the clips of a new or duplicated sequence);
+  each tagging is its own undo step ("Auto Tag Audio Types"); a clip the user typed, deleted or locked before the engine
+  answered is left out; the transaction waits for a drag in progress; failures toast at most once a minute. Premiere's
+  companion "Always override audio tags" is not added (it would replace types the user set).
+- **Select all clips of a tag.** The strip lists the types in use in the active sequence with counts (clips auto-tagged
+  count with their type); a click replaces the selection with those audio clips only (`linked: false`), so Essential
+  Sound then edits them together.
+- **Export container.** Honour first, report what cannot be honoured, never refuse a valid request: older API callers
+  (and the web, which sent MP4 + AAC for every codec) keep working, now with an explicit warning. 24-bit PCM is what the
+  schema documents for `pcm`; ProRes masters asked for AAC keep PCM (Premiere's QuickTime ProRes presets use uncompressed
+  audio) and say so.
+- **Roving tabindex.** WAI-ARIA APG "Radio Group" (selection follows focus); the existing ProcessDialog toggle groups
+  are `aria-pressed` buttons (not radio groups) and stay as they are.
+
+#### Verified (measured, this branch; build server, 16 cores)
+
+Every command ran on the build server through `remote.sh`:
+
+- Failing first (on the unfixed code, by swapping the old sources into the remote copy): `transition-razor.test.ts` 5 / 5
+  failed (`E_INVARIANT` / INV-010); `wp65a-i18n.test.tsx` Undo / Redo 2 failed ("Undo Add Marker" in Spanish);
+  `sound-fill-ui.test.tsx` keyboard test failed (`[0, 0, 0]` Tab stops); `export-container.test.ts` real-engine cases
+  2 failed (plan encoder `container: 'mp4'` for a MOV request; no `AUDIO_CODEC_CHANGED`).
+- `pnpm typecheck` exit 0; `pnpm lint` (Biome, check-tokens / anime / layers / assets) exit 0; `node scripts/i18n.mjs
+  --check`: es.json covers all 9 961 strings; `pnpm notices --check`: current.
+- `pnpm vitest run --project <p> --maxWorkers=8`: @jasper/project 171 files passed, @jasper/ui 3, @jasper/web 142,
+  @jasper/mcp 55 (2 skipped), @jasper/api 3 — all passed; @jasper/engine: see below.
+- `pnpm build` ok; `E2E_PORT=51801 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-p65a-polish.spec.ts`: 4 passed
+  (30.6 s). Screenshots looked at (not committed): the dropped music clip tagged auto; Essential Sound "In this sequence:
+  Music 1 · SFX 1" and the selection it makes; the Razor before / after (30-frame dissolve → 8 frames around the cut);
+  Role chosen by ← → / Home with the focus ring on the checked option; the Spanish UI ("Deshacer Añadir marcador",
+  "Diseño de sonido", "Esenciales", "En esta secuencia: Música 1").
+
+#### Limits and notes for the next packages
+
+- 7k / 7l above (two History entries for a mixed Auto gain on; engine-composed messages in English).
+- Auto-tagging on add listens to the user's transactions in this editor window: clips an agent places, or that arrive in
+  a new / duplicated sequence, are not tagged by it; a clip added while the engine is offline is not tagged later.
+- The Razor's shortening is only at the split: trimming a clip shorter than its transition, or an overwrite that
+  shortens the part keeping it, is still refused by INV-010 as before (not reported in any carry-over; same fix shape).
+- The container rule is ffmpeg's muxers as used here: Opus in MP4 and AV1 / VP9 in MOV are not offered (reported as
+  changed when asked).
