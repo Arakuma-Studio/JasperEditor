@@ -7023,6 +7023,13 @@ submixes and sends and calls `remapSoundDesign` like `sequence.duplicate`. Regre
   (`test-results/e2e-sound-credits-export/`): the SOUND section with the warning in the warning tone under the Credits
   select; the Jobs row.
 
+- **Final run on the build server** (`remote.sh`, 16 idle cores, after the last merge of `feat/sound-design`): `pnpm
+  typecheck` exit 0; `pnpm lint`: Biome, tokens, anime, layers ok (`check-assets` cannot run there: the synced copy has no
+  `.git`; this package adds no asset — the e2e generates its WAV in a temp folder); `i18n --check` 9 944 strings; `pnpm
+  notices --check` current; 39 touched test files (interchange incl. fuzz, api, engine-client, project sound / clipboard /
+  fuzz, web export / Sound Check / cue model, MCP, engine credits / captions / sound-check / security) **370 passed**, 7
+  skipped; `pnpm build` ok; `e2e/sound-credits-export.spec.ts` passed (40.2 s).
+
 #### Limits and notes for the next packages
 
 - No audio-only / image-sequence export destination exists to carry a sidecar; when one is added it should call
