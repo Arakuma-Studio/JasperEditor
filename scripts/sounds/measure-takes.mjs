@@ -66,7 +66,7 @@ try {
 		if (r.job) await waitJob(r.job.id);
 	}
 	for (const id of (args.packs ?? '').split(',').filter(Boolean)) {
-		const job = await api('POST', `/api/sounds/packs/${id}/install`);
+		const job = await api('POST', `/api/sounds/packs/${id}/install`, {});
 		const done = await waitJob(job.id);
 		if (done.result?.indexJobId) await waitJob(done.result.indexJobId);
 		console.error(`installed ${id}: ${done.result?.sounds} files`);
