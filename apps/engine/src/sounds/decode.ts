@@ -122,7 +122,8 @@ export const TAKE_DECODE_SAMPLE_BUDGET = SOUND_TAKES_MAX_FILE_SECONDS * MAX_ANAL
  * takes are searched over all of it, P6-E9; within TAKE_DECODE_SAMPLE_BUDGET), else SOUND_ANALYSIS_SECONDS.
  */
 export function indexDecodeSeconds(format: SoundFormat): number {
-	if (!(format.durationSec > 0) || format.durationSec > SOUND_TAKES_MAX_FILE_SECONDS) return SOUND_ANALYSIS_SECONDS;
+	if (!(format.durationSec > 0) || format.durationSec > SOUND_TAKES_MAX_FILE_SECONDS)
+		return SOUND_ANALYSIS_SECONDS;
 	const { rate, channels } = analysisLayout(format);
 	const budgetSec = Math.floor(TAKE_DECODE_SAMPLE_BUDGET / (rate * channels));
 	return Math.max(SOUND_ANALYSIS_SECONDS, Math.min(SOUND_TAKES_MAX_FILE_SECONDS, budgetSec));

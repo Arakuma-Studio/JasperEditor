@@ -43,7 +43,15 @@ export function snapshotHashOf(sounds: Record<string, SoundEntry>): string {
 	const h = createHash('sha256');
 	for (const id of Object.keys(sounds).sort()) {
 		const s = sounds[id]!;
-		const base: unknown[] = [id, s.fingerprint, s.license, s.attribution, s.types, s.analysisVersion, s.title];
+		const base: unknown[] = [
+			id,
+			s.fingerprint,
+			s.license,
+			s.attribution,
+			s.types,
+			s.analysisVersion,
+			s.title,
+		];
 		if (s.materials !== undefined || s.takes !== undefined)
 			base.push({
 				materials: s.materials ?? null,

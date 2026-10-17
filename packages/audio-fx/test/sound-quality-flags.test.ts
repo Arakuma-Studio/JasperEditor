@@ -41,7 +41,8 @@ function bandNoise(seed: number, n: number, sr: number, lo: number, hi: number):
 /** Hits (5 % of the time) over a floor of uniform noise at amplitude `floorAmp` (0 = digital silence). */
 function hitsOverFloor(floorAmp: number): Float32Array {
 	const x = floorNoise(2 * SR, floorAmp, 3);
-	for (let k = 0; k < 4; k++) addClick(x, Math.round((0.2 + k * 0.45) * SR), { tauMs: 3, lenMs: 25, seed: k });
+	for (let k = 0; k < 4; k++)
+		addClick(x, Math.round((0.2 + k * 0.45) * SR), { tauMs: 3, lenMs: 25, seed: k });
 	return x;
 }
 
@@ -79,9 +80,11 @@ describe('descriptors version 2', () => {
 	});
 
 	it('cutoffHz: the cliff of a band limit; none for full-band noise, a natural slope or a tone; null under 44.1 kHz', () => {
-		const at = (lo: number, hi: number, sr = SR) => analyzeSound([bandNoise(7, 1 << 16, sr, lo, hi)], sr).cutoffHz;
+		const at = (lo: number, hi: number, sr = SR) =>
+			analyzeSound([bandNoise(7, 1 << 16, sr, lo, hi)], sr).cutoffHz;
 		// the edge, or the next 250 Hz band (the analysis window's leakage)
-		for (const edge of [8000, 11_000, 16_000]) expect([edge, edge + 250], String(edge)).toContain(at(20, edge));
+		for (const edge of [8000, 11_000, 16_000])
+			expect([edge, edge + 250], String(edge)).toContain(at(20, edge));
 		expect(at(20, 23_900)).toBeNull();
 		expect(at(20, 8000, 32_000)).toBeNull();
 		// a natural slope (power ∝ 1/f²) and a 3 kHz tone have no cliff
@@ -190,7 +193,9 @@ describe('judge flags lowpassed, noisy-floor, dc-offset', () => {
 	it('every profile has both new fields', () => {
 		for (const t of SOUND_TYPE_IDS) {
 			expect(typeof DEFAULT_TYPE_PROFILES[t].needsAir, t).toBe('boolean');
-			expect(DEFAULT_TYPE_PROFILES[t].maxFloorDb === null || DEFAULT_TYPE_PROFILES[t].maxFloorDb === -55).toBe(true);
+			expect(
+				DEFAULT_TYPE_PROFILES[t].maxFloorDb === null || DEFAULT_TYPE_PROFILES[t].maxFloorDb === -55,
+			).toBe(true);
 		}
 	});
 

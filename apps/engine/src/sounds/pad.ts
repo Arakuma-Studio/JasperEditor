@@ -132,7 +132,8 @@ export function paddedFileName(libraryFile: string, takeIndex?: number): string 
 	const stem = basename(libraryFile, extname(libraryFile))
 		.replace(/[^\p{L}\p{N} ._-]/gu, '_')
 		.slice(0, 120);
-	const take = takeIndex !== undefined && Number.isInteger(takeIndex) && takeIndex > 0 ? ` take ${takeIndex}` : '';
+	const take =
+		takeIndex !== undefined && Number.isInteger(takeIndex) && takeIndex > 0 ? ` take ${takeIndex}` : '';
 	return `${stem || 'sound'}${take}.wav`;
 }
 

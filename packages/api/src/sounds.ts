@@ -258,7 +258,10 @@ export function takeEntryOf(parent: SoundEntry, t: SoundTake): SoundEntry {
 }
 
 /** The entry an id names in a lookup of recordings: the recording, or the take entry of a take id; null when unknown. */
-export function soundEntryById(id: string, lookup: (id: string) => SoundEntry | null | undefined): SoundEntry | null {
+export function soundEntryById(
+	id: string,
+	lookup: (id: string) => SoundEntry | null | undefined,
+): SoundEntry | null {
 	const t = parseTakeId(id);
 	if (!t) return lookup(id) ?? null;
 	const parent = lookup(t.parentId);

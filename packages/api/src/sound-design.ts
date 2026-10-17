@@ -13,6 +13,7 @@ import {
 	SFX_ROLES,
 	SOUND_DELIVERIES,
 	SOUND_DESIGN_LIMITS,
+	SOUND_REF_RE,
 } from '@jasper/project';
 import { z } from 'zod';
 import { TimeSignatureSchema } from './audio-fx.ts';
@@ -262,7 +263,9 @@ export const SOUND_DESIGN_PLAN_LIMITS = {
 	maxSkippedListed: 500,
 } as const;
 
-const soundId = z.string().regex(/^snd_[0-9a-f]{16}$/, 'a sound id: snd_ + 16 hex digits');
+const soundId = z
+	.string()
+	.regex(SOUND_REF_RE, 'a sound id: snd_ + 16 hex digits (a take: snd_<16 hex>~t<n>)');
 
 export const SoundDesignPlanStyleSchema = z.strictObject({
 	/** Density budget of derived cues (default: the sequence's setting). */

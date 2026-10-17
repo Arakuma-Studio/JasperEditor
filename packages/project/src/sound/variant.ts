@@ -7,7 +7,6 @@
 // always give the same pick. Pure.
 import { parseTakeId, SOUND_TAKES_MAX } from './provenance.ts';
 
-
 /** Candidates the rotation cycles through (the best N of the ranking). */
 export const ROTATION_TOP_N = 4;
 /** Largest varispeed deviation (±2 %). */

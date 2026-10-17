@@ -41,6 +41,7 @@ import {
 	SOUND_DESIGN_FEATURE,
 	SOUND_DESIGN_LIMITS,
 	SOUND_LABELS,
+	SOUND_REF_RE,
 	SOUND_TYPES,
 	type SoundCue,
 	type SoundProposalMedia,
@@ -1153,7 +1154,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 			// A clip without a variation ring gets [the sound it plays now] in the same transaction: later calls cycle
 			// around that anchor (it would otherwise be rebuilt around each new sound and alternate between two).
 			const ring =
-				!clip.sfx?.alternatives?.length && current && /^snd_[0-9a-f]{16}$/.test(current) ? [current] : null;
+				!clip.sfx?.alternatives?.length && current && SOUND_REF_RE.test(current) ? [current] : null;
 			const skipped: { soundId: string; reason: string }[] = [];
 			let done:
 				| {
@@ -1393,7 +1394,7 @@ async function cycleList(
 	prov: LibraryProvenance | null,
 	extra: Extra,
 ): Promise<{ soundId: string; from: string }[]> {
-	const alts = (clip.sfx?.alternatives ?? []).filter((s) => /^snd_[0-9a-f]{16}$/.test(s));
+	const alts = (clip.sfx?.alternatives ?? []).filter((s) => SOUND_REF_RE.test(s));
 	const origin = alts[0] ?? current;
 	const out: { soundId: string; from: string }[] = [];
 	const add = (id: string, from: string) => {

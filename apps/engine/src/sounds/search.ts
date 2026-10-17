@@ -202,4 +202,3 @@ export function searchRow(
 	const { takes: _takes, ...sound } = entry;
 	return { sound, score, parts, takeCount: offeredTakes(entry).length };
 }
-

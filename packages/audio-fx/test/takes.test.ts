@@ -50,7 +50,9 @@ describe('findTakes: known recordings', () => {
 			expect(t.flags, `take ${t.index}`).toEqual([]);
 			expect(t.strokes).toBe(1);
 			// 5 ms pre-roll, the attack refined to its 1 ms frame
-			expect(Math.abs(t.startSample - (attacks[k]! - ms(5))), `take ${t.index} start`).toBeLessThanOrEqual(ms(1));
+			expect(Math.abs(t.startSample - (attacks[k]! - ms(5))), `take ${t.index} start`).toBeLessThanOrEqual(
+				ms(1),
+			);
 			// ends after the click has decayed (it is ≈ 30 ms to −35 dB, plus 20 ms) and before the next one
 			expect(t.endSample).toBeGreaterThan(attacks[k]! + ms(30));
 			if (k + 1 < attacks.length) expect(t.endSample).toBeLessThan(attacks[k + 1]!);
@@ -85,7 +87,8 @@ describe('findTakes: known recordings', () => {
 	it('a take cut at a boundary is flagged: a file starting inside a sound, one ending inside one, a hit cut by the next', () => {
 		const x = floorNoise(Math.round(3 * SR), 3e-4, 5);
 		// starts inside a sustained, decaying sound (no pre-roll of quiet)
-		for (let i = 0; i < ms(400); i++) x[i] = x[i]! + 0.4 * Math.exp(-i / ms(120)) * Math.sin((2 * Math.PI * 440 * i) / SR);
+		for (let i = 0; i < ms(400); i++)
+			x[i] = x[i]! + 0.4 * Math.exp(-i / ms(120)) * Math.sin((2 * Math.PI * 440 * i) / SR);
 		// a long hit 0.35 s before the next one: it has not decayed 35 dB when the next starts
 		addClick(x, ms(800), { amp: 0.6, tauMs: 160, lenMs: 1200, seed: 1 });
 		addClick(x, ms(1150), { amp: 0.6, tauMs: 4, lenMs: 60, seed: 2 });

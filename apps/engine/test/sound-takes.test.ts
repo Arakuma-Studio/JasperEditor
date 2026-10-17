@@ -16,8 +16,8 @@ import {
 	SoundSearchResponseSchema,
 	SoundVisualSchema,
 } from '@jasper/api';
-import { analyzeSound } from '@jasper/audio-fx';
 import { encodeWav } from '@jasper/audio-dsp';
+import { analyzeSound } from '@jasper/audio-fx';
 import { appdirPaths } from '@jasper/config';
 import { frameToSample, parseTakeId, takeIdOf } from '@jasper/project';
 import type { FastifyInstance } from 'fastify';
@@ -52,7 +52,8 @@ function addClick(x: Float32Array, at: number, amp: number, tauMs: number, lenMs
 	const tau = (tauMs / 1000) * SR;
 	const len = Math.round((lenMs / 1000) * SR);
 	for (let i = 0; i < len && at + i < x.length; i++)
-		x[at + i] = x[at + i]! + amp * Math.exp(-i / tau) * (0.6 * r() + 0.4 * Math.sin((2 * Math.PI * 3000 * i) / SR));
+		x[at + i] =
+			x[at + i]! + amp * Math.exp(-i / tau) * (0.6 * r() + 0.4 * Math.sin((2 * Math.PI * 3000 * i) / SR));
 }
 
 /** Keyboard typing: 8 key presses 0.5 s apart (a down-stroke, an up-stroke 80 ms later), over a −70 dBFS floor. */
@@ -158,7 +159,10 @@ beforeAll(async () => {
 	files.whoosh = join(folder, 'Takes', 'air whoosh.wav');
 	writeFileSync(files.whoosh, encodeWav([w], SR, 's16'));
 	// hostile files: one sample, all silence
-	writeFileSync(join(folder, 'Takes', 'one sample click.wav'), encodeWav([new Float32Array([0.5])], SR, 's16'));
+	writeFileSync(
+		join(folder, 'Takes', 'one sample click.wav'),
+		encodeWav([new Float32Array([0.5])], SR, 's16'),
+	);
 	writeFileSync(join(folder, 'Takes', 'silent clicks.wav'), encodeWav([new Float32Array(SR)], SR, 's16'));
 	const put = await app.inject({
 		method: 'PUT',
@@ -223,7 +227,10 @@ describe('indexing splits multi-hit recordings into takes', { timeout: 300_000 }
 		expect(entryTakes(['whoosh', 'key'], [cached])).toBeUndefined();
 		expect(entryTakes(['key'], [])).toBeUndefined();
 		expect(entryTakes(['key'], undefined)).toBeUndefined();
-		const keyed = entryTakes(['key', 'click'], [{ ...cached, descriptors: { ...cached.descriptors, onsetCount: 2 } }])!;
+		const keyed = entryTakes(
+			['key', 'click'],
+			[{ ...cached, descriptors: { ...cached.descriptors, onsetCount: 2 } }],
+		)!;
 		expect(keyed[0]!.judge).toMatchObject({ type: 'key' });
 		expect(keyed[0]!.judge!.reasons).not.toContain('multi-hit');
 		expect(entryTakes(['future-type'], [cached])![0]!.judge).toBeNull();
@@ -273,7 +280,9 @@ describe('search, entries, visual data and audio of takes', { timeout: 300_000 }
 		expect(take.judge).toEqual(rec.takes![2]!.judge);
 		expect(take.takes).toBeUndefined();
 		for (const bad of [`${rec.id}~t9`, `${rec.id}~t0`, `${rec.id}~x`])
-			expect((await app.inject({ method: 'GET', url: `/api/sounds/${bad}`, headers: H })).statusCode).toBe(404);
+			expect((await app.inject({ method: 'GET', url: `/api/sounds/${bad}`, headers: H })).statusCode).toBe(
+				404,
+			);
 	});
 
 	it('visual data of a take covers the take alone (cached by the index, recomputed when gone)', async () => {
@@ -301,7 +310,11 @@ describe('search, entries, visual data and audio of takes', { timeout: 300_000 }
 		] as const) {
 			const rec = await recording(title);
 			const t = rec.takes![4]!;
-			const r = await app.inject({ method: 'GET', url: `/api/sounds/${takeIdOf(rec.id, 5)}/audio`, headers: H });
+			const r = await app.inject({
+				method: 'GET',
+				url: `/api/sounds/${takeIdOf(rec.id, 5)}/audio`,
+				headers: H,
+			});
 			expect(r.statusCode).toBe(200);
 			expect(String(r.headers['content-type'])).toContain('audio/');
 			const out = join(tempAppdir('jasper-take-audio-'), 'take.wav');
@@ -311,7 +324,8 @@ describe('search, entries, visual data and audio of takes', { timeout: 300_000 }
 			const range = takeRange(t, SR)!;
 			expect(got.length, title).toBe(range.endSample - range.startSample);
 			let worst = 0;
-			for (let i = 0; i < got.length; i++) worst = Math.max(worst, Math.abs(got[i]! - whole[range.startSample + i]!));
+			for (let i = 0; i < got.length; i++)
+				worst = Math.max(worst, Math.abs(got[i]! - whole[range.startSample + i]!));
 			expect(worst, title).toBeLessThan(1e-6);
 		}
 	});
@@ -345,7 +359,7 @@ describe('registering and placing a take', { timeout: 600_000 }, () => {
 		expect(reg.library.leadSilenceSec).toBe(0.05);
 		expect(reg.inexact).toBeUndefined();
 		const copyPath = await coreServices(app).registry.resolvePath(reg.mediaKey);
-		if (!copyPath) throw new Error("the copy is offline");
+		if (!copyPath) throw new Error('the copy is offline');
 		const copy = decodeF32(copyPath);
 		const whole = decodeF32(files.clicksWav);
 		const range = takeRange(t, SR)!;
@@ -436,7 +450,8 @@ describe('registering and placing a take', { timeout: 600_000 }, () => {
 				let bestErr = Number.POSITIVE_INFINITY;
 				for (let o = expected - Math.round(0.3 * SR); o < expected + Math.round(0.1 * SR); o++) {
 					let err = 0;
-					for (let k = 0; k < len && err < bestErr; k += 7) err += Math.abs(x[o + k]! - whole[range.startSample + k]!);
+					for (let k = 0; k < len && err < bestErr; k += 7)
+						err += Math.abs(x[o + k]! - whole[range.startSample + k]!);
 					if (err < bestErr) {
 						bestErr = err;
 						best = o;
@@ -498,14 +513,22 @@ describe('determinism, old indexes and the cache', { timeout: 300_000 }, () => {
 		const dir = tempAppdir('jasper-takes-prune-');
 		const hex = 'a'.repeat(64);
 		mkdirSync(join(dir, hex), { recursive: true });
-		for (const f of ['take-1-visual-v1.json', 'take-2-visual-v1.json', 'take-1-audio-v1.wav', 'take-1-visual-v0.json'])
+		for (const f of [
+			'take-1-visual-v1.json',
+			'take-2-visual-v1.json',
+			'take-1-audio-v1.wav',
+			'take-1-visual-v0.json',
+		])
 			writeFileSync(join(dir, hex, f), 'x');
 		const entry = {
 			fingerprint: `q1:${hex}`,
 			source: { type: 'starter', file: 'x.wav' },
 			takes: [{ index: 1 }],
 		} as unknown as SoundEntry;
-		const r = await pruneSoundCache({ cacheDir: dir, synthDir: join(dir, 'synth') }, { sounds: { x: entry }, files: {} });
+		const r = await pruneSoundCache(
+			{ cacheDir: dir, synthDir: join(dir, 'synth') },
+			{ sounds: { x: entry }, files: {} },
+		);
 		expect(r.files).toBe(2);
 	});
 });

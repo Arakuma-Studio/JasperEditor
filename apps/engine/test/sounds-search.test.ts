@@ -217,7 +217,8 @@ function oracle(all: SoundEntry[], q: SoundSearchQuery, includeFolders: boolean)
 		for (const r of rankSounds(pool, { ...req, license: 'any' }))
 			bump(facets.licenses, licenseClass(r.entry.license));
 		for (const r of rankSounds(byRoot, req)) bump(facets.sources, r.entry.source.type);
-		for (const r of rankSounds(unMaterial, req)) for (const m of r.entry.materials ?? []) bump(facets.materials!, m);
+		for (const r of rankSounds(unMaterial, req))
+			for (const m of r.entry.materials ?? []) bump(facets.materials!, m);
 	}
 	return { ranked, facets };
 }

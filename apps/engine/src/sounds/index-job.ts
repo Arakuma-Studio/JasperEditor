@@ -18,13 +18,13 @@ import {
 	type SoundEntry,
 	SoundEntrySchema,
 	SoundIndexRequestSchema,
-	type SoundTake,
-	SoundTakeSchema,
 	type SoundIndexResult,
 	type SoundManifestPack,
 	type SoundRoot,
 	type SoundSource,
 	type SoundSourceType,
+	type SoundTake,
+	SoundTakeSchema,
 } from '@jasper/api';
 import { judgeSound, SOUND_DESCRIPTORS_VERSION, type SoundDescriptors } from '@jasper/audio-fx';
 import {
@@ -705,7 +705,9 @@ export class SoundIndexer {
 						throw new JobError('UNSUPPORTED_MEDIA', `The sound cannot be analysed: ${(e as Error).message}`);
 					}
 					const descriptors = out.descriptors!;
-					const takes = out.takes?.map(({ visual: _v, startSample: _s, endSample: _e, ...t }): CachedTake => t);
+					const takes = out.takes?.map(
+						({ visual: _v, startSample: _s, endSample: _e, ...t }): CachedTake => t,
+					);
 					analysis = {
 						fingerprint,
 						version: ANALYSIS_VERSION,
@@ -716,7 +718,8 @@ export class SoundIndexer {
 					await atomicWriteJson(cacheFile, analysis);
 					const hex = fingerprintHex(fingerprint);
 					await writeVisual(visualCacheFile(d.cacheDir, hex), out.visual);
-					for (const t of out.takes ?? []) await writeVisual(takeVisualCacheFile(d.cacheDir, hex, t.index), t.visual);
+					for (const t of out.takes ?? [])
+						await writeVisual(takeVisualCacheFile(d.cacheDir, hex, t.index), t.visual);
 					analysed++;
 				}
 				const judgeType = item.meta.types.find(isSoundTypeId);

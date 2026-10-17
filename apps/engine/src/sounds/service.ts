@@ -58,7 +58,13 @@ import { SoundRootStore, type SoundRootsPlan } from './roots.ts';
 import { searchSoundEntries } from './search.ts';
 import { isSoundFileName, type LoadedManifest, loadManifest, starterDir } from './starter.ts';
 import { ensureSynthFile, synthItems } from './synth.ts';
-import { readVisual, takeAudioCacheFile, takeVisualCacheFile, visualCacheFile, writeVisual } from './visual.ts';
+import {
+	readVisual,
+	takeAudioCacheFile,
+	takeVisualCacheFile,
+	visualCacheFile,
+	writeVisual,
+} from './visual.ts';
 
 const PACK_JOB: JobKind = 'sound-pack-install';
 
@@ -563,7 +569,9 @@ export class SoundService {
 		const all = this.sortedEntries(snapshot);
 		const allowed = sources?.length ? new Set<string>(sources) : null;
 		const entries = withOfferedTakes(
-			all.filter((e) => (this.local || e.source.type !== 'folder') && (!allowed || allowed.has(e.source.type))),
+			all.filter(
+				(e) => (this.local || e.source.type !== 'folder') && (!allowed || allowed.has(e.source.type)),
+			),
 		);
 		return { entries, snapshotHash: snapshot.snapshotHash, librarySize: all.length };
 	}
@@ -744,7 +752,11 @@ export class SoundService {
 		const take = e.take;
 		if (!take) return this.fileOf(e);
 		const path = await this.fileOf(e);
-		const out = takeAudioCacheFile(this.core.config.paths.soundCacheDir, fingerprintHex(e.fingerprint), take.index);
+		const out = takeAudioCacheFile(
+			this.core.config.paths.soundCacheDir,
+			fingerprintHex(e.fingerprint),
+			take.index,
+		);
 		if ((await stat(out).catch(() => null))?.isFile()) return out;
 		return this.limitVisual(async () => {
 			if ((await stat(out).catch(() => null))?.isFile()) return out;
@@ -781,7 +793,10 @@ export class SoundService {
 	}
 
 	/** The audio stream of a sound's content (probed once per engine). */
-	private async streamFor(e: SoundEntry, path: string): Promise<Awaited<ReturnType<typeof probeAudioStream>>> {
+	private async streamFor(
+		e: SoundEntry,
+		path: string,
+	): Promise<Awaited<ReturnType<typeof probeAudioStream>>> {
 		let stream = this.streamOf.get(e.fingerprint) ?? null;
 		if (!stream) {
 			stream = await this.mediaCall(() => probeAudioStream(this.core.ffmpeg, path));

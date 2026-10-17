@@ -88,7 +88,9 @@ describe('LibraryProvenance.take', () => {
 			{ ...TAKE_LIB.take, soundId: takeIdOf(REC, 2) },
 		]) {
 			expect(LibraryProvenanceSchema.safeParse({ ...TAKE_LIB, take }).success).toBe(false);
-			expect(h.tx([{ type: 'media.setLibraryInfo', mediaId: m, library: { ...TAKE_LIB, take } }]).ok).toBe(false);
+			expect(h.tx([{ type: 'media.setLibraryInfo', mediaId: m, library: { ...TAKE_LIB, take } }]).ok).toBe(
+				false,
+			);
 		}
 		expect(h.doc.media[m]!.library).toBeUndefined();
 	});
@@ -141,7 +143,8 @@ describe('pickVariant over takes (vary the take, not the pitch)', () => {
 
 	it('uses the ordinary top-N rotation when the best candidate is no take or its recording has one take here', () => {
 		expect(
-			pickVariant(['snd_aaaaaaaaaaaaaaaa', ...takes(3)], { seed: 1, cueId: 'c', recentSoundIds: [] })!.soundId,
+			pickVariant(['snd_aaaaaaaaaaaaaaaa', ...takes(3)], { seed: 1, cueId: 'c', recentSoundIds: [] })!
+				.soundId,
 		).toBe('snd_aaaaaaaaaaaaaaaa');
 		const single = [takeIdOf(REC, 2), 'snd_aaaaaaaaaaaaaaaa'];
 		expect(pickVariant(single, { seed: 1, cueId: 'c', recentSoundIds: [takeIdOf(REC, 2)] })!.soundId).toBe(
@@ -194,14 +197,19 @@ describe('materialsOf (P6-E10 index field)', () => {
 
 	it('property: any texts give a sorted, duplicate-free subset of the twelve materials', () => {
 		fc.assert(
-			fc.property(fc.array(fc.oneof(fc.string(), fc.constantFrom('wood', 'GLASS', 'sci fi', 'Água')), { maxLength: 20 }), (texts) => {
-				const m = materialsOf(texts);
-				expect(new Set(m).size).toBe(m.length);
-				const order = m.map((x) => SOUND_MATERIALS.indexOf(x));
-				expect(order.every((o) => o >= 0)).toBe(true);
-				expect([...order].sort((a, b) => a - b)).toEqual(order);
-				expect(materialsOf(texts)).toEqual(m);
-			}),
+			fc.property(
+				fc.array(fc.oneof(fc.string(), fc.constantFrom('wood', 'GLASS', 'sci fi', 'Água')), {
+					maxLength: 20,
+				}),
+				(texts) => {
+					const m = materialsOf(texts);
+					expect(new Set(m).size).toBe(m.length);
+					const order = m.map((x) => SOUND_MATERIALS.indexOf(x));
+					expect(order.every((o) => o >= 0)).toBe(true);
+					expect([...order].sort((a, b) => a - b)).toEqual(order);
+					expect(materialsOf(texts)).toEqual(m);
+				},
+			),
 			{ numRuns: 300 },
 		);
 	});

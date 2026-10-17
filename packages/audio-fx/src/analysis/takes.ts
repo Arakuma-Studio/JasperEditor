@@ -87,7 +87,10 @@ export interface AnalysedTake extends TakeSegment {
 }
 
 const qDb = (x: number): number => {
-	const v = Math.round(Math.max(DESCRIPTOR_FLOOR_DB, Math.min(0, Number.isFinite(x) ? x : DESCRIPTOR_FLOOR_DB)) * 100) / 100;
+	const v =
+		Math.round(
+			Math.max(DESCRIPTOR_FLOOR_DB, Math.min(0, Number.isFinite(x) ? x : DESCRIPTOR_FLOOR_DB)) * 100,
+		) / 100;
 	return v === 0 ? 0 : v;
 };
 const qSec = (x: number): number => Math.round(x * 1e7) / 1e7;
@@ -109,7 +112,8 @@ function power(ch: readonly Float32Array[], a: number, b: number): number {
 function frameDb(ch: readonly Float32Array[], n: number, w: number): Float64Array {
 	const k = Math.ceil(n / w);
 	const out = new Float64Array(k);
-	for (let f = 0; f < k; f++) out[f] = Math.max(DESCRIPTOR_FLOOR_DB, dbPow(power(ch, f * w, Math.min(n, (f + 1) * w))));
+	for (let f = 0; f < k; f++)
+		out[f] = Math.max(DESCRIPTOR_FLOOR_DB, dbPow(power(ch, f * w, Math.min(n, (f + 1) * w))));
 	return out;
 }
 
@@ -121,7 +125,12 @@ function percentile10(v: Float64Array): number {
 }
 
 /** Runs of ≥ `minLen` samples whose every channel is within ±`level` (digital silence), as [start, end) pairs. */
-function silentRuns(ch: readonly Float32Array[], n: number, minLen: number, level: number): [number, number][] {
+function silentRuns(
+	ch: readonly Float32Array[],
+	n: number,
+	minLen: number,
+	level: number,
+): [number, number][] {
 	const runs: [number, number][] = [];
 	let from = -1;
 	for (let i = 0; i <= n; i++) {
@@ -272,7 +281,11 @@ function takesOf(p: PreparedSound): TakeSegment[] {
 		let chopped = tailDb > TAKE_CLEAN_TAIL_DB;
 		if (!chopped)
 			for (const [g0] of gaps)
-				if (g0 > e.start + w5 && g0 < e.end && rel(power(ch, Math.max(e.start, g0 - w5), g0)) > TAKE_CLEAN_TAIL_DB) {
+				if (
+					g0 > e.start + w5 &&
+					g0 < e.end &&
+					rel(power(ch, Math.max(e.start, g0 - w5), g0)) > TAKE_CLEAN_TAIL_DB
+				) {
 					chopped = true;
 					break;
 				}

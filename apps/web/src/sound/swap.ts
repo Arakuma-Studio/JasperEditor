@@ -12,7 +12,7 @@
 // added up and applied as one step. With "Audition on swap" (default on) the 2 s around the swapped sound play in
 // context afterwards.
 import type { EngineClient } from '@jasper/engine-client';
-import { type Clip, type Command, type Sequence, SOUND_DESIGN_LIMITS } from '@jasper/project';
+import { type Clip, type Command, type Sequence, SOUND_DESIGN_LIMITS, SOUND_REF_RE } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { t } from '../i18n/runtime.ts';
 import {
@@ -171,7 +171,8 @@ export function resetVariationRun(): void {
 	pendingSteps = 0;
 }
 
-const SOUND_ID = /^snd_[0-9a-f]{16}$/;
+/** A library sound id or a take id (P6-E9). */
+const SOUND_ID = SOUND_REF_RE;
 
 /**
  * The variation ring a clip carries (`sfx.alternatives`, the original sound first), or, for a clip without one, the

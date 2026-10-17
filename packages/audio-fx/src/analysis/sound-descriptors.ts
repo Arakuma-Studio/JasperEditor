@@ -767,7 +767,12 @@ function dcOf(ch: readonly Float32Array[], n: number): number | null {
 }
 
 /** Input checked and sanitised like {@link analyzeSound} does (shared with takes.ts). */
-export type PreparedSound = { channels: Float32Array[]; frames: number; totalFrames: number; sampleRate: number };
+export type PreparedSound = {
+	channels: Float32Array[];
+	frames: number;
+	totalFrames: number;
+	sampleRate: number;
+};
 
 /**
  * Validates and sanitises analysis input exactly like {@link analyzeSound} (throws `SoundAnalysisError` for invalid
@@ -800,7 +805,10 @@ export function soundOnsets(p: PreparedSound, maxSec = MAX_ANALYSIS_SECONDS): nu
 }
 
 /** The first run of maximal envelope windows [a, b] and the active span (samples within 60 dB of the peak). */
-function activeSpan(env: Envelope, n: number): { a: number; b: number; jFirst: number; jLast: number; s0: number; s1: number } {
+function activeSpan(
+	env: Envelope,
+	n: number,
+): { a: number; b: number; jFirst: number; jLast: number; s0: number; s1: number } {
 	const len = env.p.length;
 	const rel = (j: number): number => dbPow(env.p[j]! / env.max);
 	const tie = env.max * (1 - 1e-9);
