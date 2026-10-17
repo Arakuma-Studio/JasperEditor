@@ -14,7 +14,6 @@ import {
 	type ProposalItem,
 	type ProposalPreview,
 	previewProposal,
-	previewProposalSteps,
 	previewStats,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';

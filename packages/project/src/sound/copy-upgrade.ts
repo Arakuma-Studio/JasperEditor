@@ -48,7 +48,7 @@ type DocLike = {
 	media: Readonly<
 		Record<string, { id: string; kind: string; fingerprint: string; derivation?: unknown; library?: unknown }>
 	>;
-	sequences: Readonly<Record<string, { clips: Readonly<Record<string, { mediaId?: unknown }>> }>>;
+	sequences: Readonly<Record<string, { clips: Readonly<Record<string, object>> }>>;
 };
 
 /**
@@ -66,7 +66,9 @@ export function olderLibraryCopyOf(doc: DocLike, soundId: string, fingerprint: s
 	if (!candidates.length) return null;
 	const uses = new Map(candidates.map((id) => [id, 0]));
 	for (const seq of Object.values(doc.sequences))
-		for (const c of Object.values(seq.clips))
-			if (typeof c.mediaId === 'string' && uses.has(c.mediaId)) uses.set(c.mediaId, uses.get(c.mediaId)! + 1);
+		for (const c of Object.values(seq.clips)) {
+			const mediaId = (c as { mediaId?: unknown }).mediaId;
+			if (typeof mediaId === 'string' && uses.has(mediaId)) uses.set(mediaId, uses.get(mediaId)! + 1);
+		}
 	return candidates.sort((x, y) => uses.get(y)! - uses.get(x)! || (x < y ? -1 : x > y ? 1 : 0))[0]!;
 }

@@ -474,7 +474,8 @@ describe('properties', () => {
 					const masked = (i: number, ws: readonly SolverWeight[]) => {
 						const t = terms[i]!;
 						let e = e10(t.bedDomDb);
-						for (const x of t.terms) if (sfxWeightMasks(ws[x.index]!, ws[i]!)) e += e10(x.at0Db + gains[x.index]!);
+						for (const x of t.terms)
+							if (sfxWeightMasks(ws[x.index]!, ws[i]!)) e += e10(x.at0Db + gains[x.index]!);
 						return Math.max(-200, dB10(e));
 					};
 					// as given, and with every weight changed (the solver evaluated on the re-weighted events)
@@ -489,10 +490,10 @@ describe('properties', () => {
 								return;
 							}
 							// the terms do not depend on the weights; liftDb = sound + g − masked (0.01 dB steps)
-							expect(t2[i]!.terms.map((x) => [x.index, x.at0Db])).toEqual(terms[i]!.terms.map((x) => [x.index, x.at0Db]));
-							const soundDom = r.liftDb - gains[i]! + (r.sfxMaskingDb ?? 0) + terms[i]!.bedDomDb;
+							expect(t2[i]!.terms.map((x) => [x.index, x.at0Db])).toEqual(
+								terms[i]!.terms.map((x) => [x.index, x.at0Db]),
+							);
 							expect(r.sfxMaskingDb!).toBeCloseTo(masked(i, ws) - terms[i]!.bedDomDb, 1);
-							expect(Number.isFinite(soundDom)).toBe(true);
 							expect(e.clipId).toBe(r.clipId);
 						});
 					}

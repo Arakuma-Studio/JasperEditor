@@ -63,15 +63,20 @@ export type SoundCheckLevelModel = {
 	 * The sound effects overlapping it (the solver's inter-SFX masking; see the module docs): `liftAt0Db` is over the bed
 	 * plus the terms of a lower weight than `weight` (its weight at the check) at their checked `gainDb`. Absent: none.
 	 */
-	masking?: SoundCheckMaskingModel | undefined;
+	masking?: SoundCheckMaskingModel;
 };
 
 /** One sound effect's share of another's bed in that one's dominant bands (dB at 0 dB clip gain). */
-export type SoundCheckMaskingTerm = { clipId: string; weight: SfxSolverWeight; gainDb: number; at0Db: number };
+export type SoundCheckMaskingTerm = {
+	clipId: string;
+	weight: SfxSolverWeight;
+	gainDb: number;
+	at0Db: number;
+};
 export type SoundCheckMaskingModel = {
 	weight: SfxSolverWeight;
 	bedDomDb: number;
-	terms: readonly SoundCheckMaskingTerm[];
+	terms: SoundCheckMaskingTerm[];
 };
 
 /** Most overlapping sounds kept per sound effect (the loudest at their checked gains). */

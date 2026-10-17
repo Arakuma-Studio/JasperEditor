@@ -101,9 +101,8 @@ describe('view_sound_timeline: the measured picture motion', () => {
 	it('hostile pixelMotion never throws', () => {
 		fc.assert(
 			fc.property(fc.anything(), (junk) => {
-				const v = visual('absent') as SoundVisualResponse & { pixelMotion?: unknown };
-				v.pixelMotion = junk;
-				const { cells } = drawSoundTimeline(v as SoundVisualResponse, { width: 600 });
+				const v = { ...visual('absent'), pixelMotion: junk } as unknown as SoundVisualResponse;
+				const { cells } = drawSoundTimeline(v, { width: 600 });
 				expect(['measured', 'partly analysed', 'not analysed']).toContain(cells.pixelMotion);
 			}),
 			{ numRuns: 200 },

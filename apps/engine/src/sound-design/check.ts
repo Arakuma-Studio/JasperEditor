@@ -2196,7 +2196,7 @@ export async function checkSequence(
 	// ── safe fixes judged together (WP6.5b): applied in order on a dry-run copy, each re-validated after the ones
 	// before it (two safe fixes of one sound can overload it together; normalisation off, a gain can push the mix's
 	// true peak over the ceiling): a fix that is no longer safe is marked so, with why and what it conflicts with
-	const levelGuard: SoundCheckLevelGuard = {
+	const levelGuard: SoundCheckLevelGuard & { levels: SoundCheckLevelModel[] } = {
 		ceilingDb: preset.truePeakDb,
 		eventCeilingDb: levelOptions(opts.preset).truePeakCeilingDb,
 		bedCapLu: { hero: BED_CAP_LU.hero, support: BED_CAP_LU.support, ambient: BED_CAP_LU.ambient },

@@ -142,7 +142,7 @@ describe('media.upgradeLibraryCopy', () => {
 		refused({ mediaId: 'med_ffffffffffffffff', asset: copyAsset(0.05, 0) }, 'E_NOT_FOUND');
 		refused({ mediaId: old, asset: copyAsset(0.05, 0, 'snd_00000000000000aa') }, 'E_INVALID_PARAM');
 		const longer = copyAsset(0.05, 0);
-		longer.probe.durationFlicks += Math.round(0.2 * FLICKS_PER_SECOND);
+		longer.probe.durationFlicks = longer.probe.durationFlicks! + Math.round(0.2 * FLICKS_PER_SECOND);
 		refused({ mediaId: old, asset: longer }, 'E_INVALID_PARAM');
 		const twin = copyAsset(0.05, 0);
 		register(h, twin);
