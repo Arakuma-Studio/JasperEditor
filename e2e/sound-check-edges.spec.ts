@@ -49,7 +49,9 @@ test.afterAll(async () => {
 const text = (r: CallToolResult) =>
 	(r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
 async function tool<T>(name: string, args: Record<string, unknown>): Promise<T> {
-	const r = (await mcp.callTool({ name, arguments: args }, undefined, { timeout: CHECK_MS })) as CallToolResult;
+	const r = (await mcp.callTool({ name, arguments: args }, undefined, {
+		timeout: CHECK_MS,
+	})) as CallToolResult;
 	expect(r.isError, `${name}: ${text(r)}\n${mcpLog.join('').slice(-2000)}`).toBeFalsy();
 	return JSON.parse(text(r)) as T;
 }
@@ -138,11 +140,23 @@ test('Sound Check edges: CLICK and EDGE under Edges, ShareAlike under Licence, t
 	const item = (n: string) => Object.values(items).find((i) => i.name === n)!;
 	const setup = await transact(page, [
 		{ type: 'track.add', kind: 'audio', count: 2 },
-		{ type: 'clip.place', source: { projectItemId: item('music.wav').id }, at: 0, tracks: { audio: 'A1' }, ref: '$m' },
+		{
+			type: 'clip.place',
+			source: { projectItemId: item('music.wav').id },
+			at: 0,
+			tracks: { audio: 'A1' },
+			ref: '$m',
+		},
 		{ type: 'essentialSound.setType', clipIds: ['$m'], audioType: 'music' },
 		{ type: 'transition.add', clipId: '$m', edge: 'out', effectId: 'jasper.exponential-fade', duration: 60 },
 		{ type: 'mixer.setLoudness', enabled: true, targetLufs: -14, truePeakDb: -1 },
-		{ type: 'clip.place', source: { projectItemId: item('step.wav').id }, at: 120, tracks: { audio: 'A2' }, ref: '$s' },
+		{
+			type: 'clip.place',
+			source: { projectItemId: item('step.wav').id },
+			at: 120,
+			tracks: { audio: 'A2' },
+			ref: '$s',
+		},
 		{ type: 'essentialSound.setType', clipIds: ['$s'], audioType: 'sfx' },
 		{
 			type: 'clip.place',
@@ -155,7 +169,9 @@ test('Sound Check edges: CLICK and EDGE under Edges, ShareAlike under Licence, t
 	] as never);
 	expect(setup.ok, JSON.stringify(setup)).toBe(true);
 	const seq0 = Object.values(
-		await query<Record<string, { id: string; clips: Record<string, Clip> }>>(page, 'doc.get', { path: ['sequences'] }),
+		await query<Record<string, { id: string; clips: Record<string, Clip> }>>(page, 'doc.get', {
+			path: ['sequences'],
+		}),
 	)[0]!;
 	const stepClip = Object.values(seq0.clips).find((c) => c.start === 120)!;
 	const chordClip = Object.values(seq0.clips).find((c) => c.start === 150)!;
@@ -211,10 +227,10 @@ test('Sound Check edges: CLICK and EDGE under Edges, ShareAlike under Licence, t
 	await panel().screenshot({ path: join(outDir, 'panel.png') });
 
 	// the agent's view: the same codes at the same frames
-	const agent = await tool<{ verdict: string; issues: { code: string; frame?: number; range?: { start: number } }[] }>(
-		'sound_check',
-		{ projectId, images: false },
-	);
+	const agent = await tool<{
+		verdict: string;
+		issues: { code: string; frame?: number; range?: { start: number } }[];
+	}>('sound_check', { projectId, images: false });
 	const agentFindings = agent.issues.map((i) => `${i.code}@${i.frame ?? i.range?.start ?? ''}`).sort();
 	expect(agentFindings).toEqual(await panelFindings());
 	expect(agentFindings).toContain('CLICK@120');
@@ -223,7 +239,9 @@ test('Sound Check edges: CLICK and EDGE under Edges, ShareAlike under Licence, t
 	// Fix on the click: one History entry; Re-run: the click is gone
 	const before = await appliedLabels(page);
 	await click.getByTestId('sound-check-fix').click();
-	await expect.poll(async () => (await appliedLabels(page)).length, { timeout: 60_000 }).toBe(before.length + 1);
+	await expect
+		.poll(async () => (await appliedLabels(page)).length, { timeout: 60_000 })
+		.toBe(before.length + 1);
 	expect((await appliedLabels(page)).at(-1)).toMatch(/^Sound Check Fix: Fade it in/);
 	const live = (await panel().getByTestId('sound-check-live').textContent()) ?? '';
 	await panel().getByTestId('sound-check-run').click();

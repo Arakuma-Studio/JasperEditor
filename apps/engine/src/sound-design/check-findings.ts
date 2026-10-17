@@ -166,7 +166,8 @@ export class CheckProbes {
 	constructor(sampleRate: number, channels: number, stemIds: Record<StemName, Set<string>>) {
 		// the mix, the sound effects and the bed: dialogue, music and ambience are parts of the bed (a click in one of them
 		// is in the bed too, attributed to the same clip edges), so they are not scanned again (decision: −3 of 6 scans)
-		for (const s of CLICK_STEMS) if (stemIds[s].size > 0) this.clicks.set(s, new ClickDetector(sampleRate, channels));
+		for (const s of CLICK_STEMS)
+			if (stemIds[s].size > 0) this.clicks.set(s, new ClickDetector(sampleRate, channels));
 		for (const s of ['sfx', 'music', 'dialogue'] as const)
 			if (stemIds[s].size > 0) this.presence.set(s, new PresenceMeter(sampleRate, channels));
 	}
