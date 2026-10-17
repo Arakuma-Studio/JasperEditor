@@ -22,9 +22,15 @@ function stable(v: unknown, ids: Map<string, string>, depth = 0): string {
 	if (v === null || typeof v !== 'object') return JSON.stringify(v) ?? 'null';
 	if (Array.isArray(v)) return `[${v.map((x) => stable(x, ids, depth + 1)).join(',')}]`;
 	// Keyframe ids are left out altogether (WP4.2a: a curve written again is the same mix), and so are names (a
-	// renamed clip, track or submix sounds the same).
+	// renamed clip, track or submix sounds the same) and keys holding undefined, as JSON drops them (WP6.5b: the engine
+	// measures a JSON copy of the edit, an editor session checks its in-memory document: both must hash the same).
 	const keys = Object.keys(v as object)
-		.filter((k) => !(k === 'id' && isKeyframe(v as object)) && k !== 'name')
+		.filter(
+			(k) =>
+				!(k === 'id' && isKeyframe(v as object)) &&
+				k !== 'name' &&
+				(v as Record<string, unknown>)[k] !== undefined,
+		)
 		.sort();
 	return `{${keys
 		.map(

@@ -22,7 +22,7 @@ import {
 	type ClickBurst,
 	ClickDetector,
 	decayAfterMs,
-	evaluateSfxGain,
+	evaluateSfxGains,
 	harshExcess,
 	isAbruptEntry,
 	isChoppedDecay,
@@ -140,8 +140,16 @@ export type FindRow = {
 	frame: number;
 	alignedFrame: number | null;
 	codes: Set<SoundCheckCode>;
-	/** The solver's event and options of this sound (set by the MASKED pass when it was measured). */
-	solver?: { ev: SolverEvent; lo: { programLufs: number; truePeakCeilingDb: number } } | null;
+	/**
+	 * The solver's measured events, their gains, this sound's index among them and the options (set by the MASKED pass
+	 * when it was measured): the lift after a gain change is the solver's, the lower sound effects under it included.
+	 */
+	solver?: {
+		events: SolverEvent[];
+		gains: readonly number[];
+		index: number;
+		lo: { programLufs: number; truePeakCeilingDb: number };
+	} | null;
 };
 
 // ── probes fed by the one-pass render ───────────────────────────────────────────────────────────────────────────────
@@ -899,11 +907,20 @@ export function harshFindings(
 			// the MASKED minimum after the cut, for every sound it applies to (layers ride their cue's first layer)
 			let maskedAfter: number | null = null;
 			let minNeeded = 0;
+			// every measured sound's lift with this event's sounds lowered (the solver's joint evaluation)
+			const sv = ev.find((r) => r.solver)?.solver ?? null;
+			const lowered = sv
+				? (() => {
+						const g = [...sv.gains];
+						for (const r of ev) if (r.solver) g[r.solver.index] = (g[r.solver.index] ?? 0) - amount;
+						return evaluateSfxGains(sv.events, g, sv.lo);
+					})()
+				: null;
 			const masksOk = ev.every((r) => {
 				const min = r.info.weight === 'ambient' || r.sfx?.role === 'layer' ? null : MASKED_MIN_LIFT_DB[r.info.weight];
 				if (min === null) return true;
-				if (!r.solver) return false;
-				const lift = evaluateSfxGain(r.solver.ev, r.info.gainDb - amount, r.solver.lo).liftDb;
+				if (!r.solver || !lowered) return false;
+				const lift = lowered[r.solver.index]?.liftDb ?? null;
 				if (lift === null || lift < min) {
 					maskedAfter = lift;
 					minNeeded = min;

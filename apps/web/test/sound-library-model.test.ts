@@ -100,6 +100,7 @@ describe('requests, collections, badges, names', () => {
 				types: ['hit', 'boom'],
 				refine: { length: 'short', tone: 'dark' },
 				commercialSafe: false,
+				includeShareAlike: false,
 				similarTo: { id: soundId(9), title: 'x' },
 			},
 			{ limit: 10, offset: 20 },
@@ -118,6 +119,15 @@ describe('requests, collections, badges, names', () => {
 		expect(
 			searchRequest({ ...DEFAULT_FILTERS, collection: 'source:synth' }, { limit: 1, offset: 0 }).sources,
 		).toEqual(['synth']);
+		// "Include ShareAlike" (spec 12 P6-E13): commercial-safe plus CC BY-SA; it means nothing without Commercial-safe
+		expect(
+			searchRequest({ ...DEFAULT_FILTERS, includeShareAlike: true }, { limit: 1, offset: 0 }).license,
+		).toBe('commercial-safe-sa');
+		expect(
+			searchRequest({ ...DEFAULT_FILTERS, commercialSafe: false, includeShareAlike: true }, { limit: 1, offset: 0 })
+				.license,
+		).toBe('any');
+		expect(DEFAULT_FILTERS.includeShareAlike).toBe(false);
 	});
 	it('searches a local collection like the engine: filters, keeps its order without a query, facets', () => {
 		const a = soundEntry({ title: 'Big boom', types: ['boom'] });

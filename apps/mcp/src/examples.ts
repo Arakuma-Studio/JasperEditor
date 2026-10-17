@@ -309,6 +309,58 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 			},
 		},
 	},
+	// WP6.5b: the project's older copy of a library sound (here registered without lead silence) gets the engine's new
+	// copy in place; its clips move by the 50 ms lead and play the same samples (import_sounds / insert_sound do this).
+	'media.upgradeLibraryCopy': {
+		type: 'media.upgradeLibraryCopy',
+		mediaId: { mediaByName: 'impact-old.ogg' },
+		asset: {
+			kind: 'audio',
+			fingerprint: 'q1:00000000000000000000000000000000000000000000000000000000000e0001',
+			originalName: 'Impact Metal 03.wav',
+			sizeBytes: 182_444,
+			container: 'wav',
+			probe: {
+				durationFlicks: 670_320_000,
+				startTimecode: null,
+				streams: [
+					{
+						index: 0,
+						type: 'audio',
+						codec: 'pcm_f32le',
+						sampleRate: 48_000,
+						channels: 1,
+						channelLayout: 'mono',
+					},
+				],
+				rotationDegrees: 0,
+				hasAlpha: false,
+				variableFrameRate: false,
+			},
+			locators: [{ type: 'engine-store', engineId: 'local', key: 'mk_00000000000000000000e001' }],
+			library: {
+				soundId: 'snd_0123456789abcdef',
+				title: 'Impact Metal 03',
+				types: ['hit'],
+				source: { type: 'starter' },
+				license: 'CC0-1.0',
+				author: 'Kenney',
+				attribution: null,
+				descriptors: {
+					peakSec: 0.0623,
+					onsetSec: 0.061,
+					headQuietSec: 0.0605,
+					durationSec: 0.95,
+					octaveBandsDb: [-30, -25, -20, -18, -19, -24, -33],
+					centroidHz: 1820,
+					maxMomentaryLufs: -14.2,
+				},
+				leadSilenceSec: 0.05,
+			},
+		},
+		ifPossible: true,
+		ref: '$sound',
+	},
 	// sound-design (spec 12 §2.2, §2.9): cues (what find_sound_cues / deriveCues output) and peak-aligned placement.
 	'soundCue.add': {
 		type: 'soundCue.add',
@@ -400,6 +452,14 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		note: 'The music drowns the voice here',
 		slot: 'worst',
 		clipId: { clipAt: { track: 'A1', at: 15 } },
+	},
+	// WP6.5b: a precondition for changes computed from a measurement of the mix (the `mixHash` of a loudness analysis,
+	// a Sound Check or a job report): the transaction is refused (E_REVISION_MISMATCH, nothing applied) if the mix
+	// changed since; put it first.
+	'soundDesign.expectMix': {
+		type: 'soundDesign.expectMix',
+		mixHash: '7f3a9c0e5b2d4a11',
+		delivery: 'web',
 	},
 	// Phase 4 mixing (spec 12 §2.4): a music dip on clips (minimum with their Volume; times in sequence flicks)…
 	'audio.volumeDip': {

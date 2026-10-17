@@ -7,6 +7,7 @@ import {
 	type AudioClip,
 	type Clip,
 	type ClipSfx,
+	clipPitchOf,
 	FLICKS_PER_SECOND,
 	formatTimecode,
 	type LibraryProvenance,
@@ -340,19 +341,13 @@ export function paletteOf(seq: Sequence | null | undefined): string[] {
 	}
 }
 
-/** Pitch shift of a clip in semitones: its Pitch Shifter (semitones + cents), else its varispeed in whole semitones. */
+/**
+ * Pitch shift of a clip in semitones (2 decimals): the shift placement or a swap recorded (`sfx.pitch`, exact, fractional
+ * varispeed included) while it still matches the clip, else its Pitch Shifter (semitones + cents), else its varispeed in
+ * whole semitones (`clipPitchOf`).
+ */
 export function clipPitchSt(clip: Clip): number {
 	if (clip.kind !== 'audio') return 0;
-	const c = clip as AudioClip;
-	for (const fx of c.effects ?? []) {
-		if ((fx as { effectId?: string }).effectId !== 'jasper.audio.pitch-shifter') continue;
-		const p = fx.params as Record<string, { value?: unknown } | undefined>;
-		const st = typeof p.semitones?.value === 'number' ? p.semitones.value : 0;
-		const cents = typeof p.cents?.value === 'number' ? p.cents.value : 0;
-		return Math.round((st + cents / 100) * 100) / 100;
-	}
-	const rate = c.speed?.rate;
-	if (!fin(rate) || rate <= 0) return 0;
-	const st = Math.round(12 * Math.log2(rate));
-	return Math.abs(st) <= 3 ? st : 0;
+	const st = clipPitchOf(clip as AudioClip & { sfx?: unknown }).st;
+	return Number.isFinite(st) ? Math.round(st * 100) / 100 : 0;
 }

@@ -435,6 +435,37 @@ describe('clip menu, badges, Essential Sound, Properties', () => {
 		expect((s.seq().clips[s.clipId] as AudioClip).speed.rate).toBeCloseTo(rate0, 6);
 	});
 
+	it('Essential Sound ▸ Pitch shows a fractional varispeed shift; Reset gives back the exact variation (WP6.5b)', async () => {
+		const s = await filled();
+		const view = () => (
+			<SessionProvider session={s.session}>
+				<EssentialSfxSection
+					session={s.session}
+					seq={s.seq()}
+					clips={[s.seq().clips[s.clipId] as AudioClip]}
+				/>
+			</SessionProvider>
+		);
+		const r = render(view());
+		const rerender = () => r.rerender(view());
+		const clip = () => s.seq().clips[s.clipId] as AudioClip;
+		const rate0 = clip().speed.rate;
+		const mediaId = clip().mediaId;
+		const res = s.session.apply({
+			label: 'Sound Pitch',
+			origin: 'user',
+			sequenceId: s.seqId,
+			commands: [{ type: 'soundDesign.swap', clipId: s.clipId, mediaId, pitchSt: 2.5 }],
+		});
+		expect(res.ok).toBe(true);
+		rerender();
+		expect(screen.getByTestId('essential-pitch').textContent).toBe('+2.5 st');
+		fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+		rerender();
+		expect(clip().speed.rate).toBe(rate0);
+		expect(screen.getByTestId('essential-pitch').textContent).toBe('0 st');
+	});
+
 	it('Role / Align are one Tab stop each; arrow keys, Home and End move and choose (WP6.5a item 4)', async () => {
 		const s = await filled();
 		const view = () => (

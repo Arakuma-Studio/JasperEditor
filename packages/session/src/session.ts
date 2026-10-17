@@ -5,6 +5,7 @@ import {
 	applyTransaction,
 	type CommandContext,
 	diffDocuments,
+	type IdSource,
 	type Issue,
 	invariantMode,
 	type Origin,
@@ -54,6 +55,11 @@ export type SessionTxInput = TxInput & {
 	selectAfter?: (
 		result: Extract<TransactionResult, { ok: true }>,
 	) => { timeline?: readonly string[]; project?: readonly string[] } | null;
+	/**
+	 * The ids this transaction creates its entities with (default the session's). The engine's proposal accept passes
+	 * ids it journalled beforehand (`createPresetIdSource`), so it can tell after a crash whether the accept applied.
+	 */
+	ids?: IdSource;
 };
 
 export type EditorSessionOptions = {
@@ -301,7 +307,7 @@ export class EditorSession {
 				errors: [{ commandIndex: -1, code: 'E_QUEUED', message: 'A gesture is in progress; use submit()' }],
 			};
 		}
-		return this.commit(tx, this.commandContext());
+		return this.commit(tx, this.commandContext(tx.ids ? { ids: tx.ids } : {}));
 	}
 
 	/**
@@ -324,7 +330,7 @@ export class EditorSession {
 
 	private commit(tx: SessionTxInput, ctx: CommandContext): TransactionResult {
 		const before = this.store.getState();
-		const { coalesceKey, coalesceWindowMs, coalesceRelabel, selectAfter, ...rest } = tx;
+		const { coalesceKey, coalesceWindowMs, coalesceRelabel, selectAfter, ids: _ids, ...rest } = tx;
 		const { document, result } = applyTransaction(before.document, { protocol: TX_PROTOCOL, ...rest }, ctx);
 		if (!result.ok || tx.dryRun || document === before.document) return result;
 		const origin = tx.origin as Origin;

@@ -712,6 +712,23 @@ export const SOUND_CHECK_MESSAGES = {
 	whyLayer: 'Only if the layer should be heard: listen to the cue first',
 	whyCoverage: 'Only if these moments should sound like the others; mute them instead to keep them silent',
 	whyEnding: 'It changes how the mix ends: listen to it',
+	// why a fix that is safe on its own is not safe applied with the safe fixes before it, or would raise the true peak
+	// (`planSoundCheckFixes`, check-fixes.ts)
+	whyFixOverCap: 'It would leave {0} {1} LU over the bed (at most {2} LU for its role)',
+	whyFixMasked:
+		'It would leave {0} only {1} dB over the bed in its dominant band (at least {2} dB for its role)',
+	whyFixEventPeak: 'It would make {0} peak at {1} dBTP on its own (ceiling {2} dBTP)',
+	whyFixMixPeak:
+		'With loudness normalisation off, the mix where {0} plays could reach {1} dBTP (ceiling {2} dBTP)',
+	whyFixRefused: 'It no longer applies after the safe fixes before it: {0}',
+	whyFixUnresolved: 'After the safe fixes before it, it no longer resolves its finding',
+	whyFixSoundChanged:
+		'Another safe fix changes the sound or the position of {0}: its level is judged again on the next check',
+	whyFixBedChanged:
+		'The safe fixes before it change sound-effect levels over the speech: run the check again before ducking',
+	// a mono Mix is checked in mono (its own layout); a stereo export of it measures louder before normalisation
+	monoMix:
+		'The Mix is mono and was checked in mono: an export with 2 channels plays it in both and measures {0} LU louder while loudness normalisation is off',
 } as const;
 export type SoundCheckMessageKey = keyof typeof SOUND_CHECK_MESSAGES;
 

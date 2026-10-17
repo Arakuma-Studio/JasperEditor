@@ -1,5 +1,10 @@
 import { defineProject } from 'vitest/config';
 
 export default defineProject({
-	test: { include: ['test/**/*.test.ts'], environment: 'node', testTimeout: 120_000 },
+	test: {
+		setupFiles: ['../testkit/src/fast-check-setup.ts'],
+		include: ['test/**/*.test.ts'],
+		environment: 'node',
+		testTimeout: 120_000,
+	},
 });

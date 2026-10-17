@@ -7,6 +7,7 @@ import {
 	isSoundTypeId,
 	type LicenseClass,
 	licenseClass,
+	type LicenseFilter,
 	type ProjectDocument,
 	rankSounds,
 	readLibraryProvenance,
@@ -139,8 +140,10 @@ export type LibraryFilters = {
 	collection: Collection;
 	types: readonly SoundTypeId[];
 	refine: RefineState;
-	/** Commercial-safe licences only (default on). */
+	/** Commercial-safe licences only (default on): without CC BY-SA unless `includeShareAlike` (spec 12 P6-E13). */
 	commercialSafe: boolean;
+	/** "Include ShareAlike": the Commercial-safe filter also lists CC BY-SA sounds (default off). */
+	includeShareAlike: boolean;
 	/** Find Similar: rank by similarity to this sound. */
 	similarTo: { id: string; title: string } | null;
 };
@@ -151,8 +154,14 @@ export const DEFAULT_FILTERS: LibraryFilters = {
 	types: [],
 	refine: {},
 	commercialSafe: true,
+	includeShareAlike: false,
 	similarTo: null,
 };
+
+/** The engine / ranking licence filter of the Library's filters. */
+export function licenseFilterOf(f: Pick<LibraryFilters, 'commercialSafe' | 'includeShareAlike'>): LicenseFilter {
+	return !f.commercialSafe ? 'any' : f.includeShareAlike ? 'commercial-safe-sa' : 'commercial-safe';
+}
 
 const SOURCE_TYPES: readonly SoundSourceType[] = ['starter', 'pack', 'folder', 'synth'];
 
@@ -191,7 +200,7 @@ export function searchRequest(
 	const req: SoundSearchRequest = {
 		limit: page.limit,
 		offset: page.offset,
-		license: f.commercialSafe ? 'commercial-safe' : 'any',
+		license: licenseFilterOf(f),
 	};
 	const q = localizeSoundQuery(f.query.trim());
 	if (q) req.q = q.slice(0, 500);
@@ -211,7 +220,7 @@ export function searchRequest(
 
 /** The same request for `rankSounds` (local collections). */
 export function rankRequest(f: LibraryFilters, similar: SoundEntry | null): SoundRankRequest {
-	const req: SoundRankRequest = { license: f.commercialSafe ? 'commercial-safe' : 'any', ...f.refine };
+	const req: SoundRankRequest = { license: licenseFilterOf(f), ...f.refine };
 	const q = localizeSoundQuery(f.query.trim());
 	if (q) req.query = q.slice(0, 500);
 	if (f.types.length) req.types = [...f.types];

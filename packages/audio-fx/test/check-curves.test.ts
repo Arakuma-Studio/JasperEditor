@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	CurveMeter,
 	evaluateSfxGain,
+	evaluateSfxGains,
 	LOUDNESS_FLOOR_LUFS,
 	locateByCorrelation,
 	loudnessCurve,
@@ -267,8 +268,17 @@ describe('evaluateSfxGain', () => {
 					}));
 					const opts = { programLufs, truePeakCeilingDb };
 					const solved = solveSfxGains(events, opts);
+					// overlapping sound effects mask each other in the solver (WP6.5b): the batch evaluation counts them
+					const all = evaluateSfxGains(
+						events,
+						solved.events.map((r) => r.gainDb),
+						opts,
+					);
 					for (const [i, r] of solved.events.entries()) {
-						const e = evaluateSfxGain(events[i]!, r.gainDb, opts);
+						const e = all[i]!;
+						expect(e.sfxMaskingDb).toBe(r.sfxMaskingDb);
+						// with nothing under it the single, bed-only evaluation is the same
+						if (r.maskedBy.length === 0) expect(evaluateSfxGain(events[i]!, r.gainDb, opts)).toEqual(e);
 						expect(e.gainDb).toBe(r.gainDb);
 						expect(e.liftDb).toBe(r.achievedLiftDb);
 						expect(e.peakOverBedLu).toBe(r.peakOverBedLu);

@@ -2,6 +2,7 @@
 // `pnpm e2e` prepares fixtures, binaries, and builds before Playwright starts.
 import { randomBytes } from 'node:crypto';
 import { defineConfig } from '@playwright/test';
+import { e2eServerTimeoutMs } from './e2e/server-timeout';
 
 const port = Number(process.env.E2E_PORT ?? 48110);
 const baseURL = `http://127.0.0.1:${port}`;
@@ -54,7 +55,8 @@ export default defineConfig({
 		command: 'node e2e/serve.mjs',
 		url: `${baseURL}/health`,
 		reuseExistingServer: false,
-		timeout: 60_000,
+		// Start-up of the built engine + web app; `E2E_SERVER_TIMEOUT_MS` overrides the 180 s default on a loaded host.
+		timeout: e2eServerTimeoutMs(),
 		stdout: 'pipe',
 		stderr: 'pipe',
 		env: { E2E_PORT: String(port), JASPER_LOCAL_TOKEN: token, JASPER_EDITOR_KEY: editorKey },

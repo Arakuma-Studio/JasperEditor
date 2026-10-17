@@ -586,7 +586,12 @@ export function SoundLibraryPanel(props: PanelProps) {
 				reveal: (sound) => {
 					revealId.current = sound.id;
 					setQueryInput(sound.title);
-					setFilters((f) => ({ ...DEFAULT_FILTERS, commercialSafe: f.commercialSafe, query: sound.title }));
+					setFilters((f) => ({
+						...DEFAULT_FILTERS,
+						commercialSafe: f.commercialSafe,
+						includeShareAlike: f.includeShareAlike,
+						query: sound.title,
+					}));
 				},
 				auditionInContext: () => latest.current.doAuditionInContext(latest.current.selected),
 			}),
@@ -1084,7 +1089,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 					type="button"
 					aria-pressed={filters.commercialSafe}
 					data-testid="sound-commercial-safe"
-					title="Only licences that allow commercial use (no NC / ND, no undeclared folders)"
+					title="Only licences that allow commercial use (no NC / ND, no undeclared folders, no ShareAlike unless included)"
 					onClick={() => setFilters((f) => ({ ...f, commercialSafe: !f.commercialSafe }))}
 					className={cx(
 						'rounded-pr-pill border px-1.5 text-pr-small leading-[16px]',
@@ -1095,6 +1100,23 @@ export function SoundLibraryPanel(props: PanelProps) {
 				>
 					{filters.commercialSafe ? '✓ ' : ''}Commercial-safe
 				</button>
+				{filters.commercialSafe ? (
+					<button
+						type="button"
+						aria-pressed={filters.includeShareAlike}
+						data-testid="sound-include-share-alike"
+						title="Also list CC BY-SA sounds: a video synced with one must be shared under CC BY-SA"
+						onClick={() => setFilters((f) => ({ ...f, includeShareAlike: !f.includeShareAlike }))}
+						className={cx(
+							'rounded-pr-pill border px-1.5 text-pr-small leading-[16px]',
+							filters.includeShareAlike
+								? 'border-pr-warning text-pr-warning'
+								: 'border-pr-border-subtle text-pr-muted hover:text-pr-text',
+						)}
+					>
+						{filters.includeShareAlike ? '✓ ' : ''}Include ShareAlike
+					</button>
+				) : null}
 				{filtersActive ? (
 					<button
 						type="button"

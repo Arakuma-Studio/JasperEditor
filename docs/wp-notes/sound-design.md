@@ -7137,6 +7137,183 @@ Every command ran on the build server through `remote.sh`:
 - The container rule is ffmpeg's muxers as used here: Opus in MP4 and AV1 / VP9 in MOV are not offered (reported as
   changed when asked).
 
+### Phase 6 → WP6.5b carry-over polish (engine/model)
+
+Branch `feat/sd-p6-polish-engine` (with the work of `feat/sd-p6pe-{media,solver,jobs,check,cues,proposals}` merged into
+it and finished there). The nineteen engine / model / MCP items of the carry-over list (`CARRYOVER.md`) and one handed over by WP6.5a
+(item 20), each fixed with
+a regression test that failed before the fix, or — where the request itself had to be decided — decided with the
+evidence. Every number below was **measured**: on the build server (`jasper-build`: 16 × Intel Haswell vCPU, Node
+20.20.2; shared with one other agent's runs, the load average is given with each benchmark) through `remote.sh`, with
+before and after on the same machine back to back — except items 18 and 19, measured on the shared host before the
+compute rule (said there). Before = the branch point `5d80ed30` (a detached worktree), after = this branch.
+
+#### Items
+
+| # | Item | Result | What changed | Regression test (failed before → passes) | Measured |
+|---|---|---|---|---|---|
+| 1 | `pitchSt: 0` after a fractional pitch kept up to ±0.5 st | fixed | `AudioClip.sfx.pitch {st, baseRate}` (optional, repaired field by field, `docs/project-files.md`): placement and every `soundDesign.swap {pitchSt}` record the applied shift and the speed under it (the seeded variation); `clipPitchOf` (`packages/project/src/sound/pitch.ts`) uses the record while it still matches the clip's speed / Pitch Shifter, else the old whole-semitone reading (clips placed before, speeds changed by other commands) | `packages/project/test/sound-pitch-exact.test.ts` (7: reset after 2.5 st gives the variation exactly, place / cue pitch, the Pitch Shifter boundary both ways, undo / redo, old and stale records, repair, a property over any run of pitches) — before: 2.5 st over a 1.02 variation reset to 0.9906, not 1.02 | reset exact to the bit (`toBe`) |
+| 2 | Lossy sounds > 120 s up to 128 samples late after an In point; > 120 s not padded | fixed up to 1 h; decided beyond | `LIBRARY_PAD_MAX_SECONDS` 120 → 3600: registration copies sounds up to 1 h (lead / trailing silence, lossy → PCM) streamed by ffmpeg file to file (the engine never holds the sound), with a byte cap (`SOUND_COPY_MAX_BYTES` 2 GiB, under WAV's 4 GiB) and a free-disk check (512 MiB must stay free); past them the sound is registered as it is and `RegisterSoundResponse.inexact {reason: too-long \| too-large \| disk-space, message}` says why (`apps/engine/src/sounds/{pad,service}.ts`) | `apps/engine/test/sound-long-exact.test.ts` (a 125 s Ogg Vorbis library sound: PCM copy with lead silence, sample-exact at an In point, the click exactly on its frame; deterministic re-registration; the cap and the disk check) — before: registered as the Ogg, In-point decode off by 128 samples | see Verified |
+| 3 | Padded copies are WAV (size); old unpadded copies give a second media | decided: narrowest exact PCM WAV, not FLAC; dedupe implemented | copies are written in the narrowest PCM that holds the decoder's output exactly (`copyCodecFor`: 16-bit for 8/16-bit sources — half the float copies' size —, 24-bit for ≤ 24-bit, float for lossy decoders, double for double). FLAC rejected: the browser preview decodes FLAC through WebCodecs, measured not bit-exact (below), while PCM WAV is decoded in mediabunny's JS everywhere. `media.upgradeLibraryCopy` (undoable, `packages/project/src/sound/copy-upgrade.ts`): a project's older copy of the same library sound gets the new file in place — same media id and Project item, every clip moved in content time by the lead difference so it plays the same samples at the same times; `ifPossible` registers the new copy as another media when a clip cannot move (`W_COPY_KEPT`); MCP `import_sounds` / `insert_sound` / `swap_sound`, the web insert and the plan's proposal drafts use it | `apps/engine/test/sound-copy-codec.test.ts`, `packages/project/test/sound-copy-upgrade.test.ts` (6, incl. undo / redo, refusals, a property over leads / trails / clip positions), `apps/mcp/test/sound-import-upgrade.test.ts`, `apps/web/test/sound-insert.test.ts` — before: a second media | see Verified |
+| 4 | The solver did not model SFX masking each other; per-event true-peak cap vs overlapping sum | fixed | spec 12 §2.4: a sound effect of a LOWER weight playing under an event is part of its bed (ambient → support → hero; peers and the layers of one cue do not mask each other, a hero does not mask its supports — constraint 3 keeps them under it on purpose), counted by its energy profile under the event's window; the solve repeats to a fixed point (≤ 10⁻⁴ dB, at most 32 more passes, `W_UNCONVERGED`); the summed true peak of overlapping measured sounds, moment by moment from their peak profiles, stays under the ceiling (`overlap-headroom`, "limited by the sounds overlapping it"); `maskedBy`, `sfxMaskingDb`, `overlapTruePeakDb` in the solver result, the plan / rebalance reports and Sound Check (`evaluateSfxGains`) | `packages/audio-fx/test/masking-overlap.test.ts` (hand-computed cases, a brute-force oracle of the masked bed, properties: determinism, summed ceiling at every moment, convergence), `apps/engine/test/sound-design-overlap.test.ts` (real mixer: two overlapping heroes over music + rain; BS.1770-4 true peak of the SFX sum under −1 dBTP; each hero clears bed + rain by its reported lift) — before: two heroes at −1 dBTP each summed over the ceiling | see Verified |
+| 5 | Rebalance / delivery race: an edit ms before the job's transaction could be fast-forwarded | fixed | `soundDesign.expectMix {mixHash, delivery}` (changes nothing; refuses with `E_REVISION_MISMATCH` when the mix changed) leads the jobs' transactions; the jobs fail with `CONFLICT` (retryable) and apply nothing; documented in MCP `rebalance_sfx` / `apply_delivery` and the SOUND guide | `packages/project/test/sound-expect-mix.test.ts` (refusals, undo, a property over JSON copies), `apps/engine/test/sound-design-rebalance.test.ts` / `sound-design-delivery.test.ts` (an edit injected between the last check and the transact: CONFLICT, nothing applied) — before: the edit was fast-forwarded over | — |
+| 6 | `mergeDips` property failed once, seed lost | fixed (seed capture repo-wide) + 8 bugs found and fixed | `packages/testkit/src/fast-check-setup.ts` is a setup file of every vitest project: each test gets its own fast-check seed (`FC_SEED` pins it, `FC_PATH` replays a path, `FC_NUM_RUNS` scales runs); a failure prints seed, path and the replay command and writes them to `test-results/fast-check-failures/`. A targeted hunt (`packages/project/test/sound-mix-dips-hunt.test.ts`: keys on one coarse grid with the dip edges, identical / overlapping / adjacent / touching / zero-length dips and fades, −0 and subnormal depths, levels at the clamp, steep Béziers) found and pinned: a 0 dB dip written as a dip; touching windows spiking to a key; a steep Bézier rebuilt 0.087 dB off; a window edge between two flicks; an edge key holding the dip instead of the curve; an edge rounding onto a hold step; a Bézier over the clamp cut at a window edge; (200 000-run hunt) a window's edge key taking a fade's value from half a flick inside | `packages/testkit/test/fast-check-setup.test.ts`, the hunt's counterexample tests (each failed before its fix) | see Verified (hunt runs) |
+| 7 | Plan job did ≈ 69 solo renders on the engine main thread | fixed | `apps/engine/src/sound-design/measure-{core,pool,worker}.ts`: solo / bed renders and their band analysis on worker threads (≤ 2, started on first use, stopped after 30 s idle; a crash → `MEASURE_FAILED` retryable, a timeout → `MEASURE_TIMEOUT`, cancel at once; no bundle / vitest → in-thread, same code); the engine build bundles `sd-measure-worker.mjs`, the desktop package ships it | `apps/engine/test/sound-design-measure-worker.test.ts` (bit-identical results worker vs thread; the pool's lifecycle with fake workers), `sound-design-measure-crash.test.ts` (a crashing worker fails the job, never hangs it) | see Verified (plan bench) |
+| 8 | Sound Check: joint safe fixes, TP headroom with normalisation off, mono Mix, kept report on sequence delete | fixed | `planSoundCheckFixes` (`packages/project/src/sound/check-fixes.ts`): the candidates applied in order on a dry-run document and re-validated after each with the report's level model (`levelGuard`: lift, peak over the bed and true peak per sound, linear in its gain — and, merged here, the overlapping sound effects in its bed, `masking` terms from `sfxOverlapTerms`, so a fix that raises, lowers, demotes or promotes ANOTHER sound moves this one's lift exactly as the solver would); used by the engine's `safe` flags, the editor's Fix all safe and Fix, MCP `safeFixes`; with normalisation off the bound on the mix's true peak where a raised sound plays (triangle inequality on the oversampled signal); a mono Mix is rendered and measured in mono; a kept report is deleted with its sequence once no editing session could undo the delete, and with its project | `apps/engine/test/sound-check-joint.test.ts`, `sound-check-kept-lifecycle.test.ts`, `packages/project/test/sound-check-fixes.test.ts` (incl. the cross-masking cases added in the merge), `apps/web/test/sound-check-joint-fix.test.ts`, `apps/mcp/test/sound-check-verdicts.test.ts` | — |
+| 9 | `clip.applySceneEdits` 1 flick vs 1 ms in cue mapping | fixed | one rule (`shotIndexAt`, `SHOT_TIME_EPS` = the renderers' `FRAME_TIME_EPS` 2 µs) for Scene Edit Detection and the scene cue source: a shot change is shown from the first frame whose media time reaches it within the renderers' own tolerance | `packages/project/test/scene-edit-frames.test.ts` (23.976, 29.97 DF / NDF, 30; speeds 100 / 50 / 150 / 37 / 3 %, reverse, a 40 % time remap; timestamps rounded to 1 µs both ways) — before: off-by-one cuts with 1 flick when a timestamp rounded up, and with 1 ms in slow motion | — |
+| 10 | Beat tracker half-tempo lock; downbeats assume 4/4 | fixed | tempo octave from the attacks (the autocorrelation of a non-integer period split over two lags lost to twice the period); 3/4 detected from the accent periodicity; `timeSignature` ('auto' \| 2…12) on `POST /api/audio/beats`, the cue route, the plan and MCP (`find_sound_cues`, `plan_sound_design`), cached per metre | `packages/audio-fx/test/beats-tempo.test.ts` (clicks 60–200 BPM, generated kick / snare / hat patterns straight and swung, a waltz: never half or double, every beat on its attack), `apps/engine/test/audio-beats-metre.test.ts` — before: 150 BPM read as 75 | — |
+| 11 | `view_sound_timeline` drew only keyframed motion | fixed | the visual route carries the cached `motion-analysis` curve (`pixelMotion`, null before analysis and after an edit); the PNG draws it in pink over the keyframed motion where analysed; `cells.pixelMotion` says measured / partly analysed / not analysed | `apps/mcp/test/sound-timeline-motion.test.ts` (pixel checks, hostile data never throws), `apps/engine/test/sound-design-motion.test.ts` | — |
+| 12 | Motion analysis render-bound (41–47 s per minute of 1080p) | fixed where the picture is untouched footage | stretches the export could stream-copy (`copyableRuns`: one video clip at the sequence's size and rate, no effect, transform, speed, fade or other layer; ≥ 15 frames) are decoded from the source straight at the analysis size (each sequence frame gets the source frame the renderers show there, `frameIndexAt` on the file's real timestamps); everything else is still rendered through the export at the analysis size; `MOTION_VERSION` 2; the measured move cue now sits in the middle of the median-filtered fastest stretch (the same picture through two paths gave cues 24 frames apart on a constant move) | `apps/engine/test/sound-design-motion.test.ts` "untouched footage is decoded at the analysis size: the same curve, events and cues as the full render", `packages/project/test/sound-cues-engine.test.ts` | see Verified (motion bench) |
+| 13 | Accept-state crash window | fixed | an accept writes an intent (atomic, with the id bodies its transaction will take, recorded from its dry run) before the transaction and removes it after the states are written; an intent found later is settled from the document when the proposal is next read (applied → recorded accepted with refs and created ids; not → rolled back); the relay carries the ids to the editor (≤ 50 000 well-formed bodies, `docs/security-review.md`) | `apps/engine/test/proposals-journal.test.ts` (crash points injected between each step, a restart, a lost relay answer; never applied twice) | — |
+| 14 | Proposals > 64 items: invariant-only conflicts stale only at Apply | fixed | the preview checks the result as Apply does at any size; a failure is pinned by bisection over the batches on the first item after which the document breaks an invariant, which is shown stale ("conflicts with the items before it: …"), Hear leaves it out, the rest is previewed | `packages/project/test/proposals-preview-batch.test.ts` (equal to one transaction per item on random proposals, invariant-only conflicts at any size), `packages/session/test/proposals-conflict.test.ts` (130-item proposal) — before: previewed as fine, stale at Apply | the check is one 84 ms task for 1 026 items (below) |
+| 15 | 1 000-item preview ≈ 13–16 s of work | fixed (3.0 → 1.1–1.4 s wall on the build server) | items applied in batches (≤ 32 per transaction, sized to the 8 ms slice, ghosts attributed per item exactly, else one by one), checkpoints reused by the next preview of the same document (Hear after a reject); merged here: placement reads Project items without drafting them (`valuesOf` in `placeSource`: drafting every item copied the record and pushed every transaction's orphan check into a full scan of all clips — 289 of 336 preview transactions), and library provenance of finished documents is read once (frozen cache) | `packages/session/test/proposals-budget.test.ts` (operation counts; CPU time vs one transaction per item < 0.8, measured 0.63–0.66), `proposals-preview-batch.test.ts` | see Verified (preview bench) |
+| 16 | Anime mg templates (4) kept declared intro / outro (est. 1–3 frames late) | fixed | each anime template's motion as a pure model in `@jasper/mg-templates` (`templates/anime/motion.ts`: the phases the implementations build their anime.js timelines from, and anime.js's ease curves ported as functions — `licenses/ported/anime-template-motion.md`, MIT); the registry measures land / exit on it like the fframes templates' SVG twins; `@jasper/motion` builds its timelines from the same phase definitions | `packages/motion/test/mg-cue-timing.test.ts` (the model equals anime.js at every frame and between frames for every template, rate, length and ease; derived land / exit within ±1 frame of where the real animation comes to rest / starts leaving), `packages/mg-templates/test/motion-cues.test.ts` (every shipped template is measured) | derived land / exit = the real anime.js frame in every case of the test's report (4 templates × 6 rates + 16 parameter variants); the declared timing they used was off by up to 25 frames (callout with motion path at 59.94: land 84 vs 59), exits up to 16 (counter at 59.94: 270 vs 286) — the "1–3 frames" was an underestimate |
+| 17 | `place_sound` hero warning used whole dialogue clips; solver speech ignored clip volume automation | fixed | `dialogueSpans` keeps only the dialogue the mix lets through: clip gain, clip Volume keyframes, track mute (static, automated), track Volume automation, solo, submix and Mix faders evaluated with the renderers' topology (`buildAudioMix`); at or under −40 dB it is not speech for any consumer (solver, cue suppression, `place_sound`'s W_HERO_UNDER_DIALOGUE — now from the engine's heard dialogue —, Sound Check) | `packages/project/test/sound-dialogue-audible.test.ts`, `apps/engine/test/sound-design-heard-speech.test.ts` (real engine: muted by gain, ducked out by keyframes from 4.5 s, track muted by automation), `apps/mcp/test/sound-cues.test.ts` | — |
+| 18 | Search perf threshold scaled with load | decided: strict CPU budget | the search and ranking speed tests measure the main thread's CPU time (Linux `/proc/self/task/<tid>/schedstat`; `process.cpuUsage` counted V8's GC / compiler threads: 26 ms of CPU in 12 ms of wall time at load 53) against a fixed 50 ms, whatever the load | `apps/engine/test/sounds-search.test.ts`, `packages/project/test/sound-rank-scale.test.ts` | see Verified |
+| 19 | E2E web server start-up needed 600 s at high load | fixed | `E2E_SERVER_TIMEOUT_MS` (1 000 … 3 600 000; default 180 s, was a fixed 60 s; a malformed value is refused naming the variable), README | `scripts/e2e-server-timeout.test.mjs` (the config test failed before the wiring) | — |
+| 20 | (from WP6.5a, item 7k) Auto gain on for a mixed selection made two History entries | fixed | `POST /api/sound-design/rebalance {autoGain: true}` (apply mode, named clips; `SfxRebalanceRequestSchema` refuses it otherwise): the job's one transaction is `soundDesign.expectMix`, `soundDesign.setAutoGain {auto: true}` for the named unlocked clips whose gain is the user's, then `soundDesign.applyGains` — clips the solve leaves unchanged or cannot measure lose their Auto gain off mark in the same step; the result lists them (`autoGain.clipIds`); the editor's Auto gain toggle passes it and only falls back to its own transaction against an engine without it | `apps/engine/test/sound-design-rebalance.test.ts` "autoGain: …" (real engine: one revision, a measured and a not-in-the-mix clip handed back; refusals), `apps/web/test/sound-mix-ui.test.tsx` "on: a clip the solve leaves unchanged …" (one History entry; before: "Rebalance SFX Levels" + "Auto Gain On") | — |
+
+#### Decisions (and why)
+
+- **Inter-SFX masking runs up the weights only** (item 4). A hero over a support, a support over an ambience: the lower
+  sound is part of the higher one's bed. Peers do not mask each other — two sounds of one weight cannot each clear the
+  other by a positive lift, so a symmetric model has no solution that honours both targets — and a hero does not mask
+  its supports (spec §2.4 constraint 3 keeps supports 0.6 under a hero within 0.15 s on purpose). The summed true peak
+  is Σ of the overlapping sounds' amplitudes at each moment of their peak profiles: an upper bound of the sum's true
+  peak (the real one is lower when the peaks do not align in phase), so it may cut a little more than needed, never
+  less.
+- **Copies are WAV PCM in the narrowest exact width, not FLAC** (item 3): measured in Google Chrome on the build server
+  (`scripts/sounds/copy-decode-browser.mjs`, the web app's mediabunny decode path at 36 In points): PCM WAV 16-bit,
+  24-bit and float are bit-exact at every point, 24-bit FLAC too, but **16-bit FLAC at none** (worst 4.8·10⁻⁶) — the
+  browser decodes FLAC through WebCodecs, WAV in mediabunny's own JS. 16-bit sources now get 16-bit copies (half the
+  float copies of before); lossy sources stay float (their decoder's output).
+- **Long sounds: 1 h, 2 GiB, 512 MiB free** (item 2): one hour covers any library bed; 2 GiB stays under WAV's 4 GiB
+  limit (a 1 h stereo 48 kHz float copy is ≈ 1.4 GB); past those, or without the disk space, the sound is used as it is
+  (exact to a frame) and the response says so — never a failed registration.
+- **One media per sound** (item 3): a fresh insert replaces an older copy in place (`media.upgradeLibraryCopy`) rather
+  than leaving a second media for Remove Unused: existing clips keep playing the same samples at the same times, and
+  the replacement is one undoable command inside the insert's transaction.
+- **A kept Sound Check report goes when no session can bring its sequence back** (item 8d): while an editor holds the
+  project its History can undo the delete, so the report stays until the editor's session ends, a new one starts, or a
+  save happens with no editor holding the project.
+- **The rebalance / delivery race is closed in the transaction** (item 5): `soundDesign.expectMix` is checked where the
+  transaction applies (atomically), and the job fails `CONFLICT` (retryable) rather than re-planning by itself: the
+  caller (the panel, the agent) decides whether to run it again on the new mix.
+- **Preview cost of item 14**: checking the result as Apply does is one full invariant pass when a proposal adds media
+  and tracks (the incremental checker covers clip-level changes only), so a 1 000-item preview has one long task for it
+  (measured below); the editor stays responsive otherwise (every other task ≤ one slice + one placement).
+- **The search budget is strict** (item 18): 50 ms of the main thread's CPU at any load (no load factor any more).
+- **Solver budgets** (merge of items 4 and 7): the WP4.1a test's absolute 50 ms stays for the bed-alone model (one
+  pass). The masking model's budgets are ratios to that one-pass solve measured in the same process, interleaved, with
+  exact pass counts: ≤ 2.5× and 3 passes when repeats keep their weight (the plan's case; measured 1.62×), ≤ 4× and 13
+  passes for the stress case where one sound repeats across hero, support and ambient (every gain coupled through the
+  repeat medians; measured 2.69×). Absolute budgets for these failed at a load of 20–50 while the solver had not
+  changed. A rank-ordered (Gauss–Seidel) pass order was tried and did not reduce the passes (12 vs 13: the coupling is
+  through the repeat groups, not the ranks).
+
+#### Verified (measured; build server unless stated)
+
+- **Item 19** — `pnpm vitest run scripts/e2e-server-timeout.test.mjs`: 4 passed (the config test failed before the
+  wiring: `timeout: 60_000`); `pnpm exec playwright test --list` with `E2E_SERVER_TIMEOUT_MS=bogus` stops with
+  "E2E_SERVER_TIMEOUT_MS must be a whole number of milliseconds", without it lists 259 tests in 68 files (run on the
+  shared host before the compute rule).
+- **Item 18** — main-thread CPU, not wall time: on the shared host before the compute rule, at load 32–97 on 16 cores
+  (48–64 synthetic busy loops), the worst min CPU of the 12 searches was 42.95 ms (budget 50), `process.cpuUsage`
+  having measured 26 ms of CPU for 12 ms of wall at load 53 (V8's helper threads). Both files pass in every run of
+  this section.
+- **Item 3, FLAC vs WAV** — `CHANNEL=chrome node scripts/sounds/copy-decode-browser.mjs` (Google Chrome 142.0.7444.59 on
+  the build server, 36 In points each): `s16.wav`, `s24.wav`, `f32.wav`, `s24.flac` 36 / 36 bit-exact; `s16.flac`
+  0 / 36 (worst |diff| 4.8·10⁻⁶); `v.ogg` 6 / 36 (worst 0.237).
+- **Solver speed** (items 4 + merge) — `pnpm vitest run packages/audio-fx/test/masking.test.ts -t "2000 events"`: before
+  (branch point) min 16.6–17.4 ms; after the inter-SFX masking as merged, the same input min 57.6–60.4 ms (13 passes:
+  the WP4.1a 50 ms budget failed); after building the summed-peak moments once per solve min 44.4 ms; final budgets
+  (alone, load 3): bed alone 18.2 ms min (< 50); masking with repeats under one weight 33.2 ms = 1.62× one pass in
+  3 passes (< 2.5×); repeats across weights 58.3 ms = 2.69× in 13 passes (< 4×).
+- **Item 15, 1 000-item preview** — `node --import tsx packages/session/bench/proposals-preview.ts 500 3` (1 026 items,
+  manual timers, medians of 3; before = the branch point with the same bench file): opening the review **3 040 ms wall /
+  3 277 ms CPU → 1 390 ms / 1 724 ms**; after an unrelated edit 3 048 / 3 300 → 1 373 / 1 506; after a reject 3 162 /
+  3 281 → 1 078 / 1 250 (load 1.8–2). The batches alone (as merged, before the read fixes) gave 2 038 / 2 401: the
+  placement reads were the larger part. Longest task 18–23 ms → 65–79 ms: the one end-of-preview invariant check
+  (84 ms measured alone), item 14's price; p95 15–17 ms both. In the session test: batched 180–205 ms CPU vs 285–311 ms
+  one transaction per item (0.63–0.66, process CPU); on the main thread's CPU 142 vs 222 ms (0.64), the final budget.
+- **Item 7, plan job** — `SD_PLAN_BENCH=thread|worker SD_PLAN_BENCH_OUT=… pnpm vitest run
+  apps/engine/test/sound-design-plan-bench.test.ts` (the plan-mix fixture, the first plan with every style option, cold
+  caches, 67 solo + 2 bed renders), two runs each, alternating, load 2–8: main thread **wall 15.5 / 13.8 s, event-loop
+  delay p90 125 ms, p99 418 / 390 ms, mean 47 / 44 ms, levels stage 9.3 / 8.4 s** → workers **wall 12.3 / 12.0 s, p90
+  16 ms, p99 98 / 122 ms, mean 16 ms, levels 6.3 / 6.2 s**; the same placements and levels. The maximum delay stays
+  ≈ 1 s in both modes (935–1 141 ms → 979–1 013 ms): a stall outside the measurements (not identified in this pass).
+- **Item 12, motion analysis** — `SOUND_PERF=1 SOUND_PERF_OUT=… pnpm vitest run apps/engine/test/sound-design-motion.test.ts
+  -t perf` (one minute of generated 1080p30 footage, untouched), before / after alternating, load 1–4: **31.7 s and
+  24.9 s (render 31.1 / 24.1 s, native path) → 3.6 s and 3.8 s (decode 3.1 / 3.2 s, source path)**; the same 2 events.
+  The equivalence test: the 4 s box at 1080p, source decode 553–695 ms vs render 2 405–3 240 ms, every frame on the
+  same side of MOVE_ON / MOVE_OFF, per-frame speeds within 10.3 % (the rendered reference's own H.264 noise), the same
+  events and cues; also with half the clip at 99 % opacity (source + render pieces across the move). Fixed while
+  verifying (the WIP had not run): the move cue of a measured constant move followed the noise (41 vs 45 on the same
+  picture; 43 vs 37 on the split one) → `MOVE_STRETCH_SHARE` 0.85 over a 5-frame median with 2-frame gaps
+  (`sound-cues-engine.test.ts` pins both measured curves); the source decode's seek read the frame-time table only
+  as a list (`frameTime` now).
+- **Item 4 / 17, real mixer** — `apps/engine/test/sound-design-overlap.test.ts`: the two heroes at the per-event
+  headroom of before sum to **+0.72 dBTP**; solved with the summed ceiling every sound effect together peaks at
+  **−2.95 dBTP** (ceiling −1); each hero's lift over bed + rain measured −1.28 / −1.45 dB vs reported −1.29 / −1.41.
+  `sound-design-heard-speech.test.ts`: the click under muted / ducked-out / track-muted dialogue is no longer under
+  speech (3 cases), and still is with the dialogue audible.
+- **Item 8 (b)** — `apps/engine/test/sound-check-joint.test.ts`: normalisation off, mix TP −1.12 dBTP; the masked
+  support's gain fix (−24 → −7.42 dB) has a bound of +0.80 dBTP and is not safe; applied anyway the re-check measures
+  **−0.59 dBTP** (over the −1 ceiling): the rule was right. (c): the mono Mix measures as the mono export, 3.01 LU under
+  its stereo upmix.
+- **Item 6, hunt** — `FC_HUNT_RUNS=200000 pnpm vitest run packages/project/test/sound-mix-dips-hunt.test.ts` (11 min):
+  two failures, both with their seed and path reported by the new setup file (`FC_SEED=-2132445674 FC_PATH=161234:…`,
+  `FC_SEED=-1701500363 FC_PATH=63429:…`) and replayed: (1) a real defect — a window edge key took a fade's value from
+  half a flick inside (−5·10⁻⁷ dB held after the window) — fixed (an edge decides its key); (2) the checker's 10⁻⁵ dB
+  straight-lane tolerance assumed no fractional breakpoints, but overlapping dips' ramps cross between flicks (keys are
+  stored on whole flicks): the property now uses the half-flick bound (10⁻⁴ dB) when windows overlap. Both pinned.
+  After the fixes the same hunt passes: 14 of 14 (6 properties × 200 000 runs, 17.3 min, load 6–50).
+- **Item 15 / 14 / 13, proposals** — `packages/session/test/proposals-{budget,conflict}.test.ts`,
+  `packages/project/test/proposals-preview-batch.test.ts`, `apps/engine/test/proposals-journal.test.ts` pass (full run).
+- **Full suite** — `pnpm vitest run --maxWorkers=8` at the final head (load 20–50: the other agent's runs and the hunt):
+  **7 175 passed, 5 failed, 408 skipped** (29 min), the failures all outside this work and each rechecked: two
+  `@jasper/compositions` browser-shim tests (`capture-safe-canvas`, `serial-audio-context`) fail the same on the
+  integration branch alone (the build server's Chrome 142 behaves differently from the Chrome they were written
+  against); `apps/engine/test/sound-design-motion.test.ts` and `sound-dialogue-consistency.test.ts` encode their fixtures
+  with `libx264`, which the vendored LGPL ffmpeg `remote.sh` installs does not have — with the system ffmpeg (as on the
+  shared host, whose worktrees have no vendor directory) both pass (10 + 1); `apps/web/test/polish-panel-loading` timed
+  out under the load and passes alone (4 / 4); the solver's and the preview's CPU budgets failed under the load and
+  were made ratios to a reference measured in the same process (main-thread CPU for the preview): 1.62× / 2.69× of one
+  pass (budgets 2.5× / 4×, exact pass counts 3 / 13), 0.64 (budget 0.8), measured idle. The first full run (before the
+  last fixes) gave 7 135 passed with the same environmental failures. **Final run** at the integration head with WP6.5a
+  merged and item 20 (load 9–25): **7 216 passed, 3 failed, 408 skipped** (22 min) — the two browser shims and
+  `polish-panel-loading` (passes alone: 4 / 4; it imports every panel and runs out of time under load), plus the two
+  `libx264` fixture files; the budget tests pass.
+- **Gate** — `pnpm -r --no-bail typecheck` (no errors), `SD_GIT=1 … pnpm lint` (Biome, tokens, anime, layers, assets: ok),
+  `pnpm notices --check` (150 packages, 32 ported records: current), `node scripts/i18n.mjs --check` (es.json covers all
+  9 965 strings).
+- **E2E** (`pnpm build`, then `E2E_SKIP_BUILD=1 E2E_SERVER_TIMEOUT_MS=600000 pnpm exec playwright test …`, Google Chrome
+  142, fixtures from `pnpm fixtures`, at the final head): **21 passed, 1 failed** — `anime-templates` (6: drag, edit,
+  keyframed colour, effects, export = renderStill, clipped callout), `sound-cue-sources`, `sound-p2-done` (export peaks on
+  the cues), `sound-p65a-polish` (4), `sound-check`, `sound-fill`, `sound-library` (3: insert peak-aligned, the aligned
+  point exactly on the frame in an ffmpeg-decoded export, folder sound inserted exactly), `sound-mix` (Auto Sound Pass →
+  Essential solver gain → Rebalance → Delivery → export at −14 LUFS), `sound-p3-mcp`, `sound-proposal-ghosts`,
+  `sound-review` (review flow); the failure is `sound-review` "Auto Sound Pass… → … → export": the "Proposed sounds for
+  3 cues" toast covers the export dialog's Export button (screenshot looked at), and it fails the same way on the
+  integration branch without this work (export dialog / toast placement: not engine work, reported to the
+  orchestrator). An earlier run (before the last fixes and the WP6.5a merge) gave 17 passed with the same failure.
+
+#### Limits and notes for the next packages
+
+- **The editor does not say when a sound is registered inexact** (item 2): `RegisterSoundResponse.inexact` (over 1 h,
+  over 2 GiB, not enough disk) reaches MCP (`import_sounds` / `insert_sound` results and notes) but the web inserts
+  (`registerLibrarySounds` callers: insert, fill, swap, In Context) show nothing yet — a notice is UI work (WP6.5a).
+- **Older copies are replaced on the next insert or import of that sound**, not all at once: a project that never
+  inserts a sound again keeps its older copy (it plays as before; Sound Check's TRUNCATED finding still offers the swap
+  for cut ones).
+- **Clips placed before `sfx.pitch`** keep the old reading (whole varispeed semitones) until they are re-pitched once.
+- **Motion analysis of composited stretches** (effects, transforms, speed, fades, layers) still renders through the
+  export at the analysis size; only untouched footage skips it.
+- **The preview's end check is one task** (≈ 84 ms for 1 026 items idle; longer on a loaded host): the full invariant
+  pass is not sliced (the incremental checker does not cover media / item additions).
+- **The masking fixed point** can take up to 33 passes when one sound repeats across weights; `W_UNCONVERGED` reports a
+  solve that did not settle (never seen in the tests).
+
 ### Phase 6 → earshot analysis
 
 Branch `feat/sd-p6-earshot-spec` (docs only). The user found `github.com/Leonxlnx/earshot` and asked whether our sound

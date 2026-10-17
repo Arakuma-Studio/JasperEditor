@@ -22,7 +22,6 @@ import type {
 } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
-	checkInvariants,
 	createSeededIdSource,
 	dependencyClosure,
 	isSetupItem,
@@ -969,10 +968,12 @@ export class ProposalsController {
 	/**
 	 * Rebuilds the preview and the local re-validation on the committed document: anchors (cheap) at once, then the
 	 * previews — every reviewable item (the ghosts) and, when something is rejected, what Hear plays — reusing the last
-	 * ones while what they depend on did not change (a local accept or clear rebuilds nothing). Items are applied
-	 * without the per-item invariant check and the end result of a small proposal is checked once; only when that fails
-	 * are the items applied again with it, to tell which ones break it. A large proposal is built in slices (`sliceMs`)
-	 * unless `sync`.
+	 * ones while what they depend on did not change (a local accept or clear rebuilds nothing; what Hear plays after a
+	 * reject starts from the ghosts' preview where the two go the same way). Items are applied in batches (one
+	 * transaction for several items, ghosts attributed per item) and the result is checked once as Apply checks it;
+	 * when it breaks an invariant, the first item after which it does is found (bisection over the batches) and shown
+	 * stale with the issue, whatever the proposal's size. A large proposal is built in slices (`sliceMs`, each batch
+	 * kept near one slice) unless `sync`.
 	 */
 	private recompute(sync: boolean): void {
 		if (this.disposed) return;
@@ -1058,25 +1059,26 @@ export class ProposalsController {
 		this.publishItems(stale);
 		const idsFor = (it: ProposalItem) =>
 			createSeededIdSource(`${p.id}:${it.id}:${it.selectedAlternative ?? 0}`);
-		const effects = { effects: ctx.registries.effects };
-		const fast: ProposalContext = { ...ctx, checkInvariants: false };
-		// The whole result's invariant check (one full pass over the document, ≈ 100 ms for a 1 000-item proposal on a
-		// loaded machine) is skipped for a large proposal: its items were checked together by the engine on the document
-		// it was made for, a placement refuses overlaps itself, and an item that conflicts only through an invariant is
-		// reported stale by Apply (the engine's accept checks the exact set it applies) — never silently dropped.
-		const verifyTogether = all.length <= this.syncItems;
-		function* build(ids: readonly string[]): Generator<unknown, ProposalPreview, void> {
-			const quick = yield* previewProposalSteps(doc, viewed, ids, fast, { idsFor });
-			if (quick.applied.length === 0 || !verifyTogether) return quick;
-			if (checkInvariants(quick.document, effects).length === 0) return quick;
-			// together they break an invariant: once more with the check per item, to know which items do
-			return yield* previewProposalSteps(doc, viewed, ids, ctx, { idsFor });
-		}
 		const self = this;
+		const sliced = !sync && all.length > this.syncItems;
+		// Every item applied in batches, and the result checked as Apply checks it (an item that breaks an invariant
+		// together with the ones before it fails with the issue; the rest is applied again without it), whatever the
+		// size of the proposal. What Hear plays starts from the ghosts' preview where the two go the same way.
+		function* build(
+			ids: readonly string[],
+			reuse: ProposalPreview | null,
+		): Generator<unknown, ProposalPreview, void> {
+			return yield* previewProposalSteps(doc, viewed, ids, ctx, {
+				idsFor,
+				reuse,
+				// a large proposal is built in slices: each batch of items stays near one slice of work
+				...(sliced ? { batchMs: self.sliceMs, clock: self.clock } : {}),
+			});
+		}
 		function* work(): Generator<unknown, void, void> {
-			const result = resultHit ?? (yield* build(all));
+			const result = resultHit ?? (yield* build(all, null));
 			self.memo = { doc, key, preview: result };
-			const heard = rejected.size === 0 ? result : (heardHit ?? (yield* build(heardIds)));
+			const heard = rejected.size === 0 ? result : (heardHit ?? (yield* build(heardIds, result)));
 			if (rejected.size) self.heardMemo = { doc, key: heardKey, preview: heard };
 			yield; // publishing (the store's listeners redraw) starts a slice of its own
 			finish(result, heard);

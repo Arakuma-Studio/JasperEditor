@@ -14,21 +14,18 @@ import {
 	createCounterIdSource,
 	DELIVERY_PRESETS,
 	type Dip,
-	dipEnvelopeAt,
 	evaluate,
 	FLICKS_PER_SECOND,
-	type Keyframe,
 	type LibraryProvenance,
 	loadProject,
-	mergeDips,
 	ROOM_REVERB_EFFECT_ID,
 	readSoundDesign,
 	repairDocument,
 	type SoundDesign,
 	sfxGainOwner,
-	unwriteCurve,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
+import { checkLinearDips, keysOf } from './sound-dips-property.ts';
 import { LIB } from './sound-fixtures.ts';
 
 const F30 = 705_600_000 / 30;
@@ -221,64 +218,12 @@ describe('mergeDips (property)', () => {
 				fc.array(keyArb, { maxLength: 8 }),
 				fc.double({ min: -20, max: 6, noNaN: true }),
 				fc.array(dipArb, { minLength: 1, maxLength: 3 }),
-				(keys, value, dips: Dip[]) => {
-					const seen = new Set<number>();
-					const kfs: Keyframe<number>[] = [];
-					for (const k of keys) {
-						const time = k.t * 100 * MS;
-						if (seen.has(time)) continue;
-						seen.add(time);
-						kfs.push({
-							id: `kf_${kfs.length}`,
-							time,
-							value: k.v,
-							interpolation: k.hold ? 'hold' : 'linear',
-							easeIn: { influence: 1, slope: 1 },
-							easeOut: { influence: 1, slope: 1 },
-						});
-					}
-					kfs.sort((a, b) => a.time - b.time);
-					const anim: Animatable<number> = { value, keyframes: kfs };
-					const lane = {
-						toLane: (t: number) => t,
-						toSeq: (t: number) => t,
-						span: [0, Infinity] as [number, number],
-					};
-					let i = 0;
-					const r = mergeDips(anim, lane, dips, { newId: () => `new_${i++}`, clamp: [-96, 15] });
-					if (!r) return;
-					const res: Animatable<number> = { value, keyframes: r.keyframes };
-					const inWin = (t: number) => r.windows.some(([a, b]) => t >= a && t <= b);
-					for (let k = 0; k <= 400; k++) {
-						const t = k * 11 * MS;
-						const e = evaluate(anim, t);
-						const got = evaluate(res, t);
-						const d = Math.min(15, Math.max(-96, dipEnvelopeAt(dips, t)));
-						expect(got).toBeLessThanOrEqual(e + 1e-3);
-						if (!inWin(t)) expect(got).toBeCloseTo(e, 6);
-						else {
-							// ≤ the dip curve relative to the window's reference level, = the minimum of both
-							const w = r.windows.find(([a, b]) => t >= a && t <= b)!;
-							const ref = Math.max(evaluate(anim, w[0]), evaluate(anim, w[1]));
-							const dd = Math.min(15, Math.max(-96, ref + dipEnvelopeAt(dips, t)));
-							// a hold step between two samples is drawn as a 1-flick ramp: skip its instant
-							const step = kfs.some(
-								(kf, j) => j > 0 && kfs[j - 1]!.interpolation === 'hold' && Math.abs(kf.time - t) <= 2,
-							);
-							if (!step) expect(got).toBeCloseTo(Math.min(e, dd), 2);
-							expect(got).toBeLessThanOrEqual(dd + 1e-3);
-							void d;
-						}
-					}
-					// keys outside the windows are untouched
-					for (const k of kfs)
-						if (!r.windows.some(([a, b]) => k.time >= Math.round(a) && k.time <= Math.round(b)))
-							expect(r.keyframes).toContainEqual(k);
-					// unwriting gives the original keys back
-					const back = unwriteCurve(r.keyframes, r);
-					expect(back.exact).toBe(true);
-					expect(back.keyframes).toEqual(kfs);
-				},
+				(keys, value, dips: Dip[]) =>
+					checkLinearDips(
+						keysOf(keys.map((k) => ({ time: k.t * 100 * MS, v: k.v, interp: k.hold ? 'hold' : 'linear' }))),
+						value,
+						dips,
+					),
 			),
 			{
 				numRuns: 300,

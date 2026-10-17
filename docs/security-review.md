@@ -750,8 +750,11 @@ them, but it was reviewed by its author, not by this review.
   by the finished job inside the project's folder: the file name is the sequence id only when it is a document id
   (`[A-Za-z0-9_-]{1,128}`, never a path), atomic writes, ≤ 32 reports per project (the least recently written evicted),
   ≤ 16 MB per report (larger ones are not kept), a file that does not parse or names another sequence is moved aside
-  with a warning; the route is read-only (strict body, typed `404 SOUND_CHECK_NOT_FOUND`). Tests:
-  `apps/engine/test/sound-check-kept.test.ts`.
+  with a warning; the route is read-only (strict body, typed `404 SOUND_CHECK_NOT_FOUND`). A report goes with its
+  sequence (WP6.5b): the reports of sequences the saved project no longer has are deleted when no editing session could
+  undo the delete (a save or version restore with no editor lease, the lease released or expired, a new lease), and a
+  check finishing after its project or sequence is gone keeps nothing (a late write never re-creates a deleted
+  project's folder). Tests: `apps/engine/test/sound-check-kept.test.ts`, `sound-check-kept-lifecycle.test.ts`.
 - **Engine cue sources and picture motion** (spec 12 WP6.2, `apps/engine/src/sound-design/{motion,engine-cues,analysis-cache}.ts`,
   `audio/beats.ts`, `time/scenes.ts`; `POST /api/sound-design/motion`, `POST /api/audio/beats`, the cue route's
   `opts.sources` scene / beat / pixel and `snapToBeats`): strict zod bodies (project id `[A-Za-z0-9_-]{1,128}`, frame
@@ -788,7 +791,11 @@ them, but it was reviewed by its author, not by this review.
   `409 PROPOSAL_LIMIT`), expire 30 days after their last change, are read with a 21 MB cap, and a file that does not
   parse or names another id or project is moved aside (`*.corrupt-<time>`) with a warning. Accept gate: AGT-3 table.
   The relay flag `asUser` (the editor's accept is the user's History entry) is set by the engine only for requests
-  carrying the editor key and honoured by the bridge only together with `approved`. The editor's Apply (WP3.3a session
+  carrying the editor key and honoured by the bridge only together with `approved`. The relay field `ids` (an accept's
+  journalled id bodies, so a crash between its transaction and its recorded states can be settled from the document)
+  is set by the engine only (agents' transactions are nested in `transaction`; the field sits beside it), and the bridge
+  takes at most 50 000 well-formed bodies and nothing else. The accept journal's intent files are parsed with a strict
+  schema and an 8 MB cap; one that does not parse is moved aside with a warning, never acted on. The editor's Apply (WP3.3a session
   slice) needs a trusted user gesture (`event.isTrusted`; an agent's `ui_click` is synthetic and its live-UI requests
   carry `x-jasper-agent-input`, so the engine treats them as an agent's anyway). Tests:
   `apps/engine/test/proposals{,-store,-fuzz}.test.ts`, `fuzz-http.test.ts`, `apps/web/test/agent-bridge.test.ts`.

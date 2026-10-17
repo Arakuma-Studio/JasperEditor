@@ -43,9 +43,17 @@ export type RemixPlanResult = z.infer<typeof RemixPlanResultSchema>;
 export const MAX_BEATS_SOURCE_SECONDS = 30 * 60;
 
 /**
- * `POST /api/audio/beats` (spec 12 §2.8; wp-note "Phase 6 → WP6.2"): tempo, beats and (when one beat in four is clearly
- * accented) downbeats of a media's audio over a range, with the Remix tool's beat tracker (`analyzeBeats`). Cached per
- * media file and range. Sound Design's beat cues come from it.
+ * Metre of the downbeats: `'auto'` (default) detects 3 or 4 beats per bar from which beats are accented; a number
+ * 2…12 groups the beats by it (`3` for a waltz, `4` for 4/4, `6`, `7`…).
+ */
+export const TimeSignatureSchema = z.union([z.literal('auto'), z.number().int().min(2).max(12)]);
+export type TimeSignature = z.infer<typeof TimeSignatureSchema>;
+
+/**
+ * `POST /api/audio/beats` (spec 12 §2.8; wp-note "Phase 6 → WP6.2", "WP6.5b"): tempo, beats and (when one beat per
+ * bar is clearly accented) downbeats of a media's audio over a range, with the Remix tool's beat tracker
+ * (`analyzeBeats`: tempo octave from the attacks, metre 3 or 4 detected or `timeSignature`). Cached per media file,
+ * range and metre. Sound Design's beat cues come from it.
  */
 export const BeatsRequestSchema = z.strictObject({
 	mediaKey: z.string().min(1).max(256),
@@ -55,6 +63,8 @@ export const BeatsRequestSchema = z.strictObject({
 	startSeconds: z.number().min(0).max(864_000),
 	/** At most 30 min (the analysis holds the decoded range, 22.05 kHz mono). */
 	durationSeconds: z.number().positive().max(MAX_BEATS_SOURCE_SECONDS),
+	/** Metre of the downbeats (default `'auto'`: 3 or 4 detected). */
+	timeSignature: TimeSignatureSchema.optional(),
 });
 export type BeatsRequest = z.infer<typeof BeatsRequestSchema>;
 
@@ -63,8 +73,10 @@ export const BeatsResultSchema = z.object({
 	bpm: z.number().nullable(),
 	/** Attack of each beat, media seconds (ascending). */
 	beats: z.array(z.number()),
-	/** The accented beats (media seconds), or null when no beat in four is clearly accented. */
+	/** The accented beats (media seconds, one per bar), or null when no beat per bar is clearly accented. */
 	downbeats: z.array(z.number()).nullable(),
+	/** Beats per bar of `downbeats` (detected 3 or 4, or the `timeSignature` asked); null without downbeats on 'auto'. */
+	beatsPerBar: z.number().int().min(2).max(12).nullable(),
 	/** How clear the downbeat accent is (0…1). */
 	downbeatConfidence: z.number(),
 	startSeconds: z.number(),

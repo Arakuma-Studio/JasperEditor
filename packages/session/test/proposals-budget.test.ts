@@ -1,0 +1,97 @@
+// Regression budget of the review preview's work (WP6.5b item 15), robust to the machine's load: it counts
+// operations (transactions applied, items they carried, batches applied again one by one, invariant checks; the
+// `previewStats` counters) and compares the main thread's CPU time with the one-transaction-per-item reference
+// measured in the same process, never wall time. 120 place items as the WP3.2 plan builds them (≈ 266 items).
+import { readFileSync } from 'node:fs';
+import { createSeededIdSource, type ProposalItem, previewProposal, previewStats } from '@jasper/project';
+import { describe, expect, it } from 'vitest';
+import { proposalsFor } from '../src/index.ts';
+import { bigProposal, bigSession } from './big-proposal.ts';
+
+const N = 120;
+
+/**
+ * CPU time (ms) of this thread: Linux `/proc/self/task/<tid>/schedstat` (the main thread of the forked test process),
+ * not `process.cpuUsage`, which adds V8's GC and compiler threads (noisy on a loaded host); elsewhere the process's.
+ */
+function threadCpuMs(): number {
+	try {
+		const ns = Number(readFileSync(`/proc/self/task/${process.pid}/schedstat`, 'utf8').split(' ')[0]);
+		if (Number.isFinite(ns)) return ns / 1e6;
+	} catch {
+		// no procfs
+	}
+	const c = process.cpuUsage();
+	return (c.user + c.system) / 1000;
+}
+
+describe(`review preview work budget (${N} place items)`, { timeout: 600_000 }, () => {
+	it('the session builds the preview in batches: few transactions, each item applied once, one invariant check', async () => {
+		const { session, engine } = bigSession(N);
+		const p = bigProposal(session, engine, N);
+		const queue: (() => void)[] = [];
+		// a clock that says every batch took 1 ms: the batch size grows from 4 to 32 deterministically
+		let now = 0;
+		const c = proposalsFor(session, {
+			engine,
+			setTimer: (fn) => {
+				queue.push(fn);
+				return queue.length;
+			},
+			clearTimer: () => {},
+			clock: () => (now += 0.5),
+		});
+		await c.setActive(p.id);
+		previewStats(true);
+		while (queue.length) queue.shift()!();
+		const work = previewStats();
+		const items = p.items.length;
+		expect(c.getState().preview?.heard).toHaveLength(items);
+		// before: one transaction per item (≈ 266) and no check; now ≈ items / 32 + the first small batches
+		// the setup items (a bin, then the sounds imported into it, which changes the bin) are applied again one by one:
+		// the first small batches (4 + 8 + 16 items), nothing after them
+		expect(work.fallbacks).toBeLessThanOrEqual(3);
+		expect(work.items).toBeLessThanOrEqual(items + 28);
+		expect(work.transactions).toBeLessThanOrEqual(Math.ceil(items / 32) + 4 + 32);
+		expect(work.transactions).toBeLessThan(items / 4);
+		expect(work.checks).toBe(1);
+		c.dispose();
+	});
+
+	it('costs under 0.8 of the CPU time of one transaction per item (same process, interleaved, best of 5)', () => {
+		const { session, engine } = bigSession(N);
+		const p = bigProposal(session, engine, N);
+		const doc = session.getCommitted();
+		const ctx = {
+			registries: session.ctx.registries,
+			revision: session.revision,
+			now: () => '2026-10-16T10:00:00.000Z',
+			invariants: 'incremental' as const,
+		};
+		const idsFor = (it: ProposalItem) =>
+			createSeededIdSource(`${p.id}:${it.id}:${it.selectedAlternative ?? 0}`);
+		const cpu = (batch: number) => {
+			const t = threadCpuMs();
+			const r = previewProposal(doc, p, 'undecided', ctx, { idsFor, batch });
+			const d = threadCpuMs() - t;
+			expect(r.applied).toHaveLength(p.items.length);
+			return d;
+		};
+		cpu(32); // warm up both paths
+		cpu(1);
+		const ref: number[] = [];
+		const got: number[] = [];
+		for (let i = 0; i < 5; i++) {
+			ref.push(cpu(1));
+			got.push(cpu(32));
+		}
+		const best = (xs: number[]) => Math.min(...xs);
+		console.log(
+			`preview CPU, ${p.items.length} items: batched ${best(got).toFixed(0)} ms, one per item ${best(ref).toFixed(0)} ms (${(best(got) / best(ref)).toFixed(2)})`,
+		);
+		// measured 0.63–0.66 on the idle 16-core build server (180–205 ms vs 285–311 ms, WP6.5b): the batches save the
+		// per-transaction work (copies, orphan check, finalising) that the placements themselves do not; a batch path
+		// that falls back to one transaction per item measures ≈ 1.0
+		expect(best(got)).toBeLessThan(best(ref) * 0.8);
+	});
+});

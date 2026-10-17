@@ -1,8 +1,10 @@
 // Sound Check visual data (spec 12 §2.6 "Visual data comes from the engine", §2.8 `POST /api/sound-design/visual`, P5-R2;
 // wp-note "Phase 5 → WP5.1"): over a bounded range (≤ 120 s) the 10 ms momentary and short-term loudness of the mix and
 // of each stem (bed, sound effects, music, dialogue, ambience), the mix's 10 ms sample peaks, the cue ticks, the sound
-// effect clips with their aligned points, the 10 ms sample peaks of the sound-effects stem and the bed, speech, the picture's motion curve (the fastest keyframed layer per frame,
-// from `deriveCues`) and — given a finished `sound-check` job — its findings over the range. MCP draws it into PNGs
+// effect clips with their aligned points, the 10 ms sample peaks of the sound-effects stem and the bed, speech, the
+// picture's motion curve (the fastest keyframed layer per frame, from `deriveCues`), the MEASURED picture motion where
+// the range was already analysed (`motion-analysis` cache; never started here) and — given a finished `sound-check`
+// job — its findings over the range. MCP draws it into PNGs
 // (`view_sound_timeline`, `sound_check` images); the web panel draws the same data on a canvas.
 //
 // As delivered: when the Mix normalises and its stored loudness analysis is current (`mixHash` = `mixFingerprint`), the
@@ -41,7 +43,7 @@ import type { MediaRegistry } from '../media/registry.ts';
 import { vadThreshold } from '../speech/core/vad.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { audioWorld, VAD_FLOOR_DBFS } from './bed.ts';
-import { classifyStems, renderStems, STEM_NAMES, type StemName } from './stems.ts';
+import { classifyStems, mixLayoutOf, renderStems, STEM_NAMES, type StemName } from './stems.ts';
 
 /** Longest range (seconds). */
 export const VISUAL_MAX_SEC = 120;
@@ -65,6 +67,8 @@ export type VisualEnv = {
 	mgTemplates: MgTemplateRegistry;
 	/** The check job named by `checkJobId` (null: unknown / not finished). */
 	checkJob?: EngineJob | null;
+	/** The measured picture-motion curves already cached over the range (`MotionService.cachedCurves`; never analyses). */
+	pixelCurves?: (range: { start: number; end: number }) => Promise<{ startFrame: number; speed: number[] }[]>;
 	signal?: AbortSignal;
 };
 
@@ -110,7 +114,7 @@ export async function soundVisual(
 	const preHops = Math.min(PRE_HOPS, Math.floor(rangeStart / hop));
 	const renderStart = rangeStart - preHops * hop;
 	const renderEnd = rangeEnd + POST_HOPS * hop;
-	const channels = snap.audioMix?.masterFormat === '5.1' ? 6 : 2;
+	const { channels } = mixLayoutOf(snap);
 	const meters: Partial<Record<StemName, CurveMeter>> = {};
 	for (const s of STEM_NAMES) if (stems[s].size > 0) meters[s] = new CurveMeter(sr, channels);
 	if (stems.mix.size > 0)
@@ -220,6 +224,22 @@ export async function soundVisual(
 			const f = c.start + i - range.start;
 			if (f >= 0 && f < speed.length && c.speed[i]! > speed[f]!) speed[f] = c.speed[i]!;
 		}
+	// the measured picture motion, where the range was already analysed (null per frame elsewhere)
+	let pixelMotion: SoundVisualResponse['pixelMotion'] = null;
+	const measured = env.pixelCurves ? await env.pixelCurves(range).catch(() => []) : [];
+	if (measured.length) {
+		const px = new Array<number | null>(range.end - range.start).fill(null);
+		let covered = 0;
+		for (const c of measured)
+			for (let i = 0; i < c.speed.length; i++) {
+				const f = c.startFrame + i - range.start;
+				const v = c.speed[i]!;
+				if (f < 0 || f >= px.length || !Number.isFinite(v)) continue;
+				if (px[f] === null) covered++;
+				px[f] = Math.max(px[f] ?? 0, v);
+			}
+		if (covered) pixelMotion = { startFrame: range.start, speed: px.map((v) => (v === null ? null : r3(v))) };
+	}
 	// cues and sound effect clips
 	const cues = soundCuesOf(seq)
 		.filter((c) => c.frame >= range.start && c.frame < range.end)
@@ -294,6 +314,7 @@ export async function soundVisual(
 		waveformPeakDb,
 		stemPeakDb,
 		motion: { startFrame: range.start, speed: speed.map(r3) },
+		pixelMotion,
 		cues,
 		clips,
 		speech,

@@ -2,11 +2,14 @@
 //   - the credits of the library sounds the export's mixer PLAYS (its render snapshot: the range, nested sequences,
 //     enabled clips on tracks that sound), written as `<output>.credits.<txt|md|csv>` next to the output;
 //   - W_SOUND_CREDITS: a sound heard in the export asks for a credit (CC BY, CC BY-SA…) and no sidecar is written;
+//   - W_SOUND_SHARE_ALIKE: a sound heard in the export is CC BY-SA, so the video must be shared under CC BY-SA or a
+//     compatible licence (CC BY-SA 4.0 §1(a), §3(b); spec 12 §4 P6-E13);
 //   - W_SOUND_CHECK_STALE (information): the sequence's stored Sound Check is out of date or failed.
 // Header strings stay English (the sidecar is a deliverable for any audience, and the engine has no user locale);
 // credit lines are the licences' verbatim attribution lines.
 import type { ExportSettings, RenderPlan } from '@jasper/api';
 import {
+	isShareAlike,
 	licenseClass,
 	type ProjectDocument,
 	playedLibraryClips,
@@ -50,7 +53,8 @@ export function creditsFileBytes(c: SoundCredits, format: CreditsFormat): Uint8A
 }
 
 /**
- * The plan's sound warnings: W_SOUND_CREDITS and W_SOUND_CHECK_STALE (`level: 'info'`). None for exports without
+ * The plan's sound warnings: W_SOUND_CREDITS, W_SOUND_LICENSE_NC, W_SOUND_SHARE_ALIKE and W_SOUND_CHECK_STALE
+ * (`level: 'info'`). None for exports without
  * sound (stills, picture-only previews, alpha masters).
  */
 export function soundPlanWarnings(
@@ -83,6 +87,16 @@ export function soundPlanWarnings(
 				code: 'W_SOUND_LICENSE_NC',
 				message: `${nc.length} ${nc.length === 1 ? 'sound heard in this export is' : 'sounds heard in this export are'} licensed for non-commercial use only (${[...new Set(nc.map((r) => r.license))].join(', ')})`,
 				itemIds: [...new Set(nc.flatMap((r) => r.usedIn.map((id) => id.split('>')[0]!)))].slice(0, 64),
+			});
+		const sa = credits.rows.filter((r) => isShareAlike(r.license));
+		if (sa.length)
+			out.push({
+				code: 'W_SOUND_SHARE_ALIKE',
+				message: `${sa.length} ${sa.length === 1 ? 'sound heard in this export is' : 'sounds heard in this export are'} ShareAlike (${[...new Set(sa.map((r) => r.license))].join(', ')}: ${sa
+					.slice(0, 3)
+					.map((r) => `"${r.title || r.soundId}"`)
+					.join(', ')}${sa.length > 3 ? '…' : ''}): the video must be shared under CC BY-SA or a compatible licence`,
+				itemIds: [...new Set(sa.flatMap((r) => r.usedIn.map((id) => id.split('>')[0]!)))].slice(0, 64),
 			});
 	} catch {
 		// credits are metadata: a damaged provenance never blocks an export (the Sound Check reports it)

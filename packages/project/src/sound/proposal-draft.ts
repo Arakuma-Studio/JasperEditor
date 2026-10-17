@@ -12,6 +12,7 @@
 // it was given by the caller's own planner (ids are checked by the proposal validation that follows).
 import type { ProposalItemInput } from '../proposals/schema.ts';
 import type { ProjectDocument } from '../schema/document.ts';
+import { olderLibraryCopyOf } from './copy-upgrade.ts';
 import { type LibraryProvenance, readLibraryProvenance } from './provenance.ts';
 
 /** A library sound registered for the project (engine `POST /api/sounds/:id/register`). */
@@ -179,6 +180,7 @@ export function soundProposalItems(
 		}
 		const ref = `$snd${n}`;
 		const itemRef = `$sndItem${n}`;
+		const older = olderLibraryCopyOf(doc, soundId, m.fingerprint);
 		n++;
 		const id = soundSetupItemId(soundId);
 		setup.push({
@@ -186,13 +188,26 @@ export function soundProposalItems(
 			label: `Import ${m.title}`.slice(0, 200),
 			group: SOUND_PROPOSAL_SETUP_GROUP,
 			commands: [
-				{
-					...m.register,
-					asset: { ...m.register.asset, library: m.library },
-					binId: binRef,
-					ref,
-					itemRef,
-				},
+				// an older copy of this sound in the project is replaced in place (one media per sound, WP6.5b)
+				older
+					? {
+							type: 'media.upgradeLibraryCopy',
+							mediaId: older,
+							asset: { ...m.register.asset, library: m.library },
+							ifPossible: true,
+							...(typeof m.register.name === 'string' ? { name: m.register.name } : {}),
+							...(m.register.label !== undefined ? { label: m.register.label } : {}),
+							binId: binRef,
+							ref,
+							itemRef,
+						}
+					: {
+							...m.register,
+							asset: { ...m.register.asset, library: m.library },
+							binId: binRef,
+							ref,
+							itemRef,
+						},
 			],
 			...(binItem ? { requires: [binItem] } : {}),
 			meta: { setup: true, soundId, title: m.title },

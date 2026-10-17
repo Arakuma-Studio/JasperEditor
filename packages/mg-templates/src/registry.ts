@@ -6,6 +6,7 @@ import type {
 } from '@jasper/project';
 import { z } from 'zod';
 import { svgTemplateSpeed } from './motion.ts';
+import { animeTemplateSpeed, hasAnimeMotionModel } from './templates/anime/motion.ts';
 import { type AnyMgTemplate, isAnimeTemplate } from './types.ts';
 
 export type MgRegistry = MgTemplateRegistry & {
@@ -78,8 +79,10 @@ function toTemplateInfo(def: AnyMgTemplate, cache: MotionCache): MgTemplateInfo 
 		...(def.description ? { description: def.description } : {}),
 		defaultDurationSeconds: def.defaultDurationSeconds,
 		// fframes templates: measured on their SVG twins. Anime templates are drawn by @jasper/motion (anime.js),
-		// which this layer may not import (ARCHITECTURE §3.1): their cues use the declared intro / outro.
-		...(isAnimeTemplate(def)
+		// which this layer may not import (ARCHITECTURE §3.1): they are measured on their motion model (the phases
+		// and eases the implementations share with it, `anime/motion.ts`); a template without a model falls back to
+		// the declared intro / outro.
+		...(isAnimeTemplate(def) && !hasAnimeMotionModel(def)
 			? {}
 			: {
 					motionSpeed: (params: Record<string, unknown>, timing: MgTemplateMotionTiming) => {
@@ -89,7 +92,11 @@ function toTemplateInfo(def: AnyMgTemplate, cache: MotionCache): MgTemplateInfo 
 						} catch {
 							k = null; // unserialisable params: measured, not cached
 						}
-						return cache(k, () => svgTemplateSpeed(def, params, timing))?.slice() ?? null;
+						const measure = () =>
+							isAnimeTemplate(def)
+								? animeTemplateSpeed(def, params, timing)
+								: svgTemplateSpeed(def, params, timing);
+						return cache(k, measure)?.slice() ?? null;
 					},
 				}),
 	};

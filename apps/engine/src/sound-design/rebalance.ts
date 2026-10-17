@@ -2,7 +2,8 @@
 // sequence (or the ones asked for) are measured against the bed (`bed.ts`) and solved by the masking solver; the
 // report says per clip its gain, target and achieved lift, what limited it and why. `mode: 'apply'` commits every
 // change as ONE undoable transaction "Rebalance SFX Levels" (`soundDesign.applyGains`); `mode: 'propose'` (the default)
-// stores a proposal with one item per changed clip for the user to review.
+// stores a proposal with one item per changed clip for the user to review. `autoGain` (apply, named clips): the same
+// transaction hands the named clips back to Auto gain first (Essential Sound ▸ Auto gain on is one undo step).
 //
 // Which clips: every sound effect (`isSfxClip`) of the sequence overlapping `range`, or `clipIds` (explicit ids must be
 // sound effects). A clip on a locked track is skipped (LOCKED); a gain the user set by hand is kept (USER_GAIN) unless
@@ -26,6 +27,7 @@ import {
 	SOUND_DESIGN_FEATURE,
 	type SoundDelivery,
 	sequenceTimecode,
+	sfxGainOwner,
 	soundDesignSettingsOf,
 } from '@jasper/project';
 import type { AgentService } from '../agent/service.ts';
@@ -289,9 +291,21 @@ async function rebalance(ctx: JobContext, deps: RebalanceDeps): Promise<SfxRebal
 	};
 	if (ctx.signal.aborted) throw new JobError('CANCELLED', 'Cancelled', false);
 	const base = { projectId: req.projectId, sequenceId: seq.id, mode } as const;
-	if (changes.length === 0) {
+	// Auto gain on (WP6.5b): the named clips whose gain is the user's are handed back to the solver in the same
+	// transaction — first (the recorded level owns the gain again), then the solved gains (absolute) — one undo step,
+	// also for the clips the solve leaves unchanged or cannot measure (they keep their recorded level). Locked tracks
+	// are left alone (`setAutoGain` refuses them; the solve skipped them).
+	const lockedTracks = new Set(seq.audioTracks.filter((t) => t.locked).map((t) => t.id));
+	const handBack = req.autoGain
+		? [...new Set(req.clipIds ?? [])].filter((id) => {
+				const c = seq.clips[id];
+				return !!c && !lockedTracks.has(c.trackId) && sfxGainOwner(c as never) === 'user';
+			})
+		: [];
+	const handedBack = req.autoGain ? { autoGain: { clipIds: handBack } } : {};
+	if (changes.length === 0 && handBack.length === 0) {
 		ctx.progress(1, { stage: 'Nothing to change' });
-		return { ...base, applied: false, revision: live.revision, proposalId: null, report };
+		return { ...base, applied: false, revision: live.revision, proposalId: null, report, ...handedBack };
 	}
 	const command = (list: SfxRebalanceEvent[]) => ({
 		type: 'soundDesign.applyGains',
@@ -311,11 +325,16 @@ async function rebalance(ctx: JobContext, deps: RebalanceDeps): Promise<SfxRebal
 			label: REBALANCE_LABEL,
 			agentName: who.agent,
 			editor: who.editor,
-			commands: [command(changes)],
+			commands: [
+				...(handBack.length
+					? [{ type: 'soundDesign.setAutoGain', sequenceId: seq.id, clipIds: handBack, auto: true }]
+					: []),
+				...(changes.length ? [command(changes)] : []),
+			],
 			what: 'The gains were not applied',
 		});
 		ctx.progress(1, { stage: 'Applied' });
-		return { ...base, applied: true, revision, proposalId: null, report };
+		return { ...base, applied: true, revision, proposalId: null, report, ...handedBack };
 	}
 	const proposals = deps.proposals();
 	if (!proposals) throw new JobError('NOT_AVAILABLE', 'The proposal service is not running', true);

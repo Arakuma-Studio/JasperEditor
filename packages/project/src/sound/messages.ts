@@ -75,6 +75,13 @@ export const SOUND_MESSAGES = [
 	'{0} is not a sound effect (Essential Sound type SFX, or a placed sound): the solver sets sound effect gains only',
 	'{0} is not a sound effect (Essential Sound type SFX, or a placed sound): auto gain applies to sound effects',
 	'frame must be inside the sequence (0–{0})',
+	'The mix of {0} changed since it was measured (its audio, mixer, media or delivery); measure it again',
+	"{0} is not a library sound's copy (an audio media)",
+	'The new copy must be audio media, not {0}',
+	'Cannot replace {0}: {1}',
+	'The new copy is already in the project as {0}',
+	'{0} would not fit the new copy of {1}',
+	'{0} would not fit the new copy of {1}: the clips keep the older copy; the new one is another media',
 ] as const;
 
 /** Every sound-design template the editor translates (labels, refusals, Sound Check findings and fixes). */

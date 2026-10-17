@@ -9,7 +9,7 @@
 // sounds whose title names more of its words (exactly or by prefix) come next, so a title match always outranks a
 // match through a type or synonym ("punch" finds "Punch" before "Crunchy impact", typed hit); then by score, then by
 // id. Filters remove entries before scoring. Decisions and thresholds: wp-note "WP1.1a".
-import { licensePreference, passesCommercialSafeFilter } from './license.ts';
+import { isCommercialSafe, licensePreference, passesCommercialSafeFilter } from './license.ts';
 import {
 	isSoundTypeId,
 	SOUND_TYPES,
@@ -53,7 +53,12 @@ export type ToneFilter = 'dark' | 'bright';
 export type AttackFilter = 'punchy' | 'soft';
 export type WeightFilter = 'light' | 'heavy';
 export type TextureFilter = 'clean' | 'noisy';
-export type LicenseFilter = 'any' | 'commercial-safe';
+/**
+ * `commercial-safe` (the default): commercial-safe licences without ShareAlike (spec 12 P6-E13, human decision
+ * 2026-10-17); `commercial-safe-sa`: the same plus CC BY-SA ("Include ShareAlike"); `any`: every licence.
+ */
+export const LICENSE_FILTERS = ['commercial-safe', 'commercial-safe-sa', 'any'] as const;
+export type LicenseFilter = (typeof LICENSE_FILTERS)[number];
 
 export interface SoundRankRequest {
 	/** Free text: matched against titles, tags and types, with type synonyms (`swoosh` finds whooshes). */
@@ -442,18 +447,26 @@ function namedTypesOf(t: EntryText): SoundTypeId[] {
  * Licence class results by licence string (a library has a handful of distinct licences). `safe` = passes the
  * "Commercial-safe" filter (`passesCommercialSafeFilter`: the ShareAlike decision of spec 12 P6-E13 is its constant).
  */
-const LICENSE_MEMO = new Map<string, { safe: boolean; preference: number }>();
-function licenseInfo(license: unknown): { safe: boolean; preference: number } {
-	if (typeof license !== 'string')
-		return { safe: passesCommercialSafeFilter(license), preference: licensePreference(license) };
+type LicenseInfo = { safe: boolean; safeSa: boolean; preference: number };
+const LICENSE_MEMO = new Map<string, LicenseInfo>();
+const licenseInfoOf = (license: unknown): LicenseInfo => ({
+	safe: passesCommercialSafeFilter(license),
+	safeSa: isCommercialSafe(license),
+	preference: licensePreference(license),
+});
+function licenseInfo(license: unknown): LicenseInfo {
+	if (typeof license !== 'string') return licenseInfoOf(license);
 	let r = LICENSE_MEMO.get(license);
 	if (!r) {
 		if (LICENSE_MEMO.size >= 4096) LICENSE_MEMO.clear();
-		r = { safe: passesCommercialSafeFilter(license), preference: licensePreference(license) };
+		r = licenseInfoOf(license);
 		LICENSE_MEMO.set(license, r);
 	}
 	return r;
 }
+/** Whether a licence passes the request's licence filter. */
+const licenseOk = (lic: LicenseInfo, mode: LicenseFilter): boolean =>
+	mode === 'any' ? true : mode === 'commercial-safe-sa' ? lic.safeSa : lic.safe;
 
 /**
  * Text match 0…1 (the mean over query tokens of their best field match) and the share of query tokens a title word
@@ -554,7 +567,7 @@ type PreparedRequest = {
 	/** Types were asked for but none is known: nothing passes the type filter. */
 	noKnownType: boolean;
 	plan: QueryPlan | null;
-	commercialSafeOnly: boolean;
+	license: LicenseFilter;
 	similarId: string | undefined;
 };
 
@@ -564,7 +577,9 @@ function prepareRequest(request: SoundRankRequest): PreparedRequest {
 		wanted,
 		noKnownType: !!request.types && request.types.length > 0 && wanted.length === 0,
 		plan: planQuery(request.query),
-		commercialSafeOnly: (request.license ?? 'commercial-safe') === 'commercial-safe',
+		license: (LICENSE_FILTERS as readonly unknown[]).includes(request.license)
+			? (request.license as LicenseFilter)
+			: 'commercial-safe',
 		similarId: request.similarTo?.id,
 	};
 }
@@ -595,14 +610,14 @@ export function soundFilterOf(request: SoundRankRequest = {}): (e: RankableSound
 function filterBits(
 	e: RankableSound,
 	t: EntryText,
-	lic: { safe: boolean },
+	lic: LicenseInfo,
 	p: PreparedRequest,
 	request: SoundRankRequest,
 ): number {
 	let bits = 0;
 	if (!p.noKnownType && (p.wanted.length === 0 || p.wanted.some((w) => t.entryTypes.includes(w))))
 		bits |= SOUND_FILTER_TYPES;
-	if (!p.commercialSafeOnly || lic.safe) bits |= SOUND_FILTER_LICENSE;
+	if (licenseOk(lic, p.license)) bits |= SOUND_FILTER_LICENSE;
 	if (
 		passesDescriptorFilters(e.descriptors, request) &&
 		!(p.similarId !== undefined && p.similarId === e.id) &&
@@ -754,7 +769,7 @@ export function rankSounds<T extends RankableSound>(
 		const entryTypes = info.entryTypes;
 		if (wanted.length && !wanted.some((t) => entryTypes.includes(t))) continue;
 		const lic = licenseInfo(e.license);
-		if (prep.commercialSafeOnly && !lic.safe) continue;
+		if (!licenseOk(lic, prep.license)) continue;
 		if (!passesDescriptorFilters(e.descriptors, request)) continue;
 		if (sim?.id !== undefined && sim.id === e.id) continue;
 		if (plan && !(textScore(plan, info).score > 0)) continue;

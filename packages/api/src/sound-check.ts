@@ -100,8 +100,62 @@ export const SoundCheckFixSchema = z.object({
 		.object({ route: z.enum(['rebalance', 'delivery']), body: z.record(z.string(), z.unknown()) })
 		.optional(),
 	swap: z.object({ clipId: z.string(), soundId: z.string() }).optional(),
+	/**
+	 * Safe on its own but not applied with the safe fixes before it (`planSoundCheckFixes`): the findings whose fixes it
+	 * conflicts with (`safe` is then false and `why` says what it would do). Absent when it is not safe on its own.
+	 */
+	conflictsWith: z.array(z.string()).optional(),
 });
 export type SoundCheckFix = z.infer<typeof SoundCheckFixSchema>;
+
+/** What the check measured about one sound effect, linear in its clip gain (`SoundCheckLevelModel`). */
+export const SoundCheckLevelModelSchema = z.object({
+	clipId: z.string(),
+	title: z.string(),
+	gainDb: z.number(),
+	liftAt0Db: z.number().nullable(),
+	peakOverBedAt0Lu: z.number().nullable(),
+	truePeakAt0Db: z.number().nullable(),
+	mixTruePeakDb: z.number().nullable(),
+	start: z.number(),
+	end: z.number(),
+	speech: z.boolean(),
+	/**
+	 * The sound effects overlapping it (WP6.5b, the solver's inter-SFX masking): `liftAt0Db` is over the bed plus those of
+	 * a lower weight (`weight`, the sound's own at the check) at their checked gains; with other gains or weights the
+	 * masked bed is max(floor, 10·log10(10^(bedDomDb/10) + Σ 10^((at0Db + gain)/10))) over the terms whose weight ranks
+	 * under the sound's. Absent: no overlapping sound effect (or a report before it).
+	 */
+	masking: z
+		.object({
+			weight: z.enum(['hero', 'support', 'ambient']),
+			bedDomDb: z.number(),
+			terms: z
+				.array(
+					z.object({
+						clipId: z.string(),
+						weight: z.enum(['hero', 'support', 'ambient']),
+						gainDb: z.number(),
+						at0Db: z.number(),
+					}),
+				)
+				.max(64),
+		})
+		.optional(),
+});
+
+/**
+ * The numbers safe fixes are judged by together (`planSoundCheckFixes`, WP6.5b): the delivery's and the solver's
+ * true-peak ceilings, the bed caps by weight and each measured sound effect. Absent from reports before WP6.5b.
+ */
+export const SoundCheckLevelGuardSchema = z.object({
+	ceilingDb: z.number(),
+	eventCeilingDb: z.number(),
+	bedCapLu: z.object({ hero: z.number(), support: z.number(), ambient: z.number() }),
+	capToleranceLu: z.number(),
+	levels: z.array(SoundCheckLevelModelSchema).max(2000),
+});
+export type SoundCheckLevelGuardJson = z.infer<typeof SoundCheckLevelGuardSchema>;
 
 export const SoundCheckIssueSchema = z.object({
 	/** Stable within a report (`<code>:<subject>`), e.g. `OUT_OF_SYNC:clp_…`. */
@@ -208,6 +262,8 @@ export const SoundCheckLoudnessSchema = z.object({
 		gainDb: z.number().nullable(),
 	}),
 	limiterMaxGrDb: z.number().nullable(),
+	/** Channel layout the mix was checked in: the Mix's own (WP6.5b; absent from older reports: stereo or 5.1). */
+	layout: z.enum(['mono', 'stereo', '5.1']).optional(),
 	before: z.object({
 		integratedLufs: z.number().nullable(),
 		truePeakDb: z.number().nullable(),
@@ -251,6 +307,7 @@ export const SoundCheckReportSchema = z.object({
 	stems: z.record(z.string(), z.number().int()),
 	warnings: z.array(z.object({ code: z.string(), message: z.string() })),
 	timings: z.record(z.string(), z.number()),
+	levelGuard: SoundCheckLevelGuardSchema.optional(),
 });
 export type SoundCheckReport = z.infer<typeof SoundCheckReportSchema>;
 
@@ -334,6 +391,16 @@ export const SoundVisualResponseSchema = z.object({
 	stemPeakDb: z.object({ sfx: z.array(z.number()), bed: z.array(z.number()) }).optional(),
 	/** Motion speed per video frame from `motion.startFrame` (screen diagonals / s; the fastest moving layer). */
 	motion: z.object({ startFrame: frame, speed: z.array(z.number()) }),
+	/**
+	 * The picture's MEASURED motion (P6 `motion-analysis` of the rendered frames, the pixel source; same unit as
+	 * `motion`) per video frame from `startFrame`, when the range was already analysed — this route never starts an
+	 * analysis: `null` per frame outside the analysed windows, `null` altogether when nothing of the range is analysed
+	 * (or the picture changed since). Absent from engines before WP6.5b.
+	 */
+	pixelMotion: z
+		.object({ startFrame: frame, speed: z.array(z.number().nullable()) })
+		.nullable()
+		.optional(),
 	cues: z.array(
 		z.object({
 			cueId: z.string(),

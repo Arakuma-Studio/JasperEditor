@@ -278,6 +278,71 @@ describe('Essential Sound ▸ Auto gain', () => {
 		expect(f.clip().gainDb).toBe(-6);
 	});
 
+	it('on: a clip the solve leaves unchanged is handed back in the rebalance transaction (one History entry, WP6.5b)', async () => {
+		const f = fixture();
+		mountEssential(f);
+		const row = screen.getByTestId('essential-auto-gain');
+		const box = () => within(row).getByRole('checkbox', { name: 'Auto gain (masking-aware)' });
+		await act(async () => {
+			fireEvent.click(box());
+		});
+		expect(f.labels().at(-1)).toBe('Auto Gain Off');
+		const report = {
+			version: 1,
+			sequenceId: f.seqId,
+			events: [],
+			skipped: [],
+			conflicts: [],
+			warnings: [],
+			counts: counts({ changed: 0, limited: 0 }),
+			levels,
+		};
+		// the engine with `autoGain`: its transaction hands the clip back first, the solve leaves its gain as it is
+		f.engine.onRebalance((req) => {
+			expect(req.autoGain).toBe(true);
+			f.ok(
+				[{ type: 'soundDesign.setAutoGain', sequenceId: f.seqId, clipIds: req.clipIds, auto: true }],
+				'Rebalance SFX Levels',
+			);
+			return {
+				projectId: f.session.projectId,
+				sequenceId: f.seqId,
+				mode: 'apply',
+				applied: true,
+				revision: f.session.revision,
+				proposalId: null,
+				report,
+				autoGain: { clipIds: req.clipIds },
+			};
+		});
+		const n = f.labels().length;
+		await act(async () => {
+			fireEvent.click(box());
+		});
+		await waitFor(() => expect(box().getAttribute('aria-checked')).toBe('true'));
+		expect(f.engine.rebalances.at(-1)).toMatchObject({ clipIds: [f.clipId], mode: 'apply', autoGain: true });
+		// before: "Rebalance SFX Levels", then "Auto Gain On" (a second undo step)
+		expect(f.labels().slice(n)).toEqual(['Rebalance SFX Levels']);
+		// an engine without `autoGain` (no `autoGain` in its result): the editor still clears the mark itself
+		await act(async () => {
+			fireEvent.click(box());
+		});
+		f.engine.onRebalance(() => ({
+			projectId: f.session.projectId,
+			sequenceId: f.seqId,
+			mode: 'apply',
+			applied: false,
+			revision: f.session.revision,
+			proposalId: null,
+			report,
+		}));
+		const m = f.labels().length;
+		await act(async () => {
+			fireEvent.click(box());
+		});
+		await waitFor(() => expect(f.labels().slice(m)).toEqual(['Auto Gain On']));
+	});
+
 	it('Rebalance runs the selection’s automatic gains; nothing to change = no History entry', async () => {
 		const f = fixture();
 		mountEssential(f);

@@ -218,6 +218,19 @@ function retimeClipForFile(
 	return { kind: 'ok', trimmed: trimToCovered(seq, clip, cov!, h) };
 }
 
+/**
+ * Whether every frame of `clip` stays inside `target` when its content time moves by `shift` (what `replaceMediaFile`
+ * with fit `refuse` requires; read-only).
+ */
+export function clipCoveredAfterShift(seq: DSeq, clip: DClip, shift: number, target: MediaAsset): boolean {
+	const seqRate = seq.settings.frameRate as Rational;
+	if (!isBoundedContent(clip as Clip)) return true;
+	const timing = shiftedTiming(clip as unknown as ClipContentTiming, shift);
+	const tol = coverageTolerance(seqRate, clip.speed.rate, mediaFrameRate(target));
+	const cov = coveredClipFrames(timing, seqRate, target.probe.durationFlicks, tol);
+	return !!cov && cov.from === 0 && cov.to === clip.duration;
+}
+
 /** Swaps a video clip's source to another version of the same original (S07:PRC-006/007, PRC-016/017). */
 function swapClipSource(
 	doc: DDoc,

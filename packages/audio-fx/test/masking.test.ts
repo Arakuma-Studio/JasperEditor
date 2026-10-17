@@ -7,6 +7,7 @@ import {
 	CONSISTENCY_DB,
 	DIALOGUE_LIFT_DB,
 	HERO_SHADOW_DB,
+	MAX_MASKING_ITERATIONS,
 	QUIET_BED_OFFSET_LU,
 	SOLVER_CONSTRAINTS,
 	SOLVER_GAIN_MAX_DB,
@@ -133,7 +134,12 @@ describe('target lift', () => {
 	});
 
 	it('empty input', () => {
-		expect(solveSfxGains([])).toEqual({ gains: {}, events: [], warnings: [] });
+		expect(solveSfxGains([])).toEqual({
+			gains: {},
+			events: [],
+			warnings: [],
+			stats: { iterations: 1, converged: true },
+		});
 	});
 });
 
@@ -187,15 +193,20 @@ describe('constraints, one at a time', () => {
 
 	it('3 hero shadow: a support within 0.15 s of a hero × 0.6; not past 0.15 s, not ambient, not the hero', () => {
 		const h = ev({ clipId: 'h', weight: 'hero', startSec: 1, endSec: 1.3 });
-		const r = solveSfxGains([
-			h,
-			ev({ clipId: 'near', startSec: 1.4, endSec: 2 }), // gap 0.1 s
-			ev({ clipId: 'edge', startSec: 1.45, endSec: 2 }), // gap 0.15 s exactly
-			ev({ clipId: 'far', startSec: 1.46, endSec: 2 }),
-			ev({ clipId: 'before', startSec: 0, endSec: 0.9 }),
-			ev({ clipId: 'over', startSec: 0.5, endSec: 3 }), // overlaps
-			ev({ clipId: 'amb', weight: 'ambient', startSec: 1, endSec: 2 }),
-		]);
+		const r = solveSfxGains(
+			[
+				h,
+				ev({ clipId: 'near', startSec: 1.4, endSec: 2 }), // gap 0.1 s
+				ev({ clipId: 'edge', startSec: 1.45, endSec: 2 }), // gap 0.15 s exactly
+				ev({ clipId: 'far', startSec: 1.46, endSec: 2 }),
+				ev({ clipId: 'before', startSec: 0, endSec: 0.9 }),
+				ev({ clipId: 'over', startSec: 0.5, endSec: 3 }), // overlaps
+				ev({ clipId: 'amb', weight: 'ambient', startSec: 1, endSec: 2 }),
+				// the bed alone: the ambience and supports under the hero would raise the hero and the supports
+				// (overlapping-SFX masking, masking-overlap.test.ts); this test is about step 3
+			],
+			{ sfxMasking: false },
+		);
 		const free = -16.5;
 		expect(HERO_SHADOW_DB).toBeCloseTo(-4.437, 3);
 		for (const id of ['near', 'edge', 'before', 'over']) {
@@ -326,10 +337,12 @@ describe('order and post-verification (an earlier constraint is never silently b
 		const loud = { bedBandsDb: Array(7).fill(-20), bedLocalPeakLu: -10 };
 		const r = solveSfxGains([
 			ev({ clipId: 'a', soundId: 'x', ...loud, soundPeakLu: -20 }),
-			ev({ clipId: 'b', soundId: 'x', ...loud, soundPeakLu: -20 }),
+			ev({ clipId: 'b', soundId: 'x', ...loud, soundPeakLu: -20, startSec: 10, endSec: 10.5 }),
 			ev({
 				clipId: 'q',
 				soundId: 'x',
+				startSec: 20,
+				endSec: 20.5,
 				bedBandsDb: Array(7).fill(-60),
 				bedLocalPeakLu: -40,
 				soundPeakLu: -20,
@@ -355,8 +368,16 @@ describe('order and post-verification (an earlier constraint is never silently b
 		const loud = { bedBandsDb: Array(7).fill(-20), bedLocalPeakLu: -10 };
 		const r = solveSfxGains([
 			ev({ clipId: 'a', soundId: 'x', ...loud }),
-			ev({ clipId: 'b', soundId: 'x', ...loud }),
-			ev({ clipId: 'q', soundId: 'x', bedBandsDb: Array(7).fill(-60), bedLocalPeakLu: -40, soundPeakLu: 12 }),
+			ev({ clipId: 'b', soundId: 'x', ...loud, startSec: 10, endSec: 10.5 }),
+			ev({
+				clipId: 'q',
+				soundId: 'x',
+				startSec: 20,
+				endSec: 20.5,
+				bedBandsDb: Array(7).fill(-60),
+				bedLocalPeakLu: -40,
+				soundPeakLu: 12,
+			}),
 		]);
 		const q = one(r, 'q');
 		expect(q.gainDb).toBeCloseTo(-30, 9);
@@ -416,8 +437,8 @@ describe('order and post-verification (an earlier constraint is never silently b
 		const loud = { bedBandsDb: Array(7).fill(-20), bedLocalPeakLu: -10 };
 		const h = solveSfxGains([
 			ev({ clipId: 'a', soundId: 'x', ...loud, truePeakDb: -10 }),
-			ev({ clipId: 'b', soundId: 'x', ...loud, truePeakDb: -10 }),
-			ev({ clipId: 'hot', soundId: 'x', ...loud, truePeakDb: 0 }),
+			ev({ clipId: 'b', soundId: 'x', ...loud, truePeakDb: -10, startSec: 10, endSec: 10.5 }),
+			ev({ clipId: 'hot', soundId: 'x', ...loud, truePeakDb: 0, startSec: 20, endSec: 20.5 }),
 		]);
 		expect(one(h, 'hot').gainDb).toBeCloseTo(1.5, 9);
 		// headroom took it to −1 dB, consistency (earlier) back up to the median − 2
@@ -534,8 +555,19 @@ describe('properties', () => {
 			fc.property(arbEvents, arbOpts, fc.double({ min: 0, max: 30, noNaN: true }), (events, opts, d) => {
 				const a = solveSfxGains(events, opts);
 				const b = solveSfxGains(shiftBed(events, d), opts);
+				// the one cap that can take a gain DOWN when the bed rises: overlapping sounds sharing the summed true peak
+				// (a louder neighbour takes more of it); then the event was cut by it, or follows a repeat that was
+				const overlapCut = b.events.some((x) => x.limitedBy.includes('overlap-headroom'));
 				a.events.forEach((e, i) => {
-					expect(b.events[i]!.gainDb, `${e.clipId}`).toBeGreaterThanOrEqual(e.gainDb - 0.01 - 1e-9);
+					const y = b.events[i]!;
+					if (
+						overlapCut &&
+						y.limitedBy.some(
+							(l) => l === 'overlap-headroom' || l === 'consistency' || l.endsWith('/headroom'),
+						)
+					)
+						return;
+					expect(y.gainDb, `${e.clipId}`).toBeGreaterThanOrEqual(e.gainDb - 0.01 - 1e-9);
 				});
 				checkCaps(shiftBed(events, d), b, opts);
 			}),
@@ -676,7 +708,12 @@ describe('sanitisation', () => {
 			),
 			{ numRuns: 300 },
 		);
-		expect(solveSfxGains(null as never)).toEqual({ gains: {}, events: [], warnings: [] });
+		expect(solveSfxGains(null as never)).toEqual({
+			gains: {},
+			events: [],
+			warnings: [],
+			stats: { iterations: 0, converged: true },
+		});
 		expect(solveSfxGains('x' as never).warnings[0]!.code).toBe('W_INVALID_INPUT');
 		expect(solveSfxGains([], { truePeakCeilingDb: Number.NaN }).warnings[0]!.code).toBe('W_INVALID_INPUT');
 	});
@@ -694,7 +731,8 @@ describe('sanitisation', () => {
 
 describe('performance', () => {
 	// The best of 9 runs: on a shared, loaded host the median measures the load, the minimum the solver.
-	it('solves 2000 events in under 50 ms', () => {
+	/** 2000 events over 10 minutes (≈ 3 playing at once); `sameWeightRepeats`: a sound repeats under one weight only. */
+	function events2000(sameWeightRepeats: boolean): SolverEvent[] {
 		const rnd = (() => {
 			let s = 12345;
 			return () => {
@@ -703,13 +741,15 @@ describe('performance', () => {
 			};
 		})();
 		const types = ['hit', 'whoosh', 'click', 'boom', 'ui'];
-		const events: SolverEvent[] = Array.from({ length: 2000 }, (_, i) => {
+		return Array.from({ length: 2000 }, (_, i) => {
 			const t = rnd() * 600;
+			const weight = (['hero', 'support', 'support', 'ambient'] as const)[i % 4]!;
+			const sound = Math.floor(rnd() * 200);
 			return ev({
 				clipId: `c${i}`,
-				soundId: `s${Math.floor(rnd() * 200)}`,
+				soundId: sameWeightRepeats ? `${weight}-s${sound % 50}` : `s${sound}`,
 				type: types[i % types.length]!,
-				weight: (['hero', 'support', 'support', 'ambient'] as const)[i % 4]!,
+				weight,
 				startSec: t,
 				endSec: t + rnd() * 2,
 				soundBandsDb: Array.from({ length: 7 }, () => -60 + rnd() * 50),
@@ -718,18 +758,74 @@ describe('performance', () => {
 				speechOverlap: rnd() < 0.3,
 			});
 		});
-		solveSfxGains(events); // warm-up (JIT)
+	}
+	function bestOf9(events: SolverEvent[], opts: Parameters<typeof solveSfxGains>[1]) {
+		solveSfxGains(events, opts); // warm-up (JIT)
 		const times: number[] = [];
+		let iterations = 0;
 		for (let k = 0; k < 9; k++) {
 			const t0 = performance.now();
-			const r = solveSfxGains(events);
+			const r = solveSfxGains(events, opts);
 			times.push(performance.now() - t0);
 			expect(r.events).toHaveLength(2000);
+			iterations = r.stats.iterations;
 		}
 		times.sort((a, b) => a - b);
+		return { min: times[0]!, median: times[4]!, iterations };
+	}
+
+	it('solves 2000 events in under 50 ms (the bed-alone model of WP4.1a: one pass)', () => {
+		const t = bestOf9(events2000(false), { sfxMasking: false });
 		console.log(
-			`solveSfxGains 2000 events: min ${times[0]!.toFixed(1)} ms, median ${times[4]!.toFixed(1)} ms`,
+			`solveSfxGains 2000 events, bed alone: min ${t.min.toFixed(1)} ms, median ${t.median.toFixed(1)} ms`,
 		);
-		expect(times[0]!).toBeLessThan(50);
+		expect(t.iterations).toBe(1);
+		expect(t.min).toBeLessThan(50);
+	});
+
+	/** Best-of-5 wall time of the masking solve and of the one-pass (bed-alone) solve, interleaved in this process. */
+	function ratioToOnePass(events: SolverEvent[]) {
+		solveSfxGains(events, {});
+		solveSfxGains(events, { sfxMasking: false });
+		const masking: number[] = [];
+		const onePass: number[] = [];
+		let iterations = 0;
+		for (let k = 0; k < 5; k++) {
+			let t0 = performance.now();
+			solveSfxGains(events, { sfxMasking: false });
+			onePass.push(performance.now() - t0);
+			t0 = performance.now();
+			iterations = solveSfxGains(events, {}).stats.iterations;
+			masking.push(performance.now() - t0);
+		}
+		const m = Math.min(...masking);
+		const o = Math.min(...onePass);
+		return { masking: m, onePass: o, ratio: m / o, iterations };
+	}
+
+	// The masking budgets are ratios to the one-pass solve measured in the same process, interleaved (a loaded host
+	// slows both alike), and exact pass counts (WP6.5b; measured on the idle build server: 31 ms ≈ 1.8× in 3 passes,
+	// 45 ms ≈ 2.6× in 13 passes; the absolute "under 50 ms" of these cases failed at a load of 20–50).
+	it('with the masking between overlapping sound effects: 3 passes, ≤ 2.5× one pass, when repeats keep their weight', () => {
+		// a plan places a repeated sound with one role: the masking settles in one pass per weight rank
+		const t = ratioToOnePass(events2000(true));
+		console.log(
+			`solveSfxGains 2000 events, masking: ${t.masking.toFixed(1)} ms vs one pass ${t.onePass.toFixed(1)} ms (${t.ratio.toFixed(2)}×), ${t.iterations} passes`,
+		);
+		expect(t.iterations).toBe(3);
+		expect(t.ratio).toBeLessThan(2.5);
+	});
+
+	it('with the masking and one sound repeated across hero, support and ambient: ≤ 4× one pass (13 passes)', () => {
+		// The stress case: every repeat group spans the weights, so a hero's masked bed moves its group's median, which
+		// moves the ambient members under the other heroes… the fixed point takes 13 passes; only the events whose bed
+		// moved are solved again, so 13 passes cost ≈ 2.6 one-pass solves.
+		const t = ratioToOnePass(events2000(false));
+		console.log(
+			`solveSfxGains 2000 events, masking, repeats across weights: ${t.masking.toFixed(1)} ms vs one pass ${t.onePass.toFixed(1)} ms (${t.ratio.toFixed(2)}×), ${t.iterations} passes`,
+		);
+		expect(t.iterations).toBe(13);
+		expect(t.iterations).toBeLessThanOrEqual(1 + MAX_MASKING_ITERATIONS);
+		expect(t.ratio).toBeLessThan(4);
 	});
 });

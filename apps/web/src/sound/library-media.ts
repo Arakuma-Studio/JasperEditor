@@ -12,6 +12,7 @@ import {
 	type LibraryProvenance,
 	type MediaAsset,
 	mediaDurationFlicks,
+	olderLibraryCopyOf,
 	type ProjectDocument,
 	readLibraryProvenance,
 } from '@jasper/project';
@@ -129,8 +130,12 @@ export function soundMediaCommands(
 		const asset = buildMediaAsset(reg, { id: session.ctx.ids.next('med'), now: new Date().toISOString() });
 		const label = labelDefault(labelKindOfMedia(asset));
 		const ref = `${prefix}${media.size}`;
+		// An older copy of this sound in the project (registered before a registration rule changed) is replaced in place:
+		// one media per sound, its clips moved onto the new copy sample for sample (WP6.5b).
+		const older = olderLibraryCopyOf(doc, reg.library.soundId, reg.fingerprint);
 		commands.push({
-			type: 'media.register',
+			type: older ? 'media.upgradeLibraryCopy' : 'media.register',
+			...(older ? { mediaId: older, ifPossible: true } : {}),
 			asset: { ...asset, library: reg.library },
 			binId,
 			name: title,

@@ -26,6 +26,7 @@ export {
 } from './curve.ts';
 export { deriveCues, MAX_DERIVED_CUES } from './derive.ts';
 export {
+	DIALOGUE_AUDIBLE_DB,
 	DIALOGUE_BRIDGE_SEC,
 	DIALOGUE_PAD_SEC,
 	type DialogueSource,

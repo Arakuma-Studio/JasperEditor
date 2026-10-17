@@ -9,7 +9,9 @@ import { titleReveal } from './title-reveal.ts';
 export * from './callout.ts';
 export * from './common.ts';
 export * from './counter.ts';
+export * from './eases.ts';
 export * from './lower-third-anim.ts';
+export * from './motion.ts';
 export * from './timing.ts';
 export * from './title-reveal.ts';
 

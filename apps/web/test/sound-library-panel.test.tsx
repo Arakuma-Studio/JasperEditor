@@ -150,8 +150,16 @@ describe('SoundLibraryPanel', () => {
 		fireEvent.click(document.querySelector('[data-refine="length:short"]')!);
 		await waitFor(() => expect(engine.calls.search.at(-1)!.length).toBe('short'));
 		expect(engine.calls.search.at(-1)!.license).toBe('commercial-safe');
+		// Include ShareAlike (spec 12 P6-E13): CC BY-SA joins the commercial-safe results; off again
+		fireEvent.click(screen.getByTestId('sound-include-share-alike'));
+		await waitFor(() => expect(engine.calls.search.at(-1)!.license).toBe('commercial-safe-sa'));
+		expect(screen.getByTestId('sound-include-share-alike').getAttribute('aria-pressed')).toBe('true');
+		fireEvent.click(screen.getByTestId('sound-include-share-alike'));
+		await waitFor(() => expect(engine.calls.search.at(-1)!.license).toBe('commercial-safe'));
 		fireEvent.click(screen.getByTestId('sound-commercial-safe'));
 		await waitFor(() => expect(engine.calls.search.at(-1)!.license).toBe('any'));
+		// without Commercial-safe there is nothing to include
+		expect(screen.queryByTestId('sound-include-share-alike')).toBeNull();
 		const panel = document.querySelector('[data-panel-kind="soundLibrary"]')!;
 		key(screen.getByRole('button', { name: 'Clear filters' }), 'f', 'KeyF', { ctrlKey: true });
 		expect(document.activeElement).toBe(screen.getByTestId('sound-search'));

@@ -333,7 +333,7 @@ export function proposalCardCounts(doc: ProjectDocument, p: Proposal, ctx: Propo
 
 /**
  * `proposalCardCounts` one item at a time (the card spreads a large proposal's preview over several frames,
- * `runInSlices`). The items are applied without the per-item invariant check: only the counts are read.
+ * `runInSlices`). The items are applied without the invariant check: only the counts are read.
  */
 export function* proposalCardCountsSteps(
 	doc: ProjectDocument,
@@ -350,7 +350,11 @@ export function* proposalCardCountsSteps(
 			p,
 			'undecided',
 			{ ...ctx, checkInvariants: false },
-			{ idsFor: (it) => createSeededIdSource(`${p.id}:${it.id}:${it.selectedAlternative ?? 0}`) },
+			{
+				idsFor: (it) => createSeededIdSource(`${p.id}:${it.id}:${it.selectedAlternative ?? 0}`),
+				// batches of items stay near one slice of `runInSlices`
+				batchMs: 8,
+			},
 		);
 		let sounds = 0;
 		let newTracks = 0;

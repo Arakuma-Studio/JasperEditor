@@ -166,6 +166,18 @@ describe('export plan sound warnings (spec 12 §2.11)', { timeout: 300_000 }, ()
 		expect((await plan(d, { videoOnly: true })).warnings.map((x) => x.code)).not.toContain('W_SOUND_CREDITS');
 	});
 
+	it('W_SOUND_SHARE_ALIKE when a heard sound is CC BY-SA (spec 12 P6-E13), with a sidecar too; none outside its range', async () => {
+		const { d } = await creditsDoc();
+		const p = await plan(d, { credits: { sidecar: 'md' } });
+		const w = p.warnings.find((x) => x.code === 'W_SOUND_SHARE_ALIKE');
+		expect(w?.message).toMatch(
+			/^1 sound heard in this export is ShareAlike \(CC-BY-SA-4\.0: ".+"\): the video must be shared under CC BY-SA or a compatible licence$/,
+		);
+		expect(w?.itemIds?.length).toBe(1);
+		const mid = await plan(d, { range: { type: 'custom', startFrame: 60, endFrame: 200 } });
+		expect(mid.warnings.map((x) => x.code)).not.toContain('W_SOUND_SHARE_ALIKE');
+	});
+
 	it('W_SOUND_CHECK_STALE (info) for a stale or failed stored Sound Check, none for a current pass', async () => {
 		const { d } = await creditsDoc();
 		const preset = soundDesignSettingsOf(d.doc.sequences[d.seqId]!).delivery;

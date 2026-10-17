@@ -1,7 +1,14 @@
 // title-reveal@1 (S11:ATP-003): characters rise in one by one (stagger order forward / centre / seeded random),
 // the subtitle follows and an accent underline draws on; the outro plays the intro backwards. Value engine only:
 // the underline's draw-on is a dash length computed from its known width (no DOM geometry).
-import { estimateTextWidth, rgbaCss, type TitleRevealParams, titleRevealParams } from '@jasper/mg-templates';
+import {
+	estimateTextWidth,
+	rgbaCss,
+	TITLE_REVEAL_PHASES,
+	type TitleRevealParams,
+	titleRevealCharPhase,
+	titleRevealParams,
+} from '@jasper/mg-templates';
 import type { CSSProperties } from 'react';
 import {
 	createPausedTimeline,
@@ -25,7 +32,7 @@ import type { AnimeTemplateProps } from './types.ts';
 
 type Values = { o: number; y: number; d: number };
 
-type TitleRevealBuildInput = TemplateTiming & {
+export type TitleRevealBuildInput = TemplateTiming & {
 	units: number;
 	order: TitleRevealParams['order'];
 	stagger: number;
@@ -42,7 +49,7 @@ function titleSegments(title: string): TextSegment[] {
  * The timeline: targets `[...units, subtitle, underline]`. Units: `o` opacity, `y` rise in em of the title size;
  * subtitle: `o`, `y` (em of its size); underline: `d` drawn fraction.
  */
-function buildTitleReveal(input: TitleRevealBuildInput): {
+export function buildTitleReveal(input: TitleRevealBuildInput): {
 	timeline: ReturnType<typeof createPausedTimeline>;
 	targets: Values[];
 } {
@@ -51,18 +58,22 @@ function buildTitleReveal(input: TitleRevealBuildInput): {
 	const units: Values[] = Array.from({ length: n }, () => ({ o: 0, y: 0.5, d: 0 }));
 	const subtitle: Values = { o: 0, y: 0.6, d: 0 };
 	const underline: Values = { o: 1, y: 0, d: 0 };
-	const s = Math.min(1, Math.max(0, input.stagger));
-	// Characters use the first 75 % of the intro: each lasts `charDur`, starts spread over the rest.
-	const window = 0.75;
-	const charDur = window * (1 - 0.75 * s);
-	const spread = window - charDur;
+	// Characters use the first 75 % of the intro: each lasts `charDur`, starts spread over the rest (the phases are
+	// shared with the sound-design motion model, @jasper/mg-templates).
+	const { dur: charDur, spread } = titleRevealCharPhase(input.stagger);
 	const ranks = staggerRanks(n, input.order, input.seed);
 	units.forEach((u, i) => {
 		const at = n > 1 ? (ranks[i]! / (n - 1)) * spread : 0;
 		addInOut(tl, input, u, { o: [0, 1], y: [0.5, 0] }, { at, dur: charDur, ease: input.ease, outEase: 'in' });
 	});
-	addInOut(tl, input, subtitle, { o: [0, 1], y: [0.6, 0] }, { at: 0.35, dur: 0.55, ease: input.ease });
-	addInOut(tl, input, underline, { d: [0, 1] }, { at: 0.45, dur: 0.55, ease: 'inOut', outEase: 'inOut' });
+	addInOut(
+		tl,
+		input,
+		subtitle,
+		{ o: [0, 1], y: [0.6, 0] },
+		{ ...TITLE_REVEAL_PHASES.subtitle, ease: input.ease },
+	);
+	addInOut(tl, input, underline, { d: [0, 1] }, TITLE_REVEAL_PHASES.underline);
 	return { timeline: tl, targets: [...units, subtitle, underline] };
 }
 

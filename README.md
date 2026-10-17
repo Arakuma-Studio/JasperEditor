@@ -512,16 +512,17 @@ Tools (355; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `install_sound_pack` (downloads a catalogue pack from its upstream site, sha256-pinned; tell the user its size and
   licence first) `remove_sound_pack` (approval card) · cues: `find_sound_cues`
   (derived from the edit; the engine sources scene, beat and pixel measure footage and music when asked, and
-  snapToBeats) `analyze_picture_motion` (the rendered picture's motion per frame: moves, landings and cuts in
+  snapToBeats; `timeSignature` "auto" detects 3 or 4 beats per bar for the downbeats, or give it)
+  `analyze_picture_motion` (the rendered picture's motion per frame: moves, landings and cuts in
   footage, with a PNG strip) `set_sound_cues` `place_sound` (peak-exact, layers, alternates; proposes unless mode
   "apply") `swap_sound` `align_peak` · `plan_sound_design` (a whole pass as one proposal, gains solved against the
   bed; style options room glue, stop-before, build, delivery; `style.cueSources` picks where derived cues come from) ·
   `rebalance_sfx` (masking solver: each sound effect clears the bed by its target lift, with what limited it) ·
   `apply_delivery` (web / podcast / R128 / A/85: Mix loudness, Auto-Match by type, ducking, measured) `set_room_glue` (a
-  shared "SFX Room" reverb) · `sound_check` (the delivered mix measured: findings with safe fixes — sync, loudness, the
-  mix, cues, licences (ShareAlike warned), and clicks at edits, cut edges, harshness, inaudible layers, partial
-  coverage, endings and the loudness arc — five listen-here
-  timecodes, a verdict, a PNG of the worst moments; a custom delivery target; humanVerdicts: what the user said after
+  shared "SFX Room" reverb) · `sound_check` (the delivered mix measured: findings with safe fixes judged together, in the
+  order to apply them — sync, loudness, the mix, cues, licences (ShareAlike warned), and clicks at edits, cut edges,
+  harshness, inaudible layers, partial coverage, endings and the loudness arc — five listen-here timecodes, a verdict, a
+  PNG of the worst moments; a custom delivery target; humanVerdicts: what the user said after
   listening in the editor's Sound Check panel, each bound to the moment it judged and marked stale when that moment
   changed) `get_sound_check` (the last full report the engine keeps per sequence, across restarts: current or stale)
   `view_sound_timeline` (PNG: loudness of the mix and its stems, cues, motion, findings)
@@ -667,7 +668,11 @@ and `DELETE` record the review. A client with only the token may accept sound-de
 allowed it ("Allow agents to apply sound proposals"), otherwise `403 APPROVAL_REQUIRED`; it may withdraw items
 (`reject`) or delete a proposal, while `reopen`, `note` and `select` are the reviewer's (editor key only). An accepted
 item is reopened only once its accept is undone (`409 PROPOSAL_STILL_APPLIED` while what it created is in the
-document). A stale item's `reason` names what changed with timecodes ("The cut cue at 00:00:03:00 moved to
+document). Every accept is journalled (an intent file next to the proposal, with the ids its transaction creates its
+entities with): an engine that stopped between the transaction and recording it (or lost the editor's answer) settles
+it when the proposal is next read — recorded accepted when the document has it, rolled back when it does not; while the
+editor window that received it is away with its lease alive, accepting that proposal again answers `409 NO_SESSION`
+(retryable). A stale item's `reason` names what changed with timecodes ("The cut cue at 00:00:03:00 moved to
 00:00:03:10"); the accept's `stale[].problem` carries the same, structured. Reading a proposal again and
 again without `?revalidate=1` (what `wait_for_proposal` does) marks the agent as waiting for the review: the list's
 `waiting: {agent, since}` and the event `proposal.changed` with `change: "waiting"` tell the editor, which shows "<agent>
@@ -682,10 +687,13 @@ its result names the proposal it stored (`proposalId`) with a per-cue report (so
 alternates, skipped cues, each sound's gain solved against the bed with what limited it, and the room glue / delivery /
 stop-before / build items the style asked for).
 `POST /api/sound-design/rebalance {projectId, sequenceId?, clipIds?, range?, delivery?, mode?: "propose" | "apply",
-userGains?: "keep" | "replace", label?}` starts a `sound-design` job (202) that measures every sound effect against the
+userGains?: "keep" | "replace", label?, autoGain?: true}` starts a `sound-design` job (202) that measures every sound effect against the
 bed (rendered per cue cluster) and solves its gain with the masking solver; the result reports per clip the gain, target
 and achieved lift, `limitedBy` and the reason, and either names the proposal it stored (`propose`, the default) or applies
-the gains as one undoable transaction "Rebalance SFX Levels" (`apply`).
+the gains as one undoable transaction "Rebalance SFX Levels" (`apply`). `autoGain: true` (with `mode: "apply"` and
+`clipIds`; Essential Sound ▸ Auto gain on) also hands the named clips back to Auto gain in that same transaction
+(`soundDesign.setAutoGain` first, then the solved gains), also the ones the solve leaves unchanged or cannot measure;
+the result's `autoGain.clipIds` lists them.
 `POST /api/sound-design/delivery {projectId, sequenceId?, delivery: "web" | "podcast" | "broadcast-r128" | "atsc-a85",
 mode?: "propose" | "apply", loudness?, autoMatch?, ducking?, rebalance?, label?}` starts a `sound-design` job (202) that
 measures the clips, the speech and the resulting mix and applies (one transaction "Apply Delivery Preset") or proposes the
@@ -922,7 +930,9 @@ REMOTION_E2E=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome \
 
 `pnpm e2e` starts `e2e/serve.mjs`: the built engine (`apps/engine/dist/engine.mjs`) serving the built web app
 on `127.0.0.1:${E2E_PORT:-48110}` with a throwaway appdir. `E2E_SKIP_BUILD=1` reuses existing builds,
-`E2E_KEEP_APPDIR=1` keeps the appdir for inspection. The pre-step also fetches the LGPL FFmpeg directory
+`E2E_KEEP_APPDIR=1` keeps the appdir for inspection. Playwright waits up to 180 s for that server to answer `/health`;
+`E2E_SERVER_TIMEOUT_MS=<ms>` (1 000 … 3 600 000) changes it for one run, e.g. `E2E_SERVER_TIMEOUT_MS=600000` on a
+heavily loaded shared host. The pre-step also fetches the LGPL FFmpeg directory
 where a pinned prebuilt exists (`E2E_SKIP_LGPL=1` skips it), so the exports in the specs are made by the
 shipped build (H.264 by OpenH264).
 

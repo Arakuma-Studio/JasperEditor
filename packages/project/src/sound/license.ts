@@ -99,17 +99,17 @@ export function licenseObligations(license: unknown): LicenseObligations {
 }
 
 /**
- * HUMAN DECISION PENDING (spec 12 §4 P6-E13, wp-note "Phase 6 → WP-E1"): whether the default "Commercial-safe" filter
- * of the Sound Library (search, the panel, MCP `search_sounds`, the plan's sound choice) keeps CC BY-SA sounds. The
- * proposal is to exclude them (`false`): they stay allowed when chosen explicitly (`license: 'any'`), carry an "SA"
- * badge, a credits notice and a Sound Check LICENSE warning either way. Until a human answers, the current behaviour is
- * kept (`true`). This constant is the only switch.
+ * Whether the default "Commercial-safe" filter of the Sound Library keeps CC BY-SA sounds (spec 12 §4 P6-E13). Human
+ * decision (2026-10-17): it does NOT — the default filter (rankSounds' `commercial-safe`, the Library's Refine licence
+ * pill, MCP `search_sounds`, the plan job, Auto Sound Pass and the fill pickers) excludes ShareAlike. BY-SA stays
+ * selectable explicitly (`license: 'commercial-safe-sa'` = "Include ShareAlike", or `any`), always with the "SA" badge,
+ * the credits notice, the export warning and the Sound Check LICENSE warning. This constant is the only switch.
  */
-export const COMMERCIAL_SAFE_FILTER_KEEPS_SHARE_ALIKE = true;
+export const COMMERCIAL_SAFE_FILTER_KEEPS_SHARE_ALIKE = false;
 
 /**
  * Whether a sound passes the default "Commercial-safe" licence filter: commercial-safe, and not ShareAlike unless
- * {@link COMMERCIAL_SAFE_FILTER_KEEPS_SHARE_ALIKE}. (`isCommercialSafe` stays the licence-class question: BY-SA is on
+ * `keepShareAlike` (default {@link COMMERCIAL_SAFE_FILTER_KEEPS_SHARE_ALIKE}: excluded). (`isCommercialSafe` stays the licence-class question: BY-SA is on
  * the asset allowlist, AGENTS.md §3.2, so it is never a LICENSE error.)
  */
 export function passesCommercialSafeFilter(

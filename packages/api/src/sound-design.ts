@@ -15,6 +15,7 @@ import {
 	SOUND_DESIGN_LIMITS,
 } from '@jasper/project';
 import { z } from 'zod';
+import { TimeSignatureSchema } from './audio-fx.ts';
 import { EnvelopeSchema } from './projects.ts';
 import { SOUND_SOURCE_TYPES, SoundRankPartsSchema } from './sounds.ts';
 
@@ -44,6 +45,11 @@ export const SoundCuesOptionsSchema = z.strictObject({
 	 * when needed.
 	 */
 	snapToBeats: z.boolean().optional(),
+	/**
+	 * Metre of the music's downbeats for the `beat` source and `snapToBeats` (default `'auto'`: 3 or 4 beats per bar
+	 * detected; a number forces it, e.g. 3 for a waltz).
+	 */
+	timeSignature: TimeSignatureSchema.optional(),
 	/**
 	 * Engine sources: start the analyses that are missing (default true; they come back as `W_ANALYSIS_PENDING` with
 	 * their jobs), or `false` to use only what is already measured (`analysis[source].state` `missing` otherwise) — the
@@ -279,6 +285,8 @@ export const SoundDesignPlanStyleSchema = z.strictObject({
 	 * Essential music clips are analysed in the job; default off).
 	 */
 	snapToBeats: z.boolean().optional(),
+	/** Metre of the music's downbeats (default `'auto'`: 3 or 4 beats per bar detected). */
+	timeSignature: TimeSignatureSchema.optional(),
 	/** Rotation and variation seed (default: the sequence's `soundDesign.settings.seed`). */
 	seed: z.number().int().min(0).max(0xffff_ffff).optional(),
 	/** Alternatives per cue, 0–3 (default 3). */
@@ -364,6 +372,15 @@ export const SfxSolvedLevelSchema = z.object({
 	bedTracks: z.array(z.string()),
 	/** Its active window on the timeline (seconds), where sound and bed were measured. */
 	window: z.object({ start: z.number(), end: z.number() }),
+	/**
+	 * dB the lower-weight sound effects playing under it add to its bed in the dominant bands at the solved gains (an
+	 * ambience under a support or hero, a support under a hero; `achievedLiftDb` is over that masked bed). Absent: 0.
+	 */
+	sfxMaskingDb: z.number().optional(),
+	/** Clip ids of those sound effects (≤ 32). */
+	maskedBy: z.array(z.string()).optional(),
+	/** Summed true peak of it and the sounds playing with it at its worst moment (dBTP, an upper bound; pre-master). */
+	overlapTruePeakDb: z.number().optional(),
 });
 export type SfxSolvedLevel = z.infer<typeof SfxSolvedLevelSchema>;
 
@@ -541,29 +558,41 @@ export type SoundDesignPlanResult = z.infer<typeof SoundDesignPlanResultSchema>;
 
 export const SFX_REBALANCE_LIMITS = { maxClipIds: 2000, maxEvents: 2000 } as const;
 
-export const SfxRebalanceRequestSchema = z.strictObject({
-	projectId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'a project id'),
-	/** Default: the project's first sequence. */
-	sequenceId: id.optional(),
-	/** Only these sound effect clips (default: every sound effect of the sequence, in `range`). */
-	clipIds: z.array(id).min(1).max(SFX_REBALANCE_LIMITS.maxClipIds).optional(),
-	/** Sequence frames `[start, end)`: sound effects overlapping it (default the whole sequence). */
-	range: z
-		.strictObject({ start: frame, end: frame })
-		.refine((r) => r.end > r.start, 'range.end must be after range.start')
-		.optional(),
-	/** Delivery preset whose loudness and true peak the solver uses (default the sequence's). */
-	delivery: z.enum(SOUND_DELIVERIES).optional(),
-	/** `propose` (default): a proposal to review, one item per clip; `apply`: one undoable transaction. */
-	mode: z.enum(['propose', 'apply']).optional(),
-	/**
-	 * Gains the user set by hand (not the default level or an earlier solve): `keep` (default) leaves them; `replace`
-	 * solves them too. Clips named in `clipIds` are always solved.
-	 */
-	userGains: z.enum(['keep', 'replace']).optional(),
-	/** Proposal title (default "Rebalance SFX Levels: <sequence>"). */
-	label: z.string().min(1).max(200).optional(),
-});
+export const SfxRebalanceRequestSchema = z
+	.strictObject({
+		projectId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'a project id'),
+		/** Default: the project's first sequence. */
+		sequenceId: id.optional(),
+		/** Only these sound effect clips (default: every sound effect of the sequence, in `range`). */
+		clipIds: z.array(id).min(1).max(SFX_REBALANCE_LIMITS.maxClipIds).optional(),
+		/** Sequence frames `[start, end)`: sound effects overlapping it (default the whole sequence). */
+		range: z
+			.strictObject({ start: frame, end: frame })
+			.refine((r) => r.end > r.start, 'range.end must be after range.start')
+			.optional(),
+		/** Delivery preset whose loudness and true peak the solver uses (default the sequence's). */
+		delivery: z.enum(SOUND_DELIVERIES).optional(),
+		/** `propose` (default): a proposal to review, one item per clip; `apply`: one undoable transaction. */
+		mode: z.enum(['propose', 'apply']).optional(),
+		/**
+		 * Gains the user set by hand (not the default level or an earlier solve): `keep` (default) leaves them; `replace`
+		 * solves them too. Clips named in `clipIds` are always solved.
+		 */
+		userGains: z.enum(['keep', 'replace']).optional(),
+		/** Proposal title (default "Rebalance SFX Levels: <sequence>"). */
+		label: z.string().min(1).max(200).optional(),
+		/**
+		 * Essential Sound ▸ Auto gain on (WP6.5b): the named clips are handed back to the solver in the SAME transaction
+		 * (`soundDesign.setAutoGain {auto: true}` first, then the solved gains): one undo step. Clips the solve leaves
+		 * unchanged lose their Auto gain off mark too; named clips it cannot measure take their recorded level. Needs
+		 * `mode: 'apply'` and `clipIds`.
+		 */
+		autoGain: z.literal(true).optional(),
+	})
+	.refine((r) => r.autoGain !== true || (r.mode === 'apply' && !!r.clipIds?.length), {
+		message: 'autoGain needs mode "apply" and clipIds',
+		path: ['autoGain'],
+	});
 export type SfxRebalanceRequest = z.infer<typeof SfxRebalanceRequestSchema>;
 
 /** One solved sound effect of a rebalance. */
@@ -623,6 +652,8 @@ export const SfxRebalanceResultSchema = z.object({
 	/** Propose mode: the stored proposal (null when nothing changes). */
 	proposalId: z.string().nullable(),
 	report: SfxRebalanceReportSchema,
+	/** `autoGain` requests: the clips handed back to Auto gain in the transaction (absent from older engines). */
+	autoGain: z.object({ clipIds: z.array(z.string()) }).optional(),
 });
 export type SfxRebalanceResult = z.infer<typeof SfxRebalanceResultSchema>;
 

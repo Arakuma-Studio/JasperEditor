@@ -4,6 +4,7 @@
 // `SoundEntry` is a `RankableSound` (checked at compile time below).
 import {
 	LIBRARY_LIMITS,
+	LICENSE_FILTERS,
 	LibraryProvenanceSchema,
 	type RankableSound,
 	SOUND_FAMILIES,
@@ -214,8 +215,11 @@ export const SoundSearchQuerySchema = z.object({
 	attack: z.enum(['punchy', 'soft']).optional(),
 	weight: z.enum(['light', 'heavy']).optional(),
 	texture: z.enum(['clean', 'noisy']).optional(),
-	/** Default `commercial-safe`. */
-	license: z.enum(['any', 'commercial-safe']).optional(),
+	/**
+	 * Default `commercial-safe` (without CC BY-SA: spec 12 P6-E13); `commercial-safe-sa` also lists ShareAlike sounds
+	 * ("Include ShareAlike"); `any` every licence.
+	 */
+	license: z.enum(LICENSE_FILTERS).optional(),
 	/** Source types, comma-separated. */
 	sources: csv(4, z.enum(SOUND_SOURCE_TYPES)).optional(),
 	/** Only sounds of this user folder. */
@@ -244,7 +248,7 @@ export type SoundSearchRequest = {
 	attack?: 'punchy' | 'soft';
 	weight?: 'light' | 'heavy';
 	texture?: 'clean' | 'noisy';
-	license?: 'any' | 'commercial-safe';
+	license?: (typeof LICENSE_FILTERS)[number];
 	sources?: readonly SoundSourceType[];
 	rootId?: string;
 	packId?: string;
@@ -367,9 +371,17 @@ export type RegisterSoundRequest = z.infer<typeof RegisterSoundRequestSchema>;
  * into a "Sound Effects" bin. `existingMediaId`: the saved project already has this file (same fingerprint) as
  * that media; reuse it instead of registering a duplicate.
  */
+/** Why a registered sound is not a sample-exact copy (WP6.5b): over 1 h, over the copy size cap, or not enough disk. */
+export const SOUND_INEXACT_REASONS = ['too-long', 'too-large', 'disk-space'] as const;
+
 export const RegisterSoundResponseSchema = RegisteredMediaSchema.extend({
 	library: LibraryProvenanceSchema,
 	existingMediaId: z.string().nullable(),
+	/**
+	 * Present when the sound needed a sample-exact copy (lead / trailing silence, or a lossy source) but was registered as
+	 * it is: its placement is then exact to a frame, a lossy one seeked by an In point may play a few samples off.
+	 */
+	inexact: z.object({ reason: z.enum(SOUND_INEXACT_REASONS), message: z.string().max(300) }).optional(),
 });
 export type RegisterSoundResponse = z.infer<typeof RegisterSoundResponseSchema>;
 

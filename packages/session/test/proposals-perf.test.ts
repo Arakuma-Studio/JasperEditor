@@ -4,6 +4,8 @@
 // plays, and the result equals the one-shot `previewProposal`. The gate runs N = 120; the measurement in the wp-note
 // is `PROPOSALS_PERF_ITEMS=500 PROPOSALS_PERF_OUT=<file>` (timings written to the file).
 import { writeFileSync } from 'node:fs';
+import { loadavg } from 'node:os';
+import { previewStats } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { proposalsFor } from '../src/index.ts';
 import { bigProposal, bigSession } from './big-proposal.ts';
@@ -29,6 +31,8 @@ describe(`review preview with ${N} place items`, { timeout: 600_000 }, () => {
 		});
 		const run = () => {
 			const t = performance.now();
+			const cpu0 = process.cpuUsage();
+			previewStats(true);
 			let ran = 0;
 			let longest = 0;
 			const slices: number[] = [];
@@ -49,7 +53,17 @@ describe(`review preview with ${N} place items`, { timeout: 600_000 }, () => {
 			const sorted = [...slices].sort((a, b) => a - b);
 			const pct = (q: number) =>
 				Math.round(sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0);
-			return { ms: performance.now() - t, ran, longest, top, p50: pct(0.5), p95: pct(0.95) };
+			const cpu = process.cpuUsage(cpu0);
+			return {
+				ms: performance.now() - t,
+				cpuMs: (cpu.user + cpu.system) / 1000,
+				work: { ...previewStats() },
+				ran,
+				longest,
+				top,
+				p50: pct(0.5),
+				p95: pct(0.95),
+			};
 		};
 		await c.setActive(p.id);
 		const first = run();
@@ -92,6 +106,8 @@ describe(`review preview with ${N} place items`, { timeout: 600_000 }, () => {
 		const items = c.getState().items.length;
 		const ms = (r: ReturnType<typeof run>) => ({
 			totalMs: Math.round(r.ms),
+			cpuMs: Math.round(r.cpuMs),
+			work: r.work,
 			slices: r.ran,
 			longestSliceMs: Math.round(r.longest),
 			p50SliceMs: r.p50,
@@ -107,6 +123,7 @@ describe(`review preview with ${N} place items`, { timeout: 600_000 }, () => {
 			afterAccept: ms(afterAccept),
 			afterReject: ms(afterReject),
 			reviewItems: items,
+			loadavg: loadavg().map((x) => Math.round(x)),
 		});
 		if (process.env.PROPOSALS_PERF_OUT) writeFileSync(process.env.PROPOSALS_PERF_OUT, `${report}\n`);
 		expect(c.getState().items.find((it) => it.id === place[10]!.id)?.state).toBe('rejected');

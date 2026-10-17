@@ -8,7 +8,8 @@
 //   edges D ≥ E, so the result is continuous and E is untouched outside W: keyframes outside W are never replaced. Exact
 //   for linear and hold curves. A curved segment (Bézier, auto-Bézier, roving) crossing an edge widens the rewritten
 //   range to its keys: there D = +∞ where no dip is (the curve is kept), the segment is rebuilt from adaptive samples
-//   (within 0.001 dB of the curve, ≥ 1 ms apart) and the edge keys keep the eases of the curve outside.
+//   (within 0.001 dB of the curve, ≥ 1 ms apart; steep bends within 0.01 dB, ≥ 0.125 ms apart) and the edge keys
+//   keep the eases of the curve outside. A dip of no depth (0 dB) is no dip.
 // - STOP-BEFORE of a hero at T: one dip [T − seconds, T − 10 ms], 30 ms fades (down from T − s − 30 ms, back at
 //   T + 20 ms), on the music under it.
 // - BUILD of a hero at T: the cutoff of a 2nd-order Butterworth High Pass sweeps 20 Hz → fromHz at T − seconds →
@@ -225,23 +226,31 @@ export function writeCurve(
 const MIN_SAMPLE = FLICKS_PER_SECOND / 1000;
 /** Largest deviation (dB) of the rebuilt line from a curved segment between two samples. */
 const SAMPLE_TOLERANCE_DB = 1e-3;
+/**
+ * Steep bends (a 2 ms chord more than `STEEP_TOLERANCE_DB` off the curve) are sampled closer, down to `FINE_SAMPLE`
+ * (WP6.5b: a −96 dB Bézier over 100 ms was rebuilt 0.087 dB off with 1.56 ms samples; now ≤ 0.01 dB).
+ */
+const STEEP_TOLERANCE_DB = 1e-2;
+const FINE_SAMPLE = MIN_SAMPLE / 8;
 
 /**
  * Sample times (lane flicks) of `f` over (a, b) so that the polyline through them stays within `SAMPLE_TOLERANCE_DB`
- * of `f` (checked at eighths), never closer than `MIN_SAMPLE`: a smooth Bézier gets a few dozen keys instead of
+ * of `f` (checked at eighths), never closer than `MIN_SAMPLE` — except on steep bends, which are split down to
+ * `FINE_SAMPLE` while they are more than `STEEP_TOLERANCE_DB` off: a smooth Bézier gets a few dozen keys instead of
  * one every 5 ms as before. Pure.
  */
 function adaptiveSamples(f: (k: number) => number, a: number, b: number, out: number[]): void {
 	const go = (x0: number, v0: number, x1: number, v1: number, depth: number) => {
-		if (x1 - x0 <= 2 * MIN_SAMPLE || depth > 30) return;
+		if (x1 - x0 <= 2 * FINE_SAMPLE || depth > 40) return;
+		const tol = x1 - x0 <= 2 * MIN_SAMPLE ? STEEP_TOLERANCE_DB : SAMPLE_TOLERANCE_DB;
 		const lin = (x: number) => v0 + ((v1 - v0) * (x - x0)) / (x1 - x0);
 		const m = (x0 + x1) / 2;
 		const vm = f(m);
-		let ok = Math.abs(vm - lin(m)) <= SAMPLE_TOLERANCE_DB;
+		let ok = Math.abs(vm - lin(m)) <= tol;
 		for (let q = 1; ok && q < 8; q++) {
 			if (q === 4) continue;
 			const x = x0 + ((x1 - x0) * q) / 8;
-			ok = Math.abs(f(x) - lin(x)) <= SAMPLE_TOLERANCE_DB;
+			ok = Math.abs(f(x) - lin(x)) <= tol;
 		}
 		if (ok) return;
 		out.push(m);
@@ -288,7 +297,8 @@ function widenedRange(kfs: readonly Keyframe<number>[], lo0: number, hi0: number
 
 /**
  * Merges dips into a volume curve (lane `anim`, its lane time `lane`; dips in sequence flicks) by taking the minimum
- * (see the module docs). `clamp` bounds the values (dB). Returns null when no dip falls in the lane's span. `windows`
+ * (see the module docs). `clamp`: the dip curve's floor is its low end (dB; its top is not used: the result never
+ * goes above the curve). Returns null when no dip falls in the lane's span. `windows`
  * are the ranges actually rewritten (sequence flicks, widened over curved segments crossing an edge). Pure.
  */
 export function mergeDips(
@@ -297,10 +307,16 @@ export function mergeDips(
 	dips: readonly Dip[],
 	opts: { newId: () => string; clamp?: [number, number] },
 ): (CurveWrite & { windows: [number, number][] }) | null {
-	const [cmin, cmax] = opts.clamp ?? [-96, 15];
-	const clampV = (v: number) => Math.min(cmax, Math.max(cmin, v));
+	const [cmin] = opts.clamp ?? [-96, 15];
+	// The dip curve stops at the floor of the range; it is never capped at its top: the result is min(E, D) ≤ E, so it
+	// never goes above the curve, and a curve overshooting the top (a Bézier past +15 dB) at a window's edge is not cut
+	// down there in one step (WP6.5b).
+	const clampV = (v: number) => Math.max(cmin, v);
+	// A dip of no depth (0 dB, −0) is no dip: it writes nothing and does not widen the window (and so the reference
+	// level) of a dip it overlaps (WP6.5b: the 0 dB dip's window kept a swell the property expected dipped, and moved the
+	// reference level of the real dip under it).
 	const valid = dips.filter(
-		(d) => fin(d.start) && fin(d.end) && d.end >= d.start && fin(d.depthDb) && fin(d.fadeMs),
+		(d) => fin(d.start) && fin(d.end) && d.end >= d.start && fin(d.depthDb) && d.depthDb < 0 && fin(d.fadeMs),
 	);
 	// Windows: each dip with its fades, inside the lane's span, overlapping ones merged.
 	const raw = valid
@@ -336,9 +352,13 @@ export function mergeDips(
 	const refs = windows.map(([s0, e0]) => ({ s0, e0, ref: Math.max(E0(s0), E0(e0)) }));
 	const refAt = (t: number) => refs.find((w) => t >= w.s0 - tol && t <= w.e0 + tol)?.ref;
 	const env = (t: number) => dipEnvelopeAt(valid, t);
+	// Strictly inside a window the dip curve is ref + env also where the envelope touches 0: where one dip's fade ends
+	// as the next one's begins (WP6.5b: there D was +∞, so a key at that instant drew a spike up to the curve between
+	// two dipped floors).
+	const inside = (t: number) => refs.some((w) => t > w.s0 && t < w.e0);
 	const D = (t: number) => {
 		const e = env(t);
-		const ref = e < 0 ? refAt(t) : undefined;
+		const ref = e < 0 || inside(t) ? refAt(t) : undefined;
 		return ref === undefined ? Number.POSITIVE_INFINITY : clampV(ref + e);
 	};
 	const Dc = (t: number) => {
@@ -411,18 +431,17 @@ export function mergeDips(
 				if (ra === undefined || rb === undefined || ra !== rb) continue;
 				const va = ra + env(a);
 				const vb = rb + env(b);
-				for (const lim of [cmin, cmax])
+				for (const lim of [cmin])
 					if ((va - lim) * (vb - lim) < 0) pts.add(a + ((b - a) * (va - lim)) / (va - vb));
 			}
 		}
 		for (let i = 0; i < kfs.length; i++) {
 			const k = kfs[i]!.time;
-			if (k > lo && k <= hi) {
-				if (k < hi) pts.add(lane.toSeq(k));
-				// a step (also one at the range's edge): the value just before it too
-				if (i > 0 && kfs[i - 1]!.interpolation === 'hold')
-					for (const x of [k - 1, k + 1]) if (x > lo && x < hi) pts.add(lane.toSeq(x));
-			}
+			if (k > lo && k < hi) pts.add(lane.toSeq(k));
+			// a step (also one at the range's edge, or one an edge between two flicks rounds onto: WP6.5b): the values
+			// just before and after it too
+			if (k > lo - 1 && k <= hi + 1 && i > 0 && kfs[i - 1]!.interpolation === 'hold')
+				for (const x of [k - 1, k + 1]) if (x > lo && x < hi) pts.add(lane.toSeq(x));
 		}
 		// curved segments inside: adaptive samples (within SAMPLE_TOLERANCE_DB of the curve)
 		const fl = (k: number) => evaluate(anim, k);
@@ -435,16 +454,34 @@ export function mergeDips(
 			adaptiveSamples(fl, a, b, xs);
 			for (const x of xs) pts.add(lane.toSeq(x));
 		}
-		// Values at the times the keys are stored at (whole lane flicks), so the curve outside stays the same line.
+		// Values at the times the keys are stored at (whole lane flicks), so the curve outside stays the same line; the
+		// dip's value is the one at the breakpoint itself (WP6.5b: a window edge between two flicks, stored half a flick
+		// inside, took the dip there, and as a lane's first key carried it over everything before the window).
 		const snap = (t: number) => lane.toSeq(Math.round(lane.toLane(t)));
-		const times = [...new Set([...pts].map(snap))]
-			.filter((t) => t >= ws - 1 && t <= we + 1)
-			.sort((x, y) => x - y);
+		const rawOf = new Map<number, number[]>();
+		for (const p of pts) {
+			const t = snap(p);
+			const list = rawOf.get(t);
+			if (list) list.push(p);
+			else rawOf.set(t, [p]);
+		}
+		// A key the window's edge is stored at takes the edge's value (the curve, the envelope is 0 there), not that of a
+		// breakpoint inside the window that rounds onto the same flick (WP6.5b hunt: a fade ending half a flick before
+		// the edge left the window's last key 5e-7 dB under the curve, and every frame after the window with it); an
+		// inner breakpoint is then off by at most half a flick of its fade.
+		const dipAt = (t: number) => {
+			const raw = rawOf.get(t) ?? [t];
+			const edges = raw.filter((p) => p === ws || p === we);
+			let v = Number.POSITIVE_INFINITY;
+			for (const p of edges.length ? edges : raw) v = Math.min(v, D(p));
+			return v;
+		};
+		const times = [...rawOf.keys()].filter((t) => t >= ws - 1 && t <= we + 1).sort((x, y) => x - y);
 		const out: [number, number][] = [];
 		for (let i = 0; i < times.length; i++) {
 			const t = times[i]!;
 			const e = E(t);
-			out.push([t, Math.min(e, D(t))]);
+			out.push([t, Math.min(e, dipAt(t))]);
 			const tn = times[i + 1];
 			if (tn === undefined) break;
 			// where the two lines cross between two breakpoints (the dip's continuous curve; both ends inside it)

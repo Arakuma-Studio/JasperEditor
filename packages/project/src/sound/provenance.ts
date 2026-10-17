@@ -6,6 +6,7 @@
 // `LibraryProvenanceSchema` (INV-LIBRARY); `repairDocument` rewrites it with `readLibraryProvenance` (or drops it when
 // it has no sound id), with a report line. Commands (`media.setLibraryInfo`, `media.register`) validate it strictly.
 import { z } from 'zod';
+import { latest } from '../commands/draft-read.ts';
 import type { DeepStrip } from '../schema/common.ts';
 import { UNKNOWN_LICENSE } from './license.ts';
 
@@ -134,6 +135,29 @@ const str = (v: unknown, max: number): string | undefined =>
  */
 export function readLibraryProvenance(raw: unknown): LibraryProvenance | null {
 	if (!isRecord(raw)) return null;
+	// a finished (frozen) document's provenance is read once: placement and checks read it for every clip and command
+	const base = latest(raw);
+	if (!Object.isFrozen(base)) return readProvenanceFields(base);
+	const hit = PROVENANCE_CACHE.get(base);
+	if (hit !== undefined) return hit;
+	const v = frozen(readProvenanceFields(base));
+	PROVENANCE_CACHE.set(base, v);
+	return v;
+}
+
+/** Provenance read from frozen (finished-document) objects; the results are frozen, shared by every reader. */
+const PROVENANCE_CACHE = new WeakMap<object, LibraryProvenance | null>();
+
+/** Deep-freezes a cached result: it is shared by every reader of the same provenance (read-only, like documents). */
+function frozen<T>(v: T): T {
+	if (v && typeof v === 'object' && !Object.isFrozen(v)) {
+		Object.freeze(v);
+		for (const x of Object.values(v)) frozen(x);
+	}
+	return v;
+}
+
+function readProvenanceFields(raw: Record<string, unknown>): LibraryProvenance | null {
 	const ok = LibraryProvenanceSchema.safeParse(raw);
 	if (ok.success) return ok.data as LibraryProvenance;
 	const soundId = str(raw.soundId, LIBRARY_LIMITS.id + 1);

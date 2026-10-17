@@ -50,6 +50,8 @@ export type SfxInfo = {
 	gainDb: number;
 	baseGainDb: number;
 	userOffsetDb: number;
+	/** The cue it fills (its layers are one designed sound: they do not mask each other), else its clip group. */
+	cueKey: string | null;
 };
 
 const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
@@ -98,6 +100,7 @@ export function sfxInfoOf(
 		gainDb,
 		baseGainDb,
 		userOffsetDb,
+		cueKey: sfx?.cueId ?? (typeof clip.groupId === 'string' && clip.groupId ? clip.groupId : null),
 	};
 }
 
@@ -127,6 +130,9 @@ export function solverEventOf(info: SfxInfo, m: MeasuredSound): SolverEvent {
 		speechOverlap: m.speechOverlap,
 		baseGainDb: info.baseGainDb,
 		userOffsetDb: info.userOffsetDb,
+		...(info.cueKey ? { cueKey: `cue:${info.cueKey}` } : {}),
+		...(m.energyProfile ? { energyProfile: m.energyProfile } : {}),
+		...(m.peakProfileDb ? { peakProfileDb: m.peakProfileDb } : {}),
 	};
 }
 
@@ -163,6 +169,8 @@ export function levelReason(r: SolverEventResult, m: MeasuredSound, ceilingDb: n
 					return 'its repeats (±2 dB)';
 				case 'headroom':
 					return `headroom (${fmtDb(ceilingDb)} dBTP)`;
+				case 'overlap-headroom':
+					return `the sounds overlapping it (summed true peak ${fmtDb(ceilingDb)} dBTP)`;
 				case 'clamp':
 					return 'the gain range (−30…+12 dB)';
 				case 'user-offset':
@@ -184,6 +192,12 @@ export function levelReason(r: SolverEventResult, m: MeasuredSound, ceilingDb: n
 					? `its default level already clears the bed by ${fmtDb(r.achievedLiftDb)} dB`
 					: `target lift ${fmtDb(r.targetLiftDb)} dB reached`,
 		);
+	// the bed it clears includes the lower sound effects playing under it
+	const n = r.maskedBy?.length ?? 0;
+	if (n > 0 && (r.sfxMaskingDb ?? 0) >= 0.05)
+		parts.push(
+			`over the bed and ${n} sound effect${n === 1 ? '' : 's'} under it (+${fmtDb(r.sfxMaskingDb!).replace('+', '')} dB)`,
+		);
 	return (parts.length ? `${head}, ${parts.join('; ')}` : head).slice(0, 300);
 }
 
@@ -202,6 +216,11 @@ export function solvedLevel(r: SolverEventResult, m: MeasuredSound, ceilingDb: n
 		speechTracks: [...m.speechTracks],
 		bedTracks: [...m.bedTracks],
 		window: { start: Math.round(m.window.start * 1000) / 1000, end: Math.round(m.window.end * 1000) / 1000 },
+		...(r.sfxMaskingDb !== null && r.sfxMaskingDb !== undefined ? { sfxMaskingDb: r2(r.sfxMaskingDb) } : {}),
+		...(r.maskedBy?.length ? { maskedBy: r.maskedBy.slice(0, 32) } : {}),
+		...(r.overlapTruePeakDb !== null && r.overlapTruePeakDb !== undefined
+			? { overlapTruePeakDb: r2(r.overlapTruePeakDb) }
+			: {}),
 	};
 }
 

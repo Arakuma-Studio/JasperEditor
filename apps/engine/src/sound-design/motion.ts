@@ -22,6 +22,13 @@ import {
 	type MotionEvent,
 } from '@jasper/api';
 import {
+	type Clip,
+	clipMediaTimeFn,
+	copyableRuns,
+	FLICKS_PER_SECOND,
+	frameIndexAt,
+	frameTime,
+	type MediaAsset,
 	makeEnvelope,
 	measureFrameMotion,
 	type PixelMotionCurve,
@@ -34,12 +41,21 @@ import {
 	sequenceDuration,
 	sequenceTimecode,
 } from '@jasper/project';
+import { cachedFrameTimes } from '../export/retime/frames.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import type { CoreServices } from '../tools/services.ts';
 import { AnalysisCache } from './analysis-cache.ts';
 
 /** Bump when the measurement changes (older cached curves are not reused). */
-export const MOTION_VERSION = 1;
+export const MOTION_VERSION = 2;
+
+/**
+ * Stretches where the picture is one untouched source (`copyableRuns`: the stretches an export may stream-copy — one
+ * video clip at the sequence's size and rate, no effect, transform, speed, fade or other layer) at least this long
+ * are decoded from the source straight at the analysis size: what the render would composite at full size and then
+ * scale down is the source frame itself. Shorter ones render with their neighbours (one render instead of several).
+ */
+export const MIN_SOURCE_FRAMES = 15;
 
 export class MotionInputError extends Error {
 	constructor(
@@ -158,8 +174,11 @@ export class MotionService {
 	private readonly cache: AnalysisCache<MotionAnalysisResult>;
 
 	constructor(
-		private readonly core: Pick<CoreServices, 'queue' | 'exports' | 'ffmpeg'>,
-		cacheDir: string,
+		private readonly core: Pick<CoreServices, 'queue' | 'exports' | 'ffmpeg'> &
+			Partial<Pick<CoreServices, 'registry'>>,
+		private readonly cacheDir: string,
+		/** `sourceDecode: false` renders every stretch through the export (the equivalence test's reference). */
+		private readonly opts: { sourceDecode?: boolean } = {},
 	) {
 		this.cache = new AnalysisCache(cacheDir, MotionAnalysisResultSchema, { max: 300, memory: 8 });
 	}
@@ -174,6 +193,41 @@ export class MotionService {
 		return hit
 			? { ...hit, projectId: projectId ?? hit.projectId, sequenceId: plan.sequenceId, cached: true }
 			: null;
+	}
+
+	/**
+	 * The measured speed curves already cached over `range` (never analyses): the analysis windows the cue sources use
+	 * (10 minutes from frame 0, `maxMotionFrames`) and the exact range (an `analyze_picture_motion` of it). A picture
+	 * edited since its analysis has another fingerprint: not returned.
+	 */
+	async cachedCurves(
+		doc: ProjectDocument,
+		seq: Sequence,
+		range: { start: number; end: number },
+	): Promise<{ startFrame: number; speed: number[] }[]> {
+		const rate = seq.settings.frameRate as Rational;
+		const duration = Math.max(0, Math.ceil(sequenceDuration(seq)));
+		const win = maxMotionFrames(rate);
+		const plans: MotionPlan[] = [];
+		const tryPlan = (r: { start: number; end: number }) => {
+			try {
+				plans.push(planMotion(doc, seq, r));
+			} catch (e) {
+				if (!(e instanceof MotionInputError)) throw e;
+			}
+		};
+		for (let k = Math.floor(Math.max(0, range.start) / win); k * win < Math.min(duration, range.end); k++)
+			tryPlan({ start: k * win, end: Math.min(duration, (k + 1) * win) });
+		tryPlan(range);
+		const seen = new Set<string>();
+		const out: { startFrame: number; speed: number[] }[] = [];
+		for (const plan of plans) {
+			if (seen.has(plan.fingerprint)) continue;
+			seen.add(plan.fingerprint);
+			const hit = await this.cache.get(plan.fingerprint);
+			if (hit) out.push({ startFrame: hit.curve.startFrame, speed: hit.curve.speed });
+		}
+		return out;
 	}
 
 	/** Starts (or joins: same fingerprint) a `motion-analysis` job. */
@@ -237,53 +291,17 @@ export class MotionService {
 	}
 
 	private async analyze(ctx: JobContext, input: MotionJobInput): Promise<MotionAnalysisResult> {
-		const { plan } = input;
 		const t0 = Date.now();
-		const fps = plan.rate.num / plan.rate.den;
-		const frames = plan.range.end - plan.range.start;
-		const { width: W, height: H } = plan;
+		const { plan } = input;
 		const doc = input.envelope.document as unknown as ProjectDocument;
 		const seq = doc.sequences?.[plan.sequenceId];
 		if (!seq) throw new JobError('SEQUENCE_NOT_FOUND', `Sequence not found: ${plan.sequenceId}`, false);
-		const dir = await ctx.scratchDir();
-		const output = join(dir, `motion-${plan.fingerprint.slice(0, 12)}.mp4`);
-		const kbps = Math.round((W * H * fps * 3) / 1000);
-		const req: ExportStartRequest = {
-			envelope: input.envelope,
-			sequenceId: plan.sequenceId,
-			settings: {
-				sequenceId: plan.sequenceId,
-				range: { type: 'custom', startFrame: plan.range.start, endFrame: plan.range.end },
-				container: 'mp4',
-				video: {
-					codec: 'h264',
-					width: W,
-					height: H,
-					frameRate: { num: plan.rate.num, den: plan.rate.den },
-					scaling: 'stretch',
-					quality: { mode: 'crf', value: 10 },
-					bitrateKbps: Math.min(500_000, Math.max(100, kbps)),
-					encoderSpeed: 'fast',
-					keyframeInterval: 1,
-				},
-				engine: 'auto',
-				destination: { type: 'download' },
-				videoOnly: true,
-				smartRender: false,
-			},
-		} as ExportStartRequest;
-		ctx.progress(0, { stage: 'Rendering the picture' });
-		ctx.addPartial(output);
-		const rendered = await this.core.exports.renderToFile(
-			subContext(ctx, 0, 0.75, 'Rendering the picture'),
-			req,
-			output,
-		);
-		const tRender = Date.now();
-		if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Picture motion analysis cancelled');
-		ctx.progress(0.75, { stage: 'Measuring motion' });
-		const curve = await this.measure(ctx, output, W, H, frames, fps);
-		const warnings = rendered.warnings.map((w) => ({ code: w.code, message: w.message }));
+		const { curve, renderPath, warnings: rw, renderMs } = await this.measurePicture(ctx, input);
+		const tRender = t0 + renderMs;
+		const frames = plan.range.end - plan.range.start;
+		const fps = plan.rate.num / plan.rate.den;
+		const { width: W, height: H } = plan;
+		const warnings = rw.map((w) => ({ code: w.code, message: w.message }));
 		if (curve.decoded < frames)
 			warnings.push({
 				code: 'W_FRAMES_SHORT',
@@ -329,7 +347,7 @@ export class MotionService {
 			frameRate: { num: plan.rate.num, den: plan.rate.den },
 			frames,
 			cached: false,
-			renderPath: rendered.renderPath,
+			renderPath,
 			curve: {
 				startFrame: plan.range.start,
 				fps,
@@ -349,43 +367,202 @@ export class MotionService {
 			warnings,
 		};
 		ctx.log(
-			`motion-analysis: ${frames} frames ${W}x${H} via ${rendered.renderPath}, render ${tRender - t0} ms, measure ${tEnd - tRender} ms, ${events.length} events`,
+			`motion-analysis: ${frames} frames ${W}x${H} via ${renderPath}, render ${tRender - t0} ms, measure ${tEnd - tRender} ms, ${events.length} events`,
 		);
 		await this.cache.put(plan.fingerprint, result).catch((e) => ctx.log(`motion cache write failed: ${e}`));
 		ctx.progress(1, { stage: `${events.length} motion events` });
 		return result;
 	}
 
-	/** Decodes the rendered picture to gray and measures each frame against the previous one. */
-	private async measure(
+	/** The picture of the plan's range, stretch by stretch: decoded from its untouched source, or rendered. */
+	async pieces(
+		doc: ProjectDocument,
+		plan: MotionPlan,
+	): Promise<({ kind: 'render'; start: number; end: number } | SourcePiece)[]> {
+		const { start, end } = plan.range;
+		const sources: SourcePiece[] = [];
+		const registry = this.core.registry;
+		if (this.opts.sourceDecode !== false && registry) {
+			const seq = doc.sequences[plan.sequenceId]!;
+			for (const run of copyableRuns(doc, plan.sequenceId, plan.range)) {
+				if (run.end - run.start < MIN_SOURCE_FRAMES) continue;
+				const key = engineStoreKey(doc.media[run.mediaId]);
+				const rec = key ? registry.get(key) : undefined;
+				const file = key && rec ? await registry.resolvePath(key).catch(() => null) : null;
+				const clip = seq.clips[run.clipId];
+				if (!file || !rec || !clip) continue;
+				sources.push({
+					kind: 'source',
+					start: run.start,
+					end: run.end,
+					clip,
+					file,
+					fingerprint: `${rec.fingerprint}|${rec.sizeBytes}|${rec.mtimeMs}`,
+				});
+			}
+		}
+		const out: ({ kind: 'render'; start: number; end: number } | SourcePiece)[] = [];
+		let at = start;
+		for (const p of sources.sort((x, y) => x.start - y.start)) {
+			if (p.start > at) out.push({ kind: 'render', start: at, end: p.start });
+			out.push(p);
+			at = p.end;
+		}
+		if (at < end) out.push({ kind: 'render', start: at, end });
+		return out;
+	}
+
+	/**
+	 * Measures the picture of a plan: every frame against the one before, in sequence order across the stretches
+	 * (`pieces`). Rendered stretches go through the export (its planner, paths and blockers) at the analysis size and
+	 * are decoded to gray; untouched-source stretches are decoded from the source at the analysis size.
+	 */
+	async measurePicture(
 		ctx: JobContext,
-		file: string,
+		input: MotionJobInput,
+	): Promise<{
+		curve: MeasuredCurve;
+		renderPath: string;
+		warnings: { code: string; message: string }[];
+		renderMs: number;
+	}> {
+		const { plan } = input;
+		const doc = input.envelope.document as unknown as ProjectDocument;
+		const frames = plan.range.end - plan.range.start;
+		const fps = plan.rate.num / plan.rate.den;
+		const { width: W, height: H } = plan;
+		const m = new CurveMeter(frames, W, H, fps);
+		const paths = new Set<string>();
+		const warnings: { code: string; message: string }[] = [];
+		const t0 = Date.now();
+		const pieces = await this.pieces(doc, plan);
+		let done = 0;
+		for (const [i, piece] of pieces.entries()) {
+			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Picture motion analysis cancelled');
+			const n = piece.end - piece.start;
+			const sub = subContext(ctx, done / frames, (done + n) / frames);
+			const stage = piece.kind === 'source' ? 'Reading the footage' : 'Rendering the picture';
+			sub.progress(0, { stage });
+			// the meter's position: the piece's first frame (a short decode leaves the rest of the piece still)
+			m.seek(piece.start - plan.range.start);
+			if (piece.kind === 'source') {
+				await this.decodeSource(sub, piece, plan, m);
+				paths.add('source');
+			} else {
+				const dir = await ctx.scratchDir();
+				const output = join(dir, `motion-${plan.fingerprint.slice(0, 12)}-${i}.mp4`);
+				ctx.addPartial(output);
+				const rendered = await this.core.exports.renderToFile(
+					subContext(sub, 0, 0.85, stage),
+					this.renderRequest(input, plan, piece),
+					output,
+				);
+				for (const w of rendered.warnings) warnings.push({ code: w.code, message: w.message });
+				paths.add(rendered.renderPath);
+				if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Picture motion analysis cancelled');
+				sub.progress(0.85, { stage: 'Measuring motion' });
+				await this.pipeGray(sub, ['-i', output], n, W, H, (frame) => m.push(frame));
+			}
+			done += n;
+		}
+		const curve = m.finish();
+		return {
+			curve,
+			renderPath: [...paths].join('+') || 'none',
+			warnings,
+			renderMs: Math.max(0, Date.now() - t0 - Math.round(m.measureMs)),
+		};
+	}
+
+	private renderRequest(
+		input: MotionJobInput,
+		plan: MotionPlan,
+		range: { start: number; end: number },
+	): ExportStartRequest {
+		const fps = plan.rate.num / plan.rate.den;
+		const kbps = Math.round((plan.width * plan.height * fps * 3) / 1000);
+		return {
+			envelope: input.envelope,
+			sequenceId: plan.sequenceId,
+			settings: {
+				sequenceId: plan.sequenceId,
+				range: { type: 'custom', startFrame: range.start, endFrame: range.end },
+				container: 'mp4',
+				video: {
+					codec: 'h264',
+					width: plan.width,
+					height: plan.height,
+					frameRate: { num: plan.rate.num, den: plan.rate.den },
+					scaling: 'stretch',
+					quality: { mode: 'crf', value: 10 },
+					bitrateKbps: Math.min(500_000, Math.max(100, kbps)),
+					encoderSpeed: 'fast',
+					keyframeInterval: 1,
+				},
+				engine: 'auto',
+				destination: { type: 'download' },
+				videoOnly: true,
+				smartRender: false,
+			},
+		} as ExportStartRequest;
+	}
+
+	/**
+	 * Decodes an untouched-source stretch at the analysis size: each sequence frame gets the source frame the renderers
+	 * show there (`frameIndexAt` of the clip's media time on the file's real timestamps), read in one pass.
+	 */
+	private async decodeSource(
+		ctx: JobContext,
+		piece: SourcePiece,
+		plan: MotionPlan,
+		m: CurveMeter,
+	): Promise<void> {
+		const ft = await cachedFrameTimes(
+			this.core.ffmpeg,
+			piece.file,
+			join(this.cacheDir, 'frametimes'),
+			createHash('sha256').update(piece.fingerprint).digest('hex').slice(0, 32),
+			{ signal: ctx.signal },
+		);
+		const at = clipMediaTimeFn(piece.clip as never, plan.rate);
+		const want: number[] = [];
+		for (let f = piece.start; f < piece.end; f++) want.push(frameIndexAt(ft, at(f) / FLICKS_PER_SECOND));
+		const first = want[0]!;
+		const last = want[want.length - 1]!;
+		// the seek lands just before the first frame wanted (whatever the table's kind: a list or a constant rate)
+		const t0 = frameTime(ft, first) ?? 0;
+		const prev = first > 0 ? (frameTime(ft, first - 1) ?? 0) : 0;
+		const seek = first > 0 ? t0 - Math.min(0.5 * (t0 - prev), 0.01) : 0;
+		let k = first;
+		let w = 0;
+		await this.pipeGray(
+			ctx,
+			[...(seek > 0 ? ['-ss', seek.toFixed(6)] : []), '-i', piece.file],
+			last - first + 1,
+			plan.width,
+			plan.height,
+			(frame) => {
+				// every sequence frame showing source frame k (several in a hold, none for a skipped one)
+				while (w < want.length && want[w] === k) {
+					m.push(frame);
+					w++;
+				}
+				k++;
+			},
+		);
+	}
+
+	/** Decodes a file's first video stream to `W`×`H` gray frames (area scaling) and hands each to `onFrame`. */
+	private async pipeGray(
+		ctx: JobContext,
+		input: string[],
+		frames: number,
 		W: number,
 		H: number,
-		frames: number,
-		fps: number,
-	): Promise<{
-		speed: Float32Array;
-		vx: Float32Array;
-		vy: Float32Array;
-		area: Float32Array;
-		cx: Float32Array;
-		residual: Float32Array;
-		diff: Float32Array;
-		decoded: number;
-	}> {
-		const speed = new Float32Array(frames);
-		const vx = new Float32Array(frames);
-		const vy = new Float32Array(frames);
-		const area = new Float32Array(frames);
-		const cx = new Float32Array(frames).fill(0.5);
-		const residual = new Float32Array(frames);
-		const diff = new Float32Array(frames);
-		const diag = Math.hypot(W, H);
-		const k = fps / diag;
+		onFrame: (frame: Uint8Array) => void,
+	): Promise<void> {
 		const args = [
-			'-i',
-			file,
+			...input,
 			...['-map', '0:v:0', '-an', '-sn', '-dn'],
 			...['-vf', `scale=${W}:${H}:flags=area,format=gray`],
 			...[
@@ -403,7 +580,6 @@ export class MotionService {
 		const child = this.core.ffmpeg.spawnRaw(args, { signal: ctx.signal });
 		ctx.trackChild(child);
 		const size = W * H;
-		let prev: Uint8Array | null = null;
 		let cur = new Uint8Array(size);
 		let filled = 0;
 		let n = 0;
@@ -421,21 +597,10 @@ export class MotionService {
 					off += take;
 					if (filled < size) break;
 					if (n < frames) {
-						if (prev) {
-							const m = measureFrameMotion(prev, cur, W, H);
-							speed[n] = m.speedPx * k;
-							vx[n] = m.vx * k;
-							vy[n] = m.vy * k;
-							area[n] = m.area;
-							cx[n] = m.cx;
-							residual[n] = m.residual;
-							diff[n] = m.diff;
-						}
+						onFrame(cur);
 						n++;
-						if (n % 30 === 0)
-							ctx.progress(0.75 + (0.25 * n) / frames, { stage: `Measuring frame ${n} of ${frames}` });
+						if (n % 30 === 0) ctx.progress(n / frames, { stage: `Measuring frame ${n} of ${frames}` });
 					}
-					prev = cur;
 					cur = new Uint8Array(size);
 					filled = 0;
 				}
@@ -449,6 +614,89 @@ export class MotionService {
 				resolve();
 			});
 		});
-		return { speed, vx, vy, area, cx, residual, diff, decoded: n };
+	}
+}
+
+type SourcePiece = {
+	kind: 'source';
+	start: number;
+	end: number;
+	clip: Clip;
+	file: string;
+	fingerprint: string;
+};
+
+const engineStoreKey = (asset: MediaAsset | undefined): string | null => {
+	const l = asset?.locators?.find((x) => x.type === 'engine-store') as { key?: unknown } | undefined;
+	return typeof l?.key === 'string' ? l.key : null;
+};
+
+export type MeasuredCurve = {
+	speed: Float32Array;
+	vx: Float32Array;
+	vy: Float32Array;
+	area: Float32Array;
+	cx: Float32Array;
+	residual: Float32Array;
+	diff: Float32Array;
+	/** Frames measured (a short render leaves the rest still). */
+	decoded: number;
+};
+
+/** Per-frame motion of a stream of gray frames (each against the previous one), at sequence positions. */
+class CurveMeter {
+	private readonly c: MeasuredCurve;
+	private prev: Uint8Array | null = null;
+	private n = 0;
+	private readonly k: number;
+	measureMs = 0;
+
+	constructor(
+		private readonly frames: number,
+		private readonly W: number,
+		private readonly H: number,
+		fps: number,
+	) {
+		this.c = {
+			speed: new Float32Array(frames),
+			vx: new Float32Array(frames),
+			vy: new Float32Array(frames),
+			area: new Float32Array(frames),
+			cx: new Float32Array(frames).fill(0.5),
+			residual: new Float32Array(frames),
+			diff: new Float32Array(frames),
+			decoded: 0,
+		};
+		this.k = fps / Math.hypot(W, H);
+	}
+
+	/** The next frame pushed is frame `i` of the range (a gap since the last one breaks the comparison). */
+	seek(i: number): void {
+		if (i !== this.n) this.prev = null;
+		this.n = i;
+	}
+
+	push(frame: Uint8Array): void {
+		if (this.n >= this.frames) return;
+		if (this.prev) {
+			const t = performance.now();
+			const r = measureFrameMotion(this.prev, frame, this.W, this.H);
+			this.measureMs += performance.now() - t;
+			const c = this.c;
+			c.speed[this.n] = r.speedPx * this.k;
+			c.vx[this.n] = r.vx * this.k;
+			c.vy[this.n] = r.vy * this.k;
+			c.area[this.n] = r.area;
+			c.cx[this.n] = r.cx;
+			c.residual[this.n] = r.residual;
+			c.diff[this.n] = r.diff;
+		}
+		this.prev = frame;
+		this.n++;
+		this.c.decoded++;
+	}
+
+	finish(): MeasuredCurve {
+		return this.c;
 	}
 }

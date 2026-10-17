@@ -67,6 +67,25 @@ await build({
 	logLevel: 'warning',
 });
 
+// Sound design (WP6.5b): the measurement worker threads (solo / bed renders through the offline mixer and their band
+// analysis off the engine's main thread), loaded by src/sound-design/measure-pool.ts from `sd-measure-worker.mjs` next
+// to engine.mjs.
+await build({
+	entryPoints: [join(root, 'src/sound-design/measure-worker.ts')],
+	outfile: join(root, 'dist/sd-measure-worker.mjs'),
+	bundle: true,
+	platform: 'node',
+	format: 'esm',
+	target: 'node20',
+	sourcemap: false,
+	legalComments: 'none',
+	external: ['@remotion/*', 'remotion', 'esbuild', 'fsevents', '*.node'],
+	banner: {
+		js: "import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);",
+	},
+	logLevel: 'warning',
+});
+
 // wp speech: jasper-speech.mjs (the speech-to-text worker, run as a child process by `transcription` jobs) next to
 // engine.mjs. onnxruntime-node (native binding) stays external like jasper-proc's.
 await build({

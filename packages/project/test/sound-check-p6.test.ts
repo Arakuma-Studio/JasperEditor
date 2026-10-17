@@ -7,6 +7,7 @@ import {
 	COMMERCIAL_SAFE_FILTER_KEEPS_SHARE_ALIKE,
 	isCommercialSafe,
 	isShareAlike,
+	LICENSE_FILTERS,
 	type LibraryProvenance,
 	licenseObligations,
 	passesCommercialSafeFilter,
@@ -18,10 +19,12 @@ import {
 	SOUND_CHECK_EDGE_THRESHOLDS,
 	SOUND_CHECK_MESSAGES,
 	SOUND_CHECK_MODEL_STRINGS,
+	SOUND_FILTER_LICENSE,
 	SYNC_END_WINDOW_MS,
 	shareAlikeNotice,
 	soundCheckMessage,
 	soundCredits,
+	soundFilterOf,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 import { LIB } from './sound-fixtures.ts';
@@ -153,13 +156,15 @@ describe('ShareAlike (P6-E13)', () => {
 		);
 	});
 
-	it('the Commercial-safe filter has ONE switch: kept by default until a human decides, excluded when it flips', () => {
-		expect(COMMERCIAL_SAFE_FILTER_KEEPS_SHARE_ALIKE).toBe(true);
-		expect(passesCommercialSafeFilter('CC-BY-SA-4.0')).toBe(true);
-		expect(passesCommercialSafeFilter('CC-BY-SA-4.0', false)).toBe(false);
-		expect(passesCommercialSafeFilter('CC-BY-4.0', false)).toBe(true);
-		expect(passesCommercialSafeFilter('CC-BY-NC-4.0')).toBe(false);
-		// the ranking's Commercial-safe filter follows it (and puts BY-SA under BY)
+	it('the Commercial-safe filter has ONE switch: CC BY-SA excluded by default (human decision), included on request', () => {
+		expect(COMMERCIAL_SAFE_FILTER_KEEPS_SHARE_ALIKE).toBe(false);
+		expect(passesCommercialSafeFilter('CC-BY-SA-4.0')).toBe(false);
+		expect(passesCommercialSafeFilter('CC-BY-SA-4.0', true)).toBe(true);
+		expect(passesCommercialSafeFilter('CC-BY-4.0')).toBe(true);
+		expect(passesCommercialSafeFilter('CC0-1.0')).toBe(true);
+		expect(passesCommercialSafeFilter('CC-BY-NC-4.0', true)).toBe(false);
+		expect(LICENSE_FILTERS).toEqual(['commercial-safe', 'commercial-safe-sa', 'any']);
+		// the ranking: commercial-safe (the default) leaves BY-SA out; "Include ShareAlike" lists it under BY; any adds NC
 		const snd = (id: string, license: string): RankableSound => ({
 			id,
 			title: `whoosh ${id}`,
@@ -180,9 +185,18 @@ describe('ShareAlike (P6-E13)', () => {
 			},
 		});
 		const list = [snd('snd_sa', 'CC-BY-SA-4.0'), snd('snd_by', 'CC-BY-4.0'), snd('snd_nc', 'CC-BY-NC-4.0')];
-		const ids = rankSounds(list, { query: 'whoosh' }).map((r) => r.entry.id);
-		expect(ids).toEqual(['snd_by', 'snd_sa']);
-		expect(rankSounds(list, { query: 'whoosh', license: 'any' }).map((r) => r.entry.id)).toContain('snd_nc');
+		const ids = (license?: (typeof LICENSE_FILTERS)[number]) =>
+			rankSounds(list, { query: 'whoosh', ...(license ? { license } : {}) }).map((r) => r.entry.id);
+		expect(ids()).toEqual(['snd_by']);
+		expect(ids('commercial-safe')).toEqual(['snd_by']);
+		expect(ids('commercial-safe-sa')).toEqual(['snd_by', 'snd_sa']);
+		expect(ids('any').sort()).toEqual(['snd_by', 'snd_nc', 'snd_sa']);
+		// the facet bits follow the same filter
+		const bits = soundFilterOf({ query: 'whoosh' });
+		expect(bits(list[0]!) & SOUND_FILTER_LICENSE).toBe(0);
+		expect(soundFilterOf({ query: 'whoosh', license: 'commercial-safe-sa' })(list[0]!) & SOUND_FILTER_LICENSE).toBe(
+			SOUND_FILTER_LICENSE,
+		);
 	});
 
 	it('credits: the SA flag per row, the ShareAlike notice in text and Markdown, a W_SHARE_ALIKE warning', () => {

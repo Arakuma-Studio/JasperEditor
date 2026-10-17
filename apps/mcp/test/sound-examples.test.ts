@@ -4,6 +4,7 @@ import {
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
+	mixFingerprint,
 	resolveAgentAddresses,
 } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
@@ -11,6 +12,7 @@ import { COMMAND_EXAMPLES } from '../src/examples.ts';
 
 const SOUND_COMMANDS = [
 	'media.setLibraryInfo',
+	'media.upgradeLibraryCopy',
 	'soundCue.add',
 	'soundCue.update',
 	'soundCue.remove',
@@ -25,6 +27,7 @@ const SOUND_COMMANDS = [
 	'soundDesign.setAutoGain',
 	'soundDesign.setCheck',
 	'soundDesign.setVerdict',
+	'soundDesign.expectMix',
 	'audio.volumeDip',
 	'soundDesign.applyStopBefore',
 	'soundDesign.applyBuild',
@@ -54,6 +57,57 @@ const SAME_TX = new Set(['soundDesign.applyGains']);
 
 /** What an example needs in the project first (a cue to edit, a placed sound to swap). */
 const PRELUDE: Record<string, unknown[]> = {
+	// an older copy of the starter hit (the Ogg as it is: no lead silence), placed once
+	'media.upgradeLibraryCopy': [
+		{
+			type: 'media.register',
+			asset: {
+				kind: 'audio',
+				fingerprint: 'q1:00000000000000000000000000000000000000000000000000000000000e0000',
+				originalName: 'impact-old.ogg',
+				sizeBytes: 9000,
+				container: 'ogg',
+				probe: {
+					durationFlicks: 635_040_000,
+					startTimecode: null,
+					streams: [
+						{
+							index: 0,
+							type: 'audio',
+							codec: 'vorbis',
+							sampleRate: 48_000,
+							channels: 1,
+							channelLayout: 'mono',
+						},
+					],
+					rotationDegrees: 0,
+					hasAlpha: false,
+					variableFrameRate: false,
+				},
+				locators: [{ type: 'engine-store', engineId: 'local', key: 'mk_00000000000000000000e000' }],
+				library: {
+					soundId: 'snd_0123456789abcdef',
+					title: 'Impact Metal 03',
+					types: ['hit'],
+					source: { type: 'starter' },
+					license: 'CC0-1.0',
+					author: 'Kenney',
+					attribution: null,
+					descriptors: {
+						peakSec: 0.0123,
+						onsetSec: 0.011,
+						headQuietSec: 0.0105,
+						durationSec: 0.9,
+						octaveBandsDb: [-30, -25, -20, -18, -19, -24, -33],
+						centroidHz: 1820,
+						maxMomentaryLufs: -14.2,
+					},
+				},
+			},
+			ref: '$old',
+		},
+		{ type: 'soundDesign.place', frame: 30, layers: [{ mediaId: '$old', track: 'A1' }] },
+	],
 	'soundCue.update': [
 		{
 			type: 'soundCue.add',
@@ -176,7 +230,15 @@ describe('sound-design describe_commands examples', () => {
 			expect(pr.result.ok, JSON.stringify(pr.result)).toBe(true);
 			doc = pr.document;
 		}
-		const resolved = resolveAgentAddresses(doc, [...(SAME_TX.has(type) ? PRELUDE[type]! : []), example]);
+		// the precondition's example names a hash: the measured mix's (here the document's own); the literal one refuses
+		const seqId = Object.keys(doc.sequences)[0]!;
+		let cmd = example;
+		if (type === 'soundDesign.expectMix') {
+			const stale = applyTransaction(doc, { label: 'stale', origin: 'user', commands: [example] }, ctx);
+			expect(stale.result.ok ? null : stale.result.errors[0]!.code).toBe('E_REVISION_MISMATCH');
+			cmd = { ...(example as Record<string, unknown>), mixHash: mixFingerprint(doc, seqId) };
+		}
+		const resolved = resolveAgentAddresses(doc, [...(SAME_TX.has(type) ? PRELUDE[type]! : []), cmd]);
 		expect(resolved.ok).toBe(true);
 		if (!resolved.ok) return;
 		const r = applyTransaction(

@@ -147,7 +147,7 @@ Each type carries:
 - type fit for the visual kind;
 - duration fit;
 - judge score;
-- licence preference (CC0 > CC-BY > user-provided);
+- licence preference (CC0 > CC-BY > CC-BY-SA > user-provided);
 - source preference (real recordings > synth);
 - a rotation penalty for sounds already used nearby;
 
@@ -155,15 +155,22 @@ with ties broken by id.
 
 **Register into a project.** `POST /api/sounds/:soundId/register {projectId}` returns `RegisteredMedia` plus
 `library: LibraryProvenance`. Starter, pack and synth files are copied into managed media; folder sounds follow
-the local-path import rules. A sound whose quiet head is shorter than 50 ms (and which is at most 120 s long), from
-any source, is registered as a managed WAV copy with 50 ms (whole samples) of digital silence in front, so placement
+the local-path import rules. A sound whose quiet head is shorter than 50 ms (and which is at most 1 h long; 120 s before WP6.5b),
+from any source, is registered as a managed WAV copy with 50 ms (whole samples) of digital silence in front, so placement
 (§2.3) is always sample-exact; its provenance's descriptors describe that copy and `leadSilenceSec` records the
-padding (decision of the Phase 1 verification; schema v7). A sound of at most 120 s whose −60 dB tail ends less than
+padding (decision of the Phase 1 verification; schema v7). A sound of at most 1 h whose −60 dB tail ends less than
 50 ms before the end of its file (or whose tail the analysis did not reach) also gets 50 ms of digital silence after it
 (`trailSilenceSec`; a folder sound that needs it is copied, like one that needs the lead), so a placed clip, rounded up to
 the end of the sound, stays inside its media (fix "SFX tail truncation"). The copy is bit-exact and deterministic, so
-repeated registrations dedupe; a copy made before the fix has another fingerprint, so registering the sound again gives
-the padded copy as a new media (existing clips keep theirs until swapped). The client commits `media.register` into a
+repeated registrations dedupe. Copies (lossy sources too) are written by ffmpeg file to file in the narrowest PCM WAV
+that holds the decoded samples exactly (16-bit for 8/16-bit sources, 24-bit for ≤ 24-bit ones, float for float
+decoders: every lossy codec), WAV rather than FLAC because browsers decode PCM WAV in their own JS on every platform
+(WP6.5b measured Google Chrome's FLAC decode not bit-exact for 16-bit). A copy over 2 GiB, or one that would leave less
+than 512 MiB free on the media volume, is not written: the sound is registered as it is and the response's `inexact
+{reason: too-long | too-large | disk-space, message}` says so (also for sounds over 1 h). A copy made by an earlier
+build has another fingerprint: the next insert or import replaces it in place (`media.upgradeLibraryCopy`: same media
+and Project item, every clip moved in content time by the lead difference, the same samples at the same times), so a
+project never holds two copies of one sound. The client commits `media.register` (or that upgrade) into a
 "Sound Effects" bin. `MediaAssetSchema.library?` carries `soundId`, `title`, `types`, `source`, `license`, `licenseUrl`,
 `author`, `sourceUrl`, `attribution`, `descriptors{peakSec, onsetSec, headQuietSec, durationSec, octaveBandsDb,
 centroidHz, maxMomentaryLufs, truePeakDb?, tailSec?}`, `leadSilenceSec?`, `trailSilenceSec?` and `snapshotHash`
@@ -188,7 +195,8 @@ CueAnchor = {type:'edit', trackId, outgoingClipId, incomingClipId} | {type:'tran
 SoundDesign = { cues: Record<id, SoundCue>, settings?: {delivery, density:'sparse'|'balanced'|'rich', sfxTrackIds,
   roomBus: string|null, seed, agentsMayApply?: boolean}, lastCheck?: {mixHash, verdict, counts, at} }
 AudioClip.sfx? = { cueId: string|null, soundId, layer, role: 'hero'|'support'|'layer', alternatives?: string[] (≤16),
-  placement: {align, peakFlicks, errorFlicks} }
+  placement: {align, peakFlicks, errorFlicks}, pitch?: {st, baseRate} }   // pitch: WP6.5b, the applied shift and the
+  // speed under it (the seeded variation), so a pitch reset is exact; absent or not matching the speed: whole semitones
 ```
 
 `repairDocument` handles cues with dangling anchors (anchor → null, plus a warning), missing `placedClipIds`,
@@ -237,7 +245,7 @@ optional or loose, with read-time defaults.
   the trailing silence for its own sake (a riser aligned by its end ends on its frame). Registering pads short
   library sounds that do not end in ≥ 50 ms of quiet with `LIBRARY_TRAIL_SILENCE_SEC` = 50 ms of silence after them
   (§2.1; ≥ one frame at 23.976 fps, room for +19 % speed), so that frame is inside the media; media without that
-  room (copies registered before, sounds over 120 s, project audio, faster speeds) end less than one frame past their
+  room (copies registered before, sounds over 1 h, project audio, faster speeds) end less than one frame past their
   media — INV-005's one-frame tolerance, played as silence by every renderer. `end` alignment uses the end of the sound,
   not of the trailing silence. (Fix "SFX tail truncation": a click shorter than a frame after its peak was cut at its
   peak.)
@@ -275,6 +283,23 @@ if two conflict, the earlier (safety) constraint wins and the conflict is report
 
 Output: `{clipId → gainDb, limitedBy[], achievedLiftDb}`.
 
+**Overlapping sound effects (WP6.5b).** A sound effect of a lower weight playing under an event is part of that
+event's bed for the lift (ambient → support → hero), counted by its energy under the event's window (its energy
+profile); peers (the same weight) and the layers of one cue do not mask each other, and a hero does not mask its supports
+(constraint 3 keeps them under it on purpose). The gains depend on each other through that masking, so the solve repeats
+with the lower sounds at the previous pass's gains until no gain moves more than 10⁻⁴ dB (at most 32 more passes,
+deterministic; `W_UNCONVERGED` otherwise). Headroom (6) then also holds for the **summed** true peak of the measured
+sounds playing at once, moment by moment from their peak profiles (Σ of amplitudes, an upper bound of their sum's true
+peak): the sounds of a moment over the ceiling are lowered together (`limitedBy: overlap-headroom`). The bed cap and the
+dialogue guard stay against the bed. **Speech** for the dialogue guard is the dialogue the mix lets through
+(`dialogueSpans`): a section a clip gain, clip Volume keyframes, a track mute or Volume automation, solo, a submix or the
+Mix fader take to −40 dB or below is not speech for any consumer (solver, cue suppression, `place_sound`'s hero
+warning, Sound Check).
+
+**Race with edits (WP6.5b).** The rebalance and delivery jobs put `soundDesign.expectMix {mixHash, delivery}` first in
+their transaction: an edit of the mix that lands after their last check refuses the transaction (`CONFLICT`,
+retryable) instead of being fast-forwarded over.
+
 **Stop-before.** Use `mixer.writeAutomation` on the music track volume lane. When the music shares a track, fall
 back to `audio.volumeDip` (merges by taking the minimum with existing keyframes).
 
@@ -311,11 +336,19 @@ state: pending|accepted|rejected|stale|invalid, reason?, note?}], report?}`.
 
 Accept re-validates on the current document. With `partial`, stale items are reported and the rest applied;
 otherwise it is all-or-nothing. Agent accept is refused with `E_APPROVAL_REQUIRED` unless
-`soundDesign.settings.agentsMayApply` is on.
+`soundDesign.settings.agentsMayApply` is on. Every accept is **journalled** (WP6.5b): an intent file next to the proposal,
+written atomically before the transaction with the id bodies the transaction creates its entities with, removed after
+the item states are written; an intent found later (a crash, a lost relay answer) is settled from the document when the
+proposal is next read — recorded accepted when the document has what it created, rolled back when it does not — so an
+item is never left pending while applied, nor applied twice.
 
 **Session** (`packages/session/src/proposals.ts`): a proposals slice and `previewProposal(id, itemIds)`, which
 builds a non-committed preview document, recomputed debounced on `doc.changed`. The Program monitor renders
-picture **and sound** from it while "Hear proposal" is on.
+picture **and sound** from it while "Hear proposal" is on. The preview applies items in batches (up to 32 per
+transaction, sized to the editor's time slice) with every ghost attributed to its item exactly (else the batch is applied
+one item at a time), reuses the documents of an earlier preview that started the same way, and checks the invariants on
+the result as Apply would at any size: an item that breaks one only together with the items before it is found by
+bisection and shown stale in the preview ("conflicts with the items before it"), not only at Apply (WP6.5b).
 
 ### 2.6 Sound Check (P5)
 
@@ -325,16 +358,23 @@ bed) through `renderMixdown` (`measureOnly`), runs VAD, and computes 10 ms curve
 | Code | Check |
 |---|---|
 | `LOUDNESS`, `TRUE_PEAK` | integrated and TP vs preset (±1 LU) |
-| `OUT_OF_SYNC` | peak vs cue, located by cross-correlation in the SFX stem: cut ±1 frame, land ±2, move ±3, appear (start) ±1; or "cut": the clip ends < 20 ms after its aligned point while its sound goes on (error) |
+| `OUT_OF_SYNC` | peak vs cue, located by cross-correlation in the SFX stem: cut ±1 frame, land ±2, move ±3, appear (start) ±1; an end-aligned sound (riser, reverse) from 250 ms before to 30 ms after the cue (P6-E3); or "cut": the clip ends < 20 ms after its aligned point while its sound goes on (error) |
 | `TRUNCATED` | a placed sound's clip ends before the sound has faded to −60 dB (provenance tail, library tail, or measured on the file) while it runs to the last whole frame of its media — the frame grid cut it, not the user (warning). Fix (also for OUT_OF_SYNC "cut"), first that reaches the end: `clip.trim` out; `swap_sound` to the same sound (re-registers it with trailing silence, `soundDesign.swap` keeps the aligned frame, track, role, pan, gain); `soundDesign.swap` on its own media (rounds the clip up past the media end, silence there). All safe, dry-run |
 | `MASKED` | dominant-band lift: support ≥ 1.5 dB, hero ≥ 3 dB |
 | `OVERLOAD` | |
 | `MUSIC_OVER_VOICE` | music not ≥ 8 LU under voice during speech |
-| `SILENCE` | < −60 dBFS for ≥ 0.5 s outside `silence` cues |
+| `SILENCE` | < −60 dBFS for ≥ 0.5 s outside `silence` cues; a quiet run that reaches the end of the sequence after sound is its ending, not a SILENCE (P6-E3) |
 | `DIP` | short-term drop > 10 LU not explained by stop-before, a cut or a silence cue |
 | `STALE_CUE`, `NO_PICTURE_EVENT` | cue no longer matches its anchor / no picture event at the cue |
 | `DENSITY`, `REPEAT` | |
-| `LICENSE`, `CREDITS` | |
+| `LICENSE`, `CREDITS` | not commercial-safe (NC, ND, unknown: error; user-provided: warning); CC BY-SA: a `shareAlike` warning (P6-E13) / attribution needed and no credits configured |
+| `CLICK` (P6-E1) | a 14 kHz high-passed burst (> 9× its 20 ms and > 6× its 4 ms RMS, ≥ 80 % of its energy within 1 ms) in the mix or a stem: within 2 ms of an audio clip edge, remix joint or transition edge an **error** (a 1-frame constant-power fade, or a longer transition; safe), inside a clip an info. Not at the sequence's own first and last samples (HEAD / ENDING) |
+| `EDGE` (P6-E1) | warning, on every audio clip edge that is not library padding: an abrupt entry (source 20 ms before the In point within 20 dB of the clip's peak, no fade-in ≥ 5 ms, no attack within 10 ms covering it), a chopped decay (last ms over −35 dB re the peak, source after it over −35 dB, fade-out < 30 ms), chopped music at a joint (source after the Out point within 6 dB of the piece's last 50 ms and 6 dB over what enters, crossfade < 100 ms). Fix: the fade or crossfade (safe), else trim to the decay (not safe) |
+| `HARSH` (P6-E2) | a placed sound's 2–6 kHz 5 ms-RMS peak more than 6 dB over the music stem's loudest (else the dialogue's; neither: not judged): warning, fix −excess dB (safe when MASKED still holds; else a Parametric Equalizer dip, not safe); centroid > 6.5 kHz: info |
+| `LAYER_INAUDIBLE` (P6-E2) | a layer of a multi-layer cue adding < 1 dB in every 1/3-octave band (100 Hz–12.6 kHz) over the bed plus its cue's other layers, over its loudest 60 ms: info; fix the gain that adds 3 dB in its dominant band (≤ 18 dB), else remove the layer (not safe) |
+| `COVERAGE` (P6-E3) | ≥ 2 cues of a class (kind + anchor source; text / keyframe cues by clip, cuts by track) filled and ≥ 1 not (muted, ambient and dialogue-silenced cues excluded): warning; fix fill them with the class's sound (not safe), else mute them |
+| `ENDING`, `HEAD` (P6-E3) | the delivered mix's last 50 ms RMS > −45 dBFS or last 10 ms peak > −60 dBFS at the sequence end: warning, a 0.5 s Mix fade-out reaching silence 50 ms before the end (not safe) / first 5 ms peak > −40 dBFS: info, a 20 ms Mix fade-in |
+| `ARC` (P6-E3) | info: the loudest 3 s short-term window holds no hero while heroes exist, or lies in the last 15 % with no hero there |
 
 Every issue has `{code, severity, frame?, range?, message, fix?{tool|command,args}}`.
 
@@ -343,6 +383,15 @@ The report also carries:
 - `listen[5]`: worst event, biggest hero, loudest moment, densest moment, one passing cue, each with a reason;
 - `curves`;
 - the per-event table.
+
+**Safe fixes are judged together** (WP6.5b, `planSoundCheckFixes`): Fix all safe, a single Fix, MCP `sound_check`'s
+`safeFixes` and the report's `safe` flags apply the candidates in order on a dry-run document (commands, then swaps,
+then engine jobs) and re-validate each after the ones before it, with the report's level model (`levelGuard`: each
+sound effect's lift, peak over the bed and true peak, linear in its gain, and the overlapping sound effects in its bed);
+a fix that leaves any measured sound worse (further under its minimum lift, over its bed cap, its own true peak over the
+ceiling, or — normalisation off — the bound on the mix's true peak where it plays over the ceiling), no longer resolves
+its finding or no longer applies is left for the next check with why. A mono Mix is checked in mono. A kept report goes
+with its sequence (deleted once no editing session could bring the sequence back) and its project.
 
 The check must work on media of any length (no trivial pass on short input). The summary is stored in
 `soundDesign.lastCheck`; it is stale when `mixFingerprint` differs. Visual data comes from the engine; MCP
@@ -356,7 +405,8 @@ composes PNGs with `apps/mcp/src/png.ts`; the web draws the same data on canvas.
   - toolbar: search, In Context toggle, Loop, Auto-play, audition volume;
   - collection selector (All, Favourites, Recent, Used in project, Palette, Sources);
   - type chips grouped into families (Impacts, Movement, Digital, Tactile, Tonal);
-  - Refine pills: length, tone, attack, weight, texture, licence; "Commercial-safe" is on by default;
+  - Refine pills: length, tone, attack, weight, texture, licence; "Commercial-safe" is on by default and leaves CC
+    BY-SA out ("Include ShareAlike" adds it; P6-E13, human decision 2026-10-17);
   - virtualised result rows: 120×24 waveform with a peak tick, duration, licence badge, favourite;
   - palette strip and status line;
   - empty state: Install starter kit / Add a folder.
@@ -418,7 +468,8 @@ entry, and an "Audition on swap" preference applies.
 **Layering**: Add Layer… aligns to the same peak and links the layers (Link/Unlink).
 
 **Clip badges** (`clipDecorations`): an audio-type badge for all Essential types (click focuses Essential
-Sound), an "H" for hero, a chain icon for layers, and a warning dot for NC or unknown licences.
+Sound), an "H" for hero, a chain icon for layers, a warning dot for NC or unknown licences, and "SA" for CC BY-SA
+(P6-E13).
 
 **Essential Sound SFX additions**: a Sound row (name, source, licence, Swap…, ◀ ▶ variation, Find Similar),
 Role, Align, Auto gain with its reason, Room send, Pitch, Stop before next. The header gets "Browse sounds…".
@@ -515,7 +566,7 @@ Routes, declared in `packages/api/src/routes.ts` with schemas in `packages/api/s
 | `POST /api/sound-design/check` | job |
 | `POST /api/sound-design/check/last` | the sequence's last full report, kept across restarts, current / stale (Phase 5 verification) |
 | `POST /api/sound-design/visual` | |
-| `POST /api/audio/beats` | |
+| `POST /api/audio/beats` | `{mediaKey, streamIndex?, startSeconds, durationSeconds, timeSignature?: 'auto' \| 2…12}` → bpm, beats, downbeats, beatsPerBar |
 | proposal routes | §2.5 |
 
 Capabilities gain `sound: {library:{sounds, packs}, synth: true}`.
@@ -526,11 +577,12 @@ Capabilities gain `sound: {library:{sounds, packs}, synth: true}`.
 |---|---|
 | `soundCue.add`, `soundCue.update`, `soundCue.remove {withClips?}`, `soundCue.resync` | |
 | `soundDesign.place` | `{cueId?|frame?, layers[{mediaId, track?|'auto', align?, gainDb?, rate?, pitchSt?, pan?, role?}] 1..6, group?, alternatives?}` |
-| `soundDesign.swap` | `{clipId, mediaId}` |
+| `soundDesign.swap` | `{clipId, mediaId, align?, frame?, pitchSt?, alternatives?}`; `pitchSt` is applied over `sfx.pitch.baseRate` (exact reset to 0) |
 | `soundDesign.ensureBus`, `soundDesign.applyGains`, `soundDesign.setSettings`, `soundDesign.setCheck` | |
 | `soundDesign.setVerdict` | a listen-here verdict marker bound to its moment (Phase 5 verification) |
 | `audio.volumeDip` | |
 | `media.setLibraryInfo` | |
+| `media.upgradeLibraryCopy` | `{mediaId, asset, ifPossible?, binId?, name?, label?, ref?, itemRef?}`: an older copy of a library sound gets the new copy in place, its clips moved by the lead difference (WP6.5b) |
 | palette commands (`soundDesign.setPalette`) | |
 
 Every command has undo/redo tests, tests for each refusal (`E_NOT_FOUND`, `E_INVALID_PARAM`, `E_TRACK_KIND`,
@@ -1149,14 +1201,17 @@ undo is one step; an agent can propose it and the user can apply it.
 
 **P6-E13 (P1). ShareAlike sounds.** Under CC BY-SA 4.0 §1(a), a sound recording synced in timed relation with a
 moving image always produces Adapted Material. Under §3(b), the video must then be shared under BY-SA 4.0 or a
-compatible licence. earshot forbids SA for this reason. We currently count BY-SA as commercial-safe with no warning.
+compatible licence. earshot forbids SA for this reason. Before P6-E13, BY-SA counted as commercial-safe with no warning.
 
 - `licenseObligations(license)` returns `{attribution, shareAlike}`.
 - BY-SA sounds get an "SA" badge in the Library and in clip badges. The credits text adds the ShareAlike notice.
 - Sound Check `LICENSE` warns (variant `shareAlike`) when a BY-SA sound is placed. The ranking already puts BY-SA
-  below CC-BY.
-- **Human decision:** should the default "Commercial-safe" filter exclude BY-SA? Proposed: yes. BY-SA stays allowed
-  when chosen explicitly.
+  below CC-BY. Exports warn `W_SOUND_SHARE_ALIKE` when a BY-SA sound is heard; the credits warn `W_SHARE_ALIKE`.
+- **Human decision (2026-10-17): the default "Commercial-safe" filter EXCLUDES BY-SA**, everywhere it applies:
+  `rankSounds`' `commercial-safe` default, the Sound Library's licence pill, MCP `search_sounds`, the plan job, Auto
+  Sound Pass and the fill pickers. BY-SA stays selectable explicitly — `license: 'commercial-safe-sa'` ("Include
+  ShareAlike" in the Library) or `any` — always with the ShareAlike warnings above. The switch is one constant,
+  `COMMERCIAL_SAFE_FILTER_KEEPS_SHARE_ALIKE` (`packages/project/src/sound/license.ts`).
 
 *Done when* the obligations, badge, credits notice and check warning are tested and match between panel and MCP; the
 default follows the human's answer.

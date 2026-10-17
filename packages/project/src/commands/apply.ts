@@ -164,6 +164,7 @@ function applyTransactionUnchecked(
 		next = produce(doc, (draft) => {
 			commands.forEach((raw, i) => {
 				h.commandIndex = i;
+				ctx.onCommand?.(i);
 				const cmd = substituteRefs(raw, refs, ctx.selection);
 				const entry = COMMAND_CATALOG[cmd.type];
 				results.push(entry.handler(draft, cmd as never, h) ?? null);

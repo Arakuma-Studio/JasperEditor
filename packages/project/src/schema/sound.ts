@@ -427,6 +427,13 @@ export type SfxLevelDefault = DeepStrip<z.infer<typeof SfxDefaultLevelSchema>>;
 export type SfxLevelSolver = DeepStrip<z.infer<typeof SfxSolverLevelSchema>>;
 export type SfxLevel = SfxLevelDefault | SfxLevelSolver;
 
+/** `AudioClip.sfx.pitch`: the applied pitch shift and the speed under it (see `ClipSfxSchema`). */
+export const SfxPitchSchema = z.looseObject({
+	st: z.number().min(-12).max(12),
+	baseRate: z.number().min(0.01).max(100),
+});
+export type SfxPitch = DeepStrip<z.infer<typeof SfxPitchSchema>>;
+
 /** `AudioClip.sfx`: a clip placed by sound design (spec 12 §2.2). */
 export const ClipSfxSchema = z.looseObject({
 	/** The cue it fills (null = placed at a frame without a cue). */
@@ -445,6 +452,14 @@ export const ClipSfxSchema = z.looseObject({
 	placement: SfxPlacementSchema,
 	/** The default level placement gave it (absent: a gain was given, or placed before default levels). */
 	level: SfxLevelSchema.optional(),
+	/**
+	 * The pitch shift placement or a swap applied (`st`, semitones) and the clip speed under it (`baseRate`: the caller's
+	 * rate, i.e. the seeded ±2 % variation of a fill): speed = `baseRate · 2^(st/12)` for |st| ≤ 3 (varispeed), else
+	 * `baseRate` with the Pitch Shifter carrying `st`. A fractional shift and the variation cannot be told apart from the
+	 * speed alone, so a pitch reset reads this (`clipPitchOf`). Absent (placed before WP6.5b) or no longer matching the
+	 * clip's speed (changed by another command): the speed is read as whole semitones plus the variation.
+	 */
+	pitch: SfxPitchSchema.optional(),
 });
 export type ClipSfx = DeepStrip<z.infer<typeof ClipSfxSchema>>;
 
@@ -684,6 +699,10 @@ export function readClipSfx(raw: unknown): ClipSfx | null {
 	const level = opt(SfxLevelSchema, raw.level);
 	if (level !== undefined) out.level = level;
 	else delete out.level;
+	// a pitch record that does not read is dropped (the clip's speed is then read as before the record existed)
+	const pitch = opt(SfxPitchSchema, raw.pitch);
+	if (pitch !== undefined) out.pitch = pitch;
+	else delete out.pitch;
 	const r = ClipSfxSchema.safeParse(out);
 	return r.success ? (r.data as ClipSfx) : null;
 }

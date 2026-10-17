@@ -1,12 +1,13 @@
 // Beats of a media's audio (`POST /api/audio/beats`; spec 12 §2.2 "beats (engine)", §2.8; wp-note "Phase 6 → WP6.2"):
 // the range is decoded to mono 22.05 kHz (the Remix analysis rate) and `analyzeBeats` (@jasper/audio-fx: the Remix
-// tool's tempo and beat tracker, each beat moved onto its attack, downbeats when one beat in four is accented) gives
+// tool's tempo and beat tracker, each beat moved onto its attack, downbeats when one beat per bar is accented — 3 or 4
+// beats per bar detected, or the request's `timeSignature`) gives
 // tempo, beats and downbeats in media seconds. Results are cached on disk by the file's fingerprint and the range, so
 // asking again (the cue route on every Suggest Cues…, the plan job) is instant. At most two analyses run at once.
 import { createHash } from 'node:crypto';
 import type { BeatsRequest, BeatsResult } from '@jasper/api';
 import { BeatsResultSchema } from '@jasper/api';
-import { analyzeBeats, RemixError } from '@jasper/audio-fx';
+import { analyzeBeats, beatsPerBarOf, RemixError } from '@jasper/audio-fx';
 import type { MediaRegistry } from '../media/registry.ts';
 import { AnalysisCache } from '../sound-design/analysis-cache.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
@@ -14,7 +15,7 @@ import { HttpError } from '../tools/reply.ts';
 import { REMIX_ANALYSIS_RATE } from './remix.ts';
 
 /** Bump when the analysis changes (cached results of older versions are not reused). */
-export const BEATS_VERSION = 1;
+export const BEATS_VERSION = 2;
 const CONCURRENT = 2;
 const round4 = (x: number) => Math.round(x * 10_000) / 10_000;
 
@@ -98,6 +99,7 @@ export class BeatService {
 					req.streamIndex ?? null,
 					Math.round(req.startSeconds * 1000),
 					Math.round(req.durationSeconds * 1000),
+					beatsPerBarOf(req.timeSignature) ?? 'auto',
 				]),
 			)
 			.digest('hex')
@@ -141,18 +143,27 @@ export class BeatService {
 			};
 			let out: Omit<BeatsResult, 'cached'>;
 			try {
-				const a = analyzeBeats([mono], sr);
+				const a = analyzeBeats([mono], sr, { timeSignature: req.timeSignature ?? 'auto' });
 				const sec = (s: number) => round4(req.startSeconds + s / sr);
 				out = {
 					...base,
 					bpm: Math.round(a.bpm * 100) / 100,
 					beats: a.beats.map(sec),
 					downbeats: a.downbeats ? a.downbeats.map((i) => sec(a.beats[i]!)) : null,
+					beatsPerBar: a.beatsPerBar,
 					downbeatConfidence: Math.round(a.downbeatConfidence * 1000) / 1000,
 				};
 			} catch (e) {
 				if (!(e instanceof RemixError)) throw e;
-				out = { ...base, bpm: null, beats: [], downbeats: null, downbeatConfidence: 0, reason: 'NO_BEAT' };
+				out = {
+					...base,
+					bpm: null,
+					beats: [],
+					downbeats: null,
+					beatsPerBar: null,
+					downbeatConfidence: 0,
+					reason: 'NO_BEAT',
+				};
 			}
 			const key = this.keyOf(req);
 			if (key) await this.cache.put(key, out).catch(() => undefined);

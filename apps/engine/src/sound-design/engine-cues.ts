@@ -11,7 +11,7 @@
 // Modes: `submit` (the cue route) starts the jobs that are missing and reports them as pending — their cues are NOT
 // silently left out: the answer says `W_ANALYSIS_PENDING` with the job ids; `inline` (the plan job) runs every analysis
 // inside the calling job; `cached` (Sound Check) uses only what is already measured.
-import type { EngineJob, MotionAnalysisResult, SceneDetectRequest } from '@jasper/api';
+import type { EngineJob, MotionAnalysisResult, SceneDetectRequest, TimeSignature } from '@jasper/api';
 import {
 	type BeatData,
 	beatCues,
@@ -134,6 +134,8 @@ export class EngineCueSources {
 		opts: {
 			sources: readonly EngineCueSource[];
 			snapToBeats?: boolean;
+			/** Metre of the music's downbeats (`POST /api/audio/beats` `timeSignature`; default auto). */
+			timeSignature?: TimeSignature;
 			range?: { start: number; end: number };
 			mode: EngineCueMode;
 			signal?: AbortSignal;
@@ -172,6 +174,7 @@ export class EngineCueSources {
 				want.has('beat'),
 				!!opts.snapToBeats,
 				opts.signal,
+				opts.timeSignature,
 			);
 		if (want.has('pixel')) await this.pixel(doc, seq, opts.range, sub('Picture motion'), out);
 		return out;
@@ -297,6 +300,7 @@ export class EngineCueSources {
 		asCues: boolean,
 		snap: boolean,
 		signal?: AbortSignal,
+		timeSignature?: TimeSignature,
 	): Promise<void> {
 		const st: EngineSourceState = { state: 'ready', jobIds: [], found: 0 };
 		if (asCues) out.analysis.beat = st;
@@ -342,6 +346,7 @@ export class EngineCueSources {
 				mediaKey: key,
 				startSeconds: lo,
 				durationSeconds: Math.min(30 * 60, Math.max(0.5, hi - lo)),
+				...(timeSignature !== undefined && timeSignature !== 'auto' ? { timeSignature } : {}),
 			};
 			try {
 				const r =

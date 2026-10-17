@@ -5,7 +5,8 @@
 //
 // - scene: a shot change at media time c inside a footage clip is a `cut` at the first sequence frame whose shown media
 //   time crosses c — through the clip's speed, reverse, time remap and frame hold (`clipMediaTimeFn`, the frame the
-//   renderers show), the same rule as Scene Edit Detection's `clip.applySceneEdits`. A change whose neighbouring frames
+//   renderers show: `shotIndexAt`, the frame-time tolerance of `frameIndexAt`), the same rule as Scene Edit
+//   Detection's `clip.applySceneEdits`. A change whose neighbouring frames
 //   also differ (a whip, a smear: the detector's score stays high around it) is a `move` instead. Anchor
 //   `{type:'scene', mediaId, mediaSec, clipId}` with `mediaSec` = the media time shown at the cue frame, so
 //   `resolveCueAnchor` finds that frame again and follows the clip.
@@ -18,6 +19,7 @@ import type { Clip, Sequence } from '../../schema/sequence.ts';
 import type { CueAnchor, CueKind } from '../../schema/sound.ts';
 import { FLICKS_PER_SECOND, type Rational } from '../../time.ts';
 import { clipMediaTimeFn, frameAtContent, type TimedClip } from '../../time-remap/model.ts';
+import { SHOT_TIME_EPS, shotIndexAt } from '../../time-remap/sampling.ts';
 import { typesForVisualKind } from '../taxonomy.ts';
 import type { DerivedCue, ExtraCue } from './types.ts';
 import { clipName } from './util.ts';
@@ -28,8 +30,6 @@ const MAX_SEQUENCE_FRAMES = 10_368_000;
 export const MAX_SCENE_SCAN_FRAMES = 200_000;
 /** Most beats mapped per music clip. */
 export const MAX_BEATS_PER_CLIP = 5_000;
-/** A shot change counts from this far before its media time (seconds): frame timestamps are rounded to 1 µs. */
-const SHOT_TOLERANCE_SEC = 0.001;
 /** Neighbouring frames scoring this share of the detector's threshold make a change soft (a `move`). */
 const SOFT_SCORE_SHARE = 0.6;
 
@@ -214,7 +214,7 @@ function softChange(d: SceneCutData, t: number): boolean {
 	const scores = d.scores;
 	if (!times || !scores || !fin(d.threshold) || d.threshold <= 0 || times.length !== scores.length)
 		return false;
-	const i = lowerBound(times, t - SHOT_TOLERANCE_SEC);
+	const i = lowerBound(times, t - SHOT_TIME_EPS);
 	if (i <= 0 || i >= times.length) return false;
 	const lim = SOFT_SCORE_SHARE * d.threshold;
 	return (
@@ -246,8 +246,8 @@ export function sceneCutCues(
 			const c = seq.clips[fc.clipId]!;
 			const cuts = [...data.cuts].filter(fin).sort((a, b) => a - b);
 			const at = clipMediaTimeFn(c as unknown as TimedClip, rate);
-			const shot = (mFlicks: number) =>
-				lowerBound(cuts, mFlicks / FLICKS_PER_SECOND + SHOT_TOLERANCE_SEC + 1e-12);
+			// the renderers' frame pick, shared with Scene Edit Detection's `clip.applySceneEdits`
+			const shot = (mFlicks: number) => shotIndexAt(cuts, mFlicks / FLICKS_PER_SECOND);
 			// The clip's first frame is an edit point (the edits source), not a change inside the footage.
 			const from = Math.max(c.start + 1, fc.start);
 			const to = Math.min(fc.end, from + MAX_SCENE_SCAN_FRAMES);

@@ -31,7 +31,10 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	estimateTextWidth,
+	hasAnimeMotionModel,
+	isAnimeTemplate,
 	lowerThirdParams,
+	MG_CATALOG,
 	mgRegistry,
 	svgTemplateSpeed,
 	titleCard,
@@ -356,21 +359,41 @@ describe('mg land / exit cues follow the rendered motion of the fframes template
 });
 
 describe('declared-timing fallback', () => {
-	it('anime templates have no motionSpeed: declared intro / outro with confidence 0.5 / 0.4', () => {
+	it('anime templates are measured on their motion model (WP6.5b); a registry without it gets the declared timing', () => {
 		const info = mgRegistry.get('lower-third-anim', 1)!;
 		expect(info.renderer).toBe('anime');
-		expect(info.motionSpeed).toBeUndefined();
-		expect(mgRegistry.get('lower-third', 1)!.motionSpeed).toBeTypeOf('function');
+		expect(info.motionSpeed).toBeTypeOf('function');
 		const d = mgDoc({ template: 'lower-third-anim', rate: '30', at: 30, duration: 120 });
 		const cues = mgCues(d);
+		// measured: the words settle at content 27 (the declared intro ends at 30); the outro (declared from content
+		// 120 − 21 = 99) visibly leaves one frame later, at 100 (its first tweens ease in)
 		expect(cues.map((c) => [c.kind, c.frame, c.confidence])).toEqual([
-			['land', 30 + info.introFrames, 0.5],
-			['exit', 150 - info.outroFrames, 0.4],
+			['land', 30 + 27, 0.8],
+			['exit', 30 + 100, 0.6],
 		]);
-		expect(cues[0]!.reason).toMatch(/declared/);
+		expect(cues[0]!.reason).toMatch(/settles after/);
 		const seq = d.doc.sequences[d.seqId]!;
 		for (const c of cues)
 			expect(resolveCueAnchor(d.doc, seq, c.anchor as CueAnchor, { mgTemplates: mgRegistry })).toBe(c.frame);
+		const { motionSpeed: _drop, ...plainInfo } = info;
+		const declared = mgCues(d, createStaticMgRegistry([plainInfo as MgTemplateInfo]));
+		expect(declared.map((c) => [c.kind, c.frame, c.confidence])).toEqual([
+			['land', 30 + info.introFrames, 0.5],
+			['exit', 150 - info.outroFrames, 0.4],
+		]);
+		expect(declared[0]!.reason).toMatch(/declared/);
+	});
+
+	it('every shipped template is measured: the fframes ones here (VARIANTS), the anime ones in @jasper/motion', () => {
+		for (const def of MG_CATALOG) {
+			expect(mgRegistry.get(def.id, def.version)!.motionSpeed, def.id).toBeTypeOf('function');
+			if (isAnimeTemplate(def)) expect(hasAnimeMotionModel(def), def.id).toBe(true);
+			else
+				expect(
+					VARIANTS.some((v) => v.template === def.id),
+					def.id,
+				).toBe(true);
+		}
 	});
 
 	it('a registry without motionSpeed (createStaticMgRegistry) gives the declared frames for the same template', () => {
