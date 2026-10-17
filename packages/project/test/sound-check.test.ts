@@ -130,6 +130,36 @@ describe('soundDesign.setCheck', () => {
 		});
 	});
 
+	it('staleness: the cue density judges DENSITY (stale); markers, verdict markers, agents and seed do not', () => {
+		const { h } = fixture();
+		h.ok([{ type: 'soundDesign.setSettings', density: 'rich' }]);
+		h.ok([{ type: 'soundDesign.setCheck', summary: summary(h) }]);
+		const stored = h.doc;
+		expect(soundCheckStatus(h.doc, h.seqId).state).toBe('current');
+		// DENSITY's hero spacing and rate budget come from the density: another density is another check
+		for (const density of ['sparse', 'balanced'] as const) {
+			h.doc = stored;
+			h.ok([{ type: 'soundDesign.setSettings', density }]);
+			expect(soundCheckStatus(h.doc, h.seqId), density).toMatchObject({
+				state: 'stale',
+				reasons: ['inputs'],
+			});
+		}
+		// what no finding depends on keeps the summary current
+		h.doc = stored;
+		h.ok([
+			{ type: 'marker.add', frame: 40, name: 'Sound Check: sounds right', comment: 'ok' },
+			{ type: 'marker.add', frame: 80, name: 'Sound Check: flagged', comment: 'too loud' },
+			{ type: 'soundDesign.setSettings', agentsMayApply: true, seed: 77 },
+		]);
+		expect(soundCheckStatus(h.doc, h.seqId)).toMatchObject({ state: 'current', reasons: [] });
+		// summaries stored at the default density before the density was hashed stay current
+		h.doc = stored;
+		h.ok([{ type: 'soundDesign.setSettings', density: 'balanced' }]);
+		h.ok([{ type: 'soundDesign.setCheck', summary: summary(h) }]);
+		expect(soundCheckInputsHash(h.doc, h.seqId, 'web')).toBe(summary(h).inputsHash);
+	});
+
 	it('refusals', () => {
 		const { h } = fixture();
 		const code = (cmd: Record<string, unknown>) => {

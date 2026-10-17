@@ -2,7 +2,8 @@
 // block, the loudness curves derived from them, and peak location by cross-correlation. Pure and deterministic.
 //
 //   CurveMeter      per 10 ms hop: the BS.1770-4 K-weighted, channel-weighted energy (the loudness meter's measure),
-//                   the mean square over the channels (dBFS) and the sample peak. Fed in blocks of any size; the
+//                   the mean square over the channels (dBFS), the mean square of the loudest channel and the sample
+//                   peak. Fed in blocks of any size; the
 //                   result does not depend on how the stream is cut.
 //   loudnessCurve   from the hop energies: the loudness of a window CENTRED on every hop (400 ms = momentary,
 //                   3 s = short-term), LUFS, floored at LOUDNESS_FLOOR_LUFS; audio outside the stem is silence.
@@ -33,6 +34,11 @@ export type StemCurves = {
 	kEnergy: Float64Array;
 	/** Mean square over the hop's samples and channels, dBFS (floored). */
 	msDb: Float32Array;
+	/**
+	 * Mean square of the hop's loudest channel, dBFS (floored): the level of a signal in fewer channels than the layout
+	 * has (a centre-only 5.1 dialogue, a left-only stereo room tone) is not lowered by the silent ones.
+	 */
+	loudestDb: Float32Array;
 	/** Largest |sample| of the hop over the channels, dBFS (floored). */
 	peakDb: Float32Array;
 };
@@ -48,7 +54,9 @@ export class CurveMeter {
 	private readonly cap: number;
 	private kE: Float64Array;
 	private ms: Float64Array;
+	private lc: Float64Array;
 	private pk: Float32Array;
+	private readonly accC: Float64Array;
 	private n = 0;
 	private pos = 0;
 	private accK = 0;
@@ -68,7 +76,9 @@ export class CurveMeter {
 		const first = Math.min(this.cap, 1024);
 		this.kE = new Float64Array(first);
 		this.ms = new Float64Array(first);
+		this.lc = new Float64Array(first);
 		this.pk = new Float32Array(first);
+		this.accC = new Float64Array(this.channels);
 	}
 
 	/** Hops recorded so far. */
@@ -82,10 +92,13 @@ export class CurveMeter {
 		k.set(this.kE);
 		const m = new Float64Array(size);
 		m.set(this.ms);
+		const l = new Float64Array(size);
+		l.set(this.lc);
 		const p = new Float32Array(size);
 		p.set(this.pk);
 		this.kE = k;
 		this.ms = m;
+		this.lc = l;
 		this.pk = p;
 	}
 
@@ -94,6 +107,12 @@ export class CurveMeter {
 		if (this.n >= this.kE.length) this.grow();
 		this.kE[this.n] = this.accK;
 		this.ms[this.n] = this.accS / Math.max(1, samples * this.channels);
+		let loudest = 0;
+		for (let c = 0; c < this.channels; c++) {
+			if (this.accC[c]! > loudest) loudest = this.accC[c]!;
+			this.accC[c] = 0;
+		}
+		this.lc[this.n] = loudest / Math.max(1, samples);
 		this.pk[this.n] = this.accP;
 		this.n++;
 		this.accK = 0;
@@ -126,6 +145,7 @@ export class CurveMeter {
 				}
 				this.accK += w * k;
 				this.accS += s;
+				this.accC[c]! += s;
 				this.accP = p;
 			}
 			this.pos += take;
@@ -145,10 +165,13 @@ export class CurveMeter {
 		}
 		const n = this.n;
 		const msDb = new Float32Array(n);
+		const loudestDb = new Float32Array(n);
 		const peakDb = new Float32Array(n);
 		for (let i = 0; i < n; i++) {
 			const m = this.ms[i]!;
 			msDb[i] = m > 0 ? Math.max(LOUDNESS_FLOOR_LUFS, 10 * Math.log10(m)) : LOUDNESS_FLOOR_LUFS;
+			const l = this.lc[i]!;
+			loudestDb[i] = l > 0 ? Math.max(LOUDNESS_FLOOR_LUFS, 10 * Math.log10(l)) : LOUDNESS_FLOOR_LUFS;
 			const p = this.pk[i]!;
 			peakDb[i] = p > 0 ? Math.max(LOUDNESS_FLOOR_LUFS, 20 * Math.log10(p)) : LOUDNESS_FLOOR_LUFS;
 		}
@@ -158,6 +181,7 @@ export class CurveMeter {
 			count: n,
 			kEnergy: this.kE.slice(0, n),
 			msDb,
+			loudestDb,
 			peakDb,
 		};
 	}
@@ -173,6 +197,7 @@ export function silentCurves(sampleRate: number, count: number): StemCurves {
 		count: n,
 		kEnergy: new Float64Array(n),
 		msDb: new Float32Array(n).fill(LOUDNESS_FLOOR_LUFS),
+		loudestDb: new Float32Array(n).fill(LOUDNESS_FLOOR_LUFS),
 		peakDb: new Float32Array(n).fill(LOUDNESS_FLOOR_LUFS),
 	};
 }
@@ -225,16 +250,35 @@ export type Correlation = {
 /** Longest reference / signal accepted by {@link locateByCorrelation} (samples). */
 export const MAX_CORRELATION_SAMPLES = 1 << 20;
 
+/** Options of {@link locateByCorrelation}. */
+export type CorrelationOptions = {
+	/**
+	 * Where the reference is expected (a lag). Among the matches at least {@link CorrelationOptions.share} of the best
+	 * one (local maxima of the correlation), the one nearest this lag is taken: the same sound played twice within the
+	 * lag range (a repeat, a doubled layer) matches twice, and its own copy is the one where it is expected.
+	 */
+	prefer?: number;
+	/** Share of the best correlation a match needs to be preferred (default 0.75). */
+	share?: number;
+	/**
+	 * A match is the largest correlation within ± this many samples (default 1: any local maximum). Callers pass about
+	 * a frame, so the side lobes of a tonal sound (one period away) are not separate matches.
+	 */
+	separation?: number;
+};
+
 /**
  * The lag in `[minLag, maxLag]` (positions of the reference's first sample in the signal; the reference must fit) where
  * `reference` best matches `signal` by normalised cross-correlation (FFT), refined to a fraction of a sample by a
- * parabola through the best lag and its neighbours. Null when no lag fits or either input is empty or silent.
+ * parabola through the best lag and its neighbours. With `prefer`, a near-equal match nearer the expected lag wins
+ * (see {@link CorrelationOptions}). Null when no lag fits or either input is empty or silent.
  */
 export function locateByCorrelation(
 	reference: Float32Array,
 	signal: Float32Array,
 	minLag: number,
 	maxLag: number,
+	opts: CorrelationOptions = {},
 ): Correlation | null {
 	const m = reference.length;
 	const s = signal.length;
@@ -296,6 +340,29 @@ export function locateByCorrelation(
 		}
 	}
 	if (best < 0 || !(bestV > 0)) return { lag: lo, ncc: 0 };
+	const prefer = opts && fin(opts.prefer as number) ? (opts.prefer as number) : null;
+	if (prefer !== null) {
+		const share = fin(opts.share as number) ? Math.max(0, Math.min(1, opts.share as number)) : 0.75;
+		const floor = bestV * share;
+		const sep = fin(opts.separation as number) ? Math.max(1, Math.floor(opts.separation as number)) : 1;
+		const last = hi - lo;
+		const v = new Float64Array(last + 1);
+		for (let k = 0; k <= last; k++) v[k] = nccAt(k);
+		let pick = best;
+		for (let k = 0; k <= last; k++) {
+			const x = v[k]!;
+			if (x < floor || k === pick) continue;
+			let top = true;
+			for (let j = Math.max(0, k - sep); j <= Math.min(last, k + sep) && top; j++)
+				if (v[j]! > x || (v[j] === x && j < k)) top = false;
+			if (!top) continue;
+			const d = Math.abs(lo + k - prefer);
+			const dp = Math.abs(lo + pick - prefer);
+			if (d < dp || (d === dp && x > v[pick]!)) pick = k;
+		}
+		best = pick;
+		bestV = v[pick]!;
+	}
 	let frac = 0;
 	if (best > 0 && best < hi - lo) {
 		const y0 = nccAt(best - 1);
