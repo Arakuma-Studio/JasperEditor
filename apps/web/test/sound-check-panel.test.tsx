@@ -28,9 +28,12 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resultFixture } from '../../mcp/test/sound-check-report-fixture.ts';
 import { createCommandContext } from '../src/commands/context.ts';
+import { getActiveKeymap } from '../src/commands/keymap-defaults.ts';
 import { getCommand, runCommand } from '../src/commands/registry.ts';
 import { useExportSoundCheck } from '../src/export/SoundCheckGate.tsx';
 import { SoundCheckPanel } from '../src/panels/soundCheck/SoundCheckPanel.tsx';
+import { shortcutRows } from '../src/shell/keymap/KeyboardShortcutsDialog.tsx';
+import { assignShortcut, restoreBindings } from '../src/shell/keymap/store.ts';
 import { MENUBAR } from '../src/shell/menus/model.ts';
 import { soundCheckStore } from '../src/sound/check-run.ts';
 import { cuesOf } from '../src/sound/cues/model.ts';
@@ -494,6 +497,47 @@ describe('Sound Check panel', () => {
 		await key('f');
 		await waitFor(() => expect(f.labels().at(-1)).toBe('Sound Check Fix: Align its peak to the cue'));
 		expect(f.seq().clips[f.clipA]!.start).toBe(before - 2);
+	});
+
+	it('the findings list keys are Sound Check commands: listed in Keyboard Shortcuts and remappable', async () => {
+		const rows = shortcutRows(getActiveKeymap()).filter((r) => r.scope === 'soundCheck');
+		const keysOf = (id: string) => rows.find((r) => r.id === id)?.bindings.map((b) => b.key) ?? [];
+		expect(keysOf('soundCheck.nextFinding')).toEqual(['ArrowDown']);
+		expect(keysOf('soundCheck.prevFinding')).toEqual(['ArrowUp']);
+		expect(keysOf('soundCheck.firstFinding')).toEqual(['Home']);
+		expect(keysOf('soundCheck.lastFinding')).toEqual(['End']);
+		expect(keysOf('soundCheck.goToFinding')).toEqual(['Enter', 'NumpadEnter']);
+		expect(keysOf('soundCheck.fixFinding')).toEqual(['KeyF']);
+		expect(keysOf('soundCheck.openSyncStrip')).toEqual(['ArrowRight']);
+		expect(keysOf('soundCheck.closeSyncStrip')).toEqual(['ArrowLeft']);
+		expect(keysOf('soundCheck.playFinding')).toEqual(['Space']);
+		expect(rows.find((r) => r.id === 'soundCheck.fixFinding')?.label).toBe('Fix Sound Check Finding');
+		// remap Fix to X: X fixes the current finding, F no longer does
+		const f = fixture();
+		mount(f);
+		await run();
+		const previous = getActiveKeymap();
+		try {
+			// (the Keyboard Shortcuts dialog's change of a key: the F binding replaced by X)
+			const fKey = previous.find((b) => b.command === 'soundCheck.fixFinding' && b.key === 'KeyF');
+			assignShortcut('soundCheck.fixFinding', 'soundCheck', 'KeyX', 'linux', 'web', fKey);
+			const list = screen.getByTestId('sound-check-findings');
+			await act(async () => {
+				fireEvent.focus(list);
+			});
+			const n = f.labels().length;
+			await act(async () => {
+				fireEvent.keyDown(list, { key: 'f', code: 'KeyF' });
+			});
+			await settle();
+			expect(f.labels()).toHaveLength(n);
+			await act(async () => {
+				fireEvent.keyDown(list, { key: 'x', code: 'KeyX' });
+			});
+			await waitFor(() => expect(f.labels().at(-1)).toBe('Sound Check Fix: Align its peak to the cue'));
+		} finally {
+			restoreBindings(previous);
+		}
 	});
 
 	it('Fix: one History entry; the row says fixed and the summary goes stale', async () => {
