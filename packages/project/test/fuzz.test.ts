@@ -171,10 +171,11 @@ const abstract: fc.Arbitrary<Abstract> = fc.oneof(
 	}),
 	// Phase 4 (WP4.2b): auto gain on / off (non-effect clips are refused)
 	fc.record({ k: fc.constant('autoGain' as const), clip: idx, auto: fc.boolean() }),
-	// Phase 5 (WP5.1): the Sound Check summary and the credits setting (bad verdicts / ranges are refused)
+	// Phase 5 (WP5.1): the Sound Check summary and the credits setting (bad verdicts / ranges are refused); Phase 5
+	// verification: listen-here verdicts bound to a clip / cue (frames past the end and unknown clips are refused)
 	fc.record({
 		k: fc.constant('check' as const),
-		op: fc.nat(3),
+		op: fc.nat(5),
 		verdict: fc.nat(3),
 		n: fc.nat(70),
 		at: frame,
@@ -386,6 +387,17 @@ function concretize(a: Abstract, doc: ProjectDocument, media: string[]): unknown
 			};
 		}
 		case 'check': {
+			if (a.op === 4 || a.op === 5) {
+				const all = clips.map((c) => c.id);
+				const c = all.length ? all[a.n % all.length] : pick(a.n);
+				return {
+					type: 'soundDesign.setVerdict',
+					frame: a.at,
+					verdict: a.op === 5 && a.verdict === 0 ? null : a.verdict % 2 ? 'flag' : 'ok',
+					...(a.n % 3 ? { clipId: c } : {}),
+					...(a.verdict === 3 ? { note: 'x'.repeat(a.n * 40) } : {}),
+				};
+			}
 			if (a.op === 2) return { type: 'soundDesign.setSettings', credits: a.n % 2 ? 'md' : null };
 			if (a.op === 3) return { type: 'soundDesign.setCheck', summary: null };
 			return {
@@ -533,7 +545,7 @@ describe('AC-25: invariants under random transactions', () => {
 								mixAccepted++;
 							if (
 								commands.some((c) =>
-									/^soundDesign\.(setCheck|setSettings)$/.test((c as { type: string }).type),
+									/^soundDesign\.(setCheck|setSettings|setVerdict)$/.test((c as { type: string }).type),
 								)
 							)
 								checkAccepted++;

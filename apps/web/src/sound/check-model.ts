@@ -396,7 +396,12 @@ export function fixChangeSummary(issue: SoundCheckIssue, seq: Sequence | undefin
 										tcOf(seq, w.start, at),
 										tcOf(seq, w.end, at),
 									)
-								: t('Adds a sound cue at {0}', tcOf(seq, q.frame, at)),
+								: q.kind === 'silence'
+									? t(
+											'Adds a silence cue at {0}: Sound Check no longer reports silence there',
+											tcOf(seq, q.frame, at),
+										)
+									: t('Adds a sound cue at {0}', tcOf(seq, q.frame, at)),
 						);
 					}
 					break;

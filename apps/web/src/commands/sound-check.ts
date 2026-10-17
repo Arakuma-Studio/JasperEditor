@@ -32,29 +32,54 @@ const noFindings = () => t('Run the Sound Check first: there are no findings to 
 const onFinding = (ctx: CommandCtx) => !!ctx.session && currentFinding(ctx.session) !== null;
 const noCurrent = () => t('Choose a finding in the Sound Check list first');
 
+const step = (to: number | 'first' | 'last') => ({
+	scope: 'soundCheck' as const,
+	repeat: typeof to === 'number',
+	when: hasFindings,
+	disabledReason: noFindings,
+	run: (ctx: CommandCtx) => {
+		if (ctx.session) stepFinding(ctx.session, to);
+	},
+});
+const strip = (open: boolean) => ({
+	scope: 'soundCheck' as const,
+	when: (ctx: CommandCtx) => {
+		const i = ctx.session && currentFinding(ctx.session);
+		return !!i && (!open || hasSyncStrip(i));
+	},
+	disabledReason: () => (open ? t('Only sync findings have a sync strip') : noCurrent()),
+	run: (ctx: CommandCtx) => {
+		const i = ctx.session && currentFinding(ctx.session);
+		if (ctx.session && i) setSyncStrip(ctx.session, i, open);
+	},
+});
+
 /** The findings list commands (scope `soundCheck`: the Sound Check panel's list). */
 const findingCommands: UiCommand[] = [
-	...(
-		[
-			['soundCheck.nextFinding', 'Next Sound Check Finding', 1],
-			['soundCheck.prevFinding', 'Previous Sound Check Finding', -1],
-			['soundCheck.firstFinding', 'First Sound Check Finding', 'first'],
-			['soundCheck.lastFinding', 'Last Sound Check Finding', 'last'],
-		] as const
-	).map(
-		([id, label, to]): UiCommand => ({
-			id,
-			label,
-			description: 'Move the Sound Check findings list to the next / previous / first / last finding',
-			scope: 'soundCheck',
-			repeat: typeof to === 'number',
-			when: hasFindings,
-			disabledReason: noFindings,
-			run: (ctx) => {
-				if (ctx.session) stepFinding(ctx.session, to);
-			},
-		}),
-	),
+	{
+		id: 'soundCheck.nextFinding',
+		label: 'Next Sound Check Finding',
+		description: 'Move the Sound Check findings list to the next finding',
+		...step(1),
+	},
+	{
+		id: 'soundCheck.prevFinding',
+		label: 'Previous Sound Check Finding',
+		description: 'Move the Sound Check findings list to the previous finding',
+		...step(-1),
+	},
+	{
+		id: 'soundCheck.firstFinding',
+		label: 'First Sound Check Finding',
+		description: 'Move the Sound Check findings list to its first finding',
+		...step('first'),
+	},
+	{
+		id: 'soundCheck.lastFinding',
+		label: 'Last Sound Check Finding',
+		description: 'Move the Sound Check findings list to its last finding',
+		...step('last'),
+	},
 	{
 		id: 'soundCheck.goToFinding',
 		label: 'Go to Sound Check Finding',
@@ -86,30 +111,19 @@ const findingCommands: UiCommand[] = [
 			if (ctx.session && i) await applyCheckFix(ctx.session, engineOf(ctx), i);
 		},
 	},
-	...(
-		[
-			['soundCheck.openSyncStrip', 'Open Sync Strip', true],
-			['soundCheck.closeSyncStrip', 'Close Sync Strip', false],
-		] as const
-	).map(
-		([id, label, open]): UiCommand => ({
-			id,
-			label,
-			description: open
-				? 'Open the sync strip of the current Sound Check sync finding: five frames around the cue above the sound effects over the bed'
-				: 'Close the sync strip of the current Sound Check finding',
-			scope: 'soundCheck',
-			when: (ctx) => {
-				const i = ctx.session && currentFinding(ctx.session);
-				return !!i && (!open || hasSyncStrip(i));
-			},
-			disabledReason: () => (open ? t('Only sync findings have a sync strip') : noCurrent()),
-			run: (ctx) => {
-				const i = ctx.session && currentFinding(ctx.session);
-				if (ctx.session && i) setSyncStrip(ctx.session, i, open);
-			},
-		}),
-	),
+	{
+		id: 'soundCheck.openSyncStrip',
+		label: 'Open Sync Strip',
+		description:
+			'Open the sync strip of the current Sound Check sync finding: five frames around the cue above the sound effects over the bed',
+		...strip(true),
+	},
+	{
+		id: 'soundCheck.closeSyncStrip',
+		label: 'Close Sync Strip',
+		description: 'Close the sync strip of the current Sound Check finding',
+		...strip(false),
+	},
 	{
 		id: 'soundCheck.playFinding',
 		label: 'Play Sound Check Finding',

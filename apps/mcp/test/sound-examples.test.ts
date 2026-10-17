@@ -24,6 +24,7 @@ const SOUND_COMMANDS = [
 	'soundDesign.applyGains',
 	'soundDesign.setAutoGain',
 	'soundDesign.setCheck',
+	'soundDesign.setVerdict',
 	'audio.volumeDip',
 	'soundDesign.applyStopBefore',
 	'soundDesign.applyBuild',
@@ -111,6 +112,7 @@ const PRELUDE: Record<string, unknown[]> = {
 		},
 	],
 	'soundDesign.removeBus': [{ type: 'soundDesign.ensureBus' }],
+	'soundDesign.setVerdict': MUSIC,
 	'soundDesign.applyDelivery': MUSIC,
 };
 

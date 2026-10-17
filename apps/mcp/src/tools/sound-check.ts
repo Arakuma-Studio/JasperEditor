@@ -3,16 +3,19 @@
 //                        the findings with their machine-actionable fixes, the five listen-here timecodes, the per-event
 //                        table and, optionally, a PNG strip of the worst moments; `store: true` also writes the summary
 //                        into the sequence (one undo step "Sound Check Result").
+//   get_sound_check      the sequence's last full report as the engine keeps it (across restarts), current or stale.
 //   view_sound_timeline  a PNG of a range (≤ 120 s): the loudness curves of the mix and its stems, the waveform, cue ticks,
 //                        the sound effect clips, speech, motion and a check's findings, plus the geometry as JSON.
 import {
 	type SoundCheckIssue,
+	SoundCheckLastResponseSchema,
 	type SoundCheckReport,
 	SoundCheckResultSchema,
 	type SoundVisualResponse,
 	SoundVisualResponseSchema,
 } from '@jasper/api';
 import {
+	type ProjectDocument,
 	type Rational,
 	type Sequence,
 	SOUND_CHECK_TARGET_LIMITS,
@@ -52,6 +55,7 @@ const SOUND_CHECK_HINTS: Record<string, string> = {
 	RANGE_EMPTY: 'The range is outside the sequence: check get_timeline for its length.',
 	RANGE_TOO_LONG: 'Ask for a shorter range (sound_check: ≤ 4 h; view_sound_timeline: ≤ 120 s).',
 	JOB_NOT_FOUND: 'checkJobId must be a sound_check job of this project (its jobId).',
+	SOUND_CHECK_NOT_FOUND: 'No report is kept for this sequence: run sound_check.',
 	RENDER_FAILED:
 		'The mix could not be rendered: check that the media is online (list_offline_media), then try again.',
 };
@@ -73,21 +77,48 @@ function issueLine(i: SoundCheckIssue): string {
 
 /**
  * The user's listen-here verdicts (spec 12 §2.7: "Sounds right" / "Flag" + note, stored by the editor's Sound Check
- * panel as `comment` markers): each with its timecode and, when it sits on one of this report's listen-here moments,
- * that moment's slot.
+ * panel as `comment` markers): each with its timecode, the listen slot and clip / cue it judged (verdicts written
+ * before the Phase 5 verification carry only a frame: their slot comes from this report's moment at that frame), and
+ * whether it is still current — `stale` (null: cannot be told for such an older verdict) with `staleReasons`: `moment`
+ * (what plays in the listened ±2 s changed since), `moved` / `gone` (its clip or cue).
  */
-function humanVerdictsOf(seq: Sequence, r: SoundCheckReport) {
-	return soundCheckHumanVerdicts(seq).map((v) => {
+function humanVerdictsOf(doc: ProjectDocument, seq: Sequence, r: Pick<SoundCheckReport, 'listen'>) {
+	return soundCheckHumanVerdicts(seq, { doc }).map((v) => {
 		const at = r.listen.find((l) => l.frame === v.frame);
+		const slot = v.slot ?? at?.slot;
 		return {
 			timecode: sequenceTimecode(seq, v.frame),
 			frame: v.frame,
 			verdict: v.verdict === 'ok' ? 'sounds right' : 'flagged',
 			note: v.note,
 			markerId: v.markerId,
-			...(at ? { slot: at.slot } : {}),
+			...(slot ? { slot } : {}),
+			...(v.clipId ? { clipId: v.clipId } : {}),
+			...(v.cueId ? { cueId: v.cueId } : {}),
+			stale: v.stale ?? null,
+			...(v.staleReasons?.length ? { staleReasons: v.staleReasons } : {}),
+			...(v.mixChanged !== undefined && v.mixChanged !== null ? { mixChangedSince: v.mixChanged } : {}),
 		};
 	});
+}
+
+/** The per-event table as text (one row per sound effect). */
+function eventTable(r: SoundCheckReport): string {
+	return [
+		'clip | timecode | sound | track | role | cue | offset ms (tol frames) | lift dB (min) | over bed LU | status | codes',
+		...r.events.map(
+			(e) =>
+				`${e.clipId} | ${e.timecode} | ${e.title} | ${e.track} | ${e.role ?? e.weight} | ${e.cueKind ?? '—'} | ${e.offsetMs === null ? e.located : `${e.offsetMs > 0 ? '+' : ''}${e.offsetMs}`}${e.toleranceFrames !== null ? ` (±${e.toleranceFrames})` : ''} | ${e.liftDb === null ? '—' : e.liftDb}${e.minLiftDb !== null ? ` (${e.minLiftDb})` : ''} | ${e.peakOverBedLu ?? '—'} | ${e.status} | ${e.codes.join(', ') || '—'}`,
+		),
+	].join('\n');
+}
+
+/** What to do next with a report (the same advice for a fresh and a kept one). */
+function nextOf(r: SoundCheckReport, listen: string[]): string {
+	const safe = r.issues.filter((i) => i.fix?.safe);
+	return r.verdict === 'pass'
+		? `No warnings or errors. Give the user these moments to listen to, verbatim: ${listen.join(' | ') || '(none)'}. Do not say it sounds good: say what was measured.`
+		: `${safe.length} finding(s) have a safe fix: apply exactly those (each fix's tool and args), then run sound_check again. Leave the others to the user and tell them what each says. Give the user the listen-here moments verbatim: ${listen.join(' | ') || '(none)'}.`;
 }
 
 /** The frames of up to `n` worst moments (errors first, then warnings, then the listen-here worst). */
@@ -117,7 +148,7 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 		'sound_check',
 		{
 			title: 'Sound Check (measured QA of the mix)',
-			description: `Measures a sequence's sound the way it will be delivered and returns what to fix and where to listen. You cannot hear: this is how you check your sound design. The engine renders the mix (with the Mix's loudness normalisation and true-peak limiter, exactly as an export) and its stems — sound effects, dialogue, music, ambience, bed — in one pass, finds speech (transcript + voice activity) and checks: LOUDNESS (integrated vs the delivery preset ±1 LU; under 400 ms of audible audio it is "not measurable", never a pass), TRUE_PEAK (over the preset's ceiling), OUT_OF_SYNC (each placed sound located in the sound-effects mix by cross-correlation within ±3 frames of its cue: cut ±1, land ±2, move ±3, appear ±1 frame; offset in ms; or "cut": its clip ends at its peak), TRUNCATED (a placed sound's clip ends before the sound has faded to −60 dB: older copies without trailing silence; the safe fix is swap_sound to the same sound, which re-registers it, or soundDesign.swap on its own media), MASKED (dominant-band lift over the bed under 1.5 dB support / 3 dB hero, the masking solver's own definition), OVERLOAD (a sound over the bed cap, the export limiter pulling > 3 dB, clipping without normalisation), MUSIC_OVER_VOICE (music not 8 LU under the voice during speech), SILENCE (< −60 dBFS for ≥ 0.5 s outside silence cues), DIP (short-term drop > 10 LU with no stop-before, cut or silence cue), STALE_CUE (the cue's anchor moved), NO_PICTURE_EVENT (a derived cue with nothing on screen), DENSITY (heroes too close, too many cues per second), REPEAT (the same file back to back), LICENSE (non-commercial, no-derivatives, unknown or undeclared licences) and CREDITS (CC-BY sounds without a credits file). Each finding has a severity, a timecode, a message and, where one exists, a fix: {kind: commands → apply_commands args | job → rebalance_sfx / apply_delivery args | swap → swap_sound args, safe}. Apply ONLY fixes marked safe (each is one undo step that resolves its finding), then run sound_check again; leave the others to the user. listen: up to five "listen here" moments (worst finding, biggest hero, loudest moment, busiest moment, a cue that passes) — give them to the user VERBATIM and never say the result "sounds good". verdict: pass | warn | fail. images (default true) adds ONE PNG of up to three of the worst moments (±2 s each: loudness curves, waveform, cue ticks, findings). store: true writes the summary into the sequence (one undo step "Sound Check Result"; the editor shows whether it is still current). target: {integratedLufs, truePeakDb} checks a custom delivery target instead of the preset's numbers. humanVerdicts: what the user said after listening in the editor's Sound Check panel — "sounds right" or "flagged" with their note, at a timecode (and the listen slot when it is one of this report's moments); they are the user's comment markers: read them, fix what is flagged, and never add or change them yourself. Waits for the job (timeoutSeconds, default 300).`,
+			description: `Measures a sequence's sound the way it will be delivered and returns what to fix and where to listen. You cannot hear: this is how you check your sound design. The engine renders the mix (with the Mix's loudness normalisation and true-peak limiter, exactly as an export) and its stems — sound effects, dialogue, music, ambience, bed — in one pass, finds speech (transcript + voice activity) and checks: LOUDNESS (integrated vs the delivery preset ±1 LU; under 400 ms of audible audio it is "not measurable", never a pass), TRUE_PEAK (over the preset's ceiling), OUT_OF_SYNC (each placed sound located in the sound-effects mix by cross-correlation within ±3 frames of its cue: cut ±1, land ±2, move ±3, appear ±1 frame; offset in ms; or "cut": its clip ends at its peak), TRUNCATED (a placed sound's clip ends before the sound has faded to −60 dB: older copies without trailing silence; the safe fix is swap_sound to the same sound, which re-registers it, or soundDesign.swap on its own media), MASKED (dominant-band lift over the bed under 1.5 dB support / 3 dB hero, the masking solver's own definition), OVERLOAD (a sound over the bed cap, the export limiter pulling > 3 dB, clipping without normalisation), MUSIC_OVER_VOICE (music not 8 LU under the voice during speech), SILENCE (< −60 dBFS for ≥ 0.5 s outside silence cues), DIP (short-term drop > 10 LU with no stop-before, cut or silence cue), STALE_CUE (the cue's anchor moved), NO_PICTURE_EVENT (a derived cue with nothing on screen), DENSITY (heroes too close, too many cues per second), REPEAT (the same file back to back), LICENSE (non-commercial, no-derivatives, unknown or undeclared licences) and CREDITS (CC-BY sounds without a credits file). Each finding has a severity, a timecode, a message and, where one exists, a fix: {kind: commands → apply_commands args | job → rebalance_sfx / apply_delivery args | swap → swap_sound args, safe}. Apply ONLY fixes marked safe (each is one undo step that resolves its finding), then run sound_check again; leave the others to the user. listen: up to five "listen here" moments (worst finding, biggest hero, loudest moment, busiest moment, a cue that passes) — give them to the user VERBATIM and never say the result "sounds good". verdict: pass | warn | fail. images (default true) adds ONE PNG of up to three of the worst moments (±2 s each: loudness curves, waveform, cue ticks, findings). store: true writes the summary into the sequence (one undo step "Sound Check Result"; the editor shows whether it is still current). target: {integratedLufs, truePeakDb} checks a custom delivery target instead of the preset's numbers. humanVerdicts: what the user said after listening in the editor's Sound Check panel — "sounds right" or "flagged" with their note, at a timecode, with the listen slot and the clip / cue it judged; stale: true (staleReasons moment / moved / gone) when what plays there changed since they listened, so the verdict no longer covers it (null for older verdicts that cannot tell); they are the user's comment markers: read them, fix what is flagged, ask the user to listen again to stale ones, and never add or change them yourself. get_sound_check returns the last report without running the check. Waits for the job (timeoutSeconds, default 300).`,
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -201,14 +232,7 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 			const result = SoundCheckResultSchema.parse(done.result);
 			const r = result.report;
 			const listen = r.listen.map((l) => `${l.timecode} — ${l.why.text}`);
-			const safe = r.issues.filter((i) => i.fix?.safe);
-			const table = [
-				'clip | timecode | sound | track | role | cue | offset ms (tol frames) | lift dB (min) | over bed LU | status | codes',
-				...r.events.map(
-					(e) =>
-						`${e.clipId} | ${e.timecode} | ${e.title} | ${e.track} | ${e.role ?? e.weight} | ${e.cueKind ?? '—'} | ${e.offsetMs === null ? e.located : `${e.offsetMs > 0 ? '+' : ''}${e.offsetMs}`}${e.toleranceFrames !== null ? ` (±${e.toleranceFrames})` : ''} | ${e.liftDb === null ? '—' : e.liftDb}${e.minLiftDb !== null ? ` (${e.minLiftDb})` : ''} | ${e.peakOverBedLu ?? '—'} | ${e.status} | ${e.codes.join(', ') || '—'}`,
-				),
-			].join('\n');
+			const table = eventTable(r);
 			const content: { type: 'image'; data: string; mimeType: string }[] = [];
 			const pictures: { frame: number; range: { start: number; end: number } }[] = [];
 			if (a.images !== false) {
@@ -248,7 +272,7 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 					counts: r.counts,
 					loudness: r.loudness,
 					listen,
-					humanVerdicts: humanVerdictsOf(seq, r),
+					humanVerdicts: humanVerdictsOf(doc, seq, r),
 					findings: r.issues.map(issueLine),
 					issues: r.issues,
 					table,
@@ -265,13 +289,53 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 								},
 							}
 						: {}),
-					next:
-						r.verdict === 'pass'
-							? `No warnings or errors. Give the user these moments to listen to, verbatim: ${listen.join(' | ') || '(none)'}. Do not say it sounds good: say what was measured.`
-							: `${safe.length} finding(s) have a safe fix: apply exactly those (each fix's tool and args), then run sound_check again. Leave the others to the user and tell them what each says. Give the user the listen-here moments verbatim: ${listen.join(' | ') || '(none)'}.`,
+					next: nextOf(r, listen),
 				},
 				content,
 			);
+		},
+	);
+
+	defineTool(
+		ctx,
+		'get_sound_check',
+		{
+			title: 'Get the last Sound Check report',
+			description:
+				"The last full Sound Check report of a sequence without running the check again: the engine keeps each sequence's last report (findings with their fixes, listen-here moments, the per-event table) across restarts. state: current | stale with reasons — mix (the mix changed since: `mixFingerprint`) or inputs (cues, loudness settings, credits or the target changed); a stale report's fixes may no longer apply: run sound_check again before applying any. Also returns humanVerdicts (the user's listen-here verdicts, each with stale / staleReasons). Error SOUND_CHECK_NOT_FOUND when the sequence was never checked (or its report was not kept).",
+			input: { projectId: ProjectIdArg, sequenceId: SequenceIdArg },
+			annotations: READ_ONLY,
+		},
+		async (a, extra) => {
+			const { doc } = await loadDoc(ctx, a.projectId);
+			const seq = pickSequence(doc, a.sequenceId);
+			const kept = SoundCheckLastResponseSchema.parse(
+				await ctx
+					.engine((c) => c.lastSoundCheck({ projectId: a.projectId, sequenceId: seq.id }, extra.signal))
+					.catch(toolError),
+			);
+			const r = kept.result.report;
+			const listen = r.listen.map((l) => `${l.timecode} — ${l.why.text}`);
+			return jsonResult({
+				jobId: kept.jobId,
+				savedAt: kept.savedAt,
+				state: kept.state,
+				...(kept.reasons.length ? { reasons: kept.reasons } : {}),
+				verdict: r.verdict,
+				preset: r.preset,
+				range: { ...r.range, timecodes: r.rangeTimecode, wholeSequence: r.wholeSequence },
+				counts: r.counts,
+				loudness: r.loudness,
+				listen,
+				humanVerdicts: humanVerdictsOf(doc, seq, r),
+				findings: r.issues.map(issueLine),
+				issues: r.issues,
+				table: eventTable(r),
+				next:
+					kept.state === 'stale'
+						? `This report is stale (${kept.reasons.join(', ')} changed since it was made): run sound_check again before applying any fix.`
+						: nextOf(r, listen),
+			});
 		},
 	);
 
