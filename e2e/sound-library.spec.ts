@@ -265,7 +265,12 @@ test('inserted library sounds play their aligned point exactly on the frame in a
 		const lib = all[clip.mediaId]!.library!;
 		const lead = lib.leadSilenceSec ?? 0;
 		const d = lib.descriptors!;
-		const end = (all[clip.mediaId]!.probe?.durationFlicks ?? d.durationSec * FLICKS) / FLICKS;
+		// the end of the sound, before any trailing silence, as placement computes it (fix "SFX tail truncation")
+		const trail = lib.trailSilenceSec ?? 0;
+		const end =
+			trail > 0
+				? Math.max(d.peakSec, d.onsetSec, d.durationSec - trail)
+				: (all[clip.mediaId]!.probe?.durationFlicks ?? d.durationSec * FLICKS) / FLICKS;
 		const point = p.align === 'peak' ? d.peakSec : p.align === 'start' ? d.onsetSec : end;
 		// the document: the aligned point plays exactly at the cue frame
 		const at = clip.start * F + point * FLICKS - clip.sourceIn;
