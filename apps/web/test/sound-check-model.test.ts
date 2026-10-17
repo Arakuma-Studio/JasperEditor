@@ -12,6 +12,8 @@ import {
 	defaultRegistries,
 	type ProjectDocument,
 	type Sequence,
+	SOUND_CHECK_CUSTOM_LABEL,
+	SOUND_CHECK_MESSAGES,
 	SOUND_CHECK_VERDICT_MARKER,
 	soundCheckHumanVerdicts,
 	soundCheckMessage,
@@ -67,6 +69,21 @@ function doc() {
 }
 
 const report = () => reportFixture({ projectId: 'prj_x', sequenceId: 'seq_x' });
+
+describe('every Sound Check message key is translated', () => {
+	it('each finding / fix / listen template and the custom label is a model string with a Spanish text (same placeholders)', () => {
+		const ph = (x: string) =>
+			[...x.matchAll(/\{(\d+)\}/g)]
+				.map((m) => m[1])
+				.sort()
+				.join();
+		const keys = [...Object.values(SOUND_CHECK_MESSAGES), SOUND_CHECK_CUSTOM_LABEL];
+		expect(keys.length).toBeGreaterThan(50);
+		expect(keys.filter((k) => !NAMES.includes(k))).toEqual([]);
+		expect(keys.filter((k) => typeof ES[k] !== 'string' || !ES[k]!.trim())).toEqual([]);
+		expect(keys.filter((k) => ph(k) !== ph(ES[k]!))).toEqual([]);
+	});
+});
 
 describe('finding texts', () => {
 	it('fills the template; cue kinds and densities become labels; Spanish translates the template', () => {
