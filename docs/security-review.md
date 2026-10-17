@@ -458,6 +458,7 @@ Every state-changing engine route and what an agent may do with it:
 | `POST /api/sound-design/delivery` (`apply_delivery`) | Open | Mode `propose` (the default) stores a proposal (nothing changes); mode `apply` is one ordinary, undoable transaction of `soundDesign.applyDelivery` (settings, the Mix's loudness normalisation, Essential Sound Auto-Match gains, ducking Volume keyframes) and `soundDesign.applyGains`, classified like any agent transaction ("Agent: Apply Delivery Preset"); nothing is deleted; renders are measure-only (no file is written) |
 | `POST /api/sound-design/check` (`sound_check`) | Open | Measure-only renders (the first normalisation pass is a scratch file of the job, removed when it ends); with `store: true` one ordinary, undoable transaction of `soundDesign.setCheck` (metadata only, "Agent: Sound Check Result"); fixes are returned, never applied |
 | `POST /api/sound-design/visual` (`view_sound_timeline`) | Open | Read-only: measure-only renders of ≤ 120 s, nothing stored |
+| `POST /api/sound-design/motion` (`analyze_picture_motion`), engine cue sources of `POST /api/sound-design/cues` (`find_sound_cues` sources scene / beat / pixel), `POST /api/audio/beats` | Open | Read-only for the project: a picture render of ≤ 10 min into the job's scratch directory (deleted when it ends), Scene Edit Detection and beat analyses of registered media; only small JSON results are cached (`<appdir>/sounds/analysis/`) |
 | `PUT /api/settings/processing` (`set_processing_settings`) | **Gated**, now for every caller without the editor key | Where media is sent (was opt-in by a query parameter) |
 | `POST /api/project-manager` (`project_manager`) | Open | Copies into a new destination under free names; sources untouched |
 | `POST /api/assets/:id/relink`, `…/relink-scan` (`link_media`) | Open | Registers and compares files; the relink itself is a transaction (undoable; `force` is gated) |
@@ -743,6 +744,21 @@ them, but it was reviewed by its author, not by this review.
   event rows); fixes are only described (commands dry-run on a copy, never applied by the check); `checkJobId` must name
   a `sound-check` job of the same project (`404 JOB_NOT_FOUND`). `store` goes through the agent service's transaction
   path. Tests: `apps/engine/test/sound-check.test.ts` (typed refusals), `sound-check-stems.test.ts`.
+- **Engine cue sources and picture motion** (spec 12 WP6.2, `apps/engine/src/sound-design/{motion,engine-cues,analysis-cache}.ts`,
+  `audio/beats.ts`, `time/scenes.ts`; `POST /api/sound-design/motion`, `POST /api/audio/beats`, the cue route's
+  `opts.sources` scene / beat / pixel and `snapToBeats`): strict zod bodies (project id `[A-Za-z0-9_-]{1,128}`, frame
+  ranges, media keys matched by `MEDIA_KEY_RE` and looked up in the registry, beat ranges ≤ 30 min, seconds ≤ 240 h); the
+  project, sequence and range are checked before a job starts (`404`, `400 RANGE_EMPTY` / `RANGE_TOO_LONG`: ≤ 10 min of
+  picture per analysis; the cue route analyses longer sequences in 10-minute windows); the picture is rendered only
+  through the export service (`renderToFile`: the export planner, its paths and blockers — what an export would render)
+  into the job's scratch directory, decoded by ffmpeg at 128 px (a child process of the job: cancel kills it); beat
+  decodes are capped at the requested duration + 1 s of samples, two at once; scene detection of registered media only.
+  Results are cached as JSON under engine-made names (sha256 keys: `[0-9a-z]` only, read back through their zod schema,
+  a damaged file is a miss), at most 300 motion / 2 000 beat / 2 000 scene results (oldest pruned). Engine-source
+  cues are validated again by `deriveCues` (`W_EXTRA_CUE_INVALID`) and by the response schema. A failed analysis is
+  reported (`W_ANALYSIS_FAILED`, state `failed`) and not restarted for 5 minutes. Tests:
+  `apps/engine/test/sound-design-motion.test.ts` (typed refusals, cancellation), `fuzz-http.test.ts` (both new routes,
+  discovered from the server).
 - **Proposals** (spec 12 WP3.1, `apps/engine/src/routes/proposals.ts`, `proposals/{store,service}.ts`; `GET/POST
   /api/projects/:id/proposals`, `GET/DELETE …/:proposalId`, `POST …/:proposalId/accept|reject|reopen|note|select|applied`):
   project ids are matched against `prj_` + 16 Crockford characters and proposal ids against `prp_` + 16 before any path

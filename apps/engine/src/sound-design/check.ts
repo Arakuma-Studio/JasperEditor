@@ -85,7 +85,7 @@ import {
 	readEssentialSound,
 	readLibraryProvenance,
 	requiresAttribution,
-	resolveCueAnchor,
+	cueAnchorFrame,
 	type Sequence,
 	SOUND_CHECK_CATEGORY,
 	SOUND_CHECK_CODES,
@@ -1662,7 +1662,8 @@ export async function checkSequence(
 	for (const cue of cues) {
 		if (!inRange(cue.frame) || cue.muted || cue.kind === 'silence') continue;
 		if (cue.anchor) {
-			const f = resolveCueAnchor(doc, seq, cue.anchor, { mgTemplates: env.mgTemplates });
+			// where the anchor resolves, plus a beat snap's `anchorOffset`
+			const f = cueAnchorFrame(doc, seq, cue, { mgTemplates: env.mgTemplates });
 			if (f === null) {
 				const cmd = { type: 'soundCue.update', cueId: cue.id, anchor: null };
 				const ok = dryRun(doc, seq.id, [cmd], env.registries).ok;

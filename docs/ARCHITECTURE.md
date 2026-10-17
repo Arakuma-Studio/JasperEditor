@@ -322,6 +322,8 @@ The SPA always uses **relative URLs** (`/api/...`). On startup `apps/web/src/run
   sounds/packs/.downloads/ .staging/ .trash/ # pack installs in progress: resumable partial downloads, folders being built / removed
   sounds/synth/                              # Jasper Synth renders (cache, re-rendered on demand)
   sounds/cache/<fingerprintHex>/             # visual data of library sounds (peaks + spectrogram)
+  sounds/analysis/{motion,beats,scenes}/     # Sound Design's media measurements (JSON by content key): picture-motion curves,
+                                             # music beats, Scene Edit Detection results (pruned to the newest; spec 12 P6-R2)
   tmp/                                       # wiped on start
 ```
 
