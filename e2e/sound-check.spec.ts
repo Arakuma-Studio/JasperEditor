@@ -288,7 +288,7 @@ test('Sound Check panel: seeded defects found with timecodes, the same as MCP; v
 	// (a vertical SVG line has no width: Playwright calls it hidden, so check that it is drawn)
 	await expect(strip.getByTestId('sound-check-peak-line')).toBeAttached();
 	await expect(strip.getByTestId('sound-check-event-line')).toBeAttached();
-	await expect(strip.getByRole('img')).toHaveAttribute('aria-label', /late \(2\.\d frames\)/);
+	await expect(strip.getByTestId('sound-check-wave')).toHaveAttribute('aria-label', /late \(2\.\d frames\)/);
 	await strip.screenshot({ path: join(outDir, 'sync-strip.png') });
 
 	// 4. listen here: Sounds right on the first moment after the worst, Flag + note on the worst
