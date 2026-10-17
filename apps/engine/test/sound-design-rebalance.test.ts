@@ -271,6 +271,24 @@ describe('POST /api/sound-design/rebalance (real engine)', { timeout: 300_000 },
 			const g0 = sfxGains(before2.doc);
 			expect(g2[ids.hero!]).toBeCloseTo(g0[ids.hero!]! - 1, 6);
 			for (const id of [ids.shadowed, ids.inSpeech, ids.userGain]) expect(g2[id!]).toBe(g0[id!]);
+			soundDesignApplyHooks.beforeApply = undefined;
+			// 3. (WP6.5b) the race the re-read could not close: the user raises the BED between the check and the apply.
+			// The job's transaction touches only the sound effects, so the fast-forward rule (S01:AGT-010) let it through
+			// and the gains solved against the old bed were applied; the transaction now carries the measured mix
+			// (`soundDesign.expectMix`), checked atomically where it applies
+			const p3 = seed(base.doc);
+			const before3 = await saved(p3);
+			soundDesignApplyHooks.beforeApply = async (projectId) => {
+				if (projectId === p3)
+					await edit(p3, [{ type: 'audio.setGain', clipIds: [ids.music], mode: 'adjust', db: 6 }]);
+			};
+			const job3 = await failed(p3);
+			expect(job3.state, JSON.stringify(job3.result)).toBe('failed');
+			expect(job3.error).toMatchObject({ code: 'CONFLICT', retryable: true });
+			expect(job3.error?.message).toMatch(/changed before it could be applied/);
+			const after3 = await saved(p3);
+			expect(after3.revision).toBe(before3.revision + 1); // the user's edit only
+			expect(sfxGains(after3.doc)).toEqual(sfxGains(before3.doc));
 		} finally {
 			soundDesignApplyHooks.afterMeasure = undefined;
 			soundDesignApplyHooks.beforeApply = undefined;

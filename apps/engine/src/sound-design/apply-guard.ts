@@ -1,11 +1,18 @@
 // Applying a measured mix change (rebalance, delivery; spec 12 §2.8 job error `CONFLICT`). Those jobs measure the
 // live edit, solve, and only then apply: if anything audible changed meanwhile (the music raised, a fader ridden, a
 // clip moved, media relinked), the gains and loudness they computed belong to another mix. The transaction's own
-// fast-forward rule (S01:AGT-010) only refuses edits of the entities it touches, so before applying the job reads the
-// edit again and compares the MIX FINGERPRINT (every input of the sequence's mix: tracks, clips, submixes, the Mix,
-// media fingerprints) and the delivery setting with what it measured; any difference is a retryable `CONFLICT` and
-// nothing is applied. The transaction then carries the revision it was checked at, and a refusal for a stale revision
-// (`E_REVISION_MISMATCH`, an edit landing between the check and the apply) is the same retryable `CONFLICT`.
+// fast-forward rule (S01:AGT-010) only refuses edits of the entities it touches, so:
+// 1. before applying, the job reads the edit again and compares the MIX FINGERPRINT (every input of the sequence's mix:
+//    tracks, clips, submixes, the Mix, media fingerprints) and the delivery setting with what it measured; any
+//    difference is a retryable `CONFLICT` and nothing is applied (an early, clearer refusal);
+// 2. the transaction itself starts with `soundDesign.expectMix {mixHash, delivery}` of the MEASURED document, checked
+//    atomically where the transaction applies (the headless store's mutex, or the editor session), so an edit landing
+//    between that re-read and the apply refuses it too (WP6.5b: before, such an edit — the bed raised, a sound added —
+//    was fast-forwarded over and the stale gains applied). The transaction also carries the revision it was checked
+//    at; either refusal (`E_REVISION_MISMATCH`) is the same retryable `CONFLICT`.
+// Decision (WP6.5b): a CONFLICT is not retried by the job itself: the user is editing the mix right now, and a job that
+// silently re-measured would chase the edit; the caller (MCP `rebalance_sfx` / `apply_delivery`, the editor) runs it
+// again on the new mix, as the error says.
 import { mixFingerprint, type ProjectDocument, type Sequence, soundDesignSettingsOf } from '@jasper/project';
 import type { AgentService } from '../agent/service.ts';
 import { JobError } from '../jobs/types.ts';
@@ -64,6 +71,13 @@ export async function applyMeasuredMix(
 			true,
 		);
 	await soundDesignApplyHooks.beforeApply?.(req.projectId);
+	const measured = req.measured.sequences[req.sequenceId] as Sequence | undefined;
+	const guard = {
+		type: 'soundDesign.expectMix',
+		sequenceId: req.sequenceId,
+		mixHash: mixFingerprint(req.measured, req.sequenceId),
+		...(measured ? { delivery: soundDesignSettingsOf(measured).delivery } : {}),
+	};
 	const out = await agent.transact(
 		req.projectId,
 		{
@@ -71,7 +85,7 @@ export async function applyMeasuredMix(
 			origin: { agent: req.agentName },
 			sequenceId: req.sequenceId,
 			expectedRevision: now.revision,
-			commands: req.commands,
+			commands: [guard, ...req.commands],
 		},
 		{ fallbackAgent: req.agentName, ...(req.editor ? { preApproved: true, asUser: true } : {}) },
 	);

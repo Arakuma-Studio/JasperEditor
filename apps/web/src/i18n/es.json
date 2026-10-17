@@ -9898,6 +9898,8 @@
   "Sets the gain of “{0}” from {1} dB to {2} dB": "Cambia la ganancia de «{0}» de {1} dB a {2} dB",
   "Sets the gain of “{0}” to {1} dB": "Pone la ganancia de «{0}» en {1} dB",
   "Sound Check Verdict": "Veredicto de la comprobación de sonido",
+  "Check Mix Unchanged": "Comprobar que la mezcla no ha cambiado",
+  "The mix of {0} changed since it was measured (its audio, mixer, media or delivery); measure it again": "La mezcla de {0} ha cambiado desde que se midió (su audio, mezclador, medios o entrega); vuelve a medirla",
   "Sound effects": "Efectos de sonido",
   "Sound effects (outline)": "Efectos de sonido (contorno)",
   "the sound here changed": "el sonido aquí ha cambiado",

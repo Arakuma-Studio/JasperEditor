@@ -18,6 +18,7 @@ import {
 	type SoundCue,
 	type SoundDesign,
 	type SoundDesignSettings,
+	soundDesignSettingsOf,
 } from '../../schema/sound.ts';
 import { cueAnchorFrame, cueAnchorTargetExists } from '../../sound/anchor.ts';
 import {
@@ -1351,6 +1352,22 @@ function setVerdict(doc: DDoc, cmd: CommandOf<'soundDesign.setVerdict'>, h: Hand
 	return { markerId: id, removed };
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// soundDesign.expectMix
+
+function expectMix(doc: DDoc, cmd: CommandOf<'soundDesign.expectMix'>, h: HandlerContext) {
+	const seq = h.sequence(doc, cmd.sequenceId);
+	const now = mixFingerprint(doc as unknown as ProjectDocument, seq.id);
+	const delivery = soundDesignSettingsOf(seq as unknown as Sequence).delivery;
+	if (now !== cmd.mixHash || (cmd.delivery !== undefined && delivery !== cmd.delivery))
+		h.fail(
+			'E_REVISION_MISMATCH',
+			`The mix of ${seq.id} changed since it was measured (its audio, mixer, media or delivery); measure it again`,
+			{ blocking: [seq.id] },
+		);
+	return { sequenceId: seq.id, mixHash: now };
+}
+
 export const soundHandlers = {
 	'media.setLibraryInfo': setLibraryInfo,
 	'media.upgradeLibraryCopy': upgradeLibraryCopy,
@@ -1368,6 +1385,7 @@ export const soundHandlers = {
 	'soundDesign.setAutoGain': setAutoGain,
 	'soundDesign.setCheck': setCheck,
 	'soundDesign.setVerdict': setVerdict,
+	'soundDesign.expectMix': expectMix,
 } satisfies HandlerMap;
 
 export type { Clip, DClip };

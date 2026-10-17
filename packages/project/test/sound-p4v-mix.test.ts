@@ -16,19 +16,16 @@ import {
 	clipLaneTime,
 	createCounterIdSource,
 	type Dip,
-	dipEnvelopeAt,
 	evaluate,
 	FLICKS_PER_SECOND,
 	type Keyframe,
 	type LibraryProvenance,
-	mergeDips,
 	repairDocument,
-	SEQUENCE_LANE,
 	type SoundDesign,
 	sfxGainOwner,
-	unwriteCurve,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
+import { checkCurvedDips, keysOf } from './sound-dips-property.ts';
 import { LIB } from './sound-fixtures.ts';
 
 const F30 = 705_600_000 / 30;
@@ -366,16 +363,6 @@ describe('bug 2: mergeDips on curved lanes (property)', () => {
 			fade: fc.integer({ min: 0, max: 400 }),
 		})
 		.map((d) => ({ start: d.s * 10 * MS, end: (d.s + d.len) * 10 * MS, depthDb: d.depth, fadeMs: d.fade }));
-	const lanes = [
-		{ name: 'sequence', lane: SEQUENCE_LANE },
-		{
-			name: 'clip ×2 reversed',
-			lane: clipLaneTime(
-				{ start: 0, duration: 30 * 30, sourceIn: 0, speed: { rate: 2, reverse: true } },
-				{ num: 30, den: 1 },
-			),
-		},
-	];
 	it('outside the dips the curve is kept (to 0.05 dB on rebuilt curves), inside = min(curve, dip), keys outside kept, exact unwrite', () => {
 		let maxCurved = 0;
 		fc.assert(
@@ -384,82 +371,16 @@ describe('bug 2: mergeDips on curved lanes (property)', () => {
 				fc.array(dipArb, { minLength: 1, maxLength: 3 }),
 				fc.constantFrom(0, 1),
 				(keys, dips: Dip[], li) => {
-					const { lane } = lanes[li]!;
-					const seen = new Set<number>();
-					const kfs: Keyframe<number>[] = [];
-					for (const k of keys) {
-						const time = k.t * 100 * MS * (li === 1 ? 2 : 1);
-						if (seen.has(time)) continue;
-						seen.add(time);
-						kfs.push({
-							id: `kf_${kfs.length}`,
-							time,
-							value: k.v,
-							interpolation: k.interp as Keyframe<number>['interpolation'],
-							easeIn: { influence: k.inf, slope: k.slope },
-							easeOut: { influence: 1 - k.inf, slope: k.slope },
-						});
-					}
-					kfs.sort((a, b) => a.time - b.time);
-					const anim: Animatable<number> = { value: -3, keyframes: kfs };
-					let i = 0;
-					const r = mergeDips(anim, lane, dips, { newId: () => `new_${i++}`, clamp: [-96, 15] });
-					if (!r) return;
-					const res: Animatable<number> = { value: -3, keyframes: r.keyframes };
-					const E = (t: number) => evaluate(anim, lane.toLane(t));
-					const G = (t: number) => evaluate(res, lane.toLane(t));
-					// the un-widened dip windows (as mergeDips merges them) and their reference levels
-					// (sorted by window start: dips with longer fades start earlier than their start — sorting by dip start
-					// merged [1299, 1301] ms with [917, 1703] ms into [1299, 1703] ms, seed 2097034364)
-					const w0: [number, number][] = [];
-					const ws = dips
-						.map((d): [number, number] => {
-							const f = Math.max(1, d.fadeMs) * MS;
-							return [Math.max(lane.span[0], d.start - f), Math.min(lane.span[1], d.end + f)];
-						})
-						.filter((w) => w[1] > w[0])
-						.sort((a, b) => a[0] - b[0]);
-					for (const w of ws) {
-						const last = w0[w0.length - 1];
-						if (last && w[0] <= last[1]) last[1] = Math.max(last[1], w[1]);
-						else w0.push([w[0], w[1]]);
-					}
-					const curved = kfs.some((k) => k.interpolation !== 'linear' && k.interpolation !== 'hold');
-					// rebuilt curves: within sampling (1 ms samples at most 0.001 dB off; steeper bends a little more);
-					// straight ones: exact (to rounding)
-					const tolOut = curved ? 0.05 : 1e-6;
-					const tol = curved ? 0.05 : 1e-5;
-					const nearStep = (t: number) =>
-						kfs.some((kf, j) => j > 0 && Math.abs(lane.toSeq(kf.time) - t) <= 2 * (li === 1 ? 1 : 1) + 1);
-					const end = Math.min(lane.span[1], 4.5 * S);
-					for (let k = 0; k <= 300; k++) {
-						const t = (k / 300) * end;
-						if (nearStep(t)) continue;
-						const e = E(t);
-						const got = G(t);
-						expect(got).toBeLessThanOrEqual(e + tol);
-						const env = dipEnvelopeAt(dips, t);
-						if (env === 0) {
-							expect(Math.abs(got - e)).toBeLessThanOrEqual(tolOut);
-							maxCurved = curved ? Math.max(maxCurved, Math.abs(got - e)) : maxCurved;
-							continue;
-						}
-						const w = w0.find(([a, b]) => t >= a && t <= b);
-						if (!w) continue;
-						const ref = Math.max(E(w[0]), E(w[1]));
-						expect(Math.abs(got - Math.min(e, Math.min(15, Math.max(-96, ref + env))))).toBeLessThanOrEqual(
-							tol,
-						);
-					}
-					// keys outside the rewritten ranges are the same keys
-					for (const k of kfs) {
-						const ts = lane.toSeq(k.time);
-						if (!r.windows.some(([a, b]) => ts >= a - 1 && ts <= b + 1))
-							expect(r.keyframes).toContainEqual(k);
-					}
-					const back = unwriteCurve(r.keyframes, r);
-					expect(back.exact).toBe(true);
-					expect(back.keyframes).toEqual(kfs);
+					const kfs = keysOf(
+						keys.map((k) => ({
+							time: k.t * 100 * MS * (li === 1 ? 2 : 1),
+							v: k.v,
+							interp: k.interp as Keyframe<number>['interpolation'],
+							inf: k.inf,
+							slope: k.slope,
+						})),
+					);
+					maxCurved = Math.max(maxCurved, checkCurvedDips(kfs, dips, li as 0 | 1));
 				},
 			),
 			{
