@@ -114,6 +114,21 @@ const fixtures = [
 		],
 	},
 	{
+		// Sound Design picture motion (spec 12 §2.2 pixel source, WP6.2): a textured 240 px box on gray that rests for
+		// 1 s, moves 20 px per frame to the right for 1 s (moving frames 31…60) and stops; 4 s, 1080p30, no audio.
+		name: 'box-move.mp4',
+		steps: (out) => [
+			[
+				...['-f', 'lavfi', '-i', 'color=c=0x404040:s=1920x1080:r=30:d=4'],
+				...['-f', 'lavfi', '-i', 'testsrc2=s=240x240:r=30:d=1'],
+				'-filter_complex',
+				"[1:v]trim=end_frame=1,loop=loop=-1:size=1:start=0,setpts=N/30/TB[b];[0:v][b]overlay=x='if(lt(t,1),200,if(lt(t,2),200+(t-1)*600,800))':y=400:shortest=1:eval=frame,format=yuv420p",
+				...h264,
+				...['-an', '-movflags', '+faststart', out],
+			],
+		],
+	},
+	{
 		name: 'tone.wav',
 		steps: (out) => [
 			[
