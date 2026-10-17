@@ -6057,8 +6057,9 @@ the pass at low load), so it was not kept.
 - DENSITY's demotion and MASKED's gain on the same hero are both safe alone; together the hero's solved gain may exceed the
   support cap (OVERLOAD on the re-check). The panel re-runs the check after Fix all safe.
 - With normalisation off, a safe MASKED gain can raise the mix's true peak (the solver's headroom is per sound).
-- DIP also fires on long dialogue pauses over a quiet, un-ducked music bed without a picture cut (the bench: ≈ 70 DIPs in
-  30 min of 8 s pauses); a dialogue pause is not an explanation (spec).
+- ~~DIP also fires on long dialogue pauses over a quiet, un-ducked music bed without a picture cut (the bench: ≈ 70 DIPs in
+  30 min of 8 s pauses); a dialogue pause is not an explanation (spec).~~ Handled by the Phase 5 verification (below): a
+  drop where the voice stops while the bed without the dialogue holds its level is explained (decision).
 - `soundCheckInputsHash` still ignores media licences (`media.setLibraryInfo`), transcripts and picture edits (adding
   them would make every stored summary stale once).
 - The sync preference trusts the document among near-equal matches: a renderer offset of a strongly periodic sound shows
