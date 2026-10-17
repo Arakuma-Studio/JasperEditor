@@ -148,6 +148,22 @@ describe('EngineClient requests', () => {
 		await expect(c.getSound('snd_0123456789abcdef')).rejects.toMatchObject({ code: 'NOT_FOUND' });
 	});
 
+	it('lists, installs and removes sound packs (spec 12 P6-R1)', async () => {
+		const m = mockFetch((url, init) => {
+			if (url === '/api/sounds/packs' && (init.method ?? 'GET') === 'GET') return json({ packs: [], catalogErrors: [] });
+			if (url === '/api/sounds/packs/kenney-ui-audio/install' && init.method === 'POST')
+				return json({ ...job, kind: 'sound-pack-install' }, 202);
+			if (url === '/api/sounds/packs/kenney-ui-audio' && init.method === 'DELETE')
+				return json({ packId: 'kenney-ui-audio', removed: true, removedSounds: 45, freedBytes: 1, job: null });
+			return json({ code: 'NOT_FOUND', message: 'nope', retryable: false }, 404);
+		});
+		const c = new EngineClient({ fetch: m.fetch });
+		expect((await c.listSoundPacks()).packs).toEqual([]);
+		expect((await c.installSoundPack('kenney-ui-audio')).kind).toBe('sound-pack-install');
+		expect((await c.removeSoundPack('kenney-ui-audio')).removedSounds).toBe(45);
+		await expect(c.installSoundPack('nope')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+	});
+
 	it('posts the cue derivation request (spec 12 §2.8)', async () => {
 		const m = mockFetch((url, init) =>
 			url === '/api/sound-design/cues' && init.method === 'POST'

@@ -10,6 +10,10 @@ import {
 	SOUND_SOURCE_TYPES,
 	type SoundEntry,
 	type SoundLibraryStatus,
+	type SoundPackInfo,
+	SoundPackInstallResultSchema,
+	type SoundPackRemoveResponse,
+	type SoundPacksResponse,
 	type SoundRoot,
 	type SoundSearchRequest,
 	type SoundSearchResponse,
@@ -81,13 +85,14 @@ export const SOUND_CUES_GUIDE = `Sound cues (spec 12 Phase 2): a cue is a moment
 - Check: after applying sounds (yours or the user's accepted proposal), run sound_check {projectId}: it measures the delivered mix and returns a verdict, findings with codes (OUT_OF_SYNC, TRUNCATED, MASKED, MUSIC_OVER_VOICE, TRUE_PEAK, LOUDNESS, SILENCE, DIP, OVERLOAD, STALE_CUE, NO_PICTURE_EVENT, DENSITY, REPEAT, LICENSE, CREDITS), each with its timecode and, where possible, a fix (tool + args, safe or not), and five listen-here timecodes. Apply ONLY the fixes marked safe (each is one undo step), run sound_check again, and leave the rest to the user, saying what each finding measured. Give the user the listen-here timecodes verbatim. Never claim that it "sounds good": say what sound_check measured and ask them to listen. view_sound_timeline {projectId, range, checkJobId?} shows a range as a picture (loudness curves of the mix and its stems, waveform, cue ticks, motion, findings); get_timeline lists the SFX clips; render_frames around the cues shows the picture.`;
 
 export const SOUND_GUIDE = `Sound library (sound effects; spec 12). You cannot hear audio. Judge sounds only by their measured descriptors and by pictures, and never claim that something "sounds good", "sounds right" or "fits": say what the numbers and pictures show and ask the user to listen.
-- Where sounds come from: the bundled starter kit (real CC0 recordings by Kenney), installed packs, the user's own folders (add_sound_folder; their licence is the user's declaration) and Jasper Synth (procedural, generated here). Synth sounds are a deterministic fallback of lower quality: they always rank after real recordings; prefer a recording whenever one fits.
+- Where sounds come from: the bundled starter kit (real CC0 recordings by Kenney), installed packs (list_sound_packs, install_sound_pack), the user's own folders (add_sound_folder; their licence is the user's declaration) and Jasper Synth (procedural, generated here). Synth sounds are a deterministic fallback of lower quality: they always rank after real recordings; prefer a recording whenever one fits.
 - Find: search_sounds {q, types, visualKind, length/tone/attack/weight/texture, license, sources, similarTo, limit ≤ 24} → rows with soundId, types, durationSec, peakSec, riseMs, decayMs, centroidHz, below150Share, flatness, pitchMidi, the judge (ok, score, reasons such as boomy, hissy, soft-attack, non-decaying, clipped, multi-hit) and the licence. Words in titles rank first, then type synonyms ("swoosh" finds whooshes). Read the numbers: a hit should peak within a few ms (small peakSec and riseMs) and decay; a riser builds to its end; "boomy" means most energy under 150 Hz, "hissy" above 6 kHz.
 - Look: contactSheet: true on search_sounds, or view_sounds {soundIds}, gives ONE PNG grid: each cell is numbered, prints the id, title, length, peak ms, decay ms, centroid and judge, and draws the waveform (cyan) over a 64-band spectrogram (low frequencies at the bottom) with the peak as a red line and the end of the decay (−20 dB) as a dashed yellow one; the cells JSON repeats the numbers. get_sound {soundId} gives one sound with every descriptor and a larger picture with a time axis and the onset (green dashed).
 - Use: insert_sound {projectId, soundId, at} places a sound so that its aligned point lands exactly on \`at\` (a frame, {seconds}, a timecode or "playhead"): hits, booms, lands and impacts align their PEAK; risers and reverses align their END (they lead into the moment); UI blips their start (align "auto" picks this from the sound's type). Placement is sample-exact (errorFlicks 0): sounds whose head is not silent are registered with 50 ms of lead silence (the media's provenance says leadSilenceSec), so the sub-frame rest is always cut from silence; and the whole sound always plays: sounds that do not end in quiet get 50 ms of silence after them (trailSilenceSec) and every clip is rounded up to the frame that holds the end of its sound. It goes on a free unmuted "SFX…" audio track over its span, else a new "SFX n" track (never on dialogue or music tracks by itself, never over audio); one clip, one undo step that registers the sound, adds it to the project's "Sound Effects" bin, places the clip and tags it Essential Sound ▸ SFX. import_sounds {projectId, soundIds} only adds sounds to the bin (one undo step; sounds already in the project are reused); place them yourself with add_clip.
 - Judgement: sync by structure (cuts, moves, lands, text and motion events you can see in the timeline and frames), never by ear; check placement with get_timeline and render_frame. Less is more: at most one hero sound (a hit or boom that carries the moment) per ~2 s, never two heroes within 0.5 s, and no heroes under spoken words. Keep one family of sounds per type in a piece (search_sounds similarTo). When you suggest sounds, give a reason and 1–3 alternates (soundIds) per moment. Propose, don't apply: plan_sound_design and place_sound (mode "propose", its default) store a proposal the user reviews and applies in the editor; insert sounds directly (insert_sound, place_sound mode "apply") only when the user asked you to place them. Then wait for the review (wait_for_proposal) and read the notes.
 - Cues: a sequence's sound cues (Sequence.soundDesign.cues: frame, kind, weight hero/support/ambient, types, reason, anchor) are drawn for the user on the Timeline's Cue Seam, a lane between the video and audio tracks (glyph per kind; filled cues are solid with a line to the placed clip's peak). Edit them with apply_commands: soundCue.add / update / remove / resync, soundDesign.place {cueId} fills one, soundDesign.setPeak {clipId, peakFlicks} corrects where a placed clip's peak is (the clip does not move). The UI commands sound.addCue {frame?}, sound.toggleCueSeam, sound.clearUnfilledCues, sound.convertMarkersToCues and soundLibrary.fillCue {cueId} (opens the Sound Library filtered to the cue's types) run through ui_command when an editor window is open.
 - Licences: search defaults to commercial-safe licences (CC0, CC-BY, CC-BY-SA, open licences, the user's royalty-free folders); license "any" also shows user-provided (undeclared) and other sounds — do not use those in work the user will publish without asking. CC-BY sounds need a credit: list_sound_credits {projectId, format md|txt|csv} gives the credit lines of every library sound the project (or a sequence) uses, with warnings for non-commercial, no-derivatives, unknown or undeclared licences; give the credits to the user when CC-BY sounds are used.
+- Packs: list_sound_packs lists the downloadable packs this engine offers (the remaining Kenney CC0 audio packs: impacts, interface, UI, digital, sci-fi, casino and RPG foley, music jingles and announcer voices), each with its licence, the evidence the licence was checked against, its download and installed sizes, sound count and state (available, installed, outdated, damaged). Before install_sound_pack, TELL THE USER the pack's name, download size and licence (and its credit line when it has one), and install only what they asked for: it downloads from the pack's upstream site (the only network the sound library uses), checks every byte against the pinned sha256 and adds its sounds to the library (a sound-pack-install job, then a sound-index job; wait: true waits for both). remove_sound_pack deletes an installed pack and needs the user's approval on a card in an open editor window; projects that already use its sounds keep their own copies. Jingles and voices are music and speech, not effects: they have no sound type, so find them by words (search_sounds {q: "jingle"} or {packId}).
 - Library: sound_library_status shows the sources, counts per type, source and licence, the folders and whether an index job runs. rescan_sound_library re-indexes (a job; wait: true waits). add_sound_folder / remove_sound_folder change the user's folders and need the user's approval in an open editor window (E_APPROVAL_DENIED: they said no or no window was open; do not retry without asking).
 ${SOUND_CUES_GUIDE}`;
 
@@ -115,6 +120,9 @@ const SOUND_HINTS: Record<string, string> = {
 	SOUND_ROOTS_CHANGED:
 		'The folder list changed while the change waited for approval (the user or another client edited it). Read the folders again with sound_library_status and repeat the change on the current list.',
 	ANALYSIS_TIMEOUT: 'Computing the sound’s pictures took too long (the engine may be busy). Try again later.',
+	SOUND_PACK_UNKNOWN: 'Unknown pack id. list_sound_packs lists the packs this engine offers.',
+	SOUND_PACK_BUSY:
+		'The pack is being installed. Wait for its job (wait_for_job) or cancel it (cancel_job) first.',
 };
 
 /** Runs an engine call; sound-route errors get their hint (approval and transaction codes pass through). */
@@ -159,7 +167,7 @@ function soundRow(e: SoundEntry) {
 		author: e.author,
 		credit: e.attribution,
 		creditRequired: requiresAttribution(e.license),
-		source: { type: e.source.type },
+		source: e.source.type === 'pack' ? { type: 'pack', packId: e.source.packId } : { type: e.source.type },
 	};
 }
 
@@ -273,6 +281,11 @@ const SearchArgs = {
 		.max(4)
 		.optional()
 		.describe('Only these sources: starter, pack, folder, synth'),
+	packId: z
+		.string()
+		.regex(/^[a-z0-9][a-z0-9._-]{0,63}$/)
+		.optional()
+		.describe('Only the sounds of this installed pack (ids from list_sound_packs)'),
 	similarTo: SoundIdArg.optional().describe('Rank by similarity to this sound (left out of the results)'),
 	limit: z.number().int().min(1).max(MAX_SHEET).optional().describe(`Results (1…${MAX_SHEET}, default 12)`),
 	offset: z.number().int().min(0).max(100_000).optional().describe('Skip this many results (paging)'),
@@ -369,6 +382,32 @@ export function resolveAudioTrack(seq: Sequence, ref: string): string {
 	);
 }
 
+/** A pack as the tools show it (sizes in bytes and MB, the licence first). */
+function packView(p: SoundPackInfo, base: string) {
+	const mb = (n: number) => Math.round((n / 1_048_576) * 10) / 10;
+	return {
+		packId: p.id,
+		title: p.title,
+		author: p.author,
+		license: p.license,
+		licenseUrl: p.licenseUrl,
+		credit: p.attribution,
+		creditRequired: requiresAttribution(p.license),
+		licenseEvidence: p.licenseEvidence,
+		pageUrl: p.pageUrl,
+		downloadUrl: p.downloadUrl,
+		downloadMB: mb(p.downloadBytes),
+		installMB: mb(p.installBytes),
+		sounds: p.sounds,
+		state: p.state,
+		inCatalog: p.inCatalog,
+		installedAt: p.installedAt,
+		indexedSounds: p.indexedSounds,
+		description: p.description,
+		job: p.job ? jobBody(p.job, base) : null,
+	};
+}
+
 export function registerSoundTools(ctx: ToolContext): void {
 	defineTool(
 		ctx,
@@ -447,6 +486,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 				...(a.texture ? { texture: a.texture } : {}),
 				license: a.license ?? 'commercial-safe',
 				...(a.sources ? { sources: a.sources } : {}),
+				...(a.packId ? { packId: a.packId } : {}),
 				...(a.similarTo ? { similarTo: a.similarTo } : {}),
 				limit: a.limit ?? 12,
 				...(a.offset ? { offset: a.offset } : {}),
@@ -1012,6 +1052,123 @@ export function registerSoundTools(ctx: ToolContext): void {
 				...jobBody(done, ctx.link.target?.url ?? ''),
 				...(timedOut ? { timedOut: true } : {}),
 			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'list_sound_packs',
+		{
+			title: 'List sound packs',
+			description:
+				'The downloadable sound packs this engine offers and what is installed: id, title, author, description, licence (SPDX) with its URL and the evidence it was checked against, the credit line (null for CC0), the pack page, download and installed sizes, how many sounds it adds, its state (available, installed, outdated — install again to update —, damaged — install again or remove), how many of its sounds are in the library index now, and a running install job. Installed packs the catalogue no longer lists appear with inCatalog: false (they can only be removed).',
+			input: {},
+			annotations: READ_ONLY,
+		},
+		async () => {
+			const r = await soundCall<SoundPacksResponse>(ctx, (c) => c.listSoundPacks());
+			const base = ctx.link.target?.url ?? '';
+			return jsonResult({
+				packs: r.packs.map((p) => packView(p, base)),
+				...(r.catalogErrors.length ? { catalogErrors: r.catalogErrors } : {}),
+				next: 'Tell the user the size and licence of a pack before install_sound_pack.',
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'install_sound_pack',
+		{
+			title: 'Install sound pack',
+			description:
+				"Downloads a sound pack from its upstream site (the URL list_sound_packs shows; nothing is hosted by JasperEditor), checks the archive and every file against their pinned SHA-256 and sizes, installs only the listed files into the engine's sound library and indexes them (a sound-pack-install job, then a sound-index job). Before calling it, tell the user the pack's name, download size and licence (and its credit line when it has one); install only packs the user wants. wait (default true) waits for both jobs with progress (cancelling the request does not cancel the jobs; cancel_job does); wait: false returns the job to follow with wait_for_job. Installing an installed pack changes nothing; an outdated or damaged one is repaired (files that already match are kept).",
+			input: {
+				packId: z
+					.string()
+					.regex(/^[a-z0-9][a-z0-9._-]{0,63}$/)
+					.describe('Pack id from list_sound_packs'),
+				wait: z.boolean().optional().describe('Wait for the install and index jobs (default true)'),
+				timeoutSeconds: z
+					.number()
+					.int()
+					.min(1)
+					.max(3600)
+					.optional()
+					.describe('How long to wait in total (default 900)'),
+			},
+			annotations: { ...EDIT, openWorldHint: true },
+		},
+		async (a, extra) => {
+			const base = ctx.link.target?.url ?? '';
+			const list = await soundCall<SoundPacksResponse>(ctx, (c) => c.listSoundPacks());
+			const p = list.packs.find((x) => x.id === a.packId && x.inCatalog);
+			if (!p)
+				throw new ToolError(
+					'E_NOT_FOUND',
+					`Unknown sound pack ${a.packId}`,
+					`list_sound_packs lists the packs: ${list.packs
+						.filter((x) => x.inCatalog)
+						.map((x) => x.id)
+						.join(', ')}.`,
+				);
+			const job = await soundCall<EngineJob>(ctx, (c) => c.installSoundPack(a.packId));
+			const pack = {
+				id: p.id,
+				title: p.title,
+				license: p.license,
+				licenseUrl: p.licenseUrl,
+				credit: p.attribution,
+				downloadBytes: p.downloadBytes,
+				installBytes: p.installBytes,
+				sounds: p.sounds,
+			};
+			if (a.wait === false)
+				return jsonResult({ ...jobBody(job, base), pack, next: 'Call wait_for_job with this jobId.' });
+			const deadline = Date.now() + (a.timeoutSeconds ?? 900) * 1000;
+			const { job: done, timedOut } = await waitJob(ctx, job.id, Math.max(1, deadline - Date.now()), extra, {
+				cancelJobOnAbort: false,
+			});
+			if (timedOut || done.state !== 'succeeded')
+				return jsonResult({ ...jobBody(done, base), ...(timedOut ? { timedOut: true } : {}), pack });
+			const result = SoundPackInstallResultSchema.safeParse(done.result);
+			const indexJobId = result.success ? result.data.indexJobId : null;
+			let index: Record<string, unknown> | null = null;
+			if (indexJobId) {
+				const w = await waitJob(ctx, indexJobId, Math.max(1, deadline - Date.now()), extra, {
+					cancelJobOnAbort: false,
+				});
+				index = { ...jobBody(w.job, base), ...(w.timedOut ? { timedOut: true } : {}) };
+			}
+			return jsonResult({
+				ok: true,
+				...jobBody(done, base),
+				pack,
+				...(result.success ? { installed: result.data } : {}),
+				index,
+				next: `search_sounds {packId: "${p.id}"} lists its sounds.`,
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'remove_sound_pack',
+		{
+			title: 'Remove sound pack',
+			description:
+				"Deletes an installed sound pack from the engine's sound library: its sounds leave the library for every project (until it is installed again, a download). Projects that already use its sounds keep their own copies and still open and export. Needs the user's approval on a card in an open editor window (E_APPROVAL_DENIED: they said no or no window was open; do not retry without asking). A pack that is not installed: nothing happens (removed: false).",
+			input: {
+				packId: z
+					.string()
+					.regex(/^[a-z0-9][a-z0-9._-]{0,63}$/)
+					.describe('Pack id from list_sound_packs'),
+			},
+			annotations: DESTRUCTIVE_IDEMPOTENT,
+		},
+		async (a) => {
+			const r = await soundCall<SoundPackRemoveResponse>(ctx, (c) => c.removeSoundPack(a.packId));
+			return jsonResult({ ok: true, ...r, job: r.job ? jobBody(r.job, ctx.link.target?.url ?? '') : null });
 		},
 	);
 }
