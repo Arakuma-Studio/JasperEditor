@@ -14,6 +14,7 @@ import {
 	type Sequence,
 	SOUND_CHECK_CUSTOM_LABEL,
 	SOUND_CHECK_MESSAGES,
+	SOUND_CHECK_UNMEASURED,
 	SOUND_CHECK_VERDICT_MARKER,
 	soundCheckHumanVerdicts,
 	soundCheckMessage,
@@ -25,6 +26,7 @@ import { reportFixture } from '../../mcp/test/sound-check-report-fixture.ts';
 import { __setCatalogForTests } from '../src/i18n/runtime.ts';
 import {
 	defaultChoice,
+	fixWhyText,
 	groupIssues,
 	isSequenceTarget,
 	listenRows,
@@ -81,6 +83,32 @@ describe('listen-here reasons in the UI language', () => {
 	});
 });
 
+describe('why a fix needs judgement, and unmeasured reasons, in the UI language', () => {
+	it('fixWhyText translates the engine message (else its English text); unmeasured reasons are translated', () => {
+		__setCatalogForTests('es', ES, NAMES);
+		const fix = {
+			kind: 'commands' as const,
+			label: soundCheckMessage('fixSilenceCue'),
+			safe: false,
+			why: 'Only if the silence is intended',
+			whyMessage: soundCheckMessage('whySilence'),
+			tool: 'apply_commands',
+			args: {},
+		};
+		expect(fixWhyText(fix)).toBe('Solo si el silencio es intencionado');
+		const { whyMessage: _w, ...old } = fix;
+		expect(fixWhyText(old)).toBe('Only if the silence is intended');
+		expect(fixWhyText(undefined)).toBeNull();
+		const duck = soundCheckMessage('whyDuckDepth', 6, 5.2);
+		expect(fixWhyText({ ...fix, why: duck.text, whyMessage: duck })).toBe(
+			'Atenuar 6 dB deja la música 5.2 LU por debajo de la voz',
+		);
+		const m = soundCheckMessage('syncUnmeasurable', 'Air whoosh', SOUND_CHECK_UNMEASURED.covered);
+		expect(messageText(m)).toContain('otros sonidos lo tapan');
+		expect(messageText(m)).toContain('Air whoosh');
+	});
+});
+
 describe('every Sound Check message key is translated', () => {
 	it('each finding / fix / listen template and the custom label is a model string with a Spanish text (same placeholders)', () => {
 		const ph = (x: string) =>
@@ -88,7 +116,11 @@ describe('every Sound Check message key is translated', () => {
 				.map((m) => m[1])
 				.sort()
 				.join();
-		const keys = [...Object.values(SOUND_CHECK_MESSAGES), SOUND_CHECK_CUSTOM_LABEL];
+		const keys = [
+			...Object.values(SOUND_CHECK_MESSAGES),
+			...Object.values(SOUND_CHECK_UNMEASURED),
+			SOUND_CHECK_CUSTOM_LABEL,
+		];
 		expect(keys.length).toBeGreaterThan(50);
 		expect(keys.filter((k) => !NAMES.includes(k))).toEqual([]);
 		expect(keys.filter((k) => typeof ES[k] !== 'string' || !ES[k]!.trim())).toEqual([]);

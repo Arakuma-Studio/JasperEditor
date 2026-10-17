@@ -556,12 +556,42 @@ export const SOUND_CHECK_MESSAGES = {
 	fixDemote: 'Make the later hero a support sound',
 	fixSwap: 'Swap to "{0}" ({1})',
 	fixCredits: 'Export the credits with the sequence ({0} file)',
+	// why a fix needs the user's judgement (`fix.whyMessage`; Phase 5 verification: translated like the rest)
+	whyNormalise: 'The export then normalises to the target',
+	whyLimiterCeiling: 'The export limiter then holds the ceiling',
+	whyLimiterUnder: 'The export limiter then keeps the mix under its ceiling',
+	whyRebalance:
+		'Solving the sound effects against the bed and the true-peak ceiling lowers the loudest hits; listen to the result',
+	whyUserGain: 'Its gain was set by hand',
+	whySolverGain: "The solver's gain does not resolve it: {0}",
+	whyDucked:
+		'The music is ducked already: Auto-Match levels the dialogue and music clips by type (it changes their gains)',
+	whyDuckDepth: 'Ducking by {0} dB leaves the music {1} LU under the voice',
+	whySilence: 'Only if the silence is intended',
+	whyKeepCue: 'Or keep it where it is: it no longer follows the picture',
+	whyNoPicture: 'Only if nothing on screen calls for it',
+	whySimilar: 'A different sound found by similarity: listen before keeping it',
 } as const;
 export type SoundCheckMessageKey = keyof typeof SOUND_CHECK_MESSAGES;
+
+/**
+ * Why a placed sound's timing cannot be measured (the second parameter of `syncUnmeasurable`): fixed English fragments,
+ * translated by the editor (model strings).
+ */
+export const SOUND_CHECK_UNMEASURED = {
+	notInMix: 'it is not in the mix (disabled, muted track or offline media)',
+	reversed: 'it plays reversed',
+	offline: 'its media is offline',
+	short: 'its sound is too short around its aligned point',
+	edge: 'its cue is at the edge of the checked range',
+	undecodable: 'its file could not be decoded',
+	covered: 'other sounds cover it in the sound-effects mix',
+} as const;
 
 /** Every Sound Check template (the editor's model strings). */
 export const SOUND_CHECK_MODEL_STRINGS: readonly string[] = [
 	...Object.values(SOUND_CHECK_MESSAGES),
+	...Object.values(SOUND_CHECK_UNMEASURED),
 	SOUND_CHECK_CUSTOM_LABEL,
 ];
 

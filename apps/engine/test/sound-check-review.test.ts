@@ -18,6 +18,7 @@ import {
 	makeEnvelope,
 	type ProjectDocument,
 	readSoundCheckTarget,
+	SOUND_CHECK_MESSAGES,
 	soundCheckStatus,
 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -232,17 +233,19 @@ describe('Sound Check engine review (real engine)', { timeout: 600_000 }, () => 
 		// speech 4–8 s, a 4 s pause, speech again 12–16 s; the music (20 s) 20 dB down, far under the voice
 		const build = () => {
 			const fx = buildCheckDoc(media);
+			const mediaOf = (clipId: string) =>
+				(fx.doc().sequences[fx.b.seqId]!.clips[clipId] as unknown as { mediaId: string }).mediaId;
 			const music2 = fx.b.tx([
 				{
 					type: 'clip.place',
-					source: { mediaId: fx.doc().sequences[fx.b.seqId]!.clips[fx.ids.music]!.mediaId },
+					source: { mediaId: mediaOf(fx.ids.music) },
 					at: { seconds: 10 },
 					tracks: { audio: 'A1' },
 					ref: '$m2',
 				},
 				{
 					type: 'clip.place',
-					source: { mediaId: fx.doc().sequences[fx.b.seqId]!.clips[fx.ids.speech]!.mediaId },
+					source: { mediaId: mediaOf(fx.ids.speech) },
 					sourceRange: { in: { seconds: 4 }, out: { seconds: 8 } },
 					at: { seconds: 12 },
 					tracks: { audio: 'A2' },
@@ -271,6 +274,10 @@ describe('Sound Check engine review (real engine)', { timeout: 600_000 }, () => 
 		drop.fx.b.tx([{ type: 'audio.setGain', clipIds: [clipAt(255), clipAt(300)], mode: 'adjust', db: -14 }]);
 		const r2 = await check(drop.fx.doc());
 		expect(issuesOf(r2, 'DIP').length, describeIssues(r2)).toBeGreaterThan(0);
+		// its fix needs the user's judgement, and says why in a translatable message
+		const fix = issuesOf(r2, 'DIP')[0]!.fix!;
+		expect(fix.safe).toBe(false);
+		expect(fix.whyMessage).toEqual({ key: SOUND_CHECK_MESSAGES.whySilence, params: [], text: fix.why });
 	});
 
 	it('REPEAT never offers a safe swap to an alternative whose licence is not commercial-safe', async () => {

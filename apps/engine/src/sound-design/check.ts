@@ -95,6 +95,7 @@ import {
 	SOUND_CHECK_CODES,
 	SOUND_CHECK_CUSTOM_LABEL,
 	SOUND_CHECK_THRESHOLDS,
+	SOUND_CHECK_UNMEASURED,
 	type SoundCheckCode,
 	type SoundCheckMessage,
 	type SoundCheckSeverity,
@@ -360,15 +361,21 @@ const commandFix = (
 	label: SoundCheckMessage,
 	commands: Record<string, unknown>[],
 	safe: boolean,
-	why?: string,
+	why?: SoundCheckMessage,
 ): SoundCheckFix => ({
 	kind: 'commands',
 	label,
 	safe,
-	...(why ? { why } : {}),
+	...(why ? { why: why.text, whyMessage: why } : {}),
 	tool: 'apply_commands',
 	args: { projectId, label: label.text.slice(0, 80), commands },
 	commands: commands as SoundCheckFix['commands'],
+});
+
+/** A fix's `why` as text and as a translatable message. */
+const whyOf = (m: SoundCheckMessage): { why: string; whyMessage: SoundCheckMessage } => ({
+	why: m.text,
+	whyMessage: m,
 });
 
 /** Decodes a mono reference (f32 at `rate`) of a file span; null when ffmpeg cannot. */
@@ -756,11 +763,11 @@ export async function checkSequence(
 			}
 		}
 		if (!playing.has(row.clip.id)) {
-			unmeasured.set(row, 'it is not in the mix (disabled, muted track or offline media)');
+			unmeasured.set(row, SOUND_CHECK_UNMEASURED.notInMix);
 			continue;
 		}
 		if (row.clip.speed?.reverse) {
-			unmeasured.set(row, 'it plays reversed');
+			unmeasured.set(row, SOUND_CHECK_UNMEASURED.reversed);
 			continue;
 		}
 		const asset = doc.media?.[row.clip.mediaId] as { fingerprint?: string } | undefined;
@@ -768,7 +775,7 @@ export async function checkSequence(
 		const src = world.media(row.clip.mediaId);
 		const stream = src?.streams.find((s) => s.index === rc?.channels.streamIndex) ?? src?.streams[0];
 		if (!asset || !src || !stream) {
-			unmeasured.set(row, 'its media is offline');
+			unmeasured.set(row, SOUND_CHECK_UNMEASURED.offline);
 			continue;
 		}
 		const align = sfx.placement.align;
@@ -780,7 +787,7 @@ export async function checkSequence(
 		const fileStart = pointSec - before * speed;
 		const fileDur = (before + post) * speed;
 		if (fileDur * sr < 64) {
-			unmeasured.set(row, 'its sound is too short around its aligned point');
+			unmeasured.set(row, SOUND_CHECK_UNMEASURED.short);
 			continue;
 		}
 		const expected = Math.round((row.cue.frame / fpsNum) * sr);
@@ -790,7 +797,7 @@ export async function checkSequence(
 		const len = refLen + 2 * search + 2 * hop;
 		// before sample 0 nothing plays: a capture of a sound on the first frames starts with silence
 		if ((a < renderStart && renderStart > 0) || a + len > renderEnd) {
-			unmeasured.set(row, 'its cue is at the edge of the checked range');
+			unmeasured.set(row, SOUND_CHECK_UNMEASURED.edge);
 			continue;
 		}
 		captures.push({
@@ -997,7 +1004,7 @@ export async function checkSequence(
 	const measurable =
 		Number.isFinite(final.integrated) && audibleSec >= SOUND_CHECK_THRESHOLDS.minMeasurableSec;
 	const broadcast = !target && (opts.preset === 'broadcast-r128' || opts.preset === 'atsc-a85');
-	const loudnessFix = (why: string): SoundCheckFix | undefined => {
+	const loudnessFix = (why: SoundCheckMessage): SoundCheckFix | undefined => {
 		const cmd = {
 			type: 'mixer.setLoudness',
 			sequenceId: seq.id,
@@ -1040,7 +1047,7 @@ export async function checkSequence(
 	} else {
 		const off = final.integrated - preset.integratedLufs;
 		if (Math.abs(off) > SOUND_CHECK_THRESHOLDS.loudnessToleranceLu) {
-			const fix = settingsMatch ? undefined : loudnessFix('The export then normalises to the target');
+			const fix = settingsMatch ? undefined : loudnessFix(soundCheckMessage('whyNormalise'));
 			issues.add({
 				subject: 'mix',
 				code: 'LOUDNESS',
@@ -1069,7 +1076,7 @@ export async function checkSequence(
 	) {
 		let at = 0;
 		for (let i = 1; i < rangeHops; i++) if (mixPeakDb[i]! > mixPeakDb[at]!) at = i;
-		const fix = settingsMatch ? undefined : loudnessFix('The export limiter then holds the ceiling');
+		const fix = settingsMatch ? undefined : loudnessFix(soundCheckMessage('whyLimiterCeiling'));
 		issues.add({
 			subject: 'mix',
 			code: 'TRUE_PEAK',
@@ -1106,7 +1113,7 @@ export async function checkSequence(
 				kind: 'job',
 				label: soundCheckMessage('fixRebalance'),
 				safe: false,
-				why: 'Solving the sound effects against the bed and the true-peak ceiling lowers the loudest hits; listen to the result',
+				...whyOf(soundCheckMessage('whyRebalance')),
 				tool: 'rebalance_sfx',
 				args: { projectId, sequenceId: seq.id, mode: 'apply', delivery: opts.preset },
 				job: {
@@ -1123,7 +1130,7 @@ export async function checkSequence(
 	) {
 		let at = 0;
 		for (let i = 1; i < rangeHops; i++) if (mixPeakDb[i]! > mixPeakDb[at]!) at = i;
-		const fix = loudnessFix('The export limiter then keeps the mix under its ceiling');
+		const fix = loudnessFix(soundCheckMessage('whyLimiterUnder'));
 		issues.add({
 			subject: 'clip',
 			code: 'OVERLOAD',
@@ -1194,8 +1201,8 @@ export async function checkSequence(
 					safe
 						? undefined
 						: userOwned
-							? 'Its gain was set by hand'
-							: `The solver's gain does not resolve it: ${level.reason}`,
+							? soundCheckMessage('whyUserGain')
+							: soundCheckMessage('whySolverGain', level.reason),
 				);
 			};
 			// layers of a cue are judged with the cue's first layer; ambient beds sit under by design (decisions)
@@ -1266,7 +1273,7 @@ export async function checkSequence(
 	await pool(captures, DECODE_CONCURRENCY, async (c) => {
 		const ref = await decodeReference(env, c.ref, sr);
 		if (!ref || ref.length < 64) {
-			unmeasured.set(c.row, 'its file could not be decoded');
+			unmeasured.set(c.row, SOUND_CHECK_UNMEASURED.undecodable);
 			return;
 		}
 		const search = Math.ceil((SYNC_SEARCH_FRAMES / fpsNum) * sr);
@@ -1414,11 +1421,7 @@ export async function checkSequence(
 				issues.add({
 					...base,
 					severity: 'info',
-					message: soundCheckMessage(
-						'syncUnmeasurable',
-						row.info.title,
-						'other sounds cover it in the sound-effects mix',
-					),
+					message: soundCheckMessage('syncUnmeasurable', row.info.title, SOUND_CHECK_UNMEASURED.covered),
 					measured: { correlation: row.correlation },
 				});
 		}
@@ -1498,7 +1501,7 @@ export async function checkSequence(
 						kind: 'job',
 						label: soundCheckMessage('fixDelivery', preset.label),
 						safe: false,
-						why: 'The music is ducked already: Auto-Match levels the dialogue and music clips by type (it changes their gains)',
+						...whyOf(soundCheckMessage('whyDucked')),
 						tool: 'apply_delivery',
 						args: {
 							projectId,
@@ -1526,9 +1529,7 @@ export async function checkSequence(
 						safe: predicted >= SOUND_CHECK_THRESHOLDS.musicUnderVoiceLu,
 						...(predicted >= SOUND_CHECK_THRESHOLDS.musicUnderVoiceLu
 							? {}
-							: {
-									why: `Ducking by ${fmt(-depth)} dB leaves the music ${fmt(predicted)} LU under the voice`,
-								}),
+							: whyOf(soundCheckMessage('whyDuckDepth', fmt(-depth), fmt(predicted)))),
 						tool: 'apply_delivery',
 						args: {
 							projectId,
@@ -1612,7 +1613,7 @@ export async function checkSequence(
 			soundCheckMessage('fixSilenceCue'),
 			[cmd],
 			false,
-			'Only if the silence is intended',
+			soundCheckMessage('whySilence'),
 		);
 	};
 	for (const [a, b] of silentRuns) {
@@ -1778,7 +1779,7 @@ export async function checkSequence(
 									soundCheckMessage('fixRemoveCue'),
 									[{ type: 'soundCue.remove', cueIds: [cue.id], withClips: true }],
 									false,
-									'Or keep it where it is: it no longer follows the picture',
+									soundCheckMessage('whyKeepCue'),
 								),
 							}
 						: {}),
@@ -1828,7 +1829,7 @@ export async function checkSequence(
 				soundCheckMessage('fixRemoveCue'),
 				[{ type: 'soundCue.remove', cueIds: [cue.id], withClips: true }],
 				false,
-				'Only if nothing on screen calls for it',
+				soundCheckMessage('whyNoPicture'),
 			),
 		});
 	}
@@ -1977,7 +1978,7 @@ export async function checkSequence(
 					kind: 'swap',
 					label: soundCheckMessage('fixSwap', r.sound.title, r.sound.license),
 					safe: false,
-					why: 'A different sound found by similarity: listen before keeping it',
+					...whyOf(soundCheckMessage('whySimilar')),
 					tool: 'swap_sound',
 					args: { projectId, clipId: row.clip.id, to: r.sound.id },
 					swap: { clipId: row.clip.id, soundId: r.sound.id },

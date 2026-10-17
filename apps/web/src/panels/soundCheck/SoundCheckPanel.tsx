@@ -29,6 +29,7 @@ import {
 	type DeliveryChoice,
 	deliveryOptions,
 	eventOf,
+	fixWhyText,
 	groupIssues,
 	hasSyncStrip,
 	isSequenceTarget,
@@ -690,7 +691,11 @@ function Findings(props: {
 											title={
 												i.fix.safe
 													? t('Safe: {0}', messageText(i.fix.label))
-													: t('{0} — {1}', messageText(i.fix.label), i.fix.why ?? t('listen to the result'))
+													: t(
+															'{0} — {1}',
+															messageText(i.fix.label),
+															fixWhyText(i.fix) ?? t('listen to the result'),
+														)
 											}
 											onClick={() => fix(i)}
 										>

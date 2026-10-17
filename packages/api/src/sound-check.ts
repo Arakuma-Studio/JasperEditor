@@ -90,6 +90,8 @@ export const SoundCheckFixSchema = z.object({
 	label: SoundCheckMessageSchema,
 	safe: z.boolean(),
 	why: z.string().optional(),
+	/** `why` as a translatable message (template + params), when the engine gives one. */
+	whyMessage: SoundCheckMessageSchema.optional(),
 	tool: z.string(),
 	args: z.record(z.string(), z.unknown()),
 	commands: z.array(z.looseObject({ type: z.string() })).optional(),

@@ -37,6 +37,7 @@ import {
 	type FixPlan,
 	type FixUnit,
 	fixChangeSummary,
+	fixWhyText,
 	hasSyncStrip,
 	issueFrame,
 	type ListenRow,
@@ -342,7 +343,7 @@ export function fixConfirmation(
 	seq: Sequence | undefined,
 ): { title: string; body: string; confirmLabel: string } {
 	const changes = fixChangeSummary(issue, seq);
-	const why = issue.fix?.why;
+	const why = fixWhyText(issue.fix);
 	return {
 		title: t('Apply “{0}”?', messageText(issue.fix?.label)),
 		body: [

@@ -102,6 +102,8 @@ const DENSITY_PARAM = new Map<string, number>([
 	[SOUND_CHECK_MESSAGES.densityHeroes, 4],
 	[SOUND_CHECK_MESSAGES.densityRate, 3],
 ]);
+/** Templates whose parameter at this index is a fixed English fragment the editor translates (a model string). */
+const FRAGMENT_PARAM = new Map<string, number>([[SOUND_CHECK_MESSAGES.syncUnmeasurable, 1]]);
 
 /**
  * A report message in the UI language: the template (`key`, a model string) translated and filled with `params`;
@@ -113,8 +115,10 @@ export function messageText(m: SoundCheckMessageJson | null | undefined): string
 	try {
 		const kindAt = KIND_PARAM.get(m.key);
 		const densityAt = DENSITY_PARAM.get(m.key);
+		const fragmentAt = FRAGMENT_PARAM.get(m.key);
 		const params = m.params.map((p, i) => {
 			if (typeof p !== 'string') return p;
+			if (i === fragmentAt) return t(p);
 			if (i === kindAt) {
 				const label = (CUE_KIND_LABELS as Record<string, string>)[p];
 				return label ? withoutContext(t(label)).toLocaleLowerCase() : p;
@@ -475,6 +479,13 @@ export function fixChangeSummary(issue: SoundCheckIssue, seq: Sequence | undefin
 	} catch {
 		return [messageText(f.label)];
 	}
+}
+
+/** Why a fix needs the user's judgement, in the UI language (the engine's message; else its English text). */
+export function fixWhyText(fix: SoundCheckIssue['fix']): string | null {
+	if (!fix) return null;
+	if (fix.whyMessage) return messageText(fix.whyMessage);
+	return fix.why ?? null;
 }
 
 /** Findings with a safe fix the panel can apply. */
