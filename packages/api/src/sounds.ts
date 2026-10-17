@@ -367,9 +367,17 @@ export type RegisterSoundRequest = z.infer<typeof RegisterSoundRequestSchema>;
  * into a "Sound Effects" bin. `existingMediaId`: the saved project already has this file (same fingerprint) as
  * that media; reuse it instead of registering a duplicate.
  */
+/** Why a registered sound is not a sample-exact copy (WP6.5b): over 1 h, over the copy size cap, or not enough disk. */
+export const SOUND_INEXACT_REASONS = ['too-long', 'too-large', 'disk-space'] as const;
+
 export const RegisterSoundResponseSchema = RegisteredMediaSchema.extend({
 	library: LibraryProvenanceSchema,
 	existingMediaId: z.string().nullable(),
+	/**
+	 * Present when the sound needed a sample-exact copy (lead / trailing silence, or a lossy source) but was registered as
+	 * it is: its placement is then exact to a frame, a lossy one seeked by an In point may play a few samples off.
+	 */
+	inexact: z.object({ reason: z.enum(SOUND_INEXACT_REASONS), message: z.string().max(300) }).optional(),
 });
 export type RegisterSoundResponse = z.infer<typeof RegisterSoundResponseSchema>;
 

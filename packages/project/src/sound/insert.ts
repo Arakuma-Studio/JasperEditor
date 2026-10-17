@@ -27,8 +27,12 @@ export type SoundAlignRequest = SoundAlign | 'auto';
  * project (one frame at the lowest sequence rate, 23.976 fps, is 41.7 ms; 50 ms leaves room for ±2 % varispeed).
  */
 export const LIBRARY_LEAD_SILENCE_SEC = 0.05;
-/** Library sounds longer than this are registered as they are (beds: aligned by their start; padding would copy them). */
-export const LIBRARY_PAD_MAX_SECONDS = 120;
+/**
+ * Library sounds up to this long are registered as sample-exact managed copies when they need one (lead / trailing
+ * silence, or a lossy source): 1 h, beds included (WP6.5b; 120 s before). Longer ones are registered as they are (the
+ * engine says so: `inexact` `too-long`), as are copies over the engine's byte cap or without the free disk space.
+ */
+export const LIBRARY_PAD_MAX_SECONDS = 3600;
 /**
  * Seconds of silence the engine puts after a library sound that does not already end in that much quiet (its −60 dB
  * tail closer than this to the end of the file) when it registers it: a placed clip is whole frames and its length is
