@@ -328,12 +328,19 @@ function localMax(env: Float64Array, t: number, r: number): number {
 	return m;
 }
 
-/** Analyses planar audio (channels summed to mono). Throws RemixError for audio without a usable beat. */
-export function analyzeMusic(channels: readonly Float32Array[], sampleRate: number): Analysis {
+function monoOf(channels: readonly Float32Array[]): Float32Array {
 	const len = Math.max(0, ...channels.map((c) => c.length));
 	const k = 1 / Math.max(channels.length, 1);
 	const mono = new Float32Array(len);
 	for (const c of channels) for (let i = 0; i < c.length; i++) mono[i] = mono[i]! + c[i]! * k;
+	return mono;
+}
+
+/** Beat frames of the onset envelope, the period and per-beat onset strength (throws NO_BEAT). */
+function trackedBeats(
+	mono: Float32Array,
+	sampleRate: number,
+): { env: Float64Array; n: number; hop: number; frames: number[]; period: number } {
 	const { env, n, hop } = onsetEnvelope(mono, sampleRate);
 	// Steady sounds (a held tone, broadband noise) have a flux without onsets: mean ≳ standard deviation. Music's
 	// flux is sparse peaks (mean/sd ≈ 0.4 on the generated test music, 1.5 on a steady sine). A steady tone's
@@ -353,6 +360,14 @@ export function analyzeMusic(channels: readonly Float32Array[], sampleRate: numb
 	const offGrid = (a: number, b: number) => Math.abs((b - a) / period - 1) > 0.05;
 	while (frames.length > 2 && offGrid(frames[frames.length - 2]!, frames[frames.length - 1]!)) frames.pop();
 	while (frames.length > 2 && offGrid(frames[0]!, frames[1]!)) frames.shift();
+	return { env, n, hop, frames, period };
+}
+
+/** Analyses planar audio (channels summed to mono). Throws RemixError for audio without a usable beat. */
+export function analyzeMusic(channels: readonly Float32Array[], sampleRate: number): Analysis {
+	const mono = monoOf(channels);
+	const len = mono.length;
+	const { n, hop, frames, period } = trackedBeats(mono, sampleRate);
 	// The flux of frame t peaks as soon as an attack enters the newer window, at about t·hop + n − ¾·hop; joints sit
 	// half a crossfade earlier so a joint's fade is over when the beat's attack starts.
 	const beats: number[] = [];
@@ -454,4 +469,108 @@ export function planRemix(a: Analysis, target: number, params: RemixParams = DEF
 	}
 	pieces.push({ src, len: len - src });
 	return { pieces, xfade };
+}
+
+/** Beats of music (Sound Design beat cues, `POST /api/audio/beats`; spec 12 §2.2). */
+export type BeatAnalysis = {
+	sampleRate: number;
+	/** Analysed length (samples). */
+	len: number;
+	bpm: number;
+	/** Beat period (samples). */
+	period: number;
+	/** Attack of each beat (samples, increasing): the tracker's beat refined to the strongest energy rise near it. */
+	beats: number[];
+	/** Onset strength of each beat (unit-variance spectral flux, its local maximum). */
+	strengths: number[];
+	/**
+	 * Downbeats (indices into `beats`) when one beat in four is clearly accented (4/4 assumed: the phase whose beats
+	 * are strongest, ≥ 15 % above the others' mean, over ≥ 8 beats); null when the accent is not clear.
+	 */
+	downbeats: number[] | null;
+	/** How clear the downbeat phase is (0…1). */
+	downbeatConfidence: number;
+};
+
+/** Least relative accent of the downbeat phase over the other phases. */
+const DOWNBEAT_MIN_ACCENT = 0.15;
+
+/** The strongest energy rise (1 ms RMS, 5 ms either side) within ±`radius` samples of `at`. */
+function attackNear(x: Float32Array, at: number, radius: number, sr: number): number {
+	const win = Math.max(1, Math.round(0.005 * sr));
+	const lo = Math.max(win, Math.round(at - radius));
+	const hi = Math.min(x.length - win - 1, Math.round(at + radius));
+	if (hi <= lo) return Math.max(0, Math.min(x.length - 1, Math.round(at)));
+	// prefix sums of squares
+	const a0 = lo - win;
+	const a1 = hi + win + 1;
+	const pre = new Float64Array(a1 - a0 + 1);
+	for (let i = a0; i < a1; i++) pre[i - a0 + 1] = pre[i - a0]! + x[i]! * x[i]!;
+	const sum = (a: number, b: number) => pre[b - a0]! - pre[a - a0]!;
+	let best = lo;
+	let bestRise = Number.NEGATIVE_INFINITY;
+	for (let i = lo; i <= hi; i++) {
+		const rise = Math.sqrt(sum(i, i + win) / win) - Math.sqrt(sum(i - win, i) / win);
+		if (rise > bestRise) {
+			bestRise = rise;
+			best = i;
+		}
+	}
+	return best;
+}
+
+/**
+ * Tempo, beats and (when clear) downbeats of planar audio. Shares the remix's beat tracker (tempo by autocorrelation,
+ * dynamic-programming beats); each beat is then placed on the attack itself. Throws RemixError NO_BEAT for audio
+ * without a usable pulse or with fewer than 4 beats. Deterministic.
+ */
+export function analyzeBeats(channels: readonly Float32Array[], sampleRate: number): BeatAnalysis {
+	const mono = monoOf(channels);
+	const len = mono.length;
+	const { env, n, hop, frames, period } = trackedBeats(mono, sampleRate);
+	const beats: number[] = [];
+	const strengths: number[] = [];
+	for (const t of frames) {
+		// where the flux of frame t says the attack is (see analyzeMusic), then the attack itself
+		const guess = t * hop + n - Math.floor((3 * hop) / 4);
+		const b = attackNear(mono, guess, 1.5 * hop, sampleRate);
+		if (b > 0 && b < len && (beats.length === 0 || b > beats[beats.length - 1]! + hop)) {
+			beats.push(b);
+			strengths.push(localMax(env, t, 2));
+		}
+	}
+	if (beats.length < 4) throw new RemixError('NO_BEAT');
+	const periodS = period * hop;
+	let downbeats: number[] | null = null;
+	let downbeatConfidence = 0;
+	if (beats.length >= 8) {
+		const mean = [0, 1, 2, 3].map((p) => {
+			let s = 0;
+			let c = 0;
+			for (let i = p; i < beats.length; i += 4) {
+				s += strengths[i]!;
+				c++;
+			}
+			return c ? s / c : 0;
+		});
+		let p = 0;
+		for (let q = 1; q < 4; q++) if (mean[q]! > mean[p]!) p = q;
+		const others = mean.filter((_, q) => q !== p);
+		const rest = others.reduce((a, b) => a + b, 0) / others.length;
+		downbeatConfidence = mean[p]! > 0 ? Math.max(0, Math.min(1, (mean[p]! - rest) / mean[p]!)) : 0;
+		if (rest > 0 && mean[p]! >= (1 + DOWNBEAT_MIN_ACCENT) * rest) {
+			downbeats = [];
+			for (let i = p; i < beats.length; i += 4) downbeats.push(i);
+		}
+	}
+	return {
+		sampleRate,
+		len,
+		bpm: (60 * sampleRate) / periodS,
+		period: periodS,
+		beats,
+		strengths,
+		downbeats,
+		downbeatConfidence,
+	};
 }
