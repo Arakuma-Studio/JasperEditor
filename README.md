@@ -665,7 +665,11 @@ and `DELETE` record the review. A client with only the token may accept sound-de
 allowed it ("Allow agents to apply sound proposals"), otherwise `403 APPROVAL_REQUIRED`; it may withdraw items
 (`reject`) or delete a proposal, while `reopen`, `note` and `select` are the reviewer's (editor key only). An accepted
 item is reopened only once its accept is undone (`409 PROPOSAL_STILL_APPLIED` while what it created is in the
-document). A stale item's `reason` names what changed with timecodes ("The cut cue at 00:00:03:00 moved to
+document). Every accept is journalled (an intent file next to the proposal, with the ids its transaction creates its
+entities with): an engine that stopped between the transaction and recording it (or lost the editor's answer) settles
+it when the proposal is next read — recorded accepted when the document has it, rolled back when it does not; while the
+editor window that received it is away with its lease alive, accepting that proposal again answers `409 NO_SESSION`
+(retryable). A stale item's `reason` names what changed with timecodes ("The cut cue at 00:00:03:00 moved to
 00:00:03:10"); the accept's `stale[].problem` carries the same, structured. Reading a proposal again and
 again without `?revalidate=1` (what `wait_for_proposal` does) marks the agent as waiting for the review: the list's
 `waiting: {agent, since}` and the event `proposal.changed` with `change: "waiting"` tell the editor, which shows "<agent>

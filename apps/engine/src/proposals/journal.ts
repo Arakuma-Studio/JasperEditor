@@ -10,7 +10,6 @@
 import { createHash } from 'node:crypto';
 import {
 	anchorFingerprint,
-	createPresetIdSource,
 	createRandomIdSource,
 	applyTransaction as dryApply,
 	ID_BODY_RE,
@@ -58,18 +57,6 @@ export type AcceptIntent = z.infer<typeof AcceptIntentSchema>;
 
 /** Slack over the dry run's count: the live document may make the transaction create a few more entities. */
 const ID_SLACK = (n: number) => Math.min(MAX_PRESET_IDS, Math.ceil(n * 1.25) + 16);
-
-/** A counting id source (how many ids a transaction takes). */
-function counting(inner: IdSource): IdSource & { count: number } {
-	const src = {
-		count: 0,
-		next(prefix: Parameters<IdSource['next']>[0]) {
-			src.count++;
-			return inner.next(prefix);
-		},
-	};
-	return src;
-}
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 
@@ -153,21 +140,23 @@ export function prepareIntent(
 		checkInvariants: false,
 	});
 	const live = { ...tx, dryRun: undefined };
-	let count = 0;
-	try {
-		const c = counting(createRandomIdSource());
-		dryApply(doc, live, ctx(c));
-		count = c.count;
-	} catch {
-		count = 0;
-	}
-	const ids = randomIdBodies(ID_SLACK(count));
+	// One dry run with random ids that are recorded as they are handed out: those bodies, in that order, are what the
+	// real transaction will take first (then a few spare ones, for a live document that makes it create more).
+	const recorded: string[] = [];
+	const random = createRandomIdSource();
+	const recording: IdSource = {
+		next(prefix) {
+			const id = random.next(prefix);
+			if (recorded.length < MAX_PRESET_IDS) recorded.push(id.slice(id.indexOf('_') + 1));
+			return id;
+		},
+	};
 	let refs: Record<string, string> = {};
 	let created: string[] = [];
 	let dryRun: AcceptIntent['dryRun'] = 'failed';
 	const changes: AcceptIntent['changes'] = [];
 	try {
-		const r = dryApply(doc, live, ctx(createPresetIdSource(ids, createRandomIdSource())));
+		const r = dryApply(doc, live, ctx(recording));
 		if (r.result.ok) {
 			dryRun = 'ok';
 			refs = Object.fromEntries(
@@ -183,6 +172,10 @@ export function prepareIntent(
 	} catch {
 		// the expectations stay empty: the ids alone tell
 	}
+	const ids = [...recorded, ...randomIdBodies(ID_SLACK(recorded.length) - recorded.length)].slice(
+		0,
+		MAX_PRESET_IDS,
+	);
 	return {
 		version: ACCEPT_INTENT_VERSION,
 		acceptId: meta.acceptId,
