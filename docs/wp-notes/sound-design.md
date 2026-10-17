@@ -6174,7 +6174,25 @@ depth, custom-target rounding, density staleness.
 
 #### Gate
 
-GATE_RESULTS_PLACEHOLDER
+Shared host, 16 cores; other agents' jobs pushed the load to 13–68 during the full runs (measured with `uptime`).
+
+- **Before merging the integration branch** (this branch with the engine review): `pnpm verify` — lint (Biome, tokens,
+  anime, layers, assets) pass, typecheck (19 packages) pass, `pnpm test` 702 files / 7 149 tests: 6 734 passed, 389
+  skipped, **26 failed in 21 files**, all timeouts or time budgets at load 26–54 (15 × "timed out in 5000ms", camtrack /
+  masking / render budgets, an interchange fuzz input over its 2 s hang limit). Rerun alone (`pnpm vitest run <the 21
+  files> --maxWorkers=2`, `FUZZ_SEED=24301`, load 5–10): **21 files, 208 passed, 4 skipped, 0 failed**. `pnpm build` pass
+  (43 s). `pnpm notices --check`: current (150 packages, 31 ported records).
+- **After merging `feat/sound-design`** (WP6.2 cue sources; conflicts in `check.ts` imports, `routes.ts`, es.json, docs —
+  both sides kept): `pnpm verify` — lint pass (after one import-order fix), typecheck pass, `pnpm test` 707 files / 7 197
+  tests: 6 793 passed, 390 skipped, **14 failed in 12 files** at load 13–68. One was real: the README tool count (both
+  branches added a tool: 354, not 353) — fixed. The other 11 files rerun alone at load 11: **12 files (readme-tools
+  included), 131 passed, 7 skipped, 0 failed**. `pnpm build` pass (62 s); `pnpm notices --check` current; `pnpm
+  e2e:typecheck` pass; `node scripts/i18n.mjs --check`: es.json covers all 9 916 strings.
+- **E2E on the merged build**: `e2e/sound-check.spec.ts` passed; `e2e/sound-cue-sources.spec.ts` (WP6.2) passed after
+  `pnpm fixtures` (its new `box-move.mp4`). Before the merge every sound spec passed (23 / 23, 18.6 min).
+- Targeted suites on the final code: `apps/engine/test/sound-check{,-review,-kept}.test.ts` + `apps/mcp/test/sound-check.test.ts`
+  33 passed; `apps/web/test/sound-*` + review + workspace 27 files, 280 passed; project sound-check / verdicts / tail /
+  messages / fuzz 6 files, 43 passed.
 
 #### Limits
 
