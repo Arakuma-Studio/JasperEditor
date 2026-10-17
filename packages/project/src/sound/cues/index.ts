@@ -25,7 +25,20 @@ export {
 	pixelMotionEvents,
 } from './curve.ts';
 export { deriveCues, MAX_DERIVED_CUES } from './derive.ts';
-export { DIALOGUE_BRIDGE_SEC, DIALOGUE_PAD_SEC, dialogueRanges, sequenceDialogueRanges } from './edits.ts';
+export {
+	DIALOGUE_BRIDGE_SEC,
+	DIALOGUE_PAD_SEC,
+	type DialogueSource,
+	type DialogueSpan,
+	type DialogueVadClip,
+	dialogueFrameRanges,
+	dialogueSpans,
+	dialogueVadClips,
+	MAX_VOICE_REGIONS,
+	MAX_VOICE_SCAN_FRAMES,
+	type VoiceActivity,
+} from './dialogue.ts';
+export { dialogueRanges, sequenceDialogueRanges } from './edits.ts';
 export {
 	BEAT_SNAP_FRAMES,
 	BEAT_SNAP_KINDS,

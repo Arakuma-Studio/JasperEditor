@@ -283,6 +283,7 @@ const LABELS: Record<CommandType, string> = {
 	'expression.setEnabled': 'Enable Expression',
 	'effect.rename': 'Rename Effect',
 	'essentialSound.setType': 'Set Audio Type',
+	'essentialSound.autoTag': 'Auto Tag Audio Types',
 	'essentialSound.clearType': 'Clear Audio Type',
 	'essentialSound.set': 'Essential Sound',
 	'essentialSound.applyPreset': 'Apply Sound Preset',

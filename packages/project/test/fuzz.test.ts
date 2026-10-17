@@ -182,7 +182,7 @@ const abstract: fc.Arbitrary<Abstract> = fc.oneof(
 	// Phase 4 (WP4.2a): music type, dips, stop-before, build, room glue, delivery
 	fc.record({
 		k: fc.constant('mix' as const),
-		op: fc.nat(7),
+		op: fc.nat(9),
 		clip: idx,
 		cue: idx,
 		at: frame,
@@ -448,6 +448,21 @@ function concretize(a: Abstract, doc: ProjectDocument, media: string[]): unknown
 								...(a.len % 3 === 1 ? { sfxTracks: [`A${1 + (a.clip % 3)}`] } : {}),
 								roomGlue: { sendDb: a.depth / 2 },
 							};
+				case 8:
+					// Auto Tag (P6-R3): tag, re-tag, force over the user's type; Confirm is setType (op 0)
+					return {
+						type: 'essentialSound.autoTag',
+						results: {
+							[c]: {
+								category: (['dialogue', 'music', 'sfx', 'ambience'] as const)[a.len % 4],
+								confidence: Math.min(1, a.hz / 21_000),
+							},
+						},
+						...(a.depth % 2 ? { force: true } : {}),
+						...(a.len % 5 === 0 ? { minConfidence: 0.5 } : {}),
+					};
+				case 9:
+					return { type: 'essentialSound.setType', clipIds: [c], audioType: 'dialogue' };
 				default:
 					return {
 						type: 'soundDesign.applyDelivery',

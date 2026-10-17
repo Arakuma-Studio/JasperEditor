@@ -52,6 +52,24 @@ export const TYPE_SECTIONS: Record<AudioType, readonly EssentialSection[]> = {
 export const DEFAULT_LOUDNESS_TARGET = -23;
 
 const SlotSchema = z.looseObject({ on: z.boolean(), amount: z.number().min(0).max(10) });
+
+/** How an audio type was assigned by Auto Tag: the classifier's confidence (0…1), its scores and why. */
+export const AutoTagSchema = z.looseObject({
+	by: z.literal('auto'),
+	confidence: z.number().min(0).max(1),
+	scores: z.partialRecord(z.enum(AUDIO_TYPES), z.number().min(0).max(1)).optional(),
+	reasons: z.array(z.string().max(300)).max(6).optional(),
+});
+export type AutoTag = z.infer<typeof AutoTagSchema>;
+
+/** The Auto Tag marker of a clip's stored settings (null: no type, or a type the user set or confirmed). Never throws. */
+export function essentialAutoTag(raw: unknown): AutoTag | null {
+	if (!raw || typeof raw !== 'object') return null;
+	const t = (raw as { type?: unknown }).type;
+	if (typeof t !== 'string' || !(AUDIO_TYPES as readonly string[]).includes(t)) return null;
+	const r = AutoTagSchema.safeParse((raw as { tagged?: unknown }).tagged);
+	return r.success ? r.data : null;
+}
 export type Slot = { on: boolean; amount: number };
 
 export const EssentialSoundSchema = z.looseObject({
@@ -133,6 +151,12 @@ export const EssentialSoundSchema = z.looseObject({
 	 * keyframe at the playhead): `migrateLegacyPan` converts them on load. Bookkeeping, not a setting.
 	 */
 	panOffset: z.literal(true).optional(),
+	/**
+	 * Auto Tag (sound design P6-R3): present while the type was chosen by `essentialSound.autoTag` and the user has not
+	 * confirmed it (the clip badge is drawn "auto"); `essentialSound.setType` with the same type confirms it (removes
+	 * this), another type replaces it. An unreadable value is dropped by `readEssentialSound` / `repairDocument`.
+	 */
+	tagged: AutoTagSchema.optional(),
 });
 export type EssentialSound = z.infer<typeof EssentialSoundSchema>;
 
@@ -651,6 +675,9 @@ export function withPreset(
 ): EssentialSound {
 	const s = JSON.parse(JSON.stringify(preset.settings)) as EssentialSound;
 	s.preset = preset.name;
+	// a preset never carries an Auto Tag marker; the clip keeps its own while the type stays
+	delete s.tagged;
+	if (current && current.type === s.type && current.tagged) s.tagged = { ...current.tagged };
 	if (current && current.type === s.type) {
 		s.loudness = {
 			...s.loudness,

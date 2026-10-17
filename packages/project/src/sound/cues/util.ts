@@ -1,8 +1,10 @@
 // Shared helpers of the cue sources: the derivation context, clip and track lookups, pan, names and seconds.
+
 import { clipEnd, clipsOnTrack, trackLabel } from '../../derive/index.ts';
 import type { ProjectDocument } from '../../schema/document.ts';
 import type { Clip, Sequence, Track } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
+import type { VoiceActivity } from './dialogue.ts';
 import type { CueCandidate, CueDeriveSource, DeriveCuesWarning } from './types.ts';
 
 /** Kinds that draw a picture of their own (adjustment layers, cameras, lights and captions do not move "things"). */
@@ -48,6 +50,8 @@ export type CueContext = {
 	 * minutes and returning gigabytes of speed curves.
 	 */
 	sampleBudget: { left: number; warned: boolean };
+	/** Voice activity of Essential Sound dialogue clips measured by the engine (`dialogueSpans`); absent = whole clips. */
+	voice?: VoiceActivity | null;
 };
 
 /** Most frames sampled by the motion sources in one derivation (≈ 20 clips × 20 000 frames; ≈ 2 s on a busy host). */
