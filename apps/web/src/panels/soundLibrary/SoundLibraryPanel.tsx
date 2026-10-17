@@ -2,9 +2,18 @@
 // folders, Jasper Synth), filter by type chips grouped by family (disjunctive facet counts), Refine pills and the
 // licence filter ("Commercial-safe" on by default), audition (Space, Loop, Auto-play, volume) and insert peak-aligned
 // at the playhead (Enter / double-click) or by dragging onto the timeline. Collections: All, Favourites, Recent, Used
-// in this project and each source. Results are a virtualised listbox with descriptor-rich accessible names.
-import type { SoundEntry, SoundFacets, SoundLibraryStatus, SoundRoot } from '@jasper/api';
-import { isSoundTypeId, type SoundTypeId } from '@jasper/project';
+// in this project and each source. Results are a virtualised listbox with descriptor-rich accessible names. A
+// multi-hit recording (a typing run, a clock) has a disclosure listing its takes (spec 12 P6-E9) under its row: each
+// take is a row of its own (mini waveform, audition, insert, drag); → opens and ← closes it from the keyboard.
+import {
+	offeredTakes,
+	type SoundEntry,
+	type SoundFacets,
+	type SoundLibraryStatus,
+	type SoundRoot,
+	takeEntryOf,
+} from '@jasper/api';
+import { isSoundTypeId, parseTakeId, type SoundTypeId } from '@jasper/project';
 import type { SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import {
@@ -80,6 +89,7 @@ import {
 	soundAccessibleName,
 	soundTooltip,
 	TYPE_GROUPS,
+	takeLabel,
 	typeLabel,
 	usedSoundIds,
 } from '../../sound/model.ts';
@@ -117,6 +127,8 @@ type Results = {
 	indexing: boolean;
 	/** Local collections: sounds of the collection no longer in the library. */
 	missing: number;
+	/** Offered takes of the recordings among `items`, by id (spec 12 P6-E9). */
+	takeCounts: Record<string, number>;
 };
 
 const EMPTY_FACETS: SoundFacets = { types: {}, families: {}, licenses: {}, sources: {} };
@@ -302,6 +314,8 @@ export function SoundLibraryPanel(props: PanelProps) {
 					? ((await engine.getSound(filters.similarTo.id).catch(() => null)) ?? null)
 					: null;
 				const r = searchLocal(entries, filters, similar);
+				const takeCounts: Record<string, number> = {};
+				for (const e of r.results) if (offeredTakes(e).length) takeCounts[e.id] = offeredTakes(e).length;
 				return {
 					epoch,
 					filters,
@@ -311,9 +325,12 @@ export function SoundLibraryPanel(props: PanelProps) {
 					facets: r.facets,
 					indexing: !!status?.indexing,
 					missing: localIds.length - entries.length,
+					takeCounts,
 				};
 			}
 			const r = await engine.searchSounds(searchRequest(filters, { limit: PAGE, offset: 0 }), ac.signal);
+			const takeCounts: Record<string, number> = {};
+			for (const x of r.results) if (x.takeCount) takeCounts[x.sound.id] = x.takeCount;
 			return {
 				epoch,
 				filters,
@@ -323,6 +340,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 				facets: r.facets,
 				indexing: r.indexing,
 				missing: 0,
+				takeCounts,
 			};
 		};
 		run()
@@ -337,11 +355,12 @@ export function SoundLibraryPanel(props: PanelProps) {
 					setView((v) => (v.top === 0 ? v : { ...v, top: 0 }));
 				}
 				const want = revealId.current;
-				if (want && r.items.some((x) => x.id === want)) {
+				// a take stays selected while its recording is listed (and open)
+				const listed = (id: string) => r.items.some((x) => x.id === id || x.id === parseTakeId(id)?.parentId);
+				if (want && listed(want)) {
 					revealId.current = null;
 					setSelectedId(want);
-				} else
-					setSelectedId((cur) => (cur && r.items.some((x) => x.id === cur) ? cur : (r.items[0]?.id ?? null)));
+				} else setSelectedId((cur) => (cur && listed(cur) ? cur : (r.items[0]?.id ?? null)));
 			})
 			.catch((e) => {
 				if (ac.signal.aborted) return;
@@ -373,9 +392,11 @@ export function SoundLibraryPanel(props: PanelProps) {
 				setResults((cur) => {
 					if (!cur || cur.epoch !== epoch) return cur;
 					const seen = new Set(cur.items.map((x) => x.id));
-					const added = r.results.map((x) => x.sound).filter((x) => !seen.has(x.id));
+					const added = r.results.filter((x) => !seen.has(x.sound.id));
 					if (!added.length) return { ...cur, exhausted: true };
-					return { ...cur, items: [...cur.items, ...added] };
+					const takeCounts = { ...cur.takeCounts };
+					for (const x of added) if (x.takeCount) takeCounts[x.sound.id] = x.takeCount;
+					return { ...cur, items: [...cur.items, ...added.map((x) => x.sound)], takeCounts };
 				});
 			})
 			// A failed page is asked again when the list scrolls (nothing re-renders, so it does not loop).
@@ -386,7 +407,47 @@ export function SoundLibraryPanel(props: PanelProps) {
 	}, [engine, results]);
 
 	const items = results?.items ?? [];
-	const selected = items.find((x) => x.id === selectedId) ?? null;
+	// ---------------------------------------------------------------- takes (spec 12 P6-E9)
+	/** Recordings whose takes are shown under them. */
+	const [expanded, setExpanded] = useState<Record<string, true>>({});
+	/** The offered take entries of each opened recording (fetched once per library change). */
+	const [takesOf, setTakesOf] = useState<Record<string, SoundEntry[]>>({});
+	// biome-ignore lint/correctness/useExhaustiveDependencies: a library change refetches the takes
+	useEffect(() => setTakesOf({}), [libraryEpoch]);
+	const takeCountOf = useCallback((e: SoundEntry) => results?.takeCounts[e.id] ?? 0, [results]);
+	/** The rows: each result, and under an opened recording its clean takes. */
+	const rows = useMemo(() => {
+		const out: SoundEntry[] = [];
+		for (const it of items) {
+			out.push(it);
+			if (expanded[it.id]) for (const tk of takesOf[it.id] ?? []) out.push(tk);
+		}
+		return out;
+	}, [items, expanded, takesOf]);
+	useEffect(() => {
+		for (const id of Object.keys(expanded)) {
+			if (takesOf[id]) continue;
+			void cachedEntry(engine, id).then((full) => {
+				if (!full) return;
+				setTakesOf((m) =>
+					m[id] ? m : { ...m, [id]: offeredTakes(full).map((tk) => takeEntryOf(full, tk)) },
+				);
+			});
+		}
+	}, [expanded, takesOf, engine]);
+	const toggleTakes = useCallback((e: SoundEntry, open?: boolean) => {
+		setExpanded((x) => {
+			const want = open ?? !x[e.id];
+			if (!!x[e.id] === want) return x;
+			const n = { ...x };
+			if (want) n[e.id] = true;
+			else delete n[e.id];
+			return n;
+		});
+		if (open === false || open === undefined)
+			setSelectedId((cur) => (cur && parseTakeId(cur)?.parentId === e.id ? e.id : cur));
+	}, []);
+	const selected = rows.find((x) => x.id === selectedId) ?? null;
 	const rootLabel = useCallback((id: string) => roots.find((r) => r.id === id)?.label ?? null, [roots]);
 
 	// ---------------------------------------------------------------- actions
@@ -446,8 +507,9 @@ export function SoundLibraryPanel(props: PanelProps) {
 			const failed = (message: string) => (err: unknown) =>
 				notify({ kind: 'error', message, detail: err instanceof Error ? err.message : String(err) });
 			if (fill) {
-				const at = items.findIndex((x) => x.id === e.id);
-				const alternatives = items.slice(at + 1, at + 4).map((x) => x.id);
+				// the next rows are the alternatives: for a take, its sibling takes
+				const at = rows.findIndex((x) => x.id === e.id);
+				const alternatives = rows.slice(at + 1, at + 4).map((x) => x.id);
 				void fillCueWithSound(session, engine, e, {
 					sequenceId: fill.sequenceId,
 					cueId: fill.cueId,
@@ -478,7 +540,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 			}
 			void insertSoundWithFeedback(session, engine, e, notify);
 		},
-		[session, canInsert, engine, notify, readOnly, items],
+		[session, canInsert, engine, notify, readOnly, rows],
 	);
 	const doFavourite = useCallback(
 		(e: SoundEntry | null) => {
@@ -520,7 +582,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 	const select = useCallback(
 		(id: string | null, opts: { play?: boolean } = {}) => {
 			setSelectedId(id);
-			const e = id ? items.find((x) => x.id === id) : null;
+			const e = id ? rows.find((x) => x.id === id) : null;
 			if (
 				e &&
 				opts.play &&
@@ -539,7 +601,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 				void p.play(auditionSoundOf(engine, e));
 			}
 		},
-		[items, engine, session, doAuditionInContext],
+		[rows, engine, session, doAuditionInContext],
 	);
 
 	// The commands (keymap scope `soundLibrary`, menus, agents) reach the panel through its controller.
@@ -651,18 +713,21 @@ export function SoundLibraryPanel(props: PanelProps) {
 	const first = view.height > 0 ? Math.max(0, Math.floor(view.top / rowH) - 8) : 0;
 	const last =
 		view.height > 0
-			? Math.min(items.length, Math.ceil((view.top + view.height) / rowH) + 8)
-			: Math.min(items.length, INITIAL_ROWS);
+			? Math.min(rows.length, Math.ceil((view.top + view.height) / rowH) + 8)
+			: Math.min(rows.length, INITIAL_ROWS);
 	// The rows in view, plus the selected row wherever it is: `aria-activedescendant` must name a rendered element.
-	const selectedIndex = selectedId ? items.findIndex((x) => x.id === selectedId) : -1;
+	const selectedIndex = selectedId ? rows.findIndex((x) => x.id === selectedId) : -1;
 	const rendered: number[] = [];
 	if (selectedIndex >= 0 && selectedIndex < first) rendered.push(selectedIndex);
 	for (let i = first; i < last; i++) rendered.push(i);
 	if (selectedIndex >= last) rendered.push(selectedIndex);
-	const setSize = results?.exhausted ? items.length : Math.max(items.length, results?.total ?? 0);
+	const shownTakes = rows.length - items.length;
+	const setSize = results?.exhausted
+		? rows.length
+		: Math.max(rows.length, (results?.total ?? 0) + shownTakes);
 	useEffect(() => {
-		if (results && last >= items.length - 10 && items.length < results.total) loadMore();
-	}, [last, items.length, results, loadMore]);
+		if (results && last >= rows.length - 10 && items.length < results.total) loadMore();
+	}, [last, rows.length, items.length, results, loadMore]);
 	const scrollIntoView = useCallback(
 		(index: number) => {
 			const el = listRef.current;
@@ -693,21 +758,39 @@ export function SoundLibraryPanel(props: PanelProps) {
 		return false;
 	};
 	const onListKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-		const index = items.findIndex((x) => x.id === selectedId);
+		const index = rows.findIndex((x) => x.id === selectedId);
 		const page = Math.max(1, Math.floor((listRef.current?.clientHeight ?? 360) / rowH) - 1);
 		const go = (i: number) => {
-			const n = Math.max(0, Math.min(items.length - 1, i));
-			const it = items[n];
+			const n = Math.max(0, Math.min(rows.length - 1, i));
+			const it = rows[n];
 			if (!it) return;
 			e.preventDefault();
 			select(it.id, { play: true });
 			scrollIntoView(n);
 		};
+		if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && selected) {
+			// takes: → opens a recording's takes (then moves into them), ← goes back to the recording and closes them
+			const parentId = parseTakeId(selected.id)?.parentId;
+			if (e.key === 'ArrowRight' && !parentId && takeCountOf(selected) > 0) {
+				e.preventDefault();
+				if (!expanded[selected.id]) toggleTakes(selected, true);
+				else if (rows[index + 1] && parseTakeId(rows[index + 1]!.id)) go(index + 1);
+				return;
+			}
+			if (e.key === 'ArrowLeft' && (parentId || expanded[selected.id])) {
+				e.preventDefault();
+				if (parentId) {
+					const at = rows.findIndex((x) => x.id === parentId);
+					if (at >= 0) go(at);
+				} else toggleTakes(selected, false);
+				return;
+			}
+		}
 		if (!e.ctrlKey && !e.metaKey && !e.altKey) {
 			if (e.key === 'ArrowDown') return go(index < 0 ? 0 : index + 1);
 			if (e.key === 'ArrowUp') return go(index < 0 ? 0 : index - 1);
 			if (e.key === 'Home') return go(0);
-			if (e.key === 'End') return go(items.length - 1);
+			if (e.key === 'End') return go(rows.length - 1);
 			if (e.key === 'PageDown') return go(index + page);
 			if (e.key === 'PageUp') return go(index - page);
 		}
@@ -1132,38 +1215,47 @@ export function SoundLibraryPanel(props: PanelProps) {
 			</div>
 			{prefs.refineOpen ? (
 				<div className="flex flex-col gap-0.5 px-1 pt-1" data-testid="sound-refine">
-					{REFINE_OPTIONS.map(({ key, values }) => (
-						// biome-ignore lint/a11y/useSemanticElements: a pill row, not a form fieldset
-						<div
-							key={key}
-							role="group"
-							aria-label={REFINE_LABELS[key]}
-							className="flex flex-wrap items-center gap-1"
-						>
-							<span className="w-[62px] shrink-0 text-pr-small text-pr-dim">{REFINE_LABELS[key]}</span>
-							{values.map((v) => {
-								const on = filters.refine[key] === v;
-								return (
-									<button
-										key={v}
-										type="button"
-										aria-pressed={on}
-										data-refine={`${key}:${v}`}
-										onClick={() => setRefine(key, v)}
-										className={cx(
-											'rounded-pr-pill border px-1.5 text-pr-small leading-[16px]',
-											on
-												? 'border-pr-accent bg-pr-accent-fill text-pr-on-accent'
-												: 'border-pr-border-subtle text-pr-muted hover:text-pr-text',
-										)}
-									>
-										{on ? '✓ ' : ''}
-										{REFINE_LABELS[v]}
-									</button>
-								);
-							})}
-						</div>
-					))}
+					{REFINE_OPTIONS.map(({ key, values: all }) => {
+						// Material (P6-E10): only the materials the results name, with their counts
+						const counts = key === 'material' ? (facets.materials ?? {}) : null;
+						const values = counts
+							? all.filter((v) => (counts[v] ?? 0) > 0 || filters.refine[key] === v)
+							: all;
+						if (!values.length) return null;
+						return (
+							// biome-ignore lint/a11y/useSemanticElements: a pill row, not a form fieldset
+							<div
+								key={key}
+								role="group"
+								aria-label={REFINE_LABELS[key]}
+								className="flex flex-wrap items-center gap-1"
+							>
+								<span className="w-[62px] shrink-0 text-pr-small text-pr-dim">{REFINE_LABELS[key]}</span>
+								{values.map((v) => {
+									const on = filters.refine[key] === v;
+									return (
+										<button
+											key={v}
+											type="button"
+											aria-pressed={on}
+											data-refine={`${key}:${v}`}
+											onClick={() => setRefine(key, v)}
+											className={cx(
+												'rounded-pr-pill border px-1.5 text-pr-small leading-[16px]',
+												on
+													? 'border-pr-accent bg-pr-accent-fill text-pr-on-accent'
+													: 'border-pr-border-subtle text-pr-muted hover:text-pr-text',
+											)}
+										>
+											{on ? '✓ ' : ''}
+											{REFINE_LABELS[v]}
+											{counts ? <span className="pr-tabular opacity-80"> {counts[v] ?? 0}</span> : null}
+										</button>
+									);
+								})}
+							</div>
+						);
+					})}
 				</div>
 			) : null}
 			{/* results */}
@@ -1247,13 +1339,16 @@ export function SoundLibraryPanel(props: PanelProps) {
 								setView({ top: e.currentTarget.scrollTop, height: e.currentTarget.clientHeight })
 							}
 						>
-							<div style={{ height: items.length * rowH, position: 'relative' }}>
+							<div style={{ height: rows.length * rowH, position: 'relative' }}>
 								{rendered.map((i) => {
-									const it = items[i]!;
+									const it = rows[i]!;
 									const fav = prefs.favourites.includes(it.id);
 									const badge = licenseBadge(it);
 									const sel = it.id === selectedId;
 									const playing = playingId === it.id;
+									const isTake = !!it.take;
+									const takes = isTake ? 0 : takeCountOf(it);
+									const open = !!expanded[it.id];
 									return (
 										// biome-ignore lint/a11y/useFocusableInteractive: listbox options are reached with aria-activedescendant
 										// biome-ignore lint/a11y/useKeyWithClickEvents: the listbox handles the keyboard (arrows, Space, Enter)
@@ -1264,14 +1359,16 @@ export function SoundLibraryPanel(props: PanelProps) {
 											aria-selected={sel}
 											aria-setsize={setSize}
 											aria-posinset={i + 1}
-											aria-label={soundAccessibleName(it, fav)}
+											aria-label={soundAccessibleName(it, fav, takes ? { count: takes, open } : undefined)}
 											data-sound-id={it.id}
+											data-take={isTake ? it.take!.index : undefined}
 											data-playing={playing || undefined}
 											draggable
 											title={soundTooltip(it, rootLabel)}
 											style={{ position: 'absolute', top: i * rowH, height: rowH, left: 0, right: 0 }}
 											className={cx(
 												'flex cursor-default items-center gap-1.5 px-1 select-none',
+												isTake && 'pl-5',
 												sel ? 'bg-pr-selected text-pr-strong' : 'hover:bg-pr-hover',
 											)}
 											onMouseDown={() => {
@@ -1318,7 +1415,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 												compact={prefs.density === 'compact'}
 											/>
 											<div className="flex min-w-0 flex-1 flex-col justify-center leading-tight">
-												<span className="truncate">{it.title || it.id}</span>
+												<span className="truncate">{isTake ? takeLabel(it) : it.title || it.id}</span>
 												{prefs.density === 'normal' ? (
 													<span className="truncate text-pr-small text-pr-dim">
 														{it.types.map(typeLabel).join(', ') || 'Untyped'} ·{' '}
@@ -1326,6 +1423,31 @@ export function SoundLibraryPanel(props: PanelProps) {
 													</span>
 												) : null}
 											</div>
+											{takes > 0 ? (
+												<button
+													type="button"
+													tabIndex={-1}
+													aria-hidden="true"
+													aria-expanded={open}
+													title={
+														open
+															? t('Hide the takes (←)')
+															: t(
+																	'Show the takes: the single hits of this recording, each a sound of its own (→)',
+																)
+													}
+													data-takes-toggle={it.id}
+													className="inline-flex shrink-0 items-center gap-0.5 rounded-pr-pill border border-pr-border-subtle px-1 text-pr-small leading-[14px] text-pr-muted hover:text-pr-text"
+													onClick={(ev) => {
+														ev.stopPropagation();
+														toggleTakes(it);
+													}}
+													onDoubleClick={(ev) => ev.stopPropagation()}
+												>
+													<Icon id={open ? 'app.chevronDown' : 'app.chevronRight'} size={10} />
+													<span className="pr-tabular">{takeLabel(it, takes)}</span>
+												</button>
+											) : null}
 											{prefs.density === 'compact' ? (
 												<span className="shrink-0 text-pr-small text-pr-dim pr-tabular">
 													{formatSeconds(it.format.durationSec)}

@@ -12,9 +12,11 @@ import {
 	rankSounds,
 	readLibraryProvenance,
 	SOUND_FAMILIES,
+	SOUND_MATERIALS,
 	SOUND_TYPE_IDS,
 	SOUND_TYPES,
 	type SoundFamily,
+	type SoundMaterial,
 	type SoundRankRequest,
 	type SoundTypeId,
 } from '@jasper/project';
@@ -77,13 +79,15 @@ export const TYPE_GROUPS: readonly { family: SoundFamily; types: SoundTypeId[] }
 // ---------------------------------------------------------------------------------------------------------------
 // Filters → request
 
-export type RefineKey = 'length' | 'tone' | 'attack' | 'weight' | 'texture';
+export type RefineKey = 'length' | 'tone' | 'attack' | 'weight' | 'texture' | 'material';
 export type RefineState = {
 	length?: 'short' | 'medium' | 'long';
 	tone?: 'dark' | 'bright';
 	attack?: 'punchy' | 'soft';
 	weight?: 'light' | 'heavy';
 	texture?: 'clean' | 'noisy';
+	/** What the sound is made of, named by its words (spec 12 P6-E10's `materials`): not a descriptor pill. */
+	material?: SoundMaterial;
 };
 
 /** The values of each Refine pill, in order (thresholds: `DESCRIPTOR_FILTERS`). */
@@ -93,6 +97,7 @@ export const REFINE_OPTIONS: { key: RefineKey; values: readonly string[] }[] = [
 	{ key: 'attack', values: ['punchy', 'soft'] },
 	{ key: 'weight', values: ['light', 'heavy'] },
 	{ key: 'texture', values: ['clean', 'noisy'] },
+	{ key: 'material', values: SOUND_MATERIALS },
 ];
 
 export const REFINE_LABELS: Record<string, string> = {
@@ -112,6 +117,19 @@ export const REFINE_LABELS: Record<string, string> = {
 	heavy: 'Heavy',
 	clean: 'Clean',
 	noisy: 'Noisy',
+	material: 'Material',
+	wood: 'Wood',
+	glass: 'Glass',
+	metal: 'Metal',
+	plastic: 'Plastic',
+	paper: 'Paper [material]',
+	cloth: 'Cloth',
+	stone: 'Stone',
+	water: 'Water',
+	air: 'Air',
+	electronic: 'Electronic',
+	rubber: 'Rubber',
+	ceramic: 'Ceramic',
 };
 
 /**
@@ -220,9 +238,10 @@ export function searchRequest(
 	return req;
 }
 
-/** The same request for `rankSounds` (local collections). */
+/** The same request for `rankSounds` (local collections; the material filter is applied by `searchLocal`). */
 export function rankRequest(f: LibraryFilters, similar: SoundEntry | null): SoundRankRequest {
-	const req: SoundRankRequest = { license: licenseFilterOf(f), ...f.refine };
+	const { material: _m, ...refine } = f.refine;
+	const req: SoundRankRequest = { license: licenseFilterOf(f), ...refine };
 	const q = localizeSoundQuery(f.query.trim());
 	if (q) req.query = q.slice(0, 500);
 	if (f.types.length) req.types = [...f.types];
@@ -237,17 +256,23 @@ export type LocalSearch = { results: SoundEntry[]; total: number; facets: SoundF
  * a query or Find Similar, the collection keeps its own order (favourites: last starred first; recent: most recent).
  */
 export function searchLocal(
-	entries: readonly SoundEntry[],
+	entriesIn: readonly SoundEntry[],
 	f: LibraryFilters,
 	similar: SoundEntry | null,
 ): LocalSearch {
 	const req = rankRequest(f, similar);
+	const material = f.refine.material;
+	const all = entriesIn;
+	let entries: readonly SoundEntry[];
+	// the material filter, like the engine's: every facet but its own counts it
+	entries = material ? all.filter((e) => e.materials?.includes(material)) : all;
 	const ranked = rankSounds(entries, req).map((r) => r.entry);
 	const ordered = req.query || req.similarTo ? ranked : entries.filter((e) => ranked.includes(e));
-	const facets: SoundFacets = { types: {}, families: {}, licenses: {}, sources: {} };
+	const facets: SoundFacets = { types: {}, families: {}, licenses: {}, sources: {}, materials: {} };
 	const inc = (m: Record<string, number>, k: string) => {
 		m[k] = (m[k] ?? 0) + 1;
 	};
+	for (const r of rankSounds(all, req)) for (const m of r.entry.materials ?? []) inc(facets.materials!, m);
 	for (const e of rankSounds(entries, { ...req, types: undefined }).map((r) => r.entry)) {
 		const fams = new Set<string>();
 		for (const t of e.types) {
@@ -374,15 +399,26 @@ export function descriptorWords(d: SoundEntry['descriptors']): string[] {
 
 /**
  * The accessible name of a result row (listbox option, spec 12 §2.7 "descriptor-rich names"): title, types, length,
- * peak position, descriptor words and licence.
+ * peak position, descriptor words, its takes (P6-E9) and licence.
  */
-export function soundAccessibleName(e: SoundEntry, favourite: boolean): string {
+export function soundAccessibleName(
+	e: SoundEntry,
+	favourite: boolean,
+	takes?: { count: number; open: boolean },
+): string {
 	const parts = [e.title || e.id];
 	const types = e.types.map(typeLabel).join(', ');
 	if (types) parts.push(types);
 	parts.push(formatSeconds(e.format.durationSec));
 	if (fin(e.descriptors.peakSec)) parts.push(t('peak at {0}', formatOffset(e.descriptors.peakSec)));
 	parts.push(...descriptorWords(e.descriptors));
+	if (e.take) parts.push(t('take {0} of its recording', e.take.index));
+	if (takes?.count)
+		parts.push(
+			takes.open
+				? t('{0} takes shown below (← hides them)', takes.count)
+				: t('{0} takes (→ shows them)', takes.count),
+		);
 	parts.push(licenseBadge(e).title);
 	if (favourite) parts.push(withoutContext(t('favourite [accessible name]')));
 	return parts.join(', ');
@@ -410,12 +446,42 @@ export function sourceLine(
 	}
 }
 
-/** Multi-line tooltip of a row: name, types, descriptors, peak, source and licence. */
+/** Labels of the judge's reasons (tooltips; the reason ids are the engine's). */
+export const JUDGE_REASON_LABELS: Record<string, string> = {
+	boomy: 'boomy',
+	hissy: 'hissy',
+	noisy: 'noisy [judge]',
+	'soft-attack': 'soft attack [judge]',
+	'non-decaying': 'does not decay',
+	'too-long': 'too long',
+	'too-short': 'too short',
+	clipped: 'clipped',
+	'multi-hit': 'several hits',
+	quiet: 'quiet',
+	lowpassed: 'lowpassed (a lossy encode)',
+	'noisy-floor': 'noisy floor between hits',
+	'dc-offset': 'DC offset',
+};
+
+/**
+ * What a row says about its takes (spec 12 P6-E9): a recording's clean takes ("8 takes"), or a take's place in its
+ * recording ("Take 3 · 2 strokes"). Null for other sounds.
+ */
+export function takeLabel(e: SoundEntry, takeCount?: number): string | null {
+	if (e.take)
+		return e.take.strokes === 2 ? t('Take {0} · 2 strokes', e.take.index) : t('Take {0}', e.take.index);
+	if (takeCount) return takeCount === 1 ? t('1 take') : t('{0} takes', takeCount);
+	return null;
+}
+
+/** Multi-line tooltip of a row: name, types, descriptors, peak, source, licence and the judge's reasons. */
 export function soundTooltip(e: SoundEntry, rootLabel?: (rootId: string) => string | null): string {
 	const d = e.descriptors;
 	const lines = [e.title || e.id];
 	const types = e.types.map(typeLabel).join(', ');
 	if (types) lines.push(types);
+	const take = takeLabel(e);
+	if (take) lines.push(take);
 	const facts = [
 		formatSeconds(e.format.durationSec),
 		fin(d.peakSec) ? t('peak {0}', formatOffset(d.peakSec)) : null,
@@ -426,6 +492,8 @@ export function soundTooltip(e: SoundEntry, rootLabel?: (rootId: string) => stri
 	lines.push(facts.join(' · '));
 	const words = descriptorWords(d);
 	if (words.length) lines.push(words.join(', '));
+	if (e.judge && !e.judge.ok && e.judge.reasons.length)
+		lines.push(t('Judged: {0}', e.judge.reasons.map((r) => JUDGE_REASON_LABELS[r] ?? r).join(', ')));
 	lines.push(sourceLine(e, rootLabel));
 	lines.push(`${e.license}${e.author ? ` · ${e.author}` : ''}`);
 	return lines.filter(Boolean).join('\n');
