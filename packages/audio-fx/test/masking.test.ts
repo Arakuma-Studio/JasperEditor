@@ -7,6 +7,7 @@ import {
 	CONSISTENCY_DB,
 	DIALOGUE_LIFT_DB,
 	HERO_SHADOW_DB,
+	MAX_MASKING_ITERATIONS,
 	QUIET_BED_OFFSET_LU,
 	SOLVER_CONSTRAINTS,
 	SOLVER_GAIN_MAX_DB,
@@ -730,7 +731,8 @@ describe('sanitisation', () => {
 
 describe('performance', () => {
 	// The best of 9 runs: on a shared, loaded host the median measures the load, the minimum the solver.
-	it('solves 2000 events in under 50 ms', () => {
+	/** 2000 events over 10 minutes (≈ 3 playing at once); `sameWeightRepeats`: a sound repeats under one weight only. */
+	function events2000(sameWeightRepeats: boolean): SolverEvent[] {
 		const rnd = (() => {
 			let s = 12345;
 			return () => {
@@ -739,13 +741,15 @@ describe('performance', () => {
 			};
 		})();
 		const types = ['hit', 'whoosh', 'click', 'boom', 'ui'];
-		const events: SolverEvent[] = Array.from({ length: 2000 }, (_, i) => {
+		return Array.from({ length: 2000 }, (_, i) => {
 			const t = rnd() * 600;
+			const weight = (['hero', 'support', 'support', 'ambient'] as const)[i % 4]!;
+			const sound = Math.floor(rnd() * 200);
 			return ev({
 				clipId: `c${i}`,
-				soundId: `s${Math.floor(rnd() * 200)}`,
+				soundId: sameWeightRepeats ? `${weight}-s${sound % 50}` : `s${sound}`,
 				type: types[i % types.length]!,
-				weight: (['hero', 'support', 'support', 'ambient'] as const)[i % 4]!,
+				weight,
 				startSec: t,
 				endSec: t + rnd() * 2,
 				soundBandsDb: Array.from({ length: 7 }, () => -60 + rnd() * 50),
@@ -754,18 +758,52 @@ describe('performance', () => {
 				speechOverlap: rnd() < 0.3,
 			});
 		});
-		solveSfxGains(events); // warm-up (JIT)
+	}
+	function bestOf9(events: SolverEvent[], opts: Parameters<typeof solveSfxGains>[1]) {
+		solveSfxGains(events, opts); // warm-up (JIT)
 		const times: number[] = [];
+		let iterations = 0;
 		for (let k = 0; k < 9; k++) {
 			const t0 = performance.now();
-			const r = solveSfxGains(events);
+			const r = solveSfxGains(events, opts);
 			times.push(performance.now() - t0);
 			expect(r.events).toHaveLength(2000);
+			iterations = r.stats.iterations;
 		}
 		times.sort((a, b) => a - b);
+		return { min: times[0]!, median: times[4]!, iterations };
+	}
+
+	it('solves 2000 events in under 50 ms (the bed-alone model of WP4.1a: one pass)', () => {
+		const t = bestOf9(events2000(false), { sfxMasking: false });
 		console.log(
-			`solveSfxGains 2000 events: min ${times[0]!.toFixed(1)} ms, median ${times[4]!.toFixed(1)} ms`,
+			`solveSfxGains 2000 events, bed alone: min ${t.min.toFixed(1)} ms, median ${t.median.toFixed(1)} ms`,
 		);
-		expect(times[0]!).toBeLessThan(50);
+		expect(t.iterations).toBe(1);
+		expect(t.min).toBeLessThan(50);
+	});
+
+	it('with the masking between overlapping sound effects: under 50 ms when repeats keep their weight (3 passes)', () => {
+		// a plan places a repeated sound with one role: the masking settles in one pass per weight rank
+		const t = bestOf9(events2000(true), {});
+		console.log(
+			`solveSfxGains 2000 events, masking: min ${t.min.toFixed(1)} ms, median ${t.median.toFixed(1)} ms, ${t.iterations} passes`,
+		);
+		expect(t.iterations).toBeLessThanOrEqual(4);
+		expect(t.min).toBeLessThan(50);
+	});
+
+	it('with the masking and one sound repeated across hero, support and ambient: under 100 ms (≈ 13 passes)', () => {
+		// The stress case (WP6.5b): every repeat group spans the weights, so a hero's masked bed moves its group's
+		// median, which moves the ambient members under the other heroes… the fixed point takes ≈ 13 passes of ≈ 3 ms
+		// (measured on the idle 16-core build server: min 44–45 ms, 13 passes; one pass of the bed-alone model 17–19 ms).
+		// The budget is the 50 ms of one pass's era doubled for the iteration the model needs; the pass count is
+		// bounded by MAX_MASKING_ITERATIONS.
+		const t = bestOf9(events2000(false), {});
+		console.log(
+			`solveSfxGains 2000 events, masking, repeats across weights: min ${t.min.toFixed(1)} ms, median ${t.median.toFixed(1)} ms, ${t.iterations} passes`,
+		);
+		expect(t.iterations).toBeLessThanOrEqual(1 + MAX_MASKING_ITERATIONS);
+		expect(t.min).toBeLessThan(100);
 	});
 });

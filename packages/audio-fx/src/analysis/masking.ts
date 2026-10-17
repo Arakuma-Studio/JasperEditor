@@ -851,61 +851,97 @@ const amp = (db: number): number => Math.exp(db * 0.115_129_254_649_702_3);
  * so the other sounds of the moment absorb the cut, and only what they cannot absorb is a reported
  * `conflict:consistency/headroom` (consistency comes first in the spec order).
  */
-function overlapHeadroom(states: State[], order: number[], ceiling: number, holdRepeats: boolean): void {
+/**
+ * The moments of `eachMoment` for the measured events, built once per solve: each one's members (canonical order) and
+ * their peaks there (only the windows and profiles decide them, not the gains).
+ */
+type Moments = { members: Int32Array[]; peaks: Float64Array[]; widest: number };
+
+function momentsOf(evs: Clean[], measured: number[]): Moments {
+	const members: Int32Array[] = [];
+	const peaks: Float64Array[] = [];
+	let widest = 0;
+	eachMoment(evs, measured, (m, peak) => {
+		const ids = Int32Array.from(m);
+		const p = new Float64Array(ids.length);
+		for (let k = 0; k < ids.length; k++) p[k] = peak[ids[k]!]!;
+		members.push(ids);
+		peaks.push(p);
+		if (ids.length > widest) widest = ids.length;
+	});
+	return { members, peaks, widest };
+}
+
+function overlapHeadroom(states: State[], moments: Moments, ceiling: number, holdRepeats: boolean): void {
 	const cAmp = amp(ceiling);
-	const evs = states.map((s) => s.ev);
 	const held = (st: State) => holdRepeats && st.group >= 0 && st.inGroup;
 	const floorOf = (st: State): number => (held(st) ? st.g : st.lo);
 	const floorBy = (st: State): SolverConstraint => (held(st) ? 'consistency' : st.loBy);
-	const measured = order.filter((i) => evs[i]!.truePeak !== null);
+	// scratch for one moment (the same arithmetic, in the same order, as building arrays per moment)
+	const a = new Float64Array(moments.widest);
+	const fixed = new Uint8Array(moments.widest);
+	const cut = new Float64Array(states.length);
+	const atFloor = new Uint8Array(states.length);
 	for (let pass = 0; pass < OVERLAP_PASSES; pass++) {
-		const cut = new Float64Array(states.length);
-		const atFloor = new Set<number>();
+		cut.fill(0);
+		atFloor.fill(0);
 		let over = false;
-		eachMoment(evs, measured, (members, peak) => {
-			if (members.length < 2) return; // alone: per-event headroom already holds it
-			const a = members.map((i) => amp(peak[i]! + states[i]!.g));
+		for (let mi = 0; mi < moments.members.length; mi++) {
+			const members = moments.members[mi]!;
+			const peak = moments.peaks[mi]!;
+			const n = members.length;
+			if (n < 2) continue; // alone: per-event headroom already holds it
 			let sum = 0;
-			for (const x of a) sum += x;
-			if (!(sum > cAmp * (1 + 1e-12))) return;
+			for (let k = 0; k < n; k++) {
+				a[k] = amp(peak[k]! + states[members[k]!]!.g);
+				sum += a[k]!;
+			}
+			if (!(sum > cAmp * (1 + 1e-12))) continue;
 			over = true;
 			// water-filling: members at (or pushed to) their floor are fixed at it
-			const fixed = members.map((i) => states[i]!.g <= floorOf(states[i]!) + EPS);
-			for (let guard = 0; guard <= members.length; guard++) {
+			for (let k = 0; k < n; k++) {
+				const st = states[members[k]!]!;
+				fixed[k] = st.g <= floorOf(st) + EPS ? 1 : 0;
+			}
+			for (let guard = 0; guard <= n; guard++) {
 				let sf = 0;
 				let sr = 0;
-				members.forEach((i, k) => {
-					if (fixed[k]) sf += amp(peak[i]! + Math.min(states[i]!.g, floorOf(states[i]!)));
+				for (let k = 0; k < n; k++) {
+					const st = states[members[k]!]!;
+					if (fixed[k]) sf += amp(peak[k]! + Math.min(st.g, floorOf(st)));
 					else sr += a[k]!;
-				});
+				}
 				if (sr === 0 || sf >= cAmp) {
-					members.forEach((i, k) => {
+					for (let k = 0; k < n; k++) {
+						const i = members[k]!;
 						const st = states[i]!;
 						cut[i] = Math.max(cut[i]!, st.g - floorOf(st));
-						if (fixed[k] && st.g <= floorOf(st) + EPS) atFloor.add(i);
-					});
-					return;
+						if (fixed[k] && st.g <= floorOf(st) + EPS) atFloor[i] = 1;
+					}
+					break;
 				}
 				const d = 20 * Math.log10(sr / (cAmp - sf));
 				let moved = false;
-				members.forEach((i, k) => {
-					if (!fixed[k] && states[i]!.g - d < floorOf(states[i]!) - EPS) {
-						fixed[k] = true;
+				for (let k = 0; k < n; k++) {
+					const st = states[members[k]!]!;
+					if (!fixed[k] && st.g - d < floorOf(st) - EPS) {
+						fixed[k] = 1;
 						moved = true;
 					}
-				});
+				}
 				if (moved) continue;
-				members.forEach((i, k) => {
+				for (let k = 0; k < n; k++) {
+					const i = members[k]!;
 					const st = states[i]!;
 					cut[i] = Math.max(cut[i]!, fixed[k] ? Math.max(0, st.g - floorOf(st)) : d);
-				});
-				return;
+				}
+				break;
 			}
-		});
+		}
 		if (!over) return;
 		for (let i = 0; i < states.length; i++) {
 			const st = states[i]!;
-			if (atFloor.has(i)) conflict(st, floorBy(st), 'headroom');
+			if (atFloor[i]) conflict(st, floorBy(st), 'headroom');
 			if (!(cut[i]! > EPS)) continue;
 			const bound = Math.max(floorOf(st), st.g - cut[i]!);
 			st.headroomHi = Math.min(st.headroomHi, bound);
@@ -1181,9 +1217,13 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 	}
 
 	// ── 6 headroom, summed over overlapping sounds; then consistency settled once more ──────────────────────────
-	overlapHeadroom(states, order, ceiling, false);
+	const moments = momentsOf(
+		evs,
+		order.filter((i) => evs[i]!.truePeak !== null),
+	);
+	overlapHeadroom(states, moments, ceiling, false);
 	for (const grp of ctx.groups) settleGroup(states, grp, true);
-	if (ctx.groups.length) overlapHeadroom(states, order, ceiling, true);
+	if (ctx.groups.length) overlapHeadroom(states, moments, ceiling, true);
 
 	// ── quantise, re-verify, report ──────────────────────────────────────────────────────────────────────────────
 	const finalGain = (st: State): number => {
@@ -1206,24 +1246,24 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 	const overlapTp = new Float64Array(evs.length).fill(Number.NEGATIVE_INFINITY);
 	const tol = SOLVER_STEP_DB / 2 + 1e-9;
 	const unresolvedOverlap: number[] = [];
-	eachMoment(
-		evs,
-		order.filter((i) => evs[i]!.truePeak !== null),
-		(members, peak) => {
-			let sum = 0;
-			for (const i of members) sum += amp(peak[i]! + finals[i]!);
-			const db = 20 * Math.log10(sum);
-			for (const i of members) overlapTp[i] = Math.max(overlapTp[i]!, db);
-			if (members.length > 1 && db > ceiling + tol) {
-				const explained = members.some((i) => states[i]!.conflicts.some(([, lost]) => lost === 'headroom'));
-				if (!explained) {
-					let loud = members[0]!;
-					for (const i of members) if (peak[i]! + finals[i]! > peak[loud]! + finals[loud]!) loud = i;
-					if (!unresolvedOverlap.includes(loud)) unresolvedOverlap.push(loud);
-				}
+	for (let mi = 0; mi < moments.members.length; mi++) {
+		const members = moments.members[mi]!;
+		const peak = moments.peaks[mi]!;
+		let sum = 0;
+		for (let k = 0; k < members.length; k++) sum += amp(peak[k]! + finals[members[k]!]!);
+		const db = 20 * Math.log10(sum);
+		for (const i of members) overlapTp[i] = Math.max(overlapTp[i]!, db);
+		if (members.length > 1 && db > ceiling + tol) {
+			const explained = members.some((i) => states[i]!.conflicts.some(([, lost]) => lost === 'headroom'));
+			if (!explained) {
+				let loud = 0;
+				for (let k = 0; k < members.length; k++)
+					if (peak[k]! + finals[members[k]!]! > peak[loud]! + finals[members[loud]!]!) loud = k;
+				const li = members[loud]!;
+				if (!unresolvedOverlap.includes(li)) unresolvedOverlap.push(li);
 			}
-		},
-	);
+		}
+	}
 	const gains: Record<string, number> = {};
 	const results: SolverEventResult[] = states.map((st, si) => {
 		const { ev } = st;
