@@ -2,27 +2,16 @@
 // render canvas with `fitCanvas`, ATP-003), intro/outro scheduling on one paused timeline (ATP-004: the intro
 // starts at content 0, the outro ends at the content end and plays the intro backwards) and small helpers.
 // Value engine only (S11:ANM-004): builds animate plain objects; React renders inline styles from their values.
-import { type Fit, fitCanvas } from '@jasper/mg-templates';
+import { type Fit, fitCanvas, type Phase, phaseTimes, type TemplateTiming } from '@jasper/mg-templates';
 import type { CSSProperties, ReactNode } from 'react';
 import { resolveEase, seededRandom, type Timeline } from '../runtime/index.ts';
 
-/** Timing every template build receives (ms of content time; see `animeTemplateTiming`). */
-export type TemplateTiming = { totalMs: number; introMs: number; outroMs: number };
-
-/** Shortest tween (anime.js 4.5.0 mishandles zero-duration tweens, R-ANM §7 #1013). */
-const MIN_MS = 1;
+// The phases and their placement are shared with the templates' sound-design motion model (@jasper/mg-templates
+// `anime/motion.ts`): one source for when every tween runs.
+export { type Phase, phaseTimes, type TemplateTiming };
 
 /** Text stack of the templates (the fframes templates use the same family list). */
 export const TEMPLATE_FONT = "Inter, 'Inter 24pt', 'Source Sans 3', 'Source Sans Pro', Arial, sans-serif";
-
-export type Phase = {
-	/** Start and length as fractions of the intro window (the outro mirrors them inside its own window). */
-	at: number;
-	dur: number;
-	ease?: string;
-	/** Outro ease (default `in`: the mirror of an `out`-type intro). */
-	outEase?: string;
-};
 
 /**
  * Adds one animated property group of a target: the intro tween at `at·introMs` for `dur·introMs` from
@@ -47,24 +36,6 @@ export function addInOut(
 	tl.add(target, { ...introProps, duration: pt.introDur, ease: phase.ease ?? 'out' }, pt.introStart);
 	if (opts.outro === false || pt.outroStart === null) return;
 	tl.add(target, { ...outroProps, duration: pt.outroDur, ease: phase.outEase ?? 'in' }, pt.outroStart);
-}
-
-/**
- * Where a phase lands on the content timeline: the intro tween at `at·introMs` for `dur·introMs`; the outro tween
- * mirrored inside the outro window (`outroStart` null when the template has no outro), never before the intro tween
- * ends (one property is never driven by two overlapping tweens, S11:ANM-008).
- */
-export function phaseTimes(
-	t: TemplateTiming,
-	phase: Pick<Phase, 'at' | 'dur'>,
-): { introStart: number; introDur: number; outroStart: number | null; outroDur: number } {
-	const introStart = Math.max(0, Math.min(phase.at * t.introMs, Math.max(0, t.introMs)));
-	const introDur = Math.max(MIN_MS, phase.dur * t.introMs);
-	const outroDur = Math.max(MIN_MS, phase.dur * t.outroMs);
-	if (t.outroMs <= 0) return { introStart, introDur, outroStart: null, outroDur };
-	const window = Math.max(introStart + introDur, t.totalMs - t.outroMs);
-	const outroStart = Math.max(window, window + (1 - phase.at - phase.dur) * t.outroMs);
-	return { introStart, introDur, outroStart, outroDur };
 }
 
 /** The ease string of a template `ease` param (unknown names fall back to `out`). */

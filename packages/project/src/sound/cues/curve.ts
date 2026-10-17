@@ -3,8 +3,9 @@
 // keyframe source's own rules (`speedSegments`, MOVE_ON / MOVE_OFF, ABRUPT_STOP, the 0.3 s whoosh / swish split, the
 // impact bands), so footage and keyframed layers give the same kinds of cues:
 //
-// - `move`  a segment of motion, cue in the middle of its fastest stretch (frames within 10 % of the peak: measured
-//           speeds are noisy, a keyframed linear move is exact); window = the segment;
+// - `move`  a segment of motion, cue in the middle of its fastest stretch (frames within 10 % of the peak of the speed
+//           median-filtered over 5 frames: measured speeds are noisy, a keyframed linear move is exact); window = the
+//           segment;
 // - `land`  where it settles: the first reversal of the motion along the peak's direction (overshoot, bounce), or the
 //           arrival when it stops abruptly (the last moving frame ≥ ABRUPT_STOP of the peak); a gentle ease-out gets
 //           none;
@@ -180,10 +181,26 @@ function events(curve: PixelMotionCurve, opts: { edits?: readonly number[] }): P
 		const area = areaSum / len;
 		if (area < PIXEL_MIN_AREA) continue;
 		const peakV = speed[seg.peak]!;
-		let rs = seg.peak;
-		let re = seg.peak;
-		while (rs > seg.a && speed[rs - 1]! >= 0.9 * peakV) rs--;
-		while (re < seg.b && speed[re + 1]! >= 0.9 * peakV) re++;
+		// The fastest stretch on the speed median-filtered over 5 frames (inside the segment): a measured constant move
+		// has a different noisiest frame at every measurement (the render's scaler, its encoder), its median plateau
+		// does not; a keyframed move (exact, smooth) keeps its peak.
+		const med = (k: number) => {
+			const w: number[] = [];
+			for (let j = Math.max(seg.a, k - 2); j <= Math.min(seg.b, k + 2); j++) w.push(speed[j]!);
+			w.sort((x, y) => x - y);
+			return w[w.length >> 1]!;
+		};
+		const smooth: number[] = [];
+		let sp = seg.a;
+		for (let k = seg.a; k <= seg.b; k++) {
+			smooth.push(med(k));
+			if (smooth[k - seg.a]! > smooth[sp - seg.a]!) sp = k;
+		}
+		const top = smooth[sp - seg.a]!;
+		let rs = sp;
+		let re = sp;
+		while (rs > seg.a && smooth[rs - 1 - seg.a]! >= 0.9 * top) rs--;
+		while (re < seg.b && smooth[re + 1 - seg.a]! >= 0.9 * top) re++;
 		const mid = Math.floor((rs + re) / 2);
 		const global = area >= PIXEL_GLOBAL_AREA;
 		const direction: PixelMoveEvent['direction'] =

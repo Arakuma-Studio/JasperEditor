@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import {
 	BeatsResultSchema,
 	type EngineJob,
+	type EnvelopeJson,
 	type MotionAnalysisResult,
 	MotionAnalysisResultSchema,
 	type SoundCheckResult,
@@ -18,8 +19,18 @@ import {
 } from '@jasper/api';
 import { encodeWav } from '@jasper/audio-dsp';
 import { appdirPaths } from '@jasper/config';
-import { makeEnvelope, type ProjectDocument, resolveCueAnchor } from '@jasper/project';
+import {
+	makeEnvelope,
+	type PixelMotionCurve,
+	type ProjectDocument,
+	pixelMotionCues,
+	pixelMotionEvents,
+	resolveCueAnchor,
+	sceneAnchorAt,
+} from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { JobContext } from '../src/jobs/types.ts';
+import { editFrames, MotionService, planMotion } from '../src/sound-design/motion.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, makeApp, register, TEST_FFMPEG, type TestApp } from './helpers.ts';
 
@@ -195,9 +206,8 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 		const pm = whole.body.pixelMotion as { startFrame: number; speed: (number | null)[] } | null;
 		expect(pm?.startFrame).toBe(0);
 		expect(pm!.speed).toHaveLength(120);
-		pm!.speed.forEach((v, i) =>
-			expect(Math.abs(v! - analysed.curve.speed[i]!), String(i)).toBeLessThan(0.001),
-		);
+		for (const [i, v] of pm!.speed.entries())
+			expect(Math.abs(v! - analysed.curve.speed[i]!), String(i)).toBeLessThan(0.001);
 		const part = await post('/api/sound-design/visual', { projectId, range: { start: 30, end: 90 } });
 		const pp = part.body.pixelMotion as { startFrame: number; speed: (number | null)[] };
 		expect(pp.startFrame).toBe(30);
@@ -210,6 +220,109 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 		expect(none.body.pixelMotion).toBeNull();
 		expect((none.body.motion as { speed: number[] }).speed).toHaveLength(120);
 	}, 180_000);
+
+	it('untouched footage is decoded at the analysis size: the same curve, events and cues as the full render', async () => {
+		// WP6.5b item 12: stretches whose picture is one untouched source (copyableRuns) skip the 1080p composite.
+		// Reference: the same picture rendered through the export at full size then scaled (the old path).
+		const fake = (): JobContext => {
+			const ac = new AbortController();
+			return {
+				job: { id: `job_motion_${projects}` } as never,
+				input: null,
+				signal: ac.signal,
+				slots: 2,
+				progress: () => {},
+				trackChild: () => {},
+				addPartial: () => {},
+				scratchDir: async () => mkdtempSync(join(tmpdir(), 'jasper-motion-scratch-')),
+				log: () => {},
+			};
+		};
+		const core = coreServices(app);
+		const viaSource = new MotionService(core, mkdtempSync(join(tmpdir(), 'jasper-motion-a-')));
+		const viaRender = new MotionService(core, mkdtempSync(join(tmpdir(), 'jasper-motion-b-')), {
+			sourceDecode: false,
+		});
+		const compare = async (doc: ProjectDocument, want: string) => {
+			const seq = Object.values(doc.sequences)[0]!;
+			const plan = planMotion(doc, seq);
+			const envelope = makeEnvelope(doc, {
+				revision: 1,
+				savedAt: '2026-10-17T00:00:00.000Z',
+				platform: 'test',
+			}) as unknown as EnvelopeJson;
+			const input = { projectId: null, envelope, plan };
+			const t0 = Date.now();
+			const a = await viaSource.measurePicture(fake(), input);
+			const t1 = Date.now();
+			const r = await viaRender.measurePicture(fake(), input);
+			const t2 = Date.now();
+			expect(a.renderPath).toBe(want);
+			expect(r.renderPath).toBe('native');
+			expect(a.curve.decoded).toBe(plan.range.end - plan.range.start);
+			const curveOf = (c: typeof a.curve): PixelMotionCurve => ({
+				startFrame: plan.range.start,
+				fps: 30,
+				width: plan.width,
+				height: plan.height,
+				speed: c.speed,
+				vx: c.vx,
+				vy: c.vy,
+				area: c.area,
+				cx: c.cx,
+				residual: c.residual,
+			});
+			if (process.env.MOTION_DEBUG)
+				process.stderr.write(
+					`${want}\nA ${[...a.curve.speed].map((x) => x.toFixed(3)).join(' ')}\nR ${[...r.curve.speed].map((x) => x.toFixed(3)).join(' ')}\n`,
+				);
+			const edits = editFrames(seq, plan.range);
+			const ea = pixelMotionEvents(curveOf(a.curve), { edits });
+			const er = pixelMotionEvents(curveOf(r.curve), { edits });
+			expect(ea.map((e) => [e.kind, e.frame])).toEqual(er.map((e) => [e.kind, e.frame]));
+			const anchorAt = sceneAnchorAt(doc, seq);
+			const ca = pixelMotionCues(curveOf(a.curve), ea, anchorAt).cues.map((c) => [c.kind, c.frame]);
+			const cr = pixelMotionCues(curveOf(r.curve), er, anchorAt).cues.map((c) => [c.kind, c.frame]);
+			expect(ca).toEqual(cr);
+			let maxDiff = 0;
+			for (let i = 0; i < a.curve.speed.length; i++)
+				maxDiff = Math.max(maxDiff, Math.abs(a.curve.speed[i]! - r.curve.speed[i]!));
+			// the moving frames' median speed agrees within 5 %; no frame differs by MOVE_OFF (0.03) or more
+			const med = (c: Float32Array) => [...c.slice(32, 60)].sort((x, y) => x - y)[14]!;
+			expect(Math.abs(med(a.curve.speed) / med(r.curve.speed) - 1)).toBeLessThan(0.05);
+			expect(maxDiff).toBeLessThan(0.03);
+			timings[`source-${want}`] = t1 - t0;
+			timings[`render-${want}`] = t2 - t1;
+			timings[`maxSpeedDiff-${want}`] = Math.round(maxDiff * 10_000) / 10_000;
+			return { ea, cues: ca };
+		};
+		// all untouched: one source piece
+		const whole = await compare(boxDoc().b.doc, 'source');
+		expect(whole.cues.length).toBeGreaterThanOrEqual(2);
+		// mixed: the first half untouched (source), the second half at 99 % opacity (rendered); the move spans the seam
+		const b = new DocBuilder('hd-1080p-30', 900);
+		const id = b.addMedia(media.box);
+		const r = b.tx([
+			{
+				type: 'clip.place',
+				source: { mediaId: id },
+				at: 0,
+				tracks: { video: 'V1' },
+				sourceRange: { in: { seconds: 0 }, out: { seconds: 1.5 } },
+				ref: '$a',
+			},
+			{
+				type: 'clip.place',
+				source: { mediaId: id },
+				at: 45,
+				tracks: { video: 'V1' },
+				sourceRange: { in: { seconds: 1.5 }, out: { seconds: 4 } },
+				ref: '$b',
+			},
+		]);
+		b.tx([{ type: 'param.set', target: ['clip', r.refs.$b!, 'opacity'], value: 99 }]);
+		await compare(b.doc, 'source+native');
+	}, 600_000);
 
 	it('pixel cues: pending with the job ids first, then moves and lands that resolve back to their frames', async () => {
 		const { b, clipId, mediaId } = boxDoc(10);
