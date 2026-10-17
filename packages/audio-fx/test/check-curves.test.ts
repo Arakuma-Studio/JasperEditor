@@ -41,6 +41,7 @@ describe('CurveMeter', () => {
 			for (let i = 0; i < c.count; i++) {
 				expect(c.kEnergy[i]).toBeCloseTo(whole.kEnergy[i]!, 9);
 				expect(c.msDb[i]).toBe(whole.msDb[i]);
+				expect(c.loudestDb[i]).toBe(whole.loudestDb[i]);
 				expect(c.peakDb[i]).toBe(whole.peakDb[i]);
 			}
 		}
@@ -60,6 +61,22 @@ describe('CurveMeter', () => {
 		const q = feed(new CurveMeter(SR, 2), [z], 1000);
 		expect([...q.msDb].every((v) => v === LOUDNESS_FLOOR_LUFS)).toBe(true);
 		expect(silentCurves(SR, 5).msDb[4]).toBe(LOUDNESS_FLOOR_LUFS);
+	});
+
+	it("the loudest channel's level: a centre-only 5.1 or left-only stereo signal is not lowered by silent channels", () => {
+		const a = 0.002 * Math.SQRT2; // RMS 0.002 = −54 dBFS
+		const s = sine(1000, a, SR, SR);
+		const z = new Float32Array(SR);
+		const c51 = feed(new CurveMeter(SR, 6), [z, z, s, z, z, z], 480);
+		expect(c51.loudestDb[50]).toBeCloseTo(-54, 1);
+		expect(c51.msDb[50]).toBeCloseTo(-54 - 10 * Math.log10(6), 1);
+		const lr = feed(new CurveMeter(SR, 2), [s, z], 333);
+		expect(lr.loudestDb[50]).toBeCloseTo(-54, 1);
+		expect(lr.msDb[50]).toBeCloseTo(-57, 1);
+		// both channels: the loudest is the louder one
+		const both = feed(new CurveMeter(SR, 2), [s, sine(1000, a / 10, SR, SR)], 4096);
+		expect(both.loudestDb[50]).toBeCloseTo(-54, 1);
+		expect(silentCurves(SR, 3).loudestDb[2]).toBe(LOUDNESS_FLOOR_LUFS);
 	});
 
 	it('momentary and short-term curves equal the BS.1770 meter in the steady state', () => {
@@ -107,6 +124,35 @@ describe('locateByCorrelation', () => {
 			expect(Math.abs(r.lag - at)).toBeLessThan(0.05);
 			expect(r.ncc).toBeGreaterThan(0.9);
 		}
+	});
+
+	it('the same sound twice in the range: the copy nearer the expected lag; a weak match never wins', () => {
+		const ref = click();
+		// two overlapping copies 3 200 samples apart (2 frames at 30 fps), the later one louder
+		const sig = noise(5, 14_000, 0.002);
+		for (let i = 0; i < ref.length; i++) {
+			sig[3000 + i]! += 0.2 * ref[i]!;
+			sig[6200 + i]! += 0.3 * ref[i]!;
+		}
+		for (const [prefer, want] of [
+			[2900, 3000],
+			[3100, 3000],
+			[6000, 6200],
+			[7000, 6200],
+		] as const) {
+			const r = locateByCorrelation(ref, sig, 0, 14_000 - ref.length, { prefer, separation: 1600 })!;
+			expect(Math.abs(r.lag - want), `prefer ${prefer}`).toBeLessThan(0.5);
+			expect(r.ncc).toBeGreaterThan(0.6);
+		}
+		// one copy and a side lobe: the side lobe is under the share, the copy wins wherever it was expected
+		const one = noise(6, 10_000, 0.002);
+		for (let i = 0; i < ref.length; i++) one[5000 + i]! += 0.3 * ref[i]!;
+		for (const prefer of [4400, 5000, 5600]) {
+			const r = locateByCorrelation(ref, one, 0, 10_000 - ref.length, { prefer, separation: 1600 })!;
+			expect(Math.abs(r.lag - 5000), `prefer ${prefer}`).toBeLessThan(0.05);
+		}
+		// without `prefer` the best match wins
+		expect(Math.abs(locateByCorrelation(ref, one, 0, 10_000 - ref.length)!.lag - 5000)).toBeLessThan(0.05);
 	});
 
 	it('only looks inside the lag range; null without a fit or energy', () => {
@@ -174,6 +220,67 @@ describe('evaluateSfxGain', () => {
 			expect(e.dominantBands).toEqual(r.dominantBands);
 			expect(e.targetLiftDb).toBe(r.targetLiftDb);
 		}
+	});
+
+	it('property: equals the solver at its solved gains for any events (repeats, heroes, speech, silent beds)', () => {
+		const band = fc.oneof(
+			fc.double({ min: -90, max: 0, noNaN: true }),
+			fc.constant(Number.NEGATIVE_INFINITY),
+		);
+		const level = fc.option(fc.double({ min: -60, max: 0, noNaN: true }), { nil: null });
+		const event = fc.record({
+			sound: fc.integer({ min: 0, max: 3 }),
+			type: fc.constantFrom('hit', 'whoosh', 'click', ''),
+			weight: fc.constantFrom('hero', 'support', 'ambient'),
+			startSec: fc.double({ min: 0, max: 20, noNaN: true }),
+			len: fc.double({ min: 0, max: 2, noNaN: true }),
+			soundBandsDb: fc.array(band, { minLength: 7, maxLength: 7 }),
+			bedBandsDb: fc.array(band, { minLength: 7, maxLength: 7 }),
+			soundPeakLu: level,
+			truePeakDb: level,
+			bedLocalPeakLu: level,
+			speechOverlap: fc.boolean(),
+			baseGainDb: fc.double({ min: -40, max: 6, noNaN: true }),
+			userOffsetDb: fc.double({ min: -3, max: 3, noNaN: true }),
+		});
+		fc.assert(
+			fc.property(
+				fc.array(event, { minLength: 1, maxLength: 8 }),
+				fc.constantFrom(-14, -16, -23, -24),
+				fc.constantFrom(-1, -2),
+				(raw, programLufs, truePeakCeilingDb) => {
+					const events: SolverEvent[] = raw.map((e, i) => ({
+						clipId: `c${i}`,
+						soundId: `s${e.sound}`,
+						type: e.type,
+						weight: e.weight as SolverEvent['weight'],
+						startSec: e.startSec,
+						endSec: e.startSec + e.len,
+						soundBandsDb: e.soundBandsDb,
+						soundPeakLu: e.soundPeakLu,
+						truePeakDb: e.truePeakDb,
+						bedBandsDb: e.bedBandsDb,
+						bedLocalPeakLu: e.bedLocalPeakLu,
+						speechOverlap: e.speechOverlap,
+						baseGainDb: e.baseGainDb,
+						userOffsetDb: e.userOffsetDb,
+					}));
+					const opts = { programLufs, truePeakCeilingDb };
+					const solved = solveSfxGains(events, opts);
+					for (const [i, r] of solved.events.entries()) {
+						const e = evaluateSfxGain(events[i]!, r.gainDb, opts);
+						expect(e.gainDb).toBe(r.gainDb);
+						expect(e.liftDb).toBe(r.achievedLiftDb);
+						expect(e.peakOverBedLu).toBe(r.peakOverBedLu);
+						expect(e.truePeakDb).toBe(r.truePeakDb);
+						expect(e.speechBandLiftDb).toBe(r.speechBandLiftDb);
+						expect(e.dominantBands).toEqual(r.dominantBands);
+						expect(e.targetLiftDb).toBe(r.targetLiftDb);
+					}
+				},
+			),
+			{ numRuns: 500 },
+		);
 	});
 
 	it('lift follows the gain dB for dB; a silent sound has no lift; never throws', () => {
