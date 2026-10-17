@@ -4,7 +4,7 @@
 // view returns to Edit and the Jobs panel shows progress (completion toast with Download: ProjectLifecycle).
 import type { RenderPlan, VideoCodec } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
-import type { Sequence } from '@jasper/project';
+import { defaultCreditsSidecar, type Sequence, soundCredits } from '@jasper/project';
 import { useSession, useSessionState } from '@jasper/session/react';
 import { Button, IconButton, TimecodeText } from '@jasper/ui';
 import { useEffect, useMemo, useState } from 'react';
@@ -15,11 +15,13 @@ import { mediaKeyOf } from '../import/assets.ts';
 import type { CheckEngine } from '../sound/check-run.ts';
 import { useEngine } from '../state/engine.tsx';
 import { exportMode, trackExportJob } from './mode.ts';
-import { blockingForEngine, type PlanState, PlanSummary } from './PlanSummary.tsx';
+import { blockingForEngine, type PlanState, PlanSummary, soundWarningsOf } from './PlanSummary.tsx';
 import { useExportSoundCheck } from './SoundCheckGate.tsx';
 import {
 	buildExportSettings,
+	CREDITS_OPTIONS,
 	type CaptionExportChoice,
+	type CreditsChoice,
 	CODEC_LABELS,
 	codecOptions,
 	DEFAULT_CAPTION_CHOICE,
@@ -110,6 +112,17 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	const [smartRender, setSmartRender] = useState(remembered?.smartRender === true);
 	// gaps (PRJ-8): Use Proxies (Premiere's Export Settings option; drafts only, off by default).
 	const [useProxies, setUseProxies] = useState(remembered?.useProxies === true);
+	// spec 12 §2.11: the sound credits sidecar — the last choice for this sequence, else the sequence's sound design
+	// setting, else Markdown when a sound it uses needs a credit (CC BY…), else Off.
+	const creditsDefault = (id: string | null): CreditsChoice => {
+		const r = id ? loadExportChoice(session.projectId, id) : null;
+		return r?.credits ?? ((id ? defaultCreditsSidecar(session.getCommitted(), id) : null) || 'off');
+	};
+	const [creditsChoice, setCreditsChoice] = useState<CreditsChoice>(() => creditsDefault(sequenceId));
+	const usesLibrarySounds = useMemo(
+		() => (seq ? soundCredits(doc, seq.id).rows.length > 0 : false),
+		[doc, seq],
+	);
 	const [plan, setPlan] = useState<PlanState>({ status: 'idle' });
 	const [starting, setStarting] = useState(false);
 	const close = props.onClose ?? exportMode.close;
@@ -140,6 +153,9 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		setUsePreviews(r?.usePreviews === true);
 		setSmartRender(r?.smartRender === true);
 		setUseProxies(r?.useProxies === true);
+		setCreditsChoice(
+			r?.credits ?? (defaultCreditsSidecar(session.getCommitted(), sequenceId) || 'off'),
+		);
 		setFileName(r?.fileName ?? sequenceName(session.getCommitted(), sequenceId));
 	}, [sequenceId, session]);
 
@@ -169,10 +185,12 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 						usePreviews,
 						smartRender,
 						useProxies,
+						credits: creditsChoice,
 					})
 				: null,
 		[
 			seq,
+			creditsChoice,
 			effectiveRange,
 			engineChoice,
 			effectiveCodec,
@@ -232,6 +250,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	}, [engine.client, session, seq, settings, validation.length, revision]);
 
 	const poster = usePreviewPoster(seq, frames.start);
+	const soundWarnings = soundWarningsOf(plan);
 	const blocking =
 		plan.status === 'ok'
 			? blockingForEngine(plan.plan, engineChoice)
@@ -276,6 +295,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 				...(usePreviews ? { usePreviews } : {}),
 				...(smartRender ? { smartRender } : {}),
 				...(useProxies ? { useProxies } : {}),
+				credits: creditsChoice,
 			});
 			close();
 			const focused = await runIfRegistered('panel.open.jobs', ctx);
@@ -736,10 +756,44 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 							</Field>
 						</div>
 					) : null}
-					{soundCheck.section ? (
-						<div className="flex flex-col gap-2 border-t border-pr-border-subtle pt-2">
+					{soundCheck.section || usesLibrarySounds || soundWarnings.length ? (
+						<div
+							className="flex flex-col gap-2 border-t border-pr-border-subtle pt-2"
+							data-testid="export-sound"
+						>
 							<h3 className="text-pr-small text-pr-muted">SOUND</h3>
 							{soundCheck.section}
+							{usesLibrarySounds || creditsChoice !== 'off' ? (
+								<Field label="Credits">
+									<select
+										data-testid="export-credits"
+										aria-label="Sound credits file"
+										title="Credit lines of the library sounds heard in the export, written next to the file"
+										className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+										value={creditsChoice}
+										onChange={(e) => setCreditsChoice(e.target.value as CreditsChoice)}
+									>
+										{CREDITS_OPTIONS.map((o) => (
+											<option key={o.value} value={o.value}>
+												{o.label}
+											</option>
+										))}
+									</select>
+								</Field>
+							) : null}
+							{soundWarnings.length ? (
+								<ul className="flex flex-col gap-1 text-pr-small" data-testid="export-sound-warnings">
+									{soundWarnings.map((w) => (
+										<li
+											key={`${w.code}|${w.message}`}
+											data-code={w.code}
+											className={w.level === 'info' ? 'text-pr-muted' : 'text-pr-warning'}
+										>
+											{w.level === 'info' ? 'ⓘ' : '⚠'} {w.message}
+										</li>
+									))}
+								</ul>
+							) : null}
 						</div>
 					) : null}
 					<div className="border-t border-pr-border-subtle pt-2">
@@ -747,7 +801,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 						<p className="mb-2 text-pr-small">
 							{seq ? outputDescription(seq, frames.end - frames.start, chosenEncoder) : ''}
 						</p>
-						<PlanSummary state={plan} engine={engineChoice} sequence={seq} />
+						<PlanSummary state={plan} engine={engineChoice} sequence={seq} hideSoundWarnings />
 					</div>
 				</section>
 			</div>

@@ -3,6 +3,7 @@
 // warnings for licences that need a look (non-commercial, no-derivatives, unknown, undeclared user files). Pure.
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset } from '../schema/media.ts';
+import { soundDesignSettingsOf } from '../schema/sound.ts';
 import { MAX_NEST_DEPTH, nestedClosure } from '../structure/nest.ts';
 import { licenseClass, licenseUrlOf, requiresAttribution } from './license.ts';
 import { type LibraryProvenance, readLibraryProvenance } from './provenance.ts';
@@ -93,6 +94,22 @@ export const SOUND_CREDITS_FILE: Readonly<Record<'txt' | 'md' | 'csv', { ext: st
 	md: { ext: 'md', mime: 'text/markdown; charset=utf-8' },
 	csv: { ext: 'csv', mime: 'text/csv; charset=utf-8' },
 };
+
+/**
+ * The credits sidecar an export of a sequence defaults to (spec 12 §2.11, WP5.2 note): the sequence's sound design
+ * setting (`soundDesign.settings.credits`) when set (null there = asked for none), else Markdown when a sound the
+ * sequence (or a sequence nested in it) uses asks for a credit, else none. The export's own warning
+ * (`W_SOUND_CREDITS`) counts only what its range plays. Never throws.
+ */
+export function defaultCreditsSidecar(doc: ProjectDocument, sequenceId: string): 'txt' | 'md' | 'csv' | null {
+	const seq = Object.hasOwn(doc?.sequences ?? {}, sequenceId) ? doc.sequences[sequenceId] : undefined;
+	if (!seq) return null;
+	const sd = (seq as { soundDesign?: { settings?: { credits?: unknown } } }).soundDesign;
+	const configured = sd?.settings && Object.hasOwn(sd.settings, 'credits');
+	const set = soundDesignSettingsOf(seq).credits;
+	if (configured && (set === null || set === 'txt' || set === 'md' || set === 'csv')) return set ?? null;
+	return soundCredits(doc, sequenceId).rows.some((r) => r.requiresAttribution) ? 'md' : null;
+}
 
 /** The credits in one file format (`text`, `markdown` or `csv`), ending in a newline; '' when nothing is listed. */
 export function soundCreditsFileText(c: SoundCredits, format: 'txt' | 'md' | 'csv'): string {
