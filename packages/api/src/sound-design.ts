@@ -922,6 +922,12 @@ export const SoundListenEventSchema = z.object({
 	frame,
 	timecode: z.string(),
 	ms,
+	/**
+	 * The attack as the mix shows it (ms). An event attributed by an event of its clip's own (`explainedBy: 'event'`)
+	 * starts (`ms`) at the earlier of that own attack — measured without the other clips, whose bed can hide the first
+	 * milliseconds — and this one.
+	 */
+	mixMs: ms,
 	peakMs: ms,
 	shape: z.enum(['hit', 'swell']),
 	band: z.enum(['full', 'low', 'high']),
@@ -934,6 +940,12 @@ export const SoundListenEventSchema = z.object({
 	peakDb: z.number(),
 	riseMs: z.number().optional(),
 	accent: z.boolean(),
+	/**
+	 * Found where the clip rendered alone has its own onset although the mix's onset curve does not stand out there (the
+	 * mix still rises ≥ 3 dB over its bed in some band at that attack): heard, but masked more than a blind listener
+	 * would notice.
+	 */
+	guided: z.boolean(),
 	/** What plays it: the clip whose own event explains it (or, failing that, the loudest clip there). */
 	stem: z.enum(SOUND_LISTEN_STEMS).nullable(),
 	clipId: z.string().nullable(),

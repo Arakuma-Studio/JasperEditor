@@ -2,10 +2,12 @@
 // `sound-listen` job renders a range (≤ 10 min) once — the mix, the dialogue / music / ambience / sound-effect stems and
 // one LANE per set of clips that never overlap, so a lane's signal at any moment belongs to one clip (`stems.ts`: every
 // clip is decoded once) — and:
-//   1. detects the events of the mix (`ListenMeter`: onsets refined to the attack, swells, silences, accents) and of
-//      every lane;
-//   2. attributes each mix event to the clip whose OWN event explains it (the loudest lane event within 15 ms; 60 ms for
-//      swells), else to the clip that is loudest there (`explainedBy: 'level'`), and to the cue it fills;
+//   1. detects the events of every lane and of the mix (`ListenMeter`: onsets refined to the attack, swells, silences,
+//      accents); a clip's own onset is also looked at in the mix where the mix's onset curve hides it, and kept when
+//      the mix still rises ≥ 3 dB over its bed in some band there (`guided`);
+//   2. attributes each mix event to the clip whose OWN event explains it (the most prominent lane event within 30 ms;
+//      60 ms for swells), else to the clip that is loudest there (`explainedBy: 'level'`), and to the cue it fills; an
+//      attributed event starts at the earlier of its own attack and the mix's (a bed can hide the first milliseconds);
 //   3. labels sections by the Essential Sound / Auto Tag class audible per stem (dialogue, music with its ducking depth
 //      and how far it sits under the voice, ambience, effects, silence);
 //   4. matches the picture events — cuts and transitions (`pictureEditEvents`), the sound cues, the cached measured
@@ -18,7 +20,7 @@
 // Levels are as delivered when the Mix normalises and its loudness analysis is current (as the visual route). Nothing
 // is written to the project.
 import {
-	type EngineJob,
+	type SoundCheckReport,
 	SOUND_LISTEN_LIMITS,
 	type SoundListenDetail,
 	type SoundListenEvent,
@@ -77,16 +79,18 @@ import { audioWorld, VAD_FLOOR_DBFS } from './bed.ts';
 import type { EngineCueSources } from './engine-cues.ts';
 import { liveDocument, PlanInputError, planSequence } from './plan.ts';
 import { classifyStems, mixLayoutOf, renderStems } from './stems.ts';
-import { checkReportOf, deliveredGain } from './visual.ts';
+import { deliveredGain } from './visual.ts';
 
 /** Context rendered before and after the range (s): the bed, the z window and the decay of the last event. */
 const PRE_SEC = 2.5;
 const POST_SEC = 2.5;
 /** Clips this close on a lane (s) are put on different lanes, so an effect tail is not attributed to the next clip. */
 const LANE_GAP_SEC = 0.25;
-/** A lane event explains a mix event this close (ms; swells: their peaks). */
-const EXPLAIN_MS = 15;
+/** A lane event explains a mix event this close (ms, the onset merge window; swells: their peaks). */
+const EXPLAIN_MS = 30;
 const EXPLAIN_SWELL_MS = 60;
+/** A clip's own onset is a hint for the mix when it rises this much over the clip's own bed (dB). */
+const HINT_DB = 3;
 /** A placed sound is heard when a mix event attributed to it is this close to its own event (ms). */
 const HEARD_MS = 30;
 /** Its own event is searched this far around its aligned point (ms). */
@@ -140,8 +144,8 @@ export type ListenEnv = {
 	registry: Pick<MediaRegistry, 'get' | 'resolvePath'>;
 	/** Cached beats and measured picture motion (never analysed here). */
 	engineCues?: EngineCueSources | undefined;
-	/** A finished `sound-check` job of this mix (its normalisation gain is the export's). */
-	checkJob?: EngineJob | null;
+	/** The last Sound Check report of this sequence (when it measured this mix, its normalisation gain is the export's). */
+	checkReport?: SoundCheckReport | null;
 	signal?: AbortSignal;
 	onSpawn?(child: import('node:child_process').ChildProcess): void;
 	onProgress?(fraction: number, stage: string): void;
@@ -284,7 +288,16 @@ export async function listenSequence(
 	const mixMeter = new ListenMeter(sr, channels);
 	const curve: Partial<Record<(typeof SPECS)[number], CurveMeter>> = {};
 	for (const s of SPECS.slice(1)) if (stems[s].size > 0) curve[s] = new CurveMeter(sr, channels);
-	const laneMeters = lanes.map(() => new ListenMeter(sr, channels));
+	// each clip's own onsets that rise over its own bed are hints for the mix: a sound the mix's onset curve hides is
+	// still found there when the mix rises ≥ 3 dB at that attack (lanes render before the mix in every block)
+	const laneMeters = lanes.map(
+		() =>
+			new ListenMeter(sr, channels, {
+				onHit: (e) => {
+					if (e.prominenceDb >= HINT_DB) mixMeter.hint([e.ms]);
+				},
+			}),
+	);
 	const tr = Date.now();
 	if (stems.mix.size > 0) {
 		progress(0.05, 'Rendering the mix and every clip');
@@ -295,16 +308,16 @@ export async function listenSequence(
 			startSample: renderStart,
 			samples: renderEnd - renderStart,
 			stems: [
-				...SPECS.map((s) => ({ name: s, clipIds: s === 'mix' ? null : stems[s] })),
 				...lanes.map((l, i) => ({ name: `lane:${i}`, clipIds: new Set(l.map((c) => c.clipId)) })),
+				...SPECS.map((s) => ({ name: s, clipIds: s === 'mix' ? null : stems[s] })),
 			],
 			...(env.signal ? { signal: env.signal } : {}),
 			...(env.onSpawn ? { onSpawn: env.onSpawn } : {}),
 			onProgress: (f) => progress(0.05 + 0.8 * f, 'Listening'),
 			onBlock: (i, planar, n) => {
-				if (i === 0) mixMeter.push(planar, n);
-				else if (i < SPECS.length) curve[SPECS[i]!]?.push(planar, n);
-				else laneMeters[i - SPECS.length]?.push(planar, n);
+				if (i < lanes.length) laneMeters[i]!.push(planar, n);
+				else if (i === lanes.length) mixMeter.push(planar, n);
+				else curve[SPECS[i - lanes.length]!]?.push(planar, n);
 			},
 		});
 	}
@@ -312,8 +325,9 @@ export async function listenSequence(
 	timings.renderAndDetectMs = Date.now() - tr;
 	const td = Date.now();
 	progress(0.88, 'Attributing the events');
-	const mixA = mixMeter.finish();
+	// the lanes first: their last onsets are hints for the mix
 	const laneA = laneMeters.map((m) => m.finish());
+	const mixA = mixMeter.finish();
 	const total = Math.ceil((renderEnd - renderStart) / hop);
 	const silentCurve = (): StemCurves => ({
 		sampleRate: sr,
@@ -329,7 +343,7 @@ export async function listenSequence(
 	) as Record<'dialogue' | 'music' | 'ambience' | 'sfx', StemCurves>;
 
 	// as delivered
-	const norm = deliveredGain(doc, seq, checkReportOf(env.checkJob, seq.id));
+	const norm = deliveredGain(doc, seq, env.checkReport ?? null);
 	const gain = norm.gainDb;
 
 	// ── owners: what each clip is ─────────────────────────────────────────────────────────────────────────────────
@@ -400,11 +414,13 @@ export async function listenSequence(
 		const radius = e.shape === 'swell' ? EXPLAIN_SWELL_MS : EXPLAIN_MS;
 		const cands = lanesNear(seqMs, radius);
 		if (cands.length) {
+			// the clip whose own event rises most (a flicker of a loud bed does not outrank a quiet hit), then the closest
 			let best = cands[0]!;
+			const score = (c: LaneEvent) => c.e.prominenceDb + c.e.contrastDb / 100;
 			for (const c of cands)
 				if (
-					c.e.peakDb > best.e.peakDb ||
-					(c.e.peakDb === best.e.peakDb && Math.abs(c.seqMs - seqMs) < Math.abs(best.seqMs - seqMs))
+					score(c) > score(best) ||
+					(score(c) === score(best) && Math.abs(c.seqMs - seqMs) < Math.abs(best.seqMs - seqMs))
 				)
 					best = c;
 			return { e, seqMs, owner: ownerOf(best.clip.clipId, best.clip.trackId), by: 'event' as const, own: best };
@@ -474,7 +490,11 @@ export async function listenSequence(
 		}
 	}
 	pics.sort((a, b) => a.frame - b.frame || (a.key < b.key ? -1 : 1));
-	const ix = syncIndex(attributed.map((x) => ({ ...x.e, ms: x.seqMs })));
+	// an attributed event starts at the earlier of the clip's own attack (measured without the other clips, whose bed
+	// can hide its first milliseconds) and the attack the mix shows (`mixMs`)
+	const timeOf = (x: Attributed) =>
+		x.own && x.own.e.shape === x.e.shape ? Math.min(x.own.seqMs, x.seqMs) : x.seqMs;
+	const ix = syncIndex(attributed.map((x) => ({ ...x.e, ms: timeOf(x) })));
 	const answers: PictureAnswer[] = pics.map((p) => answerPictureEvent(ix, msOfFrame(p.frame), frameMs));
 	const pictureEvents: SoundListenPictureEvent[] = pics.map((p, i) => ({
 		...p,
@@ -512,10 +532,11 @@ export async function listenSequence(
 		answersOf.set(p.event, list);
 	});
 	const eventsAll: SoundListenEvent[] = attributed.map((x, i) => ({
-		frame: frameOfMs(x.seqMs),
-		timecode: tc(frameOfMs(x.seqMs)),
-		ms: r1(x.seqMs),
-		peakMs: r1(renderMs0 + x.e.peakMs),
+		frame: frameOfMs(timeOf(x)),
+		timecode: tc(frameOfMs(timeOf(x))),
+		ms: r1(timeOf(x)),
+		mixMs: r1(x.seqMs),
+		peakMs: r1(x.own && x.own.e.shape === x.e.shape ? renderMs0 + x.own.e.peakMs : renderMs0 + x.e.peakMs),
 		shape: x.e.shape,
 		band: x.e.band,
 		prominenceDb: x.e.prominenceDb,
@@ -525,6 +546,7 @@ export async function listenSequence(
 		peakDb: r1(x.e.peakDb + (x.e.peakDb > -120 ? gain : 0)),
 		...(x.e.riseMs !== undefined ? { riseMs: x.e.riseMs } : {}),
 		accent: x.e.accent,
+		guided: x.e.guided === true,
 		stem: x.owner?.stem ?? null,
 		clipId: x.owner?.clipId ?? null,
 		track: x.owner?.track ?? null,
@@ -556,6 +578,7 @@ export async function listenSequence(
 			if (x.owner?.clipId !== c.id || Math.abs(x.seqMs - at) > HEARD_MS) return;
 			if (mixIdx === null || Math.abs(x.seqMs - at) < Math.abs(attributed[mixIdx]!.seqMs - at)) mixIdx = i;
 		});
+		// events are ordered by their mix attack; the output keeps that order
 		const o = ownerOf(c.id, c.trackId);
 		placed.push({
 			clipId: c.id,
@@ -909,8 +932,8 @@ export type SoundListenDeps = {
 	ffmpeg: Ffmpeg;
 	registry: Pick<MediaRegistry, 'get' | 'resolvePath'>;
 	engineCues?: () => EngineCueSources | undefined;
-	/** The finished `sound-check` jobs (their normalisation gain is the export's). */
-	lastCheckJob?: (projectId: string, sequenceId: string) => EngineJob | null;
+	/** The sequence's last kept Sound Check report (its normalisation gain is the export's when it measured this mix). */
+	lastCheckReport?: (projectId: string, sequenceId: string) => Promise<SoundCheckReport | null>;
 };
 
 /** The `sound-listen` job runner. */
@@ -932,7 +955,7 @@ export async function runSoundListen(ctx: JobContext, deps: SoundListenDeps): Pr
 				ff: deps.ffmpeg,
 				registry: deps.registry,
 				engineCues: deps.engineCues?.(),
-				checkJob: deps.lastCheckJob?.(req.projectId, seq.id) ?? null,
+				checkReport: (await deps.lastCheckReport?.(req.projectId, seq.id).catch(() => null)) ?? null,
 				signal: ctx.signal,
 				onSpawn: ctx.trackChild,
 				onProgress: (f, stage) => ctx.progress(0.02 + 0.97 * f, { stage }),

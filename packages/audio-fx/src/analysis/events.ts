@@ -9,7 +9,8 @@
 //            its lows (< 200 Hz) and its highs (> 2 kHz): in the band where the event stands out most over its bed,
 //            walk back from the event's peak to the first millisecond within 20 dB of it above the bed (the timing comes
 //            from the full band whenever the event rises 12 dB there too); length = until the envelope falls 20 dB under
-//            the peak or back to 3 dB over the bed for 30 ms (≤ 2 s); onsets within 30 ms are one (the higher contrast).
+//            the peak or back to 3 dB over the bed for 30 ms (≤ 2 s); onsets within 30 ms are one (from the first attack,
+//            with the stronger one's band, contrast, prominence and peak).
 //   prominence  the rise of the K-weighted 10 ms level (at 1 ms steps) over the bed: the median of the 20–300 ms before
 //            the attack (floored at −80); `bedDb` reads as LUFS. Measured over the event's own length (≤ 80 ms: windows
 //            ending inside it), so a flicker of the bed just before a hit does not borrow the hit's level.
@@ -20,11 +21,13 @@
 //   accents  the top 20 % of events by prominence that are also ≥ 6 dB over their bed.
 //   sync     the event that answers a picture event (OK within a frame, near ≤ 100 ms, swell ≤ 300 ms, else none) and
 //            the CHANCE level of every share: the share random times would score with the same events (the measure of
-//            the union of the ±tolerance windows over the span), so "60 % of cuts have a sound" means something.
+//            the union of the ±tolerance windows over the span), so "60 % of cuts have a sound" means something. Only
+//            events rising ≥ 3 dB over their bed answer (and count for chance): a busy bed's flicker is no sound.
 // Changes from earshot (all deterministic): log-spaced triangular bands (96, 30 Hz–16 kHz) instead of mel; an absolute
 // −100 dB band floor instead of "80 dB under the file's maximum"; the MAD is taken around each candidate's own median;
 // the prominence window ends with the event (earshot: always 80 ms); a swell is dropped for an onset at its peak only
-// when that onset explains half its rise (earshot: any onset there);
+// when that onset explains half its rise (earshot: any onset there); merged onsets start at the first attack (earshot:
+// the stronger onset's time);
 // the z floor (2 % of the 99th percentile of the onset curve) and the bed fallback (the 10th percentile within ±2 s) are
 // local to the chunk; no level-peak fallback for unanswered cuts and no model tags (CLAP / AST are not adopted).
 import {
@@ -91,6 +94,12 @@ export const LISTEN_SYNC = {
 	onBeatMs: 50,
 	/** Tolerance of "OK" without a frame rate (ms). */
 	defaultFrameMs: 40,
+	/**
+	 * Only an event rising this much over its bed answers a picture event (and counts for the chance levels) — decision:
+	 * the flicker of a busy bed (an onset the K-weighted level does not rise for) is no sound for a cut; earshot counts
+	 * every onset.
+	 */
+	minProminenceDb: 3,
 } as const;
 
 export type ListenBand = 'full' | 'low' | 'high';
@@ -119,6 +128,11 @@ export type ListenEvent = {
 	riseMs?: number;
 	/** Top 20 % by prominence and ≥ 6 dB over the bed. */
 	accent: boolean;
+	/**
+	 * Found at a hint (`ListenMeter.hint`: where a clip rendered alone has its own onset) although the onset curve did
+	 * not stand out there: the signal still rises ≥ 3 dB over its bed in some band at that attack.
+	 */
+	guided?: boolean;
 };
 
 export type ListenSilence = {
@@ -534,8 +548,22 @@ export class ListenMeter {
 	// detection
 	private doneFrame = 0;
 	private readonly hits: ListenEvent[] = [];
+	/** Attacks to look at (ms), sorted; consumed by the chunk that covers them. */
+	private hints: number[] = [];
 
-	constructor(sampleRate: number, channels: number, opts: { spectrogram?: boolean; maxSeconds?: number } = {}) {
+	private readonly onHit: ((e: ListenEvent) => void) | null;
+
+	constructor(
+		sampleRate: number,
+		channels: number,
+		opts: {
+			spectrogram?: boolean;
+			maxSeconds?: number;
+			/** Called with every onset as its chunk finds it (not the guided ones, not swells). */
+			onHit?: (e: ListenEvent) => void;
+		} = {},
+	) {
+		this.onHit = opts.onHit ?? null;
 		this.sampleRate = rateOf(sampleRate);
 		this.channels = Math.max(1, Math.min(32, Math.floor(fin(channels) ? channels : 1)));
 		const sr = this.sampleRate;
@@ -739,8 +767,37 @@ export class ListenMeter {
 			const z = (v - med) / (mad + zFloor + 1e-9);
 			if (!(z >= LISTEN_EVENTS.zThreshold)) continue;
 			const ev = this.attackEvent(f * LISTEN_EVENTS.hopMs, z, availMs);
-			if (ev) this.hits.push(ev);
+			if (ev) {
+				this.hits.push(ev);
+				this.onHit?.(ev);
+			}
 		}
+		// hints in this chunk with no onset of their own within the merge window
+		const fromMs = from * LISTEN_EVENTS.hopMs;
+		const toMs = to * LISTEN_EVENTS.hopMs;
+		const keep: number[] = [];
+		for (const h of this.hints) {
+			if (h >= toMs && to < availF) {
+				keep.push(h);
+				continue;
+			}
+			if (h < fromMs - LISTEN_EVENTS.hopMs) continue;
+			if (this.hits.some((e) => Math.abs(e.ms - h) < LISTEN_EVENTS.mergeMs)) continue;
+			const ev = this.attackEvent(Math.round(h), 0, availMs);
+			if (ev) this.hits.push({ ...ev, guided: true });
+		}
+		this.hints = keep;
+	}
+
+	/**
+	 * Attacks (ms from the first sample) to look at even where the onset curve does not stand out — the engine passes
+	 * where each clip rendered alone has its own onsets, so a sound masked in the onset curve but still rising ≥ 3 dB
+	 * over its bed in some band is found (`guided`). Give them before the stream reaches them (+ 2.5 s); later ones
+	 * are looked at by the next chunk or at `finish`.
+	 */
+	hint(ms: readonly number[]): void {
+		for (const h of ms) if (fin(h) && h >= 0) this.hints.push(h);
+		this.hints.sort((a, b) => a - b);
 	}
 
 	private bandSeries(b: ListenBand): Series {
@@ -864,13 +921,25 @@ export class ListenMeter {
 		if (this.samples > Math.round((this.msIndex * this.sampleRate) / 1000)) this.closeMs();
 		if (this.h10N > 0) this.closeHop10();
 		this.maybeDetect(true);
-		// merge onsets within 30 ms (the higher contrast)
+		// onsets within 30 ms are one event: it starts at the first attack and has the strongest one's band, contrast,
+		// prominence and peak (earshot keeps the stronger onset's time instead, which can be one inside the sound)
 		const hits = this.hits.slice().sort((a, b) => a.ms - b.ms);
 		const merged: ListenEvent[] = [];
 		for (const e of hits) {
 			const last = merged[merged.length - 1];
 			if (last && e.ms - last.ms < LISTEN_EVENTS.mergeMs) {
-				if (e.contrastDb > last.contrastDb) merged[merged.length - 1] = e;
+				const end = Math.max(last.ms + last.lengthMs, e.ms + e.lengthMs);
+				const strong = e.contrastDb > last.contrastDb ? e : last;
+				const peak = e.peakDb > last.peakDb ? e : last;
+				merged[merged.length - 1] = {
+					...strong,
+					ms: last.ms,
+					peakMs: peak.peakMs,
+					peakDb: peak.peakDb,
+					prominenceDb: Math.max(last.prominenceDb, e.prominenceDb),
+					z: Math.max(last.z, e.z),
+					lengthMs: Math.min(LISTEN_EVENTS.lengthCapMs, end - last.ms),
+				};
 				continue;
 			}
 			merged.push(e);
@@ -1146,12 +1215,13 @@ export function syncIndex(events: readonly ListenEvent[]): SyncIndex {
 			.sort((a, b) => a.t - b.t || a.i - b.i);
 		return { t: list.map((x) => x.t), i: list.map((x) => x.i) };
 	};
+	const audible = (e: ListenEvent) => e.prominenceDb >= LISTEN_SYNC.minProminenceDb;
 	return {
 		events,
-		all: sel(() => true),
-		strong: sel((e) => e.prominenceDb >= strongDb),
-		swells: sel((e) => e.shape === 'swell'),
-		accents: sel((e) => e.accent),
+		all: sel(audible),
+		strong: sel((e) => audible(e) && e.prominenceDb >= strongDb),
+		swells: sel((e) => audible(e) && e.shape === 'swell'),
+		accents: sel((e) => audible(e) && e.accent),
 	};
 }
 

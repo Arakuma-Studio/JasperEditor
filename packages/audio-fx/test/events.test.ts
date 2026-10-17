@@ -274,6 +274,8 @@ describe('sync', () => {
 		});
 		expect(answerPictureEvent(ix, 9000, 33.3)).toMatchObject({ status: 'none', nearestStrongMs: null });
 		expect(answerPictureEvent(syncIndex([]), 0, 40).status).toBe('none');
+		// the flicker of a bed (no rise of the level) answers nothing
+		expect(answerPictureEvent(syncIndex([mk(1000, { prominenceDb: 2.9 })]), 1000, 40).status).toBe('none');
 	});
 
 	it('chance equals a brute-force count of random times', () => {
