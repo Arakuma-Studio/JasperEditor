@@ -405,17 +405,22 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 							sources: engineSources,
 							...(opts.snapToBeats ? { snapToBeats: true } : {}),
 							...(opts.range ? { range: opts.range } : {}),
-							mode: {
-								kind: 'submit',
-								projectId:
-									body.projectId ??
-									(typeof doc.projectId === 'string' && isProjectId(doc.projectId) ? doc.projectId : null),
-								origin:
-									req.jasperEditor === true
-										? { type: 'user' }
-										: { type: 'agent', agentRunId: agentNameOf(req) },
-								...(revision !== null ? { revision } : {}),
-							},
+							mode:
+								opts.analyze === false
+									? { kind: 'cached' }
+									: {
+											kind: 'submit',
+											projectId:
+												body.projectId ??
+												(typeof doc.projectId === 'string' && isProjectId(doc.projectId)
+													? doc.projectId
+													: null),
+											origin:
+												req.jasperEditor === true
+													? { type: 'user' }
+													: { type: 'agent', agentRunId: agentNameOf(req) },
+											...(revision !== null ? { revision } : {}),
+										},
 						})
 					: null;
 			// Expression-driven motion moves like the renderer shows it (deriveCues samples resolved properties).

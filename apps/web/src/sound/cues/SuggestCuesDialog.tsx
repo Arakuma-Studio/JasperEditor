@@ -1,6 +1,10 @@
 // Sequence ▸ Sound Design ▸ Suggest Cues… (spec 12 §2.7): sources with live counts (events found · cues kept after
 // merging and the density budget), range (sequence, In–Out, selected clips), density and "respect dialogue". Suggest
 // adds the derived cues — each with its reason, anchor and source `derived` — in ONE transaction "Suggest Cues (n)".
+// P6 (WP6.2): the engine's measured sources — shot changes inside footage, music beats, picture motion — with their
+// counts, an Analyze… button where they are not measured yet, and "Snap to the beat" (EngineSources.tsx).
+
+import type { EngineClient } from '@jasper/engine-client';
 import {
 	type CueDensity,
 	documentHasActiveExpressions,
@@ -15,6 +19,7 @@ import type { ToastRequest } from '../../commands/types.ts';
 import { useExpressionsFor } from '../../expressions/engine.ts';
 import { useDialogClose } from '../../extensions/dialog.ts';
 import { t } from '../../i18n/runtime.ts';
+import { type EngineCueSource, EngineSourceRows, useEngineSources } from './EngineSources.tsx';
 import { type ProjectCueSource, planSuggestion, type SuggestRange, suggestRange } from './suggest.ts';
 
 export const SUGGEST_CUES_DIALOG = 'sound.suggestCues';
@@ -48,6 +53,8 @@ export function SuggestCuesDialog(
 		session: EditorSession;
 		sequenceId: string;
 		toast?: (r: ToastRequest) => void;
+		/** The engine (measured sources: shot changes, beats, picture motion); without it they are unavailable. */
+		engine?: Pick<EngineClient, 'soundDesignCues' | 'getJob'>;
 	}>,
 ) {
 	const { open, finish } = useDialogClose(props.close);
@@ -65,6 +72,14 @@ export function SuggestCuesDialog(
 	const [density, setDensity] = useState<CueDensity>(settings.density);
 	const [respectDialogue, setRespectDialogue] = useState(true);
 	const [replace, setReplace] = useState(true);
+	const [engineSources, setEngineSources] = useState<ReadonlySet<EngineCueSource>>(() => new Set());
+	const [snapToBeats, setSnapToBeats] = useState(false);
+	// the range the engine measures (stable by value, so it is not asked again on every render)
+	const rangeNow = seq ? suggestRange(seq, range, selectedClips) : null;
+	const rs = rangeNow?.start ?? -1;
+	const re = rangeNow?.end ?? -1;
+	const engineRange = useMemo(() => (rs >= 0 && re > rs ? { start: rs, end: re } : null), [rs, re]);
+	const measured = useEngineSources(props.engine, session.projectId, sequenceId, engineRange);
 	// Expression-driven motion needs the expression engine (the engine route binds expressions too): the plan is
 	// recomputed once it is loaded, and Suggest waits for it.
 	const expressionsReady = useExpressionsFor(doc);
@@ -72,8 +87,31 @@ export function SuggestCuesDialog(
 	// biome-ignore lint/correctness/useExhaustiveDependencies: expressionsReady re-plans with bound expressions
 	const plan = useMemo(
 		() =>
-			planSuggestion(doc, sequenceId, { sources, range, density, respectDialogue, replace, selectedClips }),
-		[doc, sequenceId, sources, range, density, respectDialogue, replace, selectedClips, expressionsReady],
+			planSuggestion(doc, sequenceId, {
+				sources,
+				range,
+				density,
+				respectDialogue,
+				replace,
+				selectedClips,
+				engineSources,
+				engineCues: measured.cues,
+				snapToBeats,
+			}),
+		[
+			doc,
+			sequenceId,
+			sources,
+			range,
+			density,
+			respectDialogue,
+			replace,
+			selectedClips,
+			expressionsReady,
+			engineSources,
+			measured.cues,
+			snapToBeats,
+		],
 	);
 	const n = plan.adds.length;
 	const readOnly = session.getState().readOnly;
@@ -146,6 +184,26 @@ export function SuggestCuesDialog(
 						</div>
 					))}
 				</fieldset>
+				<EngineSourceRows
+					engine={measured}
+					selected={engineSources}
+					onToggle={(src, on) =>
+						setEngineSources((cur) => {
+							const next = new Set(cur);
+							if (on) next.add(src);
+							else next.delete(src);
+							return next;
+						})
+					}
+					counts={{
+						scene: { found: plan.found.scene, kept: plan.kept.scene },
+						beat: { found: plan.found.beat, kept: plan.kept.beat },
+						pixel: { found: plan.found.pixel, kept: plan.kept.pixel },
+					}}
+					snapToBeats={snapToBeats}
+					onSnapToBeats={setSnapToBeats}
+					testId="suggest-cues-engine-sources"
+				/>
 				<div className="flex items-center gap-2" data-testid="suggest-cues-range">
 					<span className="w-[110px] shrink-0 text-pr-muted">Range</span>
 					<Select

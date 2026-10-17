@@ -40,7 +40,7 @@ import { MotionInputError, type MotionService, maxMotionFrames, planMotion, subC
 export type EngineCueSource = (typeof ENGINE_CUE_SOURCES)[number];
 
 export type EngineSourceState = {
-	state: 'ready' | 'pending' | 'none' | 'failed';
+	state: 'ready' | 'pending' | 'missing' | 'none' | 'failed';
 	jobIds: string[];
 	found: number;
 	message?: string;
@@ -206,6 +206,7 @@ export class EngineCueSources {
 		}
 		const results = new Map<string, SceneCutData>();
 		const failed: string[] = [];
+		let missing = 0;
 		let n = 0;
 		for (const [mediaId, spans] of byMedia) {
 			if (++n > MAX_SCENE_MEDIA) {
@@ -269,7 +270,10 @@ export class EngineCueSources {
 					}
 					continue;
 				}
-				if (!r) continue;
+				if (!r) {
+					missing++;
+					continue;
+				}
 				data.cuts.push(...r.cuts);
 				data.times.push(...r.times);
 				data.scores.push(...r.scores);
@@ -280,6 +284,7 @@ export class EngineCueSources {
 		const cues = sceneCutCues(doc, seq, results, range ? { range } : {});
 		out.extraCues.push(...cues);
 		st.found = cues.length;
+		if (missing) st.state = 'missing';
 		this.finish(st, 'scene', 'Shot changes in the footage', failed, out, mode);
 	}
 
@@ -362,7 +367,7 @@ export class EngineCueSources {
 		if (asCues) out.extraCues.push(...cues);
 		if (snap) out.beatFrames = [...new Set(cues.map((c) => c.frame))].sort((a, b) => a - b);
 		st.found = cues.length;
-		if (missing && mode.kind === 'cached' && !cues.length) st.state = 'none';
+		if (missing) st.state = 'missing';
 		if (asCues) this.finish(st, 'beat', 'Beats of the music', failed, out, mode);
 	}
 
@@ -393,6 +398,7 @@ export class EngineCueSources {
 		const anchorAt = sceneAnchorAt(doc, seq);
 		const failed: string[] = [];
 		const cues: ExtraCue[] = [];
+		let missing = 0;
 		for (let k = Math.floor(r.start / win); k * win < r.end; k++) {
 			let plan: ReturnType<typeof planMotion>;
 			try {
@@ -427,7 +433,10 @@ export class EngineCueSources {
 				st.jobIds.push(job.id);
 				continue;
 			}
-			if (!res) continue;
+			if (!res) {
+				missing++;
+				continue;
+			}
 			out.pixelCurves.push({ startFrame: res.curve.startFrame, speed: res.curve.speed });
 			const events = res.events as unknown as PixelMotionEvent[];
 			const made = pixelMotionCues(res.curve, events, anchorAt).cues.filter(
@@ -437,6 +446,7 @@ export class EngineCueSources {
 		}
 		out.extraCues.push(...cues);
 		st.found = cues.length;
+		if (missing) st.state = 'missing';
 		this.finish(st, 'pixel', 'Picture motion', failed, out, mode);
 	}
 
@@ -466,6 +476,5 @@ export class EngineCueSources {
 				source,
 			});
 		}
-		if (mode.kind === 'cached' && st.state === 'ready' && !st.found && !st.jobIds.length) st.state = 'none';
 	}
 }

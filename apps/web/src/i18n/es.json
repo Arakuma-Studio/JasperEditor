@@ -9724,5 +9724,22 @@
   "The packs are not available: {0}": "Los paquetes no están disponibles: {0}",
   "This engine offers no sound packs.": "Este motor no ofrece paquetes de sonidos.",
   "Update available": "Actualización disponible",
-  "Update…": "Actualizar…"
+  "Update…": "Actualizar…",
+  "{0} found · partly analysed": "{0} encontrados · análisis parcial",
+  "Analysing… {0} %": "Analizando… {0} %",
+  "Analysis failed": "El análisis ha fallado",
+  "Analyze {0}": "Analizar {0}",
+  "Analyze…": "Analizar…",
+  "anchorOffset needs an anchor": "anchorOffset necesita un anclaje",
+  "Failed": "Ha fallado",
+  "Measured in the media": "Medido en los medios",
+  "Music beats (Essential Sound music clips)": "Tiempos de la música (clips de música de Sonido esencial)",
+  "Not analysed yet": "Aún sin analizar",
+  "Picture motion in footage": "Movimiento de la imagen en el metraje",
+  "Shot changes inside footage": "Cambios de plano dentro del metraje",
+  "Snap moves and transitions to the beat (within 2 frames)": "Ajustar movimientos y transiciones al tiempo (a 2 fotogramas como máximo)",
+  "Sources not analysed yet are measured while proposing (slower the first time).": "Las fuentes aún sin analizar se miden al proponer (más lento la primera vez).",
+  "The engine is not available": "El motor no está disponible",
+  "No footage in the range": "No hay metraje en el intervalo",
+  "No music clip in the range": "No hay clips de música en el intervalo"
 }

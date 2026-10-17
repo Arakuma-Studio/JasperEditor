@@ -44,6 +44,12 @@ export const SoundCuesOptionsSchema = z.strictObject({
 	 * when needed.
 	 */
 	snapToBeats: z.boolean().optional(),
+	/**
+	 * Engine sources: start the analyses that are missing (default true; they come back as `W_ANALYSIS_PENDING` with
+	 * their jobs), or `false` to use only what is already measured (`analysis[source].state` `missing` otherwise) — the
+	 * editor's Suggest Cues… asks this way when it opens, and starts the analyses when the user clicks Analyze….
+	 */
+	analyze: z.boolean().optional(),
 });
 export type SoundCuesOptions = z.infer<typeof SoundCuesOptionsSchema>;
 
@@ -173,14 +179,14 @@ export const SoundCuesResponseSchema = z.object({
 	/**
 	 * Engine sources asked for (`opts.sources` naming scene, beat or pixel, or `snapToBeats`): what each measured.
 	 * `pending` = its analysis is running (`jobIds`; a `W_ANALYSIS_PENDING` warning says so too) and its cues are not in
-	 * this answer yet; `ready` = measured (from the cache or just now); `none` = nothing to measure (no footage, no
-	 * Essential music clip); `failed` = the analysis failed (`message`).
+	 * this answer yet; `missing` = not analysed yet (`analyze: false`); `ready` = measured (from the cache or just now);
+	 * `none` = nothing to measure (no footage, no Essential music clip); `failed` = the analysis failed (`message`).
 	 */
 	analysis: z
 		.partialRecord(
 			z.enum(ENGINE_CUE_SOURCES),
 			z.object({
-				state: z.enum(['ready', 'pending', 'none', 'failed']),
+				state: z.enum(['ready', 'pending', 'missing', 'none', 'failed']),
 				jobIds: z.array(z.string()),
 				/** Cues the source found (before merging). */
 				found: z.number().int(),
