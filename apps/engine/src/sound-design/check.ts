@@ -65,6 +65,7 @@ import {
 	DENSITY_BUDGETS,
 	deliveryPreset,
 	deriveCues,
+	dialogueSpans,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	frameToSample,
@@ -137,6 +138,7 @@ import {
 } from './levels.ts';
 import { liveDocument, PlanInputError, planSequence } from './plan.ts';
 import { classifyStems, renderStems, STEM_NAMES, type StemName, type StemSpec } from './stems.ts';
+import { voiceServiceFor } from './voice.ts';
 
 export const SOUND_CHECK_LABEL = 'Sound Check Result';
 /** Pre-roll rendered before the range (hops of 10 ms): the 3 s short-term window's half and K-weighting warm-up. */
@@ -923,13 +925,17 @@ export async function checkSequence(
 		const th = Math.max(vadThreshold(db), VAD_FLOOR_DBFS);
 		for (let i = 0; i < db.length; i++) if (db[i]! >= th) speech[i] = 1;
 	}
-	// bridge gaps under 0.3 s (pauses between syllables and words)
-	const bridged = runs(rangeHops, (i) => speech[i] === 1);
+	// segments: the project's one dialogue definition (`dialogueSpans`: transcript words, else the voice activity of
+	// Essential Sound dialogue clips, else their spans; spec 12 P6-R3), the same stretches cue derivation and the
+	// solver's dialogue guard use; the levels are compared over the voiced hops inside them (above)
+	const voice = await voiceServiceFor(env.ff, env.registry).forSequence(doc, seq, {
+		...(env.signal ? { signal: env.signal } : {}),
+	});
 	const segments: [number, number][] = [];
-	for (const [a, b] of bridged) {
-		const last = segments[segments.length - 1];
-		if (last && a - last[1] <= 30) last[1] = b;
-		else segments.push([a, b]);
+	for (const sp of dialogueSpans(doc, seq, { voice: voice.voice })) {
+		const a = Math.max(0, Math.floor((frameToSample(sp.start, rate, sr) - rangeStart) / hop));
+		const b = Math.min(rangeHops, Math.ceil((frameToSample(sp.end, rate, sr) - rangeStart) / hop));
+		if (b > a) segments.push([a, b]);
 	}
 	const speechSeconds = r2((speech.reduce((n, v) => n + v, 0) * hop) / sr);
 

@@ -48,7 +48,10 @@ const VoiceEntrySchema = z.object({
 export type VoiceEntry = z.infer<typeof VoiceEntrySchema>;
 
 /** Voiced regions (seconds from `startSec`) of 10 ms levels (dBFS). Pure. */
-export function voiceRegions(levels: ArrayLike<number>, startSec = 0): { voiced: [number, number][]; thresholdDb: number } {
+export function voiceRegions(
+	levels: ArrayLike<number>,
+	startSec = 0,
+): { voiced: [number, number][]; thresholdDb: number } {
 	const th = Math.max(vadThreshold(levels), VOICE_FLOOR_DBFS);
 	const runs: [number, number][] = [];
 	let run = -1;
@@ -76,7 +79,12 @@ export function engineMediaKey(asset: MediaAsset | undefined): string | null {
 	return typeof l?.key === 'string' ? l.key : null;
 }
 
-export type VoiceRequest = { mediaKey: string; streamIndex: number | null; startSeconds: number; durationSeconds: number };
+export type VoiceRequest = {
+	mediaKey: string;
+	streamIndex: number | null;
+	startSeconds: number;
+	durationSeconds: number;
+};
 
 export type SequenceVoice = {
 	voice: VoiceActivity;
@@ -327,7 +335,10 @@ export function registerVoiceService(ff: Ffmpeg, svc: VoiceActivityService): voi
 	services.set(ff, svc);
 }
 
-export function voiceServiceFor(ff: Ffmpeg, registry: Pick<MediaRegistry, 'get' | 'resolvePath'>): VoiceActivityService {
+export function voiceServiceFor(
+	ff: Ffmpeg,
+	registry: Pick<MediaRegistry, 'get' | 'resolvePath'>,
+): VoiceActivityService {
 	let s = services.get(ff);
 	if (!s) {
 		s = new VoiceActivityService(ff, registry, null);
