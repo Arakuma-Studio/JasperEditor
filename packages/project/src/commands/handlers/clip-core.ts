@@ -11,6 +11,7 @@ import { SYNTHETIC_INFO, syntheticDefaultFlicks } from '../../structure/syntheti
 import { newLayer3D } from '../../three-d/model.ts';
 import { FRAME_EPS, flicksPerFrame, supportsDropFrame } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import { valuesOf } from '../draft-read.ts';
 import {
 	allTracksIn,
 	assertUnlocked,
@@ -266,7 +267,9 @@ export function placeSource(
 			const mapping = o.audioMapping ?? 'stereo';
 			// gaps (Modify ▸ Audio Channels on the Project item): the item's routing, unless a mapping was asked for.
 			const routed = ((item?.kind === 'media' ? item : undefined) ??
-				(Object.values(doc.items).find(
+				// read without drafting: drafting every Project item copies the record on each placement, and the
+				// transaction's orphan check then scans every clip (the items look changed)
+				(valuesOf(doc.items as Record<string, ProjectItem>).find(
 					(x) => x.kind === 'media' && x.mediaId === asset.id && x.audioChannels,
 				) as ProjectItem | undefined)) as
 				| { audioChannels?: { clips?: { streamIndex: number; map: number[]; mute?: number[] }[] } }

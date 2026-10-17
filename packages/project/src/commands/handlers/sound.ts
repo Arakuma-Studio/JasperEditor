@@ -6,7 +6,7 @@ import { mixFingerprint } from '../../audio/fingerprint.ts';
 import { sequenceDuration } from '../../derive/index.ts';
 import { mediaDurationFlicks } from '../../interpret/model.ts';
 import type { Keyframe } from '../../schema/common.ts';
-import type { ProjectDocument } from '../../schema/document.ts';
+import type { ProjectDocument, ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset } from '../../schema/media.ts';
 import type { AudioClip, Clip, Sequence } from '../../schema/sequence.ts';
 import {
@@ -50,6 +50,7 @@ import { isSfxClip } from '../../sound/sfx-clip.ts';
 import { isSoundTypeId, SOUND_TYPE_IDS } from '../../sound/taxonomy.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import { keysOf, peekIn, valuesOf } from '../draft-read.ts';
 import { assertUnlocked, cleanupSequence, findTrackIn, removeClip, resolveTrackIn } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import type { SoundCueInput } from '../schemas/sound.ts';
@@ -112,16 +113,24 @@ function upgradeLibraryCopy(doc: DDoc, cmd: CommandOf<'media.upgradeLibraryCopy'
 	);
 	if (!plan.ok)
 		return h.fail('E_INVALID_PARAM', `Cannot replace ${old.id}: ${plan.reason}`, { path: ['asset'] });
-	const same = Object.values(doc.media).find((m) => m.fingerprint === cmd.asset.fingerprint && !m.derivation);
+	// reads without drafting (a draft of every media and clip would be copied and finalised for nothing)
+	const same = valuesOf(doc.media as Record<string, MediaAsset>).find(
+		(m) => m.fingerprint === cmd.asset.fingerprint && !m.derivation,
+	);
 	if (same && same.id !== old.id)
 		h.fail('E_INVALID_PARAM', `The new copy is already in the project as ${same.id}`, { path: ['asset'] });
 	const shift = plan.shiftFlicks;
 	// The new file as `media.relink` would see it, for the coverage check before anything changes.
 	const next = { ...plainCopy(old), ...plainCopy(cmd.asset), id: old.id, kind: 'audio' } as MediaAsset;
 	const users: { seq: DSeq; clip: DClip }[] = [];
-	for (const seq of Object.values(doc.sequences))
-		for (const c of Object.values(seq.clips))
-			if ((c as { mediaId?: string }).mediaId === old.id) users.push({ seq, clip: c });
+	for (const sid of keysOf(doc.sequences)) {
+		const raw = peekIn(doc.sequences as Record<string, Sequence>, sid)!;
+		for (const id of keysOf(raw.clips))
+			if ((peekIn(raw.clips, id) as { mediaId?: string } | undefined)?.mediaId === old.id) {
+				const seq = doc.sequences[sid]!;
+				users.push({ seq, clip: seq.clips[id]! });
+			}
+	}
 	const misfit = users.find((u) => !clipCoveredAfterShift(u.seq, u.clip, shift, next));
 	if (misfit) {
 		const msg = `${misfit.clip.id} would not fit the new copy of ${old.originalName}`;
@@ -161,7 +170,9 @@ function upgradeLibraryCopy(doc: DDoc, cmd: CommandOf<'media.upgradeLibraryCopy'
 	}
 	h.defineRef(cmd.ref, old.id);
 	if (cmd.itemRef) {
-		const item = Object.values(doc.items).find((i) => i.kind === 'media' && i.mediaId === old.id);
+		const item = valuesOf(doc.items as Record<string, ProjectItem>).find(
+			(i) => i.kind === 'media' && i.mediaId === old.id,
+		);
 		if (item) h.defineRef(cmd.itemRef, item.id);
 	}
 	return { mediaId: old.id, upgraded: true, shiftFlicks: shift, clipIds: users.map((u) => u.clip.id) };
