@@ -236,6 +236,13 @@ export const SoundDesignSetCheckCmd = cmd('soundDesign.setCheck', {
 				.refine((c) => Object.keys(c).length <= 64, 'at most 64 counts'),
 			at: z.iso.datetime(),
 			preset: z.enum(SOUND_DELIVERIES),
+			/** Checked against a custom target instead of the preset's numbers (Sound Check panel "Custom…"). */
+			target: z
+				.strictObject({
+					integratedLufs: z.number().min(-40).max(-5),
+					truePeakDb: z.number().min(-12).max(0),
+				})
+				.optional(),
 			inputsHash: z.string().min(1).max(256).optional(),
 			jobId: z.string().min(1).max(128).optional(),
 			range: z

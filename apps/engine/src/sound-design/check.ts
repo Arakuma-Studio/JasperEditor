@@ -89,10 +89,12 @@ import {
 	type Sequence,
 	SOUND_CHECK_CATEGORY,
 	SOUND_CHECK_CODES,
+	SOUND_CHECK_CUSTOM_LABEL,
 	SOUND_CHECK_THRESHOLDS,
 	type SoundCheckCode,
 	type SoundCheckMessage,
 	type SoundCheckSeverity,
+	type SoundCheckTarget,
 	type SoundCue,
 	type SoundDelivery,
 	SYNC_MIN_CORRELATION,
@@ -199,6 +201,8 @@ export type CheckOptions = {
 	projectId: string;
 	revision: number | null;
 	preset: SoundDelivery;
+	/** A custom target checked instead of the preset's integrated loudness and true-peak ceiling (WP5.2 "Custom…"). */
+	target?: SoundCheckTarget | undefined;
 	/** Sequence frames; default the whole sequence. */
 	range?: { start: number; end: number } | undefined;
 };
@@ -457,7 +461,15 @@ export async function checkSequence(
 	};
 	const progress = (f: number, s: string) => env.onProgress?.(f, s);
 	const warnings: SoundCheckReport['warnings'] = [];
-	const preset = deliveryPreset(opts.preset);
+	const preset = opts.target
+		? {
+				...deliveryPreset(opts.preset),
+				label: SOUND_CHECK_CUSTOM_LABEL,
+				integratedLufs: opts.target.integratedLufs,
+				truePeakDb: opts.target.truePeakDb,
+				source: 'Custom target',
+			}
+		: deliveryPreset(opts.preset);
 	const settings = soundDesignSettingsOf(seq);
 	const rate = seq.settings.frameRate as Rational;
 	const fpsNum = rate.num / rate.den;
@@ -921,7 +933,7 @@ export async function checkSequence(
 	const audibleSec = (audibleHops * hop) / sr;
 	const measurable =
 		Number.isFinite(final.integrated) && audibleSec >= SOUND_CHECK_THRESHOLDS.minMeasurableSec;
-	const broadcast = opts.preset === 'broadcast-r128' || opts.preset === 'atsc-a85';
+	const broadcast = !opts.target && (opts.preset === 'broadcast-r128' || opts.preset === 'atsc-a85');
 	const loudnessFix = (why: string): SoundCheckFix | undefined => {
 		const cmd = {
 			type: 'mixer.setLoudness',
@@ -2063,13 +2075,14 @@ export async function checkSequence(
 		sequenceId: seq.id,
 		revision: opts.revision,
 		mixHash: mixFingerprint(doc, seq.id),
-		inputsHash: soundCheckInputsHash(doc, seq.id, opts.preset),
+		inputsHash: soundCheckInputsHash(doc, seq.id, opts.preset, opts.target),
 		preset: {
 			id: opts.preset,
 			label: preset.label,
 			integratedLufs: preset.integratedLufs,
 			truePeakDb: preset.truePeakDb,
 			source: preset.source,
+			...(opts.target ? { custom: true } : {}),
 		},
 		range: { ...range },
 		rangeTimecode: { start: tc(range.start), end: tc(range.end) },
@@ -2166,7 +2179,7 @@ async function soundCheckJob(ctx: JobContext, deps: SoundCheckDeps): Promise<Sou
 	const report = await checkSequence(
 		live.doc,
 		seq,
-		{ projectId: req.projectId, revision: live.revision, preset, range: req.range },
+		{ projectId: req.projectId, revision: live.revision, preset, target: req.target, range: req.range },
 		{
 			ff: deps.ffmpeg,
 			registry: deps.registry,
@@ -2205,6 +2218,7 @@ async function soundCheckJob(ctx: JobContext, deps: SoundCheckDeps): Promise<Sou
 							counts: Object.fromEntries(Object.entries(report.counts).slice(0, 64)),
 							at: new Date().toISOString(),
 							preset,
+							...(req.target ? { target: req.target } : {}),
 							inputsHash: report.inputsHash || 'none',
 							jobId: ctx.job.id,
 							...(report.wholeSequence ? {} : { range: report.range }),
