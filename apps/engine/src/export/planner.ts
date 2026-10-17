@@ -49,7 +49,12 @@ import {
 	missingTemplatesMessage,
 	TEMPLATE_NOT_INSTALLED,
 } from '../mg/templates.ts';
-import { type EncoderRequest, LEGACY_X264_CHOICE } from '../tools/encoders.ts';
+import {
+	type EncoderRequest,
+	fitOutputFormat,
+	LEGACY_X264_CHOICE,
+	outputFormatChanges,
+} from '../tools/encoders.ts';
 import { CaptionExportError, captionBurnMode, captionPlanWarnings } from './captions.ts';
 import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from './native-ext.ts';
 import { soundPlanWarnings } from './sound-credits.ts';
@@ -478,13 +483,20 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		);
 	const audioOut = audioOutputOf(seq, settings);
 	const video0 = settings.video;
+	// The requested container and audio codec are written where they fit the codec (WP6.5a); what does not fit is
+	// reported below (OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED), never changed silently (AGENTS §4).
+	const want = {
+		container: settings.container,
+		...(settings.audio && !settings.videoOnly ? { audio: settings.audio.codec } : {}),
+	};
 	const encoder = deps.selectEncoder
 		? deps.selectEncoder({
 				purpose: 'export',
 				codec: video0?.codec ?? 'h264',
 				...(video0?.encoder ? { encoder: video0.encoder } : {}),
+				...want,
 			})
-		: LEGACY_X264_CHOICE;
+		: { ...LEGACY_X264_CHOICE, ...fitOutputFormat('h264', 'export', true, want) };
 	if (!deps.capabilities.native)
 		blockers.push({ path: 'native', reason: 'ffmpeg (with a video encoder and aac) is not available' });
 	else if (!encoder && !input.still)
@@ -561,6 +573,11 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		}
 	}
 	if (encoder?.message) warnings.push({ code: 'ENCODER_FALLBACK', message: encoder.message });
+	if (!input.still)
+		warnings.push(
+			// no native encoder: only the dev-only Remotion GPL path can write, and it writes H.264 + AAC in MP4
+			...outputFormatChanges(encoder ?? { codec: 'h264', container: 'mp4', audioEncoder: 'aac' }, want),
+		);
 
 	const seqFps = seq.settings.frameRate;
 	const video = settings.video;

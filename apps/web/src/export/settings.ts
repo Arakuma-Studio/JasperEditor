@@ -69,6 +69,8 @@ export function buildExportSettings(
 		useProxies?: boolean;
 		/** spec 12 §2.11: the sound credits sidecar (absent / 'off' = none). */
 		credits?: CreditsChoice;
+		/** The engine's ffmpeg has an Opus encoder (VP9 goes into WebM with Opus; default true). */
+		opus?: boolean;
 	},
 ): ExportSettings {
 	const col = choice.color ?? DEFAULT_COLOR_CHOICE;
@@ -77,11 +79,12 @@ export function buildExportSettings(
 	const channels = a.channels && a.channels !== 'auto' ? a.channels : s.masterLayout === '5.1' ? 6 : 2;
 	const rate =
 		a.sampleRate && a.sampleRate !== 'sequence' ? a.sampleRate : (s.audioSampleRate as 44100 | 48000 | 96000);
+	const format = exportFormatOf(choice.codec ?? 'h264', choice.opus ?? true);
 	return {
 		sequenceId: seq.id,
 		range: choice.range === 'in-out' && hasInOut(seq) ? { type: 'in-out' } : { type: 'entire' },
 		presetId: MATCH_SEQUENCE_PRESET.id,
-		container: 'mp4',
+		container: format.container,
 		video: {
 			codec: choice.codec ?? 'h264',
 			...(choice.encoder ? { encoder: choice.encoder } : {}),
@@ -105,7 +108,7 @@ export function buildExportSettings(
 				: {}),
 		},
 		audio: {
-			codec: 'aac',
+			codec: format.audio,
 			sampleRate: rate ?? 48000,
 			channels,
 			bitrateKbps: channels === 6 ? 384 : AUDIO_KBPS,
@@ -123,6 +126,20 @@ export function buildExportSettings(
 		...(choice.useProxies ? { draftUseProxies: true } : {}),
 		...(choice.credits && choice.credits !== 'off' ? { credits: { sidecar: choice.credits } } : {}),
 	};
+}
+
+/**
+ * The container and audio codec the dialog asks for with a codec: its own format (ProRes masters: MOV with 24-bit PCM;
+ * VP9: WebM with Opus when the engine has Opus; the others MP4 with AAC). The engine writes what it is asked where the
+ * codec fits and names any change in the plan's warnings (OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED, WP6.5a).
+ */
+export function exportFormatOf(
+	codec: VideoCodec,
+	opus: boolean,
+): { container: ExportSettings['container']; audio: 'aac' | 'opus' | 'pcm' } {
+	if (codec === 'prores') return { container: 'mov', audio: 'pcm' };
+	if (codec === 'vp9' && opus) return { container: 'webm', audio: 'opus' };
+	return { container: 'mp4', audio: 'aac' };
 }
 
 /** The Export dialog's sound credits choice (spec 12 §2.11): no file, or `<name>.credits.<txt|md|csv>`. */

@@ -445,6 +445,7 @@ export function DeliveryDialog(
 			title="Delivery Target"
 			size="medium"
 			primaryLabel={result ? t('Close') : running ? t('Applying…') : t('Apply')}
+			hideCancel={!!result}
 			primaryDisabled={!result && (readOnly || !!running || !seq)}
 			onPrimary={async () => {
 				if (result) {

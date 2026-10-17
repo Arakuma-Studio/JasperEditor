@@ -198,6 +198,8 @@ describe('Auto Sound Pass… dialog', () => {
 		await act(async () => {
 			const primary = dialog.querySelector('[data-dialog-primary]') as HTMLButtonElement;
 			expect(primary.textContent).toBe('Close');
+			// WP6.5a: Close alone once the proposal is made
+			expect(within(dialog).queryByRole('button', { name: 'Cancel' })).toBeNull();
 			fireEvent.click(primary);
 		});
 		await waitFor(() => expect(t.closed).toHaveLength(1));

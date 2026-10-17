@@ -26,6 +26,11 @@ export type DialogProps = {
 	danger?: boolean;
 	cancelLabel?: string;
 	onCancel?(): void;
+	/**
+	 * No Cancel button: the dialog's work is done and the primary button says Close (a Cancel next to it would read as
+	 * "undo what just ran"). Esc and the title bar's close still close it.
+	 */
+	hideCancel?: boolean;
 	/** Extra footer content on the left (e.g. "Restore Defaults"). */
 	footerExtra?: ReactNode;
 	/** Custom positioning (e.g. the command palette at 20% from the top). */
@@ -144,16 +149,18 @@ export function Dialog(props: DialogProps) {
 						<div className="flex h-12 shrink-0 items-center gap-2 border-t border-pr-border-subtle px-4">
 							{footerExtra}
 							<div className="ml-auto flex items-center gap-2">
-								<Button
-									variant="secondary"
-									pill
-									onClick={() => {
-										props.onCancel?.();
-										onOpenChange(false);
-									}}
-								>
-									{cancelLabel}
-								</Button>
+								{props.hideCancel ? null : (
+									<Button
+										variant="secondary"
+										pill
+										onClick={() => {
+											props.onCancel?.();
+											onOpenChange(false);
+										}}
+									>
+										{cancelLabel}
+									</Button>
+								)}
 								<Button
 									variant={danger ? 'danger' : 'primary'}
 									pill

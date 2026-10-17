@@ -399,8 +399,15 @@ function PersistenceBanners(props: { session: EditorSession; onReplace(s: Editor
 }
 
 /**
+ * Result warnings the finished-export notice repeats: the sound ones and a file not written in the requested container
+ * or audio codec (WP6.5a, AGENTS §4).
+ */
+const SHOWN_RESULT_WARNING = /^(W_SOUND_|OUTPUT_CONTAINER_CHANGED$|AUDIO_CODEC_CHANGED$)/;
+
+/**
  * spec 12 §2.11: what the finished export says about sound credits — the credits file it wrote and its sound warnings
- * (W_SOUND_CREDITS, W_SOUND_CHECK_STALE…). Undefined when there is nothing to say.
+ * (W_SOUND_CREDITS, W_SOUND_CHECK_STALE…), and a container / audio codec other than the one asked for. Undefined when
+ * there is nothing to say.
  */
 export function exportResultDetail(result: unknown): string | undefined {
 	const r = result as
@@ -417,7 +424,7 @@ export function exportResultDetail(result: unknown): string | undefined {
 	else if (c && c.count === 0)
 		parts.push('No library sound is heard in the export: no credits file was written.');
 	for (const w of Array.isArray(r?.warnings) ? r.warnings : [])
-		if (typeof w?.code === 'string' && w.code.startsWith('W_SOUND_') && typeof w.message === 'string')
+		if (typeof w?.code === 'string' && SHOWN_RESULT_WARNING.test(w.code) && typeof w.message === 'string')
 			parts.push(w.message);
 	return parts.length ? parts.join(' ') : undefined;
 }

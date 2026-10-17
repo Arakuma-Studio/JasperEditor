@@ -7,7 +7,7 @@
 // command for every selected clip it applies to.
 import type { AudioClip, Command, Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { Button, cx, toast } from '@jasper/ui';
+import { Button, cx, SegmentedControl, toast } from '@jasper/ui';
 import { runCommand } from '../commands/registry.ts';
 import { t } from '../i18n/runtime.ts';
 import { useShellRuntimeOrNull } from '../shell/context.tsx';
@@ -34,6 +34,7 @@ const ALIGNS = [
 	['end', 'End'],
 ] as const;
 
+/** Role / Align: the editor's segmented control (one Tab stop, arrow keys move and choose; WP6.5a). */
 function Segmented<T extends string>(props: {
 	label: string;
 	value: T | null;
@@ -43,32 +44,17 @@ function Segmented<T extends string>(props: {
 	testId: string;
 }) {
 	return (
-		<div role="radiogroup" aria-label={props.label} className="flex gap-[2px]" data-testid={props.testId}>
-			{props.options.map(([v, label]) => {
-				const on = props.value === v;
-				return (
-					// biome-ignore lint/a11y/useSemanticElements: segmented control button
-					<button
-						key={v}
-						type="button"
-						role="radio"
-						aria-checked={on}
-						disabled={props.disabled}
-						onClick={() => props.onChange(v)}
-						className={cx(
-							'h-[20px] rounded-pr-control border px-2 text-pr-small disabled:opacity-40',
-							on
-								? 'border-pr-accent bg-pr-accent-fill text-pr-on-accent'
-								: 'border-pr-border-subtle text-pr-muted hover:text-pr-text',
-						)}
-						data-value={v}
-					>
-						{on ? '✓ ' : ''}
-						{t(label)}
-					</button>
-				);
-			})}
-		</div>
+		<SegmentedControl
+			label={props.label}
+			value={props.value}
+			disabled={props.disabled}
+			onChange={props.onChange}
+			data-testid={props.testId}
+			options={props.options.map(([value, label]) => ({
+				value,
+				label: `${props.value === value ? '✓ ' : ''}${t(label)}`,
+			}))}
+		/>
 	);
 }
 

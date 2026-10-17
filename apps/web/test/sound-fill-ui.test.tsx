@@ -460,6 +460,69 @@ describe('clip menu, badges, Essential Sound, Properties', () => {
 		expect(screen.getByTestId('essential-pitch').textContent).toBe('0 st');
 	});
 
+	it('Role / Align are one Tab stop each; arrow keys, Home and End move and choose (WP6.5a item 4)', async () => {
+		const s = await filled();
+		const view = () => (
+			<SessionProvider session={s.session}>
+				<EssentialSfxSection
+					session={s.session}
+					seq={s.seq()}
+					clips={[s.seq().clips[s.clipId] as AudioClip]}
+				/>
+			</SessionProvider>
+		);
+		const r = render(view());
+		const rerender = () => r.rerender(view());
+		const radios = () => within(screen.getByTestId('essential-role')).getAllByRole('radio');
+		const role = () => sfxOf(s.seq().clips[s.clipId])!.role;
+		const order = ['hero', 'support', 'layer'];
+		const start = order.indexOf(role());
+		expect(start).toBeGreaterThanOrEqual(0);
+		// roving tabindex: only the checked option is a Tab stop
+		expect(radios().map((b) => b.tabIndex)).toEqual(order.map((_, i) => (i === start ? 0 : -1)));
+		const key = (k: string) => {
+			const target = document.activeElement as HTMLElement;
+			const ev = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true });
+			act(() => {
+				target.dispatchEvent(ev);
+			});
+			rerender();
+			return ev.defaultPrevented;
+		};
+		act(() => radios()[start]!.focus());
+		expect(key('ArrowRight')).toBe(true);
+		const next = order[(start + 1) % 3]!;
+		expect(role()).toBe(next);
+		expect(s.labels().at(-1)).toBe('Sound Role');
+		expect(document.activeElement?.getAttribute('data-value')).toBe(next);
+		expect(
+			radios()
+				.find((b) => b.tabIndex === 0)
+				?.getAttribute('data-value'),
+		).toBe(next);
+		expect(key('End')).toBe(true);
+		expect(role()).toBe('layer');
+		expect(key('ArrowDown')).toBe(true); // wraps
+		expect(role()).toBe('hero');
+		expect(key('ArrowLeft')).toBe(true); // wraps back
+		expect(role()).toBe('layer');
+		expect(key('Home')).toBe(true);
+		expect(role()).toBe('hero');
+		expect(key('a')).toBe(false); // other keys are left to the keymap
+		// Align: the same keys
+		const align = () => sfxOf(s.seq().clips[s.clipId])!.placement.align;
+		const aligns = within(screen.getByTestId('essential-align')).getAllByRole('radio');
+		expect(aligns.filter((b) => b.tabIndex === 0)).toHaveLength(1);
+		act(() => aligns.find((b) => b.tabIndex === 0)!.focus());
+		const before = align();
+		expect(key('ArrowRight')).toBe(true);
+		expect(align()).not.toBe(before);
+		expect(s.labels().at(-1)).toBe('Sound Align');
+		s.session.undo();
+		rerender();
+		expect(align()).toBe(before);
+	});
+
 	it('Properties: Sound shows the credit line exactly as the credits export; Cue edits through soundCue.update', async () => {
 		const s = await filled();
 		const clip = s.seq().clips[s.clipId]!;

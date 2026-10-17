@@ -886,6 +886,8 @@ describe('Sequence ▸ Sound Design: Rebalance, Room Glue…, Delivery Target…
 				.getAllByRole('button')
 				.some((b) => b.textContent === 'Close'),
 		).toBe(true);
+		// WP6.5a: after the run, Close alone (a Cancel beside it read as "undo what just ran")
+		expect(within(dialog).queryByRole('button', { name: 'Cancel' })).toBeNull();
 		await settle();
 		const title = 'Applied Podcast · −16 LUFS · −1 dBTP';
 		expect(toastTitles()).toContain(title);

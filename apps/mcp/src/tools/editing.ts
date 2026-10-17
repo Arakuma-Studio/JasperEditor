@@ -388,7 +388,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Split clips',
 			description:
-				'Cuts clips in two at a time (clip.split, like the razor tool). By default every clip under that time on all unlocked tracks is split; restrict with clipIds or tracks. Returns the new right-hand halves.',
+				'Cuts clips in two at a time (clip.split, like the razor tool). By default every clip under that time on all unlocked tracks is split; restrict with clipIds or tracks. A cut inside a transition keeps the transition on its edit, shortened to the part of the clip it still has (W_TRANSITION_SHORTENED, as Premiere). Returns the new right-hand halves.',
 			input: {
 				projectId: ProjectIdArg,
 				at: timeArg('Where to cut'),

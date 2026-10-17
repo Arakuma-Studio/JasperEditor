@@ -1,6 +1,7 @@
 // Built-in workspaces as data (S05 §4.2, WS-001/003, R-PUI §5.4). Sizes are proportions of the parent
 // split applied to the real window size when a layout is created; fixed-size panels (Tools 40 px, Audio
 // Meters 52 px) keep their pixel size and `fill` absorbs the remainder. Splits alternate row/column.
+import { t } from '../../i18n/runtime.ts';
 import type { PanelKind } from '../../panels/types.ts';
 
 export type LayoutSize = number | { px: number } | 'fill';
@@ -287,4 +288,42 @@ export const DEFAULT_WORKSPACE_ID = 'editing';
 
 export function builtinWorkspace(id: string): WorkspaceDefinition | undefined {
 	return LAYOUT_PRESETS.find((w) => w.id === id) ?? BUILTIN_WORKSPACES.find((w) => w.id === id);
+}
+
+/**
+ * A built-in workspace's name in the UI language, by id (WP6.5a); null for other ids. Stored records keep the English
+ * name (name clashes, export) and ids never change.
+ */
+function builtinWorkspaceName(id: string): string | null {
+	switch (id) {
+		case 'editing':
+			return t('Editing');
+		case 'assembly':
+			return t('Assembly');
+		case 'effects':
+			return t('Effects');
+		case 'motion':
+			return t('Motion');
+		case 'essentials':
+			return t('Essentials');
+		case 'color':
+			return t('Color');
+		case 'audio':
+			return t('Audio');
+		case 'captions':
+			return t('Captions');
+		case 'sound-design':
+			return t('Sound Design');
+		case 'compact':
+			return t('Compact');
+		case 'phone':
+			return t('Phone');
+		default:
+			return null;
+	}
+}
+
+/** The name a workspace is shown with: a built-in's in the UI language, a custom one's as the user wrote it. */
+export function workspaceName(w: { id: string; name: string; builtIn?: boolean }): string {
+	return (w.builtIn === false ? null : builtinWorkspaceName(w.id)) ?? w.name;
 }

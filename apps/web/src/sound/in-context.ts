@@ -138,8 +138,59 @@ function set(patch: Partial<InContextState>): void {
 	inContextStore.setState(patch);
 }
 
+/**
+ * What a Timeline needs to put its view back after an audition (WP6.5a): `start` when a session's first window starts
+ * (not when a window replaces one still playing), `end` when the last one ends, with the frame the playhead returned
+ * to (null: it was left where it was — the session closed, another sequence became active).
+ */
+export type InContextViewListener = {
+	start(session: EditorSession): void;
+	end(session: EditorSession, returnedTo: number | null): void;
+};
+const viewListeners = new Set<InContextViewListener>();
+/** The session whose view the listeners were told about (a window of it is playing or being replaced). */
+let viewSession: EditorSession | null = null;
+
+/** Subscribes a Timeline to audition windows starting and ending; returns the unsubscribe function. */
+export function onInContextView(listener: InContextViewListener): () => void {
+	viewListeners.add(listener);
+	return () => {
+		viewListeners.delete(listener);
+	};
+}
+
+function viewStarted(session: EditorSession): void {
+	if (viewSession === session) return;
+	if (viewSession) viewEnded(viewSession, null);
+	viewSession = session;
+	for (const l of [...viewListeners])
+		try {
+			l.start(session);
+		} catch {
+			// a view failing must not stop the audition
+		}
+}
+
+function viewEnded(session: EditorSession, returnedTo: number | null): void {
+	if (viewSession !== session) return;
+	viewSession = null;
+	for (const l of [...viewListeners])
+		try {
+			l.end(session, returnedTo);
+		} catch {
+			// a view failing must not keep the audition
+		}
+}
+
 /** Stops whatever plays in context (the gesture is cancelled: nothing was written). */
-export function stopInContext(opts: { returnToAnchor?: boolean; reason?: 'window' } = {}): void {
+export function stopInContext(
+	opts: {
+		returnToAnchor?: boolean;
+		reason?: 'window';
+		/** A new window takes over at once (it ends the view itself). */
+		replacing?: boolean;
+	} = {},
+): void {
 	token++;
 	const watch = preparing;
 	preparing = null;
@@ -151,12 +202,17 @@ export function stopInContext(opts: { returnToAnchor?: boolean; reason?: 'window
 		// the gesture first: whatever the transport does next, the document is the committed one again
 		r.gesture?.cancel();
 		const transport = r.session.transport;
+		let returned: number | null = null;
 		try {
 			if (transport.getState().playing) transport.pause();
-			if (opts.returnToAnchor !== false) transport.seek(r.returnTo);
+			if (opts.returnToAnchor !== false) {
+				transport.seek(r.returnTo);
+				returned = r.returnTo;
+			}
 		} catch {
 			// a Program player failing to pause must not keep the audition (or its gesture) alive
 		}
+		if (!opts.replacing) viewEnded(r.session, returned);
 	}
 	const st = inContextStore.getState();
 	if (st.active || st.loading)
@@ -278,6 +334,7 @@ function playWindow(r: Running, start: number, fps: number): void {
 /** Starts a window: the run is current, input and session watchers are on, the store says what plays. */
 function begin(r: Running, title: string | null, soundId: string | null): void {
 	running = r;
+	viewStarted(r.session);
 	r.offs.push(
 		endOnInput(() => {
 			if (running === r) stopInContext();
@@ -417,7 +474,7 @@ export function playTimelineWindow(
 	},
 ): void {
 	const previous = running && running.session === session ? running.returnTo : null;
-	stopInContext({ returnToAnchor: false });
+	stopInContext({ returnToAnchor: false, replacing: previous !== null });
 	auditionPlayer().stop();
 	const my = ++token;
 	const fps = fpsOf(seq);

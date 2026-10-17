@@ -2,17 +2,26 @@
 // Loudness / Clear Audio Type. Remix… opens Essential Sound ▸
 // Duration (Premiere's flow); agents pass {targetSeconds} to remix directly. Remixed clips get Revert Remix in their
 // context menu.
-import { type AudioClip, readEssentialSound, type Sequence } from '@jasper/project';
+import {
+	AUDIO_TYPE_LABELS,
+	AUDIO_TYPES,
+	type AudioClip,
+	type AudioType,
+	readEssentialSound,
+	type Sequence,
+} from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { z } from 'zod';
 import type { CommandCtx, UiCommand } from '../commands/types.ts';
 import { clipMenuExtensions } from '../extensions/index.ts';
+import { t } from '../i18n/runtime.ts';
 import {
 	autoMatchLoudness,
 	autoMatchMessage,
 	autoTagClips,
 	autoTagMessage,
 	remixClip,
+	selectAudioType,
 	selectedAudioClips,
 } from './ops.ts';
 
@@ -59,6 +68,22 @@ function autoTagTargets(ctx: CommandCtx, raw: unknown): { seq: Sequence | null; 
 		};
 	}
 	return { seq, ids: clips.map((c) => c.id) };
+}
+
+const SelectTypeArgs = z
+	.strictObject({
+		/** The audio type (default: the type of the selected clips, when they share one). */
+		type: z.enum(AUDIO_TYPES).optional(),
+	})
+	.optional();
+
+/** The type Select All Clips of Audio Type selects: the argument, else the one type of the selected clips. */
+function selectTypeTarget(ctx: CommandCtx, raw: unknown): AudioType | null {
+	const args = SelectTypeArgs.safeParse(raw);
+	if (args.success && args.data?.type) return args.data.type;
+	const types = new Set(selection(ctx).clips.map((c) => readEssentialSound(c.essential)?.type ?? null));
+	const [only] = types;
+	return types.size === 1 && only ? only : null;
 }
 
 const RemixArgs = z
@@ -178,6 +203,40 @@ export const audioFxCommands: UiCommand[] = [
 		},
 	},
 	{
+		id: 'audio.selectAudioType',
+		label: 'Select All Clips of Audio Type',
+		labelFor: (ctx) => {
+			const type = selectTypeTarget(ctx, undefined);
+			return type
+				? t('Select All {0} Clips', t(AUDIO_TYPE_LABELS[type]))
+				: t('Select All Clips of Audio Type');
+		},
+		description:
+			'Select every audio clip of an Essential Sound type (Dialogue, Music, SFX or Ambience) in the active sequence; without a type, the type of the selected clips',
+		scope: 'global',
+		agentExposed: true,
+		argsSchema: SelectTypeArgs,
+		when: (ctx) => !!ctx.session?.getState().activeSequenceId,
+		disabledReason: () => 'Open a sequence',
+		run: (ctx, raw) => {
+			const type = selectTypeTarget(ctx, raw);
+			if (!ctx.session) return;
+			if (!type) {
+				ctx.ui.toast({
+					kind: 'info',
+					message: t('Select clips of one audio type, or pick a type in Essential Sound'),
+				});
+				return;
+			}
+			const n = selectAudioType(ctx.session, type);
+			if (!n)
+				ctx.ui.toast({
+					kind: 'info',
+					message: t('No {0} clips in this sequence', t(AUDIO_TYPE_LABELS[type])),
+				});
+		},
+	},
+	{
 		id: 'audio.clearAudioType',
 		label: 'Clear Audio Type',
 		description: 'Remove the Essential Sound type and every change it made',
@@ -200,8 +259,8 @@ export const audioFxCommands: UiCommand[] = [
 	},
 ];
 
-// Timeline clip context menu (audio clips): Auto Tag Audio Types (the selection, with this clip); remixed audio clips
-// get Revert Remix.
+// Timeline clip context menu (audio clips): Auto Tag Audio Types (the selection, with this clip), Select All <Type> Clips
+// for a clip with a type; remixed audio clips get Revert Remix.
 clipMenuExtensions.register({
 	id: 'audio-fx',
 	order: 41,
@@ -213,6 +272,7 @@ clipMenuExtensions.register({
 			: undefined;
 		const picked = s.selection.timeline.clips.filter((id) => seq?.clips[id]?.kind === 'audio');
 		const clipIds = picked.includes(clip.id) ? picked : [clip.id];
+		const clipType = readEssentialSound((clip as AudioClip).essential)?.type ?? null;
 		return [
 			...(run
 				? [
@@ -221,6 +281,15 @@ clipMenuExtensions.register({
 							label: 'Auto Tag Audio Types',
 							disabled: s.readOnly,
 							run: () => run('audio.autoTag', { clipIds }),
+						},
+					]
+				: []),
+			...(run && clipType
+				? [
+						{
+							kind: 'item' as const,
+							label: t('Select All {0} Clips', t(AUDIO_TYPE_LABELS[clipType])),
+							run: () => run('audio.selectAudioType', { type: clipType }),
 						},
 					]
 				: []),

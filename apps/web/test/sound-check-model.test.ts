@@ -103,6 +103,33 @@ describe('why a fix needs judgement, and unmeasured reasons, in the UI language'
 		expect(fixWhyText({ ...fix, why: duck.text, whyMessage: duck })).toBe(
 			'Atenuar 6 dB deja la música 5.2 LU por debajo de la voz',
 		);
+		// WP6.5a: the solver's English reason in "The solver's gain does not resolve it: {0}" is said from the fix's
+		// own gain report instead
+		const solver = soundCheckMessage('whySolverGain', 'limited by dialogue A1 (the speech band)');
+		const gainFix = {
+			...fix,
+			why: solver.text,
+			whyMessage: solver,
+			commands: [
+				{
+					type: 'soundDesign.applyGains',
+					gains: { clp_1: -6 },
+					report: {
+						clp_1: {
+							targetLiftDb: 6,
+							achievedLiftDb: 2,
+							limitedBy: ['dialogue'],
+							reason: 'limited by dialogue A1 (the speech band)',
+						},
+					},
+				},
+			] as never,
+		};
+		expect(fixWhyText(gainFix)).toBe('La ganancia del solucionador no lo resuelve: limitado por diálogo A1');
+		// without a report: the message as before
+		expect(fixWhyText({ ...gainFix, commands: [] as never })).toBe(
+			'La ganancia del solucionador no lo resuelve: limited by dialogue A1 (the speech band)',
+		);
 		const m = soundCheckMessage('syncUnmeasurable', 'Air whoosh', SOUND_CHECK_UNMEASURED.covered);
 		expect(messageText(m)).toContain('otros sonidos lo tapan');
 		expect(messageText(m)).toContain('Air whoosh');

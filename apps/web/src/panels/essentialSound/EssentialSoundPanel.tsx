@@ -32,6 +32,7 @@ const notify = {
 
 import { type ReactNode, useState } from 'react';
 import {
+	audioTypeClips,
 	autoMatchLoudness,
 	autoMatchMessage,
 	autoTagClips,
@@ -40,6 +41,7 @@ import {
 	generateDucking,
 	remixClip,
 	saveUserSoundPreset,
+	selectAudioType,
 	userSoundPresets,
 } from '../../audio-fx/ops.ts';
 import { runCommand } from '../../commands/registry.ts';
@@ -72,15 +74,63 @@ export function EssentialSoundPanel(_props: PanelProps) {
 	);
 	if (!session)
 		return <EmptyState icon="panel.essentialSound" message="Open a project to use Essential Sound" />;
-	if (!sel.seq || sel.clips.length === 0)
-		return (
-			<EmptyState
-				icon="panel.essentialSound"
-				message="Select audio clips"
-				detail="Then choose an audio type: Dialogue, Music, SFX or Ambience."
-			/>
-		);
-	return <Body session={session} seq={sel.seq} clips={sel.clips} />;
+	return (
+		<div className="flex h-full min-h-0 flex-col">
+			<TagsInSequence session={session} />
+			<div className="min-h-0 flex-1">
+				{!sel.seq || sel.clips.length === 0 ? (
+					<EmptyState
+						icon="panel.essentialSound"
+						message="Select audio clips"
+						detail="Then choose an audio type: Dialogue, Music, SFX or Ambience."
+					/>
+				) : (
+					<Body session={session} seq={sel.seq} clips={sel.clips} />
+				)}
+			</div>
+		</div>
+	);
+}
+
+/** Counts of the active sequence's audio clips per type, as a stable key for the store selector ("3,1,0,2"). */
+function typeCountsKey(s: SessionState | null): string {
+	const seq = s?.activeSequenceId
+		? (s.document.sequences[s.activeSequenceId] as Sequence | undefined)
+		: undefined;
+	if (!seq) return '';
+	const by = audioTypeClips(seq);
+	return AUDIO_TYPES.map((ty) => by[ty].length).join(',');
+}
+
+/**
+ * The tags found in the active sequence (Premiere: Essential Sound shows the audio types in use; clicking one selects
+ * all clips of that category). One button per type in use with its count; clicking selects those audio clips only.
+ */
+function TagsInSequence({ session }: { session: EditorSession }) {
+	const key = useStoreSelector(session.store, typeCountsKey);
+	const counts = key ? key.split(',').map(Number) : [];
+	if (!counts.some((n) => n > 0)) return null;
+	return (
+		<div
+			className="flex flex-wrap items-center gap-1 border-b border-pr-border-subtle px-2 py-1 text-pr-small"
+			data-testid="essential-tags"
+		>
+			<span className="text-pr-muted">{t('In this sequence:')}</span>
+			{AUDIO_TYPES.map((ty, i) =>
+				counts[i] ? (
+					<Button
+						key={ty}
+						variant="quiet"
+						aria-label={t('Select all {0} clips ({1})', t(AUDIO_TYPE_LABELS[ty]), counts[i])}
+						data-testid={`essential-tag-${ty}`}
+						onClick={() => selectAudioType(session, ty)}
+					>
+						{`${t(AUDIO_TYPE_LABELS[ty])} ${counts[i]}`}
+					</Button>
+				) : null,
+			)}
+		</div>
+	);
 }
 
 function Body({ session, seq, clips }: { session: EditorSession; seq: Sequence; clips: AudioClip[] }) {

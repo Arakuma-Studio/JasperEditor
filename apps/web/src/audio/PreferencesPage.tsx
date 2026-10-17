@@ -105,6 +105,18 @@ export function AudioPreferencesPage() {
 					/>
 				</div>
 			</PrefGroup>
+			<PrefGroup title="Essential Sound">
+				<Checkbox
+					checked={p.autoTagInTimeline}
+					onCheckedChange={(v) => audioPrefs.set({ autoTagInTimeline: v })}
+					label="Auto-tag audio types in the timeline"
+				/>
+				<p className="text-pr-small text-pr-dim">
+					Audio clips you add to a sequence are listened to on the engine and tagged Dialogue, Music, SFX or
+					Ambience, marked auto until you confirm them in Essential Sound. Types you set are kept; each
+					tagging is its own undo step.
+				</p>
+			</PrefGroup>
 			<PrefGroup title="Voice-Over Record">
 				<PrefRow label="Source">
 					<Select
