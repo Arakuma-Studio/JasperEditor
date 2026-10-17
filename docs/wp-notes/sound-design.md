@@ -6298,6 +6298,9 @@ pack (test-pinned).
 
 #### BigSoundBank (decision 5): none included — ask a human
 
+> **Superseded (2026-10-17):** the human decided to include BigSoundBank; see "Phase 6 → BigSoundBank packs" below
+> (four packs, 147 sounds). The text below is what WP6.1 found and did at the time.
+
 - **Licence: verifiable per file.** https://bigsoundbank.com/licenses.html (fetched 2026-10-17) says "This is: Creative
   Commons CC0 1.0 Universal WTFPL license … Public Domain Dedication" and "All files whose download page mentions 'Free and
   Royalty Free' are made available free of charge and freely for all your projects". Each sound page states it per file,
@@ -6395,7 +6398,7 @@ pack (test-pinned).
 #### Limits and notes for the next packages
 
 - BigSoundBank: see above — none, pending a human's decision; the kit's gaps (risers, air whooshes, keys, bright hits,
-  room tone) stay.
+  room tone) stay. *(Closed by "Phase 6 → BigSoundBank packs".)*
 - Kenney's archive URLs carry a content hash; if Kenney republishes a pack, its install fails with `PACK_CHECKSUM` (the
   message says the file changed upstream) until `pack-sources.json` is updated and the catalogue rebuilt.
 - 191 pack files keep a type the judge rejects (ranked lower by their judge score); 249 files are untyped (225 music /
@@ -6403,6 +6406,306 @@ pack (test-pinned).
 - The install reads the archive into memory (≤ 256 MB by the schema; Kenney's largest is 5.9 MB).
 - The e2e harness points `JASPER_SOUND_CATALOG` at an (empty) file in its throwaway appdir, so e2e runs never download;
   Preferences there shows "This engine offers no sound packs" unless a spec writes one.
+
+### Phase 6 → BigSoundBank packs
+
+Branch `feat/sd-p6-bigsoundbank`. Scope: spec 12 §0 decision 5 and its follow-up decision (2026-10-17), P6-R1 ("plus
+BigSoundBank items with a verified CC0 licence"). **Human decision (the project owner, 2026-10-17):** include
+BigSoundBank. Its robots.txt (`Disallow: /UPLOAD/` for every robot) and ai.txt ("Audio files: NOT available for
+training") are recommendations whose restriction targets crawlers and AI training; we train nothing, and the engine
+downloads only the curated files, from their upstream URLs, when the user asks to install a pack. Politeness rules this
+package followed and the engine now enforces: at most one request per second, a descriptive User-Agent naming
+JasperEditor, no bulk mirroring, nothing hosted by us. Files: `scripts/sounds/{lib.ts,curate-packs.ts,pack-sources.json}`,
+`apps/engine/src/sounds/{packs.json,packs.ts,service.ts}`, `packages/api/src/sounds.ts` (per-file `licenseEvidence`),
+`apps/mcp/src/tools/sound.ts` (guide and `install_sound_pack` text), `apps/engine/test/sound-packs.test.ts`, docs (spec
+12 §0 decision 5 note, `docs/gaps.md`, `docs/security-review.md` AGT-3 packs).
+
+#### What it adds (usage)
+
+Four packs in Preferences ▸ Sound Library ▸ Packs (and `list_sound_packs` / `install_sound_pack`), CC0, "No credit
+required" (each description adds BigSoundBank's optional credit wish: "Additional sounds: Joseph SARDIN -
+BigSoundBank.com"):
+
+| Pack | Sounds | Download | Content |
+|---|---|---|---|
+| `bigsoundbank-keys-clicks` — BigSoundBank — Keys & Clicks | 36 | 27.6 MB | 7 computer-keyboard typing takes (Raspberry Pi, MacBook, MacBook Pro, iMac, desktop; slow and quick), typewriter typing, key and space bar, phone touch, calculator key, mouse and trackpad clicks, switches, camera shutters and winder, pen cap, clock and metronome ticks, notification blips, radio beeps |
+| `bigsoundbank-foley-hits` — BigSoundBank — Foley & Hits | 51 | 5.9 MB | page turns, map handling, paper tears, a book, flag (cloth) shakes, zips; punches, gavel, kitchen-pan and glass hits (two bright pan-rim hits), snare, hi-hat, toms, door / lid / gate slams, industrial switch clunks, a microphone tap |
+| `bigsoundbank-whooshes-risers` — BigSoundBank — Whooshes & Risers | 37 | 19.0 MB | sword, rope, tube, wood and arrow swishes (air whooshes), a boomerang fly-by, scooter / train / motorcycle / truck / metro / sci-fi pass-bys, two engine accelerations, 10 risers (two Shepard-scale, three balloon inflations, drone take-off, three snare-roll builds, a feedback build), a reversed recording, tape rewinds, radio sweeps |
+| `bigsoundbank-ambience-room-tone` — BigSoundBank — Ambience & Room Tone | 23 | 70.5 MB | room tone (apartment with the window closed, house, very-low house atmosphere, bathroom ventilation, hospital corridor), interiors (pool changing rooms, market hall, café, pizzeria, Gare du Nord), streets and squares (Chartres, London, Paris by night, a Paris crossroads), forest, countryside day / night, dawn birds, two streams, sea, wind in a tree, wind whistling indoors |
+
+Total 147 sounds, 123.0 MB (measured: the sum of the pinned sizes). Effects are FLAC (lossless; WAV where the site has
+no FLAC: 15 files), beds OGG Vorbis (an OGG bed is ≈ 1–7 MB, its FLAC 5–30 MB). Search finds them by words and types
+(`typing`, `riser`, `room tone`, `whoosh`, `reverse`, `punch`, `page turn`; results below) and by `packId`.
+
+Rebuild (network for `fetch` only; the build server did it):
+```bash
+pnpm exec tsx scripts/sounds/curate-packs.ts fetch <work>    # Kenney as before, then BigSoundBank: licences page + every listed sound's page, ≤ 1 request / 1.5 s, downloads missing files, checks sha256 and size
+pnpm exec tsx scripts/sounds/curate-packs.ts build <work> --report <work>/report.md   # measures like the engine, types, writes packs.json
+```
+
+#### Licence evidence (checked 2026-10-17)
+
+- https://bigsoundbank.com/licenses.html: "This is: Creative Commons CC0 1.0 Universal WTFPL license , which some
+  summarize: Do what you want, I have NOTHING TO DO. Public Domain Dedication." and "All files whose download page
+  mentions "Free and Royalty Free" are made available free of charge and freely for all your projects, whether
+  commercial or not, and worldwide." (pack-level `licenseEvidence`; `fetch` fails if either sentence changes). We use
+  the CC0 grant (`CC0-1.0`, https://creativecommons.org/publicdomain/zero/1.0/); WTFPL alone is not on the allowlist.
+- **Per file**: each of the 147 sound pages (the table's links; each file's `sourceUrl`) states verbatim "License CC0
+  (public domain): Free and royalty-free", its JSON-LD `license` is https://bigsoundbank.com/licenses.html, its
+  JSON-LD `encoding` lists the pinned download URL (`/UPLOAD/flac|bwf-en|ogg/<n>.<ext>`) with exactly the pinned size,
+  and its technical details name the author. Recorded per file in the catalogue as `licenseEvidence {url: the page,
+  statement, checkedAt}` (new optional field of `SoundPackFileSchema`); Help ▸ About ▸ Licenses says so ("The licence of
+  each of its 36 sounds was also checked on the sound's own page (2026-10-17).").
+- **Authors**: only Joseph Sardin's own recordings — the page's "Author" is "Joseph SARDIN" (or "Joseph SARDIN & Axeline
+  T.", 9 files, recorded as "Joseph Sardin & Axeline T. (BigSoundBank.com)"). 23 candidates by other contributors
+  (DenisChardonnet, DavidGreck, Naro, gamin, cecilegatina, Olivier du Japon, Pierre SIBANARCO, Dj Lio) were left out
+  although their pages also say CC0: the page's FAQ says "*I* intentionally release it under the CC0 license", and when
+  in doubt we leave it out.
+- **Credit**: CC0 needs none (`attribution: null`, the UI says "No credit required"); the licences page asks, optionally,
+  for "Additional sounds: Joseph SARDIN - BigSoundBank.com" — offered in each pack's description, and the author field
+  of every sound is "Joseph Sardin (BigSoundBank.com)", which is what the credits sidecar prints.
+
+#### How the files were chosen (measured)
+
+1. Search (build server, ≤ 1 request / 1.5 s, User-Agent "JasperEditor-SoundPackCuration/1.0 (JasperEditor video editor;
+   curating a small CC0 sound-pack list for in-app download; <=1 req/s)"): 37 UCS-category listings and 93 keyword
+   searches → 1 288 distinct sounds listed; 324 of them read on their page (all 324 say CC0; 23 by other authors), 301 downloaded
+   once (280 MB, the build server only).
+2. Measured each like the engine's index (`measureLikeEngine`: the first 30 s at the file's rate ≤ 48 kHz, the whole
+   duration; plus `loopableWhole`, the `loopable` rule applied to the file's first and last second) and judged against
+   every type (`judgeSound` + `SOUND_TYPE_PROFILES`).
+3. Picked 147 for variety and cleanliness: files the judge calls `clipped` (true peak > 0.3 dBTP — all typewriter runs
+   but one, the paper balls, the stopwatches, two bells) were dropped where a clean take of the same thing existed,
+   quiet and hissy duplicates dropped, other authors dropped. The 12 typing and ticking recordings (7 keyboard runs, a
+   typewriter run, 2 clocks, 2 metronomes) are multi-hit takes: kept, typed `key` / `tick` by the WP1.2b rule (the
+   judge's rejection lowers their rank) until WP-E5 splits takes.
+4. Typed from candidate types per file (`pack-sources.json`): the judge-accepted subset, else the first candidate
+   (25 files: 11 `key` — the 8 typing runs, the typewriter key and space bar, whose press and release count as two
+   onsets, and a calculator key; 4 `tick`; 7 `click` — 3 mouse clicks, 2 switches, a camera winder, a pen cap; and in
+   Foley & Hits a book `thump` and two bright pan-rim `hit`s) — beds are `strict`; `riser` and
+   `reverse` also need the peak in the last 40 % of the sound (a forward pass-by is no riser): e.g. both car
+   accelerations (peak at 38 % and 56 %) became `transition`, the tape rewind with its peak at 27 % `glitch`.
+
+#### Verified (measured, build server jasper-build, 16 cores, load average 2–3)
+
+- `curate-packs.ts fetch ~/jasper-sd/research/bsb/work`: the licences page and all 147 pages state CC0 by the pinned
+  author with the pinned URL and size; every file matched its sha256 (3 min 50 s at 1.5 s per request).
+- `curate-packs.ts build … --report`: "bigsoundbank-keys-clicks: 36 files (36 typed, 0 untyped, 22 kept a type the judge
+  rejected)", foley-hits 51 (3), whooshes-risers 37 (0), ambience-room-tone 23 (0); the ten Kenney entries came out
+  identical to the committed ones (compared as JSON).
+- **Real install (engine on port 52101, fresh appdir, the built-in catalogue, network)**: `node realcheck.mjs` installed
+  the four packs from bigsoundbank.com: keys-clicks 36 files in 36.2 s, foley-hits 51 in 50.2 s, whooshes-risers 37 in
+  36.1 s, ambience 23 in 23.1 s (≥ 1 s per file: the engine's pacing), every file checked against its sha256; each
+  index job succeeded (status: 359 sounds = starter 60 + pack 147 + synth 152; `packs: 4`); all four `installed`,
+  `indexedSounds` 36 / 51 / 37 / 23. The engine's own judge agreed with the curation exactly: judge-ok 14 of 36, 48 of 51,
+  37 of 37, 23 of 23. Index types: keys {key 12, click 12, ui 12, tick 6, chime 4}; foley {hit 26, paper 15, thump 12,
+  swish 12, boom 8, chime 5, tap 3, click 2, tick 2, whoosh 1, shimmer 1}; whooshes {transition 21, whoosh 11, riser 10,
+  swish 7, glitch 5, reverse 2}; beds {ambience 23, roomtone 5}. Search (default licence filter): "typing" → the first 8
+  results are the 8 typing takes of the pack; "keyboard" → phone touch + 7 typing takes; "riser" → 3 starter risers then
+  5 BigSoundBank risers in the top 8; "room tone" → the 4 room-tone beds first; "whoosh" → rope and tube whooshes
+  between the kit's air whooshes; "reverse" → the kit's 4, then the reversed recording and the tape rewinds; "punch" →
+  BigSoundBank punches 5 of the top 6. `/api/licenses` listed the four packs with the per-file sentence above. The
+  engine was stopped afterwards.
+- `pnpm vitest run apps/engine/test/sound-packs.test.ts apps/mcp/test/sound-packs.test.ts apps/mcp/test/readme-tools.test.ts apps/mcp/test/conventions.test.ts apps/mcp/test/sound-guide.test.ts apps/mcp/test/fuzz.test.ts apps/web/test/sound-packs-ui.test.tsx packages/engine-client/test --maxWorkers=8`:
+  8 files, 428 tests passed. New in `sound-packs.test.ts`: the BigSoundBank packs' rules (four ids, 60–150 sounds, CC0
+  without attribution, `files` downloads, every file's URL = `bigsoundbank.com/UPLOAD/<format>/<n>`, its `sourceUrl`
+  the sound's page, `licenseEvidence` = that page + the verbatim CC0 line, author Joseph Sardin, typed, unique bytes,
+  beds OGG / effects lossless); the whole catalogue covers every type (key ≥ 8, riser ≥ 6, whoosh ≥ 6, roomtone ≥ 4,
+  reverse ≥ 1, hit ≥ 10, ambience ≥ 15, typing-tagged ≥ 8; the old pin "Kenney has no key / riser / roomtone / whoosh"
+  stays true for the Kenney packs); a per-file evidence URL that is not https is refused in the built-in catalogue and
+  invalid per-file evidence refused; a `files` pack over a local HTTP server makes one request at a time, ≥ 300 ms apart
+  with `JASPER_SOUND_PACK_FILE_INTERVAL_MS=300`, each with `PACK_USER_AGENT`, and cancelling while it waits for its next
+  request ends the job at once (< 5 s with a 60 s interval) without a second request; Help ▸ About says the per-file check.
+  **Mutation checks** (run on the build server, then discarded): without the pacing wait the interval test fails
+  ("expected 82 to be greater than or equal to 295"); without the evidence URL in the https check the hostile-entry
+  test fails.
+
+#### Per-file evidence
+
+Every row: page states "License CC0 (public domain): Free and royalty-free" (checked live by `fetch`, 2026-10-17);
+"Judge at curation" is `build`'s verdict on the candidate types (the engine's index gave the same ok / not-ok for every
+file); "Loops" is `loopableWhole`.
+
+##### BigSoundBank — Keys & Clicks (`bigsoundbank-keys-clicks`, 36 sounds, 27.6 MB)
+
+| Sound (page) | File | sha256 | Bytes | Author | Types (measured) | Judge at curation | Loops | dur s · onsets · true peak dBTP |
+|---|---|---|---|---|---|---|---|---|
+| [1724 Keyboard typing, quick (Raspberry Pi keyboard)](https://bigsoundbank.com/quick-raspberry-keyboard-1-s1724.html) | `1724-quick-raspberry-keyboard-1.flac` | `91ca8cf054e080beb2800b3620fc2313890d1ce4e31a176189fd35ae97f0e48d` | 2853647 | J. Sardin | key | rejected (key: too-long+multi-hit) → kept key | no | 29.18 · 231 · -1.82 |
+| [1726 Keyboard typing, slow (white MacBook) 1](https://bigsoundbank.com/slow-macbook-keyboard-1-s1726.html) | `1726-slow-macbook-keyboard-1.flac` | `749bd3881e91808caaca619bc4caa325744922f0402126a32b67173760bd2dd7` | 1681707 | J. Sardin | key | rejected (key: too-long+multi-hit) → kept key | no | 20.39 · 84 · -1.96 |
+| [1728 Keyboard typing, slow (MacBook Pro) 1](https://bigsoundbank.com/slow-macbook-pro-keyboard-1-s1728.html) | `1728-slow-macbook-pro-keyboard-1.flac` | `963c0ee0a0af3ba0a78816d8de91adf66f0af04ae0cb18eac72e8496e48b50a9` | 2322884 | J. Sardin | key | rejected (key: too-long+multi-hit) → kept key | no | 27.14 · 138 · -0.47 |
+| [1730 Keyboard typing, slow (iMac keyboard)](https://bigsoundbank.com/slow-imac-keyboard-s1730.html) | `1730-slow-imac-keyboard.flac` | `0a3d764d332ea28349d8cbc35a2c9464e80667a9a2005174dffa949c912c63bc` | 1784666 | J. Sardin | key | rejected (key: hissy+too-long+multi-hit) → kept key | no | 25.77 · 109 · 0.24 |
+| [1731 Keyboard typing, quick (iMac keyboard)](https://bigsoundbank.com/quick-imac-keyboard-s1731.html) | `1731-quick-imac-keyboard.flac` | `87134fcbfe283b022f4d38b5e7bbb7f2e47cf3448be80f654f2667ffa281bb50` | 3451319 | J. Sardin | key | rejected (key: hissy+too-long+multi-hit) → kept key | no | 39.65 · 227 · -1.16 |
+| [1732 Keyboard typing, slow (Raspberry Pi keyboard)](https://bigsoundbank.com/slow-raspberry-keyboard-s1732.html) | `1732-slow-raspberry-keyboard.flac` | `c353935affe85324151910dea9d44146956f285ec2322f803046313ee9809db1` | 2484799 | J. Sardin | key | rejected (key: too-long+multi-hit) → kept key | no | 39.21 · 109 · -1.55 |
+| [1734 Keyboard typing, quick (desktop keyboard)](https://bigsoundbank.com/quick-keyboard-s1734.html) | `1734-quick-keyboard.flac` | `8aab55e93a9db644a34a59a707578f89c912687c19d606ea54abae0e380f1dcc` | 5932884 | J. Sardin | key | rejected (key: too-long+multi-hit) → kept key | no | 58.86 · 263 · 0.01 |
+| [2839 Typewriter typing (Hermes Precisa 305) 6](https://bigsoundbank.com/typewriter-6-s2839.html) | `2839-typewriter-6.flac` | `bf794a52f5ef6d540c29c568293f0679330ae4e5331cbbccf0f37ca0beed3ddb` | 638221 | J. Sardin | key | rejected (key: too-long+clipped+multi-hit) → kept key | no | 7.17 · 42 · 0.85 |
+| [2842 Typewriter key (Hermes Precisa 305)](https://bigsoundbank.com/typewriter-key-s2842.html) | `2842-typewriter-key.flac` | `eef2c09a89af32f3415cbab19608426c34534b1e4eba837cdc66af72fbadb809` | 67765 | J. Sardin | key | rejected (key: hissy+too-long+multi-hit) → kept key | no | 1.02 · 2 · 0.11 |
+| [2843 Typewriter space bar (Hermes Precisa 305)](https://bigsoundbank.com/typewriter-space-s2843.html) | `2843-typewriter-space.flac` | `ccc16e0382b934b20c8d92a5d4ea2a505b0073b0b30e20b23e5522439f1fa772` | 79094 | J. Sardin | key | rejected (key: soft-attack+too-long+multi-hit) → kept key | no | 1.02 · 2 · -10.68 |
+| [2038 Phone keyboard touch sound](https://bigsoundbank.com/iphone-touch-sound-2-s2038.html) | `2038-iphone-touch-sound-2.flac` | `c44d9c62f12dd04fd0dbb84867612c052dca887212d99a59e9363b3ba7332043` | 22443 | J. Sardin | key, ui, click | ok key,ui,click | no | 0.34 · 1 · -0.06 |
+| [3270 Old calculator number key](https://bigsoundbank.com/old-calculator-number-key-1-s3270.html) | `3270-old-calculator-number-key-1.flac` | `8644c8ed16fd200ff4b80a1ce76ab2d28f95bdffced084aef050299d66f17a08` | 47541 | J. Sardin | key | rejected (key: multi-hit; click: multi-hit) → kept key | no | 0.77 · 2 · -1.25 |
+| [1735 Mouse click (Raspberry Pi mouse)](https://bigsoundbank.com/raspberry-mouse-single-click-s1735.html) | `1735-raspberry-mouse-single-click.flac` | `b9e56ee5c4d525c1dfe1d4f83f314c02c792b15e5775a54d413884ae440039f7` | 31320 | J. Sardin | click | rejected (click: hissy+multi-hit; ui: hissy) → kept click | no | 0.51 · 2 · -1.42 |
+| [1736 Mouse double click (Raspberry Pi mouse)](https://bigsoundbank.com/raspberry-mouse-double-click-1-s1736.html) | `1736-raspberry-mouse-double-click-1.flac` | `7a41fa3a6c3e59049ff32e47231de156506bbd70d0e51754e2de7c540b565e4b` | 47516 | J. Sardin | click | rejected (click: multi-hit; ui: hissy) → kept click | no | 0.60 · 4 · -2.02 |
+| [1738 Trackpad click (MacBook Pro)](https://bigsoundbank.com/macbook-pro-trackpad-single-click-s1738.html) | `1738-macbook-pro-trackpad-single-click.flac` | `05aa822e0e2207efb934631088f72cee6324d56df6fa17395f7ef7d2ef5ec525` | 27071 | J. Sardin | ui | ok ui | no | 0.51 · 2 · -3.9 |
+| [1740 Trackpad click (white MacBook)](https://bigsoundbank.com/macbook-trackpad-simple-click-s1740.html) | `1740-macbook-trackpad-simple-click.flac` | `d395337fd67183b849c0f5d194b64433ac733239fc52b6459a680286291eaf50` | 27473 | J. Sardin | ui | ok ui | no | 0.43 · 2 · -2.14 |
+| [1742 Mouse click (Apple Magic Mouse)](https://bigsoundbank.com/apple-magic-mouse-single-click-s1742.html) | `1742-apple-magic-mouse-single-click.flac` | `5b778b82a7f88915919bf8d7ddc09f7e55a01cd10cf4e93fc8b7a6c433071362` | 30191 | J. Sardin | click | rejected (click: multi-hit; ui: hissy) → kept click | no | 0.51 · 2 · -1.69 |
+| [2191 Thermostat click 1](https://bigsoundbank.com/thermostat-1-s2191.html) | `2191-thermostat-1.flac` | `354a958a750c736b7eb0fb176861992bbaea334d574ce335a4f29639466ec2e3` | 9929 | J. Sardin | click, tick | ok click,tick | no | 0.09 · 1 · 0.21 |
+| [2192 Thermostat click 2](https://bigsoundbank.com/thermostat-2-s2192.html) | `2192-thermostat-2.flac` | `426804328384f881b7e43e3c2b039af44d7af9151c40a99b49949fc716b71812` | 12028 | J. Sardin | click, tick | ok click,tick | no | 0.17 · 1 · 0.04 |
+| [0026 Light switch on and off](https://bigsoundbank.com/electric-switch-s0026.html) | `0026-electric-switch.wav` | `836d737af5128b7f4a975062e7360df5f777871070d1dac6d8686bb5e5b37ef8` | 538102 | J. Sardin | click | rejected (click: too-long+multi-hit) → kept click | no | 6.09 · 4 · -3.76 |
+| [0036 Desk lamp switch](https://bigsoundbank.com/switch-desk-lamp-s0036.html) | `0036-switch-desk-lamp.wav` | `2cf141f1f0b5bea7721612f29261142b34c3b6a303056e682b684981e9937e9e` | 336740 | J. Sardin | click | rejected (click: too-long+multi-hit) → kept click | no | 3.81 · 11 · -7.68 |
+| [2394 Camera shutter (DSLR) 1](https://bigsoundbank.com/trigger-of-camera-1-s2394.html) | `2394-trigger-of-camera-1.flac` | `455ecd33df86b055b6b3370988799c861f8c1b96ed3b900b933876172de05328` | 46718 | J. Sardin | ui | ok ui | no | 0.43 · 3 · 0.14 |
+| [2395 Camera shutter (DSLR) 2](https://bigsoundbank.com/trigger-of-camera-2-s2395.html) | `2395-trigger-of-camera-2.flac` | `a1ffa7d8145b303773b757299377452ef0359759d60180e956bedcf7caae1bc5` | 47447 | J. Sardin | ui | ok ui | no | 0.43 · 3 · 0.04 |
+| [2821 Camera shutter (Kodak Instamatic)](https://bigsoundbank.com/instamatic-triggering-1-s2821.html) | `2821-instamatic-triggering-1.flac` | `fd62abefebc04680c9477eba741494210ede5694d5c2523ad589de284dd25207` | 35662 | J. Sardin | ui | ok ui | no | 0.51 · 2 · -8.2 |
+| [2817 Camera film winder (Kodak Instamatic)](https://bigsoundbank.com/instamatic-winder-1-s2817.html) | `2817-instamatic-winder-1.flac` | `335f22ca5736a42baaf1aaaee553da3392d1424ab34686f442bd3b26a609b909` | 73287 | J. Sardin | click | rejected (click: multi-hit) → kept click | no | 0.94 · 3 · 0 |
+| [0054 Pen cap off and on](https://bigsoundbank.com/pen-cap-s0054.html) | `0054-pen-cap.wav` | `e4833b475a2b246866a6cd16b17f0ce49be49356c336f29b3ff4a3681b0d18ac` | 238894 | J. Sardin | click | rejected (click: too-long+multi-hit; tap: hissy+too-long+multi-hit) → kept click | no | 2.70 · 4 · -8.3 |
+| [2815 Alarm clock ticking (mechanical) 4](https://bigsoundbank.com/tic-tac-mechanical-alarm-clock-4-s2815.html) | `2815-tic-tac-mechanical-alarm-clock-4.flac` | `16b061f19c74958e2e921ad24360a4ea1521ad88e9eaf93d7c2dad0c2ad90cbd` | 1847861 | J. Sardin | tick | rejected (tick: too-long+multi-hit) → kept tick | no | 19.88 · 155 · -3.21 |
+| [2656 Alarm clock ticking (mechanical) 2](https://bigsoundbank.com/tic-tac-mechanical-alarm-clock-3-s2656.html) | `2656-tic-tac-mechanical-alarm-clock-3.flac` | `edc25b153c8a68fffcfe48b1e2a83ad60d9c8feadb5a84f7f7e80576f4cb2eb2` | 912309 | J. Sardin | tick | rejected (tick: too-long+multi-hit) → kept tick | no | 20.39 · 96 · -2.04 |
+| [0468 Mechanical metronome (120 BPM)](https://bigsoundbank.com/metronome-a-120bpm-s0468.html) | `0468-metronome-a-120bpm.wav` | `074258b196648c07df1366a1f038fde7a296a7d85a7f3e8bcf0c528528767dfe` | 1188908 | J. Sardin | tick | rejected (tick: too-long+multi-hit; click: too-long+multi-hit) → kept tick | no | 12.37 · 26 · -3.01 |
+| [0577 Electric metronome (120 BPM)](https://bigsoundbank.com/electric-metronome-s0577.html) | `0577-electric-metronome.wav` | `fc421c45a356c7b59aba03864a81bf2a52439debad82b122eaa20ae1ca151254` | 608192 | J. Sardin | tick | rejected (tick: too-long+multi-hit; click: too-long+multi-hit; ui: too-long) → kept tick | no | 6.32 · 12 · -0.08 |
+| [2063 Notification blip 1](https://bigsoundbank.com/notification-lasolisa-1-s2063.html) | `2063-notification-lasolisa-1.flac` | `1c8d042b9ae2c5be13626003cd36dd649ce5de9605b94423acb0b900081d08db` | 21421 | J. Sardin | ui, chime | ok ui,chime | no | 0.43 · 3 · -0.57 |
+| [2064 Notification blip 2](https://bigsoundbank.com/notification-lasolisa-2-s2064.html) | `2064-notification-lasolisa-2.flac` | `52c5b779443ebdff6c7d3bb1bf5d62751c32b329a52fddc12a15e2c0341134c1` | 21317 | J. Sardin | ui, chime | ok ui,chime | no | 0.43 · 3 · -0.57 |
+| [2065 Notification blip 3](https://bigsoundbank.com/notification-lasolisa-3-s2065.html) | `2065-notification-lasolisa-3.flac` | `e6683d6a7b6c0e8226f010ee02f4e89ca2d6c5e1c3e6d3e0333fb151750fa1d0` | 20673 | J. Sardin | ui, chime | ok ui,chime | no | 0.43 · 3 · -0.57 |
+| [2066 Notification blip 4](https://bigsoundbank.com/notification-lasolisa-4-s2066.html) | `2066-notification-lasolisa-4.flac` | `f0975d537d18b706cc22069c9f408ddff1a404dd87806835c51b97b5e5514ca6` | 20830 | J. Sardin | ui, chime | ok ui,chime | no | 0.43 · 3 · -0.57 |
+| [2380 Radio communication beep 1](https://bigsoundbank.com/aerospace-beep-1-s2380.html) | `2380-aerospace-beep-1.flac` | `e72113863b0ce6bab529e077b216dcf02c18210be12343d0f14e86ce13926e3f` | 35629 | J. Sardin | ui, click | ok ui,click | no | 0.26 · 1 · 0.28 |
+| [2381 Radio communication beep 2](https://bigsoundbank.com/aerospace-beep-2-s2381.html) | `2381-aerospace-beep-2.flac` | `fc2e344f6ef07583c0fdbf47d0084ef022f026a452f4835262dde8cc252d4c70` | 34156 | J. Sardin | ui, click | ok ui,click | no | 0.26 · 1 · 0.29 |
+
+##### BigSoundBank — Foley & Hits (`bigsoundbank-foley-hits`, 51 sounds, 5.9 MB)
+
+| Sound (page) | File | sha256 | Bytes | Author | Types (measured) | Judge at curation | Loops | dur s · onsets · true peak dBTP |
+|---|---|---|---|---|---|---|---|---|
+| [2211 Paperback page turn 1](https://bigsoundbank.com/pages-that-turn-4-s2211.html) | `2211-pages-that-turn-4.flac` | `0d9515a86c92903e3d55ba0e80198c249817a44e457a975a82249a1cc44e71a0` | 205995 | J. Sardin | paper, swish | ok paper,swish | no | 1.88 · 4 · -11.22 |
+| [2212 Paperback page turn 2](https://bigsoundbank.com/pages-that-turn-5-s2212.html) | `2212-pages-that-turn-5.flac` | `f915492a904c8e6c67f4bebec31e3518cc52ee31dc035cb434f28557f2dde3a2` | 209585 | J. Sardin | paper, swish | ok paper,swish | no | 1.79 · 13 · -1.08 |
+| [2214 Paperback page turn 3](https://bigsoundbank.com/pages-that-turn-7-s2214.html) | `2214-pages-that-turn-7.flac` | `c1cc32bd5e3428a2cfcdff97f3d22c7afd86c58ea5d3762db2b5eef0e085a977` | 127404 | J. Sardin | paper, swish | ok paper,swish | no | 1.28 · 3 · 0.15 |
+| [2216 Paperback page turn 4](https://bigsoundbank.com/pages-that-turn-9-s2216.html) | `2216-pages-that-turn-9.flac` | `45d0776ae6de3b1517234766d6af9936a84e0afea667a4226ba385305cfa23d0` | 125938 | J. Sardin | paper, swish | ok paper,swish | no | 1.28 · 4 · -0.77 |
+| [2797 Road map handled 1](https://bigsoundbank.com/road-map-2-s2797.html) | `2797-road-map-2.flac` | `a61642ba11c1ea311cc15f98b3d7cf7acf60dfc702daee0d387efa7bfc433b31` | 194421 | J. Sardin | paper | ok paper | no | 2.05 · 15 · -5.35 |
+| [2805 Road map handled 2](https://bigsoundbank.com/road-map-10-s2805.html) | `2805-road-map-10.flac` | `0be969ce513b4a26b717cea1ac73054343e32f183480fea91f350fa97bdb4d7b` | 204936 | J. Sardin | paper | ok paper | no | 1.96 · 13 · -4.27 |
+| [3239 Paper sheet torn 1](https://bigsoundbank.com/torn-paper-2-s3239.html) | `3239-torn-paper-2.flac` | `cbfecc737e2270c91dca9641b27b7b5c10cd3d8789cdbef872b024012f26f17a` | 116431 | J. Sardin & Axeline T. | paper | ok paper | no | 1.11 · 3 · -1.43 |
+| [3241 Paper sheet torn 2](https://bigsoundbank.com/torn-paper-4-s3241.html) | `3241-torn-paper-4.flac` | `ef80db53dd24356baa56d70eb167aed9a2e6bb811b4d17ff4b0108b807c6a1df` | 116108 | J. Sardin & Axeline T. | paper | ok paper | no | 1.11 · 2 · -1.56 |
+| [3242 Paper sheet torn 3](https://bigsoundbank.com/torn-paper-5-s3242.html) | `3242-torn-paper-5.flac` | `ff82f9977ebcdc99f4c7d8769ce7081a52432a516dfce749eb639d8fb0dc3a77` | 104582 | J. Sardin & Axeline T. | paper | ok paper | no | 1.11 · 2 · -7.88 |
+| [3244 Paper sheet torn 4](https://bigsoundbank.com/torn-paper-7-s3244.html) | `3244-torn-paper-7.flac` | `a32e4428ea0a4ef64aa338c1035186f8e59506f612bb6b859c6324e482d95658` | 133405 | J. Sardin & Axeline T. | paper | ok paper | no | 1.36 · 3 · 0.02 |
+| [1411 Book closed](https://bigsoundbank.com/closed-book-2-s1411.html) | `1411-closed-book-2.flac` | `249061b3e1e00cc39ab664e60c947a3ea899ba4ab7375eb11c5f31fcd1dc083d` | 65346 | J. Sardin | thump | rejected (thump: multi-hit; tap: multi-hit) → kept thump | no | 0.94 · 3 · 0.21 |
+| [1787 Nylon flag shake 1](https://bigsoundbank.com/flag-1-s1787.html) | `1787-flag-1.flac` | `ca45db92691b6915b6cad28de1b043b19a450c193aa7ed640e8007a0143464bd` | 170435 | J. Sardin | swish | ok swish | no | 1.20 · 7 · 0.05 |
+| [1788 Nylon flag shake 2](https://bigsoundbank.com/flag-2-s1788.html) | `1788-flag-2.flac` | `25f91bef1e285ca8281918355b495b5cda6f952d1f9728901f36199d5c217c41` | 109017 | J. Sardin | swish | ok swish | no | 0.77 · 3 · -4.18 |
+| [1792 Nylon flag shake 3](https://bigsoundbank.com/flag-6-s1792.html) | `1792-flag-6.flac` | `e74596f557dfb5e5369ed9ad0ac372a8a5682a8786408a348412303efc27c651` | 196523 | J. Sardin | swish | ok swish | no | 1.45 · 9 · -13.63 |
+| [1789 Nylon flag flutter](https://bigsoundbank.com/flag-3-s1789.html) | `1789-flag-3.flac` | `86fb00575bf0f25bd4007d5a2b2ec5537a5dcc31ddd3d1aeb0c0e67186b904de` | 577913 | J. Sardin | whoosh | ok whoosh | no | 3.92 · 32 · -5.43 |
+| [3325 Trouser zip 1](https://bigsoundbank.com/zipper-10-s3325.html) | `3325-zipper-10.flac` | `15f6e30c1510cb4a9b85834a4f969330b24771e96f72a311c23f9f0d989d2524` | 37452 | J. Sardin & Axeline T. | swish, paper | ok swish,paper | no | 0.43 · 1 · -0.76 |
+| [3326 Trouser zip 2](https://bigsoundbank.com/zipper-11-s3326.html) | `3326-zipper-11.flac` | `d78b369f81061478b613d81ddd22dfdab8932d543ef97ce62dcc8057dc95df59` | 78990 | J. Sardin & Axeline T. | swish, paper | ok swish,paper | no | 0.77 · 3 · -0.66 |
+| [3327 Trouser zip 3](https://bigsoundbank.com/zipper-12-s3327.html) | `3327-zipper-12.flac` | `649657a194fc5409c89319d50954f9915904a16db2339078bc45c226ddcdb5d9` | 74200 | J. Sardin & Axeline T. | swish, paper | ok swish,paper | no | 0.68 · 3 · -0.99 |
+| [1863 Zipper pulled 1](https://bigsoundbank.com/zip-8-s1863.html) | `1863-zip-8.flac` | `49271bf0d3f6035b3a2fa99ae9b09ce3d072033d6078e4c9ea666b7568214c76` | 191090 | J. Sardin | swish, paper | ok swish,paper | no | 1.79 · 1 · -6.31 |
+| [1864 Zipper pulled 2](https://bigsoundbank.com/zip-9-s1864.html) | `1864-zip-9.flac` | `72e1701c1fd29ff386d826ea26ce7a5f242ea226ab7c5ec2b2a327ff7d949d21` | 163295 | J. Sardin | swish, paper | ok swish,paper | no | 1.62 · 1 · -8.38 |
+| [2459 Punch 1](https://bigsoundbank.com/punch-4-s2459.html) | `2459-punch-4.flac` | `9b2e308cbc6884be7e04d292b20c9f31e297bb31e27fc7c7099a2e79d1342b18` | 55875 | J. Sardin | hit, thump | ok hit,thump | no | 0.85 · 1 · -3.13 |
+| [2461 Punch 2](https://bigsoundbank.com/punch-6-s2461.html) | `2461-punch-6.flac` | `779d35ce555ed60221bdee4dafe971b52b08237b932376be433e03800a57f109` | 62387 | J. Sardin | hit, thump | ok hit,thump | no | 0.94 · 1 · -1.66 |
+| [2463 Punch 3](https://bigsoundbank.com/punch-8-s2463.html) | `2463-punch-8.flac` | `9c1e0f9420ee5ca00e4d8f64aa1c1e455eb871906896aa24291855c57dc9e7d1` | 55782 | J. Sardin | hit, thump | ok hit,thump | no | 0.94 · 1 · -1.44 |
+| [2465 Punch 4](https://bigsoundbank.com/punch-10-s2465.html) | `2465-punch-10.flac` | `3d109b462a4360135a138a306e8f6994c4a4b51a16051f81fea5c51efba9f056` | 59448 | J. Sardin | hit, thump | ok hit,thump | no | 0.94 · 1 · -3.96 |
+| [2467 Punch 5](https://bigsoundbank.com/punch-12-s2467.html) | `2467-punch-12.flac` | `e072161edcf50a385825c38ea315e603d58965d3ef04193fde0ba69efcaf3bc7` | 55227 | J. Sardin | hit | ok hit | no | 0.94 · 1 · -5.1 |
+| [2468 Punch 6](https://bigsoundbank.com/punch-13-s2468.html) | `2468-punch-13.flac` | `9dd75f01372ca490dc370c3cee7e23c45d6f09c7414001807eb236b3e03adc73` | 52572 | J. Sardin | hit, thump | ok hit,thump | no | 0.77 · 1 · -2.57 |
+| [1588 Gavel blow](https://bigsoundbank.com/gavel-1-blow-s1588.html) | `1588-gavel-1-blow.flac` | `101835eaaf9f5e4d966dcfef9e4d70acaee1cb196a4ee77b2d76b487739874e5` | 18367 | J. Sardin | hit, tap | ok hit,tap | no | 0.34 · 1 · 0.25 |
+| [0380 Aluminium saucepan base hit](https://bigsoundbank.com/fond-casserole-en-aluminium-20cm-sample-s0380.html) | `0380-fond-casserole-en-aluminium-20cm-sample.wav` | `726e3831d53d8027b8c0ec3431ccf101d2c8db4c34dec162b168e1a9e2f2bd51` | 77018 | J. Sardin | hit, chime | ok hit,chime | no | 0.79 · 1 · 0.26 |
+| [0382 Heavy aluminium pan bottom hit](https://bigsoundbank.com/fond-poele-en-aluminium-26cm-sample-s0382.html) | `0382-fond-poele-en-aluminium-26cm-sample.wav` | `8f5622a3b2daefbf33b9ae5d0e29e6a620418200ceaf636943a6e0f9ff551d3d` | 96936 | J. Sardin | hit, chime | ok hit,chime | no | 1.00 · 1 · 0.08 |
+| [0383 Heavy aluminium pan rim hit (bright)](https://bigsoundbank.com/bord-poele-en-aluminium-26cm-sample-s0383.html) | `0383-bord-poele-en-aluminium-26cm-sample.wav` | `c87aec1e7a18d50379a3d952c52db5d0cc0b6409b7b22c49fe528812f59c5c4f` | 193734 | J. Sardin | hit | rejected (hit: hissy; chime: hissy) → kept hit | no | 2.01 · 1 · 0.22 |
+| [0384 Copper saucepan base hit](https://bigsoundbank.com/fond-casserole-en-cuivre-8cm-sample-s0384.html) | `0384-fond-casserole-en-cuivre-8cm-sample.wav` | `96e5004ac333487d54eb3f7d7d545c758f392023f47edb6202755572b1bce49e` | 175310 | J. Sardin | hit, chime | ok hit,chime | no | 1.81 · 1 · 0.08 |
+| [0386 Copper saucepan bottom hit (bright)](https://bigsoundbank.com/copper-cooker-bottom-10cm-sample-s0386.html) | `0386-copper-cooker-bottom-10cm-sample.wav` | `08dfc228c76d885d82a0f38a298eed089bc1724a90010ef05e28dd54b507cf73` | 163846 | J. Sardin | hit | rejected (hit: hissy; chime: hissy) → kept hit | no | 1.70 · 1 · 0 |
+| [1324 Table glasses clinking](https://bigsoundbank.com/cheers-table-glass-2-s1324.html) | `1324-cheers-table-glass-2.flac` | `f7d3da30d45299b34cbb5270710da8031c15ab30f5e210b32db9d461e68bd0e5` | 27871 | J. Sardin | hit, chime, tap | ok hit,chime,tap | no | 0.43 · 1 · -3.13 |
+| [1332 Red wine glasses clinking](https://bigsoundbank.com/cheers-big-red-wine-glass-1-s1332.html) | `1332-cheers-big-red-wine-glass-1.flac` | `4faa7d19ddfb8c3790399ff54bbe76a37a5d712f35b8e2ede637a88b971b98d2` | 46541 | J. Sardin | hit, chime, tap | ok hit,chime,tap | no | 0.60 · 1 · -7.61 |
+| [1335 Champagne flutes clinking](https://bigsoundbank.com/cheers-champagne-flute-1-s1335.html) | `1335-cheers-champagne-flute-1.flac` | `0ed6e71314090cc25a61923c14702ed905baff9223715d3c01ce137f7fda24fc` | 66962 | J. Sardin | shimmer | ok shimmer | no | 0.85 · 2 · -0.97 |
+| [2304 Snare drum hit 1](https://bigsoundbank.com/snare-drum-1-s2304.html) | `2304-snare-drum-1.flac` | `140d84e86e8b5cbd117c2e8e76b054e3fc331e001ca1a5890df30f19475a095b` | 47085 | J. Sardin | hit | ok hit | no | 0.85 · 1 · 0.01 |
+| [2308 Snare drum hit 2](https://bigsoundbank.com/snare-drum-5-s2308.html) | `2308-snare-drum-5.flac` | `614d0405f1cbee1a48e5b55f61372282ef42b1cb50d455bb475371d369553b93` | 58689 | J. Sardin | hit | ok hit | no | 0.85 · 1 · 0.01 |
+| [2310 Snare drum hit 3](https://bigsoundbank.com/snare-drum-7-s2310.html) | `2310-snare-drum-7.flac` | `a1427167212403ae637042c311a2121be0320bd4f8bfd44da4154d96139d9528` | 65873 | J. Sardin | hit | ok hit | no | 1.02 · 1 · 0.01 |
+| [2292 Closed hi-hat hit 1](https://bigsoundbank.com/hi-hat-close-1-s2292.html) | `2292-hi-hat-close-1.flac` | `b60c7b34d58fc215ea9d269c017930dfdbb03695f3c7f71441a53f5aa2eff884` | 66285 | J. Sardin | click, tick | ok click,tick | no | 0.94 · 1 · 0 |
+| [2300 Closed hi-hat hit 2](https://bigsoundbank.com/hi-hat-close-5-s2300.html) | `2300-hi-hat-close-5.flac` | `387099038b98e89659e7f390cb840c4ead4d3c61f0c9b8b3210c05a5160f3896` | 41498 | J. Sardin | click, tick | ok click,tick | no | 0.51 · 1 · 0.19 |
+| [2329 High tom hit](https://bigsoundbank.com/high-pitched-tom-1-s2329.html) | `2329-high-pitched-tom-1.flac` | `d34d523f989ea6c348fe43c8bb7d7bd226d189ca22454ed62e2062b8218f3825` | 136464 | J. Sardin | boom, hit | ok boom,hit | no | 3.67 · 1 · 0 |
+| [2338 Bass tom hit](https://bigsoundbank.com/bass-tom-1-s2338.html) | `2338-bass-tom-1.flac` | `1d94704fe4c79dd3e1bd214ee3d3025f2dcfa845223e47d8e6d525609aa42e3b` | 109732 | J. Sardin | thump, boom | ok thump,boom | no | 2.82 · 1 · 0.03 |
+| [1339 Interior door slam 1](https://bigsoundbank.com/door-slamming-3-s1339.html) | `1339-door-slamming-3.flac` | `cec4c3a7c589ae886548b914a7df8802918bdf71ff67be73f0b1732104e08157` | 50661 | J. Sardin | hit, thump, boom | ok hit,thump,boom | no | 0.77 · 1 · 0.14 |
+| [1501 Interior door slam 2](https://bigsoundbank.com/door-slamming-4-s1501.html) | `1501-door-slamming-4.flac` | `87e8a44c6e67c00a58ca2d16e7dce6e1642f6cd07823cb2fbf88aba79454cc60` | 63628 | J. Sardin | hit, thump, boom | ok hit,thump,boom | no | 0.94 · 1 · 0.09 |
+| [2895 Plastic bin lid slam 1](https://bigsoundbank.com/plastic-cover-1-s2895.html) | `2895-plastic-cover-1.flac` | `62e3752e87c8f0860218eda4f3e44192b9d179b30a155d0319215732d9c1772f` | 88394 | J. Sardin | hit, thump | ok hit,thump | no | 1.20 · 1 · 0.01 |
+| [2897 Plastic bin lid slam 2](https://bigsoundbank.com/plastic-cover-3-s2897.html) | `2897-plastic-cover-3.flac` | `3d69e6952941ef9346eb4bdce0ae4206822fb9b3757c9bf880e98d5c2aef9af1` | 69225 | J. Sardin | hit, thump | ok hit,thump | no | 1.28 · 1 · 0.2 |
+| [2358 Metal gate slam](https://bigsoundbank.com/grinding-metal-barrier-closure-1-s2358.html) | `2358-grinding-metal-barrier-closure-1.flac` | `dd635017d69aa0dd80964d132b4dc45a66536fd568639b00171bdd61479d8f18` | 305814 | J. Sardin | boom, hit | ok boom,hit | no | 4.18 · 1 · 0.04 |
+| [3061 Industrial switch clunk 1](https://bigsoundbank.com/industrial-switch-1-s3061.html) | `3061-industrial-switch-1.flac` | `9a0d5d4d98202fa74589baeb88b2fae54d54b9e4c781b85e0908cf02c44a934c` | 118785 | J. Sardin | hit, boom | ok hit,boom | no | 3.07 · 1 · -4.29 |
+| [3062 Industrial switch clunk 2](https://bigsoundbank.com/industrial-switch-2-s3062.html) | `3062-industrial-switch-2.flac` | `f22582b08340d7a011d88416ddf07a0777b7eacbb84acf04333e358b24fea171` | 123287 | J. Sardin | hit, boom | ok hit,boom | no | 3.07 · 1 · -2.15 |
+| [3063 Industrial switch clunk 3](https://bigsoundbank.com/industrial-switch-3-s3063.html) | `3063-industrial-switch-3.flac` | `74a1e1c698ef6220c1daf1392429135dc53063da37c8a2c2697d3ca58a9a76f4` | 116247 | J. Sardin | hit, boom | ok hit,boom | no | 3.07 · 1 · -2.38 |
+| [2016 Microphone tap](https://bigsoundbank.com/microphone-tapping-1-s2016.html) | `2016-microphone-tapping-1.flac` | `d54e0a2a5c265646fbfc1122d8991cb37eaa95311df0bec4e1b40d69a86f582d` | 27202 | J. Sardin | thump | ok thump | no | 0.43 · 1 · 0 |
+
+##### BigSoundBank — Whooshes & Risers (`bigsoundbank-whooshes-risers`, 37 sounds, 19.0 MB)
+
+| Sound (page) | File | sha256 | Bytes | Author | Types (measured) | Judge at curation | Loops | dur s · onsets · true peak dBTP |
+|---|---|---|---|---|---|---|---|---|
+| [0127 Sword swish cutting](https://bigsoundbank.com/sword-that-cuts-s0127.html) | `0127-sword-that-cuts.flac` | `e74e4e7d56bdf173946aee3ac6219150c33b73240b22776f276b40048a827390` | 20562 | J. Sardin | swish, whoosh | ok swish,whoosh | no | 0.93 · 3 · -0.53 |
+| [0128 Sword swish through the air](https://bigsoundbank.com/sword-through-the-air-s0128.html) | `0128-sword-through-the-air.flac` | `f9591ac29eea5c86212ffdab75a3ad50a55b77577b038d73f9be2897f3646cf2` | 12899 | J. Sardin | swish, whoosh | ok swish,whoosh | no | 0.56 · 1 · -2.14 |
+| [1795 Rope whoosh 1](https://bigsoundbank.com/whoosh-3-s1795.html) | `1795-whoosh-3.flac` | `b2e41d0320f6d54bb2462cf8b06552564fac60496b58553cbdcd561a6278958f` | 153616 | J. Sardin | whoosh, swish | ok whoosh,swish | no | 0.94 · 3 · -1.88 |
+| [1796 Rope whoosh 2](https://bigsoundbank.com/whoosh-4-s1796.html) | `1796-whoosh-4.flac` | `17942950627b87b34eec2cc62dc7eddd1b9b2ff34742f87a781cb918ea6b9c92` | 173016 | J. Sardin | whoosh, swish | ok whoosh,swish | no | 1.11 · 3 · -2.29 |
+| [1800 Metal tube whoosh 1](https://bigsoundbank.com/whoosh-7-s1800.html) | `1800-whoosh-7.flac` | `6a7e1d21b2d829e36d9ad7d7cfc55ecb6cc10167f1c838411ea8058e67581687` | 143341 | J. Sardin | whoosh, swish | ok whoosh,swish | no | 0.94 · 1 · -1.94 |
+| [1801 Metal tube whoosh 2](https://bigsoundbank.com/whoosh-8-s1801.html) | `1801-whoosh-8.flac` | `353e8662a31493403835312d2cbfc229ee4e8af0269fbdb28fad9258f501b4e0` | 133790 | J. Sardin | whoosh, swish | ok whoosh,swish | no | 0.85 · 2 · -1.94 |
+| [1802 Wooden sheet whoosh](https://bigsoundbank.com/whoosh-9-s1802.html) | `1802-whoosh-9.flac` | `53fe3adb80b3709c7ff53cc4fc03fccb95b9ab81c2f61f5730c5b7cd34ddf3ce` | 65032 | J. Sardin | whoosh | ok whoosh | no | 0.43 · 1 · -1.91 |
+| [2032 Boomerang fly-by (left to right)](https://bigsoundbank.com/boomerang-or-stick-passage-s2032.html) | `2032-boomerang-or-stick-passage.flac` | `f827c8a4525cf110dbe92cf6543d6dfc9708c8a15c34c6141616ae632026a54c` | 428399 | J. Sardin | whoosh | ok whoosh | no | 4.01 · 8 · -3.93 |
+| [0549 Arrow shot from a bow](https://bigsoundbank.com/archery-s0549.html) | `0549-archery.wav` | `ff529bedf49025d21e48f06007e67a0cfc46acc4345abff32c7adad3806ca126` | 88464 | J. Sardin | swish, whoosh | ok swish,whoosh | no | 0.91 · 2 · 0.13 |
+| [0533 Scooter pass-by](https://bigsoundbank.com/scooter-passage-s0533.html) | `0533-scooter-passage.wav` | `ab84a9febe0cd1e473dd08c66ffab1d9c75c2e92b4528eab45af9dbaa8ffe64d` | 501604 | J. Sardin | whoosh, transition | ok whoosh,transition | no | 5.21 · 0 · 0.04 |
+| [1062 Regional train pass-by 1](https://bigsoundbank.com/train-passes-1-s1062.html) | `1062-train-passes-1.flac` | `9c917bbd31f337e23d78a7704e48aa878e9a240753885f73d4173243df1d8737` | 247807 | J. Sardin | whoosh, transition | ok whoosh,transition | no | 5.38 · 1 · 0.01 |
+| [1063 Regional train pass-by 2](https://bigsoundbank.com/train-passes-2-s1063.html) | `1063-train-passes-2.flac` | `35f9d09ddc32f055ca21e81393dbefe1b57c68d07ad092d1b96aa3f51cf837b0` | 291407 | J. Sardin | transition | ok transition | no | 6.32 · 7 · 0 |
+| [0906 Two motorcycles passing at 90 km/h](https://bigsoundbank.com/2-motorcycle-passing-s0906.html) | `0906-2-motorcycle-passing.wav` | `87c14f8d77f6aba180bcc96e0815548af187bfd4126a1160fda09b1314cb61de` | 1782366 | J. Sardin | transition | ok transition | no | 9.28 · 5 · -5.2 |
+| [1255 Heavy truck passing at 90 km/h](https://bigsoundbank.com/truck-passage-1-s1255.html) | `1255-truck-passage-1.flac` | `61c3dbb241ff83d93e1753ee772e94cc83f39839a1a1a1a76d53fb6ae7374dce` | 917775 | J. Sardin | transition | ok transition | no | 9.90 · 4 · 0.26 |
+| [3595 Metro train passing 1](https://bigsoundbank.com/subway-underpass-1-s3595.html) | `3595-subway-underpass-1.flac` | `341bbdc18b8c3bd7de964736ffdcdeb1684c7da43bb75aa1d03d0ccfd218b3fd` | 922294 | J. Sardin & Axeline T. | transition | ok transition | no | 8.96 · 1 · -0.96 |
+| [3596 Metro train passing 2](https://bigsoundbank.com/subway-underpass-2-s3596.html) | `3596-subway-underpass-2.flac` | `0147fb32745b3359db8b7a9528522828a5373e2843122e54aff3552db7c2e113` | 878584 | J. Sardin & Axeline T. | transition | ok transition | no | 8.53 · 2 · -1 |
+| [2122 Flying saucer pass-by](https://bigsoundbank.com/flying-saucer-2-passage-s2122.html) | `2122-flying-saucer-2-passage.flac` | `61cf2b22bac1e2df121ad56e8ebc615874368d2b23b354cd9354aa8e2a71356a` | 806241 | J. Sardin | transition | ok transition | no | 6.06 · 0 · -1.51 |
+| [2036 Spaceship pass-by](https://bigsoundbank.com/spaceship-passage-5-s2036.html) | `2036-spaceship-passage-5.flac` | `3764438941cc5843c81388eeb9ce6038240527596d2d9e30ab89bc76d2e8d421` | 435139 | J. Sardin | transition | ok transition | no | 7.08 · 63 · -3 |
+| [0600 Sports car acceleration](https://bigsoundbank.com/acceleration-aston-martin-s0600.html) | `0600-acceleration-aston-martin.wav` | `e63e3160ba88112e6d8f78bb89413078b28701b80c79541147b9d7a02d201fe0` | 624882 | J. Sardin | transition | ok transition | no | 6.50 · 1 · -0.07 |
+| [0603 Motorcycle acceleration](https://bigsoundbank.com/75-cm3-motorcycle-acceleration-s0603.html) | `0603-75-cm3-motorcycle-acceleration.wav` | `8f4e365afd25258bd32e19f269e2b6125020da7f4cf54e1eda1a56b47299d468` | 707486 | J. Sardin | transition | ok transition | no | 7.36 · 7 · -0.05 |
+| [3528 Shepard scale riser, sustained notes](https://bigsoundbank.com/shepard-tone-x1-s3528.html) | `3528-shepard-tone-x1.flac` | `b0692ebb545628d7ffb1c9e11a98b14323c816cfd14fa653f78fdd799b711e3a` | 1083974 | J. Sardin | riser | ok riser | no | 12.03 · 12 · -0.45 |
+| [3530 Shepard scale riser, short notes](https://bigsoundbank.com/shepard-tone-x1-2-s3530.html) | `3530-shepard-tone-x1-2.flac` | `2c013d082d0e6bba89d961c4b76502f65beecc21f32bfb6592055bb523ecd04d` | 563812 | J. Sardin | riser | ok riser | yes | 12.03 · 20 · -2.5 |
+| [1130 Balloon inflation riser 1](https://bigsoundbank.com/balloon-inflation-2-s1130.html) | `1130-balloon-inflation-2.flac` | `cc18b26e702b025fcecda4a6c6719b833e2db33a720c396f79145d433ce03aa1` | 413961 | J. Sardin | riser | ok riser | no | 8.53 · 16 · -3.22 |
+| [1131 Balloon inflation riser 2](https://bigsoundbank.com/balloon-inflation-3-s1131.html) | `1131-balloon-inflation-3.flac` | `21c21831a0a7ef7f7d3c4c0be814c73bd2798c57596f150896dcfaa1c9db9482` | 528875 | J. Sardin | riser | ok riser | no | 10.75 · 19 · -2.53 |
+| [1132 Balloon inflation riser 3](https://bigsoundbank.com/balloon-inflation-4-s1132.html) | `1132-balloon-inflation-4.flac` | `55f329ee32bc242edadb2a304763e10fc7cdce10daa6d34d813d110573611e71` | 415414 | J. Sardin | riser | ok riser | no | 8.62 · 16 · -8.56 |
+| [3545 Drone start-up and take-off](https://bigsoundbank.com/drone-1-s3545.html) | `3545-drone-1.flac` | `54190bff7d654597e20f16117bd2134fd37490ba5d6ad2c7c8afcde3772ea079` | 1032792 | J. Sardin | riser | ok riser | no | 17.66 · 2 · -1.17 |
+| [2400 Snare drum roll riser, short](https://bigsoundbank.com/drum-roll-1-s-s2400.html) | `2400-drum-roll-1-s.flac` | `98b679b0a81d2f03bbcdac87b8bf78ff0def5191dc424170c4f751f0dcaed818` | 315260 | J. Sardin | riser, transition | ok riser,transition | no | 3.07 · 2 · -0.25 |
+| [2402 Snare drum roll riser, long 1](https://bigsoundbank.com/drum-roll-1-l-s2402.html) | `2402-drum-roll-1-l.flac` | `b9d925172400c8d5699b1957d8484f3b692acea82515c107f7880b4cdbea6a2e` | 536552 | J. Sardin | riser, transition | ok riser,transition | no | 5.04 · 2 · -0.26 |
+| [2405 Snare drum roll riser, long 2](https://bigsoundbank.com/drum-roll-2-l-s2405.html) | `2405-drum-roll-2-l.flac` | `fc804956b243524a173ca26c6d6080157d048951113a3d3a71ca18ee940513b4` | 613270 | J. Sardin | riser, transition | ok riser,transition | no | 5.04 · 2 · -1.74 |
+| [3587 Feedback riser (2.4 and 2.9 kHz)](https://bigsoundbank.com/2-4-and-2-9-khz-feedback-s3587.html) | `3587-2-4-and-2-9-khz-feedback.flac` | `67d4690b78dc1745c26d1f58d5f42aee445d8c1ab09bf3e13383f0a8f85d0319` | 106491 | J. Sardin | riser, transition | ok riser,transition | no | 3.16 · 3 · -16.33 |
+| [1634 Reversed gravel tip (wheelbarrow)](https://bigsoundbank.com/wheelbarrow-of-limestone-reversed-s1634.html) | `1634-wheelbarrow-of-limestone-reversed.flac` | `f3c841575699dd5d704924ba0790d3d8c637725dd90da83cc40fe536746d00eb` | 831061 | J. Sardin | reverse, transition | ok reverse,transition | no | 8.53 · 21 · 0.24 |
+| [2180 Tape rewind with music](https://bigsoundbank.com/audio-cassette-back-music-14-s2180.html) | `2180-audio-cassette-back-music-14.flac` | `cff2f2622674da1db035b74b7ac3a7b4ca51d7c1fe6aba76dcacd1fd22786c9e` | 704001 | J. Sardin | reverse, transition, glitch | ok reverse,transition,glitch | no | 2.99 · 17 · 0 |
+| [2155 Tape rewind with voice](https://bigsoundbank.com/audio-cassette-back-2-s2155.html) | `2155-audio-cassette-back-2.flac` | `357b11c5558cbc3134c48933b8a845358d2d50c9134b481e1c729fa4eaca3796` | 256480 | J. Sardin | glitch, transition | ok glitch,transition | no | 1.11 · 10 · 0 |
+| [2167 Tape rewind chirp](https://bigsoundbank.com/audio-cassette-back-music-1-s2167.html) | `2167-audio-cassette-back-music-1.flac` | `caf7251ec4b258d57c45587b2c0ace151ab65448adf06f0220307e021049897a` | 233854 | J. Sardin | glitch | ok glitch | no | 0.94 · 2 · 0 |
+| [2171 Tape rewind with music, long](https://bigsoundbank.com/audio-cassette-back-music-5-s2171.html) | `2171-audio-cassette-back-music-5.flac` | `4442924de9e91e74d713c9392a35aecf03287d142e8b617acb09e201e4a092fd` | 766867 | J. Sardin | glitch, transition | ok glitch,transition | no | 3.16 · 6 · 0 |
+| [2617 Radio tuner sweep 1](https://bigsoundbank.com/radio-frequency-sweep-1-s2617.html) | `2617-radio-frequency-sweep-1.flac` | `22a7ed6b6960ed59f752f9219ae7e3b22ca4832881459b0121acfe238cee2d96` | 854533 | J. Sardin | transition | ok transition | no | 6.49 · 10 · 0.05 |
+| [2620 Radio tuner sweep 2](https://bigsoundbank.com/radio-frequency-sweep-4-s2620.html) | `2620-radio-frequency-sweep-4.flac` | `f3f126c94d2325e8e17f9e0b71e8a1189865874d4ba6a79bc11a05623d1d2b9f` | 400287 | J. Sardin | glitch, transition | ok glitch,transition | no | 3.24 · 12 · 0.02 |
+
+##### BigSoundBank — Ambience & Room Tone (`bigsoundbank-ambience-room-tone`, 23 sounds, 70.5 MB)
+
+| Sound (page) | File | sha256 | Bytes | Author | Types (measured) | Judge at curation | Loops | dur s · onsets · true peak dBTP |
+|---|---|---|---|---|---|---|---|---|
+| [2387 Room tone: apartment, window closed](https://bigsoundbank.com/apartment-closed-window-s2387.html) | `2387-apartment-closed-window.ogg` | `b12368ee102d83b6677f0a319bfbee4d727249ffedf6d14e861172b3d01729cb` | 3430497 | J. Sardin | roomtone, ambience | ok roomtone,ambience | yes | 232.29 · 1 · -22.14 |
+| [0750 Room tone: inside a house](https://bigsoundbank.com/inside-a-house-s0750.html) | `0750-inside-a-house.ogg` | `01d105bf0ae3554ad6bdac3c44582fae287ab8c05b05826fcda3a3e5c59e01df` | 2675365 | J. Sardin | roomtone, ambience | ok roomtone,ambience | no | 86.81 · 1 · -17.55 |
+| [2458 Room tone: house atmosphere (very low)](https://bigsoundbank.com/sound-atmosphere-in-a-house-s2458.html) | `2458-sound-atmosphere-in-a-house.ogg` | `696c534d0e311b76ca3d8001326f304f210ac96cfe02097e9932f2e4e4e08ebf` | 1595315 | J. Sardin | roomtone, ambience | ok roomtone,ambience | no | 106.03 · 2 · -1.14 |
+| [0174 Room tone: bathroom ventilation](https://bigsoundbank.com/ventilation-2-s0174.html) | `0174-ventilation-2.ogg` | `9c90837394d0bd78e4cfd7c6f3bad2b000bf3efadd426aea90e6acc4032b2dbf` | 1035185 | J. Sardin | roomtone, ambience | ok roomtone,ambience | no | 35.08 · 1 · -2.03 |
+| [0874 Hospital corridor](https://bigsoundbank.com/motherhood-corridor-s0874.html) | `0874-motherhood-corridor.ogg` | `ffd0766793bd6cf1d53afcfb137a738dff93ee3fc72874ce50195dd7ea420013` | 4718640 | J. Sardin | roomtone, ambience | ok roomtone,ambience | no | 148.79 · 1 · -7.88 |
+| [1007 Pool changing rooms](https://bigsoundbank.com/pool-changing-rooms-1-s1007.html) | `1007-pool-changing-rooms-1.ogg` | `588c0f658c45cf33cbb6a96390d4be74ea9907718a5c3976391a704dd04618ee` | 3292654 | J. Sardin | ambience | ok ambience | no | 118.56 · 4 · -2.31 |
+| [2562 Market hall (Capucins, Brest)](https://bigsoundbank.com/hall-of-the-capuchins-s2562.html) | `2562-hall-of-the-capuchins.ogg` | `f2aef8d7639611d5b52df7788d627618c7baf5b1e1b08fd35e3831cc0d52480d` | 4182734 | J. Sardin | ambience | ok ambience | no | 283.02 · 1 · -8.57 |
+| [2561 Coffee shop terrace (indoor)](https://bigsoundbank.com/coffee-shop-at-the-capucins-s2561.html) | `2561-coffee-shop-at-the-capucins.ogg` | `d3138358239a4e418c69b2da169c9d0fcd144668fb2c4135757064c1fa906641` | 3612979 | J. Sardin | ambience | ok ambience | no | 242.78 · 2 · -0.94 |
+| [0624 Pizzeria restaurant](https://bigsoundbank.com/restaurant-s0624.html) | `0624-restaurant.ogg` | `85c7bd8e21e2f63c7cae39fde655c700f975a65a67c8d537b65ff0e47c08c07d` | 2619376 | J. Sardin | ambience | ok ambience | no | 90.44 · 5 · -2.24 |
+| [0634 Train station hall (Gare du Nord, Paris)](https://bigsoundbank.com/gare-du-nord-paris-s0634.html) | `0634-gare-du-nord-paris.ogg` | `f10d953512a2c51fc37dd42b0c9e5a049142987fa5e5c20189a31089e56ceef5` | 6662422 | J. Sardin | ambience | ok ambience | yes | 238.66 · 1 · -14.64 |
+| [0526 Pedestrian square with café terraces](https://bigsoundbank.com/pedestrian-place-s0526.html) | `0526-pedestrian-place.ogg` | `baecbe69fdf80b4b90f13cea00b060793b2f23b20a9890331885fbd1978d81be` | 2723818 | J. Sardin | ambience | ok ambience | no | 94.44 · 1 · -8.09 |
+| [0641 London street](https://bigsoundbank.com/london-street-s0641.html) | `0641-london-street.ogg` | `e1cd8eb07adaefd9529037f93f4365c9119b01ed543342a95be07a9be93427c0` | 4490096 | J. Sardin | ambience | ok ambience | no | 157.85 · 1 · -10.06 |
+| [0680 Paris at night (balcony)](https://bigsoundbank.com/paris-by-night-s0680.html) | `0680-paris-by-night.ogg` | `27982c2aa9561b35df1a3a371fbfa588b7e5f7f86a8684dc165984c509ce7ada` | 2233225 | J. Sardin | ambience | ok ambience | yes | 80.83 · 2 · -6.48 |
+| [3030 Paris crossroads (Saint-Lazare)](https://bigsoundbank.com/parisian-crossing-1-s3030.html) | `3030-parisian-crossing-1.ogg` | `cb19aa4d59b860e9572f2a7019cc6ee12ddf74ad9023535802c3128cc4ac9539` | 2032287 | J. Sardin | ambience | ok ambience | no | 136.21 · 4 · -0.15 |
+| [0100 Forest with birdsong](https://bigsoundbank.com/forest-s0100.html) | `0100-forest.ogg` | `419df5947cf7518e5dd8b99eed322797f30e6ffbf41888ea45ed50fbd7876de2` | 1490580 | J. Sardin | ambience | ok ambience | no | 54.50 · 1 · -18.6 |
+| [0110 Countryside at night (insects, distant road)](https://bigsoundbank.com/campaign-at-night-1-s0110.html) | `0110-campaign-at-night-1.ogg` | `5854038c76946821bd1054ae96e5713d0e8e5894bd38337d2ad6f061f9db7f55` | 2574552 | J. Sardin | ambience | ok ambience | no | 75.60 · 1 · -7.77 |
+| [0898 Countryside soundscape (birds, distant hum)](https://bigsoundbank.com/campaign-2-s0898.html) | `0898-campaign-2.ogg` | `15683a19bddf7b0a832e2f00c775d30f81ceb3c3b1fab7c9a84d449c84841205` | 2347250 | J. Sardin | ambience | ok ambience | no | 72.39 · 1 · -10.62 |
+| [0935 Birds waking at dawn](https://bigsoundbank.com/wake-birds-2-s0935.html) | `0935-wake-birds-2.ogg` | `538ee5260dadeb98391f2b342b6187ec297713338c6aa20ebf1834bf8069323c` | 2311112 | J. Sardin | ambience | ok ambience | no | 72.26 · 1 · -6.29 |
+| [0823 Small mountain stream](https://bigsoundbank.com/small-stream-s0823.html) | `0823-small-stream.ogg` | `56f240b3b2b2db32a97cbd944ca02dd89f02c1f613b1c2fe6c825c68c4a7f7af` | 3966647 | J. Sardin | ambience | ok ambience | no | 96.36 · 1 · 0.02 |
+| [0864 Brooklet](https://bigsoundbank.com/brooklet-s0864.html) | `0864-brooklet.ogg` | `798da985c253ae63209375b450f4174c79834769c59f8d21f74ed853d4732dea` | 2752624 | J. Sardin | ambience | ok ambience | yes | 84.15 · 1 · -1.92 |
+| [2564 Sea at the cliffs (Dellec beach)](https://bigsoundbank.com/sea-of-the-beach-of-dellec-1-s2564.html) | `2564-sea-of-the-beach-of-dellec-1.ogg` | `f9347bc97af04a2910d51afe2df47a06195b84efbc92ab33d56890bffe2888b5` | 3206638 | J. Sardin | ambience | ok ambience | no | 210.69 · 1 · -1.18 |
+| [0659 Wind in a tree](https://bigsoundbank.com/wind-in-a-tree-s0659.html) | `0659-wind-in-a-tree.ogg` | `c6691d897200d7c12fefa226be1471dd1c0edbd730849bd23261c33c947b9607` | 3550455 | J. Sardin | ambience | ok ambience | no | 115.45 · 1 · -18.62 |
+| [0147 Wind whistling through a window (inside)](https://bigsoundbank.com/whistling-of-the-wind-1-s0147.html) | `0147-whistling-of-the-wind-1.ogg` | `93e07c797d38df02220d5c0dd9b29a7cc8826d84122542f101754531d798abc0` | 3007321 | J. Sardin | ambience | ok ambience | no | 105.09 · 1 · -13.5 |
+
+#### Limits and notes for the next packages
+
+- The 12 multi-hit typing / ticking recordings and 10 press-and-release keys and clicks are typed by the WP1.2b fallback (judge
+  `multi-hit` / `too-long`); WP-E5 (takes) will make each key press its own judged take. Until then `key` cues prefer
+  the starter kit and Jasper Synth single keys only by judge score.
+- Only 5 beds are room tone and 4 beds loop cleanly by measurement (2387, 0634, 0680, 0864); the others are 35 s – 4.7
+  min field recordings to trim or crossfade.
+- The ambience pack is a 70.5 MB download (OGG); a 23-file install takes ≥ 23 s by the pacing rule.
+- If BigSoundBank replaces a file, its install fails with `PACK_CHECKSUM` for that file until `pack-sources.json` is
+  updated (`fetch` names the file) and the catalogue rebuilt. Its pages' JSON-LD is parsed by `curate-packs.ts`
+  (`soundPageFacts`); a site redesign breaks `fetch` loudly, not the engine.
+- Bright pan-rim hits (0383, 0386) are `hit` by fallback: the judge's `hit` profile calls anything with more than half
+  its energy above 6 kHz hissy.
 
 ### Phase 6 → WP6.2 picture motion, scene and beat cues
 

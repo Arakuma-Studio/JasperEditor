@@ -698,8 +698,13 @@ them, but it was reviewed by its author, not by this review.
   mismatches, a hostile archive with `../escape.wav`, catalogue zip-slip paths, size caps, cancel and partial cleanup,
   resume over file:// and HTTP Range, a stalled server, the approval gate, a project exporting a pack sound after the
   pack is removed), `apps/mcp/test/sound-packs.test.ts`, `fuzz-http.test.ts` (route fuzzing).
-  *Residual:* BigSoundBank is not in the catalogue (its robots.txt and ai.txt exclude automated access to its audio
-  files; wp-note "WP6.1"); a catalogue override file is trusted like the engine's own configuration.
+  `files` packs (BigSoundBank, wp-note "Phase 6 → BigSoundBank packs") download each listed file from its own pinned
+  https URL, one at a time and at most one request per second (`PACK_FILE_INTERVAL_MS`), with a descriptive
+  User-Agent (`PACK_USER_AGENT`); the same size, sha256, staging and `safeJoin` rules apply per file, and the built-in
+  catalogue refuses any non-https URL including a file's own licence evidence.
+  *Residual:* a catalogue override file is trusted like the engine's own configuration; BigSoundBank's robots.txt and
+  ai.txt disallow `/UPLOAD/` for crawlers and AI training — the human decision of 2026-10-17 accepts fetching the
+  curated files at the user's request (no crawling, no training, no hosting by us).
 - **Sound design cues** (spec 12 WP2.3, `apps/engine/src/routes/sound-design.ts`; `POST /api/sound-design/cues`):
   read-only (Open in the AGT-3 sense: nothing is written). The body is a strict zod object: an inline envelope
   (loaded with `loadProject`, a failure is `400 VALIDATION_FAILED`) xor a project id matched against
