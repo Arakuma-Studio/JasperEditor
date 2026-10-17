@@ -1648,26 +1648,24 @@ export async function checkSequence(
 			.filter((c) => c.stopBefore && !c.muted)
 			.map((c) => [c.frame - (c.stopBefore!.seconds + 0.1) * fpsNum, c.frame + 0.1 * fpsNum] as const);
 		const moves = levelMovesDown(seq, rate);
-		// A pause in the dialogue (Phase 5 verification): the voice stops and the mix falls to the quiet music under it,
-		// while the programme under the voice — the bed without the dialogue (music, ambience, other audio; energies add)
-		// — does not dip there. Only a drop of that programme is a DIP (sound effects ending are not a hole in it).
-		const withoutDialogue: StemCurves | null =
+		// The foreground falling away (Phase 5 verification): the voice pausing, or a hit's tail, over a bed that holds its
+		// level — the bed without the dialogue (music, ambience, other audio; energies add) does not itself drop there.
+		// Only a drop of that programme is a DIP (the music cutting out, a hole in the ambience).
+		const programme: StemCurves =
 			stemIds.dialogue.size > 0
 				? {
 						...curves.bed,
 						kEnergy: curves.bed.kEnergy.map((e, x) => Math.max(0, e - (curves.dialogue.kEnergy[x] ?? 0))),
 					}
-				: null;
-		const restShortTerm = withoutDialogue ? crop(loudnessCurve(withoutDialogue, 3), preHops) : null;
-		const speechEnds = segments.map(([, b]) => b);
-		const dialoguePause = (maxAt: number, bottom: number): boolean => {
-			if (!restShortTerm || !speechEnds.some((e) => e >= maxAt - 30 && e <= bottom + 30)) return false;
-			let restMax = Number.NEGATIVE_INFINITY;
+				: curves.bed;
+		const programmeShortTerm = crop(loudnessCurve(programme, 3), preHops);
+		const foregroundOnly = (maxAt: number, bottom: number): boolean => {
+			let top = Number.NEGATIVE_INFINITY;
 			for (let j = Math.max(0, maxAt - 300); j <= maxAt; j++)
-				restMax = Math.max(restMax, restShortTerm[j] ?? -Infinity);
-			let restMin = Number.POSITIVE_INFINITY;
-			for (let j = maxAt; j <= bottom; j++) restMin = Math.min(restMin, restShortTerm[j] ?? Infinity);
-			return !(restMax - restMin > SOUND_CHECK_THRESHOLDS.dipLu);
+				top = Math.max(top, programmeShortTerm[j] ?? -Infinity);
+			let low = Number.POSITIVE_INFINITY;
+			for (let j = maxAt; j <= bottom; j++) low = Math.min(low, programmeShortTerm[j] ?? Infinity);
+			return !(top - low > SOUND_CHECK_THRESHOLDS.dipLu);
 		};
 		let i = 0;
 		while (i < st.length) {
@@ -1708,7 +1706,7 @@ export async function checkSequence(
 				stopSpans.some(([a, b]) => a < fb && b > fa) ||
 				moves.some(([a, b]) => a <= fb && b >= fa) ||
 				silentRuns.some(([a, b]) => a <= bottom && b >= bottom) ||
-				dialoguePause(maxAt, bottom);
+				foregroundOnly(maxAt, bottom);
 			if (recovered && !explained) {
 				const fix = silenceFix(fa, fb);
 				issues.add({

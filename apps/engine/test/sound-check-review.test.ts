@@ -280,6 +280,13 @@ describe('Sound Check engine review (real engine)', { timeout: 600_000 }, () => 
 		expect(fix.whyMessage).toEqual({ key: SOUND_CHECK_MESSAGES.whySilence, params: [], text: fix.why });
 	});
 
+	it('DIP: hits ringing out over a steady, quiet music bed are not a dip (the programme holds) (verification)', async () => {
+		const fx = buildCheckDoc(media, { noSpeech: true });
+		fx.b.tx([{ type: 'audio.setGain', clipIds: [fx.ids.music], mode: 'adjust', db: -24 }]);
+		const r = await check(fx.doc());
+		expect(issuesOf(r, 'DIP'), describeIssues(r)).toEqual([]);
+	});
+
 	it('REPEAT never offers a safe swap to an alternative whose licence is not commercial-safe', async () => {
 		const fx0 = buildCheckDoc(media);
 		const click = soundIdOf(fx0.doc(), fx0.ids.clickMedia);

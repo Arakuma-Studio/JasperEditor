@@ -6059,11 +6059,137 @@ the pass at low load), so it was not kept.
 - With normalisation off, a safe MASKED gain can raise the mix's true peak (the solver's headroom is per sound).
 - ~~DIP also fires on long dialogue pauses over a quiet, un-ducked music bed without a picture cut (the bench: ≈ 70 DIPs in
   30 min of 8 s pauses); a dialogue pause is not an explanation (spec).~~ Handled by the Phase 5 verification (below): a
-  drop where the voice stops while the bed without the dialogue holds its level is explained (decision).
+  drop is explained when the bed without the dialogue holds its level (decision; the bench: 0 DIPs).
 - `soundCheckInputsHash` still ignores media licences (`media.setLibraryInfo`), transcripts and picture edits (adding
   them would make every stored summary stale once).
 - The sync preference trusts the document among near-equal matches: a renderer offset of a strongly periodic sound shows
   less clearly than before.
+
+### Phase 5 verification
+
+Branch `feat/sd-p5-verify` (from `8af31459`), with the engine review above merged in (`feat/sd-p5-review-engine`). Scope: spec
+12 P5-R1…R4 and the Phase 5 "Done when", the CLAUDE.md Definition of Done, the WP5.2 follow-ups, a deep review of the
+Phase 5 code and the real app (e2e, MCP). Every defect fixed here has a regression test that failed before the fix.
+
+#### Requirements (evidence)
+
+| Requirement | Status | Evidence (rerun) |
+|---|---|---|
+| P5-R1 `sound-check` job: every §2.6 check and code (+ TRUNCATED), report schema, `soundDesign.setCheck`, staleness | done | `apps/engine/test/sound-check.test.ts` (18: clean pass, 14 seeded defects each found and resolved by its fix, custom target, refusals), `sound-check-review.test.ts` (11: edges, identical sounds, reversed, SILENCE per channel, DIP vs level moves and dialogue pauses, REPEAT licence, ducking prediction, custom target rounding, MASKED = rebalance), `sound-check-stems.test.ts` (stems = `renderMixdown` sample for sample, each clip decoded once); `packages/project/test/sound-check.test.ts`, `sound-check-panel.test.ts`, `fuzz.test.ts` (AC-25 draws setCheck / setVerdict / credits); `packages/audio-fx/test/check-curves.test.ts` (500-run solver-equality property) |
+| P5-R2 visual data routes; MCP `sound_check` and `view_sound_timeline` (PNG) | done | `sound-check.test.ts` (visual route: 400 points, curves, motion, cues, aligned frames), `sound-check-kept.test.ts` (sound-effects / bed peaks), `apps/mcp/test/sound-check.test.ts` (PNG decodes, findings, safe fixes applied as given → pass); real run below (PNGs looked at) |
+| P5-R3 panel: fixes, Fix all safe, sync strip, listen-here verdict markers, Export dialog option | done | `apps/web/test/sound-check-panel.test.tsx` (14), `sound-check-model.test.ts` (15), `sound-check-listen-keep.test.ts` (3); `e2e/sound-check.spec.ts` (screenshots in `test-results/e2e-sound-check/`) |
+| P5-R4 seeded defects found with the right code; a clean fixture passes | done | `sound-check.test.ts`: "2-frame offset → OUT_OF_SYNC", "masked hit under loud music → MASKED", "0.8 s digital silence → SILENCE", "music 3 LU under the voice → MUSIC_OVER_VOICE", "true peak −0.2 dBTP → TRUE_PEAK", "short media is never a trivial pass", "the clean fixture passes" |
+| Done when: the panel and the MCP tool show the same report | done | `e2e/sound-check.spec.ts`: the panel's `CODE@frame` list equals `sound_check`'s, before and after the fixes; `humanVerdicts` = the panel's verdicts |
+| DoD: model, schema, repair | done | `Marker.soundCheck` (verdict binding): INV-SOUND, `drop-verdict-meta`, idempotent (`packages/project/test/sound-check-verdicts.test.ts`); `docs/project-files.md` row |
+| DoD: undoable commands with undo / redo / refusals | done | `soundDesign.setVerdict` (catalog "Sound Check Verdict", example in `apps/mcp/src/examples.ts`, `sound-examples.test.ts`): add / update / remove, undo = the document before, redo, 8 refusals (`sound-check-verdicts.test.ts`) |
+| DoD: UI wired — panel, menu, shortcuts without conflicts | done | Sequence ▸ Sound Design ▸ Run Sound Check; the findings list keys are `soundCheck`-scope commands (Keyboard Shortcuts lists them, remapping works: panel test); `apps/web/test/keymap.test.ts`, `edit-ux-keyboard.test.tsx` pass |
+| DoD: preview / export | n/a (metadata) | Sound Check renders nothing new; verdicts are comment markers; "Run Sound Check before export" in the Export dialog (panel test, e2e) |
+| DoD: agents (MCP tools, README, guide) | done | `sound_check` (`humanVerdicts` with `stale`), `get_sound_check` (new), `view_sound_timeline`; README tool list (353), SOUND_GUIDE "Check"; `readme-tools`, `conventions`, `sound-guide`, `sound-check-verdicts` tests |
+| DoD: i18n (en / es), a11y, tokens | done | every Sound Check template, fix reason and unmeasured reason is a model string with a Spanish text and the same placeholders (`sound-check-model.test.ts`); `node scripts/i18n.mjs --check`; `check-tokens` |
+| DoD: run in the real app and look | done | e2e (Chromium, built stack) and MCP real run below |
+
+#### WP5.2 follow-ups closed
+
+- **(a) Unsafe fixes are confirmed.** "Fix…" (and F on a finding whose fix is not safe) opens a confirmation that names
+  what will change (`fixChangeSummary`: "Adds a silence cue from 00;00;12;00 to 00;00;12;24…", "Deletes the sound cue
+  at … and the 2 sounds placed on it", "Sets the gain of “Air swish” from −9.5 dB to −4.0 dB", "Re-levels the sound
+  effects… the gain of any of them may change", Auto-Match / ducking for delivery jobs…), why it needs judgement and that
+  it is one undo step; Cancel applies nothing ("Fix not applied"). Safe fixes and Fix all safe do not ask.
+- **(b) Play all keeps playing through verdicts.** `playTimelineWindow` takes `keepPlayingOn`; the Sound Check passes
+  `keepsListening`: presses inside the listen controls (Sounds right, Flag, the note field and its buttons, ▶, Play all /
+  Stop) do not end the window, Escape and everything else still do. Found while testing it: pressing Stop (or a playing
+  row's ▶) stopped the window on pointer-down and the click then started it again — those buttons now act on their own
+  click only (`sound-check-listen-keep.test.ts`, panel test, e2e: a verdict during Play all is recorded and Play all
+  goes on).
+- **(c) Verdicts are bound to the moment they judged.** Decision: keep the spec's `comment` markers and give them a
+  structured, optional `soundCheck` field (markers are loose objects, so older builds keep it) written by a new command,
+  `soundDesign.setVerdict {frame, verdict | null, note?, slot?, clipId? | cueId?, reportMixHash?}`: the slot, the clip
+  (else cue) listened to and where it was, `mixFingerprint` at that time and `soundCheckMomentHash` (the mix fingerprint of
+  the clips overlapping the ±2 s window the panel plays). `soundCheckHumanVerdicts(seq, {doc})` reports `stale` with
+  `moment` (what plays there changed), `moved` / `gone` (its clip / cue) and `mixChanged`; a name-only marker of before is
+  `bound: false`, `stale: null`. Two moments on one frame about different clips keep separate verdicts; a verdict about
+  no clip / cue in particular (or an older one) covers every moment at its frame until a specific one replaces it. The
+  author is whoever applies the command: an agent's (MCP, HTTP agent transactions — measured in the real run: author
+  `{agent: 'external'}`) is never a human verdict. The panel shows "Out of date: the sound here changed since you
+  listened"; MCP `humanVerdicts` gains `slot`, `clipId` / `cueId`, `stale`, `staleReasons`, `mixChangedSince`.
+- **(d) The sync strip draws the sound effects over the bed.** The visual route returns `stemPeakDb {sfx, bed}` (10 ms
+  peaks as delivered, from the same one-pass stem render); the strip draws the bed filled and the sound-effects stem as
+  an outline with a legend (`sound-check-kept.test.ts`: the hit is in the sfx peaks, 20 dB over its quiet before; e2e
+  screenshot `sync-strip.png` looked at). An engine without the field still gets the mix waveform.
+- **(e) The last full report is kept.** `SoundCheckReportStore` (`apps/engine/src/sound-design/report-store.ts`):
+  every finished `sound-check` job writes `<appdir>/projects/<pid>/sound-check/<sequenceId>.json` (atomic; the newest per
+  sequence; ≤ 32 per project, least recently written evicted; ≤ 16 MB; a damaged or foreign file is moved aside);
+  `POST /api/sound-design/check/last` returns it with `state: current | stale` and `reasons: mix | inputs` against the live
+  document; the panel reloads it when the job is gone (and judges any shown report by its own hashes); MCP
+  `get_sound_check` (READ_ONLY). Note: the job journal already restores the newest 500 finished jobs for 7 days, but a
+  session's still jobs push a check out of it — the store does not depend on it (`sound-check-kept.test.ts` deletes the
+  journal, restarts the engine on the same appdir, reads the report, edits, reads it stale).
+- **(f) The findings list keys are commands** of the `soundCheck` scope — Next / Previous / First / Last Sound Check
+  Finding (↓ ↑ Home End), Go to (Enter), Fix (F), Open / Close Sync Strip (→ ←), Play (Space) — listed in Keyboard
+  Shortcuts and remappable (panel test: F rebound to X fixes with X, not F). The list's cursor and open strips moved to
+  the Sound Check store so the commands act on them.
+- **(g) End-aligned padded sounds end on the sample.** It was a real alignment error: `end` used `descriptors.durationSec −
+  trailSilenceSec` (durationSec quantised to 0.1 ms). `planSoundInsert` now ends the sound at the placed media's own
+  length minus `trailSilenceSec` (`SoundTiming.trailSec`; µs-exact from the probe) when the two agree within 2 ms. Test
+  (`sound-tail.test.ts`): four sound lengths × the 8 sequence rates, within one flick of the last sample's end (before: 5 880
+  flicks = 0.0083 ms off on the test's first case); the sound-library e2e now expects the exact end.
+
+#### More defects found by this pass (each with a regression test)
+
+| Defect | Fix |
+|---|---|
+| The foreground falling away was a DIP: a pause in the dialogue over a quiet, un-ducked music bed (≈ 70 in the 30-minute bench; 10 after the review's fixes) and a hit ringing out over quiet music ("drops 23.3 LU at 00:00:05:05") | Decision: DIP is a drop of the programme under the foreground — explained when the bed without the dialogue (bed − dialogue energies: music, ambience, other audio) does not itself drop > 10 LU over the drop; the music dropping is still a DIP (`sound-check-review.test.ts`: pause, hit tails and the control, the first two failed before — "drops 30.9 LU at 00:00:10:15", "drops 23.3 LU at 00:00:05:05"); the 30-minute bench now reports **0** DIPs (its music never drops) |
+| Play all / ▶ pressed to stop restarted playback (stopped on pointer-down, started on click) | (b) above |
+| The worst listen-here reason quoted its finding's English text inside the Spanish template | The panel says the finding itself in the UI language (`sound-check-model.test.ts`) |
+| A fix's "why" (tooltip, confirmation) was English only | `fix.whyMessage` (template + params; 12 templates) beside `why`; the panel translates it |
+| "its timing cannot be measured (…)" reasons were English inside Spanish text | `SOUND_CHECK_UNMEASURED` fragments are model strings; the panel translates that parameter |
+| End-aligned padded sounds ended 0.03 ms early | (g) above |
+
+The engine review (section above) fixed nine more: sync at the sequence's edges, identical sounds near a cue, reversed
+clips, SILENCE per channel, DIP vs deliberate level moves, REPEAT to a worse licence, ducking predicted with the wrong
+depth, custom-target rounding, density staleness.
+
+#### Real app (measured)
+
+- **E2E** (built stack, `E2E_PORT=51403 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-check.spec.ts --workers=1`):
+  passed in 2.0 min. Every sound spec (`e2e/sound-*.spec.ts`, 23 tests, one worker): **23 passed** in 18.6 min (load 3–15).
+  Screenshots looked at (`test-results/e2e-sound-check/`): `sync-strip.png` (5 stills, sound-effects outline over the
+  filled bed, "Picture" line at the cut, dashed "Sound +66.7 ms"), `fix-confirm.png` ("Apply “Mark it as intended silence
+  (a silence cue)”? This will change: Adds a silence cue from 00;00;12;00 to 00;00;12;24…"), `listen-here.png` (the flag
+  with its note, the hero and the passing moment — same clip, same frame — sharing "Sounds right"), `final.png`.
+- **MCP real run** (dev engine `JASPER_APPDIR=.stage … --port 51401`, starter kit + Jasper Synth = 212 sounds, jasper-mcp
+  over stdio; scratch script and outputs in `/var/lib/orquester/tmp/p5-verify/mcp-run/`, not committed): the Phase 4
+  fixture, `plan_sound_design {seed: 2026, delivery: web}` accepted as the editor, the impact on the 00:00:03:00 cut
+  nudged 2 frames. `sound_check {store: true}`: **fail** in 29.6 s (load ≈ 4): OUT_OF_SYNC "Crunchy impact plays 66.7 ms
+  late on its cut cue at 00:00:03:00" with the safe `align_peak` fix, 7 MASKED (solver-limited, no safe fix), one
+  "not measurable" info; listen-here worst 00:00:03:00, hero 00:00:08:10, loudest 00:00:06:00, busiest 00:00:07:03,
+  passing 00:00:08:10. The safe fix applied exactly as given → re-check **warn** in 27.1 s, no OUT_OF_SYNC error.
+  `get_sound_check`: current; after an engine restart with the job journal removed: still there, current; after a gain
+  edit: stale (`mix`), "run sound_check again before applying any fix". PNGs looked at: `check-1.png` (the nudged hit's
+  aligned line right of its cue tick, the OUT OF SYNC flag), `zoom-2-4s.png` after the fix (aligned line on the cue tick).
+- **30-minute sequence** (`SOUND_CHECK_BENCH_MIN=30 pnpm vitest run apps/engine/test/sound-check-bench.test.ts`, final code,
+  load 3.0–4.3): **109 s** wall (stems 84 s, delivery pass 17 s, levels 6 s, sync 1.4 s), engine CPU 115 s, peak RSS
+  **539 MB** (base 334), heap flat (212 → 219 MB), array buffers ≤ 178 MB, report 87 KB; one pass (42 decoders for 42
+  clips), 40 / 40 hits located, verdict warn (REPEAT ×39: the bench repeats one hit), no DIP.
+
+#### Gate
+
+GATE_RESULTS_PLACEHOLDER
+
+#### Limits
+
+- Each opened sync strip renders 5 still jobs (cached per document revision).
+- A verdict's staleness follows the audio of its ±2 s window and its clip / cue position, not picture edits; a name-only
+  verdict marker written before cannot tell (`stale: null`).
+- A kept report is not deleted with its sequence (ids are unique, so it is never shown for another; the 32-per-project
+  bound evicts it).
+- Engine review limits (above): demotion + gain on one hero can overload; with normalisation off a safe MASKED gain can
+  raise the true peak; a repeated tonal sound's renderer offset shows less clearly; the inputs hash ignores media
+  licences, transcripts and picture edits.
+- A fix's `why` for "the solver's gain does not resolve it: {0}" carries the solver's English reason as its parameter.
+- A mono Mix is checked as the export renders it by default — stereo (`audioOutputOf` in the planner), the same mono
+  signal in both channels; an export set to one channel is normalised on its own output, but Sound Check's readings
+  (integrated, true peak) are those of the stereo default.
 
 ## Phase 6: packs, cue sources, completion
 
