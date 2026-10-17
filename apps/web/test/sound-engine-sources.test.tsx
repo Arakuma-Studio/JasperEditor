@@ -27,7 +27,9 @@ function footage() {
 		label: 'p',
 		origin: 'user',
 		sequenceId: seqId,
-		commands: [{ type: 'clip.place', source: { mediaId }, at: 0, tracks: { video: 'V1' }, ref: '$v' }] as never[],
+		commands: [
+			{ type: 'clip.place', source: { mediaId }, at: 0, tracks: { video: 'V1' }, ref: '$v' },
+		] as never[],
 	});
 	if (!r.ok) throw new Error(JSON.stringify(r.errors));
 	return { session, seqId, mediaId, clipId: r.refs.$v! };

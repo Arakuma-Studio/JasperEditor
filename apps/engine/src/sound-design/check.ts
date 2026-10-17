@@ -61,6 +61,7 @@ import {
 	type ClipSfx,
 	type CueKind,
 	createRandomIdSource,
+	cueAnchorFrame,
 	DENSITY_BUDGETS,
 	deliveryPreset,
 	deriveCues,
@@ -85,7 +86,6 @@ import {
 	readEssentialSound,
 	readLibraryProvenance,
 	requiresAttribution,
-	cueAnchorFrame,
 	type Sequence,
 	SOUND_CHECK_CATEGORY,
 	SOUND_CHECK_CODES,
@@ -125,6 +125,7 @@ import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { sec } from '../tools/ffmpeg.ts';
 import { HttpError } from '../tools/reply.ts';
 import { type AudioWorld, audioWorld, type MeasureCache, measureSfxEvents, VAD_FLOOR_DBFS } from './bed.ts';
+import type { EngineCueSources } from './engine-cues.ts';
 import {
 	gainReport,
 	levelOptions,
@@ -134,7 +135,6 @@ import {
 	solvedLevel,
 	solverEventOf,
 } from './levels.ts';
-import type { EngineCueSources } from './engine-cues.ts';
 import { liveDocument, PlanInputError, planSequence } from './plan.ts';
 import { classifyStems, renderStems, STEM_NAMES, type StemName, type StemSpec } from './stems.ts';
 

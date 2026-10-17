@@ -365,7 +365,7 @@ function sequence() {
 	return { h, media, videoClip: v.clipIds[0]!, music: music.mediaId, musicClip };
 }
 
-const cutsAt = (...s: number[]): ReadonlyMap<string, SceneCutData> => new Map();
+const cutsAt = (): ReadonlyMap<string, SceneCutData> => new Map();
 
 describe('scene cuts mapped through the clip', () => {
 	it('lists the footage and the music it analyses', () => {

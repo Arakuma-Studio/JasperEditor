@@ -139,7 +139,6 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 		};
 	}, 180_000);
 	afterAll(async () => {
-		// biome-ignore lint/suspicious/noConsole: the measured timings go into the wp-note
 		console.log(`motion timings ${JSON.stringify(timings)}`);
 		await closeApps();
 	});

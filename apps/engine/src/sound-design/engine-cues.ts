@@ -114,7 +114,7 @@ export class EngineCueSources {
 	private failure(key: string): string | null {
 		const id = this.started.get(key);
 		const job = id ? this.deps.queue.get(id) : undefined;
-		if (!job || job.state !== 'failed') return null;
+		if (job?.state !== 'failed') return null;
 		const at = job.finishedAt ? Date.parse(job.finishedAt) : 0;
 		if (Date.now() - at > FAILED_MEMORY_MS) {
 			this.started.delete(key);
@@ -285,7 +285,7 @@ export class EngineCueSources {
 		out.extraCues.push(...cues);
 		st.found = cues.length;
 		if (missing) st.state = 'missing';
-		this.finish(st, 'scene', 'Shot changes in the footage', failed, out, mode);
+		this.finish(st, 'scene', 'Shot changes in the footage', failed, out);
 	}
 
 	private async beat(
@@ -368,7 +368,7 @@ export class EngineCueSources {
 		if (snap) out.beatFrames = [...new Set(cues.map((c) => c.frame))].sort((a, b) => a - b);
 		st.found = cues.length;
 		if (missing) st.state = 'missing';
-		if (asCues) this.finish(st, 'beat', 'Beats of the music', failed, out, mode);
+		if (asCues) this.finish(st, 'beat', 'Beats of the music', failed, out);
 	}
 
 	private async pixel(
@@ -447,7 +447,7 @@ export class EngineCueSources {
 		out.extraCues.push(...cues);
 		st.found = cues.length;
 		if (missing) st.state = 'missing';
-		this.finish(st, 'pixel', 'Picture motion', failed, out, mode);
+		this.finish(st, 'pixel', 'Picture motion', failed, out);
 	}
 
 	private finish(
@@ -456,7 +456,6 @@ export class EngineCueSources {
 		what: string,
 		failed: string[],
 		out: EngineCueResult,
-		mode: EngineCueMode,
 	): void {
 		if (st.jobIds.length) {
 			st.state = 'pending';

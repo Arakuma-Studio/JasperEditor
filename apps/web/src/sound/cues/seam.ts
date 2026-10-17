@@ -5,8 +5,8 @@ import { mgRegistry } from '@jasper/mg-templates';
 import {
 	type Command,
 	type CueWeight,
-	type ProjectDocument,
 	cueAnchorFrame,
+	type ProjectDocument,
 	type Sequence,
 	type SoundCue,
 } from '@jasper/project';
