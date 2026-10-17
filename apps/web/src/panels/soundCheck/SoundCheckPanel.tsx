@@ -39,9 +39,9 @@ import {
 	SEVERITY_LABELS,
 	SEVERITY_TONE,
 	safeFixable,
+	sequenceTargetCommands,
 	staleText,
 	summaryChips,
-	useAsTargetCommands,
 	VERDICT_ICON,
 	VERDICT_LABELS,
 	VERDICT_TONE,
@@ -62,8 +62,8 @@ import {
 	soundCheckStore,
 	stopListen,
 } from '../../sound/check-run.ts';
-import { SyncStrip, type StripEngine } from '../../sound/SyncStrip.tsx';
 import { seqTimecode } from '../../sound/design-model.ts';
+import { type StripEngine, SyncStrip } from '../../sound/SyncStrip.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import type { PanelProps } from '../types.ts';
 
@@ -105,7 +105,9 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 	const seq = seqId ? (doc.sequences[seqId] as Sequence | undefined) : undefined;
 	const status = useMemo(
 		() =>
-			seqId ? soundCheckStatus(doc, seqId) : { state: 'none' as const, summary: null, reasons: [], mixHash: '' },
+			seqId
+				? soundCheckStatus(doc, seqId)
+				: { state: 'none' as const, summary: null, reasons: [], mixHash: '' },
 		[doc, seqId],
 	);
 	const report = result && seqId && result.sequenceId === seqId ? result.report : null;
@@ -120,7 +122,11 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 	}, [engine, session, seqId, connected]);
 
 	const runDisabled = !engine || !connected || !seq;
-	const runReason = !seq ? t('Open a sequence first') : !connected ? t('The engine is not connected') : undefined;
+	const runReason = !seq
+		? t('Open a sequence first')
+		: !connected
+			? t('The engine is not connected')
+			: undefined;
 	const run = () => {
 		if (engine && seq) void runSoundCheck(session, engine, { sequenceId: seq.id });
 	};
@@ -177,7 +183,10 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 				</div>
 			) : null}
 			{error ? (
-				<p role="alert" className="m-0 shrink-0 border-b border-pr-border px-2 py-1 text-pr-small text-pr-danger">
+				<p
+					role="alert"
+					className="m-0 shrink-0 border-b border-pr-border px-2 py-1 text-pr-small text-pr-danger"
+				>
 					{t('The Sound Check failed: {0}', error)}
 				</p>
 			) : null}
@@ -209,7 +218,9 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 								{t('Fix all safe ({0})', safe.length)}
 							</Button>
 							<span className="text-pr-small text-pr-muted">
-								{t('Safe fixes change only what their finding is about, in one undo step; the check runs again after.')}
+								{t(
+									'Safe fixes change only what their finding is about, in one undo step; the check runs again after.',
+								)}
 							</span>
 						</div>
 						<Findings
@@ -292,17 +303,22 @@ function TargetBar(props: {
 		if (choice.kind === 'custom' && !commitCustom()) return;
 		const label =
 			choice.kind === 'preset'
-				? t('Use Delivery Target: {0}', options.find((o) => o.value === choice.preset)?.label ?? choice.preset)
+				? t(
+						'Use Delivery Target: {0}',
+						options.find((o) => o.value === choice.preset)?.label ?? choice.preset,
+					)
 				: t('Use Delivery Target: {0}', customLabel(choice.target));
 		const r = props.session.apply({
 			label,
 			origin: 'user',
 			sequenceId: seq.id,
-			commands: useAsTargetCommands(choice, seq.id),
+			commands: sequenceTargetCommands(choice, seq.id),
 		});
 		soundCheckStore(props.session).setState((s) => ({
 			announcement: {
-				message: r.ok ? t('The sequence now delivers to {0}', label) : r.errors.map((e) => e.message).join('; '),
+				message: r.ok
+					? t('The sequence now delivers to {0}', label)
+					: r.errors.map((e) => e.message).join('; '),
 				n: s.announcement.n + 1,
 			},
 		}));
@@ -368,9 +384,12 @@ function TargetBar(props: {
 			</div>
 			{choice.kind === 'custom' ? (
 				<div className="flex flex-wrap items-center gap-2 text-pr-small" data-testid="sound-check-custom">
-					<label className="flex items-center gap-1">
-						<span className="text-pr-muted">{t('Integrated (LUFS)')}</span>
+					<span className="flex items-center gap-1">
+						<span className="text-pr-muted" aria-hidden="true">
+							{t('Integrated (LUFS)')}
+						</span>
 						<TextField
+							aria-label={t('Integrated (LUFS)')}
 							className="w-16"
 							value={lufs}
 							invalid={invalid?.field === 'lufs'}
@@ -382,10 +401,13 @@ function TargetBar(props: {
 								if (e.key === 'Enter') commitCustom();
 							}}
 						/>
-					</label>
-					<label className="flex items-center gap-1">
-						<span className="text-pr-muted">{t('True peak (dBTP)')}</span>
+					</span>
+					<span className="flex items-center gap-1">
+						<span className="text-pr-muted" aria-hidden="true">
+							{t('True peak (dBTP)')}
+						</span>
 						<TextField
+							aria-label={t('True peak (dBTP)')}
 							className="w-16"
 							value={tp}
 							invalid={invalid?.field === 'tp'}
@@ -397,7 +419,7 @@ function TargetBar(props: {
 								if (e.key === 'Enter') commitCustom();
 							}}
 						/>
-					</label>
+					</span>
 					{invalid ? (
 						<span role="alert" className="text-pr-danger">
 							{invalid.message}
@@ -430,7 +452,10 @@ function Summary(props: {
 				{ id: 'infos', label: t('Info'), value: String(counts.info ?? 0) },
 			];
 	return (
-		<div className="flex flex-col gap-1 border-b border-pr-border px-2 py-1.5" data-testid="sound-check-summary">
+		<div
+			className="flex flex-col gap-1 border-b border-pr-border px-2 py-1.5"
+			data-testid="sound-check-summary"
+		>
 			<div className="flex flex-wrap items-center gap-1.5">
 				<span
 					className={`inline-flex items-center gap-1 rounded-pr-pill border border-current px-2 py-0.5 font-semibold ${VERDICT_TONE[verdict]}`}
@@ -453,9 +478,7 @@ function Summary(props: {
 				))}
 				{report?.preset ? (
 					<span className="text-pr-small text-pr-muted">
-						{report.preset.custom
-							? customLabel(report.preset)
-							: t('vs {0}', t(report.preset.label))}
+						{report.preset.custom ? customLabel(report.preset) : t('vs {0}', t(report.preset.label))}
 					</span>
 				) : null}
 			</div>
@@ -467,7 +490,12 @@ function Summary(props: {
 				>
 					<Icon id="status.warning" size={14} />
 					<span>{stale}</span>
-					<Button variant="quiet" disabled={props.runDisabled} onClick={props.onRerun} data-testid="sound-check-rerun">
+					<Button
+						variant="quiet"
+						disabled={props.runDisabled}
+						onClick={props.onRerun}
+						data-testid="sound-check-rerun"
+					>
 						{t('Re-run')}
 					</Button>
 				</div>
@@ -486,7 +514,9 @@ function issueName(i: SoundCheckIssue, fixedNow: boolean): string {
 	const parts = [t(SEVERITY_LABELS[i.severity]), i.timecode ?? '', messageText(i.message)];
 	if (fixedNow) parts.push(t('fixed, run again to confirm'));
 	else if (i.fix && canApply(i))
-		parts.push(i.fix.safe ? t('safe fix: {0}', messageText(i.fix.label)) : t('fix: {0}', messageText(i.fix.label)));
+		parts.push(
+			i.fix.safe ? t('safe fix: {0}', messageText(i.fix.label)) : t('fix: {0}', messageText(i.fix.label)),
+		);
 	return parts.filter(Boolean).join('. ');
 }
 
@@ -572,7 +602,10 @@ function Findings(props: {
 	};
 	if (!report.issues.length)
 		return (
-			<p className="m-0 border-b border-pr-border px-2 py-2 text-pr-small text-pr-muted" data-testid="sound-check-none">
+			<p
+				className="m-0 border-b border-pr-border px-2 py-2 text-pr-small text-pr-muted"
+				data-testid="sound-check-none"
+			>
 				{t('No findings: every check passed.')}
 			</p>
 		);
@@ -610,13 +643,13 @@ function Findings(props: {
 						const strip = hasSyncStrip(i);
 						const expanded = strip && open.has(i.id);
 						return (
+							// biome-ignore lint/a11y/useFocusableInteractive: listbox options are reached with aria-activedescendant
 							<div
 								key={i.id}
 								id={`${idPrefix}${i.id}`}
 								role="option"
 								aria-selected={cur === i.id}
-								aria-expanded={strip ? expanded : undefined}
-								aria-label={issueName(i, fixedNow)}
+								aria-label={`${issueName(i, fixedNow)}${strip ? `. ${expanded ? t('sync strip open') : t('sync strip: press the right arrow')}` : ''}`}
 								data-issue-id={i.id}
 								data-code={i.code}
 								data-frame={i.frame ?? i.range?.start ?? ''}
@@ -733,7 +766,11 @@ function Listen(props: {
 		setNoteFor(null);
 	};
 	return (
-		<section className="px-2 py-1.5" aria-labelledby="sound-check-listen-title" data-testid="sound-check-listen">
+		<section
+			className="px-2 py-1.5"
+			aria-labelledby="sound-check-listen-title"
+			data-testid="sound-check-listen"
+		>
 			<div className="mb-1 flex items-center gap-2">
 				<h3 id="sound-check-listen-title" className="m-0 text-pr-small font-semibold text-pr-strong">
 					{t('Listen here')}
@@ -769,7 +806,9 @@ function Listen(props: {
 							<div className="flex items-center gap-1.5">
 								<Button
 									variant="quiet"
-									aria-label={isPlaying ? t('Stop {0}', row.timecode) : t('Play 4 s around {0}', row.timecode)}
+									aria-label={
+										isPlaying ? t('Stop {0}', row.timecode) : t('Play 4 s around {0}', row.timecode)
+									}
 									aria-pressed={isPlaying}
 									data-testid="sound-check-listen-play"
 									onClick={() => (isPlaying ? stopListen(session) : playListen(session, seq.id, rows, idx))}
@@ -843,7 +882,11 @@ function Listen(props: {
 											}
 										}}
 									/>
-									<Button variant="primary" data-testid="sound-check-note-save" onClick={() => save(row, 'flag', note)}>
+									<Button
+										variant="primary"
+										data-testid="sound-check-note-save"
+										onClick={() => save(row, 'flag', note)}
+									>
 										{t('Flag')}
 									</Button>
 									<Button variant="quiet" onClick={() => setNoteFor(null)}>
@@ -858,4 +901,3 @@ function Listen(props: {
 		</section>
 	);
 }
-

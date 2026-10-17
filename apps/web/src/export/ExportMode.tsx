@@ -12,9 +12,11 @@ import { formatTimecode } from '../gaps/time-display.ts';
 import { notices } from '../home/notices.tsx';
 import { runIfRegistered, useLocalCommandCtx } from '../home/ui-bridge.ts';
 import { mediaKeyOf } from '../import/assets.ts';
+import type { CheckEngine } from '../sound/check-run.ts';
 import { useEngine } from '../state/engine.tsx';
 import { exportMode, trackExportJob } from './mode.ts';
 import { blockingForEngine, type PlanState, PlanSummary } from './PlanSummary.tsx';
+import { useExportSoundCheck } from './SoundCheckGate.tsx';
 import {
 	buildExportSettings,
 	type CaptionExportChoice,
@@ -111,6 +113,19 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	const [plan, setPlan] = useState<PlanState>({ status: 'idle' });
 	const [starting, setStarting] = useState(false);
 	const close = props.onClose ?? exportMode.close;
+	// spec 12 §2.7: "Run Sound Check before export" (sequences with sound effects)
+	const soundCheck = useExportSoundCheck({
+		session,
+		engine: engine.status === 'connected' ? (engine.client as unknown as CheckEngine) : null,
+		seq,
+		onReview: () => {
+			close();
+			// the panel shows the active sequence's report
+			if (seq && session.getState().activeSequenceId !== seq.id) session.openSequence(seq.id);
+			void runIfRegistered('panel.open.soundCheck', ctx);
+		},
+		notify: (message) => notices.push({ kind: 'info', message }),
+	});
 
 	useEffect(() => {
 		if (!sequenceId) return;
@@ -230,10 +245,12 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		plan.status === 'ok' &&
 		!blocking.length &&
 		engine.status === 'connected' &&
-		!starting;
+		!starting &&
+		!soundCheck.busy;
 
 	const startExport = async () => {
 		if (!seq || !settings || plan.status !== 'ok') return;
+		if (!(await soundCheck.gate())) return;
 		setStarting(true);
 		const name = sanitizeFileName(fileName);
 		const ext = exportExtension(plan.plan.encoder);
@@ -719,6 +736,12 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 							</Field>
 						</div>
 					) : null}
+					{soundCheck.section ? (
+						<div className="flex flex-col gap-2 border-t border-pr-border-subtle pt-2">
+							<h3 className="text-pr-small text-pr-muted">SOUND</h3>
+							{soundCheck.section}
+						</div>
+					) : null}
 					<div className="border-t border-pr-border-subtle pt-2">
 						<h3 className="mb-1 text-pr-small text-pr-muted">SUMMARY</h3>
 						<p className="mb-2 text-pr-small">
@@ -728,6 +751,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 					</div>
 				</section>
 			</div>
+			{soundCheck.prompt}
 			<footer className="flex shrink-0 items-center gap-2 border-t border-pr-border-subtle bg-pr-header px-3 py-2">
 				<div className="min-w-0 flex-1 text-pr-small text-pr-danger" data-testid="export-errors">
 					{validation.join(' ')}

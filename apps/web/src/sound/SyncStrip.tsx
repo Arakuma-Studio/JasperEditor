@@ -78,9 +78,7 @@ export function wavePath(peaksDb: readonly number[], w: number, h: number): stri
 	};
 	const xs = (i: number) => (n === 1 ? w / 2 : (i / (n - 1)) * w);
 	const top = peaksDb.map((db, i) => `${xs(i).toFixed(1)},${(mid - amp(db)).toFixed(1)}`);
-	const bottom = peaksDb
-		.map((db, i) => `${xs(i).toFixed(1)},${(mid + amp(db)).toFixed(1)}`)
-		.reverse();
+	const bottom = peaksDb.map((db, i) => `${xs(i).toFixed(1)},${(mid + amp(db)).toFixed(1)}`).reverse();
 	return `M${top.join(' L')} L${bottom.join(' L')} Z`;
 }
 
@@ -268,12 +266,7 @@ export function SyncStrip(props: {
 							strokeDasharray="4 3"
 							data-testid="sound-check-peak-line"
 						/>
-						<text
-							x={geo.measuredX * width + 3}
-							y={10}
-							fontSize={10}
-							fill="var(--pr-text-primary)"
-						>
+						<text x={geo.measuredX * width + 3} y={10} fontSize={10} fill="var(--pr-text-primary)">
 							{t('Sound {0} ms', `${offsetMs! >= 0 ? '+' : '−'}${Math.abs(offsetMs!).toFixed(1)}`)}
 						</text>
 					</>

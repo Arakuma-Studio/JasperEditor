@@ -383,7 +383,9 @@ describe('workspace state v2 → v3: the Sound Design workspace gains the Sound 
 		expect(host.data.activeView).toBe('soundLibrary-1');
 		const def = panelMap.get('soundCheck')!;
 		expect(SOUND_CHECK_PANEL_STATE).toEqual(panelState(def, 'Sound Check'));
-		expect(sd.current!.panels['soundCheck-1']).toEqual(panelState(def, 'Sound Check', instanceIdFor('soundCheck')));
+		expect(sd.current!.panels['soundCheck-1']).toEqual(
+			panelState(def, 'Sound Check', instanceIdFor('soundCheck')),
+		);
 		expect(sanitizeLayout(sd.current)?.panels['soundCheck-1']).toBeDefined();
 		// saved: next to Review in the user's own group, Review still the visible tab
 		const savedHost = groupOf(sd.saved, 'soundCheck-1')!;

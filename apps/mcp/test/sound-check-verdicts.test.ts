@@ -60,7 +60,9 @@ function fakeEngine() {
 	if (!user.ok) throw new Error(JSON.stringify(user.errors));
 	const agent = apply(
 		{
-			commands: [{ type: 'marker.add', frame: 150, name: SOUND_CHECK_VERDICT_MARKER.ok, markerType: 'comment' }],
+			commands: [
+				{ type: 'marker.add', frame: 150, name: SOUND_CHECK_VERDICT_MARKER.ok, markerType: 'comment' },
+			],
 		},
 		{ agent: 'other-agent' },
 	);
@@ -76,9 +78,7 @@ function fakeEngine() {
 		createdAt: '2026-10-17T10:00:00.000Z',
 		priority: 'user',
 		cpuSlots: 2,
-		...(state === 'succeeded'
-			? { result: resultFixture({ projectId: 'prj_test', sequenceId: seqId }) }
-			: {}),
+		...(state === 'succeeded' ? { result: resultFixture({ projectId: 'prj_test', sequenceId: seqId }) } : {}),
 	});
 	const client = {
 		agentQuery: async () => ({ result: doc, revision, via: 'headless' }),

@@ -15,10 +15,10 @@ import {
 	type Command,
 	DELIVERY_PRESETS,
 	readSoundCheckTarget,
+	type Sequence,
 	SOUND_CHECK_MESSAGES,
 	SOUND_CHECK_TARGET_LIMITS,
 	SOUND_CHECK_VERDICT_MARKER,
-	type Sequence,
 	type SoundCheckHumanVerdict,
 	type SoundCheckStatus,
 	type SoundCheckTarget,
@@ -444,7 +444,7 @@ export function isSequenceTarget(choice: DeliveryChoice, seq: Sequence | undefin
  * delivery setting, the Mix normalised at the preset, default sound-effect levels moved to it); a custom target →
  * `mixer.setLoudness` at its numbers (the delivery preset, which only presets can be, stays).
  */
-export function useAsTargetCommands(choice: DeliveryChoice, sequenceId: string): Command[] {
+export function sequenceTargetCommands(choice: DeliveryChoice, sequenceId: string): Command[] {
 	if (choice.kind === 'preset')
 		return [{ type: 'soundDesign.applyDelivery', sequenceId, delivery: choice.preset } as Command];
 	return [

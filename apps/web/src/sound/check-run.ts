@@ -190,7 +190,8 @@ export async function runSoundCheck(
 		const err = e instanceof SoundJobError ? e : new SoundJobError('E_ENGINE', String(e));
 		const cancelled = err.code === 'E_CANCELLED';
 		// a newer run replaced this one: it owns the state
-		if (ac.signal.aborted && aborts.get(session)) return { ok: false, code: err.code, message: err.message, cancelled };
+		if (ac.signal.aborted && aborts.get(session))
+			return { ok: false, code: err.code, message: err.message, cancelled };
 		store.setState({ running: null, error: cancelled ? null : err.message });
 		announce(session, cancelled ? t('Sound Check cancelled') : t('Sound Check failed: {0}', err.message));
 		return { ok: false, code: err.code, message: err.message, cancelled };
@@ -307,12 +308,14 @@ export async function applyCheckFix(
 ): Promise<FixOutcome> {
 	const store = soundCheckStore(session);
 	const result = store.getState().result;
-	if (!result || !issue.fix) return { ok: false, message: t('Nothing to fix'), applied: [], failed: [issue.id] };
+	if (!result || !issue.fix)
+		return { ok: false, message: t('Nothing to fix'), applied: [], failed: [issue.id] };
 	if (session.getState().readOnly)
 		return { ok: false, message: t('The project is read-only'), applied: [], failed: [issue.id] };
 	const plan = planFixes([issue], { safeOnly: false });
 	const unit = plan.units[0];
-	if (!unit) return { ok: false, message: t('This fix cannot be applied here'), applied: [], failed: [issue.id] };
+	if (!unit)
+		return { ok: false, message: t('This fix cannot be applied here'), applied: [], failed: [issue.id] };
 	store.setState({ fixing: issue.id });
 	try {
 		const label = t('Sound Check Fix: {0}', messageText(issue.fix.label));
@@ -404,10 +407,18 @@ export async function fixAllSafe(
 	}
 	markFixed(session, applied);
 	const message = failed.length
-		? t('Applied {0} safe fixes; {1} could not be applied: {2}', applied.length, failed.length, reasons.join('; '))
+		? t(
+				'Applied {0} safe fixes; {1} could not be applied: {2}',
+				applied.length,
+				failed.length,
+				reasons.join('; '),
+			)
 		: t('Applied {0} safe fixes', applied.length);
 	announce(session, message);
-	const rerun = opts.rerun === false || !applied.length ? null : await runSoundCheck(session, engine, { sequenceId: seqId });
+	const rerun =
+		opts.rerun === false || !applied.length
+			? null
+			: await runSoundCheck(session, engine, { sequenceId: seqId });
 	return { ok: failed.length === 0 && applied.length > 0, message, applied, failed, rerun };
 }
 
@@ -426,7 +437,12 @@ function reorder(commands: Command[], plan: FixPlan): Command[] {
  */
 export function jumpTo(
 	session: EditorSession,
-	target: { frame?: number | null; range?: { start: number } | undefined; clipIds?: readonly string[]; cueId?: string },
+	target: {
+		frame?: number | null;
+		range?: { start: number } | undefined;
+		clipIds?: readonly string[];
+		cueId?: string;
+	},
 	reveal?: (frame: number) => void,
 ): boolean {
 	const frame = target.frame ?? target.range?.start ?? null;
@@ -447,7 +463,11 @@ export function jumpTo(
 }
 
 /** Jump to an issue. */
-export function jumpToIssue(session: EditorSession, issue: SoundCheckIssue, reveal?: (f: number) => void): boolean {
+export function jumpToIssue(
+	session: EditorSession,
+	issue: SoundCheckIssue,
+	reveal?: (f: number) => void,
+): boolean {
 	return jumpTo(
 		session,
 		{
@@ -514,7 +534,8 @@ export function playListen(
 				// the next row, after this window has handed the transport back
 				setTimeout(() => {
 					const still = store.getState().playing;
-					if (still && still.index === index && still.all) playListen(session, sequenceId, rows, index + 1, opts);
+					if (still && still.index === index && still.all)
+						playListen(session, sequenceId, rows, index + 1, opts);
 				}, 0);
 				return;
 			}
@@ -543,7 +564,8 @@ export function recordVerdict(
 ): { ok: boolean; message: string } {
 	const seq = seqOf(session, sequenceId);
 	if (!seq) return { ok: false, message: t('The sequence was closed') };
-	const label = verdict === 'ok' ? t('Sounds Right at {0}', row.timecode) : t('Flag Sound at {0}', row.timecode);
+	const label =
+		verdict === 'ok' ? t('Sounds Right at {0}', row.timecode) : t('Flag Sound at {0}', row.timecode);
 	const r = applyTx(session, sequenceId, label, verdictCommands(seq, row.frame, verdict, note));
 	const message = r.ok
 		? verdict === 'ok'

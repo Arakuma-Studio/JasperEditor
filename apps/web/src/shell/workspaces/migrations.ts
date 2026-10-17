@@ -23,9 +23,20 @@ const isObj = (x: unknown): x is Obj => !!x && typeof x === 'object' && !Array.i
 /** The workspace whose stored layouts gain the Review panel. */
 export const SOUND_DESIGN_WORKSPACE_ID = 'sound-design';
 /** The Sound Check panel's state as `buildLayout` writes it (minimum size of `panels/soundCheck`; tested against it). */
-export const SOUND_CHECK_PANEL_STATE = panelState({ kind: 'soundCheck', minSize: { w: 320, h: 200 } }, 'Sound Check');
+export const SOUND_CHECK_PANEL_STATE = panelState(
+	{ kind: 'soundCheck', minSize: { w: 320, h: 200 } },
+	'Sound Check',
+);
 /** Panel kinds whose group receives Sound Check, in order of preference: Review's, then the old hosts. */
-const SOUND_CHECK_HOSTS = ['review', 'markers', 'history', 'jobs', 'soundLibrary', 'mediaBrowser', 'project'] as const;
+const SOUND_CHECK_HOSTS = [
+	'review',
+	'markers',
+	'history',
+	'jobs',
+	'soundLibrary',
+	'mediaBrowser',
+	'project',
+] as const;
 
 /** Panel kinds whose group receives Review, in order of preference (the old Sound Design left group). */
 const REVIEW_HOSTS = ['markers', 'history', 'jobs', 'soundLibrary', 'mediaBrowser', 'project'] as const;

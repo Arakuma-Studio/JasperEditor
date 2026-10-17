@@ -36,6 +36,7 @@ import { rotoCommands } from './roto.ts';
 import { shapeCommands } from './shapes.ts';
 import { soundCommands } from './sound.ts';
 import { soundCueCommands } from './sound-cues.ts';
+import { soundCheckCommands } from './sound-check.ts';
 import { soundDesignCommands } from './sound-design.ts';
 import { soundMixCommands } from './sound-mix.ts';
 import { speechCommands } from './speech.ts';
@@ -100,6 +101,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	soundCueCommands,
 	soundDesignCommands,
 	soundMixCommands,
+	soundCheckCommands,
 	// proposals (spec 12 §2.5): review in the Timeline, Hear proposal
 	proposalCommands,
 ];
