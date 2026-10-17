@@ -9,7 +9,7 @@
 // 10 ms; bursts of different channels within 1 ms are one. Reimplemented in TypeScript, streaming: the windows are the
 // same centred windows as earshot's `fftconvolve(…, mode='same')`, with silence before the first and after the last
 // sample. Sample rates under 30 kHz cannot carry 14 kHz: nothing is detected there (documented limit).
-import { Biquad, designBiquad } from '@jasper/audio-dsp';
+import { designBiquad } from '@jasper/audio-dsp';
 
 export const CLICK_DETECTOR = {
 	highpassHz: 14_000,
@@ -63,7 +63,10 @@ export class ClickDetector {
 	readonly sampleRate: number;
 	readonly channels: number;
 	readonly enabled: boolean;
-	private readonly filters: Biquad[][];
+	/** Two high-pass sections: coefficients (b0 b1 b2 a1 a2 each) and per channel TDF-II state (s1 s2 each). */
+	private readonly coeffs: Float64Array;
+	private readonly state: Float64Array[];
+	private readonly prefix: Float64Array;
 	/** Window half-lengths (samples). */
 	private readonly hLocal: number;
 	private readonly hNear: number;
@@ -86,7 +89,7 @@ export class ClickDetector {
 	private finished = false;
 
 	constructor(sampleRate: number, channels: number, opts: ClickDetectorOptions = {}) {
-		this.sampleRate = fin(sampleRate) && sampleRate >= 1000 ? Math.round(sampleRate) : 48_000;
+		this.sampleRate = fin(sampleRate) && sampleRate >= 1000 && sampleRate <= 768_000 ? Math.round(sampleRate) : 48_000;
 		this.channels = Math.max(1, Math.min(32, Math.floor(fin(channels) ? channels : 1)));
 		this.enabled = this.sampleRate >= CLICK_DETECTOR.minSampleRate;
 		const ms = (x: number) => Math.max(1, Math.round((x / 1000) * this.sampleRate));
@@ -98,12 +101,14 @@ export class ClickDetector {
 		this.pad = Math.max(this.hLocal, this.hOuter, this.hNear) + 1;
 		this.chunk = 16_384;
 		this.minLevel = fin(opts.minLevel as number) && (opts.minLevel as number) > 0 ? (opts.minLevel as number) : 1e-4;
-		this.filters = Array.from({ length: this.channels }, () =>
-			BUTTER4_Q.map(
-				(q) => new Biquad(designBiquad('highPass', this.sampleRate, CLICK_DETECTOR.highpassHz, q)),
-			),
-		);
+		this.coeffs = new Float64Array(10);
+		BUTTER4_Q.forEach((q, k) => {
+			const c = designBiquad('highPass', this.sampleRate, CLICK_DETECTOR.highpassHz, q);
+			this.coeffs.set([c.b0, c.b1, c.b2, c.a1, c.a2], k * 5);
+		});
+		this.state = Array.from({ length: this.channels }, () => new Float64Array(4));
 		const cap = this.chunk + 3 * this.pad;
+		this.prefix = new Float64Array(cap + this.pad + 1);
 		this.buf = Array.from({ length: this.channels }, () => new Float64Array(cap));
 		// the silence before the first sample (the `same` convolution's zero padding)
 		this.len = this.pad;
@@ -128,14 +133,34 @@ export class ClickDetector {
 		while (i < n) {
 			const room = this.buf[0]!.length - this.len;
 			const take = Math.min(n - i, room);
+			const k = this.coeffs;
+			const [b0, b1, b2, a1, a2, d0, d1, d2, e1, e2] = [k[0]!, k[1]!, k[2]!, k[3]!, k[4]!, k[5]!, k[6]!, k[7]!, k[8]!, k[9]!];
 			for (let c = 0; c < this.channels; c++) {
 				const x = planar[c];
-				const [f1, f2] = this.filters[c]! as [Biquad, Biquad];
+				const st = this.state[c]!;
+				let s1 = st[0]!;
+				let s2 = st[1]!;
+				let t1 = st[2]!;
+				let t2 = st[3]!;
 				const out = this.buf[c]!;
+				const avail = x ? Math.max(0, Math.min(take, x.length - i)) : 0;
 				for (let j = 0; j < take; j++) {
-					const raw = x && i + j < x.length ? x[i + j]! : 0;
-					out[this.len + j] = f2.processSample(f1.processSample(fin(raw) ? raw : 0));
+					const raw = j < avail ? x![i + j]! : 0;
+					const v = raw - raw === 0 ? raw : 0;
+					// two transposed direct form II sections
+					const y = b0 * v + s1;
+					s1 = b1 * v - a1 * y + s2;
+					s2 = b2 * v - a2 * y;
+					const z = d0 * y + t1;
+					t1 = d1 * y - e1 * z + t2;
+					t2 = d2 * y - e2 * z;
+					out[this.len + j] = z;
 				}
+				// denormal protection of the recursive state
+				st[0] = Math.abs(s1) < 1e-30 ? 0 : s1;
+				st[1] = Math.abs(s2) < 1e-30 ? 0 : s2;
+				st[2] = Math.abs(t1) < 1e-30 ? 0 : t1;
+				st[3] = Math.abs(t2) < 1e-30 ? 0 : t2;
 			}
 			this.len += take;
 			this.total += take;
@@ -164,7 +189,7 @@ export class ClickDetector {
 	private judge(from: number, to: number, final: boolean): void {
 		// prefix sums of y² per channel over the buffer plus `pad` zeros after it (the silence after the end)
 		const n = this.len + (final ? this.pad : 0);
-		const prefix = new Float64Array(n + 1);
+		const prefix = this.prefix;
 		const L = this.hLocal;
 		const N = this.hNear;
 		const I = this.hInner;
@@ -177,18 +202,22 @@ export class ClickDetector {
 				const v = k < this.len ? y[k]! : 0;
 				prefix[k + 1] = prefix[k]! + v * v;
 			}
-			const sum = (a: number, b: number) => prefix[Math.min(n, Math.max(0, b))]! - prefix[Math.min(n, Math.max(0, a))]!;
+			// every window of an index judged lies in [0, n]: k ∈ [pad, len) and pad > every half-length
+			const sum = (a: number, b: number) => prefix[b]! - prefix[a]!;
+			const minLevel = this.minLevel;
 			for (let abs = from; abs < to; abs++) {
 				const k = abs - this.base;
 				const v = y[k]!;
 				const e = v < 0 ? -v : v;
-				if (e <= this.minLevel) continue;
-				const sL = Math.max(0, sum(k - L, k + L));
-				const loc = Math.sqrt(sL / (2 * L)) + 1e-5;
-				if (e <= ratioL * loc) continue;
-				const sN = Math.max(0, sum(k - N, k + N));
-				const near = Math.sqrt(sN / (2 * N)) + 1e-5;
-				if (e <= ratioN * near) continue;
+				if (e <= minLevel) continue;
+				// e > 9·(√(sL / 2L) + 1e-5) ⇔ (e/9 − 1e-5)² > sL / 2L (both sides ≥ 0)
+				const tl = e / ratioL - 1e-5;
+				const sL = prefix[k + L]! - prefix[k - L]!;
+				if (tl <= 0 || tl * tl <= Math.max(0, sL) / (2 * L)) continue;
+				const tn = e / ratioN - 1e-5;
+				const sN = prefix[k + N]! - prefix[k - N]!;
+				if (tn <= 0 || tn * tn <= Math.max(0, sN) / (2 * N)) continue;
+				const loc = Math.sqrt(Math.max(0, sL) / (2 * L)) + 1e-5;
 				if (abs - this.last[c]! > this.refractory) {
 					const inner = Math.max(0, sum(k - I, k + I));
 					const outer = Math.max(0, sum(k - O, k + O));

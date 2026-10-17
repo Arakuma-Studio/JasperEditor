@@ -522,6 +522,7 @@ export async function edgeFindings(ctx: FindCtx, bursts: { stem: StemName; burst
 	const edges = edgesOf(ctx);
 	const trEdges = transitionEdges(ctx);
 	const near = Math.round((T.clickEdgeMs / 1000) * ctx.sr);
+	const seqEnd = frameToSample(ctx.duration, ctx.rate, ctx.sr);
 	const inStem = (stem: StemName, clipId: string) => stem === 'mix' || ctx.stemIds[stem].has(clipId);
 
 	// ── CLICK: clusters of bursts within 1 ms across stems, each attributed once ──
@@ -529,6 +530,8 @@ export async function edgeFindings(ctx: FindCtx, bursts: { stem: StemName; burst
 		.filter((b) => b.burst.kind === 'click' && b.burst.levelDb + ctx.gainDb >= T.clickMinDbfs)
 		.map((b) => ({ ...b, abs: ctx.renderStart + b.burst.sample }))
 		.filter((b) => b.abs >= ctx.rangeStart && b.abs < ctx.rangeEnd)
+		// the sequence's own first and last samples are HEAD / ENDING (P6-E3), not an edit
+		.filter((b) => b.abs >= near && b.abs <= seqEnd - near)
 		.sort((a, b) => a.abs - b.abs);
 	const merge = Math.max(1, Math.round(0.001 * ctx.sr));
 	const clusters: (typeof clicks)[] = [];
@@ -1064,7 +1067,7 @@ export async function layerFindings(ctx: FindCtx, rows: readonly FindRow[]): Pro
 				);
 		}
 		if (!fix) {
-			const cmd = { type: 'item.delete', itemIds: [r.clip.id] };
+			const cmd = { type: 'clip.lift', clipIds: [r.clip.id], groups: false };
 			if (ctx.dryRun([cmd]).ok)
 				fix = ctx.commandFix(soundCheckMessage('fixRemoveLayer'), [cmd], false, soundCheckMessage('whyLayer'));
 		}

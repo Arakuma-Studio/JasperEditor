@@ -1332,7 +1332,12 @@ export async function checkSequence(
 			prefer: c.ref.documented - c.ref.anchor - c.a,
 			separation: Math.round(sr / fpsNum),
 		});
-		if (!found || found.ncc < SYNC_MIN_CORRELATION) {
+		// an end-aligned sound's best match on the edge of its search window is the window's edge, not the sound (the
+		// sound plays outside it): not found there
+		const lagLo = nominal - c.ref.searchBefore - hop;
+		const lagHi = nominal + c.ref.searchAfter + hop;
+		const onEdge = !!found && c.ref.align === 'end' && (found.lag <= lagLo + 1 || found.lag >= lagHi - 1);
+		if (!found || found.ncc < SYNC_MIN_CORRELATION || onEdge) {
 			c.row.located = 'not-found';
 			c.row.correlation = found ? r2(found.ncc) : null;
 			return;
@@ -1673,10 +1678,14 @@ export async function checkSequence(
 			soundCheckMessage('whySilence'),
 		);
 	};
+	// A quiet run that reaches the end of the sequence after sound is how the mix ends (a tail into silence, which
+	// ENDING asks for: P6-E3), not a SILENCE finding.
+	const endsSequence = range.end >= duration;
 	for (const [a, b] of silentRuns) {
 		const fa = Math.floor(hopFrame(a));
 		const fb = Math.min(range.end, Math.ceil(hopFrame(b)));
 		if (silenceExplained(fa, fb)) continue;
+		if (endsSequence && b >= rangeHops && a > 0 && audibleHops > 0) continue;
 		const fix = silenceFix(fa, fb);
 		issues.add({
 			subject: `${fa}`,

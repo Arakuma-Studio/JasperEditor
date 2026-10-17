@@ -3,11 +3,13 @@
 //
 // Adapted from earshot `skills/real-sound/scripts/qa.py` `check_harshness` (MIT, Copyright (c) 2026 Leon Lin;
 // licenses/ported/earshot.md): the presence band 2–6 kHz (a 4th-order Butterworth high-pass at 2 kHz and low-pass at
-// 6 kHz on the channel mean), its 5 ms RMS. A placed sound whose 5 ms presence peak is more than 6 dB over the loudest
+// 6 kHz), its 5 ms RMS. earshot band-passes the channel mean; here each channel is band-passed and their mean square
+// taken (decision, wp-note): equal for a mono or dual-mono sound, but wide (decorrelated) stereo music is not read
+// 3 dB low, which would make every centred sound effect look harsh against it. A placed sound whose 5 ms presence peak is more than 6 dB over the loudest
 // 5 ms presence of the music anywhere in the range is harsh: 2–6 kHz is what phone and laptop speakers make painful
 // first. Here the presence level is kept per 10 ms hop (the largest 5 ms window ending in each hop), so the engine can
 // read any event's peak and a stem's maximum from one streaming pass.
-import { Biquad, designBiquad } from '@jasper/audio-dsp';
+import { designBiquad } from '@jasper/audio-dsp';
 
 export const PRESENCE_BAND = { lowHz: 2000, highHz: 6000, rmsMs: 5 } as const;
 /** Floor of presence levels (dBFS). */
@@ -17,15 +19,17 @@ const BUTTER4_Q = [0.5411961, 1.306563] as const;
 const fin = (x: number) => x - x === 0;
 
 /**
- * Streams planar blocks into per-hop presence levels: hop `h` holds the largest mean square of a 5 ms window of the
- * band-passed channel mean that ends inside the hop, in dB (floored). Hops of `hopSec` (default 10 ms).
+ * Streams planar blocks into per-hop presence levels: hop `h` holds the largest mean square (over the channels and a
+ * 5 ms window) of the band-passed signal for windows ending inside the hop, in dB (floored). Hops of `hopSec` (default 10 ms).
  */
 export class PresenceMeter {
 	readonly sampleRate: number;
 	readonly channels: number;
 	readonly hop: number;
 	readonly window: number;
-	private readonly filters: Biquad[];
+	/** Four sections (2 high-pass, 2 low-pass): b0 b1 b2 a1 a2 each; TDF-II state s1 s2 each. */
+	private readonly coeffs: Float64Array;
+	private readonly state: Float64Array;
 	private readonly ring: Float64Array;
 	private ringPos = 0;
 	private filled = 0;
@@ -37,18 +41,19 @@ export class PresenceMeter {
 	private readonly cap: number;
 
 	constructor(sampleRate: number, channels: number, opts: { hopSec?: number; maxHops?: number } = {}) {
-		this.sampleRate = fin(sampleRate) && sampleRate >= 1000 ? Math.round(sampleRate) : 48_000;
+		this.sampleRate = fin(sampleRate) && sampleRate >= 1000 && sampleRate <= 768_000 ? Math.round(sampleRate) : 48_000;
 		this.channels = Math.max(1, Math.min(32, Math.floor(fin(channels) ? channels : 1)));
 		const hopSec = fin(opts.hopSec as number) && (opts.hopSec as number) > 0 ? (opts.hopSec as number) : 0.01;
 		this.hop = Math.max(1, Math.round(this.sampleRate * hopSec));
 		this.window = Math.max(1, Math.round((PRESENCE_BAND.rmsMs / 1000) * this.sampleRate));
 		const nyq = this.sampleRate * 0.49;
-		this.filters = [
-			...BUTTER4_Q.map((q) => new Biquad(designBiquad('highPass', this.sampleRate, PRESENCE_BAND.lowHz, q))),
-			...BUTTER4_Q.map(
-				(q) => new Biquad(designBiquad('lowPass', this.sampleRate, Math.min(nyq, PRESENCE_BAND.highHz), q)),
-			),
+		const sections = [
+			...BUTTER4_Q.map((q) => designBiquad('highPass', this.sampleRate, PRESENCE_BAND.lowHz, q)),
+			...BUTTER4_Q.map((q) => designBiquad('lowPass', this.sampleRate, Math.min(nyq, PRESENCE_BAND.highHz), q)),
 		];
+		this.coeffs = new Float64Array(20);
+		sections.forEach((c, k) => this.coeffs.set([c.b0, c.b1, c.b2, c.a1, c.a2], k * 5));
+		this.state = new Float64Array(8 * this.channels);
 		this.ring = new Float64Array(this.window);
 		this.cap = Math.max(1, Math.min(6 * 3600 * 100, Math.floor(opts.maxHops ?? 6 * 3600 * 100)));
 		this.levels = new Float32Array(Math.min(this.cap, 1024));
@@ -71,26 +76,37 @@ export class PresenceMeter {
 	push(planar: readonly Float32Array[], frames: number): void {
 		const total = Math.max(0, Math.floor(fin(frames) ? frames : 0));
 		const C = this.channels;
-		const f = this.filters;
+		const k = this.coeffs;
+		const st = this.state;
 		const w = this.window;
 		for (let i = 0; i < total; i++) {
-			let x = 0;
+			// mean square over the channels of the band-passed signal
+			let sq = 0;
 			for (let c = 0; c < C; c++) {
 				const ch = planar[c];
-				const v = ch && i < ch.length ? ch[i]! : 0;
-				if (fin(v)) x += v;
+				const raw = ch && i < ch.length ? ch[i]! : 0;
+				let x = raw - raw === 0 ? raw : 0;
+				const b = c * 8;
+				for (let q = 0; q < 4; q++) {
+					const o = q * 5;
+					const s1 = b + q * 2;
+					const y = k[o]! * x + st[s1]!;
+					st[s1] = k[o + 1]! * x - k[o + 3]! * y + st[s1 + 1]!;
+					st[s1 + 1] = k[o + 2]! * x - k[o + 4]! * y;
+					x = y;
+				}
+				sq += x * x;
 			}
-			x /= C;
-			for (let k = 0; k < f.length; k++) x = f[k]!.processSample(x);
-			const sq = x * x;
+			sq /= C;
 			this.sum += sq - this.ring[this.ringPos]!;
 			this.ring[this.ringPos] = sq;
 			this.ringPos = (this.ringPos + 1) % w;
 			if (this.ringPos === 0) {
 				// no drift over hours of audio: the running sum is recomputed once per window
 				let s = 0;
-				for (let k = 0; k < w; k++) s += this.ring[k]!;
+				for (let j = 0; j < w; j++) s += this.ring[j]!;
 				this.sum = s;
+				for (let j = 0; j < st.length; j++) if (Math.abs(st[j]!) < 1e-30) st[j] = 0;
 			}
 			if (this.filled < w) this.filled++;
 			// a 5 ms window (silence before the first sample)

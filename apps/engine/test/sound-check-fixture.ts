@@ -1,10 +1,13 @@
 // The Sound Check fixture (spec 12 §2.6, P5-R4; wp-note "Phase 5 → WP5.1"): generated media (sound-bed-fixture.ts) on a
 // 10 s, 30 fps sequence that passes every check, and the seeded defects built on it. Nothing committed.
-//   A1  music: 10 s stereo pink noise (Essential Sound music), A2 dialogue: a syllabic 1.5 kHz tone from 4 to 8 s
+//   A1  music: 10 s stereo pink noise (Essential Sound music, +1.5 dB), A2 dialogue: a syllabic 1.5 kHz tone from 4 to 8 s
 //   cue A  frame  30 (1 s)    cut, hero     → "Test hit 0"   (hit.wav)
-//   cue B  frame  90 (3 s)    cut, support  → "Test click 0" (click.wav)
+//   cue B  frame  90 (3 s)    cut, support  → "Test click 0" (tick.wav: a 1 kHz click — the 3 kHz click.wav of the bed
+//                                                fixture sits 21 dB over the music's 2–6 kHz peak, harsh by P6-E2)
 //   cue C  frame 255 (8.5 s)  land, hero    → "Test hit 1"   (hit2.wav: the hit 2 dB quieter, another sound)
 //   the Mix normalises to −14 LUFS / −1 dBTP (web), the sequence's delivery
+//   the music fades out over its last 2 s (Exponential Fade): a clean mix ends in silence (P6-E3 ENDING; wp-note
+//   "Phase 6 → WP-E1"); `ending: 'cut'` leaves it cut at a loud frame
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { encodeWav } from '@jasper/audio-dsp';
@@ -17,19 +20,33 @@ export type FixtureMedia = Record<
 	Awaited<ReturnType<typeof register>>
 >;
 
+/** The fixture's click: 50 ms of silence, then a 1 kHz burst decaying over 30 ms (`clickSamples`' envelope, 1 kHz). */
+export function tickSamples(): Float32Array[] {
+	const n = Math.round(0.25 * SR);
+	const l = new Float32Array(n);
+	for (let i = 0; i < n; i++) {
+		const t = i / SR - 0.05;
+		if (t < 0) continue;
+		l[i] = 0.5 * Math.sin(2 * Math.PI * 1000 * t) * Math.exp(-t / 0.03);
+	}
+	return [l, l.slice()];
+}
+
 /** Writes and registers the fixture's media once (shared by every variant). */
 export async function registerCheckMedia(app: TestApp, dir: string, token: string): Promise<FixtureMedia> {
 	const files = writeBedFixture(dir);
 	const hit2 = join(dir, 'hit2.wav');
 	const h = hitSamples().map((c) => c.map((v) => v * 0.8));
 	writeFileSync(hit2, encodeWav(h, SR, 's16'));
+	const tick = join(dir, 'tick.wav');
+	writeFileSync(tick, encodeWav(tickSamples(), SR, 's16'));
 	const auth = { authorization: `Bearer ${token}` };
 	return {
 		music: await register(app, files.music, auth),
 		speech: await register(app, files.speech, auth),
 		hit: await register(app, files.hit, auth),
 		hit2: await register(app, hit2, auth),
-		click: await register(app, files.click, auth),
+		click: await register(app, tick, auth),
 	};
 }
 
@@ -62,6 +79,10 @@ export type FixtureOptions = {
 	musicHole?: [number, number];
 	/** Without the dialogue clip. */
 	noSpeech?: boolean;
+	/** How the mix ends: the music faded out over 2 s (default), or cut at a loud frame. */
+	ending?: 'fade' | 'cut';
+	/** Sequence preset (default 30 fps). */
+	preset?: string;
 };
 
 const HIT2_PROV = (license: string, attribution: string | null): LibraryProvenance => ({
@@ -71,15 +92,29 @@ const HIT2_PROV = (license: string, attribution: string | null): LibraryProvenan
 	author: 'Fixture author',
 });
 
+/** Frames per second of the builder's sequence. */
+export function fpsOf(b: DocBuilder): number {
+	const r = b.doc.sequences[b.seqId]!.settings.frameRate;
+	return r.num / r.den;
+}
+
 /** Builds the clean fixture, or a variant (see the module docs). */
 export function buildCheckDoc(m: FixtureMedia, o: FixtureOptions = {}): CheckFixture {
-	const b = new DocBuilder('hd-1080p-30', 900);
+	const b = new DocBuilder(o.preset ?? 'hd-1080p-30', 900);
 	const music = b.addMedia(m.music);
 	const speech = b.addMedia(m.speech);
 	const hit = b.addMedia(m.hit);
 	const hit2 = b.addMedia(m.hit2);
 	const click = b.addMedia(m.click);
-	const clickProv = { ...provenance('click'), ...(o.clickLicense ? { license: o.clickLicense } : {}) };
+	const clickProv = {
+		...provenance('click'),
+		descriptors: {
+			...provenance('click').descriptors,
+			octaveBandsDb: [-80, -70, -40, -14, -24, -50, -70],
+			centroidHz: 1000,
+		},
+		...(o.clickLicense ? { license: o.clickLicense } : {}),
+	};
 	const musicClips: string[] = [];
 	const base = b.tx([
 		{ type: 'media.setLibraryInfo', mediaId: hit, library: provenance('hit') },
@@ -126,6 +161,19 @@ export function buildCheckDoc(m: FixtureMedia, o: FixtureOptions = {}): CheckFix
 			? []
 			: [{ type: 'essentialSound.setType', clipIds: [base.refs.$s!], audioType: 'dialogue' }]),
 		{ type: 'mixer.setLoudness', enabled: true, targetLufs: -14, truePeakDb: -1 },
+		// a music bed 1.5 dB up: the hero hit's 2–6 kHz peak sits under 6 dB over the music's (P6-E2 HARSH)
+		{ type: 'audio.setGain', clipIds: musicClips, mode: 'set', db: 1.5 },
+		...(o.ending === 'cut'
+			? []
+			: [
+					{
+						type: 'transition.add',
+						clipId: musicClips.at(-1)!,
+						edge: 'out',
+						effectId: 'jasper.exponential-fade',
+						duration: Math.round(2 * fpsOf(b)),
+					},
+				]),
 	]);
 	const cue = (
 		frame: number,
