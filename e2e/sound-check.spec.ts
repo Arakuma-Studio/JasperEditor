@@ -287,7 +287,10 @@ test('Sound Check panel: seeded defects found with timecodes, the same as MCP; v
 	await sync.getByTestId('sound-check-strip-toggle').click();
 	const strip = sync.getByTestId('sound-check-sync-strip');
 	await expect(strip.getByTestId('sound-check-thumb')).toHaveCount(5, { timeout: 300_000 });
-	await expect(strip.getByTestId('sound-check-wave-path')).toBeVisible({ timeout: 60_000 });
+	// the sound-effects stem drawn over the bed (Phase 5 verification), with its legend
+	await expect(strip.getByTestId('sound-check-wave-sfx')).toBeAttached({ timeout: 60_000 });
+	await expect(strip.getByTestId('sound-check-wave-bed')).toBeAttached();
+	await expect(strip.getByTestId('sound-check-wave-legend')).toContainText('Sound effects');
 	// (a vertical SVG line has no width: Playwright calls it hidden, so check that it is drawn)
 	await expect(strip.getByTestId('sound-check-peak-line')).toBeAttached();
 	await expect(strip.getByTestId('sound-check-event-line')).toBeAttached();
@@ -327,6 +330,16 @@ test('Sound Check panel: seeded defects found with timecodes, the same as MCP; v
 	await panel()
 		.getByTestId('sound-check-listen')
 		.screenshot({ path: join(outDir, 'listen-here.png') });
+	// Play all keeps playing while a verdict is given (Phase 5 verification): the verdict is recorded, the chain goes on
+	const playAll = panel().getByTestId('sound-check-play-all');
+	await playAll.click();
+	await expect(playAll).toHaveText(/Stop/);
+	const labelsBefore = await appliedLabels(page);
+	await other.getByTestId('sound-check-sounds-right').click();
+	await expect.poll(async () => (await appliedLabels(page)).length).toBe(labelsBefore.length + 1);
+	await expect(playAll).toHaveText(/Stop/);
+	await playAll.click();
+	await expect(playAll).toHaveText(/Play all/);
 
 	// 5. the agent's view of the same project: the same findings at the same frames, and the user's verdicts
 	const shown = await panelFindings();
@@ -334,7 +347,14 @@ test('Sound Check panel: seeded defects found with timecodes, the same as MCP; v
 		verdict: string;
 		issues: { code: string; frame?: number; range?: { start: number } }[];
 		listen: string[];
-		humanVerdicts: { frame: number; verdict: string; note: string | null; slot?: string }[];
+		humanVerdicts: {
+			frame: number;
+			verdict: string;
+			note: string | null;
+			slot?: string;
+			clipId?: string;
+			stale: boolean | null;
+		}[];
 	};
 	const agent = await tool<McpCheck>('sound_check', { projectId, images: false, timeoutSeconds: 1200 });
 	const agentFindings = agent.issues.map((i) => `${i.code}@${i.frame ?? i.range?.start ?? ''}`).sort();
@@ -347,6 +367,12 @@ test('Sound Check panel: seeded defects found with timecodes, the same as MCP; v
 		].sort((a, b) => a.frame - b.frame),
 	);
 	expect(agent.humanVerdicts.find((v) => v.frame === worstFrame)?.slot).toBe('worst');
+	// bound to the moment they judged, and current (nothing changed since the user listened)
+	expect(agent.humanVerdicts.every((v) => v.stale === false)).toBe(true);
+	expect(agent.humanVerdicts.find((v) => v.frame === worstFrame)?.clipId).toBe(nudged!.id);
+	// the last report as the engine keeps it: current
+	const kept = await tool<{ state: string; verdict: string }>('get_sound_check', { projectId });
+	expect(kept).toMatchObject({ state: 'current', verdict: 'fail' });
 
 	// 6. Export with "Run Sound Check before export": it fails → the prompt → Review issues opens the panel
 	await focusTimeline(page);
@@ -394,10 +420,18 @@ test('Sound Check panel: seeded defects found with timecodes, the same as MCP; v
 	const silence2 = panel().locator('[data-code="SILENCE"]').first();
 	await expect(silence2).toBeVisible();
 	labels = await appliedLabels(page);
+	// a fix that needs judgement asks first, naming what it changes (Phase 5 verification)
 	await silence2.getByTestId('sound-check-fix').click();
+	const confirm = page.getByTestId('confirm-dialog');
+	await expect(confirm).toBeVisible();
+	await expect(confirm).toContainText('This will change: Adds a silence cue');
+	await expect(confirm).toContainText('Only if the silence is intended');
+	await page.screenshot({ path: join(outDir, 'fix-confirm.png') });
+	await confirm.getByRole('button', { name: 'Apply Fix' }).click();
 	await expect
 		.poll(async () => (await appliedLabels(page)).slice(labels.length), { timeout: 60_000 })
 		.toEqual(['Sound Check Fix: Mark it as intended silence (a silence cue)']);
+
 	const live2 = (await panel().getByTestId('sound-check-live').textContent()) ?? '';
 	await panel().getByTestId('sound-check-rerun').click();
 	await waitVerdict(live2);
@@ -409,4 +443,8 @@ test('Sound Check panel: seeded defects found with timecodes, the same as MCP; v
 	expect(final.issues.map((i) => `${i.code}@${i.frame ?? i.range?.start ?? ''}`).sort()).toEqual(
 		await panelFindings(),
 	);
+	// the flag on the late hit no longer covers it: the hit moved back on its cue since the user listened
+	const flagged = final.humanVerdicts.find((v) => v.frame === worstFrame);
+	expect(flagged).toMatchObject({ verdict: 'flagged', clipId: nudged!.id, stale: true });
+	expect((flagged as { staleReasons?: string[] }).staleReasons).toEqual(expect.arrayContaining(['moved']));
 });
