@@ -29,7 +29,8 @@ const RAMP: readonly (readonly [number, Rgb])[] = [
 	[1, [255, 250, 190]],
 ];
 
-function ramp(v: number): Rgb {
+/** The spectrogram colour of a level 0…1 (also the sound timeline's spectrogram lane). */
+export function ramp(v: number): Rgb {
 	const x = Math.min(1, Math.max(0, v));
 	for (let i = 1; i < RAMP.length; i++) {
 		const [p1, c1] = RAMP[i]!;

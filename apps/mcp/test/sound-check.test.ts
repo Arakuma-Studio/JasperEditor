@@ -229,7 +229,18 @@ describe('sound_check / view_sound_timeline', { timeout: 900_000 }, () => {
 		});
 		expect(view.cells.cues.map((c) => c.frame)).toEqual([30, 90]);
 		expect(view.cells.issues.map((i) => i.code)).toContain('OUT_OF_SYNC');
-		expect(view.cells.lanes).toHaveLength(6);
+		// the annotated sheet (WP-E3): no picture lane without video; spectrogram, sections and the sync lane added
+		expect((view.cells.lanes as { name: string }[]).map((l) => l.name)).toEqual([
+			'curves',
+			'spectrogram',
+			'wave',
+			'sections',
+			'sfx',
+			'cues',
+			'sync',
+			'move',
+			'check',
+		]);
 		const pic = decodePng(Buffer.from(imagesOf(rv)[0]!.data, 'base64'));
 		expect(pic.width).toBe(1200);
 

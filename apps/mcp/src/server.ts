@@ -42,7 +42,9 @@ import { registerSimWarpTools, SIM_WARP_GUIDE } from './tools/sim-warp.ts';
 import { registerSoundTools, SOUND_GUIDE } from './tools/sound.ts';
 import { registerSoundCheckTools } from './tools/sound-check.ts';
 import { registerSoundDesignTools } from './tools/sound-design.ts';
+import { registerSoundListenTools } from './tools/sound-listen.ts';
 import { registerSoundMotionTools } from './tools/sound-motion.ts';
+import { registerSoundTimelineTools } from './tools/sound-timeline.ts';
 import { registerSpeechTools, SPEECH_GUIDE } from './tools/speech.ts';
 import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
@@ -173,6 +175,8 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerSoundDesignTools(ctx);
 	registerSoundCheckTools(ctx);
 	registerSoundMotionTools(ctx);
+	registerSoundTimelineTools(ctx);
+	registerSoundListenTools(ctx);
 	registerProposalTools(ctx);
 	registerCaptionTools(ctx);
 	registerSpeechTools(ctx);

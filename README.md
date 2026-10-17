@@ -442,7 +442,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (355; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (356; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `browse_media_files` (folders and importable files on the engine's computer) `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -525,7 +525,11 @@ Tools (355; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   PNG of the worst moments; a custom delivery target; humanVerdicts: what the user said after
   listening in the editor's Sound Check panel, each bound to the moment it judged and marked stale when that moment
   changed) `get_sound_check` (the last full report the engine keeps per sequence, across restarts: current or stale)
-  `view_sound_timeline` (PNG: loudness of the mix and its stems, cues, motion, findings)
+  `view_sound_timeline` (the annotated sound sheet of ≤ 120 s: frames at the cuts and cues, loudness of the mix and its
+  stems, spectrogram, sections, every cut / cue marked by whether a sound answers it, motion, findings)
+  `listen_to_sequence` (a written log of the mix, ≤ 10 min: every sound named by the clip that plays it and the cue it
+  fills, sections, silences, which cuts and cues have a sound — each share next to its chance level — and the cuts with
+  none; the sound sheet with images)
   (`docs/specs/12-sound-design.md`, `docs/wp-notes/sound-design.md`).
 - Proposals (reviewed and applied by the user in the editor; one undo step): `list_proposals` `get_proposal` (with a
   ghost table) `wait_for_proposal` (decisions and notes) `accept_proposal` (policy-gated for agents) `reject_proposal`.
