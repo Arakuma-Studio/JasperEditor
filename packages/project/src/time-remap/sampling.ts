@@ -13,6 +13,27 @@ import type { Rational } from '../time.ts';
 
 /** Seconds of tolerance when comparing a media time with a frame timestamp (well under 1 µs of rounding). */
 export const FRAME_TIME_EPS = 2e-6;
+/**
+ * Shot changes (Scene Edit Detection's `clip.applySceneEdits`, the sound-design scene source): a change at media time
+ * c is shown from the first frame whose media time m reaches it with the renderers' own tolerance (c ≤ m + this), the
+ * frame pick of `frameIndexAt` — so an edit, a marker and a cue land on the frame where the new shot is drawn, whether
+ * the detector's timestamp (printed to 1 µs) rounded up or down.
+ */
+export const SHOT_TIME_EPS = FRAME_TIME_EPS;
+
+/** How many of the ascending shot-change times (seconds) are reached at media time `sec` (0 for a non-finite time). */
+export function shotIndexAt(cutsSec: ArrayLike<number>, sec: number): number {
+	if (!Number.isFinite(sec)) return 0;
+	const lim = sec + SHOT_TIME_EPS;
+	let lo = 0;
+	let hi = cutsSec.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (cutsSec[mid]! <= lim) lo = mid + 1;
+		else hi = mid;
+	}
+	return lo;
+}
 /** Fractions closer than this to a frame are that frame (no interpolation). */
 export const INTERP_EPS = 1e-3;
 
