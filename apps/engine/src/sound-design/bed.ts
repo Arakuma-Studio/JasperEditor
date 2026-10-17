@@ -24,10 +24,12 @@
 // start when nothing on its way is automated, so a sound placed the same way elsewhere is measured once). A rebalance
 // after a gain change, a plan run again, or a rebalance right after accepting a plan re-renders nothing. Renders
 // skip the strips no audible clip reaches (`OfflineMixer` `audibleClips`; the same output).
+//
+// THREADS (WP6.5b): the renders and their band analysis (measure-core.ts) run on the measurement worker threads
+// (measure-pool.ts) when the engine has them, else in-thread; the same code either way (bit-identical results).
 import { createHash } from 'node:crypto';
-import { tmpdir } from 'node:os';
 import type { LoudnessSummary } from '@jasper/audio-dsp';
-import { bandLevels, bedLocalPeakLu, shortTermPeakLu, type TimeWindow } from '@jasper/audio-fx';
+import type { TimeWindow } from '@jasper/audio-fx';
 import {
 	type AudioStream,
 	buildRenderSnapshot,
@@ -44,11 +46,27 @@ import {
 	type RenderSnapshot,
 	type Sequence,
 } from '@jasper/project';
-import { type MixSource, renderMixdown } from '../audio/mixdown.ts';
+import type { MixSource } from '../audio/mixdown.ts';
 import { localHandle, mediaKeyOf } from '../export/planner.ts';
 import type { MediaRegistry } from '../media/registry.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
+import {
+	ACTIVE_RANGE_DB,
+	activeSpan,
+	type BedBands,
+	MAX_WINDOW_SEC,
+	MIN_WINDOW_SEC,
+	type Pcm,
+	type RenderEnv,
+	type RenderRequest,
+	renderPcmCore,
+	type SoundEntry,
+	type Weight,
+} from './measure-core.ts';
+import { type SoundDesignMeasurer, soundDesignMeasurer } from './measure-pool.ts';
 import { type VoiceActivityService, type VoiceEntry, voiceServiceFor } from './voice.ts';
+
+export { ACTIVE_RANGE_DB, activeSpan, MAX_WINDOW_SEC, MIN_WINDOW_SEC, type Weight };
 
 /** Seconds of bed rendered before a window beyond its margin: K-weighting warm-up (0.5 s) + half a momentary window. */
 export const BED_PREROLL_SEC = 0.7;
@@ -56,22 +74,12 @@ export const BED_PREROLL_SEC = 0.7;
 export const BED_TAIL_SEC = 0.2;
 /** Local-peak margin by weight (seconds each side; spec 12 §2.4 / WP4.1a `BED_PEAK_MARGIN_SEC`). */
 export const CLUSTER_MARGIN_SEC = { hero: 1, support: 0.15, ambient: 0.15 } as const;
-/** The active window: 10 ms frames within this many dB of the loudest frame. */
-export const ACTIVE_RANGE_DB = 30;
-/** Shortest active window (seconds). */
-export const MIN_WINDOW_SEC = 0.05;
-/** Longest measured window (seconds from the active start): long beds are measured on their first 20 s. */
-export const MAX_WINDOW_SEC = 20;
 /** Seconds rendered after a sound's clip (effect tails on its track). */
 export const SOLO_TAIL_SEC = 0.5;
 /** Voiced frames are at least this loud (dBFS) besides being over the clip's adaptive threshold. */
 export const VAD_FLOOR_DBFS = -50;
-/** Silence: the loudest 10 ms frame is under this (dBFS). */
-const SILENCE_DBFS = -100;
 /** Renders running at once. */
 const DEFAULT_CONCURRENCY = 3;
-
-export type Weight = 'hero' | 'support' | 'ambient';
 
 /** A sound to measure: a clip of `doc` (the bed document, or a preview with another sound in its place). */
 export type SoundTarget = { doc: ProjectDocument; clipId: string; weight: Weight };
@@ -109,19 +117,6 @@ export type BedMeasurement = {
 	ms: { sound: number; bed: number; voice: number };
 };
 
-type Pcm = { startSample: number; channels: Float32Array[] };
-/**
- * A sound's measurement, relative to the start of its solo render (`t0` = its first sample's time): the same sound
- * played the same way gives the same entry wherever it sits on the timeline (see `soundKey`).
- */
-type SoundEntry = {
-	/** Active window (seconds from `t0`). */
-	rel: TimeWindow;
-	silent: boolean;
-	soundBandsDb: number[];
-	soundPeakLu: number | null;
-	truePeakDb: number | null;
-};
 type SoundMeasure = Pick<MeasuredSound, 'window' | 'silent' | 'soundBandsDb' | 'soundPeakLu' | 'truePeakDb'>;
 /** Per-engine caches (bounded): bed PCM per cluster by bytes, sound measurements and voice activity by count. */
 export class MeasureCache {
@@ -220,6 +215,8 @@ export type MeasureDeps = {
 	onProgress?(fraction: number, stage: string): void;
 	/** Voice activity of dialogue clips (default: the engine's service for `ff`). */
 	voice?: VoiceActivityService;
+	/** Where renders and band analysis run (default: the engine's measurement workers, in-thread without them). */
+	measurer?: SoundDesignMeasurer;
 };
 
 const sha = (v: unknown) =>
@@ -246,6 +243,8 @@ async function pool<T, R>(items: readonly T[], n: number, fn: (x: T, i: number) 
 export type AudioWorld = {
 	snapshot: RenderSnapshot;
 	media(id: string): MixSource | null;
+	/** The online media the snapshot's clips play, as files (a render request carries them to a worker). */
+	mediaFiles: Record<string, MixSource>;
 	/** The media's fingerprint when it is online here (null: offline, it renders as silence). */
 	fingerprint(id: string): string | null;
 };
@@ -274,8 +273,15 @@ export async function audioWorld(
 		resolveMedia: (asset) => local.get(asset.id)?.handle ?? null,
 		resolveFont: () => null,
 	});
+	const mediaFiles: Record<string, MixSource> = {};
+	for (const c of snapshot.audioClips) {
+		const m = local.get(c.mediaId);
+		if (m && !Object.hasOwn(mediaFiles, c.mediaId))
+			mediaFiles[c.mediaId] = { path: m.path, streams: m.streams };
+	}
 	return {
 		snapshot,
+		mediaFiles,
 		media: (id) => {
 			const m = local.get(id);
 			return m ? { path: m.path, streams: m.streams } : null;
@@ -604,103 +610,29 @@ function clipSpan(c: RenderAudioClip): [number, number] {
 	return [c.start - (c.headHandle ?? 0), c.start + c.duration + (c.tailHandle ?? 0)];
 }
 
-/** Renders `range` (frames) of `world` with only `clipIds` audible (master output, no loudness normalisation). */
-async function renderPcm(
+/** The render request of `range` (frames) of `world` with only `clipIds` audible (see `RenderRequest`). */
+function renderRequest(
 	world: AudioWorld,
 	range: { start: number; end: number },
 	clipIds: ReadonlySet<string>,
-	deps: MeasureDeps,
-	/**
-	 * `zeroGain`: that clip at 0 dB; `prune`: strips no audible clip reaches are not processed (same output; the
-	 * oracle renders leave it off); `meter: false`: no loudness meter (`truePeakDb` null).
-	 */
 	opts: { zeroGain?: string; prune?: boolean; meter?: boolean } = {},
-): Promise<{ pcm: Pcm; truePeakDb: number | null; sampleRate: number }> {
-	const snap = world.snapshot;
-	const fps = snap.settings.fps as Rational;
-	const sr = snap.audioMix?.sampleRate ?? snap.settings.sampleRate;
-	const startSample = frameToSample(range.start, fps, sr);
-	const total = Math.max(0, frameToSample(range.end, fps, sr) - startSample);
-	const snapshot: RenderSnapshot = opts.zeroGain
-		? {
-				...snap,
-				audioClips: snap.audioClips.map((c) => (c.clipId === opts.zeroGain ? { ...c, gainDb: 0 } : c)),
-			}
-		: snap;
-	const channels: Float32Array[] = [];
-	let at = 0;
-	const r = await renderMixdown({
-		ff: deps.ff,
-		snapshot,
-		media: world.media,
-		range,
-		length: total,
-		scratchDir: tmpdir(),
-		measureOnly: true,
-		withoutLoudness: true,
-		onlyClips: clipIds,
-		...(opts.prune ? { skipSilentStrips: true } : {}),
-		...(opts.meter === false ? { meter: false } : {}),
-		...(deps.signal ? { signal: deps.signal } : {}),
-		...(deps.onSpawn ? { onSpawn: deps.onSpawn } : {}),
-		onBlock: (planar, n) => {
-			if (channels.length === 0)
-				for (let c = 0; c < planar.length; c++) channels.push(new Float32Array(total));
-			const m = Math.min(n, total - at);
-			for (let c = 0; c < channels.length; c++) channels[c]!.set(planar[c]!.subarray(0, m), at);
-			at += m;
-		},
-	});
-	const tp = r.loudness.truePeakDb;
+): RenderRequest {
 	return {
-		pcm: { startSample, channels: channels.length ? channels : [new Float32Array(total)] },
-		truePeakDb: opts.meter !== false && Number.isFinite(tp) ? tp : null,
-		sampleRate: r.sampleRate,
+		snapshot: world.snapshot,
+		media: world.mediaFiles,
+		range,
+		clipIds: [...clipIds],
+		...(opts.zeroGain ? { zeroGain: opts.zeroGain } : {}),
+		...(opts.prune ? { prune: true } : {}),
+		...(opts.meter === false ? { meter: false } : {}),
 	};
 }
 
-/** Channel-averaged 10 ms frame levels (dBFS) of `pcm` from sample `from` (relative) to `to`. */
-function frameLevels(pcm: Pcm, sr: number, from = 0, to?: number): Float32Array {
-	const hop = Math.max(1, Math.round(sr / 100));
-	const len = pcm.channels[0]?.length ?? 0;
-	const end = Math.min(len, to ?? len);
-	const n = Math.max(0, Math.ceil((end - from) / hop));
-	const out = new Float32Array(n);
-	const nch = Math.max(1, pcm.channels.length);
-	for (let f = 0; f < n; f++) {
-		const a = from + f * hop;
-		const b = Math.min(end, a + hop);
-		let e = 0;
-		for (const ch of pcm.channels)
-			for (let i = a; i < b; i++) {
-				const x = ch[i]!;
-				if (x - x === 0) e += x * x;
-			}
-		e /= Math.max(1, (b - a) * nch);
-		out[f] = e > 0 ? 10 * Math.log10(e) : -200;
-	}
-	return out;
-}
-
-/** The sound's active span (samples from the start of its solo render, end exclusive), or null when it is silent. */
-export function activeSpan(pcm: Pcm, sr: number): [number, number] | null {
-	const db = frameLevels(pcm, sr);
-	let max = Number.NEGATIVE_INFINITY;
-	for (const v of db) if (v > max) max = v;
-	if (!(max > SILENCE_DBFS)) return null;
-	const floor = max - ACTIVE_RANGE_DB;
-	let a = 0;
-	while (a < db.length && db[a]! < floor) a++;
-	let b = db.length - 1;
-	while (b > a && db[b]! < floor) b--;
-	const hop = Math.max(1, Math.round(sr / 100));
-	const len = pcm.channels[0]?.length ?? 0;
-	const s0 = a * hop;
-	let s1 = Math.min(len, (b + 1) * hop);
-	s1 = Math.max(s1, Math.min(len, s0 + Math.round(MIN_WINDOW_SEC * sr)));
-	s1 = Math.min(s1, s0 + Math.round(MAX_WINDOW_SEC * sr));
-	return [s0, s1];
-}
+const renderEnv = (deps: MeasureDeps): RenderEnv => ({
+	ff: deps.ff,
+	...(deps.signal ? { signal: deps.signal } : {}),
+	...(deps.onSpawn ? { onSpawn: deps.onSpawn } : {}),
+});
 
 /** The sound's active window (absolute seconds) from its solo render, or null when it is silent. */
 export function activeWindow(pcm: Pcm, sr: number): TimeWindow | null {
@@ -748,6 +680,8 @@ export async function measureSfxEvents(
 ): Promise<BedMeasurement> {
 	const cache = deps.cache ?? measureCache;
 	const concurrency = deps.concurrency ?? DEFAULT_CONCURRENCY;
+	const measurer = deps.measurer ?? soundDesignMeasurer();
+	const env = renderEnv(deps);
 	const renders = { bed: 0, sound: 0, voice: 0, cached: 0 };
 	const seqId = input.sequenceId;
 	const bedSeq = input.bedDoc.sequences[seqId] as Sequence | undefined;
@@ -812,28 +746,15 @@ export async function measureSfxEvents(
 		if (entry || pending) renders.cached++;
 		if (!entry && !pending) {
 			pending = (async (): Promise<SoundEntry> => {
-				const r = await renderPcm(world, range, new Set([t.clipId]), deps, {
-					zeroGain: t.clipId,
-					prune: true,
-				});
-				renders.sound++;
-				const span = activeSpan(r.pcm, sr);
 				// silent: its clip span (≤ 20 s), in seconds from the render's start
 				const head = (rc.start - range.start) / fpsNum;
-				const rel = span
-					? { start: span[0] / sr, end: span[1] / sr }
-					: {
-							start: head,
-							end: Math.min((rc.start + rc.duration - range.start) / fpsNum, head + MAX_WINDOW_SEC),
-						};
-				const peak = shortTermPeakLu(r.pcm.channels, sr, rel, 0);
-				const x: SoundEntry = {
-					rel,
-					silent: span === null,
-					soundBandsDb: bandLevels(r.pcm.channels, sr, rel),
-					soundPeakLu: Number.isFinite(peak) ? peak : null,
-					truePeakDb: r.truePeakDb,
+				const silentRel = {
+					start: head,
+					end: Math.min((rc.start + rc.duration - range.start) / fpsNum, head + MAX_WINDOW_SEC),
 				};
+				const req = renderRequest(world, range, new Set([t.clipId]), { zeroGain: t.clipId, prune: true });
+				const x = await measurer.run({ kind: 'solo', req: { ...req, silentRel } }, env);
+				renders.sound++;
 				cache.putSound(key, x);
 				return x;
 			})();
@@ -877,10 +798,16 @@ export async function measureSfxEvents(
 			renders.cached++;
 			return { range, pcm: hit };
 		}
-		const r = await renderPcm(bedWorld, range, new Set(playing.map((c) => c.clipId)), deps, {
-			prune: true,
-			meter: false,
-		});
+		const r = await measurer.run(
+			{
+				kind: 'render',
+				req: renderRequest(bedWorld, range, new Set(playing.map((c) => c.clipId)), {
+					prune: true,
+					meter: false,
+				}),
+			},
+			env,
+		);
 		renders.bed++;
 		cache.putBed(key, r.pcm);
 		return { range, pcm: r.pcm };
@@ -905,18 +832,43 @@ export async function measureSfxEvents(
 		tracks: sp.trackIds.map((t) => trackLabel(bedSeq, t)),
 	}));
 	ms.voice = Date.now() - tStage;
-	// 4. Per sound: the bed over its window, its speech, the bed tracks under it.
-	const sounds = new Map<string, MeasuredSound>();
-	for (const { target, m } of ok) {
+	// 4. Per sound: the bed over its window (bands and local peak, one op per bed cluster), its speech, the bed tracks
+	//    under it.
+	const bedOf = ok.map(({ target, m }) => {
 		const span = bedSpanOf(m.window, target.weight);
-		const b = beds.find((x) => {
+		return beds.findIndex((x) => {
 			const s0 = x.pcm.startSample / sr;
 			const s1 = s0 + (x.pcm.channels[0]?.length ?? 0) / sr;
 			return s0 <= span.start + 1e-6 && s1 >= Math.min(span.end, m.window.end) - 1e-6;
 		});
-		const rel = b ? relative(m.window, b.pcm, sr) : null;
-		const bedBandsDb = b && rel ? bandLevels(b.pcm.channels, sr, rel) : bandLevels([], sr, m.window);
-		const lp = b && rel ? bedLocalPeakLu(b.pcm.channels, sr, rel, target.weight) : Number.NEGATIVE_INFINITY;
+	});
+	const bands = new Array<BedBands>(ok.length);
+	await pool([-1, ...beds.keys()], concurrency, async (bi) => {
+		const idx = ok.map((_, i) => i).filter((i) => bedOf[i] === bi);
+		if (idx.length === 0) return;
+		const b = bi >= 0 ? beds[bi]! : null;
+		const out = await measurer.run(
+			{
+				kind: 'bedBands',
+				req: {
+					channels: b ? b.pcm.channels : [],
+					sampleRate: sr,
+					items: idx.map((i) => ({
+						rel: b ? relative(ok[i]!.m.window, b.pcm, sr) : null,
+						window: ok[i]!.m.window,
+						weight: ok[i]!.target.weight,
+					})),
+				},
+			},
+			env,
+		);
+		idx.forEach((i, k) => {
+			bands[i] = out[k]!;
+		});
+	});
+	const sounds = new Map<string, MeasuredSound>();
+	for (const [i, { target, m }] of ok.entries()) {
+		const { bedBandsDb, bedLocalPeakLu } = bands[i]!;
 		const overlaps = (s: { start: number; end: number }) => s.start < m.window.end && s.end > m.window.start;
 		const speechTracks = new Set<string>();
 		for (const v of voiced) if (overlaps(v)) for (const t of v.tracks) speechTracks.add(t);
@@ -937,7 +889,7 @@ export async function measureSfxEvents(
 			soundPeakLu: m.soundPeakLu,
 			truePeakDb: m.truePeakDb,
 			bedBandsDb,
-			bedLocalPeakLu: Number.isFinite(lp) ? lp : null,
+			bedLocalPeakLu,
 			speechOverlap: speechTracks.size > 0,
 			speechTracks: [...speechTracks].sort(),
 			bedTracks,
@@ -960,7 +912,7 @@ export async function renderSequencePcm(
 ): Promise<{ sampleRate: number; startSample: number; channels: Float32Array[]; truePeakDb: number | null }> {
 	const world = await audioWorld(doc, sequenceId, deps.registry);
 	const ids = clipIds ?? new Set(world.snapshot.audioClips.map((c) => c.clipId));
-	const r = await renderPcm(world, range, ids, deps);
+	const r = await renderPcmCore(renderRequest(world, range, ids), renderEnv(deps));
 	return {
 		sampleRate: r.sampleRate,
 		startSample: r.pcm.startSample,

@@ -72,6 +72,7 @@ for (const f of [
 	'jasper-roto.mjs',
 	'jasper-camtrack.mjs',
 	'sound-worker.mjs',
+	'sd-measure-worker.mjs',
 	'dejudder-worker.mjs',
 	'vidstab.wasm',
 	'VIDSTAB-WASM.json',

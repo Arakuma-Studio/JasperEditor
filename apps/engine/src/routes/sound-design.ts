@@ -65,6 +65,7 @@ import { runSoundCheck } from '../sound-design/check.ts';
 import { mixAnalysis, planDelivery, runDelivery } from '../sound-design/delivery.ts';
 import { type EngineCueSource, EngineCueSources } from '../sound-design/engine-cues.ts';
 import { matchStoredCues } from '../sound-design/match.ts';
+import { closeSoundDesignMeasurer, soundDesignMeasurer } from '../sound-design/measure-pool.ts';
 import { MotionInputError, MotionService, planMotion } from '../sound-design/motion.ts';
 import {
 	liveDocument,
@@ -111,6 +112,10 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 	);
 	registerVoiceService(core.ffmpeg, voice);
 	services.voice = voice;
+	// The solo / bed renders and their band analysis run on worker threads (WP6.5b; in-thread without them): started on
+	// first use, stopped when idle and when the engine closes.
+	soundDesignMeasurer((m) => app.log.warn(m));
+	app.addHook('onClose', async () => closeSoundDesignMeasurer());
 	// Registered by the proposal routes (after these): looked up when a job runs.
 	const proposalsOf = () => services.proposals as ProposalService | undefined;
 	// One job kind for all three: rebalance jobs carry `rebalance` in their input, delivery jobs `delivery`.
