@@ -74,6 +74,8 @@ for (const p of Object.values(project.DELIVERY_PRESETS)) {
 // Sound design: the History labels agents' tools compose and the refusals the editor shows in notices, as templates
 // (`{0}`… are ids, titles and numbers); the runtime translates a text that matches one (`translateName`).
 for (const t of project.SOUND_MODEL_STRINGS) add(t);
+// Proposals: why a previewed item fails (WP6.5b: an invariant broken only together with the items before it).
+for (const t of project.PROPOSAL_MODEL_STRINGS) add(t);
 // The prefix of agents' History entries ("Agent: Sound Cues (add 2)", @jasper/session `agentLabel`).
 add('Agent');
 const list = [...out].sort((a, b) => a.localeCompare(b, 'en'));

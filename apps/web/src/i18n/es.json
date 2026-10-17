@@ -9985,5 +9985,6 @@
   "Cannot replace {0}: {1}": "No se puede sustituir {0}: {1}",
   "The new copy is already in the project as {0}": "La nueva copia ya está en el proyecto como {0}",
   "{0} would not fit the new copy of {1}": "{0} no cabría en la nueva copia de {1}",
-  "{0} would not fit the new copy of {1}: the clips keep the older copy; the new one is another media": "{0} no cabría en la nueva copia de {1}: los clips conservan la copia anterior; la nueva es otro medio"
+  "{0} would not fit the new copy of {1}: the clips keep the older copy; the new one is another media": "{0} no cabría en la nueva copia de {1}: los clips conservan la copia anterior; la nueva es otro medio",
+  "conflicts with the items before it: {0}": "entra en conflicto con los elementos anteriores: {0}"
 }

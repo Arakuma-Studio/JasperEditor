@@ -153,6 +153,11 @@ export function previewStats(reset = false): PreviewStats {
 	return out;
 }
 
+/** Why a preview item failed when it breaks an invariant only together with the items before it (`{0}`: the issue). */
+export const PREVIEW_CONFLICT_TEMPLATE = 'conflicts with the items before it: {0}';
+/** Texts of the proposal model the editor translates (model strings; `{0}` is filled in, never translated). */
+export const PROPOSAL_MODEL_STRINGS: readonly string[] = [PREVIEW_CONFLICT_TEMPLATE];
+
 /** Default number of items per preview transaction. */
 export const PREVIEW_BATCH = 32;
 /** Invariant conflicts resolved one by one at the end of a preview before the rest is left to Apply. */
@@ -597,7 +602,10 @@ export function* previewProposalSteps(
 		}
 	}
 	for (const [id, issues] of conflicts)
-		failed[id] = issues.map((e) => ({ ...e, message: `conflicts with the items before it: ${e.message}` }));
+		failed[id] = issues.map((e) => ({
+			...e,
+			message: PREVIEW_CONFLICT_TEMPLATE.replace('{0}', e.message),
+		}));
 
 	const applied = batches.flatMap((b) => b.applied).filter((id) => !failed[id]);
 	const result = batches.at(-1)?.doc ?? doc;

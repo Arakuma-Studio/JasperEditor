@@ -27,6 +27,7 @@ import {
 	copyableRuns,
 	FLICKS_PER_SECOND,
 	frameIndexAt,
+	frameTime,
 	type MediaAsset,
 	makeEnvelope,
 	measureFrameMotion,
@@ -526,11 +527,11 @@ export class MotionService {
 		const at = clipMediaTimeFn(piece.clip as never, plan.rate);
 		const want: number[] = [];
 		for (let f = piece.start; f < piece.end; f++) want.push(frameIndexAt(ft, at(f) / FLICKS_PER_SECOND));
-		const times = ft.kind === 'list' ? ft.times : [];
 		const first = want[0]!;
 		const last = want[want.length - 1]!;
-		const t0 = times[first] ?? 0;
-		const prev = first > 0 ? (times[first - 1] ?? 0) : 0;
+		// the seek lands just before the first frame wanted (whatever the table's kind: a list or a constant rate)
+		const t0 = frameTime(ft, first) ?? 0;
+		const prev = first > 0 ? (frameTime(ft, first - 1) ?? 0) : 0;
 		const seek = first > 0 ? t0 - Math.min(0.5 * (t0 - prev), 0.01) : 0;
 		let k = first;
 		let w = 0;
