@@ -511,7 +511,7 @@ Routes, declared in `packages/api/src/routes.ts` with schemas in `packages/api/s
 | `POST /api/sound-design/check` | job |
 | `POST /api/sound-design/check/last` | the sequence's last full report, kept across restarts, current / stale (Phase 5 verification) |
 | `POST /api/sound-design/visual` | |
-| `POST /api/audio/beats` | |
+| `POST /api/audio/beats` | `{mediaKey, streamIndex?, startSeconds, durationSeconds, timeSignature?: 'auto' \| 2…12}` → bpm, beats, downbeats, beatsPerBar |
 | proposal routes | §2.5 |
 
 Capabilities gain `sound: {library:{sounds, packs}, synth: true}`.

@@ -475,6 +475,7 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 					? await engineCues.collect(doc, seq, {
 							sources: engineSources,
 							...(opts.snapToBeats ? { snapToBeats: true } : {}),
+							...(opts.timeSignature !== undefined ? { timeSignature: opts.timeSignature } : {}),
 							...(opts.range ? { range: opts.range } : {}),
 							mode:
 								opts.analyze === false
