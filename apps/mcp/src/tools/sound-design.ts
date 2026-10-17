@@ -1046,7 +1046,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 		{
 			title: 'Swap sound',
 			description:
-				'Replaces the sound of a placed clip with another library sound in ONE undo step, keeping where its aligned point (peak, start or end) plays, its track, role, pan, gain, effects, group and cue link (keyframes keep their times). to: a soundId, or "next" / "previous" to cycle: first the alternates given to place_sound, then sounds of the same family most similar to the original, then the most similar sounds of any family; the cycle keeps the sound first placed as its anchor across calls (a clip placed without alternates stores it on its first swap), so next / previous progress and come back to it. A candidate that does not fit on the clip’s track is skipped (listed in skipped). Returns the old and new sound, the position in the cycle and the aligned frame.',
+				'Replaces the sound of a placed clip with another library sound in ONE undo step, keeping where its aligned point (peak, start or end) plays, its track, role, pan, gain, effects, group and cue link (keyframes keep their times); the clip covers the whole new sound, its tail included. to: a soundId — the clip\'s own sound registers it again and swaps the fresh copy in (Sound Check\'s fix for a sound whose tail is cut: copies made before trailing silence was added end inside the last frame); refused when the project\'s copy is already current — or "next" / "previous" to cycle: first the alternates given to place_sound, then sounds of the same family most similar to the original, then the most similar sounds of any family; the cycle keeps the sound first placed as its anchor across calls (a clip placed without alternates stores it on its first swap), so next / previous progress and come back to it. A candidate that does not fit on the clip’s track is skipped (listed in skipped). Returns the old and new sound, the position in the cycle and the aligned frame.',
 			input: {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1).max(128).describe('A placed sound clip (place_sound, insert_sound)'),
@@ -1090,8 +1090,10 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 					tries.push({ soundId: list[j]!.soundId, cycle: { index: j + 1, of: n, from: list[j]!.from } });
 				}
 			} else tries = [{ soundId: a.to, cycle: null }];
-			if (tries[0]!.soundId === current)
-				throw new ToolError('E_INVALID_PARAM', `The clip already plays ${current}`, 'Pick another sound.');
+			// The same sound again re-registers it: a copy made before the tail fix (no trailing silence) is replaced by the
+			// current one, and the clip re-planned on it so the whole sound plays (Sound Check's fix for a cut tail). When
+			// the project's copy already is the current one there is nothing to swap.
+			const refresh = tries[0]!.soundId === current;
 			// A clip without a variation ring gets [the sound it plays now] in the same transaction: later calls cycle
 			// around that anchor (it would otherwise be rebuilt around each new sound and alternate between two).
 			const ring =
@@ -1113,6 +1115,12 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 					c.registerSound(t.soundId, a.projectId),
 				);
 				const title = e.title || reg.library.title || reg.originalName;
+				if (refresh && importCommands(doc, [{ soundId: t.soundId, reg, title }]).media[0]!.mediaId === clip.mediaId)
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						`The clip already plays ${current} from its current copy`,
+						'Pick another sound.',
+					);
 				const label = soundText(SOUND_LABELS.swapSound, title);
 				try {
 					const tx = await transactFresh(

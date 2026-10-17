@@ -12,13 +12,24 @@ import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type EngineJob, RegisterSoundResponseSchema, type SoundEntry } from '@jasper/api';
 import { encodeWav } from '@jasper/audio-dsp';
-import { frameToSample, LIBRARY_TRAIL_SILENCE_SEC, type Sequence } from '@jasper/project';
+import { mgRegistry } from '@jasper/mg-templates';
+import {
+	type AudioClip,
+	defaultRegistries,
+	FLICKS_PER_SECOND,
+	flicksPerFrame,
+	frameToSample,
+	LIBRARY_TRAIL_SILENCE_SEC,
+	mediaDurationFlicks,
+	type Sequence,
+} from '@jasper/project';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { renderMixdown, WAV_F32_HEADER_BYTES } from '../src/audio/mixdown.ts';
 import { audioWorld } from '../src/sound-design/bed.ts';
+import { checkSequence } from '../src/sound-design/check.ts';
 import { writePaddedSound } from '../src/sounds/pad.ts';
-import { provenanceOf } from '../src/sounds/service.ts';
+import { provenanceOf, type SoundService } from '../src/sounds/service.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, H, JSON_H, makeApp, register, TEST_FFMPEG, tempAppdir } from './helpers.ts';
 import { makeStarter } from './sound-fixtures.ts';
@@ -123,6 +134,51 @@ async function registerSound(id: string) {
 	return RegisterSoundResponseSchema.parse(r.json());
 }
 
+
+type Placed = { clipId: string; frame: number; source: Float32Array; peakSample: number };
+
+/** Renders the sequence with the engine's mixer and checks each placed sound against its source, sample for sample. */
+async function expectWhole(b: DocBuilder, placed: readonly Placed[], label: string): Promise<void> {
+	const doc = b.doc;
+	const fps = (doc.sequences[b.seqId] as Sequence).settings.frameRate;
+	const world = await audioWorld(doc, b.seqId, coreServices(app).registry);
+	const scratch = tempAppdir('jasper-tail-render-');
+	const end = Math.max(...placed.map((p) => p.frame)) + Math.ceil((fps.num / fps.den) * 0.5);
+	const out = await renderMixdown({
+		ff: coreServices(app).ffmpeg,
+		snapshot: world.snapshot,
+		media: world.media,
+		range: { start: 0, end },
+		outputLayout: 'stereo',
+		scratchDir: scratch,
+		withoutLoudness: true,
+	});
+	const buf = await readFile(out.path!);
+	const pcm = new Float32Array(buf.buffer.slice(buf.byteOffset + WAV_F32_HEADER_BYTES));
+	await rm(scratch, { recursive: true, force: true });
+	const left = (i: number) => pcm[i * 2] ?? 0;
+	for (const p of placed) {
+		const at = frameToSample(p.frame, fps, SR) - p.peakSample; // where the source's first sample plays
+		// the whole sound: from its first sample to its last one above −60 dB (its last sample here)
+		const peak = Math.max(...p.source.map(Math.abs));
+		let last = p.source.length - 1;
+		while (last > 0 && Math.abs(p.source[last]!) < peak / 1000) last--;
+		let worst = 0;
+		let worstAt = -1;
+		for (let k = 0; k < p.source.length; k++) {
+			const d = Math.abs(left(at + k) - p.source[k]!);
+			if (d > worst) {
+				worst = d;
+				worstAt = k;
+			}
+		}
+		expect(
+			worst,
+			`${label}, clip ${p.clipId}: worst difference ${worst} at source sample ${worstAt} of ${p.source.length} (−60 dB end at ${last})`,
+		).toBeLessThan(peak * 1e-5);
+	}
+}
+
 const RATES: [string, { num: number; den: number }, boolean][] = [
 	['23.976', { num: 24000, den: 1001 }, false],
 	['29.97', { num: 30000, den: 1001 }, true],
@@ -134,7 +190,7 @@ describe('a placed short sound plays whole, its tail included', { timeout: 300_0
 	it.each(RATES)('%s fps: every click is rendered sample for sample to its −60 dB end', async (label, fps, df) => {
 		const b = new DocBuilder(`hd-1080p-${label}`, 600);
 		if (df) b.tx([{ type: 'sequence.updateSettings', settings: { dropFrame: true } }]);
-		const placed: { clipId: string; frame: number; source: Float32Array; peakSample: number }[] = [];
+		const placed: Placed[] = [];
 		for (const [i, title] of ['tick 20', 'tick 30', 'tick 40', 'late tick', 'old copy'].entries()) {
 			const old = title === 'old copy';
 			const e = await soundByTitle(old ? 'tick 30' : title);
@@ -177,44 +233,7 @@ describe('a placed short sound plays whole, its tail included', { timeout: 300_0
 				peakSample: Math.round(e.descriptors.peakSec * SR),
 			});
 		}
-		const doc = b.doc;
-		const world = await audioWorld(doc, b.seqId, coreServices(app).registry);
-		const scratch = tempAppdir('jasper-tail-render-');
-		const total = (doc.sequences[b.seqId] as Sequence).settings;
-		const end = Math.max(...placed.map((p) => p.frame)) + Math.ceil((total.frameRate.num / total.frameRate.den) * 0.5);
-		const out = await renderMixdown({
-			ff: coreServices(app).ffmpeg,
-			snapshot: world.snapshot,
-			media: world.media,
-			range: { start: 0, end },
-			outputLayout: 'stereo',
-			scratchDir: scratch,
-			withoutLoudness: true,
-		});
-		const buf = await readFile(out.path!);
-		const pcm = new Float32Array(buf.buffer.slice(buf.byteOffset + WAV_F32_HEADER_BYTES));
-		await rm(scratch, { recursive: true, force: true });
-		const left = (i: number) => pcm[i * 2] ?? 0;
-		for (const p of placed) {
-			const at = frameToSample(p.frame, fps, SR) - p.peakSample; // where the source's first sample plays
-			// the whole sound: from its first sample to its last one above −60 dB (its last sample here)
-			const peak = Math.max(...p.source.map(Math.abs));
-			let last = p.source.length - 1;
-			while (last > 0 && Math.abs(p.source[last]!) < peak / 1000) last--;
-			let worst = 0;
-			let worstAt = -1;
-			for (let k = 0; k < p.source.length; k++) {
-				const d = Math.abs(left(at + k) - p.source[k]!);
-				if (d > worst) {
-					worst = d;
-					worstAt = k;
-				}
-			}
-			expect(
-				worst,
-				`${label} fps, clip ${p.clipId}: worst difference ${worst} at source sample ${worstAt} of ${p.source.length} (−60 dB end at ${last})`,
-			).toBeLessThan(peak * 1e-5);
-		}
+		await expectWhole(b, placed, `${label} fps`);
 	});
 
 	it('registration pads silence after a sound that ends abruptly, in front of one that starts at once', async () => {
@@ -230,5 +249,150 @@ describe('a placed short sound plays whole, its tail included', { timeout: 300_0
 		expect(r2.fingerprint).not.toBe(late.fingerprint);
 		// deterministic: registering again gives the same bytes (one media)
 		expect((await registerSound(tick.id)).fingerprint).toBe(r1.fingerprint);
+	});
+});
+
+/** An existing project's clip: the head-only copy of `title`, placed and cut to whole frames inside its media (the old rule). */
+async function oldPlacement(b: DocBuilder, title: string, frame: number, soundId?: string) {
+	const e = await soundByTitle(title);
+	const path = await writePaddedSound(coreServices(app).ffmpeg, {
+		path: files[title]!,
+		samples: 2400,
+		codec: 'pcm_s16le',
+		tmpDir: tempAppdir('jasper-tail-old-'),
+	});
+	const { tailSec: _t, ...descriptors } = provenanceOf(e, 'h', 0.05).descriptors!;
+	const mediaId = b.addMedia(await register(app, path));
+	b.tx([
+		{
+			type: 'media.setLibraryInfo',
+			mediaId,
+			library: { ...provenanceOf(e, 'h', 0.05), ...(soundId ? { soundId } : {}), descriptors },
+		},
+	]);
+	const r = b.tx([
+		{ type: 'soundCue.add', cues: [{ frame, kind: 'cut', weight: 'support', source: 'user', align: 'peak', ref: '$c' }] },
+		{ type: 'soundDesign.place', cueId: '$c', layers: [{ mediaId, gainDb: 0 }] },
+	]);
+	const clipId = (r.results[1] as { clips: { clipId: string }[] }).clips[0]!.clipId;
+	const seq = b.doc.sequences[b.seqId]!;
+	const c = seq.clips[clipId] as AudioClip;
+	const F = flicksPerFrame(seq.settings.frameRate);
+	const fit = Math.floor((mediaDurationFlicks(b.doc.media[mediaId]!)! - c.sourceIn) / F + 1e-3);
+	if (fit < c.duration) b.tx([{ type: 'clip.trim', clipId, edge: 'out', deltaFrames: fit - c.duration }]);
+	const source = decodeF32(files[title]!).filter((_, k) => k % 2 === 0);
+	return { e, mediaId, clipId, placed: { clipId, frame, source, peakSample: Math.round(e.descriptors.peakSec * SR) } };
+}
+
+async function check(b: DocBuilder) {
+	const core = coreServices(app);
+	const scratch = tempAppdir('jasper-tail-check-');
+	try {
+		return await checkSequence(
+			b.doc,
+			b.doc.sequences[b.seqId] as Sequence,
+			{ projectId, revision: null, preset: 'web' },
+			{
+				ff: core.ffmpeg,
+				registry: core.registry,
+				registries: defaultRegistries(mgRegistry),
+				mgTemplates: mgRegistry,
+				scratchDir: scratch,
+				sounds: (app as unknown as { jasper: { services: { sounds?: SoundService } } }).jasper.services.sounds,
+			},
+		);
+	} finally {
+		await rm(scratch, { recursive: true, force: true });
+	}
+}
+
+describe('Sound Check finds cut tails in existing projects and fixes them safely', { timeout: 300_000 }, () => {
+	it('a head-only copy cut at its peak: OUT_OF_SYNC "cut" with a safe re-register + swap; applied, the sound plays whole', async () => {
+		const b = new DocBuilder('hd-1080p-30', 300);
+		const old = await oldPlacement(b, 'tick 30', 40);
+		const before = b.doc.sequences[b.seqId]!.clips[old.clipId]!;
+		const report = await check(b);
+		const issue = report.issues.find((i) => i.code === 'OUT_OF_SYNC' && i.clipIds?.includes(old.clipId));
+		expect(issue, JSON.stringify(report.issues.map((i) => i.message.text))).toBeDefined();
+		expect(issue!.message.key).toMatch(/^\{0\} is cut/);
+		expect(issue!.fix).toMatchObject({
+			kind: 'swap',
+			safe: true,
+			tool: 'swap_sound',
+			args: { projectId, clipId: old.clipId, to: old.e.id },
+			swap: { clipId: old.clipId, soundId: old.e.id },
+		});
+		// applied as the editor and MCP do: register the sound (a copy with trailing silence now) and swap it in
+		const reg = await registerSound(old.e.id);
+		expect(reg.library.trailSilenceSec).toBe(LIBRARY_TRAIL_SILENCE_SEC);
+		const { mediaKey: _k, browserPlayable: _b, library, existingMediaId: _x, ...asset } = reg;
+		const r = b.tx([
+			{ type: 'media.register', asset: { ...asset, derivation: null, library }, ref: '$m' },
+			{ type: 'soundDesign.swap', clipId: old.clipId, mediaId: '$m' },
+		]);
+		const swapped = (r.results[1] as { alignedFrame: number }).alignedFrame;
+		expect(swapped).toBe(40);
+		const after = b.doc.sequences[b.seqId]!.clips[old.clipId] as AudioClip & { sfx?: { role: string } };
+		expect(after.trackId).toBe(before.trackId);
+		expect(after.gainDb).toBe((before as AudioClip).gainDb);
+		expect(after.mediaId).not.toBe(old.mediaId);
+		const again = await check(b);
+		expect(
+			again.issues.filter(
+				(i) =>
+					i.clipIds?.includes(old.clipId) &&
+					i.severity !== 'info' &&
+					['OUT_OF_SYNC', 'TRUNCATED'].includes(i.code),
+			),
+		).toEqual([]);
+		await expectWhole(b, [old.placed], 'after the fix');
+	});
+
+	it('a tail cut after the peak: TRUNCATED; a sound gone from the library is re-planned on its own media instead', async () => {
+		const b = new DocBuilder('hd-1080p-60', 300);
+		// 40 ms click at 60 fps: the old rule ends it inside its last 16.7 ms, ≥ 20 ms after the peak
+		const old = await oldPlacement(b, 'tick 40', 50);
+		// the same, as a sound the library no longer has (its media alone tells where it fades)
+		const gone = await oldPlacement(b, 'tick 40', 110, 'snd_ffffffffffffff01');
+		const report = await check(b);
+		const t1 = report.issues.find((i) => i.code === 'TRUNCATED' && i.clipIds?.includes(old.clipId));
+		const t2 = report.issues.find((i) => i.code === 'TRUNCATED' && i.clipIds?.includes(gone.clipId));
+		expect(t1, JSON.stringify(report.issues.map((i) => i.message.text))).toBeDefined();
+		expect(t1!.severity).toBe('warning');
+		expect(t1!.category).toBe('sync');
+		expect(t1!.measured!.missingMs as number).toBeGreaterThan(0);
+		expect(t1!.measured!.missingMs as number).toBeLessThan(1000 / 60);
+		expect(t1!.fix).toMatchObject({ kind: 'swap', safe: true, swap: { soundId: old.e.id } });
+		expect(t2!.fix).toMatchObject({ kind: 'commands', safe: true });
+		expect(t2!.fix!.commands).toEqual([{ type: 'soundDesign.swap', clipId: gone.clipId, mediaId: gone.mediaId }]);
+		// the commands fix as given (one transaction): the clip now runs to the end of its sound, past its media
+		b.tx(t2!.fix!.commands as never);
+		const c = b.doc.sequences[b.seqId]!.clips[gone.clipId] as AudioClip;
+		const F = flicksPerFrame(b.doc.sequences[b.seqId]!.settings.frameRate);
+		expect(c.sourceIn + c.duration * F).toBeGreaterThanOrEqual(mediaDurationFlicks(b.doc.media[gone.mediaId]!)!);
+		const again = await check(b);
+		expect(again.issues.filter((i) => i.clipIds?.includes(gone.clipId) && i.code === 'TRUNCATED')).toEqual([]);
+		expect(again.issues.some((i) => i.clipIds?.includes(old.clipId) && i.code === 'TRUNCATED')).toBe(true);
+		await expectWhole(b, [gone.placed], 'past its media');
+	});
+
+	it('a clip shortened on purpose (room left in its media) is not reported', async () => {
+		const b = new DocBuilder('hd-1080p-30', 300);
+		const e = await soundByTitle('tick 40');
+		const reg = await registerSound(e.id);
+		const { mediaKey: _k, browserPlayable: _b, library, existingMediaId: _x, ...asset } = reg;
+		const r = b.tx([
+			{ type: 'media.register', asset: { ...asset, derivation: null, library }, ref: '$m' },
+			{ type: 'soundDesign.place', frame: 40, layers: [{ mediaId: '$m', gainDb: 0 }] },
+		]);
+		const clipId = (r.results[1] as { clips: { clipId: string }[] }).clips[0]!.clipId;
+		// the user trims its tail off: the media has room left, so it is a choice, not the frame grid
+		b.tx([{ type: 'clip.trim', clipId, edge: 'out', deltaFrames: -1 }]);
+		const c = b.doc.sequences[b.seqId]!.clips[clipId] as AudioClip;
+		expect(c.sourceIn + c.duration * flicksPerFrame(b.doc.sequences[b.seqId]!.settings.frameRate)).toBeLessThan(
+			(0.05 + 0.04) * FLICKS_PER_SECOND,
+		);
+		const report = await check(b);
+		expect(report.issues.filter((i) => i.clipIds?.includes(clipId) && i.code === 'TRUNCATED')).toEqual([]);
 	});
 });
