@@ -13,6 +13,7 @@ import {
 	SFX_ROLES,
 	SOUND_CHECK_CODES,
 	SOUND_CHECK_SEVERITIES,
+	SOUND_CHECK_TARGET_LIMITS,
 	SOUND_CHECK_VERDICTS,
 	SOUND_DELIVERIES,
 	SOUND_DESIGN_LIMITS,
@@ -42,6 +43,22 @@ export const SoundCheckRequestSchema = z.strictObject({
 	sequenceId: id.optional(),
 	/** Delivery preset the loudness is checked against (default the sequence's). */
 	preset: z.enum(SOUND_DELIVERIES).optional(),
+	/**
+	 * A custom delivery target checked instead of the preset's numbers (integrated LUFS, true-peak ceiling dBTP); the
+	 * preset still sets the default sound-effect levels the solver-based checks use.
+	 */
+	target: z
+		.strictObject({
+			integratedLufs: z
+				.number()
+				.min(SOUND_CHECK_TARGET_LIMITS.integratedLufs.min)
+				.max(SOUND_CHECK_TARGET_LIMITS.integratedLufs.max),
+			truePeakDb: z
+				.number()
+				.min(SOUND_CHECK_TARGET_LIMITS.truePeakDb.min)
+				.max(SOUND_CHECK_TARGET_LIMITS.truePeakDb.max),
+		})
+		.optional(),
 	/** Sequence frames `[start, end)` (default the whole sequence). */
 	range: SoundCheckRangeSchema.optional(),
 	/** Also store the summary in the sequence (`soundDesign.setCheck`, one undo step "Sound Check Result"). */
@@ -210,6 +227,8 @@ export const SoundCheckReportSchema = z.object({
 		integratedLufs: z.number(),
 		truePeakDb: z.number(),
 		source: z.string(),
+		/** Checked against a custom target (`request.target`): the numbers above are it, `id` the preset behind it. */
+		custom: z.boolean().optional(),
 	}),
 	range: z.object({ start: frame, end: frame }),
 	rangeTimecode: z.object({ start: z.string(), end: z.string() }),

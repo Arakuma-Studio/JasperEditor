@@ -41,6 +41,7 @@ type Lib = {
 	types?: string[];
 	source?: { type: string; file?: string };
 	leadSilenceSec?: number;
+	trailSilenceSec?: number;
 	descriptors?: { peakSec: number; onsetSec: number; durationSec: number };
 };
 type Media = { id: string; library?: Lib; probe?: { durationFlicks: number | null } };
@@ -48,13 +49,20 @@ async function media(p: Page): Promise<Record<string, Media>> {
 	return query(p, 'doc.get', { path: ['media'] });
 }
 
-/** The point of a library sound its type aligns (spec 12 §2.1 defaultAlign): the end of the media for risers and
- * reverses (its probed length, to the sample), the onset for UI sounds, else the peak; seconds into the registered media
+/** The point of a library sound its type aligns (spec 12 §2.1 defaultAlign): the end of the sound for risers and
+ * reverses (the media's probed length minus its trailing silence, to the sample), the onset for UI sounds, else the peak; seconds into the registered media
  * (its descriptors include any lead silence). */
 function alignedPointSec(m: Media): number {
 	const d = m.library!.descriptors!;
 	const t = m.library!.types?.[0];
-	if (t === 'riser' || t === 'reverse') return (m.probe?.durationFlicks ?? d.durationSec * FLICKS) / FLICKS;
+	// the end of the SOUND: registration pads short sounds with trailing silence, which `end` alignment leaves out —
+	// the provenance's `durationSec − trailSilenceSec`, as placement computes it (spec 12 §2.3, fix "SFX tail
+	// truncation"); a copy without a trail ends where its media does
+	const trail = m.library!.trailSilenceSec ?? 0;
+	if (t === 'riser' || t === 'reverse')
+		return trail > 0
+			? Math.max(d.peakSec, d.onsetSec, d.durationSec - trail)
+			: (m.probe?.durationFlicks ?? d.durationSec * FLICKS) / FLICKS;
 	return t === 'ui' ? d.onsetSec : d.peakSec;
 }
 
@@ -257,7 +265,12 @@ test('inserted library sounds play their aligned point exactly on the frame in a
 		const lib = all[clip.mediaId]!.library!;
 		const lead = lib.leadSilenceSec ?? 0;
 		const d = lib.descriptors!;
-		const end = (all[clip.mediaId]!.probe?.durationFlicks ?? d.durationSec * FLICKS) / FLICKS;
+		// the end of the sound, before any trailing silence, as placement computes it (fix "SFX tail truncation")
+		const trail = lib.trailSilenceSec ?? 0;
+		const end =
+			trail > 0
+				? Math.max(d.peakSec, d.onsetSec, d.durationSec - trail)
+				: (all[clip.mediaId]!.probe?.durationFlicks ?? d.durationSec * FLICKS) / FLICKS;
 		const point = p.align === 'peak' ? d.peakSec : p.align === 'start' ? d.onsetSec : end;
 		// the document: the aligned point plays exactly at the cue frame
 		const at = clip.start * F + point * FLICKS - clip.sourceIn;

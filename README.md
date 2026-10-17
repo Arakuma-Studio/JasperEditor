@@ -517,7 +517,8 @@ Tools (353; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `rebalance_sfx` (masking solver: each sound effect clears the bed by its target lift, with what limited it) ·
   `apply_delivery` (web / podcast / R128 / A/85: Mix loudness, Auto-Match by type, ducking, measured) `set_room_glue` (a
   shared "SFX Room" reverb) · `sound_check` (the delivered mix measured: findings with safe fixes, five listen-here
-  timecodes, a verdict, a PNG of the worst moments) `view_sound_timeline` (PNG: loudness of the mix and its stems, cues,
+  timecodes, a verdict, a PNG of the worst moments; a custom delivery target; humanVerdicts: what the user said after
+  listening in the editor's Sound Check panel) `view_sound_timeline` (PNG: loudness of the mix and its stems, cues,
   motion, findings)
   (`docs/specs/12-sound-design.md`, `docs/wp-notes/sound-design.md`).
 - Proposals (reviewed and applied by the user in the editor; one undo step): `list_proposals` `get_proposal` (with a
@@ -685,7 +686,8 @@ mode?: "propose" | "apply", loudness?, autoMatch?, ducking?, rebalance?, label?}
 measures the clips, the speech and the resulting mix and applies (one transaction "Apply Delivery Preset") or proposes the
 preset's Mix loudness normalisation, Auto-Match by type, ducking and re-solved sound-effect gains; the report gives the
 expected loudness and true peak and how far under the voice the music and ambience sit during speech.
-`POST /api/sound-design/check {projectId, sequenceId?, preset?, range?, store?}` starts a `sound-check` job (202): the mix
+`POST /api/sound-design/check {projectId, sequenceId?, preset?, target?: {integratedLufs, truePeakDb}, range?, store?}`
+starts a `sound-check` job (202) against the preset (or a custom `target`): the mix
 as the export delivers it and its stems (sound effects, dialogue, music, ambience, bed) are rendered in one pass and
 measured; the result (`SoundCheckResult`) has a verdict (pass / warn / fail), every finding with its code, severity,
 timecode, translatable message and fix (commands, an engine job or a sound swap; `safe` when it resolves the finding by

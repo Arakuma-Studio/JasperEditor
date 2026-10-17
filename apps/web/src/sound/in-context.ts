@@ -121,6 +121,8 @@ type Running = {
 	/** Everything to undo when it ends: transport and input listeners, session watchers, the watchdog. */
 	offs: (() => void)[];
 	token: number;
+	/** Told how a window ended: it played to its end (`window`), or something stopped it first (`stopped`). */
+	onEnd?: ((how: 'window' | 'stopped') => void) | undefined;
 };
 
 let running: Running | null = null;
@@ -135,7 +137,7 @@ function set(patch: Partial<InContextState>): void {
 }
 
 /** Stops whatever plays in context (the gesture is cancelled: nothing was written). */
-export function stopInContext(opts: { returnToAnchor?: boolean } = {}): void {
+export function stopInContext(opts: { returnToAnchor?: boolean; reason?: 'window' } = {}): void {
 	token++;
 	const watch = preparing;
 	preparing = null;
@@ -157,6 +159,13 @@ export function stopInContext(opts: { returnToAnchor?: boolean } = {}): void {
 	const st = inContextStore.getState();
 	if (st.active || st.loading)
 		set({ active: false, loading: false, soundId: null, title: null, epoch: st.epoch + 1 });
+	if (r?.onEnd) {
+		try {
+			r.onEnd(opts.reason ?? 'stopped');
+		} catch {
+			// a listener failing must not leave the transport playing
+		}
+	}
 }
 
 /**
@@ -243,7 +252,8 @@ function playWindow(r: Running, start: number, fps: number): void {
 			if (running !== r) return;
 			if (st.playing && !prev.playing) started = true;
 			// the user (or the end of the sequence) stopped it, or the window is over
-			if ((started && !st.playing) || st.frame >= r.end) stopInContext();
+			if (st.frame >= r.end) stopInContext({ reason: 'window' });
+			else if (started && !st.playing) stopInContext();
 		}),
 	);
 	const windowSec = Math.max(0, r.end - Math.max(0, start)) / (fps > 0 ? fps : 30);
@@ -384,7 +394,15 @@ export async function auditionInContext(
 export function playTimelineWindow(
 	session: EditorSession,
 	seq: Pick<Sequence, 'settings'>,
-	opts: { center: number; returnTo: number; title: string; before?: number; after?: number },
+	opts: {
+		center: number;
+		returnTo: number;
+		title: string;
+		before?: number;
+		after?: number;
+		/** Told when this window ends (it played to its end, or was stopped: a key, a click, the transport…). */
+		onEnd?: (how: 'window' | 'stopped') => void;
+	},
 ): void {
 	const previous = running && running.session === session ? running.returnTo : null;
 	stopInContext({ returnToAnchor: false });
@@ -398,6 +416,7 @@ export function playTimelineWindow(
 		end: Math.round(opts.center + (opts.after ?? 1) * fps),
 		offs: [],
 		token: my,
+		onEnd: opts.onEnd,
 	};
 	try {
 		begin(run, opts.title, null);

@@ -10,8 +10,10 @@ import type { LayoutNode, WorkspaceDefinition } from '../src/shell/workspaces/de
 import { buildLayout, instanceIdFor, panelState, sanitizeLayout } from '../src/shell/workspaces/layout.ts';
 import {
 	addReviewPanel,
+	addSoundCheckPanel,
 	migrateWorkspacesState,
 	REVIEW_PANEL_STATE,
+	SOUND_CHECK_PANEL_STATE,
 } from '../src/shell/workspaces/migrations.ts';
 import { WORKSPACES_KEY, WORKSPACES_VERSION, WorkspaceStore } from '../src/shell/workspaces/store.ts';
 import { memoryStorage } from './shell-storage.ts';
@@ -142,13 +144,15 @@ describe('workspace state v1 → v2: the Sound Design workspace gains the Review
 		expect(store.getState().activeId).toBe('sound-design');
 		const sd = store.get('sound-design')!;
 
-		// current: the old left group, Review right before Markers, the Sound Library still the visible tab
+		// current: the old left group, Review right before Markers (and Sound Check, v3, right after it), the Sound
+		// Library still the visible tab
 		const host = groupOf(sd.current, 'review-1')!;
 		expect(host.data.views).toEqual([
 			'soundLibrary-1',
 			'project-1',
 			'mediaBrowser-1',
 			'review-1',
+			'soundCheck-1',
 			'markers-1',
 			'history-1',
 			'jobs-1',
@@ -161,7 +165,10 @@ describe('workspace state v1 → v2: the Sound Design workspace gains the Review
 		// apart from the tab and its panel, the layout is the stored one (sizes, groups, other panels)
 		const without = structuredClone(sd.current!) as unknown as typeof current;
 		delete (without.panels as Record<string, unknown>)['review-1'];
-		groupOf(without, 'markers-1')!.data.views = host.data.views.filter((v) => v !== 'review-1');
+		delete (without.panels as Record<string, unknown>)['soundCheck-1'];
+		groupOf(without, 'markers-1')!.data.views = host.data.views.filter(
+			(v) => v !== 'review-1' && v !== 'soundCheck-1',
+		);
 		expect(without).toEqual(current);
 		// it survives the dock's sanitizer (a known kind, referenced by a group)
 		expect(sanitizeLayout(sd.current)?.panels['review-1']).toBeDefined();
@@ -169,7 +176,7 @@ describe('workspace state v1 → v2: the Sound Design workspace gains the Review
 		// saved: Review joins the user's Markers group (first, as in the factory group), the History tab stays active
 		const savedHost = groupOf(sd.saved, 'review-1')!;
 		expect(savedHost.data.id).toBe('mine-1');
-		expect(savedHost.data.views).toEqual(['review-1', 'history-1', 'markers-1']);
+		expect(savedHost.data.views).toEqual(['review-1', 'soundCheck-1', 'history-1', 'markers-1']);
 		expect(savedHost.data.activeView).toBe('history-1');
 		expect(reviewCount(sd.saved)).toBe(1);
 
@@ -182,7 +189,7 @@ describe('workspace state v1 → v2: the Sound Design workspace gains the Review
 		store.flush();
 		const raw = JSON.parse(storage.getItem(WORKSPACES_KEY)!);
 		expect(raw.version).toBe(WORKSPACES_VERSION);
-		expect(WORKSPACES_VERSION).toBe(2);
+		expect(WORKSPACES_VERSION).toBe(3);
 		const again = new WorkspaceStore(storage);
 		expect(again.resetReason).toBeNull();
 		expect(again.getState()).toEqual(store.getState());
@@ -214,7 +221,8 @@ describe('workspace state v1 → v2: the Sound Design workspace gains the Review
 		);
 		expect(reviewCount(store.get('sound-design')!.current)).toBe(1);
 		expect(reviewCount(store.get('sound-design')!.saved)).toBe(1);
-		expect(store.get('sound-design')!.current).toEqual(floating);
+		// (v3 puts Sound Check next to that Review, where Window ▸ Sound Check would open it)
+		expect(store.get('sound-design')!.current).toEqual(addSoundCheckPanel(floating));
 
 		// a Review panel under another instance id counts too
 		const other = oldLayout() as unknown as { panels: Record<string, unknown> };
@@ -302,7 +310,8 @@ describe('workspace state v1 → v2: the Sound Design workspace gains the Review
 		fc.assert(
 			fc.property(fc.oneof(fc.anything(), layoutish, fc.constant(oldLayout())), (layout) => {
 				const out = addReviewPanel(layout);
-				if (out !== layout) expect(reviewCount(out)).toBe(1);
+				// (Object.is: fc.anything() draws NaN, which is never `===` itself)
+				if (!Object.is(out, layout)) expect(reviewCount(out)).toBe(1);
 				const data = migrateWorkspacesState(
 					{
 						activeId: 'sound-design',
@@ -327,3 +336,117 @@ function storedData(layout: unknown) {
 		workspaces: { 'sound-design': record('sound-design', 'Sound Design', layout, layout) },
 	};
 }
+
+describe('workspace state v2 → v3: the Sound Design workspace gains the Sound Check panel', () => {
+	const storedV2 = (workspaces: Record<string, unknown>) =>
+		JSON.stringify({
+			version: 2,
+			data: {
+				activeId: 'sound-design',
+				order: ['editing', 'sound-design'],
+				workspaces,
+			},
+		});
+
+	it('adds Sound Check right after Review in the stored layouts; nothing else changes', () => {
+		const v2 = addReviewPanel(oldLayout()) as ReturnType<typeof oldLayout>;
+		// the user's saved layout: Review on its own in a group of its own, its tab active
+		const saved = structuredClone(v2);
+		const left = groupOf(saved, 'review-1')!;
+		left.data.views = left.data.views.filter((v) => v !== 'review-1');
+		(saved as unknown as { grid: { root: { data: unknown[] } } }).grid.root.data.push({
+			type: 'leaf',
+			data: { views: ['review-1'], activeView: 'review-1', id: 'mine-2' },
+			size: 200,
+		});
+		const custom = structuredClone(v2);
+		const storage = memoryStorage({
+			[WORKSPACES_KEY]: storedV2({
+				'sound-design': record('sound-design', 'Sound Design', v2, saved),
+				'custom:mine': record('custom:mine', 'Mine', custom, custom, false),
+			}),
+		});
+		const store = new WorkspaceStore(storage);
+		expect(store.resetReason).toBeNull();
+		const sd = store.get('sound-design')!;
+		const host = groupOf(sd.current, 'soundCheck-1')!;
+		expect(host.data.views).toEqual([
+			'soundLibrary-1',
+			'project-1',
+			'mediaBrowser-1',
+			'review-1',
+			'soundCheck-1',
+			'markers-1',
+			'history-1',
+			'jobs-1',
+		]);
+		expect(host.data.activeView).toBe('soundLibrary-1');
+		const def = panelMap.get('soundCheck')!;
+		expect(SOUND_CHECK_PANEL_STATE).toEqual(panelState(def, 'Sound Check'));
+		expect(sd.current!.panels['soundCheck-1']).toEqual(
+			panelState(def, 'Sound Check', instanceIdFor('soundCheck')),
+		);
+		expect(sanitizeLayout(sd.current)?.panels['soundCheck-1']).toBeDefined();
+		// saved: next to Review in the user's own group, Review still the visible tab
+		const savedHost = groupOf(sd.saved, 'soundCheck-1')!;
+		expect(savedHost.data.id).toBe('mine-2');
+		expect(savedHost.data.views).toEqual(['review-1', 'soundCheck-1']);
+		expect(savedHost.data.activeView).toBe('review-1');
+		// custom workspaces untouched; idempotent
+		expect(store.get('custom:mine')!.current).toEqual(custom);
+		const once = addSoundCheckPanel(v2);
+		expect(addSoundCheckPanel(once)).toBe(once);
+		store.flush();
+		const again = new WorkspaceStore(storage);
+		expect(again.resetReason).toBeNull();
+		expect(again.getState()).toEqual(store.getState());
+	});
+
+	it('without Review it goes where Review went (before Markers); the factory layout has it already', () => {
+		const out = addSoundCheckPanel(oldLayout());
+		expect(groupOf(out, 'soundCheck-1')!.data.views).toEqual([
+			'soundLibrary-1',
+			'project-1',
+			'mediaBrowser-1',
+			'soundCheck-1',
+			'markers-1',
+			'history-1',
+			'jobs-1',
+		]);
+		const bare = buildLayout(
+			{ id: 'sound-design', name: 'Sound Design', layout: g(['program', 'timeline'], 'program') },
+			{ width: 1600, height: 900 },
+			panelMap,
+		);
+		expect(addSoundCheckPanel(bare)).toBe(bare);
+		// mutation check: the factory Sound Design layout lists the panel next to Review
+		const factory = buildLayout(
+			{
+				id: 'sound-design',
+				name: 'Sound Design',
+				layout: g(['review', 'soundCheck', 'markers'], 'review'),
+			},
+			{ width: 1600, height: 900 },
+			panelMap,
+		);
+		expect(addSoundCheckPanel(factory)).toBe(factory);
+	});
+
+	it('never throws on hostile stored data and adds at most one Sound Check panel (property)', () => {
+		const count = (layout: unknown) =>
+			Object.values((layout as { panels: Record<string, { params?: { kind?: string } }> }).panels).filter(
+				(p) => p.params?.kind === 'soundCheck',
+			).length;
+		fc.assert(
+			fc.property(
+				fc.oneof(fc.anything(), fc.constant(oldLayout()), fc.constant(addReviewPanel(oldLayout()))),
+				(layout) => {
+					const out = addSoundCheckPanel(layout);
+					if (!Object.is(out, layout)) expect(count(out)).toBe(1);
+					expect(() => migrateWorkspacesState(layout, 2, WORKSPACES_VERSION)).not.toThrow();
+				},
+			),
+			{ numRuns: 300 },
+		);
+	});
+});

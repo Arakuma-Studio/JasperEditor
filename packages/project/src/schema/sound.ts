@@ -224,6 +224,10 @@ export const SoundCheckSummarySchema = z.looseObject({
 	at: z.string().max(64),
 	/** Delivery preset checked against. */
 	preset: z.enum(SOUND_DELIVERIES).optional(),
+	/** A custom target checked against instead of the preset's numbers (LUFS / dBTP; WP5.2 "Custom…"). */
+	target: z
+		.looseObject({ integratedLufs: z.number().min(-40).max(-5), truePeakDb: z.number().min(-12).max(0) })
+		.optional(),
 	/** Hash of the other inputs of the check (`soundCheckInputsHash`). */
 	inputsHash: z.string().max(256).optional(),
 	/** The `sound-check` job whose result is the full report. */

@@ -21,6 +21,7 @@ import {
 	CirclePlay,
 	CircleX,
 	Clapperboard,
+	ClipboardCheck,
 	Command,
 	Copy,
 	Download,
@@ -231,6 +232,7 @@ export const ICONS = {
 	'panel.mediaBrowser': FolderSearch,
 	'panel.soundLibrary': LibraryBig,
 	'panel.review': ListChecks,
+	'panel.soundCheck': ClipboardCheck,
 
 	'media.video': Film,
 	'media.image': Image,

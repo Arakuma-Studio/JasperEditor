@@ -156,6 +156,7 @@ export function soundCheckInputsHash(
 	doc: ProjectDocument,
 	sequenceId: string,
 	preset: SoundDelivery,
+	target?: SoundCheckTarget | null,
 ): string {
 	try {
 		const seq = doc.sequences?.[sequenceId] as Sequence | undefined;
@@ -169,11 +170,86 @@ export function soundCheckInputsHash(
 				loudness,
 				preset,
 				credits: soundDesignSettingsOf(seq).credits ?? null,
+				// a custom target is part of what was checked (absent for a preset: hashes stored before stay valid)
+				...(target ? { target: { lufs: target.integratedLufs, tp: target.truePeakDb } } : {}),
 			}),
 		);
 	} catch {
 		return '';
 	}
+}
+
+/**
+ * A custom delivery target a check can be run against instead of a preset's numbers (the Sound Check panel's
+ * "Custom…", MCP `sound_check {target}`; wp-note "Phase 5 → WP5.2"): integrated loudness and true-peak ceiling.
+ */
+export type SoundCheckTarget = { integratedLufs: number; truePeakDb: number };
+/** Bounds of a custom target (LUFS / dBTP): the range `mixer.setLoudness` takes, minus the inaudible extremes. */
+export const SOUND_CHECK_TARGET_LIMITS = {
+	integratedLufs: { min: -40, max: -5 },
+	truePeakDb: { min: -12, max: 0 },
+} as const;
+/** The preset label a check against a custom target reports (a model string). */
+export const SOUND_CHECK_CUSTOM_LABEL = 'Custom target';
+
+/** A custom target read from untrusted data (numbers in range, rounded to 0.1), else null. Never throws. */
+export function readSoundCheckTarget(v: unknown): SoundCheckTarget | null {
+	if (!isRecord(v)) return null;
+	const { integratedLufs: l, truePeakDb: p } = v;
+	const L = SOUND_CHECK_TARGET_LIMITS;
+	if (typeof l !== 'number' || !Number.isFinite(l) || l < L.integratedLufs.min || l > L.integratedLufs.max)
+		return null;
+	if (typeof p !== 'number' || !Number.isFinite(p) || p < L.truePeakDb.min || p > L.truePeakDb.max)
+		return null;
+	return { integratedLufs: Math.round(l * 10) / 10, truePeakDb: Math.round(p * 10) / 10 };
+}
+
+/**
+ * Listen-here verdicts (spec 12 §2.7 "Listen-here list: Sounds right / Flag + note, stored as `comment` markers"): the
+ * Sound Check panel writes a user-authored `comment` sequence marker at the listened frame with one of these names
+ * (fixed English: they are data an agent reads back, like History labels) and the user's note as its comment. MCP
+ * `sound_check` returns them as `humanVerdicts`.
+ */
+export const SOUND_CHECK_VERDICT_MARKER = {
+	ok: 'Sound Check: sounds right',
+	flag: 'Sound Check: flagged',
+} as const;
+export type SoundCheckHumanVerdict = {
+	markerId: string;
+	frame: number;
+	verdict: keyof typeof SOUND_CHECK_VERDICT_MARKER;
+	/** The user's note (the marker's comment), null when empty. */
+	note: string | null;
+};
+
+/** The marker name of a verdict. */
+export function soundCheckVerdictMarkerName(verdict: keyof typeof SOUND_CHECK_VERDICT_MARKER): string {
+	return SOUND_CHECK_VERDICT_MARKER[verdict];
+}
+
+/**
+ * The listen-here verdicts stored in a sequence's markers (user-authored `comment` markers named as
+ * `SOUND_CHECK_VERDICT_MARKER`), in frame order. Never throws; anything malformed is skipped.
+ */
+export function soundCheckHumanVerdicts(seq: unknown): SoundCheckHumanVerdict[] {
+	const markers = isRecord(seq) ? (seq as { markers?: unknown }).markers : undefined;
+	// sequence markers are a list (a record is read too: hostile or older data never throws)
+	const list = Array.isArray(markers) ? markers : isRecord(markers) ? Object.values(markers) : [];
+	const out: SoundCheckHumanVerdict[] = [];
+	for (const m of list.slice(0, 100_000)) {
+		if (!isRecord(m) || m.type !== 'comment' || m.author !== 'user') continue;
+		const verdict =
+			m.name === SOUND_CHECK_VERDICT_MARKER.ok
+				? 'ok'
+				: m.name === SOUND_CHECK_VERDICT_MARKER.flag
+					? 'flag'
+					: null;
+		if (!verdict || typeof m.id !== 'string') continue;
+		if (typeof m.frame !== 'number' || !Number.isInteger(m.frame) || m.frame < 0) continue;
+		const note = typeof m.comment === 'string' && m.comment.trim() ? m.comment.trim().slice(0, 2000) : null;
+		out.push({ markerId: m.id, frame: m.frame, verdict, note });
+	}
+	return out.sort((a, b) => a.frame - b.frame || (a.markerId < b.markerId ? -1 : 1));
 }
 
 export type SoundCheckStatus = {
@@ -203,7 +279,7 @@ export function soundCheckStatus(doc: ProjectDocument, sequenceId: string): Soun
 	const preset = (summary.preset ?? soundDesignSettingsOf(seq).delivery) as SoundDelivery;
 	if (
 		summary.inputsHash !== undefined &&
-		summary.inputsHash !== soundCheckInputsHash(doc, sequenceId, preset)
+		summary.inputsHash !== soundCheckInputsHash(doc, sequenceId, preset, readSoundCheckTarget(summary.target))
 	)
 		reasons.push('inputs');
 	if (summary.preset !== undefined && summary.preset !== soundDesignSettingsOf(seq).delivery)
@@ -281,7 +357,10 @@ export const SOUND_CHECK_MESSAGES = {
 export type SoundCheckMessageKey = keyof typeof SOUND_CHECK_MESSAGES;
 
 /** Every Sound Check template (the editor's model strings). */
-export const SOUND_CHECK_MODEL_STRINGS: readonly string[] = Object.values(SOUND_CHECK_MESSAGES);
+export const SOUND_CHECK_MODEL_STRINGS: readonly string[] = [
+	...Object.values(SOUND_CHECK_MESSAGES),
+	SOUND_CHECK_CUSTOM_LABEL,
+];
 
 export type SoundCheckMessage = { key: string; params: (string | number)[]; text: string };
 

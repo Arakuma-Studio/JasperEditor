@@ -14,7 +14,7 @@ import {
 	SoundVisualResponseSchema,
 } from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
-import { makeEnvelope, type ProjectDocument, soundCheckStatus } from '@jasper/project';
+import { makeEnvelope, type ProjectDocument, soundCheckInputsHash, soundCheckStatus } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { visualRange } from '../src/sound-design/visual.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -235,6 +235,50 @@ describe('Sound Check (real engine)', { timeout: 600_000 }, () => {
 		expect(vis.clips.map((c) => Math.round(c.alignedFrame!))).toEqual([30, 90]);
 		// the hit at 1 s stands out of the bed in the sound-effects curve
 		expect(vis.curves.sfx.momentary[100]!).toBeGreaterThan(vis.curves.sfx.momentary[50]! + 20);
+	});
+
+	it('a custom target (WP5.2 "Custom…"): checked at its numbers, its fix normalises there, the summary keeps it', async () => {
+		const fx = buildCheckDoc(media);
+		const projectId = seed(fx.doc());
+		const target = { integratedLufs: -20, truePeakDb: -2 };
+		const { report } = await check({ projectId, target, store: true }, 'custom target', EDITOR_H);
+		expect(report.preset).toMatchObject({
+			id: 'web',
+			label: 'Custom target',
+			integratedLufs: -20,
+			custom: true,
+		});
+		const loud = issuesOf(report, 'LOUDNESS')[0];
+		expect(loud, describeIssues(report)).toBeDefined();
+		// a custom target is never judged as a broadcast delivery
+		expect(loud!.severity).toBe('warning');
+		expect(loud!.message.params).toContain('Custom target');
+		expect(loud!.fix).toMatchObject({
+			safe: true,
+			commands: [{ type: 'mixer.setLoudness', enabled: true, targetLufs: -20, truePeakDb: -2 }],
+		});
+		const seqId = report.sequenceId;
+		let doc = (await saved(projectId)).doc;
+		expect(soundCheckStatus(doc, seqId)).toMatchObject({
+			state: 'current',
+			summary: { preset: 'web', target },
+		});
+		await applyFix(projectId, loud!.fix!);
+		const { report: again } = await check({ projectId, target, store: true }, 'custom re-check', EDITOR_H);
+		expect(issuesOf(again, 'LOUDNESS'), describeIssues(again)).toEqual([]);
+		expect(Math.abs(again.loudness.integratedLufs! + 20)).toBeLessThan(1);
+		expect(again.loudness.truePeakDb!).toBeLessThanOrEqual(-1.95);
+		doc = (await saved(projectId)).doc;
+		expect(soundCheckStatus(doc, seqId).state).toBe('current');
+		// the same document checked at the preset is another check: its hash differs
+		expect(again.inputsHash).not.toBe(soundCheckInputsHash(doc, seqId, 'web'));
+		expect(again.inputsHash).toBe(soundCheckInputsHash(doc, seqId, 'web', target));
+		// out of range → refused before a job starts
+		const bad = await post('/api/sound-design/check', {
+			projectId,
+			target: { integratedLufs: -70, truePeakDb: -1 },
+		});
+		expect(bad.statusCode).toBe(400);
 	});
 
 	it('2-frame offset → OUT_OF_SYNC with the offset in ms; the safe align fix puts it back', async () => {
