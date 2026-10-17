@@ -622,8 +622,11 @@ describe('planSoundCheckFixes with the solver’s inter-SFX masking (a lower sou
 			const { h, A, C, gA, gC } = masked(withModel);
 			// A just under its minimum: C's share of the bed is what holds it down
 			const g = masked(withModel).guard;
+			// C itself stays clear of its own minimum 20 dB lower (only A's finding is in question here)
 			const levels = g.levels.map((l) =>
-				l.clipId === A.clip ? { ...l, liftAt0Db: MASKED_MIN_LIFT_DB.hero - 1 - gA } : l,
+				l.clipId === A.clip
+					? { ...l, liftAt0Db: MASKED_MIN_LIFT_DB.hero - 1 - gA }
+					: { ...l, liftAt0Db: MASKED_MIN_LIFT_DB.support + 30 - gC },
 			);
 			const guard = { ...g, levels };
 			const lower: SoundCheckFixCandidate = {

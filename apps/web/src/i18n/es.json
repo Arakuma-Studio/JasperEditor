@@ -9979,5 +9979,11 @@
   "Another safe fix changes the sound or the position of {0}: its level is judged again on the next check": "Otra corrección segura cambia el sonido o la posición de {0}: su nivel se vuelve a juzgar en la próxima comprobación",
   "The safe fixes before it change sound-effect levels over the speech: run the check again before ducking": "Las correcciones seguras anteriores cambian niveles de efectos de sonido sobre la voz: vuelve a ejecutar la comprobación antes de atenuar",
   "The Mix is mono and was checked in mono: an export with 2 channels plays it in both and measures {0} LU louder while loudness normalisation is off": "La mezcla es mono y se comprobó en mono: una exportación con 2 canales la reproduce en ambos y mide {0} LU más fuerte mientras la normalización de sonoridad está desactivada",
-  "{0} left for the next check (not safe with the fixes before them): {1}": "{0} quedan para la próxima comprobación (no son seguras junto con las correcciones anteriores): {1}"
+  "{0} left for the next check (not safe with the fixes before them): {1}": "{0} quedan para la próxima comprobación (no son seguras junto con las correcciones anteriores): {1}",
+  "{0} is not a library sound's copy (an audio media)": "{0} no es una copia de un sonido de la biblioteca (un medio de audio)",
+  "The new copy must be audio media, not {0}": "La nueva copia debe ser un medio de audio, no {0}",
+  "Cannot replace {0}: {1}": "No se puede sustituir {0}: {1}",
+  "The new copy is already in the project as {0}": "La nueva copia ya está en el proyecto como {0}",
+  "{0} would not fit the new copy of {1}": "{0} no cabría en la nueva copia de {1}",
+  "{0} would not fit the new copy of {1}: the clips keep the older copy; the new one is another media": "{0} no cabría en la nueva copia de {1}: los clips conservan la copia anterior; la nueva es otro medio"
 }
