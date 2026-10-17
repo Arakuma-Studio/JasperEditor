@@ -465,9 +465,15 @@ export function mergeDips(
 			if (list) list.push(p);
 			else rawOf.set(t, [p]);
 		}
+		// A key the window's edge is stored at takes the edge's value (the curve, the envelope is 0 there), not that of a
+		// breakpoint inside the window that rounds onto the same flick (WP6.5b hunt: a fade ending half a flick before
+		// the edge left the window's last key 5e-7 dB under the curve, and every frame after the window with it); an
+		// inner breakpoint is then off by at most half a flick of its fade.
 		const dipAt = (t: number) => {
+			const raw = rawOf.get(t) ?? [t];
+			const edges = raw.filter((p) => p === ws || p === we);
 			let v = Number.POSITIVE_INFINITY;
-			for (const p of rawOf.get(t) ?? [t]) v = Math.min(v, D(p));
+			for (const p of edges.length ? edges : raw) v = Math.min(v, D(p));
 			return v;
 		};
 		const times = [...rawOf.keys()].filter((t) => t >= ws - 1 && t <= we + 1).sort((x, y) => x - y);

@@ -20,6 +20,8 @@ import {
 import { encodeWav } from '@jasper/audio-dsp';
 import { appdirPaths } from '@jasper/config';
 import {
+	MOVE_OFF,
+	MOVE_ON,
 	makeEnvelope,
 	type PixelMotionCurve,
 	type ProjectDocument,
@@ -285,12 +287,22 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 			const cr = pixelMotionCues(curveOf(r.curve), er, anchorAt).cues.map((c) => [c.kind, c.frame]);
 			expect(ca).toEqual(cr);
 			let maxDiff = 0;
-			for (let i = 0; i < a.curve.speed.length; i++)
-				maxDiff = Math.max(maxDiff, Math.abs(a.curve.speed[i]! - r.curve.speed[i]!));
-			// the moving frames' median speed agrees within 5 %; no frame differs by MOVE_OFF (0.03) or more
+			let maxRel = 0;
+			for (let i = 0; i < a.curve.speed.length; i++) {
+				const x = a.curve.speed[i]!;
+				const y = r.curve.speed[i]!;
+				maxDiff = Math.max(maxDiff, Math.abs(x - y));
+				if (Math.max(x, y) > MOVE_OFF) maxRel = Math.max(maxRel, Math.abs(x - y) / Math.max(x, y));
+				// every frame on the same side of the move thresholds: what the events and cues read
+				expect(x >= MOVE_ON, `frame ${i}: ${x} vs ${y}`).toBe(y >= MOVE_ON);
+				expect(x >= MOVE_OFF, `frame ${i}: ${x} vs ${y}`).toBe(y >= MOVE_OFF);
+			}
+			// the moving frames' median speed agrees within 5 %; per frame within 15 % (the reference is an H.264 encode of
+			// the 1080p composite: its own noise is ±12 % per frame on this box, measured on the build server)
 			const med = (c: Float32Array) => [...c.slice(32, 60)].sort((x, y) => x - y)[14]!;
 			expect(Math.abs(med(a.curve.speed) / med(r.curve.speed) - 1)).toBeLessThan(0.05);
-			expect(maxDiff).toBeLessThan(0.03);
+			expect(maxRel).toBeLessThan(0.15);
+			timings[`maxRelDiff-${want}`] = Math.round(maxRel * 1000) / 1000;
 			timings[`source-${want}`] = t1 - t0;
 			timings[`render-${want}`] = t2 - t1;
 			timings[`maxSpeedDiff-${want}`] = Math.round(maxDiff * 10_000) / 10_000;

@@ -3,9 +3,9 @@
 // keyframe source's own rules (`speedSegments`, MOVE_ON / MOVE_OFF, ABRUPT_STOP, the 0.3 s whoosh / swish split, the
 // impact bands), so footage and keyframed layers give the same kinds of cues:
 //
-// - `move`  a segment of motion, cue in the middle of its fastest stretch (frames within 10 % of the peak of the speed
-//           median-filtered over 5 frames: measured speeds are noisy, a keyframed linear move is exact); window = the
-//           segment;
+// - `move`  a segment of motion, cue in the middle of its fastest stretch (frames within 15 % of the peak of the speed
+//           median-filtered over 5 frames, across dips of ≤ MOVE_STRETCH_GAP frames: measured speeds are noisy, a
+//           keyframed linear move is exact); window = the segment;
 // - `land`  where it settles: the first reversal of the motion along the peak's direction (overshoot, bounce), or the
 //           arrival when it stops abruptly (the last moving frame ≥ ABRUPT_STOP of the peak); a gentle ease-out gets
 //           none;
@@ -30,6 +30,13 @@ export const PIXEL_CUT_RATIO = 3;
 export const PIXEL_GLOBAL_AREA = 0.5;
 /** A move's mean moving area must reach this (smaller is a flicker of a few blocks). */
 export const PIXEL_MIN_AREA = 0.012;
+/**
+ * A move's fastest stretch: the frames whose 5-frame median speed is at least this share of its top, across dips of at
+ * most MOVE_STRETCH_GAP frames (WP6.5b: the same box measured from the source and from a render differs by up to 12 %
+ * per frame — the encoder's noise; at 90 % the stretch, and so the cue, moved with it).
+ */
+export const MOVE_STRETCH_SHARE = 0.85;
+export const MOVE_STRETCH_GAP = 2;
 /** Most frames one curve may have (bounds the analysis of hostile input). */
 export const PIXEL_MAX_FRAMES = 200_000;
 
@@ -197,10 +204,19 @@ function events(curve: PixelMotionCurve, opts: { edits?: readonly number[] }): P
 			if (smooth[k - seg.a]! > smooth[sp - seg.a]!) sp = k;
 		}
 		const top = smooth[sp - seg.a]!;
+		// the stretch within MOVE_STRETCH_SHARE of it, across dips of at most MOVE_STRETCH_GAP frames (noise on a
+		// constant move dips under the line now and then; two separate humps are further apart)
+		const fast = (k: number) => smooth[k - seg.a]! >= MOVE_STRETCH_SHARE * top;
 		let rs = sp;
 		let re = sp;
-		while (rs > seg.a && smooth[rs - 1 - seg.a]! >= 0.9 * top) rs--;
-		while (re < seg.b && smooth[re + 1 - seg.a]! >= 0.9 * top) re++;
+		for (let k = sp - 1; k >= seg.a; k--) {
+			if (fast(k)) rs = k;
+			else if (rs - k > MOVE_STRETCH_GAP) break;
+		}
+		for (let k = sp + 1; k <= seg.b; k++) {
+			if (fast(k)) re = k;
+			else if (k - re > MOVE_STRETCH_GAP) break;
+		}
 		const mid = Math.floor((rs + re) / 2);
 		const global = area >= PIXEL_GLOBAL_AREA;
 		const direction: PixelMoveEvent['direction'] =

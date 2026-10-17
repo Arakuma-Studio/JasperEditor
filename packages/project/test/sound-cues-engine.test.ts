@@ -265,6 +265,26 @@ describe('pixelMotionEvents (shared thresholds with the keyframe source)', () =>
 		expect(pixelMotionEvents(bell).find((e) => e.kind === 'move')!.frame).toBe(140);
 	});
 
+	it('the same constant move measured through two paths (source decode, render) cues the same frame', () => {
+		// WP6.5b item 12, measured on the build server (a box moving from frame 31 to 60): the footage decoded at the
+		// analysis size (A) and rendered then scaled (R); A's 5-frame median dips under its 90 % line for 1–2 frames, so
+		// the contiguous stretch around its peak was 37–46 (cue 41) against R's 31–60 (cue 45)
+		const A = [
+			0.255, 0.329, 0.281, 0.271, 0.27, 0.279, 0.274, 0.314, 0.281, 0.242, 0.321, 0.254, 0.318, 0.305, 0.31,
+			0.271, 0.269, 0.28, 0.274, 0.314, 0.281, 0.271, 0.27, 0.28, 0.274, 0.314, 0.281, 0.271, 0.251, 0.313,
+		];
+		const R = [
+			0.255, 0.315, 0.29, 0.289, 0.287, 0.287, 0.288, 0.35, 0.289, 0.257, 0.32, 0.256, 0.32, 0.303, 0.318,
+			0.288, 0.289, 0.289, 0.285, 0.301, 0.289, 0.293, 0.288, 0.289, 0.286, 0.323, 0.29, 0.288, 0.255, 0.318,
+		];
+		const moveOf = (sp: number[]) =>
+			pixelMotionEvents(
+				curve(100, (i) => (i >= 31 && i <= 60 ? { speed: sp[i - 31]!, cx: 0.2 + (i - 31) * 0.01 } : {})),
+			).find((e) => e.kind === 'move')!.frame;
+		expect(moveOf(A)).toBe(100 + 45);
+		expect(moveOf(R)).toBe(100 + 45);
+	});
+
 	it('an ease-out settle gets no land; a slow drift under MOVE_ON is no move', () => {
 		const ease = curve(80, (i) =>
 			i >= 10 && i < 40 ? { speed: 0.8 * (1 - (i - 10) / 30) ** 2 + 0.001 } : {},

@@ -19,6 +19,18 @@ import { checkCurvedDips, checkLinearDips, keysOf } from './sound-dips-property.
 
 const MS = FLICKS_PER_SECOND / 1000;
 const RUNS = Number(process.env.FC_HUNT_RUNS ?? 60) || 60;
+
+/** Whether two dips' windows (with their fades, ≥ 1 ms as `mergeDips` draws them) overlap. */
+function windowsOverlap(ds: readonly Dip[]): boolean {
+	const w = ds
+		.map((d) => {
+			const f = Math.max(1, d.fadeMs) * MS;
+			return [d.start - f, d.end + f] as const;
+		})
+		.sort((a, b) => a[0] - b[0]);
+	for (let i = 1; i < w.length; i++) if (w[i]![0] < w[i - 1]![1]) return true;
+	return false;
+}
 /** 200 ms per run at most (the many-dips property is the slowest), never under the suite's 60 s. */
 const TIMEOUT = Math.max(60_000, RUNS * 200);
 
@@ -181,9 +193,11 @@ describe('mergeDips targeted hunt (properties)', () => {
 					const kfs = keysOf(keys.map((k) => ({ ...k, time: k.t * 100 * MS * (li === 1 ? 2 : 1) })));
 					// the curved check's tolerances assume dips that dip (≤ −0.5 dB) and levels inside the clamp
 					const deep = ds.map((d) => ({ ...d, depthDb: Math.min(-0.5, Math.max(-60, d.depthDb)) }));
-					// dips between whole flicks (the generator's thirds and halves): straight lanes within 1e-4 dB
+					// dips between whole flicks (the generator's thirds and halves), or dips whose windows overlap (their ramps
+					// cross at a fraction of a flick, and keys are stored on whole flicks — WP6.5b hunt): straight lanes within
+					// half a flick of the steepest ramp, 1e-4 dB; else exact to 1e-5
 					const whole = deep.every((d) => Number.isInteger(d.start) && Number.isInteger(d.end));
-					checkCurvedDips(kfs, deep, li, -3, whole ? 1e-5 : 1e-4);
+					checkCurvedDips(kfs, deep, li, -3, whole && !windowsOverlap(deep) ? 1e-5 : 1e-4);
 				}),
 				{ numRuns: RUNS },
 			);
@@ -322,6 +336,46 @@ describe('mergeDips: a dip window edge between two flicks (WP6.5b hunt)', () => 
 			samples: 900,
 			step: 5 * MS,
 		});
+	});
+});
+
+describe('mergeDips: hunt counterexamples (WP6.5b, third round: 200 000 runs per property)', () => {
+	it('a window edge sharing its flick with a fade ending half a flick inside: the last key is the curve (0 dB)', () => {
+		// FC_SEED=-2132445674 (linear / hold lanes): a static 0 dB lane; a 1-flick −0.7056 dB dip and a zero-length
+		// −60 dB dip at 0.5 flick, both without fades (1 ms drawn): the first one's fade ends at 705 601 flicks, the
+		// second's at 705 600.5 — the same stored flick; the window's last key took −5e-7 dB and held it after the window
+		const ds: Dip[] = [
+			{ start: 0, end: 1, depthDb: -0.705_599_999_999_999_9, fadeMs: 0 },
+			{ start: 0.5, end: 0.5, depthDb: -59.999, fadeMs: 0 },
+		];
+		let i = 0;
+		const r = mergeDips({ value: 0, keyframes: [] }, SEQUENCE_LANE, ds, {
+			newId: () => `n${i++}`,
+			clamp: [-96, 15],
+		})!;
+		expect(r.keyframes.at(-1)!.value).toBe(0);
+		expect(evaluate({ value: 0, keyframes: r.keyframes }, 10 * MS)).toBe(0);
+		checkLinearDips([], 0, ds, { samples: 400, step: 11 * MS });
+	});
+
+	it('overlapping ramps cross between flicks: within half a flick of the steeper ramp (straight lane)', () => {
+		// FC_SEED=-1701500363 (curved lanes, sequence lane, static −3 dB): a −60 dB dip with 2 ms fades starts while a
+		// −0.5 dB dip's 95 ms fade is still ending; the ramps cross 711 flicks into the steep one, at a fraction of a
+		// flick: the key there is up to half a flick off (≤ 30 dB/ms × 0.5 flick ≈ 2.1e-5 dB), measured 1.00028e-5 dB
+		const ds: Dip[] = [
+			{ start: 846_720_000, end: 846_720_000, depthDb: -0.5, fadeMs: 0 },
+			{ start: 846_720_000, end: 846_720_000, depthDb: -0.5, fadeMs: 95 },
+			{ start: 305_001_587, end: 908_995_187, depthDb: -0.5, fadeMs: 0 },
+			{ start: 911_111_987, end: 918_167_987, depthDb: -59.999, fadeMs: 2 },
+			{ start: 0, end: 0, depthDb: -0.5, fadeMs: 0 },
+		];
+		expect(windowsOverlap(ds)).toBe(true);
+		checkCurvedDips([], ds, 0, -3, 1e-4);
+		for (const k of mergeDips({ value: -3, keyframes: [] }, SEQUENCE_LANE, ds, {
+			newId: () => 'n',
+			clamp: [-96, 15],
+		})!.keyframes)
+			expect(Number.isInteger(k.time)).toBe(true);
 	});
 });
 
