@@ -461,7 +461,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 		'find_sound_cues',
 		{
 			title: 'Find sound cues',
-			description: `Derives cue suggestions — moments of the picture that may want a sound — from the edit itself (engine \`deriveCues\`): cuts (none where dialogue is heard unless respectDialogue: false), transitions (push/slide → whoosh with a pan sweep), keyframed motion (move at peak speed, land on an overshoot or abrupt stop, appear/exit on fades and scale-ups, emphasis on a pulse), text animators and typewriters (one key per typed unit, ≤ 12/s), motion-graphic intro ends and outro starts, graphics on V2+, 3D camera moves and markers named "sfx: <type>[+<type>]". Merged within 2 frames and thinned by the density budget. Each cue: frame + timecode + seconds, kind, weight (hero/support/ambient), types (suggested, best first), align (peak/start/end), pan, panSweep, confidence, reason, anchor (+ anchorText), window, from (source), storedCueId (the stored cue for the same event, or null). Also per-source stats (found, kept, merged, droppedByBudget, suppressedByDialogue, heroesUnderDialogue: derived heroes made support because speech is heard there), dialogue ranges (with the clips, tracks and what found them: transcript words, the measured voice activity of Essential Sound dialogue clips, or a whole dialogue clip; voice says whether every dialogue clip was measured) and warnings. Stores nothing: pass the cues you keep to set_sound_cues {add}. Sources: ${CUE_DERIVE_SOURCE_LIST}. The default is the edit's own sources; the engine sources measure media and must be asked for: "scene" (shot changes inside footage, Scene Edit Detection), "beat" (beats of Essential Sound music clips; downbeats support, others ambient) and "pixel" (the rendered picture's motion: moves, landings and cuts in footage — what keyframes cannot tell; confidence ≤ 0.5; analyse_picture_motion shows it). Their analyses run as jobs the first time (cached after): this tool waits for them (waitForAnalysis, default true, up to timeoutSeconds) and asks again; analysis per source says ready / pending / none / failed. snapToBeats moves moves, transitions, emphases and reveals onto the nearest music beat within 2 frames (anchorOffset records it).`,
+			description: `Derives cue suggestions — moments of the picture that may want a sound — from the edit itself (engine \`deriveCues\`): cuts (none where dialogue is heard unless respectDialogue: false), transitions (push/slide → whoosh with a pan sweep), keyframed motion (move at peak speed, land on an overshoot or abrupt stop, appear/exit on fades and scale-ups, emphasis on a pulse), text animators and typewriters (one key per typed unit, ≤ 12/s), motion-graphic intro ends and outro starts, graphics on V2+, 3D camera moves and markers named "sfx: <type>[+<type>]". Merged within 2 frames and thinned by the density budget. Each cue: frame + timecode + seconds, kind, weight (hero/support/ambient), types (suggested, best first), align (peak/start/end), pan, panSweep, confidence, reason, anchor (+ anchorText), window, from (source), storedCueId (the stored cue for the same event, or null). Also per-source stats (found, kept, merged, droppedByBudget, suppressedByDialogue, heroesUnderDialogue: derived heroes made support because speech is heard there), dialogue ranges (with the clips, tracks and what found them: transcript words, the measured voice activity of Essential Sound dialogue clips, or a whole dialogue clip; voice says whether every dialogue clip was measured) and warnings. Stores nothing: pass the cues you keep to set_sound_cues {add}. Sources: ${CUE_DERIVE_SOURCE_LIST}. The default is the edit's own sources; the engine sources measure media and must be asked for: "scene" (shot changes inside footage, Scene Edit Detection), "beat" (beats of Essential Sound music clips — tempo 50–210 BPM, never read at half or double speed; downbeats support, others ambient; timeSignature "auto" detects 3 or 4 beats per bar, or give it) and "pixel" (the rendered picture's motion: moves, landings and cuts in footage — what keyframes cannot tell; confidence ≤ 0.5; analyse_picture_motion shows it). Their analyses run as jobs the first time (cached after): this tool waits for them (waitForAnalysis, default true, up to timeoutSeconds) and asks again; analysis per source says ready / pending / none / failed. snapToBeats moves moves, transitions, emphases and reveals onto the nearest music beat within 2 frames (anchorOffset records it).`,
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -501,6 +501,12 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 					.boolean()
 					.optional()
 					.describe('Snap moves, transitions, emphases and reveals to the music’s beats within 2 frames'),
+				timeSignature: z
+					.union([z.literal('auto'), z.number().int().min(2).max(12)])
+					.optional()
+					.describe(
+						'Metre of the music for the beat source’s downbeats: "auto" (default: 3 or 4 beats per bar detected from the accents) or beats per bar 2…12 (3 for a waltz)',
+					),
 				waitForAnalysis: z
 					.boolean()
 					.optional()
@@ -549,6 +555,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 								...(a.respectDialogue !== undefined ? { respectDialogue: a.respectDialogue } : {}),
 								...(a.minGapFrames !== undefined ? { minGapFrames: a.minGapFrames } : {}),
 								...(a.snapToBeats ? { snapToBeats: true } : {}),
+								...(a.timeSignature !== undefined ? { timeSignature: a.timeSignature } : {}),
 								maxCues: a.maxCues ?? 500,
 							},
 						},
@@ -1795,6 +1802,12 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 							.optional()
 							.describe(
 								'Snap derived moves, transitions, emphases and reveals to the music’s beats within 2 frames',
+							),
+						timeSignature: z
+							.union([z.literal('auto'), z.number().int().min(2).max(12)])
+							.optional()
+							.describe(
+								'Metre of the music’s downbeats (beat cues): "auto" (default, 3 or 4 detected) or beats per bar 2…12',
 							),
 						respectDialogue: z
 							.boolean()

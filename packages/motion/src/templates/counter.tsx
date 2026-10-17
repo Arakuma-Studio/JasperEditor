@@ -4,7 +4,14 @@
 // `from + (to − from)·progress`, so keyframed `from`/`to` change the number without rebuilding the timeline. The
 // progress is read un-rounded right after its canonical seek (`counterProgressAt`): the 1e-6 rounding of
 // `useAnimeValues` would move a 0 → 25,000,000 count in steps of 25.
-import { type CounterParams, counterParams, formatCounterValue, rgbaCss } from '@jasper/mg-templates';
+import {
+	COUNTER_PHASES,
+	type CounterParams,
+	counterCountMs,
+	counterParams,
+	formatCounterValue,
+	rgbaCss,
+} from '@jasper/mg-templates';
 import { useMemo } from 'react';
 import { createPausedTimeline, roundValue, seekCanonical, useAnimeValues } from '../runtime/index.ts';
 import {
@@ -21,28 +28,24 @@ import type { AnimeTemplateProps } from './types.ts';
 /** `o` opacity, `y` rise (em). */
 type Values = { o: number; y: number };
 
-type CounterBuildInput = TemplateTiming & { countMs: number; ease: string };
-
-/** Count length: `countSeconds`, at most up to the outro (and at least one frame's worth of ms). */
-function counterCountMs(p: Pick<CounterParams, 'countSeconds'>, t: TemplateTiming): number {
-	return Math.max(1, Math.min(p.countSeconds * 1000, t.totalMs - t.outroMs));
-}
+export type CounterBuildInput = TemplateTiming & { countMs: number; ease: string };
 
 /** Targets `[number, label]` (their fades; the count has its own timeline, `buildCounterCount`). */
-function buildCounter(input: CounterBuildInput): {
+export function buildCounter(input: CounterBuildInput): {
 	timeline: ReturnType<typeof createPausedTimeline>;
 	targets: Values[];
 } {
 	const tl = createPausedTimeline();
 	const num: Values = { o: 0, y: 0.25 };
 	const label: Values = { o: 0, y: 0.4 };
-	addInOut(tl, input, num, { o: [0, 1], y: [0.25, 0] }, { at: 0, dur: 0.3, ease: 'out' });
-	addInOut(tl, input, label, { o: [0, 1], y: [0.4, 0] }, { at: 0.15, dur: 0.35, ease: 'out' });
+	// the phases are shared with the sound-design motion model (@jasper/mg-templates)
+	addInOut(tl, input, num, { o: [0, 1], y: [0.25, 0] }, COUNTER_PHASES.number);
+	addInOut(tl, input, label, { o: [0, 1], y: [0.4, 0] }, COUNTER_PHASES.label);
 	return { timeline: tl, targets: [num, label] };
 }
 
 /** The count: progress `p` 0 → 1 from content 0 over `countMs`. */
-function buildCounterCount(input: Pick<CounterBuildInput, 'countMs' | 'ease'>): {
+export function buildCounterCount(input: Pick<CounterBuildInput, 'countMs' | 'ease'>): {
 	timeline: ReturnType<typeof createPausedTimeline>;
 	target: { p: number };
 } {
@@ -57,7 +60,7 @@ function buildCounterCount(input: Pick<CounterBuildInput, 'countMs' | 'ease'>): 
  * `useAnimeValues`). Values that round to 0 or 1 (the rest states and float noise around them) are exactly 0 / 1,
  * so the first and last counts show `from` and `to` exactly.
  */
-function counterProgressAt(count: ReturnType<typeof buildCounterCount>, ms: number): number {
+export function counterProgressAt(count: ReturnType<typeof buildCounterCount>, ms: number): number {
 	seekCanonical(count.timeline, ms);
 	const p = count.target.p;
 	const r = roundValue(p);

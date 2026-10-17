@@ -15,6 +15,7 @@ import {
 	SOUND_DESIGN_LIMITS,
 } from '@jasper/project';
 import { z } from 'zod';
+import { TimeSignatureSchema } from './audio-fx.ts';
 import { EnvelopeSchema } from './projects.ts';
 import { SOUND_SOURCE_TYPES, SoundRankPartsSchema } from './sounds.ts';
 
@@ -44,6 +45,11 @@ export const SoundCuesOptionsSchema = z.strictObject({
 	 * when needed.
 	 */
 	snapToBeats: z.boolean().optional(),
+	/**
+	 * Metre of the music's downbeats for the `beat` source and `snapToBeats` (default `'auto'`: 3 or 4 beats per bar
+	 * detected; a number forces it, e.g. 3 for a waltz).
+	 */
+	timeSignature: TimeSignatureSchema.optional(),
 	/**
 	 * Engine sources: start the analyses that are missing (default true; they come back as `W_ANALYSIS_PENDING` with
 	 * their jobs), or `false` to use only what is already measured (`analysis[source].state` `missing` otherwise) — the
@@ -279,6 +285,8 @@ export const SoundDesignPlanStyleSchema = z.strictObject({
 	 * Essential music clips are analysed in the job; default off).
 	 */
 	snapToBeats: z.boolean().optional(),
+	/** Metre of the music's downbeats (default `'auto'`: 3 or 4 beats per bar detected). */
+	timeSignature: TimeSignatureSchema.optional(),
 	/** Rotation and variation seed (default: the sequence's `soundDesign.settings.seed`). */
 	seed: z.number().int().min(0).max(0xffff_ffff).optional(),
 	/** Alternatives per cue, 0–3 (default 3). */

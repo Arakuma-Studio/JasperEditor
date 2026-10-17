@@ -29,6 +29,7 @@ import {
 	setRamp,
 	setSegmentSpeed,
 } from '../../time-remap/ops.ts';
+import { SHOT_TIME_EPS, shotIndexAt } from '../../time-remap/sampling.ts';
 import { remapToTimeMap, timeMapToRemap } from '../../time-remap/timemap.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
@@ -425,11 +426,11 @@ function applySceneEditsHandler(doc: DDoc, cmd: CommandOf<'clip.applySceneEdits'
 	const rate = rateOf(seq);
 	const cuts = [...new Set(cmd.cuts)].sort((a, b) => a - b);
 	const mediaAt = clipMediaTimeFn(clip as unknown as VideoClip, rate);
-	const shotOf = (m: number) => {
-		let k = 0;
-		for (const c of cuts) if (c <= m + 1) k++;
-		return k;
-	};
+	// The renderers' frame pick (`shotIndexAt`, shared with the sound-design scene source): a change is shown from the
+	// first frame whose media time reaches it within the frame-time tolerance (detector timestamps are printed to 1 µs).
+	const cutsSec = cuts.map((c) => c / FLICKS_PER_SECOND);
+	const shotOf = (m: number) => shotIndexAt(cutsSec, m / FLICKS_PER_SECOND);
+	const eps = SHOT_TIME_EPS * FLICKS_PER_SECOND;
 	// Sequence frames where the shot changes (the first frame of a new shot).
 	const edits: number[] = [];
 	let prev = shotOf(mediaAt(clip.start));
@@ -482,7 +483,7 @@ function applySceneEditsHandler(doc: DDoc, cmd: CommandOf<'clip.applySceneEdits'
 		const lo = Math.min(mediaAt(clip.start), mediaAt(end(clip) - 1));
 		const hiFrame = Math.max(mediaAt(clip.start), mediaAt(end(clip) - 1));
 		const hi = hiFrame + Math.abs(step);
-		const bounds = [lo, ...cuts.filter((c) => c > lo + 1 && c < hi - 1), hi];
+		const bounds = [lo, ...cuts.filter((c) => c > lo + eps && c < hi - eps), hi];
 		for (let i = 0; i + 1 < bounds.length; i++) {
 			const id = h.ids.next('itm');
 			doc.items[id] = {

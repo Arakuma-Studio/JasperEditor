@@ -242,6 +242,29 @@ describe('pixelMotionEvents (shared thresholds with the keyframe source)', () =>
 		expect(land).toMatchObject({ kind: 'land', frame: 139, how: 'abrupt stop' });
 	});
 
+	it('a measured constant move cues its middle whatever the noise (two measurements of one picture agree)', () => {
+		// WP6.5b: the same box measured through two render paths differs by a few % per frame; the move's frame came
+		// from the single noisiest frame (frame 32 in one, 56 in the other) — the median plateau gives both the middle
+		const noisy = (seed: number) => {
+			const r = new Rng(seed);
+			return curve(100, (i) =>
+				i >= 31 && i <= 60
+					? { speed: 0.28 * (1 + 0.12 * (r.below(1_000_000) / 1_000_000 - 0.5)), cx: 0.2 + (i - 31) * 0.01 }
+					: {},
+			);
+		};
+		const frames = [1, 2, 3, 4, 5].map(
+			(seed) => pixelMotionEvents(noisy(seed)).find((e) => e.kind === 'move')!.frame,
+		);
+		expect(new Set(frames).size).toBe(1);
+		expect(frames[0]).toBe(100 + 45);
+		// a smooth (keyframed-like) bell keeps its peak
+		const bell = curve(100, (i) =>
+			i >= 20 && i <= 60 ? { speed: 0.6 * Math.sin((Math.PI * (i - 20)) / 40) } : {},
+		);
+		expect(pixelMotionEvents(bell).find((e) => e.kind === 'move')!.frame).toBe(140);
+	});
+
 	it('an ease-out settle gets no land; a slow drift under MOVE_ON is no move', () => {
 		const ease = curve(80, (i) =>
 			i >= 10 && i < 40 ? { speed: 0.8 * (1 - (i - 10) / 30) ** 2 + 0.001 } : {},

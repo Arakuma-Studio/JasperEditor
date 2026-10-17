@@ -326,6 +326,7 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 				mgTemplates: mgRegistry,
 				checkJob,
 				signal: ac.signal,
+				pixelCurves: (range) => motion.cachedCurves(doc, seq, range),
 			});
 		}),
 	);
@@ -512,6 +513,7 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 					? await engineCues.collect(doc, seq, {
 							sources: engineSources,
 							...(opts.snapToBeats ? { snapToBeats: true } : {}),
+							...(opts.timeSignature !== undefined ? { timeSignature: opts.timeSignature } : {}),
 							...(opts.range ? { range: opts.range } : {}),
 							mode:
 								opts.analyze === false

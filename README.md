@@ -512,7 +512,8 @@ Tools (355; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `install_sound_pack` (downloads a catalogue pack from its upstream site, sha256-pinned; tell the user its size and
   licence first) `remove_sound_pack` (approval card) · cues: `find_sound_cues`
   (derived from the edit; the engine sources scene, beat and pixel measure footage and music when asked, and
-  snapToBeats) `analyze_picture_motion` (the rendered picture's motion per frame: moves, landings and cuts in
+  snapToBeats; `timeSignature` "auto" detects 3 or 4 beats per bar for the downbeats, or give it)
+  `analyze_picture_motion` (the rendered picture's motion per frame: moves, landings and cuts in
   footage, with a PNG strip) `set_sound_cues` `place_sound` (peak-exact, layers, alternates; proposes unless mode
   "apply") `swap_sound` `align_peak` · `plan_sound_design` (a whole pass as one proposal, gains solved against the
   bed; style options room glue, stop-before, build, delivery; `style.cueSources` picks where derived cues come from) ·

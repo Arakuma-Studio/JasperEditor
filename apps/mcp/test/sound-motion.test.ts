@@ -1,7 +1,8 @@
 // analyze_picture_motion and find_sound_cues' engine sources (spec 12 §2.10, P6-R2; wp-note "Phase 6 → WP6.2") through
 // jasper-mcp over stdio against a real engine with generated footage (a box that rests, moves and stops): the events
 // with timecodes, the PNG strip (decodes, thumbnails at the events), find_sound_cues {sources: ["pixel"]} waiting for the
-// analysis and returning anchored cues, strict arguments and typed refusals.
+// analysis and returning anchored cues, view_sound_timeline drawing the measured curve once analysed (WP6.5b),
+// find_sound_cues' timeSignature, strict arguments and typed refusals.
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
@@ -166,6 +167,62 @@ describe.skipIf(!HAVE_FFMPEG)(
 			// the PNG for the wp-note (looked at by the author)
 			const out = process.env.MOTION_STRIP_OUT;
 			if (out) (await import('node:fs')).writeFileSync(out, Buffer.from(imgs[0]!.data, 'base64'));
+
+			// view_sound_timeline draws the measured curve (pink) now that the picture is analysed (WP6.5b item 11) —
+			// and still draws, without it, a project never analysed
+			const timeline = async (pid: string) => {
+				const { json: tj, result: tr } = await ok<{
+					cells: {
+						pixelMotion: string;
+						plotX: number;
+						plotWidth: number;
+						lanes: { name: string; y: number; height: number }[];
+					};
+				}>('view_sound_timeline', { projectId: pid, range: { start: 0, end: 120 } });
+				const img = decodePng(Buffer.from(imagesOf(tr)[0]!.data, 'base64'));
+				const lane = tj.cells.lanes.find((l) => l.name === 'move')!;
+				let pink = 0;
+				for (let y = lane.y; y < lane.y + lane.height; y++)
+					for (let x = tj.cells.plotX; x < tj.cells.plotX + tj.cells.plotWidth; x++) {
+						const o = (y * img.width + x) * 4;
+						if (img.data[o] === 255 && img.data[o + 1] === 130 && img.data[o + 2] === 210) pink++;
+					}
+				return { state: tj.cells.pixelMotion, pink };
+			};
+			const drawn = await timeline(projectId);
+			expect(drawn.state).toBe('measured');
+			expect(drawn.pink).toBeGreaterThan(500);
+			const { json: fresh } = await ok<{ projectId: string }>('create_project', {
+				name: 'Fresh',
+				preset: 'hd-1080p-30',
+			});
+			const { json: imp2 } = await ok<{ imported: { mediaId: string }[] }>('import_media', {
+				projectId: fresh.projectId,
+				paths: [join(work, 'box.mp4')],
+			});
+			await ok('apply_commands', {
+				projectId: fresh.projectId,
+				label: 'Footage',
+				commands: [
+					{
+						type: 'clip.place',
+						source: { mediaId: imp2.imported[0]!.mediaId },
+						at: 3,
+						tracks: { video: 'V1' },
+					},
+				],
+			});
+			const blank = await timeline(fresh.projectId);
+			expect(blank).toEqual({ state: 'not analysed', pink: 0 });
+			// find_sound_cues takes the music's metre (item 10): forwarded to the engine (no music here: beat 'none')
+			const { json: metre } = await ok<{ analysis: Record<string, { state: string }> }>('find_sound_cues', {
+				projectId,
+				sources: ['beat'],
+				timeSignature: 3,
+			});
+			expect(metre.analysis.beat!.state).toBe('none');
+			const badMetre = await call('find_sound_cues', { projectId, sources: ['beat'], timeSignature: 13 });
+			expect(badMetre.isError).toBe(true);
 
 			// strict arguments and refusals
 			const bad = await call('analyze_picture_motion', { projectId, rangee: 1 });

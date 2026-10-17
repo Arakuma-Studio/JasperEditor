@@ -26,6 +26,7 @@ import {
 	type SoundDesignPlanSkip,
 	type SoundEntry,
 	type SoundSourceType,
+	type TimeSignature,
 } from '@jasper/api';
 import {
 	type AudioClip,
@@ -152,6 +153,8 @@ export type PlanStyle = {
 	cueSources?: CueDeriveSource[];
 	/** Snap derived moves, transitions, emphases and reveals to the music's beats (≤ 2 frames). */
 	snapToBeats?: boolean;
+	/** Metre of the music's downbeats (absent: auto, 3 or 4 detected). */
+	timeSignature?: TimeSignature;
 };
 
 export type PlanPick = {
@@ -192,6 +195,9 @@ export function resolveStyle(req: SoundDesignPlanRequest, seq: Sequence): PlanSt
 		delivery: st.delivery ?? null,
 		...(st.cueSources?.length ? { cueSources: [...new Set(st.cueSources)] } : {}),
 		...(st.snapToBeats ? { snapToBeats: true } : {}),
+		...(st.timeSignature !== undefined && st.timeSignature !== 'auto'
+			? { timeSignature: st.timeSignature }
+			: {}),
 	};
 }
 
@@ -1080,6 +1086,7 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 			measured = await sources.collect(live.doc, live.doc.sequences[seq0.id]!, {
 				sources: engineSources,
 				...(style.snapToBeats ? { snapToBeats: true } : {}),
+				...(style.timeSignature !== undefined ? { timeSignature: style.timeSignature } : {}),
 				...(req.range ? { range: req.range } : {}),
 				mode: { kind: 'inline', ctx, projectId: req.projectId, from: 0.03, to: 0.09 },
 			});
