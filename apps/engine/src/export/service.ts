@@ -99,6 +99,15 @@ import {
 	smartCodecOf,
 	smartPieces,
 } from './smart.ts';
+import {
+	CREDITS_DIR,
+	CREDITS_FILE_RE,
+	type CreditsFormat,
+	creditsFileBytes,
+	creditsFileName,
+	exportSoundCredits,
+	resultSoundWarnings,
+} from './sound-credits.ts';
 import { convertStill, stillCurveFor } from './still-formats.ts';
 import { streamLayer } from './stream/run.ts';
 import { createSyntheticExtension } from './synthetic.ts';
@@ -953,6 +962,46 @@ export class ExportService {
 			}
 		}
 		return { embedded, sidecars };
+	}
+
+	/**
+	 * spec 12 §2.11: the sound credits sidecar (`credits/output.credits.<ext>` in the job directory, so `output.*` stays
+	 * the job's only output file): the library sounds the export's mixer plays. No file when none is heard.
+	 */
+	private async writeCreditsSidecar(
+		planned: PlannedExport,
+		settings: ExportSettings,
+		dir: string,
+		ctx: JobContext,
+	): Promise<NonNullable<ExportResult['credits']> | null> {
+		const format = settings.credits?.sidecar as CreditsFormat | null | undefined;
+		if (!format || planned.output.videoOnly || planned.output.alpha) return null;
+		const scope = settings.credits?.scope === 'attribution' ? 'attribution' : 'all';
+		const credits = exportSoundCredits(planned.document, planned.sequenceId, planned.snapshot, scope);
+		const bytes = creditsFileBytes(credits, format);
+		if (!bytes) {
+			ctx.log('credits: no library sound is heard in the exported range; no credits file');
+			return { format, scope, count: 0 };
+		}
+		const name = creditsFileName('output', format);
+		await mkdir(join(dir, CREDITS_DIR), { recursive: true });
+		await writeFile(join(dir, CREDITS_DIR, name), bytes);
+		return {
+			format,
+			scope,
+			count: credits.rows.length,
+			name,
+			url: `/renders/${ctx.job.id}/${CREDITS_DIR}/${encodeURIComponent(name)}`,
+		};
+	}
+
+	/** The sound credits sidecar of a finished render job (`/renders/:jobId/credits/:name`). */
+	async creditsFile(jobId: string, name: string): Promise<string | null> {
+		if (!JOB_ID_RE.test(jobId) || !CREDITS_FILE_RE.test(name)) return null;
+		const job = this.deps.queue.get(jobId);
+		if (job && job.state !== 'succeeded') return null;
+		const file = join(this.deps.rendersDir, jobId, CREDITS_DIR, name);
+		return (await exists(file)) ? file : null;
 	}
 
 	/** A sidecar caption file of a finished render job (`/renders/:jobId/captions/:name`). */
@@ -1846,6 +1895,8 @@ export class ExportService {
 		await this.writeHdrMetadata(planned, output, ctx);
 		// wp captions: embedded caption streams (remux) and sidecar files.
 		const captionResult = await this.writeCaptionOutputs(planned, output, dir, ctx);
+		// spec 12 §2.11: the sound credits sidecar.
+		const creditsResult = await this.writeCreditsSidecar(planned, req.settings, dir, ctx);
 		const byteSize = (await stat(output)).size;
 		const downloadUrl = `/renders/${ctx.job.id}/output`;
 		let finalPath: string | undefined;
@@ -1866,7 +1917,14 @@ export class ExportService {
 					{ signal: ctx.signal, claimed: (p) => ctx.addPartial(p) },
 				);
 			}
+			if (creditsResult?.name)
+				creditsResult.path = await copyNoOverwrite(
+					join(dir, CREDITS_DIR, creditsResult.name),
+					join(dirname(finalPath), creditsFileName(stem, creditsResult.format)),
+					{ signal: ctx.signal, claimed: (p) => ctx.addPartial(p) },
+				);
 		}
+		const allWarnings = [...warnings, ...resultSoundWarnings(planned.plan, !!creditsResult?.name)];
 		const result = {
 			downloadUrl,
 			byteSize,
@@ -1876,7 +1934,7 @@ export class ExportService {
 			path: finalPath,
 			renderPath: path,
 			...(remotionOutput ? { remotionOutput } : {}),
-			...(warnings.length ? { warnings } : {}),
+			...(allWarnings.length ? { warnings: allWarnings } : {}),
 			...(audio
 				? {
 						audioLoudness: {
@@ -1888,6 +1946,7 @@ export class ExportService {
 					}
 				: {}),
 			...(captionResult ? { captions: captionResult } : {}),
+			...(creditsResult ? { credits: creditsResult } : {}),
 			planId: planned.plan.planId,
 		};
 		this.commitRefs(ctx, planned, 'export');

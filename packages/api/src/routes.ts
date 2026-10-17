@@ -455,6 +455,12 @@ export const ROUTES = {
 		path: '/renders/:jobId/captions/:name',
 		response: 'binary',
 	},
+	/** The sound credits sidecar of a finished export (`result.credits.name`, spec 12 §2.11). */
+	renderCreditsFile: {
+		method: 'GET',
+		path: '/renders/:jobId/credits/:name',
+		response: 'binary',
+	},
 	stills: {
 		method: 'POST',
 		path: '/api/stills',

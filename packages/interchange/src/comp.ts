@@ -357,6 +357,20 @@ export function fromProject(
 				});
 			if (kind === 'video') reportVisualLoss(c, s, p, formatName, report);
 			const source = doc.sources[src]!;
+			// Audio clip effects (EQ, pitch shift, a sound design build filter…): only rendered essence carries them.
+			if (
+				kind === 'audio' &&
+				!source.key.startsWith('clip:') &&
+				c.effects.length &&
+				(sub === null || sub === 0)
+			)
+				report.warn(
+					`the audio effects (${[...new Set(c.effects.map((e) => e.effectId))].join(', ')}) of ${describeClip(c, rate)} are not carried by ${formatName}`,
+					{
+						subject: { kind: 'clip', id: c.id, name: c.name, frame: frameOf(c.start, rate) },
+						instead: 'the clip without its effects',
+					},
+				);
 			const start = (c.hold ?? c.sourceIn) + (segStart - s0) - source.offset;
 			if (start < 0) report.warn(`clip "${c.name}" uses media before the start of its (trimmed) essence`);
 			let gain = kind === 'audio' ? gainOf(c, source) : null;
@@ -435,7 +449,21 @@ export function fromProject(
 					instead: 'nothing',
 				});
 	let n = 0;
-	for (const t of s.audio) {
+	for (const [ti, t] of s.audio.entries()) {
+		// Track Volume / Pan (and their automation: stop-before dips, ducking) live on the track: not carried here.
+		if (
+			t.volumeDb?.keyframes.length ||
+			(t.volumeDb && t.volumeDb.value !== 0) ||
+			t.pan?.keyframes.length ||
+			(t.pan && t.pan.value !== 0)
+		)
+			report.warn(
+				`the volume and pan of track A${ti + 1} (and their automation) are not carried by ${formatName}`,
+				{
+					subject: { kind: 'track', name: t.name ?? `A${ti + 1}` },
+					instead: 'the clips at unity track level',
+				},
+			);
 		const fmt = (t.jasper as { channelFormat?: string } | undefined)?.channelFormat;
 		const ch = fmt === 'mono' ? 1 : fmt === '5.1' ? 6 : 2;
 		if (media.breakoutToMono)

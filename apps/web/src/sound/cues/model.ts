@@ -607,7 +607,7 @@ export function markerToCueInput(
 	return {
 		frame: Math.max(0, Math.round(m.frame)),
 		kind: 'manual',
-		weight: first?.defaultWeight ?? 'support',
+		weight: req?.weight ?? first?.defaultWeight ?? 'support',
 		...(types.length ? { types } : {}),
 		...(first ? { align: first.defaultAlign } : {}),
 		...(label ? { label: clampText(label, SOUND_DESIGN_LIMITS.label) } : {}),

@@ -174,14 +174,16 @@ function LifecycleBody(props: {
 				if (!TERMINAL_JOB_STATES.has(job.state)) return;
 				const fileName = takeTrackedExport(job.id);
 				if (fileName === null) return;
-				if (job.state === 'succeeded')
+				if (job.state === 'succeeded') {
+					const detail = exportResultDetail(job.result);
 					notices.push({
 						kind: 'success',
 						message: `Export finished: ${fileName}`,
+						...(detail ? { detail } : {}),
 						action: { label: 'Download', href: engine.client.renderOutputUrl(job.id) },
 						durationMs: null,
 					});
-				else if (job.state !== 'cancelled')
+				} else if (job.state !== 'cancelled')
 					notices.push({
 						kind: 'error',
 						message: `Export failed: ${fileName}`,
@@ -394,4 +396,28 @@ function PersistenceBanners(props: { session: EditorSession; onReplace(s: Editor
 			</Banner>,
 		);
 	return <>{banners}</>;
+}
+
+/**
+ * spec 12 §2.11: what the finished export says about sound credits — the credits file it wrote and its sound warnings
+ * (W_SOUND_CREDITS, W_SOUND_CHECK_STALE…). Undefined when there is nothing to say.
+ */
+export function exportResultDetail(result: unknown): string | undefined {
+	const r = result as
+		| { credits?: { count?: unknown; name?: unknown }; warnings?: { code?: unknown; message?: unknown }[] }
+		| undefined;
+	const parts: string[] = [];
+	const c = r?.credits;
+	if (c && typeof c.name === 'string' && typeof c.count === 'number')
+		parts.push(
+			c.count === 1
+				? 'Sound credits file written (1 sound).'
+				: `Sound credits file written (${c.count} sounds).`,
+		);
+	else if (c && c.count === 0)
+		parts.push('No library sound is heard in the export: no credits file was written.');
+	for (const w of Array.isArray(r?.warnings) ? r.warnings : [])
+		if (typeof w?.code === 'string' && w.code.startsWith('W_SOUND_') && typeof w.message === 'string')
+			parts.push(w.message);
+	return parts.length ? parts.join(' ') : undefined;
 }

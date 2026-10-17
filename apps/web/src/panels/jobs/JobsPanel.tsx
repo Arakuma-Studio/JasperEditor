@@ -165,10 +165,16 @@ export function JobsPanel(_props: PanelProps) {
 												downloadUrl={isDownloadable(j) ? engine.client.renderOutputUrl(j.id) : null}
 												sidecars={
 													isDownloadable(j)
-														? sidecarsOf(j).map((sc) => ({
-																label: sc.name.replace(/^output\./, ''),
-																url: `${engine.client.renderCaptionFileUrl(j.id, sc.name)}?download=1`,
-															}))
+														? [
+																...sidecarsOf(j).map((sc) => ({
+																	label: sc.name.replace(/^output\./, ''),
+																	url: `${engine.client.renderCaptionFileUrl(j.id, sc.name)}?download=1`,
+																})),
+																...creditsOf(j).map((name) => ({
+																	label: name.replace(/^output\./, ''),
+																	url: `${engine.client.renderCreditsFileUrl(j.id, name)}?download=1`,
+																})),
+															]
 														: []
 												}
 											/>
@@ -198,6 +204,13 @@ function sidecarsOf(j: AnyJob): { name: string }[] {
 	return Array.isArray(list)
 		? list.filter((x): x is { name: string } => !!x && typeof (x as { name?: unknown }).name === 'string')
 		: [];
+}
+
+/** spec 12 §2.11: the sound credits sidecar listed in an export job's result. */
+function creditsOf(j: AnyJob): string[] {
+	const r = (j as { result?: unknown }).result as { credits?: { name?: unknown } } | undefined;
+	const name = r?.credits?.name;
+	return typeof name === 'string' && /^output\.credits\.(txt|md|csv)$/.test(name) ? [name] : [];
 }
 
 function JobRow(props: {

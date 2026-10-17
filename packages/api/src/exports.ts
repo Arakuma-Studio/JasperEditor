@@ -23,6 +23,20 @@ export const ExportCaptionsSchema = z.object({
 });
 export type ExportCaptions = z.infer<typeof ExportCaptionsSchema>;
 
+/** Sound credits sidecar formats of an export (spec 12 §2.11). */
+export const CREDITS_SIDECAR_FORMATS = ['txt', 'md', 'csv'] as const;
+/**
+ * The sound credits written next to the output (spec 12 §2.11): `<output>.credits.<ext>` with the credit lines of the
+ * library sounds audible in the exported range (nested sequences included; muted tracks and disabled clips are not
+ * heard, so not credited). `sidecar: null` = none. `scope`: `all` sounds (default) or only those whose licence asks for
+ * a credit (`attribution`: CC BY, CC BY-SA…).
+ */
+export const ExportCreditsSchema = z.object({
+	sidecar: z.enum(CREDITS_SIDECAR_FORMATS).nullable(),
+	scope: z.enum(['all', 'attribution']).optional(),
+});
+export type ExportCredits = z.infer<typeof ExportCreditsSchema>;
+
 /** If H.264 is unavailable, the render plan names the codec and container the engine will use. */
 export const ExportSettingsSchema = z.object({
 	sequenceId: z.string(),
@@ -131,6 +145,8 @@ export const ExportSettingsSchema = z.object({
 		.default({ type: 'download' }),
 	/** Burn-in, embedded streams and sidecar files (absent = burn in the visible tracks). */
 	captions: ExportCaptionsSchema.optional(),
+	/** Sound credits sidecar (spec 12 §2.11); absent = none. */
+	credits: ExportCreditsSchema.optional(),
 	/** Picture only — no audio stream and no mixdown (render previews of the picture). */
 	videoOnly: z.boolean().optional(),
 	/**
@@ -179,7 +195,13 @@ export const RenderPlanSchema = z.object({
 		}),
 	),
 	warnings: z.array(
-		z.object({ code: z.string(), message: z.string(), itemIds: z.array(z.string()).optional() }),
+		z.object({
+			code: z.string(),
+			message: z.string(),
+			itemIds: z.array(z.string()).optional(),
+			/** `info` = for the user's information (W_SOUND_CHECK_STALE); absent = a warning. */
+			level: z.enum(['warning', 'info']).optional(),
+		}),
 	),
 	estimate: z.object({ seconds: z.number().min(0), bytes: z.number().min(0) }),
 	/** Whether stream copy is used, how many frames are copied, and why not. */
@@ -218,9 +240,26 @@ export const ExportResultSchema = z.object({
 	renderPath: z.enum(['copy', 'native', 'hybrid', 'remotion']).optional(),
 	/**
 	 * run-time warnings, e.g. `NATIVE_FALLBACK` when a native preparation step failed
-	 * and an `auto` export was rendered on the Remotion path instead.
+	 * and an `auto` export was rendered on the Remotion path instead; also the plan's sound warnings
+	 * (`W_SOUND_CREDITS`, `W_SOUND_CHECK_STALE` with `level: 'info'`).
 	 */
-	warnings: z.array(z.object({ code: z.string(), message: z.string() })).optional(),
+	warnings: z
+		.array(z.object({ code: z.string(), message: z.string(), level: z.enum(['warning', 'info']).optional() }))
+		.optional(),
+	/**
+	 * The sound credits sidecar (spec 12 §2.11): its format and scope, how many sounds it credits (0 = no file: no
+	 * library sound is heard in the range), and the file (`/renders/:jobId/credits/:name`; `path` with a destination).
+	 */
+	credits: z
+		.object({
+			format: z.enum(CREDITS_SIDECAR_FORMATS),
+			scope: z.enum(['all', 'attribution']),
+			count: z.number().int(),
+			name: z.string().optional(),
+			url: z.string().optional(),
+			path: z.string().optional(),
+		})
+		.optional(),
 	/** Loudness of the delivered audio (BS.1770-4), and the normalisation gain when it was normalised. */
 	audioLoudness: z
 		.object({

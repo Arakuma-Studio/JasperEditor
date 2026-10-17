@@ -67,6 +67,8 @@ export function buildExportSettings(
 		smartRender?: boolean;
 		/** gaps (PRJ-8): Use Proxies — render attached proxies (a draft; never the default). */
 		useProxies?: boolean;
+		/** spec 12 §2.11: the sound credits sidecar (absent / 'off' = none). */
+		credits?: CreditsChoice;
 	},
 ): ExportSettings {
 	const col = choice.color ?? DEFAULT_COLOR_CHOICE;
@@ -119,8 +121,20 @@ export function buildExportSettings(
 		...(choice.usePreviews ? { usePreviews: true } : {}),
 		...(choice.smartRender ? { smartRender: true } : {}),
 		...(choice.useProxies ? { draftUseProxies: true } : {}),
+		...(choice.credits && choice.credits !== 'off' ? { credits: { sidecar: choice.credits } } : {}),
 	};
 }
+
+/** The Export dialog's sound credits choice (spec 12 §2.11): no file, or `<name>.credits.<txt|md|csv>`. */
+export type CreditsChoice = 'off' | 'txt' | 'md' | 'csv';
+export const CREDITS_OPTIONS: { value: CreditsChoice; label: string }[] = [
+	{ value: 'off', label: 'Off' },
+	{ value: 'txt', label: 'Text (.txt)' },
+	{ value: 'md', label: 'Markdown (.md)' },
+	{ value: 'csv', label: 'CSV (.csv)' },
+];
+const isCreditsChoice = (v: unknown): v is CreditsChoice =>
+	v === 'off' || v === 'txt' || v === 'md' || v === 'csv';
 
 export type CaptionExportChoice = {
 	/** Burn the visible caption tracks into the picture. */
@@ -394,6 +408,8 @@ type Remembered = {
 	smartRender?: boolean;
 	/** gaps: Use Proxies (draft exports) */
 	useProxies?: boolean;
+	/** spec 12 §2.11: the sound credits choice last exported with */
+	credits?: CreditsChoice;
 };
 const keyOf = (projectId: string, sequenceId: string) => `jasper.export.${projectId}.${sequenceId}`;
 
@@ -437,6 +453,7 @@ export function loadExportChoice(projectId: string, sequenceId: string): Remembe
 			...(v.usePreviews === true ? { usePreviews: true } : {}),
 			...(v.smartRender === true ? { smartRender: true } : {}),
 			...(v.useProxies === true ? { useProxies: true } : {}),
+			...(isCreditsChoice(v.credits) ? { credits: v.credits } : {}),
 		};
 	} catch {
 		return null;

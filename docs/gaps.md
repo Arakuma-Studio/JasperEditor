@@ -466,7 +466,10 @@ a verdict's staleness follows the audio of its ±2 s window and its clip / cue p
 demotion plus a safe gain on one hero can overload (the check runs again after Fix all safe); a repeated tonal sound's
 renderer offset shows less clearly (sync prefers the document among near-equal matches); `soundCheckInputsHash` ignores
 media licences, transcripts and picture edits; a kept report is not removed when its sequence is deleted (it is never
-shown for another sequence); the Export dialog has no credits option yet (Phase 6).
+shown for another sequence). Export credits (Phase 6 WP6.4): the Export dialog's SOUND ▸ Credits writes
+`<name>.credits.<txt|md|csv>` with the sounds heard in the range (W_SOUND_CREDITS without it); there is no audio-only or
+image-sequence export destination to attach it to yet, the header is English, and a cue's window and kind do not survive
+an interchange round trip (point markers `SFX: <type> (<weight>)`, re-imported as `manual` cues).
 
 ### Not covered by any workstream yet
 

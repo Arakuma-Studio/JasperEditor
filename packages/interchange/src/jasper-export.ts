@@ -6,6 +6,7 @@ import {
 	type Clip,
 	captionClipSpeaker,
 	captionClipText,
+	cueMarkers,
 	flicksPerFrame,
 	isEnabledMulticamClip,
 	isKnownClipKind,
@@ -349,6 +350,7 @@ export function fromJasper(
 		const F = flicksPerFrame(rate);
 		const item = itemOfSequence.get(s.id);
 		const name = item?.name ?? 'Sequence';
+		const cues = cueMarkers(doc, s);
 		const seq: ISequence = {
 			id: s.id,
 			name,
@@ -361,18 +363,32 @@ export function fromJasper(
 			...(item ? { label: item.label } : {}),
 			video: [],
 			audio: [],
-			markers: s.markers.map(
-				(m): IMarker => ({
-					start: m.frame * F,
-					duration: m.duration * F,
-					name: m.name,
-					comment: m.comment,
-					color: m.color,
-					type: m.type,
-					...(m.url ? { url: m.url } : {}),
-					jasper: clone(m),
-				}),
-			),
+			markers: [
+				...s.markers.map(
+					(m): IMarker => ({
+						start: m.frame * F,
+						duration: m.duration * F,
+						name: m.name,
+						comment: m.comment,
+						color: m.color,
+						type: m.type,
+						...(m.url ? { url: m.url } : {}),
+						jasper: clone(m),
+					}),
+				),
+				// spec 12 §2.11: sound cues as `SFX: <type>[+<type>] (<weight>)` markers (no JasperEditor metadata: a
+				// re-import makes plain markers, which Convert Markers to Cues turns back into cues).
+				...cues.map(
+					(m): IMarker => ({
+						start: m.frame * F,
+						duration: 0,
+						name: m.name,
+						comment: m.comment,
+						color: 'mango',
+						type: 'comment',
+					}),
+				),
+			].sort((a, b) => a.start - b.start),
 			inPoint: s.inPoint === null ? null : s.inPoint * F,
 			outPoint: s.outPoint === null ? null : s.outPoint * F,
 			...(s.multicam ? { multicam: multicamOut(s) } : {}),
@@ -380,10 +396,43 @@ export function fromJasper(
 				settings: clone(s.settings),
 				master: clone(s.master),
 				workArea: s.workArea,
+				// OTIO restores the submixes (and the sends and outputs naming them) from its metadata
+				...(s.submixTracks?.length ? { submixTracks: clone(s.submixTracks) } : {}),
 				...(item ? { item: clone(item) } : {}),
 			},
 		};
 		const where = { kind: 'sequence' as const, id: s.id, name };
+		const sd = (s as { soundDesign?: unknown }).soundDesign;
+		if (sd !== undefined && sd !== null) {
+			const n = cues.length;
+			const carried =
+				opts.format === 'ale'
+					? 'not carried (an ALE is a media log without a timeline)'
+					: opts.format === 'omf'
+						? 'not carried (OMF has no sequence markers)'
+						: null;
+			const meta =
+				"proposals and the sound design's mix metadata (settings, mix records, the last Sound Check, the SFX placement data of clips) are not carried";
+			report.info(
+				n === 0
+					? `the sound design of "${name}" has no cues; ${meta}`
+					: carried
+						? `the ${n} sound design cue(s) of "${name}" are ${carried}; ${meta}`
+						: `the ${n} sound design cue(s) of "${name}" are exported as "SFX: <type> (<weight>)" markers; ${meta}`,
+				{
+					subject: where,
+					instead:
+						carried || n === 0
+							? 'nothing'
+							: 'markers (after importing, Sequence ▸ Sound Design ▸ Convert Markers to Cues makes them cues again)',
+				},
+			);
+		}
+		if (!otio && s.master.loudness?.enabled)
+			report.warn(
+				`the loudness normalisation of "${name}" (${s.master.loudness.targetLufs} LUFS, ${s.master.loudness.truePeakDb} dBTP ceiling) is not carried`,
+				{ subject: where, instead: 'the mix at its own level (normalise it in the other application)' },
+			);
 		if (!otio && s.submixTracks?.length)
 			report.warn(`the ${s.submixTracks.length} submix track(s) of "${name}" are not carried`, {
 				subject: where,

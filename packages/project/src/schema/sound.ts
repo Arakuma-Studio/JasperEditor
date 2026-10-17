@@ -187,7 +187,7 @@ export const SoundCueSchema = z.looseObject({
 export type SoundCue = DeepStrip<z.infer<typeof SoundCueSchema>>;
 
 /** Sound credits sidecar formats (`SoundDesignSettings.credits`, spec 12 §2.11 `ExportSettings.credits`). */
-export const SOUND_CREDITS_FORMATS = ['txt', 'md'] as const;
+export const SOUND_CREDITS_FORMATS = ['txt', 'md', 'csv'] as const;
 export type SoundCreditsFormat = (typeof SOUND_CREDITS_FORMATS)[number];
 
 export const SoundDesignSettingsSchema = z.looseObject({

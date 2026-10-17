@@ -737,6 +737,10 @@ export class EngineClient {
 	renderCaptionFileUrl(jobId: string, name: string): string {
 		return this.url(buildPath(ROUTES.renderCaptionFile.path, { jobId, name }));
 	}
+	/** Download URL of an export's sound credits sidecar (`result.credits.name`). */
+	renderCreditsFileUrl(jobId: string, name: string): string {
+		return this.url(buildPath(ROUTES.renderCreditsFile.path, { jobId, name }));
+	}
 	mgFileUrl(key: string, file: string): string {
 		return this.url(buildPath(ROUTES.mgFile.path, { key, file }));
 	}
