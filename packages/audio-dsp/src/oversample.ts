@@ -277,6 +277,16 @@ export class TruePeakDetector {
 		return 20 * Math.log10(this.truePeak());
 	}
 
+	/**
+	 * The maximum true peak (linear, all channels) since the last call, then starts a new span: the interpolators keep
+	 * their history, so a peak between two spans' samples is found in the later span (per-hop true-peak curves).
+	 */
+	takePeak(): number {
+		const m = this.truePeak();
+		this.peaks.fill(0);
+		return m;
+	}
+
 	/** Per-channel true peak (linear). Returns the internal array (do not mutate). */
 	truePeakPerChannel(): Float64Array {
 		return this.peaks;

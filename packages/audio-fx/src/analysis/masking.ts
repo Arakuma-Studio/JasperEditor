@@ -1490,3 +1490,82 @@ export function evaluateSfxGains(
 		return { ...r, liftDb: q(ev.soundDom + gs[i]! - masked[i]!), sfxMaskingDb: q(masked[i]! - ev.bedDom) };
 	});
 }
+
+/** One overlapping sound effect's share of an event's bed in the event's dominant bands (`sfxOverlapTerms`). */
+export interface SfxOverlapTerm {
+	/** Index of the other event in the input. */
+	index: number;
+	/** Its weight (whether it masks the event depends on both weights: lower masks higher, `WEIGHT_RANK`). */
+	weight: SolverWeight;
+	/** Its energy in the event's dominant bands under the event's window, averaged over it, at 0 dB clip gain (dB). */
+	at0Db: number;
+}
+
+/** What an event's masked bed is made of in its dominant bands (`sfxOverlapTerms`). */
+export interface SfxOverlapTerms {
+	/** The bed alone (the non-SFX mix) in the event's dominant bands (dB). */
+	bedDomDb: number;
+	/** Every other audible sound effect overlapping it, layers of its own cue excluded, in canonical order. */
+	terms: SfxOverlapTerm[];
+}
+
+/**
+ * The solver's masked bed of each event as a sum the caller can re-evaluate for other gains and weights (Sound Check's
+ * joint fixes, `planSoundCheckFixes`): masked bed (dB) = max(floor, 10·log10(10^(bedDomDb/10) + Σ 10^((at0Db + g)/10)))
+ * over the terms whose weight ranks under the event's (ambient < support < hero; `g` = that sound's clip gain) — exactly
+ * what `evaluateSfxGains` / `solveSfxGains` use, since an event's own gain never changes its bed. Every overlapping
+ * sound is listed whatever the weights, so a role change (a demotion) is judged with the right maskers. Null for a
+ * silent event; `opts.sfxMasking: false` gives no terms. Pure; never throws.
+ */
+export function sfxOverlapTerms(events: SolverEvent[], opts: SolverOptions = {}): (SfxOverlapTerms | null)[] {
+	if (!Array.isArray(events)) return [];
+	const o = opts && typeof opts === 'object' ? opts : {};
+	const evs = events.map((raw, i) => clean(raw, i, []));
+	const out: (SfxOverlapTerms | null)[] = evs.map((ev) =>
+		ev.dom.length ? { bedDomDb: ev.bedDom, terms: [] } : null,
+	);
+	if (o.sfxMasking === false) return out;
+	const be = bandEnergy(evs);
+	const order = canonicalOrder(evs);
+	const audible = (a: Clean, b: Clean) =>
+		a.dom.length > 0 && b.dom.length > 0 && !(a.cueKey !== '' && a.cueKey === b.cueKey);
+	/** Adds `m`'s energy in `t`'s dominant bands × share (as dB) to `t`'s terms when there is any. */
+	const term = (ti: number, mi: number, share: number): void => {
+		const t = evs[ti]!;
+		let e = 0;
+		for (const b of t.dom) e += be.sound[mi * BANDS + b]!;
+		e *= share;
+		if (e > 0 && Number.isFinite(e))
+			out[ti]!.terms.push({ index: mi, weight: evs[mi]!.weight, at0Db: 10 * Math.log10(e) });
+	};
+	const pairs: [number, number, number][] = [];
+	for (let p = 0; p < order.length; p++) {
+		const a = order[p]!;
+		const ea = evs[a]!;
+		const la = ea.end - ea.start;
+		if (!(la > 0)) continue;
+		for (let k = p + 1; k < order.length; k++) {
+			const b = order[k]!;
+			const eb = evs[b]!;
+			if (!(eb.start < ea.end)) break;
+			const lb = eb.end - eb.start;
+			if (!(lb > 0) || !audible(ea, eb)) continue;
+			const ov0 = eb.start;
+			const ov1 = Math.min(ea.end, eb.end);
+			if (!(ov1 > ov0)) continue;
+			// the same shares as `maskerLists`
+			pairs.push([a, b, eb.profile ? (energyShare(eb, ov0, ov1) * lb) / la : (ov1 - ov0) / la]);
+			pairs.push([b, a, ea.profile ? (energyShare(ea, ov0, ov1) * la) / lb : (ov1 - ov0) / lb]);
+		}
+	}
+	for (const [ti, mi, share] of pairs) term(ti, mi, share);
+	// canonical order within each list (the sweep adds earlier sounds first for later targets, not for earlier ones)
+	const rank = new Map(order.map((idx, r) => [idx, r]));
+	for (const t of out) t?.terms.sort((x, y) => rank.get(x.index)! - rank.get(y.index)!);
+	return out;
+}
+
+/** Whether a sound of weight `masker` is part of the bed of a sound of weight `target` (the solver's rule). */
+export function sfxWeightMasks(masker: SolverWeight, target: SolverWeight): boolean {
+	return WEIGHT_RANK[masker] < WEIGHT_RANK[target];
+}

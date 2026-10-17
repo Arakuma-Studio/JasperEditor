@@ -10,9 +10,11 @@
 // - Fix: a finding's fix as the engine described it — commands as ONE transaction (`session.apply`, the user's edit),
 //   a sound swap through the panel's swap path (register the library sound → `media.register` → `soundDesign.swap`,
 //   what the Sound Library's Swap does, also for "the same sound again"), an engine job (rebalance / delivery: the
-//   user's edit too). Fix all safe: every safe command fix and swap in ONE transaction (each fix on its own when that
-//   is refused), then the safe engine jobs one after another, then the check runs again. A fix that is not safe asks
-//   first, naming what it will change (`fixConfirmation`).
+//   user's edit too). Fix all safe: the safe fixes judged together on the current document (`planSoundCheckFixes`:
+//   applied in sequence on a dry run, each re-validated after the ones before it — a fix that is no longer safe is left
+//   for the next check, with why), the accepted command fixes and swaps in ONE transaction, then the accepted engine
+//   jobs one after another, then the check runs again. A fix that is not safe — or no longer safe on the current
+//   document — asks first, naming what it will change (`fixConfirmation`).
 // - Jump: a finding's or listen-here moment's timecode → the playhead, the clips / cue selected, the Timeline scrolled.
 // - Listen here: ▶ plays 4 s around the moment through the Program transport (`playTimelineWindow`), Play all chains
 //   the rows (the next one starts when a window plays to its end; a key or click stops the chain), and a verdict is a
@@ -25,7 +27,17 @@ import {
 	SoundCheckResultSchema,
 } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
-import { type Command, type Sequence, sequenceDuration, soundCheckStatus } from '@jasper/project';
+import {
+	type Command,
+	defaultRegistries,
+	planSoundCheckFixes,
+	type Sequence,
+	type SoundCheckFixCandidate,
+	type SoundCheckLevelGuard,
+	sequenceDuration,
+	soundCheckFixTargets,
+	soundCheckStatus,
+} from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { confirmDialog } from '@jasper/ui';
 import { createStore, type StoreApi } from 'zustand/vanilla';
@@ -266,7 +278,40 @@ export async function loadStoredReport(
 
 // ── fixes ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type FixOutcome = { ok: boolean; message: string; applied: string[]; failed: string[] };
+export type FixOutcome = {
+	ok: boolean;
+	message: string;
+	applied: string[];
+	failed: string[];
+	/** Safe fixes left for the next check: not safe with the ones applied before them (Fix all safe). */
+	skipped?: string[];
+};
+
+/** The candidate `planSoundCheckFixes` judges for a fix unit (a swap's commands once its sound is registered). */
+function candidateOf(
+	unit: FixUnit,
+	issues: readonly SoundCheckIssue[],
+	swapCommand?: Command,
+): SoundCheckFixCandidate {
+	const targets = unit.issueIds.flatMap((id) => {
+		const i = issues.find((x) => x.id === id);
+		return i ? soundCheckFixTargets(i) : [];
+	});
+	const base = { issueIds: [...unit.issueIds], ...(targets.length ? { targets } : {}) };
+	if (unit.kind === 'commands') return { ...base, kind: 'commands', commands: unit.commands as never };
+	if (unit.kind === 'swap')
+		return {
+			...base,
+			kind: 'swap',
+			commands: swapCommand ? [swapCommand as never] : null,
+			swap: { clipId: unit.clipId, soundId: unit.soundId },
+		};
+	return { ...base, kind: 'job', commands: null, job: { route: unit.job.route } };
+}
+
+const guardOf = (result: SoundCheckResult): SoundCheckLevelGuard | null =>
+	(result.report.levelGuard as SoundCheckLevelGuard | undefined) ?? null;
+const registriesOf = (session: EditorSession) => session.ctx.registries ?? defaultRegistries();
 
 /** The commands of the plan's swaps (register the sounds first) — `null` refs when there are none. */
 async function swapCommands(
@@ -379,11 +424,26 @@ export async function applyCheckFix(
 		return { ok: false, message: t('This fix cannot be applied here'), applied: [], failed: [issue.id] };
 	if (store.getState().fixing)
 		return { ok: false, message: t('A fix is being applied'), applied: [], failed: [] };
-	if (!issue.fix.safe) {
+	// a safe command fix (or one that was only unsafe together with other safe fixes) is judged again on the document
+	// as it is now: other fixes applied since can make it unsafe, or safe again
+	let judged = issue;
+	if (unit.kind === 'commands' && (issue.fix.safe || (issue.fix.conflictsWith?.length ?? 0) > 0)) {
+		const j = planSoundCheckFixes(
+			session.getCommitted(),
+			result.sequenceId,
+			[candidateOf(unit, result.report.issues)],
+			{ registries: registriesOf(session), guard: guardOf(result) },
+		);
+		const skip = j.skipped[0];
+		judged = skip
+			? { ...issue, fix: { ...issue.fix, safe: false, why: skip.reason.text, whyMessage: skip.reason } }
+			: { ...issue, fix: { ...issue.fix, safe: true } };
+	}
+	if (!judged.fix!.safe) {
 		store.setState({ fixing: issue.id });
 		let yes = false;
 		try {
-			yes = await (opts.confirm ?? confirmDialog)(fixConfirmation(issue, seqOf(session, result.sequenceId)));
+			yes = await (opts.confirm ?? confirmDialog)(fixConfirmation(judged, seqOf(session, result.sequenceId)));
 		} catch {
 			yes = false;
 		} finally {
@@ -436,26 +496,62 @@ export async function fixAllSafe(
 	const seqId = result.sequenceId;
 	const applied: string[] = [];
 	const failed: string[] = [];
+	const skipped: string[] = [];
 	const reasons: string[] = [];
+	const skipReasons: string[] = [];
 	store.setState({ fixing: 'all' });
 	announce(session, t('Applying {0} safe fixes', plan.units.length));
 	try {
-		const docUnits = plan.units.filter((u) => u.kind !== 'job');
-		if (docUnits.length) {
-			let joined: Command[] | null = null;
+		// the swaps' sounds registered first: their commands are judged with the others
+		let prelude: Command[] = [];
+		const swapCmd = new Map<string, Command>();
+		let swapsFailed = false;
+		if (plan.swaps.length) {
 			try {
-				joined = [...(await swapCommands(session, engine, seqId, plan.swaps)), ...plan.commands];
+				const cmds = await swapCommands(session, engine, seqId, plan.swaps);
+				prelude = cmds.filter((c) => c.type !== 'soundDesign.swap');
+				for (const c of cmds)
+					if (c.type === 'soundDesign.swap') swapCmd.set((c as { clipId: string }).clipId, c);
 			} catch (e) {
+				swapsFailed = true;
 				reasons.push(e instanceof Error ? e.message : String(e));
 			}
+		}
+		const units = plan.units.filter((u) => {
+			if (u.kind !== 'swap') return true;
+			if (swapsFailed || !swapCmd.has(u.clipId)) {
+				failed.push(...u.issueIds);
+				if (!swapsFailed) reasons.push(t('The clip is gone'));
+				return false;
+			}
+			return true;
+		});
+		const byCandidate = new Map<SoundCheckFixCandidate, FixUnit>();
+		const candidates = units.map((u) => {
+			const c = candidateOf(u, result.report.issues, u.kind === 'swap' ? swapCmd.get(u.clipId) : undefined);
+			byCandidate.set(c, u);
+			return c;
+		});
+		// judged together on the document as it is now: applied in sequence on a dry run, each re-validated
+		const joint = planSoundCheckFixes(session.getCommitted(), seqId, candidates, {
+			registries: registriesOf(session),
+			guard: guardOf(result),
+			prelude,
+		});
+		for (const sk of joint.skipped) {
+			skipped.push(...sk.candidate.issueIds);
+			skipReasons.push(messageText(sk.reason));
+		}
+		const accepted = joint.accepted.map((c) => byCandidate.get(c)!);
+		const docUnits = accepted.filter((u) => u.kind !== 'job');
+		if (docUnits.length) {
 			const n = docUnits.length;
 			const label = n === 1 ? t('Fix 1 Sound Check Finding') : t('Fix {0} Sound Check Findings', n);
-			// the media registrations first, then the command fixes, then the swaps (an align before a swap of the
-			// same clip: the swap keeps the aligned frame)
-			const r = joined ? applyTx(session, seqId, label, reorder(joined, plan)) : null;
-			if (r?.ok) for (const u of docUnits) applied.push(...u.issueIds);
+			// ONE transaction: the media registrations, then the accepted fixes in the order they were judged
+			const r = applyTx(session, seqId, label, joint.commands as Command[]);
+			if (r.ok) for (const u of docUnits) applied.push(...u.issueIds);
 			else {
-				if (r) reasons.push(errorsText(r));
+				reasons.push(errorsText(r));
 				for (const u of docUnits) {
 					try {
 						const err = await runUnit(session, engine, seqId, u, label);
@@ -470,7 +566,7 @@ export async function fixAllSafe(
 				}
 			}
 		}
-		for (const u of plan.units) {
+		for (const u of accepted) {
 			if (u.kind !== 'job') continue;
 			try {
 				await runUnit(session, engine, seqId, u, '');
@@ -484,28 +580,32 @@ export async function fixAllSafe(
 		store.setState({ fixing: null });
 	}
 	markFixed(session, applied);
-	const message = failed.length
-		? t(
-				'Applied {0} safe fixes; {1} could not be applied: {2}',
-				applied.length,
-				failed.length,
-				reasons.join('; '),
-			)
-		: t('Applied {0} safe fixes', applied.length);
+	const parts = [
+		failed.length
+			? t(
+					'Applied {0} safe fixes; {1} could not be applied: {2}',
+					applied.length,
+					failed.length,
+					reasons.join('; '),
+				)
+			: t('Applied {0} safe fixes', applied.length),
+		...(skipped.length
+			? [
+					t(
+						'{0} left for the next check (not safe with the fixes before them): {1}',
+						skipped.length,
+						skipReasons.filter(Boolean).join('; '),
+					),
+				]
+			: []),
+	];
+	const message = parts.join('. ');
 	announce(session, message);
 	const rerun =
 		opts.rerun === false || !applied.length
 			? null
 			: await runSoundCheck(session, engine, { sequenceId: seqId });
-	return { ok: failed.length === 0 && applied.length > 0, message, applied, failed, rerun };
-}
-
-/** Media registrations first, then the command fixes, then the swaps. */
-function reorder(commands: Command[], plan: FixPlan): Command[] {
-	const fixSet = new Set(plan.commands);
-	const media = commands.filter((c) => !fixSet.has(c) && c.type !== 'soundDesign.swap');
-	const swaps = commands.filter((c) => !fixSet.has(c) && c.type === 'soundDesign.swap');
-	return [...media, ...plan.commands, ...swaps];
+	return { ok: failed.length === 0 && applied.length > 0, message, applied, failed, skipped, rerun };
 }
 
 // ── jump ────────────────────────────────────────────────────────────────────────────────────────────────────────────
