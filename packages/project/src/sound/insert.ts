@@ -14,6 +14,7 @@
 //   over the clip's span — else a new "SFX n"; the clip is placed as ONE clip (`audioMapping: 'stereo'`, never the
 //   Project item's Modify ▸ Audio Channels routing, which could add clips on other tracks). Never overwrites audio.
 // Pure.
+import { latest } from '../commands/draft-read.ts';
 import { FLICKS_PER_SECOND, FRAME_EPS, flicksPerFrame, type Rational } from '../time.ts';
 import { peakAlignedStart } from './place.ts';
 import type { LibraryDescriptors } from './provenance.ts';
@@ -315,9 +316,13 @@ export function audioTrackClipsIn(
 ): { id: string; start: number; duration: number }[] {
 	const end = start + frames;
 	const out: { id: string; start: number; duration: number }[] = [];
-	for (const [id, c] of Object.entries(seq.clips))
+	// read without drafting: a handler passes a draft, and every clip read through it would become a child draft
+	const clips = latest(seq.clips);
+	for (const id of Object.keys(clips)) {
+		const c = latest(clips[id]!);
 		if (c.trackId === trackId && c.start < end && start < c.start + c.duration)
 			out.push({ id, start: c.start, duration: c.duration });
+	}
 	return out;
 }
 
