@@ -61,8 +61,8 @@ describe('descriptors version 2', () => {
 	it('floorDb is null when there is no "between": one event, a sound that fills the file, or under 0.2 s', () => {
 		expect(analyzeSound([floorNoise(SR, 0.3)], SR).floorDb).toBeNull();
 		// one hit decaying over a long file: its tail is not a floor
-		const one = floorNoise(2 * SR, 0.005466, 4);
-		addClick(one, 4800, { tauMs: 300, lenMs: 1900, seed: 3 });
+		const one = new Float32Array(2 * SR);
+		addClick(one, 4800, { tauMs: 500, lenMs: 1900, seed: 3 });
 		const d1 = analyzeSound([one], SR);
 		expect(d1.onsetCount).toBe(1);
 		expect(d1.floorDb).toBeNull();
@@ -195,11 +195,21 @@ describe('judge flags lowpassed, noisy-floor, dc-offset', () => {
 	});
 
 	it('a measured key band-limited at 8 kHz (a low-bitrate encode) is lowpassed; the same key full-band is not', () => {
+		// a key press (broadband, sharp attack), then band-limited as a whole the way an encoder does
 		const press = (hi: number) => {
-			const x = new Float32Array(Math.round(0.3 * SR));
-			const n = bandNoise(4, 1 << 14, SR, 300, hi);
-			for (let i = 0; i < 4800; i++) x[240 + i] = n[i]! * Math.exp(-i / 300);
-			return analyzeSound([x], SR);
+			const n = 1 << 14;
+			const re = new Float64Array(n);
+			const im = new Float64Array(n);
+			const r = new Prng(4);
+			for (let i = 0; i < 4800; i++) re[240 + i] = 0.5 * r.uniform() * Math.exp(-i / 300);
+			const fft = new Fft(n);
+			fft.forward(re, im);
+			for (let k = 1; k < n / 2; k++)
+				if ((k * SR) / n > hi) {
+					re[k] = im[k] = re[n - k] = im[n - k] = 0;
+				}
+			fft.inverse(re, im);
+			return analyzeSound([Float32Array.from(re.subarray(0, Math.round(0.3 * SR)), (v) => v / n)], SR);
 		};
 		const cut = press(8000);
 		expect([8000, 8250]).toContain(cut.cutoffHz);

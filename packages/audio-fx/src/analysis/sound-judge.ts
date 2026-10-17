@@ -236,7 +236,7 @@ export const DEFAULT_TYPE_PROFILES: Readonly<Record<SoundTypeId, SoundTypeProfil
 		thump: P(0.05, 3, 25, true, 0.95, 0.25, null, true, -45, false, NOISY_FLOOR_DB),
 		paper: P(0.05, 6, null, false, 0.3, 0.85, null, false, -50, true, null),
 		chime: P(0.2, 10, 40, true, 0.3, 0.5, 0.3, false, -45, false, null),
-		shimmer: P(0.3, 12, null, false, 0.2, 0.85, 0.5, false, -50, true, null),
+		shimmer: P(0.3, 12, null, false, 0.2, 0.85, 0.5, false, -50, false, null),
 		zap: P(0.05, 3, 30, false, 0.5, 0.6, null, false, -45, false, null),
 		ambience: P(2, 3600, null, false, 0.8, 0.6, null, false, -60, false, null),
 		roomtone: P(2, 3600, null, false, 0.9, 0.6, null, false, -75, false, null),

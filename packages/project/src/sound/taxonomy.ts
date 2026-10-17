@@ -355,7 +355,7 @@ export const SOUND_TYPES: Readonly<Record<SoundTypeId, SoundTypeInfo>> = Object.
 		'support',
 		['reveal', 'appear'],
 		D(0.5, 2, 6, 'span'),
-		P(0.3, 12, null, false, 0.2, 0.85, 0.5, false, -50, true, null),
+		P(0.3, 12, null, false, 0.2, 0.85, 0.5, false, -50, false, null),
 	),
 	zap: T(
 		'zap',
