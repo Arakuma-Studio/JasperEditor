@@ -289,6 +289,7 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 				mgTemplates: mgRegistry,
 				checkJob,
 				signal: ac.signal,
+				pixelCurves: (range) => motion.cachedCurves(doc, seq, range),
 			});
 		}),
 	);

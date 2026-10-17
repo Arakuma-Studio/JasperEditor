@@ -2,8 +2,8 @@
 // `view_sound_timeline`, `sound_check` images; wp-note "Phase 5 → WP5.1"): the engine's visual data
 // (`POST /api/sound-design/visual`) drawn as one strip — momentary loudness curves of the mix and its stems on a LUFS
 // scale, the mix waveform, speech spans, the sound effect clips with their aligned points, the cue ticks, the picture's
-// motion curve and the Sound Check's findings as flags — with a timecode axis and a legend. Pure (no I/O); never throws
-// on hostile data (lengths are clamped, non-numbers drawn as silence).
+// motion curves (keyframed, and measured where analysed) and the Sound Check's findings as flags — with a timecode axis
+// and a legend. Pure (no I/O); never throws on hostile data (lengths are clamped, non-numbers drawn as silence).
 import type { SoundVisualResponse } from '@jasper/api';
 import { drawText, fitText, LINE_HEIGHT, textWidth } from './pixel-font.ts';
 import { canvas, type RgbaImage } from './sound-sheet.ts';
@@ -24,6 +24,8 @@ const GRID: Rgb = [60, 60, 72];
 const SPEECH: Rgb = [40, 90, 50];
 const WAVE: Rgb = [120, 200, 240];
 const MOTION: Rgb = [230, 230, 120];
+/** The measured picture motion (pixel analysis), drawn over the keyframed motion. */
+export const PIXEL_MOTION: Rgb = [255, 130, 210];
 const HERO: Rgb = [255, 90, 90];
 const SUPPORT: Rgb = [255, 200, 120];
 const SEVERITY: Record<'error' | 'warning' | 'info', Rgb> = {
@@ -103,6 +105,11 @@ export type TimelineCells = {
 	}[];
 	peaks: Record<string, number | null>;
 	normalization: SoundVisualResponse['normalization'];
+	/**
+	 * Whether the measured picture motion (pink in the move lane) is drawn: the range was analysed (analyze_picture_motion
+	 * or find_sound_cues sources ["pixel"]), partly, or not at all (only the keyframed motion is drawn then).
+	 */
+	pixelMotion: 'measured' | 'partly analysed' | 'not analysed';
 };
 
 /**
@@ -238,18 +245,57 @@ export function drawSoundTimeline(
 			filled: c.filled === true,
 		};
 	});
-	// motion: speed per frame, normalised to the range's fastest
+	// motion: speed per frame — the keyframed layers and, where analysed, the measured picture — normalised together
+	// (one unit: screen diagonals per second) to the range's fastest
 	drawText(img, 'move', 4, motionY + 8, DIM);
 	const speed = Array.isArray(v.motion?.speed) ? v.motion.speed.slice(0, 200_000).map((x) => num(x, 0)) : [];
-	const smax = Math.max(1e-6, ...speed);
+	const rawPixel = (v as { pixelMotion?: unknown }).pixelMotion as
+		| { startFrame?: unknown; speed?: unknown }
+		| null
+		| undefined;
+	const pixel: (number | null)[] =
+		rawPixel && typeof rawPixel === 'object' && Array.isArray(rawPixel.speed)
+			? rawPixel.speed.slice(0, 200_000).map((x) => (typeof x === 'number' && Number.isFinite(x) ? x : null))
+			: [];
+	const pixelStart = num(rawPixel?.startFrame, start);
+	let smax = 1e-6;
+	for (const s of speed) if (s > smax) smax = s;
+	for (const s of pixel) if (s !== null && s > smax) smax = s;
+	const yOfSpeed = (s: number) => motionY + motionH - 1 - (Math.max(0, s) / smax) * (motionH - 2);
 	if (speed.some((s) => s > 0))
 		polyline(
 			img,
-			speed.map((s) => motionY + motionH - 1 - (s / smax) * (motionH - 2)),
+			speed.map(yOfSpeed),
 			Math.round(xOf(num(v.motion?.startFrame, start))),
 			Math.max(1, Math.round(speed.length * pxPerFrame)),
 			MOTION,
 		);
+	// measured runs (frames outside the analysed windows are null: not drawn)
+	let measuredFrames = 0;
+	for (let i = 0; i < pixel.length; ) {
+		if (pixel[i] === null) {
+			i++;
+			continue;
+		}
+		let j = i;
+		while (j < pixel.length && pixel[j] !== null) j++;
+		measuredFrames += j - i;
+		const run = pixel.slice(i, j) as number[];
+		polyline(
+			img,
+			run.map(yOfSpeed),
+			Math.round(xOf(pixelStart + i)),
+			Math.max(1, Math.round(run.length * pxPerFrame)),
+			PIXEL_MOTION,
+		);
+		i = j;
+	}
+	const pixelState: TimelineCells['pixelMotion'] =
+		measuredFrames === 0
+			? 'not analysed'
+			: measuredFrames >= Math.min(pixel.length, Math.max(1, end - start))
+				? 'measured'
+				: 'partly analysed';
 	// findings as flags
 	drawText(img, 'check', 4, flagY + 7, DIM);
 	let labelEnd = -1;
@@ -315,6 +361,7 @@ export function drawSoundTimeline(
 		['hero cue', HERO],
 		['support cue', SUPPORT],
 		['motion', MOTION],
+		['measured motion', PIXEL_MOTION],
 		['error', SEVERITY.error],
 		['warning', SEVERITY.warning],
 	] as const) {
@@ -353,7 +400,7 @@ export function drawSoundTimeline(
 					name: 'move',
 					y: motionY,
 					height: motionH,
-					what: 'picture motion speed (the fastest keyframed layer), normalised',
+					what: 'picture motion speed, normalised together: the fastest keyframed layer (yellow) and, where analysed, the measured picture (pink)',
 				},
 				{
 					name: 'check',
@@ -366,6 +413,7 @@ export function drawSoundTimeline(
 			issues,
 			peaks,
 			normalization: v.normalization,
+			pixelMotion: pixelState,
 		},
 	};
 }

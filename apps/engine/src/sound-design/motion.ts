@@ -176,6 +176,41 @@ export class MotionService {
 			: null;
 	}
 
+	/**
+	 * The measured speed curves already cached over `range` (never analyses): the analysis windows the cue sources use
+	 * (10 minutes from frame 0, `maxMotionFrames`) and the exact range (an `analyze_picture_motion` of it). A picture
+	 * edited since its analysis has another fingerprint: not returned.
+	 */
+	async cachedCurves(
+		doc: ProjectDocument,
+		seq: Sequence,
+		range: { start: number; end: number },
+	): Promise<{ startFrame: number; speed: number[] }[]> {
+		const rate = seq.settings.frameRate as Rational;
+		const duration = Math.max(0, Math.ceil(sequenceDuration(seq)));
+		const win = maxMotionFrames(rate);
+		const plans: MotionPlan[] = [];
+		const tryPlan = (r: { start: number; end: number }) => {
+			try {
+				plans.push(planMotion(doc, seq, r));
+			} catch (e) {
+				if (!(e instanceof MotionInputError)) throw e;
+			}
+		};
+		for (let k = Math.floor(Math.max(0, range.start) / win); k * win < Math.min(duration, range.end); k++)
+			tryPlan({ start: k * win, end: Math.min(duration, (k + 1) * win) });
+		tryPlan(range);
+		const seen = new Set<string>();
+		const out: { startFrame: number; speed: number[] }[] = [];
+		for (const plan of plans) {
+			if (seen.has(plan.fingerprint)) continue;
+			seen.add(plan.fingerprint);
+			const hit = await this.cache.get(plan.fingerprint);
+			if (hit) out.push({ startFrame: hit.curve.startFrame, speed: hit.curve.speed });
+		}
+		return out;
+	}
+
 	/** Starts (or joins: same fingerprint) a `motion-analysis` job. */
 	submit(
 		doc: ProjectDocument,

@@ -332,6 +332,16 @@ export const SoundVisualResponseSchema = z.object({
 	stemPeakDb: z.object({ sfx: z.array(z.number()), bed: z.array(z.number()) }).optional(),
 	/** Motion speed per video frame from `motion.startFrame` (screen diagonals / s; the fastest moving layer). */
 	motion: z.object({ startFrame: frame, speed: z.array(z.number()) }),
+	/**
+	 * The picture's MEASURED motion (P6 `motion-analysis` of the rendered frames, the pixel source; same unit as
+	 * `motion`) per video frame from `startFrame`, when the range was already analysed — this route never starts an
+	 * analysis: `null` per frame outside the analysed windows, `null` altogether when nothing of the range is analysed
+	 * (or the picture changed since). Absent from engines before WP6.5b.
+	 */
+	pixelMotion: z
+		.object({ startFrame: frame, speed: z.array(z.number().nullable()) })
+		.nullable()
+		.optional(),
 	cues: z.array(
 		z.object({
 			cueId: z.string(),

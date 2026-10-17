@@ -144,6 +144,7 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 	});
 
 	let analysed: MotionAnalysisResult;
+	let analysedProject = '';
 
 	it('motion-analysis: the box starts moving at frame 31 and stops at 60 (±2), cached the second time', async () => {
 		const { b } = boxDoc();
@@ -155,6 +156,7 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 		timings.box4s = Date.now() - t0;
 		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
 		analysed = MotionAnalysisResultSchema.parse(job.result);
+		analysedProject = projectId;
 		expect(analysed).toMatchObject({ projectId, cached: false, frames: 120, range: { start: 0, end: 120 } });
 		expect(analysed.renderPath).toBeTruthy();
 		expect(analysed.curve.speed).toHaveLength(120);
@@ -183,6 +185,30 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 			cached: true,
 			fingerprint: analysed.fingerprint,
 		});
+	}, 180_000);
+
+	it('the visual route (view_sound_timeline) carries the measured curve once analysed, null before and after an edit', async () => {
+		// the project analysed above: its cached curve over the whole range and over a part of it
+		const projectId = analysedProject;
+		const whole = await post('/api/sound-design/visual', { projectId, range: { start: 0, end: 120 } });
+		expect(whole.status, JSON.stringify(whole.body).slice(0, 400)).toBe(200);
+		const pm = whole.body.pixelMotion as { startFrame: number; speed: (number | null)[] } | null;
+		expect(pm?.startFrame).toBe(0);
+		expect(pm!.speed).toHaveLength(120);
+		pm!.speed.forEach((v, i) =>
+			expect(Math.abs(v! - analysed.curve.speed[i]!), String(i)).toBeLessThan(0.001),
+		);
+		const part = await post('/api/sound-design/visual', { projectId, range: { start: 30, end: 90 } });
+		const pp = part.body.pixelMotion as { startFrame: number; speed: (number | null)[] };
+		expect(pp.startFrame).toBe(30);
+		expect(pp.speed).toHaveLength(60);
+		expect(Math.abs(pp.speed[10]! - analysed.curve.speed[40]!)).toBeLessThan(0.001);
+		// a picture never analysed (the clip 7 frames later): null, the keyframed motion still there
+		const other = seed(boxDoc(7).b.doc);
+		const none = await post('/api/sound-design/visual', { projectId: other, range: { start: 0, end: 120 } });
+		expect(none.status).toBe(200);
+		expect(none.body.pixelMotion).toBeNull();
+		expect((none.body.motion as { speed: number[] }).speed).toHaveLength(120);
 	}, 180_000);
 
 	it('pixel cues: pending with the job ids first, then moves and lands that resolve back to their frames', async () => {
