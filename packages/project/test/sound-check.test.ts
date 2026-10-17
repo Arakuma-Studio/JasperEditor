@@ -11,6 +11,7 @@ import {
 	mixFingerprint,
 	readSoundDesign,
 	repairDocument,
+	SOUND_CHECK_CATEGORY,
 	SOUND_CHECK_CODES,
 	SOUND_CHECK_MESSAGES,
 	SOUND_CHECK_MODEL_STRINGS,
@@ -208,6 +209,8 @@ describe('Sound Check verdict, counts and messages', () => {
 			'LOUDNESS',
 			'TRUE_PEAK',
 			'OUT_OF_SYNC',
+			// fix "SFX tail truncation": a clip cut before its sound has faded (spec 12 §2.6)
+			'TRUNCATED',
 			'MASKED',
 			'OVERLOAD',
 			'MUSIC_OVER_VOICE',
@@ -220,6 +223,7 @@ describe('Sound Check verdict, counts and messages', () => {
 			'LICENSE',
 			'CREDITS',
 		]);
+		expect(SOUND_CHECK_CATEGORY.TRUNCATED).toBe('sync');
 	});
 
 	it('messages: the template is the key, parameters fill it, every template is a unique model string', () => {
