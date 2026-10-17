@@ -564,6 +564,19 @@ describe('solver notes in words', () => {
 			'No sound of the allowed sources is indexed: install the starter kit or rescan the sound library',
 			'Boom at 00:00:08:10: headroom kept over the bed level',
 		]);
+		// a plan's solver warning names its item at the start of its message ("sfx:004: …"): the note names the sound
+		const named = planNotes({
+			events: [{ itemId: 'sfx:004', timecode: '00:00:06:00', sound: { title: 'Pneumatic whoosh' } }],
+			conflicts: [],
+			warnings: [
+				{
+					code: 'W_DIALOGUE_BAND',
+					message:
+						'sfx:004: during speech its dominant band (4000 Hz) is in 1–4 kHz; prefer a type whose dominant band is outside 1–4 kHz (here: boom)',
+				},
+			],
+		} as never);
+		expect(named[0]!.text).toMatch(/^Pneumatic whoosh at 00:00:06:00: /);
 	});
 
 	it('never throws on hostile reports', () => {

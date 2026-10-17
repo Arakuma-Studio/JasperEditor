@@ -189,8 +189,10 @@ export function deliveryNotes(
 /** A plan's notes: its warnings and the conflicts of its solved levels (named by the item's sound and cue time). */
 export function planNotes(report: SoundDesignPlanReport): SoundNote[] {
 	const byItem = new Map(report.events.map((e) => [e.itemId, e]));
-	return soundNotes(report, (_clipId, itemId) => {
-		const ev = itemId ? byItem.get(itemId) : undefined;
+	// a plan's warnings name their item at the start of the message ("sfx:004: …"), which arrives as the clip id
+	return soundNotes(report, (clipId, itemId) => {
+		const key = itemId ?? clipId;
+		const ev = key ? byItem.get(key) : undefined;
 		return ev ? t('{0} at {1}', ev.sound.title, ev.timecode) : null;
 	});
 }
