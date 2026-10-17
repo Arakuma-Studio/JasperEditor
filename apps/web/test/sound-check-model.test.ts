@@ -70,6 +70,17 @@ function doc() {
 
 const report = () => reportFixture({ projectId: 'prj_x', sequenceId: 'seq_x' });
 
+describe('listen-here reasons in the UI language', () => {
+	it('the worst moment says its finding translated, not the English text it quotes', () => {
+		__setCatalogForTests('es', ES, NAMES);
+		const rows = listenRows(report(), undefined);
+		const worst = rows.find((r) => r.slot === 'worst')!;
+		expect(worst.text).toContain('corte');
+		expect(worst.text).not.toContain('late on its');
+		expect(worst.text).not.toContain('Worst finding');
+	});
+});
+
 describe('every Sound Check message key is translated', () => {
 	it('each finding / fix / listen template and the custom label is a model string with a Spanish text (same placeholders)', () => {
 		const ph = (x: string) =>

@@ -501,12 +501,20 @@ export function listenRows(
 	doc?: ProjectDocument,
 ): ListenRow[] {
 	const verdicts = seq ? soundCheckHumanVerdicts(seq, doc ? { doc } : {}) : [];
-	return report.listen.slice(0, 5).map((l) => ({
-		...l,
-		slotLabel: SLOT_LABELS[l.slot] ?? l.slot,
-		text: messageText(l.why),
-		verdict: soundCheckVerdictFor(verdicts, { frame: l.frame, clipId: l.clipId, cueId: l.cueId }),
-	}));
+	return report.listen.slice(0, 5).map((l) => {
+		// the worst moment's reason quotes its finding's English text: say the finding in the UI language instead
+		const issue = l.issueId ? report.issues.find((i) => i.id === l.issueId) : undefined;
+		const text =
+			issue && l.why?.key === SOUND_CHECK_MESSAGES.listenWorst
+				? t(SOUND_CHECK_MESSAGES.listenWorst, messageText(issue.message))
+				: messageText(l.why);
+		return {
+			...l,
+			slotLabel: SLOT_LABELS[l.slot] ?? l.slot,
+			text,
+			verdict: soundCheckVerdictFor(verdicts, { frame: l.frame, clipId: l.clipId, cueId: l.cueId }),
+		};
+	});
 }
 
 /** Why a verdict no longer describes its moment, in words (null when it does or cannot be told). */
