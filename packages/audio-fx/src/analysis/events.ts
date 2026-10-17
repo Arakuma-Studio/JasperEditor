@@ -169,7 +169,14 @@ export type ListenAnalysis = {
 	/** BS.1770 gated integrated loudness of what was pushed (null: everything gated out). */
 	integratedLufs: number | null;
 	/** Per 10 ms hop: the K-weighted channel-weighted energy summed over the hop, and the sample peak (dBFS, ≥ −120). */
-	hop10: { count: number; samples: number; kEnergy: Float64Array; peakDb: Float32Array };
+	hop10: {
+		count: number;
+		samples: number;
+		kEnergy: Float64Array;
+		peakDb: Float32Array;
+		/** Mean square of the mono mean of the channels (linear). */
+		meanSquare: Float64Array;
+	};
 	spectrogram: ListenSpectrogram | null;
 	/** Input beyond `maxSeconds` was ignored. */
 	truncated: boolean;
@@ -957,7 +964,13 @@ export class ListenMeter {
 			accentDb: accent === null ? null : r1(accent),
 			silences,
 			integratedLufs: integrated === null ? null : r1(integrated),
-			hop10: { count: this.k10.n, samples: this.sampleRate / 100, kEnergy: this.k10.view().slice(), peakDb: peak },
+			hop10: {
+				count: this.k10.n,
+				samples: this.sampleRate / 100,
+				kEnergy: this.k10.view().slice(),
+				peakDb: peak,
+				meanSquare: this.msF10.view().slice(),
+			},
 			spectrogram: this.spec
 				? {
 						hopMs: 10,
