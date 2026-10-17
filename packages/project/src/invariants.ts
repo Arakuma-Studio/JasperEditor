@@ -47,7 +47,12 @@ import { isKnownClipKind, SequencePreviewSettingsSchema } from './schema/sequenc
 import type { ShapeItem } from './schema/shapes.ts';
 import type { ClipCameraTracker } from './schema/three-d.ts';
 import { libraryProvenanceIssue, readLibraryProvenance } from './sound/provenance.ts';
-import { clipSfxProblem, repairSoundDesign, sequenceSoundDesignIssue } from './sound/repair.ts';
+import {
+	clipSfxProblem,
+	markerVerdictProblem,
+	repairSoundDesign,
+	sequenceSoundDesignIssue,
+} from './sound/repair.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
@@ -1397,7 +1402,14 @@ export function runInvariants(
 		for (const t of [...seq.audioTracks, ...(seq.submixTracks ?? [])])
 			for (const x of t.mixer?.sends ?? []) claim(x.id, 'snd', [...where, 'tracks', t.id, 'sends', x.id]);
 		for (const m of audioMixIssues(seq as Sequence, where)) issues.push(inv('INV-MIX', m.message, m.path));
-		for (const m of seq.markers) claim(m.id, 'mrk', [...where, 'markers', m.id]);
+		for (const m of seq.markers) {
+			claim(m.id, 'mrk', [...where, 'markers', m.id]);
+			const verdictBad = markerVerdictProblem(m as { soundCheck?: unknown });
+			if (verdictBad)
+				issues.push(
+					inv('INV-SOUND', `Marker ${m.id}: ${verdictBad}`, [...where, 'markers', m.id, 'soundCheck']),
+				);
+		}
 		// sound-design (spec 12 §2.2): cues and settings must be readable, cue ids well-formed (INV-SOUND).
 		const soundBad = sequenceSoundDesignIssue(seq as { soundDesign?: unknown });
 		if (soundBad)

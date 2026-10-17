@@ -256,7 +256,10 @@ describe('placement never ends inside the sound', () => {
 		}
 		// without the media's length the descriptors are all there is (unchanged)
 		const t = soundTimingOf(
-			{ trailSilenceSec: trail, descriptors: { peakSec: 0.06, onsetSec: lead, headQuietSec: lead, durationSec: 0.1257 } },
+			{
+				trailSilenceSec: trail,
+				descriptors: { peakSec: 0.06, onsetSec: lead, headQuietSec: lead, durationSec: 0.1257 },
+			},
 			{ peakSec: 0, onsetSec: 0, headQuietSec: 0, durationSec: 1 },
 		);
 		const r = planSoundInsert({ cueFrame: 120, fps: { num: 30, den: 1 }, align: 'end', timing: t });

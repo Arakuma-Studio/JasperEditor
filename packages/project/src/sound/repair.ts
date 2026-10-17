@@ -22,6 +22,7 @@ import {
 	soundDesignIssue,
 } from '../schema/sound.ts';
 import { cueAnchorTargetExists } from './anchor.ts';
+import { readSoundCheckVerdictMeta } from './check.ts';
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
 	!!v && typeof v === 'object' && !Array.isArray(v);
@@ -43,6 +44,12 @@ export function clipSfxProblem(c: { kind: string; sfx?: unknown }): string | nul
 	if (sfx === undefined) return null;
 	if (c.kind !== 'audio') return `a ${c.kind} clip cannot carry sound-design metadata`;
 	return clipSfxIssue(sfx);
+}
+
+/** INV-SOUND: what is wrong with a sequence marker's Sound Check verdict data (`soundDesign.setVerdict`), or null. */
+export function markerVerdictProblem(m: { soundCheck?: unknown }): string | null {
+	if (m.soundCheck === undefined) return null;
+	return readSoundCheckVerdictMeta(m.soundCheck) ? null : 'its Sound Check verdict data is unreadable';
 }
 
 /** The cues of a sequence (empty when it has none or they are unreadable). */
@@ -186,6 +193,12 @@ export function repairSoundDesign(doc: ProjectDocument, ids: IdSource, note: Not
 				delete cr.sfx;
 				note('drop-sfx', c.id, 'unreadable sound-design metadata removed (the clip stays)');
 			}
+		}
+		// Verdict markers: unreadable verdict data is dropped (the marker stays, as an unbound verdict).
+		for (const m of seq.markers ?? []) {
+			if (markerVerdictProblem(m as { soundCheck?: unknown }) === null) continue;
+			delete (m as { soundCheck?: unknown }).soundCheck;
+			note('drop-verdict-meta', m.id, 'unreadable Sound Check verdict data removed (the marker stays)');
 		}
 		let sd: SoundDesign | undefined;
 		if (r.soundDesign !== undefined) {
