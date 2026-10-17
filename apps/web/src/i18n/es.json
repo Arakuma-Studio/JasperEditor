@@ -9634,7 +9634,7 @@
   "{0} off": "{0} desactivado",
   "{0} automated": "{0} automatizado",
   "{0} {1} dB": "{0} {1} dB",
-  "nothing plays under it in the bed: default level kept": "no suena nada debajo en el fondo: se mantiene el nivel por defecto"
+  "nothing plays under it in the bed: default level kept": "no suena nada debajo en el fondo: se mantiene el nivel por defecto",
   "\"{0}\" comes from a sound folder whose licence was not declared": "\"{0}\" procede de una carpeta de sonidos cuya licencia no se ha declarado",
   "\"{0}\" has no known licence ({1})": "\"{0}\" no tiene una licencia conocida ({1})",
   "\"{0}\" is licensed {1}: no derivatives (it may not be edited or mixed)": "\"{0}\" tiene licencia {1}: sin obras derivadas (no se puede editar ni mezclar)",
