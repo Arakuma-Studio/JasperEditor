@@ -775,7 +775,9 @@ describe('Export dialog: Run Sound Check before export', () => {
 		});
 		const prompt = await screen.findByTestId('export-sound-check-prompt', {}, { timeout: 5000 });
 		expect(prompt.getAttribute('role')).toBe('alertdialog');
-		expect(prompt.textContent).toContain('Sound Check Fail: 1 error, 4 warnings. Integrated -17.2 LUFS');
+		expect(prompt.textContent).toContain(
+			'FailSound Check: 1 error, 4 warnings. Integrated −17.2 LUFS, true peak −2.1 dBTP. Review the findings, or export anyway.',
+		);
 		expect(exports).toHaveLength(1);
 		await act(async () => {
 			fireEvent.click(screen.getByTestId('export-sound-check-review'));

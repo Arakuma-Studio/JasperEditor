@@ -11,8 +11,15 @@ import type { EditorSession } from '@jasper/session';
 import { Button, Icon } from '@jasper/ui';
 import { type ReactNode, useCallback, useRef, useState } from 'react';
 import { t } from '../i18n/runtime.ts';
-import { VERDICT_ICON, VERDICT_LABELS, VERDICT_TONE, verdictSentence } from '../sound/check-model.ts';
+import {
+	countsText,
+	VERDICT_ICON,
+	VERDICT_LABELS,
+	VERDICT_TONE,
+	verdictSentence,
+} from '../sound/check-model.ts';
 import { type CheckEngine, cancelSoundCheck, runSoundCheck, soundCheckStore } from '../sound/check-run.ts';
+import { fmtDb } from '../sound/mix-model.ts';
 
 const PREF_KEY = 'jasper:sound-check-before-export';
 
@@ -159,10 +166,10 @@ export function useExportSoundCheck(opts: {
 				<span id="export-sound-check-title" className="min-w-0 flex-1">
 					{report
 						? t(
-								'{0}. Integrated {1} LUFS, true peak {2} dBTP.',
-								verdictSentence(report.verdict, report.counts),
-								report.loudness.integratedLufs ?? '–',
-								report.loudness.truePeakDb ?? '–',
+								'Sound Check: {0}. Integrated {1} LUFS, true peak {2} dBTP. Review the findings, or export anyway.',
+								countsText(report.counts),
+								report.loudness.integratedLufs === null ? '–' : fmtDb(report.loudness.integratedLufs),
+								report.loudness.truePeakDb === null ? '–' : fmtDb(report.loudness.truePeakDb),
 							)
 						: t('The Sound Check could not run: {0}', state.kind === 'error' ? state.message : '')}
 				</span>

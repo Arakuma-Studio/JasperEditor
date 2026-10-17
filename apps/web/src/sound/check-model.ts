@@ -207,15 +207,18 @@ export function summaryChips(report: SoundCheckReport): SummaryChip[] {
 	];
 }
 
-/** "Fail: 2 errors, 3 warnings" — what the live region says after a run. */
-export function verdictSentence(verdict: CheckVerdict, counts: Record<string, number>): string {
+/** "2 errors, 3 warnings". */
+export function countsText(counts: Record<string, number>): string {
 	const e = counts.error ?? 0;
 	const w = counts.warning ?? 0;
-	const parts = [
-		e === 1 ? t('1 error') : t('{0} errors', e),
-		w === 1 ? t('1 warning') : t('{0} warnings', w),
-	];
-	return t('Sound Check {0}: {1}', t(VERDICT_LABELS[verdict]), parts.join(', '));
+	return [e === 1 ? t('1 error') : t('{0} errors', e), w === 1 ? t('1 warning') : t('{0} warnings', w)].join(
+		', ',
+	);
+}
+
+/** "Sound Check Fail: 2 errors, 3 warnings" — what the live region says after a run. */
+export function verdictSentence(verdict: CheckVerdict, counts: Record<string, number>): string {
+	return t('Sound Check {0}: {1}', t(VERDICT_LABELS[verdict]), countsText(counts));
 }
 
 /** Why a stored summary is stale, in words (null when it is current or there is none). */

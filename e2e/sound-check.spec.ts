@@ -357,7 +357,7 @@ test('Sound Check panel: seeded defects found with timecodes, the same as MCP; v
 	await page.getByTestId('export-start').click();
 	const prompt = page.getByTestId('export-sound-check-prompt');
 	await expect(prompt).toBeVisible({ timeout: CHECK_MS });
-	await expect(prompt).toContainText(/Sound Check Fail/);
+	await expect(prompt).toContainText(/Fail.*Sound Check: \d+ errors?/);
 	await page.screenshot({ path: join(outDir, 'export-prompt.png') });
 	await prompt.getByTestId('export-sound-check-review').click();
 	await expect(page.getByTestId('export-mode')).toBeHidden();
