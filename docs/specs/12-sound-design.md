@@ -154,10 +154,16 @@ with ties broken by id.
 the local-path import rules. A sound whose quiet head is shorter than 50 ms (and which is at most 120 s long), from
 any source, is registered as a managed WAV copy with 50 ms (whole samples) of digital silence in front, so placement
 (§2.3) is always sample-exact; its provenance's descriptors describe that copy and `leadSilenceSec` records the
-padding (decision of the Phase 1 verification; schema v7). The client commits `media.register` into a "Sound Effects" bin.
-`MediaAssetSchema.library?` carries `soundId`, `title`, `types`, `source`, `license`, `licenseUrl`, `author`,
-`sourceUrl`, `attribution`, `descriptors{peakSec, onsetSec, headQuietSec, durationSec, octaveBandsDb,
-centroidHz, maxMomentaryLufs}` and `snapshotHash`. Command `media.setLibraryInfo` sets it.
+padding (decision of the Phase 1 verification; schema v7). A sound of at most 120 s whose −60 dB tail ends less than
+50 ms before the end of its file (or whose tail the analysis did not reach) also gets 50 ms of digital silence after it
+(`trailSilenceSec`; a folder sound that needs it is copied, like one that needs the lead), so a placed clip, rounded up to
+the end of the sound, stays inside its media (fix "SFX tail truncation"). The copy is bit-exact and deterministic, so
+repeated registrations dedupe; a copy made before the fix has another fingerprint, so registering the sound again gives
+the padded copy as a new media (existing clips keep theirs until swapped). The client commits `media.register` into a
+"Sound Effects" bin. `MediaAssetSchema.library?` carries `soundId`, `title`, `types`, `source`, `license`, `licenseUrl`,
+`author`, `sourceUrl`, `attribution`, `descriptors{peakSec, onsetSec, headQuietSec, durationSec, octaveBandsDb,
+centroidHz, maxMomentaryLufs, truePeakDb?, tailSec?}`, `leadSilenceSec?`, `trailSilenceSec?` and `snapshotHash`
+(`tailSec` only when the library analysed the whole file). Command `media.setLibraryInfo` sets it.
 
 **Credits** (`packages/project/src/sound/credits.ts`): `soundCredits(doc, sequenceId?)` returns rows, text and
 warnings, walking nested sequences.
@@ -220,6 +226,17 @@ optional or loose, with read-time defaults.
   ITU-R BT.1359). Library sounds never take this branch: registering pads their head (§2.1), so `errorFlicks` is 0;
   it remains for media placed from other sources (the longest library files, project audio).
 - Record `errorFlicks`. Refuse `start < 0` with `E_INVALID_PARAM`.
+- **Length: the whole sound always plays.** The clip is `[sourceIn, end of the sound)` in whole frames (the end of the
+  sound in the file is `durationSec − trailSilenceSec`), rounded **up** to the frame that holds where the sound has
+  faded — its −60 dB tail (`peakSec + descriptors.tailSec`) when the provenance records it, else that end: `frames =
+  max(⌊(end − sourceIn) / rate / F⌋, ⌈(faded − sourceIn) / rate / F⌉)`. No clip ends inside its sound, and none plays
+  the trailing silence for its own sake (a riser aligned by its end ends on its frame). Registering pads short
+  library sounds that do not end in ≥ 50 ms of quiet with `LIBRARY_TRAIL_SILENCE_SEC` = 50 ms of silence after them
+  (§2.1; ≥ one frame at 23.976 fps, room for +19 % speed), so that frame is inside the media; media without that
+  room (copies registered before, sounds over 120 s, project audio, faster speeds) end less than one frame past their
+  media — INV-005's one-frame tolerance, played as silence by every renderer. `end` alignment uses the end of the sound,
+  not of the trailing silence. (Fix "SFX tail truncation": a click shorter than a frame after its peak was cut at its
+  peak.)
 - Layers: one clip each, peaks aligned, on different SFX tracks, grouped (`clip.group`).
 - Rotation: round-robin over the top-N ranked candidates, never the same file twice in a row. Seeded ±2 %
   varispeed (`clip.setSpeed`, `maintainPitch:false`) and ±1 dB jitter.
@@ -304,7 +321,8 @@ bed) through `renderMixdown` (`measureOnly`), runs VAD, and computes 10 ms curve
 | Code | Check |
 |---|---|
 | `LOUDNESS`, `TRUE_PEAK` | integrated and TP vs preset (±1 LU) |
-| `OUT_OF_SYNC` | peak vs cue, located by cross-correlation in the SFX stem: cut ±1 frame, land ±2, move ±3, appear (start) ±1 |
+| `OUT_OF_SYNC` | peak vs cue, located by cross-correlation in the SFX stem: cut ±1 frame, land ±2, move ±3, appear (start) ±1; or "cut": the clip ends < 20 ms after its aligned point while its sound goes on (error) |
+| `TRUNCATED` | a placed sound's clip ends before the sound has faded to −60 dB (provenance tail, library tail, or measured on the file) while it runs to the last whole frame of its media — the frame grid cut it, not the user (warning). Fix (also for OUT_OF_SYNC "cut"), first that reaches the end: `clip.trim` out; `swap_sound` to the same sound (re-registers it with trailing silence, `soundDesign.swap` keeps the aligned frame, track, role, pan, gain); `soundDesign.swap` on its own media (rounds the clip up past the media end, silence there). All safe, dry-run |
 | `MASKED` | dominant-band lift: support ≥ 1.5 dB, hero ≥ 3 dB |
 | `OVERLOAD` | |
 | `MUSIC_OVER_VOICE` | music not ≥ 8 LU under voice during speech |

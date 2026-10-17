@@ -9642,5 +9642,8 @@
   "Two heroes {0} s apart at {1} and {2} (at most one per {3} s at {4} density, never within 0.5 s)": "Dos sonidos principales separados {0} s en {1} y {2} (como máximo uno cada {3} s con densidad {4}, nunca a menos de 0,5 s)",
   "Worst finding: {0}": "Peor hallazgo: {0}",
   "{0} is cut {1} ms after its aligned point by the end of its clip at {2}: the sound it is placed for does not play": "{0} se corta {1} ms después de su punto de alineación por el final de su clip en {2}: el sonido para el que se colocó no suena",
-  "Lengthen the clip by {0} frames so the whole sound plays": "Alargar el clip {0} fotogramas para que suene el sonido completo"
+  "Lengthen the clip by {0} frames so the whole sound plays": "Alargar el clip {0} fotogramas para que suene el sonido completo",
+  "{0} is cut by the end of its clip at {1}, {2} ms before the sound has faded (−60 dB)": "{0} se corta por el final de su clip en {1}, {2} ms antes de que el sonido se haya apagado (−60 dB)",
+  "Let the clip play to the end of its sound (past the end of its media)": "Dejar que el clip suene hasta el final de su sonido (pasado el final de su medio)",
+  "Register \"{0}\" again (its copy ends in silence now) and swap it in, so the whole sound plays": "Registrar \"{0}\" de nuevo (su copia termina ahora en silencio) e intercambiarlo, para que suene el sonido completo"
 }

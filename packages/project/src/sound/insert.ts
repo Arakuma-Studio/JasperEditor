@@ -163,8 +163,9 @@ export type SoundInsertPlacement = {
 	/** Clip Out point (content flicks): the end of the media. */
 	outFlicks: number;
 	/**
-	 * Clip length in frames: `[In, Out)` in whole frames, rounded UP when that ends inside the sound (`soundEndFlicks`), so
-	 * the whole sound plays; such a clip ends less than one frame after its media (INV-005's tolerance: silence there).
+	 * Clip length in frames: `[In, end of the sound)` in whole frames (the trailing silence left out), rounded UP when that
+	 * ends inside the sound (`soundEndFlicks`), so the whole sound plays — into the trailing silence, or, for media without
+	 * it, less than one frame past the media's end (INV-005's tolerance: silence there).
 	 */
 	frames: number;
 	/** The source point the clip reaches at least (content flicks): the sound's −60 dB tail, else its end. */
@@ -229,9 +230,12 @@ export function planSoundInsert(input: {
 		return { ok: false, code: 'E_INVALID_PARAM', message: 'The sound is too short to place' };
 	const F = flicksPerFrame(input.fps);
 	const soundEndFlicks = Math.round(reachSec * FLICKS_PER_SECOND);
-	// whole frames inside the media, or — when the last of them would end inside the sound — rounded up to the frame that
-	// holds its end (less than one frame past the media's end: INV-005's tolerance; the mixers play silence there)
-	const fit = Math.floor((durFlicks - r.sourceInFlicks) / rate / F + FRAME_EPS);
+	// whole frames of the sound (the trailing silence registration added is not played for its own sake: a riser aligned
+	// by its end ends on its frame), or — when the last of them would end inside the sound — rounded up to the frame that
+	// holds its end (inside the trailing silence; without it less than one frame past the media's end: INV-005's
+	// tolerance, the mixers play silence there)
+	const endFlicks = Math.min(durFlicks, Math.round(endSec * FLICKS_PER_SECOND));
+	const fit = Math.floor((endFlicks - r.sourceInFlicks) / rate / F + FRAME_EPS);
 	const need = Math.ceil((soundEndFlicks - r.sourceInFlicks) / rate / F - 1e-6);
 	return {
 		ok: true,

@@ -19,6 +19,7 @@ import {
 	planSoundInsert,
 	type Rational,
 	readLibraryProvenance,
+	repairDocument,
 	shiftLibraryDescriptors,
 	soundTimingOf,
 } from '../src/index.ts';
@@ -117,6 +118,22 @@ describe('registration: trailing silence', () => {
 		expect(r.ok).toBe(false);
 	});
 
+	it('repairDocument drops a damaged trailSilenceSec and keeps the rest (INV-LIBRARY flags it)', () => {
+		const h = new Harness();
+		const m = media(h, { peakAfterLead: 0.001, soundSec: 0.03, trailSec: 0.05, tailSec: 0.029 });
+		expect(checkInvariants(h.doc)).toEqual([]);
+		const doc = JSON.parse(JSON.stringify(h.doc));
+		doc.media[m].library.trailSilenceSec = -3;
+		expect(checkInvariants(doc).some((i) => i.invariant === 'INV-LIBRARY')).toBe(true);
+		const { document, report } = repairDocument(doc, h.ids);
+		expect(report).toContainEqual(expect.objectContaining({ action: 'repair-library', entity: m }));
+		const lib = document.media[m]!.library!;
+		expect(lib.trailSilenceSec).toBeUndefined();
+		expect(lib.descriptors?.tailSec).toBe(0.029);
+		expect(checkInvariants(document)).toEqual([]);
+		expect(repairDocument(document, h.ids).report).toEqual([]);
+	});
+
 	it('soundTimingOf: the sound ends before the trail; it has faded at peak + tail', () => {
 		const t = soundTimingOf(
 			{
@@ -184,6 +201,8 @@ describe('placement never ends inside the sound', () => {
 					// (whole frames inside the media keep `FRAME_EPS`, 1/1000 of a frame, as `clip.place` does)
 					if (padded && F * rate <= trail * FLICKS_PER_SECOND)
 						expect(reach).toBeLessThanOrEqual(durFlicks + F * rate * 1e-3 + 1);
+					// the trailing silence is not played for its own sake: at most the frame holding the end of the sound
+					expect(reach).toBeLessThan(endSec * FLICKS_PER_SECOND + F * rate * (1 + 1e-3) + 1);
 					// `end` aligns the end of the sound, not of the trailing silence
 					if (align === 'end') expect(p.alignFlicks).toBe(Math.round(endSec * FLICKS_PER_SECOND));
 				},
