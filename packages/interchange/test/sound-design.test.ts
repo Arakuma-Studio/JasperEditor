@@ -12,10 +12,10 @@ import {
 } from '@jasper/project';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { videoAsset } from '../../project/test/helpers.ts';
 import { LIB } from '../../project/test/sound-fixtures.ts';
 import { exportTimeline, type Format, importTimeline } from '../src/index.ts';
 import { Harness, withPath } from './support/rich.ts';
-import { videoAsset } from '../../project/test/helpers.ts';
 
 const lib = (over: Partial<LibraryProvenance>): LibraryProvenance => ({ ...LIB, ...over });
 
@@ -23,7 +23,8 @@ const lib = (over: Partial<LibraryProvenance>): LibraryProvenance => ({ ...LIB, 
 function soundProject() {
 	const h = new Harness({ preset: 'hd-1080p-30' });
 	const reg = (asset: ReturnType<typeof videoAsset>, path: string) =>
-		(h.ok([{ type: 'media.register', asset: withPath(asset, path) }]).results[0] as { mediaId: string }).mediaId;
+		(h.ok([{ type: 'media.register', asset: withPath(asset, path) }]).results[0] as { mediaId: string })
+			.mediaId;
 	const pic = reg(videoAsset({ seconds: 10, audio: false }), '/footage/pic.mov');
 	const music = reg(videoAsset({ kind: 'audio', seconds: 10 }), '/audio/music.wav');
 	const hit = reg(videoAsset({ kind: 'audio', seconds: 1 }), '/sfx/hit.wav');
@@ -38,7 +39,15 @@ function soundProject() {
 		{
 			type: 'soundCue.add',
 			cues: [
-				{ frame: 30, kind: 'move', weight: 'hero', types: ['whoosh', 'hit'], source: 'user', reason: 'Logo in', ref: '$a' },
+				{
+					frame: 30,
+					kind: 'move',
+					weight: 'hero',
+					types: ['whoosh', 'hit'],
+					source: 'user',
+					reason: 'Logo in',
+					ref: '$a',
+				},
 				{
 					frame: 90,
 					kind: 'land',
@@ -50,7 +59,9 @@ function soundProject() {
 			],
 		},
 	]);
-	h.ok([{ type: 'soundDesign.place', cueId: r.refs.$b!, layers: [{ mediaId: hit, track: 'A2', pitchSt: 5 }] }]);
+	h.ok([
+		{ type: 'soundDesign.place', cueId: r.refs.$b!, layers: [{ mediaId: hit, track: 'A2', pitchSt: 5 }] },
+	]);
 	h.ok([
 		{ type: 'soundDesign.applyStopBefore', cueId: r.refs.$b! },
 		{ type: 'soundDesign.ensureBus' },
@@ -58,7 +69,7 @@ function soundProject() {
 	]);
 	const seq = h.seq;
 	expect(seq.submixTracks).toHaveLength(1);
-	expect(seq.audioTracks[0]!.volumeDb.keyframes.length).toBeGreaterThan(0);
+	expect((seq.audioTracks[0]!.volumeDb?.keyframes ?? []).length).toBeGreaterThan(0);
 	const sfx = Object.values(seq.clips).find((c) => (c as { sfx?: unknown }).sfx)!;
 	expect((sfx as { effects: { effectId: string }[] }).effects.map((e) => e.effectId)).toContain(
 		'jasper.audio.pitch-shifter',
@@ -88,9 +99,12 @@ describe('sound design in interchange exports (spec 12 §2.11)', () => {
 		expect(entry!.message).toContain(
 			"proposals and the sound design's mix metadata (settings, mix records, the last Sound Check, the SFX placement data of clips) are not carried",
 		);
-		if (format === 'omf' || format === 'ale') expect(entry!.message).toMatch(/the 2 sound design cue\(s\) of ".*" are not carried/);
+		if (format === 'omf' || format === 'ale')
+			expect(entry!.message).toMatch(/the 2 sound design cue\(s\) of ".*" are not carried/);
 		else {
-			expect(entry!.message).toMatch(/the 2 sound design cue\(s\) of ".*" are exported as "SFX: <type> \(<weight>\)" markers/);
+			expect(entry!.message).toMatch(
+				/the 2 sound design cue\(s\) of ".*" are exported as "SFX: <type> \(<weight>\)" markers/,
+			);
 			expect(entry!.instead).toContain('Convert Markers to Cues');
 		}
 	});
@@ -118,7 +132,13 @@ describe('sound design in interchange exports (spec 12 §2.11)', () => {
 			{
 				type: 'soundCue.add',
 				sequenceId: seq.id,
-				cues: cues.map((c) => ({ frame: c.frame, kind: c.kind, weight: c.weight, types: c.types, source: 'marker' })),
+				cues: cues.map((c) => ({
+					frame: c.frame,
+					kind: c.kind,
+					weight: c.weight,
+					types: c.types,
+					source: 'marker',
+				})),
 			},
 		]);
 		expect((r.results[0] as { cueIds: string[] }).cueIds).toHaveLength(2);
@@ -129,20 +149,35 @@ describe('sound design in interchange exports (spec 12 §2.11)', () => {
 		const msgs = (f: Format) => exportTimeline(h.doc, h.seqId, f).report.entries.map((e) => e.message);
 		for (const f of ['fcp7', 'fcpxml', 'edl', 'aaf', 'omf'] as const) {
 			const m = msgs(f);
-			expect(m.some((x) => /submix track\(s\) of ".*" are not carried/.test(x)), `${f}: ${m.join(' | ')}`).toBe(true);
-			expect(m.some((x) => /the sends.* of track A2 are not carried/.test(x)), `${f}`).toBe(true);
-			expect(m.some((x) => /loudness normalisation of ".*" \(-16 LUFS, -1 dBTP ceiling\) is not carried/.test(x)), f).toBe(
-				true,
-			);
-			expect(m.some((x) => /volume and pan of track A1/.test(x)), `${f}: ${m.join(' | ')}`).toBe(true);
+			expect(
+				m.some((x) => /submix track\(s\) of ".*" are not carried/.test(x)),
+				`${f}: ${m.join(' | ')}`,
+			).toBe(true);
+			expect(
+				m.some((x) => /the sends.* of track A2 are not carried/.test(x)),
+				`${f}`,
+			).toBe(true);
+			expect(
+				m.some((x) => /loudness normalisation of ".*" \(-16 LUFS, -1 dBTP ceiling\) is not carried/.test(x)),
+				f,
+			).toBe(true);
+			expect(
+				m.some((x) => /volume and pan of track A1/.test(x)),
+				`${f}: ${m.join(' | ')}`,
+			).toBe(true);
 		}
 		for (const f of ['aaf', 'omf'] as const)
-			expect(msgs(f).some((x) => /audio effects \(jasper\.audio\.pitch-shifter\) of .* are not carried by (AAF|OMF)/.test(x))).toBe(
-				true,
-			);
+			expect(
+				msgs(f).some((x) =>
+					/audio effects \(jasper\.audio\.pitch-shifter\) of .* are not carried by (AAF|OMF)/.test(x),
+				),
+			).toBe(true);
 		// OTIO carries all of it in its metadata
 		const otio = msgs('otio');
-		expect(otio.some((x) => /submix|sends|loudness normalisation|volume and pan/.test(x)), otio.join(' | ')).toBe(false);
+		expect(
+			otio.some((x) => /submix|sends|loudness normalisation|volume and pan/.test(x)),
+			otio.join(' | '),
+		).toBe(false);
 	});
 
 	it('OTIO restores the SFX Room (submix, sends, output), the automation and the loudness; twice in a project', () => {
@@ -152,12 +187,14 @@ describe('sound design in interchange exports (spec 12 §2.11)', () => {
 		expect(imp.warnings.filter((w) => w.level === 'warning')).toEqual([]);
 		const src = h.seq;
 		expect(seq.submixTracks).toHaveLength(1);
-		expect(seq.submixTracks![0]!.effects.map((e) => e.effectId)).toEqual(src.submixTracks![0]!.effects.map((e) => e.effectId));
+		expect((seq.submixTracks![0]!.effects ?? []).map((e) => e.effectId)).toEqual(
+			(src.submixTracks![0]!.effects ?? []).map((e) => e.effectId),
+		);
 		const sends = seq.audioTracks.flatMap((t) => t.mixer?.sends ?? []);
 		expect(sends.length).toBe(src.audioTracks.flatMap((t) => t.mixer?.sends ?? []).length);
 		for (const s of sends) expect(s.target).toBe(seq.submixTracks![0]!.id);
-		expect(seq.audioTracks[0]!.volumeDb.keyframes.map((k) => k.value)).toEqual(
-			src.audioTracks[0]!.volumeDb.keyframes.map((k) => k.value),
+		expect(seq.audioTracks[0]!.volumeDb!.keyframes.map((k) => k.value)).toEqual(
+			src.audioTracks[0]!.volumeDb!.keyframes.map((k) => k.value),
 		);
 		expect(seq.master.loudness).toMatchObject({ enabled: true, targetLufs: -16, truePeakDb: -1 });
 		// a second import of the same file into the same project gets its own ids
@@ -194,8 +231,13 @@ describe('sound design in interchange exports (spec 12 §2.11)', () => {
 		const { seq, imp } = reimport(new TextEncoder().encode(text), 'otio');
 		expect(seq.audioTracks.flatMap((t) => t.mixer?.sends ?? [])).toEqual([]);
 		const warns = imp.warnings.map((w) => w.message);
-		expect(warns.some((m) => /submix track of .* is unreadable/.test(m)), warns.join(' | ')).toBe(true);
-		expect(warns.some((m) => /mixer setting\(s\) of .* name a submix the document does not carry/.test(m))).toBe(true);
+		expect(
+			warns.some((m) => /submix track of .* is unreadable/.test(m)),
+			warns.join(' | '),
+		).toBe(true);
+		expect(
+			warns.some((m) => /mixer setting\(s\) of .* name a submix the document does not carry/.test(m)),
+		).toBe(true);
 	});
 
 	it('OTIO: arbitrary submix / mixer metadata never breaks the import (property)', () => {

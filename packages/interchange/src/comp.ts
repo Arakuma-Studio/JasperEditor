@@ -358,7 +358,12 @@ export function fromProject(
 			if (kind === 'video') reportVisualLoss(c, s, p, formatName, report);
 			const source = doc.sources[src]!;
 			// Audio clip effects (EQ, pitch shift, a sound design build filter…): only rendered essence carries them.
-			if (kind === 'audio' && !source.key.startsWith('clip:') && c.effects.length && (sub === null || sub === 0))
+			if (
+				kind === 'audio' &&
+				!source.key.startsWith('clip:') &&
+				c.effects.length &&
+				(sub === null || sub === 0)
+			)
 				report.warn(
 					`the audio effects (${[...new Set(c.effects.map((e) => e.effectId))].join(', ')}) of ${describeClip(c, rate)} are not carried by ${formatName}`,
 					{
@@ -452,10 +457,13 @@ export function fromProject(
 			t.pan?.keyframes.length ||
 			(t.pan && t.pan.value !== 0)
 		)
-			report.warn(`the volume and pan of track A${ti + 1} (and their automation) are not carried by ${formatName}`, {
-				subject: { kind: 'track', name: t.name ?? `A${ti + 1}` },
-				instead: 'the clips at unity track level',
-			});
+			report.warn(
+				`the volume and pan of track A${ti + 1} (and their automation) are not carried by ${formatName}`,
+				{
+					subject: { kind: 'track', name: t.name ?? `A${ti + 1}` },
+					instead: 'the clips at unity track level',
+				},
+			);
 		const fmt = (t.jasper as { channelFormat?: string } | undefined)?.channelFormat;
 		const ch = fmt === 'mono' ? 1 : fmt === '5.1' ? 6 : 2;
 		if (media.breakoutToMono)

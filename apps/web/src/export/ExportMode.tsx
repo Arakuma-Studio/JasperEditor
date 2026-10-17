@@ -19,10 +19,10 @@ import { blockingForEngine, type PlanState, PlanSummary, soundWarningsOf } from 
 import { useExportSoundCheck } from './SoundCheckGate.tsx';
 import {
 	buildExportSettings,
-	CREDITS_OPTIONS,
 	type CaptionExportChoice,
-	type CreditsChoice,
 	CODEC_LABELS,
+	CREDITS_OPTIONS,
+	type CreditsChoice,
 	codecOptions,
 	DEFAULT_CAPTION_CHOICE,
 	DEFAULT_COLOR_CHOICE,
@@ -153,9 +153,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		setUsePreviews(r?.usePreviews === true);
 		setSmartRender(r?.smartRender === true);
 		setUseProxies(r?.useProxies === true);
-		setCreditsChoice(
-			r?.credits ?? (defaultCreditsSidecar(session.getCommitted(), sequenceId) || 'off'),
-		);
+		setCreditsChoice(r?.credits ?? (defaultCreditsSidecar(session.getCommitted(), sequenceId) || 'off'));
 		setFileName(r?.fileName ?? sequenceName(session.getCommitted(), sequenceId));
 	}, [sequenceId, session]);
 

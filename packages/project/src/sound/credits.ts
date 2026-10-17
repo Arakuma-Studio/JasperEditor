@@ -211,7 +211,8 @@ export function soundCredits(
 	};
 	if (opts.played && sequenceId !== undefined) {
 		for (const c of opts.played.slice(0, 1_000_000))
-			if (typeof c?.mediaId === 'string' && typeof c.clipId === 'string') count(c.mediaId, c.clipId, sequenceId);
+			if (typeof c?.mediaId === 'string' && typeof c.clipId === 'string')
+				count(c.mediaId, c.clipId, sequenceId);
 		seqIds = [];
 	}
 	for (const sid of [...new Set(seqIds)]) {

@@ -49,7 +49,14 @@ function fakeEngine(license = 'CC-BY-4.0') {
 					durationFlicks: 705_600_000,
 					startTimecode: null,
 					streams: [
-						{ index: 0, type: 'audio', codec: 'pcm_s16le', sampleRate: 48_000, channels: 2, channelLayout: 'stereo' },
+						{
+							index: 0,
+							type: 'audio',
+							codec: 'pcm_s16le',
+							sampleRate: 48_000,
+							channels: 2,
+							channelLayout: 'stereo',
+						},
 					],
 					rotationDegrees: 0,
 					hasAlpha: false,
@@ -74,8 +81,17 @@ function fakeEngine(license = 'CC-BY-4.0') {
 	const warnings = (s: ExportSettings): RenderPlan['warnings'] => [
 		...(s.credits?.sidecar
 			? []
-			: [{ code: 'W_SOUND_CREDITS', message: '1 sound heard in this export needs a credit (CC-BY-4.0: "Whoosh")' }]),
-		{ code: 'W_SOUND_CHECK_STALE', level: 'info' as const, message: 'The last Sound Check of this sequence is out of date' },
+			: [
+					{
+						code: 'W_SOUND_CREDITS',
+						message: '1 sound heard in this export needs a credit (CC-BY-4.0: "Whoosh")',
+					},
+				]),
+		{
+			code: 'W_SOUND_CHECK_STALE',
+			level: 'info' as const,
+			message: 'The last Sound Check of this sequence is out of date',
+		},
 		{ code: 'FIELDS_PROGRESSIVE', message: 'unrelated' },
 	];
 	const job = (state: string) => ({
@@ -168,7 +184,11 @@ describe('start_export credits (spec 12 §2.11)', () => {
 		expect(engine.starts[0]!.settings.credits).toEqual({ sidecar: 'md' });
 		expect(r.body.credits).toEqual({ sidecar: 'md', defaulted: true });
 		expect(r.body.soundWarnings).toEqual([
-			{ code: 'W_SOUND_CHECK_STALE', level: 'info', message: 'The last Sound Check of this sequence is out of date' },
+			{
+				code: 'W_SOUND_CHECK_STALE',
+				level: 'info',
+				message: 'The last Sound Check of this sequence is out of date',
+			},
 		]);
 	});
 
@@ -189,7 +209,10 @@ describe('start_export credits (spec 12 §2.11)', () => {
 		]);
 		const bad = await call('start_export', { projectId: 'prj_test', credits: 'pdf' });
 		expect(bad.isError).toBe(true);
-		const extra = await call('start_export', { projectId: 'prj_test', credits: { sidecar: 'md', where: 'x' } });
+		const extra = await call('start_export', {
+			projectId: 'prj_test',
+			credits: { sidecar: 'md', where: 'x' },
+		});
 		expect(extra.isError).toBe(true);
 	});
 
@@ -209,7 +232,11 @@ describe('start_export credits (spec 12 §2.11)', () => {
 		const { call } = await connect();
 		const r = await call('start_export', { projectId: 'prj_test', wait: true });
 		expect(r.body.result).toMatchObject({
-			credits: { format: 'md', count: 1, url: 'http://engine.test/renders/job_export/credits/output.credits.md' },
+			credits: {
+				format: 'md',
+				count: 1,
+				url: 'http://engine.test/renders/job_export/credits/output.credits.md',
+			},
 			warnings: [{ code: 'W_SOUND_CHECK_STALE', level: 'info' }],
 		});
 		const w = await call('wait_for_job', { jobId: 'job_export' });

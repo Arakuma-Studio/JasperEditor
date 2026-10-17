@@ -424,7 +424,7 @@ export function fromJasper(
 					instead:
 						carried || n === 0
 							? 'nothing'
-						: 'markers (after importing, Sequence ▸ Sound Design ▸ Convert Markers to Cues makes them cues again)',
+							: 'markers (after importing, Sequence ▸ Sound Design ▸ Convert Markers to Cues makes them cues again)',
 				},
 			);
 		}

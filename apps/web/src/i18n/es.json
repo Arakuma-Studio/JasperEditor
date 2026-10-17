@@ -9940,5 +9940,9 @@
   "Sources not analysed yet are measured while proposing (slower the first time).": "Las fuentes aún sin analizar se miden al proponer (más lento la primera vez).",
   "The engine is not available": "El motor no está disponible",
   "No footage in the range": "No hay metraje en el intervalo",
-  "No music clip in the range": "No hay clips de música en el intervalo"
+  "No music clip in the range": "No hay clips de música en el intervalo",
+  "Credit lines of the library sounds heard in the export, written next to the file": "Líneas de créditos de los sonidos de la biblioteca que se oyen en la exportación, escritas junto al archivo",
+  "Credits": "Créditos",
+  "Sound credits file": "Archivo de créditos de sonido",
+  "Text (.txt)": "Texto (.txt)"
 }

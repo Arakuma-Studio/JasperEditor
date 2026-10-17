@@ -17,6 +17,7 @@ import {
 	type LinkGroup,
 	type MediaAsset,
 	type MediaStream,
+	MixerStripSchema,
 	type MulticamAngle,
 	type MulticamSource,
 	makeSequenceSettings,
@@ -26,7 +27,6 @@ import {
 	type Sequence,
 	type SyntheticSource,
 	type TimedClip,
-	MixerStripSchema,
 	type Track,
 	TrackSchema,
 	type Transcript,
@@ -471,10 +471,13 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 				for (const raw of rawSubs.slice(0, 64)) {
 					const r = TrackSchema.safeParse(raw);
 					if (!r.success || r.data.kind !== 'audio') {
-						report.warn(`a submix track of "${s.name}" in the document's metadata is unreadable and was skipped`, {
-							subject: { kind: 'track', name: String((raw as { name?: unknown })?.name ?? 'Submix') },
-							instead: 'nothing (tracks routed to it play to the Mix)',
-						});
+						report.warn(
+							`a submix track of "${s.name}" in the document's metadata is unreadable and was skipped`,
+							{
+								subject: { kind: 'track', name: String((raw as { name?: unknown })?.name ?? 'Submix') },
+								instead: 'nothing (tracks routed to it play to the Mix)',
+							},
+						);
 						continue;
 					}
 					const id = ids.next('trk');
@@ -525,10 +528,13 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 					if (before.mixers[i]) t.mixer = before.mixers[i];
 					else delete t.mixer;
 				});
-				report.warn(`the submix routing of "${s.name}" in the document's metadata is invalid and was not restored`, {
-					subject: { kind: 'sequence', name: s.name },
-					instead: 'every track mixed straight to the Mix',
-				});
+				report.warn(
+					`the submix routing of "${s.name}" in the document's metadata is invalid and was not restored`,
+					{
+						subject: { kind: 'sequence', name: s.name },
+						instead: 'every track mixed straight to the Mix',
+					},
+				);
 			}
 		};
 

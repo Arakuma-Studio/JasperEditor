@@ -183,8 +183,7 @@ function LifecycleBody(props: {
 						action: { label: 'Download', href: engine.client.renderOutputUrl(job.id) },
 						durationMs: null,
 					});
-				}
-				else if (job.state !== 'cancelled')
+				} else if (job.state !== 'cancelled')
 					notices.push({
 						kind: 'error',
 						message: `Export failed: ${fileName}`,
@@ -415,7 +414,8 @@ export function exportResultDetail(result: unknown): string | undefined {
 				? 'Sound credits file written (1 sound).'
 				: `Sound credits file written (${c.count} sounds).`,
 		);
-	else if (c && c.count === 0) parts.push('No library sound is heard in the export: no credits file was written.');
+	else if (c && c.count === 0)
+		parts.push('No library sound is heard in the export: no credits file was written.');
 	for (const w of Array.isArray(r?.warnings) ? r.warnings : [])
 		if (typeof w?.code === 'string' && w.code.startsWith('W_SOUND_') && typeof w.message === 'string')
 			parts.push(w.message);

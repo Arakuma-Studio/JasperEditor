@@ -141,20 +141,24 @@ describe('soundCredits of what an export plays (spec 12 §2.11)', () => {
 		expect(soundCreditsFileText(c, 'csv').trimEnd().split('\r\n')).toHaveLength(3);
 		const only = soundCredits(p.h.doc, p.h.seqId, { played, attributionOnly: true });
 		expect(only.rows.map((r) => r.soundId)).toEqual(['snd_in_a']);
-		const none = soundCredits(p.h.doc, p.h.seqId, { played: playedLibraryClips(snapshotOf(p.h, { start: 40, end: 90 })) });
+		const none = soundCredits(p.h.doc, p.h.seqId, {
+			played: playedLibraryClips(snapshotOf(p.h, { start: 40, end: 90 })),
+		});
 		expect(none.rows).toEqual([]);
 		for (const f of ['txt', 'md', 'csv'] as const) expect(soundCreditsFileText(none, f)).toBe('');
 	});
 
 	it('ignores synthetic sources and hostile played lists', () => {
 		const p = project();
-		expect(playedLibraryClips({ audioClips: [{ clipId: 'a', mediaId: 'syn:x' }, { clipId: 1 }, null] as never })).toEqual(
-			[],
-		);
+		expect(
+			playedLibraryClips({ audioClips: [{ clipId: 'a', mediaId: 'syn:x' }, { clipId: 1 }, null] as never }),
+		).toEqual([]);
 		expect(playedLibraryClips({} as never)).toEqual([]);
 		fc.assert(
 			fc.property(fc.anything(), (played) => {
-				const c = soundCredits(p.h.doc, p.h.seqId, { played: (Array.isArray(played) ? played : []) as never });
+				const c = soundCredits(p.h.doc, p.h.seqId, {
+					played: (Array.isArray(played) ? played : []) as never,
+				});
 				return Array.isArray(c.rows);
 			}),
 			{ numRuns: 300 },
@@ -199,7 +203,15 @@ describe('cue markers for interchange (spec 12 §2.11)', () => {
 						ref: '$a',
 					},
 					{ frame: 90, kind: 'land', weight: 'support', source: 'user', ref: '$b' },
-					{ frame: 150, kind: 'cut', weight: 'ambient', source: 'agent', muted: true, label: 'Room', ref: '$c' },
+					{
+						frame: 150,
+						kind: 'cut',
+						weight: 'ambient',
+						source: 'agent',
+						muted: true,
+						label: 'Room',
+						ref: '$c',
+					},
 				],
 			},
 		]);
@@ -279,9 +291,9 @@ describe('cue markers for interchange (spec 12 §2.11)', () => {
 		const cues = { c1: { id: 'cue_1', frame: 3, kind: 'x y', weight: 'odd', types: ['UPPER', 7, 'ok'] } };
 		expect(cueMarkers({}, { soundDesign: { cues } }).map((m) => m.name)).toEqual(['SFX: ok (support)']);
 		expect(cueMarkers({}, { soundDesign: { cues: { c: { id: 'cue_2', frame: -1 } } } })).toEqual([]);
-		expect(cueMarkers({}, { soundDesign: { cues: { c: { id: 'cue_3', frame: 4 } } as never } })[0]!.name).toBe(
-			'SFX: sound (support)',
-		);
+		expect(
+			cueMarkers({}, { soundDesign: { cues: { c: { id: 'cue_3', frame: 4 } } as never } })[0]!.name,
+		).toBe('SFX: sound (support)');
 	});
 });
 
@@ -292,9 +304,14 @@ describe('pasting / importing a sequence with a room bus and cues (copySequence)
 		h.ok([{ type: 'media.setLibraryInfo', mediaId: m, library: LIB }]);
 		h.ok([{ type: 'track.add', kind: 'audio', count: 1 }]);
 		const r = h.ok([
-			{ type: 'soundCue.add', cues: [{ frame: 60, kind: 'land', weight: 'hero', source: 'user', ref: '$c' }] },
+			{
+				type: 'soundCue.add',
+				cues: [{ frame: 60, kind: 'land', weight: 'hero', source: 'user', ref: '$c' }],
+			},
 		]);
-		h.ok([{ type: 'soundDesign.place', cueId: r.refs.$c!, layers: [{ mediaId: m, track: 'A2', role: 'hero' }] }]);
+		h.ok([
+			{ type: 'soundDesign.place', cueId: r.refs.$c!, layers: [{ mediaId: m, track: 'A2', role: 'hero' }] },
+		]);
 		h.ok([{ type: 'soundDesign.ensureBus' }]);
 		const src = h.seq;
 		expect(src.submixTracks).toHaveLength(1);

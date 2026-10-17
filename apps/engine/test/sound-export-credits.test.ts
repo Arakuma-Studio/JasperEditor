@@ -105,7 +105,14 @@ async function creditsDoc() {
 	const add = async (lib: LibraryProvenance) => {
 		const g = 0.9 ** ++n;
 		const path = join(dir, `hit-${n}-${Math.random().toString(36).slice(2)}.wav`);
-		writeFileSync(path, encodeWav(hitSamples().map((c) => c.map((x) => x * g)), SR, 's16'));
+		writeFileSync(
+			path,
+			encodeWav(
+				hitSamples().map((c) => c.map((x) => x * g)),
+				SR,
+				's16',
+			),
+		);
 		const m = d.addMedia(await register(app, path));
 		d.tx([{ type: 'media.setLibraryInfo', mediaId: m, library: lib }]);
 		return m;
@@ -265,7 +272,9 @@ describe('the credits sidecar (spec 12 §2.11)', { timeout: 600_000 }, () => {
 			range: { type: 'custom', startFrame: 60, endFrame: 90 },
 		});
 		expect(job.result.credits).toEqual({ format: 'md', scope: 'all', count: 0 });
-		expect(job.result.warnings?.find((w) => w.code === 'W_SOUND_CHECK_STALE')).toMatchObject({ level: 'info' });
+		expect(job.result.warnings?.find((w) => w.code === 'W_SOUND_CHECK_STALE')).toMatchObject({
+			level: 'info',
+		});
 		const none = await app.inject({
 			method: 'GET',
 			url: `/renders/${job.id}/credits/output.credits.md`,
@@ -318,7 +327,7 @@ describe('oracle: exported mix = offline render (spec 12 §2.11)', { timeout: 60
 		]);
 		const seq = d.doc.sequences[d.seqId]!;
 		expect(seq.submixTracks).toHaveLength(1);
-		expect(seq.audioTracks[0]!.volumeDb.keyframes.length).toBeGreaterThan(0);
+		expect((seq.audioTracks[0]!.volumeDb?.keyframes ?? []).length).toBeGreaterThan(0);
 		const s = settings(d, { range: { type: 'custom', startFrame: 15, endFrame: 285 } });
 		// 24-bit PCM is written into MOV: ProRes keeps the container MOV whatever H.264 encoder this ffmpeg has
 		s.video = { ...s.video!, codec: 'prores' };
@@ -330,7 +339,9 @@ describe('oracle: exported mix = offline render (spec 12 §2.11)', { timeout: 60
 			{ maxBuffer: 256 * 1024 * 1024 },
 		);
 		expect(dec.status, String(dec.stderr)).toBe(0);
-		const exported = new Float32Array(dec.stdout.buffer.slice(dec.stdout.byteOffset, dec.stdout.byteOffset + dec.stdout.byteLength));
+		const exported = new Float32Array(
+			dec.stdout.buffer.slice(dec.stdout.byteOffset, dec.stdout.byteOffset + dec.stdout.byteLength),
+		);
 
 		// the offline render of the same plan (the mixer the Program monitor's mix is compared with in Phase 4)
 		const core = coreServices(app) as unknown as { registry: never; fonts: never; ffmpeg: never };
@@ -339,7 +350,12 @@ describe('oracle: exported mix = offline render (spec 12 §2.11)', { timeout: 60
 			{
 				registry: core.registry,
 				fonts: core.fonts,
-				capabilities: { native: true, remotionLocal: 'unavailable', fframes: 'unavailable', mgMasters: false },
+				capabilities: {
+					native: true,
+					remotionLocal: 'unavailable',
+					fframes: 'unavailable',
+					mgMasters: false,
+				},
 			},
 		);
 		const sr = planned.snapshot.audioMix!.sampleRate;

@@ -133,7 +133,8 @@ export const CREDITS_OPTIONS: { value: CreditsChoice; label: string }[] = [
 	{ value: 'md', label: 'Markdown (.md)' },
 	{ value: 'csv', label: 'CSV (.csv)' },
 ];
-const isCreditsChoice = (v: unknown): v is CreditsChoice => v === 'off' || v === 'txt' || v === 'md' || v === 'csv';
+const isCreditsChoice = (v: unknown): v is CreditsChoice =>
+	v === 'off' || v === 'txt' || v === 'md' || v === 'csv';
 
 export type CaptionExportChoice = {
 	/** Burn the visible caption tracks into the picture. */

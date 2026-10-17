@@ -350,7 +350,10 @@ describe('conversions', () => {
 			weight: 'support',
 			source: 'marker',
 		});
-		expect(markerToCueInput(marker({ name: 'SFX: tick (hero)' }))).toMatchObject({ types: ['tick'], weight: 'hero' });
+		expect(markerToCueInput(marker({ name: 'SFX: tick (hero)' }))).toMatchObject({
+			types: ['tick'],
+			weight: 'hero',
+		});
 		// without a weight the first type's default weight, as before
 		expect(markerToCueInput(marker({ name: 'SFX: boom' })).weight).toBe('hero');
 	});

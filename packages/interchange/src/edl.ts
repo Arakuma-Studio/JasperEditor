@@ -722,10 +722,13 @@ export function exportEdl(p: IProject, sequenceId: string, opts: ExportOptions, 
 				track.pan?.keyframes.length ||
 				(track.pan && track.pan.value !== 0))
 		)
-			report.warn(`the volume and pan of track ${ch} (and their automation) cannot be represented in an EDL`, {
-				subject: { kind: 'track', name: track.name ?? ch },
-				instead: 'unity level',
-			});
+			report.warn(
+				`the volume and pan of track ${ch} (and their automation) cannot be represented in an EDL`,
+				{
+					subject: { kind: 'track', name: track.name ?? ch },
+					instead: 'unity level',
+				},
+			);
 		const chs = ch === 'V' ? 'V' : ch === 'A1' ? 'A' : ch;
 		for (const c of track.clips) {
 			const where = { kind: 'clip' as const, id: c.id, name: c.name, frame: frameOf(c.start, rate) };
@@ -912,9 +915,12 @@ export function exportEdl(p: IProject, sequenceId: string, opts: ExportOptions, 
 	const w = Math.max(8, max);
 	const markers = o.markers ? [...s.markers].sort((a, b) => a.start - b.start) : [];
 	if (!o.markers && s.markers.length)
-		report.info(`the ${s.markers.length} sequence marker(s) of "${s.name}" are not written (Markers is off)`, {
-			instead: 'nothing',
-		});
+		report.info(
+			`the ${s.markers.length} sequence marker(s) of "${s.name}" are not written (Markers is off)`,
+			{
+				instead: 'nothing',
+			},
+		);
 	let mi = 0;
 	merged.forEach((ev, i) => {
 		out.push('');
