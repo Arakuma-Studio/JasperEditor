@@ -7580,3 +7580,155 @@ WP5.1 (= L) from the number of layers each package touches (model, engine, MCP, 
 Docs only; no code changed. The facts above were checked by reading the cloned files (paths given) and by one
 read-only Hugging Face API query (model licences, ONNX file sizes). No tests or builds were run, as PROTOCOL allows
 for documentation.
+
+### Phase 6 → WP-E1 Sound Check: new findings
+
+Branch `feat/sd-pe-e1-check-findings`. Spec 12 §4 P6-E1 (CLICK, EDGE), P6-E2 (HARSH, LAYER_INAUDIBLE), P6-E3 (COVERAGE,
+ENDING, HEAD, ARC, the riser sync window) and P6-E13 (ShareAlike), with the human decision on P6-E13 applied (below).
+The algorithms and thresholds marked "earshot" are adapted from earshot `skills/real-sound/scripts/qa.py` (MIT,
+Copyright (c) 2026 Leon Lin, commit `9721326`): reimplemented, nothing copied; the record is
+`licenses/ported/earshot.md` (in `THIRD_PARTY_NOTICES.md`, `pnpm notices`). Every number earshot measured on its own
+material is a default here, not a truth: "earshot norm (n = 7–8 launch films, one listener)" for the sync window and the
+ending/arc rules, "earshot threshold" (tuned by its author, no published n) for the detectors.
+
+Files: pure `packages/audio-fx/src/analysis/{clicks,edges,harshness}.ts` (new), `check-curves.ts` (+ 1/3-octave bands,
+loudest window, layer audibility); model `packages/project/src/sound/{check,license,credits,rank}.ts`; engine
+`apps/engine/src/sound-design/check-findings.ts` (new: the Phase 6 checks, called from `check.ts`), `check.ts` (probes in
+the one-pass render, the end-aligned window, SILENCE at the ending, the ShareAlike LICENSE variant),
+`apps/engine/src/export/sound-credits.ts` (`W_SOUND_SHARE_ALIKE`); API `packages/api/src/{sound-check,sounds}.ts`
+(categories, the licence filter); web `apps/web/src/sound/{check-model,model,register,dialogs,SoundSection}.ts(x)`,
+`panels/soundLibrary/SoundLibraryPanel.tsx`; MCP `apps/mcp/src/tools/{sound-check,sound,render}.ts`; README; i18n
+(`en.json`, `es.json`: 46 strings, `model-strings.json`); spec 12 §2.1, §2.6 table, §2.7, §4 P6-E13. Tests:
+`packages/audio-fx/test/check-findings.test.ts` (15), `packages/project/test/sound-check-p6.test.ts` (6),
+`apps/engine/test/sound-check-p6.test.ts` (14), `apps/web/test/sound-check-p6-model.test.ts` (3), additions to
+`sound-check.test.ts` (code list), `sound-export-credits.test.ts` (engine), `sound-fill-ui`, `sound-library-model`,
+`sound-library-panel`, `sound-review-misc` (web), `sounds-search` (engine), `e2e/sound-check-edges.spec.ts`.
+
+#### What it does (usage)
+
+The `sound-check` job (panel, `sound_check`, `POST /api/sound-design/check`) reports eight more codes. The panel groups
+them in two new categories, **Edges** (CLICK, EDGE, ENDING, HEAD) and **Tone** (HARSH), next to Sync, Loudness (+ ARC),
+Mix (+ LAYER_INAUDIBLE), Cues (+ COVERAGE) and Licence; rows, Fix / Fix… and Fix all safe work as before (commands in one
+undo step; the WP6.5b joint planner re-judges the safe ones).
+
+| Code | Finding | Severity | Fix |
+|---|---|---|---|
+| CLICK | a burst of the 14 kHz high-passed signal (> 9× its centred 20 ms RMS, > 6× its 4 ms RMS, ≥ 80 % of its ±5 ms energy within ±0.5 ms; earshot threshold) in the mix or a stem, ≥ −40 dBFS delivered, within 2 ms of an audio clip edge, a remix joint or a two-sided transition's span edge; message "Click at an edit: the start of …", `measured.atSec` (to 0.1 ms), `edgeOffsetMs`, the stems it was heard in | error | a transition there is lengthened (×2, ≥ 2 frames); a cut between two clips gets a 1-frame constant-power crossfade when the media have handles, else a 1-frame fade on each side; a free edge a 1-frame constant-power fade (`transition.add {clipId, edge}`). Safe (dry-run) |
+| CLICK | the same burst inside a clip's body ("a transient in the recording"), or in the mix with no clip under it | info | — |
+| EDGE entry | the source's 20 ms before the In point within 20 dB (RMS) of the clip's peak, no fade-in ≥ 5 ms (a transition, or a Volume keyframe ramp from ≥ 12 dB down), and the clip's attack (first 1 ms within 20 dB of its peak) later than 10 ms or the source within 10 dB (earshot) | warning | a fade-in of ⌈5 ms⌉ frames (or the transition lengthened). Safe |
+| EDGE decay | the clip's last ms over −35 dB re its peak, the source's 20 ms after the Out point over −35 dB, fade-out < 30 ms (earshot) | warning | a fade-out of ⌈30 ms⌉ frames (safe); else, when no fade applies, `clip.trim` to where the source has decayed 35 dB (not safe) |
+| EDGE music | a music piece (remix piece or Essential music clip) followed by a clip on its track: the source's 50 ms after the Out point within 6 dB of the piece's last 50 ms and > 6 dB over the next piece's first 50 ms (clip gains added), crossfade < 100 ms (earshot `check_splices`) | warning | the crossfade lengthened (or added, centred) to ⌈100 ms⌉ frames, safe when the dry-run reaches that length |
+| HARSH | an event's (a cue's layers together, or an unlinked sound) 2–6 kHz 5 ms-RMS peak (from 20 ms before its aligned point to 80 ms after; start/end-aligned: its first/last 2 s) more than 6 dB over the music stem's loudest 2–6 kHz 5 ms RMS in the range; no music → the dialogue's; neither → not judged (earshot) | warning | lower by (excess − 6 + 0.5) dB with `soundDesign.applyGains` (safe when every layer's MASKED minimum still holds — the solver's joint evaluation `evaluateSfxGains`, lower sound effects under it included); else a Parametric Equalizer band-4 dip at 2.5 / 4 kHz (the louder octave of the sound's descriptor bands; not safe); a user-owned gain: `audio.setGain adjust` (not safe) |
+| HARSH bright | a placed library sound whose spectral centroid (descriptor) is over 6.5 kHz | info | — |
+| LAYER_INAUDIBLE | a layer of a multi-layer cue that adds < 1 dB in every 1/3-octave band (100 Hz–12.6 kHz, where the layer is within 30 dB of its strongest band) over the bed plus the cue's other layers, over its loudest 60 ms; the layer and the rest rendered through the export mixer (`renderSequencePcm`) over the layer's first 3 s | info | the gain that makes it add 3 dB in its dominant band (`audio.setGain`) when ≤ 18 dB, else `clip.lift` of the layer; not safe |
+| COVERAGE | ≥ 2 cues of a class filled and ≥ 1 not; class = kind + anchor source, text / keyframe / mg / clip / beat anchors by clip, edits by track; muted, ambient and silence cues and unfilled cues inside dialogue spans (silenced by it) excluded; the message lists ≤ 8 unfilled timecodes | warning | fill them with the class's sound (`soundDesign.place` with the first filled cue's media and alignment, one transaction; not safe), else mute them |
+| ENDING | at the sequence end (whole sequence, or a range reaching it): the delivered mix's last 50 ms RMS (all channels) > −45 dBFS or its last 10 ms peak > −60 dBFS (earshot) | warning | a 0.5 s equal-power fade on the Mix volume lane (`mixer.writeAutomation`) reaching −96 dB 50 ms before the end (+ `mixer.updateStrip automation: read` when the Mix's automation is off); not safe |
+| HEAD | the delivered mix's first 5 ms peak > −40 dBFS (range from frame 0) | info | a 20 ms dB-linear fade-in on the Mix lane (not safe) |
+| ARC | whole sequences: the loudest 3 s short-term window holds no filled hero while heroes exist, or lies in the last 15 % with no hero there; names the moment, its LUFS and the biggest hero (earshot norm) | info | — |
+
+Also:
+- **OUT_OF_SYNC, end-aligned** (risers, reverses: `placement.align: 'end'`): the end may play from 250 ms before to 30 ms
+  after the cue (earshot norm); the SFX stem is searched from 300 ms before to 60 ms after, and a best match on the edge of
+  that window is "not found" (judged by the document). Messages "… ends 120 ms early …".
+- **SILENCE**: a quiet run that reaches the end of the sequence after sound is the ending (ENDING asks for it), not a
+  SILENCE finding.
+- **LICENSE `shareAlike`**: a placed CC BY-SA sound is a warning ("a video synced with it must be shared under CC BY-SA or
+  a compatible licence"), with a commercial-safe, non-ShareAlike alternative as its fix (registered alternatives safe,
+  similar library sounds not); REPEAT fixes never swap to a ShareAlike sound from a non-ShareAlike one.
+- **ShareAlike everywhere** (P6-E13): `licenseObligations(license) → {attribution, shareAlike}`, `isShareAlike`; the
+  Library's licence badge `BY-SA` carries `shareAlike` and a title naming the obligation; timeline clips of BY-SA sounds
+  show an "SA" badge; credits rows have `shareAlike`, the text and Markdown credits end with the ShareAlike notice (CC
+  BY-SA 4.0 §1(a), §3(b)), the credits warn `W_SHARE_ALIKE` (translated in the credits dialog); exports warn
+  `W_SOUND_SHARE_ALIKE` when a BY-SA sound is heard (with or without a credits file); MCP `search_sounds` / `get_sound`
+  rows say `shareAlike`, `insert_sound` notes it.
+- **Human decision on P6-E13 (2026-10-17)**: the default "Commercial-safe" filter **excludes** CC BY-SA everywhere it applies
+  — `rankSounds`' `commercial-safe` default, the Sound Library's Commercial-safe pill, MCP `search_sounds`, the plan job,
+  Auto Sound Pass and the fill / swap pickers (they all rank through `rankSounds` with the default). BY-SA stays
+  selectable: `license: 'commercial-safe-sa'` (the Library's new **Include ShareAlike** pill next to Commercial-safe, MCP
+  `search_sounds {license: "commercial-safe-sa"}`) or `any`. The one switch is `COMMERCIAL_SAFE_FILTER_KEEPS_SHARE_ALIKE`
+  (`packages/project/src/sound/license.ts`, now `false`); `isCommercialSafe` still says BY-SA is on the asset allowlist
+  (AGENTS.md §3.2), so a BY-SA sound is never a LICENSE error.
+- **Agents**: `sound_check`'s description and SOUND_GUIDE "Check" list the new codes, what each fix does and which are the
+  user's call; the guide's licence paragraph says the default leaves BY-SA out and what to do with one.
+
+#### Decisions
+
+- **Fades are transitions.** "The shortest fade the model expresses at that edge (a 1-frame constant-power transition, or
+  volume keyframes)": a 1-frame constant-power transition is an edge property the timeline draws and that moves with the
+  clip; sub-frame Volume keys would interleave with the user's automation. Volume-key ramps the user drew are still
+  recognised as fades (EDGE). A 1-frame fade is 33 ms at 30 fps (≥ 5 ms and ≥ 30 ms); at 60 fps the decay fade is 2 frames.
+- **The clip's peak is local**: the peak an edge is judged against is the peak of the clip's 10 s nearest the edge (a long
+  music clip is not judged against a chorus a minute away; it bounds the decode). Edges are decoded from the source media at
+  the clip's speed (mono fold), at most 400 per check (`W_EDGES_CAPPED`), 4 at a time; library padding (lead / trailing
+  silence of registered copies), edges at frame 0 / the sequence end, In points at 0 and Out points at the media end are not
+  decoded. Reversed clips are not judged.
+- **Clicks stream**: one `ClickDetector` per stem (mix, sfx, dialogue, music, ambience, bed with clips), fed by the same
+  one-pass render; bursts are clustered across stems within 1 ms and attributed once (an edge of a clip in the stem it was
+  heard in first, non-mix stems first). Level floor −40 dBFS on the delivered scale (earshot's 0.01). Bursts within 2 ms of
+  the sequence's first and last samples are HEAD / ENDING, not CLICK. At most 200 errors and 50 infos (`W_CLICKS_CAPPED`).
+- **Presence is a power mean over the channels** (earshot band-passes the channel mean): equal for mono and dual-mono,
+  but decorrelated stereo music is no longer read 3 dB low, which made every centred effect look harsh.
+- **The clean fixture is clean under the new checks** (P6-E1/E2 "the clean fixture still passes"), with three changes, each
+  a real defect the new checks found in it: its music now fades out over its last 2 s (Exponential Fade: it was cut at a
+  loud frame — ENDING); its click is a 1 kHz tick instead of the 3 kHz burst, which sat 21 dB over the music's 2–6 kHz peak
+  (HARSH); its music is 1.5 dB up (the hero hit's presence peak was 6.3 dB over the music's, 0.3 dB over the threshold). The
+  MCP `sound_check` test's mix got the same three changes. With them the Phase 5 suite passes unchanged otherwise.
+- **HEAD's fix is 20 ms, not 3 ms**: a 3 ms fade leaves the 5 ms window HEAD measures at full level, so the finding would
+  stay; a 20 ms dB-linear rise from −96 dB keeps the first 5 ms ≥ 70 dB down. ENDING's 0.5 s fade reaches silence 50 ms
+  before the end for the same reason.
+- **COVERAGE's fill is commands, not a proposal** (spec: "a proposal; not safe"): it is the user's Fix… in the panel (one
+  undo step after they chose it); agents are told to leave unsafe fixes to the user. Staggered cards that are separate clips
+  form a class only by a shared anchor source with no clip grouping (markers, as in the fixture) or one text clip's units.
+- **LAYER_INAUDIBLE renders**: two short renders per layer (alone; bed + its cue's other layers) through the export mixer,
+  ≤ 64 layers per check (`W_LAYERS_CAPPED`); "the bed" is every non-SFX clip, other cues' effects are not in it (spec).
+- **HARSH reference window**: the reference is the music's loudest 5 ms presence anywhere in the checked range (spec), so a
+  quiet passage is judged against the loud one. An event's window can include another sound effect playing there.
+
+#### Verified (measured, this branch; build server `jasper-build`, 16 × Intel Haswell vCPU, Node 20.20.2, load 4–8)
+
+- Failing first: the new test files copied onto the integration tip `8ee56158` (a detached worktree,
+  `.claude/worktrees/pe-e1-before`): `pnpm vitest run packages/audio-fx/test/check-findings.test.ts
+  packages/project/test/sound-check-p6.test.ts apps/engine/test/sound-check-p6.test.ts --maxWorkers=4` → **34 of 35
+  failed** (the detectors and the model exports do not exist; every seeded engine fixture: no such code, the riser 120 ms
+  early was OUT_OF_SYNC, the clean fixture's ending was not judged); the one that passed asserts an absence (no ARC with a
+  hero at the loudest moment).
+- `pnpm vitest run packages/audio-fx/test/check-findings.test.ts`: 15 passed — a step in a tone found at its sample
+  (≤ 3 samples, the high-pass delay) as a click, concentration ≥ 0.8; a smooth tone and noise: none; a one-sample spike over
+  −60 dBFS noise: a click; a 5 ms noise burst: no click; identical results for blocks of 1, 7, 480, 4096, 48 000 samples;
+  channels merged within 1 ms, two clicks 30 ms apart both found; 44.1 kHz works, 22.05 kHz detects nothing; a click 30
+  minutes into a stream found at its sample (streamed in 1 s blocks); 300 hostile runs (NaN, ±∞, DC, 1–4 channels, hostile
+  sample rates) never throw — the fuzz found a 4 GiB allocation for a 858 GHz "sample rate", fixed (rates capped at 768 kHz);
+  entry / decay / splice judgements on tones, fades and silence; `decayAfterMs`; the 4 kHz presence of a 0.5 sine within
+  1 dB of its mean square, 500 Hz 30 dB and 12 kHz 20 dB down, block-size independent, +g dB in → +g dB out (50 runs, ≤
+  0.01 dB); 1/3-octave bands (a 1 kHz tone in the 1 kHz band), a layer 50 dB down adds < 0.1 dB, an equal one 3.01 dB,
+  the target gain gives 3 ± 0.15 dB, the addition monotone in gain (200 runs), hostile input finite (300 runs).
+- `pnpm vitest run packages/project/test/sound-check-p6.test.ts`: 6 passed (categories, thresholds, templates; obligations,
+  500 hostile licences; the one switch and the three filter modes through `rankSounds` and `soundFilterOf`; credits flag,
+  notice, `W_SHARE_ALIKE`).
+- `pnpm vitest run apps/engine/test/sound-check-p6.test.ts --maxWorkers=8`: **14 passed** (real engine, generated media;
+  each check 2.2–5.3 s): the clean fixture passes (no CLICK / EDGE / HARSH / COVERAGE / ENDING / SILENCE / LICENSE warning;
+  HEAD info with its Mix-lane fix); HEAD's fix clears it; ARC names the loudest moment (frames 135–195) and the biggest hero,
+  and a hero there clears it; a mix cut at a loud frame → ENDING at 00:00:10:00, its fade clears it with no SILENCE after;
+  a CC BY-SA hit → LICENSE warning (`shareAlike`) and CREDITS, verdict warn; a 1 kHz tone starting on a full-level sample
+  at frame 120 → CLICK error at that clip's start, `atSec` 4.000 ± 0.001 s, its safe 1-frame fade-in clears it; a held chord
+  starting mid-sound at frame 150 → EDGE entry (source −3 dB re peak), its safe fade-in clears it and the click with it; a
+  music clip cut mid-note at frame 90 → EDGE decay, its safe fade-out clears it; a `clip.remix` of the chord joined on the
+  held chord with a 1-frame crossfade → EDGE music, the safe crossfade of 3 frames (100 ms) clears it; a 4 kHz click
+  over quiet music → HARSH (tonal) with a safe `soundDesign.applyGains` that clears it, the fixture's own sounds not harsh,
+  a centroid of 8 kHz → info; a layer 50 dB under its partner → LAYER_INAUDIBLE info on that layer only, its fix not safe;
+  3 of 4 marker-anchored appear cues filled → COVERAGE naming the 4th at 00:00:02:03, filling it clears it; a riser
+  (25 fps) on its cue and 120 ms early: no OUT_OF_SYNC (located at −120 ± 2 ms), 400 ms early: OUT_OF_SYNC error at −400 ms
+  with the safe align fix.
+- Phase 5 / WP6.5b engine suites with these changes: `pnpm vitest run apps/engine/test/sound-check*.test.ts
+  apps/engine/test/sound-tail.test.ts apps/engine/test/sound-export-credits.test.ts apps/engine/test/sounds-search.test.ts
+  --maxWorkers=8` → 10 files, 73 passed, 1 skipped (the opt-in bench). `sound-dialogue-consistency.test.ts` fails on the
+  build server at setup (`Unknown encoder 'libx264'`: it encodes its fixture video with the LGPL ffmpeg) — environment, not
+  this branch.
+- `pnpm vitest run --project @jasper/project --project @jasper/audio-fx --project @jasper/api --maxWorkers=8`: 212 files,
+  2 750 passed.
+- Web and MCP: `pnpm vitest run apps/web/test/sound-check-p6-model.test.ts apps/web/test/sound-check-model.test.ts
+  apps/web/test/sound-check-panel.test.tsx apps/web/test/sound-fill-ui.test.tsx apps/web/test/sound-library-model.test.ts
+  apps/web/test/i18n.test.ts apps/web/test/essential-autotag.test.tsx`: 7 files, 66 passed; MCP `sound-check`,
+  `sound-check-verdicts`, `readme-tools`, `conventions`, `sound-guide`, `sound-examples`: 6 files, 42 passed.
+- `pnpm typecheck` (every package), `SD_GIT=1 … pnpm lint` (Biome, tokens, anime, layers, assets), `node scripts/i18n.mjs
+  --check` (10 026 strings), `pnpm notices` (33 ported records): pass.
