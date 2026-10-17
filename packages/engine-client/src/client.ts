@@ -58,6 +58,7 @@ import {
 	type SfxRebalanceRequest,
 	type SoundCheckLastRequest,
 	type SoundCheckRequest,
+	type SoundListenRequest,
 	type SoundCuesRequest,
 	type SoundDeliveryRequest,
 	type SoundDesignPlanRequest,
@@ -436,6 +437,13 @@ export class EngineClient {
 	/** Sound Check visual data over a range of at most 120 s (`POST /api/sound-design/visual`, P5-R2). */
 	soundVisual(req: SoundVisualRequest, signal?: AbortSignal) {
 		return this.call('soundDesignVisual', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/**
+	 * Starts a `sound-listen` job (`POST /api/sound-design/listen`, spec 12 §4 P6-E6): the listening transcript of a range
+	 * (≤ 10 min) — events attributed to their clips, sections, sync with chance levels, text lines (`SoundListenResult`).
+	 */
+	soundListen(req: SoundListenRequest, signal?: AbortSignal) {
+		return this.call('soundDesignListen', { body: req, ...(signal ? { signal } : {}) });
 	}
 	/**
 	 * Starts a `motion-analysis` job (`POST /api/sound-design/motion`, P6-R2): the sequence's picture rendered small and

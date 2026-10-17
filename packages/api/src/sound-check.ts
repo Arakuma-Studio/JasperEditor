@@ -353,6 +353,8 @@ export const SoundVisualRequestSchema = z.strictObject({
 	range: SoundCheckRangeSchema,
 	/** A finished `sound-check` job whose findings are flagged over the range. */
 	checkJobId: z.string().min(1).max(128).optional(),
+	/** Also the mix's log-frequency spectrogram (P6-E7: 10 ms × 96 bands, u8; default false). */
+	spectrogram: z.boolean().optional(),
 });
 export type SoundVisualRequest = z.infer<typeof SoundVisualRequestSchema>;
 
@@ -424,6 +426,23 @@ export const SoundVisualResponseSchema = z.object({
 		}),
 	),
 	speech: z.array(z.tuple([z.number(), z.number()])),
+	/**
+	 * The mix's spectrogram as delivered, when asked (`spectrogram: true`; P6-E7): column `i` is the 10 ms from
+	 * `startSec + i · hopSec`, `bands` log-spaced bands from `fMinHz` to `fMaxHz` (band 0 the lowest), each a u8 level
+	 * (0 = `floorDb`, 255 = 0 dB re a full-scale sine) — `data` is base64 of `frames · bands` bytes, column after column.
+	 * Absent when not asked (and from engines before WP-E3).
+	 */
+	spectrogram: z
+		.object({
+			hopSec: z.number(),
+			bands: z.number().int(),
+			frames: z.number().int(),
+			fMinHz: z.number(),
+			fMaxHz: z.number(),
+			floorDb: z.number(),
+			data: z.string(),
+		})
+		.optional(),
 	issues: z.array(
 		z.object({
 			id: z.string(),

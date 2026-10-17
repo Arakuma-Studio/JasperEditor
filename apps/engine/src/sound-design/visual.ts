@@ -15,8 +15,10 @@ import { SoundCheckResultSchema } from '@jasper/api';
 import {
 	CURVE_HOP_SEC,
 	CurveMeter,
+	LISTEN_EVENTS,
 	LOUDNESS_FLOOR_LUFS,
 	loudnessCurve,
+	SpectrogramMeter,
 	silentCurves,
 } from '@jasper/audio-fx';
 import {
@@ -89,6 +91,51 @@ export function visualRange(
 	return { start, end };
 }
 
+/** The report of a finished `sound-check` job of `sequenceId` (null: none, not finished, another sequence). */
+export function checkReportOf(job: EngineJob | null | undefined, sequenceId: string) {
+	if (job?.kind !== 'sound-check' || job.state !== 'succeeded') return null;
+	const r = SoundCheckResultSchema.safeParse(job.result);
+	return r.success && r.data.sequenceId === sequenceId ? r.data.report : null;
+}
+
+/**
+ * The gain that makes the mix "as delivered" (see the module docs): the Mix's loudness normalisation measured by a
+ * check of this mix, else its stored analysis when current; 0 with the reason otherwise.
+ */
+export function deliveredGain(
+	doc: ProjectDocument,
+	seq: Sequence,
+	fromJob: ReturnType<typeof checkReportOf>,
+): { applied: boolean; gainDb: number; reason?: string } {
+	const loud = (seq.master as { loudness?: Record<string, unknown> }).loudness;
+	const analysis = loud?.analysis as { integratedLufs?: unknown; mixHash?: unknown } | null | undefined;
+	const mixHash = mixFingerprint(doc, seq.id);
+	if (!loud?.enabled)
+		return { applied: false, gainDb: 0, reason: 'Loudness normalisation is off: the curves are the mix as it is' };
+	if (
+		fromJob &&
+		fromJob.mixHash === mixHash &&
+		fromJob.wholeSequence &&
+		fromJob.loudness.normalization.gainDb !== null
+	)
+		// the check measured this mix: its normalisation gain is the export's
+		return { applied: true, gainDb: fromJob.loudness.normalization.gainDb };
+	if (
+		!analysis ||
+		typeof analysis.integratedLufs !== 'number' ||
+		!Number.isFinite(analysis.integratedLufs) ||
+		analysis.mixHash !== mixHash
+	)
+		return {
+			applied: false,
+			gainDb: 0,
+			reason:
+				'The Mix normalises, but its loudness analysis is missing or out of date: the curves are before normalisation',
+		};
+	const gain = (loud.targetLufs as number) - analysis.integratedLufs;
+	return Number.isFinite(gain) ? { applied: true, gainDb: gain } : { applied: false, gainDb: 0 };
+}
+
 /** Builds the visual data of `seq` over `req.range` (see the module docs). */
 export async function soundVisual(
 	doc: ProjectDocument,
@@ -117,6 +164,14 @@ export async function soundVisual(
 	const { channels } = mixLayoutOf(snap);
 	const meters: Partial<Record<StemName, CurveMeter>> = {};
 	for (const s of STEM_NAMES) if (stems[s].size > 0) meters[s] = new CurveMeter(sr, channels);
+	// normalisation as delivered (the check job's, else the stored analysis, when current)
+	const fromJob = checkReportOf(env.checkJob, seq.id);
+	const norm = deliveredGain(doc, seq, fromJob);
+	const gain = norm.gainDb;
+	const applied = norm.applied;
+	const reason = norm.reason;
+	// the mix's spectrogram (P6-E7), as delivered
+	const spec = req.spectrogram ? new SpectrogramMeter(sr, channels, gain) : null;
 	if (stems.mix.size > 0)
 		await renderStems({
 			ff: env.ff,
@@ -126,45 +181,12 @@ export async function soundVisual(
 			samples: renderEnd - renderStart,
 			stems: STEM_NAMES.map((s) => ({ name: s, clipIds: s === 'mix' ? null : stems[s] })),
 			...(env.signal ? { signal: env.signal } : {}),
-			onBlock: (i, planar, n) => meters[STEM_NAMES[i]!]?.push(planar, n),
+			onBlock: (i, planar, n) => {
+				meters[STEM_NAMES[i]!]?.push(planar, n);
+				if (i === 0) spec?.push(planar, n);
+			},
 		});
 	const total = Math.ceil((renderEnd - renderStart) / hop);
-	// normalisation as delivered (the stored analysis, when current)
-	const loud = (seq.master as { loudness?: Record<string, unknown> }).loudness;
-	const analysis = loud?.analysis as { integratedLufs?: unknown; mixHash?: unknown } | null | undefined;
-	let gain = 0;
-	let applied = false;
-	let reason: string | undefined;
-	const fromJob = (() => {
-		const job = env.checkJob;
-		if (job?.kind !== 'sound-check' || job.state !== 'succeeded') return null;
-		const r = SoundCheckResultSchema.safeParse(job.result);
-		return r.success && r.data.sequenceId === seq.id ? r.data.report : null;
-	})();
-	const mixHash = mixFingerprint(doc, seq.id);
-	if (!loud?.enabled) reason = 'Loudness normalisation is off: the curves are the mix as it is';
-	else if (
-		fromJob &&
-		fromJob.mixHash === mixHash &&
-		fromJob.wholeSequence &&
-		fromJob.loudness.normalization.gainDb !== null
-	) {
-		// the check measured this mix: its normalisation gain is the export's
-		gain = fromJob.loudness.normalization.gainDb;
-		applied = true;
-	} else if (
-		!analysis ||
-		typeof analysis.integratedLufs !== 'number' ||
-		!Number.isFinite(analysis.integratedLufs) ||
-		analysis.mixHash !== mixHash
-	)
-		reason =
-			'The Mix normalises, but its loudness analysis is missing or out of date: the curves are before normalisation';
-	else {
-		gain = (loud.targetLufs as number) - analysis.integratedLufs;
-		applied = Number.isFinite(gain);
-		if (!applied) gain = 0;
-	}
 	const crop = (c: Float32Array) => Array.from(c.subarray(preHops, preHops + rangeHops), (v) => r2(v));
 	const curveOf = (s: StemName) => {
 		const c = meters[s]?.finish() ?? silentCurves(sr, total);
@@ -318,6 +340,34 @@ export async function soundVisual(
 		cues,
 		clips,
 		speech,
+		...(req.spectrogram ? { spectrogram: spectrogramOf(spec, total, preHops, rangeHops) } : {}),
 		issues,
+	};
+}
+
+/** The spectrogram columns of the range (silence where nothing was rendered), base64. */
+function spectrogramOf(
+	spec: SpectrogramMeter | null,
+	total: number,
+	preHops: number,
+	rangeHops: number,
+): NonNullable<SoundVisualResponse['spectrogram']> {
+	const s = spec?.finish() ?? null;
+	const bands = s?.bands ?? LISTEN_EVENTS.bands;
+	const out = new Uint8Array(rangeHops * bands);
+	if (s)
+		for (let i = 0; i < rangeHops; i++) {
+			const k = preHops + i;
+			if (k < 0 || k >= s.frames || k >= total) continue;
+			out.set(s.data.subarray(k * bands, (k + 1) * bands), i * bands);
+		}
+	return {
+		hopSec: CURVE_HOP_SEC,
+		bands,
+		frames: rangeHops,
+		fMinHz: s?.fMinHz ?? LISTEN_EVENTS.fMinHz,
+		fMaxHz: s?.fMaxHz ?? LISTEN_EVENTS.fMaxHz,
+		floorDb: s?.floorDb ?? LISTEN_EVENTS.floorDb,
+		data: Buffer.from(out).toString('base64'),
 	};
 }
