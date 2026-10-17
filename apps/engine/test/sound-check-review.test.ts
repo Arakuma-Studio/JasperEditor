@@ -2,7 +2,7 @@
 // on a real engine with generated media — sync at the edges of the sequence, the same sound twice near a cue, reversed
 // clips, SILENCE of a signal in one channel, DIP against deliberate level moves, REPEAT fixes that must not create a
 // LICENSE finding, and MASKED numbers equal to the solver's (rebalance job) on the same document.
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -84,6 +84,7 @@ beforeAll(async () => {
 }, 180_000);
 afterAll(async () => {
 	await closeApps();
+	rmSync(dir, { recursive: true, force: true });
 });
 
 describe('Sound Check engine review (real engine)', { timeout: 600_000 }, () => {

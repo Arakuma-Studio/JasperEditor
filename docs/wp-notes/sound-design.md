@@ -5990,6 +5990,80 @@ sound-check-verdicts.test.ts, sound-check-report-fixture.ts}`, `e2e/sound-check.
 - Found for the tail-fix owner: an `end`-aligned padded sound's end comes from the provenance's quantised `durationSec −
   trailSilenceSec` (0.1 ms steps), not from the media's sample length (the `sound-library` e2e measured 0.03 ms).
 
+### Phase 5 → Sound Check engine review
+
+Branch `feat/sd-p5-review-engine` (from `feat/sd-p5-verify`): a correctness review of the check engine (`apps/engine/src/
+sound-design/check.ts`, `stems.ts`, `packages/audio-fx/src/analysis/check-curves.ts`, `masking.ts`, `packages/project/src/
+sound/check.ts`). Every fix has a regression test that failed before it (`apps/engine/test/sound-check-review.test.ts`: 8 of
+its 9 tests failed on the code before, measured; the ninth pins the MASKED / solver equality).
+
+#### Defects fixed
+
+| Area | Defect (before) | Fix |
+|---|---|---|
+| Sync, sequence edges | The post-roll stopped at the end of the sequence and a capture could not start before sample 0: a click on the last frames or a hit on frame 1 was "not measurable (its cue is at the edge of the checked range)" | The post-roll always runs 1.5 s past the range (silence after the end); a capture may start before 0 (silence there) |
+| Sync, identical sounds | Two copies of one sound within ±3 frames (a repeat, a doubled layer): the stronger correlation won, so the in-sync twin got a false error "plays 66.7 ms off its cue … though it is placed on it", or the nudged clip was measured at its twin (a missed 2-frame offset) | `locateByCorrelation({prefer, share, separation})`: among matches ≥ 75 % of the best one (maxima at least a frame apart, so a tonal sound's side lobes are not matches) the one nearest where the document plays the clip wins (decision: the document is right unless the renderer is; a renderer offset of a tonal sound is then harder to see) |
+| Sync, reversed clips | The aligned point of a reversed clip was computed as if it played forwards: a correct reversed clip got a false OUT_OF_SYNC error judged from the document (−533 ms in the test) | `start + duration − (peak − sourceIn) / rate` frames (the mixer's reversed content time) |
+| SILENCE | The level was the mean square over the channels: a left-only room tone at −58.5 dBFS read −61.5 (stereo) and a centre-only 5.1 dialogue 7.8 dB low — "silence" | `CurveMeter.loudestDb` (mean square of the loudest channel) for SILENCE (audible-for-loudness keeps the mean) |
+| DIP | A music dip written on purpose (Volume keyframes: rides, auto-duck, `audio.volumeDip`, a stop-before whose cue has moved since) was a DIP warning | A drop overlapping a Volume keyframe segment (clips in content time, tracks, submixes, the Mix) that goes down by ≥ 6 dB is explained (decision); the same drop made by a clip gain (no level move) is still reported (control test) |
+| REPEAT fix | The safe swap took any alternative: a CC-BY-NC alternative was offered as a **safe** fix (resolving a warning by creating a LICENSE error) | An alternative's licence may not rank worse than the clip's (commercial-safe < user-provided < NC / ND / unknown) |
+| MUSIC_OVER_VOICE fix | "Safe" predicted the ducking with the clip's Essential Sound depth (−15 dB default), but the delivery job writes `DELIVERY_DUCK_DB` (6 dB) under dialogue unless the user set a depth: a fix that leaves the music 6 LU under was called safe | The prediction uses the depth the job writes (the user's, else 6 dB under dialogue), the weakest of the clips'; the test applies the job and shows the finding stays |
+| Custom target | The engine hashed the raw target while `soundCheckStatus` re-hashes `readSoundCheckTarget` (0.1 steps): a stored check at −18.55 LUFS was stale at once (found by the verification agent; confirmed by the test) | The target is rounded once (`readSoundCheckTarget`) for the check, the report, the inputs hash and the stored summary |
+| Staleness | `soundCheckInputsHash` ignored the cue density, which DENSITY judges by: a summary stayed current after Sparse ↔ Rich | The density is hashed when it is not the default (summaries stored at Balanced stay current); markers incl. verdict markers, `agentsMayApply`, `seed` keep it current (test) |
+
+#### Checked and found right (evidence)
+
+- Empty sequence, a range of 0.2 s, silent stretches: "silent" / "cannot be measured" warnings, never a pass (existing
+  tests, rerun). Only dialogue: no SFX rows, no MUSIC_OVER_VOICE (no music stem). Muted tracks, offline media, reversed
+  clips: sync "not measurable" (info) or judged from the document. Speed ≠ 1: aligned point and reference decode at
+  `sr / rate` (trace, `check.ts` rows and `RefPlan.decodeRate`).
+- 5.1: K-weighting weights `[1, 1, 1, 0, 1.41, 1.41]` (`defaultChannelWeights(6)`), stems and meters at the export's
+  layout (6 channels for a 5.1 Mix), true peak over every channel; SILENCE now the loudest channel (unit test, 5.1 centre).
+- MASKED = the solver: a 500-run fast-check property (`check-curves.test.ts`) — `evaluateSfxGain` equals `solveSfxGains`
+  (gain, lift, peak over bed, true peak, speech lift, dominant bands, target) at the solved gains for any events (repeats,
+  heroes, speech, silent beds, user offsets, 4 programme levels × 2 ceilings); the engine path: on the masked fixture the
+  check's `solvedGainDb` / `solvedLiftDb` equal the rebalance job's `gainDb` / `achievedLiftDb` on the same document.
+- Licences: every catalogue pack licence (`SOUND_PACK_LICENSES`: CC0-1.0 → cc0, CC-BY-3.0 / 4.0 → cc-by, CC-BY-SA-3.0 /
+  4.0 → cc-by-sa) is commercial-safe and the CC BY ones need a credit (CREDITS); user folders: `LicenseRef-UserProvided`
+  → LICENSE warning, `LicenseRef-UserRoyaltyFree` → safe without a credit; NC / ND / NOASSERTION / unknown / "CC-BY-4.0 AND
+  …" → LICENSE error (`licenseClass`, existing tests `sound-rank`, `sound-review-fixes`, `sound-packs`).
+- Fixes: every command fix is dry-run on the current document; the panel applies them in report order (sync before
+  REPEAT / LICENSE swaps, swaps last), so an align and a swap of the same clip compose (the align's `soundDesign.swap`
+  carries the old media: applied after a swap it would undo it — the order prevents that).
+
+#### Long sequences (measured)
+
+`SOUND_CHECK_BENCH_MIN=30 pnpm vitest run apps/engine/test/sound-check-bench.test.ts` (opt-in; 30 min of pink-noise
+music + a gated 1.5 kHz voice, 40 hits on cues, normalisation on; 16-core shared host):
+
+| Build | Load | Wall | Engine CPU (user) | Peak RSS (base) | heapUsed | arrayBuffers peak | Report |
+|---|---|---|---|---|---|---|---|
+| before (`8af31459`) | 3.4–5.5 | 126 s | 133 s | 524 MB (331) | 213 → 222 MB | 157 MB | 180 KB |
+| before (`8af31459`) | 25–109 | 2 341 s | 993 s | 511 MB (333) | 212 → 224 MB | 153 MB | 178 KB |
+| after | 2.9–6.3 | 120 s | 131 s | 528 MB (339) | 213 → 224 MB | 173 MB | 174 KB |
+| after | 4.7–8.3 | 206 s | 214 s | 547 MB (331) | 212 → 221 MB | 172 MB | 168 KB |
+
+Stems are one pass (`timings.decoders` 42 = 40 hits + music + voice: every clip decoded once); 40 of 40 hits located; the
+report's curves 1 200 points; 90 speech segments. Memory grows with the duration but is bounded: ≈ 28 B per 10 ms hop per
+meter (7 meters) plus the finished curves and the transient loudness curves — ≈ 150 MB of array buffers at 30 min
+(measured), ≈ 1.2 GB at the 4-hour cap (estimated, linear). The heap stays flat. The normalisation pass writes the range
+as 32-bit floats to the job's scratch directory: 691 MB for 30 min stereo (≈ 23 MB/min, 69 MB/min for 5.1; computed),
+removed after the pass. Wall time is dominated by the six stem mixers (≈ 0.07 s of engine CPU per second of sequence at
+low load). A first variant read the scratch file 1 s per await instead of 10 ms: no measurable difference (21 vs 25 s for
+the pass at low load), so it was not kept.
+
+#### Limits (not fixed)
+
+- DENSITY's demotion and MASKED's gain on the same hero are both safe alone; together the hero's solved gain may exceed the
+  support cap (OVERLOAD on the re-check). The panel re-runs the check after Fix all safe.
+- With normalisation off, a safe MASKED gain can raise the mix's true peak (the solver's headroom is per sound).
+- DIP also fires on long dialogue pauses over a quiet, un-ducked music bed without a picture cut (the bench: ≈ 70 DIPs in
+  30 min of 8 s pauses); a dialogue pause is not an explanation (spec).
+- `soundCheckInputsHash` still ignores media licences (`media.setLibraryInfo`), transcripts and picture edits (adding
+  them would make every stored summary stale once).
+- The sync preference trusts the document among near-equal matches: a renderer offset of a strongly periodic sound shows
+  less clearly than before.
+
 ## Phase 6: packs, cue sources, completion
 
 ### Phase 6 → WP6.1 sound packs

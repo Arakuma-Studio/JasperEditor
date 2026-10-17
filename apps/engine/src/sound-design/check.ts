@@ -907,9 +907,7 @@ export async function checkSequence(
 			let skip = limiter.latency;
 			let written = 0;
 			const block = Array.from({ length: channels }, () => new Float32Array(hop));
-			// read 100 hops (1 s) at once, process hop by hop (one await per hop made the pass I/O-bound)
-			const chunk = hop * 100;
-			const raw = Buffer.alloc(chunk * channels * 4);
+			const raw = Buffer.alloc(hop * channels * 4);
 			const emit = (n: number) => {
 				limiter.process(block, 0, n);
 				const gr = -limiter.gainReductionDb();
@@ -929,17 +927,14 @@ export async function checkSequence(
 			};
 			for (let done = 0; done < rangeSamples; ) {
 				if (env.signal?.aborted) throw new JobError('CANCELLED', 'Cancelled', false);
-				const want = Math.min(chunk, rangeSamples - done);
-				const { bytesRead } = await src.read(raw, 0, want * channels * 4, done * channels * 4);
+				const n = Math.min(hop, rangeSamples - done);
+				const { bytesRead } = await src.read(raw, 0, n * channels * 4, done * channels * 4);
 				const got = Math.floor(bytesRead / (channels * 4));
-				for (let k = 0; k < want; k += hop) {
-					const n = Math.min(hop, want - k);
-					for (let i = 0; i < n; i++)
-						for (let c = 0; c < channels; c++)
-							block[c]![i] = k + i < got ? raw.readFloatLE(((k + i) * channels + c) * 4) * g : 0;
-					emit(n);
-				}
-				done += want;
+				for (let i = 0; i < n; i++)
+					for (let c = 0; c < channels; c++)
+						block[c]![i] = i < got ? raw.readFloatLE((i * channels + c) * 4) * g : 0;
+				emit(n);
+				done += n;
 			}
 			for (let left = limiter.latency; left > 0 && written < rangeSamples; ) {
 				const n = Math.min(hop, left);
