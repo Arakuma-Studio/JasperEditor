@@ -120,6 +120,11 @@ export interface CommandContext {
 	 * `full`, or `verify` (both, must agree; the default under tests). Default: `invariantMode()`.
 	 */
 	invariants?: 'full' | 'incremental' | 'verify';
+	/**
+	 * Called before each command of the transaction runs, with its index. Proposal previews apply many items in one
+	 * transaction and switch `ids` to the item a command belongs to (each item keeps its own seeded ids).
+	 */
+	onCommand?: (index: number) => void;
 }
 
 export class CommandError extends Error {

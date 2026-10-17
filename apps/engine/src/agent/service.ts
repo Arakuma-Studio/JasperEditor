@@ -23,6 +23,7 @@ import {
 	applyTransaction,
 	approvalReasons,
 	checkAgentTxLimits,
+	createPresetIdSource,
 	createRandomIdSource,
 	exportAgentQuerySchemas,
 	exportAgentSchema,
@@ -404,6 +405,11 @@ export class AgentService {
 			preApproved?: boolean;
 			/** Internal callers only: apply as the user's own edit (History "Accept …", not "Agent: …"). */
 			asUser?: boolean;
+			/**
+			 * Internal callers only: id bodies the entities are created with (`createPresetIdSource`), journalled by the
+			 * proposal accept before the transaction so that a crash in between can be reconciled with the document.
+			 */
+			ids?: readonly string[];
 		} = {},
 	): Promise<AgentTxResponse> {
 		const tx = normalizeAgentTransaction(rawTx, opts.fallbackAgent ?? 'external');
@@ -451,7 +457,12 @@ export class AgentService {
 				const out = await this.sessions.request(
 					target,
 					'tx',
-					{ transaction: tx, approved, ...(asUser ? { asUser: true } : {}) },
+					{
+						transaction: tx,
+						approved,
+						...(asUser ? { asUser: true } : {}),
+						...(opts.ids?.length ? { ids: opts.ids } : {}),
+					},
 					this.relayTimeoutMs,
 				);
 				if (out.error) return { result: fail(-1, out.error.code, out.error.message), appliedBy: 'session' };
@@ -475,7 +486,7 @@ export class AgentService {
 				appliedBy: 'session',
 			};
 		}
-		return { result: await this.headless(projectId, tx, asUser), appliedBy: 'headless' };
+		return { result: await this.headless(projectId, tx, asUser, opts.ids), appliedBy: 'headless' };
 	}
 
 	private async requestApproval(
@@ -508,6 +519,7 @@ export class AgentService {
 		projectId: string,
 		tx: ReturnType<typeof normalizeAgentTransaction>,
 		asUser = false,
+		presetIds?: readonly string[],
 	): Promise<TransactionResult> {
 		return this.mutex.run(projectId, async () => {
 			if (historyPseudoCommand(tx))
@@ -533,10 +545,12 @@ export class AgentService {
 				this.revisions.sync(projectId, revision);
 				const addr = resolveAgentAddresses(doc, tx.commands, { sequenceId: tx.sequenceId });
 				if (!addr.ok) return { ok: false, revision, errors: addr.errors };
+				const ctx = this.context(revision, projectId, tx.expectedRevision);
 				const { document, result } = applyTransaction(
 					doc,
 					{ ...tx, commands: addr.commands, ...(asUser ? { origin: 'user' } : {}) },
-					this.context(revision, projectId, tx.expectedRevision),
+					// every attempt starts from the first journalled id (only one attempt's result is saved)
+					presetIds?.length ? { ...ctx, ids: createPresetIdSource(presetIds, ctx.ids) } : ctx,
 				);
 				if (!result.ok || tx.dryRun || document === doc) return result;
 				const envelope = makeEnvelope(document, {
@@ -609,6 +623,19 @@ export class AgentService {
 	/** True when an editor session holding the lease is connected (transactions apply live). */
 	isLive(projectId: string): boolean {
 		return this.sessions.holder(projectId) !== null;
+	}
+
+	/**
+	 * True when no editor session is connected but one still holds an unexpired lease: that window may come back with
+	 * edits it has not saved yet, so the saved project does not say everything about the document.
+	 */
+	async editorAway(projectId: string): Promise<boolean> {
+		if (this.isLive(projectId)) return false;
+		try {
+			return !(await this.leaseExpired(projectId));
+		} catch {
+			return true;
+		}
 	}
 
 	/**

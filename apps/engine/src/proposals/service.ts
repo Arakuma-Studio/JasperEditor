@@ -39,6 +39,7 @@ import {
 import type { AgentService } from '../agent/service.ts';
 import { KeyedMutex } from '../tools/mutex.ts';
 import { HttpError } from '../tools/reply.ts';
+import { type AcceptIntent, ambiguousResult, prepareIntent, reconcileEvidence } from './journal.ts';
 import { type ProposalStore, proposalNotFound } from './store.ts';
 
 /** Who asks: the editor window (editor key) or anything else (an agent), with the agent's display name. */
@@ -64,6 +65,9 @@ export const soundDesignPolicy: ProposalPolicy = (doc, proposal) => {
 };
 
 const ID_BYTES = 10;
+function newAcceptId(): string {
+	return `acc_${newProposalId().slice(4)}`;
+}
 function newProposalId(): string {
 	const bytes = randomBytes(ID_BYTES);
 	let out = '';
@@ -104,6 +108,7 @@ export class ProposalService {
 			publish?: Publish;
 			registries?: Registries;
 			now?: () => Date;
+			log?: (msg: string) => void;
 		},
 	) {
 		this.store = opts.store;
@@ -176,21 +181,111 @@ export class ProposalService {
 			throw new HttpError(404, 'PROJECT_NOT_FOUND', `Project not found: ${projectId}`);
 	}
 
-	/** The stored proposal, read by the holder of its lock (404 when absent or expired). */
-	private async load(projectId: string, proposalId: string): Promise<Proposal> {
+	/**
+	 * The stored proposal, read by the holder of its lock (404 when absent or expired), after its journalled accept (if
+	 * any) is reconciled. `accept`: refuse while that accept cannot be settled yet (it may be in an editor that is away).
+	 */
+	private async load(
+		projectId: string,
+		proposalId: string,
+		opts: { accept?: boolean } = {},
+	): Promise<Proposal> {
+		const settled = await this.reconcile(projectId, proposalId);
+		if (settled === 'waiting' && opts.accept)
+			throw new HttpError(
+				409,
+				'NO_SESSION',
+				'An earlier accept of this proposal went to an editor window that is not connected now: its items are recorded once that window is back (or its lease expires); accept again then',
+				{ code: 'E_NO_SESSION', retryable: true },
+			);
 		const p = await this.store.get(projectId, proposalId, { owner: true });
 		if (!p) throw proposalNotFound(proposalId);
 		return p;
 	}
 
+	private log(msg: string): void {
+		try {
+			(this.opts.log ?? ((m: string) => console.warn(m)))(msg);
+		} catch {
+			// logging never breaks a decision
+		}
+	}
+
+	/**
+	 * Reconciles the journalled accepts of a project (accepts that were not working any more: an engine that stopped
+	 * between the transaction and the write of the states, a lost relay answer) before the proposals are read.
+	 */
+	private async reconcileProject(projectId: string): Promise<void> {
+		for (const id of await this.store.intentIds(projectId)) {
+			if (this.busy(projectId, id)) continue; // an accept of this engine is running: its intent is current
+			try {
+				await this.locks.run(`${projectId}/${id}`, () => this.reconcile(projectId, id));
+			} catch (e) {
+				this.log(`[proposals] could not reconcile the accept of ${id}: ${(e as Error).message}`);
+			}
+		}
+	}
+
+	/**
+	 * The holder of the proposal's lock settles its journalled accept, if any: in the document → the items are
+	 * recorded accepted (with the refs and created ids found there); not in it → the intent is rolled back. While the
+	 * editor that applied it may still come back with it unsaved (its lease is alive, it is not connected), nothing is
+	 * decided: 'waiting'.
+	 */
+	private async reconcile(projectId: string, proposalId: string): Promise<'none' | 'done' | 'waiting'> {
+		const intent = await this.store.readIntent(projectId, proposalId);
+		if (!intent) return 'none';
+		const p = await this.store.get(projectId, proposalId, { owner: true });
+		if (!p) {
+			await this.store.clearIntent(projectId, proposalId);
+			return 'done';
+		}
+		const byId = new Map(p.items.map((it) => [it.id, it]));
+		if (intent.itemIds.every((id) => byId.get(id)?.state === 'accepted')) {
+			// the states were written; only the intent's removal was lost
+			await this.store.clearIntent(projectId, proposalId);
+			return 'done';
+		}
+		const agent = this.agent();
+		if (intent.via === 'session' && (await agent.editorAway(projectId))) return 'waiting';
+		const { doc, revision } = await this.liveDocument(projectId);
+		const evidence = reconcileEvidence(doc, intent);
+		if (!evidence.applied) {
+			await this.store.clearIntent(projectId, proposalId);
+			this.log(
+				`[proposals] accept ${intent.acceptId} of ${proposalId} did not reach the document (${evidence.reason}): rolled back, its items stay as they were`,
+			);
+			return 'done';
+		}
+		const at = this.now().toISOString();
+		const ids = intent.itemIds.filter((id) => byId.has(id) && byId.get(id)!.state !== 'accepted');
+		const marked = markAccepted(p, ids, {
+			revision: Math.max(revision, intent.baseRevision + 1),
+			refs: evidence.refs,
+			at,
+			created: evidence.created,
+		});
+		const accepted = settleSetupItems(marked, at).proposal;
+		await this.store.put(projectId, accepted);
+		await this.store.clearIntent(projectId, proposalId);
+		this.log(
+			`[proposals] accept ${intent.acceptId} of ${proposalId} was in the document: recorded ${ids.length} item(s) accepted`,
+		);
+		this.publish(projectId, accepted, 'accepted', { itemIds: ids, revision });
+		return 'done';
+	}
+
 	async list(projectId: string) {
 		await this.ensureProject(projectId);
+		await this.reconcileProject(projectId);
 		return this.store.list(projectId);
 	}
 
 	async get(projectId: string, proposalId: string, opts: { revalidate?: boolean } = {}) {
 		await this.ensureProject(projectId);
 		if (!opts.revalidate) {
+			if (this.store.hasIntent(projectId, proposalId) && !this.busy(projectId, proposalId))
+				await this.reconcileProject(projectId);
 			// a plain read (not the lock holder): it does not expire a proposal an accept is working on
 			const p = await this.store.get(projectId, proposalId);
 			if (!p) throw proposalNotFound(proposalId);
@@ -245,7 +340,7 @@ export class ProposalService {
 	) {
 		await this.ensureProject(projectId);
 		return this.locks.run(`${projectId}/${proposalId}`, async () => {
-			const p0 = await this.load(projectId, proposalId);
+			const p0 = await this.load(projectId, proposalId, { accept: true });
 			const { doc, revision } = await this.liveDocument(projectId);
 			if (!who.editor) {
 				const policy = this.policies.get(p0.feature);
@@ -322,12 +417,30 @@ export class ProposalService {
 				};
 			}
 			const composed = plan.composed;
-			const out = await this.agent().transact(projectId, composed.tx, {
+			const agent = this.agent();
+			// The journal: the intent (with the ids the transaction will create its entities with) is on disk before the
+			// transaction runs, and removed after the states are written (`reconcile` settles one left behind).
+			const intent: AcceptIntent = prepareIntent(doc, composed.tx as Record<string, unknown>, {
+				acceptId: newAcceptId(),
+				projectId,
+				proposalId,
+				itemIds: composed.itemIds,
+				revision,
+				via: agent.isLive(projectId) ? 'session' : 'headless',
+				at: this.now().toISOString(),
+				registries: this.registries,
+			});
+			await this.store.writeIntent(projectId, intent);
+			const out = await agent.transact(projectId, composed.tx, {
 				fallbackAgent: who.agent,
+				ids: intent.ids,
 				...(who.editor ? { preApproved: true, asUser: true } : {}),
 			});
 			const result = out.result as TransactionResult;
 			if (!result.ok) {
+				// Not applied: the intent goes. A relay that lost the editor's answer may have applied it: the intent stays
+				// and is reconciled when the proposal is next read.
+				if (!ambiguousResult(result)) await this.store.clearIntent(projectId, proposalId);
 				await save(p, 'revalidated', { itemIds: plan.stale.map((s) => s.itemId) });
 				throw txError(result);
 			}
@@ -342,6 +455,12 @@ export class ProposalService {
 			const accepted = settleSetupItems(marked, at).proposal;
 			await this.store.put(projectId, accepted);
 			p = accepted;
+			try {
+				await this.store.clearIntent(projectId, proposalId);
+			} catch (e) {
+				// recorded; the intent left behind is cleared by the next read (every item of it is accepted)
+				this.log(`[proposals] could not remove the accept journal of ${proposalId}: ${(e as Error).message}`);
+			}
 			this.publish(projectId, accepted, 'accepted', { itemIds: composed.itemIds, revision: result.revision });
 			return {
 				proposal: accepted,

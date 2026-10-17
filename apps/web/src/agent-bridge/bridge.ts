@@ -6,9 +6,12 @@ import {
 	applyTransaction,
 	approvalReasons,
 	checkAgentTxLimits,
+	createPresetIdSource,
 	exportAgentQuerySchemas,
 	exportAgentSchema,
 	historyPseudoCommand,
+	ID_BODY_RE,
+	MAX_PRESET_IDS,
 	makeEnvelope,
 	normalizeAgentTransaction,
 	resolveAgentAddresses,
@@ -73,6 +76,11 @@ export type TransactOptions = {
 	 * edit is the user's (History "Accept …"), already approved, and not an agent activity.
 	 */
 	asUser?: boolean;
+	/**
+	 * Id bodies the engine journalled for this transaction (a proposal accept, `createPresetIdSource`): its entities are
+	 * created with them, so an engine that stopped before it heard the answer can find out whether it applied.
+	 */
+	ids?: readonly string[];
 };
 
 export type AgentBridgeOptions = {
@@ -363,7 +371,8 @@ export class AgentBridge {
 			...(tx.sequenceId ? { sequenceId: tx.sequenceId } : {}),
 		};
 		runBeforeAgentTransaction(this.session);
-		const result = await this.session.submit(input);
+		const ids = opts.ids?.length ? createPresetIdSource(opts.ids, this.session.ctx.ids) : null;
+		const result = await this.session.submit(ids ? { ...input, ids } : input);
 		return opts.asUser ? result : this.record(tx, via, result);
 	}
 
@@ -522,13 +531,25 @@ export class AgentBridge {
 				const result = await this.query(String(p.query), p.args ?? {});
 				return { result: { result, revision: this.session.revision } };
 			}
-			const p = (payload ?? {}) as { transaction?: AgentTxInput; approved?: boolean; asUser?: boolean };
+			const p = (payload ?? {}) as {
+				transaction?: AgentTxInput;
+				approved?: boolean;
+				asUser?: boolean;
+				ids?: unknown;
+			};
 			// `asUser` comes from the engine only for a request that carried this window's editor key.
 			const asUser = p.asUser === true && p.approved === true;
+			// `ids`: the engine's journalled id bodies of a proposal accept (well-formed ones only, bounded).
+			const ids = Array.isArray(p.ids)
+				? p.ids
+						.slice(0, MAX_PRESET_IDS)
+						.filter((b): b is string => typeof b === 'string' && ID_BODY_RE.test(b))
+				: [];
 			const result = await this.transact(p.transaction ?? {}, {
 				via: 'relay',
 				approved: !!p.approved,
 				...(asUser ? { asUser: true } : {}),
+				...(ids.length ? { ids } : {}),
 			});
 			return { result };
 		} catch (e) {
