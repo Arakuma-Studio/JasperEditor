@@ -147,12 +147,73 @@ function revertRemix(seq: DSeq, clip: DAudio, h: HandlerContext): DAudio {
 export const essentialHandlers = {
 	'essentialSound.setType': (doc, cmd: CommandOf<'essentialSound.setType'>, h) => {
 		const { seq, clips } = audioClips(doc, idList(cmd.clipIds), h);
+		const confirmed: string[] = [];
 		for (const c of clips) {
 			const cur = readEssentialSound(c.essential);
-			if (cur?.type === cmd.audioType) continue;
+			if (cur?.type === cmd.audioType) {
+				// the user chose the type Auto Tag gave: the tag is confirmed (settings untouched)
+				if (cur.tagged) {
+					const { tagged: _t, ...rest } = cur;
+					update(c, rest as EssentialSound, timeIn(seq, c, undefined, h), h);
+					confirmed.push(c.id);
+				}
+				continue;
+			}
 			update(c, newEssentialSound(cmd.audioType as AudioType), timeIn(seq, c, undefined, h), h);
 		}
-		return { clips: clips.map((c) => c.id), audioType: cmd.audioType };
+		return {
+			clips: clips.map((c) => c.id),
+			audioType: cmd.audioType,
+			...(confirmed.length ? { confirmed } : {}),
+		};
+	},
+
+	'essentialSound.autoTag': (doc, cmd: CommandOf<'essentialSound.autoTag'>, h) => {
+		const ids = Object.keys(cmd.results);
+		const { seq, clips } = audioClips(doc, ids, h);
+		const min = cmd.minConfidence ?? 0;
+		const tagged: { clipId: string; audioType: AudioType; confidence: number; from: AudioType | null }[] = [];
+		const skipped: { clipId: string; code: 'USER_TYPE' | 'SAME' | 'LOW_CONFIDENCE'; reason: string }[] = [];
+		for (const c of clips) {
+			const r = cmd.results[c.id]!;
+			const cur = readEssentialSound(c.essential);
+			const type = r.category as AudioType;
+			if (r.confidence < min) {
+				skipped.push({
+					clipId: c.id,
+					code: 'LOW_CONFIDENCE',
+					reason: `${type} at ${Math.round(r.confidence * 100)} % confidence is under ${Math.round(min * 100)} %`,
+				});
+				continue;
+			}
+			if (cur && !cur.tagged && !cmd.force) {
+				skipped.push({
+					clipId: c.id,
+					code: cur.type === type ? 'SAME' : 'USER_TYPE',
+					reason:
+						cur.type === type
+							? `already ${cur.type}`
+							: `the audio type ${cur.type} was set by hand (pass force to replace it)`,
+				});
+				continue;
+			}
+			if (cur && !cur.tagged && cur.type === type) {
+				skipped.push({ clipId: c.id, code: 'SAME', reason: `already ${cur.type}` });
+				continue;
+			}
+			const mark = {
+				by: 'auto' as const,
+				confidence: Math.round(r.confidence * 1000) / 1000,
+				...(r.scores ? { scores: { ...r.scores } } : {}),
+				...(r.reasons ? { reasons: r.reasons.slice(0, 6) } : {}),
+			};
+			// re-tagged as the same type: the settings stay, only the mark is refreshed
+			const next: EssentialSound =
+				cur?.type === type ? { ...cur, tagged: mark } : { ...newEssentialSound(type), tagged: mark };
+			update(c, next, timeIn(seq, c, undefined, h), h);
+			tagged.push({ clipId: c.id, audioType: type, confidence: mark.confidence, from: cur?.type ?? null });
+		}
+		return { tagged, skipped };
 	},
 
 	'essentialSound.clearType': (doc, cmd: CommandOf<'essentialSound.clearType'>, h) => {

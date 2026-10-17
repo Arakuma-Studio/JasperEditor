@@ -6624,3 +6624,257 @@ ARCHITECTURE §4.3 (`sounds/analysis/`), gaps.
 - The visual route (`/api/sound-design/visual`, `view_sound_timeline`) still draws the keyframe motion curve only.
 - The web Suggest Cues… asks the engine with the project id (the live document), so engine counts follow the open editor;
   an edit while the dialog is open is measured on the next Analyze… / reopen.
+
+### Phase 6 → WP6.3 Auto Tag and dialogue awareness
+
+Branch `feat/sd-p6-autotag`. Scope: spec 12 P6-R3 — Essential Sound **Auto Tag** (classify a clip as dialogue, music,
+SFX or ambience; command, MCP tool, UI action, badge) and transcript- and VAD-aware dialogue suppression with ONE
+dialogue definition for cue derivation, the plan, the solver's dialogue guard and Sound Check.
+
+Files. Audio (pure): `packages/audio-fx/src/analysis/audio-category.ts` (`audioCategoryFeatures`, `classifyAudio`,
+constants). Model: `packages/project/src/essential/model.ts` (`AutoTagSchema`, `EssentialSound.tagged`,
+`essentialAutoTag`, presets keep the mark), `commands/schemas|handlers/essential.ts` (`essentialSound.autoTag`; `setType`
+confirms), `catalog.ts` ("Auto Tag Audio Types"), `sound/cues/dialogue.ts` (`dialogueSpans`, `dialogueFrameRanges`,
+`dialogueVadClips`, `VoiceActivity`), `cues/edits.ts` (`dialogueRanges` / `sequenceDialogueRanges` delegate),
+`cues/derive.ts` (`voiceActivity`, heroes under dialogue), `cues/types.ts`, `cues/util.ts`. API: `packages/api/src/
+audio-fx.ts` (`AudioClassify*`), `sound-design.ts` (cue route `voiceActivity`, `voice`, `dialogue[].clipIds|trackIds|
+sources`, `stats.heroesUnderDialogue`, `opts.voiceActivity`), `jobs.ts` (`audio-classify`), `routes.ts` (`audioClassify`);
+client `classifyAudio`. Engine: `apps/engine/src/audio/classify.ts` (ClassifyService, job, cache), `routes/audio-fx.ts`
+(route), `sound-design/voice.ts` (VoiceActivityService), `routes/sound-design.ts` (cue route), `sound-design/plan.ts`,
+`bed.ts` (solver speech), `check.ts` (MUSIC_OVER_VOICE segments; a 12-line change). MCP: `apps/mcp/src/tools/
+audio-fx.ts` (`auto_tag_audio`, guide), `tools/sound.ts` (SOUND_GUIDE), `tools/sound-design.ts` (`find_sound_cues`
+`voice`). Web: `apps/web/src/audio-fx/{ops,commands}.ts` (`autoTagClips`, `audio.autoTag`, the clip menu entry),
+`panels/essentialSound/EssentialSoundPanel.tsx` (Auto Tag button, auto banner), `sound/register.tsx` (dotted badge),
+`shell/menus/model.ts`, `sound/cues/{EngineSources.tsx,suggest.ts,SuggestCuesDialog.tsx}` (voice activity into the
+dialog's derivation), i18n (25 strings, es.json complete). Docs: README (355 tools after merging Phase 5 verification, HTTP section), ARCHITECTURE §4.3
+(`sounds/analysis/{classify,voice}`), security review (route row + paragraph), gaps. Tests: listed under Verified.
+
+#### Premiere's Auto Tag (research; sources)
+
+helpx.adobe.com answers 403 to this host, so the behaviour comes from search-indexed excerpts of Adobe's page
+"audio auto tagging" (https://helpx.adobe.com/premiere-pro/using/audio-auto-tagging.html, quoted by the search engine),
+Adobe's beta announcement thread "Now in Beta: Auto Tag your audio clips with AI"
+(https://community.adobe.com/t5/premiere-pro-beta-discussions/now-in-beta-auto-tag-your-audio-clips-with-ai/m-p/13897306),
+the community threads on disabling it (https://community.adobe.com/t5/premiere-pro-discussions/disable-essential-sound-tagging/m-p/14660808)
+and Adobe's media alert for the 24.x audio features (https://news.adobe.com/news/news-details/2024/media-alert-adobe-premiere-pro-innovations-make-audio-editing-faster-easier-and-more-intuitive).
+What they document, and what we match:
+
+| Premiere (documented) | JasperEditor |
+|---|---|
+| Four tags: Dialogue, Music, SFX, Ambience | the same four Essential Sound types |
+| Select one or several clips and run **Auto Tag** in the Essential Sound panel | Essential Sound ▸ **Auto Tag** on the selection (untyped clips; "Auto Tag untyped clips" when some have a type; Shift-click also re-tags the types you set) |
+| Right-click a clip, or the Clip menu: **Auto Tag Audio Types** | clip context menu and Clip ▸ Audio Options ▸ **Auto Tag Audio Types** (`audio.autoTag`, agent-exposed) |
+| Each tagged clip gets an interactive badge; clicking it opens Essential Sound with that type's tools | the clip's audio-type glyph (WP2.4b); while the tag is Auto Tag's and unconfirmed it is drawn **dotted** with the confidence in its tooltip / aria-label (our addition: Premiere does not distinguish a guessed type from a chosen one); clicking selects the clip and focuses Essential Sound |
+| A wrong tag: **Clear Audio Type** | Clear Audio Type as before, plus **Confirm** / **Change…** on the panel's "Auto-tagged as Music · 82 % confident" banner (our addition) |
+| Uses an AI model | deterministic rules over measured features (below) — no model, no network; cached |
+| Preferences ▸ Audio ▸ "Auto-tag audio types in the timeline" tags clips as they are added | **not done** (decision: tagging on every placement would start engine jobs behind the user's back in every edit and every e2e; left for a follow-up with the preference off by default) |
+| The panel shows which tags were found; clicking a tag selects all clips of that category | not done |
+
+Undocumented, chosen as most plausible: Premiere never replaces a type the user set (we refuse unless `force`, code
+`USER_TYPE`); a silent clip is left untyped; re-running Auto Tag on an auto-tagged clip may change it.
+
+#### How the classifier works (`classifyAudio(audioCategoryFeatures(windows, durationSec))`)
+
+Input: up to 8 windows of planar audio (each ≤ 60 s) and the clip's real length; mono mix, NaN/±Inf as 0, resampled to
+16 kHz (4th-order low-pass at 7.2 kHz + interpolation). The engine decodes ranges ≤ 60 s whole, longer ones as four 15 s
+windows at the start, ⅓, ⅔ and end; each window is measured alone (no joins) and pooled by audible time.
+
+Features (10 ms hops; `AudioCategoryFeatures`): activity over the speech module's VAD threshold (`vadThreshold` rule: 30 %
+between the 10th and 95th percentile levels, ≥ 6 dB over the floor, ≥ −60 dBFS) and audibility (≥ −65 dBFS and within
+40 dB of the 95th percentile); dynamic range (95th − 10th percentile); bursts; Scheirer & Slaney's low-energy frames
+(< ½ the mean amplitude of the surrounding second); **syllabic modulation** = 2.5–8 Hz modulation energy of the 300–3400 Hz
+envelope over Hann-windowed 2.56 s blocks ÷ its squared mean (Houtgast & Steeneken; Scheirer & Slaney's "4 Hz modulation
+energy"); YIN pitch (de Cheveigné & Kawahara 2002) at ≤ 8 kHz every 20 ms over active frames: voiced ratio, f0 in
+70–400 Hz, steadiness (consecutive voiced frames within 0.12 semitone), glide, voiced run length; **tonal persistence**
+(64 ms frames, 48 ms hop: spectral peaks ≥ 10 dB over the spectrum 3–4 bins away and ≥ 15 dB over the frame median, still
+there ±1 bin 192 ms later — noise maxima stand ≈ 5 dB over their neighbours, so low-passed noise has none); onsets (log band
+flux, 20 bands 60 Hz–7 kHz, 20 ms) and their **periodicity** (best normalised autocorrelation over 0.24–1.5 s, ≥ 3
+periods); stationarity (std of the 1 s levels; mean RMS change of the level-free 1 s band spectrum); long-term flatness
+and centroid; active span and the drop of its last 10 %.
+
+Rules (ramp(x, a, b) = 0 at a … 1 at b; constants in the code, chosen on the tuning set below):
+
+| Score | Formula |
+|---|---|
+| dialogue | voice (voiced 0.15→0.4 × speech pitch 0.5→0.8) × modulation (0.1→0.3) × mean(glide: 1 − steady 0.3→0.55, short runs: 1 − 0.25→0.6 s, pauses: low-energy 0.1→0.25) × (1 − 0.8·beat) × length 0.4→1 s |
+| music | length 3→6 s × max(beat × (0.6 + 0.4·max(tonal, steady)), tonal × (0.5 + 0.5·steady)) × (1 − 0.5·voice·modulation); beat = periodicity 0.3→0.55 × onset rate 0.5→1.2 /s × onsets 4→8; tonal = persistence 0.35→0.6 × tonal frames 0.25→0.55 |
+| ambience | length 2.5→6 s × audible 0.6→0.9 × stationary ((1 − colour change 1.5→4 dB) × (1 − level std 3→8 dB)) × (1 − beat) × (1 − 0.7·tonal) × (1 − 0.8·voice·modulation) |
+| sfx | max(short: 1 − length 1→6 s, 0.8 × evolving (max of tail drop 10→25 dB, level std 3→8 dB, range 15→30 dB) × (1 − stationary) × (1 − length 10→30 s)) × (1 − 0.6·max(other scores)) |
+
+Category = the best score (ties: sfx); confidence = its share of the squared scores × min(1, best ÷ 0.5); "low" under
+0.6 (`LOW_CATEGORY_CONFIDENCE`). Silent (peak < −70 dBFS) → `silent: true`, confidence 0, never tagged. Reasons name the
+evidence ("voiced 57 % of the active time…", "a steady pulse (onset periodicity 0.94…)", "short (0.27 s)", "steady bed
+over 20 s…").
+
+#### Model, command, route, tool, UI
+
+- `EssentialSound.tagged?: {by: 'auto', confidence, scores?, reasons?}` (optional loose field; an older build keeps the
+  type and drops nothing it reads; an unreadable mark is dropped by `readEssentialSound` / `repairDocument`, INV-ESSENTIAL;
+  no schema bump: nothing is lost by a build that ignores it).
+- `essentialSound.autoTag {results: {clipId: {category, confidence, scores?, reasons?}} (1–2 000), force?, minConfidence?}`
+  ("Auto Tag Audio Types", one undo step): untyped → the type's defaults + the mark; an auto clip of another type →
+  re-tagged (defaults); the same type → the mark refreshed, settings kept; a type the user set → `USER_TYPE` (or `SAME`)
+  unless `force`; under `minConfidence` → `LOW_CONFIDENCE`. Result `{tagged: [{clipId, audioType, confidence, from}],
+  skipped: [{clipId, code, reason}]}`. Refusals: unknown clip `E_NOT_FOUND`, not audio `E_INVALID_PARAM`, locked track
+  `E_TRACK_LOCKED`, empty / malformed / > 2 000 `E_SCHEMA`. **Confirm** = `essentialSound.setType` with the same type
+  (removes the mark, keeps settings and effects; result `confirmed`); **Change** = `setType` with another type (no mark).
+  A slider change does not confirm. Presets keep the clip's mark and never carry one.
+- `POST /api/audio/classify {projectId | envelope, sequenceId?, clipIds} | {mediaKeys, streamIndex?}` (`?wait=1`) → job
+  `audio-classify` ("Auto Tag audio (n items)", shown in the Jobs panel; two decodes at once) → `AudioClassifyResult
+  {items: [{clipId?, mediaKey?, name, currentType?, autoTagged?, startSeconds, durationSeconds, result: {category | null,
+  confidence, scores, reasons, silent, durationSec, analysedSec, features} | null, error?, cached}], counts, lowConfidence,
+  version, ms}`. A clip is classified over the media range it plays (speed, reverse, time remap). Cached by file
+  fingerprint + stream + range (ms) + `AUDIO_CATEGORY_VERSION` under `<appdir>/sounds/analysis/classify/`. Refusals 400
+  (both or neither list, bad media key, > 500), 404 (project, sequence, no clip / media found); per-item errors
+  `NOT_AUDIO`, `CLIP_NOT_FOUND`, `NO_AUDIO_STREAM`, `MEDIA_OFFLINE`, `NOT_IN_ENGINE`, `DECODE_FAILED`.
+- MCP `auto_tag_audio {projectId, sequenceId?, clipIds? (default every untyped audio clip), mode?: apply (default) |
+  propose, force?, minConfidence?}` (EDIT): classifies, applies ONE transaction, returns a table (clip | name | before |
+  tag | confidence (low) | why), `low` and a `next` telling the agent to report low-confidence tags to the user.
+- Editor: Essential Sound shows **Auto Tag** (primary) above the type buttons for untyped clips, in the mixed-types view,
+  and an **auto banner** on typed clips ("Auto-tagged as Music · 82 % confident", why, "Low confidence" under 60 %,
+  Confirm, Change… with the four types); Clip ▸ Audio Options ▸ Auto Tag Audio Types; the clip context menu (the
+  selection with the clicked clip); toasts "Tagged 1 Dialogue, 1 Music · 1 with low confidence: confirm it · 1 silent".
+
+#### One dialogue definition (`dialogueSpans(doc, seq, {voice})`)
+
+Transcript words first (padded 0.25 s); else Essential Sound **dialogue** clips (typed by hand or by Auto Tag) on unmuted
+tracks: their **voice activity** when measured — `VoiceActivityService` streams each clip's media range (±0.5 s on a
+half-second grid) through ffmpeg at 16 kHz mono into 10 ms levels, voiced = ≥ `vadThreshold` and ≥ −50 dBFS, runs < 0.3 s
+apart joined, < 30 ms dropped, cached under `sounds/analysis/voice/`; mapped through the clip's time map, padded 0.25 s —
+else (no measurement) the whole clip; pauses < 0.75 s bridged. Spans carry the clip ids, track ids and sources
+(`words` / `vad` / `clip`). Consumers, all with the same function:
+
+- `deriveCues` (`voiceActivity` option): no `cut` (edit points, shot changes, pixel cuts) and — new — **no derived hero**
+  in a span: it becomes support with "; support: under dialogue" (`stats.heroesUnderDialogue`); `sfx:` markers are the
+  user's request and stay as asked. The cue route measures the voice (default; `opts.voiceActivity: false` = cached only)
+  and answers `voiceActivity`, `voice {state, measured, missing}` and the spans; the editor's Suggest Cues… derives
+  with the route's `voiceActivity`, so the dialog and the engine agree.
+- The plan job measures the voice inline ("Listening for dialogue") for `collectPlanCues` (cut suppression) and
+  `selectPlanSounds` (hero → support).
+- The solver's bed measurement (`measureSfxEvents`): an event overlaps speech when its window meets a span; the span's
+  tracks are named in the why-line. This replaces the per-cluster mixer render of untranscribed dialogue (decision:
+  measuring the media is cached per file and range and agrees with the other consumers; clip Volume automation is no
+  longer seen — a dialogue clip faded to silence still counts).
+- Sound Check's MUSIC_OVER_VOICE segments are the spans (the levels are still compared over the voiced hops: words and
+  the dialogue stem's VAD, as before).
+- Not changed: MCP `place_sound`'s W_HERO_UNDER_DIALOGUE warning runs in the MCP process with the pure rule (no voice
+  activity: whole dialogue clips).
+
+#### Labelled set and accuracy (measured)
+
+The set (all offline, nothing committed): **dialogue** — the 12 LJ Speech utterances of `fixtures/speech/lj-composite.flac`
+(public domain) as clips of that media (±0.3 s), two 30 s stretches, a 60 s and a 14 s stretch (held out), six utterances
+at 22.05 kHz mixed with air-conditioner noise at 20 / 10 dB SNR (held out); **SFX** — the 61 starter-kit recordings
+(`apps/engine/sounds/starter`, 0.03–3 s), the 19 Jasper Synth recipes × seeds 0, 1 (tuning) and 5 (held out), six
+generated long effects (explosion with a 6 s tail, car pass-by, door creak, power-down, 5 s riser, door slam) at 48 and
+44.1 kHz; **music** — `packages/audio-fx/test/category-fixtures.ts`: the beat-test band (drums, bass, chords) at 90 / 120 /
+140 BPM, chord pads, plucked arpeggios, a vibrato melody over a pad, drum loops, a piano-like progression (tuning: 20 s,
+44.1 kHz; held out: other seeds and tempi, 8–45 s, 22.05–48 kHz, one at −24 dB); **ambience** — pink bed with sparse
+knocks, traffic rumble with swells, rain, wind gusts, room tone with hum, air conditioner, forest with birds, office with
+keyboard clicks (tuning: 20 s; held out: 40 s at −12 dB and 9 s at 22.05 kHz). The thresholds were chosen on the tuning
+set; the held-out set was not looked at while choosing them (it was built after, once, and passed unchanged).
+
+`AUTO_TAG_REPORT=/tmp/acc.json pnpm vitest run apps/engine/test/audio-classify.test.ts -t labelled --maxWorkers=1` (the
+whole engine path: files registered, `POST /api/audio/classify`, decode, features, rules): **1 passed**; 192 items,
+classified in 101.7 s (2 at once, shared host, load ≈ 40–50 on 16 cores):
+
+| set | n | accuracy | dialogue → | music → | sfx → | ambience → |
+|---|---|---|---|---|---|---|
+| tuning | 139 | **100 %** | 14 dialogue | 13 music | 104 sfx | 8 ambience |
+| held out | 53 | **100 %** | 8 dialogue | 8 music | 25 sfx | 12 ambience |
+
+(no confusion: every off-diagonal cell is 0; the test asserts ≥ 90 % per set and prints both matrices.) Before tuning the
+first rule set scored 95.0 % / 94.2 % on the tuning set (measured with a scratch script): risers and an explosion read
+as music (low-passed noise looked "tonal": fixed by requiring spectral peaks to stand 10 dB over their neighbours),
+synth transitions as dialogue (fixed by making syllabic modulation required for dialogue), traffic / wind as music.
+
+Hard cases outside the set (scratch script `probe.mts`, measured, not asserted): LJ speech over the band 6 / 12 / 20 dB
+under it → dialogue (confidence 0.93 / 0.99 / 0.98); six LJ voices overlapped (walla) → ambience; footsteps every 0.55 s
+→ **music** (wrong: a regular untonal pulse is a drum loop to these rules); one 0.6 s word → sfx; 1.5 s of speech →
+dialogue.
+
+Speed (measured, `prof3.mts`, 60 s of stereo 48 kHz band music): 0.56–0.91 s at load ≈ 4–5; 2.2–4.6 s at load ≈ 47 (a
+10⁸-addition loop took 0.19 s and 0.72 s respectively). Long clips cost at most 4 × 15 s of decode + analysis.
+
+#### Verified (measured, this branch; shared host, 16 cores)
+
+- `pnpm vitest run packages/audio-fx/test/audio-category.test.ts --maxWorkers=2`: 11 passed — generated music (12 s,
+  44.1 kHz), ambience (12 s), every synth recipe × seeds 2, 3 and the long effects classified right; determinism; four
+  10 s windows of a bed pooled to a 240 s clip (durationSec 240, analysedSec 40, ambience); silence / empty / one sample /
+  −80 dBFS → silent, confidence 0; NaN / ±Inf = silence; 8 kHz mono, 96 kHz stereo, 5.1; refusals (`AudioCategoryError`
+  E_INVALID_PARAM: no / > 8 windows, rates 0 / 999 / 10⁶ / NaN / ∞, non-array channels; `classifyAudio(null | {})` is
+  silent); fast-check (60 runs, 0–3 channels, 0–30 000 samples, 5 rates, amplitudes 0 … 10⁴, NaN): never throws, finite
+  features, scores and confidence in 0…1. Whole package: `pnpm vitest run --maxWorkers=2` (packages/audio-fx): 26 files,
+  421 passed.
+- `pnpm vitest run apps/engine/test/audio-classify.test.ts --maxWorkers=1`: 2 passed — the accuracy table above; the
+  route: a silent file → `category: null, silent`, a 150 s bed → ambience with `analysedSec` 60 (four windows), a picture-
+  only file → `NO_AUDIO_STREAM`, counts; a clip over media 10–25 s → `startSeconds` 10, `durationSeconds` 15, `currentType`
+  sfx, `autoTagged` false; a video clip `NOT_AUDIO`, an unknown id `CLIP_NOT_FOUND`; `?wait=1` answers the finished job,
+  served from the cache; refusals 400 (empty, both lists, clipIds without a document, a bad key, 501 keys), 404 (unknown
+  key, project, sequence, no clip). A second classification of 20 media is all `cached`.
+- `pnpm vitest run packages/project/test/essential-autotag.test.ts packages/project/test/sound-dialogue.test.ts`: 8 + 7
+  passed — tagging (defaults + mark), undo (the document before is untouched) / redo (same sequences); a user's type kept
+  (`USER_TYPE`, `SAME`) unless `force`; re-tag (another type resets, the same keeps a slider change; a slider change does
+  not confirm); Confirm (mark gone, settings and effects identical) and Change; `minConfidence`; presets keep the mark and
+  never carry one; Clear Audio Type; every refusal; an unreadable mark → INV-ESSENTIAL, repaired (type kept); auto-tagged
+  dialogue in `dialogueSpans`; voice activity narrowing a clip to its voiced media (padded, bridged), empty = none;
+  200 % speed and reverse mapping; words first; muted tracks / disabled clips silent; hostile voice data (strings, NaN,
+  inverted, prototype keys, a clip at 2⁵³ + 2) never throws; `deriveCues`: a cut sounds where voice activity says nobody
+  talks and is suppressed where they do, a derived hero under speech becomes support ("under dialogue",
+  `heroesUnderDialogue`) and stays a hero in a pause or with `respectDialogue: false`, an `sfx:` marker stays a hero.
+  AC-25 fuzz draws `essentialSound.autoTag` (force, minConfidence) and Confirm. Whole package (`pnpm vitest run
+  --maxWorkers=2` in packages/project): 168 files, 2 083 passed.
+- `pnpm vitest run apps/engine/test/sound-dialogue-consistency.test.ts --maxWorkers=1`: 1 passed — LJ speech at 2–6 s and
+  9–11 s of a dialogue clip without transcript, music under it, cuts at 4 s / 7.5 s, effects at 4.2 s / 7.6 s: voice
+  activity regions start 1.9–2.3 s, end 10.6–11.1 s, nothing in 6.6–7.5 s; two `vad` spans; the cue route returns the same
+  spans and `voiceActivity`, suppresses the cut at 120 and keeps 225; `collectPlanCues` with the voice keeps only 225 (and
+  none with the pure whole-clip rule); the solver marks the effect in speech `speechOverlap` (track A1) and the one in the
+  pause not, and for both `speechOverlap` = "window meets a span"; Sound Check's `speech.segments` equal the spans within
+  one 10 ms hop.
+- `pnpm vitest run apps/engine/test/{sound-check,sound-check-stems,sound-design-cues,sound-design-plan,
+  sound-design-plan-cue-sources,sound-design-plan-levels,sound-design-plan-mix,sound-design-rebalance,
+  sound-design-delivery,sound-design-mix,sound-design-motion,fuzz-http,server,security-review,audio-fx}.test.ts
+  --maxWorkers=2 --testTimeout=900000`: 15 files, 283 passed (1 opt-in perf skipped). `sound-design-bed.test.ts`: 7 passed
+  (the voice measurement counted in `renders.voice` / `renders.cached` through the bed cache's memo).
+- `pnpm vitest run apps/mcp/test/auto-tag.test.ts apps/mcp/test/readme-tools.test.ts apps/mcp/test/conventions.test.ts
+  apps/mcp/test/audio-fx.test.ts --maxWorkers=2`: 18 passed — `auto_tag_audio` defaults to the untyped clips, sends the
+  envelope and waits, applies one transaction with the mark, reports `low` and the table ("45 % (low)"), leaves a silent
+  clip untyped, propose changes nothing, a user type is kept (USER_TYPE) unless force, `minConfidence`; engine failure,
+  unknown argument, unknown clip and bad mode are tool errors; README lists 355 tools after the merge.
+- `pnpm vitest run apps/web/test/essential-autotag.test.tsx apps/web/test/sound-fill-ui.test.tsx --maxWorkers=1`: 12
+  passed — the panel's Auto Tag on two selected clips (one History entry "Auto Tag Audio Types", the engine asked with
+  the envelope), the mixed-types banner, "Auto-tagged as Music · 81 % confident" with its reason, Confirm ("Confirm Audio
+  Type", mark gone), Change… ▸ Ambience; low confidence shown, a silent clip untyped, the toast; the dotted badge
+  (`data-auto-tag`, aria-label "… auto-tagged, 42 % confident …", dashed border); Clip ▸ Audio Options lists
+  `audio.autoTag`, the clip menu entry runs it on the clicked clip; a failing engine → "Auto Tag failed" with the detail.
+- `E2E_PORT=51503 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-autotag.spec.ts` (after `pnpm build`): 1 passed
+  (16.7 s) — speech.wav (LJ), music.wav (generated), hit.ogg (starter kit) imported through the browser; three clips
+  selected (Shift-click); Clip ▸ Audio Options ▸ Auto Tag Audio Types → dialogue / music / sfx, marked auto, History "Auto
+  Tag Audio Types", dotted badges; the speech badge opens Essential Sound with "Auto-tagged as Dialogue · 91 % confident"
+  and its reasons; Confirm → solid badge, mark gone, no clip moved; two full-frame solids slamming to a stop at frames
+  ≈ 98 (in the speech) and ≈ 458 (after it) → Suggest Cues… → the land in the speech is support ("under dialogue"), the
+  other a hero, no hero in 0–9 s. **Looked at** the screenshots (`test-results/e2e-sound-autotag/`): `tagged.png` (toast
+  "Tagged 1 Dialogue, 1 Music, 1 SFX", three badges), `essential-banner.png` (the AUTO chip, the banner with Confirm /
+  Change…, the dashed badge on the speech clip), `confirmed.png`, `cues.png` (the Cue Seam over the solid, "Suggested 4
+  cues"). Found while writing it: Playwright clicking a badge outside the visible timeline scrolls the clip layer natively
+  while the ruler stays (a test artefact — users cannot scroll that layer; the spec keeps the badge in view).
+- `pnpm typecheck` (every package), `pnpm lint` (Biome, tokens, anime, layers, assets) and `node scripts/i18n.mjs --check`
+  (es.json covers all 9 859 strings) pass.
+
+#### Limits and notes for the next packages
+
+- **Rules, not a model.** Checked on one real speaker (LJ), the starter kit and generated music / ambience: real
+  productions (dense mixes, dialogue over loud music, crowds, foley sequences, sung vocals, sound design beds with a pulse)
+  will be misread more often than the 100 % above suggests. Known wrong: regular untonal pulses (footsteps) read as music;
+  walla reads as ambience (arguably right); a single word under 1 s reads as SFX; music clips under 3 s read as SFX (a
+  stinger). The confidence and reasons are there so the user (and agents, told to report low confidence) can check.
+- Not done from Premiere: the "Auto-tag audio types in the timeline" preference (tag on add) and "select all clips of a
+  tag" from the panel.
+- Voice activity is energy-based (the speech module's VAD on the clip's media), not a speech detector: in a dialogue clip
+  loud non-speech counts as voice; clip Volume automation, mutes by keyframe and clip effects are not seen (the solver
+  used to render the dialogue through the mixer; now it measures the media, like the cue route). A dialogue clip that
+  cannot be measured (offline, not in the engine's store, > 4 h, > 64 clips or 8 h per call) falls back to its whole span
+  (`voice.state` partial / failed with the reason).
+- MCP `place_sound`'s W_HERO_UNDER_DIALOGUE uses the pure rule (whole dialogue clips), not voice activity.
+- The cue route measures voice activity synchronously (first time per media range: one ffmpeg decode — estimated ≈ 50× faster than real time, not benchmarked —
+  at 16 kHz; cached after).

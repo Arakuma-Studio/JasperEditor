@@ -51,6 +51,7 @@ export const JOB_KINDS = [
 	'sound-check',
 	'sound-pack-install',
 	'motion-analysis',
+	'audio-classify',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;

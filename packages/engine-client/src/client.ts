@@ -7,6 +7,7 @@ import {
 	API_VERSION,
 	type AssetRelinkRequest,
 	type AudioAnalyzeRequest,
+	type AudioClassifyRequest,
 	type AutoToneRequest,
 	type BeatsRequest,
 	type BeatsResult,
@@ -537,6 +538,20 @@ export class EngineClient {
 	/** A music remix plan for a clip's content range (synchronous). */
 	remixPlan(req: RemixPlanRequest): Promise<RemixPlanResult> {
 		return this.call('audioRemixPlan', { body: req });
+	}
+	/**
+	 * Essential Sound Auto Tag: starts an `audio-classify` job (`POST /api/audio/classify`, spec 12 P6-R3) classifying
+	 * clips or media as dialogue / music / SFX / ambience; result `AudioClassifyResult`. `wait` answers when it ends.
+	 */
+	classifyAudio(
+		req: AudioClassifyRequest,
+		opts: { wait?: boolean; signal?: AbortSignal } = {},
+	): Promise<EngineJob> {
+		return this.call('audioClassify', {
+			body: req,
+			...(opts.wait ? { query: { wait: '1' as const } } : {}),
+			...(opts.signal ? { signal: opts.signal } : {}),
+		});
 	}
 	/** Tempo, beats and downbeats of a media's audio range (`POST /api/audio/beats`; cached per file and range). */
 	audioBeats(req: BeatsRequest, signal?: AbortSignal): Promise<BeatsResult> {

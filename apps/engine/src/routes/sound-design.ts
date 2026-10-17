@@ -41,6 +41,7 @@ import {
 	bindExpressions,
 	defaultRegistries,
 	deriveCues,
+	dialogueSpans,
 	documentHasActiveExpressions,
 	ENGINE_CUE_SOURCES,
 	loadProject,
@@ -48,7 +49,6 @@ import {
 	type ProjectDocument,
 	type Rational,
 	SOUND_CHECK_THRESHOLDS,
-	sequenceDialogueRanges,
 	sequenceDuration,
 	sequenceTimecode,
 	soundCheckInputsHash,
@@ -76,6 +76,7 @@ import {
 import { RebalanceInputError, rebalanceTargets, runRebalance } from '../sound-design/rebalance.ts';
 import { SoundCheckReportStore } from '../sound-design/report-store.ts';
 import { soundVisual, VisualInputError, visualRange } from '../sound-design/visual.ts';
+import { registerVoiceService, VoiceActivityService } from '../sound-design/voice.ts';
 import type { SoundService } from '../sounds/service.ts';
 import type { SceneService } from '../time/scenes.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
@@ -101,6 +102,15 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 		motion: () => motion,
 	});
 	services.engineCues = engineCues;
+	// Voice activity of dialogue clips (P6-R3): one disk-cached service for the cue route, the plan job, the solver's
+	// bed measurement and Sound Check (`voiceServiceFor` finds it by the engine's ffmpeg).
+	const voice = new VoiceActivityService(
+		core.ffmpeg,
+		core.registry,
+		join(app.jasper.config.paths.soundsDir, 'analysis', 'voice'),
+	);
+	registerVoiceService(core.ffmpeg, voice);
+	services.voice = voice;
 	// Registered by the proposal routes (after these): looked up when a job runs.
 	const proposalsOf = () => services.proposals as ProposalService | undefined;
 	// One job kind for all three: rebalance jobs carry `rebalance` in their input, delivery jobs `delivery`.
@@ -488,6 +498,10 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 			if (documentHasActiveExpressions(doc)) doc = bindExpressions(doc);
 			const density = opts.density ?? soundDesignSettingsOf(seq).density;
 			const respectDialogue = opts.respectDialogue ?? true;
+			// where dialogue clips without a transcript actually speak (measured on their media; cached)
+			const spoken = respectDialogue
+				? await voice.forSequence(doc, seq, { mode: opts.voiceActivity === false ? 'cached' : 'compute' })
+				: null;
 			const out = deriveCues(doc, seqId, {
 				...(opts.range ? { range: opts.range } : {}),
 				...(opts.sources ? { sources: opts.sources } : {}),
@@ -496,6 +510,7 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 				...(opts.minGapFrames !== undefined ? { minGapFrames: opts.minGapFrames } : {}),
 				...(opts.maxCues !== undefined ? { maxCues: opts.maxCues } : {}),
 				mgTemplates: mgRegistry,
+				...(spoken ? { voiceActivity: spoken.voice } : {}),
 				...(measured ? { extraCues: measured.extraCues } : {}),
 				...(opts.snapToBeats ? { snapToBeats: true, beatFrames: measured?.beatFrames ?? [] } : {}),
 			});
@@ -563,8 +578,25 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 						}
 					: {}),
 				dialogue: respectDialogue
-					? sequenceDialogueRanges(doc, seq).map(([start, end]) => ({ start: Math.max(0, start), end }))
+					? dialogueSpans(doc, seq, { voice: spoken?.voice ?? null }).map((d) => ({
+							start: Math.max(0, d.start),
+							end: d.end,
+							clipIds: d.clipIds,
+							trackIds: d.trackIds,
+							sources: d.sources,
+						}))
 					: [],
+				...(spoken
+					? {
+							voiceActivity: spoken.voice as Record<string, [number, number][]>,
+							voice: {
+								state: spoken.state,
+								measured: spoken.measured,
+								missing: spoken.missing,
+								...(spoken.message ? { message: spoken.message } : {}),
+							},
+						}
+					: {}),
 				storedCues: soundCuesOf(seq).length,
 				...(opts.curves
 					? {

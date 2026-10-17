@@ -13,12 +13,13 @@
 // loudest (≤ 20 s). The sound's octave bands and peak loudness, and the bed's bands and local peak, are measured over
 // that same window (same length: `bandLevels`' Welch normalisation then cancels in the lift, WP4.1a).
 //
-// SPEECH: transcript words of the sequence (`sequenceWords`), plus voice activity (10 ms levels over the threshold of
-// `vadThreshold`, at least −50 dBFS) of Essential Sound dialogue clips without a transcript, rendered alone over the
-// cluster. An event overlaps speech when a word or a voiced frame falls in its window.
+// SPEECH: the one dialogue definition of the project (`dialogueSpans`, spec 12 P6-R3): transcript words, else the voice
+// activity of Essential Sound dialogue clips (`VoiceActivityService`: the speech module's energy VAD over each clip's
+// media, ≥ −50 dBFS, cached per file and range), else their whole spans; padded 0.25 s, pauses < 0.75 s bridged. An
+// event overlaps speech when its window meets a dialogue span; the span's tracks are named in the why-line.
 //
 // Caches (per engine, bounded), keyed by what a render plays and never by entity ids (`soundKey`, `mixKey`): bed PCM
-// and voice activity per cluster by the bed clips under it, their media (fingerprint, or offline) and the mixer graph;
+// per cluster by the bed clips under it, their media (fingerprint, or offline) and the mixer graph;
 // sound measurements by the clip at 0 dB, its media and the strips its signal goes through (relative to the render's
 // start when nothing on its way is automated, so a sound placed the same way elsewhere is measured once). A rebalance
 // after a gain change, a plan run again, or a rebalance right after accepting a plan re-renders nothing. Renders
@@ -31,7 +32,7 @@ import {
 	type AudioStream,
 	buildRenderSnapshot,
 	type Clip,
-	FLICKS_PER_SECOND,
+	dialogueSpans,
 	frameToSample,
 	isSfxClip,
 	looksLikeId,
@@ -42,13 +43,12 @@ import {
 	type RenderAudioClip,
 	type RenderSnapshot,
 	type Sequence,
-	sequenceWords,
 } from '@jasper/project';
 import { type MixSource, renderMixdown } from '../audio/mixdown.ts';
 import { localHandle, mediaKeyOf } from '../export/planner.ts';
 import type { MediaRegistry } from '../media/registry.ts';
-import { vadThreshold } from '../speech/core/vad.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
+import { type VoiceActivityService, type VoiceEntry, voiceServiceFor } from './voice.ts';
 
 /** Seconds of bed rendered before a window beyond its margin: K-weighting warm-up (0.5 s) + half a momentary window. */
 export const BED_PREROLL_SEC = 0.7;
@@ -123,9 +123,6 @@ type SoundEntry = {
 	truePeakDb: number | null;
 };
 type SoundMeasure = Pick<MeasuredSound, 'window' | 'silent' | 'soundBandsDb' | 'soundPeakLu' | 'truePeakDb'>;
-/** Voiced 10 ms frames of a cluster's untranscribed dialogue (absolute seconds). */
-type VoiceEntry = { start: number; end: number }[];
-
 /** Per-engine caches (bounded): bed PCM per cluster by bytes, sound measurements and voice activity by count. */
 export class MeasureCache {
 	private readonly beds = new Map<string, Pcm>();
@@ -168,12 +165,11 @@ export class MeasureCache {
 	putSound(key: string, v: SoundEntry): void {
 		bounded(this.sounds, key, v, this.maxSounds);
 	}
-	getVoice(key: string): VoiceEntry | undefined {
-		return lru(this.voices, key);
-	}
-	putVoice(key: string, v: VoiceEntry): void {
-		bounded(this.voices, key, v, this.maxSounds);
-	}
+	/** Voice activity of a dialogue range (`VoiceActivityService` entries by its request key). */
+	readonly voice = {
+		get: (key: string): VoiceEntry | undefined => lru(this.voices, key),
+		put: (key: string, v: VoiceEntry): void => bounded(this.voices, key, v, this.maxSounds),
+	};
 	/** A clip's own integrated loudness (delivery Auto-Match), null for silence. */
 	getLoudness(key: string): number | null | undefined {
 		return this.loudness.has(key) ? lru(this.loudness, key) : undefined;
@@ -222,6 +218,8 @@ export type MeasureDeps = {
 	cache?: MeasureCache;
 	concurrency?: number;
 	onProgress?(fraction: number, stage: string): void;
+	/** Voice activity of dialogue clips (default: the engine's service for `ff`). */
+	voice?: VoiceActivityService;
 };
 
 const sha = (v: unknown) =>
@@ -891,60 +889,21 @@ export async function measureSfxEvents(
 	ms.bed = Date.now() - tStage;
 	tStage = Date.now();
 
-	// 3. Speech: transcript words, and voice activity of untranscribed dialogue clips per cluster.
-	const words = (() => {
-		try {
-			return sequenceWords(input.bedDoc, bedSeq);
-		} catch {
-			return [];
-		}
-	})();
-	const wordSpans = words
-		.filter((w) => Number.isFinite(w.start) && Number.isFinite(w.end))
-		.map((w) => ({
-			start: w.start / FLICKS_PER_SECOND,
-			end: Math.max(w.start, w.end) / FLICKS_PER_SECOND,
-			track: `A${w.track + 1}`,
-		}));
-	const transcribed = new Set(words.map((w) => w.clipId));
-	const dialogueIds = new Set(
-		Object.values(bedSeq.clips)
-			.filter(
-				(c) =>
-					c.kind === 'audio' &&
-					!sfxIds.has(c.id) &&
-					!transcribed.has(c.id) &&
-					(c as { essential?: { type?: unknown } }).essential?.type === 'dialogue',
-			)
-			.map((c) => c.id),
-	);
-	const dialogueClips = bedClips.filter((c) => dialogueIds.has(c.clipId));
-	const voiced: { start: number; end: number; tracks: string[] }[] = [];
-	await pool(beds, concurrency, async (b) => {
-		const playing = overlapping(dialogueClips, b.range);
-		if (playing.length === 0) return;
-		const tracks = [...new Set(playing.map((c) => trackLabel(bedSeq, c.trackId)))];
-		const key = mixKey('voice', bedWorld, playing, b.range);
-		let spans = cache.getVoice(key);
-		if (spans) renders.cached++;
-		else {
-			const r = await renderPcm(bedWorld, b.range, new Set(playing.map((c) => c.clipId)), deps, {
-				prune: true,
-				meter: false,
-			});
-			renders.voice++;
-			const db = frameLevels(r.pcm, sr);
-			const th = Math.max(vadThreshold(db), VAD_FLOOR_DBFS);
-			const hop = Math.max(1, Math.round(sr / 100)) / sr;
-			const t0 = r.pcm.startSample / sr;
-			spans = [];
-			for (let f = 0; f < db.length; f++)
-				if (db[f]! >= th) spans.push({ start: t0 + f * hop, end: t0 + (f + 1) * hop });
-			cache.putVoice(key, spans);
-		}
-		for (const v of spans) voiced.push({ ...v, tracks });
+	// 3. Speech: the one dialogue definition (`dialogueSpans`: transcript words, else the voice activity of Essential
+	//    Sound dialogue clips measured on their media, else their spans), so the solver's dialogue guard, the cue
+	//    derivation and Sound Check agree (spec 12 P6-R3).
+	const voiceSvc = deps.voice ?? voiceServiceFor(deps.ff, deps.registry);
+	const voice = await voiceSvc.forSequence(input.bedDoc, bedSeq, {
+		memo: cache.voice,
+		...(deps.signal ? { signal: deps.signal } : {}),
 	});
-
+	renders.voice += voice.decoded;
+	renders.cached += voice.fromCache;
+	const voiced = dialogueSpans(input.bedDoc, bedSeq, { voice: voice.voice }).map((sp) => ({
+		start: sp.start / fpsNum,
+		end: sp.end / fpsNum,
+		tracks: sp.trackIds.map((t) => trackLabel(bedSeq, t)),
+	}));
 	ms.voice = Date.now() - tStage;
 	// 4. Per sound: the bed over its window, its speech, the bed tracks under it.
 	const sounds = new Map<string, MeasuredSound>();
@@ -960,7 +919,6 @@ export async function measureSfxEvents(
 		const lp = b && rel ? bedLocalPeakLu(b.pcm.channels, sr, rel, target.weight) : Number.NEGATIVE_INFINITY;
 		const overlaps = (s: { start: number; end: number }) => s.start < m.window.end && s.end > m.window.start;
 		const speechTracks = new Set<string>();
-		for (const w of wordSpans) if (overlaps(w)) speechTracks.add(w.track);
 		for (const v of voiced) if (overlaps(v)) for (const t of v.tracks) speechTracks.add(t);
 		const winFrames = { start: Math.floor(m.window.start * fpsNum), end: Math.ceil(m.window.end * fpsNum) };
 		const bedTracks = [

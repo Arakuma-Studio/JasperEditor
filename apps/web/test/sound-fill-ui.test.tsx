@@ -362,12 +362,14 @@ describe('clip menu, badges, Essential Sound, Properties', () => {
 		const clip = s.seq().clips[s.clipId]!;
 		expect(clipBadges(s.seq(), clip, { width: 120, licenceWarning: false })).toEqual({
 			type: 'sfx',
+			auto: null,
 			hero: true,
 			layer: false,
 			warn: false,
 		});
 		expect(clipBadges(s.seq(), clip, { width: 50, licenceWarning: true })).toEqual({
 			type: 'sfx',
+			auto: null,
 			hero: false,
 			layer: false,
 			warn: true,

@@ -39,6 +39,7 @@ function emptyStats(): DeriveCuesStats {
 		bySource,
 		dropped: { rate: 0, gap: 0, maxCues: 0, confidence: 0, range: 0 },
 		heroesDemoted: 0,
+		heroesUnderDialogue: 0,
 		snappedToBeat: 0,
 		found: 0,
 		kept: 0,
@@ -166,6 +167,13 @@ export function deriveCues(
 		const ctx = makeContext(doc, seq, duration, range, (w) => {
 			if (warnings.length < 200) warnings.push(w);
 		});
+		if (opts.voiceActivity && typeof opts.voiceActivity === 'object') ctx.voice = opts.voiceActivity;
+		// Where dialogue is heard (computed once: `dialogueSpans`, transcript words / voice activity / dialogue clips).
+		let dialogueCache: Array<[number, number]> | null = null;
+		const dialogueOf = () => {
+			dialogueCache ??= opts.respectDialogue !== false ? dialogueRanges(ctx) : [];
+			return dialogueCache;
+		};
 		const sources = sourceSet(opts.sources);
 		const density = (CUE_DENSITIES as readonly string[]).includes(opts.density as string)
 			? opts.density!
@@ -198,7 +206,10 @@ export function deriveCues(
 		};
 		if (range.end > range.start) {
 			run('edits', () => {
-				const r = deriveEditCues(ctx, { respectDialogue: opts.respectDialogue !== false });
+				const r = deriveEditCues(ctx, {
+					respectDialogue: opts.respectDialogue !== false,
+					dialogue: opts.respectDialogue !== false ? dialogueOf() : [],
+				});
 				stats.bySource.edits.suppressedByDialogue += r.suppressed;
 				return r.cues;
 			});
@@ -224,7 +235,7 @@ export function deriveCues(
 				});
 			// Shot changes and pixel cuts are cuts: silent where dialogue is heard, like edit points.
 			const dialogue =
-				opts.respectDialogue !== false && valid.some((c) => c.kind === 'cut') ? dialogueRanges(ctx) : [];
+				opts.respectDialogue !== false && valid.some((c) => c.kind === 'cut') ? dialogueOf() : [];
 			const project = candidates.slice();
 			const engine: CueCandidate[] = [];
 			for (const c of valid) {
@@ -243,6 +254,20 @@ export function deriveCues(
 				candidates.splice(i, 1);
 				stats.bySource.pixel.merged++;
 			}
+		}
+		// No hero under dialogue (spec 12 §1 "Less is more"; P6-R3): a derived hero where speech is heard becomes support.
+		// Explicit requests (`sfx:` markers) are the user's and stay as asked.
+		if (
+			opts.respectDialogue !== false &&
+			candidates.some((c) => c.weight === 'hero' && c.source !== 'marker')
+		) {
+			const dialogue = dialogueOf();
+			for (const c of candidates)
+				if (c.weight === 'hero' && c.source !== 'marker' && inRanges(dialogue, c.frame)) {
+					c.weight = 'support';
+					c.reason = `${c.reason}; support: under dialogue`;
+					stats.heroesUnderDialogue++;
+				}
 		}
 		const merged = mergeCandidates(candidates, (from) => stats.bySource[from].merged++);
 		const maxCues = Number.isFinite(opts.maxCues) ? Math.max(0, Math.floor(opts.maxCues!)) : MAX_DERIVED_CUES;

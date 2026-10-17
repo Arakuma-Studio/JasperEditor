@@ -155,6 +155,7 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('audio.remix', 'Remix…'),
 				c('audio.revertRemix', 'Revert Remix'),
 				c('audio.autoMatchLoudness', 'Auto-Match Loudness'),
+				c('audio.autoTag', 'Auto Tag Audio Types'),
 				c('audio.clearAudioType', 'Clear Audio Type'),
 				// sound design (spec 12 §2.7, WP2.4b): the clip context menu's entries
 				sep,

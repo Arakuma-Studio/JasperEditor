@@ -96,6 +96,7 @@ export function SuggestCuesDialog(
 				selectedClips,
 				engineSources,
 				engineCues: measured.cues,
+				voiceActivity: measured.voice,
 				snapToBeats,
 			}),
 		[
@@ -110,6 +111,7 @@ export function SuggestCuesDialog(
 			expressionsReady,
 			engineSources,
 			measured.cues,
+			measured.voice,
 			snapToBeats,
 		],
 	);

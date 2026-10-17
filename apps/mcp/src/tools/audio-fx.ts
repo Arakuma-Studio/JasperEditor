@@ -1,4 +1,4 @@
-import { MAX_REMIX_SOURCE_SECONDS } from '@jasper/api';
+import { type AudioClassifyResult, MAX_REMIX_SOURCE_SECONDS } from '@jasper/api';
 import {
 	AUDIO_EFFECTS,
 	AUDIO_TYPES,
@@ -32,12 +32,13 @@ import {
 	READ_ONLY,
 	type ToolContext,
 } from '../context.ts';
+import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
 import { analyze, apply } from './audio.ts';
 
 export const AUDIO_FX_GUIDE = `Audio effects (Premiere's Audio Effects folders: Amplitude and Compression, Delay and Echo, Filter and EQ, Modulation, Noise Reduction/Restoration, Reverb, Special, Stereo Imagery, Time and Pitch): list_audio_effects gives every effect id ("jasper.audio.…") with its parameters (units dB, Hz, ms, Q, ratio, %, st, cents, LUFS; every number keyframable). add_audio_effect puts one on an audio clip, an audio track ("A1"…, a submix "S1"…) or the Mix ("Mix"); set_audio_effect changes parameters (a value, or {"keyframes": [{at, value}…]} for automation), enables/bypasses or reorders it; remove_audio_effect deletes it; get_audio_effects lists the stacks with values at a time. The same DSP runs in the preview (AudioWorklet) and every export. Order: clip effects → clip gain / Volume / fades → pan → track effects → fader.
-Essential Sound: set_essential_sound gives clips an audio type (dialogue | music | sfx | ambience), applies a preset (get_essential_sound lists them) and/or sets options by dotted key (e.g. {"repair.noise.on": true, "repair.noise.amount": 6, "clarity.eqPreset": "Balanced Voice", "creative.reverb.on": true}); the options become ordinary keyframable clip effects you can also edit with set_audio_effect; Clip Volume and the SFX Pan are offsets on the clip's own Volume and pan (switched off, the clip's levels come back; projects saved when Pan was written into the pan open with the Pan section off, value kept, so their pan stays as saved). clear_essential_sound removes the type and every change it made. auto_match_loudness measures each clip (BS.1770, its own signal) and sets its gain to −23 LUFS (or targetLufs); silent clips and clips shorter than 400 ms are skipped with the reason. generate_essential_ducking ducks Music / Ambience clips under the clips of their "Duck against" types (ducking.* options) with Volume keyframes.
+Essential Sound: set_essential_sound gives clips an audio type (dialogue | music | sfx | ambience), applies a preset (get_essential_sound lists them) and/or sets options by dotted key (e.g. {"repair.noise.on": true, "repair.noise.amount": 6, "clarity.eqPreset": "Balanced Voice", "creative.reverb.on": true}); the options become ordinary keyframable clip effects you can also edit with set_audio_effect; Clip Volume and the SFX Pan are offsets on the clip's own Volume and pan (switched off, the clip's levels come back; projects saved when Pan was written into the pan open with the Pan section off, value kept, so their pan stays as saved). clear_essential_sound removes the type and every change it made. auto_tag_audio classifies clips as dialogue / music / sfx / ambience by listening to them (Premiere's Auto Tag) and tags them in one undoable step, marked "auto" until the user confirms (set_essential_sound with the same type confirms; another type changes it); it never replaces a type the user set unless force, returns each tag's confidence and why, and you should report low-confidence tags (< 60 %) to the user. auto_match_loudness measures each clip (BS.1770, its own signal) and sets its gain to −23 LUFS (or targetLufs); silent clips and clips shorter than 400 ms are skipped with the reason. generate_essential_ducking ducks Music / Ambience clips under the clips of their "Duck against" types (ducking.* options) with Volume keyframes.
 Music Remix: remix_audio clips a music clip to a target duration by beat tracking and re-cutting on beats (grouped pieces joined by short crossfades, one undo step; at most 30 min of music is analysed); revert_remix restores the original.`;
 
 const ClipIdsArg = z.array(z.string().min(1)).min(1).describe('Audio clip ids (get_timeline)');
@@ -560,6 +561,137 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 				...body,
 				measuredLufs: measured,
 				note: `Each clip's total gain now brings it to ${a.targetLufs ?? `its target (default ${DEFAULT_LOUDNESS_TARGET})`} LUFS; clips measured as null (silent, or shorter than 400 ms) are unchanged — see the per-clip reasons.`,
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'auto_tag_audio',
+		{
+			title: 'Auto Tag audio types',
+			description:
+				'Essential Sound ▸ Auto Tag (Premiere\'s "Auto Tag Audio Types"): listens to each audio clip (the media range it plays; long clips are sampled) and classifies it as dialogue, music, sfx or ambience from measured features (voice activity and syllabic modulation, pitch over time, onsets and their periodicity, sustained tones, stationarity, duration) — deterministic rules, not a trained model. mode "apply" (default) gives the clips that type in ONE undoable transaction, marked "auto" (the clip badge is dotted until the user confirms it in Essential Sound); "propose" only returns the results. A type the user set is never replaced unless force. clipIds default: every audio clip of the sequence without an audio type. Returns a table with each clip\'s tag, confidence and why. Report tags under 60 % confidence (low) to the user instead of trusting them; silent clips are left untyped.',
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: SequenceIdArg,
+				clipIds: z
+					.array(z.string().min(1))
+					.min(1)
+					.max(500)
+					.optional()
+					.describe('Audio clip ids (get_timeline); default every untyped audio clip'),
+				mode: z
+					.enum(['apply', 'propose'])
+					.optional()
+					.describe('apply (default): tag them; propose: only classify'),
+				force: z.boolean().optional().describe('Also replace audio types the user set (default false)'),
+				minConfidence: z
+					.number()
+					.min(0)
+					.max(1)
+					.optional()
+					.describe('Leave clips under this confidence untyped (default 0: tag every result)'),
+			},
+			annotations: EDIT,
+		},
+		async (a, extra) => {
+			const { doc, revision } = await loadDoc(ctx, a.projectId);
+			const seq = pickSequence(doc, a.sequenceId);
+			const ids =
+				a.clipIds ??
+				Object.values(seq.clips)
+					.filter((c) => c.kind === 'audio' && !readEssentialSound((c as AudioClip).essential))
+					.sort((x, y) => x.start - y.start)
+					.map((c) => c.id)
+					.slice(0, 500);
+			if (ids.length === 0)
+				return jsonResult({
+					ok: true,
+					tagged: [],
+					note: 'Every audio clip already has an audio type (pass clipIds with force: true to re-tag clips the user typed).',
+				});
+			for (const id of ids) audioClip(seq, id);
+			const job = await ctx.engine((c) =>
+				c.classifyAudio(
+					{ envelope: toolEnvelope(doc, revision), sequenceId: seq.id, clipIds: ids },
+					{ wait: true },
+				),
+			);
+			if (job.state !== 'succeeded')
+				throw new ToolError(
+					job.error?.code ?? 'E_ANALYSIS_FAILED',
+					job.error?.message ?? `The job ${job.state}`,
+					'Check engine_status; the media must be in the engine (import_media).',
+				);
+			const res = job.result as AudioClassifyResult;
+			const pct = (x: number) => `${Math.round(x * 100)} %`;
+			const rows = res.items.map((it) => ({
+				clipId: it.clipId ?? '',
+				name: it.name,
+				before: it.currentType ?? null,
+				category: it.result?.category ?? null,
+				confidence: it.result ? Math.round(it.result.confidence * 1000) / 1000 : null,
+				low: !!it.result && !it.result.silent && it.result.confidence < res.lowConfidence,
+				why: it.error
+					? `${it.error.code}: ${it.error.message}`
+					: it.result?.silent
+						? 'silent'
+						: (it.result?.reasons ?? []).join('; '),
+			}));
+			const results = Object.fromEntries(
+				res.items
+					.filter((it) => it.clipId && it.result?.category && !it.result.silent)
+					.map((it) => [
+						it.clipId!,
+						{
+							category: it.result!.category!,
+							confidence: it.result!.confidence,
+							scores: it.result!.scores,
+							reasons: it.result!.reasons.slice(0, 6),
+						},
+					]),
+			);
+			const table = [
+				'clip | name | before | tag | confidence | why',
+				...rows.map(
+					(r) =>
+						`${r.clipId} | ${r.name} | ${r.before ?? '—'} | ${r.category ?? '—'} | ${r.confidence === null ? '—' : `${pct(r.confidence)}${r.low ? ' (low)' : ''}`} | ${r.why}`,
+				),
+			].join('\n');
+			const low = rows.filter((r) => r.low).map((r) => r.clipId);
+			const base = { counts: res.counts, lowConfidence: res.lowConfidence, low, table, items: rows };
+			if (a.mode === 'propose' || Object.keys(results).length === 0)
+				return jsonResult({
+					ok: true,
+					mode: a.mode ?? 'apply',
+					applied: false,
+					...base,
+					next: 'Apply with mode "apply" (or essentialSound.autoTag in apply_commands with these results).',
+				});
+			const body = await apply(
+				ctx,
+				a.projectId,
+				'Auto Tag Audio Types',
+				[
+					{
+						type: 'essentialSound.autoTag',
+						results,
+						...(a.force ? { force: true } : {}),
+						...(a.minConfidence !== undefined ? { minConfidence: a.minConfidence } : {}),
+					},
+				],
+				extra,
+				seq.id,
+			);
+			return jsonResult({
+				...body,
+				mode: 'apply',
+				applied: true,
+				...base,
+				next: low.length
+					? `Tell the user ${low.length} tag(s) are low-confidence (${low.join(', ')}): they confirm or change them in Essential Sound (the dotted badge).`
+					: 'Tags are marked auto until the user confirms them in Essential Sound (set_essential_sound with the same type confirms).',
 			});
 		},
 	);

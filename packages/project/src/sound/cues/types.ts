@@ -1,7 +1,9 @@
 // Cue derivation types (spec 12 §2.2 "Derivation", P2-R3). Pure data; see ./derive.ts for the algorithm.
+
 import type { MgTemplateRegistry } from '../../registry/mg.ts';
 import { type CueAnchor, SOUND_DENSITIES, type SoundDensity } from '../../schema/sound.ts';
 import type { SoundAlign, SoundTypeId, SoundWeight, VisualKind } from '../taxonomy.ts';
+import type { VoiceActivity } from './dialogue.ts';
 
 /** Where a cue's frame comes from: the stored cue's `CueAnchor` (spec 12 §2.2; `resolveCueAnchor` finds it again). */
 export type DerivedCueAnchor = CueAnchor;
@@ -94,8 +96,13 @@ export type DeriveCuesOptions = {
 	minGapFrames?: number;
 	/** At most this many cues are returned (pattern members count one each). */
 	maxCues?: number;
-	/** No `cut` cues where dialogue is heard (transcript words, Essential Sound dialogue clips). Default true. */
+	/**
+	 * Where dialogue is heard (`dialogueSpans`: transcript words, else the voice activity of Essential Sound dialogue
+	 * clips, else their whole spans): no `cut` cues, and derived heroes become support. Default true.
+	 */
 	respectDialogue?: boolean;
+	/** Voice activity of dialogue clips measured by the engine (the cue route's `voiceActivity`); absent = whole clips. */
+	voiceActivity?: VoiceActivity | null;
 	/** Motion-graphic templates (intro/outro lengths); without it the `mg` source finds nothing. */
 	mgTemplates?: MgTemplateRegistry;
 	/**
@@ -131,6 +138,8 @@ export type DeriveCuesStats = {
 	dropped: { rate: number; gap: number; maxCues: number; confidence: number; range: number };
 	/** Heroes turned into support cues by the hero spacing (≤ 1 per 1.5/2/3 s, never two within 0.5 s). */
 	heroesDemoted: number;
+	/** Derived heroes made support because dialogue is heard at their frame (`respectDialogue`). */
+	heroesUnderDialogue: number;
 	/** Cues `snapToBeats` moved onto a beat. */
 	snappedToBeat: number;
 	found: number;

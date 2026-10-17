@@ -4,6 +4,7 @@
 // AudioWorklet (`@jasper/compositions`). Pure: no DOM, no Node built-ins. Loudness, true-peak limiting, pan laws and
 // ducking analysis are @jasper/audio-dsp's.
 
+export * from './analysis/audio-category.ts';
 export * from './analysis/bands.ts';
 export * from './analysis/check-curves.ts';
 export * from './analysis/masking.ts';

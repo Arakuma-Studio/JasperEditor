@@ -50,6 +50,12 @@ export const SoundCuesOptionsSchema = z.strictObject({
 	 * editor's Suggest Cues… asks this way when it opens, and starts the analyses when the user clicks Analyze….
 	 */
 	analyze: z.boolean().optional(),
+	/**
+	 * Measure the voice activity of Essential Sound dialogue clips without a transcript (the speech module's energy VAD
+	 * over each clip's media, cached per file and range) so dialogue is where they speak, not their whole span (default
+	 * true; spec 12 P6-R3). `false` = cached measurements only.
+	 */
+	voiceActivity: z.boolean().optional(),
 });
 export type SoundCuesOptions = z.infer<typeof SoundCuesOptionsSchema>;
 
@@ -157,6 +163,8 @@ export const SoundCuesResponseSchema = z.object({
 			range: z.number().int(),
 		}),
 		heroesDemoted: z.number().int(),
+		/** Derived heroes made support because dialogue is heard at their frame. */
+		heroesUnderDialogue: z.number().int().optional(),
 		/** Cues `snapToBeats` moved onto a beat. */
 		snappedToBeat: z.number().int().optional(),
 		found: z.number().int(),
@@ -172,8 +180,33 @@ export const SoundCuesResponseSchema = z.object({
 			jobIds: z.array(z.string()).optional(),
 		}),
 	),
-	/** Frame ranges `[start, end)` where dialogue is heard (transcript words, Essential Sound dialogue clips). */
-	dialogue: z.array(z.object({ start: z.number().int(), end: z.number().int() })),
+	/**
+	 * Frame ranges `[start, end)` where dialogue is heard (`dialogueSpans`: transcript words, else the voice activity of
+	 * Essential Sound dialogue clips, else their whole spans), with the clips and tracks speaking and what found them.
+	 */
+	dialogue: z.array(
+		z.object({
+			start: z.number().int(),
+			end: z.number().int(),
+			clipIds: z.array(z.string()).optional(),
+			trackIds: z.array(z.string()).optional(),
+			sources: z.array(z.enum(['words', 'vad', 'clip'])).optional(),
+		}),
+	),
+	/**
+	 * Voiced media seconds of the dialogue clips the engine measured (clip id → `[start, end)` pairs): pass it to
+	 * `deriveCues` as `voiceActivity` to derive with the same dialogue ranges (the editor's Suggest Cues…).
+	 */
+	voiceActivity: z.record(z.string(), z.array(z.tuple([z.number(), z.number()])).max(20_000)).optional(),
+	/** The voice measurement: `ready` (every dialogue clip measured), `partial` / `failed` (`message`), `none`. */
+	voice: z
+		.object({
+			state: z.enum(['ready', 'partial', 'none', 'failed']),
+			measured: z.number().int(),
+			missing: z.number().int(),
+			message: z.string().optional(),
+		})
+		.optional(),
 	/** Cues already stored in the sequence. */
 	storedCues: z.number().int(),
 	/**

@@ -7,7 +7,7 @@
 // budgets are the same as everywhere else. "Snap to the beat" moves moves and transitions onto the music's beats.
 import type { EngineCue, EngineJob, SoundCuesResponse } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
-import { ENGINE_CUE_SOURCES, type ExtraCue } from '@jasper/project';
+import { ENGINE_CUE_SOURCES, type ExtraCue, type VoiceActivity } from '@jasper/project';
 import { Button, Checkbox } from '@jasper/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { t } from '../../i18n/runtime.ts';
@@ -37,6 +37,11 @@ export type EngineSourcesState = {
 	analyze(sources: readonly EngineCueSource[]): void;
 	busy: boolean;
 	error: string | null;
+	/**
+	 * Voice activity of the Essential Sound dialogue clips the engine measured (the cue route's `voiceActivity`, P6-R3):
+	 * the dialog derives with it so "Respect dialogue" uses the engine's dialogue ranges; null until it answers.
+	 */
+	voice: VoiceActivity | null;
 };
 
 const initial = (): Record<EngineCueSource, EngineSourceStatus> =>
@@ -77,6 +82,7 @@ export function useEngineSources(
 ): EngineSourcesState {
 	const [status, setStatus] = useState(initial);
 	const [cues, setCues] = useState<ExtraCue[]>([]);
+	const [voice, setVoice] = useState<VoiceActivity | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const live = useRef(true);
@@ -101,6 +107,7 @@ export function useEngineSources(
 	);
 
 	const apply = useCallback((r: SoundCuesResponse, sources: readonly EngineCueSource[]) => {
+		setVoice(r.voiceActivity ?? null);
 		setCues((cur) => [
 			...cur.filter((c) => !sources.includes(c.from as EngineCueSource)),
 			...(r.engineCues ?? []).map(toExtra),
@@ -223,7 +230,7 @@ export function useEngineSources(
 		[engine, range, ask, apply],
 	);
 
-	return { status, cues, analyze, busy, error };
+	return { status, cues, analyze, busy, error, voice };
 }
 
 /** Why a source has nothing to measure. */

@@ -14,6 +14,7 @@ import {
 } from './agent.ts';
 import { AudioAnalyzeRequestSchema, LoudnessNormalizeRequestSchema } from './audio.ts';
 import {
+	AudioClassifyRequestSchema,
 	BeatsRequestSchema,
 	BeatsResultSchema,
 	RemixPlanRequestSchema,
@@ -755,6 +756,18 @@ export const ROUTES = {
 		path: '/api/audio/beats',
 		body: BeatsRequestSchema,
 		response: BeatsResultSchema,
+	},
+	/**
+	 * Essential Sound Auto Tag (spec 12 P6-R3): an `audio-classify` job classifying clips (over the media range each
+	 * plays) or media as dialogue, music, SFX or ambience; cached per file and range. Result `AudioClassifyResult`.
+	 */
+	audioClassify: {
+		method: 'POST',
+		path: '/api/audio/classify',
+		body: AudioClassifyRequestSchema,
+		/** `wait=1`: answer when the job ends (the finished job; a failed job is a 422 with its code). */
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
 	},
 
 	speechModels: {

@@ -22,6 +22,7 @@ import {
 	SOUND_DESIGN_LIMITS,
 	type SoundCue,
 	sequenceDuration,
+	type VoiceActivity,
 } from '@jasper/project';
 import { type CueInput, cuesOf, duplicatesStored, isFilled } from './model.ts';
 
@@ -35,6 +36,8 @@ export type SuggestOptions = {
 	engineSources?: ReadonlySet<EngineCueSource>;
 	/** The engine's measured cues of every engine source (`POST /api/sound-design/cues` `engineCues`). */
 	engineCues?: readonly ExtraCue[];
+	/** Voice activity of dialogue clips from the engine (`voiceActivity` of the cue route): the dialogue ranges. */
+	voiceActivity?: VoiceActivity | null;
 	/** Snap moves, transitions, emphases and reveals to the beats of `engineCues` (±2 frames). */
 	snapToBeats?: boolean;
 	range: SuggestRange;
@@ -111,6 +114,7 @@ export function planSuggestion(doc: ProjectDocument, sequenceId: string, o: Sugg
 		density: o.density,
 		respectDialogue: o.respectDialogue,
 		mgTemplates: mgRegistry,
+		...(o.voiceActivity ? { voiceActivity: o.voiceActivity } : {}),
 	};
 	// Found counts do not depend on the selection; kept counts do (merging), so both runs are needed unless all are on.
 	const engineSources = o.engineSources ?? new Set<EngineCueSource>();

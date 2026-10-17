@@ -458,6 +458,7 @@ Every state-changing engine route and what an agent may do with it:
 | `POST /api/sound-design/delivery` (`apply_delivery`) | Open | Mode `propose` (the default) stores a proposal (nothing changes); mode `apply` is one ordinary, undoable transaction of `soundDesign.applyDelivery` (settings, the Mix's loudness normalisation, Essential Sound Auto-Match gains, ducking Volume keyframes) and `soundDesign.applyGains`, classified like any agent transaction ("Agent: Apply Delivery Preset"); nothing is deleted; renders are measure-only (no file is written) |
 | `POST /api/sound-design/check` (`sound_check`) | Open | Measure-only renders (the first normalisation pass is a scratch file of the job, removed when it ends); with `store: true` one ordinary, undoable transaction of `soundDesign.setCheck` (metadata only, "Agent: Sound Check Result"); fixes are returned, never applied |
 | `POST /api/sound-design/visual` (`view_sound_timeline`) | Open | Read-only: measure-only renders of ≤ 120 s, nothing stored |
+| `POST /api/audio/classify` (`auto_tag_audio`, Essential Sound ▸ Auto Tag), the voice activity of `POST /api/sound-design/cues` (dialogue clips) | Open | Read-only for the project: ffmpeg decodes of registered media (≤ 500 items, ≤ 4 × 15 s windows or 60 s each; voice activity streamed into 10 ms levels, ≤ 4 h per clip, 8 h and 64 clips per call); only small JSON results are cached (`<appdir>/sounds/analysis/{classify,voice}/`); tagging is the ordinary, undoable `essentialSound.autoTag` transaction the caller sends |
 | `POST /api/sound-design/check/last` (`get_sound_check`) | Open | Read-only: the sequence's last kept report (`<appdir>/projects/<pid>/sound-check/<sequenceId>.json`, written by finished `sound-check` jobs; file names only from document ids, ≤ 32 per project, ≤ 16 MB each, damaged files moved aside) with its staleness against the live document |
 | `POST /api/sound-design/motion` (`analyze_picture_motion`), engine cue sources of `POST /api/sound-design/cues` (`find_sound_cues` sources scene / beat / pixel), `POST /api/audio/beats` | Open | Read-only for the project: a picture render of ≤ 10 min into the job's scratch directory (deleted when it ends), Scene Edit Detection and beat analyses of registered media; only small JSON results are cached (`<appdir>/sounds/analysis/`) |
 | `PUT /api/settings/processing` (`set_processing_settings`) | **Gated**, now for every caller without the editor key | Where media is sent (was opt-in by a query parameter) |
@@ -766,6 +767,17 @@ them, but it was reviewed by its author, not by this review.
   reported (`W_ANALYSIS_FAILED`, state `failed`) and not restarted for 5 minutes. Tests:
   `apps/engine/test/sound-design-motion.test.ts` (typed refusals, cancellation), `fuzz-http.test.ts` (both new routes,
   discovered from the server).
+- **Auto Tag and dialogue voice activity** (spec 12 WP6.3, `apps/engine/src/audio/classify.ts`,
+  `sound-design/voice.ts`, `routes/audio-fx.ts`; `POST /api/audio/classify`, the cue route's `voiceActivity`): a strict zod
+  body (exactly one of `clipIds` / `mediaKeys`, ≤ 500 each; ids ≤ 200 characters, media keys matched by `MEDIA_KEY_RE` and
+  looked up in the registry; a project id `[A-Za-z0-9_-]{1,128}` or an inline envelope validated by `loadProject`);
+  `404 PROJECT_NOT_FOUND` / `SEQUENCE_NOT_FOUND` / `CLIP_NOT_FOUND` / `ASSET_NOT_FOUND` before the job starts, per-item
+  errors (not audio, no audio stream, offline, not in the store) in the result. Decodes are ffmpeg child processes of
+  registered media only (2 at once; capped at the requested duration + 1 s; voice activity folds samples into 10 ms
+  levels as they stream, so memory does not grow with the clip). Results are JSON under engine-made sha256 names, read
+  back through their zod schema (≤ 5 000 classifications, ≤ 2 000 voice entries). The route never edits the project: the
+  editor and `auto_tag_audio` apply `essentialSound.autoTag` as an ordinary transaction. Tests:
+  `apps/engine/test/audio-classify.test.ts` (refusals, item errors), `fuzz-http.test.ts` (discovers the route).
 - **Proposals** (spec 12 WP3.1, `apps/engine/src/routes/proposals.ts`, `proposals/{store,service}.ts`; `GET/POST
   /api/projects/:id/proposals`, `GET/DELETE …/:proposalId`, `POST …/:proposalId/accept|reject|reopen|note|select|applied`):
   project ids are matched against `prj_` + 16 Crockford characters and proposal ids against `prp_` + 16 before any path

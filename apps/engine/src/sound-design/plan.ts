@@ -80,6 +80,7 @@ import {
 	typesForVisualKind,
 	VISUAL_KINDS,
 	type VisualKind,
+	type VoiceActivity,
 } from '@jasper/project';
 import type { AgentService } from '../agent/service.ts';
 import type { JobContext } from '../jobs/types.ts';
@@ -93,6 +94,7 @@ import type { MeasureCache } from './bed.ts';
 import type { EngineCueSource, EngineCueSources } from './engine-cues.ts';
 import { matchStoredCues } from './match.ts';
 import { planPreviewDocument, solvePlanGains } from './plan-levels.ts';
+import { voiceServiceFor } from './voice.ts';
 
 type CueKind = SoundCue['kind'];
 type CueWeight = SoundCue['weight'];
@@ -418,11 +420,15 @@ export function collectPlanCues(
 		extraCues?: readonly ExtraCue[];
 		/** Beat frames `style.snapToBeats` snaps to. */
 		beatFrames?: readonly number[];
+		/** Voice activity of the dialogue clips (`VoiceActivityService`); absent = their whole spans. */
+		voice?: VoiceActivity | null;
 	} = {},
 ): { cues: PlanCue[]; skipped: SoundDesignPlanSkip[]; warnings: { code: string; message: string }[] } {
 	const range = req.range ?? null;
 	const inRange = (f: number) => !range || (f >= range.start && f < range.end);
-	const dialogue = style.respectDialogue ? sequenceDialogueRanges(doc, seq) : [];
+	const dialogue = style.respectDialogue
+		? sequenceDialogueRanges(doc, seq, { voice: opts.voice ?? null })
+		: [];
 	const inDialogue = (f: number) => dialogue.some(([s, e]) => f >= s && f < e);
 	const stored = soundCuesOf(seq);
 	const filledBy = (c: SoundCue) => (c.placedClipIds ?? []).find((id) => Object.hasOwn(seq.clips, id));
@@ -465,6 +471,7 @@ export function collectPlanCues(
 			...(style.cueSources ? { sources: style.cueSources } : {}),
 			...(opts.mgTemplates ? { mgTemplates: opts.mgTemplates } : {}),
 			...(opts.extraCues ? { extraCues: opts.extraCues } : {}),
+			...(opts.voice ? { voiceActivity: opts.voice } : {}),
 			...(style.snapToBeats ? { snapToBeats: true, beatFrames: opts.beatFrames ?? [] } : {}),
 		});
 		for (const w of derived.warnings) warnings.push({ code: w.code, message: w.message });
@@ -550,9 +557,10 @@ export function selectPlanSounds(
 	cues: readonly PlanCue[],
 	pool: readonly SoundEntry[],
 	style: PlanStyle,
+	voice: VoiceActivity | null = null,
 ): { picks: PlanPick[]; skipped: SoundDesignPlanSkip[]; paletteMissing: number } {
 	const fps = fpsOf(seq);
-	const dialogue = style.respectDialogue ? sequenceDialogueRanges(doc, seq) : [];
+	const dialogue = style.respectDialogue ? sequenceDialogueRanges(doc, seq, { voice }) : [];
 	const inDialogue = (f: number) => dialogue.some(([s, e]) => f >= s && f < e);
 	const palette = new Set(style.palette);
 	const poolIds = new Set(pool.map((e) => e.id));
@@ -1079,8 +1087,17 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 		}
 		if (aborted()) return cancelledResult(req, seq, style);
 	}
+	// where dialogue clips without a transcript speak (P6-R3: the cue route's and the solver's definition)
+	let voice: VoiceActivity | null = null;
+	if (style.respectDialogue && deps.ffmpeg && deps.registry) {
+		ctx.progress(0.085, { stage: 'Listening for dialogue' });
+		voice = (await voiceServiceFor(deps.ffmpeg, deps.registry).forSequence(doc, seq, { signal: ctx.signal }))
+			.voice;
+		if (aborted()) return cancelledResult(req, seq, style);
+	}
 	ctx.progress(0.09, { stage: 'Finding cues' });
 	const collected = collectPlanCues(doc, seq, req, style, {
+		...(voice ? { voice } : {}),
 		...(deps.mgTemplates ? { mgTemplates: deps.mgTemplates } : {}),
 		...(measured ? { extraCues: measured.extraCues } : {}),
 		...(measured?.beatFrames ? { beatFrames: measured.beatFrames } : {}),
@@ -1089,7 +1106,7 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 	if (aborted()) return cancelledResult(req, seq, style);
 	ctx.progress(0.1, { stage: `Ranking sounds for ${collected.cues.length} cues` });
 	const pool = await sounds.rankingPool(style.sources);
-	const selected = selectPlanSounds(doc, seq, collected.cues, pool.entries, style);
+	const selected = selectPlanSounds(doc, seq, collected.cues, pool.entries, style, voice);
 	const warnings = [...collected.warnings];
 	if (selected.paletteMissing)
 		warnings.push({
