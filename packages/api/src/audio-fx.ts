@@ -89,7 +89,10 @@ export const AUDIO_CLASSIFY_MAX_ITEMS = 500;
 
 export const AudioClassifyRequestSchema = z
 	.strictObject({
-		/** The project (its live document) for `clipIds`, or the document inline (`envelope`). */
+		/**
+		 * The document of `clipIds`: inline (`envelope`, the editor's), else the project's live document (`projectId`;
+		 * with an envelope it only names the job's project).
+		 */
 		projectId: z
 			.string()
 			.regex(/^[A-Za-z0-9_-]{1,128}$/, 'a project id')
@@ -104,7 +107,7 @@ export const AudioClassifyRequestSchema = z
 	})
 	.refine((r) => (r.clipIds === undefined) !== (r.mediaKeys === undefined), 'give clipIds or mediaKeys')
 	.refine(
-		(r) => r.clipIds === undefined || (r.projectId === undefined) !== (r.envelope === undefined),
+		(r) => r.clipIds === undefined || r.projectId !== undefined || r.envelope !== undefined,
 		'clipIds need projectId or envelope',
 	);
 export type AudioClassifyRequest = z.infer<typeof AudioClassifyRequestSchema>;

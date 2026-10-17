@@ -1,9 +1,10 @@
 // Engine round trips of Essential Sound and Remix (audio-fx): Loudness Auto-Match (measure the clips' own signal on
 // the engine, then one `essentialSound.autoMatch`), Ducking (audio-mix's `autoDuck` with the Essential Sound
 // triggers), Remix (`POST /api/audio/remix-plan`, then one `clip.remix`) and Duration ▸ Stretch.
-import { MAX_REMIX_SOURCE_SECONDS } from '@jasper/api';
+import { type AudioClassifyResult, MAX_REMIX_SOURCE_SECONDS } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
+	AUDIO_TYPE_LABELS,
 	type AudioClip,
 	type AudioType,
 	duckTriggerClips,
@@ -16,7 +17,90 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { analyzeAudio, autoDuck } from '../audio/engine-ops.ts';
+import { exportEnvelope } from '../export/settings.ts';
+import { t } from '../i18n/runtime.ts';
 import { mediaKeyOf } from '../import/assets.ts';
+
+/** What an Auto Tag did: the clips tagged, those kept (a type the user set, low confidence), silent and failed ones. */
+export type AutoTagOutcome = {
+	tagged: { clipId: string; audioType: AudioType; confidence: number; from: AudioType | null }[];
+	skipped: { clipId: string; code: string; reason: string }[];
+	silent: string[];
+	failed: { clipId: string; message: string }[];
+	/** Tagged with a confidence under the classifier's "low" line (0.6): the user should confirm them. */
+	low: string[];
+};
+
+/**
+ * Essential Sound ▸ Auto Tag (Premiere's "Auto Tag Audio Types"): the engine listens to each clip (`POST
+ * /api/audio/classify`, an `audio-classify` job the Jobs panel shows) and ONE user transaction "Auto Tag Audio Types"
+ * gives them the types, marked auto until confirmed. Types the user set are kept unless `force`.
+ */
+export async function autoTagClips(
+	session: EditorSession,
+	engine: EngineClient,
+	sequenceId: string,
+	clipIds: string[],
+	opts: { force?: boolean; signal?: AbortSignal } = {},
+): Promise<AutoTagOutcome> {
+	const out: AutoTagOutcome = { tagged: [], skipped: [], silent: [], failed: [], low: [] };
+	if (!clipIds.length) return out;
+	const doc = session.getCommitted();
+	const job = await engine.classifyAudio(
+		{
+			envelope: exportEnvelope(doc, session.revision),
+			...(doc.projectId ? { projectId: doc.projectId } : {}),
+			sequenceId,
+			clipIds,
+		},
+		{ wait: true, ...(opts.signal ? { signal: opts.signal } : {}) },
+	);
+	if (job.state !== 'succeeded') throw new Error(job.error?.message ?? `Auto Tag ${job.state}`);
+	const res = job.result as AudioClassifyResult;
+	const results: Record<string, { category: AudioType; confidence: number; scores: Record<string, number>; reasons: string[] }> = {};
+	for (const it of res.items) {
+		if (!it.clipId) continue;
+		if (it.error) out.failed.push({ clipId: it.clipId, message: it.error.message });
+		else if (!it.result || it.result.silent || !it.result.category) out.silent.push(it.clipId);
+		else
+			results[it.clipId] = {
+				category: it.result.category,
+				confidence: it.result.confidence,
+				scores: it.result.scores,
+				reasons: it.result.reasons.slice(0, 6),
+			};
+	}
+	if (!Object.keys(results).length) return out;
+	const r = session.apply({
+		label: 'Auto Tag Audio Types',
+		origin: 'user',
+		commands: [{ type: 'essentialSound.autoTag', results, ...(opts.force ? { force: true } : {}) }],
+	});
+	fail(r, 'Auto Tag');
+	const done = r.ok ? (r.results[0] as Pick<AutoTagOutcome, 'tagged' | 'skipped'> | undefined) : undefined;
+	out.tagged = done?.tagged ?? [];
+	out.skipped = done?.skipped ?? [];
+	out.low = out.tagged.filter((t) => t.confidence < res.lowConfidence).map((t) => t.clipId);
+	return out;
+}
+
+/** The toast of an Auto Tag: what was tagged, kept, silent or failed (and how many are low-confidence). */
+export function autoTagMessage(o: AutoTagOutcome): string {
+	const parts: string[] = [];
+	if (o.tagged.length) {
+		const by = new Map<AudioType, number>();
+		for (const x of o.tagged) by.set(x.audioType, (by.get(x.audioType) ?? 0) + 1);
+		parts.push(t('Tagged {0}', [...by].map(([ty, k]) => `${k} ${t(AUDIO_TYPE_LABELS[ty])}`).join(', ')));
+	} else parts.push(t('Nothing was tagged'));
+	if (o.low.length)
+		parts.push(o.low.length === 1 ? t('1 with low confidence: confirm it') : t('{0} with low confidence: confirm them', o.low.length));
+	const kept = o.skipped.filter((x) => x.code === 'USER_TYPE').length;
+	if (kept) parts.push(kept === 1 ? t('1 kept the type you set') : t('{0} kept the types you set', kept));
+	if (o.silent.length) parts.push(o.silent.length === 1 ? t('1 silent') : t('{0} silent', o.silent.length));
+	if (o.failed.length)
+		parts.push(o.failed.length === 1 ? t('1 could not be analysed') : t('{0} could not be analysed', o.failed.length));
+	return parts.join(' · ');
+}
 
 /** Audio clips of the selection (in the active sequence). */
 export function selectedAudioClips(session: EditorSession): { seq: Sequence | null; clips: AudioClip[] } {

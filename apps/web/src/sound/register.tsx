@@ -11,7 +11,7 @@
 // - the Program overlay chip "Auditioning: <name>" (`programOverlays`);
 // - the Properties "Sound" section (`clipSections`).
 import type { SoundEntry } from '@jasper/api';
-import type { AudioClip, Clip, Sequence } from '@jasper/project';
+import { type AudioClip, type Clip, essentialAutoTag, type Sequence } from '@jasper/project';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { Link2, Mic, Music, Wind, Zap } from 'lucide-react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
@@ -68,11 +68,20 @@ export function clipBadges(
 	seq: Sequence | null,
 	clip: Clip,
 	opts: { width: number; licenceWarning: boolean },
-): { type: AudioTypeId | null; hero: boolean; layer: boolean; warn: boolean } {
+): {
+	type: AudioTypeId | null;
+	/** Auto Tag chose the type and the user has not confirmed it: its confidence (0…1); null otherwise. */
+	auto: number | null;
+	hero: boolean;
+	layer: boolean;
+	warn: boolean;
+} {
 	const full = opts.width >= BADGE_FULL_PX;
 	const sfx = sfxOf(clip);
+	const tag = clip.kind === 'audio' ? essentialAutoTag((clip as AudioClip).essential) : null;
 	return {
 		type: typeOf(clip),
+		auto: tag ? tag.confidence : null,
 		hero: full && sfx?.role === 'hero',
 		layer: full && !!seq && isLayered(seq, clip),
 		warn: opts.licenceWarning,
@@ -138,9 +147,28 @@ function SoundBadges(p: ClipDecorationProps) {
 				<button
 					type="button"
 					tabIndex={-1}
-					aria-label={t('Audio type {0}: open Essential Sound', AUDIO_TYPE_NAMES[b.type])}
-					title={t('{0} · click for Essential Sound', AUDIO_TYPE_NAMES[b.type])}
-					className="pointer-events-auto inline-flex cursor-pointer text-pr-strong opacity-90 hover:opacity-100"
+					aria-label={
+						b.auto !== null
+							? t(
+									'Audio type {0} (auto-tagged, {1} % confident): open Essential Sound to confirm it',
+									AUDIO_TYPE_NAMES[b.type],
+									Math.round(b.auto * 100),
+								)
+							: t('Audio type {0}: open Essential Sound', AUDIO_TYPE_NAMES[b.type])
+					}
+					title={
+						b.auto !== null
+							? t(
+									'{0} · auto-tagged ({1} %) · click to confirm in Essential Sound',
+									AUDIO_TYPE_NAMES[b.type],
+									Math.round(b.auto * 100),
+								)
+							: t('{0} · click for Essential Sound', AUDIO_TYPE_NAMES[b.type])
+					}
+					data-auto-tag={b.auto !== null ? 'true' : undefined}
+					className={`pointer-events-auto inline-flex cursor-pointer text-pr-strong opacity-90 hover:opacity-100 ${
+						b.auto !== null ? 'rounded-[2px] border border-dashed border-pr-strong p-[1px]' : ''
+					}`}
 					onPointerDown={focusEssential}
 					onMouseDown={(e) => e.stopPropagation()}
 					onClick={focusEssential}

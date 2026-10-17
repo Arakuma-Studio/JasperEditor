@@ -59,7 +59,12 @@ export default async function audioFxRoutes(app: FastifyInstance): Promise<void>
 					} catch (e) {
 						throw new HttpError(400, 'VALIDATION_FAILED', `Invalid project: ${(e as Error).message}`);
 					}
-					projectId = typeof doc.projectId === 'string' && isProjectId(doc.projectId) ? doc.projectId : null;
+					projectId =
+						body.projectId && isProjectId(body.projectId)
+							? body.projectId
+							: typeof doc.projectId === 'string' && isProjectId(doc.projectId)
+								? doc.projectId
+								: null;
 				} else {
 					if (!isProjectId(body.projectId!)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
 					const agent = app.jasper.services.agent as AgentService | undefined;

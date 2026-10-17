@@ -7,7 +7,14 @@ import type { EditorSession } from '@jasper/session';
 import { z } from 'zod';
 import type { CommandCtx, UiCommand } from '../commands/types.ts';
 import { clipMenuExtensions } from '../extensions/index.ts';
-import { autoMatchLoudness, autoMatchMessage, remixClip, selectedAudioClips } from './ops.ts';
+import {
+	autoMatchLoudness,
+	autoMatchMessage,
+	autoTagClips,
+	autoTagMessage,
+	remixClip,
+	selectedAudioClips,
+} from './ops.ts';
 
 const editable = (ctx: CommandCtx) => !!ctx.session && !ctx.session.getState().readOnly;
 
@@ -26,6 +33,30 @@ function revertRemix(session: EditorSession, clipId: string): string | null {
 		commands: [{ type: 'clip.remixRevert', clipId }] as never,
 	});
 	return r.ok ? null : (r.errors?.[0]?.message ?? 'Revert Remix failed');
+}
+
+const AutoTagArgs = z
+	.strictObject({
+		/** Clips to tag (default: the selected audio clips). */
+		clipIds: z.array(z.string().min(1)).min(1).max(500).optional(),
+		/** Also replace audio types you set (default false). */
+		force: z.boolean().optional(),
+	})
+	.optional();
+
+/** The audio clips Auto Tag works on: `clipIds` (audio clips of the active sequence) or the selection. */
+function autoTagTargets(ctx: CommandCtx, raw: unknown): { seq: Sequence | null; ids: string[] } {
+	const args = AutoTagArgs.safeParse(raw);
+	const { seq, clips } = selection(ctx);
+	if (args.success && args.data?.clipIds && ctx.session) {
+		const s = ctx.session.getState();
+		const active = s.activeSequenceId ? (s.document.sequences[s.activeSequenceId] as Sequence | undefined) : undefined;
+		return {
+			seq: active ?? null,
+			ids: args.data.clipIds.filter((id) => active?.clips[id]?.kind === 'audio'),
+		};
+	}
+	return { seq, ids: clips.map((c) => c.id) };
 }
 
 const RemixArgs = z
@@ -117,6 +148,34 @@ export const audioFxCommands: UiCommand[] = [
 		},
 	},
 	{
+		id: 'audio.autoTag',
+		label: 'Auto Tag Audio Types',
+		description:
+			'Listen to the selected audio clips and give each an audio type (Dialogue, Music, SFX or Ambience), marked auto until you confirm it in Essential Sound; types you set are kept',
+		scope: 'global',
+		agentExposed: true,
+		capability: 'engine',
+		argsSchema: AutoTagArgs,
+		when: (ctx) => editable(ctx) && selection(ctx).clips.length > 0,
+		disabledReason: (ctx) => (selection(ctx).clips.length > 0 ? undefined : 'Select audio clips'),
+		run: async (ctx, raw) => {
+			const { seq, ids } = autoTagTargets(ctx, raw);
+			if (!ctx.session || !seq || !ids.length) return;
+			const force = AutoTagArgs.safeParse(raw).data?.force === true;
+			try {
+				const out = await autoTagClips(ctx.session, ctx.engine, seq.id, ids, { force });
+				const message = autoTagMessage(out);
+				ctx.ui.toast(
+					out.tagged.length
+						? { kind: out.low.length ? 'info' : 'success', message }
+						: { kind: 'error', message: 'Auto Tag', detail: message },
+				);
+			} catch (e) {
+				ctx.ui.toast({ kind: 'error', message: 'Auto Tag failed', detail: (e as Error).message });
+			}
+		},
+	},
+	{
 		id: 'audio.clearAudioType',
 		label: 'Clear Audio Type',
 		description: 'Remove the Essential Sound type and every change it made',
@@ -139,19 +198,38 @@ export const audioFxCommands: UiCommand[] = [
 	},
 ];
 
-// Timeline clip context menu (remixed audio clips): Revert Remix.
+// Timeline clip context menu (audio clips): Auto Tag Audio Types (the selection, with this clip); remixed audio clips
+// get Revert Remix.
 clipMenuExtensions.register({
 	id: 'audio-fx',
 	order: 41,
-	items: ({ session, clip }) =>
-		clip.kind === 'audio' && (clip as AudioClip).remix
-			? [
-					{
-						kind: 'item',
-						label: 'Revert Remix',
-						disabled: session.getState().readOnly,
-						run: () => void revertRemix(session, clip.id),
-					},
-				]
-			: [],
+	items: ({ session, clip, runCommand: run }) => {
+		if (clip.kind !== 'audio') return [];
+		const s = session.getState();
+		const seq = s.activeSequenceId ? (s.document.sequences[s.activeSequenceId] as Sequence | undefined) : undefined;
+		const picked = s.selection.timeline.clips.filter((id) => seq?.clips[id]?.kind === 'audio');
+		const clipIds = picked.includes(clip.id) ? picked : [clip.id];
+		return [
+			...(run
+				? [
+						{
+							kind: 'item' as const,
+							label: 'Auto Tag Audio Types',
+							disabled: s.readOnly,
+							run: () => run('audio.autoTag', { clipIds }),
+						},
+					]
+				: []),
+			...((clip as AudioClip).remix
+				? [
+						{
+							kind: 'item' as const,
+							label: 'Revert Remix',
+							disabled: s.readOnly,
+							run: () => void revertRemix(session, clip.id),
+						},
+					]
+				: []),
+		];
+	},
 });
