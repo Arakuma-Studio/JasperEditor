@@ -426,7 +426,11 @@ describe('registering and placing a take', { timeout: 600_000 }, () => {
 			for (const c of cues) {
 				const expected = frameToSample(c.frame, fps, SR);
 				const range = takeRange(c.take, SR)!;
-				const len = range.endSample - range.startSample;
+				// the clip plays the take to its −60 dB end (`peakSec + tailSec`), whole frames: compare that much
+				const len = Math.min(
+					range.endSample - range.startSample,
+					Math.round((c.take.descriptors.peakSec + c.take.descriptors.tailSec) * SR),
+				);
 				// where the take's first sample plays: the offset where the export matches the source take
 				let best = -1;
 				let bestErr = Number.POSITIVE_INFINITY;
