@@ -9,6 +9,8 @@
 // (user `comment` markers that MCP `sound_check` returns as humanVerdicts) and Play all. Keyboard: the findings list is
 // one tab stop (↑ ↓ Home End move, Enter jumps, F fixes, → / ← open / close the sync strip, Space plays the moment);
 // everything else is buttons and fields. Run progress and the verdict are announced (aria-live). Nothing animates.
+// Tabs: Findings (the above) and Log (./LogTab.tsx, spec 12 §4 P6-E6: the listening transcript, as MCP
+// listen_to_sequence returns it).
 import type { SoundCheckIssue } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import { type Sequence, soundCheckStatus } from '@jasper/project';
@@ -74,6 +76,8 @@ import { seqTimecode } from '../../sound/design-model.ts';
 import { type StripEngine, SyncStrip } from '../../sound/SyncStrip.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import type { PanelProps } from '../types.ts';
+import { LogTab } from './LogTab.tsx';
+import { type ListenEngine, listenStore, setListenTab } from './listen-run.ts';
 
 export function SoundCheckPanel(props: PanelProps) {
 	const session = useSessionOrNull();
@@ -107,6 +111,7 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 	const playing = useStoreSelector(store, (s) => s.playing);
 	const announcement = useStoreSelector(store, (s) => s.announcement);
 	const storedChoice = useStoreSelector(store, (s) => s.choice);
+	const tab = useStoreSelector(listenStore(session), (s) => s.tab);
 	const readOnly = useSessionState((s) => s.readOnly);
 	const seqId = useSessionState((s) => s.activeSequenceId);
 	const doc = useSessionState((s) => s.document);
@@ -201,6 +206,40 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 					{t('The Sound Check failed: {0}', error)}
 				</p>
 			) : null}
+			<div
+				role="tablist"
+				aria-label={t('Sound Check views')}
+				className="flex shrink-0 gap-1 border-b border-pr-border px-2 pt-1"
+			>
+				{(
+					[
+						['findings', t('Findings')],
+						['log', t('Log')],
+					] as const
+				).map(([id, label]) => (
+					<button
+						key={id}
+						type="button"
+						role="tab"
+						id={`sound-check-tab-${id}`}
+						aria-selected={tab === id}
+						data-testid={`sound-check-tab-${id}`}
+						className={`-mb-px border-b-2 px-2 py-0.5 text-pr-small ${tab === id ? 'border-pr-accent text-pr-strong' : 'border-transparent text-pr-muted hover:text-pr-text'}`}
+						onClick={() => setListenTab(session, id)}
+					>
+						{label}
+					</button>
+				))}
+			</div>
+			{tab === 'log' ? (
+				<LogTab
+					session={session}
+					engine={engine as ListenEngine | null}
+					seq={seq}
+					connected={connected}
+					reveal={(f) => reveal(f)}
+				/>
+			) : (
 			<div className="min-h-0 flex-1 overflow-auto">
 				<Summary
 					report={report}
@@ -268,6 +307,7 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 					</div>
 				) : null}
 			</div>
+			)}
 		</div>
 	);
 }

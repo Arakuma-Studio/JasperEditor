@@ -1,7 +1,7 @@
 // Listening transcript (spec 12 §4 P6-E6, P6-E7; wp-note "Phase 6 → WP-E3"): an agent's ears for the whole mix. The
-// `sound-listen` job renders a range (≤ 10 min) once — the mix, the dialogue / music / ambience / sound-effect stems and
-// one LANE per set of clips that never overlap, so a lane's signal at any moment belongs to one clip (`stems.ts`: every
-// clip is decoded once) — and:
+// `sound-listen` job renders a range (≤ 10 min) once — the mix and one LANE per set of clips that never overlap, so a
+// lane's signal at any moment belongs to one clip (`stems.ts`: every clip is decoded once; the dialogue / music /
+// ambience / sound-effect stem curves are the lanes' energy by the class of the clip playing) — and:
 //   1. detects the events of every lane and of the mix (`ListenMeter`: onsets refined to the attack, swells, silences,
 //      accents); a clip's own onset is also looked at in the mix where the mix's onset curve hides it, and kept when
 //      the mix still rises ≥ 3 dB over its bed in some band there (`guided`);
@@ -36,7 +36,6 @@ import {
 import {
 	answerPictureEvent,
 	CURVE_HOP_SEC,
-	CurveMeter,
 	integratedOf,
 	type ListenAnalysis,
 	type ListenEvent,
@@ -109,6 +108,7 @@ const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinit
 const q = (s: string, n = 48) => `"${s.length > n ? `${s.slice(0, n - 1)}…` : s}"`;
 const signed = (x: number, unit: string) => `${x >= 0 ? '+' : '−'}${Math.abs(Math.round(x))} ${unit}`;
 const pct = (x: number) => `${Math.round(x * 100)} %`;
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 export class ListenInputError extends Error {
 	constructor(
@@ -284,10 +284,7 @@ export async function listenSequence(
 	// lane intervals without the gap
 	for (const l of lanes) for (const c of l) c.b -= LANE_GAP_SEC * 1000;
 
-	const SPECS = ['mix', 'dialogue', 'music', 'ambience', 'sfx'] as const;
 	const mixMeter = new ListenMeter(sr, channels);
-	const curve: Partial<Record<(typeof SPECS)[number], CurveMeter>> = {};
-	for (const s of SPECS.slice(1)) if (stems[s].size > 0) curve[s] = new CurveMeter(sr, channels);
 	// each clip's own onsets that rise over its own bed are hints for the mix: a sound the mix's onset curve hides is
 	// still found there when the mix rises ≥ 3 dB at that attack (lanes render before the mix in every block)
 	const laneMeters = lanes.map(
@@ -309,15 +306,14 @@ export async function listenSequence(
 			samples: renderEnd - renderStart,
 			stems: [
 				...lanes.map((l, i) => ({ name: `lane:${i}`, clipIds: new Set(l.map((c) => c.clipId)) })),
-				...SPECS.map((s) => ({ name: s, clipIds: s === 'mix' ? null : stems[s] })),
+				{ name: 'mix', clipIds: null },
 			],
 			...(env.signal ? { signal: env.signal } : {}),
 			...(env.onSpawn ? { onSpawn: env.onSpawn } : {}),
 			onProgress: (f) => progress(0.05 + 0.8 * f, 'Listening'),
 			onBlock: (i, planar, n) => {
 				if (i < lanes.length) laneMeters[i]!.push(planar, n);
-				else if (i === lanes.length) mixMeter.push(planar, n);
-				else curve[SPECS[i - lanes.length]!]?.push(planar, n);
+				else mixMeter.push(planar, n);
 			},
 		});
 	}
@@ -328,19 +324,47 @@ export async function listenSequence(
 	// the lanes first: their last onsets are hints for the mix
 	const laneA = laneMeters.map((m) => m.finish());
 	const mixA = mixMeter.finish();
+	// the stems' 10 ms curves from the lanes (no extra render): at any hop a lane plays one clip, whose stem gets the
+	// lane's energy; overlapping clips of one stem add as uncorrelated sounds
 	const total = Math.ceil((renderEnd - renderStart) / hop);
-	const silentCurve = (): StemCurves => ({
-		sampleRate: sr,
-		hop,
-		count: total,
-		kEnergy: new Float64Array(total),
-		msDb: new Float32Array(total).fill(-120),
-		loudestDb: new Float32Array(total).fill(-120),
-		peakDb: new Float32Array(total).fill(-120),
+	const STEMS = ['dialogue', 'music', 'ambience', 'sfx'] as const;
+	const stemK = Object.fromEntries(STEMS.map((s) => [s, new Float64Array(total)])) as Record<
+		(typeof STEMS)[number],
+		Float64Array
+	>;
+	const stemMs = Object.fromEntries(STEMS.map((s) => [s, new Float64Array(total)])) as Record<
+		(typeof STEMS)[number],
+		Float64Array
+	>;
+	laneA.forEach((a, li) => {
+		const lane = lanes[li]!;
+		let k = 0;
+		for (let h = 0; h < Math.min(total, a.hop10.count); h++) {
+			const ms = renderMs0 + h * 10 + 5;
+			while (k < lane.length && lane[k]!.b <= ms) k++;
+			// the clip playing at this hop, else the tail of the one before
+			const c = k < lane.length && lane[k]!.a <= ms ? lane[k]! : laneClipAt(lane, ms);
+			if (!c) continue;
+			const st = stemOf(c.clipId);
+			if (st === 'other') continue;
+			stemK[st][h]! += a.hop10.kEnergy[h]!;
+			stemMs[st][h]! += a.hop10.meanSquare[h]!;
+		}
 	});
 	const stemCurves = Object.fromEntries(
-		SPECS.slice(1).map((s) => [s, curve[s]?.finish() ?? silentCurve()]),
-	) as Record<'dialogue' | 'music' | 'ambience' | 'sfx', StemCurves>;
+		STEMS.map((s) => [
+			s,
+			{
+				sampleRate: sr,
+				hop,
+				count: total,
+				kEnergy: stemK[s],
+				msDb: Float32Array.from(stemMs[s], (v) => (v > 0 ? Math.max(-120, 10 * Math.log10(v)) : -120)),
+				loudestDb: new Float32Array(total).fill(-120),
+				peakDb: new Float32Array(total).fill(-120),
+			} satisfies StemCurves,
+		]),
+	) as Record<(typeof STEMS)[number], StemCurves>;
 
 	// as delivered
 	const norm = deliveredGain(doc, seq, env.checkReport ?? null);
@@ -412,7 +436,8 @@ export async function listenSequence(
 	const attributed: Attributed[] = mixEvents.map((e) => {
 		const seqMs = renderMs0 + e.ms;
 		const radius = e.shape === 'swell' ? EXPLAIN_SWELL_MS : EXPLAIN_MS;
-		const cands = lanesNear(seqMs, radius);
+		// a hit is explained by a hit of a clip, a swell by a swell
+		const cands = lanesNear(seqMs, radius).filter((c) => c.e.shape === e.shape);
 		if (cands.length) {
 			// the clip whose own event rises most (a flicker of a loud bed does not outrank a quiet hit), then the closest
 			let best = cands[0]!;
@@ -778,7 +803,7 @@ export async function listenSequence(
 	at(
 		range.start,
 		'summary',
-		`Listened ${tc(range.start)}–${tc(range.end)}: ${eventsAll.length} sound events (${accents} accents, ${swells} swells), ${sections.length} sections, ${silences.length} silences; integrated ${loudness.integratedLufs === null ? 'not measurable' : `${loudness.integratedLufs.toFixed(1)} LUFS`}${norm.applied ? ' as delivered' : ' as mixed'}.`,
+		`Listened ${tc(range.start)}–${tc(range.end)}: ${plural(eventsAll.length, 'sound event')} (${plural(accents, 'accent')}, ${plural(swells, 'swell')}), ${plural(sections.length, 'section')}, ${plural(silences.length, 'silence')}; integrated ${loudness.integratedLufs === null ? 'not measurable' : `${loudness.integratedLufs.toFixed(1)} LUFS`}${norm.applied ? ' as delivered' : ' as mixed'}.`,
 	);
 	const syncLine = (name: string, s: SoundListenSyncStats | null) => {
 		if (!s) return;
