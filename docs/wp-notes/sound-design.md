@@ -5908,7 +5908,87 @@ sound-check-verdicts.test.ts, sound-check-report-fixture.ts}`, `e2e/sound-check.
 - **Credits**: `ExportSettings` has no `credits` option yet; Phase 6 adds the sidecar and should default it from
   `soundDesign.settings.credits` (the Export dialog does not show a credits option in this package).
 
-@@VERIFIED@@
+#### Verified (measured, this branch; shared host, 16 cores, load average 2–24 during the runs)
+
+- `pnpm vitest run packages/project/test/sound-check-panel.test.ts packages/project/test/sound-check.test.ts`: 17 passed —
+  the target in the inputs hash only when given (stored preset hashes unchanged), setCheck stores it, current with it and
+  stale (`inputs`) against a preset hash, refusals (out of range, missing field, extra key), load keeps it, repair drops a
+  damaged one (idempotent), `readSoundCheckTarget` 300 hostile runs; verdict markers read in frame order with the note,
+  an agent-authored marker with a verdict name is not a human verdict, 2 × 300 hostile runs never throw.
+- `apps/engine/test/sound-check.test.ts`: 17 passed (+1: the clean fixture checked at a custom −20 LUFS / −2 dBTP →
+  LOUDNESS warning — not error — with the label "Custom target" and a safe `mixer.setLoudness` −20 / −2 fix; stored with the
+  target and current; the fix applied → no LOUDNESS, −20 ±1 LUFS, TP ≤ −1.95; the inputs hash differs from the preset's; an
+  out-of-range target → 400). With `security-review` and `fuzz-http`: 3 files, 215 passed.
+- `apps/mcp/test/sound-check-verdicts.test.ts` (in-memory jasper-mcp, fake engine): 2 passed — `humanVerdicts` = the user's
+  two markers with timecode, "flagged" + note on the worst slot, "sounds right" on the hero; an agent's marker named the
+  same and an ordinary comment marker left out; `target` reaches the request, out of range is refused. `conventions`,
+  `readme-tools`, `sound-guide`, `sound-examples`, `packages/api`: pass (8 files, 55 tests).
+- `apps/web/test/sound-check-panel.test.tsx`: 11 passed (real session, fake engine): Run → progress (stage, 40 %), the
+  stored summary "Sound Check Result" (current), chips, categories in order, the OUT_OF_SYNC row's accessible name, "whole
+  mix", Fix… for an unsafe fix, five listen rows, the live verdict; Cancel cancels the job (no summary); stale after a gain
+  change + Re-run, a stored summary without its job shows its chips; timecode → playhead 90 + clip selected; keyboard ↓ /
+  Enter (playhead 150, clip B) / → (5 stills at 148…152, waveform over 141–160, picture line, no measured line for
+  TRUNCATED) / ← / Home → (both lines, the late sound right of the picture, "66.7 ms late (2.0 frames)") / F (one entry
+  "Sound Check Fix: Align its peak to the cue", clip 2 frames back); Fix = one entry, "Fixed", stale `inputs`, undo restores;
+  **Fix all safe (4)** = `["Fix 3 Sound Check Findings", "Sound Check Result"]` (move + register/swap + setLoudness in one
+  entry), then the delivery job `{loudness: false, autoMatch: false, rebalance: false}`, then the re-check (only SILENCE
+  left), two undos restore the clips; listen ▶ = window centre 90 ±2 s; Sounds right / Flag + note → two user comment
+  markers, `soundCheckHumanVerdicts` reads them, a new verdict at the same frame updates the marker; Play all chains 90 →
+  91 → 120 on `window` ends and stops on `stopped`; Use as sequence target (preset → applyDelivery, then disabled; Custom…
+  "−70" refused with the alert, "−18,5" / "−2" → the request's target, the stored summary's target, mixer.setLoudness
+  −18.5 / −2); the menu entry and both UI commands; the Export gate (off → exports at once; on + fail → the alertdialog;
+  Review issues → no export; Export anyway → export; pass → export + the verdict notice; not offered without SFX).
+- `apps/web/test/sound-check-model.test.ts`: 12 passed (translated texts in English and Spanish — the cue kind "corte" —,
+  hostile messages, chips, stale line, grouping, fix plan with a shared fix applied once + a 300-run property, delivery
+  defaults and target, custom fields + property, verdict commands, listen rows, strip geometry, waveform path + property).
+  `workspace-migration.test.ts`: 8 passed (+3 for v2 → v3).
+- Full suites after merging `feat/sound-design` (Phase 4 verification, WP6.1 packs): `pnpm vitest run --project
+  @jasper/web --maxWorkers=3` → 134 files, 1 010 passed; `--project @jasper/project` → 165 files, 2 041 passed. `pnpm
+  typecheck` (every package), `pnpm lint` (Biome, tokens, anime, layers, assets), `pnpm e2e:typecheck`, `pnpm notices
+  --check` (current), `node scripts/i18n.mjs --check` (es.json covers all 9 818 strings): pass.
+- **E2E** (built stack, `E2E_PORT=51101 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-check.spec.ts`): passed (57.5 s
+  at load ≈ 4; green in every run after the first fixes, also after the merge). The Phase 2 fixture + 14 s of pink-noise music → Auto Sound Pass →
+  Accept all → Apply → the hit on the cut at frame 90 nudged 2 frames, frames 360–384 of the music lifted → Run Sound
+  Check from the menu → **fail**: `OUT_OF_SYNC:<the hit>` at data-frame 90 ("Crunchy impact plays 66.7 ms late on its cut
+  cue at 00;00;03;00"), SILENCE at 00;00;12;00 (0.79 s) → the timecode moved the playhead to 90 and selected the clip →
+  the sync strip (5 stills, the cut between −1 and the cue, the dashed line "Sound +66.7 ms", "late (2.0 frames)") →
+  Sounds right on the hero moment, Flag + "The hit lands after the cut" on the worst → the two user comment markers →
+  **jasper-mcp `sound_check` on the same project: the same `CODE@frame` list as the panel's rows** and `humanVerdicts` =
+  the two verdicts (the flag on slot `worst`) → Export (Ctrl+M) with "Run Sound Check before export": the fail prompt
+  ("Sound Check: 1 error, 2 warnings. Integrated −23.2 LUFS, true peak −5.4 dBTP…") → Review issues → the panel → Fix on
+  the late hit (one entry, the clip back on its cue, stale) → Fix all safe (one "Fix … Sound Check Findings" entry + the
+  re-check: no OUT_OF_SYNC for the hit) → Fix… on the silence ("Mark it as intended silence") → Re-run: no SILENCE; MCP
+  again lists the same findings as the panel. Screenshots looked at (`test-results/e2e-sound-check/`: panel, panel
+  high contrast, sync strip, listen-here, export prompt, after fix all, final): the first looks found the sync strip wider
+  than the panel (now measured, five columns), the "Listen here" title squeezed by its hint (hint on its own line), the
+  listen rows repeating the slot name the reason already says (removed) and the export prompt saying "Fail" twice.
+- **Every sound e2e** (same build, one worker, before merging the integration branch; 22 tests): 16 passed, 4 failed, 2
+  did not run; none from this package's code. `sound-library` expected a riser's end at the end of its media, but since
+  the tail fix `end` alignment ends the sound before its trailing silence (spec 12 §2.3) and placement takes that end from
+  the provenance (`durationSec − trailSilenceSec`): both checks of the spec now compute it the same way. `sound-mix` hung
+  for an hour on a toast that had gone (the integration branch fixed it at the same time; its fix taken in the merge).
+  `sound-p0-transport` "seek during playback" (60 ms of old audio after a seek: the Phase 0 limit "seek-during-playback
+  loses first read-ahead") and `sound-p3-mcp` (one export correlation 0.89 < 0.95 under an overlapping sound) passed on
+  the rerun of those four files (7 passed). After merging `feat/sound-design` (Phase 4 verification, WP6.1 packs) and
+  rebuilding: `sound-check` (its Auto Sound Pass now closes the plan's notes, which keep the dialog open since the
+  Phase 4 verification) and `sound-library` (3 passed, the export oracle included) pass.
+
+#### Limits and notes for the next packages
+
+- A verdict belongs to a frame: it outlives the run and later edits, and two listen moments on the same frame share it
+  (the e2e's hero and passing moments were both at 00;00;08;10). The panel shows the verdict at each moment's frame.
+- Each opened sync strip renders five `still` jobs (they show in the Jobs panel; cached per document revision); the strip
+  draws the mix waveform, not the sound-effects stem (the visual route gives the mix's peaks only).
+- Play all stops on any key or click (the In Context window's rule), including a click on a verdict button.
+- The findings list keys (↑ ↓ Home End Enter F → ← Space) are fixed, not in Keyboard Shortcuts.
+- The full report lives in the engine's job; after the engine forgets it the panel shows the stored summary's chips until
+  the next run.
+- Fix… applies an unsafe fix in one click (it says "needs your judgement" and the engine's why in its tooltip); there is
+  no confirmation.
+- Phase 6: `ExportSettings.credits` (the sidecar) should default from `soundDesign.settings.credits`; this package adds no
+  credits option to the Export dialog.
+- Found for the tail-fix owner: an `end`-aligned padded sound's end comes from the provenance's quantised `durationSec −
+  trailSilenceSec` (0.1 ms steps), not from the media's sample length (the `sound-library` e2e measured 0.03 ms).
 
 ## Phase 6: packs, cue sources, completion
 
