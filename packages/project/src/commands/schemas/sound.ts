@@ -1,6 +1,7 @@
 // Sound design commands (spec 12 §2.9; owner `sound-design`): library provenance of media (P1), cues, placement,
 // swap, palette and settings (P2).
 import { z } from 'zod';
+import { LabelColorSchema } from '../../schema/common.ts';
 import {
 	CUE_ALIGNS,
 	CueAnchorSchema,
@@ -15,6 +16,7 @@ import {
 import { SFX_DEFAULT_GAIN_MAX_DB, SFX_DEFAULT_GAIN_MIN_DB } from '../../sound/level.ts';
 import { LibraryProvenanceSchema } from '../../sound/provenance.ts';
 import { cmd, IdRefSchema, RefDeclSchema, TimeInputSchema, TrackRefSchema } from './common.ts';
+import { MediaRegisterCmd } from './project.ts';
 
 /**
  * Sets (or with `null` removes) the library provenance of a media asset: which Sound Library sound it is, its licence
@@ -24,6 +26,28 @@ import { cmd, IdRefSchema, RefDeclSchema, TimeInputSchema, TrackRefSchema } from
 export const MediaSetLibraryInfoCmd = cmd('media.setLibraryInfo', {
 	mediaId: IdRefSchema,
 	library: LibraryProvenanceSchema.nullable(),
+});
+
+/**
+ * Replaces the project's older copy of a library sound with a new copy of the same sound (WP6.5b), in place: the
+ * media keeps its id and its Project items, gets the new file (`asset`: the engine's registration, as `media.register`
+ * takes it, with its `library` provenance), and every clip using it moves in content time by the difference of the lead
+ * silences, so it plays the same samples at the same times (keyframes, markers and the aligned point move with it).
+ * Both must be copies of the same `soundId` whose sound has the same length (±50 ms), else `E_INVALID_PARAM`. When a
+ * clip cannot move onto the new file (`E_OUT_OF_MEDIA`) the command is refused, or with `ifPossible` registers the new
+ * copy as another media instead (`binId`, `name`, `label` as for `media.register`; `W_COPY_KEPT`). `ref` names the
+ * media that holds the new copy either way (`itemRef` its Project item). Result `{mediaId, upgraded, shiftFlicks, clipIds}`.
+ */
+export const MediaUpgradeLibraryCopyCmd = cmd('media.upgradeLibraryCopy', {
+	mediaId: IdRefSchema,
+	asset: MediaRegisterCmd.shape.asset.extend({ library: LibraryProvenanceSchema }),
+	ifPossible: z.boolean().optional(),
+	binId: IdRefSchema.nullable().optional(),
+	name: z.string().optional(),
+	label: LabelColorSchema.optional(),
+	ref: RefDeclSchema.optional(),
+	/** Names the media's Project item (the older copy's first item, or the new media's). */
+	itemRef: RefDeclSchema.optional(),
 });
 
 /** A library sound id (`snd_` + 16 hex digits, the engine's `SoundEntry.id`). */
@@ -171,7 +195,8 @@ export const SoundDesignPlaceCmd = cmd('soundDesign.place', {
  * instead (with the clip's own media this re-aligns the clip: MCP `align_peak`), still sample-exact through the In
  * point. The same media with another `align` re-aligns the clip (its start, peak or end on the frame the old point
  * played at, or on `frame`); `pitchSt` re-pitches it around that point (|st| ≤ 3 by varispeed keeping the seeded ±2 %
- * variation, else the Pitch Shifter effect; 0 removes the shift). A sound that would start before frame 0 is refused,
+ * variation, else the Pitch Shifter effect; 0 removes the shift: the speed is the variation again, exactly, read from the
+ * clip's `sfx.pitch` record of the applied shift, which placement and every re-pitch write). A sound that would start before frame 0 is refused,
  * except for a clip at frame 0 swapped in place (an insert near the start, `clampStart`): the new sound starts there
  * with its head trimmed. Fades on the clip's edges are shortened to its new length. Result `{clipId, mediaId, soundId,
  * start, sourceInFlicks, errorFlicks, alignedFrame, align, rate, pitchSt, trimmedHeadSec, gainDb}`. `alternatives` replaces the
@@ -358,6 +383,7 @@ export const SoundDesignSetAutoGainCmd = cmd('soundDesign.setAutoGain', {
 
 export const SOUND_COMMANDS = [
 	MediaSetLibraryInfoCmd,
+	MediaUpgradeLibraryCopyCmd,
 	SoundCueAddCmd,
 	SoundCueUpdateCmd,
 	SoundCueRemoveCmd,

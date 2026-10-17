@@ -34,6 +34,7 @@ import {
 import { isLoopbackHost } from '../context.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import { fingerprintFile, fingerprintHex } from '../media/fingerprint.ts';
+import { freeDiskBytes } from '../tools/fs.ts';
 import { contentTypeFor } from '../tools/http.ts';
 import { HttpError } from '../tools/reply.ts';
 import type { CoreServices } from '../tools/services.ts';
@@ -42,7 +43,14 @@ import { decodeSound } from './decode.ts';
 import { SoundIndexer } from './index-job.ts';
 import { type LibrarySnapshot, SoundLibrary } from './library.ts';
 import { loadPackCatalog, type PackCatalog, SOUND_CATALOG_ENV, SoundPackStore } from './packs.ts';
-import { isPcmCodec, paddedFileName, probeAudioStream, writePaddedSound } from './pad.ts';
+import {
+	copyCodecFor,
+	estimateCopyBytes,
+	isPcmCodec,
+	paddedFileName,
+	probeAudioStream,
+	writePaddedSound,
+} from './pad.ts';
 import { SoundRootStore, type SoundRootsPlan } from './roots.ts';
 import { searchSoundEntries } from './search.ts';
 import { isSoundFileName, type LoadedManifest, loadManifest, starterDir } from './starter.ts';
@@ -50,6 +58,14 @@ import { ensureSynthFile, synthItems } from './synth.ts';
 import { readVisual, visualCacheFile, writeVisual } from './visual.ts';
 
 const PACK_JOB: JobKind = 'sound-pack-install';
+
+/**
+ * Largest managed copy registering writes (WP6.5b): 2 GiB — under WAV's 4 GiB limit; a 1 h stereo 48 kHz float copy is
+ * 1.4 GB. `JASPER_SOUND_COPY_MAX_BYTES` overrides it (tests).
+ */
+export const SOUND_COPY_MAX_BYTES = 2 * 1024 ** 3;
+/** Free disk space a copy must leave on the media volume (projects, renders and the cache need room too). */
+export const SOUND_COPY_RESERVE_BYTES = 512 * 1024 ** 2;
 const SOUND_PACK_ID = SOUND_PACK_ID_RE;
 
 /** Turn `JASPER_SOUND_AUTO_INDEX=0` to keep the engine from indexing by itself (default on; off under vitest). */
@@ -632,10 +648,13 @@ export class SoundService {
 	 * `LIBRARY_TRAIL_SILENCE_SEC` of quiet gets that much silence after it too, so a placed clip (whole frames, rounded up
 	 * to the sound's end) stays inside its media; the provenance's descriptors then describe that file and
 	 * `leadSilenceSec` / `trailSilenceSec` say how much was added. A lossy sound (Vorbis, MP3…) of that length is also registered
-	 * as a PCM WAV copy (without silence when its head is quiet): seeks into lossy streams are not sample-exact. Other
-	 * sounds (PCM, or longer than the limit): starter, pack and synth files are copied into
-	 * managed media, folder files registered in place (local mode). Returns the registered media, the provenance to
-	 * commit and the saved project's media that already is this file.
+	 * as a PCM WAV copy (without silence when its head is quiet): seeks into lossy streams are not sample-exact. Copies
+	 * are written by ffmpeg file to file in the narrowest PCM that holds the decoded samples (`copyCodecFor`), for sounds
+	 * up to `LIBRARY_PAD_MAX_SECONDS` (1 h) whose copy fits `SOUND_COPY_MAX_BYTES` and leaves
+	 * `SOUND_COPY_RESERVE_BYTES` free on the media volume. Other sounds (PCM needing no silence, or a copy refused by those
+	 * limits — then `inexact` says why): starter, pack and synth files are copied into managed media, folder files
+	 * registered in place (local mode). Returns the registered media, the provenance to commit and the saved project's
+	 * media that already is this file.
 	 */
 	async register(id: string, projectId: string): Promise<RegisterSoundResponse> {
 		const e = await this.get(id);
@@ -656,10 +675,11 @@ export class SoundService {
 			new HttpError(409, 'SOUND_CHANGED', 'The file changed since it was indexed; rescan the sound library');
 		let reg: RegisteredMedia;
 		let leadSec = 0;
-		const copyable = e.descriptors.durationSec > 0 && e.descriptors.durationSec <= LIBRARY_PAD_MAX_SECONDS;
+		const durationSec = e.descriptors.durationSec;
+		const copyable = durationSec > 0 && durationSec <= LIBRARY_PAD_MAX_SECONDS;
 		// the audio stream of this content (probed once per engine: a plan registers the same sounds on every run)
-		let stream = copyable ? (this.streamOf.get(e.fingerprint) ?? null) : null;
-		if (copyable && !stream) {
+		let stream = this.streamOf.get(e.fingerprint) ?? null;
+		if (!stream) {
 			stream = await this.mediaCall(() => probeAudioStream(this.core.ffmpeg, path));
 			remember(this.streamOf, e.fingerprint, stream);
 		}
@@ -672,10 +692,45 @@ export class SoundService {
 		// decode of such a stream is not sample-aligned with its full decode (Vorbis: 128 samples late), and the
 		// descriptors (the peak) are measured on the full decode, so an In point after 0 would play the peak late.
 		const lossy = !!stream?.codec && !isPcmCodec(stream.codec);
-		if ((samples > 0 || trailSamples > 0 || lossy) && stream?.sampleRate) {
+		const outCodec = copyCodecFor(stream);
+		let inexact: RegisterSoundResponse['inexact'];
+		let wantsCopy = (samples > 0 || trailSamples > 0 || lossy) && !!stream?.sampleRate;
+		const mb = (n: number) => `${Math.ceil(n / 1_048_576)} MB`;
+		if (!copyable && durationSec > LIBRARY_PAD_MAX_SECONDS) {
+			// beyond the limit nothing is copied: a lossy or unpadded long sound is placed within a frame
+			wantsCopy = false;
+			inexact = {
+				reason: 'too-long',
+				message: `Sounds over ${LIBRARY_PAD_MAX_SECONDS / 60} min are used as they are: placement is exact to a frame, not to the sample`,
+			};
+		} else if (wantsCopy && stream.sampleRate) {
+			const bytes = estimateCopyBytes(
+				durationSec + (samples + trailSamples) / stream.sampleRate,
+				stream.sampleRate,
+				stream.channels ?? 2,
+				outCodec,
+			);
+			const max = this.envBytes('JASPER_SOUND_COPY_MAX_BYTES') ?? SOUND_COPY_MAX_BYTES;
+			const reserve = this.envBytes('JASPER_SOUND_COPY_RESERVE_BYTES') ?? SOUND_COPY_RESERVE_BYTES;
+			const free = bytes > max ? null : await freeDiskBytes(this.core.config.paths.mediaDir);
+			if (bytes > max) {
+				wantsCopy = false;
+				inexact = {
+					reason: 'too-large',
+					message: `A sample-exact copy would take ${mb(bytes)} (at most ${mb(max)}): the sound is used as it is, placement exact to a frame`,
+				};
+			} else if (free !== null && free < bytes + reserve) {
+				wantsCopy = false;
+				inexact = {
+					reason: 'disk-space',
+					message: `Not enough free disk space for a sample-exact copy (${mb(bytes)} needed, ${mb(free)} free): the sound is used as it is, placement exact to a frame`,
+				};
+			}
+		}
+		if (wantsCopy && stream?.sampleRate) {
 			if ((await fingerprintFile(path)).fingerprint !== e.fingerprint) throw changed();
 			// the same content padded the same way is the same managed file: reuse it while it is online
-			const copyKey = `${e.fingerprint}|${samples}|${trailSamples}|${stream.codec ?? ''}|${stream.sampleRate}`;
+			const copyKey = `${e.fingerprint}|${samples}|${trailSamples}|${stream.codec ?? ''}|${stream.sampleRate}|${outCodec}`;
 			const known = this.copyOf.get(copyKey);
 			const again = known ? await this.core.media.registeredIfOnline(known, { projectId }) : null;
 			if (again) reg = again;
@@ -686,6 +741,8 @@ export class SoundService {
 						samples,
 						trailSamples,
 						codec: stream.codec,
+						outCodec,
+						durationSec,
 						tmpDir: join(this.core.config.paths.mediaDir, '.sound-tmp'),
 					}),
 				);
@@ -716,7 +773,13 @@ export class SoundService {
 					break;
 				}
 			}
-		return { ...reg, library, existingMediaId };
+		return { ...reg, library, existingMediaId, ...(inexact ? { inexact } : {}) };
+	}
+
+	/** A positive byte count from the engine's environment (test overrides), else undefined. */
+	private envBytes(key: string): number | undefined {
+		const v = Number(this.env()[key]);
+		return Number.isFinite(v) && v > 0 ? v : undefined;
 	}
 
 	/** Runs an ffmpeg step of registering; its job errors become HTTP errors (422 with the code). */

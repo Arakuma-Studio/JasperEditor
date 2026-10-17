@@ -309,6 +309,58 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 			},
 		},
 	},
+	// WP6.5b: the project's older copy of a library sound (here registered without lead silence) gets the engine's new
+	// copy in place; its clips move by the 50 ms lead and play the same samples (import_sounds / insert_sound do this).
+	'media.upgradeLibraryCopy': {
+		type: 'media.upgradeLibraryCopy',
+		mediaId: { mediaByName: 'impact-old.ogg' },
+		asset: {
+			kind: 'audio',
+			fingerprint: 'q1:00000000000000000000000000000000000000000000000000000000000e0001',
+			originalName: 'Impact Metal 03.wav',
+			sizeBytes: 182_444,
+			container: 'wav',
+			probe: {
+				durationFlicks: 670_320_000,
+				startTimecode: null,
+				streams: [
+					{
+						index: 0,
+						type: 'audio',
+						codec: 'pcm_f32le',
+						sampleRate: 48_000,
+						channels: 1,
+						channelLayout: 'mono',
+					},
+				],
+				rotationDegrees: 0,
+				hasAlpha: false,
+				variableFrameRate: false,
+			},
+			locators: [{ type: 'engine-store', engineId: 'local', key: 'mk_00000000000000000000e001' }],
+			library: {
+				soundId: 'snd_0123456789abcdef',
+				title: 'Impact Metal 03',
+				types: ['hit'],
+				source: { type: 'starter' },
+				license: 'CC0-1.0',
+				author: 'Kenney',
+				attribution: null,
+				descriptors: {
+					peakSec: 0.0623,
+					onsetSec: 0.061,
+					headQuietSec: 0.0605,
+					durationSec: 0.95,
+					octaveBandsDb: [-30, -25, -20, -18, -19, -24, -33],
+					centroidHz: 1820,
+					maxMomentaryLufs: -14.2,
+				},
+				leadSilenceSec: 0.05,
+			},
+		},
+		ifPossible: true,
+		ref: '$sound',
+	},
 	// sound-design (spec 12 §2.2, §2.9): cues (what find_sound_cues / deriveCues output) and peak-aligned placement.
 	'soundCue.add': {
 		type: 'soundCue.add',

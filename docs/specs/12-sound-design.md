@@ -151,15 +151,22 @@ with ties broken by id.
 
 **Register into a project.** `POST /api/sounds/:soundId/register {projectId}` returns `RegisteredMedia` plus
 `library: LibraryProvenance`. Starter, pack and synth files are copied into managed media; folder sounds follow
-the local-path import rules. A sound whose quiet head is shorter than 50 ms (and which is at most 120 s long), from
-any source, is registered as a managed WAV copy with 50 ms (whole samples) of digital silence in front, so placement
+the local-path import rules. A sound whose quiet head is shorter than 50 ms (and which is at most 1 h long; 120 s before WP6.5b),
+from any source, is registered as a managed WAV copy with 50 ms (whole samples) of digital silence in front, so placement
 (§2.3) is always sample-exact; its provenance's descriptors describe that copy and `leadSilenceSec` records the
-padding (decision of the Phase 1 verification; schema v7). A sound of at most 120 s whose −60 dB tail ends less than
+padding (decision of the Phase 1 verification; schema v7). A sound of at most 1 h whose −60 dB tail ends less than
 50 ms before the end of its file (or whose tail the analysis did not reach) also gets 50 ms of digital silence after it
 (`trailSilenceSec`; a folder sound that needs it is copied, like one that needs the lead), so a placed clip, rounded up to
 the end of the sound, stays inside its media (fix "SFX tail truncation"). The copy is bit-exact and deterministic, so
-repeated registrations dedupe; a copy made before the fix has another fingerprint, so registering the sound again gives
-the padded copy as a new media (existing clips keep theirs until swapped). The client commits `media.register` into a
+repeated registrations dedupe. Copies (lossy sources too) are written by ffmpeg file to file in the narrowest PCM WAV
+that holds the decoded samples exactly (16-bit for 8/16-bit sources, 24-bit for ≤ 24-bit ones, float for float
+decoders: every lossy codec), WAV rather than FLAC because browsers decode PCM WAV in their own JS on every platform
+(WP6.5b measured Google Chrome's FLAC decode not bit-exact for 16-bit). A copy over 2 GiB, or one that would leave less
+than 512 MiB free on the media volume, is not written: the sound is registered as it is and the response's `inexact
+{reason: too-long | too-large | disk-space, message}` says so (also for sounds over 1 h). A copy made by an earlier
+build has another fingerprint: the next insert or import replaces it in place (`media.upgradeLibraryCopy`: same media
+and Project item, every clip moved in content time by the lead difference, the same samples at the same times), so a
+project never holds two copies of one sound. The client commits `media.register` (or that upgrade) into a
 "Sound Effects" bin. `MediaAssetSchema.library?` carries `soundId`, `title`, `types`, `source`, `license`, `licenseUrl`,
 `author`, `sourceUrl`, `attribution`, `descriptors{peakSec, onsetSec, headQuietSec, durationSec, octaveBandsDb,
 centroidHz, maxMomentaryLufs, truePeakDb?, tailSec?}`, `leadSilenceSec?`, `trailSilenceSec?` and `snapshotHash`
@@ -184,7 +191,8 @@ CueAnchor = {type:'edit', trackId, outgoingClipId, incomingClipId} | {type:'tran
 SoundDesign = { cues: Record<id, SoundCue>, settings?: {delivery, density:'sparse'|'balanced'|'rich', sfxTrackIds,
   roomBus: string|null, seed, agentsMayApply?: boolean}, lastCheck?: {mixHash, verdict, counts, at} }
 AudioClip.sfx? = { cueId: string|null, soundId, layer, role: 'hero'|'support'|'layer', alternatives?: string[] (≤16),
-  placement: {align, peakFlicks, errorFlicks} }
+  placement: {align, peakFlicks, errorFlicks}, pitch?: {st, baseRate} }   // pitch: WP6.5b, the applied shift and the
+  // speed under it (the seeded variation), so a pitch reset is exact; absent or not matching the speed: whole semitones
 ```
 
 `repairDocument` handles cues with dangling anchors (anchor → null, plus a warning), missing `placedClipIds`,
@@ -233,7 +241,7 @@ optional or loose, with read-time defaults.
   the trailing silence for its own sake (a riser aligned by its end ends on its frame). Registering pads short
   library sounds that do not end in ≥ 50 ms of quiet with `LIBRARY_TRAIL_SILENCE_SEC` = 50 ms of silence after them
   (§2.1; ≥ one frame at 23.976 fps, room for +19 % speed), so that frame is inside the media; media without that
-  room (copies registered before, sounds over 120 s, project audio, faster speeds) end less than one frame past their
+  room (copies registered before, sounds over 1 h, project audio, faster speeds) end less than one frame past their
   media — INV-005's one-frame tolerance, played as silence by every renderer. `end` alignment uses the end of the sound,
   not of the trailing silence. (Fix "SFX tail truncation": a click shorter than a frame after its peak was cut at its
   peak.)
@@ -522,11 +530,12 @@ Capabilities gain `sound: {library:{sounds, packs}, synth: true}`.
 |---|---|
 | `soundCue.add`, `soundCue.update`, `soundCue.remove {withClips?}`, `soundCue.resync` | |
 | `soundDesign.place` | `{cueId?|frame?, layers[{mediaId, track?|'auto', align?, gainDb?, rate?, pitchSt?, pan?, role?}] 1..6, group?, alternatives?}` |
-| `soundDesign.swap` | `{clipId, mediaId}` |
+| `soundDesign.swap` | `{clipId, mediaId, align?, frame?, pitchSt?, alternatives?}`; `pitchSt` is applied over `sfx.pitch.baseRate` (exact reset to 0) |
 | `soundDesign.ensureBus`, `soundDesign.applyGains`, `soundDesign.setSettings`, `soundDesign.setCheck` | |
 | `soundDesign.setVerdict` | a listen-here verdict marker bound to its moment (Phase 5 verification) |
 | `audio.volumeDip` | |
 | `media.setLibraryInfo` | |
+| `media.upgradeLibraryCopy` | `{mediaId, asset, ifPossible?, binId?, name?, label?, ref?, itemRef?}`: an older copy of a library sound gets the new copy in place, its clips moved by the lead difference (WP6.5b) |
 | palette commands (`soundDesign.setPalette`) | |
 
 Every command has undo/redo tests, tests for each refusal (`E_NOT_FOUND`, `E_INVALID_PARAM`, `E_TRACK_KIND`,

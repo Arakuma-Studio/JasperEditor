@@ -182,6 +182,37 @@ describe('insertLibrarySound', () => {
 		}
 	});
 
+	it('an older copy of the sound is replaced in place: one media, the old clip plays the same samples (WP6.5b)', async () => {
+		const s = setup();
+		const hit = s.entries[0]!;
+		// placed by an older build: the copy as it was then (no lead silence)
+		const a = await insertLibrarySound(s.session, { registerSound: async () => registered(hit) }, hit, {
+			at: 45,
+		});
+		const oldClip = {
+			...(seqOf(s).clips[a.clipId] as { start: number; sourceIn: number; duration: number }),
+		};
+		// the engine now registers the sound as another copy (50 ms of lead silence): a second insert
+		const b = await insertLibrarySound(s.session, { registerSound: async () => registeredPadded(hit) }, hit, {
+			at: 120,
+		});
+		const doc = s.session.getCommitted();
+		expect(Object.keys(doc.media)).toEqual([a.mediaId]);
+		expect(b.mediaId).toBe(a.mediaId);
+		expect(doc.media[a.mediaId]!.fingerprint).toBe(registeredPadded(hit).fingerprint);
+		const items = Object.values(doc.items).filter((i) => i.kind === 'media');
+		expect(items).toHaveLength(1);
+		const moved = seqOf(s).clips[a.clipId] as { start: number; sourceIn: number; duration: number };
+		expect(moved.start).toBe(oldClip.start);
+		expect(moved.duration).toBe(oldClip.duration);
+		expect(moved.sourceIn).toBe(oldClip.sourceIn + 0.05 * FLICKS_PER_SECOND);
+		expect(b.errorFlicks).toBe(0);
+		// one undo step undoes the insert and the upgrade together
+		s.session.undo();
+		expect(s.session.getCommitted().media[a.mediaId]!.fingerprint).toBe(hit.fingerprint);
+		expect((seqOf(s).clips[a.clipId] as { sourceIn: number }).sourceIn).toBe(oldClip.sourceIn);
+	});
+
 	it('refuses without a sequence or in a read-only project, and leaves the project alone when the engine fails', async () => {
 		const s = setup();
 		const before = s.session.getCommitted();

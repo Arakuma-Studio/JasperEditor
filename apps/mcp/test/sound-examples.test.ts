@@ -11,6 +11,7 @@ import { COMMAND_EXAMPLES } from '../src/examples.ts';
 
 const SOUND_COMMANDS = [
 	'media.setLibraryInfo',
+	'media.upgradeLibraryCopy',
 	'soundCue.add',
 	'soundCue.update',
 	'soundCue.remove',
@@ -54,6 +55,57 @@ const SAME_TX = new Set(['soundDesign.applyGains']);
 
 /** What an example needs in the project first (a cue to edit, a placed sound to swap). */
 const PRELUDE: Record<string, unknown[]> = {
+	// an older copy of the starter hit (the Ogg as it is: no lead silence), placed once
+	'media.upgradeLibraryCopy': [
+		{
+			type: 'media.register',
+			asset: {
+				kind: 'audio',
+				fingerprint: 'q1:00000000000000000000000000000000000000000000000000000000000e0000',
+				originalName: 'impact-old.ogg',
+				sizeBytes: 9000,
+				container: 'ogg',
+				probe: {
+					durationFlicks: 635_040_000,
+					startTimecode: null,
+					streams: [
+						{
+							index: 0,
+							type: 'audio',
+							codec: 'vorbis',
+							sampleRate: 48_000,
+							channels: 1,
+							channelLayout: 'mono',
+						},
+					],
+					rotationDegrees: 0,
+					hasAlpha: false,
+					variableFrameRate: false,
+				},
+				locators: [{ type: 'engine-store', engineId: 'local', key: 'mk_00000000000000000000e000' }],
+				library: {
+					soundId: 'snd_0123456789abcdef',
+					title: 'Impact Metal 03',
+					types: ['hit'],
+					source: { type: 'starter' },
+					license: 'CC0-1.0',
+					author: 'Kenney',
+					attribution: null,
+					descriptors: {
+						peakSec: 0.0123,
+						onsetSec: 0.011,
+						headQuietSec: 0.0105,
+						durationSec: 0.9,
+						octaveBandsDb: [-30, -25, -20, -18, -19, -24, -33],
+						centroidHz: 1820,
+						maxMomentaryLufs: -14.2,
+					},
+				},
+			},
+			ref: '$old',
+		},
+		{ type: 'soundDesign.place', frame: 30, layers: [{ mediaId: '$old', track: 'A1' }] },
+	],
 	'soundCue.update': [
 		{
 			type: 'soundCue.add',

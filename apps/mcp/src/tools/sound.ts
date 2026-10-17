@@ -28,6 +28,7 @@ import {
 	isCommercialSafe as isCommercialSafeLicense,
 	type MediaAsset,
 	mediaDurationFlicks,
+	olderLibraryCopyOf,
 	type ProjectDocument,
 	planSoundInsert,
 	type Rational,
@@ -88,7 +89,7 @@ export const SOUND_GUIDE = `Sound library (sound effects; spec 12). You cannot h
 - Where sounds come from: the bundled starter kit (real CC0 recordings by Kenney), installed packs (list_sound_packs, install_sound_pack), the user's own folders (add_sound_folder; their licence is the user's declaration) and Jasper Synth (procedural, generated here). Synth sounds are a deterministic fallback of lower quality: they always rank after real recordings; prefer a recording whenever one fits.
 - Find: search_sounds {q, types, visualKind, length/tone/attack/weight/texture, license, sources, similarTo, limit ≤ 24} → rows with soundId, types, durationSec, peakSec, riseMs, decayMs, centroidHz, below150Share, flatness, pitchMidi, the judge (ok, score, reasons such as boomy, hissy, soft-attack, non-decaying, clipped, multi-hit) and the licence. Words in titles rank first, then type synonyms ("swoosh" finds whooshes). Read the numbers: a hit should peak within a few ms (small peakSec and riseMs) and decay; a riser builds to its end; "boomy" means most energy under 150 Hz, "hissy" above 6 kHz.
 - Look: contactSheet: true on search_sounds, or view_sounds {soundIds}, gives ONE PNG grid: each cell is numbered, prints the id, title, length, peak ms, decay ms, centroid and judge, and draws the waveform (cyan) over a 64-band spectrogram (low frequencies at the bottom) with the peak as a red line and the end of the decay (−20 dB) as a dashed yellow one; the cells JSON repeats the numbers. get_sound {soundId} gives one sound with every descriptor and a larger picture with a time axis and the onset (green dashed).
-- Use: insert_sound {projectId, soundId, at} places a sound so that its aligned point lands exactly on \`at\` (a frame, {seconds}, a timecode or "playhead"): hits, booms, lands and impacts align their PEAK; risers and reverses align their END (they lead into the moment); UI blips their start (align "auto" picks this from the sound's type). Placement is sample-exact (errorFlicks 0): sounds whose head is not silent are registered with 50 ms of lead silence (the media's provenance says leadSilenceSec), so the sub-frame rest is always cut from silence; and the whole sound always plays: sounds that do not end in quiet get 50 ms of silence after them (trailSilenceSec) and every clip is rounded up to the frame that holds the end of its sound. It goes on a free unmuted "SFX…" audio track over its span, else a new "SFX n" track (never on dialogue or music tracks by itself, never over audio); one clip, one undo step that registers the sound, adds it to the project's "Sound Effects" bin, places the clip and tags it Essential Sound ▸ SFX. import_sounds {projectId, soundIds} only adds sounds to the bin (one undo step; sounds already in the project are reused); place them yourself with add_clip.
+- Use: insert_sound {projectId, soundId, at} places a sound so that its aligned point lands exactly on \`at\` (a frame, {seconds}, a timecode or "playhead"): hits, booms, lands and impacts align their PEAK; risers and reverses align their END (they lead into the moment); UI blips their start (align "auto" picks this from the sound's type). Placement is sample-exact (errorFlicks 0): sounds whose head is not silent are registered with 50 ms of lead silence (the media's provenance says leadSilenceSec), so the sub-frame rest is always cut from silence; and the whole sound always plays: sounds that do not end in quiet get 50 ms of silence after them (trailSilenceSec) and every clip is rounded up to the frame that holds the end of its sound. It goes on a free unmuted "SFX…" audio track over its span, else a new "SFX n" track (never on dialogue or music tracks by itself, never over audio); one clip, one undo step that registers the sound, adds it to the project's "Sound Effects" bin, places the clip and tags it Essential Sound ▸ SFX. import_sounds {projectId, soundIds} only adds sounds to the bin (one undo step; sounds already in the project are reused); place them yourself with add_clip. Sounds up to 1 h (beds too) are registered as sample-exact PCM copies; a longer one, or one whose copy would be too large or not fit the free disk, is used as it is and the result says so (inexact: placement exact to a frame). A project's older copy of a sound (registered by an earlier build) is replaced by the new copy in place on the next insert or import — the same media, its clips moved onto it sample for sample (replacedOlderCopy) — so a project never holds two copies of one sound.
 - Judgement: sync by structure (cuts, moves, lands, text and motion events you can see in the timeline and frames), never by ear; check placement with get_timeline and render_frame. Less is more: at most one hero sound (a hit or boom that carries the moment) per ~2 s, never two heroes within 0.5 s, and no heroes under spoken words. Keep one family of sounds per type in a piece (search_sounds similarTo). When you suggest sounds, give a reason and 1–3 alternates (soundIds) per moment. Propose, don't apply: plan_sound_design and place_sound (mode "propose", its default) store a proposal the user reviews and applies in the editor; insert sounds directly (insert_sound, place_sound mode "apply") only when the user asked you to place them. Then wait for the review (wait_for_proposal) and read the notes.
 - Cues: a sequence's sound cues (Sequence.soundDesign.cues: frame, kind, weight hero/support/ambient, types, reason, anchor) are drawn for the user on the Timeline's Cue Seam, a lane between the video and audio tracks (glyph per kind; filled cues are solid with a line to the placed clip's peak). Edit them with apply_commands: soundCue.add / update / remove / resync, soundDesign.place {cueId} fills one, soundDesign.setPeak {clipId, peakFlicks} corrects where a placed clip's peak is (the clip does not move). The UI commands sound.addCue {frame?}, sound.toggleCueSeam, sound.clearUnfilledCues, sound.convertMarkersToCues and soundLibrary.fillCue {cueId} (opens the Sound Library filtered to the cue's types) run through ui_command when an editor window is open.
 - Licences: search defaults to commercial-safe licences (CC0, CC-BY, CC-BY-SA, open licences, the user's royalty-free folders); license "any" also shows user-provided (undeclared) and other sounds — do not use those in work the user will publish without asking. CC-BY sounds need a credit: list_sound_credits {projectId, format md|txt|csv} gives the credit lines of every library sound the project (or a sequence) uses, with warnings for non-commercial, no-derivatives, unknown or undeclared licences; give the credits to the user when CC-BY sounds are used.
@@ -328,7 +329,14 @@ export type Registered = { soundId: string; reg: RegisterSoundResponse; title: s
  */
 export function importCommands(doc: ProjectDocument, sounds: Registered[]) {
 	const commands: Record<string, unknown>[] = [];
-	const media: { soundId: string; mediaId: string | null; ref: string | null; reused: boolean }[] = [];
+	const media: {
+		soundId: string;
+		mediaId: string | null;
+		ref: string | null;
+		reused: boolean;
+		/** The project's older copy of the sound this registration replaced in place (WP6.5b). */
+		upgradedFrom?: string;
+	}[] = [];
 	let binId = soundEffectsBin(doc);
 	const seen = new Map<string, number>();
 	sounds.forEach(({ soundId, reg, title }, i) => {
@@ -349,9 +357,29 @@ export function importCommands(doc: ProjectDocument, sounds: Registered[]) {
 			binId = '$sfxBin';
 		}
 		const base = mediaRegisterCommand(reg, `$s${i}`, `$si${i}`, title);
-		commands.push({ ...base, asset: { ...base.asset, library: reg.library }, binId });
+		// an older copy of this sound in the project is replaced in place: one media per sound (WP6.5b)
+		const older = olderLibraryCopyOf(doc, reg.library.soundId, reg.fingerprint);
+		const { type: _t, ...rest } = base;
+		commands.push(
+			older
+				? {
+						...rest,
+						type: 'media.upgradeLibraryCopy',
+						mediaId: older,
+						ifPossible: true,
+						asset: { ...base.asset, library: reg.library },
+						binId,
+					}
+				: { ...base, asset: { ...base.asset, library: reg.library }, binId },
+		);
 		seen.set(reg.fingerprint, media.length);
-		media.push({ soundId, mediaId: null, ref: `$s${i}`, reused: false });
+		media.push({
+			soundId,
+			mediaId: null,
+			ref: `$s${i}`,
+			reused: false,
+			...(older ? { upgradedFrom: older } : {}),
+		});
 	});
 	return { commands, media };
 }
@@ -579,7 +607,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 		'import_sounds',
 		{
 			title: 'Import sounds',
-			description: `Adds library sounds to a project as media in its "${SOUND_EFFECTS_BIN}" bin (created when missing), with their provenance (licence, author, credit, descriptors), in ONE transaction (one undo step). Starter-kit, pack and synth files are copied into the project's managed media; folder sounds are referenced in place. Sounds whose head is not silent are copied with 50 ms of lead silence in front (sample-exact placement), sounds that do not end in quiet with 50 ms of silence after them (so a placed clip holds the whole sound); the provenance's descriptors, leadSilenceSec and trailSilenceSec describe the copy. Sounds the project already has are reused (reused: true), never duplicated. All or nothing: an unknown or changed sound fails the call and imports nothing. Returns one mediaId per sound; place them with add_clip, or use insert_sound to import and place peak-aligned in one go.`,
+			description: `Adds library sounds to a project as media in its "${SOUND_EFFECTS_BIN}" bin (created when missing), with their provenance (licence, author, credit, descriptors), in ONE transaction (one undo step). Starter-kit, pack and synth files are copied into the project's managed media; folder sounds are referenced in place. Sounds whose head is not silent are copied with 50 ms of lead silence in front (sample-exact placement), sounds that do not end in quiet with 50 ms of silence after them (so a placed clip holds the whole sound); the provenance's descriptors, leadSilenceSec and trailSilenceSec describe the copy. Sounds the project already has are reused (reused: true), never duplicated; an older copy of a sound (registered before a registration rule changed) is replaced by the new copy in place — same mediaId, its clips moved onto it sample for sample (replacedOlderCopy: true). Sounds up to 1 h are copied sample-exact; longer ones, or copies over the size cap or without free disk space, are used as they are (inexact {reason, message}). All or nothing: an unknown or changed sound fails the call and imports nothing. Returns one mediaId per sound; place them with add_clip, or use insert_sound to import and place peak-aligned in one go.`,
 			input: {
 				projectId: ProjectIdArg,
 				soundIds: z.array(SoundIdArg).min(1).max(50).describe('Sound ids from search_sounds (up to 50)'),
@@ -626,12 +654,19 @@ export function registerSoundTools(ctx: ToolContext): void {
 				tx = { ...txBody(res, r), historyLabel: label };
 				break;
 			}
-			const sounds = plan.media.map((m, i) => ({
-				soundId: m.soundId,
-				title: registered.find((x) => x.soundId === m.soundId)?.title ?? registered[i]?.title,
-				mediaId: m.mediaId ?? (m.ref ? refs[m.ref] : undefined) ?? null,
-				reused: m.reused,
-			}));
+			const sounds = plan.media.map((m, i) => {
+				const mediaId = m.mediaId ?? (m.ref ? refs[m.ref] : undefined) ?? null;
+				const reg = registered.find((x) => x.soundId === m.soundId)?.reg;
+				return {
+					soundId: m.soundId,
+					title: registered.find((x) => x.soundId === m.soundId)?.title ?? registered[i]?.title,
+					mediaId,
+					reused: m.reused,
+					// the project's older copy of the sound now holds the new copy (its clips moved onto it, same samples)
+					...(m.upgradedFrom && mediaId === m.upgradedFrom ? { replacedOlderCopy: true } : {}),
+					...(reg?.inexact ? { inexact: reg.inexact } : {}),
+				};
+			});
 			return jsonResult({
 				...(tx ?? { ok: true, changed: [], note: 'Every sound was already in the project.' }),
 				sounds,
@@ -645,7 +680,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 		'insert_sound',
 		{
 			title: 'Insert sound (peak-aligned)',
-			description: `Puts a library sound on the timeline so that its aligned point lands exactly on \`at\` — the agent version of the Sound Library's Insert. align "auto" (default) uses the sound type's: peak for hits, booms, impacts, whooshes; end for risers and reverses (they lead into the moment); start for UI blips; or give peak | start | end. The sub-frame rest is trimmed from the head of the registered file (library sounds whose head is not silent get 50 ms of lead silence when registered), so the aligned point is exact to the flick (errorFlicks 0). A sound that would start before frame 0 starts at 0 with its head trimmed (trimmedHeadSec). track "auto" (default) picks a free unmuted "SFX…" audio track over the clip's span, else adds "SFX n"; an explicit track must be free there (E_OVERLAP otherwise): it never overwrites audio and places one clip. ONE undo step registers and imports the sound (into the "${SOUND_EFFECTS_BIN}" bin, reusing the project's copy), adds the track if needed, places the clip, tags it Essential Sound ▸ SFX and sets its gain: gainDb when given, else the sound's default level (its loudest 400 ms to the role's momentary target at the sequence's delivery — web: support −22 LUFS — under a true-peak ceiling, within −30…+12 dB; \`level\` in the result says what limited it). Returns the clip, its track, start, the aligned frame, errorFlicks and gainDb.`,
+			description: `Puts a library sound on the timeline so that its aligned point lands exactly on \`at\` — the agent version of the Sound Library's Insert. align "auto" (default) uses the sound type's: peak for hits, booms, impacts, whooshes; end for risers and reverses (they lead into the moment); start for UI blips; or give peak | start | end. The sub-frame rest is trimmed from the head of the registered file (library sounds whose head is not silent get 50 ms of lead silence when registered), so the aligned point is exact to the flick (errorFlicks 0). A sound that would start before frame 0 starts at 0 with its head trimmed (trimmedHeadSec). track "auto" (default) picks a free unmuted "SFX…" audio track over the clip's span, else adds "SFX n"; an explicit track must be free there (E_OVERLAP otherwise): it never overwrites audio and places one clip. ONE undo step registers and imports the sound (into the "${SOUND_EFFECTS_BIN}" bin, reusing the project's copy; an older copy of the sound is replaced by the new one in place, its clips moved onto it sample for sample), adds the track if needed, places the clip, tags it Essential Sound ▸ SFX and sets its gain: gainDb when given, else the sound's default level (its loudest 400 ms to the role's momentary target at the sequence's delivery — web: support −22 LUFS — under a true-peak ceiling, within −30…+12 dB; \`level\` in the result says what limited it). Returns the clip, its track, start, the aligned frame, errorFlicks and gainDb.`,
 			input: {
 				projectId: ProjectIdArg,
 				soundId: SoundIdArg.describe('Sound id from search_sounds'),
@@ -798,6 +833,11 @@ export function registerSoundTools(ctx: ToolContext): void {
 					notes.push(
 						'This is a Jasper Synth (procedural) sound: a fallback; prefer a recording if one fits.',
 					);
+				if (media[0]!.upgradedFrom && mediaId === media[0]!.upgradedFrom)
+					notes.push(
+						`The project's older copy of this sound (${mediaId}) now holds the new copy: its clips play the same samples.`,
+					);
+				if (reg.inexact) notes.push(reg.inexact.message);
 				if (requiresAttribution(entry.license))
 					notes.push('Its licence requires a credit: list_sound_credits gives the line.');
 				if (!isCommercialSafeLicense(entry.license))
