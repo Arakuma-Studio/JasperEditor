@@ -80,8 +80,8 @@ export interface PlayedClip {
 export function playedLibraryClips(snapshot: { audioClips?: readonly unknown[] }): PlayedClip[] {
 	const out: PlayedClip[] = [];
 	for (const c of Array.isArray(snapshot?.audioClips) ? snapshot.audioClips : []) {
-		const x = c as { clipId?: unknown; mediaId?: unknown; generator?: unknown };
-		if (typeof x.clipId !== 'string' || typeof x.mediaId !== 'string' || x.generator) continue;
+		const x = c as { clipId?: unknown; mediaId?: unknown; generator?: unknown } | null;
+		if (!x || typeof x.clipId !== 'string' || typeof x.mediaId !== 'string' || x.generator) continue;
 		if (x.mediaId.startsWith('syn:')) continue;
 		out.push({ clipId: x.clipId, mediaId: x.mediaId });
 	}
