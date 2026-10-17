@@ -175,6 +175,8 @@ export function SoundLibraryPanel(props: PanelProps) {
 	const [queryInput, setQueryInput] = useState('');
 	const [status, setStatus] = useState<SoundLibraryStatus | null>(null);
 	const [roots, setRoots] = useState<SoundRoot[]>([]);
+	/** Installed packs (id → title) for the Sources › Packs collections. */
+	const [installedPacks, setInstalledPacks] = useState<{ id: string; title: string }[]>([]);
 	const [results, setResults] = useState<Results | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -228,6 +230,14 @@ export function SoundLibraryPanel(props: PanelProps) {
 			.getSoundRoots()
 			.then((r) => setRoots(r.roots))
 			.catch(() => setRoots([]));
+		void engine
+			.listSoundPacks()
+			.then((r) =>
+				setInstalledPacks(
+					r.packs.filter((p) => p.state !== 'available').map((p) => ({ id: p.id, title: p.title })),
+				),
+			)
+			.catch(() => setInstalledPacks([]));
 	}, [engine]);
 	useEffect(() => {
 		if (engineStatus !== 'connected') return;
@@ -832,6 +842,8 @@ export function SoundLibraryPanel(props: PanelProps) {
 		if (bySource.starter)
 			opts.push({ value: 'source:starter', label: `Sources › ${SOUND_SOURCE_LABELS.starter}` });
 		if (bySource.pack) opts.push({ value: 'source:pack', label: `Sources › ${SOUND_SOURCE_LABELS.pack}` });
+		for (const p of installedPacks)
+			opts.push({ value: `pack:${p.id}`, label: `Sources › ${SOUND_SOURCE_LABELS.pack} › ${p.title}` });
 		if (roots.length) opts.push({ value: 'source:folder', label: `Sources › ${SOUND_SOURCE_LABELS.folder}` });
 		for (const r of roots) opts.push({ value: `root:${r.id}`, label: `Sources › ${r.label || r.path}` });
 		if (bySource.synth) opts.push({ value: 'source:synth', label: `Sources › ${SOUND_SOURCE_LABELS.synth}` });
@@ -844,6 +856,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 		bySource.pack,
 		bySource.synth,
 		roots,
+		installedPacks,
 		filters.collection,
 		palette.length,
 	]);
@@ -1147,7 +1160,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 						<Icon id="panel.soundLibrary" size={24} />
 						<p className="text-pr-ui text-pr-muted">No sounds yet</p>
 						<p className="max-w-[260px] text-pr-small text-pr-dim">
-							Install the bundled starter kit, or add a folder of your own sounds.
+							Install the bundled starter kit, download a sound pack, or add a folder of your own sounds.
 						</p>
 						<div className="flex gap-2">
 							<button
@@ -1164,6 +1177,14 @@ export function SoundLibraryPanel(props: PanelProps) {
 								data-testid="sound-install-starter"
 							>
 								Install Starter Kit
+							</button>
+							<button
+								type="button"
+								className="rounded-pr-control border border-pr-border-strong px-2 py-0.5 text-pr-ui hover:bg-pr-hover"
+								onClick={() => void runCommand('soundLibrary.installPacks', ctx())}
+								data-testid="sound-install-packs"
+							>
+								Install Sound Packs…
 							</button>
 							<button
 								type="button"

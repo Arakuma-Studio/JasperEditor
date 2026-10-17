@@ -13,6 +13,7 @@ import {
 import { auditionPlayer } from '../sound/audition.ts';
 import { insertSoundReporting, requestSoundSearch, soundLibraryController } from '../sound/controller.ts';
 import { registerSoundDialogs, SOUND_CREDITS_DIALOG } from '../sound/dialogs.tsx';
+import { requestPacksFocus } from '../sound/PacksSection.tsx';
 import { SoundLibraryPreferencesPage } from '../sound/PreferencesPage.tsx';
 import { soundLibraryPrefs } from '../sound/prefs.ts';
 import { runCommand } from './registry.ts';
@@ -196,6 +197,18 @@ export const soundCommands: UiCommand[] = [
 				message: 'Indexing the starter kit',
 				detail: 'Its sounds appear when the job ends.',
 			});
+		},
+	},
+	{
+		id: 'soundLibrary.installPacks',
+		label: 'Install Sound Packs…',
+		description:
+			'Open Preferences ▸ Sound Library ▸ Packs: the downloadable sound packs, their licences and sizes',
+		scope: 'global',
+		capability: 'engine',
+		run: (ctx) => {
+			requestPacksFocus();
+			ctx.ui.openDialog(PREFERENCES_DIALOG, { page: 'sound-library', session: ctx.session });
 		},
 	},
 	{

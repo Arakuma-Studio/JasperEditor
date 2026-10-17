@@ -124,7 +124,8 @@ export type Collection =
 	| 'used'
 	| 'palette'
 	| `source:${SoundSourceType}`
-	| `root:${string}`;
+	| `root:${string}`
+	| `pack:${string}`;
 
 export const LOCAL_COLLECTIONS: ReadonlySet<Collection> = new Set([
 	'favourites',
@@ -204,6 +205,7 @@ export function searchRequest(
 		const s = f.collection.slice(7) as SoundSourceType;
 		if (SOURCE_TYPES.includes(s)) req.sources = [s];
 	} else if (f.collection.startsWith('root:')) req.rootId = f.collection.slice(5);
+	else if (f.collection.startsWith('pack:')) req.packId = f.collection.slice(5);
 	return req;
 }
 
