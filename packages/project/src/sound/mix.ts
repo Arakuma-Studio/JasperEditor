@@ -8,7 +8,8 @@
 //   edges D ≥ E, so the result is continuous and E is untouched outside W: keyframes outside W are never replaced. Exact
 //   for linear and hold curves. A curved segment (Bézier, auto-Bézier, roving) crossing an edge widens the rewritten
 //   range to its keys: there D = +∞ where no dip is (the curve is kept), the segment is rebuilt from adaptive samples
-//   (within 0.001 dB of the curve, ≥ 1 ms apart) and the edge keys keep the eases of the curve outside.
+//   (within 0.001 dB of the curve, ≥ 1 ms apart; steep bends within 0.01 dB, ≥ 0.125 ms apart) and the edge keys
+//   keep the eases of the curve outside. A dip of no depth (0 dB) is no dip.
 // - STOP-BEFORE of a hero at T: one dip [T − seconds, T − 10 ms], 30 ms fades (down from T − s − 30 ms, back at
 //   T + 20 ms), on the music under it.
 // - BUILD of a hero at T: the cutoff of a 2nd-order Butterworth High Pass sweeps 20 Hz → fromHz at T − seconds →
@@ -225,23 +226,31 @@ export function writeCurve(
 const MIN_SAMPLE = FLICKS_PER_SECOND / 1000;
 /** Largest deviation (dB) of the rebuilt line from a curved segment between two samples. */
 const SAMPLE_TOLERANCE_DB = 1e-3;
+/**
+ * Steep bends (a 2 ms chord more than `STEEP_TOLERANCE_DB` off the curve) are sampled closer, down to `FINE_SAMPLE`
+ * (WP6.5b: a −96 dB Bézier over 100 ms was rebuilt 0.087 dB off with 1.56 ms samples; now ≤ 0.01 dB).
+ */
+const STEEP_TOLERANCE_DB = 1e-2;
+const FINE_SAMPLE = MIN_SAMPLE / 8;
 
 /**
  * Sample times (lane flicks) of `f` over (a, b) so that the polyline through them stays within `SAMPLE_TOLERANCE_DB`
- * of `f` (checked at eighths), never closer than `MIN_SAMPLE`: a smooth Bézier gets a few dozen keys instead of
+ * of `f` (checked at eighths), never closer than `MIN_SAMPLE` — except on steep bends, which are split down to
+ * `FINE_SAMPLE` while they are more than `STEEP_TOLERANCE_DB` off: a smooth Bézier gets a few dozen keys instead of
  * one every 5 ms as before. Pure.
  */
 function adaptiveSamples(f: (k: number) => number, a: number, b: number, out: number[]): void {
 	const go = (x0: number, v0: number, x1: number, v1: number, depth: number) => {
-		if (x1 - x0 <= 2 * MIN_SAMPLE || depth > 30) return;
+		if (x1 - x0 <= 2 * FINE_SAMPLE || depth > 40) return;
+		const tol = x1 - x0 <= 2 * MIN_SAMPLE ? STEEP_TOLERANCE_DB : SAMPLE_TOLERANCE_DB;
 		const lin = (x: number) => v0 + ((v1 - v0) * (x - x0)) / (x1 - x0);
 		const m = (x0 + x1) / 2;
 		const vm = f(m);
-		let ok = Math.abs(vm - lin(m)) <= SAMPLE_TOLERANCE_DB;
+		let ok = Math.abs(vm - lin(m)) <= tol;
 		for (let q = 1; ok && q < 8; q++) {
 			if (q === 4) continue;
 			const x = x0 + ((x1 - x0) * q) / 8;
-			ok = Math.abs(f(x) - lin(x)) <= SAMPLE_TOLERANCE_DB;
+			ok = Math.abs(f(x) - lin(x)) <= tol;
 		}
 		if (ok) return;
 		out.push(m);
@@ -299,8 +308,11 @@ export function mergeDips(
 ): (CurveWrite & { windows: [number, number][] }) | null {
 	const [cmin, cmax] = opts.clamp ?? [-96, 15];
 	const clampV = (v: number) => Math.min(cmax, Math.max(cmin, v));
+	// A dip of no depth (0 dB, −0) is no dip: it writes nothing and does not widen the window (and so the reference
+	// level) of a dip it overlaps (WP6.5b: the 0 dB dip's window kept a swell the property expected dipped, and moved the
+	// reference level of the real dip under it).
 	const valid = dips.filter(
-		(d) => fin(d.start) && fin(d.end) && d.end >= d.start && fin(d.depthDb) && fin(d.fadeMs),
+		(d) => fin(d.start) && fin(d.end) && d.end >= d.start && fin(d.depthDb) && d.depthDb < 0 && fin(d.fadeMs),
 	);
 	// Windows: each dip with its fades, inside the lane's span, overlapping ones merged.
 	const raw = valid
@@ -336,9 +348,13 @@ export function mergeDips(
 	const refs = windows.map(([s0, e0]) => ({ s0, e0, ref: Math.max(E0(s0), E0(e0)) }));
 	const refAt = (t: number) => refs.find((w) => t >= w.s0 - tol && t <= w.e0 + tol)?.ref;
 	const env = (t: number) => dipEnvelopeAt(valid, t);
+	// Strictly inside a window the dip curve is ref + env also where the envelope touches 0: where one dip's fade ends
+	// as the next one's begins (WP6.5b: there D was +∞, so a key at that instant drew a spike up to the curve between
+	// two dipped floors).
+	const inside = (t: number) => refs.some((w) => t > w.s0 && t < w.e0);
 	const D = (t: number) => {
 		const e = env(t);
-		const ref = e < 0 ? refAt(t) : undefined;
+		const ref = e < 0 || inside(t) ? refAt(t) : undefined;
 		return ref === undefined ? Number.POSITIVE_INFINITY : clampV(ref + e);
 	};
 	const Dc = (t: number) => {
