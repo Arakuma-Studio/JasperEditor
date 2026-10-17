@@ -1144,7 +1144,9 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 			const groupsTodo: number[] = [];
 			groupDirty.fill(0);
 			for (let i = 0; i < n; i++)
-				if (bedDom[i] !== lastBed[i]) {
+				// a bed that moved less than a tenth of the tolerance cannot move a gain past it: the event keeps its
+				// last result (its reference bed stays, so a slow drift is still caught)
+				if (Math.abs(bedDom[i]! - lastBed[i]!) > MASKING_TOLERANCE_DB / 10) {
 					const gi = ctx.groupOf[i]!;
 					if (gi < 0) todo.push(i);
 					else if (!groupDirty[gi]) {
@@ -1153,7 +1155,7 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 					}
 				}
 			for (const gi of groupsTodo) for (const i of ctx.groups[gi]!) todo.push(i);
-			lastBed.set(bedDom);
+			for (const i of todo) lastBed[i] = bedDom[i]!;
 			if (todo.length === 0) {
 				converged = true;
 				break;
