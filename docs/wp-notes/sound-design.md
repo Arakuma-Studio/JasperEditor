@@ -5210,11 +5210,11 @@ job. Shared host, 16 cores; load average 8–70 during the pass, stated with eve
 
 | Requirement | Status | Evidence (rerun) |
 |---|---|---|
-| P4-R1 masking solver, constraints in order (clamp, bed cap, hero shadow, consistency, dialogue, headroom), re-verified after the last step; earlier wins and the conflict is reported; unit + property (monotone in the bed until a cap, caps hold) | done | `packages/audio-fx/test/masking.test.ts` (31: +1 the binding constraint named in a conflict instead of "clamp", +1 dialogue advice names only speech-octave bands, +1 silent bed wording), `masking-oracle.test.ts`; reviewed: no path to `W_UNRESOLVED` (rounding leaves ≤ 2.010 dB against 2.010 + 2·10⁻⁹) |
+| P4-R1 masking solver, constraints in order (clamp, bed cap, hero shadow, consistency, dialogue, headroom), re-verified after the last step; earlier wins and the conflict is reported; unit + property (monotone in the bed until a cap, caps hold) | done | `packages/audio-fx/test/masking.test.ts` (29 tests; new here: the binding constraint named in a conflict instead of "clamp", +1 dialogue advice names only speech-octave bands, +1 silent bed wording), `masking-oracle.test.ts`; reviewed: no path to `W_UNRESOLVED` (rounding leaves ≤ 2.010 dB against 2.010 + 2·10⁻⁹) |
 | P4-R2 engine bed render per cue cluster; `soundDesign.applyGains`; `rebalance_sfx`; plan job with `limitedBy` | done | `apps/engine/test/sound-design-bed.test.ts` (+ id-free cache, offline-media key), `sound-design-rebalance.test.ts` (+ CONFLICT on a concurrent bed edit), `sound-design-plan-levels.test.ts` (+ a second identical plan renders nothing), `packages/project/test/sound-apply-gains.test.ts`, `apps/mcp/test/sound-rebalance.test.ts` |
 | P4-R3 stop-before, build, `audio.volumeDip`, `soundDesign.ensureBus` | done | `packages/project/test/sound-mix.test.ts`, `sound-p4v-mix.test.ts` (new: 12 regression tests + 2 properties: overlapping realisations removed in any order give the lanes back exactly; curved lanes), `packages/audio-fx/test/build-sweep.test.ts`, `apps/engine/test/sound-design-mix.test.ts` (exported dip, sweep, room tail) |
 | P4-R4 delivery presets wired to `mixer.setLoudness`, Auto-Match and ducking | done | `apps/engine/test/sound-design-delivery.test.ts` (+ conflicts / solver warnings in the report, CONFLICT), `sound-mix.test.ts` (delivery, ducking depth), `apps/mcp/test/sound-mix.test.ts`; real run below: −14.0 LUFS / −1.3 dBTP, music 14.1 LU under the voice |
-| P4-R5 Essential Sound SFX additions, Sequence ▸ Sound Design ▸ Rebalance SFX Levels | done | `apps/web/test/sound-mix-model.test.ts` (20), `sound-mix-ui.test.tsx` (15: multi-selection Room / Stop / Build, solver notes), `auto-sound-pass.test.tsx`; `e2e/sound-mix.spec.ts` |
+| P4-R5 Essential Sound SFX additions, Sequence ▸ Sound Design ▸ Rebalance SFX Levels | done | `apps/web/test/sound-mix-model.test.ts` (19), `sound-mix-ui.test.tsx` (15: multi-selection Room / Stop / Build, solver notes), `auto-sound-pass.test.tsx`; `e2e/sound-mix.spec.ts` |
 | "Done when" (a): on the fixture every placed event reaches its target lift or reports `limitedBy` | done | `apps/engine/test/sound-design-plan-levels.test.ts` and `sound-design-plan-mix.test.ts` assert it per event; the real run's table below (17 items, each "target reached", "already clears the bed", "nothing plays under it" or "limited by …") |
 | "Done when" (b): the export matches the preview mix (sample-level oracle) | **done here** (it did not exist for automation; it failed, the preview was fixed) | `packages/compositions/test/audio-preview-mix-oracle.test.ts` (new): the preview graph in headless Chrome driven as while playing vs the export mixer, for solver gain + room send + stop-before + build, max \|Δ\| **1.4·10⁻⁵** in both scenes (track lane / clip fallback); before the fix **0.19 / 0.15** |
 
@@ -5391,10 +5391,62 @@ load-sensitive (64.6 ms once at load ≈ 50).
   music stem from T − 3 s to T + 1.5 s — the syllables until 8.0 s over the ducked music, the low end fading from
   6.33 s with the cut edge climbing, the ≈ 24 dB band-wide dip from ≈ 8.06 s, the full band and the hit at 8.33 s.
   Files (generated media, not committed): `/var/lib/orquester/tmp/p4-verify/run/`.
-- **E2E** (`pnpm build` + `pnpm mg:build`, `E2E_PORT=50806 E2E_SKIP_BUILD=1 pnpm exec playwright test
-  e2e/sound-mix.spec.ts`): passed with the fixture's fframes graphic, Delivery Target… "Export: −14.0 LUFS, −1.0
-  dBTP", "Music under the voice: 23.1 LU" (before the ducking-depth decision was merged), native export measured
-  −14.1 LUFS / −1.1 dBTP.
+- **E2E**, every sound spec (`pnpm build` + `pnpm mg:build`, then `E2E_PORT=50807 E2E_SKIP_BUILD=1 pnpm exec playwright test
+  e2e/sound-*.spec.ts`; 21 tests, 50.6 min at load 23–45): 18 passed, 3 failed — `sound-mix`: the Auto Sound Pass
+  dialog now stays open listing the plan's notes (new behaviour: the spec reads them and closes it), and a warning toast
+  with solver notes stays until dismissed and covered the Export button (the spec dismisses every toast); `sound-p3-mcp`:
+  a bright, varispeed pick correlated 0.86–0.92 with its source on the AAC export although its peak was exact (lag 0;
+  measured residual within 1 dB of the signal above 16 kHz, 7 dB under it at 8–12 kHz: the codec), so the spec now
+  exports PCM (ProRes master) — the same pick passes there; `sound-p0-transport` "first samples" (the documented
+  real-time check, disturbed at load ≈ 43). On the final build: `sound-mix` + `sound-p3-mcp` in one engine **2 passed**
+  (1.8 min, load 5–9): the fixture with its fframes graphic, plan notes named ("Pneumatic whoosh at 00;00;06;00: its
+  energy is in the speech band (1–4 kHz) while someone speaks; move it or pick a sound whose energy is outside 1–4 kHz,
+  e.g. boom, hit, thump"), Delivery Target… "Export: −14.0 LUFS, −1.2 dBTP · Music under the voice: 14.1 LU (at least
+  8)", native export **−14.1 LUFS / −1.7 dBTP** (ffmpeg); `sound-p0-transport` + `sound-p0-preview` **10 passed** (load
+  5–8). Screenshots looked at (`test-results/e2e-sound-mix/`): the plan-notes dialog, review, Essential Sound, Room Glue…,
+  Delivery Target….
+
+#### Gate (measured, this branch; shared host, 16 cores)
+
+- Before (integration tip 6ab79253, `p4-baseline` worktree, load 60–70): `pnpm lint` and `pnpm typecheck` pass;
+  `pnpm test` 32 failed / 6 324 passed in 86.8 min — 31 tests over their time limits or budgets (engine routes at their
+  5 s default, plan-levels 92.8 s > 45 s, the 5 000-sound ranking, camera tracking…) and one real failure,
+  `sound-messages.test.ts` (the setAutoGain refusal had no template; fixed here); `pnpm notices --check` current.
+- After the helper branches (load 8 → 64): lint, typecheck pass; `pnpm test` 22 failed / 6 506 passed in 43.5 min: 21
+  engine / interchange tests over their 5 s or hook limits — rerun with `--maxWorkers=2` at load ≈ 40: 14 files 109
+  passed, the 7 video-heavy files 48 passed (4 skipped) — and one real: the new curved-lane property's own window model
+  (dips sorted by start merged [1299, 1301] with [917, 1703] ms; fixed, its counterexample kept as an example).
+- **Final** (after merging the integration branch with Phase 5 WP5.1, the e2e fixes; load 4 → 17 during the run):
+  `pnpm verify`: lint pass, typecheck pass, **`pnpm test` 6 622 passed, 1 failed, 385 skipped (688 files, 22.8 min)** —
+  the failure is `gaps-avc3-playback.test.ts` "plays in Electron with every frame" (44 of ≥ 45 frames seen in real-time
+  playback); run alone at load ≈ 15: 2 passed. `pnpm build` pass; `pnpm notices --check`: current (150 packages, 31
+  ported records). The plan-levels ≤ 45 s budget and the 2000-event solver budget passed inside both full runs.
+- Not explained: `sound-mix.test.ts` "mergeDips (property)" (WP4.2a's, linear / hold keys) failed once in a targeted run
+  after the Phase 5 merge; its seed was not captured, and 6 × 300 + 8 000 + 3 × 40 000 further runs did not reproduce it.
+
+#### Limits (after this pass)
+
+- The solver's model: SFX do not mask each other and headroom is the last (weakest) constraint, so overlapping events
+  can sum over the ceiling before the master (Sound Check's true-peak check and the delivery limiter are the net).
+- The preview follows gain and effect-parameter automation sample by sample; pan (clip pan, strip pan, the 5.1 puck)
+  is still evaluated per frame with the 8 ms glide (the placement's keyframed whoosh pans, Phase 2). The oracle renders
+  offline; in the live player the curve starts from the time the sync anchor gives, so a late frame callback no longer
+  shifts it, and without the anchor (no Remotion sync) the picture time is used as before.
+- Dips and builds follow cue edits, splits, sequence duplicates, mute / unmute and locks, not clips duplicated, pasted or
+  nested by hand (their keys stay ordinary keyframes); a dip on a track lane stays where it was when the music moves.
+- Rebalance / delivery: an edit landing in the milliseconds between the job's re-read and its transaction that touches
+  no gain clip is fast-forwarded.
+- The mixer renders on the engine's main thread: a first plan's ≈ 69 distinct solo renders are most of its time.
+- `mixFingerprint` changed again (ids and names left out): analyses stored by earlier builds of this branch read stale
+  once; a transcription finished before the upgrade and attached after it is refused (transcribe again).
+- No schema bump (Phase 4 unreleased; new fields optional; an older build of this branch reads a muted cue's suspended
+  record as written).
+- A warning toast with solver notes stays until dismissed (as every warning toast).
+- `e2e/sound-p0-transport.spec.ts` "first samples" and `gaps-avc3-playback` stay real-time checks that a loaded host can
+  disturb.
+
+Scratch scripts (not committed): `/var/lib/orquester/tmp/p4-verify/p4v-run.local.ts` (copy into `apps/mcp/` to run;
+the MCP run above), `p4v-measure.py` (the measurements).
 
 ## Phase 5: Sound Check
 
