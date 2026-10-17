@@ -358,7 +358,7 @@ the nineteen engine / model / MCP carry-overs, each with a regression test — e
 sample-exact copies of sounds up to 1 h (byte cap, disk check, `inexact` beyond) in the narrowest exact PCM WAV (FLAC
 rejected: 16-bit FLAC measured not bit-exact in Chrome), older copies replaced in place (`media.upgradeLibraryCopy`),
 inter-SFX masking and the summed true peak of overlapping sounds in the solver, `soundDesign.expectMix` closing the
-rebalance / delivery race, fast-check seeds captured repo-wide (the `mergeDips` hunt found and fixed 7 edge cases),
+rebalance / delivery race, fast-check seeds captured repo-wide (the `mergeDips` hunt found and fixed 8 edge cases),
 measurement renders on worker threads, Sound Check's safe fixes judged together (true-peak headroom, cross-masking),
 mono Mixes checked in mono, kept reports deleted with their sequence, one shot-change rule, the beat tracker's tempo
 octave and 3/4, measured picture motion in `view_sound_timeline`, untouched footage decoded at the analysis size,
