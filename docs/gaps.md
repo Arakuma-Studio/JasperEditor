@@ -336,6 +336,21 @@ Analyze… — rerun `apps/engine/test/sound-design-motion.test.ts`, `packages/p
 under ≈ 0.6 px per frame at 128 px (≈ 0.12 screen diagonals per second, the keyframe source's threshold) is not seen, and
 small objects (≤ 2 blocks of 8 px) are noise to it; the beat tracker can lock to half the tempo of fast pure click
 tracks (150 BPM read as 75); downbeats assume 4/4.
+Phase 6 → WP6.3 ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP6.3"): Essential Sound **Auto Tag**
+(Premiere's "Auto Tag Audio Types") — `POST /api/audio/classify` (an `audio-classify` job, cached per file and range)
+classifies clips as dialogue / music / SFX / ambience with documented rules over measured features (VAD, syllabic
+modulation, pitch over time, onset periodicity, held partials, stationarity, duration); `essentialSound.autoTag` tags them
+marked "auto" (dotted badge) until the user confirms in Essential Sound, never replacing a type the user set unless forced;
+Essential Sound's Auto Tag button and banner (Confirm / Change…), Clip ▸ Audio Options and the clip menu, MCP
+`auto_tag_audio`. One dialogue definition (`dialogueSpans`: transcript words, else the engine's voice activity of Essential
+dialogue clips, else their spans) now drives cue suppression (cuts and, new, derived heroes), the plan, the solver's
+dialogue guard and Sound Check's music-over-voice segments. Measured: 192 labelled clips (LJ Speech, the starter kit, the
+synth kit, generated music / ambience / long effects; 139 the thresholds were tuned on, 53 held out) all classified right
+through the engine — rerun `apps/engine/test/audio-classify.test.ts`, `packages/audio-fx/test/audio-category.test.ts`,
+`apps/engine/test/sound-dialogue-consistency.test.ts`, `e2e/sound-autotag.spec.ts`. Limits: rules, not a trained model,
+checked on synthetic music and ambience and one speaker: real mixes (dialogue over loud music, walla, footsteps — read as
+music) will be wrong more often; no "Auto-tag audio types in the timeline" preference (tagging on add); VAD is
+energy-based on the media (clip volume automation is not seen).
 See [wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 1 verification": the Sound Library panel and Sound Design
 workspace, the engine library (60-sound Kenney CC0 kit, user folders with a declared licence, Jasper Synth), ten MCP
 tools, credits; inserts land on the frame to the sample (library sounds are registered with 50 ms of lead silence, and
