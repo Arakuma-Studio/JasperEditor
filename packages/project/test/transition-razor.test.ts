@@ -193,3 +193,35 @@ describe('razor inside a transition (WP6.5a item 1)', () => {
 		expect(t.duration).toBe(4);
 	});
 });
+
+describe('other edits that leave a clip shorter than its transition (WP6.5a)', () => {
+	it('trimming the far edge of a clip under a transition shortens the transition (it was refused, INV-010)', () => {
+		for (const mode of ['regular', 'ripple'] as const) {
+			const { h, vb } = withCrossfades();
+			const r = h.tx([{ type: 'clip.trim', clipId: vb, edge: 'out', deltaFrames: -95, mode }]);
+			expect(r.ok, `${mode}: ${JSON.stringify(!r.ok && r.errors)}`).toBe(true);
+			expect(checkInvariants(h.doc), mode).toEqual([]);
+			expect(onTrack(h, 'V1')[0]!.duration, mode).toBe(5);
+			expect(onTrack(h, 'A1')[0]!.duration, mode).toBe(5); // the linked audio was trimmed with it
+			expect(r.ok && r.warnings.some((w) => w.code === 'W_TRANSITION_SHORTENED'), mode).toBe(true);
+		}
+	});
+
+	it('an overwrite that shortens the clip keeping the transition shortens it', () => {
+		const { h } = withCrossfades();
+		const c = h.registerVideo({ audio: false });
+		const r = h.tx([
+			{
+				type: 'clip.place',
+				source: { mediaId: c },
+				at: 106,
+				mode: 'overwrite',
+				tracks: { video: 'V1' },
+				sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: 200 } },
+			},
+		]);
+		expect(r.ok, JSON.stringify(!r.ok && r.errors)).toBe(true);
+		expect(checkInvariants(h.doc)).toEqual([]);
+		expect(onTrack(h, 'V1')[0]!.duration).toBe(6);
+	});
+});

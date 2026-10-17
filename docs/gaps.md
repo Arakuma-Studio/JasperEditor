@@ -456,7 +456,8 @@ image-sequence export destination to attach it to yet, the header is English, an
 an interchange round trip (point markers `SFX: <type> (<weight>)`, re-imported as `manual` cues).
 Phase 6 → WP6.5a carry-over polish (UI / editing; [wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP6.5a"):
 the Razor / Add Edit / an insert edit inside a transition's span cuts the clips and shortens the transition to the part it
-still reaches (Premiere: the duration adjusts to the frames there are; it used to fail `E_INVARIANT` for any clip); "Undo /
+still reaches, and a trim or overwrite that leaves a clip shorter than its transition shortens it too (Premiere: the
+duration adjusts to the frames there are; these edits used to fail `E_INVARIANT`); "Undo /
 Redo <step>", the crash-recovery list and the built-in workspace names in the UI language (ids and stored names
 unchanged); a `SegmentedControl` radio group in `@jasper/ui` (one Tab stop, arrow keys / Home / End choose) for Essential
 Sound Role / Align and composition text alignment; Preferences ▸ Audio ▸ "Auto-tag audio types in the timeline" (off by

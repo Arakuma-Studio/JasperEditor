@@ -608,6 +608,18 @@ export function cleanupSequence(seq: DSeq, h: HandlerContext): void {
 		if (missing || separated || moved) {
 			delete seq.transitions[t.id];
 			h.warn('W_TRANSITION_REMOVED', `Transition ${t.id} removed because its clips were separated`);
+			continue;
+		}
+		// WP6.5a: an edit that left a clip shorter than its transition (a trim, an overwrite) shortens the transition to
+		// it, as a split does (fitTransitionsAfterSplit; INV-010) — same cut and alignment, so its handles still fit.
+		const fits = Math.min(out?.duration ?? Number.POSITIVE_INFINITY, inc?.duration ?? Number.POSITIVE_INFINITY);
+		if (Number.isFinite(fits) && t.duration > fits) {
+			const d = Math.max(1, fits);
+			h.warn(
+				'W_TRANSITION_SHORTENED',
+				`Transition ${t.id} shortened from ${t.duration} to ${d} frames to fit its clips`,
+			);
+			seq.transitions[t.id]!.duration = d;
 		}
 	}
 }

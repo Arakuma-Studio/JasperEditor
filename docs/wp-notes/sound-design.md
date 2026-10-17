@@ -7055,7 +7055,7 @@ jobs, proposals performance, media padding, beats, motion, mg cues, Sound Check 
 
 | # | Item | Result | Evidence (failed before the fix, passes after) |
 |---|---|---|---|
-| 1 | Razoring inside a transition failed `E_INVARIANT` (INV-010 "longer than clip") for any clip | **Fixed.** `splitClipAt` (`packages/project/src/commands/placement.ts`) shortens a transition the split leaves longer than the part it still touches (`fitTransitionsAfterSplit`, `W_TRANSITION_SHORTENED`); it stays on its edit with its alignment. Covers Razor, Add Edit (one clip / all tracks), Alt-razor one side, insert edits through a span; video and audio, centre / start / end alignments, dip to black, single-sided fades | `packages/project/test/transition-razor.test.ts` (5; all failed before, the first with `INV-010: Transition … is longer than clip …`); `e2e/sound-p65a-polish.spec.ts` "the Razor inside a video and an audio transition" (Razor tool, 30-frame cross dissolve + constant-power crossfade → both ≤ 8 frames, History "Razor") |
+| 1 | Razoring inside a transition failed `E_INVARIANT` (INV-010 "longer than clip") for any clip | **Fixed.** `splitClipAt` (`packages/project/src/commands/placement.ts`) shortens a transition the split leaves longer than the part it still touches (`fitTransitionsAfterSplit`, `W_TRANSITION_SHORTENED`); it stays on its edit with its alignment. Covers Razor, Add Edit (one clip / all tracks), Alt-razor one side, insert edits through a span; video and audio, centre / start / end alignments, dip to black, single-sided fades. Found while checking it: trimming a clip (regular or ripple) or overwriting part of it so that it is shorter than its transition was refused the same way — `cleanupSequence` now shortens any transition longer than its clips (same rule, `W_TRANSITION_SHORTENED`) | `packages/project/test/transition-razor.test.ts` (7; all failed before, the first with `INV-010: Transition … is longer than clip …`); `e2e/sound-p65a-polish.spec.ts` "the Razor inside a video and an audio transition" (Razor tool, 30-frame cross dissolve + constant-power crossfade → both ≤ 8 frames, History "Razor") |
 | 2 | "Undo / Redo <label>" built in English | **Fixed.** `apps/web/src/shell/history-labels.ts`: `t('Undo {0}', step)` / `t('Redo {0}', step)` — the step's label is translated as the History panel shows it (`translateName`: model names, sound-design templates, "Agent: …"); the crash-recovery list's journalled "Undo …" too. Found on the way: Edit ▸ Select All / Deselect All (commands that delegate to the Timeline) stayed English — their label is now a getter through `t` | `apps/web/test/wp65a-i18n.test.tsx` ("Deshacer Añadir marcador", "Rehacer …", "Deshacer Agente: Añadir marcador"; failed before with "Undo Add Marker"); e2e screenshot `es-edit-menu.png` |
 | 3 | Built-in workspace names not translated | **Fixed.** `workspaceName(record)` (`shell/workspaces/definitions.ts`, explicit `t()` per built-in id) at every place a name is shown (header tabs and overflow, Window ▸ Workspaces, Edit Workspaces, the palette, the "Saved changes" toast); records keep the English name (name clashes, export) and the ids never change; custom names are the user's | `wp65a-i18n.test.tsx` (store ids / names unchanged, Edit Workspaces lists "Diseño de sonido", "Edición"); e2e `workspace-tab-sound-design` = "Diseño de sonido" |
 | 4 | Essential Sound Role / Align without arrow keys | **Fixed.** `SegmentedControl` in `@jasper/ui` (`primitives/Segmented.tsx`): a WAI-ARIA radio group with roving tabindex (the checked option is the one Tab stop, else the first enabled), ← ↑ / → ↓ with wrap (RTL aware), Home / End, choosing follows focus, disabled options skipped, `data-keymap-local` so a consumed key runs no shortcut. Essential Sound Role / Align and the composition text alignment (a `radiogroup` of toggle buttons) use it | `packages/ui/test/primitives.test.tsx` (3), `apps/web/test/sound-fill-ui.test.tsx` "Role / Align are one Tab stop each…" (failed before: tabIndex `[0, 0, 0]`); e2e `role-keyboard.png` |
@@ -7115,8 +7115,14 @@ Every command ran on the build server through `remote.sh`:
   2 failed (plan encoder `container: 'mp4'` for a MOV request; no `AUDIO_CODEC_CHANGED`).
 - `pnpm typecheck` exit 0; `pnpm lint` (Biome, check-tokens / anime / layers / assets) exit 0; `node scripts/i18n.mjs
   --check`: es.json covers all 9 961 strings; `pnpm notices --check`: current.
-- `pnpm vitest run --project <p> --maxWorkers=8`: @jasper/project 171 files passed, @jasper/ui 3, @jasper/web 142,
-  @jasper/mcp 55 (2 skipped), @jasper/api 3 — all passed; @jasper/engine: see below.
+- `pnpm vitest run --project <p> --maxWorkers=8`: @jasper/project 2 108 passed (171 files), @jasper/ui 42, @jasper/web
+  1 051 (142 files), @jasper/mcp 586 passed / 8 skipped, @jasper/api 17 — all passed. @jasper/engine: 1 447 passed,
+  109 skipped, 2 failed in 4 files, none in code this package touches: `sound-design-motion` and
+  `sound-dialogue-consistency` make their fixtures with the system ffmpeg's libx264, which the build server's ffmpeg does
+  not have ("Unknown encoder 'libx264'", in `beforeAll`); `camtrack-solve` (120 s) and `tracking` "lands on the exact
+  frames (system ffmpeg)" (5 s) timed out — known load-sensitive (earlier verifications above). The export-related files
+  (`export`, `export-container`, `encoders`, `sound-export-credits`, `edit-structure-export`) passed again after the last
+  change (5 / 5 files).
 - `pnpm build` ok; `E2E_PORT=51801 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-p65a-polish.spec.ts`: 4 passed
   (30.6 s). Screenshots looked at (not committed): the dropped music clip tagged auto; Essential Sound "In this sequence:
   Music 1 · SFX 1" and the selection it makes; the Razor before / after (30-frame dissolve → 8 frames around the cut);
@@ -7128,7 +7134,5 @@ Every command ran on the build server through `remote.sh`:
 - 7k / 7l above (two History entries for a mixed Auto gain on; engine-composed messages in English).
 - Auto-tagging on add listens to the user's transactions in this editor window: clips an agent places, or that arrive in
   a new / duplicated sequence, are not tagged by it; a clip added while the engine is offline is not tagged later.
-- The Razor's shortening is only at the split: trimming a clip shorter than its transition, or an overwrite that
-  shortens the part keeping it, is still refused by INV-010 as before (not reported in any carry-over; same fix shape).
 - The container rule is ffmpeg's muxers as used here: Opus in MP4 and AV1 / VP9 in MOV are not offered (reported as
   changed when asked).
