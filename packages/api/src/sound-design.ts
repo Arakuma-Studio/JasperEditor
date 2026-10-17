@@ -558,36 +558,37 @@ export type SoundDesignPlanResult = z.infer<typeof SoundDesignPlanResultSchema>;
 
 export const SFX_REBALANCE_LIMITS = { maxClipIds: 2000, maxEvents: 2000 } as const;
 
-export const SfxRebalanceRequestSchema = z.strictObject({
-	projectId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'a project id'),
-	/** Default: the project's first sequence. */
-	sequenceId: id.optional(),
-	/** Only these sound effect clips (default: every sound effect of the sequence, in `range`). */
-	clipIds: z.array(id).min(1).max(SFX_REBALANCE_LIMITS.maxClipIds).optional(),
-	/** Sequence frames `[start, end)`: sound effects overlapping it (default the whole sequence). */
-	range: z
-		.strictObject({ start: frame, end: frame })
-		.refine((r) => r.end > r.start, 'range.end must be after range.start')
-		.optional(),
-	/** Delivery preset whose loudness and true peak the solver uses (default the sequence's). */
-	delivery: z.enum(SOUND_DELIVERIES).optional(),
-	/** `propose` (default): a proposal to review, one item per clip; `apply`: one undoable transaction. */
-	mode: z.enum(['propose', 'apply']).optional(),
-	/**
-	 * Gains the user set by hand (not the default level or an earlier solve): `keep` (default) leaves them; `replace`
-	 * solves them too. Clips named in `clipIds` are always solved.
-	 */
-	userGains: z.enum(['keep', 'replace']).optional(),
-	/** Proposal title (default "Rebalance SFX Levels: <sequence>"). */
-	label: z.string().min(1).max(200).optional(),
-	/**
-	 * Essential Sound ▸ Auto gain on (WP6.5b): the named clips are handed back to the solver in the SAME transaction
-	 * (`soundDesign.setAutoGain {auto: true}` first, then the solved gains): one undo step. Clips the solve leaves
-	 * unchanged lose their Auto gain off mark too; named clips it cannot measure take their recorded level. Needs
-	 * `mode: 'apply'` and `clipIds`.
-	 */
-	autoGain: z.literal(true).optional(),
-})
+export const SfxRebalanceRequestSchema = z
+	.strictObject({
+		projectId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'a project id'),
+		/** Default: the project's first sequence. */
+		sequenceId: id.optional(),
+		/** Only these sound effect clips (default: every sound effect of the sequence, in `range`). */
+		clipIds: z.array(id).min(1).max(SFX_REBALANCE_LIMITS.maxClipIds).optional(),
+		/** Sequence frames `[start, end)`: sound effects overlapping it (default the whole sequence). */
+		range: z
+			.strictObject({ start: frame, end: frame })
+			.refine((r) => r.end > r.start, 'range.end must be after range.start')
+			.optional(),
+		/** Delivery preset whose loudness and true peak the solver uses (default the sequence's). */
+		delivery: z.enum(SOUND_DELIVERIES).optional(),
+		/** `propose` (default): a proposal to review, one item per clip; `apply`: one undoable transaction. */
+		mode: z.enum(['propose', 'apply']).optional(),
+		/**
+		 * Gains the user set by hand (not the default level or an earlier solve): `keep` (default) leaves them; `replace`
+		 * solves them too. Clips named in `clipIds` are always solved.
+		 */
+		userGains: z.enum(['keep', 'replace']).optional(),
+		/** Proposal title (default "Rebalance SFX Levels: <sequence>"). */
+		label: z.string().min(1).max(200).optional(),
+		/**
+		 * Essential Sound ▸ Auto gain on (WP6.5b): the named clips are handed back to the solver in the SAME transaction
+		 * (`soundDesign.setAutoGain {auto: true}` first, then the solved gains): one undo step. Clips the solve leaves
+		 * unchanged lose their Auto gain off mark too; named clips it cannot measure take their recorded level. Needs
+		 * `mode: 'apply'` and `clipIds`.
+		 */
+		autoGain: z.literal(true).optional(),
+	})
 	.refine((r) => r.autoGain !== true || (r.mode === 'apply' && !!r.clipIds?.length), {
 		message: 'autoGain needs mode "apply" and clipIds',
 		path: ['autoGain'],

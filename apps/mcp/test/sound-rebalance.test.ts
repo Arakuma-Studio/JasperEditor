@@ -170,6 +170,38 @@ describe('rebalance_sfx', { timeout: 600_000 }, () => {
 		expect(again.applied).toBe(false);
 		expect(again.next).toMatch(/Nothing to change/);
 
+		// autoGain (WP6.5b): an Auto-gain-off clip handed back and solved in the rebalance's own transaction
+		const off = await ok<unknown>('apply_commands', {
+			projectId,
+			label: 'Auto gain off',
+			commands: [{ type: 'soundDesign.setAutoGain', clipIds: [sfxIds[0]], auto: false }],
+		});
+		expect(off).toBeDefined();
+		const offDoc = await documentOf(projectId);
+		expect(
+			((Object.values(offDoc.sequences)[0]!.clips[sfxIds[0]!] as SfxClip).sfx!.level as { manual?: boolean })
+				.manual,
+		).toBe(true);
+		const handed = await ok<{ applied: boolean; autoGain?: { clipIds: string[] } }>('rebalance_sfx', {
+			projectId,
+			mode: 'apply',
+			clipIds: [sfxIds[0]],
+			autoGain: true,
+		});
+		expect(handed.applied).toBe(true);
+		expect(handed.autoGain).toEqual({ clipIds: [sfxIds[0]] });
+		const handedDoc = await documentOf(projectId);
+		expect(
+			(
+				(Object.values(handedDoc.sequences)[0]!.clips[sfxIds[0]!] as SfxClip).sfx!.level as {
+					manual?: boolean;
+				}
+			).manual,
+		).toBeUndefined();
+		const noApply = await call('rebalance_sfx', { projectId, clipIds: [sfxIds[0]], autoGain: true });
+		expect(noApply.isError).toBe(true);
+		expect(textOf(noApply)).toMatch(/E_INVALID_PARAM.*autoGain needs mode/);
+
 		// strict arguments and typed refusals
 		const bad = await call('rebalance_sfx', { projectId, mode: 'yes' });
 		expect(bad.isError).toBe(true);

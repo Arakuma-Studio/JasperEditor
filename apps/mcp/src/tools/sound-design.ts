@@ -2016,6 +2016,12 @@ function registerRebalanceSfx(ctx: ToolContext): void {
 					.optional()
 					.describe('Gains set by hand: keep (default) or solve them too'),
 				label: z.string().min(1).max(200).optional().describe('Proposal title'),
+				autoGain: z
+					.literal(true)
+					.optional()
+					.describe(
+						'Essential Sound ▸ Auto gain on for clipIds (mode "apply" only): the same undo step also hands those clips back to Auto gain, also the ones the solve leaves unchanged or cannot measure',
+					),
 				timeoutSeconds: z
 					.number()
 					.int()
@@ -2027,6 +2033,12 @@ function registerRebalanceSfx(ctx: ToolContext): void {
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async (a, extra) => {
+			if (a.autoGain && (a.mode !== 'apply' || !a.clipIds?.length))
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'autoGain needs mode "apply" and clipIds',
+					'Name the clips to hand back to Auto gain and pass mode "apply" (only when the user asked you to apply).',
+				);
 			const { doc } = await loadDoc(ctx, a.projectId);
 			const seq = pickSequence(doc, a.sequenceId);
 			let range: { start: number; end: number } | undefined;
@@ -2050,6 +2062,7 @@ function registerRebalanceSfx(ctx: ToolContext): void {
 						mode: a.mode ?? 'propose',
 						...(a.userGains ? { userGains: a.userGains } : {}),
 						...(a.label ? { label: a.label } : {}),
+						...(a.autoGain ? { autoGain: true as const } : {}),
 					},
 					extra.signal,
 				),
@@ -2089,6 +2102,7 @@ function registerRebalanceSfx(ctx: ToolContext): void {
 				...(rep.skipped.length ? { skipped: rep.skipped } : {}),
 				...(rep.conflicts.length ? { conflicts: rep.conflicts } : {}),
 				...(rep.warnings.length ? { warnings: rep.warnings } : {}),
+				...(r.autoGain ? { autoGain: r.autoGain } : {}),
 				levels: rep.levels,
 				next: r.proposalId
 					? `Nothing was changed. Ask the user to review proposal ${r.proposalId} in the editor (Review panel), then wait_for_proposal. You cannot hear: give them the timecodes of the limited events to listen to.`
