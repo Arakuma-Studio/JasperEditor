@@ -196,7 +196,8 @@ export class MotionService {
 			kind: 'motion-analysis',
 			title: `Picture motion analysis (${seconds.toFixed(1)} s)`,
 			priority: seconds <= 60 ? 'interactive' : 'user',
-			cpuSlots: 2,
+			// the render is an export (its threads follow the slots): half the machine, starting with whatever is free
+			cpuSlots: Math.max(2, Math.ceil(this.core.queue.totalSlots / 2)),
 			minSlots: 1,
 			...(opts.origin ? { origin: opts.origin } : {}),
 			...(opts.projectId ? { projectId: opts.projectId } : {}),

@@ -132,7 +132,8 @@ function lucasKanade(
 	const ix = new Float64Array(n);
 	const iy = new Float64Array(n);
 	const it = new Float64Array(n);
-	const px = (x: number, y: number) => prev[Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))]!;
+	const px = (x: number, y: number) =>
+		prev[Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))]!;
 	let k = 0;
 	for (let y = 0; y < b; y++)
 		for (let x = 0; x < b; x++, k++) {
@@ -175,7 +176,12 @@ function parabola(a: number, b: number, c: number): number {
  * The motion between two gray frames of `w × h` pixels (row-major, one byte per pixel). Frames of the wrong length or
  * an unusable size measure as still.
  */
-export function measureFrameMotion(prev: Uint8Array, cur: Uint8Array, w: number, h: number): PixelFrameMotion {
+export function measureFrameMotion(
+	prev: Uint8Array,
+	cur: Uint8Array,
+	w: number,
+	h: number,
+): PixelFrameMotion {
 	if (
 		!Number.isInteger(w) ||
 		!Number.isInteger(h) ||
@@ -314,10 +320,16 @@ export function measureFrameMotion(prev: Uint8Array, cur: Uint8Array, w: number,
 }
 
 /** The analysis size of a picture: long side `longSide` (default 128), even sides, at least 2 blocks each way. */
-export function pixelAnalysisSize(width: number, height: number, longSide = 128): { width: number; height: number } {
+export function pixelAnalysisSize(
+	width: number,
+	height: number,
+	longSide = 128,
+): { width: number; height: number } {
 	const w = Number.isFinite(width) && width > 0 ? width : 16;
 	const h = Number.isFinite(height) && height > 0 ? height : 9;
 	const L = Math.max(4 * PIXEL_BLOCK, Math.min(512, Math.round(longSide)));
 	const even = (x: number) => Math.max(2 * PIXEL_BLOCK, Math.round(x / 2) * 2);
-	return w >= h ? { width: even(L), height: even((L * h) / w) } : { width: even((L * w) / h), height: even(L) };
+	return w >= h
+		? { width: even(L), height: even((L * h) / w) }
+		: { width: even((L * w) / h), height: even(L) };
 }

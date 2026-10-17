@@ -90,7 +90,10 @@ function seed(doc: ProjectDocument): string {
 	writeFileSync(
 		file,
 		JSON.stringify(
-			makeEnvelope({ ...doc, projectId }, { revision: 3, savedAt: '2026-10-17T00:00:00.000Z', platform: 'test' }),
+			makeEnvelope(
+				{ ...doc, projectId },
+				{ revision: 3, savedAt: '2026-10-17T00:00:00.000Z', platform: 'test' },
+			),
 		),
 	);
 	return projectId;
@@ -174,14 +177,22 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 		expect(Math.abs(moving[15]! / 0.2723 - 1)).toBeLessThan(0.15);
 		expect(move.peakSpeed!).toBeLessThan(0.45);
 		expect(Math.min(...analysed.curve.vx.slice(31, 61))).toBeGreaterThan(0.15);
-		const again = await wait(((await post('/api/sound-design/motion', { projectId })).body as { id: string }).id);
-		expect(MotionAnalysisResultSchema.parse(again.result)).toMatchObject({ cached: true, fingerprint: analysed.fingerprint });
+		const again = await wait(
+			((await post('/api/sound-design/motion', { projectId })).body as { id: string }).id,
+		);
+		expect(MotionAnalysisResultSchema.parse(again.result)).toMatchObject({
+			cached: true,
+			fingerprint: analysed.fingerprint,
+		});
 	}, 180_000);
 
 	it('pixel cues: pending with the job ids first, then moves and lands that resolve back to their frames', async () => {
 		const { b, clipId, mediaId } = boxDoc(10);
 		const projectId = seed(b.doc);
-		const { first, final, pending } = await cues({ projectId, opts: { sources: ['pixel'], density: 'rich' } });
+		const { first, final, pending } = await cues({
+			projectId,
+			opts: { sources: ['pixel'], density: 'rich' },
+		});
 		expect(pending.length).toBe(1);
 		expect(first.analysis?.pixel).toMatchObject({ state: 'pending', jobIds: pending });
 		expect(first.cues.filter((c) => c.from === 'pixel')).toEqual([]);
@@ -203,7 +214,8 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 		expect(final.engineCues?.length).toBe(px.length);
 		// deterministic
 		const again = SoundCuesResponseSchema.parse(
-			(await post('/api/sound-design/cues', { projectId, opts: { sources: ['pixel'], density: 'rich' } })).body,
+			(await post('/api/sound-design/cues', { projectId, opts: { sources: ['pixel'], density: 'rich' } }))
+				.body,
 		);
 		expect(again.engineCues).toEqual(final.engineCues);
 		expect(again.cues).toEqual(final.cues);
@@ -216,40 +228,73 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 		] as const) {
 			const b = new DocBuilder('hd-1080p-30', 400 + speed);
 			const id = b.addMedia(media.cut);
-			const r = b.tx([{ type: 'clip.place', source: { mediaId: id }, at: 0, tracks: { video: 'V1' }, ref: '$v' }]);
+			const r = b.tx([
+				{ type: 'clip.place', source: { mediaId: id }, at: 0, tracks: { video: 'V1' }, ref: '$v' },
+			]);
 			if (speed !== 1) b.tx([{ type: 'clip.setSpeed', clipIds: [r.refs.$v!], rate: speed, ripple: false }]);
 			const projectId = seed(b.doc);
 			const { final, pending } = await cues({ projectId, opts: { sources: ['scene'] } });
 			if (speed === 1) expect(pending.length).toBe(1);
 			const sc = final.cues.filter((c) => c.from === 'scene');
-			expect(sc.map((c) => [c.frame, c.kind]), JSON.stringify(final)).toEqual([[frame, 'cut']]);
+			expect(
+				sc.map((c) => [c.frame, c.kind]),
+				JSON.stringify(final),
+			).toEqual([[frame, 'cut']]);
 			expect(resolveCueAnchor(b.doc, b.doc.sequences[b.seqId]!, sc[0]!.anchor)).toBe(frame);
 			expect(final.analysis?.scene).toMatchObject({ state: 'ready', found: 1 });
 		}
 	}, 180_000);
 
 	it('POST /api/audio/beats on a click track: 120 BPM, beats within 5 ms, downbeats; cached; typed refusals', async () => {
-		const r = await post('/api/audio/beats', { mediaKey: media.click.mediaKey, startSeconds: 0, durationSeconds: 12 });
+		const r = await post('/api/audio/beats', {
+			mediaKey: media.click.mediaKey,
+			startSeconds: 0,
+			durationSeconds: 12,
+		});
 		expect(r.status, JSON.stringify(r.body)).toBe(200);
 		const res = BeatsResultSchema.parse(r.body);
 		expect(Math.abs(res.bpm! - 120)).toBeLessThan(1);
 		const truth = Array.from({ length: 24 }, (_, k) => 0.25 + 0.5 * k);
 		for (const b of res.beats) expect(Math.min(...truth.map((t) => Math.abs(t - b)))).toBeLessThan(0.005);
 		expect(res.downbeats?.length).toBeGreaterThan(2);
-		for (const d of res.downbeats!) expect(Math.min(...truth.filter((_, k) => k % 4 === 0).map((t) => Math.abs(t - d)))).toBeLessThan(0.005);
+		for (const d of res.downbeats!)
+			expect(Math.min(...truth.filter((_, k) => k % 4 === 0).map((t) => Math.abs(t - d)))).toBeLessThan(
+				0.005,
+			);
 		expect(res.cached).toBe(false);
-		const again = BeatsResultSchema.parse((await post('/api/audio/beats', { mediaKey: media.click.mediaKey, startSeconds: 0, durationSeconds: 12 })).body);
+		const again = BeatsResultSchema.parse(
+			(
+				await post('/api/audio/beats', {
+					mediaKey: media.click.mediaKey,
+					startSeconds: 0,
+					durationSeconds: 12,
+				})
+			).body,
+		);
 		expect(again).toEqual({ ...res, cached: true });
-		expect((await post('/api/audio/beats', { mediaKey: 'mk_nope', startSeconds: 0, durationSeconds: 1 })).status).toBe(404);
-		expect((await post('/api/audio/beats', { mediaKey: media.box.mediaKey, startSeconds: 0, durationSeconds: 1 })).status).toBe(400);
-		for (const bad of [{}, { mediaKey: media.click.mediaKey }, { mediaKey: media.click.mediaKey, startSeconds: -1, durationSeconds: 1 }, { mediaKey: media.click.mediaKey, startSeconds: 0, durationSeconds: 99_999 }, { mediaKey: media.click.mediaKey, startSeconds: 0, durationSeconds: 1, extra: 1 }])
+		expect(
+			(await post('/api/audio/beats', { mediaKey: 'mk_nope', startSeconds: 0, durationSeconds: 1 })).status,
+		).toBe(404);
+		expect(
+			(await post('/api/audio/beats', { mediaKey: media.box.mediaKey, startSeconds: 0, durationSeconds: 1 }))
+				.status,
+		).toBe(400);
+		for (const bad of [
+			{},
+			{ mediaKey: media.click.mediaKey },
+			{ mediaKey: media.click.mediaKey, startSeconds: -1, durationSeconds: 1 },
+			{ mediaKey: media.click.mediaKey, startSeconds: 0, durationSeconds: 99_999 },
+			{ mediaKey: media.click.mediaKey, startSeconds: 0, durationSeconds: 1, extra: 1 },
+		])
 			expect((await post('/api/audio/beats', bad)).status, JSON.stringify(bad)).toBe(400);
 	}, 120_000);
 
 	it('beat cues of an Essential music clip within ±1 frame of the clicks; snapToBeats moves a move ≤ 2 frames', async () => {
 		const b = new DocBuilder('hd-1080p-30', 500);
 		const music = b.addMedia(media.click);
-		const r = b.tx([{ type: 'clip.place', source: { mediaId: music }, at: 0, tracks: { audio: 'A1' }, ref: '$m' }]);
+		const r = b.tx([
+			{ type: 'clip.place', source: { mediaId: music }, at: 0, tracks: { audio: 'A1' }, ref: '$m' },
+		]);
 		b.tx([{ type: 'essentialSound.setType', clipIds: [r.refs.$m!], audioType: 'music' }]);
 		const projectId = seed(b.doc);
 		const { final, pending } = await cues({ projectId, opts: { sources: ['beat'], density: 'rich' } });
@@ -258,14 +303,18 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 		expect(beats.length).toBeGreaterThanOrEqual(20);
 		for (const c of beats) {
 			const t = (c.anchor as { mediaSec: number }).mediaSec;
-			expect(Math.abs(c.frame - Math.round(((Math.round((t - 0.25) / 0.5) * 0.5 + 0.25) * 30)))).toBeLessThanOrEqual(1);
+			expect(
+				Math.abs(c.frame - Math.round((Math.round((t - 0.25) / 0.5) * 0.5 + 0.25) * 30)),
+			).toBeLessThanOrEqual(1);
 			expect(resolveCueAnchor(b.doc, b.doc.sequences[b.seqId]!, c.anchor)).toBe(c.frame);
 			expect(c.weight).not.toBe('hero');
 		}
 		expect(beats.filter((c) => c.weight === 'support').length).toBeGreaterThan(2);
 		// a keyframed move 2 frames off a beat snaps onto it (and records the offset)
 		const still = b.addMedia(media.box);
-		const v = b.tx([{ type: 'clip.place', source: { mediaId: still }, at: 0, tracks: { video: 'V2' }, ref: '$s' }]);
+		const v = b.tx([
+			{ type: 'clip.place', source: { mediaId: still }, at: 0, tracks: { video: 'V2' }, ref: '$s' },
+		]);
 		const path = ['clip', v.refs.$s!, 'transform', 'position'];
 		b.tx([
 			{ type: 'param.setAnimated', target: path, animated: true, at: { frames: 0 } },
@@ -273,14 +322,23 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 			{ type: 'keyframe.add', target: path, at: { frames: 47 }, value: [1500, 540], interpolation: 'linear' },
 		]);
 		const pid2 = seed(b.doc);
-		const plain = SoundCuesResponseSchema.parse((await post('/api/sound-design/cues', { projectId: pid2, opts: { sources: ['keyframes'] } })).body);
+		const plain = SoundCuesResponseSchema.parse(
+			(await post('/api/sound-design/cues', { projectId: pid2, opts: { sources: ['keyframes'] } })).body,
+		);
 		const move = plain.cues.find((c) => c.kind === 'move')!;
 		const snapped = SoundCuesResponseSchema.parse(
-			(await post('/api/sound-design/cues', { projectId: pid2, opts: { sources: ['keyframes'], snapToBeats: true } })).body,
+			(
+				await post('/api/sound-design/cues', {
+					projectId: pid2,
+					opts: { sources: ['keyframes'], snapToBeats: true },
+				})
+			).body,
 		);
 		const m2 = snapped.cues.find((c) => c.kind === 'move')!;
 		const beatFrames = beats.map((c) => c.frame);
-		const nearest = beatFrames.reduce((a, f) => (Math.abs(f - move.frame) < Math.abs(a - move.frame) ? f : a));
+		const nearest = beatFrames.reduce((a, f) =>
+			Math.abs(f - move.frame) < Math.abs(a - move.frame) ? f : a,
+		);
 		if (Math.abs(nearest - move.frame) <= 2 && nearest !== move.frame) {
 			expect(m2.frame).toBe(nearest);
 			expect(m2.anchorOffset).toBe(nearest - move.frame);
@@ -295,13 +353,19 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 	it('the plan job measures picture motion inline and plans its cues', async () => {
 		const { b } = boxDoc(20);
 		const projectId = seed(b.doc);
-		const r = await post('/api/sound-design/plan', { projectId, style: { cueSources: ['pixel'], density: 'rich' } });
+		const r = await post('/api/sound-design/plan', {
+			projectId,
+			style: { cueSources: ['pixel'], density: 'rich' },
+		});
 		expect(r.status, JSON.stringify(r.body)).toBe(202);
 		const job = await wait((r.body as { id: string }).id);
 		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
 		const res = job.result as SoundDesignPlanResult;
 		const keys = [...res.report.events.map((e) => e.cueKey), ...res.report.skipped.map((s) => s.cueKey)];
-		expect(keys.some((k) => typeof k === 'string' && k.startsWith('pixel:')), JSON.stringify(res.report)).toBe(true);
+		expect(
+			keys.some((k) => typeof k === 'string' && k.startsWith('pixel:')),
+			JSON.stringify(res.report),
+		).toBe(true);
 		// the analysis it made is cached for the cue route
 		const { pending } = await cues({ projectId, opts: { sources: ['pixel'] } });
 		expect(pending).toEqual([]);
@@ -313,7 +377,12 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 			{
 				type: 'soundCue.add',
 				cues: [
-					{ frame: analysed.events.find((e) => e.kind === 'land')!.frame, kind: 'land', weight: 'support', source: 'derived' },
+					{
+						frame: analysed.events.find((e) => e.kind === 'land')!.frame,
+						kind: 'land',
+						weight: 'support',
+						source: 'derived',
+					},
 					{ frame: 100, kind: 'land', weight: 'support', source: 'derived' },
 				],
 			},
@@ -327,16 +396,24 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 			expect(r.status, JSON.stringify(r.body)).toBe(202);
 			const job = await wait((r.body as { id: string }).id);
 			expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
-			return (job.result as SoundCheckResult).report.issues.filter((i) => i.code === 'NO_PICTURE_EVENT').map((i) => i.frame);
+			return (job.result as SoundCheckResult).report.issues
+				.filter((i) => i.code === 'NO_PICTURE_EVENT')
+				.map((i) => i.frame);
 		};
 		expect(await check()).toEqual([100]);
 		// another picture that was never analysed: footage motion is unknown, both are flagged
 		const other = boxDoc(5);
-		other.b.tx([{ type: 'soundCue.add', cues: [{ frame: 65, kind: 'land', weight: 'support', source: 'derived' }] }]);
+		other.b.tx([
+			{ type: 'soundCue.add', cues: [{ frame: 65, kind: 'land', weight: 'support', source: 'derived' }] },
+		]);
 		const pid = seed(other.b.doc);
 		const r = await post('/api/sound-design/check', { projectId: pid });
 		const job = await wait((r.body as { id: string }).id);
-		expect((job.result as SoundCheckResult).report.issues.filter((i) => i.code === 'NO_PICTURE_EVENT').map((i) => i.frame)).toEqual([65]);
+		expect(
+			(job.result as SoundCheckResult).report.issues
+				.filter((i) => i.code === 'NO_PICTURE_EVENT')
+				.map((i) => i.frame),
+		).toEqual([65]);
 	}, 240_000);
 
 	it('cancellation, refusals and the range cap', async () => {
@@ -347,31 +424,54 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 		const id = (r.body as { id: string }).id;
 		coreServices(app).queue.cancel(id);
 		expect((await wait(id)).state).toBe('cancelled');
-		for (const bad of [{}, { projectId: '../x' }, { projectId, range: { start: 5, end: 2 } }, { projectId, extra: true }])
-			expect((await post('/api/sound-design/motion', bad)).status, JSON.stringify(bad)).toBe(bad.projectId === '../x' ? 400 : 400);
+		for (const bad of [
+			{},
+			{ projectId: '../x' },
+			{ projectId, range: { start: 5, end: 2 } },
+			{ projectId, extra: true },
+		])
+			expect((await post('/api/sound-design/motion', bad)).status, JSON.stringify(bad)).toBe(
+				bad.projectId === '../x' ? 400 : 400,
+			);
 		expect((await post('/api/sound-design/motion', { projectId: 'prj_9999999999999999' })).status).toBe(404);
 		expect((await post('/api/sound-design/motion', { projectId, sequenceId: 'seq_nope' })).status).toBe(404);
-		expect((await post('/api/sound-design/motion', { projectId, range: { start: 500, end: 600 } })).body).toMatchObject({ code: 'RANGE_EMPTY' });
+		expect(
+			(await post('/api/sound-design/motion', { projectId, range: { start: 500, end: 600 } })).body,
+		).toMatchObject({ code: 'RANGE_EMPTY' });
 		const long = boxDoc(20_000);
 		const pl = seed(long.b.doc);
-		expect((await post('/api/sound-design/motion', { projectId: pl, range: { start: 0, end: 19_000 } })).body).toMatchObject({
+		expect(
+			(await post('/api/sound-design/motion', { projectId: pl, range: { start: 0, end: 19_000 } })).body,
+		).toMatchObject({
 			code: 'RANGE_TOO_LONG',
 		});
 	}, 120_000);
 
-	it.skipIf(!process.env.SOUND_PERF)('perf: one minute of 1080p footage', async () => {
-		boxVideo(join(dir, 'box-1080.mp4'), 60);
-		const m = await register(app, join(dir, 'box-1080.mp4'));
-		const b = new DocBuilder('hd-1080p-30', 900);
-		const id = b.addMedia(m);
-		b.tx([{ type: 'clip.place', source: { mediaId: id }, at: 0, tracks: { video: 'V1' } }]);
-		const projectId = seed(b.doc);
-		const t0 = Date.now();
-		const job = await wait(((await post('/api/sound-design/motion', { projectId })).body as { id: string }).id);
-		timings.footage1080p60s = Date.now() - t0;
-		expect(job.state).toBe('succeeded');
-		const res = MotionAnalysisResultSchema.parse(job.result);
-		timings.render = res.timings.renderMs;
-		timings.measure = res.timings.analyseMs;
-	}, 600_000);
+	it.skipIf(!process.env.SOUND_PERF)(
+		'perf: one minute of 1080p footage',
+		async () => {
+			boxVideo(join(dir, 'box-1080.mp4'), 60);
+			const m = await register(app, join(dir, 'box-1080.mp4'));
+			const b = new DocBuilder('hd-1080p-30', 900);
+			const id = b.addMedia(m);
+			b.tx([{ type: 'clip.place', source: { mediaId: id }, at: 0, tracks: { video: 'V1' } }]);
+			const projectId = seed(b.doc);
+			const t0 = Date.now();
+			const job = await wait(
+				((await post('/api/sound-design/motion', { projectId })).body as { id: string }).id,
+			);
+			timings.footage1080p60s = Date.now() - t0;
+			expect(job.state).toBe('succeeded');
+			const res = MotionAnalysisResultSchema.parse(job.result);
+			timings.render = res.timings.renderMs;
+			timings.measure = res.timings.analyseMs;
+			timings.frames = res.frames;
+			if (process.env.SOUND_PERF_OUT)
+				writeFileSync(
+					process.env.SOUND_PERF_OUT,
+					JSON.stringify({ ...timings, path: res.renderPath, events: res.events.length }),
+				);
+		},
+		600_000,
+	);
 });

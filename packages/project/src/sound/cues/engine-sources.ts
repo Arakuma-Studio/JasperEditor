@@ -15,10 +15,9 @@
 import { clipEnd } from '../../derive/index.ts';
 import type { ProjectDocument } from '../../schema/document.ts';
 import type { Clip, Sequence } from '../../schema/sequence.ts';
-import type { CueAnchor } from '../../schema/sound.ts';
+import type { CueAnchor, CueKind } from '../../schema/sound.ts';
 import { FLICKS_PER_SECOND, type Rational } from '../../time.ts';
 import { clipMediaTimeFn, frameAtContent, type TimedClip } from '../../time-remap/model.ts';
-import type { CueKind } from '../../schema/sound.ts';
 import { typesForVisualKind } from '../taxonomy.ts';
 import type { DerivedCue, ExtraCue } from './types.ts';
 import { clipName } from './util.ts';
@@ -34,7 +33,12 @@ const SOFT_SCORE_SHARE = 0.6;
 
 /** Beat snapping (`deriveCues` `snapToBeats`): the kinds that tolerate it, at most this many frames. */
 export const BEAT_SNAP_FRAMES = 2;
-export const BEAT_SNAP_KINDS: ReadonlySet<string> = new Set<CueKind>(['move', 'transition', 'emphasis', 'reveal']);
+export const BEAT_SNAP_KINDS: ReadonlySet<string> = new Set<CueKind>([
+	'move',
+	'transition',
+	'emphasis',
+	'reveal',
+]);
 
 const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
@@ -108,7 +112,9 @@ export function footageClips(
 		if (!rate) return [];
 		const r = rangeOf(seq, range);
 		const shown = new Set(
-			(Array.isArray(seq.videoTracks) ? seq.videoTracks : []).filter((t) => t && t.output !== false).map((t) => t.id),
+			(Array.isArray(seq.videoTracks) ? seq.videoTracks : [])
+				.filter((t) => t && t.output !== false)
+				.map((t) => t.id),
 		);
 		const out: EngineSourceClip[] = [];
 		for (const c of Object.values(seq.clips ?? {})) {
@@ -201,11 +207,18 @@ function lowerBound(xs: readonly number[], v: number): number {
 function softChange(d: SceneCutData, t: number): boolean {
 	const times = d.times;
 	const scores = d.scores;
-	if (!times || !scores || !fin(d.threshold) || d.threshold <= 0 || times.length !== scores.length) return false;
+	if (!times || !scores || !fin(d.threshold) || d.threshold <= 0 || times.length !== scores.length)
+		return false;
 	const i = lowerBound(times, t - SHOT_TOLERANCE_SEC);
 	if (i <= 0 || i >= times.length) return false;
 	const lim = SOFT_SCORE_SHARE * d.threshold;
-	return fin(scores[i - 1]) && scores[i - 1]! >= lim && i + 1 < scores.length && fin(scores[i + 1]) && scores[i + 1]! >= lim;
+	return (
+		fin(scores[i - 1]) &&
+		scores[i - 1]! >= lim &&
+		i + 1 < scores.length &&
+		fin(scores[i + 1]) &&
+		scores[i + 1]! >= lim
+	);
 }
 
 /**
@@ -228,7 +241,8 @@ export function sceneCutCues(
 			const c = seq.clips[fc.clipId]!;
 			const cuts = [...data.cuts].filter(fin).sort((a, b) => a - b);
 			const at = clipMediaTimeFn(c as unknown as TimedClip, rate);
-			const shot = (mFlicks: number) => lowerBound(cuts, mFlicks / FLICKS_PER_SECOND + SHOT_TOLERANCE_SEC + 1e-12);
+			const shot = (mFlicks: number) =>
+				lowerBound(cuts, mFlicks / FLICKS_PER_SECOND + SHOT_TOLERANCE_SEC + 1e-12);
 			// The clip's first frame is an edit point (the edits source), not a change inside the footage.
 			const from = Math.max(c.start + 1, fc.start);
 			const to = Math.min(fc.end, from + MAX_SCENE_SCAN_FRAMES);
@@ -268,7 +282,11 @@ export function sceneCutCues(
 }
 
 /** The beats of one music clip's range (`/api/audio/beats`): media seconds, optional downbeats, tempo. */
-export type BeatData = { beats: readonly number[]; downbeats?: readonly number[] | null; bpm?: number | null };
+export type BeatData = {
+	beats: readonly number[];
+	downbeats?: readonly number[] | null;
+	bpm?: number | null;
+};
 
 /** The sequence frame that plays media time `sec` of a clip (rounded like `resolveCueAnchor`), or null. */
 export function clipFrameOfMediaSec(c: Clip, sec: number, rate: Rational): number | null {
@@ -339,7 +357,10 @@ export function snapCuesToBeats(
 	beatFrames: readonly number[],
 	maxFrames = BEAT_SNAP_FRAMES,
 ): { cues: DerivedCue[]; snapped: number } {
-	const beats = [...beatFrames].filter((f) => Number.isInteger(f)).sort((a, b) => a - b);
+	if (!Array.isArray(cues)) return { cues: [], snapped: 0 };
+	const beats = (Array.isArray(beatFrames) ? beatFrames : [])
+		.filter((f) => Number.isInteger(f))
+		.sort((a, b) => a - b);
 	const lim = Math.max(0, Math.min(BEAT_SNAP_FRAMES, Math.floor(fin(maxFrames) ? maxFrames : 0)));
 	if (!beats.length || lim === 0) return { cues: [...cues], snapped: 0 };
 	let snapped = 0;
@@ -388,7 +409,11 @@ export function sceneAnchorAt(
 		if (!rate || !Number.isInteger(frame)) return null;
 		let best: Clip | null = null;
 		for (const c of clips)
-			if (frame >= c.start && frame < clipEnd(c) && (!best || index.get(c.trackId)! > index.get(best.trackId)!))
+			if (
+				frame >= c.start &&
+				frame < clipEnd(c) &&
+				(!best || index.get(c.trackId)! > index.get(best.trackId)!)
+			)
 				best = c;
 		if (!best) return null;
 		const m = clipMediaTimeFn(best as unknown as TimedClip, rate)(frame);

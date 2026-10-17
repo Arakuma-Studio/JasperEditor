@@ -25,6 +25,7 @@ export {
 	pixelMotionEvents,
 } from './curve.ts';
 export { deriveCues, MAX_DERIVED_CUES } from './derive.ts';
+export { DIALOGUE_BRIDGE_SEC, DIALOGUE_PAD_SEC, dialogueRanges, sequenceDialogueRanges } from './edits.ts';
 export {
 	BEAT_SNAP_FRAMES,
 	BEAT_SNAP_KINDS,
@@ -42,21 +43,6 @@ export {
 	sceneCutCues,
 	snapCuesToBeats,
 } from './engine-sources.ts';
-export {
-	type PixelFrameMotion,
-	measureFrameMotion,
-	PIXEL_BLOCK,
-	PIXEL_COARSE_SEARCH,
-	PIXEL_MATCH_GAIN,
-	PIXEL_MATCH_MAX_COST,
-	PIXEL_MIN_BLOCKS,
-	PIXEL_MIN_VECTOR,
-	PIXEL_REFINE,
-	PIXEL_STILL_COST,
-	PIXEL_TEXTURE_MIN,
-	pixelAnalysisSize,
-} from './pixel-motion.ts';
-export { DIALOGUE_BRIDGE_SEC, DIALOGUE_PAD_SEC, dialogueRanges, sequenceDialogueRanges } from './edits.ts';
 export { parseSfxRequest } from './markers.ts';
 export { MG_CONFIDENCE, type MgCuePhases, mgCuePhases, mgPhases } from './mg.ts';
 export {
@@ -68,6 +54,20 @@ export {
 	MOVE_ON,
 	speedSegments,
 } from './motion.ts';
+export {
+	measureFrameMotion,
+	PIXEL_BLOCK,
+	PIXEL_COARSE_SEARCH,
+	PIXEL_MATCH_GAIN,
+	PIXEL_MATCH_MAX_COST,
+	PIXEL_MIN_BLOCKS,
+	PIXEL_MIN_VECTOR,
+	PIXEL_REFINE,
+	PIXEL_STILL_COST,
+	PIXEL_TEXTURE_MIN,
+	type PixelFrameMotion,
+	pixelAnalysisSize,
+} from './pixel-motion.ts';
 export { PATTERN_MAX_PER_CLIP, PATTERN_MAX_PER_SEC, thinPattern, typewriterOffsets } from './text.ts';
 export { type TransitionClass, transitionClass, transitionTravel, transitionWindow } from './transitions.ts';
 export * from './types.ts';

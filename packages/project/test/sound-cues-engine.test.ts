@@ -1,6 +1,7 @@
 // Engine cue sources (spec 12 §2.2 "Scene cuts (engine), beats (engine), pixel motion curve (engine, P6)", P6-R2;
 // wp-note "Phase 6 → WP6.2"): the pure parts — frame-pair motion, curve events, scene-cut and beat mapping through
 // speed / reverse / time remap, the scene anchor's round trip, beat snapping, and how deriveCues merges them.
+import { fuzzScale, fuzzSeed, mutateJson, Rng } from '@jasper/testkit/fuzz';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -8,8 +9,8 @@ import {
 	applyTransaction,
 	beatCues,
 	checkInvariants,
-	createCounterIdSource,
 	clipMediaTimeFn,
+	createCounterIdSource,
 	cueAnchorFrame,
 	cueInputFromDerived,
 	deriveCues,
@@ -193,7 +194,9 @@ describe('measureFrameMotion', () => {
 /** A curve of `n` frames from per-frame functions. */
 function curve(
 	n: number,
-	f: (i: number) => Partial<{ speed: number; vx: number; vy: number; area: number; cx: number; residual: number }>,
+	f: (
+		i: number,
+	) => Partial<{ speed: number; vx: number; vy: number; area: number; cx: number; residual: number }>,
 	startFrame = 100,
 ): PixelMotionCurve {
 	const s = { speed: [0], vx: [0], vy: [0], area: [0], cx: [0.5], residual: [0] } as Record<string, number[]>;
@@ -227,13 +230,22 @@ describe('pixelMotionEvents (shared thresholds with the keyframe source)', () =>
 		const ev = pixelMotionEvents(c);
 		const move = ev.find((e) => e.kind === 'move');
 		const land = ev.find((e) => e.kind === 'land');
-		expect(move).toMatchObject({ kind: 'move', start: 120, end: 140, frame: 129, global: false, direction: 'right' });
+		expect(move).toMatchObject({
+			kind: 'move',
+			start: 120,
+			end: 140,
+			frame: 129,
+			global: false,
+			direction: 'right',
+		});
 		expect(move?.kind === 'move' && move.panSweep).toBeTruthy();
 		expect(land).toMatchObject({ kind: 'land', frame: 139, how: 'abrupt stop' });
 	});
 
 	it('an ease-out settle gets no land; a slow drift under MOVE_ON is no move', () => {
-		const ease = curve(80, (i) => (i >= 10 && i < 40 ? { speed: 0.8 * (1 - (i - 10) / 30) ** 2 + 0.001 } : {}));
+		const ease = curve(80, (i) =>
+			i >= 10 && i < 40 ? { speed: 0.8 * (1 - (i - 10) / 30) ** 2 + 0.001 } : {},
+		);
 		const ev = pixelMotionEvents(ease);
 		expect(ev.filter((e) => e.kind === 'move')).toHaveLength(1);
 		expect(ev.some((e) => e.kind === 'land')).toBe(false);
@@ -280,10 +292,17 @@ describe('pixelMotionEvents (shared thresholds with the keyframe source)', () =>
 		const c = curve(80, (i) => (i >= 20 && i <= 39 ? { speed: 2, area: 0.6, vx: 2 } : {}));
 		const ev = pixelMotionEvents(c);
 		const anchor = { type: 'scene' as const, mediaId: 'med_A', mediaSec: 1, clipId: 'clp_A' };
-		const { cues, unanchored } = pixelMotionCues(c, ev, (f) => (f < 130 ? { anchor, where: "'A' on V1" } : null));
+		const { cues, unanchored } = pixelMotionCues(c, ev, (f) =>
+			f < 130 ? { anchor, where: "'A' on V1" } : null,
+		);
 		expect(unanchored).toBe(1);
 		expect(cues).toHaveLength(1);
-		expect(cues[0]).toMatchObject({ kind: 'move', from: 'pixel', weight: 'support', types: ['whoosh', 'swish', 'transition'] });
+		expect(cues[0]).toMatchObject({
+			kind: 'move',
+			from: 'pixel',
+			weight: 'support',
+			types: ['whoosh', 'swish', 'transition'],
+		});
 		const all = pixelMotionCues(c, ev, () => ({ anchor, where: 'x' })).cues;
 		for (const q of all) expect(q.confidence).toBeLessThanOrEqual(PIXEL_MAX_CONFIDENCE);
 		expect(all.find((q) => q.kind === 'land')?.types[0]).toBe('hit');
@@ -339,9 +358,8 @@ function sequence() {
 	]).results[0] as { clipIds: string[] };
 	const music = h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'audio', seconds: 20 }) }])
 		.results[0] as { mediaId: string };
-	const m = h.ok([
-		{ type: 'clip.place', source: { mediaId: music.mediaId }, at: 0, tracks: { audio: 'A2' } },
-	]).results[0] as { clipIds: string[] };
+	const m = h.ok([{ type: 'clip.place', source: { mediaId: music.mediaId }, at: 0, tracks: { audio: 'A2' } }])
+		.results[0] as { clipIds: string[] };
 	const musicClip = m.clipIds[0]!;
 	h.ok([{ type: 'essentialSound.setType', clipIds: [musicClip], audioType: 'music' }]);
 	return { h, media, videoClip: v.clipIds[0]!, music: music.mediaId, musicClip };
@@ -357,7 +375,9 @@ describe('scene cuts mapped through the clip', () => {
 			expect.objectContaining({ clipId: videoClip, mediaId: media, start: 0, end: 180, mediaStartSec: 0 }),
 		]);
 		expect(f[0]!.mediaEndSec).toBeCloseTo(179 / 30, 6);
-		expect(musicClips(h.doc, h.seq)).toEqual([expect.objectContaining({ clipId: musicClip, mediaId: music })]);
+		expect(musicClips(h.doc, h.seq)).toEqual([
+			expect.objectContaining({ clipId: musicClip, mediaId: music }),
+		]);
 		// a range clips it
 		expect(footageClips(h.doc, h.seq, { start: 30, end: 60 })[0]).toMatchObject({ start: 30, end: 60 });
 		expect(musicClips(h.doc, h.seq, { start: 1000, end: 1001 })).toEqual([]);
@@ -418,7 +438,11 @@ describe('scene cuts mapped through the clip', () => {
 		const { h, media } = sequence();
 		const times = Array.from({ length: 180 }, (_, i) => i / 30);
 		const scores = times.map((t) => (Math.abs(t - 2) < 0.05 ? 0.5 : 0.01));
-		const cues = sceneCutCues(h.doc, h.seq, new Map([[media, { cuts: [0, 2], times, scores, threshold: 0.4 }]]));
+		const cues = sceneCutCues(
+			h.doc,
+			h.seq,
+			new Map([[media, { cuts: [0, 2], times, scores, threshold: 0.4 }]]),
+		);
 		expect(cues.map((c) => [c.frame, c.kind])).toEqual([[60, 'move']]);
 	});
 
@@ -530,8 +554,9 @@ describe('deriveCues with engine cues', () => {
 		// dialogue 4–5 s on A1: the clip's own audio as Essential dialogue covers the whole clip, so use a short one
 		const speech = h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'audio', seconds: 2 }) }])
 			.results[0] as { mediaId: string };
-		const sp = h.ok([{ type: 'clip.place', source: { mediaId: speech.mediaId }, at: 120, tracks: { audio: 'A3' } }])
-			.results[0] as { clipIds: string[] };
+		const sp = h.ok([
+			{ type: 'clip.place', source: { mediaId: speech.mediaId }, at: 120, tracks: { audio: 'A3' } },
+		]).results[0] as { clipIds: string[] };
 		h.ok([{ type: 'essentialSound.setType', clipIds: sp.clipIds, audioType: 'dialogue' }]);
 		const r = deriveCues(h.doc, h.seqId, { extraCues: scene, sources: ['scene'] });
 		expect(r.cues.map((c) => c.frame)).toEqual([60]);
@@ -543,7 +568,13 @@ describe('deriveCues with engine cues', () => {
 		h.ok([
 			{ type: 'param.setAnimated', target: path, animated: true, at: { frames: 0 } },
 			{ type: 'keyframe.add', target: path, at: { frames: 140 }, value: [960, 540], interpolation: 'linear' },
-			{ type: 'keyframe.add', target: path, at: { frames: 160 }, value: [1400, 540], interpolation: 'linear' },
+			{
+				type: 'keyframe.add',
+				target: path,
+				at: { frames: 160 },
+				value: [1400, 540],
+				interpolation: 'linear',
+			},
 		]);
 		const kf = deriveCues(h.doc, h.seqId, { sources: ['keyframes'] }).cues.find((c) => c.kind === 'move')!;
 		const at = sceneAnchorAt(h.doc, h.seq);
@@ -558,7 +589,9 @@ describe('deriveCues with engine cues', () => {
 		const r4 = deriveCues(h.doc, h.seqId, { extraCues: pixel, sources: ['pixel'] });
 		expect(r4.cues.filter((c) => c.from === 'pixel')).toHaveLength(2);
 		// unselected engine sources contribute nothing
-		expect(deriveCues(h.doc, h.seqId, { extraCues: pixel, sources: ['edits'] }).stats.bySource.pixel.found).toBe(0);
+		expect(
+			deriveCues(h.doc, h.seqId, { extraCues: pixel, sources: ['edits'] }).stats.bySource.pixel.found,
+		).toBe(0);
 	});
 
 	it('snapToBeats moves derived moves onto beats and counts them; the stored cue resyncs at its offset', () => {
@@ -589,7 +622,11 @@ describe('deriveCues with engine cues', () => {
 		expect(moved.moved[0]!.to).toBe(plain.frame + 12);
 		expect(before).not.toBe(h.doc);
 		// explicit beat frames work without beat cues
-		const r2 = deriveCues(h.doc, h.seqId, { sources: ['keyframes'], snapToBeats: true, beatFrames: [plain.frame + 9] });
+		const r2 = deriveCues(h.doc, h.seqId, {
+			sources: ['keyframes'],
+			snapToBeats: true,
+			beatFrames: [plain.frame + 9],
+		});
 		expect(r2.cues.find((c) => c.kind === 'move')!.frame).toBe(plain.frame + 9);
 	});
 
@@ -598,7 +635,12 @@ describe('deriveCues with engine cues', () => {
 		const anchor = { type: 'clip', clipId: videoClip, edge: 'start' };
 		const before = h.doc;
 		const snapshot = structuredClone(before);
-		const add = [{ type: 'soundCue.add', cues: [{ frame: 2, kind: 'move', weight: 'support', source: 'derived', anchor, anchorOffset: 2 }] }];
+		const add = [
+			{
+				type: 'soundCue.add',
+				cues: [{ frame: 2, kind: 'move', weight: 'support', source: 'derived', anchor, anchorOffset: 2 }],
+			},
+		];
 		const run = () =>
 			applyTransaction(
 				before,
@@ -618,12 +660,22 @@ describe('deriveCues with engine cues', () => {
 		expect(soundCuesOf(h.seq)[0]!.anchorOffset).toBe(2);
 		h.ok([{ type: 'soundCue.update', cueId: id, anchor: null }]);
 		expect(soundCuesOf(h.seq)[0]!.anchorOffset).toBeUndefined();
-		const bad = h.tx([{ type: 'soundCue.add', cues: [{ frame: 1, kind: 'move', weight: 'support', source: 'user', anchorOffset: 1 }] }]);
+		const bad = h.tx([
+			{
+				type: 'soundCue.add',
+				cues: [{ frame: 1, kind: 'move', weight: 'support', source: 'user', anchorOffset: 1 }],
+			},
+		]);
 		expect(bad.ok).toBe(false);
 		expect(!bad.ok && bad.errors[0]!.code).toBe('E_INVALID_PARAM');
 		const bad2 = h.tx([{ type: 'soundCue.update', cueId: id, anchorOffset: 3 }]);
 		expect(!bad2.ok && bad2.errors[0]!.code).toBe('E_INVALID_PARAM');
-		const tooFar = h.tx([{ type: 'soundCue.add', cues: [{ frame: 1, kind: 'move', weight: 'support', source: 'user', anchor, anchorOffset: 11 }] }]);
+		const tooFar = h.tx([
+			{
+				type: 'soundCue.add',
+				cues: [{ frame: 1, kind: 'move', weight: 'support', source: 'user', anchor, anchorOffset: 11 }],
+			},
+		]);
 		expect(tooFar.ok).toBe(false);
 		// repair keeps a valid offset and drops a broken one
 		const raw = { cues: { [id]: { ...soundCuesOf(h.seq)[0], anchor, anchorOffset: 'x' } } };
@@ -647,3 +699,50 @@ function pixelLike(frame: number, at: ReturnType<typeof sceneAnchorAt>): ExtraCu
 		size: 0.3,
 	};
 }
+
+describe('engine-source mappers on hostile input', () => {
+	it('fuzzed sequences and measurements (testkit mutateJson): never throw, frames are integers, deterministic', () => {
+		const rng = new Rng(fuzzSeed());
+		const { h, media, musicClip } = sequence();
+		const seed = h.doc.sequences[h.seqId]!;
+		const junk = [null, 1.5, -3, Number.NaN, 'x', {}, [], [Number.POSITIVE_INFINITY], [2, 'a', -1]];
+		const runs = 200 * fuzzScale();
+		for (let i = 0; i < runs; i++) {
+			const doc = structuredClone(h.doc);
+			doc.sequences[h.seqId] = mutateJson(rng, seed, [seed]) as never;
+			const seq = doc.sequences[h.seqId]!;
+			const cuts = rng.chance(0.3) ? rng.pick(junk) : [rng.below(10), rng.below(10) / 3];
+			const beats = rng.chance(0.3)
+				? rng.pick(junk)
+				: Array.from({ length: rng.below(30) }, () => rng.below(40) / 2);
+			const range = rng.chance(0.3)
+				? rng.pick(junk)
+				: rng.chance(0.5)
+					? { start: rng.below(100), end: rng.below(400) }
+					: undefined;
+			const run = () => {
+				const sc = sceneCutCues(doc, seq, new Map([[media, { cuts } as never]]), { range } as never);
+				const bc = beatCues(doc, seq, new Map([[musicClip, { beats, downbeats: rng.pick(junk) } as never]]), {
+					range,
+				} as never);
+				const at = sceneAnchorAt(doc, seq);
+				const px = [at(rng.below(400)), at(Number.NaN as never), at(-1)];
+				footageClips(doc, seq, range as never);
+				musicClips(doc, seq, range as never);
+				return { sc, bc, px };
+			};
+			let a: ReturnType<typeof run>;
+			try {
+				a = run();
+			} catch (e) {
+				throw new Error(`engine-source mapper threw on fuzz case ${i} (seed ${fuzzSeed()}): ${e}`);
+			}
+			for (const c of [...a.sc, ...a.bc]) expect(Number.isInteger(c.frame)).toBe(true);
+			const snapped = snapCuesToBeats(
+				a.sc.map((c) => ({ ...c, key: c.key ?? 'k', source: 'derived' as const, score: 1 })),
+				rng.pick([junk[5], [1, 2, 3], [Number.NaN, 4]]) as never,
+			);
+			for (const c of snapped.cues) expect(Number.isInteger(c.frame)).toBe(true);
+		}
+	});
+});

@@ -110,7 +110,11 @@ export function pixelCutIndices(c: PixelMotionCurve, fps: number): number[] {
 		const around: number[] = [];
 		for (let k = Math.max(1, i - half); k <= Math.min(n - 1, i + half); k++)
 			if (Math.abs(k - i) > 1) around.push(fin(c.residual[k]));
-		if (r >= PIXEL_CUT_RATIO * median(around) && (i + 1 >= n || r >= fin(c.residual[i + 1])) && r > fin(c.residual[i - 1]))
+		if (
+			r >= PIXEL_CUT_RATIO * median(around) &&
+			(i + 1 >= n || r >= fin(c.residual[i + 1])) &&
+			r > fin(c.residual[i - 1])
+		)
 			out.push(i);
 	}
 	return out;
@@ -140,9 +144,11 @@ function events(curve: PixelMotionCurve, opts: { edits?: readonly number[] }): P
 	const speed = new Float64Array(n);
 	for (let i = 1; i < n; i++) speed[i] = Math.max(0, Math.min(1e3, fin(curve.speed[i])));
 	const edits = new Set<number>();
-	for (const f of opts.edits ?? []) if (Number.isInteger(f) && f - start >= 0 && f - start < n) edits.add(f - start);
+	for (const f of opts.edits ?? [])
+		if (Number.isInteger(f) && f - start >= 0 && f - start < n) edits.add(f - start);
 	const cuts = pixelCutIndices(curve, fps);
-	for (const i of cuts) if (!edits.has(i)) out.push({ kind: 'cut', frame: start + i, residual: fin(curve.residual[i]) });
+	for (const i of cuts)
+		if (!edits.has(i)) out.push({ kind: 'cut', frame: start + i, residual: fin(curve.residual[i]) });
 	// Motion never spans a cut (the flow across it is meaningless): the curve is cut into pieces there.
 	const breaks = new Set<number>();
 	for (const i of [...cuts, ...edits]) {

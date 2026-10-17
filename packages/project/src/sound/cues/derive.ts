@@ -6,7 +6,7 @@ import type { ProjectDocument } from '../../schema/document.ts';
 import { isSoundTypeId, VISUAL_KINDS } from '../taxonomy.ts';
 import { applyBudgets, mergeCandidates } from './budget.ts';
 import { deriveEdgeCues } from './edges.ts';
-import { dialogueRanges, deriveEditCues, inRanges } from './edits.ts';
+import { deriveEditCues, dialogueRanges, inRanges } from './edits.ts';
 import { beatFramesOf, snapCuesToBeats } from './engine-sources.ts';
 import { deriveMarkerCues } from './markers.ts';
 import { deriveMgCues } from './mg.ts';
@@ -105,7 +105,15 @@ function extraCandidate(x: ExtraCue, i: number): CueCandidate | null {
 }
 
 /** Project sources whose events a measured picture motion may repeat. */
-const PIXEL_YIELDS_TO: ReadonlySet<string> = new Set(['edits', 'transitions', 'keyframes', 'text', 'mg', 'clipEdges', 'camera3d']);
+const PIXEL_YIELDS_TO: ReadonlySet<string> = new Set([
+	'edits',
+	'transitions',
+	'keyframes',
+	'text',
+	'mg',
+	'clipEdges',
+	'camera3d',
+]);
 /** How close (frames) a project event must be to a pixel one to describe it (merging covers 2; a measured peak may differ by 1). */
 const PIXEL_NEAR_FRAMES = 3;
 
@@ -215,7 +223,8 @@ export function deriveCues(
 					message: `${bad} engine cue(s) were malformed and ignored`,
 				});
 			// Shot changes and pixel cuts are cuts: silent where dialogue is heard, like edit points.
-			const dialogue = opts.respectDialogue !== false && valid.some((c) => c.kind === 'cut') ? dialogueRanges(ctx) : [];
+			const dialogue =
+				opts.respectDialogue !== false && valid.some((c) => c.kind === 'cut') ? dialogueRanges(ctx) : [];
 			const project = candidates.slice();
 			const engine: CueCandidate[] = [];
 			for (const c of valid) {
@@ -248,10 +257,14 @@ export function deriveCues(
 		if (opts.snapToBeats) {
 			const beats = Array.isArray(opts.beatFrames)
 				? opts.beatFrames.slice(0, MAX_DERIVED_CUES * 10)
-				: beatFramesOf(Array.isArray(opts.extraCues) ? opts.extraCues.filter((x) => x && typeof x === 'object') : []);
+				: beatFramesOf(
+						Array.isArray(opts.extraCues) ? opts.extraCues.filter((x) => x && typeof x === 'object') : [],
+					);
 			const snapped = snapCuesToBeats(cues, beats);
 			stats.snappedToBeat = snapped.snapped;
-			const out = snapped.cues.sort((a, b) => a.frame - b.frame || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+			const out = snapped.cues.sort(
+				(a, b) => a.frame - b.frame || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+			);
 			return { cues: out, curves, stats, warnings };
 		}
 		return { cues, curves, stats, warnings };
