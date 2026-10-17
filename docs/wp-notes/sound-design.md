@@ -7749,7 +7749,7 @@ Also:
   peak".
 - **Cost** (`SOUND_CHECK_BENCH_MIN=10 SOUND_CHECK_BENCH_OUT=… pnpm vitest run apps/engine/test/sound-check-bench.test.ts`,
   10 min of pink-noise music + a voice + 40 hits, back to back on the build server, load 1.3–3.9): before (integration tip
-  `8ee56158`) wall 74.1 s, engine CPU 89.2 s, stems pass 53.0 s; after, with clicks scanned on all six stems 96.5 s / 114.2 s
+  `8ee56158`) wall 74.1 s, engine CPU 89.2 s, stems pass 53.0 s; after, with clicks scanned on every stem (five here) 96.5 s / 114.2 s
   / 73.1 s; after, clicks on the mix, effects and bed only (kept) **89.8 s / 109.8 s / 66.6 s** (+21 % wall; the clip edges
   0.3 s; peak RSS 494 vs 499 MB). The bench's 40 hits over quiet pink noise are reported HARSH (40) — the same fixture
   property as the clean fixture's before its music went up 1.5 dB.
