@@ -395,13 +395,17 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 	).toBeVisible();
 	await delivery.getByRole('button', { name: 'Close' }).last().click();
 	await expect(delivery).toBeHidden();
-	// (a toast without such a button — the rebalance toast's actions are Undo and Solver Notes… — must not hang the spec)
-	for (const t of await page.getByTestId('toast').all())
-		await t
-			.getByRole('button', { name: /Dismiss|Close/ })
+	// every toast still up (the rebalance toast with solver notes is a warning and stays until dismissed) would cover
+	// the Export button: dismiss them all, never waiting on one without a Dismiss button
+	const toastHost = page.getByTestId('toast-host');
+	for (let i = 0; i < 10; i++) {
+		const dismiss = toastHost.getByRole('button', { name: 'Dismiss' });
+		if ((await dismiss.count()) === 0) break;
+		await dismiss
 			.first()
 			.click({ timeout: 5_000 })
 			.catch(() => undefined);
+	}
 
 	// 6. Export: the delivered mix measured by ffmpeg
 	seq = await sequence(page);
