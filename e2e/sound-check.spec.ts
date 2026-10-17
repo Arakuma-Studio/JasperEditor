@@ -285,7 +285,9 @@ test('Sound Check panel: seeded defects found with timecodes, the same as MCP; v
 	const strip = sync.getByTestId('sound-check-sync-strip');
 	await expect(strip.getByTestId('sound-check-thumb')).toHaveCount(5, { timeout: 300_000 });
 	await expect(strip.getByTestId('sound-check-wave-path')).toBeVisible({ timeout: 60_000 });
-	await expect(strip.getByTestId('sound-check-peak-line')).toBeVisible();
+	// (a vertical SVG line has no width: Playwright calls it hidden, so check that it is drawn)
+	await expect(strip.getByTestId('sound-check-peak-line')).toBeAttached();
+	await expect(strip.getByTestId('sound-check-event-line')).toBeAttached();
 	await expect(strip.getByRole('img')).toHaveAttribute('aria-label', /late \(2\.\d frames\)/);
 	await strip.screenshot({ path: join(outDir, 'sync-strip.png') });
 

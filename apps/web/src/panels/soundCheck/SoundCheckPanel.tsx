@@ -776,13 +776,10 @@ function Listen(props: {
 			aria-labelledby="sound-check-listen-title"
 			data-testid="sound-check-listen"
 		>
-			<div className="mb-1 flex items-center gap-2">
+			<div className="flex items-center gap-2">
 				<h3 id="sound-check-listen-title" className="m-0 text-pr-small font-semibold text-pr-strong">
 					{t('Listen here')}
 				</h3>
-				<span className="text-pr-small text-pr-muted">
-					{t('Measurements cannot hear: listen to these moments and say whether they sound right.')}
-				</span>
 				<Button
 					variant="secondary"
 					className="ml-auto"
@@ -795,6 +792,9 @@ function Listen(props: {
 					{props.playing?.all ? t('Stop') : t('Play all')}
 				</Button>
 			</div>
+			<p className="m-0 mb-1 text-pr-small text-pr-muted">
+				{t('Measurements cannot hear: listen to these moments and say whether they sound right.')}
+			</p>
 			<ol className="m-0 flex list-none flex-col gap-1 p-0">
 				{rows.map((row, idx) => {
 					const v = row.verdict?.verdict ?? null;

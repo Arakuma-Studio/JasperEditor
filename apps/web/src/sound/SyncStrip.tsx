@@ -9,7 +9,7 @@ import type { EngineJob, SoundCheckEvent, SoundCheckIssue, SoundVisualResponse }
 import type { EngineClient } from '@jasper/engine-client';
 import { type Sequence, sequenceDuration } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { exportEnvelope } from '../export/settings.ts';
 import { t } from '../i18n/runtime.ts';
 import { issueFrame } from './check-model.ts';
@@ -22,6 +22,8 @@ export const STRIP_FRAMES = [-2, -1, 0, 1, 2] as const;
 /** Seconds of waveform either side of the cue (covers the ±3-frame sync search at 23.976 fps and more). */
 export const STRIP_WAVE_SEC = 0.3;
 const THUMB_W = 112;
+/** The strip's width before it is measured (px). */
+const STRIP_DEFAULT_W = 5 * THUMB_W + 16;
 const WAVE_H = 56;
 const FLOOR_DB = -60;
 const STILL_TIMEOUT_MS = 60_000;
@@ -139,6 +141,22 @@ export function SyncStrip(props: {
 	const [visual, setVisual] = useState<SoundVisualResponse | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const frameKey = geo?.frames.join(',') ?? '';
+	// the strip takes the width the panel gives it (measured; 5 thumbnails share it)
+	const boxRef = useRef<HTMLDivElement>(null);
+	const [width, setWidth] = useState(STRIP_DEFAULT_W);
+	useEffect(() => {
+		const el = boxRef.current;
+		if (!el) return;
+		const measure = () => {
+			const w = Math.floor(el.clientWidth);
+			if (w > 0) setWidth((old) => (old === w ? old : w));
+		};
+		measure();
+		if (typeof ResizeObserver === 'undefined') return;
+		const ro = new ResizeObserver(measure);
+		ro.observe(el);
+		return () => ro.disconnect();
+	}, []);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: the frames and the job identify what to fetch
 	useEffect(() => {
@@ -172,7 +190,6 @@ export function SyncStrip(props: {
 	}, [engine, session, sequenceId, frameKey, props.checkJobId]);
 
 	if (!seq || !geo) return null;
-	const width = THUMB_W * STRIP_FRAMES.length + 4 * (STRIP_FRAMES.length - 1);
 	const tcAt = (f: number) => seqTimecode(seq, f);
 	const fps = seq.settings.frameRate.num / seq.settings.frameRate.den || 30;
 	const offsetFrames = offsetMs === null ? null : (offsetMs / 1000) * fps;
@@ -193,12 +210,12 @@ export function SyncStrip(props: {
 			data-testid="sound-check-sync-strip"
 			data-cue-frame={cueFrame}
 		>
-			<div className="flex gap-1" style={{ width }}>
+			<div ref={boxRef} className="grid w-full grid-cols-5 gap-1">
 				{geo.frames.map((f) => {
 					const th = thumbs[f];
 					const d = f - cueFrame;
 					return (
-						<figure key={f} className="m-0 flex flex-col items-center gap-0.5" style={{ width: THUMB_W }}>
+						<figure key={f} className="m-0 flex min-w-0 flex-col items-center gap-0.5">
 							<div
 								className={`flex aspect-video w-full items-center justify-center overflow-hidden rounded-pr-control border bg-pr-panel ${d === 0 ? 'border-pr-text' : 'border-pr-border-subtle'}`}
 							>
@@ -266,7 +283,13 @@ export function SyncStrip(props: {
 							strokeDasharray="4 3"
 							data-testid="sound-check-peak-line"
 						/>
-						<text x={geo.measuredX * width + 3} y={10} fontSize={10} fill="var(--pr-text-primary)">
+						<text
+							x={geo.measuredX * width + (geo.measuredX * width > width - 90 ? -3 : 3)}
+							textAnchor={geo.measuredX * width > width - 90 ? 'end' : 'start'}
+							y={10}
+							fontSize={10}
+							fill="var(--pr-text-primary)"
+						>
 							{t('Sound {0} ms', `${offsetMs! >= 0 ? '+' : '−'}${Math.abs(offsetMs!).toFixed(1)}`)}
 						</text>
 					</>
