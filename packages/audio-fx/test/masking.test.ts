@@ -133,7 +133,12 @@ describe('target lift', () => {
 	});
 
 	it('empty input', () => {
-		expect(solveSfxGains([])).toEqual({ gains: {}, events: [], warnings: [] });
+		expect(solveSfxGains([])).toEqual({
+			gains: {},
+			events: [],
+			warnings: [],
+			stats: { iterations: 1, converged: true },
+		});
 	});
 });
 
@@ -195,7 +200,9 @@ describe('constraints, one at a time', () => {
 			ev({ clipId: 'before', startSec: 0, endSec: 0.9 }),
 			ev({ clipId: 'over', startSec: 0.5, endSec: 3 }), // overlaps
 			ev({ clipId: 'amb', weight: 'ambient', startSec: 1, endSec: 2 }),
-		]);
+			// the bed alone: the ambience and supports under the hero would raise the hero and the supports
+			// (overlapping-SFX masking, masking-overlap.test.ts); this test is about step 3
+		], { sfxMasking: false });
 		const free = -16.5;
 		expect(HERO_SHADOW_DB).toBeCloseTo(-4.437, 3);
 		for (const id of ['near', 'edge', 'before', 'over']) {
@@ -326,10 +333,12 @@ describe('order and post-verification (an earlier constraint is never silently b
 		const loud = { bedBandsDb: Array(7).fill(-20), bedLocalPeakLu: -10 };
 		const r = solveSfxGains([
 			ev({ clipId: 'a', soundId: 'x', ...loud, soundPeakLu: -20 }),
-			ev({ clipId: 'b', soundId: 'x', ...loud, soundPeakLu: -20 }),
+			ev({ clipId: 'b', soundId: 'x', ...loud, soundPeakLu: -20, startSec: 10, endSec: 10.5 }),
 			ev({
 				clipId: 'q',
 				soundId: 'x',
+				startSec: 20,
+				endSec: 20.5,
 				bedBandsDb: Array(7).fill(-60),
 				bedLocalPeakLu: -40,
 				soundPeakLu: -20,
@@ -355,8 +364,16 @@ describe('order and post-verification (an earlier constraint is never silently b
 		const loud = { bedBandsDb: Array(7).fill(-20), bedLocalPeakLu: -10 };
 		const r = solveSfxGains([
 			ev({ clipId: 'a', soundId: 'x', ...loud }),
-			ev({ clipId: 'b', soundId: 'x', ...loud }),
-			ev({ clipId: 'q', soundId: 'x', bedBandsDb: Array(7).fill(-60), bedLocalPeakLu: -40, soundPeakLu: 12 }),
+			ev({ clipId: 'b', soundId: 'x', ...loud, startSec: 10, endSec: 10.5 }),
+			ev({
+				clipId: 'q',
+				soundId: 'x',
+				startSec: 20,
+				endSec: 20.5,
+				bedBandsDb: Array(7).fill(-60),
+				bedLocalPeakLu: -40,
+				soundPeakLu: 12,
+			}),
 		]);
 		const q = one(r, 'q');
 		expect(q.gainDb).toBeCloseTo(-30, 9);
@@ -416,8 +433,8 @@ describe('order and post-verification (an earlier constraint is never silently b
 		const loud = { bedBandsDb: Array(7).fill(-20), bedLocalPeakLu: -10 };
 		const h = solveSfxGains([
 			ev({ clipId: 'a', soundId: 'x', ...loud, truePeakDb: -10 }),
-			ev({ clipId: 'b', soundId: 'x', ...loud, truePeakDb: -10 }),
-			ev({ clipId: 'hot', soundId: 'x', ...loud, truePeakDb: 0 }),
+			ev({ clipId: 'b', soundId: 'x', ...loud, truePeakDb: -10, startSec: 10, endSec: 10.5 }),
+			ev({ clipId: 'hot', soundId: 'x', ...loud, truePeakDb: 0, startSec: 20, endSec: 20.5 }),
 		]);
 		expect(one(h, 'hot').gainDb).toBeCloseTo(1.5, 9);
 		// headroom took it to −1 dB, consistency (earlier) back up to the median − 2
@@ -534,8 +551,17 @@ describe('properties', () => {
 			fc.property(arbEvents, arbOpts, fc.double({ min: 0, max: 30, noNaN: true }), (events, opts, d) => {
 				const a = solveSfxGains(events, opts);
 				const b = solveSfxGains(shiftBed(events, d), opts);
+				// the one cap that can take a gain DOWN when the bed rises: overlapping sounds sharing the summed true peak
+				// (a louder neighbour takes more of it); then the event was cut by it, or follows a repeat that was
+				const overlapCut = b.events.some((x) => x.limitedBy.includes('overlap-headroom'));
 				a.events.forEach((e, i) => {
-					expect(b.events[i]!.gainDb, `${e.clipId}`).toBeGreaterThanOrEqual(e.gainDb - 0.01 - 1e-9);
+					const y = b.events[i]!;
+					if (
+						overlapCut &&
+						y.limitedBy.some((l) => l === 'overlap-headroom' || l === 'consistency' || l.endsWith('/headroom'))
+					)
+						return;
+					expect(y.gainDb, `${e.clipId}`).toBeGreaterThanOrEqual(e.gainDb - 0.01 - 1e-9);
 				});
 				checkCaps(shiftBed(events, d), b, opts);
 			}),
@@ -676,7 +702,12 @@ describe('sanitisation', () => {
 			),
 			{ numRuns: 300 },
 		);
-		expect(solveSfxGains(null as never)).toEqual({ gains: {}, events: [], warnings: [] });
+		expect(solveSfxGains(null as never)).toEqual({
+			gains: {},
+			events: [],
+			warnings: [],
+			stats: { iterations: 0, converged: true },
+		});
 		expect(solveSfxGains('x' as never).warnings[0]!.code).toBe('W_INVALID_INPUT');
 		expect(solveSfxGains([], { truePeakCeilingDb: Number.NaN }).warnings[0]!.code).toBe('W_INVALID_INPUT');
 	});

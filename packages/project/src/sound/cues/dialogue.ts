@@ -10,10 +10,19 @@
 //    through the clip's speed / reverse / time remap to the frames that play it;
 // 3. pure fallback (no measurement): the whole clip span.
 //
+// Only what the mix lets through counts (wp-note "WP6.5b solver"): a stretch where the gain from the clip to the Mix
+// is at or under DIALOGUE_AUDIBLE_DB (−40 dB) is not dialogue — clip gain, clip Volume keyframes, the track's mute
+// (static or automated) and Volume automation, solo, the submixes and sends it goes through and the Mix fader, with the
+// renderers' own topology (`buildAudioMix`; inserts and clip effects are not evaluated). Padding outside a clip's span
+// follows the clip's first / last frame.
+//
 // Every stretch is padded by DIALOGUE_PAD_SEC and pauses shorter than DIALOGUE_BRIDGE_SEC are bridged, so a cut a
 // breath after a sentence still counts as "under dialogue". Never throws ([] on damaged data).
+import { buildAudioMix, type RenderAudioMix, type RenderStrip } from '../../audio/plan.ts';
 import { sequenceWords } from '../../captions/sequence-transcript.ts';
-import { clipEnd } from '../../derive/index.ts';
+import { clipEnd, contentTimeAt } from '../../derive/index.ts';
+import { evaluate } from '../../keyframes.ts';
+import type { Animatable } from '../../schema/common.ts';
 import type { ProjectDocument } from '../../schema/document.ts';
 import type { Clip, Sequence } from '../../schema/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../../time.ts';
@@ -27,6 +36,14 @@ const MAX_SEQUENCE_FRAMES = 10_368_000;
 export const MAX_VOICE_SCAN_FRAMES = 1_000_000;
 /** Most voiced regions read per clip. */
 export const MAX_VOICE_REGIONS = 20_000;
+/**
+ * Dialogue the mix plays at or under this gain (dB, from the clip to the Mix) is not heard: not dialogue. −40 dB puts
+ * speech mixed at −20 LUFS under −60 LUFS, below any programme's noise floor (decision; EBU R 128 measures with a
+ * −70 LUFS absolute gate).
+ */
+export const DIALOGUE_AUDIBLE_DB = -40;
+/** Fader values at or under this are −∞ (the mixer's `dbToGain`). */
+const SILENT_FADER_DB = -96;
 
 /** Voiced media seconds `[start, end)` of each measured dialogue clip (clip id → sorted regions). */
 export type VoiceActivity = Readonly<Record<string, ReadonlyArray<readonly [number, number]>>>;
@@ -183,6 +200,106 @@ function voicedFrames(
 	return out;
 }
 
+const isAnimated = (a: Animatable<number> | undefined): boolean => !!a && Array.isArray(a.keyframes) && a.keyframes.length > 0;
+
+function valueAt(a: Animatable<number> | undefined, t: number): number {
+	if (!a) return 0;
+	try {
+		const v = isAnimated(a) ? evaluate(a, t) : a.value;
+		return fin(v) ? v : 0;
+	} catch {
+		return fin(a.value) ? a.value : 0;
+	}
+}
+
+/** dB → energy, with fader-style −∞. */
+const energyOf = (db: number): number => (db === Number.NEGATIVE_INFINITY ? 0 : 10 ** (db / 10));
+
+/**
+ * Gain (dB) from a strip's input to the Mix output at sequence time `t` (flicks): its fader and mute, then its output
+ * and its sends (pre-fader sends skip the fader and mute), summed as energies; −∞ when nothing gets through.
+ */
+function stripPathDb(mix: RenderAudioMix, byId: Map<string, RenderStrip>, id: string, t: number, depth = 0): number {
+	const s = byId.get(id);
+	if (!s || s.silent || depth > 64) return Number.NEGATIVE_INFINITY;
+	const fader = valueAt(s.volumeDb, t);
+	const faderDb = fader <= SILENT_FADER_DB ? Number.NEGATIVE_INFINITY : fader;
+	if (s.kind === 'master' || s.output === null) return faderDb;
+	const muted = valueAt(s.mute, t) >= 0.5;
+	const post = muted ? Number.NEGATIVE_INFINITY : faderDb;
+	let e = post === Number.NEGATIVE_INFINITY ? 0 : energyOf(post + stripPathDb(mix, byId, s.output, t, depth + 1));
+	for (const x of s.sends) {
+		const lvl = valueAt(x.levelDb, t);
+		if (lvl <= SILENT_FADER_DB) continue;
+		const base = x.preFader ? 0 : post;
+		if (base === Number.NEGATIVE_INFINITY) continue;
+		e += energyOf(base + lvl + stripPathDb(mix, byId, x.target, t, depth + 1));
+	}
+	return e > 0 ? 10 * Math.log10(e) : Number.NEGATIVE_INFINITY;
+}
+
+/** Whether a strip's path to the Mix has automation (else one evaluation holds for every frame). */
+function pathAnimated(byId: Map<string, RenderStrip>, id: string, depth = 0): boolean {
+	const s = byId.get(id);
+	if (!s || depth > 64) return false;
+	if (isAnimated(s.volumeDb) || isAnimated(s.mute) || s.sends.some((x) => isAnimated(x.levelDb))) return true;
+	return (
+		(s.output !== null && pathAnimated(byId, s.output, depth + 1)) ||
+		s.sends.some((x) => pathAnimated(byId, x.target, depth + 1))
+	);
+}
+
+/**
+ * Frames `[start, end)` of `c` the mix plays over DIALOGUE_AUDIBLE_DB, as sorted runs; a run touching the clip's first
+ * (last) frame extends to −∞ (+∞) so padding outside the clip follows its edge. Null: audible throughout.
+ */
+function audibleRuns(
+	c: Clip,
+	rate: Rational,
+	mix: RenderAudioMix | null,
+	byId: Map<string, RenderStrip>,
+): [number, number][] | null {
+	const a = c as Clip & { gainDb?: unknown; volumeDb?: Animatable<number>; channels?: { map?: unknown; mute?: unknown } };
+	const ch = a.channels;
+	if (
+		ch &&
+		Array.isArray(ch.map) &&
+		Array.isArray(ch.mute) &&
+		ch.map.length > 0 &&
+		ch.map.every((_, k) => (ch.mute as unknown[]).includes(k))
+	)
+		return []; // every channel plays silence
+	const gain = fin(a.gainDb) ? a.gainDb : 0;
+	const F = flicksPerFrame(rate);
+	const volAnim = isAnimated(a.volumeDb);
+	const pathAnim = mix ? pathAnimated(byId, c.trackId) : false;
+	const clipDb = (f: number): number => {
+		const local = Math.min(c.start + c.duration - 1, Math.max(c.start, f));
+		return gain + (volAnim ? valueAt(a.volumeDb, contentTimeAt(c, local, rate)) : valueAt(a.volumeDb, 0));
+	};
+	const routeDb = (f: number): number => (mix ? stripPathDb(mix, byId, c.trackId, f * F) : 0);
+	const audible = (f: number): boolean => clipDb(f) + routeDb(f) > DIALOGUE_AUDIBLE_DB;
+	if (!volAnim && !pathAnim) return audible(c.start) ? null : [];
+	const out: [number, number][] = [];
+	const n = Math.min(c.duration, MAX_VOICE_SCAN_FRAMES);
+	let run = -1;
+	for (let k = 0; k <= n; k++) {
+		const f = c.start + k;
+		const on = k < n && audible(f);
+		if (on && run < 0) run = f;
+		else if (!on && run >= 0) {
+			out.push([run, f]);
+			run = -1;
+		}
+	}
+	if (out.length === 1 && out[0]![0] === c.start && out[0]![1] === c.start + n) return null;
+	for (const r of out) {
+		if (r[0] === c.start) r[0] = Number.NEGATIVE_INFINITY;
+		if (r[1] === c.start + n) r[1] = Number.POSITIVE_INFINITY;
+	}
+	return out;
+}
+
 /**
  * The dialogue stretches of a sequence (sorted, disjoint, padded and bridged), with who speaks and what found them.
  * `voice`: the engine's voice activity of dialogue clips (`dialogueVadClips`); a clip it does not cover falls back to
@@ -230,9 +347,40 @@ export function dialogueSpans(
 			} else
 				pieces.push({ start: c.start, end: clipEnd(c), clipId: c.id, trackId: c.trackId, source: 'clip' });
 		}
-		pieces.sort((a, b) => a.start - b.start || a.end - b.end);
-		const out: DialogueSpan[] = [];
+		// only what the mix lets through (clip gain and Volume, track mute and Volume automation, solo, routing)
+		let mix: RenderAudioMix | null = null;
+		try {
+			mix = buildAudioMix(seq);
+		} catch {
+			mix = null;
+		}
+		const byId = new Map((mix?.strips ?? []).map((s) => [s.id, s] as const));
+		const runsOf = new Map<string, [number, number][] | null>();
+		const heard: Piece[] = [];
 		for (const p of pieces) {
+			const c = seq.clips[p.clipId];
+			if (!c || !validClip(c)) {
+				heard.push(p);
+				continue;
+			}
+			let runs = runsOf.get(c.id);
+			if (runs === undefined) {
+				runs = audibleRuns(c, rate, mix, byId);
+				runsOf.set(c.id, runs);
+			}
+			if (runs === null) {
+				heard.push(p);
+				continue;
+			}
+			for (const [a, b] of runs) {
+				const s0 = Math.max(p.start, a);
+				const s1 = Math.min(p.end, b);
+				if (s1 > s0) heard.push({ ...p, start: s0, end: s1 });
+			}
+		}
+		heard.sort((a, b) => a.start - b.start || a.end - b.end);
+		const out: DialogueSpan[] = [];
+		for (const p of heard) {
 			const last = out[out.length - 1];
 			if (last && p.start <= last.end + bridge) {
 				last.end = Math.max(last.end, p.end);
