@@ -11,10 +11,12 @@ import {
 	type SoundFacets,
 	type SoundSearchQuery,
 	SoundSearchQuerySchema,
+	withOfferedTakes,
 } from '@jasper/api';
 import {
 	isSoundTypeId,
 	licenseClass,
+	materialsOf,
 	rankSounds,
 	SOUND_TYPE_IDS,
 	SOUND_TYPES,
@@ -161,7 +163,23 @@ function syntheticLibrary(n: number, seed = 1): SoundEntry[] {
 			judge: r() < 0.9 ? { ok: r() < 0.8, score: r(), reasons: [], type: t1 } : null,
 			indexedAt: '2026-10-15T00:00:00.000Z',
 			analysisVersion: 1001,
+			materials: materialsOf([title, ...tags]),
 		} as SoundEntry);
+		// some multi-hit recordings with takes (P6-E9), a few of them cut
+		if (r() < 0.1) {
+			const e = out[out.length - 1]!;
+			e.takes = Array.from({ length: 1 + Math.floor(r() * 4) }, (_, k) => ({
+				index: k + 1,
+				startSec: k * 0.3,
+				endSec: k * 0.3 + 0.2,
+				headDb: -40,
+				tailDb: -40,
+				flags: r() < 0.25 ? ['tail-cut' as const] : [],
+				strokes: 1 as const,
+				descriptors: { ...e.descriptors, durationSec: 0.2, peakSec: 0.01, riseMs: r() * 20 },
+				judge: { ok: true, score: r(), reasons: [], type: t1 },
+			}));
+		}
 	}
 	return out.sort((a, b) => (a.id < b.id ? -1 : 1));
 }
@@ -171,13 +189,17 @@ function oracle(all: SoundEntry[], q: SoundSearchQuery, includeFolders: boolean)
 	const byId = new Map(all.map((e) => [e.id, e]));
 	const { req, none } = rankRequestOf(q, (id) => byId.get(id));
 	const visible = includeFolders ? all : all.filter((e) => e.source.type !== 'folder');
-	const byRoot = q.rootId
+	const rooted = q.rootId
 		? visible.filter((e) => e.source.type === 'folder' && e.source.rootId === q.rootId)
 		: visible;
 	const sources = q.sources?.length ? new Set<string>(q.sources) : null;
-	const pool = sources ? byRoot.filter((e) => sources.has(e.source.type)) : byRoot;
+	const matOk = (e: SoundEntry) => !q.material || (e.materials ?? []).includes(q.material);
+	const expanded = q.takes ? withOfferedTakes(rooted) : rooted;
+	const unMaterial = sources ? expanded.filter((e) => sources.has(e.source.type)) : expanded;
+	const byRoot = expanded.filter(matOk);
+	const pool = unMaterial.filter(matOk);
 	const ranked = none ? [] : rankSounds(pool, req, q.usedNearby?.length ? { usedNearby: q.usedNearby } : {});
-	const facets: SoundFacets = { types: {}, families: {}, licenses: {}, sources: {} };
+	const facets: SoundFacets = { types: {}, families: {}, licenses: {}, sources: {}, materials: {} };
 	const bump = (rec: Record<string, number>, k: string) => {
 		rec[k] = (rec[k] ?? 0) + 1;
 	};
@@ -195,6 +217,7 @@ function oracle(all: SoundEntry[], q: SoundSearchQuery, includeFolders: boolean)
 		for (const r of rankSounds(pool, { ...req, license: 'any' }))
 			bump(facets.licenses, licenseClass(r.entry.license));
 		for (const r of rankSounds(byRoot, req)) bump(facets.sources, r.entry.source.type);
+		for (const r of rankSounds(unMaterial, req)) for (const m of r.entry.materials ?? []) bump(facets.materials!, m);
 	}
 	return { ranked, facets };
 }
@@ -223,6 +246,8 @@ function randomQuery(r: () => number, all: SoundEntry[]): SoundSearchQuery {
 	if (r() < 0.15) raw.similarTo = pick(all).id;
 	if (r() < 0.2) raw.usedNearby = [pick(all).id, pick(all).id].join(',');
 	if (r() < 0.2) raw.visualKind = pick(['cut', 'transition', 'land', 'appear']);
+	if (r() < 0.2) raw.material = pick(['wood', 'glass', 'metal']);
+	if (r() < 0.25) raw.takes = pick(['true', 'false']);
 	return SoundSearchQuerySchema.parse(raw);
 }
 
