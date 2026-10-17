@@ -169,6 +169,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		: (encoding?.export?.codec ?? 'h264');
 	const encoders = encoderOptions(encoding, buildEncoders, effectiveCodec);
 	const effectiveEncoder = encoders.find((e) => e.value === encoderChoice)?.available ? encoderChoice : '';
+	const opus = encoding?.audio.opus ?? true;
 	const settings = useMemo(
 		() =>
 			seq
@@ -184,6 +185,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 						smartRender,
 						useProxies,
 						credits: creditsChoice,
+						opus,
 					})
 				: null,
 		[
@@ -199,6 +201,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 			usePreviews,
 			smartRender,
 			useProxies,
+			opus,
 		],
 	);
 	const chosenEncoder = plan.status === 'ok' ? (plan.plan.encoder ?? null) : (encoding?.export ?? null);

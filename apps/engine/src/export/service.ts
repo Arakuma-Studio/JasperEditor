@@ -1924,11 +1924,19 @@ export class ExportService {
 					{ signal: ctx.signal, claimed: (p) => ctx.addPartial(p) },
 				);
 		}
-		const allWarnings = [...warnings, ...resultSoundWarnings(planned.plan, !!creditsResult?.name)];
+		const formatChanges = planned.plan.warnings
+			.filter((w) => w.code === 'OUTPUT_CONTAINER_CHANGED' || w.code === 'AUDIO_CODEC_CHANGED')
+			.map((w) => ({ code: w.code, message: w.message }));
+		const allWarnings = [
+			...formatChanges,
+			...warnings,
+			...resultSoundWarnings(planned.plan, !!creditsResult?.name),
+		];
 		const result = {
 			downloadUrl,
 			byteSize,
 			...(encoder ? { encoder: encoder.encoder, container: encoder.container } : {}),
+			...(audio ? { audioCodec: audioCodecOf(encoder ?? null, planned.output) } : {}),
 			durationSec: planned.output.durationSec,
 			frames,
 			path: finalPath,

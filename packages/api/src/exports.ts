@@ -231,6 +231,8 @@ export const ExportResultSchema = z.object({
 	/** FFmpeg video encoder and container actually used (D-13). */
 	encoder: z.string().optional(),
 	container: z.enum(['mp4', 'webm', 'mov']).optional(),
+	/** FFmpeg audio encoder actually used (`aac`, `libopus`, `pcm_s16le`, `pcm_s24le`); absent without audio. */
+	audioCodec: z.string().optional(),
 	/**
 	 * Remotion path only (D-13): `intermediate` = Remotion rendered ProRes and the engine encoded the
 	 * deliverable; `direct` = Remotion encoded it (VP9/Opus, or H.264 in a GPL dev setup).
@@ -241,7 +243,8 @@ export const ExportResultSchema = z.object({
 	/**
 	 * run-time warnings, e.g. `NATIVE_FALLBACK` when a native preparation step failed
 	 * and an `auto` export was rendered on the Remotion path instead; also the plan's sound warnings
-	 * (`W_SOUND_CREDITS`, `W_SOUND_CHECK_STALE` with `level: 'info'`).
+	 * (`W_SOUND_CREDITS`, `W_SOUND_CHECK_STALE` with `level: 'info'`) and, when the file is not in the requested
+	 * container or audio codec, `OUTPUT_CONTAINER_CHANGED` / `AUDIO_CODEC_CHANGED` (WP6.5a, AGENTS §4).
 	 */
 	warnings: z
 		.array(z.object({ code: z.string(), message: z.string(), level: z.enum(['warning', 'info']).optional() }))

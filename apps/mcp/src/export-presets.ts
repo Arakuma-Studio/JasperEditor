@@ -71,7 +71,7 @@ export const EXPORT_PRESETS: readonly ExportPreset[] = [
 		id: 'master-prores-422hq',
 		label: 'Master – ProRes 422 HQ',
 		description:
-			'Mastering copy: ProRes 422 HQ (10-bit 4:2:2, ~220 Mbit/s at 1080p30) in MOV with 16-bit PCM audio.',
+			'Mastering copy: ProRes 422 HQ (10-bit 4:2:2, ~220 Mbit/s at 1080p30) in MOV with 24-bit PCM audio.',
 		container: 'mov',
 		codec: 'prores',
 		crf: 0,
@@ -161,8 +161,9 @@ export function buildExportSettings(
 			...(preset.bitDepth ? { bitDepth: preset.bitDepth } : {}),
 		},
 		audio: {
-			// The engine pairs the audio encoder with the container (PCM in MOV); this is the request.
-			codec: preset.container === 'webm' ? 'opus' : 'aac',
+			// The container's audio: Opus in WebM, 24-bit PCM in MOV, AAC in MP4 (the engine names any change it has to
+			// make in the plan and job warnings, OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED).
+			codec: preset.container === 'webm' ? 'opus' : preset.container === 'mov' ? 'pcm' : 'aac',
 			sampleRate:
 				preset.container === 'webm'
 					? 48000
