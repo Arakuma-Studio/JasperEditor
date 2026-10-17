@@ -150,7 +150,12 @@ describe('planSoundCheckFixes', () => {
 		// applied together without the joint judgement, B would end 3.5 LU over the support cap's tolerance
 		const { document } = applyTransaction(
 			h.doc,
-			{ label: 'x', origin: 'user', sequenceId: h.seqId, commands: candidates.flatMap((c) => c.commands) },
+			{
+				label: 'x',
+				origin: 'user',
+				sequenceId: h.seqId,
+				commands: candidates.flatMap((c): unknown[] => [...c.commands]),
+			},
 			h.ctx(),
 		);
 		expect(mB.peakOverBedAt0Lu! + gainOf(h, document, B.clip).gainDb).toBeCloseTo(10, 6);
