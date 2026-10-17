@@ -651,7 +651,9 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 			if (!a.add && !a.update && !a.remove && !a.resync)
 				throw new ToolError('E_INVALID_PARAM', 'Nothing to do', 'Give add, update, remove and/or resync.');
 			const parts: string[] = [];
-			if (a.add) parts.push(soundText(SOUND_LABELS.cuesAdd, a.add.length));
+			// suggestions already stored (storedCueId) are skipped: they are not counted
+			const adding = a.add?.filter((c) => !c.storedCueId).length ?? 0;
+			if (adding) parts.push(soundText(SOUND_LABELS.cuesAdd, adding));
 			if (a.update) parts.push(soundText(SOUND_LABELS.cuesEdit, a.update.length));
 			if (a.remove) parts.push(soundText(SOUND_LABELS.cuesRemove, a.remove.cueIds.length));
 			if (a.resync) parts.push(SOUND_LABELS.cuesResync);

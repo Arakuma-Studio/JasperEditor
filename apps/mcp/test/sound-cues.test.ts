@@ -262,6 +262,26 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		expect(again.cues.every((c) => c.storedCueId)).toBe(true);
 		// the same suggestions again: all stored, nothing to do
 		expect((await fails('set_sound_cues', { projectId, add: again.cues })).code).toBe('E_INVALID_PARAM');
+		// WP6.5a: stored suggestions are not counted in the History label ("add 1", not "add n + 1")
+		const mixed = await ok<{ historyLabel: string; added: { cueId: string }[]; skipped: unknown[] }>('set_sound_cues', {
+			projectId,
+			add: [...again.cues, { at: { seconds: 11 }, reason: 'one more' }],
+		});
+		expect(mixed.added).toHaveLength(1);
+		expect(mixed.skipped).toHaveLength(again.cues.length);
+		expect(mixed.historyLabel).toBe('Sound Cues (add 1)');
+		const only = await ok<{ historyLabel: string }>('set_sound_cues', {
+			projectId,
+			add: again.cues,
+			update: [{ cueId: again.cues[0]!.storedCueId!, label: 'first' }],
+		});
+		expect(only.historyLabel).toBe('Sound Cues (edit 1)');
+		// back to the stored suggestions only (the steps below count them)
+		await ok('set_sound_cues', {
+			projectId,
+			remove: { cueIds: [mixed.added[0]!.cueId] },
+			update: [{ cueId: again.cues[0]!.storedCueId!, label: null }],
+		});
 		// a stale expectedRevision is refused
 		expect(
 			(await fails('set_sound_cues', { projectId, add: [{ at: 12 }], expectedRevision: rev })).code,
