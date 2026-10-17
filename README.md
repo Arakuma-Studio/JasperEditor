@@ -442,7 +442,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (352; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (353; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `browse_media_files` (folders and importable files on the engine's computer) `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -509,7 +509,9 @@ Tools (352; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `list_sound_credits` · `add_sound_folder` `remove_sound_folder` `rescan_sound_library` · packs: `list_sound_packs`
   `install_sound_pack` (downloads a catalogue pack from its upstream site, sha256-pinned; tell the user its size and
   licence first) `remove_sound_pack` (approval card) · cues: `find_sound_cues`
-  (derived from the edit) `set_sound_cues` `place_sound` (peak-exact, layers, alternates; proposes unless mode
+  (derived from the edit; the engine sources scene, beat and pixel measure footage and music when asked, and
+  snapToBeats) `analyze_picture_motion` (the rendered picture's motion per frame: moves, landings and cuts in
+  footage, with a PNG strip) `set_sound_cues` `place_sound` (peak-exact, layers, alternates; proposes unless mode
   "apply") `swap_sound` `align_peak` · `plan_sound_design` (a whole pass as one proposal, gains solved against the
   bed; style options room glue, stop-before, build, delivery; `style.cueSources` picks where derived cues come from) ·
   `rebalance_sfx` (masking solver: each sound effect clears the bed by its target lift, with what limited it) ·

@@ -143,7 +143,8 @@ export function anchorText(doc: ProjectDocument, seq: Sequence, a: CueAnchor | n
 		}
 		case 'scene': {
 			const name = (doc.media[a.mediaId] as { originalName?: string } | undefined)?.originalName ?? a.mediaId;
-			return `scene cut at ${a.mediaSec} s of ${name}`;
+			const sec = Math.round(a.mediaSec * 1000) / 1000;
+			return `${sec} s into ${name}${a.clipId && seq.clips[a.clipId] ? ` in ${clipName(seq, a.clipId)}` : ''}`;
 		}
 		case 'beat':
 			return `beat ${a.beatIndex + 1} of ${clipName(seq, a.clipId)}`;
@@ -460,7 +461,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 		'find_sound_cues',
 		{
 			title: 'Find sound cues',
-			description: `Derives cue suggestions — moments of the picture that may want a sound — from the edit itself (engine \`deriveCues\`): cuts (none where dialogue is heard unless respectDialogue: false), transitions (push/slide → whoosh with a pan sweep), keyframed motion (move at peak speed, land on an overshoot or abrupt stop, appear/exit on fades and scale-ups, emphasis on a pulse), text animators and typewriters (one key per typed unit, ≤ 12/s), motion-graphic intro ends and outro starts, graphics on V2+, 3D camera moves and markers named "sfx: <type>[+<type>]". Merged within 2 frames and thinned by the density budget. Each cue: frame + timecode + seconds, kind, weight (hero/support/ambient), types (suggested, best first), align (peak/start/end), pan, panSweep, confidence, reason, anchor (+ anchorText), window, from (source), storedCueId (the stored cue for the same event, or null). Also per-source stats (found, kept, merged, droppedByBudget, suppressedByDialogue), dialogue ranges and warnings. Stores nothing: pass the cues you keep to set_sound_cues {add}. Sources: ${CUE_DERIVE_SOURCE_LIST}.`,
+			description: `Derives cue suggestions — moments of the picture that may want a sound — from the edit itself (engine \`deriveCues\`): cuts (none where dialogue is heard unless respectDialogue: false), transitions (push/slide → whoosh with a pan sweep), keyframed motion (move at peak speed, land on an overshoot or abrupt stop, appear/exit on fades and scale-ups, emphasis on a pulse), text animators and typewriters (one key per typed unit, ≤ 12/s), motion-graphic intro ends and outro starts, graphics on V2+, 3D camera moves and markers named "sfx: <type>[+<type>]". Merged within 2 frames and thinned by the density budget. Each cue: frame + timecode + seconds, kind, weight (hero/support/ambient), types (suggested, best first), align (peak/start/end), pan, panSweep, confidence, reason, anchor (+ anchorText), window, from (source), storedCueId (the stored cue for the same event, or null). Also per-source stats (found, kept, merged, droppedByBudget, suppressedByDialogue), dialogue ranges and warnings. Stores nothing: pass the cues you keep to set_sound_cues {add}. Sources: ${CUE_DERIVE_SOURCE_LIST}. The default is the edit's own sources; the engine sources measure media and must be asked for: "scene" (shot changes inside footage, Scene Edit Detection), "beat" (beats of Essential Sound music clips; downbeats support, others ambient) and "pixel" (the rendered picture's motion: moves, landings and cuts in footage — what keyframes cannot tell; confidence ≤ 0.5; analyse_picture_motion shows it). Their analyses run as jobs the first time (cached after): this tool waits for them (waitForAnalysis, default true, up to timeoutSeconds) and asks again; analysis per source says ready / pending / none / failed. snapToBeats moves moves, transitions, emphases and reveals onto the nearest music beat within 2 frames (anchorOffset records it).`,
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -496,6 +497,23 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 					.max(100_000)
 					.optional()
 					.describe('Smallest distance between cues'),
+				snapToBeats: z
+					.boolean()
+					.optional()
+					.describe('Snap moves, transitions, emphases and reveals to the music’s beats within 2 frames'),
+				waitForAnalysis: z
+					.boolean()
+					.optional()
+					.describe(
+						'Wait for the scene / pixel analyses the engine starts, then derive again (default true)',
+					),
+				timeoutSeconds: z
+					.number()
+					.int()
+					.min(1)
+					.max(900)
+					.optional()
+					.describe('How long to wait for the analyses (default 300)'),
 			},
 			annotations: READ_ONLY,
 		},
@@ -518,23 +536,49 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 						TIME_FORMATS,
 					);
 			}
-			const res = await soundCall<SoundCuesResponse>(ctx, (c) =>
-				c.soundDesignCues(
-					{
-						envelope: toolEnvelope(doc, revision ?? 0),
-						sequenceId: seq.id,
-						opts: {
-							...(range ? { range } : {}),
-							...(a.sources ? { sources: a.sources } : {}),
-							...(a.density ? { density: a.density } : {}),
-							...(a.respectDialogue !== undefined ? { respectDialogue: a.respectDialogue } : {}),
-							...(a.minGapFrames !== undefined ? { minGapFrames: a.minGapFrames } : {}),
-							maxCues: a.maxCues ?? 500,
+			const derive = () =>
+				soundCall<SoundCuesResponse>(ctx, (c) =>
+					c.soundDesignCues(
+						{
+							envelope: toolEnvelope(doc, revision ?? 0),
+							sequenceId: seq.id,
+							opts: {
+								...(range ? { range } : {}),
+								...(a.sources ? { sources: a.sources } : {}),
+								...(a.density ? { density: a.density } : {}),
+								...(a.respectDialogue !== undefined ? { respectDialogue: a.respectDialogue } : {}),
+								...(a.minGapFrames !== undefined ? { minGapFrames: a.minGapFrames } : {}),
+								...(a.snapToBeats ? { snapToBeats: true } : {}),
+								maxCues: a.maxCues ?? 500,
+							},
 						},
-					},
-					extra.signal,
-				),
-			);
+						extra.signal,
+					),
+				);
+			let res = await derive();
+			// Engine sources: their analyses run as jobs the first time; wait for them once and derive again.
+			const pendingJobs = res.warnings
+				.filter((w) => w.code === 'W_ANALYSIS_PENDING')
+				.flatMap((w) => w.jobIds ?? []);
+			const analysisNotes: string[] = [];
+			if (pendingJobs.length && a.waitForAnalysis !== false) {
+				const until = Date.now() + (a.timeoutSeconds ?? 300) * 1000;
+				let timedOut = false;
+				for (const id of pendingJobs) {
+					const left = Math.max(1000, until - Date.now());
+					const w = await waitJob(ctx, id, left, extra, { cancelJobOnAbort: false });
+					if (w.timedOut) {
+						timedOut = true;
+						analysisNotes.push(
+							`${w.job.title} is still running (job ${id}): call find_sound_cues again later`,
+						);
+						break;
+					}
+					if (w.job.state !== 'succeeded')
+						analysisNotes.push(`${w.job.title} ${w.job.state}: ${w.job.error?.message ?? 'no result'}`);
+				}
+				if (!timedOut) res = await derive();
+			}
 			const tc = (f: number) => sequenceTimecode(seq, f);
 			const cues = res.cues.map((c: SoundCueSuggestion) => ({
 				...c,
@@ -556,6 +600,8 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 				cues,
 				stats: { ...res.stats, bySource },
 				dialogue: res.dialogue.map((d) => ({ ...d, startTimecode: tc(d.start), endTimecode: tc(d.end) })),
+				...(res.analysis ? { analysis: res.analysis } : {}),
+				...(analysisNotes.length ? { analysisNotes } : {}),
 				warnings: res.warnings,
 				next:
 					cues.length === 0
@@ -1704,7 +1750,13 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 							.max(CUE_DERIVE_SOURCES.length)
 							.optional()
 							.describe(
-								`Where derived cues come from with cues "auto" (default every source, as find_sound_cues): ${CUE_DERIVE_SOURCE_LIST}. Stored cues are planned whatever their source`,
+								`Where derived cues come from with cues "auto" (default the edit's own sources, as find_sound_cues): ${CUE_DERIVE_SOURCE_LIST}. The engine sources scene (shot changes in footage), beat (music beats) and pixel (picture motion of footage) are measured inside the plan job when listed (slower the first time; cached). Stored cues are planned whatever their source`,
+							),
+						snapToBeats: z
+							.boolean()
+							.optional()
+							.describe(
+								'Snap derived moves, transitions, emphases and reveals to the music’s beats within 2 frames',
 							),
 						respectDialogue: z
 							.boolean()
