@@ -4,6 +4,7 @@
 // titles, numbers: never translated). The editor lists them in its model strings (apps/web/i18n/model-strings.ts) and
 // its runtime translates a label or message that matches one (`translateName`, apps/web/src/i18n/runtime.ts).
 // `test/sound-messages.test.ts` checks that every refusal written in the sound handlers has its template here.
+import { SOUND_CHECK_MODEL_STRINGS } from './check.ts';
 
 /** History labels of the MCP sound tools (`soundText` fills them). */
 export const SOUND_LABELS = {
@@ -74,8 +75,12 @@ export const SOUND_MESSAGES = [
 	'{0} is not a sound effect (Essential Sound type SFX, or a placed sound): auto gain applies to sound effects',
 ] as const;
 
-/** Every sound-design template the editor translates (labels and refusals). */
-export const SOUND_MODEL_STRINGS: readonly string[] = [...Object.values(SOUND_LABELS), ...SOUND_MESSAGES];
+/** Every sound-design template the editor translates (labels, refusals, Sound Check findings and fixes). */
+export const SOUND_MODEL_STRINGS: readonly string[] = [
+	...Object.values(SOUND_LABELS),
+	...SOUND_MESSAGES,
+	...SOUND_CHECK_MODEL_STRINGS,
+];
 
 /** A template with its `{n}` placeholders filled. */
 export function soundText(template: string, ...args: readonly (string | number)[]): string {

@@ -6,6 +6,7 @@ import {
 	CueAnchorSchema,
 	SFX_ROLES,
 	SFX_SOLVER_LEVEL_LIMITS,
+	SOUND_CREDITS_FORMATS,
 	SOUND_DELIVERIES,
 	SOUND_DENSITIES,
 	SOUND_DESIGN_LIMITS,
@@ -211,6 +212,38 @@ export const SoundDesignSetSettingsCmd = cmd('soundDesign.setSettings', {
 	roomBus: TrackRefSchema.nullable().optional(),
 	seed: z.number().int().min(0).max(0xffff_ffff).optional(),
 	agentsMayApply: z.boolean().optional(),
+	/** Sound credits sidecar of the sequence's exports (`txt` / `md`), or null: not configured. */
+	credits: z.enum(SOUND_CREDITS_FORMATS).nullable().optional(),
+});
+
+/** Sound Check verdicts (spec 12 §2.6). */
+export const SOUND_CHECK_VERDICT_VALUES = ['pass', 'warn', 'fail'] as const;
+
+/**
+ * Stores the summary of a Sound Check in `Sequence.soundDesign.lastCheck` (spec 12 §2.6, P5-R1), or with `summary: null`
+ * removes it. `mixHash` is the mix fingerprint the check measured (`mixFingerprint`); `inputsHash` the hash of its
+ * other inputs (`soundCheckInputsHash`): `soundCheckStatus` calls the summary stale when either differs. `counts` are
+ * issues per code or severity (≤ 64 keys). Result `{sequenceId, lastCheck}`.
+ */
+export const SoundDesignSetCheckCmd = cmd('soundDesign.setCheck', {
+	sequenceId: IdRefSchema.optional(),
+	summary: z
+		.strictObject({
+			mixHash: z.string().min(1).max(256),
+			verdict: z.enum(SOUND_CHECK_VERDICT_VALUES),
+			counts: z
+				.record(z.string().min(1).max(64), z.number().int().min(0).max(1_000_000))
+				.refine((c) => Object.keys(c).length <= 64, 'at most 64 counts'),
+			at: z.iso.datetime(),
+			preset: z.enum(SOUND_DELIVERIES),
+			inputsHash: z.string().min(1).max(256).optional(),
+			jobId: z.string().min(1).max(128).optional(),
+			range: z
+				.strictObject({ start: z.number().int().min(0), end: z.number().int().min(0) })
+				.refine((r) => r.end > r.start, 'range.end must be after range.start')
+				.optional(),
+		})
+		.nullable(),
 });
 
 /**
@@ -303,4 +336,5 @@ export const SOUND_COMMANDS = [
 	SoundDesignSetPeakCmd,
 	SoundDesignApplyGainsCmd,
 	SoundDesignSetAutoGainCmd,
+	SoundDesignSetCheckCmd,
 ] as const;

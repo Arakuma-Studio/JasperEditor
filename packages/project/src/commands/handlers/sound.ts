@@ -11,6 +11,7 @@ import {
 	readSoundDesignSettings,
 	type SfxLevel,
 	SOUND_DESIGN_LIMITS,
+	type SoundCheckSummary,
 	type SoundCue,
 	type SoundDesign,
 	type SoundDesignSettings,
@@ -1005,6 +1006,7 @@ function setSettings(doc: DDoc, cmd: CommandOf<'soundDesign.setSettings'>, h: Ha
 	if (cmd.density !== undefined) s.density = cmd.density;
 	if (cmd.seed !== undefined) s.seed = cmd.seed;
 	if (cmd.agentsMayApply !== undefined) s.agentsMayApply = cmd.agentsMayApply;
+	if (cmd.credits !== undefined) s.credits = cmd.credits;
 	if (cmd.sfxTrackIds !== undefined) {
 		const ids: string[] = [];
 		for (const ref of cmd.sfxTrackIds) {
@@ -1178,6 +1180,22 @@ function setAutoGain(doc: DDoc, cmd: CommandOf<'soundDesign.setAutoGain'>, h: Ha
 	return { clips: out };
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// soundDesign.setCheck
+
+function setCheck(doc: DDoc, cmd: CommandOf<'soundDesign.setCheck'>, h: HandlerContext) {
+	const seq = h.sequence(doc, cmd.sequenceId);
+	if (cmd.summary === null) {
+		const sd = soundDesignOf(seq, false);
+		if (sd) delete sd.lastCheck;
+		return { sequenceId: seq.id, lastCheck: null };
+	}
+	const sd = soundDesignOf(seq, true);
+	const summary = plainCopy(cmd.summary) as SoundCheckSummary;
+	sd.lastCheck = summary as Draft<SoundCheckSummary>;
+	return { sequenceId: seq.id, lastCheck: plainCopy(summary) };
+}
+
 export const soundHandlers = {
 	'media.setLibraryInfo': setLibraryInfo,
 	'soundCue.add': addCues,
@@ -1192,6 +1210,7 @@ export const soundHandlers = {
 	'soundDesign.setPeak': setPeak,
 	'soundDesign.applyGains': applyGains,
 	'soundDesign.setAutoGain': setAutoGain,
+	'soundDesign.setCheck': setCheck,
 } satisfies HandlerMap;
 
 export type { Clip, DClip };

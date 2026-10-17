@@ -45,7 +45,7 @@ nobody outside has used it, only Linux was checked — is [`docs/gaps.md`](docs/
 - **Export and interchange.** A planner routes each sequence to the native FFmpeg path, a hybrid layer bake or
   Remotion and refuses by name what a path cannot render; H.264, HEVC, VP9, AV1, ProRes, alpha; render previews and
   smart rendering; FCP 7 XML, FCPXML, EDL, AAF, OMF, ALE and OTIO in both directions.
-- **Agents.** `jasper-mcp` exposes 347 tools and the whole command catalogue; every edit is an undoable
+- **Agents.** `jasper-mcp` exposes 349 tools and the whole command catalogue; every edit is an undoable
   transaction, destructive ones need the user's approval in the editor; a `jasper` CLI; tools that look at and
   operate the live window.
 - **Safety net.** Atomic saves, single-writer leases (a reloaded tab keeps its own), crash-recovery journal, saved
@@ -442,7 +442,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (347; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (349; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `browse_media_files` (folders and importable files on the engine's computer) `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -512,7 +512,9 @@ Tools (347; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   bed; style options room glue, stop-before, build, delivery; `style.cueSources` picks where derived cues come from) ·
   `rebalance_sfx` (masking solver: each sound effect clears the bed by its target lift, with what limited it) ·
   `apply_delivery` (web / podcast / R128 / A/85: Mix loudness, Auto-Match by type, ducking, measured) `set_room_glue` (a
-  shared "SFX Room" reverb)
+  shared "SFX Room" reverb) · `sound_check` (the delivered mix measured: findings with safe fixes, five listen-here
+  timecodes, a verdict, a PNG of the worst moments) `view_sound_timeline` (PNG: loudness of the mix and its stems, cues,
+  motion, findings)
   (`docs/specs/12-sound-design.md`, `docs/wp-notes/sound-design.md`).
 - Proposals (reviewed and applied by the user in the editor; one undo step): `list_proposals` `get_proposal` (with a
   ghost table) `wait_for_proposal` (decisions and notes) `accept_proposal` (policy-gated for agents) `reject_proposal`.
@@ -679,6 +681,15 @@ mode?: "propose" | "apply", loudness?, autoMatch?, ducking?, rebalance?, label?}
 measures the clips, the speech and the resulting mix and applies (one transaction "Apply Delivery Preset") or proposes the
 preset's Mix loudness normalisation, Auto-Match by type, ducking and re-solved sound-effect gains; the report gives the
 expected loudness and true peak and how far under the voice the music and ambience sit during speech.
+`POST /api/sound-design/check {projectId, sequenceId?, preset?, range?, store?}` starts a `sound-check` job (202): the mix
+as the export delivers it and its stems (sound effects, dialogue, music, ambience, bed) are rendered in one pass and
+measured; the result (`SoundCheckResult`) has a verdict (pass / warn / fail), every finding with its code, severity,
+timecode, translatable message and fix (commands, an engine job or a sound swap; `safe` when it resolves the finding by
+itself), the per-event table, five listen-here moments and loudness curves; `store: true` also writes the summary into
+the sequence (`soundDesign.setCheck`, one undo step).
+`POST /api/sound-design/visual {projectId, sequenceId?, range, checkJobId?}` answers at once with 10 ms loudness curves of
+the mix and each stem, the mix waveform, cue ticks, sound-effect clips, speech, the picture's motion curve and a check
+job's findings over a range of at most 120 s.
 
 The engine binds loopback only. The packaged-like desktop engine requires its per-launch token
 (`JASPER_LOCAL_TOKEN`), so plain curl calls are meant for the dev or standalone engine.

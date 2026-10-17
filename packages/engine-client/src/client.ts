@@ -52,12 +52,14 @@ import {
 	type RouteResponse,
 	type SceneDetectRequest,
 	type SfxRebalanceRequest,
+	type SoundCheckRequest,
 	type SoundCuesRequest,
 	type SoundDeliveryRequest,
 	type SoundDesignPlanRequest,
 	type SoundIndexRequest,
 	type SoundRootsPutRequest,
 	type SoundSearchRequest,
+	type SoundVisualRequest,
 	type StillRequest,
 	soundSearchParams,
 	type UploadCreateRequest,
@@ -401,6 +403,18 @@ export class EngineClient {
 	 */
 	applyDelivery(req: SoundDeliveryRequest, signal?: AbortSignal) {
 		return this.call('soundDesignDelivery', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/**
+	 * Sound Check (spec 12 §2.6, P5-R1; `POST /api/sound-design/check`): a `sound-check` job whose result
+	 * (`SoundCheckResult`) is the report — findings with fixes, listen-here moments, the per-event table, the verdict.
+	 * `store: true` also stores its summary in the sequence (`soundDesign.setCheck`).
+	 */
+	soundCheck(req: SoundCheckRequest, signal?: AbortSignal) {
+		return this.call('soundDesignCheck', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** Sound Check visual data over a range of at most 120 s (`POST /api/sound-design/visual`, P5-R2). */
+	soundVisual(req: SoundVisualRequest, signal?: AbortSignal) {
+		return this.call('soundDesignVisual', { body: req, ...(signal ? { signal } : {}) });
 	}
 	/** Proposals of a project (spec 12 §2.5): summaries, newest first. */
 	listProposals(projectId: string) {

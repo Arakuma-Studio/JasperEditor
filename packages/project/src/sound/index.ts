@@ -1,4 +1,5 @@
 // Sound design (spec 12): taxonomy, ranking, licences, library provenance, credits and peak-aligned placement.
+export * from './check.ts';
 export * from './credits.ts';
 export * from './delivery.ts';
 export * from './insert.ts';

@@ -5398,4 +5398,209 @@ load-sensitive (64.6 ms once at load ≈ 50).
 
 ## Phase 5: Sound Check
 
+### Phase 5 → WP5.1 Sound Check engine & MCP
+
+Scope: spec 12 §2.6 (every check and code, report, listen[5], curves, staleness, visuals), §2.8 (`POST
+/api/sound-design/check` job `sound-check`, `POST /api/sound-design/visual`), §2.10 (`sound_check`, `view_sound_timeline`),
+P5-R1, P5-R2, P5-R4. The web panel is WP5.2 (API below).
+
+Files: `packages/audio-fx/src/analysis/check-curves.ts` (`CurveMeter`, `loudnessCurve`, `maxPool`, `locateByCorrelation`),
+`masking.ts` (+ `evaluateSfxGain`); `packages/project/src/sound/check.ts` (codes, severities, tolerances, thresholds,
+verdict, counts, `soundCheckInputsHash`, `soundCheckStatus`, message templates), `schema/sound.ts` (summary fields,
+`settings.credits`), `commands/schemas|handlers/sound.ts` (`soundDesign.setCheck`, `setSettings.credits`), `catalog.ts`
+("Sound Check Result"), `sound/messages.ts` (the templates are model strings); `packages/api/src/sound-check.ts`,
+`routes.ts` (`soundDesignCheck`, `soundDesignVisual`), `jobs.ts` (`sound-check`); `packages/engine-client` (`soundCheck`,
+`soundVisual`); `apps/engine/src/sound-design/{check,stems,visual}.ts`, `routes/sound-design.ts`, `sounds/decode.ts`
+(`readPlanar` exported); `apps/mcp/src/tools/sound-check.ts`, `sound-timeline.ts`, `server.ts`, `tools/sound.ts`
+(SOUND_GUIDE "Check"), `examples.ts`; README (349 tools, HTTP section), security review (2 route rows, a paragraph),
+i18n data (`apps/web/src/i18n/{model-strings,en,es}.json`: 48 strings). Tests: `packages/audio-fx/test/check-curves.test.ts`,
+`packages/project/test/sound-check.test.ts`, `fuzz.test.ts` (AC-25 draws setCheck / credits), `apps/engine/test/
+sound-check.test.ts`, `sound-check-stems.test.ts`, `sound-check-fixture.ts`, `apps/mcp/test/sound-check.test.ts`,
+`sound-examples.test.ts` (+1).
+
+#### How it works
+
+1. **One pass, every stem** (`stems.ts`). One `OfflineMixer` per stem — the mix, sound effects (`isSfxClip`), dialogue,
+   music, ambience (Essential Sound types) and the bed (everything that is not a sound effect) — rendered in lock-step
+   over the range in 48 000-sample blocks. A clip several stems play is decoded ONCE: its ffmpeg reader is shared
+   (`SharedDecoders`; each mixer gets a `TeeReader` over a buffer that keeps 3 blocks behind the newest sample and is
+   swept after every block — a short clip read and closed within one mixer's block is still there for the next stem).
+   Each stem plays only its clips like `renderMixdown({onlyClips})`; the output layout is the export's default (stereo,
+   5.1 for a 5.1 Mix). Pre-roll 2 s (short-term window, K-weighting warm-up), post-roll 1.5 s.
+2. **Delivered as the export does.** The mix over the range goes to the BS.1770 meter and, when the Mix normalises, to a
+   scratch float file; a second pass applies `target − integrated` and the `TruePeakLimiter` with `renderMixdown`'s
+   parameters (5 ms look-ahead, 100 ms release), recording its gain reduction per 10 ms. Stems are shown on the delivered
+   scale (+ the normalisation gain).
+3. **10 ms curves** (`CurveMeter`): per hop the K-weighted channel-weighted energy, the mean square (dBFS) and the sample
+   peak; `loudnessCurve` gives momentary (400 ms) and short-term (3 s) loudness of windows CENTRED on each hop (where an
+   event is, not 200 ms / 1.5 s after it).
+4. **Speech**: transcript words (`sequenceWords`) ∪ voice activity of the dialogue stem (10 ms levels ≥ max(`vadThreshold`,
+   −50 dBFS), the same rule as the bed render), gaps < 0.3 s bridged.
+5. **Sound effects against the bed** with the solver's own measurements (`measureSfxEvents`: the bed per cue cluster, each
+   sound alone at 0 dB; its caches are shared with rebalance / plan) and definitions: `evaluateSfxGain` (new, exported
+   from `masking.ts`) computes the dominant-band lift, the peak over the bed reference (local bed peak, never under
+   programme −12 LU) and the speech-band lift exactly as `solveSfxGains` does (property: equal at the solved gains).
+6. **Sync**: each placed clip filling a cue (two-way link) — the sound file decoded around its aligned point
+   (`placement.peakFlicks`; peak 50 ms before / 200 ms after, start 0 / 250 ms, end 250 / 0 ms) at the clip's speed
+   (resampled to sr / rate), located in the SFX stem captured around the cue by normalised cross-correlation (FFT,
+   parabolic sub-sample refinement), lags within ±3 frames (+10 ms) of the cue (spec). Offset = where the aligned point
+   plays − the cue, in ms. Correlation < 0.3 = not found there.
+7. Then the document checks, the per-event table, listen-here, verdict, curves (≤ 1 200 max-pooled points).
+
+#### Checks (decisions where the spec gives no number)
+
+| Code | Finding | Severity | Fix |
+|---|---|---|---|
+| LOUDNESS | integrated of the delivered mix outside preset ±1 LU; under 0.4 s audible (10 ms hops over −70 dBFS) → "cannot be measured"; silent → "silent" (never a pass) | error for R128 / A/85, warning for web / podcast; not measurable: warning | `mixer.setLoudness {enabled, preset target, ceiling}` (commands, safe) when the Mix does not already normalise there |
+| TRUE_PEAK | delivered true peak > ceiling + 0.1 dB | error | same as LOUDNESS (safe) |
+| OUT_OF_SYNC | the clip ends < 20 ms after its aligned point while its sound goes on ("is cut … the sound it is placed for does not play"; found by the real run, below); or the offset beyond the cue kind's tolerance: cut ±1, land ±2, move ±3, appear ±1 frame (spec); transition / emphasis / reveal ±2, exit / beat / manual ±1 (decision); +0.5 ms float slack | error | cut: `clip.trim {edge: out, deltaFrames}` (safe) only when the dry-run really lengthens the clip (it is clamped where the media ends inside the next frame: then no fix, `measured.cause` says why). Offset: the clip moved off its placement: `soundDesign.swap {clipId, mediaId, frame: cue}` = MCP `align_peak {to: 'cue', withLayers: false}` (safe, dry-run). Measured off although the document says aligned: no fix (a renderer problem, reported as such). Not found in the stem: judged by the document; not measurable (muted track, reversed, offline): info |
+| MASKED | lift < 1.5 dB support / 3 dB hero (spec; ambient beds and the layers of a cue are not checked: decision — a layer thickens its cue's first layer) | warning | `soundDesign.applyGains` at the solver's gain (all events solved together), safe when that gain reaches the minimum and the gain is not the user's |
+| OVERLOAD | a sound > bed cap + 0.5 LU (hero 10, support 6); the export limiter > 3 dB; normalisation off and sample peak ≥ 0 dBFS | warning / warning / error | the solver gain (safe if under the cap) / `rebalance_sfx` job (not safe: listen) / setLoudness (safe) |
+| MUSIC_OVER_VOICE | per speech segment ≥ 0.5 s: energy mean of the dialogue and music momentary curves over voiced hops (delivery's measure) under < 8 LU; reports whether the music is ducked | warning | not ducked: the delivery job with `{loudness: false, autoMatch: false, rebalance: false}` (ducking only), safe when under + the clip's duck depth ≥ 8 LU; ducked already: the delivery with Auto-Match (not safe) |
+| SILENCE | ≥ 0.5 s under −60 dBFS (10 ms mean square of the delivered mix), not covered by a silence cue's window (or within 0.5 s after an unwindowed one) | warning | `soundCue.add` a silence cue over it (not safe: only if intended) |
+| DIP | the centred short-term loudness falls > 10 LU under its maximum of the previous 3 s and comes back ≥ 6 LU within 6 s, with no stop-before window, video cut (V-track clip edge) or silence cue in the drop, and not inside a SILENCE run (decision: a drop that never recovers is an ending) | warning | silence cue (not safe) |
+| STALE_CUE | anchored cue: `resolveCueAnchor` ≠ cue frame; or the anchor no longer resolves | warning | `soundCue.resync {cueIds}` (safe, dry-run) / `soundCue.remove {withClips}` (not safe) |
+| NO_PICTURE_EVENT | a `derived` cue (not beat / silence) without an anchor that resolves on it, no derived event (`deriveCues` all sources, rich, ±2 frames) and no motion speed change ≥ 0.05 diag/s within ±2 frames | warning | remove the cue and its sounds (not safe) |
+| DENSITY | filled heroes closer than the density's hero spacing (1.5 / 2 / 3 s) or 0.5 s; more filled cues in 1 s than the budget (interface types ui/click/key/tick excluded: patterns) | warning / info | `soundCue.update {weight: support}` + `soundDesign.setRole {support}` on the later hero (safe) / none |
+| REPEAT | consecutive sound events (first layer of each cue, unlinked SFX) with the same sound or media | warning (info for interface types) | the clip's alternatives first (a registered one: `soundDesign.swap` commands; else a `swap` fix = `swap_sound`), safe; else a library sound by similarity (not safe) |
+| LICENSE | a clip of a library sound that is not commercial-safe: NC, ND, unknown → error; user-provided → warning | | a commercial-safe alternative (safe) or a similar commercial-safe library sound (not safe) |
+| CREDITS | commercial-safe sounds needing attribution (CC-BY…) and `settings.credits` not set | warning | `soundDesign.setSettings {credits: 'md'}` (safe) |
+
+Every command fix is dry-run on a copy of the document (`applyTransaction`) and only offered when it applies.
+**`settings.credits`** is new (decision): the spec's "no credits export configured" needs something to configure before
+Phase 6's `ExportSettings.credits`; P6 should default the export dialog's credits option from it.
+
+#### API for WP5.2 (the panel)
+
+- Run: `engine.soundCheck({projectId, sequenceId?, preset?, range?, store?})` → job `sound-check` (Jobs panel, progress
+  stages); result `SoundCheckResult {projectId, sequenceId, stored, revision, report}` (`@jasper/api` schemas). The editor's
+  call with `store: true` writes the summary as the user's own edit ("Sound Check Result", one undo step).
+- `report`: `verdict`, `counts` (per code and severity), `issues[]` `{id, code, severity, category (loudness | sync |
+  mix | cues | licence: group by it), frame?, timecode?, range?, clipIds?, cueId?, message {key, params, text}, measured,
+  fix?}`; translate with `t(message.key)` filled with `params` (keys are model strings; es.json has them). `fix {kind,
+  label (message), safe, why?, tool, args, commands? | job {route: rebalance | delivery, body} | swap {clipId, soundId}}`:
+  commands → ONE transaction; job → `engine.rebalanceSfx(body)` / `engine.applyDelivery(body)`; swap → register the
+  sound and `soundDesign.swap` (the panel's variation / Swap code path). "Fix all safe" = every `fix.safe`, then run again.
+- `events[]`: the per-event table (offsetMs, toleranceFrames, located, correlation, liftDb / minLiftDb / targetLiftDb,
+  peakOverBedLu, status, codes). Sync rows: `located`, `offsetMs`.
+- `listen[]`: `{slot: worst | hero | loudest | densest | passing, frame, timecode, seconds, why (message), issueId?,
+  clipId?, cueId?}` (≤ 5; absent slots when nothing qualifies, e.g. no failure → no "worst").
+- `loudness` (delivered integrated / TP / LRA / max momentary / short-term, `measurable`, normalisation and its gain,
+  limiter max GR, before normalisation), `curves` (momentary LUFS per stem + limiter GR, ≤ 1 200 points, `hopSec`,
+  `startSec`), `speech`, `stems`, `warnings`, `timings`.
+- Staleness: `soundCheckStatus(doc, sequenceId)` → `{state: none | current | stale, summary, reasons: mix | inputs |
+  preset}`; summary in `seq.soundDesign.lastCheck` (`mixHash`, `inputsHash`, `verdict`, `counts`, `at`, `preset`, `jobId`,
+  `range?`). Fetch the full report with `getJob(summary.jobId)` while the job is kept.
+- Drawing: `engine.soundVisual({projectId, sequenceId?, range (≤ 120 s), checkJobId?})` → 10 ms `curves.{mix, bed, sfx,
+  music, dialogue, ambience}.{momentary, shortTerm}`, `waveformPeakDb`, `motion {startFrame, speed[]}`, `cues`, `clips`
+  (aligned frames), `speech`, `issues` (of the job), `normalization {applied, gainDb, reason?}`.
+
+#### MCP
+
+- `sound_check` (EDIT_IDEMPOTENT: it runs a job and, with `store: true`, writes the summary; decision — annotations are
+  static, so the tool that may edit is not read-only): `{projectId, sequenceId?, preset?, range?, store?, images?
+  (default true), timeoutSeconds?}` → `verdict`, `counts`, `loudness`, `listen` (lines "HH:MM:SS:FF — why", to give
+  verbatim), `findings` (one line each with its fix and whether it is safe), `issues` (with fix tool + args), `table`,
+  `speech`, `stems`, `stored`, `next`; one PNG of up to three worst moments (±2 s each, `view_sound_timeline` strips
+  stacked).
+- `view_sound_timeline` (READ_ONLY): `{projectId, sequenceId?, range (≤ 120 s), checkJobId?, width?}` → one PNG (curves on a
+  −60…0 LUFS scale, speech shading, waveform, SFX clips with aligned points, cue ticks, motion, findings, timecode axis,
+  legend) + `cells` (lane geometry, each cue's / finding's x pixel, each stem's loudest value).
+- SOUND_GUIDE "Check": after applying, run sound_check, apply only fixes marked safe, give the listen-here timecodes
+  verbatim, never claim it sounds good.
+
+#### Verified (measured, this branch; shared host, 16 cores)
+
+- `pnpm vitest run packages/audio-fx/test/check-curves.test.ts`: 9 passed — `CurveMeter` identical for blocks of 1, 7, 480,
+  4096 samples; a −20 dBFS sine reads −20 dB; momentary / short-term curves equal `LoudnessMeter` (and `shortTermPeakLu`)
+  within 0.05 LU in the steady state; `maxPool` keeps peaks; `locateByCorrelation` finds a decaying burst in noise at
+  its exact offset (< 0.05 sample) at 4 positions, stays in its lag range, null for silence, a 300-run fast-check of
+  hostile input never throws; `evaluateSfxGain` equals the solver's achieved lift, peak over bed, true peak, speech lift
+  and dominant bands at the solved gains; 300 hostile runs never throw.
+- `pnpm vitest run packages/project/test/sound-check.test.ts`: 8 passed (store / clear / undo = untouched document / redo;
+  staleness by mix, cues, Mix loudness target, preset, credits, none without an inputs hash; 11 refusals; credits setting;
+  load keeps both, repair drops a damaged summary and an unknown credits format, idempotent; verdict, counts, the spec's
+  tolerances and codes, every template fills). `fuzz.test.ts` (AC-25, 2 000 runs with setCheck / credits drawn, > RUNS /
+  100 accepted): passed. `sound-messages.test.ts` fails on the integration branch already (a `setAutoGain` refusal
+  without a template; fixed on `feat/sd-p4v-model`, not merged yet): not from this package.
+- `apps/engine/test/sound-check-stems.test.ts`: 2 passed — every stem of `renderStems` (mix, sfx, dialogue, music, bed;
+  0.5 … 9.5 s, starts inside blocks) is **sample-identical** (max difference 0) to `renderMixdown` of the same clips, and
+  5 clips need 5 decoders although the mix, their stem and the bed all play them (the first version decoded short clips
+  twice and fed zeros to a stem: the test found it); the check's delivered loudness equals `renderMixdown({normalize})`
+  (integrated, true peak, gain, before) within 0.01.
+- `apps/engine/test/sound-check.test.ts` (real engine, generated media): 16 passed. The clean fixture passes (no
+  warnings; −14 ±1 LUFS delivered, TP ≤ −0.95; three sounds found at < 2 ms from their cues; stems, speech 2.5–4.5 s,
+  curves, four listen slots; `store` = revision + 1, `soundCheckStatus` current, a gain change → stale `mix`; the visual
+  route's 400 points, motion, cues, aligned frames, the hit ≥ 20 LU over the SFX curve's floor). **Seeded defects (P5-R4)**
+  each found with its code and resolved by applying its fix exactly as reported, then re-checked: a hit 2 frames late on
+  a cut → OUT_OF_SYNC +66.7 ms (± 2 ms), safe align fix → pass; a click cut at its peak → OUT_OF_SYNC "cut", safe trim; a
+  support under +14 dB music → MASKED, safe solver gain; 0.8 s of digital silence → SILENCE (0.7–0.9 s at frames 53–57),
+  silence cue; music ≈ 3 LU under the voice (measured 1.5–4.5) → MUSIC_OVER_VOICE, safe ducking job; true peak −0.2 dBTP
+  (normalisation off, calibrated) → TRUE_PEAK error, safe `mixer.setLoudness` → TP ≤ −0.95, no LOUDNESS; 0.2 s of media
+  → "cannot be measured", verdict warn; an empty sequence → "silent", warn; a cue whose marker moved 6 frames →
+  STALE_CUE, safe resync; the same hit back to back → REPEAT, safe swap to its registered alternative; heroes 1.5 s apart
+  (balanced) → DENSITY, safe demotion; CC-BY-NC click → LICENSE error, safe swap to a CC0-class alternative; user-provided
+  → LICENSE warning; CC-BY sound → CREDITS, safe credits setting; a derived cue with nothing on screen → NO_PICTURE_EVENT;
+  typed refusals (9). **Time per check** (`sound check timings`, load 8): clean fixture (10 s, 3 sounds) **1.2 s**, the
+  others 0.4–5.1 s; the same suite at load ≈ 50: clean 15.1–18.5 s, the others 2–19.5 s (all under 30 s).
+- `apps/engine/test/{security-review,fuzz-http,server}.test.ts` with the check suite: 4 files, 222 passed.
+- `apps/mcp/test/sound-check.test.ts` (jasper-mcp over stdio, real engine): a hit nudged 2 frames on a cut → `fail`,
+  OUT_OF_SYNC at 00:00:01:00, +66.7 ms, fix `align_peak` safe; listen[0] "00:00:01:00 — Worst finding: …"; ONE PNG ≥ 900 px
+  that decodes; the safe fixes applied as given (tool + args) → `pass`, stored, `soundCheckStatus` current;
+  `view_sound_timeline` with the first job: cues [30, 90], the OUT_OF_SYNC flag, 6 lanes, a 1200 px PNG; strict arguments
+  (`E_UNKNOWN_ARGUMENT`, bad preset), RANGE_TOO_LONG (130 s), RANGE_EMPTY. `readme-tools`, `conventions`, `sound-guide`,
+  `sound-examples` (setCheck example applies), `apps/web/test/i18n.test.ts`, `node scripts/i18n.mjs --check` (9 618
+  strings): pass.
+- **Real run** (dev engine `JASPER_APPDIR=.stage … --port 50901`, the 212-sound library, a scratch jasper-mcp client over
+  stdio — scripts and outputs in `/var/lib/orquester/tmp/p5-check-run/`, not committed): the Phase 4 fixture (Phase 2
+  `FIXTURE_COMMANDS` + 14 s pink-noise music on A1 + dialogue 4–8 s on A2), `plan_sound_design {seed: 2026, delivery:
+  web}` (17 cues) accepted as the editor, then the impact on the cut at 00:00:03:00 nudged 2 frames as a seeded defect.
+  `sound_check`: **fail** in 28.8 s (load ≈ 24), MASKED 5, OUT_OF_SYNC 6 (5 errors, 1 info). The nudged impact: "+66.7 ms
+  late on its cut cue", fix `align_peak` (safe) applied → gone on the re-check (16.1 s). Every other placed sound was
+  located at **0 ms** from its cue. What remains is real and has no safe fix: (1) four typewriter ticks / clicks are
+  **cut at their peak** — their clips are 1 frame long and end exactly on the aligned frame (a 85 ms padded sound peaking
+  at 58 ms: whole-frame clips cannot reach past the media end, `clip.trim` clamps with W_DURATION_CLAMPED); verified by
+  rendering one clip alone: it plays 7.121–7.133 s and stops at its peak (the first check version reported "−41.9 ms off"
+  for it and offered a trim that changed nothing; both fixed: the cut is detected first and the trim is only offered when
+  the dry-run lengthens the clip). (2) supports masked by the solver's own limits (consistency, hero-shadow, the dialogue
+  guard under speech: −28 dB for clicks under the words) — what the solver reported when it placed them. The verdict
+  stays **fail** honestly; re-check pass needs the registration fix below. Pictures looked at: `check-1.png` (two strips
+  around 00:00:03:00 and 00:00:09:20: the nudged impact's flag, the hero tick, the masked swish), `timeline.png` / 
+  `final-timeline.png` (14 s: music ducked under the speech, every SFX bump on its cue tick, motion around 1–2 s) and
+  `final-zoom.png` (5.5–9 s: ticks ≈ 19 LU under the dialogue, "As delivered (normalisation +3.5 dB)" from the check
+  job). The looks found two drawing faults, fixed: flag labels overlapped in dense passages (now skipped when they would
+  touch) and speech drawn as syllable stripes (now bridged like the check).
+- Gate on this branch (the integration branch had not moved): `pnpm typecheck` (every package) and `pnpm lint` (Biome,
+  tokens, anime, layers, assets) pass; `pnpm notices --check` current; `node scripts/i18n.mjs --check` 9 618 strings.
+  `pnpm vitest run packages/audio-fx packages/api packages/engine-client apps/web/test/i18n.test.ts
+  apps/web/test/sound-i18n.test.tsx --maxWorkers=3`: 29 files, 390 passed. `pnpm vitest run --project @jasper/project
+  --maxWorkers=3`: 1 992 of 1 993 passed — the one failure is the pre-existing `sound-messages` template gap above.
+  `pnpm vitest run apps/mcp/test/sound* apps/mcp/test/{conventions,readme-tools,fuzz}.test.ts apps/engine/test/
+  {sound-check,sound-check-stems,sound-design-cues,sound-design-rebalance,security-review,fuzz-http}.test.ts
+  --maxWorkers=2` (load 35–60): 18 files, 638 passed.
+
+#### Limits and notes for the next packages
+
+- **Upstream defect found (not fixed here; Phase 1/2 owners):** short library sounds whose peak lies in the last partial
+  frame of the media are cut at their peak — registration pads the head (50 ms) but not the tail, and clips are whole
+  frames inside the media. Padding the tail by one frame at the highest frame rate (or letting a clip's last frame run past
+  the media end as silence) fixes it; Sound Check reports these clips as OUT_OF_SYNC "cut" without a fix.
+- Sync is searched within ±3 frames of the cue (spec); a larger offset is judged from the document (`measuredIn:
+  'document'`). Two identical sounds within ±3 frames can be confused (the stronger correlation wins). A layer under
+  another sound of its cue may be "not measurable" (info). Reversed clips are not measured. Maintain-pitch speed changes
+  are decoded as varispeed for the reference (the timing is right; the correlation is lower).
+- MASKED, OVERLOAD (bed) and their fixes use the solver's event model (each sound against the bed, not against other
+  sound effects). The fix applies one clip's solved gain; consistency with its repeats follows on the next rebalance.
+- DIP needs a recovery within 6 s (a drop that stays down is treated as an ending) and is explained by any video edit
+  point in the drop. SILENCE / DIP use the delivered mix; a silence cue covers its window (or 0.5 s around an unwindowed one).
+- NO_PICTURE_EVENT sees keyframed motion, edits, transitions, text, graphics and markers (`deriveCues`); footage motion
+  needs P6's pixel analysis.
+- LOUDNESS on a `range` is the loudness of that range (warning `W_RANGE`). The visual route adds the normalisation gain but
+  not the limiter; its curves are 10 ms, the report's are max-pooled to 1 200 points.
+- The summary's staleness ignores picture edits (a moved anchor shows on the next check as STALE_CUE).
+- Messages carry the cue kind and the density as ids (`cut`, `balanced`) inside translated templates; WP5.2 may translate
+  them with the cue-kind labels it already has.
+- WP5.2 owns the panel, "Fix all safe", the listen-here markers and the Export dialog option; the API is above.
+
+
 ## Phase 6: packs, cue sources, completion

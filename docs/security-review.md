@@ -454,6 +454,8 @@ Every state-changing engine route and what an agent may do with it:
 | `POST /api/sound-design/plan` (`plan_sound_design`), `place_sound` mode "propose" | Open | Stores a proposal (nothing in the document changes); registers the planned library sounds like `POST /api/sounds/:id/register` (copies into managed media, folder files in place only on a local engine); applying it is the gated accept above |
 | `POST /api/sound-design/rebalance` (`rebalance_sfx`) | Open | Mode `propose` (the default) stores a proposal (nothing changes); mode `apply` is one ordinary, undoable transaction of `soundDesign.applyGains` (clip gains of sound effects within −30…+12 dB, nothing deleted), classified like any agent transaction (labelled "Agent: Rebalance SFX Levels"); renders are measure-only (no file is written) |
 | `POST /api/sound-design/delivery` (`apply_delivery`) | Open | Mode `propose` (the default) stores a proposal (nothing changes); mode `apply` is one ordinary, undoable transaction of `soundDesign.applyDelivery` (settings, the Mix's loudness normalisation, Essential Sound Auto-Match gains, ducking Volume keyframes) and `soundDesign.applyGains`, classified like any agent transaction ("Agent: Apply Delivery Preset"); nothing is deleted; renders are measure-only (no file is written) |
+| `POST /api/sound-design/check` (`sound_check`) | Open | Measure-only renders (the first normalisation pass is a scratch file of the job, removed when it ends); with `store: true` one ordinary, undoable transaction of `soundDesign.setCheck` (metadata only, "Agent: Sound Check Result"); fixes are returned, never applied |
+| `POST /api/sound-design/visual` (`view_sound_timeline`) | Open | Read-only: measure-only renders of ≤ 120 s, nothing stored |
 | `PUT /api/settings/processing` (`set_processing_settings`) | **Gated**, now for every caller without the editor key | Where media is sent (was opt-in by a query parameter) |
 | `POST /api/project-manager` (`project_manager`) | Open | Copies into a new destination under free names; sources untouched |
 | `POST /api/assets/:id/relink`, `…/relink-scan` (`link_media`) | Open | Registers and compares files; the relink itself is a transaction (undoable; `force` is gated) |
@@ -709,6 +711,17 @@ them, but it was reviewed by its author, not by this review.
   their schemas (≤ 5 000 measured clips, ≤ 256 ducking groups of ≤ 20 000 regions). Tests:
   `apps/engine/test/sound-design-delivery.test.ts` (typed refusals: bad preset, unknown key, unknown or malformed
   project, unknown sequence).
+- **Sound Check** (spec 12 WP5.1, `apps/engine/src/sound-design/{check,stems,visual}.ts`; `POST /api/sound-design/check`,
+  `POST /api/sound-design/visual`): strict zod bodies (project id `[A-Za-z0-9_-]{1,128}`, a frame range, a preset enum,
+  `store` boolean, a ≤ 128-character job id); the project, sequence and range are checked before a job starts (typed `404`,
+  `400 RANGE_EMPTY` / `RANGE_TOO_LONG`: ≤ 4 h per check, ≤ 120 s per visual request); the check job reads the live
+  document through the agent service and renders only through the export mixer (one `OfflineMixer` per stem, shared
+  ffmpeg decoders of engine-registry media, `measureOnly` except the normalisation pass's float scratch file in the job's
+  scratch directory, deleted in a `finally`); reference decodes of sound files are bounded (≤ 0.25 s each, 4 at once,
+  local protocols only); curves are bounded (≤ 6 h of 10 ms hops; report curves ≤ 1 200 points, ≤ 2 000 findings and
+  event rows); fixes are only described (commands dry-run on a copy, never applied by the check); `checkJobId` must name
+  a `sound-check` job of the same project (`404 JOB_NOT_FOUND`). `store` goes through the agent service's transaction
+  path. Tests: `apps/engine/test/sound-check.test.ts` (typed refusals), `sound-check-stems.test.ts`.
 - **Proposals** (spec 12 WP3.1, `apps/engine/src/routes/proposals.ts`, `proposals/{store,service}.ts`; `GET/POST
   /api/projects/:id/proposals`, `GET/DELETE …/:proposalId`, `POST …/:proposalId/accept|reject|reopen|note|select|applied`):
   project ids are matched against `prj_` + 16 Crockford characters and proposal ids against `prp_` + 16 before any path

@@ -71,7 +71,7 @@ export function analysisLayout(format: SoundFormat): { rate: number; channels: n
 }
 
 /** Collects interleaved f32le from a child into planar channels (at most `maxFrames`). */
-function readPlanar(
+export function readPlanar(
 	child: ChildProcess,
 	channels: number,
 	maxFrames: number,

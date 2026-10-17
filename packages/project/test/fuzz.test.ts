@@ -55,6 +55,7 @@ type Abstract =
 	| { k: 'setPeak'; clip: number; peak: number }
 	| { k: 'applyGains'; clip: number; n: number; gain: number; limits: number }
 	| { k: 'autoGain'; clip: number; auto: boolean }
+	| { k: 'check'; op: number; verdict: number; n: number; at: number }
 	| { k: 'mix'; op: number; clip: number; cue: number; at: number; len: number; depth: number; hz: number };
 
 const frame = fc.integer({ min: 0, max: 900 });
@@ -170,6 +171,14 @@ const abstract: fc.Arbitrary<Abstract> = fc.oneof(
 	}),
 	// Phase 4 (WP4.2b): auto gain on / off (non-effect clips are refused)
 	fc.record({ k: fc.constant('autoGain' as const), clip: idx, auto: fc.boolean() }),
+	// Phase 5 (WP5.1): the Sound Check summary and the credits setting (bad verdicts / ranges are refused)
+	fc.record({
+		k: fc.constant('check' as const),
+		op: fc.nat(3),
+		verdict: fc.nat(3),
+		n: fc.nat(70),
+		at: frame,
+	}),
 	// Phase 4 (WP4.2a): music type, dips, stop-before, build, room glue, delivery
 	fc.record({
 		k: fc.constant('mix' as const),
@@ -376,6 +385,21 @@ function concretize(a: Abstract, doc: ProjectDocument, media: string[]): unknown
 				report: { [ids[0]!]: { limitedBy, achievedLiftDb: a.limits ? a.gain / 3 : null, reason: 'fuzz' } },
 			};
 		}
+		case 'check': {
+			if (a.op === 2) return { type: 'soundDesign.setSettings', credits: a.n % 2 ? 'md' : null };
+			if (a.op === 3) return { type: 'soundDesign.setCheck', summary: null };
+			return {
+				type: 'soundDesign.setCheck',
+				summary: {
+					mixHash: `h${a.n}`,
+					verdict: ['pass', 'warn', 'fail', 'maybe'][a.verdict],
+					counts: Object.fromEntries(Array.from({ length: a.n }, (_, i) => [`C${i}`, i])),
+					at: '2026-10-16T00:00:00.000Z',
+					preset: 'web',
+					...(a.op === 1 ? { range: { start: a.at, end: a.at + (a.n % 3) } } : {}),
+				},
+			};
+		}
 		case 'autoGain': {
 			const audio = clips.filter((c) => c.kind === 'audio');
 			const c = audio[a.clip % Math.max(1, audio.length)]?.id ?? pick(a.clip);
@@ -477,6 +501,7 @@ describe('AC-25: invariants under random transactions', () => {
 		let soundAccepted = 0;
 		let gainsAccepted = 0;
 		let mixAccepted = 0;
+		let checkAccepted = 0;
 		const ids = createRandomIdSource();
 		fc.assert(
 			fc.property(
@@ -506,6 +531,12 @@ describe('AC-25: invariants under random transactions', () => {
 								)
 							)
 								mixAccepted++;
+							if (
+								commands.some((c) =>
+									/^soundDesign\.(setCheck|setSettings)$/.test((c as { type: string }).type),
+								)
+							)
+								checkAccepted++;
 							const issues = checkInvariants(document);
 							if (issues.length)
 								throw new Error(
@@ -530,5 +561,6 @@ describe('AC-25: invariants under random transactions', () => {
 		expect(soundAccepted).toBeGreaterThan(RUNS / 10);
 		expect(gainsAccepted).toBeGreaterThan(RUNS / 100);
 		expect(mixAccepted).toBeGreaterThan(RUNS / 50);
+		expect(checkAccepted).toBeGreaterThan(RUNS / 100);
 	}, 600_000);
 });
