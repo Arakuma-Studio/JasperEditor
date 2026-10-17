@@ -39,6 +39,46 @@ function fakeEngine() {
 		}
 		return r.result;
 	};
+	// 10 s of audio on A1 (bound verdicts need a moment inside the sequence)
+	const media = apply(
+		{
+			commands: [
+				{
+					type: 'media.register',
+					ref: '$a',
+					asset: {
+						kind: 'audio',
+						fingerprint: 'q1:verdicts',
+						originalName: 'voice.wav',
+						sizeBytes: 1,
+						container: 'wav',
+						probe: {
+							durationFlicks: 7_056_000_000,
+							startTimecode: null,
+							streams: [
+								{
+									index: 0,
+									type: 'audio',
+									codec: 'pcm_s16le',
+									sampleRate: 48_000,
+									channels: 2,
+									channelLayout: 'stereo',
+								},
+							],
+							rotationDegrees: 0,
+							hasAlpha: false,
+							variableFrameRate: false,
+						},
+						locators: [{ type: 'engine-store', engineId: 'local', key: 'mk_verdicts' }],
+					},
+				},
+				{ type: 'clip.place', source: { mediaId: '$a' }, at: 0, tracks: { audio: 'A1' } },
+			],
+		},
+		'user',
+	);
+	if (!media.ok) throw new Error(JSON.stringify(media.errors));
+	const audioClip = () => Object.values(doc.sequences[seqId]!.clips).find((c) => c.kind === 'audio')!.id;
 	// the user listened: the hero sounds right, the worst moment is flagged with a note; an agent wrote a marker with
 	// the same name (not a human verdict) and the user an ordinary comment marker
 	const user = apply(
@@ -68,6 +108,7 @@ function fakeEngine() {
 	);
 	if (!agent.ok) throw new Error(JSON.stringify(agent.errors));
 	const requests: SoundCheckRequest[] = [];
+	const lastRequests: unknown[] = [];
 	const job = (state: string) => ({
 		id: 'job_check',
 		kind: 'sound-check',
@@ -87,6 +128,18 @@ function fakeEngine() {
 			return job('queued');
 		},
 		getJob: async () => job('succeeded'),
+		lastSoundCheck: async (req: { projectId: string; sequenceId?: string }) => {
+			lastRequests.push(req);
+			return {
+				projectId: req.projectId,
+				sequenceId: seqId,
+				jobId: 'job_check',
+				savedAt: '2026-10-17T10:00:00.000Z',
+				state: 'stale',
+				reasons: ['mix'],
+				result: resultFixture({ projectId: 'prj_test', sequenceId: seqId }),
+			};
+		},
 		call: async (name: string) => {
 			throw new Error(`unexpected call ${name}`);
 		},
@@ -97,7 +150,7 @@ function fakeEngine() {
 		invalidate: () => {},
 		close: async () => {},
 	};
-	return { link, requests, seqId };
+	return { link, requests, lastRequests, seqId, apply, audioClip };
 }
 
 let open: Client[] = [];
@@ -114,11 +167,11 @@ async function connect() {
 	const client = new Client({ name: 'check-test', version: '1' });
 	await client.connect(y);
 	open.push(client);
-	const call = async (args: Record<string, unknown>) =>
+	const call = async (args: Record<string, unknown>, name = 'sound_check') =>
 		readToolResponse(
 			(await client.callTool({
-				name: 'sound_check',
-				arguments: { projectId: 'prj_test', images: false, ...args },
+				name,
+				arguments: { projectId: 'prj_test', ...(name === 'sound_check' ? { images: false } : {}), ...args },
 			})) as CallToolResult,
 		);
 	return { engine, call };
@@ -146,6 +199,65 @@ describe('sound_check humanVerdicts / target', () => {
 			}),
 		]);
 		expect(engine.requests[0]).not.toHaveProperty('target');
+	});
+
+	it('a verdict bound to its moment (soundDesign.setVerdict) says whether it is still current; older ones cannot tell', async () => {
+		const { call, engine } = await connect();
+		const clipId = engine.audioClip();
+		const set = engine.apply(
+			{
+				commands: [
+					{
+						type: 'soundDesign.setVerdict',
+						frame: 120,
+						verdict: 'flag',
+						note: 'Too quiet',
+						slot: 'loudest',
+						clipId,
+					},
+				],
+			},
+			'user',
+		);
+		expect(set.ok).toBe(true);
+		let r = await call({});
+		const bound = (r.body.humanVerdicts as Record<string, unknown>[]).find((v) => v.frame === 120);
+		expect(bound).toMatchObject({
+			verdict: 'flagged',
+			note: 'Too quiet',
+			slot: 'loudest',
+			clipId,
+			stale: false,
+		});
+		// the legacy (name-only) markers: staleness unknown
+		expect((r.body.humanVerdicts as Record<string, unknown>[]).find((v) => v.frame === 90)).toMatchObject({
+			stale: null,
+		});
+		// the user's sound changed since they listened: stale, with the reason
+		expect(
+			engine.apply(
+				{ commands: [{ type: 'audio.setGain', clipIds: [clipId], mode: 'adjust', db: 6 }] },
+				'user',
+			).ok,
+		).toBe(true);
+		r = await call({});
+		expect((r.body.humanVerdicts as Record<string, unknown>[]).find((v) => v.frame === 120)).toMatchObject({
+			stale: true,
+			staleReasons: ['moment'],
+			mixChangedSince: true,
+		});
+	});
+
+	it('get_sound_check returns the kept report with its staleness and the verdicts; no job is run', async () => {
+		const { call, engine } = await connect();
+		const r = await call({}, 'get_sound_check');
+		expect(r.isError).toBe(false);
+		expect(r.body).toMatchObject({ jobId: 'job_check', state: 'stale', reasons: ['mix'], verdict: 'fail' });
+		expect(String(r.body.next)).toContain('run sound_check again before applying any fix');
+		expect((r.body.findings as string[]).some((f) => f.includes('OUT_OF_SYNC'))).toBe(true);
+		expect(r.body.humanVerdicts).toHaveLength(2);
+		expect(engine.lastRequests).toEqual([{ projectId: 'prj_test', sequenceId: engine.seqId }]);
+		expect(engine.requests).toEqual([]);
 	});
 
 	it('passes a custom target to the engine; refuses one out of range', async () => {
