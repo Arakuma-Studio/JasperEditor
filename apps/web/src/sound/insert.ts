@@ -6,7 +6,7 @@
 // media to the "Sound Effects" bin (or reuses the project's copy) and runs `soundDesign.place` (spec 12 §2.9), which
 // adds the track if needed and the clip, tags it Essential Sound ▸ SFX and records its `AudioClip.sfx`.
 // Also the drag payload of the Sound Library (`application/x-jasper-sound`).
-import type { RegisterSoundResponse, SoundEntry } from '@jasper/api';
+import { type RegisterSoundResponse, SOUND_ANALYSIS_SECONDS, type SoundEntry } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	audioTrackIsFree,
@@ -96,14 +96,22 @@ export type { SoundTiming };
 export { chooseSoundTrack, nextSfxTrackName };
 export type TrackChoice = SoundTrackChoice;
 
-/** The library entry's timing (the unpadded library file): what the drag ghost knows before registering. */
+/**
+ * The library entry's timing (the unpadded library file): what the drag ghost knows before registering — with where the
+ * sound has faded (−60 dB) when the analysis covered the whole file, so the ghost is as long as the clip will be.
+ */
 export function timingOf(e: Pick<SoundEntry, 'descriptors' | 'format'>): SoundTiming {
 	const d = e.descriptors;
+	const durationSec = e.format.durationSec > 0 ? e.format.durationSec : d.durationSec;
+	const tail = d.tailSec;
 	return {
 		peakSec: d.peakSec,
 		onsetSec: d.onsetSec,
 		headQuietSec: d.headQuietSec,
-		durationSec: e.format.durationSec > 0 ? e.format.durationSec : d.durationSec,
+		durationSec,
+		...(Number.isFinite(tail) && tail >= 0 && durationSec <= SOUND_ANALYSIS_SECONDS
+			? { tailEndSec: Math.min(durationSec, d.peakSec + tail) }
+			: {}),
 	};
 }
 

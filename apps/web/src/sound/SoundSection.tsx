@@ -92,6 +92,8 @@ export function SoundSection({ session, clips, sequenceId }: ClipSectionProps) {
 	const layers = layersOf(seq, live);
 	const d = prov?.descriptors;
 	const lead = prov?.leadSilenceSec ?? 0;
+	// the silence registration put after the sound is not part of it either
+	const trail = prov?.trailSilenceSec ?? 0;
 	const sec = (x: number) => `${Math.max(0, x - lead).toFixed(3)} s`;
 	return (
 		<div className="flex flex-col gap-1 pb-2" data-testid="properties-sound-section">
@@ -113,7 +115,7 @@ export function SoundSection({ session, clips, sequenceId }: ClipSectionProps) {
 							<span className="block text-pr-small" data-testid="sound-section-descriptors">
 								{t(
 									'{0} long · onset {1} · peak {2} into the sound',
-									formatSeconds(d.durationSec - lead),
+									formatSeconds(d.durationSec - lead - trail),
 									sec(d.onsetSec),
 									sec(d.peakSec),
 								)}
