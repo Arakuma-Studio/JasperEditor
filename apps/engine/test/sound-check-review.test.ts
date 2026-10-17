@@ -228,6 +228,51 @@ describe('Sound Check engine review (real engine)', { timeout: 600_000 }, () => 
 		expect(issuesOf(r2, 'DIP').length, describeIssues(r2)).toBeGreaterThan(0);
 	});
 
+	it('DIP: a pause in the dialogue over quiet music is not a dip; the music itself dropping in the pause is (verification)', async () => {
+		// speech 4–8 s, a 4 s pause, speech again 12–16 s; the music (20 s) 20 dB down, far under the voice
+		const build = () => {
+			const fx = buildCheckDoc(media);
+			const music2 = fx.b.tx([
+				{
+					type: 'clip.place',
+					source: { mediaId: fx.doc().sequences[fx.b.seqId]!.clips[fx.ids.music]!.mediaId },
+					at: { seconds: 10 },
+					tracks: { audio: 'A1' },
+					ref: '$m2',
+				},
+				{
+					type: 'clip.place',
+					source: { mediaId: fx.doc().sequences[fx.b.seqId]!.clips[fx.ids.speech]!.mediaId },
+					sourceRange: { in: { seconds: 4 }, out: { seconds: 8 } },
+					at: { seconds: 12 },
+					tracks: { audio: 'A2' },
+					ref: '$s2',
+				},
+			]).refs;
+			fx.b.tx([
+				{ type: 'essentialSound.setType', clipIds: [music2.$m2!], audioType: 'music' },
+				{ type: 'essentialSound.setType', clipIds: [music2.$s2!], audioType: 'dialogue' },
+				{ type: 'audio.setGain', clipIds: [fx.ids.music, music2.$m2!], mode: 'adjust', db: -20 },
+			]);
+			return { fx, music2: music2.$m2! };
+		};
+		const pause = build();
+		const r1 = await check(pause.fx.doc());
+		expect(issuesOf(r1, 'DIP'), describeIssues(r1)).toEqual([]);
+		// control: the music itself drops 14 dB from 8.5 to 11.5 s inside the pause (clip gains, no level move written)
+		const drop = build();
+		const A1 = drop.fx.b.track('A1');
+		const clipAt = (start: number) =>
+			Object.values(drop.fx.doc().sequences[drop.fx.b.seqId]!.clips).find(
+				(c) => c.kind === 'audio' && c.start === start && c.trackId === A1,
+			)!.id;
+		drop.fx.b.tx([{ type: 'clip.split', at: { seconds: 8.5 }, clipIds: [drop.fx.ids.music] }]);
+		drop.fx.b.tx([{ type: 'clip.split', at: { seconds: 11.5 }, clipIds: [drop.music2] }]);
+		drop.fx.b.tx([{ type: 'audio.setGain', clipIds: [clipAt(255), clipAt(300)], mode: 'adjust', db: -14 }]);
+		const r2 = await check(drop.fx.doc());
+		expect(issuesOf(r2, 'DIP').length, describeIssues(r2)).toBeGreaterThan(0);
+	});
+
 	it('REPEAT never offers a safe swap to an alternative whose licence is not commercial-safe', async () => {
 		const fx0 = buildCheckDoc(media);
 		const click = soundIdOf(fx0.doc(), fx0.ids.clickMedia);
