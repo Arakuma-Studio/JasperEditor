@@ -612,7 +612,10 @@ export function cleanupSequence(seq: DSeq, h: HandlerContext): void {
 		}
 		// WP6.5a: an edit that left a clip shorter than its transition (a trim, an overwrite) shortens the transition to
 		// it, as a split does (fitTransitionsAfterSplit; INV-010) — same cut and alignment, so its handles still fit.
-		const fits = Math.min(out?.duration ?? Number.POSITIVE_INFINITY, inc?.duration ?? Number.POSITIVE_INFINITY);
+		const fits = Math.min(
+			out?.duration ?? Number.POSITIVE_INFINITY,
+			inc?.duration ?? Number.POSITIVE_INFINITY,
+		);
 		if (Number.isFinite(fits) && t.duration > fits) {
 			const d = Math.max(1, fits);
 			h.warn(
