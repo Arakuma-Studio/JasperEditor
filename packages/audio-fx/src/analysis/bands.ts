@@ -256,6 +256,49 @@ export function energyProfile(channels: Float32Array[], sampleRate: number, wind
 	return out;
 }
 
+/** Slices of a peak profile (`peakProfile`). */
+export const PEAK_PROFILE_SLICES = 32;
+
+/**
+ * How loud a sound's peaks are along `window` (seconds): the peak (dB re full scale) of each of
+ * {@link PEAK_PROFILE_SLICES} equal slices, its sample peak over all channels raised by how far the sound's measured
+ * true peak (`truePeakDb`, null: none) is over its loudest sample, so the loudest slice reads the true peak. The
+ * masking solver sums the overlapping sounds' slices at each moment instead of their true peaks (two hits 0.1 s apart
+ * do not peak together). Silence reads {@link BAND_FLOOR_DB}; an invalid window or rate gives null. Never throws.
+ */
+export function peakProfile(
+	channels: Float32Array[],
+	sampleRate: number,
+	window: TimeWindow,
+	truePeakDb: number | null = null,
+): number[] | null {
+	const N = PEAK_PROFILE_SLICES;
+	if (!validRate(sampleRate)) return null;
+	const ch = usableChannels(channels);
+	let len = 0;
+	for (const c of ch) len = Math.max(len, c.length);
+	const range = sampleRange(window, sampleRate, len);
+	if (ch.length === 0 || !range) return null;
+	const [s0, s1] = range;
+	const peak = new Float64Array(N);
+	for (const c of ch) {
+		const m = Math.min(c.length, s1);
+		for (let i = s0; i < m; i++) {
+			const x = c[i]!;
+			if (x - x !== 0) continue;
+			const k = Math.min(N - 1, Math.floor(((i - s0) * N) / (s1 - s0)));
+			const a = Math.abs(x);
+			if (a > peak[k]!) peak[k] = a;
+		}
+	}
+	let max = 0;
+	for (let k = 0; k < N; k++) max = Math.max(max, peak[k]!);
+	const db = (a: number) => (a > 0 ? Math.max(BAND_FLOOR_DB, 20 * Math.log10(a)) : BAND_FLOOR_DB);
+	const over =
+		typeof truePeakDb === 'number' && Number.isFinite(truePeakDb) && max > 0 ? Math.max(0, truePeakDb - db(max)) : 0;
+	return Array.from(peak, (a) => (a > 0 ? Math.min(-BAND_FLOOR_DB, db(a) + over) : BAND_FLOOR_DB));
+}
+
 /** Combined level (dB) of a set of band levels: 10·log10 Σ 10^(L/10); {@link BAND_FLOOR_DB} for none. */
 export function sumBandsDb(levels: readonly number[]): number {
 	let e = 0;

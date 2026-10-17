@@ -67,6 +67,11 @@ describe('levels', () => {
 		expect(v.targetLiftDb).toBe(3.5);
 		expect(v.achievedLiftDb).toBe(1.2);
 		expect(limitPhrase('bed-cap', '−2 dB, limited by the bed level (A1)')).toBe('the bed level (A1)');
+		// the summed true peak of overlapping sounds (WP6.5b) has words, not its code
+		expect(limitPhrase('overlap-headroom')).toBe('the sounds overlapping it (summed true peak)');
+		expect(solverReason({ limitedBy: ['headroom', 'overlap-headroom'] })).toBe(
+			'limited by headroom, the sounds overlapping it (summed true peak)',
+		);
 		expect(limitPhrase('conflict:bed-cap/consistency')).toBe(
 			'conflict: the bed level kept over its repeats (±2 dB)',
 		);
