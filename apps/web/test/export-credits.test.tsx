@@ -97,7 +97,7 @@ async function setup(opts: { license?: string; credits?: 'txt' | 'md' | 'csv' | 
 			},
 			{ type: 'clip.place', sequenceId: seqId, source: { mediaId: '$m' }, at: 0, tracks: { audio: 'A1' } },
 			...(opts.credits !== undefined
-				? [{ type: 'soundDesign.setSettings', sequenceId: seqId, credits: opts.credits }]
+				? [{ type: 'soundDesign.setSettings' as const, sequenceId: seqId, credits: opts.credits }]
 				: []),
 		],
 	});
