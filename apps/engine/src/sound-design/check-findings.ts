@@ -156,13 +156,17 @@ export type FindRow = {
 
 // ── probes fed by the one-pass render ───────────────────────────────────────────────────────────────────────────────
 
+/** Stems the click detector scans. */
+export const CLICK_STEMS: readonly StemName[] = ['mix', 'sfx', 'bed'];
+
 /** The streaming detectors of one check: clicks per stem, presence of the sound-effect, music and dialogue stems. */
 export class CheckProbes {
 	readonly clicks = new Map<StemName, ClickDetector>();
 	readonly presence = new Map<'sfx' | 'music' | 'dialogue', PresenceMeter>();
 	constructor(sampleRate: number, channels: number, stemIds: Record<StemName, Set<string>>) {
-		for (const s of Object.keys(stemIds) as StemName[])
-			if (stemIds[s].size > 0) this.clicks.set(s, new ClickDetector(sampleRate, channels));
+		// the mix, the sound effects and the bed: dialogue, music and ambience are parts of the bed (a click in one of them
+		// is in the bed too, attributed to the same clip edges), so they are not scanned again (decision: −3 of 6 scans)
+		for (const s of CLICK_STEMS) if (stemIds[s].size > 0) this.clicks.set(s, new ClickDetector(sampleRate, channels));
 		for (const s of ['sfx', 'music', 'dialogue'] as const)
 			if (stemIds[s].size > 0) this.presence.set(s, new PresenceMeter(sampleRate, channels));
 	}

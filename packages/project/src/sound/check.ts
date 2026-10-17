@@ -642,7 +642,7 @@ export const SOUND_CHECK_MESSAGES = {
 	edgeEntry:
 		'{0} starts mid-sound at {1}: its source 20 ms before the In point is only {2} dB under its peak and it has no fade-in',
 	edgeDecay:
-		'{0} is chopped at {1}: it ends {2} dB under its peak while its source goes on ({3} dB) with a {4} ms fade-out',
+		'{0} is chopped at {1}: it ends {2} dB under its peak while its source goes on at {3} dB re that peak, with a {4} ms fade-out',
 	edgeMusic:
 		'The music {0} is chopped at {1}: it keeps sounding ({2} dBFS) over what enters ({3} dBFS) with a {4} ms crossfade',
 	harshMusic:

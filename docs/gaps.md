@@ -491,6 +491,22 @@ a gain fix's "why" is said in the UI language; `set_sound_cues` counts only the 
 notes outside Sound Check fixes) stay English; auto-tagging on add ignores agents' placements (they tag with
 `auto_tag_audio`) and is its own undo step; a clip added to a new or duplicated sequence is not auto-tagged.
 
+Phase 6 → WP-E1 ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP-E1"; spec 12 §4 P6-E1…E3,
+P6-E13, ideas and thresholds adapted from earshot, `licenses/ported/earshot.md`): Sound Check also finds clicks at edits
+(CLICK, a streaming 14 kHz burst detector on the mix and every stem, fixed by a 1-frame fade), cut edges (EDGE: a head that
+starts mid-sound, a chopped decay, music chopped at a joint), harsh sounds (HARSH, 2–6 kHz over the music's peak) and
+inaudible layers (LAYER_INAUDIBLE), partial coverage of a class of cues (COVERAGE), a mix that ends mid-sound or starts on
+a loud sample (ENDING / HEAD) and a loudest moment without its hero (ARC); risers are judged by a −250…+30 ms end window.
+CC BY-SA sounds carry an "SA" badge, a credits notice, `W_SHARE_ALIKE` / `W_SOUND_SHARE_ALIKE` warnings and a Sound
+Check LICENSE warning, and the default Commercial-safe filter leaves them out (human decision; "Include ShareAlike" adds
+them). Rerun `packages/audio-fx/test/check-findings.test.ts`, `packages/project/test/sound-check-p6.test.ts`,
+`apps/engine/test/sound-check-p6.test.ts`, `e2e/sound-check-edges.spec.ts`. Limits left: EDGE judges each edge against
+the clip's peak within 10 s of it, decodes at most 400 edges and skips reversed clips; edge levels are the source's with the static clip gains (Volume
+automation is not applied to them); HARSH's reference is the music's loudest moment in
+the range and an event's window can include another effect playing then; LAYER_INAUDIBLE measures ≤ 64 layers and only
+their first 3 s; COVERAGE classes come from stored anchors (separate clips sharing a pattern are one class only through a
+shared anchor source such as markers); the fixes' fades are frames (33 ms at 30 fps), not sub-frame keys.
+
 ### Not covered by any workstream yet
 
 - **Platforms**: run and fix the desktop app on macOS and Windows; hardware H.264/HEVC export on real GPUs; build
