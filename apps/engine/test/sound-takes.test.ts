@@ -222,7 +222,7 @@ describe('indexing splits multi-hit recordings into takes', { timeout: 300_000 }
 		expect((await recording('silent clicks')).takes).toBeUndefined();
 	});
 
-	it('entryTakes: single-hit or untyped sounds only, judged with singleHit off', async () => {
+	it('entryTakes: single-hit types only (not other types, not untyped sounds), judged with singleHit off', async () => {
 		const { judge: _j, ...cached } = (await recording('keyboard typing')).takes![0]!;
 		expect(entryTakes(['whoosh', 'key'], [cached])).toBeUndefined();
 		expect(entryTakes(['key'], [])).toBeUndefined();
@@ -233,7 +233,8 @@ describe('indexing splits multi-hit recordings into takes', { timeout: 300_000 }
 		)!;
 		expect(keyed[0]!.judge).toMatchObject({ type: 'key' });
 		expect(keyed[0]!.judge!.reasons).not.toContain('multi-hit');
-		expect(entryTakes(['future-type'], [cached])![0]!.judge).toBeNull();
+		expect(entryTakes(['future-type'], [cached])).toBeUndefined();
+		expect(entryTakes([], [cached])).toBeUndefined();
 	});
 });
 

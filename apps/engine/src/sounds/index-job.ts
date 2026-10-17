@@ -122,8 +122,9 @@ type CachedAnalysis = {
 
 /**
  * The takes an entry of these types carries (P6-E9): the analysis's takes, judged as one event against the profile of
- * its first known type, when that type is a single-hit one (a typing run typed `key`, a clock `tick`) or it has no
- * known type; none for other types (two onsets of a whoosh or a chime are one sound). Pure.
+ * its first known type, when that type is a single-hit one (a typing run typed `key`, a clock `tick`, a pack file of
+ * clicks); none for other types (two onsets of a whoosh or a chime are one sound) or an untyped sound (its onsets may
+ * be one sound too: measured on the Kenney packs, wp-note "Phase 6 → WP-E5"). Pure.
  */
 export function entryTakes(
 	types: readonly string[],
@@ -131,12 +132,12 @@ export function entryTakes(
 ): SoundTake[] | undefined {
 	if (!takes?.length) return undefined;
 	const judgeType = types.find(isSoundTypeId) as SoundTypeId | undefined;
-	if (judgeType && !SOUND_TYPE_PROFILES[judgeType].singleHit) return undefined;
-	const profile = judgeType ? { ...SOUND_TYPE_PROFILES[judgeType], singleHit: false } : null;
-	return takes.map((t) => {
-		const j = profile ? judgeSound(t.descriptors as SoundDescriptors, profile) : null;
-		return { ...t, judge: j ? { ...j, type: judgeType! } : null };
-	});
+	if (!judgeType || !SOUND_TYPE_PROFILES[judgeType].singleHit) return undefined;
+	const profile = { ...SOUND_TYPE_PROFILES[judgeType], singleHit: false };
+	return takes.map((t) => ({
+		...t,
+		judge: { ...judgeSound(t.descriptors as SoundDescriptors, profile), type: judgeType },
+	}));
 }
 
 /** Materials of an item: the words of its title, tags and file path (P6-E10). */

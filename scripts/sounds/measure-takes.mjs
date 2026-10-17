@@ -58,13 +58,19 @@ try {
 		if (i > 600) throw new Error('the engine did not start');
 		await sleep(200);
 	}
-	const folders = (args.folders ?? '').split(',').filter(Boolean);
+	// folders not added yet (a second run on the same appdir reuses them and the analyses)
+	const have = (await api('GET', '/api/sounds/roots')).roots;
+	const folders = (args.folders ?? '').split(',').filter((p) => p && !have.some((r) => r.path === p));
 	if (folders.length) {
 		const r = await api('PUT', '/api/sounds/roots', {
-			roots: folders.map((path) => ({ path, license: 'CC0-1.0', label: path.split('/').pop() })),
+			roots: [
+				...have.map(({ id, path }) => ({ id, path })),
+				...folders.map((path) => ({ path, license: 'CC0-1.0', label: path.split('/').pop() })),
+			],
 		});
 		if (r.job) await waitJob(r.job.id);
 	}
+	const labels = Object.fromEntries((await api('GET', '/api/sounds/roots')).roots.map((r) => [r.id, r.label]));
 	for (const id of (args.packs ?? '').split(',').filter(Boolean)) {
 		const job = await api('POST', `/api/sounds/packs/${id}/install`, {});
 		const done = await waitJob(job.id);
@@ -76,7 +82,11 @@ try {
 	const lib = JSON.parse(readFileSync(join(APPDIR, 'sounds', 'library.json'), 'utf8'));
 	const sounds = Object.values(lib.sounds);
 	const groupOf = (e) =>
-		e.source.type === 'pack' ? `pack:${e.source.packId}` : e.source.type === 'folder' ? `folder:${e.source.rootId}` : e.source.type;
+		e.source.type === 'pack'
+			? `pack:${e.source.packId}`
+			: e.source.type === 'folder'
+				? `folder:${labels[e.source.rootId] ?? e.source.rootId}`
+				: e.source.type;
 	const groups = new Map();
 	for (const e of sounds) {
 		const g = groupOf(e);
