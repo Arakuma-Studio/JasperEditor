@@ -168,7 +168,8 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 			const seqs = await savedSequences(pid);
 			if (!seqs) return; // deleted: its folder went with it
 			const gone = await reports.prune(pid, seqs);
-			if (gone.length) app.log.info(`[sound-check] reports of deleted sequences removed: ${pid} ${gone.join(', ')}`);
+			if (gone.length)
+				app.log.info(`[sound-check] reports of deleted sequences removed: ${pid} ${gone.join(', ')}`);
 		})().catch((e) => app.log.warn(`[sound-check] reports of ${pid} not pruned: ${(e as Error).message}`));
 	};
 	const offStore = core.projects.onChange((c) => {

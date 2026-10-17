@@ -14,14 +14,24 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SoundCheckFix, SoundCheckIssue, SoundCheckReport } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
-import { defaultRegistries, type ProjectDocument, SOUND_CHECK_MESSAGES, type Sequence } from '@jasper/project';
+import {
+	defaultRegistries,
+	type ProjectDocument,
+	type Sequence,
+	SOUND_CHECK_MESSAGES,
+} from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { renderMixdown } from '../src/audio/mixdown.ts';
 import { audioWorld } from '../src/sound-design/bed.ts';
 import { checkSequence } from '../src/sound-design/check.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, makeApp, type TestApp } from './helpers.ts';
-import { buildCheckDoc, type CheckFixture, type FixtureMedia, registerCheckMedia } from './sound-check-fixture.ts';
+import {
+	buildCheckDoc,
+	type CheckFixture,
+	type FixtureMedia,
+	registerCheckMedia,
+} from './sound-check-fixture.ts';
 
 const TOKEN = 'tok_joint_0123456789abcdef012';
 let app: TestApp;
@@ -62,7 +72,10 @@ async function check(doc: ProjectDocument): Promise<SoundCheckReport> {
 const issuesOf = (r: SoundCheckReport, code: string) => r.issues.filter((i) => i.code === code);
 const describeIssues = (r: SoundCheckReport) =>
 	r.issues
-		.map((i) => `${i.severity} ${i.code} ${i.message.text}${i.fix ? ` [${i.fix.safe ? 'safe' : 'unsafe'}: ${i.fix.why ?? ''}]` : ''}`)
+		.map(
+			(i) =>
+				`${i.severity} ${i.code} ${i.message.text}${i.fix ? ` [${i.fix.safe ? 'safe' : 'unsafe'}: ${i.fix.why ?? ''}]` : ''}`,
+		)
 		.join('\n');
 const applyAll = (fx: CheckFixture, fixes: SoundCheckFix[]) =>
 	fx.b.tx(fixes.flatMap((f) => (f.commands ?? []) as unknown[]));
@@ -98,7 +111,10 @@ describe('Sound Check fixes together (real engine)', { timeout: 600_000 }, () =>
 			describeIssues(again),
 		).toBe(true);
 		// the safe set (the gain only) resolves it
-		applyAll(fx, report.issues.filter((i) => i.fix?.safe && i.fix.kind === 'commands').map((i) => i.fix!));
+		applyAll(
+			fx,
+			report.issues.filter((i) => i.fix?.safe && i.fix.kind === 'commands').map((i) => i.fix!),
+		);
 		const fixed = await check(fx.doc());
 		expect(
 			issuesOf(fixed, 'MASKED').some((i) => i.clipIds?.[0] === fx.ids.clipB),
@@ -138,7 +154,11 @@ describe('Sound Check fixes together (real engine)', { timeout: 600_000 }, () =>
 		const solved = masked!.measured!.solvedGainDb as number;
 		const d = solved - model.gainDb;
 		const bound =
-			20 * Math.log10(10 ** (model.mixTruePeakDb! / 20) + (10 ** (d / 20) - 1) * 10 ** ((model.truePeakAt0Db! + model.gainDb) / 20));
+			20 *
+			Math.log10(
+				10 ** (model.mixTruePeakDb! / 20) +
+					(10 ** (d / 20) - 1) * 10 ** ((model.truePeakAt0Db! + model.gainDb) / 20),
+			);
 		expect(bound).toBeGreaterThan(-1);
 		// measured: applied anyway, the mix's true peak goes over the ceiling — and stays under the bound
 		applyAll(fx, [masked!.fix!]);

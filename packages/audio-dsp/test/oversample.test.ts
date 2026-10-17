@@ -138,10 +138,11 @@ describe('true peak at the end of a programme (sound-design P0)', () => {
 		expect(m.truePeak()).toBeGreaterThan(0.99);
 	});
 
-	it('takePeak: per-span peaks (the history kept) whose maximum is the whole stream\'s true peak', () => {
+	it("takePeak: per-span peaks (the history kept) whose maximum is the whole stream's true peak", () => {
 		const rng = new Rng(7);
 		const x = new Float32Array(48000);
-		for (let i = 0; i < x.length; i++) x[i] = 0.3 * rng.uniform() + 0.6 * Math.sin((2 * Math.PI * 11025 * i) / 48000 + 0.7);
+		for (let i = 0; i < x.length; i++)
+			x[i] = 0.3 * rng.uniform() + 0.6 * Math.sin((2 * Math.PI * 11025 * i) / 48000 + 0.7);
 		const whole = new TruePeakDetector(48000, 1);
 		whole.process([x]);
 		const spans = new TruePeakDetector(48000, 1);

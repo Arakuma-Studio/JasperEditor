@@ -72,7 +72,10 @@ function toolError(e: unknown): never {
 /** One line per finding for the agent: severity, code, where, what, and the fix (why it is not safe). */
 function issueLine(i: SoundCheckIssue): string {
 	const f = i.fix;
-	const why = f && !f.safe && f.why ? ` — ${f.why}${f.conflictsWith?.length ? ` (with the fixes of ${f.conflictsWith.join(', ')})` : ''}` : '';
+	const why =
+		f && !f.safe && f.why
+			? ` — ${f.why}${f.conflictsWith?.length ? ` (with the fixes of ${f.conflictsWith.join(', ')})` : ''}`
+			: '';
 	const fix = f ? ` → fix (${f.safe ? 'safe' : 'needs the user'}): ${f.label.text} [${f.tool}]${why}` : '';
 	return `${i.severity.toUpperCase()} ${i.code}${i.timecode ? ` @ ${i.timecode}` : ''}: ${i.message.text}${fix}`;
 }

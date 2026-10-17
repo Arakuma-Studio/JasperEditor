@@ -574,7 +574,8 @@ export const SOUND_CHECK_MESSAGES = {
 	// why a fix that is safe on its own is not safe applied with the safe fixes before it, or would raise the true peak
 	// (`planSoundCheckFixes`, check-fixes.ts)
 	whyFixOverCap: 'It would leave {0} {1} LU over the bed (at most {2} LU for its role)',
-	whyFixMasked: 'It would leave {0} only {1} dB over the bed in its dominant band (at least {2} dB for its role)',
+	whyFixMasked:
+		'It would leave {0} only {1} dB over the bed in its dominant band (at least {2} dB for its role)',
 	whyFixEventPeak: 'It would make {0} peak at {1} dBTP on its own (ceiling {2} dBTP)',
 	whyFixMixPeak:
 		'With loudness normalisation off, the mix where {0} plays could reach {1} dBTP (ceiling {2} dBTP)',

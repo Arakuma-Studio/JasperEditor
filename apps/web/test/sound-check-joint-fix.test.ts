@@ -43,13 +43,26 @@ const LIB = (soundId: string, title: string): LibraryProvenance => ({
 function fixture(normalise: boolean) {
 	const { session, seqId } = makeSession();
 	const ok = (commands: unknown[]) => {
-		const r = session.apply({ label: 'setup', origin: 'user', sequenceId: seqId, commands: commands as never[] });
+		const r = session.apply({
+			label: 'setup',
+			origin: 'user',
+			sequenceId: seqId,
+			commands: commands as never[],
+		});
 		if (!r.ok) throw new Error(JSON.stringify(r.errors));
 		return r;
 	};
 	const reg = ok([
-		{ type: 'media.register', asset: { ...audioAsset(1), library: LIB('snd_00000000000000a1', 'Hit A') }, ref: '$a' },
-		{ type: 'media.register', asset: { ...audioAsset(1), library: LIB('snd_00000000000000b2', 'Hit B') }, ref: '$b' },
+		{
+			type: 'media.register',
+			asset: { ...audioAsset(1), library: LIB('snd_00000000000000a1', 'Hit A') },
+			ref: '$a',
+		},
+		{
+			type: 'media.register',
+			asset: { ...audioAsset(1), library: LIB('snd_00000000000000b2', 'Hit B') },
+			ref: '$b',
+		},
 		{
 			type: 'soundCue.add',
 			cues: [
@@ -57,8 +70,16 @@ function fixture(normalise: boolean) {
 				{ frame: 85, kind: 'cut', weight: 'hero', source: 'user', ref: '$cb' },
 			],
 		},
-		{ type: 'soundDesign.place', cueId: '$ca', layers: [{ mediaId: '$a', role: 'hero', track: 'A1', ref: '$xa' }] },
-		{ type: 'soundDesign.place', cueId: '$cb', layers: [{ mediaId: '$b', role: 'hero', track: 'A2', ref: '$xb' }] },
+		{
+			type: 'soundDesign.place',
+			cueId: '$ca',
+			layers: [{ mediaId: '$a', role: 'hero', track: 'A1', ref: '$xa' }],
+		},
+		{
+			type: 'soundDesign.place',
+			cueId: '$cb',
+			layers: [{ mediaId: '$b', role: 'hero', track: 'A2', ref: '$xb' }],
+		},
 		{ type: 'mixer.setLoudness', enabled: normalise, targetLufs: -14, truePeakDb: -1 },
 	]);
 	const seq = () => session.getCommitted().sequences[seqId] as Sequence;
@@ -212,7 +233,12 @@ describe('Fix all safe judges the safe fixes together', () => {
 		const all = await fixAllSafe(f.session, f.engine, { rerun: false });
 		expect(all.applied).toEqual([`MASKED:${f.ids.clipA}`]);
 		expect(all.skipped).toEqual([`MASKED:${f.ids.clipB}`]);
-		expect(f.session.getState().history.entries.slice(n).map((e) => e.label)).toEqual(['Fix 1 Sound Check Finding']);
+		expect(
+			f.session
+				.getState()
+				.history.entries.slice(n)
+				.map((e) => e.label),
+		).toEqual(['Fix 1 Sound Check Finding']);
 		expect(f.gain(f.ids.clipA)).toBeCloseTo(gA + 4, 6);
 		expect(f.gain(f.ids.clipB)).toBeCloseTo(gB, 6);
 		expect(soundCheckStore(f.session).getState().fixed).toEqual([`MASKED:${f.ids.clipA}`]);

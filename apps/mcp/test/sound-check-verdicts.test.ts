@@ -271,7 +271,12 @@ describe('sound_check humanVerdicts / target', () => {
 			'TRUNCATED',
 			'MUSIC_OVER_VOICE',
 		]);
-		expect(fixes.map((f) => f.tool)).toEqual(['align_peak', 'apply_commands', 'swap_sound', 'apply_delivery']);
+		expect(fixes.map((f) => f.tool)).toEqual([
+			'align_peak',
+			'apply_commands',
+			'swap_sound',
+			'apply_delivery',
+		]);
 		expect(r.body.next).toMatch(/in the order of safeFixes/);
 		// a fix that is not safe says why
 		const silence = (r.body.findings as string[]).find((l) => l.includes('SILENCE'))!;

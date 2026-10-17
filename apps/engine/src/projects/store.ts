@@ -223,7 +223,11 @@ export class ProjectStoreFs {
 	 * Saves an envelope when `ifMatch` equals the stored revision (or is `'*'`). The stored revision is
 	 * `max(envelope.revision, current + 1)`; a mismatch throws 409 REVISION_CONFLICT with `{revision}`.
 	 */
-	async save(projectId: string, envelope: EnvelopeJson, ifMatch: number | '*'): Promise<{ revision: number }> {
+	async save(
+		projectId: string,
+		envelope: EnvelopeJson,
+		ifMatch: number | '*',
+	): Promise<{ revision: number }> {
 		const saved = await this.saveLocked(projectId, envelope, ifMatch);
 		this.emit({ projectId, kind: 'saved', document: envelope.document });
 		return saved;

@@ -221,7 +221,11 @@ export function mixLayoutOf(snap: { audioMix?: { masterFormat?: string } | null 
 	channels: 1 | 2 | 6;
 } {
 	const f = snap.audioMix?.masterFormat;
-	return f === '5.1' ? { layout: '5.1', channels: 6 } : f === 'mono' ? { layout: 'mono', channels: 1 } : { layout: 'stereo', channels: 2 };
+	return f === '5.1'
+		? { layout: '5.1', channels: 6 }
+		: f === 'mono'
+			? { layout: 'mono', channels: 1 }
+			: { layout: 'stereo', channels: 2 };
 }
 
 /** Renders every stem over `range` in one pass (see the module docs). Throws on abort. */

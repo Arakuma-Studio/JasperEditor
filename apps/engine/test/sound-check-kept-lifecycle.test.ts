@@ -6,7 +6,12 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type Lease, SoundCheckLastResponseSchema, type SoundCheckResult, SoundCheckResultSchema } from '@jasper/api';
+import {
+	type Lease,
+	SoundCheckLastResponseSchema,
+	type SoundCheckResult,
+	SoundCheckResultSchema,
+} from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
 import { makeEnvelope, type ProjectDocument } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -81,7 +86,13 @@ function fakeResult(projectId: string, sequenceId: string): SoundCheckResult {
 }
 
 /** A saved project with two sequences, each with a kept report (written as the engine's store writes them). */
-async function seeded(): Promise<{ projectId: string; doc: ProjectDocument; a: string; b: string; file: (s: string) => string }> {
+async function seeded(): Promise<{
+	projectId: string;
+	doc: ProjectDocument;
+	a: string;
+	b: string;
+	file: (s: string) => string;
+}> {
 	const builder = new DocBuilder();
 	const a = builder.seqId;
 	const b = (builder.tx([{ type: 'sequence.create', name: 'Second', ref: '$s' }]).refs.$s as string)!;
@@ -89,9 +100,13 @@ async function seeded(): Promise<{ projectId: string; doc: ProjectDocument; a: s
 	const doc = { ...builder.doc, projectId };
 	const file = appdirPaths(appdir).projectFile(projectId);
 	mkdirSync(join(file, '..'), { recursive: true });
-	writeFileSync(file, JSON.stringify(makeEnvelope(doc, { revision: 3, savedAt: '2026-10-17T00:00:00.000Z', platform: 'test' })));
+	writeFileSync(
+		file,
+		JSON.stringify(makeEnvelope(doc, { revision: 3, savedAt: '2026-10-17T00:00:00.000Z', platform: 'test' })),
+	);
 	const store = new SoundCheckReportStore({ projectDir: (pid) => appdirPaths(appdir).projectDir(pid) });
-	for (const s of [a, b]) expect(await store.save(projectId, fakeResult(projectId, s), `job_${s}`)).toBe(true);
+	for (const s of [a, b])
+		expect(await store.save(projectId, fakeResult(projectId, s), `job_${s}`)).toBe(true);
 	const at = (s: string) => join(appdirPaths(appdir).projectDir(projectId), 'sound-check', `${s}.json`);
 	return { projectId, doc, a, b, file: at };
 }
@@ -112,7 +127,9 @@ async function saveDoc(projectId: string, doc: ProjectDocument): Promise<void> {
 		method: 'PUT',
 		url: `/api/projects/${projectId}`,
 		headers: { ...json(EDITOR_H), 'if-match': String(revision) },
-		payload: JSON.stringify(makeEnvelope(doc, { revision: revision + 1, savedAt: '2026-10-17T00:00:01.000Z', platform: 'test' })),
+		payload: JSON.stringify(
+			makeEnvelope(doc, { revision: revision + 1, savedAt: '2026-10-17T00:00:01.000Z', platform: 'test' }),
+		),
 	});
 	expect(r.statusCode, r.body).toBe(200);
 }
@@ -144,7 +161,9 @@ describe('the kept report follows its sequence and project', { timeout: 120_000 
 
 	it('while an editor holds the project the delete can be undone: kept; undone and saved: served again; gone when the session ends', async () => {
 		const { projectId, doc, a, b, file } = await seeded();
-		const lease = (await post(`/api/projects/${projectId}/lease`, { sessionId: 'ses_editor_1' })).json() as Lease;
+		const lease = (
+			await post(`/api/projects/${projectId}/lease`, { sessionId: 'ses_editor_1' })
+		).json() as Lease;
 		expect(lease.leaseId).toBeTruthy();
 		// the editor deletes B and saves: B's History entry can still undo it
 		await saveDoc(projectId, without(doc, b));
@@ -171,7 +190,9 @@ describe('the kept report follows its sequence and project', { timeout: 120_000 
 
 	it('an unsaved delete undone before the session ends keeps the report; a new session prunes against the saved project', async () => {
 		const { projectId, doc, a, b, file } = await seeded();
-		const l1 = (await post(`/api/projects/${projectId}/lease`, { sessionId: 'ses_editor_2' })).json() as Lease;
+		const l1 = (
+			await post(`/api/projects/${projectId}/lease`, { sessionId: 'ses_editor_2' })
+		).json() as Lease;
 		await saveDoc(projectId, without(doc, b));
 		// the window is taken over by another session (its History is not the old one's): pruned at once
 		const l2 = await post(`/api/projects/${projectId}/lease`, { sessionId: 'ses_editor_3', takeOver: true });
@@ -207,7 +228,8 @@ describe('SoundCheckReportStore lifecycle', () => {
 			exists: async () => projectThere,
 			keep: async (_pid, seq) => seq !== 'seq_gone',
 		});
-		for (const s of ['seq_1', 'seq_2', 'seq_3']) expect(await store.save('prj_a', fakeResult('prj_a', s), null)).toBe(true);
+		for (const s of ['seq_1', 'seq_2', 'seq_3'])
+			expect(await store.save('prj_a', fakeResult('prj_a', s), null)).toBe(true);
 		writeFileSync(join(dir, 'prj_a', 'sound-check', 'seq_2.json.corrupt-123'), 'x');
 		expect(await store.save('prj_a', fakeResult('prj_a', 'seq_gone'), null)).toBe(false);
 		expect((await store.prune('prj_a', new Set(['seq_1']))).sort()).toEqual(['seq_2', 'seq_3']);

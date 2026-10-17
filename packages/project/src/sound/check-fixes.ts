@@ -112,7 +112,9 @@ export type SoundCheckFixOptions = {
 const KIND_RANK = { commands: 0, swap: 1, job: 2 } as const;
 
 /** The order fixes are applied in: document commands, then sound swaps, then engine jobs, each in the given order. */
-export function soundCheckFixOrder<T extends { kind: SoundCheckFixCandidate['kind'] }>(items: readonly T[]): T[] {
+export function soundCheckFixOrder<T extends { kind: SoundCheckFixCandidate['kind'] }>(
+	items: readonly T[],
+): T[] {
 	return items
 		.map((c, i) => ({ c, i }))
 		.sort((a, b) => KIND_RANK[a.c.kind] - KIND_RANK[b.c.kind] || a.i - b.i)
@@ -209,7 +211,7 @@ type ClipState = {
 function clipState(doc: ProjectDocument, sequenceId: string, clipId: string): ClipState | null {
 	const seq = doc.sequences?.[sequenceId];
 	const clip = seq && Object.hasOwn(seq.clips, clipId) ? seq.clips[clipId] : undefined;
-	if (!clip || clip.kind !== 'audio') return null;
+	if (clip?.kind !== 'audio') return null;
 	const c = clip as typeof clip & {
 		gainDb?: unknown;
 		sfx?: unknown;
@@ -230,7 +232,8 @@ function clipState(doc: ProjectDocument, sequenceId: string, clipId: string): Cl
 }
 
 const normalises = (doc: ProjectDocument, sequenceId: string): boolean => {
-	const l = (doc.sequences?.[sequenceId]?.master as { loudness?: { enabled?: unknown } } | undefined)?.loudness;
+	const l = (doc.sequences?.[sequenceId]?.master as { loudness?: { enabled?: unknown } } | undefined)
+		?.loudness;
 	return l?.enabled === true;
 };
 
@@ -423,7 +426,8 @@ export function planSoundCheckFixes(
 			const b = before.get(m.clipId);
 			const a = after.get(m.clipId);
 			if (!b || !a) continue;
-			const levelChanged = Math.abs(a.gainDb - b.gainDb) > EPS || a.weight !== b.weight || a.layer !== b.layer;
+			const levelChanged =
+				Math.abs(a.gainDb - b.gainDb) > EPS || a.weight !== b.weight || a.layer !== b.layer;
 			const soundChanged = a.place !== b.place || a.sound !== b.sound;
 			const base = baseStates.get(m.clipId);
 			const invalid = !base || b.place !== base.place || b.sound !== base.sound;

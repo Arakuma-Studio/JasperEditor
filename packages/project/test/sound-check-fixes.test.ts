@@ -15,9 +15,9 @@ import {
 	type SoundCheckFixCandidate,
 	type SoundCheckLevelGuard,
 	type SoundCheckLevelModel,
+	sfxSolverWeight,
 	soundCheckFixCandidates,
 	soundCheckFixOrder,
-	sfxSolverWeight,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
 import { LIB } from './sound-fixtures.ts';
@@ -28,11 +28,19 @@ const BED_CAP = { hero: 10, support: 6, ambient: 6 } as const;
 /** Two heroes 1.5 s apart (frames 40, 85) and a support at 150, on library media; the Mix normalisation optional. */
 function fixture(opts: { normalise?: boolean } = {}) {
 	const h = new Harness();
-	const lib = (id: string, title: string): LibraryProvenance => ({ ...LIB, soundId: id, title, types: ['hit'] });
+	const lib = (id: string, title: string): LibraryProvenance => ({
+		...LIB,
+		soundId: id,
+		title,
+		types: ['hit'],
+	});
 	const media = (id: string, title: string) =>
 		(
 			h.ok([
-				{ type: 'media.register', asset: { ...videoAsset({ kind: 'audio', seconds: 0.5 }), library: lib(id, title) } },
+				{
+					type: 'media.register',
+					asset: { ...videoAsset({ kind: 'audio', seconds: 0.5 }), library: lib(id, title) },
+				},
 			]).results[0] as { mediaId: string }
 		).mediaId;
 	const mA = media('snd_00000000000000a1', 'Hit A');
@@ -71,7 +79,10 @@ function model(h: Harness, clipId: string, over: Partial<SoundCheckLevelModel> =
 		...over,
 	};
 }
-const guardOf = (levels: SoundCheckLevelModel[], over: Partial<SoundCheckLevelGuard> = {}): SoundCheckLevelGuard => ({
+const guardOf = (
+	levels: SoundCheckLevelModel[],
+	over: Partial<SoundCheckLevelGuard> = {},
+): SoundCheckLevelGuard => ({
 	ceilingDb: -1,
 	eventCeilingDb: -1,
 	bedCapLu: BED_CAP,
@@ -86,7 +97,7 @@ const gainFix = (h: Harness, issueId: string, clipId: string, db: number, kind: 
 		commands: [{ type: 'soundDesign.applyGains', sequenceId: h.seqId, gains: { [clipId]: db } }],
 		targets: [{ clipId, kind }],
 	}) satisfies SoundCheckFixCandidate;
-const demote = (h: Harness, issueId: string, cueId: string, clipId: string) =>
+const demote = (_h: Harness, issueId: string, cueId: string, clipId: string) =>
 	({
 		issueIds: [issueId],
 		kind: 'commands',
@@ -154,7 +165,10 @@ describe('planSoundCheckFixes', () => {
 		const plan = planSoundCheckFixes(
 			h.doc,
 			h.seqId,
-			[gainFix(h, 'MASKED:B', B.clip, gB + (3.5 - (1 - gS + gB)), 'masked'), demote(h, 'DENSITY:cueB', B.cue, B.clip)],
+			[
+				gainFix(h, 'MASKED:B', B.clip, gB + (3.5 - (1 - gS + gB)), 'masked'),
+				demote(h, 'DENSITY:cueB', B.cue, B.clip),
+			],
 			{ registries, guard: guardOf([mB]) },
 		);
 		expect(plan.accepted.map((c) => c.issueIds[0])).toEqual(['MASKED:B']);
@@ -284,7 +298,11 @@ describe('planSoundCheckFixes', () => {
 		expect(p1.skipped[0]!.reason.key).toBe(SOUND_CHECK_MESSAGES.whyFixSoundChanged);
 		expect(p1.skipped[0]!.conflictsWith).toEqual(['MASKED:A']);
 		// a swap to its own sound (re-registered copy with trailing silence) keeps the level model
-		const own: SoundCheckFixCandidate = { ...swap, issueIds: ['TRUNCATED:A'], swap: { clipId: A.clip, soundId: 'snd_00000000000000a1' } };
+		const own: SoundCheckFixCandidate = {
+			...swap,
+			issueIds: ['TRUNCATED:A'],
+			swap: { clipId: A.clip, soundId: 'snd_00000000000000a1' },
+		};
 		expect(planSoundCheckFixes(h.doc, h.seqId, [gain, own], { registries, guard }).accepted).toHaveLength(2);
 		// a move (soundDesign.swap at the cue) before the gain: the gain was measured where the clip was
 		const move: SoundCheckFixCandidate = {
@@ -306,7 +324,13 @@ describe('planSoundCheckFixes', () => {
 				type: 'media.register',
 				asset: {
 					...videoAsset({ kind: 'audio', seconds: 0.5 }),
-					library: { ...LIB, soundId: 'snd_00000000000000e5', title: 'Alt', types: ['hit'], descriptors: { ...LIB.descriptors!, maxMomentaryLufs: -6 } },
+					library: {
+						...LIB,
+						soundId: 'snd_00000000000000e5',
+						title: 'Alt',
+						types: ['hit'],
+						descriptors: { ...LIB.descriptors!, maxMomentaryLufs: -6 },
+					},
 				},
 			},
 		]);
@@ -348,25 +372,50 @@ describe('planSoundCheckFixes', () => {
 
 	it('candidates: a fix two findings share is one; order is commands, swaps, jobs; a prelude only with a swap', () => {
 		const { h, A, mB } = fixture();
-		const loud = { type: 'mixer.setLoudness', sequenceId: h.seqId, enabled: true, targetLufs: -14, truePeakDb: -1 };
+		const loud = {
+			type: 'mixer.setLoudness',
+			sequenceId: h.seqId,
+			enabled: true,
+			targetLufs: -14,
+			truePeakDb: -1,
+		};
 		const cands = soundCheckFixCandidates(
 			[
 				{ id: 'LOUDNESS:mix', code: 'LOUDNESS', fix: { kind: 'commands', safe: true, commands: [loud] } },
 				{ id: 'TRUE_PEAK:mix', code: 'TRUE_PEAK', fix: { kind: 'commands', safe: true, commands: [loud] } },
-				{ id: 'X:job', code: 'MUSIC_OVER_VOICE', fix: { kind: 'job', safe: true, job: { route: 'delivery', body: {} } } },
-				{ id: 'R:A', code: 'REPEAT', fix: { kind: 'swap', safe: true, swap: { clipId: A.clip, soundId: 's' } } },
-				{ id: 'L:A', code: 'LICENSE', fix: { kind: 'swap', safe: true, swap: { clipId: A.clip, soundId: 's' } } },
+				{
+					id: 'X:job',
+					code: 'MUSIC_OVER_VOICE',
+					fix: { kind: 'job', safe: true, job: { route: 'delivery', body: {} } },
+				},
+				{
+					id: 'R:A',
+					code: 'REPEAT',
+					fix: { kind: 'swap', safe: true, swap: { clipId: A.clip, soundId: 's' } },
+				},
+				{
+					id: 'L:A',
+					code: 'LICENSE',
+					fix: { kind: 'swap', safe: true, swap: { clipId: A.clip, soundId: 's' } },
+				},
 				{ id: 'S:x', code: 'SILENCE', fix: { kind: 'commands', safe: false, commands: [loud] } },
 			],
 			{ safeOnly: true },
 		);
-		expect(cands.map((c) => c.issueIds)).toEqual([['LOUDNESS:mix', 'TRUE_PEAK:mix'], ['X:job'], ['R:A', 'L:A']]);
+		expect(cands.map((c) => c.issueIds)).toEqual([
+			['LOUDNESS:mix', 'TRUE_PEAK:mix'],
+			['X:job'],
+			['R:A', 'L:A'],
+		]);
 		expect(soundCheckFixOrder(cands).map((c) => c.kind)).toEqual(['commands', 'swap', 'job']);
 		// a registered swap: the prelude registers the media under a ref the swap uses
 		const prelude = [
 			{
 				type: 'media.register',
-				asset: { ...videoAsset({ kind: 'audio', seconds: 0.5 }), library: { ...LIB, soundId: 'snd_00000000000000d4' } },
+				asset: {
+					...videoAsset({ kind: 'audio', seconds: 0.5 }),
+					library: { ...LIB, soundId: 'snd_00000000000000d4' },
+				},
 				ref: '$chk0',
 			},
 		];
@@ -375,18 +424,38 @@ describe('planSoundCheckFixes', () => {
 			kind: 'swap',
 			commands: [{ type: 'soundDesign.swap', clipId: A.clip, mediaId: '$chk0' }],
 		};
-		const p = planSoundCheckFixes(h.doc, h.seqId, [swap, { issueIds: ['LOUDNESS:mix'], kind: 'commands', commands: [loud] }], {
-			registries,
-			prelude,
-		});
+		const p = planSoundCheckFixes(
+			h.doc,
+			h.seqId,
+			[swap, { issueIds: ['LOUDNESS:mix'], kind: 'commands', commands: [loud] }],
+			{
+				registries,
+				prelude,
+			},
+		);
 		expect(p.accepted).toHaveLength(2);
-		expect(p.commands.map((c) => c.type)).toEqual(['media.register', 'mixer.setLoudness', 'soundDesign.swap']);
+		expect(p.commands.map((c) => c.type)).toEqual([
+			'media.register',
+			'mixer.setLoudness',
+			'soundDesign.swap',
+		]);
 		expect(h.tx(p.commands).ok).toBe(true);
 		// no swap accepted → no prelude
-		const q = planSoundCheckFixes(h.doc, h.seqId, [{ issueIds: ['M'], kind: 'commands', commands: [{ type: 'soundDesign.swap', clipId: A.clip, mediaId: mB }] }], {
-			registries,
-			prelude,
-		});
+		const q = planSoundCheckFixes(
+			h.doc,
+			h.seqId,
+			[
+				{
+					issueIds: ['M'],
+					kind: 'commands',
+					commands: [{ type: 'soundDesign.swap', clipId: A.clip, mediaId: mB }],
+				},
+			],
+			{
+				registries,
+				prelude,
+			},
+		);
 		expect(q.commands.map((c) => c.type)).toEqual(['soundDesign.swap']);
 	});
 
@@ -432,15 +501,33 @@ describe('planSoundCheckFixes', () => {
 						const c = clips[o.clip]!;
 						const id = `F${i}`;
 						if (o.op === 'gain')
-							return { issueIds: [id], kind: 'commands', commands: [{ type: 'soundDesign.applyGains', gains: { [c.clip]: Math.round(o.db * 100) / 100 } }] };
+							return {
+								issueIds: [id],
+								kind: 'commands',
+								commands: [
+									{ type: 'soundDesign.applyGains', gains: { [c.clip]: Math.round(o.db * 100) / 100 } },
+								],
+							};
 						if (o.op === 'demote' || o.op === 'promote')
 							return {
 								issueIds: [id],
 								kind: 'commands',
-								commands: [{ type: 'soundDesign.setRole', clipIds: [c.clip], role: o.op === 'demote' ? 'support' : 'hero' }],
+								commands: [
+									{
+										type: 'soundDesign.setRole',
+										clipIds: [c.clip],
+										role: o.op === 'demote' ? 'support' : 'hero',
+									},
+								],
 							};
-						if (o.op === 'job') return { issueIds: [id], kind: 'job', commands: null, job: { route: 'delivery' } };
-						return { issueIds: [id], kind: 'swap', commands: null, swap: { clipId: c.clip, soundId: `snd_${o.clip}` } };
+						if (o.op === 'job')
+							return { issueIds: [id], kind: 'job', commands: null, job: { route: 'delivery' } };
+						return {
+							issueIds: [id],
+							kind: 'swap',
+							commands: null,
+							swap: { clipId: c.clip, soundId: `snd_${o.clip}` },
+						};
 					});
 					const p1 = planSoundCheckFixes(h.doc, h.seqId, cands, { registries, guard });
 					const p2 = planSoundCheckFixes(h.doc, h.seqId, cands, { registries, guard });
@@ -450,9 +537,13 @@ describe('planSoundCheckFixes', () => {
 					expect(r.ok).toBe(true);
 					// oracle: every limit at the end is no further off than before any fix
 					const mags = (doc: typeof h.doc) => {
-						const off = !(doc.sequences[h.seqId]!.master as { loudness?: { enabled?: boolean } }).loudness?.enabled;
+						const off = !(doc.sequences[h.seqId]!.master as { loudness?: { enabled?: boolean } }).loudness
+							?.enabled;
 						return levels.map((m) => {
-							const c = doc.sequences[h.seqId]!.clips[m.clipId] as unknown as { gainDb: number; sfx?: { role?: string } };
+							const c = doc.sequences[h.seqId]!.clips[m.clipId] as unknown as {
+								gainDb: number;
+								sfx?: { role?: string };
+							};
 							const w = sfxSolverWeight((c.sfx?.role as 'hero') ?? null, ['hit']);
 							const g = c.gainDb;
 							let lin = 10 ** (m.mixTruePeakDb! / 20);
@@ -471,9 +562,8 @@ describe('planSoundCheckFixes', () => {
 					};
 					const before = mags(h.doc);
 					const after = mags(p1.document);
-					after.forEach((row, i) =>
-						row.forEach((x, k) => expect(x).toBeLessThanOrEqual(before[i]![k]! + 0.02)),
-					);
+					for (const [i, row] of after.entries())
+						for (const [k, x] of row.entries()) expect(x).toBeLessThanOrEqual(before[i]![k]! + 0.02);
 				},
 			),
 			{ numRuns: 300 },
