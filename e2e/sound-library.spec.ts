@@ -41,6 +41,7 @@ type Lib = {
 	types?: string[];
 	source?: { type: string; file?: string };
 	leadSilenceSec?: number;
+	trailSilenceSec?: number;
 	descriptors?: { peakSec: number; onsetSec: number; durationSec: number };
 };
 type Media = { id: string; library?: Lib; probe?: { durationFlicks: number | null } };
@@ -48,13 +49,16 @@ async function media(p: Page): Promise<Record<string, Media>> {
 	return query(p, 'doc.get', { path: ['media'] });
 }
 
-/** The point of a library sound its type aligns (spec 12 §2.1 defaultAlign): the end of the media for risers and
- * reverses (its probed length, to the sample), the onset for UI sounds, else the peak; seconds into the registered media
+/** The point of a library sound its type aligns (spec 12 §2.1 defaultAlign): the end of the sound for risers and
+ * reverses (the media's probed length minus its trailing silence, to the sample), the onset for UI sounds, else the peak; seconds into the registered media
  * (its descriptors include any lead silence). */
 function alignedPointSec(m: Media): number {
 	const d = m.library!.descriptors!;
 	const t = m.library!.types?.[0];
-	if (t === 'riser' || t === 'reverse') return (m.probe?.durationFlicks ?? d.durationSec * FLICKS) / FLICKS;
+	// the end of the SOUND: registration pads short sounds with trailing silence, which `end` alignment leaves out
+	// (spec 12 §2.3, fix "SFX tail truncation")
+	if (t === 'riser' || t === 'reverse')
+		return (m.probe?.durationFlicks ?? d.durationSec * FLICKS) / FLICKS - (m.library!.trailSilenceSec ?? 0);
 	return t === 'ui' ? d.onsetSec : d.peakSec;
 }
 

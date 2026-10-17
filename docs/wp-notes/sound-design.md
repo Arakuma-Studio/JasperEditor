@@ -5544,4 +5544,111 @@ tail.
   the clip ends before it within the last frame).
 - The re-register fix makes a new media per sound; the old copy stays in the project (Remove Unused cleans it).
 
+### Phase 5 → WP5.2 Sound Check panel
+
+Scope: spec 12 §2.7 "Sound Check panel" (+ §2.6 UX), P5-R3, the Phase 5 "Done when" ("the panel and the MCP tool show the
+same report"), the Export dialog option, Sequence ▸ Sound Design ▸ Run Sound Check. Built on WP5.1's job, report schema,
+`soundDesign.setCheck` and `soundCheckStatus`.
+
+Files: web `apps/web/src/panels/soundCheck/{index.ts, SoundCheckPanel.tsx}`, `sound/{check-model.ts (pure), check-run.ts
+(store, run / cancel, fixes, jump, listen), SyncStrip.tsx}`, `export/SoundCheckGate.tsx` (+ `ExportMode.tsx` wiring),
+`commands/sound-check.ts` (+ `commands/index.ts`, `commands/app.ts` panel label), `shell/menus/model.ts`,
+`panels/{types,registry}.ts`, `shell/workspaces/{definitions,migrations,store}.ts` (workspace state v3),
+`sound/in-context.ts` (`playTimelineWindow` `onEnd`), i18n (`en.json`, `es.json`: 120 strings, `model-strings.json`: 1);
+`packages/ui` icon `panel.soundCheck`; model `packages/project/src/sound/check.ts` (custom target: `SoundCheckTarget`,
+`SOUND_CHECK_TARGET_LIMITS`, `readSoundCheckTarget`, `SOUND_CHECK_CUSTOM_LABEL`, the target in `soundCheckInputsHash` /
+`soundCheckStatus`; verdict markers: `SOUND_CHECK_VERDICT_MARKER`, `soundCheckHumanVerdicts`,
+`soundCheckVerdictMarkerName`), `schema/sound.ts` (`lastCheck.target?`), `commands/schemas/sound.ts` (`setCheck`
+`summary.target?`); `packages/api/src/sound-check.ts` (`request.target?`, `report.preset.custom?`); engine
+`apps/engine/src/sound-design/check.ts` (the target replaces the preset's numbers; never judged as broadcast; stored);
+MCP `apps/mcp/src/tools/sound-check.ts` (`target`, `humanVerdicts`), `tools/sound.ts` (SOUND_GUIDE "Check"); README.
+Tests: `apps/web/test/{sound-check-panel.test.tsx, sound-check-model.test.ts, workspace-migration.test.ts (+3)}`,
+`packages/project/test/sound-check-panel.test.ts`, `apps/engine/test/sound-check.test.ts` (+1), `apps/mcp/test/{
+sound-check-verdicts.test.ts, sound-check-report-fixture.ts}`, `e2e/sound-check.spec.ts`.
+
+#### What it does (usage)
+
+- **Where**: Window ▸ Sound Check; in the Sound Design workspace a tab next to Review (left, below the Library group:
+  Review, Sound Check, Markers, History, Jobs); Sequence ▸ Sound Design ▸ Run Sound Check opens it and runs the check.
+- **Header**: Delivery target — the four presets ("Web / streaming · −14 LUFS · −1 dBTP" …) or **Custom…** (Integrated
+  LUFS −40…−5 and True peak dBTP −12…0 fields; "−18,5" and real minus signs accepted; out of range → `role="alert"`
+  text, `aria-invalid`, Run disabled). **Use as sequence target** (disabled with why when the sequence already delivers
+  there): a preset → `soundDesign.applyDelivery {delivery}` (the delivery setting, Mix normalisation at the preset,
+  default SFX levels moved to it), Custom → `mixer.setLoudness` at its numbers; ONE undo step "Use Delivery Target: …".
+  **Run** → the `sound-check` job with `store: true` (the editor key: the engine writes the summary as the user's edit
+  "Sound Check Result", WP5.1); the stage and percentage in the panel (`role="progressbar"`) and the job in the Jobs
+  panel; **Cancel** cancels the job at once (also a poll in flight).
+- **Summary**: the verdict chip (⊗ Fail / △ Warnings / ✓ Pass — icon shape + word + tone), Integrated, True peak, LRA,
+  Errors, Warnings, Info and "vs <preset>" / "Custom · −18.5 LUFS · −2.0 dBTP"; **Stale: <the mix changed | cues, loudness
+  or credits settings changed | the delivery target changed> since this check** + **Re-run** when `soundCheckStatus`
+  says so. A reopened project shows the stored summary's report while the engine keeps its job (`getJob(jobId)`), else
+  the summary's chips and "Run the check to see its findings…".
+- **Findings** grouped Sync, Loudness, Mix, Cues, Licence (errors first, then by time), each row: severity icon + word,
+  the timecode (a button: playhead there, the finding's clips selected — else its cue —, the Timeline scrolled; "whole
+  mix" for findings over the whole range), the code and the translated message (template + params; cue kinds and
+  densities translated), **Fix** (safe) / **Fix…** (needs judgement, the engine's `why` in the tooltip) and under it
+  "✓ <fix> · safe" / "! <fix> · needs your judgement". A fixed row says "✓ Fixed — run again to confirm" until the next
+  run. Fix = commands → ONE transaction "Sound Check Fix: <fix>" (`session.apply`, origin user); swap → the panel's swap
+  path (register the library sound → `media.register` → `soundDesign.swap`, also for the same sound = the TRUNCATED
+  re-pad); job → `runRebalance` / `runDelivery` (apply mode; the engine relays the user's edit).
+- **Fix all safe (n)**: every safe fix not yet applied — command fixes and swaps in ONE transaction "Fix n Sound Check
+  Findings" (media registrations, then the command fixes, then the swaps, so an align before a swap of the same clip
+  keeps the aligned frame; a fix two findings share is applied once); when that transaction is refused (two fixes that
+  cannot go together) each fix is applied on its own and the refused ones are reported; then the safe engine jobs one
+  after another; then the check runs again.
+- **Sync strip** (sync rows, chevron or →): the picture at the cue frame and ±1, ±2 frames (engine stills of the
+  committed sequence, 224 px JPEG, cached per revision) above the mix waveform ±0.3 s around the cue
+  (`/api/sound-design/visual` 10 ms peaks), a solid line at the picture event, a dashed "Sound +66.7 ms" line where the
+  aligned point was measured, ticks at the five frames, and the sentence "Picture event at …; sound measured 66.7 ms late
+  (2.0 frames)" (the SVG's accessible name too).
+- **Listen here**: the report's ≤ 5 moments (worst, biggest hero, loudest, busiest, a passing cue) with ▶ (2 s before to
+  2 s after through the Program transport: `playTimelineWindow`, the playhead returns), the timecode (jump), the reason,
+  **✓ Sounds right** and **✕ Flag** (a note field: Enter saves, Esc cancels). A verdict is a user-authored `comment`
+  marker at the moment's frame named "Sound Check: sounds right" / "Sound Check: flagged", the note as its comment
+  (green / rose), one undo step ("Sounds Right at …" / "Flag Sound at …"); a new verdict at the same frame updates that
+  marker. **Play all** chains the windows: the next starts when one has played to its end; a key, a click or Stop ends
+  the chain.
+- **Keyboard**: the findings list is one tab stop (`listbox`, `aria-activedescendant`, `data-keymap-local`): ↑ ↓ Home End
+  move, Enter jumps, F fixes, → / ← open / close the sync strip, Space plays 4 s around the finding; the rest are buttons
+  and fields. One `aria-live` region announces "Sound Check running", the verdict ("Sound Check Fail: 1 error, 4
+  warnings"), fixes, verdicts and playback.
+- **Export** (Export mode ▸ SOUND, shown when the sequence has sound effects): "Run Sound Check before export" (remembered
+  per browser, off by default). On: Export runs the check first (stage, percentage and Cancel above the footer); a pass or
+  warnings export at once and the verdict is said in a notice; a **fail** stops with the verdict, the counts and the
+  integrated / true peak and two buttons, **Export anyway** and **Review issues** (Export mode closes, the checked
+  sequence becomes active, the Sound Check panel opens with the report).
+- **Agents**: MCP `sound_check` is the same job and report (the e2e asserts the same codes at the same frames); it
+  gained `target {integratedLufs, truePeakDb}` and returns **`humanVerdicts`** — `{timecode, frame, verdict: "sounds
+  right" | "flagged", note, markerId, slot?}` read from the verdict markers (only user-authored `comment` markers with
+  those names: an agent cannot fake a verdict by naming a marker). UI commands `sound.runSoundCheck` and
+  `sound.fixAllSafe` are in the catalogue; verdicts are deliberately not an agent action.
+
+#### Decisions
+
+- **Custom target end to end** (the task asked for "Custom… target LUFS/TP"; WP5.1 checked presets only): a check request
+  takes `target`, the report's preset says `custom: true` with the target's numbers (label "Custom target", a model
+  string), a custom target is never judged with broadcast severity, the stored summary keeps `target` (optional, loose
+  schema; a damaged one drops the summary on repair as any damaged summary does) and `soundCheckInputsHash` includes it
+  only when present, so summaries stored before stay current. The preset behind a custom check (default SFX levels,
+  solver programme loudness) is the sequence's.
+- **Verdict markers are named, not flagged**: `marker.add` takes no metadata and the marker schema is shared; fixed
+  English names (data an agent parses, like History labels) and `author: 'user'` identify them. Shared parsing in
+  `@jasper/project` (`soundCheckHumanVerdicts`) for the panel and MCP.
+- **Summary storage follows WP5.1**: every editor run stores (`store: true`, one undo step "Sound Check Result"); read-only
+  projects run without storing.
+- **"Use as sequence target"** writes `soundDesign.applyDelivery` without measurements (normalisation at the preset and the
+  setting; no Auto-Match or ducking: that is Delivery Target…'s job, which measures first).
+- **The sync strip is SVG** (the spec says the web draws the visual data on canvas): the same data, drawn with design
+  tokens so high contrast and themes follow, testable in jsdom. Stills come from the engine's `stills` route (a `still`
+  job per frame, shown in the Jobs panel) — the Program render the export uses — not from the Program monitor's player.
+- **Play all** needed `playTimelineWindow` to say how a window ended (`onEnd('window' | 'stopped')`); nothing else of
+  the In Context audition changed.
+- **Workspace state v3**: stored Sound Design layouts get the panel right after Review (else where Review went); the
+  NaN-unsafe `out !== layout` in the v1→v2 property test (a pre-existing flake: `fc.anything()` draws NaN) is now
+  `Object.is`.
+- **Credits**: `ExportSettings` has no `credits` option yet; Phase 6 adds the sidecar and should default it from
+  `soundDesign.settings.credits` (the Export dialog does not show a credits option in this package).
+
+@@VERIFIED@@
+
 ## Phase 6: packs, cue sources, completion

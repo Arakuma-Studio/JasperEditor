@@ -376,7 +376,8 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 	for (const t of await page.getByTestId('toast').all())
 		await t
 			.getByRole('button', { name: /Dismiss|Close/ })
-			.click()
+			// bounded: dismissing one toast shifts the others' indices, so a captured `nth` can point at nothing
+			.click({ timeout: 2000 })
 			.catch(() => undefined);
 
 	// 6. Export: the delivered mix measured by ffmpeg
