@@ -60,10 +60,13 @@ import {
 	applyTransaction,
 	type ClipSfx,
 	type CueKind,
+	clipLaneTime,
 	createRandomIdSource,
+	DELIVERY_DUCK_DB,
 	DENSITY_BUDGETS,
 	deliveryPreset,
 	deriveCues,
+	duckingDepthBy,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	frameToSample,
@@ -84,6 +87,7 @@ import {
 	readClipSfx,
 	readEssentialSound,
 	readLibraryProvenance,
+	readSoundCheckTarget,
 	requiresAttribution,
 	resolveCueAnchor,
 	type Sequence,
@@ -300,6 +304,8 @@ type RefPlan = {
 	anchor: number;
 	/** Absolute sample where the aligned point should play (the cue). */
 	expected: number;
+	/** Absolute sample where the document plays it (its own copy among identical sounds in the search window). */
+	documented: number;
 	toleranceFrames: number;
 	align: 'peak' | 'start' | 'end';
 };
@@ -428,6 +434,57 @@ function runs(n: number, pred: (i: number) => boolean): [number, number][] {
 	return out;
 }
 
+/** A Volume keyframe segment going down by at least this much (dB) is a deliberate level move (DIP: decision). */
+const LEVEL_MOVE_DB = 6;
+const VOLUME_CLIP_KINDS: ReadonlySet<string> = new Set(['audio', 'nest-audio', 'synthetic-audio']);
+
+/**
+ * Where the mix's level is moved down on purpose (sequence frames `[from, to]`): Volume keyframe segments of audio clips
+ * (content time), audio tracks, submixes and the Mix (sequence time) that go down by ≥ {@link LEVEL_MOVE_DB} — music
+ * rides, auto-ducking, `audio.volumeDip`, stop-before dips (also one whose cue has moved since). A hold step is the
+ * frame of its next key.
+ */
+function levelMovesDown(seq: Sequence, rate: Rational): [number, number][] {
+	const F = flicksPerFrame(rate);
+	const out: [number, number][] = [];
+	const lane = (anim: unknown, toFrame: (t: number) => number) => {
+		const raw = (anim as { keyframes?: unknown } | null | undefined)?.keyframes;
+		if (!Array.isArray(raw) || raw.length < 2) return;
+		const ks = (raw as { time?: unknown; value?: unknown; interpolation?: unknown }[])
+			.filter((k) => fin(k?.time) && fin(k?.value))
+			.sort((a, b) => (a.time as number) - (b.time as number));
+		for (let j = 1; j < ks.length && out.length < 10_000; j++) {
+			const p = ks[j - 1]!;
+			const q = ks[j]!;
+			const fp = toFrame(p.time as number);
+			const fq = toFrame(q.time as number);
+			if (!fin(fp) || !fin(fq)) continue;
+			// the order the mix plays them in (a reversed clip plays its content keys backwards)
+			const [first, second] = fp <= fq ? [p, q] : [q, p];
+			if ((first.value as number) - (second.value as number) < LEVEL_MOVE_DB) continue;
+			out.push(p.interpolation === 'hold' ? [fq, fq] : [Math.min(fp, fq), Math.max(fp, fq)]);
+		}
+	};
+	for (const c of Object.values(seq.clips)) {
+		if (!VOLUME_CLIP_KINDS.has(c.kind)) continue;
+		const sp = (c as { speed?: { rate?: number; reverse?: boolean } }).speed;
+		const t = clipLaneTime(
+			{
+				start: c.start,
+				duration: c.duration,
+				sourceIn: c.sourceIn,
+				speed: { rate: sp?.rate || 1, reverse: !!sp?.reverse },
+			},
+			rate,
+		);
+		lane((c as { volumeDb?: unknown }).volumeDb, (k) => t.toSeq(k) / F);
+	}
+	for (const tr of [...seq.audioTracks, ...(seq.submixTracks ?? [])])
+		lane((tr as { volumeDb?: unknown }).volumeDb, (k) => k / F);
+	lane((seq.master as { volumeDb?: unknown }).volumeDb, (k) => k / F);
+	return out;
+}
+
 /** Energy mean of LUFS values over the hops `use` marks (−∞ when none / silent). */
 function meanLufs(curve: Float32Array, from: number, to: number, use: (i: number) => boolean): number {
 	let e = 0;
@@ -461,12 +518,14 @@ export async function checkSequence(
 	};
 	const progress = (f: number, s: string) => env.onProgress?.(f, s);
 	const warnings: SoundCheckReport['warnings'] = [];
-	const preset = opts.target
+	// the target as `soundCheckStatus` reads it back (0.1 steps), so a stored summary is current at once
+	const target = opts.target ? (readSoundCheckTarget(opts.target) ?? undefined) : undefined;
+	const preset = target
 		? {
 				...deliveryPreset(opts.preset),
 				label: SOUND_CHECK_CUSTOM_LABEL,
-				integratedLufs: opts.target.integratedLufs,
-				truePeakDb: opts.target.truePeakDb,
+				integratedLufs: target.integratedLufs,
+				truePeakDb: target.truePeakDb,
 				source: 'Custom target',
 			}
 		: deliveryPreset(opts.preset);
@@ -493,10 +552,10 @@ export async function checkSequence(
 	const stemIds = classifyStems(seq, playing);
 	const rangeStart = frameToSample(range.start, rate, sr);
 	const rangeEnd = Math.max(rangeStart, frameToSample(range.end, rate, sr));
-	const seqEnd = frameToSample(duration, rate, sr);
 	const preHops = Math.min(PRE_HOPS, Math.floor(rangeStart / hop));
 	const renderStart = rangeStart - preHops * hop;
-	const renderEnd = Math.min(Math.max(rangeEnd, seqEnd), rangeEnd + POST_HOPS * hop);
+	// the post-roll also runs past the end of the sequence (silence there): a sound on the last frames is located too
+	const renderEnd = rangeEnd + POST_HOPS * hop;
 	const rangeSamples = rangeEnd - rangeStart;
 	const rangeHops = Math.ceil(rangeSamples / hop);
 	const loud = (seq.master as { loudness?: { enabled?: boolean; targetLufs?: number; truePeakDb?: number } })
@@ -520,9 +579,9 @@ export async function checkSequence(
 		const sfx = clip.sfx !== undefined ? readClipSfx(clip.sfx) : null;
 		const own = sfx?.cueId ? cueById.get(sfx.cueId) : undefined;
 		const cue = own && (own.placedClipIds ?? []).includes(c.id) ? own : null;
-		const aligned = sfx?.placement
-			? (c.start * F + (sfx.placement.peakFlicks - c.sourceIn) / (c.speed?.rate || 1)) / F
-			: null;
+		// where the aligned point plays: a reversed clip plays content `sourceIn + (duration − t)·rate` at local time t
+		const into = sfx?.placement ? (sfx.placement.peakFlicks - c.sourceIn) / (c.speed?.rate || 1) / F : 0;
+		const aligned = sfx?.placement ? c.start + (c.speed?.reverse ? c.duration - into : into) : null;
 		const prov = readLibraryProvenance(
 			(doc.media?.[clip.mediaId] as { library?: unknown } | undefined)?.library,
 		);
@@ -729,7 +788,8 @@ export async function checkSequence(
 		const refLen = Math.ceil((before + post) * sr);
 		const a = expected - Math.round(before * sr) - search - hop;
 		const len = refLen + 2 * search + 2 * hop;
-		if (a < renderStart || a + len > renderEnd) {
+		// before sample 0 nothing plays: a capture of a sound on the first frames starts with silence
+		if ((a < renderStart && renderStart > 0) || a + len > renderEnd) {
 			unmeasured.set(row, 'its cue is at the edge of the checked range');
 			continue;
 		}
@@ -745,6 +805,7 @@ export async function checkSequence(
 				decodeRate: Math.max(1000, Math.round(sr / speed)),
 				anchor: Math.round(before * sr),
 				expected,
+				documented: Math.round(((row.alignedFrame ?? row.cue.frame) / fpsNum) * sr),
 				toleranceFrames: SYNC_TOLERANCE_FRAMES[kind] ?? 1,
 				align,
 			},
@@ -846,7 +907,9 @@ export async function checkSequence(
 			let skip = limiter.latency;
 			let written = 0;
 			const block = Array.from({ length: channels }, () => new Float32Array(hop));
-			const raw = Buffer.alloc(hop * channels * 4);
+			// read 100 hops (1 s) at once, process hop by hop (one await per hop made the pass I/O-bound)
+			const chunk = hop * 100;
+			const raw = Buffer.alloc(chunk * channels * 4);
 			const emit = (n: number) => {
 				limiter.process(block, 0, n);
 				const gr = -limiter.gainReductionDb();
@@ -866,14 +929,17 @@ export async function checkSequence(
 			};
 			for (let done = 0; done < rangeSamples; ) {
 				if (env.signal?.aborted) throw new JobError('CANCELLED', 'Cancelled', false);
-				const n = Math.min(hop, rangeSamples - done);
-				const { bytesRead } = await src.read(raw, 0, n * channels * 4, done * channels * 4);
+				const want = Math.min(chunk, rangeSamples - done);
+				const { bytesRead } = await src.read(raw, 0, want * channels * 4, done * channels * 4);
 				const got = Math.floor(bytesRead / (channels * 4));
-				for (let i = 0; i < n; i++)
-					for (let c = 0; c < channels; c++)
-						block[c]![i] = i < got ? raw.readFloatLE((i * channels + c) * 4) * g : 0;
-				emit(n);
-				done += n;
+				for (let k = 0; k < want; k += hop) {
+					const n = Math.min(hop, want - k);
+					for (let i = 0; i < n; i++)
+						for (let c = 0; c < channels; c++)
+							block[c]![i] = k + i < got ? raw.readFloatLE(((k + i) * channels + c) * 4) * g : 0;
+					emit(n);
+				}
+				done += want;
 			}
 			for (let left = limiter.latency; left > 0 && written < rangeSamples; ) {
 				const n = Math.min(hop, left);
@@ -896,6 +962,8 @@ export async function checkSequence(
 	const mixMomentary = crop(loudnessCurve(finalCurves, 0.4), finalOffsetHops);
 	const mixShortTerm = crop(loudnessCurve(finalCurves, 3), finalOffsetHops);
 	const mixMsDb = crop(finalCurves.msDb, finalOffsetHops);
+	// SILENCE: the loudest channel (a centre-only 5.1 dialogue or a left-only room tone is not silence)
+	const mixLoudestDb = crop(finalCurves.loudestDb, finalOffsetHops);
 	const mixPeakDb = crop(finalCurves.peakDb, finalOffsetHops);
 	const stemOffset = gainDb ?? 0;
 	const stemMomentary = (s: Stem) => crop(loudnessCurve(curves[s], 0.4, stemOffset), preHops);
@@ -933,7 +1001,7 @@ export async function checkSequence(
 	const audibleSec = (audibleHops * hop) / sr;
 	const measurable =
 		Number.isFinite(final.integrated) && audibleSec >= SOUND_CHECK_THRESHOLDS.minMeasurableSec;
-	const broadcast = !opts.target && (opts.preset === 'broadcast-r128' || opts.preset === 'atsc-a85');
+	const broadcast = !target && (opts.preset === 'broadcast-r128' || opts.preset === 'atsc-a85');
 	const loudnessFix = (why: string): SoundCheckFix | undefined => {
 		const cmd = {
 			type: 'mixer.setLoudness',
@@ -1208,7 +1276,12 @@ export async function checkSequence(
 		}
 		const search = Math.ceil((SYNC_SEARCH_FRAMES / fpsNum) * sr);
 		const nominal = c.ref.expected - c.ref.anchor - c.a;
-		const found = locateByCorrelation(ref, c.data, nominal - search - hop, nominal + search + hop);
+		// the same sound twice near the cue (a repeat, a doubled layer) matches twice: its own copy is where the document
+		// plays it, unless that match is much weaker than the best one
+		const found = locateByCorrelation(ref, c.data, nominal - search - hop, nominal + search + hop, {
+			prefer: c.ref.documented - c.ref.anchor - c.a,
+			separation: Math.round(sr / fpsNum),
+		});
 		if (!found || found.ncc < SYNC_MIN_CORRELATION) {
 			c.row.located = 'not-found';
 			c.row.correlation = found ? r2(found.ncc) : null;
@@ -1389,6 +1462,12 @@ export async function checkSequence(
 
 	// ── MUSIC_OVER_VOICE ─────────────────────────────────────────────────────────────────────────────────────────────
 	t = Date.now();
+	const hasDialogueClip = Object.values(seq.clips).some(
+		(c) =>
+			c.kind === 'audio' &&
+			c.enabled !== false &&
+			readEssentialSound((c as AudioClip).essential)?.type === 'dialogue',
+	);
 	if (stemIds.music.size > 0 && stemIds.dialogue.size + speechSeconds > 0) {
 		const voice = stemMomentary('dialogue');
 		const music = stemMomentary('music');
@@ -1408,7 +1487,16 @@ export async function checkSequence(
 			});
 			const duck = musicClips.map((id) => readEssentialSound((seq.clips[id] as AudioClip).essential));
 			const ducked = duck.some((es) => es?.ducking.enabled);
-			const depth = Math.min(0, ...duck.map((es) => es?.ducking.reduceDb ?? -15));
+			// ducked: the depth it has; else the depth the delivery job will write (`soundDesign.applyDelivery`: the
+			// user's depth, else DELIVERY_DUCK_DB under dialogue) — the least of the clips', which limits the result
+			const depths = duck.map((es) =>
+				!es
+					? 0
+					: ducked || duckingDepthBy(es) === 'user' || !hasDialogueClip
+						? es.ducking.reduceDb
+						: -DELIVERY_DUCK_DB,
+			);
+			const depth = depths.length ? Math.min(0, ducked ? Math.min(...depths) : Math.max(...depths)) : 0;
 			const predicted = under - depth;
 			const fix: SoundCheckFix = ducked
 				? {
@@ -1505,7 +1593,7 @@ export async function checkSequence(
 			c.window ? c.window.start < fb && c.window.end > fa : c.frame >= fa - fpsNum * 0.5 && c.frame < fb,
 		);
 	const minSilentHops = Math.ceil((SOUND_CHECK_THRESHOLDS.silenceMinSec * sr) / hop);
-	const silentRuns = runs(rangeHops, (i) => mixMsDb[i]! < SOUND_CHECK_THRESHOLDS.silenceDbfs).filter(
+	const silentRuns = runs(rangeHops, (i) => mixLoudestDb[i]! < SOUND_CHECK_THRESHOLDS.silenceDbfs).filter(
 		([a, b]) => b - a >= minSilentHops,
 	);
 	const silenceFix = (fa: number, fb: number): SoundCheckFix | undefined => {
@@ -1563,6 +1651,7 @@ export async function checkSequence(
 		const stopSpans = cues
 			.filter((c) => c.stopBefore && !c.muted)
 			.map((c) => [c.frame - (c.stopBefore!.seconds + 0.1) * fpsNum, c.frame + 0.1 * fpsNum] as const);
+		const moves = levelMovesDown(seq, rate);
 		let i = 0;
 		while (i < st.length) {
 			let prevMax = Number.NEGATIVE_INFINITY;
@@ -1600,6 +1689,7 @@ export async function checkSequence(
 				silenceExplained(fa, fb) ||
 				[...cuts].some((f) => f >= fa && f <= fb) ||
 				stopSpans.some(([a, b]) => a < fb && b > fa) ||
+				moves.some(([a, b]) => a <= fb && b >= fa) ||
 				silentRuns.some(([a, b]) => a <= bottom && b >= bottom);
 			if (recovered && !explained) {
 				const fix = silenceFix(fa, fb);
@@ -1808,6 +1898,9 @@ export async function checkSequence(
 		if (!had || (!hadTrail && (p.trailSilenceSec ?? 0) > 0)) libraryMedia.set(p.soundId, mid);
 	}
 	const soundOf = (r: SfxRow) => r.info.librarySoundId ?? `media:${r.clip.mediaId}`;
+	/** LICENSE severity of a licence: commercial-safe (or the project's own audio) 0, user-provided 1 (warning), else 2. */
+	const licenceRank = (l: string | null) =>
+		l === null || isCommercialSafe(l) ? 0 : licenseClass(l) === 'user-provided' ? 1 : 2;
 	const swapFix = async (
 		row: SfxRow,
 		exclude: Set<string>,
@@ -1889,7 +1982,8 @@ export async function checkSequence(
 		b.codes.add('REPEAT');
 		const next = eventsInOrder[i + 1];
 		const exclude = new Set([soundOf(a), ...(next ? [soundOf(next)] : [])]);
-		const fix = await swapFix(b, exclude, () => true);
+		// any alternative whose licence is not worse than the clip's (a REPEAT fix must not make a LICENSE finding)
+		const fix = await swapFix(b, exclude, (l) => licenceRank(l) <= licenceRank(b.licence));
 		const iface = b.types.some((x) => INTERFACE_TYPES.has(x));
 		issues.add({
 			subject: b.clip.id,
@@ -2075,14 +2169,14 @@ export async function checkSequence(
 		sequenceId: seq.id,
 		revision: opts.revision,
 		mixHash: mixFingerprint(doc, seq.id),
-		inputsHash: soundCheckInputsHash(doc, seq.id, opts.preset, opts.target),
+		inputsHash: soundCheckInputsHash(doc, seq.id, opts.preset, target),
 		preset: {
 			id: opts.preset,
 			label: preset.label,
 			integratedLufs: preset.integratedLufs,
 			truePeakDb: preset.truePeakDb,
 			source: preset.source,
-			...(opts.target ? { custom: true } : {}),
+			...(target ? { custom: true } : {}),
 		},
 		range: { ...range },
 		rangeTimecode: { start: tc(range.start), end: tc(range.end) },
@@ -2176,10 +2270,11 @@ async function soundCheckJob(ctx: JobContext, deps: SoundCheckDeps): Promise<Sou
 	const live = await liveDocument(agent, req.projectId);
 	const seq = planSequence(live.doc, req.sequenceId);
 	const preset = (req.preset ?? soundDesignSettingsOf(seq).delivery) as SoundDelivery;
+	const target = req.target ? (readSoundCheckTarget(req.target) ?? undefined) : undefined;
 	const report = await checkSequence(
 		live.doc,
 		seq,
-		{ projectId: req.projectId, revision: live.revision, preset, target: req.target, range: req.range },
+		{ projectId: req.projectId, revision: live.revision, preset, target, range: req.range },
 		{
 			ff: deps.ffmpeg,
 			registry: deps.registry,
@@ -2218,7 +2313,7 @@ async function soundCheckJob(ctx: JobContext, deps: SoundCheckDeps): Promise<Sou
 							counts: Object.fromEntries(Object.entries(report.counts).slice(0, 64)),
 							at: new Date().toISOString(),
 							preset,
-							...(req.target ? { target: req.target } : {}),
+							...(target ? { target } : {}),
 							inputsHash: report.inputsHash || 'none',
 							jobId: ctx.job.id,
 							...(report.wholeSequence ? {} : { range: report.range }),
