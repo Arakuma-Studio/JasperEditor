@@ -763,13 +763,19 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 			const v =
 				t < 4
 					? 0
-					: 0.3 * (0.5 - 0.5 * Math.cos(2 * Math.PI * 4 * (t - 4))) * Math.sign(Math.sin(2 * Math.PI * 180 * t));
+					: 0.3 *
+						(0.5 - 0.5 * Math.cos(2 * Math.PI * 4 * (t - 4))) *
+						Math.sign(Math.sin(2 * Math.PI * 180 * t));
 			pcm.writeInt16LE(Math.round(v * 32767), 44 + i * 2);
 		}
 		const wav = join(work, 'dialogue.wav');
 		writeFileSync(wav, pcm);
-		const pid = (await ok<{ projectId: string }>('create_project', { name: 'Hero under dialogue' })).projectId;
-		const media = await ok<{ imported: { mediaId: string }[] }>('import_media', { projectId: pid, paths: [wav] });
+		const pid = (await ok<{ projectId: string }>('create_project', { name: 'Hero under dialogue' }))
+			.projectId;
+		const media = await ok<{ imported: { mediaId: string }[] }>('import_media', {
+			projectId: pid,
+			paths: [wav],
+		});
 		const placed = await ok<{ clips: { id: string; kind: string }[] }>('add_clip', {
 			projectId: pid,
 			media: media.imported[0]!.mediaId,

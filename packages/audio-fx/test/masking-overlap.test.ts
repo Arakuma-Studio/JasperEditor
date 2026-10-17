@@ -88,7 +88,7 @@ describe('overlapping sound effects mask the sounds of a higher weight', () => {
 		const late = ev({ clipId: 'h', weight: 'hero', startSec: 3, endSec: 4 });
 		const r = solveSfxGains([ev({ ...amb, energyProfile: prof }), late]);
 		// its mean power over 4 s is −38 dB at 500 Hz; the last second holds 0.1 / 3 of its energy: × 4 s / 1 s
-		const eff = dB10(e10(-40) + ((0.1 / 3) * 4) * e10(-38));
+		const eff = dB10(e10(-40) + (0.1 / 3) * 4 * e10(-38));
 		expect(one(r, 'h').gainDb).toBeCloseTo(Math.round((eff + 25) * 100) / 100, 9);
 		// spread evenly: 1 s of 4 → 1 × its mean power
 		const even = solveSfxGains([ev(amb), late]);
@@ -104,7 +104,13 @@ describe('overlapping sound effects mask the sounds of a higher weight', () => {
 			ev({ clipId: 'h', weight: 'hero', startSec: 0, endSec: 0.5 }),
 			ev({ clipId: 's', weight: 'support', startSec: 2, endSec: 2.5 }), // apart from the hero
 			ev({ clipId: 's2', weight: 'support', startSec: 2, endSec: 2.5 }), // its peer, same window
-			ev({ clipId: 'w', weight: 'support', startSec: 0.2, endSec: 0.5, soundBandsDb: [-60, -60, -60, -60, -20, -30, -60] }),
+			ev({
+				clipId: 'w',
+				weight: 'support',
+				startSec: 0.2,
+				endSec: 0.5,
+				soundBandsDb: [-60, -60, -60, -60, -20, -30, -60],
+			}),
 		]);
 		// peers: both as alone (−40 + 3.5 + 20)
 		expect(one(r, 's').gainDb).toBeCloseTo(-16.5, 9);
@@ -300,18 +306,21 @@ const arbEvents = fc
 	.integer({ min: 1, max: 12 })
 	.chain((n) => fc.tuple(...Array.from({ length: n }, (_, i) => arbEvent(i))))
 	.map((xs) =>
-		xs.map(({ len, cueKey, ...e }): SolverEvent => ({
-			...e,
-			endSec: e.startSec + len,
-			...(cueKey ? { cueKey } : {}),
-		})),
+		xs.map(
+			({ len, cueKey, ...e }): SolverEvent => ({
+				...e,
+				endSec: e.startSec + len,
+				...(cueKey ? { cueKey } : {}),
+			}),
+		),
 	);
 const ceilingArb = fc.double({ min: -12, max: 0, noNaN: true });
 
 /** Largest summed true peak (dBTP) of measured events active together, at the solved gains (interval cliques). */
 function worstOverlapDb(events: SolverEvent[], r: SolverResult, unexplained: boolean): number {
 	let worst = Number.NEGATIVE_INFINITY;
-	const lostHeadroom = (i: number) => r.events[i]!.limitedBy.some((l) => l.startsWith('conflict:') && l.endsWith('/headroom'));
+	const lostHeadroom = (i: number) =>
+		r.events[i]!.limitedBy.some((l) => l.startsWith('conflict:') && l.endsWith('/headroom'));
 	events.forEach((e, i) => {
 		if (e.truePeakDb === null) return;
 		let s = 0;
@@ -320,7 +329,8 @@ function worstOverlapDb(events: SolverEvent[], r: SolverResult, unexplained: boo
 			if (m.truePeakDb === null) return;
 			const active =
 				j === i ||
-				(m.startSec <= e.startSec && (m.endSec > e.startSec || (m.endSec === m.startSec && m.startSec === e.startSec)));
+				(m.startSec <= e.startSec &&
+					(m.endSec > e.startSec || (m.endSec === m.startSec && m.startSec === e.startSec)));
 			if (!active) return;
 			s += amp(m.truePeakDb + r.events[j]!.gainDb);
 			if (lostHeadroom(j)) explained = true;
@@ -364,13 +374,24 @@ describe('properties', () => {
 	it('with peak profiles: the summed peak holds at every moment (no repeat groups to override it)', () => {
 		const prof = fc.array(fc.double({ min: -90, max: 6, noNaN: true }), { minLength: 32, maxLength: 32 });
 		fc.assert(
-			fc.property(arbEvents, fc.array(prof, { minLength: 12, maxLength: 12 }), ceilingArb, (raw, profs, ceiling) => {
-				const events = raw.map((e, i) => ({ ...e, soundId: `u${i}`, type: `t${i}`, peakProfileDb: profs[i]! }));
-				const r = solveSfxGains(events, { truePeakCeilingDb: ceiling });
-				expect(r.warnings.filter((w) => w.code === 'W_UNRESOLVED')).toEqual([]);
-				const held = r.events.some((e) => e.limitedBy.some((l) => l.endsWith('/headroom')));
-				if (!held) expect(worstMomentDb(events, r)).toBeLessThanOrEqual(ceiling + 0.005 * events.length + 1e-9);
-			}),
+			fc.property(
+				arbEvents,
+				fc.array(prof, { minLength: 12, maxLength: 12 }),
+				ceilingArb,
+				(raw, profs, ceiling) => {
+					const events = raw.map((e, i) => ({
+						...e,
+						soundId: `u${i}`,
+						type: `t${i}`,
+						peakProfileDb: profs[i]!,
+					}));
+					const r = solveSfxGains(events, { truePeakCeilingDb: ceiling });
+					expect(r.warnings.filter((w) => w.code === 'W_UNRESOLVED')).toEqual([]);
+					const held = r.events.some((e) => e.limitedBy.some((l) => l.endsWith('/headroom')));
+					if (!held)
+						expect(worstMomentDb(events, r)).toBeLessThanOrEqual(ceiling + 0.005 * events.length + 1e-9);
+				},
+			),
 			{ numRuns: 400 },
 		);
 	});
@@ -393,7 +414,10 @@ describe('properties', () => {
 				const events = raw.map((e, i) => ({ ...e, soundId: `u${i}`, type: `t${i}` }));
 				const r = solveSfxGains(events, { truePeakCeilingDb: ceiling });
 				const held = r.events.some((e) => e.limitedBy.some((l) => l.endsWith('/headroom')));
-				if (!held) expect(worstOverlapDb(events, r, false)).toBeLessThanOrEqual(ceiling + 0.005 * events.length + 1e-9);
+				if (!held)
+					expect(worstOverlapDb(events, r, false)).toBeLessThanOrEqual(
+						ceiling + 0.005 * events.length + 1e-9,
+					);
 			}),
 			{ numRuns: 500 },
 		);
@@ -411,7 +435,9 @@ describe('properties', () => {
 					expect(Math.abs(e.sfxMaskingDb - want[i]!), e.clipId).toBeLessThan(0.011);
 					// a hero / support with nothing holding it reaches its target over the masked bed
 					if (e.limitedBy.length === 0 && e.achievedLiftDb !== null)
-						expect(e.achievedLiftDb, e.clipId).toBeGreaterThanOrEqual(TARGET_LIFT_DB[events[i]!.weight] - 0.011);
+						expect(e.achievedLiftDb, e.clipId).toBeGreaterThanOrEqual(
+							TARGET_LIFT_DB[events[i]!.weight] - 0.011,
+						);
 				});
 			}),
 			{ numRuns: 400 },
@@ -424,7 +450,8 @@ describe('properties', () => {
 				const a = solveSfxGains(events);
 				expect(solveSfxGains(structuredClone(events))).toEqual(a);
 				const perm = [...events].sort(
-					(x, y) => ((x.clipId.charCodeAt(1) * 7919 + seed) % 13) - ((y.clipId.charCodeAt(1) * 7919 + seed) % 13),
+					(x, y) =>
+						((x.clipId.charCodeAt(1) * 7919 + seed) % 13) - ((y.clipId.charCodeAt(1) * 7919 + seed) % 13),
 				);
 				expect(solveSfxGains(perm).gains).toEqual(a.gains);
 			}),

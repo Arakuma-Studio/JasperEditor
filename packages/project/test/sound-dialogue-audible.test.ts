@@ -94,7 +94,10 @@ describe('dialogue that the mix does not let through is not dialogue', () => {
 			const t = seq.audioTracks.find((x) => x.id === trackId)! as Sequence['audioTracks'][number] & {
 				mixer?: { lanes?: Record<string, unknown> };
 			};
-			t.mixer = { ...(t.mixer ?? {}), lanes: { mute: { value: 0, keyframes: [key('m0', 0, 0), key('m1', 60 * F, 1)] } } };
+			t.mixer = {
+				...(t.mixer ?? {}),
+				lanes: { mute: { value: 0, keyframes: [key('m0', 0, 0), key('m1', 60 * F, 1)] } },
+			};
 		});
 		expect(ranges(h)).toEqual([[0, 60]]);
 		patchSeq(h, (seq) => {

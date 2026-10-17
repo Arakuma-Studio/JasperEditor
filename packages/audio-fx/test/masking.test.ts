@@ -192,17 +192,20 @@ describe('constraints, one at a time', () => {
 
 	it('3 hero shadow: a support within 0.15 s of a hero × 0.6; not past 0.15 s, not ambient, not the hero', () => {
 		const h = ev({ clipId: 'h', weight: 'hero', startSec: 1, endSec: 1.3 });
-		const r = solveSfxGains([
-			h,
-			ev({ clipId: 'near', startSec: 1.4, endSec: 2 }), // gap 0.1 s
-			ev({ clipId: 'edge', startSec: 1.45, endSec: 2 }), // gap 0.15 s exactly
-			ev({ clipId: 'far', startSec: 1.46, endSec: 2 }),
-			ev({ clipId: 'before', startSec: 0, endSec: 0.9 }),
-			ev({ clipId: 'over', startSec: 0.5, endSec: 3 }), // overlaps
-			ev({ clipId: 'amb', weight: 'ambient', startSec: 1, endSec: 2 }),
-			// the bed alone: the ambience and supports under the hero would raise the hero and the supports
-			// (overlapping-SFX masking, masking-overlap.test.ts); this test is about step 3
-		], { sfxMasking: false });
+		const r = solveSfxGains(
+			[
+				h,
+				ev({ clipId: 'near', startSec: 1.4, endSec: 2 }), // gap 0.1 s
+				ev({ clipId: 'edge', startSec: 1.45, endSec: 2 }), // gap 0.15 s exactly
+				ev({ clipId: 'far', startSec: 1.46, endSec: 2 }),
+				ev({ clipId: 'before', startSec: 0, endSec: 0.9 }),
+				ev({ clipId: 'over', startSec: 0.5, endSec: 3 }), // overlaps
+				ev({ clipId: 'amb', weight: 'ambient', startSec: 1, endSec: 2 }),
+				// the bed alone: the ambience and supports under the hero would raise the hero and the supports
+				// (overlapping-SFX masking, masking-overlap.test.ts); this test is about step 3
+			],
+			{ sfxMasking: false },
+		);
 		const free = -16.5;
 		expect(HERO_SHADOW_DB).toBeCloseTo(-4.437, 3);
 		for (const id of ['near', 'edge', 'before', 'over']) {
@@ -558,7 +561,9 @@ describe('properties', () => {
 					const y = b.events[i]!;
 					if (
 						overlapCut &&
-						y.limitedBy.some((l) => l === 'overlap-headroom' || l === 'consistency' || l.endsWith('/headroom'))
+						y.limitedBy.some(
+							(l) => l === 'overlap-headroom' || l === 'consistency' || l.endsWith('/headroom'),
+						)
 					)
 						return;
 					expect(y.gainDb, `${e.clipId}`).toBeGreaterThanOrEqual(e.gainDb - 0.01 - 1e-9);

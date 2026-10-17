@@ -11,7 +11,12 @@ import { encodeWav } from '@jasper/audio-dsp';
 import { bandLevels, OCTAVE_BAND_CENTRES_HZ } from '@jasper/audio-fx';
 import type { LibraryProvenance, ProjectDocument } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { MeasureCache, type MeasureDeps, measureSfxEvents, renderSequencePcm } from '../src/sound-design/bed.ts';
+import {
+	MeasureCache,
+	type MeasureDeps,
+	measureSfxEvents,
+	renderSequencePcm,
+} from '../src/sound-design/bed.ts';
 import { levelOptions, sfxInfoOf, solveAt, solverEventOf } from '../src/sound-design/levels.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, makeApp, register, type TestApp } from './helpers.ts';
@@ -43,7 +48,14 @@ beforeAll(async () => {
 	const dir = mkdtempSync(join(tmpdir(), 'jasper-overlap-'));
 	const files = writeBedFixture(dir);
 	const rainFile = join(dir, 'rain.wav');
-	writeFileSync(rainFile, encodeWav(musicSamples(3).map((c) => c.map((x) => x * 0.6)), SR, 's16'));
+	writeFileSync(
+		rainFile,
+		encodeWav(
+			musicSamples(3).map((c) => c.map((x) => x * 0.6)),
+			SR,
+			's16',
+		),
+	);
 	const b = new DocBuilder('hd-1080p-30', 300);
 	const music = b.addMedia(await register(app, files.music));
 	const hit = b.addMedia(await register(app, files.hit));
@@ -92,7 +104,9 @@ describe('overlapping sound effects on the real mixer', { timeout: 300_000 }, ()
 		const solved = solveAt(events, 'web');
 		const ceiling = levelOptions('web').truePeakCeilingDb;
 		expect(ceiling).toBe(-1);
-		expect(solved.warnings.filter((w) => w.code === 'W_UNRESOLVED' || w.code === 'W_UNCONVERGED')).toEqual([]);
+		expect(solved.warnings.filter((w) => w.code === 'W_UNRESOLVED' || w.code === 'W_UNCONVERGED')).toEqual(
+			[],
+		);
 		const by = (k: (typeof SFX)[number]) => solved.events.find((e) => e.clipId === ids[k])!;
 		// alone each hero would sit at its own headroom; together they share it
 		for (const k of ['h1', 'h2'] as const) {
@@ -112,7 +126,13 @@ describe('overlapping sound effects on the real mixer', { timeout: 300_000 }, ()
 		applied.revision = d.revision;
 		applied.tx([{ type: 'soundDesign.applyGains', gains: solved.gains }]);
 		const range = { start: 0, end: 130 };
-		const sfxOnly = await renderSequencePcm(applied.doc, d.seqId, range, new Set(SFX.map((k) => ids[k]!)), deps);
+		const sfxOnly = await renderSequencePcm(
+			applied.doc,
+			d.seqId,
+			range,
+			new Set(SFX.map((k) => ids[k]!)),
+			deps,
+		);
 		console.log(`sound effects together: true peak ${sfxOnly.truePeakDb?.toFixed(2)} dBTP`);
 		expect(sfxOnly.truePeakDb).not.toBeNull();
 		expect(sfxOnly.truePeakDb!).toBeLessThanOrEqual(ceiling + 0.05);
@@ -139,7 +159,9 @@ describe('overlapping sound effects on the real mixer', { timeout: 300_000 }, ()
 			const rel = { start: w.start - range.start / 30, end: w.end - range.start / 30 };
 			const dom = r.dominantBands.map((hz) => OCTAVE_BAND_CENTRES_HZ.indexOf(hz));
 			const e = (bands: number[]) => 10 * Math.log10(dom.reduce((s, b) => s + 10 ** (bands[b]! / 10), 0));
-			const lift = e(bandLevels(sound.channels, sound.sampleRate, rel)) - e(bandLevels(maskedBed.channels, maskedBed.sampleRate, rel));
+			const lift =
+				e(bandLevels(sound.channels, sound.sampleRate, rel)) -
+				e(bandLevels(maskedBed.channels, maskedBed.sampleRate, rel));
 			console.log(`${k}: lift over bed + rain measured ${lift.toFixed(2)} dB, reported ${r.achievedLiftDb}`);
 			expect(Math.abs(lift - r.achievedLiftDb!), k).toBeLessThan(0.5);
 		}

@@ -845,7 +845,8 @@ export async function measureSfxEvents(
 							end: Math.min((rc.start + rc.duration - range.start) / fpsNum, head + MAX_WINDOW_SEC),
 						};
 				const peak = shortTermPeakLu(r.pcm.channels, sr, rel, 0);
-				const peaks = span && r.truePeakDb !== null ? peakProfile(r.pcm.channels, sr, rel, r.truePeakDb) : null;
+				const peaks =
+					span && r.truePeakDb !== null ? peakProfile(r.pcm.channels, sr, rel, r.truePeakDb) : null;
 				const x: SoundEntry = {
 					rel,
 					silent: span === null,

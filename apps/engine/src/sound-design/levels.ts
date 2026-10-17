@@ -195,7 +195,9 @@ export function levelReason(r: SolverEventResult, m: MeasuredSound, ceilingDb: n
 	// the bed it clears includes the lower sound effects playing under it
 	const n = r.maskedBy?.length ?? 0;
 	if (n > 0 && (r.sfxMaskingDb ?? 0) >= 0.05)
-		parts.push(`over the bed and ${n} sound effect${n === 1 ? '' : 's'} under it (+${fmtDb(r.sfxMaskingDb!).replace('+', '')} dB)`);
+		parts.push(
+			`over the bed and ${n} sound effect${n === 1 ? '' : 's'} under it (+${fmtDb(r.sfxMaskingDb!).replace('+', '')} dB)`,
+		);
 	return (parts.length ? `${head}, ${parts.join('; ')}` : head).slice(0, 300);
 }
 

@@ -40,7 +40,11 @@ beforeAll(async () => {
 		{ type: 'essentialSound.setType', clipIds: [ids.speech], audioType: 'dialogue' },
 	]);
 	ids.click = b.tx([
-		{ type: 'soundDesign.place', frame: 150, layers: [{ mediaId: click, role: 'support', align: 'peak', ref: '$x' }] },
+		{
+			type: 'soundDesign.place',
+			frame: 150,
+			layers: [{ mediaId: click, role: 'support', align: 'peak', ref: '$x' }],
+		},
 	]).refs.$x!;
 	d = b;
 }, 120_000);
@@ -101,7 +105,9 @@ describe('the solver hears the dialogue the mix lets through (real engine)', { t
 			};
 			t.mixer = {
 				...(t.mixer ?? {}),
-				lanes: { mute: { value: 0, keyframes: [key('m0', 0, 0), key('m1', 135 * F, 1), key('m2', 180 * F, 0)] } },
+				lanes: {
+					mute: { value: 0, keyframes: [key('m0', 0, 0), key('m1', 135 * F, 1), key('m2', 180 * F, 0)] },
+				},
 			};
 		});
 		expect((await clickSpeech(trackMuted)).speech).toBe(false);

@@ -200,7 +200,8 @@ function voicedFrames(
 	return out;
 }
 
-const isAnimated = (a: Animatable<number> | undefined): boolean => !!a && Array.isArray(a.keyframes) && a.keyframes.length > 0;
+const isAnimated = (a: Animatable<number> | undefined): boolean =>
+	!!a && Array.isArray(a.keyframes) && a.keyframes.length > 0;
 
 function valueAt(a: Animatable<number> | undefined, t: number): number {
 	if (!a) return 0;
@@ -219,7 +220,13 @@ const energyOf = (db: number): number => (db === Number.NEGATIVE_INFINITY ? 0 : 
  * Gain (dB) from a strip's input to the Mix output at sequence time `t` (flicks): its fader and mute, then its output
  * and its sends (pre-fader sends skip the fader and mute), summed as energies; −∞ when nothing gets through.
  */
-function stripPathDb(mix: RenderAudioMix, byId: Map<string, RenderStrip>, id: string, t: number, depth = 0): number {
+function stripPathDb(
+	mix: RenderAudioMix,
+	byId: Map<string, RenderStrip>,
+	id: string,
+	t: number,
+	depth = 0,
+): number {
 	const s = byId.get(id);
 	if (!s || s.silent || depth > 64) return Number.NEGATIVE_INFINITY;
 	const fader = valueAt(s.volumeDb, t);
@@ -227,7 +234,8 @@ function stripPathDb(mix: RenderAudioMix, byId: Map<string, RenderStrip>, id: st
 	if (s.kind === 'master' || s.output === null) return faderDb;
 	const muted = valueAt(s.mute, t) >= 0.5;
 	const post = muted ? Number.NEGATIVE_INFINITY : faderDb;
-	let e = post === Number.NEGATIVE_INFINITY ? 0 : energyOf(post + stripPathDb(mix, byId, s.output, t, depth + 1));
+	let e =
+		post === Number.NEGATIVE_INFINITY ? 0 : energyOf(post + stripPathDb(mix, byId, s.output, t, depth + 1));
 	for (const x of s.sends) {
 		const lvl = valueAt(x.levelDb, t);
 		if (lvl <= SILENT_FADER_DB) continue;
@@ -259,7 +267,11 @@ function audibleRuns(
 	mix: RenderAudioMix | null,
 	byId: Map<string, RenderStrip>,
 ): [number, number][] | null {
-	const a = c as Clip & { gainDb?: unknown; volumeDb?: Animatable<number>; channels?: { map?: unknown; mute?: unknown } };
+	const a = c as Clip & {
+		gainDb?: unknown;
+		volumeDb?: Animatable<number>;
+		channels?: { map?: unknown; mute?: unknown };
+	};
 	const ch = a.channels;
 	if (
 		ch &&

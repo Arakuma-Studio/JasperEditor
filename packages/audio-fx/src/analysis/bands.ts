@@ -295,7 +295,9 @@ export function peakProfile(
 	for (let k = 0; k < N; k++) max = Math.max(max, peak[k]!);
 	const db = (a: number) => (a > 0 ? Math.max(BAND_FLOOR_DB, 20 * Math.log10(a)) : BAND_FLOOR_DB);
 	const over =
-		typeof truePeakDb === 'number' && Number.isFinite(truePeakDb) && max > 0 ? Math.max(0, truePeakDb - db(max)) : 0;
+		typeof truePeakDb === 'number' && Number.isFinite(truePeakDb) && max > 0
+			? Math.max(0, truePeakDb - db(max))
+			: 0;
 	return Array.from(peak, (a) => (a > 0 ? Math.min(-BAND_FLOOR_DB, db(a) + over) : BAND_FLOOR_DB));
 }
 

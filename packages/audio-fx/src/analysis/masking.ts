@@ -40,7 +40,12 @@
 // final gain (rounded to
 // 0.01 dB, which may miss a bound by at most 0.005 dB when the allowed interval holds no 0.01 dB step); a violation
 // without a reported conflict is a W_UNRESOLVED warning (the tests require none).
-import { BAND_FLOOR_DB, ENERGY_PROFILE_POINTS, OCTAVE_BAND_CENTRES_HZ, PEAK_PROFILE_SLICES } from './bands.ts';
+import {
+	BAND_FLOOR_DB,
+	ENERGY_PROFILE_POINTS,
+	OCTAVE_BAND_CENTRES_HZ,
+	PEAK_PROFILE_SLICES,
+} from './bands.ts';
 
 /**
  * A lift this large means the bed under the sound is at the measurement floor (nothing plays under it): the reason
@@ -803,7 +808,8 @@ function eachMoment(
 		const e = evs[i]!;
 		times.push(e.start);
 		const len = e.end - e.start;
-		if (e.peaks && len > 0) for (let k = 1; k < e.peaks.length; k++) times.push(e.start + (len * k) / e.peaks.length);
+		if (e.peaks && len > 0)
+			for (let k = 1; k < e.peaks.length; k++) times.push(e.start + (len * k) / e.peaks.length);
 	}
 	times.sort((x, y) => x - y);
 	const active: number[] = [];
@@ -1029,7 +1035,8 @@ function runSteps(
 	for (let k = 0; k < ng; k++) settleGroup(states, ctx.groups[groupsTodo ? groupsTodo[k]! : k]!, true);
 }
 
-const bedRef = (ev: Clean, quietBed: number): number => Math.max(ev.bedPeak ?? Number.NEGATIVE_INFINITY, quietBed);
+const bedRef = (ev: Clean, quietBed: number): number =>
+	Math.max(ev.bedPeak ?? Number.NEGATIVE_INFINITY, quietBed);
 
 const speechLift = (ev: Clean, g: number): number => {
 	let m = Number.NEGATIVE_INFINITY;
@@ -1209,8 +1216,7 @@ export function solveSfxGains(events: SolverEvent[], opts: SolverOptions = {}): 
 				const explained = members.some((i) => states[i]!.conflicts.some(([, lost]) => lost === 'headroom'));
 				if (!explained) {
 					let loud = members[0]!;
-					for (const i of members)
-						if (peak[i]! + finals[i]! > peak[loud]! + finals[loud]!) loud = i;
+					for (const i of members) if (peak[i]! + finals[i]! > peak[loud]! + finals[loud]!) loud = i;
 					if (!unresolvedOverlap.includes(loud)) unresolvedOverlap.push(loud);
 				}
 			}
@@ -1378,7 +1384,9 @@ function reasonText(
 		);
 	// the bed it clears includes lower sound effects under it
 	if (maskers > 0 && maskingDb >= 0.05)
-		parts.push(`over the bed and ${maskers} sound effect${maskers === 1 ? '' : 's'} under it (+${fmtDb(maskingDb).replace('+', '')} dB)`);
+		parts.push(
+			`over the bed and ${maskers} sound effect${maskers === 1 ? '' : 's'} under it (+${fmtDb(maskingDb).replace('+', '')} dB)`,
+		);
 	return parts.length ? `${head}, ${parts.join('; ')}` : head;
 }
 
