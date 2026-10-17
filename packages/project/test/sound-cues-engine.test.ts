@@ -701,6 +701,20 @@ function pixelLike(frame: number, at: ReturnType<typeof sceneAnchorAt>): ExtraCu
 }
 
 describe('engine-source mappers on hostile input', () => {
+	it('regression (FUZZ seed 777, case 2841): a clip starting at 1e20 does not hang the frame loops', () => {
+		const { h, media, videoClip, musicClip } = sequence();
+		const doc = structuredClone(h.doc);
+		const seq = doc.sequences[h.seqId]!;
+		(seq.clips[videoClip] as { start: number }).start = 1e20;
+		(seq.clips[musicClip] as { start: number }).start = 2 ** 60;
+		const t0 = Date.now();
+		expect(sceneCutCues(doc, seq, new Map([[media, { cuts: [1, 2] }]]))).toEqual([]);
+		expect(beatCues(doc, seq, new Map([[musicClip, { beats: [1, 2] }]]))).toEqual([]);
+		expect(footageClips(doc, seq)).toEqual([]);
+		expect(sceneAnchorAt(doc, seq)(10)).toBeNull();
+		expect(Date.now() - t0).toBeLessThan(2000);
+	});
+
 	it('fuzzed sequences and measurements (testkit mutateJson): never throw, frames are integers, deterministic', () => {
 		const rng = new Rng(fuzzSeed());
 		const { h, media, musicClip } = sequence();

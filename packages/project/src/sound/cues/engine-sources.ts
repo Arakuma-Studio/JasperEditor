@@ -22,6 +22,8 @@ import { typesForVisualKind } from '../taxonomy.ts';
 import type { DerivedCue, ExtraCue } from './types.ts';
 import { clipName } from './util.ts';
 
+/** Clips ending later than this frame (≈ 24 h at 120 fps) are ignored: no real edit is that long. */
+const MAX_SEQUENCE_FRAMES = 10_368_000;
 /** Most frames scanned per clip when mapping shot changes (≈ 1.8 h at 30 fps). */
 export const MAX_SCENE_SCAN_FRAMES = 200_000;
 /** Most beats mapped per music clip. */
@@ -53,9 +55,12 @@ function validClip(c: unknown): c is Clip {
 		!!x &&
 		typeof x === 'object' &&
 		typeof x.id === 'string' &&
-		Number.isInteger(x.start) &&
-		Number.isInteger(x.duration) &&
+		// safe, bounded integers: frame loops step by 1 (a start of 2⁵³ + 2 would never advance)
+		Number.isSafeInteger(x.start) &&
+		Number.isSafeInteger(x.duration) &&
+		x.start >= 0 &&
 		x.duration > 0 &&
+		x.start + x.duration <= MAX_SEQUENCE_FRAMES &&
 		!!x.speed &&
 		fin(x.speed.rate) &&
 		x.speed.rate > 0 &&

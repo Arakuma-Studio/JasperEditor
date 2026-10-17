@@ -6314,7 +6314,7 @@ ARCHITECTURE §4.3 (`sounds/analysis/`), gaps.
 
 #### Verified (measured, this branch; shared host, 16 cores)
 
-- `pnpm vitest run packages/project/test/sound-cues-engine.test.ts --maxWorkers=2`: 26 passed — frame motion (still → 0;
+- `pnpm vitest run packages/project/test/sound-cues-engine.test.ts --maxWorkers=2`: 27 passed — frame motion (still → 0;
   a box 3 px right → vx 2.7–3.3, |vy| < 0.3, area 1–25 %; up-left; 9 px (coarse search); a 2 px camera pan → area > 0.8,
   vx −2.2…−1.8; half a pixel → 0.5 ± 0.15 (LK); 0.7 px box ± 0.25; a cut → residual > 0.1; hostile sizes / buffers →
   still; 40 random frames finite); curve events on synthetic curves (constant move with an abrupt stop: window 120–140,
@@ -6330,8 +6330,11 @@ ARCHITECTURE §4.3 (`sounds/analysis/`), gaps.
   keyframe move given way (`merged` 1), kept without the keyframe source; snapToBeats on a derived move (+2, resync keeps
   it on the beat and follows the clip, explicit `beatFrames`); `anchorOffset` add / undo (untouched document) / redo (same
   document) / dropped with the anchor / refusals (no anchor, 11) / repair; testkit fuzz of the mappers (mutateJson, 200
-  cases; found `snapCuesToBeats` crashing on a non-array `beatFrames` — fixed).
-  `FUZZ=1 FUZZ_SEED=777` of that case: see below.
+  cases; found `snapCuesToBeats` crashing on a non-array `beatFrames` — fixed). `FUZZ=1 FUZZ_SEED=777` (20×) then hung
+  at case 2841: a music clip starting at frame 2⁵³ + 2 passed `Number.isInteger`, and the frame loop `f += 1` never
+  advanced there — clips must now be safe integers ending before frame 10 368 000 (regression test "a clip starting at
+  1e20 does not hang"); after the fix `FUZZ=1 FUZZ_SEED=777 pnpm vitest run packages/project/test/sound-cues-engine.test.ts`
+  27 passed (32 s) and `FUZZ=1 FUZZ_SEED=2026 … -t hostile` 4 passed.
 - `pnpm vitest run packages/audio-fx/test/beats.test.ts packages/audio-fx/test/remix.test.ts --maxWorkers=2`: 10 passed —
   click tracks at 90 / 100 / 120 / 128 BPM: tempo within 1 BPM, every beat within 5 ms of its click; accented every 4
   beats → downbeats on the accents within 5 ms, an even track → null; the generated test music (120 BPM, beats within 12 ms
