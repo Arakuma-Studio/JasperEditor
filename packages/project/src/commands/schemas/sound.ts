@@ -255,6 +255,31 @@ export const SoundDesignSetCheckCmd = cmd('soundDesign.setCheck', {
 		.nullable(),
 });
 
+/** Listen-here slots a verdict can name (spec 12 §2.6 listen[5]). */
+export const SOUND_CHECK_VERDICT_SLOTS = ['worst', 'hero', 'loudest', 'densest', 'passing'] as const;
+
+/**
+ * Records the listener's verdict on a Sound Check listen-here moment (spec 12 §2.7 "Sounds right / Flag + note, stored
+ * as `comment` markers"; Phase 5 verification): a `comment` sequence marker at `frame` named "Sound Check: sounds right"
+ * (`verdict: 'ok'`) or "Sound Check: flagged" (`'flag'`, rose), the note as its comment, with a structured
+ * `soundCheck` field binding it to the moment — the slot, the clip (`clipId`) or else cue (`cueId`) listened to and where
+ * it was, the mix fingerprint and the hash of what plays in the ±2 s window (`soundCheckMomentHash`), so a later edit
+ * there makes it stale. A verdict on the same frame about the same clip / cue (or an older unbound one at that frame)
+ * is updated instead of adding another; `verdict: null` removes them. Authored by whoever applies it: MCP
+ * `sound_check` reports only user-authored verdicts. Result `{markerId, removed}`.
+ */
+export const SoundDesignSetVerdictCmd = cmd('soundDesign.setVerdict', {
+	sequenceId: IdRefSchema.optional(),
+	frame: TimeInputSchema,
+	verdict: z.enum(['ok', 'flag']).nullable(),
+	note: z.string().max(2000).optional(),
+	slot: z.enum(SOUND_CHECK_VERDICT_SLOTS).optional(),
+	clipId: IdRefSchema.optional(),
+	cueId: z.string().min(1).max(SOUND_DESIGN_LIMITS.id).optional(),
+	/** The `mixHash` of the Sound Check report the moment came from. */
+	reportMixHash: z.string().min(1).max(256).optional(),
+});
+
 /**
  * Sets where the peak of a clip's sound is (spec 12 §2.7 "Peak handle", Shift-drag, Detect Peak): `peakFlicks` =
  * content flicks from the media start, within the media. Writes `sfx.placement` (align `peak`; an audio clip without
@@ -346,4 +371,5 @@ export const SOUND_COMMANDS = [
 	SoundDesignApplyGainsCmd,
 	SoundDesignSetAutoGainCmd,
 	SoundDesignSetCheckCmd,
+	SoundDesignSetVerdictCmd,
 ] as const;

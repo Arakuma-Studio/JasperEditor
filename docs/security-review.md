@@ -459,6 +459,7 @@ Every state-changing engine route and what an agent may do with it:
 | `POST /api/sound-design/check` (`sound_check`) | Open | Measure-only renders (the first normalisation pass is a scratch file of the job, removed when it ends); with `store: true` one ordinary, undoable transaction of `soundDesign.setCheck` (metadata only, "Agent: Sound Check Result"); fixes are returned, never applied |
 | `POST /api/sound-design/visual` (`view_sound_timeline`) | Open | Read-only: measure-only renders of ≤ 120 s, nothing stored |
 | `POST /api/audio/classify` (`auto_tag_audio`, Essential Sound ▸ Auto Tag), the voice activity of `POST /api/sound-design/cues` (dialogue clips) | Open | Read-only for the project: ffmpeg decodes of registered media (≤ 500 items, ≤ 4 × 15 s windows or 60 s each; voice activity streamed into 10 ms levels, ≤ 4 h per clip, 8 h and 64 clips per call); only small JSON results are cached (`<appdir>/sounds/analysis/{classify,voice}/`); tagging is the ordinary, undoable `essentialSound.autoTag` transaction the caller sends |
+| `POST /api/sound-design/check/last` (`get_sound_check`) | Open | Read-only: the sequence's last kept report (`<appdir>/projects/<pid>/sound-check/<sequenceId>.json`, written by finished `sound-check` jobs; file names only from document ids, ≤ 32 per project, ≤ 16 MB each, damaged files moved aside) with its staleness against the live document |
 | `POST /api/sound-design/motion` (`analyze_picture_motion`), engine cue sources of `POST /api/sound-design/cues` (`find_sound_cues` sources scene / beat / pixel), `POST /api/audio/beats` | Open | Read-only for the project: a picture render of ≤ 10 min into the job's scratch directory (deleted when it ends), Scene Edit Detection and beat analyses of registered media; only small JSON results are cached (`<appdir>/sounds/analysis/`) |
 | `PUT /api/settings/processing` (`set_processing_settings`) | **Gated**, now for every caller without the editor key | Where media is sent (was opt-in by a query parameter) |
 | `POST /api/project-manager` (`project_manager`) | Open | Copies into a new destination under free names; sources untouched |
@@ -744,7 +745,13 @@ them, but it was reviewed by its author, not by this review.
   local protocols only); curves are bounded (≤ 6 h of 10 ms hops; report curves ≤ 1 200 points, ≤ 2 000 findings and
   event rows); fixes are only described (commands dry-run on a copy, never applied by the check); `checkJobId` must name
   a `sound-check` job of the same project (`404 JOB_NOT_FOUND`). `store` goes through the agent service's transaction
-  path. Tests: `apps/engine/test/sound-check.test.ts` (typed refusals), `sound-check-stems.test.ts`.
+  path. Tests: `apps/engine/test/sound-check.test.ts` (typed refusals), `sound-check-stems.test.ts`. The last full report
+  per sequence (Phase 5 verification; `POST /api/sound-design/check/last`, `sound-design/report-store.ts`) is written
+  by the finished job inside the project's folder: the file name is the sequence id only when it is a document id
+  (`[A-Za-z0-9_-]{1,128}`, never a path), atomic writes, ≤ 32 reports per project (the least recently written evicted),
+  ≤ 16 MB per report (larger ones are not kept), a file that does not parse or names another sequence is moved aside
+  with a warning; the route is read-only (strict body, typed `404 SOUND_CHECK_NOT_FOUND`). Tests:
+  `apps/engine/test/sound-check-kept.test.ts`.
 - **Engine cue sources and picture motion** (spec 12 WP6.2, `apps/engine/src/sound-design/{motion,engine-cues,analysis-cache}.ts`,
   `audio/beats.ts`, `time/scenes.ts`; `POST /api/sound-design/motion`, `POST /api/audio/beats`, the cue route's
   `opts.sources` scene / beat / pixel and `snapToBeats`): strict zod bodies (project id `[A-Za-z0-9_-]{1,128}`, frame

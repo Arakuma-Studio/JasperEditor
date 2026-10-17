@@ -214,7 +214,8 @@ export type SoundDesignSettings = DeepStrip<z.infer<typeof SoundDesignSettingsSc
 
 /**
  * Summary of the last Sound Check (P5, `soundDesign.setCheck`); stale when `mixHash` differs from the mix's fingerprint
- * (`mixFingerprint`) or `inputsHash` from `soundCheckInputsHash` (cues, Mix loudness, preset, credits: `soundCheckStatus`).
+ * (`mixFingerprint`) or `inputsHash` from `soundCheckInputsHash` (cues, Mix loudness, preset, credits, density:
+ * `soundCheckStatus`).
  * The full report is the `sound-check` job's result (`jobId`).
  */
 export const SoundCheckSummarySchema = z.looseObject({

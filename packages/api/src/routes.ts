@@ -186,6 +186,8 @@ import {
 } from './roto.ts';
 import { SceneDetectRequestSchema } from './scenes.ts';
 import {
+	SoundCheckLastRequestSchema,
+	SoundCheckLastResponseSchema,
 	SoundCheckRequestSchema,
 	SoundVisualRequestSchema,
 	SoundVisualResponseSchema,
@@ -1196,6 +1198,16 @@ export const ROUTES = {
 		path: '/api/sound-design/check',
 		body: SoundCheckRequestSchema,
 		response: EngineJobSchema,
+	},
+	/**
+	 * The last full Sound Check report of a sequence (kept per sequence across engine restarts, bounded), with whether
+	 * it is stale against the live document (Phase 5 verification). 404 `SOUND_CHECK_NOT_FOUND` when there is none.
+	 */
+	soundDesignCheckLast: {
+		method: 'POST',
+		path: '/api/sound-design/check/last',
+		body: SoundCheckLastRequestSchema,
+		response: SoundCheckLastResponseSchema,
 	},
 	/**
 	 * Pixel motion analysis (spec 12 §2.8, P6-R2): a `motion-analysis` job (202) rendering the sequence's picture small

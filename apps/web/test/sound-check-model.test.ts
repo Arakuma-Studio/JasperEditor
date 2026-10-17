@@ -12,16 +12,21 @@ import {
 	defaultRegistries,
 	type ProjectDocument,
 	type Sequence,
+	SOUND_CHECK_CUSTOM_LABEL,
+	SOUND_CHECK_MESSAGES,
+	SOUND_CHECK_UNMEASURED,
 	SOUND_CHECK_VERDICT_MARKER,
 	soundCheckHumanVerdicts,
 	soundCheckMessage,
 } from '@jasper/project';
 import fc from 'fast-check';
 import { afterEach, describe, expect, it } from 'vitest';
+import { videoAsset } from '../../../packages/project/test/helpers.ts';
 import { reportFixture } from '../../mcp/test/sound-check-report-fixture.ts';
 import { __setCatalogForTests } from '../src/i18n/runtime.ts';
 import {
 	defaultChoice,
+	fixWhyText,
 	groupIssues,
 	isSequenceTarget,
 	listenRows,
@@ -35,6 +40,7 @@ import {
 	summaryChips,
 	verdictCommands,
 	verdictSentence,
+	verdictStaleText,
 } from '../src/sound/check-model.ts';
 import { stripGeometry, wavePath } from '../src/sound/SyncStrip.tsx';
 
@@ -61,10 +67,66 @@ function doc() {
 		if (!r.result.ok) throw new Error(JSON.stringify(r.result.errors));
 		d = r.document;
 	};
-	return { seq: () => d.sequences[seqId] as Sequence, seqId, tx };
+	return { seq: () => d.sequences[seqId] as Sequence, doc: () => d, seqId, tx };
 }
 
 const report = () => reportFixture({ projectId: 'prj_x', sequenceId: 'seq_x' });
+
+describe('listen-here reasons in the UI language', () => {
+	it('the worst moment says its finding translated, not the English text it quotes', () => {
+		__setCatalogForTests('es', ES, NAMES);
+		const rows = listenRows(report(), undefined);
+		const worst = rows.find((r) => r.slot === 'worst')!;
+		expect(worst.text).toContain('corte');
+		expect(worst.text).not.toContain('late on its');
+		expect(worst.text).not.toContain('Worst finding');
+	});
+});
+
+describe('why a fix needs judgement, and unmeasured reasons, in the UI language', () => {
+	it('fixWhyText translates the engine message (else its English text); unmeasured reasons are translated', () => {
+		__setCatalogForTests('es', ES, NAMES);
+		const fix = {
+			kind: 'commands' as const,
+			label: soundCheckMessage('fixSilenceCue'),
+			safe: false,
+			why: 'Only if the silence is intended',
+			whyMessage: soundCheckMessage('whySilence'),
+			tool: 'apply_commands',
+			args: {},
+		};
+		expect(fixWhyText(fix)).toBe('Solo si el silencio es intencionado');
+		const { whyMessage: _w, ...old } = fix;
+		expect(fixWhyText(old)).toBe('Only if the silence is intended');
+		expect(fixWhyText(undefined)).toBeNull();
+		const duck = soundCheckMessage('whyDuckDepth', 6, 5.2);
+		expect(fixWhyText({ ...fix, why: duck.text, whyMessage: duck })).toBe(
+			'Atenuar 6 dB deja la música 5.2 LU por debajo de la voz',
+		);
+		const m = soundCheckMessage('syncUnmeasurable', 'Air whoosh', SOUND_CHECK_UNMEASURED.covered);
+		expect(messageText(m)).toContain('otros sonidos lo tapan');
+		expect(messageText(m)).toContain('Air whoosh');
+	});
+});
+
+describe('every Sound Check message key is translated', () => {
+	it('each finding / fix / listen template and the custom label is a model string with a Spanish text (same placeholders)', () => {
+		const ph = (x: string) =>
+			[...x.matchAll(/\{(\d+)\}/g)]
+				.map((m) => m[1])
+				.sort()
+				.join();
+		const keys = [
+			...Object.values(SOUND_CHECK_MESSAGES),
+			...Object.values(SOUND_CHECK_UNMEASURED),
+			SOUND_CHECK_CUSTOM_LABEL,
+		];
+		expect(keys.length).toBeGreaterThan(50);
+		expect(keys.filter((k) => !NAMES.includes(k))).toEqual([]);
+		expect(keys.filter((k) => typeof ES[k] !== 'string' || !ES[k]!.trim())).toEqual([]);
+		expect(keys.filter((k) => ph(k) !== ph(ES[k]!))).toEqual([]);
+	});
+});
 
 describe('finding texts', () => {
 	it('fills the template; cue kinds and densities become labels; Spanish translates the template', () => {
@@ -231,25 +293,60 @@ describe('delivery target', () => {
 });
 
 describe('verdict markers', () => {
-	it('adds a user comment marker, then updates the one at that frame (duplicates merged)', () => {
+	/** A 20 s clip on V1/A1 so listen frames are inside the sequence. */
+	function withClip() {
 		const f = doc();
-		f.tx(verdictCommands(f.seq(), 90, 'flag', '  late  '));
-		expect(soundCheckHumanVerdicts(f.seq())).toEqual([
-			expect.objectContaining({ frame: 90, verdict: 'flag', note: 'late' }),
+		f.tx([{ type: 'media.register', asset: videoAsset({ seconds: 20 }), ref: '$m' }]);
+		const media = Object.keys(f.doc().media)[0]!;
+		f.tx([{ type: 'clip.place', source: { mediaId: media }, at: 0 }]);
+		return f;
+	}
+
+	it('soundDesign.setVerdict: a user comment marker bound to the moment, updated on the same moment', () => {
+		const f = withClip();
+		const clipId = Object.values(f.seq().clips).find((c) => c.kind === 'audio')!.id;
+		const cmds = verdictCommands(f.seq(), { frame: 90, slot: 'worst', clipId }, 'flag', '  late  ', 'mix123');
+		expect(cmds).toEqual([
+			{
+				type: 'soundDesign.setVerdict',
+				sequenceId: f.seqId,
+				frame: 90,
+				verdict: 'flag',
+				note: 'late',
+				slot: 'worst',
+				clipId,
+				reportMixHash: 'mix123',
+			},
 		]);
-		// another verdict marker at 90 written by hand: the next verdict keeps one
+		f.tx(cmds);
+		expect(soundCheckHumanVerdicts(f.seq())).toEqual([
+			expect.objectContaining({
+				frame: 90,
+				verdict: 'flag',
+				note: 'late',
+				clipId,
+				slot: 'worst',
+				bound: true,
+			}),
+		]);
+		// an older unbound verdict marker at 90 written by hand: the next verdict on the moment keeps one
 		f.tx([{ type: 'marker.add', frame: 90, name: SOUND_CHECK_VERDICT_MARKER.ok, markerType: 'comment' }]);
-		f.tx(verdictCommands(f.seq(), 90, 'ok', ''));
+		f.tx(verdictCommands(f.seq(), { frame: 90, slot: 'worst', clipId }, 'ok', ''));
 		expect(soundCheckHumanVerdicts(f.seq())).toEqual([
 			expect.objectContaining({ frame: 90, verdict: 'ok', note: null }),
 		]);
 		expect(f.seq().markers.filter((m) => m.frame === 90)).toHaveLength(1);
+		// a clip that is gone since the report: the verdict binds to the frame's window only
+		expect(
+			verdictCommands(f.seq(), { frame: 90, clipId: 'clp_gone', cueId: 'cue_gone' }, 'ok', '')[0],
+		).not.toHaveProperty('clipId');
 	});
 
-	it('listen rows carry the verdict at their frame', () => {
-		const f = doc();
-		f.tx(verdictCommands(f.seq(), 91, 'ok', ''));
-		const rows = listenRows(report(), f.seq());
+	it('listen rows carry the verdict of their moment; a verdict whose window changed is out of date', () => {
+		const f = withClip();
+		const audio = Object.values(f.seq().clips).find((c) => c.kind === 'audio')!;
+		f.tx(verdictCommands(f.seq(), { frame: 91 }, 'ok', ''));
+		let rows = listenRows(report(), f.seq(), f.doc());
 		expect(rows.map((r) => [r.frame, r.verdict?.verdict ?? null])).toEqual([
 			[90, null],
 			[91, 'ok'],
@@ -257,6 +354,12 @@ describe('verdict markers', () => {
 			[150, null],
 			[270, null],
 		]);
+		expect(verdictStaleText(rows[1]!.verdict)).toBeNull();
+		// the audio under the moment changes: out of date
+		f.tx([{ type: 'audio.setGain', clipIds: [audio.id], mode: 'adjust', db: -6 }]);
+		rows = listenRows(report(), f.seq(), f.doc());
+		expect(rows[1]!.verdict).toMatchObject({ stale: true, staleReasons: ['moment'] });
+		expect(verdictStaleText(rows[1]!.verdict)).toBe('Out of date: the sound here changed since you listened');
 	});
 });
 

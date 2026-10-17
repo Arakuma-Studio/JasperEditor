@@ -40,6 +40,7 @@ import { TRACK_MATTE_EFFECT_ID } from './masks/track-matte.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
+import { markerVerdictProblem } from './sound/repair.ts';
 import type { Rational } from './time.ts';
 
 export type InvariantMode = 'full' | 'incremental' | 'verify';
@@ -583,6 +584,8 @@ function sequenceDelta(
 	if (B.markers !== N.markers) {
 		for (const m of B.markers) delta.old.add(m.id);
 		for (const m of N.markers) delta.claim(m.id, 'mrk', [...scope.where, 'markers', m.id]);
+		// INV-SOUND of verdict markers: an unreadable verdict is reported by the full check
+		if (N.markers.some((m) => markerVerdictProblem(m as { soundCheck?: unknown }) !== null)) return false;
 	}
 
 	if (mattes) checks.trackMattes(scope);

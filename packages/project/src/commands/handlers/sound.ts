@@ -2,8 +2,11 @@
 // placement, swap, palette and settings (P2). Placement reuses the ordinary edit machinery (`placeSource`,
 // `essentialSound.setType`, `effect.add`, `clip.group`, `track.add`): every result is a normal clip (spec 12 §1).
 import type { Draft } from 'immer';
+import { mixFingerprint } from '../../audio/fingerprint.ts';
+import { sequenceDuration } from '../../derive/index.ts';
 import { mediaDurationFlicks } from '../../interpret/model.ts';
 import type { Keyframe } from '../../schema/common.ts';
+import type { ProjectDocument } from '../../schema/document.ts';
 import type { MediaAsset } from '../../schema/media.ts';
 import type { AudioClip, Clip, Sequence } from '../../schema/sequence.ts';
 import {
@@ -17,6 +20,13 @@ import {
 	type SoundDesignSettings,
 } from '../../schema/sound.ts';
 import { cueAnchorFrame, cueAnchorTargetExists } from '../../sound/anchor.ts';
+import {
+	SOUND_CHECK_VERDICT_MARKER,
+	type SoundCheckVerdictMeta,
+	type SoundCheckVerdictSubject,
+	soundCheckHumanVerdicts,
+	soundCheckMomentHash,
+} from '../../sound/check.ts';
 import {
 	audioTrackClipsIn,
 	audioTrackIsFree,
@@ -1203,6 +1213,72 @@ function setCheck(doc: DDoc, cmd: CommandOf<'soundDesign.setCheck'>, h: HandlerC
 	return { sequenceId: seq.id, lastCheck: plainCopy(summary) };
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// soundDesign.setVerdict
+
+type DMarker = Draft<Sequence['markers'][number]> & { soundCheck?: unknown };
+
+function setVerdict(doc: DDoc, cmd: CommandOf<'soundDesign.setVerdict'>, h: HandlerContext) {
+	const seq = h.sequence(doc, cmd.sequenceId);
+	const frame = h.frame(seq, cmd.frame);
+	const last = Math.max(0, Math.ceil(sequenceDuration(seq as unknown as Sequence)));
+	if (!(frame >= 0) || frame > last)
+		h.fail('E_INVALID_PARAM', `frame must be inside the sequence (0–${last})`, { path: ['frame'] });
+	let subject: SoundCheckVerdictSubject | null = null;
+	if (cmd.clipId !== undefined) {
+		if (!Object.hasOwn(seq.clips, cmd.clipId))
+			h.fail('E_NOT_FOUND', `Clip not found in ${seq.id}: ${cmd.clipId}`, { path: ['clipId'] });
+		subject = { kind: 'clip', id: cmd.clipId, start: seq.clips[cmd.clipId]!.start };
+	} else if (cmd.cueId !== undefined) {
+		const cue = soundDesignOf(seq, false)?.cues[cmd.cueId];
+		if (!cue || !Object.hasOwn(soundDesignOf(seq, false)!.cues, cmd.cueId))
+			h.fail('E_NOT_FOUND', `Sound cue not found: ${cmd.cueId}`, { path: ['cueId'] });
+		subject = { kind: 'cue', id: cmd.cueId, frame: cue!.frame };
+	}
+	const markers = seq.markers as DMarker[];
+	const clipId = subject?.kind === 'clip' ? subject.id : null;
+	const cueId = subject?.kind === 'cue' ? subject.id : null;
+	// the verdicts of this moment: same frame and subject, or unbound / subject-less ones at the frame (a more specific
+	// verdict takes them over)
+	const existing = soundCheckHumanVerdicts({ markers: plainCopy(markers) }).filter(
+		(v) =>
+			v.frame === frame &&
+			(!v.bound || (v.clipId === null && v.cueId === null) || (v.clipId === clipId && v.cueId === cueId)),
+	);
+	const keep = cmd.verdict === null ? undefined : existing.at(-1);
+	const drop = new Set(existing.filter((v) => v !== keep).map((v) => v.markerId));
+	const removed = [...drop];
+	if (drop.size) seq.markers = markers.filter((m) => !drop.has(m.id)) as never;
+	if (cmd.verdict === null) return { markerId: null, removed };
+	const docNow = doc as unknown as ProjectDocument;
+	const meta: SoundCheckVerdictMeta = {
+		v: 1,
+		verdict: cmd.verdict,
+		slot: cmd.slot ?? null,
+		subject,
+		mixHash: mixFingerprint(docNow, seq.id),
+		momentHash: soundCheckMomentHash(docNow, seq.id, frame),
+		reportMixHash: cmd.reportMixHash ?? null,
+	};
+	const fields = {
+		name: SOUND_CHECK_VERDICT_MARKER[cmd.verdict],
+		comment: (cmd.note ?? '').trim().slice(0, 2000),
+		color: cmd.verdict === 'ok' ? 'green' : 'rose',
+		type: 'comment',
+		author: h.agentAuthor(),
+		soundCheck: meta,
+	} as const;
+	if (keep) {
+		const m = (seq.markers as DMarker[]).find((x) => x.id === keep.markerId)!;
+		Object.assign(m, plainCopy(fields));
+		return { markerId: m.id, removed };
+	}
+	const id = h.newId(doc, 'mrk');
+	(seq.markers as DMarker[]).push({ id, frame, duration: 0, ...plainCopy(fields) } as DMarker);
+	seq.markers.sort((a, b) => a.frame - b.frame);
+	return { markerId: id, removed };
+}
+
 export const soundHandlers = {
 	'media.setLibraryInfo': setLibraryInfo,
 	'soundCue.add': addCues,
@@ -1218,6 +1294,7 @@ export const soundHandlers = {
 	'soundDesign.applyGains': applyGains,
 	'soundDesign.setAutoGain': setAutoGain,
 	'soundDesign.setCheck': setCheck,
+	'soundDesign.setVerdict': setVerdict,
 } satisfies HandlerMap;
 
 export type { Clip, DClip };

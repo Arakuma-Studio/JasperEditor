@@ -453,6 +453,8 @@ Role, Align, Auto gain with its reason, Room send, Pitch, Stop before next. The 
 - Summary chips; issues grouped by category with jump-to-timecode and a Fix button; "Fix all safe".
 - Sync rows expand into a strip of 5 frames plus the waveform.
 - Listen-here list: ▶, Sounds right / Flag + note, stored as `comment` markers. Play all.
+  (Phase 5 verification: the markers carry the moment they judged — slot, clip / cue, mix and window hashes — and are
+  reported stale when it changes; verdicts can be given during Play all; a fix that is not safe is confirmed first.)
 - Optional "Run Sound Check before export" in the Export dialog.
 
 **Shortcuts** (verify against `keymap-defaults.ts` and the presets; the keymap tests must pass):
@@ -507,6 +509,7 @@ Routes, declared in `packages/api/src/routes.ts` with schemas in `packages/api/s
 | `POST /api/sound-design/motion` | job |
 | `POST /api/sound-design/plan` | job → proposal |
 | `POST /api/sound-design/check` | job |
+| `POST /api/sound-design/check/last` | the sequence's last full report, kept across restarts, current / stale (Phase 5 verification) |
 | `POST /api/sound-design/visual` | |
 | `POST /api/audio/beats` | |
 | proposal routes | §2.5 |
@@ -521,6 +524,7 @@ Capabilities gain `sound: {library:{sounds, packs}, synth: true}`.
 | `soundDesign.place` | `{cueId?|frame?, layers[{mediaId, track?|'auto', align?, gainDb?, rate?, pitchSt?, pan?, role?}] 1..6, group?, alternatives?}` |
 | `soundDesign.swap` | `{clipId, mediaId}` |
 | `soundDesign.ensureBus`, `soundDesign.applyGains`, `soundDesign.setSettings`, `soundDesign.setCheck` | |
+| `soundDesign.setVerdict` | a listen-here verdict marker bound to its moment (Phase 5 verification) |
 | `audio.volumeDip` | |
 | `media.setLibraryInfo` | |
 | palette commands (`soundDesign.setPalette`) | |
@@ -551,6 +555,7 @@ Add them to the integrity property test.
 | `accept_proposal` | policy-gated |
 | `reject_proposal` | |
 | `sound_check` | report, listen timecodes, optional PNG |
+| `get_sound_check` | READ_ONLY; the last kept report, current / stale (Phase 5 verification) |
 | `view_sound_timeline` | PNG |
 | `export_sound_credits` | |
 

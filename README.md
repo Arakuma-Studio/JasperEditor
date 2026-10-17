@@ -520,8 +520,9 @@ Tools (354; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `apply_delivery` (web / podcast / R128 / A/85: Mix loudness, Auto-Match by type, ducking, measured) `set_room_glue` (a
   shared "SFX Room" reverb) · `sound_check` (the delivered mix measured: findings with safe fixes, five listen-here
   timecodes, a verdict, a PNG of the worst moments; a custom delivery target; humanVerdicts: what the user said after
-  listening in the editor's Sound Check panel) `view_sound_timeline` (PNG: loudness of the mix and its stems, cues,
-  motion, findings)
+  listening in the editor's Sound Check panel, each bound to the moment it judged and marked stale when that moment
+  changed) `get_sound_check` (the last full report the engine keeps per sequence, across restarts: current or stale)
+  `view_sound_timeline` (PNG: loudness of the mix and its stems, cues, motion, findings)
   (`docs/specs/12-sound-design.md`, `docs/wp-notes/sound-design.md`).
 - Proposals (reviewed and applied by the user in the editor; one undo step): `list_proposals` `get_proposal` (with a
   ghost table) `wait_for_proposal` (decisions and notes) `accept_proposal` (policy-gated for agents) `reject_proposal`.

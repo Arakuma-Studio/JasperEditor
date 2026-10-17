@@ -6,16 +6,18 @@
 //   user's own edit ("Sound Check Result", one undo step, WP5.1). The job shows in the Jobs panel; its progress and
 //   stage show in the panel (aria-live), and it can be cancelled.
 // - The last report per session (and sequence) lives in a store; a reopened project gets it back from the stored
-//   summary's job while the engine keeps that job.
+//   summary's job while the engine keeps that job, else from the report the engine keeps per sequence across restarts.
 // - Fix: a finding's fix as the engine described it — commands as ONE transaction (`session.apply`, the user's edit),
 //   a sound swap through the panel's swap path (register the library sound → `media.register` → `soundDesign.swap`,
 //   what the Sound Library's Swap does, also for "the same sound again"), an engine job (rebalance / delivery: the
 //   user's edit too). Fix all safe: every safe command fix and swap in ONE transaction (each fix on its own when that
-//   is refused), then the safe engine jobs one after another, then the check runs again.
+//   is refused), then the safe engine jobs one after another, then the check runs again. A fix that is not safe asks
+//   first, naming what it will change (`fixConfirmation`).
 // - Jump: a finding's or listen-here moment's timecode → the playhead, the clips / cue selected, the Timeline scrolled.
 // - Listen here: ▶ plays 4 s around the moment through the Program transport (`playTimelineWindow`), Play all chains
 //   the rows (the next one starts when a window plays to its end; a key or click stops the chain), and a verdict is a
-//   user `comment` marker (`verdictCommands`).
+//   user `comment` marker bound to the moment (`verdictCommands` → `soundDesign.setVerdict`); Play all keeps playing
+//   while the verdict buttons and the note field are used.
 import {
 	type EngineJob,
 	type SoundCheckIssue,
@@ -25,6 +27,7 @@ import {
 import type { EngineClient } from '@jasper/engine-client';
 import { type Command, type Sequence, sequenceDuration, soundCheckStatus } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
+import { confirmDialog } from '@jasper/ui';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { t } from '../i18n/runtime.ts';
 import {
@@ -33,9 +36,13 @@ import {
 	defaultChoice,
 	type FixPlan,
 	type FixUnit,
+	fixChangeSummary,
+	fixWhyText,
+	hasSyncStrip,
 	issueFrame,
 	type ListenRow,
 	messageText,
+	orderedIssues,
 	planFixes,
 	safeFixable,
 	verdictCommands,
@@ -48,7 +55,8 @@ import { runDelivery, runRebalance, runSoundJob, SoundJobError } from './mix-job
 export type CheckEngine = Pick<
 	EngineClient,
 	'soundCheck' | 'getJob' | 'cancelJob' | 'registerSound' | 'rebalanceSfx' | 'applyDelivery'
->;
+> &
+	Partial<Pick<EngineClient, 'lastSoundCheck'>>;
 
 export type SoundCheckState = {
 	/** The report shown (the last run in this window, or the stored summary's job), with its sequence. */
@@ -68,6 +76,9 @@ export type SoundCheckState = {
 	playing: { sequenceId: string; index: number; all: boolean } | null;
 	/** The last thing done, for screen readers (aria-live), with a counter so the same text is announced again. */
 	announcement: { message: string; n: number };
+	/** The findings list's current row (an issue id) and the rows whose sync strip is open (keyboard commands). */
+	cursor: string | null;
+	openStrips: readonly string[];
 };
 
 const stores = new WeakMap<EditorSession, StoreApi<SoundCheckState>>();
@@ -87,6 +98,8 @@ export function soundCheckStore(session: EditorSession): StoreApi<SoundCheckStat
 			choice: {},
 			playing: null,
 			announcement: { message: '', n: 0 },
+			cursor: null,
+			openStrips: [],
 		}));
 		stores.set(session, s);
 	}
@@ -210,29 +223,44 @@ export function cancelSoundCheck(session: EditorSession): void {
 }
 
 /**
- * Loads the report of the sequence's stored summary from its job (while the engine keeps it), when the store has none
- * for that sequence. Resolves whether it did. Never rejects.
+ * Loads the last report of a sequence when the store has none for it: the stored summary's job while the engine keeps
+ * it, else the report the engine kept for the sequence (`POST /api/sound-design/check/last`, across engine restarts;
+ * the panel marks it stale by its own hashes). Resolves whether it did. Never rejects.
  */
 export async function loadStoredReport(
 	session: EditorSession,
-	engine: Pick<EngineClient, 'getJob'>,
+	engine: Pick<EngineClient, 'getJob'> & Partial<Pick<EngineClient, 'lastSoundCheck'>>,
 	sequenceId: string,
 ): Promise<boolean> {
 	const store = soundCheckStore(session);
 	if (reportFor(session, sequenceId) || store.getState().running) return false;
 	const status = soundCheckStatus(session.getCommitted(), sequenceId);
 	const jobId = status.summary?.jobId;
-	if (!jobId) return false;
-	try {
-		const job = (await engine.getJob(jobId)) as EngineJob;
-		if (job.state !== 'succeeded') return false;
-		const parsed = SoundCheckResultSchema.safeParse(job.result);
-		if (!parsed.success || parsed.data.sequenceId !== sequenceId) return false;
-		if (reportFor(session, sequenceId) || store.getState().running) return false;
-		store.setState({ result: parsed.data, jobId, fixed: [] });
+	const take = (result: SoundCheckResult, id: string | null): boolean => {
+		if (result.sequenceId !== sequenceId || reportFor(session, sequenceId) || store.getState().running)
+			return false;
+		store.setState({ result, jobId: id, fixed: [] });
 		return true;
+	};
+	if (jobId) {
+		try {
+			const job = (await engine.getJob(jobId)) as EngineJob;
+			const parsed = job.state === 'succeeded' ? SoundCheckResultSchema.safeParse(job.result) : null;
+			if (parsed?.success) return take(parsed.data, jobId);
+		} catch {
+			// the job is gone (engine restarted): the kept report below
+		}
+	}
+	if (!engine.lastSoundCheck) return false;
+	try {
+		const kept = await engine.lastSoundCheck({ projectId: session.projectId, sequenceId });
+		const parsed = SoundCheckResultSchema.safeParse((kept as { result?: unknown }).result);
+		if (!parsed.success) return false;
+		const keptJob =
+			typeof (kept as { jobId?: unknown }).jobId === 'string' ? (kept as { jobId: string }).jobId : null;
+		return take(parsed.data, keptJob);
 	} catch {
-		return false; // the job is gone (engine restarted): the summary chips stay, Run gets the details
+		return false; // none kept (or the engine is away): the summary chips stay, Run gets the details
 	}
 }
 
@@ -306,12 +334,39 @@ function markFixed(session: EditorSession, ids: readonly string[]) {
 	soundCheckStore(session).setState((s) => ({ fixed: [...new Set([...s.fixed, ...ids])] }));
 }
 
-/** Applies one finding's fix (the user's edit; one undo step). Never rejects. */
+/** Asks the user to confirm a fix that needs their judgement (the app's confirmation dialog by default). */
+export type ConfirmFix = (opts: { title: string; body: string; confirmLabel: string }) => Promise<boolean>;
+
+/** The confirmation of a fix that is not safe: what it will change, why it needs the user's judgement, one undo step. */
+export function fixConfirmation(
+	issue: SoundCheckIssue,
+	seq: Sequence | undefined,
+): { title: string; body: string; confirmLabel: string } {
+	const changes = fixChangeSummary(issue, seq);
+	const why = fixWhyText(issue.fix);
+	return {
+		title: t('Apply “{0}”?', messageText(issue.fix?.label)),
+		body: [
+			changes.length ? t('This will change: {0}.', changes.join('; ')) : '',
+			why ? t('Why it needs your judgement: {0}.', why.replace(/[.\s]+$/, '')) : '',
+			t('It is one undo step; listen to the result before keeping it.'),
+		]
+			.filter(Boolean)
+			.join(' '),
+		confirmLabel: t('Apply Fix'),
+	};
+}
+
+/**
+ * Applies one finding's fix (the user's edit; one undo step). A fix that is not safe asks first (`confirm`, the app's
+ * confirmation dialog by default) naming what it will change; declining applies nothing. Never rejects.
+ */
 export async function applyCheckFix(
 	session: EditorSession,
 	engine: CheckEngine,
 	issue: SoundCheckIssue,
-): Promise<FixOutcome> {
+	opts: { confirm?: ConfirmFix } = {},
+): Promise<FixOutcome & { declined?: boolean }> {
 	const store = soundCheckStore(session);
 	const result = store.getState().result;
 	if (!result || !issue.fix)
@@ -322,6 +377,23 @@ export async function applyCheckFix(
 	const unit = plan.units[0];
 	if (!unit)
 		return { ok: false, message: t('This fix cannot be applied here'), applied: [], failed: [issue.id] };
+	if (store.getState().fixing)
+		return { ok: false, message: t('A fix is being applied'), applied: [], failed: [] };
+	if (!issue.fix.safe) {
+		store.setState({ fixing: issue.id });
+		let yes = false;
+		try {
+			yes = await (opts.confirm ?? confirmDialog)(fixConfirmation(issue, seqOf(session, result.sequenceId)));
+		} catch {
+			yes = false;
+		} finally {
+			store.setState({ fixing: null });
+		}
+		if (!yes) {
+			announce(session, t('Fix not applied'));
+			return { ok: false, message: t('Fix not applied'), applied: [], failed: [], declined: true };
+		}
+	}
 	store.setState({ fixing: issue.id });
 	try {
 		const label = t('Sound Check Fix: {0}', messageText(issue.fix.label));
@@ -485,6 +557,86 @@ export function jumpToIssue(
 	);
 }
 
+// ── findings list (keyboard) ────────────────────────────────────────────────────────────────────────────────────────
+
+/** The findings of the active sequence's report in the order the list shows them (empty without one). */
+export function findingOrder(session: EditorSession): SoundCheckIssue[] {
+	const r = reportFor(session, session.getState().activeSequenceId);
+	return r ? orderedIssues(r.report.issues) : [];
+}
+
+/** The findings list's current finding (null when none is current or it is no longer in the report). */
+export function currentFinding(session: EditorSession): SoundCheckIssue | null {
+	const id = soundCheckStore(session).getState().cursor;
+	return (id && findingOrder(session).find((i) => i.id === id)) || null;
+}
+
+/** Makes a finding the list's current one (null: none). */
+export function setFindingCursor(session: EditorSession, issueId: string | null): void {
+	soundCheckStore(session).setState({ cursor: issueId });
+}
+
+/** Moves the list's current finding: by `dir` rows (clamped), or to the first / last. Returns the new current one. */
+export function stepFinding(session: EditorSession, to: number | 'first' | 'last'): SoundCheckIssue | null {
+	const order = findingOrder(session);
+	if (!order.length) return null;
+	const cur = currentFinding(session);
+	const at = cur ? order.indexOf(cur) : -1;
+	const n =
+		to === 'first'
+			? 0
+			: to === 'last'
+				? order.length - 1
+				: at < 0
+					? 0
+					: Math.max(0, Math.min(order.length - 1, at + to));
+	const next = order[n]!;
+	setFindingCursor(session, next.id);
+	return next;
+}
+
+/** Opens (true), closes (false) or toggles the sync strip of a finding (only sync findings have one). */
+export function setSyncStrip(session: EditorSession, issue: SoundCheckIssue, open?: boolean): boolean {
+	const store = soundCheckStore(session);
+	const has = store.getState().openStrips.includes(issue.id);
+	const want = open ?? !has;
+	if (want && !hasSyncStrip(issue)) return false;
+	if (want === has) return true;
+	store.setState((s) => ({
+		openStrips: want ? [...s.openStrips, issue.id] : s.openStrips.filter((x) => x !== issue.id),
+	}));
+	return true;
+}
+
+/** Plays 4 s around a finding through the Program (the playhead goes there first and comes back after). */
+export function playFinding(
+	session: EditorSession,
+	issue: SoundCheckIssue,
+	reveal?: (f: number) => void,
+): boolean {
+	const seqId = reportFor(session, session.getState().activeSequenceId)?.sequenceId;
+	const frame = issueFrame(issue);
+	if (!seqId || frame === null) return false;
+	jumpToIssue(session, issue, reveal);
+	return playListen(
+		session,
+		seqId,
+		[
+			{
+				slot: 'worst',
+				frame,
+				timecode: issue.timecode ?? '',
+				seconds: 0,
+				why: issue.message,
+				slotLabel: '',
+				text: messageText(issue.message),
+				verdict: null,
+			},
+		],
+		0,
+	);
+}
+
 // ── listen here ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Seconds of each listen-here window either side of its moment (4 s in all). */
@@ -533,6 +685,7 @@ export function playListen(
 		title: t('Listen here: {0}', row.timecode),
 		before: LISTEN_HALF_SEC,
 		after,
+		keepPlayingOn: keepsListening,
 		onEnd: (how) => {
 			const now = store.getState().playing;
 			if (!now || now.index !== index || now.sequenceId !== sequenceId) return;
@@ -554,17 +707,44 @@ export function playListen(
 }
 const playingReturn = new WeakMap<EditorSession, number>();
 
+/** The attribute of the panel parts whose presses do not stop a listen-here window (the verdict buttons, the note). */
+export const LISTEN_KEEP_ATTR = 'data-listen-keep';
+
+/**
+ * Whether a key or pointer press keeps a listen-here window playing: presses inside the listen-here controls
+ * (`LISTEN_KEEP_ATTR`) — Sounds right, Flag, the note field and its buttons, and the ▶ / Play all buttons, whose own
+ * click starts or stops playback (stopping on the press would let the click start it again) — except Escape and keys
+ * that are not typing or activating a button there. Everything else stops it (the In Context rule).
+ */
+export function keepsListening(e: Event): boolean {
+	const el = e.target as Element | null;
+	if (!el || typeof (el as Element).closest !== 'function') return false;
+	const zone = el.closest(`[${LISTEN_KEEP_ATTR}]`);
+	if (!zone) return false;
+	if (typeof KeyboardEvent !== 'undefined' && e instanceof KeyboardEvent) {
+		if (e.key === 'Escape') return false;
+		const field = el.closest('input,textarea,[contenteditable="true"]');
+		const control = el.closest('button,[role="button"]');
+		// typing in the note, or activating / tabbing between the verdict buttons
+		return !!field || (!!control && ['Enter', ' ', 'Tab', 'NumpadEnter'].includes(e.key)) || e.key === 'Tab';
+	}
+	return true;
+}
+
 /** Stops a listen-here window or Play all. */
 export function stopListen(session: EditorSession): void {
 	stopPlaying(session);
 	playingReturn.delete(session);
 }
 
-/** Records the user's verdict on a listen-here moment (a `comment` marker; one undo step). */
+/**
+ * Records the user's verdict on a listen-here moment (`soundDesign.setVerdict`: a `comment` marker bound to the moment —
+ * its slot, clip or cue and the mix it judged; one undo step).
+ */
 export function recordVerdict(
 	session: EditorSession,
 	sequenceId: string,
-	row: Pick<ListenRow, 'frame' | 'timecode'>,
+	row: Pick<ListenRow, 'frame' | 'timecode'> & Partial<Pick<ListenRow, 'slot' | 'clipId' | 'cueId'>>,
 	verdict: 'ok' | 'flag',
 	note: string,
 ): { ok: boolean; message: string } {
@@ -572,7 +752,13 @@ export function recordVerdict(
 	if (!seq) return { ok: false, message: t('The sequence was closed') };
 	const label =
 		verdict === 'ok' ? t('Sounds Right at {0}', row.timecode) : t('Flag Sound at {0}', row.timecode);
-	const r = applyTx(session, sequenceId, label, verdictCommands(seq, row.frame, verdict, note));
+	const report = reportFor(session, sequenceId);
+	const r = applyTx(
+		session,
+		sequenceId,
+		label,
+		verdictCommands(seq, row, verdict, note, report?.report.mixHash ?? null),
+	);
 	const message = r.ok
 		? verdict === 'ok'
 			? t('Marked {0} as sounding right', row.timecode)

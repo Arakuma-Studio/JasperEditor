@@ -10,6 +10,7 @@ import type { ProjectDocument } from '../schema/document.ts';
 import type { Sequence } from '../schema/sequence.ts';
 import {
 	type CueKind,
+	DEFAULT_SOUND_DESIGN_SETTINGS,
 	readSoundDesign,
 	type SoundCheckSummary,
 	type SoundDelivery,
@@ -149,8 +150,9 @@ function stable(v: unknown): string {
 
 /**
  * Hash of what a Sound Check depends on besides the mix (`mixFingerprint`): the sequence's cues, the Mix's loudness
- * normalisation settings (not its analysis), the delivery preset checked and the credits setting. Picture edits are not
- * in it (a moved anchor makes a cue stale: the next check reports it). Never throws ('' for an unknown sequence).
+ * normalisation settings (not its analysis), the delivery preset checked, the credits setting and the cue density (when
+ * not the default). Picture edits, the licences of the media and transcripts are not in it (a moved anchor makes a cue
+ * stale: the next check reports it). Never throws ('' for an unknown sequence).
  */
 export function soundCheckInputsHash(
 	doc: ProjectDocument,
@@ -164,12 +166,16 @@ export function soundCheckInputsHash(
 		const sd = readSoundDesign((seq as { soundDesign?: unknown }).soundDesign);
 		const loud = (seq.master as { loudness?: unknown } | undefined)?.loudness;
 		const { analysis: _a, ...loudness } = (isRecord(loud) ? loud : {}) as Record<string, unknown>;
+		const settings = soundDesignSettingsOf(seq);
 		return fnv1a64(
 			stable({
 				cues: sd ? Object.values(sd.cues).sort((a, b) => (a.id < b.id ? -1 : 1)) : [],
 				loudness,
 				preset,
-				credits: soundDesignSettingsOf(seq).credits ?? null,
+				credits: settings.credits ?? null,
+				// DENSITY judges the hero spacing and the cue rate by the density (absent at the default: hashes stored
+				// before it was hashed stay valid)
+				...(settings.density !== DEFAULT_SOUND_DESIGN_SETTINGS.density ? { density: settings.density } : {}),
 				// a custom target is part of what was checked (absent for a preset: hashes stored before stay valid)
 				...(target ? { target: { lufs: target.integratedLufs, tp: target.truePeakDb } } : {}),
 			}),
@@ -209,17 +215,133 @@ export function readSoundCheckTarget(v: unknown): SoundCheckTarget | null {
  * Sound Check panel writes a user-authored `comment` sequence marker at the listened frame with one of these names
  * (fixed English: they are data an agent reads back, like History labels) and the user's note as its comment. MCP
  * `sound_check` returns them as `humanVerdicts`.
+ *
+ * Phase 5 verification: a verdict attaches to the moment it judged, not just to a frame. `soundDesign.setVerdict` writes
+ * the marker with a structured `soundCheck` field (`SoundCheckVerdictMeta`): the listen slot, the clip or cue listened
+ * to (and where it was), the `mixFingerprint` of the whole mix and `soundCheckMomentHash` of what plays in the listened
+ * window (±2 s). A verdict is stale when that window sounds different now (a clip in it edited, moved in or out), or
+ * its clip / cue moved or is gone; two moments on the same frame about different clips keep separate verdicts. Markers
+ * written before (name only) read as unbound verdicts whose staleness is unknown.
  */
 export const SOUND_CHECK_VERDICT_MARKER = {
 	ok: 'Sound Check: sounds right',
 	flag: 'Sound Check: flagged',
 } as const;
+/** Seconds either side of a listen-here moment the panel plays (4 s in all): the window a verdict judged. */
+export const SOUND_CHECK_LISTEN_HALF_SEC = 2;
+/** Listen-here slots (spec 12 §2.6 listen[5]). */
+export const SOUND_CHECK_LISTEN_SLOT_IDS = ['worst', 'hero', 'loudest', 'densest', 'passing'] as const;
+export type SoundCheckListenSlot = (typeof SOUND_CHECK_LISTEN_SLOT_IDS)[number];
+
+/** What a verdict listened to: a clip (at its start frame then) or a cue (at its frame then). */
+export type SoundCheckVerdictSubject =
+	| { kind: 'clip'; id: string; start: number }
+	| { kind: 'cue'; id: string; frame: number };
+
+/** The structured part of a verdict marker (`marker.soundCheck`), written by `soundDesign.setVerdict`. */
+export type SoundCheckVerdictMeta = {
+	v: 1;
+	verdict: keyof typeof SOUND_CHECK_VERDICT_MARKER;
+	slot: SoundCheckListenSlot | null;
+	subject: SoundCheckVerdictSubject | null;
+	/** `mixFingerprint` of the sequence when the verdict was given. */
+	mixHash: string;
+	/** `soundCheckMomentHash` of the listened window when the verdict was given. */
+	momentHash: string;
+	/** The `mixHash` of the Sound Check report the moment came from, when known. */
+	reportMixHash: string | null;
+};
+
+const shortStr = (v: unknown, max = 256): v is string =>
+	typeof v === 'string' && v.length > 0 && v.length <= max;
+const frameNum = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+
+/** A verdict marker's `soundCheck` field read from untrusted data, else null. Never throws. */
+export function readSoundCheckVerdictMeta(v: unknown): SoundCheckVerdictMeta | null {
+	if (!isRecord(v) || v.v !== 1) return null;
+	if (v.verdict !== 'ok' && v.verdict !== 'flag') return null;
+	if (!shortStr(v.mixHash) || !shortStr(v.momentHash)) return null;
+	const slot =
+		v.slot === undefined || v.slot === null
+			? null
+			: (SOUND_CHECK_LISTEN_SLOT_IDS as readonly unknown[]).includes(v.slot)
+				? (v.slot as SoundCheckListenSlot)
+				: undefined;
+	if (slot === undefined) return null;
+	let subject: SoundCheckVerdictSubject | null = null;
+	if (v.subject !== undefined && v.subject !== null) {
+		const sj = v.subject;
+		if (!isRecord(sj) || !shortStr(sj.id, 128)) return null;
+		if (sj.kind === 'clip' && frameNum(sj.start)) subject = { kind: 'clip', id: sj.id, start: sj.start };
+		else if (sj.kind === 'cue' && frameNum(sj.frame)) subject = { kind: 'cue', id: sj.id, frame: sj.frame };
+		else return null;
+	}
+	const reportMixHash =
+		v.reportMixHash === undefined || v.reportMixHash === null
+			? null
+			: shortStr(v.reportMixHash)
+				? v.reportMixHash
+				: undefined;
+	if (reportMixHash === undefined) return null;
+	return {
+		v: 1,
+		verdict: v.verdict,
+		slot,
+		subject,
+		mixHash: v.mixHash,
+		momentHash: v.momentHash,
+		reportMixHash,
+	};
+}
+
+/**
+ * Hash of what plays in a listen-here window (`frame` ± `SOUND_CHECK_LISTEN_HALF_SEC`): the mix fingerprint of the
+ * sequence with only the audio clips that overlap the window (so an edit elsewhere leaves it alone, while an edit of a
+ * clip in it, a clip moved in or out, a track, submix or Mix change does not), plus the window. Never throws ('' for an
+ * unknown sequence).
+ */
+export function soundCheckMomentHash(doc: ProjectDocument, sequenceId: string, frame: number): string {
+	try {
+		const seq = doc.sequences?.[sequenceId] as Sequence | undefined;
+		if (!seq) return '';
+		const r = seq.settings.frameRate;
+		const fps = r && r.num > 0 && r.den > 0 ? r.num / r.den : 30;
+		const half = Math.max(1, Math.ceil(SOUND_CHECK_LISTEN_HALF_SEC * fps));
+		const f = Number.isFinite(frame) ? Math.max(0, Math.round(frame)) : 0;
+		const a = f - half;
+		const b = f + half + 1;
+		const clips: Record<string, (typeof seq.clips)[string]> = {};
+		for (const [id, c] of Object.entries(seq.clips ?? {}))
+			if (c && c.start < b && c.start + c.duration > a) clips[id] = c;
+		const pruned = { ...seq, clips } as Sequence;
+		const window = { ...doc, sequences: { ...doc.sequences, [sequenceId]: pruned } } as ProjectDocument;
+		return fnv1a64(`${mixFingerprint(window, sequenceId)}|${a}|${b}`);
+	} catch {
+		return '';
+	}
+}
+
 export type SoundCheckHumanVerdict = {
 	markerId: string;
 	frame: number;
 	verdict: keyof typeof SOUND_CHECK_VERDICT_MARKER;
 	/** The user's note (the marker's comment), null when empty. */
 	note: string | null;
+	/** The listen slot and the clip / cue the verdict judged (null: an unbound verdict, written before they were kept). */
+	slot: SoundCheckListenSlot | null;
+	clipId: string | null;
+	cueId: string | null;
+	/** Whether the marker carries the structured verdict (`soundDesign.setVerdict`). */
+	bound: boolean;
+	/**
+	 * With a document (`soundCheckHumanVerdicts(seq, {doc})`): whether the verdict still describes what plays there now —
+	 * null when it cannot be told (an unbound verdict) — and why not: `moment` (what plays in the listened window changed),
+	 * `moved` (its clip / cue is somewhere else now), `gone` (its clip / cue no longer exists).
+	 */
+	stale?: boolean | null;
+	staleReasons?: ('moment' | 'moved' | 'gone')[];
+	/** With a document: whether the mix changed anywhere since the verdict (null: unbound). */
+	mixChanged?: boolean | null;
 };
 
 /** The marker name of a verdict. */
@@ -227,15 +349,37 @@ export function soundCheckVerdictMarkerName(verdict: keyof typeof SOUND_CHECK_VE
 	return SOUND_CHECK_VERDICT_MARKER[verdict];
 }
 
+/** Whether a verdict's subject is where it was (`moved`) or gone, in `seq`. */
+function subjectState(seq: Sequence, s: SoundCheckVerdictSubject): 'here' | 'moved' | 'gone' {
+	if (s.kind === 'clip') {
+		const c = (seq.clips as Record<string, { start: number } | undefined>)[s.id];
+		if (!c || !Object.hasOwn(seq.clips, s.id)) return 'gone';
+		return c.start === s.start ? 'here' : 'moved';
+	}
+	const sd = readSoundDesign((seq as { soundDesign?: unknown }).soundDesign);
+	const cue = sd && Object.hasOwn(sd.cues, s.id) ? sd.cues[s.id] : undefined;
+	if (!cue) return 'gone';
+	return cue.frame === s.frame ? 'here' : 'moved';
+}
+
 /**
  * The listen-here verdicts stored in a sequence's markers (user-authored `comment` markers named as
- * `SOUND_CHECK_VERDICT_MARKER`), in frame order. Never throws; anything malformed is skipped.
+ * `SOUND_CHECK_VERDICT_MARKER`), in frame order. With `doc` (the document `seq` belongs to) each says whether it is
+ * stale (see `SoundCheckHumanVerdict`). Never throws; anything malformed is skipped (a malformed `soundCheck` field reads
+ * as an unbound verdict).
  */
-export function soundCheckHumanVerdicts(seq: unknown): SoundCheckHumanVerdict[] {
+export function soundCheckHumanVerdicts(
+	seq: unknown,
+	opts: { doc?: ProjectDocument } = {},
+): SoundCheckHumanVerdict[] {
 	const markers = isRecord(seq) ? (seq as { markers?: unknown }).markers : undefined;
 	// sequence markers are a list (a record is read too: hostile or older data never throws)
 	const list = Array.isArray(markers) ? markers : isRecord(markers) ? Object.values(markers) : [];
 	const out: SoundCheckHumanVerdict[] = [];
+	const doc = opts.doc;
+	const seqId = isRecord(seq) && typeof seq.id === 'string' ? seq.id : null;
+	let mixNow: string | null = null;
+	const moments = new Map<number, string>();
 	for (const m of list.slice(0, 100_000)) {
 		if (!isRecord(m) || m.type !== 'comment' || m.author !== 'user') continue;
 		const verdict =
@@ -247,9 +391,68 @@ export function soundCheckHumanVerdicts(seq: unknown): SoundCheckHumanVerdict[] 
 		if (!verdict || typeof m.id !== 'string') continue;
 		if (typeof m.frame !== 'number' || !Number.isInteger(m.frame) || m.frame < 0) continue;
 		const note = typeof m.comment === 'string' && m.comment.trim() ? m.comment.trim().slice(0, 2000) : null;
-		out.push({ markerId: m.id, frame: m.frame, verdict, note });
+		const meta = readSoundCheckVerdictMeta(m.soundCheck);
+		const v: SoundCheckHumanVerdict = {
+			markerId: m.id,
+			frame: m.frame,
+			verdict,
+			note,
+			slot: meta?.slot ?? null,
+			clipId: meta?.subject?.kind === 'clip' ? meta.subject.id : null,
+			cueId: meta?.subject?.kind === 'cue' ? meta.subject.id : null,
+			bound: !!meta,
+		};
+		if (doc && seqId) {
+			if (!meta) {
+				v.stale = null;
+				v.staleReasons = [];
+				v.mixChanged = null;
+			} else {
+				try {
+					mixNow ??= mixFingerprint(doc, seqId);
+					let moment = moments.get(m.frame);
+					if (moment === undefined) {
+						moment = soundCheckMomentHash(doc, seqId, m.frame);
+						moments.set(m.frame, moment);
+					}
+					const reasons: ('moment' | 'moved' | 'gone')[] = [];
+					if (moment !== meta.momentHash) reasons.push('moment');
+					const where = meta.subject ? subjectState(seq as Sequence, meta.subject) : 'here';
+					if (where !== 'here') reasons.push(where);
+					v.stale = reasons.length > 0;
+					v.staleReasons = reasons;
+					v.mixChanged = mixNow !== meta.mixHash;
+				} catch {
+					v.stale = null;
+					v.staleReasons = [];
+					v.mixChanged = null;
+				}
+			}
+		}
+		out.push(v);
 	}
 	return out.sort((a, b) => a.frame - b.frame || (a.markerId < b.markerId ? -1 : 1));
+}
+
+/**
+ * The verdict a listen-here moment shows: the last one at its frame about the same clip / cue (an unbound verdict, or
+ * one about no clip / cue in particular, counts for any moment at the frame). `null` when there is none.
+ */
+export function soundCheckVerdictFor<
+	V extends Pick<SoundCheckHumanVerdict, 'frame' | 'clipId' | 'cueId' | 'bound'>,
+>(
+	verdicts: readonly V[],
+	moment: { frame: number; clipId?: string | null; cueId?: string | null },
+): V | null {
+	const clipId = moment.clipId ?? null;
+	const cueId = clipId ? null : (moment.cueId ?? null);
+	// an unbound verdict, or one about no clip / cue in particular, covers every moment at its frame
+	const at = verdicts.filter(
+		(v) =>
+			v.frame === moment.frame &&
+			(!v.bound || (v.clipId === null && v.cueId === null) || (v.clipId === clipId && v.cueId === cueId)),
+	);
+	return at.at(-1) ?? null;
 }
 
 export type SoundCheckStatus = {
@@ -353,12 +556,42 @@ export const SOUND_CHECK_MESSAGES = {
 	fixDemote: 'Make the later hero a support sound',
 	fixSwap: 'Swap to "{0}" ({1})',
 	fixCredits: 'Export the credits with the sequence ({0} file)',
+	// why a fix needs the user's judgement (`fix.whyMessage`; Phase 5 verification: translated like the rest)
+	whyNormalise: 'The export then normalises to the target',
+	whyLimiterCeiling: 'The export limiter then holds the ceiling',
+	whyLimiterUnder: 'The export limiter then keeps the mix under its ceiling',
+	whyRebalance:
+		'Solving the sound effects against the bed and the true-peak ceiling lowers the loudest hits; listen to the result',
+	whyUserGain: 'Its gain was set by hand',
+	whySolverGain: "The solver's gain does not resolve it: {0}",
+	whyDucked:
+		'The music is ducked already: Auto-Match levels the dialogue and music clips by type (it changes their gains)',
+	whyDuckDepth: 'Ducking by {0} dB leaves the music {1} LU under the voice',
+	whySilence: 'Only if the silence is intended',
+	whyKeepCue: 'Or keep it where it is: it no longer follows the picture',
+	whyNoPicture: 'Only if nothing on screen calls for it',
+	whySimilar: 'A different sound found by similarity: listen before keeping it',
 } as const;
 export type SoundCheckMessageKey = keyof typeof SOUND_CHECK_MESSAGES;
+
+/**
+ * Why a placed sound's timing cannot be measured (the second parameter of `syncUnmeasurable`): fixed English fragments,
+ * translated by the editor (model strings).
+ */
+export const SOUND_CHECK_UNMEASURED = {
+	notInMix: 'it is not in the mix (disabled, muted track or offline media)',
+	reversed: 'it plays reversed',
+	offline: 'its media is offline',
+	short: 'its sound is too short around its aligned point',
+	edge: 'its cue is at the edge of the checked range',
+	undecodable: 'its file could not be decoded',
+	covered: 'other sounds cover it in the sound-effects mix',
+} as const;
 
 /** Every Sound Check template (the editor's model strings). */
 export const SOUND_CHECK_MODEL_STRINGS: readonly string[] = [
 	...Object.values(SOUND_CHECK_MESSAGES),
+	...Object.values(SOUND_CHECK_UNMEASURED),
 	SOUND_CHECK_CUSTOM_LABEL,
 ];
 

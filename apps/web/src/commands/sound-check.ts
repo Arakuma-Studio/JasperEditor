@@ -2,21 +2,145 @@
 // WP5.2"): Run Sound Check opens the Sound Check panel and runs the check of the active sequence (the engine's
 // `sound-check` job, the summary stored as the user's edit); Fix All Safe applies the report's safe fixes (one undo step,
 // engine jobs after it) and runs the check again. Agents reach both through the UI command catalogue; the same check
-// is MCP `sound_check`, whose fixes they apply with the tools each fix names.
+// is MCP `sound_check`, whose fixes they apply with the tools each fix names. The findings list's keys are commands of
+// the Sound Check scope (Keyboard Shortcuts lists them; remappable): ↑ ↓ Home End move, Enter goes to the finding, F
+// applies its fix (one that needs judgement asks first), → / ← open / close its sync strip, Space plays 4 s around it.
 import { t } from '../i18n/runtime.ts';
-import { safeFixable } from '../sound/check-model.ts';
+import { canApply, hasSyncStrip, safeFixable } from '../sound/check-model.ts';
 import {
+	applyCheckFix,
 	type CheckEngine,
+	currentFinding,
+	findingOrder,
 	fixAllSafe,
+	jumpToIssue,
+	playFinding,
 	reportFor,
 	runSoundCheck,
+	setSyncStrip,
 	soundCheckStore,
+	stepFinding,
 } from '../sound/check-run.ts';
 import { runCommand } from './registry.ts';
 import { sequenceContext } from './sequence-context.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 const engineOf = (ctx: CommandCtx) => ctx.engine as unknown as CheckEngine;
+const reveal = (ctx: CommandCtx) => (f: number) => ctx.services.get('timelineViewport')?.scrollToFrame(f);
+const hasFindings = (ctx: CommandCtx) => !!ctx.session && findingOrder(ctx.session).length > 0;
+const noFindings = () => t('Run the Sound Check first: there are no findings to go through');
+const onFinding = (ctx: CommandCtx) => !!ctx.session && currentFinding(ctx.session) !== null;
+const noCurrent = () => t('Choose a finding in the Sound Check list first');
+
+const step = (to: number | 'first' | 'last') => ({
+	scope: 'soundCheck' as const,
+	repeat: typeof to === 'number',
+	when: hasFindings,
+	disabledReason: noFindings,
+	run: (ctx: CommandCtx) => {
+		if (ctx.session) stepFinding(ctx.session, to);
+	},
+});
+const strip = (open: boolean) => ({
+	scope: 'soundCheck' as const,
+	when: (ctx: CommandCtx) => {
+		const i = ctx.session && currentFinding(ctx.session);
+		return !!i && (!open || hasSyncStrip(i));
+	},
+	disabledReason: () => (open ? t('Only sync findings have a sync strip') : noCurrent()),
+	run: (ctx: CommandCtx) => {
+		const i = ctx.session && currentFinding(ctx.session);
+		if (ctx.session && i) setSyncStrip(ctx.session, i, open);
+	},
+});
+
+/** The findings list commands (scope `soundCheck`: the Sound Check panel's list). */
+const findingCommands: UiCommand[] = [
+	{
+		id: 'soundCheck.nextFinding',
+		label: 'Next Sound Check Finding',
+		description: 'Move the Sound Check findings list to the next finding',
+		...step(1),
+	},
+	{
+		id: 'soundCheck.prevFinding',
+		label: 'Previous Sound Check Finding',
+		description: 'Move the Sound Check findings list to the previous finding',
+		...step(-1),
+	},
+	{
+		id: 'soundCheck.firstFinding',
+		label: 'First Sound Check Finding',
+		description: 'Move the Sound Check findings list to its first finding',
+		...step('first'),
+	},
+	{
+		id: 'soundCheck.lastFinding',
+		label: 'Last Sound Check Finding',
+		description: 'Move the Sound Check findings list to its last finding',
+		...step('last'),
+	},
+	{
+		id: 'soundCheck.goToFinding',
+		label: 'Go to Sound Check Finding',
+		description:
+			'Move the playhead to the current Sound Check finding, select its clips (else its cue) and scroll the Timeline there',
+		scope: 'soundCheck',
+		when: onFinding,
+		disabledReason: noCurrent,
+		run: (ctx) => {
+			const i = ctx.session && currentFinding(ctx.session);
+			if (ctx.session && i) jumpToIssue(ctx.session, i, reveal(ctx));
+		},
+	},
+	{
+		id: 'soundCheck.fixFinding',
+		label: 'Fix Sound Check Finding',
+		description:
+			'Apply the current Sound Check finding’s fix as one undo step (a fix that needs your judgement asks first, naming what it changes)',
+		scope: 'soundCheck',
+		capability: 'engine',
+		when: (ctx) => {
+			const i = ctx.session && currentFinding(ctx.session);
+			return !!i && !!i.fix && canApply(i) && !ctx.session!.getState().readOnly;
+		},
+		disabledReason: (ctx) =>
+			ctx.session?.getState().readOnly ? t('The project is read-only') : t('This finding has no fix'),
+		run: async (ctx) => {
+			const i = ctx.session && currentFinding(ctx.session);
+			if (ctx.session && i) await applyCheckFix(ctx.session, engineOf(ctx), i);
+		},
+	},
+	{
+		id: 'soundCheck.openSyncStrip',
+		label: 'Open Sync Strip',
+		description:
+			'Open the sync strip of the current Sound Check sync finding: five frames around the cue above the sound effects over the bed',
+		...strip(true),
+	},
+	{
+		id: 'soundCheck.closeSyncStrip',
+		label: 'Close Sync Strip',
+		description: 'Close the sync strip of the current Sound Check finding',
+		...strip(false),
+	},
+	{
+		id: 'soundCheck.playFinding',
+		label: 'Play Sound Check Finding',
+		description:
+			'Play 4 s around the current Sound Check finding through the Program; the playhead comes back after',
+		scope: 'soundCheck',
+		when: (ctx) => {
+			const i = ctx.session && currentFinding(ctx.session);
+			return !!i && (i.frame !== undefined || i.range !== undefined);
+		},
+		disabledReason: noCurrent,
+		run: (ctx) => {
+			const i = ctx.session && currentFinding(ctx.session);
+			if (ctx.session && i) playFinding(ctx.session, i, reveal(ctx));
+		},
+	},
+];
 
 function pendingSafe(ctx: CommandCtx): number {
 	const e = sequenceContext(ctx);
@@ -28,6 +152,7 @@ function pendingSafe(ctx: CommandCtx): number {
 }
 
 export const soundCheckCommands: UiCommand[] = [
+	...findingCommands,
 	{
 		id: 'sound.runSoundCheck',
 		label: 'Run Sound Check',

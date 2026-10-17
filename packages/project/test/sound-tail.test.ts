@@ -217,6 +217,64 @@ describe('placement never ends inside the sound', () => {
 		);
 	});
 
+	it('end alignment of a padded sound is sample-exact: media − trail, not the 0.1 ms-quantised descriptors', () => {
+		// Phase 5 verification follow-up (g): the sound-library e2e measured a riser ending 0.03 ms early because its end was
+		// `descriptors.durationSec − trailSilenceSec` (durationSec quantised to 0.1 ms). The media's own length is exact.
+		const q = (x: number) => Math.round(x * 10_000) / 10_000;
+		const lead = 2400 / SR;
+		const trail = 2400 / SR;
+		for (const sound of [1234, 4801, 9999, 47_123]) {
+			const media = (2400 + sound + 2400) / SR;
+			const exactEnd = (2400 + sound) / SR;
+			// the copy's descriptors: the original's quantised length plus lead and trail (as `provenanceOf` writes them)
+			const timing = soundTimingOf(
+				{
+					trailSilenceSec: trail,
+					descriptors: {
+						peakSec: q(0.01) + lead,
+						onsetSec: lead,
+						headQuietSec: lead,
+						durationSec: q(sound / SR) + lead + trail,
+					},
+				},
+				{ peakSec: 0, onsetSec: 0, headQuietSec: 0, durationSec: 1 },
+			);
+			for (const fps of ALLOWED_SEQUENCE_RATES) {
+				const r = planSoundInsert({
+					cueFrame: 120,
+					fps,
+					align: 'end',
+					timing,
+					mediaDurationFlicks: Math.round(media * FLICKS_PER_SECOND),
+				});
+				expect(r.ok).toBe(true);
+				if (!r.ok) continue;
+				// within one flick of the last sample's end (a 48 kHz sample is 14 700 flicks)
+				expect(Math.abs(r.placement.alignFlicks - exactEnd * FLICKS_PER_SECOND)).toBeLessThanOrEqual(1);
+				expect(r.placement.errorFlicks).toBe(0);
+			}
+		}
+		// without the media's length the descriptors are all there is (unchanged)
+		const t = soundTimingOf(
+			{
+				trailSilenceSec: trail,
+				descriptors: { peakSec: 0.06, onsetSec: lead, headQuietSec: lead, durationSec: 0.1257 },
+			},
+			{ peakSec: 0, onsetSec: 0, headQuietSec: 0, durationSec: 1 },
+		);
+		const r = planSoundInsert({ cueFrame: 120, fps: { num: 30, den: 1 }, align: 'end', timing: t });
+		expect(r.ok && r.placement.alignFlicks).toBe(Math.round((0.1257 - trail) * FLICKS_PER_SECOND));
+		// a media whose length disagrees with the descriptors (another file) does not move the end
+		const other = planSoundInsert({
+			cueFrame: 120,
+			fps: { num: 30, den: 1 },
+			align: 'end',
+			timing: t,
+			mediaDurationFlicks: Math.round(0.5 * FLICKS_PER_SECOND),
+		});
+		expect(other.ok && other.placement.alignFlicks).toBe(Math.round((0.1257 - trail) * FLICKS_PER_SECOND));
+	});
+
 	it('a known −60 dB tail is enough to reach; without trail info a clip ends past the media by under one frame', () => {
 		const fps = { num: 30, den: 1 };
 		const F = flicksPerFrame(fps);

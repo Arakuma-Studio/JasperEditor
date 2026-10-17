@@ -11,6 +11,8 @@
 //                                 transaction "Apply Delivery Preset", or proposed (sound-design/delivery.ts).
 //   POST /api/sound-design/check  a `sound-check` job (202): Sound Check (sound-design/check.ts): findings with fixes,
 //                                 listen-here moments, the per-event table and a verdict; `store` writes the summary.
+//   POST /api/sound-design/check/last  the sequence's last full Sound Check report, kept across restarts
+//                                 (sound-design/report-store.ts), with whether it is stale against the live document.
 //   POST /api/sound-design/visual the curves, cue ticks, motion and findings over ≤ 120 s (sound-design/visual.ts).
 //   POST /api/sound-design/motion a `motion-analysis` job (202): the picture rendered small and measured per frame
 //                                 (sound-design/motion.ts), cached by the picture's fingerprint.
@@ -23,7 +25,10 @@ import {
 	type EnvelopeJson,
 	MotionAnalysisRequestSchema,
 	SfxRebalanceRequestSchema,
+	SoundCheckLastRequestSchema,
+	type SoundCheckLastResponse,
 	SoundCheckRequestSchema,
+	type SoundCheckResult,
 	type SoundCueSuggestion,
 	SoundCuesRequestSchema,
 	type SoundCuesResponse,
@@ -40,11 +45,13 @@ import {
 	documentHasActiveExpressions,
 	ENGINE_CUE_SOURCES,
 	loadProject,
+	mixFingerprint,
 	type ProjectDocument,
 	type Rational,
 	SOUND_CHECK_THRESHOLDS,
 	sequenceDuration,
 	sequenceTimecode,
+	soundCheckInputsHash,
 	soundCuesOf,
 	soundDesignSettingsOf,
 } from '@jasper/project';
@@ -67,6 +74,7 @@ import {
 	unknownCueIds,
 } from '../sound-design/plan.ts';
 import { RebalanceInputError, rebalanceTargets, runRebalance } from '../sound-design/rebalance.ts';
+import { SoundCheckReportStore } from '../sound-design/report-store.ts';
 import { soundVisual, VisualInputError, visualRange } from '../sound-design/visual.ts';
 import { registerVoiceService, VoiceActivityService } from '../sound-design/voice.ts';
 import type { SoundService } from '../sounds/service.ts';
@@ -135,8 +143,13 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 					}),
 	);
 
-	core.queue.registerRunner('sound-check', (ctx) =>
-		runSoundCheck(ctx, {
+	// The last full report per sequence outlives the job (and the engine): the panel reloads it after a restart.
+	const reports = new SoundCheckReportStore({
+		projectDir: (pid) => app.jasper.config.paths.projectDir(pid),
+		log: (m) => app.log.warn(m),
+	});
+	core.queue.registerRunner('sound-check', async (ctx) => {
+		const result: SoundCheckResult = await runSoundCheck(ctx, {
 			agent: agentOf,
 			engineCues: () => engineCues,
 			sounds: () => services.sounds as SoundService | undefined,
@@ -144,6 +157,54 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 			registry: core.registry,
 			registries: defaultRegistries(mgRegistry),
 			mgTemplates: mgRegistry,
+		});
+		if (!ctx.signal.aborted) await reports.save(result.projectId, result, ctx.job.id);
+		return result;
+	});
+
+	app.post(
+		'/api/sound-design/check/last',
+		guarded(async (req) => {
+			const body = parseOr400(SoundCheckLastRequestSchema, req.body ?? {});
+			if (!isProjectId(body.projectId)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
+			const agent = agentOf();
+			if (!agent) throw new HttpError(503, 'NOT_AVAILABLE', 'The sound design services are not running');
+			if (!(await agent.projectExists(body.projectId)))
+				throw new HttpError(404, 'PROJECT_NOT_FOUND', `Project not found: ${body.projectId}`);
+			const { doc } = await liveDocument(agent, body.projectId);
+			let seq: ReturnType<typeof planSequence>;
+			try {
+				seq = planSequence(doc, body.sequenceId);
+			} catch (e) {
+				if (e instanceof PlanInputError) throw new HttpError(404, e.code, e.message);
+				throw e;
+			}
+			const stored = await reports.get(body.projectId, seq.id);
+			if (!stored)
+				throw new HttpError(
+					404,
+					'SOUND_CHECK_NOT_FOUND',
+					`No Sound Check report of sequence ${seq.id} is kept: run the check`,
+				);
+			const report = stored.result.report;
+			const reasons: SoundCheckLastResponse['reasons'] = [];
+			if (report.mixHash !== mixFingerprint(doc, seq.id)) reasons.push('mix');
+			// the numbers the check hashed (a custom target's are the report preset's)
+			const target = report.preset.custom
+				? { integratedLufs: report.preset.integratedLufs, truePeakDb: report.preset.truePeakDb }
+				: null;
+			if (report.inputsHash !== soundCheckInputsHash(doc, seq.id, report.preset.id, target))
+				reasons.push('inputs');
+			const out: SoundCheckLastResponse = {
+				projectId: body.projectId,
+				sequenceId: seq.id,
+				jobId: stored.jobId,
+				savedAt: stored.savedAt,
+				state: reasons.length ? 'stale' : 'current',
+				reasons,
+				result: stored.result,
+			};
+			return out;
 		}),
 	);
 

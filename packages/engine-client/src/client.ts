@@ -56,6 +56,7 @@ import {
 	type RouteResponse,
 	type SceneDetectRequest,
 	type SfxRebalanceRequest,
+	type SoundCheckLastRequest,
 	type SoundCheckRequest,
 	type SoundCuesRequest,
 	type SoundDeliveryRequest,
@@ -427,6 +428,10 @@ export class EngineClient {
 	 */
 	soundCheck(req: SoundCheckRequest, signal?: AbortSignal) {
 		return this.call('soundDesignCheck', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** The last full Sound Check report of a sequence, kept across engine restarts, and whether it is stale. */
+	lastSoundCheck(req: SoundCheckLastRequest, signal?: AbortSignal) {
+		return this.call('soundDesignCheckLast', { body: req, ...(signal ? { signal } : {}) });
 	}
 	/** Sound Check visual data over a range of at most 120 s (`POST /api/sound-design/visual`, P5-R2). */
 	soundVisual(req: SoundVisualRequest, signal?: AbortSignal) {

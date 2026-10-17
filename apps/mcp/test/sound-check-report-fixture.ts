@@ -202,6 +202,7 @@ export function reportFixture(o: ReportFixtureOptions): SoundCheckReport {
 							seconds: 3,
 							why: soundCheckMessage('listenWorst', 'Impact plays 66.7 ms late'),
 							issueId: `OUT_OF_SYNC:${clipA}`,
+							clipId: clipA,
 						},
 					]
 				: []),
@@ -211,6 +212,7 @@ export function reportFixture(o: ReportFixtureOptions): SoundCheckReport {
 				timecode: tc(91),
 				seconds: 3.03,
 				why: soundCheckMessage('listenHero', 'Impact', -9.5),
+				clipId: clipA,
 			},
 			{
 				slot: 'loudest',

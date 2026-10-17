@@ -23,14 +23,17 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
-import { closeAllDialogs, toasts } from '@jasper/ui';
+import { closeAllDialogs, DialogHost, toasts } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resultFixture } from '../../mcp/test/sound-check-report-fixture.ts';
 import { createCommandContext } from '../src/commands/context.ts';
+import { getActiveKeymap } from '../src/commands/keymap-defaults.ts';
 import { getCommand, runCommand } from '../src/commands/registry.ts';
 import { useExportSoundCheck } from '../src/export/SoundCheckGate.tsx';
 import { SoundCheckPanel } from '../src/panels/soundCheck/SoundCheckPanel.tsx';
+import { shortcutRows } from '../src/shell/keymap/KeyboardShortcutsDialog.tsx';
+import { assignShortcut, restoreBindings } from '../src/shell/keymap/store.ts';
 import { MENUBAR } from '../src/shell/menus/model.ts';
 import { soundCheckStore } from '../src/sound/check-run.ts';
 import { cuesOf } from '../src/sound/cues/model.ts';
@@ -45,6 +48,7 @@ const mocks = vi.hoisted(() => ({
 		before?: number;
 		after?: number;
 		onEnd?: (how: 'window' | 'stopped') => void;
+		keepPlayingOn?: (e: Event) => boolean;
 	}[],
 }));
 vi.mock('../src/state/engine.tsx', () => ({
@@ -250,6 +254,11 @@ function fakeCheckEngine(
 			const points = Math.round(((req.range.end - req.range.start) / 30) * 100);
 			return {
 				waveformPeakDb: Array.from({ length: points }, (_, i) => (i === 30 ? -3 : -40)),
+				// the sound effects stem (the hit) over the bed (the music)
+				stemPeakDb: {
+					sfx: Array.from({ length: points }, (_, i) => (i === 30 ? -3 : -120)),
+					bed: Array.from({ length: points }, () => -40),
+				},
 				range: req.range,
 			};
 		},
@@ -437,9 +446,11 @@ describe('Sound Check panel', () => {
 		expect(f.session.transport.getState().frame).toBe(90);
 		expect(f.session.getState().selection.timeline.clips).toEqual([f.clipA]);
 		const list = screen.getByTestId('sound-check-findings');
+		// the list's keys are the Sound Check scope's commands: resolved by the key's code, as the keymap does
+		const CODE: Record<string, string> = { f: 'KeyF', ' ': 'Space' };
 		const key = async (k: string) => {
 			await act(async () => {
-				fireEvent.keyDown(list, { key: k });
+				fireEvent.keyDown(list, { key: k, code: CODE[k] ?? k });
 			});
 			await settle();
 		};
@@ -462,6 +473,11 @@ describe('Sound Check panel', () => {
 		expect(f.engine.stills.map((s) => s.frame)).toEqual([148, 149, 150, 151, 152]);
 		expect(f.engine.visuals[0]).toMatchObject({ sequenceId: f.seqId, range: { start: 141, end: 160 } });
 		expect(within(strip).getByTestId('sound-check-event-line')).toBeTruthy();
+		// the sound-effects stem is drawn over the bed (not the mix), with a legend
+		await waitFor(() => expect(within(strip).getByTestId('sound-check-wave-sfx')).toBeTruthy());
+		expect(within(strip).getByTestId('sound-check-wave-bed')).toBeTruthy();
+		expect(within(strip).queryByTestId('sound-check-wave-path')).toBeNull();
+		expect(within(strip).getByTestId('sound-check-wave-legend').textContent).toContain('Sound effects');
 		// TRUNCATED has no offset: no measured line; the summary says so
 		expect(within(strip).queryByTestId('sound-check-peak-line')).toBeNull();
 		await key('ArrowLeft');
@@ -481,6 +497,47 @@ describe('Sound Check panel', () => {
 		await key('f');
 		await waitFor(() => expect(f.labels().at(-1)).toBe('Sound Check Fix: Align its peak to the cue'));
 		expect(f.seq().clips[f.clipA]!.start).toBe(before - 2);
+	});
+
+	it('the findings list keys are Sound Check commands: listed in Keyboard Shortcuts and remappable', async () => {
+		const rows = shortcutRows(getActiveKeymap()).filter((r) => r.scope === 'soundCheck');
+		const keysOf = (id: string) => rows.find((r) => r.id === id)?.bindings.map((b) => b.key) ?? [];
+		expect(keysOf('soundCheck.nextFinding')).toEqual(['ArrowDown']);
+		expect(keysOf('soundCheck.prevFinding')).toEqual(['ArrowUp']);
+		expect(keysOf('soundCheck.firstFinding')).toEqual(['Home']);
+		expect(keysOf('soundCheck.lastFinding')).toEqual(['End']);
+		expect(keysOf('soundCheck.goToFinding')).toEqual(['Enter', 'NumpadEnter']);
+		expect(keysOf('soundCheck.fixFinding')).toEqual(['KeyF']);
+		expect(keysOf('soundCheck.openSyncStrip')).toEqual(['ArrowRight']);
+		expect(keysOf('soundCheck.closeSyncStrip')).toEqual(['ArrowLeft']);
+		expect(keysOf('soundCheck.playFinding')).toEqual(['Space']);
+		expect(rows.find((r) => r.id === 'soundCheck.fixFinding')?.label).toBe('Fix Sound Check Finding');
+		// remap Fix to X: X fixes the current finding, F no longer does
+		const f = fixture();
+		mount(f);
+		await run();
+		const previous = getActiveKeymap();
+		try {
+			// (the Keyboard Shortcuts dialog's change of a key: the F binding replaced by X)
+			const fKey = previous.find((b) => b.command === 'soundCheck.fixFinding' && b.key === 'KeyF');
+			assignShortcut('soundCheck.fixFinding', 'soundCheck', 'KeyX', 'linux', 'web', fKey);
+			const list = screen.getByTestId('sound-check-findings');
+			await act(async () => {
+				fireEvent.focus(list);
+			});
+			const n = f.labels().length;
+			await act(async () => {
+				fireEvent.keyDown(list, { key: 'f', code: 'KeyF' });
+			});
+			await settle();
+			expect(f.labels()).toHaveLength(n);
+			await act(async () => {
+				fireEvent.keyDown(list, { key: 'x', code: 'KeyX' });
+			});
+			await waitFor(() => expect(f.labels().at(-1)).toBe('Sound Check Fix: Align its peak to the cue'));
+		} finally {
+			restoreBindings(previous);
+		}
 	});
 
 	it('Fix: one History entry; the row says fixed and the summary goes stale', async () => {
@@ -503,6 +560,83 @@ describe('Sound Check panel', () => {
 		// undo restores it (an ordinary edit)
 		act(() => f.session.undo());
 		expect((f.seq().master as { loudness?: { enabled?: boolean } }).loudness?.enabled ?? false).toBe(false);
+	});
+
+	it('Fix… (a fix that needs judgement) asks first, naming what it changes; Cancel applies nothing', async () => {
+		const f = fixture();
+		render(<DialogHost />);
+		mount(f);
+		await run();
+		const n = f.labels().length;
+		await act(async () => {
+			fireEvent.click(within(rowOf('SILENCE')).getByTestId('sound-check-fix'));
+		});
+		let dialog = await screen.findByTestId('confirm-dialog');
+		expect(dialog.textContent).toContain('Apply “Mark it as intended silence (a silence cue)”?');
+		expect(dialog.textContent).toContain(
+			'This will change: Adds a silence cue at 00:00:07:00: Sound Check no longer reports silence there.',
+		);
+		expect(dialog.textContent).toContain('Why it needs your judgement: Only if the silence is intended.');
+		expect(dialog.textContent).toContain('one undo step');
+		// Cancel: nothing changes
+		await act(async () => {
+			fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+		});
+		await waitFor(() => expect(screen.queryByTestId('confirm-dialog')).toBeNull());
+		await settle();
+		expect(f.labels()).toHaveLength(n);
+		expect(cuesOf(f.seq()).some((c) => c.kind === 'silence')).toBe(false);
+		expect(screen.getByTestId('sound-check-live').textContent).toContain('Fix not applied');
+		expect(within(rowOf('SILENCE')).getByTestId('sound-check-fix')).toBeTruthy();
+		// Apply Fix: one History entry
+		await act(async () => {
+			fireEvent.click(within(rowOf('SILENCE')).getByTestId('sound-check-fix'));
+		});
+		dialog = await screen.findByTestId('confirm-dialog');
+		await act(async () => {
+			fireEvent.click(within(dialog).getByRole('button', { name: 'Apply Fix' }));
+		});
+		await waitFor(() => expect(f.labels()).toHaveLength(n + 1));
+		expect(f.labels().at(-1)).toBe('Sound Check Fix: Mark it as intended silence (a silence cue)');
+		expect(cuesOf(f.seq()).some((c) => c.kind === 'silence' && c.frame === 210)).toBe(true);
+		// a safe fix never asks
+		await act(async () => {
+			fireEvent.click(within(rowOf('LOUDNESS')).getByTestId('sound-check-fix'));
+		});
+		await waitFor(() => expect(f.labels()).toHaveLength(n + 2));
+		expect(screen.queryByTestId('confirm-dialog')).toBeNull();
+	});
+
+	it('a report the engine kept is reloaded after a restart (the job is gone) and judged stale by its own hashes', async () => {
+		const f = fixture();
+		const view = mount(f);
+		await run();
+		const kept = soundCheckStore(f.session).getState().result!;
+		view.unmount();
+		// the engine restarted: it forgot the job but kept the report per sequence
+		soundCheckStore(f.session).setState({ result: null, jobId: null });
+		const asked: unknown[] = [];
+		(f.engine.client as { lastSoundCheck?: unknown }).lastSoundCheck = async (req: unknown) => {
+			asked.push(req);
+			return {
+				projectId: f.session.projectId,
+				sequenceId: f.seqId,
+				jobId: 'job_1',
+				savedAt: '2026-10-17T10:00:00.000Z',
+				state: 'current',
+				reasons: [],
+				result: kept,
+			};
+		};
+		mount(f);
+		await waitFor(() => expect(document.querySelector('[data-code="OUT_OF_SYNC"]')).toBeTruthy());
+		expect(asked).toEqual([{ projectId: f.session.projectId, sequenceId: f.seqId }]);
+		expect(screen.queryByTestId('sound-check-stale')).toBeNull();
+		// an edit since: the kept report is stale (the panel compares its own hashes)
+		await act(async () => {
+			f.ok([{ type: 'audio.setGain', clipIds: [f.clipA], mode: 'adjust', db: -3 }], 'Gain');
+		});
+		expect((await screen.findByTestId('sound-check-stale')).textContent).toContain('the mix changed');
 	});
 
 	it('Fix all safe: commands and the swap in ONE transaction, the ducking job after it, then the check again', async () => {
@@ -594,10 +728,19 @@ describe('Sound Check panel', () => {
 				comment: 'Still late by a frame',
 			}),
 		]);
-		// what MCP sound_check returns as humanVerdicts
-		expect(soundCheckHumanVerdicts(f.seq()).map((v) => [v.frame, v.verdict, v.note])).toEqual([
-			[90, 'flag', 'Still late by a frame'],
-			[91, 'ok', null],
+		// what MCP sound_check returns as humanVerdicts: bound to the moment (slot, clip), current
+		expect(
+			soundCheckHumanVerdicts(f.seq(), { doc: f.session.getCommitted() }).map((v) => [
+				v.frame,
+				v.verdict,
+				v.note,
+				v.slot,
+				v.clipId,
+				v.stale,
+			]),
+		).toEqual([
+			[90, 'flag', 'Still late by a frame', 'worst', f.clipA, false],
+			[91, 'ok', null, 'hero', f.clipA, false],
 		]);
 		// changing a verdict updates the marker there (no second one)
 		await act(async () => {
@@ -615,6 +758,24 @@ describe('Sound Check panel', () => {
 			fireEvent.click(screen.getByTestId('sound-check-play-all'));
 		});
 		expect(mocks.windows.map((w) => w.center)).toEqual([90]);
+		// the verdict controls keep Play all going (the window's input filter accepts them), its buttons do not
+		const keep = (mocks.windows[0] as { keepPlayingOn?: (e: Event) => boolean }).keepPlayingOn!;
+		const press = (el: Element) => {
+			const e = new MouseEvent('pointerdown', { bubbles: true });
+			Object.defineProperty(e, 'target', { value: el });
+			return e;
+		};
+		expect(keep(press(within(rows()[2]!).getByTestId('sound-check-sounds-right')))).toBe(true);
+		expect(keep(press(within(rows()[2]!).getByTestId('sound-check-flag')))).toBe(true);
+		// ▶ and Play all / Stop act on their own click (a press that stopped first would let the click restart it)
+		expect(keep(press(within(rows()[2]!).getByTestId('sound-check-listen-play')))).toBe(true);
+		expect(keep(press(screen.getByTestId('sound-check-play-all')))).toBe(true);
+		expect(keep(press(screen.getByTestId('sound-check-panel')))).toBe(false);
+		// a verdict during Play all: recorded, and the chain goes on
+		await act(async () => {
+			fireEvent.click(within(rows()[0]!).getByTestId('sound-check-sounds-right'));
+		});
+		expect(screen.getByTestId('sound-check-play-all').textContent).toBe('Stop');
 		for (let i = 0; i < 2; i++) {
 			await act(async () => {
 				mocks.windows.at(-1)!.onEnd!('window');
@@ -629,6 +790,15 @@ describe('Sound Check panel', () => {
 		});
 		expect(mocks.windows).toHaveLength(3);
 		expect(screen.getByTestId('sound-check-play-all').textContent).toBe('Play all');
+		// an edit of the sound the verdicts judged: they are out of date (the row says so; MCP reports stale)
+		await act(async () => {
+			f.ok([{ type: 'audio.setGain', clipIds: [f.clipA], mode: 'adjust', db: 4 }], 'Gain');
+		});
+		expect(rows()[0]!.getAttribute('data-verdict-stale')).toBe('true');
+		expect(within(rows()[0]!).getByTestId('sound-check-verdict-stale').textContent).toBe(
+			'Out of date: the sound here changed since you listened',
+		);
+		expect(rows()[3]!.getAttribute('data-verdict-stale')).toBeNull();
 	});
 
 	it('Use as sequence target: a preset applies the delivery; Custom… checks against its numbers and normalises there', async () => {

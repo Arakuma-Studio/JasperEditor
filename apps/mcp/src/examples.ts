@@ -391,6 +391,16 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 			preset: 'web',
 		},
 	},
+	// Phase 5 verification: the listener's verdict on a listen-here moment, bound to it (the editor's Sound Check panel
+	// writes these for the user; an agent's verdict is not a human verdict — sound_check reports only the user's).
+	'soundDesign.setVerdict': {
+		type: 'soundDesign.setVerdict',
+		frame: 15,
+		verdict: 'flag',
+		note: 'The music drowns the voice here',
+		slot: 'worst',
+		clipId: { clipAt: { track: 'A1', at: 15 } },
+	},
 	// Phase 4 mixing (spec 12 §2.4): a music dip on clips (minimum with their Volume; times in sequence flicks)…
 	'audio.volumeDip': {
 		type: 'audio.volumeDip',
