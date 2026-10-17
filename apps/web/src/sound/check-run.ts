@@ -97,6 +97,8 @@ export function soundCheckStore(session: EditorSession): StoreApi<SoundCheckStat
 			choice: {},
 			playing: null,
 			announcement: { message: '', n: 0 },
+			cursor: null,
+			openStrips: [],
 		}));
 		stores.set(session, s);
 	}

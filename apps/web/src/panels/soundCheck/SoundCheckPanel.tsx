@@ -602,7 +602,7 @@ function Findings(props: {
 			data-testid="sound-check-findings"
 			onKeyDown={onKeyDown}
 			onFocus={() => {
-				if (!cur && order[0]) setCurrent(order[0].id);
+				if (!cur && order[0]) setFindingCursor(session, order[0].id);
 			}}
 		>
 			{groups.map((g) => (

@@ -429,8 +429,8 @@ export function soundCheckHumanVerdicts(
 }
 
 /**
- * The verdict a listen-here moment shows: the last one at its frame about the same clip / cue (an unbound verdict at the
- * frame counts for any moment there, as before). `null` when there is none.
+ * The verdict a listen-here moment shows: the last one at its frame about the same clip / cue (an unbound verdict, or
+ * one about no clip / cue in particular, counts for any moment at the frame). `null` when there is none.
  */
 export function soundCheckVerdictFor<
 	V extends Pick<SoundCheckHumanVerdict, 'frame' | 'clipId' | 'cueId' | 'bound'>,
@@ -440,8 +440,11 @@ export function soundCheckVerdictFor<
 ): V | null {
 	const clipId = moment.clipId ?? null;
 	const cueId = clipId ? null : (moment.cueId ?? null);
+	// an unbound verdict, or one about no clip / cue in particular, covers every moment at its frame
 	const at = verdicts.filter(
-		(v) => v.frame === moment.frame && (!v.bound || (v.clipId === clipId && v.cueId === cueId)),
+		(v) =>
+			v.frame === moment.frame &&
+			(!v.bound || (v.clipId === null && v.cueId === null) || (v.clipId === clipId && v.cueId === cueId)),
 	);
 	return at.at(-1) ?? null;
 }

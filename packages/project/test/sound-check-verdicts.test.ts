@@ -161,6 +161,15 @@ describe('soundDesign.setVerdict', () => {
 		g.h.ok([{ type: 'soundDesign.setVerdict', frame: 120, verdict: 'flag', clipId: g.clipId }]);
 		expect(verdicts(g.h)).toMatchObject([{ bound: true, verdict: 'flag', clipId: g.clipId }]);
 		expect(g.h.seq.markers).toHaveLength(1);
+		// a verdict about no clip / cue in particular covers every moment at its frame, until a specific one takes over
+		const k = fixture();
+		k.h.ok([{ type: 'soundDesign.setVerdict', frame: 120, verdict: 'ok' }]);
+		expect(soundCheckVerdictFor(verdicts(k.h), { frame: 120, clipId: k.clipId })).toMatchObject({
+			bound: true,
+			clipId: null,
+		});
+		k.h.ok([{ type: 'soundDesign.setVerdict', frame: 120, verdict: 'flag', clipId: k.clipId }]);
+		expect(verdicts(k.h)).toMatchObject([{ verdict: 'flag', clipId: k.clipId }]);
 	});
 
 	it('stale when the listened window changes or its clip moves / goes; an edit elsewhere only changes the mix', () => {

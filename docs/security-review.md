@@ -458,6 +458,7 @@ Every state-changing engine route and what an agent may do with it:
 | `POST /api/sound-design/delivery` (`apply_delivery`) | Open | Mode `propose` (the default) stores a proposal (nothing changes); mode `apply` is one ordinary, undoable transaction of `soundDesign.applyDelivery` (settings, the Mix's loudness normalisation, Essential Sound Auto-Match gains, ducking Volume keyframes) and `soundDesign.applyGains`, classified like any agent transaction ("Agent: Apply Delivery Preset"); nothing is deleted; renders are measure-only (no file is written) |
 | `POST /api/sound-design/check` (`sound_check`) | Open | Measure-only renders (the first normalisation pass is a scratch file of the job, removed when it ends); with `store: true` one ordinary, undoable transaction of `soundDesign.setCheck` (metadata only, "Agent: Sound Check Result"); fixes are returned, never applied |
 | `POST /api/sound-design/visual` (`view_sound_timeline`) | Open | Read-only: measure-only renders of ≤ 120 s, nothing stored |
+| `POST /api/sound-design/check/last` (`get_sound_check`) | Open | Read-only: the sequence's last kept report (`<appdir>/projects/<pid>/sound-check/<sequenceId>.json`, written by finished `sound-check` jobs; file names only from document ids, ≤ 32 per project, ≤ 16 MB each, damaged files moved aside) with its staleness against the live document |
 | `PUT /api/settings/processing` (`set_processing_settings`) | **Gated**, now for every caller without the editor key | Where media is sent (was opt-in by a query parameter) |
 | `POST /api/project-manager` (`project_manager`) | Open | Copies into a new destination under free names; sources untouched |
 | `POST /api/assets/:id/relink`, `…/relink-scan` (`link_media`) | Open | Registers and compares files; the relink itself is a transaction (undoable; `force` is gated) |
@@ -742,7 +743,13 @@ them, but it was reviewed by its author, not by this review.
   local protocols only); curves are bounded (≤ 6 h of 10 ms hops; report curves ≤ 1 200 points, ≤ 2 000 findings and
   event rows); fixes are only described (commands dry-run on a copy, never applied by the check); `checkJobId` must name
   a `sound-check` job of the same project (`404 JOB_NOT_FOUND`). `store` goes through the agent service's transaction
-  path. Tests: `apps/engine/test/sound-check.test.ts` (typed refusals), `sound-check-stems.test.ts`.
+  path. Tests: `apps/engine/test/sound-check.test.ts` (typed refusals), `sound-check-stems.test.ts`. The last full report
+  per sequence (Phase 5 verification; `POST /api/sound-design/check/last`, `sound-design/report-store.ts`) is written
+  by the finished job inside the project's folder: the file name is the sequence id only when it is a document id
+  (`[A-Za-z0-9_-]{1,128}`, never a path), atomic writes, ≤ 32 reports per project (the least recently written evicted),
+  ≤ 16 MB per report (larger ones are not kept), a file that does not parse or names another sequence is moved aside
+  with a warning; the route is read-only (strict body, typed `404 SOUND_CHECK_NOT_FOUND`). Tests:
+  `apps/engine/test/sound-check-kept.test.ts`.
 - **Proposals** (spec 12 WP3.1, `apps/engine/src/routes/proposals.ts`, `proposals/{store,service}.ts`; `GET/POST
   /api/projects/:id/proposals`, `GET/DELETE …/:proposalId`, `POST …/:proposalId/accept|reject|reopen|note|select|applied`):
   project ids are matched against `prj_` + 16 Crockford characters and proposal ids against `prp_` + 16 before any path

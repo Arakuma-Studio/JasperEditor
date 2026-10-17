@@ -1231,9 +1231,12 @@ function setVerdict(doc: DDoc, cmd: CommandOf<'soundDesign.setVerdict'>, h: Hand
 	const markers = seq.markers as DMarker[];
 	const clipId = subject?.kind === 'clip' ? subject.id : null;
 	const cueId = subject?.kind === 'cue' ? subject.id : null;
-	// the verdicts of this moment: same frame and subject, or unbound ones at the frame (written before subjects were kept)
+	// the verdicts of this moment: same frame and subject, or unbound / subject-less ones at the frame (a more specific
+	// verdict takes them over)
 	const existing = soundCheckHumanVerdicts({ markers: plainCopy(markers) }).filter(
-		(v) => v.frame === frame && (!v.bound || (v.clipId === clipId && v.cueId === cueId)),
+		(v) =>
+			v.frame === frame &&
+			(!v.bound || (v.clipId === null && v.cueId === null) || (v.clipId === clipId && v.cueId === cueId)),
 	);
 	const keep = cmd.verdict === null ? undefined : existing.at(-1);
 	const drop = new Set(existing.filter((v) => v !== keep).map((v) => v.markerId));
