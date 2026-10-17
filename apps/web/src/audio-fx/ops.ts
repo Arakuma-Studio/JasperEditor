@@ -10,6 +10,7 @@ import {
 	duckTriggerClips,
 	type EssentialSound,
 	type MediaAsset,
+	type ProjectDocument,
 	type Rational,
 	readEssentialSound,
 	remixSourceRange,
@@ -41,7 +42,14 @@ export async function autoTagClips(
 	engine: EngineClient,
 	sequenceId: string,
 	clipIds: string[],
-	opts: { force?: boolean; signal?: AbortSignal } = {},
+	opts: {
+		force?: boolean;
+		signal?: AbortSignal;
+		/** Waited for after the engine answered, before the transaction (the editor's gesture ending). */
+		beforeApply?: () => Promise<void>;
+		/** Clips still to tag when the answer arrives (default all): the others are dropped from the transaction. */
+		keep?: (doc: ProjectDocument, clipId: string) => boolean;
+	} = {},
 ): Promise<AutoTagOutcome> {
 	const out: AutoTagOutcome = { tagged: [], skipped: [], silent: [], failed: [], low: [] };
 	if (!clipIds.length) return out;
@@ -74,6 +82,12 @@ export async function autoTagClips(
 			};
 	}
 	if (!Object.keys(results).length) return out;
+	await opts.beforeApply?.();
+	if (opts.keep) {
+		const now = session.getCommitted();
+		for (const id of Object.keys(results)) if (!opts.keep(now, id)) delete results[id];
+		if (!Object.keys(results).length) return out;
+	}
 	const r = session.apply({
 		label: 'Auto Tag Audio Types',
 		origin: 'user',
@@ -109,6 +123,32 @@ export function autoTagMessage(o: AutoTagOutcome): string {
 			o.failed.length === 1 ? t('1 could not be analysed') : t('{0} could not be analysed', o.failed.length),
 		);
 	return parts.join(' · ');
+}
+
+/**
+ * The audio clips of each Essential Sound type in a sequence, in timeline order (Premiere: Essential Sound lists the
+ * tags found; clicking one selects all clips of that category). Auto-tagged clips count with their type.
+ */
+export function audioTypeClips(seq: Sequence): Record<AudioType, string[]> {
+	const out: Record<AudioType, string[]> = { dialogue: [], music: [], sfx: [], ambience: [] };
+	const list = Object.values(seq.clips)
+		.filter((c): c is AudioClip => c.kind === 'audio')
+		.sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
+	for (const c of list) {
+		const type = readEssentialSound(c.essential)?.type;
+		if (type) out[type].push(c.id);
+	}
+	return out;
+}
+
+/** Selects every audio clip of `type` in the active sequence (only those clips: no linked video). Returns the count. */
+export function selectAudioType(session: EditorSession, type: AudioType): number {
+	const s = session.getState();
+	const seq = s.activeSequenceId ? (s.document.sequences[s.activeSequenceId] as Sequence | undefined) : undefined;
+	if (!seq) return 0;
+	const ids = audioTypeClips(seq)[type];
+	session.select('timeline', ids, 'replace', { linked: false, groups: false });
+	return ids.length;
 }
 
 /** Audio clips of the selection (in the active sequence). */

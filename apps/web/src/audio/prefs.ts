@@ -19,6 +19,13 @@ export type AudioPrefs = {
 	/** Minimum time interval thinning (Premiere default off, 20 ms). */
 	minIntervalThinning: boolean;
 	minIntervalMs: number;
+	/**
+	 * Preferences ▸ Audio ▸ "Auto-tag audio types in the timeline" (Premiere 24.x; helpx "Auto tag audio categories":
+	 * "This setting allows auto tagging to happen anytime you add an audio clip to your sequence"). Off by default here:
+	 * Adobe documents it as a setting you enable and documents no default (community threads report it on in some
+	 * builds); tagging starts engine jobs on every add, so it is opt-in (WP6.5a).
+	 */
+	autoTagInTimeline: boolean;
 	voiceOver: {
 		/** `MediaDeviceInfo.deviceId` ('' = the system default input). */
 		deviceId: string;
@@ -46,6 +53,7 @@ export const DEFAULT_AUDIO_PREFS: AudioPrefs = {
 	linearThinning: true,
 	minIntervalThinning: false,
 	minIntervalMs: 20,
+	autoTagInTimeline: false,
 	voiceOver: {
 		deviceId: '',
 		inputChannel: 0,
@@ -79,6 +87,7 @@ export function parseAudioPrefs(raw: unknown): AudioPrefs {
 		minIntervalThinning:
 			typeof o.minIntervalThinning === 'boolean' ? o.minIntervalThinning : d.minIntervalThinning,
 		minIntervalMs: num(o.minIntervalMs, 1, 2000, d.minIntervalMs),
+		autoTagInTimeline: typeof o.autoTagInTimeline === 'boolean' ? o.autoTagInTimeline : d.autoTagInTimeline,
 		voiceOver: {
 			deviceId: typeof v.deviceId === 'string' ? v.deviceId : d.voiceOver.deviceId,
 			inputChannel: Math.round(num(v.inputChannel, 0, 63, d.voiceOver.inputChannel)),
