@@ -344,7 +344,9 @@ describe('registering and placing a take', { timeout: 600_000 }, () => {
 		expect(reg.library.license).toBe(rec.license);
 		expect(reg.library.leadSilenceSec).toBe(0.05);
 		expect(reg.inexact).toBeUndefined();
-		const copy = decodeF32(reg.path);
+		const copyPath = await coreServices(app).registry.resolvePath(reg.mediaKey);
+		if (!copyPath) throw new Error("the copy is offline");
+		const copy = decodeF32(copyPath);
 		const whole = decodeF32(files.clicksWav);
 		const range = takeRange(t, SR)!;
 		const lead = 2400;
