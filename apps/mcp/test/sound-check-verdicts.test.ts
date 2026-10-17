@@ -260,6 +260,25 @@ describe('sound_check humanVerdicts / target', () => {
 		expect(engine.requests).toEqual([]);
 	});
 
+	it('safeFixes: the safe fixes once each in the order they were judged (commands, swaps, jobs); why lines', async () => {
+		const { call } = await connect();
+		const r = await call({});
+		const fixes = r.body.safeFixes as { issueIds: string[]; tool: string }[];
+		// report order: OUT_OF_SYNC (commands), TRUNCATED (swap), SILENCE (not safe), LOUDNESS (commands), MUSIC_OVER_VOICE (job)
+		expect(fixes.map((f) => f.issueIds[0]!.split(':')[0])).toEqual([
+			'OUT_OF_SYNC',
+			'LOUDNESS',
+			'TRUNCATED',
+			'MUSIC_OVER_VOICE',
+		]);
+		expect(fixes.map((f) => f.tool)).toEqual(['align_peak', 'apply_commands', 'swap_sound', 'apply_delivery']);
+		expect(r.body.next).toMatch(/in the order of safeFixes/);
+		// a fix that is not safe says why
+		const silence = (r.body.findings as string[]).find((l) => l.includes('SILENCE'))!;
+		expect(silence).toContain('needs the user');
+		expect(silence).toContain('— Only if the silence is intended');
+	});
+
 	it('passes a custom target to the engine; refuses one out of range', async () => {
 		const { call, engine } = await connect();
 		const r = await call({ target: { integratedLufs: -20, truePeakDb: -2 } });
