@@ -197,6 +197,8 @@ import {
 	SoundEntrySchema,
 	SoundIndexRequestSchema,
 	SoundLibraryStatusSchema,
+	SoundPackRemoveResponseSchema,
+	SoundPacksResponseSchema,
 	SoundRootsPutRequestSchema,
 	SoundRootsPutResponseSchema,
 	SoundRootsResponseSchema,
@@ -1090,6 +1092,22 @@ export const ROUTES = {
 		path: '/api/sounds/index',
 		body: SoundIndexRequestSchema,
 		response: EngineJobSchema,
+	},
+	/**
+	 * Downloadable sound packs (spec 12 §2.8, P6-R1): the catalogue with what is installed, a `sound-pack-install` job
+	 * (202; download, sha256 check, extraction of the listed files, then a `sound-index` job), and removal (an agent's
+	 * removal asks the user first).
+	 */
+	soundPacks: { method: 'GET', path: '/api/sounds/packs', response: SoundPacksResponseSchema },
+	soundPackInstall: {
+		method: 'POST',
+		path: '/api/sounds/packs/:packId/install',
+		response: EngineJobSchema,
+	},
+	soundPackRemove: {
+		method: 'DELETE',
+		path: '/api/sounds/packs/:packId',
+		response: SoundPackRemoveResponseSchema,
 	},
 	/** User sound folders (local mode only). Adding, removing or relicensing one asks an agent's user first. */
 	soundRootsGet: { method: 'GET', path: '/api/sounds/roots', response: SoundRootsResponseSchema },

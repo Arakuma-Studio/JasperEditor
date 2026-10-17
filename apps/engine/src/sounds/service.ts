@@ -5,12 +5,17 @@ import { realpath, rm, stat } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import {
 	type EngineJob,
+	type JobKind,
 	type RegisteredMedia,
 	type RegisterSoundResponse,
 	SOUND_ANALYSIS_SECONDS,
+	SOUND_PACK_ID_RE,
 	SOUND_SOURCE_TYPES,
 	type SoundEntry,
 	type SoundLibraryStatus,
+	type SoundPackInstallResult,
+	type SoundPackRemoveResponse,
+	type SoundPacksResponse,
 	type SoundRoot,
 	type SoundRootsPutRequest,
 	type SoundSearchQuery,
@@ -27,7 +32,7 @@ import {
 	shiftLibraryDescriptors,
 } from '@jasper/project';
 import { isLoopbackHost } from '../context.ts';
-import { JobError } from '../jobs/types.ts';
+import { type JobContext, JobError } from '../jobs/types.ts';
 import { fingerprintFile, fingerprintHex } from '../media/fingerprint.ts';
 import { contentTypeFor } from '../tools/http.ts';
 import { HttpError } from '../tools/reply.ts';
@@ -36,12 +41,16 @@ import { resolveSoundWorker, SoundAnalyzer } from './analysis.ts';
 import { decodeSound } from './decode.ts';
 import { SoundIndexer } from './index-job.ts';
 import { type LibrarySnapshot, SoundLibrary } from './library.ts';
+import { loadPackCatalog, type PackCatalog, SOUND_CATALOG_ENV, SoundPackStore } from './packs.ts';
 import { isPcmCodec, paddedFileName, probeAudioStream, writePaddedSound } from './pad.ts';
 import { SoundRootStore, type SoundRootsPlan } from './roots.ts';
 import { searchSoundEntries } from './search.ts';
 import { isSoundFileName, type LoadedManifest, loadManifest, starterDir } from './starter.ts';
 import { ensureSynthFile, synthItems } from './synth.ts';
 import { readVisual, visualCacheFile, writeVisual } from './visual.ts';
+
+const PACK_JOB: JobKind = 'sound-pack-install';
+const SOUND_PACK_ID = SOUND_PACK_ID_RE;
 
 /** Turn `JASPER_SOUND_AUTO_INDEX=0` to keep the engine from indexing by itself (default on; off under vitest). */
 export const AUTO_INDEX_ENV = 'JASPER_SOUND_AUTO_INDEX';
@@ -168,6 +177,11 @@ export class SoundService {
 	readonly roots: SoundRootStore;
 	readonly indexer: SoundIndexer;
 	readonly analyzer: SoundAnalyzer;
+	/** Downloadable packs (WP6.1): the catalogue, installs and removals. */
+	readonly packs: SoundPackStore;
+	/** Leftovers of earlier runs (staging folders, stale partial downloads) are deleted before the first install. */
+	private readonly packsReady: Promise<void>;
+	private catalogCache: PackCatalog | null = null;
 	private readonly limitVisual = semaphore(VISUAL_CONCURRENCY);
 	private starterCache: { at: number; manifest: LoadedManifest } | null = null;
 	/** The index's entries in id order, for the snapshot they were made from (search). */
@@ -219,6 +233,122 @@ export class SoundService {
 			...(opts.log ? { log: opts.log } : {}),
 		});
 		core.queue.registerRunner('sound-index', (ctx) => this.indexer.run(ctx));
+		const env = this.env();
+		const ms = (k: string) => {
+			const v = Number(env[k]);
+			return Number.isFinite(v) && v > 0 ? v : undefined;
+		};
+		const stallMs = ms('JASPER_SOUND_PACK_STALL_MS');
+		const timeoutMs = ms('JASPER_SOUND_PACK_TIMEOUT_MS');
+		this.packs = new SoundPackStore({
+			packsDir: paths.soundPacksDir,
+			catalog: () => this.packCatalog(),
+			...(stallMs ? { stallMs } : {}),
+			...(timeoutMs ? { timeoutMs } : {}),
+		});
+		this.packsReady = this.packs
+			.cleanup()
+			.catch((e) => opts.log?.(`sound packs: cleanup failed: ${(e as Error).message}`));
+		core.queue.registerRunner(PACK_JOB, (ctx) => this.runPackInstall(ctx));
+	}
+
+	/** The pack catalogue (the built-in one is read once; a `JASPER_SOUND_CATALOG` override on every call). */
+	async packCatalog(): Promise<PackCatalog> {
+		if (this.env()[SOUND_CATALOG_ENV]) return loadPackCatalog(this.env());
+		this.catalogCache ??= await loadPackCatalog(this.env());
+		return this.catalogCache;
+	}
+
+	/** The queued or running install job of a pack. */
+	packJob(packId: string): EngineJob | null {
+		return (
+			this.core.queue
+				.list({ active: true, kind: PACK_JOB })
+				.find((j) => j.dedupeKey === `sound-pack:${packId}`) ?? null
+		);
+	}
+
+	async listPacks(): Promise<SoundPacksResponse> {
+		const snapshot = await this.library.snapshot();
+		const counts = new Map<string, number>();
+		for (const e of Object.values(snapshot.sounds))
+			if (e.source.type === 'pack') counts.set(e.source.packId, (counts.get(e.source.packId) ?? 0) + 1);
+		return this.packs.list({ indexed: (id) => counts.get(id) ?? 0, job: (id) => this.packJob(id) });
+	}
+
+	/** Starts (or joins) the `sound-pack-install` job of a catalogue pack (404 when the catalogue has no such pack). */
+	async submitPackInstall(packId: string, origin: EngineJob['origin']): Promise<EngineJob> {
+		const e = SOUND_PACK_ID.test(packId) ? await this.packs.entry(packId) : null;
+		if (!e)
+			throw new HttpError(404, 'SOUND_PACK_UNKNOWN', `Unknown sound pack ${String(packId).slice(0, 64)}`);
+		return this.core.queue.submit({
+			kind: PACK_JOB,
+			title: `Install sound pack – ${e.title}`,
+			priority: 'user',
+			cpuSlots: 0,
+			origin,
+			dedupeKey: `sound-pack:${packId}`,
+			input: { packId },
+			stage: 'Waiting',
+		});
+	}
+
+	private async runPackInstall(ctx: JobContext): Promise<SoundPackInstallResult> {
+		const { packId } = (ctx.input ?? {}) as { packId?: unknown };
+		if (typeof packId !== 'string' || !SOUND_PACK_ID.test(packId))
+			throw new JobError('SOUND_PACK_UNKNOWN', 'Invalid pack id', false);
+		await this.packsReady;
+		let r: Omit<SoundPackInstallResult, 'indexJobId'>;
+		try {
+			r = await this.packs.install(packId, {
+				signal: ctx.signal,
+				jobId: ctx.job.id,
+				progress: (p, stage) => ctx.progress(p, { stage }),
+			});
+		} catch (e) {
+			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+			if (e instanceof JobError) throw e;
+			const code = (e as NodeJS.ErrnoException).code;
+			if (code === 'ENOSPC') throw new JobError('DISK_FULL', 'The disk is full', false);
+			throw e;
+		}
+		ctx.log(
+			`${packId}: ${r.alreadyInstalled ? 'already installed' : `installed ${r.sounds} files, ${r.downloadedBytes} bytes downloaded`}`,
+		);
+		// The library picks the pack up incrementally (only its new files are analysed).
+		const snapshot = await this.library.snapshot();
+		const indexed = Object.values(snapshot.sounds).filter(
+			(s) => s.source.type === 'pack' && s.source.packId === packId,
+		).length;
+		const needIndex = !r.alreadyInstalled || indexed === 0 || !snapshot.packs[packId];
+		const job = needIndex ? this.startIndex({ origin: ctx.job.origin }) : null;
+		this.core.capabilities.changed();
+		return { ...r, indexJobId: job?.id ?? null };
+	}
+
+	/**
+	 * Removes an installed pack (approval is the route's business): its folder goes, its sounds leave the index at once,
+	 * and an index job runs so a sound also found in another source comes back under it. Projects that use its sounds
+	 * keep their managed copies.
+	 */
+	async removePack(packId: string, origin: EngineJob['origin']): Promise<SoundPackRemoveResponse> {
+		if (this.packJob(packId))
+			throw new HttpError(409, 'SOUND_PACK_BUSY', 'The pack is being installed; cancel the job first');
+		const r = await this.packs.remove(packId);
+		if (!r.removed) return { packId, removed: false, removedSounds: 0, freedBytes: 0, job: null };
+		const removedSounds = await this.library.remove(
+			(e) => e.source.type === 'pack' && e.source.packId === packId,
+			[`pack:${packId}:`],
+			[packId],
+		);
+		this.core.capabilities.changed();
+		return {
+			packId,
+			removed: true,
+			removedSounds,
+			freedBytes: r.freedBytes,
+			job: this.startIndex({ origin }),
+		};
 	}
 
 	private env(): Record<string, string | undefined> {

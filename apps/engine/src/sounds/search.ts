@@ -116,12 +116,13 @@ export function searchSoundEntries(
 	const sources = q.sources?.length ? new Set<string>(q.sources) : null;
 	const facets: SoundFacets = { types: {}, families: {}, licenses: {}, sources: {} };
 	const visible =
-		opts.includeFolders && !q.rootId
+		opts.includeFolders && !q.rootId && !q.packId
 			? all
 			: all.filter(
 					(e) =>
 						(opts.includeFolders || e.source.type !== 'folder') &&
-						(!q.rootId || (e.source.type === 'folder' && e.source.rootId === q.rootId)),
+						(!q.rootId || (e.source.type === 'folder' && e.source.rootId === q.rootId)) &&
+						(!q.packId || (e.source.type === 'pack' && e.source.packId === q.packId)),
 				);
 	const inPool = (e: SoundEntry) => !sources || sources.has(e.source.type);
 	// Counted in arrays by index, turned into the facet records at the end.

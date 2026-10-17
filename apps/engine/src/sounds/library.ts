@@ -200,10 +200,20 @@ export class SoundLibrary {
 		return this.serialize(async () => this.write(await make()));
 	}
 
-	/** Takes out the sounds (and file records) a predicate selects; returns how many sounds went. */
-	remove(pred: (e: SoundEntry) => boolean, fileKeyPrefixes: readonly string[]): Promise<number> {
+	/**
+	 * Takes out the sounds (and file records) a predicate selects, and the named installed packs; returns how many
+	 * sounds went.
+	 */
+	remove(
+		pred: (e: SoundEntry) => boolean,
+		fileKeyPrefixes: readonly string[],
+		packIds: readonly string[] = [],
+	): Promise<number> {
 		return this.serialize(async () => {
 			const s = await this.load();
+			const packs: Record<string, SoundManifestPack> = {};
+			for (const [id, p] of Object.entries(s.packs)) if (!packIds.includes(id)) packs[id] = p;
+			const packsChanged = Object.keys(packs).length !== Object.keys(s.packs).length;
 			const sounds: Record<string, SoundEntry> = {};
 			let removed = 0;
 			for (const [id, e] of Object.entries(s.sounds)) {
@@ -213,8 +223,9 @@ export class SoundLibrary {
 			const files: Record<string, FileRecord> = {};
 			for (const [k, v] of Object.entries(s.files))
 				if (!fileKeyPrefixes.some((p) => k.startsWith(p))) files[k] = v;
-			if (removed === 0 && Object.keys(files).length === Object.keys(s.files).length) return 0;
-			await this.write({ ...s, sounds, files });
+			if (removed === 0 && !packsChanged && Object.keys(files).length === Object.keys(s.files).length)
+				return 0;
+			await this.write({ ...s, sounds, files, packs });
 			return removed;
 		});
 	}

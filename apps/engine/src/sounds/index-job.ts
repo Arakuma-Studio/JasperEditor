@@ -175,7 +175,9 @@ function manifestItems(m: LoadedManifest, kind: 'starter' | 'pack'): IndexItem[]
 	const packs = new Map(m.packs.map((p) => [p.id, p]));
 	return m.sounds.map((s) => {
 		const pack = s.packId ? packs.get(s.packId) : undefined;
-		const types = storedTypes(s.types.length ? s.types : inferTypesFromName(s.file));
+		const types = storedTypes(
+			s.types.length || s.inferTypes === false ? s.types : inferTypesFromName(s.file),
+		);
 		const licenseUrl =
 			s.licenseUrl ??
 			(pack?.license === s.license ? pack?.licenseUrl : undefined) ??
