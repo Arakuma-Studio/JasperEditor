@@ -38,6 +38,11 @@ Human decisions (2026-10-14):
 4. **No AI generation** (no MOSS, no ElevenLabs, no generated-sound tier).
 5. **BigSoundBank** may be offered as a downloadable pack, *after* an agent confirms per-file that its licence is
    CC0. WTFPL alone is not on our allowlist, so we use only the CC0 grant. Record the evidence in the wp-note.
+   *Follow-up decision (2026-10-17):* include it. Its robots.txt / ai.txt disallow `/UPLOAD/` for crawlers and AI
+   training; we train nothing and fetch only the curated files, from their upstream URLs, when the user installs a
+   pack (at most one request per second, a descriptive User-Agent; nothing is hosted by us). Done in four packs
+   (wp-note "Phase 6 → BigSoundBank packs": per-file evidence table, each file's page checked for "License CC0
+   (public domain): Free and royalty-free"; only Joseph Sardin's own recordings).
 
 Decisions taken by the orchestrator:
 

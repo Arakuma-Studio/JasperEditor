@@ -38,7 +38,14 @@ import type { WebSocket } from 'ws';
 import { renderMixdown, WAV_F32_HEADER_BYTES } from '../src/audio/mixdown.ts';
 import { audioWorld } from '../src/sound-design/bed.ts';
 import builtin from '../src/sounds/packs.json' with { type: 'json' };
-import { filesDigest, parsePackCatalog, partialName, safeJoin } from '../src/sounds/packs.ts';
+import {
+	filesDigest,
+	PACK_FILE_INTERVAL_MS,
+	PACK_USER_AGENT,
+	parsePackCatalog,
+	partialName,
+	safeJoin,
+} from '../src/sounds/packs.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, H, JSON_H, makeApp, tempAppdir } from './helpers.ts';
 import { makeStarter, SR, samples } from './sound-fixtures.ts';
@@ -170,6 +177,7 @@ const ENV_KEYS = [
 	'JASPER_SOUND_AUTO_INDEX',
 	'JASPER_SOUND_CATALOG',
 	'JASPER_SOUND_PACK_STALL_MS',
+	'JASPER_SOUND_PACK_FILE_INTERVAL_MS',
 ] as const;
 const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 beforeEach(() => {
@@ -177,6 +185,7 @@ beforeEach(() => {
 	process.env.JASPER_SOUND_SYNTH_VARIANTS = '0';
 	process.env.JASPER_SOUND_AUTO_INDEX = '0';
 	delete process.env.JASPER_SOUND_PACK_STALL_MS;
+	delete process.env.JASPER_SOUND_PACK_FILE_INTERVAL_MS;
 });
 afterEach(async () => {
 	await closeApps();
@@ -243,7 +252,6 @@ describe('the built-in catalogue (apps/engine/src/sounds/packs.json)', () => {
 			for (const ev of e.licenseEvidence) expect(ev.url).toMatch(/^https:\/\//);
 			if (e.license === 'CC0-1.0') expect(e.attribution).toBeNull();
 			else expect(e.attribution).toBeTruthy();
-			expect(e.download.type).toBe('zip');
 			if (e.download.type === 'zip') {
 				expect(e.download.url).toMatch(/^https:\/\//);
 				expect(e.download.sha256).toMatch(/^[0-9a-f]{64}$/);
@@ -253,6 +261,9 @@ describe('the built-in catalogue (apps/engine/src/sounds/packs.json)', () => {
 			for (const f of e.files) {
 				expect(f.sha256).toMatch(/^[0-9a-f]{64}$/);
 				expect(f.sizeBytes).toBeGreaterThan(0);
+				// a `files` pack downloads every file from its own https URL; a zip pack extracts them
+				if (e.download.type === 'files') expect(f.url).toMatch(/^https:\/\//);
+				else expect(f.url).toBeUndefined();
 				expect(paths.has(f.path)).toBe(false);
 				paths.add(f.path);
 				// types are taxonomy ids; untyped files never let the file name guess one
@@ -302,6 +313,77 @@ describe('the built-in catalogue (apps/engine/src/sounds/packs.json)', () => {
 		]);
 	});
 
+	it('the BigSoundBank packs: each file CC0 by its own page, by Joseph Sardin, from bigsoundbank.com/UPLOAD/', () => {
+		const bsb = cat.entries.filter((e) => e.id.startsWith('bigsoundbank-'));
+		expect(bsb.map((e) => e.id).sort()).toEqual([
+			'bigsoundbank-ambience-room-tone',
+			'bigsoundbank-foley-hits',
+			'bigsoundbank-keys-clicks',
+			'bigsoundbank-whooshes-risers',
+		]);
+		const all = bsb.flatMap((e) => e.files);
+		// a curated selection (spec 12 §0 decision 5), not a mirror: 60–150 sounds in 2–5 packs
+		expect(all.length).toBeGreaterThanOrEqual(60);
+		expect(all.length).toBeLessThanOrEqual(150);
+		for (const e of bsb) {
+			// the CC0 grant (BigSoundBank also offers WTFPL, which is not on the allowlist); no credit required
+			expect(e.license).toBe('CC0-1.0');
+			expect(e.licenseUrl).toBe('https://creativecommons.org/publicdomain/zero/1.0/');
+			expect(e.attribution).toBeNull();
+			expect(e.download).toEqual({ type: 'files' });
+			expect(e.pageUrl).toBe('https://bigsoundbank.com/');
+			expect(e.author).toBe('Joseph Sardin (BigSoundBank.com)');
+			expect(e.licenseEvidence[0]).toMatchObject({ url: 'https://bigsoundbank.com/licenses.html' });
+			expect(e.licenseEvidence[0]!.statement).toContain('Creative Commons CC0 1.0 Universal');
+			// the credit BigSoundBank asks for (optional) is offered in the description
+			expect(e.description).toContain('Additional sounds: Joseph SARDIN - BigSoundBank.com');
+			expect(e.licenseFile).toBeUndefined();
+			expect(e.skipped).toEqual([]);
+			for (const f of e.files) {
+				const n = /^(\d{4})-[a-z0-9-]+\.(flac|wav|ogg)$/.exec(f.path);
+				expect(n, f.path).not.toBeNull();
+				// the file is the sound's own upstream download, and its page is where its licence was read
+				expect(f.url).toBe(
+					`https://bigsoundbank.com/UPLOAD/${n![2] === 'wav' ? 'bwf-en' : n![2]}/${n![1]}.${n![2]}`,
+				);
+				expect(f.sourceUrl).toMatch(new RegExp(`^https://bigsoundbank\\.com/[a-z0-9-]+-s${n![1]}\\.html$`));
+				expect(f.licenseEvidence).toEqual({
+					url: f.sourceUrl,
+					statement: 'License CC0 (public domain): Free and royalty-free',
+					checkedAt: e.licenseEvidence[0]!.checkedAt,
+				});
+				// only Joseph Sardin's own recordings (alone or with a co-recordist), never other contributors'
+				expect(f.author).toMatch(/^Joseph Sardin( & Axeline T\.)? \(BigSoundBank\.com\)$/);
+				expect(f.types.length, f.path).toBeGreaterThan(0);
+			}
+		}
+		// every sound once across the packs
+		expect(new Set(all.map((f) => f.sha256)).size).toBe(all.length);
+		expect(new Set(all.map((f) => f.path.slice(0, 4))).size).toBe(all.length);
+		// beds are OGG (smaller downloads), effects lossless FLAC or WAV
+		const beds = bsb.find((e) => e.id === 'bigsoundbank-ambience-room-tone')!;
+		for (const f of beds.files) expect(f.path.endsWith('.ogg'), f.path).toBe(true);
+		for (const e of bsb.filter((x) => x !== beds))
+			for (const f of e.files) expect(f.path, f.path).toMatch(/\.(flac|wav)$/);
+	});
+
+	it('the catalogue as a whole has a recording of every type (BigSoundBank fills the Kenney gaps)', () => {
+		const covered = new Set(cat.entries.flatMap((e) => e.files.flatMap((f) => f.types)));
+		expect(SOUND_TYPE_IDS.filter((t) => !covered.has(t))).toEqual([]);
+		const bsb = cat.entries.filter((e) => e.id.startsWith('bigsoundbank-')).flatMap((e) => e.files);
+		const count = (t: string) => bsb.filter((f) => f.types.includes(t)).length;
+		// several takes of each gap type (types by measurement: `curate-packs.ts build`; table in the wp-note)
+		expect(count('key')).toBeGreaterThanOrEqual(8);
+		expect(count('riser')).toBeGreaterThanOrEqual(6);
+		expect(count('whoosh')).toBeGreaterThanOrEqual(6);
+		expect(count('roomtone')).toBeGreaterThanOrEqual(4);
+		expect(count('reverse')).toBeGreaterThanOrEqual(1);
+		expect(count('hit')).toBeGreaterThanOrEqual(10);
+		expect(count('ambience')).toBeGreaterThanOrEqual(15);
+		const typing = bsb.filter((f) => f.tags.includes('typing'));
+		expect(typing.length).toBeGreaterThanOrEqual(8);
+	});
+
 	it('refuses hostile entries (zip-slip paths, non-allowlisted licences, http URLs, duplicates) and keeps the rest', () => {
 		const f = makePackFixture();
 		const ok = packEntry(f);
@@ -331,6 +413,45 @@ describe('the built-in catalogue (apps/engine/src/sounds/packs.json)', () => {
 		expect(r.errors).toHaveLength(11);
 		// the built-in catalogue takes https only
 		expect(parsePackCatalog({ version: 1, packs: [ok] }, { builtin: true, base: null }).entries).toEqual([]);
+		// … including the URL of a file's own licence evidence
+		const { licenseFile: _lf, ...zipless } = ok;
+		const web = (i: number) => `https://example.invalid/sound/${i}`;
+		const filesOk = {
+			...zipless,
+			id: 'files-https',
+			download: { type: 'files' },
+			files: ok.files.map((x, i) => ({
+				...x,
+				url: `${web(i)}.wav`,
+				sourceUrl: web(i),
+				licenseEvidence: { url: web(i), statement: 'License CC0', checkedAt: '2026-10-17' },
+			})),
+		};
+		const builtinOnly = (e: unknown) =>
+			parsePackCatalog({ version: 1, packs: [e] }, { builtin: true, base: null });
+		expect(builtinOnly(filesOk).entries.map((e) => e.id)).toEqual(['files-https']);
+		const httpEvidence = {
+			...filesOk,
+			files: filesOk.files.map((x, i) =>
+				i === 1
+					? { ...x, licenseEvidence: { ...x.licenseEvidence, url: 'http://example.invalid/sound/1' } }
+					: x,
+			),
+		};
+		const refused = builtinOnly(httpEvidence);
+		expect(refused.entries).toEqual([]);
+		expect(refused.errors[0]).toContain('"http://example.invalid/sound/1" is not an https URL');
+		// per-file evidence is validated like the pack's (a statement and a YYYY-MM-DD day)
+		const badEvidence = {
+			...filesOk,
+			files: filesOk.files.map((x) => ({
+				...x,
+				licenseEvidence: { url: x.sourceUrl, statement: '', checkedAt: 'today' },
+			})),
+		};
+		expect(
+			parsePackCatalog({ version: 1, packs: [badEvidence] }, { builtin: false, base: f.dir }).entries,
+		).toEqual([]);
 	});
 
 	it('safeJoin never leaves its folder (property)', () => {
@@ -586,6 +707,11 @@ describe('installing from a file:// catalogue', { timeout: 300_000 }, () => {
 				types: x.types,
 				tags: [],
 				sourceUrl: `https://example.invalid/sound/${i}`,
+				licenseEvidence: {
+					url: `https://example.invalid/sound/${i}`,
+					statement: 'License CC0 (public domain): Free and royalty-free',
+					checkedAt: '2026-10-17',
+				},
 			};
 		});
 		const e = { ...packEntry(f), id: 'test-files', download: { type: 'files' }, files: list };
@@ -609,6 +735,15 @@ describe('installing from a file:// catalogue', { timeout: 300_000 }, () => {
 			'https://example.invalid/sound/0',
 			'https://example.invalid/sound/1',
 		]);
+		// Help ▸ About ▸ Licenses says each sound's licence was checked on its own page
+		const lic = (
+			await app.inject({ method: 'GET', url: '/api/licenses', headers: H })
+		).json() as LicensesResponse;
+		const entry = lic.components.find((c) => c.id === 'sound-pack:test-files');
+		expect(entry?.notice).toContain(
+			"The licence of each of its 2 sounds was also checked on the sound's own page (2026-10-17).",
+		);
+		expect(entry?.texts).toEqual([]);
 	});
 });
 
@@ -731,6 +866,77 @@ describe('downloading over HTTP (a local server; no network)', { timeout: 300_00
 		// a second install request joins the running job
 		expect((await install(app)).id).toBe(job.id);
 		expect((await wait(app, job.id)).state).toBe('succeeded');
+	});
+
+	it('a `files` pack fetches one file at a time, at most one request per interval, saying who it is', async () => {
+		const f = makePackFixture();
+		const hits: { path: string; at: number; ua: string | undefined }[] = [];
+		const bodies = new Map(f.files.map((x, i) => [`/f/${i}.wav`, x.data]));
+		let open = 0;
+		let maxOpen = 0;
+		server = createServer((req, res) => {
+			open++;
+			maxOpen = Math.max(maxOpen, open);
+			hits.push({ path: req.url ?? '', at: Date.now(), ua: req.headers['user-agent'] });
+			const body = bodies.get(req.url ?? '');
+			res.on('close', () => open--);
+			if (!body) return res.writeHead(404).end();
+			res.writeHead(200, { 'content-length': body.length });
+			// slow enough that a parallel downloader would overlap two requests
+			setTimeout(() => res.end(body), 60);
+		});
+		await new Promise<void>((r) => server!.listen(0, '127.0.0.1', () => r()));
+		const port = (server!.address() as AddressInfo).port;
+		const { licenseFile: _l, ...zipless } = packEntry(f);
+		writeCatalog([
+			{
+				...zipless,
+				id: 'test-files',
+				download: { type: 'files' },
+				files: f.files.map((x, i) => ({
+					path: `${i}.wav`,
+					url: `http://127.0.0.1:${port}/f/${i}.wav`,
+					sha256: sha(x.data),
+					sizeBytes: x.data.length,
+					title: x.title,
+					types: x.types,
+					tags: [],
+					...(x.types.length ? {} : { inferTypes: false }),
+				})),
+			},
+		]);
+		process.env.JASPER_SOUND_PACK_FILE_INTERVAL_MS = '300';
+		const app = await makeApp();
+		const job = await wait(app, (await install(app, 'test-files')).id);
+		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
+		expect(hits.map((h) => h.path)).toEqual(['/f/0.wav', '/f/1.wav', '/f/2.wav']);
+		expect(maxOpen).toBe(1);
+		for (let i = 1; i < hits.length; i++) expect(hits[i]!.at - hits[i - 1]!.at).toBeGreaterThanOrEqual(295);
+		expect(hits.every((h) => h.ua === PACK_USER_AGENT)).toBe(true);
+		expect(PACK_USER_AGENT).toMatch(/^JasperEditor .*<=1 request\/s\)$/);
+		expect(PACK_FILE_INTERVAL_MS).toBe(1000);
+
+		// cancelling while the job waits for its next request stops it at once
+		hits.length = 0;
+		await closeApps();
+		process.env.JASPER_SOUND_PACK_FILE_INTERVAL_MS = '60000';
+		const app2 = await makeApp();
+		const pending = await install(app2, 'test-files');
+		const deadline = Date.now() + 20_000;
+		while (hits.length < 1 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20));
+		await new Promise((r) => setTimeout(r, 200)); // the first file is in; the job now waits 60 s for the second
+		const t0 = Date.now();
+		const c = await app2.inject({
+			method: 'POST',
+			url: `/api/jobs/${pending.id}/cancel`,
+			headers: JSON_H,
+			payload: {},
+		});
+		expect(c.statusCode, c.body).toBeLessThan(300);
+		expect((await wait(app2, pending.id)).state).toBe('cancelled');
+		expect(Date.now() - t0).toBeLessThan(5000);
+		expect(hits).toHaveLength(1);
+		expect(existsSync(join(appdirPaths(app2.appdir).soundPacksDir, 'test-files'))).toBe(false);
 	});
 
 	it('a server that sends more than the pinned size is refused', async () => {
