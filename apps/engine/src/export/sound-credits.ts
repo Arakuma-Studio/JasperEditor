@@ -95,7 +95,9 @@ export function soundPlanWarnings(
 				message: `${sa.length} ${sa.length === 1 ? 'sound heard in this export is' : 'sounds heard in this export are'} ShareAlike (${[...new Set(sa.map((r) => r.license))].join(', ')}: ${sa
 					.slice(0, 3)
 					.map((r) => `"${r.title || r.soundId}"`)
-					.join(', ')}${sa.length > 3 ? '…' : ''}): the video must be shared under CC BY-SA or a compatible licence`,
+					.join(
+						', ',
+					)}${sa.length > 3 ? '…' : ''}): the video must be shared under CC BY-SA or a compatible licence`,
 				itemIds: [...new Set(sa.flatMap((r) => r.usedIn.map((id) => id.split('>')[0]!)))].slice(0, 64),
 			});
 	} catch {

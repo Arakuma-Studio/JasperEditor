@@ -6,8 +6,8 @@ import {
 	DESCRIPTOR_FILTERS,
 	isSoundTypeId,
 	type LicenseClass,
-	licenseClass,
 	type LicenseFilter,
+	licenseClass,
 	type ProjectDocument,
 	rankSounds,
 	readLibraryProvenance,
@@ -159,7 +159,9 @@ export const DEFAULT_FILTERS: LibraryFilters = {
 };
 
 /** The engine / ranking licence filter of the Library's filters. */
-export function licenseFilterOf(f: Pick<LibraryFilters, 'commercialSafe' | 'includeShareAlike'>): LicenseFilter {
+export function licenseFilterOf(
+	f: Pick<LibraryFilters, 'commercialSafe' | 'includeShareAlike'>,
+): LicenseFilter {
 	return !f.commercialSafe ? 'any' : f.includeShareAlike ? 'commercial-safe-sa' : 'commercial-safe';
 }
 

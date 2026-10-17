@@ -124,7 +124,9 @@ describe('Phase 6 Sound Check codes', () => {
 			const t = SOUND_CHECK_MESSAGES[k];
 			expect(SOUND_CHECK_MODEL_STRINGS).toContain(t);
 			const n = new Set([...t.matchAll(/\{(\d+)\}/g)].map((x) => x[1])).size;
-			expect(soundCheckMessage(k, ...Array.from({ length: n }, (_, i) => `p${i}`)).text).not.toMatch(/\{\d+\}/);
+			expect(soundCheckMessage(k, ...Array.from({ length: n }, (_, i) => `p${i}`)).text).not.toMatch(
+				/\{\d+\}/,
+			);
 		}
 		expect(soundCheckMessage('coverage', 3, 4, 'appear', 1, '00:00:02:03').text).toBe(
 			'3 of 4 appear cues like these have a sound; 1 do not: 00:00:02:03',
@@ -194,9 +196,9 @@ describe('ShareAlike (P6-E13)', () => {
 		// the facet bits follow the same filter
 		const bits = soundFilterOf({ query: 'whoosh' });
 		expect(bits(list[0]!) & SOUND_FILTER_LICENSE).toBe(0);
-		expect(soundFilterOf({ query: 'whoosh', license: 'commercial-safe-sa' })(list[0]!) & SOUND_FILTER_LICENSE).toBe(
-			SOUND_FILTER_LICENSE,
-		);
+		expect(
+			soundFilterOf({ query: 'whoosh', license: 'commercial-safe-sa' })(list[0]!) & SOUND_FILTER_LICENSE,
+		).toBe(SOUND_FILTER_LICENSE);
 	});
 
 	it('credits: the SA flag per row, the ShareAlike notice in text and Markdown, a W_SHARE_ALIKE warning', () => {
@@ -223,7 +225,9 @@ describe('ShareAlike (P6-E13)', () => {
 			['snd_by', false],
 		]);
 		const notice = shareAlikeNotice(c.rows)!;
-		expect(notice).toMatch(/^ShareAlike: "Muted Riser" is licensed CC BY-SA\. Under CC BY-SA 4\.0 §1\(a\) and §3\(b\)/);
+		expect(notice).toMatch(
+			/^ShareAlike: "Muted Riser" is licensed CC BY-SA\. Under CC BY-SA 4\.0 §1\(a\) and §3\(b\)/,
+		);
 		expect(c.text.split('\n').at(-1)).toBe(notice);
 		expect(c.markdown).toContain('ShareAlike: "Muted Riser" is licensed CC BY-SA');
 		// the CSV keeps its columns (the licence column says CC-BY-SA-4.0)

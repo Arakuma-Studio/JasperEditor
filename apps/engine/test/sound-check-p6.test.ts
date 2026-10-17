@@ -56,7 +56,12 @@ function chordSamples(): Float32Array[] {
 	for (let i = 0; i < n; i++) {
 		const t = i / SR;
 		const g = t < 2.5 ? 1 : t < 2.51 ? 1 - (1 - 0.0316) * ((t - 2.5) / 0.01) : 0.0316;
-		l[i] = g * 0.12 * (Math.sin(2 * Math.PI * 220 * t) + Math.sin(2 * Math.PI * 277.18 * t) + Math.sin(2 * Math.PI * 329.63 * t));
+		l[i] =
+			g *
+			0.12 *
+			(Math.sin(2 * Math.PI * 220 * t) +
+				Math.sin(2 * Math.PI * 277.18 * t) +
+				Math.sin(2 * Math.PI * 329.63 * t));
 	}
 	return [l, l.slice()];
 }
@@ -92,12 +97,17 @@ function riserSamples(): Float32Array[] {
 		if (t < 0 || t >= 1) continue;
 		s = (Math.imul(s, 1103515245) + 12345) >>> 0;
 		const w = (s / 2 ** 32) * 2 - 1;
-		l[i] = 0.3 * w * (1000 ** t - 1) / 999;
+		l[i] = (0.3 * w * (1000 ** t - 1)) / 999;
 	}
 	return [l, l.slice()];
 }
 
-const prov = (soundId: string, title: string, types: string[], d: Record<string, unknown>): LibraryProvenance =>
+const prov = (
+	soundId: string,
+	title: string,
+	types: string[],
+	d: Record<string, unknown>,
+): LibraryProvenance =>
 	({
 		...provenance('hit'),
 		soundId,
@@ -133,7 +143,10 @@ function seed(doc: ProjectDocument): string {
 	writeFileSync(
 		file,
 		JSON.stringify(
-			makeEnvelope({ ...doc, projectId }, { revision: 3, savedAt: '2026-10-17T00:00:00.000Z', platform: 'test' }),
+			makeEnvelope(
+				{ ...doc, projectId },
+				{ revision: 3, savedAt: '2026-10-17T00:00:00.000Z', platform: 'test' },
+			),
 		),
 	);
 	return projectId;
@@ -162,7 +175,11 @@ async function applyFix(projectId: string, fix: SoundCheckFix): Promise<void> {
 		'/api/agent/tx',
 		{
 			projectId,
-			transaction: { label: fix.label.text.slice(0, 200), origin: { agent: 'check-test' }, commands: fix.commands },
+			transaction: {
+				label: fix.label.text.slice(0, 200),
+				origin: { agent: 'check-test' },
+				commands: fix.commands,
+			},
 		},
 		EDITOR_H,
 	);
@@ -241,8 +258,13 @@ describe('Sound Check Phase 6 findings (real engine)', { timeout: 600_000 }, () 
 		expect(head, describeIssues(report)).toBeDefined();
 		expect(head!.severity).toBe('info');
 		expect(head!.category).toBe('edges');
-		expect(head!.fix!.commands![0]).toMatchObject({ type: 'mixer.writeAutomation', stripId: 'Mix', lane: 'volume' });
-		for (const i of [...issuesOf(report, 'ARC'), ...issuesOf(report, 'LAYER_INAUDIBLE')]) expect(i.severity).toBe('info');
+		expect(head!.fix!.commands![0]).toMatchObject({
+			type: 'mixer.writeAutomation',
+			stripId: 'Mix',
+			lane: 'volume',
+		});
+		for (const i of [...issuesOf(report, 'ARC'), ...issuesOf(report, 'LAYER_INAUDIBLE')])
+			expect(i.severity).toBe('info');
 	});
 
 	/** The clean fixture with a loud held chord on its own track from 4.5 to 6.5 s: the loudest moment of the mix. */
@@ -300,12 +322,20 @@ describe('Sound Check Phase 6 findings (real engine)', { timeout: 600_000 }, () 
 		const fx = buildCheckDoc(media);
 		const track = addTrack(fx);
 		const step = fx.b.addMedia(extra.step);
-		fx.b.tx([{ type: 'clip.place', source: { mediaId: step }, at: 120, tracks: { audio: track }, ref: '$c' }]);
+		fx.b.tx([
+			{ type: 'clip.place', source: { mediaId: step }, at: 120, tracks: { audio: track }, ref: '$c' },
+		]);
 		const clip = clipOn(fx, step, 120);
 		fx.b.tx([{ type: 'essentialSound.setType', clipIds: [clip.id], audioType: 'sfx' }]);
-		const { issue } = await seeded('click', fx.doc(), 'CLICK', (i) => i.severity === 'error' && i.clipIds?.[0] === clip.id, {
-			safe: true,
-		});
+		const { issue } = await seeded(
+			'click',
+			fx.doc(),
+			'CLICK',
+			(i) => i.severity === 'error' && i.clipIds?.[0] === clip.id,
+			{
+				safe: true,
+			},
+		);
 		expect(issue.category).toBe('edges');
 		expect(issue.frame).toBe(120);
 		expect(issue.timecode).toBe('00:00:04:00');
@@ -340,7 +370,9 @@ describe('Sound Check Phase 6 findings (real engine)', { timeout: 600_000 }, () 
 		expect(issue.measured!.preDb as number).toBeGreaterThan(-20);
 		expect(issue.message.text).toMatch(/starts mid-sound at 00:00:05:00/);
 		// the fade also removes the step at the edit
-		expect(issuesOf(again, 'CLICK').filter((i) => i.severity === 'error' && i.clipIds?.includes(clip.id))).toEqual([]);
+		expect(
+			issuesOf(again, 'CLICK').filter((i) => i.severity === 'error' && i.clipIds?.includes(clip.id)),
+		).toEqual([]);
 	});
 
 	it('a music clip cut mid-note → EDGE chopped decay; its fade-out clears it', async () => {
@@ -412,13 +444,19 @@ describe('Sound Check Phase 6 findings (real engine)', { timeout: 600_000 }, () 
 		const hot = fx.b.addMedia(extra.hot);
 		const r = fx.b.tx([
 			{ type: 'media.setLibraryInfo', mediaId: hot, library: HOT_PROV },
-			{ type: 'soundCue.add', cues: [{ frame: 210, kind: 'cut', weight: 'support', source: 'user', ref: '$c' }] },
+			{
+				type: 'soundCue.add',
+				cues: [{ frame: 210, kind: 'cut', weight: 'support', source: 'user', ref: '$c' }],
+			},
 			{ type: 'soundDesign.place', cueId: '$c', layers: [{ mediaId: hot, align: 'peak', ref: '$x' }] },
 			// the click's library sound declares a bright centroid: info only
 			{
 				type: 'media.setLibraryInfo',
 				mediaId: fx.ids.clickMedia,
-				library: { ...provenance('click'), descriptors: { ...provenance('click').descriptors, centroidHz: 8000 } },
+				library: {
+					...provenance('click'),
+					descriptors: { ...provenance('click').descriptors, centroidHz: 8000 },
+				},
 			},
 		]);
 		const { issue, first } = await seeded(
@@ -445,7 +483,10 @@ describe('Sound Check Phase 6 findings (real engine)', { timeout: 600_000 }, () 
 	it('a layer 50 dB under its partner → LAYER_INAUDIBLE (info); the partner is heard', async () => {
 		const fx = buildCheckDoc(media);
 		const r = fx.b.tx([
-			{ type: 'soundCue.add', cues: [{ frame: 210, kind: 'cut', weight: 'hero', source: 'user', ref: '$c' }] },
+			{
+				type: 'soundCue.add',
+				cues: [{ frame: 210, kind: 'cut', weight: 'hero', source: 'user', ref: '$c' }],
+			},
 			{
 				type: 'soundDesign.place',
 				cueId: '$c',
@@ -457,7 +498,10 @@ describe('Sound Check Phase 6 findings (real engine)', { timeout: 600_000 }, () 
 		]);
 		const report = await check(seed(fx.doc()), 'layer');
 		const dead = issuesOf(report, 'LAYER_INAUDIBLE');
-		expect(dead.map((i) => i.clipIds?.[0]), describeIssues(report)).toEqual([r.refs.$b]);
+		expect(
+			dead.map((i) => i.clipIds?.[0]),
+			describeIssues(report),
+		).toEqual([r.refs.$b]);
 		expect(dead[0]!.severity).toBe('info');
 		expect(dead[0]!.cueId).toBe(r.refs.$c);
 		expect(dead[0]!.measured!.maxAddDb as number).toBeLessThan(1);
@@ -468,7 +512,9 @@ describe('Sound Check Phase 6 findings (real engine)', { timeout: 600_000 }, () 
 		const fx = buildCheckDoc(media);
 		// between the cues A and B, outside the dialogue (4–8 s), whose cues are silenced by it
 		const frames = [45, 51, 57, 63];
-		const marks = fx.b.tx(frames.map((f, i) => ({ type: 'marker.add', frame: f, name: `card ${i + 1}`, ref: `$m${i}` })));
+		const marks = fx.b.tx(
+			frames.map((f, i) => ({ type: 'marker.add', frame: f, name: `card ${i + 1}`, ref: `$m${i}` })),
+		);
 		const cues = fx.b.tx([
 			{
 				type: 'soundCue.add',
@@ -510,7 +556,10 @@ describe('Sound Check Phase 6 findings (real engine)', { timeout: 600_000 }, () 
 				{ type: 'media.setLibraryInfo', mediaId: riser, library: RISER_PROV },
 			]);
 			const r = b.tx([
-				{ type: 'soundCue.add', cues: [{ frame: 100, kind: 'cut', weight: 'support', source: 'user', ref: '$c' }] },
+				{
+					type: 'soundCue.add',
+					cues: [{ frame: 100, kind: 'cut', weight: 'support', source: 'user', ref: '$c' }],
+				},
 				{ type: 'soundDesign.place', cueId: '$c', layers: [{ mediaId: riser, align: 'end', ref: '$x' }] },
 			]);
 			if (move) b.tx([{ type: 'clip.move', clipIds: [r.refs.$x!], deltaFrames: move }]);

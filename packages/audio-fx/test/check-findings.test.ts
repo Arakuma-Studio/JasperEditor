@@ -214,7 +214,9 @@ describe('clip edges (EDGE)', () => {
 
 	it('never throws and stays finite on hostile input', () => {
 		const arr = fc
-			.array(fc.oneof(fc.double(), fc.constant(Number.NaN), fc.constant(Number.POSITIVE_INFINITY)), { maxLength: 500 })
+			.array(fc.oneof(fc.double(), fc.constant(Number.NaN), fc.constant(Number.POSITIVE_INFINITY)), {
+				maxLength: 500,
+			})
 			.map((a) => Float32Array.from(a));
 		fc.assert(
 			fc.property(arr, arr, arr, fc.double(), (a, b, c, ms) => {
@@ -319,12 +321,16 @@ describe('1/3-octave bands and layer audibility (LAYER_INAUDIBLE)', () => {
 		const rest = thirdOctaveEnergies([noise(3, 2880, 0.2)], 0, 2880, SR);
 		const layer = thirdOctaveEnergies([sine(2000, 0.05, SR, 2880)], 0, 2880, SR);
 		fc.assert(
-			fc.property(fc.double({ min: -40, max: 30, noNaN: true }), fc.double({ min: 0, max: 10, noNaN: true }), (g, d) => {
-				const k = (x: number) => Float64Array.from(layer, (v) => v * 10 ** (x / 10));
-				expect(layerAudibility(k(g + d), rest).maxAddDb).toBeGreaterThanOrEqual(
-					layerAudibility(k(g), rest).maxAddDb - 1e-9,
-				);
-			}),
+			fc.property(
+				fc.double({ min: -40, max: 30, noNaN: true }),
+				fc.double({ min: 0, max: 10, noNaN: true }),
+				(g, d) => {
+					const k = (x: number) => Float64Array.from(layer, (v) => v * 10 ** (x / 10));
+					expect(layerAudibility(k(g + d), rest).maxAddDb).toBeGreaterThanOrEqual(
+						layerAudibility(k(g), rest).maxAddDb - 1e-9,
+					);
+				},
+			),
 			{ numRuns: 200 },
 		);
 		fc.assert(

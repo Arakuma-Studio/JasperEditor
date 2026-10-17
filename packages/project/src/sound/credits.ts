@@ -327,7 +327,9 @@ export function soundCredits(
  * a sound synced in timed relation with a moving image Adapted Material, and §3(b) asks for that to be shared under
  * BY-SA 4.0 or a compatible licence. Null when no listed sound is ShareAlike. English, like the rest of the file.
  */
-export function shareAlikeNotice(rows: readonly Pick<SoundCreditRow, 'shareAlike' | 'title' | 'soundId'>[]): string | null {
+export function shareAlikeNotice(
+	rows: readonly Pick<SoundCreditRow, 'shareAlike' | 'title' | 'soundId'>[],
+): string | null {
 	const sa = rows.filter((r) => r.shareAlike);
 	if (!sa.length) return null;
 	const names = sa

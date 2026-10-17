@@ -124,8 +124,10 @@ describe('requests, collections, badges, names', () => {
 			searchRequest({ ...DEFAULT_FILTERS, includeShareAlike: true }, { limit: 1, offset: 0 }).license,
 		).toBe('commercial-safe-sa');
 		expect(
-			searchRequest({ ...DEFAULT_FILTERS, commercialSafe: false, includeShareAlike: true }, { limit: 1, offset: 0 })
-				.license,
+			searchRequest(
+				{ ...DEFAULT_FILTERS, commercialSafe: false, includeShareAlike: true },
+				{ limit: 1, offset: 0 },
+			).license,
 		).toBe('any');
 		expect(DEFAULT_FILTERS.includeShareAlike).toBe(false);
 	});
@@ -150,7 +152,10 @@ describe('requests, collections, badges, names', () => {
 		expect(licenseBadge({ license: 'CC-BY-4.0', source: src }).text).toBe('BY');
 		expect(licenseBadge({ license: 'CC-BY-SA-4.0', source: src }).text).toBe('BY-SA');
 		// ShareAlike (spec 12 P6-E13): flagged, and the title says what it asks of the video
-		expect(licenseBadge({ license: 'CC-BY-SA-4.0', source: src })).toMatchObject({ shareAlike: true, warn: false });
+		expect(licenseBadge({ license: 'CC-BY-SA-4.0', source: src })).toMatchObject({
+			shareAlike: true,
+			warn: false,
+		});
 		expect(licenseBadge({ license: 'CC-BY-SA-4.0', source: src }).title).toMatch(/shared under CC BY-SA/);
 		expect(licenseBadge({ license: 'CC-BY-4.0', source: src }).shareAlike).toBeUndefined();
 		expect(

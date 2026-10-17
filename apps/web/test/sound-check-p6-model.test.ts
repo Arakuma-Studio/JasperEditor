@@ -10,11 +10,20 @@ import { __setCatalogForTests } from '../src/i18n/runtime.ts';
 import { CATEGORY_LABELS, CATEGORY_ORDER, groupIssues, messageText } from '../src/sound/check-model.ts';
 
 const root = join(__dirname, '../../..');
-const ES = JSON.parse(readFileSync(join(root, 'apps/web/src/i18n/es.json'), 'utf8')) as Record<string, string>;
-const NAMES = JSON.parse(readFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), 'utf8')) as string[];
+const ES = JSON.parse(readFileSync(join(root, 'apps/web/src/i18n/es.json'), 'utf8')) as Record<
+	string,
+	string
+>;
+const NAMES = JSON.parse(
+	readFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), 'utf8'),
+) as string[];
 afterEach(() => __setCatalogForTests('en', null));
 
-const issue = (code: SoundCheckIssue['code'], frame: number, severity: SoundCheckIssue['severity']): SoundCheckIssue => ({
+const issue = (
+	code: SoundCheckIssue['code'],
+	frame: number,
+	severity: SoundCheckIssue['severity'],
+): SoundCheckIssue => ({
 	id: `${code}:${frame}`,
 	code,
 	severity,
@@ -60,7 +69,9 @@ describe('Phase 6 findings in the Sound Check panel', () => {
 		expect(messageText(soundCheckMessage('fixFadeIn', 1))).toBe(
 			'Fundido de entrada con una transición de potencia constante de 1 fotogramas',
 		);
-		expect(messageText(soundCheckMessage('licenseShareAlike', 'Riser', 'CC-BY-SA-4.0'))).toMatch(/CompartirIgual/);
+		expect(messageText(soundCheckMessage('licenseShareAlike', 'Riser', 'CC-BY-SA-4.0'))).toMatch(
+			/CompartirIgual/,
+		);
 	});
 
 	it('every Phase 6 template is a model string with a Spanish translation', () => {

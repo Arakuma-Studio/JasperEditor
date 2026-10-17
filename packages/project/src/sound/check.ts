@@ -59,7 +59,15 @@ export type SoundCheckVerdict = (typeof SOUND_CHECK_VERDICTS)[number];
  * Groups of the Sound Check panel (spec 12 §2.7 "issues grouped by category"). `edges` (clicks, cut edges, the mix's
  * own start and end) and `tonal` (harshness) are the P6-E review lenses of the same names (spec 12 §4 P6-E5).
  */
-export const SOUND_CHECK_CATEGORIES = ['loudness', 'sync', 'edges', 'mix', 'tonal', 'cues', 'licence'] as const;
+export const SOUND_CHECK_CATEGORIES = [
+	'loudness',
+	'sync',
+	'edges',
+	'mix',
+	'tonal',
+	'cues',
+	'licence',
+] as const;
 export type SoundCheckCategory = (typeof SOUND_CHECK_CATEGORIES)[number];
 export const SOUND_CHECK_CATEGORY: Readonly<Record<SoundCheckCode, SoundCheckCategory>> = {
 	LOUDNESS: 'loudness',
@@ -707,7 +715,8 @@ export const SOUND_CHECK_MESSAGES = {
 	whyNoPicture: 'Only if nothing on screen calls for it',
 	whySimilar: 'A different sound found by similarity: listen before keeping it',
 	whyExtendDecay: 'It changes the edit: the clip plays on until its sound has decayed',
-	whyHarshMasked: 'Lowering it by {0} dB would leave it masked (under {1} dB over the bed in its dominant band)',
+	whyHarshMasked:
+		'Lowering it by {0} dB would leave it masked (under {1} dB over the bed in its dominant band)',
 	whyHarshEq: 'An EQ dip changes its tone: listen to it',
 	whyLayer: 'Only if the layer should be heard: listen to the cue first',
 	whyCoverage: 'Only if these moments should sound like the others; mute them instead to keep them silent',

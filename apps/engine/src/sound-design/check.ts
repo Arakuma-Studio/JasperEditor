@@ -150,11 +150,11 @@ import {
 	coverageFindings,
 	EdgeTap,
 	edgeFindings,
+	endingFindings,
 	type FindCtx,
 	type FindRow,
 	harshFindings,
 	layerFindings,
-	endingFindings,
 } from './check-findings.ts';
 import type { EngineCueSources } from './engine-cues.ts';
 import {
@@ -1425,10 +1425,16 @@ export async function checkSequence(
 		const nominal = c.ref.expected - c.ref.anchor - c.a;
 		// the same sound twice near the cue (a repeat, a doubled layer) matches twice: its own copy is where the document
 		// plays it, unless that match is much weaker than the best one
-		const found = locateByCorrelation(ref, c.data, nominal - c.ref.searchBefore - hop, nominal + c.ref.searchAfter + hop, {
-			prefer: c.ref.documented - c.ref.anchor - c.a,
-			separation: Math.round(sr / fpsNum),
-		});
+		const found = locateByCorrelation(
+			ref,
+			c.data,
+			nominal - c.ref.searchBefore - hop,
+			nominal + c.ref.searchAfter + hop,
+			{
+				prefer: c.ref.documented - c.ref.anchor - c.a,
+				separation: Math.round(sr / fpsNum),
+			},
+		);
 		// an end-aligned sound's best match on the edge of its search window is the window's edge, not the sound (the
 		// sound plays outside it): not found there
 		const lagLo = nominal - c.ref.searchBefore - hop;

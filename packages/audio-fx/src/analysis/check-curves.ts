@@ -379,7 +379,10 @@ export function locateByCorrelation(
 // segment, summed over the channels, and how much a layer adds in each band over everything else.
 
 /** Centres of the 1/3-octave bands judged (Hz): 10^(k/10), k = 20 … 41. */
-export const THIRD_OCTAVE_CENTRES_HZ: readonly number[] = Array.from({ length: 22 }, (_, i) => 10 ** ((20 + i) / 10));
+export const THIRD_OCTAVE_CENTRES_HZ: readonly number[] = Array.from(
+	{ length: 22 },
+	(_, i) => 10 ** ((20 + i) / 10),
+);
 
 /**
  * Energies of `len` samples from `from` in each 1/3-octave band (Tukey 0.25 window, FFT zero-padded to a power of

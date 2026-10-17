@@ -139,7 +139,13 @@ describe('sound_check / view_sound_timeline', { timeout: 900_000 }, () => {
 				{ type: 'essentialSound.setType', clipIds: ['$s'], audioType: 'dialogue' },
 				{ type: 'mixer.setLoudness', enabled: true, targetLufs: -14, truePeakDb: -1 },
 				{ type: 'audio.setGain', clipIds: ['$m'], mode: 'set', db: 1.5 },
-				{ type: 'transition.add', clipId: '$m', edge: 'out', effectId: 'jasper.exponential-fade', duration: 60 },
+				{
+					type: 'transition.add',
+					clipId: '$m',
+					edge: 'out',
+					effectId: 'jasper.exponential-fade',
+					duration: 60,
+				},
 				{ type: 'media.setLibraryInfo', mediaId: hit, library: provenance('hit') },
 				{
 					type: 'media.setLibraryInfo',

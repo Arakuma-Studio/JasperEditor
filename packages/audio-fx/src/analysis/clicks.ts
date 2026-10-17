@@ -32,7 +32,7 @@ export const CLICK_DETECTOR = {
 } as const;
 
 /** Butterworth 4th order = two biquads with these Q values. */
-const BUTTER4_Q = [0.5411961, 1.3065630] as const;
+const BUTTER4_Q = [0.5411961, 1.306563] as const;
 
 export type ClickBurst = {
 	/** Sample index from the first sample pushed. */
@@ -89,7 +89,8 @@ export class ClickDetector {
 	private finished = false;
 
 	constructor(sampleRate: number, channels: number, opts: ClickDetectorOptions = {}) {
-		this.sampleRate = fin(sampleRate) && sampleRate >= 1000 && sampleRate <= 768_000 ? Math.round(sampleRate) : 48_000;
+		this.sampleRate =
+			fin(sampleRate) && sampleRate >= 1000 && sampleRate <= 768_000 ? Math.round(sampleRate) : 48_000;
 		this.channels = Math.max(1, Math.min(32, Math.floor(fin(channels) ? channels : 1)));
 		this.enabled = this.sampleRate >= CLICK_DETECTOR.minSampleRate;
 		const ms = (x: number) => Math.max(1, Math.round((x / 1000) * this.sampleRate));
@@ -100,7 +101,8 @@ export class ClickDetector {
 		this.refractory = ms(CLICK_DETECTOR.refractoryMs);
 		this.pad = Math.max(this.hLocal, this.hOuter, this.hNear) + 1;
 		this.chunk = 16_384;
-		this.minLevel = fin(opts.minLevel as number) && (opts.minLevel as number) > 0 ? (opts.minLevel as number) : 1e-4;
+		this.minLevel =
+			fin(opts.minLevel as number) && (opts.minLevel as number) > 0 ? (opts.minLevel as number) : 1e-4;
 		this.coeffs = new Float64Array(10);
 		BUTTER4_Q.forEach((q, k) => {
 			const c = designBiquad('highPass', this.sampleRate, CLICK_DETECTOR.highpassHz, q);
@@ -134,7 +136,18 @@ export class ClickDetector {
 			const room = this.buf[0]!.length - this.len;
 			const take = Math.min(n - i, room);
 			const k = this.coeffs;
-			const [b0, b1, b2, a1, a2, d0, d1, d2, e1, e2] = [k[0]!, k[1]!, k[2]!, k[3]!, k[4]!, k[5]!, k[6]!, k[7]!, k[8]!, k[9]!];
+			const [b0, b1, b2, a1, a2, d0, d1, d2, e1, e2] = [
+				k[0]!,
+				k[1]!,
+				k[2]!,
+				k[3]!,
+				k[4]!,
+				k[5]!,
+				k[6]!,
+				k[7]!,
+				k[8]!,
+				k[9]!,
+			];
 			for (let c = 0; c < this.channels; c++) {
 				const x = planar[c];
 				const st = this.state[c]!;

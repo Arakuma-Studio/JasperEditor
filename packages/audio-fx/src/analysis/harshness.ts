@@ -41,7 +41,8 @@ export class PresenceMeter {
 	private readonly cap: number;
 
 	constructor(sampleRate: number, channels: number, opts: { hopSec?: number; maxHops?: number } = {}) {
-		this.sampleRate = fin(sampleRate) && sampleRate >= 1000 && sampleRate <= 768_000 ? Math.round(sampleRate) : 48_000;
+		this.sampleRate =
+			fin(sampleRate) && sampleRate >= 1000 && sampleRate <= 768_000 ? Math.round(sampleRate) : 48_000;
 		this.channels = Math.max(1, Math.min(32, Math.floor(fin(channels) ? channels : 1)));
 		const hopSec = fin(opts.hopSec as number) && (opts.hopSec as number) > 0 ? (opts.hopSec as number) : 0.01;
 		this.hop = Math.max(1, Math.round(this.sampleRate * hopSec));
@@ -49,10 +50,14 @@ export class PresenceMeter {
 		const nyq = this.sampleRate * 0.49;
 		const sections = [
 			...BUTTER4_Q.map((q) => designBiquad('highPass', this.sampleRate, PRESENCE_BAND.lowHz, q)),
-			...BUTTER4_Q.map((q) => designBiquad('lowPass', this.sampleRate, Math.min(nyq, PRESENCE_BAND.highHz), q)),
+			...BUTTER4_Q.map((q) =>
+				designBiquad('lowPass', this.sampleRate, Math.min(nyq, PRESENCE_BAND.highHz), q),
+			),
 		];
 		this.coeffs = new Float64Array(20);
-		sections.forEach((c, k) => this.coeffs.set([c.b0, c.b1, c.b2, c.a1, c.a2], k * 5));
+		sections.forEach((c, k) => {
+			this.coeffs.set([c.b0, c.b1, c.b2, c.a1, c.a2], k * 5);
+		});
 		this.state = new Float64Array(8 * this.channels);
 		this.ring = new Float64Array(this.window);
 		this.cap = Math.max(1, Math.min(6 * 3600 * 100, Math.floor(opts.maxHops ?? 6 * 3600 * 100)));

@@ -41,8 +41,8 @@ import {
 import {
 	type AudioClip,
 	type Clip,
-	CONSTANT_POWER,
 	type ClipSfx,
+	CONSTANT_POWER,
 	evaluate,
 	FADER_MIN_DB,
 	FLICKS_PER_SECOND,
@@ -53,11 +53,11 @@ import {
 	mediaDurationFlicks,
 	type ProjectDocument,
 	type Rational,
+	type Registries,
 	readEssentialSound,
 	readLibraryProvenance,
-	type Registries,
-	SOUND_CHECK_EDGE_THRESHOLDS,
 	type Sequence,
+	SOUND_CHECK_EDGE_THRESHOLDS,
 	type SoundCheckCode,
 	type SoundCheckMessage,
 	type SoundCue,
@@ -122,7 +122,9 @@ export type FindCtx = {
 	tc(frame: number): string;
 	add(i: FindingIssue): void;
 	warn(code: string, message: string): void;
-	dryRun(commands: Record<string, unknown>[]): { ok: true; doc: ProjectDocument } | { ok: false; message: string };
+	dryRun(
+		commands: Record<string, unknown>[],
+	): { ok: true; doc: ProjectDocument } | { ok: false; message: string };
 	commandFix(
 		label: SoundCheckMessage,
 		commands: Record<string, unknown>[],
@@ -158,11 +160,7 @@ export type FindRow = {
 export class CheckProbes {
 	readonly clicks = new Map<StemName, ClickDetector>();
 	readonly presence = new Map<'sfx' | 'music' | 'dialogue', PresenceMeter>();
-	constructor(
-		sampleRate: number,
-		channels: number,
-		stemIds: Record<StemName, Set<string>>,
-	) {
+	constructor(sampleRate: number, channels: number, stemIds: Record<StemName, Set<string>>) {
 		for (const s of Object.keys(stemIds) as StemName[])
 			if (stemIds[s].size > 0) this.clicks.set(s, new ClickDetector(sampleRate, channels));
 		for (const s of ['sfx', 'music', 'dialogue'] as const)
@@ -285,7 +283,13 @@ function neighbourAt(seq: Sequence, clip: AudioClip, edge: 'start' | 'end'): Aud
  * Volume keyframe ramp — the clip's volume at the edge at least 12 dB under the loudest key within 200 ms of it, the
  * fade lasting until a key within 1 dB of that. 0 without a fade.
  */
-export function edgeFadeMs(seq: Sequence, clip: AudioClip, edge: 'start' | 'end', fps: number, F: number): number {
+export function edgeFadeMs(
+	seq: Sequence,
+	clip: AudioClip,
+	edge: 'start' | 'end',
+	fps: number,
+	F: number,
+): number {
 	const t = transitionAt(seq, clip.id, edge);
 	let ms = t ? (t.duration / fps) * 1000 : 0;
 	try {
@@ -295,7 +299,7 @@ export function edgeFadeMs(seq: Sequence, clip: AudioClip, edge: 'start' | 'end'
 			const rate = clip.speed?.rate || 1;
 			const reverse = !!clip.speed?.reverse;
 			// content time at the edge, and the direction into the clip
-			const atStart = edge === 'start' !== reverse;
+			const atStart = (edge === 'start') !== reverse;
 			const t0 = atStart ? clip.sourceIn : clip.sourceIn + clip.duration * F * rate;
 			const span = 0.2 * FLICKS_PER_SECOND * rate;
 			const near = keys
@@ -320,7 +324,12 @@ export function edgeFadeMs(seq: Sequence, clip: AudioClip, edge: 'start' | 'end'
 const framesFor = (ms: number, fps: number) => Math.max(1, Math.ceil((ms / 1000) * fps - 1e-9));
 
 /** The duration of the transition at a clip edge after commands, or null. */
-function transitionAfter(doc: ProjectDocument, seqId: string, clipId: string, edge: 'start' | 'end'): number | null {
+function transitionAfter(
+	doc: ProjectDocument,
+	seqId: string,
+	clipId: string,
+	edge: 'start' | 'end',
+): number | null {
 	const seq = doc.sequences[seqId];
 	if (!seq) return null;
 	return transitionAt(seq as Sequence, clipId, edge)?.duration ?? null;
@@ -401,8 +410,20 @@ function clickFix(
 		];
 		if (ctx.dryRun(xf).ok) return { label: soundCheckMessage('fixCrossfade', 1), commands: xf };
 		const both = [
-			{ type: 'transition.add', clipId: clip.id, edge: edge === 'start' ? 'in' : 'out', effectId: CONSTANT_POWER, duration: 1 },
-			{ type: 'transition.add', clipId: other.id, edge: edge === 'start' ? 'out' : 'in', effectId: CONSTANT_POWER, duration: 1 },
+			{
+				type: 'transition.add',
+				clipId: clip.id,
+				edge: edge === 'start' ? 'in' : 'out',
+				effectId: CONSTANT_POWER,
+				duration: 1,
+			},
+			{
+				type: 'transition.add',
+				clipId: other.id,
+				edge: edge === 'start' ? 'out' : 'in',
+				effectId: CONSTANT_POWER,
+				duration: 1,
+			},
 		];
 		if (ctx.dryRun(both).ok)
 			return { label: soundCheckMessage(edge === 'start' ? 'fixFadeIn' : 'fixFadeOut', 1), commands: both };
@@ -432,7 +453,9 @@ function edgesOf(ctx: FindCtx): EdgeRef[] {
 			if (frame <= 0 || frame >= ctx.duration || frame < ctx.range.start || frame >= ctx.range.end) continue;
 			const neighbour = neighbourAt(ctx.seq, c, edge);
 			const joint =
-				!!c.remix && !!neighbour?.remix && (neighbour.remix as { id?: string }).id === (c.remix as { id?: string }).id;
+				!!c.remix &&
+				!!neighbour?.remix &&
+				(neighbour.remix as { id?: string }).id === (c.remix as { id?: string }).id;
 			out.push({
 				clip: c,
 				edge,
@@ -456,7 +479,12 @@ function transitionEdges(ctx: FindCtx): { sample: number; frame: number; clip: A
 		const span = transitionSpan(inc.start, t.duration, t.alignment);
 		for (const f of [span.start, span.end])
 			if (f > 0 && f < ctx.duration && f !== inc.start)
-				out.push({ sample: frameToSample(f, ctx.rate, ctx.sr), frame: f, clip: f < inc.start ? inc : outC, t });
+				out.push({
+					sample: frameToSample(f, ctx.rate, ctx.sr),
+					frame: f,
+					clip: f < inc.start ? inc : outC,
+					t,
+				});
 	}
 	return out;
 }
@@ -526,7 +554,10 @@ const isMusic = (c: AudioClip) => !!c.remix || readEssentialSound(c.essential)?.
 /**
  * CLICK and EDGE (P6-E1). `bursts` are the click detector's per stem (sample = index from the first rendered sample).
  */
-export async function edgeFindings(ctx: FindCtx, bursts: { stem: StemName; burst: ClickBurst }[]): Promise<void> {
+export async function edgeFindings(
+	ctx: FindCtx,
+	bursts: { stem: StemName; burst: ClickBurst }[],
+): Promise<void> {
 	const edges = edgesOf(ctx);
 	const trEdges = transitionEdges(ctx);
 	const near = Math.round((T.clickEdgeMs / 1000) * ctx.sr);
@@ -569,7 +600,10 @@ export async function edgeFindings(ctx: FindCtx, bursts: { stem: StemName; burst
 		}
 		const loudest = cl.reduce((m, x) => (x.burst.levelDb > m.burst.levelDb ? x : m), cl[0]!);
 		const seconds = loudest.abs / ctx.sr;
-		const measured = (b: (typeof cl)[number], extra: Record<string, number | string | boolean | null> = {}) => ({
+		const measured = (
+			b: (typeof cl)[number],
+			extra: Record<string, number | string | boolean | null> = {},
+		) => ({
 			atSec: r4(b.abs / ctx.sr),
 			stem: b.stem,
 			stems: [...new Set(cl.map((x) => x.stem))].join(','),
@@ -609,7 +643,9 @@ export async function edgeFindings(ctx: FindCtx, bursts: { stem: StemName; burst
 			const commands = [{ type: 'transition.update', transitionId: tr.t.id, duration: d }];
 			const run = ctx.dryRun(commands);
 			const longer =
-				run.ok && ((run.doc.sequences[ctx.seq.id]?.transitions?.[tr.t.id] as Transition | undefined)?.duration ?? 0) > tr.t.duration;
+				run.ok &&
+				((run.doc.sequences[ctx.seq.id]?.transitions?.[tr.t.id] as Transition | undefined)?.duration ?? 0) >
+					tr.t.duration;
 			ctx.add({
 				subject,
 				code: 'CLICK',
@@ -617,9 +653,16 @@ export async function edgeFindings(ctx: FindCtx, bursts: { stem: StemName; burst
 				frame: tr.frame,
 				timecode: ctx.tc(tr.frame),
 				clipIds: [tr.t.outgoingClipId, tr.t.incomingClipId].filter((x): x is string => !!x),
-				message: soundCheckMessage('clickTransition', clipTitle(ctx.doc, tr.clip), ctx.tc(tr.frame), fmt(loudest.burst.overDb)),
+				message: soundCheckMessage(
+					'clickTransition',
+					clipTitle(ctx.doc, tr.clip),
+					ctx.tc(tr.frame),
+					fmt(loudest.burst.overDb),
+				),
 				measured: measured(loudest, { edgeOffsetMs: r2(((loudest.abs - tr.sample) / ctx.sr) * 1000) }),
-				...(longer ? { fix: ctx.commandFix(soundCheckMessage('fixLengthenTransition', d), commands, true) } : {}),
+				...(longer
+					? { fix: ctx.commandFix(soundCheckMessage('fixLengthenTransition', d), commands, true) }
+					: {}),
 			});
 			continue;
 		}
@@ -650,7 +693,10 @@ export async function edgeFindings(ctx: FindCtx, bursts: { stem: StemName; burst
 		});
 	}
 	if (errors >= 200 || infos >= 50)
-		ctx.warn('W_CLICKS_CAPPED', `More clicks than reported: the first ${errors} at edits and ${infos} inside clips are listed`);
+		ctx.warn(
+			'W_CLICKS_CAPPED',
+			`More clicks than reported: the first ${errors} at edits and ${infos} inside clips are listed`,
+		);
 
 	// ── EDGE: decode each judged edge's neighbourhood of the source ──
 	type Job = {
@@ -686,12 +732,24 @@ export async function edgeFindings(ctx: FindCtx, bursts: { stem: StemName; burst
 			const hasBefore = inSec > 1e-4 && inSec > lead + 1e-3;
 			if (!hasBefore && !wantStart.has(c.id)) continue;
 			const pre = hasBefore ? Math.min(T.edgeWindowMs / 1000, inSec / rate) : 0;
-			jobs.push({ e, fileStart: inSec - pre * rate, fileDur: (pre + inside) * rate, before: pre, after: inside });
+			jobs.push({
+				e,
+				fileStart: inSec - pre * rate,
+				fileDur: (pre + inside) * rate,
+				before: pre,
+				after: inside,
+			});
 		} else {
 			const trail = prov?.trailSilenceSec ?? 0;
 			if (outSec >= mediaSec - Math.max(1e-3, trail)) continue;
 			const post = Math.min(2, (mediaSec - outSec) / rate);
-			jobs.push({ e, fileStart: outSec - inside * rate, fileDur: (inside + post) * rate, before: inside, after: post });
+			jobs.push({
+				e,
+				fileStart: outSec - inside * rate,
+				fileDur: (inside + post) * rate,
+				before: inside,
+				after: post,
+			});
 		}
 		byClip.set(`${c.id}:${e.edge}`, jobs.at(-1)!);
 	}
@@ -703,7 +761,8 @@ export async function edgeFindings(ctx: FindCtx, bursts: { stem: StemName; burst
 		j.data = await decodeSpan(ctx, j.e.clip, j.fileStart, j.fileDur);
 		if (!j.data) failed++;
 	});
-	if (failed) ctx.warn('W_EDGES_UNDECODED', `${failed} clip edge(s) could not be decoded and were not judged`);
+	if (failed)
+		ctx.warn('W_EDGES_UNDECODED', `${failed} clip edge(s) could not be decoded and were not judged`);
 	const split = (j: Job): { before: Float32Array; after: Float32Array } | null => {
 		if (!j.data) return null;
 		const k = Math.min(j.data.length, Math.round(j.before * ctx.sr));
@@ -758,7 +817,11 @@ export async function edgeFindings(ctx: FindCtx, bursts: { stem: StemName; burst
 			if (np) {
 				const w = ms(T.musicWindowMs);
 				const g = (x: AudioClip) => (fin(x.gainDb) ? x.gainDb : 0);
-				const s = measureSplice(inside.subarray(Math.max(0, inside.length - w)), after.subarray(0, w), np.after.subarray(0, w));
+				const s = measureSplice(
+					inside.subarray(Math.max(0, inside.length - w)),
+					after.subarray(0, w),
+					np.after.subarray(0, w),
+				);
 				const sm = { outDb: s.outDb + g(c), cutOffDb: s.cutOffDb + g(c), nextInDb: s.nextInDb + g(next) };
 				const xt = transitionAt(ctx.seq, c.id, 'end');
 				const xfMs = xt ? (xt.duration / ctx.fps) * 1000 : 0;
@@ -797,7 +860,14 @@ export async function edgeFindings(ctx: FindCtx, bursts: { stem: StemName; burst
 						frame: j.e.frame,
 						timecode: ctx.tc(j.e.frame),
 						clipIds: [c.id, next.id],
-						message: soundCheckMessage('edgeMusic', title, ctx.tc(j.e.frame), fmt(sm.cutOffDb), fmt(sm.nextInDb), Math.round(xfMs)),
+						message: soundCheckMessage(
+							'edgeMusic',
+							title,
+							ctx.tc(j.e.frame),
+							fmt(sm.cutOffDb),
+							fmt(sm.nextInDb),
+							Math.round(xfMs),
+						),
 						measured: {
 							variant: 'music',
 							outDb: r1(sm.outDb),
@@ -814,7 +884,8 @@ export async function edgeFindings(ctx: FindCtx, bursts: { stem: StemName; burst
 		}
 		const m = measureExit(inside, after.subarray(0, ms(T.edgeWindowMs)), ctx.sr);
 		const fade = edgeFadeMs(ctx.seq, c, 'end', ctx.fps, ctx.F);
-		if (!isChoppedDecay(m, fade, { tailDb: T.decayTailDb, postDb: T.decayPostDb, fadeMs: T.decayFadeMs })) continue;
+		if (!isChoppedDecay(m, fade, { tailDb: T.decayTailDb, postDb: T.decayPostDb, fadeMs: T.decayFadeMs }))
+			continue;
 		let fix: SoundCheckFix | undefined;
 		const f = fadeFix(ctx, c, 'end', framesFor(T.decayFadeMs, ctx.fps));
 		if (f) fix = ctx.commandFix(f.label, f.commands, true);
@@ -837,7 +908,14 @@ export async function edgeFindings(ctx: FindCtx, bursts: { stem: StemName; burst
 			frame: j.e.frame,
 			timecode: ctx.tc(j.e.frame),
 			clipIds: [c.id],
-			message: soundCheckMessage('edgeDecay', title, ctx.tc(j.e.frame), fmt(-m.tailDb), fmt(m.postDb), Math.round(fade)),
+			message: soundCheckMessage(
+				'edgeDecay',
+				title,
+				ctx.tc(j.e.frame),
+				fmt(-m.tailDb),
+				fmt(m.postDb),
+				Math.round(fade),
+			),
 			measured: {
 				variant: 'decay',
 				tailDb: r1(m.tailDb),
@@ -917,7 +995,8 @@ export function harshFindings(
 					})()
 				: null;
 			const masksOk = ev.every((r) => {
-				const min = r.info.weight === 'ambient' || r.sfx?.role === 'layer' ? null : MASKED_MIN_LIFT_DB[r.info.weight];
+				const min =
+					r.info.weight === 'ambient' || r.sfx?.role === 'layer' ? null : MASKED_MIN_LIFT_DB[r.info.weight];
 				if (min === null) return true;
 				if (!r.solver || !lowered) return false;
 				const lift = lowered[r.solver.index]?.liftDb ?? null;
@@ -949,7 +1028,8 @@ export function harshFindings(
 						(ctx.doc.media?.[main.clip.mediaId] as { library?: unknown } | undefined)?.library,
 					);
 					const bands = (prov?.descriptors as { octaveBandsDb?: number[] } | undefined)?.octaveBandsDb;
-					const hz = bands && bands.length >= 6 ? ((bands[4] ?? -120) >= (bands[5] ?? -120) ? 2500 : 4000) : 3500;
+					const hz =
+						bands && bands.length >= 6 ? ((bands[4] ?? -120) >= (bands[5] ?? -120) ? 2500 : 4000) : 3500;
 					const dip = Math.min(30, Math.max(1, r1(amount)));
 					const eq = ev.map((r) => ({
 						type: 'effect.add',
@@ -958,7 +1038,12 @@ export function harshFindings(
 						params: { b4On: true, b4Freq: hz, b4Gain: -dip, b4Q: 1.4 },
 					}));
 					if (ctx.dryRun(eq).ok)
-						fix = ctx.commandFix(soundCheckMessage('fixHarshEq', hz, fmt(dip)), eq, false, soundCheckMessage('whyHarshEq'));
+						fix = ctx.commandFix(
+							soundCheckMessage('fixHarshEq', hz, fmt(dip)),
+							eq,
+							false,
+							soundCheckMessage('whyHarshEq'),
+						);
 					else if (ctx.dryRun([gainCmd]).ok)
 						fix = ctx.commandFix(
 							soundCheckMessage('fixHarshGain', fmt(amount)),
@@ -1011,7 +1096,13 @@ export function harshFindings(
 				timecode: ctx.tc(r.frame),
 				clipIds: [r.clip.id],
 				...(r.cue ? { cueId: r.cue.id } : {}),
-				message: soundCheckMessage('bright', r.info.title, ctx.tc(r.frame), Math.round(c), T.brightCentroidHz),
+				message: soundCheckMessage(
+					'bright',
+					r.info.title,
+					ctx.tc(r.frame),
+					Math.round(c),
+					T.brightCentroidHz,
+				),
 				measured: { variant: 'bright', centroidHz: Math.round(c) },
 			});
 		}
@@ -1023,7 +1114,8 @@ export function harshFindings(
 /** LAYER_INAUDIBLE (P6-E2): each layer of a multi-layer cue rendered alone and against the bed plus its other layers. */
 export async function layerFindings(ctx: FindCtx, rows: readonly FindRow[]): Promise<void> {
 	const byCue = new Map<string, FindRow[]>();
-	for (const r of rows) if (r.cue && ctx.playing.has(r.clip.id)) byCue.set(r.cue.id, [...(byCue.get(r.cue.id) ?? []), r]);
+	for (const r of rows)
+		if (r.cue && ctx.playing.has(r.clip.id)) byCue.set(r.cue.id, [...(byCue.get(r.cue.id) ?? []), r]);
 	const layers: { r: FindRow; others: FindRow[] }[] = [];
 	for (const [, list] of byCue) {
 		if (list.length < 2) continue;
@@ -1074,7 +1166,12 @@ export async function layerFindings(ctx: FindCtx, rows: readonly FindRow[]): Pro
 		const gain = a.gainForTargetDb;
 		let fix: SoundCheckFix | undefined;
 		if (gain !== null && gain <= 18) {
-			const cmd = { type: 'audio.setGain', clipIds: [r.clip.id], mode: 'adjust', db: r1(Math.max(0.1, gain)) };
+			const cmd = {
+				type: 'audio.setGain',
+				clipIds: [r.clip.id],
+				mode: 'adjust',
+				db: r1(Math.max(0.1, gain)),
+			};
 			if (ctx.dryRun([cmd]).ok)
 				fix = ctx.commandFix(
 					soundCheckMessage('fixLayerGain', fmt(gain), a.dominantHz),
@@ -1086,7 +1183,12 @@ export async function layerFindings(ctx: FindCtx, rows: readonly FindRow[]): Pro
 		if (!fix) {
 			const cmd = { type: 'clip.lift', clipIds: [r.clip.id], groups: false };
 			if (ctx.dryRun([cmd]).ok)
-				fix = ctx.commandFix(soundCheckMessage('fixRemoveLayer'), [cmd], false, soundCheckMessage('whyLayer'));
+				fix = ctx.commandFix(
+					soundCheckMessage('fixRemoveLayer'),
+					[cmd],
+					false,
+					soundCheckMessage('whyLayer'),
+				);
 		}
 		ctx.add({
 			subject: r.clip.id,
@@ -1129,7 +1231,11 @@ export function coverageClass(c: SoundCue): string {
 }
 
 /** COVERAGE (P6-E3). `dialogue` = dialogue spans in frames (cues there are silenced by dialogue: excluded). */
-export function coverageFindings(ctx: FindCtx, cues: readonly SoundCue[], dialogue: readonly [number, number][]): void {
+export function coverageFindings(
+	ctx: FindCtx,
+	cues: readonly SoundCue[],
+	dialogue: readonly [number, number][],
+): void {
 	const inDialogue = (f: number) => dialogue.some(([a, b]) => f >= a && f < b);
 	const classes = new Map<string, SoundCue[]>();
 	for (const c of cues) {
@@ -1153,14 +1259,29 @@ export function coverageFindings(ctx: FindCtx, cues: readonly SoundCue[], dialog
 				const sfx = (c as { sfx?: { placement?: { align?: string } } }).sfx;
 				return { mediaId: c.mediaId, ...(sfx?.placement?.align ? { align: sfx.placement.align } : {}) };
 			});
-		const fill = unfilled.map((c) => ({ type: 'soundDesign.place', sequenceId: ctx.seq.id, cueId: c.id, layers }));
+		const fill = unfilled.map((c) => ({
+			type: 'soundDesign.place',
+			sequenceId: ctx.seq.id,
+			cueId: c.id,
+			layers,
+		}));
 		const mute = unfilled.map((c) => ({ type: 'soundCue.update', cueId: c.id, muted: true }));
 		const title = layers[0] ? clipTitle(ctx.doc, ctx.seq.clips[model.placedClipIds![0]!] as Clip) : '';
 		let fix: SoundCheckFix | undefined;
 		if (layers.length && ctx.dryRun(fill).ok)
-			fix = ctx.commandFix(soundCheckMessage('fixFillCoverage', title), fill, false, soundCheckMessage('whyCoverage'));
+			fix = ctx.commandFix(
+				soundCheckMessage('fixFillCoverage', title),
+				fill,
+				false,
+				soundCheckMessage('whyCoverage'),
+			);
 		else if (ctx.dryRun(mute).ok)
-			fix = ctx.commandFix(soundCheckMessage('fixMuteCoverage'), mute, false, soundCheckMessage('whyCoverage'));
+			fix = ctx.commandFix(
+				soundCheckMessage('fixMuteCoverage'),
+				mute,
+				false,
+				soundCheckMessage('whyCoverage'),
+			);
 		const first = unfilled[0]!;
 		const last = unfilled.at(-1)!;
 		const tcs = unfilled.slice(0, 8).map((c) => ctx.tc(c.frame));
@@ -1226,7 +1347,10 @@ export function endingFindings(
 		const t0 = Math.max(0, end - T.endFadeSec * FLICKS_PER_SECOND);
 		// the fade reaches silence 50 ms before the end: the last 50 ms are what this check measures
 		const t1 = Math.max(t0 + 1, end - 0.05 * FLICKS_PER_SECOND);
-		const points = [...fadePoints(t0, t1, lane(t0), true), [Math.round(end), FADER_MIN_DB] as [number, number]];
+		const points = [
+			...fadePoints(t0, t1, lane(t0), true),
+			[Math.round(end), FADER_MIN_DB] as [number, number],
+		];
 		const cmds = [
 			...auto,
 			{ type: 'mixer.writeAutomation', sequenceId: ctx.seq.id, stripId: 'Mix', lane: 'volume', points },
@@ -1314,8 +1438,16 @@ export function arcFindings(
 			severity: 'info',
 			frame: f,
 			timecode: ctx.tc(f),
-			range: { start: Math.max(0, Math.round(frame - half)), end: Math.min(ctx.duration, Math.round(frame + half) + 1) },
-			message: soundCheckMessage('arcNoHero', ctx.tc(f), fmt(lufs), `${biggest.title} (${ctx.tc(biggest.frame)})`),
+			range: {
+				start: Math.max(0, Math.round(frame - half)),
+				end: Math.min(ctx.duration, Math.round(frame + half) + 1),
+			},
+			message: soundCheckMessage(
+				'arcNoHero',
+				ctx.tc(f),
+				fmt(lufs),
+				`${biggest.title} (${ctx.tc(biggest.frame)})`,
+			),
 			measured: { variant: 'no-hero', shortTermLufs: r1(lufs), heroes: heroes.length },
 		});
 	} else if (late && !inside.length)

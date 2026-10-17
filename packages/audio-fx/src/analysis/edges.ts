@@ -79,7 +79,11 @@ export type EntryMeasure = {
 };
 
 /** Measures a clip's head: `inside` starts at the In point, `before` is the source just before it (may be empty). */
-export function measureEntry(inside: ArrayLike<number>, before: ArrayLike<number>, sampleRate: number): EntryMeasure {
+export function measureEntry(
+	inside: ArrayLike<number>,
+	before: ArrayLike<number>,
+	sampleRate: number,
+): EntryMeasure {
 	const sr = fin(sampleRate) && sampleRate > 0 ? sampleRate : 48_000;
 	const peak = peakOf(inside);
 	const head = Math.max(1, Math.round((EDGE_LIMITS.levelMs / 1000) * sr));
@@ -110,7 +114,11 @@ export type ExitMeasure = {
 };
 
 /** Measures a clip's tail: `inside` ends at the Out point, `after` is the source just after it (may be empty). */
-export function measureExit(inside: ArrayLike<number>, after: ArrayLike<number>, sampleRate: number): ExitMeasure {
+export function measureExit(
+	inside: ArrayLike<number>,
+	after: ArrayLike<number>,
+	sampleRate: number,
+): ExitMeasure {
 	const sr = fin(sampleRate) && sampleRate > 0 ? sampleRate : 48_000;
 	const peak = peakOf(inside);
 	const w = Math.max(1, Math.round((EDGE_LIMITS.levelMs / 1000) * sr));
@@ -145,7 +153,8 @@ export function decayAfterMs(
 	const sr = fin(sampleRate) && sampleRate > 0 ? sampleRate : 48_000;
 	if (!(peak > 0)) return 0;
 	const w = Math.max(1, Math.round((windowMs / 1000) * sr));
-	for (let i = 0; i + w <= after.length; i += w) if (db(rmsOf(after, i, i + w) / peak) < belowDb) return (i / sr) * 1000;
+	for (let i = 0; i + w <= after.length; i += w)
+		if (db(rmsOf(after, i, i + w) / peak) < belowDb) return (i / sr) * 1000;
 	return null;
 }
 
