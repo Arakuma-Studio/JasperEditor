@@ -13,7 +13,9 @@ import { encodeWav } from '../packages/audio-dsp/src/index.ts';
 import { testMusic } from '../packages/audio-fx/test/music.ts';
 import {
 	appliedLabels,
+	clipBox,
 	clipElement,
+	clips,
 	createProject,
 	enableAgentBridge,
 	mediaIdForFile,
@@ -99,17 +101,37 @@ test('Auto Tag tags speech, music and an effect; Suggest Cues puts no hero under
 	const music = await mediaIdForFile(page, 'music.wav');
 	const hit = await mediaIdForFile(page, 'hit.ogg');
 	const placed = await transact(page, [
-		{ type: 'clip.place', source: { mediaId: speech }, at: 0, tracks: { audio: 'A1' }, ref: '$s' },
+		{
+			type: 'clip.place',
+			source: { mediaId: speech },
+			sourceRange: { in: { seconds: 0 }, out: { seconds: 9 } },
+			at: 0,
+			tracks: { audio: 'A1' },
+			ref: '$s',
+		},
 		{ type: 'clip.place', source: { mediaId: music }, at: 0, tracks: { audio: 'A2' }, ref: '$m' },
-		{ type: 'clip.place', source: { mediaId: hit }, at: 420, tracks: { audio: 'A3' }, ref: '$h' },
+		{ type: 'clip.place', source: { mediaId: hit }, at: 240, tracks: { audio: 'A3' }, ref: '$h' },
 	] as never);
 	expect(placed.ok, JSON.stringify(placed)).toBe(true);
 	const ids = (placed as unknown as { refs: Record<string, string> }).refs;
+	const placedRows = await clips(page);
 
 	// select the three clips and run Clip ▸ Audio Options ▸ Auto Tag Audio Types
-	await clipElement(page, ids.$s!).click();
-	await clipElement(page, ids.$m!).click({ modifiers: ['Control'] });
-	await clipElement(page, ids.$h!).click({ modifiers: ['Control'] });
+	const pick = async (id: string, add: boolean) => {
+		const b = await clipBox(page, id);
+		if (add) await page.keyboard.down('Shift');
+		await page.mouse.click(b.x + 8, b.y + b.height / 2);
+		if (add) await page.keyboard.up('Shift');
+	};
+	await pick(ids.$s!, false);
+	await pick(ids.$m!, true);
+	await pick(ids.$h!, true);
+	await expect
+		.poll(async () => {
+			const sel = JSON.stringify(await query(page, 'selection.get'));
+			return [ids.$s!, ids.$m!, ids.$h!].every((id) => sel.includes(id));
+		})
+		.toBe(true);
 	const menubar = page.getByTestId('title-bar').getByRole('menubar');
 	await menubar.getByRole('menuitem', { name: 'Clip', exact: true }).click();
 	await page.getByRole('menuitem', { name: 'Audio Options' }).hover();
@@ -135,6 +157,10 @@ test('Auto Tag tags speech, music and an effect; Suggest Cues puts no hero under
 	await expect(banner).toBeHidden();
 	await expect(badge(ids.$s!, 'dialogue')).not.toHaveAttribute('data-auto-tag', 'true');
 	expect((await essentialOf(page, ids.$s!))?.tagged).toBeUndefined();
+	// tagging and confirming moved nothing
+	expect(await clips(page)).toEqual(placedRows);
+	await page.waitForTimeout(500);
+	await page.screenshot({ path: join(outDir, 'confirmed.png') });
 
 	// two full-frame solids slam to a stop: at frame ≈ 98 (under the speech) and ≈ 458 (after it)
 	const solids = await transact(page, [
@@ -143,7 +169,7 @@ test('Auto Tag tags speech, music and an effect; Suggest Cues puts no hero under
 			at: 90,
 			duration: 60,
 			track: 'V2',
-			color: { r: 0.9, g: 0.3, b: 0.2, a: 1 },
+			color: [0.9, 0.3, 0.2, 1],
 			ref: '$a',
 		},
 		{
@@ -151,7 +177,7 @@ test('Auto Tag tags speech, music and an effect; Suggest Cues puts no hero under
 			at: 450,
 			duration: 60,
 			track: 'V2',
-			color: { r: 0.2, g: 0.4, b: 0.9, a: 1 },
+			color: [0.2, 0.4, 0.9, 1],
 			ref: '$b',
 		},
 		{
@@ -201,7 +227,7 @@ test('Auto Tag tags speech, music and an effect; Suggest Cues puts no hero under
 	expect(under!.weight).toBe('support');
 	expect(under!.reason).toContain('under dialogue');
 	expect(after!.weight).toBe('hero');
-	// no hero anywhere in the speech (0 … 12 s)
-	expect(all.filter((c) => c.weight === 'hero' && c.frame < 12 * 29.97)).toEqual([]);
+	// no hero anywhere in the speech (0 … 9 s)
+	expect(all.filter((c) => c.weight === 'hero' && c.frame < 9 * 29.97)).toEqual([]);
 	await page.screenshot({ path: join(outDir, 'cues.png') });
 });
