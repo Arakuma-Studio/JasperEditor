@@ -42,7 +42,11 @@ type Clip = {
 	essential?: { type?: string; tagged?: { by: string } };
 	sfx?: { role?: string };
 };
-type Seq = { id: string; clips: Record<string, Clip>; transitions: Record<string, { duration: number; trackId: string }> };
+type Seq = {
+	id: string;
+	clips: Record<string, Clip>;
+	transitions: Record<string, { duration: number; trackId: string }>;
+};
 
 async function sequence(p: Page): Promise<Seq> {
 	const seqs = await query<Record<string, Seq>>(p, 'doc.get', { path: ['sequences'] });
@@ -223,7 +227,9 @@ test('Essential Sound Role / Align: arrow keys move and choose', async () => {
 	await expect(role).toBeVisible({ timeout: 30_000 });
 	const before = (await sequence(page)).clips[sfx.id]!.sfx!.role;
 	const radios = role.getByRole('radio');
-	expect(await radios.evaluateAll((els) => els.filter((e) => (e as HTMLElement).tabIndex === 0).length)).toBe(1);
+	expect(await radios.evaluateAll((els) => els.filter((e) => (e as HTMLElement).tabIndex === 0).length)).toBe(
+		1,
+	);
 	await role.locator('[tabindex="0"]').focus();
 	await page.keyboard.press('ArrowRight');
 	await expect.poll(async () => (await sequence(page)).clips[sfx.id]!.sfx!.role).not.toBe(before);

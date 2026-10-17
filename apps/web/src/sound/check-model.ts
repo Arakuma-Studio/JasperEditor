@@ -506,7 +506,12 @@ function solverGainWhy(fix: NonNullable<SoundCheckIssue['fix']>): string | null 
 		if (c?.type !== 'soundDesign.applyGains' || !c.report || typeof c.report !== 'object') continue;
 		for (const r of Object.values(c.report as Record<string, unknown>)) {
 			if (!r || typeof r !== 'object') continue;
-			const lv = r as { limitedBy?: unknown; targetLiftDb?: unknown; achievedLiftDb?: unknown; reason?: unknown };
+			const lv = r as {
+				limitedBy?: unknown;
+				targetLiftDb?: unknown;
+				achievedLiftDb?: unknown;
+				reason?: unknown;
+			};
 			const why = solverReason({
 				limitedBy: Array.isArray(lv.limitedBy)
 					? lv.limitedBy.filter((x): x is string => typeof x === 'string')

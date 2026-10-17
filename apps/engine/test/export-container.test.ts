@@ -20,7 +20,16 @@ import { closeApps, DocBuilder, JSON_H, makeApp, register, TEST_FFPROBE, type Te
 import { writeBedFixture } from './sound-bed-fixture.ts';
 
 const LGPL: EncoderInventory = {
-	encoders: ['aac', 'libopus', 'pcm_s16le', 'pcm_s24le', 'prores_ks', 'libopenh264', 'libvpx-vp9', 'libsvtav1'],
+	encoders: [
+		'aac',
+		'libopus',
+		'pcm_s16le',
+		'pcm_s24le',
+		'prores_ks',
+		'libopenh264',
+		'libvpx-vp9',
+		'libsvtav1',
+	],
 	hwaccels: [],
 	license: 'lgpl',
 	lgplOnly: true,
@@ -47,7 +56,10 @@ describe('fitOutputFormat / selectVideoEncoder honour the requested container an
 
 	it('keeps the codec defaults when nothing or the same is asked (no behaviour change)', () => {
 		expect(fitOutputFormat('h264', 'export', true)).toEqual({ container: 'mp4', audioEncoder: 'aac' });
-		expect(fitOutputFormat('prores', 'export', true)).toEqual({ container: 'mov', audioEncoder: 'pcm_s16le' });
+		expect(fitOutputFormat('prores', 'export', true)).toEqual({
+			container: 'mov',
+			audioEncoder: 'pcm_s16le',
+		});
 		expect(fitOutputFormat('vp9', 'export', true)).toEqual({ container: 'webm', audioEncoder: 'libopus' });
 		expect(fitOutputFormat('vp9', 'export', false)).toEqual({ container: 'mp4', audioEncoder: 'aac' });
 		expect(fitOutputFormat('av1', 'export', true, { container: 'mp4', audio: 'aac' })).toEqual({
@@ -62,25 +74,41 @@ describe('fitOutputFormat / selectVideoEncoder honour the requested container an
 	});
 
 	it('what does not fit is reported in words, never silently', () => {
-		const prores = selectVideoEncoder(LGPL, { purpose: 'export', codec: 'prores', container: 'mp4', audio: 'aac' })!;
+		const prores = selectVideoEncoder(LGPL, {
+			purpose: 'export',
+			codec: 'prores',
+			container: 'mp4',
+			audio: 'aac',
+		})!;
 		expect(prores).toMatchObject({ container: 'mov', audioEncoder: 'pcm_s16le' });
 		expect(outputFormatChanges(prores, { container: 'mp4', audio: 'aac' })).toEqual([
 			{
 				code: 'OUTPUT_CONTAINER_CHANGED',
-				message: 'MP4 was requested but MP4 does not carry ProRes (MP4 takes H.264, HEVC, AV1, VP9): the file is MOV',
+				message:
+					'MP4 was requested but MP4 does not carry ProRes (MP4 takes H.264, HEVC, AV1, VP9): the file is MOV',
 			},
 			{
 				code: 'AUDIO_CODEC_CHANGED',
 				message: 'AAC audio was requested but ProRes masters carry PCM audio: the audio is PCM',
 			},
 		]);
-		const vp9 = selectVideoEncoder(LGPL, { purpose: 'export', codec: 'vp9', container: 'mov', audio: 'pcm' })!;
+		const vp9 = selectVideoEncoder(LGPL, {
+			purpose: 'export',
+			codec: 'vp9',
+			container: 'mov',
+			audio: 'pcm',
+		})!;
 		expect(vp9.container).toBe('webm');
 		expect(outputFormatChanges(vp9, { container: 'mov', audio: 'pcm' }).map((w) => w.code)).toEqual([
 			'OUTPUT_CONTAINER_CHANGED',
 			'AUDIO_CODEC_CHANGED',
 		]);
-		const pcmInMp4 = selectVideoEncoder(LGPL, { purpose: 'export', codec: 'h264', container: 'mp4', audio: 'pcm' })!;
+		const pcmInMp4 = selectVideoEncoder(LGPL, {
+			purpose: 'export',
+			codec: 'h264',
+			container: 'mp4',
+			audio: 'pcm',
+		})!;
 		expect(pcmInMp4).toMatchObject({ container: 'mp4', audioEncoder: 'aac' });
 		expect(outputFormatChanges(pcmInMp4, { container: 'mp4', audio: 'pcm' })).toEqual([
 			{
@@ -88,7 +116,12 @@ describe('fitOutputFormat / selectVideoEncoder honour the requested container an
 				message: 'PCM audio was requested but MP4 does not carry PCM audio (PCM needs MOV): the audio is AAC',
 			},
 		]);
-		const webm = selectVideoEncoder(NO_OPUS, { purpose: 'export', codec: 'vp9', container: 'webm', audio: 'opus' })!;
+		const webm = selectVideoEncoder(NO_OPUS, {
+			purpose: 'export',
+			codec: 'vp9',
+			container: 'webm',
+			audio: 'opus',
+		})!;
 		expect(webm).toMatchObject({ container: 'mp4', audioEncoder: 'aac' });
 		expect(outputFormatChanges(webm, { container: 'webm', audio: 'opus' })[0]!.message).toBe(
 			'WEBM was requested but WebM needs Opus audio, which this ffmpeg build lacks: the file is MP4',

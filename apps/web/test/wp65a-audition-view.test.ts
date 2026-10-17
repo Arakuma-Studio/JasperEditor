@@ -34,7 +34,8 @@ describe('onInContextView', () => {
 		});
 		return { events, off };
 	}
-	const seqOf = (session: EditorSession) => session.getCommitted().sequences[session.getState().activeSequenceId!]!;
+	const seqOf = (session: EditorSession) =>
+		session.getCommitted().sequences[session.getState().activeSequenceId!]!;
 
 	it('one start and one end with the frame the playhead returned to, also when a window replaces another', () => {
 		const { session } = makeSession();

@@ -8,9 +8,9 @@ import { SessionProvider } from '@jasper/session/react';
 import { closeAllDialogs, toasts } from '@jasper/ui';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_AUDIO_PREFS, parseAudioPrefs } from '../src/audio/prefs.ts';
 import { addedClipsToTag, autoTaggable, watchAutoTagOnAdd } from '../src/audio-fx/auto-tag-on-add.tsx';
 import { audioTypeClips } from '../src/audio-fx/ops.ts';
-import { DEFAULT_AUDIO_PREFS, parseAudioPrefs } from '../src/audio/prefs.ts';
 import { createCommandContext } from '../src/commands/context.ts';
 import { runCommand } from '../src/commands/registry.ts';
 import { clipMenuExtensions, type MenuItemSpec } from '../src/extensions/index.ts';
@@ -94,7 +94,13 @@ function fixture(category: 'dialogue' | 'music' | 'sfx' | 'ambience' = 'music') 
 			origin: origin as never,
 			sequenceId: seqId,
 			commands: [
-				{ type: 'clip.place', source: { mediaId: media[mediaIdx]! }, at, tracks: { audio: track }, ref: '$c' },
+				{
+					type: 'clip.place',
+					source: { mediaId: media[mediaIdx]! },
+					at,
+					tracks: { audio: track },
+					ref: '$c',
+				},
 			] as never[],
 		});
 		if (!res.ok) throw new Error(JSON.stringify(res.errors));
@@ -136,7 +142,9 @@ describe('Preferences ▸ Audio ▸ Auto-tag audio types in the timeline', () =>
 		const f = fixture('music');
 		const stop = watchAutoTagOnAdd(f.session, f.engine, { debounceMs: 0, enabled: () => true });
 		const id = f.place(0, 0);
-		await waitFor(() => expect(readEssentialSound((f.seq().clips[id] as AudioClip).essential)?.type).toBe('music'));
+		await waitFor(() =>
+			expect(readEssentialSound((f.seq().clips[id] as AudioClip).essential)?.type).toBe('music'),
+		);
 		expect(f.requests).toHaveLength(1);
 		expect(f.requests[0]!.clipIds).toEqual([id]);
 		expect(f.requests[0]!.sequenceId).toBe(f.seqId);
@@ -215,7 +223,9 @@ describe('Preferences ▸ Audio ▸ Auto-tag audio types in the timeline', () =>
 		await settle();
 		expect(readEssentialSound((f.seq().clips[id] as AudioClip).essential)).toBeNull();
 		g.cancel();
-		await waitFor(() => expect(readEssentialSound((f.seq().clips[id] as AudioClip).essential)?.type).toBe('ambience'));
+		await waitFor(() =>
+			expect(readEssentialSound((f.seq().clips[id] as AudioClip).essential)?.type).toBe('ambience'),
+		);
 		stop();
 	});
 

@@ -10,4 +10,9 @@ for (const spec of AUDIO_EFFECTS) {
 	if (component) effectEditors.register({ id: `audio-fx.${spec.id}`, effectId: spec.id, component });
 }
 
-programOverlays.register({ id: 'audio-fx.auto-tag-on-add', active: () => true, component: AutoTagOnAddHost, order: 0 });
+programOverlays.register({
+	id: 'audio-fx.auto-tag-on-add',
+	active: () => true,
+	component: AutoTagOnAddHost,
+	order: 0,
+});

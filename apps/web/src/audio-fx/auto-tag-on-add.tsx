@@ -56,7 +56,7 @@ export function addedClipsToTag(
 		if (!prev || prev.clips === seq.clips) continue;
 		for (const id of ids) {
 			const c = seq.clips[id];
-			if (!c || c.kind !== 'audio' || prev.clips[id] || !autoTaggable(seq, id)) continue;
+			if (c?.kind !== 'audio' || prev.clips[id] || !autoTaggable(seq, id)) continue;
 			if (splitPart(prev, seq, c)) continue;
 			const list = out.get(seqId) ?? [];
 			list.push(id);

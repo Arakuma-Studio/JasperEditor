@@ -263,10 +263,13 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 		// the same suggestions again: all stored, nothing to do
 		expect((await fails('set_sound_cues', { projectId, add: again.cues })).code).toBe('E_INVALID_PARAM');
 		// WP6.5a: stored suggestions are not counted in the History label ("add 1", not "add n + 1")
-		const mixed = await ok<{ historyLabel: string; added: { cueId: string }[]; skipped: unknown[] }>('set_sound_cues', {
-			projectId,
-			add: [...again.cues, { at: { seconds: 11 }, reason: 'one more' }],
-		});
+		const mixed = await ok<{ historyLabel: string; added: { cueId: string }[]; skipped: unknown[] }>(
+			'set_sound_cues',
+			{
+				projectId,
+				add: [...again.cues, { at: { seconds: 11 }, reason: 'one more' }],
+			},
+		);
 		expect(mixed.added).toHaveLength(1);
 		expect(mixed.skipped).toHaveLength(again.cues.length);
 		expect(mixed.historyLabel).toBe('Sound Cues (add 1)');

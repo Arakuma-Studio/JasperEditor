@@ -32,9 +32,9 @@ const notify = {
 
 import { type ReactNode, useState } from 'react';
 import {
+	audioTypeClips,
 	autoMatchLoudness,
 	autoMatchMessage,
-	audioTypeClips,
 	autoTagClips,
 	autoTagMessage,
 	deleteUserSoundPreset,
@@ -94,7 +94,9 @@ export function EssentialSoundPanel(_props: PanelProps) {
 
 /** Counts of the active sequence's audio clips per type, as a stable key for the store selector ("3,1,0,2"). */
 function typeCountsKey(s: SessionState | null): string {
-	const seq = s?.activeSequenceId ? (s.document.sequences[s.activeSequenceId] as Sequence | undefined) : undefined;
+	const seq = s?.activeSequenceId
+		? (s.document.sequences[s.activeSequenceId] as Sequence | undefined)
+		: undefined;
 	if (!seq) return '';
 	const by = audioTypeClips(seq);
 	return AUDIO_TYPES.map((ty) => by[ty].length).join(',');

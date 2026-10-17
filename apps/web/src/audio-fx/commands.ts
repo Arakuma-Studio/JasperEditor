@@ -207,7 +207,9 @@ export const audioFxCommands: UiCommand[] = [
 		label: 'Select All Clips of Audio Type',
 		labelFor: (ctx) => {
 			const type = selectTypeTarget(ctx, undefined);
-			return type ? t('Select All {0} Clips', t(AUDIO_TYPE_LABELS[type])) : t('Select All Clips of Audio Type');
+			return type
+				? t('Select All {0} Clips', t(AUDIO_TYPE_LABELS[type]))
+				: t('Select All Clips of Audio Type');
 		},
 		description:
 			'Select every audio clip of an Essential Sound type (Dialogue, Music, SFX or Ambience) in the active sequence; without a type, the type of the selected clips',

@@ -21,7 +21,12 @@ describe('Export dialog container and audio codec', () => {
 		const { session, seqId } = makeSession();
 		const seq = session.getCommitted().sequences[seqId] as Sequence;
 		const s = (codec: 'h264' | 'prores' | 'vp9', opus?: boolean) =>
-			buildExportSettings(seq, { range: 'entire', engine: 'auto', codec, ...(opus === undefined ? {} : { opus }) });
+			buildExportSettings(seq, {
+				range: 'entire',
+				engine: 'auto',
+				codec,
+				...(opus === undefined ? {} : { opus }),
+			});
 		expect([s('h264').container, s('h264').audio?.codec]).toEqual(['mp4', 'aac']);
 		expect([s('prores').container, s('prores').audio?.codec]).toEqual(['mov', 'pcm']);
 		expect([s('vp9').container, s('vp9').audio?.codec]).toEqual(['webm', 'opus']);

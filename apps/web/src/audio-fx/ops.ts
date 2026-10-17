@@ -144,7 +144,9 @@ export function audioTypeClips(seq: Sequence): Record<AudioType, string[]> {
 /** Selects every audio clip of `type` in the active sequence (only those clips: no linked video). Returns the count. */
 export function selectAudioType(session: EditorSession, type: AudioType): number {
 	const s = session.getState();
-	const seq = s.activeSequenceId ? (s.document.sequences[s.activeSequenceId] as Sequence | undefined) : undefined;
+	const seq = s.activeSequenceId
+		? (s.document.sequences[s.activeSequenceId] as Sequence | undefined)
+		: undefined;
 	if (!seq) return 0;
 	const ids = audioTypeClips(seq)[type];
 	session.select('timeline', ids, 'replace', { linked: false, groups: false });
