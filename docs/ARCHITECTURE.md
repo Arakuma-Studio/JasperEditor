@@ -318,7 +318,8 @@ The SPA always uses **relative URLs** (`/api/...`). On startup `apps/web/src/run
   projects/<projectId>/proposals/            # sound-design proposals (spec 12 §2.5; engine-side, not in the document)
   sounds/library.json                        # sound library index {version, snapshotHash, roots, packs, sounds, files} (atomic; spec 12 §2.1)
   sounds/roots.json                          # user sound folders indexed in place, with their licence declaration (local mode only)
-  sounds/packs/<packId>/                     # installed sound packs + pack.json
+  sounds/packs/<packId>/                     # installed sound packs: the catalogue's listed files + pack.json (licence, install record)
+  sounds/packs/.downloads/ .staging/ .trash/ # pack installs in progress: resumable partial downloads, folders being built / removed
   sounds/synth/                              # Jasper Synth renders (cache, re-rendered on demand)
   sounds/cache/<fingerprintHex>/             # visual data of library sounds (peaks + spectrogram)
   tmp/                                       # wiped on start

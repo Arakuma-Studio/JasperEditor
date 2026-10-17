@@ -5804,3 +5804,196 @@ tail.
 - The re-register fix makes a new media per sound; the old copy stays in the project (Remove Unused cleans it).
 
 ## Phase 6: packs, cue sources, completion
+
+### Phase 6 → WP6.1 sound packs
+
+Scope: spec 12 §0 decisions 1, 2, 4, 5, §2.1 source 2, §2.8 pack routes, §2.10 pack tools, P6-R1. Files:
+`apps/engine/src/sounds/packs.json` (the catalogue, generated), `apps/engine/src/sounds/packs.ts` (catalogue loading,
+download, extraction, install, removal, licences), `sounds/service.ts` (the `sound-pack-install` job, list, remove),
+`sounds/library.ts` (`remove` also drops packs), `sounds/index-job.ts` (`inferTypes: false`), `sounds/search.ts`
+(`packId` filter), `routes/sounds.ts` (routes, approval card, licence provider), `packages/api/src/{sounds,routes,jobs}.ts`
+(contracts), `packages/engine-client/src/client.ts` (`listSoundPacks`, `installSoundPack`, `removeSoundPack`),
+`apps/mcp/src/tools/sound.ts` (three tools, `SOUND_GUIDE`, `search_sounds {packId}`), `apps/web/src/sound/PacksSection.tsx`
+(Preferences ▸ Sound Library ▸ Packs), `PreferencesPage.tsx`, `model.ts` (`pack:<id>` collections),
+`panels/soundLibrary/{SoundLibraryPanel.tsx,index.ts}` (empty state, panel menu, Sources › Packs › <pack>),
+`commands/sound.ts` (`soundLibrary.installPacks`), `i18n/es.json`, `scripts/sounds/{curate-packs.ts,pack-sources.json}`
+(reproducible curation), `e2e/serve.mjs` (e2e catalogue), docs (README tool list, ARCHITECTURE §4.3, security review
+AGT-3 table and §9). Tests: `apps/engine/test/sound-packs.test.ts`, `apps/mcp/test/sound-packs.test.ts` (+ the shared
+`editor-window.ts`), `packages/engine-client/test/client.test.ts`, `apps/web/test/sound-packs-ui.test.tsx`,
+`e2e/sound-packs.spec.ts`.
+
+#### What it does (usage)
+
+- **Preferences ▸ Sound Library ▸ Packs** lists the engine's catalogue: name, author, licence badge (CC0, BY…) with
+  "Licence text" and "Pack page" links, the credit line (or "No credit required"), sound count, download and on-disk size,
+  state (Not installed, Installed · n in the library, Update available, Damaged) and the description. **Install…** shows a
+  confirmation with the size, the site it downloads from, the SHA-256 check, the licence and its URL, the credit line and
+  where the licence was checked, with **Accept Licence and Download**; the row then shows the job's stage and percent
+  (also in the Jobs panel) and "Adding its sounds to the library…" while the index job runs. **Remove** asks first
+  ("Projects that already use them keep their own copies"). A job an agent started shows its progress and disables the
+  buttons. An outdated pack offers **Update…**, a damaged one **Repair…** (files that already match are kept).
+- **Sound Library**: the empty state has **Install Sound Packs…**, so does the panel menu (command
+  `soundLibrary.installPacks`: opens the Sound Library preferences scrolled to and focused on Packs). Installed packs are
+  collections **Sources › Packs › <pack>** (search `packId`).
+- **Agents (MCP)**: `list_sound_packs` (READ_ONLY: licence, evidence, credit, sizes in MB, state); `install_sound_pack
+  {packId, wait?, timeoutSeconds?}` (EDIT, `openWorldHint: true`; its description and `SOUND_GUIDE` tell the agent to
+  tell the user the pack's name, download size and licence first; waits for the install and the index job by default);
+  `remove_sound_pack {packId}` (DESTRUCTIVE_IDEMPOTENT; approval card; not installed → `removed: false`, nothing asked);
+  `search_sounds {packId}`.
+- **HTTP**: `GET /api/sounds/packs` → `{packs: SoundPackInfo[], catalogErrors}`; `POST /api/sounds/packs/:packId/install`
+  → 202 `EngineJob` (`sound-pack-install`, deduped per pack; result `SoundPackInstallResult {packId, alreadyInstalled,
+  sounds, installedBytes, downloadedBytes, indexJobId}`); `DELETE /api/sounds/packs/:packId` → `SoundPackRemoveResponse
+  {packId, removed, removedSounds, freedBytes, job}` (`404 SOUND_PACK_UNKNOWN`, `409 SOUND_PACK_BUSY`, agents
+  `403 APPROVAL_DENIED`). Help ▸ About ▸ Licenses lists each installed pack (`sound-pack:<id>`, its `License.txt`).
+  Capabilities `features.sound.library.packs` = installed packs in the index.
+- **Rebuild the catalogue** (network for `fetch` only):
+  ```bash
+  pnpm exec tsx scripts/sounds/curate-packs.ts fetch /tmp/packs   # checks each page's licence statement live, downloads, checks sha256 / size / License.txt
+  pnpm exec tsx scripts/sounds/curate-packs.ts build /tmp/packs --report /tmp/packs/report.md   # measures every file, writes packs.json
+  ```
+
+#### Catalogue (measured by `curate-packs.ts`, 2026-10-17)
+
+The ten packs of kenney.nl's Audio category (the seven sound-effect packs the starter kit samples, in full, plus Music
+Jingles and the two voice-over packs). Every page's details table says "License: Creative Commons CC0" (checked live by
+`fetch`) and every archive's `License.txt` says "License (Creative Commons Zero, CC0)
+http://creativecommons.org/publicdomain/zero/1.0/" (checked by `fetch` and recorded verbatim as the second
+`licenseEvidence` entry, `<archive url>#License.txt`). Kenney's site has no robots.txt restrictions. CC0: no attribution
+(`attribution: null`); the voice-over pack's `Credits.txt` names its voices, kept as the files' author ("Kenney
+(www.kenney.nl); voice: Jeffrey M. Smith" / "…; voice: Giselle").
+
+| Pack | Page | Archive | sha256 (archive) | Bytes | Files (typed) | Installed bytes | Skipped |
+|---|---|---|---|---|---|---|---|
+| `kenney-casino-audio` | https://kenney.nl/assets/casino-audio | https://kenney.nl/media/pages/assets/casino-audio/2472606a04-1721639069/kenney_casino-audio.zip | `f36250766ac5bc378c13708ddf12a23a8e54a3251f8d482c7536e51b5dbafa18` | 876 839 | 49 (49) | 485 917 | 6 |
+| `kenney-digital-audio` | https://kenney.nl/assets/digital-audio | https://kenney.nl/media/pages/assets/digital-audio/216eac4753-1677590265/kenney_digital-audio.zip | `24e6ce28b76a6d8c89cff4d331e0965ff5c3de8a73c612028e9d363cc64e4f06` | 990 367 | 55 (55) | 418 227 | 8 |
+| `kenney-impact-sounds` | https://kenney.nl/assets/impact-sounds | https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip | `029d734af1582474edf3a694d1b0cebc97c1c152f2f39fa34d4c2bafc5de77f8` | 800 850 | 118 (118) | 930 610 | 12 |
+| `kenney-interface-sounds` | https://kenney.nl/assets/interface-sounds | https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip | `f2193d072726d6758a5f7871b2dcc54dcce0d5c35c6f0a62f92549b327c81232` | 834 536 | 89 (89) | 849 733 | 11 |
+| `kenney-music-jingles` | https://kenney.nl/assets/music-jingles | https://kenney.nl/media/pages/assets/music-jingles/f37e530b9e-1677590399/kenney_music-jingles.zip | `b729ba57959bd58793d2c5cafa348aaf2655d354f3da35ec4729e03ec77197b8` | 1 239 525 | 85 (0) | 1 277 878 | 1 |
+| `kenney-rpg-audio` | https://kenney.nl/assets/rpg-audio | https://kenney.nl/media/pages/assets/rpg-audio/8e99002d76-1677590336/kenney_rpg-audio.zip | `6dbeaf8544da958d8f2adcb4a4a4b76c1ade34a05f8ab9edccd327da7375f38b` | 964 837 | 49 (44) | 700 072 | 3 |
+| `kenney-sci-fi-sounds` | https://kenney.nl/assets/sci-fi-sounds | https://kenney.nl/media/pages/assets/sci-fi-sounds/6b296f9ecf-1677589334/kenney_sci-fi-sounds.zip | `119340f351a5098ad814f78719438c0da355a9ce8a4c8a3af6a8d48aa3d49e04` | 5 875 104 | 68 (49) | 5 859 215 | 5 |
+| `kenney-ui-audio` | https://kenney.nl/assets/ui-audio | https://kenney.nl/media/pages/assets/ui-audio/490d233f68-1677590494/kenney_ui-audio.zip | `946fc23a63d535d693eb31b2eabb80c8c28d6351e2186b344ceb71b2cb1d5eb6` | 411 949 | 45 (45) | 287 528 | 7 |
+| `kenney-voiceover-pack` | https://kenney.nl/assets/voiceover-pack | https://kenney.nl/media/pages/assets/voiceover-pack/3f7f168698-1677589897/kenney_voiceover-pack.zip | `a5194df2f05f7ec439a8d4c1a7c20ba12ffe700d363a0733ae6fa826846af458` | 1 851 632 | 94 (0) | 1 907 365 | 1 |
+| `kenney-voiceover-pack-fighter` | https://kenney.nl/assets/voiceover-pack-fighter | https://kenney.nl/media/pages/assets/voiceover-pack-fighter/6ceb77c6f1-1677589837/kenney_voiceover-pack-fighter.zip | `368ac0711e59521aff965a833e22e2b5218c397cf8b059ce3cb72e8d13219ee2` | 1 265 449 | 46 (0) | 897 701 | 1 |
+
+Total: 698 files, 13.6 MB installed, 15.1 MB of downloads (measured, sum of the catalogue). Each file carries its own
+sha256 and size; `License.txt` is installed too (pinned). **Skipped** (55, documented per file in `skipped`): the 46 files the
+starter kit already ships unchanged (re-encoded there; installing them again would list the same sound twice), Kenney's
+byte-identical duplicates (2, e.g. `footstep_carpet_001` = `_002`) and the 7 `Preview.ogg` medleys.
+
+**Types by measurement**: `pack-sources.json` gives each file-name rule candidate types; `build` decodes every file with
+the LGPL FFmpeg and keeps the candidates the judge (`analyzeSound` + `judgeSound` + `SOUND_TYPE_PROFILES`) accepts; when
+it accepts none, the first candidate is kept (191 files: multi-hit clicks and taps — Kenney's press + release — 17 + 12,
+boomy swishes / thumps / hits 14 / 11 / 9, clipped clicks 13, …; the same profile findings as WP1.2b) unless the rule is
+`strict` (the space-engine and thruster loops tried as ambience / whoosh stay untyped: 19 files). The engine judges again
+when it indexes; the real install of Interface Sounds gave 48 of 89 judge-ok, exactly the curation's 89 − 41. Music and
+voice lines are untyped on purpose (`inferTypes: false`: a jingle in "Hit jingles" is not a hit) and found by words or
+`packId`. Coverage by the packs: 17 types; **no recording of `key`, `riser`, `whoosh` (air) or `roomtone`** in any Kenney
+pack (test-pinned).
+
+#### BigSoundBank (decision 5): none included — ask a human
+
+- **Licence: verifiable per file.** https://bigsoundbank.com/licenses.html (fetched 2026-10-17) says "This is: Creative
+  Commons CC0 1.0 Universal WTFPL license … Public Domain Dedication" and "All files whose download page mentions 'Free and
+  Royalty Free' are made available free of charge and freely for all your projects". Each sound page states it per file,
+  e.g. https://bigsoundbank.com/whoosh-1-s0572.html: "License CC0 (public domain): Free and royalty-free", FAQ "I
+  intentionally release it under the CC0 license (public-domain equivalent)", and JSON-LD `license:
+  https://bigsoundbank.com/licenses.html` with direct `contentUrl`s (`/UPLOAD/bwf-en/0572.wav`, 1 044 826 bytes). So the
+  CC0 grant (not WTFPL) could be recorded per file.
+- **Why none is in the catalogue: the site's access policy.** https://bigsoundbank.com/robots.txt (updated 2026-04-16)
+  has `Disallow: /UPLOAD/` for every robot, and https://bigsoundbank.com/ai.txt (2026-09-19) says the audio files "sit
+  under /UPLOAD/, which is disallowed for every crawler" and "Real-time fetching to answer a user's question is welcome
+  across the whole site, except /UPLOAD/". Curating "by measurement" means an agent downloading audio from /UPLOAD/, and a
+  catalogue entry means the engine (and `install_sound_pack`, which agents may call) fetching /UPLOAD/ programmatically.
+  Both go against the owner's stated wishes, so this package did not download any BigSoundBank audio (it only fetched
+  pages and sent three HEAD requests while finding the download URLs, before reading ai.txt) and lists no item. **Ask a
+  human**: whether to ask Joseph Sardin (the site's contact) for permission to fetch the files of a curated list from the
+  app; the code needs nothing more (a `files` pack: one URL, sha256, size and `sourceUrl` = the sound's page per file is
+  supported and tested), only the curation (`curate-packs.ts` would need a `files` source kind).
+- The gaps the kit leaves (real risers, air whooshes, keyboard keys, bright hits, room tone) therefore remain; Jasper
+  Synth covers `key` and the derived risers / whooshes of the starter kit stay the defaults.
+
+#### Decisions
+
+- **Same rules as the model catalogue**: pinned upstream URL + sha256 + size per archive and per file, an allowlisted
+  licence (`SOUND_PACK_LICENSES`: CC0, CC BY 3.0/4.0, CC BY-SA 3.0/4.0; a non-CC0 pack must have a credit line), at least
+  one `licenseEvidence` {url, statement, checkedAt}; built-in entries https only; `JASPER_SOUND_CATALOG` names another
+  catalogue (http, file: and paths relative to it allowed; read on every request). Invalid entries are skipped and listed
+  (`catalogErrors`), never thrown. Installs are open to agents (like model installs: catalogue-pinned and size-bounded),
+  removals are gated (AGT-3).
+- **No hosting, no conversion**: the engine downloads from the author's URL and installs the files as published (Kenney:
+  OGG Vorbis, which the engine decodes); only listed files are extracted.
+- **Install pipeline**: `.downloads/<id>-<sha16>.partial` (resumed by a Range request — or a file read from the offset —
+  only for the same pinned bytes; a server that ignores Range restarts from 0; kept after a network failure or stall,
+  deleted on cancel, checksum mismatch or an oversize body; stale ones deleted at engine start), stall timeout 60 s and
+  total 30 min (`JASPER_SOUND_PACK_STALL_MS` / `…_TIMEOUT_MS` for tests), free-space check (`DISK_FULL`), archive sha256,
+  then per member: declared size = pinned size (before inflating), sha256 after, written `wx` to
+  `safeJoin(staging, catalogue path)`; `pack.json` (one pack; per file title, types, tags, author, licence, licence URL,
+  source URL = the page, `inferTypes`; plus an `install` record with the catalogue revision) is validated by the index's
+  own loader before the staging folder replaces the pack folder in one rename. Files of an installed or damaged pack that
+  already match are reused (an update that only changed metadata downloads nothing).
+- **States**: `installed` = valid pack.json, every file present at its size, same catalogue revision (a hash of files and
+  metadata); `outdated` = another revision; `damaged` = unreadable pack.json or missing files; an installed pack the
+  catalogue no longer lists is shown with `inCatalog: false` and can only be removed.
+- **Index**: after an install the job starts (or joins) an incremental `sound-index` job and returns its id; a removal
+  takes the pack's sounds and its `packs` entry out of the index at once and starts an index job, so a sound that is also
+  in another source comes back under it.
+- **Projects keep working**: registering a library sound always copies it into managed media (lossy pack files become
+  padded PCM copies), so a removed pack never takes a project's media with it (tested by export).
+
+#### Verified (measured, this branch; shared host, 16 cores, load average 2–12)
+
+- `pnpm vitest run apps/engine/test/sound-packs.test.ts --maxWorkers=2`: 19 passed — the built-in catalogue validates
+  entirely (10 Kenney packs, CC0, evidence, https, pinned sha256/sizes, known types, untyped ⇒ `inferTypes: false`, no
+  duplicate bytes, > 30 starter-kit sources skipped, uncovered types exactly key / riser / roomtone / whoosh); hostile
+  entries refused (11 kinds: `../`, absolute, backslash, hidden, non-audio, WTFPL, NC, BY without credit, case
+  duplicates, no evidence, duplicate id) and https-only for the built-in catalogue; `safeJoin` property (2 000 runs,
+  never outside its folder); install from file:// (only listed files + licence + pack.json, the archive's
+  `../escape.wav` and unlisted member never written, no leftovers, index provenance, `packId` search, capabilities,
+  Help ▸ About entry with the licence text, second install `alreadyInstalled` without index pass); archive sha256
+  mismatch, member sha256 / size mismatch, missing member, catalogue zip-slip, size cap — each refused with nothing left;
+  resume from a half file (file://); stale staging and partials cleaned at start; a `files` pack; over a local HTTP
+  server: Range resume (206) and restart (server ignoring Range), cancel deletes the partial, a stall fails
+  `DOWNLOAD_TIMEOUT` retryable keeping 2 048 bytes, an oversize body `PACK_TOO_LARGE`, removal during an install
+  `409 SOUND_PACK_BUSY`; agents: installs open (`origin: agent`), removal refused without a window, card "Remove a sound
+  pack" with name and "3 sounds", deny keeps it, approve removes, idempotent second removal asks nothing, unknown id 404,
+  the editor never asked; a project using a pack sound renders it (peak > 0.2) and exports (job succeeded) after the pack
+  was removed. **Mutation checks** (run, then reverted): skipping the approval card fails the agent test ("expected 200 to
+  be 403"); skipping the size check before inflating fails the member test (`PACK_INVALID` instead of `PACK_CHECKSUM`).
+- `pnpm vitest run apps/engine/test/fuzz-http.test.ts -t api/sounds --maxWorkers=2`: 12 passed (the 3 new routes found by
+  the route fuzzer; no 5xx).
+- `pnpm vitest run apps/mcp/test/sound-packs.test.ts apps/mcp/test/readme-tools.test.ts apps/mcp/test/conventions.test.ts apps/mcp/test/sound-guide.test.ts apps/mcp/test/fuzz.test.ts --maxWorkers=2`:
+  371 passed (real engine + jasper-mcp over stdio: annotations, list, install with wait (job + index succeeded), search
+  by pack, removal denied then approved on the card, idempotent second removal; README lists 352 tools).
+- `pnpm vitest run packages/engine-client/test --maxWorkers=2`: 22 passed.
+- `pnpm vitest run apps/web/test/sound-packs-ui.test.tsx apps/web/test/sound-library-panel.test.tsx apps/web/test/sound-i18n.test.tsx apps/web/test/i18n.test.ts apps/web/test/sound-library-model.test.ts apps/web/test/keymap.test.ts apps/web/test/polish-menu-wiring.test.ts apps/web/test/registry.test.tsx apps/web/test/agent-ui.test.ts apps/web/test/sound-cue-commands.test.tsx apps/web/test/review-stale-text.test.ts --maxWorkers=2`:
+  all passed (10 new: list, licence before download and Cancel downloads nothing, Accept → install → index → Installed,
+  Remove asks, external job progress and disabled buttons, Repair / Update, engine errors shown, CC BY credit in the
+  confirmation, the command opens and focuses Packs once, empty state and panel menu, Sources › Packs › <pack> sends
+  `packId`). `node scripts/i18n.mjs --check`: es.json covers all 9 700 strings.
+- `E2E_PORT=51210 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-packs.spec.ts` (after `pnpm --filter
+  @jasper/engine build` and `@jasper/web build`): 1 passed (30 s) — install via Preferences after the licence dialog →
+  "Installed", "2 in the library" → Sources › Packs › E2E Test Pack lists 2 → insert (media provenance `pack`) → remove →
+  `/api/sounds?packId=` total 0 → native export of the project, audio peak > 0.05. Screenshots in
+  `test-results/e2e-sound-packs/` (looked at: the collection with both waveforms and CC0 badges).
+- **Real check (network, dev engine on 51201, web on 51202, appdir `.stage`)**: Preferences ▸ Sound Library ▸ Packs
+  showed the 10 packs (looked at the screenshot); Install on Interface Sounds showed "815 KB download from kenney.nl,
+  checked against its pinned SHA-256; 89 sounds, 830 KB on disk. Licence: CC0-1.0 …"; Accept → the archive downloaded from
+  kenney.nl, matched its sha256, 89 files + License.txt + pack.json installed; the index added them (status 168 sounds:
+  starter 60, pack 89, synth 19; facets cc0 89; types swish 24, ui 31, click 20, glitch 9, tick 8, chime 6, pop 4,
+  reverse 1; 48 judge-ok); `/api/licenses` listed "Interface Sounds — sound pack (89 sounds)" with its License.txt; the
+  Library's Sources › Packs › Interface Sounds showed "89 of 168 sounds" with waveforms; "Minimise 6" inserted on A4;
+  Remove (confirmed) deleted the folder (status 79 sounds, packs 0); the saved project's media (engine-store copy
+  `mk_9147b0f2…`, provenance `pack`) exported natively afterwards with the sound in it (ffmpeg volumedetect max −12.0 dB,
+  the clip's −11 dB default level).
+
+#### Limits and notes for the next packages
+
+- BigSoundBank: see above — none, pending a human's decision; the kit's gaps (risers, air whooshes, keys, bright hits,
+  room tone) stay.
+- Kenney's archive URLs carry a content hash; if Kenney republishes a pack, its install fails with `PACK_CHECKSUM` (the
+  message says the file changed upstream) until `pack-sources.json` is updated and the catalogue rebuilt.
+- 191 pack files keep a type the judge rejects (ranked lower by their judge score); 249 files are untyped (225 music /
+  voice files, 19 sci-fi loops the judge rejected as ambience / whoosh, 5 RPG creaks and door openings by rule).
+- The install reads the archive into memory (≤ 256 MB by the schema; Kenney's largest is 5.9 MB).
+- The e2e harness points `JASPER_SOUND_CATALOG` at an (empty) file in its throwaway appdir, so e2e runs never download;
+  Preferences there shows "This engine offers no sound packs" unless a spec writes one.

@@ -443,6 +443,8 @@ Every state-changing engine route and what an agent may do with it:
 | `PUT /api/settings/gaps` otherwise | Open | Interval, render optimisation: nothing is deleted |
 | `PUT /api/sounds/roots` adding, removing, relicensing or re-crediting (author, credit template) a folder (`add_sound_folder`, `remove_sound_folder`) | **Gated** | Adding reads a folder of the user's disk into a library every project and agent shares, under the licence it declares; removing takes the user's sounds out; a licence declaration decides what counts as safe for commercial use; the credit line is what projects print as attribution. Refused with `409 SOUND_ROOTS_CHANGED` when the list changed while the card waited |
 | `PUT /api/sounds/roots` renaming or enabling / disabling a folder | Open | Nothing is read that was not, nothing lost: a disabled folder's sounds come back when it is enabled |
+| `DELETE /api/sounds/packs/:id` (`remove_sound_pack`) | **Gated** (card "Remove a sound pack" with the pack's name, sound count and size; nothing installed → nothing asked, `removed: false`; `409 SOUND_PACK_BUSY` while it installs) | A download to repeat; the pack's sounds leave the library every project and agent shares (projects keep their managed copies) |
+| `POST /api/sounds/packs/:id/install` (`install_sound_pack`) | Open (like model installs) | Only ids of the engine's catalogue: upstream URL, archive sha256 and size, every file's sha256 and size are pinned in `apps/engine/src/sounds/packs.json` (https only; `JASPER_SOUND_CATALOG` is the operator's override, for tests); the download stops past the pinned size, after 60 s without data and after 30 min; only listed members are extracted, each checked by size before inflating and by sha256 after, to paths taken from the validated catalogue (never from the archive) and checked again to stay inside the pack; nothing is executed or converted. The tool tells agents to state size and licence to the user first |
 | `POST /api/sounds/index`, `POST /api/sounds/:id/register` (`rescan_sound_library`, `import_sounds`) | Open | The index is derived data rebuilt from files; registering copies a kit, pack or synth file under an engine-chosen name, or registers a folder file in place like `/api/media/register` |
 | `POST /api/projects/:id/proposals/:proposalId/accept` (`accept_proposal`) | **Gated** for agents by the feature's policy: sound design only where the proposal's sequence has `soundDesign.settings.agentsMayApply` (default off), every other feature refused → `403 APPROVAL_REQUIRED` (`E_APPROVAL_REQUIRED`); destructive commands inside the items then still need the approval card (`APPROVAL_DENIED` / `APPROVAL_TIMEOUT`). The editor window's own accept needs nothing more (the Review UI requires a trusted gesture) and is applied as the user's edit; before it, the Review's confirmation names what an agent could not run unasked among the items (destructive commands, `force`, the `agentsMayApply` grant: `approvalNeeds`, Phase 3 verification) | Applies edits nobody reviewed; spec 12 §0 "agents propose, the user applies" |
 | `soundDesign.setSettings` with `agentsMayApply: true` in an agent transaction | **Gated** (approval card, `approvalReasons`) | An agent may not grant itself the right to apply its own proposals |
@@ -676,6 +678,25 @@ them, but it was reviewed by its author, not by this review.
   `apps/engine/test/sounds-routes.test.ts`, `sounds-unit.test.ts`, and the generic route fuzzing of
   `fuzz-http.test.ts`. *Residual:* like the Media Browser, an authenticated client of a local engine can have any
   readable folder indexed (the editor itself, or an agent the user approved).
+- **Sound packs** (spec 12 WP6.1, `apps/engine/src/sounds/packs.ts`, routes in `routes/sounds.ts`; `GET /api/sounds/packs`,
+  `POST /api/sounds/packs/:id/install`, `DELETE /api/sounds/packs/:id`): the only network the sound library uses, and
+  only on an explicit install. The catalogue is validated entry by entry (zod: id pattern, allowlisted licence with
+  evidence, pinned sha256 and sizes ≤ 256 MB per archive and 1 GB per pack, ≤ 5 000 files, relative audio paths without
+  `..`, backslashes, NUL, hidden segments or case-insensitive duplicates; built-in entries https only); invalid entries are
+  skipped and listed, never thrown. A download goes to `<packsDir>/.downloads/<id>-<sha16>.partial` (resumed by a Range
+  request only when it is the same pinned file; deleted on cancel, on a checksum mismatch or an oversize body; stale ones
+  deleted at engine start), is stopped past its pinned size, after 60 s without data and after 30 min, and must match
+  its sha256; the ZIP reader (`imports/zip.ts`) refuses ZIP64, encryption and spanned archives and bounds every entry;
+  only catalogue-listed members are read, each refused if its declared size differs from the pinned one (before
+  inflating) and if its sha256 differs (after); output paths come from the catalogue and are checked again with
+  `safeJoin` (property-tested: never outside the folder); files are written with `wx` into a staging folder that
+  replaces the pack folder in one rename after its `pack.json` validated; free disk space is checked first (`DISK_FULL`).
+  Removing renames the folder aside before deleting it. Tests: `apps/engine/test/sound-packs.test.ts` (sha256 and size
+  mismatches, a hostile archive with `../escape.wav`, catalogue zip-slip paths, size caps, cancel and partial cleanup,
+  resume over file:// and HTTP Range, a stalled server, the approval gate, a project exporting a pack sound after the
+  pack is removed), `apps/mcp/test/sound-packs.test.ts`, `fuzz-http.test.ts` (route fuzzing).
+  *Residual:* BigSoundBank is not in the catalogue (its robots.txt and ai.txt exclude automated access to its audio
+  files; wp-note "WP6.1"); a catalogue override file is trusted like the engine's own configuration.
 - **Sound design cues** (spec 12 WP2.3, `apps/engine/src/routes/sound-design.ts`; `POST /api/sound-design/cues`):
   read-only (Open in the AGT-3 sense: nothing is written). The body is a strict zod object: an inline envelope
   (loaded with `loadProject`, a failure is `400 VALIDATION_FAILED`) xor a project id matched against
