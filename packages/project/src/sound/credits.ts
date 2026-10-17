@@ -58,6 +58,47 @@ export interface SoundCreditsOptions {
 	 * every sound used. Default false.
 	 */
 	attributionOnly?: boolean;
+	/**
+	 * Count only these played clips instead of every clip of the sequence (spec 12 §2.11: an export credits the sounds
+	 * audible in its range — `playedLibraryClips` of the export's render snapshot: enabled clips on tracks that play,
+	 * inside the range, through nested sequences, `nest>inner` ids for clips of nests). With a sequence id only.
+	 */
+	played?: readonly PlayedClip[];
+}
+
+/** A clip the mixer plays (an export's render snapshot), by id and media. */
+export interface PlayedClip {
+	clipId: string;
+	mediaId: string;
+}
+
+/**
+ * The clips an export's mixer plays (`RenderSnapshot.audioClips`: the range, nested sequences flattened, disabled clips
+ * and tracks that never sound left out), without synthetic sources. What `soundCredits(…, {played})` counts.
+ */
+export function playedLibraryClips(snapshot: { audioClips?: readonly unknown[] }): PlayedClip[] {
+	const out: PlayedClip[] = [];
+	for (const c of Array.isArray(snapshot?.audioClips) ? snapshot.audioClips : []) {
+		const x = c as { clipId?: unknown; mediaId?: unknown; generator?: unknown };
+		if (typeof x.clipId !== 'string' || typeof x.mediaId !== 'string' || x.generator) continue;
+		if (x.mediaId.startsWith('syn:')) continue;
+		out.push({ clipId: x.clipId, mediaId: x.mediaId });
+	}
+	return out;
+}
+
+/** File extension and MIME type of a credits sidecar format. */
+export const SOUND_CREDITS_FILE: Readonly<Record<'txt' | 'md' | 'csv', { ext: string; mime: string }>> = {
+	txt: { ext: 'txt', mime: 'text/plain; charset=utf-8' },
+	md: { ext: 'md', mime: 'text/markdown; charset=utf-8' },
+	csv: { ext: 'csv', mime: 'text/csv; charset=utf-8' },
+};
+
+/** The credits in one file format (`text`, `markdown` or `csv`), ending in a newline; '' when nothing is listed. */
+export function soundCreditsFileText(c: SoundCredits, format: 'txt' | 'md' | 'csv'): string {
+	if (!c.rows.length) return '';
+	const body = format === 'md' ? c.markdown : format === 'csv' ? c.csv : c.text;
+	return body.endsWith('\n') ? body : `${body}\n`;
 }
 
 /** The media holding library provenance for `mediaId`: itself, or the original of a processed version. */
@@ -140,20 +181,28 @@ export function soundCredits(
 	} else seqIds = Object.keys(doc.sequences);
 
 	const byMedia = new Map<string, { library: LibraryProvenance; clips: Set<string>; seqs: Set<string> }>();
+	const count = (mediaId: string, clipId: string, sid: string) => {
+		const p = provenanceOf(doc, mediaId);
+		if (!p) return;
+		let row = byMedia.get(p.mediaId);
+		if (!row) {
+			row = { library: p.library, clips: new Set(), seqs: new Set() };
+			byMedia.set(p.mediaId, row);
+		}
+		row.clips.add(clipId);
+		row.seqs.add(sid);
+	};
+	if (opts.played && sequenceId !== undefined) {
+		for (const c of opts.played.slice(0, 1_000_000))
+			if (typeof c?.mediaId === 'string' && typeof c.clipId === 'string') count(c.mediaId, c.clipId, sequenceId);
+		seqIds = [];
+	}
 	for (const sid of [...new Set(seqIds)]) {
 		const seq = doc.sequences[sid]!;
 		for (const c of Object.values(seq.clips ?? {})) {
 			const mediaId = (c as { mediaId?: unknown }).mediaId;
 			if (typeof mediaId !== 'string') continue;
-			const p = provenanceOf(doc, mediaId);
-			if (!p) continue;
-			let row = byMedia.get(p.mediaId);
-			if (!row) {
-				row = { library: p.library, clips: new Set(), seqs: new Set() };
-				byMedia.set(p.mediaId, row);
-			}
-			row.clips.add(c.id);
-			row.seqs.add(sid);
+			count(mediaId, c.id, sid);
 		}
 	}
 	if (sequenceId === undefined && opts.includeUnused)

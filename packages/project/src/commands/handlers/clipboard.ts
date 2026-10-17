@@ -38,6 +38,7 @@ import {
 } from '../../schema/sequence.ts';
 import type { ShapeItem } from '../../schema/shapes.ts';
 import { readLibraryProvenance } from '../../sound/provenance.ts';
+import { nestedEntityIds, remapSoundDesign } from '../../sound/repair.ts';
 import { scaleAnimationFrames } from '../../text-animations.ts';
 import { flicksPerFrame, fpsOf, type Rational } from '../../time.ts';
 import { isRemapped, type TimedClip } from '../../time-remap/model.ts';
@@ -894,13 +895,43 @@ function copySequence(
 	const seq = clone(src) as Sequence & Record<string, unknown>;
 	seq.id = newId;
 	const trackMap = new Map<string, string>();
+	// Old → new ids of the clips' and tracks' children, for the cue anchors and mix records naming them (sound design).
+	const childMap = new Map<string, string>();
+	const reidentify = (x: object) => {
+		const before = nestedEntityIds(x);
+		reidentifyClipChildren(x as never, h);
+		const after = nestedEntityIds(x);
+		if (after.length === before.length)
+			for (const [k, old] of before.entries()) if (old !== after[k]) childMap.set(old, after[k]!);
+	};
 	for (const t of [...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks]) {
 		const id = h.ids.next('trk');
 		trackMap.set(t.id, id);
 		t.id = id;
-		reidentifyClipChildren(t as never, h);
+		reidentify(t);
 		resolver.remapEffectMedia(t.effects);
 		if (t.styleDefaults?.fontId) t.styleDefaults.fontId = resolver.fontId(t.styleDefaults.fontId);
+	}
+	// Submixes and the sends / outputs naming them are entities of the sequence too (as in sequence.duplicate): a copy
+	// that kept their ids broke INV-001 (duplicate ids) as soon as the same sequence was pasted or imported twice.
+	for (const t of seq.submixTracks ?? []) {
+		const id = h.ids.next('trk');
+		trackMap.set(t.id, id);
+		t.id = id;
+		reidentify(t);
+		resolver.remapEffectMedia(t.effects);
+	}
+	const sendMap = new Map<string, string>();
+	for (const t of [...seq.audioTracks, ...(seq.submixTracks ?? [])]) {
+		const mixer = t.mixer;
+		if (!mixer) continue;
+		if (typeof mixer.output === 'string') mixer.output = trackMap.get(mixer.output) ?? mixer.output;
+		for (const x of mixer.sends ?? []) {
+			const id = h.ids.next('snd');
+			sendMap.set(x.id, id);
+			x.id = id;
+			x.target = trackMap.get(x.target) ?? x.target;
+		}
 	}
 	reidentifyClipChildren(seq.master as never, h);
 	resolver.remapEffectMedia(seq.master.effects);
@@ -911,14 +942,19 @@ function copySequence(
 			if (a.videoTrackId !== null) a.videoTrackId = trackMap.get(a.videoTrackId) ?? a.videoTrackId;
 			a.audioTrackIds = a.audioTrackIds.map((id) => trackMap.get(id) ?? id);
 		}
-	for (const m of seq.markers) m.id = h.ids.next('mrk');
+	const markerMap = new Map<string, string>();
+	for (const m of seq.markers) {
+		const id = h.ids.next('mrk');
+		markerMap.set(m.id, id);
+		m.id = id;
+	}
 	const clipMap = new Map<string, string>();
 	const trackerMaps = new Map<string, Map<string, string>>();
 	const clips: Record<string, Clip> = {};
 	for (const c of Object.values(seq.clips)) {
 		const copy = c as Clip & Record<string, unknown>;
 		const before = ((copy.trackers as { id: string }[] | undefined) ?? []).map((t) => t.id);
-		reidentifyClipChildren(copy, h);
+		reidentify(copy);
 		const after = ((copy.trackers as { id: string }[] | undefined) ?? []).map((t) => t.id);
 		const id = h.ids.next('clp');
 		clipMap.set(c.id, id);
@@ -959,11 +995,13 @@ function copySequence(
 	seq.links = regroup(seq.links, 'lnk');
 	seq.groups = regroup(seq.groups, 'grp');
 	const transitions: Sequence['transitions'] = {};
+	const transitionMap = new Map<string, string>();
 	for (const t of Object.values(seq.transitions)) {
 		const out = t.outgoingClipId ? clipMap.get(t.outgoingClipId) : null;
 		const inc = t.incomingClipId ? clipMap.get(t.incomingClipId) : null;
 		if ((t.outgoingClipId && !out) || (t.incomingClipId && !inc)) continue;
 		const id = h.ids.next('trn');
+		transitionMap.set(t.id, id);
 		transitions[id] = {
 			...t,
 			id,
@@ -973,6 +1011,20 @@ function copySequence(
 		};
 	}
 	seq.transitions = transitions;
+	// sound-design: cues, their anchors, placed clips and mix records follow the copy (as in sequence.duplicate).
+	remapSoundDesign(
+		seq,
+		{
+			clips: clipMap,
+			tracks: trackMap,
+			transitions: transitionMap,
+			markers: markerMap,
+			children: childMap,
+			sends: sendMap,
+		},
+		() => h.ids.next('cue'),
+		() => h.ids.next('kf'),
+	);
 	return seq;
 }
 
