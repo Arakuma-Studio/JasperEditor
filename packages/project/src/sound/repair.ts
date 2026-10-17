@@ -551,6 +551,8 @@ export function remapSoundDesign(
 						};
 						break;
 					case 'scene':
+						// the clip it was derived on follows the copy (the media is shared)
+						if (typeof a.clipId === 'string') cue.anchor = { ...a, clipId: m(maps.clips, a.clipId) };
 						break;
 					case 'keyframe':
 						cue.anchor = {

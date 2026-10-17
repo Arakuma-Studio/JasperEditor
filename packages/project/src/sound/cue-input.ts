@@ -18,6 +18,11 @@ export function cueInputFromDerived(c: DerivedCue, ref?: string): Record<string,
 		source: c.source,
 	};
 	if (c.pan !== undefined) out.pan = c.pan;
+	if (c.anchorOffset && c.anchor)
+		out.anchorOffset = Math.max(
+			-SOUND_DESIGN_LIMITS.anchorOffset,
+			Math.min(SOUND_DESIGN_LIMITS.anchorOffset, Math.round(c.anchorOffset)),
+		);
 	if (c.panSweep) out.panSweep = { from: c.panSweep.from, to: c.panSweep.to };
 	if (c.window && c.window.end >= c.window.start) out.window = { start: c.window.start, end: c.window.end };
 	if (ref) out.ref = ref;

@@ -6,7 +6,8 @@ import type { ProjectDocument } from '../../schema/document.ts';
 import { isSoundTypeId, VISUAL_KINDS } from '../taxonomy.ts';
 import { applyBudgets, mergeCandidates } from './budget.ts';
 import { deriveEdgeCues } from './edges.ts';
-import { deriveEditCues } from './edits.ts';
+import { dialogueRanges, deriveEditCues, inRanges } from './edits.ts';
+import { beatFramesOf, snapCuesToBeats } from './engine-sources.ts';
 import { deriveMarkerCues } from './markers.ts';
 import { deriveMgCues } from './mg.ts';
 import { deriveCameraCues, deriveMotionCues } from './motion.ts';
@@ -38,6 +39,7 @@ function emptyStats(): DeriveCuesStats {
 		bySource,
 		dropped: { rate: 0, gap: 0, maxCues: 0, confidence: 0, range: 0 },
 		heroesDemoted: 0,
+		snappedToBeat: 0,
 		found: 0,
 		kept: 0,
 	};
@@ -69,6 +71,19 @@ function extraCandidate(x: ExtraCue, i: number): CueCandidate | null {
 			: undefined;
 	const pan =
 		typeof x.pan === 'number' && Number.isFinite(x.pan) ? Math.max(-100, Math.min(100, x.pan)) : undefined;
+	const sweep = x.panSweep as { from?: unknown; to?: unknown } | undefined;
+	const panSweep =
+		sweep &&
+		typeof sweep === 'object' &&
+		typeof sweep.from === 'number' &&
+		Number.isFinite(sweep.from) &&
+		typeof sweep.to === 'number' &&
+		Number.isFinite(sweep.to)
+			? {
+					from: Math.max(-100, Math.min(100, sweep.from)),
+					to: Math.max(-100, Math.min(100, sweep.to)),
+				}
+			: undefined;
 	return {
 		key: typeof x.key === 'string' && x.key ? x.key.slice(0, 200) : `${x.from}:extra:${i}`,
 		frame: x.frame,
@@ -77,6 +92,7 @@ function extraCandidate(x: ExtraCue, i: number): CueCandidate | null {
 		types,
 		align,
 		...(pan !== undefined ? { pan } : {}),
+		...(panSweep ? { panSweep } : {}),
 		anchor: x.anchor,
 		confidence: clamp01(Number(x.confidence)),
 		reason: typeof x.reason === 'string' ? x.reason.slice(0, 300) : `${x.from} cue`,
@@ -86,6 +102,27 @@ function extraCandidate(x: ExtraCue, i: number): CueCandidate | null {
 		...(typeof x.group === 'string' && x.group ? { group: x.group.slice(0, 200) } : {}),
 		size: typeof x.size === 'number' ? clamp01(x.size) : 1,
 	};
+}
+
+/** Project sources whose events a measured picture motion may repeat. */
+const PIXEL_YIELDS_TO: ReadonlySet<string> = new Set(['edits', 'transitions', 'keyframes', 'text', 'mg', 'clipEdges', 'camera3d']);
+/** How close (frames) a project event must be to a pixel one to describe it (merging covers 2; a measured peak may differ by 1). */
+const PIXEL_NEAR_FRAMES = 3;
+
+function describedByProject(c: CueCandidate, project: readonly CueCandidate[]): boolean {
+	for (const p of project) {
+		if (!PIXEL_YIELDS_TO.has(p.from)) continue;
+		if (c.kind === 'cut') {
+			if (p.kind === 'cut' || p.kind === 'transition') {
+				if (Math.abs(p.frame - c.frame) <= PIXEL_NEAR_FRAMES) return true;
+				if (p.window && c.frame >= p.window.start - 2 && c.frame <= p.window.end + 2) return true;
+			}
+			continue;
+		}
+		if (Math.abs(p.frame - c.frame) <= PIXEL_NEAR_FRAMES) return true;
+		if (p.window && c.frame >= p.window.start - 2 && c.frame < p.window.end + 2) return true;
+	}
+	return false;
 }
 
 /**
@@ -177,7 +214,26 @@ export function deriveCues(
 					code: 'W_EXTRA_CUE_INVALID',
 					message: `${bad} engine cue(s) were malformed and ignored`,
 				});
-			for (const s of new Set(valid.map((c) => c.from))) run(s, () => valid.filter((c) => c.from === s));
+			// Shot changes and pixel cuts are cuts: silent where dialogue is heard, like edit points.
+			const dialogue = opts.respectDialogue !== false && valid.some((c) => c.kind === 'cut') ? dialogueRanges(ctx) : [];
+			const project = candidates.slice();
+			const engine: CueCandidate[] = [];
+			for (const c of valid) {
+				if (c.kind === 'cut' && inRanges(dialogue, c.frame)) {
+					if (sources.has(c.from) && c.frame >= range.start && c.frame < range.end)
+						stats.bySource[c.from].suppressedByDialogue++;
+					continue;
+				}
+				engine.push(c);
+			}
+			for (const s of new Set(engine.map((c) => c.from))) run(s, () => engine.filter((c) => c.from === s));
+			// Pixel cues measure the rendered picture: an event a project source already describes keeps that source's cue.
+			for (let i = candidates.length - 1; i >= 0; i--) {
+				const c = candidates[i]!;
+				if (c.from !== 'pixel' || !describedByProject(c, project)) continue;
+				candidates.splice(i, 1);
+				stats.bySource.pixel.merged++;
+			}
 		}
 		const merged = mergeCandidates(candidates, (from) => stats.bySource[from].merged++);
 		const maxCues = Number.isFinite(opts.maxCues) ? Math.max(0, Math.floor(opts.maxCues!)) : MAX_DERIVED_CUES;
@@ -189,6 +245,15 @@ export function deriveCues(
 		);
 		for (const c of cues) stats.bySource[c.from].kept++;
 		stats.kept = cues.length;
+		if (opts.snapToBeats) {
+			const beats = Array.isArray(opts.beatFrames)
+				? opts.beatFrames.slice(0, MAX_DERIVED_CUES * 10)
+				: beatFramesOf(Array.isArray(opts.extraCues) ? opts.extraCues.filter((x) => x && typeof x === 'object') : []);
+			const snapped = snapCuesToBeats(cues, beats);
+			stats.snappedToBeat = snapped.snapped;
+			const out = snapped.cues.sort((a, b) => a.frame - b.frame || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+			return { cues: out, curves, stats, warnings };
+		}
 		return { cues, curves, stats, warnings };
 	} catch (e) {
 		warnings.push({
