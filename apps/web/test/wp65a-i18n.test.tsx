@@ -88,6 +88,17 @@ describe('Undo / Redo labels (WP6.5a item 2)', () => {
 		await own.close();
 	});
 
+	it('Edit ▸ Select All / Deselect All (commands that delegate to the Timeline) are translated too', async () => {
+		const { integrationCommands } = await import('../src/commands/integration.ts');
+		registerCommands(integrationCommands);
+		await setLanguage('es');
+		const all = integrationCommands.find((c) => c.id === 'edit.selectAll')!;
+		expect(all.label).toBe('Seleccionar todo');
+		expect(integrationCommands.find((c) => c.id === 'edit.deselectAll')!.label).toBe('Deseleccionar todo');
+		await setLanguage('en');
+		expect(all.label).toBe('Select All');
+	});
+
 	it('the crash-recovery list translates its journalled "Undo …" / "Redo …" changes', async () => {
 		await setLanguage('es');
 		expect(recoveryChangeLabel('Undo Add Marker')).toBe('Deshacer Añadir marcador');

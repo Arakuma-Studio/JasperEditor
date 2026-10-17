@@ -119,30 +119,39 @@ test('auto-tag in the timeline tags a dropped clip; Essential Sound selects all 
 
 test('the Razor inside a video and an audio transition cuts and shortens them', async () => {
 	test.setTimeout(240_000);
-	await importInto(page, [join(FIXTURES, 'clip-a.mp4'), join(FIXTURES, 'clip-b.mp4')]);
+	await page.keyboard.press('Alt+Shift+Digit1'); // Editing (the Project panel)
+	await expect(page.getByTestId('project-panel')).toBeVisible();
+	await importInto(page, [join(FIXTURES, 'clip-a.mp4')]);
 	const a = await mediaIdForFile(page, 'clip-a.mp4');
-	const b = await mediaIdForFile(page, 'clip-b.mp4');
-	const r = await transact(page, [
+	const r0 = await transact(page, [
 		{ type: 'track.add', kind: 'video', count: 1 },
 		{ type: 'track.add', kind: 'audio', count: 2 },
 		{
 			type: 'clip.place',
 			source: { mediaId: a },
 			at: 400,
-			sourceRange: { in: { frames: 30 }, out: { frames: 130 } },
-			tracks: { video: 'V2', audio: 'A3' },
+			sourceRange: { in: { seconds: 1 }, out: { seconds: 4.5 } },
+			tracks: { video: 'V3', audio: 'A5' },
 			ref: '$a',
 		},
+	] as never);
+	expect(r0.ok, JSON.stringify(r0)).toBe(true);
+	// the next clip starts where the first ends (29.97 fps sequence, 30 fps media: read it back)
+	const v2 = (await clips(page, ['V3']))[0]!;
+	const a3 = (await clips(page, ['A5']))[0]!;
+	expect(a3.end).toBe(v2.end);
+	const cut = v2.end;
+	const r = await transact(page, [
 		{
 			type: 'clip.place',
-			source: { mediaId: b },
-			at: 500,
-			sourceRange: { in: { frames: 60 }, out: { frames: 160 } },
-			tracks: { video: 'V2', audio: 'A3' },
+			source: { mediaId: a },
+			at: cut,
+			sourceRange: { in: { seconds: 3 }, out: { seconds: 6.5 } },
+			tracks: { video: 'V3', audio: 'A5' },
 			ref: '$b',
 		},
-		{ type: 'transition.add', at: 500, trackId: 'V2', effectId: 'jasper.cross-dissolve', duration: 30 },
-		{ type: 'transition.add', at: 500, trackId: 'A3', effectId: 'jasper.constant-power', duration: 30 },
+		{ type: 'transition.add', at: cut, trackId: 'V3', effectId: 'jasper.cross-dissolve', duration: 30 },
+		{ type: 'transition.add', at: cut, trackId: 'A5', effectId: 'jasper.constant-power', duration: 30 },
 	] as never);
 	expect(r.ok, JSON.stringify(r)).toBe(true);
 	const ids = (r as unknown as { refs: Record<string, string> }).refs;
@@ -150,10 +159,19 @@ test('the Razor inside a video and an audio transition cuts and shortens them', 
 		Object.values((await sequence(page)).transitions)
 			.map((t) => t.duration)
 			.sort();
-	expect(await durations()).toEqual([30, 30]);
+	const made = Object.values((await sequence(page)).transitions);
+	expect(
+		made.map((t) => [t.duration, !!t.outgoingClipId && !!t.incomingClipId]),
+		JSON.stringify({ made, warnings: (r as unknown as { warnings: unknown }).warnings }),
+	).toEqual([
+		[30, true],
+		[30, true],
+	]);
 	// zoom in around the cut so a frame is several pixels wide
-	await query(page, 'playhead.set', { frame: 500 });
+	await query(page, 'playhead.set', { frame: cut });
 	await focusTimeline(page);
+	await page.keyboard.press('Backslash'); // the whole sequence (the playhead in view), then zoom in on it
+	await page.waitForTimeout(300);
 	for (let i = 0; i < 6; i++) {
 		await page.keyboard.press('Equal');
 		await page.waitForTimeout(150);
@@ -163,13 +181,14 @@ test('the Razor inside a video and an audio transition cuts and shortens them', 
 	const pxPerFrame = inc.width / seq.clips[ids.$b!]!.duration;
 	expect(pxPerFrame).toBeGreaterThan(2);
 	await page.screenshot({ path: join(outDir, 'razor-before.png') });
-	// Razor (C) 8 frames after the cut, inside the 30-frame span (485…515), on the video: the linked audio is cut too
+	// Razor (C) 8 frames after the cut, inside the 30-frame span (cut − 15 … cut + 15), on the video: the linked audio
+	// is cut too
 	await focusTimeline(page);
 	await page.keyboard.press('KeyC');
 	await page.mouse.click(inc.x + 8 * pxPerFrame + pxPerFrame / 2, inc.y + inc.height * 0.75);
 	await page.keyboard.press('KeyV');
-	await expect.poll(async () => (await clips(page, ['V2'])).length).toBe(3);
-	expect((await clips(page, ['A3'])).length).toBe(3);
+	await expect.poll(async () => (await clips(page, ['V3'])).length).toBe(3);
+	expect((await clips(page, ['A5'])).length).toBe(3);
 	expect((await appliedLabels(page)).at(-1)).toBe('Razor');
 	const after = await durations();
 	expect(after).toHaveLength(2);
@@ -182,19 +201,24 @@ test('the Razor inside a video and an audio transition cuts and shortens them', 
 test('Essential Sound Role / Align: arrow keys move and choose', async () => {
 	test.setTimeout(240_000);
 	await importInto(page, [join(dir, 'hit.ogg')]);
+	await page.keyboard.press('Alt+Shift+Digit9'); // Sound Design (Essential Sound)
 	const hit = await mediaIdForFile(page, 'hit.ogg');
 	const r = await transact(page, [
-		{ type: 'soundDesign.place', frame: 60, layers: [{ mediaId: hit, track: 'A2' }] },
+		{ type: 'soundDesign.place', frame: 60, layers: [{ mediaId: hit, track: 'A2', align: 'start' }] },
 	] as never);
 	expect(r.ok, JSON.stringify(r)).toBe(true);
 	const sfx = Object.values((await sequence(page)).clips).find((c) => c.sfx)!;
 	expect(sfx).toBeTruthy();
-	await query(page, 'playhead.set', { frame: sfx.start });
-	await focusTimeline(page);
-	await page.keyboard.press('Backslash');
-	await page.waitForTimeout(300);
-	const b = await clipBox(page, sfx.id);
-	await page.mouse.click(b.x + Math.min(20, b.width / 3), b.y + b.height - 6);
+	// select it through Essential Sound's tags ("SFX 1": the placed sound is the only SFX clip)
+	await page.getByTestId('essential-tag-sfx').click();
+	await expect
+		.poll(async () =>
+			JSON.stringify(
+				(await query<{ selection: { timeline: { clips: string[] } } }>(page, 'selection.get')).selection
+					.timeline.clips,
+			),
+		)
+		.toBe(JSON.stringify([sfx.id]));
 	const role = page.getByTestId('essential-role');
 	await expect(role).toBeVisible({ timeout: 30_000 });
 	const before = (await sequence(page)).clips[sfx.id]!.sfx!.role;
