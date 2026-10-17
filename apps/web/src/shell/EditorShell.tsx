@@ -41,7 +41,7 @@ import { MENUBAR, WORKSPACES_MENU } from './menus/model.ts';
 import type { MenuEnv, ShellMenuItem } from './menus/resolve.ts';
 import { CommandPalette, type PaletteSources } from './palette/CommandPalette.tsx';
 import { useUiPrefs } from './prefs.ts';
-import { COMPACT_WORKSPACE, PHONE_WORKSPACE } from './workspaces/definitions.ts';
+import { COMPACT_WORKSPACE, PHONE_WORKSPACE, workspaceName } from './workspaces/definitions.ts';
 import { getWorkspaceStore } from './workspaces/instance.ts';
 import { sanitizeLayout } from './workspaces/layout.ts';
 import type { WorkspaceRecord } from './workspaces/store.ts';
@@ -231,7 +231,8 @@ function ShellBody() {
 			saveWorkspace: () => {
 				const id = effectiveRef.current;
 				store.saveChanges(id, dock.currentLayout() ?? undefined);
-				toast({ kind: 'success', title: `Saved changes to “${store.get(id)?.name ?? id}”` });
+				const saved = store.get(id);
+				toast({ kind: 'success', title: `Saved changes to “${saved ? workspaceName(saved) : id}”` });
 			},
 			saveWorkspaceAs: () => {
 				void openDialog<string>(DIALOGS.saveWorkspaceAs, { store }).then((name) => {
@@ -332,7 +333,7 @@ function ShellBody() {
 					(w): ShellMenuItem => ({
 						type: 'command',
 						command: 'workspace.switch',
-						label: w.name,
+						label: workspaceName(w),
 						args: { id: w.id },
 						checked: w.id === store.getState().activeId,
 						shortcut: store.shortcutNumber(w.id) ? `Alt+Shift+${store.shortcutNumber(w.id)}` : null,

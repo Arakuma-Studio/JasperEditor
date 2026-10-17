@@ -1,5 +1,6 @@
 import type { EditorSession } from '@jasper/session';
 import type { PanelKind } from '../panels/types.ts';
+import { redoMenuLabel, undoMenuLabel } from '../shell/history-labels.ts';
 import { getCommand, isCommandEnabled, runCommand } from './registry.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
@@ -58,7 +59,7 @@ export const editCommands: UiCommand[] = [
 		agentExposed: true,
 		labelFor: (ctx) => {
 			const l = undoLabel(ctx.session);
-			return l ? `Undo ${l}` : 'Undo';
+			return undoMenuLabel(l);
 		},
 		when: (ctx) => !blocked(ctx) && !!ctx.session?.getState().history.canUndo,
 		disabledReason: (ctx) => blocked(ctx) ?? 'Nothing to undo',
@@ -75,7 +76,7 @@ export const editCommands: UiCommand[] = [
 		agentExposed: true,
 		labelFor: (ctx) => {
 			const l = redoLabel(ctx.session);
-			return l ? `Redo ${l}` : 'Redo';
+			return redoMenuLabel(l);
 		},
 		when: (ctx) => !blocked(ctx) && !!ctx.session?.getState().history.canRedo,
 		disabledReason: (ctx) => blocked(ctx) ?? 'Nothing to redo',

@@ -1,4 +1,11 @@
 {
+  "Assembly": "Ensamblaje",
+  "Editing": "Edición",
+  "Essentials": "Esenciales",
+  "Phone": "Teléfono",
+  "Redo {0}": "Rehacer {0}",
+  "Undo {0}": "Deshacer {0}",
+  "Workspace: {0}": "Espacio de trabajo: {0}",
   "— not": "— no",
   ", Copyright (c) Julian Garnier).": ", Copyright (c) Julian Garnier).",
   ", k2": ", k2",
