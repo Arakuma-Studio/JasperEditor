@@ -7732,3 +7732,45 @@ Also:
   `sound-check-verdicts`, `readme-tools`, `conventions`, `sound-guide`, `sound-examples`: 6 files, 42 passed.
 - `pnpm typecheck` (every package), `SD_GIT=1 … pnpm lint` (Biome, tokens, anime, layers, assets), `node scripts/i18n.mjs
   --check` (10 026 strings), `pnpm notices` (33 ported records): pass.
+- Web and MCP suites: `MCP_SOUND_CHECK_TEST_PORT=52011 pnpm vitest run --project @jasper/web --project @jasper/mcp
+  --maxWorkers=8`: 201 files, 1 655 passed, 8 skipped.
+- **Real app** (built stack, `pnpm build && pnpm mcp:build`, `E2E_PORT=52020 E2E_SKIP_BUILD=1 pnpm exec playwright test
+  e2e/sound-check-edges.spec.ts e2e/sound-check.spec.ts`): 2 passed (18 s and 1.6 min). The new spec imports generated
+  music (faded out), a 1 kHz tone starting on a full-level sample (a CC BY-SA library sound) at frame 120 and a held chord
+  from 1 s into its file at frame 150; Run Sound Check shows CLICK (error) at the tone's start and EDGE at the chord's
+  start under **Edges**, the ShareAlike LICENSE warning under Licence; MCP `sound_check` returns the same codes at the same
+  frames; Fix on the click is one History entry "Sound Check Fix: Fade it in…", and the re-run has no CLICK. Looked at
+  (`test-results/e2e-sound-check-edges/`): `panel.png` (Fail · Edges: 1 error, 3 warnings, 1 info — CLICK, EDGE decay of the
+  tone's tail cut by the frame grid at 00;00;04;29, EDGE entry, ENDING (the chord runs to the end), HEAD; each fix line says
+  safe or "needs your judgement"), `panel-after-fix.png` (Warnings: the CLICK gone; Licence: CREDITS and the ShareAlike
+  warning), `panel-high-contrast.png`, `timeline-sa-badge.png` (the orange "SA" badge on the tone's clip, next to the SFX
+  glyph), `library-include-share-alike.png` (Commercial-safe on, "Include ShareAlike" off beside it). The look found the
+  chopped-decay message unclear about its second level ("its source goes on (−24.2 dB)"): it now says "at −24.2 dB re that
+  peak".
+- **Cost** (`SOUND_CHECK_BENCH_MIN=10 SOUND_CHECK_BENCH_OUT=… pnpm vitest run apps/engine/test/sound-check-bench.test.ts`,
+  10 min of pink-noise music + a voice + 40 hits, back to back on the build server, load 1.3–3.9): before (integration tip
+  `8ee56158`) wall 74.1 s, engine CPU 89.2 s, stems pass 53.0 s; after, with clicks scanned on all six stems 96.5 s / 114.2 s
+  / 73.1 s; after, clicks on the mix, effects and bed only (kept) **89.8 s / 109.8 s / 66.6 s** (+21 % wall; the clip edges
+  0.3 s; peak RSS 494 vs 499 MB). The bench's 40 hits over quiet pink noise are reported HARSH (40) — the same fixture
+  property as the clean fixture's before its music went up 1.5 dB.
+- After merging `feat/sound-design` (`8ee56158`, WP6.5b's joint safe fixes) the HARSH guard uses the solver's joint
+  evaluation (`evaluateSfxGains`, the lower sound effects in each bed): `apps/engine/test/sound-check-p6.test.ts` and
+  `sound-check.test.ts`: 31 passed.
+
+#### Limits and notes for the next packages
+
+- EDGE judges an edge against the clip's peak within 10 s of it, decodes ≤ 400 edges per check, skips reversed clips, and
+  levels are the source's with the static clip gains (Volume automation is not applied to them). The decay check cannot tell
+  a deliberate hard out (a stinger cut on purpose) from a chop: acknowledging it is WP-E2 (P6-E4).
+- CLICK finds discontinuities the 14 kHz band carries; a click at sample rates under 30 kHz is not detected; a click
+  masked in the mix and in its stem by other high-frequency content (cymbals) can be missed (an earshot property). The
+  attribution window is 2 ms; a click from a clip's own content within 2 ms of its edge is reported as an edit click.
+- HARSH's reference is the music's loudest 5 ms presence anywhere in the range (a quiet cue is judged against a loud
+  chorus elsewhere); an event's window can include another effect playing then; the solver may raise a lowered sound
+  again on the next rebalance (HARSH is not a solver constraint).
+- LAYER_INAUDIBLE renders ≤ 64 layers, their first 3 s; "the bed" is every non-SFX clip.
+- COVERAGE classes come from stored anchors; unanchored user cues of one kind form one class.
+- ENDING / HEAD fixes write the Mix volume lane (a user's automation there in the last 0.5 s / first 20 ms is replaced).
+- The check costs ≈ 21 % more wall time (10-minute bench above), mostly the click and presence scans of three stems.
+- WP-E2 (acknowledged findings, check a proposal) builds on these codes and the `edges` / `tonal` categories; WP-E4 adds
+  a "Reference" category to `SOUND_CHECK_CATEGORIES` and `CATEGORY_ORDER`.
