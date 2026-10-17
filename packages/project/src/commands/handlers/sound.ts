@@ -27,6 +27,7 @@ import {
 	soundCheckHumanVerdicts,
 	soundCheckMomentHash,
 } from '../../sound/check.ts';
+import { libraryCopyShift } from '../../sound/copy-upgrade.ts';
 import {
 	audioTrackClipsIn,
 	audioTrackIsFree,
@@ -55,6 +56,8 @@ import { placeSource } from './clip-core.ts';
 import { effectHandlers } from './effect.ts';
 import { essentialHandlers } from './essential.ts';
 import { newKeyframe } from './param.ts';
+import { clipCoveredAfterShift, replaceMediaFile } from './process.ts';
+import { projectHandlers } from './project.ts';
 import { sequenceHandlers } from './sequence.ts';
 import { refreshDefaultLevel, sfxDefaultLevel } from './sound-levels.ts';
 import { followCueMix, syncRoomSends } from './sound-mix.ts';
@@ -87,6 +90,80 @@ function setLibraryInfo(doc: DDoc, cmd: CommandOf<'media.setLibraryInfo'>, h: Ha
 	if (bad) h.fail('E_INVALID_PARAM', bad, { path: ['library', 'descriptors'] });
 	asset.library = library as Draft<LibraryProvenance>;
 	return { mediaId: asset.id, library };
+}
+
+/** `media.upgradeLibraryCopy`: the older copy gets the new file in place, its clips moved by the lead difference. */
+function upgradeLibraryCopy(doc: DDoc, cmd: CommandOf<'media.upgradeLibraryCopy'>, h: HandlerContext) {
+	const old = doc.media[cmd.mediaId] as Draft<MediaAsset> | undefined;
+	if (!old) return h.fail('E_NOT_FOUND', `Media not found: ${cmd.mediaId}`, { path: ['mediaId'] });
+	if (old.kind !== 'audio' || old.derivation)
+		h.fail('E_INVALID_PARAM', `${old.id} is not a library sound's copy (an audio media)`, {
+			path: ['mediaId'],
+		});
+	if (cmd.asset.kind !== 'audio')
+		h.fail('E_INVALID_PARAM', `The new copy must be audio media, not ${cmd.asset.kind}`, { path: ['asset'] });
+	const library = plainCopy(cmd.asset.library) as LibraryProvenance;
+	const bad = libraryDescriptorIssue(library);
+	if (bad) h.fail('E_INVALID_PARAM', bad, { path: ['asset', 'library', 'descriptors'] });
+	const plan = libraryCopyShift(
+		{ library: old.library, durationFlicks: old.probe.durationFlicks },
+		{ library, durationFlicks: cmd.asset.probe.durationFlicks },
+	);
+	if (!plan.ok)
+		return h.fail('E_INVALID_PARAM', `Cannot replace ${old.id}: ${plan.reason}`, { path: ['asset'] });
+	const same = Object.values(doc.media).find((m) => m.fingerprint === cmd.asset.fingerprint && !m.derivation);
+	if (same && same.id !== old.id)
+		h.fail('E_INVALID_PARAM', `The new copy is already in the project as ${same.id}`, { path: ['asset'] });
+	const shift = plan.shiftFlicks;
+	// The new file as `media.relink` would see it, for the coverage check before anything changes.
+	const next = { ...plainCopy(old), ...plainCopy(cmd.asset), id: old.id, kind: 'audio' } as MediaAsset;
+	const users: { seq: DSeq; clip: DClip }[] = [];
+	for (const seq of Object.values(doc.sequences))
+		for (const c of Object.values(seq.clips))
+			if ((c as { mediaId?: string }).mediaId === old.id) users.push({ seq, clip: c });
+	const misfit = users.find((u) => !clipCoveredAfterShift(u.seq, u.clip, shift, next));
+	if (misfit) {
+		const msg = `${misfit.clip.id} would not fit the new copy of ${old.originalName}`;
+		if (!cmd.ifPossible) return h.fail('E_OUT_OF_MEDIA', msg, { blocking: [misfit.clip.id] });
+		h.warn('W_COPY_KEPT', `${msg}: the clips keep the older copy; the new one is another media`);
+		const r = projectHandlers['media.register'](
+			doc,
+			{
+				type: 'media.register',
+				asset: cmd.asset,
+				...(cmd.binId !== undefined ? { binId: cmd.binId } : {}),
+				...(cmd.name !== undefined ? { name: cmd.name } : {}),
+				...(cmd.label !== undefined ? { label: cmd.label } : {}),
+				...(cmd.ref ? { ref: cmd.ref } : {}),
+				...(cmd.itemRef ? { itemRef: cmd.itemRef } : {}),
+			},
+			h,
+		) as { mediaId: string };
+		return { mediaId: r.mediaId, upgraded: false, shiftFlicks: 0, clipIds: [] as string[] };
+	}
+	const stream = cmd.asset.probe.streams.find((x) => x.type === 'audio');
+	replaceMediaFile(doc, old.id, shift, 'refuse', h, () => {
+		old.fingerprint = cmd.asset.fingerprint;
+		old.locators = plainCopy(cmd.asset.locators) as never;
+		old.probe = plainCopy(cmd.asset.probe) as never;
+		old.sizeBytes = cmd.asset.sizeBytes;
+		old.container = cmd.asset.container;
+		old.originalName = cmd.asset.originalName;
+		old.library = library as Draft<LibraryProvenance>;
+	});
+	for (const { clip } of users) {
+		const a = clip as DAudio;
+		// the aligned point is content time too
+		if (shift && a.sfx) a.sfx.placement.peakFlicks = Math.max(0, a.sfx.placement.peakFlicks + shift);
+		if (stream && a.kind === 'audio' && a.channels && a.channels.streamIndex !== stream.index)
+			a.channels.streamIndex = stream.index;
+	}
+	h.defineRef(cmd.ref, old.id);
+	if (cmd.itemRef) {
+		const item = Object.values(doc.items).find((i) => i.kind === 'media' && i.mediaId === old.id);
+		if (item) h.defineRef(cmd.itemRef, item.id);
+	}
+	return { mediaId: old.id, upgraded: true, shiftFlicks: shift, clipIds: users.map((u) => u.clip.id) };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1276,6 +1353,7 @@ function setVerdict(doc: DDoc, cmd: CommandOf<'soundDesign.setVerdict'>, h: Hand
 
 export const soundHandlers = {
 	'media.setLibraryInfo': setLibraryInfo,
+	'media.upgradeLibraryCopy': upgradeLibraryCopy,
 	'soundCue.add': addCues,
 	'soundCue.update': updateCue,
 	'soundCue.remove': removeCues,

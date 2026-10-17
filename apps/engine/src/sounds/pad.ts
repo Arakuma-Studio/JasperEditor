@@ -173,7 +173,7 @@ export async function writePaddedSound(
 				? opts.codec
 				: 'pcm_f32le';
 	const dur = opts.durationSec !== undefined && Number.isFinite(opts.durationSec) ? opts.durationSec : 0;
-	const timeoutMs = PAD_TIMEOUT_MS + Math.min(3600, Math.max(0, dur)) * PAD_TIMEOUT_MS_PER_SEC;
+	const timeoutMs = Math.round(PAD_TIMEOUT_MS + Math.min(3600, Math.max(0, dur)) * PAD_TIMEOUT_MS_PER_SEC);
 	const signal = AbortSignal.any(
 		[opts.signal, AbortSignal.timeout(timeoutMs)].filter((s): s is AbortSignal => !!s),
 	);

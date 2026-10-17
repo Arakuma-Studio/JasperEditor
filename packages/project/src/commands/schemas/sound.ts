@@ -1,6 +1,7 @@
 // Sound design commands (spec 12 §2.9; owner `sound-design`): library provenance of media (P1), cues, placement,
 // swap, palette and settings (P2).
 import { z } from 'zod';
+import { LabelColorSchema } from '../../schema/common.ts';
 import {
 	CUE_ALIGNS,
 	CueAnchorSchema,
@@ -15,6 +16,7 @@ import {
 import { SFX_DEFAULT_GAIN_MAX_DB, SFX_DEFAULT_GAIN_MIN_DB } from '../../sound/level.ts';
 import { LibraryProvenanceSchema } from '../../sound/provenance.ts';
 import { cmd, IdRefSchema, RefDeclSchema, TimeInputSchema, TrackRefSchema } from './common.ts';
+import { MediaRegisterCmd } from './project.ts';
 
 /**
  * Sets (or with `null` removes) the library provenance of a media asset: which Sound Library sound it is, its licence
@@ -24,6 +26,28 @@ import { cmd, IdRefSchema, RefDeclSchema, TimeInputSchema, TrackRefSchema } from
 export const MediaSetLibraryInfoCmd = cmd('media.setLibraryInfo', {
 	mediaId: IdRefSchema,
 	library: LibraryProvenanceSchema.nullable(),
+});
+
+/**
+ * Replaces the project's older copy of a library sound with a new copy of the same sound (WP6.5b), in place: the
+ * media keeps its id and its Project items, gets the new file (`asset`: the engine's registration, as `media.register`
+ * takes it, with its `library` provenance), and every clip using it moves in content time by the difference of the lead
+ * silences, so it plays the same samples at the same times (keyframes, markers and the aligned point move with it).
+ * Both must be copies of the same `soundId` whose sound has the same length (±50 ms), else `E_INVALID_PARAM`. When a
+ * clip cannot move onto the new file (`E_OUT_OF_MEDIA`) the command is refused, or with `ifPossible` registers the new
+ * copy as another media instead (`binId`, `name`, `label` as for `media.register`; `W_COPY_KEPT`). `ref` names the
+ * media that holds the new copy either way (`itemRef` its Project item). Result `{mediaId, upgraded, shiftFlicks, clipIds}`.
+ */
+export const MediaUpgradeLibraryCopyCmd = cmd('media.upgradeLibraryCopy', {
+	mediaId: IdRefSchema,
+	asset: MediaRegisterCmd.shape.asset.extend({ library: LibraryProvenanceSchema }),
+	ifPossible: z.boolean().optional(),
+	binId: IdRefSchema.nullable().optional(),
+	name: z.string().optional(),
+	label: LabelColorSchema.optional(),
+	ref: RefDeclSchema.optional(),
+	/** Names the media's Project item (the older copy's first item, or the new media's). */
+	itemRef: RefDeclSchema.optional(),
 });
 
 /** A library sound id (`snd_` + 16 hex digits, the engine's `SoundEntry.id`). */
@@ -359,6 +383,7 @@ export const SoundDesignSetAutoGainCmd = cmd('soundDesign.setAutoGain', {
 
 export const SOUND_COMMANDS = [
 	MediaSetLibraryInfoCmd,
+	MediaUpgradeLibraryCopyCmd,
 	SoundCueAddCmd,
 	SoundCueUpdateCmd,
 	SoundCueRemoveCmd,
