@@ -343,6 +343,18 @@ describe('conversions', () => {
 		expect(b.types).toBeUndefined();
 	});
 
+	it('reads interchange cue markers SFX: <types> (<weight>) back with their weight (spec 12 §2.11)', () => {
+		expect(markerToCueInput(marker({ name: 'SFX: whoosh+hit (support)' }))).toMatchObject({
+			kind: 'manual',
+			types: ['whoosh', 'hit'],
+			weight: 'support',
+			source: 'marker',
+		});
+		expect(markerToCueInput(marker({ name: 'SFX: tick (hero)' }))).toMatchObject({ types: ['tick'], weight: 'hero' });
+		// without a weight the first type's default weight, as before
+		expect(markerToCueInput(marker({ name: 'SFX: boom' })).weight).toBe('hero');
+	});
+
 	it('cue → marker → cue keeps the types (parseSfxRequest reads the name back)', () => {
 		const m = cueToMarker(cue('a', 12, { types: ['whoosh', 'swish'], reason: 'Push' }));
 		expect(m).toEqual({ frame: 12, name: 'sfx: whoosh+swish', comment: 'Push', duration: 0 });
