@@ -9966,5 +9966,6 @@
   "Nothing was tagged": "No se etiquetó nada",
   "Or assign an audio type to the selection:": "O asigna un tipo de audio a la selección:",
   "Tagged {0}": "Etiquetados: {0}",
-  "Update Sound Copy": "Actualizar copia del sonido"
+  "Update Sound Copy": "Actualizar copia del sonido",
+  "the sounds overlapping it (summed true peak)": "los sonidos que se solapan con él (pico real sumado)"
 }

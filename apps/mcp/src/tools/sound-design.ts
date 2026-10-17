@@ -751,7 +751,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 		'place_sound',
 		{
 			title: 'Place sound (on a cue)',
-			description: `PROPOSES (mode "propose", the default) or places (mode "apply": only when the user asked you to place sounds) 1–6 layers of sound on a stored cue (cueId) or at a time (at; a cue is created there unless createCue: false) so that each layer's aligned point lands EXACTLY on the cue frame: the peak for hits, booms, lands, whooshes; the end for risers and reverses; the start for UI blips (align auto, or say peak|start|end). Each layer is a library sound (soundId), a project media (mediaId) or a pick: sound {type, query?} chooses among the best-ranked sounds of that type (palette first), rotated so neighbouring cues differ, with the seeded ±2 % speed and ±1 dB variation. ONE undo step: imports the sounds into the "Sound Effects" bin, places one clip per layer on free SFX tracks (never over audio; a new "SFX n" when none is free), tags them Essential Sound ▸ SFX, groups the layers and links them to the cue. Gain: a layer's gainDb when given; otherwise its default level — the sound's loudest 400 ms to its role's momentary target at the sequence's delivery (web: hero −16, support −22, layer −24, beds −30 LUFS) under the role's true-peak ceiling (−6/−12/−16/−20 dBTP), within −30…+12 dB, so layered inserts stay under full scale (each clip's gainDb and level are returned). alternatives (1–3 soundIds) are stored on the clip for swap_sound "next"/"previous"; reason is recorded on the cue. Apply returns each clip with its track, start, aligned frame, peak frame and errorFlicks (0 = sample-exact), plus warnings (a hero under dialogue or within 0.5 s of another hero). Propose stores the same edit as a proposal (feature sound-design; setup items import the sounds and add the cue, the place item carries the alternatives as switchable sets) and changes nothing: ask the user to review it in the editor's Review panel, then wait_for_proposal.`,
+			description: `PROPOSES (mode "propose", the default) or places (mode "apply": only when the user asked you to place sounds) 1–6 layers of sound on a stored cue (cueId) or at a time (at; a cue is created there unless createCue: false) so that each layer's aligned point lands EXACTLY on the cue frame: the peak for hits, booms, lands, whooshes; the end for risers and reverses; the start for UI blips (align auto, or say peak|start|end). Each layer is a library sound (soundId), a project media (mediaId) or a pick: sound {type, query?} chooses among the best-ranked sounds of that type (palette first), rotated so neighbouring cues differ, with the seeded ±2 % speed and ±1 dB variation. ONE undo step: imports the sounds into the "Sound Effects" bin, places one clip per layer on free SFX tracks (never over audio; a new "SFX n" when none is free), tags them Essential Sound ▸ SFX, groups the layers and links them to the cue. Gain: a layer's gainDb when given; otherwise its default level — the sound's loudest 400 ms to its role's momentary target at the sequence's delivery (web: hero −16, support −22, layer −24, beds −30 LUFS) under the role's true-peak ceiling (−6/−12/−16/−20 dBTP), within −30…+12 dB, so layered inserts stay under full scale (each clip's gainDb and level are returned). alternatives (1–3 soundIds) are stored on the clip for swap_sound "next"/"previous"; reason is recorded on the cue. Apply returns each clip with its track, start, aligned frame, peak frame and errorFlicks (0 = sample-exact), plus warnings (a hero under dialogue — where speech is heard: transcript words, else the engine's measured voice activity of dialogue clips, not a muted or ducked-out stretch — or within 0.5 s of another hero). Propose stores the same edit as a proposal (feature sound-design; setup items import the sounds and add the cue, the place item carries the alternatives as switchable sets) and changes nothing: ask the user to review it in the editor's Review panel, then wait_for_proposal.`,
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -990,7 +990,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 							});
 					}
 					// Warnings against the edit as it is now (before this placement).
-					const warnings = placementWarnings(doc, seq, cue, frame, a);
+					const warnings = await placementWarnings(ctx, doc, seq, cue, frame, a, extra.signal);
 					return {
 						commands,
 						sequenceId: seq.id,
@@ -1476,24 +1476,61 @@ type PlaceArgs = {
 	clampStart?: boolean | undefined;
 };
 
+/**
+ * Where dialogue is heard in `seq` (the project's one definition, `dialogueSpans`): asked of the engine, which measures
+ * the voice activity of dialogue clips without a transcript (cached per media range), so a hero in a pause of a long
+ * dialogue clip is not "under dialogue"; mix gains (a muted or ducked-out stretch) count either way. When the engine
+ * cannot say, the pure rule here: transcript words, else whole dialogue clips (`whole: true`).
+ */
+async function heardDialogue(
+	ctx: ToolContext,
+	doc: ProjectDocument,
+	seq: Sequence,
+	signal?: AbortSignal,
+): Promise<{ ranges: Array<[number, number]>; whole: boolean }> {
+	try {
+		const res = await soundCall<SoundCuesResponse>(ctx, (c) =>
+			c.soundDesignCues(
+				{
+					envelope: toolEnvelope(doc, 0),
+					sequenceId: seq.id,
+					// the dialogue spans are what is asked; the derivation is kept to one frame of one source
+					opts: { sources: ['markers'], range: { start: 0, end: 1 }, maxCues: 1 },
+				},
+				signal,
+			),
+		);
+		return {
+			ranges: res.dialogue.map((d) => [d.start, d.end] as [number, number]),
+			whole: res.voice?.state === 'partial' || res.voice?.state === 'failed',
+		};
+	} catch {
+		return { ranges: sequenceDialogueRanges(doc, seq), whole: true };
+	}
+}
+
 /** Hero warnings of a placement against the edit as it is (before it). */
-function placementWarnings(
+async function placementWarnings(
+	ctx: ToolContext,
 	doc: ProjectDocument,
 	seq: Sequence,
 	cue: SoundCue | null,
 	frame: number,
 	a: PlaceArgs,
-): { code: string; message: string }[] {
+	signal?: AbortSignal,
+): Promise<{ code: string; message: string }[]> {
 	const warnings: { code: string; message: string }[] = [];
 	const weightHere = cue?.weight ?? a.weight ?? (a.layers[0]!.role === 'hero' ? 'hero' : 'support');
 	const heroHere = weightHere === 'hero' || a.layers.some((l) => l.role === 'hero');
 	if (!heroHere) return warnings;
 	const F = flicksPerFrame(seq.settings.frameRate as Rational);
-	const dialogue = sequenceDialogueRanges(doc, seq);
-	if (dialogue.some(([s, e]) => frame >= s && frame < e))
+	const dialogue = await heardDialogue(ctx, doc, seq, signal);
+	if (dialogue.ranges.some(([s, e]) => frame >= s && frame < e))
 		warnings.push({
 			code: 'W_HERO_UNDER_DIALOGUE',
-			message: `A hero sound at ${sequenceTimecode(seq, frame)} plays under spoken words: make it support, or move it.`,
+			message: `A hero sound at ${sequenceTimecode(seq, frame)} plays under spoken words${
+				dialogue.whole ? ' (or a dialogue clip whose voice activity could not be measured)' : ''
+			}: make it support, or move it.`,
 		});
 	const fps = FLICKS_PER_SECOND / F;
 	for (const c of sfxClipsOf(seq)) {
@@ -1657,7 +1694,7 @@ async function proposePlacement(
 		...(extraCommands.length ? { extraCommands } : {}),
 	};
 	const built = soundProposalItems(doc, seq.id, media, [placement], { binName: SOUND_EFFECTS_BIN });
-	const warnings = placementWarnings(doc, seq, cue, frame, a);
+	const warnings = await placementWarnings(ctx, doc, seq, cue, frame, a);
 	const label =
 		a.layers.length > 1
 			? soundText(SOUND_LABELS.placeSounds, a.layers.length)
@@ -1937,7 +1974,7 @@ function registerRebalanceSfx(ctx: ToolContext): void {
 		'rebalance_sfx',
 		{
 			title: 'Rebalance SFX levels (masking solver)',
-			description: `Sets the gains of a sequence's sound effects so each clears the BED (dialogue, music, ambience: everything that is not a sound effect) by its role's target lift in its dominant octave band — hero +5, support +3.5, ambient +2 dB — under ordered safety constraints: the gain range −30…+12 dB, a peak over the local bed of at most +10 LU (hero) / +6 LU, a support within 0.15 s of a hero × 0.6, repeats within ±2 dB, no more than +1 dB in 1–4 kHz during speech (transcript words or voice activity of dialogue clips), and the delivery's true-peak ceiling. The engine renders the bed only around the cues and each sound alone, measures, solves and returns a table: clip | timecode | sound | role | from → gain | target | achieved | limited by | why ("−3 dB, limited by dialogue A1"), plus conflicts (the earlier, safety constraint kept) and skipped clips. mode "propose" (default) stores a proposal with one item per changed clip for the user to review in the editor; mode "apply" applies every change as ONE undo step "Rebalance SFX Levels" (only when the user asked you to). Gains set by hand are kept unless userGains "replace" or you name the clips. Solving again without changes changes nothing (idempotent). If the mix changes while it measures (the user moves a fader, raises the music, relinks media), mode "apply" applies nothing and fails with CONFLICT (retryable): run it again. Sound effects = clips typed SFX in Essential Sound or placed by sound design. Waits for the job (timeoutSeconds, default 300).`,
+			description: `Sets the gains of a sequence's sound effects so each clears the BED (dialogue, music, ambience: everything that is not a sound effect, plus the sound effects of a lower weight playing under it: an ambience under a support or hero, a support under a hero — never the layers of one cue or sounds of the same weight) by its role's target lift in its dominant octave band — hero +5, support +3.5, ambient +2 dB — under ordered safety constraints: the gain range −30…+12 dB, a peak over the local bed of at most +10 LU (hero) / +6 LU, a support within 0.15 s of a hero × 0.6, repeats within ±2 dB, no more than +1 dB in 1–4 kHz during speech (transcript words or voice activity of dialogue clips, where the mix lets it through: a muted or ducked-out stretch is not speech), and the delivery's true-peak ceiling — for each sound and for the sounds that overlap together (they share it: "limited by the sounds overlapping it"). The engine renders the bed only around the cues and each sound alone, measures, solves and returns a table: clip | timecode | sound | role | from → gain | target | achieved | limited by | why ("−3 dB, limited by dialogue A1"), plus conflicts (the earlier, safety constraint kept) and skipped clips. mode "propose" (default) stores a proposal with one item per changed clip for the user to review in the editor; mode "apply" applies every change as ONE undo step "Rebalance SFX Levels" (only when the user asked you to). Gains set by hand are kept unless userGains "replace" or you name the clips. Solving again without changes changes nothing (idempotent). If the mix changes while it measures (the user moves a fader, raises the music, relinks media), mode "apply" applies nothing and fails with CONFLICT (retryable): run it again. Sound effects = clips typed SFX in Essential Sound or placed by sound design. Waits for the job (timeoutSeconds, default 300).`,
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,

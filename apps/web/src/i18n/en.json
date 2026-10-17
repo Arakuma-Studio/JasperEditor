@@ -8923,6 +8923,7 @@
   "The sound started before 0: its first {0} s were trimmed",
   "The sound was added but its clip was not found",
   "the sound's {0} is {1} s into it: aligned at frame {2} it would start at frame {3}, before the sequence",
+  "the sounds overlapping it (summed true peak)",
   "The source and sequence durations differ",
   "The Source monitor is not available yet.",
   "The SVG has nothing a shape can draw",

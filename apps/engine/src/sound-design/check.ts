@@ -10,7 +10,8 @@
 //    the final loudness, true peak, curve and the limiter's gain reduction per 10 ms.
 // 3. Speech: transcript words plus voice activity of the dialogue stem (10 ms levels over `vadThreshold`, ≥ −50 dBFS).
 // 4. Sound effects against the bed with the masking solver's own measurements and definitions (`measureSfxEvents`,
-//    `evaluateSfxGain`, `solveSfxGains`): MASKED, OVERLOAD (peak over the bed) and their gain fixes.
+//    `evaluateSfxGains`: the lower sound effects under each one count as the solver counts them, `solveSfxGains`):
+//    MASKED, OVERLOAD (peak over the bed) and their gain fixes.
 // 5. Sync: each placed sound's file, decoded around its aligned point at its speed, located in the SFX stem by
 //    cross-correlation within ±3 frames of its cue (`locateByCorrelation`): OUT_OF_SYNC with the offset in ms.
 // 6. The rest from the document and the curves: LOUDNESS, TRUE_PEAK, OVERLOAD (limiter, clipping), MUSIC_OVER_VOICE,
@@ -46,7 +47,7 @@ import {
 import {
 	CURVE_HOP_SEC,
 	CurveMeter,
-	evaluateSfxGain,
+	evaluateSfxGains,
 	LOUDNESS_FLOOR_LUFS,
 	locateByCorrelation,
 	loudnessCurve,
@@ -1179,10 +1180,20 @@ export async function checkSequence(
 		const solved = solveAt(events, opts.preset);
 		const lo = levelOptions(opts.preset);
 		const locked = new Set(seq.audioTracks.filter((tr) => tr.locked).map((tr) => tr.id));
+		// the solver's definitions, the lower sound effects under each one included (at the current / solved gains)
+		const curAll = evaluateSfxGains(
+			events,
+			measured.map((row) => row.info.gainDb),
+			lo,
+		);
+		const atAll = evaluateSfxGains(
+			events,
+			solved.events.map((r) => r.gainDb),
+			lo,
+		);
 		measured.forEach((row, i) => {
-			const ev = events[i]!;
 			const ms = m.sounds.get(row.clip.id)!;
-			const cur = evaluateSfxGain(ev, row.info.gainDb, lo);
+			const cur = curAll[i]!;
 			row.liftDb = cur.liftDb;
 			row.targetLiftDb = cur.targetLiftDb;
 			row.peakOverBedLu = cur.peakOverBedLu;
@@ -1190,7 +1201,7 @@ export async function checkSequence(
 			row.speech = ms.speechOverlap;
 			row.peakLu = ms.soundPeakLu === null ? null : ms.soundPeakLu + row.info.gainDb;
 			const res = solved.events[i]!;
-			const at = evaluateSfxGain(ev, res.gainDb, lo);
+			const at = atAll[i]!;
 			const level = solvedLevel(res, ms, lo.truePeakCeilingDb);
 			const gainCmd = {
 				type: 'soundDesign.applyGains',

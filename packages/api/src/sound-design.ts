@@ -364,6 +364,15 @@ export const SfxSolvedLevelSchema = z.object({
 	bedTracks: z.array(z.string()),
 	/** Its active window on the timeline (seconds), where sound and bed were measured. */
 	window: z.object({ start: z.number(), end: z.number() }),
+	/**
+	 * dB the lower-weight sound effects playing under it add to its bed in the dominant bands at the solved gains (an
+	 * ambience under a support or hero, a support under a hero; `achievedLiftDb` is over that masked bed). Absent: 0.
+	 */
+	sfxMaskingDb: z.number().optional(),
+	/** Clip ids of those sound effects (≤ 32). */
+	maskedBy: z.array(z.string()).optional(),
+	/** Summed true peak of it and the sounds playing with it at its worst moment (dBTP, an upper bound; pre-master). */
+	overlapTruePeakDb: z.number().optional(),
 });
 export type SfxSolvedLevel = z.infer<typeof SfxSolvedLevelSchema>;
 

@@ -102,6 +102,8 @@ export function limitPhrase(code: string, reason?: string): string {
 			return t('its repeats (±2 dB)');
 		case 'headroom':
 			return t('headroom');
+		case 'overlap-headroom':
+			return t('the sounds overlapping it (summed true peak)');
 		case 'clamp':
 			return t('the gain range (−30…+12 dB)');
 		case 'user-offset':
