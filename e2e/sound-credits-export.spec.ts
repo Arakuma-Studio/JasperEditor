@@ -6,8 +6,8 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { JobListResponseSchema } from '../packages/api/src/jobs.ts';
 import { expect, type Page, test } from '@playwright/test';
+import { JobListResponseSchema } from '../packages/api/src/jobs.ts';
 import { createProject, enableAgentBridge, focusTimeline, query, ROOT, waitForJob } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
