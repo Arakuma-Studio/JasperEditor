@@ -7280,12 +7280,23 @@ compute rule (said there). Before = the branch point `5d80ed30` (a detached work
   out under the load and passes alone (4 / 4); the solver's and the preview's CPU budgets failed under the load and
   were made ratios to a reference measured in the same process (main-thread CPU for the preview): 1.62× / 2.69× of one
   pass (budgets 2.5× / 4×, exact pass counts 3 / 13), 0.64 (budget 0.8), measured idle. The first full run (before the
-  last fixes) gave 7 135 passed with the same environmental failures.
+  last fixes) gave 7 135 passed with the same environmental failures. **Final run** at the integration head with WP6.5a
+  merged and item 20 (load 9–25): **7 216 passed, 3 failed, 408 skipped** (22 min) — the two browser shims and
+  `polish-panel-loading` (passes alone: 4 / 4; it imports every panel and runs out of time under load), plus the two
+  `libx264` fixture files; the budget tests pass.
 - **Gate** — `pnpm -r --no-bail typecheck` (no errors), `SD_GIT=1 … pnpm lint` (Biome, tokens, anime, layers, assets: ok),
   `pnpm notices --check` (150 packages, 32 ported records: current), `node scripts/i18n.mjs --check` (es.json covers all
   9 965 strings).
 - **E2E** (`pnpm build`, then `E2E_SKIP_BUILD=1 E2E_SERVER_TIMEOUT_MS=600000 pnpm exec playwright test …`, Google Chrome
-  142): ⟨E2E⟩
+  142, fixtures from `pnpm fixtures`, at the final head): **21 passed, 1 failed** — `anime-templates` (6: drag, edit,
+  keyframed colour, effects, export = renderStill, clipped callout), `sound-cue-sources`, `sound-p2-done` (export peaks on
+  the cues), `sound-p65a-polish` (4), `sound-check`, `sound-fill`, `sound-library` (3: insert peak-aligned, the aligned
+  point exactly on the frame in an ffmpeg-decoded export, folder sound inserted exactly), `sound-mix` (Auto Sound Pass →
+  Essential solver gain → Rebalance → Delivery → export at −14 LUFS), `sound-p3-mcp`, `sound-proposal-ghosts`,
+  `sound-review` (review flow); the failure is `sound-review` "Auto Sound Pass… → … → export": the "Proposed sounds for
+  3 cues" toast covers the export dialog's Export button (screenshot looked at), and it fails the same way on the
+  integration branch without this work (export dialog / toast placement: not engine work, reported to the
+  orchestrator). An earlier run (before the last fixes and the WP6.5a merge) gave 17 passed with the same failure.
 
 #### Limits and notes for the next packages
 
