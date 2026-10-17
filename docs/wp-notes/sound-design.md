@@ -6540,3 +6540,122 @@ else (no measurement) the whole clip; pauses < 0.75 s bridged. Spans carry the c
   the dialogue stem's VAD, as before).
 - Not changed: MCP `place_sound`'s W_HERO_UNDER_DIALOGUE warning runs in the MCP process with the pure rule (no voice
   activity: whole dialogue clips).
+
+#### Labelled set and accuracy (measured)
+
+The set (all offline, nothing committed): **dialogue** — the 12 LJ Speech utterances of `fixtures/speech/lj-composite.flac`
+(public domain) as clips of that media (±0.3 s), two 30 s stretches, a 60 s and a 14 s stretch (held out), six utterances
+at 22.05 kHz mixed with air-conditioner noise at 20 / 10 dB SNR (held out); **SFX** — the 61 starter-kit recordings
+(`apps/engine/sounds/starter`, 0.03–3 s), the 19 Jasper Synth recipes × seeds 0, 1 (tuning) and 5 (held out), six
+generated long effects (explosion with a 6 s tail, car pass-by, door creak, power-down, 5 s riser, door slam) at 48 and
+44.1 kHz; **music** — `packages/audio-fx/test/category-fixtures.ts`: the beat-test band (drums, bass, chords) at 90 / 120 /
+140 BPM, chord pads, plucked arpeggios, a vibrato melody over a pad, drum loops, a piano-like progression (tuning: 20 s,
+44.1 kHz; held out: other seeds and tempi, 8–45 s, 22.05–48 kHz, one at −24 dB); **ambience** — pink bed with sparse
+knocks, traffic rumble with swells, rain, wind gusts, room tone with hum, air conditioner, forest with birds, office with
+keyboard clicks (tuning: 20 s; held out: 40 s at −12 dB and 9 s at 22.05 kHz). The thresholds were chosen on the tuning
+set; the held-out set was not looked at while choosing them (it was built after, once, and passed unchanged).
+
+`AUTO_TAG_REPORT=/tmp/acc.json pnpm vitest run apps/engine/test/audio-classify.test.ts -t labelled --maxWorkers=1` (the
+whole engine path: files registered, `POST /api/audio/classify`, decode, features, rules): **1 passed**; 192 items,
+classified in 101.7 s (2 at once, shared host, load ≈ 40–50 on 16 cores):
+
+| set | n | accuracy | dialogue → | music → | sfx → | ambience → |
+|---|---|---|---|---|---|---|
+| tuning | 139 | **100 %** | 14 dialogue | 13 music | 104 sfx | 8 ambience |
+| held out | 53 | **100 %** | 8 dialogue | 8 music | 25 sfx | 12 ambience |
+
+(no confusion: every off-diagonal cell is 0; the test asserts ≥ 90 % per set and prints both matrices.) Before tuning the
+first rule set scored 95.0 % / 94.2 % on the tuning set (measured with a scratch script): risers and an explosion read
+as music (low-passed noise looked "tonal": fixed by requiring spectral peaks to stand 10 dB over their neighbours),
+synth transitions as dialogue (fixed by making syllabic modulation required for dialogue), traffic / wind as music.
+
+Hard cases outside the set (scratch script `probe.mts`, measured, not asserted): LJ speech over the band 6 / 12 / 20 dB
+under it → dialogue (confidence 0.93 / 0.99 / 0.98); six LJ voices overlapped (walla) → ambience; footsteps every 0.55 s
+→ **music** (wrong: a regular untonal pulse is a drum loop to these rules); one 0.6 s word → sfx; 1.5 s of speech →
+dialogue.
+
+Speed (measured, `prof3.mts`, 60 s of stereo 48 kHz band music): 0.56–0.91 s at load ≈ 4–5; 2.2–4.6 s at load ≈ 47 (a
+10⁸-addition loop took 0.19 s and 0.72 s respectively). Long clips cost at most 4 × 15 s of decode + analysis.
+
+#### Verified (measured, this branch; shared host, 16 cores)
+
+- `pnpm vitest run packages/audio-fx/test/audio-category.test.ts --maxWorkers=2`: 11 passed — generated music (12 s,
+  44.1 kHz), ambience (12 s), every synth recipe × seeds 2, 3 and the long effects classified right; determinism; four
+  10 s windows of a bed pooled to a 240 s clip (durationSec 240, analysedSec 40, ambience); silence / empty / one sample /
+  −80 dBFS → silent, confidence 0; NaN / ±Inf = silence; 8 kHz mono, 96 kHz stereo, 5.1; refusals (`AudioCategoryError`
+  E_INVALID_PARAM: no / > 8 windows, rates 0 / 999 / 10⁶ / NaN / ∞, non-array channels; `classifyAudio(null | {})` is
+  silent); fast-check (60 runs, 0–3 channels, 0–30 000 samples, 5 rates, amplitudes 0 … 10⁴, NaN): never throws, finite
+  features, scores and confidence in 0…1. Whole package: `pnpm vitest run --maxWorkers=2` (packages/audio-fx): 26 files,
+  421 passed.
+- `pnpm vitest run apps/engine/test/audio-classify.test.ts --maxWorkers=1`: 2 passed — the accuracy table above; the
+  route: a silent file → `category: null, silent`, a 150 s bed → ambience with `analysedSec` 60 (four windows), a picture-
+  only file → `NO_AUDIO_STREAM`, counts; a clip over media 10–25 s → `startSeconds` 10, `durationSeconds` 15, `currentType`
+  sfx, `autoTagged` false; a video clip `NOT_AUDIO`, an unknown id `CLIP_NOT_FOUND`; `?wait=1` answers the finished job,
+  served from the cache; refusals 400 (empty, both lists, clipIds without a document, a bad key, 501 keys), 404 (unknown
+  key, project, sequence, no clip). A second classification of 20 media is all `cached`.
+- `pnpm vitest run packages/project/test/essential-autotag.test.ts packages/project/test/sound-dialogue.test.ts`: 8 + 7
+  passed — tagging (defaults + mark), undo (the document before is untouched) / redo (same sequences); a user's type kept
+  (`USER_TYPE`, `SAME`) unless `force`; re-tag (another type resets, the same keeps a slider change; a slider change does
+  not confirm); Confirm (mark gone, settings and effects identical) and Change; `minConfidence`; presets keep the mark and
+  never carry one; Clear Audio Type; every refusal; an unreadable mark → INV-ESSENTIAL, repaired (type kept); auto-tagged
+  dialogue in `dialogueSpans`; voice activity narrowing a clip to its voiced media (padded, bridged), empty = none;
+  200 % speed and reverse mapping; words first; muted tracks / disabled clips silent; hostile voice data (strings, NaN,
+  inverted, prototype keys, a clip at 2⁵³ + 2) never throws; `deriveCues`: a cut sounds where voice activity says nobody
+  talks and is suppressed where they do, a derived hero under speech becomes support ("under dialogue",
+  `heroesUnderDialogue`) and stays a hero in a pause or with `respectDialogue: false`, an `sfx:` marker stays a hero.
+  AC-25 fuzz draws `essentialSound.autoTag` (force, minConfidence) and Confirm. Whole package (`pnpm vitest run
+  --maxWorkers=2` in packages/project): 168 files, 2 083 passed.
+- `pnpm vitest run apps/engine/test/sound-dialogue-consistency.test.ts --maxWorkers=1`: 1 passed — LJ speech at 2–6 s and
+  9–11 s of a dialogue clip without transcript, music under it, cuts at 4 s / 7.5 s, effects at 4.2 s / 7.6 s: voice
+  activity regions start 1.9–2.3 s, end 10.6–11.1 s, nothing in 6.6–7.5 s; two `vad` spans; the cue route returns the same
+  spans and `voiceActivity`, suppresses the cut at 120 and keeps 225; `collectPlanCues` with the voice keeps only 225 (and
+  none with the pure whole-clip rule); the solver marks the effect in speech `speechOverlap` (track A1) and the one in the
+  pause not, and for both `speechOverlap` = "window meets a span"; Sound Check's `speech.segments` equal the spans within
+  one 10 ms hop.
+- `pnpm vitest run apps/engine/test/{sound-check,sound-check-stems,sound-design-cues,sound-design-plan,
+  sound-design-plan-cue-sources,sound-design-plan-levels,sound-design-plan-mix,sound-design-rebalance,
+  sound-design-delivery,sound-design-mix,sound-design-motion,fuzz-http,server,security-review,audio-fx}.test.ts
+  --maxWorkers=2 --testTimeout=900000`: 15 files, 283 passed (1 opt-in perf skipped). `sound-design-bed.test.ts`: 7 passed
+  (the voice measurement counted in `renders.voice` / `renders.cached` through the bed cache's memo).
+- `pnpm vitest run apps/mcp/test/auto-tag.test.ts apps/mcp/test/readme-tools.test.ts apps/mcp/test/conventions.test.ts
+  apps/mcp/test/audio-fx.test.ts --maxWorkers=2`: 18 passed — `auto_tag_audio` defaults to the untyped clips, sends the
+  envelope and waits, applies one transaction with the mark, reports `low` and the table ("45 % (low)"), leaves a silent
+  clip untyped, propose changes nothing, a user type is kept (USER_TYPE) unless force, `minConfidence`; engine failure,
+  unknown argument, unknown clip and bad mode are tool errors; README lists 354 tools.
+- `pnpm vitest run apps/web/test/essential-autotag.test.tsx apps/web/test/sound-fill-ui.test.tsx --maxWorkers=1`: 12
+  passed — the panel's Auto Tag on two selected clips (one History entry "Auto Tag Audio Types", the engine asked with
+  the envelope), the mixed-types banner, "Auto-tagged as Music · 81 % confident" with its reason, Confirm ("Confirm Audio
+  Type", mark gone), Change… ▸ Ambience; low confidence shown, a silent clip untyped, the toast; the dotted badge
+  (`data-auto-tag`, aria-label "… auto-tagged, 42 % confident …", dashed border); Clip ▸ Audio Options lists
+  `audio.autoTag`, the clip menu entry runs it on the clicked clip; a failing engine → "Auto Tag failed" with the detail.
+- `E2E_PORT=51503 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-autotag.spec.ts` (after `pnpm build`): 1 passed
+  (16.7 s) — speech.wav (LJ), music.wav (generated), hit.ogg (starter kit) imported through the browser; three clips
+  selected (Shift-click); Clip ▸ Audio Options ▸ Auto Tag Audio Types → dialogue / music / sfx, marked auto, History "Auto
+  Tag Audio Types", dotted badges; the speech badge opens Essential Sound with "Auto-tagged as Dialogue · 91 % confident"
+  and its reasons; Confirm → solid badge, mark gone, no clip moved; two full-frame solids slamming to a stop at frames
+  ≈ 98 (in the speech) and ≈ 458 (after it) → Suggest Cues… → the land in the speech is support ("under dialogue"), the
+  other a hero, no hero in 0–9 s. **Looked at** the screenshots (`test-results/e2e-sound-autotag/`): `tagged.png` (toast
+  "Tagged 1 Dialogue, 1 Music, 1 SFX", three badges), `essential-banner.png` (the AUTO chip, the banner with Confirm /
+  Change…, the dashed badge on the speech clip), `confirmed.png`, `cues.png` (the Cue Seam over the solid, "Suggested 4
+  cues"). Found while writing it: Playwright clicking a badge outside the visible timeline scrolls the clip layer natively
+  while the ruler stays (a test artefact — users cannot scroll that layer; the spec keeps the badge in view).
+- `pnpm typecheck` (every package), `pnpm lint` (Biome, tokens, anime, layers, assets) and `node scripts/i18n.mjs --check`
+  (es.json covers all 9 859 strings) pass.
+
+#### Limits and notes for the next packages
+
+- **Rules, not a model.** Checked on one real speaker (LJ), the starter kit and generated music / ambience: real
+  productions (dense mixes, dialogue over loud music, crowds, foley sequences, sung vocals, sound design beds with a pulse)
+  will be misread more often than the 100 % above suggests. Known wrong: regular untonal pulses (footsteps) read as music;
+  walla reads as ambience (arguably right); a single word under 1 s reads as SFX; music clips under 3 s read as SFX (a
+  stinger). The confidence and reasons are there so the user (and agents, told to report low confidence) can check.
+- Not done from Premiere: the "Auto-tag audio types in the timeline" preference (tag on add) and "select all clips of a
+  tag" from the panel.
+- Voice activity is energy-based (the speech module's VAD on the clip's media), not a speech detector: in a dialogue clip
+  loud non-speech counts as voice; clip Volume automation, mutes by keyframe and clip effects are not seen (the solver
+  used to render the dialogue through the mixer; now it measures the media, like the cue route). A dialogue clip that
+  cannot be measured (offline, not in the engine's store, > 4 h, > 64 clips or 8 h per call) falls back to its whole span
+  (`voice.state` partial / failed with the reason).
+- MCP `place_sound`'s W_HERO_UNDER_DIALOGUE uses the pure rule (whole dialogue clips), not voice activity.
+- The cue route measures voice activity synchronously (first time per media range: one ffmpeg decode — estimated ≈ 50× faster than real time, not benchmarked —
+  at 16 kHz; cached after).
