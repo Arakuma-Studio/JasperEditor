@@ -216,7 +216,9 @@ export class ClassifyService {
 				const t = input.targets[i]!;
 				items[i] = await this.item(t, ctx.signal);
 				done++;
-				ctx.progress(done / Math.max(1, n), { stage: `Listened to ${done} of ${n}: ${t.name}`.slice(0, 120) });
+				ctx.progress(done / Math.max(1, n), {
+					stage: `Listened to ${done} of ${n}: ${t.name}`.slice(0, 120),
+				});
 			}
 		};
 		await Promise.all(Array.from({ length: Math.min(CONCURRENT, Math.max(1, n)) }, worker));

@@ -10,7 +10,12 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCommandContext } from '../src/commands/context.ts';
 import { runCommand } from '../src/commands/registry.ts';
-import { type ClipDecorationProps, clipDecorations, clipMenuExtensions, type MenuItemSpec } from '../src/extensions/index.ts';
+import {
+	type ClipDecorationProps,
+	clipDecorations,
+	clipMenuExtensions,
+	type MenuItemSpec,
+} from '../src/extensions/index.ts';
 import { MENUBAR } from '../src/shell/menus/model.ts';
 import { clipBadges } from '../src/sound/register.tsx';
 import { audioAsset } from './proposal-helpers.ts';
@@ -37,7 +42,11 @@ afterEach(() => {
 	closeAllDialogs();
 });
 
-type Answer = { category: 'dialogue' | 'music' | 'sfx' | 'ambience' | null; confidence: number; silent?: boolean };
+type Answer = {
+	category: 'dialogue' | 'music' | 'sfx' | 'ambience' | null;
+	confidence: number;
+	silent?: boolean;
+};
 
 function fixture(answers: Answer[], fail = false) {
 	const { session, seqId } = makeSession();
@@ -59,7 +68,13 @@ function fixture(answers: Answer[], fail = false) {
 		classifyAudio: async (req: AudioClassifyRequest, opts: { wait?: boolean }) => {
 			requests.push(req);
 			expect(opts.wait).toBe(true);
-			if (fail) return { id: 'job_1', kind: 'audio-classify', state: 'failed', error: { code: 'DECODE_FAILED', message: 'ffmpeg exited 1' } };
+			if (fail)
+				return {
+					id: 'job_1',
+					kind: 'audio-classify',
+					state: 'failed',
+					error: { code: 'DECODE_FAILED', message: 'ffmpeg exited 1' },
+				};
 			return {
 				id: 'job_1',
 				kind: 'audio-classify',
@@ -98,7 +113,12 @@ function fixture(answers: Answer[], fail = false) {
 	const seq = () => session.getCommitted().sequences[seqId] as Sequence;
 	const clip = (i: number) => seq().clips[ids[i]!] as AudioClip;
 	const labels = () => session.getState().history.entries.map((e) => e.label);
-	const select = (which: number[]) => session.select('timeline', which.map((i) => ids[i]!), 'replace');
+	const select = (which: number[]) =>
+		session.select(
+			'timeline',
+			which.map((i) => ids[i]!),
+			'replace',
+		);
 	const mount = () => {
 		const view = () => (
 			<SessionProvider session={session}>
@@ -126,13 +146,22 @@ describe('Essential Sound ▸ Auto Tag', () => {
 		expect(f.requests[0]!.envelope).toBeDefined();
 		expect(readEssentialSound(f.clip(0).essential)?.type).toBe('dialogue');
 		expect(f.labels().filter((l) => l === 'Auto Tag Audio Types')).toHaveLength(1);
-		expect(toasts.getState().toasts.map((t) => t.title).join()).toContain('Tagged 1 Dialogue, 1 Music');
+		expect(
+			toasts
+				.getState()
+				.toasts.map((t) => t.title)
+				.join(),
+		).toContain('Tagged 1 Dialogue, 1 Music');
 		// two types: the mixed view still offers the banner
-		await waitFor(() => expect(screen.getByTestId('essential-auto-tag-banner').textContent).toContain('2 clips auto-tagged'));
+		await waitFor(() =>
+			expect(screen.getByTestId('essential-auto-tag-banner').textContent).toContain('2 clips auto-tagged'),
+		);
 		// one clip: "Auto-tagged as Music · 81 % confident", Confirm keeps the type and drops the mark
 		act(() => f.select([1]));
 		await waitFor(() =>
-			expect(screen.getByTestId('essential-auto-tag-banner').textContent).toContain('Auto-tagged as Music · 81 % confident'),
+			expect(screen.getByTestId('essential-auto-tag-banner').textContent).toContain(
+				'Auto-tagged as Music · 81 % confident',
+			),
 		);
 		expect(screen.getByTestId('essential-auto-tag-banner').textContent).toContain('heard music');
 		expect(screen.queryByTestId('essential-auto-tag-low')).toBeNull();
@@ -161,7 +190,10 @@ describe('Essential Sound ▸ Auto Tag', () => {
 		fireEvent.click(screen.getByTestId('essential-auto-tag'));
 		await waitFor(() => expect(readEssentialSound(f.clip(0).essential)?.type).toBe('sfx'));
 		expect(f.clip(1).essential).toBeUndefined();
-		const toast = toasts.getState().toasts.map((t) => t.title).join();
+		const toast = toasts
+			.getState()
+			.toasts.map((t) => t.title)
+			.join();
 		expect(toast).toContain('1 with low confidence');
 		expect(toast).toContain('1 silent');
 		act(() => f.select([0]));
@@ -170,7 +202,14 @@ describe('Essential Sound ▸ Auto Tag', () => {
 		const deco = clipDecorations.list().find((d) => d.id === 'sound.badges')!;
 		expect(deco.appliesTo(f.clip(0))).toBe(true);
 		const Badge = deco.badge!;
-		const props = { clip: f.clip(0), x: 0, y: 0, w: 120, h: 40, selected: false } as unknown as ClipDecorationProps;
+		const props = {
+			clip: f.clip(0),
+			x: 0,
+			y: 0,
+			w: 120,
+			h: 40,
+			selected: false,
+		} as unknown as ClipDecorationProps;
 		render(
 			<SessionProvider session={f.session}>
 				<Badge {...props} />
@@ -210,13 +249,21 @@ describe('Essential Sound ▸ Auto Tag', () => {
 			const r = await runCommand(id, ctx, args);
 			expect(r.ran, r.reason).toBe(true);
 		}
-		const entry = items.find((i) => i.kind === 'item' && i.label === 'Auto Tag Audio Types') as { run(): void };
+		const entry = items.find((i) => i.kind === 'item' && i.label === 'Auto Tag Audio Types') as {
+			run(): void;
+		};
 		expect(entry).toBeDefined();
 		entry.run();
 		await waitFor(() => expect(readEssentialSound(f.clip(0).essential)?.type).toBe('music'));
 		expect(f.clip(1).essential).toBeUndefined();
 		// the command over the selection, with a failing engine
-		const g = fixture([{ category: 'music', confidence: 0.9 }, { category: 'music', confidence: 0.9 }], true);
+		const g = fixture(
+			[
+				{ category: 'music', confidence: 0.9 },
+				{ category: 'music', confidence: 0.9 },
+			],
+			true,
+		);
 		g.select([0, 1]);
 		const seen: { message: string; detail?: string }[] = [];
 		const gctx = createCommandContext({

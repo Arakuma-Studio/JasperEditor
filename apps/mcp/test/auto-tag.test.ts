@@ -34,7 +34,14 @@ function audioMedia(key: string, name: string) {
 			durationFlicks: 60 * S,
 			startTimecode: null,
 			streams: [
-				{ index: 0, type: 'audio', codec: 'pcm_s16le', sampleRate: 48000, channels: 2, channelLayout: 'stereo' },
+				{
+					index: 0,
+					type: 'audio',
+					codec: 'pcm_s16le',
+					sampleRate: 48000,
+					channels: 2,
+					channelLayout: 'stereo',
+				},
 			],
 			rotationDegrees: 0,
 			hasAlpha: false,
@@ -100,7 +107,13 @@ function fakeEngine(answers: Record<string, Item>, fail = false) {
 		}),
 		classifyAudio: async (req: { clipIds: string[]; envelope?: unknown }, opts: { wait?: boolean }) => {
 			calls.push({ req, opts });
-			if (fail) return { id: 'job_c', kind: 'audio-classify', state: 'failed', error: { code: 'DECODE_FAILED', message: 'no' } };
+			if (fail)
+				return {
+					id: 'job_c',
+					kind: 'audio-classify',
+					state: 'failed',
+					error: { code: 'DECODE_FAILED', message: 'no' },
+				};
 			const seq = Object.values(doc.sequences)[0] as Sequence;
 			return {
 				id: 'job_c',
@@ -128,7 +141,13 @@ function fakeEngine(answers: Record<string, Item>, fail = false) {
 							result: {
 								category: a.category,
 								confidence: a.confidence,
-								scores: { dialogue: 0.1, music: 0.1, sfx: 0.1, ambience: 0.1, ...(a.category ? { [a.category]: a.confidence } : {}) },
+								scores: {
+									dialogue: 0.1,
+									music: 0.1,
+									sfx: 0.1,
+									ambience: 0.1,
+									...(a.category ? { [a.category]: a.confidence } : {}),
+								},
 								reasons: a.silent ? ['silent'] : [`because ${a.category}`],
 								silent: !!a.silent,
 								durationSec: 10,
@@ -176,7 +195,8 @@ async function connect(answers: Record<string, Item>, fail = false) {
 	return { engine, call };
 }
 
-const clipOf = (doc: ProjectDocument, id: string) => (Object.values(doc.sequences)[0] as Sequence).clips[id] as AudioClip;
+const clipOf = (doc: ProjectDocument, id: string) =>
+	(Object.values(doc.sequences)[0] as Sequence).clips[id] as AudioClip;
 const ANSWERS = {
 	voice: { category: 'dialogue', confidence: 0.95 },
 	music: { category: 'music', confidence: 0.45 },
@@ -189,7 +209,7 @@ describe('auto_tag_audio', () => {
 		const r = await call('auto_tag_audio', { projectId: 'prj_t' });
 		expect(r.r.isError, r.text).toBeFalsy();
 		expect(engine.calls).toHaveLength(1);
-		const req = (engine.calls[0] as { req: { clipIds: string[]; envelope: unknown }; opts: { wait: boolean } });
+		const req = engine.calls[0] as { req: { clipIds: string[]; envelope: unknown }; opts: { wait: boolean } };
 		expect(req.req.clipIds.sort()).toEqual(Object.values(engine.clip).sort());
 		expect(req.req.envelope).toBeDefined();
 		expect(req.opts.wait).toBe(true);
@@ -213,9 +233,16 @@ describe('auto_tag_audio', () => {
 			label: 'user',
 			commands: [{ type: 'essentialSound.setType', clipIds: [engine.clip.voice], audioType: 'sfx' }],
 		});
-		const p = await call('auto_tag_audio', { projectId: 'prj_t', clipIds: [engine.clip.voice], mode: 'propose' });
+		const p = await call('auto_tag_audio', {
+			projectId: 'prj_t',
+			clipIds: [engine.clip.voice],
+			mode: 'propose',
+		});
 		expect(p.json.applied).toBe(false);
-		expect((p.json.items as { before: string; category: string }[])[0]).toMatchObject({ before: 'sfx', category: 'dialogue' });
+		expect((p.json.items as { before: string; category: string }[])[0]).toMatchObject({
+			before: 'sfx',
+			category: 'dialogue',
+		});
 		expect(readEssentialSound(clipOf(engine.doc(), engine.clip.voice).essential)?.type).toBe('sfx');
 		const keep = await call('auto_tag_audio', { projectId: 'prj_t', clipIds: [engine.clip.voice] });
 		expect(keep.r.isError, keep.text).toBeFalsy();

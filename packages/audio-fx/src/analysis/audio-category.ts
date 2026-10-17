@@ -348,8 +348,8 @@ function measureWindow(x: Float32Array, sr: number): WindowStats {
 	// ── speech-band envelope (300–3400 Hz band-pass, 10 ms RMS) for the syllabic modulation ─────────────────────────
 	const env = new Float64Array(frames);
 	{
-		const hp = new Biquad(designBiquad('highPass', sr, 300, 0.7071));
-		const lp = new Biquad(designBiquad('lowPass', sr, Math.min(3400, 0.45 * sr), 0.7071));
+		const hp = new Biquad(designBiquad('highPass', sr, 300, Math.SQRT1_2));
+		const lp = new Biquad(designBiquad('lowPass', sr, Math.min(3400, 0.45 * sr), Math.SQRT1_2));
 		for (let f = 0; f < frames; f++) {
 			let e = 0;
 			for (let i = f * hop; i < (f + 1) * hop; i++) {

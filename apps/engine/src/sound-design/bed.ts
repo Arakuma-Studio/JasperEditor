@@ -32,7 +32,7 @@ import {
 	type AudioStream,
 	buildRenderSnapshot,
 	type Clip,
-	FLICKS_PER_SECOND,
+	dialogueSpans,
 	frameToSample,
 	isSfxClip,
 	looksLikeId,
@@ -43,7 +43,6 @@ import {
 	type RenderAudioClip,
 	type RenderSnapshot,
 	type Sequence,
-	dialogueSpans,
 } from '@jasper/project';
 import { type MixSource, renderMixdown } from '../audio/mixdown.ts';
 import { localHandle, mediaKeyOf } from '../export/planner.ts';

@@ -7,8 +7,8 @@ import {
 	API_VERSION,
 	type AssetRelinkRequest,
 	type AudioAnalyzeRequest,
-	type AutoToneRequest,
 	type AudioClassifyRequest,
+	type AutoToneRequest,
 	type BeatsRequest,
 	type BeatsResult,
 	buildPath,
@@ -538,7 +538,10 @@ export class EngineClient {
 	 * Essential Sound Auto Tag: starts an `audio-classify` job (`POST /api/audio/classify`, spec 12 P6-R3) classifying
 	 * clips or media as dialogue / music / SFX / ambience; result `AudioClassifyResult`. `wait` answers when it ends.
 	 */
-	classifyAudio(req: AudioClassifyRequest, opts: { wait?: boolean; signal?: AbortSignal } = {}): Promise<EngineJob> {
+	classifyAudio(
+		req: AudioClassifyRequest,
+		opts: { wait?: boolean; signal?: AbortSignal } = {},
+	): Promise<EngineJob> {
 		return this.call('audioClassify', {
 			body: req,
 			...(opts.wait ? { query: { wait: '1' as const } } : {}),

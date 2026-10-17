@@ -57,7 +57,10 @@ export async function autoTagClips(
 	);
 	if (job.state !== 'succeeded') throw new Error(job.error?.message ?? `Auto Tag ${job.state}`);
 	const res = job.result as AudioClassifyResult;
-	const results: Record<string, { category: AudioType; confidence: number; scores: Record<string, number>; reasons: string[] }> = {};
+	const results: Record<
+		string,
+		{ category: AudioType; confidence: number; scores: Record<string, number>; reasons: string[] }
+	> = {};
 	for (const it of res.items) {
 		if (!it.clipId) continue;
 		if (it.error) out.failed.push({ clipId: it.clipId, message: it.error.message });
@@ -93,12 +96,18 @@ export function autoTagMessage(o: AutoTagOutcome): string {
 		parts.push(t('Tagged {0}', [...by].map(([ty, k]) => `${k} ${t(AUDIO_TYPE_LABELS[ty])}`).join(', ')));
 	} else parts.push(t('Nothing was tagged'));
 	if (o.low.length)
-		parts.push(o.low.length === 1 ? t('1 with low confidence: confirm it') : t('{0} with low confidence: confirm them', o.low.length));
+		parts.push(
+			o.low.length === 1
+				? t('1 with low confidence: confirm it')
+				: t('{0} with low confidence: confirm them', o.low.length),
+		);
 	const kept = o.skipped.filter((x) => x.code === 'USER_TYPE').length;
 	if (kept) parts.push(kept === 1 ? t('1 kept the type you set') : t('{0} kept the types you set', kept));
 	if (o.silent.length) parts.push(o.silent.length === 1 ? t('1 silent') : t('{0} silent', o.silent.length));
 	if (o.failed.length)
-		parts.push(o.failed.length === 1 ? t('1 could not be analysed') : t('{0} could not be analysed', o.failed.length));
+		parts.push(
+			o.failed.length === 1 ? t('1 could not be analysed') : t('{0} could not be analysed', o.failed.length),
+		);
 	return parts.join(' · ');
 }
 

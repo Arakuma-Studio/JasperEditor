@@ -10,9 +10,9 @@ import {
 	builtinEssentialPresets,
 	DEFAULT_LOUDNESS_TARGET,
 	EQ_PRESETS,
-	essentialAutoTag,
 	type EssentialSection,
 	type EssentialSound,
+	essentialAutoTag,
 	REVERB_PRESETS,
 	readEssentialSound,
 	SECTION_LABELS,
@@ -43,9 +43,9 @@ import {
 	userSoundPresets,
 } from '../../audio-fx/ops.ts';
 import { runCommand } from '../../commands/registry.ts';
+import { t } from '../../i18n/runtime.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { EssentialSfxSection } from '../../sound/EssentialSfx.tsx';
-import { t } from '../../i18n/runtime.ts';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { useInspectorOps } from '../properties/lib/ops.ts';
 import type { PanelProps } from '../types.ts';
@@ -630,9 +630,19 @@ function AutoTagButton({
 }
 
 /** Clips Auto Tag typed and the user has not confirmed: Confirm (keeps the type) or Change (another type). */
-function AutoTagBanner({ clips, apply }: { clips: AudioClip[]; apply(label: string, commands: Command[]): void }) {
+function AutoTagBanner({
+	clips,
+	apply,
+}: {
+	clips: AudioClip[];
+	apply(label: string, commands: Command[]): void;
+}) {
 	const [changing, setChanging] = useState(false);
-	const auto = clips.map((c) => ({ c, tag: essentialAutoTag(c.essential), es: readEssentialSound(c.essential) }));
+	const auto = clips.map((c) => ({
+		c,
+		tag: essentialAutoTag(c.essential),
+		es: readEssentialSound(c.essential),
+	}));
 	const tagged = auto.filter((x) => x.tag && x.es);
 	if (!tagged.length) return null;
 	const first = tagged[0]!;
@@ -696,7 +706,7 @@ function AutoTagBanner({ clips, apply }: { clips: AudioClip[]; apply(label: stri
 				</Button>
 			</div>
 			{changing ? (
-				<div className="flex flex-wrap gap-1" role="group" aria-label="Audio type">
+				<fieldset className="m-0 flex flex-wrap gap-1 border-0 p-0" aria-label="Audio type">
 					{AUDIO_TYPES.map((ty) => (
 						<Button
 							key={ty}
@@ -712,7 +722,7 @@ function AutoTagBanner({ clips, apply }: { clips: AudioClip[]; apply(label: stri
 							{AUDIO_TYPE_LABELS[ty]}
 						</Button>
 					))}
-				</div>
+				</fieldset>
 			) : null}
 		</div>
 	);

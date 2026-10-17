@@ -44,9 +44,29 @@ let dir = '';
 let projects = 0;
 
 function decode(path: string, sr: number, ss: number, t: number): Float32Array {
-	const r = spawnSync(TEST_FFMPEG, ['-v', 'error', '-ss', String(ss), '-t', String(t), '-i', path, '-ac', '1', '-ar', String(sr), '-f', 'f32le', 'pipe:1'], {
-		maxBuffer: 1 << 30,
-	});
+	const r = spawnSync(
+		TEST_FFMPEG,
+		[
+			'-v',
+			'error',
+			'-ss',
+			String(ss),
+			'-t',
+			String(t),
+			'-i',
+			path,
+			'-ac',
+			'1',
+			'-ar',
+			String(sr),
+			'-f',
+			'f32le',
+			'pipe:1',
+		],
+		{
+			maxBuffer: 1 << 30,
+		},
+	);
 	const b = r.stdout as Buffer;
 	const out = new Float32Array(b.byteLength / 4);
 	Buffer.from(out.buffer).set(b.subarray(0, out.length * 4));
@@ -59,7 +79,12 @@ function seed(doc: ProjectDocument): string {
 	mkdirSync(join(file, '..'), { recursive: true });
 	writeFileSync(
 		file,
-		JSON.stringify(makeEnvelope({ ...doc, projectId }, { revision: 1, savedAt: '2026-10-17T00:00:00.000Z', platform: 'test' })),
+		JSON.stringify(
+			makeEnvelope(
+				{ ...doc, projectId },
+				{ revision: 1, savedAt: '2026-10-17T00:00:00.000Z', platform: 'test' },
+			),
+		),
 	);
 	return projectId;
 }
@@ -104,121 +129,129 @@ describe.skipIf(!HAVE_FFMPEG)('Auto Tag classification (engine)', () => {
 		app = await makeApp();
 		dir = mkdtempSync(join(tmpdir(), 'jasper-autotag-'));
 	}, 120_000);
-	afterAll(async () => {
-		await closeApps(app);
-	});
+	afterAll(closeApps);
 
-	it(
-		'labelled set: ≥ 90 % on the tuning and on the held-out set (confusion matrices printed)',
-		{ timeout: 1_800_000 },
-		async () => {
-			const cases: Case[] = [];
-			const files: { file: string; c: Case }[] = [];
-			const add = (x: Labelled, set: Case['set'], name = x.name) =>
-				files.push({ file: writeWav(`${set}-${name}`, x.channels, x.sr), c: { name, label: x.label, set } });
-			// tuning set
-			for (const f of readdirSync(KIT).filter((f) => f.endsWith('.ogg')))
-				files.push({ file: join(KIT, f), c: { name: f, label: 'sfx', set: 'tuning' } });
-			for (const r of SYNTH_RECIPES)
-				for (const s of [0, 1]) {
-					const x = renderSynth(r.id, s);
-					add({ name: `${r.id}#${s}`, label: 'sfx', channels: x.channels, sr: x.sampleRate }, 'tuning');
-				}
-			for (const x of [...musicSet(44_100, 20), ...ambienceSet(48_000, 20), ...longSfxSet(48_000)]) add(x, 'tuning');
-			// held-out set: other seeds, tempi, rates, levels and lengths
-			const m = (name: string, channels: Float32Array[], sr: number): Labelled => ({ name, label: 'music', channels, sr });
-			for (const x of [
-				m('band 105 BPM 45 s', testMusic(44_100, 105, 20, 7).audio, 44_100),
-				m('band 76 BPM 8 s', testMusic(48_000, 76, 3, 8).audio, 48_000),
-				m('band 160 BPM −24 dB', gain(testMusic(48_000, 160, 20, 9).audio, -24), 48_000),
-				m('pad 30 s seed 5', padMusic(48_000, 30, 5), 48_000),
-				m('arpeggio 90 BPM 22 kHz', arpeggio(22_050, 12, 90, 3), 22_050),
-				m('melody seed 21', melody(48_000, 15, 21), 48_000),
-				m('drums 140 BPM', drumLoop(48_000, 10, 140, 5), 48_000),
-				m('piano seed 4', pianoProgression(44_100, 25, 4), 44_100),
-			])
-				add(x, 'held-out');
-			for (const x of ambienceSet(44_100, 40)) add({ ...x, channels: gain(x.channels, -12) }, 'held-out', `${x.name} 40 s`);
-			for (const x of ambienceSet(22_050, 9).slice(0, 4)) add(x, 'held-out', `${x.name} 9 s`);
-			for (const r of SYNTH_RECIPES) {
-				const x = renderSynth(r.id, 5);
-				add({ name: `${r.id}#5`, label: 'sfx', channels: x.channels, sr: x.sampleRate }, 'held-out');
+	it('labelled set: ≥ 90 % on the tuning and on the held-out set (confusion matrices printed)', {
+		timeout: 1_800_000,
+	}, async () => {
+		const cases: Case[] = [];
+		const files: { file: string; c: Case }[] = [];
+		const add = (x: Labelled, set: Case['set'], name = x.name) =>
+			files.push({ file: writeWav(`${set}-${name}`, x.channels, x.sr), c: { name, label: x.label, set } });
+		// tuning set
+		for (const f of readdirSync(KIT).filter((f) => f.endsWith('.ogg')))
+			files.push({ file: join(KIT, f), c: { name: f, label: 'sfx', set: 'tuning' } });
+		for (const r of SYNTH_RECIPES)
+			for (const s of [0, 1]) {
+				const x = renderSynth(r.id, s);
+				add({ name: `${r.id}#${s}`, label: 'sfx', channels: x.channels, sr: x.sampleRate }, 'tuning');
 			}
-			for (const x of longSfxSet(44_100)) add({ ...x, channels: gain(x.channels, -10) }, 'held-out', `${x.name} 44.1 kHz`);
-			// noisy speech (air-conditioner noise at 20 / 10 dB SNR), 22.05 kHz
-			const ac = ambienceSet(22_050, 10).find((x) => x.name === 'air conditioner')!.channels[0]!;
-			const rms = (c: Float32Array) => Math.sqrt(c.reduce((a, b) => a + b * b, 0) / Math.max(1, c.length));
-			LJ_TRUTH.utterances.forEach((u, i) => {
-				if (i % 2) return;
-				const v = decode(LJ, 22_050, Math.max(0, u.start - 0.5), u.end - u.start + 1);
-				const snr = i % 4 === 0 ? 20 : 10;
-				const g = (rms(v) / rms(ac)) * 10 ** (-snr / 20);
-				const mix = v.map((s, k) => 0.25 * (s + g * ac[k % ac.length]!));
-				add({ name: `speech ${i} SNR ${snr} dB`, label: 'dialogue', channels: [mix], sr: 22_050 }, 'held-out');
-			});
-			// register every file; speech as clips of the LJ media (the clip → media range path)
-			for (const f of files) {
-				const r = await register(app, f.file);
-				f.c.key = r.mediaKey;
-				cases.push(f.c);
-			}
-			const lj = await register(app, LJ);
-			const b = new DocBuilder('hd-1080p-30', 900);
-			const ljId = b.addMedia(lj);
-			const ljCases: Case[] = [];
-			let at = 0;
-			const place = (inS: number, outS: number, name: string, set: Case['set']) => {
-				const r = b.tx([
-					{
-						type: 'clip.place',
-						source: { mediaId: ljId },
-						sourceRange: { in: { seconds: inS }, out: { seconds: outS } },
-						at,
-						tracks: { audio: 'A1' },
-						ref: '$c',
-					},
-				]);
-				at += Math.ceil((outS - inS) * 30) + 30;
-				ljCases.push({ name, label: 'dialogue', set, clipId: r.refs.$c! });
-			};
-			LJ_TRUTH.utterances.forEach((u, i) => place(Math.max(0, u.start - 0.3), u.end + 0.3, `LJ utterance ${i}`, 'tuning'));
-			place(0, 30, 'LJ 0–30 s', 'tuning');
-			place(30, 60, 'LJ 30–60 s', 'tuning');
-			place(10, 70, 'LJ 10–70 s (60 s)', 'held-out');
-			place(20, 34, 'LJ 20–34 s', 'held-out');
-			const projectId = seed(b.doc);
-			const got = new Map<Case, Cat | null>();
-			const t0 = Date.now();
-			const res = await classify({ mediaKeys: cases.map((c) => c.key!) });
-			res.items.forEach((it, i) => {
-				expect(it.error, it.name).toBeUndefined();
-				got.set(cases[i]!, it.result?.category ?? null);
-			});
-			const clips = await classify({ projectId, clipIds: ljCases.map((c) => c.clipId!) });
-			clips.items.forEach((it, i) => {
-				expect(it.error, it.name).toBeUndefined();
-				expect(it.currentType).toBeNull();
-				got.set(ljCases[i]!, it.result?.category ?? null);
-			});
-			const all = [...cases, ...ljCases];
-			const ms = Date.now() - t0;
-			const report: Record<string, unknown> = { ms, items: all.length };
-			for (const set of ['tuning', 'held-out'] as const) {
-				const t = table(
-					all.filter((c) => c.set === set),
-					got,
-				);
-				report[set] = { accuracy: Math.round(t.accuracy * 1000) / 10, n: t.n, matrix: t.matrix };
-				expect(t.accuracy, `${set}: ${JSON.stringify(t.matrix)}`).toBeGreaterThanOrEqual(0.9);
-			}
-			report.wrong = all.filter((c) => got.get(c) !== c.label).map((c) => `${c.set} ${c.name}: ${c.label} → ${got.get(c)}`);
-			console.log(`AUTO_TAG_ACCURACY ${JSON.stringify(report, null, 1)}`);
-			if (process.env.AUTO_TAG_REPORT) writeFileSync(process.env.AUTO_TAG_REPORT, JSON.stringify(report, null, 2));
-			// a second run is served from the cache
-			const again = await classify({ mediaKeys: cases.slice(0, 20).map((c) => c.key!) });
-			expect(again.items.every((i) => i.cached)).toBe(true);
-		},
-	);
+		for (const x of [...musicSet(44_100, 20), ...ambienceSet(48_000, 20), ...longSfxSet(48_000)])
+			add(x, 'tuning');
+		// held-out set: other seeds, tempi, rates, levels and lengths
+		const m = (name: string, channels: Float32Array[], sr: number): Labelled => ({
+			name,
+			label: 'music',
+			channels,
+			sr,
+		});
+		for (const x of [
+			m('band 105 BPM 45 s', testMusic(44_100, 105, 20, 7).audio, 44_100),
+			m('band 76 BPM 8 s', testMusic(48_000, 76, 3, 8).audio, 48_000),
+			m('band 160 BPM −24 dB', gain(testMusic(48_000, 160, 20, 9).audio, -24), 48_000),
+			m('pad 30 s seed 5', padMusic(48_000, 30, 5), 48_000),
+			m('arpeggio 90 BPM 22 kHz', arpeggio(22_050, 12, 90, 3), 22_050),
+			m('melody seed 21', melody(48_000, 15, 21), 48_000),
+			m('drums 140 BPM', drumLoop(48_000, 10, 140, 5), 48_000),
+			m('piano seed 4', pianoProgression(44_100, 25, 4), 44_100),
+		])
+			add(x, 'held-out');
+		for (const x of ambienceSet(44_100, 40))
+			add({ ...x, channels: gain(x.channels, -12) }, 'held-out', `${x.name} 40 s`);
+		for (const x of ambienceSet(22_050, 9).slice(0, 4)) add(x, 'held-out', `${x.name} 9 s`);
+		for (const r of SYNTH_RECIPES) {
+			const x = renderSynth(r.id, 5);
+			add({ name: `${r.id}#5`, label: 'sfx', channels: x.channels, sr: x.sampleRate }, 'held-out');
+		}
+		for (const x of longSfxSet(44_100))
+			add({ ...x, channels: gain(x.channels, -10) }, 'held-out', `${x.name} 44.1 kHz`);
+		// noisy speech (air-conditioner noise at 20 / 10 dB SNR), 22.05 kHz
+		const ac = ambienceSet(22_050, 10).find((x) => x.name === 'air conditioner')!.channels[0]!;
+		const rms = (c: Float32Array) => Math.sqrt(c.reduce((a, b) => a + b * b, 0) / Math.max(1, c.length));
+		LJ_TRUTH.utterances.forEach((u, i) => {
+			if (i % 2) return;
+			const v = decode(LJ, 22_050, Math.max(0, u.start - 0.5), u.end - u.start + 1);
+			const snr = i % 4 === 0 ? 20 : 10;
+			const g = (rms(v) / rms(ac)) * 10 ** (-snr / 20);
+			const mix = v.map((s, k) => 0.25 * (s + g * ac[k % ac.length]!));
+			add({ name: `speech ${i} SNR ${snr} dB`, label: 'dialogue', channels: [mix], sr: 22_050 }, 'held-out');
+		});
+		// register every file; speech as clips of the LJ media (the clip → media range path)
+		for (const f of files) {
+			const r = await register(app, f.file);
+			f.c.key = r.mediaKey;
+			cases.push(f.c);
+		}
+		const lj = await register(app, LJ);
+		const b = new DocBuilder('hd-1080p-30', 900);
+		const ljId = b.addMedia(lj);
+		const ljCases: Case[] = [];
+		let at = 0;
+		const place = (inS: number, outS: number, name: string, set: Case['set']) => {
+			const r = b.tx([
+				{
+					type: 'clip.place',
+					source: { mediaId: ljId },
+					sourceRange: { in: { seconds: inS }, out: { seconds: outS } },
+					at,
+					tracks: { audio: 'A1' },
+					ref: '$c',
+				},
+			]);
+			at += Math.ceil((outS - inS) * 30) + 30;
+			ljCases.push({ name, label: 'dialogue', set, clipId: r.refs.$c! });
+		};
+		for (const [i, u] of LJ_TRUTH.utterances.entries())
+			place(Math.max(0, u.start - 0.3), u.end + 0.3, `LJ utterance ${i}`, 'tuning');
+		place(0, 30, 'LJ 0–30 s', 'tuning');
+		place(30, 60, 'LJ 30–60 s', 'tuning');
+		place(10, 70, 'LJ 10–70 s (60 s)', 'held-out');
+		place(20, 34, 'LJ 20–34 s', 'held-out');
+		const projectId = seed(b.doc);
+		const got = new Map<Case, Cat | null>();
+		const t0 = Date.now();
+		const res = await classify({ mediaKeys: cases.map((c) => c.key!) });
+		res.items.forEach((it, i) => {
+			expect(it.error, it.name).toBeUndefined();
+			got.set(cases[i]!, it.result?.category ?? null);
+		});
+		const clips = await classify({ projectId, clipIds: ljCases.map((c) => c.clipId!) });
+		clips.items.forEach((it, i) => {
+			expect(it.error, it.name).toBeUndefined();
+			expect(it.currentType).toBeNull();
+			got.set(ljCases[i]!, it.result?.category ?? null);
+		});
+		const all = [...cases, ...ljCases];
+		const ms = Date.now() - t0;
+		const report: Record<string, unknown> = { ms, items: all.length };
+		for (const set of ['tuning', 'held-out'] as const) {
+			const t = table(
+				all.filter((c) => c.set === set),
+				got,
+			);
+			report[set] = { accuracy: Math.round(t.accuracy * 1000) / 10, n: t.n, matrix: t.matrix };
+			expect(t.accuracy, `${set}: ${JSON.stringify(t.matrix)}`).toBeGreaterThanOrEqual(0.9);
+		}
+		report.wrong = all
+			.filter((c) => got.get(c) !== c.label)
+			.map((c) => `${c.set} ${c.name}: ${c.label} → ${got.get(c)}`);
+		console.log(`AUTO_TAG_ACCURACY ${JSON.stringify(report, null, 1)}`);
+		if (process.env.AUTO_TAG_REPORT)
+			writeFileSync(process.env.AUTO_TAG_REPORT, JSON.stringify(report, null, 2));
+		// a second run is served from the cache
+		const again = await classify({ mediaKeys: cases.slice(0, 20).map((c) => c.key!) });
+		expect(again.items.every((i) => i.cached)).toBe(true);
+	});
 
 	it('route: clips, item errors, silence, long media windows, refusals', { timeout: 600_000 }, async () => {
 		const silent = await register(app, writeWav('silence', [new Float32Array(48_000 * 3)], 48_000));
@@ -252,8 +285,9 @@ describe.skipIf(!HAVE_FFMPEG)('Auto Tag classification (engine)', () => {
 			},
 		]).refs.$a!;
 		b.tx([{ type: 'essentialSound.setType', clipIds: [c1], audioType: 'sfx' }]);
-		const v1 = b.tx([{ type: 'clip.place', source: { mediaId: pv }, at: 600, tracks: { video: 'V1' }, ref: '$v' }])
-			.refs.$v!;
+		const v1 = b.tx([
+			{ type: 'clip.place', source: { mediaId: pv }, at: 600, tracks: { video: 'V1' }, ref: '$v' },
+		]).refs.$v!;
 		const projectId = seed(b.doc);
 		const c = await classify({ projectId, clipIds: [c1, v1, 'clp_nope'] });
 		expect(c.items[0]).toMatchObject({

@@ -50,7 +50,9 @@ function autoTagTargets(ctx: CommandCtx, raw: unknown): { seq: Sequence | null; 
 	const { seq, clips } = selection(ctx);
 	if (args.success && args.data?.clipIds && ctx.session) {
 		const s = ctx.session.getState();
-		const active = s.activeSequenceId ? (s.document.sequences[s.activeSequenceId] as Sequence | undefined) : undefined;
+		const active = s.activeSequenceId
+			? (s.document.sequences[s.activeSequenceId] as Sequence | undefined)
+			: undefined;
 		return {
 			seq: active ?? null,
 			ids: args.data.clipIds.filter((id) => active?.clips[id]?.kind === 'audio'),
@@ -206,7 +208,9 @@ clipMenuExtensions.register({
 	items: ({ session, clip, runCommand: run }) => {
 		if (clip.kind !== 'audio') return [];
 		const s = session.getState();
-		const seq = s.activeSequenceId ? (s.document.sequences[s.activeSequenceId] as Sequence | undefined) : undefined;
+		const seq = s.activeSequenceId
+			? (s.document.sequences[s.activeSequenceId] as Sequence | undefined)
+			: undefined;
 		const picked = s.selection.timeline.clips.filter((id) => seq?.clips[id]?.kind === 'audio');
 		const clipIds = picked.includes(clip.id) ? picked : [clip.id];
 		return [

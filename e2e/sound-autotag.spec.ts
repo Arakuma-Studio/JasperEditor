@@ -11,7 +11,16 @@ import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { encodeWav } from '../packages/audio-dsp/src/index.ts';
 import { testMusic } from '../packages/audio-fx/test/music.ts';
-import { appliedLabels, clipElement, createProject, enableAgentBridge, mediaIdForFile, query, ROOT, transact } from './support.ts';
+import {
+	appliedLabels,
+	clipElement,
+	createProject,
+	enableAgentBridge,
+	mediaIdForFile,
+	query,
+	ROOT,
+	transact,
+} from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -29,12 +38,13 @@ async function cues(p: Page): Promise<Cue[]> {
 	return Object.values(seq.soundDesign?.cues ?? {}).sort((a, b) => a.frame - b.frame);
 }
 
-async function essentialOf(p: Page, clipId: string): Promise<{ type?: string; tagged?: { by: string } } | undefined> {
-	const seqs = await query<Record<string, { clips: Record<string, { essential?: { type?: string; tagged?: { by: string } } }> }>>(
-		p,
-		'doc.get',
-		{ path: ['sequences'] },
-	);
+async function essentialOf(
+	p: Page,
+	clipId: string,
+): Promise<{ type?: string; tagged?: { by: string } } | undefined> {
+	const seqs = await query<
+		Record<string, { clips: Record<string, { essential?: { type?: string; tagged?: { by: string } } }> }>
+	>(p, 'doc.get', { path: ['sequences'] });
 	return Object.values(seqs)[0]!.clips[clipId]?.essential;
 }
 
@@ -46,9 +56,26 @@ test.beforeAll(async ({ browser }) => {
 	mkdirSync(outDir, { recursive: true });
 	dir = mkdtempSync(join(tmpdir(), 'jasper-e2e-autotag-'));
 	// speech: the first 12 s of the LJ Speech fixture at 48 kHz
-	const r = spawnSync(ffmpeg(), ['-v', 'error', '-y', '-t', '12', '-i', join(ROOT, 'fixtures', 'speech', 'lj-composite.flac'), '-ar', '48000', '-ac', '1', join(dir, 'speech.wav')], {
-		encoding: 'utf8',
-	});
+	const r = spawnSync(
+		ffmpeg(),
+		[
+			'-v',
+			'error',
+			'-y',
+			'-t',
+			'12',
+			'-i',
+			join(ROOT, 'fixtures', 'speech', 'lj-composite.flac'),
+			'-ar',
+			'48000',
+			'-ac',
+			'1',
+			join(dir, 'speech.wav'),
+		],
+		{
+			encoding: 'utf8',
+		},
+	);
 	if (r.status !== 0) throw new Error(`ffmpeg failed: ${r.stderr}`);
 	writeFileSync(join(dir, 'music.wav'), encodeWav(testMusic(48_000, 120, 10, 3).audio, 48_000, 's16'));
 	copyFileSync(join(ROOT, 'apps', 'engine', 'sounds', 'starter', 'hit-metal-01.ogg'), join(dir, 'hit.ogg'));
@@ -92,7 +119,8 @@ test('Auto Tag tags speech, music and an effect; Suggest Cues puts no hero under
 	expect((await essentialOf(page, ids.$m!))?.type).toBe('music');
 	expect((await essentialOf(page, ids.$s!))?.tagged?.by).toBe('auto');
 	expect((await appliedLabels(page)).at(-1)).toBe('Auto Tag Audio Types');
-	const badge = (id: string, type: string) => clipElement(page, id).locator(`[data-sound-badge="type-${type}"]`);
+	const badge = (id: string, type: string) =>
+		clipElement(page, id).locator(`[data-sound-badge="type-${type}"]`);
 	await expect(badge(ids.$s!, 'dialogue')).toHaveAttribute('data-auto-tag', 'true');
 	await expect(badge(ids.$m!, 'music')).toHaveAttribute('data-auto-tag', 'true');
 	await page.screenshot({ path: join(outDir, 'tagged.png') });
@@ -110,12 +138,50 @@ test('Auto Tag tags speech, music and an effect; Suggest Cues puts no hero under
 
 	// two full-frame solids slam to a stop: at frame ≈ 98 (under the speech) and ≈ 458 (after it)
 	const solids = await transact(page, [
-		{ type: 'clip.addSolid', at: 90, duration: 60, track: 'V2', color: { r: 0.9, g: 0.3, b: 0.2, a: 1 }, ref: '$a' },
-		{ type: 'clip.addSolid', at: 450, duration: 60, track: 'V2', color: { r: 0.2, g: 0.4, b: 0.9, a: 1 }, ref: '$b' },
-		{ type: 'keyframe.add', target: ['clip', '$a', 'transform', 'position'], at: { frames: 0 }, value: [-960, 540], interpolation: 'linear' },
-		{ type: 'keyframe.add', target: ['clip', '$a', 'transform', 'position'], at: { frames: 8 }, value: [960, 540], interpolation: 'linear' },
-		{ type: 'keyframe.add', target: ['clip', '$b', 'transform', 'position'], at: { frames: 0 }, value: [-960, 540], interpolation: 'linear' },
-		{ type: 'keyframe.add', target: ['clip', '$b', 'transform', 'position'], at: { frames: 8 }, value: [960, 540], interpolation: 'linear' },
+		{
+			type: 'clip.addSolid',
+			at: 90,
+			duration: 60,
+			track: 'V2',
+			color: { r: 0.9, g: 0.3, b: 0.2, a: 1 },
+			ref: '$a',
+		},
+		{
+			type: 'clip.addSolid',
+			at: 450,
+			duration: 60,
+			track: 'V2',
+			color: { r: 0.2, g: 0.4, b: 0.9, a: 1 },
+			ref: '$b',
+		},
+		{
+			type: 'keyframe.add',
+			target: ['clip', '$a', 'transform', 'position'],
+			at: { frames: 0 },
+			value: [-960, 540],
+			interpolation: 'linear',
+		},
+		{
+			type: 'keyframe.add',
+			target: ['clip', '$a', 'transform', 'position'],
+			at: { frames: 8 },
+			value: [960, 540],
+			interpolation: 'linear',
+		},
+		{
+			type: 'keyframe.add',
+			target: ['clip', '$b', 'transform', 'position'],
+			at: { frames: 0 },
+			value: [-960, 540],
+			interpolation: 'linear',
+		},
+		{
+			type: 'keyframe.add',
+			target: ['clip', '$b', 'transform', 'position'],
+			at: { frames: 8 },
+			value: [960, 540],
+			interpolation: 'linear',
+		},
 	] as never);
 	expect(solids.ok, JSON.stringify(solids)).toBe(true);
 	await menubar.getByRole('menuitem', { name: 'Sequence', exact: true }).click();
