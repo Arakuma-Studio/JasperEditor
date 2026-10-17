@@ -279,6 +279,23 @@ if two conflict, the earlier (safety) constraint wins and the conflict is report
 
 Output: `{clipId → gainDb, limitedBy[], achievedLiftDb}`.
 
+**Overlapping sound effects (WP6.5b).** A sound effect of a lower weight playing under an event is part of that
+event's bed for the lift (ambient → support → hero), counted by its energy under the event's window (its energy
+profile); peers (the same weight) and the layers of one cue do not mask each other, and a hero does not mask its supports
+(constraint 3 keeps them under it on purpose). The gains depend on each other through that masking, so the solve repeats
+with the lower sounds at the previous pass's gains until no gain moves more than 10⁻⁴ dB (at most 32 more passes,
+deterministic; `W_UNCONVERGED` otherwise). Headroom (6) then also holds for the **summed** true peak of the measured
+sounds playing at once, moment by moment from their peak profiles (Σ of amplitudes, an upper bound of their sum's true
+peak): the sounds of a moment over the ceiling are lowered together (`limitedBy: overlap-headroom`). The bed cap and the
+dialogue guard stay against the bed. **Speech** for the dialogue guard is the dialogue the mix lets through
+(`dialogueSpans`): a section a clip gain, clip Volume keyframes, a track mute or Volume automation, solo, a submix or the
+Mix fader take to −40 dB or below is not speech for any consumer (solver, cue suppression, `place_sound`'s hero
+warning, Sound Check).
+
+**Race with edits (WP6.5b).** The rebalance and delivery jobs put `soundDesign.expectMix {mixHash, delivery}` first in
+their transaction: an edit of the mix that lands after their last check refuses the transaction (`CONFLICT`,
+retryable) instead of being fast-forwarded over.
+
 **Stop-before.** Use `mixer.writeAutomation` on the music track volume lane. When the music shares a track, fall
 back to `audio.volumeDip` (merges by taking the minimum with existing keyframes).
 
@@ -315,11 +332,19 @@ state: pending|accepted|rejected|stale|invalid, reason?, note?}], report?}`.
 
 Accept re-validates on the current document. With `partial`, stale items are reported and the rest applied;
 otherwise it is all-or-nothing. Agent accept is refused with `E_APPROVAL_REQUIRED` unless
-`soundDesign.settings.agentsMayApply` is on.
+`soundDesign.settings.agentsMayApply` is on. Every accept is **journalled** (WP6.5b): an intent file next to the proposal,
+written atomically before the transaction with the id bodies the transaction creates its entities with, removed after
+the item states are written; an intent found later (a crash, a lost relay answer) is settled from the document when the
+proposal is next read — recorded accepted when the document has what it created, rolled back when it does not — so an
+item is never left pending while applied, nor applied twice.
 
 **Session** (`packages/session/src/proposals.ts`): a proposals slice and `previewProposal(id, itemIds)`, which
 builds a non-committed preview document, recomputed debounced on `doc.changed`. The Program monitor renders
-picture **and sound** from it while "Hear proposal" is on.
+picture **and sound** from it while "Hear proposal" is on. The preview applies items in batches (up to 32 per
+transaction, sized to the editor's time slice) with every ghost attributed to its item exactly (else the batch is applied
+one item at a time), reuses the documents of an earlier preview that started the same way, and checks the invariants on
+the result as Apply would at any size: an item that breaks one only together with the items before it is found by
+bisection and shown stale in the preview ("conflicts with the items before it"), not only at Apply (WP6.5b).
 
 ### 2.6 Sound Check (P5)
 
@@ -347,6 +372,15 @@ The report also carries:
 - `listen[5]`: worst event, biggest hero, loudest moment, densest moment, one passing cue, each with a reason;
 - `curves`;
 - the per-event table.
+
+**Safe fixes are judged together** (WP6.5b, `planSoundCheckFixes`): Fix all safe, a single Fix, MCP `sound_check`'s
+`safeFixes` and the report's `safe` flags apply the candidates in order on a dry-run document (commands, then swaps,
+then engine jobs) and re-validate each after the ones before it, with the report's level model (`levelGuard`: each
+sound effect's lift, peak over the bed and true peak, linear in its gain, and the overlapping sound effects in its bed);
+a fix that leaves any measured sound worse (further under its minimum lift, over its bed cap, its own true peak over the
+ceiling, or — normalisation off — the bound on the mix's true peak where it plays over the ceiling), no longer resolves
+its finding or no longer applies is left for the next check with why. A mono Mix is checked in mono. A kept report goes
+with its sequence (deleted once no editing session could bring the sequence back) and its project.
 
 The check must work on media of any length (no trivial pass on short input). The summary is stored in
 `soundDesign.lastCheck`; it is stale when `mixFingerprint` differs. Visual data comes from the engine; MCP
