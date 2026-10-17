@@ -6379,6 +6379,13 @@ ARCHITECTURE §4.3 (`sounds/analysis/`), gaps.
   `packages/engine-client` 39 passed; `apps/mcp/test/{readme-tools,conventions,sound-guide,fuzz}.test.ts` 370 passed;
   `apps/web/test/{auto-sound-pass,sound-cue-commands,sound-cue-seam,sound-p2v-suggest,sound-cue-seam-model,i18n}` +
   the engine cue-route test 61 passed; `node scripts/i18n.mjs --check`: es.json covers all 9 717 strings.
+- **After merging the integration branch** (`8af31459`, WP5.2's panel): `pnpm typecheck` (every package) and `pnpm lint`
+  (Biome, tokens, anime, layers, assets) pass; `node scripts/i18n.mjs --check` 9 835 strings; the engine and MCP suites
+  above plus `sound-check`, `time-export`, `audio-fx` and the MCP fuzz: 14 files, 639 passed (1 opt-in perf skipped),
+  `--testTimeout=900000` at load 40–70; `packages/project/test/sound*`, audio-fx beats + remix, api, engine-client and the
+  web dialog tests: 429 tests, 424 passed in a run at load ≈ 60 — the 5 failures were timeouts (60 / 120 s limits, a < 1 s
+  perf bound at 4 s) of files this package does not change the hot paths of; rerun at `--testTimeout=900000`
+  (`sound-cues`, `sound-mix`, `sound-p2v-model`: 86 passed) and serially (`remix`, `sound-cues-property`: passed).
 
 #### Limits and notes for the next packages
 
