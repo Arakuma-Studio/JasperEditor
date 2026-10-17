@@ -10,6 +10,7 @@ import type { ProjectDocument } from '../schema/document.ts';
 import type { Sequence } from '../schema/sequence.ts';
 import {
 	type CueKind,
+	DEFAULT_SOUND_DESIGN_SETTINGS,
 	readSoundDesign,
 	type SoundCheckSummary,
 	type SoundDelivery,
@@ -149,8 +150,9 @@ function stable(v: unknown): string {
 
 /**
  * Hash of what a Sound Check depends on besides the mix (`mixFingerprint`): the sequence's cues, the Mix's loudness
- * normalisation settings (not its analysis), the delivery preset checked and the credits setting. Picture edits are not
- * in it (a moved anchor makes a cue stale: the next check reports it). Never throws ('' for an unknown sequence).
+ * normalisation settings (not its analysis), the delivery preset checked, the credits setting and the cue density (when
+ * not the default). Picture edits, the licences of the media and transcripts are not in it (a moved anchor makes a cue
+ * stale: the next check reports it). Never throws ('' for an unknown sequence).
  */
 export function soundCheckInputsHash(
 	doc: ProjectDocument,
@@ -164,12 +166,16 @@ export function soundCheckInputsHash(
 		const sd = readSoundDesign((seq as { soundDesign?: unknown }).soundDesign);
 		const loud = (seq.master as { loudness?: unknown } | undefined)?.loudness;
 		const { analysis: _a, ...loudness } = (isRecord(loud) ? loud : {}) as Record<string, unknown>;
+		const settings = soundDesignSettingsOf(seq);
 		return fnv1a64(
 			stable({
 				cues: sd ? Object.values(sd.cues).sort((a, b) => (a.id < b.id ? -1 : 1)) : [],
 				loudness,
 				preset,
-				credits: soundDesignSettingsOf(seq).credits ?? null,
+				credits: settings.credits ?? null,
+				// DENSITY judges the hero spacing and the cue rate by the density (absent at the default: hashes stored
+				// before it was hashed stay valid)
+				...(settings.density !== DEFAULT_SOUND_DESIGN_SETTINGS.density ? { density: settings.density } : {}),
 				// a custom target is part of what was checked (absent for a preset: hashes stored before stay valid)
 				...(target ? { target: { lufs: target.integratedLufs, tp: target.truePeakDb } } : {}),
 			}),
