@@ -14,7 +14,8 @@ export function sha256File(file: string): Promise<string> {
 	});
 }
 
-async function fsyncDir(dir: string): Promise<void> {
+/** fsync of a directory (a rename or removal in it becomes durable); a no-op where the filesystem cannot. */
+export async function fsyncDir(dir: string): Promise<void> {
 	// Some filesystems cannot fsync directories; other failures mean durability was not established.
 	let fh: Awaited<ReturnType<typeof open>> | null = null;
 	try {

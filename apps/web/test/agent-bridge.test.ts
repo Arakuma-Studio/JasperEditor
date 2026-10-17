@@ -246,6 +246,53 @@ describe('WS /agent relay client (ARCHITECTURE §11)', () => {
 		expect(bridge.store.getState().activity).toHaveLength(1);
 	});
 
+	it("creates a relayed accept's entities with the ids the engine journalled (malformed ones are skipped)", async () => {
+		const sockets: FakeSocket[] = [];
+		vi.stubGlobal(
+			'WebSocket',
+			class extends FakeSocket {
+				constructor() {
+					super();
+					sockets.push(this);
+				}
+			},
+		);
+		const session = makeSession();
+		const engine = { agentWsUrl: () => 'ws://test/agent' } as EngineClient;
+		const bridge = new AgentBridge(session, engine, { relay: true }).start();
+		bridges.push(bridge);
+		const ws = sockets[0]!;
+		ws.open();
+		const body = 'JRNA1ED000000001';
+		ws.server({
+			type: 'request',
+			id: 'j1',
+			kind: 'tx',
+			payload: {
+				transaction: {
+					label: 'Accept Sound pass (2 of 2)',
+					origin: { agent: 'sound-agent' },
+					commands: [
+						{ type: 'track.add', kind: 'audio', name: 'SFX 1', ref: '$t' },
+						{ type: 'marker.add', frame: 3 },
+					],
+				},
+				approved: true,
+				asUser: true,
+				ids: ['not an id', body],
+			},
+		});
+		await tick();
+		await tick();
+		const r = ws.sent.find((m) => m.id === 'j1') as { result: { ok: boolean; refs: Record<string, string> } };
+		expect(r.result.ok).toBe(true);
+		expect(r.result.refs.$t).toBe(`trk_${body}`);
+		const seq = Object.values(session.getCommitted().sequences)[0]!;
+		// the second entity comes from the session's own ids again (one body was sent)
+		expect(seq.markers.at(-1)!.id).not.toContain(body);
+		expect(seq.markers.at(-1)!.id).toMatch(/^mrk_[0-9A-Z]{16}$/);
+	});
+
 	it('throttles playhead.changed to ≤ 10 Hz with a trailing update', async () => {
 		const { bridge, session } = makeBridge();
 		const frames: number[] = [];

@@ -124,6 +124,34 @@ export function createSeededIdSource(seed: string): IdSource {
 	};
 }
 
+/** An id body (the 16 Crockford characters after the prefix). */
+export const ID_BODY_RE = /^[0-9A-HJKMNP-TV-Z]{16}$/;
+
+/** At most this many preset bodies are taken (a transaction of 5 000 commands creates far fewer entities). */
+export const MAX_PRESET_IDS = 50_000;
+
+/** `count` fresh random id bodies (for `createPresetIdSource`). */
+export function randomIdBodies(count: number): string[] {
+	const src = createRandomIdSource();
+	const n = Math.max(0, Math.min(MAX_PRESET_IDS, Math.floor(Number.isFinite(count) ? count : 0)));
+	return Array.from({ length: n }, () => src.next('clp').slice(4));
+}
+
+/**
+ * Ids taken in order from `bodies` (random bodies chosen beforehand, `randomIdBodies`), whatever the prefix, then from
+ * `fallback`. An accept journals the bodies before its transaction runs, so after a crash the engine can tell whether
+ * the transaction reached the document by looking for them (proposal accept journal). Malformed bodies are skipped.
+ */
+export function createPresetIdSource(bodies: readonly string[], fallback: IdSource): IdSource {
+	const list = bodies.slice(0, MAX_PRESET_IDS).filter((b) => typeof b === 'string' && ID_BODY_RE.test(b));
+	let i = 0;
+	return {
+		next(prefix) {
+			return i < list.length ? `${prefix}_${list[i++]}` : fallback.next(prefix);
+		},
+	};
+}
+
 /** Sequential ids (`clp_0000000000000001`, …) — readable ids for fixtures and debugging. */
 export function createCounterIdSource(start = 1): IdSource {
 	let n = start;

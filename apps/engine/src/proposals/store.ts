@@ -15,9 +15,15 @@ import {
 	ProposalSchema,
 	proposalDecided,
 } from '@jasper/project';
-import { atomicWriteFile } from '../tools/fs.ts';
+import { atomicWriteFile, fsyncDir } from '../tools/fs.ts';
 import { KeyedMutex } from '../tools/mutex.ts';
 import { HttpError } from '../tools/reply.ts';
+import { type AcceptIntent, AcceptIntentSchema } from './journal.ts';
+
+/** The accept journal's intent of a proposal: `<id>.accept-intent` next to `<id>.json` (not listed as a proposal). */
+const INTENT_SUFFIX = '.accept-intent';
+/** An intent is small (ids of what one transaction creates); anything larger is not one of ours. */
+const MAX_INTENT_BYTES = 8 * 1024 * 1024;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Largest proposal file read (the model allows 20 MB of JSON; a little slack for formatting). */
@@ -64,12 +70,98 @@ export class ProposalStore {
 		return Date.parse(this.expiresAt(p)) <= this.now().getTime() && (owner || !this.inUse(p));
 	}
 
+	/** An accept or decision is working on it, or an accept of it is journalled and not reconciled yet. */
 	private inUse(p: Proposal): boolean {
+		if (this.hasIntent(p.projectId, p.id)) return true;
 		try {
 			return this.opts.inUse?.(p.projectId, p.id) === true;
 		} catch {
 			return false;
 		}
+	}
+
+	private intentFile(projectId: string, proposalId: string): string {
+		if (!PROPOSAL_ID_RE.test(proposalId)) throw proposalNotFound(proposalId);
+		return join(this.dir(projectId), `${proposalId}${INTENT_SUFFIX}`);
+	}
+
+	/** Whether an accept of the proposal is journalled (its intent was written and not removed yet). */
+	hasIntent(projectId: string, proposalId: string): boolean {
+		try {
+			return existsSync(this.intentFile(projectId, proposalId));
+		} catch {
+			return false;
+		}
+	}
+
+	/** Proposals of the project with a journalled accept. */
+	async intentIds(projectId: string): Promise<string[]> {
+		try {
+			const names = await readdir(this.dir(projectId));
+			return names
+				.filter((n) => n.endsWith(INTENT_SUFFIX))
+				.map((n) => n.slice(0, -INTENT_SUFFIX.length))
+				.filter((id) => PROPOSAL_ID_RE.test(id));
+		} catch {
+			return [];
+		}
+	}
+
+	/** Journals an accept before its transaction runs (atomic: temp file, fsync, rename, fsync of the folder). */
+	writeIntent(projectId: string, intent: AcceptIntent): Promise<void> {
+		return this.mutex.run(projectId, async () => {
+			if (!this.projectExists(projectId)) throw proposalNotFound(intent.proposalId);
+			await atomicWriteFile(this.intentFile(projectId, intent.proposalId), JSON.stringify(intent));
+		});
+	}
+
+	/**
+	 * The journalled accept of a proposal, or null. An intent that does not parse is moved aside with a warning (it is
+	 * not ours to act on): the accept it described is then not reconciled, which the log says.
+	 */
+	readIntent(projectId: string, proposalId: string): Promise<AcceptIntent | null> {
+		return this.mutex.run(projectId, async () => {
+			const file = this.intentFile(projectId, proposalId);
+			let text: string;
+			try {
+				text = await readFile(file, 'utf8');
+			} catch (e) {
+				if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+				throw e;
+			}
+			let problem = 'too large';
+			if (text.length <= MAX_INTENT_BYTES) {
+				try {
+					const r = AcceptIntentSchema.safeParse(JSON.parse(text));
+					if (r.success && r.data.proposalId === proposalId && r.data.projectId === projectId) return r.data;
+					problem = r.success
+						? 'its proposal or project does not match'
+						: (r.error.issues[0]?.message ?? 'invalid');
+				} catch (e) {
+					problem = `not JSON (${(e as Error).message.slice(0, 120)})`;
+				}
+			}
+			const aside = `${file}.corrupt-${this.now().getTime()}`;
+			try {
+				await rename(file, aside);
+			} catch {
+				// moved already
+			}
+			this.log(
+				`[proposals] The journalled accept of ${proposalId} (project ${projectId}) could not be read (${problem}); moved aside, not reconciled: ${aside}`,
+			);
+			return null;
+		});
+	}
+
+	/** Removes a proposal's intent (the accept is recorded, or rolled back); durable once this resolves. */
+	clearIntent(projectId: string, proposalId: string): Promise<void> {
+		return this.mutex.run(projectId, async () => {
+			const file = this.intentFile(projectId, proposalId);
+			if (!existsSync(file)) return;
+			await rm(file, { force: true });
+			await fsyncDir(this.dir(projectId));
+		});
 	}
 
 	private dir(projectId: string): string {
@@ -224,12 +316,13 @@ export class ProposalStore {
 		});
 	}
 
-	/** Deletes a proposal; false when there was none. */
+	/** Deletes a proposal (and its journalled accept); false when there was none. */
 	delete(projectId: string, proposalId: string): Promise<boolean> {
 		return this.mutex.run(projectId, async () => {
 			const file = this.file(projectId, proposalId);
 			if (!existsSync(file)) return false;
 			await rm(file, { force: true });
+			await rm(this.intentFile(projectId, proposalId), { force: true });
 			return true;
 		});
 	}
