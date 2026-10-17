@@ -4,6 +4,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+	createCounterIdSource,
 	loadProject,
 	makeEnvelope,
 	mixFingerprint,
@@ -86,11 +87,11 @@ describe('custom delivery target', () => {
 		(
 			bad.sequences[h.seqId] as { soundDesign: { lastCheck: { target: unknown } } }
 		).soundDesign.lastCheck.target = { integratedLufs: 'loud' };
-		const once = repairDocument(bad).document;
+		const once = repairDocument(bad, createCounterIdSource(77)).document;
 		expect(
 			(once.sequences[h.seqId] as { soundDesign?: { lastCheck?: unknown } }).soundDesign?.lastCheck,
 		).toBe(undefined);
-		expect(repairDocument(once).document).toEqual(once);
+		expect(repairDocument(once, createCounterIdSource(78)).document).toEqual(once);
 	});
 
 	it('readSoundCheckTarget: in range, rounded to 0.1, else null — never throws', () => {

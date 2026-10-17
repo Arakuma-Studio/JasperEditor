@@ -9,7 +9,6 @@
 import type {
 	EngineJob,
 	SoundCheckRequest,
-	SoundCheckResult,
 	SoundDeliveryRequest,
 	SoundVisualRequest,
 	StillRequest,
@@ -447,7 +446,7 @@ describe('Sound Check panel', () => {
 		await act(async () => {
 			fireEvent.focus(list);
 		});
-		expect(list.getAttribute('aria-activedescendant')).toBe('sound-check-sc1-OUT_OF_SYNC:' + f.clipA);
+		expect(list.getAttribute('aria-activedescendant')).toBe(`sound-check-sc1-OUT_OF_SYNC:${f.clipA}`);
 		await key('ArrowDown');
 		expect(rowOf('TRUNCATED').getAttribute('aria-selected')).toBe('true');
 		await key('Enter');
