@@ -1410,12 +1410,18 @@ export interface SfxGainEvaluation {
 	truePeakDb: number | null;
 	/** Largest lift in a speech band at `gainDb`; null unless the event overlaps speech. */
 	speechBandLiftDb: number | null;
+	/**
+	 * dB the lower-weight sound effects under it add to its bed in the dominant bands (`evaluateSfxGains`, at their
+	 * gains; `liftDb` is over that masked bed); 0 from `evaluateSfxGain` (the bed alone), null for a silent sound.
+	 */
+	sfxMaskingDb: number | null;
 }
 
 /**
- * Evaluates one event at a clip gain with exactly the solver's definitions (dominant bands, lift, bed reference, speech
- * bands): Sound Check's MASKED and OVERLOAD findings use it so they agree with what `solveSfxGains` aims at. Pure;
- * never throws (the event is sanitised like the solver's input; a non-finite gain counts as 0 dB).
+ * Evaluates one event at a clip gain against the bed ALONE with exactly the solver's definitions (dominant bands,
+ * lift, bed reference, speech bands); with other sound effects around it use `evaluateSfxGains`, which counts the
+ * lower-weight ones under it as the solver does. Pure; never throws (the event is sanitised like the solver's input;
+ * a non-finite gain counts as 0 dB).
  */
 export function evaluateSfxGain(
 	event: SolverEvent,
@@ -1443,5 +1449,44 @@ export function evaluateSfxGain(
 		bedCapLu: BED_CAP_LU[ev.weight],
 		truePeakDb: ev.truePeak === null ? null : q(ev.truePeak + g),
 		speechBandLiftDb: ev.speech ? q(speech) : null,
+		sfxMaskingDb: ev.dom.length ? 0 : null,
 	};
+}
+
+/**
+ * Evaluates every event at its clip gain (`gainsDb[i]` for `events[i]`) with exactly the solver's definitions, the
+ * lower-weight sound effects under each one in its bed at THEIR gains (the solver's masking; `opts.sfxMasking: false`
+ * = the bed alone): Sound Check's MASKED and OVERLOAD findings use it so they agree with what `solveSfxGains` aims at
+ * — at the solver's own gains it returns the solver's lifts exactly. Pure; never throws (events sanitised like the
+ * solver's input; a non-finite or missing gain counts as 0 dB).
+ */
+export function evaluateSfxGains(
+	events: SolverEvent[],
+	gainsDb: readonly number[],
+	opts: SolverOptions = {},
+): SfxGainEvaluation[] {
+	if (!Array.isArray(events)) return [];
+	const o = opts && typeof opts === 'object' ? opts : {};
+	const gs = events.map((_, i) => {
+		const g = Array.isArray(gainsDb) ? gainsDb[i] : undefined;
+		return isNum(g) ? Math.max(-1000, Math.min(1000, g)) : 0;
+	});
+	const single = events.map((e, i) => evaluateSfxGain(e, gs[i]!, o));
+	if (o.sfxMasking === false) return single;
+	const evs = events.map((raw, i) => clean(raw, i, []));
+	const lists = maskerLists(evs, canonicalOrder(evs));
+	if (!lists) return single;
+	const masked = maskedBedDom(
+		evs,
+		lists,
+		bandEnergy(evs),
+		gs,
+		new Float64Array(evs.length),
+		new Float64Array(evs.length),
+	);
+	return single.map((r, i) => {
+		const ev = evs[i]!;
+		if (!ev.dom.length) return r;
+		return { ...r, liftDb: q(ev.soundDom + gs[i]! - masked[i]!), sfxMaskingDb: q(masked[i]! - ev.bedDom) };
+	});
 }
