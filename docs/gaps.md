@@ -349,8 +349,8 @@ synth kit, generated music / ambience / long effects; 139 the thresholds were tu
 through the engine — rerun `apps/engine/test/audio-classify.test.ts`, `packages/audio-fx/test/audio-category.test.ts`,
 `apps/engine/test/sound-dialogue-consistency.test.ts`, `e2e/sound-autotag.spec.ts`. Limits: rules, not a trained model,
 checked on synthetic music and ambience and one speaker: real mixes (dialogue over loud music, walla, footsteps — read as
-music) will be wrong more often; no "Auto-tag audio types in the timeline" preference (tagging on add); VAD is
-energy-based on the media (clip volume automation is not seen).
+music) will be wrong more often; VAD is energy-based on the media (clip volume automation is not seen). (WP6.5a added
+the "Auto-tag audio types in the timeline" preference and "select all clips of a tag".)
 See [wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 1 verification": the Sound Library panel and Sound Design
 workspace, the engine library (60-sound Kenney CC0 kit, user folders with a declared licence, Jasper Synth), ten MCP
 tools, credits; inserts land on the frame to the sample (library sounds are registered with 50 ms of lead silence, and
@@ -369,9 +369,8 @@ listed in the wp-note). Limits: no keyboard-key recording in the kit (`key` is s
 ≤ 1-frame placement rule and, when lossy, can play up to 128 samples late after an In point; Fill Unfilled Cues
 proposes (review, then Apply) since WP3.3b; Detect Peak analyses at most 2 min of a clip; Auto gain / Room send / levels
 against the bed are Phase 4 (placement gives a default level by role, below); `pitchSt: 0` after a fractional varispeed shift keeps up to
-±0.5 st; razoring inside a transition's span fails with `E_INVARIANT` for any clips (edit-structure, not sound);
-Essential Sound Role / Align radio groups have no arrow-key navigation; "Undo <label>" in the Edit menu is composed in
-English (every feature).
+±0.5 st. (Fixed in Phase 6 → WP6.5a: razoring inside a transition's span, the Role / Align arrow keys and "Undo <label>"
+in the UI language.)
 Phase 2 verification B ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 2 verification B"): the primed
 start's picture wait no longer gets cut short (`PrimedStartClock`; the Phase 0 transport e2e now measures the wait
 itself and replays plays the loaded host disturbed); placed sounds get a default level by role from their loudness and
@@ -455,6 +454,27 @@ shown for another sequence). Export credits (Phase 6 WP6.4): the Export dialog's
 `<name>.credits.<txt|md|csv>` with the sounds heard in the range (W_SOUND_CREDITS without it); there is no audio-only or
 image-sequence export destination to attach it to yet, the header is English, and a cue's window and kind do not survive
 an interchange round trip (point markers `SFX: <type> (<weight>)`, re-imported as `manual` cues).
+Phase 6 → WP6.5a carry-over polish (UI / editing; [wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP6.5a"):
+the Razor / Add Edit / an insert edit inside a transition's span cuts the clips and shortens the transition to the part it
+still reaches (Premiere: the duration adjusts to the frames there are; it used to fail `E_INVARIANT` for any clip); "Undo /
+Redo <step>", the crash-recovery list and the built-in workspace names in the UI language (ids and stored names
+unchanged); a `SegmentedControl` radio group in `@jasper/ui` (one Tab stop, arrow keys / Home / End choose) for Essential
+Sound Role / Align and composition text alignment; Preferences ▸ Audio ▸ "Auto-tag audio types in the timeline" (off by
+default: Adobe documents it as a setting to enable and documents no default) tags audio clips the user adds through the
+Auto Tag route and command, and Essential Sound lists the tags in the sequence — a click (or Clip ▸ Audio Options /
+the clip menu ▸ Select All <Type> Clips, agent-exposed `audio.selectAudioType`) selects that tag's clips; exports honour
+the requested container and audio codec where the codec fits (H.264 + 24-bit PCM in MOV on the LGPL OpenH264 build, which
+wrote MP4 + AAC whatever was asked) and report what cannot be written as asked (`OUTPUT_CONTAINER_CHANGED` /
+`AUDIO_CODEC_CHANGED` in the plan, the dialog, the job result with `audioCodec`, the finished-export notice); after an
+In Context audition the Timeline view comes back; Delivery Target… and Auto Sound Pass… offer Close alone after a run;
+a gain fix's "why" is said in the UI language; `set_sound_cues` counts only the cues it adds. Rerun
+`packages/project/test/transition-razor.test.ts`, `apps/engine/test/export-container.test.ts`,
+`apps/web/test/{wp65a-i18n,wp65a-audition-view,essential-autotag-on-add,export-format}.test.*`,
+`e2e/sound-p65a-polish.spec.ts`. Limits left: turning Auto gain on for a mixed selection whose solve leaves some clips
+unchanged still makes two History entries (the rebalance job's transaction would have to carry the Auto gain flag:
+engine `sound-design/rebalance.ts`); messages the engine composes (export warnings and the finished-export detail, solver
+notes outside Sound Check fixes) stay English; auto-tagging on add ignores agents' placements (they tag with
+`auto_tag_audio`) and is its own undo step; a clip added to a new or duplicated sequence is not auto-tagged.
 
 ### Not covered by any workstream yet
 
