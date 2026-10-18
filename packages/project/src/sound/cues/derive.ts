@@ -370,7 +370,13 @@ export function deriveCues(
 			const keptKeys = new Set(cues.map((c) => c.key));
 			for (const m of merged)
 				if (halved.has(m) && !keptKeys.has(m.key) && m.confidence < min)
-					carried.push({ key: m.key, frame: m.frame, confidence: m.confidence, minConfidence: min, reason: m.reason });
+					carried.push({
+						key: m.key,
+						frame: m.frame,
+						confidence: m.confidence,
+						minConfidence: min,
+						reason: m.reason,
+					});
 			carried.sort((a, b) => a.frame - b.frame || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 		}
 		const extra = carried.length ? { carried } : {};

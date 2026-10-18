@@ -29,7 +29,13 @@ import {
 import { isSoundMaterial, SOUND_MATERIALS, type SoundMaterial } from './materials.ts';
 import { parseTakeId, SOUND_REF_RE, takeIdOf } from './provenance.ts';
 import type { RankDescriptors } from './rank.ts';
-import { isSoundTypeId, SOUND_TYPES, type SoundFamily, type SoundTypeId, type SoundVariation } from './taxonomy.ts';
+import {
+	isSoundTypeId,
+	SOUND_TYPES,
+	type SoundFamily,
+	type SoundTypeId,
+	type SoundVariation,
+} from './taxonomy.ts';
 
 const fin = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
@@ -65,7 +71,9 @@ export type SoundStyleLayer = {
 };
 
 /** The style of the first layer that sets each field (a request first, then the sequence's settings), else defaults. */
-export function resolveSoundStyle(...layers: readonly (SoundStyleLayer | null | undefined)[]): ResolvedSoundStyle {
+export function resolveSoundStyle(
+	...layers: readonly (SoundStyleLayer | null | undefined)[]
+): ResolvedSoundStyle {
 	const out: ResolvedSoundStyle = { ...SOUND_STYLE_DEFAULTS };
 	const pick = <K extends keyof ResolvedSoundStyle>(k: K, ok: (v: unknown) => boolean) => {
 		for (const l of layers) {
@@ -138,9 +146,11 @@ export function voiceFor(
 ): { soundId: string; from: 'palette' | 'placed' } | null {
 	const pal = opts.palette instanceof Set ? opts.palette : new Set(opts.palette as readonly string[]);
 	for (const c of opts.candidates)
-		if (pal.has(c.id) && Array.isArray(c.types) && c.types.includes(type)) return { soundId: c.id, from: 'palette' };
+		if (pal.has(c.id) && Array.isArray(c.types) && c.types.includes(type))
+			return { soundId: c.id, from: 'palette' };
 	for (const p of opts.placed)
-		if (p.soundId && Array.isArray(p.types) && p.types.includes(type)) return { soundId: p.soundId, from: 'placed' };
+		if (p.soundId && Array.isArray(p.types) && p.types.includes(type))
+			return { soundId: p.soundId, from: 'placed' };
 	return null;
 }
 
@@ -181,7 +191,11 @@ export type RunStep = {
  * The runs among `items` (frame order): ≥ 3 consecutive appear / emphasis cues ≤ 0.6 s apart filled with pop, ui,
  * chime or tick. One entry per item: its step, or null outside a run.
  */
-export function findRuns(items: readonly RunCandidate[], fps: number, mode: SoundRunMode = 'climb'): (RunStep | null)[] {
+export function findRuns(
+	items: readonly RunCandidate[],
+	fps: number,
+	mode: SoundRunMode = 'climb',
+): (RunStep | null)[] {
 	const out: (RunStep | null)[] = items.map(() => null);
 	const rate = fin(fps) && fps > 0 ? fps : 30;
 	const maxGap = RUN_MAX_GAP_SEC * rate + 1e-9;
@@ -257,7 +271,7 @@ export function musicPlaysAt(seq: Sequence, frame: number): boolean {
 	try {
 		const muted = new Set((seq.audioTracks ?? []).filter((t) => t?.mute === true).map((t) => t.id));
 		for (const c of Object.values(seq.clips ?? {})) {
-			if (!c || c.kind !== 'audio' || c.enabled === false || muted.has(c.trackId)) continue;
+			if (c?.kind !== 'audio' || c.enabled === false || muted.has(c.trackId)) continue;
 			if (!(c.start <= frame && frame < c.start + c.duration)) continue;
 			if (readEssentialSound((c as { essential?: unknown }).essential)?.type === 'music') return true;
 		}
@@ -288,72 +302,73 @@ export type PersonalityProfile = {
 };
 
 /** The personality table (a decision recorded in the wp-note "Phase 6 → WP-E6"). */
-export const SOUND_PERSONALITY_PROFILES: Readonly<Record<SoundPersonality, PersonalityProfile>> = Object.freeze({
-	calm: {
-		description: 'Soft, dark and sparse: no booms or hits, gentle attacks, wood and paper',
-		tone: 'dark',
-		attack: 'soft',
-		weight: 'light',
-		texture: 'clean',
-		boost: ['swish', 'chime', 'shimmer', 'paper', 'tap'],
-		exclude: ['boom', 'hit', 'glitch', 'zap'],
-		materials: ['wood', 'paper', 'cloth', 'air'],
-		density: 'sparse',
-	},
-	energetic: {
-		description: 'Punchy, bright and rich: whooshes, hits and risers, metal and air',
-		tone: 'bright',
-		attack: 'punchy',
-		weight: 'heavy',
-		boost: ['whoosh', 'hit', 'riser', 'pop', 'transition'],
-		exclude: [],
-		materials: ['metal', 'electronic', 'air'],
-		density: 'rich',
-	},
-	bright: {
-		description: 'Light and sparkling: chimes, pops and UI blips, glass and metal, no low booms',
-		tone: 'bright',
-		attack: 'punchy',
-		weight: 'light',
-		texture: 'clean',
-		boost: ['chime', 'shimmer', 'pop', 'ui', 'click'],
-		exclude: ['boom', 'thump'],
-		materials: ['glass', 'metal', 'ceramic'],
-		density: 'balanced',
-	},
-	precise: {
-		description: 'Tight and clean interface sounds: clicks, ticks and taps, no swells',
-		attack: 'punchy',
-		weight: 'light',
-		texture: 'clean',
-		boost: ['click', 'tick', 'ui', 'key', 'tap'],
-		exclude: ['boom', 'riser', 'shimmer', 'reverse'],
-		materials: ['plastic', 'electronic', 'metal'],
-		density: 'balanced',
-	},
-	mechanical: {
-		description: 'Hard, gritty mechanisms: keys, clicks and thumps, metal and plastic',
-		tone: 'dark',
-		attack: 'punchy',
-		weight: 'heavy',
-		texture: 'noisy',
-		boost: ['click', 'key', 'tick', 'thump', 'hit'],
-		exclude: ['shimmer', 'chime'],
-		materials: ['metal', 'plastic'],
-		density: 'balanced',
-	},
-	warm: {
-		description: 'Round, soft and full: thumps, taps and paper, wood and cloth',
-		tone: 'dark',
-		attack: 'soft',
-		weight: 'heavy',
-		texture: 'clean',
-		boost: ['thump', 'tap', 'paper', 'chime', 'swish'],
-		exclude: ['glitch', 'zap'],
-		materials: ['wood', 'cloth', 'paper'],
-		density: 'balanced',
-	},
-});
+export const SOUND_PERSONALITY_PROFILES: Readonly<Record<SoundPersonality, PersonalityProfile>> =
+	Object.freeze({
+		calm: {
+			description: 'Soft, dark and sparse: no booms or hits, gentle attacks, wood and paper',
+			tone: 'dark',
+			attack: 'soft',
+			weight: 'light',
+			texture: 'clean',
+			boost: ['swish', 'chime', 'shimmer', 'paper', 'tap'],
+			exclude: ['boom', 'hit', 'glitch', 'zap'],
+			materials: ['wood', 'paper', 'cloth', 'air'],
+			density: 'sparse',
+		},
+		energetic: {
+			description: 'Punchy, bright and rich: whooshes, hits and risers, metal and air',
+			tone: 'bright',
+			attack: 'punchy',
+			weight: 'heavy',
+			boost: ['whoosh', 'hit', 'riser', 'pop', 'transition'],
+			exclude: [],
+			materials: ['metal', 'electronic', 'air'],
+			density: 'rich',
+		},
+		bright: {
+			description: 'Light and sparkling: chimes, pops and UI blips, glass and metal, no low booms',
+			tone: 'bright',
+			attack: 'punchy',
+			weight: 'light',
+			texture: 'clean',
+			boost: ['chime', 'shimmer', 'pop', 'ui', 'click'],
+			exclude: ['boom', 'thump'],
+			materials: ['glass', 'metal', 'ceramic'],
+			density: 'balanced',
+		},
+		precise: {
+			description: 'Tight and clean interface sounds: clicks, ticks and taps, no swells',
+			attack: 'punchy',
+			weight: 'light',
+			texture: 'clean',
+			boost: ['click', 'tick', 'ui', 'key', 'tap'],
+			exclude: ['boom', 'riser', 'shimmer', 'reverse'],
+			materials: ['plastic', 'electronic', 'metal'],
+			density: 'balanced',
+		},
+		mechanical: {
+			description: 'Hard, gritty mechanisms: keys, clicks and thumps, metal and plastic',
+			tone: 'dark',
+			attack: 'punchy',
+			weight: 'heavy',
+			texture: 'noisy',
+			boost: ['click', 'key', 'tick', 'thump', 'hit'],
+			exclude: ['shimmer', 'chime'],
+			materials: ['metal', 'plastic'],
+			density: 'balanced',
+		},
+		warm: {
+			description: 'Round, soft and full: thumps, taps and paper, wood and cloth',
+			tone: 'dark',
+			attack: 'soft',
+			weight: 'heavy',
+			texture: 'clean',
+			boost: ['thump', 'tap', 'paper', 'chime', 'swish'],
+			exclude: ['glitch', 'zap'],
+			materials: ['wood', 'cloth', 'paper'],
+			density: 'balanced',
+		},
+	});
 
 /** The largest score change a personality makes (added to the ranking score; ±0.15 of 1). */
 export const PERSONALITY_WEIGHT = 0.15;
@@ -376,7 +391,11 @@ function towardsLow(x: number, lo: number, hi: number, f: (v: number) => number 
  * personality excludes scores −1.
  */
 export function personalityScore(
-	e: { types?: readonly unknown[]; descriptors?: Partial<RankDescriptors> | null; materials?: readonly unknown[] | null },
+	e: {
+		types?: readonly unknown[];
+		descriptors?: Partial<RankDescriptors> | null;
+		materials?: readonly unknown[] | null;
+	},
 	personality: SoundPersonality | null | undefined,
 ): number | null {
 	if (!personality || !isSoundPersonality(personality)) return null;
@@ -437,7 +456,9 @@ export function personalityDensity(
 	personality: SoundPersonality | null | undefined,
 	fallback: SoundDensity,
 ): SoundDensity {
-	return personality && isSoundPersonality(personality) ? SOUND_PERSONALITY_PROFILES[personality].density : fallback;
+	return personality && isSoundPersonality(personality)
+		? SOUND_PERSONALITY_PROFILES[personality].density
+		: fallback;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -32,7 +32,9 @@ const logs: string[] = [];
 const engineLog: string[] = [];
 
 async function call(name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
-	return (await client.callTool({ name, arguments: args }, undefined, { timeout: 600_000 })) as CallToolResult;
+	return (await client.callTool({ name, arguments: args }, undefined, {
+		timeout: 600_000,
+	})) as CallToolResult;
 }
 async function ok<T = Record<string, unknown>>(name: string, args: Record<string, unknown> = {}) {
 	const r = await call(name, args);
@@ -70,11 +72,20 @@ function lcg(seed: number) {
 	};
 }
 /** Noise + a tone under an exponential decay τ, added at sample `at`. */
-function addBurst(x: Float32Array, at: number, amp: number, tauMs: number, hz: number, seed: number, lenSec = 0.06) {
+function addBurst(
+	x: Float32Array,
+	at: number,
+	amp: number,
+	tauMs: number,
+	hz: number,
+	seed: number,
+	lenSec = 0.06,
+) {
 	const r = lcg(seed);
 	const tau = (tauMs / 1000) * SR;
 	for (let i = 0; i < lenSec * SR && at + i < x.length; i++)
-		x[at + i] = x[at + i]! + amp * Math.exp(-i / tau) * (0.6 * r() + 0.4 * Math.sin((2 * Math.PI * hz * i) / SR));
+		x[at + i] =
+			x[at + i]! + amp * Math.exp(-i / tau) * (0.6 * r() + 0.4 * Math.sin((2 * Math.PI * hz * i) / SR));
 }
 
 function makeKit(dir: string) {
@@ -281,7 +292,12 @@ describe('place_sound type picks follow the grammar', { timeout: 600_000 }, () =
 		);
 		const woodBlock = search.results.find((r) => r.title === 'Wooden block hit')!;
 		expect(woodBlock.materials).toEqual(['wood']);
-		await ok<Placed>('place_sound', { projectId, at: 300, layers: [{ soundId: woodBlock.soundId }], mode: 'apply' });
+		await ok<Placed>('place_sound', {
+			projectId,
+			at: 300,
+			layers: [{ soundId: woodBlock.soundId }],
+			mode: 'apply',
+		});
 		const r = await ok<Placed>('place_sound', {
 			projectId,
 			at: 400,
@@ -305,7 +321,12 @@ describe('place_sound type picks follow the grammar', { timeout: 600_000 }, () =
 			proposalId: string | null;
 			grammar?: { personality: string | null; runs: string; voices: Record<string, string> };
 		}>('plan_sound_design', { projectId, style: { runs: 'flat', typing: 'words', musicCarriesCuts: false } });
-		expect(r.grammar).toMatchObject({ personality: 'precise', runs: 'flat', typing: 'words', musicCarriesCuts: false });
+		expect(r.grammar).toMatchObject({
+			personality: 'precise',
+			runs: 'flat',
+			typing: 'words',
+			musicCarriesCuts: false,
+		});
 		const cues = await ok<{ cues: unknown[]; stats: { musicCarriesCuts?: number } }>('find_sound_cues', {
 			projectId,
 			typing: 'silent',

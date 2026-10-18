@@ -88,7 +88,10 @@ export function SoundStyleFields(props: {
 							options={personalityOptions}
 						/>
 					</div>
-					<p className="pl-[128px] text-pr-small text-pr-muted" data-testid="sound-style-personality-description">
+					<p
+						className="pl-[128px] text-pr-small text-pr-muted"
+						data-testid="sound-style-personality-description"
+					>
 						{PERSONALITY_DESCRIPTIONS[current]}
 					</p>
 				</div>

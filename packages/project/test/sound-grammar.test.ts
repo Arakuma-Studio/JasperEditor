@@ -6,8 +6,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-	checkInvariants,
 	COMMAND_CATALOG,
+	checkInvariants,
 	deriveCues,
 	fillTypeOf,
 	findRuns,
@@ -67,18 +67,23 @@ describe('variation policy per type (taxonomy `variation`)', () => {
 
 	it('variationOf: voice = rate 1 and 0 dB; takes = rate 1 with the same ±1 dB; vary = ±2 % and ±1 dB (property)', () => {
 		fc.assert(
-			fc.property(fc.integer({ min: 0, max: 0xffffffff }), fc.string(), fc.integer({ min: 0, max: 5 }), (seed, cueId, layer) => {
-				const ctx = { seed, cueId, sequenceId: 'seq_x', layer };
-				const vary = variationOf(ctx);
-				const takes = variationOf({ ...ctx, variation: 'takes' });
-				const voice = variationOf({ ...ctx, variation: 'voice' });
-				expect(voice).toEqual({ rate: 1, gainDb: 0 });
-				expect(takes.rate).toBe(1);
-				expect(takes.gainDb).toBe(vary.gainDb);
-				expect(Math.abs(vary.rate - 1)).toBeLessThanOrEqual(0.02 + 1e-12);
-				expect(Math.abs(vary.gainDb)).toBeLessThanOrEqual(1);
-				expect(variationOf({ ...ctx, variation: 'vary' })).toEqual(vary);
-			}),
+			fc.property(
+				fc.integer({ min: 0, max: 0xffffffff }),
+				fc.string(),
+				fc.integer({ min: 0, max: 5 }),
+				(seed, cueId, layer) => {
+					const ctx = { seed, cueId, sequenceId: 'seq_x', layer };
+					const vary = variationOf(ctx);
+					const takes = variationOf({ ...ctx, variation: 'takes' });
+					const voice = variationOf({ ...ctx, variation: 'voice' });
+					expect(voice).toEqual({ rate: 1, gainDb: 0 });
+					expect(takes.rate).toBe(1);
+					expect(takes.gainDb).toBe(vary.gainDb);
+					expect(Math.abs(vary.rate - 1)).toBeLessThanOrEqual(0.02 + 1e-12);
+					expect(Math.abs(vary.gainDb)).toBeLessThanOrEqual(1);
+					expect(variationOf({ ...ctx, variation: 'vary' })).toEqual(vary);
+				},
+			),
 			{ numRuns: 300 },
 		);
 	});
@@ -135,15 +140,25 @@ describe('runs climb', () => {
 	const card = (frame: number, type: string | null = 'pop', kind = 'appear') => ({ frame, kind, type });
 
 	it('a 4-card stagger 0.5 s apart climbs 0 / +1 / +2 / +3 st; six cards cap at +4', () => {
-		const four = findRuns([0, 15, 30, 45].map((f) => card(f)), 30);
+		const four = findRuns(
+			[0, 15, 30, 45].map((f) => card(f)),
+			30,
+		);
 		expect(four.map((s) => s?.st)).toEqual([0, 1, 2, 3]);
 		expect(four.map((s) => s?.index)).toEqual([1, 2, 3, 4]);
 		expect(four.every((s) => s?.of === 4 && s.run === 1)).toBe(true);
 		expect(runReason(four[2]!)).toBe('run 3 of 4: +2 st');
-		const six = findRuns([0, 6, 12, 18, 24, 30].map((f) => card(f, 'ui', 'emphasis')), 30);
+		const six = findRuns(
+			[0, 6, 12, 18, 24, 30].map((f) => card(f, 'ui', 'emphasis')),
+			30,
+		);
 		expect(six.map((s) => s?.st)).toEqual([0, 1, 2, 3, 4, 4]);
 		expect(rateOfSemitones(2)).toBeCloseTo(2 ** (2 / 12), 6);
-		const flat = findRuns([0, 15, 30].map((f) => card(f)), 30, 'flat');
+		const flat = findRuns(
+			[0, 15, 30].map((f) => card(f)),
+			30,
+			'flat',
+		);
 		expect(flat.map((s) => s?.st)).toEqual([0, 0, 0]);
 		expect(runReason(flat[1]!, 'flat')).toBe('run 2 of 3: flat');
 	});
@@ -164,10 +179,16 @@ describe('runs climb', () => {
 		expect(findRuns([card(0), card(5), card(10, 'pop', 'cut'), card(15)], 30).every((s) => s === null)).toBe(
 			true,
 		);
-		const fixed = findRuns([card(0), card(5), { ...card(10), fixedPitch: true }, card(15), card(20), card(25)], 30);
+		const fixed = findRuns(
+			[card(0), card(5), { ...card(10), fixedPitch: true }, card(15), card(20), card(25)],
+			30,
+		);
 		expect(fixed.map((s) => s?.st ?? null)).toEqual([null, null, null, 0, 1, 2]);
 		// two runs are numbered in order
-		const two = findRuns([card(0), card(5), card(10), card(100, 'chime'), card(105, 'tick'), card(110, 'ui')], 30);
+		const two = findRuns(
+			[card(0), card(5), card(10), card(100, 'chime'), card(105, 'tick'), card(110, 'ui')],
+			30,
+		);
 		expect(two.map((s) => s?.run)).toEqual([1, 1, 1, 2, 2, 2]);
 	});
 
@@ -233,7 +254,9 @@ describe('typing', () => {
 	it('a typewriter faster than 25 units/s gets one key per word start; keys / silent force it', () => {
 		const h = typewriter(FAST, 30); // 35 characters in 1 s
 		const auto = deriveCues(h.doc, h.seqId, { sources: ['text'] });
-		expect(auto.cues.map((c) => (c.anchor as { unit?: number }).unit)).toEqual([0, 3, 8, 13, 16, 21, 25, 28, 32]);
+		expect(auto.cues.map((c) => (c.anchor as { unit?: number }).unit)).toEqual([
+			0, 3, 8, 13, 16, 21, 25, 28, 32,
+		]);
 		// typewriter@2 types over 60 % of its window: 35 units in 0.6 s
 		expect(auto.cues[0]!.reason).toMatch(/one key per word: 58 typed\/s/);
 		expect(new Set(auto.cues.map((c) => c.group)).size).toBe(1);
@@ -335,7 +358,9 @@ describe('music carries the cuts', () => {
 		expect(deriveCues(h.doc, h.seqId, { sources: ['edits'] }).cues.map((c) => c.frame)).toEqual([90, 180]);
 		const muted = edit({ mute: true });
 		expect(musicPlaysAt(muted.seq, 90)).toBe(false);
-		expect(deriveCues(muted.doc, muted.seqId, { sources: ['edits'] }).cues.map((c) => c.frame)).toEqual([90, 180]);
+		expect(deriveCues(muted.doc, muted.seqId, { sources: ['edits'] }).cues.map((c) => c.frame)).toEqual([
+			90, 180,
+		]);
 	});
 });
 
@@ -365,7 +390,10 @@ describe('personality', () => {
 			flatness: (prof.texture === 'noisy') === want ? 0.4 : 0.02,
 		});
 		const other = SOUND_TYPE_IDS.find(
-			(t) => !prof.boost.includes(t) && (prof.exclude.length ? prof.exclude.includes(t) : true) && t !== 'ambience',
+			(t) =>
+				!prof.boost.includes(t) &&
+				(prof.exclude.length ? prof.exclude.includes(t) : true) &&
+				t !== 'ambience',
 		)!;
 		const otherMat = (['stone', 'water', 'rubber'] as const).find((m) => !prof.materials.includes(m))!;
 		const fits: RankableSound = {
@@ -420,7 +448,11 @@ describe('personality', () => {
 			'transition',
 			'click',
 		]);
-		expect(styleCueTypes(['thump', 'hit', 'transition'], 'energetic')).toEqual(['hit', 'transition', 'thump']);
+		expect(styleCueTypes(['thump', 'hit', 'transition'], 'energetic')).toEqual([
+			'hit',
+			'transition',
+			'thump',
+		]);
 		expect(styleCueTypes(['boom', 'hit'], 'calm')).toEqual(['boom', 'hit']);
 		expect(styleCueTypes(['boom', 'hit'], null)).toEqual(['boom', 'hit']);
 		const { h } = phase2Fixture();
@@ -432,9 +464,9 @@ describe('personality', () => {
 		// the sequence's personality is the default; null asks for none
 		h.ok([{ type: 'soundDesign.setSettings', style: { personality: 'calm' } }]);
 		expect(deriveCues(h.doc, h.seqId).cues.find((c) => c.kind === 'cut')!.types).not.toContain('hit');
-		expect(deriveCues(h.doc, h.seqId, { personality: null }).cues.find((c) => c.kind === 'cut')!.types[0]).toBe(
-			'hit',
-		);
+		expect(
+			deriveCues(h.doc, h.seqId, { personality: null }).cues.find((c) => c.kind === 'cut')!.types[0],
+		).toBe('hit');
 	});
 });
 
@@ -508,7 +540,13 @@ describe('variation cycling: vary the take', () => {
 				family: ['snd_00000000000000cc', 'bad id'],
 				similar: ['snd_00000000000000bb', 'snd_00000000000000dd'],
 			}),
-		).toEqual([takeIdOf(rec, 1), 'snd_00000000000000bb', takeIdOf(rec, 3), 'snd_00000000000000cc', 'snd_00000000000000dd']);
+		).toEqual([
+			takeIdOf(rec, 1),
+			'snd_00000000000000bb',
+			takeIdOf(rec, 3),
+			'snd_00000000000000cc',
+			'snd_00000000000000dd',
+		]);
 	});
 });
 
@@ -519,8 +557,14 @@ describe('the style in the sequence settings (soundDesign.setSettings {style})',
 		h.ok([{ type: 'soundDesign.setSettings', style: { personality: 'warm', runs: 'flat' } }]);
 		const one = h.doc;
 		expect(h.seq.soundDesign?.settings?.style).toEqual({ personality: 'warm', runs: 'flat' });
-		h.ok([{ type: 'soundDesign.setSettings', style: { runs: null, typing: 'words', duckUnderTyping: true } }]);
-		expect(h.seq.soundDesign?.settings?.style).toEqual({ personality: 'warm', typing: 'words', duckUnderTyping: true });
+		h.ok([
+			{ type: 'soundDesign.setSettings', style: { runs: null, typing: 'words', duckUnderTyping: true } },
+		]);
+		expect(h.seq.soundDesign?.settings?.style).toEqual({
+			personality: 'warm',
+			typing: 'words',
+			duckUnderTyping: true,
+		});
 		expect(resolveSoundStyle(h.seq.soundDesign?.settings?.style)).toEqual({
 			personality: 'warm',
 			runs: 'climb',
@@ -533,7 +577,9 @@ describe('the style in the sequence settings (soundDesign.setSettings {style})',
 		expect(Object.values(before.sequences)[0]!.soundDesign).toBeUndefined();
 		const after = h.doc;
 		h.doc = one;
-		h.ok([{ type: 'soundDesign.setSettings', style: { runs: null, typing: 'words', duckUnderTyping: true } }]);
+		h.ok([
+			{ type: 'soundDesign.setSettings', style: { runs: null, typing: 'words', duckUnderTyping: true } },
+		]);
 		expect(h.doc.sequences[h.seqId]!.soundDesign).toEqual(after.sequences[h.seqId]!.soundDesign);
 		// clearing every field removes the style
 		h.ok([
@@ -552,9 +598,17 @@ describe('the style in the sequence settings (soundDesign.setSettings {style})',
 
 	it('refuses unknown values and keys; the schema is in the catalogue', () => {
 		const schema = COMMAND_CATALOG['soundDesign.setSettings'].schema;
-		expect(schema.safeParse({ type: 'soundDesign.setSettings', style: { personality: 'calm' } }).success).toBe(true);
+		expect(
+			schema.safeParse({ type: 'soundDesign.setSettings', style: { personality: 'calm' } }).success,
+		).toBe(true);
 		const h = new Harness();
-		for (const style of [{ personality: 'grumpy' }, { runs: 'down' }, { typing: 'fast' }, { volume: 3 }, { musicCarriesCuts: 'yes' }]) {
+		for (const style of [
+			{ personality: 'grumpy' },
+			{ runs: 'down' },
+			{ typing: 'fast' },
+			{ volume: 3 },
+			{ musicCarriesCuts: 'yes' },
+		]) {
 			const r = h.tx([{ type: 'soundDesign.setSettings', style }]);
 			expect(r.ok, JSON.stringify(style)).toBe(false);
 		}
@@ -575,7 +629,10 @@ describe('the style in the sequence settings (soundDesign.setSettings {style})',
 		const h = new Harness();
 		h.ok([{ type: 'soundDesign.setSettings', style: { personality: 'calm' } }]);
 		const doc = clone(h.doc);
-		(doc.sequences[h.seqId]!.soundDesign!.settings as Record<string, unknown>).style = { personality: 5, typing: 'words' };
+		(doc.sequences[h.seqId]!.soundDesign!.settings as Record<string, unknown>).style = {
+			personality: 5,
+			typing: 'words',
+		};
 		expect(checkInvariants(doc).length).toBeGreaterThan(0);
 		const { document } = repairDocument(doc, h.ids);
 		expect(document.sequences[h.seqId]!.soundDesign!.settings!.style).toEqual({ typing: 'words' });
@@ -591,7 +648,10 @@ describe('the style in the sequence settings (soundDesign.setSettings {style})',
 			duckUnderTyping: false,
 		});
 		expect(
-			resolveSoundStyle({ personality: null, typing: 'keys' }, { personality: 'calm', typing: 'words', runs: 'flat' }),
+			resolveSoundStyle(
+				{ personality: null, typing: 'keys' },
+				{ personality: 'calm', typing: 'words', runs: 'flat' },
+			),
 		).toMatchObject({ personality: null, typing: 'keys', runs: 'flat' });
 		expect(resolveSoundStyle({ runs: 'bad' as never }, null).runs).toBe('climb');
 	});

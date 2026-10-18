@@ -52,9 +52,9 @@ import {
 	SOUND_TYPES,
 	SOUND_TYPING_MODES,
 	type SoundCue,
+	type SoundPersonality,
 	type SoundProposalMedia,
 	type SoundProposalPlacement,
-	type SoundPersonality,
 	type SoundTypeId,
 	type SoundVariation,
 	STOP_BEFORE_DEFAULT,
@@ -484,7 +484,9 @@ function placedSoundsOf(doc: ProjectDocument, seq: Sequence, F: number): PlacedS
 		.sort((a, b) => a.at - b.at || a.c.id.localeCompare(b.c.id))
 		.map(({ c }) => ({
 			soundId: c.sfx!.soundId!,
-			types: readLibraryProvenance((doc.media[c.mediaId] as { library?: unknown } | undefined)?.library)?.types ?? [],
+			types:
+				readLibraryProvenance((doc.media[c.mediaId] as { library?: unknown } | undefined)?.library)?.types ??
+				[],
 		}));
 }
 
@@ -1996,7 +1998,9 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 						duckUnderTyping: z
 							.boolean()
 							.optional()
-							.describe('A 6 dB dip of the music under each typing run (a duck: item after its first key; default false)'),
+							.describe(
+								'A 6 dB dip of the music under each typing run (a duck: item after its first key; default false)',
+							),
 					})
 					.optional(),
 				maxCues: z.number().int().min(1).max(200).optional().describe('Cues that get a sound (default 200)'),

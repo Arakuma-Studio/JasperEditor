@@ -147,7 +147,9 @@ export function SuggestCuesDialog(
 		const styleChanges = {
 			...(style.personality !== stored.personality ? { personality: style.personality } : {}),
 			...(style.typing !== stored.typing ? { typing: style.typing } : {}),
-			...(style.musicCarriesCuts !== stored.musicCarriesCuts ? { musicCarriesCuts: style.musicCarriesCuts } : {}),
+			...(style.musicCarriesCuts !== stored.musicCarriesCuts
+				? { musicCarriesCuts: style.musicCarriesCuts }
+				: {}),
 		};
 		if (density !== settings.density || Object.keys(styleChanges).length)
 			commands.unshift({

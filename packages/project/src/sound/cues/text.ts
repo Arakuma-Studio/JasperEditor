@@ -15,8 +15,8 @@ import type { TextAnimatorGroup, TextRangeSelector } from '../../schema/text-ani
 import { getTextAnimationSpec, resolveTextAnimationWindows } from '../../text-animations.ts';
 import { rangeParams } from '../../text-animators/evaluate.ts';
 import { rangeValue, unitCount } from '../../text-animators/selectors.ts';
-import type { SoundTypeId } from '../taxonomy.ts';
 import { typingChoice } from '../grammar.ts';
+import type { SoundTypeId } from '../taxonomy.ts';
 import { textUnitCount, typewriterOffsets, typewriterScheduleMs, wordStartUnits } from '../text-events.ts';
 import type { CueCandidate, DerivedCueKind } from './types.ts';
 import {

@@ -33,7 +33,6 @@ import { PrefGroup, PrefRow } from '../shell/preferences/GeneralPage.tsx';
 import { useEngine } from '../state/engine.tsx';
 import { DELIVERY_IDS, deliveryOptionLabel, sequenceDelivery } from './mix-model.ts';
 import { PacksSection } from './PacksSection.tsx';
-import { SoundStyleFields, type StyleField } from './StyleControls.tsx';
 import {
 	MAX_AUDITION_DB,
 	MAX_PRE_ROLL_SEC,
@@ -42,6 +41,7 @@ import {
 	soundLibraryPrefs,
 	useSoundLibraryPrefs,
 } from './prefs.ts';
+import { SoundStyleFields, type StyleField } from './StyleControls.tsx';
 
 type RootLicense = (typeof SOUND_ROOT_LICENSES)[number];
 
@@ -613,8 +613,9 @@ export function StylePreference() {
 	const raw = useStoreSelector(session?.store ?? EMPTY_SESSION_STORE, (s: SessionState | null) => {
 		const seq = seqId ? s?.document.sequences[seqId] : undefined;
 		return JSON.stringify(
-			readSoundDesignSettings((seq as { soundDesign?: { settings?: unknown } } | undefined)?.soundDesign?.settings)
-				.style ?? {},
+			readSoundDesignSettings(
+				(seq as { soundDesign?: { settings?: unknown } } | undefined)?.soundDesign?.settings,
+			).style ?? {},
 		);
 	});
 	const readOnly = useStoreSelector(
@@ -629,16 +630,24 @@ export function StylePreference() {
 			label: t('Sound Design Style'),
 			origin: 'user',
 			sequenceId: seqId,
-			commands: [{ type: 'soundDesign.setSettings', sequenceId: seqId, style: { [field]: next[field] } } as never],
+			commands: [
+				{ type: 'soundDesign.setSettings', sequenceId: seqId, style: { [field]: next[field] } } as never,
+			],
 		});
 		setError(r.ok ? null : (r.errors[0]?.message ?? t('Edit failed')));
 	};
 	return (
 		<PrefGroup title="Sound design style" testId="prefs-sound-style">
-			<SoundStyleFields value={value} onChange={set} disabled={!session || !seqId || readOnly} testId="prefs-style-fields" />
+			<SoundStyleFields
+				value={value}
+				onChange={set}
+				disabled={!session || !seqId || readOnly}
+				testId="prefs-style-fields"
+			/>
 			<p className="text-pr-small text-pr-muted">
-				Saved with the sequence. Auto Sound Pass, Fill Unfilled Cues, Suggest Cues and agents start from it: one
-				click voice, takes for keys, climbing runs, one key per word for fast typing, fewer cut sounds under music.
+				Saved with the sequence. Auto Sound Pass, Fill Unfilled Cues, Suggest Cues and agents start from it:
+				one click voice, takes for keys, climbing runs, one key per word for fast typing, fewer cut sounds
+				under music.
 			</p>
 			{error ? <p className="text-pr-small text-pr-warning">{error}</p> : null}
 		</PrefGroup>

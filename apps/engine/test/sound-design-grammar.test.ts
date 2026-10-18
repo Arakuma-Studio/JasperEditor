@@ -4,7 +4,13 @@
 // cut inside music is dropped under balanced with its reason; the impacts keep one material; a personality moves the
 // picks; the music dips under typing on request. Deterministic; the proposal applies and places what the report says.
 import { createHash } from 'node:crypto';
-import { type RegisterSoundResponse, type SoundDesignPlanRequest, type SoundEntry, type SoundTake, withOfferedTakes } from '@jasper/api';
+import {
+	type RegisterSoundResponse,
+	type SoundDesignPlanRequest,
+	type SoundEntry,
+	type SoundTake,
+	withOfferedTakes,
+} from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
 	type AudioClip,
@@ -16,13 +22,18 @@ import {
 	createProposal,
 	defaultRegistries,
 	isSetupItem,
+	type ProjectDocument,
 	parseTakeId,
 	planAccept,
-	type ProjectDocument,
 	soundCuesOf,
 } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
-import { collectPlanCues, composePlanDraft, resolveStyle, selectPlanSounds } from '../src/sound-design/plan.ts';
+import {
+	collectPlanCues,
+	composePlanDraft,
+	resolveStyle,
+	selectPlanSounds,
+} from '../src/sound-design/plan.ts';
 import { provenanceOf } from '../src/sounds/service.ts';
 import { asset, F } from './sound-design-fixture.ts';
 
@@ -38,7 +49,16 @@ function audioAsset(seconds: number) {
 		container: 'wav',
 		probe: {
 			...a.probe,
-			streams: [{ index: 0, type: 'audio', codec: 'pcm_s16le', sampleRate: 48000, channels: 2, channelLayout: 'stereo' }],
+			streams: [
+				{
+					index: 0,
+					type: 'audio',
+					codec: 'pcm_s16le',
+					sampleRate: 48000,
+					channels: 2,
+					channelLayout: 'stereo',
+				},
+			],
 		},
 	};
 }
@@ -191,7 +211,13 @@ function typingRun(n: number): SoundEntry {
 			tailDb: -42,
 			flags: [],
 			strokes: 2,
-			descriptors: { ...rec.descriptors, durationSec: 0.15, peakSec: 0.006, tailSec: 0.12, headQuietSec: 0.004 },
+			descriptors: {
+				...rec.descriptors,
+				durationSec: 0.15,
+				peakSec: 0.006,
+				tailSec: 0.12,
+				headQuietSec: 0.004,
+			},
 			judge: { ok: true, score: 1, reasons: [], type: 'key' },
 		}),
 	);
@@ -222,7 +248,12 @@ const NO_MATERIALS = withOfferedTakes(BASE.map(({ materials: _m, ...e }) => e as
 
 const CUE_SOURCES = ['edits', 'text', 'markers'] as const;
 
-function planOf(doc: ProjectDocument, seqId: string, style: SoundDesignPlanRequest['style'] = {}, pool = POOL) {
+function planOf(
+	doc: ProjectDocument,
+	seqId: string,
+	style: SoundDesignPlanRequest['style'] = {},
+	pool = POOL,
+) {
 	const request = {
 		projectId: doc.projectId,
 		sequenceId: seqId,
@@ -247,7 +278,16 @@ function registered(e: SoundEntry): RegisterSoundResponse {
 		probe: {
 			durationFlicks: Math.round(0.4 * 705_600_000),
 			startTimecode: null,
-			streams: [{ index: 0, type: 'audio', codec: 'pcm_s16le', sampleRate: 48000, channels: 2, channelLayout: 'stereo' }],
+			streams: [
+				{
+					index: 0,
+					type: 'audio',
+					codec: 'pcm_s16le',
+					sampleRate: 48000,
+					channels: 2,
+					channelLayout: 'stereo',
+				},
+			],
 			rotationDegrees: 0,
 			hasAlpha: false,
 			variableFrameRate: false,
@@ -259,7 +299,8 @@ function registered(e: SoundEntry): RegisterSoundResponse {
 	} as RegisterSoundResponse;
 }
 
-const at = (r: ReturnType<typeof planOf>, frame: number) => r.selected.picks.find((p) => p.cue.frame === frame);
+const at = (r: ReturnType<typeof planOf>, frame: number) =>
+	r.selected.picks.find((p) => p.cue.frame === frame);
 
 describe('the cue grammar in the plan (typing + UI fixture)', () => {
 	const f = typingFixture();
@@ -268,7 +309,9 @@ describe('the cue grammar in the plan (typing + UI fixture)', () => {
 	it('fast typing: one key per word start, each a distinct sibling take, at rate 1 (no varispeed)', () => {
 		const keys = r.selected.picks.filter((p) => p.cue.derived?.group?.includes('typewriter'));
 		// 35 characters in 0.6 s (58 typed/s): the nine word starts
-		expect(keys.map((p) => (p.cue.derived!.anchor as { unit?: number }).unit)).toEqual([0, 3, 8, 13, 16, 21, 25, 28, 32]);
+		expect(keys.map((p) => (p.cue.derived!.anchor as { unit?: number }).unit)).toEqual([
+			0, 3, 8, 13, 16, 21, 25, 28, 32,
+		]);
 		for (const k of keys) {
 			expect(parseTakeId(k.sounds[0]!.entry.id)?.parentId).toBe(REC.id);
 			expect(k.rate).toBe(1);
@@ -320,10 +363,14 @@ describe('the cue grammar in the plan (typing + UI fixture)', () => {
 		expect(at(r, 90)).toBeUndefined();
 		const skip = r.collected.skipped.find((s) => s.frame === 90)!;
 		expect(skip).toMatchObject({ code: 'MUSIC_CARRIES_CUT', kind: 'cut' });
-		expect(skip.reason).toMatch(/^music carries the cut: its confidence is halved to 0\.25, under the balanced minimum 0\.3/);
+		expect(skip.reason).toMatch(
+			/^music carries the cut: its confidence is halved to 0\.25, under the balanced minimum 0\.3/,
+		);
 		expect(at(r, 180)?.cue.kind).toBe('cut');
 		// rich keeps it (half confidence), with the reason; off brings it back
-		expect(at(planOf(f.get(), f.seqId, { density: 'rich' }), 90)?.cue.reason).toMatch(/music carries the cut/);
+		expect(at(planOf(f.get(), f.seqId, { density: 'rich' }), 90)?.cue.reason).toMatch(
+			/music carries the cut/,
+		);
 		expect(at(planOf(f.get(), f.seqId, { musicCarriesCuts: false }), 90)?.cue.kind).toBe('cut');
 	});
 
@@ -356,7 +403,13 @@ describe('the cue grammar in the plan (typing + UI fixture)', () => {
 	it('is deterministic', () => {
 		const again = planOf(f.get(), f.seqId);
 		const sig = (x: typeof r) =>
-			x.selected.picks.map((p) => [p.cue.frame, p.sounds[0]!.entry.id, p.rate, p.pitchSt ?? 0, p.gainOffsetDb]);
+			x.selected.picks.map((p) => [
+				p.cue.frame,
+				p.sounds[0]!.entry.id,
+				p.rate,
+				p.pitchSt ?? 0,
+				p.gainOffsetDb,
+			]);
 		expect(sig(again)).toEqual(sig(r));
 	});
 });
@@ -386,7 +439,10 @@ describe('the proposal places what the grammar decided', () => {
 		expect(card.run).toEqual({ group: 'run:1', index: 3, of: 4, st: 2 });
 		expect(card.rate).toBeCloseTo(2 ** (2 / 12), 6);
 		const duckItem = draft!.items.find((i) => i.id.startsWith('duck:'))!;
-		expect(duckItem.commands[0]).toMatchObject({ type: 'audio.volumeDip', dips: [{ depthDb: -6, fadeMs: 80 }] });
+		expect(duckItem.commands[0]).toMatchObject({
+			type: 'audio.volumeDip',
+			dips: [{ depthDb: -6, fadeMs: 80 }],
+		});
 		const c = createProposal(
 			f.get(),
 			draft!,
@@ -402,7 +458,9 @@ describe('the proposal places what the grammar decided', () => {
 		if (!c.ok) throw new Error(JSON.stringify(c.errors));
 		expect(c.proposal.items.filter((i) => i.state !== 'pending')).toEqual([]);
 		const placeIds = c.proposal.items.filter((i) => !isSetupItem(i)).map((i) => i.id);
-		const plan = planAccept(f.get(), c.proposal, placeIds, 'user', { registries: defaultRegistries(mgRegistry) });
+		const plan = planAccept(f.get(), c.proposal, placeIds, 'user', {
+			registries: defaultRegistries(mgRegistry),
+		});
 		if (!plan.ok || !plan.composed) throw new Error(JSON.stringify(plan));
 		const { document, result } = applyTransaction(f.get(), plan.composed.tx as never, {
 			ids: createCounterIdSource(500),
@@ -435,6 +493,9 @@ describe('the proposal places what the grammar decided', () => {
 		// the music under the typing dips 6 dB
 		const music = Object.values(seq.clips).find((x) => x.kind === 'audio' && x.start === 195) as AudioClip;
 		expect(music.volumeDb.keyframes.length).toBeGreaterThan(0);
-		expect(Math.min(...music.volumeDb.keyframes.map((k) => k.value as number))).toBeCloseTo(music.volumeDb.value - 6, 6);
+		expect(Math.min(...music.volumeDb.keyframes.map((k) => k.value as number))).toBeCloseTo(
+			music.volumeDb.value - 6,
+			6,
+		);
 	});
 });

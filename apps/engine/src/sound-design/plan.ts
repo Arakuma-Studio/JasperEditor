@@ -51,20 +51,20 @@ import {
 	documentHasActiveExpressions,
 	ENGINE_CUE_SOURCES,
 	type ExtraCue,
+	fillTypeOf,
+	findRuns,
 	flicksPerFrame,
 	isSoundTypeId,
 	type MgTemplateRegistry,
-	fillTypeOf,
-	findRuns,
 	musicCovers,
 	musicTracksUnder,
 	type PaletteMaterials,
 	type PlacedSound,
-	paletteMaterials,
-	personalityDensity,
 	type ProjectDocument,
 	type ProposalDraft,
 	type ProposalItemInput,
+	paletteMaterials,
+	personalityDensity,
 	pickVariant,
 	type RankedSound,
 	type Rational,
@@ -76,7 +76,6 @@ import {
 	readLibraryProvenance,
 	resolveSoundStyle,
 	runReason,
-	type SoundVariation,
 	type Sequence,
 	type SFX_ROLES,
 	SOUND_DESIGN_FEATURE,
@@ -89,6 +88,7 @@ import {
 	type SoundProposalMedia,
 	type SoundProposalPlacement,
 	type SoundTypeId,
+	type SoundVariation,
 	STOP_BEFORE_DEFAULT,
 	sequenceDialogueRanges,
 	sequenceTimecode,
@@ -183,7 +183,13 @@ export type PlanStyle = {
 };
 
 /** The music dip under a typing run (style `duckUnderTyping`): music clips and the dip's floor (sequence flicks). */
-export type PlanDuck = { clipIds: string[]; start: number; end: number; firstFrame: number; lastFrame: number };
+export type PlanDuck = {
+	clipIds: string[];
+	start: number;
+	end: number;
+	firstFrame: number;
+	lastFrame: number;
+};
 
 /** Depth and fades of the dip under typing (P6-E10: "an optional 6 dB dip"). */
 export const TYPING_DUCK = { depthDb: -6, fadeMs: 80, tailSec: 0.15 } as const;
@@ -232,7 +238,9 @@ export function resolveStyle(req: SoundDesignPlanRequest, seq: Sequence): PlanSt
 	return {
 		grammar,
 		// a personality named by the request brings its default density (the sequence's own density otherwise)
-		density: st.density ?? (st.personality ? personalityDensity(st.personality, settings.density) : settings.density),
+		density:
+			st.density ??
+			(st.personality ? personalityDensity(st.personality, settings.density) : settings.density),
 		respectDialogue: st.respectDialogue ?? true,
 		seed: st.seed ?? settings.seed,
 		sources: st.sources?.length ? [...new Set(st.sources)] : ALL_SOURCES,
@@ -548,10 +556,11 @@ export function collectPlanCues(
 				timecode: sequenceTimecode(seq, c.frame),
 				kind: 'cut',
 				code: 'MUSIC_CARRIES_CUT',
-				reason: `music carries the cut: its confidence is halved to ${c.confidence}, under the ${style.density} minimum ${c.minConfidence} (${c.reason})`.slice(
-					0,
-					1000,
-				),
+				reason:
+					`music carries the cut: its confidence is halved to ${c.confidence}, under the ${style.density} minimum ${c.minConfidence} (${c.reason})`.slice(
+						0,
+						1000,
+					),
 			});
 		const matches = matchStoredCues(seq, derived.cues);
 		derived.cues.forEach((d, i) => {
@@ -604,7 +613,9 @@ function placedSounds(
 			(sfx.placement.peakFlicks - c.sourceIn) / (c.speed?.rate || 1) -
 			sfx.placement.errorFlicks;
 		if (!Number.isFinite(flicks)) continue;
-		const prov = readLibraryProvenance((doc.media?.[c.mediaId] as { library?: unknown } | undefined)?.library);
+		const prov = readLibraryProvenance(
+			(doc.media?.[c.mediaId] as { library?: unknown } | undefined)?.library,
+		);
 		out.push({
 			frame: flicks / F,
 			soundId: sfx.soundId ?? null,
@@ -791,7 +802,11 @@ export function selectPlanSounds(
 					rate: 1,
 					gainDb: 0,
 					variation,
-					voice: { type: fill, soundId: chosen.entry.id, from: v && v.soundId === chosen.entry.id ? v.from : 'first' },
+					voice: {
+						type: fill,
+						soundId: chosen.entry.id,
+						from: v && v.soundId === chosen.entry.id ? v.from : 'first',
+					},
 				});
 				continue;
 			}
@@ -800,7 +815,8 @@ export function selectPlanSounds(
 				{ seed: style.seed, cueId: cue.key, sequenceId: seq.id, layer, recentSoundIds: recentIds, variation },
 			);
 			if (!v) missingTypes.push(types.slice(0, 4).join('/'));
-			else picked.push({ candidates, index: v.index, rate: v.rate, gainDb: v.gainDb, variation, voice: null });
+			else
+				picked.push({ candidates, index: v.index, rate: v.rate, gainDb: v.gainDb, variation, voice: null });
 		}
 		if (picked.length === 0 || (missingTypes.length && !cue.layered)) {
 			skipped.push(
@@ -849,7 +865,8 @@ export function selectPlanSounds(
 							: 'the first in this sequence'
 				}), same level, no variation`,
 			);
-		else if (first.variation === 'takes') notes.push('no varispeed: keys, ticks and taps vary the take, not the pitch');
+		else if (first.variation === 'takes')
+			notes.push('no varispeed: keys, ticks and taps vary the take, not the pitch');
 		const firstType = chosen.entry.types.find(isSoundTypeId);
 		const align: CueAlign = cue.align ?? (firstType ? SOUND_TYPES[firstType].defaultAlign : 'peak');
 		if ([chosen, ...extraLayers.map((l) => l.sound)].some((r) => r.entry.source.type === 'synth'))
@@ -907,7 +924,7 @@ export function selectPlanSounds(
 		for (const p of picks) {
 			const g = p.cue.derived?.group;
 			const t = fillTypeOf(p.sounds[0]!.entry.types, p.cue.types);
-			if (!g || !g.startsWith('text:') || !t || !['key', 'tick', 'click'].includes(t)) continue;
+			if (!g?.startsWith('text:') || !t || !['key', 'tick', 'click'].includes(t)) continue;
 			const list = groups.get(g);
 			if (list) list.push(p);
 			else groups.set(g, [p]);
@@ -922,7 +939,13 @@ export function selectPlanSounds(
 				.flatMap((u) => u.clipIds);
 			if (!clipIds.length) continue;
 			const head = list.find((p) => p.cue.frame === a)!;
-			head.duck = { clipIds: [...new Set(clipIds)].sort(), start: a * F, end: b * F, firstFrame: a, lastFrame: z };
+			head.duck = {
+				clipIds: [...new Set(clipIds)].sort(),
+				start: a * F,
+				end: b * F,
+				firstFrame: a,
+				lastFrame: z,
+			};
 			head.notes.push(`the music dips ${-TYPING_DUCK.depthDb} dB under this typing run`);
 			typingDucks++;
 		}
