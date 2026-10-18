@@ -47,6 +47,7 @@ import {
 	loadProject,
 	mixFingerprint,
 	type ProjectDocument,
+	personalityDensity,
 	type Rational,
 	SOUND_CHECK_THRESHOLDS,
 	sequenceDuration,
@@ -535,7 +536,12 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 					: null;
 			// Expression-driven motion moves like the renderer shows it (deriveCues samples resolved properties).
 			if (documentHasActiveExpressions(doc)) doc = bindExpressions(doc);
-			const density = opts.density ?? soundDesignSettingsOf(seq).density;
+			// a personality named by the request brings its default density (P6-E10)
+			const density =
+				opts.density ??
+				(opts.personality
+					? personalityDensity(opts.personality, soundDesignSettingsOf(seq).density)
+					: soundDesignSettingsOf(seq).density);
 			const respectDialogue = opts.respectDialogue ?? true;
 			// where dialogue clips without a transcript actually speak (measured on their media; cached)
 			const spoken = respectDialogue
@@ -552,6 +558,10 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 				...(spoken ? { voiceActivity: spoken.voice } : {}),
 				...(measured ? { extraCues: measured.extraCues } : {}),
 				...(opts.snapToBeats ? { snapToBeats: true, beatFrames: measured?.beatFrames ?? [] } : {}),
+				// P6-E10 cue grammar (absent: the sequence's style)
+				...(opts.typing ? { typing: opts.typing } : {}),
+				...(opts.musicCarriesCuts !== undefined ? { musicCarriesCuts: opts.musicCarriesCuts } : {}),
+				...(opts.personality ? { personality: opts.personality } : {}),
 			});
 			const rate = seq.settings.frameRate as Rational;
 			const fps = rate.num / rate.den;
@@ -589,6 +599,18 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 				respectDialogue,
 				cues,
 				stats: out.stats,
+				...(out.carried?.length
+					? {
+							carried: out.carried.map((c) => ({
+								key: c.key,
+								frame: c.frame,
+								timecode: sequenceTimecode(seq, c.frame),
+								confidence: c.confidence,
+								minConfidence: c.minConfidence,
+								reason: c.reason,
+							})),
+						}
+					: {}),
 				warnings: [...out.warnings, ...(measured?.warnings ?? [])],
 				...(measured
 					? {
