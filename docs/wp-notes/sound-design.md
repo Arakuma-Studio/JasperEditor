@@ -8236,7 +8236,7 @@ below). Tests: `packages/audio-fx/test/{takes,sound-quality-flags}.test.ts` (+ `
     (Apple Magic Mouse)" 2 / 2). Still rejected: the typewriter key (`hissy`) and space bar (`soft-attack`), which takes
     cannot fix. Foley & Hits: "Book closed" 1 accepted take of 2; the two bright pan-rim hits stay `hissy` (not
     multi-hit). Of the 25 files that kept a rejected type at curation, 21 now have an accepted take.
-  - Kenney (7 folders, 523 files): 28 recordings get 28 clean takes and 30 cut ones; `dc-offset` flags 5 interface
+  - Kenney (7 folders, 523 files): 28 recordings get 27 clean takes and 30 cut ones; `dc-offset` flags 5 interface
     sounds (−35…−24 dBFS means), `noisy-floor` 11 of the UI Audio switches (floors −55…−49.7 dBFS between their two
     clicks); **`lowpassed` flags none of the 859 sounds** (the 189 cliffs found are 14.75–20 kHz encode and
     anti-alias edges, and tonal synth / sci-fi sounds of types that need no air).

@@ -1102,6 +1102,13 @@ recording of ten key presses is the best variation pool there is ("vary the take
   - `noisy-floor`: the floor between events is > −55 dBFS;
   - `dc-offset`: |mean| > −40 dBFS.
 
+*As built (WP-E5, decisions and measurements in the wp-note "Phase 6 → WP-E5")*: a pair joins only when its first
+stroke is the louder one (a take's peak is its alignment point; earshot's 15 dB rule put louder key releases on the cue);
+events are pairs, not chains; `lowpassed` reads a band-limit cliff (`cutoffHz`) under 12 kHz rather than the 95 %
+roll-off itself, which is under 12 kHz for 144 of 183 measured natural clicks and keys (`rolloff95Hz` is still reported);
+`noisy-floor` is measured only with two or more onsets and checked for quick-decaying one-shot types; only sounds of a
+single-hit type get takes.
+
 *Done when*:
 - a generated file of 10 clicks separated by digital silence gives 10 clean takes;
 - a typing file with down/up pairs gives joined pairs;
