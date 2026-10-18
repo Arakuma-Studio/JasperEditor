@@ -40,7 +40,9 @@ type Clip = {
 	remix?: { anchors?: { sourceSeconds: number; frame: number }[] };
 };
 async function audioClips(p: Page): Promise<Clip[]> {
-	const seqs = await query<Record<string, { clips: Record<string, Clip> }>>(p, 'doc.get', { path: ['sequences'] });
+	const seqs = await query<Record<string, { clips: Record<string, Clip> }>>(p, 'doc.get', {
+		path: ['sequences'],
+	});
 	return Object.values(Object.values(seqs)[0]!.clips)
 		.filter((c) => c.kind === 'audio')
 		.sort((a, b) => a.start - b.start);
@@ -51,9 +53,13 @@ function ffmpeg(): string {
 }
 
 function decode(file: string): Float32Array {
-	const r = spawnSync(ffmpeg(), ['-v', 'error', '-i', file, '-map', '0:a:0', '-ac', '1', '-ar', String(SR), '-f', 'f32le', '-'], {
-		maxBuffer: 1 << 30,
-	});
+	const r = spawnSync(
+		ffmpeg(),
+		['-v', 'error', '-i', file, '-map', '0:a:0', '-ac', '1', '-ar', String(SR), '-f', 'f32le', '-'],
+		{
+			maxBuffer: 1 << 30,
+		},
+	);
 	if (r.status !== 0) throw new Error(`ffmpeg failed: ${r.stderr}`);
 	const b = r.stdout as Buffer;
 	return new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
@@ -86,7 +92,10 @@ test('Land the drop on the hero cue, end on a bar line; measured in the export',
 	const placed = await transact(page, [
 		{ type: 'clip.place', source: { mediaId: music }, at: 0, tracks: { audio: 'A1' }, ref: '$m' },
 		{ type: 'essentialSound.setType', clipIds: ['$m'], audioType: 'music' },
-		{ type: 'soundCue.add', cues: [{ frame: 615, kind: 'emphasis', weight: 'hero', types: ['hit'], source: 'user' }] },
+		{
+			type: 'soundCue.add',
+			cues: [{ frame: 615, kind: 'emphasis', weight: 'hero', types: ['hit'], source: 'user' }],
+		},
 	] as never);
 	expect(placed.ok, JSON.stringify(placed)).toBe(true);
 	const musicId = (placed as unknown as { refs: Record<string, string> }).refs.$m!;
@@ -100,9 +109,12 @@ test('Land the drop on the hero cue, end on a bar line; measured in the export',
 	const fit = es.getByTestId('essential-music-fit');
 	await fit.scrollIntoViewIfNeeded();
 	await fit.getByTestId('essential-music-analyse').click();
-	await expect(fit.getByTestId('essential-music-info')).toHaveText(/120 BPM · 4 beats per bar · C major \(\d+ %\)/, {
-		timeout: 120_000,
-	});
+	await expect(fit.getByTestId('essential-music-info')).toHaveText(
+		/120 BPM · 4 beats per bar · C major \(\d+ %\)/,
+		{
+			timeout: 120_000,
+		},
+	);
 	// the app's default sequence is 29.97 fps drop-frame: 32 s is frame 959 = 00;00;31;29
 	await expect(fit.getByTestId('essential-music-drops')).toContainText(/Bar 17 · 00[:;]00[:;]31[:;]29/);
 	await fit.scrollIntoViewIfNeeded();
@@ -111,12 +123,16 @@ test('Land the drop on the hero cue, end on a bar line; measured in the export',
 	await page.getByRole('option', { name: /^Hero cue \(00[:;]00[:;]20[:;]15\)$/ }).click();
 	const before = await appliedLabels(page);
 	await fit.getByTestId('essential-land-drop').click();
-	await expect.poll(async () => (await appliedLabels(page)).length, { timeout: 120_000 }).toBe(before.length + 1);
+	await expect
+		.poll(async () => (await appliedLabels(page)).length, { timeout: 120_000 })
+		.toBe(before.length + 1);
 	expect((await appliedLabels(page)).at(-1)).toBe('Land the Drop');
 	const pieces = (await audioClips(page)).filter((c) => c.remix);
 	expect(pieces.length).toBeGreaterThan(1);
 	expect(pieces[0]!.remix!.anchors).toEqual([{ sourceSeconds: expect.any(Number), frame: 615 }]);
-	await expect(fit.getByTestId('essential-music-landed')).toHaveText(/^The drop lands at 00[:;]00[:;]20[:;]15$/);
+	await expect(fit.getByTestId('essential-music-landed')).toHaveText(
+		/^The drop lands at 00[:;]00[:;]20[:;]15$/,
+	);
 	await page.waitForTimeout(500);
 	await page.screenshot({ path: join(outDir, '2-landed.png') });
 
@@ -144,7 +160,12 @@ test('Land the drop on the hero cue, end on a bar line; measured in the export',
 	});
 	const out = decode(file);
 	const rate = await query<{ num: number; den: number }>(page, 'doc.get', {
-		path: ['sequences', Object.keys(await query<Record<string, unknown>>(page, 'doc.get', { path: ['sequences'] }))[0]!, 'settings', 'frameRate'],
+		path: [
+			'sequences',
+			Object.keys(await query<Record<string, unknown>>(page, 'doc.get', { path: ['sequences'] }))[0]!,
+			'settings',
+			'frameRate',
+		],
 	});
 	const fps = rate.num / rate.den;
 	const drop = 32 * SR; // the drop's downbeat in the source (bar 17 of 120 BPM)
@@ -159,7 +180,9 @@ test('Land the drop on the hero cue, end on a bar line; measured in the export',
 			best = lag;
 		}
 	}
-	console.info(`[e2e music] the drop plays ${((1000 * best) / SR).toFixed(3)} ms from frame 615 in the export`);
+	console.info(
+		`[e2e music] the drop plays ${((1000 * best) / SR).toFixed(3)} ms from frame 615 in the export`,
+	);
 	expect(Math.abs(best)).toBeLessThanOrEqual(SR / 1000 + 2); // ≤ 1 ms (AAC decode alignment ±2 samples)
 	// the music ends where the clip ends: just before a bar line (a bar every 2 s from 0 in output time after the drop)
 	let lastSample = 0;
@@ -168,7 +191,9 @@ test('Land the drop on the hero cue, end on a bar line; measured in the export',
 			lastSample = i;
 			break;
 		}
-	console.info(`[e2e music] the music is heard until ${(lastSample / SR).toFixed(3)} s; the clip ends at frame ${endFrame}`);
+	console.info(
+		`[e2e music] the music is heard until ${(lastSample / SR).toFixed(3)} s; the clip ends at frame ${endFrame}`,
+	);
 	expect(lastSample / SR).toBeLessThanOrEqual(endFrame / fps + 0.03);
 
 	// Auto Sound Pass… offers the two style options
@@ -178,8 +203,12 @@ test('Land the drop on the hero cue, end on a bar line; measured in the export',
 	const dialog = page.getByTestId('auto-sound-pass-dialog');
 	await expect(dialog).toBeVisible();
 	const style = dialog.getByTestId('auto-pass-style');
-	await expect(style.getByRole('checkbox', { name: "Tune chimes and pitched sounds to the music's key" })).toBeChecked();
-	await expect(style.getByRole('checkbox', { name: 'Stop the music on the bar line before a hit' })).toBeChecked();
+	await expect(
+		style.getByRole('checkbox', { name: "Tune chimes and pitched sounds to the music's key" }),
+	).toBeChecked();
+	await expect(
+		style.getByRole('checkbox', { name: 'Stop the music on the bar line before a hit' }),
+	).toBeChecked();
 	await style.scrollIntoViewIfNeeded();
 	await dialog.screenshot({ path: join(outDir, '5-auto-pass-style.png') });
 	await page.keyboard.press('Escape');

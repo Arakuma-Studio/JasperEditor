@@ -217,9 +217,13 @@ describe('clip.remix for music to picture', () => {
 		});
 		// never over the room on the track: the outro is cut instead
 		expect(
-			remixCommandOf(h.seq.clips[id] as never, { bpm: 120, pieces, lengthSeconds: 12.2 }, R30, { maxFrames: 360 }),
+			remixCommandOf(h.seq.clips[id] as never, { bpm: 120, pieces, lengthSeconds: 12.2 }, R30, {
+				maxFrames: 360,
+			}),
 		).toMatchObject({ targetFrames: 360 });
-		expect(remixCommandOf(h.seq.clips[id] as never, { bpm: 120, pieces, lengthSeconds: 12.2 }, R30)).toMatchObject({
+		expect(
+			remixCommandOf(h.seq.clips[id] as never, { bpm: 120, pieces, lengthSeconds: 12.2 }, R30),
+		).toMatchObject({
 			targetFrames: 366,
 		});
 		const r = h.ok([cmd]);

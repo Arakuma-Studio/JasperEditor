@@ -463,9 +463,7 @@ export async function landDrop(
 	const res = session.apply({
 		label: 'Land the Drop',
 		origin: 'user',
-		commands: [
-			remixCommandOf(clip, plan, rate, Number.isFinite(room) ? { maxFrames: room } : {}) as never,
-		],
+		commands: [remixCommandOf(clip, plan, rate, Number.isFinite(room) ? { maxFrames: room } : {}) as never],
 	});
 	fail(res, 'Land the Drop');
 	return {

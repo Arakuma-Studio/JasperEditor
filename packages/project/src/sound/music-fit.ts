@@ -67,7 +67,9 @@ export function remixCommandOf(
 		1,
 		Math.min(
 			Math.round(plan.lengthSeconds * fps),
-			opts.maxFrames !== undefined && Number.isFinite(opts.maxFrames) ? Math.floor(opts.maxFrames) : Number.POSITIVE_INFINITY,
+			opts.maxFrames !== undefined && Number.isFinite(opts.maxFrames)
+				? Math.floor(opts.maxFrames)
+				: Number.POSITIVE_INFINITY,
 		),
 	);
 	const anchors = (plan.anchors ?? [])
