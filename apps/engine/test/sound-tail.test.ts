@@ -401,6 +401,50 @@ describe('Sound Check finds cut tails in existing projects and fixes them safely
 		await expectWhole(b, [gone.placed], 'past its media');
 	});
 
+	it('a sound registered as it is (its copy over the size cap): an INEXACT information; an exact copy has none', async () => {
+		const e = await soundByTitle('tick 20');
+		process.env.JASPER_SOUND_COPY_MAX_BYTES = '16';
+		let reg: Awaited<ReturnType<typeof registerSound>>;
+		try {
+			reg = await registerSound(e.id);
+		} finally {
+			delete process.env.JASPER_SOUND_COPY_MAX_BYTES;
+		}
+		expect(reg.inexact?.reason).toBe('too-large');
+		expect(reg.library.inexact).toEqual({ reason: 'too-large' });
+		const exact = await registerSound((await soundByTitle('tick 30')).id);
+		expect(exact.library.inexact).toBeUndefined();
+		const b = new DocBuilder('hd-1080p-30', 300);
+		const placed: Record<string, string> = {};
+		for (const [name, r, frame] of [
+			['inexact', reg, 30],
+			['exact', exact, 60],
+		] as const) {
+			const { mediaKey: _k, browserPlayable: _b, library, existingMediaId: _x, inexact: _i, ...asset } = r;
+			const t = b.tx([
+				{ type: 'media.register', asset: { ...asset, derivation: null, library }, ref: '$m' },
+				{ type: 'soundDesign.place', frame, layers: [{ mediaId: '$m', gainDb: 0 }] },
+			]);
+			placed[name] = (t.results[1] as { clips: { clipId: string }[] }).clips[0]!.clipId;
+		}
+		const report = await check(b);
+		const found = report.issues.filter((i) => i.code === 'INEXACT');
+		expect(found, JSON.stringify(report.issues.map((i) => i.message.text))).toHaveLength(1);
+		expect(found[0]).toMatchObject({
+			severity: 'info',
+			category: 'sync',
+			clipIds: [placed.inexact],
+			frame: 30,
+			measured: { reason: 'too-large' },
+		});
+		expect(found[0]!.message.key).toMatch(/^\{0\} at \{1\} is not sample-exact: its sample-exact copy would have been too large/);
+		expect(found[0]!.message.text).toContain('tick 20');
+		expect(found[0]!.fix).toBeUndefined();
+		// the per-event table names it on its row
+		const row = report.events.find((ev) => ev.clipId === placed.inexact);
+		expect(row?.codes).toContain('INEXACT');
+	});
+
 	it('a clip shortened on purpose (room left in its media) is not reported', async () => {
 		const b = new DocBuilder('hd-1080p-30', 300);
 		const e = await soundByTitle('tick 40');

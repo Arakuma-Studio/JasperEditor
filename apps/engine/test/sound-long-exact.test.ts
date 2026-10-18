@@ -186,6 +186,7 @@ describe('sounds longer than 120 s are registered sample-exact', { timeout: 600_
 		// a managed PCM copy, not the Ogg itself
 		expect(reg.fingerprint).not.toBe(e.fingerprint);
 		expect(reg.inexact).toBeUndefined();
+		expect(reg.library.inexact).toBeUndefined();
 		expect(reg.library.leadSilenceSec).toBe(LIBRARY_LEAD_SILENCE_SEC);
 		const copy = join(appdirPaths(app.appdir).mediaDir, reg.mediaKey, 'long bed.wav');
 		expect(readdirSync(join(appdirPaths(app.appdir).mediaDir, reg.mediaKey))).toEqual(['long bed.wav']);
@@ -298,6 +299,10 @@ describe('sounds longer than 120 s are registered sample-exact', { timeout: 600_
 			expect(big.library.leadSilenceSec).toBeUndefined();
 			expect(big.inexact?.reason).toBe('too-large');
 			expect(big.inexact?.message).toMatch(/MB/);
+			// the numbers for the editor's notice, and the reason kept in the provenance the media is registered with
+			expect(big.inexact?.maxBytes).toBe(1024 * 1024);
+			expect(big.inexact!.bytes!).toBeGreaterThan(1024 * 1024);
+			expect(big.library.inexact).toEqual({ reason: 'too-large' });
 		} finally {
 			delete process.env.JASPER_SOUND_COPY_MAX_BYTES;
 		}
@@ -306,6 +311,9 @@ describe('sounds longer than 120 s are registered sample-exact', { timeout: 600_
 			const full = await registerSound(e.id);
 			expect(full.fingerprint).toBe(e.fingerprint);
 			expect(full.inexact?.reason).toBe('disk-space');
+			expect(full.inexact!.bytes!).toBeGreaterThan(0);
+			expect(full.inexact!.freeBytes!).toBeGreaterThanOrEqual(0);
+			expect(full.library.inexact).toEqual({ reason: 'disk-space' });
 		} finally {
 			delete process.env.JASPER_SOUND_COPY_RESERVE_BYTES;
 		}

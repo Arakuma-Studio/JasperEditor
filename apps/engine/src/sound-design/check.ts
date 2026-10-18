@@ -85,6 +85,8 @@ import {
 	isCommercialSafe,
 	isSfxClip,
 	isShareAlike,
+	LIBRARY_PAD_MAX_SECONDS,
+	type LibraryInexactReason,
 	type LibraryProvenance,
 	libraryTrailSilenceSamples,
 	licenseClass,
@@ -287,6 +289,8 @@ type SfxRow = {
 	alignedFrame: number | null;
 	licence: string | null;
 	types: string[];
+	/** The library sound was registered as it is, not as a sample-exact copy (`LibraryProvenance.inexact`). */
+	inexact: LibraryInexactReason | null;
 	codes: Set<SoundCheckCode>;
 	offsetMs: number | null;
 	located: 'found' | 'not-found' | 'not-measured';
@@ -670,6 +674,7 @@ export async function checkSequence(
 			alignedFrame: aligned,
 			licence: prov?.license ?? null,
 			types: prov?.types ?? [],
+			inexact: prov?.inexact?.reason ?? null,
 			codes: new Set(),
 			offsetMs: null,
 			located: 'not-measured',
@@ -1652,6 +1657,29 @@ export async function checkSequence(
 				...(cause ? { cause } : {}),
 			},
 			...(fix ? { fix } : {}),
+		});
+	}
+	// INEXACT (information): a placed library sound used as it is, not as a sample-exact copy (too long, its copy too
+	// large, or no disk space when it was added): its placement is exact to a frame only. One finding per clip.
+	for (const row of rows) {
+		if (!row.inexact) continue;
+		row.codes.add('INEXACT');
+		const at = row.clip.start;
+		issues.add({
+			subject: row.clip.id,
+			code: 'INEXACT',
+			severity: 'info',
+			frame: at,
+			timecode: tc(at),
+			clipIds: [row.clip.id],
+			...(row.cue ? { cueId: row.cue.id } : {}),
+			message:
+				row.inexact === 'too-long'
+					? soundCheckMessage('inexactTooLong', row.info.title, tc(at), LIBRARY_PAD_MAX_SECONDS / 60)
+					: row.inexact === 'too-large'
+						? soundCheckMessage('inexactTooLarge', row.info.title, tc(at))
+						: soundCheckMessage('inexactDiskSpace', row.info.title, tc(at)),
+			measured: { reason: row.inexact, measuredIn: 'document' },
 		});
 	}
 	lap('sync', t);

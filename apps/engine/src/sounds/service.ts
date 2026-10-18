@@ -27,6 +27,7 @@ import {
 } from '@jasper/api';
 import {
 	LIBRARY_PAD_MAX_SECONDS,
+	type LibraryInexactReason,
 	type LibraryProvenance,
 	LibraryProvenanceSchema,
 	libraryLeadSilenceSamples,
@@ -124,6 +125,8 @@ export function provenanceOf(
 	snapshotHash: string,
 	leadSilenceSec = 0,
 	trailSilenceSec = 0,
+	/** The sound is registered as it is although it needed a sample-exact copy (`LibraryProvenance.inexact`). */
+	inexact?: LibraryInexactReason,
 ): LibraryProvenance {
 	const lead = leadSilenceSec > 0 ? leadSilenceSec : 0;
 	const trail = trailSilenceSec > 0 ? trailSilenceSec : 0;
@@ -187,6 +190,7 @@ export function provenanceOf(
 		...(lead > 0 ? { leadSilenceSec: lead } : {}),
 		...(trail > 0 ? { trailSilenceSec: trail } : {}),
 		snapshotHash,
+		...(inexact ? { inexact: { reason: inexact } } : {}),
 		// a take (P6-E9): where it lies in its recording
 		...(e.take
 			? {
@@ -871,6 +875,7 @@ export class SoundService {
 			inexact = {
 				reason: 'too-long',
 				message: `Sounds over ${LIBRARY_PAD_MAX_SECONDS / 60} min are used as they are: placement is exact to a frame, not to the sample`,
+				limitSeconds: LIBRARY_PAD_MAX_SECONDS,
 			};
 		} else if (wantsCopy && stream.sampleRate) {
 			const bytes = estimateCopyBytes(
@@ -887,12 +892,16 @@ export class SoundService {
 				inexact = {
 					reason: 'too-large',
 					message: `A sample-exact copy would take ${mb(bytes)} (at most ${mb(max)}): the sound is used as it is, placement exact to a frame`,
+					bytes: Math.ceil(bytes),
+					maxBytes: Math.floor(max),
 				};
 			} else if (free !== null && free < bytes + reserve) {
 				wantsCopy = false;
 				inexact = {
 					reason: 'disk-space',
 					message: `Not enough free disk space for a sample-exact copy (${mb(bytes)} needed, ${mb(free)} free): the sound is used as it is, placement exact to a frame`,
+					bytes: Math.ceil(bytes),
+					freeBytes: Math.max(0, Math.floor(free)),
 				};
 			}
 		}
@@ -936,7 +945,7 @@ export class SoundService {
 			});
 			if (reg.fingerprint !== e.fingerprint) throw changed();
 		}
-		const library = provenanceOf(e, snapshot.snapshotHash, leadSec, trailSec);
+		const library = provenanceOf(e, snapshot.snapshotHash, leadSec, trailSec, inexact?.reason);
 		let existingMediaId: string | null = null;
 		const media = (project.envelope.document as { media?: unknown }).media;
 		if (media && typeof media === 'object')

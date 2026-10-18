@@ -21,6 +21,7 @@ import { labelDefault, labelKindOfMedia } from '../gaps/app-prefs.ts';
 import { t } from '../i18n/runtime.ts';
 import { buildMediaAsset } from '../import/assets.ts';
 import { findExistingMedia } from '../import/transaction.ts';
+import { noticeInexactSounds } from './inexact.ts';
 
 /** What registering needs of a library entry: its id (and title when known; else the engine's). */
 export type LibraryEntryLike = Pick<SoundEntry, 'id'> & { title?: string };
@@ -29,12 +30,17 @@ export type RegisteredSound = { entry: LibraryEntryLike; reg: RegisterSoundRespo
 
 export class SoundMediaError extends Error {}
 
-/** Registers library sounds with the engine for a project (sequentially; the engine dedupes). */
+/**
+ * Registers library sounds with the engine for a project (sequentially; the engine dedupes). A sound the engine had
+ * to register as it is, not as a sample-exact copy (`inexact`), is announced by a warning toast (`noticeInexactSounds`)
+ * unless `notifyInexact` is false (the In Context audition's transient document).
+ */
 export async function registerLibrarySounds(
 	engine: Pick<EngineClient, 'registerSound'>,
 	projectId: string,
 	entries: readonly LibraryEntryLike[],
 	signal?: AbortSignal,
+	opts: { notifyInexact?: boolean } = {},
 ): Promise<RegisteredSound[]> {
 	const out: RegisteredSound[] = [];
 	const seen = new Map<string, RegisterSoundResponse>();
@@ -54,6 +60,7 @@ export async function registerLibrarySounds(
 		out.push({ entry, reg });
 	}
 	if (signal?.aborted) throw new SoundMediaError(t('Cancelled'));
+	if (opts.notifyInexact !== false) noticeInexactSounds(out);
 	return out;
 }
 

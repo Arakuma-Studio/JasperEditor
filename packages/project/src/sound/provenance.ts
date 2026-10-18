@@ -129,6 +129,15 @@ export const LibraryTakeSchema = z
 	.refine((t) => t.sourceEndSec > t.sourceStartSec, 'sourceEndSec must be after sourceStartSec');
 export type LibraryTake = DeepStrip<z.infer<typeof LibraryTakeSchema>>;
 
+/**
+ * Why a registered library sound is not a sample-exact copy (WP6.5b): longer than `LIBRARY_PAD_MAX_SECONDS`, its copy
+ * over the engine's size cap, or not enough free disk space for it when it was registered. Such a sound is used as it
+ * is: its placement is exact to a frame, and a lossy one seeked by an In point may play a few samples off.
+ */
+export const LIBRARY_INEXACT_REASONS = ['too-long', 'too-large', 'disk-space'] as const;
+export type LibraryInexactReason = (typeof LIBRARY_INEXACT_REASONS)[number];
+export const LibraryInexactSchema = z.looseObject({ reason: z.enum(LIBRARY_INEXACT_REASONS) });
+
 export const LibraryProvenanceSchema = z.looseObject({
 	/** Library sound id (`snd_<sha256-16>`). */
 	soundId: z.string().min(1).max(LIBRARY_LIMITS.id),
@@ -164,6 +173,12 @@ export const LibraryProvenanceSchema = z.looseObject({
 	 * licence and credit are the recording's. Absent for whole files.
 	 */
 	take: LibraryTakeSchema.optional(),
+	/**
+	 * The registered file is the library file as it is, although it needed a sample-exact copy (lead or trailing silence,
+	 * or a lossy source), and why (final carry-over cleanup, item 3): the editor says so on insert, in Properties ▸ Sound
+	 * and as a Sound Check INEXACT information. Absent for exact copies and for sounds that needed none.
+	 */
+	inexact: LibraryInexactSchema.optional(),
 });
 export type LibraryProvenance = DeepStrip<z.infer<typeof LibraryProvenanceSchema>>;
 
@@ -238,6 +253,8 @@ function readProvenanceFields(raw: Record<string, unknown>): LibraryProvenance |
 	if (hash !== undefined) out.snapshotHash = hash;
 	const take = LibraryTakeSchema.safeParse(raw.take);
 	if (take.success) out.take = take.data;
+	const inexact = LibraryInexactSchema.safeParse(raw.inexact);
+	if (inexact.success) out.inexact = inexact.data;
 	const r = LibraryProvenanceSchema.safeParse(out);
 	return r.success ? (r.data as LibraryProvenance) : null;
 }

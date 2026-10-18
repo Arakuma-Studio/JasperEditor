@@ -3,6 +3,7 @@
 // folders indexed in place and the Jasper Synth fallback. Search ranks with `@jasper/project` `rankSounds`, so a
 // `SoundEntry` is a `RankableSound` (checked at compile time below).
 import {
+	LIBRARY_INEXACT_REASONS,
 	LIBRARY_LIMITS,
 	LICENSE_FILTERS,
 	LibraryProvenanceSchema,
@@ -531,7 +532,7 @@ export type RegisterSoundRequest = z.infer<typeof RegisterSoundRequestSchema>;
  * that media; reuse it instead of registering a duplicate.
  */
 /** Why a registered sound is not a sample-exact copy (WP6.5b): over 1 h, over the copy size cap, or not enough disk. */
-export const SOUND_INEXACT_REASONS = ['too-long', 'too-large', 'disk-space'] as const;
+export const SOUND_INEXACT_REASONS = LIBRARY_INEXACT_REASONS;
 
 export const RegisterSoundResponseSchema = RegisteredMediaSchema.extend({
 	library: LibraryProvenanceSchema,
@@ -540,7 +541,20 @@ export const RegisterSoundResponseSchema = RegisteredMediaSchema.extend({
 	 * Present when the sound needed a sample-exact copy (lead / trailing silence, or a lossy source) but was registered as
 	 * it is: its placement is then exact to a frame, a lossy one seeked by an In point may play a few samples off.
 	 */
-	inexact: z.object({ reason: z.enum(SOUND_INEXACT_REASONS), message: z.string().max(300) }).optional(),
+	inexact: z
+		.object({
+			reason: z.enum(SOUND_INEXACT_REASONS),
+			message: z.string().max(300),
+			/** too-long: the longest sound copied (s). */
+			limitSeconds: z.number().positive().optional(),
+			/** too-large / disk-space: the copy's size (bytes). */
+			bytes: z.number().int().min(0).optional(),
+			/** too-large: the size cap (bytes). */
+			maxBytes: z.number().int().min(0).optional(),
+			/** disk-space: the free space on the media volume (bytes). */
+			freeBytes: z.number().int().min(0).optional(),
+		})
+		.optional(),
 });
 export type RegisterSoundResponse = z.infer<typeof RegisterSoundResponseSchema>;
 

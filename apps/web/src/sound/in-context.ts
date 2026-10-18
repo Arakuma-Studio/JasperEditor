@@ -393,7 +393,10 @@ export async function auditionInContext(
 	});
 	let sounds: Awaited<ReturnType<typeof registerLibrarySounds>>;
 	try {
-		sounds = await registerLibrarySounds(engine, state.document.projectId, [entry]);
+		// a transient document: no "not sample-exact" notice for an audition
+		sounds = await registerLibrarySounds(engine, state.document.projectId, [entry], undefined, {
+			notifyInexact: false,
+		});
 	} catch (e) {
 		if (my !== token) return cancelled();
 		return fail(e instanceof Error ? e.message : String(e));
