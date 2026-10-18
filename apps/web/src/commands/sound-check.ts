@@ -120,7 +120,7 @@ const findingCommands: UiCommand[] = [
 		id: 'soundCheck.acknowledgeFinding',
 		label: 'Acknowledge Sound Check Finding…',
 		description:
-			'Mark the current Sound Check finding as a deliberate exception, with a reason (spec 12 P6-E4): it no longer counts against the verdict until what it is about changes. One undo step',
+			'Mark the current Sound Check finding as a deliberate exception, with a reason: it no longer counts against the verdict until what it is about changes. One undo step',
 		scope: 'soundCheck',
 		when: (ctx) => onFinding(ctx) && !ctx.session!.getState().readOnly,
 		disabledReason: (ctx) =>
