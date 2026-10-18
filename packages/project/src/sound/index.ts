@@ -12,6 +12,7 @@ export * from './license.ts';
 export * from './materials.ts';
 export * from './messages.ts';
 export * from './mix.ts';
+export * from './moment.ts';
 export * from './music-fit.ts';
 export * from './pitch.ts';
 export * from './place.ts';
