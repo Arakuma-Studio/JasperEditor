@@ -20,6 +20,7 @@ import { dropMusic } from '../packages/audio-fx/test/music.ts';
 import {
 	appliedLabels,
 	clipBox,
+	clipElement,
 	createProject,
 	enableAgentBridge,
 	FIXTURES,
@@ -529,7 +530,9 @@ test('user walkthrough: library → Suggest Cues → Auto Sound Pass → review 
 	};
 	expect(places.length).toBeGreaterThanOrEqual(3);
 	// Jasper Synth is a fallback (spec 12 §0): never rotated in among real recordings of the same type
-	report.synthPlacements = places.filter((i) => String(i.meta?.title ?? '').startsWith('Jasper Synth')).map((i) => i.meta!.title);
+	report.synthPlacements = places
+		.filter((i) => String(i.meta?.title ?? '').startsWith('Jasper Synth'))
+		.map((i) => i.meta!.title);
 	const required = new Set(items0.flatMap((i) => i.requires ?? []));
 	const toReject =
 		places.find((i) => i.meta!.role === 'support' && !required.has(i.id)) ??
@@ -688,14 +691,21 @@ test('user walkthrough: library → Suggest Cues → Auto Sound Pass → review 
 	expect(tone.some((c) => c.start <= 272 && c.start + c.duration >= 298)).toBe(true);
 	await focusTimeline(page);
 	await page.keyboard.press('Backslash');
-	// the Ambience and Room Tone tracks are below the others: scroll the tracks to them
-	const area = (await page.getByTestId('timeline-track-area').boundingBox())!;
-	await page.mouse.move(area.x + area.width / 2, area.y + area.height - 20);
-	await page.mouse.wheel(0, 400);
-	await page.waitForTimeout(300);
 	await snap('beds');
+	// the Ambience and Room Tone tracks lie below the visible ones: a picture of the track area holding them
+	const bedTracks = [...new Set([...bedPieces, ...tone].map((c) => c.trackId))];
+	for (const id of bedTracks) {
+		const row = page.locator(`[data-testid="timeline-track-area"] [data-track-id="${id}"]`).first();
+		await row.scrollIntoViewIfNeeded().catch(() => undefined);
+	}
+	await page
+		.getByTestId('timeline-track-area')
+		.screenshot({ path: join(outDir, `${String(++shot).padStart(2, '0')}-bed-tracks.png`) });
+	await focusTimeline(page);
+	await page.keyboard.press('Backslash');
 
 	// 7. Music to picture: land the drop on the hero cue (Essential Sound), End on Bar (Clip ▸ Audio Options)
+	await clipElement(page, musicClipId).scrollIntoViewIfNeeded();
 	const mbox = await clipBox(page, musicClipId);
 	await page.mouse.click(mbox.x + 40, mbox.y + mbox.height / 2);
 	await page.getByTestId('workspace-tab-audio').click();
@@ -726,6 +736,7 @@ test('user walkthrough: library → Suggest Cues → Auto Sound Pass → review 
 	const anchors = pieces[0]!.remix!.anchors ?? [];
 	report.dropAnchor = anchors;
 	const heroFrame = anchors[0]?.frame ?? 600;
+	await clipElement(page, pieces.at(-1)!.id).scrollIntoViewIfNeeded();
 	const fb = await clipBox(page, pieces.at(-1)!.id);
 	await page.mouse.click(fb.x + 20, fb.y + fb.height / 2);
 	await menu('End on Bar', 'Clip', 'Audio Options');

@@ -14,7 +14,13 @@ import {
 	SoundVisualResponseSchema,
 } from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
-import { makeEnvelope, type ProjectDocument, soundCheckInputsHash, soundCheckStatus } from '@jasper/project';
+import {
+	makeEnvelope,
+	mixFingerprint,
+	type ProjectDocument,
+	soundCheckInputsHash,
+	soundCheckStatus,
+} from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { visualRange } from '../src/sound-design/visual.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -385,7 +391,18 @@ describe('Sound Check (real engine)', { timeout: 600_000 }, () => {
 			safe: true,
 			commands: [{ type: 'mixer.setLoudness', enabled: true }],
 		});
+		// the fix stores the measured mix as the Mix's loudness analysis, so the preview is normalised at once (final
+		// verification B: without it the preview played the un-normalised mix until someone ran Analyze)
+		const analysis = (issue!.fix!.commands![0] as { analysis?: { integratedLufs: number; mixHash: string } })
+			.analysis;
+		expect(analysis, JSON.stringify(issue!.fix)).toBeDefined();
+		expect(Math.abs(analysis!.integratedLufs - report.loudness.integratedLufs!)).toBeLessThan(0.05);
 		await applyFix(projectId, issue!.fix!);
+		const fixedDoc = (await saved(projectId)).doc;
+		const stored = (
+			fixedDoc.sequences[report.sequenceId]!.master as { loudness?: { analysis?: { mixHash: string } } }
+		).loudness?.analysis;
+		expect(stored?.mixHash).toBe(mixFingerprint(fixedDoc, report.sequenceId));
 		const { report: again } = await check({ projectId }, 'tp re-check');
 		expect(issuesOf(again, 'TRUE_PEAK'), describeIssues(again)).toEqual([]);
 		expect(issuesOf(again, 'LOUDNESS')).toEqual([]);
