@@ -5,6 +5,7 @@ import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Command, TRANSITION_FAMILIES } from '@jasper/project';
+import { BROWSER_VIDEO_ARGS } from '@jasper/testkit/fixture-video';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SEQUENCE_COMPOSITION_ID } from '../src/types.ts';
 import { FX_H, FX_W, type FxMedia, fxAsset, fxSnapshot, startFxMedia } from './fx-media.ts';
@@ -52,7 +53,7 @@ describe.runIf(enabled)(
 						'-vf',
 						`scale=${FX_W * 2}:${FX_H * 2}:force_original_aspect_ratio=increase,crop=${FX_W * 2}:${FX_H * 2},zoompan=z='1+0.002*on':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${FX_W}x${FX_H}:fps=30`,
 					],
-					...['-pix_fmt', 'yuv420p', '-c:v', 'libx264', join(media.dir, 'a.mp4')],
+					...['-pix_fmt', 'yuv420p', ...BROWSER_VIDEO_ARGS, join(media.dir, 'a.mp4')],
 				]);
 				videoA = 'a.mp4';
 			}

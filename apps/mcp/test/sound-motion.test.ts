@@ -9,6 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ENGINE_VIDEO_ARGS } from '@jasper/testkit/fixture-video';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -61,7 +62,7 @@ describe.skipIf(!HAVE_FFMPEG)(
 					...['-f', 'lavfi', '-i', 'testsrc2=s=240x240:r=30:d=1'],
 					'-filter_complex',
 					"[1:v]trim=end_frame=1,loop=loop=-1:size=1:start=0,setpts=N/30/TB[b];[0:v][b]overlay=x='if(lt(t,1),200,if(lt(t,2),200+(t-1)*600,800))':y=400:shortest=1:eval=frame,format=yuv420p",
-					...['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '14', '-an', join(work, 'box.mp4')],
+					...[...ENGINE_VIDEO_ARGS, '-an', join(work, 'box.mp4')],
 				],
 				{ encoding: 'utf8' },
 			);

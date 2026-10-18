@@ -19,6 +19,7 @@ import { encodeWav } from '@jasper/audio-dsp';
 import { appdirPaths } from '@jasper/config';
 import { mgRegistry } from '@jasper/mg-templates';
 import { dialogueSpans, makeEnvelope, type ProjectDocument } from '@jasper/project';
+import { ENGINE_VIDEO_ARGS } from '@jasper/testkit/fixture-video';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testMusic } from '../../../packages/audio-fx/test/music.ts';
 import { MeasureCache, measureSfxEvents } from '../src/sound-design/bed.ts';
@@ -104,10 +105,7 @@ describe.skipIf(!HAVE_FFMPEG)(
 						'lavfi',
 						'-i',
 						src,
-						'-c:v',
-						'libx264',
-						'-preset',
-						'veryfast',
+						...ENGINE_VIDEO_ARGS,
 						'-an',
 						join(dir, name),
 					],
@@ -212,11 +210,19 @@ describe.skipIf(!HAVE_FFMPEG)(
 			const req = {
 				projectId,
 				sequenceId: seqId,
-				style: { cueSources: ['edits'] },
+				// the cue route's density: at the default one the music under the pause "carries" the kept cut
+				// (P6-E10, its confidence halved under the minimum), which is the grammar, not the dialogue ranges
+				style: { cueSources: ['edits'], density: 'rich' },
 			} as SoundDesignPlanRequest;
 			const style = resolveStyle(req, seq);
 			const planned = collectPlanCues(doc, seq, req, style, { mgTemplates: mgRegistry, voice: v.voice });
 			expect(planned.cues.filter((x) => x.kind === 'cut').map((x) => x.frame)).toEqual([225]);
+			const atDefault = { ...req, style: { cueSources: ['edits'] } } as SoundDesignPlanRequest;
+			const carried = collectPlanCues(doc, seq, atDefault, resolveStyle(atDefault, seq), {
+				mgTemplates: mgRegistry,
+				voice: v.voice,
+			});
+			expect(carried.skipped.filter((x) => x.code === 'MUSIC_CARRIES_CUT').map((x) => x.frame)).toEqual([225]);
 			expect(
 				collectPlanCues(doc, seq, req, style, { mgTemplates: mgRegistry }).cues.filter(
 					(x) => x.kind === 'cut',

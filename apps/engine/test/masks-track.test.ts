@@ -11,6 +11,7 @@ import {
 	planMaskTrack,
 	rectPath,
 } from '@jasper/project';
+import { LOSSLESS_VIDEO_ARGS } from '@jasper/testkit/fixture-video';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
@@ -28,7 +29,8 @@ let dir: string;
 
 beforeAll(async () => {
 	dir = mkdtempSync(join(tmpdir(), 'jasper-masktrack-'));
-	const file = join(dir, 'plate.mp4');
+	// lossless (FFV1 in MOV: exact frame times), the textured square's pixels exactly as drawn
+	const file = join(dir, 'plate.mov');
 	// A static texture (sums of sines, effectcraft's mask-tracker test pattern) moved by the overlay.
 	const tex = join(dir, 'tex.png');
 	execFileSync('ffmpeg', [
@@ -40,7 +42,7 @@ beforeAll(async () => {
 		...['-v', 'error', '-y', '-f', 'lavfi', '-i', `color=c=gray:s=${W}x${H}:r=30:d=${N / 30}`],
 		...['-loop', '1', '-framerate', '30', '-i', tex],
 		...['-filter_complex', `[0][1]overlay=x='40+3*n':y='60+n':shortest=1:format=rgb,format=yuv444p`],
-		...['-c:v', 'libx264', '-qp', '0', '-preset', 'ultrafast', file],
+		...[...LOSSLESS_VIDEO_ARGS, file],
 	]);
 	const png = join(dir, 'disc.png');
 	// A white disc (r = 50) and a square with a hole on transparent: alpha trace fixture.

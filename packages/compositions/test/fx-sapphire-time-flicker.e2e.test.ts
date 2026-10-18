@@ -4,6 +4,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Command } from '@jasper/project';
+import { BROWSER_VIDEO_ARGS } from '@jasper/testkit/fixture-video';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SEQUENCE_COMPOSITION_ID } from '../src/types.ts';
 import { FX_H, FX_W, type FxMedia, fxAsset, fxSnapshot, startFxMedia } from './fx-media.ts';
@@ -17,7 +18,7 @@ function makeScene(dir: string) {
 	const a = (d: number) =>
 		`testsrc2=${s}:d=${d}[a0];color=c=white:s=90x90:r=30:d=${d}[a1];[a0][a1]overlay=x='60+t*300':y=130:eval=frame`;
 	const b = `smptehdbars=${s}:d=1[b0];color=c=red:s=70x70:r=30:d=1[b1];[b0][b1]overlay=x='450-t*300':y=200:eval=frame`;
-	const out = ['-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-g', '1'];
+	const out = ['-pix_fmt', 'yuv420p', ...BROWSER_VIDEO_ARGS, '-g', '1'];
 	ff([
 		'-filter_complex',
 		`${a(1)}[a];${b}[b];[a][b]concat=n=2:v=1[v]`,
@@ -27,7 +28,8 @@ function makeScene(dir: string) {
 		join(dir, 'scene.mp4'),
 	]);
 	// Same motion, brightness flickering frame to frame.
-	const flicker = "eq=brightness='0.12*sin(n*2.1)+0.05*sin(n*5.3)':eval=frame";
+	// (geq, not eq: eq is a GPL-only filter the LGPL build lacks; the same luma offset, frame by frame)
+	const flicker = "geq=lum='clip(lum(X,Y)+255*(0.12*sin(N*2.1)+0.05*sin(N*5.3)),0,255)':cb='cb(X,Y)':cr='cr(X,Y)'";
 	ff(['-filter_complex', `${a(2)},${flicker}[v]`, '-map', '[v]', ...out, join(dir, 'flicker.mp4')]);
 }
 

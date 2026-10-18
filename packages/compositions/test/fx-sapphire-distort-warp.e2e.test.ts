@@ -66,7 +66,7 @@ describe.runIf(enabled)(
 				'-i',
 				`testsrc2=s=${FX_W}x${FX_H}`,
 				'-filter_complex',
-				'[0:v]eq=saturation=1.4[m];[1:v]crop=200:120:220:120[t];[m][t]overlay=40:200,drawgrid=w=40:h=40:t=1:c=white@0.45',
+				'[0:v]hue=s=1.4[m];[1:v]crop=200:120:220:120[t];[m][t]overlay=40:200,drawgrid=w=40:h=40:t=1:c=white@0.45',
 				'-frames:v',
 				'1',
 				join(media.dir, 'picture.png'),
