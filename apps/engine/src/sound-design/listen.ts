@@ -482,7 +482,7 @@ export async function listenSequence(
 	});
 
 	// ── picture events and their answers ──────────────────────────────────────────────────────────────────────────
-	type Pic = Omit<SoundListenPictureEvent, 'status' | 'offsetMs' | 'event' | 'nearestStrongMs'>;
+	type Pic = Omit<SoundListenPictureEvent, 'status' | 'offsetMs' | 'at' | 'event' | 'nearestStrongMs'>;
 	const pics: Pic[] = [];
 	for (const p of pictureEditEvents(doc, seq.id, range))
 		pics.push({ kind: p.kind, key: p.key, frame: p.frame, timecode: tc(p.frame), label: p.label });
@@ -533,12 +533,14 @@ export async function listenSequence(
 	// can hide its first milliseconds) and the attack the mix shows (`mixMs`)
 	const timeOf = (x: Attributed) =>
 		x.own && x.own.e.shape === x.e.shape ? Math.min(x.own.seqMs, x.seqMs) : x.seqMs;
-	const ix = syncIndex(attributed.map((x) => ({ ...x.e, ms: timeOf(x) })));
+	const peakOf = (x: Attributed) => renderMs0 + (x.own && x.own.e.shape === x.e.shape ? x.own.e.peakMs : x.e.peakMs);
+	const ix = syncIndex(attributed.map((x) => ({ ...x.e, ms: timeOf(x), peakMs: peakOf(x) })));
 	const answers: PictureAnswer[] = pics.map((p) => answerPictureEvent(ix, msOfFrame(p.frame), frameMs));
 	const pictureEvents: SoundListenPictureEvent[] = pics.map((p, i) => ({
 		...p,
 		status: answers[i]!.status,
 		offsetMs: answers[i]!.offsetMs,
+		at: answers[i]!.at,
 		event: answers[i]!.event,
 		nearestStrongMs: answers[i]!.nearestStrongMs,
 	}));
@@ -563,11 +565,14 @@ export async function listenSequence(
 	};
 
 	// ── events (output) ───────────────────────────────────────────────────────────────────────────────────────────
-	const answersOf = new Map<number, { key: string; status: PictureAnswer['status']; offsetMs: number }[]>();
+	const answersOf = new Map<
+		number,
+		{ key: string; status: PictureAnswer['status']; offsetMs: number; at: 'attack' | 'peak' }[]
+	>();
 	pictureEvents.forEach((p) => {
 		if (p.event === null || p.status === 'none') return;
 		const list = answersOf.get(p.event) ?? [];
-		list.push({ key: p.key, status: p.status, offsetMs: p.offsetMs ?? 0 });
+		list.push({ key: p.key, status: p.status, offsetMs: p.offsetMs ?? 0, at: p.at ?? 'attack' });
 		answersOf.set(p.event, list);
 	});
 	const eventsAll: SoundListenEvent[] = attributed.map((x, i) => ({
@@ -575,7 +580,7 @@ export async function listenSequence(
 		timecode: tc(frameOfMs(timeOf(x))),
 		ms: r1(timeOf(x)),
 		mixMs: r1(x.seqMs),
-		peakMs: r1(x.own && x.own.e.shape === x.e.shape ? renderMs0 + x.own.e.peakMs : renderMs0 + x.e.peakMs),
+		peakMs: r1(peakOf(x)),
 		shape: x.e.shape,
 		band: x.e.band,
 		prominenceDb: x.e.prominenceDb,
@@ -907,7 +912,7 @@ export async function listenSequence(
 		const ans = e.answers
 			.map(
 				(a) =>
-					`answers ${pictureLabel.get(a.key) ?? a.key}, ${signed(a.offsetMs, 'ms')}${a.status === 'ok' ? '' : ` (${a.status})`}`,
+					`answers ${pictureLabel.get(a.key) ?? a.key}, ${signed(a.offsetMs, 'ms')}${a.at === 'peak' && e.shape === 'hit' ? ' at its peak' : ''}${a.status === 'ok' ? '' : ` (${a.status})`}`,
 			)
 			.join('; ');
 		rows.push({

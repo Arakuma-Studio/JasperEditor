@@ -8083,3 +8083,88 @@ Also:
 - The check costs ≈ 21 % more wall time (10-minute bench above), mostly the click and presence scans of three stems.
 - WP-E2 (acknowledged findings, check a proposal) builds on these codes and the `edges` / `tonal` categories; WP-E4 adds
   a "Reference" category to `SOUND_CHECK_CATEGORIES` and `CATEGORY_ORDER`.
+
+### Phase 6 → WP-E3 Listen: events, transcript, sheet
+
+Branch `feat/sd-pe-e3-listen`. Spec 12 §4 P6-E6 (listening transcript) and P6-E7 (annotated sound sheet). The detector
+is adapted from earshot `earshot/timeline.py` (MIT, Copyright (c) 2026 Leon Lin; rows and every change in
+`licenses/ported/earshot.md`); the attribution to clips, lanes, sections by Essential Sound class and the sheet are ours.
+
+Files: `packages/audio-fx/src/analysis/events.ts` (new: `ListenMeter`, `LogBandStft`, `SpectrogramMeter`,
+`integratedOf`, `accentThreshold`, `strongThreshold`, `syncIndex`, `answerPictureEvent`, `syncChance`, `syncStats`);
+`packages/project/src/sound/cues/picture-events.ts` (new: `pictureEditEvents`, every cut and transition without the cue
+budgets); `packages/api/src/sound-design.ts` (`SoundListenRequest/Result` and parts, `SOUND_LISTEN_LIMITS`),
+`sound-check.ts` (visual `spectrogram`), `routes.ts` (`soundDesignListen`), `jobs.ts` (`sound-listen`);
+`packages/engine-client` (`soundListen`); `apps/engine/src/sound-design/listen.ts` (new), `visual.ts` (spectrogram,
+`deliveredGain` shared), `routes/sound-design.ts` (route + runner); `apps/mcp/src/tools/sound-listen.ts` (new:
+`listen_to_sequence`), `tools/sound-timeline.ts` (new: `view_sound_timeline` moved out of `sound-check.ts`, the sheet
+builder), `sound-timeline.ts` (the lanes), `sound-sheet.ts` (`ramp` exported), `server.ts`, `tools/sound.ts` (SOUND_GUIDE
+"Listen"); `apps/web/src/panels/soundCheck/{LogTab.tsx, listen-run.ts, spectrogram.tokens.ts}` (new), the panel's
+Findings / Log tabs, `commands/sound-check.ts` (`sound.listenToSequence`), the Sequence ▸ Sound Design menu, i18n (26
+strings, es.json complete); README (356 tools, the HTTP list), security review (route row and paragraph).
+
+#### What it does (usage)
+
+- **Agents:** `listen_to_sequence {projectId, sequenceId?, range? (≤ 10 min), detail?: low | normal | high, images?,
+  thumbnails?, timeoutSeconds?}` (READ_ONLY) waits for the `sound-listen` job and returns the transcript text FIRST, then
+  compact JSON (counts, loudness, sync per kind with chance, sections, `unanswered`, every placed sound with `heard` and
+  its own offset, events as rows), and with `images: true` the annotated sheet (a range over 120 s gets ≤ 3 strips of
+  20 s around the picture events with no sound, then accents). A line reads like
+  `00:00:03:00  hit, full band, +13 dB over the bed · accent · SFX A4 "Test click 0" (support, cue cut) · answers cue cut (support), +0 ms; answers Cut on V1: 'Color Matte' → 'Color Matte', +0 ms`,
+  production audio like `00:00:06:15  hit, low band, +12 dB over the bed · accent · dialogue, A2 "interview.wav"`, a cut
+  with no sound like `00:00:09:09  NO SOUND for Cut on V1: … (nothing within 250 ms)`, and every share comes with its
+  chance: `Sync, cuts: 1/2 have a sound within 1 frame (50 %; chance 13 %); 1/2 within 100 ms (50 %; chance 32 %); …`.
+- `view_sound_timeline {…, listenJobId?, listen? (default true), thumbnails?, spectrogram?}` is the annotated sheet of
+  ≤ 120 s: a picture lane (≤ 12 frames rendered through the export path — `render_frame`'s still job — at the cuts,
+  transitions, cues, measured motion and accents, each with a line to its frame; omitted without picture in the range),
+  the curves, the mix spectrogram (30 Hz–16 kHz log, 10 ms columns), the waveform, the sections band, the sfx clips, the
+  cue ticks each with its answer mark, a sync lane (C cut, T transition, Q cue, M motion) and the motion / check lanes.
+  Answer marks are shape + colour: OK filled green circle, near hollow amber diamond, swell hollow blue triangle, none
+  red cross. `cells` adds `thumbs` (frame + box), `sync` (key, kind, frame, x, status, shape), `sections` (x0…x1, classes)
+  and `spectrogram` (bands, rows) to the lanes, cues (now with `status`) and issues; the lanes are listed top to bottom.
+- **Users:** Sound Check panel ▸ **Log** tab (or Sequence ▸ Sound Design ▸ Listen to Sequence, UI command
+  `sound.listenToSequence`): Listen (progress, Cancel; a sequence over 10 min is listened to for the 10 minutes from the
+  playhead, said in a note), Detail, Copy log, Spectrogram (the mix of the listened range, or 120 s around the current
+  line, the line's moment marked), and the lines verbatim — a no-sound line has a warning icon and the danger tone. A
+  line (click, or ↑ ↓ Home End + Enter in the one-tab-stop list) moves the playhead there and selects the clip that plays
+  the sound (else the cue).
+- **HTTP:** `POST /api/sound-design/listen {projectId, sequenceId?, range?, detail?}` → `sound-listen` job (202), result
+  `SoundListenResult`; `POST /api/sound-design/visual {…, spectrogram: true}` adds `spectrogram {hopSec, bands, frames,
+  fMinHz, fMaxHz, floorDb, data (base64 u8)}`.
+
+#### Design and decisions
+
+- **Lanes.** The job renders the mix and one lane per set of clips that never overlap (greedy by start, a 0.25 s gap
+  so an effect tail is not given to the next clip; ≤ 24 lanes, more overlapping clips share the lane that frees first,
+  warned). A lane's signal at any moment is one clip's contribution to the mix (its strip, effects and track), so a
+  lane's own onsets name their clip. Lanes render before the mix in every block (`renderStems`, every clip decoded once).
+  The dialogue / music / ambience / effects curves for the sections are the lanes' 10 ms energies summed by the class
+  of the clip playing (first version: four more stem renders; dropped, −14 % on the 10-minute bench).
+- **Attribution.** A mix onset is the clip's whose own onset of the same shape lies within 30 ms (the onset merge window;
+  swells 60 ms) and rises most over its own bed (first version: the loudest peak — a flicker of the loud music bed then
+  outranked a quiet hit: only 4 of 6 hits under music were heard); else the clip loudest there (`explainedBy:
+  'level'`). An attributed event starts at the earlier of its own attack and the mix's (`mixMs`): masking delays the
+  visible start (a hit over music read 6 ms late in the mix, 0 ms on its lane).
+- **Guided onsets.** A clip's own onset (≥ 3 dB over its own bed) is a hint for the mix meter: where the blind onset
+  curve does not fire, the mix's attack rule is applied at that moment and the event is kept when the mix rises ≥ 3 dB
+  over its bed in some band (`guided: true`). This is how "≥ 90 % of placed sounds 6 dB under the music" is met (8/10
+  blind, 10/10 with it; see Verified) — a measurement of the mix at a known time, said as such in the event.
+- **Deviations from earshot** (each in `licenses/ported/earshot.md`): streaming in 30 s chunks with 2.5 s of context;
+  log-spaced bands and an absolute −100 dB floor; the MAD around each candidate's own median; the prominence window ends
+  with the event (a bed flicker 90 ms before a hit had borrowed the hit's 14 dB); merged onsets start at the first attack
+  (a knock read 12 ms late on the second onset inside it); a swell is dropped for an onset at its peak only when the
+  onset explains half its rise (the noise onsets along a riser had removed every riser); only events ≥ 3 dB over their
+  bed answer a picture event and count for chance (a pink-noise bed flickers 4.5 onsets/s: a cut in the music read "OK"
+  by chance); the chance is the exact measure of the union of the tolerance windows over the picture events' span ± 1 s.
+- **Sections** per 10 ms: dialogue where speech is (transcript words ∪ the dialogue curve's voice activity, gaps
+  < 0.3 s bridged — the check's rule), music / ambience where their momentary loudness is over −50 LUFS and within 20 LU
+  of the mix, effects only when nothing else, silence inside the mix's silences; runs under 1 s folded into the longer
+  neighbour. Music sections give the Essential Sound ducking depth (or "not ducked") and how far the music sits under
+  the voice (energy means over voiced hops).
+- **Detail** only selects lines: low (summary, sync, sections, silences, accents, no-sound), normal (+ every placed
+  sound, every event answering the picture or filling a cue), high (every event). Lines ≤ 3 000, events ≤ 5 000.
+- **Levels** are as delivered when the Mix normalises and its loudness analysis (or a kept Sound Check of this mix) is
+  current — the visual route's rule, now one function (`deliveredGain`); else as mixed, and the summary says which.
+- **Language.** The transcript is the engine's English text, printed verbatim by the panel and MCP (the spec's "lines
+  identical"); the panel's controls are translated. Decision: a measurement log, like the timecodes, is not localised.
+

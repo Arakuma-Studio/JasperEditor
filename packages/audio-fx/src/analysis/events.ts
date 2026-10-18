@@ -22,7 +22,9 @@
 //   sync     the event that answers a picture event (OK within a frame, near ≤ 100 ms, swell ≤ 300 ms, else none) and
 //            the CHANCE level of every share: the share random times would score with the same events (the measure of
 //            the union of the ±tolerance windows over the span), so "60 % of cuts have a sound" means something. Only
-//            events rising ≥ 3 dB over their bed answer (and count for chance): a busy bed's flicker is no sound.
+//            events rising ≥ 3 dB over their bed answer (and count for chance): a busy bed's flicker is no sound. An
+//            event answers at its attack or at its peak (ours: sounds are placed by their peak, a whoosh peaks on its
+//            cut long after its attack; earshot matches attacks and falls back to level peaks).
 // Changes from earshot (all deterministic): log-spaced triangular bands (96, 30 Hz–16 kHz) instead of mel; an absolute
 // −100 dB band floor instead of "80 dB under the file's maximum"; the MAD is taken around each candidate's own median;
 // the prominence window ends with the event (earshot: always 80 ms); a swell is dropped for an onset at its peak only
@@ -107,7 +109,7 @@ export type ListenBand = 'full' | 'low' | 'high';
 export type ListenEvent = {
 	/** Attack (onsets) or peak (swells), ms from the first sample pushed (0.1 ms steps). */
 	ms: number;
-	/** Where the event's full-band envelope peaks (ms). */
+	/** Where the event's full-band envelope peaks over its length (ms; swells: their peak). */
 	peakMs: number;
 	shape: 'hit' | 'swell';
 	/** The band the event stands out in. */
@@ -893,14 +895,16 @@ export class ListenMeter {
 			if (v > top) top = v;
 		}
 		const prominence = Number.isFinite(top) ? Math.max(0, top - bed) : 0;
-		// peak and its position over the first 50–300 ms
+		// the sample peak over the first 50–300 ms; where the event peaks over its whole length (≤ 2 s)
 		const span = Math.max(50, Math.min(length, 300));
 		let pk = 0;
 		let pkAt = j;
-		for (let i = j; i < Math.min(this.eFull.end, j + span); i++) {
+		let top1 = 0;
+		for (let i = j; i < Math.min(this.eFull.end, j + Math.max(span, length)); i++) {
 			const v = this.eFull.get(i);
-			if (v > pk) {
-				pk = v;
+			if (i < j + span && v > pk) pk = v;
+			if (v > top1) {
+				top1 = v;
 				pkAt = i;
 			}
 		}
@@ -1194,6 +1198,8 @@ export type PictureAnswer = {
 	event: number | null;
 	/** Sound − picture (ms; negative = the sound is early); null for none. */
 	offsetMs: number | null;
+	/** Which moment of the event answers: its attack, or its peak (a whoosh peaks on its cut long after its attack). */
+	at: 'attack' | 'peak' | null;
 	/** Unanswered: the nearest strong onset within 250 ms (sound − picture, ms), else null. */
 	nearestStrongMs: number | null;
 };
@@ -1210,7 +1216,8 @@ export function strongThreshold(events: readonly Pick<ListenEvent, 'prominenceDb
 	);
 }
 
-function nearestIn(ts: readonly number[], idx: readonly number[], t: number, radius: number): number | null {
+/** The position in `ts` (sorted) nearest to `t` within `radius`, or null. */
+function nearestAt(ts: readonly number[], t: number, radius: number): number | null {
 	if (!ts.length) return null;
 	let lo = 0;
 	let hi = ts.length;
@@ -1223,26 +1230,37 @@ function nearestIn(ts: readonly number[], idx: readonly number[], t: number, rad
 	for (const j of [lo - 1, lo, lo + 1])
 		if (j >= 0 && j < ts.length && Math.abs(ts[j]! - t) <= radius + 1e-9)
 			if (best === null || Math.abs(ts[j]! - t) < Math.abs(ts[best]! - t)) best = j;
-	return best === null ? null : idx[best]!;
+	return best;
+}
+function nearestIn(ts: readonly number[], idx: readonly number[], t: number, radius: number): number | null {
+	const j = nearestAt(ts, t, radius);
+	return j === null ? null : idx[j]!;
 }
 
-/** Event lists prepared for answering many picture events (sorted times and their indices). */
+/** Times of events (sorted): each event's attack and, when it differs, its peak, with the event's index. */
+export type SyncTimes = { t: number[]; i: number[]; peak: boolean[] };
+
+/** Event lists prepared for answering many picture events. */
 export type SyncIndex = {
 	events: readonly ListenEvent[];
-	all: { t: number[]; i: number[] };
-	strong: { t: number[]; i: number[] };
-	swells: { t: number[]; i: number[] };
-	accents: { t: number[]; i: number[] };
+	all: SyncTimes;
+	strong: SyncTimes;
+	swells: SyncTimes;
+	accents: SyncTimes;
 };
 
 export function syncIndex(events: readonly ListenEvent[]): SyncIndex {
 	const strongDb = strongThreshold(events);
-	const sel = (p: (e: ListenEvent) => boolean) => {
-		const list = events
-			.map((e, i) => ({ t: e.ms, i }))
-			.filter(({ i }) => p(events[i]!))
-			.sort((a, b) => a.t - b.t || a.i - b.i);
-		return { t: list.map((x) => x.t), i: list.map((x) => x.i) };
+	// an event answers at its attack or at its peak (sounds are placed by their peak: a whoosh peaks on its cut)
+	const sel = (p: (e: ListenEvent) => boolean): SyncTimes => {
+		const list: { t: number; i: number; peak: boolean }[] = [];
+		events.forEach((e, i) => {
+			if (!p(e)) return;
+			list.push({ t: e.ms, i, peak: false });
+			if (fin(e.peakMs) && Math.abs(e.peakMs - e.ms) > 0.5) list.push({ t: e.peakMs, i, peak: true });
+		});
+		list.sort((a, b) => a.t - b.t || a.i - b.i);
+		return { t: list.map((x) => x.t), i: list.map((x) => x.i), peak: list.map((x) => x.peak) };
 	};
 	const audible = (e: ListenEvent) => e.prominenceDb >= LISTEN_SYNC.minProminenceDb;
 	return {
@@ -1261,22 +1279,30 @@ export function syncIndex(events: readonly ListenEvent[]): SyncIndex {
  */
 export function answerPictureEvent(ix: SyncIndex, tMs: number, frameMs: number): PictureAnswer {
 	const tol = fin(frameMs) && frameMs > 0 ? frameMs : LISTEN_SYNC.defaultFrameMs;
-	const steps: [{ t: number[]; i: number[] }, number, SyncStatus][] = [
+	const steps: [SyncTimes, number, SyncStatus][] = [
 		[ix.all, tol, 'ok'],
 		[ix.strong, LISTEN_SYNC.nearMs, 'near'],
 		[ix.all, LISTEN_SYNC.nearMs, 'near'],
 		[ix.swells, LISTEN_SYNC.swellMs, 'swell'],
 	];
 	for (const [list, radius, status] of steps) {
-		const e = nearestIn(list.t, list.i, tMs, radius);
-		if (e !== null) return { status, event: e, offsetMs: r1(ix.events[e]!.ms - tMs), nearestStrongMs: null };
+		const j = nearestAt(list.t, tMs, radius);
+		if (j !== null)
+			return {
+				status,
+				event: list.i[j]!,
+				offsetMs: r1(list.t[j]! - tMs),
+				at: list.peak[j] ? 'peak' : 'attack',
+				nearestStrongMs: null,
+			};
 	}
-	const off = nearestIn(ix.strong.t, ix.strong.i, tMs, LISTEN_SYNC.offMs);
+	const off = nearestAt(ix.strong.t, tMs, LISTEN_SYNC.offMs);
 	return {
 		status: 'none',
 		event: null,
 		offsetMs: null,
-		nearestStrongMs: off === null ? null : r1(ix.events[off]!.ms - tMs),
+		at: null,
+		nearestStrongMs: off === null ? null : r1(ix.strong.t[off]! - tMs),
 	};
 }
 
@@ -1359,8 +1385,8 @@ export function syncStats(
 		.map((a) => Math.abs(a.offsetMs ?? 0));
 	const acc = ix.accents.t;
 	const accentOff = timesMs.slice(0, n).map((t) => {
-		const e = nearestIn(acc, ix.accents.i, t, LISTEN_SYNC.nearMs);
-		return e === null ? Number.POSITIVE_INFINITY : Math.abs(ix.events[e]!.ms - t);
+		const j = nearestAt(acc, t, LISTEN_SYNC.nearMs);
+		return j === null ? Number.POSITIVE_INFINITY : Math.abs(acc[j]! - t);
 	});
 	let onBeatShare: number | null = null;
 	let onBeatChance: number | null = null;

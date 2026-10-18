@@ -916,6 +916,8 @@ export const SoundListenPictureEventSchema = z.object({
 	status: z.enum(SOUND_LISTEN_STATUSES),
 	/** Sound − picture (ms; negative = early); null when nothing answers. */
 	offsetMs: z.number().nullable(),
+	/** The moment of the sound that answers: its attack, or its peak (a whoosh placed by its peak). */
+	at: z.enum(['attack', 'peak']).nullable(),
 	/** Index into `events` of the event that answers it. */
 	event: z.number().int().nullable(),
 	/** Unanswered: the nearest strong onset within 250 ms (sound − picture, ms). */
@@ -967,7 +969,12 @@ export const SoundListenEventSchema = z.object({
 	explainedBy: z.enum(['event', 'level', 'none']),
 	/** Picture events this event answers (ok / near / swell). */
 	answers: z.array(
-		z.object({ key: z.string(), status: z.enum(SOUND_LISTEN_STATUSES), offsetMs: z.number() }),
+		z.object({
+			key: z.string(),
+			status: z.enum(SOUND_LISTEN_STATUSES),
+			offsetMs: z.number(),
+			at: z.enum(['attack', 'peak']),
+		}),
 	),
 });
 export type SoundListenEvent = z.infer<typeof SoundListenEventSchema>;

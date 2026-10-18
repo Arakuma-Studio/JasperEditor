@@ -507,6 +507,24 @@ the range and an event's window can include another effect playing then; LAYER_I
 their first 3 s; COVERAGE classes come from stored anchors (separate clips sharing a pattern are one class only through a
 shared anchor source such as markers); the fixes' fades are frames (33 ms at 30 fps), not sub-frame keys.
 
+Phase 6 → WP-E3 ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP-E3"; spec 12 §4 P6-E6, P6-E7,
+algorithms adapted from earshot `timeline.py`, `licenses/ported/earshot.md`): a listening transcript — the `sound-listen`
+job (`POST /api/sound-design/listen`, ≤ 10 min) renders the mix and lanes of non-overlapping clips once, finds the
+events of the mix (onsets refined to the attack, swells, silences, accents), names the clip behind every one and the cue
+it fills (production audio by its clip), labels sections (dialogue, music with its ducking and distance under the voice,
+ambience, effects, silence), and matches every cut, transition, cue and cached measured motion to the sound that answers
+it with the CHANCE level of each share; MCP `listen_to_sequence` (text first, compact JSON, the sheet with `images`),
+the Sound Check panel's Log tab (the same lines; a line jumps and selects its clip; Copy log; the mix spectrogram),
+Sequence ▸ Sound Design ▸ Listen to Sequence; `view_sound_timeline` became the annotated sheet (frames rendered at the
+cuts / cues / accents, the mix spectrogram, sections, answer marks by shape and colour). Rerun
+`packages/audio-fx/test/events.test.ts`, `apps/engine/test/sound-listen.test.ts` (`JASPER_LISTEN_BENCH=1` for the
+10-minute timing), `apps/mcp/test/sound-listen.test.ts`, `apps/web/test/sound-listen-log.test.tsx`,
+`e2e/sound-listen.spec.ts`. Limits left: a 10-minute listen takes ≈ 100 s on the build server (measured; the renders
+dominate); the onset detector is earshot's, so a busy bed flickers into low-prominence onsets (they answer no cut: only
+events ≥ 3 dB over their bed do) and amplitude-modulated sounds (syllables) read as swells; a sound the mix's onset curve
+hides is looked at where its clip has its own onset (`guided`: 2 of 10 hits 6 dB under music in the test); transcript
+lines are English in every UI language (the panel prints the engine's lines verbatim, as agents read them).
+
 ### Not covered by any workstream yet
 
 - **Platforms**: run and fix the desktop app on macOS and Windows; hardware H.264/HEVC export on real GPUs; build

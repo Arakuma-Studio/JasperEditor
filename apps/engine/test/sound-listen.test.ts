@@ -161,7 +161,10 @@ describe('listen_to_sequence (real engine)', { timeout: 600_000 }, () => {
 		expect(cues.map((c) => c.cueId).sort()).toEqual([fx.ids.cueA, fx.ids.cueB, fx.ids.cueC].sort());
 		for (const c of cues) expect(c.status, c.label).toBe('ok');
 		// chance levels equal a brute-force count of random times over the same span
-		const times = r.events.filter((e) => e.prominenceDb >= 3).map((e) => e.ms);
+		// every event ≥ 3 dB over its bed answers at its attack or its peak
+		const times = r.events
+			.filter((e) => e.prominenceDb >= 3)
+			.flatMap((e) => (Math.abs(e.peakMs - e.ms) > 0.5 ? [e.ms, e.peakMs] : [e.ms]));
 		for (const s of [r.sync.cuts!, r.sync.cues!, r.sync.all!]) {
 			const [lo, hi] = s.spanMs;
 			let ok = 0;
@@ -175,7 +178,8 @@ describe('listen_to_sequence (real engine)', { timeout: 600_000 }, () => {
 			}
 			expect(Math.abs(s.okChance - ok / total)).toBeLessThanOrEqual(0.002);
 			expect(Math.abs(s.within100Chance - within / total)).toBeLessThanOrEqual(0.002);
-			expect(s.okChance).toBeCloseTo(syncChance(times, lo, hi, s.frameMs), 3);
+			// the result's shares are rounded to 0.001 and its times to 0.1 ms
+			expect(Math.abs(s.okChance - syncChance(times, lo, hi, s.frameMs))).toBeLessThanOrEqual(0.001);
 		}
 		expect(r.sync.cuts).toMatchObject({ n: 2, ok: 1, none: 1, okShare: 0.5 });
 		expect(r.sync.cues).toMatchObject({ n: 3, ok: 3, okShare: 1 });

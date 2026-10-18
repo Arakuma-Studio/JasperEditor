@@ -159,10 +159,10 @@ test('Log tab and listen_to_sequence on the Phase 4 fixture with a knock in the 
 				`${e.querySelector('[data-testid="sound-listen-timecode"]')?.textContent ?? ''}  ${e.querySelector('[data-testid="sound-listen-text"]')?.textContent ?? ''}`,
 		),
 	);
-	expect(panelLines[0]).toMatch(/Listened 00:00:00:00/);
+	expect(panelLines[0]).toMatch(/Listened 00[:;]00[:;]00[:;]00/);
 	expect(panelLines.some((l) => / · SFX A\d+ "/.test(l))).toBe(true);
 	// the knock in the interview is the dialogue clip's
-	const knock = panelLines.find((l) => /^00:00:06:1[45] {2}hit, .*dialogue, A2 "interview\.wav"/.test(l));
+	const knock = panelLines.find((l) => /^00[:;]00[:;]06[:;]1[3-6] {2}hit, .*dialogue, A2 "interview\.wav"/.test(l));
 	expect(knock, panelLines.join('\n')).toBeDefined();
 
 	// a line jumps the playhead and selects its clip; the spectrogram strip

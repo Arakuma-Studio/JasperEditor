@@ -270,7 +270,7 @@ describe('sync', () => {
 			mk(4200, { prominenceDb: 12 }),
 		];
 		const ix = syncIndex(events);
-		expect(answerPictureEvent(ix, 1020, 33.3)).toMatchObject({ status: 'ok', event: 0, offsetMs: -20 });
+		expect(answerPictureEvent(ix, 1020, 33.3)).toMatchObject({ status: 'ok', event: 0, offsetMs: -20, at: 'attack' });
 		// near prefers the strong onset over a closer weak one
 		expect(answerPictureEvent(ix, 2000, 33.3)).toMatchObject({ status: 'near', event: 2, offsetMs: 90 });
 		expect(answerPictureEvent(ix, 3000, 33.3)).toMatchObject({ status: 'swell', event: 3, offsetMs: 250 });
@@ -282,6 +282,10 @@ describe('sync', () => {
 		});
 		expect(answerPictureEvent(ix, 9000, 33.3)).toMatchObject({ status: 'none', nearestStrongMs: null });
 		expect(answerPictureEvent(syncIndex([]), 0, 40).status).toBe('none');
+		// a whoosh answers its cut at its peak, long after its attack
+		const whoosh = syncIndex([mk(1000, { peakMs: 1450 })]);
+		expect(answerPictureEvent(whoosh, 1450, 33.3)).toMatchObject({ status: 'ok', event: 0, offsetMs: 0, at: 'peak' });
+		expect(answerPictureEvent(whoosh, 1010, 33.3)).toMatchObject({ status: 'ok', offsetMs: -10, at: 'attack' });
 		// the flicker of a bed (no rise of the level) answers nothing
 		expect(answerPictureEvent(syncIndex([mk(1000, { prominenceDb: 2.9 })]), 1000, 40).status).toBe('none');
 	});
