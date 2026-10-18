@@ -933,8 +933,9 @@ describe('Sound Check panel: acknowledged findings (spec 12 §4 P6-E4)', () => {
 			fireEvent.change(reason, { target: { value: 'Mastered elsewhere: the client normalises it' } });
 		});
 		const n = f.labels().length;
+		// (the enabled button is a new element: the disabled one sat in its reason's tooltip)
 		await act(async () => {
-			fireEvent.click(save);
+			fireEvent.click(within(screen.getByTestId('sound-check-ack-editor')).getByTestId('sound-check-ack-save'));
 		});
 		await settle();
 		expect(f.labels()).toHaveLength(n + 1);
