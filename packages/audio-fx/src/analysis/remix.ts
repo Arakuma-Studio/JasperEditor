@@ -923,23 +923,28 @@ function bestJoint(
 			if (bj < o.jRange[0] || bj > o.jRange[1]) continue;
 			const d = bj - bi;
 			if (d < 0 && -d < o.minPiece) continue;
-			let loops = 1;
+			// a skip forward happens once; bars played again may loop (the counts either side of the exact one)
+			let counts: number[] = [1];
 			if (d < 0) {
 				if (o.shift >= 0) continue;
-				loops = Math.max(1, Math.min(o.maxLoops, Math.round(o.shift / d)));
+				const x = o.shift / d;
+				counts = [...new Set([Math.floor(x), Math.ceil(x)])].filter((n) => n >= 1 && n <= o.maxLoops);
 			} else if (o.shift <= 0) continue;
-			const err = o.shift - loops * d;
-			seen?.(err);
-			if (!o.accept(err, bi, bj)) continue;
-			const rank = o.rank(err);
 			const score = jumpScore(a, i, j);
-			if (
-				best === null ||
-				rank < bestRank ||
-				(rank === bestRank && (score > best.score || (score === best.score && (i < best.i || j < best.j))))
-			) {
-				best = { i, j, loops, err, score };
-				bestRank = rank;
+			for (const loops of counts) {
+				const err = o.shift - loops * d;
+				seen?.(err);
+				if (!o.accept(err, bi, bj)) continue;
+				const rank = o.rank(err);
+				if (
+					best === null ||
+					rank < bestRank ||
+					(rank === bestRank &&
+						(score > best.score || (score === best.score && (i < best.i || (i === best.i && j < best.j)))))
+				) {
+					best = { i, j, loops, err, score };
+					bestRank = rank;
+				}
 			}
 		}
 	}

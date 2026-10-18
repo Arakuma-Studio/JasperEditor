@@ -8887,3 +8887,106 @@ security review, gaps. Tests: `packages/project/test/sound-acknowledge.test.ts` 
   re-run it.
 - WP-E8 (beds and room tone) can add its commands next to these in `commands/*/sound.ts`; a COVERAGE or SILENCE it fixes
   will show in a proposal check of its bed proposal.
+
+### Phase 6 → WP-E7 Music to picture
+
+Branch `feat/sd-pe-e7-music`. Spec 12 §4 P6-E11: land the music's drop on a hero frame, stop the music on the bar line,
+tune tonal sounds to the music's key; plus (task) End on Bar. The ideas and the stop-down norm are earshot's
+(`skills/real-sound/scripts/arrange.py`, `docs/launch-video-sound.md`; MIT, Copyright (c) 2026 Leon Lin, commit
+`9721326`), reimplemented, nothing copied; rows in `licenses/ported/earshot.md`, `THIRD_PARTY_NOTICES.md` regenerated.
+The key finding (Krumhansl–Schmuckler) and the tuning are ours.
+
+Files: audio `packages/audio-fx/src/analysis/{key.ts (new), remix.ts}`; model `packages/project/src/sound/{tuning.ts
+(new), music-fit.ts (new), mix.ts (stopOnBar), grammar.ts (style), proposal-draft.ts (alternative layer overrides)}`,
+`schema/{sound.ts (style), sequence.ts (ClipRemix.anchors / fadeInId)}`, `commands/{schemas,handlers}/essential.ts`
+(`clip.remix`), `commands/schemas/sound.ts` (`soundDesign.setSettings {style}`), `essential/ops.ts`
+(`readRemixAnchors`), `invariants.ts` (anchors issue + repair); API `packages/api/src/audio-fx.ts` (beats `key` /
+`drops`, remix-plan `anchors` / `fit` / `maxTargetSeconds` / `timeSignature`, results), `sound-design.ts` (plan style,
+event `tuning` / `stopOn`, report grammar `tuned` / `stopsOnBar`); engine `apps/engine/src/audio/{beats.ts, remix.ts}`,
+`routes/audio-fx.ts`, `sound-design/{plan.ts, engine-cues.ts (musicInfo)}`; MCP `apps/mcp/src/tools/audio-fx.ts`
+(`remix_audio {landDropAt, dropSec}`, `find_music_drops`, `fit_music_to_picture`, AUDIO_FX_GUIDE),
+`sound-design.ts` (plan style), `sound.ts` (SOUND_GUIDE "Music to picture"); web `apps/web/src/audio-fx/{ops.ts,
+commands.ts}`, `panels/essentialSound/{MusicFit.tsx (new), EssentialSoundPanel.tsx}`, `shell/menus/model.ts`,
+`sound/{StyleControls.tsx, AutoSoundPassDialog.tsx, PreferencesPage.tsx}`; README (two tools); i18n (44 strings, es
+complete). Tests: `packages/audio-fx/test/music-picture.test.ts` (12), `packages/project/test/sound-music-fit.test.ts`
+(11), `apps/engine/test/music-picture.test.ts` (5), `apps/engine/test/sound-music-plan.test.ts` (2),
+`apps/mcp/test/music-picture.test.ts` (6), `apps/web/test/sound-music-fit.test.tsx` (4), `e2e/sound-music-fit.spec.ts`;
+fixtures `dropMusic` in `packages/audio-fx/test/music.ts` (a known key, bar lines and drop).
+
+#### What it does (usage)
+
+- **The music's analysis.** `POST /api/audio/beats` now also returns `key {tonic, mode, name, confidence, correlation,
+  margin, scale}` (also for music without a beat; null for silence) and `drops[] {sourceSeconds, bar, score, liftDb,
+  novelty, levelDb}` best first (`dropBarsGuessed` when there are no downbeats). `POST /api/audio/remix-plan` returns the
+  bar lines (`downbeats`, `beatsPerBar`, `barsGuessed`) and the drops (seconds from the range start). Cached on disk per
+  file, range and metre (`BEATS_VERSION` 3: older cache entries are re-measured).
+- **Land the drop.** `POST /api/audio/remix-plan {anchors: [{sourceSeconds, outputSeconds}], fit?, maxTargetSeconds?}`
+  plans a remix that plays each source moment at its output time within 1 ms, joining at bar lines only; `fit: 'exact'`
+  (default) refuses with 422 `E_INVALID_PARAM` and `detail.nearestTargetSeconds` when the outro cannot end within half
+  a beat of `targetSeconds`; `fit: 'nearest'` plans the nearest length that works (≤ `maxTargetSeconds`). The result
+  adds `targetSeconds`, `headTrimSeconds` and `anchors[] {…, landedSeconds, errorMs}`. `clip.remix {anchors, fadeInFrames}`
+  records the landing on every piece (`ClipRemix.anchors`, sequence frames) and fades a trimmed intro in; a later remix
+  of the clip (Remix… / the Remix tool / MCP `remix_audio` to another length) lands the drop again when it still fits.
+  Editor: Essential Sound ▸ Duration ▸ Music to picture (Analyze Music → tempo, beats per bar, key with its confidence;
+  the drops with ▶ to hear each where it plays now and a radio to pick it; "Land the drop on" Playhead / Hero cue / a
+  marker; Land Drop) and Clip ▸ Audio Options ▸ Land Drop on Playhead / Land Drop on Hero Cue (also the music clip's
+  context menu); one History entry "Land the Drop". MCP: `remix_audio {landDropAt: frame | {cueId} | "hero", dropSec?}`,
+  `fit_music_to_picture {mode: "land-drop", at}`, `find_music_drops {clipId}`.
+- **End on Bar.** The music clip (a remix's last piece) ends on a bar line — the latest frame ≥ 3 ms before a downbeat's
+  attack — with a constant-power fade-out of one beat ending there (`endOnBarPlan`: `clip.trim` + `transition.add`, or
+  `transition.update` of an existing fade; direction `earlier` (default) or `nearest` up to half a bar later when the
+  media and the track have room). Editor: Essential Sound "End on Bar", Clip ▸ Audio Options ▸ End on Bar, the context
+  menu; MCP `fit_music_to_picture {mode: "end-on-bar"}`.
+- **Tune to the key** (style `tuneToMusic`, default on): in the plan job (Auto Sound Pass…, Fill Unfilled Cues,
+  `plan_sound_design`) a chime, shimmer or any sound with `pitchConfidence` ≥ 0.8 placed over an Essential Sound music
+  clip whose key confidence is ≥ 0.6 is moved by varispeed to the nearest note of the key's scale (natural minor for
+  minor keys; a tie between two scale notes goes to the more stable one by the Krumhansl–Kessler profile): the note
+  reads "tuned -1 st to C major", the event has `tuning {st, key, note, clipId}`. Its seeded ±2 % varispeed is dropped
+  (it would detune it). A run (P6-E10) is tuned as one: its first step to the nearest scale note, each later step to
+  the next note of the scale (every step in key, at most four steps). Each alternative is tuned on its own pitch (a
+  run member's alternatives keep the grammar's climb). A cue's own `pitchSt` is never changed.
+- **Stop on the bar** (style `stopOnBar`, default on): a stop-before (style `stopBefore`, or a cue's own) over music
+  with beats ends its ramp on the last downbeat 0.1–0.5 s before the hero (a cue's own `stopBefore.seconds` is its
+  window), else the last beat there, else it stays the plain 0.25 s; the stop's seconds become hero − that line, so the
+  dip reaches its floor exactly on it; the item's label says "on the bar line" and its meta `stopOn`.
+- **Remix joints** (P6-E11 "beat-grid phase", every remix): the joints sit 5 ms before each beat's MEASURED attack (the
+  per-beat 5 ms-RMS rise refinement `analyzeBeats` already used), the timeline crossfade ENDS at the joint
+  (`end-at-cut`, at least 30 ms: 2 frames at 60 fps), and cuts round down to frames, so neither side's attack is faded or
+  doubled. Style options in Auto Sound Pass… and Preferences ▸ Sound design style: "Tune chimes and pitched sounds to
+  the music's key", "Stop the music on the bar line before a hit".
+
+#### Design and decisions
+
+- **Key: chroma + Krumhansl–Schmuckler** (Krumhansl 1990 ch. 4 profiles; Temperley 1999 for the correlation form).
+  Chroma: STFT ≈ 186 ms Hann, half hop, power per equal-tempered note C2–B6 (each bin to its nearest note), summed
+  over ≤ 2 400 evenly spread frames, √ (amplitude), folded to 12 classes. Confidence (ours): `clamp(r) ·
+  clamp(margin / 0.15)` with margin = r minus the best key of ANOTHER scale (the relative key has the same seven notes,
+  so it never lowers the confidence; tuning needs only the scale). Measured: generated C major 0.882, G major 0.767,
+  E♭ major 0.722 (named C minor: its relative), A minor 0.882 (named C major), the remix test music 0.842; a 440 Hz sine
+  0, white noise 0.053. The 0.6 threshold is the spec's.
+- **Drops** (`findDrops`, adapted from earshot): bar RMS levels relative to the 90th percentile; a candidate is within
+  3 dB of it and its 4 bars average over −4 dB; score = lift / 3 + 2 × novelty (unit chroma and unit timbre vectors).
+  Ours: the lift is over the median of the 4 bars before AND over the bar right before — with the median alone the bar
+  after a drop scored 8.2 against the drop's 8.8 on the generated 120 BPM track and won at 128 BPM (measured, first
+  run); after: 8.8 vs 3.1. Bar numbers count from the start of the analysed range (a quiet first beat the tracker
+  drops is counted at the bar length).
+- **Anchored plan** (`planAnchoredRemix`): head — no joint when the intro already fits (head trim < a bar), else the
+  bars that would come too early are skipped (one joint) or bars before the anchor are played again (up to 8 loops), the
+  head taking up what whole bars cannot; between anchors the music must fit within 1 ms; tail — a bar-line joint so the
+  outro ends within half a beat. Joints are chosen by the remix's own context similarity (`jumpScore`). With bar-only
+  joints the reachable lengths are a bar apart, hence `fit: 'nearest'` for the editor and MCP when no exact length is
+  asked (the clip moves by at most half a bar and never over the next clip). Segments and Variations do not apply to an
+  anchored plan. Without downbeats the bars are re-phased on the anchor's beat.
+- **`clip.remix` changes** (all remixes): `end-at-cut` crossfades (a 1-frame "centre" crossfade starts AT the cut, so
+  the outgoing piece played its next attack into the fade: a flam), cuts rounded down (a rounding shift now moves both
+  joint sides earlier), crossfades ≥ 30 ms. The old tests pass unchanged (`essential.test.ts`, `remix.test.ts`).
+- **End on Bar** is a pure command builder over ordinary commands (no new command): the bar line comes from the
+  engine; "ends on the bar" = the clip ends within a frame before the downbeat's attack (≥ 3 ms), faded over one beat
+  (decision: the phrase completes and the next bar's attack is never clipped; the fade avoids EDGE's chopped decay).
+- **Stop on the bar window**: 0.1–0.5 s, earshot norm "stop-downs 0.1–0.5 s before the impact" (n = 7 launch films
+  measured by one person; `STOP_ON_BAR_WINDOW_SEC`), a cue's own seconds when it has them (then its seconds change to
+  the bar line: documented, it stays inside the window the user gave).
+- **Fixed on the way**: `POST /api/audio/beats` aborted every analysis requested over a real socket (`req.raw` 'close'
+  fires once the request body is read; `inject` never showed it) — MCP `find_music_drops` failed with CANCELLED in the
+  first run; now the RESPONSE's 'close' before it finished aborts (the sync route's rule). The README listed three style
+  names as tools (`personality` …; the readme-tools test failed on `feat/sound-design`), fixed (WP-E2 made the same fix).
