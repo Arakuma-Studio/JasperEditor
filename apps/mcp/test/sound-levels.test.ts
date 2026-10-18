@@ -25,12 +25,12 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cleanEnv, waitFor } from './helpers.ts';
+import { cleanEnv, testPort, waitFor } from './helpers.ts';
 import { FIXTURE_COMMANDS } from './sound-cues-fixture.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const KIT = join(ROOT, 'apps', 'engine', 'sounds', 'starter');
-const PORT = Number(process.env.MCP_SOUND_LEVELS_TEST_PORT ?? 49517);
+const PORT = await testPort(process.env.MCP_SOUND_LEVELS_TEST_PORT);
 const FFMPEG = process.env.JASPER_FFMPEG ?? 'ffmpeg';
 const KIT_FILES = [
 	'hit-punch-01.ogg',

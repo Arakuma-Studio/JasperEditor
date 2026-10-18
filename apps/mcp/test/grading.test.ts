@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { FixedEngineLink } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
-import { cleanEnv } from './helpers.ts';
+import { cleanEnv, testPort } from './helpers.ts';
 
 const ScopeSummarySchema = GradingScopesResponseSchema.required({
 	waveform: true,
@@ -33,7 +33,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
 const FIXTURES = join(ROOT, 'fixtures', 'media');
 
-const PORT = Number(process.env.MCP_GRADING_TEST_PORT ?? 49443);
+const PORT = await testPort(process.env.MCP_GRADING_TEST_PORT);
 const URL_BASE = `http://127.0.0.1:${PORT}`;
 
 function ensureFixtures(): void {

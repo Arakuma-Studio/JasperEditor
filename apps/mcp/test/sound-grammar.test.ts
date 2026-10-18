@@ -15,10 +15,10 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SOUND_GUIDE } from '../src/tools/sound.ts';
-import { cleanEnv, waitFor } from './helpers.ts';
+import { cleanEnv, testPort, waitFor } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-const PORT = Number(process.env.MCP_GRAMMAR_TEST_PORT ?? 52411);
+const PORT = await testPort(process.env.MCP_GRAMMAR_TEST_PORT);
 const SR = 48_000;
 
 const textOf = (r: CallToolResult) =>

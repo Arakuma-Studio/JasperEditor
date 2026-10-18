@@ -26,10 +26,10 @@ import {
 import { decodePng } from '../src/png.ts';
 import type { RgbaImage } from '../src/sound-sheet.ts';
 import { SYNC_MARKS, type TimelineCells } from '../src/sound-timeline.ts';
-import { cleanEnv, waitFor } from './helpers.ts';
+import { cleanEnv, testPort, waitFor } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-const PORT = Number(process.env.MCP_SOUND_LISTEN_TEST_PORT ?? 49579);
+const PORT = await testPort(process.env.MCP_SOUND_LISTEN_TEST_PORT);
 
 const texts = (r: CallToolResult) =>
 	r.content.filter((c) => c.type === 'text').map((c) => (c as { text: string }).text);

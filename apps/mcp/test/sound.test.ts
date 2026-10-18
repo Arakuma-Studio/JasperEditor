@@ -17,11 +17,11 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { decodePng } from '../src/png.ts';
-import { cleanEnv, waitFor } from './helpers.ts';
+import { cleanEnv, testPort, waitFor } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const KIT = join(ROOT, 'apps', 'engine', 'sounds', 'starter');
-const PORT = Number(process.env.MCP_SOUND_TEST_PORT ?? 49001);
+const PORT = await testPort(process.env.MCP_SOUND_TEST_PORT);
 const KIT_FILES = [
 	'hit-punch-01.ogg',
 	'hit-crunch-01.ogg',

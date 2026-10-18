@@ -10,12 +10,12 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cleanEnv, waitFor } from './helpers.ts';
+import { cleanEnv, testPort, waitFor } from './helpers.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
 const FIXTURES = join(ROOT, 'fixtures', 'media');
-const PORT = Number(process.env.MCP_ROTO_TEST_PORT ?? 48563);
+const PORT = await testPort(process.env.MCP_ROTO_TEST_PORT);
 const PLATE = join(FIXTURES, 'roto-object.mp4');
 const TRUTH = join(FIXTURES, 'roto-object.json');
 const ARTIFACTS = join(ROOT, 'test-results', 'mcp');

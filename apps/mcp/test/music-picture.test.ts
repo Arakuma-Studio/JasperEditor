@@ -17,10 +17,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { dropMusic } from '../../../packages/audio-fx/test/music.ts';
 import { AUDIO_FX_GUIDE } from '../src/tools/audio-fx.ts';
 import { SOUND_GUIDE } from '../src/tools/sound.ts';
-import { cleanEnv, waitFor } from './helpers.ts';
+import { cleanEnv, testPort, waitFor } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-const PORT = Number(process.env.MCP_MUSIC_TEST_PORT ?? 52601);
+const PORT = await testPort(process.env.MCP_MUSIC_TEST_PORT);
 const SR = 48_000;
 
 const textOf = (r: CallToolResult) =>
