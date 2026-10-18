@@ -121,3 +121,21 @@ export function guarded<RG extends RouteGenericInterface = RouteGenericInterface
 		}
 	};
 }
+
+/**
+ * A signal for work done inside a request (no job) that aborts when the client goes away before the answer is written:
+ * 'close' of the RESPONSE before it finished (wp-note sound-design "final carry-over cleanup", item 4). Not the request
+ * stream's 'close' — that fires once the body has been read, so listening to it cancels every answer over a real
+ * connection, and attached after an await it has already fired and never notices the client leaving. Call it before
+ * the work starts (it also sees a client that left during earlier awaits).
+ */
+export function clientGoneSignal(reply: FastifyReply): AbortSignal {
+	const ac = new AbortController();
+	const res = reply.raw;
+	const gone = () => {
+		if (!res.writableFinished) ac.abort();
+	};
+	if (res.destroyed || res.socket?.destroyed) gone();
+	else res.once('close', gone);
+	return ac.signal;
+}

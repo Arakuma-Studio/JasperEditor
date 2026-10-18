@@ -1,7 +1,7 @@
 import { SyncAudioRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { MAX_ANALYSIS_SECONDS, SyncService } from '../sync/service.ts';
-import { guarded, parseOr400 } from '../tools/reply.ts';
+import { clientGoneSignal, guarded, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
 export default async function syncRoutes(app: FastifyInstance): Promise<void> {
@@ -21,12 +21,8 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
 		'/api/sync/audio',
 		guarded(async (req, reply) => {
 			const body = parseOr400(SyncAudioRequestSchema, req.body);
-			const ac = new AbortController();
-			// The client went away before the answer (not the request stream ending: 'close' of the response).
-			reply.raw.on('close', () => {
-				if (!reply.raw.writableFinished) ac.abort();
-			});
-			return reply.send(await sync.analyse(body, ac.signal));
+			// stops when the client goes away (the response's 'close'; test/route-client-gone.test.ts)
+			return reply.send(await sync.analyse(body, clientGoneSignal(reply)));
 		}),
 	);
 }
