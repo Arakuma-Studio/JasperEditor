@@ -257,7 +257,7 @@ export type Pan51 = {
 export const DEFAULT_PAN51: Readonly<Pan51> = Object.freeze({ x: 0, y: 1, center: 1, lfeGain: 1 });
 
 /** Gains of a point source at `(x, y)` to the six 5.1 outputs (LFE is 0); `Σ g² = 1`. */
-export function pointGains51(x: number, y: number, center: number): number[] {
+export function pointGains51(x: number, y: number, center: number, out?: number[]): number[] {
 	const cx = Math.min(1, Math.max(-1, x));
 	const cy = Math.min(1, Math.max(-1, y));
 	const fb = (1 - cy) * 0.5 * (Math.PI / 2);
@@ -268,7 +268,8 @@ export function pointGains51(x: number, y: number, center: number): number[] {
 	const gr = Math.sin(lr);
 	const kc = Math.min(1, Math.max(0, Math.min(1, Math.max(0, center)) * (1 - Math.abs(cx))));
 	const ph = Math.sqrt(1 - kc);
-	const g = [0, 0, 0, 0, 0, 0];
+	const g = out ?? [0, 0, 0, 0, 0, 0];
+	g[CH_LFE] = 0;
 	g[CH_L] = f * ph * gl;
 	g[CH_R] = f * ph * gr;
 	g[CH_C] = f * Math.sqrt(kc);
@@ -309,14 +310,29 @@ function offsets(from: Layout): ReadonlyArray<readonly [number, number]> {
 /** Panning matrix `m[out][in]` (6 outputs × source channels) of a `sourceLayout` source through the 5.1 panner. */
 export function pan51Matrix(sourceLayout: Layout, p: Pan51 = DEFAULT_PAN51): number[][] {
 	const ni = channelCount(sourceLayout);
-	const m = Array.from({ length: 6 }, () => new Array<number>(ni).fill(0));
+	return pan51MatrixInto(
+		Array.from({ length: 6 }, () => new Array<number>(ni).fill(0)),
+		sourceLayout,
+		p,
+	);
+}
+
+const scratch51 = [0, 0, 0, 0, 0, 0];
+
+/**
+ * `pan51Matrix` written into `m` (6 rows of the source's channel count), allocation-free: the export mixer evaluates an
+ * animated puck per sample.
+ */
+export function pan51MatrixInto(m: number[][], sourceLayout: Layout, p: Pan51): number[][] {
+	const ni = channelCount(sourceLayout);
 	const offs = offsets(sourceLayout);
 	for (let i = 0; i < offs.length; i++) {
 		if (sourceLayout === '5.1' && i === CH_LFE) {
+			for (let o = 0; o < 6; o++) m[o][i] = 0;
 			m[CH_LFE][i] = p.lfeGain;
 			continue;
 		}
-		const g = pointGains51(p.x + offs[i][0], p.y + offs[i][1], p.center);
+		const g = pointGains51(p.x + offs[i][0], p.y + offs[i][1], p.center, scratch51);
 		for (let o = 0; o < 6; o++) m[o][i] = g[o];
 		if (sourceLayout !== '5.1') m[CH_LFE][i] = p.lfeGain / ni;
 	}

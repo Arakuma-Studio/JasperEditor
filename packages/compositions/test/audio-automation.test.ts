@@ -94,4 +94,25 @@ describe('followed automation curves', () => {
 			}),
 		).toBe(true);
 	});
+
+	it('pieces end on sample frames and go down to one sample at a cusp (the 5.1 panner centre gain, a square root)', () => {
+		// a centre gain √|x| with the puck crossing x = 0 at 37.5 ms (between frames)
+		const cross = 0.0375 + 0.3 / SR;
+		const value = (t: number) => Math.sqrt(Math.min(1, Math.abs(t - cross) * 8));
+		const pts = curvePoints(value, SR, 0.12, [], { minSamples: 1, tolerance: 2e-5 });
+		// every point on a frame (the seeds are 8 ms apart; midpoints round to frames)
+		for (const [t] of pts) expect(Math.abs(t * SR - Math.round(t * SR))).toBeLessThan(1e-6);
+		// at every frame the schedule equals the curve where the pieces are one sample long around the cusp
+		let worst = 0;
+		for (let i = 0; i <= 0.12 * SR; i++) {
+			const t = i / SR;
+			worst = Math.max(worst, Math.abs(scheduled(value(0), pts, t) - value(t)));
+		}
+		expect(worst).toBeLessThan(1e-4);
+		// without frame-aligned midpoints and 8-sample pieces the frame next to the cusp is ≈ 0.02 off
+		const coarse = curvePoints(value, SR, 0.12);
+		let w8 = 0;
+		for (let i = 0; i <= 0.12 * SR; i++) w8 = Math.max(w8, Math.abs(scheduled(value(0), coarse, i / SR) - value(i / SR)));
+		expect(w8).toBeGreaterThan(worst);
+	});
 });

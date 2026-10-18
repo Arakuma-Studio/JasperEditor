@@ -21,6 +21,7 @@ import {
 	layoutFromChannels,
 	mixdownFromId,
 	pan51Matrix,
+	pan51MatrixInto,
 	panMonoGains,
 	pointGains51,
 } from '../src/index.ts';
@@ -135,6 +136,22 @@ describe('pan laws', () => {
 });
 
 describe('5.1 panner', () => {
+	it('pan51MatrixInto writes the same matrix as pan51Matrix into a reused one (the export evaluates per sample)', () => {
+		for (const layout of LAYOUTS) {
+			const n = channelCount(layout);
+			const m = Array.from({ length: 6 }, () => new Array<number>(n).fill(Number.NaN));
+			for (let k = 0; k < 200; k++) {
+				const p = {
+					x: Math.sin(k * 0.37) * 1.2,
+					y: Math.cos(k * 0.23) * 1.2,
+					center: (k % 11) / 10,
+					lfeGain: (k % 5) / 4,
+				};
+				expect(pan51MatrixInto(m, layout, p)).toEqual(pan51Matrix(layout, p));
+			}
+		}
+	});
+
 	it('point gains are equal power', () => {
 		for (let xi = -10; xi <= 10; xi++) {
 			for (let yi = -10; yi <= 10; yi++) {

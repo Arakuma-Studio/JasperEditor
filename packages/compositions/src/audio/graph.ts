@@ -659,21 +659,46 @@ export function clipGainExcess(
  */
 function clipLevelBreaks(clip: RenderAudioClip, t: number, fps: Rational, horizon = 0.25): number[] {
 	const F = flicksPerFrame(fps);
+	const out = clipKeyBreaks(clip, clip.volumeDb, t, fps, horizon);
+	for (const f of clip.fades ?? [])
+		for (const seqFrame of [f.start, f.start + f.frames]) {
+			const dt = (seqFrame * F - t) / FLICKS_PER_SECOND;
+			if (dt > 0 && dt < horizon) out.push(dt);
+		}
+	return out;
+}
+
+/** Seconds after sequence time `t` (flicks) of a clip lane's keyframes (content time mapped to the sequence). */
+function clipKeyBreaks(
+	clip: RenderAudioClip,
+	a: Animatable<number>,
+	t: number,
+	fps: Rational,
+	horizon = 0.25,
+): number[] {
+	const F = flicksPerFrame(fps);
 	const out: number[] = [];
-	const push = (seqFrame: number) => {
+	const rate = clip.speed.rate > 0 ? clip.speed.rate : 1;
+	for (const k of a.keyframes) {
+		const local = (k.time - clip.sourceIn) / (F * rate);
+		const seqFrame = clip.start + (clip.speed.reverse ? clip.duration - 1 - local : local);
 		const dt = (seqFrame * F - t) / FLICKS_PER_SECOND;
 		if (dt > 0 && dt < horizon) out.push(dt);
-	};
-	const rate = clip.speed.rate > 0 ? clip.speed.rate : 1;
-	for (const k of clip.volumeDb.keyframes) {
-		const local = (k.time - clip.sourceIn) / (F * rate);
-		push(clip.start + (clip.speed.reverse ? clip.duration - 1 - local : local));
-	}
-	for (const f of clip.fades ?? []) {
-		push(f.start);
-		push(f.start + f.frames);
 	}
 	return out;
+}
+
+/** The clip pan stage (clip width → track width) at sequence time `t` (flicks): balance into a stereo track. */
+function clipPanMatrix(clip: RenderAudioClip, w: number, tw: number, t: number, fps: Rational, pan?: number): number[][] {
+	const F = flicksPerFrame(fps);
+	const m = conversionMatrix(layoutFromChannels(w), layoutFromChannels(tw));
+	if (tw !== 2) return m;
+	let p = pan;
+	if (p === undefined) {
+		const frame = Math.min(clip.start + clip.duration - 1e-6, Math.max(clip.start, t / F));
+		p = laneAt(clip.pan, contentTimeAt(clip, frame, fps));
+	}
+	return p !== 0 ? scaleRows(m, balanceGains(Math.max(-1, Math.min(1, p / 100)))) : m;
 }
 
 class ClipNodes {
@@ -776,12 +801,16 @@ class ClipNodes {
 		const F = flicksPerFrame(rate);
 		const frame = Math.min(clip.start + clip.duration - 1e-6, Math.max(clip.start, t / F));
 		const content = contentTimeAt(clip, frame, rate);
-		const pan = override?.pan ?? laneAt(clip.pan, content);
 		const w = this.width;
 		const tw = this.trackWidth;
-		let m = conversionMatrix(layoutFromChannels(w), layoutFromChannels(tw));
-		if (tw === 2 && pan !== 0) m = scaleRows(m, balanceGains(Math.max(-1, Math.min(1, pan / 100))));
-		this.pan.set(m, instant);
+		if (follow && !instant && tw === 2 && override?.pan === undefined && isAnimated(clip.pan)) {
+			// Playing: the clip's pan keyframes are followed sample by sample (sound-design Phase 6), as the export
+			// evaluates them per sample.
+			this.pan.follow(
+				(dt) => clipPanMatrix(clip, w, tw, t + dt * followRate * FLICKS_PER_SECOND, rate),
+				clipKeyBreaks(clip, clip.pan, t, rate).map((b) => b / followRate),
+			);
+		} else this.pan.set(clipPanMatrix(clip, w, tw, t, rate, override?.pan), instant);
 		// Clip Mixer fader held: replace the clip's volume (Remotion applies gain + volume; the trim corrects it).
 		const trim =
 			override?.volume !== undefined
@@ -1570,11 +1599,27 @@ export class MixGraph {
 				st.inputMap.set(m, true);
 			}
 			if (st.pan) {
-				const pan = this.ov(s.id, 'pan') ?? laneAt(s.pan, times.pan);
-				st.pan.set(
-					panStageMatrix(st.width, st.outWidth, pan, this.puck(s, times.pan), this.mixdown),
-					instant,
-				);
+				const tp = times.pan;
+				const lanes = this.panLanes(s, st.outWidth);
+				if (follow && lanes.some((a) => isAnimated(a))) {
+					// Playing: the pan law follows the lanes between picture frames, sample by sample like the export's
+					// pan stage (sound-design Phase 6), not one step per frame with the 8 ms glide.
+					const ft = at(tp);
+					st.pan.follow(
+						(dt) =>
+							panStageMatrix(
+								st.width,
+								st.outWidth,
+								this.ov(s.id, 'pan') ?? laneAt(s.pan, ft(dt)),
+								this.puck(s, ft(dt)),
+								this.mixdown,
+							),
+						lanes.flatMap((a) => laneBreaks(a, tp)).map((b) => b / rate),
+					);
+				} else {
+					const pan = this.ov(s.id, 'pan') ?? laneAt(s.pan, tp);
+					st.pan.set(panStageMatrix(st.width, st.outWidth, pan, this.puck(s, tp), this.mixdown), instant);
+				}
 			}
 			for (const x of st.sends) {
 				const send = s.sends.find((y) => y.id === x.id);
@@ -1593,10 +1638,16 @@ export class MixGraph {
 					);
 				} else setParam(x.level.gain, dbToGain(lvOv ?? laneAt(send.levelDb, ts)), this.ctx, instant);
 				const target = this.strips.get(x.target);
-				x.matrix.set(
-					panStageMatrix(st.width, target?.width ?? 2, send.pan, this.puck(s, ts), this.mixdown),
-					instant,
-				);
+				const tw = target?.width ?? 2;
+				// a send into a 5.1 bus pans with the strip's puck, at the send's tap time
+				const puckLanes = tw === 6 ? this.panLanes(s, 6) : [];
+				if (follow && puckLanes.some((a) => isAnimated(a))) {
+					const ft = at(ts);
+					x.matrix.follow(
+						(dt) => panStageMatrix(st.width, tw, send.pan, this.puck(s, ft(dt)), this.mixdown),
+						puckLanes.flatMap((a) => laneBreaks(a, ts)).map((b) => b / rate),
+					);
+				} else x.matrix.set(panStageMatrix(st.width, tw, send.pan, this.puck(s, ts), this.mixdown), instant);
 				setParam(x.gate.gain, s.silent ? 0 : 1, this.ctx, true);
 			}
 			st.pre.sync(
@@ -1630,6 +1681,27 @@ export class MixGraph {
 					: null;
 			c.update(clip, ahead, override, instant, this.fps, follow, rate);
 		}
+	}
+
+	/**
+	 * The lanes the pan stage of a strip into a bus of width `ow` reads, without those a live control holds (the pan
+	 * into a stereo bus; the 5.1 puck into a 5.1 bus; nothing into a mono bus).
+	 */
+	private panLanes(s: RenderStrip, ow: number): Animatable<number>[] {
+		const held = (lane: string) => this.ov(s.id, lane) !== undefined;
+		if (ow === 6)
+			return (
+				[
+					['pan51.x', s.pan51.x],
+					['pan51.y', s.pan51.y],
+					['pan51.center', s.pan51.center],
+					['pan51.lfe', s.pan51.lfe],
+				] as const
+			)
+				.filter(([lane]) => !held(lane))
+				.map(([, a]) => a);
+		if (ow === 2 && !held('pan')) return [s.pan];
+		return [];
 	}
 
 	/**

@@ -3,8 +3,8 @@
 // WebCodecs). Used by every export path (native, hybrid, Remotion: the deliverable's audio always comes from here),
 // the loudness / peak / activity analysis and scrubbing. Signal path and solo rules: see `plan.ts`.
 //
-// * Sample accurate: clip volume, fades, clip pan and every strip lane are evaluated per sample (5.1 panner matrices
-//   every 32 samples); the output does not depend on the block size.
+// * Sample accurate: clip volume, fades, clip pan and every strip lane (the 5.1 panner's puck included) are evaluated
+//   per sample; the output does not depend on the block size.
 // * Latency compensated: processors (clip effects, inserts) report latency; clips pre-roll their processors, and
 //   every route into a bus is delayed so all inputs of the bus line up; the whole graph is read ahead by its total
 //   latency, so the output is aligned with the timeline.
@@ -15,6 +15,7 @@ import {
 	layoutFromChannels,
 	type Mixdown,
 	pan51Matrix,
+	pan51MatrixInto,
 	panMonoGains,
 } from '@jasper/audio-dsp';
 import { evaluate, isAnimated } from '../keyframes.ts';
@@ -30,7 +31,6 @@ import { type AudioProcessor, audioProcessorFactory } from './processors.ts';
 import { formatWidth, holdValueAt } from './strip.ts';
 
 export const MIX_BLOCK = 1024;
-const PAN51_STEP = 32;
 
 /** Decoded audio of one clip span at the mix rate (planar). Reads past the end return fewer frames (silence). */
 export interface ClipReader {
@@ -594,10 +594,8 @@ export class OfflineMixer {
 					center: evaluate(lanes.center, t) / 100,
 					lfeGain: dbToGain(evaluate(lanes.lfe, t)),
 				});
-			let mat = matAt(t0 * fps);
-			for (let i0 = 0; i0 < n; i0 += PAN51_STEP) {
-				if (animated && i0 > 0) mat = matAt((t0 + i0) * fps);
-				const i1 = Math.min(n, i0 + PAN51_STEP);
+			if (!animated) {
+				const mat = matAt(t0 * fps);
 				for (let o = 0; o < 6; o++) {
 					const row = mat[o]!;
 					const d = dest[o]!;
@@ -605,9 +603,30 @@ export class OfflineMixer {
 						const g = row[j]!;
 						if (g === 0) continue;
 						const x = src[j]!;
-						if (send) for (let i = i0; i < i1; i++) d[i]! += g * x[i]! * send.level[i]!;
-						else for (let i = i0; i < i1; i++) d[i]! += g * x[i]!;
+						if (send) for (let i = 0; i < n; i++) d[i]! += g * x[i]! * send.level[i]!;
+						else for (let i = 0; i < n; i++) d[i]! += g * x[i]!;
 					}
+				}
+				return;
+			}
+			// Animated (a puck sweep): the matrix of every sample, like the stereo pan below (sound-design Phase 6; it was
+			// held for 32 samples at a time, which stepped the gains and depended on where blocks began). The preview follows
+			// the same per-sample values.
+			const m = Array.from({ length: 6 }, () => new Array<number>(w).fill(0));
+			const p = { x: 0, y: 0, center: 0, lfeGain: 1 };
+			for (let i = 0; i < n; i++) {
+				const t = (t0 + i) * fps;
+				p.x = evaluate(lanes.x, t) / 100;
+				p.y = evaluate(lanes.y, t) / 100;
+				p.center = evaluate(lanes.center, t) / 100;
+				p.lfeGain = dbToGain(evaluate(lanes.lfe, t));
+				pan51MatrixInto(m, srcLayout, p);
+				const lv = send ? send.level[i]! : 1;
+				for (let o = 0; o < 6; o++) {
+					const row = m[o]!;
+					let acc = 0;
+					for (let j = 0; j < w; j++) acc += row[j]! * src[j]![i]!;
+					dest[o]![i]! += acc * lv;
 				}
 			}
 			return;

@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { installAudioFxProcessors } from '@jasper/audio-fx';
 import {
+	type Animatable,
 	buildRenderSnapshot,
 	type ClipReader,
 	FLICKS_PER_SECOND,
@@ -130,6 +131,78 @@ function scene(kind: 'track' | 'clip'): Case {
 		data.set(c.clipId, [noise(10 + i, n, amp, env), noise(20 + i, n, amp, env)]);
 	});
 	return { snapshot, data, results };
+}
+
+/** A keyframe (bezier with Premiere's default ease-in / ease-out influence, or linear). */
+function key(time: number, value: number, interpolation: 'bezier' | 'linear' = 'bezier') {
+	const ease = { influence: 1 / 3, slope: 0 };
+	return { id: `k${time}_${value}`, time, value, interpolation, easeIn: ease, easeOut: ease };
+}
+const lane = (...keys: ReturnType<typeof key>[]): Animatable<number> => ({ value: keys[0]!.value, keyframes: keys });
+
+/**
+ * Sound design Phase 6: whooshes panned by fast sweeps (the placement's keyframed whoosh pans, and pan automation in
+ * general). A1 (mono track): the strip's pan −100 → +100 in 0.4 s, back to −60; A2: the clip's own pan keyframes
+ * (content time) and a post-fader send into the 5.1 submix S1 with A2's 5.1 puck sweeping; A3: output into S1 with its
+ * puck sweeping (x, y, centre); S1 (5.1) → the stereo Mix, its own pan sweeping (balance after the fold).
+ */
+function panScene(): Case {
+	const h = new Harness();
+	const media = [0, 1, 2].map(() => h.registerVideo({ kind: 'audio', seconds: 4 }));
+	while (h.seq.audioTracks.length < 3) h.ok([{ type: 'track.add', kind: 'audio' }]);
+	h.ok(
+		media.map((m, i) => ({
+			type: 'clip.place',
+			source: { mediaId: m },
+			at: OFF,
+			tracks: { audio: `A${i + 1}` },
+		})),
+	);
+	h.ok([{ type: 'mixer.addSubmix' }]);
+	const s1 = h.seq.submixTracks![0]!.id;
+	h.ok([
+		{ type: 'mixer.updateStrip', stripId: 'A1', patch: { channelFormat: 'mono' } },
+		{ type: 'mixer.updateStrip', stripId: 'S1', patch: { channelFormat: '5.1' } },
+		{ type: 'mixer.updateStrip', stripId: 'A3', patch: { output: 'S1' } },
+		{ type: 'mixer.addSend', stripId: 'A2', target: s1, preFader: false, levelDb: -3 },
+	]);
+	const snapshot = buildRenderSnapshot(h.doc, h.seqId, {
+		resolveMedia: (a) => ({
+			url: a.id,
+			proxyUrl: null,
+			kind: a.kind,
+			width: null,
+			height: null,
+			durationFlicks: a.probe.durationFlicks,
+			hasAudio: true,
+			rotation: 0,
+		}),
+		resolveFont: () => null,
+	});
+	const mix = snapshot.audioMix!;
+	const strip = (l: string) => mix.strips.find((s) => s.label === l)!;
+	const sec = (x: number) => Math.round(x * S);
+	strip('A1').pan = lane(key(sec(0.25), -100), key(sec(0.65), 100), key(sec(0.9), -60, 'linear'));
+	const a2 = strip('A2');
+	a2.pan51.x = lane(key(sec(0.4), -100), key(sec(0.8), 100));
+	a2.pan51.y = lane(key(sec(0.4), 100, 'linear'), key(sec(0.8), -100, 'linear'));
+	const a3 = strip('A3');
+	a3.pan51.x = lane(key(sec(0.2), 100), key(sec(0.7), -100));
+	a3.pan51.y = lane(key(sec(0.3), -100), key(sec(0.6), 60));
+	a3.pan51.center = lane(key(sec(0.2), 0, 'linear'), key(sec(0.8), 100, 'linear'));
+	strip('S1').pan = lane(key(sec(0.5), 80), key(sec(0.75), -80));
+	// A2's clip: its own pan, content time (the clip starts at frame OFF with sourceIn 0)
+	const clip2 = snapshot.audioClips.find((c) => c.trackId === a2.id)!;
+	clip2.pan = lane(key(sec(0.1), -100), key(sec(0.4), 100), key(sec(0.6), 0));
+	const data = new Map<string, number[][]>();
+	snapshot.audioClips.forEach((c, i) => {
+		const [s0, s1end] = spanOf(c, snapshot.settings.fps, SR);
+		const n = Math.min(s1end - s0, LEN);
+		// a whoosh: noise under a 0.9 s sin² swell
+		const env = (k: number) => Math.sin(Math.min(1, k / (0.9 * SR)) * Math.PI) ** 2;
+		data.set(c.clipId, [noise(30 + i, n, 0.3, env), noise(40 + i, n, 0.3, env)]);
+	});
+	return { snapshot, data, results: [] };
 }
 
 function reader(data: Map<string, number[][]>) {
@@ -287,5 +360,21 @@ describe.runIf(!!CHROME)(
 				expect(regions.build.worst).toBeLessThan(1e-4);
 				expect(regions.after.worst).toBeLessThan(1e-4);
 			});
+
+		it('pan sweeps: strip pan, clip pan, the 5.1 puck of a track and of a send, a 5.1 submix pan', async () => {
+			const c = panScene();
+			const e = await exported(c);
+			const p = await preview(c);
+			const all = worst(p.channels, e, 0, LEN);
+			const sweep = worst(p.channels, e, 0.2 * SR, 0.95 * SR);
+			console.log(JSON.stringify({ pan: { all, sweep, latency: p.latency } }));
+			expect(all.peak).toBeGreaterThan(0.1);
+			// Measured 1.8e-5. Before (pan, puck and send pans set once per picture frame with the 8 ms glide; the export's
+			// puck held for 32 samples): 0.34. Fixed on the way: a curve started right after a set glided from the param's
+			// stale value (1.1e-2), cancelling the ramp in progress made Chrome play one frame at the previous point's value
+			// (7.5e-4), and the 5.1 panner's square-root centre gain needs one-sample pieces at x = 0 (4.6e-4).
+			expect(sweep.worst).toBeLessThan(1e-4);
+			expect(all.worst).toBeLessThan(1e-4);
+		});
 	},
 );
