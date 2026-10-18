@@ -1213,6 +1213,19 @@ density. The personality adds ±0.15 and the palette material +0.08 to the ranki
 - the stop ramp ends on the downbeat;
 - hostile inputs (no beats, steady tone, 1 s clip) are refused with typed errors.
 
+*As built (WP-E7, decisions and measurements in the wp-note "Phase 6 → WP-E7")*: the route's anchors are `{sourceSeconds,
+outputSeconds}` (seconds from the analysed range and from the remix's start; the editor and MCP convert the hero frame);
+`fit: 'nearest'` plans the nearest length a bar-line plan reaches (the editor and MCP use it when no length is given:
+the clip moves by at most half a bar, never over the next clip); a landed drop is recorded on the remix
+(`ClipRemix.anchors`) and lands again when the clip is remixed to another length; every remix's joints sit 5 ms before
+each beat's measured attack and its crossfades end at the joint (`end-at-cut`, ≥ 30 ms); MCP also has
+`fit_music_to_picture {mode: land-drop | end-on-bar}` and the editor Clip ▸ Audio Options ▸ Land Drop on Playhead / Hero
+Cue and End on Bar (a music clip ends just before a downbeat, faded over a beat); a stop moves onto the bar inside
+0.1–0.5 s before the hit (earshot's stop-down norm) or the cue's own window; tuning goes to the nearest scale note (≤ 1 st
+in a diatonic scale; ties to the more stable note), a tuned run climbs the scale, alternatives are tuned on their own
+pitch. The Phase 4 fixture's "music" is pink noise (no beat: Remix refuses it), so the clean-joint check ran on the
+remix test music and the drop track.
+
 **P6-E12 (P2). Ambience and room-tone beds.** We place one-shots but cannot lay a bed: one ambience per location, cut
 with the picture, looped without an audible seam.
 
