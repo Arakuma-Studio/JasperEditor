@@ -14,9 +14,17 @@ import { loadavg } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { arm, disarm, mark, peaks, type Recording, TAP } from './sound-tap.ts';
-import { createProject, enableAgentBridge, focusTimeline, query, ROOT, transact } from './support.ts';
+import {
+	browserLaunch,
+	createProject,
+	enableAgentBridge,
+	focusTimeline,
+	query,
+	ROOT,
+	transact,
+} from './support.ts';
 
-test.use({ launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] } });
+test.use({ launchOptions: browserLaunch(['--autoplay-policy=no-user-gesture-required']) });
 
 let page: Page;
 const outDir = join(ROOT, 'test-results', 'e2e-sound-p6-transport');

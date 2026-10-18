@@ -15,6 +15,7 @@ const baseURL = `http://127.0.0.1:${port}`;
 process.env.E2E_TOKEN ??= randomBytes(24).toString('base64url');
 process.env.E2E_EDITOR_KEY ??= randomBytes(24).toString('base64url');
 const token = process.env.E2E_TOKEN;
+const browserExecutable = process.env.JASPER_BROWSER_EXECUTABLE || undefined;
 const editorKey = process.env.E2E_EDITOR_KEY;
 const cookie = (name: string, value: string) => ({
 	name: `${name}_${port}`,
@@ -43,10 +44,11 @@ export default defineConfig({
 			cookies: [cookie('jasper_session', token), cookie('jasper_editor', editorKey)],
 			origins: [],
 		},
-		// The system Chrome (ARCHITECTURE D-16). `E2E_BROWSER_CHANNEL=chromium` takes Playwright's own Chrome for Testing
-		// instead, where the system Chrome is older than what the specs exercise (HTML-in-Canvas: Chrome 148+); give the
-		// engine's renders the same browser with JASPER_BROWSER_EXECUTABLE.
-		channel: process.env.E2E_BROWSER_CHANNEL || 'chrome',
+		// The system Chrome (ARCHITECTURE D-16), or JASPER_BROWSER_EXECUTABLE: the same variable gives the engine's
+		// renders and the GL unit tests their browser, so one run uses one Chrome (e.g. a Chrome for Testing build where
+		// the system Chrome is older than what the specs exercise: HTML-in-Canvas needs Chrome 148+). Specs that need
+		// flags take theirs from `browserLaunch` (e2e/support.ts), which keeps this executable.
+		...(browserExecutable ? { launchOptions: { executablePath: browserExecutable } } : { channel: 'chrome' }),
 		headless: true,
 		viewport: { width: 1600, height: 1000 },
 		acceptDownloads: true,

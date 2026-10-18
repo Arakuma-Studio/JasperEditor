@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
+	browserLaunch,
 	clipBox,
 	clipElement,
 	createProject,
@@ -24,7 +25,7 @@ import {
 	transact,
 } from './support.ts';
 
-test.use({ launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] } });
+test.use({ launchOptions: browserLaunch(['--autoplay-policy=no-user-gesture-required']) });
 test.describe.configure({ mode: 'serial' });
 
 const outDir = join(ROOT, 'test-results', 'e2e-sound-fill');

@@ -1,5 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import {
+	browserLaunch,
 	createProject,
 	enableAgentBridge,
 	expectTransaction,
@@ -10,9 +11,10 @@ import {
 } from './support.ts';
 
 test.use({
-	launchOptions: {
-		args: ['--enable-features=CanvasDrawElement', '--autoplay-policy=no-user-gesture-required'],
-	},
+	launchOptions: browserLaunch([
+		'--enable-features=CanvasDrawElement',
+		'--autoplay-policy=no-user-gesture-required',
+	]),
 });
 test.describe.configure({ mode: 'serial' });
 

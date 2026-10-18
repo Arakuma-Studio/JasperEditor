@@ -18,14 +18,19 @@ const PAGE = `<!doctype html><html><body style="margin:0">
 
 /** Captures the host after drawing both canvases (one asked for a low-latency context) once the host has painted. */
 const probe = async () => {
-	const host = document.getElementById('host') as HTMLCanvasElement & { requestPaint(): void };
-	const ctx = host.getContext('2d') as CanvasRenderingContext2D & {
-		drawElementImage(e: Element, x: number, y: number): void;
+	const host = document.getElementById('host') as HTMLCanvasElement & {
+		requestPaint(): void;
+		captureElementImage?(e: Element): unknown;
 	};
+	const ctx = host.getContext('2d') as CanvasRenderingContext2D & {
+		drawElementImage(e: unknown, x: number, y: number): void;
+	};
+	const root = document.getElementById('root')!;
 	let last: number[][] = [];
 	host.addEventListener('paint', () => {
 		ctx.clearRect(0, 0, 200, 100);
-		ctx.drawElementImage(document.getElementById('root')!, 0, 0);
+		// Remotion's HtmlInCanvas draws a captured ElementImage (newer Chrome draws nothing for the element itself)
+		ctx.drawElementImage(host.captureElementImage ? host.captureElementImage(root) : root, 0, 0);
 		last = [50, 150].map((x) => Array.from(ctx.getImageData(x, 50, 1, 1).data));
 	});
 	const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -46,6 +51,13 @@ const probe = async () => {
 	return last;
 };
 
+/** HTML-in-Canvas (`requestPaint`, `drawElementImage`): Chrome 148+ with CanvasDrawElement, as Remotion checks it. */
+const htmlInCanvas = () => {
+	const c = document.createElement('canvas') as HTMLCanvasElement & { requestPaint?: unknown };
+	const d = c.getContext('2d') as unknown as { drawElementImage?: unknown } | null;
+	return typeof c.requestPaint === 'function' && typeof d?.drawElementImage === 'function';
+};
+
 describe.runIf(run)('HTML-in-Canvas capture of video canvases', () => {
 	let browser: Browser;
 	beforeAll(async () => {
@@ -59,30 +71,38 @@ describe.runIf(run)('HTML-in-Canvas capture of video canvases', () => {
 		await browser?.close();
 	});
 
-	it('a low-latency canvas is not captured after the first paint without the shim; it is with it', async (ctx) => {
-		const page = await browser.newPage();
-		await page.setContent(PAGE);
-		// HTML-in-Canvas (`requestPaint`, `drawElementImage`) ships in Chrome 148+ behind CanvasDrawElement (Remotion's
-		// `HtmlInCanvas.isSupported` checks the same); an older Chrome (the build server's 142) has nothing to capture with,
-		// so the Player never takes this path there.
-		const supported = await page.evaluate(() => {
-			const c = document.createElement('canvas') as HTMLCanvasElement & { requestPaint?: unknown };
-			const d = c.getContext('2d') as unknown as { drawElementImage?: unknown } | null;
-			return typeof c.requestPaint === 'function' && typeof d?.drawElementImage === 'function';
-		});
-		ctx.skip(!supported, `Chrome ${browser.version()} has no HTML-in-Canvas (Chrome 148+)`);
-		const before = await page.evaluate(probe);
-		expect(before[1]).toEqual([255, 0, 255, 255]);
-		// The browser behaviour the shim works around (if a Chrome update fixes it, this half may start to fail: the
-		// shim is then harmless and the expectation can go).
-		expect(before[0]![3]).toBe(0);
-
+	// The shim's guarantee: with it, a canvas that asked for a low-latency context is captured like any other. An older
+	// Chrome (the build server's 142) has no HTML-in-Canvas to capture with, so the Player never takes this path there.
+	it('with the shim a low-latency canvas is captured after the first paint', async (ctx) => {
 		const fixed = await browser.newPage();
 		await fixed.setContent(PAGE);
+		ctx.skip(
+			!(await fixed.evaluate(htmlInCanvas)),
+			`Chrome ${browser.version()} has no HTML-in-Canvas (148+)`,
+		);
 		await fixed.evaluate(`(${installCaptureSafeCanvases.toString()})()`);
 		const after = await fixed.evaluate(probe);
 		expect(after[0]).toEqual([0, 255, 0, 255]);
 		expect(after[1]).toEqual([255, 0, 255, 255]);
+	}, 60_000);
+
+	// The browser behaviour the shim works around, kept visible (Chrome 150, where it was written, misses the draw).
+	// Where this Chrome captures the low-latency canvas anyway, this is skipped with what it saw: the shim is then
+	// harmless, and once no supported Chrome needs it the shim and this test can go.
+	it('without the shim a low-latency canvas is not captured after the first paint (where this Chrome misses it)', async (ctx) => {
+		const page = await browser.newPage();
+		await page.setContent(PAGE);
+		ctx.skip(
+			!(await page.evaluate(htmlInCanvas)),
+			`Chrome ${browser.version()} has no HTML-in-Canvas (148+)`,
+		);
+		const before = await page.evaluate(probe);
+		expect(before[1]).toEqual([255, 0, 255, 255]);
+		ctx.skip(
+			before[0]![3] !== 0,
+			`Chrome ${browser.version()} captures the low-latency canvas (${JSON.stringify(before[0])})`,
+		);
+		expect(before[0]![3]).toBe(0);
 	}, 60_000);
 
 	it('is idempotent and leaves other context types alone', async () => {

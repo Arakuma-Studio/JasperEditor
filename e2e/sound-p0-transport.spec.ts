@@ -24,6 +24,7 @@ import {
 	timeOf,
 } from './sound-tap.ts';
 import {
+	browserLaunch,
 	clipBox,
 	clips,
 	createProject,
@@ -35,7 +36,7 @@ import {
 	transact,
 } from './support.ts';
 
-test.use({ launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] } });
+test.use({ launchOptions: browserLaunch(['--autoplay-policy=no-user-gesture-required']) });
 // Each test measures on its own: a failing one restarts the worker, and the next test sets its project up again.
 
 let page: Page;

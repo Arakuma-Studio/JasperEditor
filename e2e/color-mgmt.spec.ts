@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import {
+	browserLaunch,
 	clips,
 	createProject,
 	enableAgentBridge,
@@ -19,7 +20,7 @@ import {
 	waitForJob,
 } from './support.ts';
 
-test.use({ launchOptions: { args: ['--enable-features=CanvasDrawElement'] } });
+test.use({ launchOptions: browserLaunch(['--enable-features=CanvasDrawElement']) });
 test.describe.configure({ mode: 'serial' });
 
 let page: Page;

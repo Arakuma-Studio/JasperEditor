@@ -13,6 +13,7 @@ import { FIXTURE_COMMANDS } from '../apps/mcp/test/sound-cues-fixture.ts';
 import { ATTEMPTS, arm, disarm, disturbances, mark, peaks, requireUndisturbed, TAP } from './sound-tap.ts';
 import {
 	appliedLabels,
+	browserLaunch,
 	clipBox,
 	createProject,
 	enableAgentBridge,
@@ -23,7 +24,7 @@ import {
 	transact,
 } from './support.ts';
 
-test.use({ launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] } });
+test.use({ launchOptions: browserLaunch(['--autoplay-policy=no-user-gesture-required']) });
 test.describe.configure({ mode: 'serial' });
 
 const outDir = join(ROOT, 'test-results', 'e2e-sound-proposal-ghosts');

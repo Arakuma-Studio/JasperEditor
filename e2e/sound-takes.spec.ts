@@ -7,9 +7,17 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { appliedLabels, createProject, enableAgentBridge, query, ROOT, waitForJob } from './support.ts';
+import {
+	appliedLabels,
+	browserLaunch,
+	createProject,
+	enableAgentBridge,
+	query,
+	ROOT,
+	waitForJob,
+} from './support.ts';
 
-test.use({ launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] } });
+test.use({ launchOptions: browserLaunch(['--autoplay-policy=no-user-gesture-required']) });
 test.describe.configure({ mode: 'serial' });
 
 const outDir = join(ROOT, 'test-results', 'e2e-sound-takes');

@@ -12,6 +12,7 @@ import { type APIRequestContext, expect, type Page, test } from '@playwright/tes
 import { FIXTURE_COMMANDS } from '../apps/mcp/test/sound-cues-fixture.ts';
 import {
 	appliedLabels,
+	browserLaunch,
 	clipBox,
 	clipElement,
 	enableAgentBridge,
@@ -22,7 +23,7 @@ import {
 	transact,
 } from './support.ts';
 
-test.use({ launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] } });
+test.use({ launchOptions: browserLaunch(['--autoplay-policy=no-user-gesture-required']) });
 test.describe.configure({ mode: 'serial' });
 
 const outDir = join(ROOT, 'test-results', 'e2e-sound-mix');

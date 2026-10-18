@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { ATTEMPTS, arm, disarm, disturbances, mark, peaks, requireUndisturbed, TAP } from './sound-tap.ts';
 import {
+	browserLaunch,
 	clipBox,
 	clips,
 	createProject,
@@ -21,7 +22,7 @@ import {
 	transact,
 } from './support.ts';
 
-test.use({ launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] } });
+test.use({ launchOptions: browserLaunch(['--autoplay-policy=no-user-gesture-required']) });
 test.describe.configure({ mode: 'serial' });
 
 let page: Page;

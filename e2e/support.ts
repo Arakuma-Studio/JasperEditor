@@ -2,7 +2,13 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type APIRequestContext, expect, type Locator, type Page } from '@playwright/test';
+import {
+	type APIRequestContext,
+	expect,
+	type LaunchOptions,
+	type Locator,
+	type Page,
+} from '@playwright/test';
 import type { JasperAgentApi } from '../apps/web/src/agent-bridge/types.ts';
 import { type ExportResult, ExportResultSchema } from '../packages/api/src/exports.ts';
 import {
@@ -19,6 +25,14 @@ declare global {
 	}
 }
 
+/**
+ * `launchOptions` for a spec that needs browser flags: the flags with the run's browser. A spec's `launchOptions`
+ * replaces the config's whole object, so this keeps JASPER_BROWSER_EXECUTABLE (playwright.config.ts) when it is set.
+ */
+export function browserLaunch(args: string[]): LaunchOptions {
+	const executablePath = process.env.JASPER_BROWSER_EXECUTABLE || undefined;
+	return { ...(executablePath ? { executablePath } : {}), args };
+}
 export const ROOT = fileURLToPath(new URL('..', import.meta.url));
 export const FIXTURES = join(ROOT, 'fixtures', 'media');
 

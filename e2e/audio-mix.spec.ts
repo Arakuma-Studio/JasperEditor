@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import {
+	browserLaunch,
 	clipBox,
 	clips,
 	createProject,
@@ -17,13 +18,11 @@ import {
 } from './support.ts';
 
 test.use({
-	launchOptions: {
-		args: [
-			'--use-fake-device-for-media-stream',
-			'--use-fake-ui-for-media-stream',
-			'--autoplay-policy=no-user-gesture-required',
-		],
-	},
+	launchOptions: browserLaunch([
+		'--use-fake-device-for-media-stream',
+		'--use-fake-ui-for-media-stream',
+		'--autoplay-policy=no-user-gesture-required',
+	]),
 	permissions: ['microphone'],
 });
 test.describe.configure({ mode: 'serial' });
