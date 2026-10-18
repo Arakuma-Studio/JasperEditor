@@ -12,6 +12,7 @@ export * from './analysis/edges.ts';
 export * from './analysis/events.ts';
 export * from './analysis/harshness.ts';
 export * from './analysis/key.ts';
+export * from './analysis/loop-window.ts';
 export * from './analysis/masking.ts';
 export * from './analysis/remix.ts';
 export * from './analysis/sound-descriptors.ts';
