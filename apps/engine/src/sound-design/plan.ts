@@ -1691,10 +1691,11 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 		if (inexact.length)
 			warnings.push({
 				code: 'W_SOUND_INEXACT',
-				message: `${inexact.length === 1 ? 'A sound is' : `${inexact.length} sounds are`} used as ${inexact.length === 1 ? 'it is' : 'they are'}, not as a sample-exact copy (${inexact
-					.slice(0, 3)
-					.map((r) => `"${r!.library.title}"`)
-					.join(', ')}${inexact.length > 3 ? '…' : ''}): ${inexact[0]!.inexact!.message}`.slice(0, 1000),
+				message:
+					`${inexact.length === 1 ? 'A sound is' : `${inexact.length} sounds are`} used as ${inexact.length === 1 ? 'it is' : 'they are'}, not as a sample-exact copy (${inexact
+						.slice(0, 3)
+						.map((r) => `"${r!.library.title}"`)
+						.join(', ')}${inexact.length > 3 ? '…' : ''}): ${inexact[0]!.inexact!.message}`.slice(0, 1000),
 			});
 	}
 	lap('register');

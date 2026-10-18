@@ -38,7 +38,8 @@ export default async function audioFxRoutes(app: FastifyInstance): Promise<void>
 			if (body.cachedOnly) {
 				const { cachedOnly: _c, ...req } = body;
 				const hit = await beats.cached(req);
-				if (!hit) throw new HttpError(404, 'BEATS_NOT_ANALYSED', 'The beats of this range are not analysed yet');
+				if (!hit)
+					throw new HttpError(404, 'BEATS_NOT_ANALYSED', 'The beats of this range are not analysed yet');
 				return hit;
 			}
 			// stops when the client goes away (the response's 'close'; test/route-client-gone.test.ts)

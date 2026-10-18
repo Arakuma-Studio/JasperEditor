@@ -590,7 +590,9 @@ describe('Essential Sound ▸ Stop before next / Build (the linked cue)', () => 
 		expect(stop()).toBeUndefined();
 		// not analysed yet (the engine's 404): the plain 0.25 s
 		client.audioBeats = vi.fn(async () => {
-			throw Object.assign(new Error('The beats of this range are not analysed yet'), { code: 'BEATS_NOT_ANALYSED' });
+			throw Object.assign(new Error('The beats of this range are not analysed yet'), {
+				code: 'BEATS_NOT_ANALYSED',
+			});
 		});
 		await act(async () => {
 			fireEvent.click(box());

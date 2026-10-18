@@ -51,8 +51,15 @@ const ENGINE: { code: string; message: string; params: ExportWarningParams }[] =
 	},
 	{
 		code: 'OUTPUT_CONTAINER_CHANGED',
-		message: 'MP4 was requested but MP4 does not carry ProRes (MP4 takes H.264, HEVC, AV1, VP9): the file is MOV',
-		params: { requested: 'MP4', written: 'MOV', why: 'codec', codec: 'ProRes', accepts: 'H.264, HEVC, AV1, VP9' },
+		message:
+			'MP4 was requested but MP4 does not carry ProRes (MP4 takes H.264, HEVC, AV1, VP9): the file is MOV',
+		params: {
+			requested: 'MP4',
+			written: 'MOV',
+			why: 'codec',
+			codec: 'ProRes',
+			accepts: 'H.264, HEVC, AV1, VP9',
+		},
 	},
 	{
 		code: 'OUTPUT_CONTAINER_CHANGED',
@@ -96,15 +103,23 @@ describe('export warnings in the UI language', () => {
 
 	it('falls back to the engine’s message: an unknown code, no params, malformed params', () => {
 		__setCatalogForTests('es', es);
-		expect(exportWarningText({ code: 'W_SOMETHING_NEW', message: 'New thing', params: { a: 1 } })).toBe('New thing');
+		expect(exportWarningText({ code: 'W_SOMETHING_NEW', message: 'New thing', params: { a: 1 } })).toBe(
+			'New thing',
+		);
 		expect(exportWarningText({ code: 'W_SOUND_CREDITS', message: 'Old engine' })).toBe('Old engine');
 		expect(
 			exportWarningText({ code: 'W_SOUND_CREDITS', message: 'Bad', params: { count: 'two', licences: 3 } }),
 		).toBe('Bad');
 		expect(
-			exportWarningText({ code: 'AUDIO_CODEC_CHANGED', message: 'Bad', params: { requested: 'PCM', why: 'x' } }),
+			exportWarningText({
+				code: 'AUDIO_CODEC_CHANGED',
+				message: 'Bad',
+				params: { requested: 'PCM', why: 'x' },
+			}),
 		).toBe('Bad');
-		expect(exportWarningText({ code: 'W_SOUND_CHECK_STALE', message: 'Bad', params: { state: 'odd' } })).toBe('Bad');
+		expect(exportWarningText({ code: 'W_SOUND_CHECK_STALE', message: 'Bad', params: { state: 'odd' } })).toBe(
+			'Bad',
+		);
 	});
 
 	it('the Export dialog’s plan summary and the finished-export notice say them in Spanish', () => {
@@ -130,7 +145,10 @@ describe('export warnings in the UI language', () => {
 		const li = screen.getByTestId('plan-warnings').querySelector(`[data-code="${w.code}"]`)!;
 		expect(li.textContent).toContain(exportWarningText(w));
 		expect(li.textContent).not.toContain(w.message);
-		const detail = exportResultDetail({ credits: { name: 'output.credits.md', count: 2 }, warnings: [w, ENGINE[4]] })!;
+		const detail = exportResultDetail({
+			credits: { name: 'output.credits.md', count: 2 },
+			warnings: [w, ENGINE[4]],
+		})!;
 		expect(detail).toContain(exportWarningText(w));
 		expect(detail).toContain(exportWarningText(ENGINE[4]!));
 		expect(detail).not.toContain('Sound credits file written');

@@ -107,7 +107,9 @@ describe('a sound registered as it is', () => {
 		cleanup();
 		// an exact sound has no such line
 		const ok = soundEntry({ title: 'Tick' });
-		const r2 = await insertLibrarySound(session, { registerSound: async () => registered(ok) }, ok, { at: 90 });
+		const r2 = await insertLibrarySound(session, { registerSound: async () => registered(ok) }, ok, {
+			at: 90,
+		});
 		const clip2 = session.getCommitted().sequences[seqId]!.clips[r2.clipId]!;
 		render(
 			<SessionProvider session={session}>

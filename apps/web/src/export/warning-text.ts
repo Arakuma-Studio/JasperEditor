@@ -11,7 +11,8 @@ import { t } from '../i18n/runtime.ts';
 
 type Warning = { code: string; message: string; params?: ExportWarningParams | undefined };
 
-const str = (p: ExportWarningParams, k: string): string | null => (typeof p[k] === 'string' ? (p[k] as string) : null);
+const str = (p: ExportWarningParams, k: string): string | null =>
+	typeof p[k] === 'string' ? (p[k] as string) : null;
 const num = (p: ExportWarningParams, k: string): number | null =>
 	typeof p[k] === 'number' && Number.isFinite(p[k]) ? (p[k] as number) : null;
 
@@ -82,7 +83,10 @@ function checkText(p: ExportWarningParams): string | null {
 		return t('The last Sound Check of this sequence failed: review its findings before delivering');
 	return errors === 1
 		? t('The last Sound Check of this sequence failed (1 error): review its findings before delivering')
-		: t('The last Sound Check of this sequence failed ({0} errors): review its findings before delivering', errors);
+		: t(
+				'The last Sound Check of this sequence failed ({0} errors): review its findings before delivering',
+				errors,
+			);
 }
 
 function formatText(code: string, p: ExportWarningParams): string | null {
@@ -106,14 +110,27 @@ function formatText(code: string, p: ExportWarningParams): string | null {
 				written,
 			);
 		if (p.why === 'muxer' && codec)
-			return t('{0} was requested but {1} is written as {2} here: the file is {2}', requested, codec, written);
+			return t(
+				'{0} was requested but {1} is written as {2} here: the file is {2}',
+				requested,
+				codec,
+				written,
+			);
 		return null;
 	}
 	const container = str(p, 'container');
 	if (p.why === 'prores')
-		return t('{0} audio was requested but ProRes masters carry PCM audio: the audio is {1}', requested, written);
+		return t(
+			'{0} audio was requested but ProRes masters carry PCM audio: the audio is {1}',
+			requested,
+			written,
+		);
 	if (p.why === 'no-opus')
-		return t('{0} audio was requested but this ffmpeg build has no Opus encoder: the audio is {1}', requested, written);
+		return t(
+			'{0} audio was requested but this ffmpeg build has no Opus encoder: the audio is {1}',
+			requested,
+			written,
+		);
 	if (p.why === 'container' && container)
 		return requested === 'PCM'
 			? t(
@@ -129,7 +146,12 @@ function formatText(code: string, p: ExportWarningParams): string | null {
 						container,
 						written,
 					)
-				: t('{0} audio was requested but {1} does not carry {0} audio: the audio is {2}', requested, container, written);
+				: t(
+						'{0} audio was requested but {1} does not carry {0} audio: the audio is {2}',
+						requested,
+						container,
+						written,
+					);
 	return null;
 }
 

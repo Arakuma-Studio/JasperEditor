@@ -112,7 +112,11 @@ export function soundPlanWarnings(
 	try {
 		const st = soundCheckStatus(doc, sequenceId);
 		if (st.state === 'stale') {
-			const reason = st.reasons.includes('mix') ? 'mix' : st.reasons.includes('preset') ? 'preset' : 'settings';
+			const reason = st.reasons.includes('mix')
+				? 'mix'
+				: st.reasons.includes('preset')
+					? 'preset'
+					: 'settings';
 			const why =
 				reason === 'mix'
 					? 'the mix changed'

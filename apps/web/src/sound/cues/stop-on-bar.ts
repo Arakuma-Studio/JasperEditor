@@ -5,10 +5,10 @@
 // the plain 0.25 s. Nothing is analysed here: the engine answers from its cache only (`cachedOnly`).
 import type { EngineClient } from '@jasper/engine-client';
 import {
-	cachedMusicGrid,
 	type Command,
-	musicClips,
+	cachedMusicGrid,
 	type MusicGrid,
+	musicClips,
 	type ProjectDocument,
 	type Sequence,
 	STOP_BEFORE_DEFAULT,
@@ -35,7 +35,9 @@ export async function analysedMusicGrid(
 	seq: Sequence,
 ): Promise<MusicGrid[]> {
 	if (!engine || !mayStopOnBar(engine, doc, seq)) return [];
-	return cachedMusicGrid(doc, seq, (req) => engine.audioBeats({ ...req, cachedOnly: true }).catch(() => null));
+	return cachedMusicGrid(doc, seq, (req) =>
+		engine.audioBeats({ ...req, cachedOnly: true }).catch(() => null),
+	);
 }
 
 /**

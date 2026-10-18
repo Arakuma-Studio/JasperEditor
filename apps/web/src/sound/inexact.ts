@@ -56,7 +56,10 @@ export function inexactDetail(x: Inexact): string {
  * naming them, with the first one's reason.
  */
 export function noticeInexactSounds(
-	sounds: readonly { entry: { id: string; title?: string }; reg: Pick<RegisterSoundResponse, 'inexact' | 'library'> }[],
+	sounds: readonly {
+		entry: { id: string; title?: string };
+		reg: Pick<RegisterSoundResponse, 'inexact' | 'library'>;
+	}[],
 	toast: typeof uiToast = uiToast,
 ): void {
 	const seen = new Set<string>();

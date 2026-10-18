@@ -180,7 +180,10 @@ export type ExportSettings = z.infer<typeof ExportSettingsSchema>;
  * - `AUDIO_CODEC_CHANGED`: `requested`, `written` (AAC | Opus | PCM), `container`, `why` (`prores` | `container` |
  *   `no-opus`).
  */
-export const ExportWarningParamsSchema = z.record(z.string().max(64), z.union([z.string().max(2000), z.number(), z.boolean()]));
+export const ExportWarningParamsSchema = z.record(
+	z.string().max(64),
+	z.union([z.string().max(2000), z.number(), z.boolean()]),
+);
 export type ExportWarningParams = z.infer<typeof ExportWarningParamsSchema>;
 
 export const RenderPlanSchema = z.object({

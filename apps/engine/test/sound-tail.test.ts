@@ -437,7 +437,9 @@ describe('Sound Check finds cut tails in existing projects and fixes them safely
 			frame: 30,
 			measured: { reason: 'too-large' },
 		});
-		expect(found[0]!.message.key).toMatch(/^\{0\} at \{1\} is not sample-exact: its sample-exact copy would have been too large/);
+		expect(found[0]!.message.key).toMatch(
+			/^\{0\} at \{1\} is not sample-exact: its sample-exact copy would have been too large/,
+		);
 		expect(found[0]!.message.text).toContain('tick 20');
 		expect(found[0]!.fix).toBeUndefined();
 		// the per-event table names it on its row

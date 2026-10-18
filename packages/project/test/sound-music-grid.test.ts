@@ -49,7 +49,11 @@ describe('the music grid and the stop on the bar line', () => {
 		// media 3.2 s … its last frame at 13.2 s − 1/30 → 2 … 14.5 s (±1 s, outward to half seconds)
 		expect(c!.mediaStartSec).toBeCloseTo(3.2, 6);
 		expect(c!.mediaEndSec).toBeCloseTo(13.2 - 1 / 30, 6);
-		expect(musicBeatRequest('mk_1', c!)).toEqual({ mediaKey: 'mk_1', startSeconds: 2, durationSeconds: 12.5 });
+		expect(musicBeatRequest('mk_1', c!)).toEqual({
+			mediaKey: 'mk_1',
+			startSeconds: 2,
+			durationSeconds: 12.5,
+		});
 		expect(musicBeatRequest('mk_1', c!, 3).timeSignature).toBe(3);
 		expect(musicBeatRequest('mk_1', c!, 'auto')).not.toHaveProperty('timeSignature');
 	});
@@ -89,9 +93,14 @@ describe('the music grid and the stop on the bar line', () => {
 		expect(on.on).toBe('downbeat');
 		expect(on.stopBefore.seconds).toBeCloseTo(0.4, 9);
 		expect(on.stopBefore.depthDb).toBe(STOP_BEFORE_DEFAULT.depthDb);
-		expect(stopBeforeFor(h.seq as Sequence, 90, [])).toEqual({ stopBefore: { ...STOP_BEFORE_DEFAULT }, on: null });
+		expect(stopBeforeFor(h.seq as Sequence, 90, [])).toEqual({
+			stopBefore: { ...STOP_BEFORE_DEFAULT },
+			on: null,
+		});
 		// explicit seconds are the window (as the plan treats a cue's own stop): 0.3 s holds no downbeat here
-		expect(stopBeforeFor(h.seq as Sequence, 90, g, { seconds: 0.3, depthDb: -18 }, { explicit: true })).toEqual({
+		expect(
+			stopBeforeFor(h.seq as Sequence, 90, g, { seconds: 0.3, depthDb: -18 }, { explicit: true }),
+		).toEqual({
 			stopBefore: { seconds: 0.3, depthDb: -18 },
 			on: null,
 		});
