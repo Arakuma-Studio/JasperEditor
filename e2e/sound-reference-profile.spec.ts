@@ -161,7 +161,9 @@ test('build a reference profile from project media, compare the sequence in Soun
 	// Profiles are the engine's, not the project's: a repeat in the same server (--repeat-each) meets what an earlier
 	// run left if it failed before deleting its own, so this run counts from what is there and names its profile apart.
 	const profiles = section.locator('[data-sound-profile]');
-	await expect(section.getByTestId('sound-profiles-empty').or(profiles.first())).toBeVisible({ timeout: 60_000 });
+	await expect(section.getByTestId('sound-profiles-empty').or(profiles.first())).toBeVisible({
+		timeout: 60_000,
+	});
 	const earlier = await profiles.count();
 	if (earlier === 0) await expect(section.getByTestId('sound-profiles-empty')).toBeVisible();
 	const repeat = test.info().repeatEachIndex;

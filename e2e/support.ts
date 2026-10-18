@@ -279,14 +279,12 @@ export async function expectNotCoveredByToasts(page: Page, target: Locator): Pro
 	expect(box).not.toBeNull();
 	// One snapshot of every toast and notice: one that expires between two reads must not leave a read waiting for
 	// it (a per-toast `innerText()` after its `boundingBox()` waited for a dismissed toast until the test timed out).
-	const shown = await page
-		.locator('[data-testid="toast"], [data-testid="notice"]')
-		.evaluateAll((els) =>
-			els.map((e) => {
-				const r = e.getBoundingClientRect();
-				return { x: r.x, y: r.y, width: r.width, height: r.height, text: (e as HTMLElement).innerText };
-			}),
-		);
+	const shown = await page.locator('[data-testid="toast"], [data-testid="notice"]').evaluateAll((els) =>
+		els.map((e) => {
+			const r = e.getBoundingClientRect();
+			return { x: r.x, y: r.y, width: r.width, height: r.height, text: (e as HTMLElement).innerText };
+		}),
+	);
 	for (const r of shown) {
 		if (r.width <= 0 || r.height <= 0) continue;
 		const overlaps =

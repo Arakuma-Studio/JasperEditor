@@ -675,7 +675,7 @@ test('many paused seeks + Play: every play starts on its first sample, nothing f
 		const expected = rec.armed + W + (next - pos);
 		// the program fades in over START_FADE (30 ms) from its start: a click that soon after the play position is
 		// heard that much softer (0.707 at full level)
-		const level = 0.7071 * Math.min(1, Math.max(0, (next - pos) / 0.03));
+		const level = Math.SQRT1_2 * Math.min(1, Math.max(0, (next - pos) / 0.03));
 		const cs = clicks(rec, 0.02);
 		const late = lateStarts(rec, rec.armed, expected + 0.3);
 		const first = cs[0];

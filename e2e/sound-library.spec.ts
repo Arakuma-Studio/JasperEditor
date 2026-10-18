@@ -408,7 +408,9 @@ test('Preferences ▸ Sound Library adds a user folder with its licence; its sou
 	await folders.filter({ hasText: dir }).getByRole('button', { name: 'Remove' }).click();
 	await prefs.getByTestId('sound-prefs-folders').getByRole('button', { name: 'Save Folders' }).click();
 	await expect(folders).toHaveCount(foldersBefore, { timeout: 30_000 });
-	await expect(prefs.getByTestId('sound-prefs-folders').getByRole('button', { name: 'Save Folders' })).toBeDisabled({
+	await expect(
+		prefs.getByTestId('sound-prefs-folders').getByRole('button', { name: 'Save Folders' }),
+	).toBeDisabled({
 		timeout: 30_000,
 	});
 	await page.keyboard.press('Escape');
