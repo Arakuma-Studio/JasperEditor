@@ -20,6 +20,7 @@ import {
 	SOUND_DESIGN_LIMITS,
 } from '@jasper/project';
 import { z } from 'zod';
+import { SoundCheckReferenceSchema, SoundProfileIdSchema } from './sound-profile.ts';
 
 const frame = z.number().int().min(0).max(SOUND_DESIGN_LIMITS.maxFrame);
 const id = z.string().min(1).max(128);
@@ -77,6 +78,12 @@ export const SoundCheckRequestSchema = z
 			.optional(),
 		/** With `proposalId`: the items to check (default every item left to review; what they require comes with them). */
 		itemIds: z.array(z.string().min(1).max(64)).min(1).max(2000).optional(),
+		/**
+		 * Compare with this reference profile (spec 12 §4 P6-E8; `list_sound_profiles`): `report.reference` and findings of
+		 * code REFERENCE (warnings and infos). Default the sequence's (`soundDesign.setSettings {referenceProfile}`); null:
+		 * no comparison.
+		 */
+		profileId: SoundProfileIdSchema.nullable().optional(),
 	})
 	.refine((r) => !(r.proposalId && r.store), {
 		message: 'A proposal check never stores its summary: leave out store',
@@ -193,6 +200,8 @@ export const SoundCheckIssueSchema = z.object({
 	/** The measured numbers behind it (offsetMs, liftDb, underLu…). */
 	measured: z.record(z.string(), z.union([z.number(), z.string(), z.boolean(), z.null()])).optional(),
 	fix: SoundCheckFixSchema.optional(),
+	/** What to do, in words with timecodes, where no command fix applies (the Reference rows, P6-E8). */
+	advice: z.array(SoundCheckMessageSchema).max(8).optional(),
 	/**
 	 * The sequence's acknowledgement of this finding (P6-E4; its key is `id`): `active` — left out of the verdict and the
 	 * safe fixes; else reported again, `why`: `changed` (what it is about changed since: "acknowledged before the
@@ -361,6 +370,11 @@ export const SoundCheckReportSchema = z.object({
 	acknowledgements: z
 		.object({ count: z.number().int().min(0), unmatched: z.array(SoundCheckUnmatchedAckSchema).max(500) })
 		.optional(),
+	/**
+	 * The comparison with a reference profile (P6-E8): one row per metric. Absent without a profile (or when the
+	 * sequence's profile is not in the library any more: `warnings` says so).
+	 */
+	reference: SoundCheckReferenceSchema.optional(),
 });
 export type SoundCheckReport = z.infer<typeof SoundCheckReportSchema>;
 

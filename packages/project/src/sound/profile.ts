@@ -381,7 +381,13 @@ export const REFERENCE_METRIC_KEYS = Object.keys(REFERENCE_METRICS) as Reference
 export const REFERENCE_CHANCE_KEYS = ['cuts_with_sound', 'cut_frame_sync'] as const;
 export type ReferenceChanceKey = (typeof REFERENCE_CHANCE_KEYS)[number];
 /** Loudness-shape metrics: n.a. for references and sequences under `shortSec` (they would measure a clip, not a piece). */
-export const REFERENCE_SHAPE_KEYS: readonly ReferenceMetricKey[] = ['lra', 'crest_lu', 'intro_lu', 'end_lu', 'final_lu'];
+export const REFERENCE_SHAPE_KEYS: readonly ReferenceMetricKey[] = [
+	'lra',
+	'crest_lu',
+	'intro_lu',
+	'end_lu',
+	'final_lu',
+];
 /** A mono mix (identical channels) counts as this stereo width (dB; earshot). */
 export const REFERENCE_MONO_DB = -40;
 /** Points of the loudness arc (0 %, 10 % … 100 %). */
@@ -523,7 +529,9 @@ export function metricStats(values: readonly (number | null | undefined)[]): Met
 }
 
 /** Every metric key with its value (absent or invalid → null). */
-export function metricValuesOf(raw: Partial<Record<string, unknown>> | null | undefined): ReferenceMetricValues {
+export function metricValuesOf(
+	raw: Partial<Record<string, unknown>> | null | undefined,
+): ReferenceMetricValues {
 	const out = {} as ReferenceMetricValues;
 	for (const k of REFERENCE_METRIC_KEYS) {
 		const v = raw?.[k];
@@ -552,10 +560,7 @@ export function aggregateReferences(
 	const arcs = refs.map((r) => r.arc).filter((a): a is (number | null)[] => Array.isArray(a));
 	const arcQ = (p: number) =>
 		Array.from({ length: REFERENCE_ARC_POINTS }, (_, i) => {
-			const v = percentileOf(
-				arcs.map((a) => a[i]).filter(fin),
-				p,
-			);
+			const v = percentileOf(arcs.map((a) => a[i]).filter(fin), p);
 			return v === null ? null : Math.round(v * 10) / 10;
 		});
 	return {
@@ -609,7 +614,12 @@ export function buildReferenceProfile(p: {
 		createdAt: p.createdAt,
 		updatedAt: p.updatedAt ?? p.createdAt,
 		...aggregateReferences(refs),
-		references: refs.map((r) => structuredClone(r)),
+		references: refs.map((r) => ({
+			...r,
+			metrics: { ...r.metrics },
+			chance: { ...r.chance },
+			arc: r.arc ? [...r.arc] : null,
+		})),
 		warnings: (p.warnings ?? []).slice(0, REFERENCE_PROFILE_LIMITS.warnings).map((w) => w.slice(0, 400)),
 	};
 }
@@ -711,7 +721,7 @@ export function referenceWindow(
 	stats: MetricStats | undefined,
 ): { lo: number | null; hi: number | null; basis: ReferenceRowBasis } {
 	const spec: MetricSpec = REFERENCE_METRICS[key];
-	if (!stats || !stats.n || stats.min === null || stats.max === null)
+	if (!stats?.n || stats.min === null || stats.max === null)
 		return { lo: null, hi: null, basis: 'no reference data' };
 	let lo: number | null = r3(stats.min - spec.tolerance);
 	const hi = r3(stats.max + spec.tolerance);
@@ -858,51 +868,64 @@ export const REFERENCE_MESSAGES = {
 	high: '{0} is high: {1}, the references {2} … {3} (median {4})',
 	lowOpen: '{0} is low: {1}, the references at least {2} (median {3})',
 	highOpen: '{0} is high: {1}, the references at most {2} (median {3})',
-	looNote: 'This sequence is reference {0} of the profile: it is judged against the other {1} (leave-one-out).',
+	looNote:
+		'This sequence is reference {0} of the profile: it is judged against the other {1} (leave-one-out).',
 	missing: 'The reference profile {0} is not in the sound library any more: no Reference comparison.',
 	lraHigh:
 		'The loudness swings {0} LU: the quietest stretch is around {1}, the loudest around {2}; lift the quiet parts or bring the loud ones down so the body holds.',
-	lraLow: 'The level hardly moves ({0} LU): give the piece sections, a calmer passage and a lift into the main moment.',
+	lraLow:
+		'The level hardly moves ({0} LU): give the piece sections, a calmer passage and a lift into the main moment.',
 	crestHigh: 'The loudest 3 s (around {0}) stand {1} LU over the whole: lift the body or tame that moment.',
 	crestLow: 'Nothing stands out ({0} LU over the whole): let the main moment rise 2–3 LU over the body.',
-	introLow: 'The opening ({0}) sits {1} LU under the body: start closer to full level or shorten the build-up.',
+	introLow:
+		'The opening ({0}) sits {1} LU under the body: start closer to full level or shorten the build-up.',
 	introHigh: 'The opening ({0}) is {1} LU louder than the body: bring it down or lift the body.',
-	endLow: 'The closing ({0}) sits {1} LU under the body: keep the energy up into the end and finish on a hit.',
+	endLow:
+		'The closing ({0}) sits {1} LU under the body: keep the energy up into the end and finish on a hit.',
 	endHigh: 'The closing ({0}) is {1} LU louder than the body: bring it down or lift the body.',
-	firstSoundHigh: 'Nothing reaches the body’s level until {0}: start the music, an ambience or a riser at the start.',
+	firstSoundHigh:
+		'Nothing reaches the body’s level until {0}: start the music, an ambience or a riser at the start.',
 	gapHigh:
 		'Silent holes inside: {0}; keep a music bed or room tone under them, or make each a deliberate stop-down that ends on a hit.',
 	endSilenceHigh:
 		'{0} s of dead air after the sound ends at {1}: trim the picture there or let the last sound ring out to the end.',
 	fadeHigh: 'A {0} s fade-out: end on a hit with a short ring-out, or cut on the last picture cut.',
 	fadeLow: 'The end is cut hard: let the last sound ring out briefly.',
-	finalLow: 'The final moment sits {0} LU under the body: end on a hit at the last cut ({1}) instead of fading away.',
+	finalLow:
+		'The final moment sits {0} LU under the body: end on a hit at the last cut ({1}) instead of fading away.',
 	finalLowNoCut: 'The final moment sits {0} LU under the body: end on a hit instead of fading away.',
 	finalHigh: 'The final hit is {0} LU over the body: pull it down 2–3 dB.',
 	onsetLow: 'Sparse ({0} onsets/s): add sounds on the on-screen actions, or use music with more drive.',
 	onsetHigh: 'Busy ({0} onsets/s): thin out the sound effects and keep accents for the important moments.',
 	hitLow: 'Few salient hits ({0}/s): add impacts or accents on the key moments.',
 	hitLowAt: 'Few salient hits ({0}/s): add impacts or accents on the key moments, e.g. the cuts at {1}.',
-	hitHigh: 'Too many salient hits ({0}/s): keep the biggest for the main moments and lower the rest by 3–6 dB.',
+	hitHigh:
+		'Too many salient hits ({0}/s): keep the biggest for the main moments and lower the rest by 3–6 dB.',
 	cutsLow:
 		'{0} of {1} picture events have no onset within 100 ms (chance {2}); no sound at all at {3}: add a whoosh into the cut, a hit or a click there.',
 	cutsLowThrough:
 		'{0} of {1} picture events have no onset within 100 ms (chance {2}): sound plays through them but nothing starts; add an accent on the ones that matter.',
 	subLow: 'Thin bottom: add a sub layer under the main moments, or pick music with real low end.',
-	subHigh: 'Too much 20–60 Hz rumble eats headroom: high-pass sound effects and ambience at 30–40 Hz, cut the music’s sub 2–4 dB.',
+	subHigh:
+		'Too much 20–60 Hz rumble eats headroom: high-pass sound effects and ambience at 30–40 Hz, cut the music’s sub 2–4 dB.',
 	lowLow: 'Weak low end: the music has no body; choose a fuller track or add a low layer.',
 	lowHigh: 'Boomy: cut 100–200 Hz on the music and on heavy sound effects by 2–3 dB.',
 	lowmidLow: 'Hollow: the 250 Hz–1 kHz body is scooped; lift it on the music or use fuller recordings.',
 	lowmidHigh: 'Muddy or boxy: cut 300–500 Hz on the music and on roomy sound effects by 2–3 dB.',
-	midLow: 'Recessed mids: clicks and the voice will not cut through small speakers; lift 1–3 kHz on effects or voice.',
+	midLow:
+		'Recessed mids: clicks and the voice will not cut through small speakers; lift 1–3 kHz on effects or voice.',
 	midHigh: 'Honky or harsh mids: cut 1–3 kHz on the loudest layer by 2 dB.',
-	presenceLow: 'Dull: transients, clicks and typing lack bite; brighten the effects or use brighter recordings.',
+	presenceLow:
+		'Dull: transients, clicks and typing lack bite; brighten the effects or use brighter recordings.',
 	presenceHigh: 'Harsh or sibilant: cut 5–7 kHz or de-ess the brightest layer.',
 	airLow: 'No air: it sounds muffled or low-bitrate; use full-band recordings (44.1 or 48 kHz, no low-pass).',
 	airHigh: 'Hissy or fizzy: low-pass or de-noise the noisiest layer.',
-	stereoLow: 'Nearly mono (side {0} dB under mid): use stereo music and ambience, pan sound effects with the motion.',
-	stereoMono: 'The mix is mono (identical channels): use stereo music and ambience, pan sound effects with the motion.',
-	stereoHigh: 'Very wide (side {0} dB against mid): check the mono fold-down, narrow wide ambiences and reverbs.',
+	stereoLow:
+		'Nearly mono (side {0} dB under mid): use stereo music and ambience, pan sound effects with the motion.',
+	stereoMono:
+		'The mix is mono (identical channels): use stereo music and ambience, pan sound effects with the motion.',
+	stereoHigh:
+		'Very wide (side {0} dB against mid): check the mono fold-down, narrow wide ambiences and reverbs.',
 } as const;
 export type ReferenceMessageKey = keyof typeof REFERENCE_MESSAGES;
 
@@ -916,7 +939,10 @@ export const REFERENCE_MODEL_STRINGS: readonly string[] = [
 
 export type ReferenceMessage = { key: string; params: (string | number)[]; text: string };
 
-export function referenceMessage(key: ReferenceMessageKey, ...params: readonly (string | number)[]): ReferenceMessage {
+export function referenceMessage(
+	key: ReferenceMessageKey,
+	...params: readonly (string | number)[]
+): ReferenceMessage {
 	const template: string = REFERENCE_MESSAGES[key];
 	const text = template.replace(/\{(\d+)\}/g, (m, i: string) =>
 		Number(i) < params.length ? String(params[Number(i)]) : m,
@@ -929,7 +955,8 @@ export function referenceRowMessage(row: ReferenceRow): ReferenceMessage {
 	const v = (x: number | null | undefined) => referenceValueText(row.metric, x);
 	const [lo, hi] = row.range;
 	const low = row.status === 'low';
-	if (lo !== null && hi !== null) return referenceMessage(low ? 'low' : 'high', row.label, v(row.value), v(lo), v(hi), v(row.median));
+	if (lo !== null && hi !== null)
+		return referenceMessage(low ? 'low' : 'high', row.label, v(row.value), v(lo), v(hi), v(row.median));
 	if (low) return referenceMessage('lowOpen', row.label, v(row.value), v(lo), v(row.median));
 	return referenceMessage('highOpen', row.label, v(row.value), v(hi), v(row.median));
 }
@@ -988,7 +1015,11 @@ export function referenceAdvice(
 					: referenceMessage('lraHigh', d1(v), ctx.quietestAt ?? '—', ctx.loudestAt ?? '—'),
 			];
 		case 'crest_lu':
-			return [low ? referenceMessage('crestLow', d1(v)) : referenceMessage('crestHigh', ctx.loudestAt ?? '—', d1(v))];
+			return [
+				low
+					? referenceMessage('crestLow', d1(v))
+					: referenceMessage('crestHigh', ctx.loudestAt ?? '—', d1(v)),
+			];
 		case 'intro_lu':
 			return [referenceMessage(low ? 'introLow' : 'introHigh', ctx.openingSpan ?? '—', d1(Math.abs(v)))];
 		case 'end_lu':
@@ -996,7 +1027,9 @@ export function referenceAdvice(
 		case 'first_sound_s':
 			return low ? [] : [referenceMessage('firstSoundHigh', ctx.firstSoundAt ?? `${d2(v)} s`)];
 		case 'max_gap_s':
-			return low ? [] : [referenceMessage('gapHigh', ctx.gaps?.length ? timecodeList(ctx.gaps, 6) : `${d2(v)} s`)];
+			return low
+				? []
+				: [referenceMessage('gapHigh', ctx.gaps?.length ? timecodeList(ctx.gaps, 6) : `${d2(v)} s`)];
 		case 'end_silence_s':
 			return low ? [] : [referenceMessage('endSilenceHigh', d1(v), ctx.soundEndsAt ?? '—')];
 		case 'fade_s':

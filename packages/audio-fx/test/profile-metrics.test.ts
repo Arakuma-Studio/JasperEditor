@@ -7,7 +7,7 @@ import { REFERENCE_METRIC_KEYS, REFERENCE_MONO_DB } from '@jasper/project';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { Prng } from '../src/core/util.ts';
-import { type ProfilePicture, type ProfileResult, ProfileMeter } from '../src/index.ts';
+import { ProfileMeter, type ProfilePicture, type ProfileResult } from '../src/index.ts';
 
 const SR = 48_000;
 
@@ -174,7 +174,12 @@ describe('ProfileMeter known answers (spec 12 P6-E8)', () => {
 		expect(on.events.picture.silentSec).toEqual([]);
 		// the clicks 300 ms after the cuts: none answered
 		const off = measure(
-			[clicks(20, cuts.map((t) => t + 0.3))],
+			[
+				clicks(
+					20,
+					cuts.map((t) => t + 0.3),
+				),
+			],
 			4800,
 			{ timesSec: cuts, fps: 25 },
 		);
@@ -198,7 +203,10 @@ describe('ProfileMeter known answers (spec 12 P6-E8)', () => {
 	});
 
 	it('is independent of the block size', () => {
-		const x = concat(clicks(6, [0.5, 1.7, 3.1]), pink(sec(6), 10).map((v) => v * 0.1));
+		const x = concat(
+			clicks(6, [0.5, 1.7, 3.1]),
+			pink(sec(6), 10).map((v) => v * 0.1),
+		);
 		const cuts = { timesSec: [0.5, 1.7, 3.1, 8], fps: 30 };
 		const a = measure([x, x.map((v) => v * 0.5)], 997, cuts);
 		const b = measure([x, x.map((v) => v * 0.5)], 48_000, cuts);
@@ -218,7 +226,13 @@ describe('ProfileMeter known answers (spec 12 P6-E8)', () => {
 	it('hostile input never throws and every metric is finite or null', () => {
 		fc.assert(
 			fc.property(
-				fc.oneof(fc.constant(Number.NaN), fc.constant(0), fc.constant(-5), fc.constant(1e12), fc.integer({ min: 1, max: 200_000 })),
+				fc.oneof(
+					fc.constant(Number.NaN),
+					fc.constant(0),
+					fc.constant(-5),
+					fc.constant(1e12),
+					fc.integer({ min: 1, max: 200_000 }),
+				),
 				fc.integer({ min: 0, max: 9 }),
 				fc.array(
 					fc.oneof(

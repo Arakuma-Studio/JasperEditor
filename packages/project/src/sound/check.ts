@@ -49,6 +49,7 @@ export const SOUND_CHECK_CODES = [
 	'REPEAT',
 	'LICENSE',
 	'CREDITS',
+	'REFERENCE',
 ] as const;
 export type SoundCheckCode = (typeof SOUND_CHECK_CODES)[number];
 export const SOUND_CHECK_SEVERITIES = ['error', 'warning', 'info'] as const;
@@ -57,7 +58,8 @@ export const SOUND_CHECK_VERDICTS = ['pass', 'warn', 'fail'] as const;
 export type SoundCheckVerdict = (typeof SOUND_CHECK_VERDICTS)[number];
 /**
  * Groups of the Sound Check panel (spec 12 §2.7 "issues grouped by category"). `edges` (clicks, cut edges, the mix's
- * own start and end) and `tonal` (harshness) are the P6-E review lenses of the same names (spec 12 §4 P6-E5).
+ * own start and end) and `tonal` (harshness) are the P6-E review lenses of the same names (spec 12 §4 P6-E5);
+ * `reference` holds the rows of a reference-profile comparison (P6-E8, code REFERENCE: warnings and infos only).
  */
 export const SOUND_CHECK_CATEGORIES = [
 	'loudness',
@@ -67,6 +69,7 @@ export const SOUND_CHECK_CATEGORIES = [
 	'tonal',
 	'cues',
 	'licence',
+	'reference',
 ] as const;
 export type SoundCheckCategory = (typeof SOUND_CHECK_CATEGORIES)[number];
 export const SOUND_CHECK_CATEGORY: Readonly<Record<SoundCheckCode, SoundCheckCategory>> = {
@@ -93,6 +96,7 @@ export const SOUND_CHECK_CATEGORY: Readonly<Record<SoundCheckCode, SoundCheckCat
 	REPEAT: 'cues',
 	LICENSE: 'licence',
 	CREDITS: 'licence',
+	REFERENCE: 'reference',
 };
 
 /**

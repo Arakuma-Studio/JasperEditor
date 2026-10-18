@@ -20,6 +20,10 @@
 //                                 events attributed to their clips and cues, sections, sync with chance levels, lines.
 //   POST /api/sound-design/motion a `motion-analysis` job (202): the picture rendered small and measured per frame
 //                                 (sound-design/motion.ts), cached by the picture's fingerprint.
+//   GET|POST /api/sound-design/profiles, GET|DELETE …/profiles/:profileId, PUT …/:profileId/name, POST …/import
+//                                 reference sound profiles (P6-E8, sound-design/profile.ts): the per-user library under
+//                                 `<appdir>/sounds/profiles`, the `sound-profile` job, rename, delete (an agent's request
+//                                 asks the user: their data) and import of a profile file.
 // The cue route also runs the engine's cue sources (scene, beat, pixel: sound-design/engine-cues.ts) when asked; what is
 // still being analysed comes back as `W_ANALYSIS_PENDING` with the job ids, never silently left out.
 
@@ -39,6 +43,10 @@ import {
 	SoundDeliveryRequestSchema,
 	SoundDesignPlanRequestSchema,
 	SoundListenRequestSchema,
+	SoundProfileBuildRequestSchema,
+	SoundProfileImportRequestSchema,
+	SoundProfileRenameRequestSchema,
+	type SoundProfilesResponse,
 	SoundVisualRequestSchema,
 } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
@@ -63,8 +71,9 @@ import {
 } from '@jasper/project';
 import type { FastifyInstance } from 'fastify';
 import type { AgentService } from '../agent/service.ts';
-import { agentNameOf } from '../agent/user-approval.ts';
+import { agentNameOf, requireUserApproval } from '../agent/user-approval.ts';
 import type { BeatService } from '../audio/beats.ts';
+import { isLoopbackHost } from '../context.ts';
 import { isProjectId } from '../projects/store.ts';
 import type { ProposalService } from '../proposals/service.ts';
 import { runSoundCheck } from '../sound-design/check.ts';
@@ -82,6 +91,12 @@ import {
 	runSoundDesignPlan,
 	unknownCueIds,
 } from '../sound-design/plan.ts';
+import {
+	importedProfile,
+	profileSummaryOf,
+	runSoundProfileJob,
+	SoundProfileStore,
+} from '../sound-design/profile.ts';
 import { RebalanceInputError, rebalanceTargets, runRebalance } from '../sound-design/rebalance.ts';
 import { SoundCheckReportStore } from '../sound-design/report-store.ts';
 import { soundVisual, VisualInputError, visualRange } from '../sound-design/visual.ts';
@@ -193,6 +208,25 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 		offStore();
 		offLeases();
 	});
+	// Reference sound profiles (P6-E8): the per-user library and its job.
+	const soundsDir = app.jasper.config.paths.soundsDir;
+	const profiles = new SoundProfileStore(join(soundsDir, 'profiles'), (m) => app.log.warn(m));
+	services.soundProfiles = profiles;
+	const localMode = core.config.dev || isLoopbackHost(core.config.host);
+	const profilesChanged = (id: string, change: 'created' | 'imported' | 'renamed' | 'deleted') =>
+		core.broadcaster.publish('soundProfiles.changed', { id, change });
+	core.queue.registerRunner('sound-profile', async (ctx) => {
+		const out = await runSoundProfileJob(ctx, {
+			store: profiles,
+			ffmpeg: core.ffmpeg,
+			registry: core.registry,
+			agent: agentOf,
+			framesDir: join(soundsDir, 'analysis', 'frametimes'),
+		});
+		profilesChanged(out.profile.id, 'created');
+		return out;
+	});
+
 	core.queue.registerRunner('sound-check', async (ctx) => {
 		const proposalCheck = !!(ctx.input as { request?: { proposalId?: unknown } } | null)?.request?.proposalId;
 		const result: SoundCheckResult = await (proposalCheck ? runProposalCheckJob : runSoundCheck)(ctx, {
@@ -204,6 +238,7 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 			registries: defaultRegistries(mgRegistry),
 			mgTemplates: mgRegistry,
 			proposals: proposalsOf,
+			profiles: () => profiles,
 			keptReport: async (pid, sequenceId) => {
 				const r = await reports.get(pid, sequenceId);
 				return r ? { result: r.result, jobId: r.jobId } : null;
@@ -257,6 +292,108 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 				input: { request: { ...body, sequenceId: seq.id } },
 				stage: 'Waiting',
 			});
+		}),
+	);
+
+	type ProfileP = { Params: { profileId: string } };
+	const profileOr404 = async (id: string) => {
+		const p = await profiles.get(String(id));
+		if (!p)
+			throw new HttpError(404, 'SOUND_PROFILE_NOT_FOUND', `No reference profile ${String(id).slice(0, 40)}`);
+		return p;
+	};
+	app.get(
+		'/api/sound-design/profiles',
+		guarded(async () => {
+			const { profiles: list, unreadable } = await profiles.list();
+			const out: SoundProfilesResponse = {
+				profiles: list.map(profileSummaryOf),
+				unreadable,
+				paths: localMode,
+			};
+			return out;
+		}),
+	);
+	app.get<ProfileP>(
+		'/api/sound-design/profiles/:profileId',
+		guarded<ProfileP>(async (req) => profileOr404(req.params.profileId)),
+	);
+	app.post(
+		'/api/sound-design/profiles',
+		guarded(async (req, reply) => {
+			const body = parseOr400(SoundProfileBuildRequestSchema, req.body ?? {});
+			if (body.paths?.length && !localMode)
+				throw new HttpError(
+					403,
+					'PATHS_NOT_ALLOWED',
+					'This engine is not local: choose project media or sequences as references',
+				);
+			if (body.projectId) {
+				if (!isProjectId(body.projectId)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
+				const agent = agentOf();
+				if (!agent) throw new HttpError(503, 'NOT_AVAILABLE', 'The sound design services are not running');
+				if (!(await agent.projectExists(body.projectId)))
+					throw new HttpError(404, 'PROJECT_NOT_FOUND', `Project not found: ${body.projectId}`);
+				// refused at once rather than as skipped references: ids the project does not have
+				const { doc } = await liveDocument(agent, body.projectId);
+				for (const id of body.mediaIds ?? [])
+					if (!Object.hasOwn(doc.media ?? {}, id))
+						throw new HttpError(404, 'MEDIA_NOT_FOUND', `Media not found: ${id.slice(0, 64)}`);
+				for (const id of body.sequenceIds ?? [])
+					if (!Object.hasOwn(doc.sequences ?? {}, id))
+						throw new HttpError(404, 'SEQUENCE_NOT_FOUND', `Sequence not found: ${id.slice(0, 64)}`);
+			}
+			const n = (body.mediaIds?.length ?? 0) + (body.sequenceIds?.length ?? 0) + (body.paths?.length ?? 0);
+			const editor = req.jasperEditor === true;
+			reply.code(202);
+			return core.queue.submit({
+				kind: 'sound-profile',
+				title: `Reference profile “${body.name.slice(0, 60)}” (${n} reference${n === 1 ? '' : 's'})`,
+				priority: 'user',
+				cpuSlots: 2,
+				minSlots: 1,
+				origin: editor ? { type: 'user' } : { type: 'agent', agentRunId: agentNameOf(req) },
+				...(body.projectId ? { projectId: body.projectId } : {}),
+				input: { request: body, local: localMode },
+				stage: 'Waiting',
+			});
+		}),
+	);
+	app.put<ProfileP>(
+		'/api/sound-design/profiles/:profileId/name',
+		guarded<ProfileP>(async (req) => {
+			const body = parseOr400(SoundProfileRenameRequestSchema, req.body ?? {});
+			await profileOr404(req.params.profileId);
+			const p = await profiles.rename(req.params.profileId, body.name);
+			profilesChanged(p.id, 'renamed');
+			return profileSummaryOf(p);
+		}),
+	);
+	app.delete<ProfileP>(
+		'/api/sound-design/profiles/:profileId',
+		guarded<ProfileP>(async (req) => {
+			const p = await profileOr404(req.params.profileId);
+			// the user's data: an agent asks first (security review AGT-3, like removing a sound pack)
+			await requireUserApproval(app, req, {
+				label: 'Delete a reference profile',
+				summary: `delete the reference profile "${p.name.slice(0, 120)}" (${p.n} reference${p.n === 1 ? '' : 's'}) from this computer's sound library`,
+				reasons: [
+					'it was measured from your own reference media; building it again needs them again',
+					'sequences that compare with it lose the Reference rows until another profile is chosen',
+				],
+			});
+			await profiles.remove(p.id);
+			profilesChanged(p.id, 'deleted');
+			return { deleted: true as const, id: p.id };
+		}),
+	);
+	app.post(
+		'/api/sound-design/profiles/import',
+		guarded(async (req) => {
+			const body = parseOr400(SoundProfileImportRequestSchema, req.body ?? {});
+			const p = await profiles.save(importedProfile(body.profile, body.name));
+			profilesChanged(p.id, 'imported');
+			return profileSummaryOf(p);
 		}),
 	);
 

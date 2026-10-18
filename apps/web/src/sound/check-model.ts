@@ -45,7 +45,8 @@ export type CheckVerdict = SoundCheckReport['verdict'];
 
 /**
  * Category order of the results list (what a user fixes first: timing, then clicks and cut edges, delivery, the mix,
- * its tone…). `edges` and `tonal` are the Phase 6 review lenses (spec 12 §4 P6-E1…E3).
+ * its tone…). `edges` and `tonal` are the Phase 6 review lenses (spec 12 §4 P6-E1…E3); `reference` (P6-E8) holds
+ * the comparison with a reference profile, a style rather than a defect: last.
  */
 export const CATEGORY_ORDER: readonly CheckCategory[] = [
 	'sync',
@@ -55,6 +56,7 @@ export const CATEGORY_ORDER: readonly CheckCategory[] = [
 	'tonal',
 	'cues',
 	'licence',
+	'reference',
 ];
 export const CATEGORY_LABELS: Record<CheckCategory, string> = {
 	sync: 'Sync',
@@ -64,6 +66,7 @@ export const CATEGORY_LABELS: Record<CheckCategory, string> = {
 	tonal: 'Tone',
 	cues: 'Cues',
 	licence: 'Licence',
+	reference: 'Reference',
 };
 export const SEVERITY_LABELS: Record<CheckSeverity, string> = {
 	error: 'Error',

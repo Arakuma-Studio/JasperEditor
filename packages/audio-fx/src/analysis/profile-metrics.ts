@@ -42,9 +42,9 @@ import {
 import { audioCategoryFeatures, classifyAudio } from './audio-category.ts';
 import {
 	answerPictureEvent,
+	LISTEN_SYNC,
 	type ListenEvent,
 	ListenMeter,
-	LISTEN_SYNC,
 	syncChance,
 	syncIndex,
 } from './events.ts';
@@ -232,7 +232,9 @@ export class ProfileMeter {
 		this.loud = new LoudnessMeter(sr, this.channels, { weights: defaultChannelWeights(this.channels) });
 		const maxSec = Math.min(
 			REFERENCE_PROFILE_LIMITS.maxSec,
-			fin(opts.maxSeconds ?? Number.NaN) && opts.maxSeconds! > 0 ? opts.maxSeconds! : REFERENCE_PROFILE_LIMITS.maxSec,
+			fin(opts.maxSeconds ?? Number.NaN) && opts.maxSeconds! > 0
+				? opts.maxSeconds!
+				: REFERENCE_PROFILE_LIMITS.maxSec,
 		);
 		this.listen = new ListenMeter(sr, this.channels, { maxSeconds: maxSec + 1 });
 		this.maxSamples = Math.floor(maxSec * sr);
@@ -590,7 +592,8 @@ export class ProfileMeter {
 					if (arr[mid]! < t) lo = mid + 1;
 					else hi = mid;
 				}
-				for (const j of [lo - 1, lo]) if (j >= 0 && j < arr.length && Math.abs(arr[j]! - t) <= tol + 1e-9) return true;
+				for (const j of [lo - 1, lo])
+					if (j >= 0 && j < arr.length && Math.abs(arr[j]! - t) <= tol + 1e-9) return true;
 				return false;
 			};
 			const ix = syncIndex(la.events.filter((e) => e.ms / 1000 < dur));
@@ -615,7 +618,9 @@ export class ProfileMeter {
 		if (total > 0)
 			BAND_KEYS.forEach((b, i) => {
 				const e = this.bandE[i]!;
-				v[`band_${b}` as keyof ReferenceMetricValues] = r3(e > 0 ? Math.max(-120, 10 * Math.log10(e / total)) : -120);
+				v[`band_${b}` as keyof ReferenceMetricValues] = r3(
+					e > 0 ? Math.max(-120, 10 * Math.log10(e / total)) : -120,
+				);
 			});
 		const fe = this.frameE.view();
 		if (fe.length) {
@@ -632,7 +637,8 @@ export class ProfileMeter {
 		} else {
 			const mm = (this.ll + 2 * this.lr + this.rr) / 4;
 			const ss = (this.ll - 2 * this.lr + this.rr) / 4;
-			v.side_to_mid_db = mm > 0 ? r3(Math.max(REFERENCE_MONO_DB, 10 * Math.log10(Math.max(ss, 1e-30) / mm))) : null;
+			v.side_to_mid_db =
+				mm > 0 ? r3(Math.max(REFERENCE_MONO_DB, 10 * Math.log10(Math.max(ss, 1e-30) / mm))) : null;
 			const d = Math.sqrt(this.ll * this.rr);
 			v.correlation = d > 0 ? r3(Math.max(-1, Math.min(1, this.lr / d))) : null;
 		}
@@ -735,7 +741,13 @@ function stopdowns(Lf: Float32Array, nh: number): ProfileEvents['stopdowns'] {
 			const len = (j - i) * 0.01;
 			let back = Number.NEGATIVE_INFINITY;
 			for (let q = j; q < Math.min(nh, j + P.stopReturnHops + 1); q++) back = Math.max(back, Lf[q]!);
-			if (len >= P.stopMinSec && len <= P.stopMaxSec && j < nh && back >= r - P.stopBackDb && out.length < 500)
+			if (
+				len >= P.stopMinSec &&
+				len <= P.stopMaxSec &&
+				j < nh &&
+				back >= r - P.stopBackDb &&
+				out.length < 500
+			)
 				out.push({ startSec: r3((i + 0.5) * 0.01 - 0.05), lengthSec: r3(len), depthDb: r1(r - lowest) });
 			i = j + P.stopSkipHops;
 		} else i++;
