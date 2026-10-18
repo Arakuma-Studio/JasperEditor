@@ -13,6 +13,7 @@ import {
 	type Command,
 	chooseSoundTrack,
 	nextSfxTrackName,
+	planMomentPlacement,
 	planSoundInsert,
 	type Rational,
 	resolveSoundAlign,
@@ -288,4 +289,64 @@ export async function insertLibrarySound(
 					? t('Added {0} to {1} · end at {2}', title, trackLabel, tc)
 					: t('Added {0} to {1} · start at {2}', title, trackLabel, tc),
 	};
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Find Moment (spec 12 P6-E14, WP-E9)
+
+/**
+ * Inserts a range of a library sound (a found moment) with its start at `at` (default: the playhead) as ONE undoable
+ * transaction "Add Sound Moment <title>": the media (reusing the project's copy), a new "SFX n" track when no SFX track
+ * is free over the span, and the clip with that source range. Throws `InsertSoundError` with a message for the user.
+ */
+export async function insertSoundMoment(
+	session: EditorSession,
+	engine: Pick<EngineClient, 'registerSound'>,
+	entry: Pick<SoundEntry, 'id' | 'title' | 'descriptors' | 'format' | 'types'>,
+	range: { startSec: number; endSec: number },
+	opts: { at?: number; sequenceId?: string; signal?: AbortSignal } = {},
+): Promise<{ clipId: string; trackLabel: string; message: string }> {
+	const before = session.getState();
+	if (before.readOnly) throw new InsertSoundError(t('The project is read-only'));
+	const sequenceId = opts.sequenceId ?? before.activeSequenceId;
+	if (!sequenceId || !before.document.sequences[sequenceId])
+		throw new InsertSoundError(t('Open a sequence first'));
+	const at = Math.max(0, Math.round(opts.at ?? session.transport.getState().frame));
+	let reg: RegisterSoundResponse;
+	try {
+		[{ reg }] = (await registerLibrarySounds(engine, before.document.projectId, [entry], opts.signal)) as [
+			RegisteredSound,
+		];
+	} catch (e) {
+		throw new InsertSoundError(e instanceof Error ? e.message : String(e));
+	}
+	const doc = session.getCommitted();
+	const seq = doc.sequences[sequenceId];
+	if (!seq) throw new InsertSoundError(t('The sequence was closed'));
+	const prepared = soundMediaCommands(session, doc, [{ entry, reg }]);
+	const sm = prepared.media.get(entry.id)!;
+	const plan = planMomentPlacement({
+		seq,
+		mediaRef: sm.ref,
+		startSec: range.startSec,
+		endSec: range.endSec,
+		leadSec: sm.provenance.leadSilenceSec ?? 0,
+		mediaDurationFlicks: sm.durFlicks,
+		at,
+		targeted: session.getState().views[sequenceId]?.targeting.audio ?? [],
+	});
+	if (!plan.ok) throw new InsertSoundError(plan.message);
+	const commands: Command[] = [...prepared.commands, ...(plan.placement.commands as Command[])];
+	const r = session.apply({ label: `Add Sound Moment ${sm.title}`, origin: 'user', sequenceId, commands });
+	if (!r.ok)
+		throw new InsertSoundError(r.errors.map((e) => e.message).join('; ') || t('The moment could not be added'));
+	const clipId = r.refs?.$momentClip;
+	if (!clipId) throw new InsertSoundError(t('The moment was added but its clip was not found'));
+	const after = session.getCommitted().sequences[sequenceId]!;
+	const clip = after.clips[clipId];
+	const trackLabel = clip ? `A${after.audioTracks.findIndex((x) => x.id === clip.trackId) + 1}` : plan.placement.track.label;
+	session.select('timeline', [clipId], 'replace', { primary: clipId });
+	soundLibraryPrefs.touchRecent(entry.id);
+	const tc = formatTimecode(at, after.settings.frameRate, { dropFrame: after.settings.dropFrame });
+	return { clipId, trackLabel, message: t('Added a moment of {0} to {1} at {2}', sm.title, trackLabel, tc) };
 }

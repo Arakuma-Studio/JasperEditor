@@ -7,9 +7,11 @@
 // take is a row of its own (mini waveform, audition, insert, drag); → opens and ← closes it from the keyboard.
 import {
 	offeredTakes,
+	type SoundDescribeInfo,
 	type SoundEntry,
 	type SoundFacets,
 	type SoundLibraryStatus,
+	type SoundMatch,
 	type SoundRoot,
 	takeEntryOf,
 } from '@jasper/api';
@@ -64,6 +66,7 @@ import {
 } from '../../sound/controller.ts';
 import { paletteOf } from '../../sound/design-model.ts';
 import { registerSoundDialogs, SOUND_LICENSE_DIALOG } from '../../sound/dialogs.tsx';
+import { FIND_MOMENT_MIN_SEC, SOUND_FIND_MOMENT_DIALOG } from '../../sound/FindMomentDialog.tsx';
 import { addLayerToClip, fillCueWithSound, fillTargetFor } from '../../sound/fill.ts';
 import {
 	auditionInContext,
@@ -129,6 +132,10 @@ type Results = {
 	missing: number;
 	/** Offered takes of the recordings among `items`, by id (spec 12 P6-E9). */
 	takeCounts: Record<string, number>;
+	/** P6-E14: how each sound matches the description (Describe mode with the model), by id. */
+	matches: Record<string, SoundMatch>;
+	/** P6-E14: what the engine did with the description (model or words, sounds still being prepared). */
+	describe?: SoundDescribeInfo;
 };
 
 const EMPTY_FACETS: SoundFacets = { types: {}, families: {}, licenses: {}, sources: {} };
@@ -154,6 +161,61 @@ function cachedEntry(
 
 function errorText(e: unknown): string {
 	return e instanceof Error ? e.message : String(e);
+}
+
+const verdictText = (v: SoundMatch['verdict']): string =>
+	v === 'strong' ? t('strong') : v === 'plausible' ? t('plausible') : v === 'weak' ? t('weak') : t('unclear');
+
+/** A described sound's match (P6-E14): its verdict, the z in the tooltip. */
+function MatchChip({ match }: { match: SoundMatch }) {
+	return (
+		<span
+			className={cx(
+				'shrink-0 rounded-pr-pill border px-1 text-pr-small leading-[14px]',
+				match.verdict === 'strong'
+					? 'border-pr-accent text-pr-accent'
+					: match.verdict === 'none'
+						? 'border-pr-border-subtle text-pr-dim'
+						: 'border-pr-border-strong text-pr-muted',
+			)}
+			title={t(
+				'How well it matches the description: z {0} among our reference descriptions (strong ≥ 3, plausible ≥ 2.5, weak ≥ 2). Listen before you trust it.',
+				match.z.toFixed(1),
+			)}
+			data-match-verdict={match.verdict}
+		>
+			{verdictText(match.verdict)}
+		</span>
+	);
+}
+
+/** What Describe did with the query (P6-E14): the model, the words instead, or sounds still being prepared. */
+function DescribeLine(props: { info: SoundDescribeInfo | undefined; query: string; local: boolean }) {
+	const { info } = props;
+	let text: string;
+	let warn = false;
+	if (props.local) text = t('Describe searches the whole library; this collection is searched by its words.');
+	else if (!props.query.trim())
+		text = t('Describe the sound: source, material, action and character, in English (“glass bottle shattering on concrete”).');
+	else if (!info) text = t('Searching…');
+	else if (info.mode === 'keywords') {
+		warn = true;
+		text = t(
+			'Describe-it search needs its optional model (Preferences ▸ Sound Library): searching the words instead.',
+		);
+	} else if (info.pending > 0)
+		text = t('{0} sounds are still being prepared; they are matched by their words for now.', info.pending);
+	else text = t('Ranked by what the sounds sound like ({0} sounds).', info.embedded);
+	return (
+		<p
+			className={cx('px-1 pt-0.5 text-pr-small', warn ? 'text-pr-warning' : 'text-pr-muted')}
+			role="status"
+			data-testid="sound-describe-info"
+			data-describe-mode={info?.mode}
+		>
+			{text}
+		</p>
+	);
 }
 
 export function SoundLibraryPanel(props: PanelProps) {
@@ -326,11 +388,16 @@ export function SoundLibraryPanel(props: PanelProps) {
 					indexing: !!status?.indexing,
 					missing: localIds.length - entries.length,
 					takeCounts,
+					matches: {},
 				};
 			}
 			const r = await engine.searchSounds(searchRequest(filters, { limit: PAGE, offset: 0 }), ac.signal);
 			const takeCounts: Record<string, number> = {};
-			for (const x of r.results) if (x.takeCount) takeCounts[x.sound.id] = x.takeCount;
+			const matches: Record<string, SoundMatch> = {};
+			for (const x of r.results) {
+				if (x.takeCount) takeCounts[x.sound.id] = x.takeCount;
+				if (x.match) matches[x.sound.id] = x.match;
+			}
 			return {
 				epoch,
 				filters,
@@ -341,6 +408,8 @@ export function SoundLibraryPanel(props: PanelProps) {
 				indexing: r.indexing,
 				missing: 0,
 				takeCounts,
+				matches,
+				...(r.describe ? { describe: r.describe } : {}),
 			};
 		};
 		run()
@@ -395,8 +464,12 @@ export function SoundLibraryPanel(props: PanelProps) {
 					const added = r.results.filter((x) => !seen.has(x.sound.id));
 					if (!added.length) return { ...cur, exhausted: true };
 					const takeCounts = { ...cur.takeCounts };
-					for (const x of added) if (x.takeCount) takeCounts[x.sound.id] = x.takeCount;
-					return { ...cur, items: [...cur.items, ...added.map((x) => x.sound)], takeCounts };
+					const matches = { ...cur.matches };
+					for (const x of added) {
+						if (x.takeCount) takeCounts[x.sound.id] = x.takeCount;
+						if (x.match) matches[x.sound.id] = x.match;
+					}
+					return { ...cur, items: [...cur.items, ...added.map((x) => x.sound)], takeCounts, matches };
 				});
 			})
 			// A failed page is asked again when the list scrolls (nothing re-renders, so it does not loop).
@@ -883,6 +956,14 @@ export function SoundLibraryPanel(props: PanelProps) {
 			{ type: 'item', id: 'similar', label: 'Find Similar', onSelect: () => doSimilar(e) },
 			{
 				type: 'item',
+				id: 'findMoment',
+				label: t('Find Moment…'),
+				disabled: !((e.format.durationSec || e.descriptors.durationSec) >= FIND_MOMENT_MIN_SEC),
+				disabledReason: t('The sound is too short to search inside'),
+				onSelect: () => void openDialog(SOUND_FIND_MOMENT_DIALOG, { entry: e, session }),
+			},
+			{
+				type: 'item',
 				id: 'palette',
 				label: t('Add to Palette'),
 				checked: palette.includes(e.id),
@@ -989,7 +1070,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 				<SearchField
 					ref={searchRef}
 					className="min-w-0 flex-1"
-					placeholder="Search sounds"
+					placeholder={filters.describe ? t('Describe the sound (source, material, action)') : t('Search sounds')}
 					aria-label="Search sounds"
 					data-testid="sound-search"
 					value={queryInput}
@@ -1002,6 +1083,21 @@ export function SoundLibraryPanel(props: PanelProps) {
 						}
 					}}
 				/>
+				<button
+					type="button"
+					aria-pressed={filters.describe}
+					title="Describe: search by what the sound sounds like — source, material, action and character, in English (“glass bottle shattering on concrete”). Needs the optional Describe-it search model (Preferences ▸ Sound Library); without it, its words are searched."
+					onClick={() => setFilters((f) => ({ ...f, describe: !f.describe }))}
+					className={cx(
+						'shrink-0 rounded-pr-pill border px-1.5 text-pr-small leading-[16px]',
+						filters.describe
+							? 'border-pr-accent bg-pr-accent-fill text-pr-on-accent'
+							: 'border-pr-border-subtle text-pr-muted hover:text-pr-text',
+					)}
+					data-testid="sound-describe"
+				>
+					{filters.describe ? '✓ ' : ''}Describe
+				</button>
 				<IconButton
 					icon="transport.loop"
 					label="Loop audition"
@@ -1051,6 +1147,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 					/>
 				</div>
 			</div>
+			{filters.describe ? <DescribeLine info={results?.describe} query={filters.query} local={local} /> : null}
 			{/* collection */}
 			<div className="flex items-center gap-1 px-1 pt-1">
 				<Select
@@ -1206,7 +1303,8 @@ export function SoundLibraryPanel(props: PanelProps) {
 						className="ml-auto text-pr-small text-pr-muted underline hover:text-pr-text"
 						onClick={() => {
 							setQueryInput('');
-							setFilters(DEFAULT_FILTERS);
+							// Describe stays as chosen: it is how the search box reads, not a filter
+							setFilters((f) => ({ ...DEFAULT_FILTERS, describe: f.describe }));
 						}}
 					>
 						Clear filters
@@ -1424,6 +1522,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 													</span>
 												) : null}
 											</div>
+											{results?.matches[it.id] ? <MatchChip match={results.matches[it.id]!} /> : null}
 											{takes > 0 ? (
 												<button
 													type="button"

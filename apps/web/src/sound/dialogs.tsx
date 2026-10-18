@@ -1,6 +1,7 @@
 // Sound Library dialogs (spec 12 §2.7, P1-R7/R8): Show Licence… (a library sound's licence, author, source and credit
 // line) and File ▸ Export ▸ Sound Credits… (the credits of the sounds a sequence or the project uses, as Markdown,
-// plain text or CSV, all of them or only those whose licence asks for a credit; `soundCredits` from @jasper/project).
+// plain text or CSV, all of them or only those whose licence asks for a credit; `soundCredits` from @jasper/project);
+// Find Moment… (P6-E14, FindMomentDialog.tsx).
 import type { SoundEntry } from '@jasper/api';
 import {
 	creditLine,
@@ -18,6 +19,7 @@ import { useMemo, useState } from 'react';
 import { useDialogClose } from '../extensions/dialog.ts';
 import { t } from '../i18n/runtime.ts';
 import { downloadBytes } from '../panels/text/state.ts';
+import { FindMomentDialog, SOUND_FIND_MOMENT_DIALOG } from './FindMomentDialog.tsx';
 import { LICENSE_BADGE_TITLES, sourceLine } from './model.ts';
 
 export const SOUND_LICENSE_DIALOG = 'sound.license';
@@ -29,6 +31,7 @@ export function registerSoundDialogs(): void {
 	registered = true;
 	registerDialog(SOUND_LICENSE_DIALOG, SoundLicenseDialog);
 	registerDialog(SOUND_CREDITS_DIALOG, SoundCreditsDialog);
+	registerDialog(SOUND_FIND_MOMENT_DIALOG, FindMomentDialog);
 }
 
 /** The credit line of a library sound (its verbatim attribution, else built like the credits export). */

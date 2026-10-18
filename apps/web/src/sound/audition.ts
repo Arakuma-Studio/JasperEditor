@@ -80,7 +80,18 @@ export type AuditionSound = {
 	title: string;
 	url: string;
 	format?: { durationSec?: number; channels?: number; sampleRate?: number } | null;
+	/** Only this range of it (seconds; Find Moment, P6-E14): `id` names the range, `cacheId` the whole sound. */
+	range?: { startSec: number; endSec: number };
+	cacheId?: string;
 };
+
+/** A valid range of a sound (start ≥ 0, end after it), or null. */
+function rangeOf(sound: AuditionSound): { startSec: number; durSec: number } | null {
+	const r = sound.range;
+	if (!r || !Number.isFinite(r.startSec) || !Number.isFinite(r.endSec) || r.startSec < 0 || !(r.endSec > r.startSec))
+		return null;
+	return { startSec: r.startSec, durSec: r.endSec - r.startSec };
+}
 
 const defaultDeps: AuditionDeps = {
 	createContext: () => {
@@ -143,6 +154,8 @@ export class AuditionPlayer {
 	private token = 0;
 	private abort: AbortController | null = null;
 	private gapTimer: ReturnType<typeof setTimeout> | null = null;
+	/** Ends a streamed range audition (an `<audio>` element has no stop time). */
+	private rangeTimer: ReturnType<typeof setTimeout> | null = null;
 	private meterRaf = 0;
 	private volumeDb = -6;
 	private readonly cache = new Map<string, { buffer: AudioBuffer; bytes: number }>();
@@ -168,11 +181,12 @@ export class AuditionPlayer {
 		try {
 			const ctx = this.context();
 			if (!ctx) throw new Error(t('This browser cannot play audio (no Web Audio)'));
-			let buffer = this.cache.get(sound.id)?.buffer;
+			const key = sound.cacheId ?? sound.id;
+			let buffer = this.cache.get(key)?.buffer;
 			if (buffer) {
-				const hit = this.cache.get(sound.id)!;
-				this.cache.delete(sound.id);
-				this.cache.set(sound.id, hit);
+				const hit = this.cache.get(key)!;
+				this.cache.delete(key);
+				this.cache.set(key, hit);
 			} else {
 				const estimate = decodedBytesOf(sound.format, ctx.sampleRate);
 				if (estimate === null || estimate > DECODE_MAX_BYTES) {
@@ -184,12 +198,12 @@ export class AuditionPlayer {
 				if (token !== this.token) return;
 				buffer = await ctx.decodeAudioData(bytes);
 				if (token !== this.token) return;
-				this.remember(sound.id, buffer);
+				this.remember(key, buffer);
 			}
 			if (ctx.state === 'suspended') await ctx.resume().catch(() => undefined);
 			if (token !== this.token) return;
 			this.set({ phase: 'playing' });
-			this.startSource(buffer, token);
+			this.startSource(buffer, token, rangeOf(sound));
 			this.startMeter();
 		} catch (e) {
 			this.fail(sound, token, e);
@@ -320,13 +334,33 @@ export class AuditionPlayer {
 		};
 		if (ctx.state === 'suspended') await ctx.resume().catch(() => undefined);
 		if (token !== this.token) return;
+		const range = rangeOf(sound);
+		if (range) el.currentTime = range.startSec;
 		await el.play();
 		if (token !== this.token) return;
 		this.set({ phase: 'playing' });
 		this.startMeter();
+		if (range) {
+			// the range ends by a timer (then loops from its start, or stops)
+			const arm = () => {
+				this.rangeTimer = setTimeout(() => {
+					this.rangeTimer = null;
+					if (token !== this.token || this.media?.el !== el) return;
+					if (this.state.loop) {
+						el.currentTime = range.startSec;
+						arm();
+						return;
+					}
+					this.releaseMedia();
+					this.set({ phase: 'idle', soundId: null });
+					this.stopMeter();
+				}, range.durSec * 1000);
+			};
+			arm();
+		}
 	}
 
-	private startSource(buffer: AudioBuffer, token: number): void {
+	private startSource(buffer: AudioBuffer, token: number, range: { startSec: number; durSec: number } | null = null): void {
 		const ctx = this.ctx;
 		if (!ctx || !this.gain) return;
 		const src = ctx.createBufferSource();
@@ -338,7 +372,7 @@ export class AuditionPlayer {
 			if (this.state.loop) {
 				this.gapTimer = setTimeout(() => {
 					this.gapTimer = null;
-					if (token === this.token && this.state.phase === 'playing') this.startSource(buffer, token);
+					if (token === this.token && this.state.phase === 'playing') this.startSource(buffer, token, range);
 				}, LOOP_GAP_SEC * 1000);
 				return;
 			}
@@ -346,7 +380,13 @@ export class AuditionPlayer {
 			this.stopMeter();
 		};
 		this.source = src;
-		src.start();
+		if (range)
+			src.start(
+				0,
+				Number.isFinite(buffer.duration) ? Math.min(range.startSec, buffer.duration) : range.startSec,
+				range.durSec,
+			);
+		else src.start();
 	}
 
 	private releaseMedia(): void {
@@ -374,6 +414,8 @@ export class AuditionPlayer {
 		this.abort = null;
 		if (this.gapTimer) clearTimeout(this.gapTimer);
 		this.gapTimer = null;
+		if (this.rangeTimer) clearTimeout(this.rangeTimer);
+		this.rangeTimer = null;
 		this.releaseMedia();
 		const s = this.source;
 		this.source = null;
