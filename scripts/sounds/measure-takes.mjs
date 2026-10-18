@@ -6,7 +6,7 @@
 // files whose type the judge rejected, before (the recording) and after (its best take). Stops the engine.
 //
 //   node scripts/sounds/measure-takes.mjs --appdir /tmp/x [--port 52301] [--folders /a,/b] [--packs id1,id2]
-//        [--out report.json]
+//        [--out report.json] [--full 1]
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -77,7 +77,8 @@ try {
 		if (done.result?.indexJobId) await waitJob(done.result.indexJobId);
 		console.error(`installed ${id}: ${done.result?.sounds} files`);
 	}
-	const idx = await api('POST', '/api/sounds/index', {});
+	// --full: analyse every file again (a changed analysis without a version bump, while developing)
+	const idx = await api('POST', '/api/sounds/index', 'full' in args ? { full: true } : {});
 	const indexed = await waitJob(idx.id);
 	const lib = JSON.parse(readFileSync(join(APPDIR, 'sounds', 'library.json'), 'utf8'));
 	const sounds = Object.values(lib.sounds);
