@@ -16,6 +16,7 @@ export * from './mix.ts';
 export * from './music-fit.ts';
 export * from './pitch.ts';
 export * from './place.ts';
+export * from './profile.ts';
 export * from './provenance.ts';
 export * from './rank.ts';
 export * from './sfx-clip.ts';

@@ -49,6 +49,7 @@ export const SOUND_CHECK_CODES = [
 	'REPEAT',
 	'LICENSE',
 	'CREDITS',
+	'REFERENCE',
 ] as const;
 export type SoundCheckCode = (typeof SOUND_CHECK_CODES)[number];
 export const SOUND_CHECK_SEVERITIES = ['error', 'warning', 'info'] as const;
@@ -57,7 +58,8 @@ export const SOUND_CHECK_VERDICTS = ['pass', 'warn', 'fail'] as const;
 export type SoundCheckVerdict = (typeof SOUND_CHECK_VERDICTS)[number];
 /**
  * Groups of the Sound Check panel (spec 12 §2.7 "issues grouped by category"). `edges` (clicks, cut edges, the mix's
- * own start and end) and `tonal` (harshness) are the P6-E review lenses of the same names (spec 12 §4 P6-E5).
+ * own start and end) and `tonal` (harshness) are the P6-E review lenses of the same names (spec 12 §4 P6-E5);
+ * `reference` holds the rows of a reference-profile comparison (P6-E8, code REFERENCE: warnings and infos only).
  */
 export const SOUND_CHECK_CATEGORIES = [
 	'loudness',
@@ -67,6 +69,7 @@ export const SOUND_CHECK_CATEGORIES = [
 	'tonal',
 	'cues',
 	'licence',
+	'reference',
 ] as const;
 export type SoundCheckCategory = (typeof SOUND_CHECK_CATEGORIES)[number];
 export const SOUND_CHECK_CATEGORY: Readonly<Record<SoundCheckCode, SoundCheckCategory>> = {
@@ -93,6 +96,7 @@ export const SOUND_CHECK_CATEGORY: Readonly<Record<SoundCheckCode, SoundCheckCat
 	REPEAT: 'cues',
 	LICENSE: 'licence',
 	CREDITS: 'licence',
+	REFERENCE: 'reference',
 };
 
 /**
@@ -254,6 +258,8 @@ export function soundCheckInputsHash(
 	sequenceId: string,
 	preset: SoundDelivery,
 	target?: SoundCheckTarget | null,
+	/** The reference profile the check compared with (P6-E8); default the sequence's (`settings.referenceProfile`). */
+	referenceProfile?: string | null,
 ): string {
 	try {
 		const seq = doc.sequences?.[sequenceId] as Sequence | undefined;
@@ -262,6 +268,7 @@ export function soundCheckInputsHash(
 		const loud = (seq.master as { loudness?: unknown } | undefined)?.loudness;
 		const { analysis: _a, ...loudness } = (isRecord(loud) ? loud : {}) as Record<string, unknown>;
 		const settings = soundDesignSettingsOf(seq);
+		const profile = referenceProfile === undefined ? (settings.referenceProfile ?? null) : referenceProfile;
 		return fnv1a64(
 			stable({
 				cues: sd ? Object.values(sd.cues).sort((a, b) => (a.id < b.id ? -1 : 1)) : [],
@@ -273,6 +280,8 @@ export function soundCheckInputsHash(
 				...(settings.density !== DEFAULT_SOUND_DESIGN_SETTINGS.density ? { density: settings.density } : {}),
 				// a custom target is part of what was checked (absent for a preset: hashes stored before stay valid)
 				...(target ? { target: { lufs: target.integratedLufs, tp: target.truePeakDb } } : {}),
+				// the reference profile compared with (absent without one: hashes stored before stay valid)
+				...(profile ? { referenceProfile: profile } : {}),
 			}),
 		);
 	} catch {

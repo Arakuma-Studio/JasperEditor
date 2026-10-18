@@ -14,6 +14,7 @@ export * from './analysis/harshness.ts';
 export * from './analysis/key.ts';
 export * from './analysis/loop-window.ts';
 export * from './analysis/masking.ts';
+export * from './analysis/profile-metrics.ts';
 export * from './analysis/remix.ts';
 export * from './analysis/sound-descriptors.ts';
 export * from './analysis/sound-judge.ts';

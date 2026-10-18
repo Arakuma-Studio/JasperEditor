@@ -606,6 +606,28 @@ only when the music between them fits within 1 ms; the head of the intro may be 
 tuned run climbs the scale (steps of 1–2 st) rather than +1 st; the stop moves onto a bar only within 0.1–0.5 s (or the
 cue's own window); keys are major / natural minor only (modes and modulations are read as the nearest key).
 
+Phase 6 → WP-E4 ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP-E4"; spec 12 §4 P6-E8; earshot's
+`profile.py` / `critique.py` metric definitions and scorecard adapted, `licenses/ported/earshot.md`; NO bundled profile):
+reference profiles — the user builds a profile from 1–20 of their own media or sequences (Preferences ▸ Sound Library ▸
+Reference profiles, MCP `build_sound_profile`; a `sound-profile` job: loudness, the arc and ending, onset / hit density,
+sync to the picture with chance levels, spectral shares, stereo width, speech share; numbers only, `<appdir>/sounds/
+profiles`, export / import as a file), a sequence selects one (`soundDesign.setSettings {referenceProfile}`, the Sound
+Check panel's Reference select) and Sound Check adds a Reference row per metric — out-of-range major rows are REFERENCE
+warnings, minor ones infos, each with what to do and timecodes (the cuts with no sound, the gaps, the dead end), leave-one-
+out when the sequence is a reference. Measured: −20 LUFS pink noise reads −20.0 with its octave shares within 0.5 dB
+(sub 1 dB), a 1 s gap 0.95–1.05 s, 2 s of dead air 1.97–2.03 s, clicks at 2/s 2.0 onsets/s, a 0.5 cut/s picture 0.5/s
+(the scene detector on generated FFV1 films); a matching sequence passes every row; the seeded mismatch (air −6 dB, 2 s
+dead end, sound on 1 of 6 cuts) is flagged by exactly those rows plus the closing level, with the timecodes. Rerun
+`packages/audio-fx/test/profile-metrics.test.ts`, `packages/project/test/sound-profile.test.ts`,
+`apps/engine/test/sound-profile.test.ts`, `apps/mcp/test/sound-profile.test.ts`, `apps/web/test/sound-reference-profiles.test.tsx`,
+`e2e/sound-reference-profile.spec.ts`. Limits left: the metrics are validated on generated material only (no labelled set
+of real films); the speech share is the model-free Auto Tag classifier per 5 s window (a voice under music may read as
+music); references are measured for at most 60 min each, at ≈ 3.8 s of CPU per minute of stereo audio plus decoding
+(measured on the build server), and a check with a profile costs the same on its mix; a sequence reference's loudness and
+true peak take the Mix's normalisation gain without running the limiter; the picture events of a media reference come
+from the scene detector (dissolves and slow changes are missed) while a sequence's are its edit's cuts and transitions;
+Reference rows offer advice, never a command fix.
+
 Phase 6 → WP-E8 ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP-E8"; spec 12 §4 P6-E12; earshot's
 ambience-zone ideas adapted, `licenses/ported/earshot.md`): ambience and room-tone beds — `soundDesign.layBed` lays a
 bed per scene (V1 cuts to other footage, scene markers, measured shot changes, or the user's scenes) as ordinary clips

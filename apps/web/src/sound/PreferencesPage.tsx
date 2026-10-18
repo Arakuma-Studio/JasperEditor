@@ -4,7 +4,8 @@
 // (an engine `sound-index` job, also listed in the Jobs panel); and the audition options (audition on hover, loop,
 // auto-play, volume) and row density. Folder changes are validated by the engine and saved with "Save Folders".
 // Proposals: "Allow agents to apply sound proposals" for the active sequence (WP3.3b). Sound design style: the active
-// sequence's cue grammar and personality (P6-E10, `soundDesign.setSettings {style}`; WP-E6).
+// sequence's cue grammar and personality (P6-E10, `soundDesign.setSettings {style}`; WP-E6). Reference profiles: the
+// engine's library of profiles measured from the user's own media (P6-E8, ReferenceProfiles.tsx; WP-E4).
 import {
 	SOUND_ROOT_LICENSES,
 	type SoundLibraryStatus,
@@ -41,6 +42,7 @@ import {
 	soundLibraryPrefs,
 	useSoundLibraryPrefs,
 } from './prefs.ts';
+import { ReferenceProfilesSection } from './ReferenceProfiles.tsx';
 import { SoundStyleFields, type StyleField } from './StyleControls.tsx';
 
 type RootLicense = (typeof SOUND_ROOT_LICENSES)[number];
@@ -98,6 +100,7 @@ const errorText = (e: unknown) =>
 
 export function SoundLibraryPreferencesPage() {
 	const p = useSoundLibraryPrefs();
+	const session = useSessionOrNull();
 	const { client: engine, subscribe } = useEngine();
 	const [status, setStatus] = useState<SoundLibraryStatus | null>(null);
 	const [local, setLocal] = useState(true);
@@ -400,6 +403,7 @@ export function SoundLibraryPreferencesPage() {
 			</PrefGroup>
 
 			<PacksSection />
+			<ReferenceProfilesSection session={session} />
 
 			<PrefGroup title="Audition">
 				<Checkbox

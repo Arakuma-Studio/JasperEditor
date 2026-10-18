@@ -562,7 +562,9 @@ describe('room tone (real engine)', { timeout: 900_000 }, () => {
 		const r = SoundRoomToneResultSchema.parse(job.result);
 		expect(r.applied).toBe(false);
 		expect(r.proposalId).toMatch(/^prp_/);
-		const checked = await waitJob(await post('/api/sound-design/check', { projectId: pid, proposalId: r.proposalId }, AGENT_H));
+		const checked = await waitJob(
+			await post('/api/sound-design/check', { projectId: pid, proposalId: r.proposalId }, AGENT_H),
+		);
 		expect(checked.state, JSON.stringify(checked.error)).toBe('succeeded');
 		const delta = SoundCheckResultSchema.parse(checked.result).proposal!.delta;
 		console.info(

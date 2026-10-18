@@ -50,6 +50,7 @@ export const JOB_KINDS = [
 	'sound-design',
 	'sound-check',
 	'sound-listen',
+	'sound-profile',
 	'sound-pack-install',
 	'motion-analysis',
 	'audio-classify',

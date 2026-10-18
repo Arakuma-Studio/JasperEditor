@@ -208,6 +208,15 @@ import {
 	SoundListenRequestSchema,
 } from './sound-design.ts';
 import {
+	SoundProfileBuildRequestSchema,
+	SoundProfileDeleteResponseSchema,
+	SoundProfileImportRequestSchema,
+	SoundProfileRenameRequestSchema,
+	SoundProfileSchema,
+	SoundProfileSummarySchema,
+	SoundProfilesResponseSchema,
+} from './sound-profile.ts';
+import {
 	RegisterSoundRequestSchema,
 	RegisterSoundResponseSchema,
 	SoundEntrySchema,
@@ -1290,6 +1299,40 @@ export const ROUTES = {
 		path: '/api/sound-design/room-tone',
 		body: SoundRoomToneRequestSchema,
 		response: EngineJobSchema,
+	},
+	/**
+	 * Reference sound profiles (spec 12 §4 P6-E8): the per-user library (`<appdir>/sounds/profiles`), a `sound-profile`
+	 * job (202) that measures 1–20 references and stores the profile, rename, delete (an agent's request asks the user)
+	 * and import of a profile file (`soundProfileGet`'s body is the file Export saves).
+	 */
+	soundProfiles: { method: 'GET', path: '/api/sound-design/profiles', response: SoundProfilesResponseSchema },
+	soundProfileGet: {
+		method: 'GET',
+		path: '/api/sound-design/profiles/:profileId',
+		response: SoundProfileSchema,
+	},
+	soundProfileBuild: {
+		method: 'POST',
+		path: '/api/sound-design/profiles',
+		body: SoundProfileBuildRequestSchema,
+		response: EngineJobSchema,
+	},
+	soundProfileRename: {
+		method: 'PUT',
+		path: '/api/sound-design/profiles/:profileId/name',
+		body: SoundProfileRenameRequestSchema,
+		response: SoundProfileSummarySchema,
+	},
+	soundProfileDelete: {
+		method: 'DELETE',
+		path: '/api/sound-design/profiles/:profileId',
+		response: SoundProfileDeleteResponseSchema,
+	},
+	soundProfileImport: {
+		method: 'POST',
+		path: '/api/sound-design/profiles/import',
+		body: SoundProfileImportRequestSchema,
+		response: SoundProfileSummarySchema,
 	},
 	/**
 	 * Proposals (spec 12 §2.5, §2.8): reviewable sets of edits stored per project. Accept composes ONE transaction

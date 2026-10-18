@@ -19,6 +19,7 @@ import {
 } from '../../schema/sound.ts';
 import { SOUND_CHECK_CODES, SOUND_CHECK_SEVERITIES } from '../../sound/check.ts';
 import { SFX_DEFAULT_GAIN_MAX_DB, SFX_DEFAULT_GAIN_MIN_DB } from '../../sound/level.ts';
+import { REFERENCE_PROFILE_ID_RE } from '../../sound/profile.ts';
 import { LibraryProvenanceSchema, SOUND_REF_RE } from '../../sound/provenance.ts';
 import { cmd, IdRefSchema, RefDeclSchema, TimeInputSchema, TrackRefSchema } from './common.ts';
 import { MediaRegisterCmd } from './project.ts';
@@ -249,6 +250,12 @@ export const SoundDesignSetSettingsCmd = cmd('soundDesign.setSettings', {
 	agentsMayApply: z.boolean().optional(),
 	/** Sound credits sidecar of the sequence's exports (`txt` / `md`), or null: not configured. */
 	credits: z.enum(SOUND_CREDITS_FORMATS).nullable().optional(),
+	/**
+	 * P6-E8: the reference profile Sound Check compares the sequence with (an id of the engine's profile library,
+	 * `list_sound_profiles`), or null: no comparison. The command does not look the id up (the library is the
+	 * engine's, per user); a check names a missing profile in its warnings.
+	 */
+	referenceProfile: z.string().regex(REFERENCE_PROFILE_ID_RE, 'a profile id (sprf_…)').nullable().optional(),
 	/**
 	 * P6-E10 cue grammar and personality (merged into the stored style; a field set to null goes back to its default):
 	 * `personality` (calm, energetic, bright, precise, mechanical, warm), `runs` (climb | flat), `typing` (auto | keys |

@@ -11,7 +11,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { encodeWav } from '../packages/audio-dsp/src/index.ts';
-import { appliedLabels, createProject, enableAgentBridge, exportViaUi, query, ROOT, transact } from './support.ts';
+import {
+	appliedLabels,
+	createProject,
+	enableAgentBridge,
+	exportViaUi,
+	query,
+	ROOT,
+	transact,
+} from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -53,9 +61,13 @@ function pink(seconds: number, seed: number, dbfs: number): Float32Array {
 }
 
 function decode(file: string): Float32Array {
-	const r = spawnSync(FFMPEG, ['-v', 'error', '-i', file, '-map', '0:a:0', '-ac', '1', '-ar', String(SR), '-f', 'f32le', '-'], {
-		maxBuffer: 1 << 30,
-	});
+	const r = spawnSync(
+		FFMPEG,
+		['-v', 'error', '-i', file, '-map', '0:a:0', '-ac', '1', '-ar', String(SR), '-f', 'f32le', '-'],
+		{
+			maxBuffer: 1 << 30,
+		},
+	);
 	if (r.status !== 0) throw new Error(`ffmpeg failed: ${r.stderr}`);
 	const b = r.stdout as Buffer;
 	return new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
@@ -78,14 +90,26 @@ async function waitVerdict(previous?: string) {
 	await expect(panel().getByTestId('sound-check-progress')).toBeHidden({ timeout: CHECK_MS });
 	if (previous)
 		await expect
-			.poll(async () => (await panel().getByTestId('sound-check-live').textContent()) ?? '', { timeout: CHECK_MS })
+			.poll(async () => (await panel().getByTestId('sound-check-live').textContent()) ?? '', {
+				timeout: CHECK_MS,
+			})
 			.not.toBe(previous);
 }
 
-type Clip = { id: string; kind: string; start: number; duration: number; trackId: string; bed?: { purpose: string } };
+type Clip = {
+	id: string;
+	kind: string;
+	start: number;
+	duration: number;
+	trackId: string;
+	bed?: { purpose: string };
+};
 type Seq = {
 	clips: Record<string, Clip>;
-	transitions: Record<string, { duration: number; outgoingClipId: string | null; incomingClipId: string | null }>;
+	transitions: Record<
+		string,
+		{ duration: number; outgoingClipId: string | null; incomingClipId: string | null }
+	>;
 	audioTracks: { id: string; name: string }[];
 	settings: { frameRate: { num: number; den: number } };
 };
@@ -97,7 +121,18 @@ test.beforeAll(async ({ browser }) => {
 	mkdirSync(outDir, { recursive: true });
 	dir = mkdtempSync(join(tmpdir(), 'jasper-e2e-beds-'));
 	for (const c of ['red', 'green', 'blue']) {
-		const r = spawnSync(FFMPEG, ['-v', 'error', '-y', '-f', 'lavfi', '-i', `color=c=${c}:s=640x360`, '-frames:v', '1', join(dir, `${c}.png`)]);
+		const r = spawnSync(FFMPEG, [
+			'-v',
+			'error',
+			'-y',
+			'-f',
+			'lavfi',
+			'-i',
+			`color=c=${c}:s=640x360`,
+			'-frames:v',
+			'1',
+			join(dir, `${c}.png`),
+		]);
 		expect(r.status, String(r.stderr)).toBe(0);
 	}
 	const street = [pink(6, 1, -30), pink(6, 2, -30)];
@@ -128,7 +163,9 @@ test('room tone fills the dialogue hole from Sound Check; an ambience bed per sc
 	await (await chooser).setFiles(names.map((n) => join(dir, n)));
 	for (const n of names)
 		await expect(page.getByTestId('project-row').filter({ hasText: n })).toBeVisible({ timeout: 120_000 });
-	const items = await query<Record<string, { id: string; name: string }>>(page, 'doc.get', { path: ['items'] });
+	const items = await query<Record<string, { id: string; name: string }>>(page, 'doc.get', {
+		path: ['items'],
+	});
 	const item = (n: string) => Object.values(items).find((i) => i.name === n)!.id;
 	const setup = await transact(page, [
 		...['red.png', 'green.png', 'blue.png'].map((n, i) => ({
@@ -159,8 +196,18 @@ test('room tone fills the dialogue hole from Sound Check; an ambience bed per sc
 	expect(setup.ok, JSON.stringify(setup)).toBe(true);
 	// the stills are 200 frames each: three scenes
 	let seq = await sequence(page);
-	const stills = Object.values(seq.clips).filter((c) => c.kind === 'still').sort((a, b) => a.start - b.start);
-	const trim = await transact(page, stills.map((c) => ({ type: 'clip.trim', clipId: c.id, edge: 'out', deltaFrames: 200 - c.duration })) as never);
+	const stills = Object.values(seq.clips)
+		.filter((c) => c.kind === 'still')
+		.sort((a, b) => a.start - b.start);
+	const trim = await transact(
+		page,
+		stills.map((c) => ({
+			type: 'clip.trim',
+			clipId: c.id,
+			edge: 'out',
+			deltaFrames: 200 - c.duration,
+		})) as never,
+	);
 	expect(trim.ok, JSON.stringify(trim)).toBe(true);
 	seq = await sequence(page);
 	const fps = seq.settings.frameRate.num / seq.settings.frameRate.den;
@@ -184,7 +231,9 @@ test('room tone fills the dialogue hole from Sound Check; an ambience bed per sc
 	await expect(confirm).toBeVisible();
 	await confirm.screenshot({ path: join(outDir, '2-fix-confirm.png') });
 	await confirm.getByRole('button', { name: 'Apply Fix' }).click();
-	await expect.poll(async () => (await appliedLabels(page)).length, { timeout: 120_000 }).toBe(before.length + 1);
+	await expect
+		.poll(async () => (await appliedLabels(page)).length, { timeout: 120_000 })
+		.toBe(before.length + 1);
 	expect((await appliedLabels(page)).at(-1)).toMatch(/Fill it with room tone/);
 	seq = await sequence(page);
 	const tone = Object.values(seq.clips).filter((c) => c.bed?.purpose === 'roomtone');
@@ -210,10 +259,14 @@ test('room tone fills the dialogue hole from Sound Check; an ambience bed per sc
 	await dialog.screenshot({ path: join(outDir, '4-dialog.png') });
 	const before2 = await appliedLabels(page);
 	await dialog.getByRole('button', { name: 'Lay Beds' }).click();
-	await expect.poll(async () => (await appliedLabels(page)).length, { timeout: 300_000 }).toBe(before2.length + 1);
+	await expect
+		.poll(async () => (await appliedLabels(page)).length, { timeout: 300_000 })
+		.toBe(before2.length + 1);
 	expect((await appliedLabels(page)).at(-1)).toBe('Lay Ambience Bed');
 	seq = await sequence(page);
-	const bed = Object.values(seq.clips).filter((c) => c.bed?.purpose === 'ambience').sort((a, b) => a.start - b.start);
+	const bed = Object.values(seq.clips)
+		.filter((c) => c.bed?.purpose === 'ambience')
+		.sort((a, b) => a.start - b.start);
 	expect(bed.length).toBeGreaterThanOrEqual(6);
 	expect(seq.audioTracks.find((t) => t.id === bed[0]!.trackId)!.name).toBe('Ambience');
 	const joints = Object.values(seq.transitions).filter(
@@ -227,7 +280,11 @@ test('room tone fills the dialogue hole from Sound Check; an ambience bed per sc
 	await page.getByTestId('timeline-track-area').screenshot({ path: join(outDir, '5-timeline.png') });
 	// ducked under the dialogue: Volume keyframes on the pieces the dialogue plays over
 	const ducked = await query<Record<string, { volumeDb?: { keyframes?: unknown[] } }>>(page, 'doc.get', {
-		path: ['sequences', Object.keys(await query<Record<string, unknown>>(page, 'doc.get', { path: ['sequences'] }))[0]!, 'clips'],
+		path: [
+			'sequences',
+			Object.keys(await query<Record<string, unknown>>(page, 'doc.get', { path: ['sequences'] }))[0]!,
+			'clips',
+		],
 	});
 	expect(bed.some((c) => (ducked[c.id]?.volumeDb?.keyframes ?? []).length > 0)).toBe(true);
 
@@ -241,7 +298,18 @@ test('room tone fills the dialogue hole from Sound Check; an ambience bed per sc
 		outDir,
 		jobTimeoutMs: 900_000,
 	});
-	spawnSync(FFMPEG, ['-v', 'error', '-y', '-i', file, '-filter_complex', '[0:a]showwavespic=s=1600x300', '-frames:v', '1', join(outDir, '6-export-wave.png')]);
+	spawnSync(FFMPEG, [
+		'-v',
+		'error',
+		'-y',
+		'-i',
+		file,
+		'-filter_complex',
+		'[0:a]showwavespic=s=1600x300',
+		'-frames:v',
+		'1',
+		join(outDir, '6-export-wave.png'),
+	]);
 	const x = decode(file);
 	const at = (f: number) => Math.round((f / fps) * SR);
 	const ambOnly = (a: number, b: number) => rmsDb(x, at(a), at(b));
@@ -251,7 +319,9 @@ test('room tone fills the dialogue hole from Sound Check; an ambience bed per sc
 		.filter((f) => f > 300 && f < 580);
 	const body = ambOnly(300, 580);
 	const dev = late.map((f) => ambOnly(f - 3, f + 3) - body);
-	console.info(`[e2e beds] body ${body.toFixed(2)} dBFS; joints ${late.join(', ')}: ${dev.map((d) => d.toFixed(2)).join(', ')} dB; the hole ${ambOnly(hole.start + 2, hole.end - 2).toFixed(2)} dBFS`);
+	console.info(
+		`[e2e beds] body ${body.toFixed(2)} dBFS; joints ${late.join(', ')}: ${dev.map((d) => d.toFixed(2)).join(', ')} dB; the hole ${ambOnly(hole.start + 2, hole.end - 2).toFixed(2)} dBFS`,
+	);
 	expect(Math.max(...dev.map(Math.abs))).toBeLessThan(1.5);
 	expect(ambOnly(hole.start + 2, hole.end - 2)).toBeGreaterThan(-60);
 });

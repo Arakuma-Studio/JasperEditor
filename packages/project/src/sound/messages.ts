@@ -5,6 +5,7 @@
 // its runtime translates a label or message that matches one (`translateName`, apps/web/src/i18n/runtime.ts).
 // `test/sound-messages.test.ts` checks that every refusal written in the sound handlers has its template here.
 import { SOUND_CHECK_MODEL_STRINGS } from './check.ts';
+import { REFERENCE_MODEL_STRINGS } from './profile.ts';
 
 /** History labels of the MCP sound tools (`soundText` fills them). */
 export const SOUND_LABELS = {
@@ -96,6 +97,7 @@ export const SOUND_MODEL_STRINGS: readonly string[] = [
 	...Object.values(SOUND_LABELS),
 	...SOUND_MESSAGES,
 	...SOUND_CHECK_MODEL_STRINGS,
+	...REFERENCE_MODEL_STRINGS,
 ];
 
 /** A template with its `{n}` placeholders filled. */

@@ -55,6 +55,7 @@ import {
 	locateByCorrelation,
 	loudnessCurve,
 	maxPool,
+	ProfileMeter,
 	type SolverEvent,
 	type StemCurves,
 	sfxOverlapTerms,
@@ -95,6 +96,8 @@ import {
 	type ProjectDocument,
 	planSoundCheckFixes,
 	type Rational,
+	REFERENCE_PROFILE_LIMITS,
+	type ReferenceProfile,
 	type Registries,
 	readClipSfx,
 	readEssentialSound,
@@ -172,6 +175,7 @@ import {
 	solverEventOf,
 } from './levels.ts';
 import { liveDocument, PlanInputError, planSequence } from './plan.ts';
+import { looWarning, missingProfileWarning, referenceFindings, sequencePicture } from './profile.ts';
 import {
 	classifyStems,
 	mixLayoutOf,
@@ -237,6 +241,8 @@ export type SoundCheckDeps = {
 		projectId: string,
 		sequenceId: string,
 	) => Promise<{ result: SoundCheckResult; jobId: string | null } | null>;
+	/** P6-E8: the reference profile library. */
+	profiles?: () => { get(id: string): Promise<ReferenceProfile | null> } | undefined;
 };
 
 export type CheckEnv = {
@@ -253,6 +259,8 @@ export type CheckEnv = {
 	onSpawn?(child: import('node:child_process').ChildProcess): void;
 	onProgress?(fraction: number, stage: string): void;
 	jobId?: string;
+	/** P6-E8: the engine's reference profiles (a check compares with the sequence's or the request's). */
+	profiles?: { get(id: string): Promise<ReferenceProfile | null> } | undefined;
 };
 
 export type CheckOptions = {
@@ -263,6 +271,8 @@ export type CheckOptions = {
 	target?: SoundCheckTarget | undefined;
 	/** Sequence frames; default the whole sequence. */
 	range?: { start: number; end: number } | undefined;
+	/** P6-E8: compare with this reference profile (default the sequence's `settings.referenceProfile`; null: none). */
+	profileId?: string | null | undefined;
 };
 
 /** A placed sound effect and what the document says about it. */
@@ -891,6 +901,16 @@ export async function checkSequence(
 	let t = Date.now();
 	// the Mix's own layout (a mono Mix in mono: WP6.5b), as `measureSfxEvents` renders the sounds and the bed
 	const { layout, channels } = mixLayoutOf(snap);
+	// P6-E8: the reference profile compared with, measured on the delivered mix (the range) as a reference is
+	const profileId = opts.profileId === undefined ? (settings.referenceProfile ?? null) : opts.profileId;
+	let refProfile: ReferenceProfile | null = null;
+	if (profileId) {
+		refProfile = (await env.profiles?.get(profileId)) ?? null;
+		if (!refProfile) warnings.push(missingProfileWarning(profileId));
+	}
+	const profileMeter = refProfile
+		? new ProfileMeter(sr, channels, { maxSeconds: REFERENCE_PROFILE_LIMITS.maxSec })
+		: null;
 	const meters: Partial<Record<Stem, CurveMeter>> = {};
 	for (const s of STEMS) if (stemIds[s].size > 0) meters[s] = new CurveMeter(sr, channels);
 	const mixMeter = new LoudnessMeter(sr, channels, { weights: defaultChannelWeights(channels) });
@@ -951,11 +971,11 @@ export async function checkSequence(
 					if (b <= a) return;
 					const off = a - at;
 					mixMeter.process(planar, off, b - a);
-					if (!fh)
-						tap.push(
-							planar.map((c) => c.subarray(off, off + (b - a))),
-							b - a,
-						);
+					if (!fh) {
+						const view = planar.map((c) => c.subarray(off, off + (b - a)));
+						tap.push(view, b - a);
+						profileMeter?.push(view, b - a);
+					}
 					if (fh) {
 						const buf = Buffer.alloc((b - a) * planar.length * 4);
 						for (let i = 0; i < b - a; i++)
@@ -1020,6 +1040,7 @@ export async function checkSequence(
 				meter2.process(view, 0, m);
 				cm.push(view, m);
 				tap.push(view, m);
+				profileMeter?.push(view, m);
 				const h = Math.min(rangeHops - 1, Math.floor(written / hop));
 				if (h >= 0 && gr > grHop[h]!) grHop[h] = gr;
 				written += m;
@@ -2426,6 +2447,39 @@ export async function checkSequence(
 	}
 	lap('document', t);
 
+	// ── REFERENCE (P6-E8): the delivered mix against the reference profile (rows: warnings and infos, never errors) ──
+	let reference: SoundCheckReport['reference'];
+	if (refProfile && profileMeter) {
+		t = Date.now();
+		progress(0.9, 'Comparing with the reference profile');
+		const measured = profileMeter.finish(sequencePicture(doc, seq, range));
+		if (measured.unscorable)
+			warnings.push({
+				code: 'W_REFERENCE_UNSCORABLE',
+				message: `The mix is ${measured.unscorable}: it is not compared with the reference profile`,
+			});
+		else {
+			if (measured.truncated)
+				warnings.push({
+					code: 'W_REFERENCE_TRUNCATED',
+					message: `Only the first ${Math.round(REFERENCE_PROFILE_LIMITS.maxSec / 60)} minutes are compared with the reference profile`,
+				});
+			reference = referenceFindings({
+				measured,
+				profile: refProfile,
+				source: opts.profileId === undefined ? 'sequence' : 'request',
+				seq,
+				projectId,
+				range,
+				wholeSequence: whole,
+				add: (i) => issues.add(i),
+			});
+			const loo = looWarning(reference);
+			if (loo) warnings.push(loo);
+		}
+		lap('reference', t);
+	}
+
 	// ── safe fixes judged together (WP6.5b): applied in order on a dry-run copy, each re-validated after the ones
 	// before it (two safe fixes of one sound can overload it together; normalisation off, a gain can push the mix's
 	// true peak over the ceiling): a fix that is no longer safe is marked so, with why and what it conflicts with
@@ -2580,7 +2634,7 @@ export async function checkSequence(
 		sequenceId: seq.id,
 		revision: opts.revision,
 		mixHash: mixFingerprint(doc, seq.id),
-		inputsHash: soundCheckInputsHash(doc, seq.id, opts.preset, target),
+		inputsHash: soundCheckInputsHash(doc, seq.id, opts.preset, target, profileId),
 		preset: {
 			id: opts.preset,
 			label: preset.label,
@@ -2650,6 +2704,7 @@ export async function checkSequence(
 		warnings,
 		timings: { ...timings, decoders, total: Date.now() - t0 },
 		levelGuard,
+		...(reference ? { reference } : {}),
 	};
 	progress(0.97, 'Checked');
 	return report;
@@ -2708,6 +2763,7 @@ export async function checkEnvFor(
 		onSpawn: ctx.trackChild,
 		onProgress,
 		jobId: ctx.job.id,
+		profiles: deps.profiles?.(),
 	};
 }
 
@@ -2726,7 +2782,14 @@ async function soundCheckJob(ctx: JobContext, deps: SoundCheckDeps): Promise<Sou
 	const report = await checkSequence(
 		live.doc,
 		seq,
-		{ projectId: req.projectId, revision: live.revision, preset, target, range: req.range },
+		{
+			projectId: req.projectId,
+			revision: live.revision,
+			preset,
+			target,
+			range: req.range,
+			...(req.profileId !== undefined ? { profileId: req.profileId } : {}),
+		},
 		await checkEnvFor(ctx, deps, (f, stage) => ctx.progress(0.02 + 0.9 * f, { stage })),
 	);
 	ctx.log(

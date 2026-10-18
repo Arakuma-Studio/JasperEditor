@@ -67,6 +67,11 @@ export const EVENT_PAYLOADS = {
 	'effectPresets.changed': z.object({ revision: z.number().int() }),
 	/** The sound library index changed (an index job finished, a folder was removed); the Sound Library refreshes. */
 	'sounds.changed': z.object({ snapshotHash: z.string(), sounds: z.number().int().min(0) }),
+	/** A reference sound profile was built, imported, renamed or deleted (P6-E8); Preferences and Sound Check refresh. */
+	'soundProfiles.changed': z.object({
+		id: z.string(),
+		change: z.enum(['created', 'imported', 'renamed', 'deleted']),
+	}),
 	/** A proposal of the project was created, decided, re-validated, deleted or expired (spec 12 §2.5). */
 	'proposal.changed': ProposalChangedEventSchema,
 	/**

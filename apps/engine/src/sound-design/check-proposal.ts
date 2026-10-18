@@ -148,6 +148,8 @@ function keptIsCurrent(
 	target: { integratedLufs: number; truePeakDb: number } | undefined,
 	range: { start: number; end: number },
 	whole: boolean,
+	/** P6-E8: the reference profile the check compares with (default the sequence's). */
+	profileId?: string | null,
 ): boolean {
 	if (report.sequenceId !== sequenceId || report.preset.id !== preset) return false;
 	if (!!report.preset.custom !== !!target) return false;
@@ -159,7 +161,7 @@ function keptIsCurrent(
 	if (whole ? !report.wholeSequence : report.range.start !== range.start || report.range.end !== range.end)
 		return false;
 	if (report.mixHash !== mixFingerprint(doc, sequenceId)) return false;
-	return report.inputsHash === soundCheckInputsHash(doc, sequenceId, preset, target ?? null);
+	return report.inputsHash === soundCheckInputsHash(doc, sequenceId, preset, target ?? null, profileId);
 }
 
 const httpToJob = (e: unknown): never => {
@@ -265,14 +267,24 @@ export async function runProposalCheck(
 		? { start: Math.min(req.range.start, duration), end: Math.min(req.range.end, duration) }
 		: { start: 0, end: duration };
 	const whole = !req.range || (range.start === 0 && range.end >= duration);
-	const opts = { projectId: req.projectId, revision: live.revision, preset, target, range: req.range };
+	const opts = {
+		projectId: req.projectId,
+		revision: live.revision,
+		preset,
+		target,
+		range: req.range,
+		...(req.profileId !== undefined ? { profileId: req.profileId } : {}),
+	};
 
 	// the base: the kept report when it is current, else a fresh check of the live document
 	let base: SoundCheckReport | null = null;
 	let baseKind: 'kept' | 'run' = 'kept';
 	let baseJobId: string | null = null;
 	const kept = await deps.keptReport?.(req.projectId, seq.id).catch(() => null);
-	if (kept && keptIsCurrent(kept.result.report, live.doc, seq.id, preset, target, range, whole)) {
+	if (
+		kept &&
+		keptIsCurrent(kept.result.report, live.doc, seq.id, preset, target, range, whole, req.profileId)
+	) {
 		base = kept.result.report;
 		baseJobId = kept.jobId;
 	}
@@ -301,7 +313,8 @@ export async function runProposalCheck(
 	);
 	if (ctx.signal.aborted) throw new JobError('CANCELLED', 'Cancelled', false);
 	const beforeAcks = applySoundAcknowledgements(live.doc, seq.id, base.issues);
-	const previewClips = (previewSeq as { clips?: Record<string, { start: number; duration: number }> }).clips ?? {};
+	const previewClips =
+		(previewSeq as { clips?: Record<string, { start: number; duration: number }> }).clips ?? {};
 	const items = applied.map((id) => ({
 		itemId: id,
 		touched: touchedBy(preview.items[id]),

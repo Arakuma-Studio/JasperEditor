@@ -1110,6 +1110,10 @@ function setSettings(doc: DDoc, cmd: CommandOf<'soundDesign.setSettings'>, h: Ha
 	if (cmd.seed !== undefined) s.seed = cmd.seed;
 	if (cmd.agentsMayApply !== undefined) s.agentsMayApply = cmd.agentsMayApply;
 	if (cmd.credits !== undefined) s.credits = cmd.credits;
+	if (cmd.referenceProfile !== undefined) {
+		if (cmd.referenceProfile === null) delete s.referenceProfile;
+		else s.referenceProfile = cmd.referenceProfile;
+	}
 	if (cmd.style !== undefined) {
 		// P6-E10: merged field by field; null takes a field back to its default (removed), an empty style is removed
 		const st = { ...(plainCopy(s.style ?? {}) as Record<string, unknown>) };

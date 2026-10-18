@@ -45,6 +45,7 @@ import { registerSoundCheckTools } from './tools/sound-check.ts';
 import { registerSoundDesignTools } from './tools/sound-design.ts';
 import { registerSoundListenTools } from './tools/sound-listen.ts';
 import { registerSoundMotionTools } from './tools/sound-motion.ts';
+import { registerSoundProfileTools } from './tools/sound-profile.ts';
 import { registerSoundTimelineTools } from './tools/sound-timeline.ts';
 import { registerSpeechTools, SPEECH_GUIDE } from './tools/speech.ts';
 import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
@@ -179,6 +180,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerSoundMotionTools(ctx);
 	registerSoundTimelineTools(ctx);
 	registerSoundListenTools(ctx);
+	registerSoundProfileTools(ctx);
 	registerProposalTools(ctx);
 	registerCaptionTools(ctx);
 	registerSpeechTools(ctx);

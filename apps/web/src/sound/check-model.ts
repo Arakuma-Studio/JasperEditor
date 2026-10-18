@@ -17,6 +17,7 @@ import {
 	DELIVERY_PRESETS,
 	mixFingerprint,
 	type ProjectDocument,
+	REFERENCE_MESSAGES,
 	readSoundCheckTarget,
 	type Sequence,
 	SOUND_CHECK_MESSAGES,
@@ -45,7 +46,8 @@ export type CheckVerdict = SoundCheckReport['verdict'];
 
 /**
  * Category order of the results list (what a user fixes first: timing, then clicks and cut edges, delivery, the mix,
- * its tone…). `edges` and `tonal` are the Phase 6 review lenses (spec 12 §4 P6-E1…E3).
+ * its tone…). `edges` and `tonal` are the Phase 6 review lenses (spec 12 §4 P6-E1…E3); `reference` (P6-E8) holds
+ * the comparison with a reference profile, a style rather than a defect: last.
  */
 export const CATEGORY_ORDER: readonly CheckCategory[] = [
 	'sync',
@@ -55,6 +57,7 @@ export const CATEGORY_ORDER: readonly CheckCategory[] = [
 	'tonal',
 	'cues',
 	'licence',
+	'reference',
 ];
 export const CATEGORY_LABELS: Record<CheckCategory, string> = {
 	sync: 'Sync',
@@ -64,6 +67,7 @@ export const CATEGORY_LABELS: Record<CheckCategory, string> = {
 	tonal: 'Tone',
 	cues: 'Cues',
 	licence: 'Licence',
+	reference: 'Reference',
 };
 export const SEVERITY_LABELS: Record<CheckSeverity, string> = {
 	error: 'Error',
@@ -122,7 +126,14 @@ const DENSITY_PARAM = new Map<string, number>([
 	[SOUND_CHECK_MESSAGES.densityRate, 3],
 ]);
 /** Templates whose parameter at this index is a fixed English fragment the editor translates (a model string). */
-const FRAGMENT_PARAM = new Map<string, number>([[SOUND_CHECK_MESSAGES.syncUnmeasurable, 1]]);
+const FRAGMENT_PARAM = new Map<string, number>([
+	[SOUND_CHECK_MESSAGES.syncUnmeasurable, 1],
+	// P6-E8: a Reference row's finding names its metric's label (a model string)
+	[REFERENCE_MESSAGES.low, 0],
+	[REFERENCE_MESSAGES.high, 0],
+	[REFERENCE_MESSAGES.lowOpen, 0],
+	[REFERENCE_MESSAGES.highOpen, 0],
+]);
 
 /**
  * A report message in the UI language: the template (`key`, a model string) translated and filled with `params`;
@@ -491,7 +502,12 @@ export function fixChangeSummary(issue: SoundCheckIssue, seq: Sequence | undefin
 					out.push(t('Exports a credits file with this sequence'));
 					break;
 				case 'media.register':
-					out.push(t('Imports “{0}” into the project', String((c.asset as { originalName?: unknown })?.originalName ?? '')));
+					out.push(
+						t(
+							'Imports “{0}” into the project',
+							String((c.asset as { originalName?: unknown })?.originalName ?? ''),
+						),
+					);
 					break;
 				case 'soundDesign.layBed': {
 					// P6-E12: room tone (or an ambience) laid as looped clips on its own track, from … to …
@@ -503,8 +519,16 @@ export function fixChangeSummary(issue: SoundCheckIssue, seq: Sequence | undefin
 					const to = shots[shots.length - 1]?.end;
 					out.push(
 						c.purpose === 'roomtone'
-							? t('Lays room tone on the “Room Tone” track from {0} to {1}, looped, with short fades under the dialogue', tcOf(seq, from, at), tcOf(seq, to, at))
-							: t('Lays an ambience bed on the “Ambience” track from {0} to {1}', tcOf(seq, from, at), tcOf(seq, to, at)),
+							? t(
+									'Lays room tone on the “Room Tone” track from {0} to {1}, looped, with short fades under the dialogue',
+									tcOf(seq, from, at),
+									tcOf(seq, to, at),
+								)
+							: t(
+									'Lays an ambience bed on the “Ambience” track from {0} to {1}',
+									tcOf(seq, from, at),
+									tcOf(seq, to, at),
+								),
 					);
 					break;
 				}

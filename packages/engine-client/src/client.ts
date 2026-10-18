@@ -64,6 +64,8 @@ import {
 	type SoundDesignPlanRequest,
 	type SoundIndexRequest,
 	type SoundListenRequest,
+	type SoundProfileBuildRequest,
+	type SoundProfileImportRequest,
 	type SoundRoomToneRequest,
 	type SoundRootsPutRequest,
 	type SoundSearchRequest,
@@ -465,6 +467,29 @@ export class EngineClient {
 	 */
 	soundListen(req: SoundListenRequest, signal?: AbortSignal) {
 		return this.call('soundDesignListen', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** The reference sound profiles of this engine's library (spec 12 §4 P6-E8). */
+	listSoundProfiles() {
+		return this.call('soundProfiles');
+	}
+	/** One reference profile: the whole file (what Export saves). */
+	getSoundProfile(profileId: string) {
+		return this.call('soundProfileGet', { params: { profileId } });
+	}
+	/** Starts a `sound-profile` job measuring 1–20 references; result `SoundProfileBuildResult`. */
+	buildSoundProfile(req: SoundProfileBuildRequest) {
+		return this.call('soundProfileBuild', { body: req });
+	}
+	renameSoundProfile(profileId: string, name: string) {
+		return this.call('soundProfileRename', { params: { profileId }, body: { name } });
+	}
+	/** Deletes a reference profile (an agent's request waits for the user's approval in an editor window). */
+	deleteSoundProfile(profileId: string) {
+		return this.call('soundProfileDelete', { params: { profileId } });
+	}
+	/** Imports a profile file (validated; stored under a new id). */
+	importSoundProfile(req: SoundProfileImportRequest) {
+		return this.call('soundProfileImport', { body: req });
 	}
 	/**
 	 * Starts a `motion-analysis` job (`POST /api/sound-design/motion`, P6-R2): the sequence's picture rendered small and
