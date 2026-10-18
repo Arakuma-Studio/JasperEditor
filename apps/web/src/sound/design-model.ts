@@ -261,7 +261,14 @@ export function cueSearchRequest(
 	const personality = resolveSoundStyle(sequenceSoundStyle(seq)).personality;
 	const placed = placedSoundIds(doc, seq);
 	return {
-		...(types.length ? { types: styleCueTypes(types.filter(isSoundTypeId), personality).slice(0, 32) } : {}),
+		...(types.length
+			? {
+					types: [
+						...styleCueTypes(types.filter(isSoundTypeId), personality),
+						...types.filter((x) => !isSoundTypeId(x)),
+					].slice(0, 32),
+				}
+			: {}),
 		...(kind ? { visualKind: kind } : {}),
 		...(win && win > 0 && win <= 600 ? { windowSec: Math.round(win * 1000) / 1000 } : {}),
 		...(cue.align ? { align: cue.align } : {}),

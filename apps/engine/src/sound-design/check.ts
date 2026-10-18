@@ -131,6 +131,7 @@ import {
 	soundDesignSettingsOf,
 	soundTimingOf,
 	trackLabel,
+	variationForFill,
 } from '@jasper/project';
 import type { AgentService } from '../agent/service.ts';
 import type { JobContext } from '../jobs/types.ts';
@@ -2257,6 +2258,8 @@ export async function checkSequence(
 		const a = eventsInOrder[i - 1]!;
 		const b = eventsInOrder[i]!;
 		if (soundOf(a) !== soundOf(b)) continue;
+		// P6-E10: a ui / click sound is the sequence's ONE voice, the same sound every time by design (not a repeat)
+		if (variationForFill(b.types) === 'voice') continue;
 		b.codes.add('REPEAT');
 		const next = eventsInOrder[i + 1];
 		const exclude = new Set([soundOf(a), ...(next ? [soundOf(next)] : [])]);

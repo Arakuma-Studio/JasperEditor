@@ -8490,7 +8490,7 @@ style, cue options, `carried`, report `grammar`, event `variation` / `run`, skip
 `swap_sound` sibling takes), `sound.ts` (guide); web `apps/web/src/sound/{StyleControls.tsx (new), AutoSoundPassDialog.tsx,
 cues/SuggestCuesDialog.tsx, cues/suggest.ts, PreferencesPage.tsx (Sound design style), fill.ts, swap.ts,
 design-model.ts}`; README; i18n (27 strings, `en.json` / `es.json`). Tests: `packages/project/test/sound-grammar.test.ts`
-(26), `apps/engine/test/sound-design-grammar.test.ts` (8), `apps/engine/test/sound-grammar-export.test.ts` (3, real
+(26), `apps/engine/test/sound-design-grammar.test.ts` (8), `apps/engine/test/sound-grammar-export.test.ts` (4, real
 ffmpeg), `apps/mcp/test/sound-grammar.test.ts` (5, a real engine over stdio), `apps/web/test/sound-style.test.tsx` (6),
 `e2e/sound-grammar.spec.ts`; two older tests adapted to the new defaults (below).
 
@@ -8591,6 +8591,9 @@ ffmpeg), `apps/mcp/test/sound-grammar.test.ts` (5, a real engine over stdio), `a
   12 per second (at 58 typed/s the nine word starts of a pangram fall 2–4 frames apart).
 - **Takes rotate within their type.** In the e2e the starter kit has no key recordings: the typewriter got ticks and
   clicks mixed by rotation; rotating within the fill type keeps one sound family per typing run.
+- **Sound Check agrees with the voice**: REPEAT (the same sound on consecutive events, with a "safe" swap fix) flagged
+  the deliberate case — its safe fix would have swapped the click voice away; a ui / click sound repeating is no longer a
+  REPEAT (`variationForFill(types) === 'voice'`), every other type is still checked.
 - **Fixed on the way (WP-E5's takes)**: `soundSetupItemId` wrote `sound:snd_…~t3`, and `~` is not allowed in proposal
   item ids — every plan proposal with a take failed validation (`E_SCHEMA`). It is now `sound:snd_….t3`.
 - **Two older tests adapted** to the new defaults (behaviour the spec changes, not weakened):
@@ -8621,13 +8624,13 @@ ffmpeg), `apps/mcp/test/sound-grammar.test.ts` (5, a real engine over stdio), `a
   hit out of the cuts and makes the pass sparse; deterministic; the composed proposal validates (`createProposal`),
   applies as one transaction, and the document has keys at speed 1, cards at 2^(st/12) with `maintainPitch: false` and
   `clipPitchOf` reading st, three clicks at one gain, the music under the typing dipped 6 dB.
-- `apps/engine/test/sound-grammar-export.test.ts` (3 passed, real engine and ffmpeg): plan job → accept → native export
+- `apps/engine/test/sound-grammar-export.test.ts` (4 passed, real engine and ffmpeg): plan job → accept → native export
   (PCM) → measured: **the four cards' pops play at 1000.0 / 1059.5 / 1122.5 / 1189.2 Hz = 0.000 / 1.000 / 2.000 / 3.000
   st** (zero-crossing frequency over 60 ms from each cue; the source pops are 1 kHz); **the three clicks peak at −10.25 /
   −10.25 / −10.25 dBFS** (one sound, one gain, after the masking solver's levels with `sameLevel`); the six typewriter
   keys are takes of the typing run at speed 1, no two in a row the same. Looked at `test-results/sd-grammar/
   export-waveform.png` (ffmpeg `showwavespic`): the key presses with their releases, four pops shortening as they climb,
-  three equal clicks.
+  three equal clicks. Sound Check on the result reports no REPEAT for the three clicks.
 - `apps/mcp/test/sound-grammar.test.ts` (5 passed, a real engine over stdio): the guide; three `place_sound {sound:
   {type: 'click'}}` give one sound at one gain, speed 1 (`picked.voice` best, then placed); three key picks are takes of
   one recording at speed 1, `swap_sound next` goes to a sibling take (`cycle.from: "takes"`); with a wooden hit placed, a

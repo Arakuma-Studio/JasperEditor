@@ -330,6 +330,21 @@ describe('the cue grammar in the exported audio (measured)', { timeout: 900_000 
 		expect(voice).toBe(clips[0]!.sfx.soundId);
 	});
 
+	it('Sound Check does not call the one click voice a REPEAT (the same sound every time is the rule)', async () => {
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/sound-design/check',
+			headers: JSON_H,
+			payload: { projectId, sequenceId: seqId },
+		});
+		expect(r.statusCode, r.body).toBe(202);
+		const job = await waitJob((r.json() as EngineJob).id);
+		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
+		const issues = (job.result as { issues: { code: string; clipIds?: string[] }[] }).issues;
+		const clickClips = new Set([240, 270, 300].map((f) => clipAt(f).id));
+		expect(issues.filter((i) => i.code === 'REPEAT' && i.clipIds?.some((c) => clickClips.has(c)))).toEqual([]);
+	});
+
 	it('the keys are takes of the typing run at speed 1, never the same take twice in a row', () => {
 		const keys = result.report.events.filter((e) => e.variation === 'takes');
 		expect(keys.length).toBeGreaterThan(3);
