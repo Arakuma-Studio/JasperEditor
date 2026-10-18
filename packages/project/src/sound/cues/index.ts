@@ -32,6 +32,7 @@ export {
 	type DialogueSource,
 	type DialogueSpan,
 	type DialogueVadClip,
+	dialogueClipsOf,
 	dialogueFrameRanges,
 	dialogueSpans,
 	dialogueVadClips,

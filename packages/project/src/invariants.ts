@@ -49,6 +49,7 @@ import type { ShapeItem } from './schema/shapes.ts';
 import type { ClipCameraTracker } from './schema/three-d.ts';
 import { libraryProvenanceIssue, readLibraryProvenance } from './sound/provenance.ts';
 import {
+	clipBedProblem,
 	clipSfxProblem,
 	markerVerdictProblem,
 	repairSoundDesign,
@@ -874,6 +875,11 @@ export function invariantCheckers(
 		if (r.sfx !== undefined) {
 			const bad = clipSfxProblem(c as Clip & { sfx?: unknown });
 			if (bad) issues.push(inv('INV-SFX', `Clip ${c.id}: ${bad}`, [...cw, 'sfx']));
+		}
+		// sound-design (spec 12 §4 P6-E12): bed metadata must be readable, on audio clips only (INV-SFX).
+		if (r.bed !== undefined) {
+			const bad = clipBedProblem(c as Clip & { bed?: unknown });
+			if (bad) issues.push(inv('INV-SFX', `Clip ${c.id}: ${bad}`, [...cw, 'bed']));
 		}
 		// three-d: only visual clips with Motion are 3D layers; environment lights reference existing media.
 		if (r.threeD !== undefined && !canBe3d(c.kind))

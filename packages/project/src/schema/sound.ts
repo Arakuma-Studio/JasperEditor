@@ -538,6 +538,31 @@ export const ClipSfxSchema = z.looseObject({
 });
 export type ClipSfx = DeepStrip<z.infer<typeof ClipSfxSchema>>;
 
+/** What a bed is for (spec 12 §4 P6-E12): an ambience per scene, or room tone under dialogue. */
+export const BED_PURPOSES = ['ambience', 'roomtone'] as const;
+export type BedPurpose = (typeof BED_PURPOSES)[number];
+
+/**
+ * `AudioClip.bed` (spec 12 §4 P6-E12; wp-note "Phase 6 → WP-E8"): the clip is a piece of a bed laid by
+ * `soundDesign.layBed` — an ambience looped per scene, or room tone in a dialogue gap. The pieces are ordinary clips
+ * joined by crossfade transitions; this records which bed and loop they belong to, so laying the bed again replaces
+ * them. Optional (absent on every other clip); a malformed value is dropped by `repairDocument` (the clip stays).
+ */
+export const ClipBedSchema = z.looseObject({
+	purpose: z.enum(BED_PURPOSES),
+	/** 0-based shot (scene) of the command that laid it, and the piece's index in that shot. */
+	shot: z.number().int().min(0).max(1_000_000),
+	piece: z.number().int().min(0).max(1_000_000),
+	/** The loop of the media the pieces repeat (content flicks from the media start), `inFlicks < outFlicks`. */
+	loop: z
+		.looseObject({
+			inFlicks: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+			outFlicks: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+		})
+		.refine((l) => l.outFlicks > l.inFlicks, 'loop.outFlicks must be after loop.inFlicks'),
+});
+export type ClipBed = DeepStrip<z.infer<typeof ClipBedSchema>>;
+
 /** Settings with their read-time defaults (absent settings, or a document written before the field existed). */
 export const DEFAULT_SOUND_DESIGN_SETTINGS: SoundDesignSettings = {
 	delivery: 'web',
@@ -590,6 +615,17 @@ export function soundDesignIssue(raw: unknown): string | null {
 /** The problem with a stored `AudioClip.sfx`, or null when it is valid (INV-SFX). */
 export function clipSfxIssue(raw: unknown): string | null {
 	return issueOf(ClipSfxSchema.safeParse(raw));
+}
+
+/** The problem with a stored `AudioClip.bed`, or null when it is valid (INV-SFX). */
+export function clipBedIssue(raw: unknown): string | null {
+	return issueOf(ClipBedSchema.safeParse(raw));
+}
+
+/** A stored `AudioClip.bed`, or null when it does not read. Pure; never throws. */
+export function readClipBed(raw: unknown): ClipBed | null {
+	const r = ClipBedSchema.safeParse(raw);
+	return r.success ? (r.data as ClipBed) : null;
 }
 
 /** Keeps the fields of `raw` that `shape` does not know (newer builds' fields survive a repair, S01:DOC-005). */

@@ -9,6 +9,7 @@ import type { Clip, Sequence } from '../schema/sequence.ts';
 import {
 	type ClipSfx,
 	type CueMix,
+	clipBedIssue,
 	clipSfxIssue,
 	type MixWrite,
 	readClipSfx,
@@ -44,6 +45,15 @@ export function clipSfxProblem(c: { kind: string; sfx?: unknown }): string | nul
 	if (sfx === undefined) return null;
 	if (c.kind !== 'audio') return `a ${c.kind} clip cannot carry sound-design metadata`;
 	return clipSfxIssue(sfx);
+}
+
+/** INV-SFX: what is wrong with a clip's `bed` (spec 12 P6-E12), or null (only audio clips carry it). */
+export function clipBedProblem(c: { kind: string; bed?: unknown }): string | null {
+	const bed = (c as { bed?: unknown }).bed;
+	if (bed === undefined) return null;
+	if (c.kind !== 'audio') return `a ${c.kind} clip cannot be a piece of a bed`;
+	const bad = clipBedIssue(bed);
+	return bad ? `bed: ${bad}` : null;
 }
 
 /** INV-SOUND: what is wrong with a sequence marker's Sound Check verdict data (`soundDesign.setVerdict`), or null. */
@@ -193,6 +203,13 @@ export function repairSoundDesign(doc: ProjectDocument, ids: IdSource, note: Not
 				delete cr.sfx;
 				note('drop-sfx', c.id, 'unreadable sound-design metadata removed (the clip stays)');
 			}
+		}
+		// Bed metadata (P6-E12): unreadable or on another kind of clip → dropped (the clip stays an ordinary clip).
+		for (const c of Object.values(seq.clips)) {
+			if ((c as { bed?: unknown }).bed === undefined) continue;
+			if (clipBedProblem(c as Clip & { bed?: unknown }) === null) continue;
+			delete (c as { bed?: unknown }).bed;
+			note('drop-bed', c.id, 'unreadable bed metadata removed (the clip stays)');
 		}
 		// Verdict markers: unreadable verdict data is dropped (the marker stays, as an unbound verdict).
 		for (const m of seq.markers ?? []) {
