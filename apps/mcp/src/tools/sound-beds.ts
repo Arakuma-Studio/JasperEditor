@@ -13,7 +13,15 @@ import {
 import { type Sequence, TimeInputSchema } from '@jasper/project';
 import { z } from 'zod';
 import { ProjectIdArg, SequenceIdArg, TIME_FORMATS } from '../arguments.ts';
-import { cancelIfAborted, defineTool, EDIT, frameOf, loadDoc, type ToolContext, waitJob } from '../context.ts';
+import {
+	cancelIfAborted,
+	defineTool,
+	EDIT,
+	frameOf,
+	loadDoc,
+	type ToolContext,
+	waitJob,
+} from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
 import { SoundIdArg } from './sound.ts';
@@ -21,7 +29,9 @@ import { SoundIdArg } from './sound.ts';
 const MODE = z
 	.enum(['propose', 'apply'])
 	.optional()
-	.describe('"propose" (default): a proposal for the user to review; "apply": one undoable edit (only when the user asked)');
+	.describe(
+		'"propose" (default): a proposal for the user to review; "apply": one undoable edit (only when the user asked)',
+	);
 const PREVIEW = z
 	.boolean()
 	.optional()
@@ -31,10 +41,18 @@ const SPAN = z.object({ start: TimeInputSchema, end: TimeInputSchema });
 
 const fmtDb = (x: number) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${Math.abs(Math.round(x * 10) / 10)}`;
 
-function spanOf(seq: Sequence, s: { start: unknown; end: unknown }, what: string): { start: number; end: number } {
+function spanOf(
+	seq: Sequence,
+	s: { start: unknown; end: unknown },
+	what: string,
+): { start: number; end: number } {
 	const r = { start: frameOf(seq, s.start as never), end: frameOf(seq, s.end as never) };
 	if (!(r.end > r.start))
-		throw new ToolError('E_INVALID_PARAM', `${what}: end (${r.end}) must be after start (${r.start})`, TIME_FORMATS);
+		throw new ToolError(
+			'E_INVALID_PARAM',
+			`${what}: end (${r.end}) must be after start (${r.start})`,
+			TIME_FORMATS,
+		);
 	return r;
 }
 
@@ -93,15 +111,44 @@ export function registerSoundBedTools(ctx: ToolContext): void {
 					.array(z.enum(BED_SCENE_SOURCES))
 					.max(3)
 					.optional()
-					.describe('Scene changes for "auto": edits (V1 cuts to other footage), markers, shots (measured); default edits + markers'),
+					.describe(
+						'Scene changes for "auto": edits (V1 cuts to other footage), markers, shots (measured); default edits + markers',
+					),
 				range: SPAN.optional().describe(`Only scenes in [start, end). ${TIME_FORMATS}`),
-				gainDb: z.number().min(-60).max(40).optional().describe('Clip gain of the bed (default the ambience level)'),
-				fadeSec: z.number().min(0).max(30).optional().describe('Fades where a bed starts and stops (default 1 s)'),
+				gainDb: z
+					.number()
+					.min(-60)
+					.max(40)
+					.optional()
+					.describe('Clip gain of the bed (default the ambience level)'),
+				fadeSec: z
+					.number()
+					.min(0)
+					.max(30)
+					.optional()
+					.describe('Fades where a bed starts and stops (default 1 s)'),
 				crossfadeSec: z.number().min(0.05).max(30).optional().describe('Loop crossfade (default 1.5 s)'),
-				sceneCrossfadeSec: z.number().min(0).max(10).optional().describe('Crossfade at scene changes (default 0.5 s)'),
-				duckUnder: z.enum(['dialogue', 'heroes']).nullable().optional().describe('Duck the bed (Volume keyframes)'),
-				track: z.string().min(1).max(64).optional().describe('An audio track free over the scenes, or "auto"'),
-				replace: z.boolean().optional().describe('Replace earlier ambience beds over the scenes (default true)'),
+				sceneCrossfadeSec: z
+					.number()
+					.min(0)
+					.max(10)
+					.optional()
+					.describe('Crossfade at scene changes (default 0.5 s)'),
+				duckUnder: z
+					.enum(['dialogue', 'heroes'])
+					.nullable()
+					.optional()
+					.describe('Duck the bed (Volume keyframes)'),
+				track: z
+					.string()
+					.min(1)
+					.max(64)
+					.optional()
+					.describe('An audio track free over the scenes, or "auto"'),
+				replace: z
+					.boolean()
+					.optional()
+					.describe('Replace earlier ambience beds over the scenes (default true)'),
 				label: z.string().min(1).max(200).optional().describe('Proposal title / History label'),
 				timeoutSeconds: TIMEOUT,
 			},
@@ -138,7 +185,9 @@ export function registerSoundBedTools(ctx: ToolContext): void {
 				...(a.label ? { label: a.label } : {}),
 			};
 			if (a.preview) {
-				const plan = SoundBedsPlanSchema.parse(await ctx.engine((c) => c.planAmbienceBeds(body, extra.signal)));
+				const plan = SoundBedsPlanSchema.parse(
+					await ctx.engine((c) => c.planAmbienceBeds(body, extra.signal)),
+				);
 				return jsonResult({
 					preview: true,
 					scenes: plan.scenes.length,
@@ -148,7 +197,9 @@ export function registerSoundBedTools(ctx: ToolContext): void {
 					next: 'Nothing was changed. Call again without preview (mode "propose") to put it up for review.',
 				});
 			}
-			const job = await ctx.engine((c) => c.layAmbienceBeds({ ...body, mode: a.mode ?? 'propose' }, extra.signal));
+			const job = await ctx.engine((c) =>
+				c.layAmbienceBeds({ ...body, mode: a.mode ?? 'propose' }, extra.signal),
+			);
 			await cancelIfAborted(ctx, extra, job.id);
 			const { job: done, timedOut } = await waitJob(ctx, job.id, (a.timeoutSeconds ?? 300) * 1000, extra);
 			if (timedOut)
@@ -195,10 +246,21 @@ export function registerSoundBedTools(ctx: ToolContext): void {
 				sequenceId: SequenceIdArg,
 				mode: MODE,
 				preview: PREVIEW,
-				gaps: z.array(SPAN).min(1).max(500).optional().describe(`Frames to fill (default every gap between dialogue clips). ${TIME_FORMATS}`),
+				gaps: z
+					.array(SPAN)
+					.min(1)
+					.max(500)
+					.optional()
+					.describe(`Frames to fill (default every gap between dialogue clips). ${TIME_FORMATS}`),
 				range: SPAN.optional().describe(`Only gaps in [start, end). ${TIME_FORMATS}`),
-				cover: z.enum(['gaps', 'regions']).optional().describe('"gaps" (default) or the whole dialogue regions'),
-				source: z.enum(['auto', 'library', 'dialogue']).optional().describe('Where the tone comes from (default auto)'),
+				cover: z
+					.enum(['gaps', 'regions'])
+					.optional()
+					.describe('"gaps" (default) or the whole dialogue regions'),
+				source: z
+					.enum(['auto', 'library', 'dialogue'])
+					.optional()
+					.describe('Where the tone comes from (default auto)'),
 				soundId: SoundIdArg.optional().describe('A room tone of the library to use'),
 				mediaId: z.string().min(1).max(128).optional().describe('A project media to use as the tone'),
 				gainDb: z.number().min(-60).max(40).optional().describe('Clip gain (default: at the floor)'),
@@ -224,15 +286,27 @@ export function registerSoundBedTools(ctx: ToolContext): void {
 			};
 			const summary = (p: SoundRoomTonePlan) => ({
 				gaps: p.gaps.map((g) => ({ start: g.start, end: g.end, timecode: g.timecode, fill: g.fill })),
-				floor: p.floor ? { levelDb: p.floor.levelDb, bandsDb: p.floor.bandsDb, clipIds: p.floor.clipIds } : null,
+				floor: p.floor
+					? { levelDb: p.floor.levelDb, bandsDb: p.floor.bandsDb, clipIds: p.floor.clipIds }
+					: null,
 				candidates: roomToneTable(p),
 				chosen: p.chosen
-					? { source: p.chosen.source, title: p.chosen.sound.title, soundId: p.chosen.sound.soundId, distanceDb: p.chosen.distanceDb, gainDb: p.chosen.gainDb, loop: p.chosen.sound.loop, why: p.chosen.why }
+					? {
+							source: p.chosen.source,
+							title: p.chosen.sound.title,
+							soundId: p.chosen.sound.soundId,
+							distanceDb: p.chosen.distanceDb,
+							gainDb: p.chosen.gainDb,
+							loop: p.chosen.sound.loop,
+							why: p.chosen.why,
+						}
 					: null,
 				...(p.warnings.length ? { warnings: p.warnings } : {}),
 			});
 			if (a.preview) {
-				const plan = SoundRoomTonePlanSchema.parse(await ctx.engine((c) => c.planRoomTone(body, extra.signal)));
+				const plan = SoundRoomTonePlanSchema.parse(
+					await ctx.engine((c) => c.planRoomTone(body, extra.signal)),
+				);
 				return jsonResult({
 					preview: true,
 					...summary(plan),
@@ -240,7 +314,9 @@ export function registerSoundBedTools(ctx: ToolContext): void {
 					next: 'Nothing was changed. Call again without preview (mode "propose") to put it up for review.',
 				});
 			}
-			const job = await ctx.engine((c) => c.fillRoomTone({ ...body, mode: a.mode ?? 'propose' }, extra.signal));
+			const job = await ctx.engine((c) =>
+				c.fillRoomTone({ ...body, mode: a.mode ?? 'propose' }, extra.signal),
+			);
 			await cancelIfAborted(ctx, extra, job.id);
 			const { job: done, timedOut } = await waitJob(ctx, job.id, (a.timeoutSeconds ?? 300) * 1000, extra);
 			if (timedOut)

@@ -40,7 +40,16 @@ const scene = (start: number, end: number, reason: 'start' | 'edit' | 'marker', 
 		mediaId: '$bed0',
 		title,
 		loudnessLufs: -28,
-		window: { startSec: 0.05, endSec: 4.05, levelDb: -30, levelStdDb: 0.9, onsetsPerMin: 0, spikes: 0, clean: true, whole: false },
+		window: {
+			startSec: 0.05,
+			endSec: 4.05,
+			levelDb: -30,
+			levelStdDb: 0.9,
+			onsetsPerMin: 0,
+			spikes: 0,
+			clean: true,
+			whole: false,
+		},
 		loop: {
 			inSec: 0.15,
 			outSec: 3.983,
@@ -116,7 +125,12 @@ function fixture(opts: { dialogueGap?: boolean } = {}) {
 					origin: 'user',
 					sequenceId: seqId,
 					commands: [
-						{ type: 'soundDesign.layBed', range: { start: 0, end: 600 }, mediaId: amb, loop: { inSec: 0.15, outSec: 4 } },
+						{
+							type: 'soundDesign.layBed',
+							range: { start: 0, end: 600 },
+							mediaId: amb,
+							loop: { inSec: 0.15, outSec: 4 },
+						},
 					] as never[],
 				});
 				if (!t.ok) throw new Error(JSON.stringify(t.errors));
@@ -139,7 +153,13 @@ function fixture(opts: { dialogueGap?: boolean } = {}) {
 				origin: 'user',
 				sequenceId: seqId,
 				commands: [
-					{ type: 'soundDesign.layBed', purpose: 'roomtone', shots: [{ start: 82, end: 158 }], mediaId: amb, gainDb: -7.8 },
+					{
+						type: 'soundDesign.layBed',
+						purpose: 'roomtone',
+						shots: [{ start: 82, end: 158 }],
+						mediaId: amb,
+						gainDb: -7.8,
+					},
 				] as never[],
 			});
 			if (!t.ok) throw new Error(JSON.stringify(t.errors));
@@ -202,7 +222,9 @@ describe('Sequence ▸ Sound Design: Lay Ambience Bed…, Fill Room Tone', () =>
 		const sd = MENUBAR.find((m) => m.label === 'Sequence')!.items.find(
 			(i) => i.type === 'submenu' && i.label === 'Sound Design',
 		) as { items: { command?: string }[] };
-		expect(sd.items.map((i) => i.command)).toEqual(expect.arrayContaining(['sound.layAmbienceBed', 'sound.fillRoomTone']));
+		expect(sd.items.map((i) => i.command)).toEqual(
+			expect.arrayContaining(['sound.layAmbienceBed', 'sound.fillRoomTone']),
+		);
 	});
 
 	it('Lay Ambience Bed…: the ambiences, the measured scenes, a scene’s own bed, a join, Lay Beds as one entry with Undo', async () => {
@@ -288,7 +310,12 @@ describe('Sequence ▸ Sound Design: Lay Ambience Bed…, Fill Room Tone', () =>
 		const p = {
 			sequenceId: 's',
 			purpose: 'ambience' as const,
-			scenes: [scene(0, 100, 'start'), scene(100, 200, 'edit'), scene(200, 300, 'edit'), scene(300, 400, 'edit')],
+			scenes: [
+				scene(0, 100, 'start'),
+				scene(100, 200, 'edit'),
+				scene(200, 300, 'edit'),
+				scene(300, 400, 'edit'),
+			],
 			commands: [],
 			warnings: [],
 			sources: [],

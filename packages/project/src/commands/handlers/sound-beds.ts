@@ -9,7 +9,13 @@ import { mediaDurationFlicks } from '../../interpret/model.ts';
 import type { ProjectDocument } from '../../schema/document.ts';
 import type { MediaAsset } from '../../schema/media.ts';
 import type { AudioClip, Sequence } from '../../schema/sequence.ts';
-import { type BedPurpose, type ClipBed, readClipBed, readSoundDesignSettings, type SoundDesign } from '../../schema/sound.ts';
+import {
+	type BedPurpose,
+	type ClipBed,
+	readClipBed,
+	readSoundDesignSettings,
+	type SoundDesign,
+} from '../../schema/sound.ts';
 import {
 	AMBIENCE_BED_DEFAULTS,
 	type BedLayoutRun,
@@ -21,8 +27,8 @@ import { dialogueSpans } from '../../sound/cues/dialogue.ts';
 import { audioTrackIsFree, type SoundTrackSequence } from '../../sound/insert.ts';
 import { defaultSfxLevel } from '../../sound/level.ts';
 import { readLibraryProvenance } from '../../sound/provenance.ts';
-import { CONSTANT_GAIN, CONSTANT_POWER } from '../../transitions.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../../time.ts';
+import { CONSTANT_GAIN, CONSTANT_POWER } from '../../transitions.ts';
 import type { DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, cleanupSequence, findTrackIn, removeClip, resolveTrackIn } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
@@ -72,7 +78,8 @@ function bedTrack(
 	}
 	const re = new RegExp(`^${name}\\b`, 'i');
 	for (const t of seq.audioTracks)
-		if (re.test(t.name ?? '') && !t.locked && trackFree(seq, t.id, spans)) return { trackId: t.id, created: false };
+		if (re.test(t.name ?? '') && !t.locked && trackFree(seq, t.id, spans))
+			return { trackId: t.id, created: false };
 	const taken = new Set(seq.audioTracks.map((t) => (t.name ?? '').toLowerCase()));
 	let label = name;
 	for (let k = 2; taken.has(label.toLowerCase()); k++) label = `${name} ${k}`;
@@ -85,7 +92,12 @@ function bedTrack(
 }
 
 /** A media that can be a bed: audio (or a video's audio) with a length. */
-function bedMedia(doc: DDoc, mediaId: string, h: HandlerContext, path: string[]): { asset: Draft<MediaAsset>; flicks: number } {
+function bedMedia(
+	doc: DDoc,
+	mediaId: string,
+	h: HandlerContext,
+	path: string[],
+): { asset: Draft<MediaAsset>; flicks: number } {
 	const asset = doc.media[mediaId] as Draft<MediaAsset> | undefined;
 	if (!asset) return h.fail('E_NOT_FOUND', `Media not found: ${mediaId}`, { path });
 	if (!SOUND_MEDIA_KINDS.has(asset.kind) || !asset.probe.streams.some((s) => s.type === 'audio'))
@@ -121,21 +133,35 @@ function layBed(doc: DDoc, cmd: CommandOf<'soundDesign.layBed'>, h: HandlerConte
 		const own = 'mediaId' in s && typeof s.mediaId === 'string' ? s.mediaId : undefined;
 		const mediaId = own ?? cmd.mediaId;
 		const { flicks } = bedMedia(doc, mediaId, h, own ? [...path, 'mediaId'] : ['mediaId']);
-		const loopSec =
-			('loop' in s && s.loop) || (mediaId === cmd.mediaId ? cmd.loop : undefined) || null;
+		const loopSec = ('loop' in s && s.loop) || (mediaId === cmd.mediaId ? cmd.loop : undefined) || null;
 		const inFlicks = loopSec ? Math.round(loopSec.inSec * FLICKS_PER_SECOND) : 0;
 		const outFlicks = loopSec ? Math.min(flicks, Math.round(loopSec.outSec * FLICKS_PER_SECOND)) : flicks;
 		if (loopSec && Math.round(loopSec.inSec * FLICKS_PER_SECOND) >= flicks)
-			h.fail('E_INVALID_PARAM', `The loop starts after the end of media ${mediaId}`, { path: [...path, 'loop'] });
+			h.fail('E_INVALID_PARAM', `The loop starts after the end of media ${mediaId}`, {
+				path: [...path, 'loop'],
+			});
 		const gain = 'gainDb' in s && typeof s.gainDb === 'number' ? s.gainDb : (cmd.gainDb ?? null);
 		const fade = ('fade' in s && s.fade) || cmd.fade || 'equal-power';
-		return { start, end, mediaId, mediaFlicks: flicks, loop: { inFlicks, outFlicks }, gainDb: gain, fade, path };
+		return {
+			start,
+			end,
+			mediaId,
+			mediaFlicks: flicks,
+			loop: { inFlicks, outFlicks },
+			gainDb: gain,
+			fade,
+			path,
+		};
 	});
 	for (let i = 1; i < shots.length; i++)
 		if (shots[i]!.start < shots[i - 1]!.end)
-			h.fail('E_INVALID_PARAM', `Shot ${i + 1} starts before shot ${i} ends: shots must be in order, without overlaps`, {
-				path: ['shots', String(i)],
-			});
+			h.fail(
+				'E_INVALID_PARAM',
+				`Shot ${i + 1} starts before shot ${i} ends: shots must be in order, without overlaps`,
+				{
+					path: ['shots', String(i)],
+				},
+			);
 	const spans = shots.map((s) => ({ start: s.start, end: s.end }));
 	// replace: the earlier beds of this purpose over these spans go first (their transitions and groups with them)
 	const replaced: string[] = [];
@@ -176,7 +202,14 @@ function layBed(doc: DDoc, cmd: CommandOf<'soundDesign.layBed'>, h: HandlerConte
 			`Shot ${i + 1}: its loop (${((shots[i]!.loop.outFlicks - shots[i]!.loop.inFlicks) / FLICKS_PER_SECOND).toFixed(2)} s) is too short for a ${crossfadeSec} s crossfade; ${(layout.crossfades[i]! / fps).toFixed(2)} s`,
 			shots[i]!.path,
 		);
-	const track = bedTrack(doc, seq, cmd.track, room ? ROOM_TONE_DEFAULTS.trackName : AMBIENCE_BED_DEFAULTS.trackName, spans, h);
+	const track = bedTrack(
+		doc,
+		seq,
+		cmd.track,
+		room ? ROOM_TONE_DEFAULTS.trackName : AMBIENCE_BED_DEFAULTS.trackName,
+		spans,
+		h,
+	);
 	// the default level: the gain given, else the library sound's ambience level (its descriptors), else 0 dB
 	const gainOf = (s: Shot): number => {
 		if (s.gainDb !== null) return s.gainDb;
@@ -254,7 +287,8 @@ function layBed(doc: DDoc, cmd: CommandOf<'soundDesign.layBed'>, h: HandlerConte
 		}
 		const transitionsOf = (r: BedLayoutRun) => {
 			for (const j of r.joins) {
-				const law = j.kind === 'loop' && shots[j.shot]!.fade === 'equal-gain' ? CONSTANT_GAIN : CONSTANT_POWER;
+				const law =
+					j.kind === 'loop' && shots[j.shot]!.fade === 'equal-gain' ? CONSTANT_GAIN : CONSTANT_POWER;
 				const out = addTransition(
 					doc,
 					{
@@ -274,7 +308,14 @@ function layBed(doc: DDoc, cmd: CommandOf<'soundDesign.layBed'>, h: HandlerConte
 				if (frames < 1) return;
 				const out = addTransition(
 					doc,
-					{ type: 'transition.add', sequenceId: seq.id, clipId, edge: e, effectId: CONSTANT_POWER, duration: frames },
+					{
+						type: 'transition.add',
+						sequenceId: seq.id,
+						clipId,
+						edge: e,
+						effectId: CONSTANT_POWER,
+						duration: frames,
+					},
 					h,
 				) as { transitionId?: string };
 				if (out?.transitionId) transitionIds.push(out.transitionId);
@@ -297,25 +338,40 @@ function layBed(doc: DDoc, cmd: CommandOf<'soundDesign.layBed'>, h: HandlerConte
 				: Object.values(pseq.clips)
 						.filter(
 							(c) =>
-								c.kind === 'audio' && (c as { sfx?: { role?: unknown } }).sfx?.role === 'hero' && !clipIds.includes(c.id),
+								c.kind === 'audio' &&
+								(c as { sfx?: { role?: unknown } }).sfx?.role === 'hero' &&
+								!clipIds.includes(c.id),
 						)
 						.map((c) => ({ start: c.start, end: clipEnd(c) }));
 		const depth =
-			cmd.duckDb ?? (cmd.duckUnder === 'dialogue' ? AMBIENCE_BED_DEFAULTS.duckDialogueDb : AMBIENCE_BED_DEFAULTS.duckHeroesDb);
+			cmd.duckDb ??
+			(cmd.duckUnder === 'dialogue'
+				? AMBIENCE_BED_DEFAULTS.duckDialogueDb
+				: AMBIENCE_BED_DEFAULTS.duckHeroesDb);
 		const fadeMs =
-			cmd.duckUnder === 'dialogue' ? AMBIENCE_BED_DEFAULTS.duckDialogueFadeMs : AMBIENCE_BED_DEFAULTS.duckHeroesFadeMs;
+			cmd.duckUnder === 'dialogue'
+				? AMBIENCE_BED_DEFAULTS.duckDialogueFadeMs
+				: AMBIENCE_BED_DEFAULTS.duckHeroesFadeMs;
 		const bedSpan = spans.length ? { start: spans[0]!.start, end: spans[spans.length - 1]!.end } : null;
 		const dips = under
 			.filter((u) => bedSpan && u.start < bedSpan.end && u.end > bedSpan.start)
 			.map((u) => ({ start: u.start * F, end: u.end * F, depthDb: depth, fadeMs }));
 		for (let k = 0; k < dips.length && depth < 0; k += VOLUME_DIP_MAX) {
 			const chunk = dips.slice(k, k + VOLUME_DIP_MAX);
-			const r = soundMixHandlers['audio.volumeDip'](doc, { type: 'audio.volumeDip', clipIds, dips: chunk }, h) as {
+			const r = soundMixHandlers['audio.volumeDip'](
+				doc,
+				{ type: 'audio.volumeDip', clipIds, dips: chunk },
+				h,
+			) as {
 				clips: Record<string, { written?: number }>;
 			};
 			if (Object.values(r.clips).some((c) => (c.written ?? 0) > 0)) ducked += chunk.length;
 		}
-		if (dips.length === 0) h.warn('W_BED_NOTHING_TO_DUCK', `No ${cmd.duckUnder === 'dialogue' ? 'dialogue' : 'hero sound'} plays over the bed`);
+		if (dips.length === 0)
+			h.warn(
+				'W_BED_NOTHING_TO_DUCK',
+				`No ${cmd.duckUnder === 'dialogue' ? 'dialogue' : 'hero sound'} plays over the bed`,
+			);
 	}
 	cleanupSequence(seq, h);
 	return {

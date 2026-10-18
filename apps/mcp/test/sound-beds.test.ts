@@ -32,7 +32,9 @@ const logs: string[] = [];
 const engineLog: string[] = [];
 
 async function call(name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
-	return (await client.callTool({ name, arguments: args }, undefined, { timeout: 600_000 })) as CallToolResult;
+	return (await client.callTool({ name, arguments: args }, undefined, {
+		timeout: 600_000,
+	})) as CallToolResult;
 }
 async function ok<T = Record<string, unknown>>(name: string, args: Record<string, unknown> = {}) {
 	const r = await call(name, args);
@@ -95,7 +97,10 @@ function pink(seconds: number, seed: number, dbfs: number): Float32Array {
 }
 const white = (seconds: number, seed: number, dbfs: number) => {
 	const r = prng(seed);
-	return scaleTo(Float32Array.from({ length: Math.round(seconds * SR) }, () => r()), dbfs);
+	return scaleTo(
+		Float32Array.from({ length: Math.round(seconds * SR) }, () => r()),
+		dbfs,
+	);
 };
 
 async function docOf(projectId: string): Promise<ProjectDocument> {
@@ -215,23 +220,42 @@ describe('beds and room tone through MCP', { timeout: 900_000 }, () => {
 			projectId,
 			label: 'Dialogue',
 			commands: [
-				{ type: 'clip.place', source: { mediaId: m }, sourceRange: { in: { seconds: 0 }, out: { seconds: 9.5 } }, at: 0, tracks: { audio: 'A1' }, ref: '$a' },
-				{ type: 'clip.place', source: { mediaId: m }, sourceRange: { in: { seconds: 10.5 }, out: { seconds: 20 } }, at: 315, tracks: { audio: 'A1' }, ref: '$b' },
+				{
+					type: 'clip.place',
+					source: { mediaId: m },
+					sourceRange: { in: { seconds: 0 }, out: { seconds: 9.5 } },
+					at: 0,
+					tracks: { audio: 'A1' },
+					ref: '$a',
+				},
+				{
+					type: 'clip.place',
+					source: { mediaId: m },
+					sourceRange: { in: { seconds: 10.5 }, out: { seconds: 20 } },
+					at: 315,
+					tracks: { audio: 'A1' },
+					ref: '$b',
+				},
 				{ type: 'essentialSound.setType', clipIds: ['$a', '$b'], audioType: 'dialogue' },
 				{ type: 'marker.add', frame: 200, name: 'Scene 2' },
 				{ type: 'marker.add', frame: 400, name: 'Scene 3' },
 			],
 		});
-		const found = await ok<{ results: { soundId: string; title: string }[] }>('search_sounds', { types: ['ambience'] });
+		const found = await ok<{ results: { soundId: string; title: string }[] }>('search_sounds', {
+			types: ['ambience'],
+		});
 		ambience = found.results.find((r) => r.title === 'Test street ambience')!.soundId;
 	});
 
 	it('lay_ambience_bed: preview, propose (nothing changes), apply (one edit)', async () => {
-		const preview = await ok<{ scenes: number; table: string; transaction: { type: string }[] }>('lay_ambience_bed', {
-			projectId,
-			soundId: ambience,
-			preview: true,
-		});
+		const preview = await ok<{ scenes: number; table: string; transaction: { type: string }[] }>(
+			'lay_ambience_bed',
+			{
+				projectId,
+				soundId: ambience,
+				preview: true,
+			},
+		);
 		console.info(`[mcp beds] preview\n${preview.table}`);
 		expect(preview.scenes).toBe(3);
 		expect(preview.table).toContain('Test street ambience');
@@ -260,11 +284,15 @@ describe('beds and room tone through MCP', { timeout: 900_000 }, () => {
 		});
 		expect(applied.applied).toBe(true);
 		const seq = seqOf(await docOf(projectId));
-		const bed = Object.values(seq.clips).filter((c) => readClipBed((c as { bed?: unknown }).bed)?.purpose === 'ambience');
+		const bed = Object.values(seq.clips).filter(
+			(c) => readClipBed((c as { bed?: unknown }).bed)?.purpose === 'ambience',
+		);
 		expect(bed.length).toBeGreaterThanOrEqual(3);
 		expect(seq.audioTracks.find((t) => t.id === bed[0]!.trackId)!.name).toBe('Ambience');
 		// ducked: Volume keyframes on the pieces under the dialogue
-		expect(bed.some((c) => ((c as { volumeDb?: { keyframes?: unknown[] } }).volumeDb?.keyframes ?? []).length > 0)).toBe(true);
+		expect(
+			bed.some((c) => ((c as { volumeDb?: { keyframes?: unknown[] } }).volumeDb?.keyframes ?? []).length > 0),
+		).toBe(true);
 	});
 
 	it('fill_room_tone: the floor, the ranked tones (pink closest), the fill', async () => {
@@ -274,14 +302,18 @@ describe('beds and room tone through MCP', { timeout: 900_000 }, () => {
 			candidates: string;
 			chosen: { title: string; source: string; distanceDb: number; gainDb: number; why: string } | null;
 		}>('fill_room_tone', { projectId, preview: true });
-		console.info(`[mcp room tone] floor ${preview.floor?.levelDb} dBFS\n${preview.candidates}\nchosen ${preview.chosen?.title}: ${preview.chosen?.why}`);
+		console.info(
+			`[mcp room tone] floor ${preview.floor?.levelDb} dBFS\n${preview.candidates}\nchosen ${preview.chosen?.title}: ${preview.chosen?.why}`,
+		);
 		expect(preview.gaps.map((g) => [g.start, g.end])).toEqual([[285, 315]]);
 		expect(preview.chosen?.title).toBe('Room tone pink');
 		expect(preview.candidates).toContain('Room tone hiss');
 		const applied = await ok<{ applied: boolean }>('fill_room_tone', { projectId, mode: 'apply' });
 		expect(applied.applied).toBe(true);
 		const seq = seqOf(await docOf(projectId));
-		const fill = Object.values(seq.clips).filter((c) => readClipBed((c as { bed?: unknown }).bed)?.purpose === 'roomtone');
+		const fill = Object.values(seq.clips).filter(
+			(c) => readClipBed((c as { bed?: unknown }).bed)?.purpose === 'roomtone',
+		);
 		expect(fill.length).toBeGreaterThanOrEqual(1);
 		expect(Math.min(...fill.map((c) => c.start))).toBe(277);
 	});
@@ -290,7 +322,11 @@ describe('beds and room tone through MCP', { timeout: 900_000 }, () => {
 		const none = await call('lay_ambience_bed', { projectId, mode: 'apply', replace: false });
 		expect(none.isError).toBe(true);
 		expect(textOf(none)).toContain('BED_SOUND_REQUIRED');
-		const bad = await call('lay_ambience_bed', { projectId, soundId: ambience, range: { start: 50, end: 10 } });
+		const bad = await call('lay_ambience_bed', {
+			projectId,
+			soundId: ambience,
+			range: { start: 50, end: 10 },
+		});
 		expect(bad.isError).toBe(true);
 		expect(textOf(bad)).toContain('E_INVALID_PARAM');
 		const unknown = await call('fill_room_tone', { projectId, nope: 1 });

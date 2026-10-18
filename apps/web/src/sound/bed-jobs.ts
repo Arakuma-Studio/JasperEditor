@@ -88,7 +88,9 @@ export function bedsSummary(r: SoundBedsResult): { title: string; detail: string
 }
 
 /** The toast after a room-tone job. */
-export function roomToneSummary(r: SoundRoomToneResult | { plan: SoundRoomTonePlan; applied: boolean; proposalId: string | null }): {
+export function roomToneSummary(
+	r: SoundRoomToneResult | { plan: SoundRoomTonePlan; applied: boolean; proposalId: string | null },
+): {
 	title: string;
 	detail: string;
 } {
@@ -105,6 +107,11 @@ export function roomToneSummary(r: SoundRoomToneResult | { plan: SoundRoomTonePl
 		detail:
 			c.distanceDb === null
 				? t('"{0}" at {1} dB', c.sound.title, c.gainDb.toFixed(1))
-				: t('"{0}", {1} dB from the dialogue’s noise floor, at {2} dB', c.sound.title, c.distanceDb.toFixed(1), c.gainDb.toFixed(1)),
+				: t(
+						'"{0}", {1} dB from the dialogue’s noise floor, at {2} dB',
+						c.sound.title,
+						c.distanceDb.toFixed(1),
+						c.gainDb.toFixed(1),
+					),
 	};
 }

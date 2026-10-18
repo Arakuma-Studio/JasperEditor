@@ -9,7 +9,16 @@ import type { SoundBedsPlan, SoundBedsRequest } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import { dialogueSpans, type Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { Button, Checkbox, Dialog, type HostedDialogProps, registerDialog, Select, Slider, toast as uiToast } from '@jasper/ui';
+import {
+	Button,
+	Checkbox,
+	Dialog,
+	type HostedDialogProps,
+	registerDialog,
+	Select,
+	Slider,
+	toast as uiToast,
+} from '@jasper/ui';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import type { ToastRequest } from '../commands/types.ts';
 import { useDialogClose } from '../extensions/dialog.ts';
@@ -118,15 +127,18 @@ export function AmbienceBedDialog(
 		return () => ac.abort();
 	}, [engine, seq]);
 
-	const base = (): Omit<SoundBedsRequest, 'mode'> => ({
-		projectId: session.projectId,
-		sequenceId,
-		soundId,
-		crossfadeSec,
-		sceneCrossfadeSec: sceneSec,
-		fadeSec,
-		...(duck ? { duckUnder: 'dialogue' as const } : {}),
-	});
+	const base = useMemo(
+		(): Omit<SoundBedsRequest, 'mode'> => ({
+			projectId: session.projectId,
+			sequenceId,
+			soundId,
+			crossfadeSec,
+			sceneCrossfadeSec: sceneSec,
+			fadeSec,
+			...(duck ? { duckUnder: 'dialogue' as const } : {}),
+		}),
+		[session.projectId, sequenceId, soundId, crossfadeSec, sceneSec, fadeSec, duck],
+	);
 
 	// the measured plan (debounced): scenes, windows, loop points
 	useEffect(() => {
@@ -138,7 +150,7 @@ export function AmbienceBedDialog(
 			engine
 				.planAmbienceBeds(
 					{
-						...base(),
+						...base,
 						sources: (['edits', 'markers', 'shots'] as const).filter((k) => sources[k]),
 					},
 					ac.signal,
@@ -161,8 +173,7 @@ export function AmbienceBedDialog(
 			clearTimeout(h);
 			ac.abort();
 		};
-		// biome-ignore lint/correctness/useExhaustiveDependencies: `base` reads these
-	}, [soundId, sources, duck, crossfadeSec, sceneSec, fadeSec, engine, seq]);
+	}, [base, soundId, sources, engine, seq]);
 
 	const run = async (mode: 'apply' | 'propose'): Promise<boolean> => {
 		if (!plan || !soundId) return false;
@@ -175,7 +186,7 @@ export function AmbienceBedDialog(
 			const r = await runBeds(
 				engine,
 				{
-					...base(),
+					...base,
 					mode,
 					...(edited
 						? { scenes: editedScenes(plan, edits, soundId) }
@@ -296,14 +307,45 @@ export function AmbienceBedDialog(
 						label={t('Shot changes (measured)')}
 					/>
 				</div>
-				<Field label={t('Loop crossfade')} value={t('{0} s', crossfadeSec.toFixed(1))} testId="ambience-bed-crossfade">
-					<Slider label={t('Loop crossfade')} value={crossfadeSec} min={0.5} max={4} step={0.1} defaultValue={1.5} disabled={busy} onChange={setCrossfade} />
+				<Field
+					label={t('Loop crossfade')}
+					value={t('{0} s', crossfadeSec.toFixed(1))}
+					testId="ambience-bed-crossfade"
+				>
+					<Slider
+						label={t('Loop crossfade')}
+						value={crossfadeSec}
+						min={0.5}
+						max={4}
+						step={0.1}
+						defaultValue={1.5}
+						disabled={busy}
+						onChange={setCrossfade}
+					/>
 				</Field>
 				<Field label={t('Scene crossfade')} value={t('{0} s', sceneSec.toFixed(1))}>
-					<Slider label={t('Scene crossfade')} value={sceneSec} min={0} max={2} step={0.1} defaultValue={0.5} disabled={busy} onChange={setSceneSec} />
+					<Slider
+						label={t('Scene crossfade')}
+						value={sceneSec}
+						min={0}
+						max={2}
+						step={0.1}
+						defaultValue={0.5}
+						disabled={busy}
+						onChange={setSceneSec}
+					/>
 				</Field>
 				<Field label={t('Fade in and out')} value={t('{0} s', fadeSec.toFixed(1))}>
-					<Slider label={t('Fade in and out')} value={fadeSec} min={0} max={3} step={0.1} defaultValue={1} disabled={busy} onChange={setFadeSec} />
+					<Slider
+						label={t('Fade in and out')}
+						value={fadeSec}
+						min={0}
+						max={3}
+						step={0.1}
+						defaultValue={1}
+						disabled={busy}
+						onChange={setFadeSec}
+					/>
 				</Field>
 				<Checkbox
 					checked={duck}
@@ -313,11 +355,7 @@ export function AmbienceBedDialog(
 				/>
 				<div className="flex flex-col gap-1" data-testid="ambience-bed-scenes" aria-busy={planning}>
 					<span className="text-pr-muted">
-						{planning
-							? t('Measuring the scenes…')
-							: plan
-								? t('{0} scenes', plan.scenes.length)
-								: t('Scenes')}
+						{planning ? t('Measuring the scenes…') : plan ? t('{0} scenes', plan.scenes.length) : t('Scenes')}
 					</span>
 					<ol className="flex max-h-[260px] flex-col gap-1 overflow-y-auto rounded border border-pr-border p-1">
 						{(plan?.scenes ?? []).map((s, i) => (

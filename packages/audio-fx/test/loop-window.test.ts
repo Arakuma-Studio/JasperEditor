@@ -4,6 +4,7 @@
 // with the found points (level at every joint within 1 dB of the body, no click), and hostile input that never throws.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { Prng } from '../src/core/util.ts';
 import {
 	crossfadeLaw,
 	detectClicks,
@@ -15,7 +16,6 @@ import {
 	spectralDistanceDb,
 	windowSpectrum,
 } from '../src/index.ts';
-import { Prng } from '../src/core/util.ts';
 
 const SR = 24_000;
 
@@ -58,7 +58,10 @@ function add(x: Float32Array, y: Float32Array, at = 0): Float32Array {
 /** A burst (a dog bark, a door): 0.3 s of a 900 Hz tone at `amp`. */
 function burst(seconds = 0.3, amp = 0.3): Float32Array {
 	const n = Math.round(seconds * SR);
-	return Float32Array.from({ length: n }, (_, i) => amp * Math.sin((2 * Math.PI * 900 * i) / SR) * Math.sin((Math.PI * i) / n));
+	return Float32Array.from(
+		{ length: n },
+		(_, i) => amp * Math.sin((2 * Math.PI * 900 * i) / SR) * Math.sin((Math.PI * i) / n),
+	);
 }
 
 const levelDb = (x: Float32Array, a: number, b: number) => {
@@ -242,7 +245,12 @@ describe('room tone', () => {
 
 	it('spectral distance: zero for equal shapes, symmetric in level, ignores bands 40 dB down', () => {
 		const a = [-40, -43, -46, -49, -52, -55, -58];
-		expect(spectralDistanceDb(a, a.map((v) => v - 12))).toBe(0);
+		expect(
+			spectralDistanceDb(
+				a,
+				a.map((v) => v - 12),
+			),
+		).toBe(0);
 		const b = [...a];
 		b[6] = -150; // far below: not counted
 		expect(spectralDistanceDb([...a.slice(0, 6), -100], b)).toBe(0);

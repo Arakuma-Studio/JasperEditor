@@ -329,7 +329,12 @@ function frameSpectra(x: Float32Array, sr: number, from: number, to: number): Fr
 }
 
 /** Octave levels (dB, floored) of the frames whose centre lies in `[a, b)` samples (relative to the analysed start). */
-function segmentBands(sp: FrameSpectra, from: number, a: number, b: number): { bands: number[]; level: number } {
+function segmentBands(
+	sp: FrameSpectra,
+	from: number,
+	a: number,
+	b: number,
+): { bands: number[]; level: number } {
 	const acc = new Float64Array(OCTAVE_BAND_CENTRES_HZ.length);
 	let t = 0;
 	let k = 0;
@@ -407,7 +412,9 @@ export function findLoopPoints(
 		const a = Math.round(t0 * sr);
 		const r = segmentBands(sp, from, a, a + Xn);
 		// too short for a spectral frame: the level from the samples
-		return r.level <= BAND_FLOOR_DB ? { ...r, level: Math.max(BAND_FLOOR_DB, dbFloor(meanSquare(x, a, a + Xn))) } : r;
+		return r.level <= BAND_FLOOR_DB
+			? { ...r, level: Math.max(BAND_FLOOR_DB, dbFloor(meanSquare(x, a, a + Xn))) }
+			: r;
 	};
 	const corr = (a0: number, b0: number): number => {
 		let ab = 0;
@@ -444,7 +451,8 @@ export function findLoopPoints(
 			const spectral = spectralDistanceDb(head.bands, tail.bands);
 			const rho = corr(Math.round(a * sr), Math.round((b - X) * sr));
 			const law = crossfadeLaw(rho);
-			const cost = Math.abs(levelDiffDb) + LOOP_CROSSFADE.spectralWeight * spectral + Math.abs(law.midpointDb);
+			const cost =
+				Math.abs(levelDiffDb) + LOOP_CROSSFADE.spectralWeight * spectral + Math.abs(law.midpointDb);
 			if (!best || cost < best.cost - 1e-9)
 				best = {
 					inSec: Math.round(a * 1000) / 1000,
@@ -472,7 +480,9 @@ export function crossfadeLaw(rho: number): { fade: 'equal-power' | 'equal-gain';
 	const p = fin(rho) ? Math.max(-1, Math.min(1, rho)) : 0;
 	const power = 10 * Math.log10(Math.max(1e-6, 1 + p));
 	const gain = 10 * Math.log10(Math.max(1e-6, (1 + p) / 2));
-	return Math.abs(gain) < Math.abs(power) ? { fade: 'equal-gain', midpointDb: gain } : { fade: 'equal-power', midpointDb: power };
+	return Math.abs(gain) < Math.abs(power)
+		? { fade: 'equal-gain', midpointDb: gain }
+		: { fade: 'equal-power', midpointDb: power };
 }
 
 // ── room tone ────────────────────────────────────────────────────────────────────────────────────────────────────

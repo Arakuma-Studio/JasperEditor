@@ -17,7 +17,10 @@ import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
 registerAmbienceBedDialog();
 
 const G: CommandScope = 'global';
-const FillArgs = z.object({ mode: z.enum(['apply', 'propose']).optional() }).strict().optional();
+const FillArgs = z
+	.object({ mode: z.enum(['apply', 'propose']).optional() })
+	.strict()
+	.optional();
 
 const writable = (ctx: CommandCtx) => {
 	const e = sequenceContext(ctx);
@@ -127,7 +130,9 @@ export const soundBedCommands: UiCommand[] = [
 		argsSchema: FillArgs,
 		when: (ctx) => {
 			const e = sequenceContext(ctx);
-			return !!e && !e.session.getState().readOnly && dialogueGaps(e.session.getCommitted(), e.seq).length > 0;
+			return (
+				!!e && !e.session.getState().readOnly && dialogueGaps(e.session.getCommitted(), e.seq).length > 0
+			);
 		},
 		disabledReason: (ctx) => {
 			const e = sequenceContext(ctx);
@@ -141,4 +146,3 @@ export const soundBedCommands: UiCommand[] = [
 		},
 	},
 ];
-

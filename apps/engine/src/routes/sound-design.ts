@@ -32,6 +32,7 @@ import {
 	type EnvelopeJson,
 	MotionAnalysisRequestSchema,
 	SfxRebalanceRequestSchema,
+	SoundBedsRequestSchema,
 	SoundCheckLastRequestSchema,
 	type SoundCheckLastResponse,
 	SoundCheckRequestSchema,
@@ -39,7 +40,6 @@ import {
 	type SoundCueSuggestion,
 	SoundCuesRequestSchema,
 	type SoundCuesResponse,
-	SoundBedsRequestSchema,
 	SoundDeliveryRequestSchema,
 	SoundDesignPlanRequestSchema,
 	SoundListenRequestSchema,
@@ -147,31 +147,31 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 		(ctx.input as { roomTone?: unknown } | null)?.roomTone !== undefined
 			? runBedJob(ctx, bedDeps)
 			: (ctx.input as { delivery?: unknown } | null)?.delivery
-			? runDelivery(ctx, {
-					agent: agentOf,
-					proposals: proposalsOf,
-					ffmpeg: core.ffmpeg,
-					registry: core.registry,
-					registries: defaultRegistries(mgRegistry),
-				})
-			: (ctx.input as { rebalance?: unknown } | null)?.rebalance
-				? runRebalance(ctx, {
+				? runDelivery(ctx, {
 						agent: agentOf,
 						proposals: proposalsOf,
 						ffmpeg: core.ffmpeg,
 						registry: core.registry,
+						registries: defaultRegistries(mgRegistry),
 					})
-				: runSoundDesignPlan(ctx, {
-						agent: agentOf,
-						engineCues: () => engineCues,
-						sounds: () => services.sounds as SoundService | undefined,
-						proposals: proposalsOf,
-						mgTemplates: mgRegistry,
-						ffmpeg: core.ffmpeg,
-						registry: core.registry,
-						planDelivery,
-						mixAnalysis,
-					}),
+				: (ctx.input as { rebalance?: unknown } | null)?.rebalance
+					? runRebalance(ctx, {
+							agent: agentOf,
+							proposals: proposalsOf,
+							ffmpeg: core.ffmpeg,
+							registry: core.registry,
+						})
+					: runSoundDesignPlan(ctx, {
+							agent: agentOf,
+							engineCues: () => engineCues,
+							sounds: () => services.sounds as SoundService | undefined,
+							proposals: proposalsOf,
+							mgTemplates: mgRegistry,
+							ffmpeg: core.ffmpeg,
+							registry: core.registry,
+							planDelivery,
+							mixAnalysis,
+						}),
 	);
 
 	// The last full report per sequence outlives the job (and the engine): the panel reloads it after a restart.

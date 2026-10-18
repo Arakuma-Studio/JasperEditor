@@ -61,17 +61,17 @@ import {
 	silentCurves,
 } from '@jasper/audio-fx';
 import {
+	type AudioClip,
 	applySoundAcknowledgements,
 	applyTransaction,
-	type AudioClip,
-	clipLaneTime,
 	type ClipSfx,
+	type CueKind,
+	clipLaneTime,
 	createRandomIdSource,
 	cueAnchorFrame,
-	type CueKind,
 	DELIVERY_DUCK_DB,
-	deliveryPreset,
 	DENSITY_BUDGETS,
+	deliveryPreset,
 	deriveCues,
 	dialogueRegions,
 	dialogueSpans,
@@ -89,23 +89,20 @@ import {
 	licenseClass,
 	MASKED_MIN_LIFT_DB,
 	type MediaAsset,
-	mediaDurationFlicks,
 	type MgTemplateRegistry,
+	mediaDurationFlicks,
 	mixFingerprint,
-	planSoundCheckFixes,
 	type ProjectDocument,
+	planSoundCheckFixes,
 	type Rational,
+	type Registries,
 	readClipSfx,
 	readEssentialSound,
 	readLibraryProvenance,
 	readSoundCheckTarget,
-	type Registries,
 	requiresAttribution,
 	roomToneSpan,
 	type Sequence,
-	sequenceDuration,
-	sequenceTimecode,
-	sequenceWords,
 	SOUND_CHECK_CAP_TOLERANCE_LU,
 	SOUND_CHECK_CATEGORY,
 	SOUND_CHECK_CODES,
@@ -115,24 +112,27 @@ import {
 	SOUND_CHECK_UNMEASURED,
 	SOUND_DESIGN_LIMITS,
 	type SoundCheckCode,
-	soundCheckFixCandidates,
-	soundCheckInputsHash,
 	type SoundCheckLevelGuard,
 	type SoundCheckLevelModel,
 	type SoundCheckMessage,
-	soundCheckMessage,
 	type SoundCheckSeverity,
 	type SoundCheckTarget,
-	soundCredits,
 	type SoundCue,
-	soundCuesOf,
 	type SoundDelivery,
-	soundDesignSettingsOf,
-	soundTimingOf,
 	SYNC_END_WINDOW_MS,
 	SYNC_MIN_CORRELATION,
 	SYNC_SEARCH_FRAMES,
 	SYNC_TOLERANCE_FRAMES,
+	sequenceDuration,
+	sequenceTimecode,
+	sequenceWords,
+	soundCheckFixCandidates,
+	soundCheckInputsHash,
+	soundCheckMessage,
+	soundCredits,
+	soundCuesOf,
+	soundDesignSettingsOf,
+	soundTimingOf,
 	trackLabel,
 	variationForFill,
 } from '@jasper/project';
@@ -148,6 +148,7 @@ import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { sec } from '../tools/ffmpeg.ts';
 import { HttpError } from '../tools/reply.ts';
 import { type AudioWorld, audioWorld, type MeasureCache, measureSfxEvents, VAD_FLOOR_DBFS } from './bed.ts';
+import { planRoomTone } from './beds.ts';
 import {
 	arcFindings,
 	CheckProbes,
@@ -179,7 +180,6 @@ import {
 	type StemName,
 	type StemSpec,
 } from './stems.ts';
-import { planRoomTone } from './beds.ts';
 import { voiceServiceFor } from './voice.ts';
 
 export const SOUND_CHECK_LABEL = 'Sound Check Result';
@@ -1798,7 +1798,10 @@ export async function checkSequence(
 	const endsSequence = range.end >= duration;
 	const counted = silentRuns
 		.map(([a, b]) => ({ a, b, fa: Math.floor(hopFrame(a)), fb: Math.min(range.end, Math.ceil(hopFrame(b))) }))
-		.filter((r) => !silenceExplained(r.fa, r.fb) && !(endsSequence && r.b >= rangeHops && r.a > 0 && audibleHops > 0));
+		.filter(
+			(r) =>
+				!silenceExplained(r.fa, r.fb) && !(endsSequence && r.b >= rangeHops && r.a > 0 && audibleHops > 0),
+		);
 	// P6-E12: a silence inside a dialogue region (dialogue on both sides less than 10 s apart) is a hole in the scene:
 	// its fix fills it with room tone (the closest match to the dialogue's noise floor; not safe: the user listens)
 	const regions = dialogueRegions(doc, seq, { voice: voice.voice });
@@ -1829,11 +1832,16 @@ export async function checkSequence(
 			aborted();
 			warnings.push({
 				code: 'W_ROOM_TONE_UNAVAILABLE',
-				message: `Room tone could not be matched for the silences in the dialogue: ${(e as Error).message}`.slice(0, 300),
+				message:
+					`Room tone could not be matched for the silences in the dialogue: ${(e as Error).message}`.slice(
+						0,
+						300,
+					),
 			});
 		}
 		for (const w of roomTone?.plan.warnings ?? [])
-			if (w.code !== 'W_NO_ROOM_TONE' || !roomTone?.plan.chosen) warnings.push({ code: w.code, message: w.message });
+			if (w.code !== 'W_NO_ROOM_TONE' || !roomTone?.plan.chosen)
+				warnings.push({ code: w.code, message: w.message });
 	}
 	const roomToneFix = (fa: number, fb: number): SoundCheckFix | undefined => {
 		const chosen = roomTone?.plan.chosen;

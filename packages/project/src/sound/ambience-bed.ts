@@ -117,9 +117,10 @@ const sourceKey = (c: Clip): string => {
 /**
  * The scenes of a sequence (or of `range`) a bed follows: see the module docs. `sources` default edits and markers;
  * `shotCuts` are measured shot-change frames (the engine's). Sorted, contiguous, covering the range. Never throws.
+ * (`_doc`: the document, for sources that will read it; today the sequence holds everything a scene needs.)
  */
 export function bedScenes(
-	doc: ProjectDocument,
+	_doc: ProjectDocument,
 	seq: Sequence,
 	opts: {
 		range?: { start: number; end: number };
@@ -161,7 +162,10 @@ export function bedScenes(
 		const first = at(r0);
 		const out: BedScene[] = [];
 		let start = r0;
-		let info: { reason: BedSceneReason; label: string } = { reason: 'start', label: String(first?.name ?? '') };
+		let info: { reason: BedSceneReason; label: string } = {
+			reason: 'start',
+			label: String(first?.name ?? ''),
+		};
 		for (const f of [...frames, r1]) {
 			const c = at(start);
 			const mediaId = (c as { mediaId?: unknown } | null)?.mediaId;
@@ -180,7 +184,9 @@ export function bedScenes(
 		const minFrames = Math.max(
 			1,
 			Math.round(
-				(fin(opts.minSceneSec) && opts.minSceneSec >= 0 ? opts.minSceneSec : AMBIENCE_BED_DEFAULTS.minSceneSec) * fps,
+				(fin(opts.minSceneSec) && opts.minSceneSec >= 0
+					? opts.minSceneSec
+					: AMBIENCE_BED_DEFAULTS.minSceneSec) * fps,
 			),
 		);
 		const merged: BedScene[] = out.map((s) => ({ ...s }));
@@ -283,8 +289,15 @@ export function planBedLayout(shots: readonly BedShotInput[], o: BedLayoutOption
 	const W: number[] = [];
 	for (let i = 0; i < n; i++) {
 		const s = shots[i]!;
-		if (!(Number.isSafeInteger(s.start) && Number.isSafeInteger(s.end) && s.start >= 0 && s.end - s.start >= 2))
-			return { ok: false, code: 'E_INVALID_PARAM', message: `Shot ${i + 1} needs at least 2 frames`, shot: i };
+		if (
+			!(Number.isSafeInteger(s.start) && Number.isSafeInteger(s.end) && s.start >= 0 && s.end - s.start >= 2)
+		)
+			return {
+				ok: false,
+				code: 'E_INVALID_PARAM',
+				message: `Shot ${i + 1} needs at least 2 frames`,
+				shot: i,
+			};
 		if (i > 0 && s.start < shots[i - 1]!.end)
 			return {
 				ok: false,
@@ -311,7 +324,12 @@ export function planBedLayout(shots: readonly BedShotInput[], o: BedLayoutOption
 		if (shots[i]!.start !== shots[i - 1]!.end) continue;
 		const la = shots[i - 1]!.end - shots[i - 1]!.start;
 		const lb = shots[i]!.end - shots[i]!.start;
-		const s = Math.min(S0, Math.floor(Math.min(la, lb) / 2), Math.floor(W[i - 1]! / 4), Math.floor(W[i]! / 4));
+		const s = Math.min(
+			S0,
+			Math.floor(Math.min(la, lb) / 2),
+			Math.floor(W[i - 1]! / 4),
+			Math.floor(W[i]! / 4),
+		);
 		if (s >= 1) {
 			sceneOut[i - 1] = s;
 			sceneIn[i] = s;
@@ -457,7 +475,11 @@ export function dialogueRegions(
 }
 
 /** Whether `[start, end)` lies inside a dialogue region (strictly between its first and last dialogue). */
-export function insideDialogueRegion(regions: readonly DialogueRegion[], start: number, end: number): DialogueRegion | null {
+export function insideDialogueRegion(
+	regions: readonly DialogueRegion[],
+	start: number,
+	end: number,
+): DialogueRegion | null {
 	return regions.find((r) => start >= r.start && end <= r.end) ?? null;
 }
 
@@ -498,7 +520,9 @@ export function dialogueGaps(
 		);
 		const minGap = Math.max(
 			1,
-			Math.round((fin(opts.minGapSec) && opts.minGapSec >= 0 ? opts.minGapSec : ROOM_TONE_DEFAULTS.minGapSec) * fps),
+			Math.round(
+				(fin(opts.minGapSec) && opts.minGapSec >= 0 ? opts.minGapSec : ROOM_TONE_DEFAULTS.minGapSec) * fps,
+			),
 		);
 		const r0 = opts.range && fin(opts.range.start) ? opts.range.start : 0;
 		const r1 = opts.range && fin(opts.range.end) ? opts.range.end : Number.POSITIVE_INFINITY;
@@ -536,8 +560,12 @@ export function roomToneSpan(
 }
 
 /** Joins spans that touch or overlap (sorted): one fill per stretch. */
-export function mergeSpans(spans: readonly { start: number; end: number }[]): { start: number; end: number }[] {
-	const sorted = [...spans].filter((s) => fin(s.start) && fin(s.end) && s.end > s.start).sort((a, b) => a.start - b.start);
+export function mergeSpans(
+	spans: readonly { start: number; end: number }[],
+): { start: number; end: number }[] {
+	const sorted = [...spans]
+		.filter((s) => fin(s.start) && fin(s.end) && s.end > s.start)
+		.sort((a, b) => a.start - b.start);
 	const out: { start: number; end: number }[] = [];
 	for (const s of sorted) {
 		const last = out[out.length - 1];

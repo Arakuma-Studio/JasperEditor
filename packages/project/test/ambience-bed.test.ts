@@ -37,7 +37,9 @@ function threeScenes(h: Harness) {
 	const ids: string[] = [];
 	for (let i = 0; i < 3; i++) {
 		const m = h.registerVideo({ seconds: 10, audio: false });
-		h.ok([{ type: 'clip.place', source: { mediaId: m }, at: i * 200, tracks: { video: 'V1' }, audio: false }]);
+		h.ok([
+			{ type: 'clip.place', source: { mediaId: m }, at: i * 200, tracks: { video: 'V1' }, audio: false },
+		]);
 		const c = h.clips('V1').find((x) => x.start === i * 200)!;
 		h.ok([{ type: 'clip.trim', clipId: c.id, edge: 'out', deltaFrames: 200 - c.duration }]);
 		ids.push(m);
@@ -77,21 +79,22 @@ describe('scenes', () => {
 		// measured shot changes, a range, the edits off
 		expect(bedScenes(h.doc, h.seq, { shotCuts: [100] }).map((s) => s.start)).toEqual([0, 100, 200, 400, 500]);
 		expect(
-			bedScenes(h.doc, h.seq, { range: { start: 150, end: 450 }, minSceneSec: 0 }).map((s) => [s.start, s.end]),
+			bedScenes(h.doc, h.seq, { range: { start: 150, end: 450 }, minSceneSec: 0 }).map((s) => [
+				s.start,
+				s.end,
+			]),
 		).toEqual([
 			[150, 200],
 			[200, 400],
 			[400, 450],
 		]);
 		// with the 2 s minimum, the 50-frame ends join the middle scene
-		expect(bedScenes(h.doc, h.seq, { range: { start: 150, end: 450 } }).map((s) => [s.start, s.end])).toEqual([
-			[150, 450],
-		]);
+		expect(bedScenes(h.doc, h.seq, { range: { start: 150, end: 450 } }).map((s) => [s.start, s.end])).toEqual(
+			[[150, 450]],
+		);
 		expect(bedScenes(h.doc, h.seq, { sources: { edits: false, markers: false } })).toHaveLength(1);
 		// a scene under 2 s joins a neighbour: here the next one, which only starts at a measured shot change
-		expect(
-			bedScenes(h.doc, h.seq, { shotCuts: [420] }).map((s) => [s.start, s.end]),
-		).toEqual([
+		expect(bedScenes(h.doc, h.seq, { shotCuts: [420] }).map((s) => [s.start, s.end])).toEqual([
 			[0, 200],
 			[200, 400],
 			[400, 500],
@@ -214,7 +217,10 @@ describe('layout', () => {
 		const o = { fps: R30, crossfadeFrames: 45, sceneCrossfadeFrames: 15, fadeFrames: 30 };
 		expect(planBedLayout([shotIn(0, 100, [0, 4]), shotIn(50, 150, [0, 4])], o)).toMatchObject({ ok: false });
 		expect(planBedLayout([shotIn(0, 1, [0, 4])], o)).toMatchObject({ ok: false });
-		expect(planBedLayout([shotIn(0, 100, [0, 0.1])], o)).toMatchObject({ ok: false, code: 'E_INVALID_PARAM' });
+		expect(planBedLayout([shotIn(0, 100, [0, 0.1])], o)).toMatchObject({
+			ok: false,
+			code: 'E_INVALID_PARAM',
+		});
 		// a short loop shortens the crossfade
 		const r = planBedLayout([shotIn(0, 300, [0, 1])], o);
 		expect(r.ok && r.layout.shortened).toEqual([0]);
@@ -227,7 +233,13 @@ describe('soundDesign.layBed', () => {
 		const { amb } = threeScenes(h);
 		const before = h.doc;
 		const shots = shotsOf(bedScenes(h.doc, h.seq));
-		const cmd = { type: 'soundDesign.layBed', shots, mediaId: amb, loop: { inSec: 0, outSec: 4 }, gainDb: -18 };
+		const cmd = {
+			type: 'soundDesign.layBed',
+			shots,
+			mediaId: amb,
+			loop: { inSec: 0, outSec: 4 },
+			gainDb: -18,
+		};
 		const r = h.ok([cmd]);
 		expect(r.warnings.filter((w) => w.code === 'W_TRANSITION_SHORTENED')).toEqual([]);
 		const res = r.results[0] as {
@@ -245,7 +257,9 @@ describe('soundDesign.layBed', () => {
 			[200, 400, 45],
 			[400, 600, 45],
 		]);
-		const clips = res.clipIds.map((id) => h.seq.clips[id] as AudioClip & { bed?: unknown; essential?: { type?: string } });
+		const clips = res.clipIds.map(
+			(id) => h.seq.clips[id] as AudioClip & { bed?: unknown; essential?: { type?: string } },
+		);
 		expect(clips.every((c) => c.essential?.type === 'ambience' && c.gainDb === -18)).toBe(true);
 		expect(clips.every((c) => readClipBed(c.bed)?.purpose === 'ambience')).toBe(true);
 		expect(clips.every((c) => c.groupId && c.groupId === clips[0]!.groupId)).toBe(true);
@@ -275,10 +289,14 @@ describe('soundDesign.layBed', () => {
 		const h = new Harness();
 		const { amb } = threeScenes(h);
 		const amb2 = h.registerVideo({ kind: 'audio', seconds: 30 });
-		const first = h.ok([{ type: 'soundDesign.layBed', range: { start: 0, end: 600 }, mediaId: amb, fade: 'equal-gain' }]);
+		const first = h.ok([
+			{ type: 'soundDesign.layBed', range: { start: 0, end: 600 }, mediaId: amb, fade: 'equal-gain' },
+		]);
 		const firstIds = (first.results[0] as { clipIds: string[] }).clipIds;
 		expect(
-			Object.values(h.seq.transitions).filter((t) => t.duration === 45).every((t) => t.effectId === 'jasper.constant-gain'),
+			Object.values(h.seq.transitions)
+				.filter((t) => t.duration === 45)
+				.every((t) => t.effectId === 'jasper.constant-gain'),
 		).toBe(true);
 		// without replace: a new "Ambience 2" track
 		const second = h.ok([{ type: 'soundDesign.layBed', range: { start: 0, end: 300 }, mediaId: amb2 }]);
@@ -297,14 +315,22 @@ describe('soundDesign.layBed', () => {
 				replace: true,
 			},
 		]);
-		const r3 = third.results[0] as { replacedClipIds: string[]; trackCreated: boolean; beds: { mediaId: string }[] };
+		const r3 = third.results[0] as {
+			replacedClipIds: string[];
+			trackCreated: boolean;
+			beds: { mediaId: string }[];
+		};
 		expect(r3.replacedClipIds.length).toBeGreaterThan(firstIds.length);
 		expect(firstIds.every((id) => !h.seq.clips[id])).toBe(true);
 		expect(r3.trackCreated).toBe(false);
 		expect(r3.beds.map((b) => b.mediaId)).toEqual([amb, amb2]);
 		// the second shot's pieces play inside 5–25 s of their media
-		const pieces = Object.values(h.seq.clips).filter((c) => c.kind === 'audio' && (c as AudioClip).mediaId === amb2);
-		expect(pieces.every((c) => c.sourceIn >= 5 * S - 1 && c.sourceIn + c.duration * F30 <= 25 * S + 1)).toBe(true);
+		const pieces = Object.values(h.seq.clips).filter(
+			(c) => c.kind === 'audio' && (c as AudioClip).mediaId === amb2,
+		);
+		expect(pieces.every((c) => c.sourceIn >= 5 * S - 1 && c.sourceIn + c.duration * F30 <= 25 * S + 1)).toBe(
+			true,
+		);
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 
@@ -315,18 +341,24 @@ describe('soundDesign.layBed', () => {
 		h.ok([{ type: 'clip.place', source: { mediaId: voice }, at: 150, tracks: { audio: 'A1' } }]);
 		const v = h.clips('A1')[0]!;
 		h.ok([{ type: 'essentialSound.setType', clipIds: [v.id], audioType: 'dialogue' }]);
-		const r = h.ok([{ type: 'soundDesign.layBed', range: { start: 0, end: 600 }, mediaId: amb, duckUnder: 'dialogue' }]);
+		const r = h.ok([
+			{ type: 'soundDesign.layBed', range: { start: 0, end: 600 }, mediaId: amb, duckUnder: 'dialogue' },
+		]);
 		const res = r.results[0] as { clipIds: string[]; ducked: number };
 		expect(res.ducked).toBe(1);
 		// the piece playing at 4.5 s (frame 135 + its dialogue's middle 195) is 10 dB down at frame 195
-		const piece = res.clipIds.map((id) => h.seq.clips[id] as AudioClip).find((c) => c.start <= 195 && c.start + c.duration > 195)!;
+		const piece = res.clipIds
+			.map((id) => h.seq.clips[id] as AudioClip)
+			.find((c) => c.start <= 195 && c.start + c.duration > 195)!;
 		const at = (f: number) => piece.sourceIn + (f - piece.start) * F30;
 		expect(evaluate(piece.volumeDb, at(195))).toBeCloseTo(-10, 1);
 		expect(checkInvariants(h.doc)).toEqual([]);
 		// nothing to duck: a warning, no keyframes
 		const h2 = new Harness();
 		const t2 = threeScenes(h2);
-		const r2 = h2.ok([{ type: 'soundDesign.layBed', range: { start: 0, end: 600 }, mediaId: t2.amb, duckUnder: 'dialogue' }]);
+		const r2 = h2.ok([
+			{ type: 'soundDesign.layBed', range: { start: 0, end: 600 }, mediaId: t2.amb, duckUnder: 'dialogue' },
+		]);
 		expect(r2.warnings.some((w) => w.code === 'W_BED_NOTHING_TO_DUCK')).toBe(true);
 	});
 
@@ -344,7 +376,16 @@ describe('soundDesign.layBed', () => {
 		bad({ mediaId: amb, range: { start: 0, end: 100 }, shots: [{ start: 0, end: 100 }] }, 'E_INVALID_PARAM');
 		bad({ mediaId: 'med_nope', range: { start: 0, end: 100 } }, 'E_NOT_FOUND');
 		bad({ mediaId: scenes[0], range: { start: 0, end: 100 } }, 'E_INVALID_PARAM'); // footage without audio
-		bad({ mediaId: amb, shots: [{ start: 0, end: 100 }, { start: 50, end: 150 }] }, 'E_INVALID_PARAM');
+		bad(
+			{
+				mediaId: amb,
+				shots: [
+					{ start: 0, end: 100 },
+					{ start: 50, end: 150 },
+				],
+			},
+			'E_INVALID_PARAM',
+		);
 		bad({ mediaId: amb, range: { start: 10, end: 11 } }, 'E_INVALID_PARAM');
 		bad({ mediaId: amb, range: { start: 0, end: 100 }, loop: { inSec: 1, outSec: 1.05 } }, 'E_INVALID_PARAM');
 		bad({ mediaId: amb, range: { start: 0, end: 100 }, loop: { inSec: 9, outSec: 12 } }, 'E_INVALID_PARAM');
@@ -355,10 +396,14 @@ describe('soundDesign.layBed', () => {
 		const v = h.registerVideo({ kind: 'audio', seconds: 3 });
 		h.ok([{ type: 'clip.place', source: { mediaId: v }, at: 0, tracks: { audio: 'A1' } }]);
 		const withAudio = h.doc;
-		const r = h.tx([{ type: 'soundDesign.layBed', mediaId: amb, range: { start: 0, end: 100 }, track: 'A1' }]);
+		const r = h.tx([
+			{ type: 'soundDesign.layBed', mediaId: amb, range: { start: 0, end: 100 }, track: 'A1' },
+		]);
 		expect(r.ok === false && r.errors[0]!.code).toBe('E_OVERLAP');
 		h.ok([{ type: 'track.update', trackId: 'A2', patch: { locked: true } }]);
-		const r2 = h.tx([{ type: 'soundDesign.layBed', mediaId: amb, range: { start: 0, end: 100 }, track: 'A2' }]);
+		const r2 = h.tx([
+			{ type: 'soundDesign.layBed', mediaId: amb, range: { start: 0, end: 100 }, track: 'A2' },
+		]);
 		expect(r2.ok === false && r2.errors[0]!.code).toBe('E_TRACK_LOCKED');
 		expect(withAudio).not.toBe(before);
 	});
@@ -426,7 +471,9 @@ describe('room tone', () => {
 		expect(insideDialogueRegion(regions, 90, 120)).toBeTruthy();
 		expect(insideDialogueRegion(regions, 300, 400)).toBeNull();
 		const gaps = dialogueGaps(h.doc, h.seq);
-		expect(gaps.map((g) => [g.start, g.end, g.beforeClipId, g.afterClipId])).toEqual([[90, 120, a!.id, b!.id]]);
+		expect(gaps.map((g) => [g.start, g.end, g.beforeClipId, g.afterClipId])).toEqual([
+			[90, 120, a!.id, b!.id],
+		]);
 		const span = roomToneSpan(gaps[0]!, R30);
 		expect(span).toEqual({ start: 82, end: 128 });
 		expect(mergeSpans([span, { start: 120, end: 140 }, { start: 300, end: 310 }])).toEqual([
@@ -478,7 +525,9 @@ describe('bed metadata: invariant and repair', () => {
 		const repaired = repairDocument(doc, createCounterIdSource(77));
 		expect(checkInvariants(repaired.document)).toEqual([]);
 		const rs = Object.values(repaired.document.sequences)[0]!;
-		expect(Object.values(rs.clips).filter((c) => (c as { bed?: unknown }).bed !== undefined).length).toBe(audio.length - 1);
+		expect(Object.values(rs.clips).filter((c) => (c as { bed?: unknown }).bed !== undefined).length).toBe(
+			audio.length - 1,
+		);
 		// idempotent
 		expect(repairDocument(repaired.document, createCounterIdSource(78)).document).toEqual(repaired.document);
 	});

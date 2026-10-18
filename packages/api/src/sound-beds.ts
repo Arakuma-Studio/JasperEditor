@@ -52,7 +52,9 @@ export const SoundBedsRequestSchema = z
 		...bedOptions,
 		soundId: soundId.optional(),
 		mediaId: id.optional(),
-		scenes: z.union([z.literal('auto'), z.array(SoundBedSceneInputSchema).min(1).max(SOUND_BED_LIMITS.maxScenes)]).optional(),
+		scenes: z
+			.union([z.literal('auto'), z.array(SoundBedSceneInputSchema).min(1).max(SOUND_BED_LIMITS.maxScenes)])
+			.optional(),
 		sources: z.array(z.enum(BED_SCENE_SOURCES)).max(BED_SCENE_SOURCES.length).optional(),
 		range: range.optional(),
 		gainDb: z.number().min(-60).max(40).optional(),
@@ -64,7 +66,10 @@ export const SoundBedsRequestSchema = z
 		/** Replace earlier ambience beds over the scenes (default true). */
 		replace: z.boolean().optional(),
 	})
-	.refine((r) => !(r.soundId && r.mediaId), { message: 'give soundId or mediaId, not both', path: ['mediaId'] });
+	.refine((r) => !(r.soundId && r.mediaId), {
+		message: 'give soundId or mediaId, not both',
+		path: ['mediaId'],
+	});
 export type SoundBedsRequest = z.infer<typeof SoundBedsRequestSchema>;
 
 /** The measured clean window of a bed recording (seconds of the sound / media). */
@@ -157,7 +162,10 @@ export const SoundRoomToneRequestSchema = z
 		mediaId: id.optional(),
 		gainDb: z.number().min(-60).max(40).optional(),
 	})
-	.refine((r) => !(r.soundId && r.mediaId), { message: 'give soundId or mediaId, not both', path: ['mediaId'] });
+	.refine((r) => !(r.soundId && r.mediaId), {
+		message: 'give soundId or mediaId, not both',
+		path: ['mediaId'],
+	});
 export type SoundRoomToneRequest = z.infer<typeof SoundRoomToneRequestSchema>;
 
 export const RoomToneCandidateSchema = z.object({
@@ -183,7 +191,12 @@ export const SoundRoomTonePlanSchema = z.object({
 	),
 	/** The dialogue's noise floor: the quietest 20 % of its 100 ms frames outside speech. */
 	floor: z
-		.object({ levelDb: z.number(), bandsDb: z.array(z.number()), clipIds: z.array(z.string()), seconds: z.number() })
+		.object({
+			levelDb: z.number(),
+			bandsDb: z.array(z.number()),
+			clipIds: z.array(z.string()),
+			seconds: z.number(),
+		})
 		.nullable(),
 	candidates: z.array(RoomToneCandidateSchema),
 	chosen: z
