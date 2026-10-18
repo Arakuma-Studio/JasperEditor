@@ -42,7 +42,7 @@ import {
 import { ClapTokenizer, EOS_ID, MAX_TEXT_TOKENS } from '../src/sounds/semantic/tokenizer.ts';
 import { SOUND_VOCABULARY } from '../src/sounds/semantic/vocab.ts';
 import { tempAppdir } from './helpers.ts';
-import { tinyVocab } from './tiny-clap.ts';
+import { tinyVocab } from '@jasper/testkit/tiny-clap';
 
 function sine(freq: number, seconds: number, amp = 0.5): Float32Array {
 	const n = Math.round(seconds * CLAP_RATE);

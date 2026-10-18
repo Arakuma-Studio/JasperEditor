@@ -27,7 +27,7 @@ import type { SoundService } from '../src/sounds/service.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, H, JSON_H, makeApp, tempAppdir, until } from './helpers.ts';
 import { PACK, SR } from './sound-fixtures.ts';
-import { writeTinyClapCatalog } from './tiny-clap.ts';
+import { writeTinyClapCatalog } from '@jasper/testkit/tiny-clap';
 
 const ENV_KEYS = [
 	'JASPER_SOUND_STARTER_DIR',

@@ -1,5 +1,5 @@
-// A tiny stand-in for the CLAP model of Describe-it search (WP-E9 tests; no network, no 780 MB download): the same
-// file names, inputs and outputs as the real export, written as raw ONNX protobuf.
+// A tiny stand-in for the CLAP model of Describe-it search (WP-E9 tests of the engine and MCP; no network, no 780 MB
+// download): the same file names, inputs and outputs as the real export, written as raw ONNX protobuf.
 //   audio: input_features [b,1,1001,64] → mean over time → centred over the 64 bands → identity into dims 0…63
 //          (+ 1e-3 on dim 511, so silence stays finite) → L2 normalised `audio_embeds` [b,512]
 //   text:  input_ids [b,t] → embedding rows → mean → L2 normalised `text_embeds` [b,512] (attention_mask unused)
