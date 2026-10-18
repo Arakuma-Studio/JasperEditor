@@ -109,7 +109,10 @@ export type ListenBand = 'full' | 'low' | 'high';
 export type ListenEvent = {
 	/** Attack (onsets) or peak (swells), ms from the first sample pushed (0.1 ms steps). */
 	ms: number;
-	/** Where the event's full-band envelope peaks over its length (ms; swells: their peak). */
+	/**
+	 * Where the event peaks (ms): the centre of its loudest 2 ms of mean power over its length, at least its first
+	 * 300 ms — the sound descriptors' `peakSec` definition (swells: their peak).
+	 */
 	peakMs: number;
 	shape: 'hit' | 'swell';
 	/** The band the event stands out in. */
@@ -940,7 +943,9 @@ export class ListenMeter {
 			const v = this.eFull.get(i);
 			if (v > pk) pk = v;
 		}
-		const pkAt = this.peakAt(j, Math.max(span, length));
+		// its peak over its length, at least its first 300 ms (an onset found early in a whoosh's rise may be measured
+		// short; its peak comes later)
+		const pkAt = this.peakAt(j, Math.min(LISTEN_EVENTS.lengthCapMs, Math.max(300, length)));
 		return {
 			ms: j,
 			peakMs: Math.round(pkAt * 10) / 10,
