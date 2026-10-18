@@ -177,7 +177,8 @@ async function playChecked(name: string, start: boolean, switchTo: boolean | nul
 		const to = rec.marks.pause ?? rec.armed;
 		const d = disturbances(rec, rec.armed, to);
 		const bed = rec.starts[0]?.player ?? 0;
-		const bedRescheduled = rec.stops.some((x) => x.player === bed && x.t >= rec.armed && x.t <= to);
+		// (stops at the resume time itself are the primed start's own rescheduling, before any audio)
+		const bedRescheduled = rec.stops.some((x) => x.player === bed && x.t > rec.armed + 0.001 && x.t <= to);
 		last = d;
 		const play: Play = { peaks: out, bedRescheduled, frameAtPause, switchStallMs };
 		try {
@@ -391,13 +392,19 @@ test('an agent proposal reviewed as ghosts, heard, partly accepted, applied as o
 				JSON.stringify(play.peaks),
 			).toBeLessThanOrEqual(2);
 		} else expect(h, JSON.stringify(play.peaks)).toEqual([]);
-		if (!play.bedRescheduled) expectBedIntact(play.peaks);
+		// sound-design Phase 6: Remotion no longer re-anchors the bed's player after the switch (the Player's props stay
+		// the same object, the graph keeps every strip): the bed keeps its exact spacing in every play
+		expect(play.bedRescheduled, JSON.stringify(play)).toBe(false);
+		expectBedIntact(play.peaks);
 	};
 	await playChecked('hear off', false, null, noHit);
 	await playChecked('hear on', true, null, cutHit);
 	await expect(page.getByTestId('proposal-hear-chip')).toHaveText('Hearing proposal: E2E sound pass');
-	await playChecked('switched on while playing', false, true, switched(true));
-	await playChecked('switched off while playing', true, false, switched(false));
+	// (E2E_HEAR_PLAYS: more switched plays in one run, for the wp-note's counts)
+	for (let i = 0; i < Number(process.env.E2E_HEAR_PLAYS ?? 1); i++) {
+		await playChecked('switched on while playing', false, true, switched(true));
+		await playChecked('switched off while playing', true, false, switched(false));
+	}
 	await runCommand('proposals.toggleHear', { on: false });
 	await expect(page.getByTestId('proposal-hear-chip')).toHaveCount(0);
 	// the session document never changed

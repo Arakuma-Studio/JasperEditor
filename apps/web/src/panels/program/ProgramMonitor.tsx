@@ -6,6 +6,7 @@ import type { FontCatalog } from '@jasper/api';
 import {
 	activeMixGraph,
 	DEFAULT_RENDER_OPTIONS,
+	type MixGraph,
 	type RenderDoc,
 	type RenderOptions,
 	SequenceComposition,
@@ -332,7 +333,6 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		() => (mixGraph ? mixGraph.onRestartRequest(() => driver.restart()) : undefined),
 		[mixGraph, driver],
 	);
-	const audioWait = useAudioStartWait(mixGraph);
 	useEffect(() => {
 		const detach = transport.attachPlayer(driver);
 		const unregister = registerDriver(transport, driver);
@@ -631,13 +631,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 						PROXY
 					</span>
 				) : null}
-				{(buffering || audioWait) && playing ? (
-					<span
-						className="pointer-events-none absolute top-2 left-2 size-2 rounded-full bg-pr-warning"
-						title="Buffering"
-						data-testid="program-buffering"
-					/>
-				) : null}
+				<BufferingDot graph={mixGraph} buffering={buffering} playing={playing} />
 			</div>
 			<div className="flex h-[28px] shrink-0 items-center gap-2 px-2">
 				<TimecodeDisplay transport={transport} format={format} onSeek={seek} testId="program-timecode" />
@@ -834,4 +828,27 @@ function liveProps(initial: LiveValue): LiveProps {
 function LiveSequenceComposition({ live }: { live: LiveProps }) {
 	const v = useSyncExternalStore(live.subscribe, live.get, live.get);
 	return v ? <SequenceComposition doc={v.doc} options={v.options} /> : null;
+}
+
+/**
+ * The buffering indicator: the Player buffering, or the audio holding the picture at a primed start (`useAudioStartWait`).
+ * Its own component: a monitor re-render while the Player starts (the wait ending) disturbed Remotion's start.
+ */
+function BufferingDot({
+	graph,
+	buffering,
+	playing,
+}: {
+	graph: MixGraph | null;
+	buffering: boolean;
+	playing: boolean;
+}) {
+	const audioWait = useAudioStartWait(graph);
+	return (buffering || audioWait) && playing ? (
+		<span
+			className="pointer-events-none absolute top-2 left-2 size-2 rounded-full bg-pr-warning"
+			title="Buffering"
+			data-testid="program-buffering"
+		/>
+	) : null;
 }

@@ -286,7 +286,9 @@ export function peaks(r: Recording, min = 0.05): { t: number; v: number }[] {
 export function reschedules(r: Recording, from: number, to: number): number[] {
 	const out = new Set<number>();
 	for (const s of r.stops) {
-		if (s.t < from || s.t > to || s.player < 0) continue;
+		// At `from` itself (the context still at its frozen resume time) every Play reschedules on purpose: since
+		// sound-design Phase 6 each Play starts primed at the picture, its sources scheduled again before any audio plays.
+		if (s.t <= from + 0.001 || s.t > to || s.player < 0) continue;
 		if (r.starts.some((x) => x.player === s.player && x.t >= s.t - 0.05 && x.t <= s.t + 2))
 			out.add(Number(s.t.toFixed(4)));
 	}

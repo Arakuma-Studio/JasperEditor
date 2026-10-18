@@ -207,6 +207,8 @@ async function pictureAnchor(
 
 /** Hard Limiter latency at 20 ms look-ahead (samples, 48 kHz): every one on the path adds it to the read-ahead. */
 const HL20 = 998;
+/** A primed start waits two render quanta beyond the read-ahead (sound-design Phase 6, `START_MARGIN`). */
+const MARGIN = 256;
 
 test('Play: the first samples at the play position are heard (nothing lost to the read-ahead)', async () => {
 	test.setTimeout(300_000);
@@ -273,7 +275,7 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 		return { offset: Math.min(...o), m: m1 };
 	};
 	// The setup's read-ahead: Hard Limiters on A1 and the Mix (41.6 ms).
-	const w1 = (2 * HL20) / SR;
+	const w1 = (2 * HL20 + MARGIN) / SR;
 	const p1 = await primed(w1);
 	console.log('play-start peaks', p1.m.rec.armed, JSON.stringify(peaks(p1.m.rec)));
 	test.info().annotations.push({
@@ -302,7 +304,7 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 	const extra = more.ok ? Object.values(more.refs ?? {}) : [];
 	expect(extra).toHaveLength(4);
 	try {
-		const w2 = (6 * HL20) / SR;
+		const w2 = (6 * HL20 + MARGIN) / SR;
 		const p2 = await primed(w2);
 		console.log('picture − audio', p1.offset, 'with a 125 ms wait', p2.offset);
 		test

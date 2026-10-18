@@ -215,17 +215,18 @@ Decisions (undocumented behaviour or our choice):
 
 ## 6. Limits
 
-- Preview latency compensation (spec 12 WP0.1) starts the media early by the read-ahead. A Play after a seek while
-  paused is primed (spec 12 Phase 0 close-out): nothing at the play position is lost, the picture waits the read-ahead
-  plus clip-effect latency (≤ 0.5 s, else unprimed) and both start together (`e2e/sound-p0-transport.spec.ts`). A seek
-  *during* playback still loses the first read-ahead after it (the picture jumps at once; Remotion also loses its decode
-  time there); the graph's audio of the old position is faded out (3 ms) and flushed. Frame-based (STFT) inserts start
+- Preview latency compensation (spec 12 WP0.1) starts the media early by the read-ahead. Every Play is primed (spec 12
+  Phase 0 close-out for Plays after a paused seek; since sound-design Phase 6 → preview transport carry-overs after a
+  plain pause too): nothing at the play position is lost, the picture waits the read-ahead plus clip-effect latency plus
+  two render quanta (up to 3 s, else unprimed; the Program monitor shows buffering from 0.2 s) and both start together
+  (`e2e/sound-p0-transport.spec.ts`, `e2e/sound-p6-transport.spec.ts`). A seek *during* playback restarts playback
+  (pause, seek, play: the picture holds as on Play) and its audio starts on its first sample. Frame-based (STFT) inserts start
   their frames where processing started, so the first ≈ 0.2 s after an onset can differ from an export started
   elsewhere by ≈ −40 dB (the same holds between two exports with different range starts); steady state is
   sample-identical. Clips that start later are premounted by their lead (≥ 2 s), so a cut is heard from its first
   sample (`e2e/sound-p0-preview.spec.ts`). A latency change during playback (normalisation on/off, an insert added or
-  removed) inserts one gap of the added latency and, when the latency grew, leaves the Mix that much late until playback
-  stops (inter-track alignment exact); the media players are not re-created.
+  removed) keeps the audio in flight; when the latency grew, the Program monitor restarts playback primed with the new
+  read-ahead (a brief picture hold) instead of leaving the Mix late until the stop; the media players are not re-created.
 - 5.1 clips: processors run per channel; stereo-image effects act on L/R only and pass the other channels. Surround
   Reverb, Mastering, Loudness Meter and Loudness Auto Gain handle all six channels (Dry / output / maximiser on every
   channel, BS.1770 weights; sound-design Phase 0, `packages/audio-fx/test/regressions-p0.test.ts`).

@@ -23,6 +23,8 @@ const outDir = join(ROOT, 'test-results', 'e2e-sound-p6-transport');
 const SR = 48000;
 /** Hard Limiter latency at 20 ms look-ahead (samples, 48 kHz). */
 const HL20 = 998;
+/** A primed start waits two render quanta beyond the read-ahead (`START_MARGIN`). */
+const MARGIN = 256;
 /** Plays per test (the wp-note's counts come from several runs of the spec). */
 const PLAYS = Number(process.env.E2E_P6_PLAYS ?? 6);
 const DEBUG = !!process.env.E2E_P6_DEBUG;
@@ -200,6 +202,13 @@ function clicks(rec: Recording, min = 0.3): { t: number; v: number; marker: bool
 	});
 }
 
+/** The primed start the program resumed with after context time `after`: the last one before the next `running`. */
+function primedStart(log: LogEntry[], after: number): LogEntry | undefined {
+	const run = log.findIndex((e) => e.kind === 'running' && e.t >= after);
+	const before = run < 0 ? log : log.slice(0, run);
+	return before.filter((e) => e.kind === 'primed' && e.t >= after).at(-1);
+}
+
 /** Wall time (ms) from the Play press to the first picture frame after the one it started on. */
 async function playLatency(p: Page): Promise<number> {
 	return p.evaluate(() => {
@@ -271,6 +280,10 @@ test('a big edit while playing (an agent adds tracks) keeps the audio going on i
 	let refused = 0;
 	let replays = 0;
 	const failures: string[] = [];
+	const audioTracks = async () =>
+		(await query<{ tracks?: { kind: string }[] }>(page, 'sequence.summary')).tracks?.filter((t) => t.kind === 'audio')
+			.length;
+	const tracksBefore = await audioTracks();
 	for (let a = 0; a < PLAYS * 3 && measured < PLAYS; a++) {
 		await seekPaused(page, frameAt(1));
 		await seekPaused(page, 0);
@@ -287,11 +300,10 @@ test('a big edit while playing (an agent adds tracks) keeps the audio going on i
 			}
 		});
 		const log = await takeLog(page);
-		// back to two tracks (the next play measures the same graph)
-		const removed = await transact(page, [
-			{ type: 'track.remove', trackIds: Array.from({ length: 12 }, (_, k) => `A${k + 3}`) },
-		]);
-		expect(removed.ok, JSON.stringify(removed)).toBe(true);
+		// back to two tracks (the next play measures the same graph): undo the three edits
+		await focusTimeline(page);
+		for (let u = 0; u < 3; u++) await page.keyboard.press('Control+KeyZ');
+		await expect.poll(audioTracks).toBe(tracksBefore);
 		const from = rec.armed;
 		const to = (rec.marks.pause ?? 1e9) - 0.001;
 		const cs = clicks(rec);
@@ -410,7 +422,7 @@ test('a latency added while playing: after the restart the Mix is on time again'
 			// every click before the edit and after the restart on its sample against the anchor in force
 			const before = anchorOffsets(rec, log, rec.armed);
 			const restart = log.find((e) => e.kind === 'restart' && e.t >= edit - 0.05);
-			const primed = log.filter((e) => e.kind === 'primed' && e.t >= edit - 0.05).at(-1);
+			const primed = primedStart(log, edit - 0.05);
 			expect(restart, JSON.stringify(log)).toBeTruthy();
 			const after = anchorOffsets(rec, log, (primed?.t ?? edit) + 0.01);
 			results.push(
@@ -477,7 +489,7 @@ test('Play with a long read-ahead (0.62 s): the first click is heard, the pictur
 	expect(more.ok, JSON.stringify(more)).toBe(true);
 	const extra = more.ok ? Object.values(more.refs ?? {}) : [];
 	try {
-		const wait = (30 * HL20) / SR;
+		const wait = (30 * HL20 + MARGIN) / SR;
 		for (let i = 0; i < Math.max(2, Math.ceil(PLAYS / 2)); i++) {
 			await takeLog(page);
 			await seekPaused(page, frameAt(1));
@@ -520,7 +532,9 @@ test('Play with a long read-ahead (0.62 s): the first click is heard, the pictur
 			expect(sawBuffering).toBe(true);
 			const picture = await pictureLag(rec, rec.armed, wait + 0.2);
 			console.log('long read-ahead picture − audio', picture);
-			expect(picture).toBeGreaterThan(-0.01);
+			// Remotion suspends and resumes the context for an instant as the wait ends (measured with this wait only):
+			// the picture then leads by up to ≈ 15 ms, far under the ≈ 45 ms a lead becomes noticeable (wp-note)
+			expect(picture).toBeGreaterThan(-0.02);
 			// one wait, not two
 			expect(picture).toBeLessThan(wait);
 		}
@@ -584,7 +598,7 @@ test('seek while playing: the audio after the seek starts on its first sample', 
 		if (before.length > 0)
 			expect(fresh!.t - before[before.length - 1]!.t, JSON.stringify(after)).toBeGreaterThan(0.25);
 		if (logged) {
-			const primed = log.filter((e) => e.kind === 'primed' && e.t >= enter - 0.05).at(-1);
+			const primed = primedStart(log, enter - 0.05);
 			expect(primed, JSON.stringify(log)).toBeTruthy();
 			// the 4.03 s click on its sample against the primed anchor (content time = sequence time here)
 			const off = fresh!.t - primed!.anchor - 4.03;
@@ -602,7 +616,7 @@ test('many paused seeks + Play: every play starts on its first sample, nothing f
 	const latencies: number[] = [];
 	let measured = 0;
 	let replays = 0;
-	const W = (2 * HL20) / SR;
+	const W = (2 * HL20 + MARGIN) / SR;
 	// a fixed pseudo-random walk of positions inside the clicks (0.3 … 7.0 s), after a play somewhere else
 	let x = 12345;
 	const rnd = () => {
