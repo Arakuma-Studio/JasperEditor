@@ -116,7 +116,8 @@ function fixtureDoc(): { doc: ProjectDocument; seqId: string } {
 			{
 				type: 'clip.addText',
 				at,
-				duration: 60,
+				// the last card stays up to 12 s: the sequence covers the click markers
+				duration: i === 3 ? 195 : 60,
 				track: `V${i + 3}`,
 				content: { text: `Card ${i + 1}` },
 				textAnimation: { in: { preset: 'pop', durationFrames: 10 } },
@@ -131,7 +132,9 @@ function fixtureDoc(): { doc: ProjectDocument; seqId: string } {
 }
 
 function decodeF32(file: string): Float32Array {
-	const out = execFileSync(TEST_FFMPEG, ['-v', 'error', '-i', file, '-map', '0:a:0', '-ac', '1', '-f', 'f32le', '-']);
+	const out = execFileSync(TEST_FFMPEG, ['-v', 'error', '-i', file, '-map', '0:a:0', '-ac', '1', '-f', 'f32le', '-'], {
+		maxBuffer: 1 << 30,
+	});
 	return new Float32Array(out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength));
 }
 
