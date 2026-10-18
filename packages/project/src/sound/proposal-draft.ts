@@ -73,7 +73,11 @@ export type SoundProposalPlacement = {
 export const SOUND_PROPOSAL_SETUP_GROUP = 'setup';
 /** Item id of the bin setup item. */
 export const SOUND_PROPOSAL_BIN_ITEM = 'bin';
-export const soundSetupItemId = (soundId: string) => `sound:${soundId}`;
+/**
+ * Item id of a sound's setup item: `sound:<sound id>`, a take's `~` written `.` (`sound:snd_<16 hex>.t3`): item ids allow
+ * letters, digits, `_`, `.`, `:` and `-` only (a take id's `~` made every plan with takes fail validation).
+ */
+export const soundSetupItemId = (soundId: string) => `sound:${soundId.replace(/~/g, '.')}`;
 export const cueSetupItemId = (placementId: string) => `cue:${placementId}`;
 
 /** The project's root bin with this name, or null. */
