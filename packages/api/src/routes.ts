@@ -186,6 +186,12 @@ import {
 } from './roto.ts';
 import { SceneDetectRequestSchema } from './scenes.ts';
 import {
+	SoundBedsPlanSchema,
+	SoundBedsRequestSchema,
+	SoundRoomTonePlanSchema,
+	SoundRoomToneRequestSchema,
+} from './sound-beds.ts';
+import {
 	SoundCheckLastRequestSchema,
 	SoundCheckLastResponseSchema,
 	SoundCheckRequestSchema,
@@ -1249,6 +1255,40 @@ export const ROUTES = {
 		method: 'POST',
 		path: '/api/sound-design/listen',
 		body: SoundListenRequestSchema,
+		response: EngineJobSchema,
+	},
+	/**
+	 * Ambience beds (spec 12 §4 P6-E12): the plan of a bed per scene — the scenes, each recording's measured clean window
+	 * and loop points, the ONE transaction that lays it (`soundDesign.layBed`) — without changing anything.
+	 */
+	soundDesignBedsPlan: {
+		method: 'POST',
+		path: '/api/sound-design/beds/plan',
+		body: SoundBedsRequestSchema,
+		response: SoundBedsPlanSchema,
+	},
+	/** Ambience beds: a `sound-design` job (202) whose result (`SoundBedsResult`) is a proposal or one applied edit. */
+	soundDesignBeds: {
+		method: 'POST',
+		path: '/api/sound-design/beds',
+		body: SoundBedsRequestSchema,
+		response: EngineJobSchema,
+	},
+	/**
+	 * Room tone (spec 12 §4 P6-E12): the plan of a fill of the holes between dialogue clips — the gaps, the dialogue's
+	 * noise floor, the room tones ranked by spectral distance to it, the transaction — without changing anything.
+	 */
+	soundDesignRoomTonePlan: {
+		method: 'POST',
+		path: '/api/sound-design/room-tone/plan',
+		body: SoundRoomToneRequestSchema,
+		response: SoundRoomTonePlanSchema,
+	},
+	/** Room tone: a `sound-design` job (202) whose result (`SoundRoomToneResult`) is a proposal or one applied edit. */
+	soundDesignRoomTone: {
+		method: 'POST',
+		path: '/api/sound-design/room-tone',
+		body: SoundRoomToneRequestSchema,
 		response: EngineJobSchema,
 	},
 	/**

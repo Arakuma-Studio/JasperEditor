@@ -18,6 +18,9 @@
 //                                 (sound-design/visual.ts).
 //   POST /api/sound-design/listen a `sound-listen` job (202): the listening transcript of ≤ 10 min (sound-design/listen.ts):
 //                                 events attributed to their clips and cues, sections, sync with chance levels, lines.
+//   POST /api/sound-design/beds[/plan], /room-tone[/plan]  ambience beds per scene and room tone in dialogue gaps
+//                                 (spec 12 §4 P6-E12; sound-design/beds.ts): the plan (read-only), or a `sound-design`
+//                                 job that proposes (default) or applies ONE transaction of `soundDesign.layBed`.
 //   POST /api/sound-design/motion a `motion-analysis` job (202): the picture rendered small and measured per frame
 //                                 (sound-design/motion.ts), cached by the picture's fingerprint.
 // The cue route also runs the engine's cue sources (scene, beat, pixel: sound-design/engine-cues.ts) when asked; what is
@@ -36,9 +39,11 @@ import {
 	type SoundCueSuggestion,
 	SoundCuesRequestSchema,
 	type SoundCuesResponse,
+	SoundBedsRequestSchema,
 	SoundDeliveryRequestSchema,
 	SoundDesignPlanRequestSchema,
 	SoundListenRequestSchema,
+	SoundRoomToneRequestSchema,
 	SoundVisualRequestSchema,
 } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
@@ -67,6 +72,7 @@ import { agentNameOf } from '../agent/user-approval.ts';
 import type { BeatService } from '../audio/beats.ts';
 import { isProjectId } from '../projects/store.ts';
 import type { ProposalService } from '../proposals/service.ts';
+import { type BedDeps, BedInputError, planBeds, planRoomTone, runBedJob } from '../sound-design/beds.ts';
 import { runSoundCheck } from '../sound-design/check.ts';
 import { runProposalCheckJob } from '../sound-design/check-proposal.ts';
 import { mixAnalysis, planDelivery, runDelivery } from '../sound-design/delivery.ts';
@@ -127,8 +133,20 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 	// Registered by the proposal routes (after these): looked up when a job runs.
 	const proposalsOf = () => services.proposals as ProposalService | undefined;
 	// One job kind for all three: rebalance jobs carry `rebalance` in their input, delivery jobs `delivery`.
+	// Ambience beds and room tone (spec 12 §4 P6-E12): their own inputs (`beds`, `roomTone`) on the same job kind.
+	const bedDeps: BedDeps = {
+		agent: agentOf,
+		proposals: proposalsOf,
+		sounds: () => services.sounds as SoundService | undefined,
+		engineCues: () => engineCues,
+		ffmpeg: core.ffmpeg,
+		registry: core.registry,
+	};
 	core.queue.registerRunner('sound-design', (ctx) =>
-		(ctx.input as { delivery?: unknown } | null)?.delivery
+		(ctx.input as { beds?: unknown; roomTone?: unknown } | null)?.beds !== undefined ||
+		(ctx.input as { roomTone?: unknown } | null)?.roomTone !== undefined
+			? runBedJob(ctx, bedDeps)
+			: (ctx.input as { delivery?: unknown } | null)?.delivery
 			? runDelivery(ctx, {
 					agent: agentOf,
 					proposals: proposalsOf,
@@ -411,6 +429,75 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 			});
 		}),
 	);
+
+	// Ambience beds and room tone (spec 12 §4 P6-E12; sound-design/beds.ts): a read-only plan, or a job that proposes /
+	// applies. The plan routes register the library sounds they measure for the project (as the plan job does).
+	type BedBody = { projectId: string; sequenceId?: string | undefined };
+	const bedRoute = (
+		schema: typeof SoundBedsRequestSchema | typeof SoundRoomToneRequestSchema,
+		kind: 'beds' | 'roomTone',
+	) => ({
+		plan: guarded(async (req, reply) => {
+			const body = parseOr400(schema, req.body ?? {}) as BedBody;
+			if (!isProjectId(body.projectId)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
+			const agent = agentOf();
+			if (!agent) throw new HttpError(503, 'NOT_AVAILABLE', 'The sound design services are not running');
+			if (!(await agent.projectExists(body.projectId)))
+				throw new HttpError(404, 'PROJECT_NOT_FOUND', `Project not found: ${body.projectId}`);
+			const { doc } = await liveDocument(agent, body.projectId);
+			const ac = new AbortController();
+			reply.raw.on('close', () => {
+				if (!reply.raw.writableFinished) ac.abort();
+			});
+			try {
+				const seq = planSequence(doc, body.sequenceId);
+				const r =
+					kind === 'beds'
+						? await planBeds(bedDeps, doc, seq, body.projectId, body as never, { signal: ac.signal })
+						: await planRoomTone(bedDeps, doc, seq, body.projectId, body as never, { signal: ac.signal });
+				return r.plan;
+			} catch (e) {
+				if (e instanceof PlanInputError) throw new HttpError(404, e.code, e.message);
+				if (e instanceof BedInputError) throw new HttpError(e.status, e.code, e.message);
+				throw e;
+			}
+		}),
+		job: guarded(async (req, reply) => {
+			const body = parseOr400(schema, req.body ?? {}) as BedBody;
+			if (!isProjectId(body.projectId)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
+			const agent = agentOf();
+			if (!agent || !services.proposals)
+				throw new HttpError(503, 'NOT_AVAILABLE', 'The sound design services are not running');
+			if (!(await agent.projectExists(body.projectId)))
+				throw new HttpError(404, 'PROJECT_NOT_FOUND', `Project not found: ${body.projectId}`);
+			const { doc } = await liveDocument(agent, body.projectId);
+			try {
+				planSequence(doc, body.sequenceId);
+			} catch (e) {
+				if (e instanceof PlanInputError) throw new HttpError(404, e.code, e.message);
+				throw e;
+			}
+			const editor = req.jasperEditor === true;
+			const who = { editor, agent: agentNameOf(req) };
+			reply.code(202);
+			return core.queue.submit({
+				kind: 'sound-design',
+				title: kind === 'beds' ? 'Lay ambience beds' : 'Fill room tone',
+				priority: 'user',
+				cpuSlots: 1,
+				origin: editor ? { type: 'user' } : { type: 'agent', agentRunId: who.agent },
+				projectId: body.projectId,
+				input: { [kind]: body, who },
+				stage: 'Waiting',
+			});
+		}),
+	});
+	const beds = bedRoute(SoundBedsRequestSchema, 'beds');
+	const roomTone = bedRoute(SoundRoomToneRequestSchema, 'roomTone');
+	app.post('/api/sound-design/beds/plan', beds.plan);
+	app.post('/api/sound-design/beds', beds.job);
+	app.post('/api/sound-design/room-tone/plan', roomTone.plan);
+	app.post('/api/sound-design/room-tone', roomTone.job);
 
 	app.post(
 		'/api/sound-design/rebalance',

@@ -681,6 +681,7 @@ export const SOUND_CHECK_MESSAGES = {
 	fixDuck: 'Duck the music under the voice',
 	fixDelivery: 'Apply the {0} delivery (Auto-Match and ducking)',
 	fixSilenceCue: 'Mark it as intended silence (a silence cue)',
+	fixRoomTone: 'Fill it with room tone ("{0}", {1} dB, looped)',
 	fixResync: 'Move the cue and its sounds to what it follows',
 	fixRemoveCue: 'Remove the cue and its sounds',
 	fixDemote: 'Make the later hero a support sound',
@@ -711,6 +712,8 @@ export const SOUND_CHECK_MESSAGES = {
 		'The music is ducked already: Auto-Match levels the dialogue and music clips by type (it changes their gains)',
 	whyDuckDepth: 'Ducking by {0} dB leaves the music {1} LU under the voice',
 	whySilence: 'Only if the silence is intended',
+	whyRoomTone:
+		'It adds a room tone under the dialogue gap: the closest match to the dialogue’s noise floor ({0}); listen that it blends in',
 	whyKeepCue: 'Or keep it where it is: it no longer follows the picture',
 	whyNoPicture: 'Only if nothing on screen calls for it',
 	whySimilar: 'A different sound found by similarity: listen before keeping it',
