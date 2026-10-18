@@ -10,7 +10,8 @@
 //   POST /api/sound-design/delivery  a `sound-design` job (202): a delivery preset measured and applied as ONE
 //                                 transaction "Apply Delivery Preset", or proposed (sound-design/delivery.ts).
 //   POST /api/sound-design/check  a `sound-check` job (202): Sound Check (sound-design/check.ts): findings with fixes,
-//                                 listen-here moments, the per-event table and a verdict; `store` writes the summary.
+//                                 listen-here moments, the per-event table and a verdict; `store` writes the summary;
+//                                 `proposalId` checks a proposal's preview against the document (check-proposal.ts).
 //   POST /api/sound-design/check/last  the sequence's last full Sound Check report, kept across restarts
 //                                 (sound-design/report-store.ts), with whether it is stale against the live document.
 //   POST /api/sound-design/visual the curves, cue ticks, motion, findings and (asked) the spectrogram over ≤ 120 s
@@ -199,8 +200,14 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 			registry: core.registry,
 			registries: defaultRegistries(mgRegistry),
 			mgTemplates: mgRegistry,
+			proposals: proposalsOf,
+			keptReport: async (pid, sequenceId) => {
+				const r = await reports.get(pid, sequenceId);
+				return r ? { result: r.result, jobId: r.jobId } : null;
+			},
 		});
-		if (!ctx.signal.aborted) await reports.save(result.projectId, result, ctx.job.id);
+		// a proposal check is of a document that does not exist (P6-E5): it never replaces the kept report
+		if (!ctx.signal.aborted && !result.proposal) await reports.save(result.projectId, result, ctx.job.id);
 		return result;
 	});
 
@@ -305,11 +312,31 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 			if (!agent) throw new HttpError(503, 'NOT_AVAILABLE', 'The sound design services are not running');
 			if (!(await agent.projectExists(body.projectId)))
 				throw new HttpError(404, 'PROJECT_NOT_FOUND', `Project not found: ${body.projectId}`);
-			// Refused at once rather than as a failed job: an unknown sequence, a range outside it or over 4 h.
+			// Refused at once rather than as a failed job: an unknown sequence or proposal, a range outside it or over 4 h.
 			const { doc } = await liveDocument(agent, body.projectId);
+			let wanted = body.sequenceId;
+			if (body.proposalId) {
+				// P6-E5: the proposal must exist (and be about this sequence when one is named); its sequence by default
+				const proposals = proposalsOf();
+				if (!proposals) throw new HttpError(503, 'NOT_AVAILABLE', 'The proposal service is not running');
+				const { proposal } = await proposals.get(body.projectId, body.proposalId);
+				if (body.sequenceId && proposal.sequenceId && proposal.sequenceId !== body.sequenceId)
+					throw new HttpError(
+						400,
+						'VALIDATION_FAILED',
+						`The proposal is about sequence ${proposal.sequenceId}, not ${body.sequenceId}`,
+					);
+				wanted = body.sequenceId ?? proposal.sequenceId ?? undefined;
+				const known = new Set(proposal.items.map((it) => it.id));
+				const missing = (body.itemIds ?? []).find((id) => !known.has(id));
+				if (missing)
+					throw new HttpError(404, 'NOT_FOUND', `No item ${missing} in proposal ${body.proposalId}`, {
+						code: 'E_NOT_FOUND',
+					});
+			}
 			let seq: ReturnType<typeof planSequence>;
 			try {
-				seq = planSequence(doc, body.sequenceId);
+				seq = planSequence(doc, wanted);
 			} catch (e) {
 				if (e instanceof PlanInputError) throw new HttpError(404, e.code, e.message);
 				throw e;
@@ -331,7 +358,7 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 			reply.code(202);
 			return core.queue.submit({
 				kind: 'sound-check',
-				title: 'Sound Check',
+				title: body.proposalId ? 'Sound Check of a proposal' : 'Sound Check',
 				priority: 'user',
 				cpuSlots: 1,
 				origin: editor ? { type: 'user' } : { type: 'agent', agentRunId: who.agent },

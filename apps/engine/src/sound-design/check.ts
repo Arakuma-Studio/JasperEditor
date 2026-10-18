@@ -61,6 +61,7 @@ import {
 	silentCurves,
 } from '@jasper/audio-fx';
 import {
+	applySoundAcknowledgements,
 	type AudioClip,
 	applyTransaction,
 	type ClipSfx,
@@ -106,6 +107,7 @@ import {
 	SOUND_CHECK_MASKING_TERMS_MAX,
 	SOUND_CHECK_THRESHOLDS,
 	SOUND_CHECK_UNMEASURED,
+	SOUND_DESIGN_LIMITS,
 	type SoundCheckCode,
 	type SoundCheckLevelGuard,
 	type SoundCheckLevelModel,
@@ -121,11 +123,9 @@ import {
 	sequenceDuration,
 	sequenceTimecode,
 	sequenceWords,
-	soundCheckCounts,
 	soundCheckFixCandidates,
 	soundCheckInputsHash,
 	soundCheckMessage,
-	soundCheckVerdict,
 	soundCredits,
 	soundCuesOf,
 	soundDesignSettingsOf,
@@ -136,7 +136,7 @@ import type { AgentService } from '../agent/service.ts';
 import type { JobContext } from '../jobs/types.ts';
 import { JobError } from '../jobs/types.ts';
 import type { MediaRegistry } from '../media/registry.ts';
-import type { Requester } from '../proposals/service.ts';
+import type { ProposalService, Requester } from '../proposals/service.ts';
 import { LOCAL_PROTOCOLS, readPlanar } from '../sounds/decode.ts';
 import type { SoundService } from '../sounds/service.ts';
 import { vadThreshold } from '../speech/core/vad.ts';
@@ -156,6 +156,7 @@ import {
 	harshFindings,
 	layerFindings,
 } from './check-findings.ts';
+import { runProposalCheck } from './check-proposal.ts';
 import type { EngineCueSources } from './engine-cues.ts';
 import {
 	gainReport,
@@ -225,6 +226,13 @@ export type SoundCheckDeps = {
 	cache?: MeasureCache;
 	/** P6: measured shot changes and picture motion (only what is already analysed) for NO_PICTURE_EVENT. */
 	engineCues?: () => EngineCueSources | undefined;
+	/** P6-E5: the proposals (a proposal check reads its proposal and stores its summary there). */
+	proposals?: () => ProposalService | undefined;
+	/** P6-E5: the sequence's kept report (the base a proposal check is compared with when it is current). */
+	keptReport?: (
+		projectId: string,
+		sequenceId: string,
+	) => Promise<{ result: SoundCheckResult; jobId: string | null } | null>;
 };
 
 export type CheckEnv = {
@@ -2361,11 +2369,15 @@ export async function checkSequence(
 		capToleranceLu: SOUND_CHECK_CAP_TOLERANCE_LU,
 		levels,
 	};
+	// ── acknowledged findings (P6-E4): marked, left out of the verdict, the safe fixes and the per-event status
+	const acked = applySoundAcknowledgements(doc, seq.id, issues.items);
+	issues.items.splice(0, issues.items.length, ...(acked.issues as SoundCheckIssue[]));
+	const openIssues = acked.open as SoundCheckIssue[];
 	{
 		const joint = planSoundCheckFixes(
 			doc,
 			seq.id,
-			soundCheckFixCandidates(issues.items, { safeOnly: true }),
+			soundCheckFixCandidates(openIssues, { safeOnly: true }),
 			{ registries: env.registries, guard: levelGuard },
 		);
 		const byId = new Map(issues.items.map((i) => [i.id, i]));
@@ -2387,7 +2399,7 @@ export async function checkSequence(
 
 	// ── the per-event table, listen-here, verdict ────────────────────────────────────────────────────────────────────
 	const severityOf = new Map<string, SoundCheckSeverity[]>();
-	for (const i of issues.items)
+	for (const i of openIssues)
 		for (const id of i.clipIds ?? []) severityOf.set(id, [...(severityOf.get(id) ?? []), i.severity]);
 	const events: SoundCheckEvent[] = rows.map((r) => {
 		const sev = severityOf.get(r.clip.id) ?? [];
@@ -2429,7 +2441,7 @@ export async function checkSequence(
 	});
 	const rank = { error: 0, warning: 1, info: 2 } as const;
 	const order = (c: SoundCheckCode) => SOUND_CHECK_CODES.indexOf(c);
-	const worst = [...issues.items]
+	const worst = [...openIssues]
 		.filter((i) => i.frame !== undefined && i.severity !== 'info')
 		.sort(
 			(a, b) => rank[a.severity] - rank[b.severity] || order(a.code) - order(b.code) || a.frame! - b.frame!,
@@ -2517,9 +2529,17 @@ export async function checkSequence(
 		wholeSequence: whole,
 		fps: { num: rate.num, den: rate.den },
 		durationSec: r3(rangeSamples / sr),
-		verdict: soundCheckVerdict(issues.items),
-		counts: soundCheckCounts(issues.items),
+		verdict: acked.verdict,
+		counts: acked.counts,
 		issues: issues.items,
+		...(acked.acknowledged || acked.unmatched.length
+			? {
+					acknowledgements: {
+						count: acked.acknowledged,
+						unmatched: acked.unmatched.slice(0, SOUND_DESIGN_LIMITS.acknowledged),
+					},
+				}
+			: {}),
 		events,
 		listen,
 		loudness: {
@@ -2598,10 +2618,33 @@ export async function runSoundCheck(ctx: JobContext, deps: SoundCheckDeps): Prom
 	}
 }
 
+/** The environment a check of this job runs in; `onProgress` maps the check's progress onto the job's. */
+export async function checkEnvFor(
+	ctx: JobContext,
+	deps: SoundCheckDeps,
+	onProgress: (fraction: number, stage: string) => void,
+): Promise<CheckEnv> {
+	return {
+		ff: deps.ffmpeg,
+		registry: deps.registry,
+		registries: deps.registries,
+		mgTemplates: deps.mgTemplates,
+		sounds: deps.sounds(),
+		...(deps.cache ? { cache: deps.cache } : {}),
+		engineCues: deps.engineCues?.(),
+		scratchDir: await ctx.scratchDir(),
+		signal: ctx.signal,
+		onSpawn: ctx.trackChild,
+		onProgress,
+		jobId: ctx.job.id,
+	};
+}
+
 async function soundCheckJob(ctx: JobContext, deps: SoundCheckDeps): Promise<SoundCheckResult> {
 	const { request: req, who } = parseInput(ctx.input);
 	const agent = deps.agent();
 	if (!agent) throw new JobError('NOT_AVAILABLE', 'The agent service is not running', true);
+	if (req.proposalId) return runProposalCheck(ctx, deps, req, agent);
 	ctx.progress(0.01, { stage: 'Reading the edit' });
 	const live = await liveDocument(agent, req.projectId);
 	const seq = planSequence(live.doc, req.sequenceId);
@@ -2611,20 +2654,7 @@ async function soundCheckJob(ctx: JobContext, deps: SoundCheckDeps): Promise<Sou
 		live.doc,
 		seq,
 		{ projectId: req.projectId, revision: live.revision, preset, target, range: req.range },
-		{
-			ff: deps.ffmpeg,
-			registry: deps.registry,
-			registries: deps.registries,
-			mgTemplates: deps.mgTemplates,
-			sounds: deps.sounds(),
-			...(deps.cache ? { cache: deps.cache } : {}),
-			engineCues: deps.engineCues?.(),
-			scratchDir: await ctx.scratchDir(),
-			signal: ctx.signal,
-			onSpawn: ctx.trackChild,
-			onProgress: (f, stage) => ctx.progress(0.02 + 0.9 * f, { stage }),
-			jobId: ctx.job.id,
-		},
+		await checkEnvFor(ctx, deps, (f, stage) => ctx.progress(0.02 + 0.9 * f, { stage })),
 	);
 	ctx.log(
 		`sound check ${report.verdict}: ${JSON.stringify(report.counts)} ${JSON.stringify(report.timings)}`,
