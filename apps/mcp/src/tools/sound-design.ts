@@ -434,6 +434,9 @@ async function candidatesOfType(
 				...(opts.windowSec ? { windowSec: opts.windowSec } : {}),
 				...(opts.usedNearby.length ? { usedNearby: opts.usedNearby.slice(0, 16) } : {}),
 				license: 'commercial-safe',
+				// the clean takes of multi-hit recordings are candidates too (P6-E9): `pickVariant` rotates over a
+				// recording's takes when one ranks first
+				takes: true,
 				limit: 12,
 			},
 			extra.signal,

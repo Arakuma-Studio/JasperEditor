@@ -8083,3 +8083,199 @@ Also:
 - The check costs ≈ 21 % more wall time (10-minute bench above), mostly the click and presence scans of three stems.
 - WP-E2 (acknowledged findings, check a proposal) builds on these codes and the `edges` / `tonal` categories; WP-E4 adds
   a "Reference" category to `SOUND_CHECK_CATEGORIES` and `CATEGORY_ORDER`.
+
+### Phase 6 → WP-E5 Takes, judge flags, materials
+
+Branch `feat/sd-pe-e5-takes`. Spec 12 §4 P6-E9 (takes; the judge flags `lowpassed`, `noisy-floor`, `dc-offset`) and the
+`materials` index field of P6-E10 (with its `material` filter and Refine pill; the ranking's palette-coherence bonus that
+reads it is WP-E6's). The take segmentation and the sourcing thresholds are adapted from earshot `earshot/search.py`
+(`event_candidates`, `_refine_start`, `_tail_db`, `_head_db`, `_edit_gaps`, `_select`) and
+`skills/real-sound/scripts/analyze.py` (MIT, Copyright (c) 2026 Leon Lin, commit `9721326`): reimplemented, nothing
+copied; rows added to `licenses/ported/earshot.md` (`THIRD_PARTY_NOTICES.md` regenerated). The −55 dBFS floor and the
+12 kHz line are "earshot real-sound rules of thumb" (no published n), defaults here, not norms.
+
+Files: pure `packages/audio-fx/src/analysis/takes.ts` (new: `findTakes`, `analyzeTakes`), `sound-descriptors.ts`
+(version 2: `rolloff95Hz`, `cutoffHz`, `floorDb`, `dcDb`; `soundOnsets`, `prepareSound`, `soundFloorDb`),
+`sound-judge.ts` (three reasons, two profile fields); model `packages/project/src/sound/{materials.ts (new),
+provenance.ts (take ids, `LibraryProvenance.take`), taxonomy.ts (the profile fields), variant.ts (take pools)}`,
+`commands/schemas/sound.ts` (take ids accepted); API `packages/api/src/sounds.ts` (`SoundTake`, `SoundEntry.{takes,
+take, materials}`, `takeEntryOf`, `soundEntryById`, `withOfferedTakes`, search `takes` / `material`, row `takeCount`,
+facet `materials`), `sound-design.ts` (take ids in plan styles); engine `apps/engine/src/sounds/{analysis-core, decode,
+index-job, library, pad, search, service, visual}.ts`, `routes/sounds.ts`; MCP `apps/mcp/src/tools/sound.ts` (search,
+get, view, import, SOUND_GUIDE), `sound-design.ts` (take ids kept in swap rings); web
+`apps/web/src/panels/soundLibrary/SoundLibraryPanel.tsx`, `apps/web/src/sound/{model,prefs,insert,swap,design-model}.ts`;
+README; i18n (`en.json`, `es.json`: 32 strings); `scripts/sounds/measure-takes.mjs` (the real-recording measurement
+below). Tests: `packages/audio-fx/test/{takes,sound-quality-flags}.test.ts` (+ `take-fixtures.ts`),
+`packages/project/test/sound-takes.test.ts`, `apps/engine/test/{sound-takes,sound-takes-plan}.test.ts`,
+`apps/mcp/test/sound-takes.test.ts`, `apps/web/test/sound-library-takes.test.tsx`, `e2e/sound-takes.spec.ts`; updated
+`sound-judge.test.ts`, `sounds-search.test.ts` (its facet oracle now covers materials and take rows), `sound-guide.test.ts`,
+`apps/web/test/sound-helpers.ts`.
+
+#### What it does (usage)
+
+- **Takes.** The index decodes a file of up to 120 s whole (within 120 s of 48 kHz stereo; 30 s as before for longer
+  files) and, when its first 30 s hold two or more onsets, splits it into takes (`analyzeTakes`):
+  - onsets from the descriptors' own SuperFlux detector over the whole file, each refined to its attack (the loudest 1 ms
+    within ±30 ms, then back while within 30 dB of it and 10 dB over the floor);
+  - a **stroke** runs from 5 ms before its attack until its 5 ms envelope has decayed 35 dB under the stroke's peak
+    (never under the floor + 4 dB), plus 20 ms; never into the next stroke, at most 2 s;
+  - a **take** is a stroke, or a **pair** of strokes whose attacks are < 0.25 s apart (a key's down- and up-stroke),
+    never across ≥ 10 ms of digital silence (≤ −100 dBFS: separate takes in a pack file) and only when the first stroke
+    is the louder one (by 1 dB, loudest 1 ms);
+  - **head / tail**: the first 5 ms / the louder of the last two 5 ms windows against the take's loudest 5 ms; clean =
+    head ≤ −15 dB and tail ≤ −30 dB, else `head-cut` / `tail-cut`; a take that runs into digital silence from over
+    −30 dB is a `tail-cut` too. Cut takes are recorded and listed, **never offered** (search rows, ranking pools,
+    pickers; registering one is refused with `422 SOUND_TAKE_CUT`);
+  - at most **64** per file: clean ones first, round-robin over 2 s stretches by prominence, numbered 1… in time order.
+  Each take has its own descriptors (`floorDb` = the recording's floor) and its own judge, against the recording's
+  judge type with `singleHit: false` (a take is never `multi-hit`). Entries keep them as `SoundEntry.takes` (optional:
+  old indexes load); only sounds of a **single-hit type** get takes (hit, boom, click, key, tick, tap, pop, thump) —
+  not other types, not untyped sounds.
+- **Take ids** `snd_<16 hex>~t<n>` (n = 1…64) work wherever a sound id does: `GET /api/sounds/:id` gives a take entry
+  (the recording's identity, licence, credit, source and materials; the take's descriptors, judge and length; `take
+  {soundId, index, startSec, endSec, headDb, tailDb, flags, strokes}`), `/visual` the take's own waveform and
+  spectrogram (written by the index, recomputed when gone), `/audio` its range as a PCM WAV (cut from the full decode,
+  cached), `/register` a managed copy of exactly its range with the usual lead / trailing silence (sample-exact; the
+  provenance carries `take {soundId, index, sourceStartSec, sourceEndSec}`; the copy is named "<file> take <n>.wav");
+  commands (`soundCue.add` sound ids, `soundDesign.place` alternatives, `soundDesign.setPalette`, swap rings) accept them.
+- **Search**: a recording row says how many clean takes it offers (`takeCount`; its `takes` are left out of the row),
+  `takes=true` adds the clean takes as rows of their own, ranked with the other sounds; `material=<id>` filters, and
+  `facets.materials` counts (ignoring its own filter). The plan job's ranking pool lists the clean takes after their
+  recording.
+- **Rotation** (`pickVariant`): when the best candidate is a take, the pool is its recording's takes among the
+  candidates (≤ 64), least recently used first, never the same take twice in a row — "vary the take, not the pitch".
+  The plan job's ranking pool and MCP `place_sound {sound: {type}}` (its search asks for `takes`) include the clean takes.
+  Swap rings and Fill's alternatives (the next rows of the list) are sibling takes when the chosen sound is a take.
+- **Judge flags** (version-2 descriptors):
+  - `lowpassed`: a type that needs air (click, key, tick, tap, swish, paper) whose spectrum ends in a **cliff**
+    (`cutoffHz`: the 1.5 kHz under an edge broadband — ≥ 4 of its six 250 Hz bands within 15 dB of its loudest — and
+    every band from the edge to 1 kHz under Nyquist ≥ 30 dB under it) below 12 kHz, in a ≥ 44.1 kHz analysis;
+  - `noisy-floor`: `floorDb` (10th percentile of 20 ms RMS, mean power over channels; reported only with ≥ 2 onsets,
+    ≥ 10 windows and ≥ 12 dB under the loudest window) over −55 dBFS, for hit, click, key, tick, tap, pop, thump;
+  - `dc-offset`: a channel mean over −40 dBFS (`dcDb`), any type.
+  `rolloff95Hz` (power) is reported too. The new reasons come last in `JUDGE_REASONS`; version-1 descriptors judge as
+  before. The analysis version is 2002 (`SOUND_DESCRIPTORS_VERSION` 2, engine revision 2): an index from an older
+  build loads, reports `needsIndex` and is re-analysed once by the automatic index.
+- **Materials** (`materialsOf`, `MATERIAL_SYNONYMS`): the twelve materials (wood, glass, metal, plastic, paper, cloth,
+  stone, water, air, electronic, rubber, ceramic) named by the title, tags and file path; ambiguous words (door, key,
+  bowl, plate, pan — also stereo panning —, stick) and words about how a sound was made (synth, procedural) name none.
+  `SoundEntry.materials`; takes inherit their recording's.
+- **Sound Library panel**: a recording row has a "› 8 takes" disclosure (also → on the selected row; ← back on the
+  recording and closes it). Take rows are indented, read "Take 3" with "Key · 0.13 s · 2 strokes" under it, draw their
+  own mini waveform, and audition (Space, hover), insert / fill / swap (Enter, double-click) and drag like any sound;
+  the option's accessible name says "8 takes (→ shows them)" / "take 3 of its recording". The tooltip lists the judge's
+  reasons in words. Refine has a **Material** row: the materials the results name, with counts.
+- **MCP**: `search_sounds {takes, material}` (rows: `takes` count, `take {recordingId, index, startSec, endSec,
+  strokes}`, `materials`), `get_sound` lists a recording's takes compactly (`takeId`, range, strokes, head / tail,
+  flags, `offered`, peak, judge) and gives a take id in full, `view_sounds` and `import_sounds` take take ids; SOUND_GUIDE
+  "Takes" paragraph and the three new judge reasons; README.
+
+#### Decisions
+
+- **Pairs, not chains, led by the louder stroke.** earshot builds pairs and longer chains (≤ 2 s) and lets CLAP pick;
+  without CLAP a chain of a fast typing run is several keys, so a take is one stroke or one pair. A take's peak is where
+  placement aligns it, so a pair must peak on its first stroke: measured on BigSoundBank's MacBook Pro typing, whose
+  releases are often louder than the presses, earshot's rule (refuse a lead 15 dB weaker) put the release on the cue
+  frame ≈ 120 ms after the press. A louder release is now a take of its own.
+- **`lowpassed` reads a cliff, not the 95 % roll-off.** Measured on the index of 859 real and synth sounds (below), 144
+  of the 183 sounds of air-needing types have a 95 % power roll-off under 12 kHz although none is a low-bitrate encode;
+  the plain rule cannot tell a sound from an encode. earshot's own `analyze.py` computes `rolloff95_hz` on a 22.05 kHz
+  resample (Nyquist 11.025 kHz), so its "> 12 kHz" rule cannot be met there. The cliff finds the encoder's band limit:
+  0 of 534 lossless BigSoundBank key / tick takes, 484 of 515 (94 %) of the same files as 24 kb/s AAC (cliff at
+  8.25–9 kHz), 0 at 48 kb/s (cliff at 17.5–18.75 kHz: above the line) and none at 96 kb/s (below).
+- **The floor is "between events".** With one event the 10th percentile reads the event's own decay (Jasper Synth's
+  booms and chimes, every starter hit read −35…−53 dBFS): the floor is reported only with two or more onsets, and only
+  quick-decaying one-shot types are checked (booms, chimes, zaps, UI sounds and glitches ring or sustain between their
+  onsets).
+- **Takes only for single-hit types.** On the Kenney folders untyped sounds with several onsets (lasers, sweeps, sci-fi
+  sequences) gave fragments; a type that must be one hit is what makes "several onsets" mean "several sounds".
+- **Search rows leave `takes` out** (`takeCount` instead): a 64-take recording is ≈ 70 kB of descriptors; the panel and
+  `get_sound` fetch the recording when it is opened.
+- **Take audio is a cached WAV of the range**, not the recording with a seek: auditioning plays the take alone and
+  sample-exact for lossy sources too (the range is cut with `asetpts=N/SR/TB` + `atrim` from the full decode, which is
+  what the analysis measured).
+- **Take ids are by number.** `~t<n>` (the spec's form) names the n-th take of the recording at this analysis version;
+  the snapshot hash covers every take's number, range and flags, and a registered take's provenance records its range,
+  so a project never depends on the number staying the same.
+
+#### Verified (build server jasper-build, 16 cores; load averages 1–3 unless said)
+
+- Failing first: the new test files run on `feat/sound-design` `4d152842` (before this package): 39 failed, 6 passed
+  (the compatibility checks), 2 files failed to load (`sound-takes.test.ts` of project, `sound-takes-plan.test.ts`).
+- `pnpm vitest run packages/audio-fx/test/takes.test.ts packages/audio-fx/test/sound-quality-flags.test.ts` (25):
+  10 clicks separated by digital silence give 10 clean takes, each starting 5 ms (± 1 ms) before its attack; a typing
+  run of down / up pairs gives one joined take per key press (mono, stereo, 44.1 kHz); a file starting inside a sound,
+  a hit not decayed before the next, a last hit past the end and a hit chopped into digital silence are flagged
+  `head-cut` / `tail-cut`; a pair with a louder second stroke stays two takes; ≤ 64 takes spread over a 15 s run;
+  deterministic; fuzz (150 runs of any length 0–4000, 1–3 channels, 8–96 kHz, NaN / ±Inf / −3.4e38) never throws and
+  gives well-formed takes; one sample, silence, all-NaN and DC give none or well-formed ones; the descriptor and judge
+  known answers above.
+- `apps/engine/test/sound-takes.test.ts` (15, real ffmpeg): indexing a folder of generated recordings (typing WAV,
+  clicks as WAV and FLAC, a whoosh, one sample, silence); search counts and take rows; material filter and facet; take
+  entries, visual data (recomputed after the cache file is damaged) and audio (bit-exact to the range, WAV and FLAC);
+  registering (the copy's samples after 2 400 samples of lead silence equal the range to < 1e-6; the same take is one
+  media); `SOUND_TAKE_CUT`; **a registered take placed on a cue peaks on the cue frame in the exported audio**: 3 takes
+  × 23.976 / 25 / 30 / 60 fps, native MOV export with PCM, the take found in the export by sample match (mean error
+  < 1e-4), its peak 0 samples from the cue frame's sample on all 12 cues (measured: the match offset was the take's
+  `peakSec` × 48 000 = 288 samples before the cue every time), and the export's own loudest 2 ms within 0.5 ms of the
+  cue; a full re-index gives the same snapshot hash and takes; an index written before takes loads, reports
+  `needsIndex`, and the re-index brings the takes back; the cache pruning removes take files the index no longer lists.
+- `apps/engine/test/sound-takes-plan.test.ts`: on the Phase 2 fixture the typewriter key cues are filled from one typing
+  recording's takes, never the same take twice in a row, alternatives sibling takes, the recording and its cut take never
+  picked; 24 repeated cues cycle through all 8 takes before one comes back. `packages/project/test/sound-takes.test.ts`
+  (11): take ids, provenance `take` (undo / redo, refusals, repair, round trip), commands accepting take ids, `pickVariant`
+  property (300 runs: always a sibling, never the last), `materialsOf` known answers and property.
+- `apps/mcp/test/sound-takes.test.ts` (5, a real engine over stdio) and `apps/web/test/sound-library-takes.test.tsx` (3):
+  the tool and panel behaviour above.
+- **Real recordings** (`node scripts/sounds/measure-takes.mjs --appdir ~/jasper-sd/e5-real --folders <the 7 Kenney effect
+  packs> --packs bigsoundbank-keys-clicks,bigsoundbank-foley-hits,bigsoundbank-whooshes-risers --full 1`; the packs
+  installed from bigsoundbank.com by the engine at its one-request-per-second pacing; 859 sounds analysed in ≈ 250 s):
+  - BigSoundBank Keys & Clicks: the 22 multi-hit recordings now hold **634 clean takes** (30 cut); 20 of them have at
+    least one take the judge accepts as its type (e.g. "Keyboard typing, quick (desktop keyboard)": 64 takes, 60
+    accepted; the two alarm clocks 64 / 64; the metronomes 26 / 26 and 12 / 12; the light switch 4 / 4; "Mouse click
+    (Apple Magic Mouse)" 2 / 2). Still rejected: the typewriter key (`hissy`) and space bar (`soft-attack`), which takes
+    cannot fix. Foley & Hits: "Book closed" 1 accepted take of 2; the two bright pan-rim hits stay `hissy` (not
+    multi-hit). Of the 25 files that kept a rejected type at curation, 21 now have an accepted take.
+  - Kenney (7 folders, 523 files): 28 recordings get 28 clean takes and 30 cut ones; `dc-offset` flags 5 interface
+    sounds (−35…−24 dBFS means), `noisy-floor` 11 of the UI Audio switches (floors −55…−49.7 dBFS between their two
+    clicks); **`lowpassed` flags none of the 859 sounds** (the 189 cliffs found are 14.75–20 kHz encode and
+    anti-alias edges, and tonal synth / sci-fi sounds of types that need no air).
+  - Deterministic: two full re-analyses gave the same snapshot hash (`72de4099be6185f8`) and the same report.
+  - Materials (the same index): starter kit (60) metal 7, glass 3, wood 2, electronic 15, air 7, paper 4, plastic 1,
+    water 2; BigSoundBank Foley & Hits (51) paper 11, cloth 9, wood 3, metal 8, glass 3, plastic 2; Keys & Clicks (36)
+    electronic 16; Whooshes & Risers (37) metal 4, air 11, wood 1, electronic 2, rubber 3, stone 1; Kenney Impact (128)
+    stone 5, wood 25, glass 15, metal 20; Interface (100) glass 6; Digital (63) electronic 9; Sci-Fi (73) electronic 19,
+    metal 5; RPG (52) cloth 6, metal 12; UI Audio and Casino none; Jasper Synth (152) electronic 8, paper 8.
+- `lowpassed` on real material (a one-off script run with `pnpm exec tsx` on the build server, not committed): the 12
+  key / tick / metronome recordings of Keys & Clicks, their first 20 s, lossless vs ffmpeg's native AAC encoder at 24 /
+  48 / 96 kb/s: numbers in "Decisions" (measured before the final pair rule; the flags do not depend on it).
+- `e2e/sound-takes.spec.ts` (`pnpm build`, `E2E_PORT=52302 E2E_TAKES_EXTRA=<the Keys & Clicks folder> pnpm exec
+  playwright test e2e/sound-takes.spec.ts`): 1 passed (1.2 min). Looked at `test-results/e2e-sound-takes/`:
+  `collapsed.png` (the typing row "› 8 takes", single-take files "› 1 take"), `expanded.png` (eight take rows, each
+  waveform showing its press and quieter release), `inserted.png` (take 3 on A4 peak-aligned at the playhead, Essential
+  Sound "Wooden keyboard typing (take 3)", toast with Undo), `material.png` (the Material pills), `real-recording.png`
+  (a BigSoundBank MacBook Pro recording, 64 takes).
+- `pnpm typecheck` (0 errors), `SD_GIT=1 … pnpm lint` (pass), `pnpm i18n:check` (10 056 strings), `pnpm notices
+  --check` (33 ported records). `pnpm vitest run packages/audio-fx packages/project packages/api apps/engine/test/sound
+  apps/engine/test/sounds apps/mcp/test apps/web/test --maxWorkers=8`: 4 707 passed, 1 failed, 22 skipped, 2 files failed
+  to load (load average 12 during the run): the failure is `sound-packs.test.ts`'s request-interval check (294 ms < 295 ms
+  under load; passes alone: 22 / 22); the 2 files (`sound-design-motion`, `sound-dialogue-consistency`) fail the same on
+  `feat/sound-design` (the build server's ffmpeg has no libx264, carry-over item).
+
+#### Limits and notes for the next packages
+
+- Takes come from the first 120 s (6-channel files: 40 s), and only when the first 30 s hold two onsets; a recording
+  longer than 120 s has none. Onsets quieter than a quarter of the loudest flux are not found (the descriptors'
+  detector), so a soft key in a loud run joins no take.
+- A pair is at most two strokes: a typewriter's strike + carriage + bell is several takes. Fast typing with releases
+  louder than presses gives presses and releases as separate takes, so a rotation may pick a release (still a key sound).
+- `~t<n>` numbers change when a recording is re-analysed differently (a new analysis version); a stored id then names
+  another range of the same file (projects keep their copies and the range in the provenance; palettes and alternatives
+  holding take ids are hints).
+- `cutoffHz` also reports a "cliff" for tonal sounds whose partials stop (synth UI blips, a reversed bell); only types
+  that need air are judged on it. A lossy encode cut above 12 kHz (MP3 / AAC ≥ 48 kb/s) is not flagged, by design.
+- `noisy-floor` needs two onsets; a single hit recorded over hiss is not flagged (its floor is not measured).
+- The palette-coherence ranking bonus that reads `materials`, the "key / tick / tap: no varispeed" variation policy and
+  climbing runs are WP-E6's (spec 12 §4.2); takes already rotate through `pickVariant` and the plan's ranking pool.
+- Swap's "next" / "previous" cycle walks the alternatives given (take ids included), then similar recordings; it does not
+  add sibling takes of its own.
