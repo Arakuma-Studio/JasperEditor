@@ -240,12 +240,22 @@ describe('proposal MCP tools', { timeout: 900_000 }, () => {
 			'E_UNKNOWN_ARGUMENT',
 		);
 		// style.cueSources: only the chosen sources derive cues (here the "sfx: boom+swoosh" marker alone)
-		const markersOnly = await ok<Planned>('plan_sound_design', {
-			projectId,
-			style: { seed: 5, cueSources: ['markers'] },
-		});
+		// check: true (spec 12 §4 P6-E5) also runs Sound Check on the new proposal (nothing applied)
+		const markersOnly = await ok<Planned & { soundCheck: { summary: string; checkedItems: string[] } }>(
+			'plan_sound_design',
+			{ projectId, style: { seed: 5, cueSources: ['markers'] }, check: true },
+		);
 		expect(markersOnly.events.map((e) => e.frame)).toEqual([250]);
 		expect(markersOnly.events[0]!.soundId).toBe(plan.events.find((e) => e.frame === 250)!.soundId);
+		expect(markersOnly.soundCheck.summary).toMatch(/^Sound Check of this proposal: fixes \d+ · introduces \d+/);
+		expect(markersOnly.soundCheck.checkedItems).toContain(markersOnly.events[0]!.itemId);
+		expect(await revisionOf(projectId)).toBe(rev);
+		const checked = await ok<{ soundCheck: { summary: string } | null }>('get_proposal', {
+			projectId,
+			proposalId: markersOnly.proposalId,
+			ghosts: false,
+		});
+		expect(checked.soundCheck?.summary).toBe(markersOnly.soundCheck.summary);
 		await ok('reject_proposal', { projectId, proposalId: markersOnly.proposalId, itemIds: 'all' });
 		expect(
 			(await fails('plan_sound_design', { projectId, style: { cueSources: ['nonsense'] } })).code,
