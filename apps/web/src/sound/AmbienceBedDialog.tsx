@@ -40,8 +40,15 @@ type Engine = Pick<
 	EngineClient,
 	'planAmbienceBeds' | 'layAmbienceBeds' | 'getJob' | 'cancelJob' | 'searchSounds'
 >;
+/** A bed choice: a library sound (`snd_…`) or a project media (`media:<id>`). */
 type Bed = { id: string; title: string };
 type SceneEdit = { soundId: string | null; join: boolean };
+
+const MEDIA_KEY = 'media:';
+/** The request fields of a bed choice. */
+export function bedRef(key: string): { soundId: string } | { mediaId: string } {
+	return key.startsWith(MEDIA_KEY) ? { mediaId: key.slice(MEDIA_KEY.length) } : { soundId: key };
+}
 
 function Field(props: { label: string; value: string; children: ReactNode; testId?: string }) {
 	return (
@@ -59,7 +66,7 @@ export function editedScenes(
 	edits: readonly SceneEdit[],
 	defaultSoundId: string,
 ): NonNullable<Exclude<SoundBedsRequest['scenes'], 'auto'>> {
-	const out: { start: number; end: number; soundId?: string }[] = [];
+	const out: { start: number; end: number; soundId?: string; mediaId?: string }[] = [];
 	plan.scenes.forEach((s, i) => {
 		const e = edits[i];
 		const last = out[out.length - 1];
@@ -68,7 +75,7 @@ export function editedScenes(
 			return;
 		}
 		const own = e?.soundId && e.soundId !== defaultSoundId ? e.soundId : undefined;
-		out.push({ start: s.start, end: s.end, ...(own ? { soundId: own } : {}) });
+		out.push({ start: s.start, end: s.end, ...(own ? bedRef(own) : {}) });
 	});
 	return out;
 }
@@ -113,9 +120,13 @@ export function AmbienceBedDialog(
 				const list = (r.results ?? [])
 					.filter((x) => !(x.sound.types as readonly string[]).includes('roomtone'))
 					.map((x) => ({ id: x.sound.id, title: x.sound.title }));
+				// the project's own audio (a location recording the user imported) after the library's
+				const own: Bed[] = Object.values(doc.media ?? {})
+					.filter((m) => m.kind === 'audio' && !m.derivation)
+					.map((m) => ({ id: `${MEDIA_KEY}${m.id}`, title: t('{0} (project)', m.originalName) }));
 				const palette = (seq?.soundDesign?.settings?.palette ?? []) as string[];
 				const first = palette.find((id) => list.some((b) => b.id === id)) ?? list[0]?.id ?? '';
-				setBeds(list);
+				setBeds([...list, ...own]);
 				setSoundId((s) => s || first);
 			} catch (e) {
 				if (!ac.signal.aborted) {
@@ -125,13 +136,13 @@ export function AmbienceBedDialog(
 			}
 		})();
 		return () => ac.abort();
-	}, [engine, seq]);
+	}, [engine, seq, doc]);
 
 	const base = useMemo(
 		(): Omit<SoundBedsRequest, 'mode'> => ({
 			projectId: session.projectId,
 			sequenceId,
-			soundId,
+			...(soundId ? bedRef(soundId) : {}),
 			crossfadeSec,
 			sceneCrossfadeSec: sceneSec,
 			fadeSec,

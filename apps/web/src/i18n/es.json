@@ -10279,5 +10279,6 @@
   "Shot change": "Cambio de plano",
   "Shot changes (measured)": "Cambios de plano (medidos)",
   "The sequence is empty": "La secuencia está vacía",
-  "Your scene": "Su escena"
+  "Your scene": "Su escena",
+  "{0} (project)": "{0} (proyecto)"
 }
