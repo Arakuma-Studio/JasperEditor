@@ -17,6 +17,7 @@ import {
 	DELIVERY_PRESETS,
 	mixFingerprint,
 	type ProjectDocument,
+	REFERENCE_MESSAGES,
 	readSoundCheckTarget,
 	type Sequence,
 	SOUND_CHECK_MESSAGES,
@@ -125,7 +126,14 @@ const DENSITY_PARAM = new Map<string, number>([
 	[SOUND_CHECK_MESSAGES.densityRate, 3],
 ]);
 /** Templates whose parameter at this index is a fixed English fragment the editor translates (a model string). */
-const FRAGMENT_PARAM = new Map<string, number>([[SOUND_CHECK_MESSAGES.syncUnmeasurable, 1]]);
+const FRAGMENT_PARAM = new Map<string, number>([
+	[SOUND_CHECK_MESSAGES.syncUnmeasurable, 1],
+	// P6-E8: a Reference row's finding names its metric's label (a model string)
+	[REFERENCE_MESSAGES.low, 0],
+	[REFERENCE_MESSAGES.high, 0],
+	[REFERENCE_MESSAGES.lowOpen, 0],
+	[REFERENCE_MESSAGES.highOpen, 0],
+]);
 
 /**
  * A report message in the UI language: the template (`key`, a model string) translated and filled with `params`;

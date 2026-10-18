@@ -75,8 +75,14 @@ function pink(n: number, seed: number): Float32Array {
 /** The 8–16 kHz "air" changed by `db` (a Linkwitz–Riley 4 crossover at 8 kHz: the bands sum flat at 0 dB). */
 function air(x: Float32Array, db: number): Float32Array {
 	if (db === 0) return x;
-	const lp = [new Biquad(designBiquad('lowPass', SR, 8000, Math.SQRT1_2)), new Biquad(designBiquad('lowPass', SR, 8000, Math.SQRT1_2))];
-	const hp = [new Biquad(designBiquad('highPass', SR, 8000, Math.SQRT1_2)), new Biquad(designBiquad('highPass', SR, 8000, Math.SQRT1_2))];
+	const lp = [
+		new Biquad(designBiquad('lowPass', SR, 8000, Math.SQRT1_2)),
+		new Biquad(designBiquad('lowPass', SR, 8000, Math.SQRT1_2)),
+	];
+	const hp = [
+		new Biquad(designBiquad('highPass', SR, 8000, Math.SQRT1_2)),
+		new Biquad(designBiquad('highPass', SR, 8000, Math.SQRT1_2)),
+	];
 	const g = 10 ** (db / 20);
 	const out = new Float32Array(x.length);
 	for (let i = 0; i < x.length; i++) {
@@ -109,7 +115,8 @@ function soundtrack(r: Recipe): Float32Array[] {
 		for (const t of r.clickAt) {
 			const at = Math.round(t * SR);
 			for (let i = 0; i < 0.02 * SR && at + i < n; i++)
-				c[at + i]! += (r.clickGain ?? 0.5) * Math.exp(-i / (SR * 0.003)) * Math.sin((2 * Math.PI * 3000 * i) / SR);
+				c[at + i]! +=
+					(r.clickGain ?? 0.5) * Math.exp(-i / (SR * 0.003)) * Math.sin((2 * Math.PI * 3000 * i) / SR);
 		}
 	return chans.map((c0) => {
 		const c = air(c0, r.airDb ?? 0);
@@ -153,7 +160,21 @@ function film(name: string, r: Recipe): string {
 	const res = spawnSync(
 		TEST_FFMPEG,
 		[
-			...['-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', `${W}x${Hh}`, '-r', String(FPS), '-i', rgb],
+			...[
+				'-v',
+				'error',
+				'-y',
+				'-f',
+				'rawvideo',
+				'-pix_fmt',
+				'rgb24',
+				'-s',
+				`${W}x${Hh}`,
+				'-r',
+				String(FPS),
+				'-i',
+				rgb,
+			],
 			...['-i', wav, '-c:v', 'ffv1', '-c:a', 'pcm_s16le', '-shortest', out],
 		],
 		{ encoding: 'utf8' },
@@ -170,7 +191,10 @@ function seed(doc: ProjectDocument): string {
 	writeFileSync(
 		file,
 		JSON.stringify(
-			makeEnvelope({ ...doc, projectId }, { revision: 3, savedAt: '2026-10-18T00:00:00.000Z', platform: 'test' }),
+			makeEnvelope(
+				{ ...doc, projectId },
+				{ revision: 3, savedAt: '2026-10-18T00:00:00.000Z', platform: 'test' },
+			),
 		),
 	);
 	return projectId;
@@ -204,7 +228,11 @@ async function getProfile(id: string) {
 	expect(r.statusCode, r.body).toBe(200);
 	return SoundProfileSchema.parse(r.json());
 }
-async function check(projectId: string, name: string, extra: Record<string, unknown> = {}): Promise<SoundCheckReport> {
+async function check(
+	projectId: string,
+	name: string,
+	extra: Record<string, unknown> = {},
+): Promise<SoundCheckReport> {
 	const t0 = Date.now();
 	const job = await waitJob(await req('POST', '/api/sound-design/check', { projectId, ...extra }));
 	timings.push({ name, ms: Date.now() - t0 });
@@ -230,7 +258,12 @@ async function sequenceDoc(r: Recipe, cuts: readonly number[], name: string): Pr
 		const len = (at[i + 1] ?? end) - f;
 		const [cr, cg, cb] = COLOURS[i % COLOURS.length]!;
 		const res = b.tx([
-			{ type: 'synthetic.create', kind: 'color-matte', params: { color: [cr / 255, cg / 255, cb / 255, 1] }, ref: '$m' },
+			{
+				type: 'synthetic.create',
+				kind: 'color-matte',
+				params: { color: [cr / 255, cg / 255, cb / 255, 1] },
+				ref: '$m',
+			},
 		]);
 		const item =
 			Object.values(b.doc.items).find(
@@ -240,8 +273,11 @@ async function sequenceDoc(r: Recipe, cuts: readonly number[], name: string): Pr
 				.filter((it) => it.kind === 'synthetic')
 				.at(-1)!;
 		b.tx([{ type: 'clip.place', source: { projectItemId: item.id }, at: f, tracks: { video: 'V1' } }]);
-		const clip = Object.values(b.doc.sequences[b.seqId]!.clips).find((c) => c.kind !== 'audio' && c.start === f)!;
-		if (len !== clip.duration) b.tx([{ type: 'clip.trim', clipId: clip.id, edge: 'out', deltaFrames: len - clip.duration }]);
+		const clip = Object.values(b.doc.sequences[b.seqId]!.clips).find(
+			(c) => c.kind !== 'audio' && c.start === f,
+		)!;
+		if (len !== clip.duration)
+			b.tx([{ type: 'clip.trim', clipId: clip.id, edge: 'out', deltaFrames: len - clip.duration }]);
 	});
 	return b;
 }
@@ -285,7 +321,11 @@ describe('reference sound profiles (real engine)', { timeout: 600_000 }, () => {
 		// numbers only: no path, no audio
 		expect(JSON.stringify(p)).not.toContain(dir);
 		const m = p.metrics;
-		console.log(`profile medians: ${Object.entries(m).map(([k, s]) => `${k} ${s.median} [${s.min}, ${s.max}]`).join('; ')}`);
+		console.log(
+			`profile medians: ${Object.entries(m)
+				.map(([k, s]) => `${k} ${s.median} [${s.min}, ${s.max}]`)
+				.join('; ')}`,
+		);
 		// the picture: 10 colour cuts in 20 s, each found by the scene detector, each with its click
 		expect(m.cut_rate).toMatchObject({ n: 3, min: 0.5, max: 0.5 });
 		expect(m.cuts_with_sound).toMatchObject({ n: 3, min: 1, max: 1 });
@@ -321,7 +361,10 @@ describe('reference sound profiles (real engine)', { timeout: 600_000 }, () => {
 		expect(ref, JSON.stringify(okReport.warnings)).toBeDefined();
 		const { rows: _rows, ...head } = ref;
 		expect(head).toMatchObject({ profileId, source: 'sequence', n: 3, scoredAgainst: 3, leaveOneOut: null });
-		expect(ref.rows.filter((r) => r.status === 'low' || r.status === 'high'), rowsText(okReport)).toEqual([]);
+		expect(
+			ref.rows.filter((r) => r.status === 'low' || r.status === 'high'),
+			rowsText(okReport),
+		).toEqual([]);
 		expect(okReport.issues.filter((i) => i.code === 'REFERENCE')).toEqual([]);
 		expect(ref.counts.scored).toBeGreaterThan(15);
 		expect(ref.rows.find((r) => r.metric === 'cut_rate')!.value).toBeCloseTo(0.5, 3);
@@ -401,15 +444,23 @@ describe('reference sound profiles (real engine)', { timeout: 600_000 }, () => {
 		expect(await bad({ ...(exported as object), format: 'earshot' })).toEqual([400, 'SOUND_PROFILE_INVALID']);
 		expect(await bad({ ...(exported as object), references: [] })).toEqual([400, 'SOUND_PROFILE_INVALID']);
 		const many = { ...(exported as { references: unknown[] }) };
-		many.references = Array.from({ length: 21 }, (_, i) => ({ ...(many.references[0] as object), id: `ref_${i + 1}` }));
+		many.references = Array.from({ length: 21 }, (_, i) => ({
+			...(many.references[0] as object),
+			id: `ref_${i + 1}`,
+		}));
 		expect(await bad(many)).toEqual([400, 'SOUND_PROFILE_INVALID']);
 		expect(await bad('not a profile')).toEqual([400, 'SOUND_PROFILE_INVALID']);
-		const tampered = JSON.parse(JSON.stringify(exported)) as { references: { metrics: Record<string, unknown> }[] };
+		const tampered = JSON.parse(JSON.stringify(exported)) as {
+			references: { metrics: Record<string, unknown> }[];
+		};
 		tampered.references[0]!.metrics.band_air = 'NaN';
 		expect(await bad(tampered)).toEqual([400, 'SOUND_PROFILE_INVALID']);
 		// a damaged file in the library: listed as unreadable, moved aside, never served
 		const pdir = join(appdirPaths(app.appdir).soundsDir, 'profiles');
-		writeFileSync(join(pdir, 'sprf_00000000000000bb.json'), '{"format": "jasper-sound-profile", "version": 1');
+		writeFileSync(
+			join(pdir, 'sprf_00000000000000bb.json'),
+			'{"format": "jasper-sound-profile", "version": 1',
+		);
 		const list = SoundProfilesResponseSchema.parse((await req('GET', '/api/sound-design/profiles')).json());
 		expect(list.unreadable).toEqual([{ file: 'sprf_00000000000000bb.json', error: 'not JSON' }]);
 		expect(existsSync(join(pdir, 'sprf_00000000000000bb.json'))).toBe(false);
@@ -422,7 +473,9 @@ describe('reference sound profiles (real engine)', { timeout: 600_000 }, () => {
 		const r = await req('PUT', `/api/sound-design/profiles/${profileId}/name`, { name: 'My channel' });
 		expect(r.statusCode, r.body).toBe(200);
 		expect((await getProfile(profileId)).name).toBe('My channel');
-		expect((await req('PUT', `/api/sound-design/profiles/${profileId}/name`, { name: '' })).statusCode).toBe(400);
+		expect((await req('PUT', `/api/sound-design/profiles/${profileId}/name`, { name: '' })).statusCode).toBe(
+			400,
+		);
 		const del = await req('DELETE', `/api/sound-design/profiles/${profileId}`);
 		expect(del.statusCode, del.body).toBe(403);
 		expect((del.json() as { code: string }).code).toBe('APPROVAL_DENIED');
@@ -437,7 +490,11 @@ describe('reference sound profiles (real engine)', { timeout: 600_000 }, () => {
 		).toBe(400);
 		const b = new DocBuilder();
 		const projectId = seed(b.doc);
-		const unknown = await req('POST', '/api/sound-design/profiles', { name: 'x', projectId, mediaIds: ['med_nope'] });
+		const unknown = await req('POST', '/api/sound-design/profiles', {
+			name: 'x',
+			projectId,
+			mediaIds: ['med_nope'],
+		});
 		expect([unknown.statusCode, (unknown.json() as { code: string }).code]).toEqual([404, 'MEDIA_NOT_FOUND']);
 		const nothing = await waitJob(
 			await req('POST', '/api/sound-design/profiles', { name: 'x', paths: [join(dir, 'missing.wav')] }),

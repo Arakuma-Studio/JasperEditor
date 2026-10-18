@@ -36,7 +36,9 @@ const logs: string[] = [];
 const engineLog: string[] = [];
 
 async function call(name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
-	return (await client.callTool({ name, arguments: args }, undefined, { timeout: 900_000 })) as CallToolResult;
+	return (await client.callTool({ name, arguments: args }, undefined, {
+		timeout: 900_000,
+	})) as CallToolResult;
 }
 async function ok<T = Record<string, unknown>>(name: string, args: Record<string, unknown> = {}) {
 	const r = await call(name, args);
@@ -166,7 +168,9 @@ describe('reference sound profiles through MCP', { timeout: 900_000 }, () => {
 		);
 		expect(built.profile.references).toBe(3);
 		const profileId = built.profile.profileId;
-		const got = await ok<{ metrics: string[]; references: { title: string }[] }>('get_sound_profile', { profileId });
+		const got = await ok<{ metrics: string[]; references: { title: string }[] }>('get_sound_profile', {
+			profileId,
+		});
 		expect(got.references.map((r) => r.title)).toEqual(['ref1.wav', 'ref2.wav', 'ref3.wav']);
 		expect(
 			got.metrics.find((l) => l.startsWith('Onset density (onset_rate): median ')),
@@ -174,19 +178,28 @@ describe('reference sound profiles through MCP', { timeout: 900_000 }, () => {
 		).toBeDefined();
 
 		// a project with a matching soundtrack and one without air
-		const { projectId } = await ok<{ projectId: string }>('create_project', { name: 'Profile', preset: 'hd-1080p-30' });
+		const { projectId } = await ok<{ projectId: string }>('create_project', {
+			name: 'Profile',
+			preset: 'hd-1080p-30',
+		});
 		const same = join(media, 'same.wav');
 		writeFileSync(same, soundtrack(4));
 		const dull = join(media, 'dull.wav');
 		writeFileSync(dull, soundtrack(5, true));
-		const imp = await ok<{ imported: { mediaId: string }[] }>('import_media', { projectId, paths: [same, dull] });
+		const imp = await ok<{ imported: { mediaId: string }[] }>('import_media', {
+			projectId,
+			paths: [same, dull],
+		});
 		const [a, b] = imp.imported.map((m) => m.mediaId) as [string, string];
 		await ok('apply_commands', {
 			projectId,
 			label: 'Soundtrack',
 			commands: [{ type: 'clip.place', source: { mediaId: a }, at: 0, tracks: { audio: 'A1' } }],
 		});
-		const set = await ok<{ referenceProfile: string; name: string }>('set_sound_profile', { projectId, profileId });
+		const set = await ok<{ referenceProfile: string; name: string }>('set_sound_profile', {
+			projectId,
+			profileId,
+		});
 		expect(set).toMatchObject({ referenceProfile: profileId, name: 'Clicks' });
 		const doc = await documentOf(projectId);
 		expect(soundDesignSettingsOf(Object.values(doc.sequences)[0]!).referenceProfile).toBe(profileId);
@@ -206,9 +219,9 @@ describe('reference sound profiles through MCP', { timeout: 900_000 }, () => {
 		const report = SoundCheckResultSchema.parse(job.result).report;
 		expect(c1.reference.rows).toHaveLength(report.reference!.rows.length);
 		report.reference!.rows.forEach((r, i) => {
-			expect(c1.reference.rows[i]!.startsWith(r.status === 'ok' ? 'ok ' : `${r.status.toUpperCase()} ${r.label}`)).toBe(
-				true,
-			);
+			expect(
+				c1.reference.rows[i]!.startsWith(r.status === 'ok' ? 'ok ' : `${r.status.toUpperCase()} ${r.label}`),
+			).toBe(true);
 			expect(c1.reference.rows[i]).toContain(`(${r.metric}, ${r.weight})`);
 		});
 		// the dull soundtrack: air flagged (an info), its advice in the finding line
@@ -217,12 +230,20 @@ describe('reference sound profiles through MCP', { timeout: 900_000 }, () => {
 			label: 'Dull soundtrack',
 			commands: [{ type: 'clip.place', source: { mediaId: b }, at: 0, tracks: { audio: 'A2' } }],
 		});
-		const d = await ok<{ jobId: string; findings: string[] }>('sound_check', { projectId, images: false, profileId });
+		const d = await ok<{ jobId: string; findings: string[] }>('sound_check', {
+			projectId,
+			images: false,
+			profileId,
+		});
 		const air = d.findings.find((f) => f.includes('REFERENCE:band_air'));
 		expect(air, d.findings.join('\n')).toBeDefined();
 		expect(air).toMatch(/^INFO REFERENCE/);
 		expect(air).toMatch(/what to do: No air/);
-		const off = await ok<{ reference?: unknown }>('sound_check', { projectId, images: false, profileId: null });
+		const off = await ok<{ reference?: unknown }>('sound_check', {
+			projectId,
+			images: false,
+			profileId: null,
+		});
 		expect(off.reference).toBeUndefined();
 
 		// export → import through a file; a hostile file is refused
@@ -237,7 +258,10 @@ describe('reference sound profiles through MCP', { timeout: 900_000 }, () => {
 		expect(back.profile.profileId).not.toBe(profileId);
 		expect(back.profile.name).toBe('Clicks (shared)');
 		const junk = join(work, 'junk.json');
-		writeFileSync(junk, JSON.stringify({ format: 'jasper-sound-profile', version: 1, references: 'all of them' }));
+		writeFileSync(
+			junk,
+			JSON.stringify({ format: 'jasper-sound-profile', version: 1, references: 'all of them' }),
+		);
 		expect((await refused('import_sound_profile', { path: junk })).code).toBe('SOUND_PROFILE_INVALID');
 		writeFileSync(junk, 'not json');
 		expect((await refused('import_sound_profile', { path: junk })).code).toBe('SOUND_PROFILE_INVALID');
@@ -251,9 +275,9 @@ describe('reference sound profiles through MCP', { timeout: 900_000 }, () => {
 		expect((await refused('build_sound_profile', { name: 'x', paths: ['relative.wav'] })).code).toBe(
 			'E_INVALID_PARAM',
 		);
-		expect(
-			(await refused('get_sound_profile', { profileId: 'sprf_00000000000000ff' })).code,
-		).toBe('SOUND_PROFILE_NOT_FOUND');
+		expect((await refused('get_sound_profile', { profileId: 'sprf_00000000000000ff' })).code).toBe(
+			'SOUND_PROFILE_NOT_FOUND',
+		);
 		expect((await refused('set_sound_profile', { projectId, profileId, extra: 1 })).text).toMatch(/extra/);
 	});
 });

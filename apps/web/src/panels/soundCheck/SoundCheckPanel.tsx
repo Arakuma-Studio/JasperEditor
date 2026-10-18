@@ -84,6 +84,7 @@ import {
 	unacknowledgeFinding,
 } from '../../sound/check-run.ts';
 import { seqTimecode } from '../../sound/design-model.ts';
+import { ReferenceRows, ReferenceSelect } from '../../sound/ReferenceProfiles.tsx';
 import { type StripEngine, SyncStrip } from '../../sound/SyncStrip.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import type { PanelProps } from '../types.ts';
@@ -301,6 +302,16 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 								instanceId={props.instanceId}
 								reveal={reveal}
 							/>
+							{report.reference ? (
+								<ReferenceRows
+									reference={report.reference}
+									onShow={(id) => {
+										const issue = report.issues.find((i) => i.id === id);
+										const f = issue?.frame ?? issue?.range?.start;
+										if (f !== undefined) reveal(f);
+									}}
+								/>
+							) : null}
 							<AckEditor session={session} view={view!} readOnly={readOnly} />
 							<Acknowledged session={session} seq={seq} view={view!} readOnly={readOnly} reveal={reveal} />
 							<Listen
@@ -449,6 +460,15 @@ function TargetBar(props: {
 						</Button>
 					)}
 				</div>
+			</div>
+			<div className="flex flex-wrap items-center gap-2">
+				<span className="text-pr-small text-pr-muted">{t('Reference')}</span>
+				<ReferenceSelect
+					session={props.session}
+					sequenceId={seq?.id ?? null}
+					disabled={props.running}
+					readOnly={props.readOnly}
+				/>
 			</div>
 			{choice.kind === 'custom' ? (
 				<div className="flex flex-wrap items-center gap-2 text-pr-small" data-testid="sound-check-custom">

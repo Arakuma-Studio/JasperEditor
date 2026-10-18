@@ -597,14 +597,27 @@ export async function runSoundProfileJob(
 		doc = (await liveDocument(agent, req.projectId)).doc;
 	}
 	const plan: Planned[] = [];
+	// titles: the bin item's name (what the user calls it), else the file's name
+	const items = Object.values(
+		(doc?.items ?? {}) as Record<
+			string,
+			{ kind?: unknown; name?: unknown; mediaId?: unknown; sequenceId?: unknown }
+		>,
+	);
+	const itemName = (key: 'mediaId' | 'sequenceId', id: string) => {
+		const it = items.find((i) => i?.[key] === id && typeof i.name === 'string' && i.name);
+		return it ? String(it.name) : null;
+	};
 	for (const id of req.mediaIds ?? []) {
 		const asset = doc?.media?.[id] as { name?: unknown; originalName?: unknown } | undefined;
-		const title = typeof asset?.name === 'string' ? asset.name : asset?.originalName;
-		plan.push({ kind: 'media', mediaId: id, title: typeof title === 'string' && title ? title : id });
+		const own = typeof asset?.name === 'string' ? asset.name : asset?.originalName;
+		const title = itemName('mediaId', id) ?? (typeof own === 'string' && own ? own : id);
+		plan.push({ kind: 'media', mediaId: id, title });
 	}
 	for (const id of req.sequenceIds ?? []) {
 		const seq = doc?.sequences?.[id] as { name?: unknown } | undefined;
-		plan.push({ kind: 'sequence', sequenceId: id, title: typeof seq?.name === 'string' ? seq.name : id });
+		const title = itemName('sequenceId', id) ?? (typeof seq?.name === 'string' && seq.name ? seq.name : id);
+		plan.push({ kind: 'sequence', sequenceId: id, title });
 	}
 	for (const p of req.paths ?? []) plan.push({ kind: 'path', path: p, title: basename(p) || p });
 	const refs: ReferenceEntry[] = [];

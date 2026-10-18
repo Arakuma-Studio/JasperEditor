@@ -77,7 +77,9 @@ const summaryRow = (p: SoundProfileSummary) => ({
 	profileId: p.id,
 	name: p.name,
 	references: p.n,
-	titles: p.references.map((r) => `${r.title} (${r.kind}, ${Math.round(r.durationSec)} s${r.hasPicture ? '' : ', no picture'})`),
+	titles: p.references.map(
+		(r) => `${r.title} (${r.kind}, ${Math.round(r.durationSec)} s${r.hasPicture ? '' : ', no picture'})`,
+	),
 	createdAt: p.createdAt,
 	...(p.warnings.length ? { warnings: p.warnings } : {}),
 });
@@ -203,7 +205,12 @@ export function registerSoundProfileTools(ctx: ToolContext): void {
 			title: 'Build a reference sound profile',
 			description: `Measures 1–${REFERENCE_PROFILE_LIMITS.references} references the USER chose and stores their statistics as a new profile in the engine's library (a sound-profile job; nothing is written to the project). References: media of the project (mediaIds: their audio, and their picture's cuts by the scene detector), sequences of the project (sequenceIds: their mix and their edit's cuts and transitions), or absolute file paths on a local engine (paths). Each is measured as a whole (at most ${REFERENCE_PROFILE_LIMITS.maxSec / 60} min): integrated loudness, true peak, loudness range, crest; the loudness arc, opening and closing level, time to first sound, longest silent gap; dead air at the end, fade length, the final moment and ring-out; onsets and salient hits per second, stop-downs; picture events per second and the share with an onset within 100 ms and within a frame, each with its chance level; the energy share of sub, low, low-mid, mid, presence and air; brightness; stereo width and correlation; speech share. References under ${REFERENCE_PROFILE_LIMITS.minSec} s, silent or without audio are skipped (listed with why). Use 5 or more references for ranges worth judging by (with fewer the result warns). Never pick references yourself: ask the user which media describe the sound they want. Waits for the job (timeoutSeconds, default 600).`,
 			input: {
-				name: z.string().trim().min(1).max(REFERENCE_PROFILE_LIMITS.name).describe('Profile name, e.g. "My channel"'),
+				name: z
+					.string()
+					.trim()
+					.min(1)
+					.max(REFERENCE_PROFILE_LIMITS.name)
+					.describe('Profile name, e.g. "My channel"'),
 				projectId: ProjectIdArg.optional().describe('Project of mediaIds / sequenceIds'),
 				mediaIds: z.array(z.string().min(1)).max(REFERENCE_PROFILE_LIMITS.references).optional(),
 				sequenceIds: z.array(z.string().min(1)).max(REFERENCE_PROFILE_LIMITS.references).optional(),
@@ -212,7 +219,13 @@ export function registerSoundProfileTools(ctx: ToolContext): void {
 					.max(REFERENCE_PROFILE_LIMITS.references)
 					.optional()
 					.describe('Absolute file paths on the engine’s computer (a local engine only)'),
-				timeoutSeconds: z.number().int().min(1).max(3600).optional().describe('Wait for the job (default 600)'),
+				timeoutSeconds: z
+					.number()
+					.int()
+					.min(1)
+					.max(3600)
+					.optional()
+					.describe('Wait for the job (default 600)'),
 			},
 			annotations: EDIT,
 		},
@@ -225,10 +238,18 @@ export function registerSoundProfileTools(ctx: ToolContext): void {
 					'Ask the user which of their media or sequences describe the sound they want.',
 				);
 			if ((a.mediaIds?.length || a.sequenceIds?.length) && !a.projectId)
-				throw new ToolError('E_INVALID_PARAM', 'mediaIds and sequenceIds need projectId', 'Pass the projectId.');
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'mediaIds and sequenceIds need projectId',
+					'Pass the projectId.',
+				);
 			for (const p of a.paths ?? [])
 				if (!isAbsolute(p))
-					throw new ToolError('E_INVALID_PARAM', `Paths must be absolute: ${p}`, 'Pass full paths such as /home/me/film.mp4.');
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						`Paths must be absolute: ${p}`,
+						'Pass full paths such as /home/me/film.mp4.',
+					);
 			const job = await profileCall<{ id: string }>(ctx, (c) =>
 				c.buildSoundProfile({
 					name: a.name,
@@ -291,7 +312,9 @@ export function registerSoundProfileTools(ctx: ToolContext): void {
 			annotations: DESTRUCTIVE,
 		},
 		async (a) => {
-			const r = await profileCall<{ deleted: true; id: string }>(ctx, (c) => c.deleteSoundProfile(a.profileId));
+			const r = await profileCall<{ deleted: true; id: string }>(ctx, (c) =>
+				c.deleteSoundProfile(a.profileId),
+			);
 			return jsonResult({ ok: true, ...r });
 		},
 	);
@@ -312,7 +335,11 @@ export function registerSoundProfileTools(ctx: ToolContext): void {
 		},
 		async (a) => {
 			if (!isAbsolute(a.path))
-				throw new ToolError('E_INVALID_PARAM', 'Paths must be absolute', 'Pass a full path such as /tmp/profile.json.');
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'Paths must be absolute',
+					'Pass a full path such as /tmp/profile.json.',
+				);
 			const p = SoundProfileSchema.parse(await profileCall(ctx, (c) => c.getSoundProfile(a.profileId)));
 			await mkdir(dirname(a.path), { recursive: true });
 			await writeFile(a.path, `${JSON.stringify(p, null, 2)}\n`, { flag: a.overwrite ? 'w' : 'wx' }).catch(
@@ -320,7 +347,9 @@ export function registerSoundProfileTools(ctx: ToolContext): void {
 					throw new ToolError(
 						e.code === 'EEXIST' ? 'E_EXISTS' : 'E_IO',
 						e.code === 'EEXIST' ? `${a.path} exists` : `Cannot write ${a.path}: ${e.message}`,
-						e.code === 'EEXIST' ? 'Pass overwrite: true to replace it, or another path.' : 'Check the folder.',
+						e.code === 'EEXIST'
+							? 'Pass overwrite: true to replace it, or another path.'
+							: 'Check the folder.',
 					);
 				},
 			);
@@ -345,16 +374,27 @@ export function registerSoundProfileTools(ctx: ToolContext): void {
 			let profile: unknown = a.profile;
 			if (a.path !== undefined) {
 				if (!isAbsolute(a.path))
-					throw new ToolError('E_INVALID_PARAM', 'Paths must be absolute', 'Pass a full path such as /tmp/profile.json.');
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						'Paths must be absolute',
+						'Pass a full path such as /tmp/profile.json.',
+					);
 				const bytes = await readFile(a.path).catch((e: Error) => {
 					throw new ToolError('E_NOT_FOUND', `Cannot read ${a.path}: ${e.message}`);
 				});
 				if (bytes.length > REFERENCE_PROFILE_LIMITS.fileBytes)
-					throw new ToolError('E_LIMIT', `The file is larger than ${REFERENCE_PROFILE_LIMITS.fileBytes} bytes`);
+					throw new ToolError(
+						'E_LIMIT',
+						`The file is larger than ${REFERENCE_PROFILE_LIMITS.fileBytes} bytes`,
+					);
 				try {
 					profile = JSON.parse(bytes.toString('utf8'));
 				} catch {
-					throw new ToolError('SOUND_PROFILE_INVALID', `${a.path} is not JSON`, PROFILE_HINTS.SOUND_PROFILE_INVALID);
+					throw new ToolError(
+						'SOUND_PROFILE_INVALID',
+						`${a.path} is not JSON`,
+						PROFILE_HINTS.SOUND_PROFILE_INVALID,
+					);
 				}
 			}
 			if (profile === undefined)
@@ -403,7 +443,9 @@ export function registerSoundProfileTools(ctx: ToolContext): void {
 				sequenceId: seq.id,
 				referenceProfile: a.profileId,
 				...(name ? { name } : {}),
-				next: a.profileId ? 'Run sound_check: its result has reference.rows.' : 'Sound Check no longer compares.',
+				next: a.profileId
+					? 'Run sound_check: its result has reference.rows.'
+					: 'Sound Check no longer compares.',
 			});
 		},
 	);
