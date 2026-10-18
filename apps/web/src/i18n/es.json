@@ -10069,7 +10069,6 @@
   "lowpassed (a lossy encode)": "paso bajo (una codificación con pérdida)",
   "noisy [judge]": "ruidoso",
   "noisy floor between hits": "ruido de fondo entre golpes",
-  "Paper [material]": "Papel",
   "Plastic": "Plástico",
   "Rubber": "Goma",
   "several hits": "varios golpes",
@@ -10077,9 +10076,10 @@
   "soft attack [judge]": "ataque suave",
   "Stone": "Piedra",
   "Take {0}": "Toma {0}",
-  "Take {0} · 2 strokes": "Toma {0} · 2 pulsaciones",
   "take {0} of its recording": "toma {0} de su grabación",
   "too long": "demasiado largo",
   "too short": "demasiado corto",
-  "Wood": "Madera"
+  "Wood": "Madera",
+  "2 strokes": "2 pulsaciones",
+  "2 strokes: a key’s down and up": "2 pulsaciones: bajada y subida de una tecla"
 }

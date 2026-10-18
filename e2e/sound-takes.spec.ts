@@ -179,7 +179,7 @@ test('a typing run’s takes: listed under it, auditioned and inserted peak-alig
 	await panel.screenshot({ path: join(outDir, 'material.png') });
 	if (extra.length) {
 		await wood.click();
-		await panel.getByTestId('sound-search').fill('keyboard typing slow');
+		await panel.getByTestId('sound-search').fill('slow macbook keyboard');
 		const real = list.getByRole('option').first();
 		await expect(real).toBeVisible({ timeout: 60_000 });
 		await real.click();

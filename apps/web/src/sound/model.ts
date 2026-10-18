@@ -122,7 +122,7 @@ export const REFINE_LABELS: Record<string, string> = {
 	glass: 'Glass',
 	metal: 'Metal',
 	plastic: 'Plastic',
-	paper: 'Paper [material]',
+	paper: 'Paper',
 	cloth: 'Cloth',
 	stone: 'Stone',
 	water: 'Water',
@@ -468,8 +468,7 @@ export const JUDGE_REASON_LABELS: Record<string, string> = {
  * recording ("Take 3 · 2 strokes"). Null for other sounds.
  */
 export function takeLabel(e: SoundEntry, takeCount?: number): string | null {
-	if (e.take)
-		return e.take.strokes === 2 ? t('Take {0} · 2 strokes', e.take.index) : t('Take {0}', e.take.index);
+	if (e.take) return t('Take {0}', e.take.index);
 	if (takeCount) return takeCount === 1 ? t('1 take') : t('{0} takes', takeCount);
 	return null;
 }
@@ -481,7 +480,7 @@ export function soundTooltip(e: SoundEntry, rootLabel?: (rootId: string) => stri
 	const types = e.types.map(typeLabel).join(', ');
 	if (types) lines.push(types);
 	const take = takeLabel(e);
-	if (take) lines.push(take);
+	if (take) lines.push(e.take?.strokes === 2 ? `${take} · ${t('2 strokes: a key’s down and up')}` : take);
 	const facts = [
 		formatSeconds(e.format.durationSec),
 		fin(d.peakSec) ? t('peak {0}', formatOffset(d.peakSec)) : null,

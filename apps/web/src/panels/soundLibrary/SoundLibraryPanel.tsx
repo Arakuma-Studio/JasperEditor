@@ -1420,6 +1420,7 @@ export function SoundLibraryPanel(props: PanelProps) {
 													<span className="truncate text-pr-small text-pr-dim">
 														{it.types.map(typeLabel).join(', ') || 'Untyped'} ·{' '}
 														{formatSeconds(it.format.durationSec)}
+														{it.take?.strokes === 2 ? ` · ${t('2 strokes')}` : ''}
 													</span>
 												) : null}
 											</div>
