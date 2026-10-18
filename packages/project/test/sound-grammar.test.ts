@@ -683,7 +683,8 @@ describe('grammar properties (deterministic, bounded, never throw)', () => {
 						for (const t of out) expect(prof.exclude).not.toContain(t);
 				} else expect(out).toEqual(types);
 				// the sequence of families is unchanged
-				const fam = (l: readonly string[]) => l.map((t) => SOUND_TYPES[t as (typeof SOUND_TYPE_IDS)[number]].family);
+				const fam = (l: readonly string[]) =>
+					l.map((t) => SOUND_TYPES[t as (typeof SOUND_TYPE_IDS)[number]].family);
 				const kept = types.filter((t) => out.includes(t));
 				expect(fam(out)).toEqual(fam(kept));
 				expect(styleCueTypes(out, p)).toEqual(out);
@@ -698,7 +699,9 @@ describe('grammar properties (deterministic, bounded, never throw)', () => {
 			fc.property(
 				fc.array(fc.oneof(typeArb, fc.string()), { maxLength: 4 }),
 				fc.record({ centroidHz: num, riseMs: num, below150Share: num, flatness: num, durationSec: num }),
-				fc.option(fc.array(fc.oneof(fc.constantFrom('wood', 'metal', 'glass'), fc.string()), { maxLength: 3 })),
+				fc.option(
+					fc.array(fc.oneof(fc.constantFrom('wood', 'metal', 'glass'), fc.string()), { maxLength: 3 }),
+				),
 				personalityArb,
 				(types, d, materials, p) => {
 					const s = personalityScore({ types, descriptors: d, materials }, p);
@@ -721,7 +724,9 @@ describe('grammar properties (deterministic, bounded, never throw)', () => {
 					fc.record({
 						soundId: fc.option(fc.string()),
 						types: fc.array(fc.oneof(typeArb, fc.string()), { maxLength: 3 }),
-						materials: fc.option(fc.array(fc.oneof(fc.constantFrom('wood', 'metal', 'air'), fc.string()), { maxLength: 3 })),
+						materials: fc.option(
+							fc.array(fc.oneof(fc.constantFrom('wood', 'metal', 'air'), fc.string()), { maxLength: 3 }),
+						),
 					}),
 					{ maxLength: 30 },
 				),
@@ -741,7 +746,9 @@ describe('grammar properties (deterministic, bounded, never throw)', () => {
 	it('deriveCues with any grammar options on the Phase 2 fixture plus music: deterministic, never more kept than found', () => {
 		const { h } = phase2Fixture();
 		const media = h.registerVideo({ kind: 'audio', seconds: 30 });
-		const r = h.ok([{ type: 'clip.place', source: { mediaId: media }, at: 40, tracks: { audio: 'A2' }, ref: '$m' }]);
+		const r = h.ok([
+			{ type: 'clip.place', source: { mediaId: media }, at: 40, tracks: { audio: 'A2' }, ref: '$m' },
+		]);
 		h.ok([{ type: 'essentialSound.setType', clipIds: [r.refs.$m!], audioType: 'music' }]);
 		fc.assert(
 			fc.property(

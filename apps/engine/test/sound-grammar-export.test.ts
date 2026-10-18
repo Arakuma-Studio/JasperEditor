@@ -7,7 +7,12 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { type EngineJob, type SoundDesignPlanResult, SoundDesignPlanResultSchema } from '@jasper/api';
+import {
+	type EngineJob,
+	SoundCheckResultSchema,
+	type SoundDesignPlanResult,
+	SoundDesignPlanResultSchema,
+} from '@jasper/api';
 import { encodeWav } from '@jasper/audio-dsp';
 import { appdirPaths } from '@jasper/config';
 import {
@@ -340,9 +345,11 @@ describe('the cue grammar in the exported audio (measured)', { timeout: 900_000 
 		expect(r.statusCode, r.body).toBe(202);
 		const job = await waitJob((r.json() as EngineJob).id);
 		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
-		const issues = (job.result as { issues: { code: string; clipIds?: string[] }[] }).issues;
+		const issues = SoundCheckResultSchema.parse(job.result).report.issues;
 		const clickClips = new Set([240, 270, 300].map((f) => clipAt(f).id));
-		expect(issues.filter((i) => i.code === 'REPEAT' && i.clipIds?.some((c) => clickClips.has(c)))).toEqual([]);
+		expect(issues.filter((i) => i.code === 'REPEAT' && i.clipIds?.some((c) => clickClips.has(c)))).toEqual(
+			[],
+		);
 	});
 
 	it('the keys are takes of the typing run at speed 1, never the same take twice in a row', () => {
