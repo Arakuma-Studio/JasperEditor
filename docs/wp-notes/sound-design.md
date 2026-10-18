@@ -8865,9 +8865,9 @@ security review, gaps. Tests: `packages/project/test/sound-acknowledge.test.ts` 
   kept): `pnpm typecheck` (every package) 0 errors; `SD_GIT=1 … pnpm lint` (Biome, tokens, anime, layers, assets) pass;
   `pnpm notices --check` current (33 ported records); `node scripts/i18n.mjs --check` (10 161); `pnpm vitest run --project
   @jasper/project --project @jasper/api --project @jasper/engine-client --project @jasper/session --project @jasper/audio-fx
-  --maxWorkers=8`: 239 files, 2 962 passed; `--project @jasper/web --project @jasper/mcp`: 209 files passed, 2 skipped
-  (1 689 tests; the README tool test failed on WP-E6's bare backticked style names in the tool list — reworded
-  `style.personality` …, then passed); engine `sound-check*`, `proposals*`, `fuzz-http`, `security-review`, `server`,
+  --maxWorkers=8`: 239 files, 2 962 passed; `--project @jasper/web --project @jasper/mcp`: 208 of 211 files passed, 2
+  skipped, 1 688 tests passed and one failed — the README tool test, on WP-E6's bare backticked style names in the tool
+  list (reworded `style.personality` …; `readme-tools.test.ts` then passed alone); engine `sound-check*`, `proposals*`, `fuzz-http`, `security-review`, `server`,
   `sound-design-plan*`, `sound-design-grammar`, `sound-grammar-export`, `sound-listen`, `agent`, `events`: 25 files, 367
   passed, 3 skipped. E2E: `sound-check-ack`, `sound-check-edges` and the first `sound-review` test pass; the second
   `sound-review` test (Auto Sound Pass → … → export) fails at the Export button under a toast — the known carry-over
