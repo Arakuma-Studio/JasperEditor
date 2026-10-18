@@ -866,7 +866,8 @@ export function referenceValueText(key: ReferenceMetricKey, v: number | null | u
 	const spec: MetricSpec = REFERENCE_METRICS[key];
 	const sign = (s: string) => s.replace(/^-/, '−');
 	if (spec.unit === 'share') return `${Math.round(v * 100)} %`;
-	const n = sign(v.toFixed(spec.decimals));
+	const fixed = v.toFixed(spec.decimals);
+	const n = Number(fixed) === 0 ? (0).toFixed(spec.decimals) : sign(fixed);
 	if (spec.unit === '0-1' || spec.unit === 'r') return n;
 	return `${n} ${spec.unit}`;
 }

@@ -45,7 +45,7 @@ nobody outside has used it, only Linux was checked — is [`docs/gaps.md`](docs/
 - **Export and interchange.** A planner routes each sequence to the native FFmpeg path, a hybrid layer bake or
   Remotion and refuses by name what a path cannot render; H.264, HEVC, VP9, AV1, ProRes, alpha; render previews and
   smart rendering; FCP 7 XML, FCPXML, EDL, AAF, OMF, ALE and OTIO in both directions.
-- **Agents.** `jasper-mcp` exposes 357 tools and the whole command catalogue; every edit is an undoable
+- **Agents.** `jasper-mcp` exposes 365 tools and the whole command catalogue; every edit is an undoable
   transaction, destructive ones need the user's approval in the editor; a `jasper` CLI; tools that look at and
   operate the live window.
 - **Safety net.** Atomic saves, single-writer leases (a reloaded tab keeps its own), crash-recovery journal, saved
@@ -442,7 +442,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (357; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (365; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `browse_media_files` (folders and importable files on the engine's computer) `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -538,7 +538,10 @@ Tools (357; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   stems, spectrogram, sections, every cut / cue marked by whether a sound answers it, motion, findings)
   `listen_to_sequence` (a written log of the mix, ≤ 10 min: every sound named by the clip that plays it and the cue it
   fills, sections, silences, which cuts and cues have a sound — each share next to its chance level — and the cuts with
-  none; the sound sheet with images)
+  none; the sound sheet with images) · reference profiles (the measured style of the user's own reference media or
+  sequences, numbers only, no bundled profile): `list_sound_profiles` `get_sound_profile` `build_sound_profile` (a job)
+  `rename_sound_profile` `delete_sound_profile` (approval card) `export_sound_profile` `import_sound_profile`
+  `set_sound_profile` (the sequence's; `sound_check {profileId}` adds the Reference rows)
   (`docs/specs/12-sound-design.md`, `docs/wp-notes/sound-design.md`).
 - Proposals (reviewed and applied by the user in the editor; one undo step): `list_proposals` `get_proposal` (with a
   ghost table and its last Sound Check: fixes · introduces) `wait_for_proposal` (decisions and notes) `accept_proposal`
@@ -729,6 +732,14 @@ listening transcript — its lines and text, the events of the mix (attack, peak
 each with the clip that plays it and the cue it fills, sections by audio type, silences, every cut / transition / cue /
 measured motion with the sound that answers it and the chance level of each sync share, the placed sounds heard or not,
 loudness. Nothing is written.
+Reference sound profiles (the per-user library under `<appdir>/sounds/profiles`, numbers only):
+`GET /api/sound-design/profiles` lists them; `POST /api/sound-design/profiles {name, projectId?, mediaIds?,
+sequenceIds?, paths? (local engine)}` starts a `sound-profile` job (202) that measures 1–20 references and stores the
+profile (`SoundProfileBuildResult`, with the skipped ones and why); `GET /api/sound-design/profiles/:profileId` is the
+profile file (what Export saves); `PUT …/:profileId/name {name}` renames; `DELETE …/:profileId` deletes (an agent waits
+for the user's approval); `POST /api/sound-design/profiles/import {profile, name?}` validates a file and stores it under a
+new id. `POST /api/sound-design/check {…, profileId?}` (default the sequence's `referenceProfile`, null: none) adds
+`report.reference` (one row per metric) and REFERENCE findings.
 `POST /api/audio/classify {projectId | envelope, sequenceId?, clipIds} | {mediaKeys, streamIndex?}` (`?wait=1` to answer
 when done) starts an `audio-classify` job: Essential Sound Auto Tag classifies each clip (the media range it plays) or
 media as dialogue, music, sfx or ambience with a confidence, per-type scores, reasons and the measured features; cached
