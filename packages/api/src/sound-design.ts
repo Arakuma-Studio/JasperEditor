@@ -21,6 +21,7 @@ import {
 import { z } from 'zod';
 import { TimeSignatureSchema } from './audio-fx.ts';
 import { EnvelopeSchema } from './projects.ts';
+import { SOUND_MATCH_VERDICTS } from './sound-semantic.ts';
 import { SOUND_SOURCE_TYPES, SoundRankPartsSchema } from './sounds.ts';
 
 const frame = z.number().int().min(0).max(SOUND_DESIGN_LIMITS.maxFrame);
@@ -991,8 +992,16 @@ export const SoundListenRequestSchema = z.strictObject({
 		.refine((r) => r.end > r.start, 'range.end must be after range.start')
 		.optional(),
 	detail: z.enum(SOUND_LISTEN_DETAILS).optional(),
+	/**
+	 * P6-E14: name what each listed event sounds like with the optional Describe-it search model (the attributed clip's
+	 * audio at the event, the closest of our reference descriptions; at most `SOUND_LISTEN_MAX_TAGS` events). Without the
+	 * model the transcript is made without names and says so (`W_TAGS_UNAVAILABLE`).
+	 */
+	tags: z.boolean().optional(),
 });
 export type SoundListenRequest = z.infer<typeof SoundListenRequestSchema>;
+/** Events named at most per listen (the transcript's listed events first, in time order). */
+export const SOUND_LISTEN_MAX_TAGS = 100;
 
 export const SOUND_LISTEN_STEMS = ['sfx', 'dialogue', 'music', 'ambience', 'other'] as const;
 export const SOUND_LISTEN_PICTURE_KINDS = ['cut', 'transition', 'cue', 'motion'] as const;
@@ -1073,6 +1082,11 @@ export const SoundListenEventSchema = z.object({
 	role: z.enum(SFX_ROLES).nullable(),
 	/** `event`: the clip's own event is there; `level`: no own event, the loudest clip at that moment; `none`. */
 	explainedBy: z.enum(['event', 'level', 'none']),
+	/**
+	 * P6-E14 (`tags`): the closest of our reference descriptions to the attributed clip's audio at the event, with its
+	 * calibrated z and verdict. Absent when not asked, without the model, or for an event no clip's audio explains.
+	 */
+	tag: z.object({ text: z.string(), z: z.number(), verdict: z.enum(SOUND_MATCH_VERDICTS) }).optional(),
 	/** Picture events this event answers (ok / near / swell). */
 	answers: z.array(
 		z.object({

@@ -15,7 +15,7 @@ import {
 import type { Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
-import { Button, Icon, Select } from '@jasper/ui';
+import { Button, Checkbox, Icon, Select } from '@jasper/ui';
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../../i18n/runtime.ts';
 import {
@@ -27,6 +27,7 @@ import {
 	runListen,
 	setListenDetail,
 	setListenSpectrogram,
+	setListenTags,
 	spectrogramWindow,
 	stepLine,
 	transcriptText,
@@ -62,6 +63,7 @@ export function LogTab(props: {
 	const running = useStoreSelector(store, (s) => s.running);
 	const error = useStoreSelector(store, (s) => s.error);
 	const detail = useStoreSelector(store, (s) => s.detail);
+	const tags = useStoreSelector(store, (s) => s.tags);
 	const cursor = useStoreSelector(store, (s) => s.cursor);
 	const showSpec = useStoreSelector(store, (s) => s.spectrogram);
 	const [copied, setCopied] = useState(false);
@@ -120,6 +122,18 @@ export function LogTab(props: {
 					options={options}
 					onValueChange={(v) => setListenDetail(session, v as SoundListenDetail)}
 				/>
+				<span
+					title={t(
+						'Say what each listed sound sounds like with the optional Describe-it search model (Preferences ▸ Sound Library); about half a second per sound',
+					)}
+					data-testid="sound-listen-tags"
+				>
+					<Checkbox
+						checked={tags}
+						onCheckedChange={(on) => setListenTags(session, on)}
+						label={t('Name the sounds')}
+					/>
+				</span>
 				<Button
 					variant="quiet"
 					data-testid="sound-listen-copy"

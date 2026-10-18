@@ -551,7 +551,7 @@ Tools (376; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   stems, spectrogram, sections, every cut / cue marked by whether a sound answers it, motion, findings)
   `listen_to_sequence` (a written log of the mix, ≤ 10 min: every sound named by the clip that plays it and the cue it
   fills, sections, silences, which cuts and cues have a sound — each share next to its chance level — and the cuts with
-  none; the sound sheet with images) · reference profiles (the measured style of the user's own reference media or
+  none; the sound sheet with images; tags: what each sound sounds like, with the Describe-it search model) · reference profiles (the measured style of the user's own reference media or
   sequences, numbers only, no bundled profile): `list_sound_profiles` `get_sound_profile` `build_sound_profile` (a job)
   `rename_sound_profile` `delete_sound_profile` (approval card) `export_sound_profile` `import_sound_profile`
   `set_sound_profile` (the sequence's; `sound_check {profileId}` adds the Reference rows)

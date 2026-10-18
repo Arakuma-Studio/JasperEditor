@@ -10507,5 +10507,7 @@
   "Window length": "Longitud de la ventana",
   "Working": "Trabajando",
   "Plausible": "Plausible",
-  "Unclear": "Incierto"
+  "Unclear": "Incierto",
+  "Name the sounds": "Nombrar los sonidos",
+  "Say what each listed sound sounds like with the optional Describe-it search model (Preferences ▸ Sound Library); about half a second per sound": "Dice a qué suena cada sonido de la lista con el modelo opcional de búsqueda por descripción (Preferencias ▸ Biblioteca de sonidos); alrededor de medio segundo por sonido"
 }

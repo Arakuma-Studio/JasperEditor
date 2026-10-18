@@ -13,6 +13,7 @@ import {
 	SoundEmbedResultSchema,
 	SoundMatchResponseSchema,
 	SoundMomentResultSchema,
+	SoundListenResultSchema,
 	SoundSearchResponseSchema,
 	SoundSemanticModelsResponseSchema,
 	SoundSemanticStatusSchema,
@@ -27,7 +28,9 @@ import type { WebSocket } from 'ws';
 import { ClapError } from '../src/sounds/semantic/runtime.ts';
 import type { SoundService } from '../src/sounds/service.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, H, JSON_H, makeApp, tempAppdir, until } from './helpers.ts';
+import { closeApps, H, JSON_H, makeApp, type TestApp, tempAppdir, until } from './helpers.ts';
+import { buildCheckDoc, registerCheckMedia } from './sound-check-fixture.ts';
+import { SOUND_VOCABULARY } from '../src/sounds/semantic/vocab.ts';
 import { PACK, SR } from './sound-fixtures.ts';
 
 const ENV_KEYS = [
@@ -269,6 +272,44 @@ describe('Describe-it search with the model', { timeout: 300_000 }, () => {
 		);
 		expect((await bad({ description: 'x', extra: true })).status).toBe(400);
 		expect((await bad({ description: 'x' }, 'snd_0123456789abcdef')).status).toBe(404);
+	});
+
+	it('names the listening transcript\'s events (P6-E6 tags) with the model', async () => {
+		const dir = tempAppdir('jasper-clap-listen-');
+		const fx = buildCheckDoc(await registerCheckMedia(app as TestApp, dir, 'tok_unused_0123456789'));
+		const projectId = 'prj_0000000000000e91';
+		const file = appdirPaths(app.appdir).projectFile(projectId);
+		mkdirSync(join(file, '..'), { recursive: true });
+		writeFileSync(
+			file,
+			JSON.stringify(
+				makeEnvelope({ ...fx.doc(), projectId }, { revision: 1, savedAt: '2026-10-18T00:00:00.000Z', platform: 'test' }),
+			),
+		);
+		const listen = async (body: Record<string, unknown>) => {
+			const r = await json(app, 'POST', '/api/sound-design/listen', { projectId, ...body });
+			expect(r.status, JSON.stringify(r.body)).toBe(202);
+			const j = await wait(app, r.body.id as string);
+			expect(j.state, JSON.stringify(j.error)).toBe('succeeded');
+			return SoundListenResultSchema.parse(j.result);
+		};
+		const plain = await listen({});
+		const named = await listen({ tags: true });
+		expect(plain.events.some((e) => e.tag)).toBe(false);
+		const tagged = named.events.filter((e) => e.tag);
+		expect(tagged.length).toBeGreaterThan(0);
+		for (const e of tagged) {
+			expect(SOUND_VOCABULARY).toContain(e.tag!.text);
+			expect(['strong', 'plausible', 'weak', 'none']).toContain(e.tag!.verdict);
+			expect(e.clipId).not.toBeNull();
+		}
+		// every placed sound's event is named, and its line says so; the rest of the transcript is unchanged
+		for (const p of named.placed) if (p.mixEvent !== null) expect(named.events[p.mixEvent]!.tag, p.title).toBeDefined();
+		const said = named.lines.filter((l) => l.text.includes('· sounds like “'));
+		expect(said.length).toBe(named.lines.filter((l) => l.event !== undefined && named.events[l.event]?.tag).length);
+		expect(named.lines.map((l) => l.text.replace(/ · sounds like “.*$/, ''))).toEqual(plain.lines.map((l) => l.text));
+		expect(named.timings.tagsMs).toBeGreaterThan(0);
+		expect(named.warnings.some((w) => w.code === 'W_TAGS_UNAVAILABLE')).toBe(false);
 	});
 
 	it('refuses hostile describe and moment requests with typed errors', async () => {

@@ -666,8 +666,9 @@ matches are 80.7 % precise and top-5 retrieval by sound alone is 84.7 % (all 184
 three sounds placed in a 90 s recording at their seconds. Rerun `apps/engine/test/sound-semantic{,-unit}.test.ts`,
 `packages/project/test/sound-{rank-describe,moment}.test.ts`, `apps/mcp/test/sound-semantic.test.ts`,
 `apps/web/test/sound-describe-ui.test.tsx`, and with the model on the build server `e2e/sound-describe.spec.ts`
-(`E2E_CLAP=1`), `apps/engine/scripts/{check-clap,measure-clap}.ts`. Limits left: English descriptions only; the event tags
-of the listening transcript (P6-E6, a listed use) are not built (the listen job streams the mix without keeping it); ≈ 0.5 s
+(`E2E_CLAP=1`), `apps/engine/scripts/{check-clap,measure-clap}.ts`. The listening transcript names its events with it
+(`listen_to_sequence {tags}`, Log ▸ Name the sounds; the clip's sound at the event, up to 100 events). Limits left:
+English descriptions only; tags name the clip's sound, not the mix; ≈ 0.5 s
 of CPU per sound or take to prepare (≈ 40 min for 5 000) and ≈ 0.8 GB of RAM while the worker runs; a 4 h Find Moment pass
 ≈ 12 min (estimated); quality is modest on synthesised UI sounds and some obvious queries miss (wp-note); the int8 export
 (≈ 205 MB) is not offered (it would need hosting and changes the top result for 12–15 % of queries, measured).

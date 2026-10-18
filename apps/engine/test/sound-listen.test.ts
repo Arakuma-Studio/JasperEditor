@@ -117,6 +117,14 @@ afterAll(async () => {
 });
 
 describe('listen_to_sequence (real engine)', { timeout: 600_000 }, () => {
+	it('says the sounds were not named when tags are asked without the Describe-it search model (P6-E14)', async () => {
+		const fx = buildCheckDoc(media);
+		const projectId = seed(fx.doc());
+		const r = await listen({ projectId, tags: true, detail: 'low' }, 'tags without the model');
+		expect(r.events.some((e) => e.tag)).toBe(false);
+		expect(r.warnings.find((w) => w.code === 'W_TAGS_UNAVAILABLE')?.message).toMatch(/not named/);
+	});
+
 	it('attributes every sound to its clip and cue, matches the cuts and reports chance levels', async () => {
 		const fx = buildCheckDoc({ ...media, speech: dialogueWithHit });
 		const { cuts } = addPicture(fx.b);

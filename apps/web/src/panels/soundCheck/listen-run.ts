@@ -27,6 +27,8 @@ export type ListenState = {
 	/** The panel's tab. */
 	tab: ListenTab;
 	detail: SoundListenDetail;
+	/** P6-E14: name what each event sounds like (the optional Describe-it search model). */
+	tags: boolean;
 	result: SoundListenResult | null;
 	jobId: string | null;
 	running: { sequenceId: string; jobId: string | null; progress: number | null; stage: string | null } | null;
@@ -48,6 +50,7 @@ export function listenStore(session: EditorSession): StoreApi<ListenState> {
 		s = createStore<ListenState>(() => ({
 			tab: 'findings',
 			detail: 'normal',
+			tags: false,
 			result: null,
 			jobId: null,
 			running: null,
@@ -71,6 +74,10 @@ export function setListenTab(session: EditorSession, tab: ListenTab): void {
 
 export function setListenDetail(session: EditorSession, detail: SoundListenDetail): void {
 	listenStore(session).setState({ detail });
+}
+
+export function setListenTags(session: EditorSession, tags: boolean): void {
+	listenStore(session).setState({ tags });
 }
 
 export function setListenSpectrogram(session: EditorSession, on: boolean): void {
@@ -120,6 +127,7 @@ export async function runListen(
 	});
 	const detail = opts.detail ?? store.getState().detail;
 	if (opts.detail) store.setState({ detail: opts.detail });
+	const tags = store.getState().tags;
 	let playhead = 0;
 	try {
 		playhead = session.transport.getState().frame;
@@ -138,7 +146,13 @@ export async function runListen(
 			engine,
 			(signal) =>
 				engine.soundListen(
-					{ projectId: session.projectId, sequenceId: seq.id, detail, ...(range ? { range } : {}) },
+					{
+						projectId: session.projectId,
+						sequenceId: seq.id,
+						detail,
+						...(range ? { range } : {}),
+						...(tags ? { tags: true } : {}),
+					},
 					signal,
 				),
 			SoundListenResultSchema,

@@ -47,6 +47,7 @@ import {
 	calibrationOf,
 	captionOf,
 	coarseWindows,
+	dot,
 	fineWindows,
 	matchOf,
 	pickMoments,
@@ -363,6 +364,69 @@ export class SemanticService {
 			if (a) items.push({ e, a, stats: this.statsOf(key, a, cal) });
 		}
 		return { items, ref: referenceOf(items, cal) };
+	}
+
+	/**
+	 * Names what windows of media files sound like (P6-E14, the listening transcript's event tags): for each window the
+	 * closest of our vocabulary phrases (largest damped similarity) with its calibrated z and verdict; null for a window
+	 * that cannot be read. Throws a typed `JobError` when the model cannot run.
+	 */
+	async nameWindows(
+		items: readonly { path: string; startSec: number; endSec: number }[],
+		signal?: AbortSignal,
+	): Promise<({ text: string; z: number; verdict: SoundMatch['verdict'] } | null)[]> {
+		if (!items.length) return [];
+		const ctx = await this.context();
+		const cal = await this.calibrationFor(ctx, signal);
+		const vectors = this.calibration!.vectors;
+		const { ref } = await this.library(ctx, cal, await this.deps.entries());
+		const biases = vectors.map((v) => queryBias(v, ref));
+		const ffmpeg = this.core.ffmpeg.bins.ffmpeg!;
+		const out: ({ text: string; z: number; verdict: SoundMatch['verdict'] } | null)[] = items.map(() => null);
+		// one request per file (≤ 8 windows), in input order
+		const byPath = new Map<string, number[]>();
+		items.forEach((it, i) => {
+			if (!(it.endSec > it.startSec) || it.startSec < 0 || !Number.isFinite(it.endSec)) return;
+			const list = byPath.get(it.path) ?? [];
+			list.push(i);
+			byPath.set(it.path, list);
+		});
+		for (const [path, idx] of byPath)
+			for (let k = 0; k < idx.length; k += MOMENT_BATCH) {
+				if (signal?.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+				const part = idx.slice(k, k + MOMENT_BATCH);
+				let embs: Float32Array[];
+				try {
+					embs = await this.runtime.embedWindows(
+						ctx.dir,
+						{ path, ffmpeg },
+						part.map((i) => ({
+							startSec: items[i]!.startSec,
+							endSec: Math.min(items[i]!.endSec, items[i]!.startSec + CLAP_WINDOW_SEC),
+						})),
+						signal,
+					);
+				} catch (err) {
+					if (signal?.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+					if (err instanceof ClapError && err.code === 'DECODE_FAILED') continue;
+					throw this.jobErrorOf(err, signal ?? new AbortController().signal);
+				}
+				part.forEach((i, j) => {
+					const a = embs[j]!;
+					let best = 0;
+					let bestS = Number.NEGATIVE_INFINITY;
+					for (let v = 0; v < vectors.length; v++) {
+						const sv = dot(a, vectors[v]!) - ref.lambda * biases[v]!;
+						if (sv > bestS) {
+							bestS = sv;
+							best = v;
+						}
+					}
+					const m = matchOf(a, audioStats(a, cal), vectors[best]!, biases[best]!, ref);
+					out[i] = { text: SOUND_VOCABULARY[best]!, z: m.z, verdict: verdictOf(m.z) };
+				});
+			}
+		return out;
 	}
 
 	/**

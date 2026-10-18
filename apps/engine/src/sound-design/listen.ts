@@ -76,6 +76,7 @@ import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { HttpError } from '../tools/reply.ts';
 import { audioWorld, VAD_FLOOR_DBFS } from './bed.ts';
 import type { EngineCueSources } from './engine-cues.ts';
+import { type NameWindows, tagListenEvents } from './listen-tags.ts';
 import { liveDocument, PlanInputError, planSequence } from './plan.ts';
 import { classifyStems, mixLayoutOf, renderStems } from './stems.ts';
 import { deliveredGain } from './visual.ts';
@@ -1018,6 +1019,8 @@ export type SoundListenDeps = {
 	engineCues?: () => EngineCueSources | undefined;
 	/** The sequence's last kept Sound Check report (its normalisation gain is the export's when it measured this mix). */
 	lastCheckReport?: (projectId: string, sequenceId: string) => Promise<SoundCheckReport | null>;
+	/** P6-E14 `tags`: the Describe-it search model's namer (absent: the sound library is not running). */
+	nameWindows?: () => NameWindows | null;
 };
 
 /** The `sound-listen` job runner. */
@@ -1046,7 +1049,24 @@ export async function runSoundListen(ctx: JobContext, deps: SoundListenDeps): Pr
 			},
 		);
 		ctx.log(`listen: ${JSON.stringify(result.counts)} ${JSON.stringify(result.timings)}`);
-		return result;
+		if (!req.tags) return result;
+		// P6-E14: name the events with the Describe-it search model; without it the transcript says why
+		const namer = deps.nameWindows?.() ?? null;
+		const unavailable = (why: string): SoundListenResult => ({
+			...result,
+			warnings: [...result.warnings, { code: 'W_TAGS_UNAVAILABLE', message: `The sounds were not named: ${why}` }],
+		});
+		if (!namer) return unavailable('the sound library is not running');
+		ctx.progress(0.99, { stage: 'Naming the sounds' });
+		try {
+			const t0 = Date.now();
+			const tagged = await tagListenEvents(result, live.doc, deps.registry, namer, ctx.signal);
+			ctx.log(`listen: named ${tagged.named} events in ${Date.now() - t0} ms`);
+			return { ...tagged.result, timings: { ...tagged.result.timings, tagsMs: Date.now() - t0 } };
+		} catch (e) {
+			if (ctx.signal.aborted) throw new JobError('CANCELLED', 'Cancelled', false);
+			return unavailable((e as Error).message);
+		}
 	} catch (e) {
 		if (e instanceof HttpError) throw new JobError(e.code, e.message, e.status === 503, e.detail);
 		if (e instanceof PlanInputError) throw new JobError(e.code, e.message, false);

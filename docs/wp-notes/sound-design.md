@@ -9641,6 +9641,14 @@ end to end: cosine with PyTorch 1.0000000 (min, 4 sounds and 34 texts). Measured
   are cached per recording: another description of the same recording only embeds the text.
 - **Match** (`POST /api/sounds/:soundId/match`): one sound against a description and up to 8 alternatives: each text's
   match and its share of a softmax over the z values.
+- **Event tags of the listening transcript** (P6-E6; `listen_to_sequence {tags: true}`, Sound Check ▸ Log ▸ Name the
+  sounds): after the `sound-listen` job, up to 100 events (the listed ones first) are named by the closest vocabulary
+  phrase (largest damped similarity, with its calibrated z and verdict) to the attributed clip's own audio at the event
+  (50 ms before the attack, 0.3–2 s by the event's length, at the clip's speed; `sound-design/listen-tags.ts`,
+  `SemanticService.nameWindows`). The clip's audio is used, not the mix: the mix is streamed and not kept, and the
+  clip's sound is what the event is about. Unattributed events, synthetic sounds, reversed and time-mapped clips are not
+  named; without the model the transcript is made as before with `W_TAGS_UNAVAILABLE`. The line reads
+  `… · sounds like “a glass bottle breaking” (plausible, z 2.7)`.
 - **Placing a moment**: `planMomentPlacement` (`packages/project/src/sound/moment.ts`) gives ordinary commands —
   `track.add` ("SFX n") when no SFX track is free, `clip.place` with the source range (the registered copy's lead silence
   counted) — so the edit is one undo step in the panel and in MCP.
@@ -9730,9 +9738,9 @@ guide says so.
 - CLAP reads English: descriptions in other languages are matched poorly (the hint says "in English"); the Describe
   query is sent untranslated.
 - Quality is what the measurement says: about 7 in 10 "strong" pairs and 1 in 10 "none" pairs share the title or type;
-  synthesised UI sounds are found worse than real recordings; some obvious queries miss (above). Event tags in the
-  listening transcript (P6-E6, in the spec's list of uses) are **not built**: the `sound-listen` job streams the mix
-  without keeping it, and tagging needs a second render per event; recorded in docs/gaps.md.
+  synthesised UI sounds are found worse than real recordings; some obvious queries miss (above). Event tags name the
+  clip's sound, not what the mix makes of it (a masked sound is still named), from a vocabulary of 305 phrases (a sound
+  none of them describes gets the closest one with a low verdict).
 - Costs: ≈ 0.5 s of CPU (8 threads) per sound or take to prepare — a library of 5 000 sounds and takes ≈ 40 min once —
   and ≈ 0.8 GB of RAM while the worker runs (ended after 2 min idle). A Find Moment pass over a 4 h recording is ≈ 1 440
   coarse windows (≈ 12 min, estimated from the measured per-window time); windows are cached per recording

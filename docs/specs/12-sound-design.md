@@ -1327,8 +1327,9 @@ window, or up to six averaged past 10 s) and per offered take, cached by content
 user's own library; ranking adds the query-side z to the vocabulary z; earshot's bands (3 / 2.5 / 2) were kept after the
 measurement (held-out BigSoundBank packs: strong 80.7 % precise). Uses built: `search_sounds {describe}` (and the Library's
 Describe pill), `match_sound {soundId, description, alternatives}`, take ranking by description (`takes: true` with
-`describe`), Find Moment (`find_sound_moment`, `insert_sound_moment`, the row menu). Not built: event tags in P6-E6 (the
-listen job streams the mix without keeping it; recorded in docs/gaps.md).
+`describe`), Find Moment (`find_sound_moment`, `insert_sound_moment`, the row menu), and event tags in P6-E6
+(`listen_to_sequence {tags}`, Sound Check ▸ Log ▸ Name the sounds: the closest vocabulary phrase to the attributed clip's
+audio at each listed event, at most 100; the mix is streamed and not kept, so the clip's sound is named).
 
 ### 4.2 Work packages (P6-E WP list)
 
