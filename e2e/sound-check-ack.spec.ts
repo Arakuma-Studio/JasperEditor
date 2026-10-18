@@ -1,23 +1,22 @@
-// Spec 12 §4 P6-E4 / P6-E5 in the built app (wp-note "Phase 6 → WP-E2"): generated music cut at a loud frame (ENDING), a
-// hit on a cut cue and a tick → Sequence ▸ Sound Design ▸ Run Sound Check → Acknowledge… on ENDING with a reason (one
+// Spec 12 §4 P6-E4 / P6-E5 in the built app (wp-note "Phase 6 → WP-E2"): the Sound Check fixture's music cut at a loud
+// frame (ENDING), a hit on a cut cue and a tick → Sequence ▸ Sound Design ▸ Run Sound Check → Acknowledge… on ENDING with a reason (one
 // History entry; the finding moves to "Acknowledged (1)" and leaves the verdict) → jasper-mcp `sound_check` lists it
 // under acknowledged and the same open findings as the panel → the agent proposes the same hit again on the next cut
 // (`place_sound`, a REPEAT) and checks the proposal (`sound_check {proposalId}`) → the user opens it from its card: the
 // Review panel shows the same "fixes · introduces" with the REPEAT linked to its item, the row badge, the ghost card's
 // line; "Check again" in the panel gives the same delta. Screenshots (looked at): test-results/e2e-sound-check-ack.
-import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { expect, type Page, test } from '@playwright/test';
+import { provenance, writeBedFixture, writeTick } from '../apps/engine/test/sound-bed-fixture.ts';
 import { appliedLabels, enableAgentBridge, query, ROOT, serverInfo, transact } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
 
 const outDir = join(ROOT, 'test-results', 'e2e-sound-check-ack');
-const FFMPEG = process.env.JASPER_FFMPEG ?? 'ffmpeg';
 const MCP_BUNDLE = join(ROOT, 'apps/mcp/dist/jasper-mcp.mjs');
 const CHECK_MS = 900_000;
 let page: Page;
@@ -55,30 +54,6 @@ async function tool<T>(name: string, args: Record<string, unknown>): Promise<T> 
 	})) as CallToolResult;
 	expect(r.isError, `${name}: ${text(r)}\n${mcpLog.join('').slice(-2000)}`).toBeFalsy();
 	return JSON.parse(text(r)) as T;
-}
-
-function wav(name: string, source: string, seconds: number): string {
-	const file = join(outDir, name);
-	const r = spawnSync(FFMPEG, [
-		'-v',
-		'error',
-		'-y',
-		'-f',
-		'lavfi',
-		'-i',
-		source,
-		'-t',
-		String(seconds),
-		'-ar',
-		'48000',
-		'-ac',
-		'2',
-		'-c:a',
-		'pcm_s16le',
-		file,
-	]);
-	expect(r.status, String(r.stderr)).toBe(0);
-	return file;
 }
 
 async function menu(p: Page, item: string) {
@@ -140,10 +115,11 @@ test('acknowledge a finding in the panel, the same in MCP; a proposal checked by
 	await expect.poll(() => page.evaluate(() => !!window.jasper), { timeout: 120_000 }).toBe(true);
 	const projectId = decodeURIComponent(/\/project\/([^/?#]+)/.exec(page.url())![1]!);
 
-	// pink music cut at a loud frame (no fade: ENDING), a decaying 180 Hz thump, a short 1 kHz tick
-	const music = wav('music.wav', 'anoisesrc=d=10:c=pink:a=0.06:seed=11', 10);
-	const hit = wav('hit.wav', 'aevalsrc=0.5*sin(2*PI*180*t)*exp(-t/0.06):d=0.5', 0.5);
-	const tick = wav('tick.wav', 'aevalsrc=0.25*sin(2*PI*1000*t)*exp(-t/0.012):d=0.15', 0.15);
+	// the Sound Check fixture's media (pink music, a hit, a 1 kHz tick); the music is cut at a loud frame (ENDING)
+	const files = writeBedFixture(join(outDir, 'media'));
+	const music = files.music;
+	const hit = files.hit;
+	const tick = writeTick(join(outDir, 'media'));
 	await page.getByTestId('project-panel').click({ position: { x: 40, y: 10 } });
 	const chooser = page.waitForEvent('filechooser');
 	await page.keyboard.press('Control+KeyI');
@@ -154,15 +130,14 @@ test('acknowledge a finding in the panel, the same in MCP; a proposal checked by
 		path: ['items'],
 	});
 	const item = (n: string) => Object.values(items).find((i) => i.name === n)!;
-	const library = (soundId: string, title: string, types: string[]) => ({
-		soundId,
-		title,
-		types,
-		source: { type: 'folder', rootId: 'root_000000000e2e', relPath: `${title}.wav` },
-		license: 'CC0-1.0',
-		author: 'E2E',
-		attribution: null,
-	});
+	const clickProv = {
+		...provenance('click'),
+		descriptors: {
+			...provenance('click').descriptors,
+			octaveBandsDb: [-80, -70, -40, -14, -24, -50, -70],
+			centroidHz: 1000,
+		},
+	};
 	const setup = await transact(page, [
 		{ type: 'track.add', kind: 'audio', count: 2 },
 		{
@@ -174,16 +149,9 @@ test('acknowledge a finding in the panel, the same in MCP; a proposal checked by
 		},
 		{ type: 'essentialSound.setType', clipIds: ['$m'], audioType: 'music' },
 		{ type: 'mixer.setLoudness', enabled: true, targetLufs: -14, truePeakDb: -1 },
-		{
-			type: 'media.setLibraryInfo',
-			mediaId: item('hit.wav').mediaId,
-			library: library('snd_0000000000e2e0a1', 'Thump', ['hit']),
-		},
-		{
-			type: 'media.setLibraryInfo',
-			mediaId: item('tick.wav').mediaId,
-			library: library('snd_0000000000e2e0a2', 'Tick', ['tick']),
-		},
+		{ type: 'audio.setGain', clipIds: ['$m'], mode: 'set', db: 1.5 },
+		{ type: 'media.setLibraryInfo', mediaId: item('hit.wav').mediaId, library: provenance('hit') },
+		{ type: 'media.setLibraryInfo', mediaId: item('tick.wav').mediaId, library: clickProv },
 		{ type: 'soundCue.add', cues: [{ frame: 30, kind: 'cut', weight: 'hero', source: 'user', ref: '$a' }] },
 		{
 			type: 'soundDesign.place',
