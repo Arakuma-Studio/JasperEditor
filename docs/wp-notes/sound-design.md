@@ -9509,3 +9509,19 @@ P6-E12 "As built", gaps, security review (route row + paragraph). Tests: `packag
   fill one when the mix is silent there.
 - No `plan_sound_design` beds option (see Design). WP-E4 (reference profiles) was integrated in parallel; see
   "Integration" for the merge.
+
+#### Integration
+
+`feat/sound-design` merged in at `2f642094` (WP-E4 reference profiles; conflicts kept both sides: `packages/api/src/routes.ts`
+and `packages/engine-client/src/client.ts` — both sets of routes and methods; `apps/engine/src/routes/sound-design.ts` —
+both imports; README — the tool count, now 369; `licenses/ported/earshot.md`, `docs/gaps.md`, this wp-note — both
+sections; `es.json` — both sides' strings; `en.json` and `THIRD_PARTY_NOTICES.md` regenerated). Then on the build server:
+`pnpm typecheck` (every package) 0 errors; `SD_GIT=1 … pnpm lint` (Biome, tokens, anime, layers, assets) ok;
+`node scripts/i18n.mjs --check`: es.json covers all 10 424 strings; `pnpm notices`: 33 ported records; `pnpm vitest run
+--project @jasper/project --project @jasper/api --project @jasper/audio-fx --project @jasper/engine-client --project
+@jasper/session --maxWorkers=8` — 245 files passed; `--project @jasper/web --project @jasper/mcp` (MCP engines on ports
+52820–52850) — 215 files, 1 725 passed, 8 skipped; engine `sound*`, `proposals*`, `agent*`, `security-review`, `server`,
+`fuzz-http`, `music-picture`, `audio-fx*` — 53 files, 579 passed, 15 skipped, the 2 known libx264 fixture failures;
+`pnpm build && pnpm mcp:build`, `E2E_PORT=52860 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-beds.spec.ts
+e2e/sound-reference-profile.spec.ts` — 2 passed (1.0 min; the beds export measured again: joints 0.87 / 0.32 dB, the hole
+−38.27 dBFS).
