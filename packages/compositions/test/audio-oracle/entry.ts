@@ -171,7 +171,14 @@ async function played(spec: PlayedSpec): Promise<{ channels: number[][]; latency
 	graph.update(spec.mix, clips, 0, spec.fps);
 	await tick();
 	await tick();
-	if (spec.clock === 'anchor') graph.attachSync({ anchor: { value: 0 }, subscribe: () => () => {} });
+	// Remotion's anchor (context time 0 = sequence time 0). Attached while the context is suspended, the graph primes a
+	// start (moves the anchor later by its wait); this harness plays from its own clock, as an unprimed run, so the anchor
+	// is put back (the wait's silence at the output ends long before the first clip, at 0.1 s).
+	const sync = { anchor: { value: 0 }, subscribe: () => () => {} };
+	if (spec.clock === 'anchor') {
+		graph.attachSync(sync);
+		sync.anchor.value = 0;
+	}
 	if (spec.playing) graph.setPlaying(true);
 	graph.update(spec.mix, clips, 0, spec.fps);
 	await tick();
