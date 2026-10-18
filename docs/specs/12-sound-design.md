@@ -984,6 +984,18 @@ in a copy before one writer applies them. Ours is the proposal.
 the document revision is unchanged; the result is deterministic; the Review panel and MCP show the same delta; an
 e2e step covers it.
 
+*As built (WP-E4/E5 = WP-E2, decisions and measurements in the wp-note "Phase 6 → WP-E2")*: a finding's key is its report
+id (`<CODE>:<subject>`: the code with the clip / cue ids it names and which edge, else its frame); an acknowledgement also
+stores the severity it covered (a finding that got worse counts again) and the finding's text, and its `inputsHash` covers
+the named clips and cue, else what plays ±2 s around the frame (`soundCheckMomentHash`), else the whole mix and delivery;
+Sound Check never honours an agent's acknowledgement of an error, whatever severity the command claimed; the panel and
+`get_sound_check` apply the document's acknowledgements to a kept report at once, and acknowledging does not make the
+stored summary stale; a duplicated sequence starts without acknowledgements; MCP `acknowledge_sound_issue {key, reason,
+unacknowledge?}` looks the finding up in the kept report. The proposal check previews the items with `previewProposal`
+and the Review panel's per-item seeded ids (the same commands as `composeAcceptTx`, attributable to items and
+deterministic), lists stale and invalid items left to review as skipped by default, attributes a finding to the items
+that touched its clips or cue (setup items only when no other did), and announces `proposal.changed` `checked`.
+
 **P6-E6 (P1). Listening transcript: an agent's ears for the whole mix.** Sound Check lists defects. Agents also need a
 chronological account of what is audible and why. We can attribute every sound to its clip, which earshot cannot.
 
