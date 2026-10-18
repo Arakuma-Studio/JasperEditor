@@ -72,14 +72,19 @@ export function useSoundProfiles(engine: Pick<EngineClient, 'listSoundProfiles'>
 	const [data, setData] = useState<SoundProfilesResponse | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const reload = useCallback(() => {
-		if (!engine) return;
-		void engine
-			.listSoundProfiles()
-			.then((r) => {
-				setData(r);
-				setError(null);
-			})
-			.catch((e) => setError(errorText(e)));
+		// an engine without profile routes (an older engine, a test double): no list, never a throw
+		if (!engine || typeof engine.listSoundProfiles !== 'function') return;
+		try {
+			void engine
+				.listSoundProfiles()
+				.then((r) => {
+					setData(r);
+					setError(null);
+				})
+				.catch((e) => setError(errorText(e)));
+		} catch (e) {
+			setError(errorText(e));
+		}
 	}, [engine]);
 	useEffect(() => reload(), [reload]);
 	useEffect(
@@ -176,7 +181,7 @@ export function NewReferenceProfileDialog(
 			title={t('New Reference Profile')}
 			description={t('Measure your own reference media: the profile keeps numbers only, never audio.')}
 			size="medium"
-			primaryLabel={result ? t('Close') : running ? t('Measuring…') : t('Build Profile')}
+			primaryLabel={result ? t('Done') : running ? t('Measuring…') : t('Build Profile')}
 			primaryDisabled={!result && (running || !req.ok)}
 			hideCancel={!!result}
 			onPrimary={async () => {
