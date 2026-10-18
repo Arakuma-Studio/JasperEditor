@@ -262,7 +262,7 @@ test.beforeAll(async ({ browser }) => {
 	writeFileSync(join(dir, 'dialogue.wav'), encodeWav([d, d.slice()], SR, 's16'));
 	// a street bed: 6 s of stereo pink noise at −30 dBFS
 	writeFileSync(join(dir, 'street.wav'), encodeWav([pink(6, 1, -30), pink(6, 2, -30)], SR, 's16'));
-	page = await browser.newPage({ viewport: { width: 1800, height: 1050 } });
+	page = await browser.newPage({ viewport: { width: 1800, height: 1350 } });
 	await enableAgentBridge(page);
 });
 test.afterAll(async () => {
@@ -692,15 +692,6 @@ test('user walkthrough: library → Suggest Cues → Auto Sound Pass → review 
 	await focusTimeline(page);
 	await page.keyboard.press('Backslash');
 	await snap('beds');
-	// the Ambience and Room Tone tracks lie below the visible ones: a picture of the track area holding them
-	const bedTracks = [...new Set([...bedPieces, ...tone].map((c) => c.trackId))];
-	for (const id of bedTracks) {
-		const row = page.locator(`[data-testid="timeline-track-area"] [data-track-id="${id}"]`).first();
-		await row.scrollIntoViewIfNeeded().catch(() => undefined);
-	}
-	await page
-		.getByTestId('timeline-track-area')
-		.screenshot({ path: join(outDir, `${String(++shot).padStart(2, '0')}-bed-tracks.png`) });
 	await focusTimeline(page);
 	await page.keyboard.press('Backslash');
 
