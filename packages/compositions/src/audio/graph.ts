@@ -1222,6 +1222,11 @@ export class MixGraph {
 		return () => this.startWaitListeners.delete(cb);
 	}
 
+	/** The picture is held for a primed start to reach the output (the Program monitor's stall watchdog waits). */
+	get startWaiting(): boolean {
+		return this.startClock.active;
+	}
+
 	private notifyStartWait(wait: number | null): void {
 		for (const cb of [...this.startWaitListeners]) cb(wait);
 	}

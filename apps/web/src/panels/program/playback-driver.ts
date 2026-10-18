@@ -79,7 +79,7 @@ type DriverOptions = {
 	 * plays again once the graph has prepared a primed start (`whenPaused`, `afterSeek`), so the audio after the seek
 	 * starts on its first sample (the picture holds that long, as on Play).
 	 */
-	audio?(): { whenPaused(): Promise<void>; afterSeek(): Promise<void> } | null;
+	audio?(): { whenPaused(): Promise<void>; afterSeek(): Promise<void>; startWaiting?: boolean } | null;
 };
 
 type DriverMode = 'idle' | 'native' | 'stepping';
@@ -345,6 +345,9 @@ export class PlaybackDriver implements PlayerController {
 			if (!p || this.mode !== 'native' || !this.opts.transport.getState().playing) return;
 			if (this.frameEvents !== seen) return this.armWatchdog(PLAY_WATCHDOG_RETRIES); // progressing
 			if (this.buffering) return this.armWatchdog(retries); // legitimately buffering: keep watching
+			// the picture is held for the audio of a primed start (a long read-ahead): not a stall (sound-design
+			// Phase 6: a kick there paused and played the Player, an audible blip and the picture early)
+			if (this.opts.audio?.()?.startWaiting) return this.armWatchdog(retries);
 			this.counters.stallsRecovered++;
 			p.pause();
 			p.seekTo(this.opts.transport.getState().frame);

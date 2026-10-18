@@ -9940,7 +9940,11 @@ a copy of the integration tip this branch started from (1fcdbcf6), built and run
   output-latency tolerance — the graph re-anchors to the picture itself; a short *paused* seek is checked once the
   playhead rests, 150 ms, so a scrub does not restart every source on every frame). Loop wraps use it too.
 - **The picture waits for the program up to 3 s** (item 3, `MAX_PRIMED_WAIT`, was 0.5 s: above it the first samples were
-  lost). Decision: any plausible effect chain waits less (one look-ahead or FFT effect adds 20–43 ms at 48 kHz; 3 s takes
+  lost). The Program monitor's stall watchdog (`PlaybackDriver`, a Player with no frame for 600 ms is kicked: pause, seek,
+  play) now leaves the Player alone while the graph holds the picture (`MixGraph.startWaiting`): with a 0.62 s wait it
+  kicked it 0.6 s in — an audible suspend / resume just before the program, the first click 1–6 quanta late in 2 of 15
+  plays and the picture leading the program by 8–54 ms; after: the first click on its sample in 15 of 15, picture − audio
+  −0.016 … +0.037 s. Decision: any plausible effect chain waits less (one look-ahead or FFT effect adds 20–43 ms at 48 kHz; 3 s takes
   some 70 in series); a longer read-ahead is pathological and still starts unprimed. A wait of 0.2 s or more shows the
   Program monitor's buffering dot (`useAudioStartWait`, `VISIBLE_START_WAIT`), in its own component.
 - **Edits while playing no longer move the audio** (item 6). Root cause, measured: the Player got `{doc, options}` as
@@ -9973,7 +9977,7 @@ level, nothing earlier. Findings, each from its debug log (`E2E_P6_DEBUG=1`):
   the expected time, not at the read one) showed it was on time. `e2e/sound-tap.ts` now records every quantum and numbers
   blocks from the largest consistent frame.
 - One quantum late (1 play in 40, base and branch): the context resumed a quantum after the `currentTime` it reported
-  while suspended; fixed by `START_MARGIN` (0 of ⟨N⟩ since).
+  while suspended; fixed by `START_MARGIN` (0 of 240 walk plays since, below).
 - "A click from before the seek" (the 20.9 ms case, seen once): not reproduced as such in ⟨N⟩ plays. Its mechanisms are
   gone: a Play after a pause went on with the old timeline (above), and a paused seek shorter than Remotion's tolerance
   kept the old position's queued buffers (measured in the walk: the 4.03 s click heard 175 ms early); both now restart
@@ -10016,12 +10020,6 @@ tests after).
 
 #### Limits and notes for the next packages
 
-- With a long primed wait (0.62 s: 30 Hard Limiters on the Mix) Remotion suspends and resumes the context for an instant
-  as the wait ends (`suspended` and `running` at the same context time in the transport log; with the 63 ms and 146 ms
-  waits of `sound-p0-transport` it does not show, picture − audio there −0.002 … +0.055 s in 5 runs): the picture then
-  leads the program by 8–47 ms (measured over 15 plays), about the threshold at which a lead becomes noticeable (≈ 45 ms).
-  The same chain loads the headless audio thread: the first click was on its sample in 13 of 15 plays and 128 / 768
-  samples late in 2 (nothing lost). Not traced to its source in Remotion.
 - A restart (a seek while playing, a latency added while playing, a loop wrap) holds the picture for the new primed
   wait plus the players' rescheduling (the Phase 0 latency-change spec: one gap of the new read-ahead + the margin,
   84.6–85.3 ms for 3 Hard Limiters in 5 runs, then on time). Every Play does the same: Space → picture moving 147–226 ms measured.

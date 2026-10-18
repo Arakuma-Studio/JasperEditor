@@ -552,21 +552,18 @@ test('Play with a long read-ahead (0.62 s): the first click is heard, the pictur
 				sawBuffering,
 			);
 			expect(cs.length, JSON.stringify(cs)).toBeGreaterThan(2);
-			// the click 30 ms after the play position is the first one heard (nothing lost), `wait` after the resume: on
-			// its sample in most plays; with 30 limiters on the audio thread now and then up to a device callback late
-			// (measured 128–768 samples in 2 of 15 plays; the wp-note)
+			// the click 30 ms after the play position is the first one heard (nothing lost), `wait` after the resume
+			// (one render quantum)
 			const off = cs[0]!.t - rec.armed - (wait + 0.03);
 			console.log('long read-ahead first click', (off * SR).toFixed(1), 'samples from the expected one');
 			expect(cs[0]!.marker).toBe(false);
-			expect(off, JSON.stringify(cs.slice(0, 3))).toBeGreaterThan(-128 / SR);
-			expect(off, JSON.stringify(cs.slice(0, 3))).toBeLessThan(0.016);
+			expect(Math.abs(off), JSON.stringify(cs.slice(0, 3))).toBeLessThan(128 / SR);
 			expect(sawBuffering).toBe(true);
 			const picture = await pictureLag(rec, rec.armed, wait + 0.2);
 			console.log('long read-ahead picture − audio', picture);
-			// With this long a wait the picture leads the program by 8–47 ms (measured; Remotion suspends and resumes the
-			// context for an instant as the wait ends; the 42 ms and 125 ms waits of sound-p0-transport do not): a limit in
-			// the wp-note. Bounded here at a frame and a half.
-			expect(picture).toBeGreaterThan(-0.05);
+			// the picture waits for the program (Chrome's output timestamps jitter by a few ms: −16 ms seen in 15 plays;
+			// before the stall watchdog knew about the wait it kicked the Player 0.6 s in and the picture led by 8–54 ms)
+			expect(picture).toBeGreaterThan(-0.02);
 			// one wait, not two
 			expect(picture).toBeLessThan(wait);
 		}

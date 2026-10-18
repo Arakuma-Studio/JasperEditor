@@ -321,7 +321,15 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 				// sound-design Phase 6: seeks while playing restart primed (sample-exact audio after the seek)
 				audio: () => {
 					const g = activeMixGraph();
-					return g ? { whenPaused: () => g.whenPaused(), afterSeek: () => g.afterSeek() } : null;
+					return g
+						? {
+								whenPaused: () => g.whenPaused(),
+								afterSeek: () => g.afterSeek(),
+								get startWaiting() {
+									return g.startWaiting;
+								},
+							}
+						: null;
 				},
 			}),
 		[transport],

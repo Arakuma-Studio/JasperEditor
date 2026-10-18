@@ -430,6 +430,33 @@ describe('PlaybackDriver (S03:ARC-010, S02:TL-873)', () => {
 		expect(audio.pending).toEqual([]);
 	});
 
+	it('the stall watchdog leaves a Player alone while the audio holds the picture for a primed start', () => {
+		vi.useFakeTimers();
+		try {
+			const audio = fakeAudio();
+			let waiting = true;
+			Object.defineProperty(audio.api, 'startWaiting', { get: () => waiting });
+			const { transport, player } = setup(undefined, audio);
+			let plays = 0;
+			const orig = player.play.bind(player);
+			player.play = () => {
+				plays++;
+				orig();
+			};
+			transport.play(1);
+			expect(plays).toBe(1);
+			// a long read-ahead: no frame for 2 s, and no kick (pause, seek, play) while the start waits
+			vi.advanceTimersByTime(2000);
+			expect(plays).toBe(1);
+			// a real stall is still kicked
+			waiting = false;
+			vi.advanceTimersByTime(1000);
+			expect(plays).toBeGreaterThan(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it('a seek during a restart plays from the latest target; a pause during it abandons it', async () => {
 		const audio = fakeAudio();
 		const { transport, player } = setup(undefined, audio);
