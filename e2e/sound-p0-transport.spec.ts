@@ -450,14 +450,20 @@ function gaps(r: Recording): { t0: number; t1: number }[] {
 	return out;
 }
 
-test('a latency change during playback: no dropout beyond the added latency', async () => {
+test('a latency change during playback: playback restarts primed — the added latency and one primed wait, then on time', async () => {
+	// Sound design Phase 6 → preview transport carry-overs: before, the Mix stayed late by the added latency until the
+	// stop (one gap of it, 998 samples). Now the Program monitor restarts playback (pause, play: primed with the new
+	// read-ahead, the picture holds): the gap of the added latency, then — at the restart — one gap of the new primed
+	// wait (the read-ahead + 2 render quanta); after it the program is on time (its alignment against the anchor is
+	// measured sample by sample in e2e/sound-p6-transport.spec.ts).
 	test.setTimeout(300_000);
 	await setup();
 	let rec = null as unknown as Recording;
 	let edit = -1;
-	let gap = Number.NaN;
+	let found: { added: number; restart: number; others: number[] } | null = null;
 	let clean = false;
 	let last: string[] = [];
+	const W = (3 * HL20 + MARGIN) / SR;
 	for (let a = 0; a < ATTEMPTS; a++) {
 		await seekPaused(page, frameAt(2.0));
 		let added = '';
@@ -484,22 +490,32 @@ test('a latency change during playback: no dropout beyond the added latency', as
 			'gaps rel. edit',
 			all.map((g) => `${((g.t1 - g.t0) * SR).toFixed(0)}@${(g.t0 - edit).toFixed(3)}`).join(' '),
 		);
-		// the gap the edit makes starts once the change reaches the graph (within 0.3 s of the transaction)
-		gap = Math.max(0, ...all.filter((g) => g.t0 >= edit && g.t0 < edit + 0.3).map((g) => g.t1 - g.t0));
-		// A valid play: the tone ran without a gap for 0.3 s before the edit (under heavy load Remotion's scheduling
-		// falls behind or it reschedules every player: that is not the graph) and nothing was rescheduled.
+		// the gaps the edit makes start once the change reaches the graph (within 0.5 s of the transaction)
+		const after = all.filter((g) => g.t0 >= edit && g.t0 < edit + 0.5);
+		const restart = after.find((g) => Math.abs(g.t1 - g.t0 - W) < 0.004);
+		const others = after.filter((g) => g !== restart).map((g) => g.t1 - g.t0);
+		found = restart ? { added: Math.max(0, ...others), restart: restart.t1 - restart.t0, others } : null;
+		// A valid play: the tone ran without a gap for 0.3 s before the edit and nothing was rescheduled but the
+		// restart's own rescheduling (while suspended, at the restart gap's start)
 		const before = all.some((g) => g.t1 > edit - 0.3 && g.t0 < edit);
-		const d = disturbances(rec, edit - 0.3, Math.min(edit + 0.7, (rec.marks.pause ?? 1e9) - 0.001));
+		const d = disturbances(
+			{ ...rec, stops: rec.stops.filter((x) => !restart || Math.abs(x.t - restart.t0) > 0.01) },
+			edit - 0.3,
+			Math.min(edit + 0.7, (rec.marks.pause ?? 1e9) - 0.001),
+		);
 		last = before ? ['a gap before the edit', ...d] : d;
-		clean = last.length === 0;
+		clean = last.length === 0 && !!found;
 		if (clean) break;
 		console.log('disturbed play (load), again:', before ? 'a gap before the edit;' : '', d.join('; '));
 	}
 	requireUndisturbed(clean, last);
-	console.log('latency change: gap', gap * SR, 'samples', gap, 's');
-	test.info().annotations.push({ type: 'gap', description: JSON.stringify({ samples: gap * SR }) });
-	// one gap of the added latency (998 samples, 20.8 ms); re-created slots and delay lines gave twice that (41.6 ms)
-	expect(gap).toBeLessThan(0.03);
+	console.log('latency change: gaps', JSON.stringify(found));
+	test.info().annotations.push({ type: 'gap', description: JSON.stringify(found) });
+	expect(found).not.toBeNull();
+	// the restart: one primed wait of the new read-ahead
+	expect(Math.abs(found!.restart - W)).toBeLessThan(0.004);
+	// before it, the live change: one gap of the added latency (998 samples, 20.8 ms) at most
+	expect(found!.added).toBeLessThan(0.03);
 });
 
 test('Essential Sound Pan saved by an older build: opening the project keeps the pan keyframes; Pan on/off is an offset', async () => {
