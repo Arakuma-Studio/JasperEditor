@@ -50,15 +50,24 @@ export type ResolvedSoundStyle = {
 	typing: SoundTypingMode;
 	musicCarriesCuts: boolean;
 	duckUnderTyping: boolean;
+	/** P6-E11: tonal sounds over music in a clear key are tuned to it. */
+	tuneToMusic: boolean;
+	/** P6-E11: stop-befores end on the bar line. */
+	stopOnBar: boolean;
 };
 
-/** Defaults of the grammar (spec 12 P6-E10): runs climb, typing auto, music carries the cuts, no duck under typing. */
+/**
+ * Defaults of the grammar (spec 12 P6-E10): runs climb, typing auto, music carries the cuts, no duck under typing;
+ * P6-E11: tune to the music, stop on the bar.
+ */
 export const SOUND_STYLE_DEFAULTS: Readonly<ResolvedSoundStyle> = Object.freeze({
 	personality: null,
 	runs: 'climb',
 	typing: 'auto',
 	musicCarriesCuts: true,
 	duckUnderTyping: false,
+	tuneToMusic: true,
+	stopOnBar: true,
 });
 
 /** A layer of style values: undefined = not set here; `personality: null` = explicitly none. */
@@ -68,6 +77,8 @@ export type SoundStyleLayer = {
 	typing?: SoundTypingMode;
 	musicCarriesCuts?: boolean;
 	duckUnderTyping?: boolean;
+	tuneToMusic?: boolean;
+	stopOnBar?: boolean;
 };
 
 /** The style of the first layer that sets each field (a request first, then the sequence's settings), else defaults. */
@@ -89,6 +100,8 @@ export function resolveSoundStyle(
 	pick('typing', (v) => v === 'auto' || v === 'keys' || v === 'words' || v === 'silent');
 	pick('musicCarriesCuts', (v) => typeof v === 'boolean');
 	pick('duckUnderTyping', (v) => typeof v === 'boolean');
+	pick('tuneToMusic', (v) => typeof v === 'boolean');
+	pick('stopOnBar', (v) => typeof v === 'boolean');
 	return out;
 }
 

@@ -588,6 +588,14 @@ export const ClipRemixSchema = z.looseObject({
 	segments: z.number().min(0).max(100),
 	variations: z.number().min(0).max(100),
 	bpm: z.number().positive(),
+	/**
+	 * Spec 12 P6-E11: source moments the remix landed on sequence frames (`{sourceSeconds, frame}`: seconds from the
+	 * original clip's content start → the frame it plays at; the drop on the hero). A later remix of the clip lands them
+	 * again. Read with `readRemixAnchors`; malformed entries are dropped by `repairDocument`.
+	 */
+	anchors: z.array(z.unknown()).max(64).optional(),
+	/** Spec 12 P6-E11: the fade-in `clip.remix` added over a trimmed intro (removed by Revert Remix). */
+	fadeInId: z.string().optional(),
 });
 export type ClipRemix = DeepStrip<z.infer<typeof ClipRemixSchema>>;
 

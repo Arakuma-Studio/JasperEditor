@@ -579,7 +579,14 @@ function trackedBeats(
 function beatAttacks(
 	mono: Float32Array,
 	sampleRate: number,
-): { env: Float64Array; hop: number; period: number; attacks: number[]; strengths: number[]; accents: number[] } {
+): {
+	env: Float64Array;
+	hop: number;
+	period: number;
+	attacks: number[];
+	strengths: number[];
+	accents: number[];
+} {
 	const { env, n, hop, frames, period } = trackedBeats(mono, sampleRate);
 	const attacks: number[] = [];
 	const strengths: number[] = [];
@@ -753,7 +760,9 @@ export function findDrops(
 	});
 	// the lift over the 4 bars before AND over the bar right before (ours: the median alone also lifts the bar after a
 	// drop, whose 4 bars before are mostly the quiet ones)
-	const lift = rel.map((r, k) => (k ? r - Math.max(median(rel.slice(Math.max(0, k - 4), k)), rel[k - 1]!) : 0));
+	const lift = rel.map((r, k) =>
+		k ? r - Math.max(median(rel.slice(Math.max(0, k - 4), k)), rel[k - 1]!) : 0,
+	);
 	const stays = rel.map((_, k) => {
 		const w = rel.slice(k, k + 4);
 		return w.reduce((x, y) => x + y, 0) / w.length;
@@ -974,9 +983,15 @@ export function planAnchoredRemix(
 		if (!fin(an.src) || !fin(an.out) || an.src < 0 || an.src >= len)
 			throw new RemixError('ANCHOR_OUT_OF_RANGE', 'the anchor is outside the analysed music');
 		if (an.out < 0 || an.out >= target)
-			throw new RemixError('ANCHOR_OUT_OF_RANGE', 'the anchor lands outside the remix (before its start or after its end)');
+			throw new RemixError(
+				'ANCHOR_OUT_OF_RANGE',
+				'the anchor lands outside the remix (before its start or after its end)',
+			);
 		if (k > 0 && !(an.src > list[k - 1]!.src && an.out > list[k - 1]!.out))
-			throw new RemixError('ANCHOR_OUT_OF_RANGE', 'anchors must be in the same order in the music and in the output');
+			throw new RemixError(
+				'ANCHOR_OUT_OF_RANGE',
+				'anchors must be in the same order in the music and in the output',
+			);
 	}
 	// bar lines: the analysis' downbeats; guessed ones are re-phased to the first anchor's nearest beat
 	let grid = a.downbeats.filter((i) => i >= 0 && i < b.length);
@@ -1119,7 +1134,11 @@ export function planAnchoredRemix(
 		let out = 0;
 		let at = Number.NaN;
 		for (const pc of pieces) {
-			if (an.src >= pc.src && an.src < pc.src + pc.len && Math.abs(out + (an.src - pc.src) - an.out) <= tol + 1) {
+			if (
+				an.src >= pc.src &&
+				an.src < pc.src + pc.len &&
+				Math.abs(out + (an.src - pc.src) - an.out) <= tol + 1
+			) {
 				at = out + (an.src - pc.src);
 				break;
 			}

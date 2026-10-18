@@ -90,6 +90,45 @@ export function stopBeforeDip(
 	return { start, end, depthDb: spec.depthDb, fadeMs: STOP_BEFORE_FADE_MS };
 }
 
+/**
+ * Spec 12 P6-E11 "stop on the bar": the search window for the bar line of a stop the plan proposes (s). earshot's
+ * stop-downs before a hit last 0.1–0.5 s (earshot norm, n = 7 launch films; `docs/launch-video-sound.md`); a stored
+ * cue's own `stopBefore.seconds` is its window.
+ */
+export const STOP_ON_BAR_WINDOW_SEC = 0.5;
+/** The shortest stop on a bar line (s): a downbeat closer to the hit than this is not used. */
+export const STOP_ON_BAR_MIN_SEC = 0.1;
+
+/**
+ * Where the stop-before of a hero at `frame` ends its ramp on the music's bar (P6-E11): the last downbeat at least
+ * `STOP_ON_BAR_MIN_SEC` before the hero and at most `windowSec` before it, else the last beat there, else null (the
+ * plain stop). `downbeats` / `beats` are sequence flicks (the music clip's attacks where they play). The stop's
+ * `seconds` is then the hero minus that line, so the dip reaches its floor exactly on it (`stopBeforeDip`). Pure.
+ */
+export function stopOnBar(
+	frame: number,
+	windowSec: number,
+	grid: { downbeats: readonly number[]; beats: readonly number[] },
+	rate: Rational,
+): { seconds: number; on: 'downbeat' | 'beat'; at: number } | null {
+	if (!fin(frame) || !fin(windowSec) || windowSec <= 0) return null;
+	const T = frame * flicksPerFrame(rate);
+	const lo = T - windowSec * FLICKS_PER_SECOND;
+	const hi = T - STOP_ON_BAR_MIN_SEC * FLICKS_PER_SECOND;
+	const pick = (xs: readonly number[]) => {
+		let best: number | null = null;
+		for (const x of Array.isArray(xs) ? xs : [])
+			if (fin(x) && x >= lo - 1 && x <= hi && (best === null || x > best)) best = x;
+		return best;
+	};
+	const d = pick(grid.downbeats);
+	const at = d ?? pick(grid.beats);
+	if (at === null) return null;
+	const seconds = (T - at) / FLICKS_PER_SECOND;
+	if (!(seconds > 0) || seconds > 10) return null;
+	return { seconds, on: d !== null ? 'downbeat' : 'beat', at };
+}
+
 /** How a volume / cutoff lane's time maps to sequence flicks and back (monotone; decreasing for reversed clips). */
 export type LaneTime = {
 	toLane(seqFlicks: number): number;

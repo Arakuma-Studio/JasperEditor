@@ -250,7 +250,7 @@ export const SoundDesignSetSettingsCmd = cmd('soundDesign.setSettings', {
 	/**
 	 * P6-E10 cue grammar and personality (merged into the stored style; a field set to null goes back to its default):
 	 * `personality` (calm, energetic, bright, precise, mechanical, warm), `runs` (climb | flat), `typing` (auto | keys |
-	 * words | silent), `musicCarriesCuts`, `duckUnderTyping`.
+	 * words | silent), `musicCarriesCuts`, `duckUnderTyping`; P6-E11 `tuneToMusic`, `stopOnBar`.
 	 */
 	style: z
 		.strictObject({
@@ -259,6 +259,8 @@ export const SoundDesignSetSettingsCmd = cmd('soundDesign.setSettings', {
 			typing: z.enum(SOUND_TYPING_MODES).nullable().optional(),
 			musicCarriesCuts: z.boolean().nullable().optional(),
 			duckUnderTyping: z.boolean().nullable().optional(),
+			tuneToMusic: z.boolean().nullable().optional(),
+			stopOnBar: z.boolean().nullable().optional(),
 		})
 		.optional(),
 });

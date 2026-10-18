@@ -110,6 +110,8 @@ function tryValue<T>(f: () => T, h: HandlerContext, clipId: string): T {
 }
 
 const end = (c: { start: number; duration: number }) => c.start + c.duration;
+/** Shortest remix joint crossfade (s): the frames of it, at least one (Sound Check's chopped-decay fade). */
+export const REMIX_MIN_CROSSFADE_S = 0.03;
 
 /** The pieces of the remix a clip belongs to (sorted by start), or just the clip. */
 function remixPieces(seq: DSeq, clip: DClip): DAudio[] {
@@ -134,6 +136,10 @@ function revertRemix(seq: DSeq, clip: DAudio, h: HandlerContext): DAudio {
 	for (const p of pieces.slice(1)) removeClip(seq, p.id, h);
 	for (const t of Object.values(seq.transitions))
 		if (t.outgoingClipId === first.id && t.incomingClipId) delete seq.transitions[t.id];
+	// P6-E11: the fade-in the remix added over a trimmed intro goes with it
+	const fadeIn = typeof info.fadeInId === 'string' ? seq.transitions[info.fadeInId] : undefined;
+	if (fadeIn && fadeIn.incomingClipId === first.id && !fadeIn.outgoingClipId)
+		delete seq.transitions[fadeIn.id];
 	first.start = info.original.start;
 	first.duration = info.original.duration;
 	first.sourceIn = info.original.sourceIn;
@@ -332,6 +338,13 @@ export const essentialHandlers = {
 		if (previous) clip = revertRemix(seq, clip, h);
 		const original = { start: clip.start, duration: clip.duration, sourceIn: clip.sourceIn };
 		const target = cmd.targetFrames;
+		// P6-E11: what the plan landed must lie inside the remix
+		for (const an of cmd.anchors ?? [])
+			if (an.frame < original.start || an.frame >= original.start + target)
+				h.fail(
+					'E_INVALID_PARAM',
+					`An anchor lands at frame ${an.frame}, outside the remix (frames ${original.start}–${original.start + target - 1})`,
+				);
 		// Room on the track: [start, start + target) must be free except for this clip.
 		for (const o of trackClips(seq, clip.trackId))
 			if (o.id !== clip.id && o.start < clip.start + target && end(o) > clip.start)
@@ -344,13 +357,14 @@ export const essentialHandlers = {
 				);
 		const maxContent = original.duration * F; // flicks of source the clip may use (its in…out range)
 		// Output cut points in frames; each piece's source start is shifted by the cut's rounding so the jump offsets
-		// (whole beats) stay exact.
+		// (whole beats) stay exact. Cuts round DOWN (P6-E11): the shift then moves both sides of a joint earlier in the
+		// source, away from the next beat's attack the plan put the joint before.
 		const pieces = cmd.pieces;
 		let outSec = 0;
 		const cuts: number[] = [0];
 		for (const p of pieces) {
 			outSec += p.lenSeconds;
-			cuts.push(Math.round(outSec / frameSec));
+			cuts.push(Math.floor(outSec / frameSec + 1e-6));
 		}
 		cuts[cuts.length - 1] = target;
 		const made: DAudio[] = [];
@@ -388,6 +402,7 @@ export const essentialHandlers = {
 			segments: cmd.segments ?? previous?.segments ?? 50,
 			variations: cmd.variations ?? previous?.variations ?? 50,
 			bpm: cmd.bpm,
+			...(cmd.anchors?.length ? { anchors: cmd.anchors.map((a) => ({ ...a })) } : {}),
 		});
 		const baseName = base.name.replace(/ \(Remix \d+\/\d+\)$/, '');
 		made.forEach((c, i) => {
@@ -414,8 +429,10 @@ export const essentialHandlers = {
 		for (const t of Object.values(seq.transitions))
 			if (t.outgoingClipId === clip.id && !t.incomingClipId && lastPiece.id !== clip.id)
 				t.outgoingClipId = lastPiece.id;
-		// Constant-power crossfades centred on the joints (shortened to the media handles when needed).
-		const xf = cmd.crossfadeFrames ?? 1;
+		// Constant-power crossfades ENDING at the joints (P6-E11: a joint sits just before a beat's attack, so the fade
+		// is over before it on both sides; the incoming piece's head handle feeds it, shortened when needed). At least
+		// 30 ms: a shorter fade-out is a chopped decay (Sound Check EDGE).
+		const xf = cmd.crossfadeFrames ?? Math.max(1, Math.ceil(REMIX_MIN_CROSSFADE_S / frameSec - 1e-9));
 		const addTransition = transitionHandlers['transition.add']!;
 		for (let i = 1; i < made.length; i++)
 			addTransition(
@@ -427,10 +444,29 @@ export const essentialHandlers = {
 					at: made[i]!.start,
 					effectId: 'jasper.constant-power',
 					duration: xf,
-					alignment: 'center',
+					alignment: 'end-at-cut',
 				},
 				h,
 			);
+		// P6-E11: a fade-in over an intro the plan trimmed (removed again by Revert Remix)
+		if (
+			cmd.fadeInFrames &&
+			!Object.values(seq.transitions).some((t) => t.incomingClipId === made[0]!.id && !t.outgoingClipId)
+		) {
+			const r = addTransition(
+				doc,
+				{
+					type: 'transition.add',
+					sequenceId: seq.id,
+					clipId: made[0]!.id,
+					edge: 'in',
+					effectId: 'jasper.constant-power',
+					duration: Math.min(cmd.fadeInFrames, Math.max(1, made[0]!.duration - 1)),
+				},
+				h,
+			) as { transitionId?: string } | undefined;
+			if (r?.transitionId) for (const c of made) (c.remix as { fadeInId?: string }).fadeInId = r.transitionId;
+		}
 		return { clipIds: made.map((c) => c.id), pieces: made.length, targetFrames: target, remixId };
 	},
 

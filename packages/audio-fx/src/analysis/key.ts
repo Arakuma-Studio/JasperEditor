@@ -20,9 +20,13 @@ import { Fft } from '../core/fft.ts';
 import { hann } from '../core/stft.ts';
 
 /** Krumhansl–Kessler probe-tone ratings of the 12 pitch classes in a major key (index 0 = the tonic). */
-export const KK_MAJOR: readonly number[] = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+export const KK_MAJOR: readonly number[] = [
+	6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88,
+];
 /** Krumhansl–Kessler probe-tone ratings of the 12 pitch classes in a minor key (index 0 = the tonic). */
-export const KK_MINOR: readonly number[] = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+export const KK_MINOR: readonly number[] = [
+	6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17,
+];
 
 /** Pitch-class names (sharps; C = 0). */
 export const PITCH_CLASS_NAMES: readonly string[] = [
@@ -116,7 +120,7 @@ function sameScale(t1: number, m1: KeyMode, t2: number, m2: KeyMode): boolean {
  * non-negative; any scale). Null for an unusable chroma (not 12 finite values, or flat).
  */
 export function estimateKey(chroma: ArrayLike<number>): MusicKey | null {
-	if (!chroma || chroma.length !== 12) return null;
+	if (chroma?.length !== 12) return null;
 	const c: number[] = [];
 	for (let i = 0; i < 12; i++) {
 		const v = chroma[i];
@@ -134,8 +138,7 @@ export function estimateKey(chroma: ArrayLike<number>): MusicKey | null {
 	const best = scores[0]!;
 	const rival = scores.find((s) => !sameScale(s.tonic, s.mode, best.tonic, best.mode));
 	const margin = rival ? best.r - rival.r : best.r;
-	const confidence =
-		Math.max(0, Math.min(1, best.r)) * Math.max(0, Math.min(1, margin / KEY_MARGIN_FULL));
+	const confidence = Math.max(0, Math.min(1, best.r)) * Math.max(0, Math.min(1, margin / KEY_MARGIN_FULL));
 	const q = (x: number) => Math.round(x * 1000) / 1000;
 	return {
 		tonic: best.tonic,

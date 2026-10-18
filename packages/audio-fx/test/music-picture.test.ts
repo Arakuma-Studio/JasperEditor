@@ -4,14 +4,7 @@
 // drop, plus hostile inputs.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import {
-	analyzeKey,
-	chromaOf,
-	estimateKey,
-	KK_MAJOR,
-	keyScale,
-	MAJOR_SCALE,
-} from '../src/analysis/key.ts';
+import { analyzeKey, chromaOf, estimateKey, KK_MAJOR, keyScale, MAJOR_SCALE } from '../src/analysis/key.ts';
 import {
 	analyzeBeats,
 	analyzeMusic,
@@ -44,7 +37,9 @@ describe('estimateKey / chromaOf', () => {
 		}
 		// the remix test music (C, Am, F, G / Dm, G, Em, Am): the C major scale
 		const k = analyzeKey(testMusic(SR, 120, 24, 7).audio, SR)!;
-		console.info(`key of the test music: ${k.name} r ${k.correlation} margin ${k.margin} confidence ${k.confidence}`);
+		console.info(
+			`key of the test music: ${k.name} r ${k.correlation} margin ${k.margin} confidence ${k.confidence}`,
+		);
 		expect(k.scale).toEqual(keyScale(0, 'major'));
 	});
 
@@ -74,7 +69,10 @@ describe('estimateKey / chromaOf', () => {
 
 	it('silence, a steady sine, noise and hostile input: no key or a low confidence, never a throw', () => {
 		expect(analyzeKey([new Float32Array(SR * 4)], SR)).toBeNull();
-		const sine = Float32Array.from({ length: SR * 8 }, (_, i) => 0.3 * Math.sin((2 * Math.PI * 440 * i) / SR));
+		const sine = Float32Array.from(
+			{ length: SR * 8 },
+			(_, i) => 0.3 * Math.sin((2 * Math.PI * 440 * i) / SR),
+		);
 		const ks = analyzeKey([sine], SR);
 		console.info(`key of a 440 Hz sine: ${ks?.name} confidence ${ks?.confidence}`);
 		expect(ks === null || ks.confidence < 0.6).toBe(true);
@@ -289,11 +287,15 @@ describe('planAnchoredRemix', () => {
 		};
 		expect(code(() => planAnchoredRemix(a, 40 * SR, []))).toBe('ANCHOR_OUT_OF_RANGE');
 		expect(code(() => planAnchoredRemix(a, 40 * SR, [{ src: -1, out: 0 }]))).toBe('ANCHOR_OUT_OF_RANGE');
-		expect(code(() => planAnchoredRemix(a, 40 * SR, [{ src: a.len + 5, out: 0 }]))).toBe('ANCHOR_OUT_OF_RANGE');
+		expect(code(() => planAnchoredRemix(a, 40 * SR, [{ src: a.len + 5, out: 0 }]))).toBe(
+			'ANCHOR_OUT_OF_RANGE',
+		);
 		expect(code(() => planAnchoredRemix(a, 40 * SR, [{ src: drop.at, out: 41 * SR }]))).toBe(
 			'ANCHOR_OUT_OF_RANGE',
 		);
-		expect(code(() => planAnchoredRemix(a, 40 * SR, [{ src: Number.NaN, out: 1 }]))).toBe('ANCHOR_OUT_OF_RANGE');
+		expect(code(() => planAnchoredRemix(a, 40 * SR, [{ src: Number.NaN, out: 1 }]))).toBe(
+			'ANCHOR_OUT_OF_RANGE',
+		);
 		expect(code(() => planAnchoredRemix(a, SR, [{ src: drop.at, out: 0 }]))).toBe('TARGET_TOO_SHORT');
 		expect(
 			code(() =>

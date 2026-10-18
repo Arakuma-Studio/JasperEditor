@@ -590,6 +590,8 @@ describe('the style in the sequence settings (soundDesign.setSettings {style})',
 			typing: 'words',
 			musicCarriesCuts: true,
 			duckUnderTyping: true,
+			tuneToMusic: true,
+			stopOnBar: true,
 		});
 		expect(checkInvariants(h.doc)).toEqual([]);
 		// undo: the earlier documents are untouched; redo repeats the same result
@@ -665,6 +667,8 @@ describe('the style in the sequence settings (soundDesign.setSettings {style})',
 			typing: 'auto',
 			musicCarriesCuts: true,
 			duckUnderTyping: false,
+			tuneToMusic: true,
+			stopOnBar: true,
 		});
 		expect(
 			resolveSoundStyle(
