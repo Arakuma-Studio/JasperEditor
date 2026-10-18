@@ -8060,6 +8060,12 @@ Also:
   evaluation (`evaluateSfxGains`, the lower sound effects in each bed): `apps/engine/test/sound-check-p6.test.ts` and
   `sound-check.test.ts`: 31 passed.
 
+- Integration: merged `feat/sound-design` at `ba04ee7f` (BigSoundBank packs; one MCP guide conflict, both kept), then
+  `pnpm typecheck` (0 errors), `SD_GIT=1 … pnpm lint`, `node scripts/i18n.mjs --check` (10 026), `pnpm notices --check`
+  (33 ported records) and `pnpm vitest run apps/mcp/test/sound*.test.ts apps/mcp/test/{readme-tools,conventions}.test.ts
+  apps/engine/test/sound-packs*.test.ts apps/engine/test/sounds*.test.ts packages/api
+  packages/project/test/sound-check-p6.test.ts --maxWorkers=8`: 27 files, 188 passed.
+
 #### Limits and notes for the next packages
 
 - EDGE judges an edge against the clip's peak within 10 s of it, decodes ≤ 400 edges per check, skips reversed clips, and
