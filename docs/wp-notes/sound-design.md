@@ -9291,3 +9291,221 @@ and `apps/web/test/sound-check-p6-model.test.ts` list REFERENCE / `reference`.
   copy of a reference (another codec, a resample) may not match and is then judged against all references.
 - WP-E8 (beds) and later packages: a bed that fills gaps changes `max_gap_s`, `intro_lu` and the arc rows; the REFERENCE
   category stays last in the panel.
+
+### Phase 6 → WP-E9 Describe-it search and Find Moment (CLAP)
+
+Branch `feat/sd-pe-e9-clap`. Spec 12 §4 P6-E14, built after the human decision of 2026-10-17 ("yes: offer
+`laion/larger_clap_general` as an optional, user-installed download, off until installed, analysis only"). Sounds can be
+found by what they sound like — "glass shattering on concrete" — also in a folder of files named `SFX_0023.wav`, and a
+long recording can be searched for its best moment ("a single clean key press on a mechanical keyboard").
+
+#### Licences (checked 2026-10-18, Hugging Face API and the files at the pinned revision)
+
+- **Model**: `laion/larger_clap_general` at revision `ada0c23a36c4e8582805bb38fec3905903f18b41`. The model card's
+  metadata and README front matter say `license: apache-2.0` (the API's `cardData.license` and tag `license:apache-2.0`);
+  the repository has no separate LICENSE file, so the card is the licence statement. Author: LAION (paper Wu, Chen,
+  Zhang, Hui, Berg-Kirkpatrick, Dubnov 2022, arXiv 2211.06687). The card does not describe the training data; the
+  human decision accepted the weights' Apache-2.0 licence. `pytorch_model.bin` sha256
+  `314eb00cce6ad68d25237b8446b659ccdb136ed4672c1bca470f142f72455026` (776 444 665 bytes) matches the LFS pointer.
+- **Tokenizer**: `vocab.json` + `merges.txt` of the same repository and revision (same Apache-2.0 statement); they are
+  RoBERTa's byte-level BPE files (RoBERTa: fairseq, MIT; the BPE scheme is GPT-2's, MIT). No other licence applies.
+- **Our conversion**: the two ONNX graphs are exported by us with `scripts/models/export-clap.py` (TorchScript exporter
+  tracing Hugging Face transformers' `ClapModel`, Apache-2.0) and hold **no weights** (below). They ship with the engine
+  (`apps/engine/models/clap/`, 3.5 MB) with `.attribution` sidecars (Apache-2.0), `ATTRIBUTION.md` rows and the
+  Apache-2.0 text next to them; an install writes `NOTICE.txt` (authors, licence, source) next to the files, and Help ▸
+  About ▸ Licenses lists the model with its Apache-2.0 text. Analysis only: nothing generates audio.
+- **Existing ONNX exports considered and not used**: `Xenova/larger_clap_general` (declares no licence);
+  `laion/larger_clap_general_openvino_int8` (LAION, Apache-2.0, but OpenVINO IR: ONNX Runtime for Node cannot load it);
+  `atan2f/larger_clap_general_coreml` (Apache-2.0, but only the text tower is ONNX, the audio tower is Core ML).
+
+#### Hosting: no publishing needed
+
+The task allowed the app to download only from a URL with a pinned sha256 and said publishing our export is not ours to
+decide. The weight-free export makes the question moot: every initializer of our graphs is an ONNX *external data*
+reference (offset, length) into LAION's unmodified `pytorch_model.bin` — a torch zip checkpoint whose 555 tensors are
+stored uncompressed, contiguous and unshared (checked by the script), so each one is a byte range of that file. The
+install downloads `pytorch_model.bin`, `vocab.json` and `merges.txt` from LAION's own repository at the pinned revision
+(`https://huggingface.co/laion/larger_clap_general/resolve/<rev>/…`, sha256 and size of each in the catalogue), copies the
+two bundled graphs (`bundled:` URLs) next to them, and ONNX Runtime reads the weights from LAION's file (it refuses
+external data outside the model's folder, so the graphs are copied, never linked). Nothing of ours is hosted anywhere.
+
+The other exports the task asked for exist only on the build server (not hosted, not used):
+
+| File (`~/jasper-sd/research/clap/out/` on `jasper-build`) | Bytes | sha256 |
+|---|---:|---|
+| `clap-audio.graph.onnx` (shipped in the repo) | 3 205 491 | `0996922788c9594ca8d0b67c01b14c0478ba8310eb40eedc7ce966f73e402b85` |
+| `clap-text.graph.onnx` (shipped in the repo) | 297 850 | `327db7241fe75fa529e306bfafc4e9fb38faa50d8c9121ed20b367e1bdb7e6e4` |
+| `clap-audio.fp32.onnx` (self-contained) | 281 425 628 | `4c1996723310788c719e5ea09fa3f9bc13ddcc45f832dee9532281aebdce3b4b` |
+| `clap-text.fp32.onnx` (self-contained) | 501 462 358 | `fd85fd9b58e34b1c7063f9cd8581ce7ebb77f324bb6e6fabf15ea31694dca738` |
+| `clap-audio.int8.onnx` | 77 361 231 | `30984c47f13f8b30f1a27e2c901fb544d0a54d77dc0d5d0f68a826dcf339b090` |
+| `clap-text.int8.onnx` | 126 127 767 | `98bcc4a9de43a4f016754fdba1a6726a7051286fdb4c2c956cbddd919264f1e2` |
+
+The graph-only files came out byte-identical in three runs of the script (measured: same sha256). Only if the human
+wants the smaller ≈ 205 MB int8 download would something have to be hosted, and that is not recommended: int8 changes
+which sound ranks first (below).
+
+#### Parity (measured on the build server)
+
+`python3 scripts/models/export-clap.py --src <laion files> --out out --sounds apps/engine/sounds/starter` (torch 2.5.1+cpu,
+transformers 4.46.3, onnx 1.19.1, onnxruntime 1.30.0, Python 3.12.3; 2 min 56 s) compares PyTorch with ONNX Runtime on
+68 sounds (the 60 starter-kit files and 8 synthetic signals) and 34 texts, from the same HF features and token ids:
+
+| Export | audio cosine min | text cosine min | padded-batch text min | top-1 agreement sound→text / text→sound | max \|Δ similarity\| |
+|---|---:|---:|---:|---:|---:|
+| graph-only (shipped) | 0.99999988 | 1.0 | 1.0 | 100 % / 100 % | 4.3·10⁻⁶ |
+| fp32 self-contained | 0.99999988 | 1.0 | 1.0 | 100 % / 100 % | 4.3·10⁻⁶ |
+| int8 (dynamic, per tensor) | 0.99446 | 0.97750 | 0.97617 | 85.3 % / 88.2 % | 0.085 |
+
+int8 variants also measured (MatMul only per tensor: text min 0.966, top-1 79 %; per channel: audio min 0.876) were not
+better; the app uses the fp32 weights. The engine's own front end against the reference
+(`pnpm exec tsx apps/engine/scripts/check-clap.ts out/parity-vectors.json <model dir> --model <model dir>`): log-mel
+max |Δ| 7.6·10⁻⁶ dB on four signals, tokenizer 34 of 34 texts identical, and TypeScript front end + onnxruntime-node 1.30
+end to end: cosine with PyTorch 1.0000000 (min, 4 sounds and 34 texts). Measured speed: 563 ms per 10 s window warm on
+8 threads (load ≈ 3–5 on the 16-core build server), ≈ 11.7 s to load the audio tower and 2.2 s the text tower.
+
+#### Design
+
+- **Catalogue**: `apps/engine/src/processing/models.json` `sound` list, `SoundModelStore`
+  (`apps/engine/src/sounds/semantic/models.ts`, delegating to the speech store: pinned files, sha256, size, `install.json`,
+  `.partial` downloads, `<appdir>/models/sound/<id>/`), installed by the processing service's `model-download` job.
+  `bundled:<path>` URLs name engine files; a file whose `url` is null makes the model "Not available yet: the model
+  download location is pending" (install refused with `MODEL_DOWNLOAD_PENDING`; shown in Preferences and MCP).
+- **Runtime**: the `jasper-clap` child process (`worker/cli.ts`, `worker/clap.ts`, bundled as `jasper-clap.mjs`, packaged
+  with the desktop app) keeps the two ONNX sessions; requests are NDJSON lines in order (texts; windows of a file decoded
+  by ffmpeg to 48 kHz mono; window levels). `ClapRuntime` (`runtime.ts`) starts it on demand, ends it after 2 min idle,
+  fails a request whose worker dies or hangs (5 min) with a typed error and starts a new one for the next; a cancelled
+  request is dropped and its abort listener removed (a job's signal sees hundreds of requests: the leak was found in the
+  real-model run, regression test in `sound-semantic.test.ts`). The engine never loads the model (D-07).
+- **Front end** (`frontend.ts`, `tokenizer.ts`): the published `ClapFeatureExtractor` settings (`rand_trunc`,
+  `repeatpad`; slaney mel 50 Hz–14 kHz, 1024/480, 1001 frames, 10·log10) and RoBERTa byte-level BPE (77 tokens at most),
+  written from the recipe, checked as above. A whole sound is one 10 s window (repeat-padded) or, past 10 s, up to six
+  evenly spread windows averaged; a take is its own range.
+- **Embeddings** (`embeddings.ts`): one binary file per model revision and recipe under
+  `<appdir>/sounds/cache/semantic/`, keyed by content fingerprint and range: a renamed file keeps its embedding, a changed
+  file or moved take gets a new one, and every `sound-embed` job drops keys the index no longer has. Atomic writes; an
+  unreadable file is set aside (`*.corrupt-<time>`) and recomputed. `sound-embed` jobs are incremental (only what the
+  cache lacks, in id order), flush every 32 sounds or 15 s (a cancelled job keeps its work) and start by themselves after
+  an install, after an index job and when a described search finds sounds without one.
+- **Calibration** (`score.ts`, `vocab.ts`): earshot's idea (licenses/ported/earshot.md), our maths and vocabulary. A
+  description's match to a sound is the z of its similarity among our 305 vocabulary phrases' similarities to that
+  sound, after removing every phrase's (and the query's) mean similarity to the user's embedded library ("hub damping",
+  at full strength from 32 sounds). The mean and variance over the vocabulary come in closed form from the vocabulary's
+  mean and covariance (no 305 dot products per sound per query; `audioStats` caches Ca per embedding). Texts are read as
+  the captions CLAP was trained on: "this is a sound of …" (vocabulary and queries alike).
+- **Ranking**: `SoundRankRequest.semantic {scores, text}` in `packages/project/src/sound/rank.ts`: the describe part
+  (weight 6, 0…1 = key / 8) blends with duration fit, judge and licence; the description's words in a title add at most
+  +0.1 (evidence only: a badly named sound loses nothing); a sound without an embedding yet is matched by those words
+  (weight 3, like `q`); a key ≤ 0 (worse than the library's average for that description) is left out; real recordings
+  stay above synth; `q` still filters. The key is the vocabulary z plus the query-side z (the cosine's z among the
+  ranked sounds), which ranked best (below). Rows carry `match {z, verdict, cosine}`; the response `describe {mode,
+  reason, embedded, pending, jobId}`. Without the model, or when it fails, the description's words are searched
+  (`mode: 'keywords'`). Search cost after the first query: 22–115 ms for 820 sounds and takes (measured, real model).
+- **Find Moment** (`POST /api/sounds/:soundId/moments`, a `sound-moment` job): coarse 10 s windows every 5 s (every 10 s
+  past 30 min; at most 4 h), the best three refined with windows of the asked length (hop half of it), ranked by the
+  same key, the best non-overlapping kept, each shrunk to where its sound is (frames within 40 dB of its loudest 10 ms,
+  5 ms before, 20 ms after) with its head (5 ms) and tail (10 ms) level against its loudest 10 ms. Window embeddings
+  are cached per recording: another description of the same recording only embeds the text.
+- **Match** (`POST /api/sounds/:soundId/match`): one sound against a description and up to 8 alternatives: each text's
+  match and its share of a softmax over the z values.
+- **Placing a moment**: `planMomentPlacement` (`packages/project/src/sound/moment.ts`) gives ordinary commands —
+  `track.add` ("SFX n") when no SFX track is free, `clip.place` with the source range (the registered copy's lead silence
+  counted) — so the edit is one undo step in the panel and in MCP.
+
+#### Usage
+
+- **Editor**: Preferences ▸ Sound Library ▸ Describe-it search: the model with its licence, attribution, size and links;
+  Download… shows the licence first ("Accept Licence and Download"), then the download and the library's preparation
+  ("n of m sounds are ready"; Prepare now); Remove asks first. Sound Library: the **Describe** pill next to the search box
+  makes the query a description (placeholder and hint say how to write one, in English); a line under it says what the
+  engine did (ranked by the model / searching the words without it / n sounds still being prepared); described rows
+  carry a Strong / Plausible / Weak / Unclear chip whose tooltip gives the z. Row menu ▸ **Find Moment…** (sounds of
+  3 s or more): describe, choose the window length, Find; each moment shows where it is, its match and whether it starts
+  inside a sound or is cut before it fades, with Audition (plays that range) and Insert at Playhead.
+- **MCP**: `describe_search_status`, `install_describe_search_model` (tell the user size and licence first),
+  `remove_describe_search_model` (approval card), `prepare_describe_search`, `search_sounds {describe}`, `match_sound`,
+  `find_sound_moment`, `insert_sound_moment`; SOUND_GUIDE explains how to write descriptions (source + material + action
+  + character, not the use) and how to read verdicts.
+- **HTTP**: `GET /api/sounds/semantic`, `GET /api/sounds/semantic/models`, `POST /api/sounds/semantic/models/:id/install`,
+  `DELETE /api/sounds/semantic/models/:id` (an agent asks the user: AGT-3 table), `POST /api/sounds/semantic/embed`,
+  `GET /api/sounds?describe=…`, `POST /api/sounds/:id/match`, `POST /api/sounds/:id/moments?wait=1`.
+
+#### Verdict bands and ranking quality (measured)
+
+`pnpm exec tsx apps/engine/scripts/measure-clap.ts --model <dir> --ffmpeg $(which ffmpeg) [--compare] <manifests>` on
+the build server, labels = the manifests' own titles and types (written by the pack authors and our curation, never by
+the vocabulary). Every distinct title (numbers removed) is a query; same title = positive, same type = related, else
+unrelated. Pairs are (query, sound); precision = same title or same type.
+
+The configuration was **chosen on the starter kit** (60 sounds, 60 queries, `--compare`): captions for vocabulary and
+queries with the engine key gave MRR 0.354 and "strong" precision 55.3 %; raw texts 0.305 / 36.4 %; "the sound of"
+queries 0.322 / 43.4 %; "a recording of" queries 0.370 / 52.7 %; caption queries over a raw vocabulary 0.360 / 53.1 %
+(differences of a few hundredths are within noise at n = 60). The key z + query z beat z alone and cosine alone in 4 of
+5 configurations. **Held out — the three BigSoundBank packs** installed on the build server (124 real recordings, 85
+title queries), with earshot's bands kept unchanged:
+
+| Band (z) | pairs | same title | same type | unrelated | precision | cumulative same-title recall |
+|---|---:|---:|---:|---:|---:|---:|
+| strong (≥ 3) | 436 | 90 | 262 | 84 | 80.7 % | 72.6 % |
+| plausible (2.5–3) | 206 | 17 | 107 | 82 | 60.2 % | 86.3 % |
+| weak (2–2.5) | 331 | 9 | 133 | 189 | 42.9 % | 93.5 % |
+| none (< 2) | 9 567 | 8 | 974 | 8 585 | 10.3 % | 100 % |
+
+Ranking by the model alone (titles hidden) on the held-out packs: top-1 42.4 %, top-5 84.7 %, MRR 0.597. On all 184
+sounds (144 queries): strong precision 71.7 %, plausible 42.9 %, weak 34.6 %, none 7.8 %; top-1 27.8 %, top-5 63.2 %,
+MRR 0.431 — the Kenney starter kit (synthesised game sounds titled "Toggle", "Back", "Confirm blip") is the hard part.
+The bands are monotonic (each lower band is less precise), so they were kept; "strong" is evidence, not proof, and the
+guide says so.
+
+#### Verified
+
+- Real model, engine API end to end on the build server (driver outside the repo; 185 indexed sounds = starter kit 60 +
+  3 BigSoundBank packs 124 + a generated 90 s user-folder recording, 820 entries with the offered takes): install from local
+  copies of the pinned files 9 s (copy + sha256); embedding 820 entries 390 s (≈ 0.48 s each, load ≈ 3); described
+  searches 22–911 ms (the first one loads the text tower). Examples: "typewriter typing" → Typewriter typing (Hermes) strong
+  z 3.55, then three keyboard typing recordings strong; "a deep cinematic boom" → Deep low boom strong; "paper being
+  crumpled" → Card pack open, Road map handled 1 / 2 (strong). Weak spots seen: "a bright bell chime" did not put the kit's
+  Bell chime in the first five; "glass shattering on concrete" has no such sound in this library and returned metal hits
+  as weak matches. Find Moment on the generated recording (brown noise bed, typewriter at 20 s, wine-glass clink at 47 s,
+  camera shutter at 70 s): "glass clinking" → 47.00–48.00 (plausible, 24.7 s, 69 windows), "typewriter typing" →
+  20.00–22.00 and 22.00–24.00 (strong, 9.3 s), "a camera shutter click" → 70.00–71.00 (weak, 14.4 s); the same "glass
+  clinking" again: all 69 windows from the cache, 230 ms.
+- Built app with the real model (build server): `pnpm build && E2E_PORT=52910 E2E_SKIP_BUILD=1 E2E_CLAP=1
+  JASPER_MODEL_CATALOG=<local catalogue> pnpm exec playwright test e2e/sound-describe.spec.ts` → 2 passed (2.0 min):
+  the licence shown before the download, the install, "80 of 80 sounds are ready", a described search with match chips,
+  Find Moment on a generated 60 s folder recording finding the glass ping placed at 33 s (32.02–34.00), Insert at
+  Playhead placing it on a new SFX track at frame 30; the screenshots (prefs-describe, licence-before-download,
+  prefs-describe-installed, describe-semantic, find-moment, moment-inserted) were looked at. Without `E2E_CLAP` the spec
+  checks the not-installed state and the keyword fallback (CI-safe, no download).
+- Tests (all on the build server, tiny stand-in model of `@jasper/testkit/tiny-clap`, no network):
+  `pnpm vitest run apps/engine/test/sound-semantic-unit.test.ts` 16 passed (front end vs a direct-DFT oracle to 1e-4 dB,
+  repeat padding, windows, tokenizer fuzz, the closed-form z against the brute-force definition (property), bands, keys,
+  moment windows and non-overlap (property), levels, cache round trip / invalidation / damaged file / fuzzed bytes);
+  `apps/engine/test/sound-semantic.test.ts` 8 passed (keyword fallback, pending model, install, incremental embedding,
+  describe ranking, match, hostile requests, Find Moment and its cache, a changed file re-embedded and the old key
+  dropped, worker crash and broken model dir, abort listeners, removal gated for agents); `packages/project/test/
+  sound-rank-describe.test.ts` 4 passed (blend, bonus, fallback, filters, q, synth tier, rankSoundsPage = rankSounds =
+  filter bits, property) and `sound-moment.test.ts` 2 passed (placement, new track, undo, refusals, property);
+  `apps/mcp/test/sound-semantic.test.ts` 1 passed (status, fallback, install, prepare, describe, match_sound, find and
+  insert a moment through jasper-mcp over stdio) and `readme-tools.test.ts`; `apps/web/test/sound-describe-ui.test.tsx`
+  6 passed (Describe toggle, info line, match chips, menu item, Find Moment list / audition range / insert one undo step
+  / model needed, Preferences card: licence before download, pending model, remove asks) and
+  `sound-library-model.test.ts`, `sound-audition.test.ts`.
+
+#### Limits and known issues
+
+- CLAP reads English: descriptions in other languages are matched poorly (the hint says "in English"); the Describe
+  query is sent untranslated.
+- Quality is what the measurement says: about 7 in 10 "strong" pairs and 1 in 10 "none" pairs share the title or type;
+  synthesised UI sounds are found worse than real recordings; some obvious queries miss (above). Event tags in the
+  listening transcript (P6-E6, in the spec's list of uses) are **not built**: the `sound-listen` job streams the mix
+  without keeping it, and tagging needs a second render per event; recorded in docs/gaps.md.
+- Costs: ≈ 0.5 s of CPU (8 threads) per sound or take to prepare — a library of 5 000 sounds and takes ≈ 40 min once —
+  and ≈ 0.8 GB of RAM while the worker runs (ended after 2 min idle). A Find Moment pass over a 4 h recording is ≈ 1 440
+  coarse windows (≈ 12 min, estimated from the measured per-window time); windows are cached per recording
+  (≈ 2 KB each). The moment caches are not garbage-collected while the model stays installed (removing the model deletes
+  all of them).
+- Hub damping uses the user's own library: with fewer than 32 embedded sounds it is weaker, and every z moves a little
+  when the library changes (the ranking stays deterministic for a given library and query).
+- A moment is trimmed only where the recording is quiet around its sound: over a steady bed the window stays as found.
+- The download is fp32 (776 MB of weights): the smaller int8 export would need hosting and loses top-1 agreement
+  (measured above).

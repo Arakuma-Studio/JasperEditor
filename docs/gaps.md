@@ -628,6 +628,27 @@ true peak take the Mix's normalisation gain without running the limiter; the pic
 from the scene detector (dissolves and slow changes are missed) while a sequence's are its edit's cuts and transitions;
 Reference rows offer advice, never a command fix.
 
+Phase 6 → WP-E9 ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP-E9"; spec 12 §4 P6-E14, human
+decision 2026-10-17; earshot's calibration idea, our vocabulary and maths, `licenses/ported/earshot.md`): Describe-it
+search and Find Moment with the optional, user-installed LAION CLAP `larger_clap_general` (Apache-2.0; analysis only).
+Its weights and tokenizer are downloaded unmodified from LAION's repository at a pinned revision (776 MB, sha256-pinned,
+licence shown first; Preferences ▸ Sound Library ▸ Describe-it search, MCP `install_describe_search_model`; removal asks
+an agent's user); our weight-free ONNX graphs (3.5 MB, shipped) read them as external data, so nothing is hosted by us.
+The `jasper-clap` worker (ONNX Runtime) embeds every sound and take once (`sound-embed`, incremental, cached by content),
+`search_sounds {describe}` / the Library's Describe pill rank by a calibrated match blended with the ranking (without
+the model: the words), `match_sound` weighs one sound against alternatives, and Find Moment (`find_sound_moment`, row menu)
+finds and inserts the best windows of a long recording. Measured: exports match PyTorch (cosine ≥ 0.99999988), the
+TypeScript front end matches the reference (7.6·10⁻⁶ dB, tokenizer 34 / 34); on held-out BigSoundBank packs "strong"
+matches are 80.7 % precise and top-5 retrieval by sound alone is 84.7 % (all 184 sounds: 71.7 %, 63.2 %); Find Moment found
+three sounds placed in a 90 s recording at their seconds. Rerun `apps/engine/test/sound-semantic{,-unit}.test.ts`,
+`packages/project/test/sound-{rank-describe,moment}.test.ts`, `apps/mcp/test/sound-semantic.test.ts`,
+`apps/web/test/sound-describe-ui.test.tsx`, and with the model on the build server `e2e/sound-describe.spec.ts`
+(`E2E_CLAP=1`), `apps/engine/scripts/{check-clap,measure-clap}.ts`. Limits left: English descriptions only; the event tags
+of the listening transcript (P6-E6, a listed use) are not built (the listen job streams the mix without keeping it); ≈ 0.5 s
+of CPU per sound or take to prepare (≈ 40 min for 5 000) and ≈ 0.8 GB of RAM while the worker runs; a 4 h Find Moment pass
+≈ 12 min (estimated); quality is modest on synthesised UI sounds and some obvious queries miss (wp-note); the int8 export
+(≈ 205 MB) is not offered (it would need hosting and changes the top result for 12–15 % of queries, measured).
+
 ### Not covered by any workstream yet
 
 - **Platforms**: run and fix the desktop app on macOS and Windows; hardware H.264/HEVC export on real GPUs; build
