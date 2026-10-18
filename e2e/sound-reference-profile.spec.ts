@@ -158,23 +158,33 @@ test('build a reference profile from project media, compare the sequence in Soun
 	let prefs = await openSoundPrefs(page);
 	const section = prefs.getByTestId('prefs-sound-profiles');
 	await section.scrollIntoViewIfNeeded();
-	await expect(section.getByTestId('sound-profiles-empty')).toBeVisible({ timeout: 60_000 });
+	// Profiles are the engine's, not the project's: a repeat in the same server (--repeat-each) meets what an earlier
+	// run left if it failed before deleting its own, so this run counts from what is there and names its profile apart.
+	const profiles = section.locator('[data-sound-profile]');
+	await expect(section.getByTestId('sound-profiles-empty').or(profiles.first())).toBeVisible({ timeout: 60_000 });
+	const earlier = await profiles.count();
+	if (earlier === 0) await expect(section.getByTestId('sound-profiles-empty')).toBeVisible();
+	const repeat = test.info().repeatEachIndex;
+	const name = repeat ? `My channel ${repeat + 1}` : 'My channel';
+	const named = (n: string) =>
+		profiles.filter({ has: page.getByRole('button', { name: `Rename ${n}`, exact: true }) });
 	await section.getByTestId('sound-profiles-new').click();
 	const dialog = section.getByTestId('new-reference-profile-form');
 	await expect(dialog).toBeVisible();
-	await dialog.getByTestId('new-reference-profile-name').fill('My channel');
+	await dialog.getByTestId('new-reference-profile-name').fill(name);
 	for (const n of names.slice(0, 3)) await dialog.getByRole('checkbox', { name: n }).click();
 	await page.screenshot({ path: join(outDir, '1-new-profile-dialog.png') });
 	await dialog.getByRole('button', { name: 'Build Profile' }).click();
 	await expect(dialog.getByTestId('new-reference-profile-result')).toBeVisible({ timeout: LONG });
 	await expect(dialog.getByTestId('new-reference-profile-result')).toContainText(
-		'“My channel”: 3 references measured.',
+		`“${name}”: 3 references measured.`,
 	);
 	await page.screenshot({ path: join(outDir, '2-new-profile-result.png') });
 	await dialog.getByRole('button', { name: 'Done' }).click();
 	await expect(dialog).toBeHidden();
-	const row = section.locator('[data-sound-profile]');
-	await expect(row).toHaveCount(1, { timeout: 60_000 });
+	await expect(profiles).toHaveCount(earlier + 1, { timeout: 60_000 });
+	const row = named(name);
+	await expect(row).toHaveCount(1);
 	await expect(row).toContainText('3 references: Episode 1.wav, Episode 2.wav, Episode 3.wav');
 	const profileId = (await row.getAttribute('data-sound-profile'))!;
 	await section.screenshot({ path: join(outDir, '3-prefs-profiles.png') });
@@ -188,7 +198,7 @@ test('build a reference profile from project media, compare the sequence in Soun
 	await expect(panel().getByTestId('sound-check-verdict')).toBeVisible({ timeout: LONG });
 	const before = await appliedLabels(page);
 	await panel().getByTestId('sound-check-reference').getByRole('combobox').click();
-	await page.getByRole('option', { name: 'My channel (3 references)' }).click();
+	await page.getByRole('option', { name: `${name} (3 references)`, exact: true }).click();
 	await expect
 		.poll(async () => (await appliedLabels(page)).at(-1), { timeout: 60_000 })
 		.toBe('Compare with Reference Profile');
@@ -250,15 +260,23 @@ test('build a reference profile from project media, compare the sequence in Soun
 	expect(file.references).toHaveLength(3);
 	expect(readFileSync(saved, 'utf8')).not.toContain(join(outDir, 'media'));
 	await sec.getByTestId('sound-profiles-import-file').setInputFiles(saved);
-	await expect(sec.locator('[data-sound-profile]')).toHaveCount(2, { timeout: 60_000 });
+	await expect(profiles).toHaveCount(earlier + 2, { timeout: 60_000 });
 	// the copy gets a distinct name
-	await expect(sec.locator('[data-sound-profile]').filter({ hasText: 'My channel (2)' })).toHaveCount(1);
+	const copy = named(`${name} (2)`);
+	await expect(copy).toHaveCount(1);
+	const copyId = (await copy.getAttribute('data-sound-profile'))!;
 	await sec.getByTestId(`sound-profile-delete-${profileId}`).click();
 	const confirm = page.getByTestId('confirm-dialog');
 	await expect(confirm).toContainText('building it again needs its 3 references');
 	await page.screenshot({ path: join(outDir, '6-delete-confirm.png') });
 	await confirm.getByRole('button', { name: 'Delete Profile' }).click();
-	await expect(sec.locator('[data-sound-profile]')).toHaveCount(1, { timeout: 60_000 });
+	await expect(profiles).toHaveCount(earlier + 1, { timeout: 60_000 });
 	await expect(sec.locator(`[data-sound-profile="${profileId}"]`)).toHaveCount(0);
 	await sec.screenshot({ path: join(outDir, '7-after-import-delete.png') });
+	// the imported copy goes too: the engine keeps no profile of this test
+	await sec.getByTestId(`sound-profile-delete-${copyId}`).click();
+	await confirm.getByRole('button', { name: 'Delete Profile' }).click();
+	await expect(profiles).toHaveCount(earlier, { timeout: 60_000 });
+	await page.keyboard.press('Escape');
+	await expect(prefs).toBeHidden();
 });

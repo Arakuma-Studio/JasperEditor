@@ -43,7 +43,10 @@ export default defineConfig({
 			cookies: [cookie('jasper_session', token), cookie('jasper_editor', editorKey)],
 			origins: [],
 		},
-		channel: 'chrome',
+		// The system Chrome (ARCHITECTURE D-16). `E2E_BROWSER_CHANNEL=chromium` takes Playwright's own Chrome for Testing
+		// instead, where the system Chrome is older than what the specs exercise (HTML-in-Canvas: Chrome 148+); give the
+		// engine's renders the same browser with JASPER_BROWSER_EXECUTABLE.
+		channel: process.env.E2E_BROWSER_CHANNEL || 'chrome',
 		headless: true,
 		viewport: { width: 1600, height: 1000 },
 		acceptDownloads: true,

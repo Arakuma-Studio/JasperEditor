@@ -359,11 +359,13 @@ test('Preferences ▸ Sound Library adds a user folder with its licence; its sou
 	await expect(prefs).toBeVisible();
 	await prefs.getByTestId('prefs-page-sound-library').click();
 	await expect(prefs.getByTestId('prefs-sound-library')).toBeVisible();
+	// (the engine's folders outlive a test: a repeat in the same server finds the earlier run's folder there)
+	const folders = prefs.getByRole('list', { name: 'Sound folders' }).getByRole('listitem');
+	const foldersBefore = await folders.count();
 	await prefs.getByTestId('sound-prefs-new-path').fill(dir);
 	await prefs.getByTestId('sound-prefs-add-folder').click();
-	await expect(prefs.getByRole('list', { name: 'Sound folders' }).getByRole('listitem')).toHaveCount(1, {
-		timeout: 30_000,
-	});
+	await expect(folders).toHaveCount(foldersBefore + 1, { timeout: 30_000 });
+	await expect(folders.filter({ hasText: dir })).toHaveCount(1);
 	await prefs.screenshot({ path: join(outDir, 'preferences-folder.png') });
 	await page.keyboard.press('Escape');
 	await expect(prefs).toBeHidden();
@@ -396,4 +398,19 @@ test('Preferences ▸ Sound Library adds a user folder with its licence; its sou
 		2,
 	);
 	await panel.getByRole('button', { name: /Commercial-safe/ }).click();
+
+	// Remove the folder again (Preferences ▸ Sound Library ▸ Remove, Save Folders): the engine is as the test found it
+	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'Edit', exact: true }).click();
+	await page.getByRole('menuitem', { name: /^Preferences$/ }).hover();
+	await page.getByRole('menuitem', { name: /^Preferences…/ }).click();
+	await expect(prefs).toBeVisible();
+	await prefs.getByTestId('prefs-page-sound-library').click();
+	await folders.filter({ hasText: dir }).getByRole('button', { name: 'Remove' }).click();
+	await prefs.getByTestId('sound-prefs-folders').getByRole('button', { name: 'Save Folders' }).click();
+	await expect(folders).toHaveCount(foldersBefore, { timeout: 30_000 });
+	await expect(prefs.getByTestId('sound-prefs-folders').getByRole('button', { name: 'Save Folders' })).toBeDisabled({
+		timeout: 30_000,
+	});
+	await page.keyboard.press('Escape');
+	await expect(prefs).toBeHidden();
 });

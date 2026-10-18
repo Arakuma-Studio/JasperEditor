@@ -981,7 +981,7 @@ where a pinned prebuilt exists (`E2E_SKIP_LGPL=1` skips it), so the exports in t
 shipped build (H.264 by OpenH264).
 
 `pnpm test` includes the MCP integration suite (`apps/mcp/test/integration.test.ts`): it boots a real engine
-in token mode on `127.0.0.1:${MCP_TEST_PORT:-48551}` (and `--start-engine` on the next port) with a temp
+in token mode on a free loopback port (`MCP_TEST_PORT` pins one; `--start-engine` on another) with a temp
 appdir, connects an MCP SDK client to `jasper-mcp` over stdio, and goes from create project → import fixture
 media → edit → `render_frame` (PNG) → `start_export` + `wait_for_job` → ffprobe of the output. Run it alone
 with `pnpm exec vitest run --project @jasper/mcp`.

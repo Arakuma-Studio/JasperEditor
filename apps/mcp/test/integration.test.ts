@@ -13,7 +13,7 @@ import { cleanEnv, testPort, waitFor } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = await testPort(process.env.MCP_TEST_PORT);
-const AUTOSTART_PORT = Number(process.env.MCP_TEST_AUTOSTART_PORT ?? PORT + 1);
+const AUTOSTART_PORT = await testPort(process.env.MCP_TEST_AUTOSTART_PORT);
 const fixture = join(ROOT, 'fixtures', 'media', 'clip-a.mp4');
 const artifacts = join(ROOT, 'test-results', 'mcp');
 
