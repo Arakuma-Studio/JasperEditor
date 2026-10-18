@@ -35,6 +35,7 @@ import {
 	createSeededIdSource,
 	dependencyClosure,
 	issueReason,
+	isSetupItem,
 	mixFingerprint,
 	type ProjectDocument,
 	type Proposal,
@@ -70,20 +71,24 @@ export function touchedBy(ghost: ProposalGhost | undefined): Set<string> {
 /**
  * What a proposal changes in the Sound Check (P6-E5): `before` = the open findings of the current document, `after` =
  * those of the proposal's preview; `items` = the checked items in proposal order with the entities each one's preview
- * touched. A finding is attributed to every item that touched one of its clips or its cue. Pure; deterministic (the
- * lists follow the reports' order).
+ * touched (`setup`: a setup item — a bin, an imported sound, a new cue — that the items placing sounds require). A
+ * finding is attributed to every item that touched one of its clips or its cue; setup items only when no other item
+ * did (the Review panel folds them under the items that need them). Pure; deterministic (the lists follow the reports'
+ * order).
  */
 export function soundCheckDelta(
 	before: readonly Finding[],
 	after: readonly Finding[],
-	items: readonly { itemId: string; touched: ReadonlySet<string> }[],
+	items: readonly { itemId: string; touched: ReadonlySet<string>; setup?: boolean }[],
 	verdict: SoundCheckDelta['verdict'],
 ): SoundCheckDelta {
 	const keysBefore = new Set(before.map((f) => f.id));
 	const keysAfter = new Set(after.map((f) => f.id));
 	const row = (f: Finding): SoundCheckDeltaFinding => {
 		const names = [...(f.clipIds ?? []), ...(f.cueId ? [f.cueId] : [])];
-		const itemIds = items.filter((it) => names.some((n) => it.touched.has(n))).map((it) => it.itemId);
+		const hit = items.filter((it) => names.some((n) => it.touched.has(n)));
+		const main = hit.filter((it) => !it.setup);
+		const itemIds = (main.length ? main : hit).map((it) => it.itemId);
 		return {
 			key: f.id,
 			code: f.code,
@@ -269,7 +274,11 @@ export async function runProposalCheck(
 	);
 	if (ctx.signal.aborted) throw new JobError('CANCELLED', 'Cancelled', false);
 	const beforeAcks = applySoundAcknowledgements(live.doc, seq.id, base.issues);
-	const items = applied.map((id) => ({ itemId: id, touched: touchedBy(preview.items[id]) }));
+	const items = applied.map((id) => ({
+		itemId: id,
+		touched: touchedBy(preview.items[id]),
+		setup: isSetupItem(byId.get(id)!),
+	}));
 	const delta = soundCheckDelta(beforeAcks.open as Finding[], after.issues.filter((i) => !i.acknowledged?.active), items, {
 		before: beforeAcks.verdict,
 		after: after.verdict,

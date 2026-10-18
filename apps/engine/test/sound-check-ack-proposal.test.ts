@@ -360,6 +360,20 @@ describe('soundCheckDelta (pure)', () => {
 			{ itemId: 'b', fixes: [], introduces: ['REPEAT:c2', 'COVERAGE:k'] },
 		]);
 		expect([d.fixedCount, d.introducedCount]).toEqual([1, 2]);
+		// setup items (a new cue, an imported sound) only when no other item touched the finding's clips / cue
+		const s2 = soundCheckDelta(
+			[],
+			[f('REPEAT:c2', 'REPEAT', 'warning', ['c0', 'c2'], 'q1'), f('COVERAGE:q9', 'COVERAGE', 'warning', undefined, 'q9')],
+			[
+				{ itemId: 'cue:place', touched: new Set(['q1', 'q9']), setup: true },
+				{ itemId: 'place', touched: new Set(['c2']) },
+			],
+			{ before: 'pass', after: 'warn' },
+		);
+		expect(s2.introduced.map((x) => [x.key, x.itemIds])).toEqual([
+			['REPEAT:c2', ['place']],
+			['COVERAGE:q9', ['cue:place']],
+		]);
 		// a finding no item names (the whole mix): no item
 		const g = soundCheckDelta([], [f('TRUE_PEAK:mix', 'TRUE_PEAK', 'error')], [{ itemId: 'a', touched: new Set(['c1']) }], {
 			before: 'pass',

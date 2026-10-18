@@ -242,7 +242,7 @@ describe('acknowledge_sound_issue / sound_check {proposalId}', { timeout: 900_00
 		expect(pc.proposal!.summary).toMatch(/^Sound Check of this proposal: fixes \d+ · introduces \d+/);
 		const repeat = pc.proposal!.introduces.find((l) => l.startsWith('WARNING REPEAT'));
 		expect(repeat, JSON.stringify(pc.proposal, null, 1)).toBeDefined();
-		expect(repeat).toMatch(/— item place/);
+		expect(repeat).toMatch(/— item place$/);
 		expect(pc.proposal!.perItem.some((x) => x.introduces.some((k) => k.startsWith('REPEAT:')))).toBe(true);
 		expect(pc.safeFixes).toEqual([]);
 		expect(pc.next).toMatch(/introduces/);
