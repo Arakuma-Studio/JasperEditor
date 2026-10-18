@@ -8283,6 +8283,7 @@ below). Tests: `packages/audio-fx/test/{takes,sound-quality-flags}.test.ts` (+ `
   climbing runs are WP-E6's (spec 12 §4.2); takes already rotate through `pickVariant` and the plan's ranking pool.
 - Swap's "next" / "previous" cycle walks the alternatives given (take ids included), then similar recordings; it does not
   add sibling takes of its own.
+
 ### Phase 6 → WP-E3 Listen: events, transcript, sheet
 
 Branch `feat/sd-pe-e3-listen`. Spec 12 §4 P6-E6 (listening transcript) and P6-E7 (annotated sound sheet). The detector

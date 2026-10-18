@@ -524,6 +524,7 @@ AAC; a registered take placed on a cue peaks on the cue frame in the export (0 s
 `scripts/sounds/measure-takes.mjs`. Limits left: takes from the first 120 s only, pairs at most (a typewriter's strike,
 carriage and bell are separate takes), take numbers can change with a new analysis version (projects keep the range),
 `noisy-floor` needs two onsets, MCP swap's next / previous adds no sibling takes of its own.
+
 Phase 6 → WP-E3 ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP-E3"; spec 12 §4 P6-E6, P6-E7,
 algorithms adapted from earshot `timeline.py`, `licenses/ported/earshot.md`): a listening transcript — the `sound-listen`
 job (`POST /api/sound-design/listen`, ≤ 10 min) renders the mix and lanes of non-overlapping clips once, finds the
