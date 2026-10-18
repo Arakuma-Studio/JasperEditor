@@ -785,7 +785,7 @@ test('user walkthrough: library → Suggest Cues → Auto Sound Pass → review 
 		findings: await findings(),
 		acknowledged: await checkPanel()
 			.getByTestId('sound-check-acknowledged-toggle')
-			.textContent()
+			.textContent({ timeout: 3000 })
 			.catch(() => null),
 	};
 	await checkPanel().screenshot({
