@@ -237,6 +237,8 @@ export type PlanPick = {
 	duck?: PlanDuck;
 	/** P6-E11: tuned to the key of the music under it (style `tuneToMusic`): the total shift, key, note, music clip. */
 	tuning?: { st: number; key: string; note: string; clipId: string };
+	/** P6-E11: the key it was tuned to (the alternatives are tuned to it too). */
+	tuneKey?: MusicKeyRef;
 };
 
 /**
@@ -1048,6 +1050,7 @@ export function selectPlanSounds(
 			else delete p.pitchSt;
 			p.rate = round6(rateOfSemitones(total - pitch));
 			p.tuning = { st: round6(total), key: m.key!.name ?? '', note, clipId: m.clipId };
+			p.tuneKey = m.key!;
 			p.notes.push(tuningReason(round6(total), m.key!.name ?? ''));
 			tuned++;
 		};
@@ -1141,6 +1144,26 @@ export function selectPlanSounds(
 
 const r3 = (x: number) => Math.round(x * 1000) / 1000;
 const round6 = (x: number) => Math.round(x * 1e6) / 1e6;
+
+/**
+ * P6-E11: layer 0's pitch and speed for an alternative of a tuned pick: its own nearest scale note (a tonal one), the
+ * run's climb as the grammar gives it (a run member: the alternative is another sound), else none (rate 1).
+ */
+function alternativeTuning(
+	p: PlanPick,
+	a: RankedSound<SoundEntry>,
+	key: MusicKeyRef,
+): Record<string, unknown> {
+	const split = (st: number) => {
+		const pitch = Math.max(-VARISPEED_PITCH_MAX_ST, Math.min(VARISPEED_PITCH_MAX_ST, st));
+		const rate = round6(rateOfSemitones(st - pitch));
+		return { pitchSt: pitch ? round6(pitch) : null, rate: rate === 1 ? null : rate };
+	};
+	if (p.run) return split(p.run.st);
+	const d = a.entry.descriptors as { pitchMidi?: number | null; pitchConfidence?: number } | undefined;
+	const t = isTunable(a.entry.types, d) ? tuneToKey(d!.pitchMidi as number, key) : null;
+	return split(t ? t.st : 0);
+}
 
 function planSound(r: RankedSound<SoundEntry>, palette: Set<string>) {
 	return {
@@ -1289,6 +1312,7 @@ export function composePlanDraft(
 			alternatives: alts.map((a) => ({
 				soundId: a.entry.id,
 				label: a.entry.title || a.entry.id,
+				...(p.tuneKey ? { layer: alternativeTuning(p, a, p.tuneKey) } : {}),
 				meta: {
 					soundId: a.entry.id,
 					title: a.entry.title,

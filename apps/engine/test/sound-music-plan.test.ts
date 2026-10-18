@@ -39,6 +39,7 @@ import {
 
 const SR = 48_000;
 const CHIME_HZ = 440 * 2 ** (1 / 12); // B♭4 = MIDI 70
+const CHIME2_MIDI = 71.3; // B4 + 30 cents: its own nearest scale note is B (−0.3 st)
 const HERO = 189;
 const ENV_KEYS = [
 	'JASPER_SOUND_STARTER_DIR',
@@ -48,14 +49,12 @@ const ENV_KEYS = [
 const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 const OUT = join(ROOT, 'test-results', 'sd-music-plan');
 
-/** A chime: B♭4 with a soft 3rd partial, 3 ms attack, 0.6 s decay, 1.2 s long. */
-function chime(): Float32Array {
+/** A chime: a tone with a soft 3rd partial, 3 ms attack, 0.6 s decay, 1.2 s long (B♭4 by default). */
+function chime(hz = CHIME_HZ): Float32Array {
 	return Float32Array.from({ length: Math.round(1.2 * SR) }, (_, i) => {
 		const t = i / SR;
 		const env = Math.min(1, t / 0.003) * Math.exp(-t / 0.6);
-		return (
-			0.5 * env * (Math.sin(2 * Math.PI * CHIME_HZ * t) + 0.1 * Math.sin(2 * Math.PI * 3 * CHIME_HZ * t))
-		);
+		return 0.5 * env * (Math.sin(2 * Math.PI * hz * t) + 0.1 * Math.sin(2 * Math.PI * 3 * hz * t));
 	});
 }
 
@@ -63,6 +62,8 @@ function makeKit(dir: string): string {
 	mkdirSync(dir, { recursive: true });
 	const x = chime();
 	writeFileSync(join(dir, 'chime.wav'), encodeWav([x, x], SR, 's16'));
+	const y = chime(440 * 2 ** ((CHIME2_MIDI - 69) / 12));
+	writeFileSync(join(dir, 'chime2.wav'), encodeWav([y, y], SR, 's16'));
 	writeFileSync(
 		join(dir, 'manifest.json'),
 		JSON.stringify({
@@ -72,6 +73,14 @@ function makeKit(dir: string): string {
 				{
 					file: 'chime.wav',
 					title: 'Glass chime',
+					types: ['chime'],
+					tags: ['test'],
+					author: 'Test Author',
+					license: 'CC0-1.0',
+				},
+				{
+					file: 'chime2.wav',
+					title: 'Bell chime',
 					types: ['chime'],
 					tags: ['test'],
 					author: 'Test Author',
@@ -113,6 +122,7 @@ let app: TestApp;
 let musicSrc: Float32Array;
 let musicMediaKey = '';
 let musicClipId = '';
+let glassId = '';
 const PID = 'prj_0000000000000001';
 
 async function waitJob(id: string): Promise<EngineJob> {
@@ -130,6 +140,10 @@ beforeAll(async () => {
 	const idx = await inject('POST', '/api/sounds/index', {});
 	expect(idx.statusCode, idx.body).toBe(202);
 	expect((await waitJob((idx.json() as EngineJob).id)).state).toBe('succeeded');
+	const found = await inject('GET', '/api/sounds?q=Glass%20chime');
+	glassId = (found.json() as { results: { sound: { id: string; title: string } }[] }).results.find(
+		(r) => r.sound.title === 'Glass chime',
+	)!.sound.id;
 	const m = dropMusic(SR, 120, 16, 9);
 	musicSrc = m.audio[0]!;
 	const dir = tempAppdir('jasper-music-media-');
@@ -180,7 +194,8 @@ async function plan(
 		projectId: PID,
 		sequenceId: seqId,
 		cues: [cueId],
-		style: { seed: 3, stopBefore: true, ...style },
+		// the palette puts the MIDI-70 chime first (the spec's case); the bell (MIDI 71.3) is its alternative
+		style: { seed: 3, stopBefore: true, palette: [glassId], ...style },
 	});
 	expect(res.statusCode, res.body).toBe(202);
 	const job = await waitJob((res.json() as EngineJob).id);
@@ -250,9 +265,24 @@ describe('tune to the key and stop on the bar (measured in the export)', { timeo
 		console.info(
 			`[music plan] event ${JSON.stringify({ tuning: ev.tuning, rate: ev.rate, notes: ev.notes, stopOn: ev.stopOn })}`,
 		);
-		expect(ev.tuning).toMatchObject({ key: 'C major', note: 'A4' });
+		// the chosen chime: B♭4 (MIDI 70) → A4 (−1 st, the more stable of A and B); its alternative, the bell (MIDI
+		// 71.3) → B4 (−0.3 st)
+		expect(ev.sound.title).toBe('Glass chime');
+		const sourceMidi = 70;
+		expect(ev.tuning).toMatchObject({ key: 'C major', note: 'A4', st: -1 });
 		expect(Math.abs(ev.tuning!.st)).toBeLessThanOrEqual(1);
-		expect(ev.notes.some((n) => /^tuned -1(\.\d+)? st to C major$/.test(n))).toBe(true);
+		expect(ev.notes.some((n) => /^tuned -\d+(\.\d+)? st to C major$/.test(n))).toBe(true);
+		// the alternative (the other chime) is tuned to the key on its own pitch
+		const place = proposal.items.find((i) => i.id === ev.itemId)!;
+		const alt = (place.alternatives ?? [])[0] as
+			| { commands: { layers?: { pitchSt?: number }[] }[] }
+			| undefined;
+		expect(alt).toBeDefined();
+		const altSt = alt!.commands[0]!.layers![0]!.pitchSt ?? 0;
+		const altMidi = CHIME2_MIDI;
+		console.info(`[music plan] chosen ${ev.sound.title} ${ev.tuning!.st} st; the alternative ${altSt} st`);
+		expect(inKey(Math.round(altMidi + altSt), { tonic: 0, mode: 'major' })).toBe(true);
+		expect(Math.abs(altMidi + altSt - Math.round(altMidi + altSt))).toBeLessThan(0.02);
 		expect(ev.stopOn).toBe('downbeat');
 		const stop = proposal.items.find((i) => i.id.startsWith('stop:'))!;
 		const secs = (stop.meta as { stopBefore: { seconds: number } }).stopBefore.seconds;
@@ -309,10 +339,10 @@ describe('tune to the key and stop on the bar (measured in the export)', { timeo
 		const hz = frequencyOf(chimeOut, s(HERO / 30) + s(0.01), s(0.1));
 		const midi = 69 + 12 * Math.log2(hz / 440);
 		console.info(
-			`[music plan] the chime plays ${hz.toFixed(2)} Hz = MIDI ${midi.toFixed(3)} (source MIDI 70)`,
+			`[music plan] the chime plays ${hz.toFixed(2)} Hz = MIDI ${midi.toFixed(3)} (source MIDI ${sourceMidi})`,
 		);
 		expect(Math.abs(midi - Math.round(midi))).toBeLessThan(0.05);
 		expect(inKey(Math.round(midi), { tonic: 0, mode: 'major' })).toBe(true);
-		expect(Math.abs(midi - 70)).toBeLessThanOrEqual(1.05);
+		expect(Math.abs(midi - sourceMidi)).toBeLessThanOrEqual(1.05);
 	});
 });

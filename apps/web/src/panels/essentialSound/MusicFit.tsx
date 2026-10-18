@@ -149,7 +149,7 @@ export function MusicFit({ session, seq, clip }: { session: EditorSession; seq: 
 				</p>
 			) : null}
 			<div className="flex items-center gap-2">
-				<span className="w-24 shrink-0 text-pr-small text-pr-muted">{t('Land the drop on')}</span>
+				<span className="w-28 shrink-0 text-pr-small text-pr-muted">{t('Land the drop on')}</span>
 				<Select
 					label={t('Land the drop on')}
 					value={target}
