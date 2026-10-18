@@ -1336,7 +1336,7 @@ resolve them by keeping both sides.
 
 Start now in parallel: **WP-E1, WP-E3, WP-E5, WP-E6, WP-E7** (lanes A–E; their owned files do not overlap, apart from
 the shared registries). Next: **WP-E2** after WP-E1, **WP-E4** after WP-E3 (and WP-E1), **WP-E8** after WP-E2.
-**WP-E9** waits for the human.
+**WP-E9** waited for the human; approved on 2026-10-17 and built (wp-note "Phase 6 → WP-E9").
 
 Each package appends a wp-note section "Phase 6 → WP-E<n> …" (what was built, usage, the commands it ran and their
 results, limits). It must not raise any number in `docs/gaps.md` or `docs/parity.md` without rerunnable evidence.
