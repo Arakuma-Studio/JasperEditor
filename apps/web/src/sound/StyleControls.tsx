@@ -1,7 +1,8 @@
 // The cue grammar and personality controls (spec 12 P6-E10; wp-note "Phase 6 → WP-E6"), shared by Auto Sound Pass…,
 // Suggest Cues… and Preferences ▸ Sound Library ▸ Sound design style: a Personality select with its one-line
 // description, Runs (climb / flat), Typing (auto / keys / words / silent), "Music carries the cuts" and "Duck the music
-// under typing". The values are a `ResolvedSoundStyle`; the dialogs start from the sequence's
+// under typing", and (P6-E11) "Tune chimes to the music's key" and "Stop the music on the bar line". The values are a
+// `ResolvedSoundStyle`; the dialogs start from the sequence's
 // `soundDesign.settings.style` (`resolveSoundStyle`), Preferences writes it with `soundDesign.setSettings {style}`.
 import {
 	type ResolvedSoundStyle,
@@ -49,7 +50,14 @@ export const TYPING_MODE_LABELS: Record<SoundTypingMode, string> = {
 	silent: 'Silent (no typing sounds)',
 };
 
-export type StyleField = 'personality' | 'runs' | 'typing' | 'musicCarriesCuts' | 'duckUnderTyping';
+export type StyleField =
+	| 'personality'
+	| 'runs'
+	| 'typing'
+	| 'musicCarriesCuts'
+	| 'duckUnderTyping'
+	| 'tuneToMusic'
+	| 'stopOnBar';
 
 export function SoundStyleFields(props: {
 	value: ResolvedSoundStyle;
@@ -138,6 +146,22 @@ export function SoundStyleFields(props: {
 					disabled={disabled}
 					onCheckedChange={(on) => set('duckUnderTyping', on)}
 					label={t('Duck the music 6 dB under typing')}
+				/>
+			) : null}
+			{show('tuneToMusic') ? (
+				<Checkbox
+					checked={value.tuneToMusic}
+					disabled={disabled}
+					onCheckedChange={(on) => set('tuneToMusic', on)}
+					label={t("Tune chimes and pitched sounds to the music's key")}
+				/>
+			) : null}
+			{show('stopOnBar') ? (
+				<Checkbox
+					checked={value.stopOnBar}
+					disabled={disabled}
+					onCheckedChange={(on) => set('stopOnBar', on)}
+					label={t('Stop the music on the bar line before a hit')}
 				/>
 			) : null}
 		</fieldset>

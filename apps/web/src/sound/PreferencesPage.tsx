@@ -648,7 +648,7 @@ export function StylePreference() {
 			<p className="text-pr-small text-pr-muted">
 				Saved with the sequence. Auto Sound Pass, Fill Unfilled Cues, Suggest Cues and agents start from it:
 				one click voice, takes for keys, climbing runs, one key per word for fast typing, fewer cut sounds
-				under music.
+				under music, chimes in the music's key, stops on the bar line.
 			</p>
 			{error ? <p className="text-pr-small text-pr-warning">{error}</p> : null}
 		</PrefGroup>

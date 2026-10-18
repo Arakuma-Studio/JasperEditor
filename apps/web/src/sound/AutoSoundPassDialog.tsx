@@ -130,6 +130,8 @@ export function autoPassRequest(
 						typing: c.style.typing,
 						musicCarriesCuts: c.style.musicCarriesCuts,
 						duckUnderTyping: c.style.duckUnderTyping,
+						tuneToMusic: c.style.tuneToMusic,
+						stopOnBar: c.style.stopOnBar,
 					}
 				: {}),
 		},
