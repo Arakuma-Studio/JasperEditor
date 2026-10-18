@@ -10,9 +10,11 @@ import {
 	SOUND_CREDITS_FORMATS,
 	SOUND_DELIVERIES,
 	SOUND_DENSITIES,
+	SOUND_ACK_KEY_RE,
 	SOUND_DESIGN_LIMITS,
 	soundCueFields,
 } from '../../schema/sound.ts';
+import { SOUND_CHECK_CODES, SOUND_CHECK_SEVERITIES } from '../../sound/check.ts';
 import { SFX_DEFAULT_GAIN_MAX_DB, SFX_DEFAULT_GAIN_MIN_DB } from '../../sound/level.ts';
 import { LibraryProvenanceSchema, SOUND_REF_RE } from '../../sound/provenance.ts';
 import { cmd, IdRefSchema, RefDeclSchema, TimeInputSchema, TrackRefSchema } from './common.ts';
@@ -322,6 +324,51 @@ export const SoundDesignSetVerdictCmd = cmd('soundDesign.setVerdict', {
 	reportMixHash: z.string().min(1).max(256).optional(),
 });
 
+/** A Sound Check finding key (`<CODE>:<subject>`, the report's issue id). */
+const FindingKeySchema = z
+	.string()
+	.min(3)
+	.max(SOUND_DESIGN_LIMITS.ackKey)
+	.regex(SOUND_ACK_KEY_RE, 'a Sound Check finding key: <CODE>:<subject> (the issue id of the report)');
+
+/**
+ * Acknowledges a Sound Check finding as a deliberate exception (spec 12 §4 P6-E4; earshot's `qa_ok`): stored in
+ * `soundDesign.acknowledged[key]` with the reason, who did it (the user, or the agent of the transaction) and when, and
+ * the hash of what the finding is about (`target`: its clips and cue, else its frame — as the report gives them; the
+ * engine hashes them now). The next Sound Check leaves it out of the verdict (`counts.acknowledged`) and lists it as
+ * acknowledged until its target changes; then it is reported again, "acknowledged before the change". `key`, `code`,
+ * `severity`, `target` and `message` are the finding's (`issue.id`, `.code`, `.severity`, `.clipIds` / `.cueId` /
+ * `.frame`, `.message.text`). Agents may acknowledge warnings and infos only: an error is the user's call
+ * (`E_APPROVAL_REQUIRED`; the user acknowledges it in the Sound Check panel). Acknowledging the same key again replaces
+ * the entry; at most 500 per sequence (`E_LIMIT`). Result `{key, acknowledged}`.
+ */
+export const SoundDesignAcknowledgeIssueCmd = cmd('soundDesign.acknowledgeIssue', {
+	sequenceId: IdRefSchema.optional(),
+	key: FindingKeySchema,
+	code: z.enum(SOUND_CHECK_CODES),
+	severity: z.enum(SOUND_CHECK_SEVERITIES),
+	/** Why it is deliberate (1–300 characters). */
+	reason: z.string().min(1).max(SOUND_DESIGN_LIMITS.ackReason),
+	target: z
+		.strictObject({
+			clipIds: z.array(IdRefSchema).max(SOUND_DESIGN_LIMITS.placedClips).optional(),
+			cueId: z.string().min(1).max(SOUND_DESIGN_LIMITS.id).optional(),
+			frame: TimeInputSchema.optional(),
+		})
+		.optional(),
+	/** The finding's text, kept with the acknowledgement. */
+	message: z.string().max(SOUND_DESIGN_LIMITS.ackMessage).optional(),
+});
+
+/**
+ * Removes the acknowledgement of a Sound Check finding (`soundDesign.acknowledgeIssue`): the next check counts it
+ * again. Unknown key → `E_NOT_FOUND`. Result `{key, removed}` (the entry removed).
+ */
+export const SoundDesignUnacknowledgeIssueCmd = cmd('soundDesign.unacknowledgeIssue', {
+	sequenceId: IdRefSchema.optional(),
+	key: FindingKeySchema,
+});
+
 /**
  * Sets where the peak of a clip's sound is (spec 12 §2.7 "Peak handle", Shift-drag, Detect Peak): `peakFlicks` =
  * content flicks from the media start, within the media. Writes `sfx.placement` (align `peak`; an audio clip without
@@ -416,4 +463,6 @@ export const SOUND_COMMANDS = [
 	SoundDesignSetCheckCmd,
 	SoundDesignSetVerdictCmd,
 	SoundDesignExpectMixCmd,
+	SoundDesignAcknowledgeIssueCmd,
+	SoundDesignUnacknowledgeIssueCmd,
 ] as const;

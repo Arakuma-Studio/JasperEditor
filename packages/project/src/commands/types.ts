@@ -28,6 +28,8 @@ export const ERROR_CODES = [
 	'E_NOT_OWNER',
 	'E_NOT_IMPLEMENTED',
 	'E_APPROVAL_DENIED',
+	/** Only the user can do this (an agent acknowledging a Sound Check error, spec 12 §4 P6-E4): not retryable. */
+	'E_APPROVAL_REQUIRED',
 	'E_APPROVAL_TIMEOUT',
 	'E_NO_SESSION',
 	'E_INVARIANT',

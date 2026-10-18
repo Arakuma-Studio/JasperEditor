@@ -14,12 +14,14 @@ import {
 	readSoundDesignSettings,
 	type SfxLevel,
 	SOUND_DESIGN_LIMITS,
+	type SoundAcknowledgement,
 	type SoundCheckSummary,
 	type SoundCue,
 	type SoundDesign,
 	type SoundDesignSettings,
 	soundDesignSettingsOf,
 } from '../../schema/sound.ts';
+import { type SoundAckTarget, soundAckInputsHash } from '../../sound/acknowledge.ts';
 import { cueAnchorFrame, cueAnchorTargetExists } from '../../sound/anchor.ts';
 import {
 	SOUND_CHECK_VERDICT_MARKER,
@@ -1364,6 +1366,84 @@ function setVerdict(doc: DDoc, cmd: CommandOf<'soundDesign.setVerdict'>, h: Hand
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// soundDesign.acknowledgeIssue / unacknowledgeIssue (spec 12 §4 P6-E4)
+
+function acknowledgeIssue(doc: DDoc, cmd: CommandOf<'soundDesign.acknowledgeIssue'>, h: HandlerContext) {
+	const seq = h.sequence(doc, cmd.sequenceId);
+	const reason = cmd.reason.trim();
+	if (!reason) h.fail('E_INVALID_PARAM', 'reason must not be empty: say why the finding is deliberate', { path: ['reason'] });
+	if (!cmd.key.startsWith(`${cmd.code}:`))
+		h.fail('E_INVALID_PARAM', `key ${cmd.key} is not a ${cmd.code} finding (keys start with their code)`, {
+			path: ['key'],
+		});
+	const origin = h.tx.origin;
+	const agent = typeof origin === 'object' ? origin.agent : null;
+	if (agent !== null && cmd.severity === 'error')
+		h.fail(
+			'E_APPROVAL_REQUIRED',
+			`Only the user can acknowledge an error (${cmd.key}): ask them to review it in the Sound Check panel, or fix it`,
+		);
+	const target: SoundAckTarget = {};
+	const clipIds = [...new Set(cmd.target?.clipIds ?? [])];
+	for (const [i, id] of clipIds.entries())
+		if (!Object.hasOwn(seq.clips, id))
+			h.fail('E_NOT_FOUND', `Clip not found in ${seq.id}: ${id}`, { path: ['target', 'clipIds', String(i)] });
+	if (clipIds.length) target.clipIds = clipIds;
+	if (cmd.target?.cueId !== undefined) {
+		const sd = soundDesignOf(seq, false);
+		if (!sd || !Object.hasOwn(sd.cues, cmd.target.cueId))
+			h.fail('E_NOT_FOUND', `Sound cue not found: ${cmd.target.cueId}`, { path: ['target', 'cueId'] });
+		target.cueId = cmd.target.cueId;
+	}
+	if (cmd.target?.frame !== undefined && !clipIds.length && target.cueId === undefined) {
+		const frame = h.frame(seq, cmd.target.frame);
+		const last = Math.max(0, Math.ceil(sequenceDuration(seq as unknown as Sequence)));
+		if (!(frame >= 0) || frame > last)
+			h.fail('E_INVALID_PARAM', `target.frame must be inside the sequence (0–${last})`, {
+				path: ['target', 'frame'],
+			});
+		target.frame = frame;
+	}
+	const sd = soundDesignOf(seq, true);
+	const acks = (sd.acknowledged ?? {}) as Record<string, SoundAcknowledgement>;
+	if (!Object.hasOwn(acks, cmd.key) && Object.keys(acks).length >= SOUND_DESIGN_LIMITS.acknowledged)
+		h.fail(
+			'E_LIMIT',
+			`A sequence holds at most ${SOUND_DESIGN_LIMITS.acknowledged} acknowledged findings: unacknowledge some first`,
+		);
+	const entry: SoundAcknowledgement = {
+		code: cmd.code,
+		severity: cmd.severity,
+		reason,
+		by: agent !== null ? 'agent' : 'user',
+		...(agent !== null ? { agent: agent.slice(0, 64) } : {}),
+		at: h.ctx.now(),
+		target,
+		inputsHash: soundAckInputsHash(doc as unknown as ProjectDocument, seq.id, target) || 'none',
+		...(cmd.message ? { message: cmd.message.slice(0, SOUND_DESIGN_LIMITS.ackMessage) } : {}),
+	};
+	const next: Record<string, SoundAcknowledgement> = {};
+	for (const [k, v] of Object.entries(acks)) if (k !== cmd.key) next[k] = plainCopy(v) as SoundAcknowledgement;
+	next[cmd.key] = entry;
+	sd.acknowledged = next as Draft<Record<string, SoundAcknowledgement>>;
+	return { key: cmd.key, acknowledged: plainCopy(entry) };
+}
+
+function unacknowledgeIssue(doc: DDoc, cmd: CommandOf<'soundDesign.unacknowledgeIssue'>, h: HandlerContext) {
+	const seq = h.sequence(doc, cmd.sequenceId);
+	const sd = soundDesignOf(seq, false);
+	const acks = sd?.acknowledged as Record<string, SoundAcknowledgement> | undefined;
+	if (!sd || !acks || !Object.hasOwn(acks, cmd.key))
+		h.fail('E_NOT_FOUND', `No acknowledged finding ${cmd.key} in ${seq.id}`, { path: ['key'] });
+	const removed = plainCopy(acks![cmd.key]!) as SoundAcknowledgement;
+	const next: Record<string, SoundAcknowledgement> = {};
+	for (const [k, v] of Object.entries(acks!)) if (k !== cmd.key) next[k] = plainCopy(v) as SoundAcknowledgement;
+	if (Object.keys(next).length) sd!.acknowledged = next as Draft<Record<string, SoundAcknowledgement>>;
+	else delete sd!.acknowledged;
+	return { key: cmd.key, removed };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // soundDesign.expectMix
 
 function expectMix(doc: DDoc, cmd: CommandOf<'soundDesign.expectMix'>, h: HandlerContext) {
@@ -1397,6 +1477,8 @@ export const soundHandlers = {
 	'soundDesign.setCheck': setCheck,
 	'soundDesign.setVerdict': setVerdict,
 	'soundDesign.expectMix': expectMix,
+	'soundDesign.acknowledgeIssue': acknowledgeIssue,
+	'soundDesign.unacknowledgeIssue': unacknowledgeIssue,
 } satisfies HandlerMap;
 
 export type { Clip, DClip };
