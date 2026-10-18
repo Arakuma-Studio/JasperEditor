@@ -38,6 +38,7 @@ import { soundCommands } from './sound.ts';
 import { soundCheckCommands } from './sound-check.ts';
 import { soundCueCommands } from './sound-cues.ts';
 import { soundDesignCommands } from './sound-design.ts';
+import { soundBedCommands } from './sound-beds.ts';
 import { soundMixCommands } from './sound-mix.ts';
 import { speechCommands } from './speech.ts';
 import { structureCommands } from './structure.ts';
@@ -101,6 +102,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	soundCueCommands,
 	soundDesignCommands,
 	soundMixCommands,
+	soundBedCommands,
 	soundCheckCommands,
 	// proposals (spec 12 §2.5): review in the Timeline, Hear proposal
 	proposalCommands,

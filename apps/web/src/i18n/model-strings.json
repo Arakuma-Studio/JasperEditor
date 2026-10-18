@@ -5771,5 +5771,8 @@
   "Zoom Lens",
   "Zoom Level",
   "Zoom Producer Point",
-  "Zooms"
+  "Zooms",
+  "Lay Ambience Bed",
+  "Fill it with room tone (\"{0}\", {1} dB, looped)",
+  "It adds room tone under the gap in the dialogue: \"{0}\", {1} dB from the dialogue’s noise floor in spectral shape; listen that it blends in"
 ]
