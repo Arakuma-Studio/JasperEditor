@@ -9827,7 +9827,52 @@ Item 7, the other CARRYOVER.md entries (preview-transport ones skipped, CLAP is 
 
 #### Verified (measured; build server `jasper-build`, 16 × Intel Haswell vCPU, Node 20.20.2)
 
-VERIFIED_PLACEHOLDER
+Every command ran on the build server through `remote.sh` (its ffmpeg for the engine tests is the vendored LGPL
+7.1.5 build: "Unknown encoder 'libx264'" before item 1).
+
+- **Failing first** (the new tests on the old sources): item 1 `scripts/fixture-gpl-encoders.test.mjs` listed the 15
+  libx264 sites (then the 2 `eq` ones), `sound-design-motion` / `sound-dialogue-consistency` failed in `beforeAll`;
+  item 2 `toast-placement.test.tsx` "expected '16px' to be '92px'"; item 3 5 failed (web toast ×2, engine numbers,
+  provenance, INEXACT); item 4 the visual route never aborted, the pre-WP-E7 beats check aborted after 1 ms; item 5 4
+  failed (0.25 s in the menu and the checkbox, 200 instead of 404, no `stopsOnBar` while the plan said "on the bar
+  line … 0.3 s"); item 6 7 failed (Spanish plan summary, params in the plan and the job result).
+- **Item 1, the whole engine suite on the LGPL ffmpeg** — `pnpm vitest run --project @jasper/engine --maxWorkers=8`
+  (load 1–44, another agent's runs): 149 files passed, 16 skipped; **1 600 tests passed, 1 failed, 102 skipped**
+  (17.4 min); no "Unknown encoder" and no `libx264` anywhere in the log. The failure, `gaps-avc3-playback` (Chrome
+  playback: frame 12 instead of 11 after a seek, at load ≈ 40), passed alone (2 / 2). `masks-track` on the FFV1 plate:
+  6 / 6 (≤ 0.6 px), `sound-design-motion` 11 (1 perf skipped), `sound-dialogue-consistency` 1, MCP `sound-motion` 1.
+  The compositions fixtures with `REMOTION_E2E=1`: `fx-motion-blur`, `fx-sapphire-time-flicker` (the `geq` flicker is
+  flattened by S_FlickerRemove), `fx-sapphire-stylize-other`, `fx-sapphire-distort-warp` — 4 files, 13 tests passed
+  (21 min of renders); the gallery tests need their output directories (not run). Fixtures made with
+  `JASPER_FFMPEG=vendor/…/ffmpeg JASPER_FFMPEG_LGPL_ONLY=1 pnpm fixtures` (OpenH264) for the e2e below.
+- **E2E** (`pnpm build`, `E2E_PORT=53020 E2E_SKIP_BUILD=1 E2E_SERVER_TIMEOUT_MS=600000 pnpm exec playwright test
+  e2e/sound-review.spec.ts e2e/sound-beds.spec.ts e2e/source-range.spec.ts`, engine on the vendored LGPL ffmpeg):
+  **6 passed** (1.8 min), with no toast dismissed any more: "Auto Sound Pass… → … → export" (the failing one) exports
+  with "Proposed sounds for 3 cues" and "Applied 3 of 3 sounds from you" up — screenshot
+  `auto-pass-export-with-toasts.png` looked at: both toasts above Export mode's footer, Cancel / Export clear;
+  `exportViaUi` checks no toast or notice overlaps the button —, peaks 0 / 0 / 0 samples from the cue frames; the beds
+  export (joints 0.87 / 0.32 dB, the hole −38.27 dBFS); `source-range` Replace Footage with the VP9 render keeps source
+  timing.
+- **Gate** — `SD_GIT=1 … pnpm lint` (Biome, tokens, anime, layers, assets: ok), `pnpm -r --no-bail typecheck` (no
+  errors), `pnpm notices --check` (current), `node scripts/i18n.mjs --check` (es.json covers every string).
+- **Other packages** — `pnpm vitest run --project @jasper/{project,web,mcp,ui,session,api,audio-fx,engine-client,testkit}
+  --project scripts --maxWorkers=8`: 484 files, **4 933 passed, 2 failed, 8 skipped**; the two failures —
+  `project/color.test.ts` (a 33³ bake 54.0 ms over its 2× budget at load ≈ 15) and `mcp/sound-packs.test.ts` (its engine
+  not found on its fixed port) — passed alone (23 / 23). `@jasper/compositions`: 58 files passed, 2 failed (the
+  `capture-safe-canvas` / `serial-audio-context` Chrome 142 shims, failing the same before this branch, WP6.5b).
+
+#### Integration
+
+`feat/sound-design` merged in at `1fcdbcf6` (WP-E9 Describe-it search: conflicts in `packages/testkit/package.json` — both
+exports kept, `./fixture-video` and `./tiny-clap` —, `docs/gaps.md` and this wp-note — both sections —, `es.json` — both
+sides' strings — and `en.json`, regenerated with `pnpm i18n`). WP-E9's new sounds routes start jobs; none does
+cancellable work inside the request (checked: item 4 needs nothing there). Then, on the build server (load 3–13):
+`SD_GIT=1 … pnpm lint` ok; `pnpm -r --no-bail typecheck` no errors; `pnpm notices --check` current;
+`node scripts/i18n.mjs --check` (es.json covers all 10 517 strings); `pnpm vitest run --project @jasper/{project,ui,api,
+session} --project scripts --maxWorkers=8` — 228 files, **2 602 passed**; `pnpm vitest run
+apps/engine/test/{route-client-gone,sound*,music-picture,audio-beats-metre,export-container,masks-track,jobs}
+apps/mcp/test/{sound*,music-picture,readme-tools,conventions} apps/web/test/{sound*,export*,i18n} --maxWorkers=8` — 113
+files, **793 passed**, 4 skipped; `pnpm build`, LGPL fixtures, and the three e2e specs again — **6 passed** (1.7 min).
 
 #### Limits and notes for the next packages
 
@@ -9838,3 +9883,4 @@ VERIFIED_PLACEHOLDER
 - Only the sound and format export warnings carry `params`; planner blockers, job errors and other engine messages stay
   English (the pattern is on `ExportWarningParamsSchema` and in `export/warning-text.ts`).
 - The fixtures changed codec, not content: the compositions gallery images (docs) were not regenerated here.
+- Not in this package: CLAP (WP-E9) and the preview transport items (the next package).
