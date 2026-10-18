@@ -220,10 +220,20 @@ test('room tone fills the dialogue hole from Sound Check; an ambience bed per sc
 		(t) => t.outgoingClipId && t.incomingClipId && bed.some((c) => c.id === t.incomingClipId),
 	);
 	expect(joints.length).toBe(bed.length - 1);
+	// the whole sequence in the timeline (Zoom to Sequence)
+	await page.getByTestId('timeline-track-area').click({ position: { x: 5, y: 5 } });
+	await page.keyboard.press('Backslash');
 	await page.waitForTimeout(800);
 	await page.getByTestId('timeline-track-area').screenshot({ path: join(outDir, '5-timeline.png') });
+	// ducked under the dialogue: Volume keyframes on the pieces the dialogue plays over
+	const ducked = await query<Record<string, { volumeDb?: { keyframes?: unknown[] } }>>(page, 'doc.get', {
+		path: ['sequences', Object.keys(await query<Record<string, unknown>>(page, 'doc.get', { path: ['sequences'] }))[0]!, 'clips'],
+	});
+	expect(bed.some((c) => (ducked[c.id]?.volumeDb?.keyframes ?? []).length > 0)).toBe(true);
 
-	// 3. the export, measured
+	// 3. the export, measured (the result toasts would cover the Export dialog's footer)
+	for (const d of await page.getByTestId('toast-host').getByRole('button', { name: 'Dismiss' }).all())
+		await d.click().catch(() => {});
 	const { file } = await exportViaUi(page, request, {
 		engine: 'native',
 		fileName: 'beds.mp4',

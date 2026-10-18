@@ -10280,5 +10280,8 @@
   "Shot changes (measured)": "Cambios de plano (medidos)",
   "The sequence is empty": "La secuencia está vacía",
   "Your scene": "Su escena",
-  "{0} (project)": "{0} (proyecto)"
+  "{0} (project)": "{0} (proyecto)",
+  "Imports “{0}” into the project": "Importa “{0}” al proyecto",
+  "Lays room tone on the “Room Tone” track from {0} to {1}, looped, with short fades under the dialogue": "Coloca tono de sala en la pista “Room Tone” de {0} a {1}, en bucle, con fundidos cortos bajo el diálogo",
+  "Lays an ambience bed on the “Ambience” track from {0} to {1}": "Coloca un fondo de ambiente en la pista “Ambience” de {0} a {1}"
 }

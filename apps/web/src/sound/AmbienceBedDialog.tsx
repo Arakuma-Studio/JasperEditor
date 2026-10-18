@@ -395,16 +395,19 @@ export function AmbienceBedDialog(
 											options={bedOptions}
 										/>
 									</div>
-									{i > 0 ? (
-										<Checkbox
-											checked={!!edits[i]?.join}
-											disabled={busy}
-											onCheckedChange={(v) =>
-												setEdits((list) => list.map((e, k) => (k === i ? { ...e, join: v } : e)))
-											}
-											label={t('Join the scene before')}
-										/>
-									) : null}
+									{/* a fixed column: the beds line up whether a row can join the one before or not */}
+									<div className="w-[190px] shrink-0">
+										{i > 0 ? (
+											<Checkbox
+												checked={!!edits[i]?.join}
+												disabled={busy}
+												onCheckedChange={(v) =>
+													setEdits((list) => list.map((e, k) => (k === i ? { ...e, join: v } : e)))
+												}
+												label={t('Join the scene before')}
+											/>
+										) : null}
+									</div>
 								</div>
 								<span className="pl-[28px] text-pr-small text-pr-muted pr-tabular">{bedSceneLine(s)}</span>
 							</li>
