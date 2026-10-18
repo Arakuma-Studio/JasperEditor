@@ -132,7 +132,7 @@ export function LogTab(props: {
 				</Button>
 				<Button
 					variant="quiet"
-					data-testid="sound-listen-spectrogram"
+					data-testid="sound-listen-spectrogram-toggle"
 					aria-pressed={showSpec}
 					disabled={!shown || !engine?.soundVisual}
 					disabledReason={t('Listen first')}

@@ -173,7 +173,7 @@ test('Log tab and listen_to_sequence on the Phase 4 fixture with a knock in the 
 	const sel = await query<{ selection: { timeline?: { clips?: string[] } } }>(page, 'selection.get');
 	expect(sel.selection.timeline?.clips).toEqual([dialogueClip]);
 	const selection = JSON.stringify(sel.selection);
-	await panel().getByTestId('sound-listen-spectrogram').click();
+	await panel().getByTestId('sound-listen-spectrogram-toggle').click();
 	await expect(panel().getByTestId('sound-listen-spectrogram')).toHaveAttribute('data-frames', /\d+/, {
 		timeout: 120_000,
 	});

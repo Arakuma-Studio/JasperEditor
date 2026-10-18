@@ -344,7 +344,7 @@ describe('Sound Check ▸ Log tab', () => {
 		await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
 		expect((writeText.mock.calls[0] as unknown as [string])[0]).toContain(result.text);
 		// the spectrogram of the listened range, marked at the current line
-		fireEvent.click(within(log).getByTestId('sound-listen-spectrogram'));
+		fireEvent.click(within(log).getByTestId('sound-listen-spectrogram-toggle'));
 		await waitFor(() => expect(eng.visuals).toHaveLength(1));
 		expect(eng.visuals[0]).toMatchObject({
 			sequenceId: f.seqId,
