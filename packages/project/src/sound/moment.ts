@@ -45,7 +45,11 @@ export function planMomentPlacement(input: {
 			return { ok: false, code: 'E_INVALID_PARAM', message: 'The moment starts after the end of the sound' };
 		sourceOutFlicks = Math.min(sourceOutFlicks, media);
 	}
-	if (!Number.isSafeInteger(sourceInFlicks) || !Number.isSafeInteger(sourceOutFlicks) || sourceOutFlicks <= sourceInFlicks)
+	if (
+		!Number.isSafeInteger(sourceInFlicks) ||
+		!Number.isSafeInteger(sourceOutFlicks) ||
+		sourceOutFlicks <= sourceInFlicks
+	)
 		return { ok: false, code: 'E_INVALID_PARAM', message: 'The moment’s range is empty or out of bounds' };
 	const fpf = flicksPerFrame(input.seq.settings.frameRate);
 	if (!(fpf > 0)) return { ok: false, code: 'E_INVALID_PARAM', message: 'The sequence has no frame rate' };
@@ -57,7 +61,13 @@ export function planMomentPlacement(input: {
 	);
 	const commands: Record<string, unknown>[] = [];
 	if (track.kind === 'new')
-		commands.push({ type: 'track.add', sequenceId: input.seq.id, kind: 'audio', name: track.name, ref: '$momentTrack' });
+		commands.push({
+			type: 'track.add',
+			sequenceId: input.seq.id,
+			kind: 'audio',
+			name: track.name,
+			ref: '$momentTrack',
+		});
 	commands.push({
 		type: 'clip.place',
 		sequenceId: input.seq.id,

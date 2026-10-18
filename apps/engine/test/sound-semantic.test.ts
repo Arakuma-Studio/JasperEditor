@@ -19,6 +19,7 @@ import {
 import { encodeWav } from '@jasper/audio-dsp';
 import { appdirPaths } from '@jasper/config';
 import { createCounterIdSource, createEmptyProject, makeEnvelope } from '@jasper/project';
+import { writeTinyClapCatalog } from '@jasper/testkit/tiny-clap';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { WebSocket } from 'ws';
@@ -27,7 +28,6 @@ import type { SoundService } from '../src/sounds/service.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, H, JSON_H, makeApp, tempAppdir, until } from './helpers.ts';
 import { PACK, SR } from './sound-fixtures.ts';
-import { writeTinyClapCatalog } from '@jasper/testkit/tiny-clap';
 
 const ENV_KEYS = [
 	'JASPER_SOUND_STARTER_DIR',
@@ -106,9 +106,20 @@ afterAll(async () => {
 const wait = (app: FastifyInstance, id: string): Promise<EngineJob> => coreServices(app).queue.wait(id);
 const sounds = (app: FastifyInstance) => app.jasper.services.sounds as SoundService;
 
-async function json(app: FastifyInstance, method: 'GET' | 'POST' | 'DELETE', url: string, payload?: unknown, headers: Record<string, string> = JSON_H) {
+async function json(
+	app: FastifyInstance,
+	method: 'GET' | 'POST' | 'DELETE',
+	url: string,
+	payload?: unknown,
+	headers: Record<string, string> = JSON_H,
+) {
 	const { 'content-type': _ct, ...plain } = headers;
-	const r = await app.inject({ method, url, headers: payload === undefined ? plain : headers, ...(payload === undefined ? {} : { payload: payload as never }) });
+	const r = await app.inject({
+		method,
+		url,
+		headers: payload === undefined ? plain : headers,
+		...(payload === undefined ? {} : { payload: payload as never }),
+	});
 	return { status: r.statusCode, body: r.json() as Record<string, unknown> };
 }
 
@@ -155,9 +166,16 @@ describe('Describe-it search without the model', { timeout: 300_000 }, () => {
 		const st = SoundSemanticStatusSchema.parse((await json(app, 'GET', '/api/sounds/semantic')).body);
 		expect(st).toMatchObject({ status: 'not-installed', embedded: 0, job: null });
 		expect(st.total).toBe(4);
-		const models = SoundSemanticModelsResponseSchema.parse((await json(app, 'GET', '/api/sounds/semantic/models')).body).models;
+		const models = SoundSemanticModelsResponseSchema.parse(
+			(await json(app, 'GET', '/api/sounds/semantic/models')).body,
+		).models;
 		expect(models.map((m) => m.id)).toEqual(['clap-test', 'clap-pending']);
-		expect(models[0]).toMatchObject({ installed: false, available: true, unavailableReason: null, license: 'Apache-2.0' });
+		expect(models[0]).toMatchObject({
+			installed: false,
+			available: true,
+			unavailableReason: null,
+			license: 'Apache-2.0',
+		});
 		expect(models[0]!.missingBytes).toBe(models[0]!.sizeBytes);
 		expect(models[1]).toMatchObject({
 			available: false,
@@ -173,11 +191,15 @@ describe('Describe-it search without the model', { timeout: 300_000 }, () => {
 		const pending = await json(app, 'POST', '/api/sounds/semantic/models/clap-pending/install', undefined);
 		expect(pending).toMatchObject({ status: 409, body: { code: 'MODEL_DOWNLOAD_PENDING' } });
 		expect((await json(app, 'POST', '/api/sounds/semantic/models/nope/install', undefined)).status).toBe(404);
-		expect((await json(app, 'POST', '/api/sounds/semantic/embed', {})).body).toMatchObject({ code: 'MODEL_NOT_INSTALLED' });
+		expect((await json(app, 'POST', '/api/sounds/semantic/embed', {})).body).toMatchObject({
+			code: 'MODEL_NOT_INSTALLED',
+		});
 		const id = d.results[0]!.sound.id;
 		const m = await json(app, 'POST', `/api/sounds/${id}/moments`, { description: 'a high tone' });
 		expect(m).toMatchObject({ status: 409, body: { code: 'MODEL_NOT_INSTALLED' } });
-		const caps = (await json(app, 'GET', '/api/capabilities')).body as { features: { sound: { describe: { status: string } } } };
+		const caps = (await json(app, 'GET', '/api/capabilities')).body as {
+			features: { sound: { describe: { status: string } } };
+		};
 		expect(caps.features.sound.describe.status).toBe('not-installed');
 	});
 });
@@ -215,8 +237,12 @@ describe('Describe-it search with the model', { timeout: 300_000 }, () => {
 		expect(titles(kw)).toEqual(['SFX_0003 glass']);
 		expect(kw.describe).toBeUndefined();
 		// q still filters in describe mode
-		expect(titles(await search(app, 'q=glass&describe=high&license=any')).every((t) => t === 'SFX_0003 glass')).toBe(true);
-		const caps = (await json(app, 'GET', '/api/capabilities')).body as { features: { sound: { describe: { status: string } } } };
+		expect(
+			titles(await search(app, 'q=glass&describe=high&license=any')).every((t) => t === 'SFX_0003 glass'),
+		).toBe(true);
+		const caps = (await json(app, 'GET', '/api/capabilities')).body as {
+			features: { sound: { describe: { status: string } } };
+		};
 		expect(caps.features.sound.describe.status).toBe('ready');
 	});
 
@@ -229,7 +255,9 @@ describe('Describe-it search with the model', { timeout: 300_000 }, () => {
 		expect((await post({ description: 'x', lengthSec: 0.1 })).status).toBe(400);
 		expect((await post({ description: 'x', count: 11 })).status).toBe(400);
 		expect((await post({ description: 'x', extra: 1 })).status).toBe(400);
-		expect((await post({ description: 'x', startSec: 5, endSec: 2 })).body).toMatchObject({ code: 'INVALID_RANGE' });
+		expect((await post({ description: 'x', startSec: 5, endSec: 2 })).body).toMatchObject({
+			code: 'INVALID_RANGE',
+		});
 		expect((await post({ description: 'x', startSec: 100 })).body).toMatchObject({ code: 'INVALID_RANGE' });
 		expect((await post({ description: 'x' }, 'snd_0123456789abcdef')).status).toBe(404);
 		expect((await post({ description: 'x' }, '../etc')).status).toBe(404);
@@ -239,10 +267,21 @@ describe('Describe-it search with the model', { timeout: 300_000 }, () => {
 	it('finds the bright moment of a long recording, trimmed, and reuses its windows', async () => {
 		const s = await search(app, 'q=field&license=any');
 		const id = s.results[0]!.sound.id;
-		const r = await json(app, 'POST', `/api/sounds/${id}/moments?wait=1`, { description: 'high', lengthSec: 1, count: 2 });
+		const r = await json(app, 'POST', `/api/sounds/${id}/moments?wait=1`, {
+			description: 'high',
+			lengthSec: 1,
+			count: 2,
+		});
 		expect(r.status, JSON.stringify(r.body)).toBe(200);
 		const res = SoundMomentResultSchema.parse((r.body as unknown as EngineJob).result);
-		expect(res).toMatchObject({ soundId: id, description: 'high', model: 'clap-test', startSec: 0, endSec: 40, lengthSec: 1 });
+		expect(res).toMatchObject({
+			soundId: id,
+			description: 'high',
+			model: 'clap-test',
+			startSec: 0,
+			endSec: 40,
+			lengthSec: 1,
+		});
 		const best = res.moments[0]!;
 		expect(best.startSec).toBeGreaterThanOrEqual(22.5);
 		expect(best.endSec).toBeLessThanOrEqual(24.6);
@@ -250,13 +289,21 @@ describe('Describe-it search with the model', { timeout: 300_000 }, () => {
 		expect(res.moments.length).toBeLessThanOrEqual(2);
 		expect(res.computed).toBeGreaterThan(0);
 		// the same recording again: every window comes from the cache
-		const again = await json(app, 'POST', `/api/sounds/${id}/moments?wait=1`, { description: 'high', lengthSec: 1, count: 2 });
+		const again = await json(app, 'POST', `/api/sounds/${id}/moments?wait=1`, {
+			description: 'high',
+			lengthSec: 1,
+			count: 2,
+		});
 		const res2 = SoundMomentResultSchema.parse((again.body as unknown as EngineJob).result);
 		expect(res2.computed).toBe(0);
 		expect(res2.cached).toBe(res.computed + res.cached);
 		expect(res2.moments).toEqual(res.moments);
 		// a range: only that part is searched
-		const part = await json(app, 'POST', `/api/sounds/${id}/moments?wait=1`, { description: 'high', startSec: 0, endSec: 15 });
+		const part = await json(app, 'POST', `/api/sounds/${id}/moments?wait=1`, {
+			description: 'high',
+			startSec: 0,
+			endSec: 15,
+		});
 		const res3 = SoundMomentResultSchema.parse((part.body as unknown as EngineJob).result);
 		expect(res3.endSec).toBe(15);
 		for (const m of res3.moments) expect(m.endSec).toBeLessThanOrEqual(15);
@@ -283,7 +330,10 @@ describe('Describe-it search with the model', { timeout: 300_000 }, () => {
 		const svc = sounds(app).semantic;
 		const dir = join(appdirPaths(app.appdir).root, 'models', 'sound', 'clap-test');
 		await svc.runtime.embedTexts(dir, ['warm up']);
-		const pending = svc.runtime.embedTexts(dir, Array.from({ length: 400 }, (_, i) => `text ${i}`));
+		const pending = svc.runtime.embedTexts(
+			dir,
+			Array.from({ length: 400 }, (_, i) => `text ${i}`),
+		);
 		(svc.runtime as unknown as { child: { kill(s: string): void } }).child.kill('SIGKILL');
 		await expect(pending).rejects.toMatchObject({ code: 'CLAP_CRASHED' });
 		expect((await svc.runtime.embedTexts(dir, ['again'])).length).toBe(1);
@@ -293,21 +343,37 @@ describe('Describe-it search with the model', { timeout: 300_000 }, () => {
 		// a cancelled request is dropped
 		const ac = new AbortController();
 		ac.abort();
-		await expect(svc.runtime.embedTexts(dir, ['x'], ac.signal)).rejects.toMatchObject({ code: 'JOB_CANCELLED' });
+		await expect(svc.runtime.embedTexts(dir, ['x'], ac.signal)).rejects.toMatchObject({
+			code: 'JOB_CANCELLED',
+		});
 	});
 });
 
 describe('removing the model', { timeout: 300_000 }, () => {
 	const TOKEN = 'tok_clap_0123456789abcdef';
 	const KEY = 'key_clap_0123456789abcdef';
-	const AGENT = { ...H, authorization: `Bearer ${TOKEN}`, [AGENT_NAME_HEADER]: 'clap-agent', 'content-type': 'application/json' };
-	const EDITOR = { ...H, cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}`, 'content-type': 'application/json' };
+	const AGENT = {
+		...H,
+		authorization: `Bearer ${TOKEN}`,
+		[AGENT_NAME_HEADER]: 'clap-agent',
+		'content-type': 'application/json',
+	};
+	const EDITOR = {
+		...H,
+		cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}`,
+		'content-type': 'application/json',
+	};
 
 	async function editorWindow(app: FastifyInstance & { appdir: string }) {
 		const doc = createEmptyProject({ ids: createCounterIdSource(5), name: 'Clap', preset: 'hd-1080p-30' });
 		const file = appdirPaths(app.appdir).projectFile(doc.projectId);
 		mkdirSync(join(file, '..'), { recursive: true });
-		writeFileSync(file, JSON.stringify(makeEnvelope(doc, { revision: 1, savedAt: '2026-10-18T00:00:00.000Z', platform: 'test' })));
+		writeFileSync(
+			file,
+			JSON.stringify(
+				makeEnvelope(doc, { revision: 1, savedAt: '2026-10-18T00:00:00.000Z', platform: 'test' }),
+			),
+		);
 		const ws: WebSocket = await app.injectWS('/agent', { headers: EDITOR });
 		const cards: { approvalId: string; answerKey: string; summary: string; label: string }[] = [];
 		let wake: (() => void) | null = null;
@@ -318,14 +384,22 @@ describe('removing the model', { timeout: 300_000 }, () => {
 				wake?.();
 			}
 		});
-		ws.send(JSON.stringify({ type: 'hello', projectId: doc.projectId, sessionId: 'ses_1', leaseId: 'lease_1' }));
+		ws.send(
+			JSON.stringify({ type: 'hello', projectId: doc.projectId, sessionId: 'ses_1', leaseId: 'lease_1' }),
+		);
 		await new Promise((r) => setTimeout(r, 100));
 		const card = async (n: number) => {
 			while (cards.length < n) await new Promise<void>((r) => (wake = r));
 			return cards[n - 1]!;
 		};
 		const answer = (c: (typeof cards)[number], decision: 'approved' | 'denied') =>
-			ws.send(JSON.stringify({ type: 'event', event: 'agent.approval.resolve', payload: { approvalId: c.approvalId, decision, answerKey: c.answerKey } }));
+			ws.send(
+				JSON.stringify({
+					type: 'event',
+					event: 'agent.approval.resolve',
+					payload: { approvalId: c.approvalId, decision, answerKey: c.answerKey },
+				}),
+			);
 		return { card, answer, cards };
 	}
 
@@ -335,7 +409,9 @@ describe('removing the model', { timeout: 300_000 }, () => {
 		await installTiny(app, AGENT);
 		// the install embeds the library by itself (it starts once the install job has ended)
 		await until(async () => {
-			const s = SoundSemanticStatusSchema.parse((await json(app, 'GET', '/api/sounds/semantic', undefined, AGENT)).body);
+			const s = SoundSemanticStatusSchema.parse(
+				(await json(app, 'GET', '/api/sounds/semantic', undefined, AGENT)).body,
+			);
 			return s.job === null && s.embedded === s.total;
 		}, 120_000);
 		const del = () => json(app, 'DELETE', '/api/sounds/semantic/models/clap-test', undefined, AGENT);
@@ -352,13 +428,17 @@ describe('removing the model', { timeout: 300_000 }, () => {
 		expect(ok.status, JSON.stringify(ok.body)).toBe(200);
 		expect(ok.body).toMatchObject({ modelId: 'clap-test' });
 		expect(ok.body.freedBytes as number).toBeGreaterThan(0);
-		const st = SoundSemanticStatusSchema.parse((await json(app, 'GET', '/api/sounds/semantic', undefined, AGENT)).body);
+		const st = SoundSemanticStatusSchema.parse(
+			(await json(app, 'GET', '/api/sounds/semantic', undefined, AGENT)).body,
+		);
 		expect(st.status).toBe('not-installed');
 		const r = await json(app, 'GET', '/api/sounds?describe=glass&license=any', undefined, AGENT);
 		expect(SoundSearchResponseSchema.parse(r.body).describe).toMatchObject({ mode: 'keywords' });
 		// nothing installed any more: removing again asks nothing
 		expect((await del()).status).toBe(200);
 		expect(editor.cards).toHaveLength(1);
-		expect((await json(app, 'DELETE', '/api/sounds/semantic/models/nope', undefined, AGENT)).status).toBe(404);
+		expect((await json(app, 'DELETE', '/api/sounds/semantic/models/nope', undefined, AGENT)).status).toBe(
+			404,
+		);
 	});
 });

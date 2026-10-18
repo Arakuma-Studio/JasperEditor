@@ -43,7 +43,8 @@ function tensor(name: string, dims: number[], data: Float32Array): number[] {
 	];
 }
 
-const attrInts = (name: string, v: number[]) => bytes(5, [...str(1, name), ...v.flatMap((x) => vint(8, x)), ...vint(20, 7)]);
+const attrInts = (name: string, v: number[]) =>
+	bytes(5, [...str(1, name), ...v.flatMap((x) => vint(8, x)), ...vint(20, 7)]);
 const attrInt = (name: string, v: number) => bytes(5, [...str(1, name), ...vint(3, v), ...vint(20, 2)]);
 
 function node(op: string, inputs: string[], outputs: string[], attrs: number[][] = []): number[] {
@@ -160,7 +161,12 @@ export function writeTinyClapCatalog(dir: string, opts: { pending?: boolean } = 
 		const p = join(src, name);
 		writeFileSync(p, data);
 		const buf = typeof data === 'string' ? Buffer.from(data) : Buffer.from(data);
-		return { path: name, url: p, sha256: createHash('sha256').update(buf).digest('hex'), sizeBytes: buf.byteLength };
+		return {
+			path: name,
+			url: p,
+			sha256: createHash('sha256').update(buf).digest('hex'),
+			sizeBytes: buf.byteLength,
+		};
 	});
 	const entry = (id: string, fileList: CatalogFile[]) => ({
 		id,
@@ -177,7 +183,12 @@ export function writeTinyClapCatalog(dir: string, opts: { pending?: boolean } = 
 	});
 	const sound = [entry('clap-test', list)];
 	if (opts.pending)
-		sound.push(entry('clap-pending', list.map((f, i) => (i === 0 ? { ...f, path: 'pending.onnx', url: null } : f))));
+		sound.push(
+			entry(
+				'clap-pending',
+				list.map((f, i) => (i === 0 ? { ...f, path: 'pending.onnx', url: null } : f)),
+			),
+		);
 	const catalog = join(dir, 'catalog.json');
 	writeFileSync(catalog, JSON.stringify({ models: [], sound }));
 	return catalog;

@@ -120,8 +120,7 @@ export class SoundModelStore {
 				let missing = 0;
 				if (!installed)
 					for (const f of e.files)
-						if (!f.url?.startsWith(BUNDLED))
-							missing += await this.store.missingBytes(filesOf(e.id, [f]));
+						if (!f.url?.startsWith(BUNDLED)) missing += await this.store.missingBytes(filesOf(e.id, [f]));
 				return {
 					id: e.id,
 					name: e.name,

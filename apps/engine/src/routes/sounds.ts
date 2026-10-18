@@ -154,9 +154,17 @@ export default async function soundRoutes(app: FastifyInstance): Promise<void> {
 			const id = req.params.modelId;
 			const m = (await svc.semantic.listModels()).find((x) => x.id === id);
 			if (!m || !processing)
-				throw new HttpError(404, 'MODEL_UNKNOWN', `Unknown Describe-it search model ${String(id).slice(0, 64)}`);
+				throw new HttpError(
+					404,
+					'MODEL_UNKNOWN',
+					`Unknown Describe-it search model ${String(id).slice(0, 64)}`,
+				);
 			if (!m.installed && !m.available)
-				throw new HttpError(409, 'MODEL_DOWNLOAD_PENDING', `${m.name}: ${m.unavailableReason ?? 'not available yet'}`);
+				throw new HttpError(
+					409,
+					'MODEL_DOWNLOAD_PENDING',
+					`${m.name}: ${m.unavailableReason ?? 'not available yet'}`,
+				);
 			const job = processing.submitInstall(id, originOf(req));
 			// once installed, the library is embedded in the background
 			void core.queue
@@ -174,13 +182,22 @@ export default async function soundRoutes(app: FastifyInstance): Promise<void> {
 			const m = (await svc.semantic.listModels()).find((x) => x.id === id);
 			const store = svc.semantic.models;
 			if (!m || !store)
-				throw new HttpError(404, 'MODEL_UNKNOWN', `Unknown Describe-it search model ${String(id).slice(0, 64)}`);
-			if (m.job) throw new HttpError(409, 'MODEL_BUSY', 'The model is being downloaded; cancel the job first');
+				throw new HttpError(
+					404,
+					'MODEL_UNKNOWN',
+					`Unknown Describe-it search model ${String(id).slice(0, 64)}`,
+				);
+			if (m.job)
+				throw new HttpError(409, 'MODEL_BUSY', 'The model is being downloaded; cancel the job first');
 			const busy = core.queue
 				.list({ active: true })
 				.some((j) => j.kind === 'sound-embed' || j.kind === 'sound-moment');
 			if (busy)
-				throw new HttpError(409, 'MODEL_BUSY', 'The model is in use (an embedding or Find Moment job); cancel it first');
+				throw new HttpError(
+					409,
+					'MODEL_BUSY',
+					'The model is in use (an embedding or Find Moment job); cancel it first',
+				);
 			// Nothing on disk: nothing to ask about (idempotent).
 			if (m.installed || m.missingBytes < m.sizeBytes)
 				// Security review AGT-3: like removing any downloaded model.
@@ -201,7 +218,10 @@ export default async function soundRoutes(app: FastifyInstance): Promise<void> {
 		'/api/sounds/semantic/embed',
 		guarded(async (req, reply) => {
 			const body = parseOr400(SoundEmbedRequestSchema, req.body ?? {});
-			const job = await svc.semantic.startEmbed({ ...(body.full ? { full: true } : {}), origin: originOf(req) });
+			const job = await svc.semantic.startEmbed({
+				...(body.full ? { full: true } : {}),
+				origin: originOf(req),
+			});
 			reply.code(202);
 			return job;
 		}),

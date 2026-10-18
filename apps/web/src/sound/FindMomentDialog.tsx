@@ -40,7 +40,9 @@ const verdictText = (v: SoundMoment['match']['verdict']): string =>
 				? t('Weak match')
 				: t('No clear match');
 
-export function FindMomentDialog(props: HostedDialogProps<{ entry: SoundEntry; session: EditorSession | null }>) {
+export function FindMomentDialog(
+	props: HostedDialogProps<{ entry: SoundEntry; session: EditorSession | null }>,
+) {
 	const { open, finish } = useDialogClose(props.close);
 	const { client: engine } = useEngine();
 	const e = props.entry;
@@ -74,11 +76,19 @@ export function FindMomentDialog(props: HostedDialogProps<{ entry: SoundEntry; s
 		setError(null);
 		setMoments(null);
 		try {
-			const job = await engine.findSoundMoments(e.id, { description: text, lengthSec: Number(length), count: 5 });
+			const job = await engine.findSoundMoments(e.id, {
+				description: text,
+				lengthSec: Number(length),
+				count: 5,
+			});
 			const end = await followJob(engine, job.id, {
 				signal: ctl.signal,
 				onUpdate: (j) =>
-					setBusy(j.progress !== null && j.progress !== undefined ? `${j.stage ?? t('Listening')} ${Math.round(j.progress * 100)} %` : (j.stage ?? j.state)),
+					setBusy(
+						j.progress !== null && j.progress !== undefined
+							? `${j.stage ?? t('Listening')} ${Math.round(j.progress * 100)} %`
+							: (j.stage ?? j.state),
+					),
 			});
 			if (ctl.signal.aborted) return false;
 			if (end.state !== 'succeeded') {
@@ -129,7 +139,10 @@ export function FindMomentDialog(props: HostedDialogProps<{ entry: SoundEntry; s
 			setError(null);
 			setBusy(r.message);
 		} catch (err) {
-			setError({ code: null, message: err instanceof InsertSoundError || err instanceof Error ? err.message : String(err) });
+			setError({
+				code: null,
+				message: err instanceof InsertSoundError || err instanceof Error ? err.message : String(err),
+			});
 		}
 	};
 
@@ -219,7 +232,11 @@ export function FindMomentDialog(props: HostedDialogProps<{ entry: SoundEntry; s
 											{m.tailDb > -30 ? ` · ${t('cut before it fades')}` : ''}
 										</span>
 									</span>
-									<Button variant="quiet" onClick={() => audition(m, i)} data-testid={`sound-find-moment-play-${i}`}>
+									<Button
+										variant="quiet"
+										onClick={() => audition(m, i)}
+										data-testid={`sound-find-moment-play-${i}`}
+									>
 										{playing === i ? t('Stop') : t('Audition')}
 									</Button>
 									<Button

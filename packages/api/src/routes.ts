@@ -211,6 +211,13 @@ import {
 	SoundProfilesResponseSchema,
 } from './sound-profile.ts';
 import {
+	SoundEmbedRequestSchema,
+	SoundMomentRequestSchema,
+	SoundSemanticModelDeleteResponseSchema,
+	SoundSemanticModelsResponseSchema,
+	SoundSemanticStatusSchema,
+} from './sound-semantic.ts';
+import {
 	RegisterSoundRequestSchema,
 	RegisterSoundResponseSchema,
 	SoundEntrySchema,
@@ -225,13 +232,6 @@ import {
 	SoundSearchResponseSchema,
 	SoundVisualSchema,
 } from './sounds.ts';
-import {
-	SoundEmbedRequestSchema,
-	SoundMomentRequestSchema,
-	SoundSemanticModelDeleteResponseSchema,
-	SoundSemanticModelsResponseSchema,
-	SoundSemanticStatusSchema,
-} from './sound-semantic.ts';
 import {
 	SpeechModelDeleteResponseSchema,
 	SpeechModelsResponseSchema,

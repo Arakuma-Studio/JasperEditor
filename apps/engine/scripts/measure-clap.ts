@@ -43,27 +43,51 @@ for (let i = 0; i < argv.length; i++) {
 const modelDir = flags.get('--model');
 const ffmpeg = flags.get('--ffmpeg') || 'ffmpeg';
 if (!modelDir || !files.length) {
-	process.stderr.write('usage: measure-clap.ts --model <dir> [--ffmpeg <path>] [--compare] <manifest.json>...\n');
+	process.stderr.write(
+		'usage: measure-clap.ts --model <dir> [--ffmpeg <path>] [--compare] <manifest.json>...\n',
+	);
 	process.exit(2);
 }
 
 type Sound = { file: string; title: string; types: string[]; stem: string };
 const sounds: Sound[] = [];
 for (const m of files) {
-	const j = JSON.parse(readFileSync(m, 'utf8')) as { sounds: { file: string; title: string; types?: string[] }[] };
+	const j = JSON.parse(readFileSync(m, 'utf8')) as {
+		sounds: { file: string; title: string; types?: string[] }[];
+	};
 	for (const s of j.sounds)
 		sounds.push({
 			file: join(dirname(m), s.file),
 			title: s.title,
 			types: s.types ?? [],
-			stem: s.title.toLowerCase().replace(/[\d_]+/g, ' ').replace(/\s+/g, ' ').trim(),
+			stem: s.title
+				.toLowerCase()
+				.replace(/[\d_]+/g, ' ')
+				.replace(/\s+/g, ' ')
+				.trim(),
 		});
 }
 
 function decode(file: string, seconds: number, start = 0): Float32Array {
 	const r = spawnSync(
 		ffmpeg,
-		['-v', 'error', '-ss', String(start), '-t', String(seconds), '-i', file, '-ac', '1', '-ar', String(CLAP_RATE), '-f', 'f32le', 'pipe:1'],
+		[
+			'-v',
+			'error',
+			'-ss',
+			String(start),
+			'-t',
+			String(seconds),
+			'-i',
+			file,
+			'-ac',
+			'1',
+			'-ar',
+			String(CLAP_RATE),
+			'-f',
+			'f32le',
+			'pipe:1',
+		],
 		{ maxBuffer: 1 << 30 },
 	);
 	if (r.status !== 0) throw new Error(`ffmpeg failed on ${file}`);
@@ -74,7 +98,15 @@ function decode(file: string, seconds: number, start = 0): Float32Array {
 }
 
 function duration(file: string): number {
-	const r = spawnSync(ffmpeg.replace(/ffmpeg$/, 'ffprobe'), ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file]);
+	const r = spawnSync(ffmpeg.replace(/ffmpeg$/, 'ffprobe'), [
+		'-v',
+		'error',
+		'-show_entries',
+		'format=duration',
+		'-of',
+		'csv=p=0',
+		file,
+	]);
 	return Number(String(r.stdout).trim()) || 0;
 }
 
@@ -83,13 +115,21 @@ const t0 = performance.now();
 const audio: Float32Array[] = [];
 for (const s of sounds) {
 	const windows = wholeSoundWindows(duration(s.file));
-	audio.push(meanEmbedding(await model.embedAudio(windows.map((w) => decode(s.file, w.endSec - w.startSec, w.startSec)))));
+	audio.push(
+		meanEmbedding(
+			await model.embedAudio(windows.map((w) => decode(s.file, w.endSec - w.startSec, w.startSec))),
+		),
+	);
 }
 const t1 = performance.now();
 const stems = [...new Set(sounds.map((s) => s.stem))];
 console.log(`sounds ${sounds.length}, title queries ${stems.length}, vocabulary ${SOUND_VOCABULARY.length}`);
-console.log(`embedding: ${((t1 - t0) / sounds.length).toFixed(0)} ms per sound (8 threads, incl. decode and model load)`);
-console.log(`bands (z): strong ≥ ${VERDICT_BANDS.strong}, plausible ≥ ${VERDICT_BANDS.plausible}, weak ≥ ${VERDICT_BANDS.weak}`);
+console.log(
+	`embedding: ${((t1 - t0) / sounds.length).toFixed(0)} ms per sound (8 threads, incl. decode and model load)`,
+);
+console.log(
+	`bands (z): strong ≥ ${VERDICT_BANDS.strong}, plausible ≥ ${VERDICT_BANDS.plausible}, weak ≥ ${VERDICT_BANDS.weak}`,
+);
 
 const bands = ['strong', 'plausible', 'weak', 'none'] as const;
 type Key = 'engine' | 'z' | 'cosine';
@@ -154,11 +194,24 @@ async function measure(name: string, cal: Calibration, caption: (q: string) => s
 }
 
 const calCaption = calibrationOf(await model.embedTexts(SOUND_VOCABULARY.map(captionOf)));
-await measure('engine (captions for vocabulary and queries)', calCaption, captionOf, compare ? ['engine', 'z', 'cosine'] : ['engine']);
+await measure(
+	'engine (captions for vocabulary and queries)',
+	calCaption,
+	captionOf,
+	compare ? ['engine', 'z', 'cosine'] : ['engine'],
+);
 if (compare) {
 	const calRaw = calibrationOf(await model.embedTexts([...SOUND_VOCABULARY]));
 	await measure('raw vocabulary, raw queries', calRaw, (q) => q, ['engine', 'z', 'cosine']);
-	await measure('raw vocabulary, "the sound of" queries', calRaw, (q) => `the sound of ${q}`, ['engine', 'z', 'cosine']);
-	await measure('raw vocabulary, "a recording of" queries', calRaw, (q) => `a recording of ${q}`, ['engine', 'z', 'cosine']);
+	await measure('raw vocabulary, "the sound of" queries', calRaw, (q) => `the sound of ${q}`, [
+		'engine',
+		'z',
+		'cosine',
+	]);
+	await measure('raw vocabulary, "a recording of" queries', calRaw, (q) => `a recording of ${q}`, [
+		'engine',
+		'z',
+		'cosine',
+	]);
 	await measure('raw vocabulary, caption queries', calRaw, captionOf, ['engine', 'z', 'cosine']);
 }

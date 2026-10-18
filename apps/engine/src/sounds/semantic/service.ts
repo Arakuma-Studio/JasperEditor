@@ -15,6 +15,9 @@ import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import {
 	type EngineJob,
+	SOUND_DESCRIBE_MAX_CHARS,
+	SOUND_MOMENT_DEFAULT_SEC,
+	SOUND_MOMENT_MAX_RECORDING_SEC,
 	type SoundDescribeInfo,
 	type SoundEmbedResult,
 	type SoundEntry,
@@ -23,16 +26,13 @@ import {
 	type SoundMomentResult,
 	type SoundSemanticModel,
 	type SoundSemanticStatus,
-	SOUND_DESCRIBE_MAX_CHARS,
-	SOUND_MOMENT_DEFAULT_SEC,
-	SOUND_MOMENT_MAX_RECORDING_SEC,
 } from '@jasper/api';
 import { type JobContext, JobError } from '../../jobs/types.ts';
 import { fingerprintHex } from '../../media/fingerprint.ts';
 import type { ProcessingService } from '../../processing/service.ts';
+import { SpeechModelError } from '../../speech/models.ts';
 import { HttpError } from '../../tools/reply.ts';
 import type { CoreServices } from '../../tools/services.ts';
-import { SpeechModelError } from '../../speech/models.ts';
 import { EMBED_RECIPE, EmbeddingStore, keyOf } from './embeddings.ts';
 import { clapCommand } from './entry.ts';
 import { CLAP_WINDOW_SEC, type ClapWindow, meanEmbedding, wholeSoundWindows } from './frontend.ts';
@@ -43,14 +43,14 @@ import {
 	audioStats,
 	type Calibration,
 	calibrationOf,
+	captionOf,
 	coarseWindows,
 	fineWindows,
 	matchOf,
-	captionOf,
 	pickMoments,
 	queryBias,
-	rankKeys,
 	type Reference,
+	rankKeys,
 	referenceOf,
 	regionsToRefine,
 	semanticScoreOf,
@@ -85,7 +85,9 @@ export function describeText(text: string): string {
 
 /** The cache key of a library entry's embedding: its whole sound, or a take's range of its recording. */
 export function entryKey(e: SoundEntry): string {
-	return e.take ? keyOf(e.fingerprint, { startSec: e.take.startSec, endSec: e.take.endSec }) : keyOf(e.fingerprint, 'whole');
+	return e.take
+		? keyOf(e.fingerprint, { startSec: e.take.startSec, endSec: e.take.endSec })
+		: keyOf(e.fingerprint, 'whole');
 }
 
 /** The windows an entry is embedded from (a take: its range, at most 10 s from its start). */
@@ -174,7 +176,10 @@ export class SemanticService {
 	/** Why describe search cannot run here, or null. */
 	private async unavailable(): Promise<{ status: 'not-installed' | 'unavailable'; reason: string } | null> {
 		if (!this.models || !this.models.entries.length)
-			return { status: 'unavailable', reason: 'this engine’s model catalogue has no Describe-it search model' };
+			return {
+				status: 'unavailable',
+				reason: 'this engine’s model catalogue has no Describe-it search model',
+			};
 		if (!this.ortAvailable())
 			return { status: 'unavailable', reason: 'ONNX Runtime (onnxruntime-node) is not installed' };
 		if (!this.core.ffmpeg.bins.ffmpeg) return { status: 'unavailable', reason: 'ffmpeg was not found' };
@@ -201,7 +206,11 @@ export class SemanticService {
 	}
 
 	private cacheDirOf(e: SoundCatalogEntry): string {
-		return join(this.core.config.paths.soundCacheDir, 'semantic', `${e.id}@${e.revision.slice(0, 12)}-r${EMBED_RECIPE}`);
+		return join(
+			this.core.config.paths.soundCacheDir,
+			'semantic',
+			`${e.id}@${e.revision.slice(0, 12)}-r${EMBED_RECIPE}`,
+		);
 	}
 
 	/** The installed model, verified, with its caches (typed errors when it cannot run). */
@@ -287,7 +296,11 @@ export class SemanticService {
 	// ---- texts --------------------------------------------------------------------------------------------------
 
 	/** Unit embeddings of texts, from the cache or the model (the cache keeps the vocabulary and recent queries). */
-	private async textVectors(ctx: ModelContext, texts: string[], signal?: AbortSignal): Promise<Float32Array[]> {
+	private async textVectors(
+		ctx: ModelContext,
+		texts: string[],
+		signal?: AbortSignal,
+	): Promise<Float32Array[]> {
 		const captions = texts.map(captionOf);
 		const keys = captions.map(textKey);
 		const out: (Float32Array | undefined)[] = await Promise.all(keys.map((k) => ctx.texts.get(k)));
@@ -309,7 +322,9 @@ export class SemanticService {
 				}
 			while (this.recentQueries.length > MAX_CACHED_QUERIES) this.recentQueries.shift();
 			const keep = new Set([...vocabKeys, ...this.recentQueries]);
-			await ctx.texts.flush(ctx.texts.size > MAX_CACHED_QUERIES + vocabKeys.size + 100 ? (k) => keep.has(k) : undefined);
+			await ctx.texts.flush(
+				ctx.texts.size > MAX_CACHED_QUERIES + vocabKeys.size + 100 ? (k) => keep.has(k) : undefined,
+			);
 		}
 		return out as Float32Array[];
 	}
@@ -385,7 +400,14 @@ export class SemanticService {
 			const pending = entries.length - items.length;
 			const job = pending > 0 ? await this.autoEmbed() : this.embedJob();
 			return {
-				info: { mode: 'semantic', reason: null, model: ctx.entry.id, embedded: items.length, pending, jobId: job?.id ?? null },
+				info: {
+					mode: 'semantic',
+					reason: null,
+					model: ctx.entry.id,
+					embedded: items.length,
+					pending,
+					jobId: job?.id ?? null,
+				},
 				scores,
 				matches,
 			};
@@ -434,7 +456,8 @@ export class SemanticService {
 				const windows = entryWindows(e);
 				if (!windows.length) {
 					failed++;
-					if (errors.length < 50) errors.push({ soundId: e.id, code: 'SOUND_EMPTY', message: 'The sound has no length' });
+					if (errors.length < 50)
+						errors.push({ soundId: e.id, code: 'SOUND_EMPTY', message: 'The sound has no length' });
 					continue;
 				}
 				let path: string;
@@ -443,7 +466,11 @@ export class SemanticService {
 				} catch (err) {
 					failed++;
 					if (errors.length < 50)
-						errors.push({ soundId: e.id, code: (err as { code?: string }).code ?? 'SOUND_FILE_MISSING', message: (err as Error).message });
+						errors.push({
+							soundId: e.id,
+							code: (err as { code?: string }).code ?? 'SOUND_FILE_MISSING',
+							message: (err as Error).message,
+						});
 					continue;
 				}
 				try {
@@ -475,7 +502,8 @@ export class SemanticService {
 	private jobErrorOf(e: unknown, signal: AbortSignal): JobError {
 		if (signal.aborted) return new JobError('JOB_CANCELLED', 'Cancelled');
 		if (e instanceof JobError) return e;
-		if (e instanceof ClapError) return new JobError(e.code, e.message, e.code === 'CLAP_CRASHED' || e.code === 'CLAP_TIMEOUT');
+		if (e instanceof ClapError)
+			return new JobError(e.code, e.message, e.code === 'CLAP_CRASHED' || e.code === 'CLAP_TIMEOUT');
 		return new JobError('CLAP_FAILED', (e as Error).message ?? String(e), false);
 	}
 
@@ -515,7 +543,11 @@ export class SemanticService {
 		const startSec = Math.max(from, from + (req.startSec ?? 0));
 		const endSec = Math.min(to, req.endSec !== undefined ? from + req.endSec : to);
 		if (!(endSec > startSec) || !Number.isFinite(endSec))
-			throw new HttpError(422, 'INVALID_RANGE', 'The range to search is empty (check startSec and endSec against the sound’s length)');
+			throw new HttpError(
+				422,
+				'INVALID_RANGE',
+				'The range to search is empty (check startSec and endSec against the sound’s length)',
+			);
 		if (endSec - startSec > SOUND_MOMENT_MAX_RECORDING_SEC)
 			throw new HttpError(
 				422,
@@ -597,7 +629,8 @@ export class SemanticService {
 				regions = regionsToRefine(c);
 				if (lengthSec >= CLAP_WINDOW_SEC) scored = c;
 			}
-			if (!scored.length) scored = await embedAll(fineWindows(regions, lengthSec, range), coarse.length ? 0.7 : 0.02, 0.9);
+			if (!scored.length)
+				scored = await embedAll(fineWindows(regions, lengthSec, range), coarse.length ? 0.7 : 0.02, 0.9);
 			await store.flush();
 			const picked = pickMoments(scored, count);
 			job.progress(0.92, { stage: 'Measuring the moments' });

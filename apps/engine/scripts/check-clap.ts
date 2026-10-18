@@ -48,7 +48,9 @@ for (const t of v.tokens) {
 	const got = tok.encode(t.text);
 	if (JSON.stringify(got) !== JSON.stringify(t.ids)) {
 		bad++;
-		console.log(`tokens differ for ${JSON.stringify(t.text)}: ${JSON.stringify(got)} vs ${JSON.stringify(t.ids)}`);
+		console.log(
+			`tokens differ for ${JSON.stringify(t.text)}: ${JSON.stringify(got)} vs ${JSON.stringify(t.ids)}`,
+		);
 	}
 }
 console.log(`tokenizer: ${v.tokens.length - bad} of ${v.tokens.length} identical`);
@@ -73,11 +75,17 @@ if (flag === '--model' && modelDir && v.audioEmbeds && v.textEmbeds) {
 	const t2 = performance.now();
 	const ca = audio.map((a, i) => cos(a, v.audioEmbeds![i]!));
 	const ct = texts.map((a, i) => cos(a, v.textEmbeds![i]!));
-	console.log(`audio cosine vs PyTorch: min ${Math.min(...ca).toFixed(7)} (${audio.length} sounds, ${(t1 - t0).toFixed(0)} ms incl. load)`);
-	console.log(`text cosine vs PyTorch: min ${Math.min(...ct).toFixed(7)} (${texts.length} texts, ${(t2 - t1).toFixed(0)} ms incl. load)`);
+	console.log(
+		`audio cosine vs PyTorch: min ${Math.min(...ca).toFixed(7)} (${audio.length} sounds, ${(t1 - t0).toFixed(0)} ms incl. load)`,
+	);
+	console.log(
+		`text cosine vs PyTorch: min ${Math.min(...ct).toFixed(7)} (${texts.length} texts, ${(t2 - t1).toFixed(0)} ms incl. load)`,
+	);
 	const t3 = performance.now();
 	await model.embedAudio(v.mel.map((m) => Float32Array.from(m.samples)));
-	console.log(`audio warm: ${((performance.now() - t3) / v.mel.length).toFixed(0)} ms per 10 s window (8 threads)`);
+	console.log(
+		`audio warm: ${((performance.now() - t3) / v.mel.length).toFixed(0)} ms per 10 s window (8 threads)`,
+	);
 	if (Math.min(...ca, ...ct) < 0.999) ok = false;
 }
 console.log(ok ? 'PASS' : 'FAIL');

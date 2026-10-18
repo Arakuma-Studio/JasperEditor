@@ -108,11 +108,14 @@ export class ClapModel {
 
 function rows(data: unknown, n: number): Float32Array[] {
 	if (!(data instanceof Float32Array) || data.length !== n * CLAP_EMBED_DIM)
-		throw new Error(`the model returned ${data instanceof Float32Array ? data.length : 'no'} values, expected ${n} × ${CLAP_EMBED_DIM}`);
+		throw new Error(
+			`the model returned ${data instanceof Float32Array ? data.length : 'no'} values, expected ${n} × ${CLAP_EMBED_DIM}`,
+		);
 	const out: Float32Array[] = [];
 	for (let r = 0; r < n; r++) {
 		const v = data.slice(r * CLAP_EMBED_DIM, (r + 1) * CLAP_EMBED_DIM);
-		for (let i = 0; i < v.length; i++) if (!Number.isFinite(v[i]!)) throw new Error('the model returned a non-finite value');
+		for (let i = 0; i < v.length; i++)
+			if (!Number.isFinite(v[i]!)) throw new Error('the model returned a non-finite value');
 		out.push(normalize(v));
 	}
 	return out;

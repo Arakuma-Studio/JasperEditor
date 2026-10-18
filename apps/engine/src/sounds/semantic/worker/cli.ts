@@ -50,7 +50,12 @@ function decode(input: Input, startSec: number, durSec: number): Promise<Float32
 		});
 		child.on('error', reject);
 		child.on('close', (code) => {
-			if (code !== 0) return reject(Object.assign(new Error(`ffmpeg could not decode the audio: ${err.trim() || `exit ${code}`}`), { code: 'DECODE_FAILED' }));
+			if (code !== 0)
+				return reject(
+					Object.assign(new Error(`ffmpeg could not decode the audio: ${err.trim() || `exit ${code}`}`), {
+						code: 'DECODE_FAILED',
+					}),
+				);
 			const b = Buffer.concat(chunks);
 			const out = new Float32Array(Math.floor(b.byteLength / 4));
 			for (let i = 0; i < out.length; i++) out[i] = b.readFloatLE(i * 4);
@@ -152,7 +157,12 @@ rl.on('line', (line) => {
 			out({ id: req.id, ok: true, ...(await handle(req)) });
 		} catch (e) {
 			const err = e as Error & { code?: string };
-			out({ id: req?.id ?? null, ok: false, code: err.code ?? 'CLAP_FAILED', message: err.message ?? String(e) });
+			out({
+				id: req?.id ?? null,
+				ok: false,
+				code: err.code ?? 'CLAP_FAILED',
+				message: err.message ?? String(e),
+			});
 		}
 	});
 });

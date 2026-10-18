@@ -19,7 +19,13 @@ export class ClapError extends Error {
 
 type Window = { startSec: number; endSec: number };
 type Input = { path: string; ffmpeg: string; stream?: number };
-export type WindowLevels = { startSec: number; endSec: number; headDb: number; tailDb: number; trimmed: boolean };
+export type WindowLevels = {
+	startSec: number;
+	endSec: number;
+	headDb: number;
+	tailDb: number;
+	trimmed: boolean;
+};
 
 type Pending = {
 	id: number;
@@ -58,7 +64,12 @@ export class ClapRuntime {
 	}
 
 	/** Unit embeddings of windows of a file (each repeat-padded / cut to 10 s). */
-	async embedWindows(dir: string, input: Input, windows: Window[], signal?: AbortSignal): Promise<Float32Array[]> {
+	async embedWindows(
+		dir: string,
+		input: Input,
+		windows: Window[],
+		signal?: AbortSignal,
+	): Promise<Float32Array[]> {
 		if (!windows.length) return [];
 		const r = await this.request(dir, { op: 'audio', input, windows }, signal);
 		return vectors(r.vectors, windows.length);
@@ -105,11 +116,21 @@ export class ClapRuntime {
 		return this.child !== null;
 	}
 
-	private request(dir: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown>> {
+	private request(
+		dir: string,
+		body: Record<string, unknown>,
+		signal?: AbortSignal,
+	): Promise<Record<string, unknown>> {
 		if (this.closed) return Promise.reject(new ClapError('CLAP_STOPPED', 'The engine is shutting down'));
 		if (signal?.aborted) return Promise.reject(new ClapError('JOB_CANCELLED', 'Cancelled'));
 		return new Promise((resolve, reject) => {
-			const p: Pending = { id: this.nextId++, body: { ...body, dir }, resolve, reject, ...(signal ? { signal } : {}) };
+			const p: Pending = {
+				id: this.nextId++,
+				body: { ...body, dir },
+				resolve,
+				reject,
+				...(signal ? { signal } : {}),
+			};
 			signal?.addEventListener(
 				'abort',
 				() => {
@@ -185,7 +206,8 @@ export class ClapRuntime {
 			if (this.stderr.length < 8000) this.stderr += c.toString();
 		});
 		child.on('error', (e) => {
-			if (this.child === child) this.stop(new ClapError('CLAP_UNAVAILABLE', `jasper-clap could not start: ${e.message}`));
+			if (this.child === child)
+				this.stop(new ClapError('CLAP_UNAVAILABLE', `jasper-clap could not start: ${e.message}`));
 		});
 		child.on('close', (code) => {
 			if (this.child !== child) return;
@@ -242,7 +264,10 @@ function vectors(data: unknown, n: number): Float32Array[] {
 	if (typeof data !== 'string') throw new ClapError('CLAP_FAILED', 'jasper-clap returned no vectors');
 	const buf = Buffer.from(data, 'base64');
 	if (buf.byteLength !== n * CLAP_EMBED_DIM * 4)
-		throw new ClapError('CLAP_FAILED', `jasper-clap returned ${buf.byteLength} bytes, expected ${n * CLAP_EMBED_DIM * 4}`);
+		throw new ClapError(
+			'CLAP_FAILED',
+			`jasper-clap returned ${buf.byteLength} bytes, expected ${n * CLAP_EMBED_DIM * 4}`,
+		);
 	const out: Float32Array[] = [];
 	for (let i = 0; i < n; i++) {
 		const v = new Float32Array(CLAP_EMBED_DIM);

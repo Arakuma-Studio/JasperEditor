@@ -124,7 +124,8 @@ export function clapLogMel(samples: Float32Array, out?: Float32Array): Float32Ar
 			const row = b * CLAP_MELS;
 			for (let m = 0; m < CLAP_MELS; m++) mel[m]! += p * fb[row + m]!;
 		}
-		for (let m = 0; m < CLAP_MELS; m++) res[t * CLAP_MELS + m] = 10 * Math.log10(Math.max(MEL_FLOOR, mel[m]!));
+		for (let m = 0; m < CLAP_MELS; m++)
+			res[t * CLAP_MELS + m] = 10 * Math.log10(Math.max(MEL_FLOOR, mel[m]!));
 	}
 	return res;
 }

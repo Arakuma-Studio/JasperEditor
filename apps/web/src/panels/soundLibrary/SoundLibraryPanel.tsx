@@ -196,7 +196,9 @@ function DescribeLine(props: { info: SoundDescribeInfo | undefined; query: strin
 	let warn = false;
 	if (props.local) text = t('Describe searches the whole library; this collection is searched by its words.');
 	else if (!props.query.trim())
-		text = t('Describe the sound: source, material, action and character, in English (“glass bottle shattering on concrete”).');
+		text = t(
+			'Describe the sound: source, material, action and character, in English (“glass bottle shattering on concrete”).',
+		);
 	else if (!info) text = t('Searching…');
 	else if (info.mode === 'keywords') {
 		warn = true;
@@ -1070,7 +1072,9 @@ export function SoundLibraryPanel(props: PanelProps) {
 				<SearchField
 					ref={searchRef}
 					className="min-w-0 flex-1"
-					placeholder={filters.describe ? t('Describe the sound (source, material, action)') : t('Search sounds')}
+					placeholder={
+						filters.describe ? t('Describe the sound (source, material, action)') : t('Search sounds')
+					}
 					aria-label="Search sounds"
 					data-testid="sound-search"
 					value={queryInput}
@@ -1147,7 +1151,9 @@ export function SoundLibraryPanel(props: PanelProps) {
 					/>
 				</div>
 			</div>
-			{filters.describe ? <DescribeLine info={results?.describe} query={filters.query} local={local} /> : null}
+			{filters.describe ? (
+				<DescribeLine info={results?.describe} query={filters.query} local={local} />
+			) : null}
 			{/* collection */}
 			<div className="flex items-center gap-1 px-1 pt-1">
 				<Select

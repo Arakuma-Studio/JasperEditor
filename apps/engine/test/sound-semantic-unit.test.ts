@@ -5,6 +5,7 @@
 // (round trip, invalidation by key, a damaged file set aside, fuzzed bytes never throw). No model, no network.
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tinyVocab } from '@jasper/testkit/tiny-clap';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { EmbeddingStore, keyOf, MAX_RECORDS } from '../src/sounds/semantic/embeddings.ts';
@@ -42,7 +43,6 @@ import {
 import { ClapTokenizer, EOS_ID, MAX_TEXT_TOKENS } from '../src/sounds/semantic/tokenizer.ts';
 import { SOUND_VOCABULARY } from '../src/sounds/semantic/vocab.ts';
 import { tempAppdir } from './helpers.ts';
-import { tinyVocab } from '@jasper/testkit/tiny-clap';
 
 function sine(freq: number, seconds: number, amp = 0.5): Float32Array {
 	const n = Math.round(seconds * CLAP_RATE);
@@ -75,7 +75,9 @@ describe('CLAP front end', () => {
 		const long = Float32Array.from({ length: CLAP_WINDOW_SAMPLES + 10 }, (_, i) => i);
 		expect(repeatPad(long)[CLAP_WINDOW_SAMPLES - 1]).toBe(CLAP_WINDOW_SAMPLES - 1);
 		expect(repeatPad(new Float32Array(0)).every((v) => v === 0)).toBe(true);
-		expect(repeatPad(Float32Array.from([Number.NaN, Number.POSITIVE_INFINITY, 0.5])).every(Number.isFinite)).toBe(true);
+		expect(
+			repeatPad(Float32Array.from([Number.NaN, Number.POSITIVE_INFINITY, 0.5])).every(Number.isFinite),
+		).toBe(true);
 	});
 
 	it('matches a direct DFT of the published recipe (oracle) to 1e-4 dB', () => {
@@ -84,10 +86,14 @@ describe('CLAP front end', () => {
 		expect(got.length).toBe(CLAP_FRAMES * CLAP_MELS);
 		// oracle: reflect-padded centred frames, periodic Hann, direct DFT power, Slaney filters, 10·log10(max(·,1e-10))
 		const padded = repeatPad(x);
-		const at = (i: number) => (i < 0 ? padded[-i]! : i >= padded.length ? padded[2 * padded.length - 2 - i]! : padded[i]!);
+		const at = (i: number) =>
+			i < 0 ? padded[-i]! : i >= padded.length ? padded[2 * padded.length - 2 - i]! : padded[i]!;
 		const fb = clapMelFilters();
 		for (const t of [0, 1, 37, 500, CLAP_FRAMES - 1]) {
-			const frame = Array.from({ length: 1024 }, (_, i) => at(t * 480 - 512 + i) * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / 1024)));
+			const frame = Array.from(
+				{ length: 1024 },
+				(_, i) => at(t * 480 - 512 + i) * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / 1024)),
+			);
 			for (const m of [0, 9, 31, 63]) {
 				let mel = 0;
 				for (let b = 0; b <= 512; b++) {
@@ -142,7 +148,16 @@ describe('CLAP tokenizer', () => {
 	const tok = new ClapTokenizer(JSON.stringify(vocab), `#version: 0.2\n${merges.join('\n')}\n`);
 
 	it('splits like GPT-2 byte-level BPE and wraps <s> … </s>', () => {
-		expect(tok.encode(captionOf('high'))).toEqual([0, vocab.this, vocab['Ġis'], vocab['Ġa'], vocab['Ġsound'], vocab['Ġof'], vocab['Ġhigh'], 2]);
+		expect(tok.encode(captionOf('high'))).toEqual([
+			0,
+			vocab.this,
+			vocab['Ġis'],
+			vocab['Ġa'],
+			vocab['Ġsound'],
+			vocab['Ġof'],
+			vocab['Ġhigh'],
+			2,
+		]);
 		expect(tok.encode('')).toEqual([0, 2]);
 		// unknown letters fall back to single byte characters, never to nothing
 		expect(tok.encode('zq').slice(1, -1)).toEqual([vocab.z, vocab.q]);
@@ -227,7 +242,12 @@ describe('calibrated match', () => {
 		expect([-1, 0, 2, 8, 20, Number.NaN].map(semanticScoreOf)).toEqual([0, 0, 0.25, 1, 1, 0]);
 		expect(rankKeys([])).toEqual([]);
 		expect(rankKeys([{ z: 1.5, cosine: 0.3 }])).toEqual([1.5]);
-		expect(rankKeys([{ z: 0, cosine: 0.1 }, { z: 0, cosine: 0.3 }])).toEqual([-1, 1]);
+		expect(
+			rankKeys([
+				{ z: 0, cosine: 0.1 },
+				{ z: 0, cosine: 0.3 },
+			]),
+		).toEqual([-1, 1]);
 	});
 
 	it('writes every vocabulary phrase once, short and lower-case', () => {
@@ -260,7 +280,14 @@ describe('Find Moment windows', () => {
 
 	it('refines the best regions and keeps the best non-overlapping windows', () => {
 		const range = { startSec: 0, endSec: 60 };
-		const fine = fineWindows([{ startSec: 10, endSec: 20 }, { startSec: 15, endSec: 25 }], 2, range);
+		const fine = fineWindows(
+			[
+				{ startSec: 10, endSec: 20 },
+				{ startSec: 15, endSec: 25 },
+			],
+			2,
+			range,
+		);
 		expect(fine[0]).toEqual({ startSec: 9, endSec: 11 });
 		expect(fine.at(-1)).toEqual({ startSec: 24, endSec: 26 });
 		expect(new Set(fine.map((w) => `${w.startSec}`)).size).toBe(fine.length);
@@ -268,18 +295,29 @@ describe('Find Moment windows', () => {
 		const picked = pickMoments(scored, 3);
 		expect(picked[0]!.window.startSec).toBe(17);
 		fc.assert(
-			fc.property(fc.array(fc.tuple(fc.double({ min: 0, max: 100, noNaN: true }), fc.double({ min: 0.1, max: 5, noNaN: true }), fc.double({ noNaN: true, min: -10, max: 10 })), { maxLength: 60 }), fc.integer({ min: 1, max: 10 }), (ws, n) => {
-				const list = ws.map(([s, l, k]) => ({ window: { startSec: s, endSec: s + l }, key: k }));
-				const got = pickMoments(list, n);
-				expect(got.length).toBeLessThanOrEqual(n);
-				for (let i = 0; i < got.length; i++)
-					for (let j = i + 1; j < got.length; j++) {
-						const a = got[i]!.window;
-						const b = got[j]!.window;
-						expect(a.startSec < b.endSec && b.startSec < a.endSec).toBe(false);
-					}
-				for (let i = 1; i < got.length; i++) expect(got[i - 1]!.key).toBeGreaterThanOrEqual(got[i]!.key);
-			}),
+			fc.property(
+				fc.array(
+					fc.tuple(
+						fc.double({ min: 0, max: 100, noNaN: true }),
+						fc.double({ min: 0.1, max: 5, noNaN: true }),
+						fc.double({ noNaN: true, min: -10, max: 10 }),
+					),
+					{ maxLength: 60 },
+				),
+				fc.integer({ min: 1, max: 10 }),
+				(ws, n) => {
+					const list = ws.map(([s, l, k]) => ({ window: { startSec: s, endSec: s + l }, key: k }));
+					const got = pickMoments(list, n);
+					expect(got.length).toBeLessThanOrEqual(n);
+					for (let i = 0; i < got.length; i++)
+						for (let j = i + 1; j < got.length; j++) {
+							const a = got[i]!.window;
+							const b = got[j]!.window;
+							expect(a.startSec < b.endSec && b.startSec < a.endSec).toBe(false);
+						}
+					for (let i = 1; i < got.length; i++) expect(got[i - 1]!.key).toBeGreaterThanOrEqual(got[i]!.key);
+				},
+			),
 			{ numRuns: 200 },
 		);
 		expect(regionsToRefine(scored)).toHaveLength(3);
@@ -287,7 +325,8 @@ describe('Find Moment windows', () => {
 
 	it('measures head and tail and trims a window to its sound', () => {
 		const x = new Float32Array(CLAP_RATE); // 1 s: silence, a 100 ms tone at 0.4 s, silence
-		for (let i = 0.4 * CLAP_RATE; i < 0.5 * CLAP_RATE; i++) x[i] = 0.5 * Math.sin((2 * Math.PI * 1000 * i) / CLAP_RATE);
+		for (let i = 0.4 * CLAP_RATE; i < 0.5 * CLAP_RATE; i++)
+			x[i] = 0.5 * Math.sin((2 * Math.PI * 1000 * i) / CLAP_RATE);
 		const t = trimToSound(x, CLAP_RATE);
 		expect(t.start / CLAP_RATE).toBeCloseTo(0.395, 2);
 		expect(t.end / CLAP_RATE).toBeCloseTo(0.52, 2);

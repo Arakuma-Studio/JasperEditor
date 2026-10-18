@@ -33,7 +33,9 @@ const logs: string[] = [];
 const engineLog: string[] = [];
 
 async function call(name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
-	return (await client.callTool({ name, arguments: args }, undefined, { timeout: 600_000 })) as CallToolResult;
+	return (await client.callTool({ name, arguments: args }, undefined, {
+		timeout: 600_000,
+	})) as CallToolResult;
 }
 async function ok<T = Record<string, unknown>>(name: string, args: Record<string, unknown> = {}) {
 	const r = await call(name, args);
@@ -62,7 +64,8 @@ function wav(path: string, x: Float32Array) {
 	buf.writeUInt16LE(16, 34);
 	buf.write('data', 36);
 	buf.writeUInt32LE(x.length * 2, 40);
-	for (let i = 0; i < x.length; i++) buf.writeInt16LE(Math.round(Math.max(-1, Math.min(1, x[i]!)) * 32000), 44 + i * 2);
+	for (let i = 0; i < x.length; i++)
+		buf.writeInt16LE(Math.round(Math.max(-1, Math.min(1, x[i]!)) * 32000), 44 + i * 2);
 	writeFileSync(path, buf);
 }
 
@@ -96,7 +99,11 @@ function makeKit(dir: string) {
 		JSON.stringify({
 			version: 1,
 			packs: [pack],
-			sounds: [sound('SFX_0001.wav', 'SFX_0001'), sound('SFX_0002.wav', 'SFX_0002'), sound('field.wav', 'Field recording')],
+			sounds: [
+				sound('SFX_0001.wav', 'SFX_0001'),
+				sound('SFX_0002.wav', 'SFX_0002'),
+				sound('field.wav', 'Field recording'),
+			],
 		}),
 	);
 }
@@ -124,7 +131,11 @@ beforeAll(async () => {
 	);
 	engine.stdout?.on('data', (d: Buffer) => engineLog.push(d.toString()));
 	engine.stderr?.on('data', (d: Buffer) => engineLog.push(d.toString()));
-	await waitFor(async () => (await fetch(`http://127.0.0.1:${PORT}/health`)).ok, 120_000, `the engine on ${PORT}`);
+	await waitFor(
+		async () => (await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
+		120_000,
+		`the engine on ${PORT}`,
+	);
 	const transport = new StdioClientTransport({
 		command: process.execPath,
 		args: ['--import', 'tsx', join(ROOT, 'apps/mcp/src/cli.ts'), '--appdir', appdir],
@@ -153,14 +164,18 @@ async function documentOf(projectId: string): Promise<ProjectDocument> {
 }
 
 type Row = { soundId: string; title: string; match?: { z: number; verdict: string } };
-type Search = { results: Row[]; describe?: { mode: string; reason?: string; embedded: number; pending: number } };
+type Search = {
+	results: Row[];
+	describe?: { mode: string; reason?: string; embedded: number; pending: number };
+};
 
 describe('Describe-it search over MCP', { timeout: 900_000 }, () => {
 	it('falls back to keywords without the model, installs it, ranks by sound, finds and places a moment', async () => {
 		await ok('rescan_sound_library', { wait: true });
-		const before = await ok<{ status: string; models: { modelId: string; license: string; installed: boolean }[] }>(
-			'describe_search_status',
-		);
+		const before = await ok<{
+			status: string;
+			models: { modelId: string; license: string; installed: boolean }[];
+		}>('describe_search_status');
 		expect(before.status).toBe('not-installed');
 		expect(before.models[0]).toMatchObject({ modelId: 'clap-test', license: 'Apache-2.0', installed: false });
 		const kw = await ok<Search>('search_sounds', { describe: 'field', license: 'any' });
@@ -170,7 +185,9 @@ describe('Describe-it search over MCP', { timeout: 900_000 }, () => {
 		expect(noModel.isError).toBe(true);
 		expect(textOf(noModel)).toContain('MODEL_NOT_INSTALLED');
 
-		const inst = await ok<{ state: string; model: { license: string } }>('install_describe_search_model', { wait: true });
+		const inst = await ok<{ state: string; model: { license: string } }>('install_describe_search_model', {
+			wait: true,
+		});
 		expect(inst).toMatchObject({ state: 'succeeded', model: { license: 'Apache-2.0' } });
 		await waitFor(
 			async () => {
@@ -180,7 +197,9 @@ describe('Describe-it search over MCP', { timeout: 900_000 }, () => {
 			300_000,
 			'the library embedded after install',
 		);
-		const prep = await ok<{ state: string; embedded: number; reused: number }>('prepare_describe_search', { wait: true });
+		const prep = await ok<{ state: string; embedded: number; reused: number }>('prepare_describe_search', {
+			wait: true,
+		});
 		expect(prep).toMatchObject({ state: 'succeeded', embedded: 0, reused: 3 });
 
 		const high = await ok<Search>('search_sounds', { describe: 'high', license: 'any' });
@@ -189,22 +208,27 @@ describe('Describe-it search over MCP', { timeout: 900_000 }, () => {
 		expect(high.results[0]!.match?.verdict).toMatch(/^(strong|plausible|weak|none)$/);
 
 		const field = kw.results[0]!.soundId;
-		const found = await ok<{ moments: { startSec: number; endSec: number; verdict: string }[] }>('find_sound_moment', {
-			soundId: field,
-			description: 'high',
-			lengthSec: 1,
-			count: 1,
-		});
+		const found = await ok<{ moments: { startSec: number; endSec: number; verdict: string }[] }>(
+			'find_sound_moment',
+			{
+				soundId: field,
+				description: 'high',
+				lengthSec: 1,
+				count: 1,
+			},
+		);
 		expect(found.moments).toHaveLength(1);
 		const m = found.moments[0]!;
 		expect(m.startSec).toBeGreaterThanOrEqual(16.5);
 		expect(m.endSec).toBeLessThanOrEqual(18.6);
 
 		const { projectId } = await ok<{ projectId: string }>('create_project', { name: 'Moments' });
-		const placed = await ok<{ clipId: string; trackCreated: boolean; start: { frame: number }; historyLabel: string }>(
-			'insert_sound_moment',
-			{ projectId, soundId: field, startSec: m.startSec, endSec: m.endSec, at: 30 },
-		);
+		const placed = await ok<{
+			clipId: string;
+			trackCreated: boolean;
+			start: { frame: number };
+			historyLabel: string;
+		}>('insert_sound_moment', { projectId, soundId: field, startSec: m.startSec, endSec: m.endSec, at: 30 });
 		expect(placed).toMatchObject({ trackCreated: true, start: { frame: 30 } });
 		expect(placed.historyLabel).toContain('Add Sound Moment');
 		const doc = await documentOf(projectId);
@@ -213,8 +237,16 @@ describe('Describe-it search over MCP', { timeout: 900_000 }, () => {
 			.find(Boolean) as { sourceIn: number; start: number } | undefined;
 		expect(clip?.start).toBe(30);
 		// the registered copy has 50 ms of lead silence in front: the range starts that much later in it
-		expect(Math.abs(clip!.sourceIn - Math.round((m.startSec + 0.05) * FLICKS_PER_SECOND))).toBeLessThanOrEqual(1);
-		const bad = await call('insert_sound_moment', { projectId, soundId: field, startSec: 5, endSec: 4, at: 0 });
+		expect(
+			Math.abs(clip!.sourceIn - Math.round((m.startSec + 0.05) * FLICKS_PER_SECOND)),
+		).toBeLessThanOrEqual(1);
+		const bad = await call('insert_sound_moment', {
+			projectId,
+			soundId: field,
+			startSec: 5,
+			endSec: 4,
+			at: 0,
+		});
 		expect(bad.isError).toBe(true);
 	});
 });

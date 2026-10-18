@@ -77,7 +77,13 @@ export type SoundSearchResult = Pick<SoundSearchResponse, 'total' | 'offset' | '
  * or the description to search as words when the model is not usable.
  */
 export type DescribeMode =
-	| { semantic: { scores: ReadonlyMap<string, number>; text: string; matches: ReadonlyMap<string, SoundMatch> } }
+	| {
+			semantic: {
+				scores: ReadonlyMap<string, number>;
+				text: string;
+				matches: ReadonlyMap<string, SoundMatch>;
+			};
+	  }
 	| { describeAsKeywords: string };
 
 /** The ranking request of a search query (family as types, `similarTo` by id); `none`: family and types share nothing. */

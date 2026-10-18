@@ -133,15 +133,21 @@ describe('requests, collections, badges, names', () => {
 		// Describe (spec 12 P6-E14): the query goes as a description, untranslated and without q; off by default
 		expect(DEFAULT_FILTERS.describe).toBe(false);
 		expect(
-			searchRequest({ ...DEFAULT_FILTERS, describe: true, query: '  glass bottle shattering ' }, { limit: 1, offset: 0 }),
+			searchRequest(
+				{ ...DEFAULT_FILTERS, describe: true, query: '  glass bottle shattering ' },
+				{ limit: 1, offset: 0 },
+			),
 		).toEqual({ limit: 1, offset: 0, license: 'commercial-safe', describe: 'glass bottle shattering' });
-		expect(searchRequest({ ...DEFAULT_FILTERS, describe: true, query: '   ' }, { limit: 1, offset: 0 })).toEqual({
+		expect(
+			searchRequest({ ...DEFAULT_FILTERS, describe: true, query: '   ' }, { limit: 1, offset: 0 }),
+		).toEqual({
 			limit: 1,
 			offset: 0,
 			license: 'commercial-safe',
 		});
 		expect(
-			searchRequest({ ...DEFAULT_FILTERS, describe: true, query: 'x'.repeat(400) }, { limit: 1, offset: 0 }).describe,
+			searchRequest({ ...DEFAULT_FILTERS, describe: true, query: 'x'.repeat(400) }, { limit: 1, offset: 0 })
+				.describe,
 		).toHaveLength(300);
 	});
 	it('searches a local collection like the engine: filters, keeps its order without a query, facets', () => {

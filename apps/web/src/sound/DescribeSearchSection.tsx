@@ -27,7 +27,9 @@ export function describeInstallBody(m: SoundSemanticModel): string {
 		),
 		t('Licence: {0} ({1}).', m.license, m.licenseUrl),
 		m.attribution,
-		t('It only analyses sounds (search and Find Moment); it never makes sounds, and no audio leaves this computer.'),
+		t(
+			'It only analyses sounds (search and Find Moment); it never makes sounds, and no audio leaves this computer.',
+		),
 	].join(' ');
 }
 
@@ -70,10 +72,17 @@ export function DescribeSearchSection() {
 			const job = await engine.installSoundSemanticModel(m.id);
 			const end = await followJob(engine, job.id, { onUpdate: (j) => setBusy(jobText(j)) });
 			if (end.state !== 'succeeded') {
-				toast({ kind: 'error', title: t('{0} was not downloaded', m.name), detail: end.error?.message ?? end.state });
+				toast({
+					kind: 'error',
+					title: t('{0} was not downloaded', m.name),
+					detail: end.error?.message ?? end.state,
+				});
 				return;
 			}
-			toast({ kind: 'success', title: t('{0} is installed: the library is being prepared for Describe-it search', m.name) });
+			toast({
+				kind: 'success',
+				title: t('{0} is installed: the library is being prepared for Describe-it search', m.name),
+			});
 		} catch (e) {
 			toast({ kind: 'error', title: t('{0} was not downloaded', m.name), detail: errorText(e) });
 		} finally {
@@ -88,7 +97,11 @@ export function DescribeSearchSection() {
 			const job = await engine.embedSounds({});
 			const end = await followJob(engine, job.id, { onUpdate: (j) => setBusy(jobText(j)) });
 			if (end.state !== 'succeeded')
-				toast({ kind: 'error', title: t('The library was not prepared'), detail: end.error?.message ?? end.state });
+				toast({
+					kind: 'error',
+					title: t('The library was not prepared'),
+					detail: end.error?.message ?? end.state,
+				});
 		} catch (e) {
 			toast({ kind: 'error', title: t('The library was not prepared'), detail: errorText(e) });
 		} finally {
@@ -126,8 +139,8 @@ export function DescribeSearchSection() {
 			<PrefGroup title="Describe-it search">
 				<p className="text-pr-small text-pr-muted">
 					Find sounds by what they sound like (&ldquo;glass shattering on concrete&rdquo;), even in folders of
-					files named SFX_0023.wav, and the best moment of a long recording. It needs an optional model
-					(LAION CLAP, about 780 MB) that runs on this computer; without it, Describe searches the words.
+					files named SFX_0023.wav, and the best moment of a long recording. It needs an optional model (LAION
+					CLAP, about 780 MB) that runs on this computer; without it, Describe searches the words.
 				</p>
 				{error ? (
 					<p className="text-pr-small text-pr-danger" role="alert">
@@ -158,7 +171,10 @@ export function DescribeSearchSection() {
 								</span>
 								{m.installed ? (
 									<>
-										<span className="text-pr-small text-pr-success" data-testid={`describe-model-${m.id}-state`}>
+										<span
+											className="text-pr-small text-pr-success"
+											data-testid={`describe-model-${m.id}-state`}
+										>
 											Installed
 										</span>
 										<Button
@@ -186,18 +202,31 @@ export function DescribeSearchSection() {
 							</div>
 							<p className="text-pr-small text-pr-muted">{m.description}</p>
 							{!m.installed && !m.available ? (
-								<p className="text-pr-small text-pr-warning" data-testid={`describe-model-${m.id}-pending-text`}>
+								<p
+									className="text-pr-small text-pr-warning"
+									data-testid={`describe-model-${m.id}-pending-text`}
+								>
 									{m.unavailableReason ?? 'Not available yet: the model download location is pending'}
 								</p>
 							) : null}
 							<p className="text-pr-small text-pr-dim">
 								{m.attribution}
 								{' · '}
-								<a href={m.licenseUrl} target="_blank" rel="noreferrer" className="text-pr-accent underline underline-offset-2">
+								<a
+									href={m.licenseUrl}
+									target="_blank"
+									rel="noreferrer"
+									className="text-pr-accent underline underline-offset-2"
+								>
 									Licence text
 								</a>
 								{' · '}
-								<a href={m.sourceUrl} target="_blank" rel="noreferrer" className="text-pr-accent underline underline-offset-2">
+								<a
+									href={m.sourceUrl}
+									target="_blank"
+									rel="noreferrer"
+									className="text-pr-accent underline underline-offset-2"
+								>
 									Model page
 								</a>
 							</p>

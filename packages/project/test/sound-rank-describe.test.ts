@@ -56,7 +56,10 @@ describe('describe mode', () => {
 		const noWords = rankSounds([lib[0]!], sem({ a_sfx_0001: 0.5 }))[0]!;
 		const w = RANK_WEIGHTS;
 		expect(noWords.score).toBeCloseTo(
-			(w.semantic * 0.5 + w.durationFit * noWords.parts.durationFit + w.judge * 1 + w.license * noWords.parts.license) /
+			(w.semantic * 0.5 +
+				w.durationFit * noWords.parts.durationFit +
+				w.judge * 1 +
+				w.license * noWords.parts.license) /
 				(w.semantic + w.durationFit + w.judge + w.license),
 			5,
 		);
@@ -70,12 +73,18 @@ describe('describe mode', () => {
 		// a description of stopwords only lists embedded sounds alone
 		expect(ids(rankSounds(lib, sem({ a_sfx_0001: 0.3 }, 'the of a')))).toEqual(['a_sfx_0001']);
 		// hostile scores never throw and never rank
-		expect(ids(rankSounds(lib, sem({ a_sfx_0001: Number.NaN, b_sfx_0002: Number.POSITIVE_INFINITY, c_glass: -3 })))).toEqual([]);
+		expect(
+			ids(
+				rankSounds(lib, sem({ a_sfx_0001: Number.NaN, b_sfx_0002: Number.POSITIVE_INFINITY, c_glass: -3 })),
+			),
+		).toEqual([]);
 		expect(() => rankSounds(lib, { semantic: { scores: {} as never, text: 'x' } })).not.toThrow();
 	});
 
 	it('keeps q as a filter and real recordings above synth', () => {
-		expect(ids(rankSounds(lib, { query: 'wood', ...sem({ a_sfx_0001: 1, d_wood: 0.1 }) }))).toEqual(['d_wood']);
+		expect(ids(rankSounds(lib, { query: 'wood', ...sem({ a_sfx_0001: 1, d_wood: 0.1 }) }))).toEqual([
+			'd_wood',
+		]);
 		const withSynth = [...lib, snd('e_synth', { source: { type: 'synth' } })];
 		const r = rankSounds(withSynth, sem({ a_sfx_0001: 0.9, e_synth: 1 }));
 		expect(ids(r)).toEqual(['a_sfx_0001', 'c_glass', 'e_synth']);
@@ -104,7 +113,12 @@ describe('describe mode', () => {
 					expect(page.total).toBe(a.length);
 					expect(ids(page.results)).toEqual(ids(a.slice(offset, offset + 10)));
 					const bits = soundFilterOf(req);
-					expect(many.filter((e) => bits(e) === SOUND_FILTER_ALL).map((e) => e.id).sort()).toEqual(ids(a).sort());
+					expect(
+						many
+							.filter((e) => bits(e) === SOUND_FILTER_ALL)
+							.map((e) => e.id)
+							.sort(),
+					).toEqual(ids(a).sort());
 				},
 			),
 			{ numRuns: 150 },

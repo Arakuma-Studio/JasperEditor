@@ -26,7 +26,10 @@ function recording(h: Harness, seconds = 40, leadSilenceSec = 0.05): string {
 		...(leadSilenceSec ? { leadSilenceSec } : {}),
 	};
 	const r = h.ok([
-		{ type: 'media.register', asset: { ...videoAsset({ kind: 'audio', seconds: seconds + leadSilenceSec }), library } },
+		{
+			type: 'media.register',
+			asset: { ...videoAsset({ kind: 'audio', seconds: seconds + leadSilenceSec }), library },
+		},
 	]);
 	return (r.results[0] as { mediaId: string }).mediaId;
 }
@@ -36,7 +39,14 @@ describe('planMomentPlacement', () => {
 		const h = new Harness();
 		const m = recording(h);
 		const before = clone(h.doc);
-		const plan = planMomentPlacement({ seq: h.seq, mediaRef: m, startSec: 23.1, endSec: 24.0, leadSec: 0.05, at: 60 });
+		const plan = planMomentPlacement({
+			seq: h.seq,
+			mediaRef: m,
+			startSec: 23.1,
+			endSec: 24.0,
+			leadSec: 0.05,
+			at: 60,
+		});
 		expect(plan.ok).toBe(true);
 		if (!plan.ok) return;
 		expect(plan.placement.track).toMatchObject({ kind: 'new', name: 'SFX 1' });
@@ -65,23 +75,52 @@ describe('planMomentPlacement', () => {
 		const h = new Harness();
 		const m = recording(h, 10, 0);
 		const media = Math.round(10 * FLICKS_PER_SECOND);
-		const p = planMomentPlacement({ seq: h.seq, mediaRef: m, startSec: 9.5, endSec: 12, mediaDurationFlicks: media, at: 0 });
+		const p = planMomentPlacement({
+			seq: h.seq,
+			mediaRef: m,
+			startSec: 9.5,
+			endSec: 12,
+			mediaDurationFlicks: media,
+			at: 0,
+		});
 		expect(p.ok && p.placement.sourceOutFlicks).toBe(media);
 		const bad = (o: Partial<Parameters<typeof planMomentPlacement>[0]>) =>
-			planMomentPlacement({ seq: h.seq, mediaRef: m, startSec: 1, endSec: 2, at: 0, mediaDurationFlicks: media, ...o });
+			planMomentPlacement({
+				seq: h.seq,
+				mediaRef: m,
+				startSec: 1,
+				endSec: 2,
+				at: 0,
+				mediaDurationFlicks: media,
+				...o,
+			});
 		expect(bad({ startSec: 11, endSec: 12 })).toMatchObject({ ok: false, code: 'E_INVALID_PARAM' });
 		expect(bad({ endSec: 1 })).toMatchObject({ ok: false });
 		expect(bad({ startSec: -1 })).toMatchObject({ ok: false });
 		expect(bad({ at: -3 })).toMatchObject({ ok: false });
 		expect(bad({ at: 1.5 })).toMatchObject({ ok: false });
 		fc.assert(
-			fc.property(fc.double(), fc.double(), fc.double(), fc.integer({ min: -10, max: 1e6 }), (s, e, lead, at) => {
-				const r = planMomentPlacement({ seq: h.seq, mediaRef: m, startSec: s, endSec: e, leadSec: lead, at, mediaDurationFlicks: media });
-				if (r.ok) {
-					expect(r.placement.frames).toBeGreaterThanOrEqual(1);
-					expect(r.placement.sourceOutFlicks).toBeGreaterThan(r.placement.sourceInFlicks);
-				}
-			}),
+			fc.property(
+				fc.double(),
+				fc.double(),
+				fc.double(),
+				fc.integer({ min: -10, max: 1e6 }),
+				(s, e, lead, at) => {
+					const r = planMomentPlacement({
+						seq: h.seq,
+						mediaRef: m,
+						startSec: s,
+						endSec: e,
+						leadSec: lead,
+						at,
+						mediaDurationFlicks: media,
+					});
+					if (r.ok) {
+						expect(r.placement.frames).toBeGreaterThanOrEqual(1);
+						expect(r.placement.sourceOutFlicks).toBeGreaterThan(r.placement.sourceInFlicks);
+					}
+				},
+			),
 			{ numRuns: 300 },
 		);
 	});

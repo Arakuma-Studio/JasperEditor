@@ -416,7 +416,11 @@ export class EngineClient {
 		return this.call('soundEmbed', { body: req });
 	}
 	/** Find Moment: a `sound-moment` job for the best windows of a sound for a description (`wait`: its end). */
-	findSoundMoments(soundId: string, req: SoundMomentRequest, opts: { wait?: boolean; signal?: AbortSignal } = {}) {
+	findSoundMoments(
+		soundId: string,
+		req: SoundMomentRequest,
+		opts: { wait?: boolean; signal?: AbortSignal } = {},
+	) {
 		return this.call('soundMoments', {
 			params: { soundId },
 			body: req,

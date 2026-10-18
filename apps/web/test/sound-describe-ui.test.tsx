@@ -102,10 +102,26 @@ const model = (over: Partial<SoundSemanticModel> = {}): SoundSemanticModel => ({
 });
 
 /** The fake engine of the sound tests plus Describe-it search: `mode` decides what a described search answers. */
-function describeEngine(entries: SoundEntry[], opts: { mode: 'semantic' | 'keywords'; momentsFail?: string }) {
+function describeEngine(
+	entries: SoundEntry[],
+	opts: { mode: 'semantic' | 'keywords'; momentsFail?: string },
+) {
 	const base = fakeSoundEngine(entries);
-	const calls = { search: [] as SoundSearchRequest[], moments: [] as unknown[], install: [] as string[], remove: [] as string[] };
-	let models = [model(), model({ id: 'clap-int8', name: 'CLAP int8', available: false, unavailableReason: 'Not available yet: the model download location is pending' })];
+	const calls = {
+		search: [] as SoundSearchRequest[],
+		moments: [] as unknown[],
+		install: [] as string[],
+		remove: [] as string[],
+	};
+	let models = [
+		model(),
+		model({
+			id: 'clap-int8',
+			name: 'CLAP int8',
+			available: false,
+			unavailableReason: 'Not available yet: the model download location is pending',
+		}),
+	];
 	const client = {
 		...base.client,
 		registerSound: async (id: string) => registeredPadded(entries.find((e) => e.id === id)!),
@@ -114,13 +130,37 @@ function describeEngine(entries: SoundEntry[], opts: { mode: 'semantic' | 'keywo
 			if (!req.describe) return base.client.searchSounds(req);
 			if (opts.mode === 'keywords') {
 				const r = await base.client.searchSounds({ ...req, q: req.describe });
-				return { ...r, describe: { mode: 'keywords' as const, reason: 'not installed', model: null, embedded: 0, pending: 2, jobId: null } };
+				return {
+					...r,
+					describe: {
+						mode: 'keywords' as const,
+						reason: 'not installed',
+						model: null,
+						embedded: 0,
+						pending: 2,
+						jobId: null,
+					},
+				};
 			}
 			const r = await base.client.searchSounds({ ...req, describe: undefined });
 			return {
 				...r,
-				results: r.results.map((x, i) => ({ ...x, match: { z: i === 0 ? 3.4 : 1.2, verdict: i === 0 ? ('strong' as const) : ('none' as const), cosine: 0.3 } })),
-				describe: { mode: 'semantic' as const, reason: null, model: 'clap-larger-general', embedded: entries.length, pending: 0, jobId: null },
+				results: r.results.map((x, i) => ({
+					...x,
+					match: {
+						z: i === 0 ? 3.4 : 1.2,
+						verdict: i === 0 ? ('strong' as const) : ('none' as const),
+						cosine: 0.3,
+					},
+				})),
+				describe: {
+					mode: 'semantic' as const,
+					reason: null,
+					model: 'clap-larger-general',
+					embedded: entries.length,
+					pending: 0,
+					jobId: null,
+				},
 			};
 		},
 		soundSemanticStatus: async () => ({
@@ -146,7 +186,9 @@ function describeEngine(entries: SoundEntry[], opts: { mode: 'semantic' | 'keywo
 		findSoundMoments: async (soundId: string, req: unknown) => {
 			calls.moments.push({ soundId, req });
 			if (opts.momentsFail)
-				throw Object.assign(new Error('Find Moment is unavailable: the model is not installed'), { code: opts.momentsFail });
+				throw Object.assign(new Error('Find Moment is unavailable: the model is not installed'), {
+					code: opts.momentsFail,
+				});
 			return job({ state: 'queued' });
 		},
 		getJob: async (id: string) =>
@@ -160,7 +202,16 @@ function describeEngine(entries: SoundEntry[], opts: { mode: 'semantic' | 'keywo
 					startSec: 0,
 					endSec: 30,
 					lengthSec: 1,
-					moments: [{ startSec: 17.1, endSec: 18, match: { z: 3.1, verdict: 'strong', cosine: 0.4 }, headDb: -60, tailDb: -12, trimmed: true }],
+					moments: [
+						{
+							startSec: 17.1,
+							endSec: 18,
+							match: { z: 3.1, verdict: 'strong', cosine: 0.4 },
+							headDb: -60,
+							tailDb: -12,
+							trimmed: true,
+						},
+					],
 					computed: 7,
 					cached: 0,
 				},
@@ -207,7 +258,9 @@ describe('Describe in the Sound Library', () => {
 		await screen.findAllByRole('option');
 		fireEvent.click(screen.getByTestId('sound-describe'));
 		fireEvent.change(screen.getByLabelText('Search sounds'), { target: { value: 'SFX_0001' } });
-		await waitFor(() => expect(screen.getByTestId('sound-describe-info').getAttribute('data-describe-mode')).toBe('keywords'));
+		await waitFor(() =>
+			expect(screen.getByTestId('sound-describe-info').getAttribute('data-describe-mode')).toBe('keywords'),
+		);
 		expect(screen.getByTestId('sound-describe-info').textContent).toContain('searching the words instead');
 		expect(document.querySelector('[data-match-verdict]')).toBeNull();
 	});
@@ -236,10 +289,14 @@ describe('Find Moment…', () => {
 			void openDialog(SOUND_FIND_MOMENT_DIALOG, { entry: entries[0]!, session });
 		});
 		const dialog = await screen.findByTestId('sound-find-moment-dialog');
-		fireEvent.change(within(dialog).getByTestId('sound-find-moment-description'), { target: { value: 'a single key press' } });
+		fireEvent.change(within(dialog).getByTestId('sound-find-moment-description'), {
+			target: { value: 'a single key press' },
+		});
 		fireEvent.click(within(dialog).getByRole('button', { name: 'Find' }));
 		const results = await within(dialog).findByTestId('sound-find-moment-results');
-		expect(calls.moments).toEqual([{ soundId: entries[0]!.id, req: { description: 'a single key press', lengthSec: 2, count: 5 } }]);
+		expect(calls.moments).toEqual([
+			{ soundId: entries[0]!.id, req: { description: 'a single key press', lengthSec: 2, count: 5 } },
+		]);
 		expect(results.textContent).toContain('0:17.10 – 0:18.00');
 		expect(results.textContent).toContain('Strong match');
 		expect(results.textContent).toContain('cut before it fades');
@@ -251,7 +308,10 @@ describe('Find Moment…', () => {
 			fireEvent.click(within(dialog).getByTestId('sound-find-moment-insert-0'));
 		});
 		await waitFor(() => expect(Object.keys(session.getCommitted().sequences[seqId]!.clips)).toHaveLength(1));
-		const clip = Object.values(session.getCommitted().sequences[seqId]!.clips)[0]! as { start: number; sourceIn: number };
+		const clip = Object.values(session.getCommitted().sequences[seqId]!.clips)[0]! as {
+			start: number;
+			sourceIn: number;
+		};
 		expect(clip.start).toBe(45);
 		// the registered copy has 50 ms of lead silence in front
 		expect(clip.sourceIn).toBe(Math.round((17.1 + 0.05) * FLICKS_PER_SECOND));
@@ -270,9 +330,13 @@ describe('Find Moment…', () => {
 		const dialog = await screen.findByTestId('sound-find-moment-dialog');
 		// an empty description is refused before anything is asked
 		fireEvent.click(within(dialog).getByRole('button', { name: 'Find' }));
-		expect((await within(dialog).findByTestId('sound-find-moment-error')).textContent).toBe('Describe the moment first');
+		expect((await within(dialog).findByTestId('sound-find-moment-error')).textContent).toBe(
+			'Describe the moment first',
+		);
 		expect(calls.moments).toEqual([]);
-		fireEvent.change(within(dialog).getByTestId('sound-find-moment-description'), { target: { value: 'a dog barking' } });
+		fireEvent.change(within(dialog).getByTestId('sound-find-moment-description'), {
+			target: { value: 'a dog barking' },
+		});
 		fireEvent.click(within(dialog).getByRole('button', { name: 'Find' }));
 		await waitFor(() =>
 			expect(within(dialog).getByTestId('sound-find-moment-error').textContent).toContain(

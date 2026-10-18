@@ -339,12 +339,16 @@ export async function insertSoundMoment(
 	const commands: Command[] = [...prepared.commands, ...(plan.placement.commands as Command[])];
 	const r = session.apply({ label: `Add Sound Moment ${sm.title}`, origin: 'user', sequenceId, commands });
 	if (!r.ok)
-		throw new InsertSoundError(r.errors.map((e) => e.message).join('; ') || t('The moment could not be added'));
+		throw new InsertSoundError(
+			r.errors.map((e) => e.message).join('; ') || t('The moment could not be added'),
+		);
 	const clipId = r.refs?.$momentClip;
 	if (!clipId) throw new InsertSoundError(t('The moment was added but its clip was not found'));
 	const after = session.getCommitted().sequences[sequenceId]!;
 	const clip = after.clips[clipId];
-	const trackLabel = clip ? `A${after.audioTracks.findIndex((x) => x.id === clip.trackId) + 1}` : plan.placement.track.label;
+	const trackLabel = clip
+		? `A${after.audioTracks.findIndex((x) => x.id === clip.trackId) + 1}`
+		: plan.placement.track.label;
 	session.select('timeline', [clipId], 'replace', { primary: clipId });
 	soundLibraryPrefs.touchRecent(entry.id);
 	const tc = formatTimecode(at, after.settings.frameRate, { dropFrame: after.settings.dropFrame });

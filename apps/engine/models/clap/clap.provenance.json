@@ -61,7 +61,7 @@
       "paddedBatchTextCosineMin": 1.0,
       "top1AgreementSoundToText": 1.0,
       "top1AgreementTextToSound": 1.0,
-      "maxAbsSimilarityDiff": 4.291534423828125e-06
+      "maxAbsSimilarityDiff": 4.291534423828125e-6
     },
     "fp32": {
       "audioCosineMin": 0.9999998807907104,
@@ -71,7 +71,7 @@
       "paddedBatchTextCosineMin": 1.0,
       "top1AgreementSoundToText": 1.0,
       "top1AgreementTextToSound": 1.0,
-      "maxAbsSimilarityDiff": 4.291534423828125e-06
+      "maxAbsSimilarityDiff": 4.291534423828125e-6
     },
     "int8": {
       "audioCosineMin": 0.9944643974304199,

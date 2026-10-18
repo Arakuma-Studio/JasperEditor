@@ -88,7 +88,13 @@ export type AuditionSound = {
 /** A valid range of a sound (start ≥ 0, end after it), or null. */
 function rangeOf(sound: AuditionSound): { startSec: number; durSec: number } | null {
 	const r = sound.range;
-	if (!r || !Number.isFinite(r.startSec) || !Number.isFinite(r.endSec) || r.startSec < 0 || !(r.endSec > r.startSec))
+	if (
+		!r ||
+		!Number.isFinite(r.startSec) ||
+		!Number.isFinite(r.endSec) ||
+		r.startSec < 0 ||
+		!(r.endSec > r.startSec)
+	)
 		return null;
 	return { startSec: r.startSec, durSec: r.endSec - r.startSec };
 }
@@ -360,7 +366,11 @@ export class AuditionPlayer {
 		}
 	}
 
-	private startSource(buffer: AudioBuffer, token: number, range: { startSec: number; durSec: number } | null = null): void {
+	private startSource(
+		buffer: AudioBuffer,
+		token: number,
+		range: { startSec: number; durSec: number } | null = null,
+	): void {
 		const ctx = this.ctx;
 		if (!ctx || !this.gain) return;
 		const src = ctx.createBufferSource();

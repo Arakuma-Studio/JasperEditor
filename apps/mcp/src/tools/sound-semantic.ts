@@ -9,8 +9,8 @@ import {
 	SOUND_MOMENT_MAX_COUNT,
 	SOUND_MOMENT_MAX_SEC,
 	SOUND_MOMENT_MIN_SEC,
-	type SoundEntry,
 	SoundEmbedResultSchema,
+	type SoundEntry,
 	SoundMomentResultSchema,
 	type SoundSemanticModelsResponse,
 	type SoundSemanticStatus,
@@ -109,7 +109,13 @@ export function registerSoundSemanticTools(ctx: ToolContext): void {
 			input: {
 				modelId: z.string().min(1).max(64).optional().describe('Model id (default: the catalogue’s first)'),
 				wait: z.boolean().optional().describe('Wait for the download (default false)'),
-				timeoutSeconds: z.number().int().min(1).max(7200).optional().describe('How long to wait (default 3600)'),
+				timeoutSeconds: z
+					.number()
+					.int()
+					.min(1)
+					.max(7200)
+					.optional()
+					.describe('How long to wait (default 3600)'),
 			},
 			annotations: EDIT_IDEMPOTENT,
 		},
@@ -117,10 +123,20 @@ export function registerSoundSemanticTools(ctx: ToolContext): void {
 			const { models } = await soundCall<SoundSemanticModelsResponse>(ctx, (c) => c.soundSemanticModels());
 			const m = a.modelId ? models.find((x) => x.id === a.modelId) : models[0];
 			if (!m)
-				throw new ToolError('E_NOT_FOUND', `Unknown Describe-it search model ${a.modelId ?? ''}`, 'Call describe_search_status.');
+				throw new ToolError(
+					'E_NOT_FOUND',
+					`Unknown Describe-it search model ${a.modelId ?? ''}`,
+					'Call describe_search_status.',
+				);
 			const job = await soundCall<EngineJob>(ctx, (c) => c.installSoundSemanticModel(m.id));
-			const model = { modelId: m.id, license: m.license, attribution: m.attribution, downloadMB: MB(m.missingBytes) };
-			if (!a.wait) return jsonResult({ ...jobBody(job, base()), model, next: 'wait_for_job with this jobId.' });
+			const model = {
+				modelId: m.id,
+				license: m.license,
+				attribution: m.attribution,
+				downloadMB: MB(m.missingBytes),
+			};
+			if (!a.wait)
+				return jsonResult({ ...jobBody(job, base()), model, next: 'wait_for_job with this jobId.' });
 			const { job: done, timedOut } = await waitJob(ctx, job.id, (a.timeoutSeconds ?? 3600) * 1000, extra, {
 				cancelJobOnAbort: false,
 			});
@@ -151,7 +167,13 @@ export function registerSoundSemanticTools(ctx: ToolContext): void {
 			input: {
 				full: z.boolean().optional(),
 				wait: z.boolean().optional().describe('Wait for the job (default false)'),
-				timeoutSeconds: z.number().int().min(1).max(7200).optional().describe('How long to wait (default 1800)'),
+				timeoutSeconds: z
+					.number()
+					.int()
+					.min(1)
+					.max(7200)
+					.optional()
+					.describe('How long to wait (default 1800)'),
 			},
 			annotations: EDIT_IDEMPOTENT,
 		},
@@ -164,7 +186,9 @@ export function registerSoundSemanticTools(ctx: ToolContext): void {
 			const r = SoundEmbedResultSchema.safeParse(done.result);
 			return jsonResult({
 				...jobBody(done, base()),
-				...(r.success ? { embedded: r.data.embedded, reused: r.data.reused, failed: r.data.failed, errors: r.data.errors } : {}),
+				...(r.success
+					? { embedded: r.data.embedded, reused: r.data.reused, failed: r.data.failed, errors: r.data.errors }
+					: {}),
 				...(timedOut ? { timedOut: true } : {}),
 			});
 		},
@@ -178,23 +202,39 @@ export function registerSoundSemanticTools(ctx: ToolContext): void {
 			description:
 				'Finds the moments of a library sound (a long recording: a field recording, a typing session, a foley take) that best match a description, with the Describe-it search model. Returns up to count non-overlapping moments, best first: startSec / endSec in the sound (shrunk to where the sound is unless trim: false), match {z, verdict, cosine} and headDb / tailDb (a loud head or tail means the moment is cut inside a sound). Windows are cached per recording: a second description of the same recording is fast. Place one with insert_sound_moment. Needs the model (describe_search_status).',
 			input: {
-				soundId: SoundIdArg.describe('Sound id from search_sounds (a recording; a take searches inside the take)'),
+				soundId: SoundIdArg.describe(
+					'Sound id from search_sounds (a recording; a take searches inside the take)',
+				),
 				description: z
 					.string()
 					.min(1)
 					.max(SOUND_DESCRIBE_MAX_CHARS)
-					.describe('Source + material + action + character: "a single clean key press on a mechanical keyboard"'),
+					.describe(
+						'Source + material + action + character: "a single clean key press on a mechanical keyboard"',
+					),
 				lengthSec: z
 					.number()
 					.min(SOUND_MOMENT_MIN_SEC)
 					.max(SOUND_MOMENT_MAX_SEC)
 					.optional()
 					.describe('Length of the windows compared, seconds (default 2)'),
-				count: z.number().int().min(1).max(SOUND_MOMENT_MAX_COUNT).optional().describe('Moments returned (default 3)'),
+				count: z
+					.number()
+					.int()
+					.min(1)
+					.max(SOUND_MOMENT_MAX_COUNT)
+					.optional()
+					.describe('Moments returned (default 3)'),
 				startSec: z.number().min(0).optional().describe('Search only from here (seconds in the sound)'),
 				endSec: z.number().min(0).optional().describe('…to here'),
 				trim: z.boolean().optional().describe('Shrink each moment to its sound (default true)'),
-				timeoutSeconds: z.number().int().min(1).max(7200).optional().describe('How long to wait (default 1800)'),
+				timeoutSeconds: z
+					.number()
+					.int()
+					.min(1)
+					.max(7200)
+					.optional()
+					.describe('How long to wait (default 1800)'),
 			},
 			annotations: READ_ONLY,
 		},
@@ -204,7 +244,12 @@ export function registerSoundSemanticTools(ctx: ToolContext): void {
 			const { job: done, timedOut } = await waitJob(ctx, job.id, (timeoutSeconds ?? 1800) * 1000, extra, {
 				cancelJobOnAbort: true,
 			});
-			if (timedOut) return jsonResult({ ...jobBody(done, base()), timedOut: true, next: 'wait_for_job with this jobId.' });
+			if (timedOut)
+				return jsonResult({
+					...jobBody(done, base()),
+					timedOut: true,
+					next: 'wait_for_job with this jobId.',
+				});
 			if (done.state !== 'succeeded')
 				throw new ToolError(
 					done.error?.code ?? 'MOMENT_FAILED',
@@ -250,15 +295,26 @@ export function registerSoundSemanticTools(ctx: ToolContext): void {
 				soundId: SoundIdArg,
 				startSec: z.number().min(0).describe('Start of the range in the sound (seconds)'),
 				endSec: z.number().min(0).describe('End of the range (seconds)'),
-				at: z.union([z.literal('playhead'), TimeInputSchema]).describe(`Where the range starts: "playhead" or ${TIME_FORMATS}`),
-				track: z.string().min(1).max(200).optional().describe('"auto" (default) or an audio track ("A3", id or name)'),
+				at: z
+					.union([z.literal('playhead'), TimeInputSchema])
+					.describe(`Where the range starts: "playhead" or ${TIME_FORMATS}`),
+				track: z
+					.string()
+					.min(1)
+					.max(200)
+					.optional()
+					.describe('"auto" (default) or an audio track ("A3", id or name)'),
 				sequenceId: SequenceIdArg,
 			},
 			annotations: EDIT,
 		},
 		async (a, extra) => {
 			if (!(a.endSec > a.startSec))
-				throw new ToolError('E_INVALID_PARAM', 'endSec must be after startSec', 'Use a moment from find_sound_moment.');
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'endSec must be after startSec',
+					'Use a moment from find_sound_moment.',
+				);
 			const entry = await soundCall<SoundEntry>(ctx, (c) => c.getSound(a.soundId));
 			const reg = await soundCall<RegisterSoundResponse>(ctx, (c) => c.registerSound(a.soundId, a.projectId));
 			const title = entry.title || reg.library.title || reg.originalName;
@@ -279,11 +335,13 @@ export function registerSoundSemanticTools(ctx: ToolContext): void {
 				const { commands, media } = importCommands(doc, [{ soundId: a.soundId, reg, title }]);
 				const existing = media[0]!.mediaId;
 				const provenance =
-					(existing && readLibraryProvenance((doc.media[existing] as { library?: unknown }).library)) || reg.library;
+					(existing && readLibraryProvenance((doc.media[existing] as { library?: unknown }).library)) ||
+					reg.library;
 				const durFlicks =
 					(existing ? mediaDurationFlicks(doc.media[existing] as MediaAsset) : reg.probe.durationFlicks) ??
 					Math.round(entry.format.durationSec * FLICKS_PER_SECOND);
-				const preferred = a.track && a.track.toLowerCase() !== 'auto' ? resolveAudioTrack(seq, a.track) : null;
+				const preferred =
+					a.track && a.track.toLowerCase() !== 'auto' ? resolveAudioTrack(seq, a.track) : null;
 				const plan = planMomentPlacement({
 					seq,
 					mediaRef: existing ?? media[0]!.ref!,
@@ -294,23 +352,46 @@ export function registerSoundSemanticTools(ctx: ToolContext): void {
 					at,
 					preferredTrackId: preferred,
 				});
-				if (!plan.ok) throw new ToolError(plan.code, plan.message, 'Check startSec / endSec against get_sound.');
-				if (preferred && (plan.placement.track.kind !== 'existing' || plan.placement.track.trackId !== preferred))
-					throw new ToolError('E_OVERLAP', `${a.track} is not free over the moment's span`, 'Use track "auto" or another track.');
+				if (!plan.ok)
+					throw new ToolError(plan.code, plan.message, 'Check startSec / endSec against get_sound.');
+				if (
+					preferred &&
+					(plan.placement.track.kind !== 'existing' || plan.placement.track.trackId !== preferred)
+				)
+					throw new ToolError(
+						'E_OVERLAP',
+						`${a.track} is not free over the moment's span`,
+						'Use track "auto" or another track.',
+					);
 				commands.push(...plan.placement.commands);
 				const label = `Add Sound Moment ${title}`.slice(0, 200);
 				const res = await transact(
 					ctx,
 					a.projectId,
-					{ label, commands, sequenceId: seq.id, ...(revision !== undefined ? { expectedRevision: revision } : {}) },
+					{
+						label,
+						commands,
+						sequenceId: seq.id,
+						...(revision !== undefined ? { expectedRevision: revision } : {}),
+					},
 					extra,
 				);
-				if (!res.result.ok && attempt === 0 && res.result.errors.some((e) => e.code === 'E_REVISION_MISMATCH')) continue;
+				if (
+					!res.result.ok &&
+					attempt === 0 &&
+					res.result.errors.some((e) => e.code === 'E_REVISION_MISMATCH')
+				)
+					continue;
 				const r = requireOk(res);
 				const clipId = r.refs.$momentClip;
 				const after = (await loadDoc(ctx, a.projectId)).doc.sequences[seq.id];
 				const clip = clipId ? after?.clips[clipId] : undefined;
-				if (!after || !clip) throw new ToolError('INTERNAL', 'The moment was added but its clip was not found', 'Call get_timeline.');
+				if (!after || !clip)
+					throw new ToolError(
+						'INTERNAL',
+						'The moment was added but its clip was not found',
+						'Call get_timeline.',
+					);
 				return jsonResult({
 					...txBody(res, r),
 					historyLabel: label,
@@ -320,7 +401,10 @@ export function registerSoundSemanticTools(ctx: ToolContext): void {
 					track: trackLabel(after, clip.trackId) ?? clip.trackId,
 					trackCreated: plan.placement.track.kind === 'new',
 					start: { frame: clip.start, timecode: sequenceTimecode(after, clip.start) },
-					end: { frame: clip.start + clip.duration, timecode: sequenceTimecode(after, clip.start + clip.duration) },
+					end: {
+						frame: clip.start + clip.duration,
+						timecode: sequenceTimecode(after, clip.start + clip.duration),
+					},
 					range: { startSec: a.startSec, endSec: a.endSec },
 					...(requiresAttribution(entry.license) ? { credit: entry.attribution } : {}),
 					...(reg.inexact ? { notes: [reg.inexact.message] } : {}),

@@ -118,7 +118,8 @@ export async function processingLicenses(svc: ProcessingService): Promise<Licens
 			bundled: false,
 			sourceUrl: m.sourceUrl,
 			notice: `Attribution: ${m.attribution}. Licence: ${m.licenseUrl}`,
-			texts: apache && /^Apache-2\.0$/i.test(m.license) ? [{ title: 'Apache License 2.0', text: apache }] : [],
+			texts:
+				apache && /^Apache-2\.0$/i.test(m.license) ? [{ title: 'Apache License 2.0', text: apache }] : [],
 		});
 	}
 	for (const m of await svc.visionModels.list()) {

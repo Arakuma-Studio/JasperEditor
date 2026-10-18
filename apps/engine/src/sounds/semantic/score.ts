@@ -109,9 +109,18 @@ export function audioStats(a: Float32Array, cal: Calibration): AudioStats {
 }
 
 /** The library reference of hub damping: ā, Cā (= mean Ca), λ and the scalars every z reuses. */
-export type Reference = { mean: Float64Array; Cmean: Float64Array; lambda: number; meanVbar: number; meanCmean: number };
+export type Reference = {
+	mean: Float64Array;
+	Cmean: Float64Array;
+	lambda: number;
+	meanVbar: number;
+	meanCmean: number;
+};
 
-export function referenceOf(items: readonly { a: Float32Array; stats: AudioStats }[], cal: Calibration): Reference {
+export function referenceOf(
+	items: readonly { a: Float32Array; stats: AudioStats }[],
+	cal: Calibration,
+): Reference {
 	const n = items.length;
 	const mean = new Float64Array(D);
 	const Cmean = new Float64Array(D);
@@ -165,12 +174,18 @@ export const REFINED_REGIONS = 3;
 const r4 = (x: number) => Math.round(x * 10_000) / 10_000;
 
 /** Windows of `lengthSec` every `hopSec` covering `[startSec, endSec]` (the last one ends at `endSec`). */
-export function slidingWindows(startSec: number, endSec: number, lengthSec: number, hopSec: number): ClapWindow[] {
+export function slidingWindows(
+	startSec: number,
+	endSec: number,
+	lengthSec: number,
+	hopSec: number,
+): ClapWindow[] {
 	if (!(endSec > startSec) || !(lengthSec > 0) || !(hopSec > 0)) return [];
 	if (endSec - startSec <= lengthSec) return [{ startSec: r4(startSec), endSec: r4(endSec) }];
 	const out: ClapWindow[] = [];
 	const last = endSec - lengthSec;
-	for (let t = startSec; t < last - 1e-9; t += hopSec) out.push({ startSec: r4(t), endSec: r4(t + lengthSec) });
+	for (let t = startSec; t < last - 1e-9; t += hopSec)
+		out.push({ startSec: r4(t), endSec: r4(t + lengthSec) });
 	out.push({ startSec: r4(last), endSec: r4(endSec) });
 	return out;
 }
@@ -208,7 +223,10 @@ export function fineWindows(
 }
 
 /** The best `count` scored windows that do not overlap (key descending, then earlier first). */
-export function pickMoments<T extends { window: ClapWindow; key: number }>(scored: readonly T[], count: number): T[] {
+export function pickMoments<T extends { window: ClapWindow; key: number }>(
+	scored: readonly T[],
+	count: number,
+): T[] {
 	const sorted = [...scored].sort(
 		(a, b) => b.key - a.key || a.window.startSec - b.window.startSec || a.window.endSec - b.window.endSec,
 	);
@@ -222,7 +240,9 @@ export function pickMoments<T extends { window: ClapWindow; key: number }>(score
 }
 
 /** The coarse regions to refine: the best REFINED_REGIONS windows by key (overlap allowed: neighbours both refine). */
-export function regionsToRefine<T extends { window: ClapWindow; key: number }>(scored: readonly T[]): ClapWindow[] {
+export function regionsToRefine<T extends { window: ClapWindow; key: number }>(
+	scored: readonly T[],
+): ClapWindow[] {
 	return [...scored]
 		.sort((a, b) => b.key - a.key || a.window.startSec - b.window.startSec)
 		.slice(0, REFINED_REGIONS)

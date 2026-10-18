@@ -37,10 +37,10 @@ import {
 import { isLoopbackHost } from '../context.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import { fingerprintFile, fingerprintHex } from '../media/fingerprint.ts';
+import type { ProcessingService } from '../processing/service.ts';
 import { freeDiskBytes } from '../tools/fs.ts';
 import { contentTypeFor } from '../tools/http.ts';
 import { HttpError } from '../tools/reply.ts';
-import type { ProcessingService } from '../processing/service.ts';
 import type { CoreServices } from '../tools/services.ts';
 import { resolveSoundWorker, SoundAnalyzer } from './analysis.ts';
 import { decodeSound } from './decode.ts';
