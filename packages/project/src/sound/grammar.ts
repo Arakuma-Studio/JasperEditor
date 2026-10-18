@@ -436,8 +436,10 @@ export function personalityAdjustment(
 }
 
 /**
- * A cue's types under a personality: its excluded types left out (unless that leaves none: the cue's request wins),
- * its boosted types first (stable). Without a personality the types as given.
+ * A cue's types under a personality: its excluded types left out (unless that leaves none: the cue's request wins), and
+ * within each family the boosted types ahead of the others (stable). A boost never moves a type ahead of another
+ * family's: the derivation's order of families is its intent (a typewriter wants keys before clicks, a cut a hit
+ * before a transition). Without a personality the types as given.
  */
 export function styleCueTypes(
 	types: readonly SoundTypeId[],
@@ -448,7 +450,17 @@ export function styleCueTypes(
 	const p = SOUND_PERSONALITY_PROFILES[personality];
 	const kept = list.filter((t) => !p.exclude.includes(t));
 	const base = kept.length ? kept : list;
-	return [...base.filter((t) => p.boost.includes(t)), ...base.filter((t) => !p.boost.includes(t))];
+	const out = [...base];
+	const families = new Set(base.map((t) => (isSoundTypeId(t) ? SOUND_TYPES[t].family : null)));
+	for (const fam of families) {
+		const at = base.map((t, k) => (isSoundTypeId(t) && SOUND_TYPES[t].family === fam ? k : -1)).filter((k) => k >= 0);
+		const mine = at.map((k) => base[k]!);
+		const ordered = [...mine.filter((t) => p.boost.includes(t)), ...mine.filter((t) => !p.boost.includes(t))];
+		at.forEach((k, n) => {
+			out[k] = ordered[n]!;
+		});
+	}
+	return out;
 }
 
 /** The density of a pass: the request's, else the personality's default when the request names one, else `fallback`. */

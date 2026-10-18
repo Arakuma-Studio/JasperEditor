@@ -442,17 +442,22 @@ describe('personality', () => {
 		expect(personalityScore({ types: ['click'] }, null)).toBeNull();
 	});
 
-	it('styleCueTypes: exclusions out (never all), boosts first; deriveCues applies it to derived cues, not markers', () => {
+	it('styleCueTypes: exclusions out (never all), boosts first within a family; deriveCues applies it to derived cues, not markers', () => {
 		expect(styleCueTypes(['hit', 'thump', 'transition', 'glitch', 'click'], 'calm')).toEqual([
 			'thump',
 			'transition',
 			'click',
 		]);
-		expect(styleCueTypes(['thump', 'hit', 'transition'], 'energetic')).toEqual([
+		// boosts reorder within a family only: warm puts the thump ahead of the hit, never ahead of another family
+		expect(styleCueTypes(['hit', 'thump', 'transition', 'glitch', 'click'], 'warm')).toEqual([
+			'thump',
 			'hit',
 			'transition',
-			'thump',
+			'click',
 		]);
+		expect(styleCueTypes(['thump', 'hit', 'transition'], 'energetic')).toEqual(['hit', 'thump', 'transition']);
+		// a typewriter keeps keys first under bright (it boosts clicks, another family)
+		expect(styleCueTypes(['key', 'tick', 'click'], 'bright')).toEqual(['key', 'tick', 'click']);
 		expect(styleCueTypes(['boom', 'hit'], 'calm')).toEqual(['boom', 'hit']);
 		expect(styleCueTypes(['boom', 'hit'], null)).toEqual(['boom', 'hit']);
 		const { h } = phase2Fixture();
