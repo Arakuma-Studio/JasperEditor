@@ -42,13 +42,13 @@ export function DescribeSearchSection() {
 
 	const load = useCallback(
 		() =>
-			void Promise.all([engine.soundSemanticStatus(), engine.soundSemanticModels()])
-				.then(([s, m]) => {
-					setStatus(s);
-					setModels(m.models);
-					setError(null);
-				})
-				.catch((e) => setError(errorText(e))),
+			// an async body: a client without these calls (an older engine's) fails into `error`, never throws here
+			void (async () => {
+				const [st, m] = await Promise.all([engine.soundSemanticStatus(), engine.soundSemanticModels()]);
+				setStatus(st);
+				setModels(m.models);
+				setError(null);
+			})().catch((e) => setError(errorText(e))),
 		[engine],
 	);
 	useEffect(() => load(), [load]);

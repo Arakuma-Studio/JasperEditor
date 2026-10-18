@@ -282,14 +282,6 @@ const SearchArgs = {
 		.max(500)
 		.optional()
 		.describe('Free text: title words, tags and type names or synonyms ("punch", "swoosh")'),
-	describe: z
-		.string()
-		.min(1)
-		.max(SOUND_DESCRIBE_MAX_CHARS)
-		.optional()
-		.describe(
-			'Describe-it search: what the sound sounds like — source + material + action + character ("glass bottle shattering on concrete, sharp"). Ranked by the optional audio-text model when installed (rows get match {z, verdict}); else its words are searched like q',
-		),
 	types: z
 		.array(z.string().min(1).max(32))
 		.max(32)
@@ -346,6 +338,14 @@ const SearchArgs = {
 			'Also return the clean takes of multi-hit recordings (typing runs, clocks, packs of clicks) as rows of their own (soundId snd_…~t<n>), ranked with the other sounds: one key press per row. Default false: a recording row says how many takes it has',
 		),
 	similarTo: SoundIdArg.optional().describe('Rank by similarity to this sound (left out of the results)'),
+	describe: z
+		.string()
+		.min(1)
+		.max(SOUND_DESCRIBE_MAX_CHARS)
+		.optional()
+		.describe(
+			'Describe-it search: what the sound sounds like — source + material + action + character ("glass bottle shattering on concrete, sharp"). Ranked by the optional audio-text model when installed (rows get match {z, verdict}); else its words are searched like q',
+		),
 	limit: z.number().int().min(1).max(MAX_SHEET).optional().describe(`Results (1…${MAX_SHEET}, default 12)`),
 	offset: z.number().int().min(0).max(100_000).optional().describe('Skip this many results (paging)'),
 };
