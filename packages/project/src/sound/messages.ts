@@ -11,6 +11,9 @@ import { REFERENCE_MODEL_STRINGS } from './profile.ts';
 export const SOUND_LABELS = {
 	/** insert_sound */
 	addSound: 'Add Sound {0}',
+	/** import_sounds and the Sound Library's Import to Project: one sound (its title) / several */
+	importSound: 'Import Sound {0}',
+	importSounds: 'Import {0} Sounds',
 	/** place_sound: one layer (its title) / several layers */
 	placeSound: 'Place Sound {0}',
 	placeSounds: 'Place {0} Sounds',

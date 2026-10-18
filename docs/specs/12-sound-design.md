@@ -1,6 +1,7 @@
 # Spec 12: Sound Design / SFX layer
 
-Status: in progress on `feat/sound-design`. Owner wp-note: [`docs/wp-notes/sound-design.md`](../wp-notes/sound-design.md).
+Status: built and verified on `feat/sound-design` (final verification: wp-note "Final verification A / B"); the merge into
+`main` (P6-R7) follows the green gate. Owner wp-note: [`docs/wp-notes/sound-design.md`](../wp-notes/sound-design.md).
 This spec wins over older specs for everything it covers; [`ARCHITECTURE.md`](../ARCHITECTURE.md) and
 [`AGENTS.md`](../../AGENTS.md) still win over this spec.
 
@@ -620,6 +621,11 @@ Add them to the integrity property test.
 | `view_sound_timeline` | PNG |
 | `export_sound_credits` | |
 
+*As built (final verification B)*: `export_sound_credits` was listed here but missing; it writes the credits file the
+editor's File ▸ Export ▸ Sound Credits… writes (never overwriting; `attributionOnly` like the dialog's "only credits").
+`detect_sound_peak` (`POST /api/sound-design/peak`) is the clip menu's Detect Peak for agents without an editor window.
+Later phases added their tools in their own sections (§4 "As built" notes); the README tool list is the complete list.
+
 `SOUND_GUIDE` must say:
 
 > You cannot hear. Judge sounds by descriptors and contact sheets, and sync by structure and sound_check.
@@ -822,8 +828,8 @@ reason, and the export matches the preview mix (sample-level oracle).
 - P6-R3. Transcript- and VAD-aware dialogue suppression, and Essential Sound **Auto Tag**: classify a clip as
   dialogue, music, sfx or ambience from descriptors plus VAD, with a command, MCP tool, UI action and badge.
 - P6-R4. Credits sidecar in export and `W_SOUND_CREDITS`; interchange cues exported as markers.
-- P6-R5. Sound Design workspace; docs (ARCHITECTURE decisions D-50 sound library and provenance, D-51 proposals,
-  D-52 sound design as ordinary commands, §4.3, §11.3), `docs/gaps.md` and `docs/parity.md` entries with
+- P6-R5. Sound Design workspace; docs (ARCHITECTURE decisions D-50 sound library and provenance (with schema v7),
+  D-51 proposals, D-52 sound design as ordinary commands — and D-53 the optional CLAP model of P6-E14 —, §4.3, §11.3), `docs/gaps.md` and `docs/parity.md` entries with
   evidence, README, and a complete wp-note.
 - P6-R6. `e2e/sound-design.spec.ts`: fixture → Suggest Cues → Auto Sound Pass → review → accept part → one undo →
   Sound Check → export → frames and audio timing checked.
@@ -1275,7 +1281,9 @@ tone closest to the dialogue's noise floor in octave-band shape is used when wit
 quietest 0.5–3 s outside its voice activity (deviation: the spec takes a library tone whenever one exists; a tone
 3–6 dB off the floor's shape — a ventilation hum under a quiet room — sounds like another room, measured 5.1–5.6 dB for
 white and hum against pink). The Sound Check fix is commands (register the tone if needed + `soundDesign.layBed` over
-the silence padded 0.25 s under the dialogue), not safe; a proposal check attributes a fixed SILENCE / DIP to the item
+the silence padded 0.25 s under the dialogue), not safe; the dialogue's own stretch is searched in the part its clips use,
+else in the media's handles (≤ 30 s either side, their own voice activity left out: dialogue trimmed tight to the words,
+final verification B); a proposal check attributes a fixed SILENCE / DIP to the item
 whose new clips play over it. Not built: a plan-job option for beds (the beds route proposes on its own).
 
 **P6-E13 (P1). ShareAlike sounds.** Under CC BY-SA 4.0 §1(a), a sound recording synced in timed relation with a

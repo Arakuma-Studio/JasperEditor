@@ -699,9 +699,14 @@ describe('sound library MCP tools', { timeout: 900_000 }, () => {
 		expect(clip.sfx?.placement.peakFlicks).toBe(m.peakFlicks);
 		// align_peak now moves it by that peak
 		const al = (
-			await ok<{ clips: { peakFrame: number | null }[] }>('align_peak', { projectId: p, clipId, to: 60 })
+			await ok<{ exact: string; clips: { alignedFrame: number }[] }>('align_peak', {
+				projectId: p,
+				clipId,
+				to: 60,
+			})
 		).body;
-		expect(al.clips[0]).toBeTruthy();
+		expect(al.exact).toBe('frame');
+		expect(Math.floor(al.clips[0]!.alignedFrame)).toBe(60);
 		expect((await fails('detect_sound_peak', { projectId: p, clipId: 'clp_nope' })).code).toBe('E_NOT_FOUND');
 		expect((await fails('detect_sound_peak', { projectId: p, clipId, sequenceId: 'seq_nope' })).code).toBe(
 			'E_NOT_FOUND',

@@ -6,7 +6,12 @@
 // media to the "Sound Effects" bin (or reuses the project's copy) and runs `soundDesign.place` (spec 12 §2.9), which
 // adds the track if needed and the clip, tags it Essential Sound ▸ SFX and records its `AudioClip.sfx`.
 // Also the drag payload of the Sound Library (`application/x-jasper-sound`).
-import { type RegisterSoundResponse, SOUND_ANALYSIS_SECONDS, type SoundEntry } from '@jasper/api';
+import {
+	type RegisterSoundResponse,
+	SOUND_ANALYSIS_SECONDS,
+	SOUND_EFFECTS_BIN,
+	type SoundEntry,
+} from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	audioTrackIsFree,
@@ -18,12 +23,14 @@ import {
 	type Rational,
 	resolveSoundAlign,
 	type Sequence,
+	SOUND_LABELS,
 	SOUND_REF_RE,
 	type SoundAlign,
 	type SoundAlignRequest,
 	type SoundInsertPlacement,
 	type SoundTiming,
 	type SoundTrackChoice,
+	soundText,
 	soundTimingOf,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -288,6 +295,61 @@ export async function insertLibrarySound(
 				: align === 'end'
 					? t('Added {0} to {1} · end at {2}', title, trackLabel, tc)
 					: t('Added {0} to {1} · start at {2}', title, trackLabel, tc),
+	};
+}
+
+/**
+ * Adds library sounds to the project's "Sound Effects" bin without placing them — the Sound Library's Import to Project,
+ * MCP `import_sounds`' twin (spec 12 §1 parity) — as ONE undoable transaction "Import Sound <title>" / "Import n
+ * Sounds". Sounds the project already has are reused (nothing is added for them). Needs no sequence. Throws
+ * `InsertSoundError` with a message for the user; never leaves a partial edit.
+ */
+export async function importLibrarySounds(
+	session: EditorSession,
+	engine: Pick<EngineClient, 'registerSound'>,
+	entries: readonly Pick<SoundEntry, 'id' | 'title' | 'descriptors' | 'format' | 'types'>[],
+	signal?: AbortSignal,
+): Promise<{ imported: number; reused: number; message: string }> {
+	const before = session.getState();
+	if (before.readOnly) throw new InsertSoundError(t('The project is read-only'));
+	if (!entries.length) throw new InsertSoundError(t('Choose a sound first'));
+	let regs: RegisteredSound[];
+	try {
+		regs = await registerLibrarySounds(engine, before.document.projectId, entries, signal);
+	} catch (e) {
+		throw new InsertSoundError(e instanceof Error ? e.message : String(e));
+	}
+	const doc = session.getCommitted();
+	const prepared = soundMediaCommands(session, doc, regs);
+	const reused = [...prepared.media.values()].filter((m) => m.existing).length;
+	const imported = prepared.media.size - reused;
+	const title = [...prepared.media.values()][0]?.title ?? entries[0]!.title;
+	if (!prepared.commands.length)
+		return {
+			imported: 0,
+			reused,
+			message:
+				reused === 1
+					? t('{0} is already in the project', title)
+					: t('These {0} sounds are already in the project', reused),
+		};
+	const label =
+		prepared.media.size === 1
+			? soundText(SOUND_LABELS.importSound, title)
+			: soundText(SOUND_LABELS.importSounds, prepared.media.size);
+	const r = session.apply({ label, origin: 'user', commands: prepared.commands });
+	if (!r.ok)
+		throw new InsertSoundError(
+			r.errors.map((e) => e.message).join('; ') || t('The sound could not be added'),
+		);
+	for (const e of entries) soundLibraryPrefs.touchRecent(e.id);
+	return {
+		imported,
+		reused,
+		message:
+			imported === 1 && prepared.media.size === 1
+				? t('Imported {0} into the “{1}” bin', title, SOUND_EFFECTS_BIN)
+				: t('Imported {0} sounds into the “{1}” bin', imported, SOUND_EFFECTS_BIN),
 	};
 }
 

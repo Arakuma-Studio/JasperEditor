@@ -6,6 +6,56 @@ Spec: [`docs/specs/12-sound-design.md`](../specs/12-sound-design.md). Inspiratio
 Each phase appends its design notes, usage, verified behaviour (with the commands that measured it), limits and
 known bugs below.
 
+## Summary (read this first)
+
+**What it is.** A sound-design layer for JasperEditor: a licensed, offline Sound Library; sound cues derived from the edit;
+sounds placed so their peak (or end, or start) lands on the cue frame to the sample; whole sound passes proposed for
+review on the timeline and applied as one undo step; levels solved against the bed; measured QA (Sound Check) with safe
+fixes; ambience beds, room tone and music fitted to the picture; credits with every export. Every result is an ordinary,
+undoable edit (clips, gains, keyframes, effects, sends, automation — ARCHITECTURE D-52), so the Program monitor and every
+export path render it with nothing new; the new schema fields (`Sequence.soundDesign`, `AudioClip.sfx`, `AudioClip.bed`,
+`MediaAsset.library`, schema v7: D-50) are metadata. Spec: [`docs/specs/12-sound-design.md`](../specs/12-sound-design.md)
+(its "As built" notes say where the build differs and why).
+
+**As a user** (Sound Design workspace, Alt+Shift+9):
+
+1. *Find and insert.* Sound Library (Window ▸ Sound Library): search by words, type chips, Refine (length, tone, attack,
+   weight, texture, material, licence — Commercial-safe by default, CC BY-SA only with "Include ShareAlike"), or Describe
+   (with the optional model). Space auditions alone, Shift+Space in context (the timeline around the cue), Enter inserts
+   at the playhead with the peak on its frame (one undo step, Essential Sound ▸ SFX, the "Sound Effects" bin); drag snaps
+   the peak. Packs and your own folders: Preferences ▸ Sound Library. Project audio gets a peak with Clip ▸ Detect Peak.
+2. *Cues.* Sequence ▸ Sound Design ▸ Suggest Cues… finds cuts, transitions, keyframed moves and landings, text
+   animations, graphics edges, 3D camera moves, `sfx:` markers and (Analyze…) measured picture motion, shot changes and
+   music beats; they show on the Cue Seam between video and audio (role, kind, stop-before / build bars). Fill a cue with
+   Enter or by dropping a sound on it; Next / Previous Variation (Ctrl+Alt+. / ,), Swap… (Alt+Shift+S), Add Layer….
+3. *A whole pass.* Sequence ▸ Sound Design ▸ Auto Sound Pass… (sources, personality, density, palette, room glue,
+   stop-before, build, delivery) → Propose: ghosts on the timeline, the Review panel (✓ / ✕, alternates ⇄, notes, ▶ in
+   context, Hear proposal A/B) → Apply (Ctrl+Enter): one History entry; Ctrl+Z takes it back into review.
+4. *Mix.* Essential Sound ▸ Sound Design (auto gain and why, room send, stop before, build), Rebalance SFX Levels, Room
+   Glue…, Delivery Target… (web / podcast / R128 / A/85), Lay Ambience Bed…, Fill Room Tone, Essential Sound ▸ Music to
+   picture (land the drop on a cue or the playhead) and Clip ▸ Audio Options ▸ End on Bar.
+5. *Check.* Run Sound Check: findings by category with timecodes, Fix / Fix all safe, Acknowledge… a deliberate one,
+   listen-here moments with Sounds right / Flag, the Log tab (a written account of what is audible), Compare with a
+   reference profile; "Run Sound Check before export" in Export mode. Export writes a credits file next to the video
+   (Export ▸ Sound ▸ Credits; File ▸ Export ▸ Sound Credits… on its own).
+
+**As an agent** (MCP, `SOUND_GUIDE` and `PROPOSALS_GUIDE` in the server instructions): you cannot hear, so judge sounds by
+`search_sounds` / `view_sounds` descriptors and contact sheets and the mix by `sound_check`, `listen_to_sequence` and
+`view_sound_timeline`. The loop: `find_sound_cues` → `set_sound_cues {add}` → `plan_sound_design {check: true}` (one
+proposal, checked) → ask the user to review → `wait_for_proposal` (decisions and notes) → `sound_check` → apply exactly its
+`safeFixes` → `sound_check` again → give the listen-here timecodes verbatim; `acknowledge_sound_issue` for deliberate
+warnings; `export_sound_credits` / `start_export {credits}`. Proposals, not edits: `place_sound`, `rebalance_sfx`,
+`apply_delivery`, `lay_ambience_bed`, `fill_room_tone` propose by default; `accept_proposal` works only where the user
+allowed agents to apply. Every editor action has a tool (the parity table in "Final verification B").
+
+**Limits** (details in the sections below and in `docs/gaps.md` "sound-design"): no AI-generated sound and no online
+sound source (human decisions); the library is what is installed (a 60-sound starter kit, 14 downloadable CC0 packs, your
+folders); Describe-it search needs a ≈ 780 MB optional download and its verdicts are evidence, not proof (strong ≈ 72–81 %
+precise, measured); the beat tracker reads 3 or 4 beats per bar (other metres when given); picture motion under ≈ 0.6 px
+per frame is not seen; the preview transport relies on Remotion 4.0.499 internals (the e2e specs fail if they change);
+a 1 000-item proposal preview costs ≈ 1.1–1.4 s of sliced work (measured, idle build server); Auto Tag reads a regular
+untonal pulse (footsteps) as music; a read-ahead over 3 s starts playback unprimed.
+
 ## Phase 0: pre-existing audio bugs
 
 ### WP0.1 preview
