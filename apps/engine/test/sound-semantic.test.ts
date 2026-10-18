@@ -277,7 +277,7 @@ describe('Describe-it search with the model', { timeout: 300_000 }, () => {
 	it('names the listening transcript\'s events (P6-E6 tags) with the model', async () => {
 		const dir = tempAppdir('jasper-clap-listen-');
 		const fx = buildCheckDoc(await registerCheckMedia(app as TestApp, dir, 'tok_unused_0123456789'));
-		const projectId = 'prj_0000000000000e91';
+		const projectId = 'prj_0000000000000991';
 		const file = appdirPaths(app.appdir).projectFile(projectId);
 		mkdirSync(join(file, '..'), { recursive: true });
 		writeFileSync(

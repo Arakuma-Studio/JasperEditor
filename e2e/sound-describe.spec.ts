@@ -15,6 +15,7 @@ test.describe.configure({ mode: 'serial' });
 const outDir = join(ROOT, 'test-results', 'e2e-sound-describe');
 const REAL = process.env.E2E_CLAP === '1';
 let page: Page;
+let projectId = '';
 
 async function openDescribe(p: Page) {
 	await p.getByTestId('title-bar').getByRole('menuitem', { name: 'Edit', exact: true }).click();
@@ -47,7 +48,7 @@ test.afterAll(async () => {
 
 test('the optional model is shown with its licence; without it Describe searches the words', async () => {
 	test.setTimeout(300_000);
-	await createProject(page, 'E2E Describe');
+	projectId = await createProject(page, 'E2E Describe');
 	const { prefs, section } = await openDescribe(page);
 	const row = section.locator('[data-model-state]').first();
 	await expect(row).toContainText('Apache-2.0');
@@ -160,4 +161,23 @@ test('with the real model: install, describe, find a moment and insert it', asyn
 	const clips = await query<Record<string, Clip>>(page, 'doc.get', { path: ['sequences'] });
 	expect(JSON.stringify(clips)).toContain('"start":30');
 	await page.screenshot({ path: join(outDir, 'moment-inserted.png') });
+
+	// the listening transcript names the inserted moment's sound (P6-E6 tags)
+	const started = await request.post('/api/sound-design/listen', { data: { projectId, tags: true, detail: 'high' } });
+	expect(started.ok(), await started.text()).toBe(true);
+	const jobId = ((await started.json()) as { id: string }).id;
+	let job: { state: string; result?: { lines: { timecode: string; text: string }[] } } = { state: 'queued' };
+	await expect
+		.poll(
+			async () => {
+				job = await (await request.get(`/api/jobs/${jobId}`)).json();
+				return ['succeeded', 'failed', 'cancelled'].includes(job.state);
+			},
+			{ timeout: 600_000, intervals: [2_000] },
+		)
+		.toBe(true);
+	expect(job.state).toBe('succeeded');
+	const named = job.result!.lines.filter((l) => l.text.includes('sounds like'));
+	console.log(`named transcript lines:\n${named.map((l) => `${l.timecode}  ${l.text}`).join('\n')}`);
+	expect(named.length).toBeGreaterThan(0);
 });
