@@ -1,12 +1,12 @@
 // Spec 12 Phase 5 in the built app (WP5.2, P5-R3 and the Phase 5 "Done when": the panel and the MCP tool show the same
-// report): the Phase 2 fixture with generated music on A1 → Auto Sound Pass… → Accept all → Apply → seeded defects: a
-// hit on a cut nudged 2 frames late, 0.8 s of the music cut out (digital silence) → Sequence ▸ Sound Design ▸ Run Sound
-// Check → the panel shows OUT_OF_SYNC (the nudged hit, at its cue's timecode) and SILENCE (at the hole) → the sync
-// strip (5 stills + waveform) → listen here: Sounds right on one moment, Flag + note on another (user comment markers)
-// → jasper-mcp `sound_check` on the same project returns the same codes at the same frames as the panel, and the two
-// verdicts as humanVerdicts → Export with "Run Sound Check before export": the fail prompt → Review issues → Fix (align)
-// = one History entry → Fix all safe (one entry, the check again) → Fix… on the silence (intended) → Re-run: both
-// findings gone. Screenshots (looked at): test-results/e2e-sound-check.
+// report): the Phase 2 fixture with generated music on A1 → Auto Sound Pass… ("Music carries the cuts" off) → Accept
+// all → Apply → seeded defects: a hit on a cut nudged 2 frames late, 0.8 s of the music cut out (digital silence) →
+// Sequence ▸ Sound Design ▸ Run Sound Check → the panel shows OUT_OF_SYNC (the nudged hit, at its cue's timecode) and
+// SILENCE (at the hole) → the sync strip (5 stills + waveform) → listen here: Sounds right on one moment, Flag + note
+// on another (user comment markers) → jasper-mcp `sound_check` on the same project returns the same codes at the same
+// frames as the panel, and the two verdicts as humanVerdicts → Export with "Run Sound Check before export": the fail
+// prompt → Review issues → Fix (align) = one History entry → Fix all safe (one entry, the check again) → Fix… on the
+// silence (intended) → Re-run: both findings gone. Screenshots (looked at): test-results/e2e-sound-check.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -202,6 +202,15 @@ test('Sound Check panel: seeded defects found with timecodes, the same as MCP; v
 	await menu(page, 'Auto Sound Pass…');
 	const dialog = page.getByTestId('auto-sound-pass-dialog');
 	await expect(dialog).toBeVisible();
+	// The seeded sync defect is a hit on the cut at 90, under the music. "Music carries the cuts" (P6-E10, default on)
+	// halves a cut's confidence under music and the density budget then leaves it without a sound; this scenario wants
+	// the cut's hit, so the user turns the option off (spec 12 §4 "Music carries the cuts").
+	const carries = dialog
+		.getByTestId('auto-pass-style')
+		.getByRole('checkbox', { name: 'Music carries the cuts (fewer cut sounds under music)' });
+	await expect(carries).toBeChecked();
+	await carries.click();
+	await expect(carries).not.toBeChecked();
 	await dialog.getByRole('button', { name: 'Propose' }).click();
 	// review opens; a plan with notes keeps the dialog open listing them until Close (Phase 4 verification)
 	await expect(page.getByTestId('review-bar')).toBeVisible({ timeout: 1_500_000 });
@@ -231,7 +240,16 @@ test('Sound Check panel: seeded defects found with timecodes, the same as MCP; v
 			break;
 		}
 	}
-	expect(nudged, JSON.stringify(onCut.map((c) => c.id))).toBeTruthy();
+	expect(
+		nudged,
+		JSON.stringify({
+			onCut: onCut.map((c) => c.id),
+			cues: Object.values(cues).map((c) => [c.frame, c.kind]),
+			sfx: Object.values(seq.clips)
+				.filter((c) => c.sfx)
+				.map((c) => [c.start, c.sfx!.cueId && cues[c.sfx!.cueId]?.frame, c.sfx!.placement?.align]),
+		}),
+	).toBeTruthy();
 	const cueFrame = cues[nudged!.sfx!.cueId!]!.frame;
 	const musicClip = Object.values(seq.clips).find((c) => c.essential?.type === 'music')!;
 	expect((await transact(page, [{ type: 'clip.split', at: 360, clipIds: [musicClip.id] }] as never)).ok).toBe(
