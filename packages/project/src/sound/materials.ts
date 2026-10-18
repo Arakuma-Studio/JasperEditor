@@ -24,7 +24,8 @@ export type SoundMaterial = (typeof SOUND_MATERIALS)[number];
 
 /**
  * Words (lower-case tokens) that name a material: the material itself, its adjectives, its kinds and objects that are
- * made of nothing else (a saucepan is metal, a page paper, a pebble stone). Ambiguous words (a door, a key, a bowl,
+ * made of nothing else. Words about how a sound was made (synth, synthetic, procedural) name none: a synthesised knock
+ * is still wood (a saucepan is metal, a page paper, a pebble stone). Ambiguous words (a door, a key, a bowl,
  * a plate, a pan — also stereo panning —, a stick) name none. Decisions recorded in the wp-note.
  */
 export const MATERIAL_SYNONYMS: Readonly<Record<string, SoundMaterial>> = Object.freeze({
@@ -162,9 +163,6 @@ export const MATERIAL_SYNONYMS: Readonly<Record<string, SoundMaterial>> = Object
 	electric: 'electronic',
 	electrical: 'electronic',
 	digital: 'electronic',
-	synth: 'electronic',
-	synthesizer: 'electronic',
-	synthetic: 'electronic',
 	beep: 'electronic',
 	beeps: 'electronic',
 	bleep: 'electronic',

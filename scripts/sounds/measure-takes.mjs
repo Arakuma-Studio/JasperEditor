@@ -107,9 +107,19 @@ try {
 	for (const e of sounds) {
 		const g = groupOf(e);
 		if (!groups.has(g))
-			groups.set(g, { files: 0, withTakes: 0, offered: 0, cut: 0, reasons: {}, rejected: [], examples: [] });
+			groups.set(g, {
+				files: 0,
+				withTakes: 0,
+				offered: 0,
+				cut: 0,
+				reasons: {},
+				materials: {},
+				rejected: [],
+				examples: [],
+			});
 		const s = groups.get(g);
 		s.files++;
+		for (const m of e.materials ?? []) s.materials[m] = (s.materials[m] ?? 0) + 1;
 		for (const r of e.judge?.reasons ?? []) s.reasons[r] = (s.reasons[r] ?? 0) + 1;
 		const takes = e.takes ?? [];
 		const offered = takes.filter((t) => t.flags.length === 0);
