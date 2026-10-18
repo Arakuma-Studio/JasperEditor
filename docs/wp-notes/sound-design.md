@@ -8591,6 +8591,10 @@ ffmpeg), `apps/mcp/test/sound-grammar.test.ts` (5, a real engine over stdio), `a
   12 per second (at 58 typed/s the nine word starts of a pangram fall 2–4 frames apart).
 - **Takes rotate within their type.** In the e2e the starter kit has no key recordings: the typewriter got ticks and
   clicks mixed by rotation; rotating within the fill type keeps one sound family per typing run.
+- **Typing is never a run.** Filled with ticks (a run type), the same typewriter then climbed like staggered cards (the
+  e2e caught keys at speed 2^(1/12)); the keys of a typing pattern (a text pattern group whose cue suggests a key first —
+  typewriters and character reveals; also once stored: a text anchor naming a unit) end a run (`isTypingCue`). Word
+  reveals (a tick or pop first) may still run.
 - **Sound Check agrees with the voice**: REPEAT (the same sound on consecutive events, with a "safe" swap fix) flagged
   the deliberate case — its safe fix would have swapped the click voice away; a ui / click sound repeating is no longer a
   REPEAT (`variationForFill(types) === 'voice'`), every other type is still checked.
@@ -8630,7 +8634,8 @@ ffmpeg), `apps/mcp/test/sound-grammar.test.ts` (5, a real engine over stdio), `a
   −10.25 / −10.25 dBFS** (one sound, one gain, after the masking solver's levels with `sameLevel`); the six typewriter
   keys are takes of the typing run at speed 1, no two in a row the same. Looked at `test-results/sd-grammar/
   export-waveform.png` (ffmpeg `showwavespic`): the key presses with their releases, four pops shortening as they climb,
-  three equal clicks. Sound Check on the result reports no REPEAT for the three clicks.
+  three equal clicks. Sound Check on the result reports no REPEAT for the three clicks (mutation-checked: with the
+  voice rule taken out of `check.ts` the test fails with two REPEAT findings on the clicks).
 - `apps/mcp/test/sound-grammar.test.ts` (5 passed, a real engine over stdio): the guide; three `place_sound {sound:
   {type: 'click'}}` give one sound at one gain, speed 1 (`picked.voice` best, then placed); three key picks are takes of
   one recording at speed 1, `swap_sound next` goes to a sibling take (`cycle.from: "takes"`); with a wooden hit placed, a
@@ -8643,10 +8648,17 @@ ffmpeg), `apps/mcp/test/sound-grammar.test.ts` (5, a real engine over stdio), `a
   places a click and a key at speed 1; the take cycle order.
 - `e2e/sound-grammar.spec.ts` (`pnpm build`, `E2E_PORT=52412 pnpm exec playwright test e2e/sound-grammar.spec.ts`; 1
   passed): Preferences sets Bright (one History entry "Sound Design Style"), Auto Sound Pass starts from it, Propose →
-  review (15 items) → Accept all → Apply; the card clips' speeds are 1, 1.05946, 1.12246, 1.18921 (2^(k/12)), the clicks
-  one sound at one gain, the typewriter's ticks at speed 1. Looked at `test-results/e2e-sound-grammar/`:
-  `1-preferences-style.png`, `2-auto-pass-style.png` (the style section with Bright's description), `3-review.png`,
-  `4-applied.png`.
+  review (15 items) → Accept all → Apply (15 sounds on A4); the card clips' speeds are 1, 1.05946, 1.12246, 1.18921
+  (2^(k/12)), the clicks one sound at one gain, the typewriter's ticks at speed 1. Looked at
+  `test-results/e2e-sound-grammar/`: `1-preferences-style.png`, `2-auto-pass-style.png` (the style section with Bright's
+  description), `3-review.png` (the typewriter rows all ticks: "Tick, firm", "Tick", "Jasper Synth tick 1" — the kit has
+  two tick recordings), `4-applied.png`. The first two runs failed and led to the two fixes above (clicks mixed into the
+  ticks; then the ticks climbing as a run).
+- `pnpm vitest run packages/project packages/api packages/audio-fx apps/engine/test/sound apps/engine/test/sounds
+  apps/mcp/test/sound apps/mcp/test/proposals apps/web/test --maxWorkers=8` (before the last three fixes; load ≈ 10–16):
+  424 files, 4 257 passed, 15 skipped, 2 files failed to load — `sound-design-motion` and `sound-dialogue-consistency`,
+  the build server's ffmpeg has no libx264, the same on `feat/sound-design` (WP-E5's note). After the fixes the grammar,
+  Sound Check and examples files were run again (below, "Integration").
 
 #### Limits and notes for the next packages
 
