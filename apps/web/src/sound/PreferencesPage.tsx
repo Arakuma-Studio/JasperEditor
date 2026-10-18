@@ -5,7 +5,8 @@
 // auto-play, volume) and row density. Folder changes are validated by the engine and saved with "Save Folders".
 // Proposals: "Allow agents to apply sound proposals" for the active sequence (WP3.3b). Sound design style: the active
 // sequence's cue grammar and personality (P6-E10, `soundDesign.setSettings {style}`; WP-E6). Reference profiles: the
-// engine's library of profiles measured from the user's own media (P6-E8, ReferenceProfiles.tsx; WP-E4).
+// engine's library of profiles measured from the user's own media (P6-E8, ReferenceProfiles.tsx; WP-E4). Describe-it
+// search: the optional audio-text model (P6-E14, DescribeSearchSection.tsx; WP-E9).
 import {
 	SOUND_ROOT_LICENSES,
 	type SoundLibraryStatus,
@@ -32,6 +33,7 @@ import { getDesktopBridge } from '../runtime/platform.ts';
 import { useShellRuntimeOrNull } from '../shell/context.tsx';
 import { PrefGroup, PrefRow } from '../shell/preferences/GeneralPage.tsx';
 import { useEngine } from '../state/engine.tsx';
+import { DescribeSearchSection } from './DescribeSearchSection.tsx';
 import { DELIVERY_IDS, deliveryOptionLabel, sequenceDelivery } from './mix-model.ts';
 import { PacksSection } from './PacksSection.tsx';
 import {
@@ -403,6 +405,7 @@ export function SoundLibraryPreferencesPage() {
 			</PrefGroup>
 
 			<PacksSection />
+			<DescribeSearchSection />
 			<ReferenceProfilesSection session={session} />
 
 			<PrefGroup title="Audition">

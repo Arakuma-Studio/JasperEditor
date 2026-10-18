@@ -6,7 +6,7 @@
 - **Ported by:** sound design WP-E1 (Sound Check: new findings), 2026-10-17; WP-E5 (takes, judge flags), 2026-10-18;
   WP-E6 (cue grammar, variation policy, personality, palette coherence), 2026-10-18; WP-E7 (music to picture),
   2026-10-18; WP-E4 (reference profiles), 2026-10-18; WP-E8 (ambience and room-tone beds),
-  2026-10-18
+  2026-10-18; WP-E9 (Describe-it search, Find Moment), 2026-10-18
 
 | Upstream path | Our path | What |
 |---|---|---|
@@ -126,3 +126,24 @@ lengths and positions, the onset rate in its score, the loop-point search (head 
 shape and correlation, the loop a whole number of timeline frames, equal gain for material that repeats in phase), the
 scene structure, the room-tone matching (the dialogue's noise floor, the spectral-shape distance, the quietest stretch
 outside voice activity) and the levels are ours. Not ported: earshot's EQ / width on beds, its `auto` ducking rides.
+
+## Describe-it search and Find Moment (sound design WP-E9, 2026-10-18)
+
+| Upstream path | Our path | What |
+|---|---|---|
+| `earshot/match.py` (`match`: the z of the query among the vocabulary per sound), `earshot/vocab.py` (`bias`, `calibrate`: term bias = a phrase's mean cosine over reference recordings, removed; per-sound z), `docs/VALIDATION.md` (verdict bands strong ≥ 3, plausible 2.5–3, weak 2–2.5) | `apps/engine/src/sounds/semantic/score.ts` (`matchOf`, `referenceOf`, `verdictOf`, `VERDICT_BANDS`) | A description's match to a sound as the z of its CLAP similarity among a fixed vocabulary's similarities to that sound, after removing each phrase's (and the query's) mean similarity to the library ("hub damping"); the three verdict bands |
+| `earshot/search.py` (`rank`, `find`, `_head_db`, `_tail_db`: windows scored by CLAP, head / tail level of a trim) | `apps/engine/src/sounds/semantic/score.ts` (`coarseWindows`, `fineWindows`, `pickMoments`), `apps/engine/src/sounds/semantic/levels.ts` (`edgeLevels`, `trimToSound`) | Searching a recording window by window for a description; a found moment's head (first 5 ms) and tail (last 10 ms) against its loudest part (cut when head > −15 dB, tail > −30 dB) |
+| `skills/earshot/SKILL.md` ("describe source + material + action + character, not the use") | `apps/mcp/src/tools/sound-describe-guide.ts`, the Sound Library's Describe hint | How to write a description |
+
+Notes: Python/PyTorch → TypeScript and ONNX Runtime; no code was copied, and earshot's vocabulary (`vocab.json`), its
+prompt templates and its realness / AST models are NOT used: the ≈ 300-phrase vocabulary is ours
+(`apps/engine/src/sounds/semantic/vocab.ts`), the caption template "this is a sound of …" was chosen by our own
+measurement, and the per-sound z, its mean and variance are computed in closed form from the vocabulary's mean and
+covariance (no 300 dot products per sound). Ranking adds the query-side z (the cosine's z among the ranked sounds) to the
+vocabulary z, which ranked best on our labelled packs (wp-note "Phase 6 → WP-E9"); the bands were kept after measuring
+them there. Moments: coarse 10 s windows (every 5 s, every 10 s past 30 min), the best three refined with windows of the
+asked length (hop half of it), never overlapping; the trim to the sound (within 40 dB of the loudest 10 ms, 5 ms before,
+20 ms after) is ours. The term bias is the mean over the user's own embedded library (earshot: 241 fixed reference
+recordings), at full strength from 32 sounds. A moment is flagged cut when its head is over −15 dB or its tail over
+−30 dB (the clean-take rule of P6-E9; earshot flags a tail over −15 dB). The model is LAION's `larger_clap_general` (Apache-2.0) in our own weight-free ONNX export
+(`scripts/models/export-clap.py`), not earshot's PyTorch pipeline.

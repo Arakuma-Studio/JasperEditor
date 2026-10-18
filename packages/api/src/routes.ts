@@ -217,6 +217,15 @@ import {
 	SoundProfilesResponseSchema,
 } from './sound-profile.ts';
 import {
+	SoundEmbedRequestSchema,
+	SoundMatchRequestSchema,
+	SoundMatchResponseSchema,
+	SoundMomentRequestSchema,
+	SoundSemanticModelDeleteResponseSchema,
+	SoundSemanticModelsResponseSchema,
+	SoundSemanticStatusSchema,
+} from './sound-semantic.ts';
+import {
 	RegisterSoundRequestSchema,
 	RegisterSoundResponseSchema,
 	SoundEntrySchema,
@@ -1158,6 +1167,49 @@ export const ROUTES = {
 		method: 'DELETE',
 		path: '/api/sounds/packs/:packId',
 		response: SoundPackRemoveResponseSchema,
+	},
+	/**
+	 * Describe-it search (spec 12 P6-E14, WP-E9): status, the optional audio-text model (install: the processing
+	 * catalogue's `model-download` job, open to agents like other model installs; removal asks an agent's user first),
+	 * the `sound-embed` job (embeddings of every sound and take, incremental, cancellable) and Find Moment (a
+	 * `sound-moment` job: the best windows of a recording for a description).
+	 */
+	soundSemanticStatus: { method: 'GET', path: '/api/sounds/semantic', response: SoundSemanticStatusSchema },
+	soundSemanticModels: {
+		method: 'GET',
+		path: '/api/sounds/semantic/models',
+		response: SoundSemanticModelsResponseSchema,
+	},
+	soundSemanticModelInstall: {
+		method: 'POST',
+		path: '/api/sounds/semantic/models/:modelId/install',
+		response: EngineJobSchema,
+	},
+	soundSemanticModelDelete: {
+		method: 'DELETE',
+		path: '/api/sounds/semantic/models/:modelId',
+		response: SoundSemanticModelDeleteResponseSchema,
+	},
+	soundEmbed: {
+		method: 'POST',
+		path: '/api/sounds/semantic/embed',
+		body: SoundEmbedRequestSchema,
+		response: EngineJobSchema,
+	},
+	/** How well a sound matches a description and realistic alternatives (z, verdict, softmax share). */
+	soundMatch: {
+		method: 'POST',
+		path: '/api/sounds/:soundId/match',
+		body: SoundMatchRequestSchema,
+		response: SoundMatchResponseSchema,
+	},
+	soundMoments: {
+		method: 'POST',
+		path: '/api/sounds/:soundId/moments',
+		body: SoundMomentRequestSchema,
+		/** `wait=1`: answer when the job ends (the finished job; a failed job is a 422 with its code). */
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
 	},
 	/** User sound folders (local mode only). Adding, removing or relicensing one asks an agent's user first. */
 	soundRootsGet: { method: 'GET', path: '/api/sounds/roots', response: SoundRootsResponseSchema },

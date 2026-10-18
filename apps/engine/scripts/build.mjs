@@ -45,6 +45,11 @@ await build({
 	// Sound design (spec 12 §2.1): the bundled starter kit (`manifest.json`, the audio files and their
 	// `.attribution` sidecars) next to engine.mjs, where `src/sounds/starter.ts` looks for `sounds/starter`.
 	const { existsSync, rmSync } = await import('node:fs');
+	// WP-E9 (spec 12 P6-E14): the weight-free CLAP graphs of Describe-it search (src/sounds/semantic/models.ts copies
+	// them next to the downloaded weights when the model is installed).
+	rmSync(join(root, 'dist', 'models', 'clap'), { recursive: true, force: true });
+	if (existsSync(join(root, 'models', 'clap')))
+		cpSync(join(root, 'models', 'clap'), join(root, 'dist', 'models', 'clap'), { recursive: true });
 	rmSync(join(root, 'dist', 'sounds'), { recursive: true, force: true });
 	if (existsSync(join(root, 'sounds')))
 		cpSync(join(root, 'sounds'), join(root, 'dist', 'sounds'), { recursive: true });
@@ -91,6 +96,24 @@ await build({
 await build({
 	entryPoints: [join(root, 'src/speech/worker/cli.ts')],
 	outfile: join(root, 'dist/jasper-speech.mjs'),
+	bundle: true,
+	platform: 'node',
+	format: 'esm',
+	target: 'node20',
+	sourcemap: false,
+	legalComments: 'none',
+	external: ['onnxruntime-node', '*.node'],
+	banner: {
+		js: "import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);",
+	},
+	logLevel: 'warning',
+});
+
+// WP-E9 (spec 12 P6-E14): jasper-clap.mjs (the Describe-it search model, a long-lived child process of the sound
+// library) next to engine.mjs. onnxruntime-node (native binding) stays external.
+await build({
+	entryPoints: [join(root, 'src/sounds/semantic/worker/cli.ts')],
+	outfile: join(root, 'dist/jasper-clap.mjs'),
 	bundle: true,
 	platform: 'node',
 	format: 'esm',

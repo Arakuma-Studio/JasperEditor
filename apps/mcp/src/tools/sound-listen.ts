@@ -80,7 +80,7 @@ export function compactListen(r: SoundListenResult, jobId: string) {
 			prominenceDb: p.prominenceDb,
 			...(p.cueId ? { cueId: p.cueId } : {}),
 		})),
-		/** [timecode, ms, shape, band, prominence dB, stem, clipId, cueId, accent, answers] */
+		/** [timecode, ms, shape, band, prominence dB, stem, clipId, cueId, accent, answers, tag ("text (verdict)" or null)] */
 		events: r.events
 			.slice(0, MAX_JSON_EVENTS)
 			.map((e) => [
@@ -94,6 +94,7 @@ export function compactListen(r: SoundListenResult, jobId: string) {
 				e.cueId,
 				e.accent,
 				e.answers.map((x) => `${x.key} ${x.status} ${x.offsetMs}`),
+				e.tag ? `${e.tag.text} (${e.tag.verdict})` : null,
 			]),
 		...(r.events.length > MAX_JSON_EVENTS ? { eventsListed: MAX_JSON_EVENTS } : {}),
 		...(r.warnings.length ? { warnings: r.warnings } : {}),
@@ -127,7 +128,7 @@ export function registerSoundListenTools(ctx: ToolContext): void {
 		'listen_to_sequence',
 		{
 			title: 'Listen to a sequence (transcript)',
-			description: `Your ears for the whole mix: a written log of what is audible, in time order, with the clip behind every sound — you cannot hear, so read this before adding sounds. The engine renders the mix and every clip of a range (default the whole sequence; at most ${SOUND_LISTEN_LIMITS.maxSeconds / 60} min) and finds the events of the mix: onsets refined to the attack (the first millisecond within 20 dB of the peak over its bed), with the band they stand out in (low < 200 Hz, high > 2 kHz, full), how far they rise over the K-weighted bed just before (dB) and their length; swells (build-ups of ≥ 8 dB over 0.25–2 s, timed at their peak); silences and drops (fast loudness 20 LU under the integrated); accents (the top 20 % by prominence that are ≥ 6 dB over the bed). Each event is attributed to the clip whose own sound explains it — a placed sound effect with its role and cue, or production audio named by its clip ("dialogue, A2 "Interview"") — and sections are labelled by what is audible (dialogue, music with its ducking and how far it sits under the voice, ambience, effects, silence). Every cut, transition, cue and measured picture motion (when analyze_picture_motion has run) is matched to the sound that answers it: OK within a frame, near ≤ 100 ms, swell ≤ 300 ms, else NO SOUND; each sync share comes with its CHANCE level — what random times would score with the same sounds — so "60 % of cuts have a sound" means something only when chance is well under it; on-beat shares when the music's beats are cached. Returns the transcript text FIRST (the lines the editor's Sound Check ▸ Log tab shows, verbatim), then compact JSON (counts, loudness, sync with chance, sections, the picture events with no sound, every placed sound with heard / its own offset, events as rows), and with images: true the annotated sound sheet (one PNG: frames at the cuts, cues and accents, loudness, the spectrogram, sections, every picture event by its answer mark; a range over ${VISUAL_MAX_SEC} s gets up to ${MAX_STRIPS} strips of ${STRIP_SEC} s around the picture events with no sound). detail: low (sections, silences, sync, accents, no-sound lines), normal (default: also every placed sound and every event that answers the picture), high (every event). It writes nothing. Waits for the job (timeoutSeconds, default 300).`,
+			description: `Your ears for the whole mix: a written log of what is audible, in time order, with the clip behind every sound — you cannot hear, so read this before adding sounds. The engine renders the mix and every clip of a range (default the whole sequence; at most ${SOUND_LISTEN_LIMITS.maxSeconds / 60} min) and finds the events of the mix: onsets refined to the attack (the first millisecond within 20 dB of the peak over its bed), with the band they stand out in (low < 200 Hz, high > 2 kHz, full), how far they rise over the K-weighted bed just before (dB) and their length; swells (build-ups of ≥ 8 dB over 0.25–2 s, timed at their peak); silences and drops (fast loudness 20 LU under the integrated); accents (the top 20 % by prominence that are ≥ 6 dB over the bed). Each event is attributed to the clip whose own sound explains it — a placed sound effect with its role and cue, or production audio named by its clip ("dialogue, A2 "Interview"") — and sections are labelled by what is audible (dialogue, music with its ducking and how far it sits under the voice, ambience, effects, silence). Every cut, transition, cue and measured picture motion (when analyze_picture_motion has run) is matched to the sound that answers it: OK within a frame, near ≤ 100 ms, swell ≤ 300 ms, else NO SOUND; each sync share comes with its CHANCE level — what random times would score with the same sounds — so "60 % of cuts have a sound" means something only when chance is well under it; on-beat shares when the music's beats are cached. Returns the transcript text FIRST (the lines the editor's Sound Check ▸ Log tab shows, verbatim), then compact JSON (counts, loudness, sync with chance, sections, the picture events with no sound, every placed sound with heard / its own offset, events as rows), and with images: true the annotated sound sheet (one PNG: frames at the cuts, cues and accents, loudness, the spectrogram, sections, every picture event by its answer mark; a range over ${VISUAL_MAX_SEC} s gets up to ${MAX_STRIPS} strips of ${STRIP_SEC} s around the picture events with no sound). detail: low (sections, silences, sync, accents, no-sound lines), normal (default: also every placed sound and every event that answers the picture), high (every event). tags: true (with the optional Describe-it search model) names what each listed event sounds like — "sounds like “a glass bottle breaking” (plausible, z 2.7)" on its line — from its clip's audio; a name is evidence, not proof. It writes nothing. Waits for the job (timeoutSeconds, default 300).`,
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -139,6 +140,12 @@ export function registerSoundListenTools(ctx: ToolContext): void {
 					.enum(SOUND_LISTEN_DETAILS)
 					.optional()
 					.describe('How much the transcript lists (default normal)'),
+				tags: z
+					.boolean()
+					.optional()
+					.describe(
+						"Name what each listed event sounds like (≤ 100 events: the clip's audio at the event, the closest of our reference descriptions, with its verdict) with the optional Describe-it search model; without it a warning says so (default false; ≈ 0.5 s per event)",
+					),
 				images: z.boolean().optional().describe('Add the annotated sound sheet PNG (default false)'),
 				thumbnails: z
 					.boolean()
@@ -179,6 +186,7 @@ export function registerSoundListenTools(ctx: ToolContext): void {
 					sequenceId: seq.id,
 					...(range ? { range } : {}),
 					...(a.detail ? { detail: a.detail } : {}),
+					...(a.tags ? { tags: true } : {}),
 				},
 				(a.timeoutSeconds ?? 300) * 1000,
 			);

@@ -34,6 +34,7 @@ export * from './sound-beds.ts';
 export * from './sound-check.ts';
 export * from './sound-design.ts';
 export * from './sound-profile.ts';
+export * from './sound-semantic.ts';
 export * from './sounds.ts';
 export * from './speech.ts';
 export * from './sync.ts';

@@ -199,6 +199,7 @@ export async function listenTo(
 		sequenceId: string;
 		range?: { start: number; end: number };
 		detail?: 'low' | 'normal' | 'high';
+		tags?: boolean;
 	},
 	timeoutMs: number,
 ): Promise<{ job: EngineJob; result: SoundListenResult | null; timedOut: boolean }> {

@@ -170,7 +170,12 @@ describe('indexing the starter kit', { timeout: 300_000 }, () => {
 		expect(Object.keys(lib.sounds)).toHaveLength(4);
 
 		const caps = await get<{ features: { sound: unknown } }>(app, '/api/capabilities');
-		expect(caps.body.features.sound).toEqual({ library: { sounds: 4, packs: 0 }, synth: true });
+		// P6-E14: Describe-it search is reported too (the optional model is not installed here)
+		expect(caps.body.features.sound).toEqual({
+			library: { sounds: 4, packs: 0 },
+			synth: true,
+			describe: { status: 'not-installed' },
+		});
 	});
 
 	it('rescans incrementally: unchanged files reuse their analysis, a changed one is analysed again', async () => {

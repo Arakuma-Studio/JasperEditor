@@ -72,7 +72,10 @@ for (const f of ['vidstab.wasm', 'VIDSTAB-WASM.json', 'LICENSE-vidstab.txt', 'NO
 const modelsSrc = join(root, 'models');
 if (existsSync(modelsSrc)) {
 	mkdirSync(join(out, 'models'), { recursive: true });
-	for (const f of readdirSync(modelsSrc)) copyFileSync(join(modelsSrc, f), join(out, 'models', f));
+	// Files only: model folders of other features (models/clap, Describe-it search) are copied by build.mjs, not
+	// shipped to remote processing hosts.
+	for (const f of readdirSync(modelsSrc, { withFileTypes: true }))
+		if (f.isFile()) copyFileSync(join(modelsSrc, f.name), join(out, 'models', f.name));
 }
 
 // Runtime dependencies for a standalone install (remote hosts).

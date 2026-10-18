@@ -1,7 +1,8 @@
 // The Sound Check panel's Log tab (spec 12 §4 P6-E6 / P6-E7; wp-note "Phase 6 → WP-E3") on a real session with a fake
 // engine: Listen runs the `sound-listen` job and lists its lines verbatim (what MCP listen_to_sequence prints); a line
 // moves the playhead and selects the clip that plays the sound; the keyboard (↓ Enter); Copy log; the spectrogram strip
-// asks the engine for the mix spectrogram of the listened range; the long-sequence range; the command and menu entry.
+// asks the engine for the mix spectrogram of the listened range; the long-sequence range; the command and menu entry;
+// Name the sounds (P6-E14) sends `tags`.
 import type { EngineJob, SoundListenRequest, SoundListenResult, SoundVisualRequest } from '@jasper/api';
 import { SoundListenResultSchema } from '@jasper/api';
 import type { Sequence } from '@jasper/project';
@@ -355,6 +356,22 @@ describe('Sound Check ▸ Log tab', () => {
 		// back to the findings
 		fireEvent.click(screen.getByTestId('sound-check-tab-findings'));
 		expect(screen.queryByTestId('sound-listen-log')).toBeNull();
+	});
+
+	it('Name the sounds asks the engine to name the events (P6-E14 tags)', async () => {
+		const f = fixture();
+		const eng = fakeEngine(f.session, f.seqId, f.hit, f.music);
+		mocks.client = eng.client;
+		mount(f.session);
+		fireEvent.click(screen.getByTestId('sound-check-tab-log'));
+		const log = screen.getByTestId('sound-listen-log');
+		const box = within(within(log).getByTestId('sound-listen-tags')).getByRole('checkbox');
+		expect(box.getAttribute('aria-checked')).toBe('false');
+		fireEvent.click(box);
+		expect(listenStore(f.session).getState().tags).toBe(true);
+		fireEvent.click(within(log).getByTestId('sound-listen-run'));
+		await waitFor(() => expect(eng.listens).toHaveLength(1));
+		expect(eng.listens[0]).toMatchObject({ tags: true, detail: 'normal' });
 	});
 
 	it('Listen to Sequence opens the Log tab and listens; the menu has it', async () => {

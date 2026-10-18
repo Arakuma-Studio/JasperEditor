@@ -442,7 +442,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (369; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (376; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `browse_media_files` (folders and importable files on the engine's computer) `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -509,7 +509,13 @@ Tools (369; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   (land the drop on a frame within 1 ms, end on a bar line; `docs/wp-notes/sound-design.md` "WP-E7").
 - Sound library (sound effects; agents judge them by descriptors and contact sheets): `sound_library_status`
   `search_sounds` (takes: true lists the single takes of multi-hit recordings — typing runs, clocks — as sounds of
-  their own, ids snd_…~t&lt;n&gt;; a material filter) `get_sound` (a recording's takes) `view_sounds` · `import_sounds`
+  their own, ids snd_…~t&lt;n&gt;; a material filter; describe: ranks by what sounds sound like with the optional
+  Describe-it search model, else searches its words) `get_sound` (a recording's takes) `view_sounds` · Describe-it
+  search (LAION CLAP, Apache-2.0, ≈ 780 MB, user-installed, analysis only): `describe_search_status`
+  `install_describe_search_model` (tell the user the size and licence first) `remove_describe_search_model` (approval
+  card) `prepare_describe_search` (embeds the library, incremental) `match_sound` (one sound against a description and
+  alternatives) `find_sound_moment` (the best moments of a long recording for a description) `insert_sound_moment`
+  (places one, one undo step) · `import_sounds`
   `insert_sound` (peak-aligned, never overwrites; take ids too) ·
   `list_sound_credits` · `add_sound_folder` `remove_sound_folder` `rescan_sound_library` · packs: `list_sound_packs`
   `install_sound_pack` (downloads a catalogue pack from its upstream site, sha256-pinned; tell the user its size and
@@ -545,7 +551,7 @@ Tools (369; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   stems, spectrogram, sections, every cut / cue marked by whether a sound answers it, motion, findings)
   `listen_to_sequence` (a written log of the mix, ≤ 10 min: every sound named by the clip that plays it and the cue it
   fills, sections, silences, which cuts and cues have a sound — each share next to its chance level — and the cuts with
-  none; the sound sheet with images) · reference profiles (the measured style of the user's own reference media or
+  none; the sound sheet with images; tags: what each sound sounds like, with the Describe-it search model) · reference profiles (the measured style of the user's own reference media or
   sequences, numbers only, no bundled profile): `list_sound_profiles` `get_sound_profile` `build_sound_profile` (a job)
   `rename_sound_profile` `delete_sound_profile` (approval card) `export_sound_profile` `import_sound_profile`
   `set_sound_profile` (the sequence's; `sound_check {profileId}` adds the Reference rows)

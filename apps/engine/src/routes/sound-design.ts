@@ -275,6 +275,11 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 			registry: core.registry,
 			engineCues: () => engineCues,
 			lastCheckReport: async (pid, sequenceId) => (await reports.get(pid, sequenceId))?.result.report ?? null,
+			// P6-E14: the sound library's Describe-it search model names the events (`tags`)
+			nameWindows: () => {
+				const sounds = app.jasper.services.sounds as SoundService | undefined;
+				return sounds ? (items, signal) => sounds.semantic.nameWindows(items, signal) : null;
+			},
 		}),
 	);
 

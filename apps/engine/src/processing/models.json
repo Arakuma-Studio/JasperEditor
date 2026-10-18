@@ -1,5 +1,5 @@
 {
-  "$comment": "Super-resolution model catalogue (S07:PST-031/032). `bundled` = shipped with the engine (apps/engine/models/, ≤ 10 MB, producer decision 2026-10-01); otherwise installed on demand from `downloadUrl` into <appdir>/models/ and verified by sha256. Weights licences are shown in Help ▸ About ▸ Licenses. `speech` = the speech-to-text models (wp speech): multi-file Whisper ONNX exports (encoder + merged decoder with cross-attention outputs), each file pinned to a Hugging Face revision and verified by sha256, installed on demand into <appdir>/models/speech/<id>/ through the same `model-download` job after the user has seen the licence; never bundled. `vision` = the Roto Brush segmentation model (SAM 2.1) and the face models (MediaPipe Face Landmarker) of parity workstream roto: multi-file ONNX models with the same pinned-revision / sha256 / licence-first install, into <appdir>/models/vision/<id>/.",
+  "$comment": "Super-resolution model catalogue (S07:PST-031/032). `bundled` = shipped with the engine (apps/engine/models/, ≤ 10 MB, producer decision 2026-10-01); otherwise installed on demand from `downloadUrl` into <appdir>/models/ and verified by sha256. Weights licences are shown in Help ▸ About ▸ Licenses. `speech` = the speech-to-text models (wp speech): multi-file Whisper ONNX exports (encoder + merged decoder with cross-attention outputs), each file pinned to a Hugging Face revision and verified by sha256, installed on demand into <appdir>/models/speech/<id>/ through the same `model-download` job after the user has seen the licence; never bundled. `vision` = the Roto Brush segmentation model (SAM 2.1) and the face models (MediaPipe Face Landmarker) of parity workstream roto: multi-file ONNX models with the same pinned-revision / sha256 / licence-first install, into <appdir>/models/vision/<id>/. `sound` = the Describe-it search model of the sound library (spec 12 P6-E14, WP-E9): LAION CLAP larger_clap_general (Apache-2.0), analysis only. Its weights are LAION's own pytorch_model.bin and tokenizer files at a pinned revision (sha256-checked); the two ONNX graphs are JasperEditor's weight-free exports (`bundled:` = apps/engine/models/clap/, scripts/models/export-clap.py) whose external data points into that file. Installed into <appdir>/models/sound/<id>/ by the same `model-download` job after the user has seen the licence; never bundled, never required. A file with `url: null` makes the model 'not available yet' (its download location is pending).",
   "models": [
     {
       "id": "span-2x-nomosuni-multijpg",
@@ -360,6 +360,52 @@
           "url": "https://huggingface.co/fernandotonon/QtMeshEditor-facemesh-onnx/resolve/32714088ed9830a98df6ee653ad406a3b83ef014/face_landmarks.onnx",
           "sha256": "d16e5a55e6a480284d468ee32469692464049518c311662ab3956681de31e3e9",
           "sizeBytes": 4920979
+        }
+      ]
+    }
+  ],
+  "sound": [
+    {
+      "id": "clap-larger-general",
+      "name": "CLAP (LAION larger_clap_general)",
+      "task": "audio-text",
+      "description": "Finds sounds by what they sound like (“glass shattering on concrete”) and the best moment of a long recording. Analysis only: it never makes sounds. Runs on this computer (ONNX Runtime, CPU).",
+      "license": "Apache-2.0",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "attribution": "CLAP larger_clap_general by LAION (Wu, Chen, Zhang, Hui, Berg-Kirkpatrick, Dubnov: Large-scale Contrastive Language-Audio Pretraining, 2022; Apache-2.0); weights and tokenizer downloaded unmodified from LAION; ONNX graphs exported by JasperEditor",
+      "sourceUrl": "https://huggingface.co/laion/larger_clap_general/tree/ada0c23a36c4e8582805bb38fec3905903f18b41",
+      "upstreamUrl": "https://huggingface.co/laion/larger_clap_general",
+      "revision": "ada0c23a36c4e8582805bb38fec3905903f18b41",
+      "files": [
+        {
+          "path": "pytorch_model.bin",
+          "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/pytorch_model.bin",
+          "sha256": "314eb00cce6ad68d25237b8446b659ccdb136ed4672c1bca470f142f72455026",
+          "sizeBytes": 776444665
+        },
+        {
+          "path": "vocab.json",
+          "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/vocab.json",
+          "sha256": "ed19656ea1707df69134c4af35c8ceda2cc9860bf2c3495026153a133670ab5e",
+          "sizeBytes": 798293
+        },
+        {
+          "path": "merges.txt",
+          "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/merges.txt",
+          "sha256": "1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5",
+          "sizeBytes": 456318
+        },
+        {
+          "path": "clap-audio.graph.onnx",
+          "url": "bundled:clap/clap-audio.graph.onnx",
+          "sha256": "0996922788c9594ca8d0b67c01b14c0478ba8310eb40eedc7ce966f73e402b85",
+          "sizeBytes": 3205491
+        },
+        {
+          "path": "clap-text.graph.onnx",
+          "url": "bundled:clap/clap-text.graph.onnx",
+          "sha256": "327db7241fe75fa529e306bfafc4e9fb38faa50d8c9121ed20b367e1bdb7e6e4",
+          "sizeBytes": 297850
         }
       ]
     }

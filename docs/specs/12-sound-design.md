@@ -1317,6 +1317,20 @@ recording cannot be searched for "a single clean key press".
 *Done when* (after approval): install, index and search work offline; the verdict bands are measured on a held-out
 labelled set from our packs (method and numbers in the wp-note); removing the model leaves search as before.
 
+*As built (WP-E9, decisions and measurements in the wp-note "Phase 6 → WP-E9")*: approved by the human on 2026-10-17. The
+weights and tokenizer are LAION's own files at a pinned revision (776 MB, fp32); our ONNX graphs hold no weights (their
+initializers are external-data ranges of LAION's `pytorch_model.bin`), ship with the engine (3.5 MB) and are copied next
+to the download, so nothing is hosted by us; the ≈ 205 MB int8 export is not offered (top-1 changes for 12–15 % of
+queries). Embeddings are computed by a `sound-embed` job (not inside `sound-index`): one per sound (one repeat-padded 10 s
+window, or up to six averaged past 10 s) and per offered take, cached by content fingerprint and range. The vocabulary is
+305 phrases of ours; texts are read as "this is a sound of …"; hub damping removes each phrase's mean similarity to the
+user's own library; ranking adds the query-side z to the vocabulary z; earshot's bands (3 / 2.5 / 2) were kept after the
+measurement (held-out BigSoundBank packs: strong 80.7 % precise). Uses built: `search_sounds {describe}` (and the Library's
+Describe pill), `match_sound {soundId, description, alternatives}`, take ranking by description (`takes: true` with
+`describe`), Find Moment (`find_sound_moment`, `insert_sound_moment`, the row menu), and event tags in P6-E6
+(`listen_to_sequence {tags}`, Sound Check ▸ Log ▸ Name the sounds: the closest vocabulary phrase to the attributed clip's
+audio at each listed event, at most 100; the mix is streamed and not kept, so the clip's sound is named).
+
 ### 4.2 Work packages (P6-E WP list)
 
 Lanes can run in parallel. Inside a lane, packages run in order. "Shared registries" are the files almost every
@@ -1339,7 +1353,7 @@ resolve them by keeping both sides.
 
 Start now in parallel: **WP-E1, WP-E3, WP-E5, WP-E6, WP-E7** (lanes A–E; their owned files do not overlap, apart from
 the shared registries). Next: **WP-E2** after WP-E1, **WP-E4** after WP-E3 (and WP-E1), **WP-E8** after WP-E2.
-**WP-E9** waits for the human.
+**WP-E9** waited for the human; approved on 2026-10-17 and built (wp-note "Phase 6 → WP-E9").
 
 Each package appends a wp-note section "Phase 6 → WP-E<n> …" (what was built, usage, the commands it ran and their
 results, limits). It must not raise any number in `docs/gaps.md` or `docs/parity.md` without rerunnable evidence.

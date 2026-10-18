@@ -1,7 +1,13 @@
 // Pure helpers of the Sound Library panel (spec 12 §2.7, P1-R7): the search request built from the panel's filters,
 // local collections (Favourites, Recent, Used in this project) ranked with the same `rankSounds` the engine uses, licence
 // badges, the descriptor words of the accessible names and tooltips, and the mini-waveform columns. No React, no I/O.
-import type { SoundEntry, SoundFacets, SoundSearchRequest, SoundSourceType } from '@jasper/api';
+import {
+	SOUND_DESCRIBE_MAX_CHARS,
+	type SoundEntry,
+	type SoundFacets,
+	type SoundSearchRequest,
+	type SoundSourceType,
+} from '@jasper/api';
 import {
 	DESCRIPTOR_FILTERS,
 	isSoundTypeId,
@@ -164,6 +170,11 @@ export type LibraryFilters = {
 	includeShareAlike: boolean;
 	/** Find Similar: rank by similarity to this sound. */
 	similarTo: { id: string; title: string } | null;
+	/**
+	 * Describe (P6-E14): the query is a description ranked by the optional audio-text model (`describe`), not words
+	 * (`q`); without the model the engine searches its words. Absent: off.
+	 */
+	describe?: boolean;
 };
 
 export const DEFAULT_FILTERS: LibraryFilters = {
@@ -174,6 +185,7 @@ export const DEFAULT_FILTERS: LibraryFilters = {
 	commercialSafe: true,
 	includeShareAlike: false,
 	similarTo: null,
+	describe: false,
 };
 
 /** The engine / ranking licence filter of the Library's filters. */
@@ -222,8 +234,12 @@ export function searchRequest(
 		offset: page.offset,
 		license: licenseFilterOf(f),
 	};
-	const q = localizeSoundQuery(f.query.trim());
-	if (q) req.q = q.slice(0, 500);
+	// a description goes to the model as typed (CLAP reads English; type labels are not translated into ids)
+	if (f.describe && f.query.trim()) req.describe = f.query.trim().slice(0, SOUND_DESCRIBE_MAX_CHARS);
+	else {
+		const q = localizeSoundQuery(f.query.trim());
+		if (q) req.q = q.slice(0, 500);
+	}
 	if (f.types.length) req.types = [...f.types];
 	for (const { key } of REFINE_OPTIONS) {
 		const v = f.refine[key];

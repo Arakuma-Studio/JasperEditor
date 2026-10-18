@@ -38,6 +38,7 @@ import {
 import { isLoopbackHost } from '../context.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import { fingerprintFile, fingerprintHex } from '../media/fingerprint.ts';
+import type { ProcessingService } from '../processing/service.ts';
 import { freeDiskBytes } from '../tools/fs.ts';
 import { contentTypeFor } from '../tools/http.ts';
 import { HttpError } from '../tools/reply.ts';
@@ -57,6 +58,7 @@ import {
 } from './pad.ts';
 import { SoundRootStore, type SoundRootsPlan } from './roots.ts';
 import { searchSoundEntries } from './search.ts';
+import { SemanticService } from './semantic/service.ts';
 import { isSoundFileName, type LoadedManifest, loadManifest, starterDir } from './starter.ts';
 import { ensureSynthFile, synthItems } from './synth.ts';
 import {
@@ -234,6 +236,8 @@ export class SoundService {
 	readonly analyzer: SoundAnalyzer;
 	/** Downloadable packs (WP6.1): the catalogue, installs and removals. */
 	readonly packs: SoundPackStore;
+	/** Describe-it search and Find Moment (P6-E14, WP-E9): the optional audio-text model's embeddings and searches. */
+	readonly semantic: SemanticService;
 	/** Leftovers of earlier runs (staging folders, stale partial downloads) are deleted before the first install. */
 	private readonly packsReady: Promise<void>;
 	private catalogCache: PackCatalog | null = null;
@@ -255,6 +259,8 @@ export class SoundService {
 			/** Tests: a smaller library cap. */
 			maxSounds?: number;
 			now?: () => number;
+			/** The processing service (its model catalogue holds the Describe-it search model); none: describe is unavailable. */
+			processing?: ProcessingService | null;
 		} = {},
 	) {
 		const paths = core.config.paths;
@@ -307,6 +313,18 @@ export class SoundService {
 			.cleanup()
 			.catch((e) => opts.log?.(`sound packs: cleanup failed: ${(e as Error).message}`));
 		core.queue.registerRunner(PACK_JOB, (ctx) => this.runPackInstall(ctx));
+		this.semantic = new SemanticService(
+			core,
+			opts.processing ?? null,
+			{
+				entries: async () => (await this.rankingPool()).entries,
+				allEntries: async () => withOfferedTakes(this.sortedEntries(await this.library.snapshot())),
+				get: (id) => this.get(id),
+				fileOf: (e) => this.fileOf(e),
+				...(opts.log ? { log: opts.log } : {}),
+			},
+			this.env(),
+		);
 	}
 
 	/** The pack catalogue (the built-in one is read once; a `JASPER_SOUND_CATALOG` override on every call). */
@@ -460,7 +478,7 @@ export class SoundService {
 		}
 		// The user (or an agent) asking for an index lifts the hold on automatic indexing.
 		if (opts.origin?.type !== 'system') this.auto = null;
-		return this.core.queue.submit({
+		const job = this.core.queue.submit({
 			kind: 'sound-index',
 			title: opts.full ? 'Rebuild the sound library' : 'Index the sound library',
 			priority: 'background',
@@ -470,6 +488,12 @@ export class SoundService {
 			input: opts.full ? { full: true } : {},
 			stage: 'Waiting',
 		});
+		// P6-E14: new sounds get their Describe-it embeddings after the index (when the model is installed)
+		void this.core.queue
+			.wait(job.id)
+			.then((j) => (j.state === 'succeeded' ? this.semantic.autoEmbed() : null))
+			.catch(() => undefined);
+		return job;
 	}
 
 	/**
@@ -543,21 +567,37 @@ export class SoundService {
 		return this.sorted.list;
 	}
 
-	async search(q: SoundSearchQuery): Promise<SoundSearchResponse> {
+	async search(q: SoundSearchQuery, signal?: AbortSignal): Promise<SoundSearchResponse> {
 		const snapshot = await this.library.snapshot();
 		const all = this.sortedEntries(snapshot);
+		// P6-E14: describe mode ranks by the audio-text model (every visible sound and offered take is scored once);
+		// without it, the description's words are searched.
+		const text = q.describe?.trim() ? q.describe : undefined;
+		const described = text
+			? await this.semantic.describe(
+					text,
+					withOfferedTakes(all.filter((e) => this.local || e.source.type !== 'folder')),
+					signal,
+				)
+			: null;
 		const out = searchSoundEntries(all, q, {
 			lookup: (id) =>
 				soundEntryById(id, (k) => (Object.hasOwn(snapshot.sounds, k) ? snapshot.sounds[k] : undefined)) ??
 				undefined,
 			// Folder sounds are not offered by a remote engine (D-47), even when an index from a local run has them.
 			includeFolders: this.local,
+			...(described && text
+				? described.scores
+					? { semantic: { scores: described.scores, text, matches: described.matches! } }
+					: { describeAsKeywords: text }
+				: {}),
 		});
 		return {
 			snapshotHash: snapshot.snapshotHash,
 			librarySize: all.length,
 			...out,
 			indexing: this.activeIndexJob() !== null,
+			...(described ? { describe: described.info } : {}),
 		};
 	}
 
@@ -1040,11 +1080,17 @@ export class SoundService {
 		};
 	}
 
-	async capability(): Promise<{ library: { sounds: number; packs: number }; synth: boolean }> {
+	async capability(): Promise<{
+		library: { sounds: number; packs: number };
+		synth: boolean;
+		describe: { status: 'ready' | 'not-installed' | 'unavailable' };
+	}> {
 		const s = await this.library.snapshot();
+		const d = await this.semantic.status().catch(() => null);
 		return {
 			library: { sounds: Object.keys(s.sounds).length, packs: Object.keys(s.packs).length },
 			synth: true,
+			describe: { status: d?.status ?? 'unavailable' },
 		};
 	}
 }

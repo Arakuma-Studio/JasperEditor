@@ -656,6 +656,28 @@ other footage, not a location the picture shows (two locations in one clip need 
 room tone from the dialogue's own media can be as short as 0.5 s (its loop then has many joints); a library room tone
 is matched by octave-band shape only (no hum detection beyond what the bands show).
 
+Phase 6 → WP-E9 ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP-E9"; spec 12 §4 P6-E14, human
+decision 2026-10-17; earshot's calibration idea, our vocabulary and maths, `licenses/ported/earshot.md`): Describe-it
+search and Find Moment with the optional, user-installed LAION CLAP `larger_clap_general` (Apache-2.0; analysis only).
+Its weights and tokenizer are downloaded unmodified from LAION's repository at a pinned revision (776 MB, sha256-pinned,
+licence shown first; Preferences ▸ Sound Library ▸ Describe-it search, MCP `install_describe_search_model`; removal asks
+an agent's user); our weight-free ONNX graphs (3.5 MB, shipped) read them as external data, so nothing is hosted by us.
+The `jasper-clap` worker (ONNX Runtime) embeds every sound and take once (`sound-embed`, incremental, cached by content),
+`search_sounds {describe}` / the Library's Describe pill rank by a calibrated match blended with the ranking (without
+the model: the words), `match_sound` weighs one sound against alternatives, and Find Moment (`find_sound_moment`, row menu)
+finds and inserts the best windows of a long recording. Measured: exports match PyTorch (cosine ≥ 0.99999988), the
+TypeScript front end matches the reference (7.6·10⁻⁶ dB, tokenizer 34 / 34); on held-out BigSoundBank packs "strong"
+matches are 80.7 % precise and top-5 retrieval by sound alone is 84.7 % (all 184 sounds: 71.7 %, 63.2 %); Find Moment found
+three sounds placed in a 90 s recording at their seconds. Rerun `apps/engine/test/sound-semantic{,-unit}.test.ts`,
+`packages/project/test/sound-{rank-describe,moment}.test.ts`, `apps/mcp/test/sound-semantic.test.ts`,
+`apps/web/test/sound-describe-ui.test.tsx`, and with the model on the build server `e2e/sound-describe.spec.ts`
+(`E2E_CLAP=1`), `apps/engine/scripts/{check-clap,measure-clap}.ts`. The listening transcript names its events with it
+(`listen_to_sequence {tags}`, Log ▸ Name the sounds; the clip's sound at the event, up to 100 events). Limits left:
+English descriptions only; tags name the clip's sound, not the mix; ≈ 0.5 s
+of CPU per sound or take to prepare (≈ 40 min for 5 000) and ≈ 0.8 GB of RAM while the worker runs; a 4 h Find Moment pass
+≈ 12 min (estimated); quality is modest on synthesised UI sounds and some obvious queries miss (wp-note); the int8 export
+(≈ 205 MB) is not offered (it would need hosting and changes the top result for 12–15 % of queries, measured).
+
 Phase 6 → final carry-over cleanup ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → final carry-over
 cleanup", item table): every test fixture is made with LGPL encoders and filters (MPEG-4 Part 2, FFV1, VP9 instead of
 libx264; `geq` / `hue` instead of `eq`), kept so by `scripts/fixture-gpl-encoders.test.mjs`, so the engine suite runs on

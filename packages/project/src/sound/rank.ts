@@ -11,6 +11,10 @@
 // id. Filters remove entries before scoring. Decisions and thresholds: wp-note "WP1.1a".
 // P6-E10 (wp-note "Phase 6 → WP-E6"): a request's `personality` adds ±0.15 (`personalityAdjustment`) and its
 // `paletteMaterials` +0.08 for a sound sharing its family's dominant material (`materialBonusOf`) to the score.
+// P6-E14 (wp-note "Phase 6 → WP-E9"): describe mode (`semantic`) blends a sound's calibrated audio-text match (weight 6)
+// with the other parts; the description's words add up to +0.1 to it (`DESCRIBE_WORDS_BONUS` × their text match: evidence
+// only, so a badly named sound loses nothing), and a sound without an embedding yet is matched by those words alone
+// (like a query). Sounds whose match is 0 (worse than average) are filtered out.
 import type { SoundPersonality } from '../schema/sound.ts';
 import { materialBonusOf, type PaletteMaterials, personalityAdjustment } from './grammar.ts';
 import { isCommercialSafe, licensePreference, passesCommercialSafeFilter } from './license.ts';
@@ -90,6 +94,12 @@ export interface SoundRankRequest {
 	personality?: SoundPersonality;
 	/** P6-E10: the dominant material per family of the sequence's placed sounds (`paletteMaterials`): +0.08 bonus. */
 	paletteMaterials?: PaletteMaterials;
+	/**
+	 * P6-E14 describe mode: each sound's match to a description (0…1, from the calibrated z of the audio-text model;
+	 * the engine's `semanticScoreOf`). A sound missing from `scores` has no embedding yet: the words of `text` are
+	 * matched instead (filter and text part, as with `query`).
+	 */
+	semantic?: { scores: ReadonlyMap<string, number>; text: string };
 	/** At most this many results (1…10 000; default all). */
 	limit?: number;
 }
@@ -119,6 +129,8 @@ export interface RankParts {
 	style?: number | null;
 	/** P6-E10: the palette-coherence bonus added to the score (0 or 0.08; null when it does not apply). */
 	material?: number | null;
+	/** P6-E14: the describe match blended into the score (0…1; null without describe mode or an embedding). */
+	semantic?: number | null;
 }
 
 export interface RankedSound<T extends RankableSound = RankableSound> {
@@ -134,7 +146,11 @@ export const RANK_WEIGHTS = {
 	judge: 1,
 	license: 0.75,
 	similarity: 3,
+	/** P6-E14: the describe match. */
+	semantic: 6,
 } as const;
+/** P6-E14: the bonus added for the description's words in a described sound's title, tags or types (× their match). */
+export const DESCRIBE_WORDS_BONUS = 0.1;
 /** Penalty for a sound used right next to the target; halves, thirds… for later positions; capped at 0.6. */
 export const ROTATION_PENALTY = 0.3;
 const MAX_ROTATION_PENALTY = 0.6;
@@ -583,6 +599,9 @@ type PreparedRequest = {
 	plan: QueryPlan | null;
 	license: LicenseFilter;
 	similarId: string | undefined;
+	/** P6-E14 describe mode and the plan of its description's words. */
+	semantic: SoundRankRequest['semantic'] | null;
+	describePlan: QueryPlan | null;
 };
 
 function prepareRequest(request: SoundRankRequest): PreparedRequest {
@@ -595,6 +614,8 @@ function prepareRequest(request: SoundRankRequest): PreparedRequest {
 			? (request.license as LicenseFilter)
 			: 'commercial-safe',
 		similarId: request.similarTo?.id,
+		semantic: request.semantic && request.semantic.scores instanceof Map ? request.semantic : null,
+		describePlan: request.semantic ? planQuery(request.semantic.text) : null,
 	};
 }
 
@@ -635,10 +656,22 @@ function filterBits(
 	if (
 		passesDescriptorFilters(e.descriptors, request) &&
 		!(p.similarId !== undefined && p.similarId === e.id) &&
-		(!p.plan || textScore(p.plan, t).score > 0)
+		(!p.plan || textScore(p.plan, t).score > 0) &&
+		describeOk(e, t, p)
 	)
 		bits |= SOUND_FILTER_REST;
 	return bits;
+}
+
+/**
+ * Describe mode's filter: a sound with a describe match needs a positive one; one without an embedding needs the
+ * description's words (no words left after stopwords: it is not listed).
+ */
+function describeOk(e: RankableSound, t: EntryText, p: PreparedRequest): boolean {
+	if (!p.semantic) return true;
+	const s = p.semantic.scores.get(e.id);
+	if (s !== undefined) return fin(s) && s > 0;
+	return !!p.describePlan && textScore(p.describePlan, t).score > 0;
 }
 
 /** The context of one ranking call: the prepared request, rotation penalties and the reference. */
@@ -670,6 +703,7 @@ const newParts = (): RankParts => ({
 	titleMatch: null,
 	style: null,
 	material: null,
+	semantic: null,
 });
 
 /** Scores an entry that passed every filter. */
@@ -725,6 +759,19 @@ function scoreInto(
 	const rotation = round6(used.get(e.id) ?? 0);
 	const style = request.personality ? personalityAdjustment(e, request.personality) : null;
 	const material = request.paletteMaterials ? materialBonusOf(e, request.paletteMaterials) : null;
+	// P6-E14: the describe match, else (no embedding yet) the description's words. Read after the query's text score
+	// (entries keep one text-score slot).
+	let semantic: number | null = null;
+	let describeWords: number | null = null;
+	let wordsBonus = 0;
+	if (prep.semantic) {
+		const s = prep.semantic.scores.get(e.id);
+		const words = prep.describePlan ? textScore(prep.describePlan, info).score : 0;
+		if (s !== undefined && fin(s)) {
+			semantic = round6(Math.min(1, Math.max(0, s)));
+			wordsBonus = round6(DESCRIBE_WORDS_BONUS * words);
+		} else describeWords = words;
+	}
 
 	let num = RANK_WEIGHTS.durationFit * dFit + RANK_WEIGHTS.judge * judge + RANK_WEIGHTS.license * license;
 	let den = RANK_WEIGHTS.durationFit + RANK_WEIGHTS.judge + RANK_WEIGHTS.license;
@@ -740,6 +787,14 @@ function scoreInto(
 		num += RANK_WEIGHTS.similarity * similarity;
 		den += RANK_WEIGHTS.similarity;
 	}
+	if (semantic !== null) {
+		num += RANK_WEIGHTS.semantic * semantic;
+		den += RANK_WEIGHTS.semantic;
+	}
+	if (describeWords !== null) {
+		num += RANK_WEIGHTS.text * describeWords;
+		den += RANK_WEIGHTS.text;
+	}
 	parts.text = text;
 	parts.typeFit = typeFit;
 	parts.durationFit = dFit;
@@ -751,7 +806,8 @@ function scoreInto(
 	parts.titleMatch = matched ? matched.titleMatch : null;
 	parts.style = style;
 	parts.material = material;
-	return round6(num / den - rotation + (style ?? 0) + (material ?? 0));
+	parts.semantic = semantic;
+	return round6(num / den - rotation + (style ?? 0) + (material ?? 0) + wordsBonus);
 }
 
 /** Sorts ranked sounds (real before synth, title words, score, id) and applies the request's limit. */
@@ -793,6 +849,7 @@ export function rankSounds<T extends RankableSound>(
 		if (!passesDescriptorFilters(e.descriptors, request)) continue;
 		if (sim?.id !== undefined && sim.id === e.id) continue;
 		if (plan && !(textScore(plan, info).score > 0)) continue;
+		if (!describeOk(e, info, prep)) continue;
 		out.push(scoreEntry(e, info, lic, run));
 	}
 	return finish(out, request);

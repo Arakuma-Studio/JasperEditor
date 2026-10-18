@@ -5,6 +5,7 @@
 import {
 	type EngineJob,
 	type RegisterSoundResponse,
+	SOUND_DESCRIBE_MAX_CHARS,
 	SOUND_EFFECTS_BIN,
 	SOUND_ROOT_LICENSES,
 	SOUND_SOURCE_TYPES,
@@ -78,6 +79,7 @@ import { mediaRegisterCommand } from '../media.ts';
 import { composeGrid, encodePng } from '../png.ts';
 import { drawSoundCell, drawSoundDetail, isTruncated, type RgbaImage } from '../sound-sheet.ts';
 import { livePlayhead } from './color.ts';
+import { DESCRIBE_GUIDE } from './sound-describe-guide.ts';
 
 /** The cue workflow (Phase 2 tools in ./sound-design.ts); part of SOUND_GUIDE. */
 export const SOUND_CUES_GUIDE = `Sound cues (spec 12 Phase 2): a cue is a moment of the picture that may want a sound, stored in the sequence (Sequence ▸ Sound Design, the Cue Seam) with its kind (cut, transition, move, land, appear, exit, emphasis, reveal, manual…), weight (hero, support, ambient), suggested types, alignment, pan, a reason and an anchor that ties it to the edit (a cut, a transition, a keyframe run, a text animation, a motion graphic, a clip edge, a marker).
@@ -108,6 +110,7 @@ export const SOUND_GUIDE = `Sound library (sound effects; spec 12). You cannot h
 - Cues: a sequence's sound cues (Sequence.soundDesign.cues: frame, kind, weight hero/support/ambient, types, reason, anchor) are drawn for the user on the Timeline's Cue Seam, a lane between the video and audio tracks (glyph per kind; filled cues are solid with a line to the placed clip's peak). Edit them with apply_commands: soundCue.add / update / remove / resync, soundDesign.place {cueId} fills one, soundDesign.setPeak {clipId, peakFlicks} corrects where a placed clip's peak is (the clip does not move). The UI commands sound.addCue {frame?}, sound.toggleCueSeam, sound.clearUnfilledCues, sound.convertMarkersToCues and soundLibrary.fillCue {cueId} (opens the Sound Library filtered to the cue's types) run through ui_command when an editor window is open.
 - Licences: search defaults to commercial-safe licences (CC0, CC-BY, open licences, the user's royalty-free folders) WITHOUT ShareAlike; license "commercial-safe-sa" also lists CC BY-SA sounds and "any" also shows user-provided (undeclared) and other sounds — do not use those in work the user will publish without asking. shareAlike: true marks CC BY-SA sounds: a video synced with one must itself be shared under CC BY-SA (CC BY-SA 4.0 §1(a), §3(b)); use one only when the user chose it, and tell them (sound_check warns LICENSE, the credits carry a ShareAlike notice, the export warns W_SOUND_SHARE_ALIKE). CC-BY sounds need a credit: list_sound_credits {projectId, format md|txt|csv} gives the credit lines of every library sound the project (or a sequence) uses, with warnings for non-commercial, no-derivatives, unknown or undeclared licences; give the credits to the user when CC-BY sounds are used. start_export writes them next to the video (credits: "md" | "txt" | "csv"; by default the sequence's credits setting, or Markdown when a sound needs a credit) and warns W_SOUND_CREDITS when a sound heard in the export needs a credit and no credits file is written.
 - Packs: list_sound_packs lists the downloadable packs this engine offers (the remaining Kenney CC0 audio packs: impacts, interface, UI, digital, sci-fi, casino and RPG foley, music jingles and announcer voices; and four curated BigSoundBank CC0 packs of real recordings by Joseph Sardin: "Keys & Clicks" with keyboard and typewriter typing takes, "Foley & Hits", "Whooshes & Risers" with air whooshes, pass-bys, risers, a reverse and tape rewinds, and "Ambience & Room Tone" with room tone and city / nature beds), each with its licence, the evidence the licence was checked against, its download and installed sizes, sound count and state (available, installed, outdated, damaged). Before install_sound_pack, TELL THE USER the pack's name, download size and licence (and its credit line when it has one), and install only what they asked for: it downloads from the pack's upstream site (the only network the sound library uses), checks every byte against the pinned sha256 and adds its sounds to the library (a sound-pack-install job, then a sound-index job; wait: true waits for both). remove_sound_pack deletes an installed pack and needs the user's approval on a card in an open editor window; projects that already use its sounds keep their own copies. Jingles and voices are music and speech, not effects: they have no sound type, so find them by words (search_sounds {q: "jingle"} or {packId}).
+${DESCRIBE_GUIDE}
 - Library: sound_library_status shows the sources, counts per type, source and licence, the folders and whether an index job runs. rescan_sound_library re-indexes (a job; wait: true waits). add_sound_folder / remove_sound_folder change the user's folders and need the user's approval in an open editor window (E_APPROVAL_DENIED: they said no or no window was open; do not retry without asking).
 ${SOUND_CUES_GUIDE}`;
 
@@ -335,6 +338,14 @@ const SearchArgs = {
 			'Also return the clean takes of multi-hit recordings (typing runs, clocks, packs of clicks) as rows of their own (soundId snd_…~t<n>), ranked with the other sounds: one key press per row. Default false: a recording row says how many takes it has',
 		),
 	similarTo: SoundIdArg.optional().describe('Rank by similarity to this sound (left out of the results)'),
+	describe: z
+		.string()
+		.min(1)
+		.max(SOUND_DESCRIBE_MAX_CHARS)
+		.optional()
+		.describe(
+			'Describe-it search: what the sound sounds like — source + material + action + character ("glass bottle shattering on concrete, sharp"). Ranked by the optional audio-text model when installed (rows get match {z, verdict}); else its words are searched like q',
+		),
 	limit: z.number().int().min(1).max(MAX_SHEET).optional().describe(`Results (1…${MAX_SHEET}, default 12)`),
 	offset: z.number().int().min(0).max(100_000).optional().describe('Skip this many results (paging)'),
 };
@@ -534,7 +545,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 		'search_sounds',
 		{
 			title: 'Search sounds',
-			description: `Searches the sound library (ranked: real recordings before Jasper Synth, title words before type synonyms, then type fit, length fit, the judge and licence preference). Returns rows with soundId, title, types, durationSec, peakSec, riseMs, decayMs (null when it does not decay), centroidHz, below150Share, flatness, pitchMidi, judge {ok, score, reasons}, license, author, credit (the line a CC-BY licence asks for), creditRequired, shareAlike (CC BY-SA: the video must be shared alike), source.type, materials (named by its words) and, for a multi-hit recording, takes (how many clean single takes it offers), plus facets (counts per type, family, licence class, source and material) and total. takes: true also returns those takes as rows (soundId snd_…~t<n>, take {recordingId, index, startSec, endSec, strokes}): one key press or tick each, judged on its own; use them for repeated cues — the rotation varies the take, not the pitch. material filters by material. Licences default to commercial-safe without ShareAlike (license "commercial-safe-sa" includes CC BY-SA, "any" every licence). contactSheet: true also returns ONE PNG with a numbered cell per result (waveform over spectrogram, red peak line, dashed decay end, id and numbers printed) and its cells JSON.`,
+			description: `Searches the sound library (ranked: real recordings before Jasper Synth, title words before type synonyms, then type fit, length fit, the judge and licence preference). describe: "…" ranks by what sounds sound like with the optional Describe-it search model (blended with the rest; rows carry match {z, verdict: strong | plausible | weak | none}; describe.mode "keywords" when the model is not installed: its words are searched instead). Returns rows with soundId, title, types, durationSec, peakSec, riseMs, decayMs (null when it does not decay), centroidHz, below150Share, flatness, pitchMidi, judge {ok, score, reasons}, license, author, credit (the line a CC-BY licence asks for), creditRequired, shareAlike (CC BY-SA: the video must be shared alike), source.type, materials (named by its words) and, for a multi-hit recording, takes (how many clean single takes it offers), plus facets (counts per type, family, licence class, source and material) and total. takes: true also returns those takes as rows (soundId snd_…~t<n>, take {recordingId, index, startSec, endSec, strokes}): one key press or tick each, judged on its own; use them for repeated cues — the rotation varies the take, not the pitch. material filters by material. Licences default to commercial-safe without ShareAlike (license "commercial-safe-sa" includes CC BY-SA, "any" every licence). contactSheet: true also returns ONE PNG with a numbered cell per result (waveform over spectrogram, red peak line, dashed decay end, id and numbers printed) and its cells JSON.`,
 			input: {
 				...SearchArgs,
 				contactSheet: z.boolean().optional().describe('Also return a PNG contact sheet of the results'),
@@ -551,6 +562,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 		async (a, extra) => {
 			const req: SoundSearchRequest = {
 				...(a.q !== undefined ? { q: a.q } : {}),
+				...(a.describe !== undefined ? { describe: a.describe } : {}),
 				...(a.types ? { types: a.types } : {}),
 				...(a.family ? { family: a.family } : {}),
 				...(a.visualKind ? { visualKind: a.visualKind } : {}),
@@ -580,8 +592,20 @@ export function registerSoundTools(ctx: ToolContext): void {
 					rank: res.offset + i + 1,
 					...soundRow(r.sound, r.takeCount),
 					score: r3(r.score),
+					...(r.match ? { match: { z: r.match.z, verdict: r.match.verdict } } : {}),
 				})),
 				facets: res.facets,
+				...(res.describe
+					? {
+							describe: {
+								mode: res.describe.mode,
+								...(res.describe.reason ? { reason: res.describe.reason } : {}),
+								embedded: res.describe.embedded,
+								pending: res.describe.pending,
+								...(res.describe.jobId ? { embedJobId: res.describe.jobId } : {}),
+							},
+						}
+					: {}),
 				...(res.librarySize === 0
 					? {
 							note: 'The library is empty: run rescan_sound_library {wait: true}, or check sound_library_status.',
