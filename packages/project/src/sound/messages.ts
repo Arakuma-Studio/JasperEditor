@@ -82,6 +82,13 @@ export const SOUND_MESSAGES = [
 	'The new copy is already in the project as {0}',
 	'{0} would not fit the new copy of {1}',
 	'{0} would not fit the new copy of {1}: the clips keep the older copy; the new one is another media',
+	// acknowledged Sound Check findings (spec 12 §4 P6-E4)
+	'reason must not be empty: say why the finding is deliberate',
+	'key {0} is not a {1} finding (keys start with their code)',
+	'Only the user can acknowledge an error ({0}): ask them to review it in the Sound Check panel, or fix it',
+	'target.frame must be inside the sequence (0–{0})',
+	'A sequence holds at most {0} acknowledged findings: unacknowledge some first',
+	'No acknowledged finding {0} in {1}',
 ] as const;
 
 /** Every sound-design template the editor translates (labels, refusals, Sound Check findings and fixes). */

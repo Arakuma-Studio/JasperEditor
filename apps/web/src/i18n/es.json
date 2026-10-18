@@ -10155,5 +10155,11 @@
   "Verdict {0} → {1}": "Veredicto {0} → {1}",
   "Why is {0} deliberate?": "¿Por qué {0} es intencionado?",
   "Why is it deliberate? (required)": "¿Por qué es intencionado? (obligatorio)",
-  "your decisions changed which items it covers": "sus decisiones cambiaron los elementos que abarca"
+  "your decisions changed which items it covers": "sus decisiones cambiaron los elementos que abarca",
+  "reason must not be empty: say why the finding is deliberate": "el motivo no puede estar vacío: diga por qué el hallazgo es intencionado",
+  "key {0} is not a {1} finding (keys start with their code)": "la clave {0} no es de un hallazgo {1} (las claves empiezan por su código)",
+  "Only the user can acknowledge an error ({0}): ask them to review it in the Sound Check panel, or fix it": "Solo el usuario puede reconocer un error ({0}): pídale que lo revise en el panel Comprobación de sonido, o corríjalo",
+  "target.frame must be inside the sequence (0–{0})": "target.frame debe estar dentro de la secuencia (0–{0})",
+  "A sequence holds at most {0} acknowledged findings: unacknowledge some first": "Una secuencia admite como máximo {0} hallazgos reconocidos: deje de reconocer alguno primero",
+  "No acknowledged finding {0} in {1}": "No hay ningún hallazgo reconocido {0} en {1}"
 }
