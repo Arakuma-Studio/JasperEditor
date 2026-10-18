@@ -74,11 +74,17 @@ export function MusicFit({ session, seq, clip }: { session: EditorSession; seq: 
 						analysis.bpm === null ? t('No steady beat') : t('{0} BPM', Math.round(analysis.bpm)),
 						analysis.beatsPerBar ? t('{0} beats per bar', analysis.beatsPerBar) : null,
 						analysis.key
-							? t(
-									analysis.key.mode === 'major' ? '{0} major ({1} %)' : '{0} minor ({1} %)',
-									analysis.key.name.split(' ')[0] ?? '',
-									Math.round(analysis.key.confidence * 100),
-								)
+							? analysis.key.mode === 'major'
+								? t(
+										'{0} major ({1} %)',
+										analysis.key.name.split(' ')[0] ?? '',
+										Math.round(analysis.key.confidence * 100),
+									)
+								: t(
+										'{0} minor ({1} %)',
+										analysis.key.name.split(' ')[0] ?? '',
+										Math.round(analysis.key.confidence * 100),
+									)
 							: t('No clear key'),
 					]
 						.filter(Boolean)
