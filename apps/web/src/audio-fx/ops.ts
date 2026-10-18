@@ -1,7 +1,15 @@
 // Engine round trips of Essential Sound and Remix (audio-fx): Loudness Auto-Match (measure the clips' own signal on
 // the engine, then one `essentialSound.autoMatch`), Ducking (audio-mix's `autoDuck` with the Essential Sound
 // triggers), Remix (`POST /api/audio/remix-plan`, then one `clip.remix`) and Duration ▸ Stretch.
-import { type AudioClassifyResult, MAX_REMIX_SOURCE_SECONDS } from '@jasper/api';
+// Music to picture (spec 12 P6-E11; wp-note "Phase 6 → WP-E7"): the music's analysis (`POST /api/audio/beats`: tempo,
+// bar lines, drops, key), Land the Drop (an anchored remix plan, then one `clip.remix`) and End on Bar.
+import {
+	type AudioClassifyResult,
+	type BeatsResult,
+	MAX_REMIX_SOURCE_SECONDS,
+	type RemixPlanRequest,
+	type RemixPlanResult,
+} from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	AUDIO_TYPE_LABELS,
@@ -9,12 +17,20 @@ import {
 	type AudioType,
 	duckTriggerClips,
 	type EssentialSound,
+	endOnBarPlan,
+	FLICKS_PER_SECOND,
+	frameAtContent,
 	type MediaAsset,
 	type ProjectDocument,
 	type Rational,
 	readEssentialSound,
+	readRemixAnchors,
+	remixCommandOf,
+	remixPiecesOf,
 	remixSourceRange,
+	remixStartFrame,
 	type Sequence,
+	soundCuesOf,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { analyzeAudio, autoDuck } from '../audio/engine-ops.ts';
@@ -267,6 +283,50 @@ export function remixTooLong(durSec: number): string {
 	return `The music is ${min(durSec)} min long; Remix analyses at most ${min(MAX_REMIX_SOURCE_SECONDS)} min. Trim the clip first.`;
 }
 
+/**
+ * The one music clip a selection names: a single clip, or every piece of one remix (selecting a piece selects its
+ * group) — then its first piece. Null otherwise.
+ */
+export function singleMusicClip(clips: readonly AudioClip[]): AudioClip | null {
+	if (clips.length === 1) return clips[0]!;
+	const id = clips[0]?.remix?.id;
+	if (!id || !clips.every((c) => c.remix?.id === id)) return null;
+	return [...clips].sort((a, b) => a.start - b.start)[0]!;
+}
+
+/** The remix length of a music clip now (a remix's target, else its duration; frames). */
+const remixLengthOf = (clip: AudioClip) => (clip.remix ? clip.remix.targetFrames : clip.duration);
+
+/** Frames free on the clip's track from where its remix starts (the next other clip), or Infinity. */
+function roomOf(seq: Sequence, clip: AudioClip): number {
+	const start = remixStartFrame(clip);
+	const own = new Set(remixPiecesOf(seq, clip).map((c) => c.id));
+	let next = Number.POSITIVE_INFINITY;
+	for (const c of Object.values(seq.clips))
+		if (c.trackId === clip.trackId && !own.has(c.id) && c.start >= start) next = Math.min(next, c.start);
+	return next - start;
+}
+
+/** The engine request base of a music clip's remix (its original content range). */
+function remixBase(
+	doc: ProjectDocument,
+	seq: Sequence,
+	clip: AudioClip,
+	targetSeconds: number,
+): RemixPlanRequest {
+	const key = mediaKeyOf(doc.media[clip.mediaId] as MediaAsset | undefined);
+	if (!key) throw new Error(t('The music is not on the engine'));
+	const { startSec, durSec } = remixSourceRange(clip, seq.settings.frameRate as Rational);
+	if (durSec > MAX_REMIX_SOURCE_SECONDS) throw new Error(remixTooLong(durSec));
+	return {
+		mediaKey: key,
+		...(clip.channels.streamIndex !== undefined ? { streamIndex: clip.channels.streamIndex } : {}),
+		startSeconds: startSec,
+		durationSeconds: durSec,
+		targetSeconds,
+	};
+}
+
 export async function remixClip(
 	session: EditorSession,
 	engine: EngineClient,
@@ -274,43 +334,167 @@ export async function remixClip(
 	clipId: string,
 	targetSeconds: number,
 	opts: { segments?: number; variations?: number } = {},
-): Promise<{ pieces: number; bpm: number; lengthSeconds: number }> {
+): Promise<{ pieces: number; bpm: number; lengthSeconds: number; keptDrop: boolean | null }> {
 	const doc = session.getCommitted();
 	const seq = doc.sequences[sequenceId] as Sequence;
 	const clip = seq.clips[clipId] as AudioClip | undefined;
-	if (clip?.kind !== 'audio') throw new Error('Select a music clip');
-	const key = mediaKeyOf(doc.media[clip.mediaId] as MediaAsset | undefined);
-	if (!key) throw new Error('The music is not on the engine');
+	if (clip?.kind !== 'audio') throw new Error(t('Select a music clip'));
 	const rate = seq.settings.frameRate as Rational;
-	const { startSec, durSec } = remixSourceRange(clip, rate);
-	if (durSec > MAX_REMIX_SOURCE_SECONDS) throw new Error(remixTooLong(durSec));
-	const plan = await engine.remixPlan({
-		mediaKey: key,
-		streamIndex: clip.channels.streamIndex,
-		startSeconds: startSec,
-		durationSeconds: durSec,
-		targetSeconds,
+	const fps = rate.num / rate.den;
+	const base: RemixPlanRequest = {
+		...remixBase(doc, seq, clip, targetSeconds),
 		...(opts.segments !== undefined ? { segments: opts.segments } : {}),
 		...(opts.variations !== undefined ? { variations: opts.variations } : {}),
-	});
-	const targetFrames = Math.max(1, Math.round((plan.lengthSeconds * rate.num) / rate.den));
+	};
+	// P6-E11: a drop the clip landed earlier lands again when it still fits
+	const start = remixStartFrame(clip);
+	const kept = readRemixAnchors(clip.remix).filter((a) => (a.frame - start) / fps < targetSeconds);
+	let plan: RemixPlanResult | null = null;
+	if (kept.length) {
+		const room = roomOf(seq, clip);
+		plan = await engine
+			.remixPlan({
+				...base,
+				anchors: kept.map((a) => ({
+					sourceSeconds: a.sourceSeconds,
+					outputSeconds: (a.frame - start) / fps,
+				})),
+				fit: 'nearest',
+				...(Number.isFinite(room) ? { maxTargetSeconds: room / fps } : {}),
+			})
+			.catch(() => null);
+	}
+	const keptDrop = kept.length ? plan !== null : null;
+	plan ??= await engine.remixPlan(base);
 	const res = session.apply({
 		label: 'Remix',
 		origin: 'user',
 		commands: [
-			{
-				type: 'clip.remix',
-				clipId,
-				targetFrames,
-				pieces: plan.pieces,
-				bpm: plan.bpm,
-				...(opts.segments !== undefined ? { segments: opts.segments } : {}),
-				...(opts.variations !== undefined ? { variations: opts.variations } : {}),
-			},
+			remixCommandOf(clip, plan, rate, {
+				...opts,
+				...(kept.length && Number.isFinite(roomOf(seq, clip)) ? { maxFrames: roomOf(seq, clip) } : {}),
+			}) as never,
 		],
 	});
 	fail(res, 'Remix');
-	return { pieces: plan.pieces.length, bpm: plan.bpm, lengthSeconds: plan.lengthSeconds };
+	return { pieces: plan.pieces.length, bpm: plan.bpm, lengthSeconds: plan.lengthSeconds, keptDrop };
+}
+
+/** The music's analysis over the clip's (original) content range: tempo, bar lines, drops and key (cached). */
+export async function musicAnalysis(
+	session: EditorSession,
+	engine: EngineClient,
+	sequenceId: string,
+	clipId: string,
+): Promise<BeatsResult> {
+	const doc = session.getCommitted();
+	const seq = doc.sequences[sequenceId] as Sequence;
+	const clip = seq.clips[clipId] as AudioClip | undefined;
+	if (clip?.kind !== 'audio') throw new Error(t('Select a music clip'));
+	const first = remixPiecesOf(seq, clip)[0]!;
+	const base = remixBase(doc, seq, first, 1);
+	return engine.audioBeats({
+		mediaKey: base.mediaKey,
+		...(base.streamIndex !== undefined ? { streamIndex: base.streamIndex } : {}),
+		startSeconds: base.startSeconds,
+		durationSeconds: base.durationSeconds,
+	});
+}
+
+/** Where a media second of a music clip (or its remix) plays now (frame), or null when it is not heard. */
+export function frameOfMusicSec(seq: Sequence, clip: AudioClip, sec: number): number | null {
+	const rate = seq.settings.frameRate as Rational;
+	for (const p of remixPiecesOf(seq, clip)) {
+		const f = frameAtContent(p, sec * FLICKS_PER_SECOND, rate);
+		if (f >= p.start && f < p.start + p.duration) return Math.round(f);
+	}
+	return null;
+}
+
+/** The first hero cue under a music clip (its remix span), or null. */
+export function heroCueUnder(seq: Sequence, clip: AudioClip): { id: string; frame: number } | null {
+	const start = remixStartFrame(clip);
+	const end = start + remixLengthOf(clip);
+	const hero = soundCuesOf(seq)
+		.filter((c) => c.weight === 'hero' && !c.muted && c.frame >= start && c.frame < end)
+		.sort((a, b) => a.frame - b.frame)[0];
+	return hero ? { id: hero.id, frame: hero.frame } : null;
+}
+
+/**
+ * Land the Drop (P6-E11): the music clip is re-cut at bar lines so its drop (the top candidate, or `dropSec` in media
+ * seconds) plays exactly at `frame` (within 1 ms); its length moves by at most half a bar so the outro still ends it
+ * (never over the next clip on the track). One undo step "Land the Drop".
+ */
+export async function landDrop(
+	session: EditorSession,
+	engine: EngineClient,
+	sequenceId: string,
+	clipId: string,
+	frame: number,
+	opts: { dropSec?: number } = {},
+): Promise<{ bar: number | null; dropSec: number; errorMs: number; lengthSeconds: number; pieces: number }> {
+	const doc = session.getCommitted();
+	const seq = doc.sequences[sequenceId] as Sequence;
+	const clip = seq.clips[clipId] as AudioClip | undefined;
+	if (clip?.kind !== 'audio') throw new Error(t('Select a music clip'));
+	const rate = seq.settings.frameRate as Rational;
+	const fps = rate.num / rate.den;
+	const start = remixStartFrame(clip);
+	if (frame < start) throw new Error(t('The drop cannot land before the music starts'));
+	const base = remixBase(doc, seq, clip, remixLengthOf(clip) / fps);
+	let dropSource: number;
+	let bar: number | null = null;
+	if (opts.dropSec !== undefined) dropSource = opts.dropSec - base.startSeconds;
+	else {
+		const first = await engine.remixPlan(base);
+		const top = first.drops?.[0];
+		if (!top) throw new Error(t('No drop found in this music'));
+		dropSource = top.sourceSeconds;
+		bar = top.bar;
+	}
+	const room = roomOf(seq, clip);
+	const plan = await engine.remixPlan({
+		...base,
+		anchors: [{ sourceSeconds: dropSource, outputSeconds: (frame - start) / fps }],
+		fit: 'nearest',
+		...(Number.isFinite(room) ? { maxTargetSeconds: room / fps } : {}),
+	});
+	const res = session.apply({
+		label: 'Land the Drop',
+		origin: 'user',
+		commands: [remixCommandOf(clip, plan, rate, Number.isFinite(room) ? { maxFrames: room } : {}) as never],
+	});
+	fail(res, 'Land the Drop');
+	return {
+		bar,
+		dropSec: base.startSeconds + dropSource,
+		errorMs: plan.anchors?.[0]?.errorMs ?? 0,
+		lengthSeconds: plan.lengthSeconds,
+		pieces: plan.pieces.length,
+	};
+}
+
+/** End on Bar (P6-E11): the music clip ends just before a bar line with a one-beat fade-out. One undo step. */
+export async function endOnBar(
+	session: EditorSession,
+	engine: EngineClient,
+	sequenceId: string,
+	clipId: string,
+	opts: { direction?: 'earlier' | 'nearest'; fadeSeconds?: number } = {},
+): Promise<{ endFrame: number; barSeconds: number }> {
+	const b = await musicAnalysis(session, engine, sequenceId, clipId);
+	if (!b.downbeats?.length)
+		throw new Error(
+			b.reason === 'NO_BEAT' ? t('The music has no steady beat') : t('The music has no clear bar lines'),
+		);
+	const doc = session.getCommitted();
+	const seq = doc.sequences[sequenceId] as Sequence;
+	const p = endOnBarPlan(doc, seq, clipId, b.downbeats, { bpm: b.bpm, ...opts });
+	if (!p.ok) throw new Error(p.message);
+	const res = session.apply({ label: 'End on Bar', origin: 'user', commands: p.commands as never });
+	fail(res, 'End on Bar');
+	return { endFrame: p.endFrame, barSeconds: p.barSeconds };
 }
 
 const PRESET_KEY = 'jasper.essentialSound.userPresets';

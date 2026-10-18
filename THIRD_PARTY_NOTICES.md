@@ -9508,7 +9508,8 @@ Record: `licenses/ported/earshot.md`
 - **Licence:** MIT
 - **Copyright:** Copyright (c) 2026 Leon Lin
 - **Ported by:** sound design WP-E1 (Sound Check: new findings), 2026-10-17; WP-E5 (takes, judge flags), 2026-10-18;
-  WP-E6 (cue grammar, variation policy, personality, palette coherence), 2026-10-18
+  WP-E6 (cue grammar, variation policy, personality, palette coherence), 2026-10-18; WP-E7 (music to picture),
+  2026-10-18
 
 | Upstream path | Our path | What |
 |---|---|---|
@@ -9572,6 +9573,23 @@ non-overlapping clips render each clip's own events, a mix event is attributed t
 (timed by the earlier of the two attacks), and a clip's own onset is looked at in the mix where the onset curve hides it
 (kept when the mix rises ≥ 3 dB there). Not ported: CLAP / AST tags, sections by Foote novelty and genre, the beat
 tracker, the level-peak fallback for unanswered cuts.
+
+## Music to picture (sound design WP-E7, 2026-10-18)
+
+| Upstream path | Our path | What |
+|---|---|---|
+| `skills/real-sound/scripts/arrange.py` (`transient_phase`, the beat grid "moved onto the measured attacks") | `packages/audio-fx/src/analysis/remix.ts` (`beatAttacks`, `analyzeMusic`, `JOINT_LEAD_S`) | The idea that a beat tracker's grid lags the attacks (20–50 ms by earshot's measurement) and that a splice on a lagging grid chops the downbeat: every joint now sits 5 ms before its beat's MEASURED attack (our existing 5 ms-RMS rise refinement per beat; earshot folds a 2.9 ms flux at the period and shifts the whole grid) |
+| `skills/real-sound/scripts/arrange.py` (`drop_score`, `drop_cands`: "a loud bar (within 3 dB of the loud sections) that stays loud for 4 bars, lifted over the 4 bars before it" + novelty) | `packages/audio-fx/src/analysis/remix.ts` (`findDrops`) | Bar levels relative to the 90th percentile; a candidate is within 3 dB of it and its 4 bars average over −4 dB; score = lift / 3 + 2 × novelty (distance of unit chroma and unit timbre vectors from the previous bar); without loud bars the bars over the 75th percentile; top 6 |
+| `skills/real-sound/scripts/arrange.py` (hard anchors: `--drop-film-bar` = `--drop` source bar; edits at bar lines) | `packages/audio-fx/src/analysis/remix.ts` (`planAnchoredRemix`) | Landing the drop on a chosen moment with joints only at bar lines (earshot: a DP over film bars against an arc; ours: the existing remix's similarity-ranked jumps restricted to bar lines, a head trim under a bar, the outro kept, exact to 1 ms) |
+| `docs/launch-video-sound.md` (stop-downs "0.15–1.5 s", riser → stop-down 0.1–0.5 s → impact) | `packages/project/src/sound/mix.ts` (`STOP_ON_BAR_WINDOW_SEC`, `STOP_ON_BAR_MIN_SEC`, `stopOnBar`) | The 0.1–0.5 s window in which a stop-before's ramp is moved onto the music's downbeat (earshot norm, n = 7 launch films measured by one person; a default the cue's own `stopBefore.seconds` replaces) |
+
+Notes: Python/librosa → TypeScript; no code was copied. Changes: our beat grid is per beat (each beat on its own
+measured attack) rather than one fitted line with a phase shift; the drop's lift is taken over the median of the 4 bars
+before AND the bar right before (earshot's median alone scored the bar after a drop almost as high: 8.2 vs 8.8 on our
+generated track, measured); bar numbers count from the start of the analysed range; key finding (Krumhansl–Schmuckler,
+`packages/audio-fx/src/analysis/key.ts`) and tuning (`packages/project/src/sound/tuning.ts`) are ours (earshot's
+`analyze.py` reports a key with librosa; nothing of it is used). Not ported: the arc DP over film bars, `--phase`
+overrides, local phase disagreements, Rubber Band stretching (GPL; we never stretch).
 
 ## Code ported by the `edit-structure` workstream
 

@@ -18,6 +18,12 @@
 // outro are kept; the plan is within half a beat of the target when the beat grid allows it, always within one beat.
 // Deterministic. Positions are samples of the analysed signal. The spectra are processed streaming (no frame store),
 // so a five-minute song analyses in a few hundred MB less than the reference.
+//
+// P6-E11 (spec 12; wp-note "Phase 6 → WP-E7"; ideas from earshot `skills/real-sound/scripts/arrange.py`, MIT,
+// reimplemented): the beat grid sits on the MEASURED attacks (the onset envelope lags them by up to a hop, and a joint on
+// a lagging grid chops the downbeat), every joint `JOINT_LEAD_S` before its beat's attack; the analysis carries the
+// bar lines (downbeats, 3 or 4 beats per bar detected) and the drop candidates (`findDrops`), and `planAnchoredRemix`
+// lands chosen source moments (the drop) on chosen output times within a millisecond, joining at bar lines only.
 import { Fft } from '../core/fft.ts';
 import { hann } from '../core/stft.ts';
 
@@ -27,6 +33,12 @@ export const CONTEXT = 4;
 export const MIN_PIECE_BEATS = 4;
 /** Crossfade at each joint (seconds). */
 export const XFADE_S = 0.02;
+/**
+ * How far before its beat's measured attack a joint sits (seconds): ≥ 3 ms (spec 12 P6-E11) with a margin for the
+ * attack measurement (5 ms RMS windows). The timeline's joint crossfade ends at the joint (`clip.remix`), so nothing of
+ * either side's attack is faded or doubled.
+ */
+export const JOINT_LEAD_S = 0.005;
 
 export type Piece = { src: number; len: number };
 export type Plan = { pieces: Piece[]; xfade: number };
@@ -44,16 +56,45 @@ export type Analysis = {
 	bpm: number;
 	/** Beat self-similarity, beats.length², row-major. */
 	sim: Float32Array;
+	/** The measured attack of each beat (samples; `beats[i]` = `attacks[i]` − the joint lead). */
+	attacks: number[];
+	/** Indices into `beats` of the bar lines (downbeats), `beatsPerBar` apart. */
+	downbeats: number[];
+	beatsPerBar: number;
+	/** The bar lines are a guess (no beat per bar is clearly accented: the strongest phase is used). */
+	barsGuessed: boolean;
+	/** Drop candidates, best first (`findDrops`). */
+	drops: MusicDrop[];
 };
 
+export type RemixErrorCode =
+	| 'NO_BEAT'
+	| 'TOO_SHORT'
+	| 'TARGET_TOO_SHORT'
+	| 'ANCHOR_OUT_OF_RANGE'
+	| 'ANCHOR_UNREACHABLE'
+	| 'NO_PLAN_NEAR_TARGET';
+
 export class RemixError extends Error {
-	constructor(readonly code: 'NO_BEAT' | 'TOO_SHORT' | 'TARGET_TOO_SHORT') {
+	constructor(
+		readonly code: RemixErrorCode,
+		message?: string,
+		/** NO_PLAN_NEAR_TARGET: the nearest output lengths a plan reaches (samples), shorter first. */
+		readonly nearestTargets: number[] = [],
+	) {
 		super(
-			code === 'NO_BEAT'
-				? 'no beat found in the audio'
-				: code === 'TOO_SHORT'
-					? 'the music is too short to remix'
-					: 'the target duration is too short for this music',
+			message ??
+				(code === 'NO_BEAT'
+					? 'no beat found in the audio'
+					: code === 'TOO_SHORT'
+						? 'the music is too short to remix'
+						: code === 'TARGET_TOO_SHORT'
+							? 'the target duration is too short for this music'
+							: code === 'ANCHOR_OUT_OF_RANGE'
+								? 'an anchor lies outside the music or the target'
+								: code === 'ANCHOR_UNREACHABLE'
+									? 'no plan lands the anchor there'
+									: 'no plan ends within half a beat of the target'),
 		);
 		this.name = 'RemixError';
 	}
@@ -395,9 +436,9 @@ function cosSim(a: Float64Array, b: Float64Array): number {
 	return na > 0 && nb > 0 ? d / Math.sqrt(na * nb) : 0;
 }
 
-/** How far the analysed beats sit before the attack of each beat (half a crossfade), samples. */
+/** How far the analysed beats (joint positions) sit before the measured attack of each beat, samples. */
 export function beatLead(sampleRate: number): number {
-	return Math.round(XFADE_S * 0.5 * sampleRate);
+	return Math.round(JOINT_LEAD_S * sampleRate);
 }
 
 function localMax(env: Float64Array, t: number, r: number): number {
@@ -531,18 +572,85 @@ function trackedBeats(
 	return { env, n, hop, frames, period };
 }
 
+/**
+ * The attacks of the tracked beats: each beat moved onto the strongest 1 ms-RMS rise within 1.5 hops of where the
+ * flux reports it (the envelope's frame lags the attack), with its onset strength and accent (the rise).
+ */
+function beatAttacks(
+	mono: Float32Array,
+	sampleRate: number,
+): {
+	env: Float64Array;
+	hop: number;
+	period: number;
+	attacks: number[];
+	strengths: number[];
+	accents: number[];
+} {
+	const { env, n, hop, frames, period } = trackedBeats(mono, sampleRate);
+	const attacks: number[] = [];
+	const strengths: number[] = [];
+	const accents: number[] = [];
+	for (const t of frames) {
+		const hit = strongestRise(mono, fluxSample(t, n, hop), 1.5 * hop, sampleRate);
+		const b = hit.at;
+		if (b > 0 && b < mono.length && (attacks.length === 0 || b > attacks[attacks.length - 1]! + hop)) {
+			attacks.push(b);
+			strengths.push(localMax(env, t, 2));
+			accents.push(hit.rise);
+		}
+	}
+	return { env, hop, period: period * hop, attacks, strengths, accents };
+}
+
+/** The bar lines of accented beats: the metre asked or detected (3 or 4), the phase, and whether it is a guess. */
+function barLines(
+	accents: readonly number[],
+	timeSignature: TimeSignature | undefined,
+): { downbeats: number[] | null; phase: number; beatsPerBar: number; asked: boolean; confidence: number } {
+	const asked = beatsPerBarOf(timeSignature);
+	let m: number;
+	let bar: ReturnType<typeof barAccent>;
+	if (asked !== null) {
+		m = asked;
+		bar = barAccent(accents, m);
+	} else {
+		const four = barAccent(accents, 4);
+		const three = barAccent(accents, 3);
+		const triple = three.ok && (!four.ok || three.contrast >= TRIPLE_MARGIN * four.contrast);
+		m = triple ? 3 : 4;
+		bar = triple ? three : four;
+	}
+	let downbeats: number[] | null = null;
+	if (bar.ok) {
+		downbeats = [];
+		for (let i = bar.phase; i < accents.length; i += m) downbeats.push(i);
+	}
+	return { downbeats, phase: bar.phase, beatsPerBar: m, asked: asked !== null, confidence: bar.contrast };
+}
+
 /** Analyses planar audio (channels summed to mono). Throws RemixError for audio without a usable beat. */
-export function analyzeMusic(channels: readonly Float32Array[], sampleRate: number): Analysis {
+export function analyzeMusic(
+	channels: readonly Float32Array[],
+	sampleRate: number,
+	opts: BeatOptions = {},
+): Analysis {
 	const mono = monoOf(channels);
 	const len = mono.length;
-	const { n, hop, frames, period } = trackedBeats(mono, sampleRate);
-	// The flux of frame t peaks as soon as an attack enters the newer window, at about t·hop + n − ¾·hop; joints sit
-	// half a crossfade earlier so a joint's fade is over when the beat's attack starts.
+	const g = beatAttacks(mono, sampleRate);
+	// Joints sit JOINT_LEAD_S before each measured attack (the grid on the attacks, not on the lagging envelope).
+	const lead = beatLead(sampleRate);
 	const beats: number[] = [];
-	for (const t of frames) {
-		const b = t * hop + n - Math.floor((3 * hop) / 4) - beatLead(sampleRate);
-		if (b > 0 && b < len && beats[beats.length - 1] !== b) beats.push(b);
-	}
+	const attacks: number[] = [];
+	const accents: number[] = [];
+	g.attacks.forEach((at, i) => {
+		const b = at - lead;
+		if (b > 0 && b < len && (beats.length === 0 || b > beats[beats.length - 1]!)) {
+			beats.push(b);
+			attacks.push(at);
+			accents.push(g.accents[i]!);
+		}
+	});
 	if (beats.length < 2 * MIN_PIECE_BEATS + 2)
 		throw new RemixError(beats.length < 4 ? 'NO_BEAT' : 'TOO_SHORT');
 	const { chroma, cep } = beatFeatures(mono, sampleRate, beats);
@@ -551,8 +659,134 @@ export function analyzeMusic(channels: readonly Float32Array[], sampleRate: numb
 	for (let i = 0; i < m; i++)
 		for (let j = 0; j < m; j++)
 			sim[i * m + j] = 0.6 * cosSim(chroma[i]!, chroma[j]!) + 0.4 * (1 + cosSim(cep[i]!, cep[j]!)) * 0.5;
-	const periodS = period * hop;
-	return { sampleRate, len, beats, period: periodS, bpm: (60 * sampleRate) / periodS, sim };
+	const bars = barLines(accents, opts.timeSignature);
+	const downbeats: number[] = [];
+	if (bars.downbeats) downbeats.push(...bars.downbeats);
+	else for (let i = bars.phase; i < m; i += bars.beatsPerBar) downbeats.push(i);
+	const drops = findDrops(mono, sampleRate, attacks, downbeats, bars.beatsPerBar, g.period);
+	return {
+		sampleRate,
+		len,
+		beats,
+		period: g.period,
+		bpm: (60 * sampleRate) / g.period,
+		sim,
+		attacks,
+		downbeats,
+		beatsPerBar: bars.beatsPerBar,
+		barsGuessed: !bars.downbeats,
+		drops,
+	};
+}
+
+/** A drop candidate (spec 12 P6-E11): a bar where the music lifts into a loud section. */
+export type MusicDrop = {
+	/** Index of its downbeat in the beats. */
+	beat: number;
+	/**
+	 * 1-based bar number from the start of the analysed range: the bars before the first bar line the tracker kept are
+	 * counted at the bar length (a quiet first beat is often not kept), so a track starting on its downbeat counts as
+	 * musicians do.
+	 */
+	bar: number;
+	/** The downbeat's attack (samples). */
+	at: number;
+	/** liftDb / 3 + 2 · novelty: the higher, the more of a drop. */
+	score: number;
+	/** The bar's level over the median of the 4 bars before it and over the bar right before it (dB). */
+	liftDb: number;
+	/** How different the bar sounds from the one before (chroma and timbre distance, 0…≈2.8). */
+	novelty: number;
+	/** The bar's level against the loud bars (dB; 0 = the 90th percentile of the bars). */
+	levelDb: number;
+};
+
+/** Most drop candidates reported. */
+export const MAX_DROPS = 6;
+
+/**
+ * Drop candidates (adapted from earshot `arrange.py`): bar levels (RMS dB) relative to the loud bars (90th percentile);
+ * a bar from the second on that is within 3 dB of the loud bars and stays loud (its 4 bars average over −4 dB) is a
+ * candidate, scored by its lift over the median of the 4 bars before it and over the bar right before it (/3) plus
+ * twice its novelty (the distance of
+ * its unit chroma and unit timbre vectors from the previous bar's). Without such loud bars, the bars over the 75th
+ * percentile are candidates. Best first, at most `MAX_DROPS`; deterministic.
+ */
+export function findDrops(
+	mono: Float32Array,
+	sampleRate: number,
+	attacks: readonly number[],
+	downbeats: readonly number[],
+	beatsPerBar: number,
+	period: number,
+): MusicDrop[] {
+	const starts = downbeats.map((d) => attacks[d]).filter((x): x is number => x !== undefined);
+	if (starts.length < 2) return [];
+	const barLen = beatsPerBar * period;
+	const level: number[] = [];
+	const used: number[] = [];
+	for (let k = 0; k < starts.length; k++) {
+		const a = Math.max(0, Math.round(starts[k]!));
+		const b = Math.min(mono.length, Math.round(k + 1 < starts.length ? starts[k + 1]! : starts[k]! + barLen));
+		if (b - a < barLen * 0.5) break;
+		let e = 0;
+		for (let i = a; i < b; i++) e += mono[i]! * mono[i]!;
+		level.push(10 * Math.log10(e / (b - a) + 1e-18));
+		used.push(starts[k]!);
+	}
+	const nb = level.length;
+	if (nb < 2) return [];
+	const sorted = [...level].sort((x, y) => x - y);
+	const pct = (p: number) => sorted[Math.min(nb - 1, Math.max(0, Math.round(p * (nb - 1))))]!;
+	const rel = level.map((v) => v - pct(0.9));
+	const median = (xs: number[]) => {
+		const s = [...xs].sort((x, y) => x - y);
+		return s.length % 2 ? s[s.length >> 1]! : (s[s.length / 2 - 1]! + s[s.length / 2]!) / 2;
+	};
+	const { chroma, cep } = beatFeatures(mono, sampleRate, used);
+	const unit = (v: Float64Array) => {
+		let s = 0;
+		for (const x of v) s += x * x;
+		const k = s > 0 ? 1 / Math.sqrt(s) : 0;
+		return Array.from(v, (x) => x * k);
+	};
+	const feats = used.map((_, k) => [...unit(chroma[k]!), ...unit(cep[k]!)]);
+	const nov = feats.map((f, k) => {
+		if (k === 0) return 0;
+		let s = 0;
+		const p = feats[k - 1]!;
+		for (let i = 0; i < f.length; i++) s += (f[i]! - p[i]!) ** 2;
+		return Math.sqrt(s);
+	});
+	// the lift over the 4 bars before AND over the bar right before (ours: the median alone also lifts the bar after a
+	// drop, whose 4 bars before are mostly the quiet ones)
+	const lift = rel.map((r, k) =>
+		k ? r - Math.max(median(rel.slice(Math.max(0, k - 4), k)), rel[k - 1]!) : 0,
+	);
+	const stays = rel.map((_, k) => {
+		const w = rel.slice(k, k + 4);
+		return w.reduce((x, y) => x + y, 0) / w.length;
+	});
+	const loudNow = rel.map((r, k) => r > -3 && stays[k]! > -4);
+	const anyLoud = loudNow.some((x, k) => x && k > 0);
+	const p75 = pct(0.75) - pct(0.9);
+	// whole bars before the first bar line kept (a quarter beat of tolerance)
+	const before = Math.max(0, Math.floor((used[0]! + 0.25 * period) / barLen));
+	const out: MusicDrop[] = [];
+	for (let k = 1; k < nb; k++) {
+		if (anyLoud ? !loudNow[k] : !(rel[k]! > p75)) continue;
+		const q = (x: number) => Math.round(x * 1000) / 1000;
+		out.push({
+			beat: downbeats[k]!,
+			bar: k + 1 + before,
+			at: used[k]!,
+			score: q(lift[k]! / 3 + 2 * nov[k]!),
+			liftDb: q(lift[k]!),
+			novelty: q(nov[k]!),
+			levelDb: q(rel[k]!),
+		});
+	}
+	return out.sort((x, y) => y.score - x.score || x.bar - y.bar).slice(0, MAX_DROPS);
 }
 
 /** Joints the Segments slider asks for. */
@@ -639,6 +873,289 @@ export function planRemix(a: Analysis, target: number, params: RemixParams = DEF
 	return { pieces, xfade };
 }
 
+/** A source moment (samples of the analysed range) to land at an output time (samples from the remix's start). */
+export type RemixAnchor = { src: number; out: number };
+
+/** An anchored plan: its pieces, the head trimmed off the intro, and where each anchor lands. */
+export type AnchoredPlan = Plan & {
+	/** Samples of the intro left out before the first piece (`pieces[0].src`; < a bar unless the music must start later). */
+	headTrim: number;
+	/** Each anchor's output position in the plan and its error (samples; |err| ≤ 1 ms). */
+	anchors: { src: number; out: number; at: number; err: number }[];
+	/** The output length asked for (samples); `planLength` is within half a beat of it. */
+	target: number;
+};
+
+/** Anchors per plan. */
+export const MAX_REMIX_ANCHORS = 4;
+
+type Joint = { i: number; j: number; loops: number; err: number; score: number };
+
+/**
+ * The best bar-line joint (beat indices `i` → `j`, `loops` times) shifting the source by about `shift` samples:
+ * playing to beat i and continuing at beat j skips b_j − b_i (negative: the bars between are played again, `loops`
+ * times). `err` = shift − loops · (b_j − b_i) must pass `accept`; among the accepted, the lowest `rank(err)`, then the
+ * most similar joint context (`jumpScore`), then the earliest.
+ */
+function bestJoint(
+	a: Analysis,
+	grid: readonly number[],
+	o: {
+		shift: number;
+		iRange: [number, number];
+		jRange: [number, number];
+		minPiece: number;
+		accept: (err: number, bi: number, bj: number) => boolean;
+		rank: (err: number) => number;
+		maxLoops: number;
+	},
+	seen?: (err: number) => void,
+): Joint | null {
+	const b = a.beats;
+	let best: Joint | null = null;
+	let bestRank = Number.POSITIVE_INFINITY;
+	for (const i of grid) {
+		const bi = b[i]!;
+		if (bi < o.iRange[0] || bi > o.iRange[1]) continue;
+		for (const j of grid) {
+			if (j === i) continue;
+			const bj = b[j]!;
+			if (bj < o.jRange[0] || bj > o.jRange[1]) continue;
+			const d = bj - bi;
+			if (d < 0 && -d < o.minPiece) continue;
+			// a skip forward happens once; bars played again may loop (the counts either side of the exact one)
+			let counts: number[] = [1];
+			if (d < 0) {
+				if (o.shift >= 0) continue;
+				const x = o.shift / d;
+				counts = [...new Set([Math.floor(x), Math.ceil(x)])].filter((n) => n >= 1 && n <= o.maxLoops);
+			} else if (o.shift <= 0) continue;
+			const score = jumpScore(a, i, j);
+			for (const loops of counts) {
+				const err = o.shift - loops * d;
+				seen?.(err);
+				if (!o.accept(err, bi, bj)) continue;
+				const rank = o.rank(err);
+				if (
+					best === null ||
+					rank < bestRank ||
+					(rank === bestRank &&
+						(score > best.score || (score === best.score && (i < best.i || (i === best.i && j < best.j)))))
+				) {
+					best = { i, j, loops, err, score };
+					bestRank = rank;
+				}
+			}
+		}
+	}
+	return best;
+}
+
+/**
+ * Plans a remix of the analysed music to `target` samples that lands each anchor's source moment (`src`, e.g. a
+ * drop's attack) at its output time (`out`) within 1 ms (spec 12 P6-E11). Every joint is at a bar line (`downbeats`)
+ * so the bars stay whole on both sides; the output's bar grid follows the anchors.
+ * - Before the first anchor: no joint when the intro already fits (the head is trimmed by < a bar); else the bars that
+ *   would come too early are skipped, or bars before the anchor are played again (up to 8 times), and the head takes
+ *   up what whole bars cannot (< a bar). Music too short before the anchor to reach it is ANCHOR_UNREACHABLE.
+ * - Between anchors: the source between them must fill the output between them within 1 ms (whole bars), else
+ *   ANCHOR_UNREACHABLE.
+ * - After the last anchor: bars skipped or played again so the outro ends within half a beat of `target`; else
+ *   NO_PLAN_NEAR_TARGET with the nearest output lengths that work (`nearestTargets`). With `fit: 'nearest'` the
+ *   nearest of those (not longer than `maxTarget` when given) is planned instead.
+ * Deterministic. Throws RemixError.
+ */
+export function planAnchoredRemix(
+	a: Analysis,
+	target: number,
+	anchors: readonly RemixAnchor[],
+	opts: { fit?: 'exact' | 'nearest'; maxTarget?: number } = {},
+): AnchoredPlan {
+	const sr = a.sampleRate;
+	const len = a.len;
+	const b = a.beats;
+	const tol = Math.max(1, Math.round(0.001 * sr));
+	const half = Math.max(1, Math.trunc(a.period / 2));
+	const bar = a.period * a.beatsPerBar;
+	const minPiece = Math.trunc(MIN_PIECE_BEATS * a.period);
+	const xfade = Math.round(XFADE_S * sr);
+	const fin = (x: number) => Number.isFinite(x);
+	if (!fin(target) || target < 2 * minPiece) throw new RemixError('TARGET_TOO_SHORT');
+	if (!anchors.length || anchors.length > MAX_REMIX_ANCHORS)
+		throw new RemixError('ANCHOR_OUT_OF_RANGE', `give 1 to ${MAX_REMIX_ANCHORS} anchors`);
+	const list = [...anchors].sort((x, y) => x.out - y.out);
+	for (const [k, an] of list.entries()) {
+		if (!fin(an.src) || !fin(an.out) || an.src < 0 || an.src >= len)
+			throw new RemixError('ANCHOR_OUT_OF_RANGE', 'the anchor is outside the analysed music');
+		if (an.out < 0 || an.out >= target)
+			throw new RemixError(
+				'ANCHOR_OUT_OF_RANGE',
+				'the anchor lands outside the remix (before its start or after its end)',
+			);
+		if (k > 0 && !(an.src > list[k - 1]!.src && an.out > list[k - 1]!.out))
+			throw new RemixError(
+				'ANCHOR_OUT_OF_RANGE',
+				'anchors must be in the same order in the music and in the output',
+			);
+	}
+	// bar lines: the analysis' downbeats; guessed ones are re-phased to the first anchor's nearest beat
+	let grid = a.downbeats.filter((i) => i >= 0 && i < b.length);
+	if (a.barsGuessed || grid.length < 2) {
+		let near = 0;
+		for (let i = 1; i < b.length; i++)
+			if (Math.abs(a.attacks[i]! - list[0]!.src) < Math.abs(a.attacks[near]! - list[0]!.src)) near = i;
+		grid = [];
+		for (let i = near % a.beatsPerBar; i < b.length; i += a.beatsPerBar) grid.push(i);
+	}
+	const sec = (x: number) => `${(x / sr).toFixed(2)} s`;
+	type Seg = { joint: Joint | null };
+	const segs: Seg[] = [];
+	// 1. the head: output 0 … first anchor
+	const first = list[0]!;
+	const need = first.src - first.out;
+	let head = 0;
+	if (need >= 0 && need < bar) {
+		head = need;
+		segs.push({ joint: null });
+	} else {
+		const j = bestJoint(a, grid, {
+			shift: need,
+			iRange: [minPiece, first.src - minPiece],
+			jRange: [0, first.src - minPiece],
+			minPiece,
+			// the head (err) is what whole bars cannot take up; the first piece [head, b_i) stays a piece
+			accept: (err, bi) => err >= 0 && err < bar && bi - err >= minPiece,
+			rank: (err) => Math.trunc(err / Math.max(1, a.period)),
+			maxLoops: 8,
+		});
+		if (j) {
+			head = j.err;
+			segs.push({ joint: j });
+		} else if (need >= 0) {
+			// no bar-line joint fits: the music starts later (the intro is trimmed)
+			head = need;
+			segs.push({ joint: null });
+		} else
+			throw new RemixError(
+				'ANCHOR_UNREACHABLE',
+				`the music before ${sec(first.src)} is too short to fill ${sec(first.out)} with whole bars`,
+			);
+	}
+	// 2. between anchors
+	for (let k = 1; k < list.length; k++) {
+		const p = list[k - 1]!;
+		const an = list[k]!;
+		const shift = an.src - p.src - (an.out - p.out);
+		if (Math.abs(shift) <= tol) {
+			segs.push({ joint: null });
+			continue;
+		}
+		const j = bestJoint(a, grid, {
+			shift,
+			iRange: [p.src + minPiece, an.src - minPiece],
+			jRange: [0, an.src - minPiece],
+			minPiece,
+			accept: (err) => Math.abs(err) <= tol,
+			rank: (err) => Math.abs(err),
+			maxLoops: 8,
+		});
+		if (!j)
+			throw new RemixError(
+				'ANCHOR_UNREACHABLE',
+				`the music between ${sec(p.src)} and ${sec(an.src)} cannot fill ${sec(an.out - p.out)} with whole bars (within 1 ms)`,
+			);
+		segs.push({ joint: j });
+	}
+	// 3. the tail: last anchor … the outro's end
+	const last = list[list.length - 1]!;
+	const tailFor = (t: number, collect?: (err: number) => void): Joint | null | undefined => {
+		const shift = len - last.src - (t - last.out);
+		collect?.(shift);
+		if (Math.abs(shift) <= half) return null;
+		return (
+			bestJoint(
+				a,
+				grid,
+				{
+					shift,
+					iRange: [last.src + minPiece, len - minPiece],
+					jRange: [0, len - minPiece],
+					minPiece,
+					accept: (err) => Math.abs(err) <= half,
+					rank: (err) => Math.trunc(Math.abs(err) / Math.max(1, half / 2)),
+					maxLoops: 8,
+				},
+				collect,
+			) ?? undefined
+		);
+	};
+	const errs: number[] = [];
+	let tail = tailFor(target, (e) => errs.push(e));
+	let planTarget = target;
+	if (tail === undefined) {
+		// what a plan can reach: the output lengths whose error is 0
+		const reach = [...new Set(errs.map((e) => Math.round(target + e)))]
+			.filter((t) => t > last.out + minPiece && t >= 2 * minPiece)
+			.sort((x, y) => x - y);
+		const below = reach.filter((t) => t < target).at(-1);
+		const above = reach.find((t) => t > target);
+		const nearest = [below, above].filter((x): x is number => x !== undefined);
+		if (opts.fit === 'nearest') {
+			const allowed = nearest
+				.filter((t) => opts.maxTarget === undefined || t <= opts.maxTarget)
+				.sort((x, y) => Math.abs(x - target) - Math.abs(y - target) || x - y);
+			for (const t of allowed) {
+				const again = tailFor(t);
+				if (again !== undefined) {
+					tail = again;
+					planTarget = t;
+					break;
+				}
+			}
+		}
+		if (tail === undefined)
+			throw new RemixError(
+				'NO_PLAN_NEAR_TARGET',
+				`with the anchor at ${sec(last.out)} and joints on bar lines the music ends ${nearest.length ? `at ${nearest.map(sec).join(' or ')}` : 'too far'} from ${sec(target)}, not within half a beat`,
+				nearest,
+			);
+	}
+	segs.push({ joint: tail });
+	// pieces
+	const pieces: Piece[] = [];
+	let cur = head;
+	for (const sg of segs) {
+		const j = sg.joint;
+		if (!j) continue;
+		const bi = b[j.i]!;
+		const bj = b[j.j]!;
+		pieces.push({ src: cur, len: bi - cur });
+		for (let r = 1; r < j.loops; r++) pieces.push({ src: bj, len: bi - bj });
+		cur = bj;
+	}
+	pieces.push({ src: cur, len: len - cur });
+	// where each anchor lands (the first piece that plays its source moment, in output order)
+	const placed = list.map((an) => {
+		let out = 0;
+		let at = Number.NaN;
+		for (const pc of pieces) {
+			if (
+				an.src >= pc.src &&
+				an.src < pc.src + pc.len &&
+				Math.abs(out + (an.src - pc.src) - an.out) <= tol + 1
+			) {
+				at = out + (an.src - pc.src);
+				break;
+			}
+			out += pc.len;
+		}
+		return { src: an.src, out: an.out, at, err: at - an.out };
+	});
+	if (placed.some((p) => !(Math.abs(p.err) <= tol + 1)))
+		throw new RemixError('ANCHOR_UNREACHABLE', 'the plan does not land every anchor (internal check)');
+	return { pieces, xfade, headTrim: head, anchors: placed, target: planTarget };
+}
+
 /** Beats of music (Sound Design beat cues, `POST /api/audio/beats`; spec 12 §2.2). */
 export type BeatAnalysis = {
 	sampleRate: number;
@@ -663,6 +1180,10 @@ export type BeatAnalysis = {
 	beatsPerBar: number | null;
 	/** How clear the downbeat phase is (0…1). */
 	downbeatConfidence: number;
+	/** Drop candidates, best first (`findDrops`; on the strongest phase in 4 when there are no downbeats). */
+	drops: MusicDrop[];
+	/** The drops' bars are a guess (no downbeats). */
+	dropBarsGuessed: boolean;
 };
 
 /**
@@ -763,50 +1284,25 @@ export function analyzeBeats(
 ): BeatAnalysis {
 	const mono = monoOf(channels);
 	const len = mono.length;
-	const { env, n, hop, frames, period } = trackedBeats(mono, sampleRate);
-	const beats: number[] = [];
-	const strengths: number[] = [];
-	const accents: number[] = [];
-	for (const t of frames) {
-		// where the flux of frame t says the attack is (see analyzeMusic), then the attack itself
-		const hit = strongestRise(mono, fluxSample(t, n, hop), 1.5 * hop, sampleRate);
-		const b = hit.at;
-		if (b > 0 && b < len && (beats.length === 0 || b > beats[beats.length - 1]! + hop)) {
-			beats.push(b);
-			strengths.push(localMax(env, t, 2));
-			accents.push(hit.rise);
-		}
-	}
+	const g = beatAttacks(mono, sampleRate);
+	const { attacks: beats, strengths, accents } = g;
 	if (beats.length < 4) throw new RemixError('NO_BEAT');
-	const periodS = period * hop;
-	const asked = beatsPerBarOf(opts.timeSignature);
-	let m: number;
-	let bar: ReturnType<typeof barAccent>;
-	if (asked !== null) {
-		m = asked;
-		bar = barAccent(accents, m);
-	} else {
-		const four = barAccent(accents, 4);
-		const three = barAccent(accents, 3);
-		const triple = three.ok && (!four.ok || three.contrast >= TRIPLE_MARGIN * four.contrast);
-		m = triple ? 3 : 4;
-		bar = triple ? three : four;
-	}
-	let downbeats: number[] | null = null;
-	if (bar.ok) {
-		downbeats = [];
-		for (let i = bar.phase; i < beats.length; i += m) downbeats.push(i);
-	}
+	const bars = barLines(accents, opts.timeSignature);
+	const grid: number[] = [];
+	if (bars.downbeats) grid.push(...bars.downbeats);
+	else for (let i = bars.phase; i < beats.length; i += bars.beatsPerBar) grid.push(i);
 	return {
 		sampleRate,
 		len,
-		bpm: (60 * sampleRate) / periodS,
-		period: periodS,
+		bpm: (60 * sampleRate) / g.period,
+		period: g.period,
 		beats,
 		strengths,
 		accents,
-		downbeats,
-		beatsPerBar: downbeats || asked !== null ? m : null,
-		downbeatConfidence: bar.contrast,
+		downbeats: bars.downbeats,
+		beatsPerBar: bars.downbeats || bars.asked ? bars.beatsPerBar : null,
+		downbeatConfidence: bars.confidence,
+		drops: findDrops(mono, sampleRate, beats, grid, bars.beatsPerBar, g.period),
+		dropBarsGuessed: !bars.downbeats,
 	};
 }

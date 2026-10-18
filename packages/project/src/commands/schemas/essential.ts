@@ -92,8 +92,21 @@ export const ClipRemixCmd = cmd('clip.remix', {
 	bpm: z.number().positive(),
 	segments: z.number().min(0).max(100).optional(),
 	variations: z.number().min(0).max(100).optional(),
-	/** Crossfade length at each joint (frames, default 1). */
+	/**
+	 * Crossfade at each joint (frames; default the frames of 30 ms, at least 1). The crossfade ends at the joint
+	 * (`end-at-cut`): the joints sit just before a beat's attack, so neither side's attack is faded or doubled.
+	 */
 	crossfadeFrames: z.number().int().min(1).max(30).optional(),
+	/**
+	 * Spec 12 P6-E11: what the plan landed (`POST /api/audio/remix-plan {anchors}`): each source moment (seconds from the
+	 * clip's content start) and the sequence frame it plays at. Recorded on the pieces so a later remix lands them again.
+	 */
+	anchors: z
+		.array(z.strictObject({ sourceSeconds: z.number().min(0).max(864_000), frame: z.number().int().min(0) }))
+		.max(4)
+		.optional(),
+	/** Spec 12 P6-E11: a fade-in over the first piece (frames), for a plan that trims the intro's head. */
+	fadeInFrames: z.number().int().min(1).max(30).optional(),
 });
 
 /** Restores the original clip of a remix (any piece's id). */

@@ -360,6 +360,13 @@ export const SoundDesignPlanStyleSchema = z.strictObject({
 	musicCarriesCuts: z.boolean().optional(),
 	/** P6-E10: a 6 dB dip of the music under each typing run (default false). */
 	duckUnderTyping: z.boolean().optional(),
+	/**
+	 * P6-E11: chimes, shimmers and clearly pitched sounds placed over a music clip in a clear key (confidence ≥ 0.6)
+	 * go to the nearest note of its scale by varispeed (default true).
+	 */
+	tuneToMusic: z.boolean().optional(),
+	/** P6-E11: a stop-before over music with beats ends its ramp on the downbeat (else the beat) before the hit (default true). */
+	stopOnBar: z.boolean().optional(),
 });
 export type SoundDesignPlanStyle = z.infer<typeof SoundDesignPlanStyleSchema>;
 
@@ -505,6 +512,8 @@ export const SoundDesignPlanEventSchema = z.object({
 			st: z.number(),
 		})
 		.optional(),
+	/** P6-E11: the sound was tuned to the music's key (style `tuneToMusic`): the shift, the key and the note. */
+	tuning: z.object({ st: z.number(), key: z.string(), note: z.string(), clipId: z.string() }).optional(),
 	alternatives: z.array(PlanSoundSchema),
 	/** Further layers on the same cue (a marker naming several types: "sfx: boom+whoosh"). */
 	extraLayers: z.array(PlanSoundSchema),
@@ -522,6 +531,8 @@ export const SoundDesignPlanEventSchema = z.object({
 	/** Phase 4: the items that dip the music before it / build into it (style `stopBefore` / `build`). */
 	stopBeforeItemId: z.string().optional(),
 	buildItemId: z.string().optional(),
+	/** P6-E11: the stop's ramp ends on the bar line (style `stopOnBar`): a downbeat, else a beat. */
+	stopOn: z.enum(['downbeat', 'beat']).optional(),
 });
 export type SoundDesignPlanEvent = z.infer<typeof SoundDesignPlanEventSchema>;
 
@@ -603,6 +614,12 @@ export const SoundDesignPlanReportSchema = z.object({
 			typing: z.enum(SOUND_TYPING_MODES),
 			musicCarriesCuts: z.boolean(),
 			duckUnderTyping: z.boolean(),
+			/** P6-E11 (absent in reports of older builds). */
+			tuneToMusic: z.boolean().optional(),
+			stopOnBar: z.boolean().optional(),
+			/** P6-E11: sounds tuned to the music's key, and stops placed on a bar line. */
+			tuned: z.number().int().optional(),
+			stopsOnBar: z.number().int().optional(),
 			/** type → the one sound that type plays in this sequence. */
 			voices: z.record(z.string(), z.string()),
 			/** Runs found and climbed (or kept flat). */

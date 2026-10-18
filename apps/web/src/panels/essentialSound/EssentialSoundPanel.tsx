@@ -42,6 +42,7 @@ import {
 	remixClip,
 	saveUserSoundPreset,
 	selectAudioType,
+	singleMusicClip,
 	userSoundPresets,
 } from '../../audio-fx/ops.ts';
 import { runCommand } from '../../commands/registry.ts';
@@ -51,6 +52,7 @@ import { EssentialSfxSection } from '../../sound/EssentialSfx.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { useInspectorOps } from '../properties/lib/ops.ts';
 import type { PanelProps } from '../types.ts';
+import { MusicFit } from './MusicFit.tsx';
 
 type Selected = { seq: Sequence | null; clips: AudioClip[] };
 
@@ -272,7 +274,9 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 	);
 	const target = s.loudness.targetLufs ?? DEFAULT_LOUDNESS_TARGET;
 	const remixed = clips.find((c) => c.remix);
-	const music = clips[0]!;
+	// one music clip: a clip, or the pieces of one remix (selecting a piece selects its group)
+	const single = singleMusicClip(clips);
+	const music = single ?? clips[0]!;
 	const durSec =
 		(remixed?.remix?.targetFrames ?? music.duration) *
 		(seq.settings.frameRate.den / seq.settings.frameRate.num);
@@ -423,7 +427,7 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 					<div className="flex gap-2">
 						<Button
 							data-testid="essential-duration-apply"
-							disabled={clips.length !== 1}
+							disabled={!single}
 							disabledReason="Select one music clip"
 							busy={busy === 'remix'}
 							onClick={() =>
@@ -463,6 +467,9 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 							</Button>
 						) : null}
 					</div>
+					{s.type === 'music' && s.duration.method === 'remix' && single ? (
+						<MusicFit session={session} seq={seq} clip={music} />
+					) : null}
 				</>,
 			),
 		ducking: () =>

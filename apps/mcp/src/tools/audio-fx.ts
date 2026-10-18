@@ -1,4 +1,11 @@
-import { type AudioClassifyResult, MAX_REMIX_SOURCE_SECONDS } from '@jasper/api';
+import {
+	type AudioClassifyResult,
+	type BeatsResult,
+	MAX_REMIX_SOURCE_SECONDS,
+	type RemixPlanRequest,
+	type RemixPlanResult,
+	TimeSignatureSchema,
+} from '@jasper/api';
 import {
 	AUDIO_EFFECTS,
 	AUDIO_TYPES,
@@ -10,15 +17,25 @@ import {
 	duckTriggerClips,
 	type EffectInstance,
 	type EffectSpec,
+	endOnBarPlan,
 	essentialKeys,
 	evaluate,
+	FLICKS_PER_SECOND,
+	frameAtContent,
 	listStrips,
 	type MediaAsset,
 	type ParamSpec,
 	type ProjectDocument,
+	type Rational,
 	readEssentialSound,
+	readRemixAnchors,
+	remixCommandOf,
+	remixPiecesOf,
 	remixSourceRange,
+	remixStartFrame,
 	type Sequence,
+	sequenceTimecode,
+	soundCuesOf,
 } from '@jasper/project';
 import { z } from 'zod';
 import { ProjectIdArg, SequenceIdArg } from '../arguments.ts';
@@ -27,6 +44,7 @@ import {
 	defineTool,
 	EDIT,
 	EDIT_IDEMPOTENT,
+	type Extra,
 	frameOf,
 	loadDoc,
 	READ_ONLY,
@@ -39,7 +57,8 @@ import { analyze, apply } from './audio.ts';
 
 export const AUDIO_FX_GUIDE = `Audio effects (Premiere's Audio Effects folders: Amplitude and Compression, Delay and Echo, Filter and EQ, Modulation, Noise Reduction/Restoration, Reverb, Special, Stereo Imagery, Time and Pitch): list_audio_effects gives every effect id ("jasper.audio.…") with its parameters (units dB, Hz, ms, Q, ratio, %, st, cents, LUFS; every number keyframable). add_audio_effect puts one on an audio clip, an audio track ("A1"…, a submix "S1"…) or the Mix ("Mix"); set_audio_effect changes parameters (a value, or {"keyframes": [{at, value}…]} for automation), enables/bypasses or reorders it; remove_audio_effect deletes it; get_audio_effects lists the stacks with values at a time. The same DSP runs in the preview (AudioWorklet) and every export. Order: clip effects → clip gain / Volume / fades → pan → track effects → fader.
 Essential Sound: set_essential_sound gives clips an audio type (dialogue | music | sfx | ambience), applies a preset (get_essential_sound lists them) and/or sets options by dotted key (e.g. {"repair.noise.on": true, "repair.noise.amount": 6, "clarity.eqPreset": "Balanced Voice", "creative.reverb.on": true}); the options become ordinary keyframable clip effects you can also edit with set_audio_effect; Clip Volume and the SFX Pan are offsets on the clip's own Volume and pan (switched off, the clip's levels come back; projects saved when Pan was written into the pan open with the Pan section off, value kept, so their pan stays as saved). clear_essential_sound removes the type and every change it made. auto_tag_audio classifies clips as dialogue / music / sfx / ambience by listening to them (Premiere's Auto Tag) and tags them in one undoable step, marked "auto" until the user confirms (set_essential_sound with the same type confirms; another type changes it); it never replaces a type the user set unless force, returns each tag's confidence and why, and you should report low-confidence tags (< 60 %) to the user. The editor's Preferences ▸ Audio ▸ "Auto-tag audio types in the timeline" (off by default) tags only what the user adds by hand: clips you place are yours to tag with auto_tag_audio. To select every clip of a type in the open editor, run ui_command audio.selectAudioType {type}. auto_match_loudness measures each clip (BS.1770, its own signal) and sets its gain to −23 LUFS (or targetLufs); silent clips and clips shorter than 400 ms are skipped with the reason. generate_essential_ducking ducks Music / Ambience clips under the clips of their "Duck against" types (ducking.* options) with Volume keyframes.
-Music Remix: remix_audio clips a music clip to a target duration by beat tracking and re-cutting on beats (grouped pieces joined by short crossfades, one undo step; at most 30 min of music is analysed); revert_remix restores the original.`;
+Music Remix: remix_audio clips a music clip to a target duration by beat tracking and re-cutting on beats (grouped pieces joined by short crossfades that end just before a beat's attack, one undo step; at most 30 min of music is analysed); revert_remix restores the original.
+Music to picture (you cannot hear the music: these tools measure it): find_music_drops {clipId} lists the music's drop candidates (bar, score, where each plays now), its key (C major, confidence), tempo and bar lines. Land the drop on the picture with remix_audio {landDropAt: frame | {cueId} | "hero", dropSec?} (or fit_music_to_picture {mode: "land-drop"}): the music is re-cut at bar lines so the drop (the top candidate, or dropSec in media seconds) plays exactly on that frame (within 1 ms), the outro still ending the clip (its length moves by at most half a bar unless you give targetDuration; an exact target no plan reaches is refused with the nearest lengths that work); a later remix of the clip keeps the drop where it landed. fit_music_to_picture {mode: "end-on-bar"} ends the music on a bar line (just before a downbeat, faded over a beat) instead of mid-bar. plan_sound_design tunes chimes and pitched sounds to the music's key and puts stop-befores on the bar line by default (style tuneToMusic / stopOnBar).`;
 
 const ClipIdsArg = z.array(z.string().min(1)).min(1).describe('Audio clip ids (get_timeline)');
 const ScalarValue = z.union([z.number(), z.boolean(), z.string()]);
@@ -197,6 +216,211 @@ function mediaKeyOf(doc: ProjectDocument, mediaId: string): string {
 			'Re-import it with import_media.',
 		);
 	return loc.key;
+}
+
+/** The length of a music clip as a remix sees it: a remix's target, else the clip's duration (frames). */
+function remixLengthOf(clip: AudioClip): number {
+	return clip.remix ? clip.remix.targetFrames : clip.duration;
+}
+
+/** Frames free on the clip's track from the remix's start (the next other clip), or Infinity. */
+function roomOf(seq: Sequence, clip: AudioClip): number {
+	const start = remixStartFrame(clip);
+	const own = new Set(remixPiecesOf(seq, clip).map((c) => c.id));
+	let next = Number.POSITIVE_INFINITY;
+	for (const c of Object.values(seq.clips))
+		if (c.trackId === clip.trackId && !own.has(c.id) && c.start >= start) next = Math.min(next, c.start);
+	return next - start;
+}
+
+/** The frame `landDropAt` names: a time (frames, {"seconds": x}, timecode), {cueId}, or "hero". */
+function landingFrame(seq: Sequence, clip: AudioClip, at: unknown): { frame: number; what: string } {
+	const start = remixStartFrame(clip);
+	if (at === 'hero') {
+		const end = start + remixLengthOf(clip);
+		const heroes = soundCuesOf(seq)
+			.filter((c) => c.weight === 'hero' && !c.muted && c.frame >= start && c.frame < end)
+			.sort((a, b) => a.frame - b.frame);
+		if (!heroes.length)
+			throw new ToolError(
+				'E_NOT_FOUND',
+				'No hero cue plays under this music clip',
+				'Give landDropAt a frame or {"cueId": …}; find_sound_cues / set_sound_cues make hero cues.',
+			);
+		return { frame: heroes[0]!.frame, what: `the hero cue ${heroes[0]!.id}` };
+	}
+	if (at && typeof at === 'object' && typeof (at as { cueId?: unknown }).cueId === 'string') {
+		const id = (at as { cueId: string }).cueId;
+		const cue = soundCuesOf(seq).find((c) => c.id === id);
+		if (!cue)
+			throw new ToolError(
+				'E_NOT_FOUND',
+				`No sound cue ${id} in this sequence`,
+				'list_sound_cues lists them.',
+			);
+		return { frame: cue.frame, what: `cue ${id}` };
+	}
+	const frame = frameOf(
+		seq,
+		at,
+		'landDropAt: frames, {"seconds": x}, "HH:MM:SS:FF", {"cueId": …} or "hero".',
+	);
+	return { frame, what: sequenceTimecode(seq, frame) };
+}
+
+/** Where a media second of a music clip (or its remix) plays now: the frame, or null when it is not heard. */
+function frameOfMediaSec(seq: Sequence, clip: AudioClip, sec: number): number | null {
+	const rate = seq.settings.frameRate as Rational;
+	for (const p of remixPiecesOf(seq, clip)) {
+		const f = frameAtContent(p, sec * FLICKS_PER_SECOND, rate);
+		if (f >= p.start && f < p.start + p.duration) return Math.round(f);
+	}
+	return null;
+}
+
+function remixError(e: unknown): ToolError {
+	const err = e as { code?: string; message?: string; detail?: { nearestTargetSeconds?: number[] } };
+	const near = err.detail?.nearestTargetSeconds;
+	return new ToolError(
+		err.code ?? 'E_REMIX_FAILED',
+		err.message ?? String(e),
+		near?.length
+			? `Plans that land it end at ${near.map((t) => `${t} s`).join(' or ')}: give one of them as targetDuration ({"seconds": x}), or leave targetDuration out.`
+			: 'Remix needs music with a steady beat at least a few bars long; the drop must lie inside the clip and land inside it.',
+	);
+}
+
+type LandArgs = {
+	projectId: string;
+	sequenceId?: string | undefined;
+	clipId: string;
+	landDropAt: unknown;
+	dropSec?: number | undefined;
+	targetDuration?: unknown;
+	timeSignature?: number | 'auto' | undefined;
+};
+
+/** Land a music clip's drop on a frame (remix_audio {landDropAt}, fit_music_to_picture land-drop). */
+async function landDrop(ctx: ToolContext, a: LandArgs, extra: Extra) {
+	const { doc } = await loadDoc(ctx, a.projectId);
+	const seq = pickSequence(doc, a.sequenceId);
+	const clip = audioClip(seq, a.clipId);
+	const rate = seq.settings.frameRate as Rational;
+	const fps = rate.num / rate.den;
+	const { startSec, durSec } = remixSourceRange(clip, rate);
+	if (durSec > MAX_REMIX_SOURCE_SECONDS)
+		throw new ToolError(
+			'E_INVALID_PARAM',
+			`The music clip is ${Math.round(durSec / 60)} min long; Remix analyses at most ${MAX_REMIX_SOURCE_SECONDS / 60} min`,
+			'Trim the clip (trim_clip) or split it, then land the drop in a part.',
+		);
+	const at = landingFrame(seq, clip, a.landDropAt);
+	const start = remixStartFrame(clip);
+	if (at.frame < start)
+		throw new ToolError(
+			'E_INVALID_PARAM',
+			`${at.what} (${sequenceTimecode(seq, at.frame)}) is before the music starts (${sequenceTimecode(seq, start)})`,
+			'Move the music clip earlier first, or choose a later frame.',
+		);
+	const base: RemixPlanRequest = {
+		mediaKey: mediaKeyOf(doc, clip.mediaId),
+		...(clip.channels.streamIndex !== undefined ? { streamIndex: clip.channels.streamIndex } : {}),
+		startSeconds: startSec,
+		durationSeconds: durSec,
+		targetSeconds: remixLengthOf(clip) / fps,
+		...(a.timeSignature !== undefined ? { timeSignature: a.timeSignature } : {}),
+	};
+	let dropSource: number;
+	let dropInfo: { bar: number; score: number } | null = null;
+	if (a.dropSec !== undefined) {
+		dropSource = a.dropSec - startSec;
+		if (dropSource < 0 || dropSource >= durSec)
+			throw new ToolError(
+				'E_INVALID_PARAM',
+				`dropSec ${a.dropSec} s is outside the clip's music (${startSec.toFixed(2)}–${(startSec + durSec).toFixed(2)} s)`,
+				'find_music_drops lists the drops in media seconds.',
+			);
+	} else {
+		const first = await ctx
+			.engine((c) => c.remixPlan(base))
+			.catch((e: unknown) => {
+				throw remixError(e);
+			});
+		const top = first.drops?.[0];
+		if (!top)
+			throw new ToolError(
+				'E_NOT_FOUND',
+				'No drop found in this music (no bar lifts into a loud section)',
+				'Pass dropSec (media seconds of the moment to land), e.g. a downbeat from find_music_drops.',
+			);
+		dropSource = top.sourceSeconds;
+		dropInfo = { bar: top.bar, score: top.score };
+	}
+	const room = roomOf(seq, clip);
+	const exact = a.targetDuration !== undefined;
+	const targetFrames = exact ? frameOf(seq, a.targetDuration) : remixLengthOf(clip);
+	if (targetFrames < 1)
+		throw new ToolError('E_INVALID_PARAM', 'targetDuration must be positive', 'e.g. {"seconds": 30}.');
+	const plan: RemixPlanResult = await ctx
+		.engine((c) =>
+			c.remixPlan({
+				...base,
+				targetSeconds: targetFrames / fps,
+				anchors: [{ sourceSeconds: dropSource, outputSeconds: (at.frame - start) / fps }],
+				fit: exact ? 'exact' : 'nearest',
+				...(!exact && Number.isFinite(room) ? { maxTargetSeconds: room / fps } : {}),
+			}),
+		)
+		.catch((e: unknown) => {
+			throw remixError(e);
+		});
+	const cmd = remixCommandOf(clip, plan, rate, !exact && Number.isFinite(room) ? { maxFrames: room } : {});
+	const body = await apply(ctx, a.projectId, 'Land the Drop', [cmd], extra, seq.id);
+	const landed = plan.anchors?.[0];
+	return jsonResult({
+		...body,
+		drop: {
+			mediaSeconds: Math.round((startSec + dropSource) * 1e4) / 1e4,
+			...(dropInfo ?? {}),
+			landsAt: { frame: at.frame, timecode: sequenceTimecode(seq, at.frame), on: at.what },
+			errorMs: landed?.errorMs ?? null,
+		},
+		bpm: plan.bpm,
+		pieces: plan.pieces.length,
+		lengthFrames: (cmd as { targetFrames: number }).targetFrames,
+		lengthSeconds: plan.lengthSeconds,
+		headTrimSeconds: plan.headTrimSeconds ?? 0,
+		note:
+			!exact && Math.abs((cmd as { targetFrames: number }).targetFrames - targetFrames) > 0
+				? `The music is ${(((cmd as { targetFrames: number }).targetFrames - targetFrames) / fps).toFixed(2)} s ${(cmd as { targetFrames: number }).targetFrames > targetFrames ? 'longer' : 'shorter'}: its outro ends on its own bar line`
+				: undefined,
+	});
+}
+
+/** The engine's beat analysis of a music clip's content range (media seconds). */
+async function beatsOf(
+	ctx: ToolContext,
+	doc: ProjectDocument,
+	seq: Sequence,
+	clip: AudioClip,
+	ts?: number | 'auto',
+) {
+	const rate = seq.settings.frameRate as Rational;
+	const { startSec, durSec } = remixSourceRange(clip, rate);
+	return ctx
+		.engine((c) =>
+			c.audioBeats({
+				mediaKey: mediaKeyOf(doc, clip.mediaId),
+				...(clip.channels.streamIndex !== undefined ? { streamIndex: clip.channels.streamIndex } : {}),
+				startSeconds: startSec,
+				durationSeconds: Math.min(durSec, MAX_REMIX_SOURCE_SECONDS),
+				...(ts !== undefined ? { timeSignature: ts } : {}),
+			}),
+		)
+		.catch((e: unknown) => {
+			const err = e as { code?: string; message?: string };
+			throw new ToolError(err.code ?? 'E_ANALYSIS_FAILED', err.message ?? String(e), 'Is the media online?');
+		}) as Promise<BeatsResult>;
 }
 
 export function registerAudioFxTools(ctx: ToolContext): void {
@@ -761,22 +985,59 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 		{
 			title: 'Remix music to a duration',
 			description:
-				'Music Remix (Essential Sound ▸ Duration ▸ Remix, the Remix tool): beat-tracks the music clip on the engine and re-cuts it on beats to targetDuration (frames, {"seconds": x} or timecode; the result lands within about a beat). The clip becomes grouped pieces joined by short constant-power crossfades (one undo step). segments (0…100, default 50) favours longer or shorter pieces, variations (0…100, default 50) how freely sections are reordered. A remixed clip is remixed again from its original. The music range analysed is limited to 30 minutes.',
+				'Music Remix (Essential Sound ▸ Duration ▸ Remix, the Remix tool): beat-tracks the music clip on the engine and re-cuts it on beats to targetDuration (frames, {"seconds": x} or timecode; the result lands within about a beat). The clip becomes grouped pieces joined by short constant-power crossfades that end just before a beat\'s attack (one undo step). segments (0…100, default 50) favours longer or shorter pieces, variations (0…100, default 50) how freely sections are reordered. A remixed clip is remixed again from its original, keeping a drop it landed earlier where it is. landDropAt (a frame, {"seconds": x}, timecode, {"cueId": …} or "hero": the first hero cue under the music) lands the music\'s drop there within 1 ms instead (spec 12 P6-E11): joints only at bar lines, the outro still ending the clip — without targetDuration its length moves by at most half a bar (never over the next clip); with targetDuration an exact length no plan reaches is refused (E_INVALID_PARAM) naming the lengths that work. dropSec picks the moment to land (media seconds; default the top drop of find_music_drops). The music range analysed is limited to 30 minutes.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
 				clipId: z.string().min(1),
-				targetDuration: z.unknown().describe('Target length: frames, {"seconds": x} or "HH:MM:SS:FF"'),
+				targetDuration: z
+					.unknown()
+					.optional()
+					.describe('Target length: frames, {"seconds": x} or "HH:MM:SS:FF" (required without landDropAt)'),
 				segments: z.number().min(0).max(100).optional(),
 				variations: z.number().min(0).max(100).optional(),
+				landDropAt: z
+					.unknown()
+					.optional()
+					.describe('Land the drop on: a frame, {"seconds": x}, "HH:MM:SS:FF", {"cueId": "cue_…"} or "hero"'),
+				dropSec: z
+					.number()
+					.min(0)
+					.max(864_000)
+					.optional()
+					.describe('The moment to land (media seconds; default the top drop candidate)'),
+				timeSignature: TimeSignatureSchema.optional().describe(
+					'Beats per bar (default "auto": 3 or 4 detected)',
+				),
 			},
 			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async (a, extra) => {
+			if (a.landDropAt !== undefined)
+				return landDrop(
+					ctx,
+					{
+						projectId: a.projectId,
+						sequenceId: a.sequenceId,
+						clipId: a.clipId,
+						landDropAt: a.landDropAt,
+						dropSec: a.dropSec,
+						targetDuration: a.targetDuration,
+						timeSignature: a.timeSignature,
+					},
+					extra,
+				);
+			if (a.targetDuration === undefined)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'Give targetDuration (or landDropAt)',
+					'e.g. {"targetDuration": {"seconds": 30}}.',
+				);
 			const { doc } = await loadDoc(ctx, a.projectId);
 			const seq = pickSequence(doc, a.sequenceId);
 			const clip = audioClip(seq, a.clipId);
 			const rate = seq.settings.frameRate;
+			const fps = rate.num / rate.den;
 			const frames = frameOf(seq, a.targetDuration);
 			if (frames < 1)
 				throw new ToolError('E_INVALID_PARAM', 'targetDuration must be positive', 'e.g. {"seconds": 30}.');
@@ -787,51 +1048,192 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 					`The music clip is ${Math.round(durSec / 60)} min long; Remix analyses at most ${MAX_REMIX_SOURCE_SECONDS / 60} min`,
 					'Trim the clip (trim_clip) or split it, then remix a part.',
 				);
-			const plan = await ctx
-				.engine((c) =>
-					c.remixPlan({
-						mediaKey: mediaKeyOf(doc, clip.mediaId),
-						streamIndex: clip.channels.streamIndex,
-						startSeconds: startSec,
-						durationSeconds: durSec,
-						targetSeconds: (frames * rate.den) / rate.num,
-						...(a.segments !== undefined ? { segments: a.segments } : {}),
-						...(a.variations !== undefined ? { variations: a.variations } : {}),
-					}),
-				)
+			const base: RemixPlanRequest = {
+				mediaKey: mediaKeyOf(doc, clip.mediaId),
+				...(clip.channels.streamIndex !== undefined ? { streamIndex: clip.channels.streamIndex } : {}),
+				startSeconds: startSec,
+				durationSeconds: durSec,
+				targetSeconds: frames / fps,
+				...(a.segments !== undefined ? { segments: a.segments } : {}),
+				...(a.variations !== undefined ? { variations: a.variations } : {}),
+				...(a.timeSignature !== undefined ? { timeSignature: a.timeSignature } : {}),
+			};
+			// a drop the clip landed earlier lands again (P6-E11), when it still fits
+			const start = remixStartFrame(clip);
+			const kept = readRemixAnchors(clip.remix).filter((x) => x.frame - start < frames);
+			let plan: RemixPlanResult | null = null;
+			let keptNote: string | undefined;
+			if (kept.length) {
+				const room = roomOf(seq, clip);
+				plan = await ctx
+					.engine((c) =>
+						c.remixPlan({
+							...base,
+							anchors: kept.map((x) => ({
+								sourceSeconds: x.sourceSeconds,
+								outputSeconds: (x.frame - start) / fps,
+							})),
+							fit: 'nearest',
+							...(Number.isFinite(room) ? { maxTargetSeconds: room / fps } : {}),
+						}),
+					)
+					.catch(() => null);
+				keptNote = plan
+					? `kept the landed drop at ${kept.map((x) => sequenceTimecode(seq, x.frame)).join(', ')}`
+					: 'the landed drop no longer fits this length: remixed without it';
+			}
+			plan ??= await ctx
+				.engine((c) => c.remixPlan(base))
 				.catch((e: unknown) => {
-					const err = e as { code?: string; message?: string };
-					throw new ToolError(
-						err.code ?? 'E_REMIX_FAILED',
-						err.message ?? String(e),
-						'Remix needs music with a steady beat at least a few bars long.',
-					);
+					throw remixError(e);
 				});
-			const targetFrames = Math.max(1, Math.round((plan.lengthSeconds * rate.num) / rate.den));
-			const body = await apply(
-				ctx,
-				a.projectId,
-				'Remix',
-				[
-					{
-						type: 'clip.remix',
-						clipId: a.clipId,
-						targetFrames,
-						pieces: plan.pieces,
-						bpm: plan.bpm,
-						...(a.segments !== undefined ? { segments: a.segments } : {}),
-						...(a.variations !== undefined ? { variations: a.variations } : {}),
-					},
-				],
-				extra,
-				seq.id,
-			);
+			const room = roomOf(seq, clip);
+			const cmd = remixCommandOf(clip, plan, rate, {
+				...(a.segments !== undefined ? { segments: a.segments } : {}),
+				...(a.variations !== undefined ? { variations: a.variations } : {}),
+				...(keptNote && Number.isFinite(room) ? { maxFrames: room } : {}),
+			});
+			const body = await apply(ctx, a.projectId, 'Remix', [cmd], extra, seq.id);
 			return jsonResult({
 				...body,
 				bpm: plan.bpm,
 				pieces: plan.pieces.length,
-				lengthFrames: targetFrames,
+				lengthFrames: (cmd as { targetFrames: number }).targetFrames,
 				lengthSeconds: plan.lengthSeconds,
+				...(keptNote ? { note: keptNote } : {}),
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'find_music_drops',
+		{
+			title: 'Find the drops of a music clip',
+			description:
+				'Listens to a music clip on the engine (cached) and returns its drop candidates — bars where the music lifts into a loud section (spec 12 P6-E11; adapted from earshot): bar number, score (lift / 3 + 2 × novelty), lift in dB, the media second of the drop\'s downbeat and the frame / timecode where it plays now (null when the clip does not play it) — best first; plus the music\'s key ("C major", confidence 0…1: ≥ 0.6 is clear), tempo, beats per bar and how many bar lines. Land one with remix_audio {landDropAt, dropSec} or fit_music_to_picture.',
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: SequenceIdArg,
+				clipId: z.string().min(1),
+				timeSignature: TimeSignatureSchema.optional().describe(
+					'Beats per bar (default "auto": 3 or 4 detected)',
+				),
+			},
+			annotations: READ_ONLY,
+		},
+		async (a) => {
+			const { doc } = await loadDoc(ctx, a.projectId);
+			const seq = pickSequence(doc, a.sequenceId);
+			const clip = audioClip(seq, a.clipId);
+			const b = await beatsOf(ctx, doc, seq, clip, a.timeSignature);
+			const drops = b.drops.map((d) => {
+				const f = frameOfMediaSec(seq, clip, d.sourceSeconds);
+				return {
+					bar: d.bar,
+					score: d.score,
+					liftDb: d.liftDb,
+					mediaSeconds: d.sourceSeconds,
+					playsAt: f === null ? null : { frame: f, timecode: sequenceTimecode(seq, f) },
+				};
+			});
+			return jsonResult({
+				clipId: clip.id,
+				bpm: b.bpm,
+				beatsPerBar: b.beatsPerBar,
+				barLines: b.downbeats?.length ?? 0,
+				barsGuessed: b.dropBarsGuessed,
+				key: b.key
+					? { name: b.key.name, tonic: b.key.tonic, mode: b.key.mode, confidence: b.key.confidence }
+					: null,
+				drops,
+				...(b.reason ? { reason: b.reason } : {}),
+				summary: drops.length
+					? `${drops.length} drop candidate${drops.length === 1 ? '' : 's'}; the top one is bar ${drops[0]!.bar} (${drops[0]!.mediaSeconds} s${drops[0]!.playsAt ? `, now at ${drops[0]!.playsAt.timecode}` : ', not played by the clip'})${b.key ? `; key ${b.key.name} (${Math.round(b.key.confidence * 100)} %)` : ''}`
+					: `No drop found${b.reason ? ` (${b.reason})` : ''}${b.key ? `; key ${b.key.name} (${Math.round(b.key.confidence * 100)} %)` : ''}`,
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'fit_music_to_picture',
+		{
+			title: 'Fit music to the picture',
+			description:
+				'Music to picture (spec 12 P6-E11), one undo step: mode "land-drop" lands the music clip\'s drop (the top candidate, or dropSec in media seconds) on `at` (a frame, {"seconds": x}, timecode, {"cueId": …} or "hero"; default "hero") within 1 ms — the same as remix_audio {landDropAt}; mode "end-on-bar" ends the music on a bar line: just before a downbeat\'s attack (within a frame), with a constant-power fade-out of fadeSeconds (default one beat) ending there; direction "earlier" (default: the last bar line inside the clip) or "nearest" (up to half a bar later when the media and the track have room). The bar lines come from the engine\'s beat analysis (refused when the music has no clear downbeat: give timeSignature).',
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: SequenceIdArg,
+				clipId: z.string().min(1),
+				mode: z.enum(['land-drop', 'end-on-bar']),
+				at: z.unknown().optional().describe('land-drop: where (default "hero")'),
+				dropSec: z
+					.number()
+					.min(0)
+					.max(864_000)
+					.optional()
+					.describe('land-drop: the moment to land (media seconds)'),
+				targetDuration: z
+					.unknown()
+					.optional()
+					.describe("land-drop: an exact length (default: the clip's, ± half a bar)"),
+				fadeSeconds: z
+					.number()
+					.positive()
+					.max(10)
+					.optional()
+					.describe('end-on-bar: fade-out length (default one beat)'),
+				direction: z
+					.enum(['earlier', 'nearest'])
+					.optional()
+					.describe('end-on-bar: which bar line (default earlier)'),
+				timeSignature: TimeSignatureSchema.optional().describe(
+					'Beats per bar (default "auto": 3 or 4 detected)',
+				),
+			},
+			annotations: DESTRUCTIVE_IDEMPOTENT,
+		},
+		async (a, extra) => {
+			if (a.mode === 'land-drop')
+				return landDrop(
+					ctx,
+					{
+						projectId: a.projectId,
+						sequenceId: a.sequenceId,
+						clipId: a.clipId,
+						landDropAt: a.at ?? 'hero',
+						dropSec: a.dropSec,
+						targetDuration: a.targetDuration,
+						timeSignature: a.timeSignature,
+					},
+					extra,
+				);
+			const { doc } = await loadDoc(ctx, a.projectId);
+			const seq = pickSequence(doc, a.sequenceId);
+			const clip = audioClip(seq, a.clipId);
+			const b = await beatsOf(ctx, doc, seq, remixPiecesOf(seq, clip)[0]!, a.timeSignature);
+			if (!b.downbeats?.length)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					b.reason === 'NO_BEAT'
+						? 'The music has no steady beat'
+						: 'The music has no clear bar lines (no beat per bar is accented)',
+					'Give timeSignature (e.g. 4) so the beats are grouped into bars, or trim the clip by hand.',
+				);
+			const p = endOnBarPlan(doc, seq, clip.id, b.downbeats, {
+				bpm: b.bpm,
+				...(a.fadeSeconds !== undefined ? { fadeSeconds: a.fadeSeconds } : {}),
+				...(a.direction ? { direction: a.direction } : {}),
+			});
+			if (!p.ok) throw new ToolError(p.code, p.message, 'find_music_drops shows the tempo and bar lines.');
+			const body = await apply(ctx, a.projectId, 'End on Bar', p.commands, extra, seq.id);
+			return jsonResult({
+				...body,
+				clipId: p.clipId,
+				endsAt: { frame: p.endFrame, timecode: sequenceTimecode(seq, p.endFrame) },
+				barLine: { mediaSeconds: p.barSeconds, frame: p.barFrame },
+				fadeFrames: p.fadeFrames,
 			});
 		},
 	);

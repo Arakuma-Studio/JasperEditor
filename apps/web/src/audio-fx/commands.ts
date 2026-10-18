@@ -7,6 +7,7 @@ import {
 	AUDIO_TYPES,
 	type AudioClip,
 	type AudioType,
+	formatTimecode,
 	readEssentialSound,
 	type Sequence,
 } from '@jasper/project';
@@ -20,9 +21,13 @@ import {
 	autoMatchMessage,
 	autoTagClips,
 	autoTagMessage,
+	endOnBar,
+	heroCueUnder,
+	landDrop,
 	remixClip,
 	selectAudioType,
 	selectedAudioClips,
+	singleMusicClip,
 } from './ops.ts';
 
 const editable = (ctx: CommandCtx) => !!ctx.session && !ctx.session.getState().readOnly;
@@ -94,6 +99,63 @@ const RemixArgs = z
 	})
 	.optional();
 
+const LandDropArgs = z
+	.strictObject({
+		/** Sequence frame to land the drop on (default: the playhead, or the hero cue for Land Drop on Hero Cue). */
+		frame: z.number().int().min(0).optional(),
+		/** The moment to land (media seconds; default the top drop candidate). */
+		dropSec: z.number().min(0).max(864_000).optional(),
+	})
+	.optional();
+
+const EndOnBarArgs = z
+	.strictObject({
+		direction: z.enum(['earlier', 'nearest']).optional(),
+		fadeSeconds: z.number().positive().max(10).optional(),
+	})
+	.optional();
+
+/** The one music clip selected (a clip, or the pieces of one remix). */
+const theMusicClip = (ctx: CommandCtx) => singleMusicClip(selection(ctx).clips);
+const oneMusicClip = (ctx: CommandCtx) => editable(ctx) && !!theMusicClip(ctx);
+
+async function runLandDrop(ctx: CommandCtx, raw: unknown, on: 'playhead' | 'hero'): Promise<void> {
+	const args = LandDropArgs.parse(raw);
+	const { seq } = selection(ctx);
+	const clip = theMusicClip(ctx);
+	if (!ctx.session || !seq || !clip) return;
+	let frame = args?.frame;
+	if (frame === undefined && on === 'hero') {
+		const hero = heroCueUnder(seq, clip);
+		if (!hero) {
+			ctx.ui.toast({
+				kind: 'error',
+				message: t('No hero cue under the music'),
+				detail: t('Add a hero cue, or land the drop on the playhead.'),
+			});
+			return;
+		}
+		frame = hero.frame;
+	}
+	frame ??= ctx.transport.getState().frame;
+	try {
+		const r = await landDrop(ctx.session, ctx.engine, seq.id, clip.id, frame, {
+			...(args?.dropSec !== undefined ? { dropSec: args.dropSec } : {}),
+		});
+		ctx.ui.toast({
+			kind: 'success',
+			message: t(
+				'The drop lands at {0} ({1} segments, {2} s)',
+				formatTimecode(frame, seq.settings.frameRate, { dropFrame: seq.settings.dropFrame }),
+				r.pieces,
+				r.lengthSeconds.toFixed(2),
+			),
+		});
+	} catch (e) {
+		ctx.ui.toast({ kind: 'error', message: t('Land the Drop failed'), detail: (e as Error).message });
+	}
+}
+
 export const audioFxCommands: UiCommand[] = [
 	{
 		id: 'audio.essentialSound',
@@ -111,15 +173,16 @@ export const audioFxCommands: UiCommand[] = [
 		agentExposed: true,
 		capability: 'engine',
 		argsSchema: RemixArgs,
-		when: (ctx) => editable(ctx) && selection(ctx).clips.length === 1,
-		disabledReason: (ctx) => (selection(ctx).clips.length === 1 ? undefined : 'Select one music clip'),
+		when: oneMusicClip,
+		disabledReason: (ctx) => (theMusicClip(ctx) ? undefined : 'Select one music clip'),
 		run: async (ctx, raw) => {
 			const args = RemixArgs.parse(raw);
-			const { seq, clips } = selection(ctx);
-			if (!ctx.session || !seq || clips.length !== 1) return;
+			const { seq } = selection(ctx);
+			const clip = theMusicClip(ctx);
+			if (!ctx.session || !seq || !clip) return;
 			if (!args) return openPanel(ctx);
 			try {
-				const r = await remixClip(ctx.session, ctx.engine, seq.id, clips[0]!.id, args.targetSeconds, args);
+				const r = await remixClip(ctx.session, ctx.engine, seq.id, clip.id, args.targetSeconds, args);
 				ctx.ui.toast({
 					kind: 'success',
 					message: `Remixed to ${r.lengthSeconds.toFixed(2)} s (${r.pieces} segments, ${Math.round(r.bpm)} BPM)`,
@@ -143,6 +206,67 @@ export const audioFxCommands: UiCommand[] = [
 			if (!ctx.session || !c) return;
 			const err = revertRemix(ctx.session, c.id);
 			if (err) ctx.ui.toast({ kind: 'error', message: err });
+		},
+	},
+	{
+		id: 'audio.landDropOnPlayhead',
+		label: 'Land Drop on Playhead',
+		description:
+			'Re-cut the selected music clip at bar lines so its drop plays exactly at the playhead (or `frame`; `dropSec` picks the moment in media seconds)',
+		scope: 'global',
+		agentExposed: true,
+		capability: 'engine',
+		argsSchema: LandDropArgs,
+		when: oneMusicClip,
+		disabledReason: (ctx) => (theMusicClip(ctx) ? undefined : 'Select one music clip'),
+		run: (ctx, raw) => runLandDrop(ctx, raw, 'playhead'),
+	},
+	{
+		id: 'audio.landDropOnHero',
+		label: 'Land Drop on Hero Cue',
+		description:
+			'Re-cut the selected music clip at bar lines so its drop plays exactly on the first hero cue under it',
+		scope: 'global',
+		agentExposed: true,
+		capability: 'engine',
+		argsSchema: LandDropArgs,
+		when: (ctx) => oneMusicClip(ctx) && !!heroCueUnder(selection(ctx).seq!, theMusicClip(ctx)!),
+		disabledReason: (ctx) =>
+			!theMusicClip(ctx)
+				? 'Select one music clip'
+				: heroCueUnder(selection(ctx).seq!, theMusicClip(ctx)!)
+					? undefined
+					: 'No hero cue under the music',
+		run: (ctx, raw) => runLandDrop(ctx, raw, 'hero'),
+	},
+	{
+		id: 'audio.endOnBar',
+		label: 'End on Bar',
+		description:
+			'End the selected music clip on a bar line: just before a downbeat, with a one-beat fade-out (`direction` nearest also looks up to half a bar later)',
+		scope: 'global',
+		agentExposed: true,
+		capability: 'engine',
+		argsSchema: EndOnBarArgs,
+		when: oneMusicClip,
+		disabledReason: (ctx) => (theMusicClip(ctx) ? undefined : 'Select one music clip'),
+		run: async (ctx, raw) => {
+			const args = EndOnBarArgs.parse(raw);
+			const { seq } = selection(ctx);
+			const clip = theMusicClip(ctx);
+			if (!ctx.session || !seq || !clip) return;
+			try {
+				const r = await endOnBar(ctx.session, ctx.engine, seq.id, clip.id, args ?? {});
+				ctx.ui.toast({
+					kind: 'success',
+					message: t(
+						'The music ends on the bar line at {0}',
+						formatTimecode(r.endFrame, seq.settings.frameRate, { dropFrame: seq.settings.dropFrame }),
+					),
+				});
+			} catch (e) {
+				ctx.ui.toast({ kind: 'error', message: t('End on Bar failed'), detail: (e as Error).message });
+			}
 		},
 	},
 	{
@@ -300,6 +424,23 @@ clipMenuExtensions.register({
 							label: 'Revert Remix',
 							disabled: s.readOnly,
 							run: () => void revertRemix(session, clip.id),
+						},
+					]
+				: []),
+			// P6-E11: music to picture on a music clip (the selection is this clip alone)
+			...(run && clipType === 'music' && clipIds.length === 1
+				? [
+						{
+							kind: 'item' as const,
+							label: 'Land Drop on Playhead',
+							disabled: s.readOnly,
+							run: () => run('audio.landDropOnPlayhead'),
+						},
+						{
+							kind: 'item' as const,
+							label: 'End on Bar',
+							disabled: s.readOnly,
+							run: () => run('audio.endOnBar'),
 						},
 					]
 				: []),

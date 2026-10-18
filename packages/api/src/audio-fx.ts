@@ -4,6 +4,56 @@ import { EnvelopeSchema } from './projects.ts';
 /** Longest music range the Remix analyses (seconds). */
 export const MAX_REMIX_SOURCE_SECONDS = 30 * 60;
 
+/**
+ * Metre of the downbeats: `'auto'` (default) detects 3 or 4 beats per bar from which beats are accented; a number
+ * 2…12 groups the beats by it (`3` for a waltz, `4` for 4/4, `6`, `7`…).
+ */
+export const TimeSignatureSchema = z.union([z.literal('auto'), z.number().int().min(2).max(12)]);
+export type TimeSignature = z.infer<typeof TimeSignatureSchema>;
+
+/** Spec 12 P6-E11: a source moment of the music (the drop) to land on an output time of the remix. */
+export const RemixAnchorSchema = z.strictObject({
+	/** Seconds from the analysed range's start (like `pieces[].srcSeconds`), e.g. a drop's `sourceSeconds`. */
+	sourceSeconds: z.number().min(0).max(MAX_REMIX_SOURCE_SECONDS),
+	/** Seconds from the remix's start (the clip's first frame): where that moment must play (within 1 ms). */
+	outputSeconds: z
+		.number()
+		.min(0)
+		.max(4 * 3600),
+});
+export type RemixAnchor = z.infer<typeof RemixAnchorSchema>;
+
+/** A drop candidate of music (spec 12 P6-E11): a bar where the music lifts into a loud section, best first. */
+export const MusicDropSchema = z.object({
+	/** Where the drop's downbeat attack is: media seconds (`/api/audio/beats`) or seconds from the range start (remix plan). */
+	sourceSeconds: z.number(),
+	/** 1-based bar number from the start of the analysed range. */
+	bar: z.number().int(),
+	/** liftDb / 3 + 2 · novelty: the higher, the more of a drop. */
+	score: z.number(),
+	liftDb: z.number(),
+	novelty: z.number(),
+	/** The bar's level against the loud bars (dB). */
+	levelDb: z.number(),
+});
+export type MusicDrop = z.infer<typeof MusicDropSchema>;
+
+/** The key of music (spec 12 P6-E11: chroma + Krumhansl–Schmuckler, `@jasper/audio-fx` `estimateKey`). */
+export const MusicKeySchema = z.object({
+	/** Pitch class of the tonic, 0 = C … 11 = B. */
+	tonic: z.number().int().min(0).max(11),
+	mode: z.enum(['major', 'minor']),
+	/** "A minor". */
+	name: z.string(),
+	/** 0…1; ≥ 0.6 is clear enough to tune to. */
+	confidence: z.number(),
+	correlation: z.number(),
+	margin: z.number(),
+	/** The key's scale as pitch classes from C. */
+	scale: z.array(z.number().int()),
+});
+export type MusicKey = z.infer<typeof MusicKeySchema>;
+
 export const RemixPlanRequestSchema = z.strictObject({
 	mediaKey: z.string().min(1),
 	/** Audio stream of the media (default: the first audio stream). */
@@ -21,6 +71,21 @@ export const RemixPlanRequestSchema = z.strictObject({
 		.max(4 * 3600),
 	segments: z.number().min(0).max(100).optional(),
 	variations: z.number().min(0).max(100).optional(),
+	/**
+	 * Spec 12 P6-E11: land these source moments on these output times within 1 ms (the drop on the hero), with joints
+	 * at bar lines only; the plan's outro ends within half a beat of `targetSeconds` or the request is refused with
+	 * E_INVALID_PARAM (`detail.nearestTargetSeconds`), unless `fit: 'nearest'` (plan the nearest length that works,
+	 * not longer than `maxTargetSeconds`). Segments and Variations do not apply to an anchored plan.
+	 */
+	anchors: z.array(RemixAnchorSchema).min(1).max(4).optional(),
+	fit: z.enum(['exact', 'nearest']).optional(),
+	maxTargetSeconds: z
+		.number()
+		.positive()
+		.max(4 * 3600)
+		.optional(),
+	/** Metre of the bar lines (default `'auto'`: 3 or 4 detected). */
+	timeSignature: TimeSignatureSchema.optional(),
 });
 export type RemixPlanRequest = z.infer<typeof RemixPlanRequestSchema>;
 
@@ -36,18 +101,33 @@ export const RemixPlanResultSchema = z.object({
 	crossfadeSeconds: z.number(),
 	/** Source position of each joint: [end of the outgoing piece, start of the incoming one] (seconds). */
 	cuts: z.array(z.tuple([z.number(), z.number()])),
+	/** P6-E11: the bar lines (seconds from the range start: each downbeat's joint position) and beats per bar. */
+	downbeats: z.array(z.number()).optional(),
+	beatsPerBar: z.number().int().optional(),
+	/** The bar lines are a guess (no beat per bar clearly accented). */
+	barsGuessed: z.boolean().optional(),
+	/** P6-E11: drop candidates, best first (seconds from the range start). */
+	drops: z.array(MusicDropSchema).optional(),
+	/** P6-E11 (anchored plans): the target planned (the request's, or the nearest with `fit: 'nearest'`). */
+	targetSeconds: z.number().optional(),
+	/** Seconds of the intro left out before the first piece (a fade-in covers it). */
+	headTrimSeconds: z.number().optional(),
+	/** Each anchor: where it lands in the plan and the error (ms, ≤ 1). */
+	anchors: z
+		.array(
+			z.object({
+				sourceSeconds: z.number(),
+				outputSeconds: z.number(),
+				landedSeconds: z.number(),
+				errorMs: z.number(),
+			}),
+		)
+		.optional(),
 });
 export type RemixPlanResult = z.infer<typeof RemixPlanResultSchema>;
 
 /** Longest music range `POST /api/audio/beats` analyses at once (seconds). */
 export const MAX_BEATS_SOURCE_SECONDS = 30 * 60;
-
-/**
- * Metre of the downbeats: `'auto'` (default) detects 3 or 4 beats per bar from which beats are accented; a number
- * 2…12 groups the beats by it (`3` for a waltz, `4` for 4/4, `6`, `7`…).
- */
-export const TimeSignatureSchema = z.union([z.literal('auto'), z.number().int().min(2).max(12)]);
-export type TimeSignature = z.infer<typeof TimeSignatureSchema>;
 
 /**
  * `POST /api/audio/beats` (spec 12 §2.8; wp-note "Phase 6 → WP6.2", "WP6.5b"): tempo, beats and (when one beat per
@@ -79,6 +159,12 @@ export const BeatsResultSchema = z.object({
 	beatsPerBar: z.number().int().min(2).max(12).nullable(),
 	/** How clear the downbeat accent is (0…1). */
 	downbeatConfidence: z.number(),
+	/** P6-E11: drop candidates, best first (media seconds; on the strongest phase in 4 when there are no downbeats). */
+	drops: z.array(MusicDropSchema),
+	/** The drops' bars are a guess (no downbeats). */
+	dropBarsGuessed: z.boolean(),
+	/** P6-E11: the key of the range (also without a beat); null for silence. */
+	key: MusicKeySchema.nullable(),
 	startSeconds: z.number(),
 	durationSeconds: z.number(),
 	/** Seconds of audio decoded (shorter than asked when the media ends earlier). */

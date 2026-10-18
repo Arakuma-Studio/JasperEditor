@@ -585,6 +585,27 @@ sequence starts without acknowledgements; a proposal check costs one or two full
 skipped when the kept report is current) and is attributed by the entities each item's preview touched (setup items only
 when no other item did).
 
+Phase 6 → WP-E7 ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP-E7"; spec 12 §4 P6-E11; earshot's
+`arrange.py` ideas and stop-down norm adapted, `licenses/ported/earshot.md`): music to picture — the beat analysis gives
+the music's key (chroma + Krumhansl–Schmuckler, with a confidence) and its drop candidates; Land the Drop re-cuts a music
+clip at bar lines so its drop plays on a chosen frame (`/api/audio/remix-plan {anchors}`, Essential Sound ▸ Duration ▸
+Music to picture, Clip ▸ Audio Options ▸ Land Drop on Playhead / Hero Cue, MCP `remix_audio {landDropAt}`,
+`fit_music_to_picture`, `find_music_drops`), recorded so a later remix keeps it; End on Bar ends a music clip just
+before a downbeat with a one-beat fade; the plan job tunes chimes, shimmers and clearly pitched sounds over music to the
+key (`style.tuneToMusic`) and puts stop-befores on the bar line (`style.stopOnBar`), both on by default; every remix's
+joints now sit 5 ms before each beat's measured attack with crossfades that end at the joint. Measured in exports: the
+drop lands 0.000 ms from the hero frame (cross-correlation), a MIDI-70 chime over C major plays 440.00 Hz (A4, −1 st),
+the music sits −24.00 dB in the 19 ms after the downbeat the stop ends on, an End on Bar export is silent from 29.9656 s
+before the bar line at 30.000 s. Also fixed: `POST /api/audio/beats` cancelled every analysis requested over a real
+socket. Rerun `packages/audio-fx/test/music-picture.test.ts`, `packages/project/test/sound-music-fit.test.ts`,
+`apps/engine/test/{music-picture,sound-music-plan}.test.ts`, `apps/mcp/test/music-picture.test.ts`,
+`apps/web/test/sound-music-fit.test.tsx`, `e2e/sound-music-fit.spec.ts`. Limits left: drops and keys are measured on
+generated music only (no labelled set of real tracks); joints on bar lines make the reachable remix lengths a bar apart
+(an exact length is refused naming the nearest; without one the clip moves by up to half a bar); several anchors land
+only when the music between them fits within 1 ms; the head of the intro may be trimmed by up to a bar (faded in); a
+tuned run climbs the scale (steps of 1–2 st) rather than +1 st; the stop moves onto a bar only within 0.1–0.5 s (or the
+cue's own window); keys are major / natural minor only (modes and modulations are read as the nearest key).
+
 ### Not covered by any workstream yet
 
 - **Platforms**: run and fix the desktop app on macOS and Windows; hardware H.264/HEVC export on real GPUs; build

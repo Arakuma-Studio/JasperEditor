@@ -17,6 +17,7 @@ import {
 	migrateLegacyPan,
 	readEssentialSound,
 } from './essential/model.ts';
+import { readRemixAnchors, remixAnchorsValid } from './essential/ops.ts';
 import { expressionIssues, repairExpressions } from './expressions.ts';
 import { createFontRef, createTrack, DEFAULT_FONT_FAMILY } from './factories.ts';
 import { gapsIssues, repairGaps } from './gaps/index.ts';
@@ -1528,6 +1529,11 @@ export function essentialIssues(
 						path: [seq.id, c.id, fx.id],
 					});
 			if (c.remix) remixes.set(c.remix.id, [...(remixes.get(c.remix.id) ?? []), c.remix.count]);
+			if (c.remix && !remixAnchorsValid(c.remix))
+				out.push({
+					message: `clip ${c.id}: unreadable remix anchors`,
+					path: [seq.id, c.id, 'remix', 'anchors'],
+				});
 		}
 		for (const [id, counts] of remixes)
 			if (counts.some((n) => n !== counts.length))
@@ -1804,6 +1810,13 @@ export function repairDocument(
 					note('drop-essential-mark', fx.id, 'essential marker without settings removed (the effect stays)');
 				}
 			if (a.remix) remixes.set(a.remix.id, [...(remixes.get(a.remix.id) ?? []), a]);
+			// P6-E11: unreadable remix anchors dropped (the readable ones kept)
+			if (a.remix && !remixAnchorsValid(a.remix)) {
+				const kept = readRemixAnchors(a.remix);
+				const { anchors: _drop, ...rest } = a.remix as typeof a.remix & { anchors?: unknown };
+				a.remix = (kept.length ? { ...rest, anchors: kept } : rest) as never;
+				note('repair-remix-anchors', c.id, `remix anchors: ${kept.length} readable kept`);
+			}
 		}
 		for (const [id, list] of remixes) {
 			if (list.every((c) => c.remix!.count === list.length)) continue;

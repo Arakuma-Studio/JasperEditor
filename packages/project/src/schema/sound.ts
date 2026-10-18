@@ -91,7 +91,7 @@ export type SoundTypingMode = (typeof SOUND_TYPING_MODES)[number];
  * The cue grammar and style of a sequence (spec 12 P6-E10, `SoundDesignSettings.style`): what the plan job (Auto Sound
  * Pass…, Fill Unfilled Cues), Suggest Cues…, MCP place_sound picks and find_sound_cues use when a request names no
  * value. Every field optional; absent = the default (no personality, runs climb, typing auto, music carries the cuts,
- * no duck under typing).
+ * no duck under typing; P6-E11: tonal sounds tuned to the music's key, stops on the bar line).
  */
 export const SoundDesignStyleSchema = z.looseObject({
 	personality: z.enum(SOUND_PERSONALITIES).optional(),
@@ -99,6 +99,10 @@ export const SoundDesignStyleSchema = z.looseObject({
 	typing: z.enum(SOUND_TYPING_MODES).optional(),
 	musicCarriesCuts: z.boolean().optional(),
 	duckUnderTyping: z.boolean().optional(),
+	/** P6-E11: chimes, shimmers and clearly pitched sounds over music in a clear key go to the nearest note of its scale. */
+	tuneToMusic: z.boolean().optional(),
+	/** P6-E11: a stop-before over music with beats ends its ramp on the downbeat (else the beat) before the hit. */
+	stopOnBar: z.boolean().optional(),
 });
 export type SoundDesignStyle = DeepStrip<z.infer<typeof SoundDesignStyleSchema>>;
 
@@ -667,7 +671,15 @@ export function readSoundDesignStyle(raw: unknown): SoundDesignStyle | null {
 	if (ok.success) return ok.data as SoundDesignStyle;
 	const shape = SoundDesignStyleSchema.shape;
 	const out: Record<string, unknown> = { ...unknownFields(raw, shape) };
-	for (const k of ['personality', 'runs', 'typing', 'musicCarriesCuts', 'duckUnderTyping'] as const) {
+	for (const k of [
+		'personality',
+		'runs',
+		'typing',
+		'musicCarriesCuts',
+		'duckUnderTyping',
+		'tuneToMusic',
+		'stopOnBar',
+	] as const) {
 		const v = opt(shape[k] as z.ZodType<unknown>, raw[k]);
 		if (v !== undefined) out[k] = v;
 	}

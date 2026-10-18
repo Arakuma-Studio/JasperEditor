@@ -50,8 +50,16 @@ export type SoundProposalPlacement = {
 	layers: SoundProposalLayer[];
 	/** `sfx.alternatives` of the first layer (the variation ring, the placed sound first). */
 	ring?: string[];
-	/** Other sounds for layer 0, one alternative command set each. */
-	alternatives?: { soundId: string; label: string; meta?: Record<string, unknown> }[];
+	/**
+	 * Other sounds for layer 0, one alternative command set each. `layer` overrides layer 0's own fields for that sound
+	 * (P6-E11: a sound tuned to the music's key gets the alternative's own tuning); a null value removes the field.
+	 */
+	alternatives?: {
+		soundId: string;
+		label: string;
+		meta?: Record<string, unknown>;
+		layer?: Record<string, unknown>;
+	}[];
 	clampStart?: boolean;
 	/** Commands after the placement (e.g. a `soundCue.update` of the reason). */
 	extraCommands?: Record<string, unknown>[];
@@ -246,17 +254,19 @@ export function soundProposalItems(
 			requires.push(id);
 			target = { cueId: ref };
 		}
-		const layer = (l: SoundProposalLayer, soundId?: string) => {
+		const layer = (l: SoundProposalLayer, soundId?: string, over?: Record<string, unknown>) => {
 			const { soundId: own, mediaId, ...rest } = l;
 			const sid = soundId ?? own;
-			return { ...rest, mediaId: sid ? mediaOf.get(sid)! : mediaId! };
+			const merged: Record<string, unknown> = { ...rest, ...(over ?? {}) };
+			for (const [k, v] of Object.entries(over ?? {})) if (v === null) delete merged[k];
+			return { ...merged, mediaId: sid ? mediaOf.get(sid)! : mediaId! };
 		};
-		const placeCommands = (first?: string) => [
+		const placeCommands = (first?: string, over?: Record<string, unknown>) => [
 			{
 				type: 'soundDesign.place',
 				sequenceId,
 				...target,
-				layers: p.layers.map((l, i) => layer(l, i === 0 ? first : undefined)),
+				layers: p.layers.map((l, i) => layer(l, i === 0 ? first : undefined, i === 0 ? over : undefined)),
 				...(p.ring?.length ? { alternatives: [...new Set(p.ring)] } : {}),
 				...(p.clampStart ? { clampStart: true } : {}),
 			},
@@ -289,7 +299,7 @@ export function soundProposalItems(
 				? {
 						alternatives: p.alternatives.map((a) => ({
 							label: a.label.slice(0, 200),
-							commands: placeCommands(a.soundId),
+							commands: placeCommands(a.soundId, a.layer),
 							...(a.meta ? { meta: a.meta } : {}),
 						})),
 					}

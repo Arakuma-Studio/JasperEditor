@@ -45,7 +45,7 @@ nobody outside has used it, only Linux was checked — is [`docs/gaps.md`](docs/
 - **Export and interchange.** A planner routes each sequence to the native FFmpeg path, a hybrid layer bake or
   Remotion and refuses by name what a path cannot render; H.264, HEVC, VP9, AV1, ProRes, alpha; render previews and
   smart rendering; FCP 7 XML, FCPXML, EDL, AAF, OMF, ALE and OTIO in both directions.
-- **Agents.** `jasper-mcp` exposes 365 tools and the whole command catalogue; every edit is an undoable
+- **Agents.** `jasper-mcp` exposes 367 tools and the whole command catalogue; every edit is an undoable
   transaction, destructive ones need the user's approval in the editor; a `jasper` CLI; tools that look at and
   operate the live window.
 - **Safety net.** Atomic saves, single-writer leases (a reloaded tab keeps its own), crash-recovery journal, saved
@@ -442,7 +442,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (365; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (367; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `browse_media_files` (folders and importable files on the engine's computer) `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -505,7 +505,8 @@ Tools (365; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `remove_audio_effect` · `get_essential_sound` `set_essential_sound` `clear_essential_sound` `auto_match_loudness`
   `generate_essential_ducking` `auto_tag_audio` (Auto Tag: dialogue / music / sfx / ambience by listening, marked
   "auto" until confirmed; `docs/wp-notes/sound-design.md` "WP6.3") · `remix_audio` `revert_remix`
-  (`docs/wp-notes/audio-fx.md`).
+  (`docs/wp-notes/audio-fx.md`) · music to picture: `find_music_drops` (drops, key, tempo) `fit_music_to_picture`
+  (land the drop on a frame within 1 ms, end on a bar line; `docs/wp-notes/sound-design.md` "WP-E7").
 - Sound library (sound effects; agents judge them by descriptors and contact sheets): `sound_library_status`
   `search_sounds` (takes: true lists the single takes of multi-hit recordings — typing runs, clocks — as sounds of
   their own, ids snd_…~t&lt;n&gt;; a material filter) `get_sound` (a recording's takes) `view_sounds` · `import_sounds`
@@ -522,7 +523,8 @@ Tools (365; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   the cue grammar — one click voice at one level, keys as takes at speed 1, climbing runs, one key per word for fast
   typing, music carries the cuts, palette materials — with `style.personality` / `style.runs` / `style.typing` /
   `style.musicCarriesCuts` / `style.duckUnderTyping`, defaulting to the sequence's `soundDesign.setSettings {style}`; find_sound_cues
-  and place_sound picks follow it too) ·
+  and place_sound picks follow it too; music to picture — chimes tuned to the music's key, stops on the bar line — with
+  `style.tuneToMusic` / `style.stopOnBar`, on by default) ·
   `rebalance_sfx` (masking solver: each sound effect clears the bed by its target lift, with what limited it) ·
   `apply_delivery` (web / podcast / R128 / A/85: Mix loudness, Auto-Match by type, ducking, measured) `set_room_glue` (a
   shared "SFX Room" reverb) · `sound_check` (the delivered mix measured: findings with safe fixes judged together, in the

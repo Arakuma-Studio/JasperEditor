@@ -18,8 +18,13 @@
 // pops / UI / chimes / ticks climb +1 st per step, fast typing gets one key per word, cuts the music carries are
 // reported (`MUSIC_CARRIES_CUT`), the personality ranks and restricts types, and sounds sharing the dominant material
 // of their family's placed sounds rank higher (palette coherence).
+// P6-E11 (wp-note "Phase 6 → WP-E7"): with `tuneToMusic` (default on) chimes, shimmers and clearly pitched sounds over a
+// music clip in a clear key go to the nearest note of its scale (runs climb the scale); with `stopOnBar` (default on) a
+// stop-before over music with beats ends its ramp on the downbeat (else the beat) before the hit. The music's beats and
+// key come from the engine's beat analysis (`EngineCueSources.musicInfo`, cached per file and range).
 import { appendFile } from 'node:fs/promises';
 import {
+	type BeatsResult,
 	mediaRegisterCommand,
 	type RegisterSoundResponse,
 	SOUND_DESIGN_PLAN_LIMITS,
@@ -51,12 +56,18 @@ import {
 	documentHasActiveExpressions,
 	ENGINE_CUE_SOURCES,
 	type ExtraCue,
+	FLICKS_PER_SECOND,
 	fillTypeOf,
 	findRuns,
 	flicksPerFrame,
+	frameAtContent,
 	isSoundTypeId,
+	isTunable,
 	isTypingCue,
 	type MgTemplateRegistry,
+	type MusicKeyRef,
+	midiNoteName,
+	musicClips,
 	musicCovers,
 	musicTracksUnder,
 	type PaletteMaterials,
@@ -75,6 +86,7 @@ import {
 	rankSounds,
 	rateOfSemitones,
 	readLibraryProvenance,
+	readMusicKey,
 	resolveSoundStyle,
 	runReason,
 	type Sequence,
@@ -91,14 +103,21 @@ import {
 	type SoundTypeId,
 	type SoundVariation,
 	STOP_BEFORE_DEFAULT,
+	STOP_ON_BAR_WINDOW_SEC,
 	sequenceDialogueRanges,
 	sequenceTimecode,
 	soundCuesOf,
 	soundDesignSettingsOf,
 	soundProposalItems,
 	stopBeforeDip,
+	stopOnBar,
 	styleCueTypes,
+	TUNE_MIN_KEY_CONFIDENCE,
+	tuneRun,
+	tuneToKey,
+	tuningReason,
 	typesForVisualKind,
+	VARISPEED_PITCH_MAX_ST,
 	VISUAL_KINDS,
 	type VisualKind,
 	type VoiceActivity,
@@ -216,7 +235,57 @@ export type PlanPick = {
 	run?: { group: string; index: number; of: number; st: number };
 	/** P6-E10: the music dip under the typing run this cue starts (style `duckUnderTyping`). */
 	duck?: PlanDuck;
+	/** P6-E11: tuned to the key of the music under it (style `tuneToMusic`): the total shift, key, note, music clip. */
+	tuning?: { st: number; key: string; note: string; clipId: string };
+	/** P6-E11: the key it was tuned to (the alternatives are tuned to it too). */
+	tuneKey?: MusicKeyRef;
 };
+
+/**
+ * P6-E11: a music clip of the sequence with its analysis where it plays: the key (null without a clear one) and the
+ * downbeats / beats in sequence flicks (the attacks inside the clip). `planMusicOf` builds it from the beat analysis.
+ */
+export type PlanMusic = {
+	clipId: string;
+	/** Sequence frames `[start, end)` of the clip. */
+	start: number;
+	end: number;
+	key: MusicKeyRef | null;
+	downbeats: number[];
+	beats: number[];
+};
+
+/** The plan's view of the music (P6-E11) from the beat analyses by clip id (`EngineCueSources.musicInfo`). Pure. */
+export function planMusicOf(
+	doc: ProjectDocument,
+	seq: Sequence,
+	results: ReadonlyMap<string, Pick<BeatsResult, 'beats' | 'downbeats' | 'key'>>,
+): PlanMusic[] {
+	const rate = seq.settings.frameRate as Rational;
+	const F = flicksPerFrame(rate);
+	const out: PlanMusic[] = [];
+	for (const mc of musicClips(doc, seq)) {
+		const r = results.get(mc.clipId);
+		const c = seq.clips[mc.clipId];
+		if (!r || !c) continue;
+		const where = (sec: number): number | null => {
+			if (!Number.isFinite(sec)) return null;
+			const f = frameAtContent(c, sec * FLICKS_PER_SECOND, rate);
+			return f >= c.start && f < c.start + c.duration ? f * F : null;
+		};
+		const map = (xs: readonly number[] | null | undefined) =>
+			(xs ?? []).map(where).filter((x): x is number => x !== null);
+		out.push({
+			clipId: mc.clipId,
+			start: c.start,
+			end: c.start + c.duration,
+			key: readMusicKey(r.key),
+			downbeats: map(r.downbeats),
+			beats: map(r.beats),
+		});
+	}
+	return out;
+}
 
 const ALL_SOURCES: SoundSourceType[] = ['starter', 'pack', 'folder', 'synth'];
 
@@ -233,6 +302,8 @@ export function resolveStyle(req: SoundDesignPlanRequest, seq: Sequence): PlanSt
 			...(st.typing ? { typing: st.typing } : {}),
 			...(st.musicCarriesCuts !== undefined ? { musicCarriesCuts: st.musicCarriesCuts } : {}),
 			...(st.duckUnderTyping !== undefined ? { duckUnderTyping: st.duckUnderTyping } : {}),
+			...(st.tuneToMusic !== undefined ? { tuneToMusic: st.tuneToMusic } : {}),
+			...(st.stopOnBar !== undefined ? { stopOnBar: st.stopOnBar } : {}),
 		},
 		settings.style,
 	);
@@ -299,12 +370,15 @@ export function roomSetupItem(seq: Sequence, style: PlanStyle): ProposalItemInpu
 export function cueMixItems(
 	seq: Sequence,
 	pick: Pick<PlanPick, 'cue' | 'role'>,
-	style: Pick<PlanStyle, 'stopBefore' | 'build'>,
+	style: Pick<PlanStyle, 'stopBefore' | 'build'> & { grammar?: Pick<ResolvedSoundStyle, 'stopOnBar'> },
 	itemNo: string,
 	tc: string,
+	music: readonly PlanMusic[] = [],
 ): {
 	stop: NonNullable<SoundProposalPlacement['after']>[number] | null;
 	build: NonNullable<SoundProposalPlacement['after']>[number] | null;
+	/** P6-E11: the stop's ramp ends on this bar line (style `stopOnBar`). */
+	stopOn?: 'downbeat' | 'beat';
 } {
 	const rate = seq.settings.frameRate as Rational;
 	const fps = fpsOf(seq);
@@ -314,18 +388,42 @@ export function cueMixItems(
 		? (seq.soundDesign as { mix?: SoundDesignMix } | undefined)?.mix?.cues?.[stored.id]
 		: undefined;
 	let stop: ReturnType<typeof cueMixItems>['stop'] = null;
+	let stopOn: 'downbeat' | 'beat' | undefined;
 	const ownStop = stored?.stopBefore;
 	if ((ownStop || (style.stopBefore && pick.role === 'hero')) && !realised?.stopBefore) {
-		const spec = ownStop ?? STOP_BEFORE_DEFAULT;
+		let spec: { seconds: number; depthDb: number } = ownStop ?? STOP_BEFORE_DEFAULT;
+		// P6-E11: the ramp ends on the music's downbeat (else beat) before the hit, inside the stop's window (the cue's
+		// own seconds, or the plan's 0.5 s stop-down window)
+		const F0 = flicksPerFrame(rate);
+		const onBar =
+			style.grammar?.stopOnBar !== false && music.length
+				? (() => {
+						const window = ownStop ? ownStop.seconds : STOP_ON_BAR_WINDOW_SEC;
+						const lo = frame * F0 - window * FLICKS_PER_SECOND;
+						const under = music.filter((m) => m.start * F0 < frame * F0 && m.end * F0 > lo);
+						return stopOnBar(
+							frame,
+							window,
+							{ downbeats: under.flatMap((m) => m.downbeats), beats: under.flatMap((m) => m.beats) },
+							rate,
+						);
+					})()
+				: null;
+		if (onBar) {
+			spec = { seconds: onBar.seconds, depthDb: spec.depthDb };
+			stopOn = onBar.on;
+		}
 		const dip = stopBeforeDip(frame, spec, rate);
 		const F = flicksPerFrame(rate);
 		if (dip) {
 			const a = Math.max(0, Math.floor((dip.start - (dip.fadeMs * F * fps) / 1000) / F));
 			const b = Math.ceil((dip.end + (dip.fadeMs * F * fps) / 1000) / F);
+			const secs = Math.round(spec.seconds * 1000) / 1000;
+			const bar = onBar ? ` on the ${onBar.on === 'downbeat' ? 'bar line' : 'beat'}` : '';
 			if (musicTracksUnder(seq, a, b).length)
 				stop = {
 					id: `stop:${itemNo}`,
-					label: `Stop before ${tc}: music ${spec.depthDb} dB for ${spec.seconds} s`,
+					label: `Stop before ${tc}${bar}: music ${spec.depthDb} dB for ${secs} s`,
 					group: 'mix',
 					meta: {
 						feature: SOUND_DESIGN_FEATURE,
@@ -333,10 +431,17 @@ export function cueMixItems(
 						frame,
 						timecode: tc,
 						stopBefore: { seconds: spec.seconds, depthDb: spec.depthDb },
-						why: `The music drops ${-spec.depthDb} dB for ${spec.seconds} s before the hit at ${tc}, so it lands in a gap`,
+						...(onBar ? { stopOn: onBar.on } : {}),
+						why: `The music drops ${-spec.depthDb} dB for ${secs} s before the hit at ${tc}${
+							onBar
+								? onBar.on === 'downbeat'
+									? ', from the downbeat: on the bar line'
+									: ', from the beat (no downbeat in the window)'
+								: ''
+						}, so it lands in a gap`,
 					},
 					commands: (cueId) => [
-						...(ownStop
+						...(ownStop && !onBar
 							? []
 							: [
 									{
@@ -382,7 +487,7 @@ export function cueMixItems(
 				],
 			};
 	}
-	return { stop, build };
+	return { stop, build, ...(stop && stopOn ? { stopOn } : {}) };
 }
 
 const fpsOf = (seq: Sequence) => {
@@ -667,6 +772,8 @@ export function selectPlanSounds(
 	pool: readonly SoundEntry[],
 	style: PlanStyle,
 	voice: VoiceActivity | null = null,
+	/** P6-E11: the music clips with their key and bar lines (`planMusicOf`). */
+	music: readonly PlanMusic[] = [],
 ): {
 	picks: PlanPick[];
 	skipped: SoundDesignPlanSkip[];
@@ -923,6 +1030,59 @@ export function selectPlanSounds(
 		}
 		p.notes.push(runReason(st, mode));
 	});
+	// P6-E11 tune to the key (style tuneToMusic): chimes, shimmers and clearly pitched sounds over a music clip in a
+	// clear key go to the nearest note of its scale by varispeed (no seeded jitter: it would detune them); a run is
+	// tuned as one and climbs the scale. Explicit pitches are never changed.
+	let tuned = 0;
+	if (style.grammar.tuneToMusic && music.length) {
+		const keyAt = (f: number) =>
+			music.find((m) => m.key && m.key.confidence >= TUNE_MIN_KEY_CONFIDENCE && f >= m.start && f < m.end) ??
+			null;
+		const pitchOf = (p: PlanPick): number | null => {
+			const e = p.sounds[0]!.entry;
+			if (typeof p.cue.stored?.pitchSt === 'number' && p.cue.stored.pitchSt !== 0) return null;
+			const d = e.descriptors as { pitchMidi?: number | null; pitchConfidence?: number } | undefined;
+			return isTunable(e.types, d) ? (d!.pitchMidi as number) : null;
+		};
+		const tune = (p: PlanPick, total: number, m: PlanMusic, note: string) => {
+			const pitch = Math.max(-VARISPEED_PITCH_MAX_ST, Math.min(VARISPEED_PITCH_MAX_ST, total));
+			if (pitch) p.pitchSt = round6(pitch);
+			else delete p.pitchSt;
+			p.rate = round6(rateOfSemitones(total - pitch));
+			p.tuning = { st: round6(total), key: m.key!.name ?? '', note, clipId: m.clipId };
+			p.tuneKey = m.key!;
+			p.notes.push(tuningReason(round6(total), m.key!.name ?? ''));
+			tuned++;
+		};
+		const runs = new Map<string, PlanPick[]>();
+		for (const p of picks) if (p.run) runs.set(p.run.group, [...(runs.get(p.run.group) ?? []), p]);
+		for (const list of runs.values()) {
+			list.sort((a, b) => a.run!.index - b.run!.index);
+			const m = keyAt(list[0]!.cue.frame);
+			const base = pitchOf(list[0]!);
+			if (!m || base === null) continue;
+			const steps = tuneRun(
+				base,
+				list.map((p) => p.run!.st),
+				m.key!,
+			);
+			if (!steps) continue;
+			list.forEach((p, k) => {
+				const own = pitchOf(p);
+				if (own === null) return;
+				const target = base + steps[k]!;
+				tune(p, target - own, m, midiNoteName(target));
+			});
+		}
+		for (const p of picks) {
+			if (p.run) continue;
+			const m = keyAt(p.cue.frame);
+			const own = pitchOf(p);
+			if (!m || own === null) continue;
+			const t = tuneToKey(own, m.key!);
+			if (t) tune(p, t.st, m, t.note);
+		}
+	}
 	// Typing under music (style duckUnderTyping): one 6 dB dip of the music under each typing run (the cues of one
 	// typewriter or character reveal, filled with keys, ticks or clicks).
 	let typingDucks = 0;
@@ -970,6 +1130,9 @@ export function selectPlanSounds(
 			typing: style.grammar.typing,
 			musicCarriesCuts: style.grammar.musicCarriesCuts,
 			duckUnderTyping: style.grammar.duckUnderTyping,
+			tuneToMusic: style.grammar.tuneToMusic,
+			stopOnBar: style.grammar.stopOnBar,
+			tuned,
 			voices,
 			runCount,
 			carriedCuts: 0,
@@ -981,6 +1144,26 @@ export function selectPlanSounds(
 
 const r3 = (x: number) => Math.round(x * 1000) / 1000;
 const round6 = (x: number) => Math.round(x * 1e6) / 1e6;
+
+/**
+ * P6-E11: layer 0's pitch and speed for an alternative of a tuned pick: its own nearest scale note (a tonal one), the
+ * run's climb as the grammar gives it (a run member: the alternative is another sound), else none (rate 1).
+ */
+function alternativeTuning(
+	p: PlanPick,
+	a: RankedSound<SoundEntry>,
+	key: MusicKeyRef,
+): Record<string, unknown> {
+	const split = (st: number) => {
+		const pitch = Math.max(-VARISPEED_PITCH_MAX_ST, Math.min(VARISPEED_PITCH_MAX_ST, st));
+		const rate = round6(rateOfSemitones(st - pitch));
+		return { pitchSt: pitch ? round6(pitch) : null, rate: rate === 1 ? null : rate };
+	};
+	if (p.run) return split(p.run.st);
+	const d = a.entry.descriptors as { pitchMidi?: number | null; pitchConfidence?: number } | undefined;
+	const t = isTunable(a.entry.types, d) ? tuneToKey(d!.pitchMidi as number, key) : null;
+	return split(t ? t.st : 0);
+}
 
 function planSound(r: RankedSound<SoundEntry>, palette: Set<string>) {
 	return {
@@ -1021,6 +1204,8 @@ export function composePlanDraft(
 		mixSetup?: ProposalItemInput[];
 		/** P6-E10: what the grammar did (`selectPlanSounds`). */
 		grammar?: SoundDesignPlanReport['grammar'];
+		/** P6-E11: the music's bar lines for stops on the bar (`planMusicOf`). */
+		music?: readonly PlanMusic[];
 	},
 ): PlanDraft {
 	const fps = fpsOf(seq);
@@ -1047,6 +1232,8 @@ export function composePlanDraft(
 	const mixSetup = extra.mixSetup ?? [];
 	let stops = 0;
 	let builds = 0;
+	let stopsOnBar = 0;
+	const musicGrid = extra.music ?? [];
 	const voiceItems = new Map<string, string[]>();
 	picks.forEach((p, i) => {
 		const id = `sfx:${String(i + 1).padStart(width, '0')}`;
@@ -1090,6 +1277,7 @@ export function composePlanDraft(
 			...(p.notes.length ? { notes: p.notes } : {}),
 			...(p.variation ? { variation: p.variation } : {}),
 			...(p.run ? { run: p.run } : {}),
+			...(p.tuning ? { tuning: p.tuning } : {}),
 		};
 		const extra = p.extraLayers.map((l) => ({
 			soundId: l.sound.entry.id,
@@ -1098,7 +1286,8 @@ export function composePlanDraft(
 			...(l.gainOffsetDb !== 0 ? { gainOffsetDb: l.gainOffsetDb } : {}),
 		}));
 		const num = String(i + 1).padStart(width, '0');
-		const mixItems = cueMixItems(seq, p, style, num, tc);
+		const mixItems = cueMixItems(seq, p, style, num, tc, musicGrid);
+		if (mixItems.stopOn) stopsOnBar++;
 		const duck = p.duck ? typingDuckItem(seq, p.duck, num) : null;
 		const after = [mixItems.stop, mixItems.build, duck].filter((x): x is NonNullable<typeof x> => x !== null);
 		if (mixItems.stop) stops++;
@@ -1123,6 +1312,7 @@ export function composePlanDraft(
 			alternatives: alts.map((a) => ({
 				soundId: a.entry.id,
 				label: a.entry.title || a.entry.id,
+				...(p.tuneKey ? { layer: alternativeTuning(p, a, p.tuneKey) } : {}),
 				meta: {
 					soundId: a.entry.id,
 					title: a.entry.title,
@@ -1153,11 +1343,13 @@ export function composePlanDraft(
 			gainOffsetDb: p.gainOffsetDb,
 			...(p.variation ? { variation: p.variation } : {}),
 			...(p.run ? { run: p.run } : {}),
+			...(p.tuning ? { tuning: p.tuning } : {}),
 			alternatives: alts.map((a) => planSound(a, palette)),
 			extraLayers: p.extraLayers.map((l) => planSound(l.sound, palette)),
 			notes: p.notes,
 			...(mixItems.stop ? { stopBeforeItemId: mixItems.stop.id } : {}),
 			...(mixItems.build ? { buildItemId: mixItems.build.id } : {}),
+			...(mixItems.stopOn ? { stopOn: mixItems.stopOn } : {}),
 		});
 	});
 	const built = soundProposalItems(doc, seq.id, media, placements, {
@@ -1207,6 +1399,7 @@ export function composePlanDraft(
 					grammar: {
 						...extra.grammar,
 						carriedCuts: skippedAll.filter((x) => x.code === 'MUSIC_CARRIES_CUT').length,
+						stopsOnBar,
 					},
 				}
 			: {}),
@@ -1453,9 +1646,28 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 	});
 	collected.warnings.push(...engineWarnings);
 	if (aborted()) return cancelledResult(req, seq, style);
+	// P6-E11: the key and bar lines of the music (tune to the key, stops on the bar): measured inline, cached
+	let music: PlanMusic[] = [];
+	const wantsBars =
+		style.grammar.stopOnBar &&
+		(style.stopBefore || collected.cues.some((c) => c.stored?.stopBefore !== undefined));
+	if ((style.grammar.tuneToMusic || wantsBars) && musicClips(doc, seq, req.range).length) {
+		const sources = deps.engineCues?.();
+		if (sources) {
+			ctx.progress(0.095, { stage: 'Listening to the music (key and bar lines)' });
+			const info = await sources.musicInfo(live.doc, live.doc.sequences[seq0.id]!, {
+				...(req.range ? { range: req.range } : {}),
+				...(style.timeSignature !== undefined ? { timeSignature: style.timeSignature } : {}),
+				signal: ctx.signal,
+			});
+			music = planMusicOf(doc, seq, info.results);
+			for (const w of info.warnings) collected.warnings.push({ code: w.code, message: w.message });
+			if (aborted()) return cancelledResult(req, seq, style);
+		}
+	}
 	ctx.progress(0.1, { stage: `Ranking sounds for ${collected.cues.length} cues` });
 	const pool = await sounds.rankingPool(style.sources);
-	const selected = selectPlanSounds(doc, seq, collected.cues, pool.entries, style, voice);
+	const selected = selectPlanSounds(doc, seq, collected.cues, pool.entries, style, voice, music);
 	const warnings = [...collected.warnings];
 	if (selected.paletteMissing)
 		warnings.push({
@@ -1610,6 +1822,7 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 		librarySize: pool.librarySize,
 		mixSetup,
 		grammar: selected.grammar,
+		music,
 	});
 	const draft = composed.draft;
 	let report = composed.report;

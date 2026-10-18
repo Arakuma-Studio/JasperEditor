@@ -11,7 +11,13 @@
 // Modes: `submit` (the cue route) starts the jobs that are missing and reports them as pending — their cues are NOT
 // silently left out: the answer says `W_ANALYSIS_PENDING` with the job ids; `inline` (the plan job) runs every analysis
 // inside the calling job; `cached` (Sound Check) uses only what is already measured.
-import type { EngineJob, MotionAnalysisResult, SceneDetectRequest, TimeSignature } from '@jasper/api';
+import type {
+	BeatsResult,
+	EngineJob,
+	MotionAnalysisResult,
+	SceneDetectRequest,
+	TimeSignature,
+} from '@jasper/api';
 import {
 	type BeatData,
 	beatCues,
@@ -95,6 +101,22 @@ function intervals(
 		else out.push({ ...s });
 	}
 	return out;
+}
+
+/** The `/api/audio/beats` request of a music clip's media range (±1 s, on a half-second grid: shared cache entries). */
+function beatRequestOf(
+	mediaKey: string,
+	c: { mediaStartSec: number; mediaEndSec: number },
+	timeSignature: TimeSignature | undefined,
+) {
+	const lo = Math.max(0, Math.floor((c.mediaStartSec - 1) * 2) / 2);
+	const hi = Math.ceil((c.mediaEndSec + 1) * 2) / 2;
+	return {
+		mediaKey,
+		startSeconds: lo,
+		durationSeconds: Math.min(30 * 60, Math.max(0.5, hi - lo)),
+		...(timeSignature !== undefined && timeSignature !== 'auto' ? { timeSignature } : {}),
+	};
 }
 
 export class EngineCueSources {
@@ -291,6 +313,60 @@ export class EngineCueSources {
 		this.finish(st, 'scene', 'Shot changes in the footage', failed, out);
 	}
 
+	/**
+	 * P6-E11 (wp-note "Phase 6 → WP-E7"): the beat analysis (beats, downbeats, drops, key) of every Essential Sound music
+	 * clip in the range, by clip id — analysed inline (or only `cached`), at most `MAX_BEAT_CLIPS` clips. Media not in the
+	 * engine, failures and missing cache entries are left out (with a warning).
+	 */
+	async musicInfo(
+		doc: ProjectDocument,
+		seq: Sequence,
+		opts: {
+			range?: { start: number; end: number };
+			timeSignature?: TimeSignature;
+			cachedOnly?: boolean;
+			signal?: AbortSignal;
+		} = {},
+	): Promise<{ results: Map<string, BeatsResult>; warnings: EngineCueWarning[] }> {
+		const results = new Map<string, BeatsResult>();
+		const warnings: EngineCueWarning[] = [];
+		const beats = this.deps.beats();
+		if (!beats) return { results, warnings };
+		for (const [i, c] of musicClips(doc, seq, opts.range).entries()) {
+			if (i >= MAX_BEAT_CLIPS) {
+				warnings.push({
+					code: 'W_ANALYSIS_TRUNCATED',
+					message: `Beats and keys were measured in the first ${MAX_BEAT_CLIPS} music clips only`,
+					source: 'beat',
+				});
+				break;
+			}
+			const asset = doc.media[c.mediaId];
+			const key = engineKey(asset);
+			if (!key) {
+				warnings.push({
+					code: 'W_MEDIA_UNAVAILABLE',
+					message: `${asset?.originalName ?? c.mediaId} is not in the engine's media store: its beats and key are unknown`,
+					source: 'beat',
+				});
+				continue;
+			}
+			const req = beatRequestOf(key, c, opts.timeSignature);
+			try {
+				const r = opts.cachedOnly ? await beats.cached(req) : await beats.analyze(req, opts.signal);
+				if (r) results.set(c.clipId, r);
+			} catch (e) {
+				if (opts.signal?.aborted) throw e;
+				warnings.push({
+					code: 'W_ANALYSIS_FAILED',
+					message: `${asset?.originalName ?? 'A music clip'}: ${e instanceof Error ? e.message : String(e)}`,
+					source: 'beat',
+				});
+			}
+		}
+		return { results, warnings };
+	}
+
 	private async beat(
 		doc: ProjectDocument,
 		seq: Sequence,
@@ -340,14 +416,7 @@ export class EngineCueSources {
 				});
 				continue;
 			}
-			const lo = Math.max(0, Math.floor((c.mediaStartSec - 1) * 2) / 2);
-			const hi = Math.ceil((c.mediaEndSec + 1) * 2) / 2;
-			const req = {
-				mediaKey: key,
-				startSeconds: lo,
-				durationSeconds: Math.min(30 * 60, Math.max(0.5, hi - lo)),
-				...(timeSignature !== undefined && timeSignature !== 'auto' ? { timeSignature } : {}),
-			};
+			const req = beatRequestOf(key, c, timeSignature);
 			try {
 				const r =
 					mode.kind === 'cached'
