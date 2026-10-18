@@ -9137,7 +9137,7 @@ and `apps/web/test/sound-check-p6-model.test.ts` list REFERENCE / `reference`.
   range) and findings of code REFERENCE in a **Reference** group — a warning for a major row, an info for a minor one, never
   an error — whose message names the row ("Air 8–16 kHz share is low: −25.1 dB, the references −11.4 dB … −8.4 dB (median
   −9.9 dB)") and whose `advice` says what to do with the timecodes ("5 of 6 picture events have no onset within 100 ms
-  (chance 6 %); no sound at all at 00:00:06:00, 00:00:08:15, …: add a whoosh into the cut, a hit or a click there"). The
+  (chance n %); no sound at all at 00:00:06:00, 00:00:08:15, …: add a whoosh into the cut, a hit or a click there"). The
   panel lists the differences under the findings (Differences only / All n metrics; a status jumps to its finding); MCP
   prints the same rows (`reference.rows`, one line each) and the advice in each finding line. A sequence that is one of
   the profile's references is judged against the others (leave-one-out; a warning says so).
