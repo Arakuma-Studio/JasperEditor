@@ -108,7 +108,13 @@ export class MatrixNode {
 			return v;
 		};
 		// a coefficient that becomes non-zero within the horizon needs its node now
-		const probe = [0, AUTOMATION_HORIZON / 4, AUTOMATION_HORIZON / 2, (3 * AUTOMATION_HORIZON) / 4, AUTOMATION_HORIZON];
+		const probe = [
+			0,
+			AUTOMATION_HORIZON / 4,
+			AUTOMATION_HORIZON / 2,
+			(3 * AUTOMATION_HORIZON) / 4,
+			AUTOMATION_HORIZON,
+		];
 		for (const b of breaks) if (b > 0 && b < AUTOMATION_HORIZON) probe.push(b);
 		for (let o = 0; o < this.outChannels; o++)
 			for (let i = 0; i < this.inChannels; i++) {
@@ -125,7 +131,15 @@ export class MatrixNode {
 				}
 				// down to one-sample pieces at a corner: the 5.1 panner's clamps and square roots bend its gains where no
 				// keyframe is
-				followCurve(g.gain, this.ctx, (dt) => m(dt)[o]?.[i] ?? 0, undefined, undefined, breaks, PAN_PRECISION);
+				followCurve(
+					g.gain,
+					this.ctx,
+					(dt) => m(dt)[o]?.[i] ?? 0,
+					undefined,
+					undefined,
+					breaks,
+					PAN_PRECISION,
+				);
 			}
 		this.primed = true;
 	}

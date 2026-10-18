@@ -112,7 +112,8 @@ describe('followed automation curves', () => {
 		// without frame-aligned midpoints and 8-sample pieces the frame next to the cusp is ≈ 0.02 off
 		const coarse = curvePoints(value, SR, 0.12);
 		let w8 = 0;
-		for (let i = 0; i <= 0.12 * SR; i++) w8 = Math.max(w8, Math.abs(scheduled(value(0), coarse, i / SR) - value(i / SR)));
+		for (let i = 0; i <= 0.12 * SR; i++)
+			w8 = Math.max(w8, Math.abs(scheduled(value(0), coarse, i / SR) - value(i / SR)));
 		expect(w8).toBeGreaterThan(worst);
 	});
 });

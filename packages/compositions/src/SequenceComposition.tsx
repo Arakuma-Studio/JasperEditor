@@ -56,7 +56,7 @@ import {
 	useRef,
 	useState,
 } from 'react';
-import { AbsoluteFill, Freeze, Internals, Sequence, useCurrentFrame } from 'remotion';
+import { AbsoluteFill, Freeze, Internals, Sequence, useBufferState, useCurrentFrame } from 'remotion';
 import { MixGraphContext } from './audio/context.ts';
 import { type MixGraph, mixGraphFor } from './audio/graph.ts';
 import { installSerialAudioContext } from './audio/serial-audio-context.ts';
@@ -1195,13 +1195,19 @@ function MixGraphDriver({
 				const s = emitter.subscribe(cb);
 				return () => s.remove();
 			},
+			emitter,
 		});
 	}, [graph, sharedAudio]);
+	// sound-design Phase 6: playback is held while the sources start again after a schedule epoch
+	const buffer = useBufferState();
+	const buffering = useContext(Internals.BufferingContextReact);
 	useEffect(() => {
-		graph.setPlaying(playing);
-	}, [graph, playing]);
+		graph.setBufferGate(() => buffer.delayPlayback(), buffering?.buffering);
+		return () => graph.setBufferGate(null);
+	}, [graph, buffer, buffering]);
 	// The playback rate (J / L shuttle): with Remotion's sync anchor the graph reads the audio clock's time from it.
 	const playbackRate = useContext(Internals.PlaybackRateContext)?.playbackRate ?? 1;
+	// (before the playing state below: a Play that comes with a seek is checked against the new picture position)
 	useEffect(() => {
 		if (!doc.audioMix) return;
 		const F = flicksPerFrame(doc.settings.fps);
@@ -1211,6 +1217,9 @@ function MixGraphDriver({
 			rate: playbackRate,
 		});
 	}, [graph, doc, frame, offset, playbackRate]);
+	useEffect(() => {
+		graph.setPlaying(playing);
+	}, [graph, playing]);
 	return null;
 }
 

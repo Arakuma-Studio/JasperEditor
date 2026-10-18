@@ -268,8 +268,23 @@ export function primedAnchor(
 	return { base, value: base + w };
 }
 
-/** Longest picture wait (s) of a primed start; a larger read-ahead starts unprimed (its first samples are lost). */
-export const MAX_PRIMED_WAIT = 0.5;
+/**
+ * Longest picture wait (s) of a primed start (sound-design Phase 6: was 0.5 s, and a longer read-ahead lost its first
+ * samples). Any plausible effect chain waits less (one FFT-based or look-ahead effect adds 20–43 ms at 48 kHz; it takes
+ * some 70 of them in series to reach this); only a longer, pathological read-ahead starts unprimed.
+ */
+export const MAX_PRIMED_WAIT = 3;
+/** A primed wait at least this long (s) is shown as buffering on the Program monitor (`MixGraph.onStartWait`). */
+export const VISIBLE_START_WAIT = 0.2;
+/**
+ * How long (context seconds) Remotion must keep asking for a later audio anchor while playing before the graph lets it
+ * re-anchor (`MixGraph` anchor guard): a late frame commit asks once or twice, a real drift keeps asking.
+ */
+export const ANCHOR_CONFIRM = 0.5;
+/** Most Remotion's anchor may differ from the picture (s) after a paused seek before the graph re-anchors (`afterSeek`). */
+const ANCHOR_STALE = 0.002;
+/** Longest hold (ms) for the sources to start again after a schedule epoch (`bumpEpoch`). */
+const GATE_TIMEOUT_MS = 1500;
 /** Fade-out (s) of the graph's stale audio at a seek during playback, before its delay lines and effects are reset. */
 export const FLUSH_FADE = 0.003;
 /** Fade-in (s) at the start of a primed playback: Remotion's own resume fade, moved to where the program starts. */
@@ -282,7 +297,28 @@ export const START_FADE = 0.03;
 export type RemotionAudioSync = {
 	anchor: { value: number };
 	subscribe(cb: (event: string) => void): () => void;
+	/**
+	 * Remotion's anchor emitter (its `dispatch`): the graph holds back the `changed` event of a re-anchor it refuses (a
+	 * frame committed late while playing, sound-design Phase 6).
+	 */
+	emitter?: { dispatch(event: string): void };
 };
+
+/** A transport event of the graph, for diagnostics (`globalThis.__jasperTransportLog`, when it is an array). */
+export type TransportLogEntry = {
+	/** Context time. */
+	t: number;
+	kind: 'anchor' | 'refused' | 'confirmed' | 'primed' | 'restart';
+	/** The anchor after the event (context time of composition time 0). */
+	anchor: number;
+	/** The anchor Remotion asked for (`refused`) or the shift written (`primed`: the wait). */
+	value?: number;
+};
+
+function transportLog(e: TransportLogEntry): void {
+	const log = (globalThis as { __jasperTransportLog?: unknown }).__jasperTransportLog;
+	if (Array.isArray(log)) log.push(e);
+}
 
 let workletUrl: string | null = null;
 const workletLoads = new WeakMap<BaseAudioContext, Promise<boolean>>();
@@ -527,7 +563,16 @@ type SendNodes = {
 	matrix: MatrixNode;
 	gate: GainNode;
 	route: DelayRoute;
+	/** The target strip's input node (a replaced target strip needs a new route). */
+	to: AudioNode;
 };
+
+function disposeSend(x: SendNodes): void {
+	x.level.disconnect();
+	x.matrix.dispose();
+	x.gate.disconnect();
+	x.route.dispose();
+}
 
 class StripNodes {
 	readonly width: number;
@@ -540,9 +585,12 @@ class StripNodes {
 	readonly post: SlotChain;
 	readonly pan: MatrixNode | null;
 	readonly gate: GainNode;
-	/** Output route into the strip's bus (null for the Mix or a dangling output). */
+	/** Output route into the strip's bus (null for the Mix or a dangling output), and the bus input it feeds. */
 	out: DelayRoute | null = null;
+	outTo: AudioNode | null = null;
 	sends: SendNodes[] = [];
+	/** Kind, widths and worklet state the nodes were built for (`MixGraph.rebuild` keeps strips of the same shape). */
+	shape = '';
 
 	constructor(
 		readonly ctx: BaseAudioContext,
@@ -590,12 +638,7 @@ class StripNodes {
 		this.meter?.disconnect();
 		this.meter?.port.close();
 		this.out?.dispose();
-		for (const x of this.sends) {
-			x.level.disconnect();
-			x.matrix.dispose();
-			x.gate.disconnect();
-			x.route.dispose();
-		}
+		for (const x of this.sends) disposeSend(x);
 	}
 }
 
@@ -689,7 +732,14 @@ function clipKeyBreaks(
 }
 
 /** The clip pan stage (clip width → track width) at sequence time `t` (flicks): balance into a stereo track. */
-function clipPanMatrix(clip: RenderAudioClip, w: number, tw: number, t: number, fps: Rational, pan?: number): number[][] {
+function clipPanMatrix(
+	clip: RenderAudioClip,
+	w: number,
+	tw: number,
+	t: number,
+	fps: Rational,
+	pan?: number,
+): number[][] {
 	const F = flicksPerFrame(fps);
 	const m = conversionMatrix(layoutFromChannels(w), layoutFromChannels(tw));
 	if (tw !== 2) return m;
@@ -939,6 +989,30 @@ export class MixGraph {
 	private readonly startClock = new PrimedStartClock();
 	private flushToken = 0;
 	private disposed = false;
+	/** Writes Remotion's anchor without the guard (the graph's own writes: a primed start, a stall). */
+	private writeAnchor: (v: number) => void = (v) => {
+		if (this.sync) this.sync.anchor.value = v;
+	};
+	/** The `changed` event that follows a refused re-anchor is not passed on. */
+	private swallowChanged = false;
+	/** Refused re-anchors in a row: context time of the first and the last. */
+	private refused: { since: number; last: number } | null = null;
+	private readonly restartListeners = new Set<() => void>();
+	/** A restart was asked for during this run (asked once per run). */
+	private restartAsked = false;
+	private readonly startWaitListeners = new Set<(wait: number | null) => void>();
+	private idleWaiters: (() => void)[] = [];
+	private seekWaiters: (() => void)[] = [];
+	/** Composition time (s) of the picture at the last update, and the playback rate (Remotion's anchor relation). */
+	private pictureTime: number | null = null;
+	private pictureRate = 1;
+	private bufferGate: (() => { unblock(): void }) | null = null;
+	/** Remotion's buffering flag (its playback loop reads it before resuming the context). */
+	private bufferFlag: { current: boolean | null } | null = null;
+	private gateHandle: { unblock(): void } | null = null;
+	private gateTimer: ReturnType<typeof setTimeout> | null = null;
+	/** Clips whose new media player has not scheduled a buffer since the last schedule epoch. */
+	private readonly awaiting = new Set<string>();
 
 	constructor(
 		readonly ctx: AudioContext,
@@ -965,6 +1039,53 @@ export class MixGraph {
 		if (this.sync === sync || this.disposed) return;
 		this.detachSync();
 		this.sync = sync;
+		// The anchor guard (sound-design Phase 6). Remotion re-anchors every player (stops their queued buffers and
+		// schedules again from the new anchor) whenever, at a frame's commit, `currentTime − frame / fps` is off by more
+		// than 0.1 s + the output latency. A frame committed late — a long main-thread task: a big document change such
+		// as Hear proposal or an added track — reads as a picture behind the audio and the audio jumped ≈ 185 ms. While
+		// playing, a later anchor is refused unless Remotion keeps asking for it (`ANCHOR_CONFIRM`: a real drift); an
+		// earlier one (the picture ahead of the audio clock) is taken at once. Seeks while playing do not come here: the
+		// Program monitor restarts playback for them (pause, seek, play: `whenPaused`, `afterSeek`).
+		const anchor = sync.anchor;
+		const own = Object.getOwnPropertyDescriptor(anchor, 'value');
+		let restoreAnchor = () => {};
+		if (own && 'value' in own && own.configurable !== false) {
+			let raw = Number(own.value);
+			Object.defineProperty(anchor, 'value', {
+				configurable: true,
+				enumerable: true,
+				get: () => raw,
+				set: (v: number) => {
+					if (this.guardAnchor(raw, v)) raw = v;
+				},
+			});
+			this.writeAnchor = (v) => {
+				raw = v;
+			};
+			restoreAnchor = () => {
+				Object.defineProperty(anchor, 'value', {
+					configurable: true,
+					enumerable: true,
+					writable: true,
+					value: raw,
+				});
+			};
+		}
+		const emitter = sync.emitter;
+		let restoreDispatch = () => {};
+		if (emitter && typeof emitter.dispatch === 'function') {
+			const dispatch = emitter.dispatch;
+			emitter.dispatch = (event: string) => {
+				if (event === 'changed' && this.swallowChanged) {
+					this.swallowChanged = false;
+					return;
+				}
+				dispatch.call(emitter, event);
+			};
+			restoreDispatch = () => {
+				emitter.dispatch = dispatch;
+			};
+		}
 		const off = sync.subscribe((e) => {
 			if (e === 'changed') this.discontinuity();
 		});
@@ -981,14 +1102,95 @@ export class MixGraph {
 				writable: true,
 				// Remotion's start reading fixes the offset; its polls then pass the start once the program is at the
 				// output (`PrimedStartClock`).
-				value: () => this.startClock.report(native.call(this.ctx), this.ctx.currentTime) as AudioTimestamp,
+				value: () => {
+					const waiting = this.startClock.active;
+					const r = this.startClock.report(native.call(this.ctx), this.ctx.currentTime) as AudioTimestamp;
+					if (waiting && !this.startClock.active) this.notifyStartWait(null);
+					return r;
+				},
 			});
 		this.unsubscribeSync = () => {
 			off();
 			this.ctx.removeEventListener?.('statechange', onState);
 			if (shimmed) delete (this.ctx as { getOutputTimestamp?: unknown }).getOutputTimestamp;
+			restoreAnchor();
+			restoreDispatch();
+			this.writeAnchor = (v) => {
+				if (this.sync) this.sync.anchor.value = v;
+			};
 		};
 		this.prime(false);
+	}
+
+	/**
+	 * Remotion writes a new anchor: whether to take it (`MixGraph.attachSync`). Refusing it also holds back the
+	 * `changed` event Remotion dispatches right after.
+	 */
+	private guardAnchor(old: number, v: number): boolean {
+		const t = this.ctx.currentTime;
+		const take = (kind: TransportLogEntry['kind']) => {
+			this.refused = null;
+			transportLog({ t, kind, anchor: v });
+			return true;
+		};
+		// paused or suspending (a seek while paused, the forced write at a suspend): Remotion's anchor stands
+		if (!this.playing || this.ctx.state !== 'running' || this.disposed) return take('anchor');
+		// the picture ahead of the audio clock (a seek forward without a restart, an audio clock that fell behind)
+		if (!(v > old)) return take('anchor');
+		const r = this.refused && t - this.refused.last < 0.15 ? this.refused : { since: t, last: t };
+		r.last = t;
+		this.refused = r;
+		if (t - r.since >= ANCHOR_CONFIRM) return take('confirmed');
+		this.swallowChanged = true;
+		transportLog({ t, kind: 'refused', anchor: old, value: v });
+		return false;
+	}
+
+	/**
+	 * Called when playback should restart (pause, then play at the same frame) so the audio is primed again: a latency
+	 * added while playing (an insert, normalisation) would otherwise leave the Mix late by it until the stop. The Program
+	 * monitor's playback driver does it (sound-design Phase 6); without a listener the Mix stays late as before.
+	 */
+	onRestartRequest(cb: () => void): () => void {
+		this.restartListeners.add(cb);
+		return () => this.restartListeners.delete(cb);
+	}
+
+	/**
+	 * The picture's wait at a primed start, in seconds, while it lasts (null when it is over): the Program monitor shows
+	 * it as buffering when it is at least `VISIBLE_START_WAIT`.
+	 */
+	onStartWait(cb: (wait: number | null) => void): () => void {
+		this.startWaitListeners.add(cb);
+		return () => this.startWaitListeners.delete(cb);
+	}
+
+	private notifyStartWait(wait: number | null): void {
+		for (const cb of [...this.startWaitListeners]) cb(wait);
+	}
+
+	/**
+	 * Resolves once playback has stopped and the next start is prepared (the context suspended, a primed start set up):
+	 * a restart can then play again (`onRestartRequest`, seeks while playing). Resolves within `timeoutMs` in any case.
+	 */
+	whenPaused(timeoutMs = 1000): Promise<void> {
+		return new Promise((resolve) => {
+			let done = false;
+			const finish = () => {
+				if (done) return;
+				done = true;
+				resolve();
+			};
+			setTimeout(finish, timeoutMs);
+			if (!this.playing && this.ctx.state === 'suspended') setTimeout(finish, 0);
+			else this.idleWaiters.push(finish);
+		});
+	}
+
+	private releaseIdle(): void {
+		const w = this.idleWaiters;
+		this.idleWaiters = [];
+		for (const f of w) f();
 	}
 
 	private detachSync(): void {
@@ -1000,12 +1202,20 @@ export class MixGraph {
 	/** Remotion's playing state: the read-ahead is held while playing and follows the plan while paused. */
 	setPlaying(playing: boolean): void {
 		if (this.playing === playing) return;
+		// Play right after a short paused seek: the anchor is fixed (and the sources start again) before the run starts
+		if (playing) this.checkPausedSeek();
 		this.playing = playing;
 		if (playing) {
 			// a run starts: whatever was primed is in use now (also when the context's own events come late)
 			this.fresh = false;
 			this.flushed = false;
-		} else this.followPlan();
+			this.restartAsked = false;
+		} else {
+			this.refused = null;
+			this.swallowChanged = false;
+			this.followPlan();
+			if (this.ctx.state === 'suspended') setTimeout(() => this.releaseIdle(), 0);
+		}
 	}
 
 	/** Bumped when every source must reschedule (AudioLayer re-creates its media players while paused). */
@@ -1021,14 +1231,14 @@ export class MixGraph {
 	private followPlan(): void {
 		if (this.playing) return;
 		const p = this.plan.total;
-		if (p !== this.readAhead) {
+		const changed = p !== this.readAhead;
+		if (changed) {
 			this.readAhead = p;
-			this.scheduleEpoch++;
 			this.fresh = true;
-			this.notify();
 		}
 		this.pad?.set(Math.max(0, this.readAhead - p), false);
-		this.prime(false);
+		// every source reschedules with the new read-ahead (once: a prime that moves the anchor does it)
+		if (!this.prime(false) && changed) this.bumpEpoch();
 	}
 
 	private onContextState(): void {
@@ -1037,6 +1247,7 @@ export class MixGraph {
 			// a run starts: whatever was primed is in use now
 			this.fresh = false;
 			this.flushed = false;
+			if (this.startClock.active) this.notifyStartWait(this.startClock.endTime - this.ctx.currentTime);
 		} else if (s === 'suspended') {
 			const shift = this.shift;
 			if (this.playing && this.startClock.active && shift && this.sync) {
@@ -1044,15 +1255,18 @@ export class MixGraph {
 				// picture, which has not moved yet. Keep the primed anchor (the queued sources follow it) and the wait;
 				// the resume after the stall waits for what is left of it.
 				this.startClock.rearm();
-				const sync = this.sync;
 				setTimeout(() => {
-					sync.anchor.value = shift.base + shift.shift;
+					this.writeAnchor(shift.base + shift.shift);
 				}, 0);
 				return;
 			}
+			if (this.startClock.active) this.notifyStartWait(null);
 			this.startClock.clear();
 			// after Remotion's own handler (it re-anchors to the picture on suspend)
-			setTimeout(() => this.prime(false), 0);
+			setTimeout(() => {
+				this.prime(false);
+				if (!this.playing) this.releaseIdle();
+			}, 0);
 		}
 	}
 
@@ -1082,9 +1296,9 @@ export class MixGraph {
 	 * the wait (read-ahead + clip effect latency) so the sources start at the play position, has the picture wait as
 	 * long, and fades the program in where it starts. `fromSeek`: Remotion is rescheduling every player already.
 	 */
-	private prime(fromSeek: boolean): void {
+	private prime(fromSeek: boolean): boolean {
 		const sync = this.sync;
-		if (!sync || !this.fresh || this.playing || this.disposed || this.ctx.state !== 'suspended') return;
+		if (!sync || !this.fresh || this.playing || this.disposed || this.ctx.state !== 'suspended') return false;
 		if (!this.flushed) {
 			this.flush();
 			this.flushed = true;
@@ -1095,7 +1309,8 @@ export class MixGraph {
 		if (!(wait > 0) || wait > MAX_PRIMED_WAIT) wait = 0;
 		const a = primedAnchor(sync.anchor.value, this.shift, wait);
 		const changed = !this.shift || a.base !== this.shift.base || wait !== this.shift.shift;
-		sync.anchor.value = a.value;
+		this.writeAnchor(a.value);
+		transportLog({ t: this.ctx.currentTime, kind: 'primed', anchor: a.value, value: wait });
 		this.shift = { base: a.base, shift: wait };
 		// The context's time is frozen while suspended: the next run starts at `t0`, the program `wait` later.
 		const g = this.outGain.gain;
@@ -1108,9 +1323,106 @@ export class MixGraph {
 			g.linearRampToValueAtTime(1, t0 + wait + START_FADE);
 		}
 		if (changed && !fromSeek) {
-			this.scheduleEpoch++;
-			this.notify();
+			this.bumpEpoch();
+			return true;
 		}
+		return false;
+	}
+
+	/**
+	 * Every source must reschedule (AudioLayer re-creates its media players): while their new players start, playback
+	 * is held (Remotion's buffering, `setBufferGate`) until each clip under the picture has scheduled its first buffer,
+	 * so a Play right after (a restart, a quick Play after an edit) does not start before them and lose their first
+	 * samples (sound-design Phase 6).
+	 */
+	private bumpEpoch(): void {
+		this.scheduleEpoch++;
+		this.awaiting.clear();
+		if (this.bufferGate) {
+			const F = flicksPerFrame(this.fps);
+			const t = this.time;
+			for (const [id, c] of this.clips) {
+				const a = (c.clip.start - (c.clip.headHandle ?? 0)) * F;
+				const b = (c.clip.start + c.clip.duration + (c.clip.tailHandle ?? 0)) * F;
+				if (a <= t + FLICKS_PER_SECOND && b > t) this.awaiting.add(id);
+			}
+			if (this.awaiting.size > 0) {
+				this.gateHandle ??= this.bufferGate();
+				// Remotion raises its flag a render after the block; a Play in this very commit (a Play right after a
+				// short paused seek, `setPlaying`) must already see it, or the context resumes before the new players
+				// have scheduled anything and their first samples are lost.
+				if (this.bufferFlag) this.bufferFlag.current = true;
+				if (this.gateTimer) clearTimeout(this.gateTimer);
+				this.gateTimer = setTimeout(() => this.releaseGate(), GATE_TIMEOUT_MS);
+			} else this.releaseGate();
+		}
+		this.notify();
+	}
+
+	private releaseGate(): void {
+		if (this.gateTimer) clearTimeout(this.gateTimer);
+		this.gateTimer = null;
+		this.awaiting.clear();
+		const h = this.gateHandle;
+		this.gateHandle = null;
+		h?.unblock();
+	}
+
+	/**
+	 * Remotion's buffering (`useBufferState().delayPlayback`), for holding playback while the sources start again after
+	 * a schedule epoch (`bumpEpoch`). Null: no hold.
+	 */
+	setBufferGate(delay: (() => { unblock(): void }) | null, flag?: { current: boolean | null }): void {
+		if (!delay) this.releaseGate();
+		this.bufferGate = delay;
+		this.bufferFlag = delay ? (flag ?? null) : null;
+	}
+
+	/** AudioLayer: the media player of `clipId` made for schedule epoch `epoch` scheduled a buffer. */
+	noteScheduled(clipId: string, epoch: number): void {
+		if (epoch !== this.scheduleEpoch || !this.awaiting.delete(clipId)) return;
+		if (this.awaiting.size === 0) this.releaseGate();
+	}
+
+	/**
+	 * Resolves once the graph has seen the picture at the position of a seek made while paused (its next update) and,
+	 * when Remotion kept its anchor (a seek shorter than its 0.1 s + output-latency tolerance: the sources would go on
+	 * from where they were), re-anchored to the picture and had every source start again. The Program monitor's
+	 * restart (a seek while playing) plays after it (sound-design Phase 6).
+	 */
+	afterSeek(timeoutMs = 300): Promise<void> {
+		return new Promise((resolve) => {
+			let done = false;
+			const finish = () => {
+				if (done) return;
+				done = true;
+				resolve();
+			};
+			setTimeout(finish, timeoutMs);
+			this.seekWaiters.push(finish);
+		});
+	}
+
+	/**
+	 * After a seek while paused: re-anchors to the picture when Remotion's anchor is stale (it ignores seeks shorter
+	 * than its tolerance, and the sources would go on from where they were), and has every source start again. Run by
+	 * `afterSeek` (a restart) and at Play — not while paused, where a scrub or frame steps would restart every source
+	 * on every frame.
+	 */
+	private checkPausedSeek(): void {
+		const sync = this.sync;
+		if (!sync || this.playing || this.ctx.state !== 'suspended' || this.pictureTime === null) return;
+		const expected = this.ctx.currentTime - this.pictureTime / this.pictureRate;
+		const cur = sync.anchor.value;
+		const base =
+			this.shift && Math.abs(cur - (this.shift.base + this.shift.shift)) < 1e-9 ? this.shift.base : cur;
+		if (!Number.isFinite(expected) || Math.abs(base - expected) <= ANCHOR_STALE) return;
+		this.writeAnchor(expected);
+		transportLog({ t: this.ctx.currentTime, kind: 'anchor', anchor: expected });
+		this.shift = null;
+		this.fresh = true;
+		this.flushed = false;
+		this.prime(false);
 	}
 
 	/** Resets every delay line and effect processor: nothing from before stays in flight (`MixGraph.flush`). */
@@ -1136,6 +1448,7 @@ export class MixGraph {
 
 	/** A seek while playing: fades out what the graph still holds of the old position, then flushes. */
 	private fadeFlush(): void {
+		if (this.startClock.active) this.notifyStartWait(null);
 		this.startClock.clear();
 		const g = this.outGain.gain;
 		const t = this.ctx.currentTime;
@@ -1256,8 +1569,9 @@ export class MixGraph {
 		this.plannedExtra = extra;
 		const sr = this.ctx.sampleRate;
 		const plan = planMixLatency(mix, (e) => previewInsertLatency(e, sr), extra);
-		// While playing, keep the audio in flight (a changed route delay inserts silence or skips, never restarts).
-		const live = this.playing && !force;
+		// While playing, keep the audio in flight (a changed route delay inserts silence or skips, never restarts; a new
+		// route is empty either way).
+		const live = this.playing;
 		for (const s of mix.strips) {
 			const st = this.strips.get(s.id);
 			const r = plan.strips[s.id];
@@ -1266,8 +1580,19 @@ export class MixGraph {
 			for (const x of st.sends) x.route.set(r.sendDelays[x.id] ?? 0, live);
 		}
 		this.plan = plan;
-		if (this.playing) this.pad?.set(Math.max(0, this.readAhead - plan.total), live);
-		else this.followPlan();
+		if (this.playing) {
+			this.pad?.set(Math.max(0, this.readAhead - plan.total), live);
+			// More latency than the read-ahead held: the Mix plays late by the difference until the sources start again.
+			// Ask for a restart (primed with the new read-ahead); the held read-ahead keeps the audio going meanwhile.
+			if (plan.total > this.readAhead && !this.restartAsked && this.restartListeners.size > 0) {
+				this.restartAsked = true;
+				transportLog({ t: this.ctx.currentTime, kind: 'restart', anchor: this.sync?.anchor.value ?? 0 });
+				const listeners = [...this.restartListeners];
+				setTimeout(() => {
+					for (const cb of listeners) cb();
+				}, 0);
+			}
+		} else this.followPlan();
 	}
 
 	/** The node Remotion's per-clip gain must connect to for `clip` (stable for the life of the clip id). */
@@ -1373,6 +1698,10 @@ export class MixGraph {
 		this.fps = fps;
 		this.time = timeFlicks;
 		this.audioClock = this.clockFrom(timeFlicks, clock);
+		if (clock && Number.isFinite(clock.compositionFlicks) && clock.rate > 0) {
+			this.pictureTime = clock.compositionFlicks / FLICKS_PER_SECOND;
+			this.pictureRate = clock.rate;
+		}
 		const key = JSON.stringify([
 			this.workletReady,
 			mix.masterFormat,
@@ -1407,50 +1736,98 @@ export class MixGraph {
 		this.applyValues(false);
 		// paused before a primed start: the wait follows edits (clip effect latency) made meanwhile
 		this.prime(false);
+		if (this.seekWaiters.length > 0) {
+			this.checkPausedSeek();
+			const w = this.seekWaiters;
+			this.seekWaiters = [];
+			for (const f of w) f();
+		}
 	}
 
+	/**
+	 * Builds the strips for a new topology. Strips whose own shape is unchanged (kind, width, bus width) keep their
+	 * nodes — inserts with their state, the audio in flight — and so do routes between kept strips and the Mix chain:
+	 * adding or removing a track, submix or send while playing (an agent's edit, Hear proposal) no longer resets every
+	 * strip (the audio in their inserts and delay lines was lost: up to the read-ahead, sound-design Phase 6).
+	 */
 	private rebuild(mix: RenderAudioMix): void {
-		for (const st of this.strips.values()) st.dispose();
-		this.strips.clear();
+		this.order = mix.strips;
+		const mw = widthOf(mix.masterFormat);
+		const shapeOf = (s: RenderStrip) =>
+			`${s.kind}|${widthOf(s.format)}|${s.kind === 'master' ? mw : s.outputFormat ? widthOf(s.outputFormat) : mw}|${this.workletReady}`;
+		const prevMaster = this.strips.get('master');
+		const old = new Map(this.strips);
+		const next = new Map<string, StripNodes>();
+		for (const s of mix.strips) {
+			const shape = shapeOf(s);
+			const prev = old.get(s.id);
+			if (prev && prev.shape === shape) {
+				next.set(s.id, prev);
+				old.delete(s.id);
+				continue;
+			}
+			const ow = s.outputFormat ? widthOf(s.outputFormat) : mw;
+			// The Mix is metered after the limiter (with loudness) under the same id: no second meter here, or
+			// its silent readings would race the real ones.
+			const meter = s.kind === 'master' ? null : this.makeMeter(s.id, widthOf(s.format), false);
+			const st = new StripNodes(this.ctx, s, ow, meter);
+			st.shape = shape;
+			next.set(s.id, st);
+		}
+		// strips gone or reshaped (their routes go with them)
+		const masterKept = !!prevMaster && next.get('master') === prevMaster;
+		for (const st of old.values()) st.dispose();
+		this.strips = next;
+		// routing (outputs and sends): routes between kept strips stay (their delay lines keep what is in flight)
+		for (const s of mix.strips) {
+			const st = next.get(s.id)!;
+			const target = s.output ? next.get(s.output) : undefined;
+			if (st.out && st.outTo !== (target?.input ?? null)) {
+				st.out.dispose();
+				st.out = null;
+				st.outTo = null;
+			}
+			if (!st.out && target) {
+				st.out = new DelayRoute(this.ctx, st.gate, target.input, target.width);
+				st.outTo = target.input;
+			}
+			const kept = new Map(st.sends.map((x) => [x.id, x]));
+			st.sends = s.sends.flatMap((x) => {
+				const t = next.get(x.target);
+				if (!t) return [];
+				const k = kept.get(x.id);
+				if (k && k.target === x.target && k.preFader === x.preFader && k.to === t.input) {
+					kept.delete(x.id);
+					return [k];
+				}
+				const level = discreteGain(this.ctx, st.width);
+				const matrix = new MatrixNode(this.ctx, st.width, t.width);
+				const gate = discreteGain(this.ctx, t.width);
+				(x.preFader ? st.pre.output : st.post.output).connect(level);
+				level.connect(matrix.input);
+				matrix.output.connect(gate);
+				const route = new DelayRoute(this.ctx, gate, t.input, t.width);
+				return [
+					{ id: x.id, target: x.target, preFader: x.preFader, level, matrix, gate, route, to: t.input },
+				];
+			});
+			for (const x of kept.values()) disposeSend(x);
+		}
+		// the Mix → loudness gain → limiter → meter (levels + loudness) → device fold → Remotion's output gain: kept
+		// with the Mix strip
+		const master = next.get('master')!;
+		if (masterKept && this.pad && this.device) {
+			this.reconnectClips();
+			return;
+		}
 		this.masterMeter?.disconnect();
 		this.limiter?.disconnect();
 		this.limiter?.port.close();
 		this.device?.dispose();
 		this.pad?.dispose();
 		this.loudGain.disconnect();
-		this.order = mix.strips;
-		const mw = widthOf(mix.masterFormat);
-		for (const s of mix.strips) {
-			const ow = s.outputFormat ? widthOf(s.outputFormat) : mw;
-			// The Mix is metered after the limiter (with loudness) under the same id: no second meter here, or
-			// its silent readings would race the real ones.
-			const meter = s.kind === 'master' ? null : this.makeMeter(s.id, widthOf(s.format), false);
-			this.strips.set(s.id, new StripNodes(this.ctx, s, ow, meter));
-		}
-		// routing (outputs and sends)
-		for (const s of mix.strips) {
-			const st = this.strips.get(s.id)!;
-			if (s.output) {
-				const target = this.strips.get(s.output);
-				if (target) st.out = new DelayRoute(this.ctx, st.gate, target.input, target.width);
-			}
-			st.sends = s.sends.flatMap((x) => {
-				const target = this.strips.get(x.target);
-				if (!target) return [];
-				const level = discreteGain(this.ctx, st.width);
-				const matrix = new MatrixNode(this.ctx, st.width, target.width);
-				const gate = discreteGain(this.ctx, target.width);
-				(x.preFader ? st.pre.output : st.post.output).connect(level);
-				level.connect(matrix.input);
-				matrix.output.connect(gate);
-				const route = new DelayRoute(this.ctx, gate, target.input, target.width);
-				return [{ id: x.id, target: x.target, preFader: x.preFader, level, matrix, gate, route }];
-			});
-		}
-		// the Mix → loudness gain → limiter → meter (levels + loudness) → device fold → Remotion's output gain
-		const master = this.strips.get('master')!;
 		this.loudGain = discreteGain(this.ctx, mw);
-		// a fresh topology: nothing in flight, the padding starts empty
+		// a fresh Mix chain: nothing in flight, the padding starts empty
 		this.pad = new DelayRoute(this.ctx, master.gate, this.loudGain, mw);
 		this.pad.set(Math.max(0, this.readAhead - this.plan.total));
 		let last: AudioNode = this.loudGain;
@@ -1473,7 +1850,11 @@ export class MixGraph {
 		}
 		last.connect(this.device.input);
 		this.device.output.connect(this.outGain);
-		// existing clips → their (new) track inputs
+		this.reconnectClips();
+	}
+
+	/** Existing clips → their track inputs (new strips get them; kept ones keep them). */
+	private reconnectClips(): void {
 		const byId = new Map(this.clipList.map((c) => [c.clipId, c]));
 		for (const [id, c] of this.clips) {
 			const clip = byId.get(id) ?? c.clip;
@@ -1719,6 +2100,8 @@ export class MixGraph {
 
 	dispose(): void {
 		this.disposed = true;
+		this.releaseGate();
+		this.releaseIdle();
 		this.detachSync();
 		for (const st of this.strips.values()) st.dispose();
 		for (const c of this.clips.values()) c.dispose();

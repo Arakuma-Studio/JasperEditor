@@ -138,7 +138,10 @@ function key(time: number, value: number, interpolation: 'bezier' | 'linear' = '
 	const ease = { influence: 1 / 3, slope: 0 };
 	return { id: `k${time}_${value}`, time, value, interpolation, easeIn: ease, easeOut: ease };
 }
-const lane = (...keys: ReturnType<typeof key>[]): Animatable<number> => ({ value: keys[0]!.value, keyframes: keys });
+const lane = (...keys: ReturnType<typeof key>[]): Animatable<number> => ({
+	value: keys[0]!.value,
+	keyframes: keys,
+});
 
 /**
  * Sound design Phase 6: whooshes panned by fast sweeps (the placement's keyframed whoosh pans, and pan automation in

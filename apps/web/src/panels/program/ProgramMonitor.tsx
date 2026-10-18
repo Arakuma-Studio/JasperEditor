@@ -4,6 +4,7 @@
 
 import type { FontCatalog } from '@jasper/api';
 import {
+	activeMixGraph,
 	DEFAULT_RENDER_OPTIONS,
 	type RenderDoc,
 	type RenderOptions,
@@ -21,6 +22,7 @@ import { Player, type PlayerRef } from '@remotion/player';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { registerUiLocator } from '../../agent-bridge/ui-automation.ts';
+import { useAudioStartWait, useMixGraph } from '../../audio/runtime.ts';
 import { useAudioSessionServices } from '../../audio/session.ts';
 import { useColorBypass } from '../../color/actions.ts';
 import { runCommand } from '../../commands/index.ts';
@@ -299,9 +301,22 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 				setPlayerRate,
 				onBuffering: setBuffering,
 				onDroppedFrames: setDropped,
+				// sound-design Phase 6: seeks while playing restart primed (sample-exact audio after the seek)
+				audio: () => {
+					const g = activeMixGraph();
+					return g ? { whenPaused: () => g.whenPaused(), afterSeek: () => g.afterSeek() } : null;
+				},
 			}),
 		[transport],
 	);
+	// A latency added while playing (an insert, normalisation) restarts playback primed, so the Mix is not late by it
+	// until the stop; a primed start that waits long for the program shows as buffering.
+	const mixGraph = useMixGraph();
+	useEffect(
+		() => (mixGraph ? mixGraph.onRestartRequest(() => driver.restart()) : undefined),
+		[mixGraph, driver],
+	);
+	const audioWait = useAudioStartWait(mixGraph);
 	useEffect(() => {
 		const detach = transport.attachPlayer(driver);
 		const unregister = registerDriver(transport, driver);
@@ -600,7 +615,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 						PROXY
 					</span>
 				) : null}
-				{buffering && playing ? (
+				{(buffering || audioWait) && playing ? (
 					<span
 						className="pointer-events-none absolute top-2 left-2 size-2 rounded-full bg-pr-warning"
 						title="Buffering"

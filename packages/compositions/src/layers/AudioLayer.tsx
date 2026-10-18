@@ -109,7 +109,16 @@ export function AudioLayer({
 	const routed = useMemo(
 		() =>
 			shared && node && graph
-				? { ...shared, gainNode: node, ...compensate(shared, () => graph.clipLead(clipRef.current)) }
+				? {
+						...shared,
+						gainNode: node,
+						...compensate(
+							shared,
+							() => graph.clipLead(clipRef.current),
+							// the new player is under way: a playback held for the sources to start again may go on
+							() => graph.noteScheduled(clipRef.current.clipId, epoch),
+						),
+					}
 				: null,
 		[shared, node, graph, fxLatency, epoch],
 	);
@@ -255,11 +264,12 @@ export function useGraphEpoch(graph: MixGraph | null): number {
 
 /**
  * A `scheduleAudioNode` that starts every source buffer `lead()` seconds early (effect latency compensation and the
- * graph's read-ahead), read when the buffer is scheduled.
+ * graph's read-ahead), read when the buffer is scheduled; `scheduled` is told of every buffer.
  */
-function compensate(shared: SharedAudio, lead: () => number): Partial<SharedAudio> {
+function compensate(shared: SharedAudio, lead: () => number, scheduled?: () => void): Partial<SharedAudio> {
 	return {
 		scheduleAudioNode: (opts) => {
+			scheduled?.();
 			const shift = lead();
 			if (!(shift > 0)) return shared.scheduleAudioNode(opts);
 			const ctx = shared.audioContext;

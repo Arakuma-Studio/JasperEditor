@@ -7,6 +7,7 @@ import {
 	type MixGraph,
 	onActiveMixGraph,
 	setMixWorkletUrl,
+	VISIBLE_START_WAIT,
 } from '@jasper/compositions';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { auditionMeter } from './audition-meter.ts';
@@ -77,4 +78,19 @@ export function useMeterReading(graph: MixGraph | null, stripId: string): MeterR
 		};
 	}, [graph, stripId]);
 	return r;
+}
+
+/**
+ * Whether the Program monitor's audio holds the picture at a primed start for at least `VISIBLE_START_WAIT` seconds
+ * (sound-design Phase 6: a long read-ahead — many latent effects — waits for the program instead of losing its first
+ * samples; the monitor shows it as buffering).
+ */
+export function useAudioStartWait(graph: MixGraph | null): boolean {
+	const [waiting, setWaiting] = useState(false);
+	useEffect(() => {
+		if (!graph) return;
+		setWaiting(false);
+		return graph.onStartWait((w) => setWaiting(w !== null && w >= VISIBLE_START_WAIT));
+	}, [graph]);
+	return waiting;
 }
