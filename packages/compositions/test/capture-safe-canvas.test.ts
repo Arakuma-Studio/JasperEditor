@@ -59,9 +59,18 @@ describe.runIf(run)('HTML-in-Canvas capture of video canvases', () => {
 		await browser?.close();
 	});
 
-	it('a low-latency canvas is not captured after the first paint without the shim; it is with it', async () => {
+	it('a low-latency canvas is not captured after the first paint without the shim; it is with it', async (ctx) => {
 		const page = await browser.newPage();
 		await page.setContent(PAGE);
+		// HTML-in-Canvas (`requestPaint`, `drawElementImage`) ships in Chrome 148+ behind CanvasDrawElement (Remotion's
+		// `HtmlInCanvas.isSupported` checks the same); an older Chrome (the build server's 142) has nothing to capture with,
+		// so the Player never takes this path there.
+		const supported = await page.evaluate(() => {
+			const c = document.createElement('canvas') as HTMLCanvasElement & { requestPaint?: unknown };
+			const d = c.getContext('2d') as unknown as { drawElementImage?: unknown } | null;
+			return typeof c.requestPaint === 'function' && typeof d?.drawElementImage === 'function';
+		});
+		ctx.skip(!supported, `Chrome ${browser.version()} has no HTML-in-Canvas (Chrome 148+)`);
 		const before = await page.evaluate(probe);
 		expect(before[1]).toEqual([255, 0, 255, 255]);
 		// The browser behaviour the shim works around (if a Chrome update fixes it, this half may start to fail: the

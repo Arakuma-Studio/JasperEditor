@@ -45,7 +45,10 @@ type Clip = {
 type Seq = {
 	id: string;
 	clips: Record<string, Clip>;
-	transitions: Record<string, { duration: number; trackId: string }>;
+	transitions: Record<
+		string,
+		{ duration: number; trackId: string; outgoingClipId: string | null; incomingClipId: string | null }
+	>;
 };
 
 async function sequence(p: Page): Promise<Seq> {
