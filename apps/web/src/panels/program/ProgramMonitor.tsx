@@ -19,7 +19,16 @@ import {
 	useStoreSelector,
 } from '@jasper/session/react';
 import { Player, type PlayerRef } from '@remotion/player';
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+	type CSSProperties,
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+	useSyncExternalStore,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { registerUiLocator } from '../../agent-bridge/ui-automation.ts';
 import { useAudioStartWait, useMixGraph } from '../../audio/runtime.ts';
@@ -260,7 +269,14 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		}),
 		[useProxies, transparent, colorBypass, fxPreviewScale, view3d, mcView, playPreviews],
 	);
-	const inputProps = useMemo(() => (doc ? { doc, options } : null), [doc, options]);
+	// The Player gets the same props object for the life of the monitor and the composition reads the document from
+	// `live`: Remotion's video config includes the props, and its playback loop restarts its clock from the current frame
+	// whenever the config changes — every edit made while playing (an agent's, Hear proposal) dropped the time since the
+	// last frame plus the edit's render from the picture, which then lagged the audio (and Remotion re-anchored every
+	// player to it: the audio jumped ≈ 185 ms back; sound-design Phase 6).
+	const [playerDoc] = useState(() => liveProps(doc ? { doc, options } : null));
+	useLayoutEffect(() => playerDoc.set(doc ? { doc, options } : null), [playerDoc, doc, options]);
+	const inputProps = useMemo(() => ({ live: playerDoc }), [playerDoc]);
 	const duration = seqId ? playerDurationFrames(drawn, seqId) : 1;
 	const end = seq ? Math.max(0, duration - 1) : 0;
 	const fps = seq ? seq.settings.frameRate.num / seq.settings.frameRate.den : 30;
@@ -477,7 +493,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		[frameSize.width, frameSize.height],
 	);
 
-	if (!seq || !doc || !inputProps) {
+	if (!seq || !doc) {
 		return (
 			<div
 				className="flex h-full items-center justify-center text-pr-small text-pr-muted"
@@ -528,7 +544,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					<MgRenderStateProvider>
 						<Player
 							ref={playerRef}
-							component={SequenceComposition}
+							component={LiveSequenceComposition}
 							inputProps={inputProps}
 							durationInFrames={duration}
 							compositionWidth={frameSize.width}
@@ -791,4 +807,31 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 				: null}
 		</div>
 	);
+}
+
+type LiveValue = { doc: RenderDoc; options: RenderOptions } | null;
+type LiveProps = { get(): LiveValue; set(v: LiveValue): void; subscribe(cb: () => void): () => void };
+
+/** The Program monitor's document and render options, for the Player's composition (`LiveSequenceComposition`). */
+function liveProps(initial: LiveValue): LiveProps {
+	let value = initial;
+	const listeners = new Set<() => void>();
+	return {
+		get: () => value,
+		set: (v) => {
+			if (v === value || (v && value && v.doc === value.doc && v.options === value.options)) return;
+			value = v;
+			for (const cb of [...listeners]) cb();
+		},
+		subscribe: (cb) => {
+			listeners.add(cb);
+			return () => listeners.delete(cb);
+		},
+	};
+}
+
+/** The Program monitor's composition: SequenceComposition with the document of `live` (stable Player props). */
+function LiveSequenceComposition({ live }: { live: LiveProps }) {
+	const v = useSyncExternalStore(live.subscribe, live.get, live.get);
+	return v ? <SequenceComposition doc={v.doc} options={v.options} /> : null;
 }

@@ -280,7 +280,9 @@ export const VISIBLE_START_WAIT = 0.2;
  * How long (context seconds) Remotion must keep asking for a later audio anchor while playing before the graph lets it
  * re-anchor (`MixGraph` anchor guard): a late frame commit asks once or twice, a real drift keeps asking.
  */
-export const ANCHOR_CONFIRM = 0.5;
+export const ANCHOR_CONFIRM = 0.3;
+/** A picture update this long (s) after the one before came late (≈ 3 frames at 30 fps): the main thread was busy. */
+const LATE_UPDATE = 0.1;
 /** Most Remotion's anchor may differ from the picture (s) after a paused seek before the graph re-anchors (`afterSeek`). */
 const ANCHOR_STALE = 0.002;
 /** Longest hold (ms) for the sources to start again after a schedule epoch (`bumpEpoch`). */
@@ -308,7 +310,20 @@ export type RemotionAudioSync = {
 export type TransportLogEntry = {
 	/** Context time. */
 	t: number;
-	kind: 'anchor' | 'refused' | 'confirmed' | 'primed' | 'restart';
+	kind:
+		| 'anchor'
+		| 'refused'
+		| 'confirmed'
+		| 'caught-up'
+		| 'primed'
+		| 'restart'
+		| 'gate'
+		| 'gate-open'
+		| 'stale'
+		| 'running'
+		| 'suspended'
+		| 'play'
+		| 'pause';
 	/** The anchor after the event (context time of composition time 0). */
 	anchor: number;
 	/** The anchor Remotion asked for (`refused`) or the shift written (`primed`: the wait). */
@@ -997,6 +1012,11 @@ export class MixGraph {
 	private swallowChanged = false;
 	/** Refused re-anchors in a row: context time of the first and the last. */
 	private refused: { since: number; last: number } | null = null;
+	private advancePicture: ((frames: number) => boolean) | null = null;
+	private pictureFps = 30;
+	/** Context time of the last update while playing, and of the last one that came late (a busy main thread). */
+	private lastUpdateAt: number | null = null;
+	private lastIrregular = Number.NEGATIVE_INFINITY;
 	private readonly restartListeners = new Set<() => void>();
 	/** A restart was asked for during this run (asked once per run). */
 	private restartAsked = false;
@@ -1140,10 +1160,35 @@ export class MixGraph {
 		const r = this.refused && t - this.refused.last < 0.15 ? this.refused : { since: t, last: t };
 		r.last = t;
 		this.refused = r;
-		if (t - r.since >= ANCHOR_CONFIRM) return take('confirmed');
+		// Only a picture that is behind while the main thread keeps up is behind for real (a freeze that did not suspend
+		// the audio); behind while frames come late is commits lagging (measured after an agent added tracks: Remotion
+		// asked for anchors 0.19–0.31 s later for 0.6 s and more, then the picture caught up).
+		if (t - Math.max(r.since, this.lastIrregular) >= ANCHOR_CONFIRM) {
+			// The picture is behind the audio for real: Remotion restarts its frame clock from the current frame when its
+			// video config changes (a new duration), dropping the time since the last frame. The audio is right; the
+			// picture catches up (drops the frames it is behind), as a player falling behind does — no audio jump.
+			const ahead = this.advancePicture;
+			const frames = Math.round((v - old) * this.pictureRate * this.pictureFps);
+			if (ahead && frames > 0 && ahead(frames)) {
+				this.refused = null;
+				this.swallowChanged = true;
+				transportLog({ t, kind: 'caught-up', anchor: old, value: frames });
+				return false;
+			}
+			return take('confirmed');
+		}
 		this.swallowChanged = true;
 		transportLog({ t, kind: 'refused', anchor: old, value: v });
 		return false;
+	}
+
+	/**
+	 * Moves the picture `frames` ahead while playing (Remotion's frame state; MixGraphDriver): the anchor guard's answer
+	 * to a picture that fell behind the audio. Returns false when it could not.
+	 */
+	setPictureAdvance(advance: ((frames: number) => boolean) | null, fps: number): void {
+		this.advancePicture = advance;
+		if (Number.isFinite(fps) && fps > 0) this.pictureFps = fps;
 	}
 
 	/**
@@ -1182,8 +1227,21 @@ export class MixGraph {
 				resolve();
 			};
 			setTimeout(finish, timeoutMs);
-			if (!this.playing && this.ctx.state === 'suspended') setTimeout(finish, 0);
-			else this.idleWaiters.push(finish);
+			// Chrome renders on for a few quanta after `suspended` (measured: `currentTime` moved 29–35 ms after the
+			// event): wait until it stands still, then put Remotion's anchor on that final time (`checkPausedSeek`), so
+			// the restart's sources and the picture's wait start where the context will resume.
+			const settle = (last: number, still: number, left: number) => {
+				if (done) return;
+				const t = this.ctx.currentTime;
+				const n = t === last ? still + 1 : 0;
+				if ((n >= 2 && this.ctx.state === 'suspended') || left <= 0) {
+					if (!this.playing) this.checkPausedSeek();
+					finish();
+				} else setTimeout(() => settle(t, n, left - 1), 10);
+			};
+			const ready = () => settle(Number.NaN, 0, 30);
+			if (!this.playing && this.ctx.state === 'suspended') setTimeout(ready, 0);
+			else this.idleWaiters.push(ready);
 		});
 	}
 
@@ -1202,8 +1260,12 @@ export class MixGraph {
 	/** Remotion's playing state: the read-ahead is held while playing and follows the plan while paused. */
 	setPlaying(playing: boolean): void {
 		if (this.playing === playing) return;
-		// Play right after a short paused seek: the anchor is fixed (and the sources start again) before the run starts
-		if (playing) this.checkPausedSeek();
+		if (playing) this.primeForPlay();
+		transportLog({
+			t: this.ctx.currentTime,
+			kind: playing ? 'play' : 'pause',
+			anchor: this.sync?.anchor.value ?? 0,
+		});
 		this.playing = playing;
 		if (playing) {
 			// a run starts: whatever was primed is in use now (also when the context's own events come late)
@@ -1243,6 +1305,8 @@ export class MixGraph {
 
 	private onContextState(): void {
 		const s = this.ctx.state;
+		if (s === 'running' || s === 'suspended')
+			transportLog({ t: this.ctx.currentTime, kind: s, anchor: this.sync?.anchor.value ?? 0 });
 		if (s === 'running') {
 			// a run starts: whatever was primed is in use now
 			this.fresh = false;
@@ -1312,15 +1376,19 @@ export class MixGraph {
 		this.writeAnchor(a.value);
 		transportLog({ t: this.ctx.currentTime, kind: 'primed', anchor: a.value, value: wait });
 		this.shift = { base: a.base, shift: wait };
-		// The context's time is frozen while suspended: the next run starts at `t0`, the program `wait` later.
+		// The context's time is frozen while suspended. The sources start at the play position at `startAt` — the anchor's
+		// base plus the picture's position: Remotion's anchor relation, which holds even when the time it read was not the
+		// final frozen time (Chrome renders on for a few quanta after `suspended`) — and the program `wait` later.
 		const g = this.outGain.gain;
 		const t0 = this.ctx.currentTime;
-		this.startClock.arm(t0, wait);
+		const pos = this.pictureTime !== null ? this.pictureTime / this.pictureRate : null;
+		const startAt = pos !== null && Number.isFinite(a.base + pos) ? a.base + pos : t0;
+		this.startClock.arm(startAt, wait);
 		g.cancelScheduledValues(0);
 		g.setValueAtTime(wait > 0 ? 0 : 1, t0);
 		if (wait > 0) {
-			g.setValueAtTime(0, t0 + wait);
-			g.linearRampToValueAtTime(1, t0 + wait + START_FADE);
+			g.setValueAtTime(0, Math.max(t0, startAt + wait));
+			g.linearRampToValueAtTime(1, Math.max(t0, startAt + wait) + START_FADE);
 		}
 		if (changed && !fromSeek) {
 			this.bumpEpoch();
@@ -1347,24 +1415,38 @@ export class MixGraph {
 				if (a <= t + FLICKS_PER_SECOND && b > t) this.awaiting.add(id);
 			}
 			if (this.awaiting.size > 0) {
+				transportLog({
+					t: this.ctx.currentTime,
+					kind: 'gate',
+					anchor: this.sync?.anchor.value ?? 0,
+					value: this.awaiting.size,
+				});
 				this.gateHandle ??= this.bufferGate();
 				// Remotion raises its flag a render after the block; a Play in this very commit (a Play right after a
 				// short paused seek, `setPlaying`) must already see it, or the context resumes before the new players
 				// have scheduled anything and their first samples are lost.
 				if (this.bufferFlag) this.bufferFlag.current = true;
 				if (this.gateTimer) clearTimeout(this.gateTimer);
-				this.gateTimer = setTimeout(() => this.releaseGate(), GATE_TIMEOUT_MS);
+				this.gateTimer = setTimeout(() => this.releaseGate(true), GATE_TIMEOUT_MS);
 			} else this.releaseGate();
 		}
 		this.notify();
 	}
 
-	private releaseGate(): void {
+	private releaseGate(timedOut = false): void {
 		if (this.gateTimer) clearTimeout(this.gateTimer);
 		this.gateTimer = null;
+		const left = this.awaiting.size;
 		this.awaiting.clear();
 		const h = this.gateHandle;
 		this.gateHandle = null;
+		if (h)
+			transportLog({
+				t: this.ctx.currentTime,
+				kind: 'gate-open',
+				anchor: this.sync?.anchor.value ?? 0,
+				value: timedOut ? -left : 0,
+			});
 		h?.unblock();
 	}
 
@@ -1404,6 +1486,32 @@ export class MixGraph {
 	}
 
 	/**
+	 * Every Play starts primed, at the picture's position (sound-design Phase 6). After a seek while paused it already
+	 * is (the anchor is only checked: `checkPausedSeek`). After a plain pause it was not: the audio in flight went on —
+	 * but Remotion moves its anchor to the picture at every suspend without having its players schedule again, so the
+	 * buffers queued before the pause kept the old timeline and those scheduled after Play the new one: the audio jumped
+	 * by the picture's lag (measured 109–188 ms) when the queued ones ran out, ≈ 2 s after Play. Now the program starts
+	 * again from the picture with every source rescheduled (the picture waits the read-ahead, as after a seek).
+	 */
+	private primeForPlay(): void {
+		const sync = this.sync;
+		if (!sync || this.disposed || this.ctx.state !== 'suspended' || this.pictureTime === null) return;
+		if (this.fresh) {
+			this.checkPausedSeek();
+			return;
+		}
+		const expected = this.ctx.currentTime - this.pictureTime / this.pictureRate;
+		if (!Number.isFinite(expected)) return;
+		const was = sync.anchor.value;
+		this.writeAnchor(expected);
+		transportLog({ t: this.ctx.currentTime, kind: 'stale', anchor: expected, value: was });
+		this.shift = null;
+		this.fresh = true;
+		this.flushed = false;
+		this.prime(false);
+	}
+
+	/**
 	 * After a seek while paused: re-anchors to the picture when Remotion's anchor is stale (it ignores seeks shorter
 	 * than its tolerance, and the sources would go on from where they were), and has every source start again. Run by
 	 * `afterSeek` (a restart) and at Play — not while paused, where a scrub or frame steps would restart every source
@@ -1418,7 +1526,7 @@ export class MixGraph {
 			this.shift && Math.abs(cur - (this.shift.base + this.shift.shift)) < 1e-9 ? this.shift.base : cur;
 		if (!Number.isFinite(expected) || Math.abs(base - expected) <= ANCHOR_STALE) return;
 		this.writeAnchor(expected);
-		transportLog({ t: this.ctx.currentTime, kind: 'anchor', anchor: expected });
+		transportLog({ t: this.ctx.currentTime, kind: 'stale', anchor: expected, value: base });
 		this.shift = null;
 		this.fresh = true;
 		this.flushed = false;
@@ -1698,6 +1806,11 @@ export class MixGraph {
 		this.fps = fps;
 		this.time = timeFlicks;
 		this.audioClock = this.clockFrom(timeFlicks, clock);
+		if (this.playing && this.ctx.state === 'running') {
+			const now = this.ctx.currentTime;
+			if (this.lastUpdateAt !== null && now - this.lastUpdateAt > LATE_UPDATE) this.lastIrregular = now;
+			this.lastUpdateAt = now;
+		} else this.lastUpdateAt = null;
 		if (clock && Number.isFinite(clock.compositionFlicks) && clock.rate > 0) {
 			this.pictureTime = clock.compositionFlicks / FLICKS_PER_SECOND;
 			this.pictureRate = clock.rate;

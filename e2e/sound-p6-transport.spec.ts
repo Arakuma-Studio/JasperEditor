@@ -4,8 +4,8 @@
 // AudioWorklet (`e2e/sound-tap.ts`) with exact context frames; the graph's transport events (`__jasperTransportLog`:
 // Remotion's anchor as the graph keeps it, primed starts, refused re-anchors) say where each click must be.
 //
-// probe.wav (8 s): clicks of 0.5 at 0.03 s + k·0.25 s, and a second click 10 ms after the one at every whole second
-// + 0.03 s (a marker that names the click). It plays on A1 (a Hard Limiter, 20 ms look-ahead: 998 samples) and A2; the
+// probe8.wav (8 s): clicks of 0.5 at 0.03 s + k·0.25 s, a second click 10 ms after the one at every whole second
+// + 0.03 s (a marker that names the click), and a third 20 ms after the one at 4.03 s (the seek target's). It plays on A1 (a Hard Limiter, 20 ms look-ahead: 998 samples) and A2; the
 // Mix has a Hard Limiter too. Below the ceiling a Hard Limiter is a pure delay: the Mix is the two tracks summed
 // (0.707 per click after the −3 dB pan law), delayed by the inserts and compensated by the read-ahead (41.6 ms).
 import { spawnSync } from 'node:child_process';
@@ -25,6 +25,7 @@ const SR = 48000;
 const HL20 = 998;
 /** Plays per test (the wp-note's counts come from several runs of the spec). */
 const PLAYS = Number(process.env.E2E_P6_PLAYS ?? 6);
+const DEBUG = !!process.env.E2E_P6_DEBUG;
 /** Whether the build has the graph's transport log (the measurements that need Remotion's anchor). */
 let logged = false;
 
@@ -57,7 +58,8 @@ async function setup(): Promise<void> {
 	if (ready) return;
 	ready = true;
 	const wav = join(outDir, 'probe8.wav');
-	const clicks = 'if(lt(t\\,8)*(eq(mod(n-1440\\,12000)\\,0)+eq(mod(n-1920\\,48000)\\,0))\\,0.5\\,0)';
+	const clicks =
+		'if(lt(t\\,8)*(eq(mod(n-1440\\,12000)\\,0)+eq(mod(n-1920\\,48000)\\,0)+eq(n\\,194400))\\,0.5\\,0)';
 	ff(['-f', 'lavfi', '-i', `aevalsrc='${clicks}':s=48000:d=9`, '-ac', '2', '-c:a', 'pcm_s16le', wav]);
 	await createProject(page, 'E2E Sound P6 transport');
 	await page.getByTestId('project-panel').click({ position: { x: 40, y: 10 } });
@@ -120,10 +122,56 @@ async function takeLog(p: Page): Promise<LogEntry[]> {
 	});
 }
 
+/**
+ * Samples (context time at the output, Program frame) every animation frame until `stopSampler`, for `pictureLag`.
+ */
+async function startSampler(p: Page): Promise<void> {
+	await p.evaluate(() => {
+		const w = window as unknown as {
+			__p6frames: [number, number, number][];
+			__p6on: boolean;
+			__tap: { ctxs: { ctx: BaseAudioContext; starts: number }[] };
+			jasper: { query(n: string): Promise<{ frame: number; playing: boolean }> };
+		};
+		w.__p6frames = [];
+		w.__p6on = true;
+		const tick = async () => {
+			if (!w.__p6on) return;
+			try {
+				const ctx = w.__tap.ctxs
+					.filter((c) => c.ctx.state === 'running' && c.starts > 0)
+					.sort((a, b) => b.starts - a.starts)[0]?.ctx as AudioContext | undefined;
+				if (ctx) {
+					const { frame, playing } = await w.jasper.query('playhead.get');
+					// anime-allow: test-side wall clock of a sample
+					const now = performance.now();
+					const o = ctx.getOutputTimestamp();
+					if (playing && o.performanceTime)
+						w.__p6frames.push([(o.contextTime ?? 0) + (now - o.performanceTime) / 1000, frame, now]);
+				}
+			} catch {
+				// the bridge between projects: no sample
+			}
+			requestAnimationFrame(() => void tick());
+		};
+		requestAnimationFrame(() => void tick());
+	});
+}
+
 /** Space, `ms` of playback (with `during` from the start), Space; the tap records from just before the first Space. */
-async function playFor(p: Page, ms: number, during?: (p: Page) => Promise<void>): Promise<Recording> {
+async function playFor(
+	p: Page,
+	ms: number,
+	during?: (p: Page) => Promise<void>,
+	opts: { armed?: boolean } = {},
+): Promise<Recording> {
 	await focusTimeline(p);
-	await arm(p);
+	if (!opts.armed) await arm(p);
+	await startSampler(p);
+	await p.evaluate(() => {
+		// anime-allow: test-side wall clock of the Play press
+		(window as unknown as { __p6space: number }).__p6space = performance.now();
+	});
 	await p.keyboard.press('Space');
 	const t0 = Date.now();
 	if (during) await during(p);
@@ -133,6 +181,9 @@ async function playFor(p: Page, ms: number, during?: (p: Page) => Promise<void>)
 	await mark(p, 'pause');
 	await p.keyboard.press('Space');
 	await p.waitForTimeout(200);
+	await p.evaluate(() => {
+		(window as unknown as { __p6on: boolean }).__p6on = false;
+	});
 	return disarm(p);
 }
 
@@ -140,14 +191,32 @@ async function playFor(p: Page, ms: number, during?: (p: Page) => Promise<void>)
  * The clicks of a recording up to the pause, in context seconds, with which content click each one is: main clicks
  * (every 0.25 s) and markers (10 ms after the whole-second ones). `index` counts main clicks from the first one heard.
  */
-function clicks(rec: Recording): { t: number; v: number; marker: boolean }[] {
+function clicks(rec: Recording, min = 0.3): { t: number; v: number; marker: boolean }[] {
 	const until = rec.marks.pause ?? Number.POSITIVE_INFINITY;
-	const ps = peaks(rec, 0.3).filter((x) => x.t <= until);
+	const ps = peaks(rec, min).filter((x) => x.t <= until);
 	return ps.map((x, i) => {
 		const prev = ps[i - 1];
 		return { ...x, marker: !!prev && Math.abs(x.t - prev.t - 0.01) < 0.0005 };
 	});
 }
+
+/** Wall time (ms) from the Play press to the first picture frame after the one it started on. */
+async function playLatency(p: Page): Promise<number> {
+	return p.evaluate(() => {
+		const w = window as unknown as { __p6frames?: [number, number, number][]; __p6space?: number };
+		const f = w.__p6frames ?? [];
+		const first = f[0]?.[1];
+		const moved = f.find((x) => x[1] !== first);
+		return moved && w.__p6space !== undefined ? moved[2] - w.__p6space : Number.NaN;
+	});
+}
+
+/** Content times of the probe's clicks (main clicks, whole-second markers, the third click at 4.05 s). */
+const PROBE_EVENTS = [
+	...Array.from({ length: 32 }, (_, k) => 0.03 + 0.25 * k),
+	...Array.from({ length: 8 }, (_, m) => m + 0.04),
+	4.05,
+].sort((a, b) => a - b);
 
 /** Gaps between consecutive main clicks that are not 0.25 s (± 2 samples), with where they are. */
 function brokenSpacing(cs: { t: number; marker: boolean }[], from: number): string[] {
@@ -218,6 +287,11 @@ test('a big edit while playing (an agent adds tracks) keeps the audio going on i
 			}
 		});
 		const log = await takeLog(page);
+		// back to two tracks (the next play measures the same graph)
+		const removed = await transact(page, [
+			{ type: 'track.remove', trackIds: Array.from({ length: 12 }, (_, k) => `A${k + 3}`) },
+		]);
+		expect(removed.ok, JSON.stringify(removed)).toBe(true);
 		const from = rec.armed;
 		const to = (rec.marks.pause ?? 1e9) - 0.001;
 		const cs = clicks(rec);
@@ -233,6 +307,22 @@ test('a big edit while playing (an agent adds tracks) keeps the audio going on i
 		measured++;
 		const note = { play: measured, clicks: cs.length, refused: n, broken };
 		console.log('big edit play', JSON.stringify(note));
+		if (DEBUG && broken.length > 0)
+			console.log(
+				'debug',
+				JSON.stringify({
+					log: log.map((e) => ({
+						...e,
+						t: +(e.t - from).toFixed(4),
+						anchor: +(e.anchor - from).toFixed(4),
+						value: e.value === undefined ? undefined : +(e.value - from).toFixed(4),
+					})),
+					clicks: cs.map((c) => +(c.t - from).toFixed(4)),
+					marks: Object.fromEntries(Object.entries(rec.marks).map(([k, v]) => [k, +(v - from).toFixed(4)])),
+					stops: rec.stops.map((x) => [+(x.t - from).toFixed(4), x.player]),
+					starts: rec.starts.length,
+				}),
+			);
 		if (cs.filter((c) => !c.marker).length < 10) failures.push(`play ${measured}: ${cs.length} clicks`);
 		if (broken.length > 0) failures.push(`play ${measured}: ${broken.join(', ')}`);
 	}
@@ -259,9 +349,9 @@ test('a latency added while playing: after the restart the Mix is on time again'
 	await setup();
 	const results: string[] = [];
 	for (let i = 0; i < Math.max(2, Math.ceil(PLAYS / 2)); i++) {
+		await takeLog(page);
 		await seekPaused(page, frameAt(1));
 		await seekPaused(page, 0);
-		await takeLog(page);
 		let added: string[] = [];
 		const rec = await playFor(page, 2600, async (p) => {
 			await p.waitForTimeout(800);
@@ -281,6 +371,30 @@ test('a latency added while playing: after the restart the Mix is on time again'
 			added = r.ok ? Object.values(r.refs ?? {}) : [];
 		});
 		const log = await takeLog(page);
+		if (DEBUG)
+			console.log(
+				'debug latency',
+				JSON.stringify({
+					log: log.map((e) => ({
+						...e,
+						t: +(e.t - rec.armed).toFixed(4),
+						anchor: +(e.anchor - rec.armed).toFixed(4),
+					})),
+					clicks: clicks(rec).map((c) => +(c.t - rec.armed).toFixed(4)),
+					edit: +((rec.marks.edit ?? 0) - rec.armed).toFixed(4),
+					frames: (
+						await page.evaluate(
+							() => (window as unknown as { __p6frames?: [number, number][] }).__p6frames ?? [],
+						)
+					)
+						.filter((_, k) => k % 3 === 0)
+						.map(([t, f]) => [
+							+(t - rec.armed).toFixed(4),
+							f,
+							+(t - rec.armed - (f * fps.den) / fps.num).toFixed(4),
+						]),
+				}),
+			);
 		expect(
 			(
 				await transact(
@@ -333,42 +447,18 @@ async function pictureLag(rec: Recording, after: number, skip = 0.6): Promise<nu
 		if (t > after + skip) picture = Math.min(picture, t - (frame * fps.den) / fps.num);
 	const cs = clicks(rec);
 	const named = cs.findIndex((c, i) => !c.marker && c.t > after + skip && cs[i + 1]?.marker);
-	if (named < 0 || !Number.isFinite(picture)) return Number.NaN;
+	if (named < 0 || !Number.isFinite(picture)) {
+		console.log(
+			'pictureLag: no measure',
+			JSON.stringify({ samples: samples.length, named, picture, after, last: samples.slice(-3) }),
+		);
+		return Number.NaN;
+	}
 	const c = cs[named]!;
 	// content time of the named click: a whole second + 0.03 s, the one the picture puts nearest
 	const m = Math.round(c.t - picture - 0.03);
 	return picture - (c.t - (m + 0.03));
 }
-
-test.beforeEach(async () => {
-	// samples (context time at the output, frame) every animation frame while playing, for `pictureLag`
-	await page.evaluate(() => {
-		const w = window as unknown as {
-			__p6frames: [number, number][];
-			__p6raf?: number;
-			__tap: { ctxs: { ctx: BaseAudioContext; starts: number }[] };
-			jasper: { query(n: string): Promise<{ frame: number; playing: boolean }> };
-		};
-		w.__p6frames = [];
-		if (w.__p6raf) return;
-		const tick = async () => {
-			const ctx = w.__tap.ctxs
-				.filter((c) => c.ctx.state === 'running' && c.starts > 0)
-				.sort((a, b) => b.starts - a.starts)[0]?.ctx as AudioContext | undefined;
-			if (ctx && w.jasper) {
-				const { frame, playing } = await w.jasper.query('playhead.get');
-				// anime-allow: test-side wall clock of a sample
-				const now = performance.now();
-				const o = ctx.getOutputTimestamp();
-				if (playing && o.performanceTime)
-					w.__p6frames.push([(o.contextTime ?? 0) + (now - o.performanceTime) / 1000, frame]);
-				if (w.__p6frames.length > 4000) w.__p6frames.splice(0, 2000);
-			}
-			w.__p6raf = requestAnimationFrame(() => void tick());
-		};
-		w.__p6raf = requestAnimationFrame(() => void tick());
-	});
-});
 
 test('Play with a long read-ahead (0.62 s): the first click is heard, the picture waits for it and shows buffering', async () => {
 	test.setTimeout(600_000);
@@ -389,10 +479,11 @@ test('Play with a long read-ahead (0.62 s): the first click is heard, the pictur
 	try {
 		const wait = (30 * HL20) / SR;
 		for (let i = 0; i < Math.max(2, Math.ceil(PLAYS / 2)); i++) {
+			await takeLog(page);
 			await seekPaused(page, frameAt(1));
 			await seekPaused(page, 0);
 			let sawBuffering = false;
-			const rec = await playFor(page, 1400, async (p) => {
+			const rec = await playFor(page, 2200, async (p) => {
 				sawBuffering = await p
 					.getByTestId('program-buffering')
 					.waitFor({ state: 'visible', timeout: 500 })
@@ -402,6 +493,19 @@ test('Play with a long read-ahead (0.62 s): the first click is heard, the pictur
 					);
 			});
 			const cs = clicks(rec);
+			if (DEBUG) {
+				const log = await takeLog(page);
+				console.log(
+					'debug long',
+					JSON.stringify(
+						log.map((e) => ({
+							...e,
+							t: +(e.t - rec.armed).toFixed(4),
+							anchor: +(e.anchor - rec.armed).toFixed(4),
+						})),
+					),
+				);
+			}
 			console.log(
 				'long read-ahead play',
 				i + 1,
@@ -446,32 +550,44 @@ test('seek while playing: the audio after the seek starts on its first sample', 
 		const log = await takeLog(page);
 		const enter = rec.marks.enter ?? 0;
 		const cs = clicks(rec);
-		// The old position's audio stops at the seek, the new one starts after it: the first click after the longest
-		// silence that follows the Enter is the first one of the new position. It must be the one at 4.03 s (26 ms after
-		// the target frame 120 = 4.004 s), named by the click 10 ms after it: none of the new position's first samples is
-		// lost.
-		const after = cs.filter((c) => c.t > enter);
-		let gapAt = 0;
-		let longest = after.length > 0 ? after[0]!.t - enter : 0;
-		for (let j = 1; j < after.length; j++)
-			if (after[j]!.t - after[j - 1]!.t > longest) {
-				longest = after[j]!.t - after[j - 1]!.t;
-				gapAt = j;
-			}
-		const fresh = after.slice(gapAt);
+		// Groups of a main click and its markers. After the Enter: the old position's single clicks until the pause,
+		// then the new position's audio — its first group must be the triple of 4.03 s (26 ms after the target frame 120
+		// = 4.004 s): none of its first samples lost, nothing earlier than the target.
+		const groups: { t: number; size: number }[] = [];
+		for (const c of cs) {
+			if (c.marker && groups.length > 0) groups[groups.length - 1]!.size++;
+			else groups.push({ t: c.t, size: 1 });
+		}
+		const after = groups.filter((g) => g.t > enter);
+		const firstNamed = after.findIndex((g) => g.size > 1);
+		const fresh = firstNamed >= 0 ? after[firstNamed]! : null;
 		console.log(
 			'seek while playing',
 			i + 1,
-			JSON.stringify({ longest, fresh: fresh.slice(0, 4).map((c) => [(c.t - enter).toFixed(4), c.marker]) }),
+			JSON.stringify(after.slice(0, 8).map((g) => [+(g.t - enter).toFixed(4), g.size])),
 		);
-		expect(fresh.length, JSON.stringify(cs)).toBeGreaterThan(2);
-		expect(fresh[0]!.marker).toBe(false);
-		expect(fresh[1]?.marker, JSON.stringify(fresh.slice(0, 3))).toBe(true);
+		if (DEBUG)
+			console.log(
+				'debug',
+				JSON.stringify({
+					log: log.map((e) => ({
+						...e,
+						t: +(e.t - enter).toFixed(4),
+						anchor: +(e.anchor - enter).toFixed(4),
+					})),
+					stops: rec.stops.map((x) => [+(x.t - enter).toFixed(4), x.player]),
+				}),
+			);
+		expect(fresh?.size, JSON.stringify(after)).toBe(3);
+		// and nothing of the new position before it (the single clicks before it are the old position's, before the hold)
+		const before = after.slice(0, firstNamed);
+		if (before.length > 0)
+			expect(fresh!.t - before[before.length - 1]!.t, JSON.stringify(after)).toBeGreaterThan(0.25);
 		if (logged) {
 			const primed = log.filter((e) => e.kind === 'primed' && e.t >= enter - 0.05).at(-1);
 			expect(primed, JSON.stringify(log)).toBeTruthy();
 			// the 4.03 s click on its sample against the primed anchor (content time = sequence time here)
-			const off = fresh[0]!.t - primed!.anchor - 4.03;
+			const off = fresh!.t - primed!.anchor - 4.03;
 			console.log('seek while playing: first click against the anchor', (off * SR).toFixed(2), 'samples');
 			expect(Math.abs(off * SR), JSON.stringify(log)).toBeLessThan(2);
 		}
@@ -483,6 +599,7 @@ test('many paused seeks + Play: every play starts on its first sample, nothing f
 	await setup();
 	const n = Number(process.env.E2E_P6_STRESS ?? PLAYS * 4);
 	const anomalies: string[] = [];
+	const latencies: number[] = [];
 	let measured = 0;
 	let replays = 0;
 	const W = (2 * HL20) / SR;
@@ -497,30 +614,78 @@ test('many paused seeks + Play: every play starts on its first sample, nothing f
 		const frame = frameAt(0.3 + rnd() * 6.5);
 		await seekPaused(page, pre);
 		await playFor(page, 150 + Math.round(rnd() * 300));
-		await seekPaused(page, frame);
+		// a real seek: away from where the play before paused (a pause and Play goes on from there, unprimed)
+		const at = (await query<{ frame: number }>(page, 'playhead.get')).frame;
+		const target = frame === at ? frame + 3 : frame;
+		await takeLog(page);
+		if (DEBUG)
+			await page.evaluate(() => {
+				(window as unknown as { __tap: { all?: unknown[] } }).__tap.all = [];
+			});
+		await seekPaused(page, target);
 		const rec = await playFor(page, 700);
-		const pos = (frame * fps.den) / fps.num;
-		// the next main click at or after the play position: content 0.03 + 0.25 k
-		const k = Math.ceil((pos - 0.03 - 1e-9) / 0.25);
-		const next = 0.03 + 0.25 * k;
+		const pos = (target * fps.den) / fps.num;
+		// the next click (main or marker) at or after the play position
+		const next = PROBE_EVENTS.find((e) => e >= pos - 1e-9) ?? Number.NaN;
 		const expected = rec.armed + W + (next - pos);
-		const cs = clicks(rec);
+		// the program fades in over START_FADE (30 ms) from its start: a click that soon after the play position is
+		// heard that much softer (0.707 at full level)
+		const level = 0.7071 * Math.min(1, Math.max(0, (next - pos) / 0.03));
+		const cs = clicks(rec, 0.02);
 		const late = lateStarts(rec, rec.armed, expected + 0.3);
 		const first = cs[0];
 		const early = cs.filter((c) => c.t < expected - 2 / SR);
 		const off = first ? (first.t - expected) * SR : Number.NaN;
-		if ((early.length > 0 || !(Math.abs(off) < 2)) && late.length > 0) {
+		// (a click between two samples — a sub-sample start — splits over them: at least half of it on one)
+		const soft = !!first && level > 0.05 && (first.v < 0.5 * level - 0.02 || first.v > level + 0.02);
+		latencies.push(await playLatency(page));
+		if ((early.length > 0 || !(Math.abs(off) < 2) || soft) && late.length > 0) {
 			replays++;
 			continue;
 		}
 		measured++;
-		if (early.length > 0 || !(Math.abs(off) < 2)) {
+		if (level < 0.05) {
+			// the next click is in the first 2 ms of the fade: inaudible by design; the one after it must be on time
+			const after = PROBE_EVENTS.find((e) => e > next + 1e-9)!;
+			const second = cs.find((c) => c.t > expected + 0.001);
+			if (second && Math.abs((second.t - expected - (after - next)) * SR) < 2 && early.length === 0) continue;
+		}
+		if (early.length > 0 || !(Math.abs(off) < 2) || soft) {
+			if (DEBUG) {
+				const log = await takeLog(page);
+				console.log(
+					'debug anomaly',
+					JSON.stringify({
+						log: log.map((e) => ({
+							...e,
+							t: +(e.t - rec.armed).toFixed(4),
+							anchor: +(e.anchor - rec.armed).toFixed(4),
+						})),
+						clicks: cs.slice(0, 6).map((c) => [+(c.t - rec.armed).toFixed(5), +c.v.toFixed(3), c.marker]),
+						expected: +(expected - rec.armed).toFixed(5),
+						stops: rec.stops.map((x) => [+(x.t - rec.armed).toFixed(4), x.player]),
+						starts: rec.starts.slice(0, 8).map((x) => [+(x.t - rec.armed).toFixed(4), x.player]),
+						connects: rec.connects
+							.slice(0, 12)
+							.map((x) => [+(x.t - rec.armed).toFixed(4), x.suspended, x.player]),
+						all: await page.evaluate(() =>
+							((window as unknown as { __tap: { all?: unknown[][] } }).__tap.all ?? [])
+								.filter((x) => x[0] === 'start')
+								.slice(0, 16),
+						),
+						armed: rec.armed,
+						firstFrame: rec.frames[0]! / SR - rec.armed,
+					}),
+				);
+			}
 			anomalies.push(
 				JSON.stringify({
 					play: measured,
 					pre,
-					frame,
+					paused: at,
+					frame: target,
 					offSamples: off,
+					level: [first?.v, level],
 					early: early.map((c) => [((c.t - rec.armed) * 1000).toFixed(2), c.v.toFixed(3)]),
 					stops: rec.stops.length,
 				}),
@@ -543,4 +708,47 @@ test('many paused seeks + Play: every play starts on its first sample, nothing f
 	});
 	expect(measured).toBe(n);
 	expect(anomalies).toEqual([]);
+});
+
+test('pause and Play again: the audio goes on with every click on its sample', async () => {
+	test.setTimeout(600_000);
+	await setup();
+	const failures: string[] = [];
+	for (let i = 0; i < Math.max(2, Math.ceil(PLAYS / 2)); i++) {
+		await seekPaused(page, frameAt(1));
+		await seekPaused(page, frameAt(0.5));
+		await playFor(page, 900);
+		await page.waitForTimeout(400);
+		await takeLog(page);
+		// Remotion's queued buffers last up to 2 s: 3.4 s of play covers buffers scheduled before and after the pause
+		const rec = await playFor(page, 3400);
+		const log = await takeLog(page);
+		const lat = await playLatency(page);
+		const cs = clicks(rec, 0.02).filter((c) => !c.marker);
+		const broken = brokenSpacing(cs, rec.armed);
+		console.log(
+			'pause and play',
+			i + 1,
+			JSON.stringify({
+				clicks: cs.length,
+				broken,
+				first: cs[0] ? cs[0].t - rec.armed : null,
+				playLatencyMs: lat,
+			}),
+		);
+		if (DEBUG && broken.length > 0)
+			console.log(
+				'debug resume',
+				JSON.stringify(
+					log.map((e) => ({
+						...e,
+						t: +(e.t - rec.armed).toFixed(4),
+						anchor: +(e.anchor - rec.armed).toFixed(4),
+					})),
+				),
+			);
+		if (cs.length < 12) failures.push(`play ${i + 1}: ${cs.length} clicks`);
+		if (broken.length > 0) failures.push(`play ${i + 1}: ${broken.join(', ')}`);
+	}
+	expect(failures).toEqual([]);
 });

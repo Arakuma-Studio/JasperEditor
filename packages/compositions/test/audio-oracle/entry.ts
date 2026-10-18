@@ -227,3 +227,88 @@ async function played(spec: PlayedSpec): Promise<{ channels: number[][]; latency
 }
 
 (window as unknown as { __mix: Record<string, unknown> }).__mix.played = played;
+
+type GuardSpec = {
+	workletUrl: string;
+	mix: RenderAudioMix;
+	fps: Rational;
+	fpsValue: number;
+	length: number;
+	/** Remotion's re-anchor requests: at picture frame `frame`, an anchor `delta` seconds from the original one. */
+	asks: { frame: number; delta: number }[];
+	/** Picture frames with no update (a busy main thread: frames committed late). */
+	skip?: number[];
+};
+
+/**
+ * Sound design Phase 6: the anchor guard of `MixGraph.attachSync` while playing, driven as Remotion drives it — one
+ * graph update per picture frame, and at some frames a re-anchor (Remotion's `setGlobalTimeAnchor`: the anchor written,
+ * then `changed` dispatched). The context reports `running` (an offline context reads `suspended` at its suspend
+ * points). Returns what the media players (the subscribers) were told and the picture advances asked for.
+ */
+async function guard(spec: GuardSpec): Promise<{
+	anchors: number[];
+	changed: number[];
+	advanced: { frame: number; frames: number }[];
+}> {
+	setMixWorkletUrl(spec.workletUrl);
+	const sr = spec.mix.sampleRate;
+	const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: spec.length, sampleRate: sr });
+	Object.defineProperty(ctx, 'state', { configurable: true, get: () => 'running' });
+	const graph = new MixGraph(ctx as unknown as AudioContext, ctx.destination);
+	if (!(await mixWorkletReady(ctx))) throw new Error('the mix worklet did not load');
+	const listeners: ((e: string) => void)[] = [];
+	const anchor = { value: 0 };
+	const changed: number[] = [];
+	const advanced: { frame: number; frames: number }[] = [];
+	let frame = 0;
+	const emitter = {
+		dispatch(e: string) {
+			for (const l of listeners) l(e);
+		},
+	};
+	listeners.push((e) => {
+		if (e === 'changed') changed.push(frame);
+	});
+	graph.update(spec.mix, [], 0, spec.fps);
+	graph.attachSync({
+		anchor,
+		subscribe: (cb) => {
+			listeners.push(cb);
+			return () => listeners.splice(listeners.indexOf(cb), 1);
+		},
+		emitter,
+	});
+	// the picture moved ahead by the advances so far (Remotion then asks for less, or nothing under its tolerance)
+	let moved = 0;
+	graph.setPictureAdvance((n) => {
+		advanced.push({ frame, frames: n });
+		moved += n / spec.fpsValue;
+		return true;
+	}, spec.fpsValue);
+	graph.setPlaying(true);
+	const F = 705_600_000 / spec.fpsValue;
+	const anchors: number[] = [];
+	const frames = Math.floor((spec.length / sr) * spec.fpsValue);
+	for (let k = 1; k < frames; k++) {
+		const at = Math.round((k * sr) / spec.fpsValue / 128) * 128;
+		if (at <= 0 || at >= spec.length) continue;
+		void ctx.suspend(at / sr).then(async () => {
+			frame = k;
+			if (!spec.skip?.includes(k))
+				graph.update(spec.mix, [], k * F, spec.fps, { compositionFlicks: k * F, rate: 1 });
+			const ask = spec.asks.find((a) => a.frame === k);
+			if (ask && Math.abs(ask.delta - moved) >= 0.1) {
+				anchor.value = ask.delta - moved;
+				emitter.dispatch('changed');
+			}
+			anchors.push(anchor.value);
+			await ctx.resume();
+		});
+	}
+	await ctx.startRendering();
+	graph.setPlaying(false);
+	return { anchors, changed, advanced };
+}
+
+(window as unknown as { __mix: Record<string, unknown> }).__mix.guard = guard;

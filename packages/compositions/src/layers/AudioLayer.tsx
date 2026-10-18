@@ -101,11 +101,15 @@ export function AudioLayer({
 	);
 	const clipRef = useRef(clip);
 	clipRef.current = clip;
-	// A stable context value: Remotion re-creates its media player when the context object changes. That happens when
-	// the clip's own effect latency changes, or when the graph asks every source to reschedule while paused (its
-	// read-ahead or the primed start changed: `MixGraph.epoch`); never for a latency change during playback, when the
-	// graph holds its read-ahead (sound-design Phase 0 close-out). The lead is read when each buffer is scheduled.
-	// biome-ignore lint/correctness/useExhaustiveDependencies: fxLatency and epoch re-create the media player on purpose
+	// The schedule epoch the media player's buffers are being scheduled for (read when each buffer is scheduled).
+	const epochRef = useRef(epoch);
+	epochRef.current = epoch;
+	// A stable context value: Remotion re-creates its media player when the context object changes (only with the
+	// shared context or the clip node). When every source must schedule again — the graph's read-ahead or a primed
+	// start changed while paused (`MixGraph.epoch`), or the clip's own effect latency changed — the player is not
+	// re-created (that re-opened and re-probed the media, sound-design Phase 6): its trim moves by a millionth of a
+	// frame (`TRIM_NUDGE`, a 0.03 µs shift), which makes Remotion drop its queued buffers and schedule again from the
+	// current position with the current anchor; the lead is read when each buffer is scheduled.
 	const routed = useMemo(
 		() =>
 			shared && node && graph
@@ -115,13 +119,14 @@ export function AudioLayer({
 						...compensate(
 							shared,
 							() => graph.clipLead(clipRef.current),
-							// the new player is under way: a playback held for the sources to start again may go on
-							() => graph.noteScheduled(clipRef.current.clipId, epoch),
+							// the player is under way: a playback held for the sources to start again may go on
+							() => graph.noteScheduled(clipRef.current.clipId, epochRef.current),
 						),
 					}
 				: null,
-		[shared, node, graph, fxLatency, epoch],
+		[shared, node, graph],
 	);
+	const nudge = useToggle(routed ? `${epoch}|${fxLatency}` : '');
 	// The source plays `graphLatency` ahead of the picture: its levels are those of the samples it is playing.
 	const leadFrames = routed ? (graphLatency * num) / den : 0;
 	const volume = useCallback(
@@ -150,9 +155,9 @@ export function AudioLayer({
 		<Audio
 			src={src}
 			trimBefore={
-				(reversed && src === reversed) || (mappedUrl && src === mappedUrl)
+				((reversed && src === reversed) || (mappedUrl && src === mappedUrl)
 					? 0
-					: videoTrimBefore(clip, { num, den })
+					: videoTrimBefore(clip, { num, den })) + (nudge ? TRIM_NUDGE : 0)
 			}
 			playbackRate={clip.speed.rate}
 			volume={volume}
@@ -245,6 +250,16 @@ function useMappedAudio(clip: RenderAudioClip, src: string | null, fps: Rational
 }
 
 type SharedAudio = NonNullable<React.ContextType<typeof Internals.SharedAudioContext>>;
+
+/** Frames the trim moves by to have Remotion schedule a media player's audio again (`AudioLayer`). */
+const TRIM_NUDGE = 1e-6;
+
+/** Flips each time `key` changes after the first render (false at first). */
+function useToggle(key: string): boolean {
+	const state = useRef({ key, on: false });
+	if (state.current.key !== key) state.current = { key, on: !state.current.on };
+	return state.current.on;
+}
 
 const noGraph = () => () => undefined;
 

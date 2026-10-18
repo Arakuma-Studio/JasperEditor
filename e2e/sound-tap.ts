@@ -22,6 +22,8 @@ export const TAP = () => {
 		stops: { t: number; player: number }[];
 		late: { t: number; by: number }[];
 		starts: { t: number; player: number }[];
+		/** Media buffers connected (Remotion schedules each right after): context time, state, player. */
+		connects: { t: number; suspended: boolean; player: number }[];
 	};
 	const w = window as unknown as { __tap: Tap };
 	// Which player a buffer source belongs to: the node it is first connected to (each Remotion media player has its
@@ -29,12 +31,12 @@ export const TAP = () => {
 	const players = new WeakMap<AudioNode, number>();
 	const playerOf = new WeakMap<AudioBufferSourceNode, number>();
 	let nextPlayer = 0;
-	w.__tap = { on: false, ctxs: [], stops: [], late: [], starts: [] };
+	w.__tap = { on: false, ctxs: [], stops: [], late: [], starts: [], connects: [] };
 	const code = `class T extends AudioWorkletProcessor {
 		constructor() { super(); this.on = false; this.buf = [];
 			this.port.onmessage = (e) => { this.on = e.data.on; if (!this.on) { this.port.postMessage(this.buf); this.buf = []; } }; }
 		process(inputs) { const x = inputs[0] && inputs[0][0];
-			if (this.on && x) { this.buf.push({ f: currentFrame, d: new Float32Array(x) });
+			if (this.on) { this.buf.push({ f: currentFrame, d: x ? new Float32Array(x) : new Float32Array(128) });
 				if (this.buf.length >= 256) { this.port.postMessage(this.buf); this.buf = []; } }
 			return true; } }
 	registerProcessor('jasper-e2e-tap', T);`;
@@ -74,6 +76,18 @@ export const TAP = () => {
 				players.set(dest, id);
 			}
 			playerOf.set(this, id);
+			if (w.__tap.on)
+				w.__tap.connects.push({
+					t: this.context.currentTime,
+					suspended: this.context.state !== 'running',
+					player: id,
+				});
+			(w.__tap as unknown as { all?: unknown[] }).all?.push([
+				'connect',
+				+this.context.currentTime.toFixed(5),
+				this.context.state === 'running' ? 'r' : 's',
+				id,
+			]);
 		}
 		if (dest instanceof AudioDestinationNode) return connect.apply(this, [busOf(dest), ...args.slice(1)]);
 		return connect.apply(this, args);
@@ -91,6 +105,15 @@ export const TAP = () => {
 	AudioBufferSourceNode.prototype.start = function (this: AudioBufferSourceNode, ...a: number[]) {
 		const when = a[0] ?? 0;
 		const ctx = this.context;
+		// diagnostics (a spec sets `__tap.all` to an array): every media buffer start, also while suspended
+		(w.__tap as unknown as { all?: unknown[] }).all?.push([
+			'start',
+			+ctx.currentTime.toFixed(5),
+			+when.toFixed(5),
+			+(a[1] ?? 0).toFixed(5),
+			ctx.state === 'running' ? 'r' : 's',
+			playerOf.get(this) ?? -1,
+		]);
 		const entry = w.__tap.ctxs.find((c) => c.ctx === ctx);
 		if (entry) entry.starts++;
 		if (w.__tap.on && ctx.state === 'running')
@@ -116,6 +139,8 @@ export type Recording = {
 	late: { t: number; by: number }[];
 	/** Every media buffer start while the context ran: context time and player. */
 	starts: { t: number; player: number }[];
+	/** Every media buffer Remotion scheduled (connected), also while suspended. */
+	connects: { t: number; suspended: boolean; player: number }[];
 	marks: Record<string, number>;
 };
 
@@ -130,6 +155,7 @@ export async function arm(p: Page): Promise<void> {
 					stops: unknown[];
 					late: unknown[];
 					starts: unknown[];
+					connects: unknown[];
 					armedAll?: number[];
 				};
 			}
@@ -143,6 +169,7 @@ export async function arm(p: Page): Promise<void> {
 		t.stops.length = 0;
 		t.late.length = 0;
 		t.starts.length = 0;
+		t.connects.length = 0;
 		// the program context is suspended while paused: its frozen time is where the next Play starts
 		t.armedAll = t.ctxs.map((c) => c.ctx.currentTime);
 		t.on = true;
@@ -183,6 +210,7 @@ export async function disarm(p: Page): Promise<Recording> {
 					stops: { t: number; player: number }[];
 					late: { t: number; by: number }[];
 					starts: { t: number; player: number }[];
+					connects: { t: number; suspended: boolean; player: number }[];
 					marks?: Record<string, number>;
 					armedAll?: number[];
 				};
@@ -194,10 +222,19 @@ export async function disarm(p: Page): Promise<Recording> {
 		const best = t.ctxs[bestIndex]!;
 		const frames: number[] = [];
 		const data: number[] = [];
-		for (const b of best.blocks) {
-			frames.push(b.f);
+		// Chrome's worklet `currentFrame` advances once per device callback, which may render several quanta (measured:
+		// five blocks with the same frame, then a jump of 640), so it can lag the block it is read in. Every quantum the
+		// context renders is recorded (silent ones too) and the context's frames stand still while it is suspended: block
+		// `i` is at `first + 128 i`, `first` the largest `f − 128 i` read (a lagging read is only ever too small). A click
+		// read with the lagging frame looked up to 512 samples early.
+		let first = Number.NEGATIVE_INFINITY;
+		best.blocks.forEach((b, i) => {
+			first = Math.max(first, b.f - 128 * i);
+		});
+		best.blocks.forEach((b, i) => {
+			frames.push(first + 128 * i);
 			for (const v of b.d) data.push(v);
-		}
+		});
 		const marks = t.marks ?? {};
 		t.marks = {};
 		return {
@@ -208,6 +245,7 @@ export async function disarm(p: Page): Promise<Recording> {
 			stops: t.stops.map((s) => ({ t: s.t, player: s.player })),
 			late: t.late.map((l) => ({ t: l.t, by: l.by })),
 			starts: t.starts.map((x) => ({ t: x.t, player: x.player })),
+			connects: t.connects.map((x) => ({ t: x.t, suspended: x.suspended, player: x.player })),
 			marks,
 		};
 	});

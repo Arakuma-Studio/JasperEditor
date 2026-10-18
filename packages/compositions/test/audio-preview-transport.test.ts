@@ -256,6 +256,25 @@ describe.runIf(!!CHROME)(
 			expect(worst(p.channels, e1, AT + HL + 128, HL)).toBeLessThan(1e-4);
 		});
 
+		it('a track added during playback (Hear proposal, an agent): every strip keeps its state, nothing is lost', async () => {
+			// Sound design Phase 6: a new strip changed the graph's topology, which rebuilt every strip — the audio in
+			// A1's and the Mix's limiters and in the route delays was dropped (a gap of up to the read-ahead).
+			const c = scene([limiter('fx_a')], [limiter('fx_m')]);
+			const next = JSON.parse(JSON.stringify(c.snapshot.audioMix)) as RenderAudioMix;
+			const a2 = next.strips.find((x) => x.label === 'A2')!;
+			next.strips.splice(next.strips.indexOf(a2) + 1, 0, {
+				...a2,
+				id: 'trk_new',
+				label: 'A3',
+				name: 'A3',
+				inserts: [],
+			});
+			const [p, e] = await Promise.all([run(c, 'live', next), exported(c, c.snapshot.audioMix!)]);
+			expect(p.plan).toEqual({ before: 2 * HL, after: 2 * HL });
+			expect(longestGap(p.channels, AT, AT + 8 * HL)).toBe(0);
+			expect(worst(p.channels, e, 0)).toBeLessThan(1e-4);
+		});
+
 		it('an insert removed during playback: the Mix is padded to the held read-ahead and stays aligned', async () => {
 			const c = scene([limiter('fx_a'), limiter('fx_b')]);
 			const next = edited(c.snapshot.audioMix!, [limiter('fx_a')]);

@@ -1205,6 +1205,24 @@ function MixGraphDriver({
 		graph.setBufferGate(() => buffer.delayPlayback(), buffering?.buffering);
 		return () => graph.setBufferGate(null);
 	}, [graph, buffer, buffering]);
+	// A picture that fell behind the audio catches up (the anchor guard): Remotion's frame state, as its playback loop
+	// advances it.
+	const setTimelineFrame = Internals.Timeline.useTimelineSetFrame();
+	const config = Internals.useUnsafeVideoConfig();
+	const compositionId = config?.id ?? null;
+	const compositionFps = config?.fps ?? 30;
+	const lastFrame = (config?.durationInFrames ?? 1) - 1;
+	useEffect(() => {
+		if (!compositionId) return;
+		graph.setPictureAdvance((n) => {
+			setTimelineFrame((c) => {
+				const cur = c[compositionId] ?? 0;
+				return { ...c, [compositionId]: Math.min(lastFrame, cur + n) };
+			});
+			return true;
+		}, compositionFps);
+		return () => graph.setPictureAdvance(null, compositionFps);
+	}, [graph, setTimelineFrame, compositionId, compositionFps, lastFrame]);
 	// The playback rate (J / L shuttle): with Remotion's sync anchor the graph reads the audio clock's time from it.
 	const playbackRate = useContext(Internals.PlaybackRateContext)?.playbackRate ?? 1;
 	// (before the playing state below: a Play that comes with a seek is checked against the new picture position)
