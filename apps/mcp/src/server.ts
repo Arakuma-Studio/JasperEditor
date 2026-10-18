@@ -41,6 +41,7 @@ import { registerShapeTools, registerVectorShapeTools, SHAPES_GUIDE } from './to
 import { registerSimWarpTools, SIM_WARP_GUIDE } from './tools/sim-warp.ts';
 import { registerSoundTools, SOUND_GUIDE } from './tools/sound.ts';
 import { registerSoundCheckTools } from './tools/sound-check.ts';
+import { registerSoundBedTools } from './tools/sound-beds.ts';
 import { registerSoundDesignTools } from './tools/sound-design.ts';
 import { registerSoundListenTools } from './tools/sound-listen.ts';
 import { registerSoundMotionTools } from './tools/sound-motion.ts';
@@ -173,6 +174,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerAudioFxTools(ctx);
 	registerSoundTools(ctx);
 	registerSoundDesignTools(ctx);
+	registerSoundBedTools(ctx);
 	registerSoundCheckTools(ctx);
 	registerSoundMotionTools(ctx);
 	registerSoundTimelineTools(ctx);

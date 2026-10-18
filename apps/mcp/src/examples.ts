@@ -500,6 +500,16 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		delivery: 'broadcast-r128',
 		ducking: [{ clipIds: [{ clipAt: { track: 'A1', at: 0 } }], regions: [[176_400_000, 529_200_000]] }],
 	},
+	// …and an ambience bed: a loop of a media laid over a range (lay_ambience_bed measures the clean window and loop
+	// points of a recording and passes them as `loop`; `shots` lays one bed per scene).
+	'soundDesign.layBed': {
+		type: 'soundDesign.layBed',
+		range: { start: 0, end: 90 },
+		mediaId: { mediaByName: 'clip-a.mp4' },
+		loop: { inSec: 0.1, outSec: 0.9 },
+		crossfadeSec: 0.2,
+		gainDb: -12,
+	},
 };
 
 /** A multi-command transaction showing temp refs. */
