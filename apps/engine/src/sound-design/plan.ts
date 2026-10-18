@@ -221,7 +221,7 @@ export function resolveStyle(req: SoundDesignPlanRequest, seq: Sequence): PlanSt
 		st.palette === undefined || st.palette === 'project' ? (settings.palette ?? []) : st.palette;
 	const grammar = resolveSoundStyle(
 		{
-			...(st.personality ? { personality: st.personality } : {}),
+			...(st.personality !== undefined ? { personality: st.personality } : {}),
 			...(st.runs ? { runs: st.runs } : {}),
 			...(st.typing ? { typing: st.typing } : {}),
 			...(st.musicCarriesCuts !== undefined ? { musicCarriesCuts: st.musicCarriesCuts } : {}),

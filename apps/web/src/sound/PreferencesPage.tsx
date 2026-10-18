@@ -3,7 +3,8 @@
 // after the licence is shown, remove; WP6.1, PacksSection.tsx); the library status and reindexing
 // (an engine `sound-index` job, also listed in the Jobs panel); and the audition options (audition on hover, loop,
 // auto-play, volume) and row density. Folder changes are validated by the engine and saved with "Save Folders".
-// Proposals: "Allow agents to apply sound proposals" for the active sequence (WP3.3b).
+// Proposals: "Allow agents to apply sound proposals" for the active sequence (WP3.3b). Sound design style: the active
+// sequence's cue grammar and personality (P6-E10, `soundDesign.setSettings {style}`; WP-E6).
 import {
 	SOUND_ROOT_LICENSES,
 	type SoundLibraryStatus,
@@ -13,14 +14,16 @@ import {
 import { EngineError } from '@jasper/engine-client';
 import {
 	DELIVERY_PRESETS,
+	type ResolvedSoundStyle,
 	readSoundDesignSettings,
 	requiresAttribution,
+	resolveSoundStyle,
 	type SoundDelivery,
 } from '@jasper/project';
 import type { SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { Button, Checkbox, ScrubbyNumber, Select, TextField, Toggle } from '@jasper/ui';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { runCommand } from '../commands/registry.ts';
 import { t } from '../i18n/runtime.ts';
 import { EMPTY_SESSION_STORE } from '../panels/session-store.ts';
@@ -30,6 +33,7 @@ import { PrefGroup, PrefRow } from '../shell/preferences/GeneralPage.tsx';
 import { useEngine } from '../state/engine.tsx';
 import { DELIVERY_IDS, deliveryOptionLabel, sequenceDelivery } from './mix-model.ts';
 import { PacksSection } from './PacksSection.tsx';
+import { SoundStyleFields, type StyleField } from './StyleControls.tsx';
 import {
 	MAX_AUDITION_DB,
 	MAX_PRE_ROLL_SEC,
@@ -449,6 +453,7 @@ export function SoundLibraryPreferencesPage() {
 
 			<AgentApplyPreference />
 			<DeliveryPreference />
+			<StylePreference />
 
 			<PrefGroup title="Display">
 				<Checkbox
@@ -587,6 +592,54 @@ export function DeliveryPreference() {
 					Delivery Target…
 				</Button>
 			</div>
+			{error ? <p className="text-pr-small text-pr-warning">{error}</p> : null}
+		</PrefGroup>
+	);
+}
+
+/**
+ * The active sequence's sound design style (spec 12 P6-E10; WP-E6): personality, runs, typing, music carries the cuts
+ * and duck under typing, stored in the project (`soundDesign.settings.style`) with `soundDesign.setSettings {style}` as
+ * the user's undoable edit. Auto Sound Pass…, Fill Unfilled Cues, Suggest Cues… and agents (plan_sound_design,
+ * place_sound picks, find_sound_cues) start from it.
+ */
+export function StylePreference() {
+	const session = useSessionOrNull();
+	const seqId = useStoreSelector(
+		session?.store ?? EMPTY_SESSION_STORE,
+		(s: SessionState | null) => s?.activeSequenceId ?? null,
+	);
+	// a string snapshot (a fresh object per read would never be equal to the last one)
+	const raw = useStoreSelector(session?.store ?? EMPTY_SESSION_STORE, (s: SessionState | null) => {
+		const seq = seqId ? s?.document.sequences[seqId] : undefined;
+		return JSON.stringify(
+			readSoundDesignSettings((seq as { soundDesign?: { settings?: unknown } } | undefined)?.soundDesign?.settings)
+				.style ?? {},
+		);
+	});
+	const readOnly = useStoreSelector(
+		session?.store ?? EMPTY_SESSION_STORE,
+		(s: SessionState | null) => !!s?.readOnly,
+	);
+	const [error, setError] = useState<string | null>(null);
+	const value = useMemo(() => resolveSoundStyle(JSON.parse(raw) as ResolvedSoundStyle), [raw]);
+	const set = (next: ResolvedSoundStyle, field: StyleField) => {
+		if (!session || !seqId || next[field] === value[field]) return;
+		const r = session.apply({
+			label: t('Sound Design Style'),
+			origin: 'user',
+			sequenceId: seqId,
+			commands: [{ type: 'soundDesign.setSettings', sequenceId: seqId, style: { [field]: next[field] } } as never],
+		});
+		setError(r.ok ? null : (r.errors[0]?.message ?? t('Edit failed')));
+	};
+	return (
+		<PrefGroup title="Sound design style" testId="prefs-sound-style">
+			<SoundStyleFields value={value} onChange={set} disabled={!session || !seqId || readOnly} testId="prefs-style-fields" />
+			<p className="text-pr-small text-pr-muted">
+				Saved with the sequence. Auto Sound Pass, Fill Unfilled Cues, Suggest Cues and agents start from it: one
+				click voice, takes for keys, climbing runs, one key per word for fast typing, fewer cut sounds under music.
+			</p>
 			{error ? <p className="text-pr-small text-pr-warning">{error}</p> : null}
 		</PrefGroup>
 	);

@@ -3,8 +3,9 @@
 // old one played, keeping the clip's track, role, pan, gain (the user's offset), effects, group, link and cue link.
 //
 // Variation cycling walks a per-clip list anchored on the clip's ring (`sfx.alternatives`, the original sound first,
-// stored by Fill / agents, or by the first variation step of a clip without one): the ring, then sounds of the
-// original's family, then its nearest descriptors (engine `similarTo`). The list is the same in every run, and a run
+// stored by Fill / agents, or by the first variation step of a clip without one): the ring, then — for a take — the
+// recording's other clean takes (P6-E10), then sounds of the original's family, then its nearest descriptors (engine
+// `similarTo`). The list is the same in every run, and a run
 // starts from the sound the clip plays, so presses after another edit continue the cycle and come back to the original. Repeated presses on
 // the same clips coalesce into ONE history entry "Swap Sound ×4" (the session's coalescing with no time window and a
 // changing label); the run closes on any other edit or undo (the document revision moves), a selection of other clips
@@ -12,7 +13,15 @@
 // added up and applied as one step. With "Audition on swap" (default on) the 2 s around the swapped sound play in
 // context afterwards.
 import type { EngineClient } from '@jasper/engine-client';
-import { type Clip, type Command, type Sequence, SOUND_DESIGN_LIMITS, SOUND_REF_RE } from '@jasper/project';
+import {
+	type Clip,
+	type Command,
+	offeredTakeIds,
+	parseTakeId,
+	type Sequence,
+	SOUND_DESIGN_LIMITS,
+	SOUND_REF_RE,
+} from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { t } from '../i18n/runtime.ts';
 import {
@@ -215,7 +224,9 @@ export async function variationCandidates(
 			.then((e) => e.types)
 			.catch(() => types);
 	const fam = familyRequest(types, 12);
-	const [family, similar] = await Promise.all([
+	// P6-E10 "vary the take, not the pitch": a take's recording offers its other clean takes first
+	const parent = anchor ? parseTakeId(anchor)?.parentId : undefined;
+	const [family, similar, siblings] = await Promise.all([
 		fam
 			? engine
 					.searchSounds(fam)
@@ -228,8 +239,14 @@ export async function variationCandidates(
 					.then((r) => r.results.map((x) => x.sound.id))
 					.catch(() => [])
 			: [],
+		parent
+			? Promise.resolve()
+					.then(() => engine.getSound(parent))
+					.then((e) => offeredTakeIds(e))
+					.catch(() => [] as string[])
+			: ([] as string[]),
 	]);
-	return variationList(anchor, ring, family, similar);
+	return variationList(anchor, ring, family, similar, siblings);
 }
 
 export type VariationStep = { ok: true; message: string; steps: number } | { ok: false; message: string };

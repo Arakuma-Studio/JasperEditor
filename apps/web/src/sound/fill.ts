@@ -4,7 +4,8 @@
 // it on the cue — the cue gives the role (hero / support), the alignment (its `align`, else the sound type's), the pan
 // or pan sweep; the variation ring (the chosen sound, then the next 1–3 ranked sounds) is stored for variation cycling
 // (`sfx.alternatives`, original first, as MCP place_sound stores it); `variationOf` gives
-// the seeded ±2 % speed and ±1 dB gain. A layer (Add Layer…) is placed on the next free SFX track, aligned to the same
+// the seeded ±2 % speed and ±1 dB gain, by the sound type's policy (P6-E10: speed 1 for keys, ticks and taps; no
+// variation for the one ui / click voice). A layer (Add Layer…) is placed on the next free SFX track, aligned to the same
 // point, and linked to the cue's other clips (Premiere-style link: moving one moves the others).
 // Fill Unfilled Cues ranks sounds per cue with the engine, picks one with `pickVariant` (round-robin over the top 4,
 // never the same file twice in a row) and fills every cue in one transaction; cues that cannot be placed are skipped
@@ -17,6 +18,7 @@ import {
 	type Sequence,
 	type SoundCue,
 	soundDesignSettingsOf,
+	variationForFill,
 	variationOf,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -94,7 +96,15 @@ export async function fillCueWithSound(
 	const existing = placedClips(seq, cue);
 	const layer = !!opts.layer && existing.length > 0;
 	const settings = soundDesignSettingsOf(seq as { soundDesign?: unknown });
-	const v = variationOf({ seed: settings.seed, cueId: cue.id, sequenceId: seq.id, layer: existing.length });
+	// P6-E10 variation policy of the sound's type: ±2 % / ±1 dB, keys / ticks / taps ±1 dB at speed 1, ui / click none
+	const types = sounds[0]?.reg.library.types ?? (entry as { types?: readonly string[] }).types ?? [];
+	const v = variationOf({
+		seed: settings.seed,
+		cueId: cue.id,
+		sequenceId: seq.id,
+		layer: existing.length,
+		variation: variationForFill(types, cue.types ?? []),
+	});
 	// the clip's variation ring: the chosen sound first (the cycle's anchor), then up to 3 ranked alternatives
 	const others = (opts.alternatives ?? []).filter((id) => id !== entry.id).slice(0, 3);
 	const alternatives = others.length ? [entry.id, ...others] : [];

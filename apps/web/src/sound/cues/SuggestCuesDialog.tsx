@@ -3,14 +3,20 @@
 // adds the derived cues — each with its reason, anchor and source `derived` — in ONE transaction "Suggest Cues (n)".
 // P6 (WP6.2): the engine's measured sources — shot changes inside footage, music beats, picture motion — with their
 // counts, an Analyze… button where they are not measured yet, and "Snap to the beat" (EngineSources.tsx).
+// P6-E10 (WP-E6): the cue grammar — personality (its excluded types leave the suggestions, it sets its default
+// density), typing (one key per word above 25 typed per second) and "music carries the cuts" — starting from the
+// sequence's style; what the user changed is stored with the cues (`soundDesign.setSettings {style}`, same step).
 
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	type CueDensity,
 	documentHasActiveExpressions,
 	PROJECT_CUE_SOURCES,
+	type ResolvedSoundStyle,
 	readSoundDesignSettings,
+	resolveSoundStyle,
 	SOUND_DENSITIES,
+	SOUND_PERSONALITY_PROFILES,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Checkbox, Dialog, type HostedDialogProps, registerDialog, Select } from '@jasper/ui';
@@ -19,6 +25,7 @@ import type { ToastRequest } from '../../commands/types.ts';
 import { useExpressionsFor } from '../../expressions/engine.ts';
 import { useDialogClose } from '../../extensions/dialog.ts';
 import { t } from '../../i18n/runtime.ts';
+import { SoundStyleFields } from '../StyleControls.tsx';
 import { type EngineCueSource, EngineSourceRows, useEngineSources } from './EngineSources.tsx';
 import { type ProjectCueSource, planSuggestion, type SuggestRange, suggestRange } from './suggest.ts';
 
@@ -74,6 +81,8 @@ export function SuggestCuesDialog(
 	const [replace, setReplace] = useState(true);
 	const [engineSources, setEngineSources] = useState<ReadonlySet<EngineCueSource>>(() => new Set());
 	const [snapToBeats, setSnapToBeats] = useState(false);
+	const stored = resolveSoundStyle(settings.style);
+	const [style, setStyle] = useState<ResolvedSoundStyle>(() => stored);
 	// the range the engine measures (stable by value, so it is not asked again on every render)
 	const rangeNow = seq ? suggestRange(seq, range, selectedClips) : null;
 	const rs = rangeNow?.start ?? -1;
@@ -98,6 +107,9 @@ export function SuggestCuesDialog(
 				engineCues: measured.cues,
 				voiceActivity: measured.voice,
 				snapToBeats,
+				typing: style.typing,
+				musicCarriesCuts: style.musicCarriesCuts,
+				personality: style.personality,
 			}),
 		[
 			doc,
@@ -113,6 +125,9 @@ export function SuggestCuesDialog(
 			measured.cues,
 			measured.voice,
 			snapToBeats,
+			style.typing,
+			style.musicCarriesCuts,
+			style.personality,
 		],
 	);
 	const n = plan.adds.length;
@@ -128,8 +143,19 @@ export function SuggestCuesDialog(
 	const suggest = () => {
 		if (!seq || !plan.commands.length) return;
 		const commands = [...plan.commands];
-		if (density !== settings.density)
-			commands.unshift({ type: 'soundDesign.setSettings', sequenceId, density } as never);
+		// the choices the user changed become the sequence's (density, and the grammar: fills and passes use them)
+		const styleChanges = {
+			...(style.personality !== stored.personality ? { personality: style.personality } : {}),
+			...(style.typing !== stored.typing ? { typing: style.typing } : {}),
+			...(style.musicCarriesCuts !== stored.musicCarriesCuts ? { musicCarriesCuts: style.musicCarriesCuts } : {}),
+		};
+		if (density !== settings.density || Object.keys(styleChanges).length)
+			commands.unshift({
+				type: 'soundDesign.setSettings',
+				sequenceId,
+				...(density !== settings.density ? { density } : {}),
+				...(Object.keys(styleChanges).length ? { style: styleChanges } : {}),
+			} as never);
 		const r = session.apply({
 			label: t('Suggest Cues ({0})', n),
 			origin: 'user',
@@ -219,6 +245,16 @@ export function SuggestCuesDialog(
 						]}
 					/>
 				</div>
+				<SoundStyleFields
+					value={style}
+					fields={['personality', 'typing', 'musicCarriesCuts']}
+					onChange={(next, field) => {
+						setStyle(next);
+						if (field === 'personality' && next.personality)
+							setDensity(SOUND_PERSONALITY_PROFILES[next.personality].density);
+					}}
+					testId="suggest-cues-style"
+				/>
 				<div className="flex items-center gap-2" data-testid="suggest-cues-density">
 					<span className="w-[110px] shrink-0 text-pr-muted">Density</span>
 					<Select

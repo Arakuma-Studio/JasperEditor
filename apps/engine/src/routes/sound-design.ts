@@ -561,7 +561,7 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 				// P6-E10 cue grammar (absent: the sequence's style)
 				...(opts.typing ? { typing: opts.typing } : {}),
 				...(opts.musicCarriesCuts !== undefined ? { musicCarriesCuts: opts.musicCarriesCuts } : {}),
-				...(opts.personality ? { personality: opts.personality } : {}),
+				...(opts.personality !== undefined ? { personality: opts.personality } : {}),
 			});
 			const rate = seq.settings.frameRate as Rational;
 			const fps = rate.num / rate.den;

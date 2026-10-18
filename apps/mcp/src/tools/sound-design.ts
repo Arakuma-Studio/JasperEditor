@@ -554,9 +554,10 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 					),
 				personality: z
 					.enum(SOUND_PERSONALITIES)
+					.nullable()
 					.optional()
 					.describe(
-						`Cue grammar personality (default: the sequence's style): its excluded types leave the suggested types, its boosted ones come first, and it brings its density when density is not given: ${PERSONALITY_LIST}`,
+						`Cue grammar personality (default: the sequence's style; null: none): its excluded types leave the suggested types, its boosted ones come first, and it brings its density when density is not given: ${PERSONALITY_LIST}`,
 					),
 				typing: z
 					.enum(SOUND_TYPING_MODES)
@@ -619,7 +620,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 								...(a.minGapFrames !== undefined ? { minGapFrames: a.minGapFrames } : {}),
 								...(a.snapToBeats ? { snapToBeats: true } : {}),
 								...(a.timeSignature !== undefined ? { timeSignature: a.timeSignature } : {}),
-								...(a.personality ? { personality: a.personality } : {}),
+								...(a.personality !== undefined ? { personality: a.personality } : {}),
 								...(a.typing ? { typing: a.typing } : {}),
 								...(a.musicCarriesCuts !== undefined ? { musicCarriesCuts: a.musicCarriesCuts } : {}),
 								maxCues: a.maxCues ?? 500,
@@ -1969,9 +1970,10 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 							),
 						personality: z
 							.enum(SOUND_PERSONALITIES)
+							.nullable()
 							.optional()
 							.describe(
-								`Cue grammar personality (default: the sequence's style): ${PERSONALITY_LIST}. It ranks sounds by its tone / attack / weight / texture and materials, boosts and excludes types, and brings its density when density is not given`,
+								`Cue grammar personality (default: the sequence's style; null: none): ${PERSONALITY_LIST}. It ranks sounds by its tone / attack / weight / texture and materials, boosts and excludes types, and brings its density when density is not given`,
 							),
 						runs: z
 							.enum(SOUND_RUN_MODES)

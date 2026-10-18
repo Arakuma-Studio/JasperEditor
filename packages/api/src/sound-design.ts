@@ -78,9 +78,9 @@ export const SoundCuesOptionsSchema = z.strictObject({
 	musicCarriesCuts: z.boolean().optional(),
 	/**
 	 * P6-E10 personality: its excluded types leave a cue's suggested types (when another fits), its boosted ones come
-	 * first; `density` defaults to the personality's. Default: the sequence's style personality (none).
+	 * first; `density` defaults to the personality's. Default: the sequence's style personality (none); null = none.
 	 */
-	personality: z.enum(SOUND_PERSONALITIES).optional(),
+	personality: z.enum(SOUND_PERSONALITIES).nullable().optional(),
 });
 export type SoundCuesOptions = z.infer<typeof SoundCuesOptionsSchema>;
 
@@ -348,9 +348,10 @@ export const SoundDesignPlanStyleSchema = z.strictObject({
 	/**
 	 * P6-E10 personality (calm, energetic, bright, precise, mechanical, warm): ranking preferences (tone, attack, weight,
 	 * texture), type boosts and exclusions, preferred materials and a default density (used when `density` is not
-	 * given). Default: the sequence's `soundDesign.settings.style.personality` (none).
+	 * given). Default: the sequence's `soundDesign.settings.style.personality` (none); null = none, whatever the
+	 * sequence's.
 	 */
-	personality: z.enum(SOUND_PERSONALITIES).optional(),
+	personality: z.enum(SOUND_PERSONALITIES).nullable().optional(),
 	/** P6-E10 runs of ≥ 3 appear / emphasis cues ≤ 0.6 s apart: `climb` (+1 st per step, capped +4; default) or `flat`. */
 	runs: z.enum(SOUND_RUN_MODES).optional(),
 	/** P6-E10 typing patterns of derived cues (`auto` default, `keys`, `words`, `silent`). */

@@ -10,6 +10,7 @@ import {
 	clipPitchOf,
 	FLICKS_PER_SECOND,
 	formatTimecode,
+	isSoundTypeId,
 	type LibraryProvenance,
 	type LicenseClass,
 	licenseClass,
@@ -18,16 +19,19 @@ import {
 	type Rational,
 	readClipSfx,
 	readLibraryProvenance,
+	resolveSoundStyle,
 	type Sequence,
-	SOUND_REF_RE,
 	SOUND_TYPES,
 	type SoundCue,
 	type SoundFamily,
+	sequenceSoundStyle,
 	soundDesignSettingsOf,
+	styleCueTypes,
 	typesForVisualKind,
 	typesOfFamily,
 	VISUAL_KINDS,
 	type VisualKind,
+	variationCycle,
 } from '@jasper/project';
 import { t } from '../i18n/runtime.ts';
 import {
@@ -253,14 +257,31 @@ export function cueSearchRequest(
 	const win =
 		cue.window && cue.window.end > cue.window.start ? (cue.window.end - cue.window.start) / fps : null;
 	const used = soundsUsedNear(doc, seq, cue.frame, { exclude: placedClips(seq, cue) });
+	// P6-E10: the sequence's personality ranks, and the placed sounds' materials keep one material family per film
+	const personality = resolveSoundStyle(sequenceSoundStyle(seq)).personality;
+	const placed = placedSoundIds(doc, seq);
 	return {
-		...(types.length ? { types: types.slice(0, 32) } : {}),
+		...(types.length ? { types: styleCueTypes(types.filter(isSoundTypeId), personality).slice(0, 32) } : {}),
 		...(kind ? { visualKind: kind } : {}),
 		...(win && win > 0 && win <= 600 ? { windowSec: Math.round(win * 1000) / 1000 } : {}),
 		...(cue.align ? { align: cue.align } : {}),
 		...(used.length ? { usedNearby: used } : {}),
+		...(personality ? { personality } : {}),
+		...(placed.length ? { placed } : {}),
 		limit,
 	};
+}
+
+/** Library sounds the sequence's clips play, in frame order (aligned point, else start), each once, ≤ 64. */
+export function placedSoundIds(doc: Pick<ProjectDocument, 'media'>, seq: Sequence): string[] {
+	const list: { id: string; at: number; clip: string }[] = [];
+	for (const c of Object.values(seq.clips)) {
+		if (c.kind !== 'audio') continue;
+		const id = clipSoundId(doc, c);
+		if (id) list.push({ id, at: alignedFrameOf(doc, seq, c) ?? c.start, clip: c.id });
+	}
+	list.sort((a, b) => a.at - b.at || (a.clip < b.clip ? -1 : 1));
+	return [...new Set(list.map((x) => x.id))].slice(0, 64);
 }
 
 /** The family of a sound's first known type. */
@@ -274,7 +295,8 @@ export function familyOf(types: readonly string[]): SoundFamily | null {
 
 /**
  * Variation candidates of a clip (spec 12 §2.7 "Variation cycling"): the agent's / Fill's alternatives (the clip's, and
- * its cue's first layer's), then sounds of the same family, then the nearest descriptors (engine `similarTo`); the
+ * its cue's first layer's), then — when the original is a take — its sibling takes (P6-E10 `variationCycle`), then
+ * sounds of the same family, then the nearest descriptors (engine `similarTo`); the
  * clip's own sound first (index 0: cycling past the end comes back to it). Deduplicated, ≤ 32.
  */
 export function variationList(
@@ -282,11 +304,10 @@ export function variationList(
 	alternatives: readonly string[],
 	family: readonly string[],
 	similar: readonly string[],
+	/** P6-E10: when the original is a take, its recording's other clean takes (after the ring: vary the take). */
+	siblings: readonly string[] = [],
 ): string[] {
-	const out: string[] = [];
-	for (const id of [current, ...alternatives, ...family, ...similar])
-		if (typeof id === 'string' && SOUND_REF_RE.test(id) && !out.includes(id)) out.push(id);
-	return out.slice(0, 32);
+	return variationCycle({ anchor: current, ring: alternatives, siblings, family, similar });
 }
 
 /** Alternatives a clip carries for cycling: its own, else those of its cue's other layers. */
