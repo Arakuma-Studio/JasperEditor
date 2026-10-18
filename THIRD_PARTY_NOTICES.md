@@ -9535,6 +9535,30 @@ reported only for two or more onsets and when it is 12 dB under the loudest wind
 30 dB down) under 12 kHz instead of the 95 % roll-off itself, which is under 12 kHz for nearly every natural click
 (earshot's `analyze.py` measures its roll-off on a 22.05 kHz resample, so its own "> 12 kHz" rule cannot be met there).
 
+## Listening transcript and sound sheet (sound design WP-E3, 2026-10-18)
+
+| Upstream path | Our path | What |
+|---|---|---|
+| `earshot/timeline.py` (`onset_curve`, `log_mel`, `_robust_z`, `_attack`, `_band_envs`, `_length_ms`, `_kw_env_db`, `detect_events`) | `packages/audio-fx/src/analysis/events.ts` (`ListenMeter`, `LogBandStft`) | Superflux onset curve at 5 ms frames (mean positive log-band increase over the maximum of the neighbouring bands two frames before), peak-picked over ±25 ms with a robust z ≥ 3 over ±1 s (floor 2 % of the 99th percentile); attack on 1 ms max-abs envelopes of the full signal, < 200 Hz and > 2 kHz (4th-order Butterworth): the band standing out most, walking back from the peak to the first millisecond within 20 dB of it over the bed, full-band timing when it rises 12 dB there; length to −20 dB or 3 dB over the bed for 30 ms (≤ 2 s); 3 dB minimum contrast, onsets within 30 ms merged; prominence of the K-weighted 10 ms level (1 ms steps) over the median of the 20–300 ms before (floor −80) |
+| `earshot/timeline.py` (`level_envs`, `_swells`) | `packages/audio-fx/src/analysis/events.ts` (`ListenMeter` swells) | 10 ms RMS of the signal and its highs smoothed over 90 ms; rises ≥ 8 dB over 0.25–2 s, ≥ 60 % rising steps, then a 4 dB fall; timed at the peak |
+| `earshot/timeline.py` (`_silences`) | `packages/audio-fx/src/analysis/events.ts` (`ListenMeter` silences) | Fast (100 ms) loudness 20 LU under the integrated loudness (or under −60 / −70 LUFS) for ≥ 0.25 s, closed over 7 hops; digital silence / near silence / drop |
+| `earshot/timeline.py` (`_strong`, `_accents`, `_answer`, `_chance`, `sync`) | `packages/audio-fx/src/analysis/events.ts` (`strongThreshold`, `accentThreshold`, `answerPictureEvent`, `syncChance`, `syncStats`), `apps/engine/src/sound-design/listen.ts` | Strong onsets (prominence ≥ min(6 dB, 40th percentile)), accents (top 20 % and ≥ 6 dB), the answer ladder (OK within a frame, near ≤ 100 ms strong first, swell ≤ 300 ms, a strong onset ≤ 250 ms named for an unanswered one), the chance of each share (random times within the tolerance of an event over the picture events' span ± 1 s), on-beat share within 50 ms |
+| `earshot/timeline.py` (`transcript`, `_event_line`, `_unanswered_line`) | `apps/engine/src/sound-design/listen.ts` (the lines) | A chronological transcript: summary and sync lines with chance, section, event, silence and "no sound" lines (our wording; every event names the clip and cue behind it, which earshot cannot) |
+| `earshot/sheet.py` (lanes) | `apps/mcp/src/sound-timeline.ts` (`drawSoundTimeline` picture, spectrogram, sections and sync lanes) | The idea of the annotated sheet's lanes (frames, spectrogram, sections, cue markers by sync); the drawing, geometry (`cells`) and shapes are ours |
+
+Notes: Python/NumPy/SciPy → TypeScript; no code was copied. Changes (all deterministic): the analysis streams in 30 s
+chunks with 2.5 s of context and bounded memory; log-spaced triangular bands (96, 30 Hz–16 kHz) instead of mel and an
+absolute −100 dB floor instead of "80 dB under the file's maximum"; the MAD is taken around each candidate's own median
+and the z floor and the bed fallback are local to the chunk; the prominence window ends with the event (earshot: 80 ms
+always, so a bed flicker just before a hit borrowed the hit's level); onsets within 30 ms merge into one event starting at
+the first attack (earshot keeps the stronger one's time); a swell is dropped for an onset at its peak only when that onset
+explains half its rise; only events rising ≥ 3 dB answer a picture event and count for chance (earshot counts any onset);
+the chance is the exact measure of the union of the tolerance windows (earshot samples a 5 ms grid). Ours only: lanes of
+non-overlapping clips render each clip's own events, a mix event is attributed to the clip whose own onset explains it
+(timed by the earlier of the two attacks), and a clip's own onset is looked at in the mix where the onset curve hides it
+(kept when the mix rises ≥ 3 dB there). Not ported: CLAP / AST tags, sections by Foote novelty and genre, the beat
+tracker, the level-peak fallback for unanswered cuts.
+
 ## Code ported by the `edit-structure` workstream
 
 Record: `licenses/ported/edit-structure.md`

@@ -49,6 +49,8 @@ and the z floor and the bed fallback are local to the chunk; the prominence wind
 always, so a bed flicker just before a hit borrowed the hit's level); onsets within 30 ms merge into one event starting at
 the first attack (earshot keeps the stronger one's time); a swell is dropped for an onset at its peak only when that onset
 explains half its rise; only events rising ≥ 3 dB answer a picture event and count for chance (earshot counts any onset);
+an event's peak is the centre of its loudest 2 ms of mean power (the sound descriptors' `peakSec`, the point placement
+aligns) and a sound answers at its attack or its peak (earshot: its attack, then a level-peak fallback);
 the chance is the exact measure of the union of the tolerance windows (earshot samples a 5 ms grid). Ours only: lanes of
 non-overlapping clips render each clip's own events, a mix event is attributed to the clip whose own onset explains it
 (timed by the earlier of the two attacks), and a clip's own onset is looked at in the mix where the onset curve hides it

@@ -12,7 +12,15 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
 import { FIXTURE_COMMANDS } from '../apps/mcp/test/sound-cues-fixture.ts';
-import { appliedLabels, enableAgentBridge, playheadFrame, query, ROOT, serverInfo, transact } from './support.ts';
+import {
+	appliedLabels,
+	enableAgentBridge,
+	playheadFrame,
+	query,
+	ROOT,
+	serverInfo,
+	transact,
+} from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -30,7 +38,8 @@ test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage({ viewport: { width: 1800, height: 1050 } });
 	await enableAgentBridge(page);
 	const env: Record<string, string> = {};
-	for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith('JASPER_')) env[k] = v;
+	for (const [k, v] of Object.entries(process.env))
+		if (v !== undefined && !k.startsWith('JASPER_')) env[k] = v;
 	const transport = new StdioClientTransport({
 		command: process.execPath,
 		args: [MCP_BUNDLE, '--appdir', serverInfo().appdir],
@@ -47,7 +56,9 @@ test.afterAll(async () => {
 });
 
 async function call(name: string, args: Record<string, unknown>): Promise<CallToolResult> {
-	const r = (await mcp.callTool({ name, arguments: args }, undefined, { timeout: LONG_MS })) as CallToolResult;
+	const r = (await mcp.callTool({ name, arguments: args }, undefined, {
+		timeout: LONG_MS,
+	})) as CallToolResult;
 	const first = (r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
 	expect(r.isError, `${name}: ${first}\n${mcpLog.join('').slice(-2000)}`).toBeFalsy();
 	return r;
@@ -55,7 +66,19 @@ async function call(name: string, args: Record<string, unknown>): Promise<CallTo
 
 function wav(name: string, args: string[]): string {
 	const file = join(outDir, name);
-	const r = spawnSync(FFMPEG, ['-v', 'error', '-y', ...args, '-ar', '48000', '-ac', '2', '-c:a', 'pcm_s16le', file]);
+	const r = spawnSync(FFMPEG, [
+		'-v',
+		'error',
+		'-y',
+		...args,
+		'-ar',
+		'48000',
+		'-ac',
+		'2',
+		'-c:a',
+		'pcm_s16le',
+		file,
+	]);
 	expect(r.status, String(r.stderr)).toBe(0);
 	return file;
 }
@@ -97,7 +120,9 @@ async function menu(p: Page, item: string) {
 
 const panel = () => page.locator('[data-panel-kind="soundCheck"][data-instance-id]');
 
-test('Log tab and listen_to_sequence on the Phase 4 fixture with a knock in the interview', async ({ request }) => {
+test('Log tab and listen_to_sequence on the Phase 4 fixture with a knock in the interview', async ({
+	request,
+}) => {
 	test.setTimeout(5_400_000);
 	const projectId = await createProject(page, 'E2E Listen');
 	const music = wav('music.wav', ['-f', 'lavfi', '-i', 'anoisesrc=d=14:c=pink:a=0.08:seed=7', '-t', '14']);
@@ -116,12 +141,28 @@ test('Log tab and listen_to_sequence on the Phase 4 fixture with a knock in the 
 	await (await chooser).setFiles([music, interview]);
 	for (const n of ['music.wav', 'interview.wav'])
 		await expect(page.getByTestId('project-row').filter({ hasText: n })).toBeVisible({ timeout: 120_000 });
-	const items = await query<Record<string, { id: string; name: string }>>(page, 'doc.get', { path: ['items'] });
+	const items = await query<Record<string, { id: string; name: string }>>(page, 'doc.get', {
+		path: ['items'],
+	});
 	const item = (n: string) => Object.values(items).find((i) => i.name === n)!.id;
 	const setup = await transact(page, [
-		...((FIXTURE_COMMANDS as { type: string }[]).filter((c) => c.type !== 'clip.addMotionGraphic') as never[]),
-		{ type: 'clip.place', source: { projectItemId: item('music.wav') }, at: 0, tracks: { audio: 'A1' }, ref: '$m' },
-		{ type: 'clip.place', source: { projectItemId: item('interview.wav') }, at: 0, tracks: { audio: 'A2' }, ref: '$d' },
+		...((FIXTURE_COMMANDS as { type: string }[]).filter(
+			(c) => c.type !== 'clip.addMotionGraphic',
+		) as never[]),
+		{
+			type: 'clip.place',
+			source: { projectItemId: item('music.wav') },
+			at: 0,
+			tracks: { audio: 'A1' },
+			ref: '$m',
+		},
+		{
+			type: 'clip.place',
+			source: { projectItemId: item('interview.wav') },
+			at: 0,
+			tracks: { audio: 'A2' },
+			ref: '$d',
+		},
 		{ type: 'essentialSound.setType', clipIds: ['$m'], audioType: 'music' },
 		{ type: 'essentialSound.setType', clipIds: ['$d'], audioType: 'dialogue' },
 	] as never);
@@ -137,12 +178,15 @@ test('Log tab and listen_to_sequence on the Phase 4 fixture with a knock in the 
 	await expect(dialog).toBeVisible();
 	await dialog.getByRole('button', { name: 'Propose' }).click();
 	await expect(page.getByTestId('review-bar')).toBeVisible({ timeout: LONG_MS });
-	if (await dialog.getByTestId('auto-pass-notes').isVisible()) await dialog.locator('[data-dialog-primary]').click();
+	if (await dialog.getByTestId('auto-pass-notes').isVisible())
+		await dialog.locator('[data-dialog-primary]').click();
 	await expect(dialog).toBeHidden();
 	const before = await appliedLabels(page);
 	await page.getByTestId('review-bar-accept-all').click();
 	await page.getByTestId('review-bar-apply').click();
-	await expect.poll(async () => (await appliedLabels(page)).length, { timeout: 120_000 }).toBe(before.length + 1);
+	await expect
+		.poll(async () => (await appliedLabels(page)).length, { timeout: 120_000 })
+		.toBe(before.length + 1);
 	await page.getByTestId('review-bar-exit').click();
 
 	// Sequence ▸ Sound Design ▸ Listen to Sequence: the Log tab
@@ -162,7 +206,9 @@ test('Log tab and listen_to_sequence on the Phase 4 fixture with a knock in the 
 	expect(panelLines[0]).toMatch(/Listened 00[:;]00[:;]00[:;]00/);
 	expect(panelLines.some((l) => / · SFX A\d+ "/.test(l))).toBe(true);
 	// the knock in the interview is the dialogue clip's
-	const knock = panelLines.find((l) => /^00[:;]00[:;]06[:;]1[3-6] {2}hit, .*dialogue, A2 "interview\.wav"/.test(l));
+	const knock = panelLines.find((l) =>
+		/^00[:;]00[:;]06[:;]1[3-6] {2}hit, .*dialogue, A2 "interview\.wav"/.test(l),
+	);
 	expect(knock, panelLines.join('\n')).toBeDefined();
 
 	// a line jumps the playhead and selects its clip; the spectrogram strip
@@ -205,7 +251,11 @@ test('Log tab and listen_to_sequence on the Phase 4 fixture with a knock in the 
 				placed: compact.placed.length,
 				heard,
 				ownOffsetMsMaxAbs: offsets.length ? Math.max(...offsets.map(Math.abs)) : null,
-				ownOffsets: compact.placed.map((p) => ({ title: p.title, heard: p.heard, ownOffsetMs: p.ownOffsetMs })),
+				ownOffsets: compact.placed.map((p) => ({
+					title: p.title,
+					heard: p.heard,
+					ownOffsetMs: p.ownOffsetMs,
+				})),
 				counts: compact.counts,
 				sync: compact.sync,
 				unanswered: compact.unanswered,
@@ -228,5 +278,6 @@ test('Log tab and listen_to_sequence on the Phase 4 fixture with a knock in the 
 		`listen real run: own offsets (ms) ${compact.placed.map((p) => `${p.title}: ${p.ownOffsetMs}`).join('; ')}; ${within1}/${offsets.length} within 1 ms`,
 	);
 	expect(within1 / Math.max(1, offsets.length)).toBeGreaterThanOrEqual(0.7);
-	for (const p of compact.placed) if (p.ownOffsetMs !== null) expect(Math.abs(p.ownOffsetMs), p.title).toBeLessThanOrEqual(50);
+	for (const p of compact.placed)
+		if (p.ownOffsetMs !== null) expect(Math.abs(p.ownOffsetMs), p.title).toBeLessThanOrEqual(50);
 });

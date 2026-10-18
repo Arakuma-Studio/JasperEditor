@@ -533,7 +533,8 @@ export async function listenSequence(
 	// can hide its first milliseconds) and the attack the mix shows (`mixMs`)
 	const timeOf = (x: Attributed) =>
 		x.own && x.own.e.shape === x.e.shape ? Math.min(x.own.seqMs, x.seqMs) : x.seqMs;
-	const peakOf = (x: Attributed) => renderMs0 + (x.own && x.own.e.shape === x.e.shape ? x.own.e.peakMs : x.e.peakMs);
+	const peakOf = (x: Attributed) =>
+		renderMs0 + (x.own && x.own.e.shape === x.e.shape ? x.own.e.peakMs : x.e.peakMs);
 	const ix = syncIndex(attributed.map((x) => ({ ...x.e, ms: timeOf(x), peakMs: peakOf(x) })));
 	const answers: PictureAnswer[] = pics.map((p) => answerPictureEvent(ix, msOfFrame(p.frame), frameMs));
 	const pictureEvents: SoundListenPictureEvent[] = pics.map((p, i) => ({
