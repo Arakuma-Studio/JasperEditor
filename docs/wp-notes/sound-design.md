@@ -8464,3 +8464,205 @@ strings, es.json complete); README (356 tools, the HTTP list), security review (
 - The transcript is English in every UI language (the panel prints the engine's lines verbatim).
 - WP-E4 (reference profiles) can reuse `ListenMeter` (onsets per second, salient hits, silences, the sync shares and their
   chance) and `syncStats` for its "sync" metrics.
+
+### Phase 6 → WP-E6 Cue grammar, variation policy, personality, palette coherence
+
+Branch `feat/sd-pe-e6-sfx-rules`. Spec 12 §4 P6-E10 (without the `materials` index field, which WP-E5 built): the rules
+that make a pass sound designed rather than random, as ONE pure policy module every path calls —
+`packages/project/src/sound/grammar.ts` — so the plan job (Auto Sound Pass…, Fill Unfilled Cues), cue derivation
+(Suggest Cues…, `find_sound_cues`, the plan's `cues: "auto"`, Sound Check's coverage), MCP `place_sound {sound: {type}}`
+picks, the search route (Fill With ▸ lists, MCP picks) and variation cycling (web Next / Previous Variation, MCP
+`swap_sound next`) decide the same way. Agents cannot hear: these rules encode the craft for them (the guide says so).
+The ideas and norms come from earshot's real-sound skill (`skills/real-sound/references/sound-design.md` §1–§3, §6 and
+`scripts/mix.py` rules; MIT, Copyright (c) 2026 Leon Lin, commit `9721326`), reimplemented, nothing copied; rows added to
+`licenses/ported/earshot.md` (`THIRD_PARTY_NOTICES.md` regenerated). Norms cited there as *(norm)* are "earshot norm
+(n = 7–8 launch films measured by one person, Cinetic's measurements)": defaults the user can change through the style,
+not truths.
+
+Files: model `packages/project/src/sound/{grammar.ts (new), taxonomy.ts (variation), variant.ts (policies), rank.ts
+(personality and material parts), text-events.ts (wordStartUnits), proposal-draft.ts (take setup item ids)}`,
+`sound/cues/{derive,text,types,util}.ts`, `schema/sound.ts` (`SoundDesignSettings.style`, `readSoundDesignStyle`),
+`commands/{schemas,handlers}/sound.ts` (`soundDesign.setSettings {style}`); API `packages/api/src/sound-design.ts` (plan
+style, cue options, `carried`, report `grammar`, event `variation` / `run`, skip code `MUSIC_CARRIES_CUT`),
+`packages/api/src/sounds.ts` (search `personality`, `placed`; rank parts `style`, `material`); engine
+`apps/engine/src/sound-design/{plan.ts, plan-levels.ts (sameLevel)}`, `routes/sound-design.ts`, `sounds/search.ts`; MCP
+`apps/mcp/src/tools/sound-design.ts` (`plan_sound_design` style, `find_sound_cues` options, `place_sound` picks,
+`swap_sound` sibling takes), `sound.ts` (guide); web `apps/web/src/sound/{StyleControls.tsx (new), AutoSoundPassDialog.tsx,
+cues/SuggestCuesDialog.tsx, cues/suggest.ts, PreferencesPage.tsx (Sound design style), fill.ts, swap.ts,
+design-model.ts}`; README; i18n (27 strings, `en.json` / `es.json`). Tests: `packages/project/test/sound-grammar.test.ts`
+(26), `apps/engine/test/sound-design-grammar.test.ts` (8), `apps/engine/test/sound-grammar-export.test.ts` (3, real
+ffmpeg), `apps/mcp/test/sound-grammar.test.ts` (5, a real engine over stdio), `apps/web/test/sound-style.test.tsx` (6),
+`e2e/sound-grammar.spec.ts`; two older tests adapted to the new defaults (below).
+
+#### What it does (usage)
+
+- **Variation policy per type** (taxonomy `SoundTypeInfo.variation`, `variationOf(ctx)` with `variation`):
+  - `voice` — ui, click: ONE voice per sequence and type, at one level: the palette sound of that type among the
+    candidates, else the first placed sound of that type (the sequence's clips by frame, then the plan's own earlier
+    picks), else the best candidate (`voiceFor`); rate 1, no gain jitter; the plan's levels give every use of the voice
+    the lowest solved gain of the group (`solvePlanGains {sameLevel}`: every member's limits still hold; the why-line
+    says "one level for every use of this voice");
+  - `takes` — key, tick, tap: rotate takes and sounds of the fill type (never a mix of clicks and ticks on a typewriter)
+    with ±1 dB and rate 1 (no varispeed: random pitch on typing is a cheap tell);
+  - `vary` — the rest: §2.3's ±2 % varispeed and ±1 dB.
+  The fill type is the first of the cue's types the chosen sound has (`fillTypeOf`). Explicit rates and pitches (layer
+  `rate`, `pitchSt`, a cue's `pitchSt`) are never changed; explicit `soundId` layers get no variation.
+- **Runs climb** (`findRuns`): ≥ 3 consecutive appear / emphasis cues ≤ 0.6 s apart filled with pop, ui, chime or tick
+  are pitched +1 st per step (0, +1, +2, +3, +4, +4 …) by varispeed (`maintainPitch: false`): up to +3 st as the
+  placement's `pitchSt` (read back as semitones by `clipPitchOf`, reset by Essential Sound ▸ Pitch), the rest as the base
+  rate (+4 = +3 st over a +1 st base speed). Run members share the proposal item group `run:<n>` and the report's `run
+  {group, index, of, st}`; the note reads "run 3 of 5: +2 st". A run's cues rotate within one type (the cards climb as one
+  sound). `style.runs: 'flat'` finds the runs and leaves the pitch alone ("run 2 of 4: flat"). In cue derivation a run of
+  ungrouped appear / emphasis candidates whose best type is a run type is budgeted as ONE unit (group `run:<first key>`),
+  so a 4-card stagger 0.3 s apart survives balanced's 2-per-second budget. A cue with its own pitch ends a run.
+- **Typing** (`typingChoice`, `wordStartUnits`): a typewriter (character unit) or a character Range Selector typed
+  faster than 25 units per second places one key per word start (keys on their own frames; the 40-per-clip cap stays)
+  instead of thinning to 12 per second; `style.typing` forces `keys`, `words` or `silent`. With `duckUnderTyping` and music
+  under a typing run (a typewriter's or reveal's cues filled with keys, ticks or clicks), the plan adds an item `duck:<n>`
+  after the run's first placement: `audio.volumeDip` −6 dB with 80 ms fades on the music clips from the first key to
+  0.15 s after the last (locked music tracks left out).
+- **Music carries the cuts** (`musicPlaysAt`): a derived cut (edit points, shot changes, pixel cuts; not an `sfx:`
+  marker) inside an enabled music clip (Essential Sound or Auto Tag type music) on an unmuted track, outside dialogue, has
+  its confidence halved and its reason ends "; music carries the cut". Balanced (minimum 0.3) then drops a normal cut
+  (0.5 → 0.25), rich (0.15) keeps it. The dropped ones are returned as `carried` (cue route, `find_sound_cues`) and the
+  plan lists them as skipped `MUSIC_CARRIES_CUT` with "music carries the cut: its confidence is halved to 0.25, under the
+  balanced minimum 0.3 (…)".
+- **Personality** (`SOUND_PERSONALITY_PROFILES`, a decision; earshot §3 names the six characters as music and source
+  choices, the table is ours):
+
+  | personality | tone | attack | weight | texture | boosts | excludes | materials | density |
+  |---|---|---|---|---|---|---|---|---|
+  | calm | dark | soft | light | clean | swish, chime, shimmer, paper, tap | boom, hit, glitch, zap | wood, paper, cloth, air | sparse |
+  | energetic | bright | punchy | heavy | — | whoosh, hit, riser, pop, transition | — | metal, electronic, air | rich |
+  | bright | bright | punchy | light | clean | chime, shimmer, pop, ui, click | boom, thump | glass, metal, ceramic | balanced |
+  | precise | — | punchy | light | clean | click, tick, ui, key, tap | boom, riser, shimmer, reverse | plastic, electronic, metal | balanced |
+  | mechanical | dark | punchy | heavy | noisy | click, key, tick, thump, hit | shimmer, chime | metal, plastic | balanced |
+  | warm | dark | soft | heavy | clean | thump, tap, paper, chime, swish | glitch, zap | wood, cloth, paper | balanced |
+
+  Ranking (`personalityScore` × 0.15 added to the score, `parts.style`): the mean of the Refine preferences on the
+  preferred side (tone by centroid 1 → 3 kHz, attack by rise 10 → 50 ms, weight by the share under 150 Hz 0.05 → 0.3,
+  texture by flatness 0.1 → 0.25, each +1 … −1 on a log or linear scale), a type boost (+1 / 0) and materials (+1 naming a
+  preferred one, −0.5 naming only others, not counted without); a sound of excluded types only scores −1. Cue types
+  (`styleCueTypes`): excluded types leave a cue's types unless none would remain (the cue's request wins); boosted
+  types move ahead of the others of their own family only (warm: a thump before a hit; a typewriter keeps keys before
+  clicks under bright). Markers keep what they ask for. A personality named by a request brings its density when the
+  request names none (Auto Sound Pass and Suggest Cues set the density select when one is chosen).
+- **Palette coherence** (`paletteMaterials`, `materialBonusOf`): the dominant material per family of the placed sounds
+  (the sequence's clips, then the plan's earlier picks: "one material family per film"; ties → the first named) gives a
+  sound of that family naming it +0.08 (`parts.material`); applies only when the sound has the `materials` field (indexes
+  from P6-E9 on). The search route computes it from `placed` (sound ids), so Fill With ▸ lists and MCP picks get it too.
+- **Variation cycling**: a take's sibling takes come after its ring and before the family (`variationCycle`,
+  `offeredTakeIds`): web Next / Previous Variation and MCP `swap_sound next` ("from": "takes").
+- **The style** (`SoundDesignSettings.style {personality, runs, typing, musicCarriesCuts, duckUnderTyping}`; absent fields
+  = defaults: no personality, climb, auto, true, false): `soundDesign.setSettings {style: {…}}` merges (null resets a
+  field; an empty style is removed), undoable; `readSoundDesignStyle` reads damaged data field by field (repair keeps the
+  readable fields and newer ones). Every path reads it as the default; a request's own values win
+  (`resolveSoundStyle`; plan `personality: null` = none whatever the sequence says).
+- **UI**: Preferences ▸ Sound Library ▸ Sound design style (the active sequence's: one undo step "Sound Design Style"
+  per change); Auto Sound Pass… "Sound design style" (Personality with its one-line description, Runs, Typing, Music
+  carries the cuts, Duck the music 6 dB under typing; starts from the sequence's style); Suggest Cues… (Personality,
+  Typing, Music carries the cuts; what changed is stored with the cues in the same step); Fill With keeps the policy.
+- **MCP**: `plan_sound_design` style `personality | runs | typing | musicCarriesCuts | duckUnderTyping` (the result
+  carries `grammar {voices, runCount, carriedCuts, typingDucks, materials}`, each event its `rate`, `variation`, `run`);
+  `find_sound_cues {personality, typing, musicCarriesCuts}` (+ `carried`); `place_sound {sound: {type}}` picks the voice
+  / takes / variation by type, with the personality and the placed sounds' palette (`picked.variation`, `picked.voice`);
+  `swap_sound next` walks sibling takes; the SOUND_GUIDE "Grammar" paragraph ("you cannot hear: these rules encode the
+  craft"); README.
+
+#### Decisions
+
+- **One module, many callers.** The rules are pure functions in `@jasper/project`; the engine route, the plan, MCP and the
+  web call them. The ranking adjustments live in `rankSounds` (request `personality`, `paletteMaterials`), so the search
+  route and the plan rank alike.
+- **Additive adjustments, not weighted parts.** The personality (±0.15) and the material bonus (+0.08) are added to the
+  score after the weighted mean, like the rotation penalty is subtracted: they reorder within the ranking's tiers (real
+  before synth, title words) and never outweigh a type the cue asks for (the plan orders candidates by cue type first).
+- **Voice per type**, not per family: a notification blip (ui) and a mouse click are different voices. The voice is the
+  palette sound, else what is already placed, so an existing edit keeps its voice; the plan's later picks follow its
+  first. One level = the group's LOWEST solved gain: louder would break a member's limit (dialogue, true peak).
+- **Runs as one budget unit** in derivation: without it the density budget thins a stagger to 2 per second and no run is
+  left to climb. Only ungrouped, non-marker candidates of the run kinds whose best type is a run type are grouped.
+- **Climb in the pitch field up to 3 st.** The Pitch control's varispeed range is ±3 st (larger shifts use the Pitch
+  Shifter, which is not varispeed); +4 st is +3 st over a 2^(1/12) base speed, so every step is varispeed and the first
+  four read back as semitones.
+- **Halve, don't mute, the cuts under music**: the density decides (balanced drops a normal cut, rich keeps it), and the
+  reason is reported either way.
+- **Words replace thinning**: one key per word start is placed on its own frame (1-frame spacing), not thinned again to
+  12 per second (at 58 typed/s the nine word starts of a pangram fall 2–4 frames apart).
+- **Takes rotate within their type.** In the e2e the starter kit has no key recordings: the typewriter got ticks and
+  clicks mixed by rotation; rotating within the fill type keeps one sound family per typing run.
+- **Fixed on the way (WP-E5's takes)**: `soundSetupItemId` wrote `sound:snd_…~t3`, and `~` is not allowed in proposal
+  item ids — every plan proposal with a take failed validation (`E_SCHEMA`). It is now `sound:snd_….t3`.
+- **Two older tests adapted** to the new defaults (behaviour the spec changes, not weakened):
+  `packages/project/test/sound-cues.test.ts` "typewriter patterns are capped at 12 per second and 40 per clip" asks for
+  `typing: 'keys'` (its typewriters type 33 and 66 units/s, which `auto` now gives one key per word);
+  `packages/project/test/sound-cues-engine.test.ts` "scene cuts under dialogue are silenced…" first asserts that its
+  music now carries the shot change (`carried`), then turns `musicCarriesCuts` off for the dialogue checks.
+
+#### Verified (build server jasper-build, 16 cores; load averages 1–6)
+
+- Failing first: the five new test files run on `feat/sound-design` `b4e152ef` (before this package): 5 files failed, 44
+  tests failed, 1 passed, 3 skipped (`remote.sh <a detached worktree with the new tests> 'pnpm vitest run …'`).
+- `pnpm vitest run packages/project/test/sound-grammar.test.ts` (26 passed): the variation policy per type and
+  `variationOf` (property, 300 runs: voice = rate 1 / 0 dB, takes = rate 1 with vary's gain), `pickVariant` takes at
+  rate 1 never twice in a row (property), `voiceFor`, runs (0/+1/+2/+3, cap +4, gap 0.6 s = 18 frames at 30 fps passes,
+  19 breaks, keys / cuts / an explicit pitch break a run, flat; property: never throws, bounds hold), typing (58 typed/s
+  pangram → the nine word starts; keys → 7 thinned keys; silent → none; the sequence style as default), four Pop cards
+  0.3 s apart all kept under balanced as one run, music carries the cut (balanced drops it into `carried` with 0.25 < 0.3,
+  rich keeps it with the reason; off, muted track, the style default), each personality moves the ranking in its
+  documented direction (a sound on its side beats a better-judged opposite only with the personality), `styleCueTypes`,
+  `paletteMaterials` / `materialBonusOf` / the ranking bonus, `variationCycle`, `soundDesign.setSettings {style}` (merge,
+  null reset, undo / redo, invariants, save round trip, refusals, lenient read, repair).
+- `apps/engine/test/sound-design-grammar.test.ts` (8 passed), the typing + UI fixture with a synthetic library: the nine
+  word-start keys are distinct sibling takes at rate 1; the 4-card stagger climbs 0/1/2/3 st and shares `run:1`, flat
+  keeps 0; the three click markers get one sound (`Mouse click a`; the palette's `Switch click` when it is in the
+  palette), rate 1, 0 dB; the cut at 90 under music is skipped `MUSIC_CARRIES_CUT`, kept under rich, back with the rule
+  off; the impacts stay metal (Metal / Steel / Iron hit; without the materials field rotation gives Wood hit); calm takes
+  hit out of the cuts and makes the pass sparse; deterministic; the composed proposal validates (`createProposal`),
+  applies as one transaction, and the document has keys at speed 1, cards at 2^(st/12) with `maintainPitch: false` and
+  `clipPitchOf` reading st, three clicks at one gain, the music under the typing dipped 6 dB.
+- `apps/engine/test/sound-grammar-export.test.ts` (3 passed, real engine and ffmpeg): plan job → accept → native export
+  (PCM) → measured: **the four cards' pops play at 1000.0 / 1059.5 / 1122.5 / 1189.2 Hz = 0.000 / 1.000 / 2.000 / 3.000
+  st** (zero-crossing frequency over 60 ms from each cue; the source pops are 1 kHz); **the three clicks peak at −10.25 /
+  −10.25 / −10.25 dBFS** (one sound, one gain, after the masking solver's levels with `sameLevel`); the six typewriter
+  keys are takes of the typing run at speed 1, no two in a row the same. Looked at `test-results/sd-grammar/
+  export-waveform.png` (ffmpeg `showwavespic`): the key presses with their releases, four pops shortening as they climb,
+  three equal clicks.
+- `apps/mcp/test/sound-grammar.test.ts` (5 passed, a real engine over stdio): the guide; three `place_sound {sound:
+  {type: 'click'}}` give one sound at one gain, speed 1 (`picked.voice` best, then placed); three key picks are takes of
+  one recording at speed 1, `swap_sound next` goes to a sibling take (`cycle.from: "takes"`); with a wooden hit placed, a
+  hit pick ranks the wooden hits first and picks the other wooden one; `plan_sound_design` returns its `grammar` with the
+  sequence's personality and the request's runs / typing / musicCarriesCuts. Looked at `test-results/sd-grammar/
+  mcp-timeline.png` (`view_sound_timeline`): three click plateaus at the same loudness, the keys, the two hits.
+- `apps/web/test/sound-style.test.tsx` (6 passed): Auto Sound Pass's style (description, calm → sparse, the request's
+  grammar), starting from the sequence's style and "No personality" → `personality: null`; Suggest Cues stores the changed
+  style with the cues in one step and leaves hit out under calm; Preferences writes the style as one undo step; Fill With
+  places a click and a key at speed 1; the take cycle order.
+- `e2e/sound-grammar.spec.ts` (`pnpm build`, `E2E_PORT=52412 pnpm exec playwright test e2e/sound-grammar.spec.ts`; 1
+  passed): Preferences sets Bright (one History entry "Sound Design Style"), Auto Sound Pass starts from it, Propose →
+  review (15 items) → Accept all → Apply; the card clips' speeds are 1, 1.05946, 1.12246, 1.18921 (2^(k/12)), the clicks
+  one sound at one gain, the typewriter's ticks at speed 1. Looked at `test-results/e2e-sound-grammar/`:
+  `1-preferences-style.png`, `2-auto-pass-style.png` (the style section with Bright's description), `3-review.png`,
+  `4-applied.png`.
+
+#### Limits and notes for the next packages
+
+- The personality table, its ±0.15 weight and the +0.08 material bonus are decisions, not measurements; the
+  personality's descriptor ranges reuse the Refine pills' thresholds (centroid 1 / 3 kHz, rise 10 / 50 ms, below-150 Hz
+  share 0.05 / 0.3, flatness 0.1 / 0.25).
+- One voice is per type and per plan / pick: clicks already placed with different sounds are not re-voiced, and Next /
+  Previous Variation of one click clip changes that clip alone (explicit, the user's choice).
+- `sameLevel` lowers to the group's lowest solved gain only in the plan; `rebalance_sfx` and Sound Check solve each clip on
+  its own (a later rebalance can split a voice's level again).
+- A run's steps above +3 st read back in Essential Sound ▸ Pitch as +3 st over a faster base speed (the Pitch control's
+  varispeed range is ±3).
+- Runs are found among the plan's picks in frame order; a stored cue with its own `pitchSt` ends a run; extra layers of a
+  marker are not climbed.
+- One key per word for a Range Selector maps its units to word starts of the clip's text (characters with or without
+  spaces); `lines` / `words` selectors are not typing. Anchor resolution of a selector unit re-derives with the
+  sequence's stored typing mode, so a request-only mode different from the stored one can leave a unit unresolvable on
+  resync (Suggest Cues stores the mode it used).
+- `duckUnderTyping` is an `after` item of the run's first placement; only derived typing groups (`text:` groups) get it,
+  not stored cues, and only music clips on unlocked tracks.
+- WP-E7 (music to picture) can add `tuneToMusic` / `stopOnBar` next to the style fields here (`resolveSoundStyle`,
+  `SoundDesignStyleSchema`, the plan's `PlanStyle.grammar`, `SoundStyleFields`).
