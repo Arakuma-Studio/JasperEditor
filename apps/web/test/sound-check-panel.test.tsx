@@ -926,7 +926,7 @@ describe('Sound Check panel: acknowledged findings (spec 12 §4 P6-E4)', () => {
 		const editor = screen.getByTestId('sound-check-ack-editor');
 		expect(editor.getAttribute('data-issue-id')).toBe('LOUDNESS:mix');
 		const save = within(editor).getByTestId('sound-check-ack-save') as HTMLButtonElement;
-		expect(save.disabled).toBe(true);
+		expect(save.getAttribute('aria-disabled')).toBe('true');
 		const reason = within(editor).getByTestId('sound-check-ack-reason') as HTMLInputElement;
 		expect(document.activeElement).toBe(reason);
 		await act(async () => {

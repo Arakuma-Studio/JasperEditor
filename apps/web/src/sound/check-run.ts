@@ -750,7 +750,8 @@ export function stepFinding(session: EditorSession, to: number | 'first' | 'last
 	const order = findingOrder(session);
 	if (!order.length) return null;
 	const cur = currentFinding(session);
-	const at = cur ? order.indexOf(cur) : -1;
+	// by id: the list is recomputed from the report and the acknowledgements on every read
+	const at = cur ? order.findIndex((i) => i.id === cur.id) : -1;
 	const n =
 		to === 'first'
 			? 0
