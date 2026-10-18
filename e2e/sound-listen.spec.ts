@@ -166,7 +166,7 @@ test('Log tab and listen_to_sequence on the Phase 4 fixture with a knock in the 
 	expect(knock, panelLines.join('\n')).toBeDefined();
 
 	// a line jumps the playhead and selects its clip; the spectrogram strip
-	const knockRow = lines.filter({ hasText: 'dialogue, A2 "interview.wav"' }).filter({ hasText: 'hit,' }).first();
+	const knockRow = lines.filter({ hasText: knock!.slice(knock!.indexOf('  ') + 2) }).first();
 	const knockFrame = Number(await knockRow.getAttribute('data-frame'));
 	await knockRow.click();
 	await expect.poll(() => playheadFrame(page)).toBe(knockFrame);

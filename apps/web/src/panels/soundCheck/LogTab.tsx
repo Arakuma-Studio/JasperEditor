@@ -248,6 +248,9 @@ function Lines(props: {
 					data-frame={l.frame}
 					className={`flex gap-2 border-t border-pr-border-subtle px-2 py-0.5 ${cursor === i ? 'bg-pr-selected' : ''} ${LINE_TONE[l.kind]}`}
 					data-testid="sound-listen-line"
+					// the cursor first (the list's focus then keeps it: moving it to the first line would scroll the
+					// row away from under the pointer and lose the click)
+					onPointerDown={() => listenStore(session).setState({ cursor: i })}
 					onClick={() => jumpToLine(session, i, props.reveal)}
 				>
 					<span className="pr-tabular shrink-0 text-pr-muted" data-testid="sound-listen-timecode">
