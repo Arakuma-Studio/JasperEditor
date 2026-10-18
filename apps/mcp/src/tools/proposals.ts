@@ -2,11 +2,12 @@
 // ghosts), wait for the user's review (decisions, swapped alternatives, notes), accept (policy-gated: the user applies
 // in the editor unless the sequence allows agents) and reject. Proposals are stored by the engine per project, outside
 // the document and its undo history; accepting items is ONE transaction (one undo step).
-import type { ProposalResponse, ProposalSummary } from '@jasper/api';
+import { type ProposalResponse, type ProposalSummary, SoundCheckProposalSummarySchema } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
 	defaultRegistries,
 	isSetupItem,
+	mixFingerprint,
 	type ProjectDocument,
 	type Proposal,
 	type ProposalItem,
@@ -31,12 +32,15 @@ import {
 	type ToolContext,
 } from '../context.ts';
 import { jsonResult, RequestCancelled, ToolError } from '../errors.ts';
+import { proposalCheckSummary } from './sound-check.ts';
 
 export const PROPOSALS_GUIDE = `Proposals (spec 12 §2.5): a reviewable set of edits stored by the engine per project, outside the document and its undo history. Each item is a list of ordinary commands with a state (pending, accepted, rejected, stale, invalid), optional alternatives (other command sets the user can cycle, e.g. another sound for the same cue), the items it requires (setup: a bin, imported sounds, new cues) and the user's note. Accepting items is ONE transaction: one undo step in History.
 - Propose, don't apply: plan_sound_design and place_sound (mode "propose", the default) store a proposal and change nothing. Tell the user it is waiting in the editor's Review panel, where they hear it in context, keep or reject each item, cycle its alternates, leave notes and apply. Never accept your own proposal unless the user asked you to apply it.
 - Read: list_proposals {projectId} lists them (counts per state); get_proposal {projectId, proposalId} gives every item with its state, reason (why it is stale or invalid), selected alternative, the user's note, and a text table of what the undecided items would create (ghosts: track, start, end, sound).
 - Wait: wait_for_proposal {projectId, proposalId} returns when the user changed something (or the proposal was applied or discarded; until: "decided" waits until nothing is left to decide), at most 900 s: per item accepted | rejected | pending | stale | invalid, "swapped" when they chose an alternative, and their notes. Read the notes and act on them (a new proposal for what they asked); call it again to keep waiting.
-- Apply: accept_proposal {projectId, proposalId, itemIds: "all" | [ids]} works for an agent only when the user turned on "Allow agents to apply sound proposals" for the sequence; otherwise it is refused with E_APPROVAL_REQUIRED: do not retry, ask the user to apply it in the Review panel. Stale items (the edit changed under them) refuse the whole accept unless partial: true. reject_proposal {itemIds} marks items rejected (the document is untouched).`;
+- Apply: accept_proposal {projectId, proposalId, itemIds: "all" | [ids]} works for an agent only when the user turned on "Allow agents to apply sound proposals" for the sequence; otherwise it is refused with E_APPROVAL_REQUIRED: do not retry, ask the user to apply it in the Review panel. Stale items (the edit changed under them) refuse the whole accept unless partial: true. reject_proposal {itemIds} marks items rejected (the document is untouched).
+- Check before you hand it over: sound_check {projectId, proposalId} runs Sound Check on the proposal's preview (the current edit with its items applied; nothing changes) and says what it fixes and introduces, per item ("fixes 3 · introduces 1"). plan_sound_design {check: true} does it for you. The result is kept on the proposal: get_proposal shows it (soundCheck), and so does the user's Review panel, next to each item.
+- One writer, one proposal per pass: when you weigh alternatives (another sound, another level, a different cue), test them yourself and merge the best into ONE proposal — its items' alternatives carry the other sounds — rather than handing the user several competing proposals. Run sound_check {proposalId} on it before asking for review, and never hand over a proposal that introduces errors without saying so (say which item and what). Review it through the lenses in SOUND_GUIDE ("Review lenses").`;
 
 const ProposalIdArg = z
 	.string()
@@ -288,7 +292,7 @@ export function registerProposalTools(ctx: ToolContext): void {
 		{
 			title: 'Get proposal',
 			description:
-				'One proposal with every item: state (pending, accepted, rejected, stale = the edit changed under it, invalid = it never applied), reason, the alternative the user selected (swapped), the user’s note, what it requires (setup items: bin, imported sounds, new cues), its why-line, plus `ghosts`: a text table (item | state | ghost | track | start | end | what) of what the undecided items would create, change or delete if applied — like get_timeline for the proposal. revalidate (default true) re-checks undecided items against the current edit first (stale items). `updatedAt` is the token for wait_for_proposal {since}. includeCommands: true adds each item’s commands.',
+				'One proposal with every item: state (pending, accepted, rejected, stale = the edit changed under it, invalid = it never applied), reason, the alternative the user selected (swapped), the user’s note, what it requires (setup items: bin, imported sounds, new cues), its why-line, plus `ghosts`: a text table (item | state | ghost | track | start | end | what) of what the undecided items would create, change or delete if applied — like get_timeline for the proposal — and `soundCheck`: its last Sound Check (sound_check {proposalId}: fixes · introduces, per item; stale when the mix changed since; null when it was never checked). revalidate (default true) re-checks undecided items against the current edit first (stale items). `updatedAt` is the token for wait_for_proposal {since}. includeCommands: true adds each item’s commands.',
 			input: {
 				projectId: ProjectIdArg,
 				proposalId: ProposalIdArg,
@@ -315,6 +319,29 @@ export function registerProposalTools(ctx: ToolContext): void {
 					ghost = { table: '', note: `no preview: ${e instanceof Error ? e.message : String(e)}` };
 				}
 			}
+			// the last Sound Check of the proposal (P6-E5), and whether the edit changed since it was made
+			const kept = SoundCheckProposalSummarySchema.safeParse(
+				(p.report as { check?: unknown } | undefined)?.check,
+			);
+			let soundCheck: Record<string, unknown> | null = null;
+			if (kept.success) {
+				let current: boolean | null = null;
+				try {
+					const doc = (await loadDoc(ctx, projectId)).doc;
+					current = mixFingerprint(doc, kept.data.sequenceId) === kept.data.baseMixHash;
+				} catch {
+					current = null;
+				}
+				soundCheck = {
+					...proposalCheckSummary(kept.data),
+					...(current === false
+						? {
+								stale:
+									'The mix changed since this check: run sound_check {proposalId} again before handing it over.',
+							}
+						: {}),
+				};
+			}
 			return jsonResult({
 				proposalId: p.id,
 				projectId: p.projectId,
@@ -333,9 +360,12 @@ export function registerProposalTools(ctx: ToolContext): void {
 					.filter((i) => includeSetup !== false || !isSetupItem(i))
 					.map((i) => itemView(i, includeCommands === true)),
 				...(ghost ? { ghosts: ghost.table, ...(ghost.note ? { ghostsNote: ghost.note } : {}) } : {}),
+				soundCheck,
 				next: proposalDecided(p)
 					? 'Nothing left to review.'
-					: 'The user reviews it in the editor’s Review panel; call wait_for_proposal {projectId, proposalId, since: updatedAt} to learn their decisions and notes.',
+					: soundCheck
+						? 'The user reviews it in the editor’s Review panel; call wait_for_proposal {projectId, proposalId, since: updatedAt} to learn their decisions and notes.'
+						: 'Run sound_check {projectId, proposalId} first (what it fixes and introduces), then ask the user to review it in the Review panel and call wait_for_proposal {projectId, proposalId, since: updatedAt}.',
 			});
 		},
 	);

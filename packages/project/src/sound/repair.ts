@@ -591,6 +591,9 @@ export function remapSoundDesign(
 		(sd as { cues: unknown }).cues = cues;
 		// What stop-before, build and room glue wrote follows the copy: its records name the copy's cues, tracks, clips,
 		// keys, filters and sends, so clearing a stop-before on the copy takes the copy's dip out exactly.
+		// Acknowledged findings stay with their sequence (P6-E4): a copy's findings name its own clips and cues, and
+		// what was deliberate in the original is decided again there.
+		delete (sd as { acknowledged?: unknown }).acknowledged;
 		const mix = remapMix((sd as { mix?: unknown }).mix, cueMap, maps, newCueId, newKeyId);
 		if (mix) (sd as { mix?: unknown }).mix = mix;
 		else delete (sd as { mix?: unknown }).mix;

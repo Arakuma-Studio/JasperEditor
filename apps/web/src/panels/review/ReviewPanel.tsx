@@ -8,11 +8,15 @@
 // `aria-activedescendant`); Enter accept, Backspace / Delete reject, U clear, A A/B, Space ▶, Shift+Space the range,
 // Ctrl+Enter Apply, Esc exit, Up / Down / Home / End move. Decisions and Apply are announced (aria-live). Nothing
 // animates; state is told by glyph and word, never by colour alone.
-import type { ProposalSummary } from '@jasper/api';
+// Sound Check of the proposal (spec 12 §4 P6-E5): "Check proposal" runs the check on the preview of the items not
+// rejected (nothing applied); "Sound Check of this proposal: fixes 3 · introduces 1" with each introduced finding linked
+// to its item (click: that item), "fixes n · introduces m" on each row and in the details; an agent's check kept on the
+// proposal shows the same; stale when the mix or the decisions changed since.
+import type { ProposalSummary, SoundCheckDeltaFinding, SoundCheckProposalSummary } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import type { Sequence } from '@jasper/project';
 import type { EditorSession, ReviewItem } from '@jasper/session';
-import { useSessionOrNull, useSessionState } from '@jasper/session/react';
+import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
 import { Button, Icon, Select } from '@jasper/ui';
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createCommandContext } from '../../commands/context.ts';
@@ -38,9 +42,23 @@ import {
 	type ReviewRow,
 	reviewCounts,
 } from '../../proposals/review.ts';
+import {
+	cancelProposalCheck,
+	checkProposal,
+	itemCheck,
+	itemCheckText,
+	type ProposalCheckEngine,
+	proposalCheckItems,
+	proposalCheckStaleText,
+	proposalCheckStatus,
+	proposalCheckStore,
+	proposalCheckText,
+	storedProposalCheck,
+} from '../../proposals/sound-check.ts';
 import { problemText } from '../../proposals/stale-text.ts';
 import { useGhostModel, useProposals, useProposalsController } from '../../proposals/state.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
+import { messageText, SEVERITY_ICON, SEVERITY_LABELS, SEVERITY_TONE } from '../../sound/check-model.ts';
 import { glyphPath, KIND_GLYPH } from '../../sound/cues/model.ts';
 import { seqTimecode } from '../../sound/design-model.ts';
 import { reviewGainText } from '../../sound/mix-model.ts';
@@ -114,6 +132,16 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 	const ghost = useGhostModel(session, seqId);
 	const previewSeq = useProposals(session, (s) => s.preview?.result.document.sequences[seqId]);
 	const model = useMemo(() => buildReviewModel(items, ghost), [items, ghost]);
+	// P6-E5: the proposal's Sound Check — the newer of the one kept on it and the last one run here
+	const checkLast = useStoreSelector(proposalCheckStore(session), (s) => s.last);
+	const check = useMemo((): SoundCheckProposalSummary | null => {
+		if (!proposal) return null;
+		const kept = storedProposalCheck(proposal);
+		const here = checkLast && checkLast.proposalId === proposal.id ? checkLast : null;
+		if (!kept) return here;
+		if (!here) return kept;
+		return here.at > kept.at ? here : kept;
+	}, [proposal, checkLast]);
 	const counts = useMemo(() => reviewCounts(items), [items]);
 	const listRef = useRef<HTMLDivElement>(null);
 	const pointing = useRef(false);
@@ -314,6 +342,17 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 							</div>
 						) : null}
 					</div>
+					<ProposalCheckBar
+						session={session}
+						engine={engine as ProposalCheckEngine | null}
+						connected={engineStatus === 'connected' || !engineState}
+						proposalId={proposal.id}
+						sequenceId={proposal.sequenceId}
+						check={check}
+						items={items}
+						labelOf={(id) => model.byId[id]?.item.label ?? id}
+						onItem={choose}
+					/>
 					<div
 						ref={listRef}
 						role="listbox"
@@ -348,6 +387,8 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 							render={(row) => (
 								<Row
 									key={row.item.id}
+									checkText={itemCheckText(check, row.item.id)}
+									introduces={itemCheck(check, row.item.id).introduces.length}
 									id={`${idPrefix}${row.item.id}`}
 									row={row}
 									seq={seq}
@@ -405,6 +446,7 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 					{currentRow ? (
 						<Details
 							key={currentRow.item.id}
+							check={check}
 							session={session}
 							row={currentRow}
 							why={why}
@@ -597,6 +639,9 @@ export function rowAriaLabel(row: ReviewRow, seq: Sequence | undefined): string 
 function Row(p: {
 	id: string;
 	row: ReviewRow;
+	/** The proposal check's badge for this item ("fixes 2 · introduces 1"), null when it says nothing about it. */
+	checkText: string | null;
+	introduces: number;
 	seq: Sequence | undefined;
 	/** Its place in the list (aria-posinset) and the rows in all (aria-setsize): the list is virtualised. */
 	position: ReviewListEntry;
@@ -664,7 +709,7 @@ function Row(p: {
 			id={p.id}
 			role="option"
 			aria-selected={p.selected}
-			aria-label={rowAriaLabel(row, p.seq)}
+			aria-label={`${rowAriaLabel(row, p.seq)}${p.checkText ? `. ${t('Sound Check: {0}', p.checkText)}` : ''}`}
 			aria-posinset={p.position.kind === 'row' ? p.position.position + 1 : undefined}
 			aria-setsize={p.setSize}
 			onPointerDown={(e) => {
@@ -729,6 +774,16 @@ function Row(p: {
 						{gainText(row)}
 					</span>
 				) : null}
+				{p.checkText ? (
+					<span
+						className={`shrink-0 pr-tabular ${p.introduces ? 'text-pr-warning' : 'text-pr-success'}`}
+						title={t('Sound Check of this proposal: {0}', p.checkText)}
+						data-review-check={p.checkText}
+					>
+						{p.introduces ? '▲ ' : '✓ '}
+						{p.checkText}
+					</span>
+				) : null}
 				{warn && problem ? (
 					<span className="min-w-0 truncate text-pr-warning" title={problem} data-review-problem>
 						! {problem}
@@ -772,6 +827,7 @@ function Row(p: {
 function Details(p: {
 	session: EditorSession;
 	row: ReviewRow;
+	check: SoundCheckProposalSummary | null;
 	why: ReturnType<typeof whyLines> | null;
 	readOnly: boolean;
 	noteRequest: boolean;
@@ -813,6 +869,7 @@ function Details(p: {
 				</ul>
 			) : null}
 			{p.why?.problem ? <div className="text-pr-warning">! {p.why.problem}</div> : null}
+			<ItemCheck check={p.check} itemId={it.id} />
 			<div className="flex flex-wrap items-center gap-1">
 				<Button
 					variant="secondary"
@@ -904,5 +961,183 @@ function Details(p: {
 				</div>
 			) : null}
 		</section>
+	);
+}
+
+// ── Sound Check of the proposal (P6-E5) ─────────────────────────────────────────────────────────────────────────
+
+/** Most introduced findings listed under the bar (the rest: "n more"; every one is in its item's details). */
+const CHECK_LIST_MAX = 5;
+
+function findingLine(f: SoundCheckDeltaFinding): string {
+	return `${f.code}${f.timecode ? ` ${f.timecode}` : ''}: ${messageText(f.message)}`;
+}
+
+/** "Sound Check of this proposal: fixes 3 · introduces 1", Check proposal / Cancel, and the introduced findings. */
+function ProposalCheckBar(p: {
+	session: EditorSession;
+	engine: ProposalCheckEngine | null;
+	connected: boolean;
+	proposalId: string;
+	sequenceId: string | null;
+	check: SoundCheckProposalSummary | null;
+	items: readonly ReviewItem[];
+	labelOf(itemId: string): string;
+	onItem(itemId: string): void;
+}) {
+	const { session, check } = p;
+	const running = useStoreSelector(proposalCheckStore(session), (s) => s.running);
+	const error = useStoreSelector(proposalCheckStore(session), (s) => s.error);
+	const doc = useSessionState((s) => s.document);
+	const status = useMemo(() => proposalCheckStatus(check, doc, p.items), [check, doc, p.items]);
+	const stale = proposalCheckStaleText(status);
+	const mine = running && running.proposalId === p.proposalId ? running : null;
+	const wanted = proposalCheckItems(p.items);
+	const run = () => {
+		if (!p.engine) return;
+		void checkProposal(session, p.engine, {
+			proposalId: p.proposalId,
+			sequenceId: p.sequenceId,
+			itemIds: wanted,
+		});
+	};
+	const introduced = check?.delta.introduced ?? [];
+	return (
+		<div
+			className="flex shrink-0 flex-col gap-0.5 border-b border-pr-border px-2 py-1 text-pr-small"
+			data-testid="review-check"
+			data-check-state={status.state}
+		>
+			<div className="flex items-center gap-1.5">
+				{check ? (
+					<span
+						className={`flex min-w-0 flex-1 items-center gap-1 font-semibold ${check.delta.introducedCount ? 'text-pr-warning' : 'text-pr-strong'}`}
+						data-testid="review-check-summary"
+						data-fixes={check.delta.fixedCount}
+						data-introduces={check.delta.introducedCount}
+						title={t('Verdict {0} → {1}', check.delta.verdict.before, check.delta.verdict.after)}
+					>
+						<Icon id={check.delta.introducedCount ? 'status.warning' : 'status.success'} size={12} />
+						<span className="min-w-0 truncate">{proposalCheckText(check)}</span>
+					</span>
+				) : (
+					<span className="min-w-0 flex-1 truncate text-pr-muted" data-testid="review-check-summary">
+						{t('Sound Check of this proposal: not run yet')}
+					</span>
+				)}
+				{mine ? (
+					<>
+						<span className="shrink-0 text-pr-muted pr-tabular" role="status">
+							{mine.stage ?? t('Checking…')}
+							{mine.progress !== null ? ` ${Math.round(mine.progress * 100)} %` : ''}
+						</span>
+						<Button
+							variant="quiet"
+							onClick={() => cancelProposalCheck(session)}
+							data-testid="review-check-cancel"
+						>
+							{t('Cancel')}
+						</Button>
+					</>
+				) : (
+					<Button
+						variant="secondary"
+						disabled={!p.engine || !p.connected || !wanted.length}
+						disabledReason={
+							!p.connected
+								? t('The engine is not connected')
+								: !wanted.length
+									? t('Nothing left to check: every item is rejected or applied')
+									: undefined
+						}
+						title={t(
+							'Run Sound Check on the proposal’s preview (the items you have not rejected): what it fixes and introduces. Nothing is applied',
+						)}
+						onClick={run}
+						data-testid="review-check-run"
+					>
+						{check ? t('Check again') : t('Check proposal')}
+					</Button>
+				)}
+			</div>
+			{stale ? (
+				<div className="flex items-center gap-1 text-pr-warning" data-testid="review-check-stale">
+					<Icon id="status.warning" size={12} />
+					{stale}
+				</div>
+			) : null}
+			{error && error.proposalId === p.proposalId && !mine ? (
+				<div role="alert" className="text-pr-danger">
+					{error.message}
+				</div>
+			) : null}
+			{check?.skipped.length ? (
+				<div
+					className="truncate text-pr-muted"
+					title={check.skipped.map((x) => `${x.itemId}: ${x.reason}`).join('\n')}
+				>
+					{t('Not checked: {0}', check.skipped.map((x) => p.labelOf(x.itemId)).join(', '))}
+				</div>
+			) : null}
+			{introduced.length ? (
+				<ul className="m-0 flex list-none flex-col p-0" data-testid="review-check-introduced">
+					{introduced.slice(0, CHECK_LIST_MAX).map((f) => (
+						<li key={f.key} className="flex min-w-0 items-center gap-1" data-check-key={f.key}>
+							<span className={`inline-flex shrink-0 items-center gap-0.5 ${SEVERITY_TONE[f.severity]}`}>
+								<Icon id={SEVERITY_ICON[f.severity]} size={12} />
+								<span className="sr-only">{t(SEVERITY_LABELS[f.severity])}</span>
+							</span>
+							<span className="min-w-0 flex-1 truncate" title={findingLine(f)}>
+								{findingLine(f)}
+							</span>
+							{f.itemId ? (
+								<button
+									type="button"
+									className="max-w-[40%] shrink-0 truncate text-pr-accent underline-offset-2 hover:underline"
+									title={t('Go to the item: {0}', p.labelOf(f.itemId))}
+									onClick={() => p.onItem(f.itemId!)}
+									data-check-item={f.itemId}
+								>
+									→ {p.labelOf(f.itemId)}
+								</button>
+							) : (
+								<span className="shrink-0 text-pr-muted">{t('the whole mix')}</span>
+							)}
+						</li>
+					))}
+					{introduced.length > CHECK_LIST_MAX ? (
+						<li className="text-pr-muted">
+							{t('{0} more in the items’ details', introduced.length - CHECK_LIST_MAX)}
+						</li>
+					) : null}
+				</ul>
+			) : null}
+		</div>
+	);
+}
+
+/** The current item's part of the proposal check: what it fixes and introduces. */
+function ItemCheck(p: { check: SoundCheckProposalSummary | null; itemId: string }) {
+	const c = itemCheck(p.check, p.itemId);
+	if (!c.fixes.length && !c.introduces.length) return null;
+	return (
+		<div className="flex flex-col" data-testid="review-item-check">
+			{c.introduces.map((f) => (
+				<div
+					key={f.key}
+					className={`flex items-start gap-1 ${SEVERITY_TONE[f.severity]}`}
+					data-check-introduces={f.key}
+				>
+					<Icon id={SEVERITY_ICON[f.severity]} size={12} />
+					<span>{t('Introduces {0}', findingLine(f))}</span>
+				</div>
+			))}
+			{c.fixes.map((f) => (
+				<div key={f.key} className="flex items-start gap-1 text-pr-success" data-check-fixes={f.key}>
+					<Icon id="status.success" size={12} />
+					<span>{t('Fixes {0}', findingLine(f))}</span>
+				</div>
+			))}
+		</div>
 	);
 }

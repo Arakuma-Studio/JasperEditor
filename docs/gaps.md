@@ -564,6 +564,27 @@ speed; one key per word needs the text's words (a Range Selector based on charac
 the clip's text; lines and words selectors are not typing); the typing dip is a separate item that the user accepts with
 the run's first key.
 
+Phase 6 → WP-E2 ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP-E2"; spec 12 §4 P6-E4, P6-E5; the
+ideas are earshot's `qa_ok` and critics' "variants", nothing ported): a Sound Check finding can be acknowledged as a
+deliberate exception with a reason (`soundDesign.acknowledgeIssue` / `unacknowledgeIssue`, undoable; ≤ 500 per sequence;
+agents warnings and infos only — an error is `E_APPROVAL_REQUIRED` and the check never honours an agent's word for one):
+it leaves the verdict, the counts (`counts.acknowledged`) and the safe fixes until its clips, cue or listened moment
+change, then it is back "acknowledged before the change"; the Sound Check panel's Acknowledge… (A) and "Acknowledged (n)"
+with Unacknowledge, MCP `acknowledge_sound_issue`. A proposal can be checked before review (`sound_check {proposalId,
+itemIds?}`, `plan_sound_design {check: true}`, the Review panel's Check proposal): the check of its preview against the
+current document's kept report (or a fresh run) → fixes / introduces per item, kept on the proposal (`report.check`,
+shown in the Review panel, its rows, the ghost card and `get_proposal`), nothing applied. The guides teach the review
+lenses (sync, edges, masking, tonal, director), one writer / one proposal per pass and query wording. Rerun
+`packages/project/test/sound-acknowledge.test.ts`, `packages/project/test/proposals-preview-batch.test.ts`,
+`apps/engine/test/sound-check-ack-proposal.test.ts`, `apps/mcp/test/sound-check-ack.test.ts`,
+`apps/mcp/test/proposals.test.ts`, `apps/web/test/{sound-check-panel,review-sound-check}.test.tsx`,
+`e2e/sound-check-ack.spec.ts`. Limits left: a finding's key is its report id, so a frame-only finding (SILENCE, DIP) that
+moves by a frame is a new finding; an acknowledgement covers its target (the named clips / cue, else ±2 s around its
+frame, else the whole mix), not the bed under it (a MASKED acknowledgement holds when the music changes); a duplicated
+sequence starts without acknowledgements; a proposal check costs one or two full checks (base and preview; the base is
+skipped when the kept report is current) and is attributed by the entities each item's preview touched (setup items only
+when no other item did).
+
 ### Not covered by any workstream yet
 
 - **Platforms**: run and fix the desktop app on macOS and Windows; hardware H.264/HEVC export on real GPUs; build

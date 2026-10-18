@@ -76,12 +76,18 @@ export function diffDocuments(before: ProjectDocument, after: ProjectDocument): 
 			diffRecord(prev.links, seq.links, out);
 			diffRecord(prev.groups, seq.groups, out);
 			diffList(prev.markers, seq.markers, out);
-			// sound-design: cues count individually; settings and the last check as the sequence's own fields.
+			// sound-design: cues count individually; settings, the last check and acknowledged findings as the
+			// sequence's own fields.
 			const sa = (prev as { soundDesign?: SoundDesign }).soundDesign;
 			const sb = (seq as { soundDesign?: SoundDesign }).soundDesign;
 			if (sa !== sb) {
 				diffRecord(sa?.cues ?? {}, sb?.cues ?? {}, out);
-				if (sa?.settings !== sb?.settings || sa?.lastCheck !== sb?.lastCheck || !sa !== !sb)
+				if (
+					sa?.settings !== sb?.settings ||
+					sa?.lastCheck !== sb?.lastCheck ||
+					sa?.acknowledged !== sb?.acknowledged ||
+					!sa !== !sb
+				)
 					if (!out.changed.includes(id)) out.changed.push(id);
 			}
 			diffList(

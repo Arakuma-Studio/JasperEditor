@@ -43,6 +43,8 @@ import { confirmDialog } from '@jasper/ui';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { t } from '../i18n/runtime.ts';
 import {
+	ackCommand,
+	acknowledgedView,
 	choiceRequest,
 	type DeliveryChoice,
 	defaultChoice,
@@ -57,6 +59,7 @@ import {
 	orderedIssues,
 	planFixes,
 	safeFixable,
+	unackCommand,
 	verdictCommands,
 	verdictSentence,
 } from './check-model.ts';
@@ -91,6 +94,10 @@ export type SoundCheckState = {
 	/** The findings list's current row (an issue id) and the rows whose sync strip is open (keyboard commands). */
 	cursor: string | null;
 	openStrips: readonly string[];
+	/** The finding whose "Acknowledge…" reason field is open (P6-E4), or null. */
+	ackOpen: string | null;
+	/** "Acknowledged (n)" is expanded. */
+	ackShown: boolean;
 };
 
 const stores = new WeakMap<EditorSession, StoreApi<SoundCheckState>>();
@@ -112,6 +119,8 @@ export function soundCheckStore(session: EditorSession): StoreApi<SoundCheckStat
 			announcement: { message: '', n: 0 },
 			cursor: null,
 			openStrips: [],
+			ackOpen: null,
+			ackShown: false,
 		}));
 		stores.set(session, s);
 	}
@@ -490,7 +499,9 @@ export async function fixAllSafe(
 	const none = { ok: false, message: t('No safe fixes'), applied: [], failed: [], rerun: null };
 	if (!result) return none;
 	if (session.getState().readOnly) return { ...none, message: t('The project is read-only') };
-	const pending = safeFixable(result.report.issues).filter((i) => !store.getState().fixed.includes(i.id));
+	// acknowledged findings are deliberate: no fix for them (P6-E4)
+	const open = acknowledgedView(session.getCommitted(), result.report).open;
+	const pending = safeFixable(open).filter((i) => !store.getState().fixed.includes(i.id));
 	const plan = planFixes(pending, { safeOnly: true });
 	if (!plan.units.length) return none;
 	const seqId = result.sequenceId;
@@ -662,7 +673,65 @@ export function jumpToIssue(
 /** The findings of the active sequence's report in the order the list shows them (empty without one). */
 export function findingOrder(session: EditorSession): SoundCheckIssue[] {
 	const r = reportFor(session, session.getState().activeSequenceId);
-	return r ? orderedIssues(r.report.issues) : [];
+	return r ? orderedIssues(openFindings(session, r)) : [];
+}
+
+/** The findings of a report that count now (acknowledged ones are listed apart, P6-E4). */
+export function openFindings(session: EditorSession, result: SoundCheckResult): SoundCheckIssue[] {
+	return acknowledgedView(session.getCommitted(), result.report).open;
+}
+
+// ── acknowledged findings (spec 12 §4 P6-E4) ───────────────────────────────────────────────────────────────────────
+
+/** Opens (an issue id) or closes (null) the "Acknowledge…" reason field of a finding. */
+export function setAckOpen(session: EditorSession, issueId: string | null): void {
+	soundCheckStore(session).setState({ ackOpen: issueId });
+}
+
+/**
+ * Acknowledges a finding with the user's reason: ONE undoable edit "Acknowledge Sound Check Finding" (the user's, so
+ * errors too). The panel shows it under "Acknowledged" at once; the next check leaves it out of the verdict.
+ */
+export function acknowledgeFinding(
+	session: EditorSession,
+	issue: SoundCheckIssue,
+	reason: string,
+): { ok: boolean; message: string } {
+	const seq = seqOf(session);
+	const result = soundCheckStore(session).getState().result;
+	const seqId = result?.sequenceId ?? seq?.id;
+	if (!seqId) return { ok: false, message: t('Open a sequence first') };
+	if (session.getState().readOnly) return { ok: false, message: t('The project is read-only') };
+	if (!reason.trim()) return { ok: false, message: t('Say why it is deliberate') };
+	const r = session.apply({
+		label: t('Acknowledge Sound Check Finding'),
+		origin: 'user',
+		sequenceId: seqId,
+		commands: [ackCommand(issue, seqId, reason)],
+	});
+	const message = r.ok ? t('Acknowledged: {0}', issue.code) : r.errors.map((e) => e.message).join('; ');
+	if (r.ok) soundCheckStore(session).setState({ ackOpen: null });
+	announce(session, message);
+	return { ok: r.ok, message };
+}
+
+/** Takes an acknowledgement back (ONE undoable edit): the finding counts again. */
+export function unacknowledgeFinding(session: EditorSession, key: string): { ok: boolean; message: string } {
+	const result = soundCheckStore(session).getState().result;
+	const seqId = result?.sequenceId ?? seqOf(session)?.id;
+	if (!seqId) return { ok: false, message: t('Open a sequence first') };
+	if (session.getState().readOnly) return { ok: false, message: t('The project is read-only') };
+	const r = session.apply({
+		label: t('Unacknowledge Sound Check Finding'),
+		origin: 'user',
+		sequenceId: seqId,
+		commands: [unackCommand(key, seqId)],
+	});
+	const message = r.ok
+		? t('It counts again: {0}', key.split(':')[0] ?? key)
+		: r.errors.map((e) => e.message).join('; ');
+	announce(session, message);
+	return { ok: r.ok, message };
 }
 
 /** The findings list's current finding (null when none is current or it is no longer in the report). */
@@ -681,7 +750,8 @@ export function stepFinding(session: EditorSession, to: number | 'first' | 'last
 	const order = findingOrder(session);
 	if (!order.length) return null;
 	const cur = currentFinding(session);
-	const at = cur ? order.indexOf(cur) : -1;
+	// by id: the list is recomputed from the report and the acknowledgements on every read
+	const at = cur ? order.findIndex((i) => i.id === cur.id) : -1;
 	const n =
 		to === 'first'
 			? 0

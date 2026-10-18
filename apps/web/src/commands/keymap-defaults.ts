@@ -366,6 +366,7 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('soundCheck.goToFinding', 'Enter', 'soundCheck'),
 	b('soundCheck.goToFinding', 'NumpadEnter', 'soundCheck'),
 	b('soundCheck.fixFinding', 'KeyF', 'soundCheck'),
+	b('soundCheck.acknowledgeFinding', 'KeyA', 'soundCheck'),
 	b('soundCheck.openSyncStrip', 'ArrowRight', 'soundCheck'),
 	b('soundCheck.closeSyncStrip', 'ArrowLeft', 'soundCheck'),
 	b('soundCheck.playFinding', 'Space', 'soundCheck'),

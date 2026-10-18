@@ -362,6 +362,8 @@ const LABELS: Record<CommandType, string> = {
 	'soundDesign.setCheck': 'Sound Check Result',
 	'soundDesign.setVerdict': 'Sound Check Verdict',
 	'soundDesign.expectMix': 'Check Mix Unchanged',
+	'soundDesign.acknowledgeIssue': 'Acknowledge Sound Check Finding',
+	'soundDesign.unacknowledgeIssue': 'Unacknowledge Sound Check Finding',
 	'audio.volumeDip': 'Volume Dip',
 	'soundDesign.applyStopBefore': 'Stop Before Cue',
 	'soundDesign.applyBuild': 'Build Into Cue',

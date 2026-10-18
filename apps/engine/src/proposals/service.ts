@@ -656,6 +656,26 @@ export class ProposalService {
 		});
 	}
 
+	/**
+	 * Stores a Sound Check of the proposal on it (`report.check`, spec 12 §4 P6-E5): the Review panel and `get_proposal`
+	 * show it. Not a decision: `updatedAt` stays (an agent waiting for the review is not woken, expiry is unchanged);
+	 * announced as `checked`. Resolves the stored proposal (404 when it is gone).
+	 */
+	async setCheck(projectId: string, proposalId: string, check: Record<string, unknown>): Promise<Proposal> {
+		await this.ensureProject(projectId);
+		return this.locks.run(`${projectId}/${proposalId}`, async () => {
+			const p = await this.load(projectId, proposalId);
+			const report =
+				p.report && typeof p.report === 'object' && !Array.isArray(p.report)
+					? { ...(p.report as Record<string, unknown>), check }
+					: { check };
+			const next: Proposal = { ...p, report };
+			await this.store.put(projectId, next);
+			this.publish(projectId, next, 'checked');
+			return next;
+		});
+	}
+
 	async delete(projectId: string, proposalId: string) {
 		await this.ensureProject(projectId);
 		return this.locks.run(`${projectId}/${proposalId}`, async () => {

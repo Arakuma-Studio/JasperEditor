@@ -8693,3 +8693,197 @@ apps/engine/test/sound-check.test.ts apps/engine/test/sound-check-review.test.ts
 apps/engine/test/sounds-search.test.ts apps/mcp/test/sound apps/web/test/sound apps/web/test/auto-sound-pass.test.tsx
 --maxWorkers=8`: 250 files, 2 765 passed, 12 skipped; `sound-design-motion` fails to load (no libx264, as on
 `feat/sound-design`). `e2e/sound-grammar.spec.ts` passed after `pnpm build`.
+
+### Phase 6 → WP-E2 Acknowledged findings, check a proposal, review lenses
+
+Branch `feat/sd-pe-e2-ack-proposals`. Spec 12 §4 P6-E4 (acknowledged findings) and P6-E5 (check a proposal before review,
+the review lenses and the "one writer" rule in the guides). The ideas are earshot's (`qa_ok`; critics testing their fixes as
+"variants" before one fixer applies them); no algorithm or code was adapted, so `licenses/ported/earshot.md` has no new row.
+
+Files: model `packages/project/src/schema/sound.ts` (`SoundAcknowledgementSchema`, `SoundDesign.acknowledged`, limits,
+`readSoundAcknowledgements`, INV-SOUND), `sound/acknowledge.ts` (new: `soundFindingKey`, `soundAckTargetOf`,
+`soundAckInputsHash`, `soundAckMark`, `applySoundAcknowledgements`), `commands/{schemas,handlers}/sound.ts`
+(`soundDesign.acknowledgeIssue` / `unacknowledgeIssue`), `commands/{catalog,types,diff}.ts` (labels, `E_APPROVAL_REQUIRED` as
+a command error code, the sequence counted as changed), `sound/repair.ts` (a duplicated sequence starts without them),
+`sound/messages.ts` (the refusals are model strings), `proposals/ghost.ts` (preview attribution sees ids named as record
+keys — a bug found here, below); API `packages/api/src/sound-check.ts` (`issue.acknowledged`, `report.acknowledgements`, the
+request's `proposalId` / `itemIds`, `SoundCheckDelta*`, `SoundCheckProposal{,Summary}`, `result.proposal`), `proposals.ts`
+(`proposal.changed` `checked`), `routes.ts`; engine `apps/engine/src/sound-design/check.ts` (acknowledgements applied before
+the joint safe-fix plan, the per-event table, the listen-here worst and the verdict), `sound-design/check-proposal.ts` (new:
+`runProposalCheckJob`, `soundCheckDelta`), `routes/sound-design.ts` (route checks, runner dispatch, the kept report never
+replaced by a proposal check), `proposals/service.ts` (`setCheck`); MCP `apps/mcp/src/tools/sound-check.ts`
+(`acknowledge_sound_issue`, `sound_check {proposalId, itemIds}`, acknowledged lists, `proposalCheckSummary`),
+`tools/proposals.ts` (`get_proposal` `soundCheck`, PROPOSALS_GUIDE rules), `tools/sound-design.ts` (`plan_sound_design
+{check}`), `tools/sound.ts` (SOUND_GUIDE: review lenses, one writer, deliberate exceptions, query wording), `errors.ts`,
+`examples.ts`, README (357 tools); web `apps/web/src/sound/{check-model,check-run}.ts`, `panels/soundCheck/SoundCheckPanel.tsx`,
+`commands/{sound-check,keymap-defaults}.ts` (`soundCheck.acknowledgeFinding`, A), `proposals/sound-check.ts` (new),
+`panels/review/ReviewPanel.tsx`, `proposals/GhostLayer.tsx`, i18n (52 strings, es.json complete); docs: spec 12 §4 "As built",
+security review, gaps. Tests: `packages/project/test/sound-acknowledge.test.ts` (new, 11), `proposals-preview-batch.test.ts`
+(+1), `fuzz.test.ts` (AC-25 draws both commands), `apps/engine/test/sound-check-ack-proposal.test.ts` (new, 5),
+`apps/mcp/test/sound-check-ack.test.ts` (new), `proposals.test.ts` (+ `check: true`), `sound-guide`, `sound-examples`,
+`apps/web/test/sound-check-panel.test.tsx` (+3), `review-sound-check.test.tsx` (new, 3), `e2e/sound-check-ack.spec.ts` (new).
+
+#### What it does (usage)
+
+- **Acknowledge a finding** (a deliberate exception: a hard cut to black, a riser that ends early on purpose). Sound Check
+  panel: on the current row (or under the pointer) **Acknowledge…**, or **A** in the findings list → a reason field below
+  the list (Enter acknowledges, Escape closes; typing there never drives the list) → one undo step "Acknowledge Sound Check
+  Finding". The finding leaves the list, the verdict, the chips and Fix all safe at once (the panel sees the report through
+  the document's acknowledgements, no re-run needed) and appears in the collapsed **Acknowledged (n)** group with its
+  reason, who and when, and **Unacknowledge**; acknowledgements the report does not match (fixed since, or outside the
+  range) are listed there too. When what it is about changes, the finding is back in the list, marked "Acknowledged before
+  the change (reason): what it is about changed since".
+- **Agents**: `acknowledge_sound_issue {projectId, sequenceId?, key, reason}` (EDIT) looks the finding up in the kept report
+  (`key` = its issue id), refuses an error (`E_APPROVAL_REQUIRED`: "fix it, or ask the user to acknowledge it in the Sound
+  Check panel") and writes the command; `unacknowledge: true` takes it back. `sound_check` / `get_sound_check` list the
+  findings that count in `findings`, the rest under `acknowledged {count, findings, notFound}`; every issue carries
+  `acknowledged {reason, by, agent?, at, active, why?}`; `counts.acknowledged`; `safeFixes` leaves them out.
+- **Commands**: `soundDesign.acknowledgeIssue {sequenceId?, key, code, severity, reason (1–300), target?: {clipIds?, cueId?,
+  frame?}, message?}` and `soundDesign.unacknowledgeIssue {sequenceId?, key}` (examples in `describe_commands`).
+- **Check a proposal before review**: `POST /api/sound-design/check {projectId, proposalId, itemIds?}` (MCP `sound_check
+  {proposalId, itemIds?}`; `plan_sound_design {check: true}` does it for the new proposal; the Review panel's **Check
+  proposal** / **Check again** sends the items not rejected) → the report of the preview plus `proposal {itemIds, skipped,
+  base: kept|run, baseJobId, revision, baseMixHash, delta {verdict before/after, counts per code and severity before/after,
+  fixed[], introduced[] (each with `itemId` / `itemIds`), fixedCount, introducedCount, items[{itemId, fixes, introduces}]}}`.
+  Nothing is applied; `store` is refused. The summary is kept on the proposal (`report.check`): the Review panel shows
+  "Sound Check of this proposal: fixes n · introduces m" (verdict before → after in its title), each introduced finding with
+  "→ <item>" (click: that item), "Not checked: …" for skipped items, "Out of date: the mix changed / your decisions changed
+  which items it covers"; each row "✓ fixes n" / "▲ introduces m"; the details list them; the ghost card says "Sound Check:
+  …"; `get_proposal` returns `soundCheck` (and `stale` when the mix changed).
+- **Guides**: SOUND_GUIDE "Review lenses" (sync → sync rows and the listening transcript; edges → CLICK / EDGE; masking →
+  MASKED / LAYER_INAUDIBLE; tonal → HARSH and the bands; director → ARC / ENDING, DENSITY / COVERAGE, sections), "One writer,
+  one proposal per pass" (merge alternatives into one proposal, `sound_check {proposalId}` before asking for review, never
+  hand over one that introduces errors without saying so), "Deliberate exceptions" (acknowledge with a reason, warnings and
+  infos only, never to make the verdict pass), and search queries as "source + material + action + character";
+  PROPOSALS_GUIDE the same rules.
+
+#### Design and decisions
+
+- **The key is the report id** (`<CODE>:<subject>`): the check already derives it from the document — the clip / cue ids
+  and which edge (`EDGE:clp_…:end`, `HARSH:bright:clp_…`), else the frame (`SILENCE:53`), else what it is about
+  (`LOUDNESS:mix`) — so a re-run gives the same key. Keys are `[A-Z…]:[A-Za-z0-9_:.#|-]`, ≤ 256.
+- **`inputsHash` covers the target**: the named clips' and cue's records (names and undefined keys left out, so the
+  editor's in-memory document and the engine's JSON copy hash alike), else what plays ±2 s around the frame
+  (`soundCheckMomentHash`, the listen-here verdicts' rule), else the mix fingerprint with the delivery and loudness
+  settings. Decision: the bed under a clip is not part of it (spec: "the target clips' and cue's relevant fields").
+- **Severity**: the entry keeps the severity it covered; a finding that got worse counts again (`why: worse`). The command
+  refuses an agent's error (`E_APPROVAL_REQUIRED`, a new command error code), and the check ignores an agent's
+  acknowledgement of an error whatever severity it claimed (`why: needs-user`): an agent cannot lie past the gate.
+- **Live, not stale**: acknowledgements are not part of `soundCheckInputsHash`. The panel and `get_sound_check` apply the
+  document's acknowledgements to the shown report (pure, cheap), so acknowledging never makes the summary "stale"; the
+  stored summary's verdict stays what was measured until the next check (the spec's "a re-check after acknowledging
+  improves the verdict").
+- **Where they apply in the check**: before the joint safe-fix plan (WP6.5b) — an acknowledged finding's fix is not
+  judged with the others, not in `safeFixes`, not in Fix all safe — and before the per-event status and the listen-here
+  "worst".
+- **A duplicated sequence starts without acknowledgements** (its findings name other clips; what was deliberate is
+  decided again there). Repair drops malformed entries, keys that do not start with their code, and keeps the newest 500.
+- **Proposal preview = `previewProposal`** with the Review panel's per-item seeded ids (`<proposal>:<item>:<alternative>`),
+  not `composeAcceptTx`'s transaction (spec deviation, same commands in the same order): it attributes every entity to its
+  item and gives the same ids on every run (deterministic keys of introduced findings — the very clip ids the user's
+  ghosts have), and it checks the invariants as Apply does.
+- **Items**: default every item left to review (pending, stale, invalid: the stale / invalid ones and what requires them
+  are skipped with their reasons, as the spec asks to list them); explicit `itemIds` may include rejected ones (the user
+  changed their mind); accepted ones are already in the document (skipped).
+- **Attribution**: a finding goes to every item whose preview created, changed or deleted one of its clips or its cue;
+  setup items (a new cue, an imported sound) only when no other item did — "introduces REPEAT → item place", not "→ the
+  cue it needed".
+- **Base**: the kept report when it describes the live document as this check would measure it (mix and inputs hashes,
+  preset, custom target, range), else a fresh check of the live document in the same job (`base: run`). Acknowledgements
+  are applied to both from their own documents, so a proposal that edits an acknowledged clip shows that finding as
+  introduced again.
+- **Storage on the proposal** under its lock, without touching `updatedAt` (not a decision: an agent's `wait_for_proposal`
+  is not woken, expiry unchanged); `proposal.changed` `checked` makes the Review panel re-read it.
+- **Found and fixed on the way**: `previewProposal`'s batch attribution ignored ids named as record keys (`applyGains
+  {gains: {clp_…: −3}}`), so a batch gave that change to another item naming the same clip by value (the MASKED fix showed
+  as fixed by a rename item). Keys that look like ids now count as named; the batch then falls back to one item at a time
+  as it does for any shared entity (regression test in `proposals-preview-batch.test.ts`, failed before the fix).
+
+#### Verified (measured, this branch; build server `jasper-build`, 16 × Intel Haswell vCPU, Node 20.20.2, load 0.5–4)
+
+- Failing first: the new tests copied onto the integration tip `b4e152ef` (a detached worktree,
+  `.claude/worktrees/pe-e2-before`): `pnpm vitest run packages/project/test/sound-acknowledge.test.ts
+  packages/project/test/proposals-preview-batch.test.ts apps/engine/test/sound-check-ack-proposal.test.ts` → **12 of 15
+  failed** and the engine file failed to load (no `check-proposal.ts`): all 11 model tests, the attribution regression;
+  the three that passed are the earlier batch-preview tests.
+- `pnpm vitest run packages/project/test/sound-acknowledge.test.ts`: 11 passed — store (user, reason, target, hash) / undo =
+  untouched document / redo / replace / unacknowledge (field removed with the last); an agent's error →
+  `E_APPROVAL_REQUIRED` (document unchanged), its warnings and infos accepted with its name, the user's error accepted;
+  16 refusals (empty / blank / 301-character reason, malformed and over-long keys, a key of another code, unknown code /
+  severity, unknown clip / cue, a frame past the end, unknown keys, unknown sequence, unacknowledging an unknown key);
+  500 entries then `E_LIMIT`, re-acknowledging one still works; the marks (left out, counted, `{reason, by, at, active}`,
+  idempotent on a report read back), a gain change on the clip → back "changed", a music change under a frame-only target →
+  back, a rename → still acknowledged, an agent's acknowledgement of an error (even claimed "warning") → `needs-user`, a
+  worse finding → `worse`, an info under an acknowledged warning → covered, unmatched entries listed; load keeps them,
+  repair drops malformed ones (idempotent, invariants clean), the newest 500 kept; a duplicated sequence has none;
+  150 fast-check runs of hostile entries and findings never throw and repair always ends valid.
+- `pnpm vitest run apps/engine/test/sound-check-ack-proposal.test.ts` (real engine, the Phase 5 fixture): 5 passed — the
+  mix cut at a loud frame: ENDING the only warning, verdict warn; the agent acknowledges it → re-check **pass**,
+  `counts.acknowledged` 1, ENDING absent from the counts, listed with `{reason, by: agent, active: true}`, no listen-here
+  worst; −1 dB on the music → ENDING back, `why: changed`, warn. A CC-BY-NC click: LICENSE error → the agent's
+  acknowledgement `E_APPROVAL_REQUIRED` (revision unchanged); a "warning" claim accepted by the command but not honoured
+  (`needs-user`, still fail); the user's (origin user) → the error left out, no error count. The proposal check (clip B at
+  −30 dB → MASKED; items: its safe gain fix, the same hit again on a cut at frame 60, an invalid track update, a rename of
+  clip C): **fixes exactly MASKED (item `gain`), introduces exactly REPEAT (item `rep`)**, counts before / after, per-item
+  lists, `skipped` = the invalid item, `base: kept` with the kept report's job; the saved document and revision
+  unchanged, `check/last` still the earlier job, the summary on the proposal (`updatedAt` unchanged), event `checked`; run
+  again → **the same delta and the same issue ids** (deterministic); `itemIds: ['gain']` → nothing introduced. The kept
+  report stale after an edit → `base: run`; a moved clip makes the rename item stale → skipped "moved"; refusals 404
+  PROPOSAL_NOT_FOUND, 400 (`store` with a proposal, `itemIds` without one, a malformed id, another sequence), 404 an
+  unknown item. The pure `soundCheckDelta`: keys, attribution, setup items last, counts, the whole mix as no item.
+  **Time** (10 s fixture, load 0.5–1.7): a check 2.4–3.3 s; a proposal check with a kept base **2.6–2.7 s**, with a fresh
+  base **5.0–5.3 s** (measured: the test logs them).
+- `MCP_SOUND_ACK_TEST_PORT=52538 pnpm vitest run apps/mcp/test/sound-check-ack.test.ts` (jasper-mcp over stdio, real
+  engine): the error → `E_APPROVAL_REQUIRED` with the panel hint and nothing written; an unknown key `E_NOT_FOUND`; no
+  reason `E_INVALID_PARAM`; ENDING acknowledged by the agent; `get_sound_check` re-reads the kept report with it (no new
+  check); the re-check lists it under acknowledged, not in findings or counts (the error still fails the verdict);
+  unacknowledge brings it back; `place_sound` proposes the same hit again → `sound_check {proposalId}` "introduces … REPEAT
+  … — item place", `safeFixes` empty, revision unchanged; `get_proposal` `soundCheck` equal; `store` with a proposal refused.
+  `apps/mcp/test/proposals.test.ts`: `plan_sound_design {check: true}` returns `soundCheck` covering the place item,
+  revision unchanged, `get_proposal` the same summary (5 passed). `sound-guide` (the lens and rule phrases),
+  `sound-examples` (both new examples apply), `readme-tools`, `conventions`: pass.
+- Web: `apps/web/test/sound-check-panel.test.tsx` 17 passed (+3: Acknowledge… needs a reason, one History entry, the row
+  leaves the list, Fix all safe 4 → 3, "Acknowledged (1)" collapsed then the reason and "by you", chips without it,
+  Unacknowledge back; A from the list, keys typed in the reason field never drive the list, Escape; the user's error →
+  verdict fail → warn; moving the clip → back "Acknowledged before the change (…)"; the shortcut listed; read-only
+  disabled), `review-sound-check.test.tsx` 3 passed (Check proposal sends the items not rejected, summary, introduced list
+  with item links and "the whole mix", row badges and aria-labels, details, stale when a decision changes; an agent's kept
+  check shows and goes stale when the mix changes; the helpers). `node scripts/i18n.mjs --check`: es.json covers all
+  10 161 strings.
+- **Real app** (built stack, `pnpm build && pnpm mcp:build`, `E2E_PORT=52520 E2E_SKIP_BUILD=1 pnpm exec playwright test
+  e2e/sound-check-ack.spec.ts`): 1 passed (25 s). The Sound Check fixture's music cut at a loud frame, a hit and a tick on
+  cut cues → Run Sound Check → ENDING → Acknowledge… with a reason (Enter) → one History entry, "Acknowledged (1)"; MCP
+  `sound_check` lists the same open findings at the same frames and ENDING acknowledged by the user; the panel's re-run
+  shows MCP's verdict; the agent's `place_sound` (a REPEAT) and `sound_check {proposalId}` → the proposal card → Review:
+  the panel shows MCP's "fixes 0 · introduces 1", the REPEAT linked to the place item, the row's "▲ introduces 1", the
+  details "Introduces REPEAT …", the ghost card "▲ Sound Check: introduces 1"; Check again → the same summary, nothing
+  applied. Looked at (`test-results/e2e-sound-check-ack/`): `1-findings.png`, `2-ack-editor.png`, `3-acknowledged.png`,
+  `4-review-check.png`, `5-ghost-card.png`, `6-review-high-contrast.png`. The looks found two faults, fixed: an
+  "Acknowledge…" button on every row took the narrow panel's width from the messages and cut the Fix button (now on the
+  current or hovered row; A from the keyboard), and the summary's icon wrapped onto its own line.
+- Gate after merging `feat/sound-design` (`383fb436`, WP-E6; conflicts in `plan_sound_design`'s description and gaps — both
+  kept): `pnpm typecheck` (every package) 0 errors; `SD_GIT=1 … pnpm lint` (Biome, tokens, anime, layers, assets) pass;
+  `pnpm notices --check` current (33 ported records); `node scripts/i18n.mjs --check` (10 161); `pnpm vitest run --project
+  @jasper/project --project @jasper/api --project @jasper/engine-client --project @jasper/session --project @jasper/audio-fx
+  --maxWorkers=8`: 239 files, 2 962 passed; `--project @jasper/web --project @jasper/mcp`: 208 of 211 files passed, 2
+  skipped, 1 688 tests passed and one failed — the README tool test, on WP-E6's bare backticked style names in the tool
+  list (reworded `style.personality` …; `readme-tools.test.ts` then passed alone); engine `sound-check*`, `proposals*`, `fuzz-http`, `security-review`, `server`,
+  `sound-design-plan*`, `sound-design-grammar`, `sound-grammar-export`, `sound-listen`, `agent`, `events`: 25 files, 367
+  passed, 3 skipped. E2E: `sound-check-ack`, `sound-check-edges` and the first `sound-review` test pass; the second
+  `sound-review` test (Auto Sound Pass → … → export) fails at the Export button under a toast — the known carry-over
+  (UI-polish-2 in the queue), not this branch.
+
+#### Limits and notes for the next packages
+
+- A frame-only finding's key holds its frame (SILENCE, DIP, DENSITY rate): if it moves by a frame it is a new finding and
+  its acknowledgement is listed as not matched.
+- An acknowledgement covers its target, not the bed under it: a MASKED acknowledgement holds when the music gets louder.
+- The stored summary (`lastCheck`) keeps the measured verdict until the next check; the panel, `get_sound_check` and the
+  Export dialog's fresh check show the current one.
+- A proposal check costs one check of the preview, two when the kept report is not current (≈ 2.6 s / 5 s on the 10 s
+  fixture); it runs on one job slot like any check. Findings are attributed by the entities each item touched; a finding
+  of the whole mix (LOUDNESS, TRUE_PEAK, ENDING…) has no item.
+- The Review panel's check covers the items not rejected; a decision changed afterwards marks it out of date but does not
+  re-run it.
+- WP-E8 (beds and room tone) can add its commands next to these in `commands/*/sound.ts`; a COVERAGE or SILENCE it fixes
+  will show in a proposal check of its bed proposal.

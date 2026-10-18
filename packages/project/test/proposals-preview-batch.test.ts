@@ -180,6 +180,24 @@ describe('batched preview ≡ one transaction per item', () => {
 	});
 });
 
+describe('attribution of ids named as record keys (P6-E5)', () => {
+	it('an item naming a clip only as a key (applyGains gains) keeps its ghost when another item names it by value', () => {
+		const { h } = setup();
+		const audio = h.clips('A1')[0]!.id;
+		h.ok([{ type: 'essentialSound.setType', clipIds: [audio], audioType: 'sfx' }]);
+		const p = proposalOf(h, [
+			{ id: 'gain', commands: [{ type: 'soundDesign.applyGains', gains: { [audio]: -6 } }] },
+			{ id: 'name', commands: [{ type: 'clip.update', clipId: audio, patch: { name: 'Renamed' } }] },
+			{ id: 'mark', commands: [{ type: 'marker.add', frame: 40, name: 'm' }] },
+		]);
+		const ref = previewProposal(h.doc, p, 'undecided', CTX, { idsFor: idsFor(p), batch: 1 });
+		const got = previewProposal(h.doc, p, 'undecided', CTX, { idsFor: idsFor(p), batch: 32 });
+		expect(ref.items.gain!.changed).toContain(audio);
+		expect(ghostSets(got)).toEqual(ghostSets(ref));
+		expect(JSON.stringify(got.document)).toBe(JSON.stringify(ref.document));
+	});
+});
+
 describe('invariant-only conflicts in a large proposal', () => {
 	it('120 items, two of which add a marker with one id: the later one fails with the issue, the rest apply', () => {
 		const { h, clipId, markerId } = setup();

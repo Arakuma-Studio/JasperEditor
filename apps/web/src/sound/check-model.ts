@@ -12,6 +12,7 @@ import type {
 	SoundCheckReport,
 } from '@jasper/api';
 import {
+	applySoundAcknowledgements,
 	type Command,
 	DELIVERY_PRESETS,
 	mixFingerprint,
@@ -21,11 +22,13 @@ import {
 	SOUND_CHECK_MESSAGES,
 	SOUND_CHECK_TARGET_LIMITS,
 	type SOUND_CHECK_VERDICT_MARKER,
+	type SoundAckUnmatched,
 	type SoundCheckHumanVerdict,
 	type SoundCheckStatus,
 	type SoundCheckTarget,
 	type SoundDelivery,
 	sequenceTimecode,
+	soundAckTargetOf,
 	soundCheckHumanVerdicts,
 	soundCheckInputsHash,
 	soundCheckVerdictFor,
@@ -545,6 +548,69 @@ function solverGainWhy(fix: NonNullable<SoundCheckIssue['fix']>): string | null 
 /** Findings with a safe fix the panel can apply. */
 export function safeFixable(issues: readonly SoundCheckIssue[]): SoundCheckIssue[] {
 	return issues.filter((i) => i.fix?.safe && canApply(i));
+}
+
+// ── acknowledged findings (spec 12 §4 P6-E4) ───────────────────────────────────────────────────────────────────────
+
+export type AckView = {
+	/** The report as the document's acknowledgements say now (marks, verdict and counts recomputed). */
+	report: SoundCheckReport;
+	/** The findings that count (the list shows them). */
+	open: SoundCheckIssue[];
+	/** The findings left out as acknowledged ("Acknowledged (n)"). */
+	acknowledged: SoundCheckIssue[];
+	/** Acknowledgements no finding of the report matches (fixed since, or outside the range). */
+	unmatched: SoundAckUnmatched[];
+};
+
+/**
+ * A report seen through the sequence's acknowledgements now (`applySoundAcknowledgements`): acknowledging or taking
+ * one back shows at once, without running the check again. Never throws.
+ */
+export function acknowledgedView(doc: ProjectDocument, report: SoundCheckReport): AckView {
+	const a = applySoundAcknowledgements(doc, report.sequenceId, report.issues);
+	const issues = a.issues as SoundCheckIssue[];
+	return {
+		report: { ...report, issues, verdict: a.verdict, counts: a.counts },
+		open: issues.filter((i) => !i.acknowledged?.active),
+		acknowledged: issues.filter((i) => i.acknowledged?.active),
+		unmatched: a.unmatched,
+	};
+}
+
+/** The command that acknowledges a finding with a reason (the user's own edit in the panel). */
+export function ackCommand(issue: SoundCheckIssue, sequenceId: string, reason: string): Command {
+	const target = soundAckTargetOf(issue);
+	return {
+		type: 'soundDesign.acknowledgeIssue',
+		sequenceId,
+		key: issue.id,
+		code: issue.code,
+		severity: issue.severity,
+		reason: reason.trim().slice(0, 300),
+		target,
+		message: issue.message.text.slice(0, 500),
+	} as Command;
+}
+
+/** The command that takes an acknowledgement back. */
+export function unackCommand(key: string, sequenceId: string): Command {
+	return { type: 'soundDesign.unacknowledgeIssue', sequenceId, key } as Command;
+}
+
+/** Who acknowledged it: "you" for the user, else the agent's name. */
+export function ackByText(a: { by: 'user' | 'agent'; agent?: string | undefined }): string {
+	return a.by === 'user' ? t('you') : (a.agent ?? t('an agent'));
+}
+
+/** Why an acknowledged finding counts again, in words (null when it is left out). */
+export function ackAgainText(issue: Pick<SoundCheckIssue, 'acknowledged'>): string | null {
+	const a = issue.acknowledged;
+	if (!a || a.active) return null;
+	if (a.why === 'worse') return t('Acknowledged as a lesser finding ({0}): it is worse now', a.reason);
+	if (a.why === 'needs-user')
+		return t('{0} acknowledged it ({1}): only you can acknowledge an error', ackByText(a), a.reason);
+	return t('Acknowledged before the change ({0}): what it is about changed since', a.reason);
 }
 
 // ── listen here ─────────────────────────────────────────────────────────────────────────────────────────────────────

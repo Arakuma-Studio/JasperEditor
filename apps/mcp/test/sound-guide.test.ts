@@ -36,6 +36,19 @@ describe('SOUND_GUIDE (spec 12 §2.10)', () => {
 			'noisy-floor',
 			'dc-offset',
 			'material',
+			// P6-E4 / P6-E5: the review lenses, one writer, acknowledged exceptions, how to write a query
+			'review lenses',
+			'sync —',
+			'edges — click and edge',
+			'masking — masked and layer_inaudible',
+			'tonal — harsh',
+			'director — arc and ending',
+			'one writer, one proposal per pass',
+			'sound_check {projectid, proposalid}',
+			'never hand over a proposal that introduces errors without saying so',
+			'acknowledge_sound_issue',
+			'warnings and infos only',
+			'source + material + action + character',
 		])
 			expect(g, phrase).toContain(phrase);
 	});
@@ -66,6 +79,12 @@ describe('PROPOSALS_GUIDE (spec 12 §2.10, P3-R5)', () => {
 			'reject_proposal',
 			'get_proposal',
 			'list_proposals',
+			// P6-E5
+			'sound_check {projectid, proposalid}',
+			'fixes and introduces',
+			'one writer, one proposal per pass',
+			'never hand over a proposal that introduces errors without saying so',
+			'plan_sound_design {check: true}',
 		])
 			expect(g, phrase).toContain(phrase);
 		// SOUND_GUIDE points at the workflow too

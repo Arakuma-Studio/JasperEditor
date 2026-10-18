@@ -198,18 +198,28 @@ type Batch = {
 
 const EMPTY_GHOST = (): ProposalGhost => ({ created: [], changed: [], deleted: [] });
 
-/** Ids and temp refs named anywhere in a command set (clipboard payloads and presets are data, not references). */
+/**
+ * Ids and temp refs named anywhere in a command set (clipboard payloads and presets are data, not references), also as
+ * record keys (`soundDesign.applyGains {gains: {clp_…: −3}}` names its clips by key: without them a batch gave such a
+ * change to another item naming the clip by value, found by the Sound Check of a proposal, P6-E5).
+ */
 function namedIds(commands: readonly unknown[], refs: Readonly<Record<string, string>>): Set<string> {
 	const out = new Set<string>();
+	const name = (v: string) => {
+		const ref = v.startsWith('$') ? refs[v] : undefined;
+		if (ref) out.add(ref);
+		else if (looksLikeId(v)) out.add(v);
+	};
 	const walk = (v: unknown, depth: number) => {
 		if (depth > 32) return;
-		if (typeof v === 'string') {
-			const ref = v.startsWith('$') ? refs[v] : undefined;
-			if (ref) out.add(ref);
-			else if (looksLikeId(v)) out.add(v);
-		} else if (Array.isArray(v)) for (const x of v) walk(x, depth + 1);
+		if (typeof v === 'string') name(v);
+		else if (Array.isArray(v)) for (const x of v) walk(x, depth + 1);
 		else if (v && typeof v === 'object')
-			for (const [k, x] of Object.entries(v)) if (k !== 'payload' && k !== 'preset') walk(x, depth + 1);
+			for (const [k, x] of Object.entries(v)) {
+				if (k === 'payload' || k === 'preset') continue;
+				if (depth > 0) name(k);
+				walk(x, depth + 1);
+			}
 	};
 	for (const c of commands) walk(c, 0);
 	return out;

@@ -17,6 +17,7 @@ import {
 	mixFingerprint,
 	type Sequence,
 	SOUND_CHECK_VERDICT_MARKER,
+	soundAcknowledgementsOf,
 	soundCheckHumanVerdicts,
 	soundCheckInputsHash,
 	soundCheckStatus,
@@ -909,6 +910,134 @@ function GateHarness(props: {
 		</div>
 	);
 }
+
+describe('Sound Check panel: acknowledged findings (spec 12 §4 P6-E4)', () => {
+	it('Acknowledge… with a reason: one undo step, the finding leaves the list, the verdict and Fix all safe; Unacknowledge brings it back', async () => {
+		const f = fixture();
+		mount(f);
+		await run();
+		expect(screen.getByTestId('sound-check-verdict').getAttribute('data-verdict')).toBe('fail');
+		const fixAll = () => screen.getByTestId('sound-check-fix-all').textContent;
+		expect(fixAll()).toBe('Fix all safe (4)');
+		// LOUDNESS (a safe fix): Acknowledge… opens the reason field below the list; Acknowledge needs a reason
+		await act(async () => {
+			fireEvent.click(within(rowOf('LOUDNESS')).getByTestId('sound-check-acknowledge'));
+		});
+		const editor = screen.getByTestId('sound-check-ack-editor');
+		expect(editor.getAttribute('data-issue-id')).toBe('LOUDNESS:mix');
+		const save = within(editor).getByTestId('sound-check-ack-save') as HTMLButtonElement;
+		expect(save.getAttribute('aria-disabled')).toBe('true');
+		const reason = within(editor).getByTestId('sound-check-ack-reason') as HTMLInputElement;
+		expect(document.activeElement).toBe(reason);
+		await act(async () => {
+			fireEvent.change(reason, { target: { value: 'Mastered elsewhere: the client normalises it' } });
+		});
+		const n = f.labels().length;
+		// (the enabled button is a new element: the disabled one sat in its reason's tooltip)
+		await act(async () => {
+			fireEvent.click(
+				within(screen.getByTestId('sound-check-ack-editor')).getByTestId('sound-check-ack-save'),
+			);
+		});
+		await settle();
+		expect(f.labels()).toHaveLength(n + 1);
+		expect(f.labels().at(-1)).toBe('Acknowledge Sound Check Finding');
+		const ack = soundAcknowledgementsOf(f.seq())['LOUDNESS:mix']!;
+		expect(ack).toMatchObject({
+			by: 'user',
+			code: 'LOUDNESS',
+			reason: 'Mastered elsewhere: the client normalises it',
+		});
+		expect(screen.queryByTestId('sound-check-ack-editor')).toBeNull();
+		// out of the list and of Fix all safe; the group says how many, collapsed
+		expect(screen.getByTestId('sound-check-findings').querySelector('[data-code="LOUDNESS"]')).toBeNull();
+		expect(fixAll()).toBe('Fix all safe (3)');
+		const toggle = screen.getByTestId('sound-check-acknowledged-toggle');
+		expect(toggle.textContent).toContain('Acknowledged (1)');
+		expect(toggle.getAttribute('aria-expanded')).toBe('false');
+		expect(screen.queryByTestId('sound-check-acknowledged-row')).toBeNull();
+		await act(async () => {
+			fireEvent.click(toggle);
+		});
+		const row = screen.getByTestId('sound-check-acknowledged-row');
+		expect(row.getAttribute('data-issue-id')).toBe('LOUDNESS:mix');
+		expect(within(row).getByTestId('sound-check-ack-reason-text').textContent).toMatch(
+			/^Reason: Mastered elsewhere: the client normalises it · by you, /,
+		);
+		// the chips count without it
+		expect(screen.getByTestId('sound-check-chip-warnings').textContent).toContain('3');
+		// Unacknowledge: back in the list (one more undo step)
+		await act(async () => {
+			fireEvent.click(within(row).getByTestId('sound-check-unacknowledge'));
+		});
+		await settle();
+		expect(f.labels().at(-1)).toBe('Unacknowledge Sound Check Finding');
+		expect(rowOf('LOUDNESS')).toBeTruthy();
+		expect(screen.queryByTestId('sound-check-acknowledged')).toBeNull();
+		expect(fixAll()).toBe('Fix all safe (4)');
+	});
+
+	it('the user acknowledges an error: the verdict improves; A opens the reason field from the list, Escape closes it', async () => {
+		const f = fixture();
+		mount(f);
+		await run();
+		const list = screen.getByTestId('sound-check-findings');
+		await act(async () => {
+			fireEvent.focus(list);
+		});
+		expect(list.getAttribute('aria-activedescendant')).toBe(`sound-check-sc1-OUT_OF_SYNC:${f.clipA}`);
+		await act(async () => {
+			fireEvent.keyDown(list, { key: 'a', code: 'KeyA' });
+		});
+		const reason = screen.getByTestId('sound-check-ack-reason') as HTMLInputElement;
+		// typing there never drives the list (A, F, arrows)
+		await act(async () => {
+			fireEvent.keyDown(reason, { key: 'f', code: 'KeyF' });
+			fireEvent.keyDown(reason, { key: 'Escape', code: 'Escape' });
+		});
+		expect(screen.queryByTestId('sound-check-ack-editor')).toBeNull();
+		expect(f.labels().at(-1)).not.toMatch(/^Sound Check Fix/);
+		await act(async () => {
+			fireEvent.keyDown(list, { key: 'a', code: 'KeyA' });
+		});
+		const r2 = screen.getByTestId('sound-check-ack-reason') as HTMLInputElement;
+		await act(async () => {
+			fireEvent.change(r2, { target: { value: 'The hit lands late on purpose (a drag)' } });
+			fireEvent.keyDown(r2, { key: 'Enter', code: 'Enter' });
+		});
+		await settle();
+		expect(soundAcknowledgementsOf(f.seq())[`OUT_OF_SYNC:${f.clipA}`]).toMatchObject({
+			by: 'user',
+			severity: 'error',
+		});
+		// no error left: Warnings
+		expect(screen.getByTestId('sound-check-verdict').getAttribute('data-verdict')).toBe('warn');
+		// moving the clip brings it back, "acknowledged before the change"
+		f.ok([{ type: 'clip.move', clipIds: [f.clipA], deltaFrames: 1 }], 'Move');
+		await settle();
+		const again = rowOf('OUT_OF_SYNC');
+		expect(within(again).getByTestId('sound-check-ack-again').textContent).toMatch(
+			/^Acknowledged before the change \(The hit lands late on purpose \(a drag\)\)/,
+		);
+		expect(within(again).getByTestId('sound-check-ack-again').getAttribute('data-ack-why')).toBe('changed');
+		expect(screen.getByTestId('sound-check-verdict').getAttribute('data-verdict')).toBe('fail');
+		// the shortcut is a Sound Check command (Keyboard Shortcuts lists it)
+		const rows = shortcutRows(getActiveKeymap()).filter((r) => r.scope === 'soundCheck');
+		expect(rows.find((r) => r.id === 'soundCheck.acknowledgeFinding')?.bindings.map((b) => b.key)).toEqual([
+			'KeyA',
+		]);
+	});
+
+	it('read-only: Acknowledge… is disabled', async () => {
+		const f = fixture();
+		mount(f);
+		await run();
+		act(() => f.session.store.setState({ readOnly: true }));
+		expect(
+			(within(rowOf('LOUDNESS')).getByTestId('sound-check-acknowledge') as HTMLButtonElement).disabled,
+		).toBe(true);
+	});
+});
 
 describe('Export dialog: Run Sound Check before export', () => {
 	it('is offered with sound effects; a fail stops with Export anyway / Review issues; a pass exports', async () => {

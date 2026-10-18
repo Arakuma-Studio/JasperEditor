@@ -175,7 +175,7 @@ const abstract: fc.Arbitrary<Abstract> = fc.oneof(
 	// verification: listen-here verdicts bound to a clip / cue (frames past the end and unknown clips are refused)
 	fc.record({
 		k: fc.constant('check' as const),
-		op: fc.nat(5),
+		op: fc.nat(7),
 		verdict: fc.nat(3),
 		n: fc.nat(70),
 		at: frame,
@@ -387,6 +387,21 @@ function concretize(a: Abstract, doc: ProjectDocument, media: string[]): unknown
 			};
 		}
 		case 'check': {
+			// P6-E4: acknowledge a finding (a clip, a frame or nothing; all severities; agents draw errors refused) / take it back
+			if (a.op === 6 || a.op === 7) {
+				const all = clips.map((c) => c.id);
+				const c = all.length ? all[a.n % all.length] : pick(a.n);
+				const key = ['MASKED:x', 'SILENCE:12', 'ENDING:end'][a.verdict % 3]!;
+				if (a.op === 7) return { type: 'soundDesign.unacknowledgeIssue', key };
+				return {
+					type: 'soundDesign.acknowledgeIssue',
+					key,
+					code: key.split(':')[0],
+					severity: ['error', 'warning', 'info', 'warning'][a.verdict],
+					reason: a.n % 5 ? 'deliberate' : ' ',
+					target: a.n % 3 === 0 ? { clipIds: [c] } : a.n % 3 === 1 ? { frame: a.at } : {},
+				};
+			}
 			if (a.op === 4 || a.op === 5) {
 				const all = clips.map((c) => c.id);
 				const c = all.length ? all[a.n % all.length] : pick(a.n);
@@ -560,7 +575,9 @@ describe('AC-25: invariants under random transactions', () => {
 								mixAccepted++;
 							if (
 								commands.some((c) =>
-									/^soundDesign\.(setCheck|setSettings|setVerdict)$/.test((c as { type: string }).type),
+									/^soundDesign\.(setCheck|setSettings|setVerdict|acknowledgeIssue|unacknowledgeIssue)$/.test(
+										(c as { type: string }).type,
+									),
 								)
 							)
 								checkAccepted++;

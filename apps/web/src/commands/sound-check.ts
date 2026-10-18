@@ -5,7 +5,8 @@
 // is MCP `sound_check`, whose fixes they apply with the tools each fix names. Listen to Sequence opens the panel's Log
 // tab and runs the listening transcript (spec 12 §4 P6-E6; MCP `listen_to_sequence`). The findings list's keys are commands of
 // the Sound Check scope (Keyboard Shortcuts lists them; remappable): ↑ ↓ Home End move, Enter goes to the finding, F
-// applies its fix (one that needs judgement asks first), → / ← open / close its sync strip, Space plays 4 s around it.
+// applies its fix (one that needs judgement asks first), A acknowledges it with a reason (P6-E4), → / ← open / close its
+// sync strip, Space plays 4 s around it.
 import { t } from '../i18n/runtime.ts';
 import { type ListenEngine, runListen, setListenTab } from '../panels/soundCheck/listen-run.ts';
 import { canApply, hasSyncStrip, safeFixable } from '../sound/check-model.ts';
@@ -16,9 +17,11 @@ import {
 	findingOrder,
 	fixAllSafe,
 	jumpToIssue,
+	openFindings,
 	playFinding,
 	reportFor,
 	runSoundCheck,
+	setAckOpen,
 	setSyncStrip,
 	soundCheckStore,
 	stepFinding,
@@ -114,6 +117,19 @@ const findingCommands: UiCommand[] = [
 		},
 	},
 	{
+		id: 'soundCheck.acknowledgeFinding',
+		label: 'Acknowledge Sound Check Finding…',
+		description:
+			'Mark the current Sound Check finding as a deliberate exception, with a reason: it no longer counts against the verdict until what it is about changes. One undo step',
+		scope: 'soundCheck',
+		when: (ctx) => onFinding(ctx) && !ctx.session!.getState().readOnly,
+		disabledReason: (ctx) => (ctx.session?.getState().readOnly ? t('The project is read-only') : noCurrent()),
+		run: (ctx) => {
+			const i = ctx.session && currentFinding(ctx.session);
+			if (ctx.session && i) setAckOpen(ctx.session, i.id);
+		},
+	},
+	{
 		id: 'soundCheck.openSyncStrip',
 		label: 'Open Sync Strip',
 		description:
@@ -150,7 +166,7 @@ function pendingSafe(ctx: CommandCtx): number {
 	const r = reportFor(e.session, e.seq.id);
 	if (!r) return 0;
 	const fixed = soundCheckStore(e.session).getState().fixed;
-	return safeFixable(r.report.issues).filter((i) => !fixed.includes(i.id)).length;
+	return safeFixable(openFindings(e.session, r)).filter((i) => !fixed.includes(i.id)).length;
 }
 
 export const soundCheckCommands: UiCommand[] = [

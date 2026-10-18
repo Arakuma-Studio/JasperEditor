@@ -205,6 +205,8 @@ export const PROPOSAL_CHANGES = [
 	'evicted',
 	/** An agent started or stopped waiting for the review (`waiting`); nothing in the proposal changed. */
 	'waiting',
+	/** A Sound Check of the proposal was stored on it (`report.check`, spec 12 §4 P6-E5); its items did not change. */
+	'checked',
 ] as const;
 
 /** Event `proposal.changed` (engine `/events`, scoped to the project). */

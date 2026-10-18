@@ -1198,7 +1198,10 @@ export const ROUTES = {
 	/**
 	 * Sound Check (spec 12 §2.6, P5-R1): a `sound-check` job (202) that renders the delivered mix and its stems, measures
 	 * them and returns `SoundCheckResult` (findings with fixes, listen-here moments, per-event table, verdict);
-	 * `store: true` also writes the summary into the sequence (`soundDesign.setCheck`).
+	 * `store: true` also writes the summary into the sequence (`soundDesign.setCheck`). With `proposalId` (spec 12 §4
+	 * P6-E5) it checks the proposal's preview document instead and adds `proposal` (what it fixes and introduces, per
+	 * item); nothing is committed and the summary is kept on the proposal (`report.check`). 404 `PROPOSAL_NOT_FOUND`,
+	 * 404 `NOT_FOUND` (an unknown item).
 	 */
 	soundDesignCheck: {
 		method: 'POST',

@@ -34,6 +34,14 @@ export const SOUND_DESIGN_LIMITS = {
 	maxFrame: 10_368_000,
 	/** Largest `SoundCue.anchorOffset` either side (frames; beat snapping moves a cue ≤ 2). */
 	anchorOffset: 10,
+	/** Acknowledged Sound Check findings a sequence may hold (spec 12 §4 P6-E4). */
+	acknowledged: 500,
+	/** An acknowledgement's reason (characters). */
+	ackReason: 300,
+	/** A finding key (`<CODE>:<subject>`). */
+	ackKey: 256,
+	/** The finding's text kept with its acknowledgement (characters). */
+	ackMessage: 500,
 } as const;
 
 export const CUE_KINDS = [
@@ -390,12 +398,43 @@ export const SoundDesignMixSchema = z.looseObject({
 });
 export type SoundDesignMix = DeepStrip<z.infer<typeof SoundDesignMixSchema>>;
 
+/**
+ * A Sound Check finding the user (or an agent, for warnings and infos only) acknowledged as a deliberate exception, with
+ * a reason (spec 12 §4 P6-E4; earshot's `qa_ok`). Keyed in `SoundDesign.acknowledged` by the finding's key (its report
+ * id: `<CODE>:<subject>` — the code with the clip / cue ids it names, else its frame). `inputsHash`
+ * (`soundAckInputsHash`) covers what the finding is about when it was acknowledged: when that changes, the finding is
+ * reported again, "acknowledged before the change". `severity` is what was acknowledged: a finding that became worse
+ * comes back. The code is stored as a string (a newer build's code survives a repair). Metadata only.
+ */
+export const SoundAcknowledgementSchema = z.looseObject({
+	code: z.string().regex(/^[A-Z][A-Z0-9_]{0,31}$/),
+	severity: z.enum(['error', 'warning', 'info']),
+	reason: z.string().min(1).max(SOUND_DESIGN_LIMITS.ackReason),
+	by: z.enum(['user', 'agent']),
+	/** The agent's name when `by` is 'agent'. */
+	agent: z.string().min(1).max(64).optional(),
+	at: z.string().min(1).max(64),
+	target: z.looseObject({
+		clipIds: z.array(id()).max(SOUND_DESIGN_LIMITS.placedClips).optional(),
+		cueId: id().optional(),
+		frame: frame().optional(),
+	}),
+	inputsHash: z.string().min(1).max(256),
+	/** The finding's English text when it was acknowledged (shown when the finding is no longer reported). */
+	message: z.string().max(SOUND_DESIGN_LIMITS.ackMessage).optional(),
+});
+export type SoundAcknowledgement = DeepStrip<z.infer<typeof SoundAcknowledgementSchema>>;
+/** A finding key: `<CODE>:<subject>` (letters, digits and `_ : . # | -`), at most `ackKey` characters. */
+export const SOUND_ACK_KEY_RE = /^[A-Z][A-Z0-9_]{0,31}:[A-Za-z0-9_:.#|-]{1,222}$/;
+
 export const SoundDesignSchema = z.looseObject({
 	cues: z.record(z.string(), SoundCueSchema),
 	settings: SoundDesignSettingsSchema.optional(),
 	lastCheck: SoundCheckSummarySchema.optional(),
 	/** Phase 4: what stop-before, build and room glue wrote (absent = nothing). */
 	mix: SoundDesignMixSchema.optional(),
+	/** P6-E4: acknowledged Sound Check findings by finding key (≤ 500; absent = none). */
+	acknowledged: z.record(z.string().regex(SOUND_ACK_KEY_RE), SoundAcknowledgementSchema).optional(),
 });
 export type SoundDesign = DeepStrip<z.infer<typeof SoundDesignSchema>>;
 
@@ -534,6 +573,17 @@ export function soundDesignIssue(raw: unknown): string | null {
 		if (cue.id !== key) return `cues.${key}: key does not match the cue id ${cue.id}`;
 	if (Object.keys((raw as SoundDesign).cues).length > SOUND_DESIGN_LIMITS.cues)
 		return `more than ${SOUND_DESIGN_LIMITS.cues} cues`;
+	const ack = (raw as SoundDesign).acknowledged;
+	if (ack !== undefined) {
+		const n = Object.keys(ack).length;
+		if (parsed.success && Object.keys(parsed.data.acknowledged ?? {}).length !== n)
+			return 'acknowledged: a key the schema cannot read (e.g. __proto__)';
+		if (n > SOUND_DESIGN_LIMITS.acknowledged)
+			return `more than ${SOUND_DESIGN_LIMITS.acknowledged} acknowledged findings`;
+		for (const [key, a] of Object.entries(ack))
+			if (!key.startsWith(`${a.code}:`))
+				return `acknowledged.${key}: the key does not start with its code ${a.code}`;
+	}
 	return null;
 }
 
@@ -688,7 +738,31 @@ export function readSoundDesign(raw: unknown): SoundDesign | null {
 	const mix = readSoundDesignMix(raw.mix);
 	if (mix) out.mix = mix;
 	else delete out.mix;
+	const ack = readSoundAcknowledgements(raw.acknowledged);
+	if (ack) out.acknowledged = ack;
+	else delete out.acknowledged;
 	return soundDesignIssue(out) === null ? (out as SoundDesign) : { cues: rec };
+}
+
+/**
+ * Lenient read of `SoundDesign.acknowledged`: each entry on its own (a malformed one, a key that is not a finding key or
+ * does not start with its code, dropped), at most `SOUND_DESIGN_LIMITS.acknowledged` kept — the most recent by `at`.
+ * Null when nothing readable is left. Pure; never throws.
+ */
+export function readSoundAcknowledgements(raw: unknown): Record<string, SoundAcknowledgement> | null {
+	if (!isRecord(raw)) return null;
+	const list: [string, SoundAcknowledgement][] = [];
+	for (const [key, v] of Object.entries(raw)) {
+		if (key.length > SOUND_DESIGN_LIMITS.ackKey || !SOUND_ACK_KEY_RE.test(key)) continue;
+		const r = SoundAcknowledgementSchema.safeParse(v);
+		if (!r.success || !key.startsWith(`${r.data.code}:`)) continue;
+		list.push([key, r.data as SoundAcknowledgement]);
+	}
+	if (!list.length) return null;
+	list.sort((a, b) => (a[1].at > b[1].at ? -1 : a[1].at < b[1].at ? 1 : a[0] < b[0] ? -1 : 1));
+	const out: Record<string, SoundAcknowledgement> = Object.create(null);
+	for (const [k, v] of list.slice(0, SOUND_DESIGN_LIMITS.acknowledged)) out[k] = v;
+	return out;
 }
 
 /**

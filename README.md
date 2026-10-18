@@ -45,7 +45,7 @@ nobody outside has used it, only Linux was checked — is [`docs/gaps.md`](docs/
 - **Export and interchange.** A planner routes each sequence to the native FFmpeg path, a hybrid layer bake or
   Remotion and refuses by name what a path cannot render; H.264, HEVC, VP9, AV1, ProRes, alpha; render previews and
   smart rendering; FCP 7 XML, FCPXML, EDL, AAF, OMF, ALE and OTIO in both directions.
-- **Agents.** `jasper-mcp` exposes 358 tools and the whole command catalogue; every edit is an undoable
+- **Agents.** `jasper-mcp` exposes 359 tools and the whole command catalogue; every edit is an undoable
   transaction, destructive ones need the user's approval in the editor; a `jasper` CLI; tools that look at and
   operate the live window.
 - **Safety net.** Atomic saves, single-writer leases (a reloaded tab keeps its own), crash-recovery journal, saved
@@ -442,7 +442,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (358; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (359; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `browse_media_files` (folders and importable files on the engine's computer) `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -522,9 +522,9 @@ Tools (358; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   bed; style options room glue, stop-before, build, delivery; `style.cueSources` picks where derived cues come from;
   the cue grammar — one click voice at one level, keys as takes at speed 1, climbing runs, one key per word for fast
   typing, music carries the cuts, palette materials — with `style.personality` / `style.runs` / `style.typing` /
-  `musicCarriesCuts` / `duckUnderTyping`, defaulting to the sequence's `soundDesign.setSettings {style}`; find_sound_cues
+  `style.musicCarriesCuts` / `style.duckUnderTyping`, defaulting to the sequence's `soundDesign.setSettings {style}`; find_sound_cues
   and place_sound picks follow it too; music to picture — chimes tuned to the music's key, stops on the bar line — with
-  `tuneToMusic` / `stopOnBar`, on by default) ·
+  `style.tuneToMusic` / `style.stopOnBar`, on by default) ·
   `rebalance_sfx` (masking solver: each sound effect clears the bed by its target lift, with what limited it) ·
   `apply_delivery` (web / podcast / R128 / A/85: Mix loudness, Auto-Match by type, ducking, measured) `set_room_glue` (a
   shared "SFX Room" reverb) · `sound_check` (the delivered mix measured: findings with safe fixes judged together, in the
@@ -532,7 +532,10 @@ Tools (358; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   harshness, inaudible layers, partial coverage, endings and the loudness arc — five listen-here timecodes, a verdict, a
   PNG of the worst moments; a custom delivery target; humanVerdicts: what the user said after
   listening in the editor's Sound Check panel, each bound to the moment it judged and marked stale when that moment
-  changed) `get_sound_check` (the last full report the engine keeps per sequence, across restarts: current or stale)
+  changed; `proposalId` checks a proposal before review — what it fixes and introduces, per item, on its preview,
+  nothing applied) `get_sound_check` (the last full report the engine keeps per sequence, across restarts: current or
+  stale) `acknowledge_sound_issue` (a deliberate exception with a reason: left out of the verdict until what it is about
+  changes; warnings and infos only for an agent, errors are the user's)
   `view_sound_timeline` (the annotated sound sheet of ≤ 120 s: frames at the cuts and cues, loudness of the mix and its
   stems, spectrogram, sections, every cut / cue marked by whether a sound answers it, motion, findings)
   `listen_to_sequence` (a written log of the mix, ≤ 10 min: every sound named by the clip that plays it and the cue it
@@ -540,7 +543,8 @@ Tools (358; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   none; the sound sheet with images)
   (`docs/specs/12-sound-design.md`, `docs/wp-notes/sound-design.md`).
 - Proposals (reviewed and applied by the user in the editor; one undo step): `list_proposals` `get_proposal` (with a
-  ghost table) `wait_for_proposal` (decisions and notes) `accept_proposal` (policy-gated for agents) `reject_proposal`.
+  ghost table and its last Sound Check: fixes · introduces) `wait_for_proposal` (decisions and notes) `accept_proposal`
+  (policy-gated for agents) `reject_proposal`.
 - Captions and transcripts: `import_captions` `export_captions` `list_captions` `add_caption` `edit_caption`
   `split_captions` `merge_captions` `delete_captions` `style_captions` `caption_track` · `import_transcript`
   `transcript_inspect` `transcript_search` `transcript_select` `transcript_extract` `transcript_lift`

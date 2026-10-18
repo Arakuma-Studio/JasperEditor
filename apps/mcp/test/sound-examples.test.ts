@@ -34,6 +34,8 @@ const SOUND_COMMANDS = [
 	'soundDesign.ensureBus',
 	'soundDesign.removeBus',
 	'soundDesign.applyDelivery',
+	'soundDesign.acknowledgeIssue',
+	'soundDesign.unacknowledgeIssue',
 ];
 
 /** A music clip on A1 (Phase 4 mixing examples). */
@@ -168,6 +170,18 @@ const PRELUDE: Record<string, unknown[]> = {
 	'soundDesign.removeBus': [{ type: 'soundDesign.ensureBus' }],
 	'soundDesign.setVerdict': MUSIC,
 	'soundDesign.applyDelivery': MUSIC,
+	'soundDesign.acknowledgeIssue': MUSIC,
+	'soundDesign.unacknowledgeIssue': [
+		...MUSIC,
+		{
+			type: 'soundDesign.acknowledgeIssue',
+			key: 'ENDING:end',
+			code: 'ENDING',
+			severity: 'warning',
+			reason: 'deliberate',
+			target: { frame: 15 },
+		},
+	],
 };
 
 describe('sound-design describe_commands examples', () => {
