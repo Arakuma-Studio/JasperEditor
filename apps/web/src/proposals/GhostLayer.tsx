@@ -7,7 +7,7 @@
 // I opens the card (focus moves into it), Esc closes it. Nothing animates (reduced motion has nothing to stop).
 import type { Sequence } from '@jasper/project';
 import type { EditorSession, ProposalsController, ReviewItem } from '@jasper/session';
-import { useSessionState } from '@jasper/session/react';
+import { useSessionState, useStoreSelector } from '@jasper/session/react';
 import { Button, Z } from '@jasper/ui';
 import {
 	type KeyboardEvent as ReactKeyboardEvent,
@@ -36,6 +36,7 @@ import {
 	stateGlyph,
 	whyLines,
 } from './ghosts.ts';
+import { itemCheck, itemCheckText, proposalCheckStore, storedProposalCheck } from './sound-check.ts';
 import { useProposals, useProposalsController } from './state.ts';
 
 /** Whether the high-contrast theme is on (`data-pr-contrast="high"` on the root element). */
@@ -477,6 +478,12 @@ function GhostCard(props: {
 	const busy = useProposals(props.session, (s) => s.busy);
 	const previewSeq = useProposals(props.session, (s) => s.preview?.result.document.sequences[seq.id]);
 	const readOnly = useSessionState((s) => s.readOnly);
+	// P6-E5: what the proposal's Sound Check says about this item (the newer of the kept check and this window's)
+	const proposal = useProposals(props.session, (s) => s.proposal);
+	const checkLast = useStoreSelector(proposalCheckStore(props.session), (s) => s.last);
+	const kept = proposal ? storedProposalCheck(proposal) : null;
+	const here = checkLast && proposal && checkLast.proposalId === proposal.id ? checkLast : null;
+	const check = kept && here ? (here.at > kept.at ? here : kept) : (kept ?? here);
 	const [noteOpen, setNoteOpen] = useState(false);
 	const [note, setNote] = useState(item?.note ?? '');
 	useEffect(() => {
@@ -546,6 +553,15 @@ function GhostCard(props: {
 			{lines.problem ? (
 				<div className="text-pr-warning" data-ghost-problem>
 					! {lines.problem}
+				</div>
+			) : null}
+			{itemCheckText(check, item.id) ? (
+				<div
+					className={itemCheck(check, item.id).introduces.length ? 'text-pr-warning' : 'text-pr-success'}
+					data-ghost-check={itemCheckText(check, item.id)}
+				>
+					{itemCheck(check, item.id).introduces.length ? '▲ ' : '✓ '}
+					{t('Sound Check: {0}', itemCheckText(check, item.id))}
 				</div>
 			) : null}
 			{item.note && !noteOpen ? <div className="text-pr-muted italic">✎ {item.note}</div> : null}

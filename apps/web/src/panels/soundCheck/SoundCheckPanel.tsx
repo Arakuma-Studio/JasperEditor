@@ -9,6 +9,10 @@
 // (user `comment` markers that MCP `sound_check` returns as humanVerdicts) and Play all. Keyboard: the findings list is
 // one tab stop (↑ ↓ Home End move, Enter jumps, F fixes, → / ← open / close the sync strip, Space plays the moment);
 // everything else is buttons and fields. Run progress and the verdict are announced (aria-live). Nothing animates.
+// Acknowledged findings (spec 12 §4 P6-E4): "Acknowledge…" on a row (or A in the list) opens a reason field below the
+// list; the finding moves to the collapsed "Acknowledged (n)" group (reason, who, Unacknowledge) at once — the report is
+// seen through the document's acknowledgements — and leaves the verdict, the counts and Fix all safe; a finding
+// acknowledged before its clips / cue / moment changed is back in the list, marked so.
 // Tabs: Findings (the above) and Log (./LogTab.tsx, spec 12 §4 P6-E6: the listening transcript, as MCP
 // listen_to_sequence returns it).
 import type { SoundCheckIssue } from '@jasper/api';
@@ -24,6 +28,10 @@ import { t } from '../../i18n/runtime.ts';
 import { isOwnKey, runScopedKey } from '../../proposals/keys.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import {
+	type AckView,
+	ackAgainText,
+	ackByText,
+	acknowledgedView,
 	CUSTOM_VALUE,
 	canApply,
 	choiceNumbers,
@@ -54,6 +62,7 @@ import {
 	verdictStaleText,
 } from '../../sound/check-model.ts';
 import {
+	acknowledgeFinding,
 	applyCheckFix,
 	type CheckEngine,
 	cancelSoundCheck,
@@ -66,11 +75,13 @@ import {
 	playListen,
 	recordVerdict,
 	runSoundCheck,
+	setAckOpen,
 	setChoice,
 	setFindingCursor,
 	setSyncStrip,
 	soundCheckStore,
 	stopListen,
+	unacknowledgeFinding,
 } from '../../sound/check-run.ts';
 import { seqTimecode } from '../../sound/design-model.ts';
 import { type StripEngine, SyncStrip } from '../../sound/SyncStrip.tsx';
@@ -123,7 +134,10 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 				: { state: 'none' as const, summary: null, reasons: [], mixHash: '' },
 		[doc, seqId],
 	);
-	const report = result && seqId && result.sequenceId === seqId ? result.report : null;
+	const raw = result && seqId && result.sequenceId === seqId ? result.report : null;
+	// the report as the sequence's acknowledgements say now (P6-E4): acknowledging shows at once
+	const view = useMemo(() => (raw ? acknowledgedView(doc, raw) : null), [doc, raw]);
+	const report = view?.report ?? null;
 	const choice: DeliveryChoice = seqId
 		? (storedChoice[seqId] ?? choiceOf(session, seqId))
 		: { kind: 'preset', preset: 'web' };
@@ -147,7 +161,7 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 	// stored summary is
 	const shownStatus = useMemo(() => (report ? reportStatus(doc, report) : status), [doc, report, status]);
 	const stale = staleText(shownStatus);
-	const safe = report ? safeFixable(report.issues).filter((i) => !fixed.includes(i.id)) : [];
+	const safe = view ? safeFixable(view.open).filter((i) => !fixed.includes(i.id)) : [];
 
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: keeps Enter / Space on the panel's own buttons and fields
@@ -278,6 +292,7 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 								engine={engine}
 								seq={seq}
 								report={report}
+								open={view!.open}
 								jobId={jobId}
 								fixing={fixing}
 								fixed={fixed}
@@ -286,6 +301,8 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 								instanceId={props.instanceId}
 								reveal={reveal}
 							/>
+							<AckEditor session={session} view={view!} readOnly={readOnly} />
+							<Acknowledged session={session} seq={seq} view={view!} readOnly={readOnly} reveal={reveal} />
 							<Listen
 								session={session}
 								seq={seq}
@@ -568,6 +585,8 @@ function wholeRange(r: { start: number; end: number }, all: { start: number; end
 
 function issueName(i: SoundCheckIssue, fixedNow: boolean): string {
 	const parts = [t(SEVERITY_LABELS[i.severity]), i.timecode ?? '', messageText(i.message)];
+	const again = ackAgainText(i);
+	if (again) parts.push(again);
 	if (fixedNow) parts.push(t('fixed, run again to confirm'));
 	else if (i.fix && canApply(i))
 		parts.push(
@@ -581,6 +600,8 @@ function Findings(props: {
 	engine: (CheckEngine & StripEngine) | null;
 	seq: Sequence;
 	report: import('@jasper/api').SoundCheckReport;
+	/** The findings that count (acknowledged ones are listed apart). */
+	open: SoundCheckIssue[];
 	jobId: string | null;
 	fixing: string | null;
 	fixed: readonly string[];
@@ -589,9 +610,9 @@ function Findings(props: {
 	instanceId: string;
 	reveal(f: number): void;
 }) {
-	const { session, engine, report, seq } = props;
-	const groups = useMemo(() => groupIssues(report.issues), [report]);
-	const order = useMemo(() => orderedIssues(report.issues), [report]);
+	const { session, engine, report, seq, open: issues } = props;
+	const groups = useMemo(() => groupIssues(issues), [issues]);
+	const order = useMemo(() => orderedIssues(issues), [issues]);
 	const store = soundCheckStore(session);
 	const current = useStoreSelector(store, (s) => s.cursor);
 	const openList = useStoreSelector(store, (s) => s.openStrips);
@@ -622,13 +643,15 @@ function Findings(props: {
 	const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
 		runScopedKey(e, 'soundCheck', ctx(), runtime ?? {});
 	};
-	if (!report.issues.length)
+	if (!issues.length)
 		return (
 			<p
 				className="m-0 border-b border-pr-border px-2 py-2 text-pr-small text-pr-muted"
 				data-testid="sound-check-none"
 			>
-				{t('No findings: every check passed.')}
+				{report.issues.length
+					? t('No findings left: the others are acknowledged.')
+					: t('No findings: every check passed.')}
 			</p>
 		);
 	return (
@@ -720,6 +743,20 @@ function Findings(props: {
 											<Icon id={expanded ? 'app.chevronDown' : 'app.chevronRight'} size={14} />
 										</button>
 									) : null}
+									<Button
+										variant="quiet"
+										tabIndex={-1}
+										className="shrink-0"
+										data-testid="sound-check-acknowledge"
+										disabled={props.readOnly}
+										title={t('Acknowledge… (A): a deliberate exception, with a reason; it no longer counts')}
+										onClick={() => {
+											setFindingCursor(session, i.id);
+											setAckOpen(session, i.id);
+										}}
+									>
+										{t('Acknowledge…')}
+									</Button>
 									{i.fix && canApply(i) && !fixedNow ? (
 										<Button
 											variant={i.fix.safe ? 'secondary' : 'quiet'}
@@ -743,6 +780,16 @@ function Findings(props: {
 										</Button>
 									) : null}
 								</div>
+								{ackAgainText(i) ? (
+									<div
+										className="ml-[68px] flex items-center gap-1 text-pr-small text-pr-warning"
+										data-testid="sound-check-ack-again"
+										data-ack-why={i.acknowledged?.why ?? ''}
+									>
+										<Icon id="status.warning" size={12} />
+										{ackAgainText(i)}
+									</div>
+								) : null}
 								{i.fix && canApply(i) && !fixedNow ? (
 									<div className="ml-[68px] text-pr-small text-pr-muted">
 										{i.fix.safe ? '✓ ' : '! '}
@@ -766,6 +813,211 @@ function Findings(props: {
 				</div>
 			))}
 		</div>
+	);
+}
+
+// ── acknowledged findings (P6-E4) ───────────────────────────────────────────────────────────────────────────────
+
+/** The findings list (focus goes back to it after the reason field). */
+const focusFindings = () =>
+	document.querySelector<HTMLElement>('[data-testid="sound-check-findings"]')?.focus();
+
+/** The reason field of "Acknowledge…", below the list (typing there never drives the list's keys). */
+function AckEditor(props: { session: EditorSession; view: AckView; readOnly: boolean }) {
+	const { session, view } = props;
+	const openId = useStoreSelector(soundCheckStore(session), (s) => s.ackOpen);
+	const issue = openId ? view.open.find((i) => i.id === openId) : undefined;
+	const [reason, setReason] = useState('');
+	const [error, setError] = useState<string | null>(null);
+	// another finding: its earlier reason when it was acknowledged before a change, else empty
+	// biome-ignore lint/correctness/useExhaustiveDependencies: only when another finding is chosen
+	useEffect(() => {
+		setReason(issue?.acknowledged?.reason ?? '');
+		setError(null);
+	}, [openId]);
+	if (!issue) return null;
+	const close = () => {
+		setAckOpen(session, null);
+		focusFindings();
+	};
+	const save = () => {
+		const r = acknowledgeFinding(session, issue, reason);
+		if (!r.ok) setError(r.message);
+		else focusFindings();
+	};
+	return (
+		<div
+			className="flex flex-col gap-1 border-b border-pr-border bg-pr-panel-alt px-2 py-1.5 text-pr-small"
+			data-testid="sound-check-ack-editor"
+			data-issue-id={issue.id}
+		>
+			<div className="text-pr-muted">
+				{t(
+					'Acknowledge {0} at {1} as deliberate: it no longer counts until what it is about changes.',
+					issue.code,
+					issue.timecode ?? t('whole mix'),
+				)}
+			</div>
+			<div className="flex items-center gap-1">
+				<TextField
+					autoFocus
+					className="min-w-0 flex-1"
+					aria-label={t('Why is {0} deliberate?', issue.code)}
+					placeholder={t('Why is it deliberate? (required)')}
+					value={reason}
+					maxLength={300}
+					invalid={!!error}
+					data-testid="sound-check-ack-reason"
+					onChange={(e) => {
+						setReason(e.target.value);
+						setError(null);
+					}}
+					onKeyDown={(e) => {
+						e.stopPropagation();
+						if (e.key === 'Enter') {
+							e.preventDefault();
+							save();
+						} else if (e.key === 'Escape') {
+							e.preventDefault();
+							close();
+						}
+					}}
+				/>
+				<Button
+					variant="primary"
+					data-testid="sound-check-ack-save"
+					disabled={props.readOnly || !reason.trim()}
+					disabledReason={
+						props.readOnly
+							? t('The project is read-only')
+							: !reason.trim()
+								? t('Say why it is deliberate')
+								: undefined
+					}
+					onClick={save}
+				>
+					{t('Acknowledge')}
+				</Button>
+				<Button variant="quiet" onClick={close}>
+					{t('Cancel')}
+				</Button>
+			</div>
+			{error ? (
+				<span role="alert" className="text-pr-danger">
+					{error}
+				</span>
+			) : null}
+		</div>
+	);
+}
+
+/** "Acknowledged (n)": the findings left out (reason, who, Unacknowledge) and acknowledgements nothing matched. */
+function Acknowledged(props: {
+	session: EditorSession;
+	seq: Sequence;
+	view: AckView;
+	readOnly: boolean;
+	reveal(f: number): void;
+}) {
+	const { session, view } = props;
+	const shown = useStoreSelector(soundCheckStore(session), (s) => s.ackShown);
+	const n = view.acknowledged.length + view.unmatched.length;
+	if (!n) return null;
+	const when = (at: string) => {
+		const d = new Date(at);
+		return Number.isNaN(d.getTime()) ? at : d.toLocaleString();
+	};
+	return (
+		<section
+			className="border-b border-pr-border"
+			data-testid="sound-check-acknowledged"
+			aria-label={t('Acknowledged findings')}
+		>
+			<button
+				type="button"
+				aria-expanded={shown}
+				className="flex w-full items-center gap-1 bg-pr-header px-2 py-0.5 text-left text-pr-small text-pr-muted hover:text-pr-text"
+				data-testid="sound-check-acknowledged-toggle"
+				onClick={() => soundCheckStore(session).setState({ ackShown: !shown })}
+			>
+				<Icon id={shown ? 'app.chevronDown' : 'app.chevronRight'} size={14} />
+				<span className="font-semibold text-pr-strong">{t('Acknowledged ({0})', n)}</span>
+				<span>{t('deliberate exceptions, left out of the verdict')}</span>
+			</button>
+			{shown ? (
+				<ul className="m-0 list-none p-0">
+					{view.acknowledged.map((i) => (
+						<li
+							key={i.id}
+							className="flex items-start gap-1.5 border-t border-pr-border-subtle px-2 py-1 text-pr-small"
+							data-testid="sound-check-acknowledged-row"
+							data-issue-id={i.id}
+							data-code={i.code}
+						>
+							<span className="mt-0.5 shrink-0 text-pr-muted" aria-hidden="true">
+								✓
+							</span>
+							<span className="min-w-0 flex-1">
+								{i.frame !== undefined ? (
+									<button
+										type="button"
+										className="mr-1 font-pr-mono text-pr-timecode underline-offset-2 hover:underline"
+										title={t('Go to {0} and select it', i.timecode ?? '')}
+										onClick={() => jumpToIssue(session, i, props.reveal)}
+									>
+										{i.timecode}
+									</button>
+								) : null}
+								<span className="mr-1 font-pr-mono text-pr-dim">{i.code}</span>
+								<span className="text-pr-muted">{t(SEVERITY_LABELS[i.severity])} · </span>
+								{messageText(i.message)}
+								<span className="block text-pr-muted" data-testid="sound-check-ack-reason-text">
+									{t('Reason: {0}', i.acknowledged!.reason)} ·{' '}
+									{t('by {0}, {1}', ackByText(i.acknowledged!), when(i.acknowledged!.at))}
+								</span>
+							</span>
+							<Button
+								variant="quiet"
+								className="shrink-0"
+								data-testid="sound-check-unacknowledge"
+								disabled={props.readOnly}
+								onClick={() => unacknowledgeFinding(session, i.id)}
+							>
+								{t('Unacknowledge')}
+							</Button>
+						</li>
+					))}
+					{view.unmatched.map((u) => (
+						<li
+							key={u.key}
+							className="flex items-start gap-1.5 border-t border-pr-border-subtle px-2 py-1 text-pr-small text-pr-muted"
+							data-testid="sound-check-acknowledged-unmatched"
+							data-issue-id={u.key}
+						>
+							<span className="mt-0.5 shrink-0" aria-hidden="true">
+								○
+							</span>
+							<span className="min-w-0 flex-1">
+								<span className="mr-1 font-pr-mono text-pr-dim">{u.code}</span>
+								{u.message ?? u.key}
+								<span className="block">
+									{t('Not reported by this check (fixed since, or outside the checked range)')} ·{' '}
+									{t('Reason: {0}', u.reason)} · {t('by {0}, {1}', ackByText(u), when(u.at))}
+								</span>
+							</span>
+							<Button
+								variant="quiet"
+								className="shrink-0"
+								disabled={props.readOnly}
+								onClick={() => unacknowledgeFinding(session, u.key)}
+							>
+								{t('Unacknowledge')}
+							</Button>
+						</li>
+					))}
+				</ul>
+			) : null}
+		</section>
 	);
 }
 
