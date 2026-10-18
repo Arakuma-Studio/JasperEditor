@@ -262,19 +262,24 @@ describe('Find Moment…', () => {
 	});
 
 	it('says the model is needed (and opens the preferences) when it is not installed', async () => {
-		const { entries, session } = mount('keywords', 'MODEL_NOT_INSTALLED');
+		const { entries, session, calls } = mount('keywords', 'MODEL_NOT_INSTALLED');
 		await screen.findAllByRole('option');
 		await act(async () => {
 			void openDialog(SOUND_FIND_MOMENT_DIALOG, { entry: entries[0]!, session });
 		});
 		const dialog = await screen.findByTestId('sound-find-moment-dialog');
+		// an empty description is refused before anything is asked
 		fireEvent.click(within(dialog).getByRole('button', { name: 'Find' }));
-		expect((await within(dialog).findByTestId('sound-find-moment-error')).textContent).toContain(
-			'needs the optional Describe-it search model',
+		expect((await within(dialog).findByTestId('sound-find-moment-error')).textContent).toBe('Describe the moment first');
+		expect(calls.moments).toEqual([]);
+		fireEvent.change(within(dialog).getByTestId('sound-find-moment-description'), { target: { value: 'a dog barking' } });
+		fireEvent.click(within(dialog).getByRole('button', { name: 'Find' }));
+		await waitFor(() =>
+			expect(within(dialog).getByTestId('sound-find-moment-error').textContent).toContain(
+				'needs the optional Describe-it search model',
+			),
 		);
 		expect(within(dialog).getByRole('button', { name: 'Open Preferences' })).toBeTruthy();
-		// an empty description is refused before anything is asked
-		fireEvent.change(within(dialog).getByTestId('sound-find-moment-description'), { target: { value: '' } });
 	});
 });
 
