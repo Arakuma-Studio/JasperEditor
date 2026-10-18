@@ -111,7 +111,7 @@ export default async function audioFxRoutes(app: FastifyInstance): Promise<void>
 			try {
 				return await planner.plan(path, body);
 			} catch (e) {
-				if (e instanceof RemixPlanError) throw new HttpError(422, e.code, e.message);
+				if (e instanceof RemixPlanError) throw new HttpError(422, e.code, e.message, e.detail);
 				throw e;
 			}
 		}),

@@ -2,12 +2,14 @@
 // the range is decoded to mono 22.05 kHz (the Remix analysis rate) and `analyzeBeats` (@jasper/audio-fx: the Remix
 // tool's tempo and beat tracker, each beat moved onto its attack, downbeats when one beat per bar is accented — 3 or 4
 // beats per bar detected, or the request's `timeSignature`) gives
-// tempo, beats and downbeats in media seconds. Results are cached on disk by the file's fingerprint and the range, so
+// tempo, beats and downbeats in media seconds; P6-E11 (wp-note "Phase 6 → WP-E7") adds the drop candidates and the
+// key (`analyzeKey`: chroma + Krumhansl–Schmuckler, also for music without a beat). Results are cached on disk by the
+// file's fingerprint and the range, so
 // asking again (the cue route on every Suggest Cues…, the plan job) is instant. At most two analyses run at once.
 import { createHash } from 'node:crypto';
 import type { BeatsRequest, BeatsResult } from '@jasper/api';
 import { BeatsResultSchema } from '@jasper/api';
-import { analyzeBeats, beatsPerBarOf, RemixError } from '@jasper/audio-fx';
+import { analyzeBeats, analyzeKey, beatsPerBarOf, RemixError } from '@jasper/audio-fx';
 import type { MediaRegistry } from '../media/registry.ts';
 import { AnalysisCache } from '../sound-design/analysis-cache.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
@@ -15,7 +17,7 @@ import { HttpError } from '../tools/reply.ts';
 import { REMIX_ANALYSIS_RATE } from './remix.ts';
 
 /** Bump when the analysis changes (cached results of older versions are not reused). */
-export const BEATS_VERSION = 2;
+export const BEATS_VERSION = 3;
 const CONCURRENT = 2;
 const round4 = (x: number) => Math.round(x * 10_000) / 10_000;
 
@@ -136,10 +138,12 @@ export class BeatService {
 				sr,
 				signal,
 			);
+			const musicKey = analyzeKey([mono], sr);
 			const base = {
 				startSeconds: req.startSeconds,
 				durationSeconds: req.durationSeconds,
 				analysedSeconds: round4(mono.length / sr),
+				key: musicKey,
 			};
 			let out: Omit<BeatsResult, 'cached'>;
 			try {
@@ -152,6 +156,15 @@ export class BeatService {
 					downbeats: a.downbeats ? a.downbeats.map((i) => sec(a.beats[i]!)) : null,
 					beatsPerBar: a.beatsPerBar,
 					downbeatConfidence: Math.round(a.downbeatConfidence * 1000) / 1000,
+					drops: a.drops.map((d) => ({
+						sourceSeconds: sec(d.at),
+						bar: d.bar,
+						score: d.score,
+						liftDb: d.liftDb,
+						novelty: d.novelty,
+						levelDb: d.levelDb,
+					})),
+					dropBarsGuessed: a.dropBarsGuessed,
 				};
 			} catch (e) {
 				if (!(e instanceof RemixError)) throw e;
@@ -162,6 +175,8 @@ export class BeatService {
 					downbeats: null,
 					beatsPerBar: null,
 					downbeatConfidence: 0,
+					drops: [],
+					dropBarsGuessed: true,
 					reason: 'NO_BEAT',
 				};
 			}
