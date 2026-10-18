@@ -344,7 +344,7 @@ def main():
         print(f"note: int8 parity is below 0.999 ({parity['int8']}); the app uses the fp32 weights", file=sys.stderr)
 
     # Vectors for the engine's TypeScript front end (log-mel and tokenizer), checked by
-    # apps/engine/scripts/check-clap-frontend.mjs on the build server.
+    # apps/engine/scripts/check-clap.ts on the build server.
     vec_names = ["sine-440-1s", "very-short-20ms", "clicks-3s", "am-tone-10s"]
     vectors = {
         "mel": [
@@ -356,6 +356,9 @@ def main():
             for n in vec_names
         ],
         "tokens": [{"text": t, "ids": tok(t)["input_ids"]} for t in TEXTS],
+        # PyTorch embeddings of the same sounds (from the HF features) and texts: the engine's end-to-end check
+        "audioEmbeds": ref_audio[[names.index(n) for n in vec_names]].tolist(),
+        "textEmbeds": ref_text.tolist(),
     }
     with open(os.path.join(out, "parity-vectors.json"), "w") as f:
         json.dump(vectors, f)

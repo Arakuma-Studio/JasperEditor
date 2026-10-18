@@ -126,9 +126,13 @@ const round4 = (x: number) => (Number.isFinite(x) ? Math.round(x * 10_000) / 10_
 // ---------------------------------------------------------------------------------------------------------------
 // Find Moment: which windows to embed, and which to keep
 
-/** Coarse pass: 10 s windows every 5 s over the range (the last one ends at its end). */
+/**
+ * Coarse pass: 10 s windows every 5 s over the range (the last one ends at its end); every 10 s over ranges longer
+ * than `COARSE_DENSE_MAX_SEC` (one window costs ≈ 0.56 s on 8 threads, measured: wp-note).
+ */
 export const COARSE_SEC = 10;
 export const COARSE_HOP_SEC = 5;
+export const COARSE_DENSE_MAX_SEC = 1800;
 /** Coarse windows refined. */
 export const REFINED_REGIONS = 3;
 
@@ -148,7 +152,8 @@ export function slidingWindows(startSec: number, endSec: number, lengthSec: numb
 /** The coarse windows of a range (none when the range is no longer than one coarse window: it is refined directly). */
 export function coarseWindows(startSec: number, endSec: number): ClapWindow[] {
 	if (endSec - startSec <= COARSE_SEC) return [];
-	return slidingWindows(startSec, endSec, COARSE_SEC, COARSE_HOP_SEC);
+	const hop = endSec - startSec > COARSE_DENSE_MAX_SEC ? COARSE_SEC : COARSE_HOP_SEC;
+	return slidingWindows(startSec, endSec, COARSE_SEC, hop);
 }
 
 /**

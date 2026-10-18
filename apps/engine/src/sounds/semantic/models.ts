@@ -50,6 +50,12 @@ export type SoundModelInfo = {
 
 const BUNDLED = 'bundled:';
 
+/** What the speech store reads of an entry or a file of it (its sizes; the URL is not read). */
+const filesOf = (id: string, files: readonly SoundModelFile[]) => ({
+	id,
+	files: files.map((f) => ({ ...f, url: f.url ?? '' })),
+});
+
 export class SoundModelStore {
 	private readonly store: SpeechModelStore;
 
@@ -94,14 +100,14 @@ export class SoundModelStore {
 	}
 
 	async installed(e: SoundCatalogEntry): Promise<boolean> {
-		return this.store.installed(e);
+		return this.store.installed(filesOf(e.id, e.files));
 	}
 
 	/** Files without a download location that are not already in place. */
 	private async pendingFiles(e: SoundCatalogEntry): Promise<string[]> {
 		const out: string[] = [];
 		for (const f of e.files)
-			if (this.sourceOf(f.url) === null && (await this.store.missingBytes({ id: e.id, files: [f] as never })) > 0)
+			if (this.sourceOf(f.url) === null && (await this.store.missingBytes(filesOf(e.id, [f]))) > 0)
 				out.push(f.path);
 		return out;
 	}
@@ -115,7 +121,7 @@ export class SoundModelStore {
 				if (!installed)
 					for (const f of e.files)
 						if (!f.url?.startsWith(BUNDLED))
-							missing += await this.store.missingBytes({ id: e.id, files: [f] as never });
+							missing += await this.store.missingBytes(filesOf(e.id, [f]));
 				return {
 					id: e.id,
 					name: e.name,
