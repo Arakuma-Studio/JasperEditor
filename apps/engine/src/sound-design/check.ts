@@ -156,7 +156,6 @@ import {
 	harshFindings,
 	layerFindings,
 } from './check-findings.ts';
-import { runProposalCheck } from './check-proposal.ts';
 import type { EngineCueSources } from './engine-cues.ts';
 import {
 	gainReport,
@@ -2592,7 +2591,8 @@ export async function checkSequence(
 
 export type SoundCheckJobInput = { request: SoundCheckRequest; who: Requester };
 
-function parseInput(raw: unknown): SoundCheckJobInput {
+/** The job's input, re-validated when read back. */
+export function parseInput(raw: unknown): SoundCheckJobInput {
 	const r = raw as { request?: unknown; who?: { editor?: unknown; agent?: unknown } } | null;
 	const parsed = SoundCheckRequestSchema.safeParse(r?.request);
 	if (!parsed.success) throw new JobError('VALIDATION_FAILED', 'The sound check request is invalid', false);
@@ -2605,10 +2605,15 @@ function parseInput(raw: unknown): SoundCheckJobInput {
 	};
 }
 
-/** The `sound-check` job runner. */
+/** The `sound-check` job runner (a proposal check, `request.proposalId`, is `runProposalCheckJob`). */
 export async function runSoundCheck(ctx: JobContext, deps: SoundCheckDeps): Promise<SoundCheckResult> {
+	return asJobErrors(() => soundCheckJob(ctx, deps));
+}
+
+/** Runs a check, turning HTTP and plan-input errors into job errors. */
+export async function asJobErrors<T>(run: () => Promise<T>): Promise<T> {
 	try {
-		return await soundCheckJob(ctx, deps);
+		return await run();
 	} catch (e) {
 		if (e instanceof HttpError) throw new JobError(e.code, e.message, e.status === 503, e.detail);
 		if (e instanceof PlanInputError) throw new JobError(e.code, e.message, false);
@@ -2642,7 +2647,9 @@ async function soundCheckJob(ctx: JobContext, deps: SoundCheckDeps): Promise<Sou
 	const { request: req, who } = parseInput(ctx.input);
 	const agent = deps.agent();
 	if (!agent) throw new JobError('NOT_AVAILABLE', 'The agent service is not running', true);
-	if (req.proposalId) return runProposalCheck(ctx, deps, req, agent);
+	// a proposal's check is its own runner (check-proposal.ts): never a check of the document under its name
+	if (req.proposalId)
+		throw new JobError('VALIDATION_FAILED', 'A proposal check runs as runProposalCheckJob', false);
 	ctx.progress(0.01, { stage: 'Reading the edit' });
 	const live = await liveDocument(agent, req.projectId);
 	const seq = planSequence(live.doc, req.sequenceId);

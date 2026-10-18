@@ -55,7 +55,7 @@ import type { AgentService } from '../agent/service.ts';
 import type { JobContext } from '../jobs/types.ts';
 import { JobError } from '../jobs/types.ts';
 import { HttpError } from '../tools/reply.ts';
-import { checkEnvFor, checkSequence, type SoundCheckDeps } from './check.ts';
+import { asJobErrors, checkEnvFor, checkSequence, parseInput, type SoundCheckDeps } from './check.ts';
 import { liveDocument, planSequence } from './plan.ts';
 
 type Finding = Pick<
@@ -155,6 +155,18 @@ const httpToJob = (e: unknown): never => {
 	if (e instanceof HttpError) throw new JobError(e.code, e.message, e.status === 503, e.detail);
 	throw e;
 };
+
+/** The `sound-check` job runner of a proposal check (`request.proposalId`). */
+export async function runProposalCheckJob(ctx: JobContext, deps: SoundCheckDeps): Promise<SoundCheckResult> {
+	return asJobErrors(async () => {
+		const { request } = parseInput(ctx.input);
+		const agent = deps.agent();
+		if (!agent) throw new JobError('NOT_AVAILABLE', 'The agent service is not running', true);
+		if (!request.proposalId)
+			throw new JobError('VALIDATION_FAILED', 'A proposal check needs proposalId', false);
+		return runProposalCheck(ctx, deps, request, agent);
+	});
+}
 
 /** The `sound-check` job of a proposal (`request.proposalId`); see the module docs. */
 export async function runProposalCheck(

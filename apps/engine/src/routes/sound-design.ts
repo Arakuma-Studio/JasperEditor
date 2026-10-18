@@ -67,6 +67,7 @@ import type { BeatService } from '../audio/beats.ts';
 import { isProjectId } from '../projects/store.ts';
 import type { ProposalService } from '../proposals/service.ts';
 import { runSoundCheck } from '../sound-design/check.ts';
+import { runProposalCheckJob } from '../sound-design/check-proposal.ts';
 import { mixAnalysis, planDelivery, runDelivery } from '../sound-design/delivery.ts';
 import { type EngineCueSource, EngineCueSources } from '../sound-design/engine-cues.ts';
 import { ListenInputError, listenRange, runSoundListen } from '../sound-design/listen.ts';
@@ -192,7 +193,8 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 		offLeases();
 	});
 	core.queue.registerRunner('sound-check', async (ctx) => {
-		const result: SoundCheckResult = await runSoundCheck(ctx, {
+		const proposalCheck = !!(ctx.input as { request?: { proposalId?: unknown } } | null)?.request?.proposalId;
+		const result: SoundCheckResult = await (proposalCheck ? runProposalCheckJob : runSoundCheck)(ctx, {
 			agent: agentOf,
 			engineCues: () => engineCues,
 			sounds: () => services.sounds as SoundService | undefined,
