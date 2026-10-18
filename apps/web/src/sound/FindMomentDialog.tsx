@@ -235,7 +235,7 @@ export function FindMomentDialog(
 										</span>
 										<span className="block text-pr-small text-pr-muted">
 											{verdictText(m.match.verdict)}
-											{` · z ${m.match.z.toFixed(1)}`}
+											{` · z ${m.match.z.toFixed(2)}`}
 											{m.headDb > -15 ? ` · ${t('starts inside a sound')}` : ''}
 											{m.tailDb > -30 ? ` · ${t('cut before it fades')}` : ''}
 										</span>

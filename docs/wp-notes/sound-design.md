@@ -9716,15 +9716,20 @@ guide says so.
   the licence shown before the download, the install, "80 of 80 sounds are ready", a described search with match chips,
   Find Moment on a generated 60 s folder recording finding the glass ping placed at 33 s (32.02–34.00), Insert at
   Playhead placing it on a new SFX track at frame 30; the screenshots (prefs-describe, licence-before-download,
-  prefs-describe-installed, describe-semantic, find-moment, moment-inserted) were looked at. Without `E2E_CLAP` the spec
-  checks the not-installed state and the keyword fallback (CI-safe, no download).
+  prefs-describe-installed, describe-semantic, find-moment, moment-inserted) were looked at; then `POST
+  /api/sound-design/listen {tags: true, detail: high}` on that project named 11 event lines of the inserted range —
+  the glass ping "sounds like “a phone notification ping” (strong, z 3.0)", the noise bed "the quiet room tone of an
+  empty room" (strong, z 3.6–3.7). Without `E2E_CLAP` the spec checks the not-installed state and the keyword fallback
+  (CI-safe, no download).
 - Tests (all on the build server, tiny stand-in model of `@jasper/testkit/tiny-clap`, no network):
   `pnpm vitest run apps/engine/test/sound-semantic-unit.test.ts` 16 passed (front end vs a direct-DFT oracle to 1e-4 dB,
   repeat padding, windows, tokenizer fuzz, the closed-form z against the brute-force definition (property), bands, keys,
   moment windows and non-overlap (property), levels, cache round trip / invalidation / damaged file / fuzzed bytes);
-  `apps/engine/test/sound-semantic.test.ts` 8 passed (keyword fallback, pending model, install, incremental embedding,
-  describe ranking, match, hostile requests, Find Moment and its cache, a changed file re-embedded and the old key
-  dropped, worker crash and broken model dir, abort listeners, removal gated for agents); `packages/project/test/
+  `apps/engine/test/sound-semantic.test.ts` 9 passed (keyword fallback, pending model, install, incremental embedding,
+  describe ranking, match, listen tags on the Sound Check fixture — every placed sound named, the rest of the transcript
+  unchanged —, hostile requests, Find Moment and its cache, a changed file re-embedded and the old key dropped, worker
+  crash and broken model dir, abort listeners, removal gated for agents); `apps/engine/test/sound-listen.test.ts` (tags
+  without the model: `W_TAGS_UNAVAILABLE`, nothing named); `packages/project/test/
   sound-rank-describe.test.ts` 4 passed (blend, bonus, fallback, filters, q, synth tier, rankSoundsPage = rankSounds =
   filter bits, property) and `sound-moment.test.ts` 2 passed (placement, new track, undo, refusals, property);
   `apps/mcp/test/sound-semantic.test.ts` 1 passed (status, fallback, install, prepare, describe, match_sound, find and

@@ -22,7 +22,7 @@ const MAX_SEC = 2;
 
 /** The line text of an event with its tag. */
 export function taggedLine(text: string, tag: EventTag): string {
-	return `${text} · sounds like “${tag.text}” (${tag.verdict}, z ${tag.z.toFixed(1)})`;
+	return `${text} · sounds like “${tag.text}” (${tag.verdict}, z ${tag.z.toFixed(2)})`;
 }
 
 /** The result with its events named (a new object; the input is not changed). */

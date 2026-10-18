@@ -180,7 +180,7 @@ function MatchChip({ match }: { match: SoundMatch }) {
 			)}
 			title={t(
 				'How well it matches the description: z {0} among our reference descriptions (strong ≥ 3, plausible ≥ 2.5, weak ≥ 2). Listen before you trust it.',
-				match.z.toFixed(1),
+				match.z.toFixed(2),
 			)}
 			data-match-verdict={match.verdict}
 		>
