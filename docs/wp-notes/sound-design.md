@@ -8261,6 +8261,10 @@ below). Tests: `packages/audio-fx/test/{takes,sound-quality-flags}.test.ts` (+ `
   to load (load average 12 during the run): the failure is `sound-packs.test.ts`'s request-interval check (294 ms < 295 ms
   under load; passes alone: 22 / 22); the 2 files (`sound-design-motion`, `sound-dialogue-consistency`) fail the same on
   `feat/sound-design` (the build server's ffmpeg has no libx264, carry-over item).
+- After the last changes (materials, `place_sound` takes): `pnpm typecheck`, `pnpm lint`, `i18n:check`, `notices --check`
+  pass; `pnpm vitest run packages/project/test/sound-takes.test.ts apps/engine/test/sounds-search.test.ts
+  apps/mcp/test/sound --maxWorkers=8`: 17 files, 86 passed. Integration: `feat/sound-design` was still at `4d152842`
+  (nothing to merge); fast-forwarded to this branch.
 
 #### Limits and notes for the next packages
 
