@@ -9085,3 +9085,221 @@ apps/mcp/test/proposals apps/web/test/sound apps/web/test/essential apps/web/tes
 same on `feat/sound-design`, WP-E5's and WP-E6's notes). After the last fix (a landed drop never overruns the room on
 its track) the four new unit / web / MCP files ran again: 33 passed. `e2e/sound-music-fit.spec.ts` passed after
 `pnpm build` (above).
+
+### Phase 6 → WP-E8 Ambience and room-tone beds
+
+Branch `feat/sd-pe-e8-beds`. Spec 12 §4 P6-E12: lay a looped ambience bed per scene; fill the holes in dialogue with room
+tone; Sound Check's SILENCE inside dialogue gets the fix "Fill it with room tone". The ideas are earshot's ("ambience
+zones: one bed per location, from clean windows of real field recordings … cut with the picture's cuts", the 1.5 s
+equal-power loop crossfade and 1 s fades of `mix.py`, the 100 ms spike and level-variance measures of `analyze.py`; MIT,
+Copyright (c) 2026 Leon Lin, commit `9721326`), reimplemented, nothing copied; rows in `licenses/ported/earshot.md`,
+`THIRD_PARTY_NOTICES.md` regenerated (33 ported records). The window search, the loop-point search, the scene structure
+and the room-tone matching are ours.
+
+Files: audio `packages/audio-fx/src/analysis/loop-window.ts` (new: `findCleanWindow`, `findLoopPoints`,
+`crossfadeLaw`, `quietestStretch`, `noiseFloorProfile`, `windowSpectrum`, `spectralDistanceDb`); model
+`packages/project/src/sound/ambience-bed.ts` (new: `bedScenes`, `planBedLayout`, `dialogueRegions`, `dialogueGaps`,
+`roomToneSpan`, `mergeSpans`, `roomToneGainDb`), `commands/{schemas,handlers}/sound-beds.ts` (new: `soundDesign.layBed`),
+`schema/sound.ts` (`ClipBedSchema`, `BED_PURPOSES`, `readClipBed`, `clipBedIssue`), `schema/sequence.ts`
+(`AudioClip.bed?`), `sound/repair.ts` + `invariants.ts` (INV-SFX for `bed`, repair drops a malformed one),
+`sound/cues/dialogue.ts` (`dialogueClipsOf` exported), `sound/check.ts` (`fixRoomTone`, `whyRoomTone`),
+`commands/catalog.ts` ("Lay Ambience Bed"); API `packages/api/src/sound-beds.ts` (new), `routes.ts` (four routes);
+client `planAmbienceBeds`, `layAmbienceBeds`, `planRoomTone`, `fillRoomTone`; engine
+`apps/engine/src/sound-design/beds.ts` (new: decoding, measuring, the plans, the job runner), `check.ts` (the SILENCE fix),
+`check-proposal.ts` (a moment finding attributed by the new clips' spans), `routes/sound-design.ts`; MCP
+`apps/mcp/src/tools/sound-beds.ts` (new), `server.ts`, SOUND_GUIDE "Beds", `examples.ts`, README (361 tools); web
+`apps/web/src/sound/{AmbienceBedDialog.tsx, bed-jobs.ts}` (new), `commands/sound-beds.ts` (new), `shell/menus/model.ts`,
+`sound/check-model.ts` (the confirmation names what a bed fix lays), i18n (52 strings, es complete); docs: spec 12 §4
+P6-E12 "As built", gaps, security review (route row + paragraph). Tests: `packages/audio-fx/test/loop-window.test.ts` (12),
+`packages/project/test/ambience-bed.test.ts` (12), `apps/engine/test/sound-beds.test.ts` (5),
+`apps/mcp/test/sound-beds.test.ts` (4), `apps/web/test/sound-beds.test.tsx` (5), `e2e/sound-beds.spec.ts`, and the
+`soundDesign.layBed` example in `apps/mcp/test/sound-examples.test.ts`.
+
+#### What it does (usage)
+
+- **Lay Ambience Bed…** (Sequence ▸ Sound Design; MCP `lay_ambience_bed`; `POST /api/sound-design/beds`, read-only plan
+  `…/beds/plan`). The bed: a library ambience (`soundId`, registered for the project), a project audio (`mediaId`; the
+  dialog lists them as "<file> (project)"), else the palette's first ambience (else `422 BED_SOUND_REQUIRED`). The
+  scenes: `bedScenes` — a cut on V1 to OTHER footage starts a scene (two clips of one media are one place), so do
+  chapter / segmentation markers and markers named "Scene…" (or "Escena…"), and with `sources: ["shots"]` the shot
+  changes Scene Edit Detection measured inside footage (cached only; `W_SHOTS_NOT_ANALYSED` otherwise); a scene under
+  2 s joins a neighbour (the next one when that starts only at a measured shot change); or the scenes the user / agent
+  gives, each with its own bed. The dialog shows every measured scene ("Loop 0.25–5.26 s of the clean window 0.00–6.00 s
+  (±0.7 dB) · 1.5 s crossfade · −2.1 dB"), a bed per scene, "Join the scene before", the crossfades, fades and "Duck under
+  the dialogue (−10 dB)" (on when the sequence has dialogue); **Lay Beds** = one History entry "Lay Ambience Bed" (Undo in
+  the toast), **Propose for Review** = a proposal opened in the Review panel (setup items import the sounds, one item
+  "bed").
+- **Fill Room Tone** (Sequence ▸ Sound Design, enabled when there is a hole between dialogue clips; MCP `fill_room_tone`;
+  `POST /api/sound-design/room-tone`, plan `…/room-tone/plan`; UI command `sound.fillRoomTone {mode}` for agents in the
+  editor). The holes: every gap of 0.1–10 s between dialogue clips (Essential Sound dialogue or transcribed) inside a
+  dialogue region (dialogue spans < 10 s apart), or the given gaps, or `cover: "regions"` (under the whole region: J- and
+  L-cuts). The fill reaches 0.25 s under the dialogue on both sides (its 0.25 s fades happen there) on a "Room Tone"
+  track; the tone and its level as below; one History entry "Fill Room Tone" or a proposal (item "room-tone").
+- **Sound Check**: a SILENCE whose range lies inside a dialogue region gets the fix "Fill it with room tone ("<tone>",
+  <gain> dB, looped)" — not safe (the panel asks first and names what it lays: "Lays room tone on the “Room Tone” track
+  from 00;00;03;21 to 00;00;05;07, looped, with short fades under the dialogue"), dry-run checked; its why names the tone
+  and its shape distance to the floor. Other SILENCEs keep "Mark it as intended silence". A proposal check
+  (`sound_check {proposalId}`) of a bed or room-tone proposal reports the SILENCE / DIP it fixes against its item.
+- **`soundDesign.layBed`** (any agent through `apply_commands`): `{range | shots[{start, end, mediaId?, loop?, gainDb?,
+  fade?}], mediaId, loop?: {inSec, outSec}, purpose?, gainDb?, fadeSec?, crossfadeSec?, sceneCrossfadeSec?, fade?,
+  duckUnder?, duckDb?, track?, replace?}`; result `{trackId, trackCreated, clipIds, transitionIds, beds[], replacedClipIds,
+  ducked}`.
+
+#### Design and decisions
+
+- **Clean window** (`findCleanWindow`, mono at 24 kHz, ≤ 10 min): 100 ms levels; a spike = a frame ≥ 10 dB over the
+  median of its centred 1 s (spec; earshot uses 12 dB over the file's median); digital silence (< −90 dBFS: the lead /
+  trail padding of library copies) is never inside; onsets = 20 ms frames rising ≥ 6 dB over the median of the 200 ms
+  before (≥ 100 ms apart, over −70 dBFS). Windows of 60, 45, 30, 20, 15, 10, 8, 6, 4, 3 s slide in 0.2 s steps; score =
+  level standard deviation + 4 dB per onset per second (decision); the LONGEST length whose best score is within 1 dB of
+  the best of all lengths wins (fewer joints). A recording with no spike-free window gets its least bad one, `clean:
+  false`, and the plan warns `W_BED_NOT_CLEAN`.
+- **Loop points** (`findLoopPoints`): the crossfade X is a whole number of frames (≤ 40 % of the window); the loop-in a
+  moves in 50 ms steps over the first second of the window, the loop-out b in whole frames over the last second
+  (b − a a whole number of frames: the pieces' timeline lengths are); the head [a, a + X] and the tail [b − X, b] — the
+  very samples the crossfade blends — are compared by level, octave-band shape and zero-lag correlation ρ; cost =
+  |ΔL| + 0.5 · shape distance + |midpoint change|. **The crossfade law follows ρ** (`crossfadeLaw`, decision): equal power
+  changes the midpoint power by 10·log10(1 + ρ), equal gain by 10·log10((1 + ρ)/2); the smaller wins (equal gain from
+  ρ > 0.41). Found by the first test run: with whole-frame loops a 50 Hz hum at 25 fps (and 60 Hz at 30 fps) ALWAYS
+  repeats in phase (2 or 2 cycles per frame) — moving a in 1 ms steps cannot change the lag — so an equal-power joint
+  would bump the hum +2.8 dB (measured); with equal gain it is −0.18 dB. Spec deviation: "equal-power crossfades" holds
+  for every uncorrelated bed (ρ ≈ 0; all the generated beds and the e2e street).
+- **Layout** (`planBedLayout`): middle pieces play exactly [a + X/2, b − X/2] of the source (handles inside the loop),
+  each joint centred on its cut, so every loop joint blends exactly the matched tail and head; a scene's FIRST piece ends
+  at the loop's end (it may start anywhere in the loop: two scenes of one bed start at different points) and its LAST
+  starts at the loop's start; the piece count is the fewest whose first and last lengths fit (proved to exist whenever
+  W ≥ max(2X, X + S_in + S_out): the crossfade is shortened only below that, `W_BED_CROSSFADE_SHORTENED`). Scene
+  crossfades (default 0.5 s, at most half the shorter scene and a quarter of either loop) join contiguous scenes;
+  fades (1 s ambience, 0.25 s room tone) stay clear of the other crossfade of their piece. Property test: every piece
+  and every handle inside its loop, every loop joint the matched one, every crossfade inside both clips (250 runs).
+- **Ordinary edits only**: `placeSource` pieces (Essential Sound type Ambience: the solver's bed, `ambient` weight),
+  `transition.add` constant-power / constant-gain transitions, `clip.group` per bed, `audio.volumeDip` for ducking
+  (dialogue: the one `dialogueSpans` definition, −10 dB = Essential Sound's ambience "Reduce by", 800 ms = its fade;
+  heroes: −6 dB, 150 ms — decisions), `track.add` "Ambience" / "Room Tone" (the first free unlocked track named so, else
+  a new one; an explicit track must be free: `E_OVERLAP`, never overwrites). `AudioClip.bed {purpose, shot, piece,
+  loop}` lets `replace` (default true from the engine and MCP) lift the earlier beds of the same purpose over the scenes
+  (on locked tracks they are kept with `W_BED_LOCKED_KEPT`).
+- **Level**: an ambience bed's window is measured as it plays (BS.1770 integrated of the window, stereo) and put at the
+  delivery's ambience level (`SFX_LEVEL_OFFSET_LU.ambience`: web −30 LUFS), within −30…+12 dB; room tone at the
+  dialogue's floor (+ the dialogue clip's gain), never under −56 dBFS (`ROOM_TONE_DEFAULTS.minLevelDbfs`: a fill is never
+  itself a SILENCE, which is −60 dBFS on the loudest channel).
+- **Room tone**: the floor = the quietest 20 % of the 100 ms frames of the dialogue clips around the gaps (≤ 8 clips, ≤ 120
+  s each) outside their voice activity (the engine's `VoiceActivityService`), level and octave bands (energy means);
+  candidates = the palette's room tones, then the library's (type `roomtone`, commercial-safe, ≤ 8 measured on their
+  clean windows), plus the dialogue's own quietest 0.5–3 s outside speech; **the shape distance** = mean absolute
+  deviation of the band-by-band difference from its median over the bands within 40 dB of the floor's loudest (level
+  plays no part: the gain sets it). Decision (deviation from "a library tone, else the dialogue's own"): a library tone is
+  used only within **3 dB** of shape; measured against a pink floor, pink tones read 0.21 dB, white noise 5.13 dB and a
+  ventilation hum 5.62 dB — another room — so beyond 3 dB the dialogue's own stretch (0.42 dB here) is used, and only
+  when there is none the closest library tone with `W_ROOM_TONE_POOR_MATCH`. The first draft used 6 dB, which would have
+  picked the hum over the dialogue's own tone.
+- **The fix is commands** (register the library tone when the project lacks it + `soundDesign.layBed` over the silence
+  padded 0.25 s), not a new fix kind: Fix in the panel, MCP `apply_commands`, the planner's dry runs and the proposal
+  check all work unchanged. The check measures the room tone once per check (only when a SILENCE lies inside dialogue).
+- **Proposal checks** (WP-E2's `soundCheckDelta`): a finding with no clip or cue (SILENCE, DIP) was attributed to no
+  item ("the whole mix"); now it goes to the items whose new clips play over its range ("fixes SILENCE@120 → room-tone").
+- **Not built**: a `plan_sound_design` option that adds beds to a sound pass (the beds route proposes on its own; the task
+  allowed either). Library sounds are registered by the plan routes too (as the plan job does) so `commands` are
+  complete.
+
+#### Verified (measured, this branch; build server `jasper-build`, 16 × Intel Haswell vCPU, Node 20.20.2, load 1–4)
+
+- **Failing first**: the new test files copied onto the integration tip `a7d5c0a9` (a detached worktree,
+  `.claude/worktrees/pe-e8-before`, removed after): `pnpm vitest run packages/audio-fx/test/loop-window.test.ts
+  packages/project/test/ambience-bed.test.ts apps/engine/test/sound-beds.test.ts apps/web/test/sound-beds.test.tsx` →
+  **27 of 28 failed** (`findCleanWindow` / `findLoopPoints` / `bedScenes` / `planBedLayout` / `dialogueRegions` … "is not a
+  function") and the web file failed to load.
+- `pnpm vitest run packages/audio-fx/test/loop-window.test.ts` — 12 passed: a 40 s pink bed with barks at 8 s and 31 s and
+  footsteps over 0–6 s → a clean ≥ 20 s window between 8.3 s and 31 s (std < 1.5 dB); a 4 s bed is its own window; a level
+  step and digital silence avoided; a recording of spikes → `clean: false`; a 12 s pink loop rendered to 40 s with the
+  found points: **every 250 ms frame within 1.00 dB of the median, no click** (the click detector), ρ −0.002, ΔL −0.4 dB;
+  a 3 dB drift: the points match better than the window's edges; a 50 Hz hum at 25 fps: ρ > 0.5 → equal gain, the
+  rendered joint's midpoint within 1.2 dB of the body; the room-tone measures (quietest stretch outside speech in the only
+  2 s pause, floor −50 ± 2 dB, pink vs pink 40 dB apart in level < 1.5 dB shape, pink vs white > 4 dB); 200 fast-check runs
+  of hostile input never throw.
+- `pnpm vitest run packages/project/test/ambience-bed.test.ts` — 12 passed: scenes (cuts to other footage, a split clip,
+  a chapter marker, a "Scene 5" marker joined as too short, measured shot changes, a range, sources off, short scenes);
+  the layout of the "Done when" case (3 × 200 frames of a 4 s loop: contiguous, 45-frame loop crossfades, 15-frame scene
+  crossfades, 30-frame fades) and the 250-run property; `soundDesign.layBed`: the 3-scene bed (Ambience track, Essential
+  ambience, grouped, names "(Bed 1/n)", no shortened transition, invariants clean, every piece inside the 4 s media),
+  undo = the document before, redo = the same up to ids; range, a second bed on "Ambience 2", replace, a per-shot bed and
+  loop, equal-gain joints; ducking under the dialogue (−10 dB at the dialogue's middle; `W_BED_NOTHING_TO_DUCK`); 11
+  refusals that change nothing (neither / both of range and shots, unknown media, footage without audio, overlapping
+  shots, a 1-frame span, a 50 ms loop, a loop past the media, a video track, an unknown track, an unknown key, an
+  occupied track `E_OVERLAP`, a locked track `E_TRACK_LOCKED`); 150 hostile argument sets → a refusal or a valid
+  document; dialogue regions, gaps, the padded fill on "Room Tone" with 8-frame fades, `roomToneGainDb`; INV-SFX and repair
+  of a malformed bed and one on a video clip (idempotent).
+- `pnpm vitest run apps/engine/test/sound-beds.test.ts` — 5 passed (real engine, a generated kit, ffmpeg):
+  - **"Done when"**: three stills (20 s) and the library's 4 s ambience, apply → window 0–4 s (std 0.87 dB, clean), loop
+    0.15–3.983 s, 1.5 s equal-power (ΔL 0 dB, shape 0.21 dB, ρ 0.001), −27.95 LUFS → −2.1 dB (−30 LUFS), **9 pieces, 6 loop
+    crossfades of 1.5 s, 2 scene crossfades of 0.5 s, one transaction** (revision + 1); **Sound Check of the result: no
+    finding at all** (so no CLICK, EDGE, DIP or SILENCE); the native PCM export: body median −35.19 dBFS (100 ms frames
+    −36.59…−33.65), **at the 8 joints −0.09…−0.03 dB from the body, no click**. Waveform and spectrogram looked at
+    (`test-results/sd-beds/beds-{wave,spectrum}.png`: level, no gap or bump at the joints).
+  - an agent proposes (setup items + "bed" requiring them; nothing changes), may not accept (403), the user accepts:
+    one transaction; refusals `404` (unknown sound, unknown sequence), `422 BED_SOUND_REQUIRED`, `400` (overlapping
+    scenes, a malformed body).
+  - **room tone**: two dialogue clips of one recording (−52 dBFS pink floor) around a 1 s hole → SILENCE "Silence under −60
+    dBFS for 1 s from 00:00:04:00 to 00:00:05:00" with the fix **"Fill it with room tone ("Room tone pink", −7.8 dB,
+    looped)"**, not safe; applied (one transaction) → the re-check has no SILENCE there and no CLICK / EDGE warning; the
+    export plays **−53.06 dBFS in the hole against the floor's −52.10 dBFS** before the speech.
+  - the fill proposed by an agent; `sound_check {proposalId}` → **fixes SILENCE@120 → item room-tone, introduces nothing**.
+  - the fill route (apply): gaps [[120, 150]], fill 112–158, floor −53.23 dBFS, **candidates: pink 0.21 dB, hiss 5.13 dB,
+    hum 5.62 dB, the dialogue's own 0.42 dB → pink**, window level + gain within 2.5 dB of −52; `source: "dialogue"` loops
+    the dialogue's own stretch.
+- `MCP_BEDS_TEST_PORT=52811 pnpm vitest run apps/mcp/test/sound-beds.test.ts` — 4 passed (engine + jasper-mcp over stdio):
+  the guide's phrases; `lay_ambience_bed` preview (the table below), propose (proposalId, nothing changed, items "bed" +
+  setup), apply (an "Ambience" track, pieces ducked with Volume keyframes); `fill_room_tone` preview (floor −53.39 dBFS,
+  pink chosen over hiss) and apply (the fill from frame 277); typed refusals (`BED_SOUND_REQUIRED`, a reversed range, an
+  unknown key).
+  ```
+  1 | 00:00:00:00–00:00:06:20 | start | Test street ambience | 0.1–6.1 s (±0.84 dB, 0 onsets/min) | 0.65–5.883 | 1.5 s equal-power (ΔL -0.15 dB, shape 0.19 dB, ρ 0) | −2.2 dB
+  2 | 00:00:06:20–00:00:13:10 | marker "Scene 2" | …
+  ```
+- `pnpm vitest run apps/web/test/sound-beds.test.tsx` — 5 passed: the menu entries; the dialog lists the library's
+  ambiences (not room tones) and the project's audio, the measured scenes with their reasons and loop lines; scene 2 gets
+  another bed, scene 3 joins it → `scenes: [{0, 200}, {200, 600, soundId: café}]`, mode apply, one History entry, Undo
+  in the toast removes it; Propose for Review sends mode propose (nothing changes), the shot-changes option re-plans;
+  Fill Room Tone is disabled without a dialogue gap, applies in one entry, the toast says '"Room tone pink", 0.2 dB from
+  the dialogue's noise floor, at -7.8 dB'; `editedScenes`.
+- **Real app** (`pnpm build`, `E2E_PORT=52860 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/sound-beds.spec.ts`): 1 passed
+  (41 s). Three stills, a dialogue recording cut around a 1 s hole, a street recording: Run Sound Check → SILENCE with
+  "Fill it with room tone ("dialogue.wav (0.00–0.50 s, own room tone)", −0.5 dB, looped)" (the e2e library has no room
+  tone: the dialogue's own) → the confirmation names what it lays → one History entry → the re-check has no SILENCE in
+  the hole; Lay Ambience Bed… with "street.wav (project)" → three measured scenes → Lay Beds → "Lay Ambience Bed", ≥ 6
+  pieces on "Ambience", ducked; the native export through the Export dialog: **joints 0.87 and 0.32 dB from the body after
+  the dialogue, the hole −38.27 dBFS** (bed + room tone). Looked at (`test-results/e2e-sound-beds/`): `1-silence-fix.png`,
+  `2-fix-confirm.png`, `3-after-room-tone.png`, `4-dialog.png`, `5-timeline.png`, `6-export-wave.png`. The looks found
+  three faults, fixed: the confirmation said 'Applies “soundDesign.layBed”' (now it names the track and the timecodes), the
+  first scene's bed select sat in the join column (a fixed column now), and the result toast covered the Export dialog's
+  footer (the spec dismisses it; the known carry-over UI-polish-2).
+- Suites on this branch before integrating: `pnpm vitest run --project @jasper/project --project @jasper/api --project
+  @jasper/audio-fx --project @jasper/engine-client --project @jasper/session --maxWorkers=8` — 243 files passed;
+  `--project @jasper/web --project @jasper/mcp` (each MCP engine on its own port 52820–52841) — 214 of 215 files, 1 712
+  tests passed; the one failure was `integration.test.ts` whose autostart port (its port + 1) I had given another test,
+  re-run alone on 52850: 10 passed; engine `sound*`, `proposals*`, `agent*`, `security-review`, `server`, `fuzz-http`,
+  `music-picture`, `audio-fx*` — 52 files, 567 passed, 15 skipped, 2 files failed to load: `sound-design-motion` and
+  `sound-dialogue-consistency` ("Unknown encoder 'libx264'": the build server's system ffmpeg; the same on
+  `feat/sound-design`, the earlier notes). `pnpm typecheck` (every package): 0 errors; `SD_GIT=1 … pnpm lint` (Biome,
+  tokens, anime, layers, assets): ok; `node scripts/i18n.mjs --check`: es.json covers all 10 255 strings; `pnpm notices
+  --check`: current (33 ported records).
+
+#### Limits and notes for the next packages
+
+- Measured on generated recordings (pink beds with barks and footsteps, hum, dialogue with a pink floor); the 23
+  BigSoundBank beds were not measured here (the build server has no pack installed; their install is network). Long OGG
+  beds are decoded up to 10 min for the window; the first measure of a 4-minute file costs one decode (cached in memory
+  per fingerprint, ≤ 64).
+- Loop points are found on the mono mix of the recording; both channels loop at the same points (a stereo bed whose
+  channels differ is judged on their mix). A mains hum at 25 / 30 fps repeats in phase by construction (whole-frame
+  loops): those joints are equal-gain.
+- Scenes follow cuts to other footage and markers; one clip that shows two places needs a marker or the measured shot
+  changes. The dialog edits scenes by joining them and choosing beds; it does not move a boundary (add a marker).
+- Room tone from the dialogue's own media can be as short as 0.5 s (a loop with many joints, crossfades ≤ 40 % of it);
+  library tones are matched by octave-band shape (7 bands, 125 Hz–8 kHz): a tone with a narrow hum the bands average out
+  can still read close.
+- The SILENCE fix covers SILENCE only; a DIP inside dialogue keeps "Mark it as intended silence" (spec). `fill_room_tone`
+  does not look for silent stretches INSIDE dialogue clips (their own pauses carry their room tone); Sound Check's fix does
+  fill one when the mix is silent there.
+- No `plan_sound_design` beds option (see Design). WP-E4 (reference profiles) was integrated in parallel; see
+  "Integration" for the merge.

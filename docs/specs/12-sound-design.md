@@ -1248,6 +1248,22 @@ with the picture, looped without an audible seam.
 of the result has no CLICK, EDGE, DIP or SILENCE there; the room-tone fix removes a seeded SILENCE in a dialogue gap;
 undo is one step; an agent can propose it and the user can apply it.
 
+*As built (WP-E8, decisions and measurements in the wp-note "Phase 6 → WP-E8")*: `soundDesign.layBed {range | shots,
+mediaId, loop?: {inSec, outSec}, purpose?: ambience | roomtone, gainDb?, fadeSec?, crossfadeSec?, sceneCrossfadeSec?,
+fade?: equal-power | equal-gain, duckUnder?, duckDb?, track?, replace?}` (pieces carry `AudioClip.bed`, an optional
+field; repair drops a malformed one); the engine measures the loop (`loop-window.ts`: `findCleanWindow`,
+`findLoopPoints` — head and tail matched in level, octave-band shape and correlation, the loop a whole number of
+frames, equal gain when they repeat in phase) and writes the command (`POST /api/sound-design/beds[/plan]`,
+`/room-tone[/plan]`; MCP `lay_ambience_bed` and `fill_room_tone`, both `mode: propose
+| apply` and `preview`); the editor has Sequence ▸ Sound Design ▸ Lay Ambience Bed… (the measured scenes, a bed per
+scene, joining scenes, Propose for Review / Lay Beds) and Fill Room Tone. Room tone: the palette's or library's room
+tone closest to the dialogue's noise floor in octave-band shape is used when within 3 dB, else the dialogue's own
+quietest 0.5–3 s outside its voice activity (deviation: the spec takes a library tone whenever one exists; a tone
+3–6 dB off the floor's shape — a ventilation hum under a quiet room — sounds like another room, measured 5.1–5.6 dB for
+white and hum against pink). The Sound Check fix is commands (register the tone if needed + `soundDesign.layBed` over
+the silence padded 0.25 s under the dialogue), not safe; a proposal check attributes a fixed SILENCE / DIP to the item
+whose new clips play over it. Not built: a plan-job option for beds (the beds route proposes on its own).
+
 **P6-E13 (P1). ShareAlike sounds.** Under CC BY-SA 4.0 §1(a), a sound recording synced in timed relation with a
 moving image always produces Adapted Material. Under §3(b), the video must then be shared under BY-SA 4.0 or a
 compatible licence. earshot forbids SA for this reason. Before P6-E13, BY-SA counted as commercial-safe with no warning.
