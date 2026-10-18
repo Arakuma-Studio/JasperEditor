@@ -9,6 +9,7 @@ import {
 	SOUND_EFFECTS_BIN,
 	type SoundCueSuggestion,
 	type SoundCuesResponse,
+	SoundCheckResultSchema,
 	SoundDeliveryResultSchema,
 	SoundDesignPlanResultSchema,
 	type SoundEntry,
@@ -84,6 +85,7 @@ import { pickSequence } from '../format.ts';
 import { mediaRegisterCommand } from '../media.ts';
 import { livePlayhead } from './color.ts';
 import { importCommands, type Registered, resolveAudioTrack, SoundIdArg, soundCall } from './sound.ts';
+import { proposalCheckNext, proposalCheckSummary } from './sound-check.ts';
 
 const CUE_DERIVE_SOURCE_LIST = CUE_DERIVE_SOURCES.join(', ');
 /** swap_sound next / previous: candidates tried in the cycle's direction when one does not fit on the track. */
@@ -1767,7 +1769,7 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 		'plan_sound_design',
 		{
 			title: 'Plan sound design (propose)',
-			description: `Plans sound effects for a sequence and stores them as a PROPOSAL for the user to review — nothing in the project changes (spec 12 P3-R3). The engine takes the cues (cues "auto", the default: the sequence's unfilled stored cues plus cues derived from the edit — cuts, transitions, moves and lands, text animators, motion graphics, "sfx:" markers — within the density budget, never a plain cut under spoken words; or cue ids of stored cues), ranks library sounds for each (its types, visual kind and window, commercial-safe licences only, palette sounds first, real recordings before Jasper Synth), rotates among the best so neighbours differ (seeded ±2 % speed, ±1 dB), and proposes one placement per cue (peak-aligned, role from the cue weight, align / pan / sweep from the cue) with 1–3 alternatives and a why-line; a marker naming several types ("sfx: boom+whoosh") gets one layer per type. Each sound's gain is SOLVED against the bed (the masking solver of rebalance_sfx: every layer and every alternative measured in place, the alternative with the item's other chosen sounds): the why-line ends with its level and what limited it ("−16.2 dB, limited by dialogue A2"); without an engine that can render audio the placement's default level by role applies (warning W_LEVELS_UNMEASURED). style {roomGlue, stopBefore, build, delivery} adds the mixing items (room glue and the delivery preset as setup items every placement requires — the gains are solved against them, and the delivery stores the loudness of the mix WITH the planned sounds so the preview is normalised right after the accept — then one stop-before dip and one build per hero with music). Deterministic for the same edit, library and seed. Waits for the job (timeoutSeconds, default 300) and returns the proposalId, a table (item | timecode | cue | sound | role | align | alternates | gain | mix), per event the gain, target and achieved lift and limitedBy (layers: their own gains), conflicts (the earlier, safety constraint kept; clipId is the item's layer ref $sfx_<n>_<layer>, the placed clip does not exist yet), levels (how they were measured), the skipped cues with reasons and warnings (the solver's for the chosen sounds and for each alternative, naming the item and alternative). Then ASK THE USER to review it in the editor's Review panel (hear in context, keep / reject, swap alternates, notes, apply as one undo step) and call wait_for_proposal; never accept it yourself unless the user asked you to apply it.`,
+			description: `Plans sound effects for a sequence and stores them as a PROPOSAL for the user to review — nothing in the project changes (spec 12 P3-R3). The engine takes the cues (cues "auto", the default: the sequence's unfilled stored cues plus cues derived from the edit — cuts, transitions, moves and lands, text animators, motion graphics, "sfx:" markers — within the density budget, never a plain cut under spoken words; or cue ids of stored cues), ranks library sounds for each (its types, visual kind and window, commercial-safe licences only, palette sounds first, real recordings before Jasper Synth), rotates among the best so neighbours differ (seeded ±2 % speed, ±1 dB), and proposes one placement per cue (peak-aligned, role from the cue weight, align / pan / sweep from the cue) with 1–3 alternatives and a why-line; a marker naming several types ("sfx: boom+whoosh") gets one layer per type. Each sound's gain is SOLVED against the bed (the masking solver of rebalance_sfx: every layer and every alternative measured in place, the alternative with the item's other chosen sounds): the why-line ends with its level and what limited it ("−16.2 dB, limited by dialogue A2"); without an engine that can render audio the placement's default level by role applies (warning W_LEVELS_UNMEASURED). style {roomGlue, stopBefore, build, delivery} adds the mixing items (room glue and the delivery preset as setup items every placement requires — the gains are solved against them, and the delivery stores the loudness of the mix WITH the planned sounds so the preview is normalised right after the accept — then one stop-before dip and one build per hero with music). Deterministic for the same edit, library and seed. Waits for the job (timeoutSeconds, default 300) and returns the proposalId, a table (item | timecode | cue | sound | role | align | alternates | gain | mix), per event the gain, target and achieved lift and limitedBy (layers: their own gains), conflicts (the earlier, safety constraint kept; clipId is the item's layer ref $sfx_<n>_<layer>, the placed clip does not exist yet), levels (how they were measured), the skipped cues with reasons and warnings (the solver's for the chosen sounds and for each alternative, naming the item and alternative). check: true also runs Sound Check on the new proposal (soundCheck: fixes · introduces, per item; sound_check {proposalId}) — do it before handing it over. Then ASK THE USER to review it in the editor's Review panel (hear in context, keep / reject, swap alternates, notes, apply as one undo step) and call wait_for_proposal; never accept it yourself unless the user asked you to apply it.`,
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -1855,13 +1857,19 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 					.optional(),
 				maxCues: z.number().int().min(1).max(200).optional().describe('Cues that get a sound (default 200)'),
 				label: z.string().min(1).max(200).optional().describe('Proposal title'),
+				check: z
+					.boolean()
+					.optional()
+					.describe(
+						'Also run Sound Check on the new proposal (sound_check {proposalId}): what it fixes and introduces, per item (default false)',
+					),
 				timeoutSeconds: z
 					.number()
 					.int()
 					.min(1)
 					.max(900)
 					.optional()
-					.describe('Wait for the plan (default 300)'),
+					.describe('Wait for the plan (default 300; the check waits as long again)'),
 			},
 			annotations: EDIT,
 		},
@@ -1910,6 +1918,29 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 				);
 			const r = SoundDesignPlanResultSchema.parse(done.result);
 			const rep = r.report;
+			// P6-E5: the new proposal's Sound Check (nothing applied), when asked
+			let soundCheck: Record<string, unknown> | null = null;
+			let checkNext: string | null = null;
+			if (a.check && r.proposalId) {
+				const cj = await ctx.engine((c) =>
+					c.soundCheck({ projectId: a.projectId, sequenceId: r.sequenceId, proposalId: r.proposalId! }, extra.signal),
+				);
+				await cancelIfAborted(ctx, extra, cj.id);
+				const w = await waitJob(ctx, cj.id, (a.timeoutSeconds ?? 300) * 1000, extra);
+				const parsed = w.job.state === 'succeeded' ? SoundCheckResultSchema.safeParse(w.job.result) : null;
+				if (parsed?.success && parsed.data.proposal) {
+					soundCheck = proposalCheckSummary(parsed.data.proposal);
+					checkNext = proposalCheckNext(parsed.data.proposal);
+				} else
+					soundCheck = {
+						jobId: cj.id,
+						state: w.job.state,
+						...(w.job.error ? { error: w.job.error } : {}),
+						note: w.timedOut
+							? `The check is still running: wait_for_job {jobId: "${cj.id}"}, then get_proposal shows it.`
+							: 'The check did not finish: run sound_check {projectId, proposalId} before asking for review.',
+					};
+			}
 			const table = [
 				'item | timecode | cue | sound | role | align | alternates | gain | mix',
 				...rep.events.map(
@@ -1976,8 +2007,9 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 				})),
 				...(rep.counts.skipped > rep.skipped.length ? { skippedTotal: rep.counts.skipped } : {}),
 				...(rep.warnings.length ? { warnings: rep.warnings } : {}),
+				...(a.check ? { soundCheck } : {}),
 				next: r.proposalId
-					? `Nothing was applied. Ask the user to review proposal ${r.proposalId} in the editor (Review panel: hear each sound in context, keep or reject it, swap alternates, leave notes, apply as one undo step), then call wait_for_proposal {projectId, proposalId} and read their decisions and notes. Do not accept it yourself unless the user asked you to apply it. You cannot hear: give the user the timecodes to listen to.`
+					? `Nothing was applied. ${checkNext ? `${checkNext} ` : 'Run sound_check {projectId, proposalId} on it (what it fixes and introduces, per item) before handing it over. '}Ask the user to review proposal ${r.proposalId} in the editor (Review panel: hear each sound in context, keep or reject it, swap alternates, leave notes, apply as one undo step), then call wait_for_proposal {projectId, proposalId} and read their decisions and notes. Do not accept it yourself unless the user asked you to apply it. You cannot hear: give the user the timecodes to listen to.`
 					: 'No cue got a sound (see skipped and warnings): nothing was stored.',
 			});
 		},
