@@ -17,6 +17,7 @@ import {
 	SoundBedsResultSchema,
 	type SoundCheckReport,
 	SoundCheckResultSchema,
+	type SoundRoomTonePlan,
 	SoundRoomToneResultSchema,
 } from '@jasper/api';
 import { encodeWav } from '@jasper/audio-dsp';
@@ -574,6 +575,54 @@ describe('room tone (real engine)', { timeout: 900_000 }, () => {
 		expect(fixed, JSON.stringify(delta)).toBeDefined();
 		expect(fixed!.itemId).toBe('room-tone');
 		expect(delta.introduced.filter((f) => f.severity !== 'info')).toEqual([]);
+	});
+
+	it("dialogue trimmed tight to the words: the floor and its own room tone come from the media's handles", async () => {
+		// regression (final verification B): clips that hold only speech (media 0.5–3.5 s and 5.5–8.5 s) gave "the
+		// dialogue around the gaps could not be measured" and, without a library tone, no fill at all
+		const b = new DocBuilder('hd-1080p-30', 291 + projects);
+		const file = join(mediaDir, 'dialogue-tight.wav');
+		const x = dialogue();
+		writeFileSync(file, encodeWav([x, x], SR, 's16'));
+		const m = b.addMedia(await register(app, file, auth));
+		const r = b.tx([
+			{
+				type: 'clip.place',
+				source: { mediaId: m },
+				sourceRange: { in: { seconds: 0.5 }, out: { seconds: 3.5 } },
+				at: 0,
+				tracks: { audio: 'A1' },
+				ref: '$a',
+			},
+			{
+				type: 'clip.place',
+				source: { mediaId: m },
+				sourceRange: { in: { seconds: 5.5 }, out: { seconds: 8.5 } },
+				at: 120,
+				tracks: { audio: 'A1' },
+				ref: '$b',
+			},
+		]);
+		b.tx([{ type: 'essentialSound.setType', clipIds: [r.refs.$a!, r.refs.$b!], audioType: 'dialogue' }]);
+		const pid = seed(b.doc);
+		const plan = await post(
+			'/api/sound-design/room-tone/plan',
+			{ projectId: pid, source: 'dialogue' },
+			AGENT_H,
+		);
+		expect(plan.statusCode, plan.body).toBe(200);
+		const p = plan.json() as SoundRoomTonePlan;
+		console.info(
+			`[room tone, tight] floor ${p.floor?.levelDb} dBFS; chosen ${p.chosen?.source} ${p.chosen?.sound.loop?.inSec}–${p.chosen?.sound.loop?.outSec} s; warnings ${p.warnings.map((w) => w.code).join(', ')}`,
+		);
+		expect(p.warnings.map((w) => w.code)).not.toContain('W_FLOOR_UNMEASURED');
+		expect(Math.abs(p.floor!.levelDb - -52)).toBeLessThan(2.5);
+		expect(p.chosen!.source).toBe('dialogue');
+		// the stretch lies in a pause of the recording (3.5–5.5 s or 8.5–10 s, or before 0.5 s), never in the words
+		const loop = p.chosen!.sound.loop as { inSec: number; outSec: number };
+		const inPause = (t: number) => t < 0.5 + 0.05 || (t > 3.5 - 0.05 && t < 5.5 + 0.05) || t > 8.5 - 0.05;
+		expect(inPause(loop.inSec) && inPause(loop.outSec), JSON.stringify(loop)).toBe(true);
+		expect(p.commands.length).toBeGreaterThan(0);
 	});
 
 	it('the fill route: the gaps, the floor, the candidates by spectral distance, the gain', async () => {

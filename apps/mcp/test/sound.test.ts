@@ -644,6 +644,70 @@ describe('sound library MCP tools', { timeout: 900_000 }, () => {
 		);
 	});
 
+	it("detect_sound_peak gives project audio its peak (the editor's Detect Peak), one undo step", async () => {
+		const p = (await ok<{ projectId: string }>('create_project', { name: 'Detect Peak' })).body.projectId;
+		const wav = join(work, 'door-hit.wav');
+		writeHitWav(wav, 1.2);
+		const imp = (
+			await ok<{ imported: { mediaId: string }[] }>('import_media', { projectId: p, paths: [wav] })
+		).body;
+		const placed = (
+			await ok<{ refs: Record<string, string> }>('apply_commands', {
+				projectId: p,
+				label: 'place',
+				commands: [
+					{
+						type: 'clip.place',
+						source: { mediaId: imp.imported[0]!.mediaId },
+						at: 30,
+						tracks: { audio: 'A1' },
+						ref: '$a',
+					},
+				],
+			})
+		).body;
+		const clipId = placed.refs.$a!;
+		// measure only: nothing changes
+		const rev = await revisionOf(p);
+		const m = (
+			await ok<{ applied: boolean; peakSec: number; peakFlicks: number; playsAt: { frame: number } }>(
+				'detect_sound_peak',
+				{ projectId: p, clipId, apply: false },
+			)
+		).body;
+		expect(m.applied).toBe(false);
+		expect(await revisionOf(p)).toBe(rev);
+		// the hit file peaks ≈ 50 ms in (writeHitWav)
+		expect(m.peakSec).toBeGreaterThan(0.04);
+		expect(m.peakSec).toBeLessThan(0.07);
+		expect(m.playsAt.frame).toBeGreaterThan(31);
+		expect(m.playsAt.frame).toBeLessThan(32.2);
+		// apply: soundDesign.setPeak, one undo step "Detect Peak"
+		const a = (
+			await ok<{ applied: boolean; historyLabel: string; peakFlicks: number }>('detect_sound_peak', {
+				projectId: p,
+				clipId,
+			})
+		).body;
+		expect(a).toMatchObject({ applied: true, historyLabel: 'Detect Peak', peakFlicks: m.peakFlicks });
+		expect(await revisionOf(p)).toBe(rev + 1);
+		const doc = await documentOf(p);
+		const clip = Object.values(doc.sequences)[0]!.clips[clipId] as unknown as {
+			sfx?: { soundId: string | null; placement: { peakFlicks: number } };
+		};
+		expect(clip.sfx?.soundId).toBeNull();
+		expect(clip.sfx?.placement.peakFlicks).toBe(m.peakFlicks);
+		// align_peak now moves it by that peak
+		const al = (
+			await ok<{ clips: { peakFrame: number | null }[] }>('align_peak', { projectId: p, clipId, to: 60 })
+		).body;
+		expect(al.clips[0]).toBeTruthy();
+		expect((await fails('detect_sound_peak', { projectId: p, clipId: 'clp_nope' })).code).toBe('E_NOT_FOUND');
+		expect((await fails('detect_sound_peak', { projectId: p, clipId, sequenceId: 'seq_nope' })).code).toBe(
+			'E_NOT_FOUND',
+		);
+	});
+
 	it('export_sound_credits writes the credits file (never overwriting) like File ▸ Export ▸ Sound Credits…', async () => {
 		const p = (await ok<{ projectId: string }>('create_project', { name: 'Credits File' })).body.projectId;
 		const out = join(work, 'credits-out');

@@ -40,12 +40,22 @@ nobody outside has used it, only Linux was checked — is [`docs/gaps.md`](docs/
   management with log inputs, Rec. 2100 PQ / HLG working spaces, OCIO configs and HDR export.
 - **Audio.** Track and clip mixers with automation, submixes and sends, loudness metering and normalisation
   (BS.1770 / EBU R128), Essential Sound, ducking, remix; one DSP for preview and every export path.
+- **Sound design.** A licensed, offline Sound Library (a bundled Kenney CC0 starter kit, downloadable CC0 packs, your own
+  folders with a licence you declare) searched by measured descriptors, auditioned in context and inserted with its peak on
+  the frame to the sample; cues derived from the edit (cuts, transitions, keyframed motion, text animators, measured
+  picture motion, scene cuts, music beats) on a Cue Seam; Auto Sound Pass proposes a whole pass you review on the
+  timeline and apply as one undo step; sound-effect levels solved against the bed, stop-before dips, builds, a shared
+  room reverb, delivery presets (−14 / −16 / −23 / −24 LUFS); Sound Check measures the delivered mix (sync, loudness,
+  masking, clicks, edges, harshness, coverage, endings…) with safe fixes; ambience beds and room tone; music drops
+  landed on a frame; credits next to the export; an optional local describe-it search. Agents drive all of it and
+  cannot hear: they get descriptors, pictures and a written listening log ([`docs/specs/12-sound-design.md`](docs/specs/12-sound-design.md),
+  [`docs/wp-notes/sound-design.md`](docs/wp-notes/sound-design.md)).
 - **Captions and speech.** Caption tracks (SRT, VTT, SCC, MCC, STL, TTML), burn-in, local speech to text with
   word timings and diarization, text-based editing.
 - **Export and interchange.** A planner routes each sequence to the native FFmpeg path, a hybrid layer bake or
   Remotion and refuses by name what a path cannot render; H.264, HEVC, VP9, AV1, ProRes, alpha; render previews and
   smart rendering; FCP 7 XML, FCPXML, EDL, AAF, OMF, ALE and OTIO in both directions.
-- **Agents.** `jasper-mcp` exposes 369 tools and the whole command catalogue; every edit is an undoable
+- **Agents.** `jasper-mcp` exposes 377 tools and the whole command catalogue; every edit is an undoable
   transaction, destructive ones need the user's approval in the editor; a `jasper` CLI; tools that look at and
   operate the live window.
 - **Safety net.** Atomic saves, single-writer leases (a reloaded tab keeps its own), crash-recovery journal, saved

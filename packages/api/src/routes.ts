@@ -206,6 +206,8 @@ import {
 	SoundDeliveryRequestSchema,
 	SoundDesignPlanRequestSchema,
 	SoundListenRequestSchema,
+	SoundPeakRequestSchema,
+	SoundPeakResponseSchema,
 } from './sound-design.ts';
 import {
 	SoundProfileBuildRequestSchema,
@@ -1228,6 +1230,16 @@ export const ROUTES = {
 		path: '/api/sound-design/cues',
 		body: SoundCuesRequestSchema,
 		response: SoundCuesResponseSchema,
+	},
+	/**
+	 * Detect Peak (spec 12 §2.7, the clip menu's action for project audio): the peak of an audio clip's sound within the
+	 * part of its media it uses (≤ 120 s), measured on the live document. Nothing is stored.
+	 */
+	soundDesignPeak: {
+		method: 'POST',
+		path: '/api/sound-design/peak',
+		body: SoundPeakRequestSchema,
+		response: SoundPeakResponseSchema,
 	},
 	/**
 	 * Sound design plan (spec 12 §2.8, P3-R3): a `sound-design` job (202) whose result (`SoundDesignPlanResult`) names the

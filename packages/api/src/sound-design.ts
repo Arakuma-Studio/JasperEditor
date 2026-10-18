@@ -1229,3 +1229,33 @@ export const SoundListenResultSchema = z.object({
 	timings: z.record(z.string(), z.number()),
 });
 export type SoundListenResult = z.infer<typeof SoundListenResultSchema>;
+
+/**
+ * `POST /api/sound-design/peak` (spec 12 §2.7 "Detect Peak", the clip menu's action for project audio, for agents and
+ * headless use): the peak of an audio clip's sound — the centre of the loudest 2 ms RMS window (`analyzeSound`, the
+ * Sound Library's own descriptor) — within the part of its media the clip uses (at most
+ * {@link SOUND_PEAK_MAX_SECONDS}), measured by the engine on the live document. Nothing is stored: MCP
+ * `detect_sound_peak` writes it with `soundDesign.setPeak` (one undo step), as the editor's Detect Peak does.
+ */
+export const SOUND_PEAK_MAX_SECONDS = 120;
+export const SoundPeakRequestSchema = z.strictObject({
+	projectId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'a project id'),
+	sequenceId: z.string().min(1).max(128).optional(),
+	clipId: z.string().min(1).max(128),
+});
+export type SoundPeakRequest = z.infer<typeof SoundPeakRequestSchema>;
+export const SoundPeakResponseSchema = z.object({
+	sequenceId: z.string(),
+	clipId: z.string(),
+	/** The peak as content flicks from the media start (what `soundDesign.setPeak {peakFlicks}` takes). */
+	peakFlicks: z.number().int().min(0),
+	/** Seconds of the clip's content (from its In point) to the peak, and to the first −30 dB onset. */
+	peakSec: z.number(),
+	onsetSec: z.number(),
+	/** Seconds analysed; `truncated` when the clip uses more than SOUND_PEAK_MAX_SECONDS of its media. */
+	analysedSec: z.number(),
+	truncated: z.boolean(),
+	/** Revision of the document the clip was read from (null when the source did not say). */
+	revision: z.number().int().nullable(),
+});
+export type SoundPeakResponse = z.infer<typeof SoundPeakResponseSchema>;

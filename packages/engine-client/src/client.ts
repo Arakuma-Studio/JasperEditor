@@ -67,6 +67,7 @@ import {
 	type SoundListenRequest,
 	type SoundMatchRequest,
 	type SoundMomentRequest,
+	type SoundPeakRequest,
 	type SoundProfileBuildRequest,
 	type SoundProfileImportRequest,
 	type SoundRoomToneRequest,
@@ -442,6 +443,9 @@ export class EngineClient {
 	/** Cue suggestions derived from the edit (spec 12 §2.8; `deriveCues` with the engine's template registry). */
 	soundDesignCues(req: SoundCuesRequest, signal?: AbortSignal) {
 		return this.call('soundDesignCues', { body: req, ...(signal ? { signal } : {}) });
+	}
+	soundDesignPeak(req: SoundPeakRequest, signal?: AbortSignal) {
+		return this.call('soundDesignPeak', { body: req, ...(signal ? { signal } : {}) });
 	}
 	/**
 	 * Starts a `sound-design` plan job (spec 12 §2.8, P3-R3); its result (`SoundDesignPlanResult`) names the proposal it

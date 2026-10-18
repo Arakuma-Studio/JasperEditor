@@ -19,6 +19,8 @@ export const SOUND_LABELS = {
 	/** align_peak: one clip / with its layers */
 	alignPeak: 'Align Sound Peak',
 	alignPeaks: 'Align {0} Sound Peaks',
+	/** detect_sound_peak (the editor's Detect Peak) */
+	detectPeak: 'Detect Peak',
 	/** set_sound_cues: "Sound Cues (add 2, edit 1, remove 1, resync)" */
 	soundCues: 'Sound Cues',
 	cuesAdd: 'add {0}',

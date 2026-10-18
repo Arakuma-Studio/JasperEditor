@@ -510,6 +510,15 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		crossfadeSec: 0.2,
 		gainDb: -12,
 	},
+	// Spec 12 P6-R3 (Auto Tag): the classified type per clip id, marked "auto" until the user confirms it (auto_tag_audio
+	// measures the clips with POST /api/audio/classify and applies this command; a type the user set is kept unless force).
+	'essentialSound.autoTag': {
+		type: 'essentialSound.autoTag',
+		results: {
+			clp_0123456789abcdef: { category: 'music', confidence: 0.92, reasons: ['tonal, with a steady beat'] },
+		},
+		minConfidence: 0.5,
+	},
 };
 
 /** A multi-command transaction showing temp refs. */
