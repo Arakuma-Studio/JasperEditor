@@ -453,7 +453,9 @@ export function styleCueTypes(
 	const out = [...base];
 	const families = new Set(base.map((t) => (isSoundTypeId(t) ? SOUND_TYPES[t].family : null)));
 	for (const fam of families) {
-		const at = base.map((t, k) => (isSoundTypeId(t) && SOUND_TYPES[t].family === fam ? k : -1)).filter((k) => k >= 0);
+		const at = base
+			.map((t, k) => (isSoundTypeId(t) && SOUND_TYPES[t].family === fam ? k : -1))
+			.filter((k) => k >= 0);
 		const mine = at.map((k) => base[k]!);
 		const ordered = [...mine.filter((t) => p.boost.includes(t)), ...mine.filter((t) => !p.boost.includes(t))];
 		at.forEach((k, n) => {

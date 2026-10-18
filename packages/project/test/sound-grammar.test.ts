@@ -455,7 +455,11 @@ describe('personality', () => {
 			'transition',
 			'click',
 		]);
-		expect(styleCueTypes(['thump', 'hit', 'transition'], 'energetic')).toEqual(['hit', 'thump', 'transition']);
+		expect(styleCueTypes(['thump', 'hit', 'transition'], 'energetic')).toEqual([
+			'hit',
+			'thump',
+			'transition',
+		]);
 		// a typewriter keeps keys first under bright (it boosts clicks, another family)
 		expect(styleCueTypes(['key', 'tick', 'click'], 'bright')).toEqual(['key', 'tick', 'click']);
 		expect(styleCueTypes(['boom', 'hit'], 'calm')).toEqual(['boom', 'hit']);

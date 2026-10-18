@@ -115,7 +115,9 @@ describe('Auto Sound Pass… sound design style', () => {
 		await settle();
 		const style = within(dialog).getByTestId('auto-pass-style');
 		expect(within(style).getByRole('combobox', { name: 'Personality' }).textContent).toBe('Warm');
-		expect(within(style).getByRole('combobox', { name: 'Runs of staggered cues' }).textContent).toMatch(/^Flat/);
+		expect(within(style).getByRole('combobox', { name: 'Runs of staggered cues' }).textContent).toMatch(
+			/^Flat/,
+		);
 		await chooseOption(within(style).getByRole('combobox', { name: 'Personality' }), 'No personality');
 		await act(async () => {
 			fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
@@ -228,6 +230,13 @@ describe('variation cycling of a take', () => {
 			['snd_00000000000000ef'],
 			[`${rec.id}~t2`, `${rec.id}~t3`],
 		);
-		expect(list).toEqual([t1, 'snd_00000000000000ab', `${rec.id}~t2`, `${rec.id}~t3`, 'snd_00000000000000cd', 'snd_00000000000000ef']);
+		expect(list).toEqual([
+			t1,
+			'snd_00000000000000ab',
+			`${rec.id}~t2`,
+			`${rec.id}~t3`,
+			'snd_00000000000000cd',
+			'snd_00000000000000ef',
+		]);
 	});
 });

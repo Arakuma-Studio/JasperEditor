@@ -22,11 +22,24 @@ import {
 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, JSON_H, makeApp, ROOT, TEST_FFMPEG, type TestApp, tempAppdir } from './helpers.ts';
+import {
+	closeApps,
+	DocBuilder,
+	JSON_H,
+	makeApp,
+	ROOT,
+	TEST_FFMPEG,
+	type TestApp,
+	tempAppdir,
+} from './helpers.ts';
 
 const SR = 48_000;
 const POP_HZ = 1000;
-const ENV_KEYS = ['JASPER_SOUND_STARTER_DIR', 'JASPER_SOUND_SYNTH_VARIANTS', 'JASPER_SOUND_AUTO_INDEX'] as const;
+const ENV_KEYS = [
+	'JASPER_SOUND_STARTER_DIR',
+	'JASPER_SOUND_SYNTH_VARIANTS',
+	'JASPER_SOUND_AUTO_INDEX',
+] as const;
 const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 
 function lcg(seed: number) {
@@ -132,9 +145,13 @@ function fixtureDoc(): { doc: ProjectDocument; seqId: string } {
 }
 
 function decodeF32(file: string): Float32Array {
-	const out = execFileSync(TEST_FFMPEG, ['-v', 'error', '-i', file, '-map', '0:a:0', '-ac', '1', '-f', 'f32le', '-'], {
-		maxBuffer: 1 << 30,
-	});
+	const out = execFileSync(
+		TEST_FFMPEG,
+		['-v', 'error', '-i', file, '-map', '0:a:0', '-ac', '1', '-f', 'f32le', '-'],
+		{
+			maxBuffer: 1 << 30,
+		},
+	);
 	return new Float32Array(out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength));
 }
 
@@ -244,16 +261,16 @@ beforeAll(async () => {
 	// a picture of the exported audio to look at (not an assertion)
 	try {
 		execFileSync(TEST_FFMPEG, [
-		'-v',
-		'error',
-		'-y',
-		'-i',
-		out,
-		'-filter_complex',
-		'[0:a]showwavespic=s=1600x300:split_channels=0',
-		'-frames:v',
-		'1',
-		join(ROOT, 'test-results', 'sd-grammar', 'export-waveform.png'),
+			'-v',
+			'error',
+			'-y',
+			'-i',
+			out,
+			'-filter_complex',
+			'[0:a]showwavespic=s=1600x300:split_channels=0',
+			'-frames:v',
+			'1',
+			join(ROOT, 'test-results', 'sd-grammar', 'export-waveform.png'),
 		]);
 	} catch {
 		// the waveform picture is optional
@@ -283,8 +300,11 @@ describe('the cue grammar in the exported audio (measured)', { timeout: 900_000 
 			return frequencyOf(exported, at + Math.round(0.003 * SR), Math.round(0.06 * SR));
 		});
 		const semis = st.map((hz) => 12 * Math.log2(hz / POP_HZ));
-		console.log(`[grammar export] pop frequencies ${st.map((x) => x.toFixed(1)).join(' / ')} Hz = ${semis.map((x) => x.toFixed(3)).join(' / ')} st`);
-		for (const [i, s] of semis.entries()) expect(Math.abs(s - i), `card ${i + 1}: ${s} st`).toBeLessThan(0.05);
+		console.log(
+			`[grammar export] pop frequencies ${st.map((x) => x.toFixed(1)).join(' / ')} Hz = ${semis.map((x) => x.toFixed(3)).join(' / ')} st`,
+		);
+		for (const [i, s] of semis.entries())
+			expect(Math.abs(s - i), `card ${i + 1}: ${s} st`).toBeLessThan(0.05);
 		const ev = result.report.events.filter((e) => e.run);
 		expect(ev.map((e) => e.run!.st)).toEqual([0, 1, 2, 3]);
 		expect(ev.map((e) => e.frame)).toEqual([120, 135, 150, 165]);
@@ -299,7 +319,8 @@ describe('the cue grammar in the exported audio (measured)', { timeout: 900_000 
 		const peaks = [240, 270, 300].map((f) => {
 			const at = frameToSample(f, fps, SR);
 			let p = 0;
-			for (let i = at - Math.round(0.01 * SR); i < at + Math.round(0.03 * SR); i++) p = Math.max(p, Math.abs(exported[i]!));
+			for (let i = at - Math.round(0.01 * SR); i < at + Math.round(0.03 * SR); i++)
+				p = Math.max(p, Math.abs(exported[i]!));
 			return 20 * Math.log10(p);
 		});
 		console.log(`[grammar export] click peaks ${peaks.map((x) => x.toFixed(2)).join(' / ')} dBFS`);

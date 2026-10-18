@@ -120,10 +120,7 @@ test('style in Preferences → Auto Sound Pass → apply: climbing cards, one cl
 	const dstyle = dialog.getByTestId('auto-pass-style');
 	await expect(dstyle.getByRole('combobox', { name: 'Personality' })).toHaveText('Bright');
 	// only the text animations and the markers (the cards' edges would add exit cues)
-	await dialog
-		.locator('[data-cue-source="clipEdges"]')
-		.getByRole('checkbox')
-		.click();
+	await dialog.locator('[data-cue-source="clipEdges"]').getByRole('checkbox').click();
 	await dstyle.scrollIntoViewIfNeeded();
 	await dialog.screenshot({ path: join(outDir, '2-auto-pass-style.png') });
 	const n0 = (await appliedLabels(page)).length;
@@ -149,7 +146,8 @@ test('style in Preferences → Auto Sound Pass → apply: climbing cards, one cl
 	// the cards climb by varispeed (speed 2^(st/12), pitch not kept)
 	const rates = cards.map((f) => clipAt(f).speed.rate);
 	console.log('card speeds', JSON.stringify(rates));
-	rates.forEach((rate, i) => expect(Math.abs(rate - 2 ** (i / 12)), `card ${i + 1}`).toBeLessThan(1e-4));
+	for (const [i, rate] of rates.entries())
+		expect(Math.abs(rate - 2 ** (i / 12)), `card ${i + 1}`).toBeLessThan(1e-4);
 	for (const f of cards.slice(1)) expect(clipAt(f).speed.maintainPitch).toBe(false);
 	// one click voice at one level
 	const cl = clicks.map(clipAt);

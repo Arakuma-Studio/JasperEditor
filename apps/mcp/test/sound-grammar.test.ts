@@ -315,7 +315,10 @@ describe('place_sound type picks follow the grammar', { timeout: 600_000 }, () =
 		const img = view.content.find((c) => c.type === 'image') as { data: string } | undefined;
 		expect(img).toBeDefined();
 		mkdirSync(join(ROOT, 'test-results', 'sd-grammar'), { recursive: true });
-		writeFileSync(join(ROOT, 'test-results', 'sd-grammar', 'mcp-timeline.png'), Buffer.from(img!.data, 'base64'));
+		writeFileSync(
+			join(ROOT, 'test-results', 'sd-grammar', 'mcp-timeline.png'),
+			Buffer.from(img!.data, 'base64'),
+		);
 	});
 
 	it('plan_sound_design takes the style options and reports what the grammar did', async () => {

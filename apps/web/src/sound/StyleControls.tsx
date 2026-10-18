@@ -77,7 +77,9 @@ export function SoundStyleFields(props: {
 	const current = value.personality ?? 'none';
 	return (
 		<fieldset className="flex flex-col gap-1" data-testid={props.testId ?? 'sound-style'}>
-			{props.legend === false ? null : <legend className="mb-1 text-pr-muted">{t('Sound design style')}</legend>}
+			{props.legend === false ? null : (
+				<legend className="mb-1 text-pr-muted">{t('Sound design style')}</legend>
+			)}
 			{show('personality') ? (
 				<div className="flex flex-col gap-0.5" data-testid="sound-style-personality">
 					<div className="flex items-center gap-2">
