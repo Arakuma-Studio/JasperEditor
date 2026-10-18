@@ -8376,3 +8376,91 @@ strings, es.json complete); README (356 tools, the HTTP list), security review (
 - **Language.** The transcript is the engine's English text, printed verbatim by the panel and MCP (the spec's "lines
   identical"); the panel's controls are translated. Decision: a measurement log, like the timecodes, is not localised.
 
+#### Verified (measured, this branch; build server `jasper-build`, 16 × Intel Haswell vCPU, Node 20.20.2, load 1.6–7.7)
+
+- `pnpm vitest run packages/audio-fx/test/events.test.ts`: 15 passed — each hit (6 kHz click, 60 Hz thump, noise
+  burst) found at its attack within 1 ms in silence and over a −50 dBFS bed, nothing else rising ≥ 3 dB; the band (a click
+  over a dark bed: high; a thump over a bright one: low); prominence of a +20 dB burst 18–23 dB and its bed within 1.5 dB
+  of BS.1770 (`LoudnessMeter`); an event's peak within 1 ms of `analyzeSound(...).peakSec` for a swelling whoosh and a
+  crunch (the descriptors' oracle); identical events for blocks of 1, 97, 4 800 and the whole signal, and hits on and
+  around the 30 s chunk edges of a 70 s stem found once; a riser's swell within 60 ms of its peak; a digital silence and a
+  28 dB drop at their times (± 60 / 80 ms), the integrated loudness within 0.3 LU of `LoudnessMeter`; accents; the
+  spectrogram (100 columns per second, the 1 kHz band loudest); the answer ladder (OK, near preferring the strong onset,
+  swell, none naming a strong onset ≤ 250 ms, a whoosh answering at its peak); **chance equal to a brute-force count**
+  of 0.05 ms grid times (60 fast-check runs, within the grid's error); shares and on-beat stats; 150 fast-check runs of
+  hostile input (NaN, ±∞, any sample rate, 0–9 channels, short arrays) never throw and stay finite; one sample, DC and
+  40 s of silence (one silence, atStart and atEnd); the 2 h cap.
+- `pnpm vitest run apps/engine/test/sound-listen.test.ts` (real engine, generated media; the Sound Check fixture — music,
+  dialogue, three placed sounds — plus a knock inside the dialogue at 6.5 s and three colour mattes on V1): 4 passed.
+  **Every placed sound's own event within 1 ms of its aligned point**, heard in the mix, attributed to its clip, stem
+  `sfx`, `explainedBy: 'event'`, its cue and role; **the knock attributed to the dialogue clip** (within 5 ms; stem
+  dialogue); the cut on cue B answered OK by the click, the cut at 9.3 s NO SOUND; the three cues OK; **the chance of the
+  cuts, cues and all equal to a brute-force count** (0.1 ms grid, ≤ 0.002); sections (music, then dialogue + music with
+  its distance under the voice); the text equals the lines; deterministic (two runs equal); detail low ⊂ normal ⊂ high; a
+  range; typed refusals (RANGE_EMPTY, unknown key, bad detail, unknown sequence / project, over 10 minutes →
+  RANGE_TOO_LONG); the visual route's spectrogram (frames = points, 96 bands, the hit loud in the low bands).
+  **6 dB under the music:** ten hits whose loudest momentary sits 6 dB under the music's (gain −15.3 dB; music −26.2 LUFS,
+  hit −16.8 LUFS max momentary, measured with `LoudnessMeter`) → **10/10 heard** (8 by the onset curve, 2 at their own
+  onset, `guided`), each attributed to its clip.
+- **Time for a 10-minute sequence** (`JASPER_LISTEN_BENCH=1`, 60 × 10 s of pink-noise music and 196 clicks, 3 lanes):
+  **102.2 s** (renders and detection 101.5 s, attribution and transcript 0.5 s; 2 775 events; 199/199 placed heard).
+  Before the stem curves came from the lanes: 117.5 s. A `ListenMeter` alone costs 1.74 s per minute of stereo noise
+  (0.39 s of silence; `CurveMeter` 0.18 s) — measured with a scratch script, not committed; the mixers are the rest.
+- `apps/mcp/test/sound-listen.test.ts` (jasper-mcp over stdio, real engine): the transcript first, equal to the job's
+  `text` and lines (`get_job`); the compact JSON names the cut with no sound and every placed sound heard within 1 ms;
+  `images: true` → one 1200 px sheet of the 10 s range, frames rendered; `view_sound_timeline {listenJobId}`: lanes picture
+  → curves → spectrogram → wave → sections → sfx → cues → sync → move → check, in order without overlap; ≥ 3 thumbnails
+  (≤ 12), the cut frames' boxes holding the green and blue mattes (pixels); the cues with status OK; the sync marks OK
+  (green pixel at the cut on cue B) and none (red pixel at the cut at 9.3 s), shapes named; sections with dialogue; a
+  listen run by the tool itself; strict arguments, RANGE_EMPTY, JOB_NOT_FOUND. `apps/mcp/test/sound-check.test.ts` passes
+  with the new lanes.
+- `apps/web/test/sound-listen-log.test.tsx` (real session, fake engine): 3 passed — the Log tab lists the job's lines
+  verbatim; the no-sound line marked by an icon; a line moves the playhead and selects its clip; ↑ / Enter / End; Copy
+  log; the spectrogram request and mark; Listen to Sequence (command and menu); the 10-minute range from the playhead and
+  the spectrogram window. `apps/web/test/sound-check-panel.test.tsx`: 14 passed.
+- **Real app** (built stack: `pnpm build`, `E2E_PORT=52201 pnpm exec playwright test e2e/sound-listen.spec.ts`): 1 passed
+  (1.3 min). The Phase 4 fixture (the Phase 2 edit at 29.97 fps, pink music on A1, an interview with a knock at 6.5 s on
+  A2, Auto Sound Pass → Accept all → Apply: 15 placed sounds, 14 cues) → Sequence ▸ Sound Design ▸ Listen to Sequence →
+  the Log tab; the knock's line (`00;00;06;14 hit, low band, +15 dB over the bed · accent · dialogue, A2
+  "interview.wav"`) clicked: the playhead at its frame, the interview clip selected; the spectrogram strip; MCP
+  `listen_to_sequence` prints the panel's lines exactly. Measured on that run: listen 5.5 s (7 lanes, 14 s); 12 of 15
+  placed sounds heard (the three not heard are ticks the solver put under the dialogue, +0 dB over the bed — what WP5.1
+  measured too); own offsets: **13 of 15 within 1 ms**, a crunchy impact 6 ms, "Air whoosh, bright" −36.9 ms (a pan-swept
+  whoosh whose loudest 2 ms lie elsewhere on its noisy plateau after the mix's processing); cues 10/14 answered within a
+  frame (chance 26 %), 12/14 within 100 ms (chance 55 %). Looked at (`test-results/e2e-sound-listen/`): `1-log-tab.png`,
+  `2-line-and-spectrogram.png` (the knock line highlighted, the playhead at 00;00;06;14, Essential Sound showing the
+  dialogue clip, the mark on the spectrogram), `3-panel.png`, `listen-sheet.png` (nine frames — the red / green / blue
+  shots, the Push transition half and half, the HELLO WORLD title — over the curves, the spectrogram with the dialogue's
+  1.5 kHz line and the explosion, the sections band, the cue ticks and the sync lane with green circles on 0 ms answers,
+  an amber diamond on the whoosh and red crosses on the two ticks under the dialogue). Also looked at:
+  `test-results/mcp-sound-listen/view-sound-timeline.png` (the MCP test's sheet). The looks found four faults, fixed:
+  whooshes answered "near" at their attack (now at their peak too: cues 7/14 → 10/14 within a frame), a crunch's peak
+  38 ms off (now the descriptors' peak definition), the flicker inside a crunch's tail listed nine times at "normal", and a
+  click on a line lost when focusing the list scrolled it away.
+- Gate after merging `feat/sound-design` (`b0d9c6ea`, WP-E5; conflicts in the earshot record, es.json, gaps and this
+  note — all append-only, both kept): `pnpm typecheck` (every package) 0 errors; `SD_GIT=1 … pnpm lint` (Biome, tokens,
+  anime, layers, assets) pass; `node scripts/i18n.mjs --check` (10 082 strings); `pnpm notices --check` (33 ported
+  records); `pnpm vitest run --project @jasper/audio-fx --project @jasper/project --project @jasper/api --project
+  @jasper/engine-client --maxWorkers=8`: 217 files passed; `pnpm vitest run --project @jasper/web --project @jasper/mcp
+  --maxWorkers=8`: 205 files passed, 2 skipped (1 668 tests); engine `sound-listen`, `sound-check`, `sound-check-p6`,
+  `sound-check-stems`, `fuzz-http` (fuzzes the new route), `security-review`, `server`: 7 passed; `sound-design-motion`
+  fails at setup on the build server (`Unknown encoder 'libx264'` for its fixture video — the known environment issue,
+  not this branch).
+
+#### Limits and notes for the next packages
+
+- A 10-minute listen takes ≈ 100 s here (measured above); the renders dominate. MCP waits 300 s by default.
+- The detector is earshot's: a busy bed flickers into low-prominence onsets (they answer nothing: only events ≥ 3 dB over
+  their bed do), a sound's tail can hold inner onsets (listed at "high"), amplitude-modulated sounds (syllables) read as
+  swells, and noisy plateaus (whooshes) have an ill-defined 2 ms peak (−36.9 ms in the real run). A hidden sound is looked
+  at where its clip has an onset (`guided`); a sound with no onset of its own (a pad) is attributed by level only.
+- Lanes: ≤ 24; beyond, clips share a lane (warned) and an event there goes to the clip playing; an effect tail past the
+  0.25 s lane gap may be given to the next clip on its lane. Nested-sequence audio is one clip.
+- Sections are by Essential Sound type (Auto Tag sets it); untyped audio is "other". The music's distance under the
+  voice is an energy mean over voiced hops.
+- Picture events are cuts, transitions, cues and CACHED measured motion (never analysed by the listen: run
+  `analyze_picture_motion` first); on-beat stats need cached beats of the music clips (`find_sound_cues` sources beat or
+  `snapToBeats` analyse them).
+- The transcript is English in every UI language (the panel prints the engine's lines verbatim).
+- WP-E4 (reference profiles) can reuse `ListenMeter` (onsets per second, salient hits, silences, the sync shares and their
+  chance) and `syncStats` for its "sync" metrics.
