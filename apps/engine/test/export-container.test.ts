@@ -86,10 +86,19 @@ describe('fitOutputFormat / selectVideoEncoder honour the requested container an
 				code: 'OUTPUT_CONTAINER_CHANGED',
 				message:
 					'MP4 was requested but MP4 does not carry ProRes (MP4 takes H.264, HEVC, AV1, VP9): the file is MOV',
+				// the values, for editors that say it in their language (final carry-over cleanup, item 6)
+				params: {
+					requested: 'MP4',
+					written: 'MOV',
+					why: 'codec',
+					codec: 'ProRes',
+					accepts: 'H.264, HEVC, AV1, VP9',
+				},
 			},
 			{
 				code: 'AUDIO_CODEC_CHANGED',
 				message: 'AAC audio was requested but ProRes masters carry PCM audio: the audio is PCM',
+				params: { requested: 'AAC', written: 'PCM', container: 'MOV', why: 'prores' },
 			},
 		]);
 		const vp9 = selectVideoEncoder(LGPL, {
@@ -114,6 +123,7 @@ describe('fitOutputFormat / selectVideoEncoder honour the requested container an
 			{
 				code: 'AUDIO_CODEC_CHANGED',
 				message: 'PCM audio was requested but MP4 does not carry PCM audio (PCM needs MOV): the audio is AAC',
+				params: { requested: 'PCM', written: 'AAC', container: 'MP4', why: 'container' },
 			},
 		]);
 		const webm = selectVideoEncoder(NO_OPUS, {
@@ -123,9 +133,10 @@ describe('fitOutputFormat / selectVideoEncoder honour the requested container an
 			audio: 'opus',
 		})!;
 		expect(webm).toMatchObject({ container: 'mp4', audioEncoder: 'aac' });
-		expect(outputFormatChanges(webm, { container: 'webm', audio: 'opus' })[0]!.message).toBe(
-			'WEBM was requested but WebM needs Opus audio, which this ffmpeg build lacks: the file is MP4',
-		);
+		expect(outputFormatChanges(webm, { container: 'webm', audio: 'opus' })[0]).toMatchObject({
+			message: 'WEBM was requested but WebM needs Opus audio, which this ffmpeg build lacks: the file is MP4',
+			params: { requested: 'WEBM', written: 'MP4', why: 'opus' },
+		});
 		expect(audioCodecFamily('pcm_s24le')).toBe('pcm');
 		expect(audioCodecFamily('libopus')).toBe('opus');
 		expect(audioCodecFamily('aac')).toBe('aac');
@@ -249,6 +260,10 @@ describe('H.264 + PCM in MOV on a real engine (WP6.5a item 6)', { timeout: 300_0
 		};
 		expect(job.error, JSON.stringify(job.error)).toBeUndefined();
 		expect(job.result).toMatchObject({ container: 'mp4', audioCodec: 'aac' });
-		expect(job.result.warnings).toContainEqual({ code: 'AUDIO_CODEC_CHANGED', message: w!.message });
+		expect(job.result.warnings).toContainEqual({
+			code: 'AUDIO_CODEC_CHANGED',
+			message: w!.message,
+			params: { requested: 'PCM', written: 'AAC', container: 'MP4', why: 'container' },
+		});
 	});
 });

@@ -1,4 +1,4 @@
-import { TERMINAL_JOB_STATES } from '@jasper/api';
+import { type ExportWarningParams, TERMINAL_JOB_STATES } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
 	type AutosaveStatus,
@@ -18,7 +18,9 @@ import { useNavigate } from 'react-router';
 import { useAgentBridge } from '../agent-bridge/index.ts';
 import { ExportMode } from '../export/ExportMode.tsx';
 import { takeTrackedExport, useExportMode, useExportModeHostedByShell } from '../export/mode.ts';
+import { exportWarningText } from '../export/warning-text.ts';
 import { useLanguageEpoch } from '../i18n/react.ts';
+import { t } from '../i18n/runtime.ts';
 import { ImportPromptHost } from '../import/ImportPromptHost.tsx';
 import { createMediaRuntimeSync } from '../import/media-runtime.ts';
 import { EngineImportService } from '../import/service.ts';
@@ -411,20 +413,30 @@ const SHOWN_RESULT_WARNING = /^(W_SOUND_|OUTPUT_CONTAINER_CHANGED$|AUDIO_CODEC_C
  */
 export function exportResultDetail(result: unknown): string | undefined {
 	const r = result as
-		| { credits?: { count?: unknown; name?: unknown }; warnings?: { code?: unknown; message?: unknown }[] }
+		| {
+				credits?: { count?: unknown; name?: unknown };
+				warnings?: { code?: unknown; message?: unknown; params?: unknown }[];
+		  }
 		| undefined;
 	const parts: string[] = [];
 	const c = r?.credits;
 	if (c && typeof c.name === 'string' && typeof c.count === 'number')
 		parts.push(
 			c.count === 1
-				? 'Sound credits file written (1 sound).'
-				: `Sound credits file written (${c.count} sounds).`,
+				? t('Sound credits file written (1 sound).')
+				: t('Sound credits file written ({0} sounds).', c.count),
 		);
 	else if (c && c.count === 0)
-		parts.push('No library sound is heard in the export: no credits file was written.');
+		parts.push(t('No library sound is heard in the export: no credits file was written.'));
+	// the engine's code + params in the UI language (its English message when they cannot be read)
 	for (const w of Array.isArray(r?.warnings) ? r.warnings : [])
 		if (typeof w?.code === 'string' && SHOWN_RESULT_WARNING.test(w.code) && typeof w.message === 'string')
-			parts.push(w.message);
+			parts.push(
+				exportWarningText({
+					code: w.code,
+					message: w.message,
+					params: w.params && typeof w.params === 'object' ? (w.params as ExportWarningParams) : undefined,
+				}),
+			);
 	return parts.length ? parts.join(' ') : undefined;
 }

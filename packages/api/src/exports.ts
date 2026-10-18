@@ -165,6 +165,24 @@ export const ExportSettingsSchema = z.object({
 export type ExportSettings = z.infer<typeof ExportSettingsSchema>;
 
 /** Render plan (S04:RP-010) plus the plan id and document revision it was computed for (RP-011). */
+/**
+ * The structured part of an engine-composed export warning: what the message says, as values, so an editor can say it
+ * in its own language (final carry-over cleanup, item 6; the pattern for every engine-composed message: a stable
+ * `code`, `params` with the values, `message` in English for agents, logs and older clients). Codes with params:
+ * - `W_SOUND_CREDITS`: `count`, `licences` (", "-joined SPDX ids), `titles` (the first three, quoted, ", "-joined),
+ *   `more` (more than three);
+ * - `W_SOUND_LICENSE_NC`: `count`, `licences`;
+ * - `W_SOUND_SHARE_ALIKE`: `count`, `licences`, `titles`, `more`;
+ * - `W_SOUND_CHECK_STALE`: `state` (`stale`: `reason` `mix` | `preset` | `settings`; `failed`: `errors`, a count, absent
+ *   when unknown);
+ * - `OUTPUT_CONTAINER_CHANGED`: `requested`, `written` (container names, upper case), `why` (`codec`: `codec` is not
+ *   carried, `accepts` lists what is; `opus`: WebM needs Opus; `muxer`: the codec is written as `written` here);
+ * - `AUDIO_CODEC_CHANGED`: `requested`, `written` (AAC | Opus | PCM), `container`, `why` (`prores` | `container` |
+ *   `no-opus`).
+ */
+export const ExportWarningParamsSchema = z.record(z.string().max(64), z.union([z.string().max(2000), z.number(), z.boolean()]));
+export type ExportWarningParams = z.infer<typeof ExportWarningParamsSchema>;
+
 export const RenderPlanSchema = z.object({
 	planId: z.string().optional(),
 	documentRevision: z.number().int().optional(),
@@ -197,10 +215,12 @@ export const RenderPlanSchema = z.object({
 	warnings: z.array(
 		z.object({
 			code: z.string(),
+			/** English, for agents and logs; editors show `code` + `params` in their language (`EXPORT_WARNING_PARAMS`). */
 			message: z.string(),
 			itemIds: z.array(z.string()).optional(),
 			/** `info` = for the user's information (W_SOUND_CHECK_STALE); absent = a warning. */
 			level: z.enum(['warning', 'info']).optional(),
+			params: ExportWarningParamsSchema.optional(),
 		}),
 	),
 	estimate: z.object({ seconds: z.number().min(0), bytes: z.number().min(0) }),
@@ -247,7 +267,14 @@ export const ExportResultSchema = z.object({
 	 * container or audio codec, `OUTPUT_CONTAINER_CHANGED` / `AUDIO_CODEC_CHANGED` (WP6.5a, AGENTS §4).
 	 */
 	warnings: z
-		.array(z.object({ code: z.string(), message: z.string(), level: z.enum(['warning', 'info']).optional() }))
+		.array(
+			z.object({
+				code: z.string(),
+				message: z.string(),
+				level: z.enum(['warning', 'info']).optional(),
+				params: ExportWarningParamsSchema.optional(),
+			}),
+		)
 		.optional(),
 	/**
 	 * The sound credits sidecar (spec 12 §2.11): its format and scope, how many sounds it credits (0 = no file: no

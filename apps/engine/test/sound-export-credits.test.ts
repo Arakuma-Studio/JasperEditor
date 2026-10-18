@@ -153,6 +153,14 @@ describe('export plan sound warnings (spec 12 §2.11)', { timeout: 300_000 }, ()
 		const w = p.warnings.find((x) => x.code === 'W_SOUND_CREDITS');
 		expect(w?.message).toMatch(/^2 sounds heard in this export need a credit \(CC-BY-4\.0, CC-BY-SA-4\.0/);
 		expect(w?.level).toBeUndefined();
+		// the values, for editors that say it in their language (final carry-over cleanup, item 6)
+		expect(w?.params).toEqual({
+			count: 2,
+			licences: 'CC-BY-4.0, CC-BY-SA-4.0',
+			titles: expect.stringMatching(/^".+", ".+"$/),
+			more: false,
+		});
+		expect(w!.message).toContain(`: ${w!.params!.titles})`);
 		expect((await plan(d, { credits: { sidecar: 'md' } })).warnings.map((x) => x.code)).not.toContain(
 			'W_SOUND_CREDITS',
 		);
@@ -174,6 +182,12 @@ describe('export plan sound warnings (spec 12 §2.11)', { timeout: 300_000 }, ()
 			/^1 sound heard in this export is ShareAlike \(CC-BY-SA-4\.0: ".+"\): the video must be shared under CC BY-SA or a compatible licence$/,
 		);
 		expect(w?.itemIds?.length).toBe(1);
+		expect(w?.params).toEqual({
+			count: 1,
+			licences: 'CC-BY-SA-4.0',
+			titles: expect.stringMatching(/^".+"$/),
+			more: false,
+		});
 		const mid = await plan(d, { range: { type: 'custom', startFrame: 60, endFrame: 200 } });
 		expect(mid.warnings.map((x) => x.code)).not.toContain('W_SOUND_SHARE_ALIKE');
 	});
@@ -197,11 +211,13 @@ describe('export plan sound warnings (spec 12 §2.11)', { timeout: 300_000 }, ()
 		expect(w!.message).toBe(
 			'The last Sound Check of this sequence failed (2 errors): review its findings before delivering',
 		);
+		expect(w!.params).toEqual({ state: 'failed', errors: 2 });
 		d.tx([{ type: 'soundDesign.setCheck', summary: summary('pass') }]);
 		d.tx([{ type: 'track.update', trackId: 'A1', patch: { volumeDb: -3 } }]);
 		w = (await plan(d)).warnings.find((x) => x.code === 'W_SOUND_CHECK_STALE');
 		expect(w).toMatchObject({ level: 'info' });
 		expect(w!.message).toMatch(/out of date \(the mix changed since\)/);
+		expect(w!.params).toEqual({ state: 'stale', reason: 'mix' });
 	});
 });
 
@@ -286,6 +302,7 @@ describe('the credits sidecar (spec 12 §2.11)', { timeout: 600_000 }, () => {
 		expect(job.result.credits).toEqual({ format: 'md', scope: 'all', count: 0 });
 		expect(job.result.warnings?.find((w) => w.code === 'W_SOUND_CHECK_STALE')).toMatchObject({
 			level: 'info',
+			params: { state: expect.stringMatching(/^(stale|failed)$/) },
 		});
 		const none = await app.inject({
 			method: 'GET',

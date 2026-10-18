@@ -7,7 +7,7 @@
 //   - W_SOUND_CHECK_STALE (information): the sequence's stored Sound Check is out of date or failed.
 // Header strings stay English (the sidecar is a deliverable for any audience, and the engine has no user locale);
 // credit lines are the licences' verbatim attribution lines.
-import type { ExportSettings, RenderPlan } from '@jasper/api';
+import type { ExportSettings, ExportWarningParams, RenderPlan } from '@jasper/api';
 import {
 	isShareAlike,
 	licenseClass,
@@ -69,59 +69,70 @@ export function soundPlanWarnings(
 	try {
 		const credits = exportSoundCredits(doc, sequenceId, snapshot);
 		const need = credits.rows.filter((r) => requiresAttribution(r.license));
-		if (need.length && !settings.credits?.sidecar) {
-			const licences = [...new Set(need.map((r) => r.license))].slice(0, 4).join(', ');
-			const names = need
+		// `params`: the values of each message, for editors that say it in their language (`ExportWarningParamsSchema`)
+		const titlesOf = (rows: typeof credits.rows) =>
+			rows
 				.slice(0, 3)
 				.map((r) => `"${r.title || r.soundId}"`)
 				.join(', ');
+		if (need.length && !settings.credits?.sidecar) {
+			const licences = [...new Set(need.map((r) => r.license))].slice(0, 4).join(', ');
+			const names = titlesOf(need);
 			out.push({
 				code: 'W_SOUND_CREDITS',
 				message: `${need.length} ${need.length === 1 ? 'sound heard in this export needs' : 'sounds heard in this export need'} a credit (${licences}: ${names}${need.length > 3 ? '…' : ''}) and no credits file is written: choose a Credits format or credit ${need.length === 1 ? 'it' : 'them'} yourself`,
 				itemIds: [...new Set(need.flatMap((r) => r.usedIn.map((id) => id.split('>')[0]!)))].slice(0, 64),
+				params: { count: need.length, licences, titles: names, more: need.length > 3 },
 			});
 		}
 		const nc = credits.rows.filter((r) => licenseClass(r.license) === 'nc');
-		if (nc.length)
+		if (nc.length) {
+			const licences = [...new Set(nc.map((r) => r.license))].join(', ');
 			out.push({
 				code: 'W_SOUND_LICENSE_NC',
-				message: `${nc.length} ${nc.length === 1 ? 'sound heard in this export is' : 'sounds heard in this export are'} licensed for non-commercial use only (${[...new Set(nc.map((r) => r.license))].join(', ')})`,
+				message: `${nc.length} ${nc.length === 1 ? 'sound heard in this export is' : 'sounds heard in this export are'} licensed for non-commercial use only (${licences})`,
 				itemIds: [...new Set(nc.flatMap((r) => r.usedIn.map((id) => id.split('>')[0]!)))].slice(0, 64),
+				params: { count: nc.length, licences },
 			});
+		}
 		const sa = credits.rows.filter((r) => isShareAlike(r.license));
-		if (sa.length)
+		if (sa.length) {
+			const licences = [...new Set(sa.map((r) => r.license))].join(', ');
+			const names = titlesOf(sa);
 			out.push({
 				code: 'W_SOUND_SHARE_ALIKE',
-				message: `${sa.length} ${sa.length === 1 ? 'sound heard in this export is' : 'sounds heard in this export are'} ShareAlike (${[...new Set(sa.map((r) => r.license))].join(', ')}: ${sa
-					.slice(0, 3)
-					.map((r) => `"${r.title || r.soundId}"`)
-					.join(
-						', ',
-					)}${sa.length > 3 ? '…' : ''}): the video must be shared under CC BY-SA or a compatible licence`,
+				message: `${sa.length} ${sa.length === 1 ? 'sound heard in this export is' : 'sounds heard in this export are'} ShareAlike (${licences}: ${names}${sa.length > 3 ? '…' : ''}): the video must be shared under CC BY-SA or a compatible licence`,
 				itemIds: [...new Set(sa.flatMap((r) => r.usedIn.map((id) => id.split('>')[0]!)))].slice(0, 64),
+				params: { count: sa.length, licences, titles: names, more: sa.length > 3 },
 			});
+		}
 	} catch {
 		// credits are metadata: a damaged provenance never blocks an export (the Sound Check reports it)
 	}
 	try {
 		const st = soundCheckStatus(doc, sequenceId);
 		if (st.state === 'stale') {
-			const why = st.reasons.includes('mix')
-				? 'the mix changed'
-				: st.reasons.includes('preset')
-					? 'the delivery target changed'
-					: 'cues, loudness or credits settings changed';
+			const reason = st.reasons.includes('mix') ? 'mix' : st.reasons.includes('preset') ? 'preset' : 'settings';
+			const why =
+				reason === 'mix'
+					? 'the mix changed'
+					: reason === 'preset'
+						? 'the delivery target changed'
+						: 'cues, loudness or credits settings changed';
 			out.push({
 				code: 'W_SOUND_CHECK_STALE',
 				level: 'info',
 				message: `The last Sound Check of this sequence is out of date (${why} since): run it again to check what you deliver`,
+				params: { state: 'stale', reason },
 			});
 		} else if (st.state === 'current' && st.summary?.verdict === 'fail') {
 			const errors = (st.summary.counts as { error?: number } | undefined)?.error;
+			const counted = typeof errors === 'number' && errors > 0;
 			out.push({
 				code: 'W_SOUND_CHECK_STALE',
 				level: 'info',
-				message: `The last Sound Check of this sequence failed${typeof errors === 'number' && errors > 0 ? ` (${errors} ${errors === 1 ? 'error' : 'errors'})` : ''}: review its findings before delivering`,
+				message: `The last Sound Check of this sequence failed${counted ? ` (${errors} ${errors === 1 ? 'error' : 'errors'})` : ''}: review its findings before delivering`,
+				params: { state: 'failed', ...(counted ? { errors } : {}) },
 			});
 		}
 	} catch {
@@ -134,8 +145,13 @@ export function soundPlanWarnings(
 export function resultSoundWarnings(
 	plan: RenderPlan,
 	creditsWritten: boolean,
-): { code: string; message: string; level?: 'warning' | 'info' }[] {
+): { code: string; message: string; level?: 'warning' | 'info'; params?: ExportWarningParams }[] {
 	return plan.warnings
 		.filter((w) => w.code.startsWith('W_SOUND_') && !(creditsWritten && w.code === 'W_SOUND_CREDITS'))
-		.map((w) => ({ code: w.code, message: w.message, ...(w.level ? { level: w.level } : {}) }));
+		.map((w) => ({
+			code: w.code,
+			message: w.message,
+			...(w.level ? { level: w.level } : {}),
+			...(w.params ? { params: w.params } : {}),
+		}));
 }

@@ -3,6 +3,7 @@
 import type { RenderPlan } from '@jasper/api';
 import type { Sequence } from '@jasper/project';
 import { type ExportEngineChoice, formatDuration, planChoiceSummary, sizeEstimateText } from './settings.ts';
+import { exportWarningText } from './warning-text.ts';
 
 export type PlanState =
 	| { status: 'idle' }
@@ -90,7 +91,7 @@ export function PlanSummary(props: {
 							className={w.level === 'info' ? 'text-pr-muted' : 'text-pr-warning'}
 							data-code={w.code}
 						>
-							{w.level === 'info' ? 'ⓘ' : '⚠'} {w.message}
+							{w.level === 'info' ? 'ⓘ' : '⚠'} {exportWarningText(w)}
 						</li>
 					))}
 				</ul>

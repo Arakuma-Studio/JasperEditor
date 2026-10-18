@@ -46,6 +46,7 @@ import {
 	saveExportChoice,
 	validateExport,
 } from './settings.ts';
+import { exportWarningText } from './warning-text.ts';
 
 const PLAN_DEBOUNCE_MS = 300;
 
@@ -798,7 +799,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 											data-code={w.code}
 											className={w.level === 'info' ? 'text-pr-muted' : 'text-pr-warning'}
 										>
-											{w.level === 'info' ? 'ⓘ' : '⚠'} {w.message}
+											{w.level === 'info' ? 'ⓘ' : '⚠'} {exportWarningText(w)}
 										</li>
 									))}
 								</ul>

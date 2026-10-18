@@ -26,6 +26,9 @@
   "(RGB) White Input Level",
   "(RGB) White Output Level",
   "{0} at {1} is bright: its spectral centroid is {2} Hz (over {3} Hz)",
+  "{0} at {1} is not sample-exact: its sample-exact copy would have been too large (placement exact to a frame)",
+  "{0} at {1} is not sample-exact: sounds over {2} min are used as they are (placement exact to a frame)",
+  "{0} at {1} is not sample-exact: there was not enough free disk space for its copy when it was added (placement exact to a frame; add it again to copy it)",
   "{0} at {1} peaks {2} dB over the loudest 2–6 kHz of the dialogue (at most {3} dB): harsh on phones and laptops",
   "{0} at {1} peaks {2} dB over the loudest 2–6 kHz of the music (at most {3} dB): harsh on phones and laptops",
   "{0} at {1} peaks {2} LU over the bed (at most {3} LU)",
@@ -1838,6 +1841,7 @@
   "Fill Alpha",
   "Fill and Stroke",
   "Fill Color",
+  "Fill it with room tone (\"{0}\", {1} dB, looped)",
   "Fill Left with Right",
   "Fill Point",
   "Fill Right with Left",
@@ -2530,6 +2534,7 @@
   "Iris Round",
   "Iris Roundness",
   "Iris Shape",
+  "It adds room tone under the gap in the dialogue: \"{0}\", {1} dB from the dialogue’s noise floor in spectral shape; listen that it blends in",
   "It changes how the mix ends: listen to it",
   "It changes the edit: the clip plays on until its sound has decayed",
   "it is not in the mix (disabled, muted track or offline media)",
@@ -2611,6 +2616,7 @@
   "Large Sponges",
   "Laser Shape",
   "Latitude",
+  "Lay Ambience Bed",
   "Layer",
   "Layer {0} of cue {1} at {2} adds at most {3} dB in any band over the bed and the other layers (less than {4} dB): it is not heard",
   "Layer Control",
@@ -5873,8 +5879,5 @@
   "Zoom Lens",
   "Zoom Level",
   "Zoom Producer Point",
-  "Zooms",
-  "Lay Ambience Bed",
-  "Fill it with room tone (\"{0}\", {1} dB, looped)",
-  "It adds room tone under the gap in the dialogue: \"{0}\", {1} dB from the dialogue’s noise floor in spectral shape; listen that it blends in"
+  "Zooms"
 ]
