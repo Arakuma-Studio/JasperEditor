@@ -33,8 +33,9 @@ const issue = (
 });
 
 describe('Phase 6 findings in the Sound Check panel', () => {
-	it('groups: Sync, Edges, Loudness, Mix, Tone, Cues, Licence — every category has a label', () => {
-		expect(CATEGORY_ORDER).toEqual(['sync', 'edges', 'loudness', 'mix', 'tonal', 'cues', 'licence']);
+	it('groups: Sync, Edges, Loudness, Mix, Tone, Cues, Licence, Reference — every category has a label', () => {
+		// Reference (P6-E8, WP-E4): the comparison with a reference profile, a style rather than a defect: last
+		expect(CATEGORY_ORDER).toEqual(['sync', 'edges', 'loudness', 'mix', 'tonal', 'cues', 'licence', 'reference']);
 		for (const c of CATEGORY_ORDER) expect(CATEGORY_LABELS[c]).toBeTruthy();
 		const groups = groupIssues([
 			issue('HARSH', 30, 'warning'),
