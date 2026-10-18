@@ -22,7 +22,7 @@ import {
 	TextField,
 	toast,
 } from '@jasper/ui';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useDialogClose } from '../extensions/dialog.ts';
 import { t } from '../i18n/runtime.ts';
 import { downloadBytes } from '../panels/text/state.ts';
@@ -119,42 +119,36 @@ const jobLine = (j: EngineJob) =>
 		? `${j.stage ?? t('Measuring')} — ${Math.round(j.progress * 100)} %`
 		: (j.stage ?? j.state);
 
-export function NewReferenceProfileDialog(
-	props: HostedDialogProps<{ session: EditorSession | null; engine: ProfileEngine; paths: boolean }>,
-) {
-	const { open, finish } = useDialogClose<string>(props.close);
-	const doc = props.session?.getCommitted() ?? null;
+type Built = { id: string; text: string; skipped: string[]; warnings: string[] };
+
+/** The New Reference Profile form's state and actions (the dialog and the Preferences form share them). */
+function useProfileBuilder(session: EditorSession | null, engine: ProfileEngine, paths: boolean) {
+	const doc = session?.getCommitted() ?? null;
 	const candidates = useMemo(() => referenceCandidates(doc), [doc]);
 	const [name, setName] = useState('');
 	const [media, setMedia] = useState<string[]>([]);
 	const [sequences, setSequences] = useState<string[]>([]);
 	const [pathText, setPathText] = useState('');
 	const [job, setJob] = useState<EngineJob | null>(null);
-	const [result, setResult] = useState<{
-		id: string;
-		text: string;
-		skipped: string[];
-		warnings: string[];
-	} | null>(null);
+	const [result, setResult] = useState<Built | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const running = !!job && !result && !error;
 	const parsed = parsePaths(pathText);
 	const req = buildRequest({
 		name,
-		projectId: props.session?.projectId ?? null,
+		projectId: session?.projectId ?? null,
 		mediaIds: media,
 		sequenceIds: sequences,
-		paths: props.paths ? parsed.paths : [],
+		paths: paths ? parsed.paths : [],
 	});
-	const toggle = (list: string[], set: (v: string[]) => void, id: string, on: boolean) =>
-		set(on ? [...list, id] : list.filter((x) => x !== id));
 	const start = async () => {
-		if (!req.ok) return;
+		if (!req.ok || running) return;
 		setError(null);
+		setJob(null);
 		try {
-			const j = await props.engine.buildSoundProfile(req.request);
+			const j = await engine.buildSoundProfile(req.request);
 			setJob(j);
-			const end = await followJob(props.engine as EngineClient, j.id, { onUpdate: setJob, intervalMs: 500 });
+			const end = await followJob(engine as EngineClient, j.id, { onUpdate: setJob, intervalMs: 500 });
 			if (end.state !== 'succeeded') {
 				setError(end.error?.message ?? end.state);
 				return;
@@ -163,171 +157,258 @@ export function NewReferenceProfileDialog(
 			setResult({
 				id: r.profile.id,
 				text: t('“{0}”: {1} references measured.', r.profile.name, r.profile.n),
-				skipped: r.skipped.map((s) => t('{0}: {1}', s.title, s.reason)),
+				skipped: r.skipped.map((x) => t('{0}: {1}', x.title, x.reason)),
 				warnings: r.warnings,
 			});
 		} catch (e) {
 			setError(errorText(e));
 		}
 	};
+	const cancel = () => {
+		if (running && job) void engine.cancelJob(job.id).catch(() => undefined);
+	};
+	return {
+		candidates,
+		name,
+		setName,
+		media,
+		setMedia,
+		sequences,
+		setSequences,
+		pathText,
+		setPathText,
+		parsed,
+		job,
+		result,
+		error,
+		running,
+		req,
+		start,
+		cancel,
+		session,
+		paths,
+	};
+}
+type Builder = ReturnType<typeof useProfileBuilder>;
+
+function BuilderBody({ b }: { b: Builder }) {
+	const nameId = useId();
+	const toggle = (list: string[], set: (v: string[]) => void, id: string, on: boolean) =>
+		set(on ? [...list, id] : list.filter((x) => x !== id));
+	const locked = b.running || !!b.result;
+	return (
+		<div className="flex flex-col gap-2 text-pr-ui">
+			<p className="m-0 text-pr-small text-pr-muted">
+				{t(
+					'Pick media or sequences whose sound you want to compare with (your channel, films you like). Five or more give ranges worth judging by. Each is measured as a whole: loudness, its arc and ending, density, sync to its picture, spectrum, stereo width and speech.',
+				)}
+			</p>
+			<div className="flex items-center gap-2">
+				<label htmlFor={nameId} className="w-[90px] shrink-0 text-pr-muted">
+					{t('Name')}
+				</label>
+				<TextField
+					id={nameId}
+					aria-label={t('Profile name')}
+					className="min-w-0 flex-1"
+					value={b.name}
+					disabled={locked}
+					placeholder={t('My channel')}
+					onChange={(e) => b.setName(e.target.value)}
+					data-testid="new-reference-profile-name"
+				/>
+			</div>
+			<fieldset className="m-0 flex flex-col gap-1 border-0 p-0" disabled={locked}>
+				<legend className="mb-1 font-semibold text-pr-strong">{t('Media from the project')}</legend>
+				{b.candidates.media.length === 0 ? (
+					<p className="m-0 text-pr-small text-pr-muted">
+						{b.session
+							? t('No media with audio of 3 s or more in this project.')
+							: t('Open a project to pick its media.')}
+					</p>
+				) : (
+					<ul
+						className="m-0 flex max-h-[160px] list-none flex-col gap-0.5 overflow-auto p-0"
+						aria-label={t('Media')}
+					>
+						{b.candidates.media.map((m) => (
+							<li key={m.mediaId}>
+								<Checkbox
+									checked={b.media.includes(m.mediaId)}
+									onCheckedChange={(on) => toggle(b.media, b.setMedia, m.mediaId, on)}
+									label={`${m.name} · ${Math.round(m.seconds)} s${m.hasPicture ? '' : ` · ${t('no picture')}`}`}
+									aria-label={m.name}
+								/>
+							</li>
+						))}
+					</ul>
+				)}
+				{b.candidates.sequences.length ? (
+					<>
+						<legend className="mt-1 mb-1 font-semibold text-pr-strong">{t('Sequences')}</legend>
+						<ul
+							className="m-0 flex max-h-[100px] list-none flex-col gap-0.5 overflow-auto p-0"
+							aria-label={t('Sequences')}
+						>
+							{b.candidates.sequences.map((x) => (
+								<li key={x.sequenceId}>
+									<Checkbox
+										checked={b.sequences.includes(x.sequenceId)}
+										onCheckedChange={(on) => toggle(b.sequences, b.setSequences, x.sequenceId, on)}
+										label={x.name}
+										aria-label={x.name}
+									/>
+								</li>
+							))}
+						</ul>
+					</>
+				) : null}
+				{b.paths ? (
+					<>
+						<legend className="mt-1 mb-1 font-semibold text-pr-strong">{t('Files on this computer')}</legend>
+						<textarea
+							aria-label={t('Files on this computer, one absolute path per line')}
+							placeholder={t('One absolute path per line')}
+							className="h-[60px] w-full resize-none rounded-pr-control bg-pr-field p-1 font-pr-mono text-pr-small text-pr-text"
+							value={b.pathText}
+							onChange={(e) => b.setPathText(e.target.value)}
+							data-testid="new-reference-profile-paths"
+						/>
+						{b.parsed.bad.length ? (
+							<p className="m-0 text-pr-small text-pr-warning" role="alert">
+								{t('Not absolute, left out: {0}', b.parsed.bad.slice(0, 3).join(', '))}
+							</p>
+						) : null}
+					</>
+				) : null}
+			</fieldset>
+			{!b.req.ok && !b.running && !b.result ? (
+				<p className="m-0 text-pr-small text-pr-muted" data-testid="new-reference-profile-why">
+					{b.req.why}
+				</p>
+			) : null}
+			{b.job && !b.result && !b.error ? (
+				<div data-testid="new-reference-profile-progress">
+					<p className="m-0 text-pr-small text-pr-text" role="status">
+						{jobLine(b.job)}
+					</p>
+					<div
+						role="progressbar"
+						aria-label={t('Measuring the references')}
+						aria-valuemin={0}
+						aria-valuemax={100}
+						aria-valuenow={b.job.progress === null ? undefined : Math.round((b.job.progress ?? 0) * 100)}
+						className="mt-0.5 h-1 w-full overflow-hidden rounded-pr-pill bg-pr-field"
+					>
+						<div
+							className="h-full bg-pr-accent-fill"
+							style={{ width: `${Math.round((b.job.progress ?? 0.02) * 100)}%` }}
+						/>
+					</div>
+				</div>
+			) : null}
+			{b.error ? (
+				<p className="m-0 text-pr-small text-pr-danger" role="alert">
+					{t('The profile was not built: {0}', b.error)}
+				</p>
+			) : null}
+			{b.result ? (
+				<div className="flex flex-col gap-0.5" data-testid="new-reference-profile-result">
+					<p className="m-0 text-pr-text">{b.result.text}</p>
+					{b.result.skipped.map((x) => (
+						<p key={x} className="m-0 text-pr-small text-pr-warning">
+							{t('Skipped {0}', x)}
+						</p>
+					))}
+					{b.result.warnings.map((w) => (
+						<p key={w} className="m-0 text-pr-small text-pr-muted">
+							{w}
+						</p>
+					))}
+				</div>
+			) : null}
+		</div>
+	);
+}
+
+const primaryOf = (b: Builder) => (b.result ? t('Done') : b.running ? t('Measuring…') : t('Build Profile'));
+
+/** The New Reference Profile dialog (the Sound Check panel's "New Reference Profile…"). */
+export function NewReferenceProfileDialog(
+	props: HostedDialogProps<{ session: EditorSession | null; engine: ProfileEngine; paths: boolean }>,
+) {
+	const { open, finish } = useDialogClose<string>(props.close);
+	const b = useProfileBuilder(props.session, props.engine, props.paths);
 	return (
 		<Dialog
 			open={open}
 			onOpenChange={(o) => {
 				if (o) return;
-				if (running && job) void props.engine.cancelJob(job.id).catch(() => undefined);
-				finish(result?.id);
+				b.cancel();
+				finish(b.result?.id);
 			}}
 			title={t('New Reference Profile')}
 			description={t('Measure your own reference media: the profile keeps numbers only, never audio.')}
 			size="medium"
-			primaryLabel={result ? t('Done') : running ? t('Measuring…') : t('Build Profile')}
-			primaryDisabled={!result && (running || !req.ok)}
-			hideCancel={!!result}
+			primaryLabel={primaryOf(b)}
+			primaryDisabled={!b.result && (b.running || !b.req.ok)}
+			hideCancel={!!b.result}
 			onPrimary={async () => {
-				if (result) {
-					finish(result.id);
+				if (b.result) {
+					finish(b.result.id);
 					return;
 				}
-				await start();
+				await b.start();
 				return false;
 			}}
 			data-testid="new-reference-profile-dialog"
 		>
-			<div className="flex flex-col gap-2 text-pr-ui">
-				<p className="m-0 text-pr-small text-pr-muted">
-					{t(
-						'Pick media or sequences whose sound you want to compare with (your channel, films you like). Five or more give ranges worth judging by. Each is measured as a whole: loudness, its arc and ending, density, sync to its picture, spectrum, stereo width and speech.',
-					)}
-				</p>
-				<div className="flex items-center gap-2">
-					<label htmlFor="new-reference-profile-name" className="w-[90px] shrink-0 text-pr-muted">
-						{t('Name')}
-					</label>
-					<TextField
-						id="new-reference-profile-name"
-						aria-label={t('Profile name')}
-						className="min-w-0 flex-1"
-						value={name}
-						disabled={running || !!result}
-						placeholder={t('My channel')}
-						onChange={(e) => setName(e.target.value)}
-						data-testid="new-reference-profile-name"
-					/>
-				</div>
-				<fieldset className="m-0 flex flex-col gap-1 border-0 p-0" disabled={running || !!result}>
-					<legend className="mb-1 font-semibold text-pr-strong">{t('Media from the project')}</legend>
-					{candidates.media.length === 0 ? (
-						<p className="m-0 text-pr-small text-pr-muted">
-							{props.session
-								? t('No media with audio of 3 s or more in this project.')
-								: t('Open a project to pick its media.')}
-						</p>
-					) : (
-						<ul
-							className="m-0 flex max-h-[160px] list-none flex-col gap-0.5 overflow-auto p-0"
-							aria-label={t('Media')}
-						>
-							{candidates.media.map((m) => (
-								<li key={m.mediaId}>
-									<Checkbox
-										checked={media.includes(m.mediaId)}
-										onCheckedChange={(on) => toggle(media, setMedia, m.mediaId, on)}
-										label={`${m.name} · ${Math.round(m.seconds)} s${m.hasPicture ? '' : ` · ${t('no picture')}`}`}
-										aria-label={m.name}
-									/>
-								</li>
-							))}
-						</ul>
-					)}
-					{candidates.sequences.length ? (
-						<>
-							<legend className="mt-1 mb-1 font-semibold text-pr-strong">{t('Sequences')}</legend>
-							<ul
-								className="m-0 flex max-h-[100px] list-none flex-col gap-0.5 overflow-auto p-0"
-								aria-label={t('Sequences')}
-							>
-								{candidates.sequences.map((s) => (
-									<li key={s.sequenceId}>
-										<Checkbox
-											checked={sequences.includes(s.sequenceId)}
-											onCheckedChange={(on) => toggle(sequences, setSequences, s.sequenceId, on)}
-											label={s.name}
-											aria-label={s.name}
-										/>
-									</li>
-								))}
-							</ul>
-						</>
-					) : null}
-					{props.paths ? (
-						<>
-							<legend className="mt-1 mb-1 font-semibold text-pr-strong">
-								{t('Files on this computer')}
-							</legend>
-							<textarea
-								aria-label={t('Files on this computer, one absolute path per line')}
-								placeholder={t('One absolute path per line')}
-								className="h-[60px] w-full resize-none rounded-pr-control bg-pr-field p-1 font-pr-mono text-pr-small text-pr-text"
-								value={pathText}
-								onChange={(e) => setPathText(e.target.value)}
-								data-testid="new-reference-profile-paths"
-							/>
-							{parsed.bad.length ? (
-								<p className="m-0 text-pr-small text-pr-warning" role="alert">
-									{t('Not absolute, left out: {0}', parsed.bad.slice(0, 3).join(', '))}
-								</p>
-							) : null}
-						</>
-					) : null}
-				</fieldset>
-				{!req.ok && !running && !result ? (
-					<p className="m-0 text-pr-small text-pr-muted" data-testid="new-reference-profile-why">
-						{req.why}
-					</p>
-				) : null}
-				{job && !result && !error ? (
-					<div data-testid="new-reference-profile-progress">
-						<p className="m-0 text-pr-small text-pr-text" role="status">
-							{jobLine(job)}
-						</p>
-						<div
-							role="progressbar"
-							aria-label={t('Measuring the references')}
-							aria-valuemin={0}
-							aria-valuemax={100}
-							aria-valuenow={job.progress === null ? undefined : Math.round((job.progress ?? 0) * 100)}
-							className="mt-0.5 h-1 w-full overflow-hidden rounded-pr-pill bg-pr-field"
-						>
-							<div
-								className="h-full bg-pr-accent-fill"
-								style={{ width: `${Math.round((job.progress ?? 0.02) * 100)}%` }}
-							/>
-						</div>
-					</div>
-				) : null}
-				{error ? (
-					<p className="m-0 text-pr-small text-pr-danger" role="alert">
-						{t('The profile was not built: {0}', error)}
-					</p>
-				) : null}
-				{result ? (
-					<div className="flex flex-col gap-0.5" data-testid="new-reference-profile-result">
-						<p className="m-0 text-pr-text">{result.text}</p>
-						{result.skipped.map((s) => (
-							<p key={s} className="m-0 text-pr-small text-pr-warning">
-								{t('Skipped {0}', s)}
-							</p>
-						))}
-						{result.warnings.map((w) => (
-							<p key={w} className="m-0 text-pr-small text-pr-muted">
-								{w}
-							</p>
-						))}
-					</div>
-				) : null}
-			</div>
+			<BuilderBody b={b} />
 		</Dialog>
+	);
+}
+
+/**
+ * The same form inside Preferences (a dialog cannot open over the Preferences dialog: a second dialog replaces the
+ * first), with its own Build / Cancel / Done buttons.
+ */
+function InlineProfileBuilder(props: {
+	session: EditorSession | null;
+	engine: ProfileEngine;
+	paths: boolean;
+	onClose(): void;
+}) {
+	const b = useProfileBuilder(props.session, props.engine, props.paths);
+	return (
+		<section
+			className="flex flex-col gap-2 rounded-pr-control border border-pr-border-strong p-2"
+			aria-label={t('New Reference Profile')}
+			data-testid="new-reference-profile-form"
+		>
+			<h4 className="m-0 font-semibold text-pr-strong">{t('New Reference Profile')}</h4>
+			<BuilderBody b={b} />
+			<div className="flex items-center justify-end gap-2">
+				{b.result ? null : (
+					<Button
+						variant="quiet"
+						onClick={() => {
+							b.cancel();
+							props.onClose();
+						}}
+					>
+						{t('Cancel')}
+					</Button>
+				)}
+				<Button
+					variant="primary"
+					disabled={!b.result && (b.running || !b.req.ok)}
+					busy={b.running}
+					onClick={() => (b.result ? props.onClose() : void b.start())}
+				>
+					{primaryOf(b)}
+				</Button>
+			</div>
+		</section>
 	);
 }
 
@@ -337,6 +418,7 @@ export function ReferenceProfilesSection(props: { session: EditorSession | null 
 	const { client: engine } = useEngine();
 	const { data, error, reload } = useSoundProfiles(engine);
 	const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+	const [building, setBuilding] = useState(false);
 	const [busy, setBusy] = useState<string | null>(null);
 	const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -417,9 +499,8 @@ export function ReferenceProfilesSection(props: { session: EditorSession | null 
 					<Button
 						variant="secondary"
 						data-testid="sound-profiles-new"
-						onClick={() =>
-							void openNewReferenceProfile(props.session, engine, data?.paths ?? false).then(() => reload())
-						}
+						disabled={building}
+						onClick={() => setBuilding(true)}
 					>
 						{t('New Reference Profile…')}
 					</Button>
@@ -451,6 +532,17 @@ export function ReferenceProfilesSection(props: { session: EditorSession | null 
 				<p className="m-0 text-pr-small text-pr-danger" role="alert">
 					{t('The profiles are not available: {0}', error)}
 				</p>
+			) : null}
+			{building ? (
+				<InlineProfileBuilder
+					session={props.session}
+					engine={engine}
+					paths={data?.paths ?? false}
+					onClose={() => {
+						setBuilding(false);
+						reload();
+					}}
+				/>
 			) : null}
 			{data === null && !error ? <p className="m-0 text-pr-muted">{t('Loading…')}</p> : null}
 			{data && data.profiles.length === 0 ? (

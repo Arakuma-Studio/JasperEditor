@@ -145,7 +145,12 @@ test('build a reference profile from project media, compare the sequence in Soun
 	});
 	const item = (n: string) => Object.values(items).find((i) => i.name === n)!;
 	const setup = await transact(page, [
-		{ type: 'clip.place', source: { projectItemId: item('Draft mix.wav').id }, at: 0, tracks: { audio: 'A1' } },
+		{
+			type: 'clip.place',
+			source: { projectItemId: item('Draft mix.wav').id },
+			at: 0,
+			tracks: { audio: 'A1' },
+		},
 	] as never);
 	expect(setup.ok, JSON.stringify(setup)).toBe(true);
 
@@ -155,16 +160,19 @@ test('build a reference profile from project media, compare the sequence in Soun
 	await section.scrollIntoViewIfNeeded();
 	await expect(section.getByTestId('sound-profiles-empty')).toBeVisible({ timeout: 60_000 });
 	await section.getByTestId('sound-profiles-new').click();
-	const dialog = page.getByTestId('new-reference-profile-dialog');
+	const dialog = section.getByTestId('new-reference-profile-form');
 	await expect(dialog).toBeVisible();
 	await dialog.getByTestId('new-reference-profile-name').fill('My channel');
 	for (const n of names.slice(0, 3)) await dialog.getByRole('checkbox', { name: n }).click();
 	await page.screenshot({ path: join(outDir, '1-new-profile-dialog.png') });
 	await dialog.getByRole('button', { name: 'Build Profile' }).click();
 	await expect(dialog.getByTestId('new-reference-profile-result')).toBeVisible({ timeout: LONG });
-	await expect(dialog.getByTestId('new-reference-profile-result')).toContainText('“My channel”: 3 references measured.');
+	await expect(dialog.getByTestId('new-reference-profile-result')).toContainText(
+		'“My channel”: 3 references measured.',
+	);
 	await page.screenshot({ path: join(outDir, '2-new-profile-result.png') });
 	await dialog.getByRole('button', { name: 'Done' }).click();
+	await expect(dialog).toBeHidden();
 	const row = section.locator('[data-sound-profile]');
 	await expect(row).toHaveCount(1, { timeout: 60_000 });
 	await expect(row).toContainText('3 references: Episode 1.wav, Episode 2.wav, Episode 3.wav');
@@ -181,15 +189,18 @@ test('build a reference profile from project media, compare the sequence in Soun
 	const before = await appliedLabels(page);
 	await panel().getByTestId('sound-check-reference').getByRole('combobox').click();
 	await page.getByRole('option', { name: 'My channel (3 references)' }).click();
-	await expect.poll(async () => (await appliedLabels(page)).at(-1), { timeout: 60_000 }).toBe(
-		'Compare with Reference Profile',
-	);
+	await expect
+		.poll(async () => (await appliedLabels(page)).at(-1), { timeout: 60_000 })
+		.toBe('Compare with Reference Profile');
 	expect((await appliedLabels(page)).length).toBe(before.length + 1);
 	await panel().getByTestId('sound-check-run').click();
 	const rows = panel().getByTestId('sound-check-reference-rows');
 	await expect(rows).toBeVisible({ timeout: LONG });
 	await expect(panel().getByTestId('sound-check-progress')).toBeHidden({ timeout: LONG });
-	await expect(rows.locator('[data-reference-metric="band_air"]')).toHaveAttribute('data-reference-status', 'low');
+	await expect(rows.locator('[data-reference-metric="band_air"]')).toHaveAttribute(
+		'data-reference-status',
+		'low',
+	);
 	const air = panel().getByTestId('sound-check-findings').locator('[data-issue-id="REFERENCE:band_air"]');
 	await expect(air).toBeVisible();
 	await panel().screenshot({ path: join(outDir, '4-sound-check-reference.png') });
@@ -198,20 +209,26 @@ test('build a reference profile from project media, compare the sequence in Soun
 	const statuses = Object.fromEntries(
 		await rows
 			.locator('[data-reference-metric]')
-			.evaluateAll((els) => els.map((e) => [e.getAttribute('data-reference-metric'), e.getAttribute('data-reference-status')])),
+			.evaluateAll((els) =>
+				els.map((e) => [e.getAttribute('data-reference-metric'), e.getAttribute('data-reference-status')]),
+			),
 	);
 	await panel().screenshot({ path: join(outDir, '5-reference-all-rows.png') });
 
 	// 3. MCP: the same rows with the same statuses
-	const agent = await tool<{ jobId: string; reference: { rows: string[] } }>('sound_check', { projectId, images: false });
-	const job = await tool<{ result: { report: { reference: { rows: { metric: string; status: string }[] } } } }>(
-		'get_job',
-		{ jobId: agent.jobId },
-	);
+	const agent = await tool<{ jobId: string; reference: { rows: string[] } }>('sound_check', {
+		projectId,
+		images: false,
+	});
+	const job = await tool<{
+		result: { report: { reference: { rows: { metric: string; status: string }[] } } };
+	}>('get_job', { jobId: agent.jobId });
 	const mcpStatuses = Object.fromEntries(job.result.report.reference.rows.map((r) => [r.metric, r.status]));
 	expect(mcpStatuses).toEqual(statuses);
 	expect(agent.reference.rows).toHaveLength(Object.keys(statuses).length);
-	expect(agent.reference.rows.find((l) => l.includes('(band_air, minor)'))).toMatch(/^LOW Air 8–16 kHz share/);
+	expect(agent.reference.rows.find((l) => l.includes('(band_air, minor)'))).toMatch(
+		/^LOW Air 8–16 kHz share/,
+	);
 
 	// 4. export, import, delete (asks first)
 	prefs = await openSoundPrefs(page);
@@ -221,7 +238,11 @@ test('build a reference profile from project media, compare the sequence in Soun
 	await sec.getByTestId(`sound-profile-export-${profileId}`).click();
 	const saved = join(outDir, 'exported.sound-profile.json');
 	await (await download).saveAs(saved);
-	const file = JSON.parse(readFileSync(saved, 'utf8')) as { format: string; id: string; references: unknown[] };
+	const file = JSON.parse(readFileSync(saved, 'utf8')) as {
+		format: string;
+		id: string;
+		references: unknown[];
+	};
 	expect(file).toMatchObject({ format: 'jasper-sound-profile', id: profileId });
 	expect(file.references).toHaveLength(3);
 	expect(readFileSync(saved, 'utf8')).not.toContain(join(outDir, 'media'));

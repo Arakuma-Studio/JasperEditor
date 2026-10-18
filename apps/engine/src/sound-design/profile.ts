@@ -624,6 +624,7 @@ export async function runSoundProfileJob(
 	const skipped: { title: string; reason: string }[] = [];
 	const warnings: string[] = [];
 	const scratch = await ctx.scratchDir();
+	const noPicture: string[] = [];
 	for (const [i, ref] of plan.entries()) {
 		if (ctx.signal.aborted) throw cancelled();
 		const base = 0.02 + (0.93 * i) / plan.length;
@@ -672,8 +673,7 @@ export async function runSoundProfileJob(
 				warnings.push(
 					`${ref.title}: only its first ${Math.round(REFERENCE_PROFILE_LIMITS.maxSec / 60)} minutes were measured`,
 				);
-			if (ref.kind !== 'sequence' && !r.measurement.hasPicture)
-				warnings.push(`${ref.title}: no picture, so no sync numbers from it`);
+			if (ref.kind !== 'sequence' && !r.measurement.hasPicture) noPicture.push(ref.title);
 			refs.push(
 				referenceEntryOf(refs.length, r.measurement, {
 					title: ref.title,
@@ -701,6 +701,10 @@ export async function runSoundProfileJob(
 				.slice(0, 900)}`,
 			false,
 			{ skipped },
+		);
+	if (noPicture.length)
+		warnings.push(
+			`${noPicture.slice(0, 5).join(', ')}${noPicture.length > 5 ? ` (+${noPicture.length - 5} more)` : ''}: no picture, so no sync numbers from ${noPicture.length === 1 ? 'it' : 'them'}`,
 		);
 	if (skipped.length) warnings.push(`${skipped.length} reference(s) skipped`);
 	if (refs.length < 3)

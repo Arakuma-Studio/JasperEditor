@@ -4,7 +4,12 @@
 // file reported); the New Reference Profile dialog (media and sequences picked, the job's progress, what was measured
 // and skipped); the Sound Check header's select (one History entry, undo; New… selects the new profile) and the
 // Reference rows (differences first, every metric on demand, advice, translated).
-import type { EngineJob, SoundCheckReference, SoundProfileBuildRequest, SoundProfileSummary } from '@jasper/api';
+import type {
+	EngineJob,
+	SoundCheckReference,
+	SoundProfileBuildRequest,
+	SoundProfileSummary,
+} from '@jasper/api';
 import { soundDesignSettingsOf } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { closeAllDialogs, DialogHost, toasts } from '@jasper/ui';
@@ -29,14 +34,20 @@ import { makeSession } from './timeline-helpers.ts';
 
 const mocks = vi.hoisted(() => ({ client: null as unknown }));
 vi.mock('../src/state/engine.tsx', () => ({
-	useEngine: () => ({ client: mocks.client, status: 'connected', subscribe: () => () => {}, capabilities: null }),
+	useEngine: () => ({
+		client: mocks.client,
+		status: 'connected',
+		subscribe: () => () => {},
+		capabilities: null,
+	}),
 	useEngineOrNull: () => ({ client: mocks.client, status: 'connected', subscribe: () => () => {} }),
 	useCapabilities: () => ({ capabilities: null, flags: new Set(['engine']) }),
 }));
 const downloads: { name: string; text: string }[] = [];
 vi.mock('../src/panels/text/state.ts', async (orig) => ({
 	...((await orig()) as Record<string, unknown>),
-	downloadBytes: (bytes: Uint8Array, name: string) => downloads.push({ name, text: new TextDecoder().decode(bytes) }),
+	downloadBytes: (bytes: Uint8Array, name: string) =>
+		downloads.push({ name, text: new TextDecoder().decode(bytes) }),
 }));
 
 const P1 = 'sprf_0000000000000001';
@@ -77,7 +88,11 @@ function fakeEngine() {
 	const client = {
 		async listSoundProfiles() {
 			calls.push({ kind: 'list' });
-			return { profiles, unreadable: [{ file: 'sprf_00000000000000bb.json', error: 'not JSON' }], paths: true };
+			return {
+				profiles,
+				unreadable: [{ file: 'sprf_00000000000000bb.json', error: 'not JSON' }],
+				paths: true,
+			};
 		},
 		async getSoundProfile(id: string) {
 			calls.push({ kind: 'get', arg: id });
@@ -166,10 +181,14 @@ describe('profile model', () => {
 			paths: ['/a/b.mp4', 'C:\\films\\x.mov'],
 			bad: ['rel.mp4'],
 		});
-		expect(buildRequest({ name: ' ', projectId: 'p', mediaIds: ['m'], sequenceIds: [], paths: [] })).toMatchObject({
+		expect(
+			buildRequest({ name: ' ', projectId: 'p', mediaIds: ['m'], sequenceIds: [], paths: [] }),
+		).toMatchObject({
 			ok: false,
 		});
-		expect(buildRequest({ name: 'x', projectId: 'p', mediaIds: [], sequenceIds: [], paths: [] })).toMatchObject({
+		expect(
+			buildRequest({ name: 'x', projectId: 'p', mediaIds: [], sequenceIds: [], paths: [] }),
+		).toMatchObject({
 			ok: false,
 			why: 'Choose at least one reference',
 		});
@@ -179,7 +198,9 @@ describe('profile model', () => {
 			ok: true,
 			request: { name: 'Mine', projectId: 'p', mediaIds: ['m'], sequenceIds: ['s'], paths: ['/x.mp4'] },
 		});
-		expect(buildRequest({ name: 'x', projectId: null, mediaIds: [], sequenceIds: [], paths: ['/x'] })).toEqual({
+		expect(
+			buildRequest({ name: 'x', projectId: null, mediaIds: [], sequenceIds: [], paths: ['/x'] }),
+		).toEqual({
 			ok: true,
 			request: { name: 'x', paths: ['/x'] },
 		});
@@ -188,7 +209,9 @@ describe('profile model', () => {
 		expect(opts[2]!.label).toMatch(/Missing profile/);
 		expect(rowValue('band_air', -19.5)).toBe('−19.5 dB');
 		expect(rowValue('cuts_with_sound', 0.8)).toBe('80 %');
-		expect(rowRange({ metric: 'band_air', range: [-22.5, -17.5], basis: 'references' })).toBe('−22.5 dB … −17.5 dB');
+		expect(rowRange({ metric: 'band_air', range: [-22.5, -17.5], basis: 'references' })).toBe(
+			'−22.5 dB … −17.5 dB',
+		);
 		expect(rowRange({ metric: 'cuts_with_sound', range: [0.75, null], basis: 'references' })).toBe('≥ 75 %');
 		expect(rowRange({ metric: 'end_silence_s', range: [null, 0.3], basis: 'references' })).toBe('≤ 0.30 s');
 		expect(profileFileName('My channel / 2026')).toBe('My_channel_2026.sound-profile.json');
@@ -207,7 +230,11 @@ describe('Preferences ▸ Sound Library ▸ Reference profiles', () => {
 		await screen.findByText('My channel');
 		expect(screen.getByText('Launch films')).toBeTruthy();
 		expect(screen.getByText(/5 references: Film 1\.mp4, Film 2\.mp4/)).toBeTruthy();
-		expect(screen.getByText(/1 damaged profile file\(s\) were moved aside: sprf_00000000000000bb\.json \(not JSON\)/)).toBeTruthy();
+		expect(
+			screen.getByText(
+				/1 damaged profile file\(s\) were moved aside: sprf_00000000000000bb\.json \(not JSON\)/,
+			),
+		).toBeTruthy();
 		// rename: Enter commits
 		fireEvent.click(screen.getByTestId(`sound-profile-rename-${P1}`));
 		const field = screen.getByTestId(`sound-profile-name-${P1}`) as HTMLInputElement;
@@ -228,7 +255,9 @@ describe('Preferences ▸ Sound Library ▸ Reference profiles', () => {
 		await settle();
 		expect(engine.calls.some((c) => c.kind === 'delete')).toBe(false);
 		fireEvent.click(screen.getByTestId(`sound-profile-delete-${P2}`));
-		fireEvent.click(within(await screen.findByTestId('confirm-dialog')).getByRole('button', { name: 'Delete Profile' }));
+		fireEvent.click(
+			within(await screen.findByTestId('confirm-dialog')).getByRole('button', { name: 'Delete Profile' }),
+		);
 		await waitFor(() => expect(screen.queryByText('Launch films')).toBeNull());
 		// import a file
 		const file = new File([JSON.stringify({ format: 'jasper-sound-profile' })], 'shared.json', {
@@ -238,14 +267,16 @@ describe('Preferences ▸ Sound Library ▸ Reference profiles', () => {
 		await screen.findByText('Shared');
 		const junk = new File(['not json'], 'junk.json', { type: 'application/json' });
 		fireEvent.change(screen.getByTestId('sound-profiles-import-file'), { target: { files: [junk] } });
-		await waitFor(() =>
-			expect(JSON.stringify(toasts.getState())).toMatch(/The profile was not imported/),
-		);
+		await waitFor(() => expect(JSON.stringify(toasts.getState())).toMatch(/The profile was not imported/));
 		// New Reference Profile…: name and media, the job's progress, what was measured and skipped
 		fireEvent.click(screen.getByTestId('sound-profiles-new'));
-		const dialog = await screen.findByTestId('new-reference-profile-dialog');
-		expect(within(dialog).getByTestId('new-reference-profile-why').textContent).toBe('Give the profile a name');
-		fireEvent.change(within(dialog).getByTestId('new-reference-profile-name'), { target: { value: 'New one' } });
+		const dialog = await screen.findByTestId('new-reference-profile-form');
+		expect(within(dialog).getByTestId('new-reference-profile-why').textContent).toBe(
+			'Give the profile a name',
+		);
+		fireEvent.change(within(dialog).getByTestId('new-reference-profile-name'), {
+			target: { value: 'New one' },
+		});
 		fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Episode 1.wav' }));
 		fireEvent.change(within(dialog).getByTestId('new-reference-profile-paths'), {
 			target: { value: '/films/a.mp4\nrelative.mp4' },
@@ -283,13 +314,31 @@ describe('Sound Check: Reference select and rows', () => {
 			fireEvent.keyDown(trigger, { key: 'Enter' });
 		});
 		await act(async () => {
-			fireEvent.keyDown(await screen.findByRole('option', { name: 'My channel (3 references)' }), { key: 'Enter' });
+			fireEvent.keyDown(await screen.findByRole('option', { name: 'My channel (3 references)' }), {
+				key: 'Enter',
+			});
 		});
 		await waitFor(() => expect(selectedProfile(session.getCommitted(), seqId)).toBe(P1));
 		const labels = session.getState().history.entries.map((e) => e.label);
 		expect(labels.at(-1)).toBe('Compare with Reference Profile');
 		act(() => session.undo());
 		expect(soundDesignSettingsOf(session.getCommitted().sequences[seqId]!).referenceProfile).toBeUndefined();
+		// New Reference Profile… opens the dialog; the profile it builds becomes the sequence's
+		await act(async () => {
+			fireEvent.keyDown(trigger, { key: 'Enter' });
+		});
+		await act(async () => {
+			fireEvent.keyDown(await screen.findByRole('option', { name: 'New Reference Profile…' }), {
+				key: 'Enter',
+			});
+		});
+		const dlg = await screen.findByTestId('new-reference-profile-dialog');
+		fireEvent.change(within(dlg).getByTestId('new-reference-profile-name'), { target: { value: 'New one' } });
+		fireEvent.click(within(dlg).getByRole('checkbox', { name: 'Episode 1.wav' }));
+		fireEvent.click(within(dlg).getByRole('button', { name: 'Build Profile' }));
+		await within(dlg).findByTestId('new-reference-profile-result', undefined, { timeout: 5000 });
+		fireEvent.click(within(dlg).getByRole('button', { name: 'Done' }));
+		await waitFor(() => expect(selectedProfile(session.getCommitted(), seqId)).toBe('sprf_0000000000000004'));
 		cleanup();
 
 		const reference: SoundCheckReference = {
@@ -350,7 +399,10 @@ describe('Sound Check: Reference select and rows', () => {
 		expect(screen.getByTestId('sound-check-reference-heading').textContent).toBe(
 			'My channel: 1 of 2 scored metrics differ',
 		);
-		const rows = () => [...view.container.querySelectorAll('[data-reference-metric]')].map((r) => r.getAttribute('data-reference-metric'));
+		const rows = () =>
+			[...view.container.querySelectorAll('[data-reference-metric]')].map((r) =>
+				r.getAttribute('data-reference-metric'),
+			);
 		expect(rows()).toEqual(['band_air']);
 		expect(screen.getByText(/No air: it sounds muffled/)).toBeTruthy();
 		fireEvent.click(screen.getByRole('button', { name: 'Low' }));
