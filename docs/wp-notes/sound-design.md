@@ -9921,9 +9921,10 @@ a copy of the integration tip this branch started from (1fcdbcf6), built and run
   `currentTime` moved 29–35 ms after the event in a quick pause/Play), the graph prepares the next start while paused:
   flush, Remotion's anchor on the picture at the final frozen time, the primed shift, and every source scheduled again
   (`prepareStart`). Work at Play itself is too late: the Player's `play()` resumes the context in the user's gesture,
-  before any React effect. The primed wait is the read-ahead + clip-effect latency + two render quanta
-  (`START_MARGIN`: Chrome's `currentTime` can stay a quantum behind where the audio thread stopped — a play's first
-  buffer, scheduled at the frozen time, started a quantum late: the first click 128 samples late, measured once in 40).
+  before any React effect. The primed wait is the read-ahead + clip-effect latency + 1 024 frames
+  (`START_MARGIN`, ≈ 21 ms: Chrome renders in device callbacks of several quanta — 640 frames measured — and its
+  `currentTime` can stay behind where the audio thread stopped; with a 256-frame margin a play's first click still came
+  128 or 256 samples late in 3 of 5 long-wait runs, with none 1 in 40 walk plays).
 - **Sources reschedule without re-creating their media players**: when the schedule epoch moves (a primed start, a
   read-ahead change while paused) or a clip's own effect latency changes, `AudioLayer` moves the clip's trim by a
   millionth of a frame (`TRIM_NUDGE`): Remotion drops the player's queued buffers and schedules again from the current
@@ -9982,4 +9983,56 @@ level, nothing earlier. Findings, each from its debug log (`E2E_P6_DEBUG=1`):
 
 #### Verified (measured)
 
-⟨filled in below⟩
+Failing first: each row's "before" is the same test against base (or, for unit tests, the code before the fix).
+
+| Item | Test | Before | After |
+|---|---|---|---|
+| 1 pan | `audio-preview-mix-oracle.test.ts` "pan sweeps" (strip pan of a mono track, clip pan, the 5.1 puck of a track and of a send, a 5.1 submix's pan; bezier and linear keys, whooshes) | max \|preview − export\| 0.34 | 1.8 · 10⁻⁵ (three runs); the Phase 4 scenes stay 1.4 · 10⁻⁵ |
+| 1 pan | `audio-automation.test.ts` "pieces end on sample frames…"; `channels.test.ts` `pan51MatrixInto` | — | pass |
+| 6 rebuild | `audio-preview-transport.test.ts` "a track added during playback" | a 748-sample gap (both limiters' audio in flight lost) | no gap, = the export (< 10⁻⁴) |
+| 6 guard | `audio-anchor-guard.test.ts` (4: a late commit refused; a picture behind for real caught up by 6 frames after 0.3 s, the audio unmoved; refused only while frames come late; an earlier anchor taken) | — (base dispatches every re-anchor) | pass |
+| 6 edits while playing | `sound-p6-transport` "a big edit…": 3 transactions of four `track.add` 0.7 / 1.5 / 2.3 s into a play, every click 0.25 s apart ± 2 samples | 6 of 6 plays broken (jumps of 9 000–22 900 samples, lost clicks) | 6 of 6 clean, no re-anchor asked for (⟨campaign⟩) |
+| 2 latency | "a latency added while playing" (six Hard Limiters, +125 ms) | the Mix stayed late (picture − audio −0.021 s) | restart; every click after it within 0.4 samples of the anchor; picture − audio +0.009 … +0.056 s |
+| 3 wait | "Play with a long read-ahead (0.62 s)" (30 Hard Limiters) | first click lost (heard 0.78 s, expected 0.654 s), no buffering shown | first click exactly at wait + 30 ms; buffering shown; picture − audio −0.015 … +0.018 s (below) |
+| 4 seek | "seek while playing" (typed timecode 4 s) | the 4.03 s click lost (first heard 4.28 s) | the 4.03 s click first, 0.00 samples from the anchor |
+| 5 pause / Play | "pause and Play again" (3.4 s after a pause) | a 5 830-sample jump 1.94 s after Play in 3 of 3 | 0 of 3 (⟨campaign⟩) |
+| 5 walk | "many paused seeks + Play" (40-play walk; base with `E2E_P6_MARGIN=0`) | 1 of 40: a 2-frame paused seek played the old position's clicks 133 ms early | 0 of 40 (⟨campaign⟩) |
+| driver | `apps/web/test/transport.test.ts` (2 new: restart order, latest target, abandon on pause) | — | 19 / 19 |
+
+Play latency (Space → the picture moving, wall clock, the walk and pause / Play tests): base 183–227 ms, branch 147–226 ms
+(every Play now primed: the read-ahead, the 21 ms margin, rescheduled sources; measured on the same host and load).
+
+Gate (this branch after merging `feat/sound-design`): `pnpm typecheck` passes; `pnpm lint` passes; `tsc -p
+e2e/tsconfig.json` reports only `e2e/sound-p65a-polish.spec.ts` (not this branch's: 2 errors on `outgoingClipId`);
+`pnpm notices --check` current; `node scripts/i18n.mjs --check` covers all strings; `pnpm build` passes. Unit:
+`pnpm vitest run packages/compositions packages/audio-dsp packages/project/test/{audio-mix,sound-tail,transition-audio}.test.ts
+apps/engine/test/{audio-mix,gaps-audio-channels,sound-design-mix}.test.ts apps/web/test --maxWorkers=8`: 1 892 passed;
+the failures were `capture-safe-canvas` and `serial-audio-context` (fail on base too: this Chromium has no
+`requestPaint`, and no longer leaves a resume pending), `test-timeout.test.ts` (my `--testTimeout` flag; 3 / 3 without
+it) and the three mix oracles before their harness put the primed anchor back (15 / 15 audio oracle / transport / guard
+tests after).
+
+⟨campaign⟩
+
+#### Limits and notes for the next packages
+
+- With a long primed wait (0.62 s measured) Remotion suspends and resumes the context for an instant as the wait ends
+  (`suspended` and `running` at the same context time in the transport log; with the 41.6 ms and 125 ms waits it does not
+  show): the picture then leads the program by up to ≈ 15 ms (measured −0.015 … +0.018 s), well under the ≈ 45 ms at which a
+  picture lead becomes noticeable. Not traced to its source in Remotion.
+- A restart (a seek while playing, a latency added while playing, a loop wrap) holds the picture for the new primed
+  wait plus the players' rescheduling (the Phase 0 latency-change spec: one gap of the new read-ahead + the margin,
+  ⟨ms⟩ for 3 Hard Limiters, then on time). Every Play does the same: Space → picture moving 147–226 ms measured.
+- A read-ahead over 3 s (`MAX_PRIMED_WAIT`) still starts unprimed (its first samples lost).
+- A Play within 150 ms of a short paused seek (shorter than Remotion's tolerance) fixes the anchor at Play, when the
+  context already runs: the program follows the picture but its first buffers are late (trimmed).
+- A change of the composition's duration while playing (Hear proposal with a longer proposal) still restarts Remotion's
+  frame clock; the picture is then behind and catches up by dropping frames after 0.3 s (`caught-up` in the transport
+  log) instead of the audio jumping. An audio clock that falls behind the wall clock (an overloaded audio thread: two dozen
+  tracks with meters in headless Chrome did it once) is still re-anchored by Remotion (an earlier anchor is taken).
+- The transport relies on Remotion 4.0.499 internals: the anchor object and `audioSyncAnchorEmitter.dispatch`
+  (`setGlobalTimeAnchor`), `setTrimBefore` dropping a player's queued buffers, `useTimelineSetFrame`, the buffering
+  manager's `buffering` ref, and `waitUntilActuallyResumed` (the Phase 0 shim). The e2e specs fail if an upgrade changes
+  them.
+- A buffering stall in the middle of a play now prepares a primed start too (`prepareStart` while suspended); no test
+  provokes one deterministically.

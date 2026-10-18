@@ -291,8 +291,11 @@ const STALE_SETTLE_MS = 150;
 const GATE_TIMEOUT_MS = 1500;
 /** Fade-out (s) of the graph's stale audio at a seek during playback, before its delay lines and effects are reset. */
 export const FLUSH_FADE = 0.003;
-/** Frames a primed start waits beyond the read-ahead (`MixGraph.prime`). */
-export const START_MARGIN = 256;
+/**
+ * Frames a primed start waits beyond the read-ahead (`MixGraph.prime`): Chrome renders in device callbacks of several
+ * quanta (640 frames measured) and its `currentTime` can stay behind where the audio thread stopped by up to one.
+ */
+export const START_MARGIN = 1024;
 /** Fade-in (s) at the start of a primed playback: Remotion's own resume fade, moved to where the program starts. */
 export const START_FADE = 0.03;
 
@@ -1426,8 +1429,8 @@ export class MixGraph {
 		// a fade-out of a seek during playback still pending: priming owns the output gain now
 		this.flushToken++;
 		const lead = (this.readAhead + this.maxClipFx()) / this.ctx.sampleRate;
-		// + two render quanta: Chrome's `currentTime` can stay a quantum behind where the audio thread stopped (measured:
-		// a play's first buffer, scheduled at the frozen time, started a quantum late — the first click 128 samples late
+		// + START_MARGIN: Chrome's `currentTime` can stay behind where the audio thread stopped (measured: a play's first
+		// buffer, scheduled at the frozen time, started one or two quanta late — the first click 128 / 256 samples late
 		// and the next buffer overlapping it); the program then starts after wherever the context really resumes.
 		const wait = lead >= 0 && lead <= MAX_PRIMED_WAIT ? lead + START_MARGIN / this.ctx.sampleRate : 0;
 		const a = primedAnchor(sync.anchor.value, this.shift, wait);

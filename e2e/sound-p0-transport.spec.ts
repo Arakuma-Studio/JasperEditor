@@ -207,8 +207,8 @@ async function pictureAnchor(
 
 /** Hard Limiter latency at 20 ms look-ahead (samples, 48 kHz): every one on the path adds it to the read-ahead. */
 const HL20 = 998;
-/** A primed start waits two render quanta beyond the read-ahead (sound-design Phase 6, `START_MARGIN`). */
-const MARGIN = 256;
+/** A primed start waits beyond the read-ahead (sound-design Phase 6, `START_MARGIN`). */
+const MARGIN = 1024;
 
 test('Play: the first samples at the play position are heard (nothing lost to the read-ahead)', async () => {
 	test.setTimeout(300_000);

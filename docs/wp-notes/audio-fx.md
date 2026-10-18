@@ -218,7 +218,7 @@ Decisions (undocumented behaviour or our choice):
 - Preview latency compensation (spec 12 WP0.1) starts the media early by the read-ahead. Every Play is primed (spec 12
   Phase 0 close-out for Plays after a paused seek; since sound-design Phase 6 → preview transport carry-overs after a
   plain pause too): nothing at the play position is lost, the picture waits the read-ahead plus clip-effect latency plus
-  two render quanta (up to 3 s, else unprimed; the Program monitor shows buffering from 0.2 s) and both start together
+  1 024 frames (≈ 21 ms; up to 3 s, else unprimed; the Program monitor shows buffering from 0.2 s) and both start together
   (`e2e/sound-p0-transport.spec.ts`, `e2e/sound-p6-transport.spec.ts`). A seek *during* playback restarts playback
   (pause, seek, play: the picture holds as on Play) and its audio starts on its first sample. Frame-based (STFT) inserts start
   their frames where processing started, so the first ≈ 0.2 s after an onset can differ from an export started
