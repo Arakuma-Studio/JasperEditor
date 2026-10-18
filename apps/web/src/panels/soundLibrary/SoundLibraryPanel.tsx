@@ -164,7 +164,7 @@ function errorText(e: unknown): string {
 }
 
 const verdictText = (v: SoundMatch['verdict']): string =>
-	v === 'strong' ? t('strong') : v === 'plausible' ? t('plausible') : v === 'weak' ? t('weak') : t('unclear');
+	v === 'strong' ? t('Strong') : v === 'plausible' ? t('Plausible') : v === 'weak' ? t('Weak') : t('Unclear');
 
 /** A described sound's match (P6-E14): its verdict, the z in the tooltip. */
 function MatchChip({ match }: { match: SoundMatch }) {
