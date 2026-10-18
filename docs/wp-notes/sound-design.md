@@ -9068,3 +9068,20 @@ fixtures `dropMusic` in `packages/audio-fx/test/music.ts` (a known key, bar line
 - End on Bar trims to a bar line and fades; it does not make the song's own ending land there (a remix to the length does).
 - `POST /api/sound-design/visual` still aborts on the request stream's 'close' like the beats route did (not changed
   here: WP-E3's route; its MCP test passes, so it may be timing-dependent).
+
+#### Integration
+
+`feat/sound-design` merged in at `a5e81a09` (WP-E2: conflicts in `README.md` — tool counts, now 359, and the style line
+both sides wrote; `apps/mcp/src/tools/sound-design.ts` — the `plan_sound_design` description, both sentences kept;
+`es.json` — both sides' strings). Then, on the build server (load 1.4–4.4): `pnpm typecheck` (every package, exit 0);
+`SD_GIT=1 … pnpm lint` (Biome, check-tokens / anime / layers / assets ok); `pnpm notices --check` (current, 33 ported
+records); `node scripts/i18n.mjs --check` (es.json covers all 10 204 strings); `pnpm vitest run packages/audio-fx
+packages/project packages/api packages/engine-client apps/engine/test/sound apps/engine/test/music-picture
+apps/engine/test/audio-fx apps/engine/test/audio-beats apps/engine/test/audio-crossfade apps/mcp/test/music-picture
+apps/mcp/test/audio-fx apps/mcp/test/readme-tools apps/mcp/test/conventions apps/mcp/test/fuzz apps/mcp/test/sound
+apps/mcp/test/proposals apps/web/test/sound apps/web/test/essential apps/web/test/auto-sound-pass apps/web/test/i18n
+--maxWorkers=8` — 327 files, **3 955 passed**, 15 skipped, 441 s; 2 files failed to load: `sound-design-motion` and
+`sound-dialogue-consistency` ("Unknown encoder 'libx264'": the build server's system ffmpeg makes their fixtures; the
+same on `feat/sound-design`, WP-E5's and WP-E6's notes). After the last fix (a landed drop never overruns the room on
+its track) the four new unit / web / MCP files ran again: 33 passed. `e2e/sound-music-fit.spec.ts` passed after
+`pnpm build` (above).
