@@ -11,6 +11,9 @@ import {
 	SOUND_DELIVERIES,
 	SOUND_DENSITIES,
 	SOUND_DESIGN_LIMITS,
+	SOUND_PERSONALITIES,
+	SOUND_RUN_MODES,
+	SOUND_TYPING_MODES,
 	soundCueFields,
 } from '../../schema/sound.ts';
 import { SFX_DEFAULT_GAIN_MAX_DB, SFX_DEFAULT_GAIN_MIN_DB } from '../../sound/level.ts';
@@ -244,6 +247,20 @@ export const SoundDesignSetSettingsCmd = cmd('soundDesign.setSettings', {
 	agentsMayApply: z.boolean().optional(),
 	/** Sound credits sidecar of the sequence's exports (`txt` / `md`), or null: not configured. */
 	credits: z.enum(SOUND_CREDITS_FORMATS).nullable().optional(),
+	/**
+	 * P6-E10 cue grammar and personality (merged into the stored style; a field set to null goes back to its default):
+	 * `personality` (calm, energetic, bright, precise, mechanical, warm), `runs` (climb | flat), `typing` (auto | keys |
+	 * words | silent), `musicCarriesCuts`, `duckUnderTyping`.
+	 */
+	style: z
+		.strictObject({
+			personality: z.enum(SOUND_PERSONALITIES).nullable().optional(),
+			runs: z.enum(SOUND_RUN_MODES).nullable().optional(),
+			typing: z.enum(SOUND_TYPING_MODES).nullable().optional(),
+			musicCarriesCuts: z.boolean().nullable().optional(),
+			duckUnderTyping: z.boolean().nullable().optional(),
+		})
+		.optional(),
 });
 
 /**

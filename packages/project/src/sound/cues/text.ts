@@ -2,6 +2,9 @@
 // start of their window; typewriter presets give one key per typed unit, and Range Selectors with animated
 // Start/End/Offset (AE-style animators) one per revealed unit. Those patterns are thinned to ≤ 12 per second and
 // ≤ 40 per clip (evenly) and share a group id, so a budget counts them as one cue.
+// Typing (spec 12 P6-E10, `typingChoice`): a character pattern typed faster than 25 units per second gets one key per
+// word start instead (thinning a fast run to 12/s reads as random keys); `CueContext.typing` forces keys, words or
+// silence (no typing cues).
 import { clipEnd } from '../../derive/index.ts';
 import { isAnimated } from '../../keyframes.ts';
 import { intrinsicBoxOf } from '../../registry/properties.ts';
@@ -13,7 +16,8 @@ import { getTextAnimationSpec, resolveTextAnimationWindows } from '../../text-an
 import { rangeParams } from '../../text-animators/evaluate.ts';
 import { rangeValue, unitCount } from '../../text-animators/selectors.ts';
 import type { SoundTypeId } from '../taxonomy.ts';
-import { textUnitCount, typewriterOffsets } from '../text-events.ts';
+import { typingChoice } from '../grammar.ts';
+import { textUnitCount, typewriterOffsets, typewriterScheduleMs, wordStartUnits } from '../text-events.ts';
 import type { CueCandidate, DerivedCueKind } from './types.ts';
 import {
 	type CueContext,
@@ -112,8 +116,22 @@ function textClipCues(ctx: CueContext, c: TextClip, cues: CueCandidate[]): void 
 			const n = textUnitCount(text, unit);
 			const offsets = typewriterOffsets(n, a.frames, ctx.fps, a.params, side);
 			const frames = offsets.map((o) => start + o);
-			const keep = thinPattern(frames, ctx.fps);
+			// typed units per second (the schedule's slot); words are a word per unit already
+			const slotMs = n > 0 ? typewriterScheduleMs(n, (a.frames * 1000) / ctx.fps, a.params).slot : 0;
+			const perSec = slotMs > 0 ? 1000 / slotMs : 0;
+			const choice = typingChoice(ctx.typing, perSec);
+			if (choice === 'silent') continue;
+			const byWord = choice === 'words' && unit === 'char';
+			const starts = byWord ? new Set(wordStartUnits(text, 'char')) : null;
+			const units = frames.map((_, i) => i).filter((i) => !starts || starts.has(i));
+			const keep = thinPattern(
+				units.map((i) => frames[i]!),
+				ctx.fps,
+			).map((k) => units[k]!);
 			const group = `text:${c.id}:${side}:typewriter`;
+			const how = byWord
+				? `one key per word: ${Math.round(perSec)} typed/s`
+				: `${keep.length} keys over ${secs(ctx, a.frames)}`;
 			for (const i of keep)
 				cues.push(
 					candidate('text', {
@@ -126,7 +144,7 @@ function textClipCues(ctx: CueContext, c: TextClip, cues: CueCandidate[]): void 
 						pan: geo.pan,
 						anchor: { type: 'text', clipId: c.id, side, unit: i },
 						confidence: 0.75,
-						reason: `Typewriter ${side === 'in' ? 'types' : 'deletes'} ${unit} ${i + 1}/${n} ${where} (${keep.length} keys over ${secs(ctx, a.frames)})`,
+						reason: `Typewriter ${side === 'in' ? 'types' : 'deletes'} ${unit} ${i + 1}/${n} ${where} (${how})`,
 						window,
 						group,
 						size: geo.area,
@@ -243,12 +261,31 @@ function selectorCues(
 			: based === 'word'
 				? ['tick', 'pop', 'key']
 				: ['swish', 'pop', 'ui'];
-	const frames = flips.map((f) => f.frame);
+	// Typing (P6-E10): a character reveal faster than 25 units per second keeps the word starts.
+	let steps = flips;
+	let how = '';
+	if (based === 'character') {
+		const span = (flips[flips.length - 1]!.frame - flips[0]!.frame + 1) / ctx.fps;
+		const choice = typingChoice(ctx.typing, span > 0 ? flips.length / span : 0);
+		if (choice === 'silent') return;
+		if (choice === 'words') {
+			const text = typeof c.content?.text === 'string' ? c.content.text : '';
+			const starts = new Set(
+				wordStartUnits(text, sel.basedOn === 'charactersExcludingSpaces' ? 'char' : 'charWithSpaces'),
+			);
+			const atStarts = flips.filter((f) => starts.has(f.unit));
+			if (atStarts.length) {
+				steps = atStarts;
+				how = `, one key per word: ${Math.round(flips.length / span)} typed/s`;
+			}
+		}
+	}
+	const frames = steps.map((f) => f.frame);
 	const keep = thinPattern(frames, ctx.fps);
 	const group = `text:${c.id}:animator:${g.id}:${sel.id}`;
 	const name = typeof g.name === 'string' && g.name ? `'${g.name}'` : 'animator';
 	for (const i of keep) {
-		const f = flips[i]!;
+		const f = steps[i]!;
 		cues.push(
 			candidate('text', {
 				key: `${group}:${f.frame}`,
@@ -260,7 +297,7 @@ function selectorCues(
 				pan: geo.pan,
 				anchor: { type: 'text', clipId: c.id, side, unit: f.unit },
 				confidence: 0.65,
-				reason: `Range selector of ${name} ${appear ? 'reveals' : 'hides'} ${based} ${f.unit + 1}/${n} ${where} (${keep.length} of ${flips.length} steps)`,
+				reason: `Range selector of ${name} ${appear ? 'reveals' : 'hides'} ${based} ${f.unit + 1}/${n} ${where} (${keep.length} of ${flips.length} steps${how})`,
 				window: { start: frames[0]!, end: frames[frames.length - 1]! + 1 },
 				group,
 				size: geo.area,

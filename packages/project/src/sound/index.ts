@@ -4,6 +4,7 @@ export * from './check-fixes.ts';
 export * from './copy-upgrade.ts';
 export * from './credits.ts';
 export * from './delivery.ts';
+export * from './grammar.ts';
 export * from './insert.ts';
 export * from './level.ts';
 export * from './license.ts';

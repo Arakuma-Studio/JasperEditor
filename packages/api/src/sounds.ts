@@ -10,6 +10,7 @@ import {
 	type RankableSound,
 	SOUND_FAMILIES,
 	SOUND_MATERIALS,
+	SOUND_PERSONALITIES,
 	SOUND_REF_RE,
 	SOUND_TAKES_MAX,
 	StoredSoundTypeSchema,
@@ -358,6 +359,13 @@ export const SoundSearchQuerySchema = z.object({
 	usedNearby: csv(64, SoundIdSchema).optional(),
 	/** Material named by the sound's words (P6-E10), e.g. `wood`, `glass`, `metal`. */
 	material: z.enum(SOUND_MATERIALS).optional(),
+	/** P6-E10: rank sounds that suit this personality higher (±0.15 on the score). */
+	personality: z.enum(SOUND_PERSONALITIES).optional(),
+	/**
+	 * P6-E10 palette coherence: library sounds placed in the sequence (frame order, ≤ 64): a sound sharing the dominant
+	 * material of the placed sounds of its family ranks +0.08 higher ("one material family per film").
+	 */
+	placed: csv(64, SoundIdSchema).optional(),
 	/** `true`: the offered takes of multi-hit recordings are rows too, ranked with the other sounds (P6-E9). */
 	takes: z
 		.enum(['true', 'false'])
@@ -388,6 +396,8 @@ export type SoundSearchRequest = {
 	similarTo?: string;
 	usedNearby?: readonly string[];
 	material?: (typeof SOUND_MATERIALS)[number];
+	personality?: (typeof SOUND_PERSONALITIES)[number];
+	placed?: readonly string[];
 	takes?: boolean;
 	limit?: number;
 	offset?: number;
@@ -419,6 +429,10 @@ export const SoundRankPartsSchema = z.object({
 	rotation: fin(),
 	/** Share of the query words its title matches (exact or prefix), ranked before the score; null without a query. */
 	titleMatch: fin().nullable().optional(),
+	/** P6-E10: the personality's adjustment added to the score (−0.15…0.15); null without a personality. */
+	style: fin().nullable().optional(),
+	/** P6-E10: the palette-coherence bonus added (0.08 for its family's dominant material, else 0); null: n/a. */
+	material: fin().nullable().optional(),
 });
 
 const counts = z.record(z.string(), z.number().int().min(0));

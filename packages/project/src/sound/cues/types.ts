@@ -1,7 +1,13 @@
 // Cue derivation types (spec 12 §2.2 "Derivation", P2-R3). Pure data; see ./derive.ts for the algorithm.
 
 import type { MgTemplateRegistry } from '../../registry/mg.ts';
-import { type CueAnchor, SOUND_DENSITIES, type SoundDensity } from '../../schema/sound.ts';
+import {
+	type CueAnchor,
+	SOUND_DENSITIES,
+	type SoundDensity,
+	type SoundPersonality,
+	type SoundTypingMode,
+} from '../../schema/sound.ts';
 import type { SoundAlign, SoundTypeId, SoundWeight, VisualKind } from '../taxonomy.ts';
 import type { VoiceActivity } from './dialogue.ts';
 
@@ -117,6 +123,21 @@ export type DeriveCuesOptions = {
 	 */
 	snapToBeats?: boolean;
 	beatFrames?: readonly number[];
+	/**
+	 * P6-E10 typing patterns (`auto`: one key per typed unit up to 25 units/s, one per word start above; `keys`, `words`,
+	 * `silent`). Default: the sequence's `soundDesign.settings.style.typing`, else `auto`.
+	 */
+	typing?: SoundTypingMode;
+	/**
+	 * P6-E10 "music carries the cuts": a cut inside unmuted music (Essential / Auto Tag type music), outside dialogue,
+	 * has its confidence halved (the reason says "music carries the cut"). Default: the sequence's style, else true.
+	 */
+	musicCarriesCuts?: boolean;
+	/**
+	 * P6-E10 personality: a cue's excluded types are left out (unless none would remain), its boosted ones come first
+	 * (`styleCueTypes`). Default: the sequence's style personality (none when unset); `null` = none.
+	 */
+	personality?: SoundPersonality | null;
 };
 
 export type CueSourceStats = {
@@ -142,8 +163,22 @@ export type DeriveCuesStats = {
 	heroesUnderDialogue: number;
 	/** Cues `snapToBeats` moved onto a beat. */
 	snappedToBeat: number;
+	/** P6-E10: cuts inside music whose confidence was halved ("music carries the cut"). */
+	musicCarriesCuts: number;
+	/** P6-E10: cue runs (≥ 3 appear / emphasis cues ≤ 0.6 s apart) the budget counted as one unit. */
+	runs: number;
 	found: number;
 	kept: number;
+};
+
+/** A cut the music carries that the density budget then left out (P6-E10): reported with its reason. */
+export type CarriedCut = {
+	key: string;
+	frame: number;
+	/** The halved confidence and the density's minimum it fell under. */
+	confidence: number;
+	minConfidence: number;
+	reason: string;
 };
 
 export type DeriveCuesWarning = {
@@ -174,6 +209,8 @@ export type DeriveCuesResult = {
 	curves: CueSpeedCurve[];
 	stats: DeriveCuesStats;
 	warnings: DeriveCuesWarning[];
+	/** P6-E10: cuts the music carries that the density budget dropped (frame order), with their reasons. */
+	carried?: CarriedCut[];
 };
 
 /** A raw event before scoring: every source produces these. */

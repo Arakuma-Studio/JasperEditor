@@ -3,7 +3,9 @@
 import { clipEnd, clipsOnTrack, trackLabel } from '../../derive/index.ts';
 import type { ProjectDocument } from '../../schema/document.ts';
 import type { Clip, Sequence, Track } from '../../schema/sequence.ts';
+import type { SoundTypingMode } from '../../schema/sound.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
+import { sequenceSoundStyle } from '../grammar.ts';
 import type { VoiceActivity } from './dialogue.ts';
 import type { CueCandidate, CueDeriveSource, DeriveCuesWarning } from './types.ts';
 
@@ -52,6 +54,11 @@ export type CueContext = {
 	sampleBudget: { left: number; warned: boolean };
 	/** Voice activity of Essential Sound dialogue clips measured by the engine (`dialogueSpans`); absent = whole clips. */
 	voice?: VoiceActivity | null;
+	/**
+	 * Typing patterns (P6-E10, `typingChoice`): the request's mode, else the sequence's `soundDesign.settings.style`, else
+	 * `auto` (one key per unit up to 25 units/s, one per word start above).
+	 */
+	typing: SoundTypingMode;
 };
 
 /** Most frames sampled by the motion sources in one derivation (≈ 20 clips × 20 000 frames; ≈ 2 s on a busy host). */
@@ -92,6 +99,7 @@ export function makeContext(
 		videoTracks,
 		warn,
 		sampleBudget: { left: MAX_SAMPLES_PER_DERIVATION, warned: false },
+		typing: sequenceSoundStyle(seq).typing ?? 'auto',
 	};
 }
 

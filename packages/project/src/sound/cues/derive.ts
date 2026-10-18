@@ -1,10 +1,28 @@
 // `deriveCues` (spec 12 §2.2 "Derivation", P2-R3): cue points read from the edit itself. Pure and deterministic: the
 // same document and options give the same cues in the same order. Never throws: a source that fails on a damaged
 // document is skipped with a `W_SOURCE_FAILED` warning, the others still run (AGENTS.md §0).
+// The cue grammar (spec 12 P6-E10, `../grammar.ts`) applies here, with the sequence's style as the default: typing
+// patterns (text source), the personality's type exclusions and boosts, "music carries the cuts" (a cut inside unmuted
+// music, outside dialogue, at half confidence: dropped under balanced, kept under rich, and reported in `carried`), and
+// runs of staggered appear / emphasis cues grouped so the budget keeps or drops a run as one unit.
 import { sequenceDuration } from '../../derive/index.ts';
 import type { ProjectDocument } from '../../schema/document.ts';
+import { SOUND_TYPING_MODES } from '../../schema/sound.ts';
+import {
+	isSoundPersonality,
+	MUSIC_CARRIES_CUT_REASON,
+	MUSIC_CUT_CONFIDENCE_FACTOR,
+	musicPlaysAt,
+	RUN_KINDS,
+	RUN_MAX_GAP_SEC,
+	RUN_MIN_LENGTH,
+	RUN_TYPES,
+	resolveSoundStyle,
+	sequenceSoundStyle,
+	styleCueTypes,
+} from '../grammar.ts';
 import { isSoundTypeId, VISUAL_KINDS } from '../taxonomy.ts';
-import { applyBudgets, mergeCandidates } from './budget.ts';
+import { applyBudgets, DENSITY_BUDGETS, mergeCandidates } from './budget.ts';
 import { deriveEdgeCues } from './edges.ts';
 import { deriveEditCues, dialogueRanges, inRanges } from './edits.ts';
 import { beatFramesOf, snapCuesToBeats } from './engine-sources.ts';
@@ -14,6 +32,7 @@ import { deriveCameraCues, deriveMotionCues } from './motion.ts';
 import { deriveTextCues } from './text.ts';
 import { deriveTransitionCues } from './transitions.ts';
 import {
+	type CarriedCut,
 	CUE_DENSITIES,
 	CUE_DERIVE_SOURCES,
 	type CueCandidate,
@@ -41,6 +60,8 @@ function emptyStats(): DeriveCuesStats {
 		heroesDemoted: 0,
 		heroesUnderDialogue: 0,
 		snappedToBeat: 0,
+		musicCarriesCuts: 0,
+		runs: 0,
 		found: 0,
 		kept: 0,
 	};
@@ -135,6 +156,39 @@ function describedByProject(c: CueCandidate, project: readonly CueCandidate[]): 
 }
 
 /**
+ * Groups runs (P6-E10): ≥ 3 consecutive ungrouped appear / emphasis candidates ≤ 0.6 s apart whose best type is pop,
+ * ui, chime or tick (staggered cards, successive notifications) share the group `run:<first key>`, so the density
+ * budget keeps or drops the run as one unit (a stagger of 4 cards 0.3 s apart is not thinned to 2). Explicit `sfx:`
+ * markers are left alone. Returns the number of runs.
+ */
+function groupRuns(candidates: CueCandidate[], fps: number): number {
+	const eligible = candidates
+		.filter(
+			(c) =>
+				!c.group &&
+				!c.explicit &&
+				c.source !== 'marker' &&
+				RUN_KINDS.includes(c.kind) &&
+				(RUN_TYPES as readonly string[]).includes(c.types[0] ?? ''),
+		)
+		.sort((a, b) => a.frame - b.frame || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+	const maxGap = RUN_MAX_GAP_SEC * fps + 1e-9;
+	let runs = 0;
+	let i = 0;
+	while (i < eligible.length) {
+		let j = i + 1;
+		while (j < eligible.length && eligible[j]!.frame - eligible[j - 1]!.frame <= maxGap) j++;
+		if (j - i >= RUN_MIN_LENGTH) {
+			runs++;
+			const group = `run:${eligible[i]!.key}`.slice(0, 200);
+			for (let k = i; k < j; k++) eligible[k]!.group = group;
+		}
+		i = j;
+	}
+	return runs;
+}
+
+/**
  * Cue points of a sequence from its edits, transitions, keyframed motion, text animation, motion-graphic templates,
  * graphic clip edges, 3D camera moves and `sfx:` markers; merged within 2 frames and thinned to the density budget.
  * `curves` are the per-frame motion speeds the keyframe and camera sources measured (the Cue Seam draws them).
@@ -168,6 +222,18 @@ export function deriveCues(
 			if (warnings.length < 200) warnings.push(w);
 		});
 		if (opts.voiceActivity && typeof opts.voiceActivity === 'object') ctx.voice = opts.voiceActivity;
+		// The grammar's style: the options, else the sequence's `soundDesign.settings.style`, else the defaults.
+		const style = resolveSoundStyle(
+			{
+				...((SOUND_TYPING_MODES as readonly unknown[]).includes(opts.typing) ? { typing: opts.typing } : {}),
+				...(typeof opts.musicCarriesCuts === 'boolean' ? { musicCarriesCuts: opts.musicCarriesCuts } : {}),
+				...(opts.personality === null || isSoundPersonality(opts.personality)
+					? { personality: opts.personality }
+					: {}),
+			},
+			sequenceSoundStyle(seq),
+		);
+		ctx.typing = style.typing;
 		// Where dialogue is heard (computed once: `dialogueSpans`, transcript words / voice activity / dialogue clips).
 		let dialogueCache: Array<[number, number]> | null = null;
 		const dialogueOf = () => {
@@ -255,6 +321,24 @@ export function deriveCues(
 				stats.bySource.pixel.merged++;
 			}
 		}
+		// P6-E10 personality: excluded types out of derived cues (an explicit `sfx:` marker keeps what it asks for).
+		if (style.personality)
+			for (const c of candidates)
+				if (c.source !== 'marker' && !c.explicit) c.types = styleCueTypes(c.types, style.personality);
+		// P6-E10 "music carries the cuts": a cut inside unmuted music, outside dialogue, at half its confidence.
+		const halved = new Set<CueCandidate>();
+		if (style.musicCarriesCuts) {
+			const dialogue = candidates.some((c) => c.kind === 'cut') ? dialogueOf() : [];
+			for (const c of candidates) {
+				if (c.kind !== 'cut' || c.explicit || c.source === 'marker') continue;
+				if (inRanges(dialogue, c.frame) || !musicPlaysAt(seq, c.frame)) continue;
+				c.confidence = Math.round(c.confidence * MUSIC_CUT_CONFIDENCE_FACTOR * 1e4) / 1e4;
+				c.reason = `${c.reason}; ${MUSIC_CARRIES_CUT_REASON}`.slice(0, 2000);
+				halved.add(c);
+			}
+			stats.musicCarriesCuts = halved.size;
+		}
+		stats.runs = groupRuns(candidates, ctx.fps);
 		// No hero under dialogue (spec 12 §1 "Less is more"; P6-R3): a derived hero where speech is heard becomes support.
 		// Explicit requests (`sfx:` markers) are the user's and stay as asked.
 		if (
@@ -279,6 +363,17 @@ export function deriveCues(
 		);
 		for (const c of cues) stats.bySource[c.from].kept++;
 		stats.kept = cues.length;
+		// The carried cuts the budget left out for their (halved) confidence, with their reasons.
+		const carried: CarriedCut[] = [];
+		if (halved.size) {
+			const min = DENSITY_BUDGETS[density].minConfidence;
+			const keptKeys = new Set(cues.map((c) => c.key));
+			for (const m of merged)
+				if (halved.has(m) && !keptKeys.has(m.key) && m.confidence < min)
+					carried.push({ key: m.key, frame: m.frame, confidence: m.confidence, minConfidence: min, reason: m.reason });
+			carried.sort((a, b) => a.frame - b.frame || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+		}
+		const extra = carried.length ? { carried } : {};
 		if (opts.snapToBeats) {
 			const beats = Array.isArray(opts.beatFrames)
 				? opts.beatFrames.slice(0, MAX_DERIVED_CUES * 10)
@@ -290,9 +385,9 @@ export function deriveCues(
 			const out = snapped.cues.sort(
 				(a, b) => a.frame - b.frame || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
 			);
-			return { cues: out, curves, stats, warnings };
+			return { cues: out, curves, stats, warnings, ...extra };
 		}
-		return { cues, curves, stats, warnings };
+		return { cues, curves, stats, warnings, ...extra };
 	} catch (e) {
 		warnings.push({
 			code: 'W_SOURCE_FAILED',
