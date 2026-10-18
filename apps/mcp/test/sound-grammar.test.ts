@@ -309,6 +309,13 @@ describe('place_sound type picks follow the grammar', { timeout: 600_000 }, () =
 		expect(titles.get(r.clips[0]!.picked!.from[0]!)).toMatch(/Wood/);
 		expect(r.clips[0]!.title).toBe('Wood knock hit');
 		expect(Math.abs(r.clips[0]!.rate - 1)).toBeLessThanOrEqual(0.02);
+		// a picture of what was placed (clicks at one level, the keys, the hits) to look at
+		const view = await call('view_sound_timeline', { projectId, range: { start: 0, end: 450 } });
+		expect(view.isError, textOf(view)).toBeFalsy();
+		const img = view.content.find((c) => c.type === 'image') as { data: string } | undefined;
+		expect(img).toBeDefined();
+		mkdirSync(join(ROOT, 'test-results', 'sd-grammar'), { recursive: true });
+		writeFileSync(join(ROOT, 'test-results', 'sd-grammar', 'mcp-timeline.png'), Buffer.from(img!.data, 'base64'));
 	});
 
 	it('plan_sound_design takes the style options and reports what the grammar did', async () => {
