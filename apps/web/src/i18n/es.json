@@ -10554,5 +10554,6 @@
   "Could not import the sound": "No se pudo importar el sonido",
   "Choose a sound first": "Elija primero un sonido",
   "Import Sound {0}": "Importar sonido {0}",
-  "Import {0} Sounds": "Importar {0} sonidos"
+  "Import {0} Sounds": "Importar {0} sonidos",
+  "{0} (alternative {1})": "{0} (alternativa {1})"
 }

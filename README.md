@@ -771,6 +771,10 @@ media as dialogue, music, sfx or ambience with a confidence, per-type scores, re
 per file and range. Apply the results with the `essentialSound.autoTag` command. The cue route
 (`/api/sound-design/cues`) also answers `voiceActivity` (voiced media seconds of Essential Sound dialogue clips without a
 transcript) and `dialogue` spans with their sources (`words`, `vad`, `clip`).
+`POST /api/sound-design/peak {projectId, sequenceId?, clipId}` answers at once with the peak of an audio clip's sound
+(the centre of its loudest 2 ms, within the part of its media the clip uses, ≤ 120 s: `peakFlicks` from the media start,
+`peakSec`, `onsetSec`, `truncated`); MCP `detect_sound_peak` writes it with `soundDesign.setPeak`, as the editor's Detect Peak
+(which measures in the browser) does.
 
 The engine binds loopback only. The packaged-like desktop engine requires its per-launch token
 (`JASPER_LOCAL_TOKEN`), so plain curl calls are meant for the dev or standalone engine.

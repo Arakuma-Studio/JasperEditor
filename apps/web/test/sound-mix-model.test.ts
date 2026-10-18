@@ -584,6 +584,26 @@ describe('solver notes in words', () => {
 		expect(named[0]!.text).toMatch(/^Pneumatic whoosh at 00:00:06:00: /);
 	});
 
+	it('an alternative\'s own warning names its item and the alternative, not "A sound"', () => {
+		const notes = soundNotes(
+			{
+				warnings: [
+					{
+						code: 'W_DIALOGUE_BAND',
+						message:
+							'itm_7 (alternative 2): during speech its dominant band (2000 Hz) is in 1–4 kHz; prefer a type whose dominant band is outside 1–4 kHz (here: boom)',
+					},
+					{ code: 'W_SOMETHING', message: 'itm_7 (alternative 1): an engine sentence' },
+				],
+			},
+			(_clipId, itemId) => (itemId === 'itm_7' ? 'Air whoosh at 00:00:13:10' : null),
+		);
+		expect(notes.map((n) => n.text)).toEqual([
+			'Air whoosh at 00:00:13:10 (alternative 2): its energy is in the speech band (1–4 kHz) while someone speaks; move it or pick a sound whose energy is outside 1–4 kHz, e.g. boom',
+			'Air whoosh at 00:00:13:10 (alternative 1): an engine sentence',
+		]);
+	});
+
 	it('never throws on hostile reports', () => {
 		fc.assert(
 			fc.property(fc.anything(), (report) => {

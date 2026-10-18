@@ -1022,6 +1022,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 						layer: i,
 						recentSoundIds: used,
 						variation,
+						fallbackIds: cands.filter((s) => s.source.type === 'synth').map((s) => s.id),
 					},
 				);
 				if (!v)

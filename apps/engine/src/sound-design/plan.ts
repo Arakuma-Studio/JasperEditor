@@ -882,7 +882,15 @@ export function selectPlanSounds(
 			}
 			const v = pickVariant(
 				candidates.map((r) => r.entry.id),
-				{ seed: style.seed, cueId: cue.key, sequenceId: seq.id, layer, recentSoundIds: recentIds, variation },
+				{
+					seed: style.seed,
+					cueId: cue.key,
+					sequenceId: seq.id,
+					layer,
+					recentSoundIds: recentIds,
+					variation,
+					fallbackIds: candidates.filter((r) => r.entry.source.type === 'synth').map((r) => r.entry.id),
+				},
 			);
 			if (!v) missingTypes.push(types.slice(0, 4).join('/'));
 			else

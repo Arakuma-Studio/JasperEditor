@@ -318,11 +318,13 @@ test('agent walkthrough through jasper-mcp: the guide holds', async () => {
 	await card.getByTestId('proposal-card-review').click();
 	await expect(page.getByTestId('review-bar')).toBeVisible();
 	const firstItem = plan.events[0]!.itemId;
-	await page.getByTestId('review-bar-accept-all').click();
+	// the note first: wait_for_proposal {until: "decided"} returns once nothing is left to decide (Accept all)
 	await page.locator(`[data-review-row="${firstItem}"]`).click();
 	await page.getByTestId('review-details').locator('[data-review-detail="note"]').click();
 	await page.getByLabel('Note for the agent').fill('Good, but try a softer one here next time');
 	await page.getByTestId('review-details').locator('[data-review-detail="save-note"]').click();
+	await expect(page.locator(`[data-review-row="${firstItem}"]`)).toHaveAttribute('aria-label', /note: Good, but/);
+	await page.getByTestId('review-bar-accept-all').click();
 	await page.screenshot({ path: join(outDir, 'user-review.png') });
 	const before = await appliedLabels(page);
 	await page.locator(`[data-review-row="${firstItem}"]`).click();

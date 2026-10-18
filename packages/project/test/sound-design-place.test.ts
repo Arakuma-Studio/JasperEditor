@@ -584,6 +584,22 @@ describe('soundDesign.setPalette / setSettings', () => {
 });
 
 describe('pickVariant (rotation and variation)', () => {
+	it('never rotates a Jasper Synth sound in among recordings (fallback only: final verification B)', () => {
+		// two real ticks and a synth tick ranked third: the walkthrough's typewriter got "Jasper Synth tick 1" every third key
+		const c = ['snd_real1', 'snd_real2', 'snd_synth', 'snd_real3'];
+		const ctx = { seed: 1, cueId: 'cue_x', fallbackIds: ['snd_synth'] };
+		const seen = new Set<string>();
+		let recent: string[] = [];
+		for (let i = 0; i < 12; i++) {
+			const v = pickVariant(c, { ...ctx, recentSoundIds: recent })!;
+			seen.add(v.soundId);
+			expect(c[v.index]).toBe(v.soundId);
+			recent = [v.soundId, ...recent];
+		}
+		expect([...seen].sort()).toEqual(['snd_real1', 'snd_real2', 'snd_real3']);
+		// only synth candidates: the fallback is used
+		expect(pickVariant(['snd_synth'], ctx)!.soundId).toBe('snd_synth');
+	});
 	const c = ['snd_a', 'snd_b', 'snd_c', 'snd_d', 'snd_e'];
 	it('round-robins over the top N, least recently used first, never the same file twice in a row', () => {
 		const ctx = { seed: 1, cueId: 'cue_1' };

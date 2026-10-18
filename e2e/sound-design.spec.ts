@@ -528,6 +528,8 @@ test('user walkthrough: library → Suggest Cues → Auto Sound Pass → review 
 			.map((i) => i.meta!.kind),
 	};
 	expect(places.length).toBeGreaterThanOrEqual(3);
+	// Jasper Synth is a fallback (spec 12 §0): never rotated in among real recordings of the same type
+	report.synthPlacements = places.filter((i) => String(i.meta?.title ?? '').startsWith('Jasper Synth')).map((i) => i.meta!.title);
 	const required = new Set(items0.flatMap((i) => i.requires ?? []));
 	const toReject =
 		places.find((i) => i.meta!.role === 'support' && !required.has(i.id)) ??
@@ -614,10 +616,13 @@ test('user walkthrough: library → Suggest Cues → Auto Sound Pass → review 
 	});
 	const fixAll = checkPanel().getByTestId('sound-check-fix-all');
 	if (await fixAll.isEnabled()) {
-		const live = (await checkPanel().getByTestId('sound-check-live').textContent()) ?? '';
 		const n = (await appliedLabels(page)).length;
 		await fixAll.click();
-		await waitVerdict(live);
+		// the fixes (one entry), then the check again ("Sound Check Result")
+		await expect
+			.poll(async () => (await appliedLabels(page)).slice(n), { timeout: LONG, intervals: [2000] })
+			.toContain('Sound Check Result');
+		await waitVerdict();
 		report.fixAllSafe = { entries: (await appliedLabels(page)).slice(n), after: await findings() };
 		await checkPanel().screenshot({
 			path: join(outDir, `${String(++shot).padStart(2, '0')}-check-fix-all.png`),
@@ -683,6 +688,11 @@ test('user walkthrough: library → Suggest Cues → Auto Sound Pass → review 
 	expect(tone.some((c) => c.start <= 272 && c.start + c.duration >= 298)).toBe(true);
 	await focusTimeline(page);
 	await page.keyboard.press('Backslash');
+	// the Ambience and Room Tone tracks are below the others: scroll the tracks to them
+	const area = (await page.getByTestId('timeline-track-area').boundingBox())!;
+	await page.mouse.move(area.x + area.width / 2, area.y + area.height - 20);
+	await page.mouse.wheel(0, 400);
+	await page.waitForTimeout(300);
 	await snap('beds');
 
 	// 7. Music to picture: land the drop on the hero cue (Essential Sound), End on Bar (Clip ▸ Audio Options)
@@ -746,9 +756,14 @@ test('user walkthrough: library → Suggest Cues → Auto Sound Pass → review 
 	await expect(delivery).toBeHidden();
 
 	// a last Sound Check of the finished mix (the acknowledged finding stays acknowledged unless its target changed)
-	const live2 = (await checkPanel().getByTestId('sound-check-live').textContent()) ?? '';
-	await checkPanel().getByTestId('sound-check-run').click();
-	await waitVerdict(live2);
+	// (Sequence ▸ Sound Design ▸ Run Sound Check shows the panel; a finished run stores "Sound Check Result")
+	const nCheck = (await appliedLabels(page)).length;
+	await menu('Run Sound Check');
+	await expect(checkPanel()).toBeVisible({ timeout: 60_000 });
+	await expect
+		.poll(async () => (await appliedLabels(page)).slice(nCheck), { timeout: LONG, intervals: [2000] })
+		.toContain('Sound Check Result');
+	await waitVerdict();
 	report.checkFinal = {
 		verdict: await checkPanel().getByTestId('sound-check-verdict').getAttribute('data-verdict'),
 		findings: await findings(),
