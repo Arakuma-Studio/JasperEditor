@@ -743,22 +743,26 @@ function Findings(props: {
 											<Icon id={expanded ? 'app.chevronDown' : 'app.chevronRight'} size={14} />
 										</button>
 									) : null}
-									<Button
-										variant="quiet"
-										tabIndex={-1}
-										// on the current row and under the pointer (A acknowledges from the keyboard): the narrow panel keeps
-										// its width for the message
-										className={`shrink-0 ${cur === i.id ? '' : 'hidden group-hover:inline-flex'}`}
-										data-testid="sound-check-acknowledge"
-										disabled={props.readOnly}
-										title={t('Acknowledge… (A): a deliberate exception, with a reason; it no longer counts')}
-										onClick={() => {
-											setFindingCursor(session, i.id);
-											setAckOpen(session, i.id);
-										}}
-									>
-										{t('Acknowledge…')}
-									</Button>
+									{/* on the current row and under the pointer (A acknowledges from the keyboard): the narrow panel keeps its
+									    width for the message */}
+									<span className={cur === i.id ? 'contents' : 'hidden group-hover:contents'}>
+										<Button
+											variant="quiet"
+											tabIndex={-1}
+											className="shrink-0"
+											data-testid="sound-check-acknowledge"
+											disabled={props.readOnly}
+											title={t(
+												'Acknowledge… (A): a deliberate exception, with a reason; it no longer counts',
+											)}
+											onClick={() => {
+												setFindingCursor(session, i.id);
+												setAckOpen(session, i.id);
+											}}
+										>
+											{t('Acknowledge…')}
+										</Button>
+									</span>
 									{i.fix && canApply(i) && !fixedNow ? (
 										<Button
 											variant={i.fix.safe ? 'secondary' : 'quiet'}
