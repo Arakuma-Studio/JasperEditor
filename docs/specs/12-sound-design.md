@@ -577,6 +577,12 @@ Routes, declared in `packages/api/src/routes.ts` with schemas in `packages/api/s
 
 Capabilities gain `sound: {library:{sounds, packs}, synth: true}`.
 
+*As built*: later phases added `POST /api/sound-design/rebalance`, `/delivery` (P4), `/listen` (P6-E6), `/profiles…`
+(P6-E8), `/beds[/plan]`, `/room-tone[/plan]` (P6-E12), `/peak` (Detect Peak, final verification B), `POST /api/audio/classify`
+(P6-R3), `/api/audio/remix-plan` (P6-E11), `/api/sounds/semantic…`, `/api/sounds/:id/match`, `/api/sounds/:id/moments`
+(P6-E14) and the `sound-listen`, `sound-profile`, `audio-classify`, `sound-embed`, `sound-moment` jobs; all are declared
+in `packages/api/src/routes.ts` and classified in `docs/security-review.md`.
+
 ### 2.9 Commands (`packages/project/src/commands/schemas/sound.ts`, `handlers/sound.ts`, owner `'sound-design'`)
 
 | Command | Notes |

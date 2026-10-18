@@ -689,6 +689,18 @@ menu, Properties) and MCP `set_sound_cues {stopBefore}` end on the music's bar l
 analysed (`/api/audio/beats {cachedOnly}`); the sound / format export warnings are translated. Rerun the tests of that
 section's table. Limits left: the bar-line stop uses only beats already analysed (the editor never starts an analysis
 for it) with the default metre; the general engine-message pattern is applied to export warnings only.
+Final verification B ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Final verification B": the requirement audit
+against spec 12 with evidence per requirement, the editor ↔ MCP parity table, the walkthroughs): Fill Room Tone found
+nothing on dialogue trimmed tight to the words — the room tone is now also taken from the media's handles (≤ 30 s either
+side, voice activity left out; rerun `apps/engine/test/sound-beds.test.ts`); the missing parity twins were added — MCP
+`export_sound_credits` (listed in the spec, never built), `detect_sound_peak` (`POST /api/sound-design/peak`, the clip
+menu's Detect Peak; `align_peak` moves such clips by frames like the editor), the Sound Library's Import to Project
+(`import_sounds`' twin) — rerun `apps/engine/test/sound-design-peak.test.ts`, `apps/mcp/test/sound.test.ts`,
+`apps/web/test/sound-import-to-project.test.ts`; `e2e/sound-design.spec.ts` (P6-R6: the user walkthrough, measured in
+the export) and `e2e/sound-agent-walkthrough.spec.ts` (an agent through the built `jasper-mcp`, following the guide)
+are new. Deliberately without a twin: audition (agents cannot hear: pictures and the listening log instead), the
+listener's verdicts and the reviewer's notes / alternates (the user's), favourites and recents (the editor user's own
+lists).
 
 ### Not covered by any workstream yet
 

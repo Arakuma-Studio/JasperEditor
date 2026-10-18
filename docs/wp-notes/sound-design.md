@@ -10104,3 +10104,108 @@ an animated 5.1 puck (none of them has one); they were not rerun on base.
   them.
 - A buffering stall in the middle of a play now prepares a primed start too (`prepareStart` while suspended); no test
   provokes one deterministically.
+
+### Final verification B
+
+Branch `feat/sd-final-audit` (from `feat/sound-design` 738a3862). Scope: prove the feature complete against spec 12 and
+honestly documented — a requirement audit, cross-surface parity (editor ↔ MCP), the documents (decision log, appdir, §11.3,
+gaps / parity, security review, project files, ported code, README, spec "As built" notes, this note's summary), two
+real-app walkthroughs on the built stack (a user through Playwright, an agent through the built `jasper-mcp` following the
+guide literally) with every screenshot looked at, and CARRYOVER.md. Final verification A (a parallel branch) ran the
+full gate and every e2e spec. Everything below ran on the build server `jasper-build` (16 × Haswell vCPU, Node 20.20.2,
+the vendored LGPL ffmpeg 7.1.5, Playwright Chromium headless; load average 2–25 from A's runs in parallel).
+
+#### Found and fixed (each with a regression test that failed before)
+
+| # | Finding | Fix | Test (before → after) |
+|---|---|---|---|
+| B1 | **Fill Room Tone did nothing** on dialogue trimmed tight to the words (the user walkthrough): the floor and the dialogue's own room tone were searched only in the part the clips use — all speech — so "the dialogue around the gaps could not be measured" and, with no library room tone installed, no fill at all. The spec takes the room tone from "the dialogue clip's own media" | `measureFloor` (`apps/engine/src/sound-design/beds.ts`) also searches the media's handles (≤ `ROOM_TONE_HANDLE_SEC` = 30 s either side of the used part) with their own voice activity measured and left out; the floor keeps the used part's own measurement when it has one | `apps/engine/test/sound-beds.test.ts` "dialogue trimmed tight to the words…": on the old `beds.ts` `W_FLOOR_UNMEASURED` (failed); now floor −53.4 dBFS, the stretch 3.65–5.45 s (the pause), commands written |
+| B2 | MCP `export_sound_credits` is in spec §2.10 but did not exist (agents could list credits, not write the file the editor's File ▸ Export ▸ Sound Credits… writes) | new tool (`apps/mcp/src/tools/sound.ts`): a file or folder path, md / txt / csv by extension, never overwriting, `attributionOnly` like the dialog; `list_sound_credits` gained `attributionOnly` too | `apps/mcp/test/sound.test.ts` "export_sound_credits writes the credits file…" (new tool: absent before) |
+| B3 | Clip ▸ **Detect Peak** (project audio) had no MCP twin: an agent without an editor window could not give project audio a peak, so `align_peak` / `swap_sound` / Sound Check sync could not use it | `POST /api/sound-design/peak` (`apps/engine/src/sound-design/peak.ts`: the clip's part of its media through its time map, ≤ 120 s, `analyzeSound` — the browser's measurement) and MCP `detect_sound_peak` (writes `soundDesign.setPeak`, one undo step "Detect Peak"; `apply: false` measures only) | `apps/engine/test/sound-design-peak.test.ts` (3: equals the browser's oracle within one sample; 120 s cap → `truncated`; typed refusals) and `apps/mcp/test/sound.test.ts` "detect_sound_peak…" |
+| B4 | MCP `align_peak` refused project audio given a peak by Detect Peak ("has no peak descriptor") while the editor's Align Peak moves it | such a clip moves by whole frames with its In point kept (`exact: "frame"`), as the editor does | `apps/mcp/test/sound.test.ts` "detect_sound_peak…" (before: `align_peak failed: … has no peak descriptor`) |
+| B5 | MCP `import_sounds` (add to the "Sound Effects" bin without placing) had no editor twin | Sound Library row menu ▸ **Import to Project** (`importLibrarySounds`, one undo step with the tool's label, reused when already in the project); the "Import Sound {0}" / "Import {0} Sounds" labels are model strings now (Spanish in History, MCP and editor alike) | `apps/web/test/sound-import-to-project.test.ts` (3) |
+| B6 | `essentialSound.autoTag` (P6-R3's command) had no `describe_commands` example | example in `apps/mcp/src/examples.ts` | `apps/mcp/test/sound-examples.test.ts` (27 commands apply) |
+| B7 | `PROPOSALS_GUIDE` named only `plan_sound_design` and `place_sound` as proposing; `rebalance_sfx`, `apply_delivery`, `lay_ambience_bed`, `fill_room_tone` propose by default too. `SOUND_GUIDE` lacked "use auto gain", the palette, `export_sound_credits` and `detect_sound_peak` | guide text | `apps/mcp/test/sound-guide.test.ts` (new phrases) |
+| B8 | Documents: the decision log had D-50 = schema v7, D-52 = the CLAP model, no "sound library and provenance" and no "sound design is ordinary commands" (P6-R5); §4.3 lacked `sounds/profiles`, `sounds/cache/semantic`, `models/sound`, the kept Sound Check reports, the accept journal, `analysis/frametimes`; §11.3 described proposals only; `docs/project-files.md` lacked `AudioClip.bed`, `sfx.level`, `library.take` / `inexact`, `remix.anchors`, `essential.tagged`, the later `soundDesign` fields; `docs/security-review.md` lacked `/api/audio/remix-plan`, `/api/sounds/:id/match` and the file-writing tools; `docs/parity.md` had no Phase 6 rows; README's feature list had no sound design, its "exposes N tools" was stale | D-50 sound library and provenance (with schema v7), D-51 proposals, **D-52 sound design is ordinary commands**, D-53 the optional model (renumbered from D-52; nothing referenced it); the rest written | `apps/mcp/test/readme-tools.test.ts` (378 tools) |
+
+#### Requirement audit (spec 12 §3, §4; CLAUDE.md Definition of Done)
+
+Status: **done** = implemented, tested and run in the real app; evidence is rerunnable (commands in the sections cited).
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| P0-R1…R3 audit, fixes with regression tests, findings recorded | done | "Phase 0" (WP0.1, WP0.2 tables), "Phase 0 verification" (V1–V11), "Phase 0 close-out" (C1–C4); `packages/compositions/test/audio-preview-oracle.test.ts` (track inserts: preview = export < 1e-4), `apps/web/test/voiceover-latency.test.ts` (simulated 25 ms input latency: within one buffer), `e2e/sound-p0-{preview,transport}.spec.ts` |
+| P1-R1…R8 | done | "Phase 1 verification" requirement table; this pass: `export_sound_credits` (B2), Import to Project (B5) |
+| P2-R1…R7 | done | "Phase 2 verification" table (`sound-placement-export.test.ts`: 0 samples at the 7 rates) |
+| P3-R1…R6 | done | "Phase 3 verification" table; `e2e/sound-review.spec.ts`, `sound-p3-mcp.spec.ts` |
+| P4-R1…R5 | done | "Phase 4 verification" table (preview = export to 1.4·10⁻⁵, later 1.8·10⁻⁵ with pan sweeps) |
+| P5-R1…R4 | done | "Phase 5 verification" table (six seeded defects, clean pass, panel = MCP) |
+| P6-R1 packs (Kenney + BigSoundBank CC0), pinned sha256, licence before install, job, removal behind approval, Help ▸ About, MCP, Preferences, `JASPER_SOUND_CATALOG` file:// tests | done | "WP6.1", "BigSoundBank packs" (per-file evidence); `apps/engine/test/sound-packs.test.ts`, `apps/mcp/test/sound-packs.test.ts`, `apps/web/test/sound-packs-ui.test.tsx`, `e2e/sound-packs.spec.ts` |
+| P6-R2 motion analysis, scene and beat cues, `/api/audio/beats`, `analyze_picture_motion` | done | "WP6.2", WP6.5b items 9–12; `apps/engine/test/sound-design-motion.test.ts`, `packages/project/test/sound-cues-engine.test.ts`, `packages/audio-fx/test/beats{,-tempo}.test.ts`, `apps/mcp/test/sound-motion.test.ts`, `e2e/sound-cue-sources.spec.ts` |
+| P6-R3 transcript / VAD dialogue suppression; Auto Tag (command, MCP, UI, badge) | done | "WP6.3" (192 labelled items, 100 % tuning and held-out, measured); `apps/engine/test/audio-classify.test.ts`, `sound-dialogue-consistency.test.ts`, `packages/project/test/sound-dialogue-audible.test.ts`, `e2e/sound-autotag.spec.ts`; this pass: the command's example (B6) |
+| P6-R4 credits sidecar, `W_SOUND_CREDITS`, interchange cues as markers | done | "WP6.4"; `apps/engine/test/sound-export-credits.test.ts`, `packages/project/test/sound-export-credits.test.ts`, `packages/interchange/test/sound-design.test.ts`, `apps/mcp/test/export-credits.test.ts`, `e2e/sound-credits-export.spec.ts`; the user walkthrough below (credits file with the export) |
+| P6-R5 workspace, ARCHITECTURE D-50 / D-51 / D-52, §4.3, §11.3, gaps / parity with evidence, README, wp-note | done | Sound Design workspace (Phase 1 verification); the documents: B8 and the summary at the top of this note |
+| P6-R6 `e2e/sound-design.spec.ts` (fixture → Suggest Cues → Auto Sound Pass → review → accept part → one undo → Sound Check → export → frames and audio timing) | done (this pass) | `e2e/sound-design.spec.ts` — the user walkthrough below, which covers every step of P6-R6 and more |
+| P6-R7 `pnpm verify`, `pnpm notices --check`, merge | gate: Final verification A; merge: the orchestrator | — |
+| P6-E1 CLICK / EDGE | done | "WP-E1"; `packages/audio-fx/test/check-findings.test.ts`, `apps/engine/test/sound-check-p6.test.ts`, `e2e/sound-check-edges.spec.ts` |
+| P6-E2 HARSH / LAYER_INAUDIBLE | done | "WP-E1" (same tests); the walkthrough's check lists HARSH infos with centroids |
+| P6-E3 COVERAGE / ENDING / HEAD / ARC; riser window | done | "WP-E1"; the walkthrough's checks report COVERAGE (the rejected item), ENDING, HEAD, ARC |
+| P6-E4 acknowledged findings | done | "WP-E2"; `packages/project/test/sound-acknowledge.test.ts`, `apps/mcp/test/sound-check-ack.test.ts`, `e2e/sound-check-ack.spec.ts`; both walkthroughs (an acknowledged ENDING counts again after the beds changed the ending: "acknowledged before the change") |
+| P6-E5 check a proposal before review | done | "WP-E2"; `apps/engine/test/sound-check-ack-proposal.test.ts`; the agent walkthrough (`plan_sound_design {check: true}`) |
+| P6-E6 listening transcript | done | "WP-E3"; `packages/audio-fx/test/events.test.ts`, `apps/engine/test/sound-listen.test.ts`, `apps/mcp/test/sound-listen.test.ts`, `e2e/sound-listen.spec.ts`; the agent walkthrough |
+| P6-E7 annotated sound sheet | done | "WP-E3"; `apps/mcp/test/sound-check.test.ts`, the agent walkthrough's sheets (looked at) |
+| P6-E8 reference profiles | done | "WP-E4"; `apps/engine/test/sound-profile.test.ts`, `packages/audio-fx/test/profile-metrics.test.ts`, `apps/mcp/test/sound-profile.test.ts`, `e2e/sound-reference-profile.spec.ts` |
+| P6-E9 takes, judge flags | done | "WP-E5"; `packages/audio-fx/test/takes.test.ts`, `apps/engine/test/sound-takes{,-plan}.test.ts`, `apps/mcp/test/sound-takes.test.ts`, `e2e/sound-takes.spec.ts` |
+| P6-E10 cue grammar, variation, personality, palette coherence | done | "WP-E6"; `packages/project/test/sound-grammar.test.ts`, `apps/engine/test/sound-design-grammar.test.ts`, `sound-grammar-export.test.ts`, `e2e/sound-grammar.spec.ts`; the walkthroughs (personality Energetic, one tick voice) |
+| P6-E11 music to picture | done | "WP-E7"; `packages/audio-fx/test/music-picture.test.ts`, `apps/engine/test/music-picture.test.ts`, `apps/mcp/test/music-picture.test.ts`, `e2e/sound-music-fit.spec.ts`; the user walkthrough (land the drop on the hero cue, End on Bar) |
+| P6-E12 ambience and room-tone beds | done (B1 fixed here) | "WP-E8"; `packages/audio-fx/test/loop-window.test.ts`, `apps/engine/test/sound-beds.test.ts`, `e2e/sound-beds.spec.ts`; the user walkthrough |
+| P6-E13 ShareAlike | done | "WP-E1" (P6-E13 part); `packages/project/test/sound-check-p6.test.ts` (obligations, the one switch) |
+| P6-E14 describe-it search (human-approved) | done | "WP-E9"; `apps/engine/test/sound-semantic{,-unit}.test.ts`, `apps/mcp/test/sound-semantic.test.ts`, `e2e/sound-describe.spec.ts` (skipped without the model); the agent walkthrough checks the keyword fallback without the model |
+| DoD: model + schema + repair | done | `docs/project-files.md` rows (B8); repair tests cited there |
+| DoD: undoable commands, undo / redo / refusals, `describe_commands` examples, catalog, integrity property | done | every command in `COMMAND_CATALOG` owned by sound design has an example that applies (`sound-examples.test.ts`, 27); the phase tables cite the undo / redo / refusal tests; `fuzz.test.ts` (AC-25) |
+| DoD: UI wired, menus, shortcuts without conflicts | done | phase tables; `apps/web/test/keymap.test.ts`, `polish-menu-wiring.test.ts` |
+| DoD: preview and every export path | done | ordinary edits (D-52): `audio-preview-mix-oracle.test.ts`, the walkthrough's native export measured |
+| DoD: agents (MCP tools, README list, guides, tool docs) | done | parity table below; `readme-tools`, `conventions`, `sound-guide` tests |
+| DoD: tests (unit, property / fuzz, oracle) | done | per phase; oracles: ffmpeg `ebur128` (loudness), cross-correlation (placement), the export mixer (preview) |
+| DoD: run in the real app, frames looked at | done | the walkthroughs below |
+| DoD: assets have sidecars, ported code recorded | done | `apps/engine/sounds/starter/*.attribution` + `ATTRIBUTION.md`; `apps/engine/models/clap/*.attribution` + Apache text; `licenses/ported/earshot.md` covers every adapted algorithm (WP-E1…E9) — `check-assets`, `pnpm notices --check` in A's gate |
+| DoD: `pnpm verify` | Final verification A | — |
+
+#### Cross-surface parity (spec 12 §1: every editor action has an MCP twin, and the reverse)
+
+Checked against the registered editor commands (`sound.*`, `soundLibrary.*`, `soundCheck.*`, `proposals.*`), the panels'
+own controls and the MCP tool list (`listTools`: 378 tools; the README list is kept equal by `readme-tools.test.ts`).
+
+| Editor | MCP |
+|---|---|
+| Sound Library search, type chips, Refine (length, tone, attack, weight, texture, material, licence, Include ShareAlike), Describe, takes disclosure, Find Similar | `search_sounds {q, types, length…, material, license, describe, takes, similarTo}` |
+| Waveform rows, Show Licence…, Reveal in Sound Library | `view_sounds`, `get_sound` (descriptors, takes, licence, credit) |
+| Audition (Space), In Context (Shift+Space) | none by design: agents cannot hear — `view_sounds` pictures for a sound, `listen_to_sequence` / `view_sound_timeline` for the mix |
+| Favourites, Recent | none by design: the editor user's own lists (browser preferences, not project data); "Used in this project" = `list_sound_credits` rows |
+| Insert at Playhead (Enter), drag to the timeline | `insert_sound` |
+| Import to Project (B5) | `import_sounds` |
+| Fill Cue (Enter / drop on a cue), Fill Unfilled Cues | `place_sound {cueId}`, `plan_sound_design {cues}` |
+| Swap…, Next / Previous Variation | `swap_sound {to: soundId \| "next" \| "previous"}` |
+| Align Peak to Playhead / to Nearest Cue, peak handle drag | `align_peak {to: "playhead" \| "cue" \| frame}` |
+| Set Peak at Playhead, peak handle Shift-drag | `apply_commands` `soundDesign.setPeak` |
+| Detect Peak (B3) | `detect_sound_peak` |
+| Role ▸, Add to Palette, Add Layer…, Link / Unlink | `apply_commands` `soundDesign.setRole` / `soundDesign.setPalette`; `place_sound` layers; `group_clips` / `ungroup_clips` |
+| Add to Sound Library… (the folder of a clip's file), Preferences ▸ Sound Library folders | `add_sound_folder` / `remove_sound_folder` (approval cards), `rescan_sound_library` |
+| Packs (Preferences) | `list_sound_packs`, `install_sound_pack`, `remove_sound_pack` (approval card) |
+| Describe-it model (Preferences), Find Moment… | `describe_search_status`, `install_describe_search_model`, `remove_describe_search_model` (approval card), `prepare_describe_search`, `match_sound`, `find_sound_moment`, `insert_sound_moment` |
+| Suggest Cues…, Cue Seam add / move / delete / role / align / stop before / build, Convert Markers to Cues, Clear Unfilled Cues, Add Sound Cue (Alt+Shift+C) | `find_sound_cues` (+ engine sources, `analyze_picture_motion`) and `set_sound_cues {add, update, remove, resync}`; the seam toggles and Convert Cue to Marker also run through `ui_command` when a window is open |
+| Auto Sound Pass… (sources, personality, density, palette, mix options, delivery) | `plan_sound_design {style, cueSources, check}` |
+| Review: card, ghosts, ✓ / ✕, alternates, notes, Hear proposal, Apply, Reopen review | `list_proposals`, `get_proposal` (ghost table), `wait_for_proposal` (decisions and notes), `reject_proposal`, `accept_proposal` (only where the user allowed agents to apply); reviewing (notes, alternates, reopen) is the user's by decision (security review: reviewer-only routes) |
+| Essential Sound ▸ Sound Design: auto gain, room send, stop before, build; Rebalance SFX Levels; Room Glue…; Delivery Target… | `apply_commands` `soundDesign.setAutoGain`, `set_room_glue`, `set_sound_cues {stopBefore, build}`; `rebalance_sfx`; `apply_delivery` |
+| Lay Ambience Bed…, Fill Room Tone, Sound Check's "Fill it with room tone" | `lay_ambience_bed`, `fill_room_tone` |
+| Essential Sound ▸ Music to picture (Analyze, Land the drop on), Clip ▸ Audio Options ▸ End on Bar / Land Drop | `find_music_drops`, `remix_audio {landDropAt}`, `fit_music_to_picture {mode}` |
+| Essential Sound ▸ Auto Tag, tag on add | `auto_tag_audio` |
+| Run Sound Check, Fix, Fix all safe, Check proposal, Reference select, sync strip, Log tab (Name the sounds) | `sound_check {proposalId?, profileId?}` (`safeFixes`), `view_sound_timeline`, `listen_to_sequence {tags}` |
+| Acknowledge… / Unacknowledge | `acknowledge_sound_issue {unacknowledge?}` (warnings and infos; an error is the user's) |
+| Listen here: Sounds right / Flag + note | read: `sound_check` / `get_sound_check` `humanVerdicts`; writing them is the listener's by decision (agents cannot hear) |
+| Reference profiles (Preferences, New Reference Profile…, Compare with reference) | `build_sound_profile`, `list_sound_profiles`, `get_sound_profile`, `rename_sound_profile`, `delete_sound_profile` (approval card), `export_sound_profile`, `import_sound_profile`, `set_sound_profile` |
+| File ▸ Export ▸ Sound Credits… (B2); Export ▸ Sound ▸ Credits | `list_sound_credits`, `export_sound_credits`; `start_export {credits}` |
+| "Allow agents to apply sound proposals" | `apply_commands` `soundDesign.setSettings {agentsMayApply}` — an approval card: an agent cannot grant itself the right |
+
+Reverse direction: every sound-design tool above has its editor action; `sound_library_status` is the Library's status
+line and Preferences page, `get_sound_check` the panel's kept report.
