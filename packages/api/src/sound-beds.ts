@@ -148,7 +148,7 @@ export type SoundBedsResult = z.infer<typeof SoundBedsResultSchema>;
  * P6-E12). `gaps`: the frames to fill (default every hole between dialogue clips under 10 s, in `range`); `cover:
  * 'regions'` lays it under the whole of each dialogue region instead (under J- and L-cuts). The tone: `soundId` /
  * `mediaId` (+ `loop`), else (`source` auto) the palette's or library's room tone whose spectrum is closest to the
- * dialogue's noise floor (within 6 dB of shape), else the quietest 0.5–3 s without speech in the dialogue's own media,
+ * dialogue’s noise floor (within 3 dB of shape), else the quietest 0.5–3 s without speech in the dialogue's own media,
  * looped; `source: 'library' | 'dialogue'` forces one. Its gain puts it at the floor's level (never under −56 dBFS).
  */
 export const SoundRoomToneRequestSchema = z

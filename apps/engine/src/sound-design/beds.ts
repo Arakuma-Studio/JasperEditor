@@ -10,7 +10,7 @@
 //               regions), the dialogue's NOISE FLOOR (the quietest 20 % of its 100 ms frames outside voice activity,
 //               `noiseFloorProfile`), the candidates — the palette's and library's room tones, measured on their clean
 //               window — ranked by the SHAPE distance of their octave bands to the floor (`spectralDistanceDb`); the
-//               closest within 6 dB is used, else the quietest 0.5–3 s without speech of the dialogue's own media
+//               closest within 3 dB is used, else the quietest 0.5–3 s without speech of the dialogue's own media
 //               (`quietestStretch`), looped; its gain puts it at the floor (never under −56 dBFS: a fill is never a
 //               silence itself).
 //   jobs        `mode: 'propose'` (default) stores a proposal (setup items for the sounds, one bed item); `apply`
@@ -96,7 +96,7 @@ export const ROOM_TONE_FLOOR_MAX_SEC = 120;
 /** Most dialogue clips measured for the floor. */
 export const ROOM_TONE_FLOOR_CLIPS = 8;
 /** A library room tone within this shape distance of the floor is a match (dB; decision, wp-note). */
-export const ROOM_TONE_MATCH_MAX_DB = 6;
+export const ROOM_TONE_MATCH_MAX_DB = 3;
 export const BEDS_LABEL = 'Lay Ambience Bed';
 export const ROOM_TONE_LABEL = 'Fill Room Tone';
 
@@ -906,7 +906,7 @@ export async function planRoomTone(
 			levelDb: floor.stretch.levelDb,
 		});
 	}
-	// the choice: given; else the closest palette / library tone within 6 dB; else the dialogue's own; else the closest
+	// the choice: given; else the closest palette / library tone within 3 dB; else the dialogue's own; else the closest
 	const lib = cands
 		.filter((c) => c.source === 'palette' || c.source === 'library')
 		.sort((a, b) => (a.distanceDb ?? 99) - (b.distanceDb ?? 99) || (a.source === 'palette' ? -1 : 1));

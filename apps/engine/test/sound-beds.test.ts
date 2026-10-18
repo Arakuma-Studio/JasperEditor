@@ -555,6 +555,25 @@ describe('room tone (real engine)', { timeout: 900_000 }, () => {
 		expect(Math.abs(gap - floor)).toBeLessThan(3);
 	});
 
+	it('an agent proposes the fill; the proposal check says it fixes the SILENCE (item room-tone)', async () => {
+		const pid = await dialogueGap();
+		const job = await waitJob(await post('/api/sound-design/room-tone', { projectId: pid }, AGENT_H));
+		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
+		const r = SoundRoomToneResultSchema.parse(job.result);
+		expect(r.applied).toBe(false);
+		expect(r.proposalId).toMatch(/^prp_/);
+		const checked = await waitJob(await post('/api/sound-design/check', { projectId: pid, proposalId: r.proposalId }, AGENT_H));
+		expect(checked.state, JSON.stringify(checked.error)).toBe('succeeded');
+		const delta = SoundCheckResultSchema.parse(checked.result).proposal!.delta;
+		console.info(
+			`[room tone] proposal check: fixes ${delta.fixed.map((f) => `${f.code}@${f.frame} → ${f.itemId}`).join(', ')}; introduces ${delta.introduced.map((f) => f.code).join(', ') || 'nothing'}`,
+		);
+		const fixed = delta.fixed.find((f) => f.code === 'SILENCE');
+		expect(fixed, JSON.stringify(delta)).toBeDefined();
+		expect(fixed!.itemId).toBe('room-tone');
+		expect(delta.introduced.filter((f) => f.severity !== 'info')).toEqual([]);
+	});
+
 	it('the fill route: the gaps, the floor, the candidates by spectral distance, the gain', async () => {
 		const pid = await dialogueGap();
 		const job = await waitJob(await post('/api/sound-design/room-tone', { projectId: pid, mode: 'apply' }));
