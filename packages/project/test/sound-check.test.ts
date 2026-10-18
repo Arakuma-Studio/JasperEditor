@@ -261,8 +261,11 @@ describe('Sound Check verdict, counts and messages', () => {
 			'REPEAT',
 			'LICENSE',
 			'CREDITS',
+			// P6-E8: the rows of a reference-profile comparison (warnings and infos only)
+			'REFERENCE',
 		]);
 		expect(SOUND_CHECK_CATEGORY.TRUNCATED).toBe('sync');
+		expect(SOUND_CHECK_CATEGORY.REFERENCE).toBe('reference');
 	});
 
 	it('messages: the template is the key, parameters fill it, every template is a unique model string', () => {
