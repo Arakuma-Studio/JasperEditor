@@ -67,7 +67,9 @@ export async function tagListenEvents(
 	});
 	const events = result.events.map((e, i) => (byEvent.has(i) ? { ...e, tag: byEvent.get(i)! } : e));
 	const lines = result.lines.map((l) =>
-		l.event !== undefined && byEvent.has(l.event) ? { ...l, text: taggedLine(l.text, byEvent.get(l.event)!) } : l,
+		l.event !== undefined && byEvent.has(l.event)
+			? { ...l, text: taggedLine(l.text, byEvent.get(l.event)!) }
+			: l,
 	);
 	return {
 		result: { ...result, events, lines, text: lines.map((l) => `${l.timecode}  ${l.text}`).join('\n') },

@@ -11,9 +11,9 @@ import {
 	AGENT_NAME_HEADER,
 	type EngineJob,
 	SoundEmbedResultSchema,
+	SoundListenResultSchema,
 	SoundMatchResponseSchema,
 	SoundMomentResultSchema,
-	SoundListenResultSchema,
 	SoundSearchResponseSchema,
 	SoundSemanticModelsResponseSchema,
 	SoundSemanticStatusSchema,
@@ -26,11 +26,11 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { WebSocket } from 'ws';
 import { ClapError } from '../src/sounds/semantic/runtime.ts';
+import { SOUND_VOCABULARY } from '../src/sounds/semantic/vocab.ts';
 import type { SoundService } from '../src/sounds/service.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, H, JSON_H, makeApp, type TestApp, tempAppdir, until } from './helpers.ts';
 import { buildCheckDoc, registerCheckMedia } from './sound-check-fixture.ts';
-import { SOUND_VOCABULARY } from '../src/sounds/semantic/vocab.ts';
 import { PACK, SR } from './sound-fixtures.ts';
 
 const ENV_KEYS = [
@@ -274,7 +274,7 @@ describe('Describe-it search with the model', { timeout: 300_000 }, () => {
 		expect((await bad({ description: 'x' }, 'snd_0123456789abcdef')).status).toBe(404);
 	});
 
-	it('names the listening transcript\'s events (P6-E6 tags) with the model', async () => {
+	it("names the listening transcript's events (P6-E6 tags) with the model", async () => {
 		const dir = tempAppdir('jasper-clap-listen-');
 		const fx = buildCheckDoc(await registerCheckMedia(app as TestApp, dir, 'tok_unused_0123456789'));
 		const projectId = 'prj_0000000000000991';
@@ -283,7 +283,10 @@ describe('Describe-it search with the model', { timeout: 300_000 }, () => {
 		writeFileSync(
 			file,
 			JSON.stringify(
-				makeEnvelope({ ...fx.doc(), projectId }, { revision: 1, savedAt: '2026-10-18T00:00:00.000Z', platform: 'test' }),
+				makeEnvelope(
+					{ ...fx.doc(), projectId },
+					{ revision: 1, savedAt: '2026-10-18T00:00:00.000Z', platform: 'test' },
+				),
 			),
 		);
 		const listen = async (body: Record<string, unknown>) => {
@@ -304,10 +307,15 @@ describe('Describe-it search with the model', { timeout: 300_000 }, () => {
 			expect(e.clipId).not.toBeNull();
 		}
 		// every placed sound's event is named, and its line says so; the rest of the transcript is unchanged
-		for (const p of named.placed) if (p.mixEvent !== null) expect(named.events[p.mixEvent]!.tag, p.title).toBeDefined();
+		for (const p of named.placed)
+			if (p.mixEvent !== null) expect(named.events[p.mixEvent]!.tag, p.title).toBeDefined();
 		const said = named.lines.filter((l) => l.text.includes('· sounds like “'));
-		expect(said.length).toBe(named.lines.filter((l) => l.event !== undefined && named.events[l.event]?.tag).length);
-		expect(named.lines.map((l) => l.text.replace(/ · sounds like “.*$/, ''))).toEqual(plain.lines.map((l) => l.text));
+		expect(said.length).toBe(
+			named.lines.filter((l) => l.event !== undefined && named.events[l.event]?.tag).length,
+		);
+		expect(named.lines.map((l) => l.text.replace(/ · sounds like “.*$/, ''))).toEqual(
+			plain.lines.map((l) => l.text),
+		);
 		expect(named.timings.tagsMs).toBeGreaterThan(0);
 		expect(named.warnings.some((w) => w.code === 'W_TAGS_UNAVAILABLE')).toBe(false);
 	});

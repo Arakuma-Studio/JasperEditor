@@ -163,7 +163,9 @@ test('with the real model: install, describe, find a moment and insert it', asyn
 	await page.screenshot({ path: join(outDir, 'moment-inserted.png') });
 
 	// the listening transcript names the inserted moment's sound (P6-E6 tags)
-	const started = await request.post('/api/sound-design/listen', { data: { projectId, tags: true, detail: 'high' } });
+	const started = await request.post('/api/sound-design/listen', {
+		data: { projectId, tags: true, detail: 'high' },
+	});
 	expect(started.ok(), await started.text()).toBe(true);
 	const jobId = ((await started.json()) as { id: string }).id;
 	let job: { state: string; result?: { lines: { timecode: string; text: string }[] } } = { state: 'queued' };

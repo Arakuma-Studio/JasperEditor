@@ -1054,7 +1054,10 @@ export async function runSoundListen(ctx: JobContext, deps: SoundListenDeps): Pr
 		const namer = deps.nameWindows?.() ?? null;
 		const unavailable = (why: string): SoundListenResult => ({
 			...result,
-			warnings: [...result.warnings, { code: 'W_TAGS_UNAVAILABLE', message: `The sounds were not named: ${why}` }],
+			warnings: [
+				...result.warnings,
+				{ code: 'W_TAGS_UNAVAILABLE', message: `The sounds were not named: ${why}` },
+			],
 		});
 		if (!namer) return unavailable('the sound library is not running');
 		ctx.progress(0.99, { stage: 'Naming the sounds' });

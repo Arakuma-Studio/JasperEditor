@@ -144,7 +144,7 @@ export function registerSoundListenTools(ctx: ToolContext): void {
 					.boolean()
 					.optional()
 					.describe(
-						'Name what each listed event sounds like (≤ 100 events: the clip\'s audio at the event, the closest of our reference descriptions, with its verdict) with the optional Describe-it search model; without it a warning says so (default false; ≈ 0.5 s per event)',
+						"Name what each listed event sounds like (≤ 100 events: the clip's audio at the event, the closest of our reference descriptions, with its verdict) with the optional Describe-it search model; without it a warning says so (default false; ≈ 0.5 s per event)",
 					),
 				images: z.boolean().optional().describe('Add the annotated sound sheet PNG (default false)'),
 				thumbnails: z
