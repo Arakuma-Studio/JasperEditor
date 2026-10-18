@@ -665,3 +665,101 @@ describe('the style in the sequence settings (soundDesign.setSettings {style})',
 		expect(resolveSoundStyle({ runs: 'bad' as never }, null).runs).toBe('climb');
 	});
 });
+
+describe('grammar properties (deterministic, bounded, never throw)', () => {
+	const typeArb = fc.constantFrom(...SOUND_TYPE_IDS);
+	const personalityArb = fc.constantFrom(null, ...SOUND_PERSONALITIES);
+
+	it('styleCueTypes keeps a subset in family order, drops exclusions unless none would remain', () => {
+		fc.assert(
+			fc.property(fc.uniqueArray(typeArb, { maxLength: 8 }), personalityArb, (types, p) => {
+				const out = styleCueTypes(types, p);
+				expect(new Set(out).size).toBe(out.length);
+				for (const t of out) expect(types).toContain(t);
+				if (types.length) expect(out.length).toBeGreaterThan(0);
+				if (p) {
+					const prof = SOUND_PERSONALITY_PROFILES[p];
+					if (types.some((t) => !prof.exclude.includes(t)))
+						for (const t of out) expect(prof.exclude).not.toContain(t);
+				} else expect(out).toEqual(types);
+				// the sequence of families is unchanged
+				const fam = (l: readonly string[]) => l.map((t) => SOUND_TYPES[t as (typeof SOUND_TYPE_IDS)[number]].family);
+				const kept = types.filter((t) => out.includes(t));
+				expect(fam(out)).toEqual(fam(kept));
+				expect(styleCueTypes(out, p)).toEqual(out);
+			}),
+			{ numRuns: 300 },
+		);
+	});
+
+	it('personalityScore stays in −1…1 for any descriptors, types and materials; null without a personality', () => {
+		const num = fc.oneof(fc.double({ min: -1e6, max: 1e6, noNaN: false }), fc.constant(Number.NaN));
+		fc.assert(
+			fc.property(
+				fc.array(fc.oneof(typeArb, fc.string()), { maxLength: 4 }),
+				fc.record({ centroidHz: num, riseMs: num, below150Share: num, flatness: num, durationSec: num }),
+				fc.option(fc.array(fc.oneof(fc.constantFrom('wood', 'metal', 'glass'), fc.string()), { maxLength: 3 })),
+				personalityArb,
+				(types, d, materials, p) => {
+					const s = personalityScore({ types, descriptors: d, materials }, p);
+					if (!p) expect(s).toBeNull();
+					else {
+						expect(Number.isFinite(s!)).toBe(true);
+						expect(s!).toBeGreaterThanOrEqual(-1);
+						expect(s!).toBeLessThanOrEqual(1);
+					}
+				},
+			),
+			{ numRuns: 400 },
+		);
+	});
+
+	it('paletteMaterials names known families and materials only, for any placed list', () => {
+		fc.assert(
+			fc.property(
+				fc.array(
+					fc.record({
+						soundId: fc.option(fc.string()),
+						types: fc.array(fc.oneof(typeArb, fc.string()), { maxLength: 3 }),
+						materials: fc.option(fc.array(fc.oneof(fc.constantFrom('wood', 'metal', 'air'), fc.string()), { maxLength: 3 })),
+					}),
+					{ maxLength: 30 },
+				),
+				(placed) => {
+					const pal = paletteMaterials(placed);
+					for (const [fam, mat] of Object.entries(pal)) {
+						expect(['impacts', 'movement', 'digital', 'tactile', 'tonal', 'beds']).toContain(fam);
+						expect(['wood', 'metal', 'air']).toContain(mat);
+					}
+					expect(paletteMaterials(placed)).toEqual(pal);
+				},
+			),
+			{ numRuns: 300 },
+		);
+	});
+
+	it('deriveCues with any grammar options on the Phase 2 fixture plus music: deterministic, never more kept than found', () => {
+		const { h } = phase2Fixture();
+		const media = h.registerVideo({ kind: 'audio', seconds: 30 });
+		const r = h.ok([{ type: 'clip.place', source: { mediaId: media }, at: 40, tracks: { audio: 'A2' }, ref: '$m' }]);
+		h.ok([{ type: 'essentialSound.setType', clipIds: [r.refs.$m!], audioType: 'music' }]);
+		fc.assert(
+			fc.property(
+				personalityArb,
+				fc.constantFrom('auto', 'keys', 'words', 'silent'),
+				fc.boolean(),
+				fc.constantFrom('sparse', 'balanced', 'rich'),
+				(personality, typing, musicCarriesCuts, density) => {
+					const o = { personality, typing, musicCarriesCuts, density } as const;
+					const a = deriveCues(h.doc, h.seqId, o);
+					expect(deriveCues(h.doc, h.seqId, o)).toEqual(a);
+					expect(a.stats.kept).toBeLessThanOrEqual(a.stats.found);
+					expect(a.warnings.filter((w) => w.code === 'W_SOURCE_FAILED')).toEqual([]);
+					if (!musicCarriesCuts) expect(a.carried).toBeUndefined();
+					for (const c of a.carried ?? []) expect(c.confidence).toBeLessThan(c.minConfidence);
+				},
+			),
+			{ numRuns: 40 },
+		);
+	});
+});
