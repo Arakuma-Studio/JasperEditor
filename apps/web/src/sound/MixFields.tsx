@@ -15,6 +15,8 @@ import type { EditorSession } from '@jasper/session';
 import { Button, Checkbox, cx, toast } from '@jasper/ui';
 import { useEffect, useId, useState } from 'react';
 import { t } from '../i18n/runtime.ts';
+import { useEngineOrNull } from '../state/engine.tsx';
+import { stopBeforeNextCommands, withMusicGrid } from './cues/stop-on-bar.ts';
 import {
 	type CueMixKind,
 	cueMixState,
@@ -171,6 +173,8 @@ export function StopBeforeEditor(props: {
 }) {
 	const { session, seq, cue, readOnly } = props;
 	const id = props.testId ?? 'stop-before';
+	// cached beat analyses put the stop on the bar line, as the cue menu does (`stopBeforeNextCommands`)
+	const engine = useEngineOrNull()?.client ?? null;
 	const [errors, setErrors] = useState<FieldError[]>([]);
 	const errId = useId();
 	// biome-ignore lint/correctness/useExhaustiveDependencies: errors belong to the cue they were made on
@@ -194,8 +198,20 @@ export function StopBeforeEditor(props: {
 				label={t('Stop before next (dip the music before the cue)')}
 				onCheckedChange={(on) => {
 					setErrors([]);
-					updateCue(session, seq.id, cue.id, t('Stop Before Next'), {
-						stopBefore: on ? { ...STOP_BEFORE_DEFAULT } : null,
+					if (!on) {
+						updateCue(session, seq.id, cue.id, t('Stop Before Next'), { stopBefore: null });
+						return;
+					}
+					const doc = session.getCommitted();
+					const s0 = doc.sequences[seq.id];
+					if (!s0) return;
+					withMusicGrid(engine, doc, s0, (grid) => {
+						const now = session.getCommitted().sequences[seq.id];
+						const cmd = now ? stopBeforeNextCommands(now, [cue.id], grid).commands[0] : undefined;
+						const stopBefore = (cmd as { stopBefore?: unknown } | undefined)?.stopBefore ?? {
+							...STOP_BEFORE_DEFAULT,
+						};
+						updateCue(session, seq.id, cue.id, t('Stop Before Next'), { stopBefore });
 					});
 				}}
 			/>

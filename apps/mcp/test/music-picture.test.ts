@@ -275,6 +275,62 @@ describe('music to picture through MCP', { timeout: 900_000 }, () => {
 		expect(off.grammar).toMatchObject({ tuneToMusic: false, tuned: 0 });
 	});
 
+	it('set_sound_cues {stopBefore: true} ends on the bar line the plan picks for the same cue; plain with stopOnBar off', async () => {
+		// final carry-over cleanup, item 5: set_sound_cues kept the plain 0.25 s (only the plan read the beats). The
+		// plan above analysed the music's beats (cached). A hero 9 frames after the landed drop (a downbeat at 615):
+		// the plan's stop and set_sound_cues' are the same, by the same rule
+		const added = await ok<{ added: { cueId: string }[] }>('set_sound_cues', {
+			projectId,
+			add: [{ frame: 624, kind: 'emphasis', weight: 'hero', types: ['chime'] }],
+		});
+		const hero = added.added[0]!.cueId;
+		const plan = await ok<{ proposalId: string }>('plan_sound_design', {
+			projectId,
+			cues: [hero],
+			style: { stopBefore: true },
+		});
+		const proposal = textOf(await call('get_proposal', { projectId, proposalId: plan.proposalId }));
+		const m = /Stop before \S+ on the (bar line|beat): music -24 dB for ([\d.]+) s/.exec(proposal);
+		expect(m, proposal.slice(0, 3000)).not.toBeNull();
+		expect(m![1]).toBe('bar line');
+		expect(Math.abs(Number(m![2]) - 0.3)).toBeLessThan(0.01);
+		const set = await ok<{ stopsOnBar?: { update?: number; on: string }[] }>('set_sound_cues', {
+			projectId,
+			update: [{ cueId: hero, stopBefore: true }],
+		});
+		expect(set.stopsOnBar).toEqual([{ update: 0, on: 'downbeat' }]);
+		const stopOf = async (id: string) =>
+			soundCuesOf(seqOf(await docOf(projectId))).find((c) => c.id === id)!.stopBefore;
+		const stored = (await stopOf(hero))!;
+		expect(Math.round(stored.seconds * 1000) / 1000).toBe(Number(m![2]));
+		expect(stored.depthDb).toBe(-24);
+		// add with stopBefore: the same rule (the downbeat at 615 is 10 frames before 625)
+		const more = await ok<{ added: { cueId: string }[]; stopsOnBar?: unknown }>('set_sound_cues', {
+			projectId,
+			add: [{ frame: 625, kind: 'cut', weight: 'support', stopBefore: true }],
+		});
+		expect(more.stopsOnBar).toEqual([{ add: 0, on: 'downbeat' }]);
+		expect(Math.abs((await stopOf(more.added[0]!.cueId))!.seconds - 10 / 30)).toBeLessThan(0.01);
+		// the style switched off: the plain 0.25 s
+		await ok('apply_commands', {
+			projectId,
+			label: 'Style',
+			commands: [{ type: 'soundDesign.setSettings', style: { stopOnBar: false } }],
+		});
+		const off = await ok<{ stopsOnBar?: unknown }>('set_sound_cues', {
+			projectId,
+			update: [{ cueId: hero, stopBefore: true }],
+		});
+		expect(off.stopsOnBar).toBeUndefined();
+		expect(await stopOf(hero)).toEqual({ seconds: 0.25, depthDb: -24 });
+		await ok('set_sound_cues', { projectId, remove: { cueIds: [hero, more.added[0]!.cueId] } });
+		await ok('apply_commands', {
+			projectId,
+			label: 'Style',
+			commands: [{ type: 'soundDesign.setSettings', style: { stopOnBar: true } }],
+		});
+	});
+
 	it('refusals are typed', async () => {
 		const code = async (name: string, args: Record<string, unknown>) => {
 			const r = await call(name, args);

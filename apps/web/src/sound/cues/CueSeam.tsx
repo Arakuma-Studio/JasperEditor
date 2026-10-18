@@ -42,6 +42,7 @@ import {
 } from '../../panels/timeline/model/snapping.ts';
 import { deltaFramesFromPx, frameToX, type Viewport } from '../../panels/timeline/model/viewport.ts';
 import type { ContextMenuItem, TimelineUiStore } from '../../panels/timeline/state/ui-store.ts';
+import { useEngineOrNull } from '../../state/engine.tsx';
 import { endSoundDrag, isSoundDrag, readSoundDrag } from '../insert.ts';
 import { type CueMixKind, cueMixState } from '../mix-model.ts';
 import {
@@ -69,9 +70,9 @@ import {
 	duplicateCueCommands,
 	moveCueCommands,
 	removeCueCommands,
-	STOP_BEFORE_DEFAULT,
 	updateCuesCommands,
 } from './seam.ts';
+import { stopBeforeNextCommands, withMusicGrid } from './stop-on-bar.ts';
 
 const EMPTY: readonly string[] = [];
 const DRAG_START_PX = 3;
@@ -169,6 +170,8 @@ export function CueSeam(p: CueSeamProps) {
 	};
 	const idPrefix = `cue-${p.instanceId}-`;
 	const readOnly = useSessionState((s) => s.readOnly);
+	// the engine's cached beat analyses put Stop Before Next on the bar line (none in tests without an engine)
+	const engine = useEngineOrNull()?.client ?? null;
 
 	// The keyboard focus follows the selection when it changes from elsewhere (Next Cue, agents).
 	useEffect(() => {
@@ -451,8 +454,29 @@ export function CueSeam(p: CueSeamProps) {
 				checked: allStop,
 				disabled: readOnly,
 				run: () => {
-					set(t('Stop Before Next'), { stopBefore: allStop ? null : { ...STOP_BEFORE_DEFAULT } });
-					if (!allStop) explainStored('stopBefore', ids);
+					if (allStop) {
+						set(t('Stop Before Next'), { stopBefore: null });
+						return;
+					}
+					// on the music's bar line when its beats are analysed (the plan's rule, `stopBeforeFor`)
+					const doc = session.getCommitted();
+					const s0 = doc.sequences[seq.id];
+					if (!s0) return;
+					withMusicGrid(engine, doc, s0, (grid) => {
+						const now = session.getCommitted().sequences[seq.id];
+						if (!now) return;
+						const { commands, onBar } = stopBeforeNextCommands(now, ids, grid);
+						const r = apply(t('Stop Before Next'), commands);
+						if (!r?.ok) return;
+						explainStored('stopBefore', ids);
+						if (onBar)
+							p.toast(
+								'info',
+								onBar === 1 && commands.length === 1
+									? t('The music stops on the bar line before the cue')
+									: t('The music stops on the bar line before {0} of {1} cues', onBar, commands.length),
+							);
+					});
 				},
 			},
 			{
