@@ -720,11 +720,12 @@ export function ReferenceRows(props: { reference: SoundCheckReference; onShow?(i
 					{rows.map((r) => {
 						const off = r.status === 'low' || r.status === 'high';
 						const status = r.basis === 'delivery' ? t('Delivery target') : STATUS_LABELS[r.status];
-						const tone = off && r.basis !== 'delivery'
-							? r.weight === 'major'
-								? 'text-pr-warning'
-								: 'text-pr-text'
-							: 'text-pr-muted';
+						const tone =
+							off && r.basis !== 'delivery'
+								? r.weight === 'major'
+									? 'text-pr-warning'
+									: 'text-pr-text'
+								: 'text-pr-muted';
 						return (
 							<li
 								key={r.metric}
