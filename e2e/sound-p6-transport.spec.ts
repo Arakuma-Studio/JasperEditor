@@ -561,9 +561,10 @@ test('Play with a long read-ahead (0.62 s): the first click is heard, the pictur
 			expect(sawBuffering).toBe(true);
 			const picture = await pictureLag(rec, rec.armed, wait + 0.2);
 			console.log('long read-ahead picture − audio', picture);
-			// the picture waits for the program (Chrome's output timestamps jitter by a few ms: −16 ms seen in 15 plays;
-			// before the stall watchdog knew about the wait it kicked the Player 0.6 s in and the picture led by 8–54 ms)
-			expect(picture).toBeGreaterThan(-0.02);
+			// the picture waits for the program: measured −0.023 … +0.037 s over 30 plays (the picture anchor is sampled
+			// from Chrome's output timestamps once per animation frame; before the stall watchdog knew about the wait it
+			// kicked the Player 0.6 s in and the picture led by 8–54 ms every play)
+			expect(picture).toBeGreaterThan(-0.03);
 			// one wait, not two
 			expect(picture).toBeLessThan(wait);
 		}

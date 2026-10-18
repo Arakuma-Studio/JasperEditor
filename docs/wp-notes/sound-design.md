@@ -9943,8 +9943,8 @@ a copy of the integration tip this branch started from (1fcdbcf6), built and run
   lost). The Program monitor's stall watchdog (`PlaybackDriver`, a Player with no frame for 600 ms is kicked: pause, seek,
   play) now leaves the Player alone while the graph holds the picture (`MixGraph.startWaiting`): with a 0.62 s wait it
   kicked it 0.6 s in — an audible suspend / resume just before the program, the first click 1–6 quanta late in 2 of 15
-  plays and the picture leading the program by 8–54 ms; after: the first click on its sample in 15 of 15, picture − audio
-  −0.016 … +0.037 s. Decision: any plausible effect chain waits less (one look-ahead or FFT effect adds 20–43 ms at 48 kHz; 3 s takes
+  plays and the picture leading the program by 8–54 ms; after: the first click on its sample in 30 of 30, picture − audio
+  −0.023 … +0.037 s (≈ +0.01 on average; the 63 ms and 146 ms waits of `sound-p0-transport` read −0.002 … +0.055 s). Decision: any plausible effect chain waits less (one look-ahead or FFT effect adds 20–43 ms at 48 kHz; 3 s takes
   some 70 in series); a longer read-ahead is pathological and still starts unprimed. A wait of 0.2 s or more shows the
   Program monitor's buffering dot (`useAudioStartWait`, `VISIBLE_START_WAIT`), in its own component.
 - **Edits while playing no longer move the audio** (item 6). Root cause, measured: the Player got `{doc, options}` as
