@@ -72,13 +72,22 @@ test('with the real model: install, describe, find a moment and insert it', asyn
 	mkdirSync(dir, { recursive: true });
 	const kit = join(ROOT, 'apps', 'engine', 'sounds', 'starter');
 	execFileSync(process.env.JASPER_FFMPEG ?? 'ffmpeg', [
-		'-v', 'error', '-y',
-		'-f', 'lavfi', '-i', 'anoisesrc=d=60:c=brown:r=48000:a=0.02',
-		'-i', join(kit, 'chime-glass-01.ogg'),
-		'-i', join(kit, 'click-ui-02.ogg'),
+		'-v',
+		'error',
+		'-y',
+		'-f',
+		'lavfi',
+		'-i',
+		'anoisesrc=d=60:c=brown:r=48000:a=0.02',
+		'-i',
+		join(kit, 'chime-glass-01.ogg'),
+		'-i',
+		join(kit, 'click-ui-02.ogg'),
 		'-filter_complex',
 		'[1:a]aformat=channel_layouts=stereo,adelay=33000|33000[a];[2:a]aformat=channel_layouts=stereo,adelay=12000|12000[b];[0:a]aformat=channel_layouts=stereo[n];[n][a][b]amix=inputs=3:normalize=0:duration=first',
-		'-ar', '48000', join(dir, 'field_recording.wav'),
+		'-ar',
+		'48000',
+		join(dir, 'field_recording.wav'),
 	]);
 	const put = await request.put('/api/sounds/roots', {
 		data: { roots: [{ path: dir, label: 'Field', license: 'LicenseRef-UserRoyaltyFree', enabled: true }] },
@@ -127,7 +136,9 @@ test('with the real model: install, describe, find a moment and insert it', asyn
 	// Find Moment on the recording
 	await panel.getByLabel('Search sounds').fill('field recording');
 	await toggle.click(); // words: the recording by its name
-	const option = panel.getByRole('listbox', { name: 'Sounds' }).getByRole('option', { name: /^field recording/i });
+	const option = panel
+		.getByRole('listbox', { name: 'Sounds' })
+		.getByRole('option', { name: /^field recording/i });
 	await expect(option).toBeVisible({ timeout: 60_000 });
 	await option.click({ button: 'right' });
 	await page.getByRole('menuitem', { name: 'Find Moment…' }).click();
@@ -142,7 +153,9 @@ test('with the real model: install, describe, find a moment and insert it', asyn
 	await dialog.screenshot({ path: join(outDir, 'find-moment.png') });
 	await query(page, 'playhead.set', { frame: 30 });
 	await dialog.getByTestId('sound-find-moment-insert-0').click();
-	await expect(dialog.getByTestId('sound-find-moment-status')).toContainText('Added a moment', { timeout: 60_000 });
+	await expect(dialog.getByTestId('sound-find-moment-status')).toContainText('Added a moment', {
+		timeout: 60_000,
+	});
 	type Clip = { start: number; sourceIn: number };
 	const clips = await query<Record<string, Clip>>(page, 'doc.get', { path: ['sequences'] });
 	expect(JSON.stringify(clips)).toContain('"start":30');

@@ -442,7 +442,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (373; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (374; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `browse_media_files` (folders and importable files on the engine's computer) `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -513,8 +513,9 @@ Tools (373; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   Describe-it search model, else searches its words) `get_sound` (a recording's takes) `view_sounds` · Describe-it
   search (LAION CLAP, Apache-2.0, ≈ 780 MB, user-installed, analysis only): `describe_search_status`
   `install_describe_search_model` (tell the user the size and licence first) `remove_describe_search_model` (approval
-  card) `prepare_describe_search` (embeds the library, incremental) `find_sound_moment` (the best moments of a long
-  recording for a description) `insert_sound_moment` (places one, one undo step) · `import_sounds`
+  card) `prepare_describe_search` (embeds the library, incremental) `match_sound` (one sound against a description and
+  alternatives) `find_sound_moment` (the best moments of a long recording for a description) `insert_sound_moment`
+  (places one, one undo step) · `import_sounds`
   `insert_sound` (peak-aligned, never overwrites; take ids too) ·
   `list_sound_credits` · `add_sound_folder` `remove_sound_folder` `rescan_sound_library` · packs: `list_sound_packs`
   `install_sound_pack` (downloads a catalogue pack from its upstream site, sha256-pinned; tell the user its size and

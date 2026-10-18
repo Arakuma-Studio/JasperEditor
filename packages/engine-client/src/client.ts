@@ -64,6 +64,7 @@ import {
 	type SoundEmbedRequest,
 	type SoundIndexRequest,
 	type SoundListenRequest,
+	type SoundMatchRequest,
 	type SoundMomentRequest,
 	type SoundProfileBuildRequest,
 	type SoundProfileImportRequest,
@@ -414,6 +415,10 @@ export class EngineClient {
 	/** Starts (or joins) a `sound-embed` job (embeddings of the sounds that lack one; `full`: all again). */
 	embedSounds(req: SoundEmbedRequest = {}) {
 		return this.call('soundEmbed', { body: req });
+	}
+	/** How well a library sound matches a description and its alternatives (Describe-it search model). */
+	matchSound(soundId: string, req: SoundMatchRequest, signal?: AbortSignal) {
+		return this.call('soundMatch', { params: { soundId }, body: req, ...(signal ? { signal } : {}) });
 	}
 	/** Find Moment: a `sound-moment` job for the best windows of a sound for a description (`wait`: its end). */
 	findSoundMoments(

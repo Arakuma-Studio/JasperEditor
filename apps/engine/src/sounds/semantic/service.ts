@@ -22,6 +22,8 @@ import {
 	type SoundEmbedResult,
 	type SoundEntry,
 	type SoundMatch,
+	type SoundMatchRequest,
+	type SoundMatchResponse,
 	type SoundMomentRequest,
 	type SoundMomentResult,
 	type SoundSemanticModel,
@@ -361,6 +363,81 @@ export class SemanticService {
 			if (a) items.push({ e, a, stats: this.statsOf(key, a, cal) });
 		}
 		return { items, ref: referenceOf(items, cal) };
+	}
+
+	/**
+	 * How well one sound matches a description and its alternatives (`POST /api/sounds/:soundId/match`): each text's
+	 * calibrated match and its share of a softmax over their z values. A sound without an embedding gets one now.
+	 */
+	async matchSound(
+		soundId: string,
+		req: SoundMatchRequest,
+		signal?: AbortSignal,
+	): Promise<SoundMatchResponse> {
+		const e = await this.deps.get(soundId);
+		const why = await this.unavailable();
+		if (why)
+			throw new HttpError(
+				409,
+				why.status === 'not-installed' ? 'MODEL_NOT_INSTALLED' : 'DESCRIBE_UNAVAILABLE',
+				`Describe-it search is unavailable: ${why.reason}`,
+			);
+		let ctx: ModelContext;
+		try {
+			ctx = await this.context();
+		} catch (err) {
+			if (err instanceof JobError) throw new HttpError(409, err.code, err.message);
+			throw err;
+		}
+		try {
+			const cal = await this.calibrationFor(ctx, signal);
+			const key = entryKey(e);
+			let a = await ctx.sounds.get(key);
+			const computed = !a;
+			if (!a) {
+				const windows = entryWindows(e);
+				if (!windows.length) throw new HttpError(422, 'SOUND_EMPTY', 'The sound has no length');
+				const path = await this.deps.fileOf(e);
+				a = meanEmbedding(
+					await this.runtime.embedWindows(
+						ctx.dir,
+						{ path, ffmpeg: this.core.ffmpeg.bins.ffmpeg! },
+						windows,
+						signal,
+					),
+				);
+				await ctx.sounds.set(key, a);
+				await ctx.sounds.flush();
+			}
+			const texts = [req.description, ...(req.alternatives ?? [])].map(describeText);
+			const qs = await this.textVectors(ctx, texts, signal);
+			const { ref } = await this.library(ctx, cal, await this.deps.entries());
+			const stats = this.statsOf(key, a, cal);
+			const ms = qs.map((q) => matchOf(a!, stats, q, queryBias(q, ref), ref));
+			const top = Math.max(...ms.map((m) => m.z));
+			const ex = ms.map((m) => Math.exp(m.z - top));
+			const sum = ex.reduce((x, y) => x + y, 0);
+			return {
+				soundId: e.id,
+				model: ctx.entry.id,
+				matches: ms.map((m, i) => ({
+					text: texts[i]!,
+					z: m.z,
+					cosine: m.cosine,
+					verdict: verdictOf(m.z),
+					share: Math.round((ex[i]! / sum) * 10_000) / 10_000,
+				})),
+				computed,
+			};
+		} catch (err) {
+			if (err instanceof HttpError) throw err;
+			const code = err instanceof ClapError ? err.code : 'CLAP_FAILED';
+			throw new HttpError(
+				code === 'CLAP_TIMEOUT' || code === 'CLAP_CRASHED' ? 503 : 422,
+				code,
+				(err as Error).message,
+			);
+		}
 	}
 
 	/**

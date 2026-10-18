@@ -212,6 +212,8 @@ import {
 } from './sound-profile.ts';
 import {
 	SoundEmbedRequestSchema,
+	SoundMatchRequestSchema,
+	SoundMatchResponseSchema,
 	SoundMomentRequestSchema,
 	SoundSemanticModelDeleteResponseSchema,
 	SoundSemanticModelsResponseSchema,
@@ -1187,6 +1189,13 @@ export const ROUTES = {
 		path: '/api/sounds/semantic/embed',
 		body: SoundEmbedRequestSchema,
 		response: EngineJobSchema,
+	},
+	/** How well a sound matches a description and realistic alternatives (z, verdict, softmax share). */
+	soundMatch: {
+		method: 'POST',
+		path: '/api/sounds/:soundId/match',
+		body: SoundMatchRequestSchema,
+		response: SoundMatchResponseSchema,
 	},
 	soundMoments: {
 		method: 'POST',

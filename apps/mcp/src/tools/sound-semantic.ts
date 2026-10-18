@@ -6,11 +6,13 @@ import {
 	type EngineJob,
 	type RegisterSoundResponse,
 	SOUND_DESCRIBE_MAX_CHARS,
+	SOUND_MATCH_MAX_ALTERNATIVES,
 	SOUND_MOMENT_MAX_COUNT,
 	SOUND_MOMENT_MAX_SEC,
 	SOUND_MOMENT_MIN_SEC,
 	SoundEmbedResultSchema,
 	type SoundEntry,
+	type SoundMatchResponse,
 	SoundMomentResultSchema,
 	type SoundSemanticModelsResponse,
 	type SoundSemanticStatus,
@@ -190,6 +192,45 @@ export function registerSoundSemanticTools(ctx: ToolContext): void {
 					? { embedded: r.data.embedded, reused: r.data.reused, failed: r.data.failed, errors: r.data.errors }
 					: {}),
 				...(timedOut ? { timedOut: true } : {}),
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'match_sound',
+		{
+			title: 'Match a sound to a description',
+			description:
+				'How well one library sound matches a description, weighed against realistic alternatives ("a door slam" vs "a car door closing" vs "a drawer shutting"): per text the calibrated match {z, verdict: strong | plausible | weak | none, cosine} and its share of a softmax over the z values (which reading wins). Use it to check a pick before proposing it, and say the numbers; the user still has to listen. Needs the Describe-it search model (describe_search_status); a sound without an embedding yet gets one now (a few seconds).',
+			input: {
+				soundId: SoundIdArg,
+				description: z
+					.string()
+					.min(1)
+					.max(SOUND_DESCRIBE_MAX_CHARS)
+					.describe('Source + material + action + character'),
+				alternatives: z
+					.array(z.string().min(1).max(SOUND_DESCRIBE_MAX_CHARS))
+					.max(SOUND_MATCH_MAX_ALTERNATIVES)
+					.optional()
+					.describe('Other readings to weigh it against (≤ 8)'),
+			},
+			annotations: READ_ONLY,
+		},
+		async (a, extra) => {
+			const r = await soundCall<SoundMatchResponse>(ctx, (c) =>
+				c.matchSound(
+					a.soundId,
+					{ description: a.description, ...(a.alternatives?.length ? { alternatives: a.alternatives } : {}) },
+					extra.signal,
+				),
+			);
+			return jsonResult({
+				soundId: r.soundId,
+				matches: r.matches.map((m) => ({ text: m.text, z: m.z, verdict: m.verdict, share: m.share })),
+				best: r.matches.reduce((b, m) => (m.share > b.share ? m : b)).text,
+				...(r.computed ? { note: 'Its embedding was computed for this answer.' } : {}),
 			});
 		},
 	);

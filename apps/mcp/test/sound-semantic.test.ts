@@ -1,7 +1,8 @@
 // Describe-it search MCP tools end to end (spec 12 P6-E14, WP-E9): a real engine (temp appdir, a generated starter kit
 // of badly named tones and a long field recording, the tiny stand-in model of @jasper/testkit as its catalogue) driven
 // by jasper-mcp over stdio: describe_search_status before and after install, search_sounds {describe} in keyword
-// fallback and in semantic mode (rows with match), prepare_describe_search, find_sound_moment on the recording, and
+// fallback and in semantic mode (rows with match), prepare_describe_search, match_sound, find_sound_moment on the
+// recording, and
 // insert_sound_moment placing that range in one transaction (its undo is covered by packages/project's
 // sound-moment.test.ts: undo needs an editor session). No network.
 import { type ChildProcess, spawn } from 'node:child_process';
@@ -207,6 +208,13 @@ describe('Describe-it search over MCP', { timeout: 900_000 }, () => {
 		expect(high.results[0]!.title).toBe('SFX_0001');
 		expect(high.results[0]!.match?.verdict).toMatch(/^(strong|plausible|weak|none)$/);
 
+		const matched = await ok<{ matches: { text: string; share: number }[]; best: string }>('match_sound', {
+			soundId: high.results[0]!.soundId,
+			description: 'high',
+			alternatives: ['low'],
+		});
+		expect(matched.best).toBe('high');
+		expect(matched.matches.map((x) => x.text)).toEqual(['high', 'low']);
 		const field = kw.results[0]!.soundId;
 		const found = await ok<{ moments: { startSec: number; endSec: number; verdict: string }[] }>(
 			'find_sound_moment',

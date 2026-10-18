@@ -20,6 +20,7 @@
 //                                        approval: AGT-3)
 //   POST /api/sounds/semantic/embed      a `sound-embed` job (202): embeddings of the sounds that lack one
 //   POST /api/sounds/:soundId/moments    a `sound-moment` job: the best windows of a sound for a description (?wait=1)
+//   POST /api/sounds/:soundId/match      how well a sound matches a description and its alternatives (z, verdict, share)
 //   PUT  /api/sounds/roots               the new folder list (local mode; an agent adding, removing, relicensing or
 //                                        re-crediting a folder needs the user's approval: security review AGT-3;
 //                                        409 SOUND_ROOTS_CHANGED when the list changed while the approval waited)
@@ -27,6 +28,7 @@ import {
 	RegisterSoundRequestSchema,
 	SoundEmbedRequestSchema,
 	SoundIndexRequestSchema,
+	SoundMatchRequestSchema,
 	SoundMomentRequestSchema,
 	SoundRootsPutRequestSchema,
 	SoundSearchQuerySchema,
@@ -313,6 +315,13 @@ export default async function soundRoutes(app: FastifyInstance): Promise<void> {
 				throw new HttpError(400, 'INVALID_RANGE', 'endSec must be after startSec');
 			const job = await svc.semantic.submitMoments(req.params.soundId, body, originOf(req));
 			return replyWithJob(core.queue, job, req.query.wait, reply, 'MOMENT_FAILED');
+		}),
+	);
+	app.post<P>(
+		'/api/sounds/:soundId/match',
+		guarded<P>(async (req) => {
+			const body = parseOr400(SoundMatchRequestSchema, req.body ?? {});
+			return svc.semantic.matchSound(req.params.soundId, body);
 		}),
 	);
 	app.get<P>(

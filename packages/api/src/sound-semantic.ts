@@ -168,3 +168,33 @@ export const SoundMomentResultSchema = z.object({
 	cached: z.number().int().min(0),
 });
 export type SoundMomentResult = z.infer<typeof SoundMomentResultSchema>;
+
+/** Alternatives a match compares at most. */
+export const SOUND_MATCH_MAX_ALTERNATIVES = 8;
+
+/** `POST /api/sounds/:soundId/match`: how well a sound matches a description (and realistic alternatives). */
+export const SoundMatchRequestSchema = z.strictObject({
+	description: z.string().trim().min(1).max(SOUND_DESCRIBE_MAX_CHARS),
+	/** Other readings to weigh it against ("a door slam" vs "a car door closing"). */
+	alternatives: z
+		.array(z.string().trim().min(1).max(SOUND_DESCRIBE_MAX_CHARS))
+		.max(SOUND_MATCH_MAX_ALTERNATIVES)
+		.optional(),
+});
+export type SoundMatchRequest = z.infer<typeof SoundMatchRequestSchema>;
+
+export const SoundMatchResponseSchema = z.object({
+	soundId: SoundRefSchema,
+	model: z.string(),
+	/** The description first, then the alternatives, each with its calibrated match. */
+	matches: z.array(
+		SoundMatchSchema.extend({
+			text: z.string(),
+			/** Softmax of the z values over the texts given (0…1, they sum to 1): which reading wins. */
+			share: fin().min(0).max(1),
+		}),
+	),
+	/** The sound had no embedding yet: it was computed for this answer (and cached). */
+	computed: z.boolean(),
+});
+export type SoundMatchResponse = z.infer<typeof SoundMatchResponseSchema>;

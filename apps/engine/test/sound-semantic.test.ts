@@ -11,6 +11,7 @@ import {
 	AGENT_NAME_HEADER,
 	type EngineJob,
 	SoundEmbedResultSchema,
+	SoundMatchResponseSchema,
 	SoundMomentResultSchema,
 	SoundSearchResponseSchema,
 	SoundSemanticModelsResponseSchema,
@@ -197,6 +198,8 @@ describe('Describe-it search without the model', { timeout: 300_000 }, () => {
 		const id = d.results[0]!.sound.id;
 		const m = await json(app, 'POST', `/api/sounds/${id}/moments`, { description: 'a high tone' });
 		expect(m).toMatchObject({ status: 409, body: { code: 'MODEL_NOT_INSTALLED' } });
+		const mt = await json(app, 'POST', `/api/sounds/${id}/match`, { description: 'a high tone' });
+		expect(mt).toMatchObject({ status: 409, body: { code: 'MODEL_NOT_INSTALLED' } });
 		const caps = (await json(app, 'GET', '/api/capabilities')).body as {
 			features: { sound: { describe: { status: string } } };
 		};
@@ -244,6 +247,28 @@ describe('Describe-it search with the model', { timeout: 300_000 }, () => {
 			features: { sound: { describe: { status: string } } };
 		};
 		expect(caps.features.sound.describe.status).toBe('ready');
+	});
+
+	it('matches one sound against a description and its alternatives', async () => {
+		const s = await search(app, 'q=SFX_0001&license=any');
+		const id = s.results[0]!.sound.id;
+		const r = await json(app, 'POST', `/api/sounds/${id}/match`, {
+			description: 'high',
+			alternatives: ['low'],
+		});
+		expect(r.status, JSON.stringify(r.body)).toBe(200);
+		const m = SoundMatchResponseSchema.parse(r.body);
+		expect(m.matches.map((x) => x.text)).toEqual(['high', 'low']);
+		expect(m.matches[0]!.share).toBeGreaterThan(m.matches[1]!.share);
+		expect(m.matches[0]!.share + m.matches[1]!.share).toBeCloseTo(1, 3);
+		expect(m.matches[0]!.z).toBeGreaterThan(m.matches[1]!.z);
+		const bad = (body: unknown, sid = id) => json(app, 'POST', `/api/sounds/${sid}/match`, body);
+		expect((await bad({ description: '' })).status).toBe(400);
+		expect((await bad({ description: 'x', alternatives: Array.from({ length: 9 }, () => 'y') })).status).toBe(
+			400,
+		);
+		expect((await bad({ description: 'x', extra: true })).status).toBe(400);
+		expect((await bad({ description: 'x' }, 'snd_0123456789abcdef')).status).toBe(404);
 	});
 
 	it('refuses hostile describe and moment requests with typed errors', async () => {
