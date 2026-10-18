@@ -24,6 +24,34 @@ export const LIBRARY_LIMITS = {
 	hash: 256,
 } as const;
 
+/** Most takes the library keeps of one recording (spec 12 P6-E9). */
+export const SOUND_TAKES_MAX = 64;
+/** A library sound id: `snd_` + 16 hex digits (a file's content) — a whole file. */
+export const SOUND_FILE_ID_RE = /^snd_[0-9a-f]{16}$/;
+/**
+ * A library sound reference: a file's id, or `snd_<16 hex>~t<n>` for its take n (1…64, P6-E9). Commands, cue sound
+ * lists, alternatives and palettes accept both; a take is an ordinary library sound wherever a sound id goes.
+ */
+export const SOUND_REF_RE = /^snd_[0-9a-f]{16}(?:~t(?:[1-9]|[1-5][0-9]|6[0-4]))?$/;
+const TAKE_REF_RE = /^(snd_[0-9a-f]{16})~t([1-9]|[1-5][0-9]|6[0-4])$/;
+
+/** The recording and take number of a take id, or null for anything else (a file id included). Never throws. */
+export function parseTakeId(id: unknown): { parentId: string; index: number } | null {
+	if (typeof id !== 'string') return null;
+	const m = TAKE_REF_RE.exec(id);
+	return m ? { parentId: m[1]!, index: Number(m[2]) } : null;
+}
+
+/** The id of take `index` (1…64) of a recording. */
+export function takeIdOf(parentId: string, index: number): string {
+	return `${parentId}~t${index}`;
+}
+
+/** The recording a sound id belongs to: the parent of a take, else the id itself. */
+export function recordingIdOf(id: string): string {
+	return parseTakeId(id)?.parentId ?? id;
+}
+
 /** A sound type id as stored: known ids and ids of newer builds (lower-case words), so they survive a round trip. */
 export const StoredSoundTypeSchema = z
 	.string()
@@ -90,6 +118,17 @@ export const LibraryDescriptorsSchema = z.looseObject({
 });
 export type LibraryDescriptors = DeepStrip<z.infer<typeof LibraryDescriptorsSchema>>;
 
+/** Where a take lies in its recording (`LibraryProvenance.take`). */
+export const LibraryTakeSchema = z
+	.looseObject({
+		soundId: z.string().regex(SOUND_FILE_ID_RE),
+		index: z.number().int().min(1).max(SOUND_TAKES_MAX),
+		sourceStartSec: sec(),
+		sourceEndSec: sec(),
+	})
+	.refine((t) => t.sourceEndSec > t.sourceStartSec, 'sourceEndSec must be after sourceStartSec');
+export type LibraryTake = DeepStrip<z.infer<typeof LibraryTakeSchema>>;
+
 export const LibraryProvenanceSchema = z.looseObject({
 	/** Library sound id (`snd_<sha256-16>`). */
 	soundId: z.string().min(1).max(LIBRARY_LIMITS.id),
@@ -119,6 +158,12 @@ export const LibraryProvenanceSchema = z.looseObject({
 	trailSilenceSec: z.number().min(0).max(1).optional(),
 	/** Hash of the library snapshot the sound was registered from. */
 	snapshotHash: z.string().max(LIBRARY_LIMITS.hash).optional(),
+	/**
+	 * The sound is a take of a recording (P6-E9): the recording's sound id, the take's number and where it lies in the
+	 * recording (seconds, sample-exact at the analysis rate). `soundId` is then the take's id (`<soundId>~t<index>`);
+	 * licence and credit are the recording's. Absent for whole files.
+	 */
+	take: LibraryTakeSchema.optional(),
 });
 export type LibraryProvenance = DeepStrip<z.infer<typeof LibraryProvenanceSchema>>;
 
@@ -191,6 +236,8 @@ function readProvenanceFields(raw: Record<string, unknown>): LibraryProvenance |
 	if (trail.success && trail.data !== undefined) out.trailSilenceSec = trail.data;
 	const hash = str(raw.snapshotHash, LIBRARY_LIMITS.hash);
 	if (hash !== undefined) out.snapshotHash = hash;
+	const take = LibraryTakeSchema.safeParse(raw.take);
+	if (take.success) out.take = take.data;
 	const r = LibraryProvenanceSchema.safeParse(out);
 	return r.success ? (r.data as LibraryProvenance) : null;
 }

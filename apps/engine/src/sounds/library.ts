@@ -10,7 +10,13 @@
 // rebuild (`needsIndex`); entries that no longer validate are dropped and also ask for a rebuild. Never throws on load.
 import { createHash } from 'node:crypto';
 import { rename } from 'node:fs/promises';
-import { type SoundEntry, SoundEntrySchema, type SoundManifestPack, type SoundRoot } from '@jasper/api';
+import {
+	type SoundEntry,
+	SoundEntrySchema,
+	type SoundManifestPack,
+	type SoundRoot,
+	soundEntryById,
+} from '@jasper/api';
 import { atomicWriteJson, exists, readJsonOrNull } from '../tools/fs.ts';
 
 export const LIBRARY_FORMAT = 'jasper-sound-library';
@@ -29,16 +35,29 @@ export type LibrarySnapshot = {
 };
 
 /**
- * Hash of what a proposal or a registration depends on: every sound's id, fingerprint, licence, attribution, types
- * and analysis version, in id order (16 hex digits of sha256).
+ * Hash of what a proposal or a registration depends on: every sound's id, fingerprint, licence, attribution, types,
+ * analysis version and title, its materials and its takes (number, range, flags: a take id names that range; P6-E9),
+ * in id order (16 hex digits of sha256). Entries without materials or takes hash as before them.
  */
 export function snapshotHashOf(sounds: Record<string, SoundEntry>): string {
 	const h = createHash('sha256');
 	for (const id of Object.keys(sounds).sort()) {
 		const s = sounds[id]!;
-		h.update(
-			JSON.stringify([id, s.fingerprint, s.license, s.attribution, s.types, s.analysisVersion, s.title]),
-		);
+		const base: unknown[] = [
+			id,
+			s.fingerprint,
+			s.license,
+			s.attribution,
+			s.types,
+			s.analysisVersion,
+			s.title,
+		];
+		if (s.materials !== undefined || s.takes !== undefined)
+			base.push({
+				materials: s.materials ?? null,
+				takes: s.takes?.map((t) => [t.index, t.startSec, t.endSec, t.flags]) ?? null,
+			});
+		h.update(JSON.stringify(base));
 		h.update('\n');
 	}
 	return h.digest('hex').slice(0, 16);
@@ -163,9 +182,10 @@ export class SoundLibrary {
 			.map((id) => s.sounds[id]!);
 	}
 
+	/** A recording by its id, or a take entry by a take id (`<recording>~t<n>`, P6-E9); null when unknown. */
 	async get(id: string): Promise<SoundEntry | null> {
 		const s = await this.snapshot();
-		return Object.hasOwn(s.sounds, id) ? s.sounds[id]! : null;
+		return soundEntryById(id, (k) => (Object.hasOwn(s.sounds, k) ? s.sounds[k]! : null));
 	}
 
 	private serialize<T>(fn: () => Promise<T>): Promise<T> {

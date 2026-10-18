@@ -127,18 +127,21 @@ export type AudioStreamInfo = {
 	channels?: number | null;
 };
 
-/** The managed file name of a padded sound: the library file's stem, `.wav`. */
-export function paddedFileName(libraryFile: string): string {
+/** The managed file name of a padded sound: the library file's stem (with ` take <n>` for a take), `.wav`. */
+export function paddedFileName(libraryFile: string, takeIndex?: number): string {
 	const stem = basename(libraryFile, extname(libraryFile))
 		.replace(/[^\p{L}\p{N} ._-]/gu, '_')
 		.slice(0, 120);
-	return `${stem || 'sound'}.wav`;
+	const take =
+		takeIndex !== undefined && Number.isInteger(takeIndex) && takeIndex > 0 ? ` take ${takeIndex}` : '';
+	return `${stem || 'sound'}${take}.wav`;
 }
 
 /**
  * Writes `<tmpDir>/<unique>.wav`: `samples` (≥ 0) of silence, then the first audio stream of `path` at its own rate
- * and channel count, then `trailSamples` (≥ 0, default 0) of silence. Returns the temp file (the caller registers or
- * deletes it). `codec` is the source's audio codec.
+ * and channel count — only samples [`range.startSample`, `range.endSample`) of it when a range is given (a take,
+ * P6-E9: cut from the full decode, so sample-exact for lossy sources too) — then `trailSamples` (≥ 0, default 0) of
+ * silence. Returns the temp file (the caller registers or deletes it). `codec` is the source's audio codec.
  */
 export async function writePaddedSound(
 	ff: Ffmpeg,
@@ -151,6 +154,8 @@ export async function writePaddedSound(
 		outCodec?: string;
 		/** The sound's length (seconds): a long one gets more time to be written. */
 		durationSec?: number;
+		/** Only these samples of the source, at its own rate (a take). */
+		range?: { startSample: number; endSample: number };
 		tmpDir: string;
 		signal?: AbortSignal;
 	},
@@ -160,7 +165,25 @@ export async function writePaddedSound(
 	const trail = opts.trailSamples ?? 0;
 	if (!Number.isSafeInteger(trail) || trail < 0 || trail > 1_000_000)
 		throw new JobError('E_INVALID_PARAM', 'Bad trailing-silence length');
+	const r = opts.range;
+	if (
+		r &&
+		(!Number.isSafeInteger(r.startSample) ||
+			!Number.isSafeInteger(r.endSample) ||
+			r.startSample < 0 ||
+			r.endSample <= r.startSample)
+	)
+		throw new JobError('E_INVALID_PARAM', 'Bad sample range');
 	const filters = [
+		// timestamps renumbered from the first decoded sample first: the range counts samples of the full decode (what
+		// the analysis measured), whatever start time the container gives the stream (an MP3's encoder delay)
+		...(r
+			? [
+					'asetpts=N/SR/TB',
+					`atrim=start_sample=${r.startSample}:end_sample=${r.endSample}`,
+					'asetpts=PTS-STARTPTS',
+				]
+			: []),
 		...(opts.samples > 0 ? [`adelay=delays=${opts.samples}S:all=1`] : []),
 		...(trail > 0 ? [`apad=pad_len=${trail}`] : []),
 	];

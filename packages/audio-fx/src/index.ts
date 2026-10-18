@@ -15,6 +15,7 @@ export * from './analysis/masking.ts';
 export * from './analysis/remix.ts';
 export * from './analysis/sound-descriptors.ts';
 export * from './analysis/sound-judge.ts';
+export * from './analysis/takes.ts';
 export * from './chain/effect-chain.ts';
 export * from './core/biquad.ts';
 export * from './core/effect.ts';

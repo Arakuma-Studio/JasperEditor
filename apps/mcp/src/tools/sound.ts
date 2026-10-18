@@ -40,6 +40,8 @@ import {
 	type Sequence,
 	SOUND_FAMILIES,
 	SOUND_LABELS,
+	SOUND_MATERIALS,
+	SOUND_REF_RE,
 	type SoundAlign,
 	type SoundTrackChoice,
 	sequenceTimecode,
@@ -47,6 +49,7 @@ import {
 	soundText,
 	soundTimingOf,
 	TimeInputSchema,
+	takeIdOf,
 	trackLabel,
 	VISUAL_KINDS,
 } from '@jasper/project';
@@ -90,7 +93,8 @@ export const SOUND_CUES_GUIDE = `Sound cues (spec 12 Phase 2): a cue is a moment
 
 export const SOUND_GUIDE = `Sound library (sound effects; spec 12). You cannot hear audio. Judge sounds only by their measured descriptors and by pictures, and never claim that something "sounds good", "sounds right" or "fits": say what the numbers and pictures show and ask the user to listen.
 - Where sounds come from: the bundled starter kit (real CC0 recordings by Kenney), installed packs (list_sound_packs, install_sound_pack), the user's own folders (add_sound_folder; their licence is the user's declaration) and Jasper Synth (procedural, generated here). Synth sounds are a deterministic fallback of lower quality: they always rank after real recordings; prefer a recording whenever one fits.
-- Find: search_sounds {q, types, visualKind, length/tone/attack/weight/texture, license, sources, similarTo, limit ≤ 24} → rows with soundId, types, durationSec, peakSec, riseMs, decayMs, centroidHz, below150Share, flatness, pitchMidi, the judge (ok, score, reasons such as boomy, hissy, soft-attack, non-decaying, clipped, multi-hit) and the licence. Words in titles rank first, then type synonyms ("swoosh" finds whooshes). Read the numbers: a hit should peak within a few ms (small peakSec and riseMs) and decay; a riser builds to its end; "boomy" means most energy under 150 Hz, "hissy" above 6 kHz.
+- Find: search_sounds {q, types, visualKind, length/tone/attack/weight/texture, material, license, sources, similarTo, takes, limit ≤ 24} → rows with soundId, types, durationSec, peakSec, riseMs, decayMs, centroidHz, below150Share, flatness, pitchMidi, materials, the judge (ok, score, reasons such as boomy, hissy, soft-attack, non-decaying, clipped, multi-hit; and the sourcing flags lowpassed — a lossy band-limit cliff under 12 kHz on a sound that needs air —, noisy-floor — the floor between its events over −55 dBFS — and dc-offset) and the licence.
+- Takes: a recording of several hits (a typing run, a ticking clock, a pack file of ten clicks) is split into takes — one key press (its down- and up-stroke joined) or one tick each, never across digital silence, each with its own descriptors and judge and never multi-hit. Its search row says takes: <n>; search_sounds {takes: true} returns the clean takes as rows of their own (soundId snd_<16 hex>~t<n>); get_sound on the recording lists them all with their range, headDb / tailDb and flags (a head-cut or tail-cut take is recorded but never offered). A take id works wherever a sound id does (get_sound, view_sounds, import_sounds, insert_sound, place_sound layers and alternatives): it is imported as a sample-exact copy of its range with the recording's licence and credit. For repeated cues of one action (typing, ticking, footsteps) use several takes of ONE recording: plan_sound_design and sound {type} picks rotate over a recording's takes ("vary the take, not the pitch"), never the same take twice in a row. Words in titles rank first, then type synonyms ("swoosh" finds whooshes). Read the numbers: a hit should peak within a few ms (small peakSec and riseMs) and decay; a riser builds to its end; "boomy" means most energy under 150 Hz, "hissy" above 6 kHz.
 - Look: contactSheet: true on search_sounds, or view_sounds {soundIds}, gives ONE PNG grid: each cell is numbered, prints the id, title, length, peak ms, decay ms, centroid and judge, and draws the waveform (cyan) over a 64-band spectrogram (low frequencies at the bottom) with the peak as a red line and the end of the decay (−20 dB) as a dashed yellow one; the cells JSON repeats the numbers. get_sound {soundId} gives one sound with every descriptor and a larger picture with a time axis and the onset (green dashed).
 - Use: insert_sound {projectId, soundId, at} places a sound so that its aligned point lands exactly on \`at\` (a frame, {seconds}, a timecode or "playhead"): hits, booms, lands and impacts align their PEAK; risers and reverses align their END (they lead into the moment); UI blips their start (align "auto" picks this from the sound's type). Placement is sample-exact (errorFlicks 0): sounds whose head is not silent are registered with 50 ms of lead silence (the media's provenance says leadSilenceSec), so the sub-frame rest is always cut from silence; and the whole sound always plays: sounds that do not end in quiet get 50 ms of silence after them (trailSilenceSec) and every clip is rounded up to the frame that holds the end of its sound. It goes on a free unmuted "SFX…" audio track over its span, else a new "SFX n" track (never on dialogue or music tracks by itself, never over audio); one clip, one undo step that registers the sound, adds it to the project's "Sound Effects" bin, places the clip and tags it Essential Sound ▸ SFX. import_sounds {projectId, soundIds} only adds sounds to the bin (one undo step; sounds already in the project are reused); place them yourself with add_clip. Sounds up to 1 h (beds too) are registered as sample-exact PCM copies; a longer one, or one whose copy would be too large or not fit the free disk, is used as it is and the result says so (inexact: placement exact to a frame). A project's older copy of a sound (registered by an earlier build) is replaced by the new copy in place on the next insert or import — the same media, its clips moved onto it sample for sample (replacedOlderCopy) — so a project never holds two copies of one sound.
 - Judgement: sync by structure (cuts, moves, lands, text and motion events you can see in the timeline and frames), never by ear; check placement with get_timeline and render_frame. Less is more: at most one hero sound (a hit or boom that carries the moment) per ~2 s, never two heroes within 0.5 s, and no heroes under spoken words. Keep one family of sounds per type in a piece (search_sounds similarTo). When you suggest sounds, give a reason and 1–3 alternates (soundIds) per moment. Propose, don't apply: plan_sound_design and place_sound (mode "propose", its default) store a proposal the user reviews and applies in the editor; insert sounds directly (insert_sound, place_sound mode "apply") only when the user asked you to place them. Then wait for the review (wait_for_proposal) and read the notes.
@@ -100,7 +104,9 @@ export const SOUND_GUIDE = `Sound library (sound effects; spec 12). You cannot h
 - Library: sound_library_status shows the sources, counts per type, source and licence, the folders and whether an index job runs. rescan_sound_library re-indexes (a job; wait: true waits). add_sound_folder / remove_sound_folder change the user's folders and need the user's approval in an open editor window (E_APPROVAL_DENIED: they said no or no window was open; do not retry without asking).
 ${SOUND_CUES_GUIDE}`;
 
-export const SoundIdArg = z.string().regex(/^snd_[0-9a-f]{16}$/, 'a sound id: snd_ + 16 hex digits');
+export const SoundIdArg = z
+	.string()
+	.regex(SOUND_REF_RE, 'a sound id: snd_ + 16 hex digits, or a take of one: snd_<16 hex>~t<n>');
 const MAX_SHEET = 24;
 const CELL_WIDTH = 360;
 const CELL_PLOT_HEIGHT = 120;
@@ -151,13 +157,28 @@ export async function soundCall<T>(ctx: ToolContext, fn: Parameters<ToolContext[
 const r3 = (x: number) => Math.round(x * 1000) / 1000;
 const r1 = (x: number) => Math.round(x * 10) / 10;
 
-/** The search row an agent reads: identity, the key descriptors, the judge and the licence. */
-function soundRow(e: SoundEntry) {
+/** The search row an agent reads: identity, the key descriptors, the judge and the licence (and its takes, P6-E9). */
+function soundRow(e: SoundEntry, takeCount?: number) {
 	const d = e.descriptors;
 	return {
 		soundId: e.id,
 		title: e.title,
 		types: e.types,
+		// a take of a multi-hit recording: which one, and where it lies in it
+		...(e.take
+			? {
+					take: {
+						recordingId: e.take.soundId,
+						index: e.take.index,
+						startSec: r3(e.take.startSec),
+						endSec: r3(e.take.endSec),
+						strokes: e.take.strokes,
+					},
+				}
+			: {}),
+		// a multi-hit recording: how many clean takes it offers (search with takes: true, or get_sound, lists them)
+		...(takeCount ? { takes: takeCount } : {}),
+		...(e.materials?.length ? { materials: e.materials } : {}),
 		durationSec: r3(e.format.durationSec),
 		peakSec: r3(d.peakSec),
 		riseMs: r1(d.riseMs),
@@ -294,6 +315,18 @@ const SearchArgs = {
 		.regex(/^[a-z0-9][a-z0-9._-]{0,63}$/)
 		.optional()
 		.describe('Only the sounds of this installed pack (ids from list_sound_packs)'),
+	material: z
+		.enum(SOUND_MATERIALS)
+		.optional()
+		.describe(
+			'Only sounds whose title, tags or folder name this material (wood, glass, metal, plastic, paper, cloth, stone, water, air, electronic, rubber, ceramic); words, not audio: an unnamed sound has none',
+		),
+	takes: z
+		.boolean()
+		.optional()
+		.describe(
+			'Also return the clean takes of multi-hit recordings (typing runs, clocks, packs of clicks) as rows of their own (soundId snd_…~t<n>), ranked with the other sounds: one key press per row. Default false: a recording row says how many takes it has',
+		),
 	similarTo: SoundIdArg.optional().describe('Rank by similarity to this sound (left out of the results)'),
 	limit: z.number().int().min(1).max(MAX_SHEET).optional().describe(`Results (1…${MAX_SHEET}, default 12)`),
 	offset: z.number().int().min(0).max(100_000).optional().describe('Skip this many results (paging)'),
@@ -494,7 +527,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 		'search_sounds',
 		{
 			title: 'Search sounds',
-			description: `Searches the sound library (ranked: real recordings before Jasper Synth, title words before type synonyms, then type fit, length fit, the judge and licence preference). Returns rows with soundId, title, types, durationSec, peakSec, riseMs, decayMs (null when it does not decay), centroidHz, below150Share, flatness, pitchMidi, judge {ok, score, reasons}, license, author, credit (the line a CC-BY licence asks for), creditRequired, shareAlike (CC BY-SA: the video must be shared alike) and source.type, plus facets (counts per type, family, licence class and source) and total. Licences default to commercial-safe without ShareAlike (license "commercial-safe-sa" includes CC BY-SA, "any" every licence). contactSheet: true also returns ONE PNG with a numbered cell per result (waveform over spectrogram, red peak line, dashed decay end, id and numbers printed) and its cells JSON.`,
+			description: `Searches the sound library (ranked: real recordings before Jasper Synth, title words before type synonyms, then type fit, length fit, the judge and licence preference). Returns rows with soundId, title, types, durationSec, peakSec, riseMs, decayMs (null when it does not decay), centroidHz, below150Share, flatness, pitchMidi, judge {ok, score, reasons}, license, author, credit (the line a CC-BY licence asks for), creditRequired, shareAlike (CC BY-SA: the video must be shared alike), source.type, materials (named by its words) and, for a multi-hit recording, takes (how many clean single takes it offers), plus facets (counts per type, family, licence class, source and material) and total. takes: true also returns those takes as rows (soundId snd_…~t<n>, take {recordingId, index, startSec, endSec, strokes}): one key press or tick each, judged on its own; use them for repeated cues — the rotation varies the take, not the pitch. material filters by material. Licences default to commercial-safe without ShareAlike (license "commercial-safe-sa" includes CC BY-SA, "any" every licence). contactSheet: true also returns ONE PNG with a numbered cell per result (waveform over spectrogram, red peak line, dashed decay end, id and numbers printed) and its cells JSON.`,
 			input: {
 				...SearchArgs,
 				contactSheet: z.boolean().optional().describe('Also return a PNG contact sheet of the results'),
@@ -523,6 +556,8 @@ export function registerSoundTools(ctx: ToolContext): void {
 				license: a.license ?? 'commercial-safe',
 				...(a.sources ? { sources: a.sources } : {}),
 				...(a.packId ? { packId: a.packId } : {}),
+				...(a.material ? { material: a.material } : {}),
+				...(a.takes ? { takes: true } : {}),
 				...(a.similarTo ? { similarTo: a.similarTo } : {}),
 				limit: a.limit ?? 12,
 				...(a.offset ? { offset: a.offset } : {}),
@@ -536,7 +571,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 				...(res.indexing ? { indexing: true } : {}),
 				results: res.results.map((r, i) => ({
 					rank: res.offset + i + 1,
-					...soundRow(r.sound),
+					...soundRow(r.sound, r.takeCount),
 					score: r3(r.score),
 				})),
 				facets: res.facets,
@@ -558,7 +593,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 		{
 			title: 'Get sound',
 			description:
-				'One library sound in full: title, types, tags, source, licence, author, credit line, format and every descriptor (peakSec, onsetSec, riseMs, decayMs, tailSec, centroidHz, rolloff85Hz, below150Share, above6kShare, flatness, octaveBandsDb 125 Hz…8 kHz, pitchMidi, onsetCount, integrated / max momentary LUFS, true peak, stereoWidth, headQuietSec, loopable), the judge, plus a PNG: waveform over spectrogram with a time axis (ms), frequency labels, the onset (green dashed), peak (red) and decay end (yellow dashed).',
+				'One library sound in full: title, types, tags, materials, source, licence, author, credit line, format and every descriptor (peakSec, onsetSec, riseMs, decayMs, tailSec, centroidHz, rolloff85Hz, rolloff95Hz, cutoffHz (a lossy band-limit cliff), below150Share, above6kShare, flatness, octaveBandsDb 125 Hz…8 kHz, pitchMidi, onsetCount, integrated / max momentary LUFS, true peak, stereoWidth, headQuietSec, loopable, floorDb (the noise floor between events), dcDb), the judge, plus a PNG: waveform over spectrogram with a time axis (ms), frequency labels, the onset (green dashed), peak (red) and decay end (yellow dashed). A multi-hit recording also lists its takes (takeId, where each lies, strokes, headDb / tailDb, flags head-cut / tail-cut — a cut take is never offered —, its peak and judge); a take id (snd_…~t<n>) gives that take alone (take {soundId of the recording, index, startSec, endSec}).',
 			input: {
 				soundId: SoundIdArg.describe('Sound id from search_sounds'),
 				width: z
@@ -574,8 +609,30 @@ export function registerSoundTools(ctx: ToolContext): void {
 		async ({ soundId, width }) => {
 			const e = await soundCall<SoundEntry>(ctx, (c) => c.getSound(soundId));
 			const visual = await soundCall<SoundVisual>(ctx, (c) => c.getSoundVisual(soundId)).catch(() => null);
+			const { takes, ...rest } = e;
 			const body = {
-				...e,
+				...rest,
+				// the takes of a multi-hit recording, compact (get_sound on a takeId gives one in full)
+				...(takes
+					? {
+							takes: takes.map((t) => ({
+								takeId: takeIdOf(e.id, t.index),
+								index: t.index,
+								startSec: t.startSec,
+								endSec: t.endSec,
+								durationSec: r3(t.endSec - t.startSec),
+								strokes: t.strokes,
+								headDb: t.headDb,
+								tailDb: t.tailDb,
+								flags: t.flags,
+								offered: t.flags.length === 0,
+								peakSec: t.descriptors.peakSec,
+								judge: t.judge
+									? { ok: t.judge.ok, score: r3(t.judge.score), reasons: t.judge.reasons }
+									: null,
+							})),
+						}
+					: {}),
 				defaultAlign: defaultAlignForTypes(e.types),
 				creditRequired: requiresAttribution(e.license),
 				shareAlike: isShareAlike(e.license),
@@ -597,7 +654,11 @@ export function registerSoundTools(ctx: ToolContext): void {
 			title: 'View sounds (contact sheet)',
 			description: `ONE PNG contact sheet of up to ${MAX_SHEET} library sounds, in the order given: numbered cells, each the waveform (cyan, normalised) over a 64-band log spectrogram (low at the bottom) with the peak as a red line and the decay end (−20 dB) as a dashed yellow line, the id, title, length, peak ms, decay ms, centroid and judge printed above. Plus cells JSON (cell, row, column, soundId, peakMs, decayMs, centroidHz, judge reasons). Use it to compare candidates: you cannot hear them.`,
 			input: {
-				soundIds: z.array(SoundIdArg).min(1).max(MAX_SHEET).describe('Sound ids from search_sounds'),
+				soundIds: z
+					.array(SoundIdArg)
+					.min(1)
+					.max(MAX_SHEET)
+					.describe('Sound ids from search_sounds (take ids snd_…~t<n> too: a cell shows the take alone)'),
 				columns: z.number().int().min(1).max(6).optional().describe('Cells per row (default 3)'),
 			},
 			annotations: READ_ONLY,
@@ -619,7 +680,13 @@ export function registerSoundTools(ctx: ToolContext): void {
 			description: `Adds library sounds to a project as media in its "${SOUND_EFFECTS_BIN}" bin (created when missing), with their provenance (licence, author, credit, descriptors), in ONE transaction (one undo step). Starter-kit, pack and synth files are copied into the project's managed media; folder sounds are referenced in place. Sounds whose head is not silent are copied with 50 ms of lead silence in front (sample-exact placement), sounds that do not end in quiet with 50 ms of silence after them (so a placed clip holds the whole sound); the provenance's descriptors, leadSilenceSec and trailSilenceSec describe the copy. Sounds the project already has are reused (reused: true), never duplicated; an older copy of a sound (registered before a registration rule changed) is replaced by the new copy in place — same mediaId, its clips moved onto it sample for sample (replacedOlderCopy: true). Sounds up to 1 h are copied sample-exact; longer ones, or copies over the size cap or without free disk space, are used as they are (inexact {reason, message}). All or nothing: an unknown or changed sound fails the call and imports nothing. Returns one mediaId per sound; place them with add_clip, or use insert_sound to import and place peak-aligned in one go.`,
 			input: {
 				projectId: ProjectIdArg,
-				soundIds: z.array(SoundIdArg).min(1).max(50).describe('Sound ids from search_sounds (up to 50)'),
+				soundIds: z
+					.array(SoundIdArg)
+					.min(1)
+					.max(50)
+					.describe(
+						'Sound ids from search_sounds (up to 50); a take id imports a copy of that take alone (sample-exact, the recording’s licence and credit)',
+					),
 			},
 			annotations: EDIT,
 		},

@@ -7,6 +7,7 @@ export * from './delivery.ts';
 export * from './insert.ts';
 export * from './level.ts';
 export * from './license.ts';
+export * from './materials.ts';
 export * from './messages.ts';
 export * from './mix.ts';
 export * from './pitch.ts';

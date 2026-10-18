@@ -17,6 +17,7 @@ import {
 	type Rational,
 	resolveSoundAlign,
 	type Sequence,
+	SOUND_REF_RE,
 	type SoundAlign,
 	type SoundAlignRequest,
 	type SoundInsertPlacement,
@@ -41,7 +42,7 @@ const SOUND_ID_TYPE_PREFIX = 'application/x-jasper-sound-id.';
 
 const SoundDragSchema = z.object({
 	type: z.literal('jasper/sound'),
-	soundId: z.string().regex(/^snd_[0-9a-f]{16}$/),
+	soundId: z.string().regex(SOUND_REF_RE),
 });
 export type SoundDragPayload = z.infer<typeof SoundDragSchema>;
 

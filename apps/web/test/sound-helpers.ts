@@ -1,10 +1,13 @@
 // Shared fixtures of the Sound Library tests: library entries, a registered-sound answer, a fake engine client.
-import type {
-	RegisterSoundResponse,
-	SoundEntry,
-	SoundPackInfo,
-	SoundSearchRequest,
-	SoundSearchResponse,
+import {
+	offeredTakes,
+	type RegisterSoundResponse,
+	type SoundEntry,
+	type SoundPackInfo,
+	type SoundSearchRequest,
+	type SoundSearchResponse,
+	soundEntryById,
+	withOfferedTakes,
 } from '@jasper/api';
 import { rankSounds } from '@jasper/project';
 
@@ -161,7 +164,13 @@ export function fakeSoundEngine(entries: SoundEntry[], opts: { packs?: SoundPack
 			listSoundPacks: async () => ({ packs: opts.packs ?? [], catalogErrors: [] }),
 			searchSounds: async (req: SoundSearchRequest): Promise<SoundSearchResponse> => {
 				calls.search.push(req);
-				const ranked = rankSounds(entries, {
+				// takes (P6-E9): rows of their own with `takes`, else counted on their recording; `material` filters
+				const pool = (req.takes ? withOfferedTakes(entries) : entries).filter(
+					(e) => !req.material || (e.materials ?? []).includes(req.material),
+				);
+				const materials: Record<string, number> = {};
+				for (const e of entries) for (const m of e.materials ?? []) materials[m] = (materials[m] ?? 0) + 1;
+				const ranked = rankSounds(pool, {
 					...(req.q ? { query: req.q } : {}),
 					...(req.types ? { types: req.types } : {}),
 					license: req.license ?? 'commercial-safe',
@@ -174,15 +183,21 @@ export function fakeSoundEngine(entries: SoundEntry[], opts: { packs?: SoundPack
 					librarySize: entries.length,
 					total: ranked.length,
 					offset: req.offset ?? 0,
-					results: ranked
-						.slice(req.offset ?? 0, (req.offset ?? 0) + (req.limit ?? 50))
-						.map((r) => ({ sound: r.entry, score: r.score, parts: r.parts as never })),
-					facets: { types, families: {}, licenses: {}, sources: {} },
+					results: ranked.slice(req.offset ?? 0, (req.offset ?? 0) + (req.limit ?? 50)).map((r) => {
+						const { takes, ...sound } = r.entry;
+						return {
+							sound: takes ? sound : r.entry,
+							score: r.score,
+							parts: r.parts as never,
+							...(takes ? { takeCount: offeredTakes(r.entry).length } : {}),
+						};
+					}),
+					facets: { types, families: {}, licenses: {}, sources: {}, materials },
 					indexing: false,
 				};
 			},
 			getSound: async (id: string) => {
-				const e = entries.find((x) => x.id === id);
+				const e = soundEntryById(id, (k) => entries.find((x) => x.id === k));
 				if (!e) throw new Error('not found');
 				return e;
 			},
@@ -192,7 +207,7 @@ export function fakeSoundEngine(entries: SoundEntry[], opts: { packs?: SoundPack
 			soundAudioUrl: (id: string) => `/api/sounds/${id}/audio`,
 			registerSound: async (id: string) => {
 				calls.register.push(id);
-				const e = entries.find((x) => x.id === id);
+				const e = soundEntryById(id, (k) => entries.find((x) => x.id === k));
 				if (!e) throw new Error('not found');
 				return registered(e);
 			},

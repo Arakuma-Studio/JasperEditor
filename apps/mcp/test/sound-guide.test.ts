@@ -27,6 +27,15 @@ describe('SOUND_GUIDE (spec 12 §2.10)', () => {
 			'a reason and 1–3 alternates',
 			'commercial-safe',
 			'credit',
+			// P6-E9: takes and the sourcing flags
+			'takes: true',
+			'~t<n>',
+			'never offered',
+			'vary the take, not the pitch',
+			'lowpassed',
+			'noisy-floor',
+			'dc-offset',
+			'material',
 		])
 			expect(g, phrase).toContain(phrase);
 	});

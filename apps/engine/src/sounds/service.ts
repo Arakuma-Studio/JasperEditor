@@ -1,8 +1,8 @@
 // The engine's sound library service (spec 12 §2.1, §2.8; wp-note "WP1.2"): the index, user folders, the bundled
 // starter kit, Jasper Synth, search with facets, files and visual data of a sound, and registering a sound into a
 // project. Routes: routes/sounds.ts.
-import { realpath, rm, stat } from 'node:fs/promises';
-import { join, sep } from 'node:path';
+import { mkdir, realpath, rename, rm, stat } from 'node:fs/promises';
+import { dirname, join, sep } from 'node:path';
 import {
 	type EngineJob,
 	type JobKind,
@@ -22,6 +22,8 @@ import {
 	type SoundSearchResponse,
 	type SoundSourceType,
 	type SoundVisual,
+	soundEntryById,
+	withOfferedTakes,
 } from '@jasper/api';
 import {
 	LIBRARY_PAD_MAX_SECONDS,
@@ -29,6 +31,7 @@ import {
 	LibraryProvenanceSchema,
 	libraryLeadSilenceSamples,
 	libraryTrailSilenceSamples,
+	SOUND_REF_RE,
 	shiftLibraryDescriptors,
 } from '@jasper/project';
 import { isLoopbackHost } from '../context.ts';
@@ -40,7 +43,7 @@ import { HttpError } from '../tools/reply.ts';
 import type { CoreServices } from '../tools/services.ts';
 import { resolveSoundWorker, SoundAnalyzer } from './analysis.ts';
 import { decodeSound } from './decode.ts';
-import { SoundIndexer } from './index-job.ts';
+import { ANALYSIS_VERSION, SoundIndexer } from './index-job.ts';
 import { type LibrarySnapshot, SoundLibrary } from './library.ts';
 import { loadPackCatalog, type PackCatalog, SOUND_CATALOG_ENV, SoundPackStore } from './packs.ts';
 import {
@@ -55,7 +58,13 @@ import { SoundRootStore, type SoundRootsPlan } from './roots.ts';
 import { searchSoundEntries } from './search.ts';
 import { isSoundFileName, type LoadedManifest, loadManifest, starterDir } from './starter.ts';
 import { ensureSynthFile, synthItems } from './synth.ts';
-import { readVisual, visualCacheFile, writeVisual } from './visual.ts';
+import {
+	readVisual,
+	takeAudioCacheFile,
+	takeVisualCacheFile,
+	visualCacheFile,
+	writeVisual,
+} from './visual.ts';
 
 const PACK_JOB: JobKind = 'sound-pack-install';
 
@@ -107,7 +116,8 @@ function inside(base: string, child: string): boolean {
 /**
  * The provenance a registered library sound carries in the project (`MediaAsset.library`): the library entry's, with
  * time points of the registered file (`leadSilenceSec` in front, `trailSilenceSec` after). `tailSec` (where the sound has
- * faded to −60 dB) is kept only when the library's analysis covered the whole file.
+ * faded to −60 dB) is kept only when the library's analysis covered the whole file. A take's (P6-E9) names its
+ * recording and range (`take`).
  */
 export function provenanceOf(
 	e: SoundEntry,
@@ -177,8 +187,33 @@ export function provenanceOf(
 		...(lead > 0 ? { leadSilenceSec: lead } : {}),
 		...(trail > 0 ? { trailSilenceSec: trail } : {}),
 		snapshotHash,
+		// a take (P6-E9): where it lies in its recording
+		...(e.take
+			? {
+					take: {
+						soundId: e.take.soundId,
+						index: e.take.index,
+						sourceStartSec: sec(e.take.startSec),
+						sourceEndSec: sec(e.take.endSec),
+					},
+				}
+			: {}),
 	};
 	return LibraryProvenanceSchema.parse(candidate) as LibraryProvenance;
+}
+
+/**
+ * A take's range in source samples (P6-E9): the analysis measured it at the file's own rate up to 48 kHz (above, at
+ * 48 kHz), so the boundaries are whole samples of the source at its own rate. Null without a known rate.
+ */
+export function takeRange(
+	take: { startSec: number; endSec: number },
+	sampleRate: number | null | undefined,
+): { startSample: number; endSample: number } | null {
+	if (!sampleRate || !(sampleRate > 0)) return null;
+	const startSample = Math.max(0, Math.round(take.startSec * sampleRate));
+	const endSample = Math.round(take.endSec * sampleRate);
+	return endSample > startSample ? { startSample, endSample } : null;
 }
 
 /** Remembers `v` under `k` in a bounded insertion-ordered map. */
@@ -433,12 +468,17 @@ export class SoundService {
 		});
 	}
 
-	/** Whether the library should be (re)indexed: never indexed, rebuilt after damage, or the starter kit changed. */
+	/**
+	 * Whether the library should be (re)indexed: never indexed, rebuilt after damage, the starter kit changed, or sounds
+	 * were analysed by an older analysis version (an upgrade: their takes, materials and new judge flags come with it).
+	 */
 	async needsIndex(): Promise<boolean> {
 		if (await this.library.neverIndexed()) return true;
 		const s = await this.library.snapshot();
 		const starter = await this.starter();
-		return s.starterHash !== starter.hash;
+		if (s.starterHash !== starter.hash) return true;
+		for (const e of Object.values(s.sounds)) if (e.analysisVersion !== ANALYSIS_VERSION) return true;
+		return false;
 	}
 
 	/**
@@ -478,8 +518,9 @@ export class SoundService {
 		return job;
 	}
 
+	/** A recording, or a take entry for a take id (`snd_<16 hex>~t<n>`, P6-E9); 404 when unknown. */
 	async get(id: string): Promise<SoundEntry> {
-		const e = typeof id === 'string' && /^snd_[0-9a-f]{16}$/.test(id) ? await this.library.get(id) : null;
+		const e = typeof id === 'string' && SOUND_REF_RE.test(id) ? await this.library.get(id) : null;
 		if (!e) throw notFound(id);
 		return e;
 	}
@@ -502,7 +543,9 @@ export class SoundService {
 		const snapshot = await this.library.snapshot();
 		const all = this.sortedEntries(snapshot);
 		const out = searchSoundEntries(all, q, {
-			lookup: (id) => (Object.hasOwn(snapshot.sounds, id) ? snapshot.sounds[id] : undefined),
+			lookup: (id) =>
+				soundEntryById(id, (k) => (Object.hasOwn(snapshot.sounds, k) ? snapshot.sounds[k] : undefined)) ??
+				undefined,
 			// Folder sounds are not offered by a remote engine (D-47), even when an index from a local run has them.
 			includeFolders: this.local,
 		});
@@ -516,7 +559,8 @@ export class SoundService {
 
 	/**
 	 * The entries ranking may pick from (id order), for the sound-design plan: folder sounds only on a local engine (D-47),
-	 * and only of the given sources when `sources` is set.
+	 * and only of the given sources when `sources` is set; the offered takes of multi-hit recordings follow their
+	 * recording (P6-E9: a typing run's key presses are candidates of their own, and `pickVariant` rotates over them).
 	 */
 	async rankingPool(
 		sources?: readonly SoundSourceType[],
@@ -524,8 +568,10 @@ export class SoundService {
 		const snapshot = await this.library.snapshot();
 		const all = this.sortedEntries(snapshot);
 		const allowed = sources?.length ? new Set<string>(sources) : null;
-		const entries = all.filter(
-			(e) => (this.local || e.source.type !== 'folder') && (!allowed || allowed.has(e.source.type)),
+		const entries = withOfferedTakes(
+			all.filter(
+				(e) => (this.local || e.source.type !== 'folder') && (!allowed || allowed.has(e.source.type)),
+			),
 		);
 		return { entries, snapshotHash: snapshot.snapshotHash, librarySize: all.length };
 	}
@@ -602,6 +648,7 @@ export class SoundService {
 				'LOCAL_MODE_ONLY',
 				'Sounds of user folders are only available with a local engine',
 			);
+		if (e.take) return this.takeVisual(e, e.take);
 		const file = visualCacheFile(this.core.config.paths.soundCacheDir, fingerprintHex(e.fingerprint));
 		const cached = await readVisual(file, e.fingerprint);
 		if (cached) return cached;
@@ -644,6 +691,121 @@ export class SoundService {
 	}
 
 	/**
+	 * The visual data of a take (P6-E9): written by the index; when it is gone, computed from the recording's samples of
+	 * the take (the file decoded from its start, so the range is exact).
+	 */
+	private async takeVisual(e: SoundEntry, take: NonNullable<SoundEntry['take']>): Promise<SoundVisual> {
+		const file = takeVisualCacheFile(
+			this.core.config.paths.soundCacheDir,
+			fingerprintHex(e.fingerprint),
+			take.index,
+		);
+		const cached = await readVisual(file, e.fingerprint);
+		if (cached && cached.soundId === e.id) return cached;
+		return this.limitVisual(async () => {
+			const again = await readVisual(file, e.fingerprint);
+			if (again && again.soundId === e.id) return again;
+			const path = await this.fileOf(e);
+			if ((await fingerprintFile(path)).fingerprint !== e.fingerprint)
+				throw new HttpError(
+					409,
+					'SOUND_CHANGED',
+					'The file changed since it was indexed; rescan the sound library',
+				);
+			const decoded = await this.mediaCall(() =>
+				decodeSound(this.core.ffmpeg, path, { seconds: Math.ceil(take.endSec + 0.1) }),
+			);
+			const a = Math.round(take.startSec * decoded.rate);
+			const b = Math.round(take.endSec * decoded.rate);
+			let v: SoundVisual;
+			try {
+				v = (
+					await this.analyzer.run(
+						{
+							kind: 'take-visual',
+							soundId: e.id,
+							fingerprint: e.fingerprint,
+							durationSec: e.descriptors.durationSec,
+							peakSec: e.descriptors.peakSec,
+							channels: decoded.channels.map((c) => c.slice(Math.min(a, c.length), Math.min(b, c.length))),
+							rate: decoded.rate,
+						},
+						undefined,
+						{ timeoutMs: VISUAL_TIMEOUT_MS },
+					)
+				).visual;
+			} catch (err) {
+				const code = (err as { code?: string }).code;
+				const busy = code === 'ANALYSIS_TIMEOUT' || code === 'INTERRUPTED';
+				throw new HttpError(busy ? 503 : 422, code ?? 'ANALYSIS_FAILED', (err as Error).message);
+			}
+			await writeVisual(file, v);
+			return v;
+		});
+	}
+
+	/**
+	 * The file a sound's audio route serves: the library file, or for a take (P6-E9) its range of the recording as a
+	 * PCM WAV in the cache (written once, sample-exact from the full decode), so auditioning plays the take alone.
+	 */
+	async audioFileOf(e: SoundEntry): Promise<string> {
+		const take = e.take;
+		if (!take) return this.fileOf(e);
+		const path = await this.fileOf(e);
+		const out = takeAudioCacheFile(
+			this.core.config.paths.soundCacheDir,
+			fingerprintHex(e.fingerprint),
+			take.index,
+		);
+		if ((await stat(out).catch(() => null))?.isFile()) return out;
+		return this.limitVisual(async () => {
+			if ((await stat(out).catch(() => null))?.isFile()) return out;
+			if ((await fingerprintFile(path)).fingerprint !== e.fingerprint)
+				throw new HttpError(
+					409,
+					'SOUND_CHANGED',
+					'The file changed since it was indexed; rescan the sound library',
+				);
+			const stream = await this.streamFor(e, path);
+			const range = takeRange(take, stream.sampleRate);
+			if (!range) throw new HttpError(422, 'SOUND_UNSUPPORTED', 'The sound’s sample rate is unknown');
+			const tmp = await this.mediaCall(() =>
+				writePaddedSound(this.core.ffmpeg, {
+					path,
+					samples: 0,
+					trailSamples: 0,
+					codec: stream.codec,
+					outCodec: copyCodecFor(stream),
+					durationSec: e.descriptors.durationSec,
+					range,
+					tmpDir: join(this.core.config.paths.soundCacheDir, '.tmp'),
+				}),
+			);
+			try {
+				await mkdir(dirname(out), { recursive: true });
+				await rename(tmp, out);
+			} catch (err) {
+				await rm(tmp, { force: true });
+				throw err;
+			}
+			return out;
+		});
+	}
+
+	/** The audio stream of a sound's content (probed once per engine). */
+	private async streamFor(
+		e: SoundEntry,
+		path: string,
+	): Promise<Awaited<ReturnType<typeof probeAudioStream>>> {
+		let stream = this.streamOf.get(e.fingerprint) ?? null;
+		if (!stream) {
+			stream = await this.mediaCall(() => probeAudioStream(this.core.ffmpeg, path));
+			remember(this.streamOf, e.fingerprint, stream);
+		}
+		return stream;
+	}
+
+	/**
 	 * Registers a sound's file as media for a project. A sound whose head is not quiet (and which is at most
 	 * `LIBRARY_PAD_MAX_SECONDS` long) is registered as a managed WAV copy with `LIBRARY_LEAD_SILENCE_SEC` of silence in
 	 * front (`pad.ts`), whatever its source, so placement is sample-exact; a sound that does not end in
@@ -653,13 +815,20 @@ export class SoundService {
 	 * as a PCM WAV copy (without silence when its head is quiet): seeks into lossy streams are not sample-exact. Copies
 	 * are written by ffmpeg file to file in the narrowest PCM that holds the decoded samples (`copyCodecFor`), for sounds
 	 * up to `LIBRARY_PAD_MAX_SECONDS` (1 h) whose copy fits `SOUND_COPY_MAX_BYTES` and leaves
-	 * `SOUND_COPY_RESERVE_BYTES` free on the media volume. Other sounds (PCM needing no silence, or a copy refused by those
+	 * `SOUND_COPY_RESERVE_BYTES` free on the media volume. A take (P6-E9) is always a copy: its range of the recording,
+	 * with the same lead and trailing silence rules applied to the take's own descriptors (a cut take is refused). Other sounds (PCM needing no silence, or a copy refused by those
 	 * limits — then `inexact` says why): starter, pack and synth files are copied into managed media, folder files
 	 * registered in place (local mode). Returns the registered media, the provenance to commit and the saved project's
 	 * media that already is this file.
 	 */
 	async register(id: string, projectId: string): Promise<RegisterSoundResponse> {
 		const e = await this.get(id);
+		if (e.take?.flags.length)
+			throw new HttpError(
+				422,
+				'SOUND_TAKE_CUT',
+				`Take ${e.take.index} is cut (${e.take.flags.join(', ')}): it is never offered; use a clean take of the recording`,
+			);
 		const project = await this.core.projects.get(projectId);
 		const path = await this.fileOf(e);
 		const snapshot = await this.library.snapshot();
@@ -680,11 +849,9 @@ export class SoundService {
 		const durationSec = e.descriptors.durationSec;
 		const copyable = durationSec > 0 && durationSec <= LIBRARY_PAD_MAX_SECONDS;
 		// the audio stream of this content (probed once per engine: a plan registers the same sounds on every run)
-		let stream = this.streamOf.get(e.fingerprint) ?? null;
-		if (!stream) {
-			stream = await this.mediaCall(() => probeAudioStream(this.core.ffmpeg, path));
-			remember(this.streamOf, e.fingerprint, stream);
-		}
+		const stream = await this.streamFor(e, path);
+		const range = e.take ? takeRange(e.take, stream.sampleRate) : undefined;
+		if (e.take && !range) throw new HttpError(422, 'SOUND_UNSUPPORTED', 'The sound’s sample rate is unknown');
 		const samples = stream?.sampleRate ? libraryLeadSilenceSamples(e.descriptors, stream.sampleRate) : 0;
 		const trailSamples = stream?.sampleRate
 			? libraryTrailSilenceSamples(e.descriptors, stream.sampleRate, { analysedSec: SOUND_ANALYSIS_SECONDS })
@@ -696,7 +863,7 @@ export class SoundService {
 		const lossy = !!stream?.codec && !isPcmCodec(stream.codec);
 		const outCodec = copyCodecFor(stream);
 		let inexact: RegisterSoundResponse['inexact'];
-		let wantsCopy = (samples > 0 || trailSamples > 0 || lossy) && !!stream?.sampleRate;
+		let wantsCopy = (samples > 0 || trailSamples > 0 || lossy || !!range) && !!stream?.sampleRate;
 		const mb = (n: number) => `${Math.ceil(n / 1_048_576)} MB`;
 		if (!copyable && durationSec > LIBRARY_PAD_MAX_SECONDS) {
 			// beyond the limit nothing is copied: a lossy or unpadded long sound is placed within a frame
@@ -732,7 +899,7 @@ export class SoundService {
 		if (wantsCopy && stream?.sampleRate) {
 			if ((await fingerprintFile(path)).fingerprint !== e.fingerprint) throw changed();
 			// the same content padded the same way is the same managed file: reuse it while it is online
-			const copyKey = `${e.fingerprint}|${samples}|${trailSamples}|${stream.codec ?? ''}|${stream.sampleRate}|${outCodec}`;
+			const copyKey = `${e.fingerprint}|${samples}|${trailSamples}|${stream.codec ?? ''}|${stream.sampleRate}|${outCodec}|${range ? `${range.startSample}-${range.endSample}` : ''}`;
 			const known = this.copyOf.get(copyKey);
 			const again = known ? await this.core.media.registeredIfOnline(known, { projectId }) : null;
 			if (again) reg = again;
@@ -745,11 +912,16 @@ export class SoundService {
 						codec: stream.codec,
 						outCodec,
 						durationSec,
+						...(range ? { range } : {}),
 						tmpDir: join(this.core.config.paths.mediaDir, '.sound-tmp'),
 					}),
 				);
 				try {
-					reg = await this.core.media.registerUploaded(tmp, paddedFileName(path), { projectId });
+					reg = await this.core.media.registerUploaded(
+						tmp,
+						paddedFileName(path, e.take ? e.take.index : undefined),
+						{ projectId },
+					);
 				} finally {
 					await rm(tmp, { force: true });
 				}

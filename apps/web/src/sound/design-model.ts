@@ -19,6 +19,7 @@ import {
 	readClipSfx,
 	readLibraryProvenance,
 	type Sequence,
+	SOUND_REF_RE,
 	SOUND_TYPES,
 	type SoundCue,
 	type SoundFamily,
@@ -284,7 +285,7 @@ export function variationList(
 ): string[] {
 	const out: string[] = [];
 	for (const id of [current, ...alternatives, ...family, ...similar])
-		if (typeof id === 'string' && /^snd_[0-9a-f]{16}$/.test(id) && !out.includes(id)) out.push(id);
+		if (typeof id === 'string' && SOUND_REF_RE.test(id) && !out.includes(id)) out.push(id);
 	return out.slice(0, 32);
 }
 

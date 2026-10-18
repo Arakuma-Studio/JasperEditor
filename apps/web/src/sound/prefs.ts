@@ -2,9 +2,11 @@
 // (audio/prefs.ts): favourites and recently auditioned / inserted sounds, the audition options (loop, auto-play on
 // select, audition on hover, volume) and the list density. Never part of a project document or of undo history.
 // Every value read back is validated: a damaged or hand-edited entry falls back to the default (AGENTS.md §0.2).
+import { SOUND_REF_RE } from '@jasper/project';
 import { useSyncExternalStore } from 'react';
 
-const SOUND_ID = /^snd_[0-9a-f]{16}$/;
+/** A library sound id or a take id (P6-E9). */
+const SOUND_ID = SOUND_REF_RE;
 export const MAX_FAVOURITES = 500;
 export const MAX_RECENTS = 50;
 

@@ -3,11 +3,13 @@
 // are counted (each dimension counts with every filter but its own) without sorting anything. Pure apart from
 // its inputs, so it can be measured on a synthetic library (test/sounds-search.test.ts: < 50 ms for 5 000 sounds).
 import {
+	offeredTakes,
 	SOUND_SEARCH_DEFAULT_LIMIT,
 	type SoundEntry,
 	type SoundFacets,
 	type SoundSearchQuery,
 	type SoundSearchResponse,
+	withOfferedTakes,
 } from '@jasper/api';
 import {
 	isSoundTypeId,
@@ -19,6 +21,7 @@ import {
 	SOUND_FILTER_LICENSE,
 	SOUND_FILTER_REST,
 	SOUND_FILTER_TYPES,
+	SOUND_MATERIALS,
 	SOUND_TYPE_IDS,
 	SOUND_TYPES,
 	type SoundRankRequest,
@@ -31,6 +34,7 @@ const NOT_LICENSE = SOUND_FILTER_TYPES | SOUND_FILTER_REST;
 
 const TYPE_INDEX = new Map<string, number>(SOUND_TYPE_IDS.map((t, i) => [t, i]));
 const FAMILY_INDEX = new Map<string, number>(SOUND_FAMILIES.map((f, i) => [f, i]));
+const MATERIAL_INDEX = new Map<string, number>(SOUND_MATERIALS.map((m, i) => [m, i]));
 
 /** What the facets count of an entry: indices of its known types (repeats kept) and distinct families, its licence class. */
 type FacetInfo = { types: number[]; families: number[]; licenseClass: string; of: SoundEntry['types'] };
@@ -105,7 +109,9 @@ export function rankRequestOf(
 
 /**
  * Searches entries (in id order). `includeFolders: false` (remote mode, D-47) leaves user-folder sounds out of the
- * results and the facets.
+ * results and the facets. `takes: true` adds the offered takes of multi-hit recordings as entries of their own (P6-E9);
+ * `material` keeps sounds whose words name it (its facet counts ignore that filter). Result rows leave a recording's
+ * `takes` out and say how many it offers (`takeCount`).
  */
 export function searchSoundEntries(
 	all: readonly SoundEntry[],
@@ -124,14 +130,24 @@ export function searchSoundEntries(
 						(!q.rootId || (e.source.type === 'folder' && e.source.rootId === q.rootId)) &&
 						(!q.packId || (e.source.type === 'pack' && e.source.packId === q.packId)),
 				);
+	const pool = q.takes ? withOfferedTakes(visible) : visible;
 	const inPool = (e: SoundEntry) => !sources || sources.has(e.source.type);
+	const material = q.material;
+	const matOk = (e: SoundEntry) => !material || (e.materials?.includes(material) ?? false);
+	const materialCounts = new Int32Array(SOUND_MATERIALS.length);
 	// Counted in arrays by index, turned into the facet records at the end.
 	const typeCounts = new Int32Array(SOUND_TYPE_IDS.length);
 	const familyCounts = new Int32Array(SOUND_FAMILIES.length);
 	const licenseCounts = new Map<string, number>();
 	const sourceCounts = new Map<string, number>();
 	const count = (e: SoundEntry, f: number) => {
-		const pooled = inPool(e);
+		// Materials: every filter but the material filter.
+		if (f === SOUND_FILTER_ALL && !none && inPool(e))
+			for (const m of e.materials ?? []) {
+				const i = MATERIAL_INDEX.get(m);
+				if (i !== undefined) materialCounts[i]!++;
+			}
+		const pooled = inPool(e) && matOk(e);
 		const info = facetInfoOf(e);
 		// Types and families: every filter but the type filter.
 		if (pooled && (f & NOT_TYPES) === NOT_TYPES) {
@@ -142,15 +158,16 @@ export function searchSoundEntries(
 		// Licences: every filter but the licence filter; sources: every filter but the source filter.
 		if (pooled && (f & NOT_LICENSE) === NOT_LICENSE)
 			licenseCounts.set(info.licenseClass, (licenseCounts.get(info.licenseClass) ?? 0) + 1);
-		if (f === SOUND_FILTER_ALL) sourceCounts.set(e.source.type, (sourceCounts.get(e.source.type) ?? 0) + 1);
+		if (f === SOUND_FILTER_ALL && matOk(e))
+			sourceCounts.set(e.source.type, (sourceCounts.get(e.source.type) ?? 0) + 1);
 	};
 	const ctx = q.usedNearby?.length ? { usedNearby: q.usedNearby } : {};
 	// One pass: the filter bits of every entry count the facets; entries of the pool that pass every filter are ranked.
 	const offset = q.offset ?? 0;
 	const limit = q.limit ?? SOUND_SEARCH_DEFAULT_LIMIT;
-	const page = rankSoundsPage(visible, req, ctx, {
+	const page = rankSoundsPage(pool, req, ctx, {
 		onFilter: count,
-		inRanking: (e) => !none && inPool(e),
+		inRanking: (e) => !none && inPool(e) && matOk(e),
 		offset,
 		limit,
 	});
@@ -162,10 +179,26 @@ export function searchSoundEntries(
 	});
 	for (const [k, v] of licenseCounts) facets.licenses[k] = v;
 	for (const [k, v] of sourceCounts) facets.sources[k] = v;
+	const materials: Record<string, number> = {};
+	SOUND_MATERIALS.forEach((m, i) => {
+		if (materialCounts[i]) materials[m] = materialCounts[i]!;
+	});
+	facets.materials = materials;
 	return {
 		total: page.total,
 		offset,
-		results: page.results.map((r) => ({ sound: r.entry, score: r.score, parts: r.parts })),
+		results: page.results.map((r) => searchRow(r.entry, r.score, r.parts)),
 		facets,
 	};
+}
+
+/** A result row: a recording's takes are left out (`takeCount` says how many it offers; get the sound for them). */
+export function searchRow(
+	entry: SoundEntry,
+	score: number,
+	parts: SoundSearchResponse['results'][number]['parts'],
+): SoundSearchResponse['results'][number] {
+	if (!entry.takes) return { sound: entry, score, parts };
+	const { takes: _takes, ...sound } = entry;
+	return { sound, score, parts, takeCount: offeredTakes(entry).length };
 }

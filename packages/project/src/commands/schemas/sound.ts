@@ -14,7 +14,7 @@ import {
 	soundCueFields,
 } from '../../schema/sound.ts';
 import { SFX_DEFAULT_GAIN_MAX_DB, SFX_DEFAULT_GAIN_MIN_DB } from '../../sound/level.ts';
-import { LibraryProvenanceSchema } from '../../sound/provenance.ts';
+import { LibraryProvenanceSchema, SOUND_REF_RE } from '../../sound/provenance.ts';
 import { cmd, IdRefSchema, RefDeclSchema, TimeInputSchema, TrackRefSchema } from './common.ts';
 import { MediaRegisterCmd } from './project.ts';
 
@@ -50,10 +50,13 @@ export const MediaUpgradeLibraryCopyCmd = cmd('media.upgradeLibraryCopy', {
 	itemRef: RefDeclSchema.optional(),
 });
 
-/** A library sound id (`snd_` + 16 hex digits, the engine's `SoundEntry.id`). */
+/**
+ * A library sound id (`snd_` + 16 hex digits, the engine's `SoundEntry.id`), or one of its takes
+ * (`snd_<16 hex>~t<n>`, spec 12 P6-E9).
+ */
 export const SoundIdSchema = z
 	.string()
-	.regex(/^snd_[0-9a-f]{16}$/, 'a sound id looks like snd_0123456789abcdef');
+	.regex(SOUND_REF_RE, 'a sound id looks like snd_0123456789abcdef (a take: snd_0123456789abcdef~t3)');
 
 /**
  * One cue to add: the `SoundCue` fields of spec 12 §2.2 (what `deriveCues` outputs) without the model's own

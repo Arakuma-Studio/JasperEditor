@@ -507,7 +507,9 @@ Tools (356; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   "auto" until confirmed; `docs/wp-notes/sound-design.md` "WP6.3") · `remix_audio` `revert_remix`
   (`docs/wp-notes/audio-fx.md`).
 - Sound library (sound effects; agents judge them by descriptors and contact sheets): `sound_library_status`
-  `search_sounds` `get_sound` `view_sounds` · `import_sounds` `insert_sound` (peak-aligned, never overwrites) ·
+  `search_sounds` (takes: true lists the single takes of multi-hit recordings — typing runs, clocks — as sounds of
+  their own, ids snd_…~t&lt;n&gt;; a material filter) `get_sound` (a recording's takes) `view_sounds` · `import_sounds`
+  `insert_sound` (peak-aligned, never overwrites; take ids too) ·
   `list_sound_credits` · `add_sound_folder` `remove_sound_folder` `rescan_sound_library` · packs: `list_sound_packs`
   `install_sound_pack` (downloads a catalogue pack from its upstream site, sha256-pinned; tell the user its size and
   licence first) `remove_sound_pack` (approval card) · cues: `find_sound_cues`
