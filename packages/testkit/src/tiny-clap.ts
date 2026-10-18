@@ -109,7 +109,8 @@ export function tinyVocab(): { vocab: Record<string, number>; merges: string[] }
 		const ch = String.fromCharCode(c);
 		if (!(ch in vocab)) vocab[ch] = Object.keys(vocab).length;
 	}
-	if (!('Ġ' in vocab)) vocab['Ġ'] = Object.keys(vocab).length;
+	const space = 'Ġ';
+	if (!(space in vocab)) vocab[space] = Object.keys(vocab).length;
 	return { vocab, merges };
 }
 

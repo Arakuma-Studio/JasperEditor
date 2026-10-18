@@ -30,11 +30,10 @@ let worst = 0;
 for (const m of v.mel) {
 	const got = clapLogMel(Float32Array.from(m.samples));
 	let d = 0;
-	m.features.forEach((row, t) =>
-		row.forEach((x, k) => {
-			d = Math.max(d, Math.abs(got[t * row.length + k]! - x));
-		}),
-	);
+	for (let t = 0; t < m.features.length; t++) {
+		const row = m.features[t]!;
+		for (let k = 0; k < row.length; k++) d = Math.max(d, Math.abs(got[t * row.length + k]! - row[k]!));
+	}
 	worst = Math.max(worst, d);
 	console.log(`mel ${m.name}: max |Δ| = ${d.toExponential(3)} dB`);
 }

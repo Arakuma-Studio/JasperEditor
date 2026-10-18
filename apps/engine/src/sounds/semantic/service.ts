@@ -175,7 +175,7 @@ export class SemanticService {
 
 	/** Why describe search cannot run here, or null. */
 	private async unavailable(): Promise<{ status: 'not-installed' | 'unavailable'; reason: string } | null> {
-		if (!this.models || !this.models.entries.length)
+		if (!this.models?.entries.length)
 			return {
 				status: 'unavailable',
 				reason: 'this engine’s model catalogue has no Describe-it search model',

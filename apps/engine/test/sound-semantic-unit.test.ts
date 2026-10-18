@@ -146,16 +146,17 @@ describe('CLAP front end', () => {
 describe('CLAP tokenizer', () => {
 	const { vocab, merges } = tinyVocab();
 	const tok = new ClapTokenizer(JSON.stringify(vocab), `#version: 0.2\n${merges.join('\n')}\n`);
+	const id = (token: string) => vocab[token]!;
 
 	it('splits like GPT-2 byte-level BPE and wraps <s> … </s>', () => {
 		expect(tok.encode(captionOf('high'))).toEqual([
 			0,
 			vocab.this,
-			vocab['Ġis'],
-			vocab['Ġa'],
-			vocab['Ġsound'],
-			vocab['Ġof'],
-			vocab['Ġhigh'],
+			id('Ġis'),
+			id('Ġa'),
+			id('Ġsound'),
+			id('Ġof'),
+			id('Ġhigh'),
 			2,
 		]);
 		expect(tok.encode('')).toEqual([0, 2]);

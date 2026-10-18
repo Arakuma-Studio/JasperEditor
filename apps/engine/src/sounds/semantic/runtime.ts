@@ -225,7 +225,10 @@ export class ClapRuntime {
 	}
 
 	private afterRequest(): void {
-		if (this.queue.length) return this.pump();
+		if (this.queue.length) {
+			this.pump();
+			return;
+		}
 		if (this.idleTimer) clearTimeout(this.idleTimer);
 		this.idleTimer = setTimeout(() => this.stop(null), this.opts.idleMs ?? 120_000);
 		this.idleTimer.unref?.();

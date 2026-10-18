@@ -165,8 +165,10 @@ export function FindMomentDialog(
 					single clean key press on a mechanical keyboard&rdquo;, &ldquo;a glass bottle clinking&rdquo;. The
 					recording is compared window by window with the Describe-it search model.
 				</p>
-				<label className="flex flex-col gap-0.5">
-					<span className="text-pr-small text-pr-muted">Description</span>
+				<div className="flex flex-col gap-0.5">
+					<span className="text-pr-small text-pr-muted" aria-hidden="true">
+						Description
+					</span>
 					<TextField
 						value={description}
 						maxLength={300}
@@ -181,7 +183,7 @@ export function FindMomentDialog(
 						}}
 						data-testid="sound-find-moment-description"
 					/>
-				</label>
+				</div>
 				<Select
 					label="Window length"
 					className="w-40"

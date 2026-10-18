@@ -101,7 +101,7 @@ function valid(windows: unknown): windows is Win[] {
 
 const b64 = (vs: Float32Array[]) => {
 	const all = new Float32Array(vs.length * (vs[0]?.length ?? 0));
-	vs.forEach((v, i) => all.set(v, i * v.length));
+	for (let i = 0; i < vs.length; i++) all.set(vs[i]!, i * vs[i]!.length);
 	return Buffer.from(all.buffer, all.byteOffset, all.byteLength).toString('base64');
 };
 
