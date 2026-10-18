@@ -359,6 +359,8 @@
   "1 silent",
   "1 sound",
   "1 take",
+  "1 take (→ shows it)",
+  "1 take shown below (← hides it)",
   "1 text clip selected · double-click to apply as {0}",
   "1 warning",
   "1 with low confidence: confirm it",

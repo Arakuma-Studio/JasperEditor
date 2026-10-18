@@ -415,9 +415,13 @@ export function soundAccessibleName(
 	if (e.take) parts.push(t('take {0} of its recording', e.take.index));
 	if (takes?.count)
 		parts.push(
-			takes.open
-				? t('{0} takes shown below (← hides them)', takes.count)
-				: t('{0} takes (→ shows them)', takes.count),
+			takes.count === 1
+				? takes.open
+					? t('1 take shown below (← hides it)')
+					: t('1 take (→ shows it)')
+				: takes.open
+					? t('{0} takes shown below (← hides them)', takes.count)
+					: t('{0} takes (→ shows them)', takes.count),
 		);
 	parts.push(licenseBadge(e).title);
 	if (favourite) parts.push(withoutContext(t('favourite [accessible name]')));

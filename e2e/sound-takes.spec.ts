@@ -180,8 +180,10 @@ test('a typing run’s takes: listed under it, auditioned and inserted peak-alig
 	if (extra.length) {
 		await wood.click();
 		await panel.getByTestId('sound-search').fill('slow macbook keyboard');
+		// the search has answered (not the previous list's first row)
 		const real = list.getByRole('option').first();
-		await expect(real).toBeVisible({ timeout: 60_000 });
+		await expect(real).toHaveAttribute('aria-label', /slow macbook/, { timeout: 60_000 });
+		await expect(real).toHaveAttribute('aria-label', /takes \(→ shows them\)/);
 		await real.click();
 		await page.keyboard.press('ArrowRight');
 		await expect(panel.locator('[data-take]').first()).toBeVisible({ timeout: 30_000 });
