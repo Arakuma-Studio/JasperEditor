@@ -422,7 +422,9 @@ Every state-changing engine route and what an agent may do with it:
 | `DELETE /api/effect-presets/:id`, `…/folders/:id` (`delete_effect_preset`) | **Gated** | The user's library, shared by all projects, no undo |
 | `POST /api/effect-presets`, `PUT …/:id`, `POST …/import`, `POST/PUT …/folders` (`save_effect_preset`) | Open | Add, rename, move: nothing is lost; import never overwrites |
 | `DELETE /api/roto/models/:id`, `DELETE /api/speech/models/:id` (`remove_roto_model`, `remove_speech_model`) | **Gated** | Gigabytes to download again; features stop working meanwhile |
-| `POST …/models/:id/install` (`install_*_model`) | Open | Catalogue-pinned downloads, size-bounded (ENG-2) |
+| `DELETE /api/sounds/semantic/models/:id` (`remove_describe_search_model`; WP-E9) | **Gated** | 780 MB to download again; its cached embeddings go with it; Describe-it search and Find Moment stop working meanwhile (nothing installed: nothing asked) |
+| `POST …/models/:id/install` (`install_*_model`, `install_describe_search_model`) | Open | Catalogue-pinned downloads, size-bounded (ENG-2) |
+| `POST /api/sounds/semantic/embed`, `POST /api/sounds/:id/moments` (`prepare_describe_search`, `find_sound_moment`) | Open | Derived data in the engine's cache only (embeddings of library sounds); nothing of the user's changes |
 | `POST /api/cache/clean` mode `all` (`clean_cache`) | **Gated** | Removes what saved projects reference: hours of proxies, previews, prerenders |
 | `POST /api/cache/clean` mode `unused` / `auto` | Open | Only files no saved or open project references; the engine's own automatic pass does the same |
 | `POST /api/cache/location` (`set_cache_location`) | **Gated** | Writes to a folder of the caller's choice; `fresh` deletes the cache |

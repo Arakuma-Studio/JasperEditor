@@ -26,7 +26,7 @@ export function describeInstallBody(m: SoundSemanticModel): string {
 			formatBytes(m.sizeBytes),
 		),
 		t('Licence: {0} ({1}).', m.license, m.licenseUrl),
-		m.attribution,
+		/[.!?]$/.test(m.attribution.trim()) ? m.attribution.trim() : `${m.attribution.trim()}.`,
 		t(
 			'It only analyses sounds (search and Find Moment); it never makes sounds, and no audio leaves this computer.',
 		),
