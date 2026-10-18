@@ -501,6 +501,37 @@ export function fixChangeSummary(issue: SoundCheckIssue, seq: Sequence | undefin
 				case 'soundDesign.setSettings':
 					out.push(t('Exports a credits file with this sequence'));
 					break;
+				case 'media.register':
+					out.push(
+						t(
+							'Imports “{0}” into the project',
+							String((c.asset as { originalName?: unknown })?.originalName ?? ''),
+						),
+					);
+					break;
+				case 'soundDesign.layBed': {
+					// P6-E12: room tone (or an ambience) laid as looped clips on its own track, from … to …
+					const shots = (Array.isArray(c.shots) ? c.shots : c.range ? [c.range] : []) as {
+						start?: unknown;
+						end?: unknown;
+					}[];
+					const from = shots[0]?.start;
+					const to = shots[shots.length - 1]?.end;
+					out.push(
+						c.purpose === 'roomtone'
+							? t(
+									'Lays room tone on the “Room Tone” track from {0} to {1}, looped, with short fades under the dialogue',
+									tcOf(seq, from, at),
+									tcOf(seq, to, at),
+								)
+							: t(
+									'Lays an ambience bed on the “Ambience” track from {0} to {1}',
+									tcOf(seq, from, at),
+									tcOf(seq, to, at),
+								),
+					);
+					break;
+				}
 				default:
 					out.push(t('Applies “{0}”', c.type));
 			}

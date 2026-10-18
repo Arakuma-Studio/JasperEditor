@@ -459,6 +459,7 @@ Every state-changing engine route and what an agent may do with it:
 | `POST /api/sound-design/plan` (`plan_sound_design`), `place_sound` mode "propose" | Open | Stores a proposal (nothing in the document changes); registers the planned library sounds like `POST /api/sounds/:id/register` (copies into managed media, folder files in place only on a local engine); applying it is the gated accept above |
 | `POST /api/sound-design/rebalance` (`rebalance_sfx`) | Open | Mode `propose` (the default) stores a proposal (nothing changes); mode `apply` is one ordinary, undoable transaction of `soundDesign.applyGains` (clip gains of sound effects within −30…+12 dB, nothing deleted), classified like any agent transaction (labelled "Agent: Rebalance SFX Levels"); renders are measure-only (no file is written) |
 | `POST /api/sound-design/delivery` (`apply_delivery`) | Open | Mode `propose` (the default) stores a proposal (nothing changes); mode `apply` is one ordinary, undoable transaction of `soundDesign.applyDelivery` (settings, the Mix's loudness normalisation, Essential Sound Auto-Match gains, ducking Volume keyframes) and `soundDesign.applyGains`, classified like any agent transaction ("Agent: Apply Delivery Preset"); nothing is deleted; renders are measure-only (no file is written) |
+| `POST /api/sound-design/beds`, `/room-tone` (`lay_ambience_bed`, `fill_room_tone`, Sequence ▸ Sound Design ▸ Lay Ambience Bed… / Fill Room Tone) and their `/plan` routes | Open | Mode `propose` (the default) stores a proposal (nothing changes); mode `apply` is one ordinary, undoable transaction of `soundDesign.layBed` (clips, crossfade transitions, fades, Volume dips on a new or free audio track; with `replace` it lifts only earlier bed pieces — clips carrying `bed` metadata of the same purpose — over the scenes, on unlocked tracks) and the `media.register` of the library sounds it uses, classified like any agent transaction ("Agent: Lay Ambience Bed" / "Agent: Fill Room Tone"); the plan routes and the jobs register those sounds like `POST /api/sounds/:id/register` (copies into managed media); decodes are measure-only |
 | `POST /api/sound-design/check` (`sound_check`) | Open | Measure-only renders (the first normalisation pass is a scratch file of the job, removed when it ends); with `store: true` one ordinary, undoable transaction of `soundDesign.setCheck` (metadata only, "Agent: Sound Check Result"); fixes are returned, never applied. With `proposalId` (P6-E5) the preview of a proposal of the same project is checked — nothing is applied, `store` is refused, the summary is written on the proposal (`report.check`, no decision, `updatedAt` kept) |
 | `POST /api/sound-design/visual` (`view_sound_timeline`) | Open | Read-only: measure-only renders of ≤ 120 s, nothing stored |
 | `POST /api/sound-design/listen` (`listen_to_sequence`, `view_sound_timeline`'s sections and answer marks, Sound Check ▸ Log) | Open | Read-only: measure-only renders of ≤ 10 min (the mix and ≤ 24 clip lanes through the export mixer, nothing written), cached beats and picture motion read but never analysed; the result is the job's (nothing stored in the project or the appdir) |
@@ -771,6 +772,18 @@ them, but it was reviewed by its author, not by this review.
   undo the delete (a save or version restore with no editor lease, the lease released or expired, a new lease), and a
   check finishing after its project or sequence is gone keeps nothing (a late write never re-creates a deleted
   project's folder). Tests: `apps/engine/test/sound-check-kept.test.ts`, `sound-check-kept-lifecycle.test.ts`.
+- **Ambience beds and room tone** (spec 12 WP-E8, `apps/engine/src/sound-design/beds.ts`,
+  `packages/audio-fx/src/analysis/loop-window.ts`; `POST /api/sound-design/beds[/plan]`, `/room-tone[/plan]`): strict
+  zod bodies (project id `[A-Za-z0-9_-]{1,128}`, sound ids by `SOUND_REF_RE`, ≤ 500 scenes / gaps as frame ranges,
+  bounded seconds and decibels); the project and sequence are checked before a job starts (typed `404`); library sounds
+  are only those of the engine's index (`SoundService.get` / `register`: the same checks as the register route, folder
+  sounds only on a local engine), project media only through the engine registry; recordings are decoded by ffmpeg into
+  memory capped at the requested duration + 1 s (≤ 10 min per bed, ≤ 120 s per dialogue clip, ≤ 8 dialogue clips, ≤ 8
+  candidate room tones), a cancelled request or job kills its decodes; measurements are cached in memory only (≤ 64);
+  the plan routes answer JSON only. Sound Check's room-tone fix (a SILENCE inside dialogue) is returned as commands,
+  never applied (not safe). Tests: `apps/engine/test/sound-beds.test.ts` (refusals),
+  `packages/audio-fx/test/loop-window.test.ts` (hostile input never throws), `packages/project/test/ambience-bed.test.ts`
+  (hostile command arguments: a refusal or a valid document).
 - **Listening transcript** (spec 12 WP-E3, `apps/engine/src/sound-design/listen.ts`, `packages/audio-fx/src/analysis/events.ts`;
   `POST /api/sound-design/listen`, the visual route's `spectrogram`): a strict zod body (project id `[A-Za-z0-9_-]{1,128}`,
   a frame range, a detail enum); the project, sequence and range are checked before a job starts (typed `404`,

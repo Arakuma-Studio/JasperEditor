@@ -1,5 +1,6 @@
 // Sound design (spec 12): taxonomy, ranking, licences, library provenance, credits and peak-aligned placement.
 export * from './acknowledge.ts';
+export * from './ambience-bed.ts';
 export * from './check.ts';
 export * from './check-fixes.ts';
 export * from './copy-upgrade.ts';

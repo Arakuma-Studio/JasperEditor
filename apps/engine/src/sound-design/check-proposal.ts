@@ -61,7 +61,7 @@ import { liveDocument, planSequence } from './plan.ts';
 type Finding = Pick<
 	SoundCheckIssue,
 	'id' | 'code' | 'severity' | 'frame' | 'timecode' | 'message' | 'clipIds' | 'cueId'
->;
+> & { range?: { start: number; end: number } | undefined };
 
 /** The entity ids an item's preview created, changed or deleted. */
 export function touchedBy(ghost: ProposalGhost | undefined): Set<string> {
@@ -73,20 +73,31 @@ export function touchedBy(ghost: ProposalGhost | undefined): Set<string> {
  * those of the proposal's preview; `items` = the checked items in proposal order with the entities each one's preview
  * touched (`setup`: a setup item — a bin, an imported sound, a new cue — that the items placing sounds require). A
  * finding is attributed to every item that touched one of its clips or its cue; setup items only when no other item
- * did (the Review panel folds them under the items that need them). Pure; deterministic (the lists follow the reports'
- * order).
+ * did (the Review panel folds them under the items that need them). A finding of a moment with no clip or cue (SILENCE,
+ * DIP: spec 12 P6-E12, a bed or room tone filling it) goes to the items whose new clips (`spans`, sequence frames) play
+ * over its range. Pure; deterministic (the lists follow the reports' order).
  */
 export function soundCheckDelta(
 	before: readonly Finding[],
 	after: readonly Finding[],
-	items: readonly { itemId: string; touched: ReadonlySet<string>; setup?: boolean }[],
+	items: readonly {
+		itemId: string;
+		touched: ReadonlySet<string>;
+		setup?: boolean;
+		spans?: readonly (readonly [number, number])[];
+	}[],
 	verdict: SoundCheckDelta['verdict'],
 ): SoundCheckDelta {
 	const keysBefore = new Set(before.map((f) => f.id));
 	const keysAfter = new Set(after.map((f) => f.id));
 	const row = (f: Finding): SoundCheckDeltaFinding => {
 		const names = [...(f.clipIds ?? []), ...(f.cueId ? [f.cueId] : [])];
-		const hit = items.filter((it) => names.some((n) => it.touched.has(n)));
+		const at = f.range ?? (f.frame !== undefined ? { start: f.frame, end: f.frame + 1 } : null);
+		const hit = names.length
+			? items.filter((it) => names.some((n) => it.touched.has(n)))
+			: at
+				? items.filter((it) => it.spans?.some(([a, b]) => a < at.end && b > at.start))
+				: [];
 		const main = hit.filter((it) => !it.setup);
 		const itemIds = (main.length ? main : hit).map((it) => it.itemId);
 		return {
@@ -302,10 +313,16 @@ export async function runProposalCheck(
 	);
 	if (ctx.signal.aborted) throw new JobError('CANCELLED', 'Cancelled', false);
 	const beforeAcks = applySoundAcknowledgements(live.doc, seq.id, base.issues);
+	const previewClips =
+		(previewSeq as { clips?: Record<string, { start: number; duration: number }> }).clips ?? {};
 	const items = applied.map((id) => ({
 		itemId: id,
 		touched: touchedBy(preview.items[id]),
 		setup: isSetupItem(byId.get(id)!),
+		// the frames its new clips play (a bed or room tone filling a silence)
+		spans: (preview.items[id]?.created ?? [])
+			.filter((c) => Object.hasOwn(previewClips, c))
+			.map((c) => [previewClips[c]!.start, previewClips[c]!.start + previewClips[c]!.duration] as const),
 	}));
 	const delta = soundCheckDelta(
 		beforeAcks.open as Finding[],

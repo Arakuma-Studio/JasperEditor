@@ -56,6 +56,7 @@ import {
 	type RouteResponse,
 	type SceneDetectRequest,
 	type SfxRebalanceRequest,
+	type SoundBedsRequest,
 	type SoundCheckLastRequest,
 	type SoundCheckRequest,
 	type SoundCuesRequest,
@@ -68,6 +69,7 @@ import {
 	type SoundMomentRequest,
 	type SoundProfileBuildRequest,
 	type SoundProfileImportRequest,
+	type SoundRoomToneRequest,
 	type SoundRootsPutRequest,
 	type SoundSearchRequest,
 	type SoundVisualRequest,
@@ -455,6 +457,25 @@ export class EngineClient {
 	 */
 	rebalanceSfx(req: SfxRebalanceRequest, signal?: AbortSignal) {
 		return this.call('soundDesignRebalance', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/**
+	 * Ambience beds (spec 12 §4 P6-E12; `POST /api/sound-design/beds/plan`): the scenes, each recording's clean window and
+	 * loop points and the transaction that lays a bed per scene (`SoundBedsPlan`). Read-only.
+	 */
+	planAmbienceBeds(req: SoundBedsRequest, signal?: AbortSignal) {
+		return this.call('soundDesignBedsPlan', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** Ambience beds: a `sound-design` job (202) that proposes (default) or applies them (`SoundBedsResult`). */
+	layAmbienceBeds(req: SoundBedsRequest, signal?: AbortSignal) {
+		return this.call('soundDesignBeds', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** Room tone (`POST /api/sound-design/room-tone/plan`): the gaps, the floor, the ranked tones, the transaction. */
+	planRoomTone(req: SoundRoomToneRequest, signal?: AbortSignal) {
+		return this.call('soundDesignRoomTonePlan', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** Room tone: a `sound-design` job (202) that proposes (default) or applies the fill (`SoundRoomToneResult`). */
+	fillRoomTone(req: SoundRoomToneRequest, signal?: AbortSignal) {
+		return this.call('soundDesignRoomTone', { body: req, ...(signal ? { signal } : {}) });
 	}
 	/**
 	 * Delivery preset (spec 12 §2.4, P4-R4; `POST /api/sound-design/delivery`): a `sound-design` job that measures the

@@ -104,6 +104,14 @@ function safeWords(doc: ProjectDocument, seq: Sequence) {
 }
 
 /** Essential Sound dialogue clips on unmuted tracks, enabled (whatever their transcript). */
+export function dialogueClipsOf(seq: Sequence): Clip[] {
+	try {
+		return dialogueClips(seq);
+	} catch {
+		return [];
+	}
+}
+
 function dialogueClips(seq: Sequence): Clip[] {
 	const live = new Set(
 		(Array.isArray(seq?.audioTracks) ? seq.audioTracks : []).filter((t) => t && !t.mute).map((t) => t.id),

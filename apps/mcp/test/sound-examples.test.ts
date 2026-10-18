@@ -36,6 +36,7 @@ const SOUND_COMMANDS = [
 	'soundDesign.applyDelivery',
 	'soundDesign.acknowledgeIssue',
 	'soundDesign.unacknowledgeIssue',
+	'soundDesign.layBed',
 ];
 
 /** A music clip on A1 (Phase 4 mixing examples). */

@@ -30,7 +30,7 @@ import {
 import { MaskSchema } from './mask.ts';
 import { PuppetSchema } from './puppet.ts';
 import { type VectorShapeData, VectorShapeDataSchema } from './shapes.ts';
-import type { ClipSfx, SoundDesign } from './sound.ts';
+import type { ClipBed, ClipSfx, SoundDesign } from './sound.ts';
 import { TextAnimatorGroupSchema, TextMoreOptionsSchema, TextPathOptionsSchema } from './text-animators.ts';
 import {
 	CameraDataSchema,
@@ -617,6 +617,11 @@ export const AudioClipSchema = z.looseObject({
 	 * as any value here so a malformed one never fails a load; INV-SFX checks it and `repairDocument` repairs or drops it.
 	 */
 	sfx: z.custom<ClipSfx>(() => true).optional(),
+	/**
+	 * sound-design (spec 12 §4 P6-E12): the clip is a piece of an ambience or room-tone bed (`soundDesign.layBed`).
+	 * Accepted as any value here; INV-SFX checks it and `repairDocument` drops a malformed one (the clip stays).
+	 */
+	bed: z.custom<ClipBed>(() => true).optional(),
 });
 export const StillClipSchema = z.looseObject({
 	...commonShape,

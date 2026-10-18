@@ -9509,7 +9509,8 @@ Record: `licenses/ported/earshot.md`
 - **Copyright:** Copyright (c) 2026 Leon Lin
 - **Ported by:** sound design WP-E1 (Sound Check: new findings), 2026-10-17; WP-E5 (takes, judge flags), 2026-10-18;
   WP-E6 (cue grammar, variation policy, personality, palette coherence), 2026-10-18; WP-E7 (music to picture),
-  2026-10-18; WP-E4 (reference profiles), 2026-10-18; WP-E9 (Describe-it search, Find Moment), 2026-10-18
+  2026-10-18; WP-E4 (reference profiles), 2026-10-18; WP-E8 (ambience and room-tone beds),
+  2026-10-18; WP-E9 (Describe-it search, Find Moment), 2026-10-18
 
 | Upstream path | Our path | What |
 |---|---|---|
@@ -9614,6 +9615,21 @@ sequence reference of the checked sequence) and, by measurements, on level-indep
 tolerance (earshot: 3 of loudness, true peak, brightness and the mid share — similar generated films matched). Rows are
 Sound Check findings of severity warning (major) or info (minor), never errors. Not ported: realness, the AudioSet music
 share, tempo, the beat-grid share, the verdict score, the bundled profile.
+
+## Ambience and room-tone beds (sound design WP-E8, 2026-10-18)
+
+| Upstream path | Our path | What |
+|---|---|---|
+| `skills/real-sound/scripts/analyze.py` (`spikes_over_12db`: 100 ms windows more than 12 dB over the median level; `level_std_db_100ms`; "ambience: level_std small, no spikes") | `packages/audio-fx/src/analysis/loop-window.ts` (`findCleanWindow`) | 100 ms levels; a spike is a frame ≥ 10 dB (spec 12 P6-E12; earshot 12 dB) over the median of its 1 s neighbourhood (earshot: of the whole file); the window's level standard deviation as its steadiness |
+| `skills/real-sound/references/sound-design.md` §8 ("Ambience zones: one bed per location, from clean windows of real field recordings … cut with the picture's cuts, ducked under key actions") | `packages/project/src/sound/ambience-bed.ts` (`bedScenes`, `planBedLayout`), `apps/engine/src/sound-design/beds.ts` | One bed per scene from the recording's clean window, cut with the picture's scene changes, optionally ducked |
+| `skills/real-sound/scripts/mix.py` (ambience beds: `src_start..src_end` "the clean window (also the loop)", "loop with a 1.5 s equal-power crossfade", `fade_in` / `fade_out` 1.0 s) | `packages/audio-fx/src/analysis/loop-window.ts` (`LOOP_CROSSFADE`), `packages/project/src/sound/ambience-bed.ts` (`AMBIENCE_BED_DEFAULTS`), `commands/handlers/sound-beds.ts` | The 1.5 s equal-power loop crossfade and 1 s fades of a bed |
+
+Notes: Python/NumPy → TypeScript; no code was copied. Changes: earshot mixes the loop into one rendered stem; ours lays
+ordinary clips joined by crossfade transitions (every joint editable and undoable). The clean-window search over
+lengths and positions, the onset rate in its score, the loop-point search (head and tail matched in level, octave-band
+shape and correlation, the loop a whole number of timeline frames, equal gain for material that repeats in phase), the
+scene structure, the room-tone matching (the dialogue's noise floor, the spectral-shape distance, the quietest stretch
+outside voice activity) and the levels are ours. Not ported: earshot's EQ / width on beds, its `auto` ducking rides.
 
 ## Describe-it search and Find Moment (sound design WP-E9, 2026-10-18)
 

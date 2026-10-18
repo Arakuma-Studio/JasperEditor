@@ -74,12 +74,14 @@ import {
 	DENSITY_BUDGETS,
 	deliveryPreset,
 	deriveCues,
+	dialogueRegions,
 	dialogueSpans,
 	duckingDepthBy,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	frameToSample,
 	HERO_MIN_SEC,
+	insideDialogueRegion,
 	isCommercialSafe,
 	isSfxClip,
 	isShareAlike,
@@ -102,6 +104,7 @@ import {
 	readLibraryProvenance,
 	readSoundCheckTarget,
 	requiresAttribution,
+	roomToneSpan,
 	type Sequence,
 	SOUND_CHECK_CAP_TOLERANCE_LU,
 	SOUND_CHECK_CATEGORY,
@@ -148,6 +151,7 @@ import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { sec } from '../tools/ffmpeg.ts';
 import { HttpError } from '../tools/reply.ts';
 import { type AudioWorld, audioWorld, type MeasureCache, measureSfxEvents, VAD_FLOOR_DBFS } from './bed.ts';
+import { planRoomTone } from './beds.ts';
 import {
 	arcFindings,
 	CheckProbes,
@@ -1813,12 +1817,73 @@ export async function checkSequence(
 	// A quiet run that reaches the end of the sequence after sound is how the mix ends (a tail into silence, which
 	// ENDING asks for: P6-E3), not a SILENCE finding.
 	const endsSequence = range.end >= duration;
-	for (const [a, b] of silentRuns) {
-		const fa = Math.floor(hopFrame(a));
-		const fb = Math.min(range.end, Math.ceil(hopFrame(b)));
-		if (silenceExplained(fa, fb)) continue;
-		if (endsSequence && b >= rangeHops && a > 0 && audibleHops > 0) continue;
-		const fix = silenceFix(fa, fb);
+	const counted = silentRuns
+		.map(([a, b]) => ({ a, b, fa: Math.floor(hopFrame(a)), fb: Math.min(range.end, Math.ceil(hopFrame(b))) }))
+		.filter(
+			(r) =>
+				!silenceExplained(r.fa, r.fb) && !(endsSequence && r.b >= rangeHops && r.a > 0 && audibleHops > 0),
+		);
+	// P6-E12: a silence inside a dialogue region (dialogue on both sides less than 10 s apart) is a hole in the scene:
+	// its fix fills it with room tone (the closest match to the dialogue's noise floor; not safe: the user listens)
+	const regions = dialogueRegions(doc, seq, { voice: voice.voice });
+	const holes = counted.filter((r) => insideDialogueRegion(regions, r.fa, r.fb));
+	let roomTone: Awaited<ReturnType<typeof planRoomTone>> | null = null;
+	if (holes.length) {
+		progress(0.72, 'Matching room tone to the dialogue');
+		try {
+			roomTone = await planRoomTone(
+				{
+					agent: () => undefined,
+					proposals: () => undefined,
+					sounds: () => env.sounds,
+					ffmpeg: env.ff,
+					registry: env.registry,
+				},
+				doc,
+				seq,
+				projectId,
+				{ gaps: holes.map((r) => ({ start: r.fa, end: Math.max(r.fa + 1, r.fb) })) },
+				{
+					voice: voice.voice,
+					...(env.signal ? { signal: env.signal } : {}),
+					...(env.onSpawn ? { onSpawn: env.onSpawn } : {}),
+				},
+			);
+		} catch (e) {
+			aborted();
+			warnings.push({
+				code: 'W_ROOM_TONE_UNAVAILABLE',
+				message:
+					`Room tone could not be matched for the silences in the dialogue: ${(e as Error).message}`.slice(
+						0,
+						300,
+					),
+			});
+		}
+		for (const w of roomTone?.plan.warnings ?? [])
+			if (w.code !== 'W_NO_ROOM_TONE' || !roomTone?.plan.chosen)
+				warnings.push({ code: w.code, message: w.message });
+	}
+	const roomToneFix = (fa: number, fb: number): SoundCheckFix | undefined => {
+		const chosen = roomTone?.plan.chosen;
+		const lay = roomTone?.layBedFor([roomToneSpan({ start: fa, end: Math.max(fa + 1, fb) }, rate)]);
+		if (!roomTone || !chosen || !lay) return undefined;
+		const cmds = [...roomTone.setup.flatMap((x) => x.commands), lay];
+		if (!dryRun(doc, seq.id, cmds, env.registries).ok) return undefined;
+		return commandFix(
+			projectId,
+			soundCheckMessage('fixRoomTone', chosen.sound.title, fmt(chosen.gainDb)),
+			cmds,
+			false,
+			soundCheckMessage(
+				'whyRoomTone',
+				chosen.sound.title,
+				chosen.distanceDb === null ? '—' : `${chosen.distanceDb}`,
+			),
+		);
+	};
+	for (const { a, b, fa, fb } of counted) {
+		const fix = (holes.some((h) => h.fa === fa) ? roomToneFix(fa, fb) : undefined) ?? silenceFix(fa, fb);
 		issues.add({
 			subject: `${fa}`,
 			code: 'SILENCE',

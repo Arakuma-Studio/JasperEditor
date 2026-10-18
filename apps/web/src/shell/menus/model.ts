@@ -305,6 +305,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('sound.rebalanceSfx', 'Rebalance SFX Levels'),
 				c('sound.roomGlue', 'Room Glue…'),
 				c('sound.deliveryTarget', 'Delivery Target…'),
+				c('sound.layAmbienceBed', 'Lay Ambience Bed…'),
+				c('sound.fillRoomTone', 'Fill Room Tone'),
 				c('sound.runSoundCheck', 'Run Sound Check'),
 				c('sound.listenToSequence', 'Listen to Sequence'),
 				sep,

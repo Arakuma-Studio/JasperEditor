@@ -628,6 +628,29 @@ true peak take the Mix's normalisation gain without running the limiter; the pic
 from the scene detector (dissolves and slow changes are missed) while a sequence's are its edit's cuts and transitions;
 Reference rows offer advice, never a command fix.
 
+Phase 6 → WP-E8 ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP-E8"; spec 12 §4 P6-E12; earshot's
+ambience-zone ideas adapted, `licenses/ported/earshot.md`): ambience and room-tone beds — `soundDesign.layBed` lays a
+bed per scene (V1 cuts to other footage, scene markers, measured shot changes, or the user's scenes) as ordinary clips
+on an "Ambience" track: the recording's measured clean window (no spike ≥ 10 dB over its 1 s neighbourhood) looped at
+measured loop points with 1.5 s crossfades (equal power; equal gain when it repeats in phase), 0.5 s crossfades at
+scene changes, 1 s fades, at the ambience level, optionally ducked; room tone fills the holes between dialogue clips
+with the palette / library tone whose octave-band shape is closest to the dialogue's noise floor (within 3 dB), else
+the dialogue's own quietest stretch, at the floor's level; Sound Check's SILENCE inside dialogue has the fix "Fill it
+with room tone" (not safe). Engine `POST /api/sound-design/beds[/plan]`, `/room-tone[/plan]` (propose / apply), MCP
+`lay_ambience_bed`, `fill_room_tone`, Sequence ▸ Sound Design ▸ Lay Ambience Bed… / Fill Room Tone. Measured: a 4 s
+ambience over three scenes of 20 s — 9 pieces, 6 loop and 2 scene crossfades, the Sound Check has no finding at all,
+the native export is within 0.09 dB of its body at every joint (100 ms RMS) with no click; a 1 s hole between dialogue
+clips (floor −53 dBFS) is reported SILENCE, its fix chooses the pink room tone (shape 0.21 dB; hum 5.62, hiss 5.13) and
+the export plays −53.06 dBFS there (the floor −52.10). Rerun `packages/audio-fx/test/loop-window.test.ts`,
+`packages/project/test/ambience-bed.test.ts`, `apps/engine/test/sound-beds.test.ts`, `apps/mcp/test/sound-beds.test.ts`,
+`apps/web/test/sound-beds.test.tsx`, `e2e/sound-beds.spec.ts`. Limits left: loop points are found on the decoded mix of
+the recording's channels (the loop is the same for both); the loop length is a whole number of frames, so a mains hum
+at 25 / 30 fps always repeats in phase (then the joint is equal-gain); the clean window, loop points and room-tone
+ranking are measured on generated recordings in the tests (not a labelled set of real beds); scenes follow cuts to
+other footage, not a location the picture shows (two locations in one clip need a marker or the measured shot changes);
+room tone from the dialogue's own media can be as short as 0.5 s (its loop then has many joints); a library room tone
+is matched by octave-band shape only (no hum detection beyond what the bands show).
+
 Phase 6 → WP-E9 ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP-E9"; spec 12 §4 P6-E14, human
 decision 2026-10-17; earshot's calibration idea, our vocabulary and maths, `licenses/ported/earshot.md`): Describe-it
 search and Find Moment with the optional, user-installed LAION CLAP `larger_clap_general` (Apache-2.0; analysis only).
