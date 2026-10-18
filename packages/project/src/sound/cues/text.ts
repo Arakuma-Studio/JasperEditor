@@ -56,10 +56,14 @@ const UNKNOWN_PRESET = {
 
 /**
  * Thins sorted pattern frames: drops repeats and frames closer than `fps / 12` to the last kept one (≤ 12 per
- * second), then keeps at most 40 evenly spread. Returns indices into `frames`.
+ * second; `minSpacingFrames` instead when given: one key per word start keeps every word on its own frame), then
+ * keeps at most 40 evenly spread. Returns indices into `frames`.
  */
-export function thinPattern(frames: readonly number[], fps: number): number[] {
-	const spacing = fps / PATTERN_MAX_PER_SEC;
+export function thinPattern(frames: readonly number[], fps: number, minSpacingFrames?: number): number[] {
+	const spacing =
+		minSpacingFrames !== undefined && Number.isFinite(minSpacingFrames)
+			? Math.max(1, minSpacingFrames)
+			: fps / PATTERN_MAX_PER_SEC;
 	const kept: number[] = [];
 	let last = Number.NEGATIVE_INFINITY;
 	for (let i = 0; i < frames.length; i++) {
@@ -124,9 +128,11 @@ function textClipCues(ctx: CueContext, c: TextClip, cues: CueCandidate[]): void 
 			const byWord = choice === 'words' && unit === 'char';
 			const starts = byWord ? new Set(wordStartUnits(text, 'char')) : null;
 			const units = frames.map((_, i) => i).filter((i) => !starts || starts.has(i));
+			// one key per word replaces the 12/s thinning (no two words on one frame)
 			const keep = thinPattern(
 				units.map((i) => frames[i]!),
 				ctx.fps,
+				byWord ? 1 : undefined,
 			).map((k) => units[k]!);
 			const group = `text:${c.id}:${side}:typewriter`;
 			const how = byWord
@@ -281,7 +287,7 @@ function selectorCues(
 		}
 	}
 	const frames = steps.map((f) => f.frame);
-	const keep = thinPattern(frames, ctx.fps);
+	const keep = thinPattern(frames, ctx.fps, how ? 1 : undefined);
 	const group = `text:${c.id}:animator:${g.id}:${sel.id}`;
 	const name = typeof g.name === 'string' && g.name ? `'${g.name}'` : 'animator';
 	for (const i of keep) {

@@ -819,17 +819,6 @@ export function selectPlanSounds(
 		const notes: string[] = missingTypes.map(
 			(t) => `no commercial-safe sound of type ${t} in the allowed sources: that layer is left out`,
 		);
-		if (first.voice)
-			notes.push(
-				`one ${first.voice.type} voice: ${chosen.entry.title || chosen.entry.id} (${
-					first.voice.from === 'palette'
-						? 'the palette sound'
-						: first.voice.from === 'placed'
-							? 'the first placed'
-							: 'the first in this sequence'
-				}), same level, no variation`,
-			);
-		else if (first.variation === 'takes') notes.push('no varispeed: keys, ticks and taps vary the take, not the pitch');
 		let role: Role = cue.weight === 'hero' ? 'hero' : 'support';
 		if (role === 'hero' && style.respectDialogue && inDialogue(cue.frame)) {
 			role = 'support';
@@ -845,6 +834,17 @@ export function selectPlanSounds(
 			}
 		}
 		if (role === 'hero') heroes.push(cue.frame);
+		if (first.voice)
+			notes.push(
+				`one ${first.voice.type} voice: ${chosen.entry.title || chosen.entry.id} (${
+					first.voice.from === 'palette'
+						? 'the palette sound'
+						: first.voice.from === 'placed'
+							? 'the first placed'
+							: 'the first in this sequence'
+				}), same level, no variation`,
+			);
+		else if (first.variation === 'takes') notes.push('no varispeed: keys, ticks and taps vary the take, not the pitch');
 		const firstType = chosen.entry.types.find(isSoundTypeId);
 		const align: CueAlign = cue.align ?? (firstType ? SOUND_TYPES[firstType].defaultAlign : 'peak');
 		if ([chosen, ...extraLayers.map((l) => l.sound)].some((r) => r.entry.source.type === 'synth'))
