@@ -20,6 +20,7 @@ import {
 import { appdirPaths } from '@jasper/config';
 import { makeEnvelope, type ProjectDocument, type Proposal, soundAcknowledgementsOf } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { AgentService } from '../src/agent/service.ts';
 import type { Broadcaster } from '../src/events/broadcaster.ts';
 import { soundCheckDelta } from '../src/sound-design/check-proposal.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -38,7 +39,7 @@ let media: FixtureMedia;
 let projects = 0;
 
 function seed(doc: ProjectDocument): string {
-	const projectId = `prj_${(++projects).toString().padStart(14, '0')}a2`;
+	const projectId = `prj_${(++projects).toString().padStart(16, '0')}`;
 	const file = appdirPaths(app.appdir).projectFile(projectId);
 	mkdirSync(join(file, '..'), { recursive: true });
 	writeFileSync(
@@ -75,6 +76,16 @@ async function tx(projectId: string, commands: unknown[], headers: Record<string
 	);
 	expect(r.statusCode, r.body).toBe(200);
 	return (r.json() as { result: { ok: boolean; errors?: { code: string; message: string }[] } }).result;
+}
+/** An edit as the user's own (the editor's session applies the panel's edits with origin user). */
+async function userTx(projectId: string, commands: unknown[]) {
+	const agent = app.jasper.services.agent as AgentService;
+	const out = await agent.transact(
+		projectId,
+		{ label: 'Acknowledge Sound Check Finding', origin: { agent: 'editor' }, commands },
+		{ preApproved: true, asUser: true },
+	);
+	return out.result as { ok: boolean };
 }
 const describeIssues = (r: SoundCheckResult) =>
 	r.report.issues.map((i) => `${i.severity} ${i.id} ${i.message.text}`).join('\n');
@@ -162,9 +173,9 @@ describe('acknowledged findings (P6-E4, real engine)', { timeout: 600_000 }, () 
 			active: false,
 			why: 'needs-user',
 		});
-		// the user (editor key): accepted, and the check leaves the error out
-		const user = await tx(projectId, [ackOf(lic!, 'Licensed separately for this film (contract 2026-114)')], EDITOR_H);
-		expect(user.ok, JSON.stringify(user.errors)).toBe(true);
+		// the user's own edit (what the Sound Check panel applies, origin user): accepted, the check leaves the error out
+		const user = await userTx(projectId, [ackOf(lic!, 'Licensed separately for this film (contract 2026-114)')]);
+		expect(user.ok, JSON.stringify(user)).toBe(true);
 		const ok = (await check({ projectId })).result;
 		expect(ok.report.issues.find((i) => i.id === lic!.id)!.acknowledged).toMatchObject({
 			by: 'user',
@@ -178,10 +189,7 @@ describe('acknowledged findings (P6-E4, real engine)', { timeout: 600_000 }, () 
 /** The masked fixture (music +14 dB, the click 12 dB down), its kept check, and a proposal (gain fix + a repeat). */
 async function maskedProposal() {
 	const fx = buildCheckDoc(media);
-	fx.b.tx([
-		{ type: 'audio.setGain', clipIds: [fx.ids.music], mode: 'set', db: 14 },
-		{ type: 'soundDesign.applyGains', gains: { [fx.ids.clipB]: -12 } },
-	]);
+	fx.b.tx([{ type: 'soundDesign.applyGains', gains: { [fx.ids.clipB]: -30 } }]);
 	const projectId = seed(fx.doc());
 	const { job: baseJob, result: base } = await check({ projectId, store: true }, EDITOR_H);
 	const masked = base.report.issues.find((i) => i.code === 'MASKED' && i.clipIds?.[0] === fx.ids.clipB);
@@ -202,16 +210,20 @@ async function maskedProposal() {
 						cueId: '$q',
 						layers: [{ mediaId: fx.ids.hitMedia, role: 'support', align: 'peak', ref: '$h' }],
 					},
-					{ type: 'soundDesign.applyGains', gains: { $h: 6 } },
 				],
 			},
 			{ id: 'bad', label: 'On a track that does not exist', commands: [{ type: 'track.update', trackId: 'A9', patch: { mute: true } }] },
+			{
+				id: 'name',
+				label: 'Name the last hit',
+				commands: [{ type: 'clip.update', clipId: fx.ids.clipC, patch: { name: 'The last hit' } }],
+			},
 		],
 	};
 	const r = await post(`/api/projects/${projectId}/proposals`, draft, AGENT_H);
 	expect(r.statusCode, r.body).toBe(200);
 	const proposal = ProposalCreateResponseSchema.parse(r.json()).proposal as Proposal;
-	expect(proposal.items.map((i) => i.state)).toEqual(['pending', 'pending', 'invalid']);
+	expect(proposal.items.map((i) => i.state)).toEqual(['pending', 'pending', 'invalid', 'pending']);
 	return { fx, projectId, base, baseJob, masked: masked!, proposal };
 }
 
@@ -228,8 +240,8 @@ describe('Sound Check of a proposal (P6-E5, real engine)', { timeout: 900_000 },
 		expect(p.proposalId).toBe(proposal.id);
 		expect(p.base).toBe('kept');
 		expect(p.baseJobId).toBe(baseJob.id);
-		expect(p.itemIds).toEqual(['gain', 'rep']);
-		expect(p.skipped).toEqual([]);
+		expect(p.itemIds).toEqual(['gain', 'rep', 'name']);
+		expect(p.skipped).toEqual([{ itemId: 'bad', state: 'invalid', reason: expect.stringMatching(/A9/) }]);
 		const fixedCodes = [...new Set(p.delta.fixed.map((f) => f.code))].sort();
 		const introducedCodes = [...new Set(p.delta.introduced.map((f) => f.code))].sort();
 		const text = JSON.stringify(p.delta, null, 1);
@@ -278,19 +290,22 @@ describe('Sound Check of a proposal (P6-E5, real engine)', { timeout: 900_000 },
 	it('invalid and stale items are skipped and listed; a fresh base when the kept report is stale; typed refusals', async () => {
 		const { fx, projectId, proposal } = await maskedProposal();
 		// the kept report goes stale (an edit of the mix): the base is run
-		const e = await tx(projectId, [{ type: 'audio.setGain', clipIds: [fx.ids.clipC], mode: 'adjust', db: -0.5 }], EDITOR_H);
+		const e = await tx(projectId, [{ type: 'audio.setGain', clipIds: [fx.ids.clipA], mode: 'adjust', db: -0.5 }], EDITOR_H);
 		expect(e.ok).toBe(true);
 		const { job, result } = await check({ projectId, proposalId: proposal.id, itemIds: ['gain', 'bad'] });
 		expect(result.proposal!.base).toBe('run');
 		expect(result.proposal!.baseJobId).toBe(job.id);
 		expect(result.proposal!.itemIds).toEqual(['gain']);
 		expect(result.proposal!.skipped).toEqual([{ itemId: 'bad', state: 'invalid', reason: expect.stringMatching(/A9/) }]);
-		// a stale item (its clip moved since): skipped with why
-		const m = await tx(projectId, [{ type: 'clip.move', clipIds: [fx.ids.clipB], deltaFrames: 5 }], EDITOR_H);
+		// a stale item (the clip it names moved since): skipped with why
+		const m = await tx(projectId, [{ type: 'clip.move', clipIds: [fx.ids.clipC], deltaFrames: 5 }], EDITOR_H);
 		expect(m.ok, JSON.stringify(m.errors)).toBe(true);
 		const st = (await check({ projectId, proposalId: proposal.id })).result.proposal!;
-		expect(st.skipped.find((s) => s.itemId === 'gain')).toMatchObject({ state: 'stale' });
-		expect(st.itemIds).toEqual(['rep']);
+		expect(st.skipped.find((s) => s.itemId === 'name'), JSON.stringify(st.skipped)).toMatchObject({
+			state: 'stale',
+			reason: expect.stringMatching(/moved/),
+		});
+		expect(st.itemIds).not.toContain('name');
 		// refusals
 		const code = async (body: Record<string, unknown>) => {
 			const r = await post('/api/sound-design/check', body);

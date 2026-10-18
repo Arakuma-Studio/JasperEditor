@@ -4,8 +4,8 @@
 // current document:
 //
 // 1. The proposal is re-validated on the live document (its stale / invalid items are recorded as such). The items
-//    checked are the requested ones (default: every pending item) with what they require; a requested item that is
-//    stale or invalid, or requires one, is skipped and listed, and so is one that fails in the preview.
+//    checked are the requested ones (default: every item left to review) with what they require; a requested item that
+//    is stale or invalid, or requires one, is skipped and listed, and so is one that fails in the preview.
 // 2. The preview document is `previewProposal` with the session's per-item seeded ids (`<proposal>:<item>:<alternative>`):
 //    every created entity is attributed to its item, the same ids every run (deterministic finding keys — and the very
 //    ids the Review panel's ghosts have), and the result is checked against the invariants as Apply checks it.
@@ -179,9 +179,12 @@ export async function runProposalCheck(
 		throw new JobError('NOT_FOUND', `No item ${unknown[0]} in proposal ${proposalId}`, false, {
 			code: 'E_NOT_FOUND',
 		});
+	// default: every item left to review (pending, and the stale and invalid ones, which are skipped and listed)
 	const requested = req.itemIds
 		? [...new Set(req.itemIds)]
-		: proposal.items.filter((it) => it.state === 'pending').map((it) => it.id);
+		: proposal.items
+				.filter((it) => it.state === 'pending' || it.state === 'stale' || it.state === 'invalid')
+				.map((it) => it.id);
 	// stale / invalid items (and what requires them) are skipped; accepted ones are in the document already
 	const skipped: SoundCheckProposal['skipped'] = [];
 	const checked: string[] = [];

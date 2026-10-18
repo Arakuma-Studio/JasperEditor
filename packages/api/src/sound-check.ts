@@ -74,7 +74,7 @@ export const SoundCheckRequestSchema = z.strictObject({
 		.string()
 		.regex(/^prp_[0-9A-HJKMNP-TV-Z]{16}$/, 'a proposal id')
 		.optional(),
-	/** With `proposalId`: the items to check (default every pending item; what they require comes with them). */
+	/** With `proposalId`: the items to check (default every item left to review; what they require comes with them). */
 	itemIds: z.array(z.string().min(1).max(64)).min(1).max(2000).optional(),
 })
 	.refine((r) => !(r.proposalId && r.store), {
