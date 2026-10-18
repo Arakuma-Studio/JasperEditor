@@ -375,8 +375,8 @@ export function spectralDistanceDb(
 
 /**
  * The loop points of a window for an equal-power crossfade of `crossfadeSec` (see the module docs). `frameSec` (the
- * timeline's frame, default 10 ms) makes `outSec − inSec` a whole number of frames. The crossfade is shortened to a third of the
- * window when the window is shorter than three crossfades. Null for invalid input or a window under 3 frames.
+ * timeline's frame, default 10 ms) makes `outSec − inSec` a whole number of frames. The crossfade is shortened to 40 % of the
+ * window when the window is shorter than 2.5 crossfades. Null for invalid input or a window under 3 frames.
  */
 export function findLoopPoints(
 	x: Float32Array,
@@ -391,7 +391,7 @@ export function findLoopPoints(
 	const frame = fin(opts.frameSec) && opts.frameSec >= 0.001 && opts.frameSec < 1 ? opts.frameSec : 0.01;
 	if (we - ws < 3 * frame) return null;
 	let X = fin(opts.crossfadeSec) && opts.crossfadeSec > 0 ? opts.crossfadeSec : LOOP_CROSSFADE.defaultSec;
-	X = Math.min(X, (we - ws) / 3);
+	X = Math.min(X, (we - ws) / 2.5);
 	// the timeline's crossfade is a whole number of frames
 	X = Math.max(frame, Math.floor(X / frame + 1e-9) * frame);
 	const S = Math.min(LOOP_CROSSFADE.searchSec, Math.max(0, (we - ws - 2 * X) / 4));

@@ -251,15 +251,17 @@ type BedSource = {
 	fingerprint: string;
 	durationSec: number;
 	/** Setup items (bin, register / provenance) this source needs. */
-	setup: { id: string; label: string; commands: Record<string, unknown>[] }[];
+	setup: SetupItem[];
 };
+
+type SetupItem = { id: string; label: string; commands: Record<string, unknown>[]; requires?: string[] };
 
 type Sources = {
 	doc: ProjectDocument;
 	projectId: string;
 	byKey: Map<string, Promise<BedSource>>;
 	binRef: string | null;
-	binItem: { id: string; label: string; commands: Record<string, unknown>[] } | null;
+	binItem: SetupItem | null;
 	n: number;
 };
 
@@ -338,6 +340,8 @@ async function librarySource(deps: BedDeps, src: Sources, soundId: string): Prom
 		id: soundSetupItemId(soundId),
 		label: `Import ${title}`.slice(0, 200),
 		commands: [{ ...cmd, asset: { ...cmd.asset, library: reg.library }, binId: src.binRef }],
+		// the bin this transaction creates comes first
+		...(src.binItem && src.binRef === '$bedBin' ? { requires: [src.binItem.id] } : {}),
 	});
 	return { soundId, mediaId: ref, title, path, fingerprint: reg.fingerprint, durationSec, setup };
 }
@@ -353,8 +357,8 @@ function sourceOf(deps: BedDeps, src: Sources, s: { soundId?: string; mediaId?: 
 }
 
 /** The setup items of the sources used (bin first, each source's once, in first-use order). */
-function setupItems(src: Sources, used: readonly BedSource[]): { id: string; label: string; commands: Record<string, unknown>[] }[] {
-	const out: { id: string; label: string; commands: Record<string, unknown>[] }[] = [];
+function setupItems(src: Sources, used: readonly BedSource[]): SetupItem[] {
+	const out: SetupItem[] = [];
 	const seen = new Set<string>();
 	const needsBin = used.some((u) => u.setup.some((s) => s.commands.some((c) => c.binId === '$bedBin')));
 	if (needsBin && src.binItem) {
@@ -1066,6 +1070,7 @@ async function finish(
 				label: s.label,
 				group: SOUND_PROPOSAL_SETUP_GROUP,
 				commands: s.commands,
+				...(s.requires ? { requires: s.requires } : {}),
 				meta: { setup: true },
 			})),
 			{

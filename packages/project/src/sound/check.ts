@@ -713,7 +713,7 @@ export const SOUND_CHECK_MESSAGES = {
 	whyDuckDepth: 'Ducking by {0} dB leaves the music {1} LU under the voice',
 	whySilence: 'Only if the silence is intended',
 	whyRoomTone:
-		'It adds a room tone under the dialogue gap: the closest match to the dialogue’s noise floor ({0}); listen that it blends in',
+		'It adds room tone under the gap in the dialogue: "{0}", {1} dB from the dialogue’s noise floor in spectral shape; listen that it blends in',
 	whyKeepCue: 'Or keep it where it is: it no longer follows the picture',
 	whyNoPicture: 'Only if nothing on screen calls for it',
 	whySimilar: 'A different sound found by similarity: listen before keeping it',

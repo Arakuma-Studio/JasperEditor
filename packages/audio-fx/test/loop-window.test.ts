@@ -204,9 +204,9 @@ describe('loop points', () => {
 		expect(Math.abs(mid - body)).toBeLessThan(1.2);
 	});
 
-	it('a short window shortens the crossfade to a third of it', () => {
+	it('a short window shortens the crossfade to 40 % of it', () => {
 		const lp = findLoopPoints(pink(9, 3, -30), SR, { startSec: 0, endSec: 3 }, { crossfadeSec: 1.5 })!;
-		expect(lp.crossfadeSec).toBe(1);
+		expect(lp.crossfadeSec).toBe(1.2);
 		expect(lp.outSec - lp.inSec).toBeGreaterThanOrEqual(2 * lp.crossfadeSec - 1e-9);
 	});
 });
