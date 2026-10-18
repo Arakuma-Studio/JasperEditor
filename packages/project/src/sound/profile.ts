@@ -744,9 +744,25 @@ function statusOf(v: number | null, lo: number | null, hi: number | null): Refer
 
 /**
  * Which reference of the profile the measured piece is (leave-one-out, earshot `critique.reference_match`): the same
- * identity (a sequence reference of this very sequence), else the same duration within 50 ms and at least 3 of
- * integrated loudness ±0.15, true peak ±0.15, brightness ±15 Hz and mid share ±0.15 dB. Null: none.
+ * identity (a sequence reference of this very sequence), else the same duration within 50 ms and every one of the
+ * level-independent measurements below within its tolerance (at least 6 of them measured on both). Null: none.
+ * Decision: earshot matches on 3 of loudness, true peak, brightness and the mid share; the loudness and the peak change
+ * with the delivery normalisation, and similar pieces (generated test films, episodes of one series) matched on 3, so
+ * ours asks for all of a longer, level-free list.
  */
+export const REFERENCE_MATCH_TOLERANCE: Readonly<Partial<Record<ReferenceMetricKey, number>>> = {
+	brightness_hz: 15,
+	band_low: 0.15,
+	band_mid: 0.15,
+	band_presence: 0.15,
+	band_air: 0.15,
+	side_to_mid_db: 0.15,
+	correlation: 0.01,
+	lra: 0.2,
+	crest_lu: 0.15,
+	onset_rate: 0.02,
+};
+
 export function referenceMatch(
 	m: Pick<ReferenceMeasurement, 'durationSec' | 'metrics'>,
 	profile: Pick<ReferenceProfile, 'references'>,
@@ -758,18 +774,13 @@ export function referenceMatch(
 		);
 		if (own) return { referenceId: own.id, title: own.title, by: 'identity' };
 	}
-	const tol: Partial<Record<ReferenceMetricKey, number>> = {
-		lufs_i: 0.15,
-		true_peak: 0.15,
-		brightness_hz: 15,
-		band_mid: 0.15,
-	};
+	const tol = REFERENCE_MATCH_TOLERANCE;
 	for (const g of profile.references) {
 		if (!(Math.abs(g.durationSec - m.durationSec) <= 0.05)) continue;
 		const both = (Object.keys(tol) as ReferenceMetricKey[]).filter(
 			(k) => fin(m.metrics[k]) && fin(g.metrics[k]),
 		);
-		if (both.length >= 3 && both.every((k) => Math.abs(m.metrics[k]! - g.metrics[k]!) <= tol[k]!))
+		if (both.length >= 6 && both.every((k) => Math.abs(m.metrics[k]! - g.metrics[k]!) <= tol[k]!))
 			return { referenceId: g.id, title: g.title, by: 'measurements' };
 	}
 	return null;

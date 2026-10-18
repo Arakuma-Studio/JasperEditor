@@ -598,8 +598,9 @@ export async function runSoundProfileJob(
 	}
 	const plan: Planned[] = [];
 	for (const id of req.mediaIds ?? []) {
-		const asset = doc?.media?.[id] as { name?: unknown } | undefined;
-		plan.push({ kind: 'media', mediaId: id, title: typeof asset?.name === 'string' ? asset.name : id });
+		const asset = doc?.media?.[id] as { name?: unknown; originalName?: unknown } | undefined;
+		const title = typeof asset?.name === 'string' ? asset.name : asset?.originalName;
+		plan.push({ kind: 'media', mediaId: id, title: typeof title === 'string' && title ? title : id });
 	}
 	for (const id of req.sequenceIds ?? []) {
 		const seq = doc?.sequences?.[id] as { name?: unknown } | undefined;

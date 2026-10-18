@@ -212,6 +212,11 @@ describe('comparison', () => {
 			status: 'high',
 			range: [-22.5, -17.5],
 		});
+		// the same piece delivered louder still matches (level-free); one with another mid share does not
+		const louder = { ...a, metrics: { ...a.metrics, lufs_i: -10, true_peak: -0.5 } };
+		expect(compareWithProfile(louder, p).leaveOneOut).toMatchObject({ referenceId: 'ref_1' });
+		const other = { ...a, metrics: { ...a.metrics, band_mid: -7.7 } };
+		expect(compareWithProfile(other, p).leaveOneOut).toBeNull();
 		// a sequence reference of this very sequence, by identity (even after an edit changed its numbers)
 		const q = profileOf(films, ['sequence', 'media', 'media', 'media']);
 		const byId = compareWithProfile(film({ band_air: -15, lufs_i: -10 }, 33), q, { identity: 'prj_a/seq_0' });
