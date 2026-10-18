@@ -172,9 +172,9 @@ export type LibraryFilters = {
 	similarTo: { id: string; title: string } | null;
 	/**
 	 * Describe (P6-E14): the query is a description ranked by the optional audio-text model (`describe`), not words
-	 * (`q`); without the model the engine searches its words.
+	 * (`q`); without the model the engine searches its words. Absent: off.
 	 */
-	describe: boolean;
+	describe?: boolean;
 };
 
 export const DEFAULT_FILTERS: LibraryFilters = {
