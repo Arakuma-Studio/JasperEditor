@@ -58,6 +58,8 @@ export function SoundStyleFields(props: {
 	fields?: readonly StyleField[];
 	disabled?: boolean;
 	testId?: string;
+	/** Show the "Sound design style" legend (default true; Preferences has its own group title). */
+	legend?: boolean;
 }) {
 	const { value, onChange, disabled } = props;
 	const show = (f: StyleField) => !props.fields || props.fields.includes(f);
@@ -75,7 +77,7 @@ export function SoundStyleFields(props: {
 	const current = value.personality ?? 'none';
 	return (
 		<fieldset className="flex flex-col gap-1" data-testid={props.testId ?? 'sound-style'}>
-			<legend className="mb-1 text-pr-muted">{t('Sound design style')}</legend>
+			{props.legend === false ? null : <legend className="mb-1 text-pr-muted">{t('Sound design style')}</legend>}
 			{show('personality') ? (
 				<div className="flex flex-col gap-0.5" data-testid="sound-style-personality">
 					<div className="flex items-center gap-2">

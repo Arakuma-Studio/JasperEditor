@@ -641,6 +641,7 @@ export function StylePreference() {
 			<SoundStyleFields
 				value={value}
 				onChange={set}
+				legend={false}
 				disabled={!session || !seqId || readOnly}
 				testId="prefs-style-fields"
 			/>

@@ -774,8 +774,9 @@ export function selectPlanSounds(
 			}
 			const fill = fillTypeOf(candidates[0]!.entry.types, types);
 			const variation = variationOfType(fill);
-			// a run (staggered cards: the derivation's `run:` group) rotates within one type, so it climbs as one sound
-			if (fill && cue.derived?.group?.startsWith('run:')) {
+			// a run (staggered cards: the derivation's `run:` group) rotates within one type, so it climbs as one sound;
+			// keys, ticks and taps rotate their own type's takes and sounds (one keyboard, not a mix of clicks and ticks)
+			if (fill && (cue.derived?.group?.startsWith('run:') || variation === 'takes')) {
 				const same = candidates.filter((c) => fillTypeOf(c.entry.types, types) === fill);
 				if (same.length) candidates = same;
 			}
