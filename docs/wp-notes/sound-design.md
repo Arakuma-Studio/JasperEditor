@@ -8681,3 +8681,15 @@ ffmpeg), `apps/mcp/test/sound-grammar.test.ts` (5, a real engine over stdio), `a
   not stored cues, and only music clips on unlocked tracks.
 - WP-E7 (music to picture) can add `tuneToMusic` / `stopOnBar` next to the style fields here (`resolveSoundStyle`,
   `SoundDesignStyleSchema`, the plan's `PlanStyle.grammar`, `SoundStyleFields`).
+
+#### Integration
+
+`feat/sound-design` merged in at `b4e152ef` (WP-E3: conflicts in `licenses/ported/earshot.md`, `es.json` and
+`THIRD_PARTY_NOTICES.md`, both sides kept, notices and `en.json` regenerated). Then, on the build server:
+`pnpm typecheck` (no errors), `SD_GIT=1 … pnpm lint` (Biome and check-tokens / anime / layers / assets ok), `pnpm notices
+--check` (current, 33 ported records), `node scripts/i18n.mjs --check` (10 109 strings), and `pnpm vitest run
+packages/project apps/engine/test/sound-design apps/engine/test/sound-grammar-export.test.ts
+apps/engine/test/sound-check.test.ts apps/engine/test/sound-check-review.test.ts apps/engine/test/sound-takes-plan.test.ts
+apps/engine/test/sounds-search.test.ts apps/mcp/test/sound apps/web/test/sound apps/web/test/auto-sound-pass.test.tsx
+--maxWorkers=8`: 250 files, 2 765 passed, 12 skipped; `sound-design-motion` fails to load (no libx264, as on
+`feat/sound-design`). `e2e/sound-grammar.spec.ts` passed after `pnpm build`.
