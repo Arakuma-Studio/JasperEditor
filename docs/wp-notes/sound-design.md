@@ -10016,13 +10016,15 @@ tests after).
 
 #### Limits and notes for the next packages
 
-- With a long primed wait (0.62 s measured) Remotion suspends and resumes the context for an instant as the wait ends
-  (`suspended` and `running` at the same context time in the transport log; with the 41.6 ms and 125 ms waits it does not
-  show): the picture then leads the program by up to ≈ 15 ms (measured −0.015 … +0.018 s), well under the ≈ 45 ms at which a
-  picture lead becomes noticeable. Not traced to its source in Remotion.
+- With a long primed wait (0.62 s: 30 Hard Limiters on the Mix) Remotion suspends and resumes the context for an instant
+  as the wait ends (`suspended` and `running` at the same context time in the transport log; with the 63 ms and 146 ms
+  waits of `sound-p0-transport` it does not show, picture − audio there −0.002 … +0.055 s in 5 runs): the picture then
+  leads the program by 8–47 ms (measured over 15 plays), about the threshold at which a lead becomes noticeable (≈ 45 ms).
+  The same chain loads the headless audio thread: the first click was on its sample in 13 of 15 plays and 128 / 768
+  samples late in 2 (nothing lost). Not traced to its source in Remotion.
 - A restart (a seek while playing, a latency added while playing, a loop wrap) holds the picture for the new primed
   wait plus the players' rescheduling (the Phase 0 latency-change spec: one gap of the new read-ahead + the margin,
-  ⟨ms⟩ for 3 Hard Limiters, then on time). Every Play does the same: Space → picture moving 147–226 ms measured.
+  84.6–85.3 ms for 3 Hard Limiters in 5 runs, then on time). Every Play does the same: Space → picture moving 147–226 ms measured.
 - A read-ahead over 3 s (`MAX_PRIMED_WAIT`) still starts unprimed (its first samples lost).
 - A Play within 150 ms of a short paused seek (shorter than Remotion's tolerance) fixes the anchor at Play, when the
   context already runs: the program follows the picture but its first buffers are late (trimmed).

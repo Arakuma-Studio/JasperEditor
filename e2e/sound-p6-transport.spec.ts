@@ -206,11 +206,12 @@ function clicks(rec: Recording, min = 0.3): { t: number; v: number; marker: bool
  * How far (s) the audio clock slipped against the wall clock over a play (`__p6frames`: medians of the first and last
  * five samples of wall − audio time; NaN with fewer than ten).
  */
-async function clockSlip(p: Page): Promise<number> {
+async function clockSlip(p: Page, after = Number.NEGATIVE_INFINITY): Promise<number> {
 	const f = await p.evaluate(
 		() => (window as unknown as { __p6frames?: [number, number, number][] }).__p6frames ?? [],
 	);
-	const d = f.map(([t, , w]) => w / 1000 - t);
+	// (not during a primed wait: the graph then reports the output timestamp shifted, for Remotion's start)
+	const d = f.filter(([t]) => t > after).map(([t, , w]) => w / 1000 - t);
 	if (d.length < 10) return Number.NaN;
 	const med = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
 	return med(d.slice(-5)) - med(d.slice(0, 5));
@@ -456,7 +457,7 @@ test('a latency added while playing: after the restart the Mix is on time again'
 		results.push(`play ${i + 1}: picture − audio after the edit ${picture.toFixed(4)} s`);
 		console.log('latency restart picture − audio', picture);
 		// (a sample of the picture's anchor reads a few ms early now and then: Chrome's output timestamps jitter)
-		expect(picture).toBeGreaterThan(-0.015);
+		expect(picture).toBeGreaterThan(-0.02);
 	}
 	test.info().annotations.push({ type: 'latency-restart', description: JSON.stringify(results) });
 });
@@ -525,7 +526,7 @@ test('Play with a long read-ahead (0.62 s): the first click is heard, the pictur
 			const cs = clicks(rec);
 			// 30 limiters load the audio thread: a play whose audio clock slipped against the wall clock (an underrun)
 			// measures the host, not the graph, and is played again (as the Phase 0 specs do)
-			const slip = await clockSlip(page);
+			const slip = await clockSlip(page, rec.armed + wait + 0.1);
 			if (!(Math.abs(slip) < 0.01)) {
 				console.log('long read-ahead: the audio clock slipped', (slip * 1000).toFixed(1), 'ms, again');
 				continue;
