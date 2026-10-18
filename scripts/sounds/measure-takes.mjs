@@ -14,9 +14,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
-const args = Object.fromEntries(
-	process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith('--') ? [...acc, [a.slice(2), all[i + 1]]] : acc), []),
-);
+const args = {};
+for (const [i, a] of process.argv.slice(2).entries())
+	if (a.startsWith('--')) args[a.slice(2)] = process.argv[i + 3];
 const PORT = Number(args.port ?? 52301);
 const APPDIR = args.appdir;
 if (!APPDIR) throw new Error('--appdir is required');
@@ -24,13 +24,26 @@ mkdirSync(APPDIR, { recursive: true });
 const token = randomBytes(16).toString('hex');
 const editorKey = randomBytes(16).toString('hex');
 const base = `http://127.0.0.1:${PORT}`;
-const headers = { authorization: `Bearer ${token}`, cookie: `jasper_editor=${editorKey}`, 'content-type': 'application/json' };
+const headers = {
+	authorization: `Bearer ${token}`,
+	cookie: `jasper_editor=${editorKey}`,
+	'content-type': 'application/json',
+};
 
-const engine = spawn(process.execPath, ['--import', 'tsx', join(ROOT, 'apps/engine/src/cli.ts'), '--port', String(PORT), '--appdir', APPDIR], {
-	cwd: ROOT,
-	env: { ...process.env, JASPER_LOCAL_TOKEN: token, JASPER_EDITOR_KEY: editorKey, JASPER_SOUND_AUTO_INDEX: '0' },
-	stdio: ['ignore', 'ignore', 'inherit'],
-});
+const engine = spawn(
+	process.execPath,
+	['--import', 'tsx', join(ROOT, 'apps/engine/src/cli.ts'), '--port', String(PORT), '--appdir', APPDIR],
+	{
+		cwd: ROOT,
+		env: {
+			...process.env,
+			JASPER_LOCAL_TOKEN: token,
+			JASPER_EDITOR_KEY: editorKey,
+			JASPER_SOUND_AUTO_INDEX: '0',
+		},
+		stdio: ['ignore', 'ignore', 'inherit'],
+	},
+);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function api(method, path, body) {
 	const r = await fetch(base + path, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) });
@@ -70,7 +83,9 @@ try {
 		});
 		if (r.job) await waitJob(r.job.id);
 	}
-	const labels = Object.fromEntries((await api('GET', '/api/sounds/roots')).roots.map((r) => [r.id, r.label]));
+	const labels = Object.fromEntries(
+		(await api('GET', '/api/sounds/roots')).roots.map((r) => [r.id, r.label]),
+	);
 	for (const id of (args.packs ?? '').split(',').filter(Boolean)) {
 		const job = await api('POST', `/api/sounds/packs/${id}/install`, {});
 		const done = await waitJob(job.id);
@@ -91,7 +106,8 @@ try {
 	const groups = new Map();
 	for (const e of sounds) {
 		const g = groupOf(e);
-		if (!groups.has(g)) groups.set(g, { files: 0, withTakes: 0, offered: 0, cut: 0, reasons: {}, rejected: [], examples: [] });
+		if (!groups.has(g))
+			groups.set(g, { files: 0, withTakes: 0, offered: 0, cut: 0, reasons: {}, rejected: [], examples: [] });
 		const s = groups.get(g);
 		s.files++;
 		for (const r of e.judge?.reasons ?? []) s.reasons[r] = (s.reasons[r] ?? 0) + 1;
@@ -103,7 +119,10 @@ try {
 			s.cut += takes.length - offered.length;
 		}
 		if (e.judge && !e.judge.ok) {
-			const best = offered.reduce((b, t) => (!b || (t.judge?.score ?? 0) > (b.judge?.score ?? 0) ? t : b), null);
+			const best = offered.reduce(
+				(b, t) => (!b || (t.judge?.score ?? 0) > (b.judge?.score ?? 0) ? t : b),
+				null,
+			);
 			s.rejected.push({
 				title: e.title,
 				type: e.judge.type,
@@ -112,20 +131,41 @@ try {
 				durationSec: e.format.durationSec,
 				takes: takes.length,
 				offered: offered.length,
-				bestTake: best ? { index: best.index, ok: best.judge?.ok ?? null, score: best.judge?.score ?? null, reasons: best.judge?.reasons ?? [] } : null,
+				bestTake: best
+					? {
+							index: best.index,
+							ok: best.judge?.ok ?? null,
+							score: best.judge?.score ?? null,
+							reasons: best.judge?.reasons ?? [],
+						}
+					: null,
 				offeredOk: offered.filter((t) => t.judge?.ok).length,
 			});
 		}
 		if (takes.length && s.examples.length < 6)
 			s.examples.push({
 				title: e.title,
-				takes: takes.map((t) => ({ i: t.index, start: t.startSec, end: t.endSec, strokes: t.strokes, head: t.headDb, tail: t.tailDb, flags: t.flags, ok: t.judge?.ok ?? null })),
+				takes: takes.map((t) => ({
+					i: t.index,
+					start: t.startSec,
+					end: t.endSec,
+					strokes: t.strokes,
+					head: t.headDb,
+					tail: t.tailDb,
+					flags: t.flags,
+					ok: t.judge?.ok ?? null,
+				})),
 			});
 	}
 	const report = {
 		measuredAt: new Date().toISOString(),
 		seconds: Math.round((Date.now() - t0) / 1000),
-		index: { analysed: indexed.result.analysed, reused: indexed.result.reused, sounds: indexed.result.sounds, errors: indexed.result.errors.length },
+		index: {
+			analysed: indexed.result.analysed,
+			reused: indexed.result.reused,
+			sounds: indexed.result.sounds,
+			errors: indexed.result.errors.length,
+		},
 		snapshotHash: lib.snapshotHash,
 		groups: Object.fromEntries(groups),
 		materials: sounds.reduce((m, e) => {
