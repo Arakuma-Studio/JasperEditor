@@ -99,8 +99,9 @@ export function soundCheckDelta(
 	};
 	const fixed = before.filter((f) => !keysAfter.has(f.id)).map(row);
 	const introduced = after.filter((f) => !keysBefore.has(f.id)).map(row);
-	const cb = soundCheckCounts(before as { code: SoundCheckCode; severity: SoundCheckSeverity }[]);
-	const ca = soundCheckCounts(after as { code: SoundCheckCode; severity: SoundCheckSeverity }[]);
+	type Counted = readonly { code: SoundCheckCode; severity: SoundCheckSeverity }[];
+	const cb = soundCheckCounts(before as unknown as Counted);
+	const ca = soundCheckCounts(after as unknown as Counted);
 	const counts: SoundCheckDelta['counts'] = {};
 	for (const k of [...new Set([...Object.keys(cb), ...Object.keys(ca)])].sort())
 		counts[k] = { before: cb[k] ?? 0, after: ca[k] ?? 0 };
@@ -210,7 +211,7 @@ export async function runProposalCheck(
 		checked,
 		{
 			registries: deps.registries,
-			revision: live.revision,
+			revision: live.revision ?? 0,
 			now: () => new Date().toISOString(),
 			invariants: 'incremental',
 		},
@@ -219,8 +220,7 @@ export async function runProposalCheck(
 		},
 	);
 	for (const [id, errors] of Object.entries(preview.failed))
-		if (checked.includes(id) || preview.applied.includes(id) || byId.has(id))
-			skipped.push({ itemId: id, state: 'failed', reason: issueReason(errors) });
+		skipped.push({ itemId: id, state: 'failed', reason: issueReason(errors) });
 	const applied = preview.applied.filter((id) => !Object.hasOwn(preview.failed, id));
 	const previewSeq = preview.document.sequences[seq.id];
 	if (!previewSeq) throw new JobError('VALIDATION_FAILED', 'The proposal removes the sequence it is about', false);
