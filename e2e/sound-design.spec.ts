@@ -760,12 +760,26 @@ test('user walkthrough: library → Suggest Cues → Auto Sound Pass → review 
 	// a last Sound Check of the finished mix (the acknowledged finding stays acknowledged unless its target changed)
 	// (Sequence ▸ Sound Design ▸ Run Sound Check shows the panel; a finished run stores "Sound Check Result")
 	const nCheck = (await appliedLabels(page)).length;
+	const jobsBefore = new Set(
+		JobListResponseSchema.parse(await (await request.get('/api/jobs')).json()).jobs.map((j) => j.id),
+	);
 	await menu('Run Sound Check');
 	await expect(checkPanel()).toBeVisible({ timeout: 60_000 });
+	let checkJob = '';
 	await expect
-		.poll(async () => (await appliedLabels(page)).slice(nCheck), { timeout: LONG, intervals: [2000] })
-		.toContain('Sound Check Result');
+		.poll(
+			async () => {
+				const { jobs } = JobListResponseSchema.parse(await (await request.get('/api/jobs')).json());
+				checkJob = jobs.find((j) => j.kind === 'sound-check' && !jobsBefore.has(j.id))?.id ?? '';
+				return checkJob;
+			},
+			{ timeout: 120_000 },
+		)
+		.not.toBe('');
+	const finalJob = await waitForJob(request, checkJob, LONG);
+	expect(finalJob.state, JSON.stringify(finalJob.error ?? null)).toBe('succeeded');
 	await waitVerdict();
+	report.finalCheckHistory = (await appliedLabels(page)).slice(nCheck);
 	report.checkFinal = {
 		verdict: await checkPanel().getByTestId('sound-check-verdict').getAttribute('data-verdict'),
 		findings: await findings(),
