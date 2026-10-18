@@ -247,7 +247,9 @@ describe('proposal MCP tools', { timeout: 900_000 }, () => {
 		);
 		expect(markersOnly.events.map((e) => e.frame)).toEqual([250]);
 		expect(markersOnly.events[0]!.soundId).toBe(plan.events.find((e) => e.frame === 250)!.soundId);
-		expect(markersOnly.soundCheck.summary).toMatch(/^Sound Check of this proposal: fixes \d+ · introduces \d+/);
+		expect(markersOnly.soundCheck.summary).toMatch(
+			/^Sound Check of this proposal: fixes \d+ · introduces \d+/,
+		);
 		expect(markersOnly.soundCheck.checkedItems).toContain(markersOnly.events[0]!.itemId);
 		expect(await revisionOf(projectId)).toBe(rev);
 		const checked = await ok<{ soundCheck: { summary: string } | null }>('get_proposal', {
