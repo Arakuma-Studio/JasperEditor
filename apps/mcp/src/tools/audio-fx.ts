@@ -374,7 +374,7 @@ async function landDrop(ctx: ToolContext, a: LandArgs, extra: Extra) {
 		.catch((e: unknown) => {
 			throw remixError(e);
 		});
-	const cmd = remixCommandOf(clip, plan, rate);
+	const cmd = remixCommandOf(clip, plan, rate, !exact && Number.isFinite(room) ? { maxFrames: room } : {});
 	const body = await apply(ctx, a.projectId, 'Land the Drop', [cmd], extra, seq.id);
 	const landed = plan.anchors?.[0];
 	return jsonResult({
@@ -1087,9 +1087,11 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 				.catch((e: unknown) => {
 					throw remixError(e);
 				});
+			const room = roomOf(seq, clip);
 			const cmd = remixCommandOf(clip, plan, rate, {
 				...(a.segments !== undefined ? { segments: a.segments } : {}),
 				...(a.variations !== undefined ? { variations: a.variations } : {}),
+				...(keptNote && Number.isFinite(room) ? { maxFrames: room } : {}),
 			});
 			const body = await apply(ctx, a.projectId, 'Remix', [cmd], extra, seq.id);
 			return jsonResult({

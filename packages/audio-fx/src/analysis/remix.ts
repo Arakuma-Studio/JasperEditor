@@ -1102,7 +1102,7 @@ export function planAnchoredRemix(
 		const nearest = [below, above].filter((x): x is number => x !== undefined);
 		if (opts.fit === 'nearest') {
 			const allowed = nearest
-				.filter((t) => opts.maxTarget === undefined || t <= opts.maxTarget + half)
+				.filter((t) => opts.maxTarget === undefined || t <= opts.maxTarget)
 				.sort((x, y) => Math.abs(x - target) - Math.abs(y - target) || x - y);
 			for (const t of allowed) {
 				const again = tailFor(t);

@@ -369,7 +369,12 @@ export async function remixClip(
 	const res = session.apply({
 		label: 'Remix',
 		origin: 'user',
-		commands: [remixCommandOf(clip, plan, rate, opts) as never],
+		commands: [
+			remixCommandOf(clip, plan, rate, {
+				...opts,
+				...(kept.length && Number.isFinite(roomOf(seq, clip)) ? { maxFrames: roomOf(seq, clip) } : {}),
+			}) as never,
+		],
 	});
 	fail(res, 'Remix');
 	return { pieces: plan.pieces.length, bpm: plan.bpm, lengthSeconds: plan.lengthSeconds, keptDrop };
@@ -458,7 +463,9 @@ export async function landDrop(
 	const res = session.apply({
 		label: 'Land the Drop',
 		origin: 'user',
-		commands: [remixCommandOf(clip, plan, rate) as never],
+		commands: [
+			remixCommandOf(clip, plan, rate, Number.isFinite(room) ? { maxFrames: room } : {}) as never,
+		],
 	});
 	fail(res, 'Land the Drop');
 	return {

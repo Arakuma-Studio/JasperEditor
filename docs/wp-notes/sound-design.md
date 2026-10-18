@@ -8990,3 +8990,81 @@ fixtures `dropMusic` in `packages/audio-fx/test/music.ts` (a known key, bar line
   fires once the request body is read; `inject` never showed it) — MCP `find_music_drops` failed with CANCELLED in the
   first run; now the RESPONSE's 'close' before it finished aborts (the sync route's rule). The README listed three style
   names as tools (`personality` …; the readme-tools test failed on `feat/sound-design`), fixed (WP-E2 made the same fix).
+
+#### Verified (build server `jasper-build`, 16 × Intel Haswell vCPU, Node 20.20.2, load 1–3 unless said)
+
+- **Failing first** (`feat/sound-design` `383fb436`, a detached worktree with the new tests): `music-picture.test.ts`
+  failed to load (no `key.ts`); a joint-phase test on the unfixed `analyzeMusic` measured joints **2.22–14.69 ms** before
+  the true attacks, **3 of 95 under 3 ms** (and the timeline's 1-frame "centre" crossfade starts at the cut, so every
+  outgoing piece played its next attack into the fade).
+- `pnpm vitest run packages/audio-fx/test/music-picture.test.ts` — 12 passed: keys (C major r 0.882 / margin 0.317 /
+  confidence 0.882; G major 0.767; E♭ major 0.722 named C minor; A minor 0.882 named C major; the remix test music
+  0.842; a 440 Hz sine 0; white noise 0.053; rotation property 300 runs; hostile chroma / audio 60 runs); the drop at
+  bar 17 (120, 100 BPM) and bar 9 (128 BPM) top in `analyzeBeats` and `analyzeMusic`, its attack within 5 ms
+  (120 BPM: 8.8 vs the next 3.1); joints **3.72–7.35 ms** before every true attack on three tracks; anchored plans land the
+  drop at 12 / 20.37 / 32.2 / 41.1 s with a **rendered-output cross-correlation lag of 0.00 ms**, joints at bar lines, the
+  outro within half a beat; NO_PLAN_NEAR_TARGET with lengths that then plan; two anchors 4 bars apart land, an
+  inconsistent pair is refused; deterministic; typed refusals (no anchor, outside, NaN, target too short, order, an
+  early downbeat that cannot reach 10 s, no beat, a steady tone, 1 s of music) and 200 fast-check runs never throw
+  anything else. `remix.test.ts`, `beats.test.ts`, `beats-tempo.test.ts` unchanged and passing.
+- `pnpm vitest run packages/project/test/sound-music-fit.test.ts` — 11 passed: MIDI 70 over C major → A4 (−1 st; A and B
+  tie, A is the more stable), cents and minor keys, `isTunable`, a run climbing the scale (69, 71, 72, 74, 76, 76),
+  500-run property (≤ 2 st, lands in key); the stop's ramp on the downbeat 0.4 s before (dip start = the downbeat ±1
+  flick), the beat with a narrower window, null without; End on Bar (frame 374 before the 12.5 s bar line, 15-frame fade,
+  undo = untouched, redo = same, again = the fade updated, nearest = the later bar, refusals, 200-run property: every
+  plan applies); `clip.remix` cuts rounded down, `end-at-cut` joints, 2 frames at 60 fps, anchors recorded and refused
+  outside, the fade-in made and removed by Revert, repair of unreadable anchors, the save round-trips; the style fields.
+- `pnpm vitest run apps/engine/test/music-picture.test.ts` — 5 passed (real engine, ffmpeg): the beats route's key
+  C major (0.884) and drop bar 17 at 32.0001 s; an anchored remix of a 64 s track landing the drop at frame 615:
+  7 pieces, head 1.4995 s, 62.50 s, `errorMs` 0, **the native PCM export cross-correlated against the source: 0.000 ms**;
+  Sound Check of it and of a plain remix of the test music: **no CLICK or EDGE** (only LOUDNESS / TRUE_PEAK / OVERLOAD /
+  ENDING / HEAD of the hot, unmastered generated music); End on Bar: bar line 30.0000 s, clip end frame 899, **the export
+  silent from 29.9656 s**, faded (the last tenth of the fade ≥ 12 dB under the music before it); refusals 422
+  REMIX_NO_BEAT (tone), REMIX_NO_BEAT / REMIX_TOO_SHORT (1 s), E_INVALID_PARAM (anchor outside; an exact target with
+  `detail.nearestTargetSeconds`), 400 (5 anchors). Waveforms looked at (`test-results/sd-music-picture/`): the quiet
+  intro up to 20.5 s then the loud section; the End on Bar export tapering at its end.
+- `pnpm vitest run apps/engine/test/sound-music-plan.test.ts` — 2 passed (plan job, accept, two native exports): with the
+  style off nothing is tuned and the stop stays 0.25 s; on: the Glass chime (MIDI 70) "tuned -1 st to C major" → A4, its
+  alternative (the bell, MIDI 71.3) −0.3 st → B4; the stop item "on the bar line", 0.3 s = hero − the measured downbeat
+  (6.0 s) to 1 µs; **measured: the music −24.00 dB in the 19 ms after the downbeat** (against the source, the 35–60 ms
+  before untouched within 0.5 dB); **the chime plays 440.00 Hz = MIDI 69.000** (music muted).
+- `MCP_MUSIC_TEST_PORT=52601 pnpm vitest run apps/mcp/test/music-picture.test.ts` — 6 passed (engine + jasper-mcp over
+  stdio): the guides; `find_music_drops` "6 drop candidates; the top one is bar 17 (32.0001 s, now at 00:00:32:00); key
+  C major (88 %)"; `remix_audio {landDropAt: "hero"}` → frame 615, `errorMs` ≤ 1, the anchor recorded; a later
+  `remix_audio {targetDuration: 50 s}` "kept the landed drop at 00:00:20:15"; `fit_music_to_picture end-on-bar`;
+  `plan_sound_design` grammar tuned 1 / 0 with the style; typed refusals. The first run found the beats route bug (below).
+- `pnpm vitest run apps/web/test/sound-music-fit.test.tsx` — 4 passed: Analyze Music ("120 BPM · 4 beats per bar ·
+  C major (88 %)"), ▶ seeks to 960 and plays, the marker and hero targets, Land Drop as one History entry with the anchor,
+  "The drop lands at 00:00:20:15"; Land Drop on Hero Cue then Remix… keeps the drop (a remix's pieces selected as a group
+  count as one music clip — Remix… was disabled on a remixed clip before); End on Bar; the menus and context menu;
+  an engine failure toasted; the style checkboxes.
+- `e2e/sound-music-fit.spec.ts` (`pnpm build`, `E2E_PORT=52602 E2E_SKIP_BUILD=1 pnpm exec playwright test
+  e2e/sound-music-fit.spec.ts`): 1 passed (39 s) — import, Audio workspace, Analyze Music, Land Drop on the hero cue
+  (29.97 fps drop-frame: 00;00;20;15), Clip ▸ Audio Options ▸ End on Bar, a native export through the Export dialog:
+  **the drop plays −0.104 ms from frame 615** (AAC, cross-correlation), the music heard until 62.527 s with the clip
+  ending at frame 1 874 (62.529 s). Screenshots looked at (`test-results/e2e-sound-music-fit/`): `1-analysed.png` (tempo,
+  metre, key, four drops with ▶ and their timecodes), `2-landed.png` (bar 17 now at 00;00;20;15, "The drop lands at",
+  the target select), `4-end-on-bar.png`, `5-auto-pass-style.png` (the two new checkboxes ticked). The first run's look
+  found the "Land the drop on" label wrapping (widened) and the test's own clip click on a piece out of view.
+
+#### Limits and notes for the next packages
+
+- Drops, keys and joints are measured on generated music (known key, bars and drop); there is no labelled set of real
+  tracks. earshot reports its own downbeat half a bar off on one of two real tracks; ours needs an accented beat per bar
+  (else the bars are re-phased on the anchor's beat, `barsGuessed`).
+- Keys are major / natural minor (Krumhansl–Kessler); modal music and modulations read as the nearest key, one key per
+  analysed range (a music clip's range ±1 s). A relative key is reported by name as the analysis finds it (E♭ major can
+  read "C minor"): the scale, which tuning uses, is the same.
+- With joints on bar lines the remix lengths an anchor allows are a bar apart: an exact length is refused naming the
+  nearest; without one the clip moves by at most half a bar (never over the next clip). Several anchors land only when
+  the music between them fills the output between them to 1 ms. The intro's head may lose up to a bar (faded in over a
+  frame); with too little music before the drop for whole bars the head is trimmed further (the music starts later).
+- A tuned run climbs the scale (1–2 st steps) instead of P6-E10's +1 st; a run's alternatives keep the chromatic climb.
+  Sounds without a measured pitch are never tuned; a chime's YIN pitch is its first partial (inharmonic bells may read
+  an octave or a partial off — then it is "in key" on that partial).
+- The stop moves onto the music's bar only inside 0.1–0.5 s before the hit (or the cue's own window); the editor's
+  Stop Before Next (cue menu) and `set_sound_cues {stopBefore}` keep the plain seconds (only the plan reads the beats).
+  When a cue or the music moves later, the stop keeps its seconds (re-run the plan or Apply Stop Before to re-align).
+- End on Bar trims to a bar line and fades; it does not make the song's own ending land there (a remix to the length does).
+- `POST /api/sound-design/visual` still aborts on the request stream's 'close' like the beats route did (not changed
+  here: WP-E3's route; its MCP test passes, so it may be timing-dependent).

@@ -49,7 +49,8 @@ export type RemixPlanLike = {
 };
 
 /**
- * The `clip.remix` command of a planned remix: the clip's length is the plan's (`lengthSeconds` in frames), the anchors
+ * The `clip.remix` command of a planned remix: the clip's length is the plan's (`lengthSeconds` in frames, at most
+ * `maxFrames`), the anchors
  * are recorded (sequence frames) so a later remix lands them again, and a plan that trims the intro gets a one-frame
  * fade-in (no abrupt entry).
  */
@@ -57,11 +58,18 @@ export function remixCommandOf(
 	clip: AudioClip,
 	plan: RemixPlanLike,
 	rate: Rational,
-	opts: { segments?: number; variations?: number } = {},
+	opts: { segments?: number; variations?: number; maxFrames?: number } = {},
 ): Record<string, unknown> {
 	const fps = fpsOf(rate);
 	const start = remixStartFrame(clip);
-	const targetFrames = Math.max(1, Math.round(plan.lengthSeconds * fps));
+	// the plan's length in frames; never over the room on the track (`maxFrames`: the outro is cut by ≤ half a beat)
+	const targetFrames = Math.max(
+		1,
+		Math.min(
+			Math.round(plan.lengthSeconds * fps),
+			opts.maxFrames !== undefined && Number.isFinite(opts.maxFrames) ? Math.floor(opts.maxFrames) : Number.POSITIVE_INFINITY,
+		),
+	);
 	const anchors = (plan.anchors ?? [])
 		.filter((a) => fin(a.sourceSeconds) && fin(a.outputSeconds))
 		.map((a) => ({
