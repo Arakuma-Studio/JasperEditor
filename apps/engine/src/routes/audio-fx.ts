@@ -31,13 +31,15 @@ export default async function audioFxRoutes(app: FastifyInstance): Promise<void>
 	app.jasper.services.beats = beats;
 	app.post(
 		'/api/audio/beats',
-		guarded(async (req) => {
+		guarded(async (req, reply) => {
 			const body = parseOr400(BeatsRequestSchema, req.body);
 			if (!MEDIA_KEY_RE.test(body.mediaKey) || !core.registry.get(body.mediaKey))
 				throw new HttpError(404, 'ASSET_NOT_FOUND', 'Unknown media key');
 			const ac = new AbortController();
-			req.raw.on('close', () => {
-				if (!req.raw.complete || req.raw.destroyed) ac.abort();
+			// The client went away before the answer: 'close' of the RESPONSE (WP-E7 fix: the request stream's 'close'
+			// fires once its body is read — over a real socket every analysis was cancelled; inject never showed it).
+			reply.raw.on('close', () => {
+				if (!reply.raw.writableFinished) ac.abort();
 			});
 			return beats.analyze(body, ac.signal);
 		}),
