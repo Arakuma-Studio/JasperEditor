@@ -19,8 +19,8 @@ import {
 	defaultRegistries,
 	endOnBarPlan,
 	type ProjectDocument,
-	type Sequence,
 	remixCommandOf,
+	type Sequence,
 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { dropMusic, testMusic } from '../../../packages/audio-fx/test/music.ts';
@@ -66,12 +66,17 @@ afterAll(async () => {
 	rmSync(dir, { recursive: true, force: true });
 });
 
-const post = (url: string, payload: unknown) => app.inject({ method: 'POST', url, headers: JSON_H, payload });
+const post = (url: string, payload: Record<string, unknown>) =>
+	app.inject({ method: 'POST', url, headers: JSON_H, payload });
 
 function decode(file: string): Float32Array {
-	const out = execFileSync(TEST_FFMPEG, ['-v', 'error', '-i', file, '-map', '0:a:0', '-ac', '1', '-f', 'f32le', '-'], {
-		maxBuffer: 1 << 30,
-	});
+	const out = execFileSync(
+		TEST_FFMPEG,
+		['-v', 'error', '-i', file, '-map', '0:a:0', '-ac', '1', '-f', 'f32le', '-'],
+		{
+			maxBuffer: 1 << 30,
+		},
+	);
 	return new Float32Array(out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength));
 }
 
@@ -169,7 +174,9 @@ describe('music to picture on the engine', () => {
 		});
 		expect(res.statusCode, res.body).toBe(200);
 		const b = res.json() as BeatsResult;
-		console.info(`[music] key ${b.key?.name} (${b.key?.confidence}), drops ${JSON.stringify(b.drops.slice(0, 3))}`);
+		console.info(
+			`[music] key ${b.key?.name} (${b.key?.confidence}), drops ${JSON.stringify(b.drops.slice(0, 3))}`,
+		);
 		expect(b.key?.scale).toEqual([0, 2, 4, 5, 7, 9, 11]);
 		expect(b.key!.confidence).toBeGreaterThanOrEqual(0.6);
 		expect(b.drops[0]!.bar).toBe(17);
@@ -219,7 +226,13 @@ describe('music to picture on the engine', () => {
 		const cmd = remixCommandOf(seqOf(d).clips[clipId] as AudioClip, plan, { num: FPS, den: 1 });
 		d.tx([cmd]);
 		const out = await exportAudio(d, 'anchored-remix');
-		const lag = lagOf(dropSrc, Math.round(drop.sourceSeconds * SR), out, Math.round((hero / FPS) * SR), 4 * 48);
+		const lag = lagOf(
+			dropSrc,
+			Math.round(drop.sourceSeconds * SR),
+			out,
+			Math.round((hero / FPS) * SR),
+			4 * 48,
+		);
 		console.info(`[music] the drop in the export: ${((1000 * lag) / SR).toFixed(3)} ms from the hero frame`);
 		expect(Math.abs(lag)).toBeLessThanOrEqual(SR / 1000);
 		const report = await soundCheck(d.doc);
@@ -227,7 +240,9 @@ describe('music to picture on the engine', () => {
 		const bad = report.issues.filter(
 			(i) => (i.code === 'CLICK' || i.code === 'EDGE') && (i.clipIds ?? []).some((id) => pieces.has(id)),
 		);
-		console.info(`[music] Sound Check: ${report.issues.map((i) => `${i.severity} ${i.code}`).join(', ') || 'no findings'}`);
+		console.info(
+			`[music] Sound Check: ${report.issues.map((i) => `${i.severity} ${i.code}`).join(', ') || 'no findings'}`,
+		);
 		expect(bad.map((i) => i.message.text)).toEqual([]);
 	});
 
@@ -243,7 +258,9 @@ describe('music to picture on the engine', () => {
 		expect(Object.keys(seqOf(d).clips).length).toBe(plan.pieces.length);
 		const report = await soundCheck(d.doc);
 		const bad = report.issues.filter((i) => i.code === 'CLICK' || i.code === 'EDGE');
-		console.info(`[music] plain remix Sound Check: ${report.issues.map((i) => `${i.severity} ${i.code}`).join(', ') || 'no findings'}`);
+		console.info(
+			`[music] plain remix Sound Check: ${report.issues.map((i) => `${i.severity} ${i.code}`).join(', ') || 'no findings'}`,
+		);
 		expect(bad.map((i) => i.message.text)).toEqual([]);
 	});
 
@@ -281,7 +298,9 @@ describe('music to picture on the engine', () => {
 		const endS = last + 1;
 		const fadeS = Math.round((p.fadeFrames / FPS) * SR);
 		// the fade: the last tenth of it far under the music just before it
-		expect(rms(endS - fadeS - SR / 10, endS - fadeS) - rms(endS - Math.round(fadeS / 10), endS)).toBeGreaterThan(12);
+		expect(
+			rms(endS - fadeS - SR / 10, endS - fadeS) - rms(endS - Math.round(fadeS / 10), endS),
+		).toBeGreaterThan(12);
 	});
 
 	it('hostile inputs are refused with typed errors', async () => {
