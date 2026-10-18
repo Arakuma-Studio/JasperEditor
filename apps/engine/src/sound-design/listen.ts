@@ -613,9 +613,19 @@ export async function listenSequence(
 		const alignedFrame = into === null ? null : a.start + (a.speed?.reverse ? a.duration - into : into);
 		const alignedMs = alignedFrame === null ? null : msOfFrame(alignedFrame);
 		const ref = alignedMs ?? msOfFrame(c.start);
+		// its own event: the one whose moment is nearest the aligned point — the attack of a start-aligned sound, the
+		// peak (the descriptors' definition) of an end-aligned one (risers and reverses peak at their end), the attack
+		// or the peak of a peak-aligned one (a hit's library peak is often its attack)
+		const align = sfx?.placement?.align ?? null;
+		const momentOf = (l: LaneEvent) => {
+			const peak = renderMs0 + l.e.peakMs;
+			if (align === 'start') return l.seqMs;
+			if (align === 'end') return peak;
+			return Math.abs(l.seqMs - ref) <= Math.abs(peak - ref) ? l.seqMs : peak;
+		};
 		const own = laneEvents
-			.filter((l) => l.clip.clipId === c.id && Math.abs(l.seqMs - ref) <= OWN_MS)
-			.sort((x, y) => Math.abs(x.seqMs - ref) - Math.abs(y.seqMs - ref))[0];
+			.filter((l) => l.clip.clipId === c.id && Math.abs(momentOf(l) - ref) <= OWN_MS)
+			.sort((x, y) => Math.abs(momentOf(x) - ref) - Math.abs(momentOf(y) - ref))[0];
 		const at = own?.seqMs ?? ref;
 		let mixIdx: number | null = null;
 		attributed.forEach((x, i) => {
@@ -633,7 +643,7 @@ export async function listenSequence(
 			cueId: o.cueId,
 			role: o.role,
 			ownEventMs: own ? r1(own.seqMs) : null,
-			ownOffsetMs: own && alignedMs !== null ? r1(own.seqMs - alignedMs) : null,
+			ownOffsetMs: own && alignedMs !== null ? r1(momentOf(own) - alignedMs) : null,
 			heard: mixIdx !== null,
 			mixEvent: mixIdx,
 			prominenceDb: mixIdx !== null ? attributed[mixIdx]!.e.prominenceDb : null,
@@ -830,10 +840,13 @@ export async function listenSequence(
 	};
 
 	// ── the transcript ────────────────────────────────────────────────────────────────────────────────────────────
-	const keepEvent = (e: SoundListenEvent): boolean =>
+	// normal: what a placed sound or the picture is about — each placed sound's own event in the mix, every event
+	// answering the picture, every one rising ≥ 6 dB (the flicker inside a sound's tail is left to "high")
+	const placedEvents = new Set(placed.map((p) => p.mixEvent).filter((i): i is number => i !== null));
+	const keepEvent = (e: SoundListenEvent, i: number): boolean =>
 		detail === 'high' ||
 		e.accent ||
-		(detail === 'normal' && (e.stem === 'sfx' || e.answers.length > 0 || e.cueId !== null));
+		(detail === 'normal' && (placedEvents.has(i) || e.answers.length > 0 || e.prominenceDb >= 6));
 	const lines: SoundListenLine[] = [];
 	const at = (
 		frame: number,
@@ -898,7 +911,7 @@ export async function listenSequence(
 		});
 	const pictureLabel = new Map(pictureEvents.map((p) => [p.key, p.label]));
 	eventsAll.forEach((e, i) => {
-		if (!keepEvent(e)) return;
+		if (!keepEvent(e, i)) return;
 		const what =
 			e.shape === 'swell'
 				? `swell (build-up), ${e.band} band, rises ${e.prominenceDb.toFixed(0)} dB over ${((e.riseMs ?? 0) / 1000).toFixed(1)} s`

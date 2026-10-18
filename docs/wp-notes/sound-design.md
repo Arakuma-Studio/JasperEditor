@@ -8161,8 +8161,16 @@ strings, es.json complete); README (356 tools, the HTTP list), security review (
   of the mix, effects only when nothing else, silence inside the mix's silences; runs under 1 s folded into the longer
   neighbour. Music sections give the Essential Sound ducking depth (or "not ducked") and how far the music sits under
   the voice (energy means over voiced hops).
-- **Detail** only selects lines: low (summary, sync, sections, silences, accents, no-sound), normal (+ every placed
-  sound, every event answering the picture or filling a cue), high (every event). Lines ≤ 3 000, events ≤ 5 000.
+- **Detail** only selects lines: low (summary, sync, sections, silences, accents, no-sound), normal (+ each placed
+  sound's own event in the mix, every event answering the picture, every event ≥ 6 dB over its bed — first version:
+  every event of a sound-effect clip, which listed the flicker inside a crunch's tail nine times), high (every event).
+  Lines ≤ 3 000, events ≤ 5 000.
+- **Peaks.** An event's `peakMs` uses the sound descriptors' definition (the centre of the loudest 2 ms of mean power
+  in 0.5 ms steps, over the event's length), so it lands where the library's `peakSec` — the point placement aligns —
+  says the sound peaks (first version: the loudest 1 ms max-abs bin, 38 ms off on a crunchy impact in the real run).
+  A sound answers a picture event at its attack or at its peak (a whoosh placed by its peak starts long before its
+  cut); a placed sound's own offset is measured at its attack (start-aligned), its peak (end-aligned) or whichever is
+  nearer (peak-aligned: a hit's library peak is often its attack).
 - **Levels** are as delivered when the Mix normalises and its loudness analysis (or a kept Sound Check of this mix) is
   current — the visual route's rule, now one function (`deliveredGain`); else as mixed, and the summary says which.
 - **Language.** The transcript is the engine's English text, printed verbatim by the panel and MCP (the spec's "lines

@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { Prng } from '../src/core/util.ts';
 import {
 	accentThreshold,
+	analyzeSound,
 	answerPictureEvent,
 	integratedOf,
 	LISTEN_EVENTS,
@@ -112,6 +113,29 @@ describe('onsets', () => {
 				(e) => !at.some((a) => e.ms - (a / SR) * 1000 >= -40 && e.ms - (a / SR) * 1000 <= 200),
 			);
 			expect(others.filter((e) => e.prominenceDb >= 3 || e.accent)).toEqual([]);
+		}
+	});
+
+	it("puts an event's peak where the sound descriptors put it (the point placement aligns)", () => {
+		// a whoosh: noise swelling over 300 ms and falling over 200 ms, and a crunch: bursts in a decaying tail
+		const whoosh = whiteNoise(Math.round(0.6 * SR), 1, 31);
+		for (let i = 0; i < whoosh.length; i++) {
+			const t = i / SR;
+			whoosh[i]! *= 0.4 * (t < 0.3 ? (t / 0.3) ** 2 : Math.max(0, 1 - (t - 0.3) / 0.2));
+		}
+		const crunch = whiteNoise(Math.round(0.5 * SR), 1, 32);
+		for (let i = 0; i < crunch.length; i++) {
+			const t = i / SR;
+			crunch[i]! *= 0.5 * Math.exp(-t / 0.08) * (1 + 0.8 * Math.sin(2 * Math.PI * 23 * t));
+		}
+		for (const sound of [whoosh, crunch]) {
+			const peakSec = analyzeSound([sound], SR).peakSec;
+			const x = new Float32Array(3 * SR);
+			const at = SR;
+			x.set(sound, at);
+			const ev = hits(analyse(x)).find((e) => e.ms >= 990 && e.ms <= 1000 + peakSec * 1000);
+			expect(ev, JSON.stringify(hits(analyse(x)))).toBeDefined();
+			expect(Math.abs(ev!.peakMs - (1000 + peakSec * 1000))).toBeLessThanOrEqual(1);
 		}
 	});
 

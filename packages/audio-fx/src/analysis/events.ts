@@ -525,6 +525,14 @@ export class ListenMeter {
 	private readonly eLow = new Series();
 	private readonly eHigh = new Series();
 	private readonly kMs = new Series();
+	/**
+	 * Mean power over the channels per 0.5 ms block (`halfHop` samples): the sound descriptors' envelope, so an event's
+	 * peak is found where the library's `peakSec` says a sound peaks (placement aligns that point).
+	 */
+	private readonly half = new Series();
+	private readonly halfHop: number;
+	private aHalf = 0;
+	private halfN = 0;
 	// onset curve (absolute frame index)
 	private readonly odf = new Series();
 	private prev1: Float64Array | null = null;
@@ -584,6 +592,7 @@ export class ListenMeter {
 		this.spec = opts.spectrogram === true;
 		this.specData = new Uint8Array(this.spec ? 1024 * LISTEN_EVENTS.bands : 0);
 		this.stft = new LogBandStft(sr, (f, levels) => this.onFrame(f, levels));
+		this.halfHop = Math.max(1, Math.round(sr * 0.0005));
 		const maxSec = Math.min(
 			LISTEN_EVENTS.maxSeconds,
 			fin(opts.maxSeconds ?? Number.NaN) ? opts.maxSeconds! : LISTEN_EVENTS.maxSeconds,
@@ -687,13 +696,21 @@ export class ListenMeter {
 			let amax = 0;
 			let kE = 0;
 			let any = false;
+			let pw = 0;
 			for (let c = 0; c < C; c++) {
 				const raw = planar[c]?.[i];
 				const x = raw !== undefined && fin(raw) ? raw : 0;
 				if (x !== 0) any = true;
 				m += x;
+				pw += x * x;
 				const a = x < 0 ? -x : x;
 				if (a > amax) amax = a;
+			}
+			this.aHalf += pw / C;
+			if (++this.halfN === this.halfHop) {
+				this.half.push(this.aHalf / this.halfHop);
+				this.aHalf = 0;
+				this.halfN = 0;
 			}
 			m /= C;
 			if (!any) this.zeroRun++;
@@ -748,6 +765,7 @@ export class ListenMeter {
 		this.doneFrame = upTo;
 		const keepMs = this.doneFrame * frameMs - LISTEN_EVENTS.contextMs;
 		for (const s of [this.eFull, this.eLow, this.eHigh, this.kMs]) s.dropBefore(keepMs);
+		this.half.dropBefore(Math.floor((keepMs * this.sampleRate) / 1000 / this.halfHop));
 		this.odf.dropBefore(this.doneFrame - half - 50);
 	}
 
@@ -866,6 +884,26 @@ export class ListenMeter {
 		return -0.691 + 10 * Math.log10(e / samples + 1e-12);
 	}
 
+	/**
+	 * Where a sound starting at ms `j` peaks within `spanMs`: the centre of the loudest 2 ms (four 0.5 ms blocks) of the
+	 * mean power, the first of equal maxima — the sound descriptors' `peakSec` definition.
+	 */
+	private peakAt(j: number, spanMs: number): number {
+		const perMs = this.sampleRate / 1000 / this.halfHop;
+		const a = Math.max(this.half.base, Math.floor(j * perMs));
+		const b = Math.min(this.half.end, Math.ceil((j + spanMs) * perMs));
+		let best = -1;
+		let bestK = a;
+		for (let k = a; k + 4 <= b; k++) {
+			const w = this.half.get(k) + this.half.get(k + 1) + this.half.get(k + 2) + this.half.get(k + 3);
+			if (w > best * (1 + 1e-9)) {
+				best = w;
+				bestK = k;
+			}
+		}
+		return best < 0 ? j : ((bestK + 2) * this.halfHop * 1000) / this.sampleRate;
+	}
+
 	private attackEvent(ic: number, z: number, availMs: number): ListenEvent | null {
 		const att = this.attack(ic, availMs);
 		if (!att) return null;
@@ -895,22 +933,17 @@ export class ListenMeter {
 			if (v > top) top = v;
 		}
 		const prominence = Number.isFinite(top) ? Math.max(0, top - bed) : 0;
-		// the sample peak over the first 50–300 ms; where the event peaks over its whole length (≤ 2 s)
+		// the sample peak over the first 50–300 ms
 		const span = Math.max(50, Math.min(length, 300));
 		let pk = 0;
-		let pkAt = j;
-		let top1 = 0;
-		for (let i = j; i < Math.min(this.eFull.end, j + Math.max(span, length)); i++) {
+		for (let i = j; i < Math.min(this.eFull.end, j + span); i++) {
 			const v = this.eFull.get(i);
-			if (i < j + span && v > pk) pk = v;
-			if (v > top1) {
-				top1 = v;
-				pkAt = i;
-			}
+			if (v > pk) pk = v;
 		}
+		const pkAt = this.peakAt(j, Math.max(span, length));
 		return {
 			ms: j,
-			peakMs: pkAt,
+			peakMs: Math.round(pkAt * 10) / 10,
 			shape: 'hit',
 			band: att.best.band,
 			prominenceDb: r1(prominence),
