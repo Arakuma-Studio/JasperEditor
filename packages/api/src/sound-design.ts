@@ -937,3 +937,264 @@ export const MotionAnalysisResultSchema = z.object({
 	warnings: z.array(z.object({ code: z.string(), message: z.string() })),
 });
 export type MotionAnalysisResult = z.infer<typeof MotionAnalysisResultSchema>;
+
+// ---------------------------------------------------------------------------------------------------------------
+// `POST /api/sound-design/listen` (spec 12 §4 P6-E6; wp-note "Phase 6 → WP-E3"): a `sound-listen` job — the listening
+// transcript of a range: the mix and every clip rendered (`stems.ts`), the events of the mix (onsets refined to the
+// attack, swells) each attributed to the clip whose own event explains it and the cue it fills, sections by Essential
+// Sound / Auto Tag class, silences, the picture events (edits, transitions, cues, cached measured motion) matched to the
+// event that answers them with the CHANCE level of every sync share, and the same as chronological text lines. Nothing
+// is stored in the project.
+
+/** Bounds of a listen. */
+export const SOUND_LISTEN_LIMITS = {
+	/** Longest range listened to at once (seconds of sequence time). */
+	maxSeconds: 600,
+	/** Most transcript lines and events returned. */
+	lines: 3000,
+	events: 5000,
+	/** Most clip lanes rendered (clips that never overlap share a lane). */
+	lanes: 24,
+} as const;
+
+/**
+ * How much the transcript says: `low` — sections, silences, sync, accents and picture events with no sound; `normal`
+ * (default) — also every event of a placed sound and every event that answers a picture event; `high` — every event.
+ */
+export const SOUND_LISTEN_DETAILS = ['low', 'normal', 'high'] as const;
+export type SoundListenDetail = (typeof SOUND_LISTEN_DETAILS)[number];
+
+export const SoundListenRequestSchema = z.strictObject({
+	projectId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'a project id'),
+	/** Default: the project's first sequence. */
+	sequenceId: id.optional(),
+	/** Sequence frames `[start, end)` (default the whole sequence; at most 10 min). */
+	range: z
+		.strictObject({ start: frame, end: frame })
+		.refine((r) => r.end > r.start, 'range.end must be after range.start')
+		.optional(),
+	detail: z.enum(SOUND_LISTEN_DETAILS).optional(),
+});
+export type SoundListenRequest = z.infer<typeof SoundListenRequestSchema>;
+
+export const SOUND_LISTEN_STEMS = ['sfx', 'dialogue', 'music', 'ambience', 'other'] as const;
+export const SOUND_LISTEN_PICTURE_KINDS = ['cut', 'transition', 'cue', 'motion'] as const;
+export const SOUND_LISTEN_STATUSES = ['ok', 'near', 'swell', 'none'] as const;
+export const SOUND_LISTEN_CLASSES = ['dialogue', 'music', 'ambience', 'effects', 'other', 'silence'] as const;
+export const SOUND_LISTEN_LINE_KINDS = [
+	'summary',
+	'sync',
+	'section',
+	'event',
+	'unanswered',
+	'silence',
+	'note',
+] as const;
+
+const ms = z.number();
+
+/** A picture event this sound answers (`answers`) or one the transcript checks (`pictureEvents`). */
+export const SoundListenPictureEventSchema = z.object({
+	kind: z.enum(SOUND_LISTEN_PICTURE_KINDS),
+	/** Stable key: `edit:<track>:<out>><in>`, `transition:<id>`, `cue:<id>`, `motion:<kind>:<frame>`. */
+	key: z.string(),
+	frame,
+	timecode: z.string(),
+	/** "Cut V1 "A"→"B"", "Cross Dissolve on V1", "cue cut (hero)", "picture lands (abrupt stop)". */
+	label: z.string(),
+	status: z.enum(SOUND_LISTEN_STATUSES),
+	/** Sound − picture (ms; negative = early); null when nothing answers. */
+	offsetMs: z.number().nullable(),
+	/** The moment of the sound that answers: its attack, or its peak (a whoosh placed by its peak). */
+	at: z.enum(['attack', 'peak']).nullable(),
+	/** Index into `events` of the event that answers it. */
+	event: z.number().int().nullable(),
+	/** Unanswered: the nearest strong onset within 250 ms (sound − picture, ms). */
+	nearestStrongMs: z.number().nullable(),
+	cueId: z.string().optional(),
+	weight: z.enum(CUE_WEIGHTS).optional(),
+});
+export type SoundListenPictureEvent = z.infer<typeof SoundListenPictureEventSchema>;
+
+export const SoundListenEventSchema = z.object({
+	/** Sequence frame of the attack (onsets) or peak (swells), and the same in ms of sequence time. */
+	frame,
+	timecode: z.string(),
+	ms,
+	/**
+	 * The attack as the mix shows it (ms). An event attributed by an event of its clip's own (`explainedBy: 'event'`)
+	 * starts (`ms`) at the earlier of that own attack — measured without the other clips, whose bed can hide the first
+	 * milliseconds — and this one.
+	 */
+	mixMs: ms,
+	peakMs: ms,
+	shape: z.enum(['hit', 'swell']),
+	band: z.enum(['full', 'low', 'high']),
+	/** Rise over the K-weighted bed just before (dB) and that bed (≈ LUFS as delivered; swells: dBFS RMS). */
+	prominenceDb: z.number(),
+	bedDb: z.number(),
+	contrastDb: z.number(),
+	lengthMs: z.number(),
+	/** Sample peak over its first 50–300 ms (dBFS, as delivered). */
+	peakDb: z.number(),
+	riseMs: z.number().optional(),
+	accent: z.boolean(),
+	/**
+	 * Found where the clip rendered alone has its own onset although the mix's onset curve does not stand out there (the
+	 * mix still rises ≥ 3 dB over its bed in some band at that attack): heard, but masked more than a blind listener
+	 * would notice.
+	 */
+	guided: z.boolean(),
+	/** What plays it: the clip whose own event explains it (or, failing that, the loudest clip there). */
+	stem: z.enum(SOUND_LISTEN_STEMS).nullable(),
+	clipId: z.string().nullable(),
+	track: z.string().nullable(),
+	clipName: z.string().nullable(),
+	/** The cue the clip fills (two-way link) and its role. */
+	cueId: z.string().nullable(),
+	cueKind: z.enum(CUE_KINDS).nullable(),
+	role: z.enum(SFX_ROLES).nullable(),
+	/** `event`: the clip's own event is there; `level`: no own event, the loudest clip at that moment; `none`. */
+	explainedBy: z.enum(['event', 'level', 'none']),
+	/** Picture events this event answers (ok / near / swell). */
+	answers: z.array(
+		z.object({
+			key: z.string(),
+			status: z.enum(SOUND_LISTEN_STATUSES),
+			offsetMs: z.number(),
+			at: z.enum(['attack', 'peak']),
+		}),
+	),
+});
+export type SoundListenEvent = z.infer<typeof SoundListenEventSchema>;
+
+export const SoundListenSectionSchema = z.object({
+	start: frame,
+	end: frame,
+	startTimecode: z.string(),
+	endTimecode: z.string(),
+	classes: z.array(z.enum(SOUND_LISTEN_CLASSES)),
+	label: z.string(),
+	/** Energy-mean momentary loudness of the mix over it (LUFS as delivered; null: silent). */
+	lufs: z.number().nullable(),
+	/** Music in it: its Essential Sound ducking depth (dB, null: no ducking) and how far it sits under the voice (LU). */
+	music: z.object({ duckDb: z.number().nullable(), underVoiceLu: z.number().nullable() }).optional(),
+});
+export type SoundListenSection = z.infer<typeof SoundListenSectionSchema>;
+
+export const SoundListenSyncStatsSchema = z.object({
+	n: z.number().int(),
+	ok: z.number().int(),
+	near: z.number().int(),
+	swell: z.number().int(),
+	none: z.number().int(),
+	okShare: z.number(),
+	okChance: z.number(),
+	within100Share: z.number(),
+	within100Chance: z.number(),
+	accentOkShare: z.number().nullable(),
+	accentOkChance: z.number().nullable(),
+	accent100Share: z.number().nullable(),
+	accent100Chance: z.number().nullable(),
+	onBeatShare: z.number().nullable(),
+	onBeatChance: z.number().nullable(),
+	medianAbsOffsetMs: z.number().nullable(),
+	frameMs: z.number(),
+	spanMs: z.tuple([z.number(), z.number()]),
+});
+export type SoundListenSyncStats = z.infer<typeof SoundListenSyncStatsSchema>;
+
+export const SoundListenLineSchema = z.object({
+	frame,
+	timecode: z.string(),
+	kind: z.enum(SOUND_LISTEN_LINE_KINDS),
+	/** The line as the transcript prints it (after the timecode). */
+	text: z.string(),
+	/** Index into `events` (event lines). */
+	event: z.number().int().optional(),
+	/** Picture event key (unanswered lines). */
+	key: z.string().optional(),
+});
+export type SoundListenLine = z.infer<typeof SoundListenLineSchema>;
+
+export const SoundListenPlacedSchema = z.object({
+	clipId: z.string(),
+	title: z.string(),
+	track: z.string(),
+	/** Where its aligned point plays (sequence ms) and its alignment. */
+	alignedMs: z.number().nullable(),
+	align: z.enum(CUE_ALIGNS).nullable(),
+	cueId: z.string().nullable(),
+	role: z.enum(SFX_ROLES).nullable(),
+	/** Its own event (the clip rendered alone), relative to the aligned point (ms). */
+	ownEventMs: z.number().nullable(),
+	ownOffsetMs: z.number().nullable(),
+	/** An event of the MIX is attributed to it within 30 ms of its own event (heard in the mix). */
+	heard: z.boolean(),
+	mixEvent: z.number().int().nullable(),
+	prominenceDb: z.number().nullable(),
+});
+export type SoundListenPlaced = z.infer<typeof SoundListenPlacedSchema>;
+
+export const SoundListenResultSchema = z.object({
+	projectId: z.string(),
+	sequenceId: z.string(),
+	revision: z.number().int().nullable(),
+	range: z.object({ start: frame, end: frame }),
+	rangeTimecode: z.object({ start: z.string(), end: z.string() }),
+	wholeSequence: z.boolean(),
+	fps: z.object({ num: z.number().int(), den: z.number().int() }),
+	detail: z.enum(SOUND_LISTEN_DETAILS),
+	lines: z.array(SoundListenLineSchema),
+	/** All the transcript text: one line per entry of `lines` (timecode, two spaces, text). */
+	text: z.string(),
+	events: z.array(SoundListenEventSchema),
+	sections: z.array(SoundListenSectionSchema),
+	silences: z.array(
+		z.object({
+			start: frame,
+			end: frame,
+			startTimecode: z.string(),
+			kind: z.enum(['digital silence', 'near silence', 'drop']),
+			levelLufs: z.number(),
+			seconds: z.number(),
+		}),
+	),
+	pictureEvents: z.array(SoundListenPictureEventSchema),
+	unanswered: z.array(SoundListenPictureEventSchema),
+	sync: z.object({
+		cuts: SoundListenSyncStatsSchema.nullable(),
+		transitions: SoundListenSyncStatsSchema.nullable(),
+		cues: SoundListenSyncStatsSchema.nullable(),
+		motion: SoundListenSyncStatsSchema.nullable(),
+		all: SoundListenSyncStatsSchema.nullable(),
+		/** Beats of the music were known (cached beat analysis): the on-beat stats are filled. */
+		beatsKnown: z.boolean(),
+		/** Measured picture motion was cached for the range (`analyze_picture_motion`). */
+		motionAnalysed: z.boolean(),
+	}),
+	placed: z.array(SoundListenPlacedSchema),
+	loudness: z.object({
+		integratedLufs: z.number().nullable(),
+		maxMomentaryLufs: z.number().nullable(),
+		maxMomentaryFrame: frame.nullable(),
+		maxShortTermLufs: z.number().nullable(),
+		maxShortTermFrame: frame.nullable(),
+		normalization: z.object({ applied: z.boolean(), gainDb: z.number(), reason: z.string().optional() }),
+	}),
+	counts: z.object({
+		events: z.number().int(),
+		accents: z.number().int(),
+		swells: z.number().int(),
+		sections: z.number().int(),
+		silences: z.number().int(),
+		pictureEvents: z.number().int(),
+		unanswered: z.number().int(),
+		lanes: z.number().int(),
+		/** Events left out of `events` by the limit. */
+		eventsDropped: z.number().int(),
+	}),
+	warnings: z.array(z.object({ code: z.string(), message: z.string() })),
+	timings: z.record(z.string(), z.number()),
+});
+export type SoundListenResult = z.infer<typeof SoundListenResultSchema>;

@@ -13,7 +13,10 @@
 //                                 listen-here moments, the per-event table and a verdict; `store` writes the summary.
 //   POST /api/sound-design/check/last  the sequence's last full Sound Check report, kept across restarts
 //                                 (sound-design/report-store.ts), with whether it is stale against the live document.
-//   POST /api/sound-design/visual the curves, cue ticks, motion and findings over ≤ 120 s (sound-design/visual.ts).
+//   POST /api/sound-design/visual the curves, cue ticks, motion, findings and (asked) the spectrogram over ≤ 120 s
+//                                 (sound-design/visual.ts).
+//   POST /api/sound-design/listen a `sound-listen` job (202): the listening transcript of ≤ 10 min (sound-design/listen.ts):
+//                                 events attributed to their clips and cues, sections, sync with chance levels, lines.
 //   POST /api/sound-design/motion a `motion-analysis` job (202): the picture rendered small and measured per frame
 //                                 (sound-design/motion.ts), cached by the picture's fingerprint.
 // The cue route also runs the engine's cue sources (scene, beat, pixel: sound-design/engine-cues.ts) when asked; what is
@@ -34,6 +37,7 @@ import {
 	type SoundCuesResponse,
 	SoundDeliveryRequestSchema,
 	SoundDesignPlanRequestSchema,
+	SoundListenRequestSchema,
 	SoundVisualRequestSchema,
 } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
@@ -65,6 +69,7 @@ import type { ProposalService } from '../proposals/service.ts';
 import { runSoundCheck } from '../sound-design/check.ts';
 import { mixAnalysis, planDelivery, runDelivery } from '../sound-design/delivery.ts';
 import { type EngineCueSource, EngineCueSources } from '../sound-design/engine-cues.ts';
+import { ListenInputError, listenRange, runSoundListen } from '../sound-design/listen.ts';
 import { matchStoredCues } from '../sound-design/match.ts';
 import { closeSoundDesignMeasurer, soundDesignMeasurer } from '../sound-design/measure-pool.ts';
 import { MotionInputError, MotionService, planMotion } from '../sound-design/motion.ts';
@@ -199,6 +204,52 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 		if (!ctx.signal.aborted) await reports.save(result.projectId, result, ctx.job.id);
 		return result;
 	});
+
+	// The listening transcript (spec 12 §4 P6-E6): read-only for the project.
+	core.queue.registerRunner('sound-listen', (ctx) =>
+		runSoundListen(ctx, {
+			agent: agentOf,
+			ffmpeg: core.ffmpeg,
+			registry: core.registry,
+			engineCues: () => engineCues,
+			lastCheckReport: async (pid, sequenceId) => (await reports.get(pid, sequenceId))?.result.report ?? null,
+		}),
+	);
+
+	app.post(
+		'/api/sound-design/listen',
+		guarded(async (req, reply) => {
+			const body = parseOr400(SoundListenRequestSchema, req.body ?? {});
+			if (!isProjectId(body.projectId)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
+			const agent = agentOf();
+			if (!agent) throw new HttpError(503, 'NOT_AVAILABLE', 'The sound design services are not running');
+			if (!(await agent.projectExists(body.projectId)))
+				throw new HttpError(404, 'PROJECT_NOT_FOUND', `Project not found: ${body.projectId}`);
+			// Refused at once rather than as a failed job: an unknown sequence, a range outside it or over 10 min.
+			const { doc } = await liveDocument(agent, body.projectId);
+			let seq: ReturnType<typeof planSequence>;
+			try {
+				seq = planSequence(doc, body.sequenceId);
+				listenRange(seq, body);
+			} catch (e) {
+				if (e instanceof PlanInputError) throw new HttpError(404, e.code, e.message);
+				if (e instanceof ListenInputError) throw new HttpError(400, e.code, e.message);
+				throw e;
+			}
+			const editor = req.jasperEditor === true;
+			reply.code(202);
+			return core.queue.submit({
+				kind: 'sound-listen',
+				title: 'Listen to the mix',
+				priority: 'user',
+				cpuSlots: 1,
+				origin: editor ? { type: 'user' } : { type: 'agent', agentRunId: agentNameOf(req) },
+				projectId: body.projectId,
+				input: { request: { ...body, sequenceId: seq.id } },
+				stage: 'Waiting',
+			});
+		}),
+	);
 
 	app.post(
 		'/api/sound-design/check/last',

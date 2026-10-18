@@ -2,10 +2,12 @@
 // WP5.2"): Run Sound Check opens the Sound Check panel and runs the check of the active sequence (the engine's
 // `sound-check` job, the summary stored as the user's edit); Fix All Safe applies the report's safe fixes (one undo step,
 // engine jobs after it) and runs the check again. Agents reach both through the UI command catalogue; the same check
-// is MCP `sound_check`, whose fixes they apply with the tools each fix names. The findings list's keys are commands of
+// is MCP `sound_check`, whose fixes they apply with the tools each fix names. Listen to Sequence opens the panel's Log
+// tab and runs the listening transcript (spec 12 §4 P6-E6; MCP `listen_to_sequence`). The findings list's keys are commands of
 // the Sound Check scope (Keyboard Shortcuts lists them; remappable): ↑ ↓ Home End move, Enter goes to the finding, F
 // applies its fix (one that needs judgement asks first), → / ← open / close its sync strip, Space plays 4 s around it.
 import { t } from '../i18n/runtime.ts';
+import { type ListenEngine, runListen, setListenTab } from '../panels/soundCheck/listen-run.ts';
 import { canApply, hasSyncStrip, safeFixable } from '../sound/check-model.ts';
 import {
 	applyCheckFix,
@@ -170,6 +172,26 @@ export const soundCheckCommands: UiCommand[] = [
 			const r = await runSoundCheck(e.session, engineOf(ctx), { sequenceId: e.seq.id });
 			if (!r.ok && !r.cancelled)
 				ctx.ui.toast({ kind: 'warning', message: t('The Sound Check failed'), detail: r.message });
+		},
+	},
+	{
+		id: 'sound.listenToSequence',
+		label: 'Listen to Sequence',
+		description:
+			'Open the Sound Check panel on its Log tab and listen to the active sequence (up to 10 minutes): a written log of the mix — every sound with the clip that plays it and the cue it fills, the sections, the silences, and which cuts and cues have a sound, each share next to what random timing would score (the same log agents read with listen_to_sequence)',
+		scope: 'global',
+		capability: 'engine',
+		agentExposed: true,
+		when: (ctx) => !!sequenceContext(ctx),
+		disabledReason: () => t('Open a sequence first'),
+		run: async (ctx) => {
+			const e = sequenceContext(ctx);
+			if (!e) return;
+			await runCommand('panel.open.soundCheck', ctx);
+			setListenTab(e.session, 'log');
+			const r = await runListen(e.session, ctx.engine as unknown as ListenEngine, { sequenceId: e.seq.id });
+			if (!r.ok && !r.cancelled)
+				ctx.ui.toast({ kind: 'warning', message: t('The listen failed'), detail: r.message });
 		},
 	},
 	{

@@ -442,7 +442,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (355; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (356; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `browse_media_files` (folders and importable files on the engine's computer) `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -531,7 +531,11 @@ Tools (355; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   PNG of the worst moments; a custom delivery target; humanVerdicts: what the user said after
   listening in the editor's Sound Check panel, each bound to the moment it judged and marked stale when that moment
   changed) `get_sound_check` (the last full report the engine keeps per sequence, across restarts: current or stale)
-  `view_sound_timeline` (PNG: loudness of the mix and its stems, cues, motion, findings)
+  `view_sound_timeline` (the annotated sound sheet of ≤ 120 s: frames at the cuts and cues, loudness of the mix and its
+  stems, spectrogram, sections, every cut / cue marked by whether a sound answers it, motion, findings)
+  `listen_to_sequence` (a written log of the mix, ≤ 10 min: every sound named by the clip that plays it and the cue it
+  fills, sections, silences, which cuts and cues have a sound — each share next to its chance level — and the cuts with
+  none; the sound sheet with images)
   (`docs/specs/12-sound-design.md`, `docs/wp-notes/sound-design.md`).
 - Proposals (reviewed and applied by the user in the editor; one undo step): `list_proposals` `get_proposal` (with a
   ghost table) `wait_for_proposal` (decisions and notes) `accept_proposal` (policy-gated for agents) `reject_proposal`.
@@ -712,9 +716,15 @@ measured; the result (`SoundCheckResult`) has a verdict (pass / warn / fail), ev
 timecode, translatable message and fix (commands, an engine job or a sound swap; `safe` when it resolves the finding by
 itself), the per-event table, five listen-here moments and loudness curves; `store: true` also writes the summary into
 the sequence (`soundDesign.setCheck`, one undo step).
-`POST /api/sound-design/visual {projectId, sequenceId?, range, checkJobId?}` answers at once with 10 ms loudness curves of
-the mix and each stem, the mix waveform, cue ticks, sound-effect clips, speech, the picture's motion curve and a check
-job's findings over a range of at most 120 s.
+`POST /api/sound-design/visual {projectId, sequenceId?, range, checkJobId?, spectrogram?}` answers at once with 10 ms
+loudness curves of the mix and each stem, the mix waveform, cue ticks, sound-effect clips, speech, the picture's motion
+curve, a check job's findings and (asked) the mix's log-frequency spectrogram over a range of at most 120 s.
+`POST /api/sound-design/listen {projectId, sequenceId?, range?, detail?: low | normal | high}` starts a `sound-listen`
+job (202) over at most 10 minutes: the mix and every clip rendered once; the result (`SoundListenResult`) is the
+listening transcript — its lines and text, the events of the mix (attack, peak, band, prominence over the bed, accent)
+each with the clip that plays it and the cue it fills, sections by audio type, silences, every cut / transition / cue /
+measured motion with the sound that answers it and the chance level of each sync share, the placed sounds heard or not,
+loudness. Nothing is written.
 `POST /api/audio/classify {projectId | envelope, sequenceId?, clipIds} | {mediaKeys, streamIndex?}` (`?wait=1` to answer
 when done) starts an `audio-classify` job: Essential Sound Auto Tag classifies each clip (the media range it plays) or
 media as dialogue, music, sfx or ambience with a confidence, per-type scores, reasons and the measured features; cached

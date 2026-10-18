@@ -4,19 +4,16 @@
 //                        table and, optionally, a PNG strip of the worst moments; `store: true` also writes the summary
 //                        into the sequence (one undo step "Sound Check Result").
 //   get_sound_check      the sequence's last full report as the engine keeps it (across restarts), current or stale.
-//   view_sound_timeline  a PNG of a range (≤ 120 s): the loudness curves of the mix and its stems, the waveform, cue ticks,
-//                        the sound effect clips, speech, motion and a check's findings, plus the geometry as JSON.
+//   (view_sound_timeline, the PNG of a range, is in ./sound-timeline.ts; sound_check's pictures use its drawing.)
 import {
 	type SoundCheckIssue,
 	SoundCheckLastResponseSchema,
 	type SoundCheckReport,
 	SoundCheckResultSchema,
-	type SoundVisualResponse,
 	SoundVisualResponseSchema,
 } from '@jasper/api';
 import {
 	type ProjectDocument,
-	type Rational,
 	type Sequence,
 	SOUND_CHECK_TARGET_LIMITS,
 	SOUND_DELIVERIES,
@@ -47,7 +44,6 @@ import { drawSoundTimeline } from '../sound-timeline.ts';
 /** Seconds either side of a worst moment in sound_check's pictures. */
 const STRIP_PAD_SEC = 2;
 const MAX_STRIPS = 3;
-const VISUAL_MAX_SEC = 120;
 
 const RangeArg = z
 	.object({ start: TimeInputSchema, end: TimeInputSchema })
@@ -356,72 +352,6 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 						? `This report is stale (${kept.reasons.join(', ')} changed since it was made): run sound_check again before applying any fix.`
 						: nextOf(r, listen),
 			});
-		},
-	);
-
-	defineTool(
-		ctx,
-		'view_sound_timeline',
-		{
-			title: 'View sound timeline (PNG)',
-			description: `ONE PNG of a sequence range (at most ${VISUAL_MAX_SEC} s) for an agent that cannot hear: the momentary loudness of the mix (white) and its stems — bed (blue), sound effects (orange), music (purple), dialogue (green), ambience (teal) — on a LUFS scale (0 at the top, −60 at the bottom; grid at −6, −14, −23, −40), speech shaded green, the mix waveform, the sound effect clips with the point each is aligned on, the cue ticks (hero tall red, support short amber, dashed = unfilled), the picture's motion (the fastest keyframed layer in yellow; the MEASURED picture in pink where the range was already analysed by analyze_picture_motion or find_sound_cues sources ["pixel"] — cells.pixelMotion says measured / partly analysed / not analysed), and — with checkJobId (a sound_check jobId) — its findings as flags, over a timecode axis. Curves are as delivered when the Mix normalises and its loudness analysis is current. Plus cells JSON: lane positions, each cue's and finding's x pixel, each stem's loudest value. Use it to see where sounds stand out of the bed, whether a hit lines up with motion, and how far the music sits under the voice.`,
-			input: {
-				projectId: ProjectIdArg,
-				sequenceId: SequenceIdArg,
-				range: RangeArg,
-				checkJobId: z
-					.string()
-					.min(1)
-					.max(128)
-					.optional()
-					.describe('A sound_check jobId whose findings to flag'),
-				width: z.number().int().min(480).max(2400).optional().describe('Picture width in px (default 1200)'),
-			},
-			annotations: READ_ONLY,
-		},
-		async (a, extra) => {
-			const { doc } = await loadDoc(ctx, a.projectId);
-			const seq = pickSequence(doc, a.sequenceId);
-			const range = { start: frameOf(seq, a.range.start), end: frameOf(seq, a.range.end) };
-			if (range.end <= range.start)
-				throw new ToolError(
-					'E_INVALID_PARAM',
-					`range.end (${range.end}) must be after range.start (${range.start})`,
-					TIME_FORMATS,
-				);
-			const rate = seq.settings.frameRate as Rational;
-			if ((range.end - range.start) / (rate.num / rate.den) > VISUAL_MAX_SEC + 1e-9)
-				throw new ToolError(
-					'RANGE_TOO_LONG',
-					`At most ${VISUAL_MAX_SEC} s per picture`,
-					'Ask for a shorter range, or several.',
-				);
-			const v: SoundVisualResponse = SoundVisualResponseSchema.parse(
-				await ctx
-					.engine((c) =>
-						c.soundVisual(
-							{
-								projectId: a.projectId,
-								sequenceId: seq.id,
-								range,
-								...(a.checkJobId ? { checkJobId: a.checkJobId } : {}),
-							},
-							extra.signal,
-						),
-					)
-					.catch(toolError),
-			);
-			const { image, cells } = drawSoundTimeline(v, { ...(a.width ? { width: a.width } : {}) });
-			return jsonResult(
-				{
-					range: v.range,
-					rangeTimecode: v.rangeTimecode,
-					normalization: v.normalization,
-					cells,
-					speech: v.speech,
-				},
-				[{ type: 'image', data: encodePng(image).toString('base64'), mimeType: 'image/png' }],
-			);
 		},
 	);
 }

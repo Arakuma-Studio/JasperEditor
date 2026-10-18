@@ -9,6 +9,7 @@ export * from './analysis/bands.ts';
 export * from './analysis/check-curves.ts';
 export * from './analysis/clicks.ts';
 export * from './analysis/edges.ts';
+export * from './analysis/events.ts';
 export * from './analysis/harshness.ts';
 export * from './analysis/masking.ts';
 export * from './analysis/remix.ts';

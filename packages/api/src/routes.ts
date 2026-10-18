@@ -199,6 +199,7 @@ import {
 	SoundCuesResponseSchema,
 	SoundDeliveryRequestSchema,
 	SoundDesignPlanRequestSchema,
+	SoundListenRequestSchema,
 } from './sound-design.ts';
 import {
 	RegisterSoundRequestSchema,
@@ -1235,6 +1236,17 @@ export const ROUTES = {
 		path: '/api/sound-design/visual',
 		body: SoundVisualRequestSchema,
 		response: SoundVisualResponseSchema,
+	},
+	/**
+	 * Listening transcript (spec 12 §4 P6-E6): a `sound-listen` job (202) that renders the mix and every clip of a range
+	 * (≤ 10 min) and returns `SoundListenResult` — events attributed to their clips and cues, sections, silences, the
+	 * picture events with the sound that answers them and the chance level of each sync share, and the text lines.
+	 */
+	soundDesignListen: {
+		method: 'POST',
+		path: '/api/sound-design/listen',
+		body: SoundListenRequestSchema,
+		response: EngineJobSchema,
 	},
 	/**
 	 * Proposals (spec 12 §2.5, §2.8): reviewable sets of edits stored per project. Accept composes ONE transaction

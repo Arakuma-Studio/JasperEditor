@@ -68,6 +68,7 @@ export {
 	MOVE_ON,
 	speedSegments,
 } from './motion.ts';
+export { type PictureEditEvent, pictureEditEvents } from './picture-events.ts';
 export {
 	measureFrameMotion,
 	PIXEL_BLOCK,
