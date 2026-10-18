@@ -5,7 +5,7 @@
 - **Copyright:** Copyright (c) 2026 Leon Lin
 - **Ported by:** sound design WP-E1 (Sound Check: new findings), 2026-10-17; WP-E5 (takes, judge flags), 2026-10-18;
   WP-E6 (cue grammar, variation policy, personality, palette coherence), 2026-10-18; WP-E7 (music to picture),
-  2026-10-18
+  2026-10-18; WP-E4 (reference profiles), 2026-10-18
 
 | Upstream path | Our path | What |
 |---|---|---|
@@ -86,3 +86,27 @@ generated track, measured); bar numbers count from the start of the analysed ran
 `packages/audio-fx/src/analysis/key.ts`) and tuning (`packages/project/src/sound/tuning.ts`) are ours (earshot's
 `analyze.py` reports a key with librosa; nothing of it is used). Not ported: the arc DP over film bars, `--phase`
 overrides, local phase disagreements, Rubber Band stretching (GPL; we never stretch).
+
+## Reference profiles (sound design WP-E4, 2026-10-18)
+
+| Upstream path | Our path | What |
+|---|---|---|
+| `earshot/profile.py` (`film_metrics`, `_audio_pass`, `salient_hits`, `stopdowns`, `_edge`, `_arc`, `_final_hit_tail`, `near_frac`) | `packages/audio-fx/src/analysis/profile-metrics.ts` (`ProfileMeter`) | The metric set and definitions: integrated / true peak / LRA / crest (loudest 3 s − integrated); the 11-point arc (energy-mean momentary loudness around 0 %…100 %, window max(1.5 s, 5 %)), opening / closing level (first / last max(10 %, 0.5 s)), position of the loudest 3 s, first sound (first 100 ms block within 20 LU, refined on 2 ms levels within 20 dB of the loudest of the next 150 ms), longest gap (100 ms level 30 LU under), dead air (last block within 30 LU, refined), fade (last momentary within 6 LU to the end of sound, − 0.2 s), final moment (loudest momentary of the last 3 s of sound), final-hit ring-out (strongest onset of the last 4 s in the top quarter); salient hits (100 ms level jumping ≥ 6 dB within 80 ms over the minimum of the 200 ms before, to within 8 LU of integrated, one per run); stop-downs (≥ 10 dB under the median of the preceding 2 s for 0.15–1.5 s, back within 3 dB in 0.3 s); onsets per second; picture events per second and the share with an onset within ±100 ms and ±1 frame; six band shares (sub 20–60, low 60–250, low-mid 250–1k, mid 1–4k, presence 4–8k, air 8–16k Hz) and the median magnitude-weighted centroid; side / mid energy (mono −40 dB) and L/R correlation; files under 3 s or silent unscorable, under 10 s no loudness-shape metrics |
+| `earshot/profile.py` (`_stats`, `aggregate`, `profile`) | `packages/project/src/sound/profile.ts` (`metricStats`, `aggregateReferences`, `buildReferenceProfile`), `apps/engine/src/sound-design/profile.ts` (`runSoundProfileJob`) | Per metric median, p10–p90 (NumPy linear percentiles), min–max and n; the arc's median / p10 / p90 per point; references that are missing, without audio, under 3 s or silent are skipped with a reason; fewer than 3 references warned |
+| `earshot/critique.py` (`SPEC` weights, tolerances and sides; `_window`; `_status`; `scorecard`; `reference_match`; `leave_one_out`; `_actions`, `BAND_FIX`) | `packages/project/src/sound/profile.ts` (`REFERENCE_METRICS`, `referenceWindow`, `compareWithProfile`, `referenceMatch`, `referenceAdvice`), `apps/engine/src/sound-design/profile.ts` (`referenceFindings`) | The scorecard: the window = the references' min–max widened by the metric's tolerance, one-sided where earshot judges one side, a density window reaching 0 floored at half the sparsest reference; statuses ok / low / high / n.a.; weights major / minor / info; leave-one-out against the other references (at least two); what to do per metric and direction (our wording), with timecodes |
+
+Notes: Python/NumPy/librosa → TypeScript; no code was copied, and earshot's bundled 7-film launch profile is NOT used or
+shipped (users build their own; the reason is in the wp-note). Changes: streaming in blocks with bounded memory (≈ 10 MB
+an hour); onsets are our `ListenMeter`'s (P6-E6) rising ≥ 3 dB over their bed (earshot: librosa spectral flux); a
+salient hit is timed at the most prominent of those onsets; curves at 10 ms steps; edges refined ±100 ms around the
+block (a centred block straddling the edge missed it by half its length in our known-answer test); a gap's length adds
+back the 100 ms window (a 1 s hole reads 1 s); the chance of a sync share is the exact measure of the union of the
+tolerance windows over the piece (earshot: 16 fixed circular shifts of the picture events); picture events come from our
+scene detector (`sceneSignature` / `detectSceneCuts`, the flash test streamed) or, for a sequence, its edit's cuts and
+transitions (earshot: a frame-difference detector); speech share from our model-free Auto Tag classifier per 5 s window
+(earshot: AudioSet "Speech" ≥ 0.5). Integrated loudness and true peak are shown for context only (Sound Check's LOUDNESS
+/ TRUE_PEAK follow the delivery preset; earshot judges them against a web window). Leave-one-out also by identity (a
+sequence reference of the checked sequence) and, by measurements, on level-independent metrics only, all of them within
+tolerance (earshot: 3 of loudness, true peak, brightness and the mid share — similar generated films matched). Rows are
+Sound Check findings of severity warning (major) or info (minor), never errors. Not ported: realness, the AudioSet music
+share, tempo, the beat-grid share, the verdict score, the bundled profile.
