@@ -391,7 +391,12 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 		'/api/sound-design/profiles/import',
 		guarded(async (req) => {
 			const body = parseOr400(SoundProfileImportRequestSchema, req.body ?? {});
-			const p = await profiles.save(importedProfile(body.profile, body.name));
+			const incoming = importedProfile(body.profile, body.name);
+			// a second copy of a shared profile gets a distinct name ("My channel (2)")
+			const names = new Set((await profiles.list()).profiles.map((x) => x.name));
+			let name = incoming.name;
+			for (let n = 2; names.has(name) && n < 1000; n++) name = `${incoming.name.slice(0, 110)} (${n})`;
+			const p = await profiles.save(name === incoming.name ? incoming : { ...incoming, name });
 			profilesChanged(p.id, 'imported');
 			return profileSummaryOf(p);
 		}),

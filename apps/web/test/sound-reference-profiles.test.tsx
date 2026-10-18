@@ -210,7 +210,7 @@ describe('profile model', () => {
 		expect(rowValue('band_air', -19.5)).toBe('−19.5 dB');
 		expect(rowValue('cuts_with_sound', 0.8)).toBe('80 %');
 		expect(rowRange({ metric: 'band_air', range: [-22.5, -17.5], basis: 'references' })).toBe(
-			'−22.5 dB … −17.5 dB',
+			'−22.5 … −17.5 dB',
 		);
 		expect(rowRange({ metric: 'cuts_with_sound', range: [0.75, null], basis: 'references' })).toBe('≥ 75 %');
 		expect(rowRange({ metric: 'end_silence_s', range: [null, 0.3], basis: 'references' })).toBe('≤ 0.30 s');

@@ -716,64 +716,56 @@ export function ReferenceRows(props: { reference: SoundCheckReference; onShow?(i
 					{t('Every scored metric is within the references’ range.')}
 				</p>
 			) : (
-				<table className="w-full border-collapse text-pr-small">
-					<thead>
-						<tr className="text-left text-pr-muted">
-							<th className="py-0.5 pr-2 font-normal">{t('Metric')}</th>
-							<th className="py-0.5 pr-2 font-normal">{t('Value')}</th>
-							<th className="py-0.5 pr-2 font-normal">{t('References')}</th>
-							<th className="py-0.5 pr-2 font-normal">{t('Median')}</th>
-							<th className="py-0.5 font-normal">{t('Status')}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{rows.map((r) => {
-							const off = r.status === 'low' || r.status === 'high';
-							return (
-								<tr
-									key={r.metric}
-									data-reference-metric={r.metric}
-									data-reference-status={r.status}
-									className="align-top"
-								>
-									<td className="py-0.5 pr-2 text-pr-text" title={t(r.why)}>
+				<ul className="m-0 flex list-none flex-col p-0 text-pr-small" aria-label={t('Reference rows')}>
+					{rows.map((r) => {
+						const off = r.status === 'low' || r.status === 'high';
+						const status = r.basis === 'delivery' ? t('Delivery target') : STATUS_LABELS[r.status];
+						const tone = off && r.basis !== 'delivery'
+							? r.weight === 'major'
+								? 'text-pr-warning'
+								: 'text-pr-text'
+							: 'text-pr-muted';
+						return (
+							<li
+								key={r.metric}
+								data-reference-metric={r.metric}
+								data-reference-status={r.status}
+								className="border-b border-pr-border-subtle py-0.5 last:border-b-0"
+							>
+								<div className="flex items-baseline gap-2">
+									<span className="min-w-0 flex-1 text-pr-text" title={t(r.why)}>
 										{t(r.label)}
-										{off && r.advice?.length ? (
-											<div className="text-pr-muted">{r.advice.map((a) => messageText(a)).join(' ')}</div>
-										) : null}
-									</td>
-									<td className="py-0.5 pr-2 pr-tabular text-pr-text">
-										{rowValue(r.metric, r.value)}
-										{r.chance !== undefined && r.chance !== null ? (
-											<span className="text-pr-muted">
-												{' '}
-												{t('(chance {0})', rowValue(r.metric, r.chance))}
-											</span>
-										) : null}
-									</td>
-									<td className="py-0.5 pr-2 pr-tabular text-pr-muted">{rowRange(r)}</td>
-									<td className="py-0.5 pr-2 pr-tabular text-pr-muted">{rowValue(r.metric, r.median)}</td>
-									<td
-										className={`py-0.5 ${off ? (r.weight === 'major' ? 'text-pr-warning' : 'text-pr-text') : 'text-pr-muted'}`}
-									>
+									</span>
+									<span className={`shrink-0 whitespace-nowrap ${tone}`} title={WEIGHT_LABELS[r.weight]}>
 										{off && r.issueId && props.onShow ? (
 											<button
 												type="button"
 												className="underline underline-offset-2"
 												onClick={() => props.onShow?.(r.issueId!)}
-												title={WEIGHT_LABELS[r.weight]}
 											>
-												{STATUS_LABELS[r.status]}
+												{status}
 											</button>
 										) : (
-											<span title={WEIGHT_LABELS[r.weight]}>{STATUS_LABELS[r.status]}</span>
+											status
 										)}
-									</td>
-								</tr>
-							);
-						})}
-					</tbody>
-				</table>
+									</span>
+								</div>
+								<div className="pr-tabular text-pr-muted">
+									<span className="text-pr-text">{rowValue(r.metric, r.value)}</span>
+									{r.chance !== undefined && r.chance !== null
+										? ` ${t('(chance {0})', rowValue(r.metric, r.chance))}`
+										: ''}
+									{' · '}
+									{t('references {0}', rowRange(r))}
+									{r.median !== null ? ` · ${t('median {0}', rowValue(r.metric, r.median))}` : ''}
+								</div>
+								{off && r.advice?.length ? (
+									<div className="text-pr-muted">{r.advice.map((x) => messageText(x)).join(' ')}</div>
+								) : null}
+							</li>
+						);
+					})}
+				</ul>
 			)}
 		</section>
 	);

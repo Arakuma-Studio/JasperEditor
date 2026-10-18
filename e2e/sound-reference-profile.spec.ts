@@ -248,6 +248,8 @@ test('build a reference profile from project media, compare the sequence in Soun
 	expect(readFileSync(saved, 'utf8')).not.toContain(join(outDir, 'media'));
 	await sec.getByTestId('sound-profiles-import-file').setInputFiles(saved);
 	await expect(sec.locator('[data-sound-profile]')).toHaveCount(2, { timeout: 60_000 });
+	// the copy gets a distinct name
+	await expect(sec.locator('[data-sound-profile]').filter({ hasText: 'My channel (2)' })).toHaveCount(1);
 	await sec.getByTestId(`sound-profile-delete-${profileId}`).click();
 	const confirm = page.getByTestId('confirm-dialog');
 	await expect(confirm).toContainText('building it again needs its 3 references');

@@ -10268,7 +10268,6 @@
   "Measuring": "Midiendo",
   "Measuring the references": "Midiendo las referencias",
   "Media from the project": "Medios del proyecto",
-  "Metric": "Métrica",
   "Mid 1–4 kHz share": "Proporción de medios 1–4 kHz",
   "Minor": "Menor",
   "Missing profile ({0})": "Perfil que falta ({0})",
@@ -10306,7 +10305,6 @@
   "Recessed mids: clicks and the voice will not cut through small speakers; lift 1–3 kHz on effects or voice.": "Medios hundidos: los clics y la voz no atravesarán los altavoces pequeños; suba 1–3 kHz en los efectos o la voz.",
   "Reference comparison": "Comparación con la referencia",
   "Reference profiles": "Perfiles de referencia",
-  "References": "Referencias",
   "Rename {0}": "Cambiar nombre de {0}",
   "Rhythmic activity: too sparse feels empty, too dense feels cluttered.": "Actividad rítmica: demasiado escasa parece vacía, demasiado densa parece abarrotada.",
   "Salient hit density": "Densidad de golpes destacados",
@@ -10352,10 +10350,12 @@
   "Too many salient hits ({0}/s): keep the biggest for the main moments and lower the rest by 3–6 dB.": "Demasiados golpes destacados ({0}/s): reserve los mayores para los momentos principales y baje el resto 3–6 dB.",
   "Too much 20–60 Hz rumble eats headroom: high-pass sound effects and ambience at 30–40 Hz, cut the music’s sub 2–4 dB.": "Demasiado retumbe entre 20 y 60 Hz se come el margen: aplique un paso alto a 30–40 Hz a los efectos y al ambiente y recorte 2–4 dB los subgraves de la música.",
   "Too much sounds muddy, too little hollow.": "Demasiado suena embarrado; demasiado poco, hueco.",
-  "Value": "Valor",
   "Very wide (side {0} dB against mid): check the mono fold-down, narrow wide ambiences and reverbs.": "Muy ancho (lateral {0} dB frente al centro): compruebe la suma a mono y estreche los ambientes y reverberaciones anchos.",
   "Weak low end: the music has no body; choose a fuller track or add a low layer.": "Graves débiles: a la música le falta cuerpo; elija una pista más llena o añada una capa grave.",
   "Where clicks and the voice cut through small speakers.": "Donde los clics y la voz atraviesan los altavoces pequeños.",
   "Where the loudest moment sits (0 = the start, 1 = the end).": "Dónde está el momento más fuerte (0 = el principio, 1 = el final).",
-  "Whether the last moment lands at body level or above, or fades away.": "Si el último momento llega al nivel del cuerpo o por encima, o se desvanece."
+  "Whether the last moment lands at body level or above, or fades away.": "Si el último momento llega al nivel del cuerpo o por encima, o se desvanece.",
+  "median {0}": "mediana {0}",
+  "Reference rows": "Filas de referencia",
+  "references {0}": "referencias {0}"
 }

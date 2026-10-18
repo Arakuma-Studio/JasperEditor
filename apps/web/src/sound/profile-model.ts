@@ -147,7 +147,14 @@ export function rowValue(metric: string, v: number | null | undefined): string {
 export function rowRange(r: Pick<SoundCheckReference['rows'][number], 'metric' | 'range' | 'basis'>): string {
 	const [lo, hi] = r.range;
 	if (r.basis === 'no reference data') return t('No reference data');
-	if (lo !== null && hi !== null) return `${rowValue(r.metric, lo)} … ${rowValue(r.metric, hi)}`;
+	if (lo !== null && hi !== null) {
+		// one unit for both ends: "−22.5 … −17.5 dB", "75 … 90 %"
+		const a = rowValue(r.metric, lo);
+		const b = rowValue(r.metric, hi);
+		const unit = /^(\S+)( .+)$/.exec(b);
+		const ua = /^(\S+)( .+)$/.exec(a);
+		return unit && ua && ua[2] === unit[2] ? `${ua[1]} … ${b}` : `${a} … ${b}`;
+	}
 	if (lo !== null) return `≥ ${rowValue(r.metric, lo)}`;
 	if (hi !== null) return `≤ ${rowValue(r.metric, hi)}`;
 	return '—';
