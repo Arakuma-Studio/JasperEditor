@@ -20,6 +20,7 @@ import {
 import { z } from 'zod';
 import { EngineJobSchema } from './jobs.ts';
 import { RegisteredMediaSchema } from './media.ts';
+import { SOUND_DESCRIBE_MAX_CHARS, SoundDescribeInfoSchema, SoundMatchSchema } from './sound-semantic.ts';
 
 /** `snd_` + the first 16 hex digits of the file's content fingerprint: the same bytes are the same sound. */
 export const SOUND_ID_RE = /^snd_[0-9a-f]{16}$/;
@@ -325,6 +326,11 @@ const intString = (min: number, max: number) =>
 export const SoundSearchQuerySchema = z.object({
 	/** Free text: titles, tags and types (with synonyms: `swoosh` finds whooshes). */
 	q: z.string().max(500).optional(),
+	/**
+	 * Describe-it search (P6-E14): what the sound sounds like, ranked by the optional audio-text model blended with the
+	 * other parts of the ranking ("glass shattering on concrete"). Without the model, its words are searched like `q`.
+	 */
+	describe: z.string().max(SOUND_DESCRIBE_MAX_CHARS).optional(),
 	/** Type ids or synonyms, comma-separated. */
 	types: csv(32, z.string().min(1).max(32)).optional(),
 	/** One panel family (`impacts`, `movement`, `digital`, `tactile`, `tonal`, `beds`). */
@@ -379,6 +385,7 @@ export type SoundSearchQuery = z.infer<typeof SoundSearchQuerySchema>;
 /** What a client asks for (typed); `soundSearchParams` turns it into the query string. */
 export type SoundSearchRequest = {
 	q?: string;
+	describe?: string;
 	types?: readonly string[];
 	family?: (typeof SOUND_FAMILIES)[number];
 	visualKind?: (typeof VISUAL_KINDS)[number];
@@ -433,6 +440,8 @@ export const SoundRankPartsSchema = z.object({
 	style: fin().nullable().optional(),
 	/** P6-E10: the palette-coherence bonus added (0.08 for its family's dominant material, else 0); null: n/a. */
 	material: fin().nullable().optional(),
+	/** P6-E14: the describe match (0…1 from its calibrated z) blended into the score; null without one. */
+	semantic: fin().nullable().optional(),
 });
 
 const counts = z.record(z.string(), z.number().int().min(0));
@@ -470,9 +479,13 @@ export const SoundSearchResponseSchema = z.object({
 			parts: SoundRankPartsSchema,
 			/** Offered takes of a recording row ("12 takes"; its `takes` are left out: get the sound for them). */
 			takeCount: z.number().int().min(0).optional(),
+			/** P6-E14: how well it matches the description (describe mode, sounds with an embedding). */
+			match: SoundMatchSchema.optional(),
 		}),
 	),
 	facets: SoundFacetsSchema,
+	/** P6-E14: present when `describe` was given. */
+	describe: SoundDescribeInfoSchema.optional(),
 	/** An index job is queued or running: results may change (`sounds.changed` event). */
 	indexing: z.boolean(),
 });
@@ -672,6 +685,8 @@ export type SoundLibraryStatus = z.infer<typeof SoundLibraryStatusSchema>;
 export const SoundCapabilitiesSchema = z.object({
 	library: z.object({ sounds: z.number().int().min(0), packs: z.number().int().min(0) }),
 	synth: z.boolean(),
+	/** P6-E14 Describe-it search (absent from engines before WP-E9). */
+	describe: z.object({ status: z.enum(['ready', 'not-installed', 'unavailable']) }).optional(),
 });
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -10,6 +10,7 @@ import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import type { ProcessingModel } from '@jasper/api';
 import type { VisionCatalogEntry } from '../roto/models.ts';
+import type { SoundCatalogEntry } from '../sounds/semantic/models.ts';
 import type { SpeechCatalogEntry } from '../speech/models.ts';
 import { sha256File } from '../tools/fs.ts';
 import builtin from './models.json' with { type: 'json' };
@@ -48,6 +49,8 @@ export function loadCatalog(env: Record<string, string | undefined> = process.en
 	speech: SpeechCatalogEntry[];
 	/** parity (roto): segmentation and face models (`vision`, see roto/models.ts). */
 	vision: VisionCatalogEntry[];
+	/** WP-E9: the Describe-it search (audio-text) models (`sound`, see sounds/semantic/models.ts). */
+	sound: SoundCatalogEntry[];
 } {
 	const file = env[MODEL_CATALOG_ENV];
 	if (file) {
@@ -56,6 +59,7 @@ export function loadCatalog(env: Record<string, string | undefined> = process.en
 			bundledDir?: string;
 			speech?: SpeechCatalogEntry[];
 			vision?: VisionCatalogEntry[];
+			sound?: SoundCatalogEntry[];
 		};
 		const base = dirname(resolve(file));
 		const dir = json.bundledDir
@@ -63,18 +67,26 @@ export function loadCatalog(env: Record<string, string | undefined> = process.en
 				? json.bundledDir
 				: join(base, json.bundledDir)
 			: base;
-		return { entries: json.models, bundledDir: dir, speech: json.speech ?? [], vision: json.vision ?? [] };
+		return {
+			entries: json.models,
+			bundledDir: dir,
+			speech: json.speech ?? [],
+			vision: json.vision ?? [],
+			sound: json.sound ?? [],
+		};
 	}
 	const b = builtin as unknown as {
 		models: CatalogEntry[];
 		speech?: SpeechCatalogEntry[];
 		vision?: VisionCatalogEntry[];
+		sound?: SoundCatalogEntry[];
 	};
 	return {
 		entries: b.models,
 		bundledDir: bundledModelsDir(env),
 		speech: b.speech ?? [],
 		vision: b.vision ?? [],
+		sound: b.sound ?? [],
 	};
 }
 

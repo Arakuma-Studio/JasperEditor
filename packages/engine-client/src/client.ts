@@ -61,8 +61,10 @@ import {
 	type SoundCuesRequest,
 	type SoundDeliveryRequest,
 	type SoundDesignPlanRequest,
+	type SoundEmbedRequest,
 	type SoundIndexRequest,
 	type SoundListenRequest,
+	type SoundMomentRequest,
 	type SoundProfileBuildRequest,
 	type SoundProfileImportRequest,
 	type SoundRootsPutRequest,
@@ -392,6 +394,35 @@ export class EngineClient {
 	/** Removes an installed pack (an agent's request waits for the user's approval in an editor window). */
 	removeSoundPack(packId: string) {
 		return this.call('soundPackRemove', { params: { packId } });
+	}
+	/** Describe-it search (spec 12 P6-E14): whether it works here, the model and how much of the library is embedded. */
+	soundSemanticStatus(signal?: AbortSignal) {
+		return this.call('soundSemanticStatus', { ...(signal ? { signal } : {}) });
+	}
+	/** The Describe-it search model catalogue (licence, sizes, installed, available, its download job). */
+	soundSemanticModels() {
+		return this.call('soundSemanticModels');
+	}
+	/** Starts (or joins) the `model-download` job of a Describe-it search model (show its licence first). */
+	installSoundSemanticModel(modelId: string) {
+		return this.call('soundSemanticModelInstall', { params: { modelId } });
+	}
+	/** Removes the model and its cached embeddings (an agent's request waits for the user's approval). */
+	removeSoundSemanticModel(modelId: string) {
+		return this.call('soundSemanticModelDelete', { params: { modelId } });
+	}
+	/** Starts (or joins) a `sound-embed` job (embeddings of the sounds that lack one; `full`: all again). */
+	embedSounds(req: SoundEmbedRequest = {}) {
+		return this.call('soundEmbed', { body: req });
+	}
+	/** Find Moment: a `sound-moment` job for the best windows of a sound for a description (`wait`: its end). */
+	findSoundMoments(soundId: string, req: SoundMomentRequest, opts: { wait?: boolean; signal?: AbortSignal } = {}) {
+		return this.call('soundMoments', {
+			params: { soundId },
+			body: req,
+			...(opts.wait ? { query: { wait: '1' as const } } : {}),
+			...(opts.signal ? { signal: opts.signal } : {}),
+		});
 	}
 	/** Replaces the user sound folders (local engines); an agent adding, removing or relicensing one is asked about. */
 	putSoundRoots(req: SoundRootsPutRequest) {

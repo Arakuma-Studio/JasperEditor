@@ -69,6 +69,7 @@ for (const f of [
 	'jasper-proc.mjs',
 	'jasper-proc.package.json',
 	'jasper-speech.mjs',
+	'jasper-clap.mjs',
 	'jasper-roto.mjs',
 	'jasper-camtrack.mjs',
 	'sound-worker.mjs',

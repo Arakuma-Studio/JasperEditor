@@ -7,6 +7,7 @@ import {
 	SOUND_SEARCH_DEFAULT_LIMIT,
 	type SoundEntry,
 	type SoundFacets,
+	type SoundMatch,
 	type SoundSearchQuery,
 	type SoundSearchResponse,
 	withOfferedTakes,
@@ -71,10 +72,19 @@ function licenseClassOf(license: string): string {
 
 export type SoundSearchResult = Pick<SoundSearchResponse, 'total' | 'offset' | 'results' | 'facets'>;
 
+/**
+ * P6-E14 describe mode of a search: the model's 0…1 scores and matches per sound id (the engine's `SemanticService`),
+ * or the description to search as words when the model is not usable.
+ */
+export type DescribeMode =
+	| { semantic: { scores: ReadonlyMap<string, number>; text: string; matches: ReadonlyMap<string, SoundMatch> } }
+	| { describeAsKeywords: string };
+
 /** The ranking request of a search query (family as types, `similarTo` by id); `none`: family and types share nothing. */
 export function rankRequestOf(
 	q: SoundSearchQuery,
 	lookup: (id: string) => SoundEntry | undefined,
+	describe?: DescribeMode,
 ): { req: SoundRankRequest; none: boolean } {
 	let types: string[] | undefined;
 	// A family and types that share nothing match nothing.
@@ -91,8 +101,16 @@ export function rankRequestOf(
 			throw new HttpError(404, 'SOUND_NOT_FOUND', `Unknown sound: ${String(q.similarTo).slice(0, 80)}`);
 		similarTo = { id: ref.id, descriptors: ref.descriptors };
 	}
+	// P6-E14: without the model, the description's words join the query (keyword fallback)
+	const query =
+		describe && 'describeAsKeywords' in describe
+			? [q.q, describe.describeAsKeywords].filter((x) => x?.trim()).join(' ')
+			: q.q;
 	const req: SoundRankRequest = {
-		...(q.q !== undefined ? { query: q.q } : {}),
+		...(query !== undefined ? { query } : {}),
+		...(describe && 'semantic' in describe
+			? { semantic: { scores: describe.semantic.scores, text: describe.semantic.text } }
+			: {}),
 		...(types ? { types } : {}),
 		...(q.visualKind ? { visualKind: q.visualKind } : {}),
 		...(q.windowSec !== undefined ? { windowSec: q.windowSec } : {}),
@@ -129,9 +147,21 @@ export function rankRequestOf(
 export function searchSoundEntries(
 	all: readonly SoundEntry[],
 	q: SoundSearchQuery,
-	opts: { lookup: (id: string) => SoundEntry | undefined; includeFolders: boolean },
+	opts: {
+		lookup: (id: string) => SoundEntry | undefined;
+		includeFolders: boolean;
+		/** P6-E14: describe mode with the model's scores… */
+		semantic?: Extract<DescribeMode, { semantic: unknown }>['semantic'];
+		/** …or its description searched as words. */
+		describeAsKeywords?: string;
+	},
 ): SoundSearchResult {
-	const { req, none } = rankRequestOf(q, opts.lookup);
+	const describe: DescribeMode | undefined = opts.semantic
+		? { semantic: opts.semantic }
+		: opts.describeAsKeywords !== undefined
+			? { describeAsKeywords: opts.describeAsKeywords }
+			: undefined;
+	const { req, none } = rankRequestOf(q, opts.lookup, describe);
 	const sources = q.sources?.length ? new Set<string>(q.sources) : null;
 	const facets: SoundFacets = { types: {}, families: {}, licenses: {}, sources: {} };
 	const visible =
@@ -200,7 +230,11 @@ export function searchSoundEntries(
 	return {
 		total: page.total,
 		offset,
-		results: page.results.map((r) => searchRow(r.entry, r.score, r.parts)),
+		results: page.results.map((r) => {
+			const row = searchRow(r.entry, r.score, r.parts);
+			const match = opts.semantic?.matches.get(r.entry.id);
+			return match ? { ...row, match } : row;
+		}),
 		facets,
 	};
 }

@@ -104,6 +104,23 @@ export async function processingLicenses(svc: ProcessingService): Promise<Licens
 			texts: [],
 		});
 	}
+	// WP-E9: the Describe-it search model (CLAP), with its Apache-2.0 text
+	const apache = readFirst([
+		join(here, 'models', 'clap', 'LICENSE-Apache-2.0.txt'),
+		join(here, '..', '..', 'models', 'clap', 'LICENSE-Apache-2.0.txt'),
+	]);
+	for (const m of await svc.soundModels.list()) {
+		out.push({
+			id: `model:${m.id}`,
+			name: `${m.name} — Describe-it search model weights${m.installed ? '' : ' (not installed)'}`,
+			version: m.revision.slice(0, 12),
+			license: m.license,
+			bundled: false,
+			sourceUrl: m.sourceUrl,
+			notice: `Attribution: ${m.attribution}. Licence: ${m.licenseUrl}`,
+			texts: apache && /^Apache-2\.0$/i.test(m.license) ? [{ title: 'Apache License 2.0', text: apache }] : [],
+		});
+	}
 	for (const m of await svc.visionModels.list()) {
 		out.push({
 			id: `model:${m.id}`,
