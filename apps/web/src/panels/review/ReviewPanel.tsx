@@ -1031,7 +1031,11 @@ function ProposalCheckBar(p: {
 							{mine.stage ?? t('Checking…')}
 							{mine.progress !== null ? ` ${Math.round(mine.progress * 100)} %` : ''}
 						</span>
-						<Button variant="quiet" onClick={() => cancelProposalCheck(session)} data-testid="review-check-cancel">
+						<Button
+							variant="quiet"
+							onClick={() => cancelProposalCheck(session)}
+							data-testid="review-check-cancel"
+						>
 							{t('Cancel')}
 						</Button>
 					</>
@@ -1068,7 +1072,10 @@ function ProposalCheckBar(p: {
 				</div>
 			) : null}
 			{check?.skipped.length ? (
-				<div className="truncate text-pr-muted" title={check.skipped.map((x) => `${x.itemId}: ${x.reason}`).join('\n')}>
+				<div
+					className="truncate text-pr-muted"
+					title={check.skipped.map((x) => `${x.itemId}: ${x.reason}`).join('\n')}
+				>
 					{t('Not checked: {0}', check.skipped.map((x) => p.labelOf(x.itemId)).join(', '))}
 				</div>
 			) : null}
@@ -1099,7 +1106,9 @@ function ProposalCheckBar(p: {
 						</li>
 					))}
 					{introduced.length > CHECK_LIST_MAX ? (
-						<li className="text-pr-muted">{t('{0} more in the items’ details', introduced.length - CHECK_LIST_MAX)}</li>
+						<li className="text-pr-muted">
+							{t('{0} more in the items’ details', introduced.length - CHECK_LIST_MAX)}
+						</li>
 					) : null}
 				</ul>
 			) : null}
@@ -1114,7 +1123,11 @@ function ItemCheck(p: { check: SoundCheckProposalSummary | null; itemId: string 
 	return (
 		<div className="flex flex-col" data-testid="review-item-check">
 			{c.introduces.map((f) => (
-				<div key={f.key} className={`flex items-start gap-1 ${SEVERITY_TONE[f.severity]}`} data-check-introduces={f.key}>
+				<div
+					key={f.key}
+					className={`flex items-start gap-1 ${SEVERITY_TONE[f.severity]}`}
+					data-check-introduces={f.key}
+				>
 					<Icon id={SEVERITY_ICON[f.severity]} size={12} />
 					<span>{t('Introduces {0}', findingLine(f))}</span>
 				</div>

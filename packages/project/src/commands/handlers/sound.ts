@@ -1371,7 +1371,10 @@ function setVerdict(doc: DDoc, cmd: CommandOf<'soundDesign.setVerdict'>, h: Hand
 function acknowledgeIssue(doc: DDoc, cmd: CommandOf<'soundDesign.acknowledgeIssue'>, h: HandlerContext) {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const reason = cmd.reason.trim();
-	if (!reason) h.fail('E_INVALID_PARAM', 'reason must not be empty: say why the finding is deliberate', { path: ['reason'] });
+	if (!reason)
+		h.fail('E_INVALID_PARAM', 'reason must not be empty: say why the finding is deliberate', {
+			path: ['reason'],
+		});
 	if (!cmd.key.startsWith(`${cmd.code}:`))
 		h.fail('E_INVALID_PARAM', `key ${cmd.key} is not a ${cmd.code} finding (keys start with their code)`, {
 			path: ['key'],
@@ -1423,7 +1426,8 @@ function acknowledgeIssue(doc: DDoc, cmd: CommandOf<'soundDesign.acknowledgeIssu
 		...(cmd.message ? { message: cmd.message.slice(0, SOUND_DESIGN_LIMITS.ackMessage) } : {}),
 	};
 	const next: Record<string, SoundAcknowledgement> = {};
-	for (const [k, v] of Object.entries(acks)) if (k !== cmd.key) next[k] = plainCopy(v) as SoundAcknowledgement;
+	for (const [k, v] of Object.entries(acks))
+		if (k !== cmd.key) next[k] = plainCopy(v) as SoundAcknowledgement;
 	next[cmd.key] = entry;
 	sd.acknowledged = next as Draft<Record<string, SoundAcknowledgement>>;
 	return { key: cmd.key, acknowledged: plainCopy(entry) };
@@ -1437,7 +1441,8 @@ function unacknowledgeIssue(doc: DDoc, cmd: CommandOf<'soundDesign.unacknowledge
 		h.fail('E_NOT_FOUND', `No acknowledged finding ${cmd.key} in ${seq.id}`, { path: ['key'] });
 	const removed = plainCopy(acks![cmd.key]!) as SoundAcknowledgement;
 	const next: Record<string, SoundAcknowledgement> = {};
-	for (const [k, v] of Object.entries(acks!)) if (k !== cmd.key) next[k] = plainCopy(v) as SoundAcknowledgement;
+	for (const [k, v] of Object.entries(acks!))
+		if (k !== cmd.key) next[k] = plainCopy(v) as SoundAcknowledgement;
 	if (Object.keys(next).length) sd!.acknowledged = next as Draft<Record<string, SoundAcknowledgement>>;
 	else delete sd!.acknowledged;
 	return { key: cmd.key, removed };

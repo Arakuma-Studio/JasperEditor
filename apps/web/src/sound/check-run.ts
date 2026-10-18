@@ -709,9 +709,7 @@ export function acknowledgeFinding(
 		sequenceId: seqId,
 		commands: [ackCommand(issue, seqId, reason)],
 	});
-	const message = r.ok
-		? t('Acknowledged: {0}', issue.code)
-		: r.errors.map((e) => e.message).join('; ');
+	const message = r.ok ? t('Acknowledged: {0}', issue.code) : r.errors.map((e) => e.message).join('; ');
 	if (r.ok) soundCheckStore(session).setState({ ackOpen: null });
 	announce(session, message);
 	return { ok: r.ok, message };
@@ -729,7 +727,9 @@ export function unacknowledgeFinding(session: EditorSession, key: string): { ok:
 		sequenceId: seqId,
 		commands: [unackCommand(key, seqId)],
 	});
-	const message = r.ok ? t('It counts again: {0}', key.split(':')[0] ?? key) : r.errors.map((e) => e.message).join('; ');
+	const message = r.ok
+		? t('It counts again: {0}', key.split(':')[0] ?? key)
+		: r.errors.map((e) => e.message).join('; ');
 	announce(session, message);
 	return { ok: r.ok, message };
 }

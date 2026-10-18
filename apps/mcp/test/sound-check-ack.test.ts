@@ -37,7 +37,9 @@ const logs: string[] = [];
 const engineLog: string[] = [];
 
 async function call(name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
-	return (await client.callTool({ name, arguments: args }, undefined, { timeout: 900_000 })) as CallToolResult;
+	return (await client.callTool({ name, arguments: args }, undefined, {
+		timeout: 900_000,
+	})) as CallToolResult;
 }
 async function ok<T = Record<string, unknown>>(name: string, args: Record<string, unknown> = {}) {
 	const r = await call(name, args);
@@ -133,7 +135,12 @@ describe('acknowledge_sound_issue / sound_check {proposalId}', { timeout: 900_00
 			projectId,
 			paths: [files.music, files.speech, files.hit, files.click],
 		});
-		const [music, speech, hit, click] = imp.imported.map((m) => m.mediaId) as [string, string, string, string];
+		const [music, speech, hit, click] = imp.imported.map((m) => m.mediaId) as [
+			string,
+			string,
+			string,
+			string,
+		];
 		// the Sound Check fixture's clean mix, but the music is cut at a loud frame (no fade-out: ENDING)
 		const built = await ok<{ refs: Record<string, string> }>('apply_commands', {
 			projectId,
@@ -158,7 +165,10 @@ describe('acknowledge_sound_issue / sound_check {proposalId}', { timeout: 900_00
 						},
 					},
 				},
-				{ type: 'soundCue.add', cues: [{ frame: 30, kind: 'cut', weight: 'hero', source: 'agent', ref: '$a' }] },
+				{
+					type: 'soundCue.add',
+					cues: [{ frame: 30, kind: 'cut', weight: 'hero', source: 'agent', ref: '$a' }],
+				},
 				{
 					type: 'soundDesign.place',
 					cueId: '$a',
@@ -168,7 +178,11 @@ describe('acknowledge_sound_issue / sound_check {proposalId}', { timeout: 900_00
 					type: 'soundCue.add',
 					cues: [{ frame: 90, kind: 'cut', weight: 'support', source: 'agent', ref: '$b' }],
 				},
-				{ type: 'soundDesign.place', cueId: '$b', layers: [{ mediaId: click, role: 'support', align: 'peak' }] },
+				{
+					type: 'soundDesign.place',
+					cueId: '$b',
+					layers: [{ mediaId: click, role: 'support', align: 'peak' }],
+				},
 			],
 		});
 		const hitClip = built.refs.$h!;
@@ -188,13 +202,19 @@ describe('acknowledge_sound_issue / sound_check {proposalId}', { timeout: 900_00
 
 		// refusals: the error is the user's call; an unknown key; no reason
 		const before = await documentOf(projectId);
-		const e1 = await refused('acknowledge_sound_issue', { projectId, key: sync.id, reason: 'Late on purpose' });
+		const e1 = await refused('acknowledge_sound_issue', {
+			projectId,
+			key: sync.id,
+			reason: 'Late on purpose',
+		});
 		expect(e1.code).toBe('E_APPROVAL_REQUIRED');
 		expect(e1.text).toMatch(/Sound Check panel/);
-		expect((await refused('acknowledge_sound_issue', { projectId, key: 'MASKED:nope', reason: 'x' })).code).toBe(
-			'E_NOT_FOUND',
+		expect(
+			(await refused('acknowledge_sound_issue', { projectId, key: 'MASKED:nope', reason: 'x' })).code,
+		).toBe('E_NOT_FOUND');
+		expect((await refused('acknowledge_sound_issue', { projectId, key: ending.id })).code).toBe(
+			'E_INVALID_PARAM',
 		);
-		expect((await refused('acknowledge_sound_issue', { projectId, key: ending.id })).code).toBe('E_INVALID_PARAM');
 		const seqId = Object.keys(before.sequences)[0]!;
 		expect(soundAcknowledgementsOf((await documentOf(projectId)).sequences[seqId])).toEqual({});
 
@@ -219,8 +239,13 @@ describe('acknowledge_sound_issue / sound_check {proposalId}', { timeout: 900_00
 		expect(again.counts.acknowledged).toBe(1);
 		expect(again.counts.ENDING).toBeUndefined();
 		expect(again.findings.some((f) => f.includes(ending.id))).toBe(false);
-		expect(again.acknowledged!.findings[0]).toMatch(/ENDING .*acknowledged by agent .*the hard stop is the joke/);
-		expect(again.issues.find((i) => i.id === ending.id)!.acknowledged).toMatchObject({ active: true, by: 'agent' });
+		expect(again.acknowledged!.findings[0]).toMatch(
+			/ENDING .*acknowledged by agent .*the hard stop is the joke/,
+		);
+		expect(again.issues.find((i) => i.id === ending.id)!.acknowledged).toMatchObject({
+			active: true,
+			by: 'agent',
+		});
 		expect(again.verdict).toBe('fail'); // the error still counts
 
 		// unacknowledge: it counts again

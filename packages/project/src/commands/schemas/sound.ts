@@ -7,10 +7,10 @@ import {
 	CueAnchorSchema,
 	SFX_ROLES,
 	SFX_SOLVER_LEVEL_LIMITS,
+	SOUND_ACK_KEY_RE,
 	SOUND_CREDITS_FORMATS,
 	SOUND_DELIVERIES,
 	SOUND_DENSITIES,
-	SOUND_ACK_KEY_RE,
 	SOUND_DESIGN_LIMITS,
 	soundCueFields,
 } from '../../schema/sound.ts';

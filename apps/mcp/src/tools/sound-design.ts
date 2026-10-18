@@ -7,9 +7,9 @@ import {
 	type RegisterSoundResponse,
 	SfxRebalanceResultSchema,
 	SOUND_EFFECTS_BIN,
+	SoundCheckResultSchema,
 	type SoundCueSuggestion,
 	type SoundCuesResponse,
-	SoundCheckResultSchema,
 	SoundDeliveryResultSchema,
 	SoundDesignPlanResultSchema,
 	type SoundEntry,
@@ -1923,7 +1923,10 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 			let checkNext: string | null = null;
 			if (a.check && r.proposalId) {
 				const cj = await ctx.engine((c) =>
-					c.soundCheck({ projectId: a.projectId, sequenceId: r.sequenceId, proposalId: r.proposalId! }, extra.signal),
+					c.soundCheck(
+						{ projectId: a.projectId, sequenceId: r.sequenceId, proposalId: r.proposalId! },
+						extra.signal,
+					),
 				);
 				await cancelIfAborted(ctx, extra, cj.id);
 				const w = await waitJob(ctx, cj.id, (a.timeoutSeconds ?? 300) * 1000, extra);

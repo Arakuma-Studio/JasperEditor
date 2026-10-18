@@ -23,13 +23,13 @@ import {
 } from '../schema/sound.ts';
 import { fnv1a64 } from '../structure/nest.ts';
 import {
+	SOUND_CHECK_CODES,
+	type SoundCheckCode,
 	type SoundCheckSeverity,
 	type SoundCheckVerdict,
 	soundCheckCounts,
 	soundCheckMomentHash,
 	soundCheckVerdict,
-	SOUND_CHECK_CODES,
-	type SoundCheckCode,
 } from './check.ts';
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -78,7 +78,9 @@ export function soundFindingKey(f: Pick<SoundAckFinding, 'id'>): string {
 }
 
 /** What a finding names: its clips (≤ 16) and cue, else its frame (or the start of its range). */
-export function soundAckTargetOf(f: Pick<SoundAckFinding, 'clipIds' | 'cueId' | 'frame' | 'range'>): SoundAckTarget {
+export function soundAckTargetOf(
+	f: Pick<SoundAckFinding, 'clipIds' | 'cueId' | 'frame' | 'range'>,
+): SoundAckTarget {
 	if (!isRecord(f)) return {};
 	const clipIds = (Array.isArray(f.clipIds) ? f.clipIds : [])
 		.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= SOUND_DESIGN_LIMITS.id)
@@ -89,7 +91,10 @@ export function soundAckTargetOf(f: Pick<SoundAckFinding, 'clipIds' | 'cueId' | 
 			: undefined;
 	if (clipIds.length || cueId) return { ...(clipIds.length ? { clipIds } : {}), ...(cueId ? { cueId } : {}) };
 	const frame = f.frame ?? (isRecord(f.range) ? f.range.start : undefined);
-	return typeof frame === 'number' && Number.isSafeInteger(frame) && frame >= 0 && frame <= SOUND_DESIGN_LIMITS.maxFrame
+	return typeof frame === 'number' &&
+		Number.isSafeInteger(frame) &&
+		frame >= 0 &&
+		frame <= SOUND_DESIGN_LIMITS.maxFrame
 		? { frame }
 		: {};
 }
@@ -225,7 +230,10 @@ export function applySoundAcknowledgements<T extends SoundAckFinding>(
 	}
 	const known = new Set<string>(SOUND_CHECK_CODES);
 	const counts = soundCheckCounts(
-		open.filter((i) => known.has(i.code)) as unknown as { code: SoundCheckCode; severity: SoundCheckSeverity }[],
+		open.filter((i) => known.has(i.code)) as unknown as {
+			code: SoundCheckCode;
+			severity: SoundCheckSeverity;
+		}[],
 	);
 	if (n) counts.acknowledged = n;
 	const unmatched = Object.entries(acks)

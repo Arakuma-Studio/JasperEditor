@@ -123,8 +123,7 @@ const findingCommands: UiCommand[] = [
 			'Mark the current Sound Check finding as a deliberate exception, with a reason: it no longer counts against the verdict until what it is about changes. One undo step',
 		scope: 'soundCheck',
 		when: (ctx) => onFinding(ctx) && !ctx.session!.getState().readOnly,
-		disabledReason: (ctx) =>
-			ctx.session?.getState().readOnly ? t('The project is read-only') : noCurrent(),
+		disabledReason: (ctx) => (ctx.session?.getState().readOnly ? t('The project is read-only') : noCurrent()),
 		run: (ctx) => {
 			const i = ctx.session && currentFinding(ctx.session);
 			if (ctx.session && i) setAckOpen(ctx.session, i.id);

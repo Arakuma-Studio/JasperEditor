@@ -545,7 +545,8 @@ export function soundDesignIssue(raw: unknown): string | null {
 		if (n > SOUND_DESIGN_LIMITS.acknowledged)
 			return `more than ${SOUND_DESIGN_LIMITS.acknowledged} acknowledged findings`;
 		for (const [key, a] of Object.entries(ack))
-			if (!key.startsWith(`${a.code}:`)) return `acknowledged.${key}: the key does not start with its code ${a.code}`;
+			if (!key.startsWith(`${a.code}:`))
+				return `acknowledged.${key}: the key does not start with its code ${a.code}`;
 	}
 	return null;
 }

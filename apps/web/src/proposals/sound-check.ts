@@ -22,14 +22,18 @@ import { runSoundJob, SoundJobError } from '../sound/mix-jobs.ts';
 export type ProposalCheckEngine = Pick<EngineClient, 'soundCheck' | 'getJob' | 'cancelJob'>;
 
 /** The last check the engine keeps on a proposal (`report.check`), or null (never checked, or unreadable). */
-export function storedProposalCheck(p: Pick<Proposal, 'report'> | null | undefined): SoundCheckProposalSummary | null {
+export function storedProposalCheck(
+	p: Pick<Proposal, 'report'> | null | undefined,
+): SoundCheckProposalSummary | null {
 	const r = SoundCheckProposalSummarySchema.safeParse((p?.report as { check?: unknown } | undefined)?.check);
 	return r.success ? r.data : null;
 }
 
 /** The items a check of the review covers: the decisions the user can still make — pending and accepted, not setup. */
 export function proposalCheckItems(items: readonly Pick<ReviewItem, 'id' | 'setup' | 'state'>[]): string[] {
-	return items.filter((it) => !it.setup && (it.state === 'pending' || it.state === 'accepted')).map((it) => it.id);
+	return items
+		.filter((it) => !it.setup && (it.state === 'pending' || it.state === 'accepted'))
+		.map((it) => it.id);
 }
 
 export type ProposalCheckStatus = {

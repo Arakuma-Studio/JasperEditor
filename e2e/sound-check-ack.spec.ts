@@ -50,7 +50,9 @@ test.afterAll(async () => {
 const text = (r: CallToolResult) =>
 	(r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
 async function tool<T>(name: string, args: Record<string, unknown>): Promise<T> {
-	const r = (await mcp.callTool({ name, arguments: args }, undefined, { timeout: CHECK_MS })) as CallToolResult;
+	const r = (await mcp.callTool({ name, arguments: args }, undefined, {
+		timeout: CHECK_MS,
+	})) as CallToolResult;
 	expect(r.isError, `${name}: ${text(r)}\n${mcpLog.join('').slice(-2000)}`).toBeFalsy();
 	return JSON.parse(text(r)) as T;
 }
@@ -94,7 +96,9 @@ async function panelOpen(): Promise<string[]> {
 		await panel()
 			.getByTestId('sound-check-findings')
 			.locator('[data-issue-id]')
-			.evaluateAll((els) => els.map((e) => `${e.getAttribute('data-code')}@${e.getAttribute('data-frame') ?? ''}`))
+			.evaluateAll((els) =>
+				els.map((e) => `${e.getAttribute('data-code')}@${e.getAttribute('data-frame') ?? ''}`),
+			)
 	).sort();
 }
 async function waitVerdict(previous?: string) {
@@ -161,7 +165,13 @@ test('acknowledge a finding in the panel, the same in MCP; a proposal checked by
 	});
 	const setup = await transact(page, [
 		{ type: 'track.add', kind: 'audio', count: 2 },
-		{ type: 'clip.place', source: { projectItemId: item('music.wav').id }, at: 0, tracks: { audio: 'A1' }, ref: '$m' },
+		{
+			type: 'clip.place',
+			source: { projectItemId: item('music.wav').id },
+			at: 0,
+			tracks: { audio: 'A1' },
+			ref: '$m',
+		},
 		{ type: 'essentialSound.setType', clipIds: ['$m'], audioType: 'music' },
 		{ type: 'mixer.setLoudness', enabled: true, targetLufs: -14, truePeakDb: -1 },
 		{
@@ -180,7 +190,10 @@ test('acknowledge a finding in the panel, the same in MCP; a proposal checked by
 			cueId: '$a',
 			layers: [{ mediaId: item('hit.wav').mediaId, role: 'hero', align: 'peak' }],
 		},
-		{ type: 'soundCue.add', cues: [{ frame: 90, kind: 'cut', weight: 'support', source: 'user', ref: '$b' }] },
+		{
+			type: 'soundCue.add',
+			cues: [{ frame: 90, kind: 'cut', weight: 'support', source: 'user', ref: '$b' }],
+		},
 		{
 			type: 'soundDesign.place',
 			cueId: '$b',
@@ -206,7 +219,9 @@ test('acknowledge a finding in the panel, the same in MCP; a proposal checked by
 	await reason.fill('The cut to black on the hit is the punchline');
 	await page.screenshot({ path: join(outDir, '2-ack-editor.png') });
 	await reason.press('Enter');
-	await expect.poll(async () => (await appliedLabels(page)).length, { timeout: 60_000 }).toBe(before.length + 1);
+	await expect
+		.poll(async () => (await appliedLabels(page)).length, { timeout: 60_000 })
+		.toBe(before.length + 1);
 	expect((await appliedLabels(page)).at(-1)).toBe('Acknowledge Sound Check Finding');
 	await expect(panel().getByTestId('sound-check-findings').locator('[data-code="ENDING"]')).toHaveCount(0);
 	const toggle = panel().getByTestId('sound-check-acknowledged-toggle');
@@ -239,7 +254,9 @@ test('acknowledge a finding in the panel, the same in MCP; a proposal checked by
 	expect(await panelOpen()).toEqual(open);
 	// ENDING was a warning: with it left out the verdict is no worse than before
 	const rank = { pass: 0, warn: 1, fail: 2 } as const;
-	expect(rank[agent.verdict as keyof typeof rank]).toBeLessThanOrEqual(rank[verdictBefore as keyof typeof rank]);
+	expect(rank[agent.verdict as keyof typeof rank]).toBeLessThanOrEqual(
+		rank[verdictBefore as keyof typeof rank],
+	);
 
 	// 3. the agent proposes the same thump on the next cut (a REPEAT) and checks the proposal first
 	const placed = await tool<{ proposalId: string }>('place_sound', {
@@ -265,7 +282,9 @@ test('acknowledge a finding in the panel, the same in MCP; a proposal checked by
 	await expect(bar).toHaveAttribute('data-check-state', 'current');
 	const link = bar.getByTestId('review-check-introduced').locator('[data-check-item="place"]').first();
 	await expect(link).toBeVisible();
-	await expect(reviewPanel().locator('[data-review-row="place"] [data-review-check]')).toContainText('introduces');
+	await expect(reviewPanel().locator('[data-review-row="place"] [data-review-check]')).toContainText(
+		'introduces',
+	);
 	await reviewPanel().screenshot({ path: join(outDir, '4-review-check.png') });
 	await link.click();
 	await expect(reviewPanel().getByTestId('review-item-check')).toContainText('Introduces REPEAT');

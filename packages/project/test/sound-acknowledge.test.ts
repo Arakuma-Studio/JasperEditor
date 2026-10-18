@@ -18,8 +18,8 @@ import {
 	SOUND_DESIGN_LIMITS,
 	type SoundAckFinding,
 	soundAckInputsHash,
-	soundAckTargetOf,
 	soundAcknowledgementsOf,
+	soundAckTargetOf,
 	soundDesignIssue,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
@@ -30,7 +30,12 @@ const AGENT = { agent: 'test-agent' };
 
 function fixture() {
 	const h = new Harness();
-	const library: LibraryProvenance = { ...LIB, soundId: 'snd_000000000000c0de', title: 'Hit', types: ['hit'] };
+	const library: LibraryProvenance = {
+		...LIB,
+		soundId: 'snd_000000000000c0de',
+		title: 'Hit',
+		types: ['hit'],
+	};
 	const r = h.ok([
 		{ type: 'media.register', asset: { ...videoAsset({ kind: 'audio', seconds: 0.5 }), library } },
 	]);
@@ -70,7 +75,11 @@ function fixture() {
 	return { h, clipId, cueId, musicClip: mus.refs.$m!, masked, sync, silence };
 }
 
-const ackCmd = (f: SoundAckFinding, reason = 'A hard cut on purpose', over: Record<string, unknown> = {}) => ({
+const ackCmd = (
+	f: SoundAckFinding,
+	reason = 'A hard cut on purpose',
+	over: Record<string, unknown> = {},
+) => ({
 	type: 'soundDesign.acknowledgeIssue',
 	key: f.id,
 	code: f.code,
@@ -115,7 +124,9 @@ describe('soundDesign.acknowledgeIssue / unacknowledgeIssue', () => {
 		// unacknowledge: gone (and the field with the last one); undo brings it back
 		const withAck = h.doc;
 		const u = h.ok([{ type: 'soundDesign.unacknowledgeIssue', key: masked.id }]);
-		expect((u.results[0] as { removed: { reason: string } }).removed.reason).toBe('Quiet on purpose under the voice');
+		expect((u.results[0] as { removed: { reason: string } }).removed.reason).toBe(
+			'Quiet on purpose under the voice',
+		);
 		expect((h.seq as { soundDesign?: { acknowledged?: unknown } }).soundDesign?.acknowledged).toBeUndefined();
 		h.doc = withAck;
 		expect(soundAcknowledgementsOf(h.seq)[masked.id]).toBeDefined();
@@ -193,7 +204,11 @@ describe('applySoundAcknowledgements (what Sound Check reports)', () => {
 		const { h, masked, silence } = fixture();
 		const issues = [masked, silence];
 		const none = applySoundAcknowledgements(h.doc, h.seqId, issues);
-		expect(none).toMatchObject({ verdict: 'warn', acknowledged: 0, counts: { warning: 2, MASKED: 1, SILENCE: 1 } });
+		expect(none).toMatchObject({
+			verdict: 'warn',
+			acknowledged: 0,
+			counts: { warning: 2, MASKED: 1, SILENCE: 1 },
+		});
 		expect(none.unmatched).toEqual([]);
 		h.ok([ackCmd(masked), ackCmd(silence, 'A beat of air before the logo')]);
 		const r = applySoundAcknowledgements(h.doc, h.seqId, issues);
@@ -252,7 +267,9 @@ describe('applySoundAcknowledgements (what Sound Check reports)', () => {
 		const userWorse = applySoundAcknowledgements(h.doc, h.seqId, [{ ...masked, severity: 'error' }]);
 		expect(userWorse.issues[0]!.acknowledged).toMatchObject({ active: false, why: 'worse' });
 		// an info is covered by an acknowledged warning
-		expect(applySoundAcknowledgements(h.doc, h.seqId, [{ ...masked, severity: 'info' }]).acknowledged).toBe(1);
+		expect(applySoundAcknowledgements(h.doc, h.seqId, [{ ...masked, severity: 'info' }]).acknowledged).toBe(
+			1,
+		);
 	});
 
 	it('acknowledgements no finding matches are listed (fixed since, or outside the range); another code never matches', () => {
@@ -275,8 +292,9 @@ describe('acknowledgements: load, repair, copies', () => {
 			[masked.id, silence.id].sort(),
 		);
 		const bad = clone(h.doc);
-		const sd = (bad.sequences[h.seqId] as { soundDesign: { acknowledged: Record<string, Record<string, unknown>> } })
-			.soundDesign;
+		const sd = (
+			bad.sequences[h.seqId] as { soundDesign: { acknowledged: Record<string, Record<string, unknown>> } }
+		).soundDesign;
 		sd.acknowledged[masked.id]!.reason = '';
 		sd.acknowledged['NOT A KEY'] = { ...sd.acknowledged[silence.id]! };
 		sd.acknowledged['HARSH:x'] = { ...sd.acknowledged[silence.id]! };
@@ -328,7 +346,10 @@ describe('acknowledgements: load, repair, copies', () => {
 			},
 			{ requiredKeys: [] },
 		);
-		const acks = fc.dictionary(fc.oneof(fc.constantFrom('MASKED:clp_1', 'SILENCE:3', '__proto__'), fc.string()), fc.oneof(entry, fc.anything()));
+		const acks = fc.dictionary(
+			fc.oneof(fc.constantFrom('MASKED:clp_1', 'SILENCE:3', '__proto__'), fc.string()),
+			fc.oneof(entry, fc.anything()),
+		);
 		const finding = fc.record(
 			{
 				id: fc.oneof(fc.constantFrom('MASKED:clp_1', 'SILENCE:3'), fc.string(), fc.anything()),

@@ -61,8 +61,8 @@ import {
 	silentCurves,
 } from '@jasper/audio-fx';
 import {
-	applySoundAcknowledgements,
 	type AudioClip,
+	applySoundAcknowledgements,
 	applyTransaction,
 	type ClipSfx,
 	type CueKind,
@@ -2374,12 +2374,10 @@ export async function checkSequence(
 	issues.items.splice(0, issues.items.length, ...(acked.issues as SoundCheckIssue[]));
 	const openIssues = acked.open as SoundCheckIssue[];
 	{
-		const joint = planSoundCheckFixes(
-			doc,
-			seq.id,
-			soundCheckFixCandidates(openIssues, { safeOnly: true }),
-			{ registries: env.registries, guard: levelGuard },
-		);
+		const joint = planSoundCheckFixes(doc, seq.id, soundCheckFixCandidates(openIssues, { safeOnly: true }), {
+			registries: env.registries,
+			guard: levelGuard,
+		});
 		const byId = new Map(issues.items.map((i) => [i.id, i]));
 		for (const s of joint.skipped)
 			for (const id of s.candidate.issueIds) {

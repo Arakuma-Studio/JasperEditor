@@ -313,7 +313,11 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 					'Call sound_check {proposalId} without store.',
 				);
 			if (a.itemIds && !a.proposalId)
-				throw new ToolError('E_INVALID_PARAM', 'itemIds needs proposalId', 'Pass the proposal the items are of.');
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'itemIds needs proposalId',
+					'Pass the proposal the items are of.',
+				);
 			const { doc } = await loadDoc(ctx, a.projectId);
 			const seq = pickSequence(doc, a.sequenceId);
 			let range: { start: number; end: number } | undefined;
@@ -503,7 +507,7 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 					.string()
 					.min(3)
 					.max(256)
-					.describe('The finding\'s key: its issue id in the last Sound Check report'),
+					.describe("The finding's key: its issue id in the last Sound Check report"),
 				reason: z
 					.string()
 					.min(1)
@@ -553,7 +557,7 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 				throw new ToolError(
 					'E_NOT_FOUND',
 					`The last Sound Check of ${seq.id} has no finding ${a.key}`,
-					'Run sound_check and use a finding\'s id from its issues (or acknowledged list).',
+					"Run sound_check and use a finding's id from its issues (or acknowledged list).",
 					{ keys: kept.result.report.issues.slice(0, 50).map((i) => i.id) },
 				);
 			if (issue.severity === 'error')
@@ -579,7 +583,9 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 							target: {
 								...(issue.clipIds?.length ? { clipIds: issue.clipIds.slice(0, 16) } : {}),
 								...(issue.cueId ? { cueId: issue.cueId } : {}),
-								...(!issue.clipIds?.length && !issue.cueId && (issue.frame ?? issue.range?.start) !== undefined
+								...(!issue.clipIds?.length &&
+								!issue.cueId &&
+								(issue.frame ?? issue.range?.start) !== undefined
 									? { frame: issue.frame ?? issue.range!.start }
 									: {}),
 							},
@@ -594,7 +600,9 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 				key: issue.id,
 				finding: issueLine(issue),
 				...(kept.state === 'stale'
-					? { warning: `The kept report is stale (${kept.reasons.join(', ')} changed since): run sound_check to see the finding as it is now.` }
+					? {
+							warning: `The kept report is stale (${kept.reasons.join(', ')} changed since): run sound_check to see the finding as it is now.`,
+						}
 					: {}),
 				next: 'The next sound_check leaves it out of the verdict and lists it under acknowledged, until what it is about changes.',
 			});

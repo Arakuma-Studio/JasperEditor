@@ -21,6 +21,7 @@
 // The summary is stored on the proposal (`report.check`, `ProposalService.setCheck`) for the Review panel and
 // `get_proposal`.
 import {
+	SOUND_CHECK_DELTA_MAX,
 	type SoundCheckDelta,
 	type SoundCheckDeltaFinding,
 	type SoundCheckIssue,
@@ -28,14 +29,13 @@ import {
 	type SoundCheckReport,
 	type SoundCheckRequest,
 	type SoundCheckResult,
-	SOUND_CHECK_DELTA_MAX,
 } from '@jasper/api';
 import {
 	applySoundAcknowledgements,
 	createSeededIdSource,
 	dependencyClosure,
-	issueReason,
 	isSetupItem,
+	issueReason,
 	mixFingerprint,
 	type ProjectDocument,
 	type Proposal,
@@ -206,7 +206,8 @@ export async function runProposalCheck(
 			skipped.push({
 				itemId: id,
 				state: bad.id === id ? bad.state : `requires ${bad.state}`,
-				reason: bad.id === id ? (bad.reason ?? bad.state) : `It requires ${bad.id}: ${bad.reason ?? bad.state}`,
+				reason:
+					bad.id === id ? (bad.reason ?? bad.state) : `It requires ${bad.id}: ${bad.reason ?? bad.state}`,
 			});
 			continue;
 		}
@@ -231,7 +232,8 @@ export async function runProposalCheck(
 		skipped.push({ itemId: id, state: 'failed', reason: issueReason(errors) });
 	const applied = preview.applied.filter((id) => !Object.hasOwn(preview.failed, id));
 	const previewSeq = preview.document.sequences[seq.id];
-	if (!previewSeq) throw new JobError('VALIDATION_FAILED', 'The proposal removes the sequence it is about', false);
+	if (!previewSeq)
+		throw new JobError('VALIDATION_FAILED', 'The proposal removes the sequence it is about', false);
 
 	const preset = (req.preset ?? soundDesignSettingsOf(seq).delivery) as SoundDelivery;
 	const target = req.target ? (readSoundCheckTarget(req.target) ?? undefined) : undefined;
@@ -258,7 +260,9 @@ export async function runProposalCheck(
 			live.doc,
 			seq,
 			opts,
-			await checkEnvFor(ctx, deps, (f, stage) => ctx.progress(0.05 + 0.45 * f, { stage: `Current: ${stage}` })),
+			await checkEnvFor(ctx, deps, (f, stage) =>
+				ctx.progress(0.05 + 0.45 * f, { stage: `Current: ${stage}` }),
+			),
 		);
 	}
 	if (ctx.signal.aborted) throw new JobError('CANCELLED', 'Cancelled', false);
@@ -279,10 +283,15 @@ export async function runProposalCheck(
 		touched: touchedBy(preview.items[id]),
 		setup: isSetupItem(byId.get(id)!),
 	}));
-	const delta = soundCheckDelta(beforeAcks.open as Finding[], after.issues.filter((i) => !i.acknowledged?.active), items, {
-		before: beforeAcks.verdict,
-		after: after.verdict,
-	});
+	const delta = soundCheckDelta(
+		beforeAcks.open as Finding[],
+		after.issues.filter((i) => !i.acknowledged?.active),
+		items,
+		{
+			before: beforeAcks.verdict,
+			after: after.verdict,
+		},
+	);
 	const part: SoundCheckProposal = {
 		proposalId,
 		itemIds: applied,

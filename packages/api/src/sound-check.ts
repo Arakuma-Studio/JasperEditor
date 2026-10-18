@@ -38,45 +38,46 @@ export const SoundCheckRangeSchema = z
 	.strictObject({ start: frame, end: frame })
 	.refine((r) => r.end > r.start, 'range.end must be after range.start');
 
-export const SoundCheckRequestSchema = z.strictObject({
-	projectId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'a project id'),
-	/** Default: the project's first sequence. */
-	sequenceId: id.optional(),
-	/** Delivery preset the loudness is checked against (default the sequence's). */
-	preset: z.enum(SOUND_DELIVERIES).optional(),
-	/**
-	 * A custom delivery target checked instead of the preset's numbers (integrated LUFS, true-peak ceiling dBTP); the
-	 * preset still sets the default sound-effect levels the solver-based checks use.
-	 */
-	target: z
-		.strictObject({
-			integratedLufs: z
-				.number()
-				.min(SOUND_CHECK_TARGET_LIMITS.integratedLufs.min)
-				.max(SOUND_CHECK_TARGET_LIMITS.integratedLufs.max),
-			truePeakDb: z
-				.number()
-				.min(SOUND_CHECK_TARGET_LIMITS.truePeakDb.min)
-				.max(SOUND_CHECK_TARGET_LIMITS.truePeakDb.max),
-		})
-		.optional(),
-	/** Sequence frames `[start, end)` (default the whole sequence). */
-	range: SoundCheckRangeSchema.optional(),
-	/** Also store the summary in the sequence (`soundDesign.setCheck`, one undo step "Sound Check Result"). */
-	store: z.boolean().optional(),
-	/**
-	 * Check a proposal before review (spec 12 §4 P6-E5): the check runs on the proposal's preview document (the items on
-	 * the current document, never committed) and the result adds `proposal` — the delta against the current document's
-	 * kept report (or a fresh run of it). Never stores (no `store`), never changes the document. The sequence defaults to
-	 * the proposal's.
-	 */
-	proposalId: z
-		.string()
-		.regex(/^prp_[0-9A-HJKMNP-TV-Z]{16}$/, 'a proposal id')
-		.optional(),
-	/** With `proposalId`: the items to check (default every item left to review; what they require comes with them). */
-	itemIds: z.array(z.string().min(1).max(64)).min(1).max(2000).optional(),
-})
+export const SoundCheckRequestSchema = z
+	.strictObject({
+		projectId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'a project id'),
+		/** Default: the project's first sequence. */
+		sequenceId: id.optional(),
+		/** Delivery preset the loudness is checked against (default the sequence's). */
+		preset: z.enum(SOUND_DELIVERIES).optional(),
+		/**
+		 * A custom delivery target checked instead of the preset's numbers (integrated LUFS, true-peak ceiling dBTP); the
+		 * preset still sets the default sound-effect levels the solver-based checks use.
+		 */
+		target: z
+			.strictObject({
+				integratedLufs: z
+					.number()
+					.min(SOUND_CHECK_TARGET_LIMITS.integratedLufs.min)
+					.max(SOUND_CHECK_TARGET_LIMITS.integratedLufs.max),
+				truePeakDb: z
+					.number()
+					.min(SOUND_CHECK_TARGET_LIMITS.truePeakDb.min)
+					.max(SOUND_CHECK_TARGET_LIMITS.truePeakDb.max),
+			})
+			.optional(),
+		/** Sequence frames `[start, end)` (default the whole sequence). */
+		range: SoundCheckRangeSchema.optional(),
+		/** Also store the summary in the sequence (`soundDesign.setCheck`, one undo step "Sound Check Result"). */
+		store: z.boolean().optional(),
+		/**
+		 * Check a proposal before review (spec 12 §4 P6-E5): the check runs on the proposal's preview document (the items on
+		 * the current document, never committed) and the result adds `proposal` — the delta against the current document's
+		 * kept report (or a fresh run of it). Never stores (no `store`), never changes the document. The sequence defaults to
+		 * the proposal's.
+		 */
+		proposalId: z
+			.string()
+			.regex(/^prp_[0-9A-HJKMNP-TV-Z]{16}$/, 'a proposal id')
+			.optional(),
+		/** With `proposalId`: the items to check (default every item left to review; what they require comes with them). */
+		itemIds: z.array(z.string().min(1).max(64)).min(1).max(2000).optional(),
+	})
 	.refine((r) => !(r.proposalId && r.store), {
 		message: 'A proposal check never stores its summary: leave out store',
 		path: ['store'],

@@ -32,7 +32,13 @@ afterEach(() => {
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
 function delta(proposalId: string, baseMixHash: string, itemIds: string[]): SoundCheckProposal {
-	const finding = (key: string, code: string, severity: 'error' | 'warning', items: string[], frame?: number) => ({
+	const finding = (
+		key: string,
+		code: string,
+		severity: 'error' | 'warning',
+		items: string[],
+		frame?: number,
+	) => ({
 		key,
 		code: code as never,
 		severity,
@@ -52,10 +58,18 @@ function delta(proposalId: string, baseMixHash: string, itemIds: string[]): Soun
 		delta: {
 			verdict: { before: 'warn', after: 'fail' },
 			counts: { MASKED: { before: 1, after: 0 }, REPEAT: { before: 0, after: 1 } },
-			fixed: [{ ...finding('MASKED:clp_bed', 'MASKED', 'warning', ['hit'], 30), message: soundCheckMessage('maskedSupport', 'Hit', '00:00:01:00', 1.2, 1000, 1.5) }],
+			fixed: [
+				{
+					...finding('MASKED:clp_bed', 'MASKED', 'warning', ['hit'], 30),
+					message: soundCheckMessage('maskedSupport', 'Hit', '00:00:01:00', 1.2, 1000, 1.5),
+				},
+			],
 			introduced: [
 				finding('REPEAT:clp_boom', 'REPEAT', 'warning', ['boom'], 200),
-				{ ...finding('TRUE_PEAK:mix', 'TRUE_PEAK', 'error', []), message: soundCheckMessage('truePeak', -0.2, 'Web', -1) },
+				{
+					...finding('TRUE_PEAK:mix', 'TRUE_PEAK', 'error', []),
+					message: soundCheckMessage('truePeak', -0.2, 'Web', -1),
+				},
 			],
 			fixedCount: 1,
 			introducedCount: 2,
@@ -81,7 +95,13 @@ async function setup() {
 				...resultFixture({ projectId: f.session.projectId, sequenceId: f.seqId }),
 				proposal: delta(req.proposalId!, base, [...(req.itemIds ?? [])]),
 			});
-			return { id, kind: 'sound-check', state: 'running', progress: 0.3, stage: 'Proposal: Rendering the stems' };
+			return {
+				id,
+				kind: 'sound-check',
+				state: 'running',
+				progress: 0.3,
+				stage: 'Proposal: Rendering the stems',
+			};
 		},
 		async getJob(id: string) {
 			return { id, kind: 'sound-check', state: 'succeeded', progress: 1, result: jobs.get(id) };
@@ -199,9 +219,9 @@ describe('Review panel: Sound Check of the proposal', () => {
 		const t = await setup();
 		const items = t.c.getState().items;
 		expect(proposalCheckItems(items)).toEqual(['trk', 'hit', 'boom', 'move', 'cue']);
-		expect(proposalCheckItems(items.map((i) => (i.id === 'hit' ? { ...i, state: 'rejected' as const } : i)))).toEqual(
-			['trk', 'boom', 'move', 'cue'],
-		);
+		expect(
+			proposalCheckItems(items.map((i) => (i.id === 'hit' ? { ...i, state: 'rejected' as const } : i))),
+		).toEqual(['trk', 'boom', 'move', 'cue']);
 		const base = mixFingerprint(t.session.getCommitted(), t.seqId);
 		const check: SoundCheckProposalSummary = {
 			...delta(t.p.id, base, ['trk', 'hit', 'boom', 'move', 'cue']),
@@ -209,7 +229,10 @@ describe('Review panel: Sound Check of the proposal', () => {
 			at: 'x',
 			sequenceId: t.seqId,
 		};
-		expect(proposalCheckStatus(check, t.session.getCommitted(), items)).toEqual({ state: 'current', reasons: [] });
+		expect(proposalCheckStatus(check, t.session.getCommitted(), items)).toEqual({
+			state: 'current',
+			reasons: [],
+		});
 		expect(proposalCheckStatus(null, t.session.getCommitted(), items).state).toBe('none');
 		expect(itemCheck(check, 'hit').fixes.map((f) => f.key)).toEqual(['MASKED:clp_bed']);
 		expect(itemCheckText(check, 'boom')).toBe('introduces 1');

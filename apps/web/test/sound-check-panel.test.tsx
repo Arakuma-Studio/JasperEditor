@@ -935,13 +935,19 @@ describe('Sound Check panel: acknowledged findings (spec 12 §4 P6-E4)', () => {
 		const n = f.labels().length;
 		// (the enabled button is a new element: the disabled one sat in its reason's tooltip)
 		await act(async () => {
-			fireEvent.click(within(screen.getByTestId('sound-check-ack-editor')).getByTestId('sound-check-ack-save'));
+			fireEvent.click(
+				within(screen.getByTestId('sound-check-ack-editor')).getByTestId('sound-check-ack-save'),
+			);
 		});
 		await settle();
 		expect(f.labels()).toHaveLength(n + 1);
 		expect(f.labels().at(-1)).toBe('Acknowledge Sound Check Finding');
 		const ack = soundAcknowledgementsOf(f.seq())['LOUDNESS:mix']!;
-		expect(ack).toMatchObject({ by: 'user', code: 'LOUDNESS', reason: 'Mastered elsewhere: the client normalises it' });
+		expect(ack).toMatchObject({
+			by: 'user',
+			code: 'LOUDNESS',
+			reason: 'Mastered elsewhere: the client normalises it',
+		});
 		expect(screen.queryByTestId('sound-check-ack-editor')).toBeNull();
 		// out of the list and of Fix all safe; the group says how many, collapsed
 		expect(screen.getByTestId('sound-check-findings').querySelector('[data-code="LOUDNESS"]')).toBeNull();
@@ -1017,7 +1023,9 @@ describe('Sound Check panel: acknowledged findings (spec 12 §4 P6-E4)', () => {
 		expect(screen.getByTestId('sound-check-verdict').getAttribute('data-verdict')).toBe('fail');
 		// the shortcut is a Sound Check command (Keyboard Shortcuts lists it)
 		const rows = shortcutRows(getActiveKeymap()).filter((r) => r.scope === 'soundCheck');
-		expect(rows.find((r) => r.id === 'soundCheck.acknowledgeFinding')?.bindings.map((b) => b.key)).toEqual(['KeyA']);
+		expect(rows.find((r) => r.id === 'soundCheck.acknowledgeFinding')?.bindings.map((b) => b.key)).toEqual([
+			'KeyA',
+		]);
 	});
 
 	it('read-only: Acknowledge… is disabled', async () => {
@@ -1025,9 +1033,9 @@ describe('Sound Check panel: acknowledged findings (spec 12 §4 P6-E4)', () => {
 		mount(f);
 		await run();
 		act(() => f.session.store.setState({ readOnly: true }));
-		expect((within(rowOf('LOUDNESS')).getByTestId('sound-check-acknowledge') as HTMLButtonElement).disabled).toBe(
-			true,
-		);
+		expect(
+			(within(rowOf('LOUDNESS')).getByTestId('sound-check-acknowledge') as HTMLButtonElement).disabled,
+		).toBe(true);
 	});
 });
 

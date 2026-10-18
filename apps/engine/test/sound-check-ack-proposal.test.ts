@@ -120,11 +120,25 @@ describe('acknowledged findings (P6-E4, real engine)', { timeout: 600_000 }, () 
 		expect(ending, describeIssues(first)).toBeDefined();
 		expect(first.report.verdict, describeIssues(first)).toBe('warn');
 		const warnings = first.report.issues.filter((i) => i.severity === 'warning');
-		expect(warnings.map((i) => i.code), describeIssues(first)).toEqual(['ENDING']);
-		const r = await tx(projectId, [ackOf(ending!, 'The cut to black is the joke: it ends on the hit')], AGENT_H);
+		expect(
+			warnings.map((i) => i.code),
+			describeIssues(first),
+		).toEqual(['ENDING']);
+		const r = await tx(
+			projectId,
+			[ackOf(ending!, 'The cut to black is the joke: it ends on the hit')],
+			AGENT_H,
+		);
 		expect(r.ok, JSON.stringify(r.errors)).toBe(true);
-		const acked = soundAcknowledgementsOf((await saved(projectId)).doc.sequences[first.sequenceId])[ending!.id]!;
-		expect(acked).toMatchObject({ by: 'agent', agent: 'ack-agent', code: 'ENDING', target: { frame: ending!.frame } });
+		const acked = soundAcknowledgementsOf((await saved(projectId)).doc.sequences[first.sequenceId])[
+			ending!.id
+		]!;
+		expect(acked).toMatchObject({
+			by: 'agent',
+			agent: 'ack-agent',
+			code: 'ENDING',
+			target: { frame: ending!.frame },
+		});
 		const again = (await check({ projectId })).result;
 		expect(again.report.verdict, describeIssues(again)).toBe('pass');
 		expect(again.report.counts.acknowledged).toBe(1);
@@ -140,7 +154,11 @@ describe('acknowledged findings (P6-E4, real engine)', { timeout: 600_000 }, () 
 		// no listen-here "worst" for an acknowledged finding; the fix is not one "Fix all safe" would take
 		expect(again.report.listen.find((l) => l.slot === 'worst')).toBeUndefined();
 		// the music under the end changes: the finding is back, "acknowledged before the change"
-		const e = await tx(projectId, [{ type: 'audio.setGain', clipIds: [fx.ids.music], mode: 'adjust', db: -1 }], EDITOR_H);
+		const e = await tx(
+			projectId,
+			[{ type: 'audio.setGain', clipIds: [fx.ids.music], mode: 'adjust', db: -1 }],
+			EDITOR_H,
+		);
 		expect(e.ok).toBe(true);
 		const back = (await check({ projectId })).result;
 		expect(back.report.verdict).toBe('warn');
@@ -174,7 +192,9 @@ describe('acknowledged findings (P6-E4, real engine)', { timeout: 600_000 }, () 
 			why: 'needs-user',
 		});
 		// the user's own edit (what the Sound Check panel applies, origin user): accepted, the check leaves the error out
-		const user = await userTx(projectId, [ackOf(lic!, 'Licensed separately for this film (contract 2026-114)')]);
+		const user = await userTx(projectId, [
+			ackOf(lic!, 'Licensed separately for this film (contract 2026-114)'),
+		]);
 		expect(user.ok, JSON.stringify(user)).toBe(true);
 		const ok = (await check({ projectId })).result;
 		expect(ok.report.issues.find((i) => i.id === lic!.id)!.acknowledged).toMatchObject({
@@ -204,7 +224,10 @@ async function maskedProposal() {
 				id: 'rep',
 				label: 'Another hit right after the first',
 				commands: [
-					{ type: 'soundCue.add', cues: [{ frame: 60, kind: 'cut', weight: 'support', source: 'agent', ref: '$q' }] },
+					{
+						type: 'soundCue.add',
+						cues: [{ frame: 60, kind: 'cut', weight: 'support', source: 'agent', ref: '$q' }],
+					},
 					{
 						type: 'soundDesign.place',
 						cueId: '$q',
@@ -212,7 +235,11 @@ async function maskedProposal() {
 					},
 				],
 			},
-			{ id: 'bad', label: 'On a track that does not exist', commands: [{ type: 'track.update', trackId: 'A9', patch: { mute: true } }] },
+			{
+				id: 'bad',
+				label: 'On a track that does not exist',
+				commands: [{ type: 'track.update', trackId: 'A9', patch: { mute: true } }],
+			},
 			{
 				id: 'name',
 				label: 'Name the last hit',
@@ -247,11 +274,17 @@ describe('Sound Check of a proposal (P6-E5, real engine)', { timeout: 900_000 },
 		const text = JSON.stringify(p.delta, null, 1);
 		expect(fixedCodes, text).toEqual(['MASKED']);
 		expect(introducedCodes, text).toEqual(['REPEAT']);
-		expect(p.delta.fixed.find((f) => f.key === masked.id)).toMatchObject({ itemId: 'gain', itemIds: ['gain'] });
+		expect(p.delta.fixed.find((f) => f.key === masked.id)).toMatchObject({
+			itemId: 'gain',
+			itemIds: ['gain'],
+		});
 		const rep = p.delta.introduced[0]!;
 		expect(rep.itemId).toBe('rep');
 		expect(rep.clipIds).toContain(fx.ids.clipA);
-		expect(p.delta.counts.MASKED).toEqual({ before: base.report.counts.MASKED, after: (base.report.counts.MASKED ?? 0) - 1 });
+		expect(p.delta.counts.MASKED).toEqual({
+			before: base.report.counts.MASKED,
+			after: (base.report.counts.MASKED ?? 0) - 1,
+		});
 		expect(p.delta.counts.REPEAT).toEqual({ before: 0, after: 1 });
 		expect(p.delta.items).toEqual([
 			{ itemId: 'gain', fixes: [masked.id], introduces: [] },
@@ -266,7 +299,11 @@ describe('Sound Check of a proposal (P6-E5, real engine)', { timeout: 900_000 },
 		const last = await post('/api/sound-design/check/last', { projectId }, AGENT_H);
 		expect((last.json() as { jobId: string }).jobId).toBe(baseJob.id);
 		// stored on the proposal; announced
-		const got = await app.inject({ method: 'GET', url: `/api/projects/${projectId}/proposals/${proposal.id}`, headers: AGENT_H });
+		const got = await app.inject({
+			method: 'GET',
+			url: `/api/projects/${projectId}/proposals/${proposal.id}`,
+			headers: AGENT_H,
+		});
 		const stored = (got.json() as { proposal: Proposal }).proposal;
 		expect((stored.report as { check: Record<string, unknown> }).check).toMatchObject({
 			jobId: job.id,
@@ -290,18 +327,27 @@ describe('Sound Check of a proposal (P6-E5, real engine)', { timeout: 900_000 },
 	it('invalid and stale items are skipped and listed; a fresh base when the kept report is stale; typed refusals', async () => {
 		const { fx, projectId, proposal } = await maskedProposal();
 		// the kept report goes stale (an edit of the mix): the base is run
-		const e = await tx(projectId, [{ type: 'audio.setGain', clipIds: [fx.ids.clipA], mode: 'adjust', db: -0.5 }], EDITOR_H);
+		const e = await tx(
+			projectId,
+			[{ type: 'audio.setGain', clipIds: [fx.ids.clipA], mode: 'adjust', db: -0.5 }],
+			EDITOR_H,
+		);
 		expect(e.ok).toBe(true);
 		const { job, result } = await check({ projectId, proposalId: proposal.id, itemIds: ['gain', 'bad'] });
 		expect(result.proposal!.base).toBe('run');
 		expect(result.proposal!.baseJobId).toBe(job.id);
 		expect(result.proposal!.itemIds).toEqual(['gain']);
-		expect(result.proposal!.skipped).toEqual([{ itemId: 'bad', state: 'invalid', reason: expect.stringMatching(/A9/) }]);
+		expect(result.proposal!.skipped).toEqual([
+			{ itemId: 'bad', state: 'invalid', reason: expect.stringMatching(/A9/) },
+		]);
 		// a stale item (the clip it names moved since): skipped with why
 		const m = await tx(projectId, [{ type: 'clip.move', clipIds: [fx.ids.clipC], deltaFrames: 5 }], EDITOR_H);
 		expect(m.ok, JSON.stringify(m.errors)).toBe(true);
 		const st = (await check({ projectId, proposalId: proposal.id })).result.proposal!;
-		expect(st.skipped.find((s) => s.itemId === 'name'), JSON.stringify(st.skipped)).toMatchObject({
+		expect(
+			st.skipped.find((s) => s.itemId === 'name'),
+			JSON.stringify(st.skipped),
+		).toMatchObject({
 			state: 'stale',
 			reason: expect.stringMatching(/moved/),
 		});
@@ -316,12 +362,20 @@ describe('Sound Check of a proposal (P6-E5, real engine)', { timeout: 900_000 },
 		expect(await code({ projectId, itemIds: ['gain'] })).toBe('400 VALIDATION_FAILED');
 		expect(await code({ projectId, proposalId: proposal.id, itemIds: ['nope'] })).toBe('404 NOT_FOUND');
 		expect(await code({ projectId, proposalId: 'prp_x' })).toBe('400 VALIDATION_FAILED');
-		expect(await code({ projectId, proposalId: proposal.id, sequenceId: 'seq_nope' })).toBe('400 VALIDATION_FAILED');
+		expect(await code({ projectId, proposalId: proposal.id, sequenceId: 'seq_nope' })).toBe(
+			'400 VALIDATION_FAILED',
+		);
 	});
 });
 
 describe('soundCheckDelta (pure)', () => {
-	const f = (id: string, code: string, severity: 'error' | 'warning' | 'info', clipIds?: string[], cueId?: string) => ({
+	const f = (
+		id: string,
+		code: string,
+		severity: 'error' | 'warning' | 'info',
+		clipIds?: string[],
+		cueId?: string,
+	) => ({
 		id,
 		code: code as never,
 		severity,
@@ -331,7 +385,11 @@ describe('soundCheckDelta (pure)', () => {
 	});
 	it('fixed / introduced by key, attributed to the items that touched their clips or cue; counts before / after', () => {
 		const before = [f('MASKED:c1', 'MASKED', 'warning', ['c1']), f('LOUDNESS:mix', 'LOUDNESS', 'error')];
-		const after = [f('LOUDNESS:mix', 'LOUDNESS', 'error'), f('REPEAT:c2', 'REPEAT', 'warning', ['c0', 'c2']), f('COVERAGE:k', 'COVERAGE', 'warning', undefined, 'q1')];
+		const after = [
+			f('LOUDNESS:mix', 'LOUDNESS', 'error'),
+			f('REPEAT:c2', 'REPEAT', 'warning', ['c0', 'c2']),
+			f('COVERAGE:k', 'COVERAGE', 'warning', undefined, 'q1'),
+		];
 		const d = soundCheckDelta(
 			before,
 			after,
@@ -363,7 +421,10 @@ describe('soundCheckDelta (pure)', () => {
 		// setup items (a new cue, an imported sound) only when no other item touched the finding's clips / cue
 		const s2 = soundCheckDelta(
 			[],
-			[f('REPEAT:c2', 'REPEAT', 'warning', ['c0', 'c2'], 'q1'), f('COVERAGE:q9', 'COVERAGE', 'warning', undefined, 'q9')],
+			[
+				f('REPEAT:c2', 'REPEAT', 'warning', ['c0', 'c2'], 'q1'),
+				f('COVERAGE:q9', 'COVERAGE', 'warning', undefined, 'q9'),
+			],
 			[
 				{ itemId: 'cue:place', touched: new Set(['q1', 'q9']), setup: true },
 				{ itemId: 'place', touched: new Set(['c2']) },
@@ -375,10 +436,15 @@ describe('soundCheckDelta (pure)', () => {
 			['COVERAGE:q9', ['cue:place']],
 		]);
 		// a finding no item names (the whole mix): no item
-		const g = soundCheckDelta([], [f('TRUE_PEAK:mix', 'TRUE_PEAK', 'error')], [{ itemId: 'a', touched: new Set(['c1']) }], {
-			before: 'pass',
-			after: 'fail',
-		});
+		const g = soundCheckDelta(
+			[],
+			[f('TRUE_PEAK:mix', 'TRUE_PEAK', 'error')],
+			[{ itemId: 'a', touched: new Set(['c1']) }],
+			{
+				before: 'pass',
+				after: 'fail',
+			},
+		);
 		expect(g.introduced[0]).toMatchObject({ itemId: null, itemIds: [] });
 		expect(g.items).toEqual([]);
 	});
