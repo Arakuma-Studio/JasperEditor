@@ -181,6 +181,8 @@ test('acknowledge a finding in the panel, the same in MCP; a proposal checked by
 	const verdictBefore = await panel().getByTestId('sound-check-verdict').getAttribute('data-verdict');
 	await panel().screenshot({ path: join(outDir, '1-findings.png') });
 	const before = await appliedLabels(page);
+	// the row's Acknowledge… shows on the current row (and under the pointer)
+	await ending.getByTestId('sound-check-message').click();
 	await ending.getByTestId('sound-check-acknowledge').click();
 	const reason = panel().getByTestId('sound-check-ack-reason');
 	await expect(reason).toBeFocused();
@@ -199,6 +201,7 @@ test('acknowledge a finding in the panel, the same in MCP; a proposal checked by
 	await expect(ackRow).toHaveAttribute('data-issue-id', endingId);
 	await expect(ackRow).toContainText('Reason: The cut to black on the hit is the punchline');
 	await expect(ackRow).toContainText('by you');
+	await ackRow.scrollIntoViewIfNeeded();
 	await panel().screenshot({ path: join(outDir, '3-acknowledged.png') });
 
 	// 2. the agent's view: the same open findings, ENDING acknowledged; then the panel's re-run agrees

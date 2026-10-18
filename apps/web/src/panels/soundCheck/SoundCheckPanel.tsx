@@ -698,7 +698,7 @@ function Findings(props: {
 								data-issue-id={i.id}
 								data-code={i.code}
 								data-frame={i.frame ?? i.range?.start ?? ''}
-								className={`border-t border-pr-border-subtle px-2 py-1 ${cur === i.id ? 'bg-pr-selected' : ''}`}
+								className={`group border-t border-pr-border-subtle px-2 py-1 ${cur === i.id ? 'bg-pr-selected' : ''}`}
 								onPointerDown={() => setFindingCursor(session, i.id)}
 							>
 								<div className="flex items-start gap-1.5">
@@ -746,7 +746,9 @@ function Findings(props: {
 									<Button
 										variant="quiet"
 										tabIndex={-1}
-										className="shrink-0"
+										// on the current row and under the pointer (A acknowledges from the keyboard): the narrow panel keeps
+										// its width for the message
+										className={`shrink-0 ${cur === i.id ? '' : 'hidden group-hover:inline-flex'}`}
 										data-testid="sound-check-acknowledge"
 										disabled={props.readOnly}
 										title={t('Acknowledge… (A): a deliberate exception, with a reason; it no longer counts')}

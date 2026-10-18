@@ -1011,14 +1011,14 @@ function ProposalCheckBar(p: {
 			<div className="flex items-center gap-1.5">
 				{check ? (
 					<span
-						className={`min-w-0 flex-1 truncate font-semibold ${check.delta.introducedCount ? 'text-pr-warning' : 'text-pr-strong'}`}
+						className={`flex min-w-0 flex-1 items-center gap-1 font-semibold ${check.delta.introducedCount ? 'text-pr-warning' : 'text-pr-strong'}`}
 						data-testid="review-check-summary"
 						data-fixes={check.delta.fixedCount}
 						data-introduces={check.delta.introducedCount}
 						title={t('Verdict {0} → {1}', check.delta.verdict.before, check.delta.verdict.after)}
 					>
-						<Icon id={check.delta.introducedCount ? 'status.warning' : 'status.success'} size={12} />{' '}
-						{proposalCheckText(check)}
+						<Icon id={check.delta.introducedCount ? 'status.warning' : 'status.success'} size={12} />
+						<span className="min-w-0 truncate">{proposalCheckText(check)}</span>
 					</span>
 				) : (
 					<span className="min-w-0 flex-1 truncate text-pr-muted" data-testid="review-check-summary">
