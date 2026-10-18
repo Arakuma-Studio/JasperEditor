@@ -892,7 +892,15 @@ export const SOUND_LISTEN_STEMS = ['sfx', 'dialogue', 'music', 'ambience', 'othe
 export const SOUND_LISTEN_PICTURE_KINDS = ['cut', 'transition', 'cue', 'motion'] as const;
 export const SOUND_LISTEN_STATUSES = ['ok', 'near', 'swell', 'none'] as const;
 export const SOUND_LISTEN_CLASSES = ['dialogue', 'music', 'ambience', 'effects', 'other', 'silence'] as const;
-export const SOUND_LISTEN_LINE_KINDS = ['summary', 'sync', 'section', 'event', 'unanswered', 'silence', 'note'] as const;
+export const SOUND_LISTEN_LINE_KINDS = [
+	'summary',
+	'sync',
+	'section',
+	'event',
+	'unanswered',
+	'silence',
+	'note',
+] as const;
 
 const ms = z.number();
 
@@ -958,7 +966,9 @@ export const SoundListenEventSchema = z.object({
 	/** `event`: the clip's own event is there; `level`: no own event, the loudest clip at that moment; `none`. */
 	explainedBy: z.enum(['event', 'level', 'none']),
 	/** Picture events this event answers (ok / near / swell). */
-	answers: z.array(z.object({ key: z.string(), status: z.enum(SOUND_LISTEN_STATUSES), offsetMs: z.number() })),
+	answers: z.array(
+		z.object({ key: z.string(), status: z.enum(SOUND_LISTEN_STATUSES), offsetMs: z.number() }),
+	),
 });
 export type SoundListenEvent = z.infer<typeof SoundListenEventSchema>;
 

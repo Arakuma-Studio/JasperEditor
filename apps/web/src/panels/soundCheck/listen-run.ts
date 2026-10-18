@@ -167,7 +167,11 @@ export async function runListen(
 		store.setState({ result, jobId, running: null, error: null, cursor: null });
 		announce(
 			session,
-			t('Listened: {0} sound events, {1} picture events with no sound', result.counts.events, result.counts.unanswered),
+			t(
+				'Listened: {0} sound events, {1} picture events with no sound',
+				result.counts.events,
+				result.counts.unanswered,
+			),
 		);
 		return { ok: true, result };
 	} catch (e) {
@@ -193,7 +197,8 @@ export function lineTarget(
 	line: SoundListenLine,
 ): { frame: number; clipIds: string[]; cueId?: string } {
 	const e = line.event !== undefined ? r.events[line.event] : undefined;
-	if (e) return { frame: line.frame, clipIds: e.clipId ? [e.clipId] : [], ...(e.cueId ? { cueId: e.cueId } : {}) };
+	if (e)
+		return { frame: line.frame, clipIds: e.clipId ? [e.clipId] : [], ...(e.cueId ? { cueId: e.cueId } : {}) };
 	const p = line.key ? r.pictureEvents.find((x) => x.key === line.key) : undefined;
 	return { frame: line.frame, clipIds: [], ...(p?.cueId ? { cueId: p.cueId } : {}) };
 }
@@ -216,7 +221,11 @@ export function stepLine(session: EditorSession, to: number | 'first' | 'last'):
 	const n = s.result?.lines.length ?? 0;
 	if (!n) return null;
 	const next =
-		to === 'first' ? 0 : to === 'last' ? n - 1 : Math.max(0, Math.min(n - 1, (s.cursor ?? (to > 0 ? -1 : n)) + to));
+		to === 'first'
+			? 0
+			: to === 'last'
+				? n - 1
+				: Math.max(0, Math.min(n - 1, (s.cursor ?? (to > 0 ? -1 : n)) + to));
 	listenStore(session).setState({ cursor: next });
 	return next;
 }

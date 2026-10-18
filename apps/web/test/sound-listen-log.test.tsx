@@ -19,7 +19,12 @@ import { makeSession } from './timeline-helpers.ts';
 
 const mocks = vi.hoisted(() => ({ client: null as unknown }));
 vi.mock('../src/state/engine.tsx', () => ({
-	useEngine: () => ({ client: mocks.client, status: 'connected', subscribe: () => () => {}, capabilities: null }),
+	useEngine: () => ({
+		client: mocks.client,
+		status: 'connected',
+		subscribe: () => () => {},
+		capabilities: null,
+	}),
 	useEngineOrNull: () => ({ client: mocks.client, status: 'connected', subscribe: () => () => {} }),
 	useCapabilities: () => ({ capabilities: null, flags: new Set(['engine']) }),
 	createEditorEngineClient: () => mocks.client,
@@ -98,11 +103,39 @@ function listenResult(projectId: string, sequenceId: string, hit: string, music:
 		answers: [],
 	});
 	const lines = [
-		{ frame: 0, timecode: '00:00:00:00', kind: 'summary' as const, text: 'Listened 00:00:00:00–00:00:10:00: 2 sound events (1 accent, 0 swells), 1 section, 0 silences; integrated -20.0 LUFS as mixed.' },
-		{ frame: 0, timecode: '00:00:00:00', kind: 'section' as const, text: '== music until 00:00:10:00 · -20 LUFS' },
-		{ frame: 45, timecode: '00:00:01:15', kind: 'event' as const, text: 'hit, low band, +4 dB over the bed · music, A1 "Music"', event: 0 },
-		{ frame: 90, timecode: '00:00:03:00', kind: 'event' as const, text: 'hit, low band, +15 dB over the bed · accent · SFX A2 "Hit"', event: 1 },
-		{ frame: 240, timecode: '00:00:08:00', kind: 'unanswered' as const, text: "NO SOUND for Cut on V1: 'A' → 'B' (nothing within 250 ms)", key: 'edit:v1:a>b' },
+		{
+			frame: 0,
+			timecode: '00:00:00:00',
+			kind: 'summary' as const,
+			text: 'Listened 00:00:00:00–00:00:10:00: 2 sound events (1 accent, 0 swells), 1 section, 0 silences; integrated -20.0 LUFS as mixed.',
+		},
+		{
+			frame: 0,
+			timecode: '00:00:00:00',
+			kind: 'section' as const,
+			text: '== music until 00:00:10:00 · -20 LUFS',
+		},
+		{
+			frame: 45,
+			timecode: '00:00:01:15',
+			kind: 'event' as const,
+			text: 'hit, low band, +4 dB over the bed · music, A1 "Music"',
+			event: 0,
+		},
+		{
+			frame: 90,
+			timecode: '00:00:03:00',
+			kind: 'event' as const,
+			text: 'hit, low band, +15 dB over the bed · accent · SFX A2 "Hit"',
+			event: 1,
+		},
+		{
+			frame: 240,
+			timecode: '00:00:08:00',
+			kind: 'unanswered' as const,
+			text: "NO SOUND for Cut on V1: 'A' → 'B' (nothing within 250 ms)",
+			key: 'edit:v1:a>b',
+		},
 	];
 	return SoundListenResultSchema.parse({
 		projectId,
@@ -117,16 +150,52 @@ function listenResult(projectId: string, sequenceId: string, hit: string, music:
 		text: lines.map((l) => `${l.timecode}  ${l.text}`).join('\n'),
 		events: [event(45, music, 'music', false), event(90, hit, 'sfx', true)],
 		sections: [
-			{ start: 0, end: 300, startTimecode: '00:00:00:00', endTimecode: '00:00:10:00', classes: ['music'], label: 'music', lufs: -20 },
+			{
+				start: 0,
+				end: 300,
+				startTimecode: '00:00:00:00',
+				endTimecode: '00:00:10:00',
+				classes: ['music'],
+				label: 'music',
+				lufs: -20,
+			},
 		],
 		silences: [],
 		pictureEvents: [
-			{ kind: 'cut', key: 'edit:v1:a>b', frame: 240, timecode: '00:00:08:00', label: "Cut on V1: 'A' → 'B'", status: 'none', offsetMs: null, event: null, nearestStrongMs: null },
+			{
+				kind: 'cut',
+				key: 'edit:v1:a>b',
+				frame: 240,
+				timecode: '00:00:08:00',
+				label: "Cut on V1: 'A' → 'B'",
+				status: 'none',
+				offsetMs: null,
+				event: null,
+				nearestStrongMs: null,
+			},
 		],
 		unanswered: [
-			{ kind: 'cut', key: 'edit:v1:a>b', frame: 240, timecode: '00:00:08:00', label: "Cut on V1: 'A' → 'B'", status: 'none', offsetMs: null, event: null, nearestStrongMs: null },
+			{
+				kind: 'cut',
+				key: 'edit:v1:a>b',
+				frame: 240,
+				timecode: '00:00:08:00',
+				label: "Cut on V1: 'A' → 'B'",
+				status: 'none',
+				offsetMs: null,
+				event: null,
+				nearestStrongMs: null,
+			},
 		],
-		sync: { cuts: stats, transitions: null, cues: null, motion: null, all: stats, beatsKnown: false, motionAnalysed: false },
+		sync: {
+			cuts: stats,
+			transitions: null,
+			cues: null,
+			motion: null,
+			all: stats,
+			beatsKnown: false,
+			motionAnalysed: false,
+		},
 		placed: [],
 		loudness: {
 			integratedLufs: -20,
@@ -136,13 +205,28 @@ function listenResult(projectId: string, sequenceId: string, hit: string, music:
 			maxShortTermFrame: 90,
 			normalization: { applied: false, gainDb: 0, reason: 'off' },
 		},
-		counts: { events: 2, accents: 1, swells: 0, sections: 1, silences: 0, pictureEvents: 1, unanswered: 1, lanes: 2, eventsDropped: 0 },
+		counts: {
+			events: 2,
+			accents: 1,
+			swells: 0,
+			sections: 1,
+			silences: 0,
+			pictureEvents: 1,
+			unanswered: 1,
+			lanes: 2,
+			eventsDropped: 0,
+		},
 		warnings: [],
 		timings: { totalMs: 10 },
 	});
 }
 
-function fakeEngine(session: ReturnType<typeof fixture>['session'], seqId: string, hit: string, music: string) {
+function fakeEngine(
+	session: ReturnType<typeof fixture>['session'],
+	seqId: string,
+	hit: string,
+	music: string,
+) {
 	const listens: SoundListenRequest[] = [];
 	const visuals: SoundVisualRequest[] = [];
 	const jobs = new Map<string, () => unknown>();
@@ -221,7 +305,9 @@ describe('Sound Check ▸ Log tab', () => {
 		const log = screen.getByTestId('sound-listen-log');
 		expect(within(log).getByTestId('sound-listen-copy').getAttribute('aria-disabled')).toBe('true');
 		fireEvent.click(within(log).getByTestId('sound-listen-run'));
-		await waitFor(() => expect(within(log).getAllByTestId('sound-listen-line')).toHaveLength(5), { timeout: 3000 });
+		await waitFor(() => expect(within(log).getAllByTestId('sound-listen-line')).toHaveLength(5), {
+			timeout: 3000,
+		});
 		expect(eng.listens).toEqual([{ projectId: f.session.projectId, sequenceId: f.seqId, detail: 'normal' }]);
 		// verbatim: the same lines MCP prints (timecode, two spaces, text)
 		const result = listenStore(f.session).getState().result!;
@@ -258,7 +344,11 @@ describe('Sound Check ▸ Log tab', () => {
 		// the spectrogram of the listened range, marked at the current line
 		fireEvent.click(within(log).getByTestId('sound-listen-spectrogram'));
 		await waitFor(() => expect(eng.visuals).toHaveLength(1));
-		expect(eng.visuals[0]).toMatchObject({ sequenceId: f.seqId, range: { start: 0, end: 300 }, spectrogram: true });
+		expect(eng.visuals[0]).toMatchObject({
+			sequenceId: f.seqId,
+			range: { start: 0, end: 300 },
+			spectrogram: true,
+		});
 		expect(await within(log).findByTestId('sound-listen-spectrogram-mark')).toBeDefined();
 		// back to the findings
 		fireEvent.click(screen.getByTestId('sound-check-tab-findings'));
@@ -271,7 +361,11 @@ describe('Sound Check ▸ Log tab', () => {
 		mocks.client = eng.client;
 		const cmd = getCommand('sound.listenToSequence');
 		expect(cmd).toMatchObject({ agentExposed: true, capability: 'engine' });
-		const ctx = createCommandContext({ engine: eng.client as never, session: f.session, capabilities: ['engine'] });
+		const ctx = createCommandContext({
+			engine: eng.client as never,
+			session: f.session,
+			capabilities: ['engine'],
+		});
 		await act(async () => {
 			await runCommand('sound.listenToSequence', ctx);
 		});
@@ -288,8 +382,14 @@ describe('Sound Check ▸ Log tab', () => {
 		} as unknown as Sequence;
 		expect(listenRangeFor(seq, 30 * 60 * 2)).toMatchObject({ range: { start: 3600, end: 3600 + 18_000 } });
 		expect(listenRangeFor(seq, 30 * 60 * 14).range).toEqual({ start: 27_000 - 18_000, end: 27_000 });
-		expect(listenRangeFor({ ...seq, clips: { a: { start: 0, duration: 300 } } } as never, 0)).toEqual({ note: null });
-		const r = { range: { start: 0, end: 18_000 }, fps: { num: 30, den: 1 }, lines: [{ frame: 9000 }] } as never;
+		expect(listenRangeFor({ ...seq, clips: { a: { start: 0, duration: 300 } } } as never, 0)).toEqual({
+			note: null,
+		});
+		const r = {
+			range: { start: 0, end: 18_000 },
+			fps: { num: 30, den: 1 },
+			lines: [{ frame: 9000 }],
+		} as never;
 		expect(spectrogramWindow(r, null)).toEqual({ start: 0, end: 3600 });
 		expect(spectrogramWindow(r, 0)).toEqual({ start: 9000 - 1800, end: 9000 + 1800 });
 	});

@@ -45,7 +45,9 @@ const logs: string[] = [];
 const engineLog: string[] = [];
 
 async function call(name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
-	return (await client.callTool({ name, arguments: args }, undefined, { timeout: 900_000 })) as CallToolResult;
+	return (await client.callTool({ name, arguments: args }, undefined, {
+		timeout: 900_000,
+	})) as CallToolResult;
 }
 async function ok(name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
 	const r = await call(name, args);
@@ -162,34 +164,60 @@ describe('listen_to_sequence / view_sound_timeline sheet', { timeout: 900_000 },
 			await ok('import_media', { projectId, paths: [files.music, interview, files.hit, files.click] }),
 		);
 		const [music, talk, hitM, click] = imp.imported.map((m) => m.mediaId) as [string, string, string, string];
-		const built = json<{ refs: Record<string, string> }>(await ok('apply_commands', {
-			projectId,
-			label: 'Bed, sounds, picture',
-			commands: [
-				{ type: 'clip.place', source: { mediaId: music }, at: 0, tracks: { audio: 'A1' }, ref: '$m' },
-				{ type: 'clip.place', source: { mediaId: talk }, at: 0, tracks: { audio: 'A2' }, ref: '$s' },
-				{ type: 'essentialSound.setType', clipIds: ['$m'], audioType: 'music' },
-				{ type: 'essentialSound.setType', clipIds: ['$s'], audioType: 'dialogue' },
-				{ type: 'audio.setGain', clipIds: ['$m'], mode: 'set', db: 1.5 },
-				{ type: 'transition.add', clipId: '$m', edge: 'out', effectId: 'jasper.exponential-fade', duration: 60 },
-				{ type: 'media.setLibraryInfo', mediaId: hitM, library: provenance('hit') },
-				{
-					type: 'media.setLibraryInfo',
-					mediaId: click,
-					library: {
-						...provenance('click'),
-						descriptors: { ...provenance('click').descriptors, octaveBandsDb: [-80, -70, -40, -14, -24, -50, -70], centroidHz: 1000 },
+		const built = json<{ refs: Record<string, string> }>(
+			await ok('apply_commands', {
+				projectId,
+				label: 'Bed, sounds, picture',
+				commands: [
+					{ type: 'clip.place', source: { mediaId: music }, at: 0, tracks: { audio: 'A1' }, ref: '$m' },
+					{ type: 'clip.place', source: { mediaId: talk }, at: 0, tracks: { audio: 'A2' }, ref: '$s' },
+					{ type: 'essentialSound.setType', clipIds: ['$m'], audioType: 'music' },
+					{ type: 'essentialSound.setType', clipIds: ['$s'], audioType: 'dialogue' },
+					{ type: 'audio.setGain', clipIds: ['$m'], mode: 'set', db: 1.5 },
+					{
+						type: 'transition.add',
+						clipId: '$m',
+						edge: 'out',
+						effectId: 'jasper.exponential-fade',
+						duration: 60,
 					},
-				},
-				{ type: 'soundCue.add', cues: [{ frame: 30, kind: 'cut', weight: 'hero', source: 'agent', ref: '$a' }] },
-				{ type: 'soundDesign.place', cueId: '$a', layers: [{ mediaId: hitM, role: 'hero', align: 'peak' }] },
-				{ type: 'soundCue.add', cues: [{ frame: 90, kind: 'cut', weight: 'support', source: 'agent', ref: '$b' }] },
-				{ type: 'soundDesign.place', cueId: '$b', layers: [{ mediaId: click, role: 'support', align: 'peak' }] },
-				{ type: 'synthetic.create', kind: 'color-matte', params: { color: [0.9, 0.2, 0.2, 1] }, ref: '$r' },
-				{ type: 'synthetic.create', kind: 'color-matte', params: { color: [0.2, 0.8, 0.3, 1] }, ref: '$g' },
-				{ type: 'synthetic.create', kind: 'color-matte', params: { color: [0.2, 0.3, 0.9, 1] }, ref: '$u' },
-			],
-		}));
+					{ type: 'media.setLibraryInfo', mediaId: hitM, library: provenance('hit') },
+					{
+						type: 'media.setLibraryInfo',
+						mediaId: click,
+						library: {
+							...provenance('click'),
+							descriptors: {
+								...provenance('click').descriptors,
+								octaveBandsDb: [-80, -70, -40, -14, -24, -50, -70],
+								centroidHz: 1000,
+							},
+						},
+					},
+					{
+						type: 'soundCue.add',
+						cues: [{ frame: 30, kind: 'cut', weight: 'hero', source: 'agent', ref: '$a' }],
+					},
+					{
+						type: 'soundDesign.place',
+						cueId: '$a',
+						layers: [{ mediaId: hitM, role: 'hero', align: 'peak' }],
+					},
+					{
+						type: 'soundCue.add',
+						cues: [{ frame: 90, kind: 'cut', weight: 'support', source: 'agent', ref: '$b' }],
+					},
+					{
+						type: 'soundDesign.place',
+						cueId: '$b',
+						layers: [{ mediaId: click, role: 'support', align: 'peak' }],
+					},
+					{ type: 'synthetic.create', kind: 'color-matte', params: { color: [0.9, 0.2, 0.2, 1] }, ref: '$r' },
+					{ type: 'synthetic.create', kind: 'color-matte', params: { color: [0.2, 0.8, 0.3, 1] }, ref: '$g' },
+					{ type: 'synthetic.create', kind: 'color-matte', params: { color: [0.2, 0.3, 0.9, 1] }, ref: '$u' },
+				],
+			}),
+		);
 		// the mattes on V1 (red, green, blue): cuts at 3 s (on cue B) and 9.3 s (nothing there)
 		const all = Object.values((await documentOf(projectId)).items);
 		const items = ['$r', '$g', '$u'].map(
@@ -206,7 +234,15 @@ describe('listen_to_sequence / view_sound_timeline sheet', { timeout: 900_000 },
 				await ok('apply_commands', {
 					projectId,
 					label: `Shot ${k + 1}`,
-					commands: [{ type: 'clip.place', source: { projectItemId: items[k]!.id }, at: a, tracks: { video: 'V1' }, ref: '$v' }],
+					commands: [
+						{
+							type: 'clip.place',
+							source: { projectItemId: items[k]!.id },
+							at: a,
+							tracks: { video: 'V1' },
+							ref: '$v',
+						},
+					],
 				}),
 			);
 			const doc = await documentOf(projectId);
@@ -259,7 +295,11 @@ describe('listen_to_sequence / view_sound_timeline sheet', { timeout: 900_000 },
 		writeFileSync(join(out, 'transcript.txt'), transcript);
 
 		// view_sound_timeline with that listen: every lane, cue, mark and thumbnail located
-		const v = await ok('view_sound_timeline', { projectId, range: { start: 0, end: 300 }, listenJobId: ci.jobId });
+		const v = await ok('view_sound_timeline', {
+			projectId,
+			range: { start: 0, end: 300 },
+			listenJobId: ci.jobId,
+		});
 		const view = json<{ cells: TimelineCells; listen: string; pictureLane: string }>(v);
 		expect(view.listen).toBe('from the given listen job');
 		const cells = view.cells;
@@ -312,7 +352,11 @@ describe('listen_to_sequence / view_sound_timeline sheet', { timeout: 900_000 },
 		expect(cells.spectrogram).toMatchObject({ bands: 96 });
 
 		// a range listened to by view_sound_timeline itself, without frames
-		const v2 = await ok('view_sound_timeline', { projectId, range: { start: 60, end: 120 }, thumbnails: false });
+		const v2 = await ok('view_sound_timeline', {
+			projectId,
+			range: { start: 60, end: 120 },
+			thumbnails: false,
+		});
 		const view2 = json<{ cells: TimelineCells; listen: string; listenJobId: string }>(v2);
 		expect(view2.listen).toBe('listened to the range');
 		expect(view2.cells.lanes.map((l) => l.name)).not.toContain('picture');
@@ -325,7 +369,11 @@ describe('listen_to_sequence / view_sound_timeline sheet', { timeout: 900_000 },
 		const empty = await call('listen_to_sequence', { projectId, range: { start: 600, end: 700 } });
 		expect(empty.isError).toBe(true);
 		expect(texts(empty)[0]).toMatch(/RANGE_EMPTY/);
-		const notJob = await call('view_sound_timeline', { projectId, range: { start: 0, end: 60 }, listenJobId: 'job_nope' });
+		const notJob = await call('view_sound_timeline', {
+			projectId,
+			range: { start: 0, end: 60 },
+			listenJobId: 'job_nope',
+		});
 		expect(notJob.isError).toBe(true);
 		expect(texts(notJob)[0]).toMatch(/JOB_NOT_FOUND/);
 	});

@@ -135,7 +135,10 @@ export function registerSoundListenTools(ctx: ToolContext): void {
 					.object({ start: TimeInputSchema, end: TimeInputSchema })
 					.optional()
 					.describe(`Sequence range [start, end) (default the whole sequence; ≤ 10 min). ${TIME_FORMATS}`),
-				detail: z.enum(SOUND_LISTEN_DETAILS).optional().describe('How much the transcript lists (default normal)'),
+				detail: z
+					.enum(SOUND_LISTEN_DETAILS)
+					.optional()
+					.describe('How much the transcript lists (default normal)'),
 				images: z.boolean().optional().describe('Add the annotated sound sheet PNG (default false)'),
 				thumbnails: z
 					.boolean()
@@ -164,7 +167,11 @@ export function registerSoundListenTools(ctx: ToolContext): void {
 						TIME_FORMATS,
 					);
 			}
-			const { job, result: r, timedOut } = await listenTo(
+			const {
+				job,
+				result: r,
+				timedOut,
+			} = await listenTo(
 				ctx,
 				extra,
 				{
@@ -242,7 +249,10 @@ export function registerSoundListenTools(ctx: ToolContext): void {
 				what: 'One strip per range, top to bottom: frames, loudness curves, spectrogram, waveform, sections, sfx clips, cue ticks with answer marks, the sync lane (C cut, T transition, Q cue, M motion: OK green circle, near amber diamond, swell blue triangle, no sound red cross), motion, findings. view_sound_timeline {range, listenJobId} draws any other range with its cells.',
 				strips: strips.map((st) => ({
 					...st.range,
-					timecodes: { start: sequenceTimecode(seq, st.range.start), end: sequenceTimecode(seq, st.range.end) },
+					timecodes: {
+						start: sequenceTimecode(seq, st.range.start),
+						end: sequenceTimecode(seq, st.range.end),
+					},
 					why: st.why,
 				})),
 				pictureLane: lanes,

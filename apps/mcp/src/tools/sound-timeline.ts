@@ -168,7 +168,7 @@ export async function listenJobResult(
 	sequenceId: string,
 ): Promise<SoundListenResult> {
 	const job = (await ctx.engine((c) => c.getJob(jobId)).catch(() => null)) as EngineJob | null;
-	if (!job || job.kind !== 'sound-listen' || job.projectId !== projectId)
+	if (job?.kind !== 'sound-listen' || job.projectId !== projectId)
 		throw new ToolError(
 			'JOB_NOT_FOUND',
 			`No listen_to_sequence job ${jobId} of this project`,
@@ -182,7 +182,11 @@ export async function listenJobResult(
 		);
 	const r = SoundListenResultSchema.parse(job.result);
 	if (r.sequenceId !== sequenceId)
-		throw new ToolError('JOB_NOT_FOUND', `The listen job ${jobId} is of another sequence`, 'Pass its sequenceId.');
+		throw new ToolError(
+			'JOB_NOT_FOUND',
+			`The listen job ${jobId} is of another sequence`,
+			'Pass its sequenceId.',
+		);
 	return r;
 }
 
@@ -190,7 +194,12 @@ export async function listenJobResult(
 export async function listenTo(
 	ctx: ToolContext,
 	extra: Extra,
-	req: { projectId: string; sequenceId: string; range?: { start: number; end: number }; detail?: 'low' | 'normal' | 'high' },
+	req: {
+		projectId: string;
+		sequenceId: string;
+		range?: { start: number; end: number };
+		detail?: 'low' | 'normal' | 'high';
+	},
 	timeoutMs: number,
 ): Promise<{ job: EngineJob; result: SoundListenResult | null; timedOut: boolean }> {
 	const job = await ctx.engine((c) => c.soundListen(req, extra.signal)).catch(toolError);
@@ -231,12 +240,19 @@ export function registerSoundTimelineTools(ctx: ToolContext): void {
 					.min(1)
 					.max(128)
 					.optional()
-					.describe('A listen_to_sequence jobId whose sections and answer marks to draw (default: listen to the range)'),
+					.describe(
+						'A listen_to_sequence jobId whose sections and answer marks to draw (default: listen to the range)',
+					),
 				listen: z
 					.boolean()
 					.optional()
-					.describe('Listen to the range for the sections and answer marks (default true; a job of a few seconds)'),
-				thumbnails: z.boolean().optional().describe('Draw the picture lane (default true; each frame is a render)'),
+					.describe(
+						'Listen to the range for the sections and answer marks (default true; a job of a few seconds)',
+					),
+				thumbnails: z
+					.boolean()
+					.optional()
+					.describe('Draw the picture lane (default true; each frame is a render)'),
 				spectrogram: z.boolean().optional().describe('Draw the spectrogram lane (default true)'),
 				width: z.number().int().min(480).max(2400).optional().describe('Picture width in px (default 1200)'),
 				timeoutSeconds: z

@@ -458,6 +458,7 @@ Every state-changing engine route and what an agent may do with it:
 | `POST /api/sound-design/delivery` (`apply_delivery`) | Open | Mode `propose` (the default) stores a proposal (nothing changes); mode `apply` is one ordinary, undoable transaction of `soundDesign.applyDelivery` (settings, the Mix's loudness normalisation, Essential Sound Auto-Match gains, ducking Volume keyframes) and `soundDesign.applyGains`, classified like any agent transaction ("Agent: Apply Delivery Preset"); nothing is deleted; renders are measure-only (no file is written) |
 | `POST /api/sound-design/check` (`sound_check`) | Open | Measure-only renders (the first normalisation pass is a scratch file of the job, removed when it ends); with `store: true` one ordinary, undoable transaction of `soundDesign.setCheck` (metadata only, "Agent: Sound Check Result"); fixes are returned, never applied |
 | `POST /api/sound-design/visual` (`view_sound_timeline`) | Open | Read-only: measure-only renders of ≤ 120 s, nothing stored |
+| `POST /api/sound-design/listen` (`listen_to_sequence`, `view_sound_timeline`'s sections and answer marks, Sound Check ▸ Log) | Open | Read-only: measure-only renders of ≤ 10 min (the mix and ≤ 24 clip lanes through the export mixer, nothing written), cached beats and picture motion read but never analysed; the result is the job's (nothing stored in the project or the appdir) |
 | `POST /api/audio/classify` (`auto_tag_audio`, Essential Sound ▸ Auto Tag), the voice activity of `POST /api/sound-design/cues` (dialogue clips) | Open | Read-only for the project: ffmpeg decodes of registered media (≤ 500 items, ≤ 4 × 15 s windows or 60 s each; voice activity streamed into 10 ms levels, ≤ 4 h per clip, 8 h and 64 clips per call); only small JSON results are cached (`<appdir>/sounds/analysis/{classify,voice}/`); tagging is the ordinary, undoable `essentialSound.autoTag` transaction the caller sends |
 | `POST /api/sound-design/check/last` (`get_sound_check`) | Open | Read-only: the sequence's last kept report (`<appdir>/projects/<pid>/sound-check/<sequenceId>.json`, written by finished `sound-check` jobs; file names only from document ids, ≤ 32 per project, ≤ 16 MB each, damaged files moved aside) with its staleness against the live document |
 | `POST /api/sound-design/motion` (`analyze_picture_motion`), engine cue sources of `POST /api/sound-design/cues` (`find_sound_cues` sources scene / beat / pixel), `POST /api/audio/beats` | Open | Read-only for the project: a picture render of ≤ 10 min into the job's scratch directory (deleted when it ends), Scene Edit Detection and beat analyses of registered media; only small JSON results are cached (`<appdir>/sounds/analysis/`) |
@@ -760,6 +761,16 @@ them, but it was reviewed by its author, not by this review.
   undo the delete (a save or version restore with no editor lease, the lease released or expired, a new lease), and a
   check finishing after its project or sequence is gone keeps nothing (a late write never re-creates a deleted
   project's folder). Tests: `apps/engine/test/sound-check-kept.test.ts`, `sound-check-kept-lifecycle.test.ts`.
+- **Listening transcript** (spec 12 WP-E3, `apps/engine/src/sound-design/listen.ts`, `packages/audio-fx/src/analysis/events.ts`;
+  `POST /api/sound-design/listen`, the visual route's `spectrogram`): a strict zod body (project id `[A-Za-z0-9_-]{1,128}`,
+  a frame range, a detail enum); the project, sequence and range are checked before a job starts (typed `404`,
+  `400 RANGE_EMPTY` / `RANGE_TOO_LONG`: ≤ 10 min per listen); the job reads the live document through the agent service
+  and renders only through the export mixer (`renderStems`: the mix and ≤ 24 lanes of clips that never overlap, shared
+  ffmpeg decoders of engine-registry media, nothing written); the analysis streams in 30 s chunks with bounded memory
+  (≤ 2 h of input per meter; ≤ 3 000 lines, ≤ 5 000 events, ≤ 400 sections returned); beats and picture motion are read
+  from their caches only (`mode: 'cached'`). The spectrogram of the visual route is ≤ 120 s × 96 bytes per 10 ms.
+  Tests: `apps/engine/test/sound-listen.test.ts` (typed refusals), `packages/audio-fx/test/events.test.ts` (hostile input
+  never throws).
 - **Engine cue sources and picture motion** (spec 12 WP6.2, `apps/engine/src/sound-design/{motion,engine-cues,analysis-cache}.ts`,
   `audio/beats.ts`, `time/scenes.ts`; `POST /api/sound-design/motion`, `POST /api/audio/beats`, the cue route's
   `opts.sources` scene / beat / pixel and `snapToBeats`): strict zod bodies (project id `[A-Za-z0-9_-]{1,128}`, frame

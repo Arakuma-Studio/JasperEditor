@@ -58,7 +58,6 @@ export {
 	snapCuesToBeats,
 } from './engine-sources.ts';
 export { type CueMarker, cueMarkers, parseSfxRequest } from './markers.ts';
-export { type PictureEditEvent, pictureEditEvents } from './picture-events.ts';
 export { MG_CONFIDENCE, type MgCuePhases, mgCuePhases, mgPhases } from './mg.ts';
 export {
 	ABRUPT_STOP,
@@ -69,6 +68,7 @@ export {
 	MOVE_ON,
 	speedSegments,
 } from './motion.ts';
+export { type PictureEditEvent, pictureEditEvents } from './picture-events.ts';
 export {
 	measureFrameMotion,
 	PIXEL_BLOCK,

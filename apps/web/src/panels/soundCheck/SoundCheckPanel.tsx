@@ -240,73 +240,73 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 					reveal={(f) => reveal(f)}
 				/>
 			) : (
-			<div className="min-h-0 flex-1 overflow-auto">
-				<Summary
-					report={report}
-					summary={status.summary}
-					stale={stale}
-					runDisabled={runDisabled || !!running}
-					onRerun={run}
-				/>
-				{report && seq ? (
-					<>
-						<div className="flex items-center gap-2 border-b border-pr-border px-2 py-1">
-							<Button
-								variant="secondary"
-								data-testid="sound-check-fix-all"
-								disabled={!safe.length || readOnly || !!fixing || !!running || !engine}
-								disabledReason={
-									readOnly
-										? t('The project is read-only')
-										: !safe.length
-											? t('No safe fixes left')
-											: undefined
-								}
-								busy={fixing === 'all'}
-								onClick={() => engine && void fixAllSafe(session, engine)}
-							>
-								{t('Fix all safe ({0})', safe.length)}
-							</Button>
-							<span className="text-pr-small text-pr-muted">
-								{t(
-									'Safe fixes change only what their finding is about, in one undo step; the check runs again after.',
-								)}
-							</span>
-						</div>
-						<Findings
-							session={session}
-							engine={engine}
-							seq={seq}
-							report={report}
-							jobId={jobId}
-							fixing={fixing}
-							fixed={fixed}
-							readOnly={readOnly}
-							busy={!!running}
-							instanceId={props.instanceId}
-							reveal={reveal}
-						/>
-						<Listen
-							session={session}
-							seq={seq}
-							rows={listenRows(report, seq, doc)}
-							playing={playing && playing.sequenceId === seq.id ? playing : null}
-							readOnly={readOnly}
-							reveal={reveal}
-						/>
-					</>
-				) : !running ? (
-					<div className="flex flex-col items-center gap-2 p-4 text-center text-pr-small text-pr-muted">
-						<p className="m-0">
-							{status.summary
-								? t('Run the check to see its findings and the moments to listen to.')
-								: t(
-										'Sound Check measures the mix as it will be delivered: sync of every placed sound, loudness, masking, music under the voice, silences, cues and licences. Choose a delivery target and run it.',
+				<div className="min-h-0 flex-1 overflow-auto">
+					<Summary
+						report={report}
+						summary={status.summary}
+						stale={stale}
+						runDisabled={runDisabled || !!running}
+						onRerun={run}
+					/>
+					{report && seq ? (
+						<>
+							<div className="flex items-center gap-2 border-b border-pr-border px-2 py-1">
+								<Button
+									variant="secondary"
+									data-testid="sound-check-fix-all"
+									disabled={!safe.length || readOnly || !!fixing || !!running || !engine}
+									disabledReason={
+										readOnly
+											? t('The project is read-only')
+											: !safe.length
+												? t('No safe fixes left')
+												: undefined
+									}
+									busy={fixing === 'all'}
+									onClick={() => engine && void fixAllSafe(session, engine)}
+								>
+									{t('Fix all safe ({0})', safe.length)}
+								</Button>
+								<span className="text-pr-small text-pr-muted">
+									{t(
+										'Safe fixes change only what their finding is about, in one undo step; the check runs again after.',
 									)}
-						</p>
-					</div>
-				) : null}
-			</div>
+								</span>
+							</div>
+							<Findings
+								session={session}
+								engine={engine}
+								seq={seq}
+								report={report}
+								jobId={jobId}
+								fixing={fixing}
+								fixed={fixed}
+								readOnly={readOnly}
+								busy={!!running}
+								instanceId={props.instanceId}
+								reveal={reveal}
+							/>
+							<Listen
+								session={session}
+								seq={seq}
+								rows={listenRows(report, seq, doc)}
+								playing={playing && playing.sequenceId === seq.id ? playing : null}
+								readOnly={readOnly}
+								reveal={reveal}
+							/>
+						</>
+					) : !running ? (
+						<div className="flex flex-col items-center gap-2 p-4 text-center text-pr-small text-pr-muted">
+							<p className="m-0">
+								{status.summary
+									? t('Run the check to see its findings and the moments to listen to.')
+									: t(
+											'Sound Check measures the mix as it will be delivered: sync of every placed sound, loudness, masking, music under the voice, silences, cues and licences. Choose a delivery target and run it.',
+										)}
+							</p>
+						</div>
+					) : null}
+				</div>
 			)}
 		</div>
 	);

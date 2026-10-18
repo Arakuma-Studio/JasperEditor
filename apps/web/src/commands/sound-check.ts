@@ -7,6 +7,7 @@
 // the Sound Check scope (Keyboard Shortcuts lists them; remappable): ↑ ↓ Home End move, Enter goes to the finding, F
 // applies its fix (one that needs judgement asks first), → / ← open / close its sync strip, Space plays 4 s around it.
 import { t } from '../i18n/runtime.ts';
+import { type ListenEngine, runListen, setListenTab } from '../panels/soundCheck/listen-run.ts';
 import { canApply, hasSyncStrip, safeFixable } from '../sound/check-model.ts';
 import {
 	applyCheckFix,
@@ -22,7 +23,6 @@ import {
 	soundCheckStore,
 	stepFinding,
 } from '../sound/check-run.ts';
-import { type ListenEngine, runListen, setListenTab } from '../panels/soundCheck/listen-run.ts';
 import { runCommand } from './registry.ts';
 import { sequenceContext } from './sequence-context.ts';
 import type { CommandCtx, UiCommand } from './types.ts';

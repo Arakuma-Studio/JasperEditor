@@ -6,7 +6,12 @@
 // clip that plays the sound (else its cue). Spectrogram shows the mix's log-frequency spectrogram of the listened range
 // (≤ 120 s around the current line) with the line's moment marked. Keyboard: the list is one tab stop (↑ ↓ Home End
 // move, Enter goes to the line); everything else is buttons. Progress and the outcome are announced (aria-live).
-import { SOUND_LISTEN_DETAILS, type SoundListenDetail, type SoundListenLine, type SoundListenResult } from '@jasper/api';
+import {
+	SOUND_LISTEN_DETAILS,
+	type SoundListenDetail,
+	type SoundListenLine,
+	type SoundListenResult,
+} from '@jasper/api';
 import type { Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
@@ -61,7 +66,10 @@ export function LogTab(props: {
 	const showSpec = useStoreSelector(store, (s) => s.spectrogram);
 	const [copied, setCopied] = useState(false);
 	const shown = result && seq && result.sequenceId === seq.id ? result : null;
-	const options = useMemo(() => SOUND_LISTEN_DETAILS.map((d) => ({ value: d, label: t(DETAIL_LABELS[d]) })), []);
+	const options = useMemo(
+		() => SOUND_LISTEN_DETAILS.map((d) => ({ value: d, label: t(DETAIL_LABELS[d]) })),
+		[],
+	);
 	const disabled = !engine || !props.connected || !seq;
 	const reason = !seq
 		? t('Open a sequence first')
@@ -133,7 +141,9 @@ export function LogTab(props: {
 					{t('Spectrogram')}
 				</Button>
 			</div>
-			{note ? <p className="m-0 border-b border-pr-border px-2 py-1 text-pr-small text-pr-muted">{note}</p> : null}
+			{note ? (
+				<p className="m-0 border-b border-pr-border px-2 py-1 text-pr-small text-pr-muted">{note}</p>
+			) : null}
 			{running && running.sequenceId === seq?.id ? (
 				<div className="shrink-0 border-b border-pr-border px-2 py-1" data-testid="sound-listen-progress">
 					<div className="flex items-center justify-between text-pr-small text-pr-muted">
@@ -158,7 +168,10 @@ export function LogTab(props: {
 				</div>
 			) : null}
 			{error ? (
-				<p role="alert" className="m-0 shrink-0 border-b border-pr-border px-2 py-1 text-pr-small text-pr-danger">
+				<p
+					role="alert"
+					className="m-0 shrink-0 border-b border-pr-border px-2 py-1 text-pr-small text-pr-danger"
+				>
 					{t('The listen failed: {0}', error)}
 				</p>
 			) : null}
@@ -224,6 +237,7 @@ function Lines(props: {
 		>
 			{result.lines.map((l, i) => (
 				// biome-ignore lint/a11y/useFocusableInteractive: listbox options are reached with aria-activedescendant
+				// biome-ignore lint/a11y/useKeyWithClickEvents: the listbox handles the keys (Enter goes to the current line)
 				<div
 					// biome-ignore lint/suspicious/noArrayIndexKey: the lines of one result never reorder
 					key={i}
@@ -314,7 +328,10 @@ function SpectrogramStrip(props: {
 	const line = cursor !== null ? result.lines[cursor] : undefined;
 	const at = line ? (line.frame - win.start) / Math.max(1, win.end - win.start) : null;
 	return (
-		<div className="shrink-0 border-b border-pr-border px-2 py-1" data-testid="sound-listen-spectrogram-strip">
+		<div
+			className="shrink-0 border-b border-pr-border px-2 py-1"
+			data-testid="sound-listen-spectrogram-strip"
+		>
 			<div className="mb-0.5 flex justify-between text-pr-small text-pr-muted">
 				<span>{t('Spectrogram of the mix (30 Hz–16 kHz, log frequency)')}</span>
 				<span className="pr-tabular">
@@ -338,7 +355,9 @@ function SpectrogramStrip(props: {
 				) : null}
 			</div>
 			{state?.key === key && state.error ? (
-				<p className="m-0 text-pr-small text-pr-danger">{t('The spectrogram could not be drawn: {0}', state.error)}</p>
+				<p className="m-0 text-pr-small text-pr-danger">
+					{t('The spectrogram could not be drawn: {0}', state.error)}
+				</p>
 			) : null}
 		</div>
 	);

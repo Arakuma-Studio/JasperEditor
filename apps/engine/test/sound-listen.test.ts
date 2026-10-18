@@ -73,12 +73,21 @@ function addPicture(b: DocBuilder): { cuts: number[] } {
 	const len = [at[1]! - at[0]!, at[2]! - at[1]!, Math.round(10 * fps) - at[2]!];
 	at.forEach((f, i) => {
 		const r = b.tx([
-			{ type: 'synthetic.create', kind: 'color-matte', params: { color: [i / 3, 0.2, 1 - i / 3, 1] }, ref: '$m' },
+			{
+				type: 'synthetic.create',
+				kind: 'color-matte',
+				params: { color: [i / 3, 0.2, 1 - i / 3, 1] },
+				ref: '$m',
+			},
 		]);
 		const item = Object.values(b.doc.items).find(
 			(it) => it.kind === 'synthetic' && (it as { syntheticId?: string }).syntheticId === r.refs.$m,
 		);
-		const pid = item?.id ?? Object.values(b.doc.items).filter((it) => it.kind === 'synthetic').at(-1)!.id;
+		const pid =
+			item?.id ??
+			Object.values(b.doc.items)
+				.filter((it) => it.kind === 'synthetic')
+				.at(-1)!.id;
 		b.tx([{ type: 'clip.place', source: { projectItemId: pid }, at: f, tracks: { video: 'V1' }, ref: '$v' }]);
 		const clip = Object.values(b.doc.sequences[b.seqId]!.clips).find(
 			(c) => c.kind !== 'audio' && c.start === f,
@@ -134,7 +143,10 @@ describe('listen_to_sequence (real engine)', { timeout: 600_000 }, () => {
 		expect(hitA).toMatchObject({ role: 'hero', cueKind: 'cut' });
 		// the production hit inside the dialogue is the dialogue clip's
 		const knock = r.events.filter((e) => e.shape === 'hit' && Math.abs(e.ms - DIALOGUE_HIT_SEC * 1000) <= 5);
-		expect(knock, JSON.stringify(r.events.filter((e) => Math.abs(e.ms - DIALOGUE_HIT_SEC * 1000) < 150))).toHaveLength(1);
+		expect(
+			knock,
+			JSON.stringify(r.events.filter((e) => Math.abs(e.ms - DIALOGUE_HIT_SEC * 1000) < 150)),
+		).toHaveLength(1);
 		expect(knock[0]).toMatchObject({ stem: 'dialogue', clipId: fx.ids.speech, explainedBy: 'event' });
 		// the cut at 3 s is answered by the click on cue B (frame 90); the cut at 9.3 s has no sound
 		const cutAt = (f: number) => r.pictureEvents.find((p) => p.kind === 'cut' && p.frame === f)!;
@@ -187,9 +199,16 @@ describe('listen_to_sequence (real engine)', { timeout: 600_000 }, () => {
 		expect(line(r.placed.find((p) => p.clipId === fx.ids.clipB)!.mixEvent!)).toMatch(/answers Cut on V1/);
 		expect(line(r.events.indexOf(knock[0]!))).toMatch(/dialogue, A2 "interview\.wav"/);
 		expect(r.lines.some((l) => l.kind === 'unanswered' && /^NO SOUND for Cut on V1/.test(l.text))).toBe(true);
-		expect(r.lines.some((l) => l.kind === 'sync' && /Sync, cuts: 1\/2 have a sound within 1 frame \(50 %; chance \d+ %\)/.test(l.text))).toBe(true);
+		expect(
+			r.lines.some(
+				(l) =>
+					l.kind === 'sync' &&
+					/Sync, cuts: 1\/2 have a sound within 1 frame \(50 %; chance \d+ %\)/.test(l.text),
+			),
+		).toBe(true);
 		expect(r.lines.some((l) => l.kind === 'section')).toBe(true);
-		for (let i = 1; i < r.lines.length; i++) expect(r.lines[i]!.frame).toBeGreaterThanOrEqual(r.lines[i - 1]!.frame - 0);
+		for (let i = 1; i < r.lines.length; i++)
+			expect(r.lines[i]!.frame).toBeGreaterThanOrEqual(r.lines[i - 1]!.frame - 0);
 		// loudness as delivered (the fixture normalises; no current analysis → as mixed, said so)
 		expect(r.loudness.integratedLufs).not.toBeNull();
 		expect(r.loudness.normalization.applied).toBe(false);
@@ -202,7 +221,9 @@ describe('listen_to_sequence (real engine)', { timeout: 600_000 }, () => {
 		const high = await listen({ projectId, detail: 'high' }, 'fixture high');
 		expect(low.lines.length).toBeLessThanOrEqual(r.lines.length);
 		expect(low.lines.filter((l) => l.kind === 'event').every((l) => low.events[l.event!]!.accent)).toBe(true);
-		expect(r.lines.filter((l) => l.kind === 'event').length).toBeLessThan(high.lines.filter((l) => l.kind === 'event').length);
+		expect(r.lines.filter((l) => l.kind === 'event').length).toBeLessThan(
+			high.lines.filter((l) => l.kind === 'event').length,
+		);
 		expect(high.lines.filter((l) => l.kind === 'event').length).toBe(high.events.length);
 		// a range
 		const part = await listen({ projectId, range: { start: 60, end: 120 } }, 'range');
@@ -228,8 +249,15 @@ describe('listen_to_sequence (real engine)', { timeout: 600_000 }, () => {
 		const ids: string[] = [];
 		for (const f of frames) {
 			const r = fx.b.tx([
-				{ type: 'soundCue.add', cues: [{ frame: f, kind: 'appear', weight: 'support', source: 'user', ref: '$c' }] },
-				{ type: 'soundDesign.place', cueId: '$c', layers: [{ mediaId: fx.ids.hitMedia, role: 'support', align: 'peak', ref: '$x' }] },
+				{
+					type: 'soundCue.add',
+					cues: [{ frame: f, kind: 'appear', weight: 'support', source: 'user', ref: '$c' }],
+				},
+				{
+					type: 'soundDesign.place',
+					cueId: '$c',
+					layers: [{ mediaId: fx.ids.hitMedia, role: 'support', align: 'peak', ref: '$x' }],
+				},
 			]);
 			ids.push(r.refs.$x!);
 		}
@@ -275,7 +303,11 @@ describe('listen_to_sequence (real engine)', { timeout: 600_000 }, () => {
 	it('the visual route draws the mix spectrogram when asked', async () => {
 		const fx = buildCheckDoc(media);
 		const projectId = seed(fx.doc());
-		const r = await post('/api/sound-design/visual', { projectId, range: { start: 0, end: 150 }, spectrogram: true });
+		const r = await post('/api/sound-design/visual', {
+			projectId,
+			range: { start: 0, end: 150 },
+			spectrogram: true,
+		});
 		expect(r.statusCode, r.body).toBe(200);
 		const v = SoundVisualResponseSchema.parse(r.json());
 		const s = v.spectrogram!;
@@ -284,7 +316,8 @@ describe('listen_to_sequence (real engine)', { timeout: 600_000 }, () => {
 		const data = Buffer.from(s.data, 'base64');
 		expect(data.length).toBe(s.frames * s.bands);
 		// the hero hit at 1 s is loud in the low bands; the music fills the rest
-		const col = (sec: number) => data.subarray(Math.round(sec * 100) * s.bands, (Math.round(sec * 100) + 1) * s.bands);
+		const col = (sec: number) =>
+			data.subarray(Math.round(sec * 100) * s.bands, (Math.round(sec * 100) + 1) * s.bands);
 		const low = (c: Uint8Array) => c.subarray(0, 24).reduce((a, b) => a + b, 0);
 		expect(low(col(1.01))).toBeGreaterThan(low(col(0.5)));
 		const plain = SoundVisualResponseSchema.parse(
@@ -297,7 +330,9 @@ describe('listen_to_sequence (real engine)', { timeout: 600_000 }, () => {
 		const fx = buildCheckDoc(media, { noSpeech: true });
 		const fps = fpsOf(fx.b);
 		const seq = fx.doc().sequences[fx.b.seqId]!;
-		const musicClip = Object.values(seq.clips).find((c) => c.kind === 'audio' && c.start === 0 && c.duration > 200)!;
+		const musicClip = Object.values(seq.clips).find(
+			(c) => c.kind === 'audio' && c.start === 0 && c.duration > 200,
+		)!;
 		// 60 copies of the 10 s music and a hit every 3 s
 		const cmds: unknown[] = [];
 		for (let k = 1; k < 60; k++)
@@ -310,8 +345,17 @@ describe('listen_to_sequence (real engine)', { timeout: 600_000 }, () => {
 		fx.b.tx(cmds);
 		for (let k = 4; k < 200; k++)
 			fx.b.tx([
-				{ type: 'soundCue.add', cues: [{ frame: Math.round(k * 3 * fps), kind: 'cut', weight: 'support', source: 'user', ref: '$c' }] },
-				{ type: 'soundDesign.place', cueId: '$c', layers: [{ mediaId: fx.ids.clickMedia, role: 'support', align: 'peak' }] },
+				{
+					type: 'soundCue.add',
+					cues: [
+						{ frame: Math.round(k * 3 * fps), kind: 'cut', weight: 'support', source: 'user', ref: '$c' },
+					],
+				},
+				{
+					type: 'soundDesign.place',
+					cueId: '$c',
+					layers: [{ mediaId: fx.ids.clickMedia, role: 'support', align: 'peak' }],
+				},
 			]);
 		const projectId = seed(fx.doc());
 		const t0 = Date.now();

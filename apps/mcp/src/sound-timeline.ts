@@ -193,9 +193,25 @@ export type TimelineCells = {
 		status?: SyncStatus;
 	}[];
 	/** The picture lane's frames (rendered through the export path), each with its box. */
-	thumbs: { frame: number; timecode: string; label: string; x: number; y: number; width: number; height: number }[];
+	thumbs: {
+		frame: number;
+		timecode: string;
+		label: string;
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+	}[];
 	/** The sync lane: every cut, transition, cue and measured motion with its answer mark. */
-	sync: { key: string; kind: string; frame: number; x: number; status: SyncStatus; shape: string; label: string }[];
+	sync: {
+		key: string;
+		kind: string;
+		frame: number;
+		x: number;
+		status: SyncStatus;
+		shape: string;
+		label: string;
+	}[];
 	/** The sections band. */
 	sections: { start: number; end: number; x0: number; x1: number; label: string; classes: string[] }[];
 	/** The spectrogram lane (rows: low frequencies at the bottom, log-spaced fMinHz…fMaxHz), or null. */
@@ -226,7 +242,12 @@ export type TimelineThumb = { frame: number; image: RgbaImage; label: string };
 
 export function drawSoundTimeline(
 	v: SoundVisualResponse,
-	opts: { width?: number; title?: string; listen?: TimelineListen | null; thumbs?: readonly TimelineThumb[] } = {},
+	opts: {
+		width?: number;
+		title?: string;
+		listen?: TimelineListen | null;
+		thumbs?: readonly TimelineThumb[];
+	} = {},
 ): { image: RgbaImage; cells: TimelineCells } {
 	const W = Math.max(480, Math.min(2400, Math.round(num(opts.width, 1200))));
 	const plotX = 54;
@@ -315,7 +336,8 @@ export function drawSoundTimeline(
 	if (thumbs.length) {
 		drawText(img, 'pic', 4, pictureY + Math.round(th / 2) - 3, DIM);
 		const xs = thumbs.map((t) => Math.round(xOf(t.frame) - tw / 2));
-		for (let i = 0; i < xs.length; i++) xs[i] = Math.max(plotX, i ? Math.max(xs[i]!, xs[i - 1]! + tw + 4) : xs[i]!);
+		for (let i = 0; i < xs.length; i++)
+			xs[i] = Math.max(plotX, i ? Math.max(xs[i]!, xs[i - 1]! + tw + 4) : xs[i]!);
 		for (let i = xs.length - 1; i >= 0; i--)
 			xs[i] = Math.min(xs[i]!, (i + 1 < xs.length ? xs[i + 1]! - 4 : plotX + plotW) - tw);
 		thumbs.forEach((t, i) => {
@@ -413,9 +435,17 @@ export function drawSoundTimeline(
 			if (!(b > a)) continue;
 			const classes = Array.isArray(sct.classes) ? sct.classes.map(String) : [];
 			const band = Math.max(1, Math.floor(sectionsH / Math.max(1, classes.length)));
-			classes.forEach((c, k) =>
-				fillRect(img, a, sectionsY + k * band, b - a, band, SECTION_COLOURS[c] ?? SECTION_COLOURS.other!, 0.85),
-			);
+			classes.forEach((c, k) => {
+				fillRect(
+					img,
+					a,
+					sectionsY + k * band,
+					b - a,
+					band,
+					SECTION_COLOURS[c] ?? SECTION_COLOURS.other!,
+					0.85,
+				);
+			});
 			vline(img, a, sectionsY, sectionsY + sectionsH - 1, TEXT, false, 0.6);
 			const label = fitText(String(sct.label ?? ''), Math.max(0, b - a - 4));
 			if (label && a + 2 > lastLabel) {

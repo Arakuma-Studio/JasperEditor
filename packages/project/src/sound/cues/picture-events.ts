@@ -2,8 +2,9 @@
 // each cut and transition to the sound that answers it, so it needs all of them — not the cue suggestions `deriveCues`
 // keeps after its density budgets and dialogue rules. The same detection as the `edits` and `transitions` sources
 // (through edits and edits under a transition are not cuts; a transition is at its visual centre). Pure; never throws.
-import type { ProjectDocument } from '../../schema/document.ts';
+
 import { sequenceDuration } from '../../derive/index.ts';
+import type { ProjectDocument } from '../../schema/document.ts';
 import { deriveEditCues } from './edits.ts';
 import { deriveTransitionCues } from './transitions.ts';
 import { makeContext } from './util.ts';
@@ -37,7 +38,13 @@ export function pictureEditEvents(
 		if (!Number.isFinite(duration) || duration < 0) duration = 0;
 		const start = Number.isFinite(range?.start) ? Math.max(0, Math.floor(range!.start)) : 0;
 		const end = Number.isFinite(range?.end) ? Math.min(duration, Math.ceil(range!.end)) : duration;
-		const ctx = makeContext(doc, seq, duration, { start: Math.min(start, duration), end: Math.max(start, end) }, () => {});
+		const ctx = makeContext(
+			doc,
+			seq,
+			duration,
+			{ start: Math.min(start, duration), end: Math.max(start, end) },
+			() => {},
+		);
 		const out: PictureEditEvent[] = [];
 		for (const c of deriveEditCues(ctx, { respectDialogue: false }).cues)
 			out.push({ kind: 'cut', key: c.key, frame: c.frame, label: c.reason });

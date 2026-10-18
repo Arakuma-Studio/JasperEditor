@@ -111,7 +111,11 @@ export function deliveredGain(
 	const analysis = loud?.analysis as { integratedLufs?: unknown; mixHash?: unknown } | null | undefined;
 	const mixHash = mixFingerprint(doc, seq.id);
 	if (!loud?.enabled)
-		return { applied: false, gainDb: 0, reason: 'Loudness normalisation is off: the curves are the mix as it is' };
+		return {
+			applied: false,
+			gainDb: 0,
+			reason: 'Loudness normalisation is off: the curves are the mix as it is',
+		};
 	if (
 		fromJob &&
 		fromJob.mixHash === mixHash &&

@@ -20,8 +20,8 @@
 // Levels are as delivered when the Mix normalises and its loudness analysis is current (as the visual route). Nothing
 // is written to the project.
 import {
-	type SoundCheckReport,
 	SOUND_LISTEN_LIMITS,
+	type SoundCheckReport,
 	type SoundListenDetail,
 	type SoundListenEvent,
 	type SoundListenLine,
@@ -104,7 +104,6 @@ const MIN_SECTION_HOPS = 100;
 const MAX_SECTIONS = 400;
 
 const r1 = (x: number) => Math.round(x * 10) / 10;
-const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const q = (s: string, n = 48) => `"${s.length > n ? `${s.slice(0, n - 1)}…` : s}"`;
 const signed = (x: number, unit: string) => `${x >= 0 ? '+' : '−'}${Math.abs(Math.round(x))} ${unit}`;
 const pct = (x: number) => `${Math.round(x * 100)} %`;
@@ -382,7 +381,9 @@ export async function listenSequence(
 		const sfx = a?.sfx !== undefined ? readClipSfx(a.sfx) : null;
 		const own = sfx?.cueId ? cueById.get(sfx.cueId) : undefined;
 		const cue = own && (own.placedClipIds ?? []).includes(clipId) ? own : null;
-		const asset = a ? (doc.media?.[a.mediaId] as (MediaAsset & { library?: unknown }) | undefined) : undefined;
+		const asset = a
+			? (doc.media?.[a.mediaId] as (MediaAsset & { library?: unknown }) | undefined)
+			: undefined;
 		const prov = readLibraryProvenance(asset?.library);
 		const name =
 			(isSfxClip(c) && prov?.title) ||
@@ -423,7 +424,8 @@ export async function listenSequence(
 			else hi = mid;
 		}
 		const out: LaneEvent[] = [];
-		for (let i = lo; i < laneMsSorted.length && laneMsSorted[i]! <= ms + radius; i++) out.push(laneEvents[i]!);
+		for (let i = lo; i < laneMsSorted.length && laneMsSorted[i]! <= ms + radius; i++)
+			out.push(laneEvents[i]!);
 		return out;
 	};
 
@@ -432,7 +434,13 @@ export async function listenSequence(
 		const ms = renderMs0 + e.ms;
 		return ms >= rangeStartMs && ms < rangeEndMs;
 	});
-	type Attributed = { e: ListenEvent; seqMs: number; owner: Owner | null; by: 'event' | 'level' | 'none'; own: LaneEvent | null };
+	type Attributed = {
+		e: ListenEvent;
+		seqMs: number;
+		owner: Owner | null;
+		by: 'event' | 'level' | 'none';
+		own: LaneEvent | null;
+	};
 	const attributed: Attributed[] = mixEvents.map((e) => {
 		const seqMs = renderMs0 + e.ms;
 		const radius = e.shape === 'swell' ? EXPLAIN_SWELL_MS : EXPLAIN_MS;
@@ -448,7 +456,13 @@ export async function listenSequence(
 					(score(c) === score(best) && Math.abs(c.seqMs - seqMs) < Math.abs(best.seqMs - seqMs))
 				)
 					best = c;
-			return { e, seqMs, owner: ownerOf(best.clip.clipId, best.clip.trackId), by: 'event' as const, own: best };
+			return {
+				e,
+				seqMs,
+				owner: ownerOf(best.clip.clipId, best.clip.trackId),
+				by: 'event' as const,
+				own: best,
+			};
 		}
 		// no own event: the clip loudest at that moment (its 10 ms peaks over the event's first 50 ms)
 		let bestLane = -1;
@@ -625,7 +639,12 @@ export async function listenSequence(
 	const mixCurve = curvesOf(mixA);
 	const mixMom = loudnessCurve(mixCurve, 0.4, gain);
 	const momOf = (s: 'dialogue' | 'music' | 'ambience' | 'sfx') => loudnessCurve(stemCurves[s], 0.4, gain);
-	const mom = { dialogue: momOf('dialogue'), music: momOf('music'), ambience: momOf('ambience'), sfx: momOf('sfx') };
+	const mom = {
+		dialogue: momOf('dialogue'),
+		music: momOf('music'),
+		ambience: momOf('ambience'),
+		sfx: momOf('sfx'),
+	};
 	// speech: transcript words ∪ the dialogue stem's voice activity, gaps under 0.3 s bridged (as the check)
 	const speech = new Uint8Array(rangeHops);
 	try {
@@ -677,7 +696,10 @@ export async function listenSequence(
 	for (;;) {
 		let k = -1;
 		for (let i = 0; i < runs.length; i++)
-			if (runs[i]!.b - runs[i]!.a < MIN_SECTION_HOPS && (k < 0 || runs[i]!.b - runs[i]!.a < runs[k]!.b - runs[k]!.a))
+			if (
+				runs[i]!.b - runs[i]!.a < MIN_SECTION_HOPS &&
+				(k < 0 || runs[i]!.b - runs[i]!.a < runs[k]!.b - runs[k]!.a)
+			)
 				k = i;
 		if (k < 0 || runs.length === 1) break;
 		const prev = runs[k - 1];
@@ -695,7 +717,10 @@ export async function listenSequence(
 		runs = merged;
 	}
 	if (runs.length > MAX_SECTIONS) {
-		warnings.push({ code: 'W_SECTIONS_TRUNCATED', message: `Only the first ${MAX_SECTIONS} sections are listed` });
+		warnings.push({
+			code: 'W_SECTIONS_TRUNCATED',
+			message: `Only the first ${MAX_SECTIONS} sections are listed`,
+		});
 		runs = runs.slice(0, MAX_SECTIONS);
 	}
 	const hopFrame = (i: number) =>
@@ -738,10 +763,15 @@ export async function listenSequence(
 			const parts: string[] = [];
 			if (duckDb !== null) parts.push(`ducked ${signed(duckDb, 'dB')}`);
 			else if (classes.includes('dialogue')) parts.push('not ducked');
-			if (underVoiceLu !== null) parts.push(`${Math.abs(underVoiceLu).toFixed(0)} LU ${underVoiceLu >= 0 ? 'under' : 'over'} the voice`);
+			if (underVoiceLu !== null)
+				parts.push(
+					`${Math.abs(underVoiceLu).toFixed(0)} LU ${underVoiceLu >= 0 ? 'under' : 'over'} the voice`,
+				);
 			if (parts.length) musicText = ` (music ${parts.join(', ')})`;
 		}
-		const names = classes.map((c) => (c === 'effects' ? 'effects only' : c === 'other' ? 'untyped audio' : c));
+		const names = classes.map((c) =>
+			c === 'effects' ? 'effects only' : c === 'other' ? 'untyped audio' : c,
+		);
 		return {
 			start,
 			end,
@@ -775,7 +805,8 @@ export async function listenSequence(
 	const st = loudnessCurve(mixCurve, 3, gain);
 	const maxOf = (c: Float32Array) => {
 		let best = -1;
-		for (let i = preHops; i < Math.min(c.length, preHops + rangeHops); i++) if (best < 0 || c[i]! > c[best]!) best = i;
+		for (let i = preHops; i < Math.min(c.length, preHops + rangeHops); i++)
+			if (best < 0 || c[i]! > c[best]!) best = i;
 		return best >= 0 && c[best]! > -70 ? { v: r1(c[best]!), f: hopFrame(best - preHops) } : null;
 	};
 	const mm = maxOf(mixMom);
@@ -786,7 +817,11 @@ export async function listenSequence(
 		maxMomentaryFrame: mm?.f ?? null,
 		maxShortTermLufs: ms3?.v ?? null,
 		maxShortTermFrame: ms3?.f ?? null,
-		normalization: { applied: norm.applied, gainDb: r1(gain), ...(norm.reason ? { reason: norm.reason } : {}) },
+		normalization: {
+			applied: norm.applied,
+			gainDb: r1(gain),
+			...(norm.reason ? { reason: norm.reason } : {}),
+		},
 	};
 
 	// ── the transcript ────────────────────────────────────────────────────────────────────────────────────────────
@@ -795,8 +830,12 @@ export async function listenSequence(
 		e.accent ||
 		(detail === 'normal' && (e.stem === 'sfx' || e.answers.length > 0 || e.cueId !== null));
 	const lines: SoundListenLine[] = [];
-	const at = (frame: number, kind: SoundListenLine['kind'], text: string, extra: Partial<SoundListenLine> = {}) =>
-		lines.push({ frame, timecode: tc(frame), kind, text, ...extra });
+	const at = (
+		frame: number,
+		kind: SoundListenLine['kind'],
+		text: string,
+		extra: Partial<SoundListenLine> = {},
+	) => lines.push({ frame, timecode: tc(frame), kind, text, ...extra });
 	const accents = eventsAll.filter((e) => e.accent).length;
 	const swells = eventsAll.filter((e) => e.shape === 'swell').length;
 	const unanswered = pictureEvents.filter((p) => p.status === 'none');
@@ -822,7 +861,8 @@ export async function listenSequence(
 	syncLine('transitions', sync.transitions);
 	syncLine('cues', sync.cues);
 	syncLine('measured picture motion', sync.motion);
-	if (!pics.length) at(range.start, 'sync', 'Sync: no cuts, transitions, cues or measured picture motion in the range.');
+	if (!pics.length)
+		at(range.start, 'sync', 'Sync: no cuts, transitions, cues or measured picture motion in the range.');
 	if (!motionAnalysed)
 		at(
 			range.start,
@@ -860,17 +900,15 @@ export async function listenSequence(
 				: `hit, ${e.band} band, ${e.bedDb > -60 ? `${signed(e.prominenceDb, 'dB')} over the bed` : `${signed(e.prominenceDb, 'dB')} out of silence`}`;
 		const who = (() => {
 			if (!e.clipId) return 'not attributed to a clip';
-			const kind =
-				e.stem === 'sfx'
-					? 'SFX'
-					: e.stem === 'other'
-						? 'production audio,'
-						: `${e.stem},`;
+			const kind = e.stem === 'sfx' ? 'SFX' : e.stem === 'other' ? 'production audio,' : `${e.stem},`;
 			const extra = [e.role, e.cueKind ? `cue ${e.cueKind}` : null].filter(Boolean).join(', ');
 			return `${kind} ${e.track ?? '?'} ${q(e.clipName ?? e.clipId)}${extra ? ` (${extra})` : ''}${e.explainedBy === 'level' ? ' — loudest there, no event of its own' : ''}`;
 		})();
 		const ans = e.answers
-			.map((a) => `answers ${pictureLabel.get(a.key) ?? a.key}, ${signed(a.offsetMs, 'ms')}${a.status === 'ok' ? '' : ` (${a.status})`}`)
+			.map(
+				(a) =>
+					`answers ${pictureLabel.get(a.key) ?? a.key}, ${signed(a.offsetMs, 'ms')}${a.status === 'ok' ? '' : ` (${a.status})`}`,
+			)
 			.join('; ');
 		rows.push({
 			ms: e.ms,
@@ -895,10 +933,11 @@ export async function listenSequence(
 			},
 		});
 	rows.sort((a, b) => a.ms - b.ms || a.order - b.order);
-	for (const r of rows) at(r.line.frame, r.line.kind, r.line.text, {
-		...(r.line.event !== undefined ? { event: r.line.event } : {}),
-		...(r.line.key !== undefined ? { key: r.line.key } : {}),
-	});
+	for (const r of rows)
+		at(r.line.frame, r.line.kind, r.line.text, {
+			...(r.line.event !== undefined ? { event: r.line.event } : {}),
+			...(r.line.key !== undefined ? { key: r.line.key } : {}),
+		});
 	if (lines.length > SOUND_LISTEN_LIMITS.lines) {
 		const dropped = lines.length - SOUND_LISTEN_LIMITS.lines + 1;
 		lines.length = SOUND_LISTEN_LIMITS.lines - 1;
@@ -911,7 +950,8 @@ export async function listenSequence(
 			code: 'W_EVENTS_TRUNCATED',
 			message: `${eventsAll.length - events.length} events were left out: listen to a shorter range`,
 		});
-	if (mixA.truncated) warnings.push({ code: 'W_TRUNCATED', message: 'The range was cut at 2 hours of audio' });
+	if (mixA.truncated)
+		warnings.push({ code: 'W_TRUNCATED', message: 'The range was cut at 2 hours of audio' });
 	timings.analyseMs = Date.now() - td;
 	timings.totalMs = Date.now() - t0;
 	progress(1, 'Listened');

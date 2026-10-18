@@ -210,7 +210,9 @@ class Sos {
 	constructor(sections: readonly BiquadCoeffs[]) {
 		this.c = new Float64Array(sections.length * 5);
 		this.s = new Float64Array(sections.length * 2);
-		sections.forEach((q, i) => this.c.set([q.b0, q.b1, q.b2, q.a1, q.a2], i * 5));
+		sections.forEach((q, i) => {
+			this.c.set([q.b0, q.b1, q.b2, q.a1, q.a2], i * 5);
+		});
 	}
 	run(x: number): number {
 		const c = this.c;
@@ -525,7 +527,6 @@ export class ListenMeter {
 	private readonly odf = new Series();
 	private prev1: Float64Array | null = null;
 	private prev2: Float64Array | null = null;
-	private readonly specCols = new Dense(1024);
 	private specData: Uint8Array;
 	private specFrames = 0;
 	private specPending: Float64Array | null = null;
@@ -951,7 +952,9 @@ export class ListenMeter {
 			}
 			merged.push(e);
 		}
-		const events = [...merged, ...this.swells(merged)].sort((a, b) => a.ms - b.ms || (a.shape < b.shape ? -1 : 1));
+		const events = [...merged, ...this.swells(merged)].sort(
+			(a, b) => a.ms - b.ms || (a.shape < b.shape ? -1 : 1),
+		);
 		const accent = accentThreshold(events);
 		if (accent !== null) for (const e of events) e.accent = e.prominenceDb >= accent;
 		const integrated = integratedOf(this.k10.view(), this.sampleRate / 100);
@@ -1102,7 +1105,8 @@ export class ListenMeter {
 		// binary closing with a 7-wide element on an edge-padded mask, then kept only where within 6 LU of the threshold
 		const padded = [low[0]!, low[0]!, low[0]!, ...low, low[m - 1]!, low[m - 1]!, low[m - 1]!];
 		const dil = padded.map((_, i) => {
-			for (let q = i - 3; q <= i + 3; q++) if (padded[Math.max(0, Math.min(padded.length - 1, q))]) return true;
+			for (let q = i - 3; q <= i + 3; q++)
+				if (padded[Math.max(0, Math.min(padded.length - 1, q))]) return true;
 			return false;
 		});
 		const ero = dil.map((_, i) => {
@@ -1171,7 +1175,13 @@ export function integratedOf(kEnergy: ArrayLike<number>, hopSamples: number): nu
 /** The accent threshold of a list of events: max(6 dB, the 80th percentile of prominence); null for none. */
 export function accentThreshold(events: readonly Pick<ListenEvent, 'prominenceDb'>[]): number | null {
 	if (!events.length) return null;
-	return Math.max(LISTEN_EVENTS.accentDb, percentile(events.map((e) => e.prominenceDb), 80));
+	return Math.max(
+		LISTEN_EVENTS.accentDb,
+		percentile(
+			events.map((e) => e.prominenceDb),
+			80,
+		),
+	);
 }
 
 // ── sync ──────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1191,7 +1201,13 @@ export type PictureAnswer = {
 /** earshot's "strong" onsets: prominence ≥ min(6 dB, the 40th percentile). */
 export function strongThreshold(events: readonly Pick<ListenEvent, 'prominenceDb'>[]): number {
 	if (!events.length) return Number.POSITIVE_INFINITY;
-	return Math.min(6, percentile(events.map((e) => e.prominenceDb), 40));
+	return Math.min(
+		6,
+		percentile(
+			events.map((e) => e.prominenceDb),
+			40,
+		),
+	);
 }
 
 function nearestIn(ts: readonly number[], idx: readonly number[], t: number, radius: number): number | null {
@@ -1253,8 +1269,7 @@ export function answerPictureEvent(ix: SyncIndex, tMs: number, frameMs: number):
 	];
 	for (const [list, radius, status] of steps) {
 		const e = nearestIn(list.t, list.i, tMs, radius);
-		if (e !== null)
-			return { status, event: e, offsetMs: r1(ix.events[e]!.ms - tMs), nearestStrongMs: null };
+		if (e !== null) return { status, event: e, offsetMs: r1(ix.events[e]!.ms - tMs), nearestStrongMs: null };
 	}
 	const off = nearestIn(ix.strong.t, ix.strong.i, tMs, LISTEN_SYNC.offMs);
 	return {
@@ -1349,7 +1364,10 @@ export function syncStats(
 	});
 	let onBeatShare: number | null = null;
 	let onBeatChance: number | null = null;
-	const beats = (beatsMs ?? []).filter(fin).slice().sort((a, b) => a - b);
+	const beats = (beatsMs ?? [])
+		.filter(fin)
+		.slice()
+		.sort((a, b) => a - b);
 	if (beats.length > 1) {
 		const idx = beats.map((_, i) => i);
 		onBeatShare = r3(

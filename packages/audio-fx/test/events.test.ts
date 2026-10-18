@@ -4,6 +4,7 @@
 import { LoudnessMeter } from '@jasper/audio-dsp';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { Prng } from '../src/core/util.ts';
 import {
 	accentThreshold,
 	answerPictureEvent,
@@ -16,7 +17,6 @@ import {
 	syncIndex,
 	syncStats,
 } from '../src/index.ts';
-import { Prng } from '../src/core/util.ts';
 
 const SR = 48_000;
 
@@ -84,7 +84,8 @@ function addHit(x: Float32Array, at: number, kind: 'click' | 'thump' | 'burst', 
 	}
 }
 const hits = (a: ListenAnalysis) => a.events.filter((e) => e.shape === 'hit');
-const near = (a: ListenAnalysis, ms: number, tol: number) => hits(a).filter((e) => Math.abs(e.ms - ms) <= tol);
+const near = (a: ListenAnalysis, ms: number, tol: number) =>
+	hits(a).filter((e) => Math.abs(e.ms - ms) <= tol);
 
 describe('onsets', () => {
 	it('finds each hit at its attack within 1 ms, in silence and over a bed', () => {
@@ -93,7 +94,9 @@ describe('onsets', () => {
 		const bed = whiteNoise(n, 0.003, 7);
 		const at = [0.5, 1.3337, 2.1, 3.05].map((s) => Math.round(s * SR));
 		for (const [k, x] of [silent, bed].entries()) {
-			at.forEach((a, i) => addHit(x, a, (['click', 'thump', 'burst', 'click'] as const)[i]!, 0.3, i + k));
+			at.forEach((a, i) => {
+				addHit(x, a, (['click', 'thump', 'burst', 'click'] as const)[i]!, 0.3, i + k);
+			});
 			const r = analyse(x);
 			for (const a of at) {
 				const ms = (a / SR) * 1000;
@@ -150,7 +153,9 @@ describe('onsets', () => {
 		// a 70 s stem: hits on and around the 30 s analysis chunks
 		const long = whiteNoise(70 * SR, 0.002, 6);
 		const times = [10, 29.995, 30.05, 59.99, 60.4, 69];
-		times.forEach((s, i) => addHit(long, Math.round(s * SR), 'click', 0.3, i));
+		times.forEach((s, i) => {
+			addHit(long, Math.round(s * SR), 'click', 0.3, i);
+		});
 		const r = analyse(long, 48_000);
 		for (const s of times) expect(near(r, s * 1000, 1), `${s} s`).toHaveLength(1);
 		expect(hits(r).filter((e) => e.prominenceDb >= 10)).toHaveLength(times.length);
@@ -166,7 +171,8 @@ describe('swells, silences, accents, loudness', () => {
 		for (let i = 0; i < n; i++) {
 			const t = i / SR;
 			let db = -70;
-			if (t >= 1 && t < 2.2) db = -60 + ((t - 1) / 1.2) * 45; // −60 → −15 dBFS over 1.2 s
+			if (t >= 1 && t < 2.2)
+				db = -60 + ((t - 1) / 1.2) * 45; // −60 → −15 dBFS over 1.2 s
 			else if (t >= 2.2 && t < 2.3) db = -15 - ((t - 2.2) / 0.1) * 45;
 			x[i] = w[i]! * 10 ** (db / 20);
 		}
@@ -205,7 +211,9 @@ describe('swells, silences, accents, loudness', () => {
 		expect(accentThreshold([0, 10, 20, 30, 40].map(ev))).toBe(32);
 		const n = 6 * SR;
 		const x = whiteNoise(n, 0.002, 21);
-		[0.5, 1.5, 2.5, 3.5, 4.5].forEach((s, i) => addHit(x, Math.round(s * SR), 'burst', 0.02 * (i + 1), i));
+		[0.5, 1.5, 2.5, 3.5, 4.5].forEach((s, i) => {
+			addHit(x, Math.round(s * SR), 'burst', 0.02 * (i + 1), i);
+		});
 		const r = analyse(x);
 		expect(r.accentDb).not.toBeNull();
 		for (const e of r.events) expect(e.accent).toBe(e.prominenceDb >= r.accentDb!);
@@ -295,7 +303,9 @@ describe('sync', () => {
 					}
 					const brute = hit / total;
 					const exact = syncChance(ts, lo, hi, tol);
-					expect(Math.abs(exact - brute)).toBeLessThanOrEqual(((2 * ts.length + 2) * step) / (hi - lo) + 1e-9);
+					expect(Math.abs(exact - brute)).toBeLessThanOrEqual(
+						((2 * ts.length + 2) * step) / (hi - lo) + 1e-9,
+					);
 				},
 			),
 			{ numRuns: 60 },
@@ -342,7 +352,9 @@ describe('hostile input', () => {
 					m.push([], 100);
 					const r = m.finish();
 					expect(m.finish()).toBe(r);
-					for (const e of r.events) for (const v of Object.values(e)) if (typeof v === 'number') expect(Number.isFinite(v)).toBe(true);
+					for (const e of r.events)
+						for (const v of Object.values(e))
+							if (typeof v === 'number') expect(Number.isFinite(v)).toBe(true);
 					expect(JSON.stringify(r.silences)).not.toContain('null');
 				},
 			),
