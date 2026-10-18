@@ -14,6 +14,7 @@ import {
 import {
 	isSoundTypeId,
 	licenseClass,
+	paletteMaterials,
 	rankSoundsPage,
 	resolveTypeNames,
 	SOUND_FAMILIES,
@@ -103,6 +104,18 @@ export function rankRequestOf(
 		...(q.texture ? { texture: q.texture } : {}),
 		license: q.license ?? 'commercial-safe',
 		...(similarTo ? { similarTo } : {}),
+		// P6-E10: the personality's preferences, and the palette materials of the placed sounds (unknown ids ignored)
+		...(q.personality ? { personality: q.personality } : {}),
+		...(q.placed?.length
+			? {
+					paletteMaterials: paletteMaterials(
+						q.placed
+							.map((id) => lookup(id))
+							.filter((e): e is SoundEntry => !!e)
+							.map((e) => ({ soundId: e.id, types: e.types, materials: e.materials ?? null })),
+					),
+				}
+			: {}),
 	};
 	return { req, none };
 }

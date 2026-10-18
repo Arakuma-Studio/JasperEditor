@@ -478,16 +478,17 @@ describe('text source', () => {
 	});
 
 	it('typewriter patterns are capped at 12 per second and 40 per clip', () => {
+		// typing `keys`: one key per typed unit (`auto` would type these faster-than-25/s runs one key per word, P6-E10)
 		const h = newHarness();
 		addText(h, 'x'.repeat(200), { in: { preset: 'typewriter', durationFrames: 300 } }, 0, 400);
-		const keys = of(derive(h).cues, 'text').filter((c) => c.group);
+		const keys = of(derive(h, { typing: 'keys' }).cues, 'text').filter((c) => c.group);
 		expect(keys.length).toBe(40);
 		expect(new Set(keys.map((k) => k.group)).size).toBe(1);
 		for (let i = 0; i + 12 < keys.length; i++)
 			expect(keys[i + 12]!.frame - keys[i]!.frame).toBeGreaterThanOrEqual(30);
 		const fast = newHarness();
 		addText(fast, 'abcdefghijklmnopqrst', { in: { preset: 'typewriter', durationFrames: 15 } });
-		const k2 = of(derive(fast).cues, 'text').filter((c) => c.group);
+		const k2 = of(derive(fast, { typing: 'keys' }).cues, 'text').filter((c) => c.group);
 		for (let i = 1; i < k2.length; i++) expect(k2[i]!.frame - k2[i - 1]!.frame).toBeGreaterThanOrEqual(2.5);
 		expect(k2.length).toBeLessThanOrEqual(6);
 	});

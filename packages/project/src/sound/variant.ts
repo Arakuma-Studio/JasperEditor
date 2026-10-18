@@ -3,9 +3,11 @@
 // (the least recently used one wins, ties by rank), never the same file twice in a row when another candidate exists;
 // ±2 % varispeed and ±1 dB gain from a hash of (sequence, cue, seed, layer). When the best candidate is a take of a
 // recording (spec 12 P6-E9), the recording's takes among the candidates are the pool ("vary the take, not the
-// pitch"): repeated cues cycle through its takes, never the same take twice in a row. Deterministic: the same inputs
-// always give the same pick. Pure.
+// pitch"): repeated cues cycle through its takes, never the same take twice in a row. The variation follows the type's
+// policy (spec 12 P6-E10, `VariantContext.variation`): `voice` (ui, click) none at all, `takes` (key, tick, tap) ±1 dB
+// and no varispeed, `vary` (the rest) ±2 % and ±1 dB. Deterministic: the same inputs always give the same pick. Pure.
 import { parseTakeId, SOUND_TAKES_MAX } from './provenance.ts';
+import type { SoundVariation } from './taxonomy.ts';
 
 /** Candidates the rotation cycles through (the best N of the ranking). */
 export const ROTATION_TOP_N = 4;
@@ -25,6 +27,8 @@ export type VariantContext = {
 	recentSoundIds?: readonly string[];
 	/** Size of the rotation pool (default `ROTATION_TOP_N`, 1…16). */
 	topN?: number;
+	/** The variation policy of the sound's type (P6-E10; default `vary`): see `variationOf`. */
+	variation?: SoundVariation;
 };
 
 export type VariantPick = {
@@ -61,11 +65,18 @@ function generator(seed: number): () => number {
 	};
 }
 
-/** The seeded speed and gain variation of one cue layer: rate in [0.98, 1.02], gain in [−1, +1] dB. */
-export function variationOf(ctx: Pick<VariantContext, 'seed' | 'cueId' | 'sequenceId' | 'layer'>): {
+/**
+ * The seeded speed and gain variation of one cue layer: rate in [0.98, 1.02], gain in [−1, +1] dB (`vary`, the
+ * default); rate 1 with the same gain for `takes` (no varispeed on keys, ticks and taps); rate 1 and 0 dB for `voice`
+ * (one click voice at one level).
+ */
+export function variationOf(
+	ctx: Pick<VariantContext, 'seed' | 'cueId' | 'sequenceId' | 'layer' | 'variation'>,
+): {
 	rate: number;
 	gainDb: number;
 } {
+	if (ctx.variation === 'voice') return { rate: 1, gainDb: 0 };
 	const seed = Number.isFinite(ctx.seed) ? Math.floor(ctx.seed) >>> 0 : 0;
 	const layer = Number.isFinite(ctx.layer) ? Math.floor(ctx.layer ?? 0) : 0;
 	const next = generator(hash32(`${ctx.sequenceId ?? ''}|${String(ctx.cueId)}|${seed}|${layer}`));
@@ -73,7 +84,7 @@ export function variationOf(ctx: Pick<VariantContext, 'seed' | 'cueId' | 'sequen
 	const v = next();
 	const rate = Math.round((1 + VARIATION_RATE * (2 * u - 1)) * 10_000) / 10_000;
 	const gainDb = Math.round(VARIATION_GAIN_DB * (2 * v - 1) * 100) / 100;
-	return { rate, gainDb: Object.is(gainDb, -0) ? 0 : gainDb };
+	return { rate: ctx.variation === 'takes' ? 1 : rate, gainDb: Object.is(gainDb, -0) ? 0 : gainDb };
 }
 
 /**

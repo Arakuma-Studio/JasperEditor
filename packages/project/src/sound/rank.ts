@@ -9,6 +9,10 @@
 // sounds whose title names more of its words (exactly or by prefix) come next, so a title match always outranks a
 // match through a type or synonym ("punch" finds "Punch" before "Crunchy impact", typed hit); then by score, then by
 // id. Filters remove entries before scoring. Decisions and thresholds: wp-note "WP1.1a".
+// P6-E10 (wp-note "Phase 6 → WP-E6"): a request's `personality` adds ±0.15 (`personalityAdjustment`) and its
+// `paletteMaterials` +0.08 for a sound sharing its family's dominant material (`materialBonusOf`) to the score.
+import type { SoundPersonality } from '../schema/sound.ts';
+import { materialBonusOf, type PaletteMaterials, personalityAdjustment } from './grammar.ts';
 import { isCommercialSafe, licensePreference, passesCommercialSafeFilter } from './license.ts';
 import {
 	isSoundTypeId,
@@ -46,6 +50,8 @@ export interface RankableSound {
 	license: string;
 	descriptors: RankDescriptors;
 	judge?: { ok: boolean; score: number } | null;
+	/** Materials its words name (P6-E9 index field; absent in older indexes: no palette bonus). */
+	materials?: readonly string[];
 }
 
 export type LengthFilter = 'short' | 'medium' | 'long';
@@ -80,6 +86,10 @@ export interface SoundRankRequest {
 	license?: LicenseFilter;
 	/** Rank by descriptor similarity to this sound (its own id is left out). */
 	similarTo?: { id?: string; descriptors: RankDescriptors };
+	/** P6-E10: sounds that suit this personality rank higher (±0.15 on the score). */
+	personality?: SoundPersonality;
+	/** P6-E10: the dominant material per family of the sequence's placed sounds (`paletteMaterials`): +0.08 bonus. */
+	paletteMaterials?: PaletteMaterials;
 	/** At most this many results (1…10 000; default all). */
 	limit?: number;
 }
@@ -105,6 +115,10 @@ export interface RankParts {
 	 * `source`, ranked before the score.
 	 */
 	titleMatch: number | null;
+	/** P6-E10: the personality's adjustment added to the score (−0.15…0.15; null without a personality). */
+	style?: number | null;
+	/** P6-E10: the palette-coherence bonus added to the score (0 or 0.08; null when it does not apply). */
+	material?: number | null;
 }
 
 export interface RankedSound<T extends RankableSound = RankableSound> {
@@ -654,6 +668,8 @@ const newParts = (): RankParts => ({
 	similarity: null,
 	rotation: 0,
 	titleMatch: null,
+	style: null,
+	material: null,
 });
 
 /** Scores an entry that passed every filter. */
@@ -707,6 +723,8 @@ function scoreInto(
 	const license = lic.preference;
 	const similarity = sim ? round6(Math.exp(-descriptorDistance(sim.descriptors, e.descriptors))) : null;
 	const rotation = round6(used.get(e.id) ?? 0);
+	const style = request.personality ? personalityAdjustment(e, request.personality) : null;
+	const material = request.paletteMaterials ? materialBonusOf(e, request.paletteMaterials) : null;
 
 	let num = RANK_WEIGHTS.durationFit * dFit + RANK_WEIGHTS.judge * judge + RANK_WEIGHTS.license * license;
 	let den = RANK_WEIGHTS.durationFit + RANK_WEIGHTS.judge + RANK_WEIGHTS.license;
@@ -731,7 +749,9 @@ function scoreInto(
 	parts.similarity = similarity;
 	parts.rotation = rotation;
 	parts.titleMatch = matched ? matched.titleMatch : null;
-	return round6(num / den - rotation);
+	parts.style = style;
+	parts.material = material;
+	return round6(num / den - rotation + (style ?? 0) + (material ?? 0));
 }
 
 /** Sorts ranked sounds (real before synth, title words, score, id) and applies the request's limit. */

@@ -2,7 +2,9 @@
 // options; WP3.3b): range (sequence, In–Out, selected clips), where cues come from (the Suggest Cues… sources, with
 // "n found · k kept" counts), density, palette / kit (the sequence's palette, or prefer one sound source), the sound
 // sources allowed (starter kit, packs, your folders, Jasper Synth, with their sound counts), "respect dialogue" and the
-// Phase 4 mix options (room glue with its send level, stop before heroes, build into heroes, a delivery preset).
+// Phase 4 mix options (room glue with its send level, stop before heroes, build into heroes, a delivery preset) and
+// the P6-E10 cue grammar (personality with its one-line description — choosing one sets its default density —, runs,
+// typing, music carries the cuts, duck under typing; starting from the sequence's style).
 // Propose runs the engine's `sound-design` plan job (progress here and in the Jobs panel; Cancel cancels it) and opens
 // review on the proposal it stores — nothing is applied until the user applies it in review.
 import {
@@ -17,9 +19,12 @@ import {
 	DELIVERY_PRESETS,
 	documentHasActiveExpressions,
 	PROJECT_CUE_SOURCES,
+	type ResolvedSoundStyle,
 	ROOM_GLUE_DEFAULT,
 	readSoundDesignSettings,
+	resolveSoundStyle,
 	SOUND_DENSITIES,
+	SOUND_PERSONALITY_PROFILES,
 	type SoundDelivery,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -36,6 +41,7 @@ import { SoundNotesList } from './MixDialogs.tsx';
 import { notesCount, planNotes } from './mix-jobs.ts';
 import { DELIVERY_IDS, deliveryOptionLabel, fmtDb, type SoundNote } from './mix-model.ts';
 import { PlanError, reviewPlanResult, runSoundPlan } from './plan-run.ts';
+import { SoundStyleFields } from './StyleControls.tsx';
 
 export const AUTO_SOUND_PASS_DIALOG = 'sound.autoSoundPass';
 
@@ -69,6 +75,8 @@ export type AutoPassChoices = {
 	respectDialogue: boolean;
 	/** Phase 4 mixing items of the proposal (absent = none). */
 	mix?: AutoPassMix;
+	/** P6-E10 cue grammar and personality (absent: the sequence's style). */
+	style?: ResolvedSoundStyle;
 };
 
 /**
@@ -115,6 +123,15 @@ export function autoPassRequest(
 			...(c.mix?.stopBefore ? { stopBefore: true } : {}),
 			...(c.mix?.build ? { build: true } : {}),
 			...(c.mix?.delivery ? { delivery: c.mix.delivery } : {}),
+			...(c.style
+				? {
+						personality: c.style.personality,
+						runs: c.style.runs,
+						typing: c.style.typing,
+						musicCarriesCuts: c.style.musicCarriesCuts,
+						duckUnderTyping: c.style.duckUnderTyping,
+					}
+				: {}),
 		},
 	};
 }
@@ -160,6 +177,7 @@ export function AutoSoundPassDialog(
 	const [delivery, setDelivery] = useState<SoundDelivery | 'none'>('none');
 	const [engineSources, setEngineSources] = useState<ReadonlySet<EngineCueSource>>(() => new Set());
 	const [snapToBeats, setSnapToBeats] = useState(false);
+	const [style, setStyle] = useState<ResolvedSoundStyle>(() => resolveSoundStyle(settings.style));
 	const rangeNow = seq ? suggestRange(seq, range, selectedClips) : null;
 	const rs = rangeNow?.start ?? -1;
 	const re = rangeNow?.end ?? -1;
@@ -202,6 +220,9 @@ export function AutoSoundPassDialog(
 				engineSources,
 				engineCues: measured.cues,
 				snapToBeats,
+				typing: style.typing,
+				musicCarriesCuts: style.musicCarriesCuts,
+				personality: style.personality,
 			}),
 		[
 			doc,
@@ -215,6 +236,9 @@ export function AutoSoundPassDialog(
 			engineSources,
 			measured.cues,
 			snapToBeats,
+			style.typing,
+			style.musicCarriesCuts,
+			style.personality,
 		],
 	);
 	const readOnly = session.getState().readOnly;
@@ -258,6 +282,7 @@ export function AutoSoundPassDialog(
 						build,
 						delivery: delivery === 'none' ? null : delivery,
 					},
+					style,
 				},
 				plan.range,
 				kit,
@@ -376,6 +401,16 @@ export function AutoSoundPassDialog(
 					onSnapToBeats={setSnapToBeats}
 					testId="auto-pass-engine-sources"
 					hint={t('Sources not analysed yet are measured while proposing (slower the first time).')}
+				/>
+				<SoundStyleFields
+					value={style}
+					onChange={(next, field) => {
+						setStyle(next);
+						// a personality brings its default density (the select below can change it again)
+						if (field === 'personality' && next.personality)
+							setDensity(SOUND_PERSONALITY_PROFILES[next.personality].density);
+					}}
+					testId="auto-pass-style"
 				/>
 				<div className="flex items-center gap-2" data-testid="auto-pass-density">
 					<span className="w-[120px] shrink-0 text-pr-muted">Density</span>

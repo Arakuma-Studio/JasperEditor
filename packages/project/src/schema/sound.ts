@@ -70,6 +70,36 @@ export type SoundDensity = (typeof SOUND_DENSITIES)[number];
 /** Delivery presets (spec 12 §2.4; `packages/project/src/sound/delivery.ts` in P4). */
 export const SOUND_DELIVERIES = ['web', 'podcast', 'broadcast-r128', 'atsc-a85'] as const;
 export type SoundDelivery = (typeof SOUND_DELIVERIES)[number];
+/**
+ * Personalities of a sound pass (spec 12 P6-E10; the table is `SOUND_PERSONALITY_PROFILES` in `sound/grammar.ts`):
+ * Refine preferences, type boosts and exclusions, preferred materials and a default density.
+ */
+export const SOUND_PERSONALITIES = ['calm', 'energetic', 'bright', 'precise', 'mechanical', 'warm'] as const;
+export type SoundPersonality = (typeof SOUND_PERSONALITIES)[number];
+/** Runs of appear / emphasis cues (P6-E10): `climb` +1 st per step (capped +4), or `flat`. */
+export const SOUND_RUN_MODES = ['climb', 'flat'] as const;
+export type SoundRunMode = (typeof SOUND_RUN_MODES)[number];
+/**
+ * Typing patterns (P6-E10): `auto` = one key per typed unit up to 25 units/s, one per word start above; `keys` /
+ * `words` force one of them; `silent` = no typing cues.
+ */
+export const SOUND_TYPING_MODES = ['auto', 'keys', 'words', 'silent'] as const;
+export type SoundTypingMode = (typeof SOUND_TYPING_MODES)[number];
+
+/**
+ * The cue grammar and style of a sequence (spec 12 P6-E10, `SoundDesignSettings.style`): what the plan job (Auto Sound
+ * Pass…, Fill Unfilled Cues), Suggest Cues…, MCP place_sound picks and find_sound_cues use when a request names no
+ * value. Every field optional; absent = the default (no personality, runs climb, typing auto, music carries the cuts,
+ * no duck under typing).
+ */
+export const SoundDesignStyleSchema = z.looseObject({
+	personality: z.enum(SOUND_PERSONALITIES).optional(),
+	runs: z.enum(SOUND_RUN_MODES).optional(),
+	typing: z.enum(SOUND_TYPING_MODES).optional(),
+	musicCarriesCuts: z.boolean().optional(),
+	duckUnderTyping: z.boolean().optional(),
+});
+export type SoundDesignStyle = DeepStrip<z.infer<typeof SoundDesignStyleSchema>>;
 
 const id = () => z.string().min(1).max(SOUND_DESIGN_LIMITS.id);
 const frame = () => z.number().int().min(0).max(SOUND_DESIGN_LIMITS.maxFrame);
@@ -217,6 +247,8 @@ export const SoundDesignSettingsSchema = z.looseObject({
 	 * is resolved by setting it; the export dialog's credits option defaults to it). Absent / null = not configured.
 	 */
 	credits: z.enum(SOUND_CREDITS_FORMATS).nullable().optional(),
+	/** The cue grammar and personality (P6-E10; `soundDesign.setSettings {style}`). Absent = every default. */
+	style: SoundDesignStyleSchema.optional(),
 });
 export type SoundDesignSettings = DeepStrip<z.infer<typeof SoundDesignSettingsSchema>>;
 
@@ -619,6 +651,24 @@ export function readSoundCue(raw: unknown, key?: string): SoundCue | null {
 	return r.success ? (r.data as SoundCue) : null;
 }
 
+/**
+ * Lenient read of a stored `SoundDesignSettings.style`: valid as it is; otherwise field by field (unreadable fields
+ * dropped, unknown newer ones kept). Null when it is not an object. Pure; never throws.
+ */
+export function readSoundDesignStyle(raw: unknown): SoundDesignStyle | null {
+	if (!isRecord(raw)) return null;
+	const ok = SoundDesignStyleSchema.safeParse(raw);
+	if (ok.success) return ok.data as SoundDesignStyle;
+	const shape = SoundDesignStyleSchema.shape;
+	const out: Record<string, unknown> = { ...unknownFields(raw, shape) };
+	for (const k of ['personality', 'runs', 'typing', 'musicCarriesCuts', 'duckUnderTyping'] as const) {
+		const v = opt(shape[k] as z.ZodType<unknown>, raw[k]);
+		if (v !== undefined) out[k] = v;
+	}
+	const r = SoundDesignStyleSchema.safeParse(out);
+	return r.success ? (r.data as SoundDesignStyle) : {};
+}
+
 /** Lenient read of stored settings: each field on its own, defaults for the unreadable ones. */
 export function readSoundDesignSettings(raw: unknown): SoundDesignSettings {
 	if (!isRecord(raw)) return { ...DEFAULT_SOUND_DESIGN_SETTINGS, sfxTrackIds: [], palette: [] };
@@ -639,6 +689,11 @@ export function readSoundDesignSettings(raw: unknown): SoundDesignSettings {
 	if (raw.palette !== undefined) out.palette = ids(raw.palette, SOUND_DESIGN_LIMITS.palette);
 	const cr = opt(shape.credits, raw.credits);
 	if (cr !== undefined) out.credits = cr;
+	if (raw.style !== undefined) {
+		const st = readSoundDesignStyle(raw.style);
+		if (st) out.style = st;
+		else delete out.style;
+	}
 	const r = SoundDesignSettingsSchema.safeParse(out);
 	return r.success ? (r.data as SoundDesignSettings) : { ...d, sfxTrackIds: [], palette: [] };
 }

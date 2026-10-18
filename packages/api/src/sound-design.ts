@@ -13,7 +13,10 @@ import {
 	SFX_ROLES,
 	SOUND_DELIVERIES,
 	SOUND_DESIGN_LIMITS,
+	SOUND_PERSONALITIES,
 	SOUND_REF_RE,
+	SOUND_RUN_MODES,
+	SOUND_TYPING_MODES,
 } from '@jasper/project';
 import { z } from 'zod';
 import { TimeSignatureSchema } from './audio-fx.ts';
@@ -63,6 +66,21 @@ export const SoundCuesOptionsSchema = z.strictObject({
 	 * true; spec 12 P6-R3). `false` = cached measurements only.
 	 */
 	voiceActivity: z.boolean().optional(),
+	/**
+	 * P6-E10 typing patterns: `auto` (one key per typed unit up to 25 units/s, one per word start above), `keys`,
+	 * `words` or `silent` (no typing cues). Default: the sequence's `soundDesign.settings.style`, else `auto`.
+	 */
+	typing: z.enum(SOUND_TYPING_MODES).optional(),
+	/**
+	 * P6-E10 "music carries the cuts": a cut inside unmuted music, outside dialogue, at half confidence (balanced drops
+	 * it, rich keeps it). Default: the sequence's style, else true.
+	 */
+	musicCarriesCuts: z.boolean().optional(),
+	/**
+	 * P6-E10 personality: its excluded types leave a cue's suggested types (when another fits), its boosted ones come
+	 * first; `density` defaults to the personality's. Default: the sequence's style personality (none); null = none.
+	 */
+	personality: z.enum(SOUND_PERSONALITIES).nullable().optional(),
 });
 export type SoundCuesOptions = z.infer<typeof SoundCuesOptionsSchema>;
 
@@ -174,9 +192,26 @@ export const SoundCuesResponseSchema = z.object({
 		heroesUnderDialogue: z.number().int().optional(),
 		/** Cues `snapToBeats` moved onto a beat. */
 		snappedToBeat: z.number().int().optional(),
+		/** P6-E10: cuts inside music at half confidence ("music carries the cut"). */
+		musicCarriesCuts: z.number().int().optional(),
+		/** P6-E10: runs of staggered appear / emphasis cues budgeted as one unit. */
+		runs: z.number().int().optional(),
 		found: z.number().int(),
 		kept: z.number().int(),
 	}),
+	/** P6-E10: cuts the music carries that the density budget left out, with their reasons. */
+	carried: z
+		.array(
+			z.object({
+				key: z.string(),
+				frame,
+				timecode: z.string(),
+				confidence: z.number(),
+				minConfidence: z.number(),
+				reason: z.string(),
+			}),
+		)
+		.optional(),
 	warnings: z.array(
 		z.object({
 			code: z.string(),
@@ -310,6 +345,21 @@ export const SoundDesignPlanStyleSchema = z.strictObject({
 	 * item the placements require; the gains are then solved against that delivery's mix.
 	 */
 	delivery: z.enum(SOUND_DELIVERIES).optional(),
+	/**
+	 * P6-E10 personality (calm, energetic, bright, precise, mechanical, warm): ranking preferences (tone, attack, weight,
+	 * texture), type boosts and exclusions, preferred materials and a default density (used when `density` is not
+	 * given). Default: the sequence's `soundDesign.settings.style.personality` (none); null = none, whatever the
+	 * sequence's.
+	 */
+	personality: z.enum(SOUND_PERSONALITIES).nullable().optional(),
+	/** P6-E10 runs of ≥ 3 appear / emphasis cues ≤ 0.6 s apart: `climb` (+1 st per step, capped +4; default) or `flat`. */
+	runs: z.enum(SOUND_RUN_MODES).optional(),
+	/** P6-E10 typing patterns of derived cues (`auto` default, `keys`, `words`, `silent`). */
+	typing: z.enum(SOUND_TYPING_MODES).optional(),
+	/** P6-E10: a cut inside unmuted music, outside dialogue, at half confidence (default true). */
+	musicCarriesCuts: z.boolean().optional(),
+	/** P6-E10: a 6 dB dip of the music under each typing run (default false). */
+	duckUnderTyping: z.boolean().optional(),
 });
 export type SoundDesignPlanStyle = z.infer<typeof SoundDesignPlanStyleSchema>;
 
@@ -440,10 +490,21 @@ export const SoundDesignPlanEventSchema = z.object({
 	types: z.array(z.string()),
 	sound: PlanSoundSchema,
 	parts: SoundRankPartsSchema,
-	/** Seeded varispeed (±2 %). */
+	/** Seeded varispeed (±2 %; 1 for keys, ticks, taps and the one voice of ui / click), times a run's climb. */
 	rate: z.number(),
-	/** Seeded gain variation (±1 dB) the placement adds to the default level. */
+	/** Seeded gain variation (±1 dB; 0 for the one voice of ui / click) the placement adds to the default level. */
 	gainOffsetDb: z.number(),
+	/** P6-E10: the variation policy of the sound's type (`voice`, `takes`, `vary`). */
+	variation: z.enum(['voice', 'takes', 'vary']).optional(),
+	/** P6-E10: the step of a run (≥ 3 staggered appear / emphasis cues): run number, position, length, semitones. */
+	run: z
+		.object({
+			group: z.string(),
+			index: z.number().int(),
+			of: z.number().int(),
+			st: z.number(),
+		})
+		.optional(),
 	alternatives: z.array(PlanSoundSchema),
 	/** Further layers on the same cue (a marker naming several types: "sfx: boom+whoosh"). */
 	extraLayers: z.array(PlanSoundSchema),
@@ -476,6 +537,8 @@ export const SOUND_DESIGN_SKIP_CODES = [
 	'NEAR_STORED',
 	'STORED',
 	'OUT_OF_RANGE',
+	/** P6-E10: a cut inside music at half confidence, under the density's minimum. */
+	'MUSIC_CARRIES_CUT',
 ] as const;
 
 export const SoundDesignPlanSkipSchema = z.object({
@@ -527,6 +590,29 @@ export const SoundDesignPlanReportSchema = z.object({
 			delivery: z.enum(SOUND_DELIVERIES).nullable(),
 			stopBefore: z.number().int(),
 			build: z.number().int(),
+		})
+		.optional(),
+	/**
+	 * P6-E10: the cue grammar the plan used (the request's style over the sequence's) and what it did: the one voice of
+	 * each ui / click type, the runs, the cuts the music carried, the typing ducks, the palette materials by family.
+	 */
+	grammar: z
+		.object({
+			personality: z.enum(SOUND_PERSONALITIES).nullable(),
+			runs: z.enum(SOUND_RUN_MODES),
+			typing: z.enum(SOUND_TYPING_MODES),
+			musicCarriesCuts: z.boolean(),
+			duckUnderTyping: z.boolean(),
+			/** type → the one sound that type plays in this sequence. */
+			voices: z.record(z.string(), z.string()),
+			/** Runs found and climbed (or kept flat). */
+			runCount: z.number().int(),
+			/** Cuts the music carried that the budget dropped (skipped `MUSIC_CARRIES_CUT`). */
+			carriedCuts: z.number().int(),
+			/** Typing dips proposed under music (`duck:` items). */
+			typingDucks: z.number().int(),
+			/** family → its dominant material after the plan (palette coherence). */
+			materials: z.record(z.string(), z.string()),
 		})
 		.optional(),
 });

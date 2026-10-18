@@ -601,6 +601,12 @@ describe('deriveCues with engine cues', () => {
 			{ type: 'clip.place', source: { mediaId: speech.mediaId }, at: 120, tracks: { audio: 'A3' } },
 		]).results[0] as { clipIds: string[] };
 		h.ok([{ type: 'essentialSound.setType', clipIds: sp.clipIds, audioType: 'dialogue' }]);
+		// the fixture's music runs under the whole edit: it carries the shot change at 60 (P6-E10, at half confidence
+		// it falls under balanced's minimum; sound-grammar.test.ts) — reported, and switched off for what follows
+		const carried = deriveCues(h.doc, h.seqId, { extraCues: scene, sources: ['scene'] });
+		expect(carried.cues).toEqual([]);
+		expect(carried.carried?.map((c) => c.frame)).toEqual([60]);
+		h.ok([{ type: 'soundDesign.setSettings', style: { musicCarriesCuts: false } }]);
 		const r = deriveCues(h.doc, h.seqId, { extraCues: scene, sources: ['scene'] });
 		expect(r.cues.map((c) => c.frame)).toEqual([60]);
 		expect(r.stats.bySource.scene).toMatchObject({ found: 1, kept: 1, suppressedByDialogue: 1 });

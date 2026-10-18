@@ -105,6 +105,23 @@ export interface DurationFit {
 	window: 'lead' | 'span' | null;
 }
 
+/**
+ * How repeated cues of a type vary (spec 12 P6-E10, "vary the take, not the pitch"): `voice` = one sound per sequence
+ * at one level, no varispeed and no gain jitter (ui, click: "one click voice, same level every time"); `takes` = rotate
+ * takes and sounds with ±1 dB gain jitter and no varispeed (key, tick, tap: random pitch on typing is a cheap tell);
+ * `vary` = the §2.3 rotation with ±2 % varispeed and ±1 dB. The policy itself is `sound/grammar.ts`.
+ */
+export type SoundVariation = 'voice' | 'takes' | 'vary';
+export const SOUND_VARIATIONS = ['voice', 'takes', 'vary'] as const;
+
+const VARIATION_OF: Readonly<Partial<Record<SoundTypeId, SoundVariation>>> = {
+	ui: 'voice',
+	click: 'voice',
+	key: 'takes',
+	tick: 'takes',
+	tap: 'takes',
+};
+
 export interface SoundTypeInfo {
 	id: SoundTypeId;
 	category: SoundCategory;
@@ -115,6 +132,8 @@ export interface SoundTypeInfo {
 	visualKinds: readonly VisualKind[];
 	durationFit: DurationFit;
 	profile: SoundTypeProfile;
+	/** How repeated cues of the type vary (P6-E10). */
+	variation: SoundVariation;
 }
 
 const P = (
@@ -169,6 +188,7 @@ const T = (
 		visualKinds: Object.freeze([...visualKinds]),
 		durationFit,
 		profile,
+		variation: VARIATION_OF[id] ?? 'vary',
 	});
 
 /**

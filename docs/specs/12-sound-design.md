@@ -1170,6 +1170,18 @@ come from earshot's launch-film grammar and study; the norms are cited in the wp
 - each personality moves the ranking in its documented direction;
 - the material counts of the starter kit and packs are recorded.
 
+*As built (WP-E6, decisions and measurements in the wp-note "Phase 6 → WP-E6")*: one pure policy module,
+`packages/project/src/sound/grammar.ts`, used by the plan job, cue derivation, the search route, MCP picks and variation
+cycling; the style is `SoundDesignSettings.style` (`soundDesign.setSettings {style}`) and every request field of the same
+name overrides it. The one voice of a ui / click type is the palette sound, else the first placed one (sequence clips,
+then the plan's earlier picks); the plan gives every use of a voice the group's lowest solved gain. Keys, ticks and taps
+rotate within their own type. A run climbs as +3 st of pitch at most plus the rest as base speed (all varispeed) and is
+budgeted as one unit when cues are derived. One key per word replaces the 12/s thinning (keys on their own frames). The
+dropped cuts the music carries are skipped `MUSIC_CARRIES_CUT` / listed as `carried` with their reason. A personality's
+boosts reorder a cue's types only within a family, and its density applies when the request names a personality but no
+density. The personality adds ±0.15 and the palette material +0.08 to the ranking score. The optional typing dip is an
+`audio.volumeDip` of −6 dB (80 ms fades) after the run's first placement. The material counts were recorded by WP-E5.
+
 **P6-E11 (P2). Music to picture: land the drop, stop on the bar, tune to the key.**
 
 - Beat-grid phase: the remix analysis puts joints ≥ 3 ms before the measured attack of the downbeat. Beat trackers

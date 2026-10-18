@@ -31,23 +31,33 @@ import {
 	flicksPerFrame,
 	isSoundTypeId,
 	type LibraryProvenance,
+	offeredTakeIds,
+	type PlacedSound,
 	type ProjectDocument,
+	parseTakeId,
 	pickVariant,
 	type Rational,
 	readLibraryProvenance,
 	requiresAttribution,
+	resolveSoundStyle,
 	type Sequence,
 	SFX_ROLES,
 	SOUND_DELIVERIES,
 	SOUND_DESIGN_FEATURE,
 	SOUND_DESIGN_LIMITS,
 	SOUND_LABELS,
+	SOUND_PERSONALITIES,
+	SOUND_PERSONALITY_PROFILES,
 	SOUND_REF_RE,
+	SOUND_RUN_MODES,
 	SOUND_TYPES,
+	SOUND_TYPING_MODES,
 	type SoundCue,
+	type SoundPersonality,
 	type SoundProposalMedia,
 	type SoundProposalPlacement,
 	type SoundTypeId,
+	type SoundVariation,
 	STOP_BEFORE_DEFAULT,
 	sequenceDialogueRanges,
 	sequenceTimecode,
@@ -61,6 +71,8 @@ import {
 	trackLabel,
 	VISUAL_KINDS,
 	type VisualKind,
+	variationOfType,
+	voiceFor,
 } from '@jasper/project';
 import { z } from 'zod';
 import { ProjectIdArg, SequenceIdArg, TIME_FORMATS } from '../arguments.ts';
@@ -88,6 +100,10 @@ import { importCommands, type Registered, resolveAudioTrack, SoundIdArg, soundCa
 import { proposalCheckNext, proposalCheckSummary } from './sound-check.ts';
 
 const CUE_DERIVE_SOURCE_LIST = CUE_DERIVE_SOURCES.join(', ');
+/** "calm (Soft, dark and sparse: …), energetic (…)…" for the tool docs (P6-E10). */
+const PERSONALITY_LIST = SOUND_PERSONALITIES.map(
+	(p) => `${p} (${SOUND_PERSONALITY_PROFILES[p].description.toLowerCase()})`,
+).join(', ');
 /** swap_sound next / previous: candidates tried in the cycle's direction when one does not fit on the track. */
 const MAX_CYCLE_TRIES = 4;
 const r3 = (x: number) => Math.round(x * 1000) / 1000;
@@ -424,7 +440,15 @@ async function candidatesOfType(
 	ctx: ToolContext,
 	type: SoundTypeId,
 	query: string | undefined,
-	opts: { visualKind?: VisualKind; windowSec?: number; usedNearby: string[]; palette: string[] },
+	opts: {
+		visualKind?: VisualKind;
+		windowSec?: number;
+		usedNearby: string[];
+		palette: string[];
+		/** P6-E10: the sequence's personality and its placed library sounds (palette coherence by material). */
+		personality?: SoundPersonality | null;
+		placed?: string[];
+	},
 	extra: Extra,
 ): Promise<SoundEntry[]> {
 	const res = await soundCall<SoundSearchResponse>(ctx, (c) =>
@@ -435,6 +459,8 @@ async function candidatesOfType(
 				...(opts.visualKind ? { visualKind: opts.visualKind } : {}),
 				...(opts.windowSec ? { windowSec: opts.windowSec } : {}),
 				...(opts.usedNearby.length ? { usedNearby: opts.usedNearby.slice(0, 16) } : {}),
+				...(opts.personality ? { personality: opts.personality } : {}),
+				...(opts.placed?.length ? { placed: opts.placed.slice(0, 64) } : {}),
 				license: 'commercial-safe',
 				// the clean takes of multi-hit recordings are candidates too (P6-E9): `pickVariant` rotates over a
 				// recording's takes when one ranks first
@@ -447,6 +473,23 @@ async function candidatesOfType(
 	const rows = res.results.map((r) => r.sound);
 	const pal = new Set(opts.palette);
 	return [...rows.filter((s) => pal.has(s.id)), ...rows.filter((s) => !pal.has(s.id))];
+}
+
+/**
+ * The placed library sounds of a sequence in frame order, with their provenance types (P6-E10: the one voice of a ui /
+ * click type is the first placed; the palette materials come from them).
+ */
+function placedSoundsOf(doc: ProjectDocument, seq: Sequence, F: number): PlacedSound[] {
+	return sfxClipsOf(seq)
+		.map((c) => ({ c, at: alignedFrameOf(c, F) }))
+		.filter((x): x is { c: SfxClip; at: number } => x.at !== null && typeof x.c.sfx?.soundId === 'string')
+		.sort((a, b) => a.at - b.at || a.c.id.localeCompare(b.c.id))
+		.map(({ c }) => ({
+			soundId: c.sfx!.soundId!,
+			types:
+				readLibraryProvenance((doc.media[c.mediaId] as { library?: unknown } | undefined)?.library)?.types ??
+				[],
+		}));
 }
 
 /** Library sounds used by placed clips near `frame` (nearest first): the rotation's "recent" list. */
@@ -467,7 +510,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 		'find_sound_cues',
 		{
 			title: 'Find sound cues',
-			description: `Derives cue suggestions — moments of the picture that may want a sound — from the edit itself (engine \`deriveCues\`): cuts (none where dialogue is heard unless respectDialogue: false), transitions (push/slide → whoosh with a pan sweep), keyframed motion (move at peak speed, land on an overshoot or abrupt stop, appear/exit on fades and scale-ups, emphasis on a pulse), text animators and typewriters (one key per typed unit, ≤ 12/s), motion-graphic intro ends and outro starts, graphics on V2+, 3D camera moves and markers named "sfx: <type>[+<type>]". Merged within 2 frames and thinned by the density budget. Each cue: frame + timecode + seconds, kind, weight (hero/support/ambient), types (suggested, best first), align (peak/start/end), pan, panSweep, confidence, reason, anchor (+ anchorText), window, from (source), storedCueId (the stored cue for the same event, or null). Also per-source stats (found, kept, merged, droppedByBudget, suppressedByDialogue, heroesUnderDialogue: derived heroes made support because speech is heard there), dialogue ranges (with the clips, tracks and what found them: transcript words, the measured voice activity of Essential Sound dialogue clips, or a whole dialogue clip; voice says whether every dialogue clip was measured) and warnings. Stores nothing: pass the cues you keep to set_sound_cues {add}. Sources: ${CUE_DERIVE_SOURCE_LIST}. The default is the edit's own sources; the engine sources measure media and must be asked for: "scene" (shot changes inside footage, Scene Edit Detection), "beat" (beats of Essential Sound music clips — tempo 50–210 BPM, never read at half or double speed; downbeats support, others ambient; timeSignature "auto" detects 3 or 4 beats per bar, or give it) and "pixel" (the rendered picture's motion: moves, landings and cuts in footage — what keyframes cannot tell; confidence ≤ 0.5; analyse_picture_motion shows it). Their analyses run as jobs the first time (cached after): this tool waits for them (waitForAnalysis, default true, up to timeoutSeconds) and asks again; analysis per source says ready / pending / none / failed. snapToBeats moves moves, transitions, emphases and reveals onto the nearest music beat within 2 frames (anchorOffset records it).`,
+			description: `Derives cue suggestions — moments of the picture that may want a sound — from the edit itself (engine \`deriveCues\`): cuts (none where dialogue is heard unless respectDialogue: false), transitions (push/slide → whoosh with a pan sweep), keyframed motion (move at peak speed, land on an overshoot or abrupt stop, appear/exit on fades and scale-ups, emphasis on a pulse), text animators and typewriters (one key per typed unit, ≤ 12/s; above 25 typed units/s one key per word start — typing "auto"), staggered appear / emphasis runs (≥ 3 within 0.6 s, budgeted as one unit), motion-graphic intro ends and outro starts, graphics on V2+, 3D camera moves and markers named "sfx: <type>[+<type>]". Merged within 2 frames and thinned by the density budget; a cut inside unmuted music (outside dialogue) has half its confidence ("music carries the cut": balanced drops it, listed in carried with its reason). Each cue: frame + timecode + seconds, kind, weight (hero/support/ambient), types (suggested, best first), align (peak/start/end), pan, panSweep, confidence, reason, anchor (+ anchorText), window, from (source), storedCueId (the stored cue for the same event, or null). Also per-source stats (found, kept, merged, droppedByBudget, suppressedByDialogue, heroesUnderDialogue: derived heroes made support because speech is heard there), dialogue ranges (with the clips, tracks and what found them: transcript words, the measured voice activity of Essential Sound dialogue clips, or a whole dialogue clip; voice says whether every dialogue clip was measured) and warnings. Stores nothing: pass the cues you keep to set_sound_cues {add}. Sources: ${CUE_DERIVE_SOURCE_LIST}. The default is the edit's own sources; the engine sources measure media and must be asked for: "scene" (shot changes inside footage, Scene Edit Detection), "beat" (beats of Essential Sound music clips — tempo 50–210 BPM, never read at half or double speed; downbeats support, others ambient; timeSignature "auto" detects 3 or 4 beats per bar, or give it) and "pixel" (the rendered picture's motion: moves, landings and cuts in footage — what keyframes cannot tell; confidence ≤ 0.5; analyse_picture_motion shows it). Their analyses run as jobs the first time (cached after): this tool waits for them (waitForAnalysis, default true, up to timeoutSeconds) and asks again; analysis per source says ready / pending / none / failed. snapToBeats moves moves, transitions, emphases and reveals onto the nearest music beat within 2 frames (anchorOffset records it).`,
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -512,6 +555,25 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 					.optional()
 					.describe(
 						'Metre of the music for the beat source’s downbeats: "auto" (default: 3 or 4 beats per bar detected from the accents) or beats per bar 2…12 (3 for a waltz)',
+					),
+				personality: z
+					.enum(SOUND_PERSONALITIES)
+					.nullable()
+					.optional()
+					.describe(
+						`Cue grammar personality (default: the sequence's style; null: none): its excluded types leave the suggested types, its boosted ones come first, and it brings its density when density is not given: ${PERSONALITY_LIST}`,
+					),
+				typing: z
+					.enum(SOUND_TYPING_MODES)
+					.optional()
+					.describe(
+						'Typing cues: "auto" (default: one key per typed unit up to 25 units/s, one per word start above), "keys", "words" or "silent"',
+					),
+				musicCarriesCuts: z
+					.boolean()
+					.optional()
+					.describe(
+						'A cut inside unmuted music, outside dialogue, at half confidence (default true): balanced drops it and lists it in carried with its reason, rich keeps it',
 					),
 				waitForAnalysis: z
 					.boolean()
@@ -562,6 +624,9 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 								...(a.minGapFrames !== undefined ? { minGapFrames: a.minGapFrames } : {}),
 								...(a.snapToBeats ? { snapToBeats: true } : {}),
 								...(a.timeSignature !== undefined ? { timeSignature: a.timeSignature } : {}),
+								...(a.personality !== undefined ? { personality: a.personality } : {}),
+								...(a.typing ? { typing: a.typing } : {}),
+								...(a.musicCarriesCuts !== undefined ? { musicCarriesCuts: a.musicCarriesCuts } : {}),
 								maxCues: a.maxCues ?? 500,
 							},
 						},
@@ -612,6 +677,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 				storedCues: res.storedCues,
 				cues,
 				stats: { ...res.stats, bySource },
+				...(res.carried?.length ? { carried: res.carried } : {}),
 				dialogue: res.dialogue.map((d) => ({ ...d, startTimecode: tc(d.start), endTimecode: tc(d.end) })),
 				...(res.voice ? { voice: res.voice } : {}),
 				...(res.analysis ? { analysis: res.analysis } : {}),
@@ -838,7 +904,17 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 			const frame0 = cue0 ? cue0.frame : await resolveAt(ctx, a.projectId, seq0, a.at!);
 			const settings = soundDesignSettingsOf(seq0);
 			const recent = recentSounds(seq0, frame0, F);
-			const picks: (null | { soundId: string; rate: number; gainDb: number; from: string[] })[] = [];
+			// P6-E10 cue grammar: the sequence's personality, its placed sounds (voices, palette materials)
+			const grammar = resolveSoundStyle(settings.style);
+			const placedNow = placedSoundsOf(first.doc, seq0, F);
+			const picks: (null | {
+				soundId: string;
+				rate: number;
+				gainDb: number;
+				from: string[];
+				variation: SoundVariation;
+				voice?: string;
+			})[] = [];
 			for (const [i, l] of a.layers.entries()) {
 				if (!l.sound) {
 					picks.push(null);
@@ -861,6 +937,8 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 						...(windowSec && windowSec > 0 ? { windowSec } : {}),
 						usedNearby: recent,
 						palette: settings.palette ?? [],
+						personality: grammar.personality,
+						placed: placedNow.map((p) => p.soundId!).filter((x, k, all) => all.indexOf(x) === k),
 					},
 					extra,
 				);
@@ -872,6 +950,32 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 						.reverse(),
 					...recent,
 				];
+				for (const s of cands) entries.set(s.id, s);
+				const variation = variationOfType(type);
+				if (variation === 'voice') {
+					// one voice per sequence (ui, click): the palette sound, else the first placed, else the best; no variation
+					const voice = voiceFor(type, {
+						candidates: cands.map((s) => ({ id: s.id, types: s.types })),
+						palette: settings.palette ?? [],
+						placed: placedNow,
+					});
+					const soundId = voice?.soundId ?? cands[0]?.id;
+					if (!soundId)
+						throw new ToolError(
+							'E_NOT_FOUND',
+							`No library sound of type "${type}"${l.sound.query ? ` matching "${l.sound.query}"` : ''}`,
+							'Try another type or query (search_sounds), or check sound_library_status.',
+						);
+					picks.push({
+						soundId,
+						rate: 1,
+						gainDb: 0,
+						from: cands.slice(0, 4).map((s) => s.id),
+						variation,
+						voice: voice?.from ?? 'best',
+					});
+					continue;
+				}
 				const v = pickVariant(
 					cands.map((s) => s.id),
 					{
@@ -880,6 +984,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 						sequenceId: seq0.id,
 						layer: i,
 						recentSoundIds: used,
+						variation,
 					},
 				);
 				if (!v)
@@ -888,12 +993,12 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 						`No library sound of type "${type}"${l.sound.query ? ` matching "${l.sound.query}"` : ''}`,
 						'Try another type or query (search_sounds), or check sound_library_status.',
 					);
-				for (const s of cands) entries.set(s.id, s);
 				picks.push({
 					soundId: v.soundId,
 					rate: v.rate,
 					gainDb: v.gainDb,
 					from: cands.slice(0, 4).map((s) => s.id),
+					variation,
 				});
 			}
 			const soundIds = a.layers.map((l, i) => l.soundId ?? picks[i]?.soundId ?? null);
@@ -1079,7 +1184,15 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 						: {}),
 					...(p.trimmedHeadSec > 0 ? { trimmedHeadSec: p.trimmedHeadSec } : {}),
 					...(pick
-						? { picked: { from: pick.from, variationRate: pick.rate, variationGainDb: pick.gainDb } }
+						? {
+								picked: {
+									from: pick.from,
+									variationRate: pick.rate,
+									variationGainDb: pick.gainDb,
+									variation: pick.variation,
+									...(pick.voice ? { voice: pick.voice } : {}),
+								},
+							}
 						: {}),
 				};
 			});
@@ -1108,7 +1221,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 		{
 			title: 'Swap sound',
 			description:
-				'Replaces the sound of a placed clip with another library sound in ONE undo step, keeping where its aligned point (peak, start or end) plays, its track, role, pan, gain, effects, group and cue link (keyframes keep their times); the clip covers the whole new sound, its tail included. to: a soundId — the clip\'s own sound registers it again and swaps the fresh copy in (Sound Check\'s fix for a sound whose tail is cut: copies made before trailing silence was added end inside the last frame); refused when the project\'s copy is already current — or "next" / "previous" to cycle: first the alternates given to place_sound, then sounds of the same family most similar to the original, then the most similar sounds of any family; the cycle keeps the sound first placed as its anchor across calls (a clip placed without alternates stores it on its first swap), so next / previous progress and come back to it. A candidate that does not fit on the clip’s track is skipped (listed in skipped). Returns the old and new sound, the position in the cycle and the aligned frame.',
+				'Replaces the sound of a placed clip with another library sound in ONE undo step, keeping where its aligned point (peak, start or end) plays, its track, role, pan, gain, effects, group and cue link (keyframes keep their times); the clip covers the whole new sound, its tail included. to: a soundId — the clip\'s own sound registers it again and swaps the fresh copy in (Sound Check\'s fix for a sound whose tail is cut: copies made before trailing silence was added end inside the last frame); refused when the project\'s copy is already current — or "next" / "previous" to cycle: first the alternates given to place_sound, then — when the original is a take — the other clean takes of its recording ("vary the take, not the pitch"), then sounds of the same family most similar to the original, then the most similar sounds of any family; the cycle keeps the sound first placed as its anchor across calls (a clip placed without alternates stores it on its first swap), so next / previous progress and come back to it. A candidate that does not fit on the clip’s track is skipped (listed in skipped). Returns the old and new sound, the position in the cycle and the aligned frame.',
 			input: {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1).max(128).describe('A placed sound clip (place_sound, insert_sound)'),
@@ -1408,6 +1521,12 @@ async function cycleList(
 	for (const s of alts) add(s, 'alternatives');
 	if (!origin) return out;
 	add(origin, 'alternatives');
+	// P6-E10 "vary the take, not the pitch": a take's sibling takes come next (the recording's clean takes)
+	const parent = parseTakeId(origin)?.parentId;
+	if (parent) {
+		const rec = await soundCall<SoundEntry>(ctx, (c) => c.getSound(parent)).catch(() => null);
+		for (const id of rec ? offeredTakeIds(rec) : []) add(id, 'takes');
+	}
 	let types: string[] = prov?.types ?? [];
 	try {
 		types = (await soundCall<SoundEntry>(ctx, (c) => c.getSound(origin))).types;
@@ -1769,7 +1888,7 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 		'plan_sound_design',
 		{
 			title: 'Plan sound design (propose)',
-			description: `Plans sound effects for a sequence and stores them as a PROPOSAL for the user to review — nothing in the project changes (spec 12 P3-R3). The engine takes the cues (cues "auto", the default: the sequence's unfilled stored cues plus cues derived from the edit — cuts, transitions, moves and lands, text animators, motion graphics, "sfx:" markers — within the density budget, never a plain cut under spoken words; or cue ids of stored cues), ranks library sounds for each (its types, visual kind and window, commercial-safe licences only, palette sounds first, real recordings before Jasper Synth), rotates among the best so neighbours differ (seeded ±2 % speed, ±1 dB), and proposes one placement per cue (peak-aligned, role from the cue weight, align / pan / sweep from the cue) with 1–3 alternatives and a why-line; a marker naming several types ("sfx: boom+whoosh") gets one layer per type. Each sound's gain is SOLVED against the bed (the masking solver of rebalance_sfx: every layer and every alternative measured in place, the alternative with the item's other chosen sounds): the why-line ends with its level and what limited it ("−16.2 dB, limited by dialogue A2"); without an engine that can render audio the placement's default level by role applies (warning W_LEVELS_UNMEASURED). style {roomGlue, stopBefore, build, delivery} adds the mixing items (room glue and the delivery preset as setup items every placement requires — the gains are solved against them, and the delivery stores the loudness of the mix WITH the planned sounds so the preview is normalised right after the accept — then one stop-before dip and one build per hero with music). Deterministic for the same edit, library and seed. Waits for the job (timeoutSeconds, default 300) and returns the proposalId, a table (item | timecode | cue | sound | role | align | alternates | gain | mix), per event the gain, target and achieved lift and limitedBy (layers: their own gains), conflicts (the earlier, safety constraint kept; clipId is the item's layer ref $sfx_<n>_<layer>, the placed clip does not exist yet), levels (how they were measured), the skipped cues with reasons and warnings (the solver's for the chosen sounds and for each alternative, naming the item and alternative). check: true also runs Sound Check on the new proposal (soundCheck: fixes · introduces, per item; sound_check {proposalId}) — do it before handing it over. Then ASK THE USER to review it in the editor's Review panel (hear in context, keep / reject, swap alternates, notes, apply as one undo step) and call wait_for_proposal; never accept it yourself unless the user asked you to apply it.`,
+			description: `Plans sound effects for a sequence and stores them as a PROPOSAL for the user to review — nothing in the project changes (spec 12 P3-R3). The engine takes the cues (cues "auto", the default: the sequence's unfilled stored cues plus cues derived from the edit — cuts, transitions, moves and lands, text animators, motion graphics, "sfx:" markers — within the density budget, never a plain cut under spoken words; or cue ids of stored cues), ranks library sounds for each (its types, visual kind and window, commercial-safe licences only, palette sounds first, real recordings before Jasper Synth), rotates among the best so neighbours differ (seeded ±2 % speed, ±1 dB), and proposes one placement per cue (peak-aligned, role from the cue weight, align / pan / sweep from the cue) with 1–3 alternatives and a why-line; a marker naming several types ("sfx: boom+whoosh") gets one layer per type. Each sound's gain is SOLVED against the bed (the masking solver of rebalance_sfx: every layer and every alternative measured in place, the alternative with the item's other chosen sounds): the why-line ends with its level and what limited it ("−16.2 dB, limited by dialogue A2"); without an engine that can render audio the placement's default level by role applies (warning W_LEVELS_UNMEASURED). style {roomGlue, stopBefore, build, delivery} adds the mixing items (room glue and the delivery preset as setup items every placement requires — the gains are solved against them, and the delivery stores the loudness of the mix WITH the planned sounds so the preview is normalised right after the accept — then one stop-before dip and one build per hero with music). The cue grammar (style personality / runs / typing / musicCarriesCuts / duckUnderTyping; default the sequence's soundDesign.settings.style): ui and click cues share ONE voice (the palette sound, else the first placed) at one level with no variation; keys, ticks and taps rotate takes at speed 1 (no varispeed); runs of staggered pops / UI / chimes / ticks climb +1 st per step; fast typing gets one key per word; cuts the music carries are skipped with their reason; sounds sharing the dominant material of their family's placed sounds rank higher (one material family per film). The report's grammar says what it did (voices, runCount, carriedCuts, typingDucks, materials); each event has its rate, variation and run step. Deterministic for the same edit, library and seed. Waits for the job (timeoutSeconds, default 300) and returns the proposalId, a table (item | timecode | cue | sound | role | align | alternates | gain | mix), per event the gain, target and achieved lift and limitedBy (layers: their own gains), conflicts (the earlier, safety constraint kept; clipId is the item's layer ref $sfx_<n>_<layer>, the placed clip does not exist yet), levels (how they were measured), the skipped cues with reasons and warnings (the solver's for the chosen sounds and for each alternative, naming the item and alternative). check: true also runs Sound Check on the new proposal (soundCheck: fixes · introduces, per item; sound_check {proposalId}) — do it before handing it over. Then ASK THE USER to review it in the editor's Review panel (hear in context, keep / reject, swap alternates, notes, apply as one undo step) and call wait_for_proposal; never accept it yourself unless the user asked you to apply it.`,
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -1852,6 +1971,37 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 							.optional()
 							.describe(
 								'Delivery preset as a setup item (loudness, Auto-Match, ducking; see apply_delivery); gains are solved against it',
+							),
+						personality: z
+							.enum(SOUND_PERSONALITIES)
+							.nullable()
+							.optional()
+							.describe(
+								`Cue grammar personality (default: the sequence's style; null: none): ${PERSONALITY_LIST}. It ranks sounds by its tone / attack / weight / texture and materials, boosts and excludes types, and brings its density when density is not given`,
+							),
+						runs: z
+							.enum(SOUND_RUN_MODES)
+							.optional()
+							.describe(
+								'Runs of ≥ 3 appear / emphasis cues ≤ 0.6 s apart filled with pop, ui, chime or tick (staggered cards, notifications): "climb" (default, +1 st per step by varispeed, capped +4) or "flat"',
+							),
+						typing: z
+							.enum(SOUND_TYPING_MODES)
+							.optional()
+							.describe(
+								'Typing cues: "auto" (default: one key per typed unit up to 25 units/s, one per word start above), "keys", "words" or "silent"',
+							),
+						musicCarriesCuts: z
+							.boolean()
+							.optional()
+							.describe(
+								'A cut inside unmuted music, outside dialogue, at half confidence: balanced drops it (skipped MUSIC_CARRIES_CUT with its reason), rich keeps it (default true)',
+							),
+						duckUnderTyping: z
+							.boolean()
+							.optional()
+							.describe(
+								'A 6 dB dip of the music under each typing run (a duck: item after its first key; default false)',
 							),
 					})
 					.optional(),
@@ -1998,7 +2148,11 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 						: {}),
 					...(e.stopBeforeItemId ? { stopBeforeItemId: e.stopBeforeItemId } : {}),
 					...(e.buildItemId ? { buildItemId: e.buildItemId } : {}),
+					rate: e.rate,
+					...(e.variation ? { variation: e.variation } : {}),
+					...(e.run ? { run: e.run } : {}),
 				})),
+				...(rep.grammar ? { grammar: rep.grammar } : {}),
 				...(rep.conflicts?.length ? { conflicts: rep.conflicts } : {}),
 				...(rep.levels ? { levels: rep.levels } : {}),
 				...(rep.mix ? { mix: rep.mix } : {}),

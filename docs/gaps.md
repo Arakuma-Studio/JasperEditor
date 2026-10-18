@@ -543,6 +543,27 @@ events ≥ 3 dB over their bed do) and amplitude-modulated sounds (syllables) re
 hides is looked at where its clip has its own onset (`guided`: 2 of 10 hits 6 dB under music in the test); transcript
 lines are English in every UI language (the panel prints the engine's lines verbatim, as agents read them).
 
+Phase 6 → WP-E6 ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP-E6"; spec 12 §4 P6-E10; earshot's
+launch grammar adapted, `licenses/ported/earshot.md`): one cue grammar module every path uses — ui / click cues share
+ONE voice at one level (no variation; the plan solves one gain for them), keys / ticks / taps rotate takes at speed 1,
+runs of ≥ 3 staggered appear / emphasis pops, UI blips, chimes or ticks climb +1 st per step (capped +4) and are budgeted
+as one unit, typing faster than 25 units/s gets one key per word start, a cut inside music outside dialogue is at half
+confidence (balanced drops it, reported `MUSIC_CARRIES_CUT`), six personalities (ranking preferences, type boosts and
+exclusions, materials, default density), and a ranking bonus for the dominant material of the placed sounds' family; the
+style is stored per sequence (`soundDesign.setSettings {style}`) and set in Preferences ▸ Sound Library, Auto Sound Pass…
+and Suggest Cues…; MCP `plan_sound_design` style options, `find_sound_cues` options, `place_sound` picks and `swap_sound`
+sibling takes follow it, and Sound Check's REPEAT no longer flags the one voice. Measured in an export: a 4-card stagger plays 1000.0 / 1059.5 / 1122.5 / 1189.2 Hz from 1 kHz
+pops (0 / 1 / 2 / 3 st) and three clicks peak at −10.25 dBFS each. Also fixed: a plan proposal holding a take failed
+validation (`~` in a setup item id). Rerun `packages/project/test/sound-grammar.test.ts`,
+`apps/engine/test/sound-design-grammar.test.ts`, `apps/engine/test/sound-grammar-export.test.ts`,
+`apps/mcp/test/sound-grammar.test.ts`, `apps/web/test/sound-style.test.tsx`, `e2e/sound-grammar.spec.ts`. Limits left:
+the personality table and its weights are decisions, not measurements; the one-voice rule picks per type within one
+plan or pick, it does not re-voice clicks already placed with other sounds, and variation cycling of a click clip
+changes that clip alone; a run's fifth and later steps read back in Essential Sound ▸ Pitch as +3 st over a faster base
+speed; one key per word needs the text's words (a Range Selector based on characters maps its units to word starts of
+the clip's text; lines and words selectors are not typing); the typing dip is a separate item that the user accepts with
+the run's first key.
+
 Phase 6 → WP-E2 ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP-E2"; spec 12 §4 P6-E4, P6-E5; the
 ideas are earshot's `qa_ok` and critics' "variants", nothing ported): a Sound Check finding can be acknowledged as a
 deliberate exception with a reason (`soundDesign.acknowledgeIssue` / `unacknowledgeIssue`, undoable; ≤ 500 per sequence;

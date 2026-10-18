@@ -246,7 +246,15 @@ export async function solvePlanGains(
 	draft: ProposalDraft,
 	report: SoundDesignPlanReport,
 	deps: PlanLevelDeps,
-	opts: { delivery?: SoundDelivery; mgTemplates?: MgTemplateRegistry } = {},
+	opts: {
+		delivery?: SoundDelivery;
+		mgTemplates?: MgTemplateRegistry;
+		/**
+		 * P6-E10: groups of place items whose layer 0 plays one voice (a ui / click type's one sound): each group gets
+		 * ONE level, the lowest solved gain of its members (so every member's limits still hold).
+		 */
+		sameLevel?: readonly (readonly string[])[];
+	} = {},
 ): Promise<PlanLevelsResult> {
 	const t0 = Date.now();
 	if (!deps.ffmpeg || !deps.registry)
@@ -367,6 +375,29 @@ export async function solvePlanGains(
 		for (const c of conflictsOf(r, t.itemId))
 			conflicts.push({ ...c, clipId: layerRef(t.itemId, t.layer), message: named(c.message) });
 	});
+	// P6-E10 one voice, one level: the members of a group come down to the group's lowest solved gain.
+	for (const group of opts.sameLevel ?? []) {
+		const clips = group
+			.map((id) => main.clips.get(id)?.[0])
+			.filter((c): c is string => typeof c === 'string' && levelOf.has(c));
+		if (clips.length < 2) continue;
+		const min = Math.min(...clips.map((c) => levelOf.get(c)!.gainDb));
+		for (const c of clips) {
+			const l = levelOf.get(c)!;
+			const d = Math.round((l.gainDb - min) * 100) / 100;
+			if (!(d > 0)) continue;
+			const down = (x: number | null) => (x === null ? null : Math.round((x - d) * 100) / 100);
+			levelOf.set(c, {
+				...l,
+				gainDb: min,
+				achievedLiftDb: down(l.achievedLiftDb),
+				peakOverBedLu: down(l.peakOverBedLu),
+				truePeakDb: down(l.truePeakDb),
+				limitedBy: [...l.limitedBy, 'voice'].slice(0, 16),
+				reason: `${l.reason}; −${d} dB more: one level for every use of this voice`.slice(0, 300),
+			});
+		}
+	}
 	const solverWarnings = new Map<string, { code: string; message: string }>();
 	const keepWarning = (w: { code: string; message: string }) => {
 		if (w.code === 'W_CONFLICT') return; // reported as `conflicts`

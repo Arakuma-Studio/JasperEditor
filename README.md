@@ -518,7 +518,11 @@ Tools (357; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `analyze_picture_motion` (the rendered picture's motion per frame: moves, landings and cuts in
   footage, with a PNG strip) `set_sound_cues` `place_sound` (peak-exact, layers, alternates; proposes unless mode
   "apply") `swap_sound` `align_peak` · `plan_sound_design` (a whole pass as one proposal, gains solved against the
-  bed; style options room glue, stop-before, build, delivery; `style.cueSources` picks where derived cues come from) ·
+  bed; style options room glue, stop-before, build, delivery; `style.cueSources` picks where derived cues come from;
+  the cue grammar — one click voice at one level, keys as takes at speed 1, climbing runs, one key per word for fast
+  typing, music carries the cuts, palette materials — with style `personality` / `runs` / `typing` /
+  `musicCarriesCuts` / `duckUnderTyping`, defaulting to the sequence's `soundDesign.setSettings {style}`; find_sound_cues
+  and place_sound picks follow it too) ·
   `rebalance_sfx` (masking solver: each sound effect clears the bed by its target lift, with what limited it) ·
   `apply_delivery` (web / podcast / R128 / A/85: Mix loudness, Auto-Match by type, ducking, measured) `set_room_glue` (a
   shared "SFX Room" reverb) · `sound_check` (the delivered mix measured: findings with safe fixes judged together, in the

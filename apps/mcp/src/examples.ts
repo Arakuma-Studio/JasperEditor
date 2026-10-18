@@ -403,7 +403,13 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		soundIds: ['snd_0123456789abcdef'],
 		mode: 'add',
 	},
-	'soundDesign.setSettings': { type: 'soundDesign.setSettings', density: 'sparse', delivery: 'web', seed: 7 },
+	'soundDesign.setSettings': {
+		type: 'soundDesign.setSettings',
+		density: 'sparse',
+		delivery: 'web',
+		seed: 7,
+		style: { personality: 'calm', typing: 'auto', musicCarriesCuts: true },
+	},
 	// The peak 0.25 s into the media (flicks): the Timeline's peak handle Shift-drag.
 	'soundDesign.setPeak': {
 		type: 'soundDesign.setPeak',

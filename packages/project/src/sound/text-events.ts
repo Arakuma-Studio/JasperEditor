@@ -59,3 +59,39 @@ export function typewriterOffsets(
 	if (side === 'in') return typed;
 	return typed.map((x) => windowFrames - x).reverse();
 }
+
+/**
+ * The units of a text that start a word (spec 12 P6-E10 "one key per word" for fast typing), as indices into the units
+ * `textUnitCount` / the Range Selector counts: `char` = non-space graphemes (a typewriter's characters, a selector's
+ * "characters excluding spaces"), `charWithSpaces` = every grapheme except line breaks (a selector's "characters").
+ * A word starts at a non-space grapheme after whitespace (line breaks included) or at the start. Pure.
+ */
+export function wordStartUnits(text: string, basis: 'char' | 'charWithSpaces' = 'char'): number[] {
+	if (typeof text !== 'string' || text.length === 0) return [];
+	const t = text.slice(0, 20_000);
+	const Seg = (globalThis as { Intl?: { Segmenter?: new (l?: string, o?: object) => unknown } }).Intl
+		?.Segmenter;
+	const graphemes: string[] = Seg
+		? Array.from(
+				(
+					new Seg(undefined, { granularity: 'grapheme' }) as {
+						segment(s: string): Iterable<{ segment: string }>;
+					}
+				).segment(t),
+				(s) => s.segment,
+			)
+		: Array.from(t);
+	const out: number[] = [];
+	let withSpaces = 0;
+	let noSpace = 0;
+	let afterSpace = true;
+	for (const g of graphemes) {
+		const lineBreak = /^(\r?\n|\r)$/.test(g);
+		const space = /^\s+$/u.test(g);
+		if (!space && afterSpace) out.push(basis === 'char' ? noSpace : withSpaces);
+		if (!lineBreak) withSpaces++;
+		if (!space) noSpace++;
+		afterSpace = space;
+	}
+	return out;
+}

@@ -21,6 +21,8 @@ import {
 	type Sequence,
 	SOUND_DESIGN_LIMITS,
 	type SoundCue,
+	type SoundPersonality,
+	type SoundTypingMode,
 	sequenceDuration,
 	type VoiceActivity,
 } from '@jasper/project';
@@ -47,6 +49,13 @@ export type SuggestOptions = {
 	replace: boolean;
 	/** Selected clip ids (range `selection`). */
 	selectedClips?: readonly string[];
+	/**
+	 * P6-E10 cue grammar (absent: the sequence's `soundDesign.settings.style`): typing patterns, "music carries the
+	 * cuts" and the personality's type exclusions and boosts (`null` = none).
+	 */
+	typing?: SoundTypingMode;
+	musicCarriesCuts?: boolean;
+	personality?: SoundPersonality | null;
 };
 
 export type SuggestPlan = {
@@ -115,6 +124,9 @@ export function planSuggestion(doc: ProjectDocument, sequenceId: string, o: Sugg
 		respectDialogue: o.respectDialogue,
 		mgTemplates: mgRegistry,
 		...(o.voiceActivity ? { voiceActivity: o.voiceActivity } : {}),
+		...(o.typing ? { typing: o.typing } : {}),
+		...(o.musicCarriesCuts !== undefined ? { musicCarriesCuts: o.musicCarriesCuts } : {}),
+		...(o.personality !== undefined ? { personality: o.personality } : {}),
 	};
 	// Found counts do not depend on the selection; kept counts do (merging), so both runs are needed unless all are on.
 	const engineSources = o.engineSources ?? new Set<EngineCueSource>();
