@@ -644,6 +644,49 @@ describe('sound library MCP tools', { timeout: 900_000 }, () => {
 		);
 	});
 
+	it('export_sound_credits writes the credits file (never overwriting) like File ▸ Export ▸ Sound Credits…', async () => {
+		const p = (await ok<{ projectId: string }>('create_project', { name: 'Credits File' })).body.projectId;
+		const out = join(work, 'credits-out');
+		// Nothing used yet: nothing to write.
+		expect((await fails('export_sound_credits', { projectId: p, path: out })).code).toBe('E_INVALID_PARAM');
+		expect((await fails('export_sound_credits', { projectId: p, path: 'relative/credits.md' })).code).toBe(
+			'E_INVALID_PARAM',
+		);
+		await ok('insert_sound', { projectId: p, soundId: byTitle.get('Punch')!.soundId, at: 30 });
+		const listed = (await ok<{ text: string }>('list_sound_credits', { projectId: p })).body.text;
+		// A folder: named after the project, Markdown by default.
+		mkdirSync(out, { recursive: true });
+		const a = (
+			await ok<{ path: string; format: string; count: number }>('export_sound_credits', {
+				projectId: p,
+				path: out,
+			})
+		).body;
+		expect(a).toMatchObject({ path: join(out, 'Credits_File-sound-credits.md'), format: 'md', count: 1 });
+		expect(readFileSync(a.path, 'utf8')).toBe(listed);
+		// The same name again: a free name, the first file untouched.
+		const b = (await ok<{ path: string }>('export_sound_credits', { projectId: p, path: out })).body;
+		expect(b.path).toBe(join(out, 'Credits_File-sound-credits (2).md'));
+		expect(readFileSync(a.path, 'utf8')).toBe(listed);
+		// A file path: the format follows its extension.
+		const csvPath = join(out, 'sub', 'list.csv');
+		const c = (
+			await ok<{ path: string; format: string }>('export_sound_credits', { projectId: p, path: csvPath })
+		).body;
+		expect(c).toMatchObject({ path: csvPath, format: 'csv' });
+		expect(readFileSync(csvPath, 'utf8').split('\n')[0]).toContain('title');
+		// CC0 needs no credit: attributionOnly has nothing to write, and list_sound_credits says the same.
+		expect(
+			(await ok<{ count: number }>('list_sound_credits', { projectId: p, attributionOnly: true })).body.count,
+		).toBe(0);
+		expect(
+			(await fails('export_sound_credits', { projectId: p, path: out, attributionOnly: true })).code,
+		).toBe('E_INVALID_PARAM');
+		expect(
+			(await fails('export_sound_credits', { projectId: p, path: out, sequenceId: 'seq_nope' })).code,
+		).toBe('E_NOT_FOUND');
+	});
+
 	it('sound folders need the user: refused without a window, denied, approved; CC-BY credits', async () => {
 		const folder = join(work, 'my sounds');
 		mkdirSync(folder);

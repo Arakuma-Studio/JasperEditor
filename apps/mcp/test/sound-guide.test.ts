@@ -49,6 +49,13 @@ describe('SOUND_GUIDE (spec 12 §2.10)', () => {
 			'acknowledge_sound_issue',
 			'warnings and infos only',
 			'source + material + action + character',
+			// the rest of the §2.10 text: auto gain, the palette, the check, its safe fixes, listen-here, credits
+			'use auto gain',
+			'palette',
+			'sound_check',
+			'only the fixes marked safe',
+			'listen-here timecodes verbatim',
+			'export_sound_credits',
 		])
 			expect(g, phrase).toContain(phrase);
 	});
