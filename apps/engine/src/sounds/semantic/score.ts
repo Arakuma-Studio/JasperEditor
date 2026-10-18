@@ -7,6 +7,9 @@
 //   s(a, x) = a·x − λ ā·x            (ā = mean library embedding; λ = min(1, n / 32) for n embedded sounds)
 //   z(a, q) = (s(a, q) − mean_i s(a, v_i)) / std_i s(a, v_i)
 //
+// Ranking among sounds adds the query-side z (the cosine's z among the ranked sounds' cosines for that description):
+// key = z(a, q) + (a·q − mean) / std. Measured on our labelled packs it ranks better than either alone (wp-note).
+//
 // mean_i and std_i are computed without the 300 dot products per sound: mean_i s = a·v̄ − λ ā·v̄ and
 // var_i s = aᵀCa − 2λ aᵀCā + λ² āᵀCā, with v̄ and C the vocabulary's mean and covariance; aᵀC is cached per embedding
 // (`audioStats`), and Cā = mean(Ca) because it is linear. Pure and deterministic (fixed summation order).
@@ -33,10 +36,33 @@ export function verdictOf(z: number): SoundMatchVerdict {
 	return SOUND_MATCH_VERDICTS[3];
 }
 
-/** The 0…1 describe part of the ranking (`SoundRankRequest.semantic`): z / 4, clamped (z ≤ 0 → 0: filtered out). */
-export function semanticScoreOf(z: number): number {
-	if (!Number.isFinite(z) || z <= 0) return 0;
-	return Math.round(Math.min(1, z / 4) * 1e6) / 1e6;
+/**
+ * The 0…1 describe part of the ranking (`SoundRankRequest.semantic`) from a ranking key (`rankKeys`): key / 8, clamped
+ * (key ≤ 0 → 0: the sound is filtered out).
+ */
+export function semanticScoreOf(key: number): number {
+	if (!Number.isFinite(key) || key <= 0) return 0;
+	return Math.round(Math.min(1, key / 8) * 1e6) / 1e6;
+}
+
+/** The text the model reads for a description or a vocabulary phrase (the captions CLAP was trained on read so). */
+export function captionOf(text: string): string {
+	return `this is a sound of ${text}`;
+}
+
+/**
+ * Ranking keys of matches of one description to many sounds (or windows): each one's vocabulary z plus the z of its
+ * cosine among theirs (population standard deviation; one match: its z alone).
+ */
+export function rankKeys(matches: readonly { z: number; cosine: number }[]): number[] {
+	const n = matches.length;
+	if (n === 0) return [];
+	let mu = 0;
+	for (const m of matches) mu += m.cosine / n;
+	let v = 0;
+	for (const m of matches) v += (m.cosine - mu) ** 2 / n;
+	const sd = Math.sqrt(v);
+	return matches.map((m) => round4(m.z + (n > 1 && sd > 1e-9 ? (m.cosine - mu) / sd : 0)));
 }
 
 export function dot(a: ArrayLike<number>, b: ArrayLike<number>): number {
@@ -181,10 +207,10 @@ export function fineWindows(
 	return out.sort((x, y) => x.startSec - y.startSec || x.endSec - y.endSec);
 }
 
-/** The best `count` scored windows that do not overlap (z descending, then earlier first). */
-export function pickMoments<T extends { window: ClapWindow; z: number }>(scored: readonly T[], count: number): T[] {
+/** The best `count` scored windows that do not overlap (key descending, then earlier first). */
+export function pickMoments<T extends { window: ClapWindow; key: number }>(scored: readonly T[], count: number): T[] {
 	const sorted = [...scored].sort(
-		(a, b) => b.z - a.z || a.window.startSec - b.window.startSec || a.window.endSec - b.window.endSec,
+		(a, b) => b.key - a.key || a.window.startSec - b.window.startSec || a.window.endSec - b.window.endSec,
 	);
 	const out: T[] = [];
 	for (const s of sorted) {
@@ -195,10 +221,10 @@ export function pickMoments<T extends { window: ClapWindow; z: number }>(scored:
 	return out;
 }
 
-/** The coarse regions to refine: the best REFINED_REGIONS windows by z (overlap allowed: neighbours both refine). */
-export function regionsToRefine<T extends { window: ClapWindow; z: number }>(scored: readonly T[]): ClapWindow[] {
+/** The coarse regions to refine: the best REFINED_REGIONS windows by key (overlap allowed: neighbours both refine). */
+export function regionsToRefine<T extends { window: ClapWindow; key: number }>(scored: readonly T[]): ClapWindow[] {
 	return [...scored]
-		.sort((a, b) => b.z - a.z || a.window.startSec - b.window.startSec)
+		.sort((a, b) => b.key - a.key || a.window.startSec - b.window.startSec)
 		.slice(0, REFINED_REGIONS)
 		.map((s) => s.window);
 }

@@ -46,8 +46,10 @@ import {
 	coarseWindows,
 	fineWindows,
 	matchOf,
+	captionOf,
 	pickMoments,
 	queryBias,
+	rankKeys,
 	type Reference,
 	referenceOf,
 	regionsToRefine,
@@ -286,9 +288,10 @@ export class SemanticService {
 
 	/** Unit embeddings of texts, from the cache or the model (the cache keeps the vocabulary and recent queries). */
 	private async textVectors(ctx: ModelContext, texts: string[], signal?: AbortSignal): Promise<Float32Array[]> {
-		const keys = texts.map(textKey);
+		const captions = texts.map(captionOf);
+		const keys = captions.map(textKey);
 		const out: (Float32Array | undefined)[] = await Promise.all(keys.map((k) => ctx.texts.get(k)));
-		const missing = texts.filter((_, i) => !out[i]);
+		const missing = captions.filter((_, i) => !out[i]);
 		if (missing.length) {
 			const vs = await this.runtime.embedTexts(ctx.dir, missing, signal);
 			let j = 0;
@@ -297,7 +300,7 @@ export class SemanticService {
 					out[i] = vs[j++]!;
 					await ctx.texts.set(keys[i]!, out[i]!);
 				}
-			const vocabKeys = new Set(SOUND_VOCABULARY.map(textKey));
+			const vocabKeys = new Set(SOUND_VOCABULARY.map((v) => textKey(captionOf(v))));
 			for (const k of keys)
 				if (!vocabKeys.has(k)) {
 					const at = this.recentQueries.indexOf(k);
@@ -372,11 +375,13 @@ export class SemanticService {
 			const bias = queryBias(q!, ref);
 			const scores = new Map<string, number>();
 			const matches = new Map<string, SoundMatch>();
-			for (const it of items) {
-				const m = matchOf(it.a, it.stats, q!, bias, ref);
-				scores.set(it.e.id, semanticScoreOf(m.z));
+			const ms = items.map((it) => matchOf(it.a, it.stats, q!, bias, ref));
+			const keys = rankKeys(ms);
+			items.forEach((it, i) => {
+				const m = ms[i]!;
+				scores.set(it.e.id, semanticScoreOf(keys[i]!));
 				matches.set(it.e.id, { z: m.z, cosine: m.cosine, verdict: verdictOf(m.z) });
-			}
+			});
 			const pending = entries.length - items.length;
 			const job = pending > 0 ? await this.autoEmbed() : this.embedJob();
 			return {
@@ -580,14 +585,13 @@ export class SemanticService {
 					});
 					if (computed && computed % 64 < MOMENT_BATCH) await store.flush();
 				}
-				return windows.map((w, i) => {
-					const a = vectors[i]!;
-					return { window: w, a, ...matchOf(a, audioStats(a, cal), q!, bias, ref) };
-				});
+				const ms = vectors.map((a) => matchOf(a, audioStats(a, cal), q!, bias, ref));
+				const keys = rankKeys(ms);
+				return windows.map((w, i) => ({ window: w, ...ms[i]!, key: keys[i]! }));
 			};
 			const coarse = coarseWindows(range.startSec, range.endSec);
 			let regions: ClapWindow[] = [range];
-			let scored: { window: ClapWindow; z: number; cosine: number }[] = [];
+			let scored: { window: ClapWindow; z: number; cosine: number; key: number }[] = [];
 			if (coarse.length) {
 				const c = await embedAll(coarse, 0.02, lengthSec >= CLAP_WINDOW_SEC ? 0.9 : 0.7);
 				regions = regionsToRefine(c);
