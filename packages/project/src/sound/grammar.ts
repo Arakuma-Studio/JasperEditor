@@ -175,6 +175,8 @@ export type RunCandidate = {
 	type: string | null;
 	/** The cue has its own pitch (an explicit pitchSt): never re-pitched, it ends a run. */
 	fixedPitch?: boolean;
+	/** A key of a typing pattern (typewriter, character reveal): typing is not a run, whatever fills it; it ends one. */
+	typing?: boolean;
 };
 
 export type RunStep = {
@@ -189,7 +191,7 @@ export type RunStep = {
 
 /**
  * The runs among `items` (frame order): ≥ 3 consecutive appear / emphasis cues ≤ 0.6 s apart filled with pop, ui,
- * chime or tick. One entry per item: its step, or null outside a run.
+ * chime or tick, not keys of a typing pattern (`isTypingCue`). One entry per item: its step, or null outside a run.
  */
 export function findRuns(
 	items: readonly RunCandidate[],
@@ -205,7 +207,8 @@ export function findRuns(
 		RUN_KINDS.includes(c.kind) &&
 		typeof c.type === 'string' &&
 		(RUN_TYPES as readonly string[]).includes(c.type) &&
-		!c.fixedPitch;
+		!c.fixedPitch &&
+		!c.typing;
 	let run = 0;
 	let i = 0;
 	while (i < items.length) {
@@ -229,6 +232,16 @@ export function findRuns(
 		i = j;
 	}
 	return out;
+}
+
+/**
+ * Whether a derived cue is a key of a typing pattern: a text pattern group (typewriter, Range Selector) whose cue
+ * suggests a key first (characters typed or revealed; word reveals suggest a tick or pop first and may run).
+ */
+export function isTypingCue(
+	cue: { group?: string | null; types?: readonly unknown[] } | null | undefined,
+): boolean {
+	return !!cue && typeof cue.group === 'string' && cue.group.startsWith('text:') && cue.types?.[0] === 'key';
 }
 
 /** The varispeed rate of a pitch shift in semitones (2^(st/12), 6 decimals). */

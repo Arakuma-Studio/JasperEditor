@@ -400,6 +400,24 @@ describe('the cue grammar in the plan (typing + UI fixture)', () => {
 		f.tx([{ type: 'soundDesign.setSettings', style: { personality: null } }]);
 	});
 
+	it('a typewriter filled with ticks (no key recording) is typing, not a climbing run: speed 1, one type', () => {
+		const ticksOnly = withOfferedTakes([
+			...BASE.filter((e) => !e.types.includes('key')),
+			entry('Tick a', ['tick'], judged(0.9, 'tick')),
+			entry('Tick b', ['tick'], judged(0.85, 'tick')),
+		]);
+		const t = planOf(f.get(), f.seqId, {}, ticksOnly);
+		const keys = t.selected.picks.filter((p) => p.cue.derived?.group?.includes('typewriter'));
+		expect(keys.length).toBe(9);
+		for (const k of keys) {
+			expect(k.sounds[0]!.entry.types).toContain('tick');
+			expect(k.rate).toBe(1);
+			expect(k.pitchSt ?? 0).toBe(0);
+			expect(k.run).toBeUndefined();
+			expect(k.variation).toBe('takes');
+		}
+	});
+
 	it('is deterministic', () => {
 		const again = planOf(f.get(), f.seqId);
 		const sig = (x: typeof r) =>

@@ -55,6 +55,7 @@ import {
 	findRuns,
 	flicksPerFrame,
 	isSoundTypeId,
+	isTypingCue,
 	type MgTemplateRegistry,
 	musicCovers,
 	musicTracksUnder,
@@ -898,6 +899,12 @@ export function selectPlanSounds(
 			kind: p.cue.kind,
 			type: fillTypeOf(p.sounds[0]!.entry.types, p.cue.types),
 			fixedPitch: typeof p.cue.stored?.pitchSt === 'number' && p.cue.stored.pitchSt !== 0,
+			// a typewriter's keys are a pattern, not a run (also once stored: a text anchor naming a unit)
+			typing:
+				isTypingCue(p.cue.derived) ||
+				(p.cue.stored?.anchor?.type === 'text' &&
+					(p.cue.stored.anchor as { unit?: number }).unit !== undefined &&
+					p.cue.types[0] === 'key'),
 		})),
 		fps,
 		mode,

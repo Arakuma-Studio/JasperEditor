@@ -11,6 +11,7 @@ import {
 	deriveCues,
 	fillTypeOf,
 	findRuns,
+	isTypingCue,
 	loadProject,
 	MATERIAL_BONUS,
 	materialBonusOf,
@@ -190,6 +191,15 @@ describe('runs climb', () => {
 			30,
 		);
 		expect(two.map((s) => s?.run)).toEqual([1, 1, 1, 2, 2, 2]);
+	});
+
+	it('a typing pattern is never a run, whatever fills it (a typewriter filled with ticks)', () => {
+		const key = (frame: number) => ({ frame, kind: 'appear', type: 'tick', typing: true });
+		expect(findRuns([0, 3, 6, 9, 12].map(key), 30)).toEqual([null, null, null, null, null]);
+		expect(isTypingCue({ group: 'text:clp_1:in:typewriter', types: ['key', 'tick', 'click'] })).toBe(true);
+		expect(isTypingCue({ group: 'text:clp_1:animator:a:s', types: ['tick', 'pop', 'key'] })).toBe(false);
+		expect(isTypingCue({ group: 'run:x', types: ['key'] })).toBe(false);
+		expect(isTypingCue(null)).toBe(false);
 	});
 
 	it('never throws and keeps its bounds on any input (property)', () => {
