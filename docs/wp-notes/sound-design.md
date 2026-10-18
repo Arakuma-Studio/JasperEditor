@@ -9884,3 +9884,102 @@ files, **793 passed**, 4 skipped; `pnpm build`, LGPL fixtures, and the three e2e
   English (the pattern is on `ExportWarningParamsSchema` and in `export/warning-text.ts`).
 - The fixtures changed codec, not content: the compositions gallery images (docs) were not regenerated here.
 - Not in this package: CLAP (WP-E9) and the preview transport items (the next package).
+
+### Phase 6 → preview transport carry-overs
+
+Branch `feat/sd-p6-transport`. Scope: the preview transport and mix-graph items CARRYOVER.md left open (pan once per
+frame; a latent effect added while playing; the 0.5 s picture-wait cap; seeks while playing; the rare transport cases;
+the Hear-toggle re-sync). Files: `packages/compositions/src/audio/{graph,automation,matrix-node}.ts`,
+`layers/AudioLayer.tsx`, `SequenceComposition.tsx`; `packages/project/src/audio/mixer.ts` (export 5.1 panner),
+`packages/audio-dsp/src/channels.ts` (`pan51MatrixInto`); `apps/web/src/panels/program/{ProgramMonitor.tsx,
+playback-driver.ts}`, `apps/web/src/audio/runtime.ts`; tests `packages/compositions/test/{audio-preview-mix-oracle,
+audio-preview-transport,audio-anchor-guard,audio-automation}.test.ts`, `packages/audio-dsp/test/channels.test.ts`,
+`apps/web/test/transport.test.ts`, `e2e/sound-p6-transport.spec.ts` (new), `e2e/sound-tap.ts`,
+`e2e/sound-p0-transport.spec.ts`, `e2e/sound-proposal-ghosts.spec.ts`. Every measurement below ran on the build server
+`jasper-build` (16 × Haswell vCPU, Node 20.20.2, Playwright Chromium, headless; load average 1–3 unless stated); "base" is
+a copy of the integration tip this branch started from (1fcdbcf6), built and run beside it.
+
+#### What changed (design)
+
+- **Pan follows its automation sample by sample** (item 1). While playing, the strip pan stage, the 5.1 puck (into a 5.1
+  bus), a send's puck and the clip pan schedule their matrix coefficients as followed curves (`MatrixNode.follow`, the
+  same `followCurve` as gains since Phase 4), at the stage times of the export. Three defects of the curve follower came
+  out on the way and are fixed for gains too: a curve started right after a `setParam` glided from `AudioParam.value`,
+  which still reads the last rendered quantum (1.1 · 10⁻² off — the follower now keeps what it set, `noteParamSet`); cancelling
+  the ramp under way made Chrome play the first frame of the quantum at the previous point's value whenever the update
+  time times the rate landed a rounding error above the frame (single-sample errors up to 7.5 · 10⁻⁴ — the piece in
+  progress is kept and the new curve continues from its end, ≤ one 8 ms piece later); and pieces now end on sample
+  frames, down to one sample where the curve has a corner no keyframe names (the 5.1 panner's centre gain is a square
+  root of the distance from the centre: 4.6 · 10⁻⁴ at the crossing), with a 2 · 10⁻⁵ tolerance for matrix coefficients.
+  The export's animated 5.1 puck was held 32 samples at a time on a block-relative grid (so its output depended on where
+  blocks began); it is now evaluated per sample like every other lane (`pan51MatrixInto`, allocation-free).
+- **Every Play starts primed** (items 2–5). The Phase 0 close-out primed a Play after a paused seek; a plain pause went on
+  with the audio in flight. That continuation was wrong: Remotion moves its anchor to the picture at every suspend
+  without having its players schedule again, so the buffers queued before the pause kept the old timeline and those
+  scheduled after Play the new one — measured: the audio jumped 109–188 ms about 2 s after Play (the queued buffers ran
+  out). Now, once the context has really stopped (`settle`: Chrome renders on for a few quanta after `suspended`;
+  `currentTime` moved 29–35 ms after the event in a quick pause/Play), the graph prepares the next start while paused:
+  flush, Remotion's anchor on the picture at the final frozen time, the primed shift, and every source scheduled again
+  (`prepareStart`). Work at Play itself is too late: the Player's `play()` resumes the context in the user's gesture,
+  before any React effect. The primed wait is the read-ahead + clip-effect latency + two render quanta
+  (`START_MARGIN`: Chrome's `currentTime` can stay a quantum behind where the audio thread stopped — a play's first
+  buffer, scheduled at the frozen time, started a quantum late: the first click 128 samples late, measured once in 40).
+- **Sources reschedule without re-creating their media players**: when the schedule epoch moves (a primed start, a
+  read-ahead change while paused) or a clip's own effect latency changes, `AudioLayer` moves the clip's trim by a
+  millionth of a frame (`TRIM_NUDGE`): Remotion drops the player's queued buffers and schedules again from the current
+  position and anchor. Re-creating the players (the close-out's way) re-opened and re-probed the media. While the sources
+  start again, playback is held through Remotion's buffering (`setBufferGate`; the flag is raised at once, Remotion's own
+  state a render later) until every clip under the picture has scheduled a buffer (≤ 1.5 s).
+- **A latency added while playing restarts playback** (item 2): the graph asks (`onRestartRequest`) and the Program
+  monitor's `PlaybackDriver.restart()` pauses, waits for the prepared start (`whenPaused`) and plays again. The
+  transport store stays playing; the picture holds for the new primed wait. A latency removed while playing still keeps
+  the audio in flight (padding at the Mix: exact).
+- **A seek while playing restarts playback** (item 4) the same way, with the seek done while paused
+  (`PlaybackDriver.restart(frame)`, then `afterSeek`: when Remotion kept its anchor — a seek shorter than its 0.1 s +
+  output-latency tolerance — the graph re-anchors to the picture itself; a short *paused* seek is checked once the
+  playhead rests, 150 ms, so a scrub does not restart every source on every frame). Loop wraps use it too.
+- **The picture waits for the program up to 3 s** (item 3, `MAX_PRIMED_WAIT`, was 0.5 s: above it the first samples were
+  lost). Decision: any plausible effect chain waits less (one look-ahead or FFT effect adds 20–43 ms at 48 kHz; 3 s takes
+  some 70 in series); a longer read-ahead is pathological and still starts unprimed. A wait of 0.2 s or more shows the
+  Program monitor's buffering dot (`useAudioStartWait`, `VISIBLE_START_WAIT`), in its own component.
+- **Edits while playing no longer move the audio** (item 6). Root cause, measured: the Player got `{doc, options}` as
+  `inputProps`; Remotion's video config includes the props, and its playback loop (`usePlayback`) restarts its frame
+  clock from the current frame whenever the config changes — every edit made while playing dropped the time since the
+  last frame plus the edit's render from the picture. The picture fell behind the audio clock (the anchor log showed
+  Remotion asking for anchors 0.19–0.31 s later on every frame for 0.5 s and more after an agent added four tracks), and
+  Remotion re-anchored every player to it: the audio jumped back ≈ 185 ms (the Hear-toggle skip; adding a track does the
+  same). Fixes: (a) the Player gets one props object for the life of the monitor and the composition reads the document
+  from a store (`LiveSequenceComposition`); (b) the anchor guard (`MixGraph.attachSync`): while playing, a later anchor is
+  refused and its `changed` event held back unless Remotion keeps asking with the frames coming regularly
+  (`ANCHOR_CONFIRM` 0.3 s, updates ≤ 0.1 s apart) — then the picture is behind for real (e.g. a duration change still
+  resets Remotion's clock) and it catches up by dropping frames (`setPictureAdvance`) instead of the audio jumping; an
+  earlier anchor (picture ahead of the audio clock) is taken; (c) a new strip no longer rebuilds every strip
+  (`rebuild` keeps strips of the same shape with their inserts, delay lines and routes: adding a track while playing lost
+  up to the read-ahead of audio in flight).
+- `globalThis.__jasperTransportLog` (an array set by a test) receives the graph's transport events (anchors as kept,
+  refusals, catch-ups, primed starts, restarts, the buffering gate, context states): the e2e measures every click
+  against the anchor from it.
+
+#### The rare transport cases (item 5)
+
+`e2e/sound-p6-transport.spec.ts` "many paused seeks + Play" plays a fixed pseudo-random walk (a play somewhere, a paused
+seek elsewhere, Play) and checks the first click of each play: on its sample after the primed wait, at the start fade's
+level, nothing earlier. Findings, each from its debug log (`E2E_P6_DEBUG=1`):
+
+- "First click 256 samples early" (Phase 2 verification B, seen once): **a tap artefact**. Chrome's worklet
+  `currentFrame` advances once per device callback, which can render several quanta (blocks read five times the same
+  frame, then a jump of 640): a click in such a block read up to 512 samples early. Its level (0.554 = the start fade at
+  the expected time, not at the read one) showed it was on time. `e2e/sound-tap.ts` now records every quantum and numbers
+  blocks from the largest consistent frame.
+- One quantum late (1 play in 40, base and branch): the context resumed a quantum after the `currentTime` it reported
+  while suspended; fixed by `START_MARGIN` (0 of ⟨N⟩ since).
+- "A click from before the seek" (the 20.9 ms case, seen once): not reproduced as such in ⟨N⟩ plays. Its mechanisms are
+  gone: a Play after a pause went on with the old timeline (above), and a paused seek shorter than Remotion's tolerance
+  kept the old position's queued buffers (measured in the walk: the 4.03 s click heard 175 ms early); both now restart
+  primed.
+- Test artefacts the walk exposed and the spec handles: a click within the 30 ms start fade is quieter; a click between
+  two samples (a fractional anchor: 1601.6 samples per frame at 29.97 fps) splits over them (0.8 / 0.2 or 0.6 / 0.4).
+
+#### Verified (measured)
+
+⟨filled in below⟩

@@ -281,8 +281,9 @@ test('a big edit while playing (an agent adds tracks) keeps the audio going on i
 	let replays = 0;
 	const failures: string[] = [];
 	const audioTracks = async () =>
-		(await query<{ tracks?: { kind: string }[] }>(page, 'sequence.summary')).tracks?.filter((t) => t.kind === 'audio')
-			.length;
+		(await query<{ tracks?: { kind: string }[] }>(page, 'sequence.summary')).tracks?.filter(
+			(t) => t.kind === 'audio',
+		).length;
 	const tracksBefore = await audioTracks();
 	for (let a = 0; a < PLAYS * 3 && measured < PLAYS; a++) {
 		await seekPaused(page, frameAt(1));
