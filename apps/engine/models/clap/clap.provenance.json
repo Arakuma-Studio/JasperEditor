@@ -1,0 +1,95 @@
+{
+  "model": "laion/larger_clap_general",
+  "revision": "ada0c23a36c4e8582805bb38fec3905903f18b41",
+  "weights": {
+    "file": "pytorch_model.bin",
+    "sha256": "314eb00cce6ad68d25237b8446b659ccdb136ed4672c1bca470f142f72455026",
+    "sizeBytes": 776444665,
+    "license": "Apache-2.0"
+  },
+  "opset": 17,
+  "io": {
+    "audio": "input_features float32 [batch,1,1001,64] -> audio_embeds float32 [batch,512] (L2-normalised)",
+    "text": "input_ids int64 [batch,tokens], attention_mask int64 [batch,tokens] -> text_embeds float32 [batch,512]"
+  },
+  "graphOnly": {
+    "audio": {
+      "externalTensors": 330,
+      "embeddedTensors": 0,
+      "embeddedBytes": 0
+    },
+    "text": {
+      "externalTensors": 204,
+      "embeddedTensors": 0,
+      "embeddedBytes": 0
+    }
+  },
+  "files": {
+    "clap-audio.fp32.onnx": {
+      "sha256": "4c1996723310788c719e5ea09fa3f9bc13ddcc45f832dee9532281aebdce3b4b",
+      "sizeBytes": 281425628
+    },
+    "clap-audio.graph.onnx": {
+      "sha256": "0996922788c9594ca8d0b67c01b14c0478ba8310eb40eedc7ce966f73e402b85",
+      "sizeBytes": 3205491
+    },
+    "clap-audio.int8.onnx": {
+      "sha256": "30984c47f13f8b30f1a27e2c901fb544d0a54d77dc0d5d0f68a826dcf339b090",
+      "sizeBytes": 77361231
+    },
+    "clap-text.fp32.onnx": {
+      "sha256": "fd85fd9b58e34b1c7063f9cd8581ce7ebb77f324bb6e6fabf15ea31694dca738",
+      "sizeBytes": 501462358
+    },
+    "clap-text.graph.onnx": {
+      "sha256": "327db7241fe75fa529e306bfafc4e9fb38faa50d8c9121ed20b367e1bdb7e6e4",
+      "sizeBytes": 297850
+    },
+    "clap-text.int8.onnx": {
+      "sha256": "98bcc4a9de43a4f016754fdba1a6726a7051286fdb4c2c956cbddd919264f1e2",
+      "sizeBytes": 126127767
+    }
+  },
+  "parity": {
+    "sounds": 68,
+    "texts": 34,
+    "graph": {
+      "audioCosineMin": 0.9999998807907104,
+      "audioCosineMean": 1.0,
+      "textCosineMin": 1.0,
+      "textCosineMean": 1.0,
+      "paddedBatchTextCosineMin": 1.0,
+      "top1AgreementSoundToText": 1.0,
+      "top1AgreementTextToSound": 1.0,
+      "maxAbsSimilarityDiff": 4.291534423828125e-06
+    },
+    "fp32": {
+      "audioCosineMin": 0.9999998807907104,
+      "audioCosineMean": 1.0,
+      "textCosineMin": 1.0,
+      "textCosineMean": 1.0,
+      "paddedBatchTextCosineMin": 1.0,
+      "top1AgreementSoundToText": 1.0,
+      "top1AgreementTextToSound": 1.0,
+      "maxAbsSimilarityDiff": 4.291534423828125e-06
+    },
+    "int8": {
+      "audioCosineMin": 0.9944643974304199,
+      "audioCosineMean": 0.9969834685325623,
+      "textCosineMin": 0.9775015115737915,
+      "textCosineMean": 0.9902956485748291,
+      "paddedBatchTextCosineMin": 0.9761716723442078,
+      "top1AgreementSoundToText": 0.8529411764705882,
+      "top1AgreementTextToSound": 0.8823529411764706,
+      "maxAbsSimilarityDiff": 0.08541262149810791
+    }
+  },
+  "tools": {
+    "python": "3.12.3",
+    "torch": "2.5.1+cpu",
+    "transformers": "4.46.3",
+    "onnx": "1.19.1",
+    "onnxruntime": "1.30.0",
+    "numpy": "2.5.4"
+  }
+}

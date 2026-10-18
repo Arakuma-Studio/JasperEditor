@@ -41,6 +41,8 @@ Shipped as separate files with their licence texts; also listed in Help ▸ Abou
 | Asset | Author | Source | Licence |
 |---|---|---|---|
 | `apps/engine/models/2xNomosUni_span_multijpg.onnx` | Philip Hofmann (weights); SPAN architecture by Hongyuan Yu et al. (Apache-2.0) | https://github.com/Phhofm/models/releases/tag/2xNomosUni_span_multijpg | CC-BY-4.0 (`apps/engine/models/LICENSE-CC-BY-4.0.txt`) |
+| `apps/engine/models/clap/clap-audio.graph.onnx` | LAION (laion/larger_clap_general); graph traced from Hugging Face transformers' ClapModel (Apache-2.0), exported by JasperEditor; holds no weights (they are downloaded from LAION on request) | https://huggingface.co/laion/larger_clap_general/tree/ada0c23a36c4e8582805bb38fec3905903f18b41 | Apache-2.0 (`licenses/texts/Apache-2.0.txt`) |
+| `apps/engine/models/clap/clap-text.graph.onnx` | LAION (laion/larger_clap_general); graph traced from Hugging Face transformers' ClapModel (Apache-2.0), exported by JasperEditor; holds no weights (they are downloaded from LAION on request) | https://huggingface.co/laion/larger_clap_general/tree/ada0c23a36c4e8582805bb38fec3905903f18b41 | Apache-2.0 (`licenses/texts/Apache-2.0.txt`) |
 | `apps/engine/src/processing/proc/vidstab/vidstab.wasm` | Georg Martius and the vid.stab contributors | https://github.com/georgmartius/vid.stab (commit e2445c4081658318223762a696eb1c645c2d7168) | LGPL-2.1-or-later (`apps/engine/src/processing/proc/vidstab/LICENSE-vidstab.txt`) |
 
 ## Project fixtures
