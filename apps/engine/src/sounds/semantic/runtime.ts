@@ -124,25 +124,29 @@ export class ClapRuntime {
 		if (this.closed) return Promise.reject(new ClapError('CLAP_STOPPED', 'The engine is shutting down'));
 		if (signal?.aborted) return Promise.reject(new ClapError('JOB_CANCELLED', 'Cancelled'));
 		return new Promise((resolve, reject) => {
+			// the abort listener goes when the request settles (a job's signal sees hundreds of requests)
+			const onAbort = () => {
+				const i = this.queue.indexOf(p);
+				if (i >= 0) this.queue.splice(i, 1);
+				// queued: dropped; running: its answer is discarded when it comes
+				p.resolve = () => undefined;
+				p.reject = () => undefined;
+				reject(new ClapError('JOB_CANCELLED', 'Cancelled'));
+			};
 			const p: Pending = {
 				id: this.nextId++,
 				body: { ...body, dir },
-				resolve,
-				reject,
+				resolve: (v) => {
+					signal?.removeEventListener('abort', onAbort);
+					resolve(v);
+				},
+				reject: (e) => {
+					signal?.removeEventListener('abort', onAbort);
+					reject(e);
+				},
 				...(signal ? { signal } : {}),
 			};
-			signal?.addEventListener(
-				'abort',
-				() => {
-					const i = this.queue.indexOf(p);
-					if (i >= 0) this.queue.splice(i, 1);
-					// queued: dropped; running: its answer is discarded when it comes
-					p.resolve = () => undefined;
-					p.reject = () => undefined;
-					reject(new ClapError('JOB_CANCELLED', 'Cancelled'));
-				},
-				{ once: true },
-			);
+			signal?.addEventListener('abort', onAbort, { once: true });
 			this.queue.push(p);
 			this.pump();
 		});

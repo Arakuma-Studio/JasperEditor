@@ -340,6 +340,21 @@ describe('Describe-it search with the model', { timeout: 300_000 }, () => {
 		// a broken model directory is a typed error, not a crash
 		const bad = tempAppdir('jasper-clap-bad-');
 		await expect(svc.runtime.embedTexts(bad, ['x'])).rejects.toBeInstanceOf(ClapError);
+		// requests remove their abort listener when they settle (a job's signal carries hundreds of them)
+		const shared = new AbortController();
+		let listeners = 0;
+		const add = shared.signal.addEventListener.bind(shared.signal);
+		const remove = shared.signal.removeEventListener.bind(shared.signal);
+		shared.signal.addEventListener = ((...a: Parameters<typeof add>) => {
+			listeners++;
+			add(...a);
+		}) as typeof add;
+		shared.signal.removeEventListener = ((...a: Parameters<typeof remove>) => {
+			listeners--;
+			remove(...a);
+		}) as typeof remove;
+		for (let i = 0; i < 12; i++) await svc.runtime.embedTexts(dir, [`t${i}`], shared.signal);
+		expect(listeners).toBe(0);
 		// a cancelled request is dropped
 		const ac = new AbortController();
 		ac.abort();
