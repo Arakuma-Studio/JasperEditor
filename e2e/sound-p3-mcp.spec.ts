@@ -134,6 +134,40 @@ function locate(mix: Float32Array, ref: Float32Array, w0: number, w1: number, gu
 	return best;
 }
 
+/**
+ * The normalised correlation of `mix[lag + i]` with `ref[i]` over [w0, w1) at the best fractional delay of `ref`
+ * (−0.5 … +0.5 sample in tenths, windowed sinc, 33 taps). A varispeed clip's samples fall between the reference's:
+ * measured on a bright whoosh at rate 0.987 (sound-p3-mcp, Final verification A), r 0.938 at the integer lag and
+ * 0.9995 at a 0.3-sample delay (a 33-tap filter took the reference to the mix within −92 dB).
+ */
+function subSampleCorrelation(mix: Float32Array, ref: Float32Array, w0: number, w1: number, lag: number) {
+	const K = 16;
+	let best = { r: -2, delay: 0 };
+	for (let tenth = -5; tenth <= 5; tenth++) {
+		const d = tenth / 10;
+		const h: number[] = [];
+		for (let k = -K; k <= K; k++) {
+			const x = k - d;
+			const sinc = x === 0 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x);
+			h.push(sinc * (0.5 + 0.5 * Math.cos((Math.PI * x) / (K + 1))));
+		}
+		let xy = 0;
+		let xx = 0;
+		let yy = 0;
+		for (let i = w0; i < w1; i++) {
+			let y = 0;
+			for (let k = -K; k <= K; k++) y += h[k + K]! * (ref[i - k] ?? 0);
+			const x = mix[lag + i] ?? 0;
+			xy += x * y;
+			xx += x * x;
+			yy += y * y;
+		}
+		const r = xx > 0 && yy > 0 ? xy / Math.sqrt(xx * yy) : -1;
+		if (r > best.r) best = { r, delay: d };
+	}
+	return best;
+}
+
 const reviewPanel = () => page.locator('[data-panel-kind="review"][data-instance-id]');
 const row = (id: string) => page.locator(`[data-review-row="${id}"]`);
 
@@ -335,7 +369,8 @@ test('an MCP agent proposes, the user reviews and applies, the agent reads the r
 	expect(placed.map((c) => c.frame)).toEqual([90, 180, 300]);
 	// PCM audio (ProRes master): the default preset's AAC drops and smears the top octaves, so a bright sound's
 	// correlation with its source fell to 0.86–0.92 whenever the plan picked one (Phase 4 verification: residual within
-	// 1 dB of the signal over 16 kHz, 7 dB under it at 8–12 kHz) — the peak positions were exact (lag 0)
+	// 1 dB of the signal over 16 kHz, 7 dB under it at 8–12 kHz) — the peak positions were exact (lag 0). A varispeed
+	// clip still lands between the reference's samples: the correlation is taken at its sub-sample delay.
 	const exported = await tool<{ path?: string; result?: { path?: string }; state?: string }>('start_export', {
 		projectId,
 		preset: 'master-prores-422hq',
@@ -370,14 +405,30 @@ test('an MCP agent proposes, the user reviews and applies, the agent reads the r
 				((c.start * F + (c.sfx.placement.peakFlicks - c.sourceIn) / c.speed.rate) / FLICKS) * SR,
 			);
 			const cueSample = Math.round(((cue.frame * F) / FLICKS) * SR);
+			const fine = subSampleCorrelation(mix, ref, w0, w1, found.lag);
 			report.push({
 				cue: cue.frame,
+				rate: c.speed.rate,
 				r: Number(found.r.toFixed(3)),
+				rFine: Number(fine.r.toFixed(4)),
+				delaySamples: fine.delay,
 				vsDocument: found.lag + refPoint - docPoint,
 				fromCueFrame: found.lag + refPoint - cueSample,
 			});
-			expect(found.r).toBeGreaterThan(0.95);
-			expect(Math.abs(found.lag + refPoint - docPoint)).toBeLessThanOrEqual(2);
+			// what else sounds within the measured window (±0.1 s around the peak) and the clip itself, if it fails
+			const docSec = docPoint / SR;
+			const near = Object.values(seq.clips)
+				.filter((o) => o.id !== c.id && o.mediaId)
+				.filter((o) => {
+					const s0 = (o.start * F) / FLICKS;
+					const len = ((o as unknown as { duration: number }).duration * F) / FLICKS;
+					return s0 < docSec + 0.1 && s0 + len > docSec - 0.1;
+				})
+				.map((o) => o.id);
+			const why = JSON.stringify({ row: report.at(-1), near, clip: c });
+			// the sound itself (a chance match over 9 600 samples is a few hundredths), at its sub-sample position
+			expect(fine.r, why).toBeGreaterThan(0.95);
+			expect(Math.abs(found.lag + refPoint - docPoint), why).toBeLessThanOrEqual(2);
 		}
 	}
 	writeFileSync(join(outDir, 'peaks.json'), JSON.stringify(report, null, 2));
