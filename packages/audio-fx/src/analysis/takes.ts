@@ -9,8 +9,10 @@
 //                 loudest frame of its first 60 ms; never under the floor + 4 dB), then 20 ms more; never into the next
 //                 stroke (which starts 5 ms before its attack) and at most 2 s
 //   take          a stroke, or a pair of strokes whose attacks are < 0.25 s apart (a key's down- and up-stroke), never
-//                 across ≥ 10 ms of digital silence (≤ −100 dBFS: separate takes of a pack) and never led by a stroke
-//                 15 dB weaker than the one it joins
+//                 across ≥ 10 ms of digital silence (≤ −100 dBFS: separate takes of a pack), and only when the first
+//                 stroke is the louder one (by 1 dB, loudest 1 ms): the take's peak, where placement aligns it, is then
+//                 the key going down (earshot only refuses a lead 15 dB weaker; measured on real MacBook typing, whose
+//                 releases can be louder than the presses, wp-note)
 //   head / tail   the first 5 ms / the louder of the last two 5 ms windows against the take's loudest 5 ms (dB); clean
 //                 = head ≤ −15 dB and tail ≤ −30 dB, else `head-cut` / `tail-cut` (also `tail-cut`: the take runs into
 //                 digital silence from a level over −30 dB, a chopped decay). Cut takes are recorded, never offered.
@@ -18,8 +20,8 @@
 //                 the floor) first, so a long run is sampled over its whole length; numbered 1… in time order
 //
 // Differences from earshot (decisions in the wp-note): events are pairs only, not longer chains (a chain of a fast
-// typing run would be several keys); no CLAP scoring (every take is kept, judged by its descriptors); the chop check
-// into digital silence is ours. Pure and deterministic; never throws for odd audio (invalid arguments throw
+// typing run would be several keys), led by their louder stroke; no CLAP scoring (every take is kept, judged by its
+// descriptors); the chop check into digital silence is ours. Pure and deterministic; never throws for odd audio (invalid arguments throw
 // `SoundAnalysisError` like `analyzeSound`).
 import {
 	analyzeSound,
@@ -56,8 +58,11 @@ export const TAKE_EDIT_GAP_LEVEL = 1e-5;
 export const TAKE_CLEAN_HEAD_DB = -15;
 /** Clean: the last 10 ms at most this loud against the take's peak (dB). */
 export const TAKE_CLEAN_TAIL_DB = -30;
-/** A stroke this much weaker than the next one does not lead a pair (dB). */
-export const TAKE_WEAK_LEAD_DB = 15;
+/**
+ * A pair is joined only when its first stroke is louder than its second by this much (dB, loudest 1 ms): a take's peak
+ * is where placement aligns it, so a pair must peak on its first stroke (the key going down), never on its release.
+ */
+export const TAKE_LEAD_MARGIN_DB = 1;
 
 export type TakeFlag = 'head-cut' | 'tail-cut';
 export const TAKE_FLAGS: readonly TakeFlag[] = Object.freeze(['head-cut', 'tail-cut']);
@@ -151,7 +156,7 @@ function silentRuns(
 	return runs;
 }
 
-type Stroke = { start: number; end: number; attack: number; prom: number };
+type Stroke = { start: number; end: number; attack: number; prom: number; peak1: number };
 type Event = { start: number; end: number; prom: number; strokes: 1 | 2 };
 
 /** At most `max` events, round-robin over `bucket`-sample stretches, most prominent first within each. */
@@ -239,7 +244,10 @@ function takesOf(p: PreparedSound): TakeSegment[] {
 			}
 		end = Math.min(end, limit, start + cap, n);
 		if (end - start < minLen) continue;
-		strokes.push({ start, end, attack: att, prom: env5[pk]! - floor5 });
+		let peak1 = DESCRIPTOR_FLOOR_DB;
+		for (let k = Math.floor(start / w1); k < Math.min(env1.length, Math.ceil(end / w1)); k++)
+			peak1 = Math.max(peak1, env1[k]!);
+		strokes.push({ start, end, attack: att, prom: env5[pk]! - floor5, peak1 });
 		prevEnd = end;
 	}
 
@@ -252,7 +260,7 @@ function takesOf(p: PreparedSound): TakeSegment[] {
 			b &&
 			b.attack - a.attack < TAKE_JOIN_SEC * sr &&
 			!gapIn(a.attack, b.attack) &&
-			a.prom >= b.prom - TAKE_WEAK_LEAD_DB &&
+			a.peak1 >= b.peak1 + TAKE_LEAD_MARGIN_DB &&
 			b.end - a.start <= cap
 		) {
 			events.push({ start: a.start, end: b.end, prom: Math.max(a.prom, b.prom), strokes: 2 });

@@ -74,6 +74,20 @@ describe('findTakes: known recordings', () => {
 		});
 	});
 
+	it('a pair whose second stroke is louder stays two takes: each peaks on its own stroke', () => {
+		const x = floorNoise(Math.round(2 * SR), 3e-4, 13);
+		addClick(x, ms(300), { amp: 0.25, tauMs: 4, seed: 1 });
+		addClick(x, ms(380), { amp: 0.6, tauMs: 5, seed: 2 });
+		addClick(x, ms(1200), { amp: 0.6, tauMs: 5, seed: 3 });
+		addClick(x, ms(1280), { amp: 0.3, tauMs: 4, seed: 4 });
+		const takes = analyzeTakes([x], SR);
+		expect(takes.map((t) => t.strokes)).toEqual([1, 1, 2]);
+		for (const t of takes) {
+			// the peak is within the first 15 ms of the take (5 ms pre-roll + its own stroke's attack)
+			expect(t.descriptors.peakSec, `take ${t.index}`).toBeLessThan(0.016);
+		}
+	});
+
 	it('the same in stereo, and at 44.1 kHz', () => {
 		const { x } = typingPairs();
 		const r = x.map((v) => v * 0.5);
