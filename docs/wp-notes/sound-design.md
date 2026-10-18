@@ -9085,3 +9085,209 @@ apps/mcp/test/proposals apps/web/test/sound apps/web/test/essential apps/web/tes
 same on `feat/sound-design`, WP-E5's and WP-E6's notes). After the last fix (a landed drop never overruns the room on
 its track) the four new unit / web / MCP files ran again: 33 passed. `e2e/sound-music-fit.spec.ts` passed after
 `pnpm build` (above).
+
+### Phase 6 → WP-E4 Reference profiles
+
+Branch `feat/sd-pe-e4-reference`. Spec 12 §4 P6-E8 ("make it sound like the films I like", measured and without
+models). The metric definitions and the scorecard are adapted from earshot `earshot/profile.py` and `earshot/critique.py`
+(MIT, Copyright (c) 2026 Leon Lin; rows and every change in `licenses/ported/earshot.md`); nothing was copied. earshot's
+bundled 7-film launch profile is **not** shipped or used (the earshot analysis above: one user's style of SaaS launch
+films, a scorecard that was not blind) — users build their own, and the library starts empty. The weights, tolerances and
+sides of the rows are "earshot norms (n = 7–8 launch films, one listener)": defaults, not truths.
+
+Files: pure `packages/audio-fx/src/analysis/profile-metrics.ts` (new: `ProfileMeter`, `PROFILE_METRICS`);
+`packages/project/src/sound/profile.ts` (new: `REFERENCE_METRICS` — the metric table with groups, labels, units, weights,
+tolerances, sides and why-texts —, the file schema, `readReferenceProfile`, `aggregateReferences`, `compareWithProfile`,
+`referenceWindow`, `referenceMatch`, `referenceAdvice`, the model strings), `schema/sound.ts` (`settings.referenceProfile`
+and its lenient read), `commands/{schemas,handlers}/sound.ts` (`soundDesign.setSettings {referenceProfile}`), `sound/check.ts`
+(code REFERENCE, category `reference`, the profile in `soundCheckInputsHash`), `sound/messages.ts` (model strings),
+`time-remap/scenes.ts` (`detectSceneCuts` takes a streamed flash test, `sceneFlashTest`); API `packages/api/src/sound-profile.ts`
+(new), `sound-check.ts` (`profileId`, `issue.advice`, `report.reference`), `routes.ts`, `jobs.ts` (`sound-profile`), `events.ts`
+(`soundProfiles.changed`); `packages/engine-client` (six methods); engine `apps/engine/src/sound-design/profile.ts` (new: the
+store, the job, the file and sequence measurements, `referenceFindings`), `check.ts` / `check-proposal.ts` (the comparison),
+`routes/sound-design.ts` (six routes, the runner); MCP `apps/mcp/src/tools/sound-profile.ts` (new: eight tools,
+`referenceSection`), `tools/sound-check.ts` (`profileId`, the rows, advice in the finding lines), `tools/sound.ts` (SOUND_GUIDE
+"Reference profiles"), `server.ts`; web `apps/web/src/sound/{profile-model.ts, ReferenceProfiles.tsx}` (new),
+`PreferencesPage.tsx`, `check-model.ts` (Reference in the category order, labels translated in findings),
+`panels/soundCheck/SoundCheckPanel.tsx`, i18n (170 strings, es.json complete); README (367 tools, the HTTP API), security
+review (routes, approval, untrusted files), gaps, spec 12 §4 P6-E8 "As built", `licenses/ported/earshot.md`,
+`THIRD_PARTY_NOTICES.md`. Tests: `packages/audio-fx/test/profile-metrics.test.ts` (10), `packages/project/test/sound-profile.test.ts`
+(11), `apps/engine/test/sound-profile.test.ts` (5), `apps/mcp/test/sound-profile.test.ts` (1), `apps/web/test/sound-reference-profiles.test.tsx`
+(3), `e2e/sound-reference-profile.spec.ts`; the code / category inventories in `packages/project/test/sound-check.test.ts`
+and `apps/web/test/sound-check-p6-model.test.ts` list REFERENCE / `reference`.
+
+#### What it does (usage)
+
+- **Build a profile** from 1–20 references the user owns: Preferences ▸ Sound Library ▸ **Reference profiles** ▸ New
+  Reference Profile… (a name; the project's media with audio of 3 s or more, its sequences, and on a local engine files by
+  absolute path; Build Profile shows the job's progress — "2 of 3: Episode 2.wav — Measuring 61 %" — then what was measured,
+  skipped and warned), the Sound Check panel's Reference select ▸ New Reference Profile… (the same form as a dialog; the new
+  profile becomes the sequence's), MCP `build_sound_profile {name, projectId?, mediaIds?, sequenceIds?, paths?}` or `POST
+  /api/sound-design/profiles` (a `sound-profile` job). A profile is one JSON file of numbers in
+  `<appdir>/sounds/profiles/<id>.json` — per metric the median, p10–p90, min–max and n, the arc's median / p10 / p90, and each
+  reference's own numbers, title and fingerprint (never audio, never a path).
+- **Manage them**: Rename (Enter), Export… (downloads `<name>.sound-profile.json`), Import… (a shared file; a second copy is
+  named "… (2)"), Delete… (asks first; an agent's `delete_sound_profile` waits for the user's approval card: their data). MCP
+  `list_sound_profiles`, `get_sound_profile` (one line per metric), `rename_sound_profile`, `export_sound_profile {path}`,
+  `import_sound_profile {path | profile}`.
+- **Compare**: the Sound Check panel's header **Reference** select sets the sequence's profile (one undo step "Compare with
+  Reference Profile"; MCP `set_sound_profile`), and every Run compares; MCP `sound_check {profileId}` compares with any profile
+  (null: none). The report gets `reference` (one row per metric: value, the judged window, typical band, median, n,
+  status ok / low / high / n.a., weight major / minor / info, the sync shares' chance levels, the advice of the rows out of
+  range) and findings of code REFERENCE in a **Reference** group — a warning for a major row, an info for a minor one, never
+  an error — whose message names the row ("Air 8–16 kHz share is low: −25.1 dB, the references −11.4 dB … −8.4 dB (median
+  −9.9 dB)") and whose `advice` says what to do with the timecodes ("5 of 6 picture events have no onset within 100 ms
+  (chance 6 %); no sound at all at 00:00:06:00, 00:00:08:15, …: add a whoosh into the cut, a hit or a click there"). The
+  panel lists the differences under the findings (Differences only / All n metrics; a status jumps to its finding); MCP
+  prints the same rows (`reference.rows`, one line each) and the advice in each finding line. A sequence that is one of
+  the profile's references is judged against the others (leave-one-out; a warning says so).
+
+#### Design and decisions
+
+- **Measured identically on both sides.** One pure `ProfileMeter` measures a reference's audio and the checked sequence's
+  delivered mix (Sound Check feeds it the same blocks as its ENDING tap: normalised and limited when the Mix normalises).
+  It streams (any block size gives the same numbers — tested at 997 and 48 000), holds ≈ 10 MB per hour of stereo
+  (2 ms levels, 85 ms spectrum frames, ListenMeter's 10 ms hops) and never throws on hostile input.
+- **The metrics** (spec list): loudness — integrated, true peak, LRA, crest; arc — 11 points, opening / closing level,
+  position of the loudest 3 s, first sound, longest gap; ending — dead air, fade, final moment, final-hit ring-out;
+  density — onsets / s (our `ListenMeter` onsets rising ≥ 3 dB over their bed: WP-E3's rule for "a sound"), salient hits / s,
+  stop-downs / min; sync — picture events / s and the share with an onset within ±100 ms and within one frame, each with
+  its chance (the exact measure of the union of the tolerance windows over the piece, WP-E3's `syncChance`); spectrum — six
+  band shares (dB of the 20 Hz–16 kHz total) and the median magnitude-weighted centroid; stereo — side / mid (a mono mix
+  −40 dB) and correlation; speech share. Not adopted: earshot's music share (AudioSet), tempo and on-beat share (a beat
+  tracker on arbitrary references), realness. Shape metrics are n.a. under 10 s; under 3 s or silent nothing is scored.
+- **Picture events.** A media reference's come from our scene detector on its decoded picture (`sceneSignature` /
+  `detectSceneCuts`, 192 px frames at their real timestamps; the flash test now streams over a ring of six signatures —
+  keeping every signature of an hour of video would take ≈ 2 GB); a sequence's (reference or checked) are its edit's cuts
+  and transitions (`pictureEditEvents`): exact for the edit, and what the user means by "a cut".
+- **Speech share** is the share of 5 s windows our model-free Auto Tag classifier (`classifyAudio`, WP6.3) calls dialogue
+  (earshot: AudioSet "Speech" ≥ 0.5). Decision: an info row only (weight 0), as earshot's.
+- **Rows → findings.** Window = the references' min–max widened by the metric's tolerance, one side where earshot judges
+  one (time to first sound, gaps and dead air: upper; sound on cuts: lower), a density window reaching 0 floored at half the
+  sparsest reference. Weight 2 (major) out of range → warning, 1 (minor) → info, 0 → shown only. **Integrated loudness and
+  true peak are context rows** (weight 0, basis "delivery"): Sound Check's LOUDNESS / TRUE_PEAK keep following the delivery
+  preset, so a style never contradicts the delivery target. The finding's key is `REFERENCE:<metric>` (acknowledgeable like
+  any warning or info, P6-E4); its frame / range point at what it is about (where the sound ends, the first silent cut, the
+  longest gap, the loudest moment).
+- **No command fixes.** The spec asks for "what to do"; we give it as `issue.advice` (model strings with timecodes) and
+  offer no command fix: no ordinary edit makes a mix "more like" a style without the user's judgement (a fade-in for a late
+  first sound, a trim for dead air … each changes the piece), so nothing is marked safe and Fix all safe never touches a
+  Reference row. ENDING / HEAD / SILENCE keep their own fixes where the defect is real.
+- **Leave-one-out.** By identity (a sequence reference whose `<projectId>/<sequenceId>` is the checked sequence, even after
+  edits) or by measurements: the same duration ± 50 ms and every level-independent metric of a list of ten within its
+  tolerance (≥ 6 measured on both). Decision: earshot matches 3 of loudness, true peak, brightness and the mid share; that
+  matched a different generated film here (measured: the matching sequence was taken for "film1"), and loudness changes
+  with the delivery normalisation. With fewer than two other references the profile is used whole.
+- **Staleness.** `soundCheckInputsHash` includes the profile a check compared with (absent without one: older hashes stay
+  valid), so choosing another profile makes the kept report stale; profiles are immutable apart from their name, so the id
+  suffices.
+- **The store and files are untrusted.** Strict schema (unknown keys, non-finite or > 1e7 numbers, more than 20 references,
+  duplicate ids, a wrong format / version / metrics version are refused with a reason), ≤ 1 MB, the aggregate always
+  recomputed from the references, file names only `sprf_<16 hex>.json` (a request can never name a path), atomic serialised
+  writes, a damaged file moved aside and listed. Import gives a new id.
+- **A sequence reference** is its whole mix (≤ 60 min) rendered by the export mixer; with the Mix's normalisation on, the
+  normalisation gain is added to its integrated loudness and true peak (capped at the ceiling) — the limiter is not run
+  (decision: those two rows are context only).
+- **New Reference Profile… in Preferences is a form, not a dialog**: a hosted dialog opened from the Preferences dialog
+  replaces it (found in the real app: after Done the Preferences were gone). The Sound Check panel opens it as a dialog.
+- **MCP names.** The spec's `build_sound_profile`, `list_sound_profiles`, `delete_sound_profile`, `sound_check {profileId}`,
+  plus `get_ / rename_ / export_ / import_sound_profile` and `set_sound_profile` (every UI action has a tool). The
+  orchestrator's working names (`list_reference_profiles`, `build_reference_profile`, `set_reference_profile`) were not used:
+  the spec's names win.
+
+#### Verified (measured, this branch; build server `jasper-build`, 16 × Intel Haswell vCPU, Node 20.20.2, load 1.6–7)
+
+- **Failing first**: the five new test files copied onto the integration tip `a7d5c0a9` (a detached worktree,
+  `.claude/worktrees/pe-e4-before`, removed after): `pnpm vitest run packages/audio-fx/test/profile-metrics.test.ts
+  packages/project/test/sound-profile.test.ts apps/engine/test/sound-profile.test.ts apps/mcp/test/sound-profile.test.ts
+  apps/web/test/sound-reference-profiles.test.tsx` → **all 27 tests failed** and the web file failed to load (no profile
+  module, routes, tools or components).
+- `pnpm vitest run packages/audio-fx/test/profile-metrics.test.ts`: 10 passed — −20 LUFS pink noise reads −20.0 LUFS and its
+  band shares match pink noise's equal energy per octave within 0.5 dB (sub 1 dB: 3–5 bins of an 85 ms frame), LRA < 2 LU,
+  independent channels side ≈ mid (< 0.3 dB) and correlation < 0.05, brightness 1–6 kHz (5.3 kHz is the analytic centroid
+  of pink noise to 16 kHz); identical channels −40 dB / correlation 1; **a 1 s gap 0.95–1.05 s** (listed at 5.0–6.0 s), a 2 s
+  silent start 1.98–2.02 s to the first sound; **a hard end** fade < 0.5 s and dead air < 0.02 s, **a 2 s linear fade**
+  0.6–2 s (> the hard end + 0.5), **2 s of dead air 1.97–2.03 s**; **clicks at 2/s: 2.0 onsets/s** (40 onsets within 2 ms of
+  their times) and ≥ 1.5 hits/s; **a 0.5 cut/s picture: 0.5 events/s**, clicks on the cuts 100 % within 100 ms and a frame
+  (chance 0.10 and 0.04 = 10 × window / 20 s, the analytic value), clicks 300 ms off 0 %; under 10 s the shape rows n.a.,
+  under 3 s / silent unscorable; blocks of 997 and 48 000 give identical results; truncation at maxSeconds; 60 fast-check
+  runs of hostile input (NaN, ±∞, any rate, 0–9 channels, a missing channel) never throw and stay finite or null. The edge
+  refinement failed first (dead air read 1.945 s: a centred block straddling the edge was searched only inside the block) —
+  now ±100 ms around it.
+- `pnpm vitest run packages/project/test/sound-profile.test.ts`: 11 passed — NumPy percentiles; the windows (tolerance,
+  one-sided, the density floor, delivery basis, no data); a matching piece passes every row; the seeded mismatch (air −6 dB,
+  2 s dead air, sound on 1 of 6 cuts) flagged by exactly end_silence_s (warning), cuts_with_sound (warning) and band_air
+  (info) with their texts and advice; leave-one-out by measurements (a louder delivery still matches, another mid share
+  does not) and by identity, none with fewer than two others; n.a. rows; JSON round trip, a tampered aggregate recomputed,
+  a bare file (references only) read; 17 hostile files refused with a reason (wrong format / version / metrics version, a path
+  as id, empty / long name, 0 or 21 references, duplicate ids, an `audio` field, a string metric, an unknown metric, 1e300,
+  a short arc, unknown top-level keys, `__proto__`); 300 fast-check runs never throw; every label / why / template a model
+  string; `soundDesign.setSettings {referenceProfile}` set / undo / redo / clear, the inputs hash follows it, malformed ids
+  refused (E_SCHEMA), dropped on read and by `repairDocument` (invariants clean).
+- `pnpm vitest run apps/engine/test/sound-profile.test.ts` (real engine; three 20 s FFV1 + PCM films with a colour change and a
+  click on each of 10 cuts): 5 passed — the profile of film 3 (project media) and films 1–2 (paths), a 1 s file skipped
+  ("shorter than 3 s"); **cut_rate 0.5 / 0.5**, cuts_with_sound 1 / 1, frame sync 1 / 1, onsets 0.50–0.55 /s, hits 0.5 /s,
+  first sound and dead air < 0.05 s, no gap, fade < 0.5 s, air −12.6…−11.7 dB, correlation 0.48–0.56; no path in the file;
+  **a matching sequence** (the same recipe as A1 audio under colour mattes cut at the same seconds) passes every row,
+  scoredAgainst 3, no REFERENCE finding; **the seeded mismatch** (air −6 dB by a Linkwitz–Riley crossover at 8 kHz, the
+  sound stopping hard at 18 s of 20, six cuts of which one has a click) flagged by end_silence_s (warning, 00:00:18:00,
+  "2.0 s of dead air after the sound ends at 00:00:18:00 …"), cuts_with_sound (warning, value 0.167, 00:00:06:00, the five
+  silent cuts' timecodes in the advice), band_air (info, "No air …") and end_lu (info: the dead end lowers the closing
+  level) — the rest in range (lra, crest, onsets, hits, bands, first sound, gaps); `profileId: null` compares nothing; a
+  profile holding the checked sequence scores it leave-one-out (by identity, against 2) with the warning; a missing profile
+  is `W_REFERENCE_PROFILE_MISSING`; export → import round-trips (new id, same references and statistics); five hostile
+  imports `400 SOUND_PROFILE_INVALID`; a damaged library file listed as "not JSON", moved aside, `404`; a traversal id `404`;
+  rename; an agent's delete `403 APPROVAL_DENIED` with no editor window, the profile kept; the editor deletes; refusals
+  (`400` bodies, `404 MEDIA_NOT_FOUND`, a missing path → job `NO_REFERENCES` naming it). Timings (measured, load 3–7):
+  building 3 films 11.5 s, a check with a profile 2.8–3.3 s against 1.4 s without, on 20 s sequences.
+- `ProfileMeter` cost (a scratch script, not committed, idle server): **3.8 s per minute of stereo noise** (ListenMeter
+  2.0 s of it); a 10-minute check with a profile ≈ +38 s (estimated from that rate).
+- `MCP_SOUND_PROFILE_TEST_PORT=52711 pnpm vitest run apps/mcp/test/sound-profile.test.ts` (jasper-mcp over stdio, real
+  engine): empty library says there is no bundled profile; build from three paths; get (one line per metric); a project's
+  soundtrack: `set_sound_profile` (the setting written, `list_sound_profiles {projectId}` names it), `sound_check` rows all in
+  range and **equal to the job report's rows in order, status and weight**; a dull soundtrack: "INFO REFERENCE …band_air …
+  what to do: No air …"; `profileId: null` none; export to a file (no media path in it), `E_EXISTS` on a second export,
+  import from the file under another name, junk files `SOUND_PROFILE_INVALID`; delete refused (approval); strict arguments.
+- `pnpm vitest run apps/web/test/sound-reference-profiles.test.tsx`: 3 passed — the model (candidates leave out a 1 s
+  sound, paths, the request, the select's options with a missing profile, single-unit ranges); Preferences: list with the
+  damaged-file line, Rename with Enter, Export downloads the file, Delete asks (Cancel keeps it), Import (junk → a toast),
+  the form's reason, a relative path left out, Build Profile → progress → "“New one”: 2 references measured." and the
+  skipped file; the Sound Check select: one History entry "Compare with Reference Profile", undo; New Reference Profile…
+  (dialog) builds and selects the new profile; the rows: differences first, all on demand, a status jumps to its finding,
+  Spanish. `apps/web/test/sound-check-panel.test.tsx` 17 passed (the select tolerates an engine without profile routes).
+- **Real app** (built stack: `pnpm build && pnpm mcp:build`, `E2E_PORT=52720 E2E_SKIP_BUILD=1 pnpm exec playwright test
+  e2e/sound-reference-profile.spec.ts`): 1 passed (22 s). Three 12 s soundtracks imported, a dull fourth on A1 → Preferences ▸
+  Sound Library ▸ Reference profiles ▸ New Reference Profile…, three ticked, Build → "“My channel”: 3 references measured."
+  → the Sound Check select (one History entry) → Run: Reference group (6 infos: air low, sub / low / low-mid high …) and the
+  rows; jasper-mcp `sound_check` gives the same metric → status map; Export… downloads the file (no media path), Import…
+  adds "My channel (2)", Delete… asks and removes. Looked at (`test-results/e2e-sound-reference-profile/`):
+  `1-new-profile-dialog.png`, `2-new-profile-result.png` (the form inside Preferences with the result and one combined
+  "no picture" warning), `3-prefs-profiles.png`, `4-sound-check-reference.png` (the Reference group's infos with their
+  messages), `4b-reference-differences.png` (each differing row: label, status, value · references … · median, advice),
+  `5-reference-all-rows.png` (loudness rows marked "Delivery target"), `6-delete-confirm.png`, `7-after-import-delete.png`.
+  The looks found four faults, fixed: New Reference Profile… opened as a dialog closed the Preferences dialog (now a form
+  there); the five-column table was unreadable in the narrow panel (now two lines per row, a range with one unit); context
+  rows showed "Low" for the integrated loudness (now "Delivery target"); three identical "no picture" warnings (now one).
+- Gate after merging `feat/sound-design` (`a7d5c0a9`, WP-E7; one README conflict, the tool count: 357 + 2 + 8 = 367):
+  `pnpm typecheck` 0 errors; `SD_GIT=1 … pnpm lint` (Biome, tokens, anime, layers, assets) pass; `node scripts/i18n.mjs
+  --check` (10 373 strings); `pnpm notices --check` current (33 ported records); `pnpm vitest run --project @jasper/project
+  --project @jasper/audio-fx --project @jasper/api --project @jasper/engine-client --project @jasper/session --maxWorkers=8`:
+  243 files, 3 006 tests — one failed, the code inventory in `sound-check.test.ts`, which now lists REFERENCE (passes);
+  `--project @jasper/web --project @jasper/mcp` (own ports 52730+): 215 files, 1 721 tests — one failed, the category order
+  in `sound-check-p6-model.test.ts`, which now ends with `reference` (passes); engine `events`, `fuzz-http` (fuzzes the six
+  new routes), `security-review`, `server`, every `sound-check*` file, `sound-listen`, `sound-profile`: 14 files, 296 passed,
+  1 skipped.
+
+#### Limits and notes for the next packages
+
+- The metrics are validated on generated material (noise, clicks, colour cuts); no labelled set of real films was measured.
+  Picture events of media references come from the scene detector (dissolves and slow changes are missed, flashes are
+  rejected); the speech share is the model-free classifier (a voice under loud music can read as music).
+- A reference is measured for its first 60 minutes; ≈ 3.8 s of CPU per minute of stereo plus the decode (and ≈ 1–3 ms per
+  frame of picture for the scene detector); a check with a profile pays the same on its mix.
+- A sequence reference's loudness and true peak take the normalisation gain without the limiter (context rows only).
+- Rows give advice, never a command fix; ENDING / HEAD / SILENCE / COVERAGE keep their own fixes.
+- Leave-one-out by measurements needs the same duration ± 50 ms and ten level-free metrics within tolerance: a re-encoded
+  copy of a reference (another codec, a resample) may not match and is then judged against all references.
+- WP-E8 (beds) and later packages: a bed that fills gaps changes `max_gap_s`, `intro_lu` and the arc rows; the REFERENCE
+  category stays last in the panel.

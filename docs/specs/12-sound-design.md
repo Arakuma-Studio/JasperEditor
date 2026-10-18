@@ -1089,6 +1089,20 @@ measured and without models (adapted from earshot `profile.py` / `critique.py`).
 - leave-one-out works;
 - the panel and MCP show the same rows.
 
+*As built (WP-E4, decisions and measurements in the wp-note "Phase 6 → WP-E4")*: the MCP tools are the spec's
+`build_sound_profile` (also `sequenceIds`), `list_sound_profiles`, `delete_sound_profile` and `sound_check {profileId}`,
+plus `get_sound_profile`, `rename_sound_profile`, `export_sound_profile` / `import_sound_profile` (a profile is a file to
+share) and `set_sound_profile` — the sequence's own profile (`soundDesign.setSettings {referenceProfile}`, one undo step),
+which every Sound Check run compares with unless the request names another (`profileId`, null for none). References may be
+sequences (their mix through the export mixer, their edit's cuts and transitions as picture events). The Reference rows are
+findings of code REFERENCE in a category `reference` (warnings for major rows, infos for minor ones; integrated loudness and
+true peak are context rows only) plus `report.reference.rows`; they carry their advice in `issue.advice` and offer no
+command fix (no edit makes a mix "more like" a style safely: the user decides). Leave-one-out matches the checked
+sequence by identity, or a media reference by level-independent measurements. In the editor: Preferences ▸ Sound Library
+▸ Reference profiles (New Reference Profile… as a form there, Import…, Rename, Export…, Delete…) and the Sound Check
+panel's Reference select (with "New Reference Profile…", a dialog) and Reference rows. Speech share is our model-free
+Auto Tag classifier per 5 s window.
+
 **P6-E9 (P1). Takes: multi-hit recordings become variation pools.** The judge marks multi-hit files down today, but a
 recording of ten key presses is the best variation pool there is ("vary the take, not the pitch").
 
