@@ -10,7 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const GPL_ENCODER = /['"`](?:-c:v|-vcodec|-codec:v|-c:a|-acodec|-codec:a)['"`]\s*,\s*['"`](libx264|libx264rgb|libx265|libxvid|libfdk_aac)['"`]/g;
+const GPL_ENCODER =
+	/['"`](?:-c:v|-vcodec|-codec:v|-c:a|-acodec|-codec:a)['"`]\s*,\s*['"`](libx264|libx264rgb|libx265|libxvid|libfdk_aac)['"`]/g;
 /** GPL-only filters (AGENTS.md §2.2) at the start of a filter in filter text. */
 const GPL_FILTER =
 	/(?:^|["'`,;\]])\s*(eq|hqdn3d|perspective|boxblur|smartblur|delogo|frei0r|spp|pp7|uspp|fspp|mpdecimate|pullup)=/gm;

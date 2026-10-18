@@ -25,7 +25,10 @@ const hooks = vi.hoisted(() => ({
 	async work(signal: AbortSignal | undefined): Promise<void> {
 		hooks.entered?.();
 		const t0 = Date.now();
-		const seen: { aborted: boolean; abortedAfterMs: number | null } = { aborted: false, abortedAfterMs: null };
+		const seen: { aborted: boolean; abortedAfterMs: number | null } = {
+			aborted: false,
+			abortedAfterMs: null,
+		};
 		hooks.seen.push(seen);
 		const limit = hooks.mode === 'answer' ? 200 : 3000;
 		await new Promise<void>((resolve) => {
@@ -72,7 +75,10 @@ let projectId = '';
 let mediaKey = '';
 
 /** A POST over a real socket (the engine's allowed Host header); `destroy()` closes it before the answer. */
-function post(path: string, body: unknown): { done: Promise<{ status: number; body: string }>; destroy(): void } {
+function post(
+	path: string,
+	body: unknown,
+): { done: Promise<{ status: number; body: string }>; destroy(): void } {
 	const req = request({
 		host: '127.0.0.1',
 		port,
@@ -101,7 +107,11 @@ const ROUTES: { name: string; path: string; body: () => unknown; patch?: () => v
 		path: '/api/sound-design/visual',
 		body: () => ({ projectId, range: { start: 0, end: 30 } }),
 	},
-	{ name: 'POST /api/sound-design/beds/plan', path: '/api/sound-design/beds/plan', body: () => ({ projectId }) },
+	{
+		name: 'POST /api/sound-design/beds/plan',
+		path: '/api/sound-design/beds/plan',
+		body: () => ({ projectId }),
+	},
 	{
 		name: 'POST /api/sound-design/room-tone/plan',
 		path: '/api/sound-design/room-tone/plan',

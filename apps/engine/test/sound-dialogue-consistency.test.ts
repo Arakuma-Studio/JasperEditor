@@ -97,18 +97,7 @@ describe.skipIf(!HAVE_FFMPEG)(
 			] as const) {
 				const r = spawnSync(
 					TEST_FFMPEG,
-					[
-						'-v',
-						'error',
-						'-y',
-						'-f',
-						'lavfi',
-						'-i',
-						src,
-						...ENGINE_VIDEO_ARGS,
-						'-an',
-						join(dir, name),
-					],
+					['-v', 'error', '-y', '-f', 'lavfi', '-i', src, ...ENGINE_VIDEO_ARGS, '-an', join(dir, name)],
 					{
 						encoding: 'utf8',
 					},
@@ -222,7 +211,9 @@ describe.skipIf(!HAVE_FFMPEG)(
 				mgTemplates: mgRegistry,
 				voice: v.voice,
 			});
-			expect(carried.skipped.filter((x) => x.code === 'MUSIC_CARRIES_CUT').map((x) => x.frame)).toEqual([225]);
+			expect(carried.skipped.filter((x) => x.code === 'MUSIC_CARRIES_CUT').map((x) => x.frame)).toEqual([
+				225,
+			]);
 			expect(
 				collectPlanCues(doc, seq, req, style, { mgTemplates: mgRegistry }).cues.filter(
 					(x) => x.kind === 'cut',

@@ -1,5 +1,5 @@
 // Renders the first pending import prompt as a modal dialog (S05 §14.1: Enter = primary, Esc = cancel).
-import { Button, Z } from '@jasper/ui';
+import { Button, registerModal, Z } from '@jasper/ui';
 import { useEffect, useRef } from 'react';
 import { importPrompts, type PendingPrompt, type PromptQueue, usePromptQueue } from './prompts.ts';
 
@@ -14,6 +14,8 @@ export function Dialog(props: {
 	const ref = useRef<HTMLDivElement>(null);
 	useEffect(() => {
 		ref.current?.querySelector<HTMLElement>('[data-autofocus]')?.focus();
+		// toasts keep clear of its buttons (`placeToasts`)
+		return ref.current ? registerModal(ref.current) : undefined;
 	}, []);
 	return (
 		<div
@@ -38,7 +40,9 @@ export function Dialog(props: {
 			>
 				<h2 className="text-pr-ui font-semibold text-pr-strong">{props.title}</h2>
 				<div className="min-h-0 overflow-auto text-pr-ui">{props.children}</div>
-				<div className="flex justify-end gap-2">{props.footer}</div>
+				<div data-dialog-actions="" className="flex justify-end gap-2">
+					{props.footer}
+				</div>
 			</div>
 		</div>
 	);

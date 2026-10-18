@@ -29,7 +29,8 @@ function makeScene(dir: string) {
 	]);
 	// Same motion, brightness flickering frame to frame.
 	// (geq, not eq: eq is a GPL-only filter the LGPL build lacks; the same luma offset, frame by frame)
-	const flicker = "geq=lum='clip(lum(X,Y)+255*(0.12*sin(N*2.1)+0.05*sin(N*5.3)),0,255)':cb='cb(X,Y)':cr='cr(X,Y)'";
+	const flicker =
+		"geq=lum='clip(lum(X,Y)+255*(0.12*sin(N*2.1)+0.05*sin(N*5.3)),0,255)':cb='cb(X,Y)':cr='cr(X,Y)'";
 	ff(['-filter_complex', `${a(2)},${flicker}[v]`, '-map', '[v]', ...out, join(dir, 'flicker.mp4')]);
 }
 

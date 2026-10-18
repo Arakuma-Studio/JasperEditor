@@ -288,9 +288,7 @@ test('room tone fills the dialogue hole from Sound Check; an ambience bed per sc
 	});
 	expect(bed.some((c) => (ducked[c.id]?.volumeDb?.keyframes ?? []).length > 0)).toBe(true);
 
-	// 3. the export, measured (the result toasts would cover the Export dialog's footer)
-	for (const d of await page.getByTestId('toast-host').getByRole('button', { name: 'Dismiss' }).all())
-		await d.click().catch(() => {});
+	// 3. the export, measured (the result toasts stay up: they keep clear of Export mode's footer)
 	const { file } = await exportViaUi(page, request, {
 		engine: 'native',
 		fileName: 'beds.mp4',
