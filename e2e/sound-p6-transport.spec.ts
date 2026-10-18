@@ -23,8 +23,8 @@ const outDir = join(ROOT, 'test-results', 'e2e-sound-p6-transport');
 const SR = 48000;
 /** Hard Limiter latency at 20 ms look-ahead (samples, 48 kHz). */
 const HL20 = 998;
-/** A primed start waits two render quanta beyond the read-ahead (`START_MARGIN`). */
-const MARGIN = 256;
+/** A primed start waits two render quanta beyond the read-ahead (`START_MARGIN`; 0 to measure a build before it). */
+const MARGIN = Number(process.env.E2E_P6_MARGIN ?? 256);
 /** Plays per test (the wp-note's counts come from several runs of the spec). */
 const PLAYS = Number(process.env.E2E_P6_PLAYS ?? 6);
 const DEBUG = !!process.env.E2E_P6_DEBUG;
