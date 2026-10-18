@@ -254,6 +254,8 @@ export function soundCheckInputsHash(
 	sequenceId: string,
 	preset: SoundDelivery,
 	target?: SoundCheckTarget | null,
+	/** The reference profile the check compared with (P6-E8); default the sequence's (`settings.referenceProfile`). */
+	referenceProfile?: string | null,
 ): string {
 	try {
 		const seq = doc.sequences?.[sequenceId] as Sequence | undefined;
@@ -262,6 +264,7 @@ export function soundCheckInputsHash(
 		const loud = (seq.master as { loudness?: unknown } | undefined)?.loudness;
 		const { analysis: _a, ...loudness } = (isRecord(loud) ? loud : {}) as Record<string, unknown>;
 		const settings = soundDesignSettingsOf(seq);
+		const profile = referenceProfile === undefined ? (settings.referenceProfile ?? null) : referenceProfile;
 		return fnv1a64(
 			stable({
 				cues: sd ? Object.values(sd.cues).sort((a, b) => (a.id < b.id ? -1 : 1)) : [],
@@ -273,6 +276,8 @@ export function soundCheckInputsHash(
 				...(settings.density !== DEFAULT_SOUND_DESIGN_SETTINGS.density ? { density: settings.density } : {}),
 				// a custom target is part of what was checked (absent for a preset: hashes stored before stay valid)
 				...(target ? { target: { lufs: target.integratedLufs, tp: target.truePeakDb } } : {}),
+				// the reference profile compared with (absent without one: hashes stored before stay valid)
+				...(profile ? { referenceProfile: profile } : {}),
 			}),
 		);
 	} catch {

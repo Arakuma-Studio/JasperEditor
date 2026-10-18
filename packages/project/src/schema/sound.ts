@@ -8,6 +8,7 @@
 // that deletes a clip, transition or marker leaves them dangling, readers ignore dangling ids, and `repairDocument`
 // prunes them on load (anchor → null with a report line). No schema bump: every field is optional or loose (v7).
 import { z } from 'zod';
+import { REFERENCE_PROFILE_ID_RE } from '../sound/profile.ts';
 import { StoredSoundTypeSchema } from '../sound/provenance.ts';
 import { type DeepStrip, keyframeSchema } from './common.ts';
 
@@ -249,6 +250,11 @@ export const SoundDesignSettingsSchema = z.looseObject({
 	credits: z.enum(SOUND_CREDITS_FORMATS).nullable().optional(),
 	/** The cue grammar and personality (P6-E10; `soundDesign.setSettings {style}`). Absent = every default. */
 	style: SoundDesignStyleSchema.optional(),
+	/**
+	 * The reference profile Sound Check compares the sequence with (P6-E8; `soundDesign.setSettings {referenceProfile}`):
+	 * an id of the engine's per-user profile library (`sprf_…`). Absent / null = no comparison.
+	 */
+	referenceProfile: z.string().regex(REFERENCE_PROFILE_ID_RE).nullable().optional(),
 });
 export type SoundDesignSettings = DeepStrip<z.infer<typeof SoundDesignSettingsSchema>>;
 
@@ -689,6 +695,9 @@ export function readSoundDesignSettings(raw: unknown): SoundDesignSettings {
 	if (raw.palette !== undefined) out.palette = ids(raw.palette, SOUND_DESIGN_LIMITS.palette);
 	const cr = opt(shape.credits, raw.credits);
 	if (cr !== undefined) out.credits = cr;
+	const rp = opt(shape.referenceProfile, raw.referenceProfile);
+	if (rp !== undefined) out.referenceProfile = rp;
+	else delete out.referenceProfile;
 	if (raw.style !== undefined) {
 		const st = readSoundDesignStyle(raw.style);
 		if (st) out.style = st;
