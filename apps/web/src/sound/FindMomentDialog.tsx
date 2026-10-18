@@ -50,6 +50,8 @@ export function FindMomentDialog(
 	const [description, setDescription] = useState('');
 	const [length, setLength] = useState('2');
 	const [busy, setBusy] = useState<string | null>(null);
+	/** A search is running (Find is disabled until it ends). */
+	const [searching, setSearching] = useState(false);
 	const [error, setError] = useState<{ code: string | null; message: string } | null>(null);
 	const [moments, setMoments] = useState<SoundMoment[] | null>(null);
 	const [playing, setPlaying] = useState<number | null>(null);
@@ -73,6 +75,7 @@ export function FindMomentDialog(
 		const ctl = new AbortController();
 		ac.current = ctl;
 		setBusy(t('Queued'));
+		setSearching(true);
 		setError(null);
 		setMoments(null);
 		try {
@@ -105,7 +108,10 @@ export function FindMomentDialog(
 			const code = (err as { code?: unknown }).code;
 			setError({ code: typeof code === 'string' ? code : null, message: errorText(err) });
 		} finally {
-			if (ac.current === ctl) setBusy(null);
+			if (ac.current === ctl) {
+				setBusy(null);
+				setSearching(false);
+			}
 		}
 		return false;
 	};
@@ -154,7 +160,7 @@ export function FindMomentDialog(
 			title={t('Find Moment — {0}', e.title || e.id)}
 			size="medium"
 			primaryLabel="Find"
-			primaryDisabled={!!busy && busy === t('Queued')}
+			primaryDisabled={searching}
 			onPrimary={find}
 			cancelLabel="Close"
 			data-testid="sound-find-moment-dialog"
