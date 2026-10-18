@@ -453,6 +453,20 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		slot: 'worst',
 		clipId: { clipAt: { track: 'A1', at: 15 } },
 	},
+	// P6-E4: a Sound Check finding acknowledged as deliberate (its key, code, severity, target and text are the report
+	// issue's: id, code, severity, clipIds / cueId / frame, message.text). Agents: warnings and infos only (an error is
+	// E_APPROVAL_REQUIRED, the user's call). MCP acknowledge_sound_issue looks the finding up for you.
+	'soundDesign.acknowledgeIssue': {
+		type: 'soundDesign.acknowledgeIssue',
+		key: 'ENDING:end',
+		code: 'ENDING',
+		severity: 'warning',
+		reason: 'The cut to black on the last hit is the punchline',
+		target: { frame: 15 },
+		message: 'The mix ends mid-sound at 00:00:00:15',
+	},
+	// …and taken back: the finding counts again on the next check.
+	'soundDesign.unacknowledgeIssue': { type: 'soundDesign.unacknowledgeIssue', key: 'ENDING:end' },
 	// WP6.5b: a precondition for changes computed from a measurement of the mix (the `mixHash` of a loudness analysis,
 	// a Sound Check or a job report): the transaction is refused (E_REVISION_MISMATCH, nothing applied) if the mix
 	// changed since; put it first.
