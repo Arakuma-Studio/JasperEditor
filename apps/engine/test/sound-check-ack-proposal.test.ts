@@ -61,12 +61,18 @@ async function saved(projectId: string): Promise<{ doc: ProjectDocument; revisio
 	const b = r.json() as { result: ProjectDocument; revision: number };
 	return { doc: b.result, revision: b.revision };
 }
+const timings: string[] = [];
 async function check(body: Record<string, unknown>, headers: Record<string, string> = AGENT_H) {
+	const t0 = Date.now();
 	const r = await post('/api/sound-design/check', body, headers);
 	expect(r.statusCode, r.body).toBe(202);
 	const job: EngineJob = await coreServices(app).queue.wait((r.json() as EngineJob).id);
 	expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
-	return { job, result: SoundCheckResultSchema.parse(job.result) as SoundCheckResult };
+	const result = SoundCheckResultSchema.parse(job.result) as SoundCheckResult;
+	timings.push(
+		`${body.proposalId ? `proposal (base ${result.proposal?.base})` : 'check'} ${Date.now() - t0} ms`,
+	);
+	return { job, result };
 }
 async function tx(projectId: string, commands: unknown[], headers: Record<string, string>) {
 	const r = await post(
@@ -108,6 +114,7 @@ beforeAll(async () => {
 	media = await registerCheckMedia(app, mkdtempSync(join(tmpdir(), 'jasper-ackp-')), TOKEN);
 }, 180_000);
 afterAll(async () => {
+	console.log(`sound check timings: ${timings.join(', ')}`);
 	await closeApps();
 });
 
