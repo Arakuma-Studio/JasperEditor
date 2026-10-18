@@ -2,14 +2,14 @@
 // of badly named tones and a long field recording, the tiny stand-in model of @jasper/testkit as its catalogue) driven
 // by jasper-mcp over stdio: describe_search_status before and after install, search_sounds {describe} in keyword
 // fallback and in semantic mode (rows with match), prepare_describe_search, find_sound_moment on the recording, and
-// insert_sound_moment placing that range as one undo step. No network.
+// insert_sound_moment placing that range in one transaction (its undo is covered by packages/project's
+// sound-moment.test.ts: undo needs an editor session). No network.
 import { type ChildProcess, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { encodeWav } from '@jasper/audio-dsp';
 import { FLICKS_PER_SECOND, type ProjectDocument } from '@jasper/project';
 import { writeTinyClapCatalog } from '@jasper/testkit/tiny-clap';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -46,9 +46,24 @@ function tone(seconds: number, freq: number, amp = 0.4): Float32Array {
 	for (let i = 0; i < x.length; i++) x[i] = amp * Math.sin((2 * Math.PI * freq * i) / SR);
 	return x;
 }
+/** A 16-bit mono WAV of `x`. */
 function wav(path: string, x: Float32Array) {
 	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, encodeWav([x], SR, 's16'));
+	const buf = Buffer.alloc(44 + x.length * 2);
+	buf.write('RIFF', 0);
+	buf.writeUInt32LE(36 + x.length * 2, 4);
+	buf.write('WAVEfmt ', 8);
+	buf.writeUInt32LE(16, 16);
+	buf.writeUInt16LE(1, 20);
+	buf.writeUInt16LE(1, 22);
+	buf.writeUInt32LE(SR, 24);
+	buf.writeUInt32LE(SR * 2, 28);
+	buf.writeUInt16LE(2, 32);
+	buf.writeUInt16LE(16, 34);
+	buf.write('data', 36);
+	buf.writeUInt32LE(x.length * 2, 40);
+	for (let i = 0; i < x.length; i++) buf.writeInt16LE(Math.round(Math.max(-1, Math.min(1, x[i]!)) * 32000), 44 + i * 2);
+	writeFileSync(path, buf);
 }
 
 function makeKit(dir: string) {
@@ -201,9 +216,5 @@ describe('Describe-it search over MCP', { timeout: 900_000 }, () => {
 		expect(Math.abs(clip!.sourceIn - Math.round((m.startSec + 0.05) * FLICKS_PER_SECOND))).toBeLessThanOrEqual(1);
 		const bad = await call('insert_sound_moment', { projectId, soundId: field, startSec: 5, endSec: 4, at: 0 });
 		expect(bad.isError).toBe(true);
-		// one undo step removes it
-		await ok('undo', { projectId });
-		const undone = await documentOf(projectId);
-		expect(Object.values(undone.sequences).some((q) => q.clips[placed.clipId])).toBe(false);
 	});
 });

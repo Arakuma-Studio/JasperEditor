@@ -509,7 +509,7 @@ Tools (373; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   (land the drop on a frame within 1 ms, end on a bar line; `docs/wp-notes/sound-design.md` "WP-E7").
 - Sound library (sound effects; agents judge them by descriptors and contact sheets): `sound_library_status`
   `search_sounds` (takes: true lists the single takes of multi-hit recordings — typing runs, clocks — as sounds of
-  their own, ids snd_…~t&lt;n&gt;; a material filter; `describe` ranks by what sounds sound like with the optional
+  their own, ids snd_…~t&lt;n&gt;; a material filter; describe: ranks by what sounds sound like with the optional
   Describe-it search model, else searches its words) `get_sound` (a recording's takes) `view_sounds` · Describe-it
   search (LAION CLAP, Apache-2.0, ≈ 780 MB, user-installed, analysis only): `describe_search_status`
   `install_describe_search_model` (tell the user the size and licence first) `remove_describe_search_model` (approval
