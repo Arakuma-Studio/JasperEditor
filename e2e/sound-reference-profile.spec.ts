@@ -203,7 +203,10 @@ test('build a reference profile from project media, compare the sequence in Soun
 	);
 	const air = panel().getByTestId('sound-check-findings').locator('[data-issue-id="REFERENCE:band_air"]');
 	await expect(air).toBeVisible();
+	await air.scrollIntoViewIfNeeded();
 	await panel().screenshot({ path: join(outDir, '4-sound-check-reference.png') });
+	await rows.scrollIntoViewIfNeeded();
+	await panel().screenshot({ path: join(outDir, '4b-reference-differences.png') });
 	await rows.getByTestId('sound-check-reference-all').click();
 	await rows.scrollIntoViewIfNeeded();
 	const statuses = Object.fromEntries(
