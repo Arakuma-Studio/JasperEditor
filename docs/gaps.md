@@ -552,7 +552,7 @@ confidence (balanced drops it, reported `MUSIC_CARRIES_CUT`), six personalities 
 exclusions, materials, default density), and a ranking bonus for the dominant material of the placed sounds' family; the
 style is stored per sequence (`soundDesign.setSettings {style}`) and set in Preferences ▸ Sound Library, Auto Sound Pass…
 and Suggest Cues…; MCP `plan_sound_design` style options, `find_sound_cues` options, `place_sound` picks and `swap_sound`
-sibling takes follow it. Measured in an export: a 4-card stagger plays 1000.0 / 1059.5 / 1122.5 / 1189.2 Hz from 1 kHz
+sibling takes follow it, and Sound Check's REPEAT no longer flags the one voice. Measured in an export: a 4-card stagger plays 1000.0 / 1059.5 / 1122.5 / 1189.2 Hz from 1 kHz
 pops (0 / 1 / 2 / 3 st) and three clicks peak at −10.25 dBFS each. Also fixed: a plan proposal holding a take failed
 validation (`~` in a setup item id). Rerun `packages/project/test/sound-grammar.test.ts`,
 `apps/engine/test/sound-design-grammar.test.ts`, `apps/engine/test/sound-grammar-export.test.ts`,
