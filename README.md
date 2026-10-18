@@ -710,9 +710,15 @@ measured; the result (`SoundCheckResult`) has a verdict (pass / warn / fail), ev
 timecode, translatable message and fix (commands, an engine job or a sound swap; `safe` when it resolves the finding by
 itself), the per-event table, five listen-here moments and loudness curves; `store: true` also writes the summary into
 the sequence (`soundDesign.setCheck`, one undo step).
-`POST /api/sound-design/visual {projectId, sequenceId?, range, checkJobId?}` answers at once with 10 ms loudness curves of
-the mix and each stem, the mix waveform, cue ticks, sound-effect clips, speech, the picture's motion curve and a check
-job's findings over a range of at most 120 s.
+`POST /api/sound-design/visual {projectId, sequenceId?, range, checkJobId?, spectrogram?}` answers at once with 10 ms
+loudness curves of the mix and each stem, the mix waveform, cue ticks, sound-effect clips, speech, the picture's motion
+curve, a check job's findings and (asked) the mix's log-frequency spectrogram over a range of at most 120 s.
+`POST /api/sound-design/listen {projectId, sequenceId?, range?, detail?: low | normal | high}` starts a `sound-listen`
+job (202) over at most 10 minutes: the mix and every clip rendered once; the result (`SoundListenResult`) is the
+listening transcript — its lines and text, the events of the mix (attack, peak, band, prominence over the bed, accent)
+each with the clip that plays it and the cue it fills, sections by audio type, silences, every cut / transition / cue /
+measured motion with the sound that answers it and the chance level of each sync share, the placed sounds heard or not,
+loudness. Nothing is written.
 `POST /api/audio/classify {projectId | envelope, sequenceId?, clipIds} | {mediaKeys, streamIndex?}` (`?wait=1` to answer
 when done) starts an `audio-classify` job: Essential Sound Auto Tag classifies each clip (the media range it plays) or
 media as dialogue, music, sfx or ambience with a confidence, per-type scores, reasons and the measured features; cached
