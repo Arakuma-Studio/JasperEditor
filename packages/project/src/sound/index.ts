@@ -15,6 +15,7 @@ export * from './messages.ts';
 export * from './mix.ts';
 export * from './moment.ts';
 export * from './music-fit.ts';
+export * from './music-grid.ts';
 export * from './pitch.ts';
 export * from './place.ts';
 export * from './profile.ts';

@@ -1,9 +1,14 @@
 import { Dialog as RDialog } from 'radix-ui';
-import { type KeyboardEvent, type ReactNode, useState, useSyncExternalStore } from 'react';
+import { type KeyboardEvent, type ReactNode, useEffect, useState, useSyncExternalStore } from 'react';
 import { cx } from '../cx.ts';
 import { Icon } from '../icons/Icon.tsx';
 import { Button } from '../primitives/Button.tsx';
 import { escapeRevertsField, InDialogContext } from './layer.ts';
+import { registerModal, TOAST_HOST_ATTR } from './modal-registry.ts';
+
+/** A click on a toast is not a click outside a modal: it does not close the dialog. */
+const fromToast = (e: { target: EventTarget | null }) =>
+	!!(e.target as { closest?(s: string): Element | null } | null)?.closest?.(`[${TOAST_HOST_ATTR}]`);
 
 export type DialogSize = 'small' | 'medium' | 'large';
 const WIDTHS: Record<DialogSize, string> = { small: 'w-[400px]', medium: 'w-[560px]', large: 'w-[880px]' };
@@ -61,6 +66,9 @@ export function Dialog(props: DialogProps) {
 	} = props;
 
 	const [error, setError] = useState<string | null>(null);
+	// the open modal, for overlays that keep clear of its title bar and footer (toasts: `placeToasts`)
+	const [content, setContent] = useState<HTMLDivElement | null>(null);
+	useEffect(() => (open && content ? registerModal(content) : undefined), [open, content]);
 	const runPrimary = async () => {
 		if (primaryDisabled || !onPrimary) return;
 		setError(null);
@@ -89,6 +97,7 @@ export function Dialog(props: DialogProps) {
 			<RDialog.Portal>
 				<RDialog.Overlay className="fixed inset-0 z-[var(--pr-z-dialog)] bg-[var(--pr-overlay-scrim)]" />
 				<RDialog.Content
+					ref={setContent}
 					data-testid={props['data-testid'] ?? 'dialog'}
 					onKeyDown={onKeyDown}
 					// The app keyboard dispatcher skips modal dialogs so their controls own keyboard input.
@@ -99,6 +108,12 @@ export function Dialog(props: DialogProps) {
 						(e.currentTarget as HTMLElement | null)
 							?.querySelector<HTMLElement>('[data-dialog-primary]')
 							?.focus();
+					}}
+					onPointerDownOutside={(e) => {
+						if (fromToast(e)) e.preventDefault();
+					}}
+					onFocusOutside={(e) => {
+						if (fromToast(e)) e.preventDefault();
 					}}
 					onEscapeKeyDown={(e) => {
 						// A field that is being edited takes the first Esc to revert its text (DIALOG_ESCAPE_REVERTS);
@@ -121,7 +136,10 @@ export function Dialog(props: DialogProps) {
 					{bare ? (
 						<RDialog.Title className="sr-only">{title}</RDialog.Title>
 					) : (
-						<div className="flex h-10 shrink-0 items-center gap-2 border-b border-pr-border-subtle pr-2 pl-4">
+						<div
+							data-dialog-header=""
+							className="flex h-10 shrink-0 items-center gap-2 border-b border-pr-border-subtle pr-2 pl-4"
+						>
 							<RDialog.Title className="truncate text-[length:var(--pr-font-size-dialog-title)] leading-5 font-semibold text-pr-strong">
 								{title}
 							</RDialog.Title>
@@ -146,7 +164,10 @@ export function Dialog(props: DialogProps) {
 						) : null}
 					</div>
 					{primaryLabel ? (
-						<div className="flex h-12 shrink-0 items-center gap-2 border-t border-pr-border-subtle px-4">
+						<div
+							data-dialog-actions=""
+							className="flex h-12 shrink-0 items-center gap-2 border-t border-pr-border-subtle px-4"
+						>
 							{footerExtra}
 							<div className="ml-auto flex items-center gap-2">
 								{props.hideCancel ? null : (

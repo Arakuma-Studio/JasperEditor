@@ -30,6 +30,7 @@ import {
 	resolveCueAnchor,
 	sceneAnchorAt,
 } from '@jasper/project';
+import { ENGINE_VIDEO_ARGS } from '@jasper/testkit/fixture-video';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { JobContext } from '../src/jobs/types.ts';
 import { editFrames, MotionService, planMotion } from '../src/sound-design/motion.ts';
@@ -62,7 +63,7 @@ function boxVideo(file: string, seconds = 4): void {
 		...['-f', 'lavfi', '-i', 'testsrc2=s=240x240:r=30:d=1'],
 		'-filter_complex',
 		"[1:v]trim=end_frame=1,loop=loop=-1:size=1:start=0,setpts=N/30/TB[b];[0:v][b]overlay=x='if(lt(t,1),200,if(lt(t,2),200+(t-1)*600,800))':y=400:shortest=1:eval=frame,format=yuv420p",
-		...['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '14', '-g', '15', '-an', file],
+		...[...ENGINE_VIDEO_ARGS, '-g', '15', '-an', file],
 	]);
 }
 
@@ -73,7 +74,7 @@ function cutVideo(file: string): void {
 		...['-f', 'lavfi', '-i', 'smptebars=s=320x180:r=30:d=2'],
 		'-filter_complex',
 		'[0:v][1:v]concat=n=2:v=1:a=0,format=yuv420p',
-		...['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-an', file],
+		...[...ENGINE_VIDEO_ARGS, '-an', file],
 	]);
 }
 

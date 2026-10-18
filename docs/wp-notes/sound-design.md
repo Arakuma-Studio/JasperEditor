@@ -9756,3 +9756,131 @@ guide says so.
 - A moment is trimmed only where the recording is quiet around its sound: over a steady bed the window stays as found.
 - The download is fp32 (776 MB of weights): the smaller int8 export would need hosting and loses top-1 agreement
   (measured above).
+
+### Phase 6 → final carry-over cleanup
+
+Branch `feat/sd-p6-cleanup`. The carry-overs left after WP6.5a / WP6.5b and the WP-E packages (CARRYOVER.md, the
+"limits / for the next package" notes of Phase 6), except the CLAP search (WP-E9, in parallel) and the preview transport
+(Phase 0 latent-effect lateness, the ≤ 0.5 s picture wait on Play, seek read-ahead, the rare transport cases, the Hear
+toggle's ≈ 185 ms jump, PAN automation per frame in the preview: the next package's). Every fix has a regression test
+that failed before it — shown by running the new tests on the old sources (the old files copied over the remote copy,
+`remote.sh`), results below.
+
+#### Item table
+
+| # | Item | Result | What changed | Regression test (failed before → passes) |
+|---|---|---|---|---|
+| 1 | Test fixtures encoded with libx264, which the vendored LGPL ffmpeg lacks: `sound-design-motion` and `sound-dialogue-consistency` failed in `beforeAll` ("Unknown encoder 'libx264'") on the build server | **Fixed** | `@jasper/testkit/fixture-video`: `ENGINE_VIDEO_ARGS` (FFmpeg's own MPEG-4 Part 2, q 2: 50.8 dB PSNR on testsrc2 vs x264's defaults 44.2, measured with the vendored build), `LOSSLESS_VIDEO_ARGS` (FFV1, in `.mov` for exact frame times), `BROWSER_VIDEO_ARGS` (VP9, libvpx BSD, crf 12 real-time: 52.7 dB, 0.46 s for 2 s of 640×360). Used by every fixture that hard-coded libx264: engine `sound-design-motion`, `sound-dialogue-consistency`, `masks-track` (lossless plate, was `-qp 0` x264), `jobs` (the cancel encode), MCP `sound-motion`, the eight compositions gallery / fx e2e fixtures (VP9 in MP4; the `fx-media` / `docs-gallery` fallbacks gone), `e2e/source-range.spec.ts`. Also the GPL-only `eq` filter in three compositions fixtures (`geq` luma offset for the flicker, `hue=s=1.4` for saturation). `scripts/make-fixtures.mjs` already chose OpenH264 in LGPL mode (`fixtureH264Args`) | `scripts/fixture-gpl-encoders.test.mjs` (scans every test, spec, bench and fixture script for a GPL encoder argument or a GPL-only filter: failed listing the 15 libx264 sites, then the 2 `eq` ones) — and the two engine files themselves (failed in `beforeAll`, pass: 11 + 1). Found once they ran: `sound-dialogue-consistency` expected the plan's cue collection to keep a cut the WP-E6 grammar ("the music carries the cut", confidence halved, balanced density) now drops — the test asks the plan for the cue route's density (`rich`) and pins the carried cut (`MUSIC_CARRIES_CUT` at frame 225) |
+| 2 | A toast covered the Export button (e2e "Auto Sound Pass… → export"; WP-E8 dismissed toasts first) | **Fixed in the UI** | Toasts stay above dialogs (S05:DT-030 "always visible") but keep clear of what a modal asks the user to click: `placeToasts` (`@jasper/ui` `toast/placement.ts`): where they are when clear; else in their column above the dialog; else between its title bar and its footer, the stack's height capped (newest kept). Modals register their element (`registerModal`: `Dialog`, the import prompts, and Export mode — a full-window mode whose Cancel / Export sit bottom-right, the actual case); title bars / footers are marked `data-dialog-header` / `data-dialog-actions`. The NoticeHost ("Export finished · Download") uses the same placement. A click on a toast no longer counts as a click outside the modal (it closed the dialog). The e2e workarounds (dismissing toasts) are removed; `exportViaUi` asserts no toast / notice overlaps the Export button before clicking it | `packages/ui/test/toast-placement.test.tsx` (7: the rules, a 2 000-case property that no placement covers a title bar or footer, and ToastHost + Dialog in the DOM — before: "expected '16px' to be '92px'", the toast left on the footer) |
+| 3 | 'inexact' registration (over 1 h, copy over 2 GiB, no disk space) reported by MCP only | **Done** | `LibraryProvenance.inexact {reason}` (optional, lenient read, repaired; the engine writes it with the provenance), `RegisterSoundResponse.inexact` carries its numbers (`limitSeconds`, `bytes`, `maxBytes`, `freeBytes`). Web: a warning toast on Insert / Fill / Swap / Sound Check's swap fix ("“Long Rain” is not sample-exact" + the numbers; none for the In Context audition's transient document), Properties ▸ Sound says why (`sound-section-inexact`), Sound Check has an INEXACT information (sync group, per clip, no fix); the plan job warns `W_SOUND_INEXACT`; MCP docs list INEXACT; es.json | `packages/project/test/sound-inexact.test.ts`, `apps/engine/test/sound-long-exact.test.ts` (numbers, provenance), `apps/engine/test/sound-tail.test.ts` "an INEXACT information", `apps/web/test/sound-inexact.test.tsx` (4) — before: 5 failed (no toast, no numbers, no provenance reason, no finding) |
+| 4 | `POST /api/sound-design/visual` with the beats route's old cancel check | **Fixed (all five routes)** | Over a real socket the visual route never noticed a client that left: its `req.raw.on('close')` was attached after the handler's awaits, when the request stream had already closed (the beats route's version, attached before them, cancelled every analysis — WP-E7). One helper, `clientGoneSignal(reply)` (`tools/reply.ts`: the response's 'close' before it finished, and a client already gone when it is created), in `/api/sound-design/visual`, `/beds/plan`, `/room-tone/plan`, `/api/audio/beats`, `/api/sync/audio` (the only in-request cancellable work in the engine's routes) | `apps/engine/test/route-client-gone.test.ts` (10, a listening engine and `node:http`, each route's work stubbed to hold until aborted): before, the visual route's "cancelled when the client closes the connection" failed (never aborted); with the beats route's pre-WP-E7 check put back, its "answered while the client waits" failed (aborted after 1 ms) |
+| 5 | Cue menu Stop Before Next and MCP `set_sound_cues {stopBefore}` kept the plain seconds | **Fixed** | One rule in the model (`sound/music-grid.ts`: `musicBeatRequest` — the plan's and the cue route's beat request —, `musicGridOf`, `stopBeforeOnBar`, `stopBeforeFor`, `cachedMusicGrid`); the plan's `cueMixItems` / `planMusicOf` use it. `POST /api/audio/beats {cachedOnly: true}` answers from the cache only (404 `BEATS_NOT_ANALYSED`, nothing started). Stop Before Next (cue menu, Properties ▸ Cue / Essential Sound checkbox) and `set_sound_cues` add / update put the stop's ramp end on the downbeat (else beat) 0.1–0.5 s before the hit when the sequence's style `stopOnBar` is on (default) and the music under it has analysed beats; else 0.25 s. `true` uses the plan's 0.5 s window, explicit `{seconds}` are the window (as the plan treats a cue's own stop); MCP returns `stopsOnBar`; the menu says "The music stops on the bar line before the cue" | `packages/project/test/sound-music-grid.test.ts` (5), `apps/web/test/sound-mix-ui.test.tsx` and `sound-cue-seam.test.tsx` (the checkbox and the menu: 0.4 s to the downbeat, the cache only, 0.25 s when not analysed or the style is off), `apps/engine/test/audio-beats-metre.test.ts` (`cachedOnly` 404 → 200), `apps/mcp/test/music-picture.test.ts` (real engine: the plan's stop for a hero 9 frames after the landed drop is "on the bar line … 0.3 s"; `set_sound_cues` stores the same seconds to the ms, `add` too, 0.25 s with the style off) — before: 4 failed (0.25 s, 200 instead of 404, no `stopsOnBar`) |
+| 6 | Engine-composed export messages English (WP6.5a 7l) | **Done for the sound and format warnings; pattern documented** | `RenderPlan.warnings[].params` / `ExportResult.warnings[].params` (`ExportWarningParamsSchema`, documented per code): `W_SOUND_CREDITS`, `W_SOUND_LICENSE_NC`, `W_SOUND_SHARE_ALIKE` (count, licences, titles, more), `W_SOUND_CHECK_STALE` (stale + reason / failed + errors), `OUTPUT_CONTAINER_CHANGED` / `AUDIO_CODEC_CHANGED` (requested, written, why, codec / accepts / container). The web says them with `t()` (`export/warning-text.ts`; in English exactly the engine's words) in the plan summary, Export mode's sound section and the finished-export notice (whose own credits lines were not wrapped for translation either: now `t()`); unknown codes or unreadable params show the engine's message. The pattern for the rest (planner blockers, job errors): `params` next to the English message, documented on the schema, a table in the web | `apps/web/test/export-warning-text.test.tsx` (English = engine message for 10 cases, Spanish for all, fallbacks, PlanSummary and the notice in Spanish), `apps/engine/test/{export-container,sound-export-credits}.test.ts` (params) — before: 7 failed |
+| 7 | The rest of CARRYOVER.md | **Confirmed fixed earlier** (table below) | — | — |
+
+Item 7, the other CARRYOVER.md entries (preview-transport ones skipped, CLAP is WP-E9):
+
+| Entry | Where it was fixed | Evidence |
+|---|---|---|
+| Razor inside a transition (E_INVARIANT) | WP6.5a item 1 (merged `e326b0a5`) | `packages/project/test/transition-razor.test.ts` |
+| "Undo <label>" English; workspace names | WP6.5a items 2, 3 | `apps/web/test/wp65a-i18n.test.tsx` |
+| Role / Align arrow keys | WP6.5a item 4 | `packages/ui/test/primitives.test.tsx`, `apps/web/test/sound-fill-ui.test.tsx` |
+| `pitchSt: 0` after a fractional pitch | WP6.5b item 1 (`45c1e253`) | `packages/project/test/sound-pitch-exact.test.ts` |
+| Lossy sounds > 120 s late; padded copies WAV / second media | WP6.5b items 2, 3 (+ item 3 here for the editor) | `apps/engine/test/sound-long-exact.test.ts`, `sound-copy-codec.test.ts`, `packages/project/test/sound-copy-upgrade.test.ts` |
+| Search perf threshold vs load | WP6.5b item 18 (strict CPU budget) | `apps/engine/test/sounds-search.test.ts` |
+| Anime mg templates' declared cue timing | WP6.5b item 16 | `packages/motion/test/mg-cue-timing.test.ts` |
+| Ghost lanes and the vertical scroll | Phase 3 verification (e) (WP6.5a 7f) | `proposal-ghosts-model.test.ts` |
+| Preview recompute on the main thread; 1 000-item preview 13–16 s | WP6.5b item 15: sliced in 8 ms batches, 3.0 → 1.1–1.4 s on the idle build server; one end-of-preview invariant check stays a single task (84 ms for 1 026 items idle, WP6.5b limits) | `packages/session/test/proposals-budget.test.ts` |
+| Proposals > 64 items: invariant conflicts only at Apply | WP6.5b item 14 | `proposals-preview-batch.test.ts`, `packages/session/test/proposals-conflict.test.ts` |
+| Crash between accept transaction and state write | WP6.5b item 13 (journalled) | `apps/engine/test/proposals-journal.test.ts` |
+| E2E start-up 600 s | WP6.5b item 19 (`E2E_SERVER_TIMEOUT_MS`) | `scripts/e2e-server-timeout.test.mjs` |
+| Solver: SFX masking each other | WP6.5b item 4 | `packages/audio-fx/test/masking-overlap.test.ts` |
+| Rebalance / delivery race | WP6.5b item 5 (`soundDesign.expectMix`) | `packages/project/test/sound-expect-mix.test.ts` |
+| `mergeDips` property seed lost | WP6.5b item 6 (seed capture, 8 fixes) | `packages/testkit/test/fast-check-setup.test.ts` |
+| Plan job's ≈ 69 solo renders on the main thread | WP6.5b item 7 (worker threads) | `apps/engine/test/sound-design-measure-worker.test.ts` |
+| Sound Check: demotion + gain, TP with normalisation off, mono Mix, kept report on delete | WP6.5b item 8 | `apps/engine/test/sound-check-joint.test.ts`, `sound-check-kept-lifecycle.test.ts` |
+| WP6.2: 1-flick vs 1 ms, half tempo / 4/4, `view_sound_timeline` motion, motion analysis render-bound | WP6.5b items 9–12 | `scene-edit-frames.test.ts`, `beats-tempo.test.ts`, `sound-timeline-motion.test.ts`, `sound-design-motion.test.ts` (runs on the build server since item 1) |
+| BigSoundBank (ask a human) | Human decision 2026-10-17 (YES, polite fetching); "Phase 6 → BigSoundBank packs" (`0032ea47`) | `apps/engine/test/sound-packs.test.ts` |
+| WP6.3: auto-tag preference, select clips of a tag | WP6.5a item 5 | `apps/web/test/essential-autotag-on-add.test.tsx` |
+| WP6.3: `place_sound` hero warning, solver speech vs volume automation | WP6.5b item 17 | `packages/project/test/sound-dialogue-audible.test.ts`, `apps/engine/test/sound-design-heard-speech.test.ts` |
+| MOV + PCM written as MP4 | WP6.5a item 6 (+ item 6 here for its words) | `apps/engine/test/export-container.test.ts` |
+| Earshot research queue | "Phase 6 → earshot analysis" (`507f89b0`) and WP-E1…E8 | their sections |
+| Auto gain on: two History entries (WP6.5a 7k) | WP6.5b item 20 (`8b48a04a`) | `apps/engine/test/sound-design-rebalance.test.ts` "autoGain" |
+
+#### Decisions
+
+- **Toasts above modals, out of their way** (item 2). Spec 05 DT-030 puts toasts above dialogs ("always visible");
+  Premiere's modal dialogs block the main window and its notifications. Keeping them readable but never on a dialog's
+  footer or title bar keeps both: a toast moves (above the dialog, else between its title bar and footer) rather than
+  hiding. Export mode is treated as a modal: its footer is the one the e2e hit.
+- **Fixture codecs** (item 1): one fixed LGPL encoder per use (MPEG-4 Part 2 for media the engine decodes, FFV1 for
+  lossless, VP9 for media a browser plays — in `.mp4`, so file names stayed) rather than "OpenH264 when present": the
+  same fixture on every host, and every FFmpeg build has MPEG-4 Part 2, FFV1 and (in practice) libvpx. Tests that need
+  H.264 itself keep `fixtureH264Args` (OpenH264 in LGPL-only mode).
+- **Bar-line stops use analysed beats only** (item 5): the cue menu and `set_sound_cues` never start an analysis (it can
+  take seconds; the plan, the beat cue source and Music to picture make it). The metre is the default (`auto`); a plan run
+  with a fixed `timeSignature` caches under another key and is not found.
+- **INEXACT is information** (item 3): the placement is still exact to a frame and the sound plays whole; the reason is
+  stored, not the sizes (they describe the moment of registration).
+- **English stays the engine's** (item 6): the engine has no user locale; `message` remains for agents, logs and older
+  editors, `params` carries the values. In English the web's text is the engine's message word for word (tested).
+
+#### Verified (measured; build server `jasper-build`, 16 × Intel Haswell vCPU, Node 20.20.2)
+
+Every command ran on the build server through `remote.sh` (its ffmpeg for the engine tests is the vendored LGPL
+7.1.5 build: "Unknown encoder 'libx264'" before item 1).
+
+- **Failing first** (the new tests on the old sources): item 1 `scripts/fixture-gpl-encoders.test.mjs` listed the 15
+  libx264 sites (then the 2 `eq` ones), `sound-design-motion` / `sound-dialogue-consistency` failed in `beforeAll`;
+  item 2 `toast-placement.test.tsx` "expected '16px' to be '92px'"; item 3 5 failed (web toast ×2, engine numbers,
+  provenance, INEXACT); item 4 the visual route never aborted, the pre-WP-E7 beats check aborted after 1 ms; item 5 4
+  failed (0.25 s in the menu and the checkbox, 200 instead of 404, no `stopsOnBar` while the plan said "on the bar
+  line … 0.3 s"); item 6 7 failed (Spanish plan summary, params in the plan and the job result).
+- **Item 1, the whole engine suite on the LGPL ffmpeg** — `pnpm vitest run --project @jasper/engine --maxWorkers=8`
+  (load 1–44, another agent's runs): 149 files passed, 16 skipped; **1 600 tests passed, 1 failed, 102 skipped**
+  (17.4 min); no "Unknown encoder" and no `libx264` anywhere in the log. The failure, `gaps-avc3-playback` (Chrome
+  playback: frame 12 instead of 11 after a seek, at load ≈ 40), passed alone (2 / 2). `masks-track` on the FFV1 plate:
+  6 / 6 (≤ 0.6 px), `sound-design-motion` 11 (1 perf skipped), `sound-dialogue-consistency` 1, MCP `sound-motion` 1.
+  The compositions fixtures with `REMOTION_E2E=1`: `fx-motion-blur`, `fx-sapphire-time-flicker` (the `geq` flicker is
+  flattened by S_FlickerRemove), `fx-sapphire-stylize-other`, `fx-sapphire-distort-warp` — 4 files, 13 tests passed
+  (21 min of renders); the gallery tests need their output directories (not run). Fixtures made with
+  `JASPER_FFMPEG=vendor/…/ffmpeg JASPER_FFMPEG_LGPL_ONLY=1 pnpm fixtures` (OpenH264) for the e2e below.
+- **E2E** (`pnpm build`, `E2E_PORT=53020 E2E_SKIP_BUILD=1 E2E_SERVER_TIMEOUT_MS=600000 pnpm exec playwright test
+  e2e/sound-review.spec.ts e2e/sound-beds.spec.ts e2e/source-range.spec.ts`, engine on the vendored LGPL ffmpeg):
+  **6 passed** (1.8 min), with no toast dismissed any more: "Auto Sound Pass… → … → export" (the failing one) exports
+  with "Proposed sounds for 3 cues" and "Applied 3 of 3 sounds from you" up — screenshot
+  `auto-pass-export-with-toasts.png` looked at: both toasts above Export mode's footer, Cancel / Export clear;
+  `exportViaUi` checks no toast or notice overlaps the button —, peaks 0 / 0 / 0 samples from the cue frames; the beds
+  export (joints 0.87 / 0.32 dB, the hole −38.27 dBFS); `source-range` Replace Footage with the VP9 render keeps source
+  timing.
+- **Gate** — `SD_GIT=1 … pnpm lint` (Biome, tokens, anime, layers, assets: ok), `pnpm -r --no-bail typecheck` (no
+  errors), `pnpm notices --check` (current), `node scripts/i18n.mjs --check` (es.json covers every string).
+- **Other packages** — `pnpm vitest run --project @jasper/{project,web,mcp,ui,session,api,audio-fx,engine-client,testkit}
+  --project scripts --maxWorkers=8`: 484 files, **4 933 passed, 2 failed, 8 skipped**; the two failures —
+  `project/color.test.ts` (a 33³ bake 54.0 ms over its 2× budget at load ≈ 15) and `mcp/sound-packs.test.ts` (its engine
+  not found on its fixed port) — passed alone (23 / 23). `@jasper/compositions`: 58 files passed, 2 failed (the
+  `capture-safe-canvas` / `serial-audio-context` Chrome 142 shims, failing the same before this branch, WP6.5b).
+
+#### Integration
+
+`feat/sound-design` merged in at `1fcdbcf6` (WP-E9 Describe-it search: conflicts in `packages/testkit/package.json` — both
+exports kept, `./fixture-video` and `./tiny-clap` —, `docs/gaps.md` and this wp-note — both sections —, `es.json` — both
+sides' strings — and `en.json`, regenerated with `pnpm i18n`). WP-E9's new sounds routes start jobs; none does
+cancellable work inside the request (checked: item 4 needs nothing there). Then, on the build server (load 3–13):
+`SD_GIT=1 … pnpm lint` ok; `pnpm -r --no-bail typecheck` no errors; `pnpm notices --check` current;
+`node scripts/i18n.mjs --check` (es.json covers all 10 517 strings); `pnpm vitest run --project @jasper/{project,ui,api,
+session} --project scripts --maxWorkers=8` — 228 files, **2 602 passed**; `pnpm vitest run
+apps/engine/test/{route-client-gone,sound*,music-picture,audio-beats-metre,export-container,masks-track,jobs}
+apps/mcp/test/{sound*,music-picture,readme-tools,conventions} apps/web/test/{sound*,export*,i18n} --maxWorkers=8` — 113
+files, **793 passed**, 4 skipped; `pnpm build`, LGPL fixtures, and the three e2e specs again — **6 passed** (1.7 min).
+
+#### Limits and notes for the next packages
+
+- Bar-line stops need the music's beats already analysed with the default metre; a stop set before the analysis keeps
+  0.25 s until set again (or until the plan re-plans it). Explicit `{seconds}` from an agent are the window, as in the plan.
+- Toast placement measures the open modals' title bar and footer by data attributes: a future modal not built on
+  `Dialog` must call `registerModal` and mark them (the import prompts and Export mode do).
+- Only the sound and format export warnings carry `params`; planner blockers, job errors and other engine messages stay
+  English (the pattern is on `ExportWarningParamsSchema` and in `export/warning-text.ts`).
+- The fixtures changed codec, not content: the compositions gallery images (docs) were not regenerated here.
+- Not in this package: CLAP (WP-E9) and the preview transport items (the next package).

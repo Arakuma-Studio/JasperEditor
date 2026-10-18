@@ -16,7 +16,7 @@ import { replyWithJob } from '../jobs/reply.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
 import { isProjectId } from '../projects/store.ts';
 import { liveDocument } from '../sound-design/plan.ts';
-import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
+import { clientGoneSignal, guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
 export default async function audioFxRoutes(app: FastifyInstance): Promise<void> {
@@ -35,13 +35,15 @@ export default async function audioFxRoutes(app: FastifyInstance): Promise<void>
 			const body = parseOr400(BeatsRequestSchema, req.body);
 			if (!MEDIA_KEY_RE.test(body.mediaKey) || !core.registry.get(body.mediaKey))
 				throw new HttpError(404, 'ASSET_NOT_FOUND', 'Unknown media key');
-			const ac = new AbortController();
-			// The client went away before the answer: 'close' of the RESPONSE (WP-E7 fix: the request stream's 'close'
-			// fires once its body is read — over a real socket every analysis was cancelled; inject never showed it).
-			reply.raw.on('close', () => {
-				if (!reply.raw.writableFinished) ac.abort();
-			});
-			return beats.analyze(body, ac.signal);
+			if (body.cachedOnly) {
+				const { cachedOnly: _c, ...req } = body;
+				const hit = await beats.cached(req);
+				if (!hit)
+					throw new HttpError(404, 'BEATS_NOT_ANALYSED', 'The beats of this range are not analysed yet');
+				return hit;
+			}
+			// stops when the client goes away (the response's 'close'; test/route-client-gone.test.ts)
+			return beats.analyze(body, clientGoneSignal(reply));
 		}),
 	);
 	// Essential Sound Auto Tag (spec 12 P6-R3): an `audio-classify` job; results cached per file and range.

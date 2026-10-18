@@ -558,6 +558,60 @@ describe('Essential Sound ▸ Room with several tracks selected', () => {
 });
 
 describe('Essential Sound ▸ Stop before next / Build (the linked cue)', () => {
+	it('over music with analysed beats the stop ends on the bar line (the plan’s rule); plain when not analysed or the style is off', async () => {
+		// final carry-over cleanup, item 5: before, Stop Before Next always stored 0.25 s (only the plan read the beats)
+		const f = fixture();
+		// 120 BPM from 0.6 s, a downbeat every 4 beats: 0.6, 2.6, 4.6 … (media seconds = sequence seconds here)
+		const beats = Array.from({ length: 20 }, (_, k) => 0.6 + k * 0.5);
+		const downbeats = beats.filter((_, k) => k % 4 === 0);
+		const asked: Record<string, unknown>[] = [];
+		const client = mocks.client as Record<string, unknown>;
+		client.audioBeats = vi.fn(async (req: Record<string, unknown>) => {
+			asked.push(req);
+			return { beats, downbeats };
+		});
+		mountEssential(f);
+		const box = () => within(screen.getByTestId('essential-stop')).getByRole('checkbox');
+		const stop = () => cuesOf(f.seq())[0]!.stopBefore;
+		await act(async () => {
+			fireEvent.click(box());
+		});
+		await vi.waitFor(() => expect(stop()).toBeDefined());
+		// the hero at 5 s: the downbeat at 4.6 s is 0.4 s before it (inside the plan's 0.5 s window)
+		expect(stop()!.seconds).toBeCloseTo(0.4, 9);
+		expect(stop()!.depthDb).toBe(-24);
+		expect(f.labels().at(-1)).toBe('Stop Before Next');
+		// nothing is analysed for it: the engine's cache only, with the plan's request for the clip
+		expect(asked).toHaveLength(1);
+		expect(asked[0]).toMatchObject({ cachedOnly: true, startSeconds: 0 });
+		await act(async () => {
+			fireEvent.click(box());
+		});
+		expect(stop()).toBeUndefined();
+		// not analysed yet (the engine's 404): the plain 0.25 s
+		client.audioBeats = vi.fn(async () => {
+			throw Object.assign(new Error('The beats of this range are not analysed yet'), {
+				code: 'BEATS_NOT_ANALYSED',
+			});
+		});
+		await act(async () => {
+			fireEvent.click(box());
+		});
+		await vi.waitFor(() => expect(stop()).toEqual({ seconds: 0.25, depthDb: -24 }));
+		await act(async () => {
+			fireEvent.click(box());
+		});
+		// the style's stopOnBar off: plain, and the engine is not asked
+		f.ok([{ type: 'soundDesign.setSettings', style: { stopOnBar: false } }]);
+		const off = vi.fn(async () => ({ beats, downbeats }));
+		client.audioBeats = off;
+		await act(async () => {
+			fireEvent.click(box());
+		});
+		expect(stop()).toEqual({ seconds: 0.25, depthDb: -24 });
+		expect(off).not.toHaveBeenCalled();
+	});
+
 	it('writes the cue’s stop-before into the music track; validation refuses bad numbers', async () => {
 		const f = fixture();
 		mountEssential(f);

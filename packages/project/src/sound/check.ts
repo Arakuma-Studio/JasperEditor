@@ -30,6 +30,7 @@ export const SOUND_CHECK_CODES = [
 	'TRUE_PEAK',
 	'OUT_OF_SYNC',
 	'TRUNCATED',
+	'INEXACT',
 	'CLICK',
 	'EDGE',
 	'ENDING',
@@ -78,6 +79,7 @@ export const SOUND_CHECK_CATEGORY: Readonly<Record<SoundCheckCode, SoundCheckCat
 	ARC: 'loudness',
 	OUT_OF_SYNC: 'sync',
 	TRUNCATED: 'sync',
+	INEXACT: 'sync',
 	CLICK: 'edges',
 	EDGE: 'edges',
 	ENDING: 'edges',
@@ -613,6 +615,13 @@ export const SOUND_CHECK_MESSAGES = {
 	syncCut:
 		'{0} is cut {1} ms after its aligned point by the end of its clip at {2}: the sound it is placed for does not play',
 	truncated: '{0} is cut by the end of its clip at {1}, {2} ms before the sound has faded (−60 dB)',
+	// INEXACT (information): a library sound registered as it is (`LibraryProvenance.inexact`)
+	inexactTooLong:
+		'{0} at {1} is not sample-exact: sounds over {2} min are used as they are (placement exact to a frame)',
+	inexactTooLarge:
+		'{0} at {1} is not sample-exact: its sample-exact copy would have been too large (placement exact to a frame)',
+	inexactDiskSpace:
+		'{0} at {1} is not sample-exact: there was not enough free disk space for its copy when it was added (placement exact to a frame; add it again to copy it)',
 	maskedHero:
 		'Hero sound {0} at {1} clears the bed by only {2} dB in its dominant band ({3} Hz; at least {4} dB)',
 	maskedSupport:

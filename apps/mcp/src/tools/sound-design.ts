@@ -27,10 +27,12 @@ import {
 	CUE_WEIGHTS,
 	type CueAnchor,
 	CueAnchorSchema,
+	cachedMusicGrid,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	isSoundTypeId,
 	type LibraryProvenance,
+	type MusicGrid,
 	offeredTakeIds,
 	type PlacedSound,
 	type ProjectDocument,
@@ -60,12 +62,14 @@ import {
 	type SoundVariation,
 	STOP_BEFORE_DEFAULT,
 	sequenceDialogueRanges,
+	sequenceStopsOnBar,
 	sequenceTimecode,
 	soundCueFields,
 	soundCuesOf,
 	soundDesignSettingsOf,
 	soundProposalItems,
 	soundText,
+	stopBeforeFor,
 	synonymType,
 	TimeInputSchema,
 	trackLabel,
@@ -312,7 +316,7 @@ const CueAddArg = z.object({
 		.union([z.literal(true), soundCueFields.stopBefore.unwrap()])
 		.optional()
 		.describe(
-			'Dip the music before the cue: {seconds, depthDb} or true (0.25 s at −24 dB); written into the mix when the cue is filled',
+			"Dip the music before the cue: {seconds, depthDb} or true (0.25 s at −24 dB); written into the mix when the cue is filled. Over music whose beats are analysed (the engine's cache) and with the style's stopOnBar on, its ramp ends on the downbeat (else beat) before the hit — within 0.5 s for true, within the seconds given otherwise — as plan_sound_design does (stopsOnBar in the result)",
 		),
 	build: z
 		.union([z.literal(true), soundCueFields.build.unwrap()])
@@ -349,7 +353,7 @@ const CueUpdateArg = z.object({
 	muted: z.boolean().optional(),
 	moveClips: z.boolean().optional().describe('A new frame moves the cue’s placed clips too (default true)'),
 	stopBefore: nullable(z.union([z.literal(true), soundCueFields.stopBefore.unwrap()])).describe(
-		'Dip the music before the cue ({seconds, depthDb} or true = 0.25 s at −24 dB; null removes it and its dip). A filled cue gets it in the mix at once',
+		"Dip the music before the cue ({seconds, depthDb} or true = 0.25 s at −24 dB; null removes it and its dip). A filled cue gets it in the mix at once. On the bar line like add's stopBefore",
 	),
 	build: nullable(z.union([z.literal(true), soundCueFields.build.unwrap()])).describe(
 		'High-pass build into the cue ({seconds, fromHz, toHz} or true = 2 s, 150 → 2000 Hz; null removes it). A filled cue gets it at once',
@@ -697,7 +701,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 		{
 			title: 'Set sound cues',
 			description:
-				'Adds, edits, removes and resyncs the sound cues of a sequence in ONE transaction (one undo step). add: find_sound_cues suggestions verbatim (their informational keys are accepted; a suggestion already stored, storedCueId set, is skipped) or manual cues {at | frame, kind (default manual), weight (default support), types, align, pan, reason…} (source agent). update: [{cueId, …fields}] (null clears an optional field; a new frame moves the cue’s placed sounds unless moveClips: false). remove: {cueIds, withClips?} (withClips also deletes their placed sounds; otherwise they stay, unlinked). resync: true (or {cueIds}) moves anchored cues and their sounds to where their picture events are now. stopBefore (a music dip before the hit) and build (a high-pass sweep into it) are cue fields: once the cue is filled (now, or when a sound is placed on it) they are written into the mix — the music track’s volume automation (or the music clips’ Volume when the music shares its track) and one High Pass filter per music track — and they follow the cue (moved, changed, cleared with null, muted, deleted). Returns the new cue ids in add order.',
+				'Adds, edits, removes and resyncs the sound cues of a sequence in ONE transaction (one undo step). add: find_sound_cues suggestions verbatim (their informational keys are accepted; a suggestion already stored, storedCueId set, is skipped) or manual cues {at | frame, kind (default manual), weight (default support), types, align, pan, reason…} (source agent). update: [{cueId, …fields}] (null clears an optional field; a new frame moves the cue’s placed sounds unless moveClips: false). remove: {cueIds, withClips?} (withClips also deletes their placed sounds; otherwise they stay, unlinked). resync: true (or {cueIds}) moves anchored cues and their sounds to where their picture events are now. stopBefore (a music dip before the hit) and build (a high-pass sweep into it) are cue fields: once the cue is filled (now, or when a sound is placed on it) they are written into the mix — the music track’s volume automation (or the music clips’ Volume when the music shares its track) and one High Pass filter per music track — and they follow the cue (moved, changed, cleared with null, muted, deleted). A stop-before over music with analysed beats ends on its bar line when the sequence’s style stopOnBar is on (the plan’s rule; stopsOnBar lists them). Returns the new cue ids in add order.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -747,6 +751,25 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 					const commands: Record<string, unknown>[] = [];
 					const skipped: { index: number; storedCueId: string; frame: number }[] = [];
 					const addedAt: number[] = [];
+					// P6-E11: a stop-before ends its ramp on the music's bar line (the plan's rule, `stopBeforeFor`) when the
+					// sequence's style stopOnBar is on and the music's beats are analysed (the engine's cache; nothing is
+					// analysed here)
+					let grid: readonly MusicGrid[] | null = null;
+					const stopsOnBar: { add?: number; update?: number; on: 'downbeat' | 'beat' }[] = [];
+					const stopOf = async (
+						v: true | { seconds: number; depthDb: number },
+						frame: number,
+						where: { add: number } | { update: number },
+					) => {
+						grid ??= sequenceStopsOnBar(seq)
+							? await cachedMusicGrid(doc, seq, (req) =>
+									ctx.engine((c) => c.audioBeats({ ...req, cachedOnly: true })).catch(() => null),
+								)
+							: [];
+						const r = stopBeforeFor(seq, frame, grid, stopBeforeOf(v), { explicit: v !== true });
+						if (r.on) stopsOnBar.push({ ...where, on: r.on });
+						return r.stopBefore;
+					};
 					if (a.add) {
 						const cues: Record<string, unknown>[] = [];
 						for (const [i, c] of a.add.entries()) {
@@ -755,7 +778,10 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 								skipped.push({ index: i, storedCueId: c.storedCueId, frame: f });
 								continue;
 							}
-							cues.push(await cueCommandInput(ctx, a.projectId, seq, c, i));
+							const input = await cueCommandInput(ctx, a.projectId, seq, c, i);
+							if (c.stopBefore !== undefined)
+								input.stopBefore = await stopOf(c.stopBefore, input.frame as number, { add: i });
+							cues.push(input);
 							addedAt.push(i);
 						}
 						if (cues.length) commands.push({ type: 'soundCue.add', sequenceId: seq.id, cues });
@@ -776,7 +802,16 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 								? { types: types === null ? null : typeIds(types, `update[${i}].types`) }
 								: {}),
 							...(stopBefore !== undefined
-								? { stopBefore: stopBefore === null ? null : stopBeforeOf(stopBefore) }
+								? {
+										stopBefore:
+											stopBefore === null
+												? null
+												: await stopOf(
+														stopBefore,
+														f ?? soundCuesOf(seq).find((c) => c.id === u.cueId)?.frame ?? 0,
+														{ update: i },
+													),
+									}
 								: {}),
 							...(build !== undefined ? { build: build === null ? null : buildOf(build) } : {}),
 						});
@@ -799,7 +834,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 							'Every cue to add is already stored (storedCueId)',
 							'Nothing changed. Pass suggestions with storedCueId null, or edit stored cues with update.',
 						);
-					return { commands, sequenceId: seq.id, state: { skipped, addedAt, seqId: seq.id } };
+					return { commands, sequenceId: seq.id, state: { skipped, addedAt, seqId: seq.id, stopsOnBar } };
 				},
 				extra,
 				a.expectedRevision,
@@ -813,6 +848,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 				out.added = state.addedAt.map((index, j) => ({ index, cueId: ids[j] }));
 			}
 			if (state.skipped.length) out.skipped = state.skipped;
+			if (state.stopsOnBar.length) out.stopsOnBar = state.stopsOnBar;
 			if (a.update) out.updated = a.update.map(() => results[k++]);
 			if (a.remove) out.removed = results[k++];
 			if (a.resync) out.resynced = results[k++];

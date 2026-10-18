@@ -382,7 +382,9 @@ rates, 0 samples; varispeed ±2 % ≤ 1 sample), `apps/mcp/test/sound-cues.test.
 defects, 36 with a regression test that failed before the fix (model review 6, agent surfaces 6, web UI 21, lead 4;
 listed in the wp-note). Limits: no keyboard-key recording in the kit (`key` is synth only); sounds over 1 h (or whose
 sample-exact copy would pass 2 GiB or the free disk space; 120 s before WP6.5b) keep the ≤ 1-frame placement rule and, when
-lossy, can play up to 128 samples late after an In point — registration says so (`inexact`); Fill Unfilled Cues
+lossy, can play up to 128 samples late after an In point — registration says so (`inexact`), and since the final
+carry-over cleanup the editor shows it too (a warning on insert, Properties ▸ Sound, Sound Check's INEXACT information,
+the plan's `W_SOUND_INEXACT`); Fill Unfilled Cues
 proposes (review, then Apply) since WP3.3b; Detect Peak analyses at most 2 min of a clip; Auto gain / Room send / levels
 against the bed are Phase 4 (placement gives a default level by role, below); `pitchSt: 0` after a fractional varispeed shift is exact since
 WP6.5b for clips placed since (`sfx.pitch`; older clips keep up to ±0.5 st until re-pitched). (Fixed in Phase 6 → WP6.5a:
@@ -487,8 +489,11 @@ In Context audition the Timeline view comes back; Delivery Target… and Auto So
 a gain fix's "why" is said in the UI language; `set_sound_cues` counts only the cues it adds. Rerun
 `packages/project/test/transition-razor.test.ts`, `apps/engine/test/export-container.test.ts`,
 `apps/web/test/{wp65a-i18n,wp65a-audition-view,essential-autotag-on-add,export-format}.test.*`,
-`e2e/sound-p65a-polish.spec.ts`. Limits left: messages the engine composes (export warnings and the finished-export detail, solver
-notes outside Sound Check fixes) stay English; auto-tagging on add ignores agents' placements (they tag with
+`e2e/sound-p65a-polish.spec.ts`. Limits left: since the final carry-over cleanup the sound and format export warnings
+(`W_SOUND_CREDITS`, `W_SOUND_LICENSE_NC`, `W_SOUND_SHARE_ALIKE`, `W_SOUND_CHECK_STALE`, `OUTPUT_CONTAINER_CHANGED`,
+`AUDIO_CODEC_CHANGED`) and the finished-export detail are said in the UI language (code + `params` from the engine,
+`ExportWarningParamsSchema`); other engine-composed messages (planner blockers, job errors, solver notes outside Sound
+Check fixes) stay English — the pattern to extend is documented there; auto-tagging on add ignores agents' placements (they tag with
 `auto_tag_audio`) and is its own undo step; a clip added to a new or duplicated sequence is not auto-tagged.
 
 Phase 6 → WP-E1 ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP-E1"; spec 12 §4 P6-E1…E3,
@@ -672,6 +677,18 @@ English descriptions only; tags name the clip's sound, not the mix; ≈ 0.5 s
 of CPU per sound or take to prepare (≈ 40 min for 5 000) and ≈ 0.8 GB of RAM while the worker runs; a 4 h Find Moment pass
 ≈ 12 min (estimated); quality is modest on synthesised UI sounds and some obvious queries miss (wp-note); the int8 export
 (≈ 205 MB) is not offered (it would need hosting and changes the top result for 12–15 % of queries, measured).
+
+Phase 6 → final carry-over cleanup ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → final carry-over
+cleanup", item table): every test fixture is made with LGPL encoders and filters (MPEG-4 Part 2, FFV1, VP9 instead of
+libx264; `geq` / `hue` instead of `eq`), kept so by `scripts/fixture-gpl-encoders.test.mjs`, so the engine suite runs on
+the vendored LGPL ffmpeg; toasts and notices keep clear of a modal dialog's and Export mode's title bar and footer (and a
+click on a toast no longer closes the dialog); a sound registered as it is (not sample-exact) is shown in the editor;
+in-request work (`/api/sound-design/visual`, `/beds/plan`, `/room-tone/plan`, `/api/audio/beats`, `/api/sync/audio`)
+stops when the client goes away and never before (`clientGoneSignal`, a real-connection test); Stop Before Next (cue
+menu, Properties) and MCP `set_sound_cues {stopBefore}` end on the music's bar line by the plan's rule when its beats are
+analysed (`/api/audio/beats {cachedOnly}`); the sound / format export warnings are translated. Rerun the tests of that
+section's table. Limits left: the bar-line stop uses only beats already analysed (the editor never starts an analysis
+for it) with the default metre; the general engine-message pattern is applied to export warnings only.
 
 ### Not covered by any workstream yet
 

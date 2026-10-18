@@ -42,6 +42,7 @@ import {
 	sfxOf,
 	trackLabelOf,
 } from './design-model.ts';
+import { inexactReasonText } from './inexact.ts';
 import { BuildEditor, StopBeforeEditor } from './MixFields.tsx';
 import { formatSeconds, LICENSE_BADGE_TITLES, typeLabel } from './model.ts';
 
@@ -157,6 +158,11 @@ export function SoundSection({ session, clips, sequenceId }: ClipSectionProps) {
 					>
 						Detect Peak
 					</Button>
+				) : null}
+				{prov?.inexact ? (
+					<span className="block text-pr-small text-pr-warning" data-testid="sound-section-inexact">
+						{inexactReasonText(prov.inexact.reason)}
+					</span>
 				) : null}
 			</Row>
 			{sfx ? (

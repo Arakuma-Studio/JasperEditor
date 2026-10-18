@@ -25,6 +25,7 @@ import {
 	type ExtraCue,
 	footageClips,
 	type MediaAsset,
+	musicBeatRequest,
 	musicClips,
 	type PixelMotionEvent,
 	type ProjectDocument,
@@ -103,21 +104,12 @@ function intervals(
 	return out;
 }
 
-/** The `/api/audio/beats` request of a music clip's media range (±1 s, on a half-second grid: shared cache entries). */
-function beatRequestOf(
+/** The `/api/audio/beats` request of a music clip's media range (`musicBeatRequest`: the cue menu finds it cached). */
+const beatRequestOf = (
 	mediaKey: string,
 	c: { mediaStartSec: number; mediaEndSec: number },
 	timeSignature: TimeSignature | undefined,
-) {
-	const lo = Math.max(0, Math.floor((c.mediaStartSec - 1) * 2) / 2);
-	const hi = Math.ceil((c.mediaEndSec + 1) * 2) / 2;
-	return {
-		mediaKey,
-		startSeconds: lo,
-		durationSeconds: Math.min(30 * 60, Math.max(0.5, hi - lo)),
-		...(timeSignature !== undefined && timeSignature !== 'auto' ? { timeSignature } : {}),
-	};
-}
+) => musicBeatRequest(mediaKey, c, timeSignature);
 
 export class EngineCueSources {
 	/** Analyses started per request key: a failed one is reported instead of being started again and again. */

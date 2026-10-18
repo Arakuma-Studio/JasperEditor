@@ -273,6 +273,22 @@ type ExportOutcome = {
 	job: EngineJob & { result: ExportResult };
 };
 
+/** No visible toast or notice overlaps `target` (a dialog's or Export mode's action). */
+export async function expectNotCoveredByToasts(page: Page, target: Locator): Promise<void> {
+	const box = await target.boundingBox();
+	expect(box).not.toBeNull();
+	for (const t of await page.locator('[data-testid="toast"], [data-testid="notice"]').all()) {
+		const r = await t.boundingBox();
+		if (!r) continue;
+		const overlaps =
+			r.x < box!.x + box!.width &&
+			r.x + r.width > box!.x &&
+			r.y < box!.y + box!.height &&
+			r.y + r.height > box!.y;
+		expect(overlaps, `${await t.innerText()} covers the action`).toBe(false);
+	}
+}
+
 export async function exportViaUi(
 	page: Page,
 	request: APIRequestContext,
@@ -284,6 +300,8 @@ export async function exportViaUi(
 		/** The plan's blocker list must explain the path choice (S04:RP-010). */
 		expectBlocker?: RegExp;
 		jobTimeoutMs?: number;
+		/** Screenshot of Export mode just before Export is clicked (with whatever toasts are showing). */
+		screenshot?: string;
 	},
 ): Promise<ExportOutcome> {
 	await focusTimeline(page);
@@ -297,9 +315,12 @@ export async function exportViaUi(
 	const before = new Set(
 		JobListResponseSchema.parse(await (await request.get('/api/jobs')).json()).jobs.map((j) => j.id),
 	);
-	// A sticky notice from the previous export ("Export finished · Download") must not cover the footer.
-	await expect(page.getByTestId('export-start')).toBeEnabled();
-	await page.getByTestId('export-start').click({ timeout: 10_000 });
+	// Toasts and sticky notices (a previous "Export finished · Download") never cover the footer's actions.
+	const start = page.getByTestId('export-start');
+	await expect(start).toBeEnabled();
+	await expectNotCoveredByToasts(page, start);
+	if (opts.screenshot) await page.screenshot({ path: opts.screenshot });
+	await start.click({ timeout: 10_000 });
 	await expect(page.getByTestId('export-mode')).toBeHidden();
 	let jobId = '';
 	await expect

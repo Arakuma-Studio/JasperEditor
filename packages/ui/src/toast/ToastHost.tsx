@@ -1,11 +1,14 @@
 // Toast host (S05:TS-001/004/005/007/008): bottom-right, 16 px from the edges, stacking upward, 360 px
 // wide; menu colors, radius 6, overlay shadow; each kind has an icon and a 3 px accent bar. Max three
 // visible; older ones collapse into "+N more", which opens the notification log. Focus is never stolen.
+// Above modal dialogs (DT-030) but never over their title bar or footer: the stack moves out of the way of an open
+// modal (`placeToasts`), and a click on a toast does not close the dialog.
 import { Popover } from 'radix-ui';
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { cx } from '../cx.ts';
 import { Icon } from '../icons/Icon.tsx';
 import type { IconId } from '../icons/registry.ts';
+import { TOAST_EDGE } from './placement.ts';
 import {
 	MAX_VISIBLE,
 	type Toast,
@@ -14,6 +17,7 @@ import {
 	type ToastStore,
 	toasts as windowStore,
 } from './toast-store.ts';
+import { useToastPlacement } from './use-placement.ts';
 
 const KIND: Record<ToastKind, { icon: IconId; bar: string; text: string }> = {
 	info: { icon: 'status.info', bar: 'bg-pr-accent', text: 'text-pr-accent' },
@@ -142,12 +146,24 @@ export function ToastHost({ store = windowStore, runCommand, bottomOffset = 0 }:
 
 	const latest = state.toasts.at(-1);
 	const assertive = latest && (latest.kind === 'error' || latest.kind === 'warning');
+	const hostRef = useRef<HTMLDivElement>(null);
+	const place = useToastPlacement(
+		hostRef,
+		TOAST_EDGE + bottomOffset,
+		`${hidden}|${shown.map((t) => `${t.id}:${t.count}`).join(',')}`,
+	);
 	return (
 		<>
 			<div
-				className="pointer-events-none fixed right-4 z-[var(--pr-z-toast)] flex flex-col items-end gap-2"
-				style={{ bottom: 16 + bottomOffset }}
+				ref={hostRef}
+				className={cx(
+					'pointer-events-none fixed right-4 z-[var(--pr-z-toast)] flex flex-col items-end justify-end gap-2',
+					place.maxHeight !== null && 'overflow-hidden',
+				)}
+				style={{ bottom: place.bottom, ...(place.maxHeight !== null ? { maxHeight: place.maxHeight } : {}) }}
 				data-testid="toast-host"
+				data-avoiding={place.avoided}
+				data-toast-host=""
 				onPointerEnter={() => store.setPaused(true)}
 				onPointerLeave={() => store.setPaused(false)}
 			>
@@ -168,6 +184,7 @@ export function ToastHost({ store = windowStore, runCommand, bottomOffset = 0 }:
 								align="end"
 								sideOffset={6}
 								className="z-[var(--pr-z-toast)] max-h-[60vh] w-[360px] overflow-y-auto rounded-pr-menu border border-pr-menu-border bg-pr-menu p-1 font-pr text-pr-ui shadow-pr-overlay"
+								data-toast-host=""
 							>
 								<NotificationLog store={store} />
 							</Popover.Content>

@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Command, defaultRegistries, type EffectSpec, TRANSITION_SPECS } from '@jasper/project';
+import { BROWSER_VIDEO_ARGS } from '@jasper/testkit/fixture-video';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sceneA, sceneB } from '../../../scripts/docs/gallery-scenes.mjs';
 import { SEQUENCE_COMPOSITION_ID } from '../src/types.ts';
@@ -224,7 +225,7 @@ describe.runIf(enabled)(
 			(existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : null);
 		const browser = browserExecutable ? { browserExecutable, chromeMode: 'chrome-for-testing' as const } : {};
 		const ff = (args: string[]) => execFileSync('ffmpeg', ['-v', 'error', '-y', ...args]);
-		let video = 'scene.mp4';
+		const video = 'scene.mp4';
 
 		beforeAll(async () => {
 			media = await startFxMedia('docs-gallery-');
@@ -238,12 +239,7 @@ describe.runIf(enabled)(
 					`scale=${FX_W * 2}:${FX_H * 2},zoompan=z='1+0.002*on':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${FX_W}x${FX_H}:fps=30`,
 				],
 			];
-			try {
-				ff([...pan, '-pix_fmt', 'yuv420p', '-c:v', 'libx264', join(media.dir, video)]);
-			} catch {
-				video = 'scene.webm';
-				ff([...pan, '-c:v', 'libvpx-vp9', join(media.dir, video)]);
-			}
+			ff([...pan, '-pix_fmt', 'yuv420p', ...BROWSER_VIDEO_ARGS, join(media.dir, video)]);
 			const { bundle } = await import('@remotion/bundler');
 			serveUrl = await bundle({ entryPoint: join(here, '..', 'src', 'remotion-entry.ts') });
 			renderer = await import('@remotion/renderer');

@@ -241,6 +241,8 @@ describe('Sound Check verdict, counts and messages', () => {
 			'OUT_OF_SYNC',
 			// fix "SFX tail truncation": a clip cut before its sound has faded (spec 12 §2.6)
 			'TRUNCATED',
+			// a library sound used as it is, not as a sample-exact copy (information; final carry-over cleanup)
+			'INEXACT',
 			// Phase 6 (spec 12 §4 P6-E1…E3)
 			'CLICK',
 			'EDGE',
@@ -265,6 +267,7 @@ describe('Sound Check verdict, counts and messages', () => {
 			'REFERENCE',
 		]);
 		expect(SOUND_CHECK_CATEGORY.TRUNCATED).toBe('sync');
+		expect(SOUND_CHECK_CATEGORY.INEXACT).toBe('sync');
 		expect(SOUND_CHECK_CATEGORY.REFERENCE).toBe('reference');
 	});
 

@@ -1926,7 +1926,7 @@ export class ExportService {
 		}
 		const formatChanges = planned.plan.warnings
 			.filter((w) => w.code === 'OUTPUT_CONTAINER_CHANGED' || w.code === 'AUDIO_CODEC_CHANGED')
-			.map((w) => ({ code: w.code, message: w.message }));
+			.map((w) => ({ code: w.code, message: w.message, ...(w.params ? { params: w.params } : {}) }));
 		const allWarnings = [
 			...formatChanges,
 			...warnings,

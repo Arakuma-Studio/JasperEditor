@@ -13,6 +13,7 @@
     "./browser": "./src/browser.ts",
     "./image": "./src/image.ts",
     "./env": "./src/env.ts",
+    "./fixture-video": "./src/fixture-video.ts",
     "./tiny-clap": "./src/tiny-clap.ts"
   },
   "devDependencies": {

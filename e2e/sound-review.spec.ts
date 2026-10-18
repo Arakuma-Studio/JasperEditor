@@ -389,9 +389,8 @@ test('Auto Sound Pass… → Propose → review → Accept all → Apply → exp
 	await expect(page.getByTestId('review-bar')).toBeHidden();
 	await page.screenshot({ path: join(outDir, 'auto-pass-applied.png') });
 
-	// export: each single-layer, peak-aligned placement peaks on its cue frame (the toast would cover the footer)
-	await applied.getByRole('button', { name: /Dismiss|Close/ }).click();
-	await expect(applied).toBeHidden();
+	// export: each single-layer, peak-aligned placement peaks on its cue frame. The toasts stay up: they keep clear of
+	// Export mode's footer (its Export button) by themselves
 	const seq = await sequence(page);
 	const cues = Object.values(seq.soundDesign?.cues ?? {});
 	expect(cues.map((c) => c.frame).sort((a, b) => a - b)).toEqual([75, 150, 225]);
@@ -401,6 +400,7 @@ test('Auto Sound Pass… → Propose → review → Accept all → Apply → exp
 		expectPath: /native/i,
 		outDir,
 		jobTimeoutMs: 600_000,
+		screenshot: join(outDir, 'auto-pass-export-with-toasts.png'),
 	});
 	const mix = decodeMono(file);
 	const SR = 48_000;

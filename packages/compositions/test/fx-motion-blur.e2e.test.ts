@@ -4,6 +4,7 @@ import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Command } from '@jasper/project';
+import { BROWSER_VIDEO_ARGS } from '@jasper/testkit/fixture-video';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SEQUENCE_COMPOSITION_ID } from '../src/types.ts';
 import { FX_H, FX_W, type FxMedia, fxAsset, fxSnapshot, startFxMedia } from './fx-media.ts';
@@ -40,7 +41,7 @@ describe.runIf(enabled)(
 				'-i',
 				`testsrc2=s=${FX_W}x${FX_H}`,
 				'-filter_complex',
-				'[0:v]eq=saturation=1.4[m];[1:v]crop=200:120:220:120[t];[m][t]overlay=40:200,drawgrid=w=40:h=40:t=2:c=white@0.8',
+				'[0:v]hue=s=1.4[m];[1:v]crop=200:120:220:120[t];[m][t]overlay=40:200,drawgrid=w=40:h=40:t=2:c=white@0.8',
 				'-frames:v',
 				'1',
 				join(media.dir, 'picture.png'),
@@ -74,8 +75,7 @@ describe.runIf(enabled)(
 					'60',
 					'-pix_fmt',
 					'yuv420p',
-					'-c:v',
-					'libx264',
+					...BROWSER_VIDEO_ARGS,
 					join(media.dir, dst),
 				]);
 			const { bundle } = await import('@remotion/bundler');

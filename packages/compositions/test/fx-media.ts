@@ -14,6 +14,7 @@ import {
 	FLICKS_PER_SECOND,
 	type MediaAsset,
 } from '@jasper/project';
+import { BROWSER_VIDEO_ARGS } from '@jasper/testkit/fixture-video';
 import { testFxRegistry } from './fx-examples.ts';
 
 export const FX_W = 640;
@@ -33,13 +34,9 @@ export async function startFxMedia(prefix: string): Promise<FxMedia> {
 	const ff = (args: string[]) => execFileSync('ffmpeg', ['-v', 'error', '-y', ...args]);
 	ff(['-f', 'lavfi', '-i', 'color=c=red:s=200x200', '-frames:v', '1', join(dir, 'red.png')]);
 	const src = `testsrc2=s=${FX_W}x${FX_H}:r=30:d=2`;
-	let video = 'clip.mp4';
-	try {
-		ff(['-f', 'lavfi', '-i', src, '-pix_fmt', 'yuv420p', '-c:v', 'libx264', join(dir, video)]);
-	} catch {
-		video = 'clip.webm';
-		ff(['-f', 'lavfi', '-i', src, '-c:v', 'libvpx-vp9', join(dir, video)]);
-	}
+	// VP9 in MP4: an LGPL encoder every FFmpeg build here has, and a codec every Chromium decodes
+	const video = 'clip.mp4';
+	ff(['-f', 'lavfi', '-i', src, '-pix_fmt', 'yuv420p', ...BROWSER_VIDEO_ARGS, join(dir, video)]);
 	const pages = new Map<string, { type: string; body: string }>();
 	const server = createServer((req, res) => {
 		const name = decodeURIComponent((req.url ?? '/').split('?')[0]!.slice(1));

@@ -109,7 +109,7 @@ import { soundVisual, VisualInputError, visualRange } from '../sound-design/visu
 import { registerVoiceService, VoiceActivityService } from '../sound-design/voice.ts';
 import type { SoundService } from '../sounds/service.ts';
 import type { SceneService } from '../time/scenes.ts';
-import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
+import { clientGoneSignal, guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
@@ -539,7 +539,7 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 
 	app.post(
 		'/api/sound-design/visual',
-		guarded(async (req) => {
+		guarded(async (req, reply) => {
 			const body = parseOr400(SoundVisualRequestSchema, req.body ?? {});
 			if (!isProjectId(body.projectId)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
 			const agent = agentOf();
@@ -562,16 +562,15 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 				if (checkJob?.kind !== 'sound-check' || checkJob.projectId !== body.projectId)
 					throw new HttpError(404, 'JOB_NOT_FOUND', `No Sound Check job ${body.checkJobId} of this project`);
 			}
-			const ac = new AbortController();
-			req.raw.on('close', () => {
-				if (!req.raw.complete || req.raw.destroyed) ac.abort();
-			});
+			// stops when the client goes away: the RESPONSE's 'close' (the request stream's fires once its body is read,
+			// before this handler's awaits end — the client leaving was never noticed; test/route-client-gone.test.ts)
+			const signal = clientGoneSignal(reply);
 			return soundVisual(doc, seq, body, {
 				ff: core.ffmpeg,
 				registry: core.registry,
 				mgTemplates: mgRegistry,
 				checkJob,
-				signal: ac.signal,
+				signal,
 				pixelCurves: (range) => motion.cachedCurves(doc, seq, range),
 			});
 		}),
@@ -592,16 +591,13 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 			if (!(await agent.projectExists(body.projectId)))
 				throw new HttpError(404, 'PROJECT_NOT_FOUND', `Project not found: ${body.projectId}`);
 			const { doc } = await liveDocument(agent, body.projectId);
-			const ac = new AbortController();
-			reply.raw.on('close', () => {
-				if (!reply.raw.writableFinished) ac.abort();
-			});
+			const signal = clientGoneSignal(reply);
 			try {
 				const seq = planSequence(doc, body.sequenceId);
 				const r =
 					kind === 'beds'
-						? await planBeds(bedDeps, doc, seq, body.projectId, body as never, { signal: ac.signal })
-						: await planRoomTone(bedDeps, doc, seq, body.projectId, body as never, { signal: ac.signal });
+						? await planBeds(bedDeps, doc, seq, body.projectId, body as never, { signal })
+						: await planRoomTone(bedDeps, doc, seq, body.projectId, body as never, { signal });
 				return r.plan;
 			} catch (e) {
 				if (e instanceof PlanInputError) throw new HttpError(404, e.code, e.message);

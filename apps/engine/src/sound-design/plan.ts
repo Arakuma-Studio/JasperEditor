@@ -56,19 +56,19 @@ import {
 	documentHasActiveExpressions,
 	ENGINE_CUE_SOURCES,
 	type ExtraCue,
-	FLICKS_PER_SECOND,
 	fillTypeOf,
 	findRuns,
 	flicksPerFrame,
-	frameAtContent,
 	isSoundTypeId,
 	isTunable,
 	isTypingCue,
 	type MgTemplateRegistry,
+	type MusicGrid,
 	type MusicKeyRef,
 	midiNoteName,
 	musicClips,
 	musicCovers,
+	musicGridOf,
 	musicTracksUnder,
 	type PaletteMaterials,
 	type PlacedSound,
@@ -110,7 +110,7 @@ import {
 	soundDesignSettingsOf,
 	soundProposalItems,
 	stopBeforeDip,
-	stopOnBar,
+	stopBeforeOnBar,
 	styleCueTypes,
 	TUNE_MIN_KEY_CONFIDENCE,
 	tuneRun,
@@ -245,15 +245,8 @@ export type PlanPick = {
  * P6-E11: a music clip of the sequence with its analysis where it plays: the key (null without a clear one) and the
  * downbeats / beats in sequence flicks (the attacks inside the clip). `planMusicOf` builds it from the beat analysis.
  */
-export type PlanMusic = {
-	clipId: string;
-	/** Sequence frames `[start, end)` of the clip. */
-	start: number;
-	end: number;
-	key: MusicKeyRef | null;
-	downbeats: number[];
-	beats: number[];
-};
+/** A music clip's grid (`MusicGrid`: frames `[start, end)`, beats and downbeats in sequence flicks) and its key. */
+export type PlanMusic = MusicGrid & { key: MusicKeyRef | null };
 
 /** The plan's view of the music (P6-E11) from the beat analyses by clip id (`EngineCueSources.musicInfo`). Pure. */
 export function planMusicOf(
@@ -261,30 +254,8 @@ export function planMusicOf(
 	seq: Sequence,
 	results: ReadonlyMap<string, Pick<BeatsResult, 'beats' | 'downbeats' | 'key'>>,
 ): PlanMusic[] {
-	const rate = seq.settings.frameRate as Rational;
-	const F = flicksPerFrame(rate);
-	const out: PlanMusic[] = [];
-	for (const mc of musicClips(doc, seq)) {
-		const r = results.get(mc.clipId);
-		const c = seq.clips[mc.clipId];
-		if (!r || !c) continue;
-		const where = (sec: number): number | null => {
-			if (!Number.isFinite(sec)) return null;
-			const f = frameAtContent(c, sec * FLICKS_PER_SECOND, rate);
-			return f >= c.start && f < c.start + c.duration ? f * F : null;
-		};
-		const map = (xs: readonly number[] | null | undefined) =>
-			(xs ?? []).map(where).filter((x): x is number => x !== null);
-		out.push({
-			clipId: mc.clipId,
-			start: c.start,
-			end: c.start + c.duration,
-			key: readMusicKey(r.key),
-			downbeats: map(r.downbeats),
-			beats: map(r.beats),
-		});
-	}
-	return out;
+	// the grid is the one the cue menu and set_sound_cues read (`musicGridOf`, P6-E11)
+	return musicGridOf(doc, seq, results).map((g) => ({ ...g, key: readMusicKey(results.get(g.clipId)?.key) }));
 }
 
 const ALL_SOURCES: SoundSourceType[] = ['starter', 'pack', 'folder', 'synth'];
@@ -394,20 +365,10 @@ export function cueMixItems(
 		let spec: { seconds: number; depthDb: number } = ownStop ?? STOP_BEFORE_DEFAULT;
 		// P6-E11: the ramp ends on the music's downbeat (else beat) before the hit, inside the stop's window (the cue's
 		// own seconds, or the plan's 0.5 s stop-down window)
-		const F0 = flicksPerFrame(rate);
+		// (`stopBeforeOnBar`: the same rule as the cue menu's Stop Before Next and set_sound_cues)
 		const onBar =
-			style.grammar?.stopOnBar !== false && music.length
-				? (() => {
-						const window = ownStop ? ownStop.seconds : STOP_ON_BAR_WINDOW_SEC;
-						const lo = frame * F0 - window * FLICKS_PER_SECOND;
-						const under = music.filter((m) => m.start * F0 < frame * F0 && m.end * F0 > lo);
-						return stopOnBar(
-							frame,
-							window,
-							{ downbeats: under.flatMap((m) => m.downbeats), beats: under.flatMap((m) => m.beats) },
-							rate,
-						);
-					})()
+			style.grammar?.stopOnBar !== false
+				? stopBeforeOnBar(seq, frame, ownStop ? ownStop.seconds : STOP_ON_BAR_WINDOW_SEC, music)
 				: null;
 		if (onBar) {
 			spec = { seconds: onBar.seconds, depthDb: spec.depthDb };
@@ -1725,6 +1686,17 @@ async function runPlan(ctx: JobContext, deps: PlanDeps): Promise<SoundDesignPlan
 				ctx.log(`register ${id}: ${r.error}`);
 			}
 		});
+		// sounds used as they are, not as sample-exact copies (their provenance says so; Sound Check: INEXACT)
+		const inexact = order.map((id) => registered.get(id)).filter((r) => r?.inexact);
+		if (inexact.length)
+			warnings.push({
+				code: 'W_SOUND_INEXACT',
+				message:
+					`${inexact.length === 1 ? 'A sound is' : `${inexact.length} sounds are`} used as ${inexact.length === 1 ? 'it is' : 'they are'}, not as a sample-exact copy (${inexact
+						.slice(0, 3)
+						.map((r) => `"${r!.library.title}"`)
+						.join(', ')}${inexact.length > 3 ? '…' : ''}): ${inexact[0]!.inexact!.message}`.slice(0, 1000),
+			});
 	}
 	lap('register');
 	const skipped = [...collected.skipped, ...selected.skipped];

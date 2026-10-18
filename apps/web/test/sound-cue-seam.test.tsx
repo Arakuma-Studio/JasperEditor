@@ -13,7 +13,15 @@ import { createTimelineUiStore } from '../src/panels/timeline/state/ui-store.ts'
 import { CueSeam } from '../src/sound/cues/CueSeam.tsx';
 import { cuesOf, SEAM_PX } from '../src/sound/cues/model.ts';
 import { SuggestCuesDialog } from '../src/sound/cues/SuggestCuesDialog.tsx';
+import { audioAsset } from './proposal-helpers.ts';
 import { makeSession, solid } from './timeline-helpers.ts';
+
+// The cue menu's Stop Before Next asks the engine (its cached beats) through `useEngineOrNull`; none unless a test sets one.
+const engineMock = vi.hoisted(() => ({ client: null as unknown }));
+vi.mock('../src/state/engine.tsx', async (orig) => ({
+	...(await orig<typeof import('../src/state/engine.tsx')>()),
+	useEngineOrNull: () => (engineMock.client ? { client: engineMock.client } : null),
+}));
 
 beforeAll(() => registerAllCommands());
 afterEach(() => cleanup());
@@ -255,6 +263,36 @@ describe('Cue Seam', () => {
 		act(() => t.session.undo());
 		expect(t.seq().markers).toHaveLength(0);
 		expect(t.cueList()).toHaveLength(3);
+	});
+
+	it('Stop Before Next over music with analysed beats ends on the bar line, as the plan does', async () => {
+		// final carry-over cleanup, item 5: the menu stored the plain 0.25 s; only the plan read the beats
+		const beats = Array.from({ length: 30 }, (_, k) => 0.6 + k * 0.5);
+		const downbeats = beats.filter((_, k) => k % 4 === 0);
+		const audioBeats = vi.fn(async () => ({ beats, downbeats }));
+		engineMock.client = { audioBeats };
+		try {
+			const t = setup([{ frame: 90, kind: 'land', weight: 'hero', source: 'user' }], {
+				before: [
+					{ type: 'media.register', asset: audioAsset(20), ref: '$music' },
+					{ type: 'clip.place', source: { mediaId: '$music' }, at: 0, tracks: { audio: 'A1' }, ref: '$m' },
+					{ type: 'essentialSound.setType', clipIds: ['$m'], audioType: 'music' },
+				],
+			});
+			fireEvent.contextMenu(t.lane(), { clientX: 900 });
+			const items = t.menus.at(-1)!;
+			const stop = items.find((i) => i.kind === 'item' && i.label === 'Stop Before Next') as { run(): void };
+			act(() => stop.run());
+			await vi.waitFor(() => expect(t.cueList()[0]!.stopBefore).toBeDefined());
+			// the hit at 3 s: the downbeat at 2.6 s
+			expect(t.cueList()[0]!.stopBefore!.seconds).toBeCloseTo(0.4, 9);
+			expect(t.cueList()[0]!.stopBefore!.depthDb).toBe(-24);
+			expect(t.history().at(-1)).toBe('Stop Before Next');
+			expect(t.toasts).toContain('The music stops on the bar line before the cue');
+			expect(audioBeats).toHaveBeenCalledWith(expect.objectContaining({ cachedOnly: true }));
+		} finally {
+			engineMock.client = null;
+		}
 	});
 
 	it('refusals reach the user (a read-only project never edits)', () => {

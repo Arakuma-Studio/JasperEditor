@@ -145,6 +145,11 @@ export const BeatsRequestSchema = z.strictObject({
 	durationSeconds: z.number().positive().max(MAX_BEATS_SOURCE_SECONDS),
 	/** Metre of the downbeats (default `'auto'`: 3 or 4 detected). */
 	timeSignature: TimeSignatureSchema.optional(),
+	/**
+	 * Only an analysis already made (cached): 404 `BEATS_NOT_ANALYSED` instead of analysing. The cue menu's Stop Before
+	 * Next and MCP `set_sound_cues {stopBefore}` put the stop on the bar line only when the music has analysed beats.
+	 */
+	cachedOnly: z.boolean().optional(),
 });
 export type BeatsRequest = z.infer<typeof BeatsRequestSchema>;
 

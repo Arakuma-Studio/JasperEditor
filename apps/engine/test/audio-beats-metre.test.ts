@@ -61,6 +61,15 @@ describe('POST /api/audio/beats: tempo octave and metre', () => {
 	afterAll(() => closeApps());
 
 	it('a 150 BPM click reads 150 BPM, not 75', async () => {
+		// cachedOnly (the cue menu / set_sound_cues stop on the bar): nothing analysed yet → 404, nothing started
+		const before = await beats({
+			mediaKey: keys.fast,
+			startSeconds: 0,
+			durationSeconds: 12,
+			cachedOnly: true,
+		});
+		expect(before.status).toBe(404);
+		expect((before.body as { code?: string }).code).toBe('BEATS_NOT_ANALYSED');
 		const r = await beats({ mediaKey: keys.fast, startSeconds: 0, durationSeconds: 12 });
 		expect(r.status, JSON.stringify(r.body)).toBe(200);
 		const res = BeatsResultSchema.parse(r.body);
@@ -68,6 +77,10 @@ describe('POST /api/audio/beats: tempo octave and metre', () => {
 		expect(res.beats.length).toBeGreaterThanOrEqual(26);
 		expect(res.downbeats).toBeNull();
 		expect(res.beatsPerBar).toBeNull();
+		// analysed: the cache answers cachedOnly with the same result
+		const hit = await beats({ mediaKey: keys.fast, startSeconds: 0, durationSeconds: 12, cachedOnly: true });
+		expect(hit.status).toBe(200);
+		expect(BeatsResultSchema.parse(hit.body)).toEqual({ ...res, cached: true });
 	}, 60_000);
 
 	it('a waltz: 3 beats per bar detected, forced 3 the same, forced 4 no bar; metres cached apart; 400s', async () => {

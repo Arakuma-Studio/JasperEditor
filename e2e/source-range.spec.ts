@@ -182,8 +182,9 @@ test('Replace Footage with a render of frames 10…63 and its sidecar keeps sour
 	const render = join(tmp, 'frame-code-from10.mp4');
 	const r = spawnSync('ffmpeg', [
 		...['-v', 'error', '-y', '-i', join(FIXTURES, 'frame-code.mp4')],
-		...['-vf', 'select=gte(n\\,10),setpts=N/30/TB', '-r', '30', '-c:v', 'libx264', '-preset', 'veryfast'],
-		...['-crf', '12', '-pix_fmt', 'yuv420p', '-an', render],
+		...['-vf', 'select=gte(n\\,10),setpts=N/30/TB', '-r', '30', '-pix_fmt', 'yuv420p', '-an'],
+		// VP9 in MP4 (libvpx, BSD): an LGPL-only FFmpeg has no x264, and every Chromium decodes VP9
+		...['-c:v', 'libvpx-vp9', '-crf', '12', '-b:v', '0', '-deadline', 'realtime', '-cpu-used', '8', render],
 	]);
 	expect(r.status, String(r.stderr)).toBe(0);
 	const sidecar = join(tmp, 'frame-code-from10.json');

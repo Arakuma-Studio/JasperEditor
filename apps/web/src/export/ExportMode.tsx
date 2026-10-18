@@ -6,8 +6,8 @@ import type { RenderPlan, VideoCodec } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import { defaultCreditsSidecar, type Sequence, soundCredits } from '@jasper/project';
 import { useSession, useSessionState } from '@jasper/session/react';
-import { Button, IconButton, TimecodeText } from '@jasper/ui';
-import { useEffect, useMemo, useState } from 'react';
+import { Button, IconButton, registerModal, TimecodeText } from '@jasper/ui';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatTimecode } from '../gaps/time-display.ts';
 import { notices } from '../home/notices.tsx';
 import { runIfRegistered, useLocalCommandCtx } from '../home/ui-bridge.ts';
@@ -46,6 +46,7 @@ import {
 	saveExportChoice,
 	validateExport,
 } from './settings.ts';
+import { exportWarningText } from './warning-text.ts';
 
 const PLAN_DEBOUNCE_MS = 300;
 
@@ -318,17 +319,25 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 
 	const rate = seq?.settings.frameRate ?? { num: 30, den: 1 };
 	const tc = (f: number) => formatTimecode(f, rate, { dropFrame: seq?.settings.dropFrame });
+	// Export mode fills the window and has its actions bottom-right, where toasts stack: they keep clear of its title
+	// bar and footer (`placeToasts`), as of a modal dialog's
+	const root = useRef<HTMLDivElement>(null);
+	useEffect(() => (root.current ? registerModal(root.current) : undefined), []);
 
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: Esc leaves Export mode from anywhere inside it
 		<div
+			ref={root}
 			className="flex h-full min-h-0 flex-col bg-pr-app text-pr-text"
 			data-testid="export-mode"
 			onKeyDown={(e) => {
 				if (e.key === 'Escape') close();
 			}}
 		>
-			<header className="flex h-[var(--pr-tab-h)] shrink-0 items-center gap-2 border-b border-pr-border-subtle bg-pr-header px-3">
+			<header
+				data-dialog-header=""
+				className="flex h-[var(--pr-tab-h)] shrink-0 items-center gap-2 border-b border-pr-border-subtle bg-pr-header px-3"
+			>
 				<h2 className="text-pr-ui text-pr-strong">Export</h2>
 				<span className="text-pr-small text-pr-muted">{seq ? sequenceName(doc, seq.id) : ''}</span>
 				<IconButton className="ml-auto" icon="app.close" label="Back to Edit" onClick={close} />
@@ -790,7 +799,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 											data-code={w.code}
 											className={w.level === 'info' ? 'text-pr-muted' : 'text-pr-warning'}
 										>
-											{w.level === 'info' ? 'ⓘ' : '⚠'} {w.message}
+											{w.level === 'info' ? 'ⓘ' : '⚠'} {exportWarningText(w)}
 										</li>
 									))}
 								</ul>
@@ -807,7 +816,10 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 				</section>
 			</div>
 			{soundCheck.prompt}
-			<footer className="flex shrink-0 items-center gap-2 border-t border-pr-border-subtle bg-pr-header px-3 py-2">
+			<footer
+				data-dialog-actions=""
+				className="flex shrink-0 items-center gap-2 border-t border-pr-border-subtle bg-pr-header px-3 py-2"
+			>
 				<div className="min-w-0 flex-1 text-pr-small text-pr-danger" data-testid="export-errors">
 					{validation.join(' ')}
 					{engine.status !== 'connected' ? ' The engine is not connected.' : ''}

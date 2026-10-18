@@ -206,37 +206,59 @@ export function fitOutputFormat(
 export function outputFormatChanges(
 	choice: Pick<EncoderChoice, 'codec' | 'container' | 'audioEncoder'>,
 	want: { container?: EncoderChoice['container']; audio?: ExportAudioCodec },
-): { code: 'OUTPUT_CONTAINER_CHANGED' | 'AUDIO_CODEC_CHANGED'; message: string }[] {
-	const out: { code: 'OUTPUT_CONTAINER_CHANGED' | 'AUDIO_CODEC_CHANGED'; message: string }[] = [];
+): {
+	code: 'OUTPUT_CONTAINER_CHANGED' | 'AUDIO_CODEC_CHANGED';
+	message: string;
+	/** The values for editors that say it in their language (`ExportWarningParamsSchema`). */
+	params: Record<string, string>;
+}[] {
+	const out: ReturnType<typeof outputFormatChanges> = [];
 	const name = codecName(choice.codec);
 	const C = (c: string) => c.toUpperCase();
 	if (want.container && want.container !== choice.container) {
-		const why = !CONTAINER_VIDEO_CODECS[want.container].includes(choice.codec)
-			? `${C(want.container)} does not carry ${name} (${C(want.container)} takes ${CONTAINER_VIDEO_CODECS[
-					want.container
-				]
-					.map(codecName)
-					.join(', ')})`
+		const reason = !CONTAINER_VIDEO_CODECS[want.container].includes(choice.codec)
+			? 'codec'
 			: want.container === 'webm'
-				? 'WebM needs Opus audio, which this ffmpeg build lacks'
-				: `${name} is written as ${C(choice.container)} here`;
+				? 'opus'
+				: 'muxer';
+		const accepts = CONTAINER_VIDEO_CODECS[want.container].map(codecName).join(', ');
+		const why =
+			reason === 'codec'
+				? `${C(want.container)} does not carry ${name} (${C(want.container)} takes ${accepts})`
+				: reason === 'opus'
+					? 'WebM needs Opus audio, which this ffmpeg build lacks'
+					: `${name} is written as ${C(choice.container)} here`;
 		out.push({
 			code: 'OUTPUT_CONTAINER_CHANGED',
 			message: `${C(want.container)} was requested but ${why}: the file is ${C(choice.container)}`,
+			params: {
+				requested: C(want.container),
+				written: C(choice.container),
+				why: reason,
+				codec: name,
+				...(reason === 'codec' ? { accepts } : {}),
+			},
 		});
 	}
 	const got = audioCodecFamily(choice.audioEncoder);
 	if (want.audio && want.audio !== got) {
 		const A = { aac: 'AAC', opus: 'Opus', pcm: 'PCM' } as const;
-		const why =
+		const reason =
 			choice.codec === 'prores' && CONTAINER_AUDIO_CODECS[choice.container].includes(want.audio)
-				? 'ProRes masters carry PCM audio'
+				? 'prores'
 				: !CONTAINER_AUDIO_CODECS[choice.container].includes(want.audio)
+					? 'container'
+					: 'no-opus';
+		const why =
+			reason === 'prores'
+				? 'ProRes masters carry PCM audio'
+				: reason === 'container'
 					? `${C(choice.container)} does not carry ${A[want.audio]} audio${want.audio === 'pcm' ? ' (PCM needs MOV)' : want.audio === 'opus' ? ' (Opus needs WebM)' : ''}`
 					: 'this ffmpeg build has no Opus encoder';
 		out.push({
 			code: 'AUDIO_CODEC_CHANGED',
 			message: `${A[want.audio]} audio was requested but ${why}: the audio is ${A[got]}`,
+			params: { requested: A[want.audio], written: A[got], container: C(choice.container), why: reason },
 		});
 	}
 	return out;
