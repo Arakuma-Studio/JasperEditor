@@ -10644,3 +10644,11 @@ The guarantee is unchanged: the delivered stream is an encode whose decoded true
   this machine, so a 1 h programme's delivery is minutes; it now overlaps the picture render).
 - `e2e/sound-check.spec.ts` fails at its setup (the Auto Sound Pass placed no cut sound to nudge, line 234) on this
   branch and identically on 6cdc304d (run there with the same build server and fixtures): not caused by this fix.
+
+Gate on this branch before the fast-forward (build server): `pnpm typecheck` clean; `SD_GIT=1 pnpm lint` clean (the one
+warning is `e2e/sound-p6-transport.spec.ts`'s, not this branch's); `node scripts/i18n.mjs --check` (10 544 strings);
+`pnpm notices --check` current; `pnpm vitest run --project <p> --maxWorkers=8`: `@jasper/project` 2364 passed,
+`@jasper/audio-dsp` 110, `@jasper/api` 17, `@jasper/web` 1119, `@jasper/mcp` 650 passed / 8 skipped / 1 failed
+(`sound-packs.test.ts`, the pack-server start-up race noted above; alone: 2 of 2 pass), `@jasper/engine` 1669 passed /
+114 skipped / 3 failed at a 1-min load of 26–45 (camtrack radial-distortion solve timing out, the avc3 Chrome playback,
+the grading scopes); those three files alone: 19 of 19 pass. The full `pnpm verify` is final verification A's.
