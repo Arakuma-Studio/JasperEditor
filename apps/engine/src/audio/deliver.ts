@@ -14,7 +14,15 @@
 //    lowers the whole ceiling by 0.25 dB. The best encode is delivered (the encoder is deterministic: the mux encodes
 //    the same bits), and a miss is reported. The decoded loudness also steers the PCM target (AAC at 128 kb/s
 //    measures ≈ 0.3–0.5 LU under its input).
-import { open } from 'node:fs/promises';
+// 3. Speed (wp-note "Fix: preview loudness parity, codec-aware Sound Check, delivery speed"): the PCM aim starts at the
+//    codec's typical decoded loudness loss (`codecLoudnessLossLu`), so the first encode usually lands; the best encode
+//    is kept (`DeliveryOutcome.encoded`) and the export muxes it by stream copy instead of encoding the WAV again; the
+//    solved parameters are remembered by the content of the mix (`DELIVERY_CACHE`, keyed by a hash of the pass-1 samples
+//    and the target / codec): a second delivery of the same mix (Sound Check before export, then the export; a
+//    re-export) writes and encodes once, still checked on the decoded audio. Measure-only passes skip the true-peak
+//    meter (only their integrated loudness is read).
+import { open, rename, rm } from 'node:fs/promises';
+import { endianness } from 'node:os';
 import { join } from 'node:path';
 import {
 	defaultChannelWeights,
@@ -26,6 +34,8 @@ import {
 import { audioEncodeArgs } from '../tools/encoders.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { PcmStreamReader, resamplerArgs } from './decode.ts';
+
+const LITTLE_ENDIAN = endianness() === 'LE';
 
 /** The deliverable's audio encoding (what the export's mux writes). */
 export type DeliveryCodec = {
@@ -60,12 +70,22 @@ export const DELIVERY_LIMITS = {
 	/** The PCM loudness target moves at most this far from the delivery target to land the decoded one. */
 	maxLoudnessOffsetLu: 1.5,
 	/** A correction turns an overshooting hop down by this times its overshoot (+ the margin). */
-	overCorrection: 1.5,
+	overCorrection: 2,
 	/** Each encode that finds new offenders lowers the whole ceiling by this much (dB)… */
 	ceilingStepDb: 0.25,
 	/** …to at most this far under the target. */
 	maxCodecHeadroomDb: 4,
 } as const;
+
+/**
+ * Lower limiter ceilings (dB under the round's own) encoded alongside each encode of the decoded check, each at its own
+ * converged gain, on other cores (`parallel`): the codec's overshoot moves with every change, so how much headroom
+ * suffices is not known in advance; with these the round usually ends with an encode that meets the target instead of
+ * starting another one (measured on the loud fixture: ≈ 2× less wall time, wp-note). The gentlest that meets is
+ * delivered (the round's own first, then 0.5 dB, then 1 dB lower). Skipped where the limiter is idle at that ceiling
+ * (the audio would be the same).
+ */
+export const DELIVERY_CEILING_STEPS_DB: readonly number[] = [0.5, 1];
 
 /**
  * Headroom (dB) between the delivery true-peak target and the limiter ceiling in front of the encoder, by codec and
@@ -85,6 +105,19 @@ export const CODEC_HEADROOM_TABLE: readonly {
 	{ codec: 'libopus', minKbps: 96, headroomDb: 1 },
 	{ codec: 'libopus', minKbps: 0, headroomDb: 2 },
 ];
+
+/**
+ * Typical loudness the decoded audio loses against the encoder's input (LU, measured with ffmpeg 7.1 on the loud and
+ * typical fixtures: AAC 128 kb/s 0.35–0.47, 192 ≈ 0.2, 256–320 0.05–0.1, Opus 0.15–0.25; the wp-note). The PCM aim
+ * starts this much over the target so the first encode usually lands within the decoded tolerance; the decoded
+ * measurement corrects it either way.
+ */
+export function codecLoudnessLossLu(c: Pick<DeliveryCodec, 'codec' | 'bitrateKbps' | 'channels'>): number {
+	if (!isLossyCodec(c.codec)) return 0;
+	const k = kbpsPerPair(c);
+	if (c.codec === 'libopus') return 0.2;
+	return k >= 256 ? 0.1 : k >= 160 ? 0.2 : k >= 96 ? 0.4 : 0.5;
+}
 
 export function isLossyCodec(codec: string): boolean {
 	return !codec.startsWith('pcm_');
@@ -156,6 +189,11 @@ export async function runDeliveryPass(o: {
 		let skip = limiter.latency;
 		let written = 0;
 		const raw = Buffer.alloc(BLOCK * channels * 4);
+		// little-endian hosts read the float32 samples through a typed view (the WAV's byte order), else per sample
+		const f32 =
+			LITTLE_ENDIAN && raw.byteOffset % 4 === 0
+				? new Float32Array(raw.buffer, raw.byteOffset, BLOCK * channels)
+				: null;
 		const block = Array.from({ length: channels }, () => new Float32Array(BLOCK));
 		const emit = async (n: number) => {
 			limiter.process(block, 0, n);
@@ -168,7 +206,11 @@ export async function runDeliveryPass(o: {
 			const m = Math.min(n - from, total - written);
 			if (m <= 0) return;
 			const view = block.map((c) => c.subarray(from, from + m));
-			if (corr) for (const c of view) for (let i = 0; i < m; i++) c[i] = c[i]! * corr(written + i);
+			if (corr)
+				for (let i = 0; i < m; i++) {
+					const k = corr(written + i);
+					if (k !== 1) for (const c of view) c[i] = c[i]! * k;
+				}
 			await o.sink(view, m, gr);
 			written += m;
 		};
@@ -181,10 +223,13 @@ export async function runDeliveryPass(o: {
 				n * channels * 4,
 				o.pass1.headerBytes + done * channels * 4,
 			);
-			const got = Math.floor(bytesRead / (channels * 4));
-			for (let i = 0; i < n; i++)
-				for (let c = 0; c < channels; c++)
-					block[c]![i] = i < got ? raw.readFloatLE((i * channels + c) * 4) * g : 0;
+			const got = Math.min(n, Math.floor(bytesRead / (channels * 4)));
+			for (let c = 0; c < channels; c++) {
+				const b = block[c]!;
+				if (f32) for (let i = 0; i < got; i++) b[i] = f32[i * channels + c]! * g;
+				else for (let i = 0; i < got; i++) b[i] = raw.readFloatLE((i * channels + c) * 4) * g;
+				b.fill(0, got, n);
+			}
 			await emit(n);
 			done += n;
 			o.onProgress?.(done / total);
@@ -246,22 +291,30 @@ export async function measureEncodedAudio(o: {
 		{ ...(o.signal ? { signal: o.signal } : {}), ...(o.onSpawn ? { onSpawn: o.onSpawn } : {}) },
 	);
 	const reader = new PcmStreamReader(ch, child);
-	const meter = new LoudnessMeter(sr, ch, { weights: defaultChannelWeights(ch) });
+	// the loudness meter without its own true peak: the per-hop detector below measures it (once, not twice)
+	const meter = new LoudnessMeter(sr, ch, { weights: defaultChannelWeights(ch), truePeak: false });
 	const tp = new TruePeakDetector(sr, ch);
 	const hop = Math.max(1, Math.round(sr * DELIVERY_LIMITS.hopSec));
 	const hops: number[] = [];
-	const block = Array.from({ length: ch }, () => new Float32Array(hop));
+	// read 100 hops at a time; the hops are cut out of each block
+	const blockLen = hop * 100;
+	const block = Array.from({ length: ch }, () => new Float32Array(blockLen));
 	let samples = 0;
+	let max = 0;
 	const exited = new Promise<number | null>((resolve) => child.on('close', (code) => resolve(code)));
 	try {
 		for (;;) {
-			const n = await reader.read(block, hop);
+			const n = await reader.read(block, blockLen);
 			if (n <= 0) break;
 			meter.process(block, 0, n);
-			tp.process(block, 0, n);
-			hops.push(20 * Math.log10(tp.takePeak()));
+			for (let at = 0; at < n; at += hop) {
+				tp.process(block, at, Math.min(hop, n - at));
+				const pk = tp.takePeak();
+				if (pk > max) max = pk;
+				hops.push(20 * Math.log10(pk));
+			}
 			samples += n;
-			if (n < hop) break;
+			if (n < blockLen) break;
 		}
 	} finally {
 		reader.close();
@@ -271,10 +324,15 @@ export async function measureEncodedAudio(o: {
 		throw new Error(`decoding the encoded audio failed: ${reader.errors.trim().slice(-500)}`);
 	tp.flush();
 	const tail = tp.takePeak();
+	if (tail > max) max = tail;
 	if (hops.length && tail > 0)
 		hops[hops.length - 1] = Math.max(hops[hops.length - 1]!, 20 * Math.log10(tail));
 	meter.flush();
-	return { loudness: meter.summary(), hopTruePeakDb: Float32Array.from(hops), samples };
+	return {
+		loudness: { ...meter.summary(), truePeakDb: 20 * Math.log10(max) },
+		hopTruePeakDb: Float32Array.from(hops),
+		samples,
+	};
 }
 
 /** ffmpeg arguments that encode a mix WAV exactly as the export's mux does (codec, rate, channels, resampler). */
@@ -313,7 +371,7 @@ export function verifyEncodeArgs(o: {
 /** What the delivery came to (the export result and Sound Check report it). */
 export type DeliveryOutcome = {
 	params: DeliveryParams;
-	/** Loudness of the PCM out of the delivery chain with `params`. */
+	/** Loudness of the PCM out of the delivery chain with `params` (with `write`, of the written file). */
 	pcm: LoudnessSummary;
 	/** The plain normalisation gain (target − measured) before convergence. */
 	initialGainDb: number;
@@ -330,12 +388,90 @@ export type DeliveryOutcome = {
 	corrections: { hops: number; maxDb: number };
 	/** `outPath` holds the pass with `params`. */
 	written: boolean;
+	/**
+	 * The encode of `outPath` the decoded check measured (`decoded`), a file in `scratchDir`: the export muxes it by
+	 * stream copy (the delivered bits are the checked bits). Null without a decoded check.
+	 */
+	encoded: string | null;
+	/** The parameters came from `DELIVERY_CACHE` (an earlier delivery of the same mix to the same target and codec). */
+	cached: boolean;
+	/** Wall time of this delivery's limiter passes, encodes and decodes (ms; for logs and benchmarks). */
+	timings: { passesMs: number; encodeMs: number; decodeMs: number };
 };
+
+/** A loudness convergence: the parameters, the PCM loudness, whether the ceiling took the push, its passes. */
+type Converged = {
+	params: DeliveryParams;
+	pcm: LoudnessSummary;
+	limited: boolean;
+	/** Gain and integrated loudness of each pass at these parameters' ceiling and correction. */
+	points: { g: number; i: number }[];
+};
+
+/** A solved delivery remembered by `DELIVERY_CACHE`. */
+type CachedDelivery = { params: DeliveryParams; aim: number; limited: boolean };
+
+/**
+ * Solved delivery parameters by mix content (a hash of the pass-1 samples), length, target, ceiling and codec: least
+ * recently used first out, at most `DELIVERY_CACHE_SIZE` entries in this engine process. A hit still writes and (lossy)
+ * encodes and checks the decoded audio; only the search is skipped.
+ */
+export const DELIVERY_CACHE = new Map<string, CachedDelivery>();
+export const DELIVERY_CACHE_SIZE = 32;
+
+export function deliveryCacheKey(o: {
+	contentHash: string;
+	sampleRate: number;
+	channels: number;
+	total: number;
+	targetLufs: number;
+	truePeakDb: number;
+	codec: DeliveryCodec | null;
+	soxr: boolean;
+}): string {
+	const c = o.codec;
+	return [
+		o.contentHash,
+		o.sampleRate,
+		o.channels,
+		o.total,
+		o.targetLufs,
+		o.truePeakDb,
+		c ? `${c.codec}/${c.bitrateKbps}/${c.sampleRate}/${c.channels}` : 'none',
+		o.soxr ? 'soxr' : 'swr',
+	].join('|');
+}
+
+function cacheGet(key: string): CachedDelivery | undefined {
+	const v = DELIVERY_CACHE.get(key);
+	if (v) {
+		DELIVERY_CACHE.delete(key);
+		DELIVERY_CACHE.set(key, v);
+	}
+	return v;
+}
+
+function cacheSet(key: string, v: CachedDelivery): void {
+	DELIVERY_CACHE.delete(key);
+	DELIVERY_CACHE.set(key, v);
+	while (DELIVERY_CACHE.size > DELIVERY_CACHE_SIZE) {
+		const first = DELIVERY_CACHE.keys().next().value;
+		if (first === undefined) break;
+		DELIVERY_CACHE.delete(first);
+	}
+}
+
+const copyParams = (p: DeliveryParams): DeliveryParams => ({
+	gainDb: p.gainDb,
+	ceilingDb: p.ceilingDb,
+	correction: p.correction ? Float32Array.from(p.correction) : null,
+});
 
 /**
  * Finds the delivery parameters of a normalised mix and (with `outPath`) writes the delivered PCM there as a float32
  * WAV. `write(params)` writes one pass to `outPath` (the caller's WAV writer, so the bytes are its own); passes in
  * between only measure. With `codec` lossy (or another rate) the written file is encoded and decoded to check it.
+ * `contentHash` (a hash of the pass-1 samples) lets a later delivery of the same mix start from these parameters.
  */
 export async function solveDelivery(o: {
 	ff: Ffmpeg;
@@ -349,9 +485,16 @@ export async function solveDelivery(o: {
 	codec: DeliveryCodec | null;
 	soxr: boolean;
 	scratchDir: string;
-	/** Writes one delivery pass with `params` to `outPath` and returns its loudness. Absent: measure only. */
-	write?: ((params: DeliveryParams) => Promise<LoudnessSummary>) | undefined;
+	/**
+	 * Writes one delivery pass with `params` to `path` (default `outPath`; other paths: candidates the decoded check
+	 * encodes alongside) and returns its loudness. Absent: measure only.
+	 */
+	write?: ((params: DeliveryParams, path?: string) => Promise<LoudnessSummary>) | undefined;
 	outPath?: string | undefined;
+	/** A hash of the pass-1 samples: the solved parameters are remembered (`DELIVERY_CACHE`) under it. */
+	contentHash?: string | undefined;
+	/** Encodes of the decoded check run at once (the round's own + lower-ceiling alternatives; default 3, min 1). */
+	parallel?: number | undefined;
 	signal?: AbortSignal | undefined;
 	onSpawn?(child: import('node:child_process').ChildProcess): void;
 	onProgress?(fraction: number, stage: string): void;
@@ -364,44 +507,67 @@ export async function solveDelivery(o: {
 	const headroom = o.codec ? codecHeadroomDb(o.codec) : 0;
 	const initialGainDb = Number.isFinite(o.before.integrated) ? target - o.before.integrated : 0;
 	const hops = Math.ceil(o.total / (sr * L.hopSec)) + 1;
+	const timings = { passesMs: 0, encodeMs: 0, decodeMs: 0 };
+	const parallel = Math.max(1, Math.floor(o.parallel ?? 3));
+	const key = o.contentHash
+		? deliveryCacheKey({
+				contentHash: o.contentHash,
+				sampleRate: sr,
+				channels: o.channels,
+				total: o.total,
+				targetLufs: target,
+				truePeakDb: tpTarget,
+				codec: o.codec,
+				soxr: o.soxr,
+			})
+		: null;
+	const hit = key ? cacheGet(key) : undefined;
 	let params: DeliveryParams = { gainDb: initialGainDb, ceilingDb: tpTarget - headroom, correction: null };
 	let passes = 0;
 	let encodePasses = 0;
 	/** The parameters `outPath` was last written with (identity). */
 	let writtenWith: DeliveryParams | null = null;
 
-	const measure = async (p: DeliveryParams, write: boolean): Promise<LoudnessSummary> => {
+	const measure = async (p: DeliveryParams, write: boolean, path?: string): Promise<LoudnessSummary> => {
 		passes++;
 		if (o.signal?.aborted) throw new Error('aborted');
-		if (write && o.write) {
-			const s = await o.write(p);
-			writtenWith = p;
-			return s;
+		const t0 = performance.now();
+		try {
+			if (write && o.write) {
+				const s = await o.write(p, path ?? o.outPath);
+				if (!path || path === o.outPath) writtenWith = p;
+				return s;
+			}
+			// with a writer only the integrated loudness of a measuring pass is read (the written pass reports the true
+			// peak): no true-peak meter; measure-only deliveries report the true peak of their passes
+			const meter = new LoudnessMeter(sr, o.channels, {
+				weights: defaultChannelWeights(o.channels),
+				truePeak: !o.write,
+			});
+			await runDeliveryPass({
+				pass1: o.pass1,
+				sampleRate: sr,
+				channels: o.channels,
+				total: o.total,
+				params: p,
+				signal: o.signal,
+				sink: (view, m) => meter.process(view, 0, m),
+			});
+			meter.flush();
+			return meter.summary();
+		} finally {
+			timings.passesMs += performance.now() - t0;
 		}
-		const meter = new LoudnessMeter(sr, o.channels, { weights: defaultChannelWeights(o.channels) });
-		await runDeliveryPass({
-			pass1: o.pass1,
-			sampleRate: sr,
-			channels: o.channels,
-			total: o.total,
-			params: p,
-			signal: o.signal,
-			sink: (view, m) => meter.process(view, 0, m),
-		});
-		meter.flush();
-		return meter.summary();
 	};
 
 	/** Loudness convergence at a ceiling / correction: the gain that lands `aim` (PCM), ≤ maxLoudnessPasses. */
-	const converge = async (
-		start: DeliveryParams,
-		aim: number,
-		writeFirst: boolean,
-	): Promise<{ params: DeliveryParams; pcm: LoudnessSummary; limited: boolean }> => {
+	const converge = async (start: DeliveryParams, aim: number, writeFirst: boolean): Promise<Converged> => {
 		let p = start;
 		let s = await measure(p, writeFirst);
+		const points: { g: number; i: number }[] = [];
 		if (!Number.isFinite(s.integrated) || !Number.isFinite(o.before.integrated))
-			return { params: p, pcm: s, limited: false };
+			return { params: p, pcm: s, limited: false, points };
+		points.push({ g: p.gainDb, i: s.integrated });
 		let best = { params: p, pcm: s };
 		let prev: { g: number; i: number } | null = null;
 		let limited = false;
@@ -432,99 +598,270 @@ export async function solveDelivery(o: {
 				Math.min(0.95, k / L.maxLoudnessPasses),
 				'Matching loudness under the true-peak ceiling',
 			);
-			s = await measure(p, false);
+			// with a writer every pass is written: the pass that lands is then already the delivered file (no pass again)
+			s = await measure(p, writeFirst);
+			if (Number.isFinite(s.integrated)) points.push({ g: p.gainDb, i: s.integrated });
 			if (Math.abs(aim - s.integrated) < Math.abs(aim - best.pcm.integrated)) best = { params: p, pcm: s };
 		}
 		if (!limited && Math.abs(aim - best.pcm.integrated) > 0.5) limited = aim > best.pcm.integrated;
-		return { params: best.params, pcm: best.pcm, limited };
+		return { params: best.params, pcm: best.pcm, limited, points };
 	};
 
-	let aim = target;
-	let r = await converge(params, aim, true);
-	params = r.params;
+	/**
+	 * The gain that lands `aim` at a lower ceiling `ceil`, from the loudness measured at the base ceiling (`points`): the
+	 * limiter is scale-invariant (limiting `g·x` at `c` is `c` × limiting `(g − c)·x` at 0 dBFS, corrections included),
+	 * so every pass is a point on one curve F(push = g − c) = I − c, and the gain at `ceil` follows from F by secant
+	 * inter/extrapolation (slope 1 with one point).
+	 */
+	const gainAtCeiling = (pts: readonly { p: number; f: number }[], ceil: number, aimAt: number): number => {
+		const want = aimAt - ceil;
+		const sorted = [...pts].sort((a, b) => Math.abs(a.f - want) - Math.abs(b.f - want));
+		const a = sorted[0]!;
+		const b = sorted.find((x) => Math.abs(x.p - a.p) > 1e-6);
+		let slope = b ? (a.f - b.f) / (a.p - b.p) : 1;
+		if (!Number.isFinite(slope)) slope = 1;
+		slope = Math.min(1, Math.max(L.minSlope, slope));
+		const push = Math.min(initialGainDb + L.maxPushDb - ceil, a.p + (want - a.f) / slope);
+		return push + ceil;
+	};
+
+	const clampAim = (a: number) =>
+		Math.max(target - L.maxLoudnessOffsetLu, Math.min(target + L.maxLoudnessOffsetLu, a));
+	// a lossy codec decodes a little quieter than its input: the PCM aim starts over the target by its typical loss
+	let aim = clampAim(target + (verify && o.codec ? codecLoudnessLossLu(o.codec) : 0));
+	let r: Converged;
+	if (hit) {
+		// the same mix delivered before to this target and codec: start from its parameters (one pass)
+		params = copyParams(hit.params);
+		aim = hit.aim;
+		r = { params, pcm: await measure(params, true), limited: hit.limited, points: [] };
+	} else {
+		r = await converge(params, aim, true);
+		params = r.params;
+	}
 	let decoded: LoudnessSummary | null = null;
 	let truePeakMet = true;
-	const raw = new Float32Array(hops);
+	let encoded: string | null = null;
+	let solvedAim = aim;
 	if (verify && o.codec && o.outPath && o.write) {
-		const enc = join(
-			o.scratchDir,
-			`verify.${isLossyCodec(o.codec.codec) ? (o.codec.codec === 'libopus' ? 'webm' : 'm4a') : 'wav'}`,
-		);
-		/** The best encode so far: true peak met first, then the smallest overshoot, then the loudness error. */
-		let best: {
+		const codec = o.codec;
+		const outPath = o.outPath;
+		const ext = isLossyCodec(codec.codec) ? (codec.codec === 'libopus' ? 'webm' : 'm4a') : 'wav';
+		/** One encode of the decoded check: its parameters, the WAV it encodes and the encoded file. */
+		type Cand = {
 			params: DeliveryParams;
 			r: typeof r;
-			decoded: LoudnessSummary;
-			score: [number, number];
-		} | null = null;
-		let ceiling = params.ceilingDb;
-		for (let e = 0; e < L.maxEncodePasses; e++) {
-			if (writtenWith !== params) r = { ...r, pcm: await measure(params, true) };
-			o.onProgress?.(0.96, 'Checking the encoded audio');
-			await o.ff.run(
-				[
-					'-y',
-					...verifyEncodeArgs({ input: o.outPath, output: enc, codec: o.codec, mixRate: sr, soxr: o.soxr }),
-				],
-				{ ...(o.signal ? { signal: o.signal } : {}), ...(o.onSpawn ? { onSpawn: o.onSpawn } : {}) },
-			);
+			raw: Float32Array;
+			ceiling: number;
+			aim: number;
+			wav: string;
+			file: string;
+			ac: AbortController;
+			done: Promise<boolean>;
+			/** The decoded check of this encode (once measured). */
+			decoded?: LoudnessSummary;
+			score?: [number, number];
+		};
+		/** The best encode so far: true peak met first, then the smallest overshoot, then the loudness error. */
+		let best: Cand | null = null;
+		const keep = new Set<string>();
+		const made: string[] = [];
+		const start = (c: Omit<Cand, 'ac' | 'done' | 'file'>, tag: string): Cand => {
+			const file = join(o.scratchDir, `verify-${tag}.${ext}`);
+			made.push(file);
+			const ac = new AbortController();
+			const stop = () => ac.abort();
+			o.signal?.addEventListener('abort', stop, { once: true });
+			const t0 = performance.now();
 			encodePasses++;
-			const m = await measureEncodedAudio({
-				ff: o.ff,
-				file: enc,
-				channels: o.codec.channels,
-				sampleRate: o.codec.sampleRate,
-				signal: o.signal,
-				...(o.onSpawn ? { onSpawn: o.onSpawn } : {}),
-			});
-			const excess = Math.max(0, m.loudness.truePeakDb - (tpTarget - L.truePeakMarginDb));
-			const loudErr = Number.isFinite(m.loudness.integrated) ? target - m.loudness.integrated : 0;
-			const score: [number, number] = [excess, Math.abs(loudErr)];
-			if (!best || score[0] < best.score[0] || (score[0] === best.score[0] && score[1] < best.score[1]))
-				best = { params, r, decoded: m.loudness, score };
-			if (excess === 0 && (Math.abs(loudErr) <= L.decodedTolLu || r.limited)) break;
-			if (e === L.maxEncodePasses - 1) break;
-			if (excess > 0) {
-				// the decoded hops over the target (10 ms of time at either rate: the same index in the mix) are turned
-				// down by their overshoot + the margin, over-corrected by half: the encoder's rate control moves with
-				// every change, so a hit corrected exactly tends to come back a little over
-				const aimTp = tpTarget - L.correctionMarginDb;
-				let fresh = false;
-				for (let h = 0; h < Math.min(raw.length, m.hopTruePeakDb.length); h++) {
-					const v = m.hopTruePeakDb[h]!;
-					if (!(v > aimTp)) continue;
-					if (raw[h] === 0 && v > tpTarget) fresh = true;
-					raw[h] = Math.min(L.maxCorrectionDb, raw[h]! + L.overCorrection * (v - aimTp));
-				}
-				// offenders the last corrections did not know: the codec moves its overshoot around (bit reservoir, rate
-				// control), so the whole mix also gets a little more headroom
-				if (fresh && e > 0) ceiling = Math.max(tpTarget - L.maxCodecHeadroomDb, ceiling - L.ceilingStepDb);
+			const done = o.ff
+				.run(['-y', ...verifyEncodeArgs({ input: c.wav, output: file, codec, mixRate: sr, soxr: o.soxr })], {
+					signal: ac.signal,
+					...(o.onSpawn ? { onSpawn: o.onSpawn } : {}),
+				})
+				.then(
+					() => {
+						timings.encodeMs += performance.now() - t0;
+						return true;
+					},
+					(e) => {
+						if (ac.signal.aborted && !o.signal?.aborted) return false;
+						throw e;
+					},
+				)
+				.finally(() => o.signal?.removeEventListener('abort', stop));
+			// a failed encode is reported where it is awaited; until then it must not count as unhandled (the next
+			// candidates are converged while it runs)
+			done.catch(() => {});
+			return { ...c, file, ac, done };
+		};
+		/** Corrections of `raw` from a decoded hop map at a margin and over-correction (a copy). */
+		const corrected = (
+			raw: Float32Array,
+			hopDb: Float32Array,
+			margin: number,
+			over: number,
+		): { raw: Float32Array; fresh: boolean } => {
+			const out = Float32Array.from(raw);
+			const aimTp = tpTarget - margin;
+			let fresh = false;
+			for (let h = 0; h < Math.min(out.length, hopDb.length); h++) {
+				const v = hopDb[h]!;
+				if (!(v > aimTp)) continue;
+				if (out[h] === 0 && v > tpTarget) fresh = true;
+				out[h] = Math.min(L.maxCorrectionDb, out[h]! + over * (v - aimTp));
 			}
-			if (Number.isFinite(m.loudness.integrated) && !r.limited)
-				aim = Math.max(
-					target - L.maxLoudnessOffsetLu,
-					Math.min(target + L.maxLoudnessOffsetLu, aim + loudErr),
+			return { raw: out, fresh };
+		};
+		const withCorrection = (p: DeliveryParams, raw: Float32Array, ceiling: number): DeliveryParams => ({
+			...p,
+			ceilingDb: ceiling,
+			correction: raw.some((v) => v > 0) ? Float32Array.from(raw) : null,
+		});
+		const raw0 = new Float32Array(hops);
+		if (params.correction) raw0.set(params.correction.subarray(0, raw0.length));
+		if (writtenWith !== params) r = { ...r, pcm: await measure(params, true) };
+		o.onProgress?.(0.96, 'Checking the encoded audio');
+		/**
+		 * The round's lower-ceiling alternatives (`DELIVERY_CEILING_STEPS_DB`, at most `parallel` − 1), converged and
+		 * written while the round's first encode runs. None where the limiter is idle at the lower ceiling.
+		 */
+		const alternatives = async (
+			base: typeof r,
+			raw: Float32Array,
+			ceiling: number,
+			aimAt: number,
+			tag: string,
+		): Promise<Cand[]> => {
+			const out: Cand[] = [];
+			// the base's passes as points on the scale-free loudness curve (see gainAtCeiling)
+			const pts = base.points.map((x) => ({ p: x.g - ceiling, f: x.i - ceiling }));
+			if (Number.isFinite(base.pcm.integrated))
+				pts.push({ p: base.params.gainDb - ceiling, f: base.pcm.integrated - ceiling });
+			if (!pts.length) return out;
+			for (const [n, step] of DELIVERY_CEILING_STEPS_DB.entries()) {
+				if (out.length + 1 >= parallel || encodePasses >= L.maxEncodePasses) break;
+				const ceil = Math.max(tpTarget - L.maxCodecHeadroomDb, ceiling - step);
+				if (!(ceil < ceiling) || !(base.pcm.truePeakDb > ceil + 0.01)) continue;
+				const wav = `${outPath}.alt-${tag}-${n}.wav`;
+				made.push(wav);
+				// one written pass at the predicted gain; a second (secant on the curve) when it misses the aim
+				let p = withCorrection({ ...base.params, gainDb: gainAtCeiling(pts, ceil, aimAt) }, raw, ceil);
+				let pcm = await measure(p, true, wav);
+				if (Number.isFinite(pcm.integrated)) {
+					pts.push({ p: p.gainDb - ceil, f: pcm.integrated - ceil });
+					if (Math.abs(aimAt - pcm.integrated) > L.loudnessTolLu) {
+						p = { ...p, gainDb: gainAtCeiling(pts, ceil, aimAt) };
+						pcm = await measure(p, true, wav);
+						if (Number.isFinite(pcm.integrated)) pts.push({ p: p.gainDb - ceil, f: pcm.integrated - ceil });
+					}
+				}
+				out.push(
+					start(
+						{
+							params: p,
+							r: { params: p, pcm, limited: base.limited, points: [] },
+							raw,
+							ceiling: ceil,
+							aim: aimAt,
+							wav,
+						},
+						`${tag}${'bcd'[n]}`,
+					),
 				);
-			const next: DeliveryParams = {
-				...params,
-				ceilingDb: ceiling,
-				correction: raw.some((v) => v > 0) ? Float32Array.from(raw) : null,
-			};
-			r = await converge(next, aim, true);
-			params = r.params;
+			}
+			return out;
+		};
+		let round: Cand[] = [start({ params, r, raw: raw0, ceiling: params.ceilingDb, aim, wav: outPath }, '0')];
+		// a cached delivery met the target before: no alternatives
+		if (!hit) for (const c of await alternatives(r, raw0, params.ceilingDb, aim, '0')) round.push(c);
+		let met: Cand | null = null;
+		try {
+			for (let k = 0; ; k++) {
+				// the candidates in order of preference (the gentlest correction first): the first that meets the target is
+				// delivered and the others stop
+				let roundBest: { c: Cand; hopDb: Float32Array; loudErr: number; score: [number, number] } | null =
+					null;
+				for (const [i, c] of round.entries()) {
+					if (!(await c.done)) continue;
+					const t0 = performance.now();
+					const m = await measureEncodedAudio({
+						ff: o.ff,
+						file: c.file,
+						channels: codec.channels,
+						sampleRate: codec.sampleRate,
+						signal: o.signal,
+						...(o.onSpawn ? { onSpawn: o.onSpawn } : {}),
+					});
+					timings.decodeMs += performance.now() - t0;
+					const excess = Math.max(0, m.loudness.truePeakDb - (tpTarget - L.truePeakMarginDb));
+					const loudErr = Number.isFinite(m.loudness.integrated) ? target - m.loudness.integrated : 0;
+					const score: [number, number] = [excess, Math.abs(loudErr)];
+					c.decoded = m.loudness;
+					c.score = score;
+					const better = (a: [number, number], b: [number, number] | undefined) =>
+						!b || a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
+					if (better(score, (best as Cand | null)?.score)) best = c;
+					if (better(score, roundBest?.score)) roundBest = { c, hopDb: m.hopTruePeakDb, loudErr, score };
+					if (excess === 0 && (Math.abs(loudErr) <= L.decodedTolLu || c.r.limited)) {
+						met = c;
+						for (const later of round.slice(i + 1)) later.ac.abort();
+						await Promise.allSettled(round.slice(i + 1).map((x) => x.done));
+						break;
+					}
+				}
+				if (met || !roundBest || encodePasses >= L.maxEncodePasses) break;
+				// the next round from the best encode of this one: its decoded hops over the target (10 ms of time at either
+				// rate: the same index in the mix) turned down by their overshoot + the margin, over-corrected (the encoder's
+				// rate control moves with every change, so a hit corrected exactly tends to come back a little over)
+				const from = roundBest.c;
+				const excess = roundBest.score[0];
+				let ceiling = from.ceiling;
+				let raw = from.raw;
+				if (excess > 0) {
+					const c1 = corrected(from.raw, roundBest.hopDb, L.correctionMarginDb, L.overCorrection);
+					raw = c1.raw;
+					// offenders the last corrections did not know: the codec moves its overshoot around (bit reservoir, rate
+					// control), so the whole mix also gets a little more headroom
+					if (c1.fresh && k > 0)
+						ceiling = Math.max(tpTarget - L.maxCodecHeadroomDb, ceiling - L.ceilingStepDb);
+				}
+				let nextAim = from.aim;
+				if (!from.r.limited) nextAim = clampAim(from.aim + roundBest.loudErr);
+				let rc = await converge(withCorrection(from.params, raw, ceiling), nextAim, true);
+				// `outPath` holds the converged pass (the encode reads it)
+				if (writtenWith !== rc.params) rc = { ...rc, pcm: await measure(rc.params, true) };
+				const next: Cand[] = [
+					start({ params: rc.params, r: rc, raw, ceiling, aim: nextAim, wav: outPath }, `${k + 1}a`),
+				];
+				for (const c of await alternatives(rc, raw, ceiling, nextAim, `${k + 1}`)) next.push(c);
+				round = next;
+			}
+		} finally {
+			for (const c of round) c.ac.abort();
+			await Promise.allSettled(round.map((c) => c.done));
 		}
-		if (best) {
-			// deliver the best encode (the last one when it met the target); its numbers are known (the encoder is
-			// deterministic), the WAV is written again only when it is not the last pass
-			params = best.params;
-			r = best.r;
-			decoded = best.decoded;
-			truePeakMet = best.score[0] === 0;
-			if (writtenWith !== params) await measure(params, true);
+		// deliver the encode that met the target, else the best one, as it is (the export copies it); its WAV becomes
+		// `outPath` (written again only when a later pass overwrote it)
+		const pick = (met as Cand | null) ?? (best as Cand | null);
+		if (pick?.decoded && pick.score) {
+			params = pick.params;
+			r = pick.r;
+			decoded = pick.decoded;
+			truePeakMet = pick.score[0] === 0;
+			encoded = pick.file;
+			solvedAim = pick.aim;
+			keep.add(pick.file);
+			if (pick.wav !== outPath) {
+				await rename(pick.wav, outPath);
+				writtenWith = params;
+			} else if (writtenWith !== params) await measure(params, true);
 		}
+		for (const f of made) if (!keep.has(f)) await rm(f, { force: true });
 	} else if (o.write && writtenWith !== params) {
 		r = { ...r, pcm: await measure(params, true) };
 	}
+	if (key) cacheSet(key, { params: copyParams(params), aim: solvedAim, limited: r.limited });
 	let corrHops = 0;
 	let corrMax = 0;
 	for (const v of params.correction ?? []) {
@@ -543,5 +880,8 @@ export async function solveDelivery(o: {
 		truePeakMet,
 		corrections: { hops: corrHops, maxDb: corrMax },
 		written: !!o.write && writtenWith === params,
+		encoded,
+		cached: !!hit,
+		timings,
 	};
 }

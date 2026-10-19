@@ -78,7 +78,13 @@ type NativeBuildOptions = {
 	/** M2 native extensions (ARCHITECTURE §19.6) and what their `prepare` returned for this export. */
 	extensions?: { list: readonly NativeExtension[]; prepared: PreparedExtensions };
 	/** audio-mix: the mixdown WAV of the export range (absent = silence; stills have no audio). */
-	audio?: { file: string; sampleRate: number; soxr?: boolean };
+	audio?: {
+		file: string;
+		sampleRate: number;
+		soxr?: boolean;
+		/** The delivery's checked encode of `file` (deliver.ts): muxed by stream copy instead of encoding `file`. */
+		encoded?: string;
+	};
 	/** edit-structure: what the extensions prepared for each nested sequence (`nestPath` keys). */
 	nested?: ReadonlyMap<string, PreparedExtensions>;
 	/**
@@ -1140,10 +1146,14 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 
 	// Audio (skipped for stills): the offline mixer's mixdown (audio-mix: clip levels, pan, buses, sends, automation,
 	// 5.1, loudness normalisation — `audio/mixdown.ts`), resampled with SoX to the delivered rate when it differs.
+	/** The input index of a stream-copied audio encode (no audio filter chain then). */
+	let copiedAudio: number | null = null;
 	if (!o.still && !output.videoOnly) {
 		const totalSamples = Math.round(output.durationSec * output.audioSampleRate);
 		const layout = output.audioChannels === 1 ? 'mono' : output.audioChannels === 6 ? '5.1' : 'stereo';
-		if (o.audio) {
+		if (o.audio?.encoded) {
+			copiedAudio = addInput(['-i', o.audio.encoded]);
+		} else if (o.audio) {
 			const k = addInput(['-i', o.audio.file]);
 			const rs =
 				o.audio.sampleRate !== output.audioSampleRate
@@ -1165,7 +1175,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		args.push('-frames:v', '1', '-update', '1', '-f', 'image2', '-c:v', 'png', o.outputFile);
 	} else {
 		args.push(
-			...(output.videoOnly ? [] : ['-map', '[aout]']),
+			...(output.videoOnly ? [] : ['-map', copiedAudio !== null ? `${copiedAudio}:a:0` : '[aout]']),
 			...enc!.video,
 			...(output.color
 				? colorTagArgs(output.color)
@@ -1176,13 +1186,19 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			String(output.frames),
 			...(output.videoOnly
 				? ['-an']
-				: [
-						...audioEncodeArgs(audioCodecOf(encoder, output), output.audioBitrateKbps, output.audioChannels),
-						'-ar',
-						String(output.audioSampleRate),
-						'-ac',
-						String(output.audioChannels),
-					]),
+				: copiedAudio !== null
+					? ['-c:a', 'copy']
+					: [
+							...audioEncodeArgs(
+								audioCodecOf(encoder, output),
+								output.audioBitrateKbps,
+								output.audioChannels,
+							),
+							'-ar',
+							String(output.audioSampleRate),
+							'-ac',
+							String(output.audioChannels),
+						]),
 			'-threads',
 			String(Math.max(1, o.threads)),
 			...(encoder.container !== 'webm' ? ['-movflags', '+faststart'] : []),

@@ -24,12 +24,14 @@ import {
 	SOUND_CHECK_TARGET_LIMITS,
 	type SOUND_CHECK_VERDICT_MARKER,
 	type SoundAckUnmatched,
+	type SoundCheckAudio,
 	type SoundCheckHumanVerdict,
 	type SoundCheckStatus,
 	type SoundCheckTarget,
 	type SoundDelivery,
 	sequenceTimecode,
 	soundAckTargetOf,
+	soundCheckAudioKey,
 	soundCheckHumanVerdicts,
 	soundCheckInputsHash,
 	soundCheckVerdictFor,
@@ -285,7 +287,9 @@ export function staleText(status: Pick<SoundCheckStatus, 'state' | 'reasons'>): 
 			? t('the mix changed')
 			: r === 'inputs'
 				? t('cues, loudness or credits settings changed')
-				: t('the delivery target changed'),
+				: r === 'codec'
+					? t('the export encoding to check for changed')
+					: t('the delivery target changed'),
 	);
 	return t('Stale: {0} since this check', words.join(', '));
 }
@@ -297,7 +301,9 @@ export function staleText(status: Pick<SoundCheckStatus, 'state' | 'reasons'>): 
  */
 export function reportStatus(
 	doc: ProjectDocument,
-	report: Pick<SoundCheckReport, 'sequenceId' | 'mixHash' | 'inputsHash' | 'preset'>,
+	report: Pick<SoundCheckReport, 'sequenceId' | 'mixHash' | 'inputsHash' | 'preset' | 'exportAudio'>,
+	/** The panel's "Check for": a report checked for another encoding is stale (`codec`). */
+	checkFor?: SoundCheckAudio | null,
 ): Pick<SoundCheckStatus, 'state' | 'reasons'> {
 	const seq = doc.sequences?.[report.sequenceId] as Sequence | undefined;
 	if (!seq) return { state: 'none', reasons: [] };
@@ -306,9 +312,14 @@ export function reportStatus(
 	const target = report.preset.custom
 		? { integratedLufs: report.preset.integratedLufs, truePeakDb: report.preset.truePeakDb }
 		: null;
-	if (report.inputsHash !== soundCheckInputsHash(doc, report.sequenceId, report.preset.id, target))
+	if (
+		report.inputsHash !==
+		soundCheckInputsHash(doc, report.sequenceId, report.preset.id, target, undefined, report.exportAudio)
+	)
 		reasons.push('inputs');
 	if (report.preset.id !== soundDesignSettingsOf(seq).delivery) reasons.push('preset');
+	if (checkFor !== undefined && soundCheckAudioKey(checkFor) !== soundCheckAudioKey(report.exportAudio))
+		reasons.push('codec');
 	return { state: reasons.length ? 'stale' : 'current', reasons };
 }
 
@@ -755,6 +766,86 @@ export function verdictCommands(
 }
 
 // ── delivery target ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+// ── Check for: the export encoding the check delivers through ─────────────────────────────────────────────────────
+
+/** The "Check for" value of the PCM master (the mix as it is, no codec). */
+export const CHECK_FOR_MASTER = 'master';
+
+/** The encodings "Check for" offers (`aac:256`, `opus:160`, `master`) in menu order. */
+export const CHECK_FOR_ENCODINGS: readonly SoundCheckAudio[] = [
+	{ codec: 'aac', bitrateKbps: 128 },
+	{ codec: 'aac', bitrateKbps: 192 },
+	{ codec: 'aac', bitrateKbps: 256 },
+	{ codec: 'aac', bitrateKbps: 320 },
+	{ codec: 'opus', bitrateKbps: 96 },
+	{ codec: 'opus', bitrateKbps: 128 },
+	{ codec: 'opus', bitrateKbps: 160 },
+];
+
+/** The select value of an encoding (null / PCM at the mix rate: the master). */
+export function checkForValue(a: SoundCheckAudio | null | undefined): string {
+	if (!a || a.codec === 'pcm') return a?.sampleRate ? `pcm@${a.sampleRate}` : CHECK_FOR_MASTER;
+	return `${a.codec}:${a.bitrateKbps ?? (a.codec === 'aac' ? 192 : 160)}`;
+}
+
+/** The encoding of a select value (null: the PCM master; unknown values too). */
+export function checkForAudio(value: string): SoundCheckAudio | null {
+	const pcm = /^pcm@(44100|48000|96000)$/.exec(value);
+	if (pcm) return { codec: 'pcm', sampleRate: Number(pcm[1]) as 44100 | 48000 | 96000 };
+	const m = /^(aac|opus):(\d{2,4})$/.exec(value);
+	if (!m) return null;
+	const kbps = Number(m[2]);
+	return kbps >= 16 && kbps <= 1536 ? { codec: m[1] as 'aac' | 'opus', bitrateKbps: kbps } : null;
+}
+
+/** The translated label of an encoding: "AAC 256 kb/s", "Opus 160 kb/s", "PCM / master", "PCM 44.1 kHz". */
+export function checkForLabel(a: SoundCheckAudio | null | undefined): string {
+	if (!a) return t('PCM / master');
+	if (a.codec === 'pcm')
+		return a.sampleRate ? t('PCM {0} kHz', String(a.sampleRate / 1000)) : t('PCM / master');
+	const kbps = String(a.bitrateKbps ?? (a.codec === 'aac' ? 192 : 160));
+	return a.codec === 'aac' ? t('AAC {0} kb/s', kbps) : t('Opus {0} kb/s', kbps);
+}
+
+/**
+ * The "Check for" select's options: the PCM master, the AAC and Opus rates, and `extra` (the default when it is none
+ * of these, e.g. the last export's PCM at another rate) — each value once.
+ */
+export function checkForOptions(extra?: SoundCheckAudio | null): { value: string; label: string }[] {
+	const out = [
+		{ value: CHECK_FOR_MASTER, label: checkForLabel(null) },
+		...CHECK_FOR_ENCODINGS.map((a) => ({ value: checkForValue(a), label: checkForLabel(a) })),
+	];
+	if (extra && !out.some((o) => o.value === checkForValue(extra)))
+		out.push({ value: checkForValue(extra), label: checkForLabel(extra) });
+	return out;
+}
+
+/**
+ * What "Check for" starts at: the sequence's last export settings (`lastExport`: the encoding the Export dialog will
+ * write again), else the delivery preset's typical encoding (`DELIVERY_PRESETS[…].typicalAudio`: Web AAC 256 kb/s,
+ * Podcast AAC 128 kb/s, broadcast PCM). `source` says which, for the select's hint.
+ */
+export function defaultCheckFor(
+	seq: Sequence | undefined,
+	choice: DeliveryChoice,
+	lastExport: { audio: SoundCheckAudio | null } | null,
+): { audio: SoundCheckAudio | null; source: 'export' | 'preset' } {
+	if (lastExport) return { audio: lastExport.audio, source: 'export' };
+	const id =
+		choice.kind === 'preset'
+			? choice.preset
+			: seq
+				? (soundDesignSettingsOf(seq).delivery as SoundDelivery)
+				: 'web';
+	const a = DELIVERY_PRESETS[id]?.typicalAudio ?? DELIVERY_PRESETS.web.typicalAudio;
+	return {
+		audio:
+			a.codec === 'pcm' ? null : { codec: a.codec, ...(a.bitrateKbps ? { bitrateKbps: a.bitrateKbps } : {}) },
+		source: 'preset',
+	};
+}
 
 export type DeliveryChoice =
 	| { kind: 'preset'; preset: SoundDelivery }

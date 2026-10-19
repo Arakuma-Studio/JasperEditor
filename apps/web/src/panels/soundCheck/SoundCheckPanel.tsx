@@ -1,5 +1,7 @@
 // Sound Check panel (spec 12 §2.6 / §2.7 "Sound Check panel", P5-R3; wp-note "Phase 5 → WP5.2"): the delivery target
-// (the four presets or Custom… LUFS / dBTP) with "Use as sequence target" (one undoable edit) and Run (the engine's
+// (the four presets or Custom… LUFS / dBTP) with "Use as sequence target" (one undoable edit), "Check for" (the export
+// encoding the check delivers through: the last export settings', else the target's typical one; the summary records it
+// and is stale for another one) and Run (the engine's
 // `sound-check` job: progress here and in the Jobs panel, Cancel); the summary chips (integrated, true peak, LRA,
 // findings by severity, the verdict) with a stale badge and Re-run when the mix changed since the stored summary; the
 // findings grouped by category — severity by shape and word, the timecode (jumps the playhead and selects the clip or
@@ -17,7 +19,7 @@
 // listen_to_sequence returns it).
 import type { SoundCheckIssue } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
-import { type Sequence, soundCheckStatus } from '@jasper/project';
+import { readSoundCheckAudio, type Sequence, soundCheckStatus } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
 import { Button, Icon, Select, TextField } from '@jasper/ui';
@@ -34,6 +36,9 @@ import {
 	acknowledgedView,
 	CUSTOM_VALUE,
 	canApply,
+	checkForLabel,
+	checkForOptions,
+	checkForValue,
 	choiceNumbers,
 	customLabel,
 	type DeliveryChoice,
@@ -66,6 +71,7 @@ import {
 	applyCheckFix,
 	type CheckEngine,
 	cancelSoundCheck,
+	checkForOf,
 	choiceOf,
 	fixAllSafe,
 	jumpTo,
@@ -76,6 +82,7 @@ import {
 	recordVerdict,
 	runSoundCheck,
 	setAckOpen,
+	setCheckFor,
 	setChoice,
 	setFindingCursor,
 	setSyncStrip,
@@ -123,25 +130,31 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 	const playing = useStoreSelector(store, (s) => s.playing);
 	const announcement = useStoreSelector(store, (s) => s.announcement);
 	const storedChoice = useStoreSelector(store, (s) => s.choice);
+	// re-read "Check for" when it is chosen (its default follows the target and the last export settings)
+	useStoreSelector(store, (s) => s.checkFor);
 	const tab = useStoreSelector(listenStore(session), (s) => s.tab);
 	const readOnly = useSessionState((s) => s.readOnly);
 	const seqId = useSessionState((s) => s.activeSequenceId);
 	const doc = useSessionState((s) => s.document);
 	const seq = seqId ? (doc.sequences[seqId] as Sequence | undefined) : undefined;
+	const choice: DeliveryChoice = seqId
+		? (storedChoice[seqId] ?? choiceOf(session, seqId))
+		: { kind: 'preset', preset: 'web' };
+	const checkFor = seqId ? checkForOf(session, seqId) : { audio: null, source: 'preset' as const };
+	const checkForKey = checkForValue(checkFor.audio);
+	// stale also when the stored summary was checked for another export encoding than "Check for"
+	// biome-ignore lint/correctness/useExhaustiveDependencies: checkForKey stands for checkFor.audio
 	const status = useMemo(
 		() =>
 			seqId
-				? soundCheckStatus(doc, seqId)
+				? soundCheckStatus(doc, seqId, { checkFor: checkFor.audio })
 				: { state: 'none' as const, summary: null, reasons: [], mixHash: '' },
-		[doc, seqId],
+		[doc, seqId, checkForKey],
 	);
 	const raw = result && seqId && result.sequenceId === seqId ? result.report : null;
 	// the report as the sequence's acknowledgements say now (P6-E4): acknowledging shows at once
 	const view = useMemo(() => (raw ? acknowledgedView(doc, raw) : null), [doc, raw]);
 	const report = view?.report ?? null;
-	const choice: DeliveryChoice = seqId
-		? (storedChoice[seqId] ?? choiceOf(session, seqId))
-		: { kind: 'preset', preset: 'web' };
 	const reveal = (f: number) => runtime?.services.get('timelineViewport')?.scrollToFrame(f);
 
 	// a reopened project: its stored summary's report, while the engine keeps the job
@@ -160,7 +173,11 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 	};
 	// the report shown is judged by its own hashes (it may be one the engine kept across a restart); without one, the
 	// stored summary is
-	const shownStatus = useMemo(() => (report ? reportStatus(doc, report) : status), [doc, report, status]);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: checkForKey stands for checkFor.audio
+	const shownStatus = useMemo(
+		() => (report ? reportStatus(doc, report, checkFor.audio) : status),
+		[doc, report, status, checkForKey],
+	);
 	const stale = staleText(shownStatus);
 	const safe = view ? safeFixable(view.open).filter((i) => !fixed.includes(i.id)) : [];
 
@@ -189,6 +206,8 @@ function CheckBody(props: PanelProps & { session: EditorSession }) {
 				onRun={run}
 				onCancel={() => cancelSoundCheck(session)}
 				onChoice={(c) => seq && setChoice(session, seq.id, c)}
+				checkFor={checkFor}
+				onCheckFor={(v) => seq && setCheckFor(session, seq.id, v)}
 			/>
 			{running && running.sequenceId === seqId ? (
 				<div className="shrink-0 border-b border-pr-border px-2 py-1" data-testid="sound-check-progress">
@@ -353,8 +372,12 @@ function TargetBar(props: {
 	onRun(): void;
 	onCancel(): void;
 	onChoice(c: DeliveryChoice): void;
+	/** The export encoding the check delivers through, and where its default came from. */
+	checkFor: ReturnType<typeof checkForOf>;
+	onCheckFor(value: string): void;
 }) {
 	const { seq, choice } = props;
+	const encodings = useMemo(() => checkForOptions(props.checkFor.audio), [props.checkFor.audio]);
 	const options = useMemo(() => deliveryOptions(), []);
 	const numbers = choiceNumbers(choice);
 	const [lufs, setLufs] = useState(String(numbers.integratedLufs));
@@ -460,6 +483,31 @@ function TargetBar(props: {
 						</Button>
 					)}
 				</div>
+			</div>
+			<div className="flex flex-wrap items-center gap-2" data-testid="sound-check-check-for">
+				<span className="text-pr-small text-pr-muted" aria-hidden="true">
+					{t('Check for')}
+				</span>
+				<Select
+					label={t('Check for')}
+					value={checkForValue(props.checkFor.audio)}
+					options={encodings}
+					disabled={props.running}
+					onValueChange={props.onCheckFor}
+					className="min-w-0 max-w-[200px]"
+				/>
+				<span
+					className="text-pr-small text-pr-muted"
+					title={t(
+						'Sound Check delivers the mix through this encoding before it judges loudness and true peak (the decoded audio, as the export writes it)',
+					)}
+				>
+					{props.checkFor.source === 'export'
+						? t('(the last export settings)')
+						: props.checkFor.source === 'preset'
+							? t('(typical for this delivery target)')
+							: ''}
+				</span>
 			</div>
 			<div className="flex flex-wrap items-center gap-2">
 				<span className="text-pr-small text-pr-muted">{t('Reference')}</span>
@@ -569,6 +617,12 @@ function Summary(props: {
 						{report.preset.custom ? customLabel(report.preset) : t('vs {0}', t(report.preset.label))}
 					</span>
 				) : null}
+				<span className="text-pr-small text-pr-muted" data-testid="sound-check-checked-for">
+					{t(
+						'checked for {0}',
+						checkForLabel(readSoundCheckAudio(report ? report.exportAudio : summary?.exportAudio)),
+					)}
+				</span>
 			</div>
 			{stale ? (
 				<div

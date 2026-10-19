@@ -285,6 +285,17 @@ export const SoundCheckSummarySchema = z.looseObject({
 	jobId: z.string().max(128).optional(),
 	/** Sequence frames checked `[start, end)` (absent: the whole sequence). */
 	range: z.looseObject({ start: z.number().int().min(0), end: z.number().int().min(0) }).optional(),
+	/**
+	 * The export encoding the check delivered the mix through (`SoundCheckAudio`; absent: the PCM master). Read with
+	 * `readSoundCheckAudio`; part of `inputsHash`, and of the staleness against the panel's "Check for".
+	 */
+	exportAudio: z
+		.looseObject({
+			codec: z.enum(['aac', 'opus', 'pcm']),
+			bitrateKbps: z.number().int().min(16).max(1536).optional(),
+			sampleRate: z.number().int().optional(),
+		})
+		.optional(),
 });
 export type SoundCheckSummary = DeepStrip<z.infer<typeof SoundCheckSummarySchema>>;
 

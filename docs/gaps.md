@@ -710,11 +710,15 @@ convergence"): the delivered lossy file overshot −1 dBTP (−0.9 … +0.1 dBTP
 runs under a codec / bit-rate headroom (EBU Tech 3344, AES TD1008) and the export decodes its own encode and turns the
 moments the codec still pushes over down (≤ 8 encodes; ffmpeg `ebur128` on the files of 15 AAC / Opus exports at three
 targets: all ≤ the target, `apps/engine/test/export-lossy-true-peak.test.ts`); the limiter left a loud mix ≈ 0.5 LU
-under its target — the gain now converges (±0.1 LU, or `ceilingLimited` + a warning). Limits left: the Program monitor
-normalises with the one-pass gain (target − measured) and its limiter at the target, so on a mix the limiter works hard
-it plays up to ≈ 1 dB under the export (estimated from the push measured on the test mix, +1.1 dB) and its peaks are
-the PCM's, not the codec's; Sound Check judges the decoded codec only when it is told the export's encoding (Export ▸
-Run Sound Check before export, MCP `sound_check {exportPreset}`), and its stored summary does not record which; Sound
+under its target — the gain now converges (±0.1 LU, or `ceilingLimited` + a warning). Fixed since (wp-note "Fix:
+preview loudness parity, codec-aware Sound Check, delivery speed"): the Program monitor played a heavily limited mix
+0.84 LU under the export (the one-pass gain) — the stored analysis now carries the export's converged gain and the
+preview plays it (0.06 LU from the PCM export, headless-Chrome oracle `apps/engine/test/preview-loudness-parity.test.ts`);
+Sound Check checks for an export encoding everywhere (the panel's "Check for", default the last export settings or the
+target's typical AAC 256 / AAC 128 / PCM; the summary records it and is stale for another; MCP defaults the same); a
+lossy normalised export took 3–4× the time of the one-pass export — now ≈ 1.0–1.25× on a typical mix (measured,
+`apps/engine/test/delivery-speed.bench.test.ts`). Limits left: the preview's peaks are the PCM's, not the codec's; a
+loud, bright stress mix at AAC 128 kb/s still needs two encode rounds (≈ 2.7× the one-pass export); Sound
 Check's OVERLOAD (the limiter pulls 7 dB on the hero hit) stays a warning for the user's judgement; a review alternate
 can be a Jasper Synth sound when the library has fewer real takes.
 

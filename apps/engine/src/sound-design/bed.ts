@@ -133,6 +133,7 @@ export class MeasureCache {
 	private readonly voices = new Map<string, VoiceEntry>();
 	private readonly loudness = new Map<string, number | null>();
 	private readonly mixes = new Map<string, LoudnessSummary>();
+	private readonly deliveries = new Map<string, Record<string, unknown> | null>();
 	constructor(
 		readonly maxBedBytes = 96 * 1024 * 1024,
 		readonly maxSounds = 4000,
@@ -186,12 +187,20 @@ export class MeasureCache {
 	putMix(key: string, v: LoudnessSummary): void {
 		bounded(this.mixes, key, v, 64);
 	}
+	/** A whole mix's converged delivery for a target (the stored analysis's `delivery`), by mix key and target. */
+	getMixDelivery(key: string): Record<string, unknown> | null | undefined {
+		return this.deliveries.has(key) ? lru(this.deliveries, key) : undefined;
+	}
+	putMixDelivery(key: string, v: Record<string, unknown> | null): void {
+		bounded(this.deliveries, key, v, 64);
+	}
 	clear(): void {
 		this.beds.clear();
 		this.sounds.clear();
 		this.voices.clear();
 		this.loudness.clear();
 		this.mixes.clear();
+		this.deliveries.clear();
 		this.bedBytes = 0;
 	}
 }

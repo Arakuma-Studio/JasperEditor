@@ -10562,5 +10562,18 @@
   "as {0} {1} kb/s decodes": "tal como se decodifica en {0} a {1} kb/s",
   "as {0} decodes": "tal como se decodifica en {0}",
   "limiter {0} dBTP in front of the encoder": "limitador a {0} dBTP antes del codificador",
-  "Opus": "Opus"
+  "Opus": "Opus",
+  "(the last export settings)": "(los últimos ajustes de exportación)",
+  "(typical for this delivery target)": "(lo habitual para este objetivo de entrega)",
+  "Check for": "Comprobar para",
+  "checked for {0}": "comprobado para {0}",
+  "Gain to target: {0} dB (true peaks limited at {1} dBTP); analyze to match the export exactly": "Ganancia hasta el objetivo: {0} dB (picos reales limitados a {1} dBTP); analice para igualar exactamente la exportación",
+  "Gain to target: {0} dB, as the export delivers it (true peaks limited at {1} dBTP; {2} limiter passes)": "Ganancia hasta el objetivo: {0} dB, como la entrega la exportación (picos reales limitados a {1} dBTP; {2} pasadas del limitador)",
+  "the export encoding to check for changed": "cambió la codificación de exportación que se comprueba",
+  "PCM {0} kHz": "PCM {0} kHz",
+  "PCM / master": "PCM / máster",
+  "Sound Check delivers the mix through this encoding before it judges loudness and true peak (the decoded audio, as the export writes it)": "Sound Check entrega la mezcla con esta codificación antes de juzgar la sonoridad y el pico real (el audio decodificado, como lo escribe la exportación)",
+  "The limiter cannot make the mix louder under this ceiling.": "El limitador no puede hacer la mezcla más fuerte bajo este techo.",
+  "AAC {0} kb/s": "AAC {0} kb/s",
+  "Opus {0} kb/s": "Opus {0} kb/s"
 }

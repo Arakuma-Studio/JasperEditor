@@ -499,10 +499,11 @@ export class ExportService {
 		const soxr = await hasSoxr(this.deps.ff);
 		// Exports always carry a sound stream (silence when nothing is heard), as the native path does.
 		const layout = o.audioChannels === 1 ? 'mono' : o.audioChannels === 6 ? '5.1' : 'stereo';
+		const audioIn = audioStream(planned, audio, soxr);
 		const audioInput = o.videoOnly
 			? []
-			: audio?.path
-				? ['-i', audio.path]
+			: audioIn
+				? ['-i', audioIn.file]
 				: [
 						'-f',
 						'lavfi',
@@ -516,14 +517,13 @@ export class ExportService {
 				? [
 						'-map',
 						`${input}:a:0`,
-						...(audio?.path && audio.sampleRate !== o.audioSampleRate
-							? ['-af', `aresample=${o.audioSampleRate}:${resamplerArgs(soxr)}`]
-							: []),
-						...audioEncodeArgs(audioCodecOf(o.encoder, o), o.audioBitrateKbps, o.audioChannels),
-						'-ar',
-						String(o.audioSampleRate),
-						'-ac',
-						String(o.audioChannels),
+						...(audioIn?.args ?? [
+							...audioEncodeArgs(audioCodecOf(o.encoder, o), o.audioBitrateKbps, o.audioChannels),
+							'-ar',
+							String(o.audioSampleRate),
+							'-ac',
+							String(o.audioChannels),
+						]),
 					]
 				: ['-an'];
 		const rate = `${o.fps.num}/${o.fps.den}`;
@@ -776,35 +776,24 @@ export class ExportService {
 		const script = join(await ctx.scratchDir(), 'previews-graph.txt');
 		await writeFile(script, filter);
 		const soxr = await hasSoxr(this.deps.ff);
+		const audioIn = audioStream(planned, audio, soxr);
 		const ai = files.length;
 		const args = [
 			...enc.pre,
 			...files.flatMap((f) => ['-i', f]),
-			...(audio?.path ? ['-i', audio.path] : []),
+			...(audioIn ? ['-i', audioIn.file] : []),
 			'-filter_complex_script',
 			script,
 			'-map',
 			'[vout]',
-			...(audio?.path ? ['-map', `${ai}:a:0`] : []),
-			...(audio?.path && audio.sampleRate !== o.audioSampleRate
-				? ['-af', `aresample=${o.audioSampleRate}:${resamplerArgs(soxr)}`]
-				: []),
+			...(audioIn ? ['-map', `${ai}:a:0`] : []),
 			...enc.video,
 			...['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv'],
 			'-r',
 			`${o.fps.num}/${o.fps.den}`,
 			'-frames:v',
 			String(o.frames),
-			...(audio?.path
-				? [
-						...audioEncodeArgs(audioCodecOf(o.encoder, o), o.audioBitrateKbps, o.audioChannels),
-						'-ar',
-						String(o.audioSampleRate),
-						'-ac',
-						String(o.audioChannels),
-						'-shortest',
-					]
-				: ['-an']),
+			...(audioIn ? [...audioIn.args, '-shortest'] : ['-an']),
 			'-threads',
 			String(Math.max(1, ctx.slots)),
 			...(o.encoder?.container !== 'webm' ? ['-movflags', '+faststart'] : []),
@@ -1170,7 +1159,15 @@ export class ExportService {
 			still,
 			extensions: { list: exts, prepared },
 			...(audio?.path
-				? { audio: { file: audio.path, sampleRate: audio.sampleRate, soxr: await hasSoxr(this.deps.ff) } }
+				? {
+						audio: {
+							file: audio.path,
+							sampleRate: audio.sampleRate,
+							soxr: await hasSoxr(this.deps.ff),
+							// the delivery's checked encode: muxed by stream copy
+							...(deliveredEncode(planned, audio) ? { encoded: deliveredEncode(planned, audio)! } : {}),
+						},
+					}
 				: {}),
 			nested,
 		});
@@ -1304,7 +1301,8 @@ export class ExportService {
 		ctx.progress(0, { stage: 'Mixing audio' });
 		const o = planned.output;
 		const sr = planned.snapshot.audioMix?.sampleRate ?? 48000;
-		return renderMixdown({
+		const t0 = performance.now();
+		const mix = await renderMixdown({
 			ff: this.deps.ff,
 			snapshot: planned.snapshot,
 			media: (id) => {
@@ -1320,12 +1318,76 @@ export class ExportService {
 			outputLayout: layoutOf(o.audioChannels),
 			normalize: o.normalize,
 			// the deliverable's encoding: a lossy codec's limiter headroom and the decoded check (deliver.ts)
-			...(opts.deliver ? { deliver: deliveryCodecOf(planned) } : {}),
+			...(opts.deliver
+				? { deliver: deliveryCodecOf(planned), parallel: Math.min(3, Math.max(1, ctx.slots)) }
+				: {}),
 			scratchDir: await ctx.scratchDir(),
 			signal: ctx.signal,
 			onSpawn: ctx.trackChild,
 			onProgress: (_f, stage) => ctx.progress(0, { stage }),
 		});
+		const d = mix.normalized?.delivery;
+		const t = (ms: number) => `${Math.round(ms)} ms`;
+		ctx.log(
+			d
+				? `audio: mixed (${t(mix.mixMs ?? 0)}) and delivered in ${t(performance.now() - t0)} — ${d.passes} passes (${t(d.timings.passesMs)}), ${d.encodePasses} encodes (${t(d.timings.encodeMs)} summed), decoded checks ${t(d.timings.decodeMs)}${d.cached ? ', reused an earlier delivery of this mix' : ''}${d.encoded ? ', the checked encode is muxed as it is' : ''}`
+				: `audio: mixed in ${t(performance.now() - t0)}`,
+		);
+		return mix;
+	}
+
+	/** Whether this export's delivery encodes and checks a lossy (or resampled) stream: normalised, not picture-only. */
+	private deliveryEncodes(planned: PlannedExport): boolean {
+		const o = planned.output;
+		const sr = planned.snapshot.audioMix?.sampleRate ?? 48000;
+		return !o.videoOnly && !!o.normalize && needsDecodedCheck(deliveryCodecOf(planned), sr);
+	}
+
+	/**
+	 * The native path with the audio delivery alongside (wp-note sound-design "Fix: … delivery speed"): the picture is
+	 * rendered alone into the scratch directory while the mix is delivered (its encodes on other cores), then the two
+	 * are joined by stream copy — the delivery's checked encode as it is (or, without one, the WAV encoded as every
+	 * mux does). The delivered file is the one the sequential path writes; the encodes no longer wait for each other.
+	 */
+	private async runNativeAlongside(
+		planned: PlannedExport,
+		masters: Map<string, string>,
+		output: string,
+		ctx: JobContext,
+		audioP: Promise<MixdownResult | null>,
+	): Promise<number> {
+		const ext = planned.output.encoder?.container ?? 'mp4';
+		const picture = join(await ctx.scratchDir(), `picture-only.${ext}`);
+		const pictureOnly = { ...planned, output: { ...planned.output, videoOnly: true } };
+		const frames = await this.runNative(pictureOnly, masters, picture, ctx, false, null);
+		ctx.progress(0.97, { stage: 'Joining the picture and the delivered sound' });
+		const audio = await audioP;
+		const a = audioStream(planned, audio, await hasSoxr(this.deps.ff));
+		if (!a) {
+			await rename(picture, output);
+			return frames;
+		}
+		const args = [
+			'-i',
+			picture,
+			'-i',
+			a.file,
+			'-map',
+			'0',
+			'-map',
+			'1:a:0',
+			'-c',
+			'copy',
+			...a.args,
+			...(ext !== 'webm' ? ['-movflags', '+faststart'] : []),
+			'-f',
+			ext,
+			output,
+		];
+		ctx.log(`ffmpeg ${args.join(' ')}`);
+		await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
+		await rm(picture, { force: true });
+		return frames;
 	}
 
 	/** Remotion's direct output (VP9/Opus or GPL H.264) with the mixdown as its audio (stream copy of the video). */
@@ -1337,29 +1399,19 @@ export class ExportService {
 		ctx: JobContext,
 	) {
 		const o = planned.output;
-		const codec = audioCodecOf(o.encoder, o);
-		const soxr = await hasSoxr(this.deps.ff);
-		const af =
-			audio.sampleRate !== o.audioSampleRate
-				? ['-af', `aresample=${o.audioSampleRate}:${resamplerArgs(soxr)}`]
-				: [];
+		const audioIn = audioStream(planned, audio, await hasSoxr(this.deps.ff))!;
 		const args = [
 			'-i',
 			video,
 			'-i',
-			audio.path!,
+			audioIn.file,
 			'-map',
 			'0:v:0',
 			'-map',
 			'1:a:0',
 			'-c:v',
 			'copy',
-			...af,
-			...audioEncodeArgs(codec, o.audioBitrateKbps, o.audioChannels),
-			'-ar',
-			String(o.audioSampleRate),
-			'-ac',
-			String(o.audioChannels),
+			...audioIn.args,
 			'-shortest',
 			...(o.encoder?.container !== 'webm' ? ['-movflags', '+faststart'] : []),
 			'-f',
@@ -1461,20 +1513,17 @@ export class ExportService {
 				: [`scale=out_color_matrix=bt709:out_range=tv:${SWS_FLAGS}`, 'setsar=1', BT709_FRAME_TAGS]),
 			...enc.filters,
 		];
-		const soxr = await hasSoxr(this.deps.ff);
+		const audioIn = audioStream(planned, audio ?? null, await hasSoxr(this.deps.ff));
 		const args = [
 			...enc.pre,
 			'-i',
 			input,
-			...(audio?.path ? ['-i', audio.path] : []),
+			...(audioIn ? ['-i', audioIn.file] : []),
 			'-map',
 			'0:v:0',
-			...(o.videoOnly ? [] : ['-map', audio?.path ? '1:a:0' : '0:a:0?']),
+			...(o.videoOnly ? [] : ['-map', audioIn ? '1:a:0' : '0:a:0?']),
 			'-vf',
 			vf.join(','),
-			...(audio?.path && audio.sampleRate !== o.audioSampleRate
-				? ['-af', `aresample=${o.audioSampleRate}:${resamplerArgs(soxr)}`]
-				: []),
 			...enc.video,
 			...(o.color
 				? colorTagArgs(o.color)
@@ -1483,13 +1532,13 @@ export class ExportService {
 			String(frames),
 			...(o.videoOnly
 				? ['-an']
-				: [
+				: (audioIn?.args ?? [
 						...audioEncodeArgs(audioCodecOf(choice, o), o.audioBitrateKbps, o.audioChannels),
 						'-ar',
 						String(o.audioSampleRate),
 						'-ac',
 						String(o.audioChannels),
-					]),
+					])),
 			'-threads',
 			String(Math.max(1, ctx.slots)),
 			...(choice.container !== 'webm' ? ['-movflags', '+faststart'] : []),
@@ -1749,7 +1798,12 @@ export class ExportService {
 		let masters = new Map<string, string>();
 		const warnings: { code: string; message: string }[] = [];
 		// previews: picture-only renders skip the mixdown.
-		const audio = planned.output.videoOnly ? null : await this.renderAudio(planned, ctx);
+		// A lossy normalised delivery (the decoded check's encodes) runs alongside the native picture render, which then
+		// writes the picture alone; the two are joined by stream copy (`runNativeAlongside`). Else the mix comes first.
+		const alongside = path === 'native' && this.deliveryEncodes(planned);
+		const audioP = planned.output.videoOnly ? Promise.resolve(null) : this.renderAudio(planned, ctx);
+		audioP.catch(() => {});
+		let audio = alongside ? null : await audioP;
 		if (path === 'native' || path === 'hybrid') {
 			const m = await this.collectMgMasters(planned, ctx);
 			if (m === null) {
@@ -1761,7 +1815,13 @@ export class ExportService {
 		}
 		if (path === 'native' || path === 'hybrid') {
 			try {
-				frames = await this.runNative(planned, masters, output, ctx, false, audio);
+				if (alongside && path === 'native') {
+					frames = await this.runNativeAlongside(planned, masters, output, ctx, audioP);
+					audio = await audioP;
+				} else {
+					audio ??= await audioP;
+					frames = await this.runNative(planned, masters, output, ctx, false, audio);
+				}
 			} catch (e) {
 				// S11:LBK-023: a failed preparation (bake, warp, pre-render…) of an `auto` export → Remotion path.
 				const replanned = await this.fallbackToRemotion(
@@ -1779,6 +1839,8 @@ export class ExportService {
 				path = 'remotion';
 			}
 		}
+		// (the mix of an export that left the native path, or whose masters were unavailable)
+		if (!planned.output.videoOnly) audio ??= await audioP;
 		if (path === 'remotion' && planned.output.alpha) {
 			// wp interchange: a straight-alpha ProRes 4444 master of the range (no audio), as the layer bake renders it.
 			const prepared = await this.prepareForRemotion(planned, ctx);
@@ -1937,19 +1999,26 @@ export class ExportService {
 			.map((w) => ({ code: w.code, message: w.message, ...(w.params ? { params: w.params } : {}) }));
 		// a normalised export's delivered audio itself, decoded from the file, when it is not the PCM mix (lossy codec or
 		// another rate): the numbers the delivery target is met on
+		// (when the file's audio stream is the delivery's checked encode, copied, its decoded numbers are the check's: the
+		// same bits, decoded by the same ffmpeg — no second decode)
+		const copied = audio ? deliveredEncode(planned, audio) : null;
+		const checked = copied ? audio?.normalized?.delivery.decoded : null;
 		const audioLoudness = audio
 			? audioLoudnessOf(
 					audio,
-					audio.normalized && needsDecodedCheck(deliveryCodecOf(planned), audio.sampleRate)
-						? await measureEncodedAudio({
-								ff: this.deps.ff,
-								file: output,
-								channels: planned.output.audioChannels,
-								sampleRate: planned.output.audioSampleRate,
-								signal: ctx.signal,
-								onSpawn: ctx.trackChild,
-							})
-						: null,
+					checked
+						? { loudness: checked }
+						: audio.normalized && needsDecodedCheck(deliveryCodecOf(planned), audio.sampleRate)
+							? await measureEncodedAudio({
+									ff: this.deps.ff,
+									file: output,
+									channels: planned.output.audioChannels,
+									sampleRate: planned.output.audioSampleRate,
+									signal: ctx.signal,
+									onSpawn: ctx.trackChild,
+								})
+							: null,
+					!!copied,
 				)
 			: null;
 		const allWarnings = [
@@ -2129,6 +2198,53 @@ export class ExportService {
 	}
 }
 
+/**
+ * The delivery's checked encode (`deliver.ts`: the lossy encode whose decoded audio met the target) when it is exactly
+ * this export's audio stream (same codec, bit rate, rate, channels): every mux copies it instead of encoding the WAV
+ * again — the delivered bits are the checked bits, and the export saves one audio encode.
+ */
+function deliveredEncode(p: PlannedExport, audio: MixdownResult | null): string | null {
+	const n = audio?.normalized;
+	const file = n?.delivery.encoded;
+	if (!file || !n.codec) return null;
+	const want = deliveryCodecOf(p);
+	const c = n.codec;
+	return want.codec === c.codec &&
+		want.bitrateKbps === c.bitrateKbps &&
+		want.sampleRate === c.sampleRate &&
+		want.channels === c.channels
+		? file
+		: null;
+}
+
+/**
+ * The audio input of a mux and its output options: the delivery's checked encode by stream copy, else the mix WAV
+ * resampled to the delivered rate when it differs and encoded with the deliverable's codec. Null without audio.
+ */
+function audioStream(
+	p: PlannedExport,
+	audio: MixdownResult | null,
+	soxr: boolean,
+): { file: string; args: string[] } | null {
+	if (!audio?.path) return null;
+	const enc = deliveredEncode(p, audio);
+	if (enc) return { file: enc, args: ['-c:a', 'copy'] };
+	const o = p.output;
+	return {
+		file: audio.path,
+		args: [
+			...(audio.sampleRate !== o.audioSampleRate
+				? ['-af', `aresample=${o.audioSampleRate}:${resamplerArgs(soxr)}`]
+				: []),
+			...audioEncodeArgs(audioCodecOf(o.encoder, o), o.audioBitrateKbps, o.audioChannels),
+			'-ar',
+			String(o.audioSampleRate),
+			'-ac',
+			String(o.audioChannels),
+		],
+	};
+}
+
 /** The deliverable's audio encoding (what every path's mux writes: `audioEncodeArgs` with these). */
 function deliveryCodecOf(p: PlannedExport): DeliveryCodec {
 	const o = p.output;
@@ -2149,6 +2265,7 @@ type AudioLoudnessResult = NonNullable<import('@jasper/api').ExportResult['audio
 function audioLoudnessOf(
 	audio: MixdownResult,
 	delivered: { loudness: import('@jasper/audio-dsp').LoudnessSummary } | null,
+	copied: boolean,
 ): AudioLoudnessResult {
 	const f = (x: number) => (Number.isFinite(x) ? Math.round(x * 1000) / 1000 : null);
 	const m = delivered?.loudness ?? audio.loudness;
@@ -2174,6 +2291,8 @@ function audioLoudnessOf(
 					localCorrections: { count: d.corrections.hops, maxDb: Math.round(d.corrections.maxDb * 100) / 100 },
 					ceilingLimited: d.ceilingLimited,
 					truePeakMet: Number.isFinite(m.truePeakDb) ? m.truePeakDb <= n.truePeakDb + 0.05 : true,
+					...(d.cached ? { deliveryReused: true } : {}),
+					...(copied ? { streamCopied: true } : {}),
 				}
 			: {}),
 	};

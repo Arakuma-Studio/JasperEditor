@@ -47,6 +47,7 @@ import {
 	type SoundCheckSeverity,
 	type SoundDelivery,
 	sequenceDuration,
+	soundCheckAudioKey,
 	soundCheckCounts,
 	soundCheckInputsHash,
 	soundDesignSettingsOf,
@@ -150,6 +151,8 @@ function keptIsCurrent(
 	whole: boolean,
 	/** P6-E8: the reference profile the check compares with (default the sequence's). */
 	profileId?: string | null,
+	/** The export encoding the check delivers through (a report checked for another one is not reused). */
+	exportAudio?: unknown,
 ): boolean {
 	if (report.sequenceId !== sequenceId || report.preset.id !== preset) return false;
 	if (!!report.preset.custom !== !!target) return false;
@@ -161,7 +164,11 @@ function keptIsCurrent(
 	if (whole ? !report.wholeSequence : report.range.start !== range.start || report.range.end !== range.end)
 		return false;
 	if (report.mixHash !== mixFingerprint(doc, sequenceId)) return false;
-	return report.inputsHash === soundCheckInputsHash(doc, sequenceId, preset, target ?? null, profileId);
+	if (soundCheckAudioKey(report.exportAudio) !== soundCheckAudioKey(exportAudio)) return false;
+	return (
+		report.inputsHash ===
+		soundCheckInputsHash(doc, sequenceId, preset, target ?? null, profileId, exportAudio)
+	);
 }
 
 const httpToJob = (e: unknown): never => {
@@ -284,7 +291,17 @@ export async function runProposalCheck(
 	const kept = await deps.keptReport?.(req.projectId, seq.id).catch(() => null);
 	if (
 		kept &&
-		keptIsCurrent(kept.result.report, live.doc, seq.id, preset, target, range, whole, req.profileId)
+		keptIsCurrent(
+			kept.result.report,
+			live.doc,
+			seq.id,
+			preset,
+			target,
+			range,
+			whole,
+			req.profileId,
+			req.exportAudio,
+		)
 	) {
 		base = kept.result.report;
 		baseJobId = kept.jobId;

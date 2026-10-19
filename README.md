@@ -553,7 +553,9 @@ Tools (378; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   shared "SFX Room" reverb) · `sound_check` (the delivered mix measured: findings with safe fixes judged together, in the
   order to apply them — sync, loudness, the mix, cues, licences (ShareAlike warned), and clicks at edits, cut edges,
   harshness, inaudible layers, partial coverage, endings and the loudness arc — five listen-here timecodes, a verdict, a
-  PNG of the worst moments; a custom delivery target; humanVerdicts: what the user said after
+  PNG of the worst moments; a custom delivery target; delivered through the export encoding it is checked for —
+  `exportPreset` / `exportAudio`, by default the delivery preset's typical one (Web AAC 256, Podcast AAC 128, broadcast
+  PCM) — and the stored summary records which; humanVerdicts: what the user said after
   listening in the editor's Sound Check panel, each bound to the moment it judged and marked stale when that moment
   changed; `proposalId` checks a proposal before review — what it fixes and introduces, per item, on its preview,
   nothing applied) `get_sound_check` (the last full report the engine keeps per sequence, across restarts: current or

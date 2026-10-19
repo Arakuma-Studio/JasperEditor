@@ -331,6 +331,13 @@ export const ExportResultSchema = z.object({
 			localCorrections: z.object({ count: z.number().int(), maxDb: z.number() }).optional(),
 			ceilingLimited: z.boolean().optional(),
 			truePeakMet: z.boolean().optional(),
+			/**
+			 * The delivery started from the parameters of an earlier delivery of the same mix to the same target and codec
+			 * (a Sound Check with this export's encoding, an earlier export): one pass and one encode, still checked.
+			 */
+			deliveryReused: z.boolean().optional(),
+			/** The file's audio stream is the checked encode itself (muxed by stream copy, not encoded again). */
+			streamCopied: z.boolean().optional(),
 		})
 		.optional(),
 	/** Caption streams embedded in the file and sidecar files written. */

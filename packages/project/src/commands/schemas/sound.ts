@@ -321,6 +321,14 @@ export const SoundDesignSetCheckCmd = cmd('soundDesign.setCheck', {
 				.strictObject({ start: z.number().int().min(0), end: z.number().int().min(0) })
 				.refine((r) => r.end > r.start, 'range.end must be after range.start')
 				.optional(),
+			/** The export encoding the check delivered through (absent: the PCM master). */
+			exportAudio: z
+				.strictObject({
+					codec: z.enum(['aac', 'opus', 'pcm']),
+					bitrateKbps: z.number().int().min(16).max(1536).optional(),
+					sampleRate: z.union([z.literal(44100), z.literal(48000), z.literal(96000)]).optional(),
+				})
+				.optional(),
 		})
 		.nullable(),
 });

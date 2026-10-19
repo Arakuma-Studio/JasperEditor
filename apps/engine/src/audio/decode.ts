@@ -3,6 +3,7 @@
 // `atempo` when "Maintain Audio Pitch" is on, a rate change — like the preview — when it is off; reversed clips are
 // decoded forwards and reversed) and resamples with SoX (VHQ) when the build has it, else swr with a long filter.
 import type { ChildProcess } from 'node:child_process';
+import { endianness } from 'node:os';
 import type { AudioStream, ClipReader, Rational, RenderAudioClip } from '@jasper/project';
 import { FLICKS_PER_SECOND, fileTimeOf, flicksPerFrame, frameToSample } from '@jasper/project';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
@@ -145,6 +146,8 @@ export function clipDecodeArgs(o: {
 }
 
 /** Streams interleaved f32le from a child's stdout into planar blocks. */
+const LITTLE_ENDIAN = endianness() === 'LE';
+
 export class PcmStreamReader implements ClipReader {
 	private readonly iter: AsyncIterator<Buffer>;
 	private pending: Buffer = Buffer.alloc(0);
@@ -181,9 +184,19 @@ export class PcmStreamReader implements ClipReader {
 		}
 		const all = chunks.length === 1 ? chunks[0]! : Buffer.concat(chunks, have);
 		const got = Math.min(frames, Math.floor(all.length / bytesPerFrame));
-		const dv = new DataView(all.buffer, all.byteOffset, got * bytesPerFrame);
-		for (let i = 0; i < got; i++)
-			for (let c = 0; c < this.channels; c++) out[c]![i] = dv.getFloat32((i * this.channels + c) * 4, true);
+		const ch = this.channels;
+		if (LITTLE_ENDIAN && all.byteOffset % 4 === 0) {
+			// the samples through a typed view (ffmpeg writes f32le): the same values as DataView, several times faster
+			const f = new Float32Array(all.buffer, all.byteOffset, got * ch);
+			for (let c = 0; c < ch; c++) {
+				const o = out[c]!;
+				for (let i = 0; i < got; i++) o[i] = f[i * ch + c]!;
+			}
+		} else {
+			const dv = new DataView(all.buffer, all.byteOffset, got * bytesPerFrame);
+			for (let i = 0; i < got; i++)
+				for (let c = 0; c < ch; c++) out[c]![i] = dv.getFloat32((i * ch + c) * 4, true);
+		}
 		this.pending = Buffer.from(all.subarray(got * bytesPerFrame));
 		return got;
 	}

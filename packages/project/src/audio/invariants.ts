@@ -1,7 +1,7 @@
 // Invariants and load-time repairs of the audio-mix data (INV-MIX): submix tracks are audio-kind tracks without
 // clips; outputs and sends name existing submixes without feedback (a submix only feeds a later submix); at most
-// MAX_SENDS sends; lane keys are known; loudness settings are in range.
-import { STRIP_LANES } from '../schema/audio.ts';
+// MAX_SENDS sends; lane keys are known; loudness settings are in range; a stored converged delivery is readable.
+import { readLoudnessDelivery, STRIP_LANES } from '../schema/audio.ts';
 import type { Sequence, Track } from '../schema/sequence.ts';
 import { MAX_SENDS } from './strip.ts';
 
@@ -49,6 +49,12 @@ export function audioMixIssues(seq: Sequence, where: string[]): MixIssue[] {
 	subs.forEach((t, i) => {
 		check(t, i);
 	});
+	const delivery = (seq.master.loudness?.analysis as { delivery?: unknown } | null | undefined)?.delivery;
+	if (delivery !== undefined && delivery !== null && !readLoudnessDelivery(delivery))
+		out.push({
+			message: 'The loudness analysis has an unreadable converged delivery',
+			path: [...where, 'master', 'loudness', 'analysis', 'delivery'],
+		});
 	return out;
 }
 
@@ -94,4 +100,19 @@ export function repairAudioMix(
 		if (t.kind !== 'audio') (t as { kind: string }).kind = 'audio';
 		fix(t, i);
 	});
+	// an unreadable converged delivery is dropped: the preview plays the one-pass gain until the mix is analysed again
+	const analysis = seq.master.loudness?.analysis as { delivery?: unknown } | null | undefined;
+	if (
+		analysis &&
+		analysis.delivery !== undefined &&
+		analysis.delivery !== null &&
+		!readLoudnessDelivery(analysis.delivery)
+	) {
+		delete analysis.delivery;
+		note(
+			'drop-loudness-delivery',
+			seq.id,
+			'removed an unreadable converged delivery from the loudness analysis',
+		);
+	}
 }

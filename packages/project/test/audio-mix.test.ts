@@ -644,6 +644,69 @@ describe('mixer commands', () => {
 		expect(mixFingerprint(h.doc, h.seqId)).not.toBe(hash);
 	});
 
+	it('a converged delivery in the analysis: the plan plays its gain and ceiling for that target only; undo / redo; refusals; repair', () => {
+		const h = new Harness();
+		const hash = mixFingerprint(h.doc, h.seqId);
+		const delivery = {
+			targetLufs: -14,
+			truePeakDbtp: -1,
+			gainDb: 5.31,
+			limiterCeilingDbtp: -1,
+			passes: 4,
+			ceilingLimited: false,
+			deliveredLufs: -14.01,
+		};
+		const analysis = {
+			integratedLufs: -18.18,
+			truePeakDbtp: -1.47,
+			lra: 3,
+			mixHash: hash,
+			analyzedAt: 'now',
+			delivery,
+		};
+		const before = h.doc;
+		h.ok([{ type: 'mixer.setLoudness', enabled: true, targetLufs: -14, truePeakDb: -1, analysis }]);
+		// the converged gain (+5.31 dB), not the one-pass target − measured (+4.18 dB)
+		expect(buildAudioMix(h.seq).loudness).toEqual({ gainDb: 5.31, truePeakDb: -1 });
+		expect(h.seq.master.loudness?.analysis?.delivery).toEqual(delivery);
+		// undo: the document before is untouched; redo: the same transaction gives the same document
+		expect(Object.values(before.sequences)[0]!.master.loudness).toBeUndefined();
+		// the delivery belongs to its target: another target or ceiling plays the one-pass gain
+		h.ok([{ type: 'mixer.setLoudness', targetLufs: -16 }]);
+		expect(buildAudioMix(h.seq).loudness?.gainDb).toBeCloseTo(-16 + 18.18, 6);
+		h.ok([{ type: 'mixer.setLoudness', targetLufs: -14, truePeakDb: -2 }]);
+		expect(buildAudioMix(h.seq).loudness).toEqual({ gainDb: -14 + 18.18, truePeakDb: -2 });
+		h.ok([{ type: 'mixer.setLoudness', truePeakDb: -1 }]);
+		expect(buildAudioMix(h.seq).loudness).toEqual({ gainDb: 5.31, truePeakDb: -1 });
+		// the delivery is not part of the mix fingerprint (storing it never makes the analysis stale)
+		expect(mixFingerprint(h.doc, h.seqId)).toBe(hash);
+		// refusals: a malformed delivery is a schema error and changes nothing
+		for (const bad of [
+			{ ...delivery, gainDb: 'x' },
+			{ ...delivery, limiterCeilingDbtp: 5 },
+			{ ...delivery, passes: -1 },
+			{ targetLufs: -14 },
+		]) {
+			const doc = h.doc;
+			const r = h.tx([{ type: 'mixer.setLoudness', analysis: { ...analysis, delivery: bad } }]);
+			expect(r.ok, JSON.stringify(bad)).toBe(false);
+			expect(h.doc).toBe(doc);
+		}
+		// a file with a damaged delivery loads (the analysis is read leniently), is repaired, and plays target − measured
+		const raw = JSON.parse(JSON.stringify(h.doc)) as ProjectDocument;
+		(Object.values(raw.sequences)[0]!.master.loudness!.analysis as { delivery: unknown }).delivery = {
+			gainDb: 'loud',
+		};
+		expect(checkInvariants(raw).some((i) => i.invariant === 'INV-MIX')).toBe(true);
+		expect(buildAudioMix(Object.values(raw.sequences)[0]!).loudness?.gainDb).toBeCloseTo(-14 + 18.18, 6);
+		const { document, report } = repairDocument(raw, createCounterIdSource(99));
+		const a = Object.values(document.sequences)[0]!.master.loudness!.analysis!;
+		expect(a.delivery).toBeUndefined();
+		expect(a.integratedLufs).toBe(-18.18);
+		expect(report.some((e) => e.action === 'drop-loudness-delivery')).toBe(true);
+		expect(checkInvariants(document).filter((i) => i.invariant === 'INV-MIX')).toEqual([]);
+	});
+
 	it('mixFingerprint ignores keyframe ids (the same curve written again is the same mix)', () => {
 		const h = new Harness();
 		const m = h.registerVideo({ seconds: 10 });
