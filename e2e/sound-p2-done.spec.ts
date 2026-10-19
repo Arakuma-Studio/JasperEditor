@@ -360,7 +360,11 @@ test('Phase 2 done-when: suggest (= engine route), fill, vary, layer, undo/redo,
 				refs.set(refKey, ref);
 			}
 			const refPoint = Math.round(((c.sfx!.placement.peakFlicks / FLICKS) * SR) / c.speed.rate);
-			const W = 2400; // 50 ms around the aligned point
+			// 300 ms around the aligned point (or the whole sound): long enough to hold the envelope. With 50 ms a tonal
+			// whoosh ("Pneumatic whoosh", a 561 Hz whistle: a period of 85.5 samples) correlated better one period off in
+			// the AAC export (r 0.871 at +86 samples, 0.859 at its exact place; 100 ms: 0.884 against 0.859); with 300 ms
+			// its exact place leads by 0.10 (Final verification A, measured on that export)
+			const W = 14_400;
 			const w0 = Math.max(0, Math.min(ref.length - W, refPoint - W / 2));
 			const w1 = Math.min(ref.length, w0 + W);
 			const expected = pointFrame(s, c) * (F / FLICKS) * SR;
@@ -368,9 +372,10 @@ test('Phase 2 done-when: suggest (= engine route), fill, vary, layer, undo/redo,
 			const found = locate(mix, ref, w0, w1, Math.round(expected - refPoint), 2400);
 			const at = found.lag + refPoint;
 			const point = pointFrame(s, c);
-			// another SFX clip sounding within a frame of this one's aligned point lowers the correlation
+			// another SFX clip sounding within the window (or a frame) of this one's aligned point lowers the correlation
+			const half = Math.max(1, (W / 2 / SR) * (FLICKS / F));
 			const overlapping = sfxClips(s)
-				.filter((o) => o.id !== c.id && o.start < point + 1 && o.start + o.duration > point - 1)
+				.filter((o) => o.id !== c.id && o.start < point + half && o.start + o.duration > point - half)
 				.map((o) => o.id);
 			rows.push({
 				clipId: c.id,
@@ -424,8 +429,9 @@ test('Phase 2 done-when: suggest (= engine route), fill, vary, layer, undo/redo,
 	writeFileSync(join(outDir, 'export-points.json'), JSON.stringify(report, null, 1));
 	expect(report.length).toBeGreaterThanOrEqual(5);
 	for (const row of report) {
-		// a sound alone is found (chance correlation over 2 400 samples is ≈ 0.02; AAC smears short ticks to 0.55–0.7,
-		// measured); overlapping sounds lower it further, but the lag must still be exact (AAC, varispeed: ≤ 2 samples)
+		// a sound alone is found (chance correlation over the window is a few hundredths; AAC smears short ticks to
+		// 0.55–0.7, measured); overlapping sounds lower it further, but the lag must still be exact (AAC, varispeed: ≤ 2
+		// samples)
 		if (!row.overlapped) expect(row.r as number, JSON.stringify(row)).toBeGreaterThan(0.3);
 		expect(Math.abs(row.errorSamples as number), JSON.stringify(row)).toBeLessThanOrEqual(2);
 		expect(row.fromCueSamples as number, JSON.stringify(row)).toBeGreaterThanOrEqual(-2);
