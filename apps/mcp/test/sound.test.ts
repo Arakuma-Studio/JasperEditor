@@ -644,6 +644,118 @@ describe('sound library MCP tools', { timeout: 900_000 }, () => {
 		);
 	});
 
+	it("detect_sound_peak gives project audio its peak (the editor's Detect Peak), one undo step", async () => {
+		const p = (await ok<{ projectId: string }>('create_project', { name: 'Detect Peak' })).body.projectId;
+		const wav = join(work, 'door-hit.wav');
+		writeHitWav(wav, 1.2);
+		const imp = (
+			await ok<{ imported: { mediaId: string }[] }>('import_media', { projectId: p, paths: [wav] })
+		).body;
+		const placed = (
+			await ok<{ refs: Record<string, string> }>('apply_commands', {
+				projectId: p,
+				label: 'place',
+				commands: [
+					{
+						type: 'clip.place',
+						source: { mediaId: imp.imported[0]!.mediaId },
+						at: 30,
+						tracks: { audio: 'A1' },
+						ref: '$a',
+					},
+				],
+			})
+		).body;
+		const clipId = placed.refs.$a!;
+		// measure only: nothing changes
+		const rev = await revisionOf(p);
+		const m = (
+			await ok<{ applied: boolean; peakSec: number; peakFlicks: number; playsAt: { frame: number } }>(
+				'detect_sound_peak',
+				{ projectId: p, clipId, apply: false },
+			)
+		).body;
+		expect(m.applied).toBe(false);
+		expect(await revisionOf(p)).toBe(rev);
+		// the hit file peaks ≈ 50 ms in (writeHitWav)
+		expect(m.peakSec).toBeGreaterThan(0.04);
+		expect(m.peakSec).toBeLessThan(0.07);
+		expect(m.playsAt.frame).toBeGreaterThan(31);
+		expect(m.playsAt.frame).toBeLessThan(32.2);
+		// apply: soundDesign.setPeak, one undo step "Detect Peak"
+		const a = (
+			await ok<{ applied: boolean; historyLabel: string; peakFlicks: number }>('detect_sound_peak', {
+				projectId: p,
+				clipId,
+			})
+		).body;
+		expect(a).toMatchObject({ applied: true, historyLabel: 'Detect Peak', peakFlicks: m.peakFlicks });
+		expect(await revisionOf(p)).toBe(rev + 1);
+		const doc = await documentOf(p);
+		const clip = Object.values(doc.sequences)[0]!.clips[clipId] as unknown as {
+			sfx?: { soundId: string | null; placement: { peakFlicks: number } };
+		};
+		expect(clip.sfx?.soundId).toBeNull();
+		expect(clip.sfx?.placement.peakFlicks).toBe(m.peakFlicks);
+		// align_peak now moves it by that peak
+		const al = (
+			await ok<{ exact: string; clips: { alignedFrame: number }[] }>('align_peak', {
+				projectId: p,
+				clipId,
+				to: 60,
+			})
+		).body;
+		expect(al.exact).toBe('frame');
+		expect(Math.floor(al.clips[0]!.alignedFrame)).toBe(60);
+		expect((await fails('detect_sound_peak', { projectId: p, clipId: 'clp_nope' })).code).toBe('E_NOT_FOUND');
+		expect((await fails('detect_sound_peak', { projectId: p, clipId, sequenceId: 'seq_nope' })).code).toBe(
+			'E_NOT_FOUND',
+		);
+	});
+
+	it('export_sound_credits writes the credits file (never overwriting) like File ▸ Export ▸ Sound Credits…', async () => {
+		const p = (await ok<{ projectId: string }>('create_project', { name: 'Credits File' })).body.projectId;
+		const out = join(work, 'credits-out');
+		// Nothing used yet: nothing to write.
+		expect((await fails('export_sound_credits', { projectId: p, path: out })).code).toBe('E_INVALID_PARAM');
+		expect((await fails('export_sound_credits', { projectId: p, path: 'relative/credits.md' })).code).toBe(
+			'E_INVALID_PARAM',
+		);
+		await ok('insert_sound', { projectId: p, soundId: byTitle.get('Punch')!.soundId, at: 30 });
+		const listed = (await ok<{ text: string }>('list_sound_credits', { projectId: p })).body.text;
+		// A folder: named after the project, Markdown by default.
+		mkdirSync(out, { recursive: true });
+		const a = (
+			await ok<{ path: string; format: string; count: number }>('export_sound_credits', {
+				projectId: p,
+				path: out,
+			})
+		).body;
+		expect(a).toMatchObject({ path: join(out, 'Credits_File-sound-credits.md'), format: 'md', count: 1 });
+		expect(readFileSync(a.path, 'utf8')).toBe(listed);
+		// The same name again: a free name, the first file untouched.
+		const b = (await ok<{ path: string }>('export_sound_credits', { projectId: p, path: out })).body;
+		expect(b.path).toBe(join(out, 'Credits_File-sound-credits (2).md'));
+		expect(readFileSync(a.path, 'utf8')).toBe(listed);
+		// A file path: the format follows its extension.
+		const csvPath = join(out, 'sub', 'list.csv');
+		const c = (
+			await ok<{ path: string; format: string }>('export_sound_credits', { projectId: p, path: csvPath })
+		).body;
+		expect(c).toMatchObject({ path: csvPath, format: 'csv' });
+		expect(readFileSync(csvPath, 'utf8').split('\n')[0]).toContain('title');
+		// CC0 needs no credit: attributionOnly has nothing to write, and list_sound_credits says the same.
+		expect(
+			(await ok<{ count: number }>('list_sound_credits', { projectId: p, attributionOnly: true })).body.count,
+		).toBe(0);
+		expect(
+			(await fails('export_sound_credits', { projectId: p, path: out, attributionOnly: true })).code,
+		).toBe('E_INVALID_PARAM');
+		expect(
+			(await fails('export_sound_credits', { projectId: p, path: out, sequenceId: 'seq_nope' })).code,
+		).toBe('E_NOT_FOUND');
+	});
+
 	it('sound folders need the user: refused without a window, denied, approved; CC-BY credits', async () => {
 		const folder = join(work, 'my sounds');
 		mkdirSync(folder);

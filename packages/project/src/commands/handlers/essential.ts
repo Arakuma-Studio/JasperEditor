@@ -113,6 +113,34 @@ const end = (c: { start: number; duration: number }) => c.start + c.duration;
 /** Shortest remix joint crossfade (s): the frames of it, at least one (Sound Check's chopped-decay fade). */
 export const REMIX_MIN_CROSSFADE_S = 0.03;
 
+/**
+ * The measured loudness Auto-Match uses for each clip: its own, except that the pieces of one remix (`remix.id`) are
+ * one piece of music and get ONE match gain: the duration-weighted power mean of their measurements (≈ the integrated
+ * loudness of the pieces played in a row, BS.1770 gating aside). Matched one by one, an intro piece and a drop piece
+ * got gains 9 dB apart and the joint between them jumped (final verification B: Sound Check EDGE after a delivery).
+ */
+function remixMeasured(
+	clips: readonly DClip[],
+	measuredLufs: Record<string, number | null>,
+): (c: DClip) => number | null | undefined {
+	const groups = new Map<string, { e: number; d: number }>();
+	for (const c of clips) {
+		const r = (c as DAudio).remix?.id;
+		const m = measuredLufs[c.id];
+		if (!r || m === null || m === undefined || !Number.isFinite(m) || !(c.duration > 0)) continue;
+		const g = groups.get(r) ?? { e: 0, d: 0 };
+		g.e += c.duration * 10 ** (m / 10);
+		g.d += c.duration;
+		groups.set(r, g);
+	}
+	return (c) => {
+		const m = measuredLufs[c.id];
+		const g = (c as DAudio).remix?.id ? groups.get((c as DAudio).remix!.id) : undefined;
+		if (!g || m === null || m === undefined || !Number.isFinite(m)) return m;
+		return 10 * Math.log10(g.e / g.d);
+	};
+}
+
 /** The pieces of the remix a clip belongs to (sorted by start), or just the clip. */
 function remixPieces(seq: DSeq, clip: DClip): DAudio[] {
 	const r = (clip as DAudio).remix;
@@ -292,13 +320,14 @@ export const essentialHandlers = {
 		if (ids.length === 0) h.fail('E_INVALID_PARAM', 'measuredLufs is empty');
 		const { seq, clips } = audioClips(doc, ids, h);
 		const out: Record<string, { gainDb: number } | { skipped: string }> = {};
+		const measuredOf = remixMeasured(clips, cmd.measuredLufs);
 		for (const c of clips) {
 			const cur = readEssentialSound(c.essential);
 			if (!cur) {
 				out[c.id] = { skipped: 'no audio type' };
 				continue;
 			}
-			const measured = cmd.measuredLufs[c.id];
+			const measured = measuredOf(c);
 			if (measured === null || measured === undefined || !Number.isFinite(measured)) {
 				// No integrated loudness: silence, or a clip shorter than one 400 ms BS.1770 gating block.
 				const rate = seq.settings.frameRate as Rational;
@@ -443,7 +472,7 @@ export const essentialHandlers = {
 					trackId: clip.trackId,
 					at: made[i]!.start,
 					effectId: 'jasper.constant-power',
-					duration: xf,
+					duration: cmd.jointCrossfadeFrames?.[i - 1] ?? xf,
 					alignment: 'end-at-cut',
 				},
 				h,

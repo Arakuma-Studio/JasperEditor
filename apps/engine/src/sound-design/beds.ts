@@ -11,7 +11,8 @@
 //               `noiseFloorProfile`), the candidates — the palette's and library's room tones, measured on their clean
 //               window — ranked by the SHAPE distance of their octave bands to the floor (`spectralDistanceDb`); the
 //               closest within 3 dB is used, else the quietest 0.5–3 s without speech of the dialogue's own media
-//               (`quietestStretch`), looped; its gain puts it at the floor (never under −56 dBFS: a fill is never a
+//               (`quietestStretch`; in the part its clips use, else in the media's handles, ≤ 30 s either side, with
+//               their own voice activity left out), looped; its gain puts it at the floor (never under −56 dBFS: a fill is never a
 //               silence itself).
 //   jobs        `mode: 'propose'` (default) stores a proposal (setup items for the sounds, one bed item); `apply`
 //               commits ONE transaction (the editor's: the user's own History entry).
@@ -681,6 +682,9 @@ type Floor = {
 	} | null;
 };
 
+/** Seconds of a dialogue media searched either side of the part its clips use when that part has no pause in it. */
+export const ROOM_TONE_HANDLE_SEC = 30;
+
 async function measureFloor(
 	deps: BedDeps,
 	doc: ProjectDocument,
@@ -696,23 +700,24 @@ async function measureFloor(
 	let g = 0;
 	const ids: string[] = [];
 	let stretch: Floor['stretch'] = null;
-	for (const c of clips) {
-		const asset = doc.media?.[c.mediaId] as MediaAsset | undefined;
-		const key = engineMediaKey(asset);
-		const path = key && deps.registry.get(key) ? await deps.registry.resolvePath(key) : null;
-		if (!path) continue;
+	/** Measures `[startSec, endSec)` of a clip's media with its voice activity (media seconds) left out. */
+	const consider = async (
+		c: FloorClip,
+		path: string,
+		startSec: number,
+		endSec: number,
+		voiced: readonly (readonly [number, number])[],
+	) => {
 		const pcm = await decodeBed(
 			deps.ffmpeg,
 			path,
-			{ start: c.startSec, duration: Math.max(0.2, c.endSec - c.startSec), stream: c.streamIndex },
+			{ start: startSec, duration: Math.max(0.2, endSec - startSec), stream: c.streamIndex },
 			ctx,
 		).catch(() => null);
-		if (!pcm || pcm.mono.length < pcm.rate * 0.2) continue;
-		const exclude = (voice[c.clipId] ?? []).map(
-			([a, b]) => [a - c.startSec, b - c.startSec] as [number, number],
-		);
+		if (!pcm || pcm.mono.length < pcm.rate * 0.2) return;
+		const exclude = voiced.map(([a, b]) => [a - startSec, b - startSec] as [number, number]);
 		const f = noiseFloorProfile(pcm.mono, pcm.rate, { exclude });
-		if (!f) continue;
+		if (!f) return;
 		e += 10 ** (f.levelDb / 10);
 		f.bandsDb.forEach((b, i) => {
 			bands[i] = (bands[i] ?? 0) + 10 ** (b / 10);
@@ -720,7 +725,7 @@ async function measureFloor(
 		seconds += f.seconds;
 		g += c.gainDb;
 		n++;
-		ids.push(c.clipId);
+		if (!ids.includes(c.clipId)) ids.push(c.clipId);
 		const q = quietestStretch(pcm.mono, pcm.rate, { exclude });
 		if (
 			q &&
@@ -735,15 +740,67 @@ async function measureFloor(
 			stretch = {
 				mediaId: c.mediaId,
 				clipId: c.clipId,
-				startSec: r3(c.startSec + q.startSec),
-				endSec: r3(c.startSec + q.endSec),
+				startSec: r3(startSec + q.startSec),
+				endSec: r3(startSec + q.endSec),
 				levelDb: q.levelDb,
 				spectrum: windowSpectrum(pcm.mono, pcm.rate, q.startSec, q.endSec) ?? {
 					levelDb: q.levelDb,
 					bandsDb: [],
 				},
-				loop: loop ? { ...loop, inSec: r3(c.startSec + loop.inSec), outSec: c.startSec + loop.outSec } : null,
+				loop: loop ? { ...loop, inSec: r3(startSec + loop.inSec), outSec: startSec + loop.outSec } : null,
 			};
+		}
+	};
+	const located: { c: FloorClip; path: string; key: string }[] = [];
+	for (const c of clips) {
+		const asset = doc.media?.[c.mediaId] as MediaAsset | undefined;
+		const key = engineMediaKey(asset);
+		const path = key && deps.registry.get(key) ? await deps.registry.resolvePath(key) : null;
+		if (!path || !key) continue;
+		located.push({ c, path, key });
+		await consider(c, path, c.startSec, c.endSec, voice[c.clipId] ?? []);
+	}
+	// Dialogue trimmed tight to the words has no pause in what the clips use: the room tone is in the media's handles
+	// (the recording before and after the used part, ≤ ROOM_TONE_HANDLE_SEC each side), with their own voice activity
+	// left out — where an editor takes room tone from (final verification B: a Fill Room Tone that found nothing).
+	if (!n || !stretch) {
+		const svc = voiceServiceFor(deps.ffmpeg, deps.registry);
+		const before = n;
+		for (const { c, path, key } of located) {
+			const dur = deps.registry.get(key)?.durationSec ?? null;
+			const spans: [number, number][] = [
+				[Math.max(0, c.startSec - ROOM_TONE_HANDLE_SEC), c.startSec],
+				[
+					c.endSec,
+					dur !== null && Number.isFinite(dur) ? Math.min(dur, c.endSec + ROOM_TONE_HANDLE_SEC) : c.endSec,
+				],
+			];
+			for (const [a, b] of spans) {
+				if (!(b - a >= 0.5)) continue;
+				let voiced: [number, number][] = [];
+				try {
+					voiced = (
+						await svc.measure(
+							{ mediaKey: key, streamIndex: c.streamIndex, startSeconds: a, durationSeconds: b - a },
+							ctx.signal,
+						)
+					).voiced;
+				} catch {
+					if (ctx.signal?.aborted) throw new Error('cancelled');
+					continue; // no voice activity: not a stretch to trust
+				}
+				const keepFloor = before === 0;
+				const was = { e, bands: [...bands], seconds, n, g };
+				await consider(c, path, a, b, voiced);
+				if (!keepFloor) {
+					// the floor stays the used part's own; only the stretch comes from the handle
+					e = was.e;
+					bands.splice(0, bands.length, ...was.bands);
+					seconds = was.seconds;
+					n = was.n;
+					g = was.g;
+				}
+			}
 		}
 	}
 	if (!n) return null;

@@ -40,12 +40,22 @@ nobody outside has used it, only Linux was checked — is [`docs/gaps.md`](docs/
   management with log inputs, Rec. 2100 PQ / HLG working spaces, OCIO configs and HDR export.
 - **Audio.** Track and clip mixers with automation, submixes and sends, loudness metering and normalisation
   (BS.1770 / EBU R128), Essential Sound, ducking, remix; one DSP for preview and every export path.
+- **Sound design.** A licensed, offline Sound Library (a bundled Kenney CC0 starter kit, downloadable CC0 packs, your own
+  folders with a licence you declare) searched by measured descriptors, auditioned in context and inserted with its peak on
+  the frame to the sample; cues derived from the edit (cuts, transitions, keyframed motion, text animators, measured
+  picture motion, scene cuts, music beats) on a Cue Seam; Auto Sound Pass proposes a whole pass you review on the
+  timeline and apply as one undo step; sound-effect levels solved against the bed, stop-before dips, builds, a shared
+  room reverb, delivery presets (−14 / −16 / −23 / −24 LUFS); Sound Check measures the delivered mix (sync, loudness,
+  masking, clicks, edges, harshness, coverage, endings…) with safe fixes; ambience beds and room tone; music drops
+  landed on a frame; credits next to the export; an optional local describe-it search. Agents drive all of it and
+  cannot hear: they get descriptors, pictures and a written listening log ([`docs/specs/12-sound-design.md`](docs/specs/12-sound-design.md),
+  [`docs/wp-notes/sound-design.md`](docs/wp-notes/sound-design.md)).
 - **Captions and speech.** Caption tracks (SRT, VTT, SCC, MCC, STL, TTML), burn-in, local speech to text with
   word timings and diarization, text-based editing.
 - **Export and interchange.** A planner routes each sequence to the native FFmpeg path, a hybrid layer bake or
   Remotion and refuses by name what a path cannot render; H.264, HEVC, VP9, AV1, ProRes, alpha; render previews and
   smart rendering; FCP 7 XML, FCPXML, EDL, AAF, OMF, ALE and OTIO in both directions.
-- **Agents.** `jasper-mcp` exposes 369 tools and the whole command catalogue; every edit is an undoable
+- **Agents.** `jasper-mcp` exposes 378 tools and the whole command catalogue; every edit is an undoable
   transaction, destructive ones need the user's approval in the editor; a `jasper` CLI; tools that look at and
   operate the live window.
 - **Safety net.** Atomic saves, single-writer leases (a reloaded tab keeps its own), crash-recovery journal, saved
@@ -442,7 +452,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (376; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (378; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `browse_media_files` (folders and importable files on the engine's computer) `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -517,14 +527,16 @@ Tools (376; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   alternatives) `find_sound_moment` (the best moments of a long recording for a description) `insert_sound_moment`
   (places one, one undo step) · `import_sounds`
   `insert_sound` (peak-aligned, never overwrites; take ids too) ·
-  `list_sound_credits` · `add_sound_folder` `remove_sound_folder` `rescan_sound_library` · packs: `list_sound_packs`
+  `list_sound_credits` `export_sound_credits` (writes the credits file, md / txt / csv, never overwriting) ·
+  `add_sound_folder` `remove_sound_folder` `rescan_sound_library` · packs: `list_sound_packs`
   `install_sound_pack` (downloads a catalogue pack from its upstream site, sha256-pinned; tell the user its size and
   licence first) `remove_sound_pack` (approval card) · cues: `find_sound_cues`
   (derived from the edit; the engine sources scene, beat and pixel measure footage and music when asked, and
   snapToBeats; `timeSignature` "auto" detects 3 or 4 beats per bar for the downbeats, or give it)
   `analyze_picture_motion` (the rendered picture's motion per frame: moves, landings and cuts in
   footage, with a PNG strip) `set_sound_cues` `place_sound` (peak-exact, layers, alternates; proposes unless mode
-  "apply") `swap_sound` `align_peak` · `plan_sound_design` (a whole pass as one proposal, gains solved against the
+  "apply") `swap_sound` `align_peak` `detect_sound_peak` (the editor's Detect Peak for project audio: the engine measures the
+  clip's peak and writes it, one undo step) · `plan_sound_design` (a whole pass as one proposal, gains solved against the
   bed; style options room glue, stop-before, build, delivery; `style.cueSources` picks where derived cues come from;
   the cue grammar — one click voice at one level, keys as takes at speed 1, climbing runs, one key per word for fast
   typing, music carries the cuts, palette materials — with `style.personality` / `style.runs` / `style.typing` /
@@ -759,6 +771,10 @@ media as dialogue, music, sfx or ambience with a confidence, per-type scores, re
 per file and range. Apply the results with the `essentialSound.autoTag` command. The cue route
 (`/api/sound-design/cues`) also answers `voiceActivity` (voiced media seconds of Essential Sound dialogue clips without a
 transcript) and `dialogue` spans with their sources (`words`, `vad`, `clip`).
+`POST /api/sound-design/peak {projectId, sequenceId?, clipId}` answers at once with the peak of an audio clip's sound
+(the centre of its loudest 2 ms, within the part of its media the clip uses, ≤ 120 s: `peakFlicks` from the media start,
+`peakSec`, `onsetSec`, `truncated`); MCP `detect_sound_peak` writes it with `soundDesign.setPeak`, as the editor's Detect Peak
+(which measures in the browser) does.
 
 The engine binds loopback only. The packaged-like desktop engine requires its per-launch token
 (`JASPER_LOCAL_TOKEN`), so plain curl calls are meant for the dev or standalone engine.

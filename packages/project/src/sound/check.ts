@@ -212,6 +212,15 @@ export const SOUND_CHECK_EDGE_THRESHOLDS = {
 	endPeakDbfs: -60,
 	/** ENDING fix: a fade on the Mix volume lane (s). */
 	endFadeSec: 0.5,
+	/**
+	 * ENDING is not reported for a mix that fades out to silence: its last 50 ms RMS at least `endFadeDropDb` under the
+	 * 50 ms that began `endFadeLookSec` before the end, and still falling (its last 10 ms peak `endFadeFallDb` or more
+	 * under that last-50 ms RMS: a fade reaching zero, not one that stops at a level). Decision, final verification B: a
+	 * one-beat fade into a bar line ends at gain 0 but its last 10 ms read ≈ 30 dB under the music (−51.1 dBFS peak).
+	 */
+	endFadeLookSec: 0.5,
+	endFadeDropDb: 18,
+	endFadeFallDb: 3,
 	/** HEAD: the first 5 ms peak over −40 dBFS (earshot); its fix a 3 ms fade (ms). */
 	headPeakDbfs: -40,
 	headFadeMs: 3,

@@ -13,6 +13,7 @@ import {
 	SoundDeliveryResultSchema,
 	SoundDesignPlanResultSchema,
 	type SoundEntry,
+	type SoundPeakResponse,
 	type SoundSearchResponse,
 } from '@jasper/api';
 import {
@@ -1021,6 +1022,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 						layer: i,
 						recentSoundIds: used,
 						variation,
+						fallbackIds: cands.filter((s) => s.source.type === 'synth').map((s) => s.id),
 					},
 				);
 				if (!v)
@@ -1413,7 +1415,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 		{
 			title: 'Align sound peak',
 			description:
-				'Moves a placed sound clip so that its aligned point (its peak for hits and whooshes, its end for risers; or align) lands EXACTLY on a frame: to = a frame / {seconds} / timecode, "playhead" (the open editor’s), or "cue" (the clip’s own cue, else the nearest stored cue). The other layers of its cue move with it (withLayers, default true), each by its own aligned point; keyframes travel with the sound. Sample-exact through the In point (library sounds carry 50 ms of lead silence). ONE undo step; refused when a clip would leave its track’s free space (E_OVERLAP) or start before frame 0.',
+				'Moves a placed sound clip so that its aligned point (its peak for hits and whooshes, its end for risers; or align) lands EXACTLY on a frame: to = a frame / {seconds} / timecode, "playhead" (the open editor’s), or "cue" (the clip’s own cue, else the nearest stored cue). The other layers of its cue move with it (withLayers, default true), each by its own aligned point; keyframes travel with the sound. Sample-exact through the In point (library sounds carry 50 ms of lead silence); project audio given a peak by detect_sound_peak moves by whole frames with its In point kept (exact: "frame"), as the editor’s Align Peak does. ONE undo step; refused when a clip would leave its track’s free space (E_OVERLAP) or start before frame 0.',
 			input: {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1).max(128),
@@ -1461,6 +1463,62 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 			const moving = [clip, ...others];
 			const label =
 				moving.length > 1 ? soundText(SOUND_LABELS.alignPeaks, moving.length) : SOUND_LABELS.alignPeak;
+			// Project audio given a peak by Detect Peak (detect_sound_peak) has no library descriptors to re-place it from:
+			// like the editor's Align Peak, it moves by whole frames (its In point kept), exact to a frame.
+			const libraryPeak = (c: AudioClip) =>
+				!!readLibraryProvenance((doc.media[c.mediaId] as { library?: unknown } | undefined)?.library)
+					?.descriptors;
+			if (!libraryPeak(clip) && (a.align === undefined || a.align === 'peak')) {
+				const at = alignedFrameOf(clip, F);
+				if (at === null)
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						`${a.clipId} has no peak`,
+						'Give project audio a peak first with detect_sound_peak.',
+					);
+				let delta = target - Math.floor(at);
+				const minStart = Math.min(...moving.map((c) => c.start));
+				if (minStart + delta < 0) delta = -minStart;
+				const res = await transact(
+					ctx,
+					a.projectId,
+					{
+						label,
+						commands: delta
+							? [
+									{
+										type: 'clip.move',
+										clipIds: moving.map((c) => c.id),
+										deltaFrames: delta,
+										mode: 'overwrite',
+									},
+								]
+							: [],
+					},
+					extra,
+				);
+				const r = requireOk(res);
+				const after = (await loadDoc(ctx, a.projectId)).doc;
+				const s2 = after.sequences[seq.id]!;
+				return jsonResult({
+					...txBody(res, r),
+					historyLabel: label,
+					frame: { frame: target, timecode: sequenceTimecode(s2, target) },
+					...(cueUsed ? { cueId: cueUsed } : {}),
+					exact: 'frame',
+					note: 'Project audio (a peak from detect_sound_peak) moves by whole frames with its In point kept: its peak lands in the target frame, not on its first sample.',
+					clips: moving.map((c) => {
+						const now = s2.clips[c.id] as (AudioClip & { sfx?: ClipSfx }) | undefined;
+						const f = now ? alignedFrameOf(now, F) : null;
+						return {
+							clipId: c.id,
+							alignedFrame: f === null ? null : r3(f),
+							start: now ? { frame: now.start, timecode: sequenceTimecode(s2, now.start) } : null,
+							movedFrames: delta,
+						};
+					}),
+				});
+			}
 			const { res, r } = await transactFresh(
 				ctx,
 				a.projectId,
@@ -1514,6 +1572,75 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 							note: `The clip's cue ${linkedCue.id} stays at ${sequenceTimecode(s2, linkedCue.frame)}: set_sound_cues {update: [{cueId, frame}]} moves a cue together with its sounds.`,
 						}
 					: {}),
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'detect_sound_peak',
+		{
+			title: 'Detect the peak of project audio',
+			description:
+				"The editor's Clip ▸ Detect Peak for an agent (no editor window needed): the engine decodes the part of the media an audio clip uses (at most 120 s) and finds its peak — the centre of its loudest 2 ms, the Sound Library's own descriptor — then (apply, the default) writes it with soundDesign.setPeak as ONE undo step \"Detect Peak\": the clip gets a peak, so align_peak, swap_sound {to: soundId}, the peak handle, peak snapping and Sound Check's sync treat it like a library sound. Use it for project audio (a recorded hit, a door slam in the production sound) you want to line up by its peak; library sounds already carry theirs. Returns the peak as content flicks (peakFlicks), seconds into the clip (peakSec, onsetSec), the frame and timecode where it plays now, and truncated when the clip uses more than 120 s of its media (only the first 120 s are searched). Refused: not an audio clip, a reversed clip, media outside the engine store or offline, silence (SILENT).",
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: SequenceIdArg,
+				clipId: z.string().min(1).max(128).describe('The audio clip (get_timeline)'),
+				apply: z
+					.boolean()
+					.optional()
+					.describe('Write it with soundDesign.setPeak (default true); false only measures'),
+			},
+			annotations: EDIT,
+		},
+		async (a, extra) => {
+			const { doc } = await loadDoc(ctx, a.projectId);
+			const { seq } = findAudioClip(doc, a.clipId);
+			if (a.sequenceId !== undefined && a.sequenceId !== seq.id)
+				throw new ToolError(
+					'E_NOT_FOUND',
+					`Clip ${a.clipId} is not in sequence ${a.sequenceId}`,
+					'Call get_timeline for clip ids.',
+				);
+			const m = await soundCall<SoundPeakResponse>(ctx, (c) =>
+				c.soundDesignPeak({ projectId: a.projectId, sequenceId: seq.id, clipId: a.clipId }, extra.signal),
+			);
+			const peakAt = (d: ProjectDocument) => {
+				const s2 = d.sequences[seq.id];
+				const c = s2?.clips[a.clipId] as AudioClip | undefined;
+				if (!s2 || !c) return null;
+				const F = flicksPerFrame(s2.settings.frameRate as Rational);
+				const f = (c.start * F + (m.peakFlicks - c.sourceIn) / (c.speed?.rate || 1)) / F;
+				return { frame: r3(f), timecode: sequenceTimecode(s2, Math.floor(f)) };
+			};
+			const measured = {
+				clipId: a.clipId,
+				sequenceId: seq.id,
+				peakFlicks: m.peakFlicks,
+				peakSec: m.peakSec,
+				onsetSec: m.onsetSec,
+				analysedSec: m.analysedSec,
+				truncated: m.truncated,
+			};
+			if (a.apply === false) return jsonResult({ ...measured, applied: false, playsAt: peakAt(doc) });
+			const res = await transact(
+				ctx,
+				a.projectId,
+				{
+					label: SOUND_LABELS.detectPeak,
+					commands: [{ type: 'soundDesign.setPeak', clipId: a.clipId, peakFlicks: m.peakFlicks }],
+				},
+				extra,
+			);
+			const r = requireOk(res);
+			const after = (await loadDoc(ctx, a.projectId)).doc;
+			return jsonResult({
+				...txBody(res, r),
+				historyLabel: SOUND_LABELS.detectPeak,
+				...measured,
+				applied: true,
+				playsAt: peakAt(after),
 			});
 		},
 	);

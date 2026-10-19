@@ -133,6 +133,7 @@ describe('End on Bar', () => {
 		expect(c.start + c.duration).toBe(374);
 		const fade = Object.values(h.seq.transitions).find((t) => t.outgoingClipId === id && !t.incomingClipId)!;
 		expect(fade.duration).toBe(15);
+
 		expect(checkInvariants(h.doc)).toEqual([]);
 		expect(before).toEqual(snap);
 		const after = noIds(h.doc.sequences);
@@ -242,6 +243,44 @@ describe('clip.remix for music to picture', () => {
 		const joints = Object.values(h.seq.transitions).filter((t) => t.incomingClipId && t.outgoingClipId);
 		expect(joints.map((t) => t.alignment)).toEqual(['end-at-cut', 'end-at-cut']);
 		expect(joints.every((t) => t.duration === 1)).toBe(true);
+		// per-joint crossfades from the engine's measurement (a joint the music would be heard chopped at: 110 ms)
+		const longCmd = remixCommandOf(
+			h.seq.clips[id] as never,
+			{ bpm: 120, pieces, lengthSeconds: 12, jointCrossfadeSeconds: [0.03, 0.11] },
+			R30,
+		);
+		expect(longCmd).toMatchObject({ jointCrossfadeFrames: [1, 4] });
+		// all default: no per-joint list; a list of the wrong length is ignored
+		expect(
+			remixCommandOf(
+				h.seq.clips[id] as never,
+				{ bpm: 120, pieces, lengthSeconds: 12, jointCrossfadeSeconds: [0.03, 0.03] },
+				R30,
+			),
+		).not.toHaveProperty('jointCrossfadeFrames');
+		expect(
+			remixCommandOf(
+				h.seq.clips[id] as never,
+				{ bpm: 120, pieces, lengthSeconds: 12, jointCrossfadeSeconds: [0.11] },
+				R30,
+			),
+		).not.toHaveProperty('jointCrossfadeFrames');
+		{
+			const h3 = new Harness();
+			const id3 = music(h3);
+			h3.ok([
+				remixCommandOf(
+					h3.seq.clips[id3] as never,
+					{ bpm: 120, pieces, lengthSeconds: 12, jointCrossfadeSeconds: [0.03, 0.11] },
+					R30,
+				),
+			]);
+			const j3 = Object.values(h3.seq.transitions)
+				.filter((t) => t.incomingClipId && t.outgoingClipId)
+				.sort((a, b) => h3.seq.clips[a.incomingClipId!]!.start - h3.seq.clips[b.incomingClipId!]!.start);
+			expect(j3.map((t) => t.duration)).toEqual([1, 4]);
+			expect(checkInvariants(h3.doc)).toEqual([]);
+		}
 		const fadeIn = Object.values(h.seq.transitions).find(
 			(t) => t.incomingClipId === list[0]!.id && !t.outgoingClipId,
 		)!;

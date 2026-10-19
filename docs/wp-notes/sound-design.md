@@ -6,6 +6,56 @@ Spec: [`docs/specs/12-sound-design.md`](../specs/12-sound-design.md). Inspiratio
 Each phase appends its design notes, usage, verified behaviour (with the commands that measured it), limits and
 known bugs below.
 
+## Summary (read this first)
+
+**What it is.** A sound-design layer for JasperEditor: a licensed, offline Sound Library; sound cues derived from the edit;
+sounds placed so their peak (or end, or start) lands on the cue frame to the sample; whole sound passes proposed for
+review on the timeline and applied as one undo step; levels solved against the bed; measured QA (Sound Check) with safe
+fixes; ambience beds, room tone and music fitted to the picture; credits with every export. Every result is an ordinary,
+undoable edit (clips, gains, keyframes, effects, sends, automation — ARCHITECTURE D-52), so the Program monitor and every
+export path render it with nothing new; the new schema fields (`Sequence.soundDesign`, `AudioClip.sfx`, `AudioClip.bed`,
+`MediaAsset.library`, schema v7: D-50) are metadata. Spec: [`docs/specs/12-sound-design.md`](../specs/12-sound-design.md)
+(its "As built" notes say where the build differs and why).
+
+**As a user** (Sound Design workspace, Alt+Shift+9):
+
+1. *Find and insert.* Sound Library (Window ▸ Sound Library): search by words, type chips, Refine (length, tone, attack,
+   weight, texture, material, licence — Commercial-safe by default, CC BY-SA only with "Include ShareAlike"), or Describe
+   (with the optional model). Space auditions alone, Shift+Space in context (the timeline around the cue), Enter inserts
+   at the playhead with the peak on its frame (one undo step, Essential Sound ▸ SFX, the "Sound Effects" bin); drag snaps
+   the peak. Packs and your own folders: Preferences ▸ Sound Library. Project audio gets a peak with Clip ▸ Detect Peak.
+2. *Cues.* Sequence ▸ Sound Design ▸ Suggest Cues… finds cuts, transitions, keyframed moves and landings, text
+   animations, graphics edges, 3D camera moves, `sfx:` markers and (Analyze…) measured picture motion, shot changes and
+   music beats; they show on the Cue Seam between video and audio (role, kind, stop-before / build bars). Fill a cue with
+   Enter or by dropping a sound on it; Next / Previous Variation (Ctrl+Alt+. / ,), Swap… (Alt+Shift+S), Add Layer….
+3. *A whole pass.* Sequence ▸ Sound Design ▸ Auto Sound Pass… (sources, personality, density, palette, room glue,
+   stop-before, build, delivery) → Propose: ghosts on the timeline, the Review panel (✓ / ✕, alternates ⇄, notes, ▶ in
+   context, Hear proposal A/B) → Apply (Ctrl+Enter): one History entry; Ctrl+Z takes it back into review.
+4. *Mix.* Essential Sound ▸ Sound Design (auto gain and why, room send, stop before, build), Rebalance SFX Levels, Room
+   Glue…, Delivery Target… (web / podcast / R128 / A/85), Lay Ambience Bed…, Fill Room Tone, Essential Sound ▸ Music to
+   picture (land the drop on a cue or the playhead) and Clip ▸ Audio Options ▸ End on Bar.
+5. *Check.* Run Sound Check: findings by category with timecodes, Fix / Fix all safe, Acknowledge… a deliberate one,
+   listen-here moments with Sounds right / Flag, the Log tab (a written account of what is audible), Compare with a
+   reference profile; "Run Sound Check before export" in Export mode. Export writes a credits file next to the video
+   (Export ▸ Sound ▸ Credits; File ▸ Export ▸ Sound Credits… on its own).
+
+**As an agent** (MCP, `SOUND_GUIDE` and `PROPOSALS_GUIDE` in the server instructions): you cannot hear, so judge sounds by
+`search_sounds` / `view_sounds` descriptors and contact sheets and the mix by `sound_check`, `listen_to_sequence` and
+`view_sound_timeline`. The loop: `find_sound_cues` → `set_sound_cues {add}` → `plan_sound_design {check: true}` (one
+proposal, checked) → ask the user to review → `wait_for_proposal` (decisions and notes) → `sound_check` → apply exactly its
+`safeFixes` → `sound_check` again → give the listen-here timecodes verbatim; `acknowledge_sound_issue` for deliberate
+warnings; `export_sound_credits` / `start_export {credits}`. Proposals, not edits: `place_sound`, `rebalance_sfx`,
+`apply_delivery`, `lay_ambience_bed`, `fill_room_tone` propose by default; `accept_proposal` works only where the user
+allowed agents to apply. Every editor action has a tool (the parity table in "Final verification B").
+
+**Limits** (details in the sections below and in `docs/gaps.md` "sound-design"): no AI-generated sound and no online
+sound source (human decisions); the library is what is installed (a 60-sound starter kit, 14 downloadable CC0 packs, your
+folders); Describe-it search needs a ≈ 780 MB optional download and its verdicts are evidence, not proof (strong ≈ 72–81 %
+precise, measured); the beat tracker reads 3 or 4 beats per bar (other metres when given); picture motion under ≈ 0.6 px
+per frame is not seen; the preview transport relies on Remotion 4.0.499 internals (the e2e specs fail if they change);
+a 1 000-item proposal preview costs ≈ 1.1–1.4 s of sliced work (measured, idle build server); Auto Tag reads a regular
+untonal pulse (footsteps) as music; a read-ahead over 3 s starts playback unprimed.
+
 ## Phase 0: pre-existing audio bugs
 
 ### WP0.1 preview
@@ -10054,3 +10104,172 @@ an animated 5.1 puck (none of them has one); they were not rerun on base.
   them.
 - A buffering stall in the middle of a play now prepares a primed start too (`prepareStart` while suspended); no test
   provokes one deterministically.
+
+### Final verification B
+
+Branch `feat/sd-final-audit` (from `feat/sound-design` 738a3862). Scope: prove the feature complete against spec 12 and
+honestly documented — a requirement audit, cross-surface parity (editor ↔ MCP), the documents (decision log, appdir, §11.3,
+gaps / parity, security review, project files, ported code, README, spec "As built" notes, this note's summary), two
+real-app walkthroughs on the built stack (a user through Playwright, an agent through the built `jasper-mcp` following the
+guide literally) with every screenshot looked at, and CARRYOVER.md. Final verification A (a parallel branch) ran the
+full gate and every e2e spec. Everything below ran on the build server `jasper-build` (16 × Haswell vCPU, Node 20.20.2,
+the vendored LGPL ffmpeg 7.1.5, Playwright Chromium headless; load average 2–25 from A's runs in parallel).
+
+#### Found and fixed (each with a regression test that failed before)
+
+| # | Finding | Fix | Test (before → after) |
+|---|---|---|---|
+| B1 | **Fill Room Tone did nothing** on dialogue trimmed tight to the words (the user walkthrough): the floor and the dialogue's own room tone were searched only in the part the clips use — all speech — so "the dialogue around the gaps could not be measured" and, with no library room tone installed, no fill at all. The spec takes the room tone from "the dialogue clip's own media" | `measureFloor` (`apps/engine/src/sound-design/beds.ts`) also searches the media's handles (≤ `ROOM_TONE_HANDLE_SEC` = 30 s either side of the used part) with their own voice activity measured and left out; the floor keeps the used part's own measurement when it has one | `apps/engine/test/sound-beds.test.ts` "dialogue trimmed tight to the words…": on the old `beds.ts` `W_FLOOR_UNMEASURED` (failed); now floor −53.4 dBFS, the stretch 3.65–5.45 s (the pause), commands written |
+| B2 | MCP `export_sound_credits` is in spec §2.10 but did not exist (agents could list credits, not write the file the editor's File ▸ Export ▸ Sound Credits… writes) | new tool (`apps/mcp/src/tools/sound.ts`): a file or folder path, md / txt / csv by extension, never overwriting, `attributionOnly` like the dialog; `list_sound_credits` gained `attributionOnly` too | `apps/mcp/test/sound.test.ts` "export_sound_credits writes the credits file…" (new tool: absent before) |
+| B3 | Clip ▸ **Detect Peak** (project audio) had no MCP twin: an agent without an editor window could not give project audio a peak, so `align_peak` / `swap_sound` / Sound Check sync could not use it | `POST /api/sound-design/peak` (`apps/engine/src/sound-design/peak.ts`: the clip's part of its media through its time map, ≤ 120 s, `analyzeSound` — the browser's measurement) and MCP `detect_sound_peak` (writes `soundDesign.setPeak`, one undo step "Detect Peak"; `apply: false` measures only) | `apps/engine/test/sound-design-peak.test.ts` (3: equals the browser's oracle within one sample; 120 s cap → `truncated`; typed refusals) and `apps/mcp/test/sound.test.ts` "detect_sound_peak…" |
+| B4 | MCP `align_peak` refused project audio given a peak by Detect Peak ("has no peak descriptor") while the editor's Align Peak moves it | such a clip moves by whole frames with its In point kept (`exact: "frame"`), as the editor does | `apps/mcp/test/sound.test.ts` "detect_sound_peak…" (before: `align_peak failed: … has no peak descriptor`) |
+| B5 | MCP `import_sounds` (add to the "Sound Effects" bin without placing) had no editor twin | Sound Library row menu ▸ **Import to Project** (`importLibrarySounds`, one undo step with the tool's label, reused when already in the project); the "Import Sound {0}" / "Import {0} Sounds" labels are model strings now (Spanish in History, MCP and editor alike) | `apps/web/test/sound-import-to-project.test.ts` (3) |
+| B6 | `essentialSound.autoTag` (P6-R3's command) had no `describe_commands` example | example in `apps/mcp/src/examples.ts` | `apps/mcp/test/sound-examples.test.ts` (27 commands apply) |
+| B7 | `PROPOSALS_GUIDE` named only `plan_sound_design` and `place_sound` as proposing; `rebalance_sfx`, `apply_delivery`, `lay_ambience_bed`, `fill_room_tone` propose by default too. `SOUND_GUIDE` lacked "use auto gain", the palette, `export_sound_credits` and `detect_sound_peak` | guide text | `apps/mcp/test/sound-guide.test.ts` (new phrases) |
+| B9 | A rotation mixed **Jasper Synth** into real recordings: with two real ticks in the library the walkthrough's typewriter played "Jasper Synth tick 1" every third key (the pool was the top 4 of the ranking, synth included). Spec §0: synth is a test fixture and offline fallback | `pickVariant` (`packages/project/src/sound/variant.ts`) takes `fallbackIds`: they join the pool only when no other candidate exists; the plan job and `place_sound {sound: {type}}` pass the synth candidates | `packages/project/test/sound-design-place.test.ts` "never rotates a Jasper Synth sound in…" (before: the synth id in the picks); the agent walkthrough's ticks: "Tick, firm" / "Tick" only |
+| B10 | Auto Sound Pass notes read "A sound: its energy is in the speech band…" for an alternative's own warning (the plan names it "<item> (alternative k)", which the note's subject parser did not read) | `soundNotes` (`apps/web/src/sound/mix-model.ts`) names the item and the alternative ("Air whoosh at 00:00:13:10 (alternative 2): …", Spanish too) | `apps/web/test/sound-mix-model.test.ts` "an alternative's own warning names its item…" |
+| B11 | Sound Check's safe fix "Normalise the mix" enabled the Mix normalisation without a loudness analysis: the export was normalised, the **preview kept playing the un-normalised mix** (the agent walkthrough: +4.5 dBTP) until someone ran Analyze in the Audio Track Mixer — the Program monitor and the export disagreed (AGENTS.md §4) | the fix carries the check's own measurement of the whole mix (normalisation off) as `analysis` (`mixHash` of the checked mix), as Delivery Target already did | `apps/engine/test/sound-check.test.ts` "true peak −0.2 dBTP…": the fix's analysis equals the measured integrated loudness and is current after the fix |
+| B12 | A landed drop's **remix joint was found chopped** by the next Sound Check (EDGE: the outgoing source went on at −15.0 dBFS over −24.0 dBFS entering, with the remix's 33 ms crossfade): two features of ours disagreed (P6-E11 "the remix joints cause no P6-E1 finding") | the remix plan measures every joint with Sound Check's own rule (`isChoppedMusic`, the EDGE thresholds; a 5 ms level envelope kept with the cached analysis) and returns `jointCrossfadeSeconds` (110 ms there, 30 ms elsewhere); `remixCommandOf` passes them as `clip.remix {jointCrossfadeFrames}` (optional, per joint) — the editor's Remix and Land Drop and MCP `remix_audio` / `fit_music_to_picture` alike | `apps/engine/test/remix-joints.test.ts` (2), `packages/project/test/sound-music-fit.test.ts` (per-joint frames in the command and on the timeline) |
+| B14 | B12's joint was still chopped after B12: the remix's raw levels at that joint are equal (−25.0 dBFS out, −25.1 in, measured on the walkthrough's music), the 9 dB came from **Delivery Target's Auto-Match matching each remix piece on its own**: the quiet intro piece got ≈ +10 dB, the drop piece ≈ +1 dB (Sound Check adds each clip's gain: −15.0 / −24.0) | `essentialSound.autoMatch` gives the pieces of one remix (`remix.id`) ONE match: the duration-weighted power mean of their measurements (≈ their integrated loudness in a row, gating aside); every surface goes through it (Essential Sound ▸ Auto-Match, MCP `auto_match_loudness`, Delivery Target, `apply_delivery`). B12 stays: it guards joints the planner itself would leave chopped | `packages/project/test/essential.test.ts` "Auto-Match gives the pieces of one remix ONE gain…" (before: gains −7 / +3 dB apart by 10 dB); the user walkthrough's final Sound Check (below) |
+| B13 | **End on Bar → ENDING "ends mid-sound"**: the one-beat fade into the bar line reaches gain 0 at the sequence's last sample, but its last 10 ms read −51.1 dBFS (earshot's rule wants −60) | a mix that fades out to silence over its last half second (last 50 ms ≥ 18 dB under the level 0.5 s before, and still falling: the last 10 ms peak ≥ 3 dB under the last-50 ms RMS) is an ending (`endsWithFadeOut`); a cut at a loud frame, a dip, or a fade that stops at a level are reported as before. (Changing End on Bar to an exponential fade was tried and rejected: WP-E7's export test measures the music sounding until the bar line, as the feature promises) | `apps/engine/test/sound-check-ending-fade.test.ts` (2); the Phase 6 ENDING fixtures (`apps/engine/test/sound-check-p6.test.ts`) still pass |
+| B8 | Documents: the decision log had D-50 = schema v7, D-52 = the CLAP model, no "sound library and provenance" and no "sound design is ordinary commands" (P6-R5); §4.3 lacked `sounds/profiles`, `sounds/cache/semantic`, `models/sound`, the kept Sound Check reports, the accept journal, `analysis/frametimes`; §11.3 described proposals only; `docs/project-files.md` lacked `AudioClip.bed`, `sfx.level`, `library.take` / `inexact`, `remix.anchors`, `essential.tagged`, the later `soundDesign` fields; `docs/security-review.md` lacked `/api/audio/remix-plan`, `/api/sounds/:id/match` and the file-writing tools; `docs/parity.md` had no Phase 6 rows; README's feature list had no sound design, its "exposes N tools" was stale | D-50 sound library and provenance (with schema v7), D-51 proposals, **D-52 sound design is ordinary commands**, D-53 the optional model (renumbered from D-52; nothing referenced it); the rest written | `apps/mcp/test/readme-tools.test.ts` (378 tools) |
+
+#### Requirement audit (spec 12 §3, §4; CLAUDE.md Definition of Done)
+
+Status: **done** = implemented, tested and run in the real app; evidence is rerunnable (commands in the sections cited).
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| P0-R1…R3 audit, fixes with regression tests, findings recorded | done | "Phase 0" (WP0.1, WP0.2 tables), "Phase 0 verification" (V1–V11), "Phase 0 close-out" (C1–C4); `packages/compositions/test/audio-preview-oracle.test.ts` (track inserts: preview = export < 1e-4), `apps/web/test/voiceover-latency.test.ts` (simulated 25 ms input latency: within one buffer), `e2e/sound-p0-{preview,transport}.spec.ts` |
+| P1-R1…R8 | done | "Phase 1 verification" requirement table; this pass: `export_sound_credits` (B2), Import to Project (B5) |
+| P2-R1…R7 | done | "Phase 2 verification" table (`sound-placement-export.test.ts`: 0 samples at the 7 rates) |
+| P3-R1…R6 | done | "Phase 3 verification" table; `e2e/sound-review.spec.ts`, `sound-p3-mcp.spec.ts` |
+| P4-R1…R5 | done | "Phase 4 verification" table (preview = export to 1.4·10⁻⁵, later 1.8·10⁻⁵ with pan sweeps) |
+| P5-R1…R4 | done | "Phase 5 verification" table (six seeded defects, clean pass, panel = MCP) |
+| P6-R1 packs (Kenney + BigSoundBank CC0), pinned sha256, licence before install, job, removal behind approval, Help ▸ About, MCP, Preferences, `JASPER_SOUND_CATALOG` file:// tests | done | "WP6.1", "BigSoundBank packs" (per-file evidence); `apps/engine/test/sound-packs.test.ts`, `apps/mcp/test/sound-packs.test.ts`, `apps/web/test/sound-packs-ui.test.tsx`, `e2e/sound-packs.spec.ts` |
+| P6-R2 motion analysis, scene and beat cues, `/api/audio/beats`, `analyze_picture_motion` | done | "WP6.2", WP6.5b items 9–12; `apps/engine/test/sound-design-motion.test.ts`, `packages/project/test/sound-cues-engine.test.ts`, `packages/audio-fx/test/beats{,-tempo}.test.ts`, `apps/mcp/test/sound-motion.test.ts`, `e2e/sound-cue-sources.spec.ts` |
+| P6-R3 transcript / VAD dialogue suppression; Auto Tag (command, MCP, UI, badge) | done | "WP6.3" (192 labelled items, 100 % tuning and held-out, measured); `apps/engine/test/audio-classify.test.ts`, `sound-dialogue-consistency.test.ts`, `packages/project/test/sound-dialogue-audible.test.ts`, `e2e/sound-autotag.spec.ts`; this pass: the command's example (B6) |
+| P6-R4 credits sidecar, `W_SOUND_CREDITS`, interchange cues as markers | done | "WP6.4"; `apps/engine/test/sound-export-credits.test.ts`, `packages/project/test/sound-export-credits.test.ts`, `packages/interchange/test/sound-design.test.ts`, `apps/mcp/test/export-credits.test.ts`, `e2e/sound-credits-export.spec.ts`; the user walkthrough below (credits file with the export) |
+| P6-R5 workspace, ARCHITECTURE D-50 / D-51 / D-52, §4.3, §11.3, gaps / parity with evidence, README, wp-note | done | Sound Design workspace (Phase 1 verification); the documents: B8 and the summary at the top of this note |
+| P6-R6 `e2e/sound-design.spec.ts` (fixture → Suggest Cues → Auto Sound Pass → review → accept part → one undo → Sound Check → export → frames and audio timing) | done (this pass) | `e2e/sound-design.spec.ts` — the user walkthrough below, which covers every step of P6-R6 and more |
+| P6-R7 `pnpm verify`, `pnpm notices --check`, merge | gate: Final verification A; merge: the orchestrator | — |
+| P6-E1 CLICK / EDGE | done | "WP-E1"; `packages/audio-fx/test/check-findings.test.ts`, `apps/engine/test/sound-check-p6.test.ts`, `e2e/sound-check-edges.spec.ts` |
+| P6-E2 HARSH / LAYER_INAUDIBLE | done | "WP-E1" (same tests); the walkthrough's check lists HARSH infos with centroids |
+| P6-E3 COVERAGE / ENDING / HEAD / ARC; riser window | done | "WP-E1"; the walkthrough's checks report COVERAGE (the rejected item), ENDING, HEAD, ARC |
+| P6-E4 acknowledged findings | done | "WP-E2"; `packages/project/test/sound-acknowledge.test.ts`, `apps/mcp/test/sound-check-ack.test.ts`, `e2e/sound-check-ack.spec.ts`; both walkthroughs (an acknowledged ENDING counts again after the beds changed the ending: "acknowledged before the change") |
+| P6-E5 check a proposal before review | done | "WP-E2"; `apps/engine/test/sound-check-ack-proposal.test.ts`; the agent walkthrough (`plan_sound_design {check: true}`) |
+| P6-E6 listening transcript | done | "WP-E3"; `packages/audio-fx/test/events.test.ts`, `apps/engine/test/sound-listen.test.ts`, `apps/mcp/test/sound-listen.test.ts`, `e2e/sound-listen.spec.ts`; the agent walkthrough |
+| P6-E7 annotated sound sheet | done | "WP-E3"; `apps/mcp/test/sound-check.test.ts`, the agent walkthrough's sheets (looked at) |
+| P6-E8 reference profiles | done | "WP-E4"; `apps/engine/test/sound-profile.test.ts`, `packages/audio-fx/test/profile-metrics.test.ts`, `apps/mcp/test/sound-profile.test.ts`, `e2e/sound-reference-profile.spec.ts` |
+| P6-E9 takes, judge flags | done | "WP-E5"; `packages/audio-fx/test/takes.test.ts`, `apps/engine/test/sound-takes{,-plan}.test.ts`, `apps/mcp/test/sound-takes.test.ts`, `e2e/sound-takes.spec.ts` |
+| P6-E10 cue grammar, variation, personality, palette coherence | done | "WP-E6"; `packages/project/test/sound-grammar.test.ts`, `apps/engine/test/sound-design-grammar.test.ts`, `sound-grammar-export.test.ts`, `e2e/sound-grammar.spec.ts`; the walkthroughs (personality Energetic, one tick voice) |
+| P6-E11 music to picture | done | "WP-E7"; `packages/audio-fx/test/music-picture.test.ts`, `apps/engine/test/music-picture.test.ts`, `apps/mcp/test/music-picture.test.ts`, `e2e/sound-music-fit.spec.ts`; the user walkthrough (land the drop on the hero cue, End on Bar) |
+| P6-E12 ambience and room-tone beds | done (B1 fixed here) | "WP-E8"; `packages/audio-fx/test/loop-window.test.ts`, `apps/engine/test/sound-beds.test.ts`, `e2e/sound-beds.spec.ts`; the user walkthrough |
+| P6-E13 ShareAlike | done | "WP-E1" (P6-E13 part); `packages/project/test/sound-check-p6.test.ts` (obligations, the one switch) |
+| P6-E14 describe-it search (human-approved) | done | "WP-E9"; `apps/engine/test/sound-semantic{,-unit}.test.ts`, `apps/mcp/test/sound-semantic.test.ts`, `e2e/sound-describe.spec.ts` (skipped without the model); the agent walkthrough checks the keyword fallback without the model |
+| DoD: model + schema + repair | done | `docs/project-files.md` rows (B8); repair tests cited there |
+| DoD: undoable commands, undo / redo / refusals, `describe_commands` examples, catalog, integrity property | done | every command in `COMMAND_CATALOG` owned by sound design has an example that applies (`sound-examples.test.ts`, 27); the phase tables cite the undo / redo / refusal tests; `fuzz.test.ts` (AC-25) |
+| DoD: UI wired, menus, shortcuts without conflicts | done | phase tables; `apps/web/test/keymap.test.ts`, `polish-menu-wiring.test.ts` |
+| DoD: preview and every export path | done | ordinary edits (D-52): `audio-preview-mix-oracle.test.ts`, the walkthrough's native export measured |
+| DoD: agents (MCP tools, README list, guides, tool docs) | done | parity table below; `readme-tools`, `conventions`, `sound-guide` tests |
+| DoD: tests (unit, property / fuzz, oracle) | done | per phase; oracles: ffmpeg `ebur128` (loudness), cross-correlation (placement), the export mixer (preview) |
+| DoD: run in the real app, frames looked at | done | the walkthroughs below |
+| DoD: assets have sidecars, ported code recorded | done | `apps/engine/sounds/starter/*.attribution` + `ATTRIBUTION.md`; `apps/engine/models/clap/*.attribution` + Apache text; `licenses/ported/earshot.md` covers every adapted algorithm (WP-E1…E9) — `check-assets`, `pnpm notices --check` in A's gate |
+| DoD: `pnpm verify` | Final verification A | — |
+
+#### Cross-surface parity (spec 12 §1: every editor action has an MCP twin, and the reverse)
+
+Checked against the registered editor commands (`sound.*`, `soundLibrary.*`, `soundCheck.*`, `proposals.*`), the panels'
+own controls and the MCP tool list (`listTools`: 378 tools; the README list is kept equal by `readme-tools.test.ts`).
+
+| Editor | MCP |
+|---|---|
+| Sound Library search, type chips, Refine (length, tone, attack, weight, texture, material, licence, Include ShareAlike), Describe, takes disclosure, Find Similar | `search_sounds {q, types, length…, material, license, describe, takes, similarTo}` |
+| Waveform rows, Show Licence…, Reveal in Sound Library | `view_sounds`, `get_sound` (descriptors, takes, licence, credit) |
+| Audition (Space), In Context (Shift+Space) | none by design: agents cannot hear — `view_sounds` pictures for a sound, `listen_to_sequence` / `view_sound_timeline` for the mix |
+| Favourites, Recent | none by design: the editor user's own lists (browser preferences, not project data); "Used in this project" = `list_sound_credits` rows |
+| Insert at Playhead (Enter), drag to the timeline | `insert_sound` |
+| Import to Project (B5) | `import_sounds` |
+| Fill Cue (Enter / drop on a cue), Fill Unfilled Cues | `place_sound {cueId}`, `plan_sound_design {cues}` |
+| Swap…, Next / Previous Variation | `swap_sound {to: soundId \| "next" \| "previous"}` |
+| Align Peak to Playhead / to Nearest Cue, peak handle drag | `align_peak {to: "playhead" \| "cue" \| frame}` |
+| Set Peak at Playhead, peak handle Shift-drag | `apply_commands` `soundDesign.setPeak` |
+| Detect Peak (B3) | `detect_sound_peak` |
+| Role ▸, Add to Palette, Add Layer…, Link / Unlink | `apply_commands` `soundDesign.setRole` / `soundDesign.setPalette`; `place_sound` layers; `group_clips` / `ungroup_clips` |
+| Add to Sound Library… (the folder of a clip's file), Preferences ▸ Sound Library folders | `add_sound_folder` / `remove_sound_folder` (approval cards), `rescan_sound_library` |
+| Packs (Preferences) | `list_sound_packs`, `install_sound_pack`, `remove_sound_pack` (approval card) |
+| Describe-it model (Preferences), Find Moment… | `describe_search_status`, `install_describe_search_model`, `remove_describe_search_model` (approval card), `prepare_describe_search`, `match_sound`, `find_sound_moment`, `insert_sound_moment` |
+| Suggest Cues…, Cue Seam add / move / delete / role / align / stop before / build, Convert Markers to Cues, Clear Unfilled Cues, Add Sound Cue (Alt+Shift+C) | `find_sound_cues` (+ engine sources, `analyze_picture_motion`) and `set_sound_cues {add, update, remove, resync}`; the seam toggles and Convert Cue to Marker also run through `ui_command` when a window is open |
+| Auto Sound Pass… (sources, personality, density, palette, mix options, delivery) | `plan_sound_design {style, cueSources, check}` |
+| Review: card, ghosts, ✓ / ✕, alternates, notes, Hear proposal, Apply, Reopen review | `list_proposals`, `get_proposal` (ghost table), `wait_for_proposal` (decisions and notes), `reject_proposal`, `accept_proposal` (only where the user allowed agents to apply); reviewing (notes, alternates, reopen) is the user's by decision (security review: reviewer-only routes) |
+| Essential Sound ▸ Sound Design: auto gain, room send, stop before, build; Rebalance SFX Levels; Room Glue…; Delivery Target… | `apply_commands` `soundDesign.setAutoGain`, `set_room_glue`, `set_sound_cues {stopBefore, build}`; `rebalance_sfx`; `apply_delivery` |
+| Lay Ambience Bed…, Fill Room Tone, Sound Check's "Fill it with room tone" | `lay_ambience_bed`, `fill_room_tone` |
+| Essential Sound ▸ Music to picture (Analyze, Land the drop on), Clip ▸ Audio Options ▸ End on Bar / Land Drop | `find_music_drops`, `remix_audio {landDropAt}`, `fit_music_to_picture {mode}` |
+| Essential Sound ▸ Auto Tag, tag on add | `auto_tag_audio` |
+| Run Sound Check, Fix, Fix all safe, Check proposal, Reference select, sync strip, Log tab (Name the sounds) | `sound_check {proposalId?, profileId?}` (`safeFixes`), `view_sound_timeline`, `listen_to_sequence {tags}` |
+| Acknowledge… / Unacknowledge | `acknowledge_sound_issue {unacknowledge?}` (warnings and infos; an error is the user's) |
+| Listen here: Sounds right / Flag + note | read: `sound_check` / `get_sound_check` `humanVerdicts`; writing them is the listener's by decision (agents cannot hear) |
+| Reference profiles (Preferences, New Reference Profile…, Compare with reference) | `build_sound_profile`, `list_sound_profiles`, `get_sound_profile`, `rename_sound_profile`, `delete_sound_profile` (approval card), `export_sound_profile`, `import_sound_profile`, `set_sound_profile` |
+| File ▸ Export ▸ Sound Credits… (B2); Export ▸ Sound ▸ Credits | `list_sound_credits`, `export_sound_credits`; `start_export {credits}` |
+| "Allow agents to apply sound proposals" | `apply_commands` `soundDesign.setSettings {agentsMayApply}` — an approval card: an agent cannot grant itself the right |
+
+Reverse direction: every sound-design tool above has its editor action; `sound_library_status` is the Library's status
+line and Preferences page, `get_sound_check` the panel's kept report.
+
+#### Walkthroughs on the built stack (measured)
+
+Commands (build server, `~/jasper-sd/work/final-audit`): `pnpm build`, `JASPER_FFMPEG=$PWD/vendor/ffmpeg-lgpl/linux-x64/ffmpeg
+JASPER_FFMPEG_LGPL_ONLY=1 pnpm fixtures`, then `E2E_PORT=53301 E2E_SKIP_BUILD=1 E2E_SERVER_TIMEOUT_MS=600000 pnpm exec
+playwright test e2e/sound-design.spec.ts e2e/sound-agent-walkthrough.spec.ts`. Both pass (last runs: 3.3 min and 2.6 min
+at load ≈ 10). Reports: `test-results/e2e-sound-design/walkthrough.json`, `test-results/e2e-sound-agent/agent-walkthrough.json`;
+every screenshot below was looked at.
+
+**User** (`e2e/sound-design.spec.ts`, P6-R6; a 24 s cut with two pushes, a typewriter title, a keyframed logo, a
+"sfx: boom" marker, 16 bars of 120 BPM music with a drop at bar 9, dialogue with a gap, a street bed):
+
+| Step | Measured |
+|---|---|
+| Sound Library: search "pop", audition, Insert at Playhead (frame 150) | "Bong pop" placed with its peak on the frame: error 0 flicks |
+| Suggest Cues… | sources: transitions 1, keyframes 2, text 6, clip edges 1, markers 1, edits 0 → 11 cues (6 typewriter keys, exit, push, move, land, the marker's hero) |
+| Auto Sound Pass… (Energetic, room glue, stop before, build, Web) | proposal of 29 items, 11 placements with 2–3 alternatives; notes name items and alternatives (B10); no Jasper Synth placed (B9) |
+| Review: accept all, reject one, an alternate, a note, Ctrl+Enter, Ctrl+Z, Reopen review, Apply | 28 accepted / 1 rejected; "Applied 12 of 13 sounds from you" (Undo, Reopen review) — one History entry each time |
+| Sound Check, Fix all safe (0 errors, 2 dialogue EDGE warnings) | one entry "Fix 3 Sound Check Findings", the check runs again; ENDING acknowledged, then reported "acknowledged before the change" after the beds |
+| Lay Ambience Bed… (street.wav), Fill Room Tone | 7 bed pieces under 3 scenes; 1 room-tone piece [262, 307) from "dialogue.wav 3.50–5.50 s, own room tone", 0.3 dB from the floor (B1) |
+| Music to picture: Analyze, Land the drop on the hero cue, End on Bar | 120 BPM · 4/4 · C major (88 %); bar 9 lands at 00;00;20;00 (anchor 16.0002 s → frame 600); ends on the bar line at frame 719, faded over a beat |
+| Delivery Target (Web) | before −16.7 LUFS / +3.4 dBTP; export −14.0 LUFS / −1.0 dBTP expected; music 19.8 LU, ambience 14.9 LU under the voice; 12 clips matched, 11 sound effects re-solved |
+| Final Sound Check | warn: no EDGE at the remix joint any more (B12, B14), no ENDING (B13); left: OVERLOAD (the limiter pulls 7.1 dB at the explosion, needs judgement), HEAD and ARC / HARSH infos |
+| Export (native, H.264 + AAC 256 kb/s, Markdown credits) | engine's PCM: −14.48 LUFS, −1.00 dBTP; decoded file (`ffmpeg ebur128=peak=true`): −14.6 LUFS, −0.1 dBTP, LRA 8.5; credits 9 rows; every peak-aligned sound found in the mix by cross-correlation (r 0.31–0.84) 0 or ±1 sample from the document's peak and from its cue frame (10 sounds) |
+
+Screenshots: `01-edit` … `23-exported`, `export-frame-{5.00,13.00,20.02}s`, `export-wave` (the bed, the dialogue's syllables,
+the build into the drop at 20 s and the music's bar hits fading out at the end).
+
+**Agent** (`e2e/sound-agent-walkthrough.spec.ts`, the built `jasper-mcp` over stdio, the guide followed literally):
+`search_sounds` (contact sheet; every row judged ok, CC0) → `view_sounds` → `find_sound_cues` (11 cues, the dialogue
+span from VAD) → `set_sound_cues {add}` as returned → `plan_sound_design {check: true}` (27 items, every event with its
+why, level and limits) → the user notes one item and accepts all in the editor → `wait_for_proposal` (applied, the note
+read back) → `sound_check` (fail: LOUDNESS −15.4 LUFS, TRUE_PEAK +4.5 dBTP, OVERLOAD) → its safe fix through
+`apply_commands` → `sound_check` again (warn; no safe fix left) → `listen_to_sequence` (sheet and transcript: "cuts 1/1
+within a frame, chance 13 %") → `view_sound_timeline` → `describe_search_status` (model not installed) and a keywords
+search → `acknowledge_sound_issue` (a warning: ok; an error: E_APPROVAL_REQUIRED) → `list_sound_credits` /
+`export_sound_credits` (5 rows; a second run wrote "… (2).md", never overwriting). Screenshots: `01-search-contact-sheet`
+… `05-sound-timeline`, `user-review`, `user-card`, `user-final`.
+
+#### Limits found and left (also in `docs/gaps.md`)
+
+- True peak: the limiter holds −1 dBTP on the PCM the engine encodes; the decoded AAC overshoots (−0.9 … +0.1 dBTP over
+  six runs, the picks differ between runs). A codec-aware ceiling (Spotify asks −2 dBTP of loud lossy masters) is not
+  built; the walkthrough checks the PCM and reports the decoded number.
+- The limiter keeps a loud mix ≈ 0.5 LU under target (−14.48 for −14); the safe LOUDNESS fix can leave −15.0 LUFS at that
+  edge (the agent walkthrough checks that it improves). OVERLOAD on a big hero hit is a warning for the user (its fix,
+  the masking solver, needs judgement).
+- A review alternate can be Jasper Synth when the library has fewer real takes than alternates (the walkthrough's "Next
+  alternate" picked "Jasper Synth tick 1"); it is labelled Synth and only plays where the user picks it.
+- B12 measures joints on the planner's mono 22.05 kHz analysis; it did not fire in this walkthrough (the joint's raw
+  levels match) and guards against joints the plan itself leaves chopped.
+
+#### Gate on this branch (build server, before the fast-forward)
+
+`SD_GIT=1 pnpm lint` ok (one warning in `e2e/sound-p6-transport.spec.ts`, not this branch's); `pnpm typecheck` ok;
+`pnpm notices --check` current (150 packages, 33 ported records); `node scripts/i18n.mjs --check` (es.json covers all
+10 527 strings); `pnpm vitest run --project <p> --maxWorkers=6`: project 2361 passed, api 17, engine-client 22, mcp 649
+(8 skipped), web 1114, engine 1646 (99 skipped). The full `pnpm verify` and every e2e spec are final verification A's.

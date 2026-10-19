@@ -2,6 +2,10 @@
 // search with an optional contact sheet, one sound in detail, contact sheets of chosen sounds, importing sounds into
 // a project's "Sound Effects" bin, inserting one peak-aligned on the timeline, credits, and the user's sound folders.
 // Agents cannot hear: every result carries the measured descriptors, and the pictures show where the energy is.
+
+import { existsSync } from 'node:fs';
+import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { basename, dirname, extname, isAbsolute, join } from 'node:path';
 import {
 	type EngineJob,
 	type RegisterSoundResponse,
@@ -92,7 +96,7 @@ export const SOUND_CUES_GUIDE = `Sound cues (spec 12 Phase 2): a cue is a moment
 - Balance against the bed: rebalance_sfx {projectId} measures every sound effect against the bed (dialogue, music, ambience) around its cue and solves its gain so it clears the bed by its target lift (hero +5, support +3.5, ambient +2 dB in its dominant octave band) without passing the safety limits (bed peak, hero shadow, repeats ±2 dB, +1 dB in 1–4 kHz under speech, the delivery's true peak — per sound and summed over the sounds that overlap: overlapping sounds share it, "limited by the sounds overlapping it"); sound effects of a lower weight playing under a sound are part of its bed (an ambience under supports and heroes, a support under a hero; never the layers of one cue or two sounds of the same weight; each event's maskedBy / sfxMaskingDb say so); the table says per clip the gain, target and achieved lift and what limited it ("−3 dB, limited by dialogue A1"). It proposes by default (mode "apply" only when the user asked). plan_sound_design already solves the gains of what it proposes (each item's why-line ends with the level and its limit). A sound limited by dialogue under speech is too bright for the moment: move the cue out of the words or pick a type whose dominant band is outside 1–4 kHz (a W_DIALOGUE_BAND warning says so and lists the types in that solve whose dominant band is outside 1–4 kHz, when there are any). If the mix changes while rebalance_sfx or apply_delivery measures or before its change lands, mode "apply" applies nothing and fails with CONFLICT: run it again (their transaction starts with soundDesign.expectMix {mixHash, delivery}; put the same precondition first in an apply_commands transaction you computed from a measured mixHash, and it is refused with E_REVISION_MISMATCH if the mix changed since). A gain the user set by hand, or whose Auto gain they turned off in Essential Sound (soundDesign.setAutoGain {clipIds, auto: false} through apply_commands; the clip's sfx.level gets manual: true), is theirs: rebalance_sfx and apply_delivery leave it alone unless you name the clip (clipIds), and only do that when the user asked (soundDesign.applyGains skips such a clip, listing it in skipped, unless override: true). soundDesign.setAutoGain {auto: true} hands the gain back: the clip's gain becomes its recorded level again (clips without one are skipped: rebalance them).
 - Beds (P6-E12): lay_ambience_bed {projectId, soundId} lays one ambience per scene (scenes follow V1 cuts to other footage, scene markers and, with sources ["shots"], measured shot changes; or pass scenes [{start, end, soundId?}]): the engine finds each recording's clean window (no spike ≥ 10 dB over its 1 s neighbourhood: no voice or bump in the loop) and loop points (head and tail matched in level, octave-band shape and correlation), loops it with 1.5 s crossfades (equal-power; equal-gain when it repeats in phase, a hum), 0.5 s crossfades at scene changes, 1 s fades, at the delivery's ambience level (web −30 LUFS), optionally ducked under the dialogue; it proposes by default and replaces earlier beds over the scenes. Pick the bed with search_sounds {types: ["ambience"]} by its place (a café, a street, a forest), never one per shot. fill_room_tone {projectId} fills the holes between dialogue clips (under 10 s, inside a dialogue scene) with the room tone whose octave-band shape is closest to the dialogue's noise floor (measured in its pauses; within 3 dB), else the dialogue's own quietest 0.5–3 s without speech, looped, at the floor's level (never under −56 dBFS); sound_check offers the same fill as the fix of a SILENCE inside dialogue ("Fill it with room tone", not safe: the user's call). Quote the measured numbers (window, loop, distances), never that a bed "sounds seamless".
 - Mix (Phase 4): a cue's stopBefore {seconds, depthDb} (or true: 0.25 s at −24 dB) dips the music before the hit and its build {seconds, fromHz, toHz} (or true: 2 s, 150 → 2000 Hz) sweeps one High Pass filter per music track into it; set them with set_sound_cues — once the cue is filled they are written into the mix (music track volume automation, or the music clips' Volume when the music shares its track) and follow the cue (moved, changed, null removes them exactly, muted — kept and written again exactly when unmuted —, deleted; overlapping ones come out exactly in any order; a split music clip keeps both parts; a duplicated sequence's copy has its own); soundDesign.applyStopBefore / applyBuild {cueId} write them again (apply_commands). A cue edit never fails because of the mix: a locked music track is skipped (warning W_MIX_SKIPPED; a deleted cue's dip on a locked track comes out when the track is unlocked), and so is automation too dense to record. plan_sound_design style {stopBefore: true, build: true} proposes them for heroes with music (one item per hero, after its placement). set_room_glue puts the sound effects in one shared "SFX Room" reverb (sends at −16 dB; interface sounds ui/click/key/tick stay dry; tracks that also play dialogue or music get none); the room return counts as each sound's own level in rebalance_sfx; style {roomGlue: true} proposes it. apply_delivery {delivery: web | podcast | broadcast-r128 | atsc-a85} mixes to a loudness preset (−14 / −16 / −23 / −24 LUFS, −1 / −1 / −1 / −2 dBTP): Mix normalisation, Auto-Match by type (music 8 LU, ambience 10 LU under the voice), ducking under dialogue (6 dB more for a clip whose Ducking amount is its type's default: ≈ 14 / 16 LU under the voice during speech; an amount the user set is kept), sound effects solved again; it reports the measured "music under voice" LU — quote those numbers, never that the mix "sounds" balanced. It proposes by default.
-- Fix: swap_sound {clipId, to: soundId | "next" | "previous"} replaces a placed sound keeping its peak frame, track, role, pan and gain (a gain still at the default level becomes the new sound's default) ("next" cycles the alternates you gave, then the same family, then the most similar sounds). align_peak {clipId, to: frame | timecode | "playhead" | "cue"} moves a clip (with the other layers of its cue) so its peak lands exactly there. After editing the picture, set_sound_cues {resync: true} moves anchored cues and their sounds to follow the edit.
+- Fix: swap_sound {clipId, to: soundId | "next" | "previous"} replaces a placed sound keeping its peak frame, track, role, pan and gain (a gain still at the default level becomes the new sound's default) ("next" cycles the alternates you gave, then the same family, then the most similar sounds). align_peak {clipId, to: frame | timecode | "playhead" | "cue"} moves a clip (with the other layers of its cue) so its peak lands exactly there. Project audio (a hit or door slam in the production sound, not a library sound) has no peak until you give it one: detect_sound_peak {clipId} measures it on the engine and writes it (the editor's Clip ▸ Detect Peak), after which align_peak moves it by its peak (to a frame) and swap_sound replaces it in place. After editing the picture, set_sound_cues {resync: true} moves anchored cues and their sounds to follow the edit.
 - Check: after applying sounds (yours or the user's accepted proposal), run sound_check {projectId}: it measures the delivered mix and returns a verdict, findings with codes (OUT_OF_SYNC, TRUNCATED, INEXACT — a sound used as it is, not sample-exact, info —, MASKED, MUSIC_OVER_VOICE, TRUE_PEAK, LOUDNESS, SILENCE, DIP, OVERLOAD, STALE_CUE, NO_PICTURE_EVENT, DENSITY, REPEAT, LICENSE, CREDITS; and the edit lenses: CLICK — a click at a clip edit, error, fixed by a 1-frame fade; EDGE — a clip starting mid-sound, a chopped decay or chopped music at a joint, fixed by a fade or a longer crossfade; HARSH — a sound more than 6 dB over the music's loudest 2–6 kHz, fixed by lowering it when it stays audible; LAYER_INAUDIBLE — a layer that adds nothing, info; COVERAGE — some cues of a class of action left silent, filled with the class's sound (needs the user); ENDING / HEAD — the mix ends mid-sound / starts on a loud sample, a fade on the Mix lane (needs the user); ARC — the loudest moment holds no hero, info), each with its timecode and, where possible, a fix (tool + args, safe or not), and five listen-here timecodes. Apply ONLY the fixes marked safe, in the order of safeFixes and each once (each is one undo step; they were judged together in that order, so a fix that would undo or overload another, or push the true peak over the ceiling with normalisation off, is marked not safe with why), run sound_check again, and leave the rest to the user, saying what each finding measured. Give the user the listen-here timecodes verbatim. Never claim that it "sounds good": say what sound_check measured and ask them to listen. After they have listened in the editor's Sound Check panel, sound_check returns their humanVerdicts ("sounds right" / "flagged" + note per timecode, each bound to the moment it judged): act on the flagged ones, ask them to listen again where a verdict is stale (the sound there changed since), and never write verdicts yourself. get_sound_check {projectId} returns the last report without running the check (stale when the mix changed since). view_sound_timeline {projectId, range, checkJobId?} shows a range as a picture (loudness curves of the mix and its stems, waveform, cue ticks, motion, findings); get_timeline lists the SFX clips; render_frames around the cues shows the picture.
 - Listen: before adding sounds to an edit that already has some, and after a pass, run listen_to_sequence {projectId} — your ears for the whole mix: a written log, in time order, of every audible event with the clip behind it (placed sounds with their role and cue, production audio by its clip: a door knock inside an interview is the dialogue clip's), the sections (dialogue, music and how far it sits under the voice, ambience, silence), and which cuts, transitions, cues and measured motion have a sound (OK within a frame, near ≤ 100 ms, swell ≤ 300 ms) or NO SOUND. Read every sync share next to its chance level: random times would score that much with the same sounds, so a share near its chance says nothing. Do not stack a new hit on one the log already shows; most cuts under music need no sound of their own. images: true adds the annotated sound sheet (frames at the cuts and cues, loudness, spectrogram, sections, answer marks: OK green circle, near amber diamond, swell blue triangle, no sound red cross); view_sound_timeline {range, listenJobId} draws another range of the same listen. Quote its timecodes and numbers; never say how it sounds.
 - Reference profiles ("make it sound like my channel"): a profile is the measured style of 1–20 references the USER chose — their own videos, a few films they like, sequences of theirs — as numbers only (loudness, range and crest; the loudness arc; first sound, gaps, dead air, fade and the final moment; onsets and salient hits per second; picture events per second and the share with an onset within 100 ms and within a frame, each next to its chance level; the energy share of sub / low / low-mid / mid / presence / air; brightness; stereo width; speech share). There is NO bundled profile: never pick references yourself, ask which media describe the sound they want. build_sound_profile {name, projectId, mediaIds | sequenceIds | paths} measures them (a job; 5 or more references give ranges worth judging by), list_sound_profiles / get_sound_profile read the library, set_sound_profile makes one the sequence's, and sound_check (its profileId, else the sequence's) adds reference.rows: each metric's value against the references' min–max widened by a tolerance, ok / low / high, with what to do and timecodes; out-of-range major rows are REFERENCE warnings, minor ones infos. They describe a style, not a defect: report what differs and what the user could do, change the mix only where they agree, and keep the delivery target for loudness (LOUDNESS / TRUE_PEAK). A sequence that is one of the profile's references is judged against the others (leave-one-out). export_sound_profile / import_sound_profile share a profile as a file; delete_sound_profile needs the user's approval (their data).
@@ -106,9 +110,9 @@ export const SOUND_GUIDE = `Sound library (sound effects; spec 12). You cannot h
 - Takes: a recording of several hits (a typing run, a ticking clock, a pack file of ten clicks) is split into takes — one key press (its down- and up-stroke joined) or one tick each, never across digital silence, each with its own descriptors and judge and never multi-hit. Its search row says takes: <n>; search_sounds {takes: true} returns the clean takes as rows of their own (soundId snd_<16 hex>~t<n>); get_sound on the recording lists them all with their range, headDb / tailDb and flags (a head-cut or tail-cut take is recorded but never offered). A take id works wherever a sound id does (get_sound, view_sounds, import_sounds, insert_sound, place_sound layers and alternatives): it is imported as a sample-exact copy of its range with the recording's licence and credit. For repeated cues of one action (typing, ticking, footsteps) use several takes of ONE recording: plan_sound_design and sound {type} picks rotate over a recording's takes ("vary the take, not the pitch"), never the same take twice in a row. Words in titles rank first, then type synonyms ("swoosh" finds whooshes). Read the numbers: a hit should peak within a few ms (small peakSec and riseMs) and decay; a riser builds to its end; "boomy" means most energy under 150 Hz, "hissy" above 6 kHz.
 - Look: contactSheet: true on search_sounds, or view_sounds {soundIds}, gives ONE PNG grid: each cell is numbered, prints the id, title, length, peak ms, decay ms, centroid and judge, and draws the waveform (cyan) over a 64-band spectrogram (low frequencies at the bottom) with the peak as a red line and the end of the decay (−20 dB) as a dashed yellow one; the cells JSON repeats the numbers. get_sound {soundId} gives one sound with every descriptor and a larger picture with a time axis and the onset (green dashed).
 - Use: insert_sound {projectId, soundId, at} places a sound so that its aligned point lands exactly on \`at\` (a frame, {seconds}, a timecode or "playhead"): hits, booms, lands and impacts align their PEAK; risers and reverses align their END (they lead into the moment); UI blips their start (align "auto" picks this from the sound's type). Placement is sample-exact (errorFlicks 0): sounds whose head is not silent are registered with 50 ms of lead silence (the media's provenance says leadSilenceSec), so the sub-frame rest is always cut from silence; and the whole sound always plays: sounds that do not end in quiet get 50 ms of silence after them (trailSilenceSec) and every clip is rounded up to the frame that holds the end of its sound. It goes on a free unmuted "SFX…" audio track over its span, else a new "SFX n" track (never on dialogue or music tracks by itself, never over audio); one clip, one undo step that registers the sound, adds it to the project's "Sound Effects" bin, places the clip and tags it Essential Sound ▸ SFX. import_sounds {projectId, soundIds} only adds sounds to the bin (one undo step; sounds already in the project are reused); place them yourself with add_clip. Sounds up to 1 h (beds too) are registered as sample-exact PCM copies; a longer one, or one whose copy would be too large or not fit the free disk, is used as it is and the result says so (inexact: placement exact to a frame). A project's older copy of a sound (registered by an earlier build) is replaced by the new copy in place on the next insert or import — the same media, its clips moved onto it sample for sample (replacedOlderCopy) — so a project never holds two copies of one sound.
-- Judgement: sync by structure (cuts, moves, lands, text and motion events you can see in the timeline and frames), never by ear; check placement with get_timeline and render_frame. Less is more: at most one hero sound (a hit or boom that carries the moment) per ~2 s, never two heroes within 0.5 s, and no heroes under spoken words. Keep one family of sounds per type in a piece (search_sounds similarTo). When you suggest sounds, give a reason and 1–3 alternates (soundIds) per moment. Propose, don't apply: plan_sound_design and place_sound (mode "propose", its default) store a proposal the user reviews and applies in the editor; insert sounds directly (insert_sound, place_sound mode "apply") only when the user asked you to place them. Then wait for the review (wait_for_proposal) and read the notes.
+- Judgement: sync by structure (cuts, moves, lands, text and motion events you can see in the timeline and frames), never by ear; check placement with get_timeline and render_frame. Less is more: at most one hero sound (a hit or boom that carries the moment) per ~2 s, never two heroes within 0.5 s, and no heroes under spoken words. Keep one family of sounds per type in a piece (search_sounds similarTo) and prefer the sequence's palette (soundDesign.setPalette; sound {type} picks and plan_sound_design take it first). Use auto gain: leave gainDb out so each sound gets its measured default level and rebalance_sfx solves it against the bed. When you suggest sounds, give a reason and 1–3 alternates (soundIds) per moment. Propose, don't apply: plan_sound_design and place_sound (mode "propose", its default) store a proposal the user reviews and applies in the editor; insert sounds directly (insert_sound, place_sound mode "apply") only when the user asked you to place them. Then wait for the review (wait_for_proposal) and read the notes.
 - Cues: a sequence's sound cues (Sequence.soundDesign.cues: frame, kind, weight hero/support/ambient, types, reason, anchor) are drawn for the user on the Timeline's Cue Seam, a lane between the video and audio tracks (glyph per kind; filled cues are solid with a line to the placed clip's peak). Edit them with apply_commands: soundCue.add / update / remove / resync, soundDesign.place {cueId} fills one, soundDesign.setPeak {clipId, peakFlicks} corrects where a placed clip's peak is (the clip does not move). The UI commands sound.addCue {frame?}, sound.toggleCueSeam, sound.clearUnfilledCues, sound.convertMarkersToCues and soundLibrary.fillCue {cueId} (opens the Sound Library filtered to the cue's types) run through ui_command when an editor window is open.
-- Licences: search defaults to commercial-safe licences (CC0, CC-BY, open licences, the user's royalty-free folders) WITHOUT ShareAlike; license "commercial-safe-sa" also lists CC BY-SA sounds and "any" also shows user-provided (undeclared) and other sounds — do not use those in work the user will publish without asking. shareAlike: true marks CC BY-SA sounds: a video synced with one must itself be shared under CC BY-SA (CC BY-SA 4.0 §1(a), §3(b)); use one only when the user chose it, and tell them (sound_check warns LICENSE, the credits carry a ShareAlike notice, the export warns W_SOUND_SHARE_ALIKE). CC-BY sounds need a credit: list_sound_credits {projectId, format md|txt|csv} gives the credit lines of every library sound the project (or a sequence) uses, with warnings for non-commercial, no-derivatives, unknown or undeclared licences; give the credits to the user when CC-BY sounds are used. start_export writes them next to the video (credits: "md" | "txt" | "csv"; by default the sequence's credits setting, or Markdown when a sound needs a credit) and warns W_SOUND_CREDITS when a sound heard in the export needs a credit and no credits file is written.
+- Licences: search defaults to commercial-safe licences (CC0, CC-BY, open licences, the user's royalty-free folders) WITHOUT ShareAlike; license "commercial-safe-sa" also lists CC BY-SA sounds and "any" also shows user-provided (undeclared) and other sounds — do not use those in work the user will publish without asking. shareAlike: true marks CC BY-SA sounds: a video synced with one must itself be shared under CC BY-SA (CC BY-SA 4.0 §1(a), §3(b)); use one only when the user chose it, and tell them (sound_check warns LICENSE, the credits carry a ShareAlike notice, the export warns W_SOUND_SHARE_ALIKE). CC-BY sounds need a credit: list_sound_credits {projectId, format md|txt|csv} gives the credit lines of every library sound the project (or a sequence) uses, with warnings for non-commercial, no-derivatives, unknown or undeclared licences; give the credits to the user when CC-BY sounds are used, and export them — export_sound_credits {projectId, path} writes the same text to a file (as File ▸ Export ▸ Sound Credits… does; never overwriting). start_export writes them next to the video (credits: "md" | "txt" | "csv"; by default the sequence's credits setting, or Markdown when a sound needs a credit) and warns W_SOUND_CREDITS when a sound heard in the export needs a credit and no credits file is written.
 - Packs: list_sound_packs lists the downloadable packs this engine offers (the remaining Kenney CC0 audio packs: impacts, interface, UI, digital, sci-fi, casino and RPG foley, music jingles and announcer voices; and four curated BigSoundBank CC0 packs of real recordings by Joseph Sardin: "Keys & Clicks" with keyboard and typewriter typing takes, "Foley & Hits", "Whooshes & Risers" with air whooshes, pass-bys, risers, a reverse and tape rewinds, and "Ambience & Room Tone" with room tone and city / nature beds), each with its licence, the evidence the licence was checked against, its download and installed sizes, sound count and state (available, installed, outdated, damaged). Before install_sound_pack, TELL THE USER the pack's name, download size and licence (and its credit line when it has one), and install only what they asked for: it downloads from the pack's upstream site (the only network the sound library uses), checks every byte against the pinned sha256 and adds its sounds to the library (a sound-pack-install job, then a sound-index job; wait: true waits for both). remove_sound_pack deletes an installed pack and needs the user's approval on a card in an open editor window; projects that already use its sounds keep their own copies. Jingles and voices are music and speech, not effects: they have no sound type, so find them by words (search_sounds {q: "jingle"} or {packId}).
 ${DESCRIBE_GUIDE}
 - Library: sound_library_status shows the sources, counts per type, source and licence, the folders and whether an index job runs. rescan_sound_library re-indexes (a job; wait: true waits). add_sound_folder / remove_sound_folder change the user's folders and need the user's approval in an open editor window (E_APPROVAL_DENIED: they said no or no window was open; do not retry without asking).
@@ -162,6 +166,11 @@ export async function soundCall<T>(ctx: ToolContext, fn: Parameters<ToolContext[
 		}
 		throw e;
 	}
+}
+
+/** The credits text of one format (the editor's Export Sound Credits dialog writes the same). */
+function creditsText(c: { markdown: string; text: string; csv: string }, fmt: 'md' | 'txt' | 'csv'): string {
+	return fmt === 'md' ? c.markdown : fmt === 'csv' ? c.csv : c.text;
 }
 
 const r3 = (x: number) => Math.round(x * 1000) / 1000;
@@ -1007,18 +1016,15 @@ export function registerSoundTools(ctx: ToolContext): void {
 					.optional()
 					.describe('Sequence id ("seq_…"): only what it (with its nests) uses; default: the whole project'),
 				format: z.enum(['md', 'txt', 'csv']).optional().describe('Text format (default md)'),
+				attributionOnly: z
+					.boolean()
+					.optional()
+					.describe('Only the sounds whose licence asks for a credit (default false: every sound)'),
 			},
 			annotations: READ_ONLY,
 		},
-		async ({ projectId, sequenceId, format }) => {
-			const { doc } = await loadDoc(ctx, projectId);
-			if (sequenceId !== undefined && !Object.hasOwn(doc.sequences, sequenceId))
-				throw new ToolError(
-					'E_NOT_FOUND',
-					`Sequence not found: ${sequenceId}`,
-					'Call get_project for sequence ids.',
-				);
-			const c = soundCredits(doc, sequenceId);
+		async ({ projectId, sequenceId, format, attributionOnly }) => {
+			const c = await creditsOf(projectId, sequenceId, attributionOnly);
 			const fmt = format ?? 'md';
 			return jsonResult({
 				scope: sequenceId ? { sequenceId } : 'project',
@@ -1026,11 +1032,107 @@ export function registerSoundTools(ctx: ToolContext): void {
 				attributionRequired: c.rows.filter((r) => r.requiresAttribution).length,
 				rows: c.rows,
 				format: fmt,
-				text: fmt === 'md' ? c.markdown : fmt === 'csv' ? c.csv : c.text,
+				text: creditsText(c, fmt),
 				warnings: c.warnings,
 			});
 		},
 	);
+
+	defineTool(
+		ctx,
+		'export_sound_credits',
+		{
+			title: 'Export sound credits',
+			description:
+				'Writes the sound credits of a project (or of one sequence and every sequence nested in it) to a file, as File ▸ Export ▸ Sound Credits… does: the same text list_sound_credits returns, in md (default), txt or csv. path is an absolute file path on the engine\'s computer (the format follows its extension, else format) or a folder (the file is named "<sequence or project>-sound-credits.<ext>" in it); an existing file is never overwritten (" (2)" is appended). Refused with E_INVALID_PARAM when no library sound is used (nothing to credit). Returns the path, format, rows and warnings. To write the credits next to an exported video instead, use start_export {credits}.',
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: z
+					.string()
+					.optional()
+					.describe('Sequence id ("seq_…"): only what it (with its nests) uses; default: the whole project'),
+				path: z.string().min(1).max(4096).describe('Absolute output file or folder path'),
+				format: z.enum(['md', 'txt', 'csv']).optional().describe('Default: from the path extension, else md'),
+				attributionOnly: z
+					.boolean()
+					.optional()
+					.describe('Only the sounds whose licence asks for a credit (default false: every sound)'),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, sequenceId, path, format, attributionOnly }) => {
+			if (!isAbsolute(path))
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'Paths must be absolute',
+					'Pass a full path such as /tmp/credits.md, or a folder.',
+				);
+			const c = await creditsOf(projectId, sequenceId, attributionOnly);
+			if (!c.rows.length)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					attributionOnly ? 'No sound used here asks for a credit' : 'No library sound is used here',
+					'list_sound_credits shows what the project uses; nothing was written.',
+				);
+			const fromExt = extname(path).slice(1).toLowerCase();
+			const dirTarget =
+				path.endsWith('/') ||
+				path.endsWith('\\') ||
+				(await stat(path).then(
+					(st) => st.isDirectory(),
+					() => false,
+				));
+			const fmt: 'md' | 'txt' | 'csv' =
+				format ??
+				(!dirTarget && (fromExt === 'md' || fromExt === 'txt' || fromExt === 'csv') ? fromExt : 'md');
+			const ext = `.${fmt}`;
+			let dest = dirTarget ? join(path, `${c.baseName.replace(/[^\w.-]+/g, '_')}-sound-credits${ext}`) : path;
+			if (extname(dest).toLowerCase() !== ext) dest += ext;
+			const stem = basename(dest, ext);
+			for (let i = 2; existsSync(dest); i++) dest = join(dirname(dest), `${stem} (${i})${ext}`);
+			const bytes = Buffer.from(creditsText(c, fmt), 'utf8');
+			try {
+				await mkdir(dirname(dest), { recursive: true });
+				await writeFile(dest, bytes, { flag: 'wx' });
+			} catch (e) {
+				throw new ToolError(
+					'E_IO',
+					`Could not write ${dest}: ${(e as Error).message}`,
+					'Pick another folder the engine can write to.',
+				);
+			}
+			return jsonResult({
+				path: dest,
+				format: fmt,
+				bytes: bytes.length,
+				scope: sequenceId ? { sequenceId } : 'project',
+				count: c.rows.length,
+				attributionRequired: c.rows.filter((r) => r.requiresAttribution).length,
+				rows: c.rows,
+				warnings: c.warnings,
+			});
+		},
+	);
+
+	/** The credits of a project or sequence (`E_NOT_FOUND` for an unknown sequence), with the name a file takes. */
+	async function creditsOf(projectId: string, sequenceId: string | undefined, attributionOnly?: boolean) {
+		const { doc } = await loadDoc(ctx, projectId);
+		if (sequenceId !== undefined && !Object.hasOwn(doc.sequences, sequenceId))
+			throw new ToolError(
+				'E_NOT_FOUND',
+				`Sequence not found: ${sequenceId}`,
+				'Call get_project for sequence ids.',
+			);
+		const c = soundCredits(doc, sequenceId, attributionOnly ? { attributionOnly: true } : undefined);
+		const seqName = sequenceId
+			? Object.values(doc.items).find(
+					(i) => i.kind === 'sequence' && (i as { sequenceId?: string }).sequenceId === sequenceId,
+				)?.name
+			: undefined;
+		// A credit list with only some rows still warns about every sound used (as the editor's dialog does).
+		const warnings = attributionOnly ? soundCredits(doc, sequenceId).warnings : c.warnings;
+		return { ...c, warnings, baseName: (seqName ?? doc.name) || 'project' };
+	}
 
 	/** Writes the folder list; the engine asks the user first when an agent adds, removes or relicenses one. */
 	async function putRoots(roots: Record<string, unknown>[], what: string, extra: Extra) {

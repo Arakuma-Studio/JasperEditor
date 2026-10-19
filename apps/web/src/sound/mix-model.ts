@@ -564,6 +564,9 @@ export function conflictNote(c: ConflictLike, where: string | null): SoundNote {
 	};
 }
 
+/** "<itemId> (alternative k): …": a plan's warning about an item's k-th alternative. */
+const ALTERNATIVE_PREFIX = /^([A-Za-z0-9_$#:.-]{1,128}) \(alternative (\d{1,3})\): /;
+
 /** The id a solver message starts with ("clp_12: …"), when it has one. */
 const idPrefix = (message: string): string | null =>
 	/^([A-Za-z0-9_$#:.-]{1,128}): /.exec(message)?.[1] ?? null;
@@ -689,7 +692,19 @@ export function soundNotes(report: unknown, where: NoteWhere): SoundNote[] {
 		...conflicts.map((c) => conflictNote(c, safeWhere(c.clipId, c.itemId))),
 		...warnings
 			.filter((w) => !(w.code === 'W_CONFLICT' && conflicts.length))
-			.map((w) => warningNote(w, safeWhere(w.clipId ?? idPrefix(w.message) ?? undefined))),
+			.map((w) => {
+				// a plan names an alternative's own warning "<itemId> (alternative k): …" (final verification B: these
+				// read "A sound: …" in the Auto Sound Pass notes); the note names the item and the alternative
+				const alt = w.clipId ? null : ALTERNATIVE_PREFIX.exec(w.message);
+				if (alt) {
+					const base = safeWhere(undefined, alt[1]);
+					return warningNote(
+						{ code: w.code, message: `${alt[1]}: ${w.message.slice(alt[0].length)}` },
+						base ? t('{0} (alternative {1})', base, alt[2]!) : null,
+					);
+				}
+				return warningNote(w, safeWhere(w.clipId ?? idPrefix(w.message) ?? undefined));
+			}),
 	];
 	const rank = (n: SoundNote) =>
 		n.code === 'W_UNRESOLVED' ? 0 : n.severity === 'warning' ? 1 : n.kind === 'conflict' ? 2 : 3;

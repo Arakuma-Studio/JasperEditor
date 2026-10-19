@@ -189,6 +189,9 @@ export class CheckProbes {
 }
 
 /** The first 5 ms and last 50 ms of the delivered mix (HEAD, ENDING). */
+/** 10 ms blocks the ending tap keeps (0.6 s: the window `endFadeLookSec` before the end and after). */
+const ENDING_FADE_BLOCKS = 60;
+
 export class EdgeTap {
 	private readonly headN: number;
 	private readonly tailN: number;
@@ -197,30 +200,52 @@ export class EdgeTap {
 	private headLen = 0;
 	private tailPos = 0;
 	private tailLen = 0;
+	/** Mean square of each 10 ms block of the last ENDING_FADE_BLOCKS blocks (a ring; `blockN` samples each). */
+	private readonly blocks = new Float64Array(ENDING_FADE_BLOCKS);
+	private readonly blockN: number;
+	private blockPos = 0;
+	private blockCount = 0;
+	private blockSum = 0;
+	private blockFill = 0;
 	readonly sampleRate: number;
 	constructor(sampleRate: number, channels: number) {
 		this.sampleRate = sampleRate;
 		this.headN = Math.max(1, Math.round(0.005 * sampleRate));
 		this.tailN = Math.max(1, Math.round(0.05 * sampleRate));
+		this.blockN = Math.max(1, Math.round(0.01 * sampleRate));
 		this.head = Array.from({ length: channels }, () => new Float32Array(this.headN));
 		this.tail = Array.from({ length: channels }, () => new Float32Array(this.tailN));
 	}
 	push(planar: readonly Float32Array[], n: number): void {
+		const chans = Math.max(1, this.tail.length);
 		for (let i = 0; i < n; i++) {
 			const h = this.headLen < this.headN;
+			let e = 0;
 			for (let c = 0; c < this.tail.length; c++) {
 				const raw = planar[c]?.[i] ?? 0;
 				const v = Number.isFinite(raw) ? raw : 0;
 				if (h) this.head[c]![this.headLen] = v;
 				this.tail[c]![this.tailPos] = v;
+				e += v * v;
 			}
 			if (h) this.headLen++;
 			this.tailPos = (this.tailPos + 1) % this.tailN;
 			if (this.tailLen < this.tailN) this.tailLen++;
+			this.blockSum += e / chans;
+			if (++this.blockFill === this.blockN) {
+				this.blocks[this.blockPos] = this.blockSum / this.blockN;
+				this.blockPos = (this.blockPos + 1) % ENDING_FADE_BLOCKS;
+				if (this.blockCount < ENDING_FADE_BLOCKS) this.blockCount++;
+				this.blockSum = 0;
+				this.blockFill = 0;
+			}
 		}
 	}
-	/** Levels (dBFS): first 5 ms peak, last 50 ms RMS (all channels), last 10 ms peak; null without audio. */
-	result(): { headPeakDb: number; tailRmsDb: number; tailPeakDb: number } | null {
+	/**
+	 * Levels (dBFS): first 5 ms peak, last 50 ms RMS (all channels), last 10 ms peak; `fadeFromDb` the RMS of the 50 ms
+	 * that began `T.endFadeLookSec` before the end (null when the mix is shorter); null without audio.
+	 */
+	result(): { headPeakDb: number; tailRmsDb: number; tailPeakDb: number; fadeFromDb: number | null } | null {
 		if (this.headLen === 0 || this.tailLen === 0) return null;
 		const dbOf = (v: number, power = false) =>
 			v > 0 ? Math.max(-120, (power ? 10 : 20) * Math.log10(v)) : -120;
@@ -243,10 +268,22 @@ export class EdgeTap {
 				if (i >= o.length - last10) tp = Math.max(tp, Math.abs(o[i]!));
 			}
 		}
+		// the 5 complete 10 ms blocks that began `endFadeLookSec` before the end (blocks are oldest first in the ring)
+		const back = Math.round(T.endFadeLookSec / 0.01);
+		let fadeFromDb: number | null = null;
+		if (this.blockCount >= back) {
+			let m = 0;
+			for (let k = 0; k < 5; k++) {
+				const age = back - k; // 1 = the newest complete block
+				m += this.blocks[(this.blockPos - age + ENDING_FADE_BLOCKS * 2) % ENDING_FADE_BLOCKS]!;
+			}
+			fadeFromDb = r1(dbOf(m / 5, true));
+		}
 		return {
 			headPeakDb: r1(dbOf(hp)),
 			tailRmsDb: r1(dbOf(e / (this.tailLen * this.tail.length), true)),
 			tailPeakDb: r1(dbOf(tp)),
+			fadeFromDb,
 		};
 	}
 }
@@ -1335,19 +1372,45 @@ function fadePoints(t0: number, t1: number, v0: number, out: boolean, steps = 16
 	return pts;
 }
 
+/**
+ * A mix that fades out to silence over its last half second — its last 50 ms at least `endFadeDropDb` under the 50 ms
+ * that began `endFadeLookSec` before the end, and its last 10 ms peak `endFadeFallDb` under that last-50 ms RMS (still
+ * falling: a fade reaching zero, not one that stops at a level) — ends; it is not "mid-sound" even when the fade's last
+ * 10 ms are over −60 dBFS (End on Bar's one-beat fade into the bar line; final verification B). Pure.
+ */
+export function endsWithFadeOut(tap: {
+	tailRmsDb: number;
+	tailPeakDb: number;
+	fadeFromDb?: number | null;
+}): boolean {
+	return (
+		typeof tap.fadeFromDb === 'number' &&
+		Number.isFinite(tap.fadeFromDb) &&
+		Number.isFinite(tap.tailRmsDb) &&
+		Number.isFinite(tap.tailPeakDb) &&
+		tap.fadeFromDb - tap.tailRmsDb >= T.endFadeDropDb &&
+		tap.tailPeakDb <= tap.tailRmsDb - T.endFadeFallDb
+	);
+}
+
 /** ENDING and HEAD (P6-E3) from the delivered mix's first 5 ms and last 50 ms. */
 export function endingFindings(
 	ctx: FindCtx,
-	tap: { headPeakDb: number; tailRmsDb: number; tailPeakDb: number } | null,
+	tap: { headPeakDb: number; tailRmsDb: number; tailPeakDb: number; fadeFromDb?: number | null } | null,
 ): void {
 	if (!tap) return;
+	const fadesOut = endsWithFadeOut(tap);
 	const master = stripView(ctx.seq, 'master');
 	const auto =
 		master && master.automation === 'off'
 			? [{ type: 'mixer.updateStrip', sequenceId: ctx.seq.id, stripId: 'Mix', patch: { automation: 'read' } }]
 			: [];
 	const lane = (t: number) => (master ? laneValueAt(master, 'volume', t) : 0);
-	if (ctx.range.end >= ctx.duration && (tap.tailRmsDb > T.endRmsDbfs || tap.tailPeakDb > T.endPeakDbfs)) {
+	if (
+		ctx.range.end >= ctx.duration &&
+		!fadesOut &&
+		(tap.tailRmsDb > T.endRmsDbfs || tap.tailPeakDb > T.endPeakDbfs)
+	) {
 		const end = ctx.duration * ctx.F;
 		const t0 = Math.max(0, end - T.endFadeSec * FLICKS_PER_SECOND);
 		// the fade reaches silence 50 ms before the end: the last 50 ms are what this check measures

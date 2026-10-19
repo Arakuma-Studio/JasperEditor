@@ -37,6 +37,7 @@ const SOUND_COMMANDS = [
 	'soundDesign.acknowledgeIssue',
 	'soundDesign.unacknowledgeIssue',
 	'soundDesign.layBed',
+	'essentialSound.autoTag',
 ];
 
 /** A music clip on A1 (Phase 4 mixing examples). */
@@ -60,6 +61,10 @@ const SAME_TX = new Set(['soundDesign.applyGains']);
 
 /** What an example needs in the project first (a cue to edit, a placed sound to swap). */
 const PRELUDE: Record<string, unknown[]> = {
+	// an untyped audio clip to tag (the example's clip id is put on it below)
+	'essentialSound.autoTag': [
+		{ type: 'clip.place', source: { mediaByName: 'clip-a.mp4' }, at: 0, tracks: { audio: 'A1' } },
+	],
 	// an older copy of the starter hit (the Ogg as it is: no lead silence), placed once
 	'media.upgradeLibraryCopy': [
 		{
@@ -248,6 +253,12 @@ describe('sound-design describe_commands examples', () => {
 		// the precondition's example names a hash: the measured mix's (here the document's own); the literal one refuses
 		const seqId = Object.keys(doc.sequences)[0]!;
 		let cmd = example;
+		if (type === 'essentialSound.autoTag') {
+			// results are keyed by clip id: the example's placeholder id names the clip the prelude placed
+			const clipId = Object.values(doc.sequences[seqId]!.clips).find((c) => c.kind === 'audio')!.id;
+			const ex = example as { results: Record<string, unknown> };
+			cmd = { ...(example as Record<string, unknown>), results: { [clipId]: Object.values(ex.results)[0] } };
+		}
 		if (type === 'soundDesign.expectMix') {
 			const stale = applyTransaction(doc, { label: 'stale', origin: 'user', commands: [example] }, ctx);
 			expect(stale.result.ok ? null : stale.result.errors[0]!.code).toBe('E_REVISION_MISMATCH');

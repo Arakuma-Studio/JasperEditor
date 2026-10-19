@@ -47,6 +47,7 @@ import {
 	SoundDeliveryRequestSchema,
 	SoundDesignPlanRequestSchema,
 	SoundListenRequestSchema,
+	SoundPeakRequestSchema,
 	SoundProfileBuildRequestSchema,
 	SoundProfileImportRequestSchema,
 	SoundProfileRenameRequestSchema,
@@ -90,6 +91,7 @@ import { ListenInputError, listenRange, runSoundListen } from '../sound-design/l
 import { matchStoredCues } from '../sound-design/match.ts';
 import { closeSoundDesignMeasurer, soundDesignMeasurer } from '../sound-design/measure-pool.ts';
 import { MotionInputError, MotionService, planMotion } from '../sound-design/motion.ts';
+import { measurePeak, peakPlan } from '../sound-design/peak.ts';
 import {
 	liveDocument,
 	PlanInputError,
@@ -778,6 +780,31 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 				origin: editor ? { type: 'user' } : { type: 'agent', agentRunId: agentNameOf(req) },
 				...(live.revision !== null ? { revision: live.revision } : {}),
 			});
+		}),
+	);
+
+	// Detect Peak for agents (spec 12 §2.7): the peak of an audio clip's sound in the live document, nothing stored
+	app.post(
+		'/api/sound-design/peak',
+		guarded(async (req, reply) => {
+			const body = parseOr400(SoundPeakRequestSchema, req.body ?? {});
+			const agent = app.jasper.services.agent as AgentService | undefined;
+			if (!agent) throw new HttpError(503, 'NOT_AVAILABLE', 'The agent service is not running');
+			if (!isProjectId(body.projectId) || !(await agent.projectExists(body.projectId)))
+				throw new HttpError(404, 'PROJECT_NOT_FOUND', `Project not found: ${body.projectId}`);
+			const { doc, revision } = await liveDocument(agent, body.projectId);
+			const plan = peakPlan(doc, body.sequenceId, body.clipId);
+			const rec = core.registry.get(plan.mediaKey);
+			if (!rec) throw new HttpError(404, 'ASSET_NOT_FOUND', 'The clip’s media is not registered');
+			const stream = rec.probe.streams.find(
+				(st) => st.type === 'audio' && (plan.streamIndex === null || st.index === plan.streamIndex),
+			);
+			if (!stream) throw new HttpError(400, 'NO_AUDIO_STREAM', 'The clip’s media has no such audio stream');
+			const path = await core.registry.resolvePath(plan.mediaKey);
+			if (!path) throw new HttpError(409, 'MEDIA_OFFLINE', 'The media is offline');
+			const channels = stream.type === 'audio' && Number.isFinite(stream.channels) ? stream.channels : 2;
+			// stops when the client goes away (test/route-client-gone.test.ts)
+			return measurePeak(plan, { ff: core.ffmpeg, path, channels }, revision, clientGoneSignal(reply));
 		}),
 	);
 

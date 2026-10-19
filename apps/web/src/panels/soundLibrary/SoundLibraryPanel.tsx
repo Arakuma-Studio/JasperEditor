@@ -74,7 +74,7 @@ import {
 	inContextStore,
 	stopInContext,
 } from '../../sound/in-context.ts';
-import { endSoundDrag, writeSoundDrag } from '../../sound/insert.ts';
+import { endSoundDrag, importLibrarySounds, writeSoundDrag } from '../../sound/insert.ts';
 import {
 	type Collection,
 	DEFAULT_FILTERS,
@@ -617,6 +617,28 @@ export function SoundLibraryPanel(props: PanelProps) {
 		},
 		[session, canInsert, engine, notify, readOnly, rows],
 	);
+	// Import to Project (MCP import_sounds' twin): into the "Sound Effects" bin, not placed; one undo step
+	const doImport = useCallback(
+		(e: SoundEntry | null) => {
+			if (!e || !session) return;
+			void importLibrarySounds(session, engine, [e])
+				.then((r) =>
+					notify({
+						kind: r.imported ? 'success' : 'info',
+						message: r.message,
+						...(r.imported ? { action: { label: t('Undo'), command: 'history.undo' } } : {}),
+					}),
+				)
+				.catch((err: unknown) =>
+					notify({
+						kind: 'error',
+						message: t('Could not import the sound'),
+						detail: err instanceof Error ? err.message : String(err),
+					}),
+				);
+		},
+		[session, engine, notify],
+	);
 	const doFavourite = useCallback(
 		(e: SoundEntry | null) => {
 			if (!e) return;
@@ -963,6 +985,14 @@ export function SoundLibraryPanel(props: PanelProps) {
 				disabled: !((e.format.durationSec || e.descriptors.durationSec) >= FIND_MOMENT_MIN_SEC),
 				disabledReason: t('The sound is too short to search inside'),
 				onSelect: () => void openDialog(SOUND_FIND_MOMENT_DIALOG, { entry: e, session }),
+			},
+			{
+				type: 'item',
+				id: 'importToProject',
+				label: t('Import to Project'),
+				disabled: !session || readOnly,
+				disabledReason: !session ? t('Open a project first') : t('The project is read-only'),
+				onSelect: () => doImport(e),
 			},
 			{
 				type: 'item',

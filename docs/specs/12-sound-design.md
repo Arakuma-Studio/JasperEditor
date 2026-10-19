@@ -1,6 +1,7 @@
 # Spec 12: Sound Design / SFX layer
 
-Status: in progress on `feat/sound-design`. Owner wp-note: [`docs/wp-notes/sound-design.md`](../wp-notes/sound-design.md).
+Status: built and verified on `feat/sound-design` (final verification: wp-note "Final verification A / B"); the merge into
+`main` (P6-R7) follows the green gate. Owner wp-note: [`docs/wp-notes/sound-design.md`](../wp-notes/sound-design.md).
 This spec wins over older specs for everything it covers; [`ARCHITECTURE.md`](../ARCHITECTURE.md) and
 [`AGENTS.md`](../../AGENTS.md) still win over this spec.
 
@@ -378,7 +379,7 @@ bed) through `renderMixdown` (`measureOnly`), runs VAD, and computes 10 ms curve
 | `HARSH` (P6-E2) | a placed sound's 2–6 kHz 5 ms-RMS peak more than 6 dB over the music stem's loudest (else the dialogue's; neither: not judged): warning, fix −excess dB (safe when MASKED still holds; else a Parametric Equalizer dip, not safe); centroid > 6.5 kHz: info |
 | `LAYER_INAUDIBLE` (P6-E2) | a layer of a multi-layer cue adding < 1 dB in every 1/3-octave band (100 Hz–12.6 kHz) over the bed plus its cue's other layers, over its loudest 60 ms: info; fix the gain that adds 3 dB in its dominant band (≤ 18 dB), else remove the layer (not safe) |
 | `COVERAGE` (P6-E3) | ≥ 2 cues of a class (kind + anchor source; text / keyframe cues by clip, cuts by track) filled and ≥ 1 not (muted, ambient and dialogue-silenced cues excluded): warning; fix fill them with the class's sound (not safe), else mute them |
-| `ENDING`, `HEAD` (P6-E3) | the delivered mix's last 50 ms RMS > −45 dBFS or last 10 ms peak > −60 dBFS at the sequence end: warning, a 0.5 s Mix fade-out reaching silence 50 ms before the end (not safe) / first 5 ms peak > −40 dBFS: info, a 20 ms Mix fade-in |
+| `ENDING`, `HEAD` (P6-E3) | the delivered mix's last 50 ms RMS > −45 dBFS or last 10 ms peak > −60 dBFS at the sequence end, unless the mix fades out to silence there (last 50 ms ≥ 18 dB under the level 0.5 s before and still falling; final verification B): warning, a 0.5 s Mix fade-out reaching silence 50 ms before the end (not safe) / first 5 ms peak > −40 dBFS: info, a 20 ms Mix fade-in |
 | `ARC` (P6-E3) | info: the loudest 3 s short-term window holds no hero while heroes exist, or lies in the last 15 % with no hero there |
 
 Every issue has `{code, severity, frame?, range?, message, fix?{tool|command,args}}`.
@@ -576,6 +577,12 @@ Routes, declared in `packages/api/src/routes.ts` with schemas in `packages/api/s
 
 Capabilities gain `sound: {library:{sounds, packs}, synth: true}`.
 
+*As built*: later phases added `POST /api/sound-design/rebalance`, `/delivery` (P4), `/listen` (P6-E6), `/profiles…`
+(P6-E8), `/beds[/plan]`, `/room-tone[/plan]` (P6-E12), `/peak` (Detect Peak, final verification B), `POST /api/audio/classify`
+(P6-R3), `/api/audio/remix-plan` (P6-E11), `/api/sounds/semantic…`, `/api/sounds/:id/match`, `/api/sounds/:id/moments`
+(P6-E14) and the `sound-listen`, `sound-profile`, `audio-classify`, `sound-embed`, `sound-moment` jobs; all are declared
+in `packages/api/src/routes.ts` and classified in `docs/security-review.md`.
+
 ### 2.9 Commands (`packages/project/src/commands/schemas/sound.ts`, `handlers/sound.ts`, owner `'sound-design'`)
 
 | Command | Notes |
@@ -619,6 +626,11 @@ Add them to the integrity property test.
 | `get_sound_check` | READ_ONLY; the last kept report, current / stale (Phase 5 verification) |
 | `view_sound_timeline` | PNG |
 | `export_sound_credits` | |
+
+*As built (final verification B)*: `export_sound_credits` was listed here but missing; it writes the credits file the
+editor's File ▸ Export ▸ Sound Credits… writes (never overwriting; `attributionOnly` like the dialog's "only credits").
+`detect_sound_peak` (`POST /api/sound-design/peak`) is the clip menu's Detect Peak for agents without an editor window.
+Later phases added their tools in their own sections (§4 "As built" notes); the README tool list is the complete list.
 
 `SOUND_GUIDE` must say:
 
@@ -822,8 +834,8 @@ reason, and the export matches the preview mix (sample-level oracle).
 - P6-R3. Transcript- and VAD-aware dialogue suppression, and Essential Sound **Auto Tag**: classify a clip as
   dialogue, music, sfx or ambience from descriptors plus VAD, with a command, MCP tool, UI action and badge.
 - P6-R4. Credits sidecar in export and `W_SOUND_CREDITS`; interchange cues exported as markers.
-- P6-R5. Sound Design workspace; docs (ARCHITECTURE decisions D-50 sound library and provenance, D-51 proposals,
-  D-52 sound design as ordinary commands, §4.3, §11.3), `docs/gaps.md` and `docs/parity.md` entries with
+- P6-R5. Sound Design workspace; docs (ARCHITECTURE decisions D-50 sound library and provenance (with schema v7),
+  D-51 proposals, D-52 sound design as ordinary commands — and D-53 the optional CLAP model of P6-E14 —, §4.3, §11.3), `docs/gaps.md` and `docs/parity.md` entries with
   evidence, README, and a complete wp-note.
 - P6-R6. `e2e/sound-design.spec.ts`: fixture → Suggest Cues → Auto Sound Pass → review → accept part → one undo →
   Sound Check → export → frames and audio timing checked.
@@ -1232,7 +1244,9 @@ outputSeconds}` (seconds from the analysed range and from the remix's start; the
 `fit: 'nearest'` plans the nearest length a bar-line plan reaches (the editor and MCP use it when no length is given:
 the clip moves by at most half a bar, never over the next clip); a landed drop is recorded on the remix
 (`ClipRemix.anchors`) and lands again when the clip is remixed to another length; every remix's joints sit 5 ms before
-each beat's measured attack and its crossfades end at the joint (`end-at-cut`, ≥ 30 ms); MCP also has
+each beat's measured attack and its crossfades end at the joint (`end-at-cut`, ≥ 30 ms; 110 ms at a joint the plan measures
+as chopped by Sound Check's EDGE rule, `jointCrossfadeSeconds`, final verification B; Auto-Match and Delivery Target give
+the pieces of one remix one gain); MCP also has
 `fit_music_to_picture {mode: land-drop | end-on-bar}` and the editor Clip ▸ Audio Options ▸ Land Drop on Playhead / Hero
 Cue and End on Bar (a music clip ends just before a downbeat, faded over a beat); a stop moves onto the bar inside
 0.1–0.5 s before the hit (earshot's stop-down norm) or the cue's own window; tuning goes to the nearest scale note (≤ 1 st
@@ -1275,7 +1289,9 @@ tone closest to the dialogue's noise floor in octave-band shape is used when wit
 quietest 0.5–3 s outside its voice activity (deviation: the spec takes a library tone whenever one exists; a tone
 3–6 dB off the floor's shape — a ventilation hum under a quiet room — sounds like another room, measured 5.1–5.6 dB for
 white and hum against pink). The Sound Check fix is commands (register the tone if needed + `soundDesign.layBed` over
-the silence padded 0.25 s under the dialogue), not safe; a proposal check attributes a fixed SILENCE / DIP to the item
+the silence padded 0.25 s under the dialogue), not safe; the dialogue's own stretch is searched in the part its clips use,
+else in the media's handles (≤ 30 s either side, their own voice activity left out: dialogue trimmed tight to the words,
+final verification B); a proposal check attributes a fixed SILENCE / DIP to the item
 whose new clips play over it. Not built: a plan-job option for beds (the beds route proposes on its own).
 
 **P6-E13 (P1). ShareAlike sounds.** Under CC BY-SA 4.0 §1(a), a sound recording synced in timed relation with a

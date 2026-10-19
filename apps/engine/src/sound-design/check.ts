@@ -1126,6 +1126,21 @@ export async function checkSequence(
 	const measurable =
 		Number.isFinite(final.integrated) && audibleSec >= SOUND_CHECK_THRESHOLDS.minMeasurableSec;
 	const broadcast = !target && (opts.preset === 'broadcast-r128' || opts.preset === 'atsc-a85');
+	// With normalisation off, `before` is the whole mix as it plays: stored with the fix as the Mix's loudness analysis,
+	// so the preview is normalised at once like the export (final verification B: an agent's safe fix left the preview
+	// playing the un-normalised mix, +4.5 dBTP, until someone ran Analyze in the Audio Track Mixer).
+	const analysis =
+		!normalize && whole && fin(before.integrated)
+			? {
+					integratedLufs: r3(before.integrated),
+					truePeakDbtp: fin(before.truePeakDb) ? r3(before.truePeakDb) : null,
+					lra: fin(before.lra) ? r3(before.lra) : null,
+					maxMomentaryLufs: fin(before.maxMomentary) ? r3(before.maxMomentary) : null,
+					maxShortTermLufs: fin(before.maxShortTerm) ? r3(before.maxShortTerm) : null,
+					mixHash: mixFingerprint(doc, seq.id),
+					analyzedAt: new Date().toISOString(),
+				}
+			: null;
 	const loudnessFix = (why: SoundCheckMessage): SoundCheckFix | undefined => {
 		const cmd = {
 			type: 'mixer.setLoudness',
@@ -1133,6 +1148,7 @@ export async function checkSequence(
 			enabled: true,
 			targetLufs: preset.integratedLufs,
 			truePeakDb: preset.truePeakDb,
+			...(analysis ? { analysis } : {}),
 		};
 		const ok = dryRun(doc, seq.id, [cmd], env.registries);
 		if (!ok.ok) return undefined;

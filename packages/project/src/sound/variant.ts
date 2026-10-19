@@ -1,6 +1,7 @@
 // Rotation and variation (spec 12 §2.3): which of the ranked candidates fills a cue, and a small seeded random
 // variation of its speed and gain so repeated sounds do not sound mechanical. Round-robin over the top-N candidates
-// (the least recently used one wins, ties by rank), never the same file twice in a row when another candidate exists;
+// (the least recently used one wins, ties by rank), never the same file twice in a row when another candidate exists,
+// and Jasper Synth sounds only when no recording is a candidate (`fallbackIds`);
 // ±2 % varispeed and ±1 dB gain from a hash of (sequence, cue, seed, layer). When the best candidate is a take of a
 // recording (spec 12 P6-E9), the recording's takes among the candidates are the pool ("vary the take, not the
 // pitch"): repeated cues cycle through its takes, never the same take twice in a row. The variation follows the type's
@@ -27,6 +28,11 @@ export type VariantContext = {
 	recentSoundIds?: readonly string[];
 	/** Size of the rotation pool (default `ROTATION_TOP_N`, 1…16). */
 	topN?: number;
+	/**
+	 * Fallback candidates (Jasper Synth, spec 12 §0: "a deterministic test fixture and offline fallback"): in the pool
+	 * only when no other candidate exists, so a rotation never mixes a synth sound into real recordings.
+	 */
+	fallbackIds?: readonly string[];
 	/** The variation policy of the sound's type (P6-E10; default `vary`): see `variationOf`. */
 	variation?: SoundVariation;
 };
@@ -116,7 +122,12 @@ export function pickVariant(candidates: readonly string[], ctx: VariantContext):
 	});
 	if (ranked.length === 0) return null;
 	const n = Math.max(1, Math.min(16, Math.floor(Number.isFinite(ctx.topN) ? ctx.topN! : ROTATION_TOP_N)));
-	const pool = takePool(ranked) ?? ranked.slice(0, n);
+	const fallback = new Set(
+		Array.isArray(ctx.fallbackIds) ? ctx.fallbackIds.filter((x) => typeof x === 'string') : [],
+	);
+	const real = fallback.size ? ranked.filter((c) => !fallback.has(c.id)) : ranked;
+	const usable = real.length ? real : ranked;
+	const pool = takePool(usable) ?? usable.slice(0, n);
 	const recent = Array.isArray(ctx.recentSoundIds)
 		? ctx.recentSoundIds.filter((x) => typeof x === 'string')
 		: [];
