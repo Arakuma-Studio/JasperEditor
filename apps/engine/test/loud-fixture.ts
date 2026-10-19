@@ -31,7 +31,8 @@ export function loudMix(seconds = 12, sampleRate = 48_000): [Float32Array, Float
 		const tb = t % 0.5;
 		const snare = rnd() * 0.8 * Math.exp(-tb / 0.04);
 		const tk = t % 1;
-		const kick = 0.9 * Math.sin(2 * Math.PI * 55 * tk * (1 + 2 * Math.exp(-tk / 0.03))) * Math.exp(-tk / 0.15);
+		const kick =
+			0.9 * Math.sin(2 * Math.PI * 55 * tk * (1 + 2 * Math.exp(-tk / 0.03))) * Math.exp(-tk / 0.15);
 		const th = t % 0.125;
 		const hat = rnd() * 0.3 * Math.exp(-th / 0.008);
 		// × 0.4: the file stays under full scale (the normalisation gain brings it up to the target again)

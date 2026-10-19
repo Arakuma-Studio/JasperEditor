@@ -290,7 +290,11 @@ export type CheckOptions = {
 };
 
 /** The ffmpeg encoding of a Sound Check `exportAudio` (as the export planner picks it: Opus at 48 kHz, PCM 24-bit). */
-export function checkDeliveryCodec(ea: SoundCheckExportAudio, mixRate: number, channels: number): DeliveryCodec {
+export function checkDeliveryCodec(
+	ea: SoundCheckExportAudio,
+	mixRate: number,
+	channels: number,
+): DeliveryCodec {
 	return {
 		codec: ea.codec === 'opus' ? 'libopus' : ea.codec === 'pcm' ? 'pcm_s24le' : 'aac',
 		bitrateKbps: ea.bitrateKbps ?? (channels === 6 ? 384 : 192),
@@ -1058,7 +1062,9 @@ export async function checkSequence(
 				codec,
 				soxr: await hasSoxr(env.ff),
 				scratchDir: env.scratchDir,
-				...(wav ? { outPath: wav, write: (params) => writeDeliveryWav(p1, wav, sr, channels, rangeSamples, params) } : {}),
+				...(wav
+					? { outPath: wav, write: (params) => writeDeliveryWav(p1, wav, sr, channels, rangeSamples, params) }
+					: {}),
 				signal: env.signal,
 				...(env.onSpawn ? { onSpawn: env.onSpawn } : {}),
 				onProgress: (f, stage) => progress(0.47 + 0.02 * f, stage),

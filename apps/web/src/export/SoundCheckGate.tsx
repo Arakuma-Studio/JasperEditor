@@ -95,40 +95,43 @@ export function useExportSoundCheck(opts: {
 	const decide = useRef<((go: boolean) => void) | null>(null);
 	const visible = hasSoundEffects(seq);
 
-	const gate = useCallback(async (exportAudio?: SoundCheckExportAudio): Promise<boolean> => {
-		if (!on || !visible || !seq || !engine) return true;
-		setState({ kind: 'checking', progress: null, stage: null });
-		const store = soundCheckStore(session);
-		const off = store.subscribe((s) => {
-			if (s.running?.sequenceId === seq.id)
-				setState({ kind: 'checking', progress: s.running.progress, stage: s.running.stage });
-		});
-		const r = await runSoundCheck(session, engine, {
-			sequenceId: seq.id,
-			...(exportAudio ? { exportAudio } : {}),
-		});
-		off();
-		if (!r.ok) {
-			if (r.cancelled) {
-				setState({ kind: 'idle' });
-				return false;
+	const gate = useCallback(
+		async (exportAudio?: SoundCheckExportAudio): Promise<boolean> => {
+			if (!on || !visible || !seq || !engine) return true;
+			setState({ kind: 'checking', progress: null, stage: null });
+			const store = soundCheckStore(session);
+			const off = store.subscribe((s) => {
+				if (s.running?.sequenceId === seq.id)
+					setState({ kind: 'checking', progress: s.running.progress, stage: s.running.stage });
+			});
+			const r = await runSoundCheck(session, engine, {
+				sequenceId: seq.id,
+				...(exportAudio ? { exportAudio } : {}),
+			});
+			off();
+			if (!r.ok) {
+				if (r.cancelled) {
+					setState({ kind: 'idle' });
+					return false;
+				}
+				setState({ kind: 'error', message: r.message });
+				return new Promise<boolean>((resolve) => {
+					decide.current = resolve;
+				});
 			}
-			setState({ kind: 'error', message: r.message });
+			const report = r.result.report;
+			if (report.verdict !== 'fail') {
+				setState({ kind: 'idle' });
+				opts.notify(verdictSentence(report.verdict, report.counts));
+				return true;
+			}
+			setState({ kind: 'failed', report });
 			return new Promise<boolean>((resolve) => {
 				decide.current = resolve;
 			});
-		}
-		const report = r.result.report;
-		if (report.verdict !== 'fail') {
-			setState({ kind: 'idle' });
-			opts.notify(verdictSentence(report.verdict, report.counts));
-			return true;
-		}
-		setState({ kind: 'failed', report });
-		return new Promise<boolean>((resolve) => {
-			decide.current = resolve;
-		});
-	}, [on, visible, seq, engine, session, opts]);
+		},
+		[on, visible, seq, engine, session, opts],
+	);
 
 	const choose = (go: boolean, review = false) => {
 		const d = decide.current;

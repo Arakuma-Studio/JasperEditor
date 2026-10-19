@@ -23,8 +23,8 @@ import {
 	TruePeakDetector,
 	TruePeakLimiter,
 } from '@jasper/audio-dsp';
-import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { audioEncodeArgs } from '../tools/encoders.ts';
+import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { PcmStreamReader, resamplerArgs } from './decode.ts';
 
 /** The deliverable's audio encoding (what the export's mux writes). */
@@ -121,7 +121,11 @@ export type DeliveryParams = {
 export type Pass1 = { path: string; headerBytes: number };
 
 /** What a delivery pass gives its sink per block: the output (planar view), its length, the limiter's reduction. */
-export type DeliverySink = (view: Float32Array[], frames: number, gainReductionDb: number) => void | Promise<void>;
+export type DeliverySink = (
+	view: Float32Array[],
+	frames: number,
+	gainReductionDb: number,
+) => void | Promise<void>;
 
 /**
  * Streams the pass-1 mix through the delivery chain: gain, the true-peak limiter (5 ms look-ahead, 100 ms release),
@@ -171,7 +175,12 @@ export async function runDeliveryPass(o: {
 		for (let done = 0; done < total; ) {
 			if (o.signal?.aborted) throw new Error('aborted');
 			const n = Math.min(BLOCK, total - done);
-			const { bytesRead } = await src.read(raw, 0, n * channels * 4, o.pass1.headerBytes + done * channels * 4);
+			const { bytesRead } = await src.read(
+				raw,
+				0,
+				n * channels * 4,
+				o.pass1.headerBytes + done * channels * 4,
+			);
 			const got = Math.floor(bytesRead / (channels * 4));
 			for (let i = 0; i < n; i++)
 				for (let c = 0; c < channels; c++)
@@ -262,7 +271,8 @@ export async function measureEncodedAudio(o: {
 		throw new Error(`decoding the encoded audio failed: ${reader.errors.trim().slice(-500)}`);
 	tp.flush();
 	const tail = tp.takePeak();
-	if (hops.length && tail > 0) hops[hops.length - 1] = Math.max(hops[hops.length - 1]!, 20 * Math.log10(tail));
+	if (hops.length && tail > 0)
+		hops[hops.length - 1] = Math.max(hops[hops.length - 1]!, 20 * Math.log10(tail));
 	meter.flush();
 	return { loudness: meter.summary(), hopTruePeakDb: Float32Array.from(hops), samples };
 }
@@ -418,7 +428,10 @@ export async function solveDelivery(o: {
 			}
 			prev = { g: p.gainDb, i: s.integrated };
 			p = { ...p, gainDb: p.gainDb + step };
-			o.onProgress?.(Math.min(0.95, k / L.maxLoudnessPasses), 'Matching loudness under the true-peak ceiling');
+			o.onProgress?.(
+				Math.min(0.95, k / L.maxLoudnessPasses),
+				'Matching loudness under the true-peak ceiling',
+			);
 			s = await measure(p, false);
 			if (Math.abs(aim - s.integrated) < Math.abs(aim - best.pcm.integrated)) best = { params: p, pcm: s };
 		}
@@ -438,14 +451,21 @@ export async function solveDelivery(o: {
 			`verify.${isLossyCodec(o.codec.codec) ? (o.codec.codec === 'libopus' ? 'webm' : 'm4a') : 'wav'}`,
 		);
 		/** The best encode so far: true peak met first, then the smallest overshoot, then the loudness error. */
-		let best: { params: DeliveryParams; r: typeof r; decoded: LoudnessSummary; score: [number, number] } | null =
-			null;
+		let best: {
+			params: DeliveryParams;
+			r: typeof r;
+			decoded: LoudnessSummary;
+			score: [number, number];
+		} | null = null;
 		let ceiling = params.ceilingDb;
 		for (let e = 0; e < L.maxEncodePasses; e++) {
 			if (writtenWith !== params) r = { ...r, pcm: await measure(params, true) };
 			o.onProgress?.(0.96, 'Checking the encoded audio');
 			await o.ff.run(
-				['-y', ...verifyEncodeArgs({ input: o.outPath, output: enc, codec: o.codec, mixRate: sr, soxr: o.soxr })],
+				[
+					'-y',
+					...verifyEncodeArgs({ input: o.outPath, output: enc, codec: o.codec, mixRate: sr, soxr: o.soxr }),
+				],
 				{ ...(o.signal ? { signal: o.signal } : {}), ...(o.onSpawn ? { onSpawn: o.onSpawn } : {}) },
 			);
 			encodePasses++;
@@ -481,7 +501,10 @@ export async function solveDelivery(o: {
 				if (fresh && e > 0) ceiling = Math.max(tpTarget - L.maxCodecHeadroomDb, ceiling - L.ceilingStepDb);
 			}
 			if (Number.isFinite(m.loudness.integrated) && !r.limited)
-				aim = Math.max(target - L.maxLoudnessOffsetLu, Math.min(target + L.maxLoudnessOffsetLu, aim + loudErr));
+				aim = Math.max(
+					target - L.maxLoudnessOffsetLu,
+					Math.min(target + L.maxLoudnessOffsetLu, aim + loudErr),
+				);
 			const next: DeliveryParams = {
 				...params,
 				ceilingDb: ceiling,

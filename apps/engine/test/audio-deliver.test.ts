@@ -30,7 +30,8 @@ const dir = mkdtempSync(join(tmpdir(), 'jasper-deliver-'));
 function pass1Of(name: string, planar: Float32Array[]): { path: string; headerBytes: number } {
 	const n = planar[0]!.length;
 	const buf = Buffer.alloc(n * planar.length * 4);
-	for (let i = 0; i < n; i++) for (let c = 0; c < planar.length; c++) buf.writeFloatLE(planar[c]![i]!, (i * planar.length + c) * 4);
+	for (let i = 0; i < n; i++)
+		for (let c = 0; c < planar.length; c++) buf.writeFloatLE(planar[c]![i]!, (i * planar.length + c) * 4);
 	const path = join(dir, name);
 	writeFileSync(path, buf);
 	return { path, headerBytes: 0 };
@@ -41,7 +42,8 @@ async function readWav(path: string, channels: number): Promise<Float32Array[]> 
 	const n = (b.length - WAV_F32_HEADER_BYTES) / 4 / channels;
 	const out = Array.from({ length: channels }, () => new Float32Array(n));
 	for (let i = 0; i < n; i++)
-		for (let c = 0; c < channels; c++) out[c]![i] = b.readFloatLE(WAV_F32_HEADER_BYTES + (i * channels + c) * 4);
+		for (let c = 0; c < channels; c++)
+			out[c]![i] = b.readFloatLE(WAV_F32_HEADER_BYTES + (i * channels + c) * 4);
 	return out;
 }
 
@@ -61,7 +63,8 @@ describe('codec headroom (the documented table)', () => {
 		for (const fam of ['aac', 'libopus'] as const) {
 			const rows = CODEC_HEADROOM_TABLE.filter((r) => r.codec === fam);
 			expect(rows.at(-1)!.minKbps).toBe(0);
-			for (let i = 1; i < rows.length; i++) expect(rows[i]!.headroomDb).toBeGreaterThan(rows[i - 1]!.headroomDb);
+			for (let i = 1; i < rows.length; i++)
+				expect(rows[i]!.headroomDb).toBeGreaterThan(rows[i - 1]!.headroomDb);
 		}
 	});
 });
@@ -123,7 +126,16 @@ describe('loudness convergence under the true-peak ceiling', () => {
 			outPath: out,
 			write: (params) => writeDeliveryWav(p1, out, SR, 2, mix[0]!.length, params),
 		});
-		console.log('convergence', JSON.stringify({ onePass: onePass.integrated, after: r.pcm.integrated, passes: r.passes, gainDb: r.params.gainDb, initial: r.initialGainDb }));
+		console.log(
+			'convergence',
+			JSON.stringify({
+				onePass: onePass.integrated,
+				after: r.pcm.integrated,
+				passes: r.passes,
+				gainDb: r.params.gainDb,
+				initial: r.initialGainDb,
+			}),
+		);
 		expect(r.written).toBe(true);
 		expect(r.passes).toBeGreaterThan(1);
 		expect(r.passes).toBeLessThanOrEqual(DELIVERY_LIMITS.maxLoudnessPasses + 1);
@@ -140,7 +152,9 @@ describe('loudness convergence under the true-peak ceiling', () => {
 
 	it('says when the ceiling makes the target impossible (a steady tone pushed into the limiter)', async () => {
 		const n = SR * 4;
-		const tone = [0, 1].map(() => Float32Array.from({ length: n }, (_, i) => 0.1 * Math.sin((2 * Math.PI * 500 * i) / SR)));
+		const tone = [0, 1].map(() =>
+			Float32Array.from({ length: n }, (_, i) => 0.1 * Math.sin((2 * Math.PI * 500 * i) / SR)),
+		);
 		const before = measureLoudness(tone, SR);
 		const r = await solveDelivery({
 			ff,
@@ -196,7 +210,9 @@ describe('loudness convergence under the true-peak ceiling', () => {
 		);
 		const got = await readWav(out, 2);
 		let maxDiff = 0;
-		for (let c = 0; c < 2; c++) for (let i = 0; i < got[c]!.length; i++) maxDiff = Math.max(maxDiff, Math.abs(got[c]![i]! - expected[c]![i]!));
+		for (let c = 0; c < 2; c++)
+			for (let i = 0; i < got[c]!.length; i++)
+				maxDiff = Math.max(maxDiff, Math.abs(got[c]![i]! - expected[c]![i]!));
 		expect(maxDiff).toBe(0);
 	}, 120_000);
 });

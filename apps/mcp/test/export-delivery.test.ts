@@ -32,7 +32,9 @@ const logs: string[] = [];
 const engineLog: string[] = [];
 
 async function call(name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
-	return (await client.callTool({ name, arguments: args }, undefined, { timeout: 900_000 })) as CallToolResult;
+	return (await client.callTool({ name, arguments: args }, undefined, {
+		timeout: 900_000,
+	})) as CallToolResult;
 }
 async function ok<T = Record<string, unknown>>(name: string, args: Record<string, unknown> = {}) {
 	const r = await call(name, args);
@@ -121,7 +123,14 @@ describe('lossy export delivery through MCP', { timeout: 900_000 }, () => {
 		const started = await ok<{
 			jobId: string;
 			state: string;
-			plan: { loudness?: { targetLufs: number; truePeakDb: number; limiterCeilingDb: number; codecHeadroomDb: number } };
+			plan: {
+				loudness?: {
+					targetLufs: number;
+					truePeakDb: number;
+					limiterCeilingDb: number;
+					codecHeadroomDb: number;
+				};
+			};
 			result?: { audioLoudness: AudioLoudness; audioCodec: string };
 		}>('start_export', { projectId, preset: 'draft-720p-h264', engine: 'native', wait: true });
 		expect(started.state).toBe('succeeded');
@@ -150,7 +159,13 @@ describe('lossy export delivery through MCP', { timeout: 900_000 }, () => {
 		const check = await ok<{
 			loudness: {
 				normalization: { limiterCeilingDb: number; codecHeadroomDb: number; encodePasses: number };
-				delivered: { codec: string; bitrateKbps: number; truePeakDb: number; integratedLufs: number; truePeakMet: boolean };
+				delivered: {
+					codec: string;
+					bitrateKbps: number;
+					truePeakDb: number;
+					integratedLufs: number;
+					truePeakMet: boolean;
+				};
 			};
 			issues: { code: string }[];
 		}>('sound_check', { projectId, exportPreset: 'draft-720p-h264', images: false });

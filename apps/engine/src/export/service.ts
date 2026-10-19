@@ -2183,7 +2183,9 @@ function audioLoudnessOf(
  * AGENTS §4 (never silent): the delivered audio misses the delivery target — its true peak over the target after the
  * bounded corrections, or a loudness the limiter's ceiling kept outside ±0.5 LU.
  */
-function deliveryWarnings(a: AudioLoudnessResult): { code: string; message: string; params: Record<string, string | number> }[] {
+function deliveryWarnings(
+	a: AudioLoudnessResult,
+): { code: string; message: string; params: Record<string, string | number> }[] {
 	const out: { code: string; message: string; params: Record<string, string | number> }[] = [];
 	if (a.truePeakTargetDbtp === undefined || a.targetLufs === undefined) return out;
 	if (a.truePeakMet === false && a.truePeakDbtp !== null)

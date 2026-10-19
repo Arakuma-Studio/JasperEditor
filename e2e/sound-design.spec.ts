@@ -932,8 +932,12 @@ test('user walkthrough: library → Suggest Cues → Auto Sound Pass → review 
 	expect(a?.truePeakMet, JSON.stringify(a)).toBe(true);
 	expect(a?.codecHeadroomDb, JSON.stringify(a)).toBe(0.5);
 	expect(a?.limiterCeilingDbtp ?? 99, JSON.stringify(a)).toBeLessThanOrEqual(-1.5);
-	expect(Math.abs((a?.truePeakDbtp ?? 99) - loud.truePeak), JSON.stringify({ loud, a })).toBeLessThanOrEqual(0.15);
-	expect(a?.pcm?.truePeakDbtp ?? 99, JSON.stringify(a)).toBeLessThanOrEqual((a?.limiterCeilingDbtp ?? -1) + 0.05);
+	expect(Math.abs((a?.truePeakDbtp ?? 99) - loud.truePeak), JSON.stringify({ loud, a })).toBeLessThanOrEqual(
+		0.15,
+	);
+	expect(a?.pcm?.truePeakDbtp ?? 99, JSON.stringify(a)).toBeLessThanOrEqual(
+		(a?.limiterCeilingDbtp ?? -1) + 0.05,
+	);
 	// a sound is found in the mix when its 100 ms around the peak correlates with the mix at r ≥ 0.2 (chance for 4800
 	// samples ≈ 1/√4800 ≈ 0.014; the music, beds and limiter keep a placed sound under r ≈ 0.85, measured 0.24–0.84 over the runs)
 	const clear = peaks.filter((p) => (p.r as number) >= 0.2);

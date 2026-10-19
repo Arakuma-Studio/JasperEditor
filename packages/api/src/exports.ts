@@ -318,7 +318,9 @@ export const ExportResultSchema = z.object({
 			truePeakDbtp: z.number().nullable(),
 			lra: z.number().nullable(),
 			measuredOn: z.enum(['pcm', 'decoded-file']).optional(),
-			pcm: z.object({ integratedLufs: z.number().nullable(), truePeakDbtp: z.number().nullable() }).optional(),
+			pcm: z
+				.object({ integratedLufs: z.number().nullable(), truePeakDbtp: z.number().nullable() })
+				.optional(),
 			normalizedGainDb: z.number().optional(),
 			targetLufs: z.number().optional(),
 			truePeakTargetDbtp: z.number().optional(),

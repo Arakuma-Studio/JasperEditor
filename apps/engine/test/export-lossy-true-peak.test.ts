@@ -80,7 +80,18 @@ async function exportOf(
 function ebur128(file: string): { I: number; TP: number } {
 	const r = spawnSync(
 		TEST_FFMPEG,
-		['-hide_banner', '-nostats', '-i', file, '-vn', '-filter_complex', 'ebur128=peak=true', '-f', 'null', '-'],
+		[
+			'-hide_banner',
+			'-nostats',
+			'-i',
+			file,
+			'-vn',
+			'-filter_complex',
+			'ebur128=peak=true',
+			'-f',
+			'null',
+			'-',
+		],
 		{ encoding: 'utf8' },
 	);
 	const s = r.stderr.slice(r.stderr.lastIndexOf('Summary:'));
@@ -142,7 +153,8 @@ describe('lossy exports meet the delivery target on the decoded file', { timeout
 					limited: a.ceilingLimited,
 				});
 				// the plan says the ceiling in front of the encoder
-				const pn = (plan.audio as { normalize?: { limiterCeilingDb?: number; codecHeadroomDb?: number } }).normalize;
+				const pn = (plan.audio as { normalize?: { limiterCeilingDb?: number; codecHeadroomDb?: number } })
+					.normalize;
 				expect(pn?.codecHeadroomDb).toBe(headroom);
 				expect(pn?.limiterCeilingDb).toBe(tp - headroom);
 				// the file itself (ffmpeg's meter): never over the true-peak target …

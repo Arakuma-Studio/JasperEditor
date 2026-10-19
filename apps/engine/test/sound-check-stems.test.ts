@@ -165,7 +165,10 @@ describe('renderStems', { timeout: 600_000 }, () => {
 		expect(n.codecHeadroomDb).toBe(1.5);
 		expect(n.gainDb).toBeCloseTo(d.params.gainDb, 2);
 		expect(n.encodePasses).toBe(d.encodePasses);
-		expect(n.localCorrections).toEqual({ count: d.corrections.hops, maxDb: Math.round(d.corrections.maxDb * 100) / 100 });
+		expect(n.localCorrections).toEqual({
+			count: d.corrections.hops,
+			maxDb: Math.round(d.corrections.maxDb * 100) / 100,
+		});
 		// the decoded audio is what LOUDNESS / TRUE_PEAK judge, and it is the export's
 		const del = report.loudness.delivered!;
 		expect(del).toMatchObject({ codec: 'aac', bitrateKbps: 128, sampleRate: 48000, truePeakMet: true });
