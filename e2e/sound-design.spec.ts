@@ -921,7 +921,7 @@ test('user walkthrough: library → Suggest Cues → Auto Sound Pass → review 
 	expect(Math.abs((pcm?.integratedLufs ?? 0) + 14), JSON.stringify(pcm)).toBeLessThanOrEqual(0.5);
 	expect(loud.truePeak, JSON.stringify(loud)).toBeLessThanOrEqual(0.5);
 	// a sound is found in the mix when its 100 ms around the peak correlates with the mix at r ≥ 0.2 (chance for 4800
-	// samples ≈ 1/√4800 ≈ 0.014; the music, beds and limiter keep a placed sound under r ≈ 0.85, measured 0.24–0.84)
+	// samples ≈ 1/√4800 ≈ 0.014; the music, beds and limiter keep a placed sound under r ≈ 0.85, measured 0.24–0.84 over the runs)
 	const clear = peaks.filter((p) => (p.r as number) >= 0.2);
 	expect(clear.length, JSON.stringify(peaks)).toBeGreaterThanOrEqual(Math.ceil(peaks.length / 2));
 	for (const p of clear) {

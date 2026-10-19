@@ -10238,7 +10238,7 @@ every screenshot below was looked at.
 | Music to picture: Analyze, Land the drop on the hero cue, End on Bar | 120 BPM · 4/4 · C major (88 %); bar 9 lands at 00;00;20;00 (anchor 16.0002 s → frame 600); ends on the bar line at frame 719, faded over a beat |
 | Delivery Target (Web) | before −16.7 LUFS / +3.4 dBTP; export −14.0 LUFS / −1.0 dBTP expected; music 19.8 LU, ambience 14.9 LU under the voice; 12 clips matched, 11 sound effects re-solved |
 | Final Sound Check | warn: no EDGE at the remix joint any more (B12, B14), no ENDING (B13); left: OVERLOAD (the limiter pulls 7.1 dB at the explosion, needs judgement), HEAD and ARC / HARSH infos |
-| Export (native, H.264 + AAC 256 kb/s, Markdown credits) | engine's PCM: −14.48 LUFS, −1.00 dBTP; decoded file (`ffmpeg ebur128=peak=true`): −14.6 LUFS, −0.1 dBTP, LRA 8.5; credits 9 rows; every peak-aligned sound found in the mix by cross-correlation (r 0.31–0.81) 0 or ±1 sample from the document's peak and from its cue frame (10 sounds) |
+| Export (native, H.264 + AAC 256 kb/s, Markdown credits) | engine's PCM: −14.48 LUFS, −1.00 dBTP; decoded file (`ffmpeg ebur128=peak=true`): −14.6 LUFS, −0.1 dBTP, LRA 8.5; credits 9 rows; every peak-aligned sound found in the mix by cross-correlation (r 0.31–0.84) 0 or ±1 sample from the document's peak and from its cue frame (10 sounds) |
 
 Screenshots: `01-edit` … `23-exported`, `export-frame-{5.00,13.00,20.02}s`, `export-wave` (the bed, the dialogue's syllables,
 the build into the drop at 20 s and the music's bar hits fading out at the end).
