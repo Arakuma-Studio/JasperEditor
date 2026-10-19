@@ -112,7 +112,9 @@ const CODECS = [
 
 describe('lossy exports meet the delivery target on the decoded file', { timeout: 1_800_000 }, () => {
 	const rows: Record<string, unknown>[] = [];
-	afterAll(() => console.log('delivered', JSON.stringify(rows, null, 1)));
+	afterAll(() => {
+		for (const r of rows) console.log('delivered', JSON.stringify(r));
+	});
 	for (const [preset, lufs, tp] of PRESETS)
 		for (const [codec, kbps, container] of CODECS)
 			it(`${preset} (${lufs} LUFS / ${tp} dBTP) → ${codec} ${kbps} kb/s`, async () => {

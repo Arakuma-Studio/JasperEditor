@@ -2189,13 +2189,16 @@ function deliveryWarnings(a: AudioLoudnessResult): { code: string; message: stri
 	if (a.truePeakMet === false && a.truePeakDbtp !== null)
 		out.push({
 			code: 'AUDIO_TRUE_PEAK_OVER',
-			message: `The delivered audio peaks at ${a.truePeakDbtp.toFixed(1)} dBTP, over the ${a.truePeakTargetDbtp} dBTP target, after ${a.encodePasses ?? 0} encodes with local corrections: lower the loudest moments or use a higher audio bit rate`,
+			// the editor says it from code + params (apps/web/src/export/warning-text.ts): in English exactly these words
+			message: `The delivered audio peaks at ${a.truePeakDbtp.toFixed(1)} dBTP, over the ${a.truePeakTargetDbtp} dBTP target: lower the loudest moments or use a higher audio bit rate`,
 			params: { truePeakDbtp: Math.round(a.truePeakDbtp * 10) / 10, targetDbtp: a.truePeakTargetDbtp },
 		});
 	if (a.integratedLufs !== null && Math.abs(a.integratedLufs - a.targetLufs) > 0.5)
 		out.push({
 			code: 'AUDIO_LOUDNESS_CEILING',
-			message: `The delivered audio measures ${a.integratedLufs.toFixed(1)} LUFS, not the ${a.targetLufs} LUFS target: ${a.ceilingLimited ? 'the true-peak limiter cannot make it louder under its ceiling' : 'the loudness did not converge'} (limiter ceiling ${a.limiterCeilingDbtp?.toFixed(1)} dBTP)`,
+			message: a.ceilingLimited
+				? `The delivered audio measures ${a.integratedLufs.toFixed(1)} LUFS, not the ${a.targetLufs} LUFS target: the true-peak limiter cannot make it louder under its ${(a.limiterCeilingDbtp ?? a.truePeakTargetDbtp).toFixed(1)} dBTP ceiling`
+				: `The delivered audio measures ${a.integratedLufs.toFixed(1)} LUFS, not the ${a.targetLufs} LUFS target`,
 			params: {
 				integratedLufs: Math.round(a.integratedLufs * 10) / 10,
 				targetLufs: a.targetLufs,

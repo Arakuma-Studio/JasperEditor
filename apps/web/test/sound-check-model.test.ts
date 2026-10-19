@@ -23,6 +23,7 @@ import fc from 'fast-check';
 import { afterEach, describe, expect, it } from 'vitest';
 import { videoAsset } from '../../../packages/project/test/helpers.ts';
 import { reportFixture } from '../../mcp/test/sound-check-report-fixture.ts';
+import { exportAudioOf } from '../src/export/SoundCheckGate.tsx';
 import { __setCatalogForTests } from '../src/i18n/runtime.ts';
 import {
 	defaultChoice,
@@ -420,5 +421,61 @@ describe('sync strip', () => {
 			),
 			{ numRuns: 300 },
 		);
+	});
+});
+
+describe('checked as an export encodes it (loudness.delivered)', () => {
+	it('the chips show the decoded codec audio, the codec and the limiter ceiling in front of the encoder', () => {
+		const base = report();
+		const r = {
+			...base,
+			loudness: {
+				...base.loudness,
+				integratedLufs: -14.3,
+				truePeakDb: -2.5,
+				normalization: {
+					...base.loudness.normalization,
+					enabled: true,
+					targetLufs: -14,
+					truePeakDb: -1,
+					limiterCeilingDb: -2.5,
+					codecHeadroomDb: 1.5,
+				},
+				delivered: {
+					codec: 'aac' as const,
+					bitrateKbps: 128,
+					sampleRate: 48000,
+					integratedLufs: -14.0,
+					truePeakDb: -1.3,
+					truePeakMet: true,
+				},
+			},
+		};
+		const chips = Object.fromEntries(summaryChips(r).map((c) => [c.id, c]));
+		expect(chips.integrated!.value).toBe('−14.0 LUFS');
+		expect(chips.truePeak!.value).toBe('−1.3 dBTP');
+		expect(chips.truePeak!.title).toContain('as AAC 128 kb/s decodes');
+		expect(chips.truePeak!.title).toContain('limiter −2.5 dBTP in front of the encoder');
+		// a PCM check (no delivered, the ceiling is the target): the titles stay as they were
+		const pcm = Object.fromEntries(summaryChips(report()).map((c) => [c.id, c]));
+		expect(pcm.truePeak!.title).toBe(`Ceiling ${report().preset.truePeakDb} dBTP`);
+	});
+
+	it('the Export dialog checks with the plan’s audio codec and bit rate', () => {
+		expect(exportAudioOf('aac', { bitrateKbps: 256, sampleRate: 48000 })).toEqual({
+			codec: 'aac',
+			bitrateKbps: 256,
+			sampleRate: 48000,
+		});
+		expect(exportAudioOf('libopus', { bitrateKbps: 160, sampleRate: 48000 })).toEqual({
+			codec: 'opus',
+			bitrateKbps: 160,
+			sampleRate: 48000,
+		});
+		expect(exportAudioOf('pcm_s24le', { bitrateKbps: 1536, sampleRate: 44100 })).toEqual({
+			codec: 'pcm',
+			sampleRate: 44100,
+		});
+		expect(exportAudioOf(undefined, undefined)).toBeUndefined();
 	});
 });

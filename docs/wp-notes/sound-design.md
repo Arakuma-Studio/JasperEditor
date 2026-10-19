@@ -10273,3 +10273,99 @@ search → `acknowledge_sound_issue` (a warning: ok; an error: E_APPROVAL_REQUIR
 `pnpm notices --check` current (150 packages, 33 ported records); `node scripts/i18n.mjs --check` (es.json covers all
 10 527 strings); `pnpm vitest run --project <p> --maxWorkers=6`: project 2361 passed, api 17, engine-client 22, mcp 649
 (8 skipped), web 1114, engine 1646 (99 skipped). The full `pnpm verify` and every e2e spec are final verification A's.
+
+### Fix: lossy-codec true-peak headroom and loudness convergence
+
+Branch `feat/sd-fix-lossy-tp` (from `feat/sound-design` ea77ae2c). Two delivery defects left by "Final verification B":
+(1) exports to lossy codecs overshot the delivery true-peak target after encoding — the engine limited the PCM mix to
+−1 dBTP, the decoded AAC 256 kb/s file measured −0.9 … +0.1 dBTP over six runs; (2) the limiter kept a loud mix
+≈ 0.5 LU under the integrated target (−14.48 LUFS for −14). Both are fixed in one place every export path and Sound
+Check share: `apps/engine/src/audio/deliver.ts`.
+
+#### Research (sources) and the decision
+
+- **EBU Tech 3344** (2016, "Guidelines for distribution and reproduction in accordance with EBU R 128"), Annex A, table
+  of signal levels, "Encoding level": "the signal shall be passed through an end-stage peak limiter set to a level of
+  −2 dBTP before applying it to the encoder. It might be necessary to decrease the limiter level in front of the codec
+  system if relatively low bitrates are used. On high bitrates, a higher limiter level might be possible"; A.1: "Based
+  on measurements of the transmission, it might therefore be necessary to decrease the limiter level in front of the
+  codec system, for example if relatively low bitrates are used which in general cause a rise of overshoots" (read from
+  `tech.ebu.ch/docs/tech/tech3344.pdf`, 2026-10-19).
+- **AES TD1008** (v1.21, 2021, "Recommendations for loudness of internet audio streaming and on-demand distribution";
+  quoted through `docs.rs/crate/baken/3.0.2/source/docs/true-peak-ceiling.md`, the AES download needs a login): §4 "the
+  Maximum True Peak level not exceed −1 dBTP at the codec input of lossy-encoded streams"; §7B "High-rate (e.g., 256
+  kbps) coders may work satisfactorily with as little as −0.5 dBTP for the limiting threshold. Typically, peak overshoot
+  increases as the bit rate decreases, so the limiting threshold may need to be reduced below the recommended −1.0 dBTP."
+- **Spotify for Artists**, "Loudness normalization" (support.spotify.com, read 2026-10-19): keep it below −1 dB TP "best
+  for lossy formats (Ogg/Vorbis and AAC)"; "If your master is louder than −14dB integrated LUFS, keep True Peak below
+  −2dB".
+- **earshot** `skills/real-sound/scripts/master.py` (MIT, `licenses/ported/earshot.md`): the loudness is measured again
+  after its limiter and the gain corrected again, at most 8 passes, 0.5 LU tolerance; its limiter ceiling 0.77
+  (−2.3 dBFS) "leaves room for AAC overshoot".
+- **Measured here** (build server, ffmpeg 7.1.5 LGPL vendor build: native `aac`, `libopus`; a loud synthetic mix —
+  sawtooth chords, noise snares with an instantaneous attack, kicks, hats — and a voice-like buzz with noise hits,
+  normalised to the targets with our limiter at −1 / −2 / −3 dBTP, encoded at AAC 128 / 192 / 256 / 320 and Opus 64 …
+  192 kb/s, decoded and metered by ours and by ffmpeg `ebur128=peak=true`, the two within 0.05 dB): the decoded true
+  peak is 0.3 … 2.4 dB over the PCM's on the loud mix and up to 4.1 dB (AAC 320 kb/s!) on the voice-like one, and it
+  is **not monotonic** — lowering the ceiling 1 dB can raise the decoded peak (AAC 320, voice: −2 dBTP → +2.1, −3 dBTP →
+  +1.1); ffmpeg's AAC also decodes 0.1–0.5 LU under its input (its low-pass; 0.5 LU at 128 kb/s). So no table alone can
+  guarantee the delivered peak with this encoder: the table is the starting headroom, a check of the decoded audio
+  makes the guarantee.
+
+Decision — **codec headroom table** (`CODEC_HEADROOM_TABLE`; the limiter ceiling = target − headroom; per channel pair,
+so 5.1 at 384 kb/s counts as 128):
+
+| Codec | ≥ 256 kb/s | 160–255 | 96–159 | < 96 |
+|---|---|---|---|---|
+| AAC (ffmpeg `aac`) | 0.5 dB (TD1008 §7B) | 1 dB (Tech 3344: −2 dBTP for −1) | 1.5 dB | 2 dB |
+| Opus (`libopus`) | 0.5 dB (≥ 160) | 0.5 dB | 1 dB | 2 dB |
+| PCM | 0 | | | |
+
+(the low-rate rows follow "overshoot increases as the bit rate decreases"; the steps are ours). Then the **decoded
+check**: the delivered WAV is encoded exactly as the export's mux does (`verifyEncodeArgs`: the same `audioEncodeArgs`,
+resampler, `aformat`, rate and channels), decoded by ffmpeg and metered (BS.1770 true peak per 10 ms hop and the
+integrated loudness). Hops over the target − 0.3 dB are turned down by 1.5 × their overshoot (local corrections held
+±3 hops, 10 ms ramps: no click; applied after the limiter, so the PCM ceiling still holds), an encode that finds new
+offenders also lowers the whole ceiling by 0.25 dB (the encoder's rate control moves its overshoot to other hits when
+anything changes — measured: a hit corrected exactly came back elsewhere), the PCM loudness aim moves by the decoded
+loudness error (≤ ±1.5 LU), and the audio is encoded again — ≤ 8 encodes; the best encode is delivered (met first,
+then the smallest overshoot, then the loudness error) and a miss is a result warning `AUDIO_TRUE_PEAK_OVER` (AGENTS §4:
+never silent). ffmpeg's encoders are deterministic, so the mux's own encode of the same WAV is the checked one; the
+export then decodes **its own file** and reports that (`measuredOn: "decoded-file"`).
+
+**Loudness convergence** (defect 2): after each limiter pass the integrated loudness is measured and the gain moved
+by a secant step on the limiter's own slope (`converge`, ≤ 8 passes, aim ±0.1 LU; earshot takes the full error each
+pass). The push stops at +6 dB over the plain normalisation gain or when another dB of gain adds < 0.1 LU (the limiter
+takes it all): then `ceilingLimited: true` and, outside ±0.5 LU, the result warning `AUDIO_LOUDNESS_CEILING` ("the
+true-peak limiter cannot make it louder under its −X dBTP ceiling"). A mix within ±0.1 LU after the first pass is
+written by that pass alone: sample for sample what the export wrote before this fix (tested).
+
+#### What changed (files)
+
+- `apps/engine/src/audio/deliver.ts` (new): `codecHeadroomDb`, `runDeliveryPass` (gain → limiter → corrections),
+  `solveDelivery` (convergence + decoded check), `measureEncodedAudio`, `verifyEncodeArgs`, `correctionGains`.
+- `apps/engine/src/audio/mixdown.ts`: the second pass is `solveDelivery`; `deliver` option (the deliverable's codec);
+  `normalized` carries the target, the outcome (ceiling, passes, encodes, corrections, decoded numbers);
+  `writeDeliveryWav` shared with Sound Check.
+- `apps/engine/src/export/service.ts`: every export passes its codec / bit rate / rate / channels; a normalised lossy (or
+  resampled) export decodes its own file for `audioLoudness`; `AUDIO_TRUE_PEAK_OVER` / `AUDIO_LOUDNESS_CEILING`
+  warnings. Render Audio (a float WAV, no encoder) keeps no headroom. `planner.ts`: `plan.audio.normalize
+  {limiterCeilingDb, codecHeadroomDb}`.
+- `apps/engine/src/sound-design/check.ts`, `check-proposal.ts`: Sound Check runs the same delivery (so its LOUDNESS is
+  the converged export's); request `exportAudio {codec, bitrateKbps?, sampleRate?}`: with the Mix's normalisation the
+  check delivers through that codec and **LOUDNESS / TRUE_PEAK judge the decoded audio** (`loudness.delivered`);
+  `loudness.normalization {limiterCeilingDb, codecHeadroomDb, passes, encodePasses, ceilingLimited,
+  localCorrections}`.
+- `packages/api`: `ExportResult.audioLoudness` (measuredOn, pcm, targetLufs, truePeakTargetDbtp, limiterCeilingDbtp,
+  codecHeadroomDb, loudnessPasses, encodePasses, localCorrections, ceilingLimited, truePeakMet), `RenderPlan.audio.
+  normalize`, `SoundCheckRequest.exportAudio`, `SoundCheckLoudness.normalization` / `delivered` (all optional).
+- MCP: `start_export` plan body `loudness` (target, ceiling, headroom) and its description; `wait_for_job` passes the
+  result through; `sound_check {exportPreset | exportAudio}` (a start_export preset's codec and bit rate); SOUND_GUIDE
+  "Check" (run sound_check with the preset you will export with).
+- Web: Export ▸ "Run Sound Check before export" checks with the plan's audio codec and bit rate (`exportAudioOf`); the
+  Sound Check chips show the decoded numbers with "as AAC 128 kb/s decodes · limiter −2.5 dBTP in front of the encoder"
+  in their titles; the finished-export notice says the two new warnings (English = the engine's words, Spanish in
+  es.json).
+- `e2e/sound-design.spec.ts`: the walkthrough checks the **decoded file** against the Web target again (true peak ≤ −1
+  dBTP by ffmpeg `ebur128`, −14 LUFS ± 0.5) and the result's ceiling (≤ −1.5 dBTP at 256 kb/s), instead of B's PCM-only
+  check.
