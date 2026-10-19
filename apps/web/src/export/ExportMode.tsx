@@ -16,7 +16,7 @@ import type { CheckEngine } from '../sound/check-run.ts';
 import { useEngine } from '../state/engine.tsx';
 import { exportMode, trackExportJob } from './mode.ts';
 import { blockingForEngine, type PlanState, PlanSummary, soundWarningsOf } from './PlanSummary.tsx';
-import { useExportSoundCheck } from './SoundCheckGate.tsx';
+import { exportAudioOf, useExportSoundCheck } from './SoundCheckGate.tsx';
 import {
 	buildExportSettings,
 	type CaptionExportChoice,
@@ -271,7 +271,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 
 	const startExport = async () => {
 		if (!seq || !settings || plan.status !== 'ok') return;
-		if (!(await soundCheck.gate())) return;
+		if (!(await soundCheck.gate(exportAudioOf(plan.plan.audio.codec, settings.audio)))) return;
 		setStarting(true);
 		const name = sanitizeFileName(fileName);
 		const ext = exportExtension(plan.plan.encoder);

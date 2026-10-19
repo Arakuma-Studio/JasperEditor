@@ -39,6 +39,7 @@ import {
 	writeCaptionFile,
 } from '@jasper/project';
 import { hasSoxr, resamplerArgs } from '../audio/decode.ts';
+import { type DeliveryCodec, measureEncodedAudio, needsDecodedCheck } from '../audio/deliver.ts';
 import { layoutOf, type MixdownResult, renderMixdown } from '../audio/mixdown.ts';
 import type { UrlSigner } from '../auth/signed-url.ts';
 import type { CacheService } from '../cache/service.ts';
@@ -1295,7 +1296,11 @@ export class ExportService {
 	 * audio-mix: the deliverable's audio for every path — the offline mixer over the export range (clip levels, pan,
 	 * buses, sends, automation, 5.1) with two-pass loudness normalisation when requested.
 	 */
-	private async renderAudio(planned: PlannedExport, ctx: JobContext): Promise<MixdownResult> {
+	private async renderAudio(
+		planned: PlannedExport,
+		ctx: JobContext,
+		opts: { deliver?: boolean } = { deliver: true },
+	): Promise<MixdownResult> {
 		ctx.progress(0, { stage: 'Mixing audio' });
 		const o = planned.output;
 		const sr = planned.snapshot.audioMix?.sampleRate ?? 48000;
@@ -1314,6 +1319,8 @@ export class ExportService {
 			length: Math.round(o.durationSec * sr),
 			outputLayout: layoutOf(o.audioChannels),
 			normalize: o.normalize,
+			// the deliverable's encoding: a lossy codec's limiter headroom and the decoded check (deliver.ts)
+			...(opts.deliver ? { deliver: deliveryCodecOf(planned) } : {}),
 			scratchDir: await ctx.scratchDir(),
 			signal: ctx.signal,
 			onSpawn: ctx.trackChild,
@@ -1682,7 +1689,8 @@ export class ExportService {
 			if (e instanceof PlanError) throw new JobError(e.code, e.message, false, e.detail);
 			throw e;
 		}
-		const audio = await this.renderAudio(planned, ctx);
+		// Render Audio keeps the float mix (no encoder follows): no codec headroom
+		const audio = await this.renderAudio(planned, ctx, { deliver: false });
 		if (!audio.path) throw new JobError('MIXDOWN_FAILED', 'The mixer wrote no audio', true);
 		await copyFile(audio.path, output);
 		return { samples: audio.samples };
@@ -1927,9 +1935,27 @@ export class ExportService {
 		const formatChanges = planned.plan.warnings
 			.filter((w) => w.code === 'OUTPUT_CONTAINER_CHANGED' || w.code === 'AUDIO_CODEC_CHANGED')
 			.map((w) => ({ code: w.code, message: w.message, ...(w.params ? { params: w.params } : {}) }));
+		// a normalised export's delivered audio itself, decoded from the file, when it is not the PCM mix (lossy codec or
+		// another rate): the numbers the delivery target is met on
+		const audioLoudness = audio
+			? audioLoudnessOf(
+					audio,
+					audio.normalized && needsDecodedCheck(deliveryCodecOf(planned), audio.sampleRate)
+						? await measureEncodedAudio({
+								ff: this.deps.ff,
+								file: output,
+								channels: planned.output.audioChannels,
+								sampleRate: planned.output.audioSampleRate,
+								signal: ctx.signal,
+								onSpawn: ctx.trackChild,
+							})
+						: null,
+				)
+			: null;
 		const allWarnings = [
 			...formatChanges,
 			...warnings,
+			...(audioLoudness ? deliveryWarnings(audioLoudness) : []),
 			...resultSoundWarnings(planned.plan, !!creditsResult?.name),
 		];
 		const result = {
@@ -1943,16 +1969,7 @@ export class ExportService {
 			renderPath: path,
 			...(remotionOutput ? { remotionOutput } : {}),
 			...(allWarnings.length ? { warnings: allWarnings } : {}),
-			...(audio
-				? {
-						audioLoudness: {
-							integratedLufs: Number.isFinite(audio.loudness.integrated) ? audio.loudness.integrated : null,
-							truePeakDbtp: Number.isFinite(audio.loudness.truePeakDb) ? audio.loudness.truePeakDb : null,
-							lra: Number.isFinite(audio.loudness.lra) ? audio.loudness.lra : null,
-							...(audio.normalized ? { normalizedGainDb: audio.normalized.gainDb } : {}),
-						},
-					}
-				: {}),
+			...(audioLoudness ? { audioLoudness } : {}),
 			...(captionResult ? { captions: captionResult } : {}),
 			...(creditsResult ? { credits: creditsResult } : {}),
 			planId: planned.plan.planId,
@@ -2110,6 +2127,83 @@ export class ExportService {
 			...(warnings.length ? { warnings } : {}),
 		};
 	}
+}
+
+/** The deliverable's audio encoding (what every path's mux writes: `audioEncodeArgs` with these). */
+function deliveryCodecOf(p: PlannedExport): DeliveryCodec {
+	const o = p.output;
+	return {
+		codec: audioCodecOf(o.encoder, o),
+		bitrateKbps: o.audioBitrateKbps,
+		sampleRate: o.audioSampleRate,
+		channels: o.audioChannels,
+	};
+}
+
+type AudioLoudnessResult = NonNullable<import('@jasper/api').ExportResult['audioLoudness']>;
+
+/**
+ * The export result's `audioLoudness`: what the delivered file's audio measures (decoded from the file itself when it
+ * is lossy or resampled) and how the delivery got there (limiter ceiling, codec headroom, passes, local corrections).
+ */
+function audioLoudnessOf(
+	audio: MixdownResult,
+	delivered: { loudness: import('@jasper/audio-dsp').LoudnessSummary } | null,
+): AudioLoudnessResult {
+	const f = (x: number) => (Number.isFinite(x) ? Math.round(x * 1000) / 1000 : null);
+	const m = delivered?.loudness ?? audio.loudness;
+	const n = audio.normalized;
+	const d = n?.delivery;
+	return {
+		integratedLufs: f(m.integrated),
+		truePeakDbtp: f(m.truePeakDb),
+		lra: f(m.lra),
+		measuredOn: delivered ? 'decoded-file' : 'pcm',
+		...(delivered
+			? { pcm: { integratedLufs: f(audio.loudness.integrated), truePeakDbtp: f(audio.loudness.truePeakDb) } }
+			: {}),
+		...(n && d
+			? {
+					normalizedGainDb: n.gainDb,
+					targetLufs: n.targetLufs,
+					truePeakTargetDbtp: n.truePeakDb,
+					limiterCeilingDbtp: d.params.ceilingDb,
+					codecHeadroomDb: d.codecHeadroomDb,
+					loudnessPasses: d.passes,
+					encodePasses: d.encodePasses,
+					localCorrections: { count: d.corrections.hops, maxDb: Math.round(d.corrections.maxDb * 100) / 100 },
+					ceilingLimited: d.ceilingLimited,
+					truePeakMet: Number.isFinite(m.truePeakDb) ? m.truePeakDb <= n.truePeakDb + 0.05 : true,
+				}
+			: {}),
+	};
+}
+
+/**
+ * AGENTS §4 (never silent): the delivered audio misses the delivery target — its true peak over the target after the
+ * bounded corrections, or a loudness the limiter's ceiling kept outside ±0.5 LU.
+ */
+function deliveryWarnings(a: AudioLoudnessResult): { code: string; message: string; params: Record<string, string | number> }[] {
+	const out: { code: string; message: string; params: Record<string, string | number> }[] = [];
+	if (a.truePeakTargetDbtp === undefined || a.targetLufs === undefined) return out;
+	if (a.truePeakMet === false && a.truePeakDbtp !== null)
+		out.push({
+			code: 'AUDIO_TRUE_PEAK_OVER',
+			message: `The delivered audio peaks at ${a.truePeakDbtp.toFixed(1)} dBTP, over the ${a.truePeakTargetDbtp} dBTP target, after ${a.encodePasses ?? 0} encodes with local corrections: lower the loudest moments or use a higher audio bit rate`,
+			params: { truePeakDbtp: Math.round(a.truePeakDbtp * 10) / 10, targetDbtp: a.truePeakTargetDbtp },
+		});
+	if (a.integratedLufs !== null && Math.abs(a.integratedLufs - a.targetLufs) > 0.5)
+		out.push({
+			code: 'AUDIO_LOUDNESS_CEILING',
+			message: `The delivered audio measures ${a.integratedLufs.toFixed(1)} LUFS, not the ${a.targetLufs} LUFS target: ${a.ceilingLimited ? 'the true-peak limiter cannot make it louder under its ceiling' : 'the loudness did not converge'} (limiter ceiling ${a.limiterCeilingDbtp?.toFixed(1)} dBTP)`,
+			params: {
+				integratedLufs: Math.round(a.integratedLufs * 10) / 10,
+				targetLufs: a.targetLufs,
+				ceilingDbtp: Math.round((a.limiterCeilingDbtp ?? a.truePeakTargetDbtp) * 10) / 10,
+				why: a.ceilingLimited ? 'ceiling' : 'converge',
+			},
+		});
+	return out;
 }
 
 function sequenceName(p: PlannedExport): string {

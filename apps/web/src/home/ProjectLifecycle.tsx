@@ -401,10 +401,11 @@ function PersistenceBanners(props: { session: EditorSession; onReplace(s: Editor
 }
 
 /**
- * Result warnings the finished-export notice repeats: the sound ones and a file not written in the requested container
- * or audio codec (WP6.5a, AGENTS §4).
+ * Result warnings the finished-export notice repeats: the sound ones, a file not written in the requested container
+ * or audio codec (WP6.5a, AGENTS §4), and delivered audio that misses its loudness or true-peak target.
  */
-const SHOWN_RESULT_WARNING = /^(W_SOUND_|OUTPUT_CONTAINER_CHANGED$|AUDIO_CODEC_CHANGED$)/;
+const SHOWN_RESULT_WARNING =
+	/^(W_SOUND_|OUTPUT_CONTAINER_CHANGED$|AUDIO_CODEC_CHANGED$|AUDIO_TRUE_PEAK_OVER$|AUDIO_LOUDNESS_CEILING$)/;
 
 /**
  * spec 12 §2.11: what the finished export says about sound credits — the credits file it wrote and its sound warnings

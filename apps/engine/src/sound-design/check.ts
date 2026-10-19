@@ -23,6 +23,7 @@ import { open, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
 	SoundCheckEvent,
+	SoundCheckExportAudio,
 	SoundCheckFix,
 	SoundCheckIssue,
 	SoundCheckListen,
@@ -43,7 +44,6 @@ import {
 	LoudnessMeter,
 	type LoudnessSummary,
 	TruePeakDetector,
-	TruePeakLimiter,
 } from '@jasper/audio-dsp';
 import {
 	BED_CAP_LU,
@@ -142,6 +142,16 @@ import {
 	variationForFill,
 } from '@jasper/project';
 import type { AgentService } from '../agent/service.ts';
+import { hasSoxr } from '../audio/decode.ts';
+import {
+	type DeliveryCodec,
+	type DeliveryOutcome,
+	needsDecodedCheck,
+	type Pass1,
+	runDeliveryPass,
+	solveDelivery,
+} from '../audio/deliver.ts';
+import { writeDeliveryWav } from '../audio/mixdown.ts';
 import type { JobContext } from '../jobs/types.ts';
 import { JobError } from '../jobs/types.ts';
 import type { MediaRegistry } from '../media/registry.ts';
@@ -275,7 +285,19 @@ export type CheckOptions = {
 	range?: { start: number; end: number } | undefined;
 	/** P6-E8: compare with this reference profile (default the sequence's `settings.referenceProfile`; null: none). */
 	profileId?: string | null | undefined;
+	/** The export's audio encoding: deliver and judge LOUDNESS / TRUE_PEAK as that export (`deliver.ts`). */
+	exportAudio?: SoundCheckExportAudio | undefined;
 };
+
+/** The ffmpeg encoding of a Sound Check `exportAudio` (as the export planner picks it: Opus at 48 kHz, PCM 24-bit). */
+export function checkDeliveryCodec(ea: SoundCheckExportAudio, mixRate: number, channels: number): DeliveryCodec {
+	return {
+		codec: ea.codec === 'opus' ? 'libopus' : ea.codec === 'pcm' ? 'pcm_s24le' : 'aac',
+		bitrateKbps: ea.bitrateKbps ?? (channels === 6 ? 384 : 192),
+		sampleRate: ea.codec === 'opus' ? 48000 : (ea.sampleRate ?? mixRate),
+		channels,
+	};
+}
 
 /** A placed sound effect and what the document says about it. */
 type SfxRow = {
@@ -1013,68 +1035,68 @@ export async function checkSequence(
 	let finalOffsetHops = preHops;
 	let gainDb: number | null = null;
 	const grHop = new Float32Array(rangeHops);
+	let delivery: DeliveryOutcome | null = null;
 	if (normalize && pass1) {
 		aborted();
 		progress(0.47, 'Normalising loudness as the export does');
-		gainDb = Number.isFinite(before.integrated) ? normalize.targetLufs - before.integrated : 0;
-		const g = 10 ** (gainDb / 20);
-		const limiter = new TruePeakLimiter(sr, channels, {
-			ceilingDb: normalize.truePeakDb,
-			lookaheadMs: 5,
-			releaseMs: 100,
-		});
-		const meter2 = new LoudnessMeter(sr, channels, { weights: defaultChannelWeights(channels) });
-		const cm = new CurveMeter(sr, channels);
-		const src = await open(pass1, 'r');
+		const p1: Pass1 = { path: pass1, headerBytes: 0 };
 		try {
-			let skip = limiter.latency;
+			// the export's delivery (`deliver.ts`): loudness converged under the ceiling; with an export's audio
+			// encoding, the codec's headroom and the decoded check, on a WAV the encoder reads like the export's
+			const codec = opts.exportAudio ? checkDeliveryCodec(opts.exportAudio, sr, channels) : null;
+			const verify = needsDecodedCheck(codec, sr);
+			const wav = verify ? join(env.scratchDir, 'check-delivered.wav') : undefined;
+			delivery = await solveDelivery({
+				ff: env.ff,
+				pass1: p1,
+				sampleRate: sr,
+				channels,
+				total: rangeSamples,
+				before,
+				targetLufs: normalize.targetLufs,
+				truePeakDb: normalize.truePeakDb,
+				codec,
+				soxr: await hasSoxr(env.ff),
+				scratchDir: env.scratchDir,
+				...(wav ? { outPath: wav, write: (params) => writeDeliveryWav(p1, wav, sr, channels, rangeSamples, params) } : {}),
+				signal: env.signal,
+				...(env.onSpawn ? { onSpawn: env.onSpawn } : {}),
+				onProgress: (f, stage) => progress(0.47 + 0.02 * f, stage),
+			});
+			if (wav) await rm(wav, { force: true });
+			gainDb = delivery.params.gainDb;
+			const meter2 = new LoudnessMeter(sr, channels, { weights: defaultChannelWeights(channels) });
+			const cm = new CurveMeter(sr, channels);
 			let written = 0;
-			const block = Array.from({ length: channels }, () => new Float32Array(hop));
-			const raw = Buffer.alloc(hop * channels * 4);
-			const emit = (n: number) => {
-				limiter.process(block, 0, n);
-				const gr = -limiter.gainReductionDb();
-				let from = 0;
-				if (skip > 0) {
-					from = Math.min(n, skip);
-					skip -= from;
-				}
-				const m = Math.min(n - from, rangeSamples - written);
-				if (m <= 0) return;
-				const view = block.map((c) => c.subarray(from, from + m));
-				meter2.process(view, 0, m);
-				cm.push(view, m);
-				tap.push(view, m);
-				profileMeter?.push(view, m);
-				const h = Math.min(rangeHops - 1, Math.floor(written / hop));
-				if (h >= 0 && gr > grHop[h]!) grHop[h] = gr;
-				written += m;
-			};
-			for (let done = 0; done < rangeSamples; ) {
-				if (env.signal?.aborted) throw new JobError('CANCELLED', 'Cancelled', false);
-				const n = Math.min(hop, rangeSamples - done);
-				const { bytesRead } = await src.read(raw, 0, n * channels * 4, done * channels * 4);
-				const got = Math.floor(bytesRead / (channels * 4));
-				for (let i = 0; i < n; i++)
-					for (let c = 0; c < channels; c++)
-						block[c]![i] = i < got ? raw.readFloatLE((i * channels + c) * 4) * g : 0;
-				emit(n);
-				done += n;
-			}
-			for (let left = limiter.latency; left > 0 && written < rangeSamples; ) {
-				const n = Math.min(hop, left);
-				for (const c of block) c.fill(0, 0, n);
-				emit(n);
-				left -= n;
-			}
+			await runDeliveryPass({
+				pass1: p1,
+				sampleRate: sr,
+				channels,
+				total: rangeSamples,
+				params: delivery.params,
+				blockSize: hop,
+				signal: env.signal,
+				sink: (view, m, gr) => {
+					meter2.process(view, 0, m);
+					cm.push(view, m);
+					tap.push(view, m);
+					profileMeter?.push(view, m);
+					const h = Math.min(rangeHops - 1, Math.floor(written / hop));
+					if (h >= 0 && gr > grHop[h]!) grHop[h] = gr;
+					written += m;
+				},
+			});
+			meter2.flush();
+			final = meter2.summary();
+			finalCurves = cm.finish();
+			finalOffsetHops = 0;
+		} catch (e) {
+			if (env.signal?.aborted || (e as Error).message === 'aborted')
+				throw new JobError('CANCELLED', 'Cancelled', false);
+			throw e;
 		} finally {
-			await src.close();
 			await rm(pass1, { force: true });
 		}
-		meter2.flush();
-		final = meter2.summary();
-		finalCurves = cm.finish();
-		finalOffsetHops = 0;
 	}
 	lap('delivery', t);
 	// curves over the range: index 0 = rangeStart
@@ -1123,8 +1145,14 @@ export async function checkSequence(
 	// ── LOUDNESS, TRUE_PEAK, OVERLOAD (limiter, clipping) ──────────────────────────────────────────────────────────
 	for (let i = 0; i < rangeHops; i++) if (mixMsDb[i]! > AUDIBLE_DBFS) audibleHops++;
 	const audibleSec = (audibleHops * hop) / sr;
+	// with an export's lossy encoding the decoded audio is what is delivered: LOUDNESS and TRUE_PEAK judge it
+	const decoded = delivery?.decoded ?? null;
+	const judged = {
+		integrated: decoded ? decoded.integrated : final.integrated,
+		truePeakDb: decoded ? decoded.truePeakDb : final.truePeakDb,
+	};
 	const measurable =
-		Number.isFinite(final.integrated) && audibleSec >= SOUND_CHECK_THRESHOLDS.minMeasurableSec;
+		Number.isFinite(judged.integrated) && audibleSec >= SOUND_CHECK_THRESHOLDS.minMeasurableSec;
 	const broadcast = !target && (opts.preset === 'broadcast-r128' || opts.preset === 'atsc-a85');
 	// With normalisation off, `before` is the whole mix as it plays: stored with the fix as the Mix's loudness analysis,
 	// so the preview is normalised at once like the export (final verification B: an agent's safe fix left the preview
@@ -1164,7 +1192,7 @@ export async function checkSequence(
 		!!normalize &&
 		normalize.targetLufs === preset.integratedLufs &&
 		normalize.truePeakDb <= preset.truePeakDb;
-	if (!Number.isFinite(final.integrated) && audibleHops === 0) {
+	if (!Number.isFinite(judged.integrated) && audibleHops === 0) {
 		issues.add({
 			subject: 'mix',
 			code: 'LOUDNESS',
@@ -1183,7 +1211,7 @@ export async function checkSequence(
 			measured: { audibleSec: r2(audibleSec), checkedSec: r2(rangeSamples / sr) },
 		});
 	} else {
-		const off = final.integrated - preset.integratedLufs;
+		const off = judged.integrated - preset.integratedLufs;
 		if (Math.abs(off) > SOUND_CHECK_THRESHOLDS.loudnessToleranceLu) {
 			const fix = settingsMatch ? undefined : loudnessFix(soundCheckMessage('whyNormalise'));
 			issues.add({
@@ -1192,13 +1220,19 @@ export async function checkSequence(
 				severity: broadcast ? 'error' : 'warning',
 				message: soundCheckMessage(
 					'loudnessOff',
-					fmt(final.integrated),
+					fmt(judged.integrated),
 					fmt(off),
 					preset.label,
 					preset.integratedLufs,
 				),
 				range: { ...range },
-				measured: { integratedLufs: r2(final.integrated), offLu: r2(off), normalised: !!normalize },
+				measured: {
+					integratedLufs: r2(judged.integrated),
+					offLu: r2(off),
+					normalised: !!normalize,
+					...(decoded ? { measuredOn: 'decoded' } : {}),
+					...(delivery?.ceilingLimited ? { ceilingLimited: true } : {}),
+				},
 				...(fix ? { fix } : {}),
 			});
 		}
@@ -1209,8 +1243,8 @@ export async function checkSequence(
 			message: soundCheckMessage('loudnessRange', tc(range.start), tc(range.end)).text,
 		});
 	if (
-		Number.isFinite(final.truePeakDb) &&
-		final.truePeakDb > preset.truePeakDb + SOUND_CHECK_THRESHOLDS.truePeakToleranceDb
+		Number.isFinite(judged.truePeakDb) &&
+		judged.truePeakDb > preset.truePeakDb + SOUND_CHECK_THRESHOLDS.truePeakToleranceDb
 	) {
 		let at = 0;
 		for (let i = 1; i < rangeHops; i++) if (mixPeakDb[i]! > mixPeakDb[at]!) at = i;
@@ -1221,8 +1255,13 @@ export async function checkSequence(
 			severity: 'error',
 			frame: Math.round(hopFrame(at)),
 			timecode: tc(hopFrame(at)),
-			message: soundCheckMessage('truePeak', fmt(final.truePeakDb), preset.label, preset.truePeakDb),
-			measured: { truePeakDb: r2(final.truePeakDb), ceilingDb: preset.truePeakDb },
+			message: soundCheckMessage('truePeak', fmt(judged.truePeakDb), preset.label, preset.truePeakDb),
+			measured: {
+				truePeakDb: r2(judged.truePeakDb),
+				ceilingDb: preset.truePeakDb,
+				...(delivery ? { limiterCeilingDb: r2(delivery.params.ceilingDb) } : {}),
+				...(decoded ? { measuredOn: 'decoded' } : {}),
+			},
 			...(fix ? { fix } : {}),
 		});
 	}
@@ -2718,7 +2757,32 @@ export async function checkSequence(
 				targetLufs: normalize?.targetLufs ?? null,
 				truePeakDb: normalize?.truePeakDb ?? null,
 				gainDb: gainDb === null ? null : r2(gainDb),
+				...(delivery
+					? {
+							limiterCeilingDb: r2(delivery.params.ceilingDb),
+							codecHeadroomDb: delivery.codecHeadroomDb,
+							passes: delivery.passes,
+							encodePasses: delivery.encodePasses,
+							ceilingLimited: delivery.ceilingLimited,
+							localCorrections: { count: delivery.corrections.hops, maxDb: r2(delivery.corrections.maxDb) },
+						}
+					: {}),
 			},
+			...(delivery && decoded && opts.exportAudio
+				? {
+						delivered: {
+							codec: opts.exportAudio.codec,
+							bitrateKbps:
+								opts.exportAudio.codec === 'pcm'
+									? null
+									: checkDeliveryCodec(opts.exportAudio, sr, channels).bitrateKbps,
+							sampleRate: checkDeliveryCodec(opts.exportAudio, sr, channels).sampleRate,
+							integratedLufs: measurable ? r2(decoded.integrated) : null,
+							truePeakDb: finOrNull(decoded.truePeakDb),
+							truePeakMet: delivery.truePeakMet,
+						},
+					}
+				: {}),
 			limiterMaxGrDb: normalize ? r2(limiterMax) : null,
 			layout,
 			before: {
@@ -2833,6 +2897,7 @@ async function soundCheckJob(ctx: JobContext, deps: SoundCheckDeps): Promise<Sou
 			target,
 			range: req.range,
 			...(req.profileId !== undefined ? { profileId: req.profileId } : {}),
+			...(req.exportAudio ? { exportAudio: req.exportAudio } : {}),
 		},
 		await checkEnvFor(ctx, deps, (f, stage) => ctx.progress(0.02 + 0.9 * f, { stage })),
 	);
