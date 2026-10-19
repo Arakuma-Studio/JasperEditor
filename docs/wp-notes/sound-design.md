@@ -10652,3 +10652,96 @@ warning is `e2e/sound-p6-transport.spec.ts`'s, not this branch's); `node scripts
 (`sound-packs.test.ts`, the pack-server start-up race noted above; alone: 2 of 2 pass), `@jasper/engine` 1669 passed /
 114 skipped / 3 failed at a 1-min load of 26–45 (camtrack radial-distortion solve timing out, the avc3 Chrome playback,
 the grading scopes); those three files alone: 19 of 19 pass. The full `pnpm verify` is final verification A's.
+
+### Final verification A
+
+Branch `feat/sd-final-gate` (worktree `final-gate`), from `feat/sound-design` 738a3862, with `feat/sound-design` merged in
+three more times while it ran (ea77ae2c final verification B; 6cdc304d the lossy-codec true-peak fix; f226abaa the
+codec-aware Sound Check and delivery parity / speed). `main` was already
+merged (3900acc8, nothing newer). Goal: the full gate and every e2e spec green, deterministically, on the build server.
+Everything below ran on `jasper-build` (16 vCPU, Node 20.20.2), shared with other agents' runs: load averages are given
+per step (their runs pushed it to 20–32 at times).
+
+#### Commands
+
+- The run scripts (outside the repository: `/var/lib/orquester/tmp/sound-design/final-gate-scripts/`, synced into
+  the server copy as `.fg/` while it ran). Gate (`gate.sh`, one copy of the worktree, `SD_GIT=1` for `check-assets`): `pnpm lint`, `pnpm typecheck`,
+  `pnpm test --maxWorkers=8`, `pnpm build`, `pnpm notices --check`, `pnpm i18n:check`, `pnpm e2e:typecheck`.
+- E2E (`final.sh` → `campaign.sh`): `node scripts/e2e-prepare.mjs` (fixtures, LGPL ffmpeg, `mg:build`, engine + Remotion bundle,
+  web, jasper-mcp), then for every `e2e/*.spec.ts` its own `E2E_PORT=53201 E2E_SKIP_BUILD=1 pnpm exec playwright test
+  e2e/<spec>` (a fresh `e2e/serve.mjs`, appdir and browser per spec), then `node e2e/mg-fallback-check.mjs`.
+- Browser: `JASPER_BROWSER_EXECUTABLE=~/jasper-sd/browsers/cft-150.0.7871.124/chrome-linux64/chrome` (Chrome for Testing
+  150, downloaded from Google's CfT bucket into `~/jasper-sd`) for the pages, the engine's renders and the GL unit tests —
+  see "Chrome" below for why.
+
+#### Failures found and what fixed them
+
+| Failure | Root cause (evidence) | Fix |
+|---|---|---|
+| `pnpm e2e:typecheck`: 2 errors in `sound-p65a-polish.spec.ts` | the spec's `Seq` type lacked the transitions' `outgoingClipId` / `incomingClipId` (schema `TransitionSchema`) | typed as in the schema |
+| `@jasper/compositions` `capture-safe-canvas`, `serial-audio-context` on the server | its Chrome 142 has no HTML-in-Canvas (`host.requestPaint is not a function`; Remotion's `HtmlInCanvas.isSupported` needs Chrome 148+) and settles every resume (the race the shim works around is Chrome 150's) | each split into the shim's guarantee and the browser premise; the premise test is skipped with what the browser did where it lacks the premise, and the capture probe draws a `captureElementImage` like Remotion. Measured: Chrome 142 2 passed / 3 skipped; CfT 150.0.7871.124 5 / 5 (both premises reproduced), twice |
+| `apps/mcp/test/sound-packs.test.ts` ENGINE_NOT_FOUND | it and `sound-check-ack.test.ts` both defaulted to port 49563: in parallel workers one file's jasper-mcp found the other's engine (and other checkouts' suites on the same host use the same defaults) | `testPort()` (a free loopback port; `MCP_*_TEST_PORT` still pins one) in all 26 engine-backed MCP files, and `test-ports.test.ts` fails on a fixed default |
+| `e2e/sound-check.spec.ts` 0 / n | P6-E10 "Music carries the cuts" (default on) halves a cut's confidence under music and the density budget drops it: the cues after Auto Sound Pass had no cut at frame 90 (`[[46,"move"],[52,"land"],[180,"transition"],…]`), so nothing could be nudged | the spec turns the option off in the dialog (the scenario is a hit on a cut under the music) |
+| `sound-packs` (test timeout), `sound-music-fit` (600 s timeout) | `expectNotCoveredByToasts` read each toast with `boundingBox()` / `innerText()`: a toast that expired in between left the read waiting for it until the test timed out (logs: waiting for `…toast….nth(2)` 900 s; `.nth(1)` 600 s) | one `evaluateAll` snapshot of every toast and notice |
+| `sound-library`, `sound-reference-profile` with `--repeat-each` | the engine's folders and profiles outlive a test | counts relative to what is there, a per-repeat profile name, and both clean up (Remove + Save Folders; the imported copy deleted). `--repeat-each=3`: 9 / 9 and 3 / 3 |
+| `sound-p3-mcp` correlation 0.90–0.94 (bound 0.95) | a varispeed sound (rate 0.987) lands between the reference's samples: on the failing export r = 0.938 at the integer lag with the document position exact; a 33-tap filter takes the reference to the mix within −92 dB; at a 0.3-sample delay r = 0.9995 (resampler choice changes nothing: soxr, swr 64 taps, linear all 0.938) | the correlation is taken at the best sub-sample delay (windowed sinc, ±0.5 sample) |
+| HTML-in-Canvas specs on the system Chrome 142: `color-mgmt`, `compositor`, `keyframes-blend`, `three-d` (picture checks), `edit-structure` (export refused `FX_LAYER_UNSUPPORTED … need HTML-in-Canvas (Chrome ≥ 148)`) | the browser predates the feature (pages and the engine's render browser are both the system Chrome) | one browser per run: `playwright.config.ts` takes `JASPER_BROWSER_EXECUTABLE` for the pages too; the 18 specs that set flags use `browserLaunch(args)` (`e2e/support.ts`) so their `launchOptions` keep it. With CfT 150 all five pass |
+| `sound-p6-transport` long read-ahead, picture − audio −0.032 s (bound −0.03) | the picture anchor was the smallest of ~60 samples: single samples read 11–38 ms under the next lowest (an early output timestamp) — over 35 plays on CfT 150, 4 failed that way | the anchor is the 10th percentile of each frame's first-seen offset; over 29 plays afterwards −0.026 … +0.108 s, none under −0.03 (the smallest sample went to −0.144) |
+| `sound-p2-done` export peak 86 samples off ("Pneumatic whoosh", rate 0.9962, round 2; the campaign before this one had a 10.4-sample miss on a whoosh at rate 0.9, not kept to analyse) | the whoosh is a 561 Hz whistle (period 85.5 samples): over the 50 ms window the AAC export correlated better one period off (r 0.871 at +86, 0.870 at −85, 0.859 at its exact place; 100 ms: 0.884 against 0.859), measured on the failing export with the engine's descriptors (`analyzeSound`) | a 300 ms window (or the whole sound): the exact place leads by 0.10 on that export; a clip counts as overlapped when another sounds inside the window. 4 / 4 runs afterwards, the whistle at 0 samples each time |
+| unit `packages/audio-fx/test/loop-window.test.ts` hostile input (random seed −1099340938) | `spectralDistanceDb([2.89e293], [−1.80e308])` returned Infinity: the difference of two finite levels overflowed (merged from WP-E8, first hit in round 4) | the levels are bounded to ±10⁶ dB before differencing; the counterexample and an opposite-sign pair are pinned |
+| `sound-check` after merging f226abaa: `get_sound_check` state `stale` right after `sound_check` | the codec-aware check hashes its inputs with the export encoding it was checked for (jasper-mcp checks for the delivery preset's AAC by default); `POST /api/sound-design/check/last` re-hashed them without it, so every report checked for a lossy export read stale (`inputs`) | the route hashes with `report.exportAudio`, as the panel does; `sound-check-kept.test.ts` checks an AAC report reads current (it fails without the fix) |
+| `sound-p6-transport` seek while playing: a single click 0.093 s before the fresh triple (bound: > 0.25 s) | the click was the old position's, heard until the transport held: a quick restart leaves less than 0.25 s between them, so the bound measured the restart's speed, not what it was meant to (no new-position audio before its target) | the clicks between the Enter and the fresh triple must lie on the old position's grid (0.25 s apart, ±2 ms from the clicks before the Enter); 30 / 30 seeks afterwards |
+| `sound-p6-transport` long read-ahead: 2 of 3 plays measured | 7 of 9 tries had an audio clock that slipped 10.8–188 ms (30 limiters on a shared host); each is played again, up to 3 tries per play | up to 8 tries per measured play |
+| `pnpm test` held 30 min by `audio-fx/masking-overlap.test.ts` (round 10) | the property "with peak profiles: the summed peak holds at every moment" failed for ≈ 1 seed in 40 (unshrunk: 0.25–2.45 dB over the ceiling on seeds 73384217, −317207919, 69596252, 324021770) and fast-check then shrank a large counterexample for over 30 minutes. Every failure had events of 1e-223 … 1e-74 s at times like 1.5e-208 s: their 32 profile slices round onto one or two representable instants, so the solver's slice boundaries (`start + len·k/32`) and the oracle's slice midpoints disagree about which slice sounds when. 20 000 runs on ordinary times found no excess (largest −0.005 dB) | the property's events are on the 48 kHz sample grid, as every timeline time is (sub-sample events are never measured); the 9 recorded seeds pass and 200 fresh seeds afterwards had no failure and no run over 120 s (before: 8 failures and 1 run over 120 s in 270) |
+| unit `apps/engine/test/sound-packs.test.ts` polite fetching: 282 ms between two request stamps (≥ 295) | the engine paces request starts; the test's server stamps arrivals on the same event loop, so a held-up loop stamps late (full suite, load ≈ 30) | the allowance is the event loop's measured hold-up over the download (`monitorEventLoopDelay`) |
+| unit `apps/web/test/polish-panel-loading.test.tsx` timeout (15.5 s) | the first import of the panel registry transforms its whole module graph; nothing in the check is timed | its own 180 s timeout |
+| `e2e/mg-fallback-check.mjs` PASS, then ENOTEMPTY on exit | its exit handler removed the appdirs while the SIGTERMed engines still wrote there | waits for the engines, then removes them (retries) |
+
+Not changed, with evidence: `@jasper/audio-fx` Pitch Shifter's 8× realtime budget failed
+once while two copies of the suite ran at once by my mistake (2 853 ms against a load-scaled 2 420 ms) and passed in every
+gate run since (1 635 ms against 2 743 ms in g1).
+
+#### Chrome
+
+The server's system Chrome is 142; the developer host's is 150.0.7871.181; Playwright 1.63's bundled Chrome for Testing is
+153.0.8010.12. HTML-in-Canvas, which the Program monitor's GPU stacks and Remotion's render of them need, is Chrome 148+, so
+on 142 five specs cannot pass. CfT 153 was tried first: the five pass there, but its HTML-in-Canvas captured only the first
+child canvas of the host in a probe (a plain 2D canvas drawn after the first paint stayed transparent; Chrome 150 captures
+it), which fails `capture-safe-canvas` — recorded below as a risk for the next Chrome, not fixed. The gate runs on CfT
+150.0.7871.124 (the developer host's milestone, the newest 150 build in CfT's known-good list).
+
+#### Results
+
+| Run | Code | Gate | E2E (every spec, each in a fresh server: 80, then 83 after B's three) | Load |
+|---|---|---|---|---|
+| base1 (system Chrome 142) | 9cf78388 | — | 71 / 80 specs passed (the five HTML-in-Canvas specs, sound-check, sound-p3-mcp, sound-p6-transport, sound-packs) — 89 min | 4–22 |
+| base2 (CfT 150) | d17f1cb8 | — | 79 / 80 (sound-p6-transport long read-ahead) — 72 min | 3–15 |
+| g1 | d8964b93 | lint, typecheck, notices, i18n, e2e typecheck ok; **7 681 passed, 395 skipped, 0 failed** (808 files, 24.4 min); build ok | — | 2–32 |
+| round 1 | 6051dc1d | 2 failed (the polite-fetch stamp and the registry import, fixed above) | **82 / 82** (84 min); fframes check PASS (exit crash fixed above) | 3–30 |
+| round 2 | 41ec010c (`feat/sound-design` merged again: the delivery fix) | **green**: 7 731 passed, 395 skipped, 0 failed (816 files, 26.2 min); lint 56 s, typecheck 369 s, build 105 s, notices, i18n, e2e typecheck ok | 81 / 82 (`sound-p2-done`: the tonal whoosh, fixed above) (77 min); fframes check PASS, clean exit | 2–20 |
+| round 3 | 5b9a3b71 | green: 7 731 passed, 395 skipped (27.4 min) | 52 / 52 green when the server rebooted at 03:00 (a scheduled reboot: also on Oct 12 and Oct 15 at 03:00); the round restarted, and a relaunch through `remote.sh` under `timeout` started it twice in the same copy (both stopped, not counted) | 2–31 |
+| round 4 | b9d1ff8b (`feat/sound-design` f226abaa merged: codec-aware Sound Check, delivery parity / speed) | 1 failed: `audio-fx/loop-window` hostile input (fixed below) | stopped | 3–24 |
+| round 5 | 2185f11f | **green**: 7 742 passed, 407 skipped, 0 failed (818 files, 24.3 min) | 82 / 83 (`sound-check`: the kept report read stale, fixed below) (73 min; the first start of this e2e met an engine round 4 left on its port: not counted) | 1–24 |
+| round 6 | 19910f88 | **green**: 7 742 passed, 407 skipped (23.9 min) | **83 / 83** (73 min); fframes check PASS | 2–24 |
+| round 7 | 19910f88 | **green**: 7 746 passed, 403 skipped (23.9 min) | 74 / 75 when stopped: `sound-p6-transport` seek while playing (fixed below) | 2–22 |
+| round 8 | 69d6c8fd | **green**: 7 742 passed, 407 skipped (24.0 min) | 82 / 83: `sound-p6-transport` long read-ahead ran out of plays (7 of 9 slipped; fixed below) (72 min) | 2–23 |
+| round 9 | 9d5154e0 | **green**: 7 742 passed, 407 skipped (24.1 min) | **83 / 83** (72 min); fframes check PASS | 2–23 |
+| round 10 | 9d5154e0 | `pnpm test` held for 30 min by one file (`audio-fx/masking-overlap`: fixed below); stopped | — | 1–21 |
+| **round 11 (final)** | 83b2c20f | **green**: lint 50 s, typecheck 336 s, **7 742 passed, 407 skipped, 0 failed** (818 files, 23.9 min), build 98 s, `notices --check`, `i18n:check`, `e2e:typecheck` ok | **83 / 83** (72 min, every spec in its own server); fframes fallback check PASS | 1.9–11.9 |
+
+The skipped tests are environment-gated (`REMOTION_E2E`, `MG_E2E`, model downloads, …); the 403 vs 407 of round 7 are 4
+browser- or host-gated skips. Per the orchestrator's final criterion the last round is the one clean run of the whole
+gate and every spec; rounds 6 and 9 were also clean on earlier code (test changes since: the transport spec's seek and
+retry fixes, the sample-grid property).
+
+#### Limits and notes
+
+- The gate needs a Chrome with HTML-in-Canvas for five specs; with the system Chrome 142 they fail (they do not skip:
+  their subject is that path). On the server the gate is run with `JASPER_BROWSER_EXECUTABLE` set to CfT 150.
+- Chrome 153 (CfT 153.0.8010.12) captures only the first child canvas of an HTML-in-Canvas host in our probe; if that ships,
+  video canvases inside GPU stacks may draw empty. `capture-safe-canvas.test.ts` fails on it and will show it.
+- Not run: `pnpm e2e:desktop`, `e2e:desktop-clipboard` (the server has no xvfb), `pnpm e2e:packaged` (needs
+  `dist:dir`); `sound-describe` runs its 1 keyword test and skips the CLAP one (no model on the server).
+- The transport specs measure real time: under load 20–30 from other runs `sound-p6-transport` passed in round 1; the
+  long read-ahead test's retries for an audio clock that slipped (an underrun of the 30 limiters) can run out under heavier load
+  (`E2E_P6_PLAYS=40` at load 13–25: 16 and 13 of 20 plays measured).

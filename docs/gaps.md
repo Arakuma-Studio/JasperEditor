@@ -722,6 +722,19 @@ loud, bright stress mix at AAC 128 kb/s still needs two encode rounds (≈ 2.7×
 Check's OVERLOAD (the limiter pulls 7 dB on the hero hit) stays a warning for the user's judgement; a review alternate
 can be a Jasper Synth sound when the library has fewer real takes.
 
+Final verification A ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Final verification A"): the full gate
+(`pnpm verify`, `notices --check`, `i18n:check`, `e2e:typecheck`) and all 83 e2e specs, each in a fresh server, plus the
+fframes fallback check, on the build server with Chrome for Testing 150 as `JASPER_BROWSER_EXECUTABLE` (the server's
+Chrome 142 predates HTML-in-Canvas). It fixed two product defects — the kept Sound Check report read stale whenever it had
+been checked for a lossy export (`POST /api/sound-design/check/last` hashed without the encoding) and
+`spectralDistanceDb` overflowed to Infinity on hostile levels — and made the gate deterministic: MCP tests on free ports
+(two shared 49563), a toast race in `e2e/support.ts` that hung exports until the test timed out, specs independent of
+earlier runs in the same server, sub-sample and envelope-long correlation windows for varispeed and tonal sounds, robust
+measures in the transport spec, the Sound Check spec turning off "Music carries the cuts", a property test kept to the
+sample grid. Limits left: on Chrome 142 five HTML-in-Canvas specs fail (they test that path); Chrome 153 (CfT
+153.0.8010.12) captured only the first child canvas of an HTML-in-Canvas host in a probe, which `capture-safe-canvas.test.ts`
+shows; the desktop smoke and packaged-app checks were not run (no xvfb on the server).
+
 ### Not covered by any workstream yet
 
 - **Platforms**: run and fix the desktop app on macOS and Windows; hardware H.264/HEVC export on real GPUs; build
