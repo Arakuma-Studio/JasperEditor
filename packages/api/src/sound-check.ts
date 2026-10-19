@@ -39,6 +39,16 @@ export const SoundCheckRangeSchema = z
 	.strictObject({ start: frame, end: frame })
 	.refine((r) => r.end > r.start, 'range.end must be after range.start');
 
+/** An export's audio encoding for Sound Check (`ExportSettings.audio`'s codec, bit rate and rate). */
+export const SoundCheckExportAudioSchema = z.strictObject({
+	codec: z.enum(['aac', 'opus', 'pcm']),
+	/** kb/s (default 192, the engine's export default for stereo; ignored for PCM). */
+	bitrateKbps: z.number().int().min(16).max(1536).optional(),
+	/** Delivered rate (default the mix's; Opus is always 48 kHz). */
+	sampleRate: z.union([z.literal(44100), z.literal(48000), z.literal(96000)]).optional(),
+});
+export type SoundCheckExportAudio = z.infer<typeof SoundCheckExportAudioSchema>;
+
 export const SoundCheckRequestSchema = z
 	.strictObject({
 		projectId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'a project id'),
@@ -62,6 +72,13 @@ export const SoundCheckRequestSchema = z
 					.max(SOUND_CHECK_TARGET_LIMITS.truePeakDb.max),
 			})
 			.optional(),
+		/**
+		 * The export's audio encoding (the Export dialog's, or an MCP export preset's): with the Mix's normalisation the
+		 * check delivers the mix as that export does — the codec's limiter headroom, the encoded audio decoded and
+		 * corrected where it still overshoots — and LOUDNESS / TRUE_PEAK judge the decoded audio
+		 * (`loudness.delivered`). Absent: the PCM mix (a lossy export is checked again when it is written).
+		 */
+		exportAudio: SoundCheckExportAudioSchema.optional(),
 		/** Sequence frames `[start, end)` (default the whole sequence). */
 		range: SoundCheckRangeSchema.optional(),
 		/** Also store the summary in the sequence (`soundDesign.setCheck`, one undo step "Sound Check Result"). */
@@ -315,7 +332,30 @@ export const SoundCheckLoudnessSchema = z.object({
 		targetLufs: z.number().nullable(),
 		truePeakDb: z.number().nullable(),
 		gainDb: z.number().nullable(),
+		/** The limiter's ceiling (the target less the export codec's headroom; = truePeakDb for PCM). */
+		limiterCeilingDb: z.number().nullable().optional(),
+		codecHeadroomDb: z.number().optional(),
+		/** Delivery passes (loudness convergence) and encodes of the decoded check. */
+		passes: z.number().int().optional(),
+		encodePasses: z.number().int().optional(),
+		/** The limiter takes any more gain: the target cannot be reached under the ceiling. */
+		ceilingLimited: z.boolean().optional(),
+		localCorrections: z.object({ count: z.number().int(), maxDb: z.number() }).optional(),
 	}),
+	/**
+	 * With `request.exportAudio` and normalisation: the delivered audio as that export encodes it, decoded — what
+	 * LOUDNESS and TRUE_PEAK judge (the fields above are the PCM in front of the encoder).
+	 */
+	delivered: z
+		.object({
+			codec: z.enum(['aac', 'opus', 'pcm']),
+			bitrateKbps: z.number().nullable(),
+			sampleRate: z.number().int(),
+			integratedLufs: z.number().nullable(),
+			truePeakDb: z.number().nullable(),
+			truePeakMet: z.boolean(),
+		})
+		.optional(),
 	limiterMaxGrDb: z.number().nullable(),
 	/** Channel layout the mix was checked in: the Mix's own (WP6.5b; absent from older reports: stereo or 5.1). */
 	layout: z.enum(['mono', 'stereo', '5.1']).optional(),

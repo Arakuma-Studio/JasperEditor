@@ -10,6 +10,7 @@
 //   (view_sound_timeline, the PNG of a range, is in ./sound-timeline.ts; sound_check's pictures use its drawing.)
 import {
 	type SoundCheckDeltaFinding,
+	type SoundCheckExportAudio,
 	type SoundCheckIssue,
 	SoundCheckLastResponseSchema,
 	type SoundCheckProposal,
@@ -47,6 +48,7 @@ import {
 	waitJob,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
+import { buildExportSettings, EXPORT_PRESETS, findExportPreset } from '../export-presets.ts';
 import { pickSequence } from '../format.ts';
 import { composeGrid, encodePng } from '../png.ts';
 import { drawSoundTimeline } from '../sound-timeline.ts';
@@ -247,13 +249,26 @@ export function proposalCheckNext(p: SoundCheckProposal): string {
 	return `It introduces ${d.introducedCount} finding(s)${errors.length ? `, ${errors.length} of them error(s)` : ''}. Fix them in the proposal first (reject the items named and propose them again, or merge a better alternative into one new proposal), or hand it over saying exactly what it introduces and why — never hand over a proposal that introduces errors without saying so. Then ask the user to review it in the Review panel and wait_for_proposal.`;
 }
 
+/** The audio encoding a start_export preset delivers for a sequence (its ExportSettings.audio). */
+export function exportAudioOfPreset(
+	seq: Sequence,
+	p: NonNullable<ReturnType<typeof findExportPreset>>,
+): SoundCheckExportAudio {
+	const audio = buildExportSettings(seq, p, { range: { type: 'entire' }, engine: 'auto' }).audio!;
+	return {
+		codec: audio.codec,
+		...(audio.codec !== 'pcm' && audio.bitrateKbps ? { bitrateKbps: audio.bitrateKbps } : {}),
+		sampleRate: audio.sampleRate,
+	};
+}
+
 export function registerSoundCheckTools(ctx: ToolContext): void {
 	defineTool(
 		ctx,
 		'sound_check',
 		{
 			title: 'Sound Check (measured QA of the mix)',
-			description: `Measures a sequence's sound the way it will be delivered and returns what to fix and where to listen. You cannot hear: this is how you check your sound design. The engine renders the mix (with the Mix's loudness normalisation and true-peak limiter, exactly as an export) and its stems — sound effects, dialogue, music, ambience, bed — in one pass, finds speech (transcript + voice activity) and checks: LOUDNESS (integrated vs the delivery preset ±1 LU; under 400 ms of audible audio it is "not measurable", never a pass), TRUE_PEAK (over the preset's ceiling), OUT_OF_SYNC (each placed sound located in the sound-effects mix by cross-correlation within ±3 frames of its cue: cut ±1, land ±2, move ±3, appear ±1 frame; offset in ms; or "cut": its clip ends at its peak; an end-aligned riser or reverse may end 250 ms before to 30 ms after its cue), TRUNCATED (a placed sound's clip ends before the sound has faded to −60 dB: older copies without trailing silence; the safe fix is swap_sound to the same sound, which re-registers it, or soundDesign.swap on its own media), INEXACT (information: a library sound used as it is, not as a sample-exact copy — over 1 h, its copy over the size cap, or no free disk space when it was added — so its placement is exact to a frame, not to the sample; import_sounds / insert_sound said so then), MASKED (dominant-band lift over the bed under 1.5 dB support / 3 dB hero, the masking solver's own definition), OVERLOAD (a sound over the bed cap, the export limiter pulling > 3 dB, clipping without normalisation), MUSIC_OVER_VOICE (music not 8 LU under the voice during speech), SILENCE (< −60 dBFS in every channel for ≥ 0.5 s outside silence cues), DIP (short-term drop > 10 LU with no stop-before, cut, silence cue, Volume keyframes lowering the level there; only the bed under the voice and effects dropping counts), STALE_CUE (the cue's anchor moved), NO_PICTURE_EVENT (a derived cue with nothing on screen), DENSITY (heroes too close, too many cues per second), REPEAT (the same file back to back), LICENSE (non-commercial, no-derivatives, unknown or undeclared licences: error / warning; a CC BY-SA sound: a ShareAlike warning — the video must then be shared under CC BY-SA), CREDITS (CC-BY sounds without a credits file), and the edit / tone / director lenses: CLICK (a click within 2 ms of a clip edge, remix joint or transition edge: error, a 1-frame fade fixes it; inside a clip: info), EDGE (a clip whose head starts mid-sound, a decay chopped at its Out point, music chopped at a joint: warning, a fade or a 100 ms crossfade fixes it), HARSH (a placed sound more than 6 dB over the music's — else the dialogue's — loudest 2–6 kHz 5 ms level: warning, lowered by the excess when it stays unmasked; a bright sound, centroid > 6.5 kHz: info), LAYER_INAUDIBLE (a layer of a multi-layer cue adding < 1 dB in every 1/3-octave band: info), COVERAGE (some cues of a class of action — same kind and anchor, by clip or track — filled and others not: warning, fill them or mute them, the user's call), ENDING (the mix ends mid-sound: last 50 ms over −45 dBFS RMS or last 10 ms over −60 dBFS peak; a Mix fade-out, the user's call), HEAD (the first 5 ms over −40 dBFS: info) and ARC (the loudest 3 s hold no hero, or sit in the last 15 % without one: info). Each finding has a severity, a timecode, a message and, where one exists, a fix: {kind: commands → apply_commands args | job → rebalance_sfx / apply_delivery args | swap → swap_sound args, safe}. Apply ONLY the fixes marked safe, in the order of safeFixes (each one undo step, each once), then run sound_check again; leave the others to the user. The safe fixes are judged together: each is safe on its own and after the safe fixes before it in safeFixes — a fix that would undo or overload what another one does (a hero's gain and its demotion), or with loudness normalisation off push the mix's true peak over the ceiling, is not safe and says why (fix.why; fix.conflictsWith names the findings it conflicts with: run sound_check again after the others). A mono Mix is checked in mono (loudness.layout). listen: up to five "listen here" moments (worst finding, biggest hero, loudest moment, busiest moment, a cue that passes) — give them to the user VERBATIM and never say the result "sounds good". verdict: pass | warn | fail. images (default true) adds ONE PNG of up to three of the worst moments (±2 s each: loudness curves, waveform, cue ticks, findings). store: true writes the summary into the sequence (one undo step "Sound Check Result"; the editor shows whether it is still current). target: {integratedLufs, truePeakDb} checks a custom delivery target instead of the preset's numbers. humanVerdicts: what the user said after listening in the editor's Sound Check panel — "sounds right" or "flagged" with their note, at a timecode, with the listen slot and the clip / cue it judged; stale: true (staleReasons moment / moved / gone) when what plays there changed since they listened, so the verdict no longer covers it (null for older verdicts that cannot tell); they are the user's comment markers: read them, fix what is flagged, ask the user to listen again to stale ones, and never add or change them yourself. get_sound_check returns the last report without running the check. Acknowledged findings (acknowledge_sound_issue, or the user in the Sound Check panel): a deliberate exception with a reason — left out of the verdict and of safeFixes, counted in counts.acknowledged and listed under acknowledged (findings lists the ones that count); a finding acknowledged before its clips / cue / moment changed counts again ("acknowledged before the change"). proposalId (+ itemIds, default every item left to review) checks a PROPOSAL before review instead: the engine runs the check on the proposal's preview document (nothing is applied, the revision does not change, store is refused) and returns proposal: "fixes n · introduces m", the verdict before → after, each finding fixed / introduced with the item whose clips it names, per item, and the items skipped (stale, invalid); the result is kept on the proposal (get_proposal shows it, so does the Review panel). Run it on every proposal before asking the user to review it. profileId (default the sequence's, set_sound_profile; null: none) compares the delivered mix with a reference profile the user built from their own media (build_sound_profile): reference.rows — one per metric, the value against the references' min–max widened by a tolerance, ok / low / high, with what to do and the timecodes (the cuts with no sound, the gaps, the dead end) — and findings of code REFERENCE (warnings for major rows, infos for minor ones; never errors: a style, not a defect; LOUDNESS and TRUE_PEAK keep following the delivery target). A sequence that is one of the profile's references is judged against the others (leave-one-out). Waits for the job (timeoutSeconds, default 300).`,
+			description: `Measures a sequence's sound the way it will be delivered and returns what to fix and where to listen. You cannot hear: this is how you check your sound design. The engine renders the mix (with the Mix's loudness normalisation and true-peak limiter, exactly as an export) and its stems — sound effects, dialogue, music, ambience, bed — in one pass, finds speech (transcript + voice activity) and checks: LOUDNESS (integrated vs the delivery preset ±1 LU; under 400 ms of audible audio it is "not measurable", never a pass), TRUE_PEAK (over the preset's ceiling), OUT_OF_SYNC (each placed sound located in the sound-effects mix by cross-correlation within ±3 frames of its cue: cut ±1, land ±2, move ±3, appear ±1 frame; offset in ms; or "cut": its clip ends at its peak; an end-aligned riser or reverse may end 250 ms before to 30 ms after its cue), TRUNCATED (a placed sound's clip ends before the sound has faded to −60 dB: older copies without trailing silence; the safe fix is swap_sound to the same sound, which re-registers it, or soundDesign.swap on its own media), INEXACT (information: a library sound used as it is, not as a sample-exact copy — over 1 h, its copy over the size cap, or no free disk space when it was added — so its placement is exact to a frame, not to the sample; import_sounds / insert_sound said so then), MASKED (dominant-band lift over the bed under 1.5 dB support / 3 dB hero, the masking solver's own definition), OVERLOAD (a sound over the bed cap, the export limiter pulling > 3 dB, clipping without normalisation), MUSIC_OVER_VOICE (music not 8 LU under the voice during speech), SILENCE (< −60 dBFS in every channel for ≥ 0.5 s outside silence cues), DIP (short-term drop > 10 LU with no stop-before, cut, silence cue, Volume keyframes lowering the level there; only the bed under the voice and effects dropping counts), STALE_CUE (the cue's anchor moved), NO_PICTURE_EVENT (a derived cue with nothing on screen), DENSITY (heroes too close, too many cues per second), REPEAT (the same file back to back), LICENSE (non-commercial, no-derivatives, unknown or undeclared licences: error / warning; a CC BY-SA sound: a ShareAlike warning — the video must then be shared under CC BY-SA), CREDITS (CC-BY sounds without a credits file), and the edit / tone / director lenses: CLICK (a click within 2 ms of a clip edge, remix joint or transition edge: error, a 1-frame fade fixes it; inside a clip: info), EDGE (a clip whose head starts mid-sound, a decay chopped at its Out point, music chopped at a joint: warning, a fade or a 100 ms crossfade fixes it), HARSH (a placed sound more than 6 dB over the music's — else the dialogue's — loudest 2–6 kHz 5 ms level: warning, lowered by the excess when it stays unmasked; a bright sound, centroid > 6.5 kHz: info), LAYER_INAUDIBLE (a layer of a multi-layer cue adding < 1 dB in every 1/3-octave band: info), COVERAGE (some cues of a class of action — same kind and anchor, by clip or track — filled and others not: warning, fill them or mute them, the user's call), ENDING (the mix ends mid-sound: last 50 ms over −45 dBFS RMS or last 10 ms over −60 dBFS peak; a Mix fade-out, the user's call), HEAD (the first 5 ms over −40 dBFS: info) and ARC (the loudest 3 s hold no hero, or sit in the last 15 % without one: info). Each finding has a severity, a timecode, a message and, where one exists, a fix: {kind: commands → apply_commands args | job → rebalance_sfx / apply_delivery args | swap → swap_sound args, safe}. Apply ONLY the fixes marked safe, in the order of safeFixes (each one undo step, each once), then run sound_check again; leave the others to the user. The safe fixes are judged together: each is safe on its own and after the safe fixes before it in safeFixes — a fix that would undo or overload what another one does (a hero's gain and its demotion), or with loudness normalisation off push the mix's true peak over the ceiling, is not safe and says why (fix.why; fix.conflictsWith names the findings it conflicts with: run sound_check again after the others). A mono Mix is checked in mono (loudness.layout). listen: up to five "listen here" moments (worst finding, biggest hero, loudest moment, busiest moment, a cue that passes) — give them to the user VERBATIM and never say the result "sounds good". verdict: pass | warn | fail. images (default true) adds ONE PNG of up to three of the worst moments (±2 s each: loudness curves, waveform, cue ticks, findings). store: true writes the summary into the sequence (one undo step "Sound Check Result"; the editor shows whether it is still current). target: {integratedLufs, truePeakDb} checks a custom delivery target instead of the preset's numbers. humanVerdicts: what the user said after listening in the editor's Sound Check panel — "sounds right" or "flagged" with their note, at a timecode, with the listen slot and the clip / cue it judged; stale: true (staleReasons moment / moved / gone) when what plays there changed since they listened, so the verdict no longer covers it (null for older verdicts that cannot tell); they are the user's comment markers: read them, fix what is flagged, ask the user to listen again to stale ones, and never add or change them yourself. get_sound_check returns the last report without running the check. Acknowledged findings (acknowledge_sound_issue, or the user in the Sound Check panel): a deliberate exception with a reason — left out of the verdict and of safeFixes, counted in counts.acknowledged and listed under acknowledged (findings lists the ones that count); a finding acknowledged before its clips / cue / moment changed counts again ("acknowledged before the change"). proposalId (+ itemIds, default every item left to review) checks a PROPOSAL before review instead: the engine runs the check on the proposal's preview document (nothing is applied, the revision does not change, store is refused) and returns proposal: "fixes n · introduces m", the verdict before → after, each finding fixed / introduced with the item whose clips it names, per item, and the items skipped (stale, invalid); the result is kept on the proposal (get_proposal shows it, so does the Review panel). Run it on every proposal before asking the user to review it. profileId (default the sequence's, set_sound_profile; null: none) compares the delivered mix with a reference profile the user built from their own media (build_sound_profile): reference.rows — one per metric, the value against the references' min–max widened by a tolerance, ok / low / high, with what to do and the timecodes (the cuts with no sound, the gaps, the dead end) — and findings of code REFERENCE (warnings for major rows, infos for minor ones; never errors: a style, not a defect; LOUDNESS and TRUE_PEAK keep following the delivery target). A sequence that is one of the profile's references is judged against the others (leave-one-out). exportPreset (a start_export preset id) or exportAudio {codec, bitrateKbps} checks the mix as that export delivers it: with the Mix's loudness normalisation the limiter runs under the codec's headroom (loudness.normalization.limiterCeilingDb, codecHeadroomDb), the encoded audio is decoded and turned down locally where it still overshoots, and LOUDNESS / TRUE_PEAK judge the decoded audio (loudness.delivered {codec, integratedLufs, truePeakDb, truePeakMet}); without it they judge the PCM mix, and a lossy export checks itself again when it is written (start_export result.audioLoudness). loudness.normalization.ceilingLimited: the limiter cannot make the mix louder under its ceiling (the target is out of reach: lower the loudest moments). Run it with the preset you will export with. Waits for the job (timeoutSeconds, default 300).`,
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -302,6 +317,22 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 					.describe(
 						'Compare with this reference profile (default the sequence’s, set_sound_profile; null: no comparison)',
 					),
+				exportPreset: z
+					.string()
+					.optional()
+					.describe(
+						'Check the mix as this start_export preset delivers it (list_export_presets: its audio codec and bit rate — AAC in MP4, Opus in WebM, PCM in MOV): with the Mix’s loudness normalisation, LOUDNESS and TRUE_PEAK judge the encoded audio decoded (loudness.delivered), with the codec’s limiter headroom (loudness.normalization.limiterCeilingDb)',
+					),
+				exportAudio: z
+					.strictObject({
+						codec: z.enum(['aac', 'opus', 'pcm']),
+						bitrateKbps: z.number().int().min(16).max(1536).optional(),
+						sampleRate: z.union([z.literal(44100), z.literal(48000), z.literal(96000)]).optional(),
+					})
+					.optional()
+					.describe(
+						'Instead of exportPreset: the export’s audio encoding (start_export’s audio settings; bit rate default 192 kb/s)',
+					),
 				timeoutSeconds: z
 					.number()
 					.int()
@@ -325,8 +356,25 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 					'itemIds needs proposalId',
 					'Pass the proposal the items are of.',
 				);
+			if (a.exportPreset && a.exportAudio)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'Pass exportPreset or exportAudio, not both',
+					'exportPreset names a start_export preset; exportAudio gives the codec and bit rate yourself.',
+				);
 			const { doc } = await loadDoc(ctx, a.projectId);
 			const seq = pickSequence(doc, a.sequenceId);
+			let exportAudio = a.exportAudio;
+			if (a.exportPreset) {
+				const p = findExportPreset(a.exportPreset);
+				if (!p)
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						`Unknown export preset "${a.exportPreset}"`,
+						`Use one of: ${EXPORT_PRESETS.map((x) => x.id).join(', ')} (list_export_presets).`,
+					);
+				exportAudio = exportAudioOfPreset(seq, p);
+			}
 			let range: { start: number; end: number } | undefined;
 			if (a.range) {
 				range = { start: frameOf(seq, a.range.start), end: frameOf(seq, a.range.end) };
@@ -350,6 +398,7 @@ export function registerSoundCheckTools(ctx: ToolContext): void {
 							...(a.proposalId ? { proposalId: a.proposalId } : {}),
 							...(a.itemIds ? { itemIds: a.itemIds } : {}),
 							...(a.profileId !== undefined ? { profileId: a.profileId } : {}),
+							...(exportAudio ? { exportAudio } : {}),
 						},
 						extra.signal,
 					),

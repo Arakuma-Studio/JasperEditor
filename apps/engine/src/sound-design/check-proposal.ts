@@ -274,6 +274,7 @@ export async function runProposalCheck(
 		target,
 		range: req.range,
 		...(req.profileId !== undefined ? { profileId: req.profileId } : {}),
+		...(req.exportAudio ? { exportAudio: req.exportAudio } : {}),
 	};
 
 	// the base: the kept report when it is current, else a fresh check of the live document

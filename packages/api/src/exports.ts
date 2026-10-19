@@ -202,7 +202,19 @@ export const RenderPlanSchema = z.object({
 	),
 	audio: z.object({
 		mode: z.enum(['native-mix', 'remotion', 'browser']),
-		normalize: z.object({ targetLufs: z.number(), truePeakDb: z.number().optional() }).optional(),
+		/**
+		 * The loudness target, and the true-peak limiter's ceiling in front of the encoder: the target less the codec's
+		 * headroom (`codecHeadroomDb`: 0 for PCM; lossy codecs by bit rate). The export then checks the decoded audio and
+		 * corrects where the codec still overshoots (result `audioLoudness`).
+		 */
+		normalize: z
+			.object({
+				targetLufs: z.number(),
+				truePeakDb: z.number().optional(),
+				limiterCeilingDb: z.number().optional(),
+				codecHeadroomDb: z.number().optional(),
+			})
+			.optional(),
 		/** What the delivered audio is: rate, channels and codec. */
 		sampleRate: z.number().int().optional(),
 		channels: z.number().int().optional(),
@@ -293,13 +305,32 @@ export const ExportResultSchema = z.object({
 			path: z.string().optional(),
 		})
 		.optional(),
-	/** Loudness of the delivered audio (BS.1770-4), and the normalisation gain when it was normalised. */
+	/**
+	 * Loudness of the delivered audio (BS.1770-4): of a normalised lossy (or resampled) export the file's own audio,
+	 * decoded (`measuredOn: 'decoded-file'`, the PCM it was encoded from in `pcm`); else the PCM mix. With normalisation:
+	 * the gain, the target, the limiter ceiling in front of the encoder (target − the codec's headroom), how many
+	 * loudness passes and encodes it took, the local corrections where the codec still overshot, and whether the target
+	 * was met (`AUDIO_TRUE_PEAK_OVER` / `AUDIO_LOUDNESS_CEILING` warnings when not).
+	 */
 	audioLoudness: z
 		.object({
 			integratedLufs: z.number().nullable(),
 			truePeakDbtp: z.number().nullable(),
 			lra: z.number().nullable(),
+			measuredOn: z.enum(['pcm', 'decoded-file']).optional(),
+			pcm: z
+				.object({ integratedLufs: z.number().nullable(), truePeakDbtp: z.number().nullable() })
+				.optional(),
 			normalizedGainDb: z.number().optional(),
+			targetLufs: z.number().optional(),
+			truePeakTargetDbtp: z.number().optional(),
+			limiterCeilingDbtp: z.number().optional(),
+			codecHeadroomDb: z.number().optional(),
+			loudnessPasses: z.number().int().optional(),
+			encodePasses: z.number().int().optional(),
+			localCorrections: z.object({ count: z.number().int(), maxDb: z.number() }).optional(),
+			ceilingLimited: z.boolean().optional(),
+			truePeakMet: z.boolean().optional(),
 		})
 		.optional(),
 	/** Caption streams embedded in the file and sidecar files written. */

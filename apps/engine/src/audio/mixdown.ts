@@ -1,8 +1,9 @@
 // Audio mixdown of an export or analysis (audio-mix): runs the offline mixer (`@jasper/project` OfflineMixer) over
 // the export range with ffmpeg clip decoders, measures BS.1770-4 loudness of the result while writing it, and — for
 // loudness normalisation — applies `target − measured` and a look-ahead true-peak limiter at the ceiling in a second
-// pass (two-pass normalisation on the final mix, S04:RN-032). Output: a float32 WAV (WAVE_FORMAT_EXTENSIBLE) that
-// every export path muxes as the deliverable's audio.
+// pass (two-pass normalisation on the final mix, S04:RN-032), converging on the target and checking a lossy
+// deliverable after encoding (`deliver.ts`). Output: a float32 WAV (WAVE_FORMAT_EXTENSIBLE) that every export path
+// muxes as the deliverable's audio.
 
 import { open, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -12,7 +13,6 @@ import {
 	LoudnessMeter,
 	type LoudnessSummary,
 	type Mixdown,
-	TruePeakLimiter,
 } from '@jasper/audio-dsp';
 import { installAudioFxProcessors } from '@jasper/audio-fx';
 import {
@@ -25,6 +25,14 @@ import {
 } from '@jasper/project';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { clipDecodeArgs, hasSoxr, PcmStreamReader } from './decode.ts';
+import {
+	type DeliveryCodec,
+	type DeliveryOutcome,
+	type DeliveryParams,
+	type Pass1,
+	runDeliveryPass,
+	solveDelivery,
+} from './deliver.ts';
 
 // audio-fx: the audio effect processors (clip effects and track / submix / Mix inserts) for the offline mixer.
 installAudioFxProcessors();
@@ -44,6 +52,11 @@ export type MixdownOptions = {
 	mixdown?: Mixdown;
 	/** Two-pass loudness normalisation of the final mix. */
 	normalize?: { targetLufs: number; truePeakDb: number } | null;
+	/**
+	 * The deliverable's audio encoding (exports): with normalisation, a lossy codec gets the limiter headroom of its bit
+	 * rate and the encoded audio is decoded and checked against the true-peak target (`deliver.ts`).
+	 */
+	deliver?: DeliveryCodec | null;
 	scratchDir: string;
 	signal?: AbortSignal;
 	onSpawn?(child: import('node:child_process').ChildProcess): void;
@@ -80,8 +93,18 @@ export type MixdownResult = {
 	samples: number;
 	/** Loudness of the delivered audio (after normalisation). */
 	loudness: LoudnessSummary;
-	/** Loudness before normalisation and the gain applied (normalised exports). */
-	normalized?: { before: LoudnessSummary; gainDb: number; truePeakDb: number };
+	/**
+	 * Loudness before normalisation, the gain applied (after convergence), the delivery target and how the delivery
+	 * came to it (limiter ceiling, passes, the decoded check of a lossy codec: `deliver.ts`).
+	 */
+	normalized?: {
+		before: LoudnessSummary;
+		gainDb: number;
+		truePeakDb: number;
+		targetLufs: number;
+		delivery: DeliveryOutcome;
+		codec?: DeliveryCodec;
+	};
 };
 
 /** Layout of a channel count. */
@@ -208,76 +231,88 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 	if (!o.normalize || !keep || !pass1) {
 		return { path: pass1, sampleRate: sr, channels, samples: total, loudness: before };
 	}
-	const gainDb = Number.isFinite(before.integrated) ? o.normalize.targetLufs - before.integrated : 0;
-	const g = 10 ** (gainDb / 20);
 	const out = join(o.scratchDir, 'mix.wav');
-	const limiter = new TruePeakLimiter(sr, channels, {
-		ceilingDb: o.normalize.truePeakDb,
-		lookaheadMs: 5,
-		releaseMs: 100,
-	});
-	const meter2 = new LoudnessMeter(sr, channels, { weights: defaultChannelWeights(channels) });
-	const src = await open(pass1, 'r');
-	const dst = await open(out, 'w');
+	const norm = o.normalize;
+	// one delivery pass written to `out` (the float32 WAV every export path muxes) with its loudness
+	const write = (params: DeliveryParams) =>
+		writeDeliveryWav({ path: pass1, headerBytes: WAV_F32_HEADER_BYTES }, out, sr, channels, total, params, {
+			blockSize: BLOCK,
+			signal: o.signal,
+			onProgress: (f) => o.onProgress?.(0.6 + f * 0.3, 'Normalizing loudness'),
+		});
+	let outcome: DeliveryOutcome;
 	try {
-		await dst.write(wavHeaderF32(channels, sr, total));
-		let skip = limiter.latency;
-		let written = 0;
-		const raw = Buffer.alloc(BLOCK * channels * 4);
-		const block = Array.from({ length: channels }, () => new Float32Array(BLOCK));
-		const emit = async (n: number) => {
-			limiter.process(block, 0, n);
-			let from = 0;
-			if (skip > 0) {
-				from = Math.min(n, skip);
-				skip -= from;
-			}
-			const m = Math.min(n - from, total - written);
-			if (m <= 0) return;
-			const view = block.map((c) => c.subarray(from, from + m));
-			meter2.process(view, 0, m);
-			await dst.write(interleave(view, m));
-			written += m;
-		};
-		for (let done = 0; done < total; ) {
-			if (o.signal?.aborted) throw new Error('aborted');
-			const n = Math.min(BLOCK, total - done);
-			const { bytesRead } = await src.read(
-				raw,
-				0,
-				n * channels * 4,
-				WAV_F32_HEADER_BYTES + done * channels * 4,
-			);
-			const got = Math.floor(bytesRead / (channels * 4));
-			for (let i = 0; i < n; i++)
-				for (let c = 0; c < channels; c++)
-					block[c]![i] = i < got ? raw.readFloatLE((i * channels + c) * 4) * g : 0;
-			await emit(n);
-			done += n;
-			o.onProgress?.(0.6 + (done / total) * 0.4, 'Normalizing loudness');
-		}
-		// flush the limiter's delay line
-		for (let left = limiter.latency; left > 0 && written < total; ) {
-			const n = Math.min(BLOCK, left);
-			for (const c of block) c.fill(0, 0, n);
-			await emit(n);
-			left -= n;
-		}
+		outcome = await solveDelivery({
+			ff: o.ff,
+			pass1: { path: pass1, headerBytes: WAV_F32_HEADER_BYTES },
+			sampleRate: sr,
+			channels,
+			total,
+			before,
+			targetLufs: norm.targetLufs,
+			truePeakDb: norm.truePeakDb,
+			codec: o.deliver ?? null,
+			soxr,
+			scratchDir: o.scratchDir,
+			write,
+			outPath: out,
+			signal: o.signal,
+			...(o.onSpawn ? { onSpawn: o.onSpawn } : {}),
+			onProgress: (f, stage) => o.onProgress?.(0.9 + f * 0.1, stage),
+		});
 	} finally {
-		await src.close();
-		await dst.close();
 		await rm(pass1, { force: true });
 	}
-	meter2.flush();
-	const after = meter2.summary();
 	return {
 		path: out,
 		sampleRate: sr,
 		channels,
 		samples: total,
-		loudness: after,
-		normalized: { before, gainDb, truePeakDb: o.normalize.truePeakDb },
+		loudness: outcome.pcm,
+		normalized: {
+			before,
+			gainDb: outcome.params.gainDb,
+			truePeakDb: norm.truePeakDb,
+			targetLufs: norm.targetLufs,
+			delivery: outcome,
+			...(o.deliver ? { codec: o.deliver } : {}),
+		},
 	};
+}
+
+/** Writes one delivery pass of `pass1` to `out` as a float32 WAV and returns its loudness (`deliver.ts`). */
+export async function writeDeliveryWav(
+	pass1: Pass1,
+	out: string,
+	sr: number,
+	channels: number,
+	total: number,
+	params: DeliveryParams,
+	opts: { blockSize?: number; signal?: AbortSignal | undefined; onProgress?(fraction: number): void } = {},
+): Promise<LoudnessSummary> {
+	const meter = new LoudnessMeter(sr, channels, { weights: defaultChannelWeights(channels) });
+	const dst = await open(out, 'w');
+	try {
+		await dst.write(wavHeaderF32(channels, sr, total));
+		await runDeliveryPass({
+			pass1,
+			sampleRate: sr,
+			channels,
+			total,
+			params,
+			blockSize: opts.blockSize ?? BLOCK,
+			signal: opts.signal,
+			...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
+			sink: async (view, m) => {
+				meter.process(view, 0, m);
+				await dst.write(interleave(view, m));
+			},
+		});
+	} finally {
+		await dst.close();
+	}
+	meter.flush();
+	return meter.summary();
 }
 
 /** A snapshot whose clips play at their source level (no gain, volume, fades or pan): peak / source analysis. */

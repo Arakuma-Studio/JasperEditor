@@ -76,6 +76,24 @@ const ENGINE: { code: string; message: string; params: ExportWarningParams }[] =
 		message: 'PCM audio was requested but MP4 does not carry PCM audio (PCM needs MOV): the audio is AAC',
 		params: { requested: 'PCM', written: 'AAC', container: 'MP4', why: 'container' },
 	},
+	// the delivered audio missed its target (apps/engine/src/export/service.ts `deliveryWarnings`)
+	{
+		code: 'AUDIO_TRUE_PEAK_OVER',
+		message:
+			'The delivered audio peaks at -0.7 dBTP, over the -1 dBTP target: lower the loudest moments or use a higher audio bit rate',
+		params: { truePeakDbtp: -0.7, targetDbtp: -1 },
+	},
+	{
+		code: 'AUDIO_LOUDNESS_CEILING',
+		message:
+			'The delivered audio measures -6.7 LUFS, not the -2 LUFS target: the true-peak limiter cannot make it louder under its -6.0 dBTP ceiling',
+		params: { integratedLufs: -6.7, targetLufs: -2, ceilingDbtp: -6, why: 'ceiling' },
+	},
+	{
+		code: 'AUDIO_LOUDNESS_CEILING',
+		message: 'The delivered audio measures -14.8 LUFS, not the -14 LUFS target',
+		params: { integratedLufs: -14.8, targetLufs: -14, ceilingDbtp: -1.5, why: 'converge' },
+	},
 ];
 
 afterEach(() => {
@@ -152,5 +170,19 @@ describe('export warnings in the UI language', () => {
 		expect(detail).toContain(exportWarningText(w));
 		expect(detail).toContain(exportWarningText(ENGINE[4]!));
 		expect(detail).not.toContain('Sound credits file written');
+	});
+});
+
+describe('delivered audio that misses its target', () => {
+	it('the finished-export notice repeats AUDIO_TRUE_PEAK_OVER / AUDIO_LOUDNESS_CEILING in the UI language', () => {
+		const over = ENGINE.find((w) => w.code === 'AUDIO_TRUE_PEAK_OVER')!;
+		const ceiling = ENGINE.find((w) => w.code === 'AUDIO_LOUDNESS_CEILING')!;
+		expect(exportResultDetail({ warnings: [over, ceiling] })).toBe(`${over.message} ${ceiling.message}`);
+		__setCatalogForTests('es', es);
+		const detail = exportResultDetail({ warnings: [over] })!;
+		expect(detail).toContain('El audio entregado alcanza -0.7 dBTP');
+		expect(
+			exportWarningText({ code: 'AUDIO_TRUE_PEAK_OVER', message: 'Old', params: { truePeakDbtp: 'x' } }),
+		).toBe('Old');
 	});
 });

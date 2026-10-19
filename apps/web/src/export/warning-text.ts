@@ -155,6 +155,32 @@ function formatText(code: string, p: ExportWarningParams): string | null {
 	return null;
 }
 
+/** The delivered audio missed its loudness target (`AUDIO_TRUE_PEAK_OVER`, `AUDIO_LOUDNESS_CEILING`). */
+function deliveryText(code: string, p: ExportWarningParams): string | null {
+	if (code === 'AUDIO_TRUE_PEAK_OVER') {
+		const tp = num(p, 'truePeakDbtp');
+		const target = num(p, 'targetDbtp');
+		if (tp === null || target === null) return null;
+		return t(
+			'The delivered audio peaks at {0} dBTP, over the {1} dBTP target: lower the loudest moments or use a higher audio bit rate',
+			tp.toFixed(1),
+			target,
+		);
+	}
+	const lufs = num(p, 'integratedLufs');
+	const target = num(p, 'targetLufs');
+	const ceiling = num(p, 'ceilingDbtp');
+	if (lufs === null || target === null || ceiling === null) return null;
+	return p.why === 'ceiling'
+		? t(
+				'The delivered audio measures {0} LUFS, not the {1} LUFS target: the true-peak limiter cannot make it louder under its {2} dBTP ceiling',
+				lufs.toFixed(1),
+				target,
+				ceiling.toFixed(1),
+			)
+		: t('The delivered audio measures {0} LUFS, not the {1} LUFS target', lufs.toFixed(1), target);
+}
+
 /** An export warning in the UI language (the engine's English message when it cannot be said from its params). */
 export function exportWarningText(w: Warning): string {
 	const p = w.params && typeof w.params === 'object' && !Array.isArray(w.params) ? w.params : null;
@@ -164,6 +190,8 @@ export function exportWarningText(w: Warning): string {
 			? checkText(p)
 			: w.code === 'OUTPUT_CONTAINER_CHANGED' || w.code === 'AUDIO_CODEC_CHANGED'
 				? formatText(w.code, p)
-				: soundText(w.code, p);
+				: w.code === 'AUDIO_TRUE_PEAK_OVER' || w.code === 'AUDIO_LOUDNESS_CEILING'
+					? deliveryText(w.code, p)
+					: soundText(w.code, p);
 	return text ?? w.message;
 }

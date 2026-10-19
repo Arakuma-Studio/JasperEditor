@@ -10555,5 +10555,12 @@
   "Choose a sound first": "Elija primero un sonido",
   "Import Sound {0}": "Importar sonido {0}",
   "Import {0} Sounds": "Importar {0} sonidos",
-  "{0} (alternative {1})": "{0} (alternativa {1})"
+  "{0} (alternative {1})": "{0} (alternativa {1})",
+  "The delivered audio peaks at {0} dBTP, over the {1} dBTP target: lower the loudest moments or use a higher audio bit rate": "El audio entregado alcanza {0} dBTP, por encima del objetivo de {1} dBTP: baje los momentos más fuertes o use una tasa de bits de audio mayor",
+  "The delivered audio measures {0} LUFS, not the {1} LUFS target: the true-peak limiter cannot make it louder under its {2} dBTP ceiling": "El audio entregado mide {0} LUFS, no los {1} LUFS del objetivo: el limitador de pico real no puede subirlo más bajo su techo de {2} dBTP",
+  "The delivered audio measures {0} LUFS, not the {1} LUFS target": "El audio entregado mide {0} LUFS, no los {1} LUFS del objetivo",
+  "as {0} {1} kb/s decodes": "tal como se decodifica en {0} a {1} kb/s",
+  "as {0} decodes": "tal como se decodifica en {0}",
+  "limiter {0} dBTP in front of the encoder": "limitador a {0} dBTP antes del codificador",
+  "Opus": "Opus"
 }

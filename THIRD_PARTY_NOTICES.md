@@ -9510,7 +9510,8 @@ Record: `licenses/ported/earshot.md`
 - **Ported by:** sound design WP-E1 (Sound Check: new findings), 2026-10-17; WP-E5 (takes, judge flags), 2026-10-18;
   WP-E6 (cue grammar, variation policy, personality, palette coherence), 2026-10-18; WP-E7 (music to picture),
   2026-10-18; WP-E4 (reference profiles), 2026-10-18; WP-E8 (ambience and room-tone beds),
-  2026-10-18; WP-E9 (Describe-it search, Find Moment), 2026-10-18
+  2026-10-18; WP-E9 (Describe-it search, Find Moment), 2026-10-18; fix "lossy-codec true-peak headroom and loudness
+  convergence", 2026-10-19
 
 | Upstream path | Our path | What |
 |---|---|---|
@@ -9521,6 +9522,7 @@ Record: `licenses/ported/earshot.md`
 | `skills/real-sound/scripts/qa.py` (`check_loudness` head / tail, `check_coverage`, `sync_issue` end window) | `apps/engine/src/sound-design/check-findings.ts` (`endingFindings`, `coverageFindings`, `arcFindings`), `apps/engine/src/sound-design/check.ts` | Thresholds of the master's head (5 ms peak −40 dBFS) and tail (50 ms RMS −45 dBFS, 10 ms peak −60 dBFS), classes of action sounded in part, the riser end window −250…+30 ms, the loudest moment in the last 15 % |
 | `earshot/search.py` (`event_candidates`, `_refine_start`, `_tail_db`, `_head_db`, `_edit_gaps`, `_select`) | `packages/audio-fx/src/analysis/takes.ts` (`findTakes`, `analyzeTakes`) | Takes of a multi-hit recording: a stroke from 5 ms before its refined attack until it has decayed 35 dB under its peak (never under the floor + 4 dB) plus 20 ms, never into the next stroke, at most 2 s; strokes < 0.25 s apart joined (never across ≥ 10 ms of digital silence at −100 dBFS); head (first 5 ms) and tail (last 10 ms) against the peak, clean = head ≤ −15 dB and tail ≤ −30 dB; round-robin selection over 2 s stretches by prominence |
 | `skills/real-sound/scripts/analyze.py` (`noise_floor_dbfs`, `dc`, `rolloff95_hz`, the "foley / SFX" rules of thumb) | `packages/audio-fx/src/analysis/sound-descriptors.ts` (`floorDb`, `dcDb`, `rolloff95Hz`), `packages/audio-fx/src/analysis/sound-judge.ts` (`noisy-floor`, `dc-offset`, `lowpassed`) | Noise floor = 10th percentile of 20 ms RMS, flagged over −55 dBFS between events; DC offset (channel mean) over −40 dBFS; 95 % roll-off and the 12 kHz "not dull / lossy cliff" line |
+| `skills/real-sound/scripts/master.py` (`loudness_passes`, the limiter's `ceiling=0.77` "leaves room for AAC overshoot") | `apps/engine/src/audio/deliver.ts` (`solveDelivery`) | Loudness measured again after the true-peak limiter and the gain corrected again, at most 8 passes, 0.5 LU tolerance; a limiter ceiling under the delivery peak for lossy encoders |
 | `skills/real-sound/references/sound-design.md` §2 "Launch-video grammar", §6 "Variation without randomness"; `skills/real-sound/scripts/mix.py` (rule `mode: cycle`, `jitter_db`, `pitch`, `pitch_ramp`) | `packages/project/src/sound/grammar.ts` (`variationOfType`, `voiceFor`, `findRuns`, `rateOfSemitones`), `packages/project/src/sound/variant.ts` (`variationOf` policies), `packages/project/src/sound/taxonomy.ts` (`variation`), `apps/engine/src/sound-design/plan.ts` | One click voice at one level (no pitch or gain variation); keys vary the take with ±1 dB, never the pitch; a run of pops / ticks climbs in pitch across its members (earshot: a linear `pitch_ramp` between two semitone values over the matched events; ours: +1 st per step capped at +4, ≥ 3 cues ≤ 0.6 s apart) |
 | `skills/real-sound/references/sound-design.md` §2 (typing row: "at most ~12 keys/s; above ~25 chars/s one key per word or silence", "music dips 6-10 dB under the run"; hard-cuts row: "about 85 % of cuts in pro films have no sound of their own") | `packages/project/src/sound/grammar.ts` (`typingChoice`, `TYPING_WORDS_ABOVE_PER_SEC`, `MUSIC_CUT_CONFIDENCE_FACTOR`, `musicPlaysAt`), `packages/project/src/sound/cues/{text,derive}.ts`, `packages/project/src/sound/text-events.ts` (`wordStartUnits`), `apps/engine/src/sound-design/plan.ts` (`TYPING_DUCK`) | One key per word start above 25 typed units/s; an optional 6 dB music dip under a typing run; a cut inside music at half confidence |
 | `skills/real-sound/references/sound-design.md` §1 "One palette" ("one material family per film"), §3 "Match the brand's personality" (calm / fast / bright / precise / mechanical / warm) | `packages/project/src/sound/grammar.ts` (`paletteMaterials`, `materialBonusOf`, `SOUND_PERSONALITY_PROFILES`, `personalityScore`, `styleCueTypes`), `packages/project/src/sound/rank.ts` | A ranking bonus for the dominant material of the family's placed sounds; six personalities as ranking preferences, type boosts and exclusions, materials and a default density (earshot describes them as music and source choices in prose; the table is ours) |
@@ -9651,6 +9653,12 @@ asked length (hop half of it), never overlapping; the trim to the sound (within 
 recordings), at full strength from 32 sounds. A moment is flagged cut when its head is over −15 dB or its tail over
 −30 dB (the clean-take rule of P6-E9; earshot flags a tail over −15 dB). The model is LAION's `larger_clap_general` (Apache-2.0) in our own weight-free ONNX export
 (`scripts/models/export-clap.py`), not earshot's PyTorch pipeline.
+
+Delivery fix changes (2026-10-19): earshot's master corrects by the full `target − measured` each pass; ours takes
+secant steps on the measured loudness (the limiter's own slope), aims at ±0.1 LU, caps the push at +6 dB over the plain
+normalisation gain and reports when the ceiling makes the target unreachable; instead of one 0.77 (−2.3 dBFS) ceiling
+the headroom follows the codec and bit rate (a table with its sources in the sound-design wp-note), and the encoded
+audio is decoded and corrected where it still overshoots (ours).
 
 ## Code ported by the `edit-structure` workstream
 

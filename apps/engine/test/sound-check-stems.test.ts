@@ -123,4 +123,60 @@ describe('renderStems', { timeout: 600_000 }, () => {
 		expect(report.loudness.before.integratedLufs).toBeCloseTo(r.normalized!.before.integrated, 2);
 		await rm(r.path!, { force: true });
 	});
+
+	it("with an export's AAC encoding the check delivers and judges exactly what that export does", async () => {
+		const fx = buildCheckDoc(media);
+		const doc = fx.doc();
+		const seq = doc.sequences[Object.keys(doc.sequences)[0]!] as Sequence;
+		const core = coreServices(app);
+		const scratch = mkdtempSync(join(tmpdir(), 'jasper-stems-codec-'));
+		const report = await checkSequence(
+			doc,
+			seq,
+			{
+				projectId: 'prj_0000000000000001',
+				revision: null,
+				preset: 'web',
+				exportAudio: { codec: 'aac', bitrateKbps: 128 },
+			},
+			{
+				ff: core.ffmpeg,
+				registry: core.registry,
+				registries: defaultRegistries(mgRegistry),
+				mgTemplates: mgRegistry,
+				scratchDir: scratch,
+			},
+		);
+		const world = await audioWorld(doc, seq.id, core.registry);
+		const r = await renderMixdown({
+			ff: core.ffmpeg,
+			snapshot: world.snapshot,
+			media: world.media,
+			range: { start: 0, end: 300 },
+			outputLayout: 'stereo',
+			normalize: { targetLufs: -14, truePeakDb: -1 },
+			deliver: { codec: 'aac', bitrateKbps: 128, sampleRate: 48000, channels: 2 },
+			scratchDir: scratch,
+		});
+		const d = r.normalized!.delivery;
+		const n = report.loudness.normalization;
+		expect(n.limiterCeilingDb).toBeCloseTo(d.params.ceilingDb, 2);
+		expect(n.limiterCeilingDb).toBe(-2.5);
+		expect(n.codecHeadroomDb).toBe(1.5);
+		expect(n.gainDb).toBeCloseTo(d.params.gainDb, 2);
+		expect(n.encodePasses).toBe(d.encodePasses);
+		expect(n.localCorrections).toEqual({
+			count: d.corrections.hops,
+			maxDb: Math.round(d.corrections.maxDb * 100) / 100,
+		});
+		// the decoded audio is what LOUDNESS / TRUE_PEAK judge, and it is the export's
+		const del = report.loudness.delivered!;
+		expect(del).toMatchObject({ codec: 'aac', bitrateKbps: 128, sampleRate: 48000, truePeakMet: true });
+		expect(del.truePeakDb).toBeCloseTo(d.decoded!.truePeakDb, 2);
+		expect(del.integratedLufs).toBeCloseTo(d.decoded!.integrated, 2);
+		expect(del.truePeakDb!).toBeLessThanOrEqual(-1);
+		expect(report.issues.some((i) => i.code === 'TRUE_PEAK')).toBe(false);
+		expect(report.loudness.integratedLufs).toBeCloseTo(r.loudness.integrated, 2);
+		await rm(r.path!, { force: true });
+	});
 });

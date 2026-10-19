@@ -37,6 +37,7 @@ import {
 	transitionSpec,
 	warpExportIssues,
 } from '@jasper/project';
+import { codecHeadroomDb } from '../audio/deliver.ts';
 import { lutRefs } from '../color/extension.ts';
 import { type ExportColor, ExportColorError, exportColorOf } from '../color/output.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
@@ -772,7 +773,22 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		],
 		audio: {
 			mode: 'native-mix',
-			...(audioOut.normalize ? { normalize: audioOut.normalize } : {}),
+			...(audioOut.normalize
+				? {
+						normalize: (() => {
+							const headroom = codecHeadroomDb({
+								codec: audioCodecOf(encoder, output),
+								bitrateKbps: output.audioBitrateKbps,
+								channels: output.audioChannels,
+							});
+							return {
+								...audioOut.normalize,
+								limiterCeilingDb: audioOut.normalize.truePeakDb - headroom,
+								codecHeadroomDb: headroom,
+							};
+						})(),
+					}
+				: {}),
 			sampleRate: output.audioSampleRate,
 			channels: output.audioChannels,
 			codec: audioCodecOf(encoder, output),

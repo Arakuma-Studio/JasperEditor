@@ -218,22 +218,39 @@ export type SummaryChip = { id: string; label: string; value: string; title?: st
 const num = (v: number | null | undefined, unit: string) =>
 	v === null || v === undefined || !Number.isFinite(v) ? '–' : `${fmtDb(v)} ${unit}`;
 
-/** The summary chips: integrated, true peak, LRA, findings per severity. */
+const CODEC_NAMES = { aac: 'AAC', opus: 'Opus', pcm: 'PCM' } as const;
+
+/**
+ * The summary chips: integrated, true peak, LRA, findings per severity. Checked as an export encodes it
+ * (`loudness.delivered`): the decoded codec audio's numbers, with the codec and the limiter ceiling in the titles.
+ */
 export function summaryChips(report: SoundCheckReport): SummaryChip[] {
 	const l = report.loudness;
 	const c = report.counts;
+	const d = l.delivered;
+	const as = d
+		? d.bitrateKbps
+			? t('as {0} {1} kb/s decodes', CODEC_NAMES[d.codec], d.bitrateKbps)
+			: t('as {0} decodes', CODEC_NAMES[d.codec])
+		: null;
+	const ceiling = l.normalization.limiterCeilingDb;
+	const limiter =
+		typeof ceiling === 'number' && ceiling !== report.preset.truePeakDb
+			? t('limiter {0} dBTP in front of the encoder', fmtDb(ceiling))
+			: null;
+	const titled = (base: string) => [base, as, limiter].filter(Boolean).join(' · ');
 	return [
 		{
 			id: 'integrated',
 			label: t('Integrated'),
-			value: l.measurable ? num(l.integratedLufs, 'LUFS') : t('not measurable'),
-			title: t('Target {0} LUFS', report.preset.integratedLufs),
+			value: l.measurable ? num(d ? d.integratedLufs : l.integratedLufs, 'LUFS') : t('not measurable'),
+			title: titled(t('Target {0} LUFS', report.preset.integratedLufs)),
 		},
 		{
 			id: 'truePeak',
 			label: t('True peak'),
-			value: num(l.truePeakDb, 'dBTP'),
-			title: t('Ceiling {0} dBTP', report.preset.truePeakDb),
+			value: num(d ? d.truePeakDb : l.truePeakDb, 'dBTP'),
+			title: titled(t('Ceiling {0} dBTP', report.preset.truePeakDb)),
 		},
 		{
 			id: 'lra',

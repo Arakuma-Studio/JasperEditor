@@ -22,6 +22,7 @@
 //   while the verdict buttons and the note field are used.
 import {
 	type EngineJob,
+	type SoundCheckExportAudio,
 	type SoundCheckIssue,
 	type SoundCheckResult,
 	SoundCheckResultSchema,
@@ -163,7 +164,13 @@ export type RunOutcome =
 export async function runSoundCheck(
 	session: EditorSession,
 	engine: CheckEngine,
-	opts: { sequenceId?: string; choice?: DeliveryChoice; sleep?(ms: number): Promise<void> } = {},
+	opts: {
+		sequenceId?: string;
+		choice?: DeliveryChoice;
+		/** The export's audio encoding (Export ▸ Run Sound Check before export): judge the decoded codec audio. */
+		exportAudio?: SoundCheckExportAudio;
+		sleep?(ms: number): Promise<void>;
+	} = {},
 ): Promise<RunOutcome> {
 	const store = soundCheckStore(session);
 	const seq = seqOf(session, opts.sequenceId);
@@ -195,6 +202,7 @@ export async function runSoundCheck(
 						sequenceId: seq.id,
 						preset: req.preset,
 						...(req.target ? { target: req.target } : {}),
+						...(opts.exportAudio ? { exportAudio: opts.exportAudio } : {}),
 						store: !session.getState().readOnly,
 					},
 					signal,
