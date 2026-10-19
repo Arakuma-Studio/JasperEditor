@@ -652,10 +652,23 @@ test('seek while playing: the audio after the seek starts on its first sample', 
 				}),
 			);
 		expect(fresh?.size, JSON.stringify(after)).toBe(3);
-		// and nothing of the new position before it (the single clicks before it are the old position's, before the hold)
+		// and nothing of the new position before it: the single clicks between the Enter and the fresh triple are the old
+		// position's, played on until the transport held — on the grid of the clicks before the Enter (0.25 s apart,
+		// sample-exact on the old anchor; ±2 ms). A click of the new position before its target (3.78 s) sits on the new
+		// grid, 0.25 s before the triple, and fails this unless the two grids happen to meet. Until Final verification A
+		// this asked for 0.25 s of silence before the triple, which a quick restart does not leave (an old click 0.093 s
+		// before it, measured).
 		const before = after.slice(0, firstNamed);
-		if (before.length > 0)
-			expect(fresh!.t - before[before.length - 1]!.t, JSON.stringify(after)).toBeGreaterThan(0.25);
+		const lastOld = groups.filter((g) => g.t <= enter).at(-1);
+		const offGrid = (t: number, ref: number) => {
+			const k = (t - ref) / 0.25;
+			return Math.abs(k - Math.round(k)) * 0.25;
+		};
+		for (const g of before) {
+			const why = JSON.stringify({ lastOld, after });
+			expect(lastOld, why).toBeTruthy();
+			expect(offGrid(g.t, lastOld!.t), why).toBeLessThan(0.002);
+		}
 		if (logged) {
 			const primed = primedStart(log, enter - 0.05);
 			expect(primed, JSON.stringify(log)).toBeTruthy();
