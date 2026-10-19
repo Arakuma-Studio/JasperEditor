@@ -288,7 +288,7 @@ export function staleText(status: Pick<SoundCheckStatus, 'state' | 'reasons'>): 
 			: r === 'inputs'
 				? t('cues, loudness or credits settings changed')
 				: r === 'codec'
-					? t('it was checked for another export encoding')
+					? t('the export encoding to check for changed')
 					: t('the delivery target changed'),
 	);
 	return t('Stale: {0} since this check', words.join(', '));

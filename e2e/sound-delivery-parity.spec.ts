@@ -25,7 +25,7 @@ test.afterAll(async () => {
 	await page?.close();
 });
 
-/** A loud, bright mix: pink noise with a kick every 0.5 s (the limiter works on every hit at −14 LUFS). */
+/** A quiet noise bed with a noise snare every 0.5 s (instant attack): normalised to −14 LUFS the limiter works on every hit. */
 function loudWav(): string {
 	const file = join(outDir, 'loud.wav');
 	const r = spawnSync(FFMPEG, [
@@ -35,7 +35,7 @@ function loudWav(): string {
 		'-f',
 		'lavfi',
 		'-i',
-		'aevalsrc=0.25*(random(0)*2-1)+0.6*sin(2*PI*55*t)*exp(-mod(t\\,0.5)/0.08):d=10:s=48000',
+		'aevalsrc=(random(0)*2-1)*(0.04+0.7*exp(-mod(t\\,0.5)/0.03)):d=10:s=48000',
 		'-ac',
 		'2',
 		'-c:a',
@@ -92,13 +92,16 @@ test('Analyze stores the converged delivery; Sound Check checks for the export e
 	await expect(dialog).toBeHidden();
 
 	// the Sound Check panel: Check for
+	// (the Sound Design workspace, then Sequence ▸ Sound Design ▸ Run Sound Check opens the panel and runs)
 	await page.keyboard.press('Alt+Shift+Digit9');
+	await menubar.getByRole('menuitem', { name: 'Sequence', exact: true }).click();
+	await page.getByRole('menuitem', { name: 'Sound Design' }).hover();
+	await page.getByRole('menuitem', { name: 'Run Sound Check', exact: true }).click();
 	const panel = page.locator('[data-panel-kind="soundCheck"][data-instance-id]');
 	await expect(panel).toBeVisible({ timeout: 60_000 });
 	const row = panel.getByTestId('sound-check-check-for');
 	await expect(row).toContainText('AAC 256 kb/s');
 	await expect(row).toContainText('(typical for this delivery target)');
-	await panel.getByTestId('sound-check-run').click();
 	await expect(panel.getByTestId('sound-check-verdict')).toBeVisible({ timeout: CHECK_MS });
 	await expect(panel.getByTestId('sound-check-progress')).toBeHidden({ timeout: CHECK_MS });
 	await expect(panel.getByTestId('sound-check-checked-for')).toHaveText('checked for AAC 256 kb/s');
@@ -113,6 +116,6 @@ test('Analyze stores the converged delivery; Sound Check checks for the export e
 	// another encoding to check for: the summary is stale for it
 	await row.getByRole('combobox').click();
 	await page.getByRole('option', { name: 'Opus 160 kb/s' }).click();
-	await expect(panel.getByTestId('sound-check-stale')).toContainText('it was checked for another export encoding');
+	await expect(panel.getByTestId('sound-check-stale')).toContainText('the export encoding to check for changed');
 	await page.screenshot({ path: join(outDir, '03-sound-check-stale-opus.png') });
 });

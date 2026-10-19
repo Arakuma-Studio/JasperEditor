@@ -422,7 +422,7 @@ describe('Sound Check panel', () => {
 			setCheckFor(f.session, f.seqId, 'opus:160');
 		});
 		expect((await screen.findByTestId('sound-check-stale')).textContent).toContain(
-			'it was checked for another export encoding',
+			'the export encoding to check for changed',
 		);
 		expect(
 			soundCheckStatus(f.session.getCommitted(), f.seqId, { checkFor: { codec: 'opus', bitrateKbps: 160 } })

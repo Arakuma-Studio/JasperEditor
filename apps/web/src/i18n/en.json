@@ -4616,7 +4616,7 @@
   "It no longer applies after the safe fixes before it: {0}",
   "It only analyses sounds (search and Find Moment); it never makes sounds, and no audio leaves this computer.",
   "it plays reversed",
-  "it was checked for another export encoding",
+  "the export encoding to check for changed",
   "It would leave {0} {1} LU over the bed (at most {2} LU for its role)",
   "It would leave {0} only {1} dB over the bed in its dominant band (at least {2} dB for its role)",
   "It would make {0} peak at {1} dBTP on its own (ceiling {2} dBTP)",
