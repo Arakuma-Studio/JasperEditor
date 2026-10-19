@@ -10215,3 +10215,54 @@ own controls and the MCP tool list (`listTools`: 378 tools; the README list is k
 
 Reverse direction: every sound-design tool above has its editor action; `sound_library_status` is the Library's status
 line and Preferences page, `get_sound_check` the panel's kept report.
+
+#### Walkthroughs on the built stack (measured)
+
+Commands (build server, `~/jasper-sd/work/final-audit`): `pnpm build`, `JASPER_FFMPEG=$PWD/vendor/ffmpeg-lgpl/linux-x64/ffmpeg
+JASPER_FFMPEG_LGPL_ONLY=1 pnpm fixtures`, then `E2E_PORT=53301 E2E_SKIP_BUILD=1 E2E_SERVER_TIMEOUT_MS=600000 pnpm exec
+playwright test e2e/sound-design.spec.ts e2e/sound-agent-walkthrough.spec.ts`. Both pass (last runs: 3.3 min and 2.6 min
+at load ≈ 10). Reports: `test-results/e2e-sound-design/walkthrough.json`, `test-results/e2e-sound-agent/agent-walkthrough.json`;
+every screenshot below was looked at.
+
+**User** (`e2e/sound-design.spec.ts`, P6-R6; a 24 s cut with two pushes, a typewriter title, a keyframed logo, a
+"sfx: boom" marker, 16 bars of 120 BPM music with a drop at bar 9, dialogue with a gap, a street bed):
+
+| Step | Measured |
+|---|---|
+| Sound Library: search "pop", audition, Insert at Playhead (frame 150) | "Bong pop" placed with its peak on the frame: error 0 flicks |
+| Suggest Cues… | sources: transitions 1, keyframes 2, text 6, clip edges 1, markers 1, edits 0 → 11 cues (6 typewriter keys, exit, push, move, land, the marker's hero) |
+| Auto Sound Pass… (Energetic, room glue, stop before, build, Web) | proposal of 29 items, 11 placements with 2–3 alternatives; notes name items and alternatives (B10); no Jasper Synth placed (B9) |
+| Review: accept all, reject one, an alternate, a note, Ctrl+Enter, Ctrl+Z, Reopen review, Apply | 28 accepted / 1 rejected; "Applied 12 of 13 sounds from you" (Undo, Reopen review) — one History entry each time |
+| Sound Check, Fix all safe (0 errors, 2 dialogue EDGE warnings) | one entry "Fix 3 Sound Check Findings", the check runs again; ENDING acknowledged, then reported "acknowledged before the change" after the beds |
+| Lay Ambience Bed… (street.wav), Fill Room Tone | 7 bed pieces under 3 scenes; 1 room-tone piece [262, 307) from "dialogue.wav 3.50–5.50 s, own room tone", 0.3 dB from the floor (B1) |
+| Music to picture: Analyze, Land the drop on the hero cue, End on Bar | 120 BPM · 4/4 · C major (88 %); bar 9 lands at 00;00;20;00 (anchor 16.0002 s → frame 600); ends on the bar line at frame 719, faded over a beat |
+| Delivery Target (Web) | before −16.7 LUFS / +3.4 dBTP; export −14.0 LUFS / −1.0 dBTP expected; music 19.8 LU, ambience 14.9 LU under the voice; 12 clips matched, 11 sound effects re-solved |
+| Final Sound Check | warn: no EDGE at the remix joint any more (B12, B14), no ENDING (B13); left: OVERLOAD (the limiter pulls 7.1 dB at the explosion, needs judgement), HEAD and ARC / HARSH infos |
+| Export (native, H.264 + AAC 256 kb/s, Markdown credits) | engine's PCM: −14.48 LUFS, −1.00 dBTP; decoded file (`ffmpeg ebur128=peak=true`): −14.6 LUFS, −0.1 dBTP, LRA 8.5; credits 9 rows; every peak-aligned sound found in the mix by cross-correlation (r 0.31–0.81) 0 or ±1 sample from the document's peak and from its cue frame (10 sounds) |
+
+Screenshots: `01-edit` … `23-exported`, `export-frame-{5.00,13.00,20.02}s`, `export-wave` (the bed, the dialogue's syllables,
+the build into the drop at 20 s and the music's bar hits fading out at the end).
+
+**Agent** (`e2e/sound-agent-walkthrough.spec.ts`, the built `jasper-mcp` over stdio, the guide followed literally):
+`search_sounds` (contact sheet; every row judged ok, CC0) → `view_sounds` → `find_sound_cues` (11 cues, the dialogue
+span from VAD) → `set_sound_cues {add}` as returned → `plan_sound_design {check: true}` (27 items, every event with its
+why, level and limits) → the user notes one item and accepts all in the editor → `wait_for_proposal` (applied, the note
+read back) → `sound_check` (fail: LOUDNESS −15.4 LUFS, TRUE_PEAK +4.5 dBTP, OVERLOAD) → its safe fix through
+`apply_commands` → `sound_check` again (warn; no safe fix left) → `listen_to_sequence` (sheet and transcript: "cuts 1/1
+within a frame, chance 13 %") → `view_sound_timeline` → `describe_search_status` (model not installed) and a keywords
+search → `acknowledge_sound_issue` (a warning: ok; an error: E_APPROVAL_REQUIRED) → `list_sound_credits` /
+`export_sound_credits` (5 rows; a second run wrote "… (2).md", never overwriting). Screenshots: `01-search-contact-sheet`
+… `05-sound-timeline`, `user-review`, `user-card`, `user-final`.
+
+#### Limits found and left (also in `docs/gaps.md`)
+
+- True peak: the limiter holds −1 dBTP on the PCM the engine encodes; the decoded AAC overshoots (−0.9 … +0.1 dBTP over
+  six runs, the picks differ between runs). A codec-aware ceiling (Spotify asks −2 dBTP of loud lossy masters) is not
+  built; the walkthrough checks the PCM and reports the decoded number.
+- The limiter keeps a loud mix ≈ 0.5 LU under target (−14.48 for −14); the safe LOUDNESS fix can leave −15.0 LUFS at that
+  edge (the agent walkthrough checks that it improves). OVERLOAD on a big hero hit is a warning for the user (its fix,
+  the masking solver, needs judgement).
+- A review alternate can be Jasper Synth when the library has fewer real takes than alternates (the walkthrough's "Next
+  alternate" picked "Jasper Synth tick 1"); it is labelled Synth and only plays where the user picks it.
+- B12 measures joints on the planner's mono 22.05 kHz analysis; it did not fire in this walkthrough (the joint's raw
+  levels match) and guards against joints the plan itself leaves chopped.

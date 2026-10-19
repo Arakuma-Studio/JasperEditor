@@ -700,7 +700,16 @@ menu's Detect Peak; `align_peak` moves such clips by frames like the editor), th
 the export) and `e2e/sound-agent-walkthrough.spec.ts` (an agent through the built `jasper-mcp`, following the guide)
 are new. Deliberately without a twin: audition (agents cannot hear: pictures and the listening log instead), the
 listener's verdicts and the reviewer's notes / alternates (the user's), favourites and recents (the editor user's own
-lists).
+lists). The walkthroughs also found: Delivery Target's Auto-Match matched each remix piece on its own (a landed drop's
+joint jumped 9 dB; one gain per remix now, `packages/project/test/essential.test.ts`), a remix joint the plan left
+chopped (110 ms there, `apps/engine/test/remix-joints.test.ts`), End on Bar's fade-out reported as ENDING
+(`apps/engine/test/sound-check-ending-fade.test.ts`), Sound Check's "Normalise the mix" fix leaving the preview
+un-normalised (`apps/engine/test/sound-check.test.ts`), Jasper Synth rotated in among real recordings and alternatives'
+notes without their item. Limits left: −1 dBTP is held on the mix the engine encodes (−1.00 dBTP measured), the decoded
+256 kb/s AAC reads −0.9 … +0.1 dBTP over six runs (codec overshoot; no codec-aware ceiling such as −2 dBTP for loud lossy
+masters); the limiter keeps a loud mix ≈ 0.5 LU under its target (−14.48 LUFS for −14) and Sound Check's OVERLOAD (the
+limiter pulls 7 dB on the hero hit) stays a warning for the user's judgement; a safe LOUDNESS fix can leave a mix at
+−15.0 LUFS at that edge; a review alternate can be a Jasper Synth sound when the library has fewer real takes.
 
 ### Not covered by any workstream yet
 
